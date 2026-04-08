@@ -90,5 +90,5 @@ npm run run:doctor -- --required codex
 
 - `docs/semantic-kernel-v1.md`
 - `docs/xlgraph-subset-compatibility.md`
+- `docs/langgraph-engine-example-systems.md`
 - `specs/mermaid-dsl-v0.1.md`
-# ogsystem

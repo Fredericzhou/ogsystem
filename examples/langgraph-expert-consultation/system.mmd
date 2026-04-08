@@ -1,0 +1,32 @@
+flowchart TD
+%% engine=langgraph
+%% system.id=medical.expert.consultation
+%% system.version=1.0.0
+%% law.global=law.medical.consultation.base
+%% entry.role=intake
+%% role.mode.parallel_dispatch=parallel_split
+%% join.mode.chief_review=all_of
+%% join.sources.chief_review=cardiology,neurology,imaging
+%% loop.max.parallel_dispatch=2
+%% exec.bind.intake=profile.intake.codex
+%% exec.bind.parallel_dispatch=profile.dispatch.codex
+%% exec.bind.cardiology=profile.cardiology.claude
+%% exec.bind.neurology=profile.neurology.gemini
+%% exec.bind.imaging=profile.imaging.python
+%% exec.bind.chief_review=profile.chief.codex
+%% exec.bind.final_report=profile.report.codex
+
+input -->|CASE_RECEIVED| intake[Role:intake]
+intake[Role:intake] -->|READY_FOR_PARALLEL| parallel_dispatch[Role:parallel_dispatch]
+
+parallel_dispatch[Role:parallel_dispatch] -->|START_CARDIOLOGY| cardiology[Role:cardiology]
+parallel_dispatch[Role:parallel_dispatch] -->|START_NEUROLOGY| neurology[Role:neurology]
+parallel_dispatch[Role:parallel_dispatch] -->|START_IMAGING| imaging[Role:imaging]
+
+cardiology[Role:cardiology] -->|CARDIOLOGY_DONE| chief_review[Role:chief_review]
+neurology[Role:neurology] -->|NEUROLOGY_DONE| chief_review[Role:chief_review]
+imaging[Role:imaging] -->|IMAGING_DONE| chief_review[Role:chief_review]
+
+chief_review[Role:chief_review] -->|REQUEST_RECHECK| parallel_dispatch[Role:parallel_dispatch]
+chief_review[Role:chief_review] -->|CONSENSUS_READY| final_report[Role:final_report]
+final_report[Role:final_report] -->|REPORT_READY| output

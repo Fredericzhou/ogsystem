@@ -1,0 +1,10 @@
+{
+  "laws": [
+    {
+      "lawId": "law.branch",
+      "constraints": {
+        "allowNoopWithoutExecutionBinding": true
+      }
+    }
+  ]
+}

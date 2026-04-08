@@ -1,0 +1,12 @@
+[
+  {
+    "profileId": "invalid.profile",
+    "toolPolicy": {
+      "allowedTools": [
+        {
+          "toolRef": "tool.branch"
+        }
+      ]
+    }
+  }
+]

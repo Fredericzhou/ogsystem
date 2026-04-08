@@ -1,0 +1,12 @@
+{
+  "laws": [
+    {
+      "lawId": "law.debate.base",
+      "constraints": {
+        "forbiddenToolRefs": [],
+        "maxTransitions": 20,
+        "allowNoopWithoutExecutionBinding": false
+      }
+    }
+  ]
+}

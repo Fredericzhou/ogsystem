@@ -1,0 +1,8 @@
+[
+  {
+    "profileId": "exec.console.codex.v1",
+    "toolRef": "tool.cli.codex.exec",
+    "timeoutMs": 90000,
+    "maxOutputBytes": 65536
+  }
+]

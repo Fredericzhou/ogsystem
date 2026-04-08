@@ -1,0 +1,10 @@
+[
+  {
+    "profileId": "profile.branch",
+    "toolRef": "tool.branch"
+  },
+  {
+    "profileId": "profile.forbid",
+    "toolRef": "tool.forbidden"
+  }
+]

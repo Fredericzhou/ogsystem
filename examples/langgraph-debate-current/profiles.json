@@ -1,0 +1,38 @@
+[
+  {
+    "profileId": "profile.moderator.codex",
+    "toolRef": "tool.codex.exec",
+    "timeoutMs": 60000,
+    "maxOutputBytes": 65536
+  },
+  {
+    "profileId": "profile.round.codex",
+    "toolRef": "tool.codex.exec",
+    "timeoutMs": 60000,
+    "maxOutputBytes": 65536
+  },
+  {
+    "profileId": "profile.minimalist.claude",
+    "toolRef": "tool.claude.exec",
+    "timeoutMs": 90000,
+    "maxOutputBytes": 65536
+  },
+  {
+    "profileId": "profile.alignmentist.gemini",
+    "toolRef": "tool.gemini.exec",
+    "timeoutMs": 90000,
+    "maxOutputBytes": 65536
+  },
+  {
+    "profileId": "profile.judge.codex",
+    "toolRef": "tool.codex.exec",
+    "timeoutMs": 90000,
+    "maxOutputBytes": 65536
+  },
+  {
+    "profileId": "profile.summary.codex",
+    "toolRef": "tool.codex.exec",
+    "timeoutMs": 60000,
+    "maxOutputBytes": 65536
+  }
+]

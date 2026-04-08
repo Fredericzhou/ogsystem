@@ -1,0 +1,44 @@
+[
+  {
+    "profileId": "profile.intake.codex",
+    "toolRef": "tool.codex.exec",
+    "timeoutMs": 60000,
+    "maxOutputBytes": 65536
+  },
+  {
+    "profileId": "profile.dispatch.codex",
+    "toolRef": "tool.codex.exec",
+    "timeoutMs": 60000,
+    "maxOutputBytes": 65536
+  },
+  {
+    "profileId": "profile.cardiology.claude",
+    "toolRef": "tool.claude.exec",
+    "timeoutMs": 90000,
+    "maxOutputBytes": 65536
+  },
+  {
+    "profileId": "profile.neurology.gemini",
+    "toolRef": "tool.gemini.exec",
+    "timeoutMs": 90000,
+    "maxOutputBytes": 65536
+  },
+  {
+    "profileId": "profile.imaging.python",
+    "toolRef": "tool.python.imaging",
+    "timeoutMs": 45000,
+    "maxOutputBytes": 65536
+  },
+  {
+    "profileId": "profile.chief.codex",
+    "toolRef": "tool.codex.exec",
+    "timeoutMs": 90000,
+    "maxOutputBytes": 65536
+  },
+  {
+    "profileId": "profile.report.codex",
+    "toolRef": "tool.codex.exec",
+    "timeoutMs": 60000,
+    "maxOutputBytes": 65536
+  }
+]

@@ -1,0 +1,18 @@
+{
+  "tools": [
+    {
+      "toolRef": "tool.branch",
+      "runner": "local_shell",
+      "command": "node",
+      "argsTemplate": ["tests/fixtures/scripts/branch-tool.js", "PATH_A"],
+      "stdinMode": "none"
+    },
+    {
+      "toolRef": "tool.forbidden",
+      "runner": "local_shell",
+      "command": "node",
+      "argsTemplate": ["tests/fixtures/scripts/branch-tool.js", "PATH_B"],
+      "stdinMode": "none"
+    }
+  ]
+}

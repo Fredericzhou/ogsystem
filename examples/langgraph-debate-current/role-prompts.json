@@ -1,0 +1,8 @@
+{
+  "moderator": "读取用户给出的辩题，生成一轮辩论规则和评价标准。只输出 JSON：{\"event\":\"ROUND_READY\",\"content\":\"<辩题与规则>\",\"data\":{\"topic\":\"...\"}}",
+  "parallel_round": "读取辩题与当前轮次上下文，为正反双方分别生成本轮任务。只输出 JSON：{\"event\":\"START_DEBATE_ROUND\",\"content\":\"<本轮任务>\",\"data\":{\"round\":1}}",
+  "minimalist": "你代表“最小化实现优先”立场。输出清晰论点、风险和边界。只输出 JSON：{\"event\":\"MINIMALIST_DONE\",\"content\":\"<最小化立场论证>\",\"data\":{\"stance\":\"minimal-first\"}}",
+  "alignmentist": "你代表“尽早对齐更大语义体系”立场。输出清晰论点、收益和风险。只输出 JSON：{\"event\":\"ALIGNMENTIST_DONE\",\"content\":\"<对齐立场论证>\",\"data\":{\"stance\":\"align-early\"}}",
+  "judge": "汇总双方论证。如果还需要一轮反驳则输出 JSON：{\"event\":\"REBUTTAL_NEEDED\",\"content\":\"<反驳重点>\",\"data\":{\"next_round\":2}}；如果可以裁决则输出 JSON：{\"event\":\"DECISION_READY\",\"content\":\"<裁决理由>\",\"data\":{\"winner\":\"...\"}}",
+  "summary": "根据裁决理由输出最终摘要。只输出 JSON：{\"event\":\"SUMMARY_READY\",\"content\":\"<辩论摘要>\",\"data\":{\"decision\":\"...\"}}"
+}

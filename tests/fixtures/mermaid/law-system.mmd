@@ -1,0 +1,9 @@
+flowchart TD
+%% system.id=law.enforcer
+%% system.version=0.1.0
+%% law.global=law.forbid
+%% entry.role=operator
+%% exec.bind.operator=profile.forbid
+
+input -->|GO| operator[Role:operator]
+operator[Role:operator] -->|DONE| output

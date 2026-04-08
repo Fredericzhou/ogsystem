@@ -1,0 +1,37 @@
+{
+  "tools": [
+    {
+      "toolRef": "tool.codex.exec",
+      "runner": "local_shell",
+      "command": "codex",
+      "argsTemplate": [
+        "exec",
+        "--skip-git-repo-check",
+        "--color",
+        "never",
+        "{{prompt}}"
+      ],
+      "stdinMode": "none"
+    },
+    {
+      "toolRef": "tool.claude.exec",
+      "runner": "local_shell",
+      "command": "claude",
+      "argsTemplate": [
+        "--print",
+        "{{prompt}}"
+      ],
+      "stdinMode": "none"
+    },
+    {
+      "toolRef": "tool.gemini.exec",
+      "runner": "local_shell",
+      "command": "gemini",
+      "argsTemplate": [
+        "--prompt",
+        "{{prompt}}"
+      ],
+      "stdinMode": "none"
+    }
+  ]
+}

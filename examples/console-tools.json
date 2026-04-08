@@ -1,0 +1,17 @@
+{
+  "tools": [
+    {
+      "toolRef": "tool.cli.codex.exec",
+      "runner": "local_shell",
+      "command": "codex",
+      "argsTemplate": [
+        "exec",
+        "--skip-git-repo-check",
+        "--color",
+        "never",
+        "{{prompt}}"
+      ],
+      "stdinMode": "none"
+    }
+  ]
+}
