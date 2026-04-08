@@ -1,0 +1,9 @@
+{
+  "roleId": "diagnosis-neurology",
+  "roleVersion": "1.0.0",
+  "name": "Neurology Specialist",
+  "description": "Assesses neurological signs, imaging, and cognitive clues for the case.",
+  "promptTemplate": "prompt.md",
+  "outputSchema": "output.schema.json",
+  "tags": ["diagnosis", "neurology"]
+}

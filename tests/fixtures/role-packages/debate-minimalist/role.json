@@ -1,0 +1,9 @@
+{
+  "roleId": "debate-minimalist",
+  "roleVersion": "1.0.0",
+  "name": "Minimalist Debater",
+  "description": "Advocates for minimal implementation-first decisions during architecture debates.",
+  "promptTemplate": "prompt.md",
+  "outputSchema": "output.schema.json",
+  "tags": ["debate", "architecture"]
+}

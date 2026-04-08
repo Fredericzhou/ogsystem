@@ -1,0 +1,32 @@
+{
+  "roles": {
+    "intake": {
+      "roleRef": "file:../../og-roles/roles/diagnosis-intake@1.0.0",
+      "resolvedVersion": "1.0.0"
+    },
+    "parallel_dispatch": {
+      "roleRef": "file:../../og-roles/roles/diagnosis-dispatch@1.0.0",
+      "resolvedVersion": "1.0.0"
+    },
+    "cardiology": {
+      "roleRef": "file:../../og-roles/roles/diagnosis-cardiology@1.0.0",
+      "resolvedVersion": "1.0.0"
+    },
+    "neurology": {
+      "roleRef": "file:../../og-roles/roles/diagnosis-neurology@1.0.0",
+      "resolvedVersion": "1.0.0"
+    },
+    "imaging": {
+      "roleRef": "file:../../og-roles/roles/diagnosis-imaging@1.0.0",
+      "resolvedVersion": "1.0.0"
+    },
+    "chief_review": {
+      "roleRef": "file:../../og-roles/roles/diagnosis-chief-review@1.0.0",
+      "resolvedVersion": "1.0.0"
+    },
+    "final_report": {
+      "roleRef": "file:../../og-roles/roles/diagnosis-report@1.0.0",
+      "resolvedVersion": "1.0.0"
+    }
+  }
+}

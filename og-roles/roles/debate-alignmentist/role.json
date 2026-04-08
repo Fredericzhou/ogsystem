@@ -1,0 +1,9 @@
+{
+  "roleId": "debate-alignmentist",
+  "roleVersion": "1.0.0",
+  "name": "Alignmentist Debater",
+  "description": "Argues for advancing the system toward a larger semantic alignment vision.",
+  "promptTemplate": "prompt.md",
+  "outputSchema": "output.schema.json",
+  "tags": ["debate", "alignment"]
+}

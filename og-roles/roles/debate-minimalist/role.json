@@ -1,0 +1,9 @@
+{
+  "roleId": "debate-minimalist",
+  "roleVersion": "1.0.0",
+  "name": "Minimalist Debater",
+  "description": "Argues that the current build should stay minimal and defer complex alignment.",
+  "promptTemplate": "prompt.md",
+  "outputSchema": "output.schema.json",
+  "tags": ["debate", "minimalism"]
+}

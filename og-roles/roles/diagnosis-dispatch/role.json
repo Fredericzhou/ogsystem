@@ -1,0 +1,9 @@
+{
+  "roleId": "diagnosis-dispatch",
+  "roleVersion": "1.0.0",
+  "name": "Diagnosis Dispatch",
+  "description": "Packages case context and dispatches parallel specialist tasks.",
+  "promptTemplate": "prompt.md",
+  "outputSchema": "output.schema.json",
+  "tags": ["diagnosis", "dispatch"]
+}

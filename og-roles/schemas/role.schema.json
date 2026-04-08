@@ -1,0 +1,42 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "OGSystem Role Package",
+  "type": "object",
+  "required": [
+    "roleId",
+    "roleVersion",
+    "name",
+    "description",
+    "promptTemplate",
+    "outputSchema"
+  ],
+  "properties": {
+    "roleId": {
+      "type": "string",
+      "pattern": "^[a-z0-9-]+$"
+    },
+    "roleVersion": {
+      "type": "string"
+    },
+    "name": {
+      "type": "string"
+    },
+    "description": {
+      "type": "string"
+    },
+    "promptTemplate": {
+      "type": "string"
+    },
+    "outputSchema": {
+      "type": "string"
+    },
+    "tags": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "default": []
+    }
+  },
+  "additionalProperties": false
+}

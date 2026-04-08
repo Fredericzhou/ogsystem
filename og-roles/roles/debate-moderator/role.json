@@ -1,0 +1,9 @@
+{
+  "roleId": "debate-moderator",
+  "roleVersion": "1.0.0",
+  "name": "Debate Moderator",
+  "description": "Kicks off rounds, injects context, and hands control to debaters.",
+  "promptTemplate": "prompt.md",
+  "outputSchema": "output.schema.json",
+  "tags": ["debate", "coordination"]
+}

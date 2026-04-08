@@ -7,11 +7,18 @@ import {
   validateToolsConfig
 } from "./config.js";
 import { loadSystemFromMermaid } from "./parse-mermaid.js";
+import {
+  loadAssemblyConfig,
+  loadRolePackage,
+  renderRolePrompt,
+  validateRoleOutputSchema
+} from "./role-repo.js";
 import { projectStages } from "./stage-projector.js";
 import { runCliTool, ToolExecutionError } from "./tool-runner.js";
 import { SYSTEM_END_ROLE_ID } from "./types.js";
 import type {
   AdapterRunResult,
+  AssemblyNodeConfig,
   AuditRecord,
   CliTool,
   EffectiveLawConstraints,
@@ -19,6 +26,7 @@ import type {
   Flow,
   LawCatalog,
   LawSpec,
+  LoadedRolePackage,
   RoleExecutionOutput,
   SystemDefinition
 } from "./types.js";
@@ -43,6 +51,8 @@ type RuntimeInput = {
   workdir: string;
   prompt: string;
   rolePrompts: Record<string, string>;
+  assemblyByRoleId: Map<string, AssemblyNodeConfig>;
+  rolePackagesByRoleId: Map<string, LoadedRolePackage>;
   dryRun?: boolean;
 };
 
@@ -145,7 +155,7 @@ export function parseRoleExecutionOutput(
   }
 
   const record = parsed as Record<string, unknown>;
-  const allowedKeys = new Set(["event", "content"]);
+  const allowedKeys = new Set(["event", "content", "data"]);
   for (const key of Object.keys(record)) {
     if (!allowedKeys.has(key)) {
       throw new Error(`Executable role output contains unsupported field "${key}"`);
@@ -168,6 +178,13 @@ export function parseRoleExecutionOutput(
     result.content = record.content;
   }
 
+  if (record.data !== undefined) {
+    if (typeof record.data !== "object" || record.data === null || Array.isArray(record.data)) {
+      throw new Error('Executable role output field "data" must be an object');
+    }
+    result.data = record.data as Record<string, unknown>;
+  }
+
   if (options.requireEvent && !result.event) {
     throw new Error('Executable role output must include "event" for roles with outgoing flows');
   }
@@ -179,8 +196,29 @@ function resolveRolePrompt(args: {
   roleId: string;
   state: RuntimeState;
   rolePrompts: Record<string, string>;
+  assemblyByRoleId: Map<string, AssemblyNodeConfig>;
+  rolePackagesByRoleId: Map<string, LoadedRolePackage>;
   outgoingFlows: Flow[];
 }): string {
+  const assembly = args.assemblyByRoleId.get(args.roleId);
+  const rolePackage = args.rolePackagesByRoleId.get(args.roleId);
+  if (assembly && rolePackage) {
+    const allowedEvents = args.outgoingFlows.map((item) => item.eventType);
+    return renderRolePrompt({
+      promptTemplate: rolePackage.promptTemplate,
+      persona: rolePackage.persona,
+      work: rolePackage.work,
+      values: {
+        task: assembly.promptArgs?.task ?? args.state.userPrompt,
+        context: assembly.promptArgs?.context ?? args.state.userPrompt,
+        allowed_events: JSON.stringify(allowedEvents),
+        last_output: args.state.lastOutput,
+        system_notes: assembly.promptArgs?.system_notes ?? "",
+        round: String(args.state.transitionCount + 1)
+      }
+    });
+  }
+
   const template = args.rolePrompts[args.roleId];
   if (template) {
     return template.replace(/\{\{lastOutput\}\}/g, args.state.lastOutput);
@@ -242,7 +280,9 @@ async function executeRoleNode(args: {
   const started = Date.now();
   const nextTransitionCount = args.state.transitionCount + 1;
   const outgoing = args.adjacency.get(args.roleId) ?? [];
-  const profileRef = args.context.system.executionBinding[args.roleId];
+  const assembly = args.context.assemblyByRoleId.get(args.roleId);
+  const rolePackage = args.context.rolePackagesByRoleId.get(args.roleId);
+  const profileRef = assembly?.profileRef ?? args.context.system.executionBinding[args.roleId];
   const maxTransitions = args.context.effectiveLaw.maxTransitions;
   const lawRef = args.context.system.lawBinding.globalLawRef;
 
@@ -409,6 +449,8 @@ async function executeRoleNode(args: {
     roleId: args.roleId,
     state: args.state,
     rolePrompts: args.context.rolePrompts,
+    assemblyByRoleId: args.context.assemblyByRoleId,
+    rolePackagesByRoleId: args.context.rolePackagesByRoleId,
     outgoingFlows: outgoing
   });
 
@@ -451,6 +493,13 @@ async function executeRoleNode(args: {
     const parsedOutput = parseRoleExecutionOutput(result.stdout, {
       requireEvent: outgoing.length > 0
     });
+    if (rolePackage) {
+      validateRoleOutputSchema({
+        output: parsedOutput,
+        schema: rolePackage.outputSchema,
+        roleId: args.roleId
+      });
+    }
     const selectedFlow = parsedOutput.event ? findFlowByEvent(outgoing, parsedOutput.event) : null;
     if (outgoing.length > 0 && !selectedFlow) {
       const error = `Executable role output event "${parsedOutput.event ?? ""}" does not match any outgoing flow on role "${args.roleId}"`;
@@ -589,6 +638,34 @@ async function loadRolePrompts(path?: string): Promise<Record<string, string>> {
   return validateRolePromptsConfig(await readJsonFile(path), path);
 }
 
+async function loadRolePackages(args: {
+  assemblyPath?: string;
+  system: SystemDefinition;
+}): Promise<{
+  assemblyByRoleId: Map<string, AssemblyNodeConfig>;
+  rolePackagesByRoleId: Map<string, LoadedRolePackage>;
+}> {
+  const assemblyResult = await loadAssemblyConfig(args.assemblyPath);
+  const assemblyByRoleId = new Map<string, AssemblyNodeConfig>(
+    Object.entries(assemblyResult.assembly.nodes)
+  );
+  const rolePackagesByRoleId = new Map<string, LoadedRolePackage>();
+
+  for (const [roleId, node] of assemblyByRoleId.entries()) {
+    if (!args.system.roleIds.includes(roleId)) {
+      throw new Error(`Assembly node "${roleId}" does not exist in system role graph`);
+    }
+
+    const rolePackage = await loadRolePackage({
+      roleRef: node.roleRef,
+      baseDir: assemblyResult.baseDir
+    });
+    rolePackagesByRoleId.set(roleId, rolePackage);
+  }
+
+  return { assemblyByRoleId, rolePackagesByRoleId };
+}
+
 function mergeRuntimeState(
   state: RuntimeState,
   patch: Partial<RuntimeState>,
@@ -612,6 +689,7 @@ export async function runSystemWithAdapter(args: {
   profilesPath?: string;
   toolsPath?: string;
   lawsPath?: string;
+  assemblyPath?: string;
   prompt: string;
   workdir: string;
   rolePromptsPath?: string;
@@ -622,6 +700,10 @@ export async function runSystemWithAdapter(args: {
   const tools = await loadTools(args.toolsPath);
   const lawCatalog = await loadLaws(args.lawsPath);
   const rolePrompts = await loadRolePrompts(args.rolePromptsPath);
+  const { assemblyByRoleId, rolePackagesByRoleId } = await loadRolePackages({
+    assemblyPath: args.assemblyPath,
+    system
+  });
   const effectiveLaw = resolveEffectiveLaw(system, lawCatalog);
 
   const profilesById = new Map(profiles.map((item) => [item.profileId, item]));
@@ -645,16 +727,18 @@ export async function runSystemWithAdapter(args: {
     const patch = await executeRoleNode({
       roleId,
       state,
-      context: {
-        system,
-        effectiveLaw,
-        profilesById,
-        toolsByRef,
-        workdir: args.workdir,
-        prompt: args.prompt,
-        rolePrompts,
-        dryRun: args.dryRun
-      },
+        context: {
+          system,
+          effectiveLaw,
+          profilesById,
+          toolsByRef,
+          workdir: args.workdir,
+          prompt: args.prompt,
+          rolePrompts,
+          assemblyByRoleId,
+          rolePackagesByRoleId,
+          dryRun: args.dryRun
+        },
       adjacency
     });
 

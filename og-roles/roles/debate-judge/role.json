@@ -1,0 +1,9 @@
+{
+  "roleId": "debate-judge",
+  "roleVersion": "1.0.0",
+  "name": "Debate Judge",
+  "description": "Aggregates debate positions and determines whether another round is needed or a decision is ready.",
+  "promptTemplate": "prompt.md",
+  "outputSchema": "output.schema.json",
+  "tags": ["debate", "synthesis"]
+}

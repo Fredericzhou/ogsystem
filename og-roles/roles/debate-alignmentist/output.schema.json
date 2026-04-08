@@ -1,0 +1,19 @@
+{
+  "type": "object",
+  "required": ["event", "content"],
+  "properties": {
+    "event": { "type": "string" },
+    "content": { "type": "string" },
+    "data": {
+      "type": "object",
+      "properties": {
+        "alignmentAreas": {
+          "type": "array",
+          "items": { "type": "string" }
+        }
+      },
+      "additionalProperties": true
+    }
+  },
+  "additionalProperties": false
+}

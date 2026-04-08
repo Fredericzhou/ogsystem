@@ -1,0 +1,9 @@
+{
+  "roleId": "diagnosis-report",
+  "roleVersion": "1.0.0",
+  "name": "Diagnosis Report Writer",
+  "description": "Writes the final consultation report from the resolved diagnosis.",
+  "promptTemplate": "prompt.md",
+  "outputSchema": "output.schema.json",
+  "tags": ["diagnosis", "report"]
+}

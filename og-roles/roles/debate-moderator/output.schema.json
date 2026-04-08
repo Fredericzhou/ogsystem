@@ -1,0 +1,16 @@
+{
+  "type": "object",
+  "required": ["event", "content"],
+  "properties": {
+    "event": { "type": "string" },
+    "content": { "type": "string" },
+    "data": {
+      "type": "object",
+      "properties": {
+        "round": { "type": "integer" }
+      },
+      "additionalProperties": true
+    }
+  },
+  "additionalProperties": false
+}

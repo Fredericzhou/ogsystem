@@ -1,0 +1,28 @@
+{
+  "roles": {
+    "moderator": {
+      "roleRef": "file:../../og-roles/roles/debate-moderator@1.0.0",
+      "resolvedVersion": "1.0.0"
+    },
+    "parallel_round": {
+      "roleRef": "file:../../og-roles/roles/debate-round-manager@1.0.0",
+      "resolvedVersion": "1.0.0"
+    },
+    "minimalist": {
+      "roleRef": "file:../../og-roles/roles/debate-minimalist@1.0.0",
+      "resolvedVersion": "1.0.0"
+    },
+    "alignmentist": {
+      "roleRef": "file:../../og-roles/roles/debate-alignmentist@1.0.0",
+      "resolvedVersion": "1.0.0"
+    },
+    "judge": {
+      "roleRef": "file:../../og-roles/roles/debate-judge@1.0.0",
+      "resolvedVersion": "1.0.0"
+    },
+    "summary": {
+      "roleRef": "file:../../og-roles/roles/debate-summary@1.0.0",
+      "resolvedVersion": "1.0.0"
+    }
+  }
+}

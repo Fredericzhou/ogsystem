@@ -1,0 +1,17 @@
+{
+  "type": "object",
+  "required": ["event", "content"],
+  "properties": {
+    "event": { "type": "string" },
+    "content": { "type": "string" },
+    "data": {
+      "type": "object",
+      "properties": {
+        "stance": { "type": "string" },
+        "confidence": { "type": "number", "minimum": 0, "maximum": 1 }
+      },
+      "additionalProperties": true
+    }
+  },
+  "additionalProperties": false
+}

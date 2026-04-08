@@ -1,0 +1,46 @@
+{
+  "nodes": {
+    "moderator": {
+      "roleRef": "file:../../og-roles/roles/debate-moderator@1.0.0",
+      "profileRef": "profile.moderator.codex",
+      "promptArgs": {
+        "task": "Interpret the debate topic and produce a structured round briefing."
+      }
+    },
+    "parallel_round": {
+      "roleRef": "file:../../og-roles/roles/debate-round-manager@1.0.0",
+      "profileRef": "profile.round.codex",
+      "promptArgs": {
+        "task": "Distribute the debate prompts to the minimalist and alignmentist roles."
+      }
+    },
+    "minimalist": {
+      "roleRef": "file:../../og-roles/roles/debate-minimalist@1.0.0",
+      "profileRef": "profile.minimalist.claude",
+      "promptArgs": {
+        "task": "Advocate for the minimal implementation-first stance."
+      }
+    },
+    "alignmentist": {
+      "roleRef": "file:../../og-roles/roles/debate-alignmentist@1.0.0",
+      "profileRef": "profile.alignmentist.gemini",
+      "promptArgs": {
+        "task": "Advocate for aligning early with a larger semantic system."
+      }
+    },
+    "judge": {
+      "roleRef": "file:../../og-roles/roles/debate-judge@1.0.0",
+      "profileRef": "profile.judge.codex",
+      "promptArgs": {
+        "task": "Synthesize both sides and decide if a rebuttal is needed."
+      }
+    },
+    "summary": {
+      "roleRef": "file:../../og-roles/roles/debate-summary@1.0.0",
+      "profileRef": "profile.summary.codex",
+      "promptArgs": {
+        "task": "Summarize the final decision and rationale."
+      }
+    }
+  }
+}

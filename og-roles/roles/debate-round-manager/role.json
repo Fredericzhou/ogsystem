@@ -1,0 +1,9 @@
+{
+  "roleId": "debate-round-manager",
+  "roleVersion": "1.0.0",
+  "name": "Debate Round Manager",
+  "description": "Prepares a debate round and dispatches instructions to both debaters.",
+  "promptTemplate": "prompt.md",
+  "outputSchema": "output.schema.json",
+  "tags": ["debate", "coordination"]
+}

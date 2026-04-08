@@ -1,0 +1,9 @@
+{
+  "roleId": "debate-summary",
+  "roleVersion": "1.0.0",
+  "name": "Debate Summary Writer",
+  "description": "Writes the final summary after the judge reaches a decision.",
+  "promptTemplate": "prompt.md",
+  "outputSchema": "output.schema.json",
+  "tags": ["debate", "summary"]
+}

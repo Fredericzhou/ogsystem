@@ -52,6 +52,19 @@ npm run run:adapter -- \
   --dry-run
 ```
 
+Run assembly-driven example (role repo + file roleRef):
+
+```bash
+npm run run:adapter -- \
+  --system tests/fixtures/mermaid/assembly-system.mmd \
+  --assembly tests/fixtures/assemblies/assembly-system.json \
+  --profiles tests/fixtures/profiles/branch-profiles.json \
+  --tools tests/fixtures/tools/branch-tools.json \
+  --laws examples/console-laws.json \
+  --prompt "demo" \
+  --dry-run
+```
+
 Check required CLI tools:
 
 ```bash
@@ -70,6 +83,8 @@ npm run run:doctor -- --required codex
 - Tools are minimal shell adapters: `toolRef`, `runner`, `command`, `argsTemplate`, `stdinMode`.
 - The law catalog currently resolves only `law.global` and the constraints `forbiddenToolRefs`, `maxTransitions`, `allowNoopWithoutExecutionBinding`.
 - `talentBinding` is preserved as metadata-only sidecar in the parsed system definition. It is not part of runtime execution.
+- Roles can now be resolved from `assembly.json` via local `file:` role refs. Role packages live under `og-roles/` and provide `role.json`, `prompt.md`, and `output.schema.json`.
+- `role-prompts.json` remains supported for legacy systems, but migrated systems should use `assembly.json`.
 
 ## DSL Hard Rules
 
@@ -91,4 +106,5 @@ npm run run:doctor -- --required codex
 - `docs/semantic-kernel-v1.md`
 - `docs/xlgraph-subset-compatibility.md`
 - `docs/langgraph-engine-example-systems.md`
+- `docs/ogsystem-role-repo-minimal-plan.md`
 - `specs/mermaid-dsl-v0.1.md`
