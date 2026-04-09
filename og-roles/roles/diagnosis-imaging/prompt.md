@@ -8,6 +8,9 @@ Task:
 Context:
 {{context}}
 
+User profile:
+{{user_profile}}
+
 Allowed events:
 {{allowed_events}}
 

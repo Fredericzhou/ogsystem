@@ -1,7 +1,7 @@
 {
   "modelId": "deep-o3",
   "executor": "opencode",
-  "model": "o3",
+  "model": "openai/o3",
   "args": {
     "reasoningEffort": "high"
   },

@@ -1,8 +1,8 @@
 {
   "roleId": "diagnosis-chief-review",
   "roleVersion": "1.0.0",
-  "name": "Diagnosis Chief Review",
-  "description": "Aggregates specialist findings and decides between recheck and consensus.",
+  "name": "Chief Consultation Summary",
+  "description": "Aggregates specialist findings and writes the final multidisciplinary summary.",
   "talent": {
     "reasoningDepth": "high",
     "style": "analytical",

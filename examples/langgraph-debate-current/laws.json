@@ -4,7 +4,7 @@
       "lawId": "law.debate.base",
       "constraints": {
         "forbiddenToolRefs": [],
-        "maxTransitions": 20,
+        "maxTransitions": 12,
         "allowNoopWithoutExecutionBinding": false
       }
     }

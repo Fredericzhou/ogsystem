@@ -3,21 +3,17 @@ flowchart TD
 %% system.id=medical.expert.consultation
 %% system.version=1.0.0
 %% law.global=law.medical.consultation.base
-%% entry.role=diagnosis-intake
+%% entry.role=diagnosis-dispatch
 %% role.mode.diagnosis-dispatch=parallel_split
 %% join.mode.diagnosis-chief-review=all_of
 %% join.sources.diagnosis-chief-review=diagnosis-cardiology,diagnosis-neurology,diagnosis-imaging
-%% loop.max.diagnosis-dispatch=2
-%% model.bind.diagnosis-intake=fast-gpt54
 %% model.bind.diagnosis-dispatch=fast-gpt54
-%% model.bind.diagnosis-cardiology=claude-sonnet
+%% model.bind.diagnosis-cardiology=balanced-gpt52
 %% model.bind.diagnosis-neurology=deep-o3
-%% model.bind.diagnosis-imaging=deep-o3
+%% model.bind.diagnosis-imaging=steady-gpt54
 %% model.bind.diagnosis-chief-review=deep-o3
-%% model.bind.diagnosis-report=fast-gpt54
 
-input -->|CASE_RECEIVED| diagnosis-intake[Role:diagnosis-intake]
-diagnosis-intake[Role:diagnosis-intake] -->|READY_FOR_PARALLEL| diagnosis-dispatch[Role:diagnosis-dispatch]
+input -->|CASE_RECEIVED| diagnosis-dispatch[Role:diagnosis-dispatch]
 
 diagnosis-dispatch[Role:diagnosis-dispatch] -->|START_CARDIOLOGY| diagnosis-cardiology[Role:diagnosis-cardiology]
 diagnosis-dispatch[Role:diagnosis-dispatch] -->|START_NEUROLOGY| diagnosis-neurology[Role:diagnosis-neurology]
@@ -27,6 +23,4 @@ diagnosis-cardiology[Role:diagnosis-cardiology] -->|CARDIOLOGY_DONE| diagnosis-c
 diagnosis-neurology[Role:diagnosis-neurology] -->|NEUROLOGY_DONE| diagnosis-chief-review[Role:diagnosis-chief-review]
 diagnosis-imaging[Role:diagnosis-imaging] -->|IMAGING_DONE| diagnosis-chief-review[Role:diagnosis-chief-review]
 
-diagnosis-chief-review[Role:diagnosis-chief-review] -->|REQUEST_RECHECK| diagnosis-dispatch[Role:diagnosis-dispatch]
-diagnosis-chief-review[Role:diagnosis-chief-review] -->|CONSENSUS_READY| diagnosis-report[Role:diagnosis-report]
-diagnosis-report[Role:diagnosis-report] -->|REPORT_READY| output
+diagnosis-chief-review[Role:diagnosis-chief-review] -->|CONSULTATION_READY| output

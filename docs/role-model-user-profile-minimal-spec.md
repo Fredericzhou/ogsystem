@@ -144,6 +144,7 @@ project/
       audit/
         summary.md
         transitions.md
+      shared/
       roles/
         debate-moderator/
           role.md
@@ -154,7 +155,6 @@ project/
           audit.md
           private/
             notes.md
-          shared -> /absolute/path/to/project
         debate-judge/
           ...
 
@@ -169,12 +169,14 @@ project/
         output.schema.json
 
   og-models/
+    catalog/
+      opencode-models.json
     models/
       fast-gpt54/
         model.json
       deep-o3/
         model.json
-      claude-sonnet/
+      balanced-gpt52/
         model.json
 ```
 
@@ -195,13 +197,11 @@ flowchart TD
 %% system.id=architecture.debate.current
 %% system.version=1.0.0
 %% law.global=law.debate.base
-%% entry.role=debate-moderator
-%% model.bind.debate-moderator=fast-gpt54
-%% model.bind.debate-minimalist=claude-sonnet
+%% entry.role=debate-minimalist
+%% model.bind.debate-minimalist=balanced-gpt52
 %% model.bind.debate-judge=deep-o3
 
-input -->|DEBATE_REQUEST| moderator[Role:debate-moderator]
-moderator[Role:debate-moderator] -->|ROUND_READY| minimalist[Role:debate-minimalist]
+input -->|DEBATE_REQUEST| minimalist[Role:debate-minimalist]
 minimalist[Role:debate-minimalist] -->|MINIMALIST_DONE| judge[Role:debate-judge]
 judge[Role:debate-judge] -->|DECISION_READY| output
 ```
@@ -343,14 +343,11 @@ User profile rules:
   // Run output root.
   "runsDir": ".ogsystems",
 
-  // Current working directory is treated as the shared workspace.
-  "sharedDir": ".",
-
   // Role private workspace policy.
   "workspace": {
     "rolesDir": "roles",
     "privateDirName": "private",
-    "linkSharedIntoRoleDir": true
+    "linkSharedIntoRoleDir": false
   },
 
   // Common OpenCode arguments shared by all models unless overridden.

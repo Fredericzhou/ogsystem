@@ -5,6 +5,9 @@
 Task:
 {{task}}
 
+User profile:
+{{user_profile}}
+
 Allowed events:
 {{allowed_events}}
 
@@ -14,4 +17,4 @@ Last output:
 Output requirements:
 - Return JSON only.
 - event must be one of allowed_events.
-- content must explain whether to loop or finalize.
+- content must clearly separate shared findings, differing opinions, and the overall conclusion.

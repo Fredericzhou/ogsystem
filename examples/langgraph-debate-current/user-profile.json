@@ -1,0 +1,8 @@
+{
+  "userProfileId": "architecture.review.zh.executive",
+  "language": "zh-CN",
+  "style": "executive",
+  "riskPreference": "high",
+  "outputLength": "short",
+  "domainBackground": ["software-architecture", "engineering-management"]
+}

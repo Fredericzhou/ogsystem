@@ -24,4 +24,5 @@ Rules:
 - Role packages do not define flow, joins, loops, or execution bindings.
 - Role packages do not bind tools or models.
 - `system.mmd` owns orchestration and role-to-model binding (`model.bind.*`; `exec.bind.*` in legacy runtime).
+- runtime injects `user_profile` into prompt variables; role packages decide how to apply it.
 - `talent` and `preferredModelTags` in `role.json` are soft hints only. They are not hard bindings.

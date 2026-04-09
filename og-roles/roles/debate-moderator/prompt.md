@@ -8,6 +8,9 @@ Task:
 Context:
 {{context}}
 
+User profile:
+{{user_profile}}
+
 Allowed events:
 {{allowed_events}}
 
@@ -19,5 +22,5 @@ System notes:
 
 Output requirements:
 - Return JSON only.
-- event must be one of allowed_events.
-- content must summarize the upcoming round logistics.
+- event is optional for parallel_split nodes and may be omitted.
+- content must contain the round brief that both debaters should follow.

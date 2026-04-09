@@ -4,17 +4,16 @@
   "properties": {
     "event": {
       "type": "string",
-      "enum": ["REQUEST_RECHECK", "CONSENSUS_READY"]
+      "enum": ["CONSULTATION_READY"]
     },
     "content": { "type": "string" },
     "data": {
       "type": "object",
       "properties": {
-        "recommendation": { "type": "string" },
-        "recheckQuestions": {
-          "type": "array",
-          "items": { "type": "string" }
-        }
+        "agreements": { "type": "string" },
+        "differences": { "type": "string" },
+        "overallConclusion": { "type": "string" },
+        "nextSteps": { "type": "string" }
       },
       "additionalProperties": true
     }

@@ -11,6 +11,9 @@ Allowed events:
 Last output:
 {{last_output}}
 
+User profile:
+{{user_profile}}
+
 Output requirements:
 - Return JSON only.
 - event must be from allowed_events.

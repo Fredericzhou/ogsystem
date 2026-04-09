@@ -857,11 +857,10 @@ async function loadRuntimeConfig(path: string | undefined, workdir: string): Pro
         roleRepo: "./og-roles",
         modelRepo: "./og-models",
         runsDir: ".ogsystems",
-        sharedDir: ".",
         workspace: {
           rolesDir: "roles",
           privateDirName: "private",
-          linkSharedIntoRoleDir: true
+          linkSharedIntoRoleDir: false
         },
         opencode: {
           baseArgs: ["run"]
@@ -949,6 +948,17 @@ async function ensureSymlink(target: string, path: string): Promise<void> {
   }
 }
 
+function resolveSharedDir(args: {
+  runDir: string;
+  workdir: string;
+  runtimeConfig: RuntimeConfig;
+}): string {
+  if (!args.runtimeConfig.sharedDir) {
+    return resolve(args.runDir, "shared");
+  }
+  return resolve(args.workdir, args.runtimeConfig.sharedDir);
+}
+
 async function initializeRunContext(args: {
   system: SystemDefinition;
   systemPath: string;
@@ -968,11 +978,16 @@ async function initializeRunContext(args: {
   const runId = basename(runDir);
   const auditDir = resolve(runDir, "audit");
   const rolesRootDir = resolve(runDir, args.runtimeConfig.workspace.rolesDir);
-  const sharedDir = resolve(args.workdir, args.runtimeConfig.sharedDir);
+  const sharedDir = resolveSharedDir({
+    runDir,
+    workdir: args.workdir,
+    runtimeConfig: args.runtimeConfig
+  });
   const roleDirsById = new Map<string, RoleRunDirs>();
 
   await mkdir(auditDir, { recursive: true });
   await mkdir(rolesRootDir, { recursive: true });
+  await mkdir(sharedDir, { recursive: true });
 
   const sourceSystem = await readFile(args.systemPath, "utf8");
   if (!(await pathExists(resolve(runDir, "request.md")))) {

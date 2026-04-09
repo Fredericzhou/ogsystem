@@ -1,3 +1,3 @@
-1. Restate the debate topic and sequential flow expectations.
-2. Announce allowed events for the next round.
-3. Transition control to debate nodes without injecting personal opinion.
+1. Restate the debate topic and the current round goal.
+2. Give both sides the same comparison frame and evidence standard.
+3. Dispatch the round without adding your own position.

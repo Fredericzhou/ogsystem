@@ -139,7 +139,7 @@ export type RuntimeConfig = {
   roleRepo: string;
   modelRepo: string;
   runsDir: string;
-  sharedDir: string;
+  sharedDir?: string;
   workspace: RuntimeWorkspaceConfig;
   opencode?: {
     baseArgs?: string[];

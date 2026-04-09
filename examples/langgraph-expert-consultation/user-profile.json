@@ -1,0 +1,8 @@
+{
+  "userProfileId": "hospital.case.board.zh.detailed",
+  "language": "zh-CN",
+  "style": "analytical",
+  "riskPreference": "high",
+  "outputLength": "medium",
+  "domainBackground": ["multidisciplinary-consultation", "clinical-diagnostics"]
+}

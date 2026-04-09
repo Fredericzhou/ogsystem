@@ -2,7 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import path from "node:path";
 import os from "node:os";
-import { lstat, mkdtemp, mkdir, readFile, readdir, readlink, symlink } from "node:fs/promises";
+import { lstat, mkdtemp, mkdir, readFile, readdir, symlink } from "node:fs/promises";
 
 import { runSystemWithAdapter } from "../dist/runtime/adapter.js";
 
@@ -35,36 +35,35 @@ test("adapter auto-discovers runtime config and persists run artifacts for model
   const stateJson = JSON.parse(await readFile(path.resolve(runDir, "state.json"), "utf8"));
   assert.strictEqual(stateJson.finalRoleId, "debate-judge");
 
-  const moderatorPrompt = await readFile(
-    path.resolve(runDir, "roles", "debate-moderator", "prompt.md"),
+  const minimalistPrompt = await readFile(
+    path.resolve(runDir, "roles", "debate-minimalist", "prompt.md"),
     "utf8"
   );
-  assert.match(moderatorPrompt, /讨论当前架构是否继续最小化/);
+  assert.match(minimalistPrompt, /讨论当前架构是否继续最小化/);
 
-  const moderatorRole = await readFile(
-    path.resolve(runDir, "roles", "debate-moderator", "role.md"),
+  const minimalistRole = await readFile(
+    path.resolve(runDir, "roles", "debate-minimalist", "role.md"),
     "utf8"
   );
-  assert.match(moderatorRole, /modelId: fast-gpt54/);
-  assert.match(moderatorRole, /preferredModelTags:/);
+  assert.match(minimalistRole, /modelId: balanced-gpt52/);
+  assert.match(minimalistRole, /preferredModelTags:/);
 
-  const moderatorInbox = await readFile(
-    path.resolve(runDir, "roles", "debate-moderator", "inbox.md"),
+  const minimalistInbox = await readFile(
+    path.resolve(runDir, "roles", "debate-minimalist", "inbox.md"),
     "utf8"
   );
-  assert.match(moderatorInbox, /Runtime Input Projection:/);
-  assert.match(moderatorInbox, /"user_profile"/);
-  assert.match(moderatorInbox, /"allowed_events"/);
+  assert.match(minimalistInbox, /Runtime Input Projection:/);
+  assert.match(minimalistInbox, /"user_profile"/);
+  assert.match(minimalistInbox, /"allowed_events"/);
 
-  const moderatorPrivateStat = await lstat(
-    path.resolve(runDir, "roles", "debate-moderator", "private")
+  const minimalistPrivateStat = await lstat(
+    path.resolve(runDir, "roles", "debate-minimalist", "private")
   );
-  assert.ok(moderatorPrivateStat.isDirectory());
+  assert.ok(minimalistPrivateStat.isDirectory());
 
-  const moderatorSharedPath = path.resolve(runDir, "roles", "debate-moderator", "shared");
-  const moderatorSharedStat = await lstat(moderatorSharedPath);
-  assert.ok(moderatorSharedStat.isSymbolicLink());
-  assert.strictEqual(await readlink(moderatorSharedPath), tempRoot);
+  const runSharedStat = await lstat(path.resolve(runDir, "shared"));
+  assert.ok(runSharedStat.isDirectory());
+  await assert.rejects(lstat(path.resolve(runDir, "roles", "debate-minimalist", "shared")));
 
   const judgeResult = JSON.parse(
     await readFile(path.resolve(runDir, "roles", "debate-judge", "result.json"), "utf8")

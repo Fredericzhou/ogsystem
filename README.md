@@ -72,14 +72,26 @@ Run LangGraph debate example:
 npm run run:adapter -- \
   --system examples/langgraph-debate-current/system.mmd \
   --laws examples/langgraph-debate-current/laws.json \
+  --user-profile examples/langgraph-debate-current/user-profile.json \
   --prompt "是否应继续保持 OGSystem 最小化并延后 reducer 与恢复语义？" \
+  --dry-run
+```
+
+Run LangGraph expert consultation example:
+
+```bash
+npm run run:adapter -- \
+  --system examples/langgraph-expert-consultation/system.mmd \
+  --laws examples/langgraph-expert-consultation/laws.json \
+  --user-profile examples/langgraph-expert-consultation/user-profile.json \
+  --prompt "患者间断高热、皮疹、胸闷、肌无力，常规检查未能解释原因，请组织多学科会诊。" \
   --dry-run
 ```
 
 Check required CLI tools:
 
 ```bash
-npm run run:doctor -- --required codex
+npm run run:doctor -- --required opencode
 ```
 
 ## Runtime Guarantees
@@ -90,9 +102,11 @@ npm run run:doctor -- --required codex
 - The runtime now supports `model.bind.<roleId>=<modelId>` with auto-discovered `.ogsystem/runtime.json`, `.ogsystem/user-profile.json`, `.ogsystem/laws.json`, and `og-models/`.
 - The runtime now supports `%% engine=langgraph` with `role.mode.*=parallel_split`, `join.mode.*=all_of`, `join.sources.*`, and `loop.max.*`.
 - Each run persists under `.ogsystems/<run-id>/`, including run-level state and per-role prompt/result/audit artifacts.
+- Each run gets its own isolated `.ogsystems/<run-id>/shared/` directory, and role directories do not receive a `shared` symlink by default.
 - `.ogsystems/` is generated runtime state and should stay out of version control.
 - LangGraph runs persist `activeBranches`, `completedBranches`, `loopIterations`, and `graphState` inside `state.json`, and support `--resume-run` against the same run directory.
 - Roles without execution binding fail fast by default. A law may opt into `allowNoopWithoutExecutionBinding`, but noop remains explicit and is rejected on branching nodes.
+- `user-profile.json` is injected into role prompts as delivery preference; role packages decide how to apply it.
 
 ## Configuration Boundaries
 
@@ -107,13 +121,14 @@ npm run run:doctor -- --required codex
 
 ## Target Scaffolding
 
-- `og-models/models/*/model.json` provides model repository samples.
+- `og-models/catalog/opencode-models.json` snapshots the current local `opencode models` list.
+- `og-models/models/*/model.json` provides curated reusable model bindings.
 - `.ogsystem/runtime.json` provides runtime defaults for shared workspace and runs directory.
 - `.ogsystem/user-profile.json` provides user delivery preference sample.
 - `.ogsystem/laws.json` provides sample law catalog colocated with runtime config.
 - `examples/target-model-binding-system.mmd` shows `model.bind.*` usage.
-- `examples/langgraph-debate-current/system.mmd` shows runnable loop + parallel + join semantics.
-- `examples/langgraph-expert-consultation/system.mmd` shows runnable expert consultation semantics.
+- `examples/langgraph-debate-current/` shows a minimal debate with loop + parallel + join.
+- `examples/langgraph-expert-consultation/` shows a minimal expert consultation with parallel + join.
 
 Validate a generated run directory against the runtime contract:
 

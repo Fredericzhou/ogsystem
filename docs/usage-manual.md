@@ -48,12 +48,22 @@ OGSystem/
         input.schema.json
 
   og-models/
+    catalog/
+      opencode-models.json
     models/
       <modelId>/
         model.json
 
   examples/
     target-model-binding-system.mmd
+    langgraph-debate-current/
+      system.mmd
+      laws.json
+      user-profile.json
+    langgraph-expert-consultation/
+      system.mmd
+      laws.json
+      user-profile.json
     console-system.mmd
     console-profiles.json
     console-tools.json
@@ -69,13 +79,11 @@ flowchart TD
 %% system.id=demo.target.model.binding
 %% system.version=1.0.0
 %% law.global=law.console.base
-%% entry.role=debate-moderator
-%% model.bind.debate-moderator=fast-gpt54
-%% model.bind.debate-minimalist=claude-sonnet
+%% entry.role=debate-minimalist
+%% model.bind.debate-minimalist=balanced-gpt52
 %% model.bind.debate-judge=deep-o3
 
-input -->|DEBATE_REQUEST| moderator[Role:debate-moderator]
-moderator[Role:debate-moderator] -->|ROUND_READY| minimalist[Role:debate-minimalist]
+input -->|DEBATE_REQUEST| minimalist[Role:debate-minimalist]
 minimalist[Role:debate-minimalist] -->|MINIMALIST_DONE| judge[Role:debate-judge]
 judge[Role:debate-judge] -->|DECISION_READY| output
 ```
@@ -103,24 +111,22 @@ flowchart TD
 %% system.version=1.0.0
 %% law.global=law.debate.base
 %% entry.role=debate-moderator
-%% role.mode.debate-round-manager=parallel_split
+%% role.mode.debate-moderator=parallel_split
 %% join.mode.debate-judge=all_of
 %% join.sources.debate-judge=debate-minimalist,debate-alignmentist
-%% loop.max.debate-round-manager=2
+%% loop.max.debate-moderator=2
 %% model.bind.debate-moderator=fast-gpt54
-%% model.bind.debate-round-manager=fast-gpt54
-%% model.bind.debate-minimalist=claude-sonnet
+%% model.bind.debate-minimalist=balanced-gpt52
 %% model.bind.debate-alignmentist=deep-o3
 %% model.bind.debate-judge=deep-o3
-%% model.bind.debate-summary=fast-gpt54
+%% model.bind.debate-summary=steady-gpt54
 
 input -->|DEBATE_REQUEST| debate-moderator[Role:debate-moderator]
-debate-moderator[Role:debate-moderator] -->|ROUND_READY| debate-round-manager[Role:debate-round-manager]
-debate-round-manager[Role:debate-round-manager] -->|SEND_MINIMALIST| debate-minimalist[Role:debate-minimalist]
-debate-round-manager[Role:debate-round-manager] -->|SEND_ALIGNMENTIST| debate-alignmentist[Role:debate-alignmentist]
+debate-moderator[Role:debate-moderator] -->|SEND_MINIMALIST| debate-minimalist[Role:debate-minimalist]
+debate-moderator[Role:debate-moderator] -->|SEND_ALIGNMENTIST| debate-alignmentist[Role:debate-alignmentist]
 debate-minimalist[Role:debate-minimalist] -->|MINIMALIST_DONE| debate-judge[Role:debate-judge]
 debate-alignmentist[Role:debate-alignmentist] -->|ALIGNMENTIST_DONE| debate-judge[Role:debate-judge]
-debate-judge[Role:debate-judge] -->|REBUTTAL_NEEDED| debate-round-manager[Role:debate-round-manager]
+debate-judge[Role:debate-judge] -->|REBUTTAL_NEEDED| debate-moderator[Role:debate-moderator]
 debate-judge[Role:debate-judge] -->|DECISION_READY| debate-summary[Role:debate-summary]
 debate-summary[Role:debate-summary] -->|SUMMARY_READY| output
 ```
@@ -156,7 +162,7 @@ Example:
 {
   "modelId": "deep-o3",
   "executor": "opencode",
-  "model": "o3",
+  "model": "openai/o3",
   "args": {
     "reasoningEffort": "high"
   },
@@ -170,6 +176,8 @@ Model rules:
 
 - model packages do not include persona/prompt logic
 - model packages do not include routing logic
+- `og-models/catalog/opencode-models.json` is the raw availability snapshot
+- `og-models/models/*` should stay a small curated alias layer
 
 ## 7. User Profile Contract
 
@@ -209,8 +217,7 @@ Example:
   "executor": "opencode",
   "roleRepo": "./og-roles",
   "modelRepo": "./og-models",
-  "runsDir": ".ogsystems",
-  "sharedDir": "."
+  "runsDir": ".ogsystems"
 }
 ```
 
@@ -219,14 +226,20 @@ Example:
 When a run starts, `.ogsystems/<run-id>/` should persist:
 
 - run-level files: `run.md`, `request.md`, `system.mmd`, `state.json`, `events.ndjson`
+- run-level shared workspace: `shared/`
 - audit files: `audit/summary.md`, `audit/transitions.md`
 - per-role files: `role.md`, `inbox.md`, `prompt.md`, `result.json`, `outbox.md`, `audit.md`, `private/`
-- role workspace link: `shared -> <cwd>` when shared linking is enabled
 
 Markdown files are human projections.
 `state.json` and `events.ndjson` are authoritative machine state.
 `inbox.md` is a projection of normalized runtime input, not a free-form summary.
 `.ogsystems/` is generated runtime state and should be ignored by git.
+
+Minimal shared-workspace rule:
+
+- default shared path is `.ogsystems/<run-id>/shared/`
+- runtime exposes it through `OGSYSTEM_SHARED_DIR`
+- role directories do not receive a `shared` symlink by default
 
 For `engine=langgraph` runs, `state.json` also persists:
 
@@ -273,7 +286,19 @@ LangGraph runtime command:
 npm run run:adapter -- \
   --system examples/langgraph-debate-current/system.mmd \
   --laws examples/langgraph-debate-current/laws.json \
+  --user-profile examples/langgraph-debate-current/user-profile.json \
   --prompt "是否应继续保持 OGSystem 最小化并延后 reducer 与恢复语义？" \
+  --dry-run
+```
+
+Minimal expert consultation command:
+
+```bash
+npm run run:adapter -- \
+  --system examples/langgraph-expert-consultation/system.mmd \
+  --laws examples/langgraph-expert-consultation/laws.json \
+  --user-profile examples/langgraph-expert-consultation/user-profile.json \
+  --prompt "患者间断高热、皮疹、胸闷、肌无力，常规检查未能解释原因，请组织多学科会诊。" \
   --dry-run
 ```
 
@@ -283,6 +308,7 @@ Resume a LangGraph run from persisted `state.json.graphState`:
 npm run run:adapter -- \
   --system examples/langgraph-debate-current/system.mmd \
   --laws examples/langgraph-debate-current/laws.json \
+  --user-profile examples/langgraph-debate-current/user-profile.json \
   --resume-run .ogsystems/<run-id> \
   --prompt "是否应继续保持 OGSystem 最小化并延后 reducer 与恢复语义？" \
   --dry-run

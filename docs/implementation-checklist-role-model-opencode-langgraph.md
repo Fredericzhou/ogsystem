@@ -249,7 +249,8 @@ These can run in parallel once section A is reasonably stable.
 - [x] create a minimal model catalog:
   - `fast-gpt54`
   - `deep-o3`
-  - `claude-sonnet`
+  - `balanced-gpt52`
+  - `steady-gpt54`
 - [x] define consistent tag vocabulary:
   - `fast`
   - `reasoning`

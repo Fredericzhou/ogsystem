@@ -1,8 +1,8 @@
 {
   "roleId": "diagnosis-dispatch",
   "roleVersion": "1.0.0",
-  "name": "Diagnosis Dispatch",
-  "description": "Packages case context and dispatches parallel specialist tasks.",
+  "name": "Consultation Dispatch",
+  "description": "Packages the complex case and dispatches parallel specialist tasks.",
   "talent": {
     "coordination": "high",
     "reasoningDepth": "medium",

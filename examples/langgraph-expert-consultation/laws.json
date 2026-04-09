@@ -4,7 +4,7 @@
       "lawId": "law.medical.consultation.base",
       "constraints": {
         "forbiddenToolRefs": [],
-        "maxTransitions": 24,
+        "maxTransitions": 8,
         "allowNoopWithoutExecutionBinding": false
       }
     }

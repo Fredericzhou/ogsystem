@@ -1,0 +1,11 @@
+{
+  "modelId": "balanced-gpt52",
+  "executor": "opencode",
+  "model": "openai/gpt-5.2",
+  "args": {
+    "reasoningEffort": "medium"
+  },
+  "timeoutMs": 120000,
+  "maxOutputBytes": 65536,
+  "tags": ["balanced", "reasoning", "general"]
+}

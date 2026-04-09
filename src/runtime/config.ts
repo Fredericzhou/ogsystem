@@ -310,7 +310,7 @@ export function validateRuntimeConfig(value: unknown, filePath: string): Runtime
     roleRepo: expectOptionalString(record.roleRepo, filePath, "$.roleRepo") ?? "./og-roles",
     modelRepo: expectOptionalString(record.modelRepo, filePath, "$.modelRepo") ?? "./og-models",
     runsDir: expectOptionalString(record.runsDir, filePath, "$.runsDir") ?? ".ogsystems",
-    sharedDir: expectOptionalString(record.sharedDir, filePath, "$.sharedDir") ?? ".",
+    sharedDir: expectOptionalString(record.sharedDir, filePath, "$.sharedDir"),
     workspace: {
       rolesDir:
         expectOptionalString(workspaceRecord.rolesDir, filePath, "$.workspace.rolesDir") ?? "roles",
@@ -325,7 +325,7 @@ export function validateRuntimeConfig(value: unknown, filePath: string): Runtime
           workspaceRecord.linkSharedIntoRoleDir,
           filePath,
           "$.workspace.linkSharedIntoRoleDir"
-        ) ?? true
+        ) ?? false
     },
     opencode: {
       baseArgs

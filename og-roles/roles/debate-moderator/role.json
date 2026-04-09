@@ -2,7 +2,7 @@
   "roleId": "debate-moderator",
   "roleVersion": "1.0.0",
   "name": "Debate Moderator",
-  "description": "Kicks off rounds, injects context, and hands control to debaters.",
+  "description": "Frames the debate round and dispatches one shared brief to both debaters.",
   "talent": {
     "coordination": "high",
     "reasoningDepth": "medium",

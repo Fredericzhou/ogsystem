@@ -11,7 +11,7 @@ type CheckResult = {
 function usage(): string {
   return [
     "Usage:",
-    "  npm run run:doctor -- [--required codex]",
+    "  npm run run:doctor -- [--required opencode]",
     "",
     "Options:",
     "  --required <csv>   Required commands. Missing required commands return exit code 2.",
@@ -88,7 +88,7 @@ async function main(): Promise<void> {
     return;
   }
 
-  const candidates = ["codex"];
+  const candidates = ["opencode", "codex"];
   const required = new Set(
     (values.required ?? "")
       .split(",")

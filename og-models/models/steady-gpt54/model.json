@@ -1,11 +1,11 @@
 {
-  "modelId": "claude-sonnet",
+  "modelId": "steady-gpt54",
   "executor": "opencode",
-  "model": "claude-sonnet-4",
+  "model": "openai/gpt-5.4",
   "args": {
     "reasoningEffort": "medium"
   },
   "timeoutMs": 120000,
   "maxOutputBytes": 65536,
-  "tags": ["fast", "reasoning", "long-context"]
+  "tags": ["balanced", "general", "long-context"]
 }

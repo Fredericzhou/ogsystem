@@ -3,11 +3,10 @@
   "roleRepo": "./og-roles",
   "modelRepo": "./og-models",
   "runsDir": ".ogsystems",
-  "sharedDir": ".",
   "workspace": {
     "rolesDir": "roles",
     "privateDirName": "private",
-    "linkSharedIntoRoleDir": true
+    "linkSharedIntoRoleDir": false
   },
   "opencode": {
     "baseArgs": ["run"]
