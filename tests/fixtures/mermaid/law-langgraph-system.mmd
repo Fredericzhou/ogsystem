@@ -1,0 +1,10 @@
+flowchart TD
+%% engine=langgraph
+%% system.id=law.enforcer.langgraph
+%% system.version=0.1.0
+%% law.global=law.forbid
+%% entry.role=test-operator
+%% exec.bind.test-operator=profile.forbid
+
+input -->|GO| operator[Role:test-operator]
+operator[Role:test-operator] -->|DONE| output

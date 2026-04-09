@@ -10,7 +10,11 @@ import {
   validateRoleInputSchema,
   validateRoleOutputSchema
 } from "./role-repo.js";
-import { OpencodeExecutionError, executeOpencodeModelRole } from "./opencode-executor.js";
+import {
+  type OpencodeRunClient,
+  OpencodeExecutionError,
+  executeOpencodeModelRole
+} from "./opencode-executor.js";
 import { projectStages } from "./stage-projector.js";
 import { runCliTool, ToolExecutionError } from "./tool-runner.js";
 import { SYSTEM_END_ROLE_ID } from "./types.js";
@@ -43,6 +47,7 @@ type RunnerInput = {
   workdir: string;
   rolePackagesByRoleId: Map<string, LoadedRolePackage>;
   runContext: RunContext;
+  opencodeRun?: OpencodeRunClient;
   prompt: string;
   dryRun?: boolean;
   initialState?: LangGraphState;
@@ -321,6 +326,9 @@ function makeAuditRecord(args: {
   toolRef?: string;
   command?: string;
   resultArgs?: string[];
+  sessionId?: string;
+  messageId?: string;
+  serverPid?: number;
   exitCode: number;
   selectedEvent?: string;
   nextRoleId?: string;
@@ -340,6 +348,9 @@ function makeAuditRecord(args: {
     toolRef: args.toolRef,
     command: args.command,
     args: args.resultArgs,
+    sessionId: args.sessionId,
+    messageId: args.messageId,
+    serverPid: args.serverPid,
     exitCode: args.exitCode,
     durationMs: Date.now() - args.started,
     selectedEvent: args.selectedEvent,
@@ -600,11 +611,41 @@ export async function runSystemWithLangGraph(args: RunnerInput): Promise<Adapter
       const loopIteration = currentBranch?.loopIteration ?? state.loopIterations[roleId] ?? 1;
       const branchId = currentBranch?.branchId ?? buildBranchId(roleId, loopIteration);
       const started = Date.now();
+      const nextTransitionCount = state.transitionCount + 1;
       const lawRef = system.lawBinding.globalLawRef;
+      const maxTransitions = args.effectiveLaw.maxTransitions;
       const isParallelSplit = system.langGraph?.routingModeByRoleId[roleId] === "parallel_split";
       const rolePackage = args.rolePackagesByRoleId.get(roleId);
       const modelId = system.modelBinding[roleId] ?? system.executionBinding[roleId];
       const legacyProfileRef = system.executionBinding[roleId];
+
+      if (maxTransitions !== undefined && nextTransitionCount > maxTransitions) {
+        const error = `Transition budget exceeded: ${nextTransitionCount} > ${maxTransitions}`;
+        const audit = makeAuditRecord({
+          roleId,
+          branchId,
+          loopIteration,
+          lawRef,
+          started,
+          modelId,
+          exitCode: 1,
+          status: "failed",
+          error
+        });
+        await persistRoleResult({ roleId, context: args, audit });
+        await appendAuditFiles(args.runContext, audit);
+        return {
+          status: "failed",
+          error,
+          transitionCount: 1,
+          auditTrail: [audit],
+          finalRoleId: roleId,
+          lastExecutedRoleId: roleId,
+          branchRecords: {
+            [branchId]: { branchId, roleId, loopIteration, status: "completed" }
+          }
+        };
+      }
 
       const { prompt, allowedEvents } = resolvePromptInput({
         roleId,
@@ -625,7 +666,7 @@ export async function runSystemWithLangGraph(args: RunnerInput): Promise<Adapter
         loopIteration
       });
 
-      let tool: CliTool;
+      let tool: CliTool | undefined;
       let effectiveModelId: string | undefined = modelId;
       let effectiveProfileId: string | undefined;
       let executionWorkdir = args.workdir;
@@ -634,7 +675,8 @@ export async function runSystemWithLangGraph(args: RunnerInput): Promise<Adapter
       let maxOutputBytes = 64 * 1024;
       let auditCommand: string | undefined;
 
-      if (modelId && args.modelsById.has(modelId)) {
+      try {
+        if (modelId && args.modelsById.has(modelId)) {
         const modelPackage = args.modelsById.get(modelId);
         if (!modelPackage) {
           throw new Error(`Model package not loaded for model "${modelId}"`);
@@ -663,29 +705,149 @@ export async function runSystemWithLangGraph(args: RunnerInput): Promise<Adapter
         effectiveModelId = undefined;
         effectiveProfileId = legacyProfileRef;
         if (!effectiveProfileId) {
-          const error = `Role "${roleId}" has no execution binding`;
+          if (!args.effectiveLaw.allowNoopWithoutExecutionBinding) {
+            const error = `Role "${roleId}" has no execution binding`;
+            const audit = makeAuditRecord({
+              roleId,
+              branchId,
+              loopIteration,
+              lawRef,
+              started,
+              exitCode: 1,
+              status: "failed",
+              error
+            });
+            await persistRoleResult({ roleId, context: args, audit });
+            await appendAuditFiles(args.runContext, audit);
+            return {
+              status: "failed",
+              error,
+              transitionCount: 1,
+              auditTrail: [audit],
+              finalRoleId: roleId,
+              lastExecutedRoleId: roleId,
+              branchRecords: {
+                [branchId]: { branchId, roleId, loopIteration, status: "completed" }
+              }
+            };
+          }
+
+          if (outgoing.length > 1) {
+            const error = `Role "${roleId}" cannot use explicit noop mode with multiple outgoing flows`;
+            const audit = makeAuditRecord({
+              roleId,
+              branchId,
+              loopIteration,
+              lawRef,
+              started,
+              exitCode: 1,
+              status: "failed",
+              error
+            });
+            await persistRoleResult({ roleId, context: args, audit });
+            await appendAuditFiles(args.runContext, audit);
+            return {
+              status: "failed",
+              error,
+              transitionCount: 1,
+              auditTrail: [audit],
+              finalRoleId: roleId,
+              lastExecutedRoleId: roleId,
+              branchRecords: {
+                [branchId]: { branchId, roleId, loopIteration, status: "completed" }
+              }
+            };
+          }
+
+          const selectedToRoleId = outgoing[0]?.toRoleId;
+          const selectedEvent = outgoing[0]?.eventType;
+          const branchUpdates: Record<string, BranchRecord> = {
+            [branchId]: { branchId, roleId, loopIteration, status: "completed" }
+          };
+          const loopUpdates: Record<string, number> = {};
+          let finalStatus: LangGraphState["status"] = "running";
+          let finalRoleId = "";
+          let nextRoleIdForAudit: string | undefined;
+
+          if (!selectedToRoleId || selectedToRoleId === SYSTEM_END_ROLE_ID) {
+            finalStatus = "done";
+            finalRoleId = roleId;
+          } else {
+            const nextLoopIteration = getTargetLoopIteration({
+              targetRoleId: selectedToRoleId,
+              currentLoopIteration: loopIteration,
+              state,
+              system
+            });
+
+            if (
+              wouldExceedLoopBudget({
+                targetRoleId: selectedToRoleId,
+                currentLoopIteration: loopIteration,
+                state,
+                system
+              })
+            ) {
+              const error = `Loop budget exceeded for ${selectedToRoleId}`;
+              const audit = makeAuditRecord({
+                roleId,
+                branchId,
+                loopIteration,
+                lawRef,
+                started,
+                exitCode: 1,
+                status: "failed",
+                error
+              });
+              await persistRoleResult({ roleId, context: args, audit });
+              await appendAuditFiles(args.runContext, audit);
+              return {
+                status: "failed",
+                error,
+                transitionCount: 1,
+                auditTrail: [audit],
+                finalRoleId: roleId,
+                lastExecutedRoleId: roleId,
+                branchRecords: {
+                  [branchId]: { branchId, roleId, loopIteration, status: "completed" }
+                }
+              };
+            }
+
+            loopUpdates[selectedToRoleId] = nextLoopIteration;
+            const nextBranchId = buildBranchId(selectedToRoleId, nextLoopIteration);
+            branchUpdates[nextBranchId] = {
+              branchId: nextBranchId,
+              roleId: selectedToRoleId,
+              loopIteration: nextLoopIteration,
+              status: "active"
+            };
+            nextRoleIdForAudit = selectedToRoleId;
+          }
+
           const audit = makeAuditRecord({
             roleId,
             branchId,
             loopIteration,
             lawRef,
             started,
-            exitCode: 1,
-            status: "failed",
-            error
+            exitCode: 0,
+            selectedEvent,
+            nextRoleId: nextRoleIdForAudit,
+            status: "noop"
           });
           await persistRoleResult({ roleId, context: args, audit });
           await appendAuditFiles(args.runContext, audit);
           return {
-            status: "failed",
-            error,
+            status: finalStatus,
             transitionCount: 1,
             auditTrail: [audit],
-            finalRoleId: roleId,
+            branchRecords: branchUpdates,
+            loopIterations: loopUpdates,
+            selectedEventByRoleId: selectedEvent ? { [roleId]: selectedEvent } : {},
+            finalRoleId,
             lastExecutedRoleId: roleId,
-            branchRecords: {
-              [branchId]: { branchId, roleId, loopIteration, status: "completed" }
-            }
+            finalOutput: ""
           };
         }
 
@@ -697,13 +859,18 @@ export async function runSystemWithLangGraph(args: RunnerInput): Promise<Adapter
         if (!legacyTool) {
           throw new Error(`Tool not found: ${profile.toolRef}`);
         }
+        if (args.effectiveLaw.forbiddenToolRefs.includes(profile.toolRef)) {
+          throw new Error(`Tool is forbidden by effective law: ${profile.toolRef}`);
+        }
         tool = legacyTool;
         auditCommand = tool.command;
         timeoutMs = profile.timeoutMs ?? timeoutMs;
         maxOutputBytes = profile.maxOutputBytes ?? maxOutputBytes;
       }
 
-      try {
+        if (modelId && args.modelsById.has(modelId) && !args.dryRun && !args.opencodeRun) {
+          throw new Error(`OpenCode run server missing for model-bound role "${roleId}"`);
+        }
         const result =
           modelId && args.modelsById.has(modelId) && !args.dryRun
             ? await executeOpencodeModelRole({
@@ -712,9 +879,9 @@ export async function runSystemWithLangGraph(args: RunnerInput): Promise<Adapter
                 schema: rolePackage?.outputSchema,
                 modelPackage: args.modelsById.get(modelId)!,
                 workdir: executionWorkdir,
-                env: executionEnv,
                 timeoutMs,
-                maxOutputBytes
+                maxOutputBytes,
+                runClient: args.opencodeRun!
               })
             : await runCliTool({
                 tool,
@@ -858,9 +1025,12 @@ export async function runSystemWithLangGraph(args: RunnerInput): Promise<Adapter
           started,
           modelId: effectiveModelId,
           profileId: effectiveProfileId,
-          toolRef: tool.toolRef,
+          toolRef: tool?.toolRef,
           command: auditCommand,
           resultArgs: result.args,
+          sessionId: result.sessionId,
+          messageId: result.messageId,
+          serverPid: result.serverPid,
           exitCode: result.exitCode,
           selectedEvent,
           nextRoleId: nextRoleIdForAudit,
@@ -913,9 +1083,12 @@ export async function runSystemWithLangGraph(args: RunnerInput): Promise<Adapter
           started,
           modelId: effectiveModelId,
           profileId: effectiveProfileId,
-          toolRef: tool.toolRef,
+          toolRef: tool?.toolRef,
           command: auditCommand,
           resultArgs: executionError?.args,
+          sessionId: executionError?.sessionId,
+          messageId: executionError?.messageId,
+          serverPid: executionError?.serverPid,
           exitCode: 1,
           status: "failed",
           stdout: executionError?.stdout,
@@ -1037,7 +1210,10 @@ export async function runSystemWithLangGraph(args: RunnerInput): Promise<Adapter
       `- runId: ${args.runContext.runId}`,
       `- status: ${finalState.status}`,
       `- finalRoleId: ${finalState.finalRoleId}`,
-      `- transitionCount: ${finalState.transitionCount}`
+      `- transitionCount: ${finalState.transitionCount}`,
+      `- opencodeServerUrl: ${args.opencodeRun?.url ?? ""}`,
+      `- opencodeServerPid: ${args.opencodeRun?.pid ?? ""}`,
+      `- opencodeServerStartedAt: ${args.opencodeRun?.startedAt ?? ""}`
     ].join("\n"),
     "utf8"
   );

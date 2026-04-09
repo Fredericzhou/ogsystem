@@ -5,14 +5,20 @@ import { createOpencodeClient } from "@opencode-ai/sdk/v2";
 import { ToolExecutionError } from "./tool-runner.js";
 import type { LoadedModelPackage } from "./types.js";
 
-type StartedServer = {
+export type StartedServer = {
   url: string;
   pid?: number;
   close(): void;
   getOutput(): string;
 };
 
-type PromptResponse = {
+type SessionCreateResponse = {
+  data?: {
+    id?: string;
+  };
+};
+
+type SessionPromptResponse = {
   data?: {
     id?: string;
     info?: {
@@ -29,9 +35,15 @@ type PromptResponse = {
 };
 
 type SessionApi = {
-  create(args: { title: string }): Promise<{ data?: { id?: string } }>;
+  create(args: {
+    title: string;
+    directory?: string;
+    workspace?: string;
+  }): Promise<SessionCreateResponse>;
   prompt(args: {
     sessionID: string;
+    directory?: string;
+    workspace?: string;
     model: {
       providerID: string;
       modelID: string;
@@ -45,7 +57,12 @@ type SessionApi = {
       type: "text";
       text: string;
     }>;
-  }): Promise<PromptResponse>;
+  }): Promise<SessionPromptResponse>;
+  abort(args: {
+    sessionID: string;
+    directory?: string;
+    workspace?: string;
+  }): Promise<unknown>;
 };
 
 type OpencodeClientLike = {
@@ -59,8 +76,17 @@ export type OpencodeSdkTransport = {
   }): Promise<StartedServer>;
   createClient(args: {
     baseUrl: string;
-    directory: string;
+    directory?: string;
   }): OpencodeClientLike;
+};
+
+export type OpencodeRunClient = {
+  url: string;
+  pid?: number;
+  startedAt: string;
+  close(): void;
+  getOutput(): string;
+  client: OpencodeClientLike;
 };
 
 export class OpencodeExecutionError extends Error {
@@ -70,12 +96,30 @@ export class OpencodeExecutionError extends Error {
       args?: string[];
       stdout?: string;
       stderr?: string;
+      sessionId?: string;
+      messageId?: string;
+      serverPid?: number;
     }
   ) {
     super(message);
     this.name = "OpencodeExecutionError";
   }
 }
+
+const TRANSIENT_OPENCODE_ERROR_PATTERNS = [
+  /service temporarily unavailable/i,
+  /temporarily unavailable/i,
+  /api_error/i,
+  /rate limit/i,
+  /\b502\b/,
+  /\b503\b/,
+  /\b504\b/,
+  /socket hang up/i,
+  /econnreset/i
+];
+
+const MAX_OPENCODE_ATTEMPTS = 3;
+const RETRY_BASE_DELAY_MS = 1000;
 
 function splitModelRef(model: string): { providerID: string; modelID: string } {
   const separator = model.indexOf("/");
@@ -111,6 +155,70 @@ function resolveVariant(args?: Record<string, string | boolean>): string | undef
     throw new Error("OpenCode model variant must be a non-empty string");
   }
   return variant;
+}
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function getErrorMessage(error: unknown): string {
+  if (error instanceof Error && error.message.trim()) {
+    return error.message;
+  }
+  return String(error);
+}
+
+function isTransientOpenCodeError(error: unknown): boolean {
+  const message = getErrorMessage(error);
+  return TRANSIENT_OPENCODE_ERROR_PATTERNS.some((pattern) => pattern.test(message));
+}
+
+function buildExecutionArgs(args: {
+  runClient: OpencodeRunClient;
+  workdir: string;
+  sessionId?: string;
+  messageId?: string;
+  providerID: string;
+  modelID: string;
+  variant?: string;
+}): string[] {
+  return [
+    `server=${args.runClient.url}`,
+    `directory=${args.workdir}`,
+    ...(args.sessionId ? [`session=${args.sessionId}`] : []),
+    ...(args.messageId ? [`message=${args.messageId}`] : []),
+    `model=${args.providerID}/${args.modelID}`,
+    ...(args.variant ? [`variant=${args.variant}`] : [])
+  ];
+}
+
+function wrapExecutionError(args: {
+  error: unknown;
+  stderr?: string;
+  sessionId?: string;
+  messageId?: string;
+  serverPid?: number;
+  executionArgs: string[];
+}): OpencodeExecutionError {
+  if (args.error instanceof OpencodeExecutionError) {
+    return new OpencodeExecutionError(args.error.message, {
+      args: args.error.details?.args ?? args.executionArgs,
+      stdout: args.error.details?.stdout,
+      stderr: [args.stderr, args.error.details?.stderr].filter(Boolean).join("\n"),
+      sessionId: args.error.details?.sessionId ?? args.sessionId,
+      messageId: args.error.details?.messageId ?? args.messageId,
+      serverPid: args.error.details?.serverPid ?? args.serverPid
+    });
+  }
+
+  const message = getErrorMessage(args.error);
+  return new OpencodeExecutionError(message, {
+    args: args.executionArgs,
+    stderr: [args.stderr, message].filter(Boolean).join("\n"),
+    sessionId: args.sessionId,
+    messageId: args.messageId,
+    serverPid: args.serverPid
+  });
 }
 
 function summarizeParts(parts: Array<Record<string, unknown>> | undefined): string {
@@ -154,19 +262,39 @@ function enforceOutputLimit(stdout: string, stderr: string, maxOutputBytes: numb
   }
 }
 
-function withTimeout<T>(promise: Promise<T>, timeoutMs: number, onTimeout: () => void): Promise<T> {
+function withTimeout<T>(
+  promise: Promise<T>,
+  timeoutMs: number,
+  onTimeout: () => void | Promise<void>
+): Promise<T> {
   return new Promise((resolve, reject) => {
+    let settled = false;
     const timer = setTimeout(() => {
-      onTimeout();
-      reject(new ToolExecutionError("timeout", `Command timeout after ${timeoutMs}ms`));
+      Promise.resolve(onTimeout())
+        .catch(() => undefined)
+        .finally(() => {
+          if (settled) {
+            return;
+          }
+          settled = true;
+          reject(new ToolExecutionError("timeout", `Command timeout after ${timeoutMs}ms`));
+        });
     }, timeoutMs);
 
     promise.then(
       (value) => {
+        if (settled) {
+          return;
+        }
+        settled = true;
         clearTimeout(timer);
         resolve(value);
       },
       (error) => {
+        if (settled) {
+          return;
+        }
+        settled = true;
         clearTimeout(timer);
         reject(error);
       }
@@ -223,7 +351,9 @@ async function startServer(args: {
       if (!child.killed) {
         child.kill("SIGKILL");
       }
-      finishReject(new ToolExecutionError("timeout", `OpenCode server startup timeout after ${args.timeoutMs}ms`));
+      finishReject(
+        new ToolExecutionError("timeout", `OpenCode server startup timeout after ${args.timeoutMs}ms`)
+      );
     }, args.timeoutMs);
 
     const parseOutput = (chunk: Buffer) => {
@@ -238,7 +368,9 @@ async function startServer(args: {
           if (!child.killed) {
             child.kill("SIGKILL");
           }
-          finishReject(new ToolExecutionError("spawn", `Failed to parse OpenCode server url from output: ${line}`));
+          finishReject(
+            new ToolExecutionError("spawn", `Failed to parse OpenCode server url from output: ${line}`)
+          );
           return;
         }
         finishResolve(match[1]);
@@ -264,10 +396,15 @@ async function startServer(args: {
   });
 }
 
-function createClient(args: { baseUrl: string; directory: string }): OpencodeClientLike {
+function createClient(args: { baseUrl: string; directory?: string }): OpencodeClientLike {
+  if (args.directory) {
+    return createOpencodeClient({
+      baseUrl: args.baseUrl,
+      directory: args.directory
+    });
+  }
   return createOpencodeClient({
-    baseUrl: args.baseUrl,
-    directory: args.directory
+    baseUrl: args.baseUrl
   });
 }
 
@@ -276,6 +413,32 @@ const defaultTransport: OpencodeSdkTransport = {
   createClient
 };
 
+export async function startOpencodeRunClient(
+  args: {
+    timeoutMs: number;
+    env?: Record<string, string>;
+    directory?: string;
+  },
+  transport: OpencodeSdkTransport = defaultTransport
+): Promise<OpencodeRunClient> {
+  const server = await transport.startServer(args);
+  return {
+    url: server.url,
+    pid: server.pid,
+    startedAt: new Date().toISOString(),
+    close() {
+      server.close();
+    },
+    getOutput() {
+      return server.getOutput();
+    },
+    client: transport.createClient({
+      baseUrl: server.url,
+      directory: args.directory
+    })
+  };
+}
+
 export async function executeOpencodeModelRole(
   args: {
     roleId: string;
@@ -283,9 +446,9 @@ export async function executeOpencodeModelRole(
     schema: unknown;
     modelPackage: LoadedModelPackage;
     workdir: string;
-    env?: Record<string, string>;
     timeoutMs: number;
     maxOutputBytes: number;
+    runClient?: OpencodeRunClient;
   },
   transport: OpencodeSdkTransport = defaultTransport
 ): Promise<{
@@ -303,101 +466,171 @@ export async function executeOpencodeModelRole(
 
   const { providerID, modelID } = splitModelRef(args.modelPackage.manifest.model);
   const variant = resolveVariant(args.modelPackage.manifest.args);
-  const server = await transport.startServer({
-    timeoutMs: Math.max(15000, Math.min(args.timeoutMs, 30000)),
-    env: {
-      OPENCODE_CONFIG_CONTENT: JSON.stringify({}),
-      ...args.env
-    }
-  });
+  const ownRunClient = args.runClient
+    ? undefined
+    : await startOpencodeRunClient(
+        {
+          timeoutMs: Math.max(15000, Math.min(args.timeoutMs, 30000)),
+          env: {
+            OPENCODE_CONFIG_CONTENT: JSON.stringify({})
+          },
+          directory: args.workdir
+        },
+        transport
+      );
+  const runClient = args.runClient ?? ownRunClient;
+  if (!runClient) {
+    throw new Error("OpenCode run client is unavailable");
+  }
+  let sessionId = "";
+  let messageId: string | undefined;
 
   try {
     return await withTimeout(
       (async () => {
-        const client = transport.createClient({
-          baseUrl: server.url,
-          directory: args.workdir
-        });
-        const created = await client.session.create({
-          title: `${args.roleId}-${Date.now()}`
-        });
-        const sessionId = created.data?.id;
-        if (!sessionId) {
-          throw new Error("OpenCode SDK did not return a session id");
-        }
+        for (let attempt = 1; attempt <= MAX_OPENCODE_ATTEMPTS; attempt += 1) {
+          sessionId = "";
+          messageId = undefined;
+          let stderr = "";
 
-        const response = await client.session.prompt({
-          sessionID: sessionId,
-          model: {
-            providerID,
-            modelID
-          },
-          variant,
-          format: {
-            type: "json_schema",
-            schema: args.schema as Record<string, unknown>
-          },
-          parts: [
-            {
-              type: "text",
-              text: args.prompt
+          try {
+            const created = await runClient.client.session.create({
+              title: `${args.roleId}-${Date.now()}`,
+              directory: args.workdir
+            });
+            sessionId = created.data?.id ?? "";
+            if (!sessionId) {
+              throw new Error("OpenCode SDK did not return a session id");
             }
-          ]
-        });
 
-        const info = response.data?.info;
-        const stderr = summarizeParts(response.data?.parts);
-        if (info?.error) {
-          const message = info.error.data?.message || info.error.name || "OpenCode execution failed";
-          throw new OpencodeExecutionError(message, {
-            stderr,
-            args: [
-              "serve",
-              "--hostname=127.0.0.1",
-              "--port=0",
-              `directory=${args.workdir}`,
-              `session=${sessionId}`,
-              `model=${providerID}/${modelID}`,
-              ...(variant ? [`variant=${variant}`] : [])
-            ]
-          });
+            const response = await runClient.client.session.prompt({
+              sessionID: sessionId,
+              directory: args.workdir,
+              model: {
+                providerID,
+                modelID
+              },
+              variant,
+              format: {
+                type: "json_schema",
+                schema: args.schema as Record<string, unknown>
+              },
+              parts: [
+                {
+                  type: "text",
+                  text: args.prompt
+                }
+              ]
+            });
+
+            const info = response.data?.info;
+            messageId = response.data?.id;
+            stderr = summarizeParts(response.data?.parts);
+            if (info?.error) {
+              const message =
+                info.error.data?.message || info.error.name || "OpenCode execution failed";
+              throw new OpencodeExecutionError(message, {
+                stderr,
+                sessionId,
+                messageId,
+                serverPid: runClient.pid,
+                args: buildExecutionArgs({
+                  runClient,
+                  workdir: args.workdir,
+                  sessionId,
+                  messageId,
+                  providerID,
+                  modelID,
+                  variant
+                })
+              });
+            }
+
+            const stdout = normalizeStructuredOutput(info?.structured);
+            enforceOutputLimit(stdout, stderr, args.maxOutputBytes);
+
+            return {
+              exitCode: 0,
+              stdout,
+              stderr,
+              args: buildExecutionArgs({
+                runClient,
+                workdir: args.workdir,
+                sessionId,
+                messageId,
+                providerID,
+                modelID,
+                variant
+              }),
+              sessionId,
+              messageId,
+              serverPid: runClient.pid
+            };
+          } catch (error) {
+            const wrappedError = wrapExecutionError({
+              error,
+              stderr,
+              sessionId,
+              messageId,
+              serverPid: runClient.pid,
+              executionArgs: buildExecutionArgs({
+                runClient,
+                workdir: args.workdir,
+                sessionId,
+                messageId,
+                providerID,
+                modelID,
+                variant
+              })
+            });
+
+            if (attempt >= MAX_OPENCODE_ATTEMPTS || !isTransientOpenCodeError(error)) {
+              if (attempt > 1) {
+                throw new OpencodeExecutionError(
+                  `OpenCode execution failed after ${attempt} attempts: ${wrappedError.message}`,
+                  wrappedError.details
+                );
+              }
+              throw wrappedError;
+            }
+
+            if (sessionId) {
+              await runClient.client.session.abort({
+                sessionID: sessionId,
+                directory: args.workdir
+              });
+            }
+            await sleep(RETRY_BASE_DELAY_MS * attempt);
+          }
         }
 
-        const stdout = normalizeStructuredOutput(info?.structured);
-        enforceOutputLimit(stdout, stderr, args.maxOutputBytes);
-
-        return {
-          exitCode: 0,
-          stdout,
-          stderr,
-          args: [
-            "serve",
-            "--hostname=127.0.0.1",
-            "--port=0",
-            `directory=${args.workdir}`,
-            `session=${sessionId}`,
-            `model=${providerID}/${modelID}`,
-            ...(variant ? [`variant=${variant}`] : [])
-          ],
-          sessionId,
-          messageId: response.data?.id,
-          serverPid: server.pid
-        };
+        throw new Error("OpenCode execution attempts exhausted");
       })(),
       args.timeoutMs,
-      () => server.close()
+      async () => {
+        if (!sessionId) {
+          return;
+        }
+        await runClient.client.session.abort({
+          sessionID: sessionId,
+          directory: args.workdir
+        });
+      }
     );
   } catch (error) {
     if (error instanceof OpencodeExecutionError) {
-      const serverOutput = server.getOutput();
+      const serverOutput = runClient.getOutput();
       throw new OpencodeExecutionError(error.message, {
         args: error.details?.args,
         stdout: error.details?.stdout,
-        stderr: [error.details?.stderr, serverOutput].filter(Boolean).join("\n")
+        stderr: [error.details?.stderr, serverOutput].filter(Boolean).join("\n"),
+        sessionId: error.details?.sessionId,
+        messageId: error.details?.messageId,
+        serverPid: error.details?.serverPid
       });
     }
     throw error;
   } finally {
-    server.close();
+    ownRunClient?.close();
   }
 }

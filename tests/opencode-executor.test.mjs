@@ -1,7 +1,10 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 
-import { executeOpencodeModelRole } from "../dist/runtime/opencode-executor.js";
+import {
+  executeOpencodeModelRole,
+  startOpencodeRunClient
+} from "../dist/runtime/opencode-executor.js";
 
 function makeModelPackage(overrides = {}) {
   return {
@@ -21,81 +24,167 @@ function makeModelPackage(overrides = {}) {
   };
 }
 
-test("executeOpencodeModelRole uses SDK structured output and maps variant", async () => {
-  let closed = false;
-  let promptArgs;
-
-  const result = await executeOpencodeModelRole(
-    {
-      roleId: "debate-moderator",
-      prompt: "return structured output",
-      schema: {
-        type: "object",
-        required: ["event", "content"],
-        properties: {
-          event: { type: "string" },
-          content: { type: "string" }
+function makeRunClient(overrides = {}) {
+  return {
+    url: "http://127.0.0.1:4096",
+    pid: 12345,
+    startedAt: "2026-04-09T00:00:00.000Z",
+    close() {},
+    getOutput() {
+      return "opencode server listening";
+    },
+    client: {
+      session: {
+        async create() {
+          return {
+            data: {
+              id: "ses_123"
+            }
+          };
         },
-        additionalProperties: false
-      },
-      modelPackage: makeModelPackage(),
-      workdir: "/tmp/run/roles/debate-moderator",
-      timeoutMs: 5000,
-      maxOutputBytes: 4096
+        async prompt() {
+          return {
+            data: {
+              id: "msg_456",
+              info: {
+                structured: {
+                  event: "SEND_MINIMALIST",
+                  content: "dispatch"
+                }
+              },
+              parts: [
+                { type: "step-start" },
+                {
+                  type: "tool",
+                  tool: "planner",
+                  state: {
+                    status: "completed"
+                  }
+                }
+              ]
+            }
+          };
+        },
+        async abort() {
+          return true;
+        }
+      }
+    },
+    ...overrides
+  };
+}
+
+test("startOpencodeRunClient starts one reusable shared server", async () => {
+  let createClientArgs;
+
+  const runClient = await startOpencodeRunClient(
+    {
+      timeoutMs: 5000
     },
     {
       async startServer() {
         return {
           url: "http://127.0.0.1:4096",
-          pid: 12345,
-          close() {
-            closed = true;
-          },
+          pid: 321,
+          close() {},
           getOutput() {
             return "opencode server listening";
           }
         };
       },
-      createClient() {
-        return {
-          session: {
-            async create() {
-              return {
-                data: {
-                  id: "ses_123"
-                }
-              };
-            },
-            async prompt(args) {
-              promptArgs = args;
-              return {
-                data: {
-                  id: "msg_456",
-                  info: {
-                    structured: {
-                      event: "SEND_MINIMALIST",
-                      content: "dispatch"
-                    }
-                  },
-                  parts: [
-                    { type: "step-start" },
-                    {
-                      type: "tool",
-                      tool: "planner",
-                      state: {
-                        status: "completed"
-                      }
-                    }
-                  ]
-                }
-              };
-            }
-          }
-        };
+      createClient(args) {
+        createClientArgs = args;
+        return makeRunClient().client;
       }
     }
   );
 
+  assert.strictEqual(runClient.url, "http://127.0.0.1:4096");
+  assert.strictEqual(runClient.pid, 321);
+  assert.strictEqual(createClientArgs.baseUrl, "http://127.0.0.1:4096");
+});
+
+test("executeOpencodeModelRole uses shared server sessions and maps variant", async () => {
+  let createArgs;
+  let promptArgs;
+  let closed = false;
+
+  const runClient = makeRunClient({
+    close() {
+      closed = true;
+    },
+    client: {
+      session: {
+        async create(args) {
+          createArgs = args;
+          return {
+            data: {
+              id: "ses_123"
+            }
+          };
+        },
+        async prompt(args) {
+          promptArgs = args;
+          return {
+            data: {
+              id: "msg_456",
+              info: {
+                structured: {
+                  event: "SEND_MINIMALIST",
+                  content: "dispatch"
+                }
+              },
+              parts: [
+                { type: "step-start" },
+                {
+                  type: "tool",
+                  tool: "planner",
+                  state: {
+                    status: "completed"
+                  }
+                }
+              ]
+            }
+          };
+        },
+        async abort() {
+          return true;
+        }
+      }
+    }
+  });
+
+  const result = await executeOpencodeModelRole({
+    roleId: "debate-moderator",
+    prompt: "return structured output",
+    schema: {
+      type: "object",
+      required: ["event", "content"],
+      properties: {
+        event: { type: "string" },
+        content: { type: "string" }
+      },
+      additionalProperties: false
+    },
+    modelPackage: makeModelPackage(),
+    workdir: "/tmp/run/roles/debate-moderator",
+    timeoutMs: 5000,
+    maxOutputBytes: 4096,
+    runClient
+  });
+
+  assert.deepStrictEqual(createArgs, {
+    title: createArgs.title,
+    directory: "/tmp/run/roles/debate-moderator"
+  });
+  assert.strictEqual(promptArgs.sessionID, "ses_123");
+  assert.strictEqual(promptArgs.directory, "/tmp/run/roles/debate-moderator");
+  assert.strictEqual(promptArgs.variant, "low");
+  assert.deepStrictEqual(promptArgs.model, {
+    providerID: "openai",
+    modelID: "gpt-5.4-mini"
+  });
+  assert.strictEqual(promptArgs.format.type, "json_schema");
   assert.deepStrictEqual(JSON.parse(result.stdout), {
     event: "SEND_MINIMALIST",
     content: "dispatch"
@@ -105,149 +194,133 @@ test("executeOpencodeModelRole uses SDK structured output and maps variant", asy
   assert.strictEqual(result.sessionId, "ses_123");
   assert.strictEqual(result.messageId, "msg_456");
   assert.strictEqual(result.serverPid, 12345);
-  assert.strictEqual(promptArgs.variant, "low");
-  assert.deepStrictEqual(promptArgs.model, {
-    providerID: "openai",
-    modelID: "gpt-5.4-mini"
-  });
-  assert.strictEqual(promptArgs.format.type, "json_schema");
-  assert.strictEqual(closed, true);
+  assert.strictEqual(closed, false);
 });
 
-test("executeOpencodeModelRole rejects unsupported model args before transport startup", async () => {
+test("executeOpencodeModelRole rejects unsupported model args before using run client", async () => {
   await assert.rejects(
-    executeOpencodeModelRole(
-      {
-        roleId: "debate-moderator",
-        prompt: "return structured output",
-        schema: {
-          type: "object",
-          properties: {
-            content: { type: "string" }
-          }
-        },
-        modelPackage: makeModelPackage({
-          args: {
-            temperature: "0.1"
-          }
-        }),
-        workdir: "/tmp/run/roles/debate-moderator",
-        timeoutMs: 5000,
-        maxOutputBytes: 4096
-      },
-      {
-        async startServer() {
-          throw new Error("transport should not start");
-        },
-        createClient() {
-          throw new Error("transport should not create client");
+    executeOpencodeModelRole({
+      roleId: "debate-moderator",
+      prompt: "return structured output",
+      schema: {
+        type: "object",
+        properties: {
+          content: { type: "string" }
         }
-      }
-    ),
+      },
+      modelPackage: makeModelPackage({
+        args: {
+          temperature: "0.1"
+        }
+      }),
+      workdir: "/tmp/run/roles/debate-moderator",
+      timeoutMs: 5000,
+      maxOutputBytes: 4096,
+      runClient: makeRunClient()
+    }),
     /Unsupported OpenCode model args/
   );
 });
 
-test("executeOpencodeModelRole keeps sessions isolated when transport reuses one server", async () => {
-  const server = {
-    url: "http://127.0.0.1:4096",
-    pid: 321,
-    close() {},
-    getOutput() {
-      return "opencode server listening";
-    }
-  };
-
-  const createdSessionIds = [];
-  const clientBindings = [];
+test("executeOpencodeModelRole keeps sessions isolated on one shared server", async () => {
+  const createCalls = [];
+  const promptCalls = [];
   let sequence = 0;
 
-  const transport = {
-    async startServer() {
-      return server;
-    },
-    createClient(args) {
-      clientBindings.push(args);
-      return {
-        session: {
-          async create() {
-            sequence += 1;
-            const sessionID = `ses_${sequence}`;
-            createdSessionIds.push(sessionID);
-            return { data: { id: sessionID } };
-          },
-          async prompt(promptArgs) {
-            return {
-              data: {
-                id: `msg_${promptArgs.sessionID}`,
-                info: {
-                  structured: {
-                    event: "NEXT",
-                    content: `${promptArgs.sessionID}:${promptArgs.parts[0].text}`
-                  }
-                },
-                parts: [{ type: "step-start" }, { type: "step-finish" }]
-              }
-            };
-          }
+  const runClient = makeRunClient({
+    url: "http://127.0.0.1:4096",
+    pid: 321,
+    client: {
+      session: {
+        async create(args) {
+          createCalls.push(args);
+          sequence += 1;
+          return {
+            data: {
+              id: `ses_${sequence}`
+            }
+          };
+        },
+        async prompt(args) {
+          promptCalls.push(args);
+          return {
+            data: {
+              id: `msg_${args.sessionID}`,
+              info: {
+                structured: {
+                  event: "NEXT",
+                  content: `${args.sessionID}:${args.parts[0].text}`
+                }
+              },
+              parts: [{ type: "step-start" }, { type: "step-finish" }]
+            }
+          };
+        },
+        async abort() {
+          return true;
         }
-      };
+      }
     }
+  });
+
+  const schema = {
+    type: "object",
+    required: ["event", "content"],
+    properties: {
+      event: { type: "string" },
+      content: { type: "string" }
+    },
+    additionalProperties: false
   };
 
-  const first = await executeOpencodeModelRole(
+  const first = await executeOpencodeModelRole({
+    roleId: "role-a",
+    prompt: "first",
+    schema,
+    modelPackage: makeModelPackage(),
+    workdir: "/tmp/run/roles/role-a",
+    timeoutMs: 5000,
+    maxOutputBytes: 4096,
+    runClient
+  });
+
+  const second = await executeOpencodeModelRole({
+    roleId: "role-b",
+    prompt: "second",
+    schema,
+    modelPackage: makeModelPackage(),
+    workdir: "/tmp/run/roles/role-b",
+    timeoutMs: 5000,
+    maxOutputBytes: 4096,
+    runClient
+  });
+
+  assert.deepStrictEqual(createCalls, [
     {
-      roleId: "role-a",
-      prompt: "first",
-      schema: {
-        type: "object",
-        required: ["event", "content"],
-        properties: {
-          event: { type: "string" },
-          content: { type: "string" }
-        },
-        additionalProperties: false
-      },
-      modelPackage: makeModelPackage(),
-      workdir: "/tmp/run/roles/role-a",
-      timeoutMs: 5000,
-      maxOutputBytes: 4096
+      title: createCalls[0].title,
+      directory: "/tmp/run/roles/role-a"
     },
-    transport
-  );
-
-  const second = await executeOpencodeModelRole(
     {
-      roleId: "role-b",
-      prompt: "second",
-      schema: {
-        type: "object",
-        required: ["event", "content"],
-        properties: {
-          event: { type: "string" },
-          content: { type: "string" }
-        },
-        additionalProperties: false
+      title: createCalls[1].title,
+      directory: "/tmp/run/roles/role-b"
+    }
+  ]);
+  assert.deepStrictEqual(
+    promptCalls.map((entry) => ({
+      sessionID: entry.sessionID,
+      directory: entry.directory
+    })),
+    [
+      {
+        sessionID: "ses_1",
+        directory: "/tmp/run/roles/role-a"
       },
-      modelPackage: makeModelPackage(),
-      workdir: "/tmp/run/roles/role-b",
-      timeoutMs: 5000,
-      maxOutputBytes: 4096
-    },
-    transport
+      {
+        sessionID: "ses_2",
+        directory: "/tmp/run/roles/role-b"
+      }
+    ]
   );
-
-  assert.strictEqual(clientBindings.length, 2);
-  assert.deepStrictEqual(clientBindings.map((entry) => entry.baseUrl), [
-    "http://127.0.0.1:4096",
-    "http://127.0.0.1:4096"
-  ]);
-  assert.deepStrictEqual(clientBindings.map((entry) => entry.directory), [
-    "/tmp/run/roles/role-a",
-    "/tmp/run/roles/role-b"
-  ]);
-
-  assert.deepStrictEqual(createdSessionIds, ["ses_1", "ses_2"]);
   assert.strictEqual(first.sessionId, "ses_1");
   assert.strictEqual(second.sessionId, "ses_2");
   assert.strictEqual(first.messageId, "msg_ses_1");
@@ -259,5 +332,138 @@ test("executeOpencodeModelRole keeps sessions isolated when transport reuses one
   assert.deepStrictEqual(JSON.parse(second.stdout), {
     event: "NEXT",
     content: "ses_2:second"
+  });
+});
+
+test("executeOpencodeModelRole aborts only the timed out session", async () => {
+  const aborted = [];
+
+  await assert.rejects(
+    executeOpencodeModelRole({
+      roleId: "role-timeout",
+      prompt: "hang",
+      schema: {
+        type: "object",
+        properties: {
+          content: { type: "string" }
+        }
+      },
+      modelPackage: makeModelPackage(),
+      workdir: "/tmp/run/roles/role-timeout",
+      timeoutMs: 10,
+      maxOutputBytes: 4096,
+      runClient: makeRunClient({
+        client: {
+          session: {
+            async create() {
+              return {
+                data: {
+                  id: "ses_timeout"
+                }
+              };
+            },
+            async prompt() {
+              await new Promise((resolve) => setTimeout(resolve, 50));
+              return {
+                data: {
+                  id: "msg_timeout",
+                  info: {
+                    structured: {
+                      content: "late"
+                    }
+                  },
+                  parts: []
+                }
+              };
+            },
+            async abort(args) {
+              aborted.push(args);
+              return true;
+            }
+          }
+        }
+      })
+    }),
+    /Command timeout/
+  );
+
+  assert.deepStrictEqual(aborted, [
+    {
+      sessionID: "ses_timeout",
+      directory: "/tmp/run/roles/role-timeout"
+    }
+  ]);
+});
+
+test("executeOpencodeModelRole retries transient prompt failures with new sessions", async () => {
+  const createdSessions = [];
+  const promptedSessions = [];
+  const abortedSessions = [];
+
+  const result = await executeOpencodeModelRole({
+    roleId: "role-retry",
+    prompt: "retry once",
+    schema: {
+      type: "object",
+      required: ["event", "content"],
+      properties: {
+        event: { type: "string" },
+        content: { type: "string" }
+      },
+      additionalProperties: false
+    },
+    modelPackage: makeModelPackage(),
+    workdir: "/tmp/run/roles/role-retry",
+    timeoutMs: 5000,
+    maxOutputBytes: 4096,
+    runClient: makeRunClient({
+      client: {
+        session: {
+          async create() {
+            const sessionID = `ses_${createdSessions.length + 1}`;
+            createdSessions.push(sessionID);
+            return {
+              data: {
+                id: sessionID
+              }
+            };
+          },
+          async prompt(args) {
+            promptedSessions.push(args.sessionID);
+            if (args.sessionID === "ses_1") {
+              throw new Error(
+                'Type validation failed: Value: {"error":{"type":"api_error","message":"Service temporarily unavailable"}}'
+              );
+            }
+            return {
+              data: {
+                id: "msg_2",
+                info: {
+                  structured: {
+                    event: "NEXT",
+                    content: "recovered"
+                  }
+                },
+                parts: [{ type: "step-start" }, { type: "step-finish" }]
+              }
+            };
+          },
+          async abort(args) {
+            abortedSessions.push(args.sessionID);
+            return true;
+          }
+        }
+      }
+    })
+  });
+
+  assert.deepStrictEqual(createdSessions, ["ses_1", "ses_2"]);
+  assert.deepStrictEqual(promptedSessions, ["ses_1", "ses_2"]);
+  assert.deepStrictEqual(abortedSessions, ["ses_1"]);
+  assert.strictEqual(result.sessionId, "ses_2");
+  assert.strictEqual(result.messageId, "msg_2");
+  assert.deepStrictEqual(JSON.parse(result.stdout), {
+    event: "NEXT",
+    content: "recovered"
   });
 });

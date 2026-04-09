@@ -231,6 +231,7 @@ Example:
 When a run starts, `.ogsystems/<run-id>/` should persist:
 
 - run-level files: `run.md`, `request.md`, `system.mmd`, `state.json`, `events.ndjson`
+- run-level OpenCode metadata: `opencode-server.json` for `model.bind` runs
 - run-level shared workspace: `shared/`
 - audit files: `audit/summary.md`, `audit/transitions.md`
 - per-role files: `role.md`, `inbox.md`, `prompt.md`, `result.json`, `outbox.md`, `audit.md`, `private/`
@@ -251,6 +252,9 @@ OpenCode lifecycle rule for `model.bind`:
 - one OGSystem run starts one shared `opencode serve`
 - each node execution creates an isolated OpenCode `session`
 - each node prompt still binds to that node's role directory
+- node audit records include `sessionId`, `messageId`, and shared `serverPid`
+- run events include `opencode_server_started` and `opencode_server_closed`
+- transient provider/service failures are retried with a fresh session on the same shared server
 - after node completion, session metadata can be retained for audit/resume while the shared server stays alive
 - parallel LangGraph branches therefore run as concurrent sessions on the same server process
 

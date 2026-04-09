@@ -453,14 +453,14 @@ This is the smallest change that:
 
 ## 17. Suggested Task Checklist
 
-- define run-level server manager
-- define node execution to session mapping
-- define session metadata persistence fields
-- define server shutdown policy
-- define session retention policy
-- switch `model.bind` execution from per-node serve to run-level serve
-- keep one node = one session
-- validate parallel branch behavior
-- validate mixed-model behavior
-- validate timeout and abort semantics
-- update runtime and usage docs
+- [x] define run-level server manager
+- [x] define node execution to session mapping
+- [x] define session metadata persistence fields
+- [x] define server shutdown policy
+- [x] define session retention policy
+- [x] switch `model.bind` execution from per-node serve to run-level serve
+- [x] keep one node = one session
+- [x] validate parallel branch behavior
+- [x] validate mixed-model behavior
+- [x] validate timeout and abort semantics
+- [x] update runtime and usage docs

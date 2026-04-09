@@ -18,7 +18,12 @@ import {
 } from "./role-repo.js";
 import { runSystemWithLangGraph } from "./langgraph-runner.js";
 import { projectStages } from "./stage-projector.js";
-import { OpencodeExecutionError, executeOpencodeModelRole } from "./opencode-executor.js";
+import {
+  OpencodeExecutionError,
+  type OpencodeRunClient,
+  executeOpencodeModelRole,
+  startOpencodeRunClient
+} from "./opencode-executor.js";
 import { runCliTool, ToolExecutionError } from "./tool-runner.js";
 import { SYSTEM_END_ROLE_ID } from "./types.js";
 import type {
@@ -61,6 +66,7 @@ type RuntimeInput = {
   workdir: string;
   rolePackagesByRoleId: Map<string, LoadedRolePackage>;
   runContext: RunContext;
+  opencodeRun?: OpencodeRunClient;
   dryRun?: boolean;
 };
 
@@ -75,8 +81,12 @@ type RunContext = {
   auditDir: string;
   eventsPath: string;
   statePath: string;
+  opencodeServerPath: string;
   roleDirsById: Map<string, RoleRunDirs>;
   sharedDir: string;
+  opencodeServerUrl?: string;
+  opencodeServerPid?: number;
+  opencodeServerStartedAt?: string;
 };
 
 function preview(value: string): string | undefined {
@@ -304,6 +314,9 @@ function makeAuditRecord(args: {
   toolRef?: string;
   command?: string;
   resultArgs?: string[];
+  sessionId?: string;
+  messageId?: string;
+  serverPid?: number;
   exitCode: number;
   selectedEvent?: string;
   nextRoleId?: string;
@@ -320,6 +333,9 @@ function makeAuditRecord(args: {
     toolRef: args.toolRef,
     command: args.command,
     args: args.resultArgs,
+    sessionId: args.sessionId,
+    messageId: args.messageId,
+    serverPid: args.serverPid,
     exitCode: args.exitCode,
     durationMs: Date.now() - args.started,
     selectedEvent: args.selectedEvent,
@@ -674,7 +690,18 @@ async function executeRoleNode(args: {
   }
 
   try {
-    const result =
+    if (modelId && args.context.modelsById.has(modelId) && !args.context.dryRun && !args.context.opencodeRun) {
+      throw new Error(`OpenCode run server missing for model-bound role "${args.roleId}"`);
+    }
+    const result: {
+      exitCode: number;
+      stdout: string;
+      stderr: string;
+      args: string[];
+      sessionId?: string;
+      messageId?: string;
+      serverPid?: number;
+    } =
       modelId && args.context.modelsById.has(modelId) && !args.context.dryRun
         ? await executeOpencodeModelRole({
             roleId: args.roleId,
@@ -682,9 +709,9 @@ async function executeRoleNode(args: {
             schema: rolePackage?.outputSchema,
             modelPackage: args.context.modelsById.get(modelId)!,
             workdir: executionWorkdir,
-            env: executionEnv,
             timeoutMs,
-            maxOutputBytes
+            maxOutputBytes,
+            runClient: args.context.opencodeRun!
           })
         : await runCliTool({
             tool,
@@ -720,6 +747,9 @@ async function executeRoleNode(args: {
         toolRef: tool.toolRef,
         command: auditCommand,
         resultArgs: result.args,
+        sessionId: result.sessionId,
+        messageId: result.messageId,
+        serverPid: result.serverPid,
         exitCode: result.exitCode,
         status: "failed",
         stdout: result.stdout,
@@ -759,6 +789,9 @@ async function executeRoleNode(args: {
       toolRef: tool.toolRef,
       command: auditCommand,
       resultArgs: result.args,
+      sessionId: result.sessionId,
+      messageId: result.messageId,
+      serverPid: result.serverPid,
       exitCode: result.exitCode,
       selectedEvent: selectedFlow?.eventType,
       nextRoleId: nextRoleId ?? undefined,
@@ -797,6 +830,9 @@ async function executeRoleNode(args: {
       toolRef: tool.toolRef,
       command: auditCommand,
       resultArgs: executionError?.args,
+      sessionId: executionError?.sessionId,
+      messageId: executionError?.messageId,
+      serverPid: executionError?.serverPid,
       exitCode: 1,
       status: "failed",
       stdout: executionError?.stdout,
@@ -1029,6 +1065,7 @@ async function initializeRunContext(args: {
     auditDir,
     eventsPath: resolve(runDir, "events.ndjson"),
     statePath: resolve(runDir, "state.json"),
+    opencodeServerPath: resolve(runDir, "opencode-server.json"),
     roleDirsById,
     sharedDir
   };
@@ -1111,59 +1148,57 @@ export async function runSystemWithAdapter(args: {
   const profilesById = new Map(profiles.map((item) => [item.profileId, item]));
   const toolsByRef = new Map(tools.map((item) => [item.toolRef, item]));
   const adjacency = buildAdjacency(system.flows);
+  const requiresOpencodeRunServer = !args.dryRun && modelsById.size > 0;
+  let opencodeRun: OpencodeRunClient | undefined;
 
-  if (system.engine === "langgraph") {
-    let initialState: unknown;
-    if (args.resumeRunDir) {
-      const resumeStatePath = resolve(runContext.runDir, "state.json");
-      if (await pathExists(resumeStatePath)) {
-        const resumeState = await readJsonFile(resumeStatePath);
-        if (
-          typeof resumeState === "object" &&
-          resumeState !== null &&
-          !Array.isArray(resumeState) &&
-          "graphState" in resumeState
-        ) {
-          initialState = (resumeState as Record<string, unknown>).graphState;
+  try {
+    if (requiresOpencodeRunServer) {
+      opencodeRun = await startOpencodeRunClient({
+        timeoutMs: 30000,
+        env: {
+          OGSYSTEM_RUN_DIR: runContext.runDir,
+          OGSYSTEM_SHARED_DIR: runContext.sharedDir
+        }
+      });
+      runContext.opencodeServerUrl = opencodeRun.url;
+      runContext.opencodeServerPid = opencodeRun.pid;
+      runContext.opencodeServerStartedAt = opencodeRun.startedAt;
+      await writeFile(
+        runContext.opencodeServerPath,
+        stringifyJson({
+          lifecycle: "single-serve-multi-session",
+          startedAt: runContext.opencodeServerStartedAt,
+          url: runContext.opencodeServerUrl,
+          pid: runContext.opencodeServerPid
+        }),
+        "utf8"
+      );
+      await appendEvent(runContext, {
+        type: "opencode_server_started",
+        at: runContext.opencodeServerStartedAt,
+        url: runContext.opencodeServerUrl,
+        pid: runContext.opencodeServerPid,
+        lifecycle: "single-serve-multi-session"
+      });
+    }
+
+    if (system.engine === "langgraph") {
+      let initialState: unknown;
+      if (args.resumeRunDir) {
+        const resumeStatePath = resolve(runContext.runDir, "state.json");
+        if (await pathExists(resumeStatePath)) {
+          const resumeState = await readJsonFile(resumeStatePath);
+          if (
+            typeof resumeState === "object" &&
+            resumeState !== null &&
+            !Array.isArray(resumeState) &&
+            "graphState" in resumeState
+          ) {
+            initialState = (resumeState as Record<string, unknown>).graphState;
+          }
         }
       }
-    }
-    return await runSystemWithLangGraph({
-      system,
-      effectiveLaw,
-      profilesById,
-      toolsByRef,
-      modelsById,
-      runtimeConfig,
-      userProfile,
-      workdir: args.workdir,
-      rolePackagesByRoleId,
-      runContext,
-      prompt: args.prompt,
-      dryRun: args.dryRun,
-      initialState: initialState as never
-    });
-  }
-
-  let state: RuntimeState = {
-    currentRoleId: system.entryRoleId,
-    nextRoleId: system.entryRoleId,
-    status: "running",
-    userPrompt: args.prompt,
-    lastOutput: "",
-    transitionCount: 0,
-    auditTrail: [],
-    error: null,
-    finalRoleId: null
-  };
-  await persistState(runContext, state);
-
-  while (state.status === "running") {
-    const roleId = state.nextRoleId ?? state.currentRoleId;
-    const patch = await executeRoleNode({
-      roleId,
-      state,
-      context: {
+      return await runSystemWithLangGraph({
         system,
         effectiveLaw,
         profilesById,
@@ -1174,81 +1209,144 @@ export async function runSystemWithAdapter(args: {
         workdir: args.workdir,
         rolePackagesByRoleId,
         runContext,
-        dryRun: args.dryRun
-      },
-      adjacency
-    });
-
-    state = mergeRuntimeState(state, patch, args.prompt);
-    await persistState(runContext, state);
-    for (const audit of patch.auditTrail ?? []) {
-      await appendEvent(runContext, {
-        type: "audit",
-        ...audit
+        opencodeRun,
+        prompt: args.prompt,
+        dryRun: args.dryRun,
+        initialState: initialState as never
       });
-      await appendFile(
-        resolve(runContext.auditDir, "transitions.md"),
-        `- ${audit.roleId}: ${audit.status}${audit.selectedEvent ? ` (${audit.selectedEvent})` : ""}\n`,
+    }
+
+    let state: RuntimeState = {
+      currentRoleId: system.entryRoleId,
+      nextRoleId: system.entryRoleId,
+      status: "running",
+      userPrompt: args.prompt,
+      lastOutput: "",
+      transitionCount: 0,
+      auditTrail: [],
+      error: null,
+      finalRoleId: null
+    };
+    await persistState(runContext, state);
+
+    while (state.status === "running") {
+      const roleId = state.nextRoleId ?? state.currentRoleId;
+      const patch = await executeRoleNode({
+        roleId,
+        state,
+        context: {
+          system,
+          effectiveLaw,
+          profilesById,
+          toolsByRef,
+          modelsById,
+          runtimeConfig,
+          userProfile,
+          workdir: args.workdir,
+          rolePackagesByRoleId,
+          runContext,
+          opencodeRun,
+          dryRun: args.dryRun
+        },
+        adjacency
+      });
+
+      state = mergeRuntimeState(state, patch, args.prompt);
+      await persistState(runContext, state);
+      for (const audit of patch.auditTrail ?? []) {
+        await appendEvent(runContext, {
+          type: "audit",
+          ...audit
+        });
+        await appendFile(
+          resolve(runContext.auditDir, "transitions.md"),
+          `- ${audit.roleId}: ${audit.status}${audit.selectedEvent ? ` (${audit.selectedEvent})` : ""}\n`,
+          "utf8"
+        );
+      }
+      if (state.status === "running" && !state.nextRoleId) {
+        state = mergeRuntimeState(
+          state,
+          {
+            status: "failed",
+            error: `Runtime lost next role after executing "${roleId}"`,
+            finalRoleId: roleId,
+            auditTrail: [
+              makeAuditRecord({
+                roleId,
+                lawRef: system.lawBinding.globalLawRef,
+                started: Date.now(),
+                exitCode: 1,
+                status: "failed",
+                error: `Runtime lost next role after executing "${roleId}"`
+              })
+            ]
+          },
+          args.prompt
+        );
+        await persistState(runContext, state);
+      }
+    }
+
+    const systemState = {
+      status: state.status,
+      currentRoleId: state.currentRoleId,
+      nextRoleId: state.nextRoleId ?? undefined,
+      finalRoleId: state.finalRoleId ?? undefined,
+      transitionCount: state.transitionCount,
+      lastOutput: state.lastOutput || undefined,
+      error: state.error ?? undefined
+    };
+    const stages = projectStages({ auditTrail: state.auditTrail });
+    await writeFile(
+      resolve(runContext.auditDir, "summary.md"),
+      [
+        "# Audit Summary",
+        "",
+        `- runId: ${runContext.runId}`,
+        `- status: ${state.status}`,
+        `- finalRoleId: ${state.finalRoleId ?? ""}`,
+        `- transitionCount: ${state.transitionCount}`,
+        `- opencodeServerUrl: ${runContext.opencodeServerUrl ?? ""}`,
+        `- opencodeServerPid: ${runContext.opencodeServerPid ?? ""}`,
+        `- opencodeServerStartedAt: ${runContext.opencodeServerStartedAt ?? ""}`
+      ].join("\n"),
+      "utf8"
+    );
+
+    return {
+      systemId: system.systemId,
+      systemVersion: system.systemVersion,
+      lawRef: system.lawBinding.globalLawRef,
+      status: state.status === "failed" ? "failed" : "done",
+      finalRoleId: state.finalRoleId ?? undefined,
+      finalOutput: state.lastOutput || undefined,
+      systemState,
+      stages,
+      auditTrail: state.auditTrail,
+      error: state.error ?? undefined
+    };
+  } finally {
+    if (opencodeRun) {
+      opencodeRun.close();
+      await writeFile(
+        runContext.opencodeServerPath,
+        stringifyJson({
+          lifecycle: "single-serve-multi-session",
+          startedAt: runContext.opencodeServerStartedAt,
+          closedAt: new Date().toISOString(),
+          url: runContext.opencodeServerUrl,
+          pid: runContext.opencodeServerPid
+        }),
         "utf8"
       );
-    }
-    if (state.status === "running" && !state.nextRoleId) {
-      state = mergeRuntimeState(
-        state,
-        {
-          status: "failed",
-          error: `Runtime lost next role after executing "${roleId}"`,
-          finalRoleId: roleId,
-          auditTrail: [
-            makeAuditRecord({
-              roleId,
-              lawRef: system.lawBinding.globalLawRef,
-              started: Date.now(),
-              exitCode: 1,
-              status: "failed",
-              error: `Runtime lost next role after executing "${roleId}"`
-            })
-          ]
-        },
-        args.prompt
-      );
-      await persistState(runContext, state);
+      await appendEvent(runContext, {
+        type: "opencode_server_closed",
+        at: new Date().toISOString(),
+        url: runContext.opencodeServerUrl,
+        pid: runContext.opencodeServerPid,
+        lifecycle: "single-serve-multi-session"
+      });
     }
   }
-
-  const systemState = {
-    status: state.status,
-    currentRoleId: state.currentRoleId,
-    nextRoleId: state.nextRoleId ?? undefined,
-    finalRoleId: state.finalRoleId ?? undefined,
-    transitionCount: state.transitionCount,
-    lastOutput: state.lastOutput || undefined,
-    error: state.error ?? undefined
-  };
-  const stages = projectStages({ auditTrail: state.auditTrail });
-  await writeFile(
-    resolve(runContext.auditDir, "summary.md"),
-    [
-      "# Audit Summary",
-      "",
-      `- runId: ${runContext.runId}`,
-      `- status: ${state.status}`,
-      `- finalRoleId: ${state.finalRoleId ?? ""}`,
-      `- transitionCount: ${state.transitionCount}`
-    ].join("\n"),
-    "utf8"
-  );
-
-  return {
-    systemId: system.systemId,
-    systemVersion: system.systemVersion,
-    lawRef: system.lawBinding.globalLawRef,
-    status: state.status === "failed" ? "failed" : "done",
-    finalRoleId: state.finalRoleId ?? undefined,
-    finalOutput: state.lastOutput || undefined,
-    systemState,
-    stages,
-    auditTrail: state.auditTrail,
-    error: state.error ?? undefined
-  };
 }

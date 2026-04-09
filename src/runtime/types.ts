@@ -158,6 +158,9 @@ export type AuditRecord = {
   toolRef?: string;
   command?: string;
   args?: string[];
+  sessionId?: string;
+  messageId?: string;
+  serverPid?: number;
   exitCode: number;
   durationMs: number;
   selectedEvent?: string;
@@ -179,6 +182,7 @@ export type RunContext = {
   auditDir: string;
   eventsPath: string;
   statePath: string;
+  opencodeServerPath: string;
   roleDirsById: Map<string, RoleRunDirs>;
   sharedDir: string;
 };

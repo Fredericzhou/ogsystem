@@ -5,6 +5,8 @@ import path from "node:path";
 import { runSystemWithAdapter } from "../dist/runtime/adapter.js";
 
 const systemPath = path.resolve("tests/fixtures/mermaid/law-system.mmd");
+const langgraphSystemPath = path.resolve("tests/fixtures/mermaid/law-langgraph-system.mmd");
+const noopLanggraphSystemPath = path.resolve("tests/fixtures/mermaid/noop-langgraph-system.mmd");
 const profilesPath = path.resolve("tests/fixtures/profiles/branch-profiles.json");
 const toolsPath = path.resolve("tests/fixtures/tools/branch-tools.json");
 const lawMissingPath = path.resolve("tests/fixtures/laws/law-branch.json");
@@ -37,4 +39,22 @@ test("adapter fails when execution bindings use forbidden tool", async () => {
   const result = await runSystemWithAdapter(buildArgs(lawForbidPath));
   assert.strictEqual(result.status, "failed");
   assert.match(result.error ?? "", /Tool is forbidden by effective law/);
+});
+
+test("adapter langgraph fails when execution bindings use forbidden tool", async () => {
+  const result = await runSystemWithAdapter({
+    ...buildArgs(lawForbidPath),
+    systemPath: langgraphSystemPath
+  });
+  assert.strictEqual(result.status, "failed");
+  assert.match(result.error ?? "", /Tool is forbidden by effective law/);
+});
+
+test("adapter langgraph allows noop when law enables it", async () => {
+  const result = await runSystemWithAdapter({
+    ...buildArgs(lawMissingPath),
+    systemPath: noopLanggraphSystemPath
+  });
+  assert.strictEqual(result.status, "done");
+  assert.strictEqual(result.finalRoleId, "test-operator");
 });
