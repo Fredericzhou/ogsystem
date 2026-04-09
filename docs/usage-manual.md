@@ -248,10 +248,11 @@ Minimal shared-workspace rule:
 
 OpenCode lifecycle rule for `model.bind`:
 
-- one node execution starts one isolated `opencode serve`
-- the server is bound to that node's role directory
-- after the node returns structured JSON or fails, that server is closed immediately
-- parallel LangGraph branches therefore create multiple concurrent but short-lived OpenCode processes
+- one OGSystem run starts one shared `opencode serve`
+- each node execution creates an isolated OpenCode `session`
+- each node prompt still binds to that node's role directory
+- after node completion, session metadata can be retained for audit/resume while the shared server stays alive
+- parallel LangGraph branches therefore run as concurrent sessions on the same server process
 
 For `engine=langgraph` runs, `state.json` also persists:
 

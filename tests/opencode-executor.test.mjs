@@ -147,3 +147,117 @@ test("executeOpencodeModelRole rejects unsupported model args before transport s
     /Unsupported OpenCode model args/
   );
 });
+
+test("executeOpencodeModelRole keeps sessions isolated when transport reuses one server", async () => {
+  const server = {
+    url: "http://127.0.0.1:4096",
+    pid: 321,
+    close() {},
+    getOutput() {
+      return "opencode server listening";
+    }
+  };
+
+  const createdSessionIds = [];
+  const clientBindings = [];
+  let sequence = 0;
+
+  const transport = {
+    async startServer() {
+      return server;
+    },
+    createClient(args) {
+      clientBindings.push(args);
+      return {
+        session: {
+          async create() {
+            sequence += 1;
+            const sessionID = `ses_${sequence}`;
+            createdSessionIds.push(sessionID);
+            return { data: { id: sessionID } };
+          },
+          async prompt(promptArgs) {
+            return {
+              data: {
+                id: `msg_${promptArgs.sessionID}`,
+                info: {
+                  structured: {
+                    event: "NEXT",
+                    content: `${promptArgs.sessionID}:${promptArgs.parts[0].text}`
+                  }
+                },
+                parts: [{ type: "step-start" }, { type: "step-finish" }]
+              }
+            };
+          }
+        }
+      };
+    }
+  };
+
+  const first = await executeOpencodeModelRole(
+    {
+      roleId: "role-a",
+      prompt: "first",
+      schema: {
+        type: "object",
+        required: ["event", "content"],
+        properties: {
+          event: { type: "string" },
+          content: { type: "string" }
+        },
+        additionalProperties: false
+      },
+      modelPackage: makeModelPackage(),
+      workdir: "/tmp/run/roles/role-a",
+      timeoutMs: 5000,
+      maxOutputBytes: 4096
+    },
+    transport
+  );
+
+  const second = await executeOpencodeModelRole(
+    {
+      roleId: "role-b",
+      prompt: "second",
+      schema: {
+        type: "object",
+        required: ["event", "content"],
+        properties: {
+          event: { type: "string" },
+          content: { type: "string" }
+        },
+        additionalProperties: false
+      },
+      modelPackage: makeModelPackage(),
+      workdir: "/tmp/run/roles/role-b",
+      timeoutMs: 5000,
+      maxOutputBytes: 4096
+    },
+    transport
+  );
+
+  assert.strictEqual(clientBindings.length, 2);
+  assert.deepStrictEqual(clientBindings.map((entry) => entry.baseUrl), [
+    "http://127.0.0.1:4096",
+    "http://127.0.0.1:4096"
+  ]);
+  assert.deepStrictEqual(clientBindings.map((entry) => entry.directory), [
+    "/tmp/run/roles/role-a",
+    "/tmp/run/roles/role-b"
+  ]);
+
+  assert.deepStrictEqual(createdSessionIds, ["ses_1", "ses_2"]);
+  assert.strictEqual(first.sessionId, "ses_1");
+  assert.strictEqual(second.sessionId, "ses_2");
+  assert.strictEqual(first.messageId, "msg_ses_1");
+  assert.strictEqual(second.messageId, "msg_ses_2");
+  assert.deepStrictEqual(JSON.parse(first.stdout), {
+    event: "NEXT",
+    content: "ses_1:first"
+  });
+  assert.deepStrictEqual(JSON.parse(second.stdout), {
+    event: "NEXT",
+    content: "ses_2:second"
+  });
+});

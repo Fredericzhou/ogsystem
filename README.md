@@ -100,6 +100,7 @@ npm run run:doctor -- --required opencode
 - Executable roles always resolve to one JSON object: `{"event":"EVENT_NAME","content":"..."}`. For `model.bind`, the runtime sends `prompt + output.schema.json` to OpenCode SDK v2 and reads `info.structured`; for legacy `exec.bind`, the runtime still parses tool stdout as one JSON object. `event` is required for roles with outgoing flows and must match one Mermaid edge label exactly.
 - Executable roles are resolved by `roleId` directly. For each Mermaid `Role:<roleId>`, the runtime loads `og-roles/roles/<roleId>/role.json`, renders `prompt.md`, validates optional `input.schema.json`, and validates `output.schema.json`.
 - The runtime now supports `model.bind.<roleId>=<modelId>` with auto-discovered `.ogsystem/runtime.json`, `.ogsystem/user-profile.json`, `.ogsystem/laws.json`, and `og-models/`.
+- OpenCode lifecycle for `model.bind`: one run owns one shared `opencode serve`, and each node execution uses an isolated session against that shared server.
 - The runtime now supports `%% engine=langgraph` with `role.mode.*=parallel_split`, `join.mode.*=all_of`, `join.sources.*`, and `loop.max.*`.
 - Each run persists under `.ogsystems/<run-id>/`, including run-level state and per-role prompt/result/audit artifacts.
 - Each run gets its own isolated `.ogsystems/<run-id>/shared/` directory, and role directories do not receive a `shared` symlink by default.
