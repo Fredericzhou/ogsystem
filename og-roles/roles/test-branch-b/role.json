@@ -1,0 +1,10 @@
+{
+  "roleId": "test-branch-b",
+  "roleVersion": "1.0.0",
+  "name": "Test Branch B",
+  "description": "Terminal branch B role used by tests.",
+  "promptTemplate": "prompt.md",
+  "inputSchema": "../_shared/input.schema.json",
+  "outputSchema": "output.schema.json",
+  "tags": ["test"]
+}

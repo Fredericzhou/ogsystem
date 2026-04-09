@@ -1,0 +1,13 @@
+{
+  "type": "object",
+  "required": ["event", "content"],
+  "properties": {
+    "event": {
+      "type": "string",
+      "enum": ["END_A"]
+    },
+    "content": { "type": "string" },
+    "data": { "type": "object" }
+  },
+  "additionalProperties": false
+}

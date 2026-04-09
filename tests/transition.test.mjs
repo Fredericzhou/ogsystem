@@ -16,6 +16,6 @@ const baseArgs = {
 test("branch node follows explicit event output", async () => {
   const result = await runSystemWithAdapter({ ...baseArgs, dryRun: false });
   assert.strictEqual(result.status, "done");
-  assert.strictEqual(result.finalRoleId, "branchA");
+  assert.strictEqual(result.finalRoleId, "test-branch-a");
   assert.strictEqual(result.auditTrail[0]?.selectedEvent, "PATH_A");
 });

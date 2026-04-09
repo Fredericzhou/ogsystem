@@ -1,9 +1,7 @@
 import { readFile } from "node:fs/promises";
-import { dirname, resolve } from "node:path";
+import { resolve } from "node:path";
 
 import type {
-  AssemblyConfig,
-  AssemblyNodeConfig,
   LoadedRolePackage,
   RoleExecutionOutput,
   RolePackageManifest
@@ -57,19 +55,6 @@ function expectOptionalStringArray(
   return value.map((entry, index) => expectString(entry, filePath, `${fieldPath}[${index}]`));
 }
 
-function expectStringRecord(
-  value: unknown,
-  filePath: string,
-  fieldPath: string
-): Record<string, string> {
-  const record = expectRecord(value, filePath, fieldPath);
-  const result: Record<string, string> = {};
-  for (const [key, entry] of Object.entries(record)) {
-    result[key] = expectString(entry, filePath, `${fieldPath}.${key}`);
-  }
-  return result;
-}
-
 function expectNoExtraKeys(
   record: Record<string, JsonValue>,
   allowedKeys: string[],
@@ -84,32 +69,6 @@ function expectNoExtraKeys(
   }
 }
 
-export function validateAssemblyConfig(value: unknown, filePath: string): AssemblyConfig {
-  const record = expectRecord(value, filePath, "$");
-  expectNoExtraKeys(record, ["nodes"], filePath, "$");
-  const nodesRecord = expectRecord(record.nodes, filePath, "$.nodes");
-  const nodes: Record<string, AssemblyNodeConfig> = {};
-
-  for (const [roleId, rawNode] of Object.entries(nodesRecord)) {
-    const fieldPath = `$.nodes.${roleId}`;
-    const nodeRecord = expectRecord(rawNode, filePath, fieldPath);
-    expectNoExtraKeys(nodeRecord, ["roleRef", "profileRef", "promptArgs"], filePath, fieldPath);
-    nodes[roleId] = {
-      roleRef: expectString(nodeRecord.roleRef, filePath, `${fieldPath}.roleRef`),
-      profileRef:
-        nodeRecord.profileRef === undefined
-          ? undefined
-          : expectString(nodeRecord.profileRef, filePath, `${fieldPath}.profileRef`),
-      promptArgs:
-        nodeRecord.promptArgs === undefined
-          ? undefined
-          : expectStringRecord(nodeRecord.promptArgs, filePath, `${fieldPath}.promptArgs`)
-    };
-  }
-
-  return { nodes };
-}
-
 export function validateRolePackageManifest(
   value: unknown,
   filePath: string
@@ -117,7 +76,16 @@ export function validateRolePackageManifest(
   const record = expectRecord(value, filePath, "$");
   expectNoExtraKeys(
     record,
-    ["roleId", "roleVersion", "name", "description", "promptTemplate", "outputSchema", "tags"],
+    [
+      "roleId",
+      "roleVersion",
+      "name",
+      "description",
+      "promptTemplate",
+      "inputSchema",
+      "outputSchema",
+      "tags"
+    ],
     filePath,
     "$"
   );
@@ -128,6 +96,10 @@ export function validateRolePackageManifest(
     name: expectString(record.name, filePath, "$.name"),
     description: expectString(record.description, filePath, "$.description"),
     promptTemplate: expectString(record.promptTemplate, filePath, "$.promptTemplate"),
+    inputSchema:
+      record.inputSchema === undefined
+        ? undefined
+        : expectString(record.inputSchema, filePath, "$.inputSchema"),
     outputSchema: expectString(record.outputSchema, filePath, "$.outputSchema"),
     tags: expectOptionalStringArray(record.tags, filePath, "$.tags")
   };
@@ -143,78 +115,46 @@ async function readJsonFile(path: string): Promise<unknown> {
   }
 }
 
-function resolveFileRoleRef(roleRef: string, baseDir: string): { path: string; version?: string } {
-  if (!roleRef.startsWith("file:")) {
-    throw new Error(`Unsupported roleRef "${roleRef}". Only file: refs are supported`);
-  }
-  const raw = roleRef.slice("file:".length);
-  const match = raw.match(/^(.*?)(?:@([^/@]+))?$/);
-  if (!match || !match[1]) {
-    throw new Error(`Invalid file roleRef "${roleRef}"`);
-  }
-  return {
-    path: resolve(baseDir, match[1]),
-    version: match[2]
-  };
-}
-
-export async function loadAssemblyConfig(path?: string): Promise<{
-  assembly: AssemblyConfig;
-  baseDir: string;
-  path?: string;
-}> {
-  if (!path) {
-    return {
-      assembly: { nodes: {} },
-      baseDir: process.cwd(),
-      path: undefined
-    };
-  }
-  return {
-    assembly: validateAssemblyConfig(await readJsonFile(path), path),
-    baseDir: dirname(path),
-    path
-  };
-}
-
 export async function loadRolePackage(args: {
-  roleRef: string;
-  baseDir: string;
+  roleId: string;
+  roleRootDir: string;
 }): Promise<LoadedRolePackage> {
-  const resolved = resolveFileRoleRef(args.roleRef, args.baseDir);
-  const manifestPath = resolve(resolved.path, "role.json");
+  const resolvedPath = resolve(args.roleRootDir, args.roleId);
+  const manifestPath = resolve(resolvedPath, "role.json");
   const manifest = validateRolePackageManifest(await readJsonFile(manifestPath), manifestPath);
 
-  if (resolved.version && manifest.roleVersion !== resolved.version) {
+  if (manifest.roleId !== args.roleId) {
     throw new Error(
-      `Role package version mismatch for ${args.roleRef}: expected ${resolved.version}, got ${manifest.roleVersion}`
+      `Role package mismatch in ${manifestPath}: expected roleId "${args.roleId}", got "${manifest.roleId}"`
     );
   }
 
-  const promptTemplatePath = resolve(resolved.path, manifest.promptTemplate);
-  const outputSchemaPath = resolve(resolved.path, manifest.outputSchema);
+  const promptTemplatePath = resolve(resolvedPath, manifest.promptTemplate);
+  const inputSchemaPath = manifest.inputSchema ? resolve(resolvedPath, manifest.inputSchema) : undefined;
+  const outputSchemaPath = resolve(resolvedPath, manifest.outputSchema);
   const promptTemplate = await readFile(promptTemplatePath, "utf8");
+  const inputSchema = inputSchemaPath ? await readJsonFile(inputSchemaPath) : undefined;
   const outputSchema = await readJsonFile(outputSchemaPath);
 
   let persona: string | undefined;
   try {
-    persona = await readFile(resolve(resolved.path, "persona.md"), "utf8");
+    persona = await readFile(resolve(resolvedPath, "persona.md"), "utf8");
   } catch {
     persona = undefined;
   }
 
   let work: string | undefined;
   try {
-    work = await readFile(resolve(resolved.path, "work.md"), "utf8");
+    work = await readFile(resolve(resolvedPath, "work.md"), "utf8");
   } catch {
     work = undefined;
   }
 
   return {
-    ref: args.roleRef,
-    resolvedPath: resolved.path,
+    resolvedPath,
     manifest,
     promptTemplate,
+    inputSchema,
     outputSchema,
     persona,
     work
@@ -294,6 +234,23 @@ function validateObjectSchema(
   }
 
   return errors;
+}
+
+export function validateRoleInputSchema(args: {
+  input: Record<string, string>;
+  schema: unknown;
+  roleId: string;
+}): void {
+  if (typeof args.schema !== "object" || args.schema === null || Array.isArray(args.schema)) {
+    throw new Error(`Invalid input schema for role "${args.roleId}": expected JSON object`);
+  }
+
+  const errors = validateObjectSchema(args.input, args.schema as Record<string, unknown>, "$");
+  if (errors.length > 0) {
+    throw new Error(
+      `Role "${args.roleId}" input does not match schema: ${errors.join("; ")}`
+    );
+  }
 }
 
 export function validateRoleOutputSchema(args: {

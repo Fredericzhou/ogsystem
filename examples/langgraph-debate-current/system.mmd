@@ -3,27 +3,27 @@ flowchart TD
 %% system.id=architecture.debate.current
 %% system.version=1.0.0
 %% law.global=law.debate.base
-%% entry.role=moderator
-%% role.mode.parallel_round=parallel_split
-%% join.mode.judge=all_of
-%% join.sources.judge=minimalist,alignmentist
-%% loop.max.parallel_round=2
-%% exec.bind.moderator=profile.moderator.codex
-%% exec.bind.parallel_round=profile.round.codex
-%% exec.bind.minimalist=profile.minimalist.claude
-%% exec.bind.alignmentist=profile.alignmentist.gemini
-%% exec.bind.judge=profile.judge.codex
-%% exec.bind.summary=profile.summary.codex
+%% entry.role=debate-moderator
+%% role.mode.debate-round-manager=parallel_split
+%% join.mode.debate-judge=all_of
+%% join.sources.debate-judge=debate-minimalist,debate-alignmentist
+%% loop.max.debate-round-manager=2
+%% exec.bind.debate-moderator=profile.moderator.codex
+%% exec.bind.debate-round-manager=profile.round.codex
+%% exec.bind.debate-minimalist=profile.minimalist.claude
+%% exec.bind.debate-alignmentist=profile.alignmentist.gemini
+%% exec.bind.debate-judge=profile.judge.codex
+%% exec.bind.debate-summary=profile.summary.codex
 
-input -->|DEBATE_REQUEST| moderator[Role:moderator]
-moderator[Role:moderator] -->|ROUND_READY| parallel_round[Role:parallel_round]
+input -->|DEBATE_REQUEST| moderator[Role:debate-moderator]
+moderator[Role:debate-moderator] -->|ROUND_READY| parallel_round[Role:debate-round-manager]
 
-parallel_round[Role:parallel_round] -->|SEND_MINIMALIST| minimalist[Role:minimalist]
-parallel_round[Role:parallel_round] -->|SEND_ALIGNMENTIST| alignmentist[Role:alignmentist]
+parallel_round[Role:debate-round-manager] -->|SEND_MINIMALIST| minimalist[Role:debate-minimalist]
+parallel_round[Role:debate-round-manager] -->|SEND_ALIGNMENTIST| alignmentist[Role:debate-alignmentist]
 
-minimalist[Role:minimalist] -->|MINIMALIST_DONE| judge[Role:judge]
-alignmentist[Role:alignmentist] -->|ALIGNMENTIST_DONE| judge[Role:judge]
+minimalist[Role:debate-minimalist] -->|MINIMALIST_DONE| judge[Role:debate-judge]
+alignmentist[Role:debate-alignmentist] -->|ALIGNMENTIST_DONE| judge[Role:debate-judge]
 
-judge[Role:judge] -->|REBUTTAL_NEEDED| parallel_round[Role:parallel_round]
-judge[Role:judge] -->|DECISION_READY| summary[Role:summary]
-summary[Role:summary] -->|SUMMARY_READY| output
+judge[Role:debate-judge] -->|REBUTTAL_NEEDED| parallel_round[Role:debate-round-manager]
+judge[Role:debate-judge] -->|DECISION_READY| summary[Role:debate-summary]
+summary[Role:debate-summary] -->|SUMMARY_READY| output

@@ -65,31 +65,22 @@ export type RoleExecutionOutput = {
   data?: Record<string, unknown>;
 };
 
-export type AssemblyNodeConfig = {
-  roleRef: string;
-  profileRef?: string;
-  promptArgs?: Record<string, string>;
-};
-
-export type AssemblyConfig = {
-  nodes: Record<string, AssemblyNodeConfig>;
-};
-
 export type RolePackageManifest = {
   roleId: string;
   roleVersion: string;
   name: string;
   description: string;
   promptTemplate: string;
+  inputSchema?: string;
   outputSchema: string;
   tags?: string[];
 };
 
 export type LoadedRolePackage = {
-  ref: string;
   resolvedPath: string;
   manifest: RolePackageManifest;
   promptTemplate: string;
+  inputSchema?: unknown;
   outputSchema: unknown;
   persona?: string;
   work?: string;

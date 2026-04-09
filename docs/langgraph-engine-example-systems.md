@@ -54,33 +54,33 @@ flowchart TD
 %% system.id=medical.expert.consultation
 %% system.version=1.0.0
 %% law.global=law.medical.consultation.base
-%% entry.role=intake
-%% role.mode=parallel_dispatch
-%% join.mode=all_of
-%% join.sources=cardiology,neurology,imaging
-%% loop.max=2
-%% exec.bind.intake=profile.intake.codex
-%% exec.bind.parallel_dispatch=profile.dispatch.codex
-%% exec.bind.cardiology=profile.cardiology.claude
-%% exec.bind.neurology=profile.neurology.gemini
-%% exec.bind.imaging=profile.imaging.python
-%% exec.bind.chief_review=profile.chief.codex
-%% exec.bind.final_report=profile.report.codex
+%% entry.role=diagnosis-intake
+%% role.mode.diagnosis-dispatch=parallel_split
+%% join.mode.diagnosis-chief-review=all_of
+%% join.sources.diagnosis-chief-review=diagnosis-cardiology,diagnosis-neurology,diagnosis-imaging
+%% loop.max.diagnosis-dispatch=2
+%% exec.bind.diagnosis-intake=profile.intake.codex
+%% exec.bind.diagnosis-dispatch=profile.dispatch.codex
+%% exec.bind.diagnosis-cardiology=profile.cardiology.claude
+%% exec.bind.diagnosis-neurology=profile.neurology.gemini
+%% exec.bind.diagnosis-imaging=profile.imaging.python
+%% exec.bind.diagnosis-chief-review=profile.chief.codex
+%% exec.bind.diagnosis-report=profile.report.codex
 
-input -->|CASE_RECEIVED| intake[Role:intake]
-intake[Role:intake] -->|READY_FOR_PARALLEL| parallel_dispatch[Role:parallel_dispatch]
+input -->|CASE_RECEIVED| intake[Role:diagnosis-intake]
+intake[Role:diagnosis-intake] -->|READY_FOR_PARALLEL| parallel_dispatch[Role:diagnosis-dispatch]
 
-parallel_dispatch[Role:parallel_dispatch] -->|START_CARDIOLOGY| cardiology[Role:cardiology]
-parallel_dispatch[Role:parallel_dispatch] -->|START_NEUROLOGY| neurology[Role:neurology]
-parallel_dispatch[Role:parallel_dispatch] -->|START_IMAGING| imaging[Role:imaging]
+parallel_dispatch[Role:diagnosis-dispatch] -->|START_CARDIOLOGY| cardiology[Role:diagnosis-cardiology]
+parallel_dispatch[Role:diagnosis-dispatch] -->|START_NEUROLOGY| neurology[Role:diagnosis-neurology]
+parallel_dispatch[Role:diagnosis-dispatch] -->|START_IMAGING| imaging[Role:diagnosis-imaging]
 
-cardiology[Role:cardiology] -->|CARDIOLOGY_DONE| chief_review[Role:chief_review]
-neurology[Role:neurology] -->|NEUROLOGY_DONE| chief_review[Role:chief_review]
-imaging[Role:imaging] -->|IMAGING_DONE| chief_review[Role:chief_review]
+cardiology[Role:diagnosis-cardiology] -->|CARDIOLOGY_DONE| chief_review[Role:diagnosis-chief-review]
+neurology[Role:diagnosis-neurology] -->|NEUROLOGY_DONE| chief_review[Role:diagnosis-chief-review]
+imaging[Role:diagnosis-imaging] -->|IMAGING_DONE| chief_review[Role:diagnosis-chief-review]
 
-chief_review[Role:chief_review] -->|REQUEST_RECHECK| parallel_dispatch[Role:parallel_dispatch]
-chief_review[Role:chief_review] -->|CONSENSUS_READY| final_report[Role:final_report]
-final_report[Role:final_report] -->|REPORT_READY| output
+chief_review[Role:diagnosis-chief-review] -->|REQUEST_RECHECK| parallel_dispatch[Role:diagnosis-dispatch]
+chief_review[Role:diagnosis-chief-review] -->|CONSENSUS_READY| final_report[Role:diagnosis-report]
+final_report[Role:diagnosis-report] -->|REPORT_READY| output
 ```
 
 ### Execution Profiles
@@ -184,25 +184,23 @@ final_report[Role:final_report] -->|REPORT_READY| output
 }
 ```
 
-### Role Prompts
+### Role Packages
 
-```json
-{
-  "intake": "读取病例输入，整理主诉、症状、已知检查结果，并只输出 JSON：{\"event\":\"READY_FOR_PARALLEL\",\"content\":\"<结构化病例摘要>\",\"data\":{\"case_summary\":\"...\"}}",
-  "parallel_dispatch": "读取病例摘要，为心内科、神经科、影像专家准备并行任务上下文。只输出 JSON：{\"event\":\"START_ALL\",\"content\":\"<并行调度说明>\",\"data\":{\"dispatch_bundle\":\"...\"}}",
-  "cardiology": "你是心内科专家。基于病例摘要输出专科判断、风险点、建议检查。只输出 JSON：{\"event\":\"CARDIOLOGY_DONE\",\"content\":\"<心内科结论>\",\"data\":{\"specialty\":\"cardiology\",\"confidence\":0.0}}",
-  "neurology": "你是神经科专家。基于病例摘要输出专科判断、风险点、建议检查。只输出 JSON：{\"event\":\"NEUROLOGY_DONE\",\"content\":\"<神经科结论>\",\"data\":{\"specialty\":\"neurology\",\"confidence\":0.0}}",
-  "imaging": "你是影像分析角色。基于病例摘要和影像结果给出影像侧判断。只输出 JSON：{\"event\":\"IMAGING_DONE\",\"content\":\"<影像结论>\",\"data\":{\"specialty\":\"imaging\",\"confidence\":0.0}}",
-  "chief_review": "汇总并行专家意见。如果结论冲突或证据不足则输出 JSON：{\"event\":\"REQUEST_RECHECK\",\"content\":\"<需要补充的问题>\",\"data\":{\"missing\":\"...\"}}；如果已可形成共识则输出 JSON：{\"event\":\"CONSENSUS_READY\",\"content\":\"<会诊结论>\",\"data\":{\"diagnosis\":\"...\"}}",
-  "final_report": "把最终会诊结论整理成面向临床的报告。只输出 JSON：{\"event\":\"REPORT_READY\",\"content\":\"<最终报告>\",\"data\":{\"report\":\"...\"}}"
-}
-```
+Role behavior is expected to live in role packages resolved by roleId:
+
+- `diagnosis-intake`
+- `diagnosis-dispatch`
+- `diagnosis-cardiology`
+- `diagnosis-neurology`
+- `diagnosis-imaging`
+- `diagnosis-chief-review`
+- `diagnosis-report`
 
 ### LangGraph Execution Notes
 
-- `parallel_dispatch` is lowered as one parallel split node.
-- `chief_review` is lowered as an `all_of` join node that waits for `cardiology`, `neurology`, and `imaging`.
-- `REQUEST_RECHECK` forms a bounded loop back to `parallel_dispatch`.
+- `diagnosis-dispatch` is lowered as one parallel split node.
+- `diagnosis-chief-review` is lowered as an `all_of` join node that waits for `diagnosis-cardiology`, `diagnosis-neurology`, and `diagnosis-imaging`.
+- `REQUEST_RECHECK` forms a bounded loop back to `diagnosis-dispatch`.
 - Each specialist role uses a different tool/profile.
 
 ## 2. Current Debate Example
@@ -225,30 +223,30 @@ flowchart TD
 %% system.id=architecture.debate.current
 %% system.version=1.0.0
 %% law.global=law.debate.base
-%% entry.role=moderator
-%% role.mode=parallel_round
-%% join.mode=all_of
-%% join.sources=minimalist,alignmentist
-%% loop.max=2
-%% exec.bind.moderator=profile.moderator.codex
-%% exec.bind.parallel_round=profile.round.codex
-%% exec.bind.minimalist=profile.minimalist.claude
-%% exec.bind.alignmentist=profile.alignmentist.gemini
-%% exec.bind.judge=profile.judge.codex
-%% exec.bind.summary=profile.summary.codex
+%% entry.role=debate-moderator
+%% role.mode.debate-round-manager=parallel_split
+%% join.mode.debate-judge=all_of
+%% join.sources.debate-judge=debate-minimalist,debate-alignmentist
+%% loop.max.debate-round-manager=2
+%% exec.bind.debate-moderator=profile.moderator.codex
+%% exec.bind.debate-round-manager=profile.round.codex
+%% exec.bind.debate-minimalist=profile.minimalist.claude
+%% exec.bind.debate-alignmentist=profile.alignmentist.gemini
+%% exec.bind.debate-judge=profile.judge.codex
+%% exec.bind.debate-summary=profile.summary.codex
 
-input -->|DEBATE_REQUEST| moderator[Role:moderator]
-moderator[Role:moderator] -->|ROUND_READY| parallel_round[Role:parallel_round]
+input -->|DEBATE_REQUEST| moderator[Role:debate-moderator]
+moderator[Role:debate-moderator] -->|ROUND_READY| parallel_round[Role:debate-round-manager]
 
-parallel_round[Role:parallel_round] -->|SEND_MINIMALIST| minimalist[Role:minimalist]
-parallel_round[Role:parallel_round] -->|SEND_ALIGNMENTIST| alignmentist[Role:alignmentist]
+parallel_round[Role:debate-round-manager] -->|SEND_MINIMALIST| minimalist[Role:debate-minimalist]
+parallel_round[Role:debate-round-manager] -->|SEND_ALIGNMENTIST| alignmentist[Role:debate-alignmentist]
 
-minimalist[Role:minimalist] -->|MINIMALIST_DONE| judge[Role:judge]
-alignmentist[Role:alignmentist] -->|ALIGNMENTIST_DONE| judge[Role:judge]
+minimalist[Role:debate-minimalist] -->|MINIMALIST_DONE| judge[Role:debate-judge]
+alignmentist[Role:debate-alignmentist] -->|ALIGNMENTIST_DONE| judge[Role:debate-judge]
 
-judge[Role:judge] -->|REBUTTAL_NEEDED| parallel_round[Role:parallel_round]
-judge[Role:judge] -->|DECISION_READY| summary[Role:summary]
-summary[Role:summary] -->|SUMMARY_READY| output
+judge[Role:debate-judge] -->|REBUTTAL_NEEDED| parallel_round[Role:debate-round-manager]
+judge[Role:debate-judge] -->|DECISION_READY| summary[Role:debate-summary]
+summary[Role:debate-summary] -->|SUMMARY_READY| output
 ```
 
 ### Execution Profiles
@@ -294,23 +292,21 @@ summary[Role:summary] -->|SUMMARY_READY| output
 ]
 ```
 
-### Role Prompts
+### Role Packages
 
-```json
-{
-  "moderator": "读取用户给出的辩题，生成一轮辩论规则和评价标准。只输出 JSON：{\"event\":\"ROUND_READY\",\"content\":\"<辩题与规则>\",\"data\":{\"topic\":\"...\"}}",
-  "parallel_round": "读取辩题与当前轮次上下文，为正反双方分别生成本轮任务。只输出 JSON：{\"event\":\"START_DEBATE_ROUND\",\"content\":\"<本轮任务>\",\"data\":{\"round\":1}}",
-  "minimalist": "你代表“最小化实现优先”立场。输出清晰论点、风险和边界。只输出 JSON：{\"event\":\"MINIMALIST_DONE\",\"content\":\"<最小化立场论证>\",\"data\":{\"stance\":\"minimal-first\"}}",
-  "alignmentist": "你代表“尽早对齐更大语义体系”立场。输出清晰论点、收益和风险。只输出 JSON：{\"event\":\"ALIGNMENTIST_DONE\",\"content\":\"<对齐立场论证>\",\"data\":{\"stance\":\"align-early\"}}",
-  "judge": "汇总双方论证。如果还需要一轮反驳则输出 JSON：{\"event\":\"REBUTTAL_NEEDED\",\"content\":\"<反驳重点>\",\"data\":{\"next_round\":2}}；如果可以裁决则输出 JSON：{\"event\":\"DECISION_READY\",\"content\":\"<裁决理由>\",\"data\":{\"winner\":\"...\"}}",
-  "summary": "根据裁决理由输出最终摘要。只输出 JSON：{\"event\":\"SUMMARY_READY\",\"content\":\"<辩论摘要>\",\"data\":{\"decision\":\"...\"}}"
-}
-```
+Role behavior is expected to live in role packages resolved by roleId:
+
+- `debate-moderator`
+- `debate-round-manager`
+- `debate-minimalist`
+- `debate-alignmentist`
+- `debate-judge`
+- `debate-summary`
 
 ### LangGraph Execution Notes
 
-- `parallel_round` is lowered to a parallel split.
-- `judge` is an `all_of` join that waits for both debaters.
+- `debate-round-manager` is lowered to a parallel split.
+- `debate-judge` is an `all_of` join that waits for both debaters.
 - `REBUTTAL_NEEDED` creates a bounded debate loop.
 - This example is intentionally small: two parallel debaters, one judge, one optional rebuttal loop.
 

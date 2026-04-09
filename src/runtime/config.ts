@@ -228,15 +228,3 @@ export function validateLawsConfig(value: unknown, filePath: string): LawCatalog
   );
   return { laws };
 }
-
-export function validateRolePromptsConfig(
-  value: unknown,
-  filePath: string
-): Record<string, string> {
-  const record = expectRecord(value, filePath, "$");
-  const prompts: Record<string, string> = {};
-  for (const [key, entry] of Object.entries(record)) {
-    prompts[key] = expectString(entry, filePath, `$.${key}`);
-  }
-  return prompts;
-}

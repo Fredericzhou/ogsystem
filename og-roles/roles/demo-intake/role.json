@@ -1,0 +1,10 @@
+{
+  "roleId": "demo-intake",
+  "roleVersion": "1.0.0",
+  "name": "Demo Intake",
+  "description": "Consumes a prompt and completes the minimal example flow.",
+  "promptTemplate": "prompt.md",
+  "inputSchema": "../_shared/input.schema.json",
+  "outputSchema": "output.schema.json",
+  "tags": ["demo"]
+}

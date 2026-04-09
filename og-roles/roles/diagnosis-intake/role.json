@@ -4,6 +4,7 @@
   "name": "Diagnosis Intake",
   "description": "Normalizes raw case details into a structured intake summary.",
   "promptTemplate": "prompt.md",
+  "inputSchema": "../_shared/input.schema.json",
   "outputSchema": "output.schema.json",
   "tags": ["diagnosis", "intake"]
 }

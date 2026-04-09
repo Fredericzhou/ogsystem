@@ -1,3 +1,0 @@
-{
-  "analyst": "分析用户问题，给出结论，并只输出严格 JSON：{\"event\":\"ANALYSIS_DONE\",\"content\":\"<结论>\"}"
-}

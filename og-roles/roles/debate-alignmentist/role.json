@@ -4,6 +4,7 @@
   "name": "Alignmentist Debater",
   "description": "Argues for advancing the system toward a larger semantic alignment vision.",
   "promptTemplate": "prompt.md",
+  "inputSchema": "../_shared/input.schema.json",
   "outputSchema": "output.schema.json",
   "tags": ["debate", "alignment"]
 }

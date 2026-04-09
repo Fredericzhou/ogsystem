@@ -1,0 +1,10 @@
+{
+  "roleId": "demo-analyst",
+  "roleVersion": "1.0.0",
+  "name": "Demo Analyst",
+  "description": "Produces a concise analysis summary for the console demo.",
+  "promptTemplate": "prompt.md",
+  "inputSchema": "../_shared/input.schema.json",
+  "outputSchema": "output.schema.json",
+  "tags": ["demo"]
+}

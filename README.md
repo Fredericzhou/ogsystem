@@ -1,6 +1,6 @@
 # OGSystem
 
-OGSystem is a minimal console runtime for a restricted Mermaid flowchart DSL, with semantic naming kept as an `xlgraph` subset.
+OGSystem is a minimal console runtime for a restricted Mermaid flowchart DSL.
 
 Implemented scope:
 
@@ -8,12 +8,14 @@ Implemented scope:
 - Root semantics: `Law / System / AuditTrail`
 - Runtime outputs: `SystemState / Stage`
 - Engine: explicit state-machine runtime
+- Role resolution: auto-load from `og-roles/roles/<roleId>/`
 
 Non-goals:
 
 - No full platform parity
 - No recursive child-system runtime
 - No `start/end` boundary alias mode
+- No assembly layer
 
 ## Quick Start
 
@@ -47,21 +49,7 @@ npm run run:adapter -- \
   --profiles examples/console-profiles.json \
   --tools examples/console-tools.json \
   --laws examples/console-laws.json \
-  --role-prompts examples/console-role-prompts.json \
   --prompt "分析当前仓库结构并输出摘要" \
-  --dry-run
-```
-
-Run assembly-driven example (role repo + file roleRef):
-
-```bash
-npm run run:adapter -- \
-  --system tests/fixtures/mermaid/assembly-system.mmd \
-  --assembly tests/fixtures/assemblies/assembly-system.json \
-  --profiles tests/fixtures/profiles/branch-profiles.json \
-  --tools tests/fixtures/tools/branch-tools.json \
-  --laws examples/console-laws.json \
-  --prompt "demo" \
   --dry-run
 ```
 
@@ -75,6 +63,7 @@ npm run run:doctor -- --required codex
 
 - The adapter progresses through an explicit state machine. The entry role becomes the initial state, each role execution emits one structured result, and completion happens only when a transition reaches the terminal `output` boundary or an explicit noop law allows a single-path pass-through.
 - Executable roles must emit strict JSON on stdout: `{"event":"EVENT_NAME","content":"..."}`. `event` is required for roles with outgoing flows and must match one Mermaid edge label exactly. Regex matching and line-by-line event guessing are not supported.
+- Executable roles are resolved by `roleId` directly. For each Mermaid `Role:<roleId>`, the runtime loads `og-roles/roles/<roleId>/role.json`, renders `prompt.md`, validates optional `input.schema.json`, and validates `output.schema.json`.
 - Roles without `exec.bind` fail fast by default. A law may opt into `allowNoopWithoutExecutionBinding`, but noop remains explicit and is rejected on branching nodes.
 
 ## Configuration Boundaries
@@ -83,8 +72,8 @@ npm run run:doctor -- --required codex
 - Tools are minimal shell adapters: `toolRef`, `runner`, `command`, `argsTemplate`, `stdinMode`.
 - The law catalog currently resolves only `law.global` and the constraints `forbiddenToolRefs`, `maxTransitions`, `allowNoopWithoutExecutionBinding`.
 - `talentBinding` is preserved as metadata-only sidecar in the parsed system definition. It is not part of runtime execution.
-- Roles can now be resolved from `assembly.json` via local `file:` role refs. Role packages live under `og-roles/` and provide `role.json`, `prompt.md`, and `output.schema.json`.
-- `role-prompts.json` remains supported for legacy systems, but migrated systems should use `assembly.json`.
+- Role packages live under `og-roles/roles/<roleId>/` and provide `role.json`, `prompt.md`, optional `persona.md`, optional `work.md`, optional `input.schema.json`, and required `output.schema.json`.
+- `system.mmd` owns flow and `exec.bind.*`; role packages own prompt and I/O contract.
 
 ## DSL Hard Rules
 

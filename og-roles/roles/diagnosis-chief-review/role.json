@@ -4,6 +4,7 @@
   "name": "Diagnosis Chief Review",
   "description": "Aggregates specialist findings and decides between recheck and consensus.",
   "promptTemplate": "prompt.md",
+  "inputSchema": "../_shared/input.schema.json",
   "outputSchema": "output.schema.json",
   "tags": ["diagnosis", "review"]
 }

@@ -1,0 +1,10 @@
+{
+  "roleId": "test-operator",
+  "roleVersion": "1.0.0",
+  "name": "Test Operator",
+  "description": "Single-step operator used by law and adapter tests.",
+  "promptTemplate": "prompt.md",
+  "inputSchema": "../_shared/input.schema.json",
+  "outputSchema": "output.schema.json",
+  "tags": ["test"]
+}

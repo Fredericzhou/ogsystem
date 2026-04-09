@@ -2,11 +2,11 @@ flowchart TD
 %% system.id=branch.explorer
 %% system.version=0.1.0
 %% law.global=law.branch
-%% entry.role=decision
-%% exec.bind.decision=profile.branch
+%% entry.role=test-decision
+%% exec.bind.test-decision=profile.branch
 
-input -->|ENTER| decision[Role:decision]
-decision[Role:decision] -->|PATH_A| branchA[Role:branchA]
-decision[Role:decision] -->|PATH_B| branchB[Role:branchB]
-branchA[Role:branchA] -->|END_A| output
-branchB[Role:branchB] -->|END_B| output
+input -->|ENTER| decision[Role:test-decision]
+decision[Role:test-decision] -->|PATH_A| branchA[Role:test-branch-a]
+decision[Role:test-decision] -->|PATH_B| branchB[Role:test-branch-b]
+branchA[Role:test-branch-a] -->|END_A| output
+branchB[Role:test-branch-b] -->|END_B| output

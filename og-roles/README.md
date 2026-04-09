@@ -1,18 +1,22 @@
 # OGSystem Role Repository
 
-This repository stores reusable role packages consumed by `OGSystem`. Each package provides:
+Each executable Mermaid role resolves directly to `og-roles/roles/<roleId>/`.
 
-- a `role.json` manifest validated by `schemas/role.schema.json`
-- a `prompt.md` template rendered with runtime context
-- an `output.schema.json` ensuring structured JSON outputs
-- optional `persona.md` and `work.md` for human-readable guidance
+Required files:
 
-To add a role:
+- `role.json`
+- `prompt.md`
+- `output.schema.json`
 
-1. Create `roles/<roleId>/role.json` with the required keys.
-2. Supply `prompt.md` that references `{{task}}`, `{{allowed_events}}`, and other runtime tokens.
-3. Define `output.schema.json` to match the JSON contract your role emits.
-4. Update `registry.json` with the new role entry.
+Optional files:
 
-Role packages must never reference `toolRef`, `command`, or execution-time policies.
-The system assigns those via `assembly.json` when building concrete graphs.
+- `persona.md`
+- `work.md`
+- `input.schema.json`
+
+Rules:
+
+- `role.json.roleId` must equal the directory name.
+- Role packages do not define flow, joins, loops, or execution bindings.
+- Role packages do not bind tools or models.
+- `system.mmd` owns orchestration and `exec.bind.*`.

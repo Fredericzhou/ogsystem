@@ -3,30 +3,30 @@ flowchart TD
 %% system.id=medical.expert.consultation
 %% system.version=1.0.0
 %% law.global=law.medical.consultation.base
-%% entry.role=intake
-%% role.mode.parallel_dispatch=parallel_split
-%% join.mode.chief_review=all_of
-%% join.sources.chief_review=cardiology,neurology,imaging
-%% loop.max.parallel_dispatch=2
-%% exec.bind.intake=profile.intake.codex
-%% exec.bind.parallel_dispatch=profile.dispatch.codex
-%% exec.bind.cardiology=profile.cardiology.claude
-%% exec.bind.neurology=profile.neurology.gemini
-%% exec.bind.imaging=profile.imaging.python
-%% exec.bind.chief_review=profile.chief.codex
-%% exec.bind.final_report=profile.report.codex
+%% entry.role=diagnosis-intake
+%% role.mode.diagnosis-dispatch=parallel_split
+%% join.mode.diagnosis-chief-review=all_of
+%% join.sources.diagnosis-chief-review=diagnosis-cardiology,diagnosis-neurology,diagnosis-imaging
+%% loop.max.diagnosis-dispatch=2
+%% exec.bind.diagnosis-intake=profile.intake.codex
+%% exec.bind.diagnosis-dispatch=profile.dispatch.codex
+%% exec.bind.diagnosis-cardiology=profile.cardiology.claude
+%% exec.bind.diagnosis-neurology=profile.neurology.gemini
+%% exec.bind.diagnosis-imaging=profile.imaging.python
+%% exec.bind.diagnosis-chief-review=profile.chief.codex
+%% exec.bind.diagnosis-report=profile.report.codex
 
-input -->|CASE_RECEIVED| intake[Role:intake]
-intake[Role:intake] -->|READY_FOR_PARALLEL| parallel_dispatch[Role:parallel_dispatch]
+input -->|CASE_RECEIVED| intake[Role:diagnosis-intake]
+intake[Role:diagnosis-intake] -->|READY_FOR_PARALLEL| parallel_dispatch[Role:diagnosis-dispatch]
 
-parallel_dispatch[Role:parallel_dispatch] -->|START_CARDIOLOGY| cardiology[Role:cardiology]
-parallel_dispatch[Role:parallel_dispatch] -->|START_NEUROLOGY| neurology[Role:neurology]
-parallel_dispatch[Role:parallel_dispatch] -->|START_IMAGING| imaging[Role:imaging]
+parallel_dispatch[Role:diagnosis-dispatch] -->|START_CARDIOLOGY| cardiology[Role:diagnosis-cardiology]
+parallel_dispatch[Role:diagnosis-dispatch] -->|START_NEUROLOGY| neurology[Role:diagnosis-neurology]
+parallel_dispatch[Role:diagnosis-dispatch] -->|START_IMAGING| imaging[Role:diagnosis-imaging]
 
-cardiology[Role:cardiology] -->|CARDIOLOGY_DONE| chief_review[Role:chief_review]
-neurology[Role:neurology] -->|NEUROLOGY_DONE| chief_review[Role:chief_review]
-imaging[Role:imaging] -->|IMAGING_DONE| chief_review[Role:chief_review]
+cardiology[Role:diagnosis-cardiology] -->|CARDIOLOGY_DONE| chief_review[Role:diagnosis-chief-review]
+neurology[Role:diagnosis-neurology] -->|NEUROLOGY_DONE| chief_review[Role:diagnosis-chief-review]
+imaging[Role:diagnosis-imaging] -->|IMAGING_DONE| chief_review[Role:diagnosis-chief-review]
 
-chief_review[Role:chief_review] -->|REQUEST_RECHECK| parallel_dispatch[Role:parallel_dispatch]
-chief_review[Role:chief_review] -->|CONSENSUS_READY| final_report[Role:final_report]
-final_report[Role:final_report] -->|REPORT_READY| output
+chief_review[Role:diagnosis-chief-review] -->|REQUEST_RECHECK| parallel_dispatch[Role:diagnosis-dispatch]
+chief_review[Role:diagnosis-chief-review] -->|CONSENSUS_READY| final_report[Role:diagnosis-report]
+final_report[Role:diagnosis-report] -->|REPORT_READY| output

@@ -4,6 +4,7 @@
   "name": "Debate Moderator",
   "description": "Kicks off rounds, injects context, and hands control to debaters.",
   "promptTemplate": "prompt.md",
+  "inputSchema": "../_shared/input.schema.json",
   "outputSchema": "output.schema.json",
   "tags": ["debate", "coordination"]
 }

@@ -4,6 +4,7 @@
   "name": "Imaging Specialist",
   "description": "Produces an imaging-focused interpretation for the consultation.",
   "promptTemplate": "prompt.md",
+  "inputSchema": "../_shared/input.schema.json",
   "outputSchema": "output.schema.json",
   "tags": ["diagnosis", "imaging"]
 }

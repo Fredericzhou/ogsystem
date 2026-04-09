@@ -3,43 +3,43 @@ import assert from "node:assert/strict";
 import path from "node:path";
 
 import {
-  loadAssemblyConfig,
   loadRolePackage,
   renderRolePrompt,
+  validateRoleInputSchema,
   validateRoleOutputSchema
 } from "../dist/runtime/role-repo.js";
 
-const debateAssemblyPath = path.resolve("examples/langgraph-debate-current/assembly.json");
-const minimalistRoleRef = "file:../role-packages/debate-minimalist@1.0.0";
-const fixtureAssemblyBaseDir = path.resolve("tests/fixtures/assemblies");
+const roleRootDir = path.resolve("og-roles/roles");
 
-test("assembly references roleRef + profileRef", async () => {
-  const { assembly } = await loadAssemblyConfig(debateAssemblyPath);
-  assert.ok(assembly.nodes);
-  for (const [nodeId, metadata] of Object.entries(assembly.nodes)) {
-    assert.ok(typeof metadata.roleRef === "string" && metadata.roleRef.length > 0, `${nodeId} missing roleRef`);
-    assert.ok(typeof metadata.profileRef === "string" && metadata.profileRef.length > 0, `${nodeId} missing profileRef`);
-    assert.ok(metadata.promptArgs, `${nodeId} must provide promptArgs`);
-  }
-});
-
-test("loadRolePackage resolves versioned local refs and renders contextual fields", async () => {
+test("loadRolePackage resolves role directory and renders contextual fields", async () => {
   const rolePackage = await loadRolePackage({
-    roleRef: minimalistRoleRef,
-    baseDir: fixtureAssemblyBaseDir
+    roleId: "debate-minimalist",
+    roleRootDir
   });
+  assert.ok(rolePackage.inputSchema);
+
+  const values = {
+    task: "Explain why minimalism matters",
+    context: "current debate round 1",
+    allowed_events: JSON.stringify(["MINIMALIST_DONE", "REBUTTAL_NEEDED"]),
+    last_output: "previous message",
+    system_notes: "",
+    round: "1"
+  };
+
+  assert.doesNotThrow(() =>
+    validateRoleInputSchema({
+      input: values,
+      schema: rolePackage.inputSchema,
+      roleId: "debate-minimalist"
+    })
+  );
+
   const rendered = renderRolePrompt({
     promptTemplate: rolePackage.promptTemplate,
     persona: rolePackage.persona,
     work: rolePackage.work,
-    values: {
-      task: "Explain why minimalism matters",
-      context: "current debate round 1",
-      allowed_events: JSON.stringify(["MINIMALIST_DONE", "REBUTTAL_NEEDED"]),
-      last_output: "previous message",
-      system_notes: "",
-      round: "1"
-    }
+    values
   });
   assert.ok(rendered.includes("Explain why minimalism matters"));
   assert.ok(rendered.includes("MINIMALIST_DONE"));
@@ -47,14 +47,14 @@ test("loadRolePackage resolves versioned local refs and renders contextual field
 
 test("output schema rejects invalid payload", async () => {
   const rolePackage = await loadRolePackage({
-    roleRef: minimalistRoleRef,
-    baseDir: fixtureAssemblyBaseDir
+    roleId: "debate-minimalist",
+    roleRootDir
   });
   assert.throws(() =>
     validateRoleOutputSchema({
       output: { content: "missing event" },
       schema: rolePackage.outputSchema,
-      roleId: "minimalist"
+      roleId: "debate-minimalist"
     })
   );
 
@@ -66,7 +66,7 @@ test("output schema rejects invalid payload", async () => {
         data: { stance: "minimal", confidence: 0.92 }
       },
       schema: rolePackage.outputSchema,
-      roleId: "minimalist"
+      roleId: "debate-minimalist"
     })
   );
 });
