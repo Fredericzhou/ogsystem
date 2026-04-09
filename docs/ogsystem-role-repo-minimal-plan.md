@@ -1,7 +1,12 @@
 # OGSystem Role Repo Minimal Plan
 
 Date: 2026-04-09  
-Status: landed
+Status: historical / landed
+
+Historical note:
+
+- This document captures an earlier minimal role-repo plan.
+- Keep it as background only; it is not the current runtime source of truth.
 
 ## Goal
 

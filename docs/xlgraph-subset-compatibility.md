@@ -1,7 +1,12 @@
 # OGSystem x xlgraph Subset Compatibility
 
 Date: 2026-04-09  
-Status: stable-minimal
+Status: historical reference
+
+Historical note:
+
+- The current repository does not implement an active `xlgraph` compatibility layer.
+- Treat this file as naming/background context only unless a concrete compatibility contract is reintroduced.
 
 ## 1. Positioning
 

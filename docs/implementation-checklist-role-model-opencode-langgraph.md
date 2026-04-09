@@ -1,7 +1,12 @@
 # Implementation Checklist: Role / Model / OpenCode / LangGraph
 
 Date: 2026-04-09  
-Status: runtime contract and LangGraph execution landed
+Status: historical / partially landed
+
+Historical note:
+
+- This checklist mixes landed work with older planning assumptions.
+- Use `docs/single-graph-runtime-execution-checklist.md` for the current cleanup and migration sequence.
 
 ## Goal
 

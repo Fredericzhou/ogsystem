@@ -20,8 +20,7 @@ const invalidSource = `flowchart TD
 input -->|ENTER| intake[Role:intake]
 `;
 
-const langgraphSource = `flowchart TD
-%% engine=langgraph
+const graphSource = `flowchart TD
 %% system.id=test.langgraph
 %% system.version=0.1.0
 %% law.global=law.test
@@ -50,15 +49,15 @@ test("parser accepts a minimal system", () => {
   assert.strictEqual(system.lawBinding.globalLawRef, "law.test");
   assert.strictEqual(system.executionBinding.intake, "profile.parser");
   assert.strictEqual(system.modelBinding.intake, "model.fast");
+  assert.deepStrictEqual(system.langGraph?.routingModeByRoleId, {});
 });
 
 test("parser rejects missing metadata", () => {
   assert.throws(() => parseSystemFromMermaidSource(invalidSource), /Missing required metadata/);
 });
 
-test("parser accepts langgraph metadata and compiles semantic hints", () => {
-  const system = parseSystemFromMermaidSource(langgraphSource);
-  assert.strictEqual(system.engine, "langgraph");
+test("parser accepts graph metadata and compiles semantic hints without engine flag", () => {
+  const system = parseSystemFromMermaidSource(graphSource);
   assert.strictEqual(system.langGraph?.routingModeByRoleId.dispatch, "parallel_split");
   assert.strictEqual(system.langGraph?.joinModeByRoleId.review, "all_of");
   assert.deepStrictEqual(system.langGraph?.joinSourcesByRoleId.review, ["worker_a", "worker_b"]);

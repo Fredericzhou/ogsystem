@@ -6,8 +6,7 @@ import type {
   LangGraphHints,
   LangGraphJoinMode,
   LangGraphRoutingMode,
-  SystemDefinition,
-  SystemEngine
+  SystemDefinition
 } from "./types.js";
 
 type ParsedNodeToken =
@@ -43,7 +42,6 @@ type ParsedSystemGraph = {
 };
 
 type ValidatedSystemGraph = ParsedSystemGraph & {
-  engine: SystemEngine;
   systemId: string;
   systemVersion: string;
   globalLawRef: string;
@@ -255,12 +253,8 @@ function parseTokenizedMermaid(tokens: TokenizedMermaid): ParsedSystemGraph {
 
 function validateParsedSystemGraph(graph: ParsedSystemGraph): ValidatedSystemGraph {
   const engineValue = graph.metadata.get("engine");
-  let engine: SystemEngine = "minimal";
-  if (engineValue !== undefined) {
-    if (engineValue !== "langgraph") {
-      throw new Error(`Unsupported engine "${engineValue}". Expected "langgraph".`);
-    }
-    engine = "langgraph";
+  if (engineValue !== undefined && engineValue !== "langgraph") {
+    throw new Error(`Unsupported engine "${engineValue}". Expected "langgraph".`);
   }
 
   const systemId = graph.metadata.get("system.id");
@@ -321,9 +315,6 @@ function validateParsedSystemGraph(graph: ParsedSystemGraph): ValidatedSystemGra
     }
 
     if (key.startsWith("role.mode.")) {
-      if (engine !== "langgraph") {
-        throw new Error(`Unsupported metadata key "${key}" for minimal kernel`);
-      }
       const roleId = key.slice("role.mode.".length);
       if (value !== "parallel_split") {
         throw new Error(`Unsupported role.mode for ${roleId}: "${value}"`);
@@ -335,9 +326,6 @@ function validateParsedSystemGraph(graph: ParsedSystemGraph): ValidatedSystemGra
     }
 
     if (key.startsWith("join.mode.")) {
-      if (engine !== "langgraph") {
-        throw new Error(`Unsupported metadata key "${key}" for minimal kernel`);
-      }
       const roleId = key.slice("join.mode.".length);
       if (value !== "all_of") {
         throw new Error(`Unsupported join.mode for ${roleId}: "${value}"`);
@@ -349,9 +337,6 @@ function validateParsedSystemGraph(graph: ParsedSystemGraph): ValidatedSystemGra
     }
 
     if (key.startsWith("join.sources.")) {
-      if (engine !== "langgraph") {
-        throw new Error(`Unsupported metadata key "${key}" for minimal kernel`);
-      }
       const roleId = key.slice("join.sources.".length);
       if (roleId) {
         joinSourcesByRoleId[roleId] = value
@@ -363,9 +348,6 @@ function validateParsedSystemGraph(graph: ParsedSystemGraph): ValidatedSystemGra
     }
 
     if (key.startsWith("loop.max.")) {
-      if (engine !== "langgraph") {
-        throw new Error(`Unsupported metadata key "${key}" for minimal kernel`);
-      }
       const roleId = key.slice("loop.max.".length);
       const parsed = Number.parseInt(value, 10);
       if (!Number.isInteger(parsed) || parsed <= 0) {
@@ -378,7 +360,7 @@ function validateParsedSystemGraph(graph: ParsedSystemGraph): ValidatedSystemGra
     }
 
     if (!key.startsWith("exec.bind.")) {
-      throw new Error(`Unsupported metadata key "${key}" for minimal kernel`);
+      throw new Error(`Unsupported metadata key "${key}"`);
     }
 
     const roleId = key.slice("exec.bind.".length);
@@ -481,19 +463,15 @@ function validateParsedSystemGraph(graph: ParsedSystemGraph): ValidatedSystemGra
     }
   }
 
-  let langGraph: LangGraphHints | undefined;
-  if (engine === "langgraph") {
-    langGraph = {
-      routingModeByRoleId,
-      joinModeByRoleId,
-      joinSourcesByRoleId,
-      loopMaxByRoleId
-    };
-  }
+  const langGraph: LangGraphHints = {
+    routingModeByRoleId,
+    joinModeByRoleId,
+    joinSourcesByRoleId,
+    loopMaxByRoleId
+  };
 
   return {
     ...graph,
-    engine,
     systemId,
     systemVersion,
     globalLawRef,
@@ -508,7 +486,6 @@ function validateParsedSystemGraph(graph: ParsedSystemGraph): ValidatedSystemGra
 
 function compileSystemDefinition(graph: ValidatedSystemGraph): SystemDefinition {
   return {
-    engine: graph.engine,
     systemId: graph.systemId,
     systemVersion: graph.systemVersion,
     entryRoleId: graph.entryRoleId,

@@ -1,7 +1,12 @@
 # Semantic Kernel v1 (Minimal)
 
 Date: 2026-04-09  
-Status: stable-minimal
+Status: historical / superseded
+
+Historical note:
+
+- This document describes the superseded explicit state-machine direction.
+- The current runtime uses one graph-based execution path; treat this file as design history, not current architecture guidance.
 
 ## 1. Scope
 

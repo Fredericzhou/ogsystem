@@ -1,5 +1,12 @@
 # OpenCode Single-Serve Multi-Session Plan
 
+Status: historical / implemented
+
+Historical note:
+
+- This plan has already been implemented in the current runtime.
+- Keep this file only as design history; do not treat it as the active execution checklist.
+
 Implementation note:
 
 - the minimal implementation now keeps one shared `opencode serve` per run and one reusable session per role/node within that run

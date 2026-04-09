@@ -6,8 +6,6 @@ export type Flow = {
 
 export const SYSTEM_END_ROLE_ID = "__system_end__";
 
-export type SystemEngine = "minimal" | "langgraph";
-
 export type LangGraphRoutingMode = "parallel_split";
 
 export type LangGraphJoinMode = "all_of";
@@ -24,7 +22,6 @@ export type LawBinding = {
 };
 
 export type SystemDefinition = {
-  engine: SystemEngine;
   systemId: string;
   systemVersion: string;
   entryRoleId: string;

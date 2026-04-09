@@ -1,13 +1,13 @@
 # OGSystem
 
-OGSystem is a minimal console runtime for a restricted Mermaid flowchart DSL.
+OGSystem is a console runtime for a restricted Mermaid flowchart DSL.
 
 Implemented scope:
 
 - DSL: Mermaid `flowchart` restricted subset
 - Root semantics: `Law / System / AuditTrail`
 - Runtime outputs: `SystemState / Stage`
-- Engine: explicit state-machine runtime plus LangGraph execution for parallel/join/loop systems
+- Engine: one graph runtime for sequential, branching, parallel, join, and loop systems
 - Role resolution: auto-load from `og-roles/roles/<roleId>/`
 
 Non-goals:
@@ -96,17 +96,17 @@ npm run run:doctor -- --required opencode
 
 ## Runtime Guarantees
 
-- The adapter progresses through an explicit state machine. The entry role becomes the initial state, each role execution emits one structured result, and completion happens only when a transition reaches the terminal `output` boundary or an explicit noop law allows a single-path pass-through.
+- The adapter runs one graph-based execution model. The entry role becomes the initial active branch, each role execution emits one structured result, and completion happens only when active branches are exhausted or a transition reaches the terminal `output` boundary.
 - Executable roles always resolve to one JSON object: `{"event":"EVENT_NAME","content":"..."}`. For `model.bind`, the runtime sends `prompt + output.schema.json` to OpenCode SDK v2 and reads `info.structured`; for legacy `exec.bind`, the runtime still parses tool stdout as one JSON object. `event` is required for roles with outgoing flows and must match one Mermaid edge label exactly.
 - For `model.bind`, one run now starts one shared `opencode serve`, and each role/node keeps one isolated OpenCode session on that server for the duration of the run.
 - Executable roles are resolved by `roleId` directly. For each Mermaid `Role:<roleId>`, the runtime loads `og-roles/roles/<roleId>/role.json`, renders `prompt.md`, validates optional `input.schema.json`, and validates `output.schema.json`.
 - The runtime now supports `model.bind.<roleId>=<modelId>` with auto-discovered `.ogsystem/runtime.json`, `.ogsystem/user-profile.json`, `.ogsystem/laws.json`, and `og-models/`.
 - `model.bind` retries transient OpenCode/provider failures on the same role session while keeping the same run-level shared server.
-- The runtime now supports `%% engine=langgraph` with `role.mode.*=parallel_split`, `join.mode.*=all_of`, `join.sources.*`, and `loop.max.*`.
+- The runtime supports `role.mode.*=parallel_split`, `join.mode.*=all_of`, `join.sources.*`, and `loop.max.*`. Legacy `%% engine=langgraph` metadata is accepted but no longer required.
 - Each run persists under `.ogsystems/<run-id>/`, including run-level state, `sessions.json`, and per-role execution history under `roles/<roleId>/executions/`.
 - Each run gets its own isolated `.ogsystems/<run-id>/shared/` directory, and role directories do not receive a `shared` symlink by default.
 - `.ogsystems/` is generated runtime state and should stay out of version control.
-- LangGraph runs persist `activeBranches`, `completedBranches`, `loopIterations`, and `graphState` inside `state.json`, and support `--resume-run` against the same run directory.
+- Runs persist `activeBranches`, `completedBranches`, `loopIterations`, and `graphState` inside `state.json`, and support `--resume-run` against the same run directory.
 - Roles without execution binding fail fast by default. A law may opt into `allowNoopWithoutExecutionBinding`, but noop remains explicit and is rejected on branching nodes.
 - `user-profile.json` is injected into role prompts as delivery preference; role packages decide how to apply it.
 
@@ -152,19 +152,25 @@ node skills/ogsystem-nl-to-mmd/scripts/validate_ogsystem_mmd.mjs \
 
 - `src/runtime/cli.ts`
 - `src/runtime/adapter.ts`
+- `src/runtime/langgraph-runner.ts`
 - `src/runtime/model-repo.ts`
 - `src/runtime/parse-mermaid.ts`
 - `src/runtime/stage-projector.ts`
 - `src/runtime/tool-runner.ts`
 - `src/runtime/doctor.ts`
 
-## Docs
+## Active Docs
 
 - `docs/role-model-user-profile-minimal-spec.md`
-- `docs/implementation-checklist-role-model-opencode-langgraph.md`
 - `docs/usage-manual.md`
+- `docs/single-graph-runtime-execution-checklist.md`
+- `docs/langgraph-engine-example-systems.md`
+- `specs/mermaid-dsl-v0.1.md`
+
+## Historical Docs
+
+- `docs/implementation-checklist-role-model-opencode-langgraph.md`
+- `docs/ogsystem-role-repo-minimal-plan.md`
+- `docs/opencode-single-serve-multi-session-plan.md`
 - `docs/semantic-kernel-v1.md`
 - `docs/xlgraph-subset-compatibility.md`
-- `docs/langgraph-engine-example-systems.md`
-- `docs/ogsystem-role-repo-minimal-plan.md`
-- `specs/mermaid-dsl-v0.1.md`

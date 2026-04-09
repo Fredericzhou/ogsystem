@@ -2,16 +2,16 @@
 
 ## 1. Runtime Status
 
-This repository currently has two layers of documentation:
+This repository currently has two active runtime paths:
 
 - target architecture: `model.bind + model repo + user profile`
-- current LangGraph runtime path: `engine=langgraph + role.mode/join.mode/loop.max`
+- current graph runtime path: `role.mode/join.mode/loop.max`
 - legacy-compatible runtime path: `exec.bind + profiles/tools`
 
 Use this rule:
 
 - preferred runtime path: use `model.bind.<roleId>=<modelId>`
-- use `%% engine=langgraph` when the system needs parallel split, `all_of` join, or bounded loop
+- add `role.mode/join.mode/loop.max` only when the system needs parallel split, `all_of` join, or bounded loop
 - legacy compatibility path: `exec.bind.<roleId>` still works when paired with `profiles/tools`
 
 ## 2. Semantic Layers
@@ -102,11 +102,10 @@ input -->|ENTER| analyst[Role:demo-analyst]
 analyst[Role:demo-analyst] -->|ANALYSIS_DONE| output
 ```
 
-LangGraph execution example (current adapter):
+Graph execution example (current adapter):
 
 ```mermaid
 flowchart TD
-%% engine=langgraph
 %% system.id=architecture.debate.current
 %% system.version=1.0.0
 %% law.global=law.debate.base
@@ -260,7 +259,7 @@ OpenCode lifecycle rule for `model.bind`:
 - after node completion, session metadata can be retained for audit/resume while the shared server stays alive
 - parallel LangGraph branches therefore run as concurrent sessions on the same server process
 
-For `engine=langgraph` runs, `state.json` also persists:
+For graph-based runs, `state.json` also persists:
 
 - `activeBranches`
 - `completedBranches`
