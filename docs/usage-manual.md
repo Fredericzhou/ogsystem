@@ -5,11 +5,13 @@
 This repository currently has two layers of documentation:
 
 - target architecture: `model.bind + model repo + user profile`
+- current LangGraph runtime path: `engine=langgraph + role.mode/join.mode/loop.max`
 - legacy-compatible runtime path: `exec.bind + profiles/tools`
 
 Use this rule:
 
 - preferred runtime path: use `model.bind.<roleId>=<modelId>`
+- use `%% engine=langgraph` when the system needs parallel split, `all_of` join, or bounded loop
 - legacy compatibility path: `exec.bind.<roleId>` still works when paired with `profiles/tools`
 
 ## 2. Semantic Layers
@@ -90,6 +92,37 @@ flowchart TD
 
 input -->|ENTER| analyst[Role:demo-analyst]
 analyst[Role:demo-analyst] -->|ANALYSIS_DONE| output
+```
+
+LangGraph execution example (current adapter):
+
+```mermaid
+flowchart TD
+%% engine=langgraph
+%% system.id=architecture.debate.current
+%% system.version=1.0.0
+%% law.global=law.debate.base
+%% entry.role=debate-moderator
+%% role.mode.debate-round-manager=parallel_split
+%% join.mode.debate-judge=all_of
+%% join.sources.debate-judge=debate-minimalist,debate-alignmentist
+%% loop.max.debate-round-manager=2
+%% model.bind.debate-moderator=fast-gpt54
+%% model.bind.debate-round-manager=fast-gpt54
+%% model.bind.debate-minimalist=claude-sonnet
+%% model.bind.debate-alignmentist=deep-o3
+%% model.bind.debate-judge=deep-o3
+%% model.bind.debate-summary=fast-gpt54
+
+input -->|DEBATE_REQUEST| debate-moderator[Role:debate-moderator]
+debate-moderator[Role:debate-moderator] -->|ROUND_READY| debate-round-manager[Role:debate-round-manager]
+debate-round-manager[Role:debate-round-manager] -->|SEND_MINIMALIST| debate-minimalist[Role:debate-minimalist]
+debate-round-manager[Role:debate-round-manager] -->|SEND_ALIGNMENTIST| debate-alignmentist[Role:debate-alignmentist]
+debate-minimalist[Role:debate-minimalist] -->|MINIMALIST_DONE| debate-judge[Role:debate-judge]
+debate-alignmentist[Role:debate-alignmentist] -->|ALIGNMENTIST_DONE| debate-judge[Role:debate-judge]
+debate-judge[Role:debate-judge] -->|REBUTTAL_NEEDED| debate-round-manager[Role:debate-round-manager]
+debate-judge[Role:debate-judge] -->|DECISION_READY| debate-summary[Role:debate-summary]
+debate-summary[Role:debate-summary] -->|SUMMARY_READY| output
 ```
 
 ## 5. Role Package Contract
@@ -195,6 +228,14 @@ Markdown files are human projections.
 `inbox.md` is a projection of normalized runtime input, not a free-form summary.
 `.ogsystems/` is generated runtime state and should be ignored by git.
 
+For `engine=langgraph` runs, `state.json` also persists:
+
+- `activeBranches`
+- `completedBranches`
+- `pendingJoinRoleIds`
+- `loopIterations`
+- `graphState`
+
 ## 10. Commands
 
 Preferred runtime command:
@@ -223,6 +264,27 @@ npm run run:adapter -- \
   --tools examples/console-tools.json \
   --laws examples/console-laws.json \
   --prompt "analyze this repository" \
+  --dry-run
+```
+
+LangGraph runtime command:
+
+```bash
+npm run run:adapter -- \
+  --system examples/langgraph-debate-current/system.mmd \
+  --laws examples/langgraph-debate-current/laws.json \
+  --prompt "是否应继续保持 OGSystem 最小化并延后 reducer 与恢复语义？" \
+  --dry-run
+```
+
+Resume a LangGraph run from persisted `state.json.graphState`:
+
+```bash
+npm run run:adapter -- \
+  --system examples/langgraph-debate-current/system.mmd \
+  --laws examples/langgraph-debate-current/laws.json \
+  --resume-run .ogsystems/<run-id> \
+  --prompt "是否应继续保持 OGSystem 最小化并延后 reducer 与恢复语义？" \
   --dry-run
 ```
 

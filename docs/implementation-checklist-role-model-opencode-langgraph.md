@@ -1,7 +1,7 @@
 # Implementation Checklist: Role / Model / OpenCode / LangGraph
 
 Date: 2026-04-09  
-Status: phase-1 runtime complete; LangGraph execution pending
+Status: runtime contract and LangGraph execution landed
 
 ## Goal
 
@@ -111,7 +111,7 @@ Acceptance:
   - `timeoutMs`
   - `maxOutputBytes`
   - `tags`
-- [ ] Move current execution-specific configuration out of `profiles/tools`
+- [x] Move current execution-specific configuration out of `profiles/tools`
 - [x] Keep `OpenCode` as default executor in the first version
 
 Acceptance:
@@ -239,7 +239,7 @@ These can run in parallel once section A is reasonably stable.
 
 ### C2. Role Repo Cleanup
 
-- [ ] align role ids and node ids where possible
+- [x] align role ids and node ids where possible
 - [x] add shared input schema conventions
 - [x] add event enum to more `output.schema.json` files
 - [x] remove stale terminology like `profile` from role docs
@@ -259,9 +259,9 @@ These can run in parallel once section A is reasonably stable.
 ### C4. OpenCode Runtime Experiments
 
 - [x] test role-private workspace behavior
-- [ ] test shared directory write collisions
-- [ ] test prompt size growth over multiple rounds
-- [ ] test audit file usefulness for progressive loading
+- [x] test shared directory write collisions
+- [x] test prompt size growth over multiple rounds
+- [x] test audit file usefulness for progressive loading
 
 ## D. Do Only After The Runtime Contract Is Stable
 
@@ -269,10 +269,10 @@ These are important, but should not be implemented first.
 
 ### D1. Real LangGraph Parallel Execution
 
-- [ ] lower Mermaid metadata into actual parallel branches
-- [ ] support `all_of` join
-- [ ] add branch-aware audit records
-- [ ] persist branch-local state
+- [x] lower Mermaid metadata into actual parallel branches
+- [x] support `all_of` join
+- [x] add branch-aware audit records
+- [x] persist branch-local state
 
 Prerequisite:
 
@@ -280,10 +280,10 @@ Prerequisite:
 
 ### D2. State Merge / Reducer Semantics
 
-- [ ] define join input shape
-- [ ] define reducer semantics
-- [ ] define deterministic merge order
-- [ ] define conflict policy
+- [x] define join input shape
+- [x] define reducer semantics
+- [x] define deterministic merge order
+- [x] define conflict policy
 
 Prerequisite:
 
@@ -291,10 +291,10 @@ Prerequisite:
 
 ### D3. Loop Resume Semantics
 
-- [ ] define loop iteration record
-- [ ] define loop carry-over state
-- [ ] define loop termination rule
-- [ ] define replay/recovery behavior
+- [x] define loop iteration record
+- [x] define loop carry-over state
+- [x] define loop termination rule
+- [x] define replay/recovery behavior
 
 Prerequisite:
 
@@ -304,12 +304,12 @@ Prerequisite:
 
 These items are likely to create churn if started too early.
 
-- [ ] do not optimize for remote role/model repos before local contracts are stable
-- [ ] do not add complex auto-selection logic from role talent to model binding yet
-- [ ] do not make user profile influence routing or law semantics
-- [ ] do not make markdown files the only runtime truth
-- [ ] do not implement broad plugin/tool abstractions if executor is effectively fixed to `OpenCode`
-- [ ] do not add deep LangGraph metadata support to the current minimal parser before runtime semantics exist
+- [x] do not optimize for remote role/model repos before local contracts are stable
+- [x] do not add complex auto-selection logic from role talent to model binding yet
+- [x] do not make user profile influence routing or law semantics
+- [x] do not make markdown files the only runtime truth
+- [x] do not implement broad plugin/tool abstractions if executor is effectively fixed to `OpenCode`
+- [x] do not add deep LangGraph metadata support to the current minimal parser before runtime semantics exist
 
 ## F. Recommended Execution Order
 

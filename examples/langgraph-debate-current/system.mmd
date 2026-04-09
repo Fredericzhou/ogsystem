@@ -15,15 +15,15 @@ flowchart TD
 %% model.bind.debate-judge=deep-o3
 %% model.bind.debate-summary=fast-gpt54
 
-input -->|DEBATE_REQUEST| moderator[Role:debate-moderator]
-moderator[Role:debate-moderator] -->|ROUND_READY| parallel_round[Role:debate-round-manager]
+input -->|DEBATE_REQUEST| debate-moderator[Role:debate-moderator]
+debate-moderator[Role:debate-moderator] -->|ROUND_READY| debate-round-manager[Role:debate-round-manager]
 
-parallel_round[Role:debate-round-manager] -->|SEND_MINIMALIST| minimalist[Role:debate-minimalist]
-parallel_round[Role:debate-round-manager] -->|SEND_ALIGNMENTIST| alignmentist[Role:debate-alignmentist]
+debate-round-manager[Role:debate-round-manager] -->|SEND_MINIMALIST| debate-minimalist[Role:debate-minimalist]
+debate-round-manager[Role:debate-round-manager] -->|SEND_ALIGNMENTIST| debate-alignmentist[Role:debate-alignmentist]
 
-minimalist[Role:debate-minimalist] -->|MINIMALIST_DONE| judge[Role:debate-judge]
-alignmentist[Role:debate-alignmentist] -->|ALIGNMENTIST_DONE| judge[Role:debate-judge]
+debate-minimalist[Role:debate-minimalist] -->|MINIMALIST_DONE| debate-judge[Role:debate-judge]
+debate-alignmentist[Role:debate-alignmentist] -->|ALIGNMENTIST_DONE| debate-judge[Role:debate-judge]
 
-judge[Role:debate-judge] -->|REBUTTAL_NEEDED| parallel_round[Role:debate-round-manager]
-judge[Role:debate-judge] -->|DECISION_READY| summary[Role:debate-summary]
-summary[Role:debate-summary] -->|SUMMARY_READY| output
+debate-judge[Role:debate-judge] -->|REBUTTAL_NEEDED| debate-round-manager[Role:debate-round-manager]
+debate-judge[Role:debate-judge] -->|DECISION_READY| debate-summary[Role:debate-summary]
+debate-summary[Role:debate-summary] -->|SUMMARY_READY| output

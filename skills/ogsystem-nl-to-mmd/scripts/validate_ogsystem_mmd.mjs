@@ -74,7 +74,7 @@ function requireFile(path, errors, label) {
   }
 }
 
-async function validateRunDir(runDir, errors, warnings) {
+async function validateRunDir(runDir, system, errors, warnings) {
   requireFile(resolve(runDir, "run.md"), errors, "run contract file");
   requireFile(resolve(runDir, "request.md"), errors, "run contract file");
   requireFile(resolve(runDir, "system.mmd"), errors, "run contract file");
@@ -93,6 +93,24 @@ async function validateRunDir(runDir, errors, warnings) {
   if (roleIds.length === 0) {
     warnings.push(`run directory has no role artifacts under ${rolesDir}`);
     return;
+  }
+
+  if (fileExists(resolve(runDir, "state.json"))) {
+    const stateJson = await readJson(resolve(runDir, "state.json"));
+    if (system.engine === "langgraph") {
+      if (!Array.isArray(stateJson.activeBranches)) {
+        errors.push(`langgraph run state is missing activeBranches in ${resolve(runDir, "state.json")}`);
+      }
+      if (!Array.isArray(stateJson.completedBranches)) {
+        errors.push(`langgraph run state is missing completedBranches in ${resolve(runDir, "state.json")}`);
+      }
+      if (!stateJson.loopIterations || typeof stateJson.loopIterations !== "object") {
+        errors.push(`langgraph run state is missing loopIterations in ${resolve(runDir, "state.json")}`);
+      }
+      if (!stateJson.graphState || typeof stateJson.graphState !== "object") {
+        errors.push(`langgraph run state is missing graphState in ${resolve(runDir, "state.json")}`);
+      }
+    }
   }
 
   for (const roleId of roleIds) {
@@ -168,7 +186,7 @@ async function main() {
 
   if (values["run-dir"]) {
     const runDir = resolve(process.cwd(), values["run-dir"]);
-    await validateRunDir(runDir, errors, warnings);
+    await validateRunDir(runDir, system, errors, warnings);
   }
 
   const outgoingByRole = new Map();

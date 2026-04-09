@@ -1,7 +1,14 @@
 import { readFile } from "node:fs/promises";
 
 import { SYSTEM_END_ROLE_ID } from "./types.js";
-import type { Flow, SystemDefinition } from "./types.js";
+import type {
+  Flow,
+  LangGraphHints,
+  LangGraphJoinMode,
+  LangGraphRoutingMode,
+  SystemDefinition,
+  SystemEngine
+} from "./types.js";
 
 type ParsedNodeToken =
   | {
@@ -36,6 +43,7 @@ type ParsedSystemGraph = {
 };
 
 type ValidatedSystemGraph = ParsedSystemGraph & {
+  engine: SystemEngine;
   systemId: string;
   systemVersion: string;
   globalLawRef: string;
@@ -44,6 +52,7 @@ type ValidatedSystemGraph = ParsedSystemGraph & {
   talentBinding: Record<string, string>;
   executionBinding: Record<string, string>;
   modelBinding: Record<string, string>;
+  langGraph?: LangGraphHints;
 };
 
 function parseNodeToken(token: string): ParsedNodeToken {
@@ -245,6 +254,15 @@ function parseTokenizedMermaid(tokens: TokenizedMermaid): ParsedSystemGraph {
 }
 
 function validateParsedSystemGraph(graph: ParsedSystemGraph): ValidatedSystemGraph {
+  const engineValue = graph.metadata.get("engine");
+  let engine: SystemEngine = "minimal";
+  if (engineValue !== undefined) {
+    if (engineValue !== "langgraph") {
+      throw new Error(`Unsupported engine "${engineValue}". Expected "langgraph".`);
+    }
+    engine = "langgraph";
+  }
+
   const systemId = graph.metadata.get("system.id");
   const systemVersion = graph.metadata.get("system.version");
   const globalLawRef = graph.metadata.get("law.global");
@@ -275,7 +293,11 @@ function validateParsedSystemGraph(graph: ParsedSystemGraph): ValidatedSystemGra
   const talentBinding: Record<string, string> = {};
   const executionBinding: Record<string, string> = {};
   const modelBinding: Record<string, string> = {};
-  const exactMetadataKeys = new Set(["system.id", "system.version", "law.global", "entry.role"]);
+  const routingModeByRoleId: Record<string, LangGraphRoutingMode> = {};
+  const joinModeByRoleId: Record<string, LangGraphJoinMode> = {};
+  const joinSourcesByRoleId: Record<string, string[]> = {};
+  const loopMaxByRoleId: Record<string, number> = {};
+  const exactMetadataKeys = new Set(["engine", "system.id", "system.version", "law.global", "entry.role"]);
 
   for (const [key, value] of graph.metadata.entries()) {
     if (exactMetadataKeys.has(key)) {
@@ -294,6 +316,63 @@ function validateParsedSystemGraph(graph: ParsedSystemGraph): ValidatedSystemGra
       const roleId = key.slice("model.bind.".length);
       if (roleId) {
         modelBinding[roleId] = value;
+      }
+      continue;
+    }
+
+    if (key.startsWith("role.mode.")) {
+      if (engine !== "langgraph") {
+        throw new Error(`Unsupported metadata key "${key}" for minimal kernel`);
+      }
+      const roleId = key.slice("role.mode.".length);
+      if (value !== "parallel_split") {
+        throw new Error(`Unsupported role.mode for ${roleId}: "${value}"`);
+      }
+      if (roleId) {
+        routingModeByRoleId[roleId] = value;
+      }
+      continue;
+    }
+
+    if (key.startsWith("join.mode.")) {
+      if (engine !== "langgraph") {
+        throw new Error(`Unsupported metadata key "${key}" for minimal kernel`);
+      }
+      const roleId = key.slice("join.mode.".length);
+      if (value !== "all_of") {
+        throw new Error(`Unsupported join.mode for ${roleId}: "${value}"`);
+      }
+      if (roleId) {
+        joinModeByRoleId[roleId] = value;
+      }
+      continue;
+    }
+
+    if (key.startsWith("join.sources.")) {
+      if (engine !== "langgraph") {
+        throw new Error(`Unsupported metadata key "${key}" for minimal kernel`);
+      }
+      const roleId = key.slice("join.sources.".length);
+      if (roleId) {
+        joinSourcesByRoleId[roleId] = value
+          .split(",")
+          .map((item) => item.trim())
+          .filter(Boolean);
+      }
+      continue;
+    }
+
+    if (key.startsWith("loop.max.")) {
+      if (engine !== "langgraph") {
+        throw new Error(`Unsupported metadata key "${key}" for minimal kernel`);
+      }
+      const roleId = key.slice("loop.max.".length);
+      const parsed = Number.parseInt(value, 10);
+      if (!Number.isInteger(parsed) || parsed <= 0) {
+        throw new Error(`Invalid loop.max for ${roleId}: "${value}"`);
+      }
+      if (roleId) {
+        loopMaxByRoleId[roleId] = parsed;
       }
       continue;
     }
@@ -358,8 +437,63 @@ function validateParsedSystemGraph(graph: ParsedSystemGraph): ValidatedSystemGra
     }
   }
 
+  for (const roleId of Object.keys(routingModeByRoleId)) {
+    if (!roleIds.includes(roleId)) {
+      throw new Error(`role.mode.${roleId} references undefined role`);
+    }
+  }
+
+  for (const roleId of Object.keys(joinModeByRoleId)) {
+    if (!roleIds.includes(roleId)) {
+      throw new Error(`join.mode.${roleId} references undefined role`);
+    }
+    if (joinModeByRoleId[roleId] === "all_of" && !joinSourcesByRoleId[roleId]?.length) {
+      throw new Error(`join.sources.${roleId} is required when join.mode.${roleId}=all_of`);
+    }
+  }
+
+  for (const [roleId, sources] of Object.entries(joinSourcesByRoleId)) {
+    if (!roleIds.includes(roleId)) {
+      throw new Error(`join.sources.${roleId} references undefined role`);
+    }
+    for (const sourceRoleId of sources) {
+      if (!roleIds.includes(sourceRoleId)) {
+        throw new Error(`join.sources.${roleId} references undefined source role "${sourceRoleId}"`);
+      }
+      const hasIncomingFlow = graph.flows.some(
+        (flow) => flow.fromRoleId === sourceRoleId && flow.toRoleId === roleId
+      );
+      if (!hasIncomingFlow) {
+        throw new Error(
+          `join.sources.${roleId} includes "${sourceRoleId}" but no Mermaid edge exists from ${sourceRoleId} to ${roleId}`
+        );
+      }
+    }
+  }
+
+  for (const [roleId, loopMax] of Object.entries(loopMaxByRoleId)) {
+    if (!roleIds.includes(roleId)) {
+      throw new Error(`loop.max.${roleId} references undefined role`);
+    }
+    const hasIncomingLoop = graph.flows.some((flow) => flow.toRoleId === roleId);
+    if (!hasIncomingLoop || loopMax <= 0) {
+      throw new Error(`loop.max.${roleId} requires a positive budget on a reachable role`);
+    }
+  }
+
+  let langGraph: LangGraphHints | undefined;
+  if (engine === "langgraph") {
+    langGraph = {
+      routingModeByRoleId,
+      joinModeByRoleId,
+      joinSourcesByRoleId,
+      loopMaxByRoleId
+    };
+  }
+
   return {
     ...graph,
+    engine,
     systemId,
     systemVersion,
     globalLawRef,
@@ -367,12 +501,14 @@ function validateParsedSystemGraph(graph: ParsedSystemGraph): ValidatedSystemGra
     roleIds,
     talentBinding,
     executionBinding,
-    modelBinding
+    modelBinding,
+    langGraph
   };
 }
 
 function compileSystemDefinition(graph: ValidatedSystemGraph): SystemDefinition {
   return {
+    engine: graph.engine,
     systemId: graph.systemId,
     systemVersion: graph.systemVersion,
     entryRoleId: graph.entryRoleId,
@@ -381,7 +517,8 @@ function compileSystemDefinition(graph: ValidatedSystemGraph): SystemDefinition 
     lawBinding: { globalLawRef: graph.globalLawRef },
     talentBinding: graph.talentBinding,
     executionBinding: graph.executionBinding,
-    modelBinding: graph.modelBinding
+    modelBinding: graph.modelBinding,
+    langGraph: graph.langGraph
   };
 }
 

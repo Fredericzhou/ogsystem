@@ -1,6 +1,6 @@
 {
   "type": "object",
-  "required": ["event", "content"],
+  "required": ["content"],
   "properties": {
     "event": {
       "type": "string",

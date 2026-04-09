@@ -13,5 +13,5 @@ Allowed events:
 
 Output requirements:
 - Return JSON only.
-- event must come from allowed_events.
+- event is optional for parallel_split nodes and may be omitted.
 - content must contain the round instructions.

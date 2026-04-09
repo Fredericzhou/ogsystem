@@ -7,7 +7,7 @@ Implemented scope:
 - DSL: Mermaid `flowchart` restricted subset
 - Root semantics: `Law / System / AuditTrail`
 - Runtime outputs: `SystemState / Stage`
-- Engine: explicit state-machine runtime
+- Engine: explicit state-machine runtime plus LangGraph execution for parallel/join/loop systems
 - Role resolution: auto-load from `og-roles/roles/<roleId>/`
 
 Non-goals:
@@ -66,6 +66,16 @@ npm run run:adapter -- \
   --dry-run
 ```
 
+Run LangGraph debate example:
+
+```bash
+npm run run:adapter -- \
+  --system examples/langgraph-debate-current/system.mmd \
+  --laws examples/langgraph-debate-current/laws.json \
+  --prompt "是否应继续保持 OGSystem 最小化并延后 reducer 与恢复语义？" \
+  --dry-run
+```
+
 Check required CLI tools:
 
 ```bash
@@ -78,8 +88,10 @@ npm run run:doctor -- --required codex
 - Executable roles must emit strict JSON on stdout: `{"event":"EVENT_NAME","content":"..."}`. `event` is required for roles with outgoing flows and must match one Mermaid edge label exactly. Regex matching and line-by-line event guessing are not supported.
 - Executable roles are resolved by `roleId` directly. For each Mermaid `Role:<roleId>`, the runtime loads `og-roles/roles/<roleId>/role.json`, renders `prompt.md`, validates optional `input.schema.json`, and validates `output.schema.json`.
 - The runtime now supports `model.bind.<roleId>=<modelId>` with auto-discovered `.ogsystem/runtime.json`, `.ogsystem/user-profile.json`, `.ogsystem/laws.json`, and `og-models/`.
+- The runtime now supports `%% engine=langgraph` with `role.mode.*=parallel_split`, `join.mode.*=all_of`, `join.sources.*`, and `loop.max.*`.
 - Each run persists under `.ogsystems/<run-id>/`, including run-level state and per-role prompt/result/audit artifacts.
 - `.ogsystems/` is generated runtime state and should stay out of version control.
+- LangGraph runs persist `activeBranches`, `completedBranches`, `loopIterations`, and `graphState` inside `state.json`, and support `--resume-run` against the same run directory.
 - Roles without execution binding fail fast by default. A law may opt into `allowNoopWithoutExecutionBinding`, but noop remains explicit and is rejected on branching nodes.
 
 ## Configuration Boundaries
@@ -100,6 +112,8 @@ npm run run:doctor -- --required codex
 - `.ogsystem/user-profile.json` provides user delivery preference sample.
 - `.ogsystem/laws.json` provides sample law catalog colocated with runtime config.
 - `examples/target-model-binding-system.mmd` shows `model.bind.*` usage.
+- `examples/langgraph-debate-current/system.mmd` shows runnable loop + parallel + join semantics.
+- `examples/langgraph-expert-consultation/system.mmd` shows runnable expert consultation semantics.
 
 Validate a generated run directory against the runtime contract:
 

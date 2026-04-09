@@ -7,7 +7,7 @@ flowchart TD
 %% model.bind.debate-minimalist=claude-sonnet
 %% model.bind.debate-judge=deep-o3
 
-input -->|DEBATE_REQUEST| moderator[Role:debate-moderator]
-moderator[Role:debate-moderator] -->|ROUND_READY| minimalist[Role:debate-minimalist]
-minimalist[Role:debate-minimalist] -->|MINIMALIST_DONE| judge[Role:debate-judge]
-judge[Role:debate-judge] -->|DECISION_READY| output
+input -->|DEBATE_REQUEST| debate-moderator[Role:debate-moderator]
+debate-moderator[Role:debate-moderator] -->|ROUND_READY| debate-minimalist[Role:debate-minimalist]
+debate-minimalist[Role:debate-minimalist] -->|MINIMALIST_DONE| debate-judge[Role:debate-judge]
+debate-judge[Role:debate-judge] -->|DECISION_READY| output

@@ -1,13 +1,13 @@
 # LangGraph Engine Example Systems
 
 Date: 2026-04-09  
-Status: design examples
+Status: runnable examples on current adapter
 
-This document provides Mermaid-first examples for a future `LangGraph` engine mode.
+This document provides Mermaid-first examples for the current `LangGraph` engine mode.
 
 Important:
 
-- these are design examples, not runnable on the current minimal runtime
+- these examples are runnable on the current adapter when `%% engine=langgraph` is present
 - they use target terminology: `model.bind.<roleId>=<modelId>`
 - runtime migration may still keep `exec.bind.*` compatibility in implementation
 
@@ -19,13 +19,13 @@ Assumed capabilities:
 - per-role model binding
 - structured role output
 
-Proposed executable output contract:
+Executable output contract:
 
 ```json
 {"event":"EVENT_NAME","content":"...","data":{}}
 ```
 
-Proposed metadata extensions:
+Supported metadata extensions:
 
 - `%% engine=langgraph`
 - `%% role.mode.<roleId>=parallel_split`
@@ -33,6 +33,14 @@ Proposed metadata extensions:
 - `%% join.sources.<roleId>=roleA,roleB,...`
 - `%% loop.max.<roleId>=N`
 - `%% model.bind.<roleId>=<modelId>`
+
+Reducer and merge rules in the current engine:
+
+- branch outputs merge into `roleResults[roleId]`
+- join input is read in `join.sources.<roleId>` order
+- concurrent writes to reduced collections use keyed merge or append reducers
+- concurrent writes to non-reduced scalar channels are treated as invalid and should not be designed into role nodes
+- `parallel_split` nodes may omit `event`; graph structure owns the fanout
 
 ## 1. Expert Consultation System
 
@@ -109,6 +117,16 @@ Role behavior is expected to resolve from `og-roles/roles/<roleId>/`:
 - `diagnosis-chief-review` is an `all_of` join waiting for all specialists
 - `REQUEST_RECHECK` forms a bounded loop back to dispatch
 
+Run:
+
+```bash
+npm run run:adapter -- \
+  --system examples/langgraph-expert-consultation/system.mmd \
+  --laws examples/langgraph-expert-consultation/laws.json \
+  --prompt "病例：胸痛伴短暂意识丧失，如何组织多学科会诊？" \
+  --dry-run
+```
+
 ## 2. Current Debate Example
 
 Goal:
@@ -166,9 +184,19 @@ summary[Role:debate-summary] -->|SUMMARY_READY| output
 - `debate-judge` is an `all_of` join waiting for both debaters
 - `REBUTTAL_NEEDED` creates a bounded loop
 
-## 3. Minimal Future Engine Requirements
+Run:
 
-To run these systems, the engine should minimally support:
+```bash
+npm run run:adapter -- \
+  --system examples/langgraph-debate-current/system.mmd \
+  --laws examples/langgraph-debate-current/laws.json \
+  --prompt "是否应继续保持 OGSystem 最小化并延后 reducer 与恢复语义？" \
+  --dry-run
+```
+
+## 3. Implemented Engine Requirements
+
+The current engine now supports:
 
 1. role-level model binding
 2. parallel split into multiple active branches

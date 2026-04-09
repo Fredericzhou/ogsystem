@@ -6,11 +6,25 @@ export type Flow = {
 
 export const SYSTEM_END_ROLE_ID = "__system_end__";
 
+export type SystemEngine = "minimal" | "langgraph";
+
+export type LangGraphRoutingMode = "parallel_split";
+
+export type LangGraphJoinMode = "all_of";
+
+export type LangGraphHints = {
+  routingModeByRoleId: Record<string, LangGraphRoutingMode>;
+  joinModeByRoleId: Record<string, LangGraphJoinMode>;
+  joinSourcesByRoleId: Record<string, string[]>;
+  loopMaxByRoleId: Record<string, number>;
+};
+
 export type LawBinding = {
   globalLawRef: string;
 };
 
 export type SystemDefinition = {
+  engine: SystemEngine;
   systemId: string;
   systemVersion: string;
   entryRoleId: string;
@@ -20,6 +34,7 @@ export type SystemDefinition = {
   talentBinding: Record<string, string>;
   executionBinding: Record<string, string>;
   modelBinding: Record<string, string>;
+  langGraph?: LangGraphHints;
 };
 
 export type ExecutionProfile = {
@@ -134,6 +149,9 @@ export type RuntimeConfig = {
 export type AuditRecord = {
   at: string;
   roleId: string;
+  branchId?: string;
+  joinId?: string;
+  loopIteration?: number;
   lawRef?: string;
   modelId?: string;
   profileId?: string;
@@ -148,6 +166,37 @@ export type AuditRecord = {
   stdoutPreview?: string;
   stderrPreview?: string;
   error?: string;
+};
+
+export type RoleRunDirs = {
+  roleDir: string;
+  privateDir: string;
+};
+
+export type RunContext = {
+  runId: string;
+  runDir: string;
+  auditDir: string;
+  eventsPath: string;
+  statePath: string;
+  roleDirsById: Map<string, RoleRunDirs>;
+  sharedDir: string;
+};
+
+export type BranchRecord = {
+  branchId: string;
+  roleId: string;
+  loopIteration: number;
+  status: "active" | "completed";
+};
+
+export type StoredRoleResult = {
+  roleId: string;
+  event?: string;
+  content?: string;
+  data?: Record<string, unknown>;
+  branchId?: string;
+  loopIteration: number;
 };
 
 export type SystemStateSnapshot = {

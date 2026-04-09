@@ -16,6 +16,7 @@ import {
   validateRoleInputSchema,
   validateRoleOutputSchema
 } from "./role-repo.js";
+import { runSystemWithLangGraph } from "./langgraph-runner.js";
 import { projectStages } from "./stage-projector.js";
 import { runCliTool, ToolExecutionError } from "./tool-runner.js";
 import { SYSTEM_END_ROLE_ID } from "./types.js";
@@ -954,10 +955,17 @@ async function initializeRunContext(args: {
   prompt: string;
   workdir: string;
   runtimeConfig: RuntimeConfig;
+  resumeRunDir?: string;
 }): Promise<RunContext> {
   const createdAt = new Date();
-  const runId = `${timestampForPath(createdAt)}-${slugify(args.system.systemId)}`;
-  const runDir = resolve(args.workdir, args.runtimeConfig.runsDir, runId);
+  const runDir = args.resumeRunDir
+    ? resolve(args.workdir, args.resumeRunDir)
+    : resolve(
+        args.workdir,
+        args.runtimeConfig.runsDir,
+        `${timestampForPath(createdAt)}-${slugify(args.system.systemId)}`
+      );
+  const runId = basename(runDir);
   const auditDir = resolve(runDir, "audit");
   const rolesRootDir = resolve(runDir, args.runtimeConfig.workspace.rolesDir);
   const sharedDir = resolve(args.workdir, args.runtimeConfig.sharedDir);
@@ -967,22 +975,32 @@ async function initializeRunContext(args: {
   await mkdir(rolesRootDir, { recursive: true });
 
   const sourceSystem = await readFile(args.systemPath, "utf8");
-  await writeFile(resolve(runDir, "request.md"), `${args.prompt}\n`, "utf8");
-  await writeFile(resolve(runDir, "system.mmd"), sourceSystem, "utf8");
-  await writeFile(
-    resolve(runDir, "run.md"),
-    [
-      `# Run ${runId}`,
-      "",
-      `- systemId: ${args.system.systemId}`,
-      `- systemVersion: ${args.system.systemVersion}`,
-      `- entryRoleId: ${args.system.entryRoleId}`,
-      `- sharedDir: ${sharedDir}`
-    ].join("\n"),
-    "utf8"
-  );
-  await writeFile(resolve(auditDir, "summary.md"), "# Audit Summary\n", "utf8");
-  await writeFile(resolve(auditDir, "transitions.md"), "# Transitions\n", "utf8");
+  if (!(await pathExists(resolve(runDir, "request.md")))) {
+    await writeFile(resolve(runDir, "request.md"), `${args.prompt}\n`, "utf8");
+  }
+  if (!(await pathExists(resolve(runDir, "system.mmd")))) {
+    await writeFile(resolve(runDir, "system.mmd"), sourceSystem, "utf8");
+  }
+  if (!(await pathExists(resolve(runDir, "run.md")))) {
+    await writeFile(
+      resolve(runDir, "run.md"),
+      [
+        `# Run ${runId}`,
+        "",
+        `- systemId: ${args.system.systemId}`,
+        `- systemVersion: ${args.system.systemVersion}`,
+        `- entryRoleId: ${args.system.entryRoleId}`,
+        `- sharedDir: ${sharedDir}`
+      ].join("\n"),
+      "utf8"
+    );
+  }
+  if (!(await pathExists(resolve(auditDir, "summary.md")))) {
+    await writeFile(resolve(auditDir, "summary.md"), "# Audit Summary\n", "utf8");
+  }
+  if (!(await pathExists(resolve(auditDir, "transitions.md")))) {
+    await writeFile(resolve(auditDir, "transitions.md"), "# Transitions\n", "utf8");
+  }
 
   for (const roleId of args.system.roleIds) {
     const roleDir = resolve(rolesRootDir, roleId);
@@ -1050,6 +1068,7 @@ export async function runSystemWithAdapter(args: {
   lawsPath?: string;
   runtimeConfigPath?: string;
   userProfilePath?: string;
+  resumeRunDir?: string;
   prompt: string;
   workdir: string;
   dryRun?: boolean;
@@ -1074,12 +1093,46 @@ export async function runSystemWithAdapter(args: {
     systemPath: args.systemPath,
     prompt: args.prompt,
     workdir: args.workdir,
-    runtimeConfig
+    runtimeConfig,
+    resumeRunDir: args.resumeRunDir
   });
 
   const profilesById = new Map(profiles.map((item) => [item.profileId, item]));
   const toolsByRef = new Map(tools.map((item) => [item.toolRef, item]));
   const adjacency = buildAdjacency(system.flows);
+
+  if (system.engine === "langgraph") {
+    let initialState: unknown;
+    if (args.resumeRunDir) {
+      const resumeStatePath = resolve(runContext.runDir, "state.json");
+      if (await pathExists(resumeStatePath)) {
+        const resumeState = await readJsonFile(resumeStatePath);
+        if (
+          typeof resumeState === "object" &&
+          resumeState !== null &&
+          !Array.isArray(resumeState) &&
+          "graphState" in resumeState
+        ) {
+          initialState = (resumeState as Record<string, unknown>).graphState;
+        }
+      }
+    }
+    return await runSystemWithLangGraph({
+      system,
+      effectiveLaw,
+      profilesById,
+      toolsByRef,
+      modelsById,
+      runtimeConfig,
+      userProfile,
+      workdir: args.workdir,
+      rolePackagesByRoleId,
+      runContext,
+      prompt: args.prompt,
+      dryRun: args.dryRun,
+      initialState: initialState as never
+    });
+  }
 
   let state: RuntimeState = {
     currentRoleId: system.entryRoleId,

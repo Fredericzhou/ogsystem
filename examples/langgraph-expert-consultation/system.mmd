@@ -16,17 +16,17 @@ flowchart TD
 %% model.bind.diagnosis-chief-review=deep-o3
 %% model.bind.diagnosis-report=fast-gpt54
 
-input -->|CASE_RECEIVED| intake[Role:diagnosis-intake]
-intake[Role:diagnosis-intake] -->|READY_FOR_PARALLEL| parallel_dispatch[Role:diagnosis-dispatch]
+input -->|CASE_RECEIVED| diagnosis-intake[Role:diagnosis-intake]
+diagnosis-intake[Role:diagnosis-intake] -->|READY_FOR_PARALLEL| diagnosis-dispatch[Role:diagnosis-dispatch]
 
-parallel_dispatch[Role:diagnosis-dispatch] -->|START_CARDIOLOGY| cardiology[Role:diagnosis-cardiology]
-parallel_dispatch[Role:diagnosis-dispatch] -->|START_NEUROLOGY| neurology[Role:diagnosis-neurology]
-parallel_dispatch[Role:diagnosis-dispatch] -->|START_IMAGING| imaging[Role:diagnosis-imaging]
+diagnosis-dispatch[Role:diagnosis-dispatch] -->|START_CARDIOLOGY| diagnosis-cardiology[Role:diagnosis-cardiology]
+diagnosis-dispatch[Role:diagnosis-dispatch] -->|START_NEUROLOGY| diagnosis-neurology[Role:diagnosis-neurology]
+diagnosis-dispatch[Role:diagnosis-dispatch] -->|START_IMAGING| diagnosis-imaging[Role:diagnosis-imaging]
 
-cardiology[Role:diagnosis-cardiology] -->|CARDIOLOGY_DONE| chief_review[Role:diagnosis-chief-review]
-neurology[Role:diagnosis-neurology] -->|NEUROLOGY_DONE| chief_review[Role:diagnosis-chief-review]
-imaging[Role:diagnosis-imaging] -->|IMAGING_DONE| chief_review[Role:diagnosis-chief-review]
+diagnosis-cardiology[Role:diagnosis-cardiology] -->|CARDIOLOGY_DONE| diagnosis-chief-review[Role:diagnosis-chief-review]
+diagnosis-neurology[Role:diagnosis-neurology] -->|NEUROLOGY_DONE| diagnosis-chief-review[Role:diagnosis-chief-review]
+diagnosis-imaging[Role:diagnosis-imaging] -->|IMAGING_DONE| diagnosis-chief-review[Role:diagnosis-chief-review]
 
-chief_review[Role:diagnosis-chief-review] -->|REQUEST_RECHECK| parallel_dispatch[Role:diagnosis-dispatch]
-chief_review[Role:diagnosis-chief-review] -->|CONSENSUS_READY| final_report[Role:diagnosis-report]
-final_report[Role:diagnosis-report] -->|REPORT_READY| output
+diagnosis-chief-review[Role:diagnosis-chief-review] -->|REQUEST_RECHECK| diagnosis-dispatch[Role:diagnosis-dispatch]
+diagnosis-chief-review[Role:diagnosis-chief-review] -->|CONSENSUS_READY| diagnosis-report[Role:diagnosis-report]
+diagnosis-report[Role:diagnosis-report] -->|REPORT_READY| output
