@@ -64,8 +64,10 @@ test("adapter runs langgraph debate example with parallel branches, join, and bo
     path.resolve(runDir, "roles", "debate-summary", "prompt.md"),
     "utf8"
   );
-  assert.ok(summaryPrompt.length > moderatorPrompt.length);
   assert.match(moderatorPrompt, /architecture\.review\.zh\.executive/);
+  assert.match(summaryPrompt, /Context:/);
+  assert.match(summaryPrompt, /\[dry-run\] opencode-sdk/);
+  assert.match(summaryPrompt, /SUMMARY_READY/);
 
   const resumed = await runSystemWithAdapter({
     systemPath: path.resolve(repoRoot, "examples", "langgraph-debate-current", "system.mmd"),

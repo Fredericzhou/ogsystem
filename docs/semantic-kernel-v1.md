@@ -69,10 +69,11 @@ Projection
 - Target semantics: `model.bind.<roleId>` binds one role to one model package.
 - Legacy runtime compatibility: `exec.bind.<roleId>` can still map to execution profile during migration.
 - Model package selects executor/model/timeout/output limits.
-- Node execution must return strict JSON on stdout:
+- Node execution must resolve to one JSON object:
   - `{"event":"EVENT_NAME","content":"..."}`
   - `event` is required when the role has outgoing flows
   - `content` is optional payload text that becomes `lastOutput`
+- `model.bind` uses OpenCode SDK structured output with `output.schema.json`; legacy `exec.bind` still parses stdout as one JSON object.
 - Run terminates when:
   - transition target is `output`, or
   - an explicit noop-enabled law allows a no-bind node to move through a single deterministic path.
@@ -98,7 +99,7 @@ Mermaid DSL
 ## 9. Runtime Refinements
 
 - The runtime uses an explicit state loop that mirrors `SystemDefinition` directly. Current role, next role, status, and audit trail all live in one runtime state object.
-- Tools must emit `{"event":"EVENT_NAME","content":"..."}` on stdout. The runtime parses the full stdout as one JSON object and never falls back to regex or JSONL guessing.
+- Legacy tool execution still expects `{"event":"EVENT_NAME","content":"..."}` on stdout. The runtime parses the full stdout as one JSON object and never falls back to regex or JSONL guessing.
 - Nodes without execution binding fail immediately unless the catalog law opts into `allowNoopWithoutExecutionBinding`. Even then, noop only works for terminal or single-outgoing roles.
 
 ## 10. P2 Architecture Decision

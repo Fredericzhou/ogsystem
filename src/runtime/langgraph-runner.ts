@@ -10,6 +10,7 @@ import {
   validateRoleInputSchema,
   validateRoleOutputSchema
 } from "./role-repo.js";
+import { OpencodeExecutionError, executeOpencodeModelRole } from "./opencode-executor.js";
 import { projectStages } from "./stage-projector.js";
 import { runCliTool, ToolExecutionError } from "./tool-runner.js";
 import { SYSTEM_END_ROLE_ID } from "./types.js";
@@ -79,24 +80,6 @@ function renderUserProfile(userProfile?: UserProfile): string {
     return "";
   }
   return stringifyJson(userProfile);
-}
-
-function renderOpencodeArgs(args?: Record<string, string | boolean>): string[] {
-  if (!args) {
-    return [];
-  }
-  const rendered: string[] = [];
-  for (const [key, value] of Object.entries(args)) {
-    const flag = key.startsWith("--") ? key : `--${key}`;
-    if (typeof value === "boolean") {
-      if (value) {
-        rendered.push(flag);
-      }
-      continue;
-    }
-    rendered.push(flag, value);
-  }
-  return rendered;
 }
 
 function buildAdjacency(flows: Flow[]): Map<string, Flow[]> {
@@ -649,6 +632,7 @@ export async function runSystemWithLangGraph(args: RunnerInput): Promise<Adapter
       let executionEnv: Record<string, string> | undefined;
       let timeoutMs = 120000;
       let maxOutputBytes = 64 * 1024;
+      let auditCommand: string | undefined;
 
       if (modelId && args.modelsById.has(modelId)) {
         const modelPackage = args.modelsById.get(modelId);
@@ -667,17 +651,12 @@ export async function runSystemWithLangGraph(args: RunnerInput): Promise<Adapter
           OGSYSTEM_MODEL_ID: modelPackage.manifest.modelId,
           OGSYSTEM_ALLOWED_EVENTS: allowedEvents.join(",")
         };
+        auditCommand = "opencode-sdk";
         tool = {
           toolRef: `model.${modelPackage.manifest.modelId}`,
           runner: "local_shell",
-          command: "opencode",
-          argsTemplate: [
-            ...(args.runtimeConfig.opencode?.baseArgs ?? ["run"]),
-            "--model",
-            modelPackage.manifest.model,
-            ...renderOpencodeArgs(modelPackage.manifest.args),
-            "{{prompt}}"
-          ],
+          command: auditCommand,
+          argsTemplate: [],
           stdinMode: "none"
         };
       } else {
@@ -719,23 +698,36 @@ export async function runSystemWithLangGraph(args: RunnerInput): Promise<Adapter
           throw new Error(`Tool not found: ${profile.toolRef}`);
         }
         tool = legacyTool;
+        auditCommand = tool.command;
         timeoutMs = profile.timeoutMs ?? timeoutMs;
         maxOutputBytes = profile.maxOutputBytes ?? maxOutputBytes;
       }
 
       try {
-        const result = await runCliTool({
-          tool,
-          vars: { prompt },
-          env: executionEnv,
-          workdir: executionWorkdir,
-          timeoutMs,
-          maxOutputBytes,
-          dryRun: args.dryRun,
-          dryRunOutput: {
-            event: pickDryRunEvent({ roleId, outgoing, state, system })
-          }
-        });
+        const result =
+          modelId && args.modelsById.has(modelId) && !args.dryRun
+            ? await executeOpencodeModelRole({
+                roleId,
+                prompt,
+                schema: rolePackage?.outputSchema,
+                modelPackage: args.modelsById.get(modelId)!,
+                workdir: executionWorkdir,
+                env: executionEnv,
+                timeoutMs,
+                maxOutputBytes
+              })
+            : await runCliTool({
+                tool,
+                vars: { prompt },
+                env: executionEnv,
+                workdir: executionWorkdir,
+                timeoutMs,
+                maxOutputBytes,
+                dryRun: args.dryRun,
+                dryRunOutput: {
+                  event: pickDryRunEvent({ roleId, outgoing, state, system })
+                }
+              });
         const parsedOutput = parseRoleExecutionOutput(result.stdout, {
           requireEvent: outgoing.length > 0 && !isParallelSplit
         });
@@ -867,7 +859,7 @@ export async function runSystemWithLangGraph(args: RunnerInput): Promise<Adapter
           modelId: effectiveModelId,
           profileId: effectiveProfileId,
           toolRef: tool.toolRef,
-          command: tool.command,
+          command: auditCommand,
           resultArgs: result.args,
           exitCode: result.exitCode,
           selectedEvent,
@@ -911,6 +903,8 @@ export async function runSystemWithLangGraph(args: RunnerInput): Promise<Adapter
       } catch (error) {
         const message = error instanceof Error ? error.message : String(error);
         const category = error instanceof ToolExecutionError ? ` (${error.category})` : "";
+        const executionError =
+          error instanceof OpencodeExecutionError ? error.details : undefined;
         const audit = makeAuditRecord({
           roleId,
           branchId,
@@ -920,9 +914,12 @@ export async function runSystemWithLangGraph(args: RunnerInput): Promise<Adapter
           modelId: effectiveModelId,
           profileId: effectiveProfileId,
           toolRef: tool.toolRef,
-          command: tool.command,
+          command: auditCommand,
+          resultArgs: executionError?.args,
           exitCode: 1,
           status: "failed",
+          stdout: executionError?.stdout,
+          stderr: executionError?.stderr,
           error: `${message}${category}`
         });
         await persistRoleResult({ roleId, context: args, audit });

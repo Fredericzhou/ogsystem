@@ -97,7 +97,7 @@ npm run run:doctor -- --required opencode
 ## Runtime Guarantees
 
 - The adapter progresses through an explicit state machine. The entry role becomes the initial state, each role execution emits one structured result, and completion happens only when a transition reaches the terminal `output` boundary or an explicit noop law allows a single-path pass-through.
-- Executable roles must emit strict JSON on stdout: `{"event":"EVENT_NAME","content":"..."}`. `event` is required for roles with outgoing flows and must match one Mermaid edge label exactly. Regex matching and line-by-line event guessing are not supported.
+- Executable roles always resolve to one JSON object: `{"event":"EVENT_NAME","content":"..."}`. For `model.bind`, the runtime sends `prompt + output.schema.json` to OpenCode SDK v2 and reads `info.structured`; for legacy `exec.bind`, the runtime still parses tool stdout as one JSON object. `event` is required for roles with outgoing flows and must match one Mermaid edge label exactly.
 - Executable roles are resolved by `roleId` directly. For each Mermaid `Role:<roleId>`, the runtime loads `og-roles/roles/<roleId>/role.json`, renders `prompt.md`, validates optional `input.schema.json`, and validates `output.schema.json`.
 - The runtime now supports `model.bind.<roleId>=<modelId>` with auto-discovered `.ogsystem/runtime.json`, `.ogsystem/user-profile.json`, `.ogsystem/laws.json`, and `og-models/`.
 - The runtime now supports `%% engine=langgraph` with `role.mode.*=parallel_split`, `join.mode.*=all_of`, `join.sources.*`, and `loop.max.*`.

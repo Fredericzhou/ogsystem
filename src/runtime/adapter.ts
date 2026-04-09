@@ -18,6 +18,7 @@ import {
 } from "./role-repo.js";
 import { runSystemWithLangGraph } from "./langgraph-runner.js";
 import { projectStages } from "./stage-projector.js";
+import { OpencodeExecutionError, executeOpencodeModelRole } from "./opencode-executor.js";
 import { runCliTool, ToolExecutionError } from "./tool-runner.js";
 import { SYSTEM_END_ROLE_ID } from "./types.js";
 import type {
@@ -107,24 +108,6 @@ function renderUserProfile(userProfile?: UserProfile): string {
     return "";
   }
   return stringifyJson(userProfile);
-}
-
-function renderOpencodeArgs(args?: Record<string, string | boolean>): string[] {
-  if (!args) {
-    return [];
-  }
-  const rendered: string[] = [];
-  for (const [key, value] of Object.entries(args)) {
-    const flag = key.startsWith("--") ? key : `--${key}`;
-    if (typeof value === "boolean") {
-      if (value) {
-        rendered.push(flag);
-      }
-      continue;
-    }
-    rendered.push(flag, value);
-  }
-  return rendered;
 }
 
 function buildRoleInputProjection(args: {
@@ -581,6 +564,7 @@ async function executeRoleNode(args: {
   let executionEnv: Record<string, string> | undefined;
   let timeoutMs = 120000;
   let maxOutputBytes = 64 * 1024;
+  let auditCommand: string | undefined;
 
   if (modelId && args.context.modelsById.has(modelId)) {
     const modelPackage = args.context.modelsById.get(modelId);
@@ -599,17 +583,12 @@ async function executeRoleNode(args: {
       OGSYSTEM_MODEL_ID: modelPackage.manifest.modelId,
       OGSYSTEM_ALLOWED_EVENTS: outgoing.map((item) => item.eventType).join(",")
     };
+    auditCommand = "opencode-sdk";
     tool = {
       toolRef: `model.${modelPackage.manifest.modelId}`,
       runner: "local_shell",
-      command: "opencode",
-      argsTemplate: [
-        ...(args.context.runtimeConfig.opencode?.baseArgs ?? ["run"]),
-        "--model",
-        modelPackage.manifest.model,
-        ...renderOpencodeArgs(modelPackage.manifest.args),
-        "{{prompt}}"
-      ],
+      command: auditCommand,
+      argsTemplate: [],
       stdinMode: "none"
     };
   } else {
@@ -689,23 +668,36 @@ async function executeRoleNode(args: {
     }
 
     tool = legacyTool;
+    auditCommand = tool.command;
     timeoutMs = profile.timeoutMs ?? timeoutMs;
     maxOutputBytes = profile.maxOutputBytes ?? maxOutputBytes;
   }
 
   try {
-    const result = await runCliTool({
-      tool,
-      vars: { prompt },
-      env: executionEnv,
-      workdir: executionWorkdir,
-      timeoutMs,
-      maxOutputBytes,
-      dryRun: args.context.dryRun,
-      dryRunOutput: {
-        event: outgoing.length === 1 ? outgoing[0].eventType : undefined
-      }
-    });
+    const result =
+      modelId && args.context.modelsById.has(modelId) && !args.context.dryRun
+        ? await executeOpencodeModelRole({
+            roleId: args.roleId,
+            prompt,
+            schema: rolePackage?.outputSchema,
+            modelPackage: args.context.modelsById.get(modelId)!,
+            workdir: executionWorkdir,
+            env: executionEnv,
+            timeoutMs,
+            maxOutputBytes
+          })
+        : await runCliTool({
+            tool,
+            vars: { prompt },
+            env: executionEnv,
+            workdir: executionWorkdir,
+            timeoutMs,
+            maxOutputBytes,
+            dryRun: args.context.dryRun,
+            dryRunOutput: {
+              event: outgoing.length === 1 ? outgoing[0].eventType : undefined
+            }
+          });
     const parsedOutput = parseRoleExecutionOutput(result.stdout, {
       requireEvent: outgoing.length > 0
     });
@@ -726,7 +718,7 @@ async function executeRoleNode(args: {
         modelId: effectiveModelId,
         profileId: effectiveProfileId,
         toolRef: tool.toolRef,
-        command: tool.command,
+        command: auditCommand,
         resultArgs: result.args,
         exitCode: result.exitCode,
         status: "failed",
@@ -765,7 +757,7 @@ async function executeRoleNode(args: {
       modelId: effectiveModelId,
       profileId: effectiveProfileId,
       toolRef: tool.toolRef,
-      command: tool.command,
+      command: auditCommand,
       resultArgs: result.args,
       exitCode: result.exitCode,
       selectedEvent: selectedFlow?.eventType,
@@ -795,6 +787,7 @@ async function executeRoleNode(args: {
     const message = error instanceof Error ? error.message : String(error);
     const category =
       error instanceof ToolExecutionError ? ` (${error.category})` : "";
+    const executionError = error instanceof OpencodeExecutionError ? error.details : undefined;
     const audit = makeAuditRecord({
       roleId: args.roleId,
       lawRef,
@@ -802,9 +795,12 @@ async function executeRoleNode(args: {
       modelId: effectiveModelId,
       profileId: effectiveProfileId,
       toolRef: tool.toolRef,
-      command: tool.command,
+      command: auditCommand,
+      resultArgs: executionError?.args,
       exitCode: 1,
       status: "failed",
+      stdout: executionError?.stdout,
+      stderr: executionError?.stderr,
       error: `${message}${category}`
     });
     await persistRoleResult({ roleId: args.roleId, context: args.context, audit });

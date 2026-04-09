@@ -178,6 +178,11 @@ Model rules:
 - model packages do not include routing logic
 - `og-models/catalog/opencode-models.json` is the raw availability snapshot
 - `og-models/models/*` should stay a small curated alias layer
+- for `executor: "opencode"`, `model.bind` roles run through OpenCode SDK v2 structured output:
+  - input = rendered role prompt + `output.schema.json` + model selection + role working directory
+  - output = one JSON object from `assistant.info.structured`
+  - `args.reasoningEffort` is treated as the OpenCode `variant`
+  - unsupported arbitrary CLI flags are not used on the SDK path
 
 ## 7. User Profile Contract
 
@@ -240,6 +245,13 @@ Minimal shared-workspace rule:
 - default shared path is `.ogsystems/<run-id>/shared/`
 - runtime exposes it through `OGSYSTEM_SHARED_DIR`
 - role directories do not receive a `shared` symlink by default
+
+OpenCode lifecycle rule for `model.bind`:
+
+- one node execution starts one isolated `opencode serve`
+- the server is bound to that node's role directory
+- after the node returns structured JSON or fails, that server is closed immediately
+- parallel LangGraph branches therefore create multiple concurrent but short-lived OpenCode processes
 
 For `engine=langgraph` runs, `state.json` also persists:
 
