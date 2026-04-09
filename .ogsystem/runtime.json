@@ -2,13 +2,5 @@
   "executor": "opencode",
   "roleRepo": "./og-roles",
   "modelRepo": "./og-models",
-  "runsDir": ".ogsystems",
-  "workspace": {
-    "rolesDir": "roles",
-    "privateDirName": "private",
-    "linkSharedIntoRoleDir": false
-  },
-  "opencode": {
-    "baseArgs": ["run"]
-  }
+  "runsDir": ".ogsystems"
 }

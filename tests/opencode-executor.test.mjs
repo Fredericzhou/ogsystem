@@ -335,6 +335,67 @@ test("executeOpencodeModelRole keeps sessions isolated on one shared server", as
   });
 });
 
+test("executeOpencodeModelRole reuses an existing session when provided", async () => {
+  let createCalls = 0;
+  let promptSessionId;
+
+  const result = await executeOpencodeModelRole({
+    roleId: "role-loop",
+    prompt: "continue debate",
+    schema: {
+      type: "object",
+      required: ["event", "content"],
+      properties: {
+        event: { type: "string" },
+        content: { type: "string" }
+      },
+      additionalProperties: false
+    },
+    modelPackage: makeModelPackage(),
+    workdir: "/tmp/run/roles/role-loop",
+    timeoutMs: 5000,
+    maxOutputBytes: 4096,
+    runClient: makeRunClient({
+      client: {
+        session: {
+          async create() {
+            createCalls += 1;
+            return {
+              data: {
+                id: "ses_created"
+              }
+            };
+          },
+          async prompt(args) {
+            promptSessionId = args.sessionID;
+            return {
+              data: {
+                id: "msg_loop",
+                info: {
+                  structured: {
+                    event: "NEXT",
+                    content: "continued"
+                  }
+                },
+                parts: [{ type: "step-start" }, { type: "step-finish" }]
+              }
+            };
+          },
+          async abort() {
+            return true;
+          }
+        }
+      }
+    }),
+    sessionId: "ses_existing"
+  });
+
+  assert.strictEqual(createCalls, 0);
+  assert.strictEqual(promptSessionId, "ses_existing");
+  assert.strictEqual(result.sessionId, "ses_existing");
+  assert.strictEqual(result.messageId, "msg_loop");
+});
+
 test("executeOpencodeModelRole aborts only the timed out session", async () => {
   const aborted = [];
 
@@ -395,10 +456,11 @@ test("executeOpencodeModelRole aborts only the timed out session", async () => {
   ]);
 });
 
-test("executeOpencodeModelRole retries transient prompt failures with new sessions", async () => {
+test("executeOpencodeModelRole retries transient prompt failures on the same session", async () => {
   const createdSessions = [];
   const promptedSessions = [];
   const abortedSessions = [];
+  let promptAttempts = 0;
 
   const result = await executeOpencodeModelRole({
     roleId: "role-retry",
@@ -430,7 +492,8 @@ test("executeOpencodeModelRole retries transient prompt failures with new sessio
           },
           async prompt(args) {
             promptedSessions.push(args.sessionID);
-            if (args.sessionID === "ses_1") {
+            promptAttempts += 1;
+            if (promptAttempts === 1) {
               throw new Error(
                 'Type validation failed: Value: {"error":{"type":"api_error","message":"Service temporarily unavailable"}}'
               );
@@ -457,10 +520,10 @@ test("executeOpencodeModelRole retries transient prompt failures with new sessio
     })
   });
 
-  assert.deepStrictEqual(createdSessions, ["ses_1", "ses_2"]);
-  assert.deepStrictEqual(promptedSessions, ["ses_1", "ses_2"]);
+  assert.deepStrictEqual(createdSessions, ["ses_1"]);
+  assert.deepStrictEqual(promptedSessions, ["ses_1", "ses_1"]);
   assert.deepStrictEqual(abortedSessions, ["ses_1"]);
-  assert.strictEqual(result.sessionId, "ses_2");
+  assert.strictEqual(result.sessionId, "ses_1");
   assert.strictEqual(result.messageId, "msg_2");
   assert.deepStrictEqual(JSON.parse(result.stdout), {
     event: "NEXT",

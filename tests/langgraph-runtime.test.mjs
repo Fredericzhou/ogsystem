@@ -60,6 +60,38 @@ test("adapter runs langgraph debate example with parallel branches, join, and bo
     path.resolve(runDir, "roles", "debate-moderator", "prompt.md"),
     "utf8"
   );
+  const moderatorExecutions = await readdir(
+    path.resolve(runDir, "roles", "debate-moderator", "executions")
+  );
+  assert.strictEqual(moderatorExecutions.length, 2);
+  const moderatorFirstExecution = JSON.parse(
+    await readFile(
+      path.resolve(
+        runDir,
+        "roles",
+        "debate-moderator",
+        "executions",
+        moderatorExecutions[0],
+        "execution.json"
+      ),
+      "utf8"
+    )
+  );
+  const moderatorSecondExecution = JSON.parse(
+    await readFile(
+      path.resolve(
+        runDir,
+        "roles",
+        "debate-moderator",
+        "executions",
+        moderatorExecutions[1],
+        "execution.json"
+      ),
+      "utf8"
+    )
+  );
+  assert.strictEqual(moderatorFirstExecution.executionIndex, 1);
+  assert.strictEqual(moderatorSecondExecution.executionIndex, 2);
   const summaryPrompt = await readFile(
     path.resolve(runDir, "roles", "debate-summary", "prompt.md"),
     "utf8"
@@ -123,4 +155,8 @@ test("adapter runs minimal expert consultation example with parallel specialists
     "utf8"
   );
   assert.match(chiefPrompt, /hospital\.case\.board\.zh\.detailed/);
+  const chiefExecutions = await readdir(
+    path.resolve(runDir, "roles", "diagnosis-chief-review", "executions")
+  );
+  assert.strictEqual(chiefExecutions.length, 1);
 });

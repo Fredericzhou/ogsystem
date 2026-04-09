@@ -98,12 +98,12 @@ npm run run:doctor -- --required opencode
 
 - The adapter progresses through an explicit state machine. The entry role becomes the initial state, each role execution emits one structured result, and completion happens only when a transition reaches the terminal `output` boundary or an explicit noop law allows a single-path pass-through.
 - Executable roles always resolve to one JSON object: `{"event":"EVENT_NAME","content":"..."}`. For `model.bind`, the runtime sends `prompt + output.schema.json` to OpenCode SDK v2 and reads `info.structured`; for legacy `exec.bind`, the runtime still parses tool stdout as one JSON object. `event` is required for roles with outgoing flows and must match one Mermaid edge label exactly.
-- For `model.bind`, one run now starts one shared `opencode serve`, and each node execution gets its own isolated OpenCode session on that server.
+- For `model.bind`, one run now starts one shared `opencode serve`, and each role/node keeps one isolated OpenCode session on that server for the duration of the run.
 - Executable roles are resolved by `roleId` directly. For each Mermaid `Role:<roleId>`, the runtime loads `og-roles/roles/<roleId>/role.json`, renders `prompt.md`, validates optional `input.schema.json`, and validates `output.schema.json`.
 - The runtime now supports `model.bind.<roleId>=<modelId>` with auto-discovered `.ogsystem/runtime.json`, `.ogsystem/user-profile.json`, `.ogsystem/laws.json`, and `og-models/`.
-- `model.bind` retries transient OpenCode/provider failures with a fresh session while keeping the same run-level shared server.
+- `model.bind` retries transient OpenCode/provider failures on the same role session while keeping the same run-level shared server.
 - The runtime now supports `%% engine=langgraph` with `role.mode.*=parallel_split`, `join.mode.*=all_of`, `join.sources.*`, and `loop.max.*`.
-- Each run persists under `.ogsystems/<run-id>/`, including run-level state and per-role prompt/result/audit artifacts.
+- Each run persists under `.ogsystems/<run-id>/`, including run-level state, `sessions.json`, and per-role execution history under `roles/<roleId>/executions/`.
 - Each run gets its own isolated `.ogsystems/<run-id>/shared/` directory, and role directories do not receive a `shared` symlink by default.
 - `.ogsystems/` is generated runtime state and should stay out of version control.
 - LangGraph runs persist `activeBranches`, `completedBranches`, `loopIterations`, and `graphState` inside `state.json`, and support `--resume-run` against the same run directory.
@@ -125,7 +125,7 @@ npm run run:doctor -- --required opencode
 
 - `og-models/catalog/opencode-models.json` snapshots the current local `opencode models` list.
 - `og-models/models/*/model.json` provides curated reusable model bindings.
-- `.ogsystem/runtime.json` provides runtime defaults for shared workspace and runs directory.
+- `.ogsystem/runtime.json` provides runtime defaults for role repo, model repo, and runs directory.
 - `.ogsystem/user-profile.json` provides user delivery preference sample.
 - `.ogsystem/laws.json` provides sample law catalog colocated with runtime config.
 - `examples/target-model-binding-system.mmd` shows `model.bind.*` usage.

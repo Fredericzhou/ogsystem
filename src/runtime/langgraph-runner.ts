@@ -6,6 +6,14 @@ import { END, START, ReducedValue, StateGraph, StateSchema } from "@langchain/la
 import { z } from "zod";
 
 import {
+  allocateRoleExecution,
+  appendEvent,
+  getRoleSession,
+  persistRolePrelude,
+  persistRoleResult,
+  persistRoleSession
+} from "./run-artifacts.js";
+import {
   renderRolePrompt,
   validateRoleInputSchema,
   validateRoleOutputSchema
@@ -17,6 +25,14 @@ import {
 } from "./opencode-executor.js";
 import { projectStages } from "./stage-projector.js";
 import { runCliTool, ToolExecutionError } from "./tool-runner.js";
+import {
+  buildAdjacency,
+  buildIncoming,
+  parseRoleExecutionOutput,
+  preview,
+  renderUserProfile,
+  stringifyJson
+} from "./runtime-support.js";
 import { SYSTEM_END_ROLE_ID } from "./types.js";
 import type {
   AdapterRunResult,
@@ -68,101 +84,6 @@ type LangGraphState = {
   lastExecutedRoleId: string;
 };
 
-function preview(value: string): string | undefined {
-  const normalized = value.trim();
-  if (!normalized) {
-    return undefined;
-  }
-  return normalized.slice(0, 400);
-}
-
-function stringifyJson(value: unknown): string {
-  return JSON.stringify(value, null, 2);
-}
-
-function renderUserProfile(userProfile?: UserProfile): string {
-  if (!userProfile) {
-    return "";
-  }
-  return stringifyJson(userProfile);
-}
-
-function buildAdjacency(flows: Flow[]): Map<string, Flow[]> {
-  const map = new Map<string, Flow[]>();
-  for (const flow of flows) {
-    const list = map.get(flow.fromRoleId) ?? [];
-    list.push(flow);
-    map.set(flow.fromRoleId, list);
-  }
-  return map;
-}
-
-function buildIncoming(flows: Flow[]): Map<string, Flow[]> {
-  const map = new Map<string, Flow[]>();
-  for (const flow of flows) {
-    if (flow.toRoleId === SYSTEM_END_ROLE_ID) {
-      continue;
-    }
-    const list = map.get(flow.toRoleId) ?? [];
-    list.push(flow);
-    map.set(flow.toRoleId, list);
-  }
-  return map;
-}
-
-function parseRoleExecutionOutput(
-  output: string,
-  options: { requireEvent: boolean }
-): RoleExecutionOutput {
-  const trimmed = output.trim();
-  if (!trimmed) {
-    throw new Error("Executable role output is empty; expected JSON object");
-  }
-
-  let parsed: unknown;
-  try {
-    parsed = JSON.parse(trimmed);
-  } catch (error) {
-    const message = error instanceof Error ? error.message : String(error);
-    throw new Error(`Executable role output must be valid JSON: ${message}`);
-  }
-
-  if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) {
-    throw new Error("Executable role output must be a JSON object");
-  }
-
-  const record = parsed as Record<string, unknown>;
-  const allowedKeys = new Set(["event", "content", "data"]);
-  for (const key of Object.keys(record)) {
-    if (!allowedKeys.has(key)) {
-      throw new Error(`Executable role output contains unsupported field "${key}"`);
-    }
-  }
-
-  const result: RoleExecutionOutput = {};
-  if (record.event !== undefined) {
-    if (typeof record.event !== "string" || !record.event.trim()) {
-      throw new Error('Executable role output field "event" must be a non-empty string');
-    }
-    result.event = record.event;
-  }
-  if (record.content !== undefined) {
-    if (typeof record.content !== "string") {
-      throw new Error('Executable role output field "content" must be a string');
-    }
-    result.content = record.content;
-  }
-  if (record.data !== undefined) {
-    if (typeof record.data !== "object" || record.data === null || Array.isArray(record.data)) {
-      throw new Error('Executable role output field "data" must be an object');
-    }
-    result.data = record.data as Record<string, unknown>;
-  }
-  if (options.requireEvent && !result.event) {
-    throw new Error('Executable role output must include "event" for roles with outgoing flows');
-  }
-  return result;
-}
 
 function mergeStatus(
   current: LangGraphState["status"],
@@ -362,77 +283,6 @@ function makeAuditRecord(args: {
   };
 }
 
-async function persistRolePrelude(args: {
-  roleId: string;
-  context: RunnerInput;
-  state: LangGraphState;
-  prompt: string;
-  allowedEvents: string[];
-  modelId?: string;
-  loopIteration: number;
-}): Promise<void> {
-  const roleDirs = args.context.runContext.roleDirsById.get(args.roleId);
-  if (!roleDirs) {
-    return;
-  }
-  const rolePackage = args.context.rolePackagesByRoleId.get(args.roleId);
-  await writeFile(
-    resolve(roleDirs.roleDir, "inbox.md"),
-    [
-      `# Inbox: ${args.roleId}`,
-      "",
-      `Role: ${rolePackage?.manifest.name ?? args.roleId}`,
-      "",
-      "Role Description:",
-      rolePackage?.manifest.description ?? "",
-      "",
-      "Runtime Input Projection:",
-      "```json",
-      stringifyJson({
-        role_id: args.roleId,
-        task: args.state.userPrompt,
-        allowed_events: args.allowedEvents,
-        round: args.loopIteration,
-        user_profile: args.context.userProfile ?? {}
-      }),
-      "```"
-    ].join("\n"),
-    "utf8"
-  );
-  await writeFile(resolve(roleDirs.roleDir, "prompt.md"), `${args.prompt}\n`, "utf8");
-  await writeFile(
-    resolve(roleDirs.roleDir, "role.md"),
-    [
-      `# Role ${args.roleId}`,
-      "",
-      `- modelId: ${args.modelId ?? "legacy-profile"}`,
-      `- allowedEvents: ${args.allowedEvents.join(", ") || "(none)"}`,
-      `- resolvedRolePath: ${rolePackage?.resolvedPath ?? ""}`,
-      `- preferredModelTags: ${(rolePackage?.manifest.preferredModelTags ?? []).join(", ") || "(none)"}`,
-      `- sharedDir: ${args.context.runContext.sharedDir}`,
-      `- privateDir: ${roleDirs.privateDir}`
-    ].join("\n"),
-    "utf8"
-  );
-}
-
-async function persistRoleResult(args: {
-  roleId: string;
-  context: RunnerInput;
-  output?: RoleExecutionOutput;
-  audit: AuditRecord;
-}): Promise<void> {
-  const roleDirs = args.context.runContext.roleDirsById.get(args.roleId);
-  if (!roleDirs) {
-    return;
-  }
-  if (args.output) {
-    await writeFile(resolve(roleDirs.roleDir, "result.json"), stringifyJson(args.output), "utf8");
-    await writeFile(resolve(roleDirs.roleDir, "outbox.md"), `${args.output.content ?? ""}\n`, "utf8");
-  }
-  await writeFile(resolve(roleDirs.roleDir, "audit.md"), stringifyJson(args.audit), "utf8");
-}
-
 function getTargetLoopIteration(args: {
   targetRoleId: string;
   currentLoopIteration: number;
@@ -588,7 +438,7 @@ function createInitialState(system: SystemDefinition, prompt: string): LangGraph
 }
 
 async function appendAuditFiles(runContext: RunContext, audit: AuditRecord): Promise<void> {
-  await appendFile(runContext.eventsPath, `${JSON.stringify({ type: "audit", ...audit })}\n`, "utf8");
+  await appendEvent(runContext, { type: "audit", ...audit });
   await appendFile(
     resolve(runContext.auditDir, "transitions.md"),
     `- ${audit.roleId}: ${audit.status}${audit.selectedEvent ? ` (${audit.selectedEvent})` : ""}\n`,
@@ -618,6 +468,12 @@ export async function runSystemWithLangGraph(args: RunnerInput): Promise<Adapter
       const rolePackage = args.rolePackagesByRoleId.get(roleId);
       const modelId = system.modelBinding[roleId] ?? system.executionBinding[roleId];
       const legacyProfileRef = system.executionBinding[roleId];
+      const execution = allocateRoleExecution({
+        context: args.runContext,
+        roleId,
+        branchId,
+        loopIteration
+      });
 
       if (maxTransitions !== undefined && nextTransitionCount > maxTransitions) {
         const error = `Transition budget exceeded: ${nextTransitionCount} > ${maxTransitions}`;
@@ -632,7 +488,7 @@ export async function runSystemWithLangGraph(args: RunnerInput): Promise<Adapter
           status: "failed",
           error
         });
-        await persistRoleResult({ roleId, context: args, audit });
+        await persistRoleResult({ roleId, context: args.runContext, execution, audit });
         await appendAuditFiles(args.runContext, audit);
         return {
           status: "failed",
@@ -658,12 +514,24 @@ export async function runSystemWithLangGraph(args: RunnerInput): Promise<Adapter
 
       await persistRolePrelude({
         roleId,
-        context: args,
-        state,
+        roleName: rolePackage?.manifest.name ?? roleId,
+        roleDescription: rolePackage?.manifest.description ?? "",
         prompt,
         allowedEvents,
         modelId,
-        loopIteration
+        resolvedRolePath: rolePackage?.resolvedPath,
+        preferredModelTags: rolePackage?.manifest.preferredModelTags,
+        sharedDir: args.runContext.sharedDir,
+        privateDir: args.runContext.roleDirsById.get(roleId)?.privateDir ?? "",
+        execution,
+        roleInputProjection: {
+          role_id: roleId,
+          task: state.userPrompt,
+          allowed_events: allowedEvents,
+          round: loopIteration,
+          user_profile: args.userProfile ?? {}
+        },
+        context: args.runContext
       });
 
       let tool: CliTool | undefined;
@@ -674,6 +542,7 @@ export async function runSystemWithLangGraph(args: RunnerInput): Promise<Adapter
       let timeoutMs = 120000;
       let maxOutputBytes = 64 * 1024;
       let auditCommand: string | undefined;
+      const existingSession = getRoleSession(args.runContext, roleId);
 
       try {
         if (modelId && args.modelsById.has(modelId)) {
@@ -717,7 +586,7 @@ export async function runSystemWithLangGraph(args: RunnerInput): Promise<Adapter
               status: "failed",
               error
             });
-            await persistRoleResult({ roleId, context: args, audit });
+            await persistRoleResult({ roleId, context: args.runContext, execution, audit });
             await appendAuditFiles(args.runContext, audit);
             return {
               status: "failed",
@@ -744,7 +613,7 @@ export async function runSystemWithLangGraph(args: RunnerInput): Promise<Adapter
               status: "failed",
               error
             });
-            await persistRoleResult({ roleId, context: args, audit });
+            await persistRoleResult({ roleId, context: args.runContext, execution, audit });
             await appendAuditFiles(args.runContext, audit);
             return {
               status: "failed",
@@ -799,7 +668,7 @@ export async function runSystemWithLangGraph(args: RunnerInput): Promise<Adapter
                 status: "failed",
                 error
               });
-              await persistRoleResult({ roleId, context: args, audit });
+              await persistRoleResult({ roleId, context: args.runContext, execution, audit });
               await appendAuditFiles(args.runContext, audit);
               return {
                 status: "failed",
@@ -836,7 +705,7 @@ export async function runSystemWithLangGraph(args: RunnerInput): Promise<Adapter
             nextRoleId: nextRoleIdForAudit,
             status: "noop"
           });
-          await persistRoleResult({ roleId, context: args, audit });
+          await persistRoleResult({ roleId, context: args.runContext, execution, audit });
           await appendAuditFiles(args.runContext, audit);
           return {
             status: finalStatus,
@@ -881,7 +750,8 @@ export async function runSystemWithLangGraph(args: RunnerInput): Promise<Adapter
                 workdir: executionWorkdir,
                 timeoutMs,
                 maxOutputBytes,
-                runClient: args.opencodeRun!
+                runClient: args.opencodeRun!,
+                sessionId: existingSession?.sessionId
               })
             : await runCliTool({
                 tool,
@@ -1040,9 +910,19 @@ export async function runSystemWithLangGraph(args: RunnerInput): Promise<Adapter
           error: finalError || undefined
         });
 
+        if (result.sessionId) {
+          await persistRoleSession({
+            context: args.runContext,
+            roleId,
+            execution,
+            sessionId: result.sessionId,
+            messageId: result.messageId
+          });
+        }
         await persistRoleResult({
           roleId,
-          context: args,
+          context: args.runContext,
+          execution,
           output: parsedOutput,
           audit
         });
@@ -1095,7 +975,16 @@ export async function runSystemWithLangGraph(args: RunnerInput): Promise<Adapter
           stderr: executionError?.stderr,
           error: `${message}${category}`
         });
-        await persistRoleResult({ roleId, context: args, audit });
+        if (executionError?.sessionId) {
+          await persistRoleSession({
+            context: args.runContext,
+            roleId,
+            execution,
+            sessionId: executionError.sessionId,
+            messageId: executionError.messageId
+          });
+        }
+        await persistRoleResult({ roleId, context: args.runContext, execution, audit });
         await appendAuditFiles(args.runContext, audit);
         return {
           status: "failed",

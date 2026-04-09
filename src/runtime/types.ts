@@ -174,6 +174,30 @@ export type AuditRecord = {
 export type RoleRunDirs = {
   roleDir: string;
   privateDir: string;
+  executionsDir: string;
+  sessionPath: string;
+};
+
+export type RoleExecutionRecord = {
+  executionId: string;
+  executionIndex: number;
+  executionDir: string;
+  roleId: string;
+  sessionKey: string;
+  startedAt: string;
+  branchId?: string;
+  loopIteration?: number;
+};
+
+export type OpencodeSessionRecord = {
+  sessionKey: string;
+  roleId: string;
+  sessionId: string;
+  directory: string;
+  createdAt: string;
+  lastPromptAt: string;
+  lastMessageId?: string;
+  promptCount: number;
 };
 
 export type RunContext = {
@@ -183,8 +207,14 @@ export type RunContext = {
   eventsPath: string;
   statePath: string;
   opencodeServerPath: string;
+  sessionsPath: string;
   roleDirsById: Map<string, RoleRunDirs>;
+  roleExecutionCounts: Map<string, number>;
+  sessionRecordsByRoleId: Map<string, OpencodeSessionRecord>;
   sharedDir: string;
+  opencodeServerUrl?: string;
+  opencodeServerPid?: number;
+  opencodeServerStartedAt?: string;
 };
 
 export type BranchRecord = {

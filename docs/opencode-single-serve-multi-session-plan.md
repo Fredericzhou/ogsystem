@@ -1,5 +1,11 @@
 # OpenCode Single-Serve Multi-Session Plan
 
+Implementation note:
+
+- the minimal implementation now keeps one shared `opencode serve` per run and one reusable session per role/node within that run
+- this differs slightly from the original draft below, which assumed one new session per node execution
+- the change was made so looped nodes can preserve session history while still keeping role-level isolation
+
 ## 1. Goal
 
 Replace the current runtime strategy:

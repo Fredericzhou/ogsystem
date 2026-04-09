@@ -60,9 +60,32 @@ test("adapter auto-discovers runtime config and persists run artifacts for model
     path.resolve(runDir, "roles", "debate-minimalist", "private")
   );
   assert.ok(minimalistPrivateStat.isDirectory());
+  const minimalistExecutions = await readdir(
+    path.resolve(runDir, "roles", "debate-minimalist", "executions")
+  );
+  assert.strictEqual(minimalistExecutions.length, 1);
+  const minimalistExecutionPrompt = await readFile(
+    path.resolve(
+      runDir,
+      "roles",
+      "debate-minimalist",
+      "executions",
+      minimalistExecutions[0],
+      "prompt.md"
+    ),
+    "utf8"
+  );
+  assert.match(minimalistExecutionPrompt, /讨论当前架构是否继续最小化/);
+  const privateReadme = await readFile(
+    path.resolve(runDir, "roles", "debate-minimalist", "private", "README.md"),
+    "utf8"
+  );
+  assert.match(privateReadme, /Role-private writable workspace/);
 
   const runSharedStat = await lstat(path.resolve(runDir, "shared"));
   assert.ok(runSharedStat.isDirectory());
+  const sharedReadme = await readFile(path.resolve(runDir, "shared", "README.md"), "utf8");
+  assert.match(sharedReadme, /Run-shared writable workspace/);
   await assert.rejects(lstat(path.resolve(runDir, "roles", "debate-minimalist", "shared")));
 
   const judgeResult = JSON.parse(

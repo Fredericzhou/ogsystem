@@ -1,5 +1,5 @@
-import { appendFile, mkdir, readFile, symlink, writeFile } from "node:fs/promises";
-import { basename, dirname, resolve } from "node:path";
+import { appendFile, mkdir, readFile, writeFile } from "node:fs/promises";
+import { dirname, resolve } from "node:path";
 
 import {
   validateLawsConfig,
@@ -11,11 +11,29 @@ import {
 import { loadModelPackage } from "./model-repo.js";
 import { loadSystemFromMermaid } from "./parse-mermaid.js";
 import {
+  allocateRoleExecution,
+  appendEvent,
+  getRoleSession,
+  initializeRunContext,
+  pathExists,
+  persistRolePrelude,
+  persistRoleResult,
+  persistRoleSession,
+  readJsonFile
+} from "./run-artifacts.js";
+import {
   loadRolePackage,
   renderRolePrompt,
   validateRoleInputSchema,
   validateRoleOutputSchema
 } from "./role-repo.js";
+import {
+  buildAdjacency,
+  parseRoleExecutionOutput,
+  preview,
+  renderUserProfile,
+  stringifyJson
+} from "./runtime-support.js";
 import { runSystemWithLangGraph } from "./langgraph-runner.js";
 import { projectStages } from "./stage-projector.js";
 import {
@@ -38,7 +56,9 @@ import type {
   LoadedModelPackage,
   LoadedRolePackage,
   RoleExecutionOutput,
+  RoleExecutionRecord,
   RuntimeConfig,
+  RunContext,
   SystemDefinition,
   UserProfile
 } from "./types.js";
@@ -69,56 +89,6 @@ type RuntimeInput = {
   opencodeRun?: OpencodeRunClient;
   dryRun?: boolean;
 };
-
-type RoleRunDirs = {
-  roleDir: string;
-  privateDir: string;
-};
-
-type RunContext = {
-  runId: string;
-  runDir: string;
-  auditDir: string;
-  eventsPath: string;
-  statePath: string;
-  opencodeServerPath: string;
-  roleDirsById: Map<string, RoleRunDirs>;
-  sharedDir: string;
-  opencodeServerUrl?: string;
-  opencodeServerPid?: number;
-  opencodeServerStartedAt?: string;
-};
-
-function preview(value: string): string | undefined {
-  const normalized = value.trim();
-  if (!normalized) {
-    return undefined;
-  }
-  return normalized.slice(0, 400);
-}
-
-function slugify(value: string): string {
-  const normalized = value
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, "-")
-    .replace(/^-+|-+$/g, "");
-  return normalized || "run";
-}
-
-function timestampForPath(date: Date): string {
-  return date.toISOString().replace(/[:.]/g, "-");
-}
-
-function stringifyJson(value: unknown): string {
-  return JSON.stringify(value, null, 2);
-}
-
-function renderUserProfile(userProfile?: UserProfile): string {
-  if (!userProfile) {
-    return "";
-  }
-  return stringifyJson(userProfile);
-}
 
 function buildRoleInputProjection(args: {
   roleId: string;
@@ -207,65 +177,6 @@ function findFlowByEvent(flows: Flow[], event: string): Flow | null {
   return flows.find((item) => item.eventType === event) ?? null;
 }
 
-export function parseRoleExecutionOutput(
-  output: string,
-  options: { requireEvent: boolean }
-): RoleExecutionOutput {
-  const trimmed = output.trim();
-  if (!trimmed) {
-    throw new Error("Executable role output is empty; expected JSON object");
-  }
-
-  let parsed: unknown;
-  try {
-    parsed = JSON.parse(trimmed);
-  } catch (error) {
-    const message = error instanceof Error ? error.message : String(error);
-    throw new Error(`Executable role output must be valid JSON: ${message}`);
-  }
-
-  if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) {
-    throw new Error("Executable role output must be a JSON object");
-  }
-
-  const record = parsed as Record<string, unknown>;
-  const allowedKeys = new Set(["event", "content", "data"]);
-  for (const key of Object.keys(record)) {
-    if (!allowedKeys.has(key)) {
-      throw new Error(`Executable role output contains unsupported field "${key}"`);
-    }
-  }
-
-  const result: RoleExecutionOutput = {};
-
-  if (record.event !== undefined) {
-    if (typeof record.event !== "string" || !record.event.trim()) {
-      throw new Error('Executable role output field "event" must be a non-empty string');
-    }
-    result.event = record.event;
-  }
-
-  if (record.content !== undefined) {
-    if (typeof record.content !== "string") {
-      throw new Error('Executable role output field "content" must be a string');
-    }
-    result.content = record.content;
-  }
-
-  if (record.data !== undefined) {
-    if (typeof record.data !== "object" || record.data === null || Array.isArray(record.data)) {
-      throw new Error('Executable role output field "data" must be an object');
-    }
-    result.data = record.data as Record<string, unknown>;
-  }
-
-  if (options.requireEvent && !result.event) {
-    throw new Error('Executable role output must include "event" for roles with outgoing flows');
-  }
-
-  return result;
-}
-
 function resolveRolePrompt(args: {
   roleId: string;
   state: RuntimeState;
@@ -347,79 +258,6 @@ function makeAuditRecord(args: {
   };
 }
 
-async function persistRolePrelude(args: {
-  roleId: string;
-  context: RuntimeInput;
-  prompt: string;
-  allowedEvents: string[];
-  modelId?: string;
-  state: RuntimeState;
-}): Promise<void> {
-  const roleDirs = args.context.runContext.roleDirsById.get(args.roleId);
-  if (!roleDirs) {
-    return;
-  }
-  const rolePackage = args.context.rolePackagesByRoleId.get(args.roleId);
-  const roleInput = buildRoleInputProjection({
-    roleId: args.roleId,
-    state: args.state,
-    allowedEvents: args.allowedEvents,
-    userProfile: args.context.userProfile
-  });
-  await writeFile(
-    resolve(roleDirs.roleDir, "inbox.md"),
-    [
-      `# Inbox: ${args.roleId}`,
-      "",
-      `Role: ${rolePackage?.manifest.name ?? args.roleId}`,
-      "",
-      "Role Description:",
-      rolePackage?.manifest.description ?? "",
-      "",
-      "Runtime Input Projection:",
-      "```json",
-      stringifyJson(roleInput),
-      "```"
-    ].join("\n"),
-    "utf8"
-  );
-  await writeFile(resolve(roleDirs.roleDir, "prompt.md"), `${args.prompt}\n`, "utf8");
-  await writeFile(
-    resolve(roleDirs.roleDir, "role.md"),
-    [
-      `# Role ${args.roleId}`,
-      "",
-      `- modelId: ${args.modelId ?? "legacy-profile"}`,
-      `- allowedEvents: ${args.allowedEvents.join(", ") || "(none)"}`,
-      `- resolvedRolePath: ${rolePackage?.resolvedPath ?? ""}`,
-      `- preferredModelTags: ${(rolePackage?.manifest.preferredModelTags ?? []).join(", ") || "(none)"}`,
-      `- sharedDir: ${args.context.runContext.sharedDir}`,
-      `- privateDir: ${roleDirs.privateDir}`
-    ].join("\n"),
-    "utf8"
-  );
-}
-
-async function persistRoleResult(args: {
-  roleId: string;
-  context: RuntimeInput;
-  output?: RoleExecutionOutput;
-  audit: AuditRecord;
-}): Promise<void> {
-  const roleDirs = args.context.runContext.roleDirsById.get(args.roleId);
-  if (!roleDirs) {
-    return;
-  }
-  if (args.output) {
-    await writeFile(resolve(roleDirs.roleDir, "result.json"), stringifyJson(args.output), "utf8");
-    await writeFile(
-      resolve(roleDirs.roleDir, "outbox.md"),
-      `${args.output.content ?? ""}\n`,
-      "utf8"
-    );
-  }
-  await writeFile(resolve(roleDirs.roleDir, "audit.md"), stringifyJson(args.audit), "utf8");
-}
 
 async function executeRoleNode(args: {
   roleId: string;
@@ -436,6 +274,10 @@ async function executeRoleNode(args: {
   const legacyProfileRef = args.context.system.executionBinding[args.roleId];
   const maxTransitions = args.context.effectiveLaw.maxTransitions;
   const lawRef = args.context.system.lawBinding.globalLawRef;
+  const execution = allocateRoleExecution({
+    context: args.context.runContext,
+    roleId: args.roleId
+  });
 
   if (maxTransitions !== undefined && nextTransitionCount > maxTransitions) {
     const error = `Transition budget exceeded: ${nextTransitionCount} > ${maxTransitions}`;
@@ -450,7 +292,8 @@ async function executeRoleNode(args: {
     });
     await persistRoleResult({
       roleId: args.roleId,
-      context: args.context,
+      context: args.context.runContext,
+      execution,
       audit
     });
     return {
@@ -474,7 +317,12 @@ async function executeRoleNode(args: {
         status: "failed",
         error
       });
-      await persistRoleResult({ roleId: args.roleId, context: args.context, audit });
+      await persistRoleResult({
+        roleId: args.roleId,
+        context: args.context.runContext,
+        execution,
+        audit
+      });
       return {
         currentRoleId: args.roleId,
         transitionCount: nextTransitionCount,
@@ -495,7 +343,12 @@ async function executeRoleNode(args: {
         status: "failed",
         error
       });
-      await persistRoleResult({ roleId: args.roleId, context: args.context, audit });
+      await persistRoleResult({
+        roleId: args.roleId,
+        context: args.context.runContext,
+        execution,
+        audit
+      });
       return {
         currentRoleId: args.roleId,
         transitionCount: nextTransitionCount,
@@ -519,7 +372,12 @@ async function executeRoleNode(args: {
       nextRoleId: nextRoleId ?? undefined,
       status: "noop"
     });
-    await persistRoleResult({ roleId: args.roleId, context: args.context, audit });
+    await persistRoleResult({
+      roleId: args.roleId,
+      context: args.context.runContext,
+      execution,
+      audit
+    });
     return {
       currentRoleId: args.roleId,
       transitionCount: nextTransitionCount,
@@ -540,11 +398,23 @@ async function executeRoleNode(args: {
 
   await persistRolePrelude({
     roleId: args.roleId,
-    context: args.context,
+    roleName: rolePackage?.manifest.name ?? args.roleId,
+    roleDescription: rolePackage?.manifest.description ?? "",
     prompt,
     allowedEvents: outgoing.map((item) => item.eventType),
     modelId,
-    state: args.state
+    resolvedRolePath: rolePackage?.resolvedPath,
+    preferredModelTags: rolePackage?.manifest.preferredModelTags,
+    sharedDir: args.context.runContext.sharedDir,
+    privateDir: args.context.runContext.roleDirsById.get(args.roleId)?.privateDir ?? "",
+    execution,
+    roleInputProjection: buildRoleInputProjection({
+      roleId: args.roleId,
+      state: args.state,
+      allowedEvents: outgoing.map((item) => item.eventType),
+      userProfile: args.context.userProfile
+    }),
+    context: args.context.runContext
   });
 
   if (args.context.dryRun && outgoing.length > 1) {
@@ -560,7 +430,8 @@ async function executeRoleNode(args: {
     });
     await persistRoleResult({
       roleId: args.roleId,
-      context: args.context,
+      context: args.context.runContext,
+      execution,
       audit
     });
     return {
@@ -581,6 +452,7 @@ async function executeRoleNode(args: {
   let timeoutMs = 120000;
   let maxOutputBytes = 64 * 1024;
   let auditCommand: string | undefined;
+  const existingSession = getRoleSession(args.context.runContext, args.roleId);
 
   if (modelId && args.context.modelsById.has(modelId)) {
     const modelPackage = args.context.modelsById.get(modelId);
@@ -625,7 +497,12 @@ async function executeRoleNode(args: {
         status: "failed",
         error
       });
-      await persistRoleResult({ roleId: args.roleId, context: args.context, audit });
+      await persistRoleResult({
+        roleId: args.roleId,
+        context: args.context.runContext,
+        execution,
+        audit
+      });
       return {
         currentRoleId: args.roleId,
         transitionCount: nextTransitionCount,
@@ -649,7 +526,12 @@ async function executeRoleNode(args: {
         status: "failed",
         error
       });
-      await persistRoleResult({ roleId: args.roleId, context: args.context, audit });
+      await persistRoleResult({
+        roleId: args.roleId,
+        context: args.context.runContext,
+        execution,
+        audit
+      });
       return {
         currentRoleId: args.roleId,
         transitionCount: nextTransitionCount,
@@ -672,7 +554,12 @@ async function executeRoleNode(args: {
         status: "failed",
         error
       });
-      await persistRoleResult({ roleId: args.roleId, context: args.context, audit });
+      await persistRoleResult({
+        roleId: args.roleId,
+        context: args.context.runContext,
+        execution,
+        audit
+      });
       return {
         currentRoleId: args.roleId,
         transitionCount: nextTransitionCount,
@@ -711,7 +598,8 @@ async function executeRoleNode(args: {
             workdir: executionWorkdir,
             timeoutMs,
             maxOutputBytes,
-            runClient: args.context.opencodeRun!
+            runClient: args.context.opencodeRun!,
+            sessionId: existingSession?.sessionId
           })
         : await runCliTool({
             tool,
@@ -756,9 +644,19 @@ async function executeRoleNode(args: {
         stderr: result.stderr,
         error
       });
+      if (result.sessionId) {
+        await persistRoleSession({
+          context: args.context.runContext,
+          roleId: args.roleId,
+          execution,
+          sessionId: result.sessionId,
+          messageId: result.messageId
+        });
+      }
       await persistRoleResult({
         roleId: args.roleId,
-        context: args.context,
+        context: args.context.runContext,
+        execution,
         output: parsedOutput,
         audit
       });
@@ -800,9 +698,19 @@ async function executeRoleNode(args: {
       stderr: result.stderr,
       error: error ?? undefined
     });
+    if (result.sessionId) {
+      await persistRoleSession({
+        context: args.context.runContext,
+        roleId: args.roleId,
+        execution,
+        sessionId: result.sessionId,
+        messageId: result.messageId
+      });
+    }
     await persistRoleResult({
       roleId: args.roleId,
-      context: args.context,
+      context: args.context.runContext,
+      execution,
       output: parsedOutput,
       audit
     });
@@ -839,7 +747,21 @@ async function executeRoleNode(args: {
       stderr: executionError?.stderr,
       error: `${message}${category}`
     });
-    await persistRoleResult({ roleId: args.roleId, context: args.context, audit });
+    if (executionError?.sessionId) {
+      await persistRoleSession({
+        context: args.context.runContext,
+        roleId: args.roleId,
+        execution,
+        sessionId: executionError.sessionId,
+        messageId: executionError.messageId
+      });
+    }
+    await persistRoleResult({
+      roleId: args.roleId,
+      context: args.context.runContext,
+      execution,
+      audit
+    });
     return {
       currentRoleId: args.roleId,
       transitionCount: nextTransitionCount,
@@ -848,35 +770,6 @@ async function executeRoleNode(args: {
       finalRoleId: args.roleId,
       auditTrail: [audit]
     };
-  }
-}
-
-function buildAdjacency(flows: Flow[]): Map<string, Flow[]> {
-  const map = new Map<string, Flow[]>();
-  for (const flow of flows) {
-    const list = map.get(flow.fromRoleId) ?? [];
-    list.push(flow);
-    map.set(flow.fromRoleId, list);
-  }
-  return map;
-}
-
-async function readJsonFile(path: string): Promise<unknown> {
-  const source = await readFile(path, "utf8");
-  try {
-    return JSON.parse(source) as unknown;
-  } catch (error) {
-    const message = error instanceof Error ? error.message : String(error);
-    throw new Error(`Invalid JSON in ${path}: ${message}`);
-  }
-}
-
-async function pathExists(path: string): Promise<boolean> {
-  try {
-    await readFile(path, "utf8");
-    return true;
-  } catch {
-    return false;
   }
 }
 
@@ -972,105 +865,6 @@ async function loadModelPackages(args: {
   return modelsById;
 }
 
-async function ensureSymlink(target: string, path: string): Promise<void> {
-  try {
-    await symlink(target, path, "dir");
-  } catch {
-    // Ignore if already created by a previous run attempt.
-  }
-}
-
-function resolveSharedDir(args: {
-  runDir: string;
-  workdir: string;
-  runtimeConfig: RuntimeConfig;
-}): string {
-  if (!args.runtimeConfig.sharedDir) {
-    return resolve(args.runDir, "shared");
-  }
-  return resolve(args.workdir, args.runtimeConfig.sharedDir);
-}
-
-async function initializeRunContext(args: {
-  system: SystemDefinition;
-  systemPath: string;
-  prompt: string;
-  workdir: string;
-  runtimeConfig: RuntimeConfig;
-  resumeRunDir?: string;
-}): Promise<RunContext> {
-  const createdAt = new Date();
-  const runDir = args.resumeRunDir
-    ? resolve(args.workdir, args.resumeRunDir)
-    : resolve(
-        args.workdir,
-        args.runtimeConfig.runsDir,
-        `${timestampForPath(createdAt)}-${slugify(args.system.systemId)}`
-      );
-  const runId = basename(runDir);
-  const auditDir = resolve(runDir, "audit");
-  const rolesRootDir = resolve(runDir, args.runtimeConfig.workspace.rolesDir);
-  const sharedDir = resolveSharedDir({
-    runDir,
-    workdir: args.workdir,
-    runtimeConfig: args.runtimeConfig
-  });
-  const roleDirsById = new Map<string, RoleRunDirs>();
-
-  await mkdir(auditDir, { recursive: true });
-  await mkdir(rolesRootDir, { recursive: true });
-  await mkdir(sharedDir, { recursive: true });
-
-  const sourceSystem = await readFile(args.systemPath, "utf8");
-  if (!(await pathExists(resolve(runDir, "request.md")))) {
-    await writeFile(resolve(runDir, "request.md"), `${args.prompt}\n`, "utf8");
-  }
-  if (!(await pathExists(resolve(runDir, "system.mmd")))) {
-    await writeFile(resolve(runDir, "system.mmd"), sourceSystem, "utf8");
-  }
-  if (!(await pathExists(resolve(runDir, "run.md")))) {
-    await writeFile(
-      resolve(runDir, "run.md"),
-      [
-        `# Run ${runId}`,
-        "",
-        `- systemId: ${args.system.systemId}`,
-        `- systemVersion: ${args.system.systemVersion}`,
-        `- entryRoleId: ${args.system.entryRoleId}`,
-        `- sharedDir: ${sharedDir}`
-      ].join("\n"),
-      "utf8"
-    );
-  }
-  if (!(await pathExists(resolve(auditDir, "summary.md")))) {
-    await writeFile(resolve(auditDir, "summary.md"), "# Audit Summary\n", "utf8");
-  }
-  if (!(await pathExists(resolve(auditDir, "transitions.md")))) {
-    await writeFile(resolve(auditDir, "transitions.md"), "# Transitions\n", "utf8");
-  }
-
-  for (const roleId of args.system.roleIds) {
-    const roleDir = resolve(rolesRootDir, roleId);
-    const privateDir = resolve(roleDir, args.runtimeConfig.workspace.privateDirName);
-    await mkdir(privateDir, { recursive: true });
-    if (args.runtimeConfig.workspace.linkSharedIntoRoleDir) {
-      await ensureSymlink(sharedDir, resolve(roleDir, "shared"));
-    }
-    roleDirsById.set(roleId, { roleDir, privateDir });
-  }
-
-  return {
-    runId,
-    runDir,
-    auditDir,
-    eventsPath: resolve(runDir, "events.ndjson"),
-    statePath: resolve(runDir, "state.json"),
-    opencodeServerPath: resolve(runDir, "opencode-server.json"),
-    roleDirsById,
-    sharedDir
-  };
-}
-
 async function persistState(context: RunContext, state: RuntimeState): Promise<void> {
   await writeFile(
     context.statePath,
@@ -1085,10 +879,6 @@ async function persistState(context: RunContext, state: RuntimeState): Promise<v
     }),
     "utf8"
   );
-}
-
-async function appendEvent(context: RunContext, payload: Record<string, unknown>): Promise<void> {
-  await appendFile(context.eventsPath, `${JSON.stringify(payload)}\n`, "utf8");
 }
 
 function mergeRuntimeState(

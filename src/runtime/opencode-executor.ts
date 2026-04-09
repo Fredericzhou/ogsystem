@@ -449,6 +449,7 @@ export async function executeOpencodeModelRole(
     timeoutMs: number;
     maxOutputBytes: number;
     runClient?: OpencodeRunClient;
+    sessionId?: string;
   },
   transport: OpencodeSdkTransport = defaultTransport
 ): Promise<{
@@ -482,25 +483,27 @@ export async function executeOpencodeModelRole(
   if (!runClient) {
     throw new Error("OpenCode run client is unavailable");
   }
-  let sessionId = "";
+  let sessionId = args.sessionId ?? "";
   let messageId: string | undefined;
 
   try {
     return await withTimeout(
       (async () => {
         for (let attempt = 1; attempt <= MAX_OPENCODE_ATTEMPTS; attempt += 1) {
-          sessionId = "";
+          sessionId = args.sessionId ?? sessionId;
           messageId = undefined;
           let stderr = "";
 
           try {
-            const created = await runClient.client.session.create({
-              title: `${args.roleId}-${Date.now()}`,
-              directory: args.workdir
-            });
-            sessionId = created.data?.id ?? "";
             if (!sessionId) {
-              throw new Error("OpenCode SDK did not return a session id");
+              const created = await runClient.client.session.create({
+                title: `${args.roleId}-${Date.now()}`,
+                directory: args.workdir
+              });
+              sessionId = created.data?.id ?? "";
+              if (!sessionId) {
+                throw new Error("OpenCode SDK did not return a session id");
+              }
             }
 
             const response = await runClient.client.session.prompt({
