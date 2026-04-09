@@ -3,6 +3,12 @@
   "roleVersion": "1.0.0",
   "name": "Diagnosis Report Writer",
   "description": "Writes the final consultation report from the resolved diagnosis.",
+  "talent": {
+    "reasoningDepth": "medium",
+    "style": "concise",
+    "riskPreference": "conservative"
+  },
+  "preferredModelTags": ["fast", "instruction-following"],
   "promptTemplate": "prompt.md",
   "inputSchema": "../_shared/input.schema.json",
   "outputSchema": "output.schema.json",

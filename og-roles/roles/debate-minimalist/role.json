@@ -3,6 +3,12 @@
   "roleVersion": "1.0.0",
   "name": "Minimalist Debater",
   "description": "Argues that the current build should stay minimal and defer complex alignment.",
+  "talent": {
+    "reasoningDepth": "high",
+    "style": "critical",
+    "riskPreference": "conservative"
+  },
+  "preferredModelTags": ["reasoning", "long-context"],
   "promptTemplate": "prompt.md",
   "inputSchema": "../_shared/input.schema.json",
   "outputSchema": "output.schema.json",

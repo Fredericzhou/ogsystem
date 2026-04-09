@@ -8,13 +8,13 @@ flowchart TD
 %% join.mode.diagnosis-chief-review=all_of
 %% join.sources.diagnosis-chief-review=diagnosis-cardiology,diagnosis-neurology,diagnosis-imaging
 %% loop.max.diagnosis-dispatch=2
-%% exec.bind.diagnosis-intake=profile.intake.codex
-%% exec.bind.diagnosis-dispatch=profile.dispatch.codex
-%% exec.bind.diagnosis-cardiology=profile.cardiology.claude
-%% exec.bind.diagnosis-neurology=profile.neurology.gemini
-%% exec.bind.diagnosis-imaging=profile.imaging.python
-%% exec.bind.diagnosis-chief-review=profile.chief.codex
-%% exec.bind.diagnosis-report=profile.report.codex
+%% model.bind.diagnosis-intake=fast-gpt54
+%% model.bind.diagnosis-dispatch=fast-gpt54
+%% model.bind.diagnosis-cardiology=claude-sonnet
+%% model.bind.diagnosis-neurology=deep-o3
+%% model.bind.diagnosis-imaging=deep-o3
+%% model.bind.diagnosis-chief-review=deep-o3
+%% model.bind.diagnosis-report=fast-gpt54
 
 input -->|CASE_RECEIVED| intake[Role:diagnosis-intake]
 intake[Role:diagnosis-intake] -->|READY_FOR_PARALLEL| parallel_dispatch[Role:diagnosis-dispatch]

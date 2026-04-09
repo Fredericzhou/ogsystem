@@ -3,6 +3,12 @@
   "roleVersion": "1.0.0",
   "name": "Diagnosis Dispatch",
   "description": "Packages case context and dispatches parallel specialist tasks.",
+  "talent": {
+    "coordination": "high",
+    "reasoningDepth": "medium",
+    "style": "structured"
+  },
+  "preferredModelTags": ["fast", "long-context"],
   "promptTemplate": "prompt.md",
   "inputSchema": "../_shared/input.schema.json",
   "outputSchema": "output.schema.json",

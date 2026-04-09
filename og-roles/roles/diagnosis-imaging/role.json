@@ -3,6 +3,12 @@
   "roleVersion": "1.0.0",
   "name": "Imaging Specialist",
   "description": "Produces an imaging-focused interpretation for the consultation.",
+  "talent": {
+    "reasoningDepth": "high",
+    "style": "diagnostic",
+    "riskPreference": "conservative"
+  },
+  "preferredModelTags": ["reasoning", "long-context"],
   "promptTemplate": "prompt.md",
   "inputSchema": "../_shared/input.schema.json",
   "outputSchema": "output.schema.json",

@@ -1,0 +1,11 @@
+{
+  "modelId": "claude-sonnet",
+  "executor": "opencode",
+  "model": "claude-sonnet-4",
+  "args": {
+    "reasoningEffort": "medium"
+  },
+  "timeoutMs": 120000,
+  "maxOutputBytes": 65536,
+  "tags": ["fast", "reasoning", "long-context"]
+}

@@ -24,7 +24,8 @@ test("loadRolePackage resolves role directory and renders contextual fields", as
     allowed_events: JSON.stringify(["MINIMALIST_DONE", "REBUTTAL_NEEDED"]),
     last_output: "previous message",
     system_notes: "",
-    round: "1"
+    round: "1",
+    user_profile: "{\"language\":\"zh-CN\"}"
   };
 
   assert.doesNotThrow(() =>

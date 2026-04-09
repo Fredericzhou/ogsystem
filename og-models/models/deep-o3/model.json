@@ -1,0 +1,11 @@
+{
+  "modelId": "deep-o3",
+  "executor": "opencode",
+  "model": "o3",
+  "args": {
+    "reasoningEffort": "high"
+  },
+  "timeoutMs": 180000,
+  "maxOutputBytes": 65536,
+  "tags": ["reasoning", "long-context"]
+}

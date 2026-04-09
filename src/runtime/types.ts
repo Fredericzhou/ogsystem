@@ -19,6 +19,7 @@ export type SystemDefinition = {
   lawBinding: LawBinding;
   talentBinding: Record<string, string>;
   executionBinding: Record<string, string>;
+  modelBinding: Record<string, string>;
 };
 
 export type ExecutionProfile = {
@@ -73,6 +74,8 @@ export type RolePackageManifest = {
   promptTemplate: string;
   inputSchema?: string;
   outputSchema: string;
+  talent?: Record<string, string>;
+  preferredModelTags?: string[];
   tags?: string[];
 };
 
@@ -86,10 +89,53 @@ export type LoadedRolePackage = {
   work?: string;
 };
 
+export type ModelPackageManifest = {
+  modelId: string;
+  executor: "opencode";
+  model: string;
+  args?: Record<string, string | boolean>;
+  timeoutMs?: number;
+  maxOutputBytes?: number;
+  tags?: string[];
+};
+
+export type LoadedModelPackage = {
+  resolvedPath: string;
+  manifest: ModelPackageManifest;
+};
+
+export type UserProfile = {
+  userProfileId: string;
+  language?: string;
+  style?: string;
+  riskPreference?: string;
+  outputLength?: string;
+  domainBackground?: string[];
+};
+
+export type RuntimeWorkspaceConfig = {
+  rolesDir: string;
+  privateDirName: string;
+  linkSharedIntoRoleDir: boolean;
+};
+
+export type RuntimeConfig = {
+  executor: "opencode";
+  roleRepo: string;
+  modelRepo: string;
+  runsDir: string;
+  sharedDir: string;
+  workspace: RuntimeWorkspaceConfig;
+  opencode?: {
+    baseArgs?: string[];
+  };
+};
+
 export type AuditRecord = {
   at: string;
   roleId: string;
   lawRef?: string;
+  modelId?: string;
   profileId?: string;
   toolRef?: string;
   command?: string;

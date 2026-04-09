@@ -40,8 +40,11 @@ og-roles/
 systems/
   debate-minimal/
     system.mmd
-    profiles.json
-    tools.json
+    model-repo/
+      models/
+    .ogsystem/
+      runtime.json
+      user-profile.json
     laws.json
 ```
 
@@ -105,7 +108,7 @@ Rules:
 - role graph
 - event edges
 - law binding
-- `exec.bind.<roleId>`
+- `model.bind.<roleId>` (legacy runtime may still read `exec.bind.<roleId>`)
 
 `system.mmd` does not define:
 
@@ -121,7 +124,7 @@ flowchart TD
 %% system.version=1.0.0
 %% law.global=law.console.base
 %% entry.role=demo-analyst
-%% exec.bind.demo-analyst=exec.console.codex.v1
+%% model.bind.demo-analyst=fast-gpt54
 
 input -->|ENTER| analyst[Role:demo-analyst]
 analyst[Role:demo-analyst] -->|ANALYSIS_DONE| output
@@ -133,8 +136,8 @@ Kept:
 
 - Mermaid parser
 - explicit runtime state machine
-- `profiles.json`
-- `tools.json`
+- `model repo`
+- runtime defaults in `.ogsystem/runtime.json`
 - law catalog
 - strict JSON output validation
 

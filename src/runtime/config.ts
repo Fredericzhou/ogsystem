@@ -3,7 +3,9 @@ import type {
   CliToolRegistry,
   ExecutionProfile,
   LawCatalog,
-  LawSpec
+  LawSpec,
+  RuntimeConfig,
+  UserProfile
 } from "./types.js";
 
 type JsonValue = null | boolean | number | string | JsonValue[] | { [key: string]: JsonValue };
@@ -227,4 +229,106 @@ export function validateLawsConfig(value: unknown, filePath: string): LawCatalog
     validateLawSpec(item, filePath, `$.laws[${index}]`)
   );
   return { laws };
+}
+
+export function validateUserProfileConfig(value: unknown, filePath: string): UserProfile {
+  const record = expectRecord(value, filePath, "$");
+  expectNoExtraKeys(
+    record,
+    [
+      "userProfileId",
+      "language",
+      "style",
+      "riskPreference",
+      "outputLength",
+      "domainBackground"
+    ],
+    filePath,
+    "$"
+  );
+
+  const domainBackgroundValue = record.domainBackground;
+  const domainBackground =
+    domainBackgroundValue === undefined
+      ? undefined
+      : expectArray(domainBackgroundValue, filePath, "$.domainBackground").map((entry, index) =>
+          expectString(entry, filePath, `$.domainBackground[${index}]`)
+        );
+
+  return {
+    userProfileId: expectString(record.userProfileId, filePath, "$.userProfileId"),
+    language: expectOptionalString(record.language, filePath, "$.language"),
+    style: expectOptionalString(record.style, filePath, "$.style"),
+    riskPreference: expectOptionalString(record.riskPreference, filePath, "$.riskPreference"),
+    outputLength: expectOptionalString(record.outputLength, filePath, "$.outputLength"),
+    domainBackground
+  };
+}
+
+export function validateRuntimeConfig(value: unknown, filePath: string): RuntimeConfig {
+  const record = expectRecord(value, filePath, "$");
+  expectNoExtraKeys(
+    record,
+    ["executor", "roleRepo", "modelRepo", "runsDir", "sharedDir", "workspace", "opencode"],
+    filePath,
+    "$"
+  );
+
+  const executor = expectString(record.executor, filePath, "$.executor");
+  if (executor !== "opencode") {
+    fail(filePath, "$.executor", `expected "opencode", received "${executor}"`);
+  }
+
+  const workspaceRecord =
+    record.workspace === undefined
+      ? {}
+      : expectRecord(record.workspace, filePath, "$.workspace");
+  expectNoExtraKeys(
+    workspaceRecord,
+    ["rolesDir", "privateDirName", "linkSharedIntoRoleDir"],
+    filePath,
+    "$.workspace"
+  );
+
+  const opencodeRecord =
+    record.opencode === undefined
+      ? undefined
+      : expectRecord(record.opencode, filePath, "$.opencode");
+  if (opencodeRecord) {
+    expectNoExtraKeys(opencodeRecord, ["baseArgs"], filePath, "$.opencode");
+  }
+  const baseArgsValue = opencodeRecord?.baseArgs;
+  const baseArgs =
+    baseArgsValue === undefined
+      ? undefined
+      : expectArray(baseArgsValue, filePath, "$.opencode.baseArgs").map((entry, index) =>
+          expectString(entry, filePath, `$.opencode.baseArgs[${index}]`)
+        );
+
+  return {
+    executor: "opencode",
+    roleRepo: expectOptionalString(record.roleRepo, filePath, "$.roleRepo") ?? "./og-roles",
+    modelRepo: expectOptionalString(record.modelRepo, filePath, "$.modelRepo") ?? "./og-models",
+    runsDir: expectOptionalString(record.runsDir, filePath, "$.runsDir") ?? ".ogsystems",
+    sharedDir: expectOptionalString(record.sharedDir, filePath, "$.sharedDir") ?? ".",
+    workspace: {
+      rolesDir:
+        expectOptionalString(workspaceRecord.rolesDir, filePath, "$.workspace.rolesDir") ?? "roles",
+      privateDirName:
+        expectOptionalString(
+          workspaceRecord.privateDirName,
+          filePath,
+          "$.workspace.privateDirName"
+        ) ?? "private",
+      linkSharedIntoRoleDir:
+        expectOptionalBoolean(
+          workspaceRecord.linkSharedIntoRoleDir,
+          filePath,
+          "$.workspace.linkSharedIntoRoleDir"
+        ) ?? true
+    },
+    opencode: {
+      baseArgs
+    }
+  };
 }

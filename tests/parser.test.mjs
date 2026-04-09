@@ -9,6 +9,7 @@ const validSource = `flowchart TD
 %% law.global=law.test
 %% entry.role=intake
 %% exec.bind.intake=profile.parser
+%% model.bind.intake=model.fast
 input -->|ENTER| intake[Role:intake]
 intake[Role:intake] -->|COMPLETE| output
 `;
@@ -24,6 +25,8 @@ test("parser accepts a minimal system", () => {
   assert.strictEqual(system.entryRoleId, "intake");
   assert.ok(system.flows.length >= 1);
   assert.strictEqual(system.lawBinding.globalLawRef, "law.test");
+  assert.strictEqual(system.executionBinding.intake, "profile.parser");
+  assert.strictEqual(system.modelBinding.intake, "model.fast");
 });
 
 test("parser rejects missing metadata", () => {

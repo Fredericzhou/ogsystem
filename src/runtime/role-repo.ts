@@ -55,6 +55,22 @@ function expectOptionalStringArray(
   return value.map((entry, index) => expectString(entry, filePath, `${fieldPath}[${index}]`));
 }
 
+function expectOptionalTalent(
+  value: unknown,
+  filePath: string,
+  fieldPath: string
+): RolePackageManifest["talent"] | undefined {
+  if (value === undefined) {
+    return undefined;
+  }
+  const record = expectRecord(value, filePath, fieldPath);
+  const talent: Record<string, string> = {};
+  for (const [key, entry] of Object.entries(record)) {
+    talent[key] = expectString(entry, filePath, `${fieldPath}.${key}`);
+  }
+  return talent;
+}
+
 function expectNoExtraKeys(
   record: Record<string, JsonValue>,
   allowedKeys: string[],
@@ -84,6 +100,8 @@ export function validateRolePackageManifest(
       "promptTemplate",
       "inputSchema",
       "outputSchema",
+      "talent",
+      "preferredModelTags",
       "tags"
     ],
     filePath,
@@ -101,6 +119,12 @@ export function validateRolePackageManifest(
         ? undefined
         : expectString(record.inputSchema, filePath, "$.inputSchema"),
     outputSchema: expectString(record.outputSchema, filePath, "$.outputSchema"),
+    talent: expectOptionalTalent(record.talent, filePath, "$.talent"),
+    preferredModelTags: expectOptionalStringArray(
+      record.preferredModelTags,
+      filePath,
+      "$.preferredModelTags"
+    ),
     tags: expectOptionalStringArray(record.tags, filePath, "$.tags")
   };
 }

@@ -1,0 +1,13 @@
+flowchart TD
+%% system.id=demo.target.model.binding
+%% system.version=1.0.0
+%% law.global=law.console.base
+%% entry.role=debate-moderator
+%% model.bind.debate-moderator=fast-gpt54
+%% model.bind.debate-minimalist=claude-sonnet
+%% model.bind.debate-judge=deep-o3
+
+input -->|DEBATE_REQUEST| moderator[Role:debate-moderator]
+moderator[Role:debate-moderator] -->|ROUND_READY| minimalist[Role:debate-minimalist]
+minimalist[Role:debate-minimalist] -->|MINIMALIST_DONE| judge[Role:debate-judge]
+judge[Role:debate-judge] -->|DECISION_READY| output

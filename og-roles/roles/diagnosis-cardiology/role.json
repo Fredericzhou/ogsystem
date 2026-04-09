@@ -3,6 +3,12 @@
   "roleVersion": "1.0.0",
   "name": "Cardiology Specialist",
   "description": "Analyzes the case from a cardiology perspective and emits structured findings.",
+  "talent": {
+    "reasoningDepth": "high",
+    "style": "diagnostic",
+    "riskPreference": "conservative"
+  },
+  "preferredModelTags": ["reasoning", "long-context"],
   "promptTemplate": "prompt.md",
   "inputSchema": "../_shared/input.schema.json",
   "outputSchema": "output.schema.json",

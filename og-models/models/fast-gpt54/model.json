@@ -1,0 +1,11 @@
+{
+  "modelId": "fast-gpt54",
+  "executor": "opencode",
+  "model": "gpt-5.4-mini",
+  "args": {
+    "reasoningEffort": "low"
+  },
+  "timeoutMs": 60000,
+  "maxOutputBytes": 32768,
+  "tags": ["fast", "low-cost"]
+}

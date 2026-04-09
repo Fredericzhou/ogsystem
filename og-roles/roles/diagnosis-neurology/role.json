@@ -3,6 +3,12 @@
   "roleVersion": "1.0.0",
   "name": "Neurology Specialist",
   "description": "Assesses neurological signs, imaging, and cognitive clues for the case.",
+  "talent": {
+    "reasoningDepth": "high",
+    "style": "diagnostic",
+    "riskPreference": "conservative"
+  },
+  "preferredModelTags": ["reasoning", "long-context"],
   "promptTemplate": "prompt.md",
   "inputSchema": "../_shared/input.schema.json",
   "outputSchema": "output.schema.json",

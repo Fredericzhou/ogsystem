@@ -3,6 +3,12 @@
   "roleVersion": "1.0.0",
   "name": "Diagnosis Chief Review",
   "description": "Aggregates specialist findings and decides between recheck and consensus.",
+  "talent": {
+    "reasoningDepth": "high",
+    "style": "analytical",
+    "riskPreference": "conservative"
+  },
+  "preferredModelTags": ["reasoning", "long-context"],
   "promptTemplate": "prompt.md",
   "inputSchema": "../_shared/input.schema.json",
   "outputSchema": "output.schema.json",

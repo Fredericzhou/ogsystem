@@ -3,6 +3,12 @@
   "roleVersion": "1.0.0",
   "name": "Debate Round Manager",
   "description": "Prepares a debate round and dispatches instructions to both debaters.",
+  "talent": {
+    "coordination": "high",
+    "reasoningDepth": "medium",
+    "style": "structured"
+  },
+  "preferredModelTags": ["fast", "long-context"],
   "promptTemplate": "prompt.md",
   "inputSchema": "../_shared/input.schema.json",
   "outputSchema": "output.schema.json",

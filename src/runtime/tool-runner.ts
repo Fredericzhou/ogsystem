@@ -27,6 +27,7 @@ function buildDryRunContent(command: string, args: string[]): string {
 export async function runCliTool(args: {
   tool: CliTool;
   vars: Record<string, string>;
+  env?: Record<string, string>;
   workdir: string;
   timeoutMs: number;
   maxOutputBytes: number;
@@ -57,6 +58,10 @@ export async function runCliTool(args: {
 
     const child = spawn(args.tool.command, renderedArgs, {
       cwd: args.workdir,
+      env: {
+        ...process.env,
+        ...args.env
+      },
       stdio: ["pipe", "pipe", "pipe"]
     });
 

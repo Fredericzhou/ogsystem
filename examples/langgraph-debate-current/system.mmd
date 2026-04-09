@@ -8,12 +8,12 @@ flowchart TD
 %% join.mode.debate-judge=all_of
 %% join.sources.debate-judge=debate-minimalist,debate-alignmentist
 %% loop.max.debate-round-manager=2
-%% exec.bind.debate-moderator=profile.moderator.codex
-%% exec.bind.debate-round-manager=profile.round.codex
-%% exec.bind.debate-minimalist=profile.minimalist.claude
-%% exec.bind.debate-alignmentist=profile.alignmentist.gemini
-%% exec.bind.debate-judge=profile.judge.codex
-%% exec.bind.debate-summary=profile.summary.codex
+%% model.bind.debate-moderator=fast-gpt54
+%% model.bind.debate-round-manager=fast-gpt54
+%% model.bind.debate-minimalist=claude-sonnet
+%% model.bind.debate-alignmentist=deep-o3
+%% model.bind.debate-judge=deep-o3
+%% model.bind.debate-summary=fast-gpt54
 
 input -->|DEBATE_REQUEST| moderator[Role:debate-moderator]
 moderator[Role:debate-moderator] -->|ROUND_READY| parallel_round[Role:debate-round-manager]

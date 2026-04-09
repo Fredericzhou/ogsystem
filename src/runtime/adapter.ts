@@ -1,11 +1,14 @@
-import { readFile } from "node:fs/promises";
-import { resolve } from "node:path";
+import { appendFile, mkdir, readFile, symlink, writeFile } from "node:fs/promises";
+import { basename, dirname, resolve } from "node:path";
 
 import {
   validateLawsConfig,
   validateProfilesConfig,
-  validateToolsConfig
+  validateRuntimeConfig,
+  validateToolsConfig,
+  validateUserProfileConfig
 } from "./config.js";
+import { loadModelPackage } from "./model-repo.js";
 import { loadSystemFromMermaid } from "./parse-mermaid.js";
 import {
   loadRolePackage,
@@ -25,9 +28,12 @@ import type {
   Flow,
   LawCatalog,
   LawSpec,
+  LoadedModelPackage,
   LoadedRolePackage,
   RoleExecutionOutput,
-  SystemDefinition
+  RuntimeConfig,
+  SystemDefinition,
+  UserProfile
 } from "./types.js";
 
 type RuntimeState = {
@@ -47,9 +53,28 @@ type RuntimeInput = {
   effectiveLaw: EffectiveLawConstraints;
   profilesById: Map<string, ExecutionProfile>;
   toolsByRef: Map<string, CliTool>;
+  modelsById: Map<string, LoadedModelPackage>;
+  runtimeConfig: RuntimeConfig;
+  userProfile?: UserProfile;
   workdir: string;
   rolePackagesByRoleId: Map<string, LoadedRolePackage>;
+  runContext: RunContext;
   dryRun?: boolean;
+};
+
+type RoleRunDirs = {
+  roleDir: string;
+  privateDir: string;
+};
+
+type RunContext = {
+  runId: string;
+  runDir: string;
+  auditDir: string;
+  eventsPath: string;
+  statePath: string;
+  roleDirsById: Map<string, RoleRunDirs>;
+  sharedDir: string;
 };
 
 function preview(value: string): string | undefined {
@@ -58,6 +83,65 @@ function preview(value: string): string | undefined {
     return undefined;
   }
   return normalized.slice(0, 400);
+}
+
+function slugify(value: string): string {
+  const normalized = value
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "");
+  return normalized || "run";
+}
+
+function timestampForPath(date: Date): string {
+  return date.toISOString().replace(/[:.]/g, "-");
+}
+
+function stringifyJson(value: unknown): string {
+  return JSON.stringify(value, null, 2);
+}
+
+function renderUserProfile(userProfile?: UserProfile): string {
+  if (!userProfile) {
+    return "";
+  }
+  return stringifyJson(userProfile);
+}
+
+function renderOpencodeArgs(args?: Record<string, string | boolean>): string[] {
+  if (!args) {
+    return [];
+  }
+  const rendered: string[] = [];
+  for (const [key, value] of Object.entries(args)) {
+    const flag = key.startsWith("--") ? key : `--${key}`;
+    if (typeof value === "boolean") {
+      if (value) {
+        rendered.push(flag);
+      }
+      continue;
+    }
+    rendered.push(flag, value);
+  }
+  return rendered;
+}
+
+function buildRoleInputProjection(args: {
+  roleId: string;
+  state: RuntimeState;
+  allowedEvents: string[];
+  userProfile?: UserProfile;
+}): Record<string, unknown> {
+  return {
+    role_id: args.roleId,
+    task: args.state.userPrompt,
+    context: args.state.userPrompt,
+    allowed_events: args.allowedEvents,
+    last_output: args.state.lastOutput,
+    system_notes: "",
+    round: args.state.transitionCount + 1,
+    user_profile: args.userProfile ?? {}
+  };
 }
 
 function mergeLawConstraints(base: EffectiveLawConstraints, spec?: LawSpec): EffectiveLawConstraints {
@@ -193,6 +277,7 @@ function resolveRolePrompt(args: {
   state: RuntimeState;
   rolePackagesByRoleId: Map<string, LoadedRolePackage>;
   outgoingFlows: Flow[];
+  userProfile?: UserProfile;
 }): string {
   const rolePackage = args.rolePackagesByRoleId.get(args.roleId);
   if (!rolePackage) {
@@ -205,7 +290,8 @@ function resolveRolePrompt(args: {
     allowed_events: JSON.stringify(args.outgoingFlows.map((item) => item.eventType)),
     last_output: args.state.lastOutput,
     system_notes: "",
-    round: String(args.state.transitionCount + 1)
+    round: String(args.state.transitionCount + 1),
+    user_profile: renderUserProfile(args.userProfile)
   };
 
   if (rolePackage.inputSchema) {
@@ -229,6 +315,7 @@ function makeAuditRecord(args: {
   lawRef: string;
   started: number;
   status: AuditRecord["status"];
+  modelId?: string;
   profileId?: string;
   toolRef?: string;
   command?: string;
@@ -244,6 +331,7 @@ function makeAuditRecord(args: {
     at: new Date().toISOString(),
     roleId: args.roleId,
     lawRef: args.lawRef,
+    modelId: args.modelId,
     profileId: args.profileId,
     toolRef: args.toolRef,
     command: args.command,
@@ -259,6 +347,80 @@ function makeAuditRecord(args: {
   };
 }
 
+async function persistRolePrelude(args: {
+  roleId: string;
+  context: RuntimeInput;
+  prompt: string;
+  allowedEvents: string[];
+  modelId?: string;
+  state: RuntimeState;
+}): Promise<void> {
+  const roleDirs = args.context.runContext.roleDirsById.get(args.roleId);
+  if (!roleDirs) {
+    return;
+  }
+  const rolePackage = args.context.rolePackagesByRoleId.get(args.roleId);
+  const roleInput = buildRoleInputProjection({
+    roleId: args.roleId,
+    state: args.state,
+    allowedEvents: args.allowedEvents,
+    userProfile: args.context.userProfile
+  });
+  await writeFile(
+    resolve(roleDirs.roleDir, "inbox.md"),
+    [
+      `# Inbox: ${args.roleId}`,
+      "",
+      `Role: ${rolePackage?.manifest.name ?? args.roleId}`,
+      "",
+      "Role Description:",
+      rolePackage?.manifest.description ?? "",
+      "",
+      "Runtime Input Projection:",
+      "```json",
+      stringifyJson(roleInput),
+      "```"
+    ].join("\n"),
+    "utf8"
+  );
+  await writeFile(resolve(roleDirs.roleDir, "prompt.md"), `${args.prompt}\n`, "utf8");
+  await writeFile(
+    resolve(roleDirs.roleDir, "role.md"),
+    [
+      `# Role ${args.roleId}`,
+      "",
+      `- modelId: ${args.modelId ?? "legacy-profile"}`,
+      `- allowedEvents: ${args.allowedEvents.join(", ") || "(none)"}`,
+      `- resolvedRolePath: ${rolePackage?.resolvedPath ?? ""}`,
+      `- preferredModelTags: ${(rolePackage?.manifest.preferredModelTags ?? []).join(", ") || "(none)"}`,
+      `- sharedDir: ${args.context.runContext.sharedDir}`,
+      `- privateDir: ${roleDirs.privateDir}`
+    ].join("\n"),
+    "utf8"
+  );
+}
+
+async function persistRoleResult(args: {
+  roleId: string;
+  context: RuntimeInput;
+  output?: RoleExecutionOutput;
+  audit: AuditRecord;
+}): Promise<void> {
+  const roleDirs = args.context.runContext.roleDirsById.get(args.roleId);
+  if (!roleDirs) {
+    return;
+  }
+  if (args.output) {
+    await writeFile(resolve(roleDirs.roleDir, "result.json"), stringifyJson(args.output), "utf8");
+    await writeFile(
+      resolve(roleDirs.roleDir, "outbox.md"),
+      `${args.output.content ?? ""}\n`,
+      "utf8"
+    );
+  }
+  await writeFile(resolve(roleDirs.roleDir, "audit.md"), stringifyJson(args.audit), "utf8");
+}
+
 async function executeRoleNode(args: {
   roleId: string;
   state: RuntimeState;
@@ -269,71 +431,78 @@ async function executeRoleNode(args: {
   const nextTransitionCount = args.state.transitionCount + 1;
   const outgoing = args.adjacency.get(args.roleId) ?? [];
   const rolePackage = args.context.rolePackagesByRoleId.get(args.roleId);
-  const profileRef = args.context.system.executionBinding[args.roleId];
+  const modelId =
+    args.context.system.modelBinding[args.roleId] ?? args.context.system.executionBinding[args.roleId];
+  const legacyProfileRef = args.context.system.executionBinding[args.roleId];
   const maxTransitions = args.context.effectiveLaw.maxTransitions;
   const lawRef = args.context.system.lawBinding.globalLawRef;
 
   if (maxTransitions !== undefined && nextTransitionCount > maxTransitions) {
     const error = `Transition budget exceeded: ${nextTransitionCount} > ${maxTransitions}`;
+    const audit = makeAuditRecord({
+      roleId: args.roleId,
+      lawRef,
+      started,
+      modelId,
+      exitCode: 1,
+      status: "failed",
+      error
+    });
+    await persistRoleResult({
+      roleId: args.roleId,
+      context: args.context,
+      audit
+    });
     return {
       currentRoleId: args.roleId,
       transitionCount: nextTransitionCount,
       status: "failed",
       error,
       finalRoleId: args.roleId,
-      auditTrail: [
-        makeAuditRecord({
-          roleId: args.roleId,
-          lawRef,
-          started,
-          exitCode: 1,
-          status: "failed",
-          error
-        })
-      ]
+      auditTrail: [audit]
     };
   }
 
-  if (!profileRef) {
+  if (!modelId && !legacyProfileRef) {
     if (!args.context.effectiveLaw.allowNoopWithoutExecutionBinding) {
       const error = `Role "${args.roleId}" has no execution binding`;
+      const audit = makeAuditRecord({
+        roleId: args.roleId,
+        lawRef,
+        started,
+        exitCode: 1,
+        status: "failed",
+        error
+      });
+      await persistRoleResult({ roleId: args.roleId, context: args.context, audit });
       return {
         currentRoleId: args.roleId,
         transitionCount: nextTransitionCount,
         status: "failed",
         error,
         finalRoleId: args.roleId,
-        auditTrail: [
-          makeAuditRecord({
-            roleId: args.roleId,
-            lawRef,
-            started,
-            exitCode: 1,
-            status: "failed",
-            error
-          })
-        ]
+        auditTrail: [audit]
       };
     }
 
     if (outgoing.length > 1) {
       const error = `Role "${args.roleId}" cannot use explicit noop mode with multiple outgoing flows`;
+      const audit = makeAuditRecord({
+        roleId: args.roleId,
+        lawRef,
+        started,
+        exitCode: 1,
+        status: "failed",
+        error
+      });
+      await persistRoleResult({ roleId: args.roleId, context: args.context, audit });
       return {
         currentRoleId: args.roleId,
         transitionCount: nextTransitionCount,
         status: "failed",
         error,
         finalRoleId: args.roleId,
-        auditTrail: [
-          makeAuditRecord({
-            roleId: args.roleId,
-            lawRef,
-            started,
-            exitCode: 1,
-            status: "failed",
-            error
-          })
-        ]
+        auditTrail: [audit]
       };
     }
 
@@ -341,94 +510,23 @@ async function executeRoleNode(args: {
     const nextRoleId = selectedToRoleId === SYSTEM_END_ROLE_ID ? null : selectedToRoleId ?? null;
     const status: RuntimeState["status"] = nextRoleId ? "running" : "done";
 
+    const audit = makeAuditRecord({
+      roleId: args.roleId,
+      lawRef,
+      started,
+      exitCode: 0,
+      selectedEvent: outgoing[0]?.eventType,
+      nextRoleId: nextRoleId ?? undefined,
+      status: "noop"
+    });
+    await persistRoleResult({ roleId: args.roleId, context: args.context, audit });
     return {
       currentRoleId: args.roleId,
       transitionCount: nextTransitionCount,
       nextRoleId,
       status,
       finalRoleId: status === "running" ? null : args.roleId,
-      auditTrail: [
-        makeAuditRecord({
-          roleId: args.roleId,
-          lawRef,
-          started,
-          exitCode: 0,
-          selectedEvent: outgoing[0]?.eventType,
-          nextRoleId: nextRoleId ?? undefined,
-          status: "noop"
-        })
-      ]
-    };
-  }
-
-  const profile = args.context.profilesById.get(profileRef);
-  if (!profile) {
-    const error = `Execution profile not found: ${profileRef}`;
-    return {
-      currentRoleId: args.roleId,
-      transitionCount: nextTransitionCount,
-      status: "failed",
-      error,
-      finalRoleId: args.roleId,
-      auditTrail: [
-        makeAuditRecord({
-          roleId: args.roleId,
-          lawRef,
-          started,
-          profileId: profileRef,
-          exitCode: 1,
-          status: "failed",
-          error
-        })
-      ]
-    };
-  }
-
-  const toolRef = profile.toolRef;
-  const tool = args.context.toolsByRef.get(toolRef);
-  if (!tool) {
-    const error = `Tool not found: ${toolRef}`;
-    return {
-      currentRoleId: args.roleId,
-      transitionCount: nextTransitionCount,
-      status: "failed",
-      error,
-      finalRoleId: args.roleId,
-      auditTrail: [
-        makeAuditRecord({
-          roleId: args.roleId,
-          lawRef,
-          started,
-          profileId: profileRef,
-          toolRef,
-          exitCode: 1,
-          status: "failed",
-          error
-        })
-      ]
-    };
-  }
-
-  if (args.context.effectiveLaw.forbiddenToolRefs.includes(toolRef)) {
-    const error = `Tool is forbidden by effective law: ${toolRef}`;
-    return {
-      currentRoleId: args.roleId,
-      transitionCount: nextTransitionCount,
-      status: "failed",
-      error,
-      finalRoleId: args.roleId,
-      auditTrail: [
-        makeAuditRecord({
-          roleId: args.roleId,
-          lawRef,
-          started,
-          profileId: profileRef,
-          toolRef,
-          exitCode: 1,
-          status: "failed",
-          error
-        })
-      ]
+      auditTrail: [audit]
     };
   }
 
@@ -436,40 +534,172 @@ async function executeRoleNode(args: {
     roleId: args.roleId,
     state: args.state,
     rolePackagesByRoleId: args.context.rolePackagesByRoleId,
-    outgoingFlows: outgoing
+    outgoingFlows: outgoing,
+    userProfile: args.context.userProfile
+  });
+
+  await persistRolePrelude({
+    roleId: args.roleId,
+    context: args.context,
+    prompt,
+    allowedEvents: outgoing.map((item) => item.eventType),
+    modelId,
+    state: args.state
   });
 
   if (args.context.dryRun && outgoing.length > 1) {
     const error = `Dry-run requires an unambiguous single outgoing flow for role "${args.roleId}"`;
+    const audit = makeAuditRecord({
+      roleId: args.roleId,
+      lawRef,
+      started,
+      modelId,
+      exitCode: 1,
+      status: "failed",
+      error
+    });
+    await persistRoleResult({
+      roleId: args.roleId,
+      context: args.context,
+      audit
+    });
     return {
       currentRoleId: args.roleId,
       transitionCount: nextTransitionCount,
       status: "failed",
       error,
       finalRoleId: args.roleId,
-      auditTrail: [
-        makeAuditRecord({
-          roleId: args.roleId,
-          lawRef,
-          started,
-          profileId: profileRef,
-          toolRef,
-          command: tool.command,
-          exitCode: 1,
-          status: "failed",
-          error
-        })
-      ]
+      auditTrail: [audit]
     };
+  }
+
+  let tool: CliTool;
+  let effectiveModelId: string | undefined = modelId;
+  let effectiveProfileId: string | undefined;
+  let executionWorkdir = args.context.workdir;
+  let executionEnv: Record<string, string> | undefined;
+  let timeoutMs = 120000;
+  let maxOutputBytes = 64 * 1024;
+
+  if (modelId && args.context.modelsById.has(modelId)) {
+    const modelPackage = args.context.modelsById.get(modelId);
+    if (!modelPackage) {
+      throw new Error(`Model package not loaded for model "${modelId}"`);
+    }
+    timeoutMs = modelPackage.manifest.timeoutMs ?? timeoutMs;
+    maxOutputBytes = modelPackage.manifest.maxOutputBytes ?? maxOutputBytes;
+    const roleDirs = args.context.runContext.roleDirsById.get(args.roleId);
+    executionWorkdir = roleDirs?.roleDir ?? args.context.workdir;
+    executionEnv = {
+      OGSYSTEM_RUN_DIR: args.context.runContext.runDir,
+      OGSYSTEM_SHARED_DIR: args.context.runContext.sharedDir,
+      OGSYSTEM_ROLE_DIR: roleDirs?.roleDir ?? executionWorkdir,
+      OGSYSTEM_ROLE_ID: args.roleId,
+      OGSYSTEM_MODEL_ID: modelPackage.manifest.modelId,
+      OGSYSTEM_ALLOWED_EVENTS: outgoing.map((item) => item.eventType).join(",")
+    };
+    tool = {
+      toolRef: `model.${modelPackage.manifest.modelId}`,
+      runner: "local_shell",
+      command: "opencode",
+      argsTemplate: [
+        ...(args.context.runtimeConfig.opencode?.baseArgs ?? ["run"]),
+        "--model",
+        modelPackage.manifest.model,
+        ...renderOpencodeArgs(modelPackage.manifest.args),
+        "{{prompt}}"
+      ],
+      stdinMode: "none"
+    };
+  } else {
+    effectiveModelId = undefined;
+    effectiveProfileId = legacyProfileRef;
+    if (!effectiveProfileId) {
+      throw new Error(`Missing legacy execution profile for role "${args.roleId}"`);
+    }
+    const profile = args.context.profilesById.get(effectiveProfileId);
+    if (!profile) {
+      const error = `Execution profile not found: ${effectiveProfileId}`;
+      const audit = makeAuditRecord({
+        roleId: args.roleId,
+        lawRef,
+        started,
+        profileId: effectiveProfileId,
+        exitCode: 1,
+        status: "failed",
+        error
+      });
+      await persistRoleResult({ roleId: args.roleId, context: args.context, audit });
+      return {
+        currentRoleId: args.roleId,
+        transitionCount: nextTransitionCount,
+        status: "failed",
+        error,
+        finalRoleId: args.roleId,
+        auditTrail: [audit]
+      };
+    }
+
+    const legacyTool = args.context.toolsByRef.get(profile.toolRef);
+    if (!legacyTool) {
+      const error = `Tool not found: ${profile.toolRef}`;
+      const audit = makeAuditRecord({
+        roleId: args.roleId,
+        lawRef,
+        started,
+        profileId: effectiveProfileId,
+        toolRef: profile.toolRef,
+        exitCode: 1,
+        status: "failed",
+        error
+      });
+      await persistRoleResult({ roleId: args.roleId, context: args.context, audit });
+      return {
+        currentRoleId: args.roleId,
+        transitionCount: nextTransitionCount,
+        status: "failed",
+        error,
+        finalRoleId: args.roleId,
+        auditTrail: [audit]
+      };
+    }
+
+    if (args.context.effectiveLaw.forbiddenToolRefs.includes(profile.toolRef)) {
+      const error = `Tool is forbidden by effective law: ${profile.toolRef}`;
+      const audit = makeAuditRecord({
+        roleId: args.roleId,
+        lawRef,
+        started,
+        profileId: effectiveProfileId,
+        toolRef: profile.toolRef,
+        exitCode: 1,
+        status: "failed",
+        error
+      });
+      await persistRoleResult({ roleId: args.roleId, context: args.context, audit });
+      return {
+        currentRoleId: args.roleId,
+        transitionCount: nextTransitionCount,
+        status: "failed",
+        error,
+        finalRoleId: args.roleId,
+        auditTrail: [audit]
+      };
+    }
+
+    tool = legacyTool;
+    timeoutMs = profile.timeoutMs ?? timeoutMs;
+    maxOutputBytes = profile.maxOutputBytes ?? maxOutputBytes;
   }
 
   try {
     const result = await runCliTool({
       tool,
       vars: { prompt },
-      workdir: args.context.workdir,
-      timeoutMs: profile.timeoutMs ?? 120000,
-      maxOutputBytes: profile.maxOutputBytes ?? 64 * 1024,
+      env: executionEnv,
+      workdir: executionWorkdir,
+      timeoutMs,
+      maxOutputBytes,
       dryRun: args.context.dryRun,
       dryRunOutput: {
         event: outgoing.length === 1 ? outgoing[0].eventType : undefined
@@ -488,6 +718,27 @@ async function executeRoleNode(args: {
     const selectedFlow = parsedOutput.event ? findFlowByEvent(outgoing, parsedOutput.event) : null;
     if (outgoing.length > 0 && !selectedFlow) {
       const error = `Executable role output event "${parsedOutput.event ?? ""}" does not match any outgoing flow on role "${args.roleId}"`;
+      const audit = makeAuditRecord({
+        roleId: args.roleId,
+        lawRef,
+        started,
+        modelId: effectiveModelId,
+        profileId: effectiveProfileId,
+        toolRef: tool.toolRef,
+        command: tool.command,
+        resultArgs: result.args,
+        exitCode: result.exitCode,
+        status: "failed",
+        stdout: result.stdout,
+        stderr: result.stderr,
+        error
+      });
+      await persistRoleResult({
+        roleId: args.roleId,
+        context: args.context,
+        output: parsedOutput,
+        audit
+      });
       return {
         currentRoleId: args.roleId,
         transitionCount: nextTransitionCount,
@@ -495,22 +746,7 @@ async function executeRoleNode(args: {
         error,
         finalRoleId: args.roleId,
         lastOutput: parsedOutput.content ?? "",
-        auditTrail: [
-          makeAuditRecord({
-            roleId: args.roleId,
-            lawRef,
-            started,
-            profileId: profileRef,
-            toolRef,
-            command: tool.command,
-            resultArgs: result.args,
-            exitCode: result.exitCode,
-            status: "failed",
-            stdout: result.stdout,
-            stderr: result.stderr,
-            error
-          })
-        ]
+        auditTrail: [audit]
       };
     }
 
@@ -521,6 +757,29 @@ async function executeRoleNode(args: {
     const status: RuntimeState["status"] = failed ? "failed" : nextRoleId ? "running" : "done";
     const error = failed ? `Command exited with code ${result.exitCode}` : null;
 
+    const audit = makeAuditRecord({
+      roleId: args.roleId,
+      lawRef,
+      started,
+      modelId: effectiveModelId,
+      profileId: effectiveProfileId,
+      toolRef: tool.toolRef,
+      command: tool.command,
+      resultArgs: result.args,
+      exitCode: result.exitCode,
+      selectedEvent: selectedFlow?.eventType,
+      nextRoleId: nextRoleId ?? undefined,
+      status: failed ? "failed" : "ok",
+      stdout: result.stdout,
+      stderr: result.stderr,
+      error: error ?? undefined
+    });
+    await persistRoleResult({
+      roleId: args.roleId,
+      context: args.context,
+      output: parsedOutput,
+      audit
+    });
     return {
       currentRoleId: args.roleId,
       transitionCount: nextTransitionCount,
@@ -529,48 +788,32 @@ async function executeRoleNode(args: {
       error,
       finalRoleId: status === "running" ? null : args.roleId,
       lastOutput: parsedOutput.content ?? "",
-      auditTrail: [
-        makeAuditRecord({
-          roleId: args.roleId,
-          lawRef,
-          started,
-          profileId: profileRef,
-          toolRef,
-          command: tool.command,
-          resultArgs: result.args,
-          exitCode: result.exitCode,
-          selectedEvent: selectedFlow?.eventType,
-          nextRoleId: nextRoleId ?? undefined,
-          status: failed ? "failed" : "ok",
-          stdout: result.stdout,
-          stderr: result.stderr,
-          error: error ?? undefined
-        })
-      ]
+      auditTrail: [audit]
     };
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     const category =
       error instanceof ToolExecutionError ? ` (${error.category})` : "";
+    const audit = makeAuditRecord({
+      roleId: args.roleId,
+      lawRef,
+      started,
+      modelId: effectiveModelId,
+      profileId: effectiveProfileId,
+      toolRef: tool.toolRef,
+      command: tool.command,
+      exitCode: 1,
+      status: "failed",
+      error: `${message}${category}`
+    });
+    await persistRoleResult({ roleId: args.roleId, context: args.context, audit });
     return {
       currentRoleId: args.roleId,
       transitionCount: nextTransitionCount,
       status: "failed",
       error: `${message}${category}`,
       finalRoleId: args.roleId,
-      auditTrail: [
-        makeAuditRecord({
-          roleId: args.roleId,
-          lawRef,
-          started,
-          profileId: profileRef,
-          toolRef,
-          command: tool.command,
-          exitCode: 1,
-          status: "failed",
-          error: `${message}${category}`
-        })
-      ]
+      auditTrail: [audit]
     };
   }
 }
@@ -595,6 +838,51 @@ async function readJsonFile(path: string): Promise<unknown> {
   }
 }
 
+async function pathExists(path: string): Promise<boolean> {
+  try {
+    await readFile(path, "utf8");
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+async function loadRuntimeConfig(path: string | undefined, workdir: string): Promise<RuntimeConfig> {
+  const runtimePath = path ?? resolve(workdir, ".ogsystem", "runtime.json");
+  if (!(await pathExists(runtimePath))) {
+    return validateRuntimeConfig(
+      {
+        executor: "opencode",
+        roleRepo: "./og-roles",
+        modelRepo: "./og-models",
+        runsDir: ".ogsystems",
+        sharedDir: ".",
+        workspace: {
+          rolesDir: "roles",
+          privateDirName: "private",
+          linkSharedIntoRoleDir: true
+        },
+        opencode: {
+          baseArgs: ["run"]
+        }
+      },
+      runtimePath
+    );
+  }
+  return validateRuntimeConfig(await readJsonFile(runtimePath), runtimePath);
+}
+
+async function loadUserProfile(
+  path: string | undefined,
+  workdir: string
+): Promise<UserProfile | undefined> {
+  const profilePath = path ?? resolve(workdir, ".ogsystem", "user-profile.json");
+  if (!(await pathExists(profilePath))) {
+    return undefined;
+  }
+  return validateUserProfileConfig(await readJsonFile(profilePath), profilePath);
+}
+
 async function loadProfiles(path?: string): Promise<ExecutionProfile[]> {
   if (!path) {
     return [];
@@ -609,26 +897,132 @@ async function loadTools(path?: string): Promise<CliTool[]> {
   return validateToolsConfig(await readJsonFile(path), path).tools;
 }
 
-async function loadLaws(path?: string): Promise<LawCatalog | undefined> {
-  if (!path) {
+async function loadLaws(path: string | undefined, workdir: string): Promise<LawCatalog | undefined> {
+  const lawPath = path ?? resolve(workdir, ".ogsystem", "laws.json");
+  if (!(await pathExists(lawPath))) {
     return undefined;
   }
-  return validateLawsConfig(await readJsonFile(path), path);
+  return validateLawsConfig(await readJsonFile(lawPath), lawPath);
 }
 
-async function loadRolePackages(args: { system: SystemDefinition }): Promise<Map<string, LoadedRolePackage>> {
+async function loadRolePackages(args: {
+  system: SystemDefinition;
+  roleRootDir: string;
+}): Promise<Map<string, LoadedRolePackage>> {
   const rolePackagesByRoleId = new Map<string, LoadedRolePackage>();
-  const roleRootDir = resolve(process.cwd(), "og-roles", "roles");
 
   for (const roleId of args.system.roleIds) {
     const rolePackage = await loadRolePackage({
       roleId,
-      roleRootDir
+      roleRootDir: args.roleRootDir
     });
     rolePackagesByRoleId.set(roleId, rolePackage);
   }
 
   return rolePackagesByRoleId;
+}
+
+async function loadModelPackages(args: {
+  system: SystemDefinition;
+  modelRootDir: string;
+}): Promise<Map<string, LoadedModelPackage>> {
+  const modelsById = new Map<string, LoadedModelPackage>();
+  const referencedModelIds = new Set(Object.values(args.system.modelBinding));
+
+  for (const modelId of referencedModelIds) {
+    const modelPackage = await loadModelPackage({
+      modelId,
+      modelRootDir: args.modelRootDir
+    });
+    modelsById.set(modelId, modelPackage);
+  }
+
+  return modelsById;
+}
+
+async function ensureSymlink(target: string, path: string): Promise<void> {
+  try {
+    await symlink(target, path, "dir");
+  } catch {
+    // Ignore if already created by a previous run attempt.
+  }
+}
+
+async function initializeRunContext(args: {
+  system: SystemDefinition;
+  systemPath: string;
+  prompt: string;
+  workdir: string;
+  runtimeConfig: RuntimeConfig;
+}): Promise<RunContext> {
+  const createdAt = new Date();
+  const runId = `${timestampForPath(createdAt)}-${slugify(args.system.systemId)}`;
+  const runDir = resolve(args.workdir, args.runtimeConfig.runsDir, runId);
+  const auditDir = resolve(runDir, "audit");
+  const rolesRootDir = resolve(runDir, args.runtimeConfig.workspace.rolesDir);
+  const sharedDir = resolve(args.workdir, args.runtimeConfig.sharedDir);
+  const roleDirsById = new Map<string, RoleRunDirs>();
+
+  await mkdir(auditDir, { recursive: true });
+  await mkdir(rolesRootDir, { recursive: true });
+
+  const sourceSystem = await readFile(args.systemPath, "utf8");
+  await writeFile(resolve(runDir, "request.md"), `${args.prompt}\n`, "utf8");
+  await writeFile(resolve(runDir, "system.mmd"), sourceSystem, "utf8");
+  await writeFile(
+    resolve(runDir, "run.md"),
+    [
+      `# Run ${runId}`,
+      "",
+      `- systemId: ${args.system.systemId}`,
+      `- systemVersion: ${args.system.systemVersion}`,
+      `- entryRoleId: ${args.system.entryRoleId}`,
+      `- sharedDir: ${sharedDir}`
+    ].join("\n"),
+    "utf8"
+  );
+  await writeFile(resolve(auditDir, "summary.md"), "# Audit Summary\n", "utf8");
+  await writeFile(resolve(auditDir, "transitions.md"), "# Transitions\n", "utf8");
+
+  for (const roleId of args.system.roleIds) {
+    const roleDir = resolve(rolesRootDir, roleId);
+    const privateDir = resolve(roleDir, args.runtimeConfig.workspace.privateDirName);
+    await mkdir(privateDir, { recursive: true });
+    if (args.runtimeConfig.workspace.linkSharedIntoRoleDir) {
+      await ensureSymlink(sharedDir, resolve(roleDir, "shared"));
+    }
+    roleDirsById.set(roleId, { roleDir, privateDir });
+  }
+
+  return {
+    runId,
+    runDir,
+    auditDir,
+    eventsPath: resolve(runDir, "events.ndjson"),
+    statePath: resolve(runDir, "state.json"),
+    roleDirsById,
+    sharedDir
+  };
+}
+
+async function persistState(context: RunContext, state: RuntimeState): Promise<void> {
+  await writeFile(
+    context.statePath,
+    stringifyJson({
+      status: state.status,
+      currentRoleId: state.currentRoleId,
+      nextRoleId: state.nextRoleId,
+      transitionCount: state.transitionCount,
+      lastOutput: state.lastOutput,
+      error: state.error,
+      finalRoleId: state.finalRoleId
+    }),
+    "utf8"
+  );
+}
+
+async function appendEvent(context: RunContext, payload: Record<string, unknown>): Promise<void> {
+  await appendFile(context.eventsPath, `${JSON.stringify(payload)}\n`, "utf8");
 }
 
 function mergeRuntimeState(
@@ -654,16 +1048,34 @@ export async function runSystemWithAdapter(args: {
   profilesPath?: string;
   toolsPath?: string;
   lawsPath?: string;
+  runtimeConfigPath?: string;
+  userProfilePath?: string;
   prompt: string;
   workdir: string;
   dryRun?: boolean;
 }): Promise<AdapterRunResult> {
   const system = await loadSystemFromMermaid(args.systemPath);
+  const runtimeConfig = await loadRuntimeConfig(args.runtimeConfigPath, args.workdir);
   const profiles = await loadProfiles(args.profilesPath);
   const tools = await loadTools(args.toolsPath);
-  const lawCatalog = await loadLaws(args.lawsPath);
-  const rolePackagesByRoleId = await loadRolePackages({ system });
+  const lawCatalog = await loadLaws(args.lawsPath, args.workdir);
+  const userProfile = await loadUserProfile(args.userProfilePath, args.workdir);
+  const rolePackagesByRoleId = await loadRolePackages({
+    system,
+    roleRootDir: resolve(args.workdir, runtimeConfig.roleRepo, "roles")
+  });
+  const modelsById = await loadModelPackages({
+    system,
+    modelRootDir: resolve(args.workdir, runtimeConfig.modelRepo)
+  });
   const effectiveLaw = resolveEffectiveLaw(system, lawCatalog);
+  const runContext = await initializeRunContext({
+    system,
+    systemPath: args.systemPath,
+    prompt: args.prompt,
+    workdir: args.workdir,
+    runtimeConfig
+  });
 
   const profilesById = new Map(profiles.map((item) => [item.profileId, item]));
   const toolsByRef = new Map(tools.map((item) => [item.toolRef, item]));
@@ -680,6 +1092,7 @@ export async function runSystemWithAdapter(args: {
     error: null,
     finalRoleId: null
   };
+  await persistState(runContext, state);
 
   while (state.status === "running") {
     const roleId = state.nextRoleId ?? state.currentRoleId;
@@ -691,14 +1104,30 @@ export async function runSystemWithAdapter(args: {
         effectiveLaw,
         profilesById,
         toolsByRef,
+        modelsById,
+        runtimeConfig,
+        userProfile,
         workdir: args.workdir,
         rolePackagesByRoleId,
+        runContext,
         dryRun: args.dryRun
       },
       adjacency
     });
 
     state = mergeRuntimeState(state, patch, args.prompt);
+    await persistState(runContext, state);
+    for (const audit of patch.auditTrail ?? []) {
+      await appendEvent(runContext, {
+        type: "audit",
+        ...audit
+      });
+      await appendFile(
+        resolve(runContext.auditDir, "transitions.md"),
+        `- ${audit.roleId}: ${audit.status}${audit.selectedEvent ? ` (${audit.selectedEvent})` : ""}\n`,
+        "utf8"
+      );
+    }
     if (state.status === "running" && !state.nextRoleId) {
       state = mergeRuntimeState(
         state,
@@ -719,6 +1148,7 @@ export async function runSystemWithAdapter(args: {
         },
         args.prompt
       );
+      await persistState(runContext, state);
     }
   }
 
@@ -732,6 +1162,18 @@ export async function runSystemWithAdapter(args: {
     error: state.error ?? undefined
   };
   const stages = projectStages({ auditTrail: state.auditTrail });
+  await writeFile(
+    resolve(runContext.auditDir, "summary.md"),
+    [
+      "# Audit Summary",
+      "",
+      `- runId: ${runContext.runId}`,
+      `- status: ${state.status}`,
+      `- finalRoleId: ${state.finalRoleId ?? ""}`,
+      `- transitionCount: ${state.transitionCount}`
+    ].join("\n"),
+    "utf8"
+  );
 
   return {
     systemId: system.systemId,

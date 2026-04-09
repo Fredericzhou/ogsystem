@@ -9,10 +9,12 @@ function usage(): string {
     "  npm run run:adapter -- --system <file.mmd> --prompt <text>",
     "",
     "Options:",
-    "  --profiles <file>       Execution profiles JSON (optional)",
-    "  --tools <file>          CLI tools JSON (optional)",
-    "  --laws <file>            Law catalog JSON (optional)",
-    "  --workdir <path>         Working directory for CLI tools (default: cwd)",
+    "  --runtime <file>        Runtime config JSON (optional, defaults to .ogsystem/runtime.json)",
+    "  --user-profile <file>   User profile JSON (optional, defaults to .ogsystem/user-profile.json)",
+    "  --laws <file>           Law catalog JSON (optional, defaults to .ogsystem/laws.json)",
+    "  --profiles <file>       Legacy execution profiles JSON (optional)",
+    "  --tools <file>          Legacy CLI tools JSON (optional)",
+    "  --workdir <path>        Working directory and shared workspace (default: cwd)",
     "  --trace-out <file>       Write final runtime result JSON",
     "  --dry-run                Do not execute external commands"
   ].join("\n");
@@ -22,6 +24,8 @@ async function main(): Promise<void> {
   const { values } = parseArgs({
     options: {
       system: { type: "string" },
+      runtime: { type: "string" },
+      "user-profile": { type: "string" },
       profiles: { type: "string" },
       tools: { type: "string" },
       laws: { type: "string" },
@@ -45,6 +49,8 @@ async function main(): Promise<void> {
 
   const result = await runSystemWithAdapter({
     systemPath: values.system,
+    runtimeConfigPath: values.runtime,
+    userProfilePath: values["user-profile"],
     profilesPath: values.profiles,
     toolsPath: values.tools,
     lawsPath: values.laws,

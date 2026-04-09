@@ -3,6 +3,12 @@
   "roleVersion": "1.0.0",
   "name": "Demo Analyst",
   "description": "Produces a concise analysis summary for the console demo.",
+  "talent": {
+    "reasoningDepth": "medium",
+    "style": "concise",
+    "riskPreference": "balanced"
+  },
+  "preferredModelTags": ["fast", "instruction-following"],
   "promptTemplate": "prompt.md",
   "inputSchema": "../_shared/input.schema.json",
   "outputSchema": "output.schema.json",

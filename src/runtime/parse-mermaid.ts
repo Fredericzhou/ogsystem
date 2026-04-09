@@ -43,6 +43,7 @@ type ValidatedSystemGraph = ParsedSystemGraph & {
   roleIds: string[];
   talentBinding: Record<string, string>;
   executionBinding: Record<string, string>;
+  modelBinding: Record<string, string>;
 };
 
 function parseNodeToken(token: string): ParsedNodeToken {
@@ -273,6 +274,7 @@ function validateParsedSystemGraph(graph: ParsedSystemGraph): ValidatedSystemGra
 
   const talentBinding: Record<string, string> = {};
   const executionBinding: Record<string, string> = {};
+  const modelBinding: Record<string, string> = {};
   const exactMetadataKeys = new Set(["system.id", "system.version", "law.global", "entry.role"]);
 
   for (const [key, value] of graph.metadata.entries()) {
@@ -284,6 +286,14 @@ function validateParsedSystemGraph(graph: ParsedSystemGraph): ValidatedSystemGra
       const roleId = key.slice("talent.bind.".length);
       if (roleId) {
         talentBinding[roleId] = value;
+      }
+      continue;
+    }
+
+    if (key.startsWith("model.bind.")) {
+      const roleId = key.slice("model.bind.".length);
+      if (roleId) {
+        modelBinding[roleId] = value;
       }
       continue;
     }
@@ -342,6 +352,12 @@ function validateParsedSystemGraph(graph: ParsedSystemGraph): ValidatedSystemGra
     }
   }
 
+  for (const roleId of Object.keys(modelBinding)) {
+    if (!roleIds.includes(roleId)) {
+      throw new Error(`model.bind.${roleId} references undefined role`);
+    }
+  }
+
   return {
     ...graph,
     systemId,
@@ -350,7 +366,8 @@ function validateParsedSystemGraph(graph: ParsedSystemGraph): ValidatedSystemGra
     entryRoleId,
     roleIds,
     talentBinding,
-    executionBinding
+    executionBinding,
+    modelBinding
   };
 }
 
@@ -363,7 +380,8 @@ function compileSystemDefinition(graph: ValidatedSystemGraph): SystemDefinition 
     flows: graph.flows,
     lawBinding: { globalLawRef: graph.globalLawRef },
     talentBinding: graph.talentBinding,
-    executionBinding: graph.executionBinding
+    executionBinding: graph.executionBinding,
+    modelBinding: graph.modelBinding
   };
 }
 

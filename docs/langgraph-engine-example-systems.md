@@ -3,38 +3,36 @@
 Date: 2026-04-09  
 Status: design examples
 
-This document provides two Mermaid-first system examples intended for a future `LangGraph` engine mode.
+This document provides Mermaid-first examples for a future `LangGraph` engine mode.
 
 Important:
 
-- These are design examples, not runnable on the current minimal runtime.
-- They assume the runtime supports:
-  - parallel split
-  - `all_of` join
-  - loop budget
-  - per-role execution binding
-  - structured role output
+- these are design examples, not runnable on the current minimal runtime
+- they use target terminology: `model.bind.<roleId>=<modelId>`
+- runtime migration may still keep `exec.bind.*` compatibility in implementation
 
-Proposed structured output contract for executable roles:
+Assumed capabilities:
+
+- parallel split
+- `all_of` join
+- loop budget
+- per-role model binding
+- structured role output
+
+Proposed executable output contract:
 
 ```json
 {"event":"EVENT_NAME","content":"...","data":{}}
 ```
 
-Proposed LangGraph-oriented metadata extensions used below:
+Proposed metadata extensions:
 
 - `%% engine=langgraph`
 - `%% role.mode.<roleId>=parallel_split`
 - `%% join.mode.<roleId>=all_of`
 - `%% join.sources.<roleId>=roleA,roleB,...`
 - `%% loop.max.<roleId>=N`
-- `%% exec.bind.<roleId>=<profileId>`
-
-Concrete sample files:
-
-- `examples/langgraph-expert-consultation/`
-- `examples/langgraph-debate-current/`
-- minimal future engine boundary: `src/runtime/langgraph-engine.ts`
+- `%% model.bind.<roleId>=<modelId>`
 
 ## 1. Expert Consultation System
 
@@ -42,7 +40,7 @@ Goal:
 
 - intake one medical problem
 - dispatch to multiple specialist roles in parallel
-- each specialist uses a different CLI and profile
+- each specialist can use a different model package
 - chief physician merges parallel diagnoses
 - if evidence conflicts, run one more consultation loop
 
@@ -59,13 +57,13 @@ flowchart TD
 %% join.mode.diagnosis-chief-review=all_of
 %% join.sources.diagnosis-chief-review=diagnosis-cardiology,diagnosis-neurology,diagnosis-imaging
 %% loop.max.diagnosis-dispatch=2
-%% exec.bind.diagnosis-intake=profile.intake.codex
-%% exec.bind.diagnosis-dispatch=profile.dispatch.codex
-%% exec.bind.diagnosis-cardiology=profile.cardiology.claude
-%% exec.bind.diagnosis-neurology=profile.neurology.gemini
-%% exec.bind.diagnosis-imaging=profile.imaging.python
-%% exec.bind.diagnosis-chief-review=profile.chief.codex
-%% exec.bind.diagnosis-report=profile.report.codex
+%% model.bind.diagnosis-intake=fast-gpt54
+%% model.bind.diagnosis-dispatch=fast-gpt54
+%% model.bind.diagnosis-cardiology=claude-sonnet
+%% model.bind.diagnosis-neurology=deep-o3
+%% model.bind.diagnosis-imaging=deep-o3
+%% model.bind.diagnosis-chief-review=deep-o3
+%% model.bind.diagnosis-report=fast-gpt54
 
 input -->|CASE_RECEIVED| intake[Role:diagnosis-intake]
 intake[Role:diagnosis-intake] -->|READY_FOR_PARALLEL| parallel_dispatch[Role:diagnosis-dispatch]
@@ -83,110 +81,19 @@ chief_review[Role:diagnosis-chief-review] -->|CONSENSUS_READY| final_report[Role
 final_report[Role:diagnosis-report] -->|REPORT_READY| output
 ```
 
-### Execution Profiles
+### Model Packages
 
-```json
-[
-  {
-    "profileId": "profile.intake.codex",
-    "toolRef": "tool.codex.exec",
-    "timeoutMs": 60000,
-    "maxOutputBytes": 65536
-  },
-  {
-    "profileId": "profile.dispatch.codex",
-    "toolRef": "tool.codex.exec",
-    "timeoutMs": 60000,
-    "maxOutputBytes": 65536
-  },
-  {
-    "profileId": "profile.cardiology.claude",
-    "toolRef": "tool.claude.exec",
-    "timeoutMs": 90000,
-    "maxOutputBytes": 65536
-  },
-  {
-    "profileId": "profile.neurology.gemini",
-    "toolRef": "tool.gemini.exec",
-    "timeoutMs": 90000,
-    "maxOutputBytes": 65536
-  },
-  {
-    "profileId": "profile.imaging.python",
-    "toolRef": "tool.python.imaging",
-    "timeoutMs": 45000,
-    "maxOutputBytes": 65536
-  },
-  {
-    "profileId": "profile.chief.codex",
-    "toolRef": "tool.codex.exec",
-    "timeoutMs": 90000,
-    "maxOutputBytes": 65536
-  },
-  {
-    "profileId": "profile.report.codex",
-    "toolRef": "tool.codex.exec",
-    "timeoutMs": 60000,
-    "maxOutputBytes": 65536
-  }
-]
-```
+Role execution is expected to resolve from `og-models/models/<modelId>/model.json`.
 
-### Tool Registry
+Example package ids used above:
 
-```json
-{
-  "tools": [
-    {
-      "toolRef": "tool.codex.exec",
-      "runner": "local_shell",
-      "command": "codex",
-      "argsTemplate": [
-        "exec",
-        "--skip-git-repo-check",
-        "--color",
-        "never",
-        "{{prompt}}"
-      ],
-      "stdinMode": "none"
-    },
-    {
-      "toolRef": "tool.claude.exec",
-      "runner": "local_shell",
-      "command": "claude",
-      "argsTemplate": [
-        "--print",
-        "{{prompt}}"
-      ],
-      "stdinMode": "none"
-    },
-    {
-      "toolRef": "tool.gemini.exec",
-      "runner": "local_shell",
-      "command": "gemini",
-      "argsTemplate": [
-        "--prompt",
-        "{{prompt}}"
-      ],
-      "stdinMode": "none"
-    },
-    {
-      "toolRef": "tool.python.imaging",
-      "runner": "local_shell",
-      "command": "python3",
-      "argsTemplate": [
-        "scripts/imaging_consult.py",
-        "{{prompt}}"
-      ],
-      "stdinMode": "none"
-    }
-  ]
-}
-```
+- `fast-gpt54`
+- `deep-o3`
+- `claude-sonnet`
 
 ### Role Packages
 
-Role behavior is expected to live in role packages resolved by roleId:
+Role behavior is expected to resolve from `og-roles/roles/<roleId>/`:
 
 - `diagnosis-intake`
 - `diagnosis-dispatch`
@@ -196,24 +103,19 @@ Role behavior is expected to live in role packages resolved by roleId:
 - `diagnosis-chief-review`
 - `diagnosis-report`
 
-### LangGraph Execution Notes
+### Notes
 
-- `diagnosis-dispatch` is lowered as one parallel split node.
-- `diagnosis-chief-review` is lowered as an `all_of` join node that waits for `diagnosis-cardiology`, `diagnosis-neurology`, and `diagnosis-imaging`.
-- `REQUEST_RECHECK` forms a bounded loop back to `diagnosis-dispatch`.
-- Each specialist role uses a different tool/profile.
+- `diagnosis-dispatch` is lowered as one parallel split node
+- `diagnosis-chief-review` is an `all_of` join waiting for all specialists
+- `REQUEST_RECHECK` forms a bounded loop back to dispatch
 
 ## 2. Current Debate Example
-
-Debate topic:
-
-- should OGSystem continue with a minimal implementation, or align early to a larger semantic system
 
 Goal:
 
 - run two debaters in parallel
 - judge produces either final decision or one rebuttal round
-- use different CLIs for different debate roles
+- each role may use a different model package
 
 ### Mermaid
 
@@ -228,12 +130,12 @@ flowchart TD
 %% join.mode.debate-judge=all_of
 %% join.sources.debate-judge=debate-minimalist,debate-alignmentist
 %% loop.max.debate-round-manager=2
-%% exec.bind.debate-moderator=profile.moderator.codex
-%% exec.bind.debate-round-manager=profile.round.codex
-%% exec.bind.debate-minimalist=profile.minimalist.claude
-%% exec.bind.debate-alignmentist=profile.alignmentist.gemini
-%% exec.bind.debate-judge=profile.judge.codex
-%% exec.bind.debate-summary=profile.summary.codex
+%% model.bind.debate-moderator=fast-gpt54
+%% model.bind.debate-round-manager=fast-gpt54
+%% model.bind.debate-minimalist=claude-sonnet
+%% model.bind.debate-alignmentist=deep-o3
+%% model.bind.debate-judge=deep-o3
+%% model.bind.debate-summary=fast-gpt54
 
 input -->|DEBATE_REQUEST| moderator[Role:debate-moderator]
 moderator[Role:debate-moderator] -->|ROUND_READY| parallel_round[Role:debate-round-manager]
@@ -249,52 +151,7 @@ judge[Role:debate-judge] -->|DECISION_READY| summary[Role:debate-summary]
 summary[Role:debate-summary] -->|SUMMARY_READY| output
 ```
 
-### Execution Profiles
-
-```json
-[
-  {
-    "profileId": "profile.moderator.codex",
-    "toolRef": "tool.codex.exec",
-    "timeoutMs": 60000,
-    "maxOutputBytes": 65536
-  },
-  {
-    "profileId": "profile.round.codex",
-    "toolRef": "tool.codex.exec",
-    "timeoutMs": 60000,
-    "maxOutputBytes": 65536
-  },
-  {
-    "profileId": "profile.minimalist.claude",
-    "toolRef": "tool.claude.exec",
-    "timeoutMs": 90000,
-    "maxOutputBytes": 65536
-  },
-  {
-    "profileId": "profile.alignmentist.gemini",
-    "toolRef": "tool.gemini.exec",
-    "timeoutMs": 90000,
-    "maxOutputBytes": 65536
-  },
-  {
-    "profileId": "profile.judge.codex",
-    "toolRef": "tool.codex.exec",
-    "timeoutMs": 90000,
-    "maxOutputBytes": 65536
-  },
-  {
-    "profileId": "profile.summary.codex",
-    "toolRef": "tool.codex.exec",
-    "timeoutMs": 60000,
-    "maxOutputBytes": 65536
-  }
-]
-```
-
 ### Role Packages
-
-Role behavior is expected to live in role packages resolved by roleId:
 
 - `debate-moderator`
 - `debate-round-manager`
@@ -303,20 +160,19 @@ Role behavior is expected to live in role packages resolved by roleId:
 - `debate-judge`
 - `debate-summary`
 
-### LangGraph Execution Notes
+### Notes
 
-- `debate-round-manager` is lowered to a parallel split.
-- `debate-judge` is an `all_of` join that waits for both debaters.
-- `REBUTTAL_NEEDED` creates a bounded debate loop.
-- This example is intentionally small: two parallel debaters, one judge, one optional rebuttal loop.
+- `debate-round-manager` is lowered to a parallel split
+- `debate-judge` is an `all_of` join waiting for both debaters
+- `REBUTTAL_NEEDED` creates a bounded loop
 
-## Minimal LangGraph Engine Requirements Behind These Examples
+## 3. Minimal Future Engine Requirements
 
 To run these systems, the engine should minimally support:
 
-1. role-level execution binding
-2. parallel split from one role into multiple active branches
+1. role-level model binding
+2. parallel split into multiple active branches
 3. `all_of` join with deterministic merge input
 4. bounded loop control
 5. audit records with `branchId`, `joinId`, and `loopIteration`
-6. projection from runtime state and audit trail rather than exposing LangGraph internal step ids
+6. projections from runtime state and audit trail rather than leaking internal engine step ids

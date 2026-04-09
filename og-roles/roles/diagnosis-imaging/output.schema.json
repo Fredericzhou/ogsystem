@@ -2,7 +2,10 @@
   "type": "object",
   "required": ["event", "content"],
   "properties": {
-    "event": { "type": "string" },
+    "event": {
+      "type": "string",
+      "enum": ["IMAGING_DONE"]
+    },
     "content": { "type": "string" },
     "data": { "type": "object" }
   },

@@ -3,6 +3,12 @@
   "roleVersion": "1.0.0",
   "name": "Debate Judge",
   "description": "Aggregates debate positions and determines whether another round is needed or a decision is ready.",
+  "talent": {
+    "reasoningDepth": "high",
+    "style": "analytical",
+    "riskPreference": "balanced"
+  },
+  "preferredModelTags": ["reasoning", "long-context"],
   "promptTemplate": "prompt.md",
   "inputSchema": "../_shared/input.schema.json",
   "outputSchema": "output.schema.json",

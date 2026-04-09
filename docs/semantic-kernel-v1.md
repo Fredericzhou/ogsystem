@@ -38,7 +38,7 @@ System
 |- roleIds[]
 |- flows(fromRoleId, eventType, toRoleId)
 |- talentBinding? (roleId -> talentRef)
-`- executionBinding? (roleId -> executionProfileRef)
+`- executionBinding? (roleId -> modelRef; legacy runtime may map from executionProfileRef)
 
 Runtime
 |- SystemState(status/current/next/final/transitionCount)
@@ -66,8 +66,9 @@ Projection
 
 ## 6. Execution Semantics
 
-- `exec.bind.<roleId>` binds one role to one execution profile.
-- Profile selects exactly one tool plus optional `timeoutMs` and `maxOutputBytes`.
+- Target semantics: `model.bind.<roleId>` binds one role to one model package.
+- Legacy runtime compatibility: `exec.bind.<roleId>` can still map to execution profile during migration.
+- Model package selects executor/model/timeout/output limits.
 - Node execution must return strict JSON on stdout:
   - `{"event":"EVENT_NAME","content":"..."}`
   - `event` is required when the role has outgoing flows
@@ -98,7 +99,7 @@ Mermaid DSL
 
 - The runtime uses an explicit state loop that mirrors `SystemDefinition` directly. Current role, next role, status, and audit trail all live in one runtime state object.
 - Tools must emit `{"event":"EVENT_NAME","content":"..."}` on stdout. The runtime parses the full stdout as one JSON object and never falls back to regex or JSONL guessing.
-- Nodes without `exec.bind` fail immediately unless the catalog law opts into `allowNoopWithoutExecutionBinding`. Even then, noop only works for terminal or single-outgoing roles.
+- Nodes without execution binding fail immediately unless the catalog law opts into `allowNoopWithoutExecutionBinding`. Even then, noop only works for terminal or single-outgoing roles.
 
 ## 10. P2 Architecture Decision
 

@@ -3,6 +3,12 @@
   "roleVersion": "1.0.0",
   "name": "Debate Moderator",
   "description": "Kicks off rounds, injects context, and hands control to debaters.",
+  "talent": {
+    "coordination": "high",
+    "reasoningDepth": "medium",
+    "style": "neutral"
+  },
+  "preferredModelTags": ["fast", "instruction-following"],
   "promptTemplate": "prompt.md",
   "inputSchema": "../_shared/input.schema.json",
   "outputSchema": "output.schema.json",

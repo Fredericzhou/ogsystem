@@ -3,6 +3,12 @@
   "roleVersion": "1.0.0",
   "name": "Debate Summary Writer",
   "description": "Writes the final summary after the judge reaches a decision.",
+  "talent": {
+    "reasoningDepth": "medium",
+    "style": "concise",
+    "riskPreference": "balanced"
+  },
+  "preferredModelTags": ["fast", "instruction-following"],
   "promptTemplate": "prompt.md",
   "inputSchema": "../_shared/input.schema.json",
   "outputSchema": "output.schema.json",
