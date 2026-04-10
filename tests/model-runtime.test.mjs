@@ -34,6 +34,10 @@ test("adapter auto-discovers runtime config and persists run artifacts for model
   const runDir = path.resolve(runsDir, runs[0]);
   const stateJson = JSON.parse(await readFile(path.resolve(runDir, "state.json"), "utf8"));
   assert.strictEqual(stateJson.finalRoleId, "debate-judge");
+  const sessionIndex = JSON.parse(await readFile(path.resolve(runDir, "sessions.json"), "utf8"));
+  assert.equal(sessionIndex.length, 2);
+  assert.equal(sessionIndex[0].sessionId.startsWith("dryrun-session-"), true);
+  assert.equal(sessionIndex[1].sessionId.startsWith("dryrun-session-"), true);
 
   const minimalistPrompt = await readFile(
     path.resolve(runDir, "roles", "debate-minimalist", "prompt.md"),
@@ -64,18 +68,39 @@ test("adapter auto-discovers runtime config and persists run artifacts for model
     path.resolve(runDir, "roles", "debate-minimalist", "executions")
   );
   assert.strictEqual(minimalistExecutions.length, 1);
+  const minimalistExecutionDir = path.resolve(
+    runDir,
+    "roles",
+    "debate-minimalist",
+    "executions",
+    minimalistExecutions[0]
+  );
   const minimalistExecutionPrompt = await readFile(
-    path.resolve(
-      runDir,
-      "roles",
-      "debate-minimalist",
-      "executions",
-      minimalistExecutions[0],
-      "prompt.md"
-    ),
+    path.resolve(minimalistExecutionDir, "prompt.md"),
     "utf8"
   );
   assert.match(minimalistExecutionPrompt, /讨论当前架构是否继续最小化/);
+  const minimalistSession = JSON.parse(
+    await readFile(path.resolve(runDir, "roles", "debate-minimalist", "session.json"), "utf8")
+  );
+  assert.equal(minimalistSession.sessionId, "dryrun-session-debate-minimalist");
+  const minimalistExecutionSession = JSON.parse(
+    await readFile(path.resolve(minimalistExecutionDir, "session.json"), "utf8")
+  );
+  assert.equal(minimalistExecutionSession.sessionId, "dryrun-session-debate-minimalist");
+  const minimalistAudit = JSON.parse(
+    await readFile(path.resolve(runDir, "roles", "debate-minimalist", "audit.json"), "utf8")
+  );
+  assert.equal(minimalistAudit.status, "ok");
+  const minimalistResult = JSON.parse(
+    await readFile(path.resolve(runDir, "roles", "debate-minimalist", "result.json"), "utf8")
+  );
+  assert.equal(minimalistResult.event, "MINIMALIST_DONE");
+  const minimalistOutbox = await readFile(
+    path.resolve(runDir, "roles", "debate-minimalist", "outbox.md"),
+    "utf8"
+  );
+  assert.match(minimalistOutbox, /\[dry-run\] opencode-sdk/);
   const privateReadme = await readFile(
     path.resolve(runDir, "roles", "debate-minimalist", "private", "README.md"),
     "utf8"

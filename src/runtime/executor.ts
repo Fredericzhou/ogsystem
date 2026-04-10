@@ -118,7 +118,9 @@ export function createDefaultExecutor(args: {
                   content: "[dry-run] opencode-sdk"
                 }),
                 stderr: "",
-                args: [] as string[]
+                args: [] as string[],
+                sessionId: request.sessionId ?? `dryrun-session-${request.roleId}`,
+                messageId: `dryrun-message-${request.roleId}`
               }
             : await executeOpencodeModelRole({
                 roleId: request.roleId,

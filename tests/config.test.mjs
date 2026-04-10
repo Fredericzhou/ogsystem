@@ -50,3 +50,58 @@ test("runtime config rejects removed linkSharedIntoRoleDir field", () => {
     }
   );
 });
+
+test("runtime config validates every supported runtime field", () => {
+  const config = validateRuntimeConfig(
+    {
+      executor: "opencode",
+      roleRepo: "./og-roles",
+      modelRepo: "./og-models",
+      runsDir: ".ogsystems",
+      sharedDir: "./shared-workspace",
+      workspace: {
+        rolesDir: "roles",
+        privateDirName: "private"
+      },
+      opencode: {
+        baseArgs: ["run", "--json"]
+      }
+    },
+    "runtime.json"
+  );
+
+  assert.equal(config.executor, "opencode");
+  assert.equal(config.sharedDir, "./shared-workspace");
+  assert.deepStrictEqual(config.workspace, {
+    rolesDir: "roles",
+    privateDirName: "private"
+  });
+  assert.deepStrictEqual(config.opencode?.baseArgs, ["run", "--json"]);
+});
+
+test("runtime config accepts every supported field", () => {
+  const config = validateRuntimeConfig(
+    {
+      executor: "opencode",
+      roleRepo: "./og-roles",
+      modelRepo: "./og-models",
+      runsDir: ".ogsystems",
+      sharedDir: "./shared-workspace",
+      workspace: {
+        rolesDir: "roles",
+        privateDirName: "private"
+      },
+      opencode: {
+        baseArgs: ["run", "--json"]
+      }
+    },
+    "runtime.json"
+  );
+
+  assert.equal(config.sharedDir, "./shared-workspace");
+  assert.deepStrictEqual(config.opencode?.baseArgs, ["run", "--json"]);
+  assert.deepStrictEqual(config.workspace, {
+    rolesDir: "roles",
+    privateDirName: "private"
+  });
+});

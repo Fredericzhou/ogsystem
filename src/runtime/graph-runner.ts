@@ -5,6 +5,17 @@ import { Annotation, END, START, StateGraph } from "@langchain/langgraph";
 
 import type { Executor } from "./executor.js";
 import { getExecutionPlanNode } from "./execution-plan.js";
+import { isJoinNodeReady, selectRoutingTargets } from "./graph-mode-registry.js";
+import {
+  activateBranch,
+  completeBranch,
+  createInitialGraphState,
+  getActiveRoleIds,
+  getTargetLoopIteration,
+  projectStateSnapshot,
+  storeRoleResult,
+  wouldExceedLoopBudget
+} from "./graph-runtime-state.js";
 import { executeRoleNode } from "./role-executor.js";
 import { projectStages } from "./stage-projector.js";
 import { stringifyJson } from "./runtime-support.js";
@@ -101,117 +112,12 @@ const GraphStateAnnotation = Annotation.Root({
   })
 });
 
-function buildBranchId(roleId: string, loopIteration: number): string {
-  return `${roleId}@${loopIteration}`;
-}
-
-function getTargetLoopIteration(args: {
-  targetRoleId: string;
-  currentLoopIteration: number;
-  state: GraphState;
-  plan: ExecutionPlan;
-}): number {
-  const targetNode = getExecutionPlanNode(args.plan, args.targetRoleId);
-  if (targetNode.loopMax !== undefined) {
-    return (args.state.loopIterations[args.targetRoleId] ?? 0) + 1;
-  }
-  return args.currentLoopIteration;
-}
-
-function wouldExceedLoopBudget(args: {
-  targetRoleId: string;
-  currentLoopIteration: number;
-  state: GraphState;
-  plan: ExecutionPlan;
-}): boolean {
-  const targetNode = getExecutionPlanNode(args.plan, args.targetRoleId);
-  if (targetNode.loopMax === undefined) {
-    return false;
-  }
-  return getTargetLoopIteration(args) > targetNode.loopMax;
-}
-
-function allJoinSourcesReady(args: {
-  joinRoleId: string;
-  currentRoleId: string;
-  loopIteration: number;
-  state: GraphState;
-  plan: ExecutionPlan;
-  currentResult?: StoredRoleResult;
-}): boolean {
-  const joinNode = getExecutionPlanNode(args.plan, args.joinRoleId);
-  for (const sourceRoleId of joinNode.joinSources) {
-    if (sourceRoleId === args.currentRoleId) {
-      continue;
-    }
-    const result = args.state.roleResults[sourceRoleId];
-    if (!result || result.loopIteration !== args.loopIteration) {
-      return false;
-    }
-  }
-  return Boolean(args.currentResult || args.state.roleResults[args.currentRoleId]);
-}
-
-function projectStateSnapshot(args: {
-  state: GraphState;
-  plan: ExecutionPlan;
-}): Record<string, unknown> {
-  const branches = Object.values(args.state.branchRecords);
-  const activeBranches = branches.filter((branch) => branch.status === "active");
-  const completedBranches = branches.filter((branch) => branch.status === "completed");
-  const pendingJoinRoleIds = activeBranches
-    .map((branch) => branch.roleId)
-    .filter((roleId) => getExecutionPlanNode(args.plan, roleId).joinMode === "all_of");
-
-  return {
-    status: args.state.status,
-    currentRoleId: args.state.finalRoleId || args.state.lastExecutedRoleId || args.plan.entryRoleId,
-    nextRoleId: activeBranches.length === 1 ? activeBranches[0].roleId : undefined,
-    finalRoleId: args.state.finalRoleId || undefined,
-    transitionCount: args.state.transitionCount,
-    lastOutput: args.state.finalOutput || undefined,
-    error: args.state.error || undefined,
-    activeBranches,
-    completedBranches,
-    pendingJoinRoleIds,
-    loopIterations: args.state.loopIterations,
-    roleResults: args.state.roleResults,
-    graphState: args.state
-  };
-}
-
 async function persistProjectedState(args: {
   state: GraphState;
   plan: ExecutionPlan;
   runContext: RunContext;
 }): Promise<void> {
   await writeFile(args.runContext.statePath, stringifyJson(projectStateSnapshot(args)), "utf8");
-}
-
-function createInitialState(plan: ExecutionPlan, prompt: string): GraphState {
-  return {
-    userPrompt: prompt,
-    status: "running",
-    error: "",
-    transitionCount: 0,
-    auditTrail: [],
-    roleResults: {},
-    branchRecords: {
-      [buildBranchId(plan.entryRoleId, 1)]: {
-        branchId: buildBranchId(plan.entryRoleId, 1),
-        roleId: plan.entryRoleId,
-        loopIteration: 1,
-        status: "active"
-      }
-    },
-    loopIterations: {
-      [plan.entryRoleId]: 1
-    },
-    selectedEventByRoleId: {},
-    finalOutput: "",
-    finalRoleId: "",
-    lastExecutedRoleId: ""
-  };
 }
 
 function buildFailureUpdate(args: {
@@ -252,12 +158,11 @@ function buildSuccessUpdate(args: {
 }): GraphUpdate {
   const node = getExecutionPlanNode(args.plan, args.roleId);
   const branchUpdates: Record<string, BranchRecord> = {
-    [args.branchId]: {
+    [args.branchId]: completeBranch({
       branchId: args.branchId,
       roleId: args.roleId,
-      loopIteration: args.loopIteration,
-      status: "completed"
-    }
+      loopIteration: args.loopIteration
+    })
   };
   const loopUpdates: Record<string, number> = {
     [args.roleId]: args.loopIteration
@@ -267,14 +172,11 @@ function buildSuccessUpdate(args: {
   let finalOutput = "";
   let finalRoleId = "";
 
-  const candidateTargets =
-    args.mode === "noop"
-      ? node.outgoing.map((flow) => flow.toRoleId).slice(0, 1)
-      : node.routingMode === "parallel_split"
-        ? node.outgoing.map((flow) => flow.toRoleId)
-        : node.outgoing
-            .filter((flow) => flow.eventType === args.selectedEvent)
-            .map((flow) => flow.toRoleId);
+  const candidateTargets = selectRoutingTargets({
+    node,
+    selectedEvent: args.selectedEvent,
+    mode: args.mode
+  });
 
   for (const targetRoleId of candidateTargets) {
     if (targetRoleId === SYSTEM_END_ROLE_ID) {
@@ -308,34 +210,27 @@ function buildSuccessUpdate(args: {
 
     const targetNode = getExecutionPlanNode(args.plan, targetRoleId);
     if (targetNode.joinMode === "all_of") {
-      if (
-        allJoinSourcesReady({
-          joinRoleId: targetRoleId,
-          currentRoleId: args.roleId,
-          loopIteration: args.loopIteration,
-          state: args.state,
-          plan: args.plan,
-          currentResult: args.storedResult
-        })
-      ) {
-        const nextBranchId = buildBranchId(targetRoleId, nextLoopIteration);
-        branchUpdates[nextBranchId] = {
-          branchId: nextBranchId,
+      if (isJoinNodeReady({
+        node: targetNode,
+        currentRoleId: args.roleId,
+        loopIteration: args.loopIteration,
+        state: args.state,
+        currentResult: args.storedResult
+      })) {
+        const branch = activateBranch({
           roleId: targetRoleId,
-          loopIteration: nextLoopIteration,
-          status: "active"
-        };
+          loopIteration: nextLoopIteration
+        });
+        branchUpdates[branch.branchId] = branch;
       }
       continue;
     }
 
-    const nextBranchId = buildBranchId(targetRoleId, nextLoopIteration);
-    branchUpdates[nextBranchId] = {
-      branchId: nextBranchId,
+    const branch = activateBranch({
       roleId: targetRoleId,
-      loopIteration: nextLoopIteration,
-      status: "active"
-    };
+      loopIteration: nextLoopIteration
+    });
+    branchUpdates[branch.branchId] = branch;
   }
 
   return {
@@ -343,7 +238,7 @@ function buildSuccessUpdate(args: {
     error: finalError,
     transitionCount: 1,
     auditTrail: [args.audit],
-    roleResults: args.storedResult ? { [args.roleId]: args.storedResult } : {},
+    roleResults: storeRoleResult(args.roleId, args.storedResult),
     branchRecords: branchUpdates,
     loopIterations: loopUpdates,
     selectedEventByRoleId: args.selectedEvent ? { [args.roleId]: args.selectedEvent } : {},
@@ -408,13 +303,11 @@ export async function runSystemWithGraphRunner(args: RunnerInput): Promise<Adapt
     if (state.status !== "running") {
       return END;
     }
-    const activeRoles = Object.values(state.branchRecords)
-      .filter((branch) => branch.status === "active")
-      .map((branch) => branch.roleId);
+    const activeRoles = getActiveRoleIds(state);
     if (activeRoles.length === 0) {
       return END;
     }
-    return Array.from(new Set(activeRoles));
+    return activeRoles;
   });
 
   for (const roleId of args.plan.roleIds) {
@@ -466,7 +359,7 @@ export async function runSystemWithGraphRunner(args: RunnerInput): Promise<Adapt
   }
 
   const graph = graphBuilder.compile();
-  let finalState = args.initialState ?? createInitialState(args.plan, args.prompt);
+  let finalState = args.initialState ?? createInitialGraphState({ plan: args.plan, prompt: args.prompt });
   await persistProjectedState({ state: finalState, plan: args.plan, runContext: args.runContext });
 
   const recursionLimit = (args.effectiveLaw.maxTransitions ?? 100) + 20;

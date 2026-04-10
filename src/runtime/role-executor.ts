@@ -1,12 +1,15 @@
-import { appendFile } from "node:fs/promises";
-import { resolve } from "node:path";
-
+import { appendAuditRecord, createAuditRecord } from "./audit-recorder.js";
 import type { Executor, ExecutorBinding } from "./executor.js";
 import { getExecutionPlanNode } from "./execution-plan.js";
+import {
+  buildBranchId,
+  findCurrentBranch,
+  getTargetLoopIteration,
+  wouldExceedLoopBudget
+} from "./graph-runtime-state.js";
 import { OpencodeExecutionError } from "./opencode-executor.js";
 import {
   allocateRoleExecution,
-  appendEvent,
   getRoleSession,
   persistRolePrelude,
   persistRoleResult,
@@ -17,12 +20,11 @@ import {
   validateRoleInputSchema,
   validateRoleOutputSchema
 } from "./role-repo.js";
-import { preview, renderUserProfile, stringifyJson } from "./runtime-support.js";
+import { renderUserProfile, stringifyJson } from "./runtime-support.js";
 import { ToolExecutionError } from "./tool-runner.js";
 import { SYSTEM_END_ROLE_ID } from "./types.js";
 import type {
   AuditRecord,
-  BranchRecord,
   CliTool,
   EffectiveLawConstraints,
   ExecutionPlan,
@@ -64,18 +66,6 @@ export type RoleExecutorResult =
       branchId: string;
       loopIteration: number;
     };
-
-function buildBranchId(roleId: string, loopIteration: number): string {
-  return `${roleId}@${loopIteration}`;
-}
-
-export function findCurrentBranch(state: GraphState, roleId: string): BranchRecord | undefined {
-  const branches = Object.values(state.branchRecords).filter(
-    (branch) => branch.roleId === roleId && branch.status === "active"
-  );
-  branches.sort((left, right) => right.loopIteration - left.loopIteration);
-  return branches[0];
-}
 
 function getDirectContext(state: GraphState, node: ExecutionPlanNode): string {
   if (node.incoming.length !== 1) {
@@ -124,92 +114,6 @@ function buildRolePromptInput(args: {
     round: String(currentLoop),
     user_profile: renderUserProfile(args.userProfile)
   };
-}
-
-function makeAuditRecord(args: {
-  roleId: string;
-  branchId?: string;
-  joinId?: string;
-  loopIteration?: number;
-  lawRef: string;
-  started: number;
-  status: AuditRecord["status"];
-  modelId?: string;
-  profileId?: string;
-  toolRef?: string;
-  command?: string;
-  resultArgs?: string[];
-  sessionId?: string;
-  messageId?: string;
-  serverPid?: number;
-  exitCode: number;
-  selectedEvent?: string;
-  nextRoleId?: string;
-  stdout?: string;
-  stderr?: string;
-  error?: string;
-  repair?: RoleOutputRepairRecord;
-}): AuditRecord {
-  return {
-    at: new Date().toISOString(),
-    roleId: args.roleId,
-    branchId: args.branchId,
-    joinId: args.joinId,
-    loopIteration: args.loopIteration,
-    lawRef: args.lawRef,
-    modelId: args.modelId,
-    profileId: args.profileId,
-    toolRef: args.toolRef,
-    command: args.command,
-    args: args.resultArgs,
-    sessionId: args.sessionId,
-    messageId: args.messageId,
-    serverPid: args.serverPid,
-    exitCode: args.exitCode,
-    durationMs: Date.now() - args.started,
-    selectedEvent: args.selectedEvent,
-    nextRoleId: args.nextRoleId,
-    status: args.status,
-    stdoutPreview: preview(args.stdout ?? ""),
-    stderrPreview: preview(args.stderr ?? ""),
-    error: args.error,
-    repair: args.repair
-  };
-}
-
-async function appendAuditFiles(runContext: RunContext, audit: AuditRecord): Promise<void> {
-  await appendEvent(runContext, { type: "audit", ...audit });
-  await appendFile(
-    resolve(runContext.auditDir, "transitions.md"),
-    `- ${audit.roleId}: ${audit.status}${audit.selectedEvent ? ` (${audit.selectedEvent})` : ""}\n`,
-    "utf8"
-  );
-}
-
-function getTargetLoopIteration(args: {
-  targetRoleId: string;
-  currentLoopIteration: number;
-  state: GraphState;
-  plan: ExecutionPlan;
-}): number {
-  const targetNode = getExecutionPlanNode(args.plan, args.targetRoleId);
-  if (targetNode.loopMax !== undefined) {
-    return (args.state.loopIterations[args.targetRoleId] ?? 0) + 1;
-  }
-  return args.currentLoopIteration;
-}
-
-function wouldExceedLoopBudget(args: {
-  targetRoleId: string;
-  currentLoopIteration: number;
-  state: GraphState;
-  plan: ExecutionPlan;
-}): boolean {
-  const targetNode = getExecutionPlanNode(args.plan, args.targetRoleId);
-  if (targetNode.loopMax === undefined) {
-    return false;
-  }
-  return getTargetLoopIteration(args) > targetNode.loopMax;
 }
 
 function pickDryRunEvent(args: {
@@ -411,6 +315,45 @@ function mergeRepairRecord(
   };
 }
 
+function inferCorrectionReason(message: string): RoleOutputRepairRecord["kind"] | undefined {
+  if (
+    /valid JSON/i.test(message) ||
+    /JSON object/i.test(message) ||
+    /unsupported field/i.test(message)
+  ) {
+    return "invalid_json";
+  }
+  if (/does not match schema/i.test(message)) {
+    return "schema_mismatch";
+  }
+  if (/does not match any outgoing flow/i.test(message)) {
+    return "unknown_event";
+  }
+  return undefined;
+}
+
+function buildCorrectionRequest(args: {
+  roleId: string;
+  message: string;
+  rawOutput?: string;
+  allowedEvents: string[];
+  schemaPath?: string;
+}) {
+  const reason = inferCorrectionReason(args.message);
+  if (!reason || !args.rawOutput?.trim()) {
+    return undefined;
+  }
+
+  return {
+    roleId: args.roleId,
+    reason,
+    rawOutput: args.rawOutput,
+    allowedEvents: args.allowedEvents,
+    schemaPath: args.schemaPath,
+    detail: args.message
+  };
+}
+
 export async function executeRoleNode(args: {
   roleId: string;
   node: ExecutionPlanNode;
@@ -444,7 +387,7 @@ export async function executeRoleNode(args: {
 
   if (maxTransitions !== undefined && nextTransitionCount > maxTransitions) {
     const error = `Transition budget exceeded: ${nextTransitionCount} > ${maxTransitions}`;
-    const audit = makeAuditRecord({
+    const audit = createAuditRecord({
       roleId: args.roleId,
       branchId,
       loopIteration,
@@ -455,7 +398,7 @@ export async function executeRoleNode(args: {
       error
     });
     await persistRoleResult({ roleId: args.roleId, context: args.runContext, execution, audit });
-    await appendAuditFiles(args.runContext, audit);
+    await appendAuditRecord(args.runContext, audit);
     return {
       status: "failed",
       error,
@@ -467,7 +410,7 @@ export async function executeRoleNode(args: {
 
   if (!rolePackage) {
     const error = `Role package not loaded for role "${args.roleId}"`;
-    const audit = makeAuditRecord({
+    const audit = createAuditRecord({
       roleId: args.roleId,
       branchId,
       loopIteration,
@@ -478,7 +421,7 @@ export async function executeRoleNode(args: {
       error
     });
     await persistRoleResult({ roleId: args.roleId, context: args.runContext, execution, audit });
-    await appendAuditFiles(args.runContext, audit);
+    await appendAuditRecord(args.runContext, audit);
     return {
       status: "failed",
       error,
@@ -523,6 +466,7 @@ export async function executeRoleNode(args: {
   let profileId: string | undefined;
   let toolRef: string | undefined;
   let command: string | undefined;
+  let lastStdout: string | undefined;
 
   try {
     if (args.node.binding.kind === "model") {
@@ -607,7 +551,7 @@ export async function executeRoleNode(args: {
 
       const selectedToRoleId = args.node.outgoing[0]?.toRoleId;
       const selectedEvent = args.node.outgoing[0]?.eventType;
-      const audit = makeAuditRecord({
+      const audit = createAuditRecord({
         roleId: args.roleId,
         branchId,
         loopIteration,
@@ -620,7 +564,7 @@ export async function executeRoleNode(args: {
         status: "noop"
       });
       await persistRoleResult({ roleId: args.roleId, context: args.runContext, execution, audit });
-      await appendAuditFiles(args.runContext, audit);
+      await appendAuditRecord(args.runContext, audit);
       return {
         status: "noop",
         audit,
@@ -647,6 +591,7 @@ export async function executeRoleNode(args: {
       }),
       sessionId: existingSession?.sessionId
     });
+    lastStdout = result.stdout;
 
     const parsed = parseRoleExecutionOutputWithRepair({
       rawOutput: result.stdout,
@@ -679,7 +624,7 @@ export async function executeRoleNode(args: {
       );
     }
 
-    const audit = makeAuditRecord({
+    const audit = createAuditRecord({
       roleId: args.roleId,
       branchId,
       joinId: args.node.joinMode === "all_of" ? `${args.roleId}@${loopIteration}` : undefined,
@@ -718,7 +663,7 @@ export async function executeRoleNode(args: {
       output: parsed.output,
       audit
     });
-    await appendAuditFiles(args.runContext, audit);
+    await appendAuditRecord(args.runContext, audit);
 
     return {
       status: "ok",
@@ -746,7 +691,14 @@ export async function executeRoleNode(args: {
       typeof (error as { repair?: unknown }).repair === "object"
         ? ((error as { repair?: RoleOutputRepairRecord }).repair ?? undefined)
         : undefined;
-    const audit = makeAuditRecord({
+    const correctionRequest = buildCorrectionRequest({
+      roleId: args.roleId,
+      message: `${message}${category}`,
+      rawOutput: executionError?.stdout ?? lastStdout,
+      allowedEvents,
+      schemaPath: rolePackage?.outputSchemaPath
+    });
+    const audit = createAuditRecord({
       roleId: args.roleId,
       branchId,
       loopIteration,
@@ -765,7 +717,8 @@ export async function executeRoleNode(args: {
       stdout: executionError?.stdout,
       stderr: executionError?.stderr,
       error: `${message}${category}`,
-      repair
+      repair,
+      correctionRequest
     });
     if (executionError?.sessionId) {
       await persistRoleSession({
@@ -777,7 +730,7 @@ export async function executeRoleNode(args: {
       });
     }
     await persistRoleResult({ roleId: args.roleId, context: args.runContext, execution, audit });
-    await appendAuditFiles(args.runContext, audit);
+    await appendAuditRecord(args.runContext, audit);
     return {
       status: "failed",
       error: `${message}${category}`,

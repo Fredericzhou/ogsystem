@@ -1,5 +1,6 @@
 import { readFile } from "node:fs/promises";
 
+import { hasJoinModeHandler, hasRoutingModeHandler } from "./graph-mode-registry.js";
 import { SYSTEM_END_ROLE_ID } from "./types.js";
 import type {
   Flow,
@@ -316,7 +317,7 @@ function validateParsedSystemGraph(graph: ParsedSystemGraph): ValidatedSystemGra
 
     if (key.startsWith("role.mode.")) {
       const roleId = key.slice("role.mode.".length);
-      if (value !== "parallel_split") {
+      if (!hasRoutingModeHandler(value)) {
         throw new Error(`Unsupported role.mode for ${roleId}: "${value}"`);
       }
       if (roleId) {
@@ -327,7 +328,7 @@ function validateParsedSystemGraph(graph: ParsedSystemGraph): ValidatedSystemGra
 
     if (key.startsWith("join.mode.")) {
       const roleId = key.slice("join.mode.".length);
-      if (value !== "all_of") {
+      if (!hasJoinModeHandler(value)) {
         throw new Error(`Unsupported join.mode for ${roleId}: "${value}"`);
       }
       if (roleId) {

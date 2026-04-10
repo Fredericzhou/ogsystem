@@ -203,6 +203,7 @@ export type AuditRecord = {
   stderrPreview?: string;
   error?: string;
   repair?: RoleOutputRepairRecord;
+  correctionRequest?: RoleOutputCorrectionRequest;
 };
 
 export type RoleRunDirs = {
@@ -338,4 +339,22 @@ export type RoleOutputRepairRecord = {
   applied: boolean;
   strategy: string;
   detail: string;
+};
+
+export type RoleOutputCorrectionRequest = {
+  roleId: string;
+  reason: RoleOutputFailureKind;
+  rawOutput: string;
+  allowedEvents: string[];
+  schemaPath?: string;
+  detail: string;
+};
+
+export type RunArtifactRetention = "runtime_consumed" | "operator_latest" | "history_only";
+
+export type RunArtifactPolicyEntry = {
+  path: string;
+  retention: RunArtifactRetention;
+  resumeConsumed: boolean;
+  description: string;
 };
