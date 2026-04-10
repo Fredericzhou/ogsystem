@@ -6,6 +6,74 @@ import { lstat, mkdtemp, mkdir, readFile, readdir, symlink, writeFile } from "no
 
 import { runSystemWithAdapter } from "../dist/runtime/adapter.js";
 
+function parseJsonCodeBlock(markdown) {
+  const match = markdown.match(/```json\n([\s\S]*?)\n```/);
+  assert.ok(match, "expected markdown to contain one json code block");
+  return JSON.parse(match[1]);
+}
+
+async function writeModelBoundRole(args) {
+  const roleDir = path.resolve(args.rolesRoot, args.roleId);
+  await mkdir(roleDir, { recursive: true });
+  await writeFile(
+    path.resolve(roleDir, "role.json"),
+    JSON.stringify(
+      {
+        roleId: args.roleId,
+        roleVersion: "1.0.0",
+        name: args.name ?? args.roleId,
+        description: args.description ?? `${args.roleId} test role`,
+        promptTemplate: "prompt.md",
+        outputSchema: "output.schema.json"
+      },
+      null,
+      2
+    ),
+    "utf8"
+  );
+  await writeFile(
+    path.resolve(roleDir, "prompt.md"),
+    [
+      `Role: ${args.roleId}`,
+      "Task:",
+      "{{task}}",
+      "",
+      "Context:",
+      "{{context}}",
+      "",
+      "Allowed events: {{allowed_events}}",
+      "Round: {{round}}"
+    ].join("\n"),
+    "utf8"
+  );
+  await writeFile(
+    path.resolve(roleDir, "output.schema.json"),
+    JSON.stringify(
+      {
+        type: "object",
+        properties: {
+          event: {
+            type: "string",
+            enum: args.allowedEvents
+          },
+          content: {
+            type: "string"
+          },
+          data: {
+            type: "object",
+            additionalProperties: true
+          }
+        },
+        required: args.requireEvent === false ? [] : ["event"],
+        additionalProperties: true
+      },
+      null,
+      2
+    ),
+    "utf8"
+  );
+}
+
 test("adapter runs graph debate example with parallel branches, join, and bounded loop", async () => {
   const repoRoot = process.cwd();
   const tempRoot = await mkdtemp(path.join(os.tmpdir(), "ogsystem-langgraph-runtime-"));
@@ -64,9 +132,9 @@ test("adapter runs graph debate example with parallel branches, join, and bounde
     path.resolve(runDir, "roles", "debate-moderator", "prompt.md"),
     "utf8"
   );
-  const moderatorExecutions = await readdir(
-    path.resolve(runDir, "roles", "debate-moderator", "executions")
-  );
+  const moderatorExecutions = (
+    await readdir(path.resolve(runDir, "roles", "debate-moderator", "executions"))
+  ).sort();
   assert.strictEqual(moderatorExecutions.length, 2);
   const moderatorFirstExecution = JSON.parse(
     await readFile(
@@ -100,7 +168,43 @@ test("adapter runs graph debate example with parallel branches, join, and bounde
     path.resolve(runDir, "roles", "debate-summary", "prompt.md"),
     "utf8"
   );
+  const judgePrompt = await readFile(
+    path.resolve(runDir, "roles", "debate-judge", "prompt.md"),
+    "utf8"
+  );
+  const moderatorInbox = await readFile(
+    path.resolve(runDir, "roles", "debate-moderator", "inbox.md"),
+    "utf8"
+  );
+  const moderatorSecondInbox = parseJsonCodeBlock(
+    await readFile(
+      path.resolve(
+        runDir,
+        "roles",
+        "debate-moderator",
+        "executions",
+        moderatorExecutions[1],
+        "inbox.md"
+      ),
+      "utf8"
+    )
+  );
+  const judgeInbox = parseJsonCodeBlock(
+    await readFile(path.resolve(runDir, "roles", "debate-judge", "inbox.md"), "utf8")
+  );
+  const judgeContext = JSON.parse(judgeInbox.context);
   assert.match(moderatorPrompt, /architecture\.review\.zh\.executive/);
+  assert.match(moderatorPrompt, /Round:\s*2/);
+  assert.match(moderatorInbox, /"round": 2/);
+  assert.strictEqual(moderatorSecondInbox.round, 2);
+  assert.deepStrictEqual(Object.keys(judgeContext), [
+    "debate-minimalist",
+    "debate-alignmentist"
+  ]);
+  assert.strictEqual(judgeContext["debate-minimalist"].event, "MINIMALIST_DONE");
+  assert.strictEqual(judgeContext["debate-alignmentist"].event, "ALIGNMENTIST_DONE");
+  assert.match(judgePrompt, /"debate-minimalist"/);
+  assert.match(judgePrompt, /"debate-alignmentist"/);
   assert.match(summaryPrompt, /Context:/);
   assert.match(summaryPrompt, /\[dry-run\] opencode-sdk/);
   assert.match(summaryPrompt, /SUMMARY_READY/);
@@ -172,6 +276,124 @@ test("adapter runs expert consultation example with parallel specialists and fin
     path.resolve(runDir, "roles", "diagnosis-chief-review", "executions")
   );
   assert.strictEqual(chiefExecutions.length, 1);
+});
+
+test("adapter preserves session lineage semantics and join context projection across split and join", async () => {
+  const repoRoot = process.cwd();
+  const tempRoot = await mkdtemp(path.join(os.tmpdir(), "ogsystem-orchestration-semantics-"));
+  const systemPath = path.resolve(tempRoot, "system.mmd");
+  const rolesRoot = path.resolve(tempRoot, "og-roles", "roles");
+
+  await mkdir(path.resolve(tempRoot, ".ogsystem"), { recursive: true });
+  await symlink(path.resolve(repoRoot, "og-models"), path.resolve(tempRoot, "og-models"), "dir");
+  await symlink(
+    path.resolve(repoRoot, ".ogsystem", "laws.json"),
+    path.resolve(tempRoot, ".ogsystem", "laws.json")
+  );
+  await writeFile(
+    path.resolve(tempRoot, ".ogsystem", "runtime.json"),
+    JSON.stringify(
+      {
+        executor: "opencode",
+        roleRepo: "./og-roles",
+        modelRepo: "./og-models",
+        runsDir: "ogsystem-history"
+      },
+      null,
+      2
+    ),
+    "utf8"
+  );
+
+  await writeModelBoundRole({
+    rolesRoot,
+    roleId: "coordinator",
+    allowedEvents: ["TO_A", "TO_B"],
+    requireEvent: false
+  });
+  await writeModelBoundRole({
+    rolesRoot,
+    roleId: "analyst_a",
+    allowedEvents: ["A_DONE"]
+  });
+  await writeModelBoundRole({
+    rolesRoot,
+    roleId: "analyst_b",
+    allowedEvents: ["B_DONE"]
+  });
+  await writeModelBoundRole({
+    rolesRoot,
+    roleId: "merger",
+    allowedEvents: ["MERGED"]
+  });
+  await writeModelBoundRole({
+    rolesRoot,
+    roleId: "summary",
+    allowedEvents: ["DONE"]
+  });
+
+  await writeFile(
+    systemPath,
+    `flowchart TD
+%% system.id=test.orchestration.semantics
+%% system.version=1.0.0
+%% law.global=law.console.base
+%% entry.role=coordinator
+%% role.mode.coordinator=parallel_split
+%% join.mode.merger=all_of
+%% join.sources.merger=analyst_a,analyst_b
+%% model.bind.coordinator=fast-gpt54
+%% model.bind.analyst_a=balanced-gpt52
+%% model.bind.analyst_b=balanced-gpt52
+%% model.bind.merger=deep-o3
+%% model.bind.summary=steady-gpt54
+
+input -->|START| coordinator[Role:coordinator]
+coordinator[Role:coordinator] -->|TO_A| analystA[Role:analyst_a]
+coordinator[Role:coordinator] -->|TO_B| analystB[Role:analyst_b]
+analystA[Role:analyst_a] -->|A_DONE| merger[Role:merger]
+analystB[Role:analyst_b] -->|B_DONE| merger[Role:merger]
+merger[Role:merger] -->|MERGED| summary[Role:summary]
+summary[Role:summary] -->|DONE| output
+`,
+    "utf8"
+  );
+
+  const result = await runSystemWithAdapter({
+    systemPath,
+    prompt: "验证编排语义是否稳定",
+    workdir: tempRoot,
+    dryRun: true
+  });
+
+  assert.strictEqual(result.status, "done");
+  assert.strictEqual(result.finalRoleId, "summary");
+
+  const runId = (await readdir(path.resolve(tempRoot, "ogsystem-history")))[0];
+  const runDir = path.resolve(tempRoot, "ogsystem-history", runId);
+  const sessionIndex = JSON.parse(await readFile(path.resolve(runDir, "sessions.json"), "utf8"));
+  const sessionByRoleId = new Map(sessionIndex.map((entry) => [entry.roleId, entry]));
+  const coordinatorSession = sessionByRoleId.get("coordinator");
+  const analystASession = sessionByRoleId.get("analyst_a");
+  const analystBSession = sessionByRoleId.get("analyst_b");
+  const mergerSession = sessionByRoleId.get("merger");
+  const summarySession = sessionByRoleId.get("summary");
+
+  assert.ok(coordinatorSession);
+  assert.ok(analystASession);
+  assert.ok(analystBSession);
+  assert.ok(mergerSession);
+  assert.ok(summarySession);
+  assert.notStrictEqual(analystASession.sessionLineageId, analystBSession.sessionLineageId);
+  assert.notStrictEqual(mergerSession.sessionLineageId, analystASession.sessionLineageId);
+  assert.notStrictEqual(mergerSession.sessionLineageId, analystBSession.sessionLineageId);
+  assert.strictEqual(summarySession.sessionLineageId, mergerSession.sessionLineageId);
+
+  const mergerInbox = await readFile(path.resolve(runDir, "roles", "merger", "inbox.md"), "utf8");
+  assert.match(mergerInbox, /\\"analyst_a\\"/);
+  assert.match(mergerInbox, /\\"analyst_b\\"/);
+  assert.match(mergerInbox, /"round": 1/);
+  assert.match(mergerInbox, /"allowed_events": \[\s*"MERGED"\s*\]/);
 });
 
 test("adapter executes non-join multi-incoming role once per active branch", async () => {
@@ -337,7 +559,11 @@ test("adapter keeps scheduler recursion budget above loop-heavy transition count
   );
   await writeFile(
     path.resolve(roleDir, "prompt.md"),
-    ["Return a JSON object.", "Allowed events: {{allowed_events}}."].join("\n"),
+    [
+      "Return a JSON object.",
+      "Allowed events: {{allowed_events}}.",
+      "Round: {{round}}."
+    ].join("\n"),
     "utf8"
   );
   await writeFile(
@@ -402,4 +628,25 @@ operator[Role:test-loop-probe] -->|DONE| output
   assert.strictEqual(result.finalRoleId, "test-loop-probe");
   assert.strictEqual(result.auditTrail.length, 40);
   assert.strictEqual(result.systemState.transitionCount, 40);
+
+  const runDir = path.resolve(
+    tempRoot,
+    "ogsystem-history",
+    (await readdir(path.resolve(tempRoot, "ogsystem-history")))[0]
+  );
+  const executionDirs = (
+    await readdir(path.resolve(runDir, "roles", "test-loop-probe", "executions"))
+  ).sort((left, right) => left.localeCompare(right));
+  const lastPrompt = await readFile(
+    path.resolve(
+      runDir,
+      "roles",
+      "test-loop-probe",
+      "executions",
+      executionDirs.at(-1),
+      "prompt.md"
+    ),
+    "utf8"
+  );
+  assert.match(lastPrompt, /Round: 40\./);
 });

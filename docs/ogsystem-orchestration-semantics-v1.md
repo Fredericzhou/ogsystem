@@ -28,9 +28,9 @@
 
 | 编排语义 | 原理说明 | 逻辑层 (Role/Prompt) 的具体工作 |
 | :--- | :--- | :--- |
-| **`join.mode: all_of`** | **全量汇合**。等待所有上游产出。 | **1. 命名空间打包**：将多方产物以 `roleId` 为键注入 `{{context}}`。 <br> **2. 汇合判定**：由运行时按 `join.sources` 与当前 `lineageId` 判断是否可激活 join 节点。 |
+| **`join.mode: all_of`** | **全量汇合**。等待 `join.sources` 声明的全部上游在同一 `lineageId + loopIteration` 下完成；当前实现要求 `join.sources.<roleId>` 与 Mermaid 中该节点的全部入边角色严格一致，避免隐式漏等/多等。 | **1. 命名空间打包**：运行时将多方产物整理为以 `roleId` 为键的 JSON 对象注入 `{{context}}`，值中保留 `event/content/data`。 <br> **2. 汇合判定**：由运行时按 `join.sources`、当前 `lineageId` 与当前轮次判断是否可激活 join 节点。 |
 | **默认事件路由（无 `role.mode`）** | **条件跳转**。由输出事件决定。 | **1. 选项锁定**：在 Prompt 注入 `allowed_events`。 <br> **2. 结构化约束**：在有出边且非并行模式下要求输出 `event`。 |
-| **`role.mode: parallel_split`** | **并行分发**。同时激活所有下游。 | **1. 任务分片**：在 Prompt 中明确当前分支的子任务目标。 <br> **2. 会话隔离**：运行时按 `sessionLineageId` 控制分支会话隔离；注意默认并非分支级独立工作目录。 |
+| **`role.mode: parallel_split`** | **并行分发**。同时激活所有下游。 | **1. 任务分片**：在 Prompt 中明确当前分支的子任务目标。 <br> **2. 会话隔离**：运行时按 `sessionLineageId` 控制分支会话隔离；注意默认并非分支级独立工作目录，同一 role 仍共享其 `privateDir`。 |
 | **`loop.max`** | **循环预算**。限制拓扑环路迭代。 | **1. 轮次感知**：注入 `round` 变量。 <br> **2. 运行时守卫**：环路在解析期要求存在 `loop.max.*`，执行期由 loop budget 进行拦截。 |
 
 ---
@@ -74,3 +74,14 @@
 *   **主控方**：通过 Prompt 模板决定如何“消费”框架准备好的干净 Context。
 *   **格式官**：通过严格遵守 Output Schema，将业务决策转化为框架识别的信号（Event）。
 *   **自治者**：利用内部计算能力消化“局部不确定性”，只向框架提交最终的权威产物。
+
+---
+
+## 七、 当前实现契约（v1 Runtime）
+
+为避免将抽象语义理解成未落地能力，当前实现还有以下收敛约束：
+
+*   **Join 配置是显式且严格的**：`join.mode.<roleId>=all_of` 时，`join.sources.<roleId>` 不只是“提示”，而是恢复与激活的硬契约；它必须与 Mermaid 中该节点的全部入边角色完全一致。
+*   **Join 上下文是可读投影，不是原始 state dump**：运行时注入的是以 `roleId` 为键的 JSON 投影，而不是整个 `graphState` 或任意内部结构。
+*   **隔离的是模型会话，不是分支文件系统**：并行 sibling branch 会拿到不同的 `sessionLineageId`，从而不会共享模型会话记忆；但相同 role 默认仍共用一个 role 私有目录。
+*   **顺序链路会继承 `sessionLineageId`**：只有并行分叉、一次激活多个目标，或进入 `all_of` join 时，运行时才会切换到新的会话血缘；普通单路顺序流转会沿用当前 branch 的 `sessionLineageId`。

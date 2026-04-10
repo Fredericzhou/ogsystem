@@ -26,6 +26,7 @@ OGSystem 将职责拆分为四层：
 - graph runner 只负责图调度和状态编排
 - role executor 只负责节点执行、修复策略、审计落盘
 - `exec.bind` 是兼容模式，不再代表第二套引擎
+- OpenCode session 复用键为 `roleId:sessionLineageId`，并行 sibling 分支隔离的是会话记忆，不是 role 私有目录
 
 ## 3. 架构
 
@@ -62,6 +63,7 @@ npm run build
 快速入口：
 
 - 使用手册：`docs/usage-manual.md`
+- 编排语义参考：`docs/ogsystem-orchestration-semantics-v1.md`
 - 架构决策：`docs/DECISIONS.md`
 - 单运行时执行清单：`docs/single-graph-runtime-execution-checklist.md`
 

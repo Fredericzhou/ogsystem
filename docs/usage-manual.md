@@ -8,6 +8,7 @@ Use this rule:
 
 - default execution path: use `model.bind.<roleId>=<modelId>`
 - graph semantics: add `role.mode/join.mode/loop.max` only when the system needs parallel split, `all_of` join, or bounded loop
+- `join.mode.<roleId>=all_of` requires `join.sources.<roleId>` and that source list must match the role's Mermaid incoming edges exactly
 - compatibility execution mode: `exec.bind.<roleId>` still works when paired with `profiles/tools`, but it runs inside the same graph runtime rather than a separate engine
 
 ## 2. Semantic Layers
@@ -125,6 +126,15 @@ debate-judge[Role:debate-judge] -->|REBUTTAL_NEEDED| debate-moderator[Role:debat
 debate-judge[Role:debate-judge] -->|DECISION_READY| debate-summary[Role:debate-summary]
 debate-summary[Role:debate-summary] -->|SUMMARY_READY| output
 ```
+
+Orchestration semantics contract:
+
+- `parallel_split` activates all downstream targets of the current role in the same transition
+- default routing without `role.mode` is event-driven; runtime injects `allowed_events`, and non-parallel roles with outgoing flows must emit `event`
+- `join.mode.<roleId>=all_of` waits until every role listed in `join.sources.<roleId>` has produced a result under the same `lineageId`
+- `all_of` join projects upstream results into `{{context}}` as source-role-scoped sections rather than exposing raw runtime state
+- `loop.max.<roleId>=N` is both a parser-time cycle budget declaration and an execution-time guard; runtime also injects `round`
+- `branchId`, `lineageId`, and `sessionLineageId` are distinct runtime identifiers for branch instance, split/join lineage, and session reuse/isolation
 
 ## 5. Role Package Contract
 
@@ -275,6 +285,23 @@ Minimal shared-workspace rule:
 - runtime exposes it through `OGSYSTEM_SHARED_DIR`
 - role directories do not receive a `shared` symlink by default
 
+Runtime prompt projection contract:
+
+- `task`: original user prompt
+- `context`: direct upstream `content`; for `join.mode=<roleId>: all_of`, runtime serializes a JSON string keyed by `join.sources` role ids, and each value carries that source branch's `event`/`content`/`data`
+- `allowed_events`: JSON array string of outgoing event ids
+- `last_output`: mirrors the current `context` projection
+- `round`: current loop iteration as a string
+- `system_notes`: reserved runtime hint channel; currently only populated selectively
+- `user_profile`: serialized user-profile payload
+
+Lineage contract:
+
+- each active branch carries `branchId`, `lineageId`, and `sessionLineageId`
+- `lineageId` scopes branch-family correlation such as `all_of` join readiness and result lookup
+- `sessionLineageId` scopes OpenCode session reuse and sibling-branch isolation
+- session keys are always `roleId:sessionLineageId`
+
 OpenCode lifecycle rule for `model.bind`:
 
 - one OGSystem run starts one shared `opencode serve`
@@ -282,12 +309,19 @@ OpenCode lifecycle rule for `model.bind`:
 - repeated turns on the same branch lineage reuse the same OpenCode `session`
 - sibling branches of the same role do not share a session
 - sibling branches of the same role still share the same role directory and private workspace; the isolation guarantee is model-session isolation, not per-branch file-system isolation
+- ordinary single-target sequential flow keeps the current `sessionLineageId`; fan-out and `all_of` join activation allocate a new lineage
 - each node prompt still binds to that node's role directory
 - node audit records include `sessionId`, `messageId`, and shared `serverPid`
 - run events include `opencode_server_started` and `opencode_server_closed`
 - transient provider/service failures are retried on the same role session
 - after node completion, session metadata can be retained for audit/resume while the shared server stays alive
 - parallel graph branches therefore run as concurrent sessions on the same server process
+
+Join context projection rule:
+
+- when `join.mode.<roleId>=all_of`, runtime injects upstream results into `{{context}}` as one JSON object keyed by source `roleId`
+- each keyed value keeps the normalized `event`, `content`, and optional `data` fields from that upstream result
+- the injected join context is a normalized projection, not the raw `graphState`
 
 Role output repair policy:
 

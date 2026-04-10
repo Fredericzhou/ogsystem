@@ -165,22 +165,26 @@ function renderJoinContext(args: {
   joinSources: string[];
   branch: BranchRecord;
 }): string {
-  const sections = args.joinSources.map((sourceRoleId) => {
+  const namespace = Object.fromEntries(args.joinSources.map((sourceRoleId) => {
     const result = findRoleResult({
       state: args.state,
       roleId: sourceRoleId,
       lineageId: args.branch.lineageId,
       loopIteration: args.branch.loopIteration
     });
-    return [
-      `## ${sourceRoleId}`,
-      result?.content ?? "",
-      result?.data ? stringifyJson(result.data) : ""
-    ]
-      .filter(Boolean)
-      .join("\n");
-  });
-  return sections.join("\n\n").trim() || args.state.userPrompt;
+    const artifact: Record<string, unknown> = {};
+    if (result?.event) {
+      artifact.event = result.event;
+    }
+    if (result?.content !== undefined) {
+      artifact.content = result.content;
+    }
+    if (result?.data !== undefined) {
+      artifact.data = result.data;
+    }
+    return [sourceRoleId, artifact];
+  }));
+  return stringifyJson(namespace);
 }
 
 /**
@@ -197,7 +201,7 @@ function buildRolePromptInput(args: {
 }): RolePromptInput {
   const allowedEvents = args.node.outgoing.map((item) => item.eventType);
   const context =
-    args.node.joinSources.length > 0
+    args.node.joinMode === "all_of"
       ? renderJoinContext({
           state: args.state,
           joinSources: args.node.joinSources,

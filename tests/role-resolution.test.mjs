@@ -46,6 +46,31 @@ test("loadRolePackage resolves role directory and renders contextual fields", as
   assert.ok(rendered.includes("MINIMALIST_DONE"));
 });
 
+test("loop-aware role prompts can render the injected round field", async () => {
+  const rolePackage = await loadRolePackage({
+    roleId: "debate-moderator",
+    roleRootDir
+  });
+
+  const rendered = renderRolePrompt({
+    promptTemplate: rolePackage.promptTemplate,
+    persona: rolePackage.persona,
+    work: rolePackage.work,
+    values: {
+      task: "Coordinate the next debate turn",
+      context: "judge requested another round",
+      allowed_events: JSON.stringify(["SEND_MINIMALIST", "SEND_ALIGNMENTIST"]),
+      last_output: "judge requested another round",
+      system_notes: "",
+      round: "2",
+      user_profile: "{\"language\":\"zh-CN\"}"
+    }
+  });
+
+  assert.match(rendered, /Round:\s*2/);
+  assert.match(rendered, /judge requested another round/);
+});
+
 test("output schema rejects invalid payload", async () => {
   const rolePackage = await loadRolePackage({
     roleId: "debate-minimalist",

@@ -69,6 +69,47 @@ b[Role:b] -->|RETRY| a[Role:a]
 b[Role:b] -->|DONE| output
 `;
 
+const joinSourcesWithoutJoinModeSource = `flowchart TD
+%% system.id=test.join.sources.without-mode
+%% system.version=0.1.0
+%% law.global=law.test
+%% entry.role=dispatch
+%% exec.bind.dispatch=profile.dispatch
+%% exec.bind.worker_a=profile.worker
+%% exec.bind.worker_b=profile.worker
+%% exec.bind.review=profile.review
+%% join.sources.review=worker_a,worker_b
+input -->|START| dispatch[Role:dispatch]
+dispatch[Role:dispatch] -->|A| worker_a[Role:worker_a]
+dispatch[Role:dispatch] -->|B| worker_b[Role:worker_b]
+worker_a[Role:worker_a] -->|DONE_A| review[Role:review]
+worker_b[Role:worker_b] -->|DONE_B| review[Role:review]
+review[Role:review] -->|DONE| output
+`;
+
+const joinSourcesMismatchSource = `flowchart TD
+%% system.id=test.join.sources.mismatch
+%% system.version=0.1.0
+%% law.global=law.test
+%% entry.role=dispatch
+%% role.mode.dispatch=parallel_split
+%% join.mode.review=all_of
+%% join.sources.review=worker_a,worker_b
+%% model.bind.dispatch=model.fast
+%% model.bind.worker_a=model.fast
+%% model.bind.worker_b=model.fast
+%% model.bind.worker_c=model.fast
+%% model.bind.review=model.fast
+input -->|START| dispatch[Role:dispatch]
+dispatch[Role:dispatch] -->|A| worker_a[Role:worker_a]
+dispatch[Role:dispatch] -->|B| worker_b[Role:worker_b]
+dispatch[Role:dispatch] -->|C| worker_c[Role:worker_c]
+worker_a[Role:worker_a] -->|DONE_A| review[Role:review]
+worker_b[Role:worker_b] -->|DONE_B| review[Role:review]
+worker_c[Role:worker_c] -->|DONE_C| review[Role:review]
+review[Role:review] -->|DONE| output
+`;
+
 test("parser accepts a minimal system", () => {
   const system = parseSystemFromMermaidSource(validSource);
   assert.strictEqual(system.entryRoleId, "intake");
@@ -101,4 +142,18 @@ test("parser rejects cyclic topology without explicit loop budget", () => {
 test("parser accepts cyclic topology when at least one role in the cycle has loop budget", () => {
   const system = parseSystemFromMermaidSource(cycleWithLoopBudgetSource);
   assert.strictEqual(system.graph?.loopMaxByRoleId.a, 2);
+});
+
+test("parser rejects join.sources without an explicit join.mode", () => {
+  assert.throws(
+    () => parseSystemFromMermaidSource(joinSourcesWithoutJoinModeSource),
+    /MERMAID_JOIN_SOURCES_REQUIRE_JOIN_MODE|requires join\.mode/
+  );
+});
+
+test("parser rejects all_of join when join.sources does not match incoming role edges", () => {
+  assert.throws(
+    () => parseSystemFromMermaidSource(joinSourcesMismatchSource),
+    /MERMAID_JOIN_SOURCES_MISMATCH|join\.sources\.review must match exactly/
+  );
 });

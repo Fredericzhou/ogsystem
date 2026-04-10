@@ -23,6 +23,7 @@ LangGraph is the current backend implementation of the graph runtime, not the pu
 
 - OGSystem semantics live in Mermaid parsing plus the normalized execution plan
 - `role.mode.*`, `join.mode.*`, `join.sources.*`, and `loop.max.*` are OGSystem metadata
+- `join.sources.*` is only valid together with `join.mode.*`, and `all_of` sources must match the incoming Mermaid role edges exactly
 - legacy `%% engine=langgraph` is accepted only as compatibility input
 
 Reason:
@@ -36,7 +37,8 @@ OpenCode is the current default executor behind the `Executor` abstraction.
 
 - the runtime depends on `executor.ts`, not on OpenCode lifecycle details everywhere
 - one run starts one shared `opencode serve`
-- each role/node keeps one isolated session on that shared server for the run
+- sessions are keyed by `roleId:sessionLineageId`
+- sibling branches of the same role do not share a session, but they still share the same role directory/private workspace
 
 Reason:
 
@@ -48,8 +50,12 @@ Reason:
 Semantic fan-out is not the same thing as backend compute parallelism.
 
 - `parallel_split` means OGSystem activates multiple downstream branches
+- join readiness is tracked by `join.sources + lineageId`, not by raw node count alone
+- ordinary single-target sequential transitions keep the current `sessionLineageId`
+- `all_of` join activation allocates a fresh join session lineage after all declared sources are ready
 - actual execution concurrency depends on the backend and executor behavior
 - today, model-bound runs share one OpenCode server and use concurrent sessions when branches fan out
+- sibling branches of the same role are isolated at the model-session layer, not by separate role-private directories
 
 ## 5. Persistence Contract
 

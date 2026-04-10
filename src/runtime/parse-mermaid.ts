@@ -693,6 +693,14 @@ function validateParsedSystemGraph(graph: ParsedSystemGraph): ValidatedSystemGra
         lineNumber: metadataLine(`join.sources.${roleId}`)
       });
     }
+    if (!joinModeByRoleId[roleId]) {
+      failMermaid({
+        stage: "validate",
+        errorCode: "MERMAID_JOIN_SOURCES_REQUIRE_JOIN_MODE",
+        message: `join.sources.${roleId} requires join.mode.${roleId}`,
+        lineNumber: metadataLine(`join.sources.${roleId}`)
+      });
+    }
     for (const sourceRoleId of sources) {
       if (!roleIds.includes(sourceRoleId)) {
         failMermaid({
@@ -710,6 +718,38 @@ function validateParsedSystemGraph(graph: ParsedSystemGraph): ValidatedSystemGra
           stage: "validate",
           errorCode: "MERMAID_JOIN_SOURCE_MISSING_EDGE",
           message: `join.sources.${roleId} includes "${sourceRoleId}" but no Mermaid edge exists from ${sourceRoleId} to ${roleId}`,
+          lineNumber: metadataLine(`join.sources.${roleId}`)
+        });
+      }
+    }
+    if (joinModeByRoleId[roleId] === "all_of") {
+      const declaredSources = Array.from(new Set(sources)).sort((left, right) =>
+        left.localeCompare(right)
+      );
+      const incomingSources = Array.from(
+        new Set(
+          graph.flows
+            .filter((flow) => flow.toRoleId === roleId && flow.fromRoleId !== SYSTEM_END_ROLE_ID)
+            .map((flow) => flow.fromRoleId)
+        )
+      ).sort((left, right) => left.localeCompare(right));
+      const missingSources = incomingSources.filter(
+        (sourceRoleId) => !declaredSources.includes(sourceRoleId)
+      );
+      const extraSources = declaredSources.filter(
+        (sourceRoleId) => !incomingSources.includes(sourceRoleId)
+      );
+      if (missingSources.length > 0 || extraSources.length > 0) {
+        const details = [
+          missingSources.length > 0 ? `missing incoming roles: ${missingSources.join(", ")}` : "",
+          extraSources.length > 0 ? `extra declared roles: ${extraSources.join(", ")}` : ""
+        ]
+          .filter(Boolean)
+          .join("; ");
+        failMermaid({
+          stage: "validate",
+          errorCode: "MERMAID_JOIN_SOURCES_MISMATCH",
+          message: `join.sources.${roleId} must match exactly the incoming Mermaid role edges for join.mode.${roleId}=all_of (${details})`,
           lineNumber: metadataLine(`join.sources.${roleId}`)
         });
       }
