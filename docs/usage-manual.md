@@ -1,5 +1,48 @@
 # OGSystem Usage Manual
 
+## Read This First
+
+OGSystem 当前是一套单机、文件优先、可恢复的图编排运行时。它最重要的特点不是“功能很多”，而是把编排语义、执行状态、恢复契约和运行证据收敛到了一条可审计的主路径里。
+
+建议先建立这四个认知：
+
+- 这是一个 graph runtime，不再维护第二套独立引擎。
+- Mermaid 图不是展示层，而是会被编译成真正的 `ExecutionPlan`。
+- `ogsystem-history/<run-id>/` 不是临时日志目录，而是运行时的数据平面与恢复依据。
+- Resume 的前提不是“目录还在”，而是“语义指纹、状态快照、会话索引和 checkpoint/WAL 仍然一致”。
+
+## Capability Snapshot
+
+OGSystem 当前重点优化以下能力：
+
+- 显式图语义：`parallel_split`、`all_of` join、`loop.max` 都有解析期和执行期约束。
+- 文件优先恢复：`state.json`、`sessions.json`、`plan-fingerprint.json`、`checkpoints/`、`execution-outcome.json` 组成恢复权威集。
+- 会话血缘隔离：`roleId:sessionLineageId` 保证顺序流转可复用会话，并行 sibling 不串会话记忆。
+- Crash 自愈补偿：角色结果先 durable，再 checkpoint；恢复时补偿缺失 checkpoint，而不是盲目重跑节点。
+- 运维可观察：`audit/`、`events.ndjson`、per-role execution snapshots 让每一步都有证据。
+
+## Architecture Snapshot
+
+理解项目时，可以先按下面这条链路看：
+
+- `adapter.ts`：加载系统、角色、模型、law，构造运行上下文并校验 resume 指纹。
+- `parse-mermaid.ts` + `execution-plan.ts`：把 Mermaid DSL 归一化为运行时可执行计划。
+- `graph-runner.ts`：推进图状态、管理 branch/lineage、写 checkpoint、处理 resume 补偿。
+- `role-executor.ts`：执行单个 role，做 prompt 投影、schema 校验、输出修复和结果落盘。
+- `run-artifacts.ts`：管理 runDir、会话索引、`.resume.lock`、execution artifacts 与缓冲刷盘。
+
+## Recommended Reading Order
+
+如果你是第一次进入项目，建议按以下顺序阅读：
+
+1. `README.md`
+2. `docs/README.md`
+3. `docs/product-introduction.md`
+4. 本手册
+5. `docs/ogsystem-orchestration-semantics-v1.md`
+6. `docs/DECISIONS.md`
+7. `docs/ogsystem-ebook.md`
+
 ## 1. Runtime Status
 
 This repository now has one active runtime path: the graph runtime.

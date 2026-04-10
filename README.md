@@ -22,6 +22,7 @@ Non-goals:
 Product introduction:
 
 - `docs/product-introduction.md`
+- `docs/README.md`
 
 Detailed usage manual:
 
@@ -190,24 +191,10 @@ node skills/ogsystem-nl-to-mmd/scripts/validate_ogsystem_mmd.mjs \
 - `src/runtime/tool-runner.ts`
 - `src/runtime/doctor.ts`
 
-## Active Docs
+## Documentation
 
-- `docs/product-introduction.md`
-- `docs/DECISIONS.md`
-- `docs/role-model-user-profile-minimal-spec.md`
-- `docs/usage-manual.md`
-- `docs/langgraph-engine-example-systems.md` (active examples, historical filename)
-- `specs/mermaid-dsl-v0.1.md`
-
-Architecture source of truth:
-
-- `docs/DECISIONS.md` records the active single-runtime contract.
-
-## Historical Docs
-
-- `docs/single-graph-runtime-execution-checklist.md` (completed migration record)
-- `docs/implementation-checklist-role-model-opencode-langgraph.md`
-- `docs/ogsystem-role-repo-minimal-plan.md`
-- `docs/opencode-single-serve-multi-session-plan.md`
-- `docs/semantic-kernel-v1.md`
-- `docs/xlgraph-subset-compatibility.md`
+- `docs/README.md` is the authoritative document index and archive policy.
+- `docs/product-introduction.md` is the project-level overview.
+- `docs/usage-manual.md` is the main operator/developer manual.
+- `docs/ogsystem-orchestration-semantics-v1.md` is the orchestration semantics source of truth.
+- `docs/DECISIONS.md` records architecture decisions.

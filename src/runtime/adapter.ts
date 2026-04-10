@@ -267,6 +267,8 @@ function buildRolePackageFingerprintComponent(
   identity: Record<string, unknown>;
   sourceHints: Record<string, unknown>;
 }> {
+  // Resume safety is based on loaded package contents rather than machine-local paths.
+  // Paths are preserved only as diagnostics to explain mismatches to the operator.
   return Array.from(rolePackagesByRoleId.entries())
     .sort(([left], [right]) => left.localeCompare(right))
     .map(([roleId, rolePackage]) => ({
@@ -318,6 +320,8 @@ export function buildRunPlanFingerprint(args: {
   modelsById: Map<string, LoadedModelPackage>;
   effectiveLaw: EffectiveLawConstraints;
 }): RunPlanFingerprint {
+  // A run may resume only against the same executable contract: graph semantics, loaded role content,
+  // loaded model config, and the effective law set must all remain identical.
   const rolePackageComponents = buildRolePackageFingerprintComponent(args.rolePackagesByRoleId);
   const modelPackageComponents = buildModelPackageFingerprintComponent(args.modelsById);
   const componentValues: Record<FingerprintComponentName, unknown> = {

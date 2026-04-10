@@ -160,9 +160,8 @@ type ValidatedSystemGraph = ParsedSystemGraph & {
 };
 
 /**
- * parseNodeToken parses a single Mermaid node definition.
- * It supports standard nodes (e.g., node[Role:roleId]) and 
- * boundary tokens (input, output).
+ * Parsing is intentionally strict. A narrow node grammar keeps Mermaid readable and lets the
+ * runtime reject ambiguous surface syntax before semantic validation begins.
  */
 function parseNodeToken(token: string, lineNumber?: number): ParsedNodeToken {
   const trimmed = token.trim();
@@ -313,6 +312,8 @@ function tokenizeMermaidSource(source: string): TokenizedMermaid {
 }
 
 function parseTokenizedMermaid(tokens: TokenizedMermaid): ParsedSystemGraph {
+  // Boundary edges are normalized into the same role-flow model the runtime uses, so later
+  // validation and planning only need to reason about one graph shape.
   const metadata = new Map<string, string>();
   const metadataLineByKey = new Map<string, number>();
   const roleByNode = new Map<string, string>();
@@ -414,12 +415,8 @@ function parseTokenizedMermaid(tokens: TokenizedMermaid): ParsedSystemGraph {
 }
 
 /**
- * validateParsedSystemGraph ensures the parsed graph is semantically correct.
- * It checks for:
- * 1. Required metadata (system.id, system.version, law.global).
- * 2. Valid entry role and terminal roles.
- * 3. Correct execution, talent, and model bindings.
- * 4. Consistent join modes and loop budgets.
+ * Semantic validation is where Mermaid stops being "parseable text" and becomes "safe to
+ * execute": bindings must resolve, joins must match incoming edges, and cycles need budgets.
  */
 function validateParsedSystemGraph(graph: ParsedSystemGraph): ValidatedSystemGraph {
   const metadataLine = (key: string): number | undefined => graph.metadataLineByKey.get(key);
@@ -836,8 +833,8 @@ function compileSystemDefinition(graph: ValidatedSystemGraph): SystemDefinition 
 }
 
 /**
- * parseSystemFromMermaidSource is the main entry point for converting
- * a Mermaid DSL source into a formal SystemDefinition.
+ * After this point the runtime works only with SystemDefinition, not Mermaid source text. That
+ * keeps execution and tests independent from the surface DSL representation.
  */
 export function parseSystemFromMermaidSource(source: string): SystemDefinition {
   return compileSystemDefinition(

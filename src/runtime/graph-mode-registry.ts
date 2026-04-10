@@ -27,6 +27,8 @@ type JoinModeHandler = {
 
 const routingModeHandlers = new Map<GraphRoutingMode, RoutingModeHandler>();
 const joinModeHandlers = new Map<GraphJoinMode, JoinModeHandler>();
+// The registry is the single extension seam for graph semantics. Parser validation and runtime
+// dispatch consult the same registry so a new mode fails closed until both phases support it.
 
 export function registerRoutingModeHandler(
   mode: GraphRoutingMode,

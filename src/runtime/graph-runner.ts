@@ -109,9 +109,8 @@ function mergeStatus(current: GraphRunStatus, update: GraphRunStatus): GraphRunS
 }
 
 /**
- * GraphStateAnnotation defines the LangGraph state structure.
- * It uses custom reducers to manage how different parts of the state
- * (like audit trails, results, and loop counts) are updated during execution.
+ * LangGraph nodes emit incremental GraphUpdate objects, while OGSystem persists materialized
+ * GraphState snapshots. Reducers bridge those two views and keep checkpoint-sized updates composable.
  */
 const GraphStateAnnotation = Annotation.Root({
   userPrompt: Annotation<string>,
@@ -322,6 +321,8 @@ async function replayPendingRuntimeCheckpoints(args: {
 }
 
 function calculateGraphRecursionLimit(maxTransitions?: number): number {
+  // LangGraph counts scheduler hops and role-node executions toward recursion depth, so the
+  // recursion ceiling must be higher than the user-facing transition budget.
   const transitionBudget = maxTransitions ?? DEFAULT_TRANSITION_BUDGET;
   return transitionBudget * 2 + GRAPH_RECURSION_MARGIN;
 }
@@ -370,6 +371,8 @@ async function reconcileCommittedRoleExecutionOutcomes(args: {
   plan: ExecutionPlan;
   runContext: RunContext;
 }): Promise<GraphState> {
+  // Resume first trusts the existing checkpoint WAL, then heals only the crash window where
+  // role execution committed durably but the checkpoint was never written or reconciled.
   const replay = await replayPendingRuntimeCheckpoints({
     state: args.state,
     runContext: args.runContext
@@ -502,6 +505,9 @@ function resolveNextSessionLineageId(args: {
   nextBranchSequence: number;
   activatedTargetCount: number;
 }): string {
+  // Session lineage models conversation-memory reuse rather than branch identity. Sequential
+  // single-target flow inherits lineage; fan-out and join activation mint a new lineage so
+  // sibling prompts cannot share the same model session by accident.
   if (
     args.activatedTargetCount > 1 ||
     args.currentNode.routingMode === "parallel_split" ||
@@ -706,14 +712,9 @@ function buildSuccessUpdate(args: {
 }
 
 /**
- * runSystemWithGraphRunner is the main entry point for executing an agent system.
- * It compiles the ExecutionPlan into a LangGraph StateGraph and executes it.
- * 
- * The process involves:
- * 1. Adding a node for each role in the system.
- * 2. Configuring edges (static and conditional) based on the flows defined in the plan.
- * 3. Managing state persistence and audit logging throughout the run.
- * 4. Returning a comprehensive AdapterRunResult upon completion.
+ * The synthetic scheduler node keeps graph control flow centralized. Role nodes only execute
+ * their active branches, emit state updates, and hand control back so scheduling decisions
+ * stay in one place.
  */
 export async function runSystemWithGraphRunner(args: RunnerInput): Promise<AdapterRunResult> {
   const logger = createRunConsoleLogger(args.logRun);

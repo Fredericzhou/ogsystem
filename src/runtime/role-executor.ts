@@ -144,6 +144,8 @@ async function persistCommittedExecutionResult(args: {
   branch: BranchRecord;
   result: PersistedRoleExecutorResult;
 }): Promise<RoleExecutionOutcomeRecord> {
+  // This outcome file is the durable marker that a role attempt has finished. The graph runner
+  // may still crash before checkpointing, so resume relies on this marker to reconcile safely.
   const outcome = buildRoleExecutionOutcome(args);
   await persistRoleExecutionOutcome({
     execution: args.execution,
@@ -165,6 +167,8 @@ function renderJoinContext(args: {
   joinSources: string[];
   branch: BranchRecord;
 }): string {
+  // Join prompts receive a normalized projection keyed by declared sources rather than the raw
+  // graph state shape. This keeps role templates stable even if internal runtime state evolves.
   const namespace = Object.fromEntries(args.joinSources.map((sourceRoleId) => {
     const result = findRoleResult({
       state: args.state,
@@ -188,9 +192,8 @@ function renderJoinContext(args: {
 }
 
 /**
- * buildRolePromptInput prepares the data needed to render a role's prompt.
- * It gathers the task, context (from upstream roles or the user), 
- * allowed events, and user profile information.
+ * Prompt input is intentionally flattened into a small stable contract. Executors and prompt
+ * templates should not depend on full runtime state or branch internals.
  */
 function buildRolePromptInput(args: {
   roleId: string;
@@ -299,9 +302,8 @@ function extractJsonObjectCandidate(raw: string): string | undefined {
 }
 
 /**
- * parseRoleExecutionOutputWithRepair handles the raw output from a role execution.
- * It attempts to parse it as JSON and applies repair strategies if the JSON
- * is wrapped in other text or slightly malformed.
+ * Output repair is intentionally narrow: recover a wrapped JSON object and normalize the only
+ * allowed event when that choice is unambiguous. Anything broader would hide contract drift.
  */
 export function parseRoleExecutionOutputWithRepair(args: {
   rawOutput: string;
@@ -525,13 +527,8 @@ function buildCorrectionRequest(args: {
 }
 
 /**
- * executeRoleNode is the high-level coordinator for executing a single role.
- * It manages:
- * 1. Budget checks (max transitions).
- * 2. Prompt rendering and input validation.
- * 3. Dispatching to the appropriate executor (model or profile-based).
- * 4. Capturing and repairing output.
- * 5. Persisting results and audit records.
+ * Role execution deliberately stops at "run one node and persist durable evidence". Graph-level
+ * progression, branch activation, join waiting, and terminal status are owned by graph-runner.
  */
 export async function executeRoleNode(args: {
   roleId: string;

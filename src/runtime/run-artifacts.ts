@@ -143,6 +143,8 @@ function isProcessAlive(pid: number): boolean {
 }
 
 async function acquireResumeRunLock(runDir: string): Promise<() => Promise<void>> {
+  // Resume is single-master per run directory. A light advisory lock is sufficient for the
+  // current single-machine runtime: atomic create, stale same-host takeover, clean-exit release.
   const lockPath = resolve(runDir, RESUME_RUN_LOCK_FILE);
   const owner: ResumeRunLockRecord = {
     pid: process.pid,
@@ -491,6 +493,8 @@ export async function initializeRunContext(args: {
   runtimeConfig: RuntimeConfig;
   resumeRunDir?: string;
 }): Promise<RunContext> {
+  // Fresh runs and resumed runs share the same directory contract. Initialization therefore
+  // prefers idempotent setup and write-if-missing files so resume never overwrites evidence.
   const createdAt = new Date();
   const runDir = args.resumeRunDir
     ? resolve(args.workdir, args.resumeRunDir)
@@ -611,6 +615,8 @@ export async function initializeRunContext(args: {
 export async function loadResumeGraphState(args: {
   runDir: string;
 }): Promise<GraphState> {
+  // Resume fails closed: validate both the state snapshot and the session index before any
+  // executor starts. Partial copies or manual edits should stop here, not during execution.
   const statePath = resolve(args.runDir, "state.json");
   const sessionsPath = resolve(args.runDir, "sessions.json");
 
@@ -1252,6 +1258,8 @@ export function chainBufferedFlush(
   state: BufferedAppendState,
   runFlush: () => Promise<void>
 ): Promise<void> {
+  // The token guards against an older queued flush clearing the promise that a newer flush
+  // still depends on.
   const flushToken = Symbol("flush");
   const queuedFlush = (state.flushPromise ?? Promise.resolve()).then(runFlush);
   const activeFlush = queuedFlush.finally(() => {

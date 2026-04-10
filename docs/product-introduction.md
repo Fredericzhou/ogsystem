@@ -1,77 +1,69 @@
 # OGSystem 产品自我介绍
 
-## 1. 背景
+## 1. 它是什么
 
-OGSystem 是一个面向多角色协作流程的控制台运行时，使用受限 Mermaid `flowchart` 作为系统编排 DSL。  
-项目目标不是做“全功能平台”，而是提供一个可执行、可审计、可恢复的最小核心，用于快速验证角色编排、模型绑定与运行治理策略。
+OGSystem 是一个面向多角色协作流程的单机编排内核。它使用受限的 Mermaid `flowchart` 作为 DSL，把角色图、模型绑定、恢复语义和运行证据统一收敛到一个文件优先的运行时里。
 
-当前版本已经收敛为单一运行时路径：
+它的目标不是做“平台大全”，而是把下面几件事做扎实：
 
-- 一个图执行模型（graph runtime）
-- 一套文件优先的恢复模型（`state.json.graphState` + `sessions.json` + `plan-fingerprint.json` + `checkpoints/` + `execution-outcome.json`）
-- 一套统一节点执行契约（role package + schema validation + executor abstraction）
+- 角色图可执行，而不是停留在设计图层。
+- 运行结果可审计、可回放、可恢复。
+- 语义边界清楚，出现漂移时能 fail fast。
+- 在不引入重型基础设施的前提下，尽量提高稳定性和可靠性。
 
-## 2. 原理
+## 2. 它擅长什么
 
-OGSystem 将职责拆分为四层：
+- **图语义硬化**：`parallel_split`、`all_of` join、`loop.max` 都在解析和执行两侧被明确约束。
+- **文件优先恢复**：运行状态落盘到 `ogsystem-history/<run-id>/`，以 `state.json`、`sessions.json`、`plan-fingerprint.json`、`checkpoints/` 和 `execution-outcome.json` 组成恢复权威集。
+- **会话血缘隔离**：OpenCode 会话按 `roleId:sessionLineageId` 复用或隔离，顺序链路复用记忆，并行 sibling 不串话。
+- **Crash 自愈补偿**：角色执行先提交 durable outcome，再由图调度层写 checkpoint；恢复时自动补齐缺失的 checkpoint，而不是重跑模型。
+- **最小但完整的工程闭环**：解析、调度、执行、审计、恢复与检查能力都收敛在同一套内核工程里。
 
-- `system.mmd`：定义角色图、流转事件、law 绑定、执行绑定
-- `role package`：定义角色语义与 I/O 契约（`prompt.md`、`output.schema.json`）
-- `model package`：定义执行器与模型参数（如 OpenCode model/args/timeout）
-- runtime：执行图调度、调用 executor、持久化运行证据
+## 3. 架构特点
 
-核心运行原则：
+OGSystem 当前采用单一 graph runtime 路径，核心模块分工很清晰：
 
-- Mermaid 图语义先编译成后端中立的 `ExecutionPlan`
-- graph runner 只负责图调度和状态编排
-- role executor 只负责节点执行、修复策略、审计落盘
-- `exec.bind` 是兼容模式，不再代表第二套引擎
-- OpenCode session 复用键为 `roleId:sessionLineageId`，并行 sibling 分支隔离的是会话记忆，不是 role 私有目录
+- `src/runtime/adapter.ts`：组合根，负责装配配置、系统定义、角色包、模型包与运行上下文。
+- `src/runtime/parse-mermaid.ts` 与 `src/runtime/execution-plan.ts`：把受限 Mermaid DSL 编译成可执行计划。
+- `src/runtime/graph-runner.ts`：负责图级状态推进、branch/lineage 管理、checkpoint 与 resume 补偿。
+- `src/runtime/role-executor.ts`：负责单节点 prompt 渲染、执行绑定、输出修复、schema 校验与审计落盘。
+- `src/runtime/run-artifacts.ts`：负责 run 目录、会话索引、`.resume.lock`、checkpoint、execution artifacts 与 buffered append。
 
-## 3. 架构
+这套结构的核心特点是：
 
-关键模块如下：
+- **职责分离**：调度、执行、持久化分别收敛，不靠隐式共享逻辑。
+- **实现可解释**：文档中的语义标签可以映射回明确的代码模块与产物文件。
+- **运维可观察**：每次执行的关键信息都有对应落盘证据，不依赖黑盒状态。
 
-- `src/runtime/adapter.ts`：组合根，装配运行上下文与依赖
-- `src/runtime/parse-mermaid.ts` + `src/runtime/execution-plan.ts`：DSL 解析与语义归一化
-- `src/runtime/graph-runner.ts`：统一图运行与状态推进
-- `src/runtime/role-executor.ts`：节点执行、输出修复、schema 校验
-- `src/runtime/executor.ts` + `src/runtime/opencode-executor.ts`：执行器抽象与默认实现
-- `src/runtime/run-artifacts.ts` + `src/runtime/run-artifact-policy.ts`：产物写入与契约策略
-- `src/runtime/doctor.ts`：运行前健康检查与 run-dir 恢复检查
+## 4. 当前边界
 
-运行数据默认落盘到 `ogsystem-history/<run-id>/`，其中：
+OGSystem 目前是一个很强的单机文件型内核，但仍有明确边界：
 
-- run-id 命名格式：`yyyy-MM-dd_HH24-mm-ss_xxxx`（`xxxx` 为系统ID派生的4位代码）
-- 运行恢复依赖：`state.json.graphState`、`sessions.json`、`plan-fingerprint.json`、`checkpoints/`、`execution-outcome.json`
-- 审计与操作视图：`events.ndjson`、`audit/*.md`、`roles/<roleId>/...`
+- 重点解决的是单机正确性、恢复能力和操作安全，不是分布式调度。
+- `.resume.lock` 只覆盖同机 `--resume-run` 竞争，不解决跨主机共享存储上的并发恢复。
+- 指纹校验是严格模式。只要系统定义、角色内容、模型包或 law 变化，resume 就会拒绝继续。
+- 长期运行的主要压力来自状态与产物增长，不是当前语义正确性本身。
 
-## 4. 安装
+这意味着它适合：
 
-```bash
-npm install
-npm run build
-```
+- 本地或单机服务上的多角色编排实验与生产化前验证。
+- 对恢复能力、审计能力、可解释性要求较高的运行场景。
+- 希望以低复杂度方式获得“编排 + 恢复 + 证据链”的工程团队。
 
-建议环境准备：
+它暂时不适合：
 
-- Node.js 20+
-- 已安装并可执行 `opencode`（如需真实模型执行）
+- 需要跨机器抢占式调度的集群环境。
+- 需要“宽松兼容恢复”或“热升级恢复”的运行模式。
+- 以无限长期运行和海量历史产物为核心诉求的系统。
 
-## 5. 使用手册入口
+## 5. 从哪里开始读
 
-快速入口：
+建议按以下顺序理解项目：
 
-- 使用手册：`docs/usage-manual.md`
-- 编排语义参考：`docs/ogsystem-orchestration-semantics-v1.md`
-- 架构决策：`docs/DECISIONS.md`
-- 单运行时执行清单：`docs/single-graph-runtime-execution-checklist.md`
+1. `docs/README.md`：先看文档索引与归档规则，知道什么文档是活的。
+2. `docs/usage-manual.md`：把项目能力、目录约定、运行命令和恢复契约整体过一遍。
+3. `docs/ogsystem-orchestration-semantics-v1.md`：确认已实现语义的精确定义。
+4. `docs/DECISIONS.md`：理解为什么做这些架构选择。
+5. `docs/ogsystem-ebook.md`：系统阅读模块设计、原则、价值与演进方向。
 
-最小 dry-run 示例：
-
-```bash
-npm run run:adapter -- \
-  --system examples/target-model-binding-system.mmd \
-  --prompt "讨论当前架构是否继续最小化" \
-  --dry-run
-```
+如果你要直接上手运行，下一站应是 `docs/usage-manual.md`。如果你要评估设计是否合理，下一站应是 `docs/DECISIONS.md` 与 `docs/ogsystem-ebook.md`。

@@ -1,151 +1,120 @@
 # OGSystem Long-Term Stability Roadmap
 
-Date: 2026-04-10
+Date: 2026-04-11
 Status: active planning
 
-## 1. Summary
+## 1. 当前定位
 
-Current state: OGSystem has a solid runnable runtime core, but is not yet at long-term product stability level.
+OGSystem 现在已经具备较强的单机正确性与恢复能力：
 
-Main gap: not feature completeness, but reliability system completeness:
+- 指纹校验覆盖系统定义、角色内容、模型包与 law。
+- 会话按 `roleId:sessionLineageId` 做血缘隔离。
+- `execution-outcome.json` + `checkpoints/` 形成 crash-idempotent 恢复链。
+- `.resume.lock` 可以阻止同机双 `--resume-run` 竞争。
 
-- SLO/SLA and error governance
-- observability and run-time diagnostics
-- release gate and compatibility policy
-- recovery drills and operability
+因此，近期最主要的风险已经不再是“语义是否正确”，而是“长期运行后磁盘与 I/O 会不会成为天花板”。
 
-## 2. P0 Must-Do (2-4 weeks)
+## 2. 近期必须做的三件事
 
-1. Define SLO/SLA
-- success rate
-- P95/P99 latency
-- timeout ratio
-- resume success ratio
-- session reuse ratio
+### 2.1 审计流式化，控制 `state.json` 膨胀
 
-2. Introduce typed error model
-- unify error categories and codes
-- replace free-form runtime-only strings where possible
-- make errors monitorable and alertable
+当前问题：
 
-3. Harden model output policy
-- structured-output fallback path
-- bounded corrective retry policy
-- timeout fallback and terminal failure snapshots
+- `state.json.graphState` 仍包含完整 `auditTrail`。
+- 运行时间越长，单次原子写入成本越高。
+- 大文件写盘会放大 event loop lag，并拖慢每次 transition 的落盘延迟。
 
-4. Complete recovery consistency
-- enforce `state.json.graphState` + `sessions.json` consistency checks
-- guarantee resume idempotency
-- prevent duplicate execution on resume
+近期目标：
 
-5. Minimum observability baseline
-- run-level metrics
-- role-level metrics
-- structured logs with stable fields
-- key lifecycle events
+- 将长期累积的审计历史从 `state.json` 中剥离。
+- 保留 resume 必需的最小状态，把完整历史流式写入独立 `.ndjson` 或分段审计文件。
+- 在内存与快照中只保留最近窗口或聚合摘要。
 
-6. Release gate
-- build + test + regression examples + doctor preflight required before release
+### 2.2 落地产物保留与清理策略
 
-7. Config compatibility strategy
-- config versioning
-- migration script/check
-- deprecation window policy
+当前问题：
 
-## 3. P1 Stability Operations (1-2 quarters)
+- `roles/<roleId>/executions/<executionId>/` 会随运行次数持续增长。
+- 单目录海量小文件会拖慢 `readdir`、resume 扫描和运维检查。
+- 目前已经有 `--cleanup-executions <n>`，但仍偏手工，不是完整的保留策略。
 
-1. Fault-injection test set
-- timeout
-- flaky upstream/provider
-- missing structured output
-- malformed JSON
-- file-system partial failure
+近期目标：
 
-2. Long-running regression suite
-- deterministic fixtures
-- resume/retry path coverage
-- scheduled daily/weekly run
+- 把“保留最近 N 份执行快照”从手工参数升级为可配置策略。
+- 明确哪些产物必须保留、哪些产物可以清理、哪些产物只需归档。
+- 在不改变恢复权威集的前提下，限制历史 artifacts 的无限增长。
 
-3. Capacity and performance baselines
-- max concurrent runs
-- branch fan-out limits
-- write amplification and disk growth
-- CPU/memory profile under load
+### 2.3 增加增长与 I/O 指标
 
-4. Artifact lifecycle policy
-- retention window
-- cleanup and archive jobs
-- audit preservation policy
+当前问题：
 
-5. Security baseline
-- secrets handling
-- least-privilege runtime
-- command/tool allow-list
-- sensitive data redaction
+- 已有 `metrics.json`，但还缺少足够的增长类和 I/O 类指标。
+- 状态膨胀通常不是突然出故障，而是逐步退化；如果没有指标，只能靠体感发现问题。
 
-6. Runtime progress visualization
-- terminal watch mode
-- lightweight timeline UI from run artifacts
+近期目标：
 
-7. Stable API/CLI contract
-- versioned input/output contract
-- compatibility regression tests
+- 在 `metrics.json` 中补充关键指标，例如：
+  - `state.json` 当前大小
+  - checkpoint 数量
+  - per-role execution 目录数量
+  - 持久化耗时
+  - buffered append flush 耗时
+- 为未来的清理策略、压测和告警提供基础数据。
 
-## 4. P2 Productization and Team Process
+## 3. 继续加强，但不额外增加架构复杂度
 
-1. Release management
-- semantic versioning
-- changelog
-- upgrade guide
-- rollback playbook
+这部分值得继续做，但应坚持“小改动提升稳定性”的原则：
 
-2. Operations playbook
-- on-call SOP
-- incident response
-- recovery procedure
-- regular recovery drills
+- 保持故障注入与恢复演练，持续验证 `execution-outcome.json` 到 checkpoint 的补偿链条。
+- 保持 replay benchmark，确认 WAL 重放时间仍在可接受范围内。
+- 继续扩展与恢复、自愈、lock 相关的测试覆盖，但不引入新的状态层或外部基础设施。
 
-3. Quality governance
-- defect severity policy
-- RCA template
-- reliability weekly report
+## 4. 明确延后事项
 
-4. Model governance
-- model version pinning
-- staged rollout
-- fallback switch
-- cost/quality dashboard
+以下方向目前不是近期优先级，原因是它们会明显提高复杂度，且并非当前瓶颈：
 
-5. Multi-environment standardization
-- dev/staging/prod isolation
-- baseline config templates
-- environment parity checks
+### 4.1 语义兼容型 Resume
 
-## 5. Top 3 Priorities Right Now
+暂不做“带损恢复”或“宽容指纹”。
 
-1. Turn structured-output failures and timeouts into fully controlled policies.
-2. Turn resume capability into measurable reliability (with drills, not only code support).
-3. Turn runnable runtime into releasable product (gates + observability + operability).
+原因：
 
-## 6. Suggested 30/60/90-Day Milestones
+- 当前严格指纹是正确性边界的重要组成部分。
+- 一旦允许“提示词轻微变化仍可 resume”，就必须定义复杂的兼容规则、迁移规则和审计解释。
+- 这类能力更适合在真正出现大量版本迁移需求后再设计。
+
+### 4.2 分布式锁或跨主机恢复协调
+
+暂不把 `.resume.lock` 抽象成 Redis/DB 锁 provider。
+
+原因：
+
+- 当前系统定位仍是单机文件型内核。
+- 跨主机锁只有在共享存储、多实例恢复成为真实部署场景时才值得投入。
+- 过早抽象会让运行时边界变复杂，但不会解决当前最现实的 I/O 增长问题。
+
+## 5. 30/60/90 天建议
 
 ### Day 0-30
 
-- SLO draft and initial dashboards
-- error code taxonomy v1
-- release gate in CI
-- resume consistency checks + tests
+- 设计并落地 `auditTrail` 剥离方案。
+- 明确 artifact retention 分类与默认策略。
+- 为 `metrics.json` 增加增长类与 I/O 类指标。
 
 ### Day 31-60
 
-- fault injection suite v1
-- artifact retention and cleanup job
-- terminal watch command
-- on-call/runbook first version
+- 把 retention 策略接入实际命令或 runtime 配置。
+- 建立针对长循环和大量 execution 目录的回归测试。
+- 为 state 膨胀、checkpoint 增长和 flush 耗时建立 benchmark 基线。
 
 ### Day 61-90
 
-- staging reliability drill cadence
-- model rollout and rollback policy
-- compatibility matrix and upgrade guide
-- product-level readiness review
+- 根据指标与 benchmark 结果决定是否需要 compact state。
+- 评估是否引入更细粒度的 audit 分段和归档策略。
+- 在真实运行样本上复盘单机上限，再决定是否需要进入“分布式协调”设计阶段。
+
+## 6. 总结
+
+OGSystem 现在的优势是：单机语义闭环、恢复机制完整、实现复杂度可控。
+
+接下来最值得投入的方向不是再造更多语义，而是守住这个优势，让它在长时间运行时依然稳定、可观测、可维护。
