@@ -18,6 +18,7 @@ function usage(): string {
     "  --tools <file>          Legacy CLI tools JSON (optional)",
     "  --workdir <path>        Working directory and shared workspace (default: cwd)",
     "  --cleanup-executions <n> Keep only the latest n per-role execution snapshots (optional)",
+    "  --log-run               Print simple role/transition runtime logs to stderr",
     "  --trace-out <file>       Write final runtime result JSON",
     "  --dry-run                Do not execute external commands"
   ].join("\n");
@@ -36,6 +37,7 @@ async function main(): Promise<void> {
       prompt: { type: "string" },
       workdir: { type: "string" },
       "cleanup-executions": { type: "string" },
+      "log-run": { type: "boolean" },
       "trace-out": { type: "string" },
       "dry-run": { type: "boolean" },
       help: { type: "boolean", short: "h" }
@@ -74,7 +76,8 @@ async function main(): Promise<void> {
     prompt: values.prompt,
     workdir: values.workdir ?? process.cwd(),
     dryRun: values["dry-run"] ?? false,
-    cleanupExecutionHistory
+    cleanupExecutionHistory,
+    logRun: values["log-run"] ?? false
   });
 
   const output = JSON.stringify(result, null, 2);

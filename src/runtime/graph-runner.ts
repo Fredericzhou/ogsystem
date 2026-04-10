@@ -2,6 +2,7 @@ import { resolve } from "node:path";
 
 import { Annotation, END, START, StateGraph } from "@langchain/langgraph";
 
+import { createRunConsoleLogger } from "./console-run-log.js";
 import type { Executor } from "./executor.js";
 import { getExecutionPlanNode } from "./execution-plan.js";
 import { isJoinNodeReady, selectRoutingTargets } from "./graph-mode-registry.js";
@@ -28,6 +29,7 @@ import type {
   CliTool,
   EffectiveLawConstraints,
   ExecutionPlan,
+  ExecutionPlanNode,
   ExecutionProfile,
   GraphRunStatus,
   GraphState,
@@ -55,7 +57,23 @@ type RunnerInput = {
   prompt: string;
   initialState?: GraphState;
   cleanupExecutionHistory?: number;
+  logRun: boolean;
 };
+
+function listPendingJoinSources(args: {
+  node: ExecutionPlanNode;
+  currentRoleId: string;
+  loopIteration: number;
+  state: GraphState;
+}): string[] {
+  return args.node.joinSources.filter((sourceRoleId) => {
+    if (sourceRoleId === args.currentRoleId) {
+      return false;
+    }
+    const result = args.state.roleResults[sourceRoleId];
+    return !result || result.loopIteration !== args.loopIteration;
+  });
+}
 
 function mergeStatus(current: GraphRunStatus, update: GraphRunStatus): GraphRunStatus {
   if (current === "failed" || update === "failed") {
@@ -164,6 +182,7 @@ function buildSuccessUpdate(args: {
   selectedEvent?: string;
   storedResult?: StoredRoleResult;
   mode: "ok" | "noop";
+  logger: ReturnType<typeof createRunConsoleLogger>;
 }): GraphUpdate {
   const node = getExecutionPlanNode(args.plan, args.roleId);
   const branchUpdates: Record<string, BranchRecord> = {
@@ -189,10 +208,21 @@ function buildSuccessUpdate(args: {
   });
 
   for (const targetRoleId of candidateTargets) {
+    const flow = node.outgoing.find(
+      (item) =>
+        item.toRoleId === targetRoleId &&
+        (node.routingMode === "parallel_split" || item.eventType === args.selectedEvent)
+    );
     if (targetRoleId === SYSTEM_END_ROLE_ID) {
       finalStatus = "done";
       finalOutput = args.storedResult?.content ?? "";
       finalRoleId = args.roleId;
+      args.logger.transition({
+        fromRoleId: args.roleId,
+        event: flow?.eventType ?? args.selectedEvent,
+        toRoleId: "output",
+        branchId: args.branchId
+      });
       continue;
     }
 
@@ -241,6 +271,23 @@ function buildSuccessUpdate(args: {
           loopIteration: nextLoopIteration
         });
         branchUpdates[branch.branchId] = branch;
+        args.logger.transition({
+          fromRoleId: args.roleId,
+          event: flow?.eventType ?? args.selectedEvent,
+          toRoleId: targetRoleId,
+          branchId: args.branchId
+        });
+      } else {
+        args.logger.joinWait({
+          roleId: targetRoleId,
+          arrivedFrom: args.roleId,
+          waitingFor: listPendingJoinSources({
+            node: targetNode,
+            currentRoleId: args.roleId,
+            loopIteration: args.loopIteration,
+            state: args.state
+          })
+        });
       }
       continue;
     }
@@ -250,6 +297,12 @@ function buildSuccessUpdate(args: {
       loopIteration: nextLoopIteration
     });
     branchUpdates[branch.branchId] = branch;
+    args.logger.transition({
+      fromRoleId: args.roleId,
+      event: flow?.eventType ?? args.selectedEvent,
+      toRoleId: targetRoleId,
+      branchId: args.branchId
+    });
   }
 
   return {
@@ -269,6 +322,7 @@ function buildSuccessUpdate(args: {
 }
 
 export async function runSystemWithGraphRunner(args: RunnerInput): Promise<AdapterRunResult> {
+  const logger = createRunConsoleLogger(args.logRun);
   const graphBuilder = new StateGraph(GraphStateAnnotation) as StateGraph<
     typeof GraphStateAnnotation.spec,
     GraphState,
@@ -292,7 +346,8 @@ export async function runSystemWithGraphRunner(args: RunnerInput): Promise<Adapt
         runContext: args.runContext,
         executor: args.executor,
         userProfile: args.userProfile,
-        workdir: args.workdir
+        workdir: args.workdir,
+        logger
       });
 
       if (result.status === "failed") {
@@ -315,7 +370,8 @@ export async function runSystemWithGraphRunner(args: RunnerInput): Promise<Adapt
         audit: result.audit,
         selectedEvent: result.selectedEvent,
         storedResult: result.storedResult,
-        mode: result.status
+        mode: result.status,
+        logger
       });
     });
   }
@@ -381,6 +437,12 @@ export async function runSystemWithGraphRunner(args: RunnerInput): Promise<Adapt
 
   const graph = graphBuilder.compile();
   let finalState = args.initialState ?? createInitialGraphState({ plan: args.plan, prompt: args.prompt });
+  logger.runStart({
+    runId: args.runContext.runId,
+    systemId: args.plan.systemId,
+    entryRoleId: args.plan.entryRoleId,
+    resume: Boolean(args.initialState)
+  });
   await persistProjectedState({ state: finalState, plan: args.plan, runContext: args.runContext });
 
   const recursionLimit = (args.effectiveLaw.maxTransitions ?? 100) + 20;
@@ -436,6 +498,15 @@ export async function runSystemWithGraphRunner(args: RunnerInput): Promise<Adapt
       keepLatest: args.cleanupExecutionHistory
     });
   }
+
+  logger.runEnd({
+    status: finalState.status === "failed" ? "failed" : "done",
+    finalRoleId: finalState.finalRoleId || undefined,
+    totalTransitions: summary.totalTransitions,
+    okCount: summary.okCount,
+    failedCount: summary.failedCount,
+    noopCount: summary.noopCount
+  });
 
   return {
     systemId: args.plan.systemId,

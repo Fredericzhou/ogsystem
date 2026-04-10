@@ -1,4 +1,6 @@
 import { appendAuditRecord, createAuditRecord } from "./audit-recorder.js";
+import { createRunConsoleLogger } from "./console-run-log.js";
+import type { RunConsoleLogger } from "./console-run-log.js";
 import type { Executor, ExecutorBinding } from "./executor.js";
 import { getExecutionPlanNode } from "./execution-plan.js";
 import {
@@ -435,6 +437,7 @@ export async function executeRoleNode(args: {
   executor: Executor;
   userProfile?: UserProfile;
   workdir: string;
+  logger?: RunConsoleLogger;
 }): Promise<RoleExecutorResult> {
   const currentBranch = findCurrentBranch(args.state, args.roleId);
   const loopIteration =
@@ -554,6 +557,8 @@ export async function executeRoleNode(args: {
   let toolRef: string | undefined;
   let command: string | undefined;
   let lastStdout: string | undefined;
+  let bindingLabel = "noop";
+  const logger = args.logger ?? createRunConsoleLogger(false);
 
   try {
     if (args.node.binding.kind === "model") {
@@ -577,6 +582,7 @@ export async function executeRoleNode(args: {
         kind: "model",
         modelPackage
       };
+      bindingLabel = `model:${modelPackage.manifest.modelId}`;
     } else if (args.node.binding.kind === "profile") {
       const profile = args.profilesById.get(args.node.binding.profileId);
       if (!profile) {
@@ -599,7 +605,15 @@ export async function executeRoleNode(args: {
         profile,
         tool
       };
+      bindingLabel = `profile:${profile.profileId}`;
     }
+
+    logger.roleStart({
+      roleId: args.roleId,
+      branchId,
+      loopIteration,
+      binding: binding ? bindingLabel : "noop"
+    });
 
     await persistRolePrelude({
       roleId: args.roleId,
@@ -652,6 +666,13 @@ export async function executeRoleNode(args: {
       });
       await persistRoleResult({ roleId: args.roleId, context: args.runContext, execution, audit });
       await appendAuditRecord(args.runContext, audit);
+      logger.roleDone({
+        roleId: args.roleId,
+        branchId,
+        status: "noop",
+        selectedEvent,
+        durationMs: audit.durationMs
+      });
       return {
         status: "noop",
         audit,
@@ -751,6 +772,13 @@ export async function executeRoleNode(args: {
       audit
     });
     await appendAuditRecord(args.runContext, audit);
+    logger.roleDone({
+      roleId: args.roleId,
+      branchId,
+      status: "ok",
+      selectedEvent,
+      durationMs: audit.durationMs
+    });
 
     return {
       status: "ok",
@@ -827,6 +855,13 @@ export async function executeRoleNode(args: {
     }
     await persistRoleResult({ roleId: args.roleId, context: args.runContext, execution, audit });
     await appendAuditRecord(args.runContext, audit);
+    logger.roleDone({
+      roleId: args.roleId,
+      branchId,
+      status: "failed",
+      durationMs: audit.durationMs,
+      errorCode: failure.errorCode
+    });
     return {
       status: "failed",
       error: `${message}${category}`,

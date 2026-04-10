@@ -199,6 +199,7 @@ export async function runSystemWithAdapter(args: {
   workdir: string;
   dryRun?: boolean;
   cleanupExecutionHistory?: number;
+  logRun?: boolean;
 }): Promise<AdapterRunResult> {
   try {
     const system = await loadSystemFromMermaid(args.systemPath);
@@ -255,7 +256,8 @@ export async function runSystemWithAdapter(args: {
         executor,
         prompt: args.prompt,
         initialState,
-        cleanupExecutionHistory: args.cleanupExecutionHistory
+        cleanupExecutionHistory: args.cleanupExecutionHistory,
+        logRun: args.logRun ?? false
       });
     } finally {
       await executor.close();

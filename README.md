@@ -104,6 +104,16 @@ Lint a system with the runtime parser/validator:
 npm run lint:system -- --system examples/target-model-binding-system.mmd
 ```
 
+Show simple role/transition progress in the console while keeping final JSON on stdout:
+
+```bash
+npm run run:adapter -- \
+  --system examples/target-model-binding-system.mmd \
+  --prompt "讨论当前架构是否继续最小化" \
+  --dry-run \
+  --log-run
+```
+
 ## Runtime Guarantees
 
 - The adapter runs one graph-based execution model. The entry role becomes the initial active branch, each role execution emits one structured result, and completion happens only when active branches are exhausted or a transition reaches the terminal `output` boundary.
@@ -123,6 +133,7 @@ npm run lint:system -- --system examples/target-model-binding-system.mmd
 - `state.json` and `sessions.json` writes are atomic, and resume rejects partial/corrupted snapshots before execution starts.
 - Runs persist `activeBranches`, `completedBranches`, `loopIterations`, and `graphState` inside `state.json`, and support `--resume-run` against the same run directory.
 - `audit/summary.md` and result JSON now expose `totalTransitions`, `okCount`, `failedCount`, `noopCount`, structured `failureCountsByErrorCode`, and repair statistics.
+- `--log-run` prints simple run/role/transition progress lines to `stderr`; final result JSON remains on `stdout`.
 - Roles without execution binding fail fast by default. A law may opt into `allowNoopWithoutExecutionBinding`, but noop remains explicit and is rejected on branching nodes.
 - `user-profile.json` is injected into role prompts as delivery preference; role packages decide how to apply it.
 

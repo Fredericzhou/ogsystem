@@ -334,6 +334,20 @@ Lint rules:
 - stays read-only
 - emits one hard-fail diagnostic per error in `line errorCode message` form
 
+Console progress logging:
+
+```bash
+npm run run:adapter -- \
+  --system examples/target-model-binding-system.mmd \
+  --prompt "demo" \
+  --dry-run \
+  --log-run
+```
+
+- `--log-run` is off by default
+- writes one-line run/role/transition progress logs to `stderr`
+- keeps the final adapter result JSON on `stdout`
+
 Run-directory inspection (resume prerequisites):
 
 ```bash
