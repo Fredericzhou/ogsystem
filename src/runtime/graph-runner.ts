@@ -10,8 +10,10 @@ import {
   activateBranch,
   completeBranch,
   createInitialGraphState,
+  findRoleResult,
   getActiveRoleIds,
   getTargetLoopIteration,
+  listActiveBranches,
   projectStateSnapshot,
   storeRoleResult,
   wouldExceedLoopBudget
@@ -21,7 +23,13 @@ import { createRuntimeError, normalizeRuntimeError } from "./runtime-errors.js";
 import { summarizeRun } from "./run-summary.js";
 import { projectStages } from "./stage-projector.js";
 import { stringifyJson } from "./runtime-support.js";
-import { cleanupHistoricalExecutionSnapshots, writeAtomicFile } from "./run-artifacts.js";
+import {
+  cleanupHistoricalExecutionSnapshots,
+  flushBufferedRunArtifacts,
+  loadPendingRuntimeCheckpoints,
+  persistRuntimeCheckpoint,
+  writeAtomicFile
+} from "./run-artifacts.js";
 import { SYSTEM_END_ROLE_ID } from "./types.js";
 import type {
   AdapterRunResult,
@@ -39,10 +47,13 @@ import type {
   RunContext,
   RuntimeErrorEnvelope,
   StoredRoleResult,
+  GraphStateUpdate,
   UserProfile
 } from "./types.js";
 
-type GraphUpdate = Partial<GraphState>;
+type GraphUpdate = GraphStateUpdate;
+
+const SCHEDULER_NODE_ID = "__scheduler__";
 
 type RunnerInput = {
   plan: ExecutionPlan;
@@ -63,16 +74,19 @@ type RunnerInput = {
 
 function listPendingJoinSources(args: {
   node: ExecutionPlanNode;
-  currentRoleId: string;
-  loopIteration: number;
+  currentBranch: BranchRecord;
   state: GraphState;
 }): string[] {
   return args.node.joinSources.filter((sourceRoleId) => {
-    if (sourceRoleId === args.currentRoleId) {
+    if (sourceRoleId === args.currentBranch.roleId) {
       return false;
     }
-    const result = args.state.roleResults[sourceRoleId];
-    return !result || result.loopIteration !== args.loopIteration;
+    return !findRoleResult({
+      state: args.state,
+      roleId: sourceRoleId,
+      lineageId: args.currentBranch.lineageId,
+      loopIteration: args.currentBranch.loopIteration
+    });
   });
 }
 
@@ -125,7 +139,7 @@ const GraphStateAnnotation = Annotation.Root({
     reducer: (current, update) => ({ ...current, ...update }),
     default: () => ({})
   }),
-  selectedEventByRoleId: Annotation<Record<string, string>>({
+  selectedEventByBranchId: Annotation<Record<string, string>>({
     reducer: (current, update) => ({ ...current, ...update }),
     default: () => ({})
   }),
@@ -140,8 +154,70 @@ const GraphStateAnnotation = Annotation.Root({
   lastExecutedRoleId: Annotation<string>({
     reducer: (_current, update) => update,
     default: () => ""
+  }),
+  nextBranchSequence: Annotation<number>({
+    reducer: (_current, update) => update,
+    default: () => 1
+  }),
+  lastCheckpointSequence: Annotation<number>({
+    reducer: (_current, update) => update,
+    default: () => 0
   })
 });
+
+function mergeGraphUpdates(current: GraphUpdate, update: GraphUpdate): GraphUpdate {
+  return {
+    status:
+      current.status && update.status
+        ? mergeStatus(current.status, update.status)
+        : (current.status ?? update.status),
+    error: current.error || update.error,
+    errorEnvelope: current.errorEnvelope ?? update.errorEnvelope,
+    transitionCount: (current.transitionCount ?? 0) + (update.transitionCount ?? 0),
+    auditTrail: [...(current.auditTrail ?? []), ...(update.auditTrail ?? [])],
+    roleResults: { ...(current.roleResults ?? {}), ...(update.roleResults ?? {}) },
+    branchRecords: { ...(current.branchRecords ?? {}), ...(update.branchRecords ?? {}) },
+    loopIterations: { ...(current.loopIterations ?? {}), ...(update.loopIterations ?? {}) },
+    selectedEventByBranchId: {
+      ...(current.selectedEventByBranchId ?? {}),
+      ...(update.selectedEventByBranchId ?? {})
+    },
+    finalOutput: update.finalOutput || current.finalOutput,
+    finalRoleId: update.finalRoleId || current.finalRoleId,
+    lastExecutedRoleId: update.lastExecutedRoleId ?? current.lastExecutedRoleId,
+    nextBranchSequence: update.nextBranchSequence ?? current.nextBranchSequence,
+    lastCheckpointSequence: Math.max(
+      current.lastCheckpointSequence ?? 0,
+      update.lastCheckpointSequence ?? 0
+    )
+  };
+}
+
+function applyGraphUpdate(state: GraphState, update: GraphUpdate): GraphState {
+  return {
+    userPrompt: state.userPrompt,
+    status: update.status ? mergeStatus(state.status, update.status) : state.status,
+    error: state.error || update.error || "",
+    errorEnvelope: state.errorEnvelope ?? update.errorEnvelope,
+    transitionCount: state.transitionCount + (update.transitionCount ?? 0),
+    auditTrail: state.auditTrail.concat(update.auditTrail ?? []),
+    roleResults: { ...state.roleResults, ...(update.roleResults ?? {}) },
+    branchRecords: { ...state.branchRecords, ...(update.branchRecords ?? {}) },
+    loopIterations: { ...state.loopIterations, ...(update.loopIterations ?? {}) },
+    selectedEventByBranchId: {
+      ...state.selectedEventByBranchId,
+      ...(update.selectedEventByBranchId ?? {})
+    },
+    finalOutput: update.finalOutput || state.finalOutput,
+    finalRoleId: update.finalRoleId || state.finalRoleId,
+    lastExecutedRoleId: update.lastExecutedRoleId ?? state.lastExecutedRoleId,
+    nextBranchSequence: update.nextBranchSequence ?? state.nextBranchSequence,
+    lastCheckpointSequence: Math.max(
+      state.lastCheckpointSequence,
+      update.lastCheckpointSequence ?? state.lastCheckpointSequence
+    )
+  };
+}
 
 async function persistProjectedState(args: {
   state: GraphState;
@@ -150,6 +226,11 @@ async function persistProjectedState(args: {
 }): Promise<void> {
   try {
     await writeAtomicFile(args.runContext.statePath, stringifyJson(projectStateSnapshot(args)));
+    await writeAtomicFile(
+      args.runContext.metricsPath,
+      stringifyJson(projectMetricsSnapshot(args))
+    );
+    await flushBufferedRunArtifacts(args.runContext);
   } catch (error) {
     throw createRuntimeError(
       normalizeRuntimeError(error, {
@@ -162,6 +243,68 @@ async function persistProjectedState(args: {
       })
     );
   }
+}
+
+function projectMetricsSnapshot(args: {
+  state: GraphState;
+  plan: ExecutionPlan;
+  runContext: RunContext;
+}): Record<string, unknown> {
+  const summary = summarizeRun({
+    auditTrail: args.state.auditTrail,
+    transitionCount: args.state.transitionCount,
+    terminalStatus: args.state.status,
+    terminalErrorEnvelope: args.state.errorEnvelope
+  });
+  const roleMetrics = args.state.auditTrail.reduce<Record<string, Record<string, number>>>(
+    (accumulator, audit) => {
+      const current = accumulator[audit.roleId] ?? {
+        total: 0,
+        ok: 0,
+        failed: 0,
+        noop: 0,
+        durationMsTotal: 0
+      };
+      current.total += 1;
+      current.durationMsTotal += audit.durationMs;
+      if (audit.status === "ok") {
+        current.ok += 1;
+      } else if (audit.status === "failed") {
+        current.failed += 1;
+      } else {
+        current.noop += 1;
+      }
+      accumulator[audit.roleId] = current;
+      return accumulator;
+    },
+    {}
+  );
+
+  return {
+    runId: args.runContext.runId,
+    systemId: args.plan.systemId,
+    systemVersion: args.plan.systemVersion,
+    status: args.state.status,
+    transitionCount: args.state.transitionCount,
+    summary,
+    failureCountsByErrorCode: summary.failureCountsByErrorCode,
+    roleMetrics
+  };
+}
+
+async function replayPendingRuntimeCheckpoints(args: {
+  state: GraphState;
+  runContext: RunContext;
+}): Promise<GraphState> {
+  const checkpoints = await loadPendingRuntimeCheckpoints({
+    context: args.runContext,
+    afterSequence: args.state.lastCheckpointSequence
+  });
+  let replayedState = args.state;
+  for (const checkpoint of checkpoints) {
+    replayedState = applyGraphUpdate(replayedState, checkpoint.update);
+  }
+  return replayedState;
 }
 
 async function writeRunSummary(args: {
@@ -211,8 +354,7 @@ async function cleanupExecutionHistory(args: {
 
 function buildFailureUpdate(args: {
   roleId: string;
-  branchId: string;
-  loopIteration: number;
+  branch: BranchRecord;
   error: string;
   errorEnvelope: RuntimeErrorEnvelope;
   audit: AuditRecord;
@@ -226,12 +368,7 @@ function buildFailureUpdate(args: {
     finalRoleId: args.roleId,
     lastExecutedRoleId: args.roleId,
     branchRecords: {
-      [args.branchId]: {
-        branchId: args.branchId,
-        roleId: args.roleId,
-        loopIteration: args.loopIteration,
-        status: "completed"
-      }
+      [args.branch.branchId]: completeBranch(args.branch)
     }
   };
 }
@@ -249,8 +386,7 @@ function buildSuccessUpdate(args: {
   state: GraphState;
   plan: ExecutionPlan;
   roleId: string;
-  branchId: string;
-  loopIteration: number;
+  currentBranch: BranchRecord;
   audit: AuditRecord;
   selectedEvent?: string;
   storedResult?: StoredRoleResult;
@@ -259,20 +395,19 @@ function buildSuccessUpdate(args: {
 }): GraphUpdate {
   const node = getExecutionPlanNode(args.plan, args.roleId);
   const branchUpdates: Record<string, BranchRecord> = {
-    [args.branchId]: completeBranch({
-      branchId: args.branchId,
-      roleId: args.roleId,
-      loopIteration: args.loopIteration
-    })
+    [args.currentBranch.branchId]: completeBranch(args.currentBranch)
   };
   const loopUpdates: Record<string, number> = {
-    [args.roleId]: args.loopIteration
+    [args.roleId]: args.currentBranch.loopIteration
   };
+  let nextBranchSequence = args.state.nextBranchSequence;
   let finalStatus: GraphRunStatus = "running";
   let finalError = "";
   let finalOutput = "";
   let finalRoleId = "";
   let finalErrorEnvelope: RuntimeErrorEnvelope | undefined;
+  let reachedSystemOutput = false;
+  let terminalOutput = "";
 
   const candidateTargets = selectRoutingTargets({
     node,
@@ -287,14 +422,13 @@ function buildSuccessUpdate(args: {
         (node.routingMode === "parallel_split" || item.eventType === args.selectedEvent)
     );
     if (targetRoleId === SYSTEM_END_ROLE_ID) {
-      finalStatus = "done";
-      finalOutput = args.storedResult?.content ?? "";
-      finalRoleId = args.roleId;
+      reachedSystemOutput = true;
+      terminalOutput = args.storedResult?.content ?? "";
       args.logger.transition({
         fromRoleId: args.roleId,
         event: flow?.eventType ?? args.selectedEvent,
         toRoleId: "output",
-        branchId: args.branchId
+        branchId: args.currentBranch.branchId
       });
       continue;
     }
@@ -302,7 +436,7 @@ function buildSuccessUpdate(args: {
     if (
       wouldExceedLoopBudget({
         targetRoleId,
-        currentLoopIteration: args.loopIteration,
+        currentLoopIteration: args.currentBranch.loopIteration,
         state: args.state,
         plan: args.plan
       })
@@ -316,7 +450,7 @@ function buildSuccessUpdate(args: {
         retryable: false,
         stage: "execute",
         roleId: args.roleId,
-        branchId: args.branchId
+        branchId: args.currentBranch.branchId
       };
       finalRoleId = args.roleId;
       break;
@@ -324,7 +458,7 @@ function buildSuccessUpdate(args: {
 
     const nextLoopIteration = getTargetLoopIteration({
       targetRoleId,
-      currentLoopIteration: args.loopIteration,
+      currentLoopIteration: args.currentBranch.loopIteration,
       state: args.state,
       plan: args.plan
     });
@@ -334,21 +468,26 @@ function buildSuccessUpdate(args: {
     if (targetNode.joinMode === "all_of") {
       if (isJoinNodeReady({
         node: targetNode,
-        currentRoleId: args.roleId,
-        loopIteration: args.loopIteration,
+        currentBranch: args.currentBranch,
         state: args.state,
         currentResult: args.storedResult
       })) {
         const branch = activateBranch({
           roleId: targetRoleId,
-          loopIteration: nextLoopIteration
+          loopIteration: nextLoopIteration,
+          branchSequence: nextBranchSequence,
+          lineageId: args.currentBranch.lineageId,
+          parentBranchId: args.currentBranch.branchId,
+          activatedByRoleId: args.roleId,
+          activatedByEvent: flow?.eventType ?? args.selectedEvent
         });
+        nextBranchSequence += 1;
         branchUpdates[branch.branchId] = branch;
         args.logger.transition({
           fromRoleId: args.roleId,
           event: flow?.eventType ?? args.selectedEvent,
           toRoleId: targetRoleId,
-          branchId: args.branchId
+          branchId: args.currentBranch.branchId
         });
       } else {
         args.logger.joinWait({
@@ -356,8 +495,7 @@ function buildSuccessUpdate(args: {
           arrivedFrom: args.roleId,
           waitingFor: listPendingJoinSources({
             node: targetNode,
-            currentRoleId: args.roleId,
-            loopIteration: args.loopIteration,
+            currentBranch: args.currentBranch,
             state: args.state
           })
         });
@@ -367,15 +505,35 @@ function buildSuccessUpdate(args: {
 
     const branch = activateBranch({
       roleId: targetRoleId,
-      loopIteration: nextLoopIteration
+      loopIteration: nextLoopIteration,
+      branchSequence: nextBranchSequence,
+      lineageId: args.currentBranch.lineageId,
+      parentBranchId: args.currentBranch.branchId,
+      activatedByRoleId: args.roleId,
+      activatedByEvent: flow?.eventType ?? args.selectedEvent
     });
+    nextBranchSequence += 1;
     branchUpdates[branch.branchId] = branch;
     args.logger.transition({
       fromRoleId: args.roleId,
       event: flow?.eventType ?? args.selectedEvent,
       toRoleId: targetRoleId,
-      branchId: args.branchId
+      branchId: args.currentBranch.branchId
     });
+  }
+
+  if (reachedSystemOutput && finalStatus !== "failed") {
+    const hasOtherActiveBranches = Object.values(args.state.branchRecords).some(
+      (branch) => branch.status === "active" && branch.branchId !== args.currentBranch.branchId
+    );
+    const hasActivatedBranches = Object.values(branchUpdates).some(
+      (branch) => branch.status === "active"
+    );
+    if (!hasOtherActiveBranches && !hasActivatedBranches) {
+      finalStatus = "done";
+      finalOutput = terminalOutput;
+      finalRoleId = args.roleId;
+    }
   }
 
   return {
@@ -384,13 +542,16 @@ function buildSuccessUpdate(args: {
     errorEnvelope: finalErrorEnvelope,
     transitionCount: 1,
     auditTrail: [args.audit],
-    roleResults: storeRoleResult(args.roleId, args.storedResult),
+    roleResults: storeRoleResult(args.currentBranch.branchId, args.storedResult),
     branchRecords: branchUpdates,
     loopIterations: loopUpdates,
-    selectedEventByRoleId: args.selectedEvent ? { [args.roleId]: args.selectedEvent } : {},
+    selectedEventByBranchId: args.selectedEvent
+      ? { [args.currentBranch.branchId]: args.selectedEvent }
+      : {},
     finalOutput,
     finalRoleId,
-    lastExecutedRoleId: args.roleId
+    lastExecutedRoleId: args.roleId,
+    nextBranchSequence
   };
 }
 
@@ -413,53 +574,83 @@ export async function runSystemWithGraphRunner(args: RunnerInput): Promise<Adapt
     string
   >;
 
+  graphBuilder.addNode(SCHEDULER_NODE_ID, async () => ({}));
+
   for (const roleId of args.plan.roleIds) {
     const node = getExecutionPlanNode(args.plan, roleId);
     graphBuilder.addNode(roleId, async (state: GraphState) => {
-      const result = await executeRoleNode({
-        roleId,
-        node,
-        plan: args.plan,
-        state,
-        effectiveLaw: args.effectiveLaw,
-        profilesById: args.profilesById,
-        toolsByRef: args.toolsByRef,
-        modelsById: args.modelsById,
-        rolePackagesByRoleId: args.rolePackagesByRoleId,
-        runContext: args.runContext,
-        executor: args.executor,
-        userProfile: args.userProfile,
-        workdir: args.workdir,
-        logger
-      });
-
-      if (result.status === "failed") {
-        return buildFailureUpdate({
-          roleId,
-          branchId: result.branchId,
-          loopIteration: result.loopIteration,
-          error: result.error,
-          errorEnvelope: result.failure,
-          audit: result.audit
-        });
+      const activeBranches = listActiveBranches(state, roleId);
+      if (activeBranches.length === 0) {
+        return {};
       }
 
-      return buildSuccessUpdate({
-        state,
-        plan: args.plan,
-        roleId,
-        branchId: result.branchId,
-        loopIteration: result.loopIteration,
-        audit: result.audit,
-        selectedEvent: result.selectedEvent,
-        storedResult: result.storedResult,
-        mode: result.status,
-        logger
-      });
+      let workingState = state;
+      let combinedUpdate: GraphUpdate = {};
+
+      for (const branch of activeBranches) {
+        const result = await executeRoleNode({
+          roleId,
+          node,
+          plan: args.plan,
+          state: workingState,
+          branch,
+          effectiveLaw: args.effectiveLaw,
+          profilesById: args.profilesById,
+          toolsByRef: args.toolsByRef,
+          modelsById: args.modelsById,
+          rolePackagesByRoleId: args.rolePackagesByRoleId,
+          runContext: args.runContext,
+          executor: args.executor,
+          userProfile: args.userProfile,
+          workdir: args.workdir,
+          logger
+        });
+
+        const branchUpdate =
+          result.status === "failed"
+            ? buildFailureUpdate({
+                roleId,
+                branch,
+                error: result.error,
+                errorEnvelope: result.failure,
+                audit: result.audit
+              })
+            : buildSuccessUpdate({
+                state: workingState,
+                plan: args.plan,
+                roleId,
+                currentBranch: branch,
+                audit: result.audit,
+                selectedEvent: result.selectedEvent,
+                storedResult: result.storedResult,
+                mode: result.status,
+                logger
+              });
+
+        const checkpoint = await persistRuntimeCheckpoint({
+          context: args.runContext,
+          roleId,
+          branchId: branch.branchId,
+          loopIteration: branch.loopIteration,
+          executionId: result.executionId,
+          update: branchUpdate
+        });
+
+        workingState = applyGraphUpdate(workingState, checkpoint.update);
+        combinedUpdate = mergeGraphUpdates(combinedUpdate, checkpoint.update);
+
+        if (workingState.status !== "running") {
+          break;
+        }
+      }
+
+      return combinedUpdate;
     });
+    graphBuilder.addEdge(roleId, SCHEDULER_NODE_ID);
   }
 
-  graphBuilder.addConditionalEdges(START, (state: GraphState) => {
+  graphBuilder.addEdge(START, SCHEDULER_NODE_ID);
+  graphBuilder.addConditionalEdges(SCHEDULER_NODE_ID, (state: GraphState) => {
     if (state.status !== "running") {
       return END;
     }
@@ -467,59 +658,17 @@ export async function runSystemWithGraphRunner(args: RunnerInput): Promise<Adapt
     if (activeRoles.length === 0) {
       return END;
     }
-    return activeRoles;
+    return activeRoles[0];
   });
-
-  for (const roleId of args.plan.roleIds) {
-    const node = getExecutionPlanNode(args.plan, roleId);
-    if (node.joinSources.length > 0) {
-      graphBuilder.addEdge(node.joinSources, roleId);
-    }
-
-    if (node.routingMode === "parallel_split") {
-      for (const flow of node.outgoing) {
-        if (flow.toRoleId === SYSTEM_END_ROLE_ID) {
-          graphBuilder.addEdge(roleId, END);
-          continue;
-        }
-        if (getExecutionPlanNode(args.plan, flow.toRoleId).joinMode === "all_of") {
-          continue;
-        }
-        graphBuilder.addEdge(roleId, flow.toRoleId);
-      }
-      continue;
-    }
-
-    if (node.outgoing.length === 0) {
-      graphBuilder.addEdge(roleId, END);
-      continue;
-    }
-
-    if (node.outgoing.length === 1) {
-      const onlyFlow = node.outgoing[0];
-      if (onlyFlow.toRoleId === SYSTEM_END_ROLE_ID) {
-        graphBuilder.addEdge(roleId, END);
-      } else if (getExecutionPlanNode(args.plan, onlyFlow.toRoleId).joinMode !== "all_of") {
-        graphBuilder.addEdge(roleId, onlyFlow.toRoleId);
-      }
-      continue;
-    }
-
-    graphBuilder.addConditionalEdges(roleId, (state: GraphState) => {
-      if (state.status !== "running") {
-        return END;
-      }
-      const selectedEvent = state.selectedEventByRoleId[roleId];
-      const selectedFlow = node.outgoing.find((flow) => flow.eventType === selectedEvent);
-      if (!selectedFlow || selectedFlow.toRoleId === SYSTEM_END_ROLE_ID) {
-        return END;
-      }
-      return selectedFlow.toRoleId;
-    });
-  }
 
   const graph = graphBuilder.compile();
   let finalState = args.initialState ?? createInitialGraphState({ plan: args.plan, prompt: args.prompt });
+  if (args.initialState) {
+    finalState = await replayPendingRuntimeCheckpoints({
+      state: finalState,
+      runContext: args.runContext
+    });
+  }
   logger.runStart({
     runId: args.runContext.runId,
     systemId: args.plan.systemId,

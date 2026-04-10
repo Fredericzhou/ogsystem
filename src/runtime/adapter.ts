@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { resolve } from "node:path";
 
 import {
@@ -15,7 +16,13 @@ import { loadModelPackage } from "./model-repo.js";
 import { loadSystemFromMermaid } from "./parse-mermaid.js";
 import { loadRolePackage } from "./role-repo.js";
 import { createRuntimeError, normalizeRuntimeError } from "./runtime-errors.js";
-import { initializeRunContext, loadResumeGraphState, pathExists } from "./run-artifacts.js";
+import {
+  initializeRunContext,
+  loadResumeGraphState,
+  pathExists,
+  persistRunPlanFingerprint,
+  validateResumePlanFingerprint
+} from "./run-artifacts.js";
 import type {
   AdapterRunResult,
   CliTool,
@@ -30,6 +37,7 @@ import type {
   SystemDefinition,
   UserProfile
 } from "./types.js";
+import type { RunPlanFingerprint } from "./run-artifacts.js";
 
 function mergeLawConstraints(base: EffectiveLawConstraints, spec?: LawSpec): EffectiveLawConstraints {
   if (!spec?.constraints) {
@@ -187,6 +195,60 @@ async function loadModelPackages(args: {
   return modelsById;
 }
 
+function sortedRecordEntries(record: Record<string, string>): Array<[string, string]> {
+  return Object.entries(record).sort(([left], [right]) => left.localeCompare(right));
+}
+
+function sortedRoleIds(values: string[]): string[] {
+  return [...values].sort((left, right) => left.localeCompare(right));
+}
+
+export function buildRunPlanFingerprint(system: SystemDefinition): RunPlanFingerprint {
+  const payload = {
+    systemId: system.systemId,
+    systemVersion: system.systemVersion,
+    entryRoleId: system.entryRoleId,
+    roleIds: sortedRoleIds(system.roleIds),
+    flows: [...system.flows]
+      .map((flow) => ({
+        fromRoleId: flow.fromRoleId,
+        toRoleId: flow.toRoleId,
+        eventType: flow.eventType
+      }))
+      .sort((left, right) => {
+        if (left.fromRoleId !== right.fromRoleId) {
+          return left.fromRoleId.localeCompare(right.fromRoleId);
+        }
+        if (left.eventType !== right.eventType) {
+          return left.eventType.localeCompare(right.eventType);
+        }
+        return left.toRoleId.localeCompare(right.toRoleId);
+      }),
+    lawRef: system.lawBinding.globalLawRef,
+    talentBinding: sortedRecordEntries(system.talentBinding),
+    executionBinding: sortedRecordEntries(system.executionBinding),
+    modelBinding: sortedRecordEntries(system.modelBinding),
+    graph: {
+      routingModeByRoleId: sortedRecordEntries(system.graph?.routingModeByRoleId ?? {}),
+      joinModeByRoleId: sortedRecordEntries(system.graph?.joinModeByRoleId ?? {}),
+      joinSourcesByRoleId: Object.entries(system.graph?.joinSourcesByRoleId ?? {})
+        .map(([roleId, sources]) => [roleId, sortedRoleIds(sources)] as [string, string[]])
+        .sort(([left], [right]) => left.localeCompare(right)),
+      loopMaxByRoleId: Object.entries(system.graph?.loopMaxByRoleId ?? {})
+        .map(([roleId, max]) => [roleId, max] as [string, number])
+        .sort(([left], [right]) => left.localeCompare(right))
+    }
+  };
+
+  const digest = createHash("sha256").update(JSON.stringify(payload)).digest("hex");
+  return {
+    version: 1,
+    algorithm: "sha256",
+    digest,
+    payload
+  };
+}
+
 export async function runSystemWithAdapter(args: {
   systemPath: string;
   profilesPath?: string;
@@ -211,10 +273,12 @@ export async function runSystemWithAdapter(args: {
         userProfile?: UserProfile;
         rolePackagesByRoleId: Map<string, LoadedRolePackage>;
         runContext: Awaited<ReturnType<typeof initializeRunContext>>;
+        planFingerprint: RunPlanFingerprint;
       }
     | undefined;
   try {
     const system = await loadSystemFromMermaid(args.systemPath);
+    const planFingerprint = buildRunPlanFingerprint(system);
     const plan = createExecutionPlan(system);
     const runtimeConfig = await loadRuntimeConfig(args.runtimeConfigPath, args.workdir);
     const profiles = await loadProfiles(args.profilesPath);
@@ -238,6 +302,12 @@ export async function runSystemWithAdapter(args: {
       runtimeConfig,
       resumeRunDir: args.resumeRunDir
     });
+    if (!args.resumeRunDir) {
+      await persistRunPlanFingerprint({
+        runDir: runContext.runDir,
+        fingerprint: planFingerprint
+      });
+    }
 
     const profilesById = new Map(profiles.map((item) => [item.profileId, item]));
     const toolsByRef = new Map(tools.map((item) => [item.toolRef, item]));
@@ -249,7 +319,8 @@ export async function runSystemWithAdapter(args: {
       modelsById,
       userProfile,
       rolePackagesByRoleId,
-      runContext
+      runContext,
+      planFingerprint
     };
   } catch (error) {
     throw createRuntimeError(
@@ -287,6 +358,10 @@ export async function runSystemWithAdapter(args: {
     let initialState: GraphState | undefined;
     if (args.resumeRunDir) {
       try {
+        await validateResumePlanFingerprint({
+          runDir: setup.runContext.runDir,
+          expectedFingerprint: setup.planFingerprint
+        });
         initialState = await loadResumeGraphState({ runDir: setup.runContext.runDir });
       } catch (error) {
         throw createRuntimeError(

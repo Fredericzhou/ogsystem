@@ -6,6 +6,8 @@
   "scripts": {
     "build": "tsc -p tsconfig.json",
     "test": "npm run build && node --test tests",
+    "test:runtime-regression": "npm run build && node --test tests/graph-runtime.integration.test.mjs tests/resume-session.test.mjs tests/session-recovery.test.mjs tests/runtime-fault-injection.test.mjs",
+    "test:fault-injection": "npm run build && node --test tests/opencode-executor.test.mjs tests/resume-session.test.mjs tests/runtime-fault-injection.test.mjs",
     "test:examples": "npm run run:adapter -- --system examples/target-model-binding-system.mmd --prompt \"ci example\" --dry-run && npm run run:adapter -- --system examples/langgraph-debate-current/system.mmd --laws examples/langgraph-debate-current/laws.json --user-profile examples/langgraph-debate-current/user-profile.json --prompt \"ci graph example\" --dry-run",
     "test:doctor": "npm run run:doctor -- --system examples/target-model-binding-system.mmd --laws .ogsystem/laws.json",
     "run:adapter": "tsx src/runtime/cli.ts",

@@ -4,7 +4,7 @@ import type { CliTool } from "./types.js";
 
 export class ToolExecutionError extends Error {
   constructor(
-    public readonly category: "spawn" | "timeout" | "output_limit",
+    public readonly category: "spawn" | "timeout" | "output_limit" | "exit_code",
     message: string
   ) {
     super(message);
@@ -134,7 +134,20 @@ export async function runCliTool(args: {
     });
 
     child.on("close", (code) => {
-      resolveOnce(code ?? 1);
+      const exitCode = code ?? 1;
+      if (exitCode !== 0) {
+        const stderrText = stderr.trim();
+        rejectOnce(
+          new ToolExecutionError(
+            "exit_code",
+            stderrText
+              ? `Command exited with code ${exitCode}: ${stderrText}`
+              : `Command exited with code ${exitCode}`
+          )
+        );
+        return;
+      }
+      resolveOnce(exitCode);
     });
   });
 }

@@ -2,7 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import path from "node:path";
 import os from "node:os";
-import { lstat, mkdtemp, mkdir, readFile, readdir, symlink } from "node:fs/promises";
+import { lstat, mkdtemp, mkdir, readFile, readdir, symlink, writeFile } from "node:fs/promises";
 
 import { runSystemWithAdapter } from "../dist/runtime/adapter.js";
 
@@ -44,12 +44,16 @@ test("adapter runs graph debate example with parallel branches, join, and bounde
 
   const runDir = path.resolve(runsDir, runs[0]);
   const stateJson = JSON.parse(await readFile(path.resolve(runDir, "state.json"), "utf8"));
+  const metricsJson = JSON.parse(await readFile(path.resolve(runDir, "metrics.json"), "utf8"));
   assert.strictEqual(stateJson.finalRoleId, "debate-summary");
   assert.ok(Array.isArray(stateJson.completedBranches));
   assert.deepStrictEqual(stateJson.loopIterations["debate-moderator"], 2);
+  assert.strictEqual(metricsJson.systemId, "architecture.debate.current");
+  assert.strictEqual(metricsJson.roleMetrics["debate-moderator"].total, 2);
+  assert.strictEqual(metricsJson.summary.totalTransitions, 9);
 
   const eventsText = await readFile(path.resolve(runDir, "events.ndjson"), "utf8");
-  assert.match(eventsText, /"branchId":"debate-minimalist@1"/);
+  assert.match(eventsText, /"branchId":"debate-minimalist@1#\d+"/);
   assert.match(eventsText, /"joinId":"debate-judge@2"/);
 
   assert.ok((await lstat(path.resolve(runDir, "shared"))).isDirectory());
@@ -168,6 +172,74 @@ test("adapter runs expert consultation example with parallel specialists and fin
     path.resolve(runDir, "roles", "diagnosis-chief-review", "executions")
   );
   assert.strictEqual(chiefExecutions.length, 1);
+});
+
+test("adapter executes non-join multi-incoming role once per active branch", async () => {
+  const repoRoot = process.cwd();
+  const tempRoot = await mkdtemp(path.join(os.tmpdir(), "ogsystem-multi-branch-role-"));
+  const systemPath = path.resolve(tempRoot, "system.mmd");
+
+  await mkdir(path.resolve(tempRoot, ".ogsystem"), { recursive: true });
+  await symlink(path.resolve(repoRoot, "og-roles"), path.resolve(tempRoot, "og-roles"), "dir");
+  await symlink(path.resolve(repoRoot, "og-models"), path.resolve(tempRoot, "og-models"), "dir");
+  await symlink(
+    path.resolve(repoRoot, ".ogsystem", "runtime.json"),
+    path.resolve(tempRoot, ".ogsystem", "runtime.json")
+  );
+  await symlink(
+    path.resolve(repoRoot, ".ogsystem", "user-profile.json"),
+    path.resolve(tempRoot, ".ogsystem", "user-profile.json")
+  );
+
+  await writeFile(
+    systemPath,
+    `flowchart TD
+%% system.id=test.multi-branch-role
+%% system.version=1.0.0
+%% law.global=law.console.base
+%% entry.role=debate-moderator
+%% role.mode.debate-moderator=parallel_split
+%% model.bind.debate-moderator=fast-gpt54
+%% model.bind.test-branch-a=balanced-gpt52
+%% model.bind.test-branch-b=balanced-gpt52
+%% model.bind.test-decision=deep-o3
+
+input -->|START| moderator[Role:debate-moderator]
+moderator[Role:debate-moderator] -->|TO_A| branchA[Role:test-branch-a]
+moderator[Role:debate-moderator] -->|TO_B| branchB[Role:test-branch-b]
+branchA[Role:test-branch-a] -->|END_A| decision[Role:test-decision]
+branchB[Role:test-branch-b] -->|END_B| decision[Role:test-decision]
+decision[Role:test-decision] -->|PATH_A| output
+decision[Role:test-decision] -->|PATH_B| output
+`,
+    "utf8"
+  );
+
+  const result = await runSystemWithAdapter({
+    systemPath,
+    lawsPath: path.resolve(repoRoot, ".ogsystem", "laws.json"),
+    userProfilePath: path.resolve(repoRoot, ".ogsystem", "user-profile.json"),
+    prompt: "parallel converge without join",
+    workdir: tempRoot,
+    dryRun: true
+  });
+
+  assert.strictEqual(result.status, "done");
+  assert.strictEqual(result.finalRoleId, "test-decision");
+  assert.strictEqual(
+    result.auditTrail.filter((item) => item.roleId === "test-decision").length,
+    2
+  );
+
+  const runDir = path.resolve(
+    tempRoot,
+    "ogsystem-history",
+    (await readdir(path.resolve(tempRoot, "ogsystem-history")))[0]
+  );
+  const decisionExecutions = await readdir(
+    path.resolve(runDir, "roles", "test-decision", "executions")
+  );
+  assert.strictEqual(decisionExecutions.length, 2);
 });
 
 test("adapter optionally cleans historical execution snapshots without touching resume sources", async () => {

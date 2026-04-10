@@ -7,6 +7,7 @@ import {
   rm,
   writeFile
 } from "node:fs/promises";
+import { randomUUID } from "node:crypto";
 import { basename, resolve } from "node:path";
 
 import { readJsonFile, writeTextFileAtomic } from "./json-file.js";
@@ -18,11 +19,35 @@ import type {
   RoleExecutionOutput,
   RoleExecutionRecord,
   RoleRunDirs,
+  RuntimeCheckpointRecord,
   RunContext,
   RuntimeConfig,
   SystemDefinition
 } from "./types.js";
 import { stringifyJson } from "./runtime-support.js";
+
+export const RUN_PLAN_FINGERPRINT_FILE = "plan-fingerprint.json";
+const BUFFER_RECOVERY_DIR = ".buffer-recovery";
+
+export type RunPlanFingerprint = {
+  version: number;
+  algorithm: "sha256";
+  digest: string;
+  payload: Record<string, unknown>;
+};
+
+type BufferedAppendBatch = {
+  key: string;
+  path: string;
+  content: string;
+};
+
+type BufferedAppendState = {
+  pendingByKey: Map<string, BufferedAppendBatch>;
+  flushPromise?: Promise<void>;
+};
+
+const bufferedAppendStateByRunDir = new Map<string, BufferedAppendState>();
 
 function slugify(value: string): string {
   const normalized = value
@@ -92,6 +117,77 @@ export async function writeAtomicFile(path: string, content: string): Promise<vo
   await writeTextFileAtomic(path, content);
 }
 
+function getBufferedAppendState(runDir: string): BufferedAppendState {
+  const existing = bufferedAppendStateByRunDir.get(runDir);
+  if (existing) {
+    return existing;
+  }
+  const created: BufferedAppendState = {
+    pendingByKey: new Map()
+  };
+  bufferedAppendStateByRunDir.set(runDir, created);
+  return created;
+}
+
+async function writeBufferedAppendRecovery(
+  runDir: string,
+  batch: BufferedAppendBatch
+): Promise<void> {
+  const recoveryDir = resolve(runDir, BUFFER_RECOVERY_DIR);
+  await mkdir(recoveryDir, { recursive: true });
+  await writeAtomicFile(
+    resolve(recoveryDir, `${Date.now()}-${randomUUID()}.json`),
+    stringifyJson(batch)
+  );
+}
+
+async function replayBufferedAppendRecovery(runDir: string): Promise<void> {
+  const recoveryDir = resolve(runDir, BUFFER_RECOVERY_DIR);
+  if (!(await directoryExists(recoveryDir))) {
+    return;
+  }
+
+  const entries = await readdir(recoveryDir, { withFileTypes: true });
+  const files = entries
+    .filter((entry) => entry.isFile())
+    .map((entry) => entry.name)
+    .sort((left, right) => left.localeCompare(right));
+
+  for (const file of files) {
+    const recoveryPath = resolve(recoveryDir, file);
+    const payload = await readJsonFile(recoveryPath);
+    if (
+      typeof payload !== "object" ||
+      payload === null ||
+      Array.isArray(payload) ||
+      typeof (payload as BufferedAppendBatch).path !== "string" ||
+      typeof (payload as BufferedAppendBatch).content !== "string"
+    ) {
+      await rm(recoveryPath, { force: true });
+      continue;
+    }
+
+    const batch = payload as BufferedAppendBatch;
+    await appendFile(batch.path, batch.content, "utf8");
+    await rm(recoveryPath, { force: true });
+  }
+}
+
+function isFingerprintRecord(value: unknown): value is RunPlanFingerprint {
+  if (typeof value !== "object" || value === null || Array.isArray(value)) {
+    return false;
+  }
+  const record = value as Record<string, unknown>;
+  return (
+    typeof record.version === "number" &&
+    record.algorithm === "sha256" &&
+    typeof record.digest === "string" &&
+    typeof record.payload === "object" &&
+    record.payload !== null &&
+    !Array.isArray(record.payload)
+  );
+}
+
 async function restoreRoleExecutionCount(executionsDir: string): Promise<number> {
   if (!(await directoryExists(executionsDir))) {
     return 0;
@@ -109,8 +205,31 @@ async function restoreRoleExecutionCount(executionsDir: string): Promise<number>
   }, 0);
 }
 
+async function restoreCheckpointSequence(checkpointsDir: string): Promise<number> {
+  if (!(await directoryExists(checkpointsDir))) {
+    return 1;
+  }
+  const entries = await readdir(checkpointsDir, { withFileTypes: true });
+  return (
+    entries.reduce((max, entry) => {
+      if (!entry.isFile()) {
+        return max;
+      }
+      const value = Number.parseInt(entry.name.slice(0, 6), 10);
+      if (!Number.isFinite(value)) {
+        return max;
+      }
+      return Math.max(max, value + 1);
+    }, 1) || 1
+  );
+}
+
 function buildExecutionId(executionIndex: number, startedAt: string): string {
   return `${String(executionIndex).padStart(4, "0")}-${startedAt.replace(/[:.]/g, "-")}`;
+}
+
+function buildCheckpointFileName(sequence: number, executionId: string): string {
+  return `${String(sequence).padStart(6, "0")}-${executionId}.json`;
 }
 
 async function persistSessionSnapshot(context: RunContext): Promise<void> {
@@ -156,6 +275,7 @@ export async function initializeRunContext(args: {
       );
   const runId = basename(runDir);
   const auditDir = resolve(runDir, "audit");
+  const checkpointsDir = resolve(runDir, "checkpoints");
   const rolesRootDir = resolve(runDir, args.runtimeConfig.workspace.rolesDir);
   const sharedDir = resolveSharedDir({
     runDir,
@@ -166,6 +286,7 @@ export async function initializeRunContext(args: {
   const roleExecutionCounts = new Map<string, number>();
 
   await mkdir(auditDir, { recursive: true });
+  await mkdir(checkpointsDir, { recursive: true });
   await mkdir(rolesRootDir, { recursive: true });
   await mkdir(sharedDir, { recursive: true });
 
@@ -235,17 +356,23 @@ export async function initializeRunContext(args: {
     }
   }
 
+  await replayBufferedAppendRecovery(runDir);
+  getBufferedAppendState(runDir);
+
   return {
     runId,
     runDir,
     auditDir,
     eventsPath: resolve(runDir, "events.ndjson"),
     statePath: resolve(runDir, "state.json"),
+    metricsPath: resolve(runDir, "metrics.json"),
     opencodeServerPath: resolve(runDir, "opencode-server.json"),
     sessionsPath,
+    checkpointsDir,
     roleDirsById,
     roleExecutionCounts,
     sessionRecordsByRoleId,
+    nextCheckpointSequence: await restoreCheckpointSequence(checkpointsDir),
     sharedDir
   };
 }
@@ -337,12 +464,14 @@ export async function loadResumeGraphState(args: {
     typeof graphState.loopIterations !== "object" ||
     graphState.loopIterations === null ||
     Array.isArray(graphState.loopIterations) ||
-    typeof graphState.selectedEventByRoleId !== "object" ||
-    graphState.selectedEventByRoleId === null ||
-    Array.isArray(graphState.selectedEventByRoleId) ||
+    typeof graphState.selectedEventByBranchId !== "object" ||
+    graphState.selectedEventByBranchId === null ||
+    Array.isArray(graphState.selectedEventByBranchId) ||
     typeof graphState.finalOutput !== "string" ||
     typeof graphState.finalRoleId !== "string" ||
-    typeof graphState.lastExecutedRoleId !== "string"
+    typeof graphState.lastExecutedRoleId !== "string" ||
+    typeof graphState.nextBranchSequence !== "number" ||
+    typeof graphState.lastCheckpointSequence !== "number"
   ) {
     throw createRuntimeError({
       errorCode: "RESUME_STATE_INVALID",
@@ -411,7 +540,9 @@ export async function loadResumeGraphState(args: {
     seenRoleIds.add(roleId);
 
     const hasAuditTrailEntry = graphState.auditTrail.some((entry) => entry.roleId === roleId);
-    const hasRoleResult = Boolean(graphState.roleResults?.[roleId]);
+    const hasRoleResult = Object.values(graphState.roleResults).some(
+      (result) => result.roleId === roleId
+    );
     const hasBranchRecord = Object.values(graphState.branchRecords).some(
       (branch) => branch.roleId === roleId
     );
@@ -430,6 +561,152 @@ export async function loadResumeGraphState(args: {
   }
 
   return graphState;
+}
+
+export async function persistRunPlanFingerprint(args: {
+  runDir: string;
+  fingerprint: RunPlanFingerprint;
+}): Promise<void> {
+  const fingerprintPath = resolve(args.runDir, RUN_PLAN_FINGERPRINT_FILE);
+  await writeAtomicFile(fingerprintPath, stringifyJson(args.fingerprint));
+}
+
+export async function validateResumePlanFingerprint(args: {
+  runDir: string;
+  expectedFingerprint: RunPlanFingerprint;
+}): Promise<void> {
+  const fingerprintPath = resolve(args.runDir, RUN_PLAN_FINGERPRINT_FILE);
+  const runId = basename(args.runDir);
+
+  if (!(await pathExists(fingerprintPath))) {
+    throw createRuntimeError({
+      errorCode: "RESUME_PLAN_FINGERPRINT_MISSING",
+      errorCategory: "state",
+      message: `Missing resume plan fingerprint: ${fingerprintPath}`,
+      retryable: false,
+      stage: "resume",
+      runId
+    });
+  }
+
+  let stored: unknown;
+  try {
+    stored = await readJsonFile(fingerprintPath);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    throw createRuntimeError({
+      errorCode: "RESUME_PLAN_FINGERPRINT_INVALID",
+      errorCategory: "state",
+      message: `Resume plan fingerprint is unreadable: ${fingerprintPath} (${message})`,
+      retryable: false,
+      stage: "resume",
+      runId
+    });
+  }
+
+  if (!isFingerprintRecord(stored)) {
+    throw createRuntimeError({
+      errorCode: "RESUME_PLAN_FINGERPRINT_INVALID",
+      errorCategory: "state",
+      message: `Resume plan fingerprint is invalid: ${fingerprintPath}`,
+      retryable: false,
+      stage: "resume",
+      runId
+    });
+  }
+
+  if (
+    stored.version !== args.expectedFingerprint.version ||
+    stored.algorithm !== args.expectedFingerprint.algorithm ||
+    stored.digest !== args.expectedFingerprint.digest
+  ) {
+    throw createRuntimeError({
+      errorCode: "RESUME_PLAN_FINGERPRINT_MISMATCH",
+      errorCategory: "state",
+      message: `Resume plan fingerprint mismatch: expected ${args.expectedFingerprint.digest} but found ${stored.digest}`,
+      retryable: false,
+      stage: "resume",
+      runId
+    });
+  }
+}
+
+export async function persistRuntimeCheckpoint(args: {
+  context: RunContext;
+  roleId: string;
+  branchId: string;
+  loopIteration: number;
+  executionId: string;
+  update: RuntimeCheckpointRecord["update"];
+}): Promise<RuntimeCheckpointRecord> {
+  const checkpointSequence = args.context.nextCheckpointSequence;
+  args.context.nextCheckpointSequence += 1;
+  const checkpoint: RuntimeCheckpointRecord = {
+    checkpointSequence,
+    roleId: args.roleId,
+    branchId: args.branchId,
+    loopIteration: args.loopIteration,
+    executionId: args.executionId,
+    update: {
+      ...args.update,
+      lastCheckpointSequence: checkpointSequence
+    }
+  };
+
+  await writeAtomicFile(
+    resolve(
+      args.context.checkpointsDir,
+      buildCheckpointFileName(checkpointSequence, args.executionId)
+    ),
+    stringifyJson(checkpoint)
+  );
+  return checkpoint;
+}
+
+export async function loadPendingRuntimeCheckpoints(args: {
+  context: RunContext;
+  afterSequence: number;
+}): Promise<RuntimeCheckpointRecord[]> {
+  if (!(await directoryExists(args.context.checkpointsDir))) {
+    return [];
+  }
+
+  const entries = await readdir(args.context.checkpointsDir, { withFileTypes: true });
+  const files = entries
+    .filter((entry) => entry.isFile())
+    .map((entry) => entry.name)
+    .sort((left, right) => left.localeCompare(right));
+  const checkpoints: RuntimeCheckpointRecord[] = [];
+
+  for (const file of files) {
+    const sequence = Number.parseInt(file.slice(0, 6), 10);
+    if (!Number.isFinite(sequence) || sequence <= args.afterSequence) {
+      continue;
+    }
+
+    const raw = await readJsonFile(resolve(args.context.checkpointsDir, file));
+    if (
+      typeof raw !== "object" ||
+      raw === null ||
+      Array.isArray(raw) ||
+      typeof (raw as RuntimeCheckpointRecord).checkpointSequence !== "number" ||
+      typeof (raw as RuntimeCheckpointRecord).roleId !== "string" ||
+      typeof (raw as RuntimeCheckpointRecord).branchId !== "string" ||
+      typeof (raw as RuntimeCheckpointRecord).loopIteration !== "number" ||
+      typeof (raw as RuntimeCheckpointRecord).executionId !== "string" ||
+      typeof (raw as RuntimeCheckpointRecord).update !== "object" ||
+      (raw as RuntimeCheckpointRecord).update === null ||
+      Array.isArray((raw as RuntimeCheckpointRecord).update)
+    ) {
+      throw new Error(`Invalid runtime checkpoint: ${resolve(args.context.checkpointsDir, file)}`);
+    }
+
+    checkpoints.push(raw as RuntimeCheckpointRecord);
+  }
+
+  return checkpoints.sort(
+    (left, right) => left.checkpointSequence - right.checkpointSequence
+  );
 }
 
 export async function cleanupHistoricalExecutionSnapshots(args: {
@@ -623,5 +900,55 @@ export async function appendEvent(
   context: RunContext,
   payload: Record<string, unknown>
 ): Promise<void> {
-  await appendFile(context.eventsPath, `${JSON.stringify(payload)}\n`, "utf8");
+  const state = getBufferedAppendState(context.runDir);
+  state.pendingByKey.set("events", {
+    key: "events",
+    path: context.eventsPath,
+    content: `${state.pendingByKey.get("events")?.content ?? ""}${JSON.stringify(payload)}\n`
+  });
+}
+
+export async function appendBufferedText(args: {
+  context: RunContext;
+  key: string;
+  path: string;
+  content: string;
+}): Promise<void> {
+  const state = getBufferedAppendState(args.context.runDir);
+  state.pendingByKey.set(args.key, {
+    key: args.key,
+    path: args.path,
+    content: `${state.pendingByKey.get(args.key)?.content ?? ""}${args.content}`
+  });
+}
+
+export async function flushBufferedRunArtifacts(context: RunContext): Promise<void> {
+  const state = getBufferedAppendState(context.runDir);
+  const runFlush = async (): Promise<void> => {
+    if (state.pendingByKey.size === 0) {
+      return;
+    }
+
+    const batches = Array.from(state.pendingByKey.values());
+    state.pendingByKey.clear();
+
+    for (const batch of batches) {
+      try {
+        await appendFile(batch.path, batch.content, "utf8");
+      } catch (error) {
+        await writeBufferedAppendRecovery(context.runDir, batch);
+        throw error;
+      }
+    }
+  };
+
+  state.flushPromise = (state.flushPromise ?? Promise.resolve())
+    .then(runFlush)
+    .finally(() => {
+      if (state.flushPromise) {
+        state.flushPromise = undefined;
+      }
+    });
+
+  await state.flushPromise;
 }

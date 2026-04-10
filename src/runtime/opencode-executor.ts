@@ -322,26 +322,48 @@ function enforceOutputLimit(stdout: string, stderr: string, maxOutputBytes: numb
   }
 }
 
+function createTimeoutError(timeoutMs: number): ToolExecutionError {
+  return new ToolExecutionError("timeout", `Command timeout after ${timeoutMs}ms`);
+}
+
+function isTimeoutError(error: unknown): error is ToolExecutionError {
+  return error instanceof ToolExecutionError && error.category === "timeout";
+}
+
+function throwIfCancelled(signal: AbortSignal, timeoutMs: number): void {
+  if (!signal.aborted) {
+    return;
+  }
+  const reason = signal.reason;
+  if (reason instanceof Error) {
+    throw reason;
+  }
+  throw createTimeoutError(timeoutMs);
+}
+
 function withTimeout<T>(
-  promise: Promise<T>,
+  operation: (signal: AbortSignal) => Promise<T>,
   timeoutMs: number,
-  onTimeout: () => void | Promise<void>
+  onTimeout: (signal: AbortSignal) => void | Promise<void>
 ): Promise<T> {
   return new Promise((resolve, reject) => {
     let settled = false;
+    const controller = new AbortController();
     const timer = setTimeout(() => {
-      Promise.resolve(onTimeout())
+      const timeoutError = createTimeoutError(timeoutMs);
+      controller.abort(timeoutError);
+      Promise.resolve(onTimeout(controller.signal))
         .catch(() => undefined)
         .finally(() => {
           if (settled) {
             return;
           }
           settled = true;
-          reject(new ToolExecutionError("timeout", `Command timeout after ${timeoutMs}ms`));
+          reject(timeoutError);
         });
     }, timeoutMs);
 
-    promise.then(
+    operation(controller.signal).then(
       (value) => {
         if (settled) {
           return;
@@ -558,11 +580,36 @@ export async function executeOpencodeModelRole(
   }
   let sessionId = args.sessionId ?? "";
   let messageId: string | undefined;
+  let timeoutCleanupSessionId: string | undefined;
 
   try {
     return await withTimeout(
-      (async () => {
+      async (signal) => {
+        const abortTimedOutSession = async (): Promise<void> => {
+          if (!sessionId || timeoutCleanupSessionId === sessionId) {
+            return;
+          }
+          timeoutCleanupSessionId = sessionId;
+          try {
+            await runClient.client.session.abort({
+              sessionID: sessionId,
+              directory: args.workdir
+            });
+          } catch {
+            // Ignore timeout cleanup failures; the timeout error is the primary signal.
+          }
+        };
+
+        const ensureNotCancelled = async (): Promise<void> => {
+          if (!signal.aborted) {
+            return;
+          }
+          await abortTimedOutSession();
+          throwIfCancelled(signal, args.timeoutMs);
+        };
+
         for (let attempt = 1; attempt <= MAX_OPENCODE_ATTEMPTS; attempt += 1) {
+          await ensureNotCancelled();
           sessionId = args.sessionId ?? sessionId;
           messageId = undefined;
           let stderr = "";
@@ -577,8 +624,10 @@ export async function executeOpencodeModelRole(
               if (!sessionId) {
                 throw new Error("OpenCode SDK did not return a session id");
               }
+              await ensureNotCancelled();
             }
 
+            await ensureNotCancelled();
             const response = await runClient.client.session.prompt({
               sessionID: sessionId,
               directory: args.workdir,
@@ -598,6 +647,7 @@ export async function executeOpencodeModelRole(
                 }
               ]
             });
+            await ensureNotCancelled();
 
             const info = response.data?.info;
             messageId = response.data?.id;
@@ -652,6 +702,7 @@ export async function executeOpencodeModelRole(
                   }
                 ]
               });
+              await ensureNotCancelled();
 
               const correctionInfo = correctionResponse.data?.info;
               messageId = correctionResponse.data?.id;
@@ -702,6 +753,10 @@ export async function executeOpencodeModelRole(
               serverPid: runClient.pid
             };
           } catch (error) {
+            if (isTimeoutError(error)) {
+              throw error;
+            }
+
             const wrappedError = wrapExecutionError({
               error,
               stderr,
@@ -740,16 +795,21 @@ export async function executeOpencodeModelRole(
         }
 
         throw new Error("OpenCode execution attempts exhausted");
-      })(),
+      },
       args.timeoutMs,
       async () => {
-        if (!sessionId) {
+        if (!sessionId || timeoutCleanupSessionId === sessionId) {
           return;
         }
-        await runClient.client.session.abort({
-          sessionID: sessionId,
-          directory: args.workdir
-        });
+        timeoutCleanupSessionId = sessionId;
+        try {
+          await runClient.client.session.abort({
+            sessionID: sessionId,
+            directory: args.workdir
+          });
+        } catch {
+          // Ignore timeout cleanup failures; the timeout error is the primary signal.
+        }
       }
     );
   } catch (error) {

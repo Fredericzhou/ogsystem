@@ -1,7 +1,7 @@
 import { writeFile } from "node:fs/promises";
 
 import { executeOpencodeModelRole, startOpencodeRunClient } from "./opencode-executor.js";
-import { appendEvent } from "./run-artifacts.js";
+import { appendEvent, flushBufferedRunArtifacts } from "./run-artifacts.js";
 import { stringifyJson } from "./runtime-support.js";
 import { runCliTool } from "./tool-runner.js";
 import type {
@@ -131,6 +131,7 @@ export function createDefaultExecutor(args: {
         pid: runClient.pid,
         lifecycle: "single-serve-multi-session"
       });
+      await flushBufferedRunArtifacts(args.runContext);
     },
 
     async execute(request) {
@@ -238,6 +239,7 @@ export function createDefaultExecutor(args: {
         pid: runClient.pid,
         lifecycle: "single-serve-multi-session"
       });
+      await flushBufferedRunArtifacts(args.runContext);
       runClient = undefined;
     }
   };

@@ -1,7 +1,7 @@
 import { appendFile } from "node:fs/promises";
 import { resolve } from "node:path";
 
-import { appendEvent } from "./run-artifacts.js";
+import { appendBufferedText, appendEvent } from "./run-artifacts.js";
 import { preview } from "./runtime-support.js";
 import type {
   AuditRecord,
@@ -70,9 +70,10 @@ export function createAuditRecord(args: AuditRecordInput): AuditRecord {
 
 export async function appendAuditRecord(runContext: RunContext, audit: AuditRecord): Promise<void> {
   await appendEvent(runContext, { type: "audit", ...audit });
-  await appendFile(
-    resolve(runContext.auditDir, "transitions.md"),
-    `- ${audit.roleId}: ${audit.status}${audit.selectedEvent ? ` (${audit.selectedEvent})` : ""}\n`,
-    "utf8"
-  );
+  await appendBufferedText({
+    context: runContext,
+    key: "transitions",
+    path: resolve(runContext.auditDir, "transitions.md"),
+    content: `- ${audit.roleId}: ${audit.status}${audit.selectedEvent ? ` (${audit.selectedEvent})` : ""}\n`
+  });
 }

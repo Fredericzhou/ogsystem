@@ -456,6 +456,70 @@ test("executeOpencodeModelRole aborts only the timed out session", async () => {
   ]);
 });
 
+test("executeOpencodeModelRole aborts a session created after timeout", async () => {
+  const aborted = [];
+  let promptCalls = 0;
+
+  await assert.rejects(
+    executeOpencodeModelRole({
+      roleId: "role-timeout-create-race",
+      prompt: "hang on create",
+      schema: {
+        type: "object",
+        properties: {
+          content: { type: "string" }
+        }
+      },
+      modelPackage: makeModelPackage(),
+      workdir: "/tmp/run/roles/role-timeout-create-race",
+      timeoutMs: 10,
+      maxOutputBytes: 4096,
+      runClient: makeRunClient({
+        client: {
+          session: {
+            async create() {
+              await new Promise((resolve) => setTimeout(resolve, 50));
+              return {
+                data: {
+                  id: "ses_create_late"
+                }
+              };
+            },
+            async prompt() {
+              promptCalls += 1;
+              return {
+                data: {
+                  id: "msg_create_late",
+                  info: {
+                    structured: {
+                      content: "should-not-run"
+                    }
+                  },
+                  parts: []
+                }
+              };
+            },
+            async abort(args) {
+              aborted.push(args);
+              return true;
+            }
+          }
+        }
+      })
+    }),
+    /Command timeout/
+  );
+
+  await new Promise((resolve) => setTimeout(resolve, 80));
+  assert.strictEqual(promptCalls, 0);
+  assert.deepStrictEqual(aborted, [
+    {
+      sessionID: "ses_create_late",
+      directory: "/tmp/run/roles/role-timeout-create-race"
+    }
+  ]);
+});
+
 test("executeOpencodeModelRole retries transient prompt failures on the same session", async () => {
   const createdSessions = [];
   const promptedSessions = [];

@@ -1,10 +1,12 @@
 import type {
+  BranchRecord,
   ExecutionPlanNode,
   GraphJoinMode,
   GraphRoutingMode,
   GraphState,
   StoredRoleResult
 } from "./types.js";
+import { findRoleResult } from "./graph-runtime-state.js";
 
 type RoutingModeHandler = {
   selectTargets(args: {
@@ -17,8 +19,7 @@ type RoutingModeHandler = {
 type JoinModeHandler = {
   isReady(args: {
     node: ExecutionPlanNode;
-    currentRoleId: string;
-    loopIteration: number;
+    currentBranch: BranchRecord;
     state: GraphState;
     currentResult?: StoredRoleResult;
   }): boolean;
@@ -70,8 +71,7 @@ export function selectRoutingTargets(args: {
 
 export function isJoinNodeReady(args: {
   node: ExecutionPlanNode;
-  currentRoleId: string;
-  loopIteration: number;
+  currentBranch: BranchRecord;
   state: GraphState;
   currentResult?: StoredRoleResult;
 }): boolean {
@@ -102,14 +102,27 @@ registerRoutingModeHandler("parallel_split", {
 registerJoinModeHandler("all_of", {
   isReady(args) {
     for (const sourceRoleId of args.node.joinSources) {
-      if (sourceRoleId === args.currentRoleId) {
+      if (sourceRoleId === args.currentBranch.roleId) {
         continue;
       }
-      const result = args.state.roleResults[sourceRoleId];
-      if (!result || result.loopIteration !== args.loopIteration) {
+      const result = findRoleResult({
+        state: args.state,
+        roleId: sourceRoleId,
+        lineageId: args.currentBranch.lineageId,
+        loopIteration: args.currentBranch.loopIteration
+      });
+      if (!result) {
         return false;
       }
     }
-    return Boolean(args.currentResult || args.state.roleResults[args.currentRoleId]);
+    return Boolean(
+      args.currentResult ??
+        findRoleResult({
+          state: args.state,
+          roleId: args.currentBranch.roleId,
+          lineageId: args.currentBranch.lineageId,
+          loopIteration: args.currentBranch.loopIteration
+        })
+    );
   }
 });

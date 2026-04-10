@@ -4,9 +4,11 @@ import type { RunConsoleLogger } from "./console-run-log.js";
 import type { Executor, ExecutorBinding } from "./executor.js";
 import { getExecutionPlanNode } from "./execution-plan.js";
 import {
-  buildBranchId,
-  findCurrentBranch,
+  buildJoinId,
+  getBranchResult,
   getTargetLoopIteration,
+  listActiveBranches,
+  findRoleResult,
   wouldExceedLoopBudget
 } from "./graph-runtime-state.js";
 import { OpencodeExecutionError } from "./opencode-executor.js";
@@ -28,6 +30,7 @@ import { ToolExecutionError } from "./tool-runner.js";
 import { SYSTEM_END_ROLE_ID } from "./types.js";
 import type {
   AuditRecord,
+  BranchRecord,
   CliTool,
   EffectiveLawConstraints,
   ExecutionPlan,
@@ -60,6 +63,7 @@ export type RoleExecutorResult =
       audit: AuditRecord;
       storedResult?: StoredRoleResult;
       selectedEvent?: string;
+      executionId: string;
       branchId: string;
       loopIteration: number;
     }
@@ -68,21 +72,31 @@ export type RoleExecutorResult =
       error: string;
       failure: RuntimeErrorEnvelope;
       audit: AuditRecord;
+      executionId: string;
       branchId: string;
       loopIteration: number;
     };
 
-function getDirectContext(state: GraphState, node: ExecutionPlanNode): string {
-  if (node.incoming.length !== 1) {
+function getDirectContext(state: GraphState, branch: BranchRecord): string {
+  if (!branch.parentBranchId) {
     return state.userPrompt;
   }
-  const upstream = state.roleResults[node.incoming[0].fromRoleId];
+  const upstream = getBranchResult(state, branch.parentBranchId);
   return upstream?.content ?? state.userPrompt;
 }
 
-function renderJoinContext(state: GraphState, joinSources: string[]): string {
-  const sections = joinSources.map((sourceRoleId) => {
-    const result = state.roleResults[sourceRoleId];
+function renderJoinContext(args: {
+  state: GraphState;
+  joinSources: string[];
+  branch: BranchRecord;
+}): string {
+  const sections = args.joinSources.map((sourceRoleId) => {
+    const result = findRoleResult({
+      state: args.state,
+      roleId: sourceRoleId,
+      lineageId: args.branch.lineageId,
+      loopIteration: args.branch.loopIteration
+    });
     return [
       `## ${sourceRoleId}`,
       result?.content ?? "",
@@ -91,7 +105,7 @@ function renderJoinContext(state: GraphState, joinSources: string[]): string {
       .filter(Boolean)
       .join("\n");
   });
-  return sections.join("\n\n").trim() || state.userPrompt;
+  return sections.join("\n\n").trim() || args.state.userPrompt;
 }
 
 /**
@@ -102,18 +116,19 @@ function renderJoinContext(state: GraphState, joinSources: string[]): string {
 function buildRolePromptInput(args: {
   roleId: string;
   node: ExecutionPlanNode;
+  branch: BranchRecord;
   state: GraphState;
   userProfile?: UserProfile;
 }): RolePromptInput {
   const allowedEvents = args.node.outgoing.map((item) => item.eventType);
   const context =
     args.node.joinSources.length > 0
-      ? renderJoinContext(args.state, args.node.joinSources)
-      : getDirectContext(args.state, args.node);
-  const currentLoop =
-    findCurrentBranch(args.state, args.roleId)?.loopIteration ??
-    args.state.loopIterations[args.roleId] ??
-    1;
+      ? renderJoinContext({
+          state: args.state,
+          joinSources: args.node.joinSources,
+          branch: args.branch
+        })
+      : getDirectContext(args.state, args.branch);
 
   return {
     task: args.state.userPrompt,
@@ -121,14 +136,14 @@ function buildRolePromptInput(args: {
     allowed_events: JSON.stringify(allowedEvents),
     last_output: context,
     system_notes: "",
-    round: String(currentLoop),
+    round: String(args.branch.loopIteration),
     user_profile: renderUserProfile(args.userProfile)
   };
 }
 
 function pickDryRunEvent(args: {
-  roleId: string;
   node: ExecutionPlanNode;
+  branch: BranchRecord;
   state: GraphState;
   plan: ExecutionPlan;
 }): string | undefined {
@@ -146,10 +161,7 @@ function pickDryRunEvent(args: {
       flow.toRoleId === SYSTEM_END_ROLE_ID ||
       !wouldExceedLoopBudget({
         targetRoleId: flow.toRoleId,
-        currentLoopIteration:
-          findCurrentBranch(args.state, args.roleId)?.loopIteration ??
-          args.state.loopIterations[args.roleId] ??
-          1,
+        currentLoopIteration: args.branch.loopIteration,
         state: args.state,
         plan: args.plan
       })
@@ -447,6 +459,7 @@ export async function executeRoleNode(args: {
   node: ExecutionPlanNode;
   plan: ExecutionPlan;
   state: GraphState;
+  branch?: BranchRecord;
   effectiveLaw: EffectiveLawConstraints;
   profilesById: Map<string, ExecutionProfile>;
   toolsByRef: Map<string, CliTool>;
@@ -458,10 +471,13 @@ export async function executeRoleNode(args: {
   workdir: string;
   logger?: RunConsoleLogger;
 }): Promise<RoleExecutorResult> {
-  const currentBranch = findCurrentBranch(args.state, args.roleId);
-  const loopIteration =
-    currentBranch?.loopIteration ?? args.state.loopIterations[args.roleId] ?? 1;
-  const branchId = currentBranch?.branchId ?? buildBranchId(args.roleId, loopIteration);
+  const currentBranch =
+    args.branch ?? listActiveBranches(args.state, args.roleId).at(-1);
+  if (!currentBranch) {
+    throw new Error(`No active branch available for role "${args.roleId}"`);
+  }
+  const loopIteration = currentBranch.loopIteration;
+  const branchId = currentBranch.branchId;
   const started = Date.now();
   const nextTransitionCount = args.state.transitionCount + 1;
   const lawRef = args.plan.lawBinding.globalLawRef;
@@ -502,6 +518,7 @@ export async function executeRoleNode(args: {
       error,
       failure,
       audit,
+      executionId: execution.executionId,
       branchId,
       loopIteration
     };
@@ -535,6 +552,7 @@ export async function executeRoleNode(args: {
       error,
       failure,
       audit,
+      executionId: execution.executionId,
       branchId,
       loopIteration
     };
@@ -543,6 +561,7 @@ export async function executeRoleNode(args: {
   const promptInput = buildRolePromptInput({
     roleId: args.roleId,
     node: args.node,
+    branch: currentBranch,
     state: args.state,
     userProfile: args.userProfile
   });
@@ -696,6 +715,7 @@ export async function executeRoleNode(args: {
         status: "noop",
         audit,
         selectedEvent,
+        executionId: execution.executionId,
         branchId,
         loopIteration
       };
@@ -711,8 +731,8 @@ export async function executeRoleNode(args: {
       timeoutMs,
       maxOutputBytes,
       dryRunOutputEvent: pickDryRunEvent({
-        roleId: args.roleId,
         node: args.node,
+        branch: currentBranch,
         state: args.state,
         plan: args.plan
       }),
@@ -754,7 +774,7 @@ export async function executeRoleNode(args: {
     const audit = createAuditRecord({
       roleId: args.roleId,
       branchId,
-      joinId: args.node.joinMode === "all_of" ? `${args.roleId}@${loopIteration}` : undefined,
+      joinId: args.node.joinMode === "all_of" ? buildJoinId(args.roleId, loopIteration) : undefined,
       loopIteration,
       lawRef,
       started,
@@ -808,9 +828,11 @@ export async function executeRoleNode(args: {
         content: parsed.output.content,
         data: parsed.output.data,
         branchId,
+        lineageId: currentBranch.lineageId,
         loopIteration
       },
       selectedEvent,
+      executionId: execution.executionId,
       branchId,
       loopIteration
     };
@@ -886,6 +908,7 @@ export async function executeRoleNode(args: {
       error: `${message}${category}`,
       failure,
       audit,
+      executionId: execution.executionId,
       branchId,
       loopIteration
     };

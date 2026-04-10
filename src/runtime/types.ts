@@ -278,11 +278,14 @@ export type RunContext = {
   auditDir: string;
   eventsPath: string;
   statePath: string;
+  metricsPath: string;
   opencodeServerPath: string;
   sessionsPath: string;
+  checkpointsDir: string;
   roleDirsById: Map<string, RoleRunDirs>;
   roleExecutionCounts: Map<string, number>;
   sessionRecordsByRoleId: Map<string, OpencodeSessionRecord>;
+  nextCheckpointSequence: number;
   sharedDir: string;
 };
 
@@ -297,6 +300,11 @@ export type BranchRecord = {
   branchId: string;
   roleId: string;
   loopIteration: number;
+  branchSequence: number;
+  lineageId: string;
+  parentBranchId?: string;
+  activatedByRoleId?: string;
+  activatedByEvent?: string;
   status: "active" | "completed";
 };
 
@@ -305,7 +313,8 @@ export type StoredRoleResult = {
   event?: string;
   content?: string;
   data?: Record<string, unknown>;
-  branchId?: string;
+  branchId: string;
+  lineageId: string;
   loopIteration: number;
 };
 
@@ -321,10 +330,23 @@ export type GraphState = {
   roleResults: Record<string, StoredRoleResult>;
   branchRecords: Record<string, BranchRecord>;
   loopIterations: Record<string, number>;
-  selectedEventByRoleId: Record<string, string>;
+  selectedEventByBranchId: Record<string, string>;
   finalOutput: string;
   finalRoleId: string;
   lastExecutedRoleId: string;
+  nextBranchSequence: number;
+  lastCheckpointSequence: number;
+};
+
+export type GraphStateUpdate = Partial<GraphState>;
+
+export type RuntimeCheckpointRecord = {
+  checkpointSequence: number;
+  roleId: string;
+  branchId: string;
+  loopIteration: number;
+  executionId: string;
+  update: GraphStateUpdate;
 };
 
 export type RoleInputProjection = {
@@ -462,4 +484,3 @@ export type RuntimeErrorEnvelope = {
   branchId?: string;
   line?: number;
 };
-

@@ -7,7 +7,15 @@ import type {
   StoredRoleResult
 } from "./types.js";
 
-export function buildBranchId(roleId: string, loopIteration: number): string {
+export function buildBranchId(
+  roleId: string,
+  loopIteration: number,
+  branchSequence: number
+): string {
+  return `${roleId}@${loopIteration}#${branchSequence}`;
+}
+
+export function buildJoinId(roleId: string, loopIteration: number): string {
   return `${roleId}@${loopIteration}`;
 }
 
@@ -73,36 +81,58 @@ export function projectStateSnapshot(args: {
     pendingJoinRoleIds,
     loopIterations: args.state.loopIterations,
     roleResults: args.state.roleResults,
+    selectedEventByBranchId: args.state.selectedEventByBranchId,
+    nextBranchSequence: args.state.nextBranchSequence,
+    lastCheckpointSequence: args.state.lastCheckpointSequence,
     graphState: args.state
   };
 }
 
 export function findCurrentBranch(state: GraphState, roleId: string): BranchRecord | undefined {
-  const branches = Object.values(state.branchRecords).filter(
-    (branch) => branch.roleId === roleId && branch.status === "active"
-  );
-  branches.sort((left, right) => right.loopIteration - left.loopIteration);
-  return branches[0];
+  return listActiveBranches(state, roleId).at(-1);
+}
+
+export function listActiveBranches(state: GraphState, roleId: string): BranchRecord[] {
+  return Object.values(state.branchRecords)
+    .filter((branch) => branch.roleId === roleId && branch.status === "active")
+    .sort((left, right) => left.branchSequence - right.branchSequence);
 }
 
 export function getActiveRoleIds(state: GraphState): string[] {
-  return Array.from(
-    new Set(
-      Object.values(state.branchRecords)
-        .filter((branch) => branch.status === "active")
-        .map((branch) => branch.roleId)
-    )
-  );
+  const firstBranchByRoleId = new Map<string, number>();
+  for (const branch of Object.values(state.branchRecords)) {
+    if (branch.status !== "active") {
+      continue;
+    }
+    const current = firstBranchByRoleId.get(branch.roleId);
+    if (current === undefined || branch.branchSequence < current) {
+      firstBranchByRoleId.set(branch.roleId, branch.branchSequence);
+    }
+  }
+
+  return Array.from(firstBranchByRoleId.entries())
+    .sort((left, right) => left[1] - right[1])
+    .map(([roleId]) => roleId);
 }
 
 export function activateBranch(args: {
   roleId: string;
   loopIteration: number;
+  branchSequence: number;
+  lineageId: string;
+  parentBranchId?: string;
+  activatedByRoleId?: string;
+  activatedByEvent?: string;
 }): BranchRecord {
   return {
-    branchId: buildBranchId(args.roleId, args.loopIteration),
+    branchId: buildBranchId(args.roleId, args.loopIteration, args.branchSequence),
     roleId: args.roleId,
     loopIteration: args.loopIteration,
+    branchSequence: args.branchSequence,
+    lineageId: args.lineageId,
+    parentBranchId: args.parentBranchId,
+    activatedByRoleId: args.activatedByRoleId,
+    activatedByEvent: args.activatedByEvent,
     status: "active"
   };
 }
@@ -111,11 +141,21 @@ export function completeBranch(args: {
   branchId: string;
   roleId: string;
   loopIteration: number;
+  branchSequence: number;
+  lineageId: string;
+  parentBranchId?: string;
+  activatedByRoleId?: string;
+  activatedByEvent?: string;
 }): BranchRecord {
   return {
     branchId: args.branchId,
     roleId: args.roleId,
     loopIteration: args.loopIteration,
+    branchSequence: args.branchSequence,
+    lineageId: args.lineageId,
+    parentBranchId: args.parentBranchId,
+    activatedByRoleId: args.activatedByRoleId,
+    activatedByEvent: args.activatedByEvent,
     status: "completed"
   };
 }
@@ -124,7 +164,7 @@ export function createInitialGraphState(args: {
   plan: ExecutionPlan;
   prompt: string;
 }): GraphState {
-  const branchId = buildBranchId(args.plan.entryRoleId, 1);
+  const branchId = buildBranchId(args.plan.entryRoleId, 1, 1);
   return {
     userPrompt: args.prompt,
     status: "running",
@@ -137,16 +177,20 @@ export function createInitialGraphState(args: {
         branchId,
         roleId: args.plan.entryRoleId,
         loopIteration: 1,
+        branchSequence: 1,
+        lineageId: branchId,
         status: "active"
       }
     },
     loopIterations: {
       [args.plan.entryRoleId]: 1
     },
-    selectedEventByRoleId: {},
+    selectedEventByBranchId: {},
     finalOutput: "",
     finalRoleId: "",
-    lastExecutedRoleId: ""
+    lastExecutedRoleId: "",
+    nextBranchSequence: 2,
+    lastCheckpointSequence: 0
   };
 }
 
@@ -155,8 +199,32 @@ export function createInitialState(plan: ExecutionPlan, prompt: string): GraphSt
 }
 
 export function storeRoleResult(
-  roleId: string,
+  branchId: string,
   result: StoredRoleResult | undefined
 ): Record<string, StoredRoleResult> {
-  return result ? { [roleId]: result } : {};
+  return result ? { [branchId]: result } : {};
+}
+
+export function getBranchResult(
+  state: GraphState,
+  branchId: string | undefined
+): StoredRoleResult | undefined {
+  if (!branchId) {
+    return undefined;
+  }
+  return state.roleResults[branchId];
+}
+
+export function findRoleResult(args: {
+  state: GraphState;
+  roleId: string;
+  lineageId: string;
+  loopIteration: number;
+}): StoredRoleResult | undefined {
+  return Object.values(args.state.roleResults).find(
+    (result) =>
+      result.roleId === args.roleId &&
+      result.lineageId === args.lineageId &&
+      result.loopIteration === args.loopIteration
+  );
 }

@@ -61,34 +61,63 @@ test("graph runtime helpers cover loop budget, join readiness, and state project
     ["worker_a", "worker_b"]
   );
 
-  state.roleResults.worker_a = {
+  const workerABranch = {
+    branchId: "worker_a@1#2",
+    roleId: "worker_a",
+    loopIteration: 1,
+    branchSequence: 2,
+    lineageId: "dispatch@1#1",
+    parentBranchId: "dispatch@1#1",
+    activatedByRoleId: "dispatch",
+    activatedByEvent: "TO_A",
+    status: "active"
+  };
+  const workerBBranch = {
+    branchId: "worker_b@1#3",
+    roleId: "worker_b",
+    loopIteration: 1,
+    branchSequence: 3,
+    lineageId: "dispatch@1#1",
+    parentBranchId: "dispatch@1#1",
+    activatedByRoleId: "dispatch",
+    activatedByEvent: "TO_B",
+    status: "active"
+  };
+  state.branchRecords[workerABranch.branchId] = workerABranch;
+  state.branchRecords[workerBBranch.branchId] = workerBBranch;
+
+  state.roleResults[workerABranch.branchId] = {
     roleId: "worker_a",
     event: "A_DONE",
     content: "a",
+    branchId: workerABranch.branchId,
+    lineageId: workerABranch.lineageId,
     loopIteration: 1
   };
   assert.equal(
     isJoinNodeReady({
       node: review,
-      currentRoleId: "worker_a",
-      loopIteration: 1,
-      state
+      currentBranch: workerABranch,
+      state,
+      currentResult: state.roleResults[workerABranch.branchId]
     }),
     false
   );
 
-  state.roleResults.worker_b = {
+  state.roleResults[workerBBranch.branchId] = {
     roleId: "worker_b",
     event: "B_DONE",
     content: "b",
+    branchId: workerBBranch.branchId,
+    lineageId: workerBBranch.lineageId,
     loopIteration: 1
   };
   assert.equal(
     isJoinNodeReady({
       node: review,
-      currentRoleId: "worker_b",
-      loopIteration: 1,
-      state
+      currentBranch: workerBBranch,
+      state,
+      currentResult: state.roleResults[workerBBranch.branchId]
     }),
     true
   );

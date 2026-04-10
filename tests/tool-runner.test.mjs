@@ -86,3 +86,22 @@ test("runCliTool rejects when process times out", async () => {
     }
   );
 });
+
+test("runCliTool rejects when process exits with non-zero code", async () => {
+  await assert.rejects(
+    () =>
+      runCliTool({
+        tool: buildTool(["-e", "process.stderr.write('boom'); process.exit(17)"]),
+        vars: {},
+        workdir: process.cwd(),
+        timeoutMs: 1000,
+        maxOutputBytes: DEFAULT_MAX_OUTPUT_BYTES
+      }),
+    (error) => {
+      assert.ok(error instanceof Error);
+      assert.match(error.message, /exited with code 17/i);
+      assert.match(error.message, /boom/);
+      return true;
+    }
+  );
+});
