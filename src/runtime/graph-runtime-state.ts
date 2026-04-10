@@ -1,5 +1,11 @@
 import { getExecutionPlanNode } from "./execution-plan.js";
-import type { BranchRecord, ExecutionPlan, GraphState, StoredRoleResult } from "./types.js";
+import { summarizeRun } from "./run-summary.js";
+import type {
+  BranchRecord,
+  ExecutionPlan,
+  GraphState,
+  StoredRoleResult
+} from "./types.js";
 
 export function buildBranchId(roleId: string, loopIteration: number): string {
   return `${roleId}@${loopIteration}`;
@@ -35,6 +41,12 @@ export function projectStateSnapshot(args: {
   state: GraphState;
   plan: ExecutionPlan;
 }): Record<string, unknown> {
+  const summary = summarizeRun({
+    auditTrail: args.state.auditTrail,
+    transitionCount: args.state.transitionCount,
+    terminalStatus: args.state.status,
+    terminalErrorEnvelope: args.state.errorEnvelope
+  });
   const branches = Object.values(args.state.branchRecords);
   const activeBranches = branches.filter((branch) => branch.status === "active");
   const completedBranches = branches.filter((branch) => branch.status === "completed");
@@ -48,8 +60,14 @@ export function projectStateSnapshot(args: {
     nextRoleId: activeBranches.length === 1 ? activeBranches[0].roleId : undefined,
     finalRoleId: args.state.finalRoleId || undefined,
     transitionCount: args.state.transitionCount,
+    totalTransitions: summary.totalTransitions,
+    okCount: summary.okCount,
+    failedCount: summary.failedCount,
+    noopCount: summary.noopCount,
+    failureCountsByErrorCode: summary.failureCountsByErrorCode,
     lastOutput: args.state.finalOutput || undefined,
     error: args.state.error || undefined,
+    errorEnvelope: args.state.errorEnvelope || undefined,
     activeBranches,
     completedBranches,
     pendingJoinRoleIds,

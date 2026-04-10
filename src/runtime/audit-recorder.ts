@@ -7,6 +7,7 @@ import type {
   AuditRecord,
   RoleOutputCorrectionRequest,
   RoleOutputRepairRecord,
+  RuntimeErrorEnvelope,
   RunContext
 } from "./types.js";
 
@@ -32,6 +33,7 @@ type AuditRecordInput = {
   stdout?: string;
   stderr?: string;
   error?: string;
+  errorEnvelope?: RuntimeErrorEnvelope;
   repair?: RoleOutputRepairRecord;
   correctionRequest?: RoleOutputCorrectionRequest;
 };
@@ -60,6 +62,7 @@ export function createAuditRecord(args: AuditRecordInput): AuditRecord {
     stdoutPreview: preview(args.stdout ?? ""),
     stderrPreview: preview(args.stderr ?? ""),
     error: args.error,
+    errorEnvelope: args.errorEnvelope,
     repair: args.repair,
     correctionRequest: args.correctionRequest
   };

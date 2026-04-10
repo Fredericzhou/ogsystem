@@ -1,12 +1,14 @@
 import { readFile } from "node:fs/promises";
 
 import { hasJoinModeHandler, hasRoutingModeHandler } from "./graph-mode-registry.js";
+import { createRuntimeError, RuntimeError } from "./runtime-errors.js";
 import { SYSTEM_END_ROLE_ID } from "./types.js";
 import type {
   Flow,
   GraphJoinMode,
   GraphMetadata,
   GraphRoutingMode,
+  RuntimeErrorStage,
   SystemDefinition
 } from "./types.js";
 
@@ -22,6 +24,7 @@ type ParsedNodeToken =
     };
 
 type TokenizedEdge = {
+  lineNumber: number;
   line: string;
   from: ParsedNodeToken;
   to: ParsedNodeToken;
@@ -29,18 +32,35 @@ type TokenizedEdge = {
 };
 
 type TokenizedMermaid = {
-  metadata: Array<{ key: string; value: string }>;
+  metadata: Array<{ lineNumber: number; key: string; value: string }>;
   edges: TokenizedEdge[];
 };
 
 type ParsedSystemGraph = {
   metadata: Map<string, string>;
+  metadataLineByKey: Map<string, number>;
   roleByNode: Map<string, string>;
   nodeByRole: Map<string, string>;
   flows: Flow[];
   inputEntryCandidates: Set<string>;
   hasOutputTransition: boolean;
 };
+
+function failMermaid(args: {
+  stage: "parse" | "validate";
+  errorCode: string;
+  message: string;
+  lineNumber?: number;
+}): never {
+  throw createRuntimeError({
+    errorCode: args.errorCode,
+    errorCategory: "validation",
+    message: args.message,
+    retryable: false,
+    stage: args.stage,
+    line: args.lineNumber
+  });
+}
 
 type ValidatedSystemGraph = ParsedSystemGraph & {
   systemId: string;
@@ -54,7 +74,7 @@ type ValidatedSystemGraph = ParsedSystemGraph & {
   graph?: GraphMetadata;
 };
 
-function parseNodeToken(token: string): ParsedNodeToken {
+function parseNodeToken(token: string, lineNumber?: number): ParsedNodeToken {
   const trimmed = token.trim();
   const normalized = trimmed.toLowerCase();
   if (trimmed === "input") {
@@ -70,15 +90,21 @@ function parseNodeToken(token: string): ParsedNodeToken {
     };
   }
   if (normalized === "start" || normalized === "end" || normalized === "done") {
-    throw new Error(
-      `Unsupported boundary token "${trimmed}". Use input/output as the only System boundary tokens.`
-    );
+    failMermaid({
+      stage: "parse",
+      errorCode: "MERMAID_UNSUPPORTED_BOUNDARY_TOKEN",
+      message: `Unsupported boundary token "${trimmed}". Use input/output as the only System boundary tokens.`,
+      lineNumber
+    });
   }
   const match = trimmed.match(/^([A-Za-z0-9._:-]+)\[Role:([A-Za-z0-9._:-]+)\]$/);
   if (!match) {
-    throw new Error(
-      `Invalid node token "${token}". Expected strict format: nodeId[Role:roleId] or boundary token input/output`
-    );
+    failMermaid({
+      stage: "parse",
+      errorCode: "MERMAID_INVALID_NODE_TOKEN",
+      message: `Invalid node token "${token}". Expected strict format: nodeId[Role:roleId] or boundary token input/output`,
+      lineNumber
+    });
   }
   return {
     kind: "role",
@@ -87,7 +113,10 @@ function parseNodeToken(token: string): ParsedNodeToken {
   };
 }
 
-function parseMetadataLine(line: string): { key: string; value: string } | null {
+function parseMetadataLine(
+  line: string,
+  lineNumber: number
+): { lineNumber: number; key: string; value: string } | null {
   const trimmed = line.trim();
   if (!trimmed.startsWith("%%")) {
     return null;
@@ -102,10 +131,10 @@ function parseMetadataLine(line: string): { key: string; value: string } | null 
   if (!key || !value) {
     return null;
   }
-  return { key, value };
+  return { lineNumber, key, value };
 }
 
-function parseEdgeLine(line: string): TokenizedEdge | null {
+function parseEdgeLine(line: string, lineNumber: number): TokenizedEdge | null {
   const trimmed = line.trim();
   if (!trimmed || trimmed.startsWith("%%")) {
     return null;
@@ -116,23 +145,30 @@ function parseEdgeLine(line: string): TokenizedEdge | null {
   }
   const eventType = match[2].trim();
   if (!eventType) {
-    throw new Error(`Empty event type in line: ${line}`);
+    failMermaid({
+      stage: "parse",
+      errorCode: "MERMAID_EMPTY_EVENT_TYPE",
+      message: `Empty event type in line: ${line}`,
+      lineNumber
+    });
   }
   return {
+    lineNumber,
     line: trimmed,
-    from: parseNodeToken(match[1]),
-    to: parseNodeToken(match[3]),
+    from: parseNodeToken(match[1], lineNumber),
+    to: parseNodeToken(match[3], lineNumber),
     eventType
   };
 }
 
 function tokenizeMermaidSource(source: string): TokenizedMermaid {
   const lines = source.split(/\r?\n/);
-  const metadata: Array<{ key: string; value: string }> = [];
+  const metadata: Array<{ lineNumber: number; key: string; value: string }> = [];
   const edges: TokenizedEdge[] = [];
   let flowchartFound = false;
 
-  for (const line of lines) {
+  for (const [index, line] of lines.entries()) {
+    const lineNumber = index + 1;
     const trimmed = line.trim();
     if (!trimmed) {
       continue;
@@ -141,31 +177,42 @@ function tokenizeMermaidSource(source: string): TokenizedMermaid {
     if (!flowchartFound) {
       const flowchartMatch = trimmed.match(/^flowchart\s+(TD|LR)$/);
       if (!flowchartMatch) {
-        throw new Error(
-          `First non-empty line must be "flowchart TD" or "flowchart LR". Got: ${trimmed}`
-        );
+        failMermaid({
+          stage: "parse",
+          errorCode: "MERMAID_INVALID_HEADER",
+          message: `First non-empty line must be "flowchart TD" or "flowchart LR". Got: ${trimmed}`,
+          lineNumber
+        });
       }
       flowchartFound = true;
       continue;
     }
 
-    const metadataItem = parseMetadataLine(line);
+    const metadataItem = parseMetadataLine(line, lineNumber);
     if (metadataItem) {
       metadata.push(metadataItem);
       continue;
     }
 
-    const edge = parseEdgeLine(line);
+    const edge = parseEdgeLine(line, lineNumber);
     if (!edge) {
-      throw new Error(
-        `Invalid executable line: "${trimmed}". Allowed lines: metadata comments and event edges.`
-      );
+      failMermaid({
+        stage: "parse",
+        errorCode: "MERMAID_INVALID_EXECUTABLE_LINE",
+        message: `Invalid executable line: "${trimmed}". Allowed lines: metadata comments and event edges.`,
+        lineNumber
+      });
     }
     edges.push(edge);
   }
 
   if (!flowchartFound) {
-    throw new Error('Missing "flowchart TD|LR" header');
+    failMermaid({
+      stage: "parse",
+      errorCode: "MERMAID_MISSING_HEADER",
+      message: 'Missing "flowchart TD|LR" header',
+      lineNumber: 1
+    });
   }
 
   return { metadata, edges };
@@ -173,6 +220,7 @@ function tokenizeMermaidSource(source: string): TokenizedMermaid {
 
 function parseTokenizedMermaid(tokens: TokenizedMermaid): ParsedSystemGraph {
   const metadata = new Map<string, string>();
+  const metadataLineByKey = new Map<string, number>();
   const roleByNode = new Map<string, string>();
   const nodeByRole = new Map<string, string>();
   const flows: Flow[] = [];
@@ -181,6 +229,7 @@ function parseTokenizedMermaid(tokens: TokenizedMermaid): ParsedSystemGraph {
 
   for (const item of tokens.metadata) {
     metadata.set(item.key, item.value);
+    metadataLineByKey.set(item.key, item.lineNumber);
   }
 
   for (const edge of tokens.edges) {
@@ -191,26 +240,35 @@ function parseTokenizedMermaid(tokens: TokenizedMermaid): ParsedSystemGraph {
 
       const existingRole = roleByNode.get(node.nodeId);
       if (existingRole && existingRole !== node.roleId) {
-        throw new Error(
-          `Node "${node.nodeId}" maps to multiple role ids: "${existingRole}" vs "${node.roleId}"`
-        );
+        failMermaid({
+          stage: "validate",
+          errorCode: "MERMAID_DUPLICATE_NODE_ROLE",
+          message: `Node "${node.nodeId}" maps to multiple role ids: "${existingRole}" vs "${node.roleId}"`,
+          lineNumber: edge.lineNumber
+        });
       }
       roleByNode.set(node.nodeId, node.roleId);
 
       const existingNode = nodeByRole.get(node.roleId);
       if (existingNode && existingNode !== node.nodeId) {
-        throw new Error(
-          `Role id "${node.roleId}" maps to multiple node ids: "${existingNode}" vs "${node.nodeId}"`
-        );
+        failMermaid({
+          stage: "validate",
+          errorCode: "MERMAID_DUPLICATE_ROLE_NODE",
+          message: `Role id "${node.roleId}" maps to multiple node ids: "${existingNode}" vs "${node.nodeId}"`,
+          lineNumber: edge.lineNumber
+        });
       }
       nodeByRole.set(node.roleId, node.nodeId);
     }
 
     if (edge.from.kind === "boundary") {
       if (edge.from.boundary !== "input" || edge.to.kind !== "role") {
-        throw new Error(
-          `Boundary edge "${edge.line}" is invalid. Only input -->|EVENT| Role is allowed.`
-        );
+        failMermaid({
+          stage: "parse",
+          errorCode: "MERMAID_INVALID_BOUNDARY_EDGE",
+          message: `Boundary edge "${edge.line}" is invalid. Only input -->|EVENT| Role is allowed.`,
+          lineNumber: edge.lineNumber
+        });
       }
       inputEntryCandidates.add(edge.to.roleId);
       continue;
@@ -218,9 +276,12 @@ function parseTokenizedMermaid(tokens: TokenizedMermaid): ParsedSystemGraph {
 
     if (edge.to.kind === "boundary") {
       if (edge.to.boundary !== "output" || edge.from.kind !== "role") {
-        throw new Error(
-          `Boundary edge "${edge.line}" is invalid. Only Role -->|EVENT| output is allowed.`
-        );
+        failMermaid({
+          stage: "parse",
+          errorCode: "MERMAID_INVALID_BOUNDARY_EDGE",
+          message: `Boundary edge "${edge.line}" is invalid. Only Role -->|EVENT| output is allowed.`,
+          lineNumber: edge.lineNumber
+        });
       }
       flows.push({
         fromRoleId: edge.from.roleId,
@@ -232,7 +293,12 @@ function parseTokenizedMermaid(tokens: TokenizedMermaid): ParsedSystemGraph {
     }
 
     if (edge.from.kind !== "role" || edge.to.kind !== "role") {
-      throw new Error(`Unsupported edge form: "${edge.line}"`);
+      failMermaid({
+        stage: "parse",
+        errorCode: "MERMAID_UNSUPPORTED_EDGE_FORM",
+        message: `Unsupported edge form: "${edge.line}"`,
+        lineNumber: edge.lineNumber
+      });
     }
 
     flows.push({
@@ -244,6 +310,7 @@ function parseTokenizedMermaid(tokens: TokenizedMermaid): ParsedSystemGraph {
 
   return {
     metadata,
+    metadataLineByKey,
     roleByNode,
     nodeByRole,
     flows,
@@ -253,9 +320,15 @@ function parseTokenizedMermaid(tokens: TokenizedMermaid): ParsedSystemGraph {
 }
 
 function validateParsedSystemGraph(graph: ParsedSystemGraph): ValidatedSystemGraph {
+  const metadataLine = (key: string): number | undefined => graph.metadataLineByKey.get(key);
   const engineValue = graph.metadata.get("engine");
   if (engineValue !== undefined && engineValue !== "langgraph") {
-    throw new Error(`Unsupported engine "${engineValue}". Expected "langgraph".`);
+    failMermaid({
+      stage: "validate",
+      errorCode: "MERMAID_UNSUPPORTED_ENGINE",
+      message: `Unsupported engine "${engineValue}". Expected "langgraph".`,
+      lineNumber: metadataLine("engine")
+    });
   }
 
   const systemId = graph.metadata.get("system.id");
@@ -264,25 +337,39 @@ function validateParsedSystemGraph(graph: ParsedSystemGraph): ValidatedSystemGra
   let entryRoleId = graph.metadata.get("entry.role");
 
   if (!systemId || !systemVersion || !globalLawRef) {
-    throw new Error("Missing required metadata: system.id / system.version / law.global");
+    failMermaid({
+      stage: "validate",
+      errorCode: "MERMAID_MISSING_REQUIRED_METADATA",
+      message: "Missing required metadata: system.id / system.version / law.global"
+    });
   }
 
   if (graph.inputEntryCandidates.size > 1) {
-    throw new Error("Multiple input boundary targets are not allowed");
+    failMermaid({
+      stage: "validate",
+      errorCode: "MERMAID_MULTIPLE_INPUT_TARGETS",
+      message: "Multiple input boundary targets are not allowed"
+    });
   }
   if (graph.inputEntryCandidates.size === 1) {
     const [inputEntryRoleId] = Array.from(graph.inputEntryCandidates);
     if (entryRoleId && entryRoleId !== inputEntryRoleId) {
-      throw new Error(
-        `entry.role "${entryRoleId}" conflicts with input boundary target "${inputEntryRoleId}"`
-      );
+      failMermaid({
+        stage: "validate",
+        errorCode: "MERMAID_ENTRY_ROLE_CONFLICT",
+        message: `entry.role "${entryRoleId}" conflicts with input boundary target "${inputEntryRoleId}"`,
+        lineNumber: metadataLine("entry.role")
+      });
     }
     entryRoleId = inputEntryRoleId;
   }
   if (!entryRoleId) {
-    throw new Error(
-      "Missing entry role. Provide entry.role metadata or input -->|EVENT| <Role> boundary edge."
-    );
+    failMermaid({
+      stage: "validate",
+      errorCode: "MERMAID_MISSING_ENTRY_ROLE",
+      message:
+        "Missing entry role. Provide entry.role metadata or input -->|EVENT| <Role> boundary edge."
+    });
   }
 
   const talentBinding: Record<string, string> = {};
@@ -318,7 +405,12 @@ function validateParsedSystemGraph(graph: ParsedSystemGraph): ValidatedSystemGra
     if (key.startsWith("role.mode.")) {
       const roleId = key.slice("role.mode.".length);
       if (!hasRoutingModeHandler(value)) {
-        throw new Error(`Unsupported role.mode for ${roleId}: "${value}"`);
+        failMermaid({
+          stage: "validate",
+          errorCode: "MERMAID_UNSUPPORTED_ROUTING_MODE",
+          message: `Unsupported role.mode for ${roleId}: "${value}"`,
+          lineNumber: metadataLine(key)
+        });
       }
       if (roleId) {
         routingModeByRoleId[roleId] = value;
@@ -329,7 +421,12 @@ function validateParsedSystemGraph(graph: ParsedSystemGraph): ValidatedSystemGra
     if (key.startsWith("join.mode.")) {
       const roleId = key.slice("join.mode.".length);
       if (!hasJoinModeHandler(value)) {
-        throw new Error(`Unsupported join.mode for ${roleId}: "${value}"`);
+        failMermaid({
+          stage: "validate",
+          errorCode: "MERMAID_UNSUPPORTED_JOIN_MODE",
+          message: `Unsupported join.mode for ${roleId}: "${value}"`,
+          lineNumber: metadataLine(key)
+        });
       }
       if (roleId) {
         joinModeByRoleId[roleId] = value;
@@ -352,7 +449,12 @@ function validateParsedSystemGraph(graph: ParsedSystemGraph): ValidatedSystemGra
       const roleId = key.slice("loop.max.".length);
       const parsed = Number.parseInt(value, 10);
       if (!Number.isInteger(parsed) || parsed <= 0) {
-        throw new Error(`Invalid loop.max for ${roleId}: "${value}"`);
+        failMermaid({
+          stage: "validate",
+          errorCode: "MERMAID_INVALID_LOOP_MAX",
+          message: `Invalid loop.max for ${roleId}: "${value}"`,
+          lineNumber: metadataLine(key)
+        });
       }
       if (roleId) {
         loopMaxByRoleId[roleId] = parsed;
@@ -361,7 +463,12 @@ function validateParsedSystemGraph(graph: ParsedSystemGraph): ValidatedSystemGra
     }
 
     if (!key.startsWith("exec.bind.")) {
-      throw new Error(`Unsupported metadata key "${key}"`);
+      failMermaid({
+        stage: "validate",
+        errorCode: "MERMAID_UNSUPPORTED_METADATA_KEY",
+        message: `Unsupported metadata key "${key}"`,
+        lineNumber: metadataLine(key)
+      });
     }
 
     const roleId = key.slice("exec.bind.".length);
@@ -372,15 +479,22 @@ function validateParsedSystemGraph(graph: ParsedSystemGraph): ValidatedSystemGra
 
   const roleIds = Array.from(graph.nodeByRole.keys());
   if (!roleIds.includes(entryRoleId)) {
-    throw new Error(`entry.role "${entryRoleId}" does not exist in role graph`);
+    failMermaid({
+      stage: "validate",
+      errorCode: "MERMAID_ENTRY_ROLE_MISSING",
+      message: `entry.role "${entryRoleId}" does not exist in role graph`,
+      lineNumber: metadataLine("entry.role")
+    });
   }
 
   const reservedRoles = new Set(["input", "output", "start", "end", "done"]);
   for (const roleId of roleIds) {
     if (reservedRoles.has(roleId.toLowerCase())) {
-      throw new Error(
-        `Reserved role id "${roleId}" is not allowed. Use entry.role for input and terminal roles without outgoing edges (or output boundary) for completion.`
-      );
+      failMermaid({
+        stage: "validate",
+        errorCode: "MERMAID_RESERVED_ROLE_ID",
+        message: `Reserved role id "${roleId}" is not allowed. Use entry.role for input and terminal roles without outgoing edges (or output boundary) for completion.`
+      });
     }
   }
 
@@ -397,70 +511,126 @@ function validateParsedSystemGraph(graph: ParsedSystemGraph): ValidatedSystemGra
 
   const terminalRoles = roleIds.filter((roleId) => (outDegree.get(roleId) ?? 0) === 0);
   if (terminalRoles.length === 0 && !graph.hasOutputTransition) {
-    throw new Error(
-      "At least one terminal role (without outgoing role-edge) or Role -->|EVENT| output transition is required"
-    );
+    failMermaid({
+      stage: "validate",
+      errorCode: "MERMAID_MISSING_TERMINAL",
+      message:
+        "At least one terminal role (without outgoing role-edge) or Role -->|EVENT| output transition is required"
+    });
   }
 
   for (const roleId of Object.keys(talentBinding)) {
     if (!roleIds.includes(roleId)) {
-      throw new Error(`talent.bind.${roleId} references undefined role`);
+      failMermaid({
+        stage: "validate",
+        errorCode: "MERMAID_UNDEFINED_ROLE_REF",
+        message: `talent.bind.${roleId} references undefined role`,
+        lineNumber: metadataLine(`talent.bind.${roleId}`)
+      });
     }
   }
 
   for (const roleId of Object.keys(executionBinding)) {
     if (!roleIds.includes(roleId)) {
-      throw new Error(`exec.bind.${roleId} references undefined role`);
+      failMermaid({
+        stage: "validate",
+        errorCode: "MERMAID_UNDEFINED_ROLE_REF",
+        message: `exec.bind.${roleId} references undefined role`,
+        lineNumber: metadataLine(`exec.bind.${roleId}`)
+      });
     }
   }
 
   for (const roleId of Object.keys(modelBinding)) {
     if (!roleIds.includes(roleId)) {
-      throw new Error(`model.bind.${roleId} references undefined role`);
+      failMermaid({
+        stage: "validate",
+        errorCode: "MERMAID_UNDEFINED_ROLE_REF",
+        message: `model.bind.${roleId} references undefined role`,
+        lineNumber: metadataLine(`model.bind.${roleId}`)
+      });
     }
   }
 
   for (const roleId of Object.keys(routingModeByRoleId)) {
     if (!roleIds.includes(roleId)) {
-      throw new Error(`role.mode.${roleId} references undefined role`);
+      failMermaid({
+        stage: "validate",
+        errorCode: "MERMAID_UNDEFINED_ROLE_REF",
+        message: `role.mode.${roleId} references undefined role`,
+        lineNumber: metadataLine(`role.mode.${roleId}`)
+      });
     }
   }
 
   for (const roleId of Object.keys(joinModeByRoleId)) {
     if (!roleIds.includes(roleId)) {
-      throw new Error(`join.mode.${roleId} references undefined role`);
+      failMermaid({
+        stage: "validate",
+        errorCode: "MERMAID_UNDEFINED_ROLE_REF",
+        message: `join.mode.${roleId} references undefined role`,
+        lineNumber: metadataLine(`join.mode.${roleId}`)
+      });
     }
     if (joinModeByRoleId[roleId] === "all_of" && !joinSourcesByRoleId[roleId]?.length) {
-      throw new Error(`join.sources.${roleId} is required when join.mode.${roleId}=all_of`);
+      failMermaid({
+        stage: "validate",
+        errorCode: "MERMAID_MISSING_JOIN_SOURCES",
+        message: `join.sources.${roleId} is required when join.mode.${roleId}=all_of`,
+        lineNumber: metadataLine(`join.mode.${roleId}`)
+      });
     }
   }
 
   for (const [roleId, sources] of Object.entries(joinSourcesByRoleId)) {
     if (!roleIds.includes(roleId)) {
-      throw new Error(`join.sources.${roleId} references undefined role`);
+      failMermaid({
+        stage: "validate",
+        errorCode: "MERMAID_UNDEFINED_ROLE_REF",
+        message: `join.sources.${roleId} references undefined role`,
+        lineNumber: metadataLine(`join.sources.${roleId}`)
+      });
     }
     for (const sourceRoleId of sources) {
       if (!roleIds.includes(sourceRoleId)) {
-        throw new Error(`join.sources.${roleId} references undefined source role "${sourceRoleId}"`);
+        failMermaid({
+          stage: "validate",
+          errorCode: "MERMAID_UNDEFINED_ROLE_REF",
+          message: `join.sources.${roleId} references undefined source role "${sourceRoleId}"`,
+          lineNumber: metadataLine(`join.sources.${roleId}`)
+        });
       }
       const hasIncomingFlow = graph.flows.some(
         (flow) => flow.fromRoleId === sourceRoleId && flow.toRoleId === roleId
       );
       if (!hasIncomingFlow) {
-        throw new Error(
-          `join.sources.${roleId} includes "${sourceRoleId}" but no Mermaid edge exists from ${sourceRoleId} to ${roleId}`
-        );
+        failMermaid({
+          stage: "validate",
+          errorCode: "MERMAID_JOIN_SOURCE_MISSING_EDGE",
+          message: `join.sources.${roleId} includes "${sourceRoleId}" but no Mermaid edge exists from ${sourceRoleId} to ${roleId}`,
+          lineNumber: metadataLine(`join.sources.${roleId}`)
+        });
       }
     }
   }
 
   for (const [roleId, loopMax] of Object.entries(loopMaxByRoleId)) {
     if (!roleIds.includes(roleId)) {
-      throw new Error(`loop.max.${roleId} references undefined role`);
+      failMermaid({
+        stage: "validate",
+        errorCode: "MERMAID_UNDEFINED_ROLE_REF",
+        message: `loop.max.${roleId} references undefined role`,
+        lineNumber: metadataLine(`loop.max.${roleId}`)
+      });
     }
     const hasIncomingLoop = graph.flows.some((flow) => flow.toRoleId === roleId);
     if (!hasIncomingLoop || loopMax <= 0) {
-      throw new Error(`loop.max.${roleId} requires a positive budget on a reachable role`);
+      failMermaid({
+        stage: "validate",
+        errorCode: "MERMAID_INVALID_LOOP_MAX",
+        message: `loop.max.${roleId} requires a positive budget on a reachable role`,
+        lineNumber: metadataLine(`loop.max.${roleId}`)
+      });
     }
   }
 
@@ -509,4 +679,38 @@ export function parseSystemFromMermaidSource(source: string): SystemDefinition {
 export async function loadSystemFromMermaid(path: string): Promise<SystemDefinition> {
   const source = await readFile(path, "utf8");
   return parseSystemFromMermaidSource(source);
+}
+
+export type SystemLintDiagnostic = {
+  line?: number;
+  errorCode: string;
+  message: string;
+  stage: RuntimeErrorStage;
+};
+
+export function lintSystemFromMermaidSource(source: string): SystemLintDiagnostic[] {
+  try {
+    parseSystemFromMermaidSource(source);
+    return [];
+  } catch (error) {
+    if (error instanceof RuntimeError) {
+      const envelope = error.envelope;
+      return [
+        {
+          line: envelope.line,
+          errorCode: envelope.errorCode,
+          message: envelope.message,
+          stage: envelope.stage
+        }
+      ];
+    }
+
+    return [
+      {
+        errorCode: "MERMAID_LINT_ERROR",
+        message: error instanceof Error ? error.message : String(error),
+        stage: "lint"
+      }
+    ];
+  }
 }

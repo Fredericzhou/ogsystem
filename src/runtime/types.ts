@@ -168,6 +168,7 @@ export type RuntimeWorkspaceConfig = {
 };
 
 export type RuntimeConfig = {
+  configVersion?: string;
   executor: "opencode";
   roleRepo: string;
   modelRepo: string;
@@ -202,6 +203,7 @@ export type AuditRecord = {
   stdoutPreview?: string;
   stderrPreview?: string;
   error?: string;
+  errorEnvelope?: RuntimeErrorEnvelope;
   repair?: RoleOutputRepairRecord;
   correctionRequest?: RoleOutputCorrectionRequest;
 };
@@ -271,6 +273,7 @@ export type GraphState = {
   userPrompt: string;
   status: GraphRunStatus;
   error: string;
+  errorEnvelope?: RuntimeErrorEnvelope;
   transitionCount: number;
   auditTrail: AuditRecord[];
   roleResults: Record<string, StoredRoleResult>;
@@ -299,8 +302,26 @@ export type SystemStateSnapshot = {
   nextRoleId?: string;
   finalRoleId?: string;
   transitionCount: number;
+  totalTransitions: number;
+  okCount: number;
+  failedCount: number;
+  noopCount: number;
+  failureCountsByErrorCode: Record<string, number>;
   lastOutput?: string;
   error?: string;
+  errorEnvelope?: RuntimeErrorEnvelope;
+};
+
+export type RunSummarySnapshot = {
+  totalTransitions: number;
+  okCount: number;
+  failedCount: number;
+  noopCount: number;
+  failureCountsByErrorCode: Record<string, number>;
+  repairStats: {
+    attemptedCount: number;
+    appliedCount: number;
+  };
 };
 
 export type StageSnapshot = {
@@ -321,9 +342,11 @@ export type AdapterRunResult = {
   finalRoleId?: string;
   finalOutput?: string;
   systemState: SystemStateSnapshot;
+  runSummary: RunSummarySnapshot;
   stages: StageSnapshot[];
   auditTrail: AuditRecord[];
   error?: string;
+  errorEnvelope?: RuntimeErrorEnvelope;
 };
 
 export type JsonSchemaValidationIssue = {
@@ -357,4 +380,36 @@ export type RunArtifactPolicyEntry = {
   retention: RunArtifactRetention;
   resumeConsumed: boolean;
   description: string;
+};
+
+export type RuntimeErrorStage =
+  | "parse"
+  | "validate"
+  | "compile"
+  | "resume"
+  | "execute"
+  | "lint"
+  | "config"
+  | "cli"
+  | "doctor";
+
+export type RuntimeErrorCategory =
+  | "input"
+  | "config"
+  | "state"
+  | "validation"
+  | "execution"
+  | "io"
+  | "system";
+
+export type RuntimeErrorEnvelope = {
+  errorCode: string;
+  errorCategory: RuntimeErrorCategory;
+  message: string;
+  retryable: boolean;
+  stage: RuntimeErrorStage;
+  roleId?: string;
+  runId?: string;
+  branchId?: string;
+  line?: number;
 };

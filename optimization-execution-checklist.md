@@ -1,154 +1,132 @@
-# OGSystem Optimization Execution Checklist
+# OGSystem Reliability-First Execution Checklist
 
-Date: 2026-04-09  
-Scope: minimal kernel hardening only
+Date: 2026-04-10  
+Scope: reliability, consistency, stability, and persistence only
 
-## 0. Goal
+## 0. Principles
 
-Make the runtime minimal and truthful:
+- Reuse the existing `parse -> validate -> compile -> execute` flow.
+- Keep one runtime path and one executor boundary.
+- Add diagnostics and safeguards only.
+- Do not introduce plugin, hook, scheduler, or multi-backend subsystems.
+- Keep all changes additive and backward-compatible.
+- Prefer hard fail over recovery heuristics.
 
-- no fake capability surface
-- strict config validation
-- deterministic transition contract
-- stable execution baseline
+## 1. P0
 
-## 1. P0 Must Do (Hardening)
+### 1.1 Error envelope
 
-### 1.1 Align config model with real behavior
-
-- [x] Decide and freeze execution capability surface:
-  - Option A: keep single-tool execution profile only
-  - Option B: implement multi-tool/retry/concurrency fully
-- [x] Remove unused fields if not implemented:
-  - removed `ExecutionProfile.toolPolicy.allowedTools[].retry`
-  - removed `ExecutionProfile.toolPolicy.allowedTools[].maxConcurrency`
-  - removed `CliTool.outputMode`
-  - removed `CliTool.cwdPolicy`
-- [x] Decide `talentBinding` behavior:
-  - keep as metadata-only sidecar with explicit docs
-  - or remove from runtime types until used
-
-Acceptance:
-
-- [x] `types.ts` and runtime behavior are 1:1 aligned
-- [x] No field remains "declared but ignored"
-
-### 1.2 Add schema validation for JSON inputs
-
-- [x] Add runtime schemas for:
-  - `profiles`
-  - `tools`
-  - `laws`
-  - `role-prompts`
-- [x] Validate immediately after file load (before graph build)
-- [x] Return actionable errors with file path + field path
+- [x] Define one stable error envelope for runtime, audit, and CLI:
+  - `errorCode`
+  - `errorCategory`
+  - `message`
+  - `retryable`
+  - `stage`
+  - `roleId?`, `runId?`, `branchId?`
+  - `line?` for lint diagnostics
+- [x] Keep existing user-facing error text unchanged.
+- [x] Populate the envelope on every failure path.
 
 Acceptance:
 
-- [x] Invalid config fails early with readable error
-- [x] Valid config path unchanged
+- [x] Failure records are machine-parseable without string matching.
 
-### 1.3 Fix transition output contract
+### 1.2 System lint
 
-- [x] Define one strict contract for executable role output:
-  - `{"event":"EVENT_NAME","content":"..."}`
-- [x] Replace regex/line-guess fallback with strict parser
-- [x] Document contract in README + DSL spec
-
-Acceptance:
-
-- [x] Branching is deterministic
-- [x] No "guess event" code path remains
-
-### 1.4 Tighten no-exec behavior
-
-- [x] Define explicit policy for nodes without `exec.bind`:
-  - fail-fast by default, or
-  - explicit noop mode via law/config switch
-- [x] Ensure completion means intentional execution outcome, not accidental pass-through
+- [x] Add one thin `lint:system` command.
+- [x] Reuse the existing Mermaid parse/validate/compile path only.
+- [x] Do not build a separate validation engine or second parser.
+- [x] Emit line-aware diagnostics in the form `line + errorCode + message`.
+- [x] Keep lint read-only.
+- [x] Keep lint hard-fail only.
+- [x] Do not add auto-repair or suggestion logic.
 
 Acceptance:
 
-- [x] `noop` path is explicit and documented
+- [x] Lint and runtime share one source of truth.
 
-## 2. P1 Should Do (Stability + Engineering)
+### 1.3 State persistence
 
-### 2.1 Stabilize tool runner
-
-- [x] Add max output bytes for stdout/stderr
-- [x] Add timeout error category
-- [x] If retry is retained, implement bounded retry with backoff
-- [x] Keep dry-run behavior deterministic
-
-Acceptance:
-
-- [x] Large output and timeout behavior are test-covered
-
-### 2.2 Minimal tests
-
-- [x] Add test framework and baseline suites:
-  - parser validation
-  - law resolution
-  - transition selection
-  - dry-run
-  - CLI arg validation
-- [x] Add fixtures for valid/invalid Mermaid and JSON configs
+- [x] Make `state.json` writes atomic.
+- [x] Keep `state.json.graphState` as the resume source of truth.
+- [x] Check consistency between `state.json.graphState` and `sessions.json` before resume.
+- [x] Reject partial or corrupted state snapshots.
+- [x] Add a resume idempotency test.
 
 Acceptance:
 
-- [x] `npm test` runs in CI
+- [x] Re-running resume does not duplicate role execution.
 
-### 2.3 Minimal CI quality gate
+### 1.4 Output repair boundary
 
-- [x] Add CI workflow:
-  - `npm ci`
-  - `npm run build`
-  - `npm test`
-- [x] Add lint/format only if rules are minimal and stable
-
-Acceptance:
-
-- [x] PR has automated pass/fail signal
-
-### 2.4 Portability cleanup
-
-- [x] Replace `zsh -lc "command -v"` in doctor with platform-neutral resolution
+- [x] Keep output repair bounded to one correction attempt.
+- [x] Keep repair narrow and deterministic.
+- [x] Do not add relaxed-schema or raw-text fallback tiers.
+- [x] Record repair statistics in the run summary.
 
 Acceptance:
 
-- [x] doctor works without shell-specific dependency
+- [x] Repair behavior is measurable and predictable.
 
-## 3. P2 Optional Refactor
+### 1.5 Minimal observability
 
-- [x] Evaluate runtime architecture:
-  - keep LangGraph with typed graph + compile cache
-  - or replace with explicit loop state machine
-- [x] Split Mermaid parser into clear stages:
-  - tokenize
-  - parse
-  - validate
-  - compile
+- [x] Add run summary counters:
+  - `totalTransitions`
+  - `okCount`
+  - `failedCount`
+  - `noopCount`
+- [x] Add structured failure summaries by `errorCode`.
+- [x] Keep Markdown audit files as the operator-facing view.
 
 Acceptance:
 
-- [x] design choice documented with tradeoff and benchmark notes
+- [x] A failing role and failure class can be identified from run artifacts alone.
+
+## 2. P1
+
+### 2.1 Tests
+
+- [x] Add bad Mermaid fixtures.
+- [x] Add diagnostic snapshot tests for lint output.
+- [x] Add error envelope regression tests.
+- [x] Add resume idempotency tests.
+
+### 2.2 CI
+
+- [x] Keep build and test as the base gate.
+- [x] Add dry-run example regression gates.
+- [x] Add doctor preflight when execution is expected.
+
+### 2.3 Artifact control
+
+- [x] Add optional cleanup for historical execution snapshots.
+- [x] Keep resume-consumed artifacts intact.
+- [x] Do not affect `state.json` or `sessions.json`.
+
+### 2.4 Config compatibility
+
+- [x] Add explicit config version checks.
+- [x] Fail fast on unsupported versions.
+- [x] Do not add a migration platform.
+
+## 3. Out of Scope
+
+- [x] Plugin or hook ecosystem
+- [x] New scheduler or orchestration layer
+- [x] Multi-backend persistence
+- [x] Multi-server sharding
+- [x] Warning tier or suggestion engine
+- [x] External secrets manager integration
 
 ## 4. Execution Order
 
-1. P0.1 config truthfulness  
-2. P0.2 schema validation  
-3. P0.3 output contract  
-4. P0.4 no-exec policy  
-5. P1.1 tool-runner hardening  
-6. P1.2 tests  
-7. P1.3 CI  
-8. P1.4 portability  
-9. P2 refactor decisions
-
-## 5. Done Criteria
-
-- [x] Build passes: `npm run build`
-- [x] Tests pass: `npm test`
-- [x] Minimal sample runs: `npm run run:adapter -- --system examples/minimal-system.mmd --laws examples/console-laws.json --prompt "demo" --dry-run`
-- [x] Console sample runs: `npm run run:adapter -- --system examples/console-system.mmd --profiles examples/console-profiles.json --tools examples/console-tools.json --laws examples/console-laws.json --role-prompts examples/console-role-prompts.json --prompt "demo" --dry-run`
-- [x] Docs/specs updated to match final implemented behavior
+1. Error envelope
+2. `lint:system`
+3. Atomic state writes
+4. Resume consistency
+5. Bounded output repair
+6. Minimal observability
+7. Bad-sample tests
+8. CI dry-run gate
+9. Artifact cleanup
+10. Config version checks

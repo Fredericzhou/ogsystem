@@ -14,7 +14,8 @@ import { readJsonFile } from "./json-file.js";
 import { loadModelPackage } from "./model-repo.js";
 import { loadSystemFromMermaid } from "./parse-mermaid.js";
 import { loadRolePackage } from "./role-repo.js";
-import { initializeRunContext, pathExists } from "./run-artifacts.js";
+import { RuntimeError, createRuntimeError } from "./runtime-errors.js";
+import { initializeRunContext, loadResumeGraphState, pathExists } from "./run-artifacts.js";
 import type {
   AdapterRunResult,
   CliTool,
@@ -197,74 +198,80 @@ export async function runSystemWithAdapter(args: {
   prompt: string;
   workdir: string;
   dryRun?: boolean;
+  cleanupExecutionHistory?: number;
 }): Promise<AdapterRunResult> {
-  const system = await loadSystemFromMermaid(args.systemPath);
-  const plan = createExecutionPlan(system);
-  const runtimeConfig = await loadRuntimeConfig(args.runtimeConfigPath, args.workdir);
-  const profiles = await loadProfiles(args.profilesPath);
-  const tools = await loadTools(args.toolsPath);
-  const lawCatalog = await loadLaws(args.lawsPath, args.workdir);
-  const userProfile = await loadUserProfile(args.userProfilePath, args.workdir);
-  const rolePackagesByRoleId = await loadRolePackages({
-    system,
-    roleRootDir: resolve(args.workdir, runtimeConfig.roleRepo, "roles")
-  });
-  const modelsById = await loadModelPackages({
-    system,
-    modelRootDir: resolve(args.workdir, runtimeConfig.modelRepo)
-  });
-  const effectiveLaw = resolveEffectiveLaw(system, lawCatalog);
-  const runContext = await initializeRunContext({
-    system,
-    systemPath: args.systemPath,
-    prompt: args.prompt,
-    workdir: args.workdir,
-    runtimeConfig,
-    resumeRunDir: args.resumeRunDir
-  });
-
-  const profilesById = new Map(profiles.map((item) => [item.profileId, item]));
-  const toolsByRef = new Map(tools.map((item) => [item.toolRef, item]));
-  const executor = createDefaultExecutor({
-    dryRun: args.dryRun,
-    runContext,
-    needsModelExecutor: modelsById.size > 0
-  });
-
   try {
-    await executor.start();
-
-    let initialState: GraphState | undefined;
-    if (args.resumeRunDir) {
-      const resumeStatePath = resolve(runContext.runDir, "state.json");
-      if (await pathExists(resumeStatePath)) {
-        const resumeState = await readJsonFile(resumeStatePath);
-        if (
-          typeof resumeState === "object" &&
-          resumeState !== null &&
-          !Array.isArray(resumeState) &&
-          "graphState" in resumeState
-        ) {
-          initialState = (resumeState as { graphState?: GraphState }).graphState;
-        }
-      }
-    }
-
-    return await runSystemWithGraphRunner({
-      plan,
-      effectiveLaw,
-      profilesById,
-      toolsByRef,
-      modelsById,
-      userProfile,
-      workdir: args.workdir,
-      rolePackagesByRoleId,
-      runContext,
-      executor,
+    const system = await loadSystemFromMermaid(args.systemPath);
+    const plan = createExecutionPlan(system);
+    const runtimeConfig = await loadRuntimeConfig(args.runtimeConfigPath, args.workdir);
+    const profiles = await loadProfiles(args.profilesPath);
+    const tools = await loadTools(args.toolsPath);
+    const lawCatalog = await loadLaws(args.lawsPath, args.workdir);
+    const userProfile = await loadUserProfile(args.userProfilePath, args.workdir);
+    const rolePackagesByRoleId = await loadRolePackages({
+      system,
+      roleRootDir: resolve(args.workdir, runtimeConfig.roleRepo, "roles")
+    });
+    const modelsById = await loadModelPackages({
+      system,
+      modelRootDir: resolve(args.workdir, runtimeConfig.modelRepo)
+    });
+    const effectiveLaw = resolveEffectiveLaw(system, lawCatalog);
+    const runContext = await initializeRunContext({
+      system,
+      systemPath: args.systemPath,
       prompt: args.prompt,
-      initialState
+      workdir: args.workdir,
+      runtimeConfig,
+      resumeRunDir: args.resumeRunDir
+    });
+
+    const profilesById = new Map(profiles.map((item) => [item.profileId, item]));
+    const toolsByRef = new Map(tools.map((item) => [item.toolRef, item]));
+    const executor = createDefaultExecutor({
+      dryRun: args.dryRun,
+      runContext,
+      needsModelExecutor: modelsById.size > 0
+    });
+
+    try {
+      await executor.start();
+
+      let initialState: GraphState | undefined;
+      if (args.resumeRunDir) {
+        initialState = await loadResumeGraphState({ runDir: runContext.runDir });
+      }
+
+      return await runSystemWithGraphRunner({
+        plan,
+        effectiveLaw,
+        profilesById,
+        toolsByRef,
+        modelsById,
+        userProfile,
+        workdir: args.workdir,
+        rolePackagesByRoleId,
+        runContext,
+        executor,
+        prompt: args.prompt,
+        initialState,
+        cleanupExecutionHistory: args.cleanupExecutionHistory
+      });
+    } finally {
+      await executor.close();
+    }
+  } catch (error) {
+    if (error instanceof RuntimeError) {
+      throw error;
+    }
+    throw createRuntimeError({
+      errorCode: "RUNTIME_SETUP_FAILED",
+      errorCategory: "config",
+      message: error instanceof Error ? error.message : String(error),
+      retryable: false,
+      stage: "config"
     });
   } finally {
-    await executor.close();
+    // No-op: outer try/catch ensures setup failures are normalized.
   }
 }

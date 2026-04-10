@@ -98,6 +98,12 @@ Check required CLI tools:
 npm run run:doctor -- --required opencode
 ```
 
+Lint a system with the runtime parser/validator:
+
+```bash
+npm run lint:system -- --system examples/target-model-binding-system.mmd
+```
+
 ## Runtime Guarantees
 
 - The adapter runs one graph-based execution model. The entry role becomes the initial active branch, each role execution emits one structured result, and completion happens only when active branches are exhausted or a transition reaches the terminal `output` boundary.
@@ -108,12 +114,15 @@ npm run run:doctor -- --required opencode
 - `model.bind` retries transient OpenCode/provider failures on the same role session while keeping the same run-level shared server.
 - The runtime supports `role.mode.*=parallel_split`, `join.mode.*=all_of`, `join.sources.*`, and `loop.max.*`. Legacy `%% engine=langgraph` metadata is accepted as compatibility input but is not required DSL semantics.
 - Role output repair is intentionally narrow: wrapped JSON object extraction and single-allowed-event normalization are auto-repaired; schema mismatch still fails fast.
+- Runtime, audit, and CLI failures now carry one machine-parseable error envelope: `errorCode`, `errorCategory`, `message`, `retryable`, `stage`, plus role/run/branch/line context when available.
 - Each run persists under `ogsystem-history/<run-id>/`, including run-level state, `sessions.json`, and per-role execution history under `roles/<roleId>/executions/`.
 - Run-id format is `yyyy-MM-dd_HH24-mm-ss_xxxx` (`xxxx` = 4-char system code).
 - Each run gets its own isolated `ogsystem-history/<run-id>/shared/` directory, and role directories do not receive a `shared` symlink by default.
 - `ogsystem-history/` is generated runtime state and should stay out of version control.
 - `state.json.graphState` and `sessions.json` are the runtime-consumed resume sources. `events.ndjson` remains append-only audit history.
+- `state.json` and `sessions.json` writes are atomic, and resume rejects partial/corrupted snapshots before execution starts.
 - Runs persist `activeBranches`, `completedBranches`, `loopIterations`, and `graphState` inside `state.json`, and support `--resume-run` against the same run directory.
+- `audit/summary.md` and result JSON now expose `totalTransitions`, `okCount`, `failedCount`, `noopCount`, structured `failureCountsByErrorCode`, and repair statistics.
 - Roles without execution binding fail fast by default. A law may opt into `allowNoopWithoutExecutionBinding`, but noop remains explicit and is rejected on branching nodes.
 - `user-profile.json` is injected into role prompts as delivery preference; role packages decide how to apply it.
 
@@ -133,6 +142,7 @@ npm run run:doctor -- --required opencode
 - `og-models/catalog/opencode-models.json` snapshots the current local `opencode models` list.
 - `og-models/models/*/model.json` provides curated reusable model bindings.
 - `.ogsystem/runtime.json` provides runtime defaults for role repo, model repo, and runs directory.
+- `.ogsystem/runtime.json` may include `configVersion: "1"`; unsupported versions fail fast.
 - `.ogsystem/user-profile.json` provides user delivery preference sample.
 - `.ogsystem/laws.json` provides sample law catalog colocated with runtime config.
 - `examples/target-model-binding-system.mmd` shows `model.bind.*` usage.

@@ -269,10 +269,24 @@ export function validateRuntimeConfig(value: unknown, filePath: string): Runtime
   const record = expectRecord(value, filePath, "$");
   expectNoExtraKeys(
     record,
-    ["executor", "roleRepo", "modelRepo", "runsDir", "sharedDir", "workspace", "opencode"],
+    [
+      "configVersion",
+      "executor",
+      "roleRepo",
+      "modelRepo",
+      "runsDir",
+      "sharedDir",
+      "workspace",
+      "opencode"
+    ],
     filePath,
     "$"
   );
+
+  const configVersion = expectOptionalString(record.configVersion, filePath, "$.configVersion");
+  if (configVersion !== undefined && configVersion !== "1") {
+    fail(filePath, "$.configVersion", `unsupported config version "${configVersion}"`);
+  }
 
   const executor = expectString(record.executor, filePath, "$.executor");
   if (executor !== "opencode") {
@@ -306,6 +320,7 @@ export function validateRuntimeConfig(value: unknown, filePath: string): Runtime
         );
 
   return {
+    configVersion: configVersion ?? "1",
     executor: "opencode",
     roleRepo: expectOptionalString(record.roleRepo, filePath, "$.roleRepo") ?? "./og-roles",
     modelRepo: expectOptionalString(record.modelRepo, filePath, "$.modelRepo") ?? "./og-models",

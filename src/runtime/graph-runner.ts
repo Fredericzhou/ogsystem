@@ -1,4 +1,3 @@
-import { writeFile } from "node:fs/promises";
 import { resolve } from "node:path";
 
 import { Annotation, END, START, StateGraph } from "@langchain/langgraph";
@@ -17,8 +16,10 @@ import {
   wouldExceedLoopBudget
 } from "./graph-runtime-state.js";
 import { executeRoleNode } from "./role-executor.js";
+import { summarizeRun } from "./run-summary.js";
 import { projectStages } from "./stage-projector.js";
 import { stringifyJson } from "./runtime-support.js";
+import { cleanupHistoricalExecutionSnapshots, writeAtomicFile } from "./run-artifacts.js";
 import { SYSTEM_END_ROLE_ID } from "./types.js";
 import type {
   AdapterRunResult,
@@ -33,6 +34,7 @@ import type {
   LoadedModelPackage,
   LoadedRolePackage,
   RunContext,
+  RuntimeErrorEnvelope,
   StoredRoleResult,
   UserProfile
 } from "./types.js";
@@ -52,6 +54,7 @@ type RunnerInput = {
   executor: Executor;
   prompt: string;
   initialState?: GraphState;
+  cleanupExecutionHistory?: number;
 };
 
 function mergeStatus(current: GraphRunStatus, update: GraphRunStatus): GraphRunStatus {
@@ -73,6 +76,10 @@ const GraphStateAnnotation = Annotation.Root({
   error: Annotation<string>({
     reducer: (current, update) => current || update,
     default: () => ""
+  }),
+  errorEnvelope: Annotation<RuntimeErrorEnvelope | undefined>({
+    reducer: (current, update) => current || update,
+    default: () => undefined
   }),
   transitionCount: Annotation<number>({
     reducer: (current, update) => current + update,
@@ -117,7 +124,7 @@ async function persistProjectedState(args: {
   plan: ExecutionPlan;
   runContext: RunContext;
 }): Promise<void> {
-  await writeFile(args.runContext.statePath, stringifyJson(projectStateSnapshot(args)), "utf8");
+  await writeAtomicFile(args.runContext.statePath, stringifyJson(projectStateSnapshot(args)));
 }
 
 function buildFailureUpdate(args: {
@@ -125,11 +132,13 @@ function buildFailureUpdate(args: {
   branchId: string;
   loopIteration: number;
   error: string;
+  errorEnvelope: RuntimeErrorEnvelope;
   audit: AuditRecord;
 }): GraphUpdate {
   return {
     status: "failed",
     error: args.error,
+    errorEnvelope: args.errorEnvelope,
     transitionCount: 1,
     auditTrail: [args.audit],
     finalRoleId: args.roleId,
@@ -171,6 +180,7 @@ function buildSuccessUpdate(args: {
   let finalError = "";
   let finalOutput = "";
   let finalRoleId = "";
+  let finalErrorEnvelope: RuntimeErrorEnvelope | undefined;
 
   const candidateTargets = selectRoutingTargets({
     node,
@@ -196,6 +206,15 @@ function buildSuccessUpdate(args: {
     ) {
       finalStatus = "failed";
       finalError = `Loop budget exceeded for ${targetRoleId}`;
+      finalErrorEnvelope = {
+        errorCode: "GRAPH_LOOP_BUDGET_EXCEEDED",
+        errorCategory: "state",
+        message: finalError,
+        retryable: false,
+        stage: "execute",
+        roleId: args.roleId,
+        branchId: args.branchId
+      };
       finalRoleId = args.roleId;
       break;
     }
@@ -236,6 +255,7 @@ function buildSuccessUpdate(args: {
   return {
     status: finalStatus,
     error: finalError,
+    errorEnvelope: finalErrorEnvelope,
     transitionCount: 1,
     auditTrail: [args.audit],
     roleResults: storeRoleResult(args.roleId, args.storedResult),
@@ -281,6 +301,7 @@ export async function runSystemWithGraphRunner(args: RunnerInput): Promise<Adapt
           branchId: result.branchId,
           loopIteration: result.loopIteration,
           error: result.error,
+          errorEnvelope: result.failure,
           audit: result.audit
         });
       }
@@ -383,8 +404,12 @@ export async function runSystemWithGraphRunner(args: RunnerInput): Promise<Adapt
 
   const auditTrail = finalState.auditTrail;
   const stages = projectStages({ auditTrail });
+  const summary = summarizeRun({
+    auditTrail,
+    transitionCount: finalState.transitionCount
+  });
   const serverMetadata = args.executor.getServerMetadata();
-  await writeFile(
+  await writeAtomicFile(
     resolve(args.runContext.auditDir, "summary.md"),
     [
       "# Audit Summary",
@@ -392,13 +417,25 @@ export async function runSystemWithGraphRunner(args: RunnerInput): Promise<Adapt
       `- runId: ${args.runContext.runId}`,
       `- status: ${finalState.status}`,
       `- finalRoleId: ${finalState.finalRoleId}`,
-      `- transitionCount: ${finalState.transitionCount}`,
+      `- totalTransitions: ${summary.totalTransitions}`,
+      `- okCount: ${summary.okCount}`,
+      `- failedCount: ${summary.failedCount}`,
+      `- noopCount: ${summary.noopCount}`,
+      `- failureCountsByErrorCode: ${stringifyJson(summary.failureCountsByErrorCode)}`,
+      `- repairStats.attemptedCount: ${summary.repairStats.attemptedCount}`,
+      `- repairStats.appliedCount: ${summary.repairStats.appliedCount}`,
       `- opencodeServerUrl: ${serverMetadata.url ?? ""}`,
       `- opencodeServerPid: ${serverMetadata.pid ?? ""}`,
       `- opencodeServerStartedAt: ${serverMetadata.startedAt ?? ""}`
-    ].join("\n"),
-    "utf8"
+    ].join("\n")
   );
+
+  if (args.cleanupExecutionHistory !== undefined) {
+    await cleanupHistoricalExecutionSnapshots({
+      context: args.runContext,
+      keepLatest: args.cleanupExecutionHistory
+    });
+  }
 
   return {
     systemId: args.plan.systemId,
@@ -413,11 +450,19 @@ export async function runSystemWithGraphRunner(args: RunnerInput): Promise<Adapt
       nextRoleId: undefined,
       finalRoleId: finalState.finalRoleId || undefined,
       transitionCount: finalState.transitionCount,
+      totalTransitions: summary.totalTransitions,
+      okCount: summary.okCount,
+      failedCount: summary.failedCount,
+      noopCount: summary.noopCount,
+      failureCountsByErrorCode: summary.failureCountsByErrorCode,
       lastOutput: finalState.finalOutput || undefined,
-      error: finalState.error || undefined
+      error: finalState.error || undefined,
+      errorEnvelope: finalState.errorEnvelope || undefined
     },
+    runSummary: summary,
     stages,
     auditTrail,
-    error: finalState.error || undefined
+    error: finalState.error || undefined,
+    errorEnvelope: finalState.errorEnvelope || undefined
   };
 }

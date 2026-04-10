@@ -118,3 +118,25 @@ test("runtime config defaults runsDir to ogsystem-history", () => {
 
   assert.equal(config.runsDir, "ogsystem-history");
 });
+
+test("runtime config fails fast on unsupported config version", () => {
+  assert.throws(
+    () =>
+      validateRuntimeConfig(
+        {
+          configVersion: "2",
+          executor: "opencode",
+          roleRepo: "./og-roles",
+          modelRepo: "./og-models"
+        },
+        "runtime.json"
+      ),
+    (error) => {
+      assert.ok(error instanceof Error);
+      assert.match(error.message, /runtime\.json/);
+      assert.match(error.message, /\.configVersion/);
+      assert.match(error.message, /unsupported config version "2"/);
+      return true;
+    }
+  );
+});

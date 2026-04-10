@@ -20,6 +20,7 @@ import {
   validateRoleInputSchema,
   validateRoleOutputSchema
 } from "./role-repo.js";
+import { normalizeRuntimeError } from "./runtime-errors.js";
 import { renderUserProfile, stringifyJson } from "./runtime-support.js";
 import { ToolExecutionError } from "./tool-runner.js";
 import { SYSTEM_END_ROLE_ID } from "./types.js";
@@ -35,6 +36,7 @@ import type {
   LoadedRolePackage,
   RoleExecutionOutput,
   RoleOutputRepairRecord,
+  RuntimeErrorEnvelope,
   RunContext,
   StoredRoleResult,
   UserProfile
@@ -62,6 +64,7 @@ export type RoleExecutorResult =
   | {
       status: "failed";
       error: string;
+      failure: RuntimeErrorEnvelope;
       audit: AuditRecord;
       branchId: string;
       loopIteration: number;
@@ -315,6 +318,70 @@ function mergeRepairRecord(
   };
 }
 
+function buildFailureEnvelope(args: {
+  error: unknown;
+  roleId: string;
+  branchId: string;
+  runId: string;
+  loopIteration: number;
+  message?: string;
+}): RuntimeErrorEnvelope {
+  if (args.error instanceof Error && "envelope" in args.error) {
+    return normalizeRuntimeError(args.error, {
+      errorCode: "ROLE_EXECUTION_FAILED",
+      errorCategory: "execution",
+      stage: "execute",
+      retryable: false,
+      roleId: args.roleId,
+      runId: args.runId,
+      branchId: args.branchId
+    });
+  }
+
+  if (args.error instanceof ToolExecutionError) {
+    const errorCode =
+      args.error.category === "timeout"
+        ? "TOOL_EXECUTION_TIMEOUT"
+        : args.error.category === "output_limit"
+          ? "TOOL_EXECUTION_OUTPUT_LIMIT"
+          : "TOOL_EXECUTION_SPAWN";
+    return {
+      errorCode,
+      errorCategory: "execution",
+      message: args.message ?? args.error.message,
+      retryable: args.error.category === "timeout",
+      stage: "execute",
+      roleId: args.roleId,
+      runId: args.runId,
+      branchId: args.branchId
+    };
+  }
+
+  if (args.error instanceof OpencodeExecutionError) {
+    return {
+      errorCode: "OPENCODE_EXECUTION_ERROR",
+      errorCategory: "execution",
+      message: args.message ?? args.error.message,
+      retryable: false,
+      stage: "execute",
+      roleId: args.roleId,
+      runId: args.runId,
+      branchId: args.branchId
+    };
+  }
+
+  return normalizeRuntimeError(args.error, {
+    errorCode: "ROLE_EXECUTION_FAILED",
+    errorCategory: "execution",
+    stage: "execute",
+    retryable: false,
+    message: args.message,
+    roleId: args.roleId,
+    runId: args.runId,
+    branchId: args.branchId
+  });
+}
+
 function inferCorrectionReason(message: string): RoleOutputRepairRecord["kind"] | undefined {
   if (
     /valid JSON/i.test(message) ||
@@ -387,6 +454,14 @@ export async function executeRoleNode(args: {
 
   if (maxTransitions !== undefined && nextTransitionCount > maxTransitions) {
     const error = `Transition budget exceeded: ${nextTransitionCount} > ${maxTransitions}`;
+    const failure = buildFailureEnvelope({
+      error: new Error(error),
+      roleId: args.roleId,
+      branchId,
+      runId: args.runContext.runId,
+      loopIteration,
+      message: error
+    });
     const audit = createAuditRecord({
       roleId: args.roleId,
       branchId,
@@ -395,13 +470,15 @@ export async function executeRoleNode(args: {
       started,
       exitCode: 1,
       status: "failed",
-      error
+      error,
+      errorEnvelope: failure
     });
     await persistRoleResult({ roleId: args.roleId, context: args.runContext, execution, audit });
     await appendAuditRecord(args.runContext, audit);
     return {
       status: "failed",
       error,
+      failure,
       audit,
       branchId,
       loopIteration
@@ -410,6 +487,14 @@ export async function executeRoleNode(args: {
 
   if (!rolePackage) {
     const error = `Role package not loaded for role "${args.roleId}"`;
+    const failure = buildFailureEnvelope({
+      error: new Error(error),
+      roleId: args.roleId,
+      branchId,
+      runId: args.runContext.runId,
+      loopIteration,
+      message: error
+    });
     const audit = createAuditRecord({
       roleId: args.roleId,
       branchId,
@@ -418,13 +503,15 @@ export async function executeRoleNode(args: {
       started,
       exitCode: 1,
       status: "failed",
-      error
+      error,
+      errorEnvelope: failure
     });
     await persistRoleResult({ roleId: args.roleId, context: args.runContext, execution, audit });
     await appendAuditRecord(args.runContext, audit);
     return {
       status: "failed",
       error,
+      failure,
       audit,
       branchId,
       loopIteration
@@ -684,6 +771,14 @@ export async function executeRoleNode(args: {
     const message = error instanceof Error ? error.message : String(error);
     const category = error instanceof ToolExecutionError ? ` (${error.category})` : "";
     const executionError = error instanceof OpencodeExecutionError ? error.details : undefined;
+    const failure = buildFailureEnvelope({
+      error,
+      roleId: args.roleId,
+      branchId,
+      runId: args.runContext.runId,
+      loopIteration,
+      message: `${message}${category}`
+    });
     const repair =
       typeof error === "object" &&
       error !== null &&
@@ -717,6 +812,7 @@ export async function executeRoleNode(args: {
       stdout: executionError?.stdout,
       stderr: executionError?.stderr,
       error: `${message}${category}`,
+      errorEnvelope: failure,
       repair,
       correctionRequest
     });
@@ -734,6 +830,7 @@ export async function executeRoleNode(args: {
     return {
       status: "failed",
       error: `${message}${category}`,
+      failure,
       audit,
       branchId,
       loopIteration

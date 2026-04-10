@@ -103,3 +103,58 @@ minimalist[Role:debate-minimalist] -->|MINIMALIST_DONE| output
   const stateJson = JSON.parse(await readFile(path.resolve(runDir, "state.json"), "utf8"));
   assert.strictEqual(stateJson.graphState.finalRoleId, "debate-minimalist");
 });
+
+test("adapter resume rejects partial or corrupted state snapshots", async () => {
+  const tempRoot = await mkdtemp(path.join(os.tmpdir(), "ogsystem-resume-corrupt-"));
+  const systemPath = path.resolve(tempRoot, "resume-system.mmd");
+  const runtimePath = path.resolve(tempRoot, "runtime.json");
+  const runDir = path.resolve(tempRoot, "ogsystem-history", "broken-run");
+
+  const systemSource = `flowchart TD
+%% system.id=resume.corrupt.demo
+%% system.version=1.0.0
+%% law.global=law.console.base
+%% entry.role=debate-minimalist
+%% model.bind.debate-minimalist=balanced-gpt52
+
+input -->|GO| minimalist[Role:debate-minimalist]
+minimalist[Role:debate-minimalist] -->|MINIMALIST_DONE| output
+`;
+
+  await mkdir(runDir, { recursive: true });
+  await writeFile(systemPath, systemSource, "utf8");
+  await writeFile(
+    runtimePath,
+    JSON.stringify(
+      {
+        executor: "opencode",
+        roleRepo: path.resolve("og-roles"),
+        modelRepo: path.resolve("og-models"),
+        runsDir: "ogsystem-history"
+      },
+      null,
+      2
+    ),
+    "utf8"
+  );
+  await writeFile(path.resolve(runDir, "state.json"), JSON.stringify({ graphState: { status: "running" } }), "utf8");
+  await writeFile(path.resolve(runDir, "sessions.json"), JSON.stringify([], null, 2), "utf8");
+
+  await assert.rejects(
+    () =>
+      runSystemWithAdapter({
+        systemPath,
+        runtimeConfigPath: runtimePath,
+        lawsPath: path.resolve(".ogsystem", "laws.json"),
+        workdir: tempRoot,
+        resumeRunDir: "ogsystem-history/broken-run",
+        prompt: "resume corrupted",
+        dryRun: true
+      }),
+    (error) => {
+      assert.ok(error instanceof Error);
+      assert.match(error.message, /partial or corrupted/);
+      return true;
+    }
+  );
+});

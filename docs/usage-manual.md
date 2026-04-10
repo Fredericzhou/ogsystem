@@ -214,12 +214,18 @@ Example:
 
 ```json
 {
+  "configVersion": "1",
   "executor": "opencode",
   "roleRepo": "./og-roles",
   "modelRepo": "./og-models",
   "runsDir": "ogsystem-history"
 }
 ```
+
+Compatibility rule:
+
+- `configVersion` is optional for the current repo default, but when present it must be `"1"`
+- unsupported config versions fail fast; the runtime does not provide in-place migration
 
 ## 9. Run Directory Contract
 
@@ -239,6 +245,8 @@ Resume source of truth:
 
 - `state.json.graphState`
 - `sessions.json`
+- both files are written atomically
+- resume rejects partial/corrupted `graphState` snapshots before role execution starts
 
 Audit/operator artifacts:
 
@@ -271,6 +279,7 @@ Role output repair policy:
 - wrapped stdout that still contains one recoverable JSON object is normalized once
 - unknown event is auto-normalized only when the role has exactly one allowed outgoing event
 - schema mismatch fails fast and remains visible in the audit trail
+- repair statistics are recorded in `audit/summary.md` and the adapter result JSON
 
 For graph-based runs, `state.json` also persists:
 
@@ -279,6 +288,13 @@ For graph-based runs, `state.json` also persists:
 - `pendingJoinRoleIds`
 - `loopIterations`
 - `graphState`
+- run summary counters: `totalTransitions`, `okCount`, `failedCount`, `noopCount`
+- structured `failureCountsByErrorCode`
+
+Optional history cleanup:
+
+- `--cleanup-executions <n>` keeps only the latest `n` per-role `executions/<executionId>/` snapshots
+- cleanup never touches `state.json` or `sessions.json`
 
 ## 9.1 Artifact Retention Policy Classes
 
@@ -305,6 +321,18 @@ npm run run:doctor -- \
   --system examples/target-model-binding-system.mmd \
   --laws .ogsystem/laws.json
 ```
+
+Lint command:
+
+```bash
+npm run lint:system -- --system examples/target-model-binding-system.mmd
+```
+
+Lint rules:
+
+- reuses the same Mermaid parse/validate/compile path as runtime execution
+- stays read-only
+- emits one hard-fail diagnostic per error in `line errorCode message` form
 
 Run-directory inspection (resume prerequisites):
 

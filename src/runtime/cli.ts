@@ -2,6 +2,7 @@ import { writeFile } from "node:fs/promises";
 import { parseArgs } from "node:util";
 
 import { runSystemWithAdapter } from "./adapter.js";
+import { RuntimeError, formatRuntimeErrorEnvelope } from "./runtime-errors.js";
 
 function usage(): string {
   return [
@@ -16,6 +17,7 @@ function usage(): string {
     "  --profiles <file>       Legacy execution profiles JSON (optional)",
     "  --tools <file>          Legacy CLI tools JSON (optional)",
     "  --workdir <path>        Working directory and shared workspace (default: cwd)",
+    "  --cleanup-executions <n> Keep only the latest n per-role execution snapshots (optional)",
     "  --trace-out <file>       Write final runtime result JSON",
     "  --dry-run                Do not execute external commands"
   ].join("\n");
@@ -33,6 +35,7 @@ async function main(): Promise<void> {
       laws: { type: "string" },
       prompt: { type: "string" },
       workdir: { type: "string" },
+      "cleanup-executions": { type: "string" },
       "trace-out": { type: "string" },
       "dry-run": { type: "boolean" },
       help: { type: "boolean", short: "h" }
@@ -49,6 +52,17 @@ async function main(): Promise<void> {
     throw new Error(`Missing required args.\n\n${usage()}`);
   }
 
+  const cleanupExecutionHistory =
+    values["cleanup-executions"] === undefined
+      ? undefined
+      : Number.parseInt(values["cleanup-executions"], 10);
+  if (
+    cleanupExecutionHistory !== undefined &&
+    (!Number.isInteger(cleanupExecutionHistory) || cleanupExecutionHistory <= 0)
+  ) {
+    throw new Error("--cleanup-executions must be a positive integer");
+  }
+
   const result = await runSystemWithAdapter({
     systemPath: values.system,
     runtimeConfigPath: values.runtime,
@@ -59,7 +73,8 @@ async function main(): Promise<void> {
     lawsPath: values.laws,
     prompt: values.prompt,
     workdir: values.workdir ?? process.cwd(),
-    dryRun: values["dry-run"] ?? false
+    dryRun: values["dry-run"] ?? false,
+    cleanupExecutionHistory
   });
 
   const output = JSON.stringify(result, null, 2);
@@ -72,5 +87,8 @@ async function main(): Promise<void> {
 main().catch((error) => {
   const message = error instanceof Error ? error.stack ?? error.message : String(error);
   console.error(message);
+  if (error instanceof RuntimeError) {
+    console.error(formatRuntimeErrorEnvelope(error.envelope));
+  }
   process.exitCode = 1;
 });

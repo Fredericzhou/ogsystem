@@ -112,6 +112,15 @@ test("adapter runs graph debate example with parallel branches, join, and bounde
   });
   assert.strictEqual(resumed.status, "done");
   assert.strictEqual(resumed.finalRoleId, "debate-summary");
+
+  const moderatorExecutionsAfterResume = await readdir(
+    path.resolve(runDir, "roles", "debate-moderator", "executions")
+  );
+  const summaryExecutionsAfterResume = await readdir(
+    path.resolve(runDir, "roles", "debate-summary", "executions")
+  );
+  assert.strictEqual(moderatorExecutionsAfterResume.length, 2);
+  assert.strictEqual(summaryExecutionsAfterResume.length, 1);
 });
 
 test("adapter runs expert consultation example with parallel specialists and final summary", async () => {
@@ -159,4 +168,41 @@ test("adapter runs expert consultation example with parallel specialists and fin
     path.resolve(runDir, "roles", "diagnosis-chief-review", "executions")
   );
   assert.strictEqual(chiefExecutions.length, 1);
+});
+
+test("adapter optionally cleans historical execution snapshots without touching resume sources", async () => {
+  const repoRoot = process.cwd();
+  const tempRoot = await mkdtemp(path.join(os.tmpdir(), "ogsystem-cleanup-runtime-"));
+
+  await mkdir(path.resolve(tempRoot, ".ogsystem"), { recursive: true });
+  await symlink(path.resolve(repoRoot, "og-roles"), path.resolve(tempRoot, "og-roles"), "dir");
+  await symlink(path.resolve(repoRoot, "og-models"), path.resolve(tempRoot, "og-models"), "dir");
+  await symlink(
+    path.resolve(repoRoot, ".ogsystem", "runtime.json"),
+    path.resolve(tempRoot, ".ogsystem", "runtime.json")
+  );
+  await symlink(
+    path.resolve(repoRoot, ".ogsystem", "user-profile.json"),
+    path.resolve(tempRoot, ".ogsystem", "user-profile.json")
+  );
+
+  await runSystemWithAdapter({
+    systemPath: path.resolve(repoRoot, "examples", "langgraph-debate-current", "system.mmd"),
+    lawsPath: path.resolve(repoRoot, "examples", "langgraph-debate-current", "laws.json"),
+    userProfilePath: path.resolve(repoRoot, "examples", "langgraph-debate-current", "user-profile.json"),
+    prompt: "cleanup historical snapshots",
+    workdir: tempRoot,
+    dryRun: true,
+    cleanupExecutionHistory: 1
+  });
+
+  const runId = (await readdir(path.resolve(tempRoot, "ogsystem-history")))[0];
+  const runDir = path.resolve(tempRoot, "ogsystem-history", runId);
+  const moderatorExecutions = await readdir(
+    path.resolve(runDir, "roles", "debate-moderator", "executions")
+  );
+
+  assert.strictEqual(moderatorExecutions.length, 1);
+  await readFile(path.resolve(runDir, "state.json"), "utf8");
+  await readFile(path.resolve(runDir, "sessions.json"), "utf8");
 });

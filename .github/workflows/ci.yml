@@ -28,3 +28,7 @@ jobs:
         run: npm run build
       - name: Test
         run: npm test
+      - name: Dry-run regressions
+        run: npm run test:examples
+      - name: Doctor preflight
+        run: npm run test:doctor

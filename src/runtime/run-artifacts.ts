@@ -1,9 +1,19 @@
-import { access, appendFile, mkdir, readFile, readdir, writeFile } from "node:fs/promises";
+import {
+  access,
+  appendFile,
+  mkdir,
+  readFile,
+  readdir,
+  rm,
+  writeFile
+} from "node:fs/promises";
 import { basename, resolve } from "node:path";
 
-import { readJsonFile } from "./json-file.js";
+import { readJsonFile, writeTextFileAtomic } from "./json-file.js";
+import { createRuntimeError } from "./runtime-errors.js";
 import type {
   AuditRecord,
+  GraphState,
   OpencodeSessionRecord,
   RoleExecutionOutput,
   RoleExecutionRecord,
@@ -78,6 +88,10 @@ async function writeIfMissing(path: string, content: string): Promise<void> {
   await writeFile(path, content, "utf8");
 }
 
+export async function writeAtomicFile(path: string, content: string): Promise<void> {
+  await writeTextFileAtomic(path, content);
+}
+
 async function restoreRoleExecutionCount(executionsDir: string): Promise<number> {
   if (!(await directoryExists(executionsDir))) {
     return 0;
@@ -100,14 +114,13 @@ function buildExecutionId(executionIndex: number, startedAt: string): string {
 }
 
 async function persistSessionSnapshot(context: RunContext): Promise<void> {
-  await writeFile(
+  await writeAtomicFile(
     context.sessionsPath,
     stringifyJson(
       Array.from(context.sessionRecordsByRoleId.values()).sort((left, right) =>
         left.roleId.localeCompare(right.roleId)
       )
-    ),
-    "utf8"
+    )
   );
 }
 
@@ -237,6 +250,210 @@ export async function initializeRunContext(args: {
   };
 }
 
+export async function loadResumeGraphState(args: {
+  runDir: string;
+}): Promise<GraphState> {
+  const statePath = resolve(args.runDir, "state.json");
+  const sessionsPath = resolve(args.runDir, "sessions.json");
+
+  if (!(await pathExists(statePath))) {
+    throw createRuntimeError({
+      errorCode: "RESUME_STATE_MISSING",
+      errorCategory: "state",
+      message: `Missing resume state snapshot: ${statePath}`,
+      retryable: false,
+      stage: "resume",
+      runId: basename(args.runDir)
+    });
+  }
+  if (!(await pathExists(sessionsPath))) {
+    throw createRuntimeError({
+      errorCode: "RESUME_SESSIONS_MISSING",
+      errorCategory: "state",
+      message: `Missing resume session snapshot: ${sessionsPath}`,
+      retryable: false,
+      stage: "resume",
+      runId: basename(args.runDir)
+    });
+  }
+
+  let rawState: unknown;
+  try {
+    rawState = await readJsonFile(statePath);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    throw createRuntimeError({
+      errorCode: "RESUME_STATE_INVALID",
+      errorCategory: "state",
+      message: `Resume state snapshot is unreadable: ${statePath} (${message})`,
+      retryable: false,
+      stage: "resume",
+      runId: basename(args.runDir)
+    });
+  }
+  if (
+    typeof rawState !== "object" ||
+    rawState === null ||
+    Array.isArray(rawState) ||
+    !("graphState" in rawState)
+  ) {
+    throw createRuntimeError({
+      errorCode: "RESUME_STATE_INVALID",
+      errorCategory: "state",
+      message: `Resume state snapshot is missing graphState: ${statePath}`,
+      retryable: false,
+      stage: "resume",
+      runId: basename(args.runDir)
+    });
+  }
+
+  const graphState = (rawState as { graphState?: GraphState }).graphState;
+  if (
+    typeof graphState !== "object" ||
+    graphState === null ||
+    Array.isArray(graphState)
+  ) {
+    throw createRuntimeError({
+      errorCode: "RESUME_STATE_INVALID",
+      errorCategory: "state",
+      message: `Resume state snapshot contains an invalid graphState: ${statePath}`,
+      retryable: false,
+      stage: "resume",
+      runId: basename(args.runDir)
+    });
+  }
+  if (
+    typeof graphState.userPrompt !== "string" ||
+    typeof graphState.status !== "string" ||
+    typeof graphState.error !== "string" ||
+    typeof graphState.transitionCount !== "number" ||
+    !Array.isArray(graphState.auditTrail) ||
+    typeof graphState.roleResults !== "object" ||
+    graphState.roleResults === null ||
+    Array.isArray(graphState.roleResults) ||
+    typeof graphState.branchRecords !== "object" ||
+    graphState.branchRecords === null ||
+    Array.isArray(graphState.branchRecords) ||
+    typeof graphState.loopIterations !== "object" ||
+    graphState.loopIterations === null ||
+    Array.isArray(graphState.loopIterations) ||
+    typeof graphState.selectedEventByRoleId !== "object" ||
+    graphState.selectedEventByRoleId === null ||
+    Array.isArray(graphState.selectedEventByRoleId) ||
+    typeof graphState.finalOutput !== "string" ||
+    typeof graphState.finalRoleId !== "string" ||
+    typeof graphState.lastExecutedRoleId !== "string"
+  ) {
+    throw createRuntimeError({
+      errorCode: "RESUME_STATE_INVALID",
+      errorCategory: "state",
+      message: `Resume state snapshot is partial or corrupted: ${statePath}`,
+      retryable: false,
+      stage: "resume",
+      runId: basename(args.runDir)
+    });
+  }
+
+  let sessions: unknown;
+  try {
+    sessions = await readJsonFile(sessionsPath);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    throw createRuntimeError({
+      errorCode: "RESUME_SESSIONS_INVALID",
+      errorCategory: "state",
+      message: `Resume session snapshot is unreadable: ${sessionsPath} (${message})`,
+      retryable: false,
+      stage: "resume",
+      runId: basename(args.runDir)
+    });
+  }
+  if (!Array.isArray(sessions)) {
+    throw createRuntimeError({
+      errorCode: "RESUME_SESSIONS_INVALID",
+      errorCategory: "state",
+      message: `Resume session snapshot must be an array: ${sessionsPath}`,
+      retryable: false,
+      stage: "resume",
+      runId: basename(args.runDir)
+    });
+  }
+
+  const seenRoleIds = new Set<string>();
+  for (const item of sessions) {
+    if (
+      typeof item !== "object" ||
+      item === null ||
+      Array.isArray(item) ||
+      typeof (item as OpencodeSessionRecord).roleId !== "string"
+    ) {
+      throw createRuntimeError({
+        errorCode: "RESUME_SESSIONS_INVALID",
+        errorCategory: "state",
+        message: `Resume session snapshot contains invalid entries: ${sessionsPath}`,
+        retryable: false,
+        stage: "resume",
+        runId: basename(args.runDir)
+      });
+    }
+
+    const roleId = (item as OpencodeSessionRecord).roleId;
+    if (seenRoleIds.has(roleId)) {
+      throw createRuntimeError({
+        errorCode: "RESUME_SESSIONS_INVALID",
+        errorCategory: "state",
+        message: `Resume session snapshot contains duplicate roleId "${roleId}": ${sessionsPath}`,
+        retryable: false,
+        stage: "resume",
+        runId: basename(args.runDir)
+      });
+    }
+    seenRoleIds.add(roleId);
+
+    const hasAuditTrailEntry = graphState.auditTrail.some((entry) => entry.roleId === roleId);
+    const hasRoleResult = Boolean(graphState.roleResults?.[roleId]);
+    const hasBranchRecord = Object.values(graphState.branchRecords).some(
+      (branch) => branch.roleId === roleId
+    );
+    const matchesLastExecution =
+      graphState.lastExecutedRoleId === roleId || graphState.finalRoleId === roleId;
+    if (!hasAuditTrailEntry && !hasRoleResult && !hasBranchRecord && !matchesLastExecution) {
+      throw createRuntimeError({
+        errorCode: "RESUME_SNAPSHOT_INCONSISTENT",
+        errorCategory: "state",
+        message: `Resume session record for "${roleId}" is not represented in graphState: ${statePath} vs ${sessionsPath}`,
+        retryable: false,
+        stage: "resume",
+        runId: basename(args.runDir)
+      });
+    }
+  }
+
+  return graphState;
+}
+
+export async function cleanupHistoricalExecutionSnapshots(args: {
+  context: RunContext;
+  keepLatest: number;
+}): Promise<void> {
+  if (!Number.isInteger(args.keepLatest) || args.keepLatest <= 0) {
+    return;
+  }
+
+  for (const roleDirs of args.context.roleDirsById.values()) {
+    const entries = await readdir(roleDirs.executionsDir, { withFileTypes: true });
+    const executionDirs = entries
+      .filter((entry) => entry.isDirectory())
+      .map((entry) => entry.name)
+      .sort((left, right) => left.localeCompare(right));
+
+    const removable = executionDirs.slice(0, Math.max(0, executionDirs.length - args.keepLatest));
+    await Promise.all(
+      removable.map((entry) => rm(resolve(roleDirs.executionsDir, entry), { recursive: true, force: true }))
+    );
+  }
+}
+
 export function allocateRoleExecution(args: {
   context: RunContext;
   roleId: string;
@@ -294,8 +511,8 @@ export async function persistRoleSession(args: {
   args.context.sessionRecordsByRoleId.set(args.roleId, record);
   const content = stringifyJson(record);
   await mkdir(args.execution.executionDir, { recursive: true });
-  await writeFile(roleDirs.sessionPath, content, "utf8");
-  await writeFile(resolve(args.execution.executionDir, "session.json"), content, "utf8");
+  await writeAtomicFile(roleDirs.sessionPath, content);
+  await writeAtomicFile(resolve(args.execution.executionDir, "session.json"), content);
   await persistSessionSnapshot(args.context);
   return record;
 }
