@@ -405,31 +405,7 @@ node skills/ogsystem-nl-to-mmd/scripts/validate_ogsystem_mmd.mjs \
   --run-dir .ogsystems/<run-id>
 ```
 
-## 11. Doctor And Recovery Diagnostics
-
-Preflight check runtime/law/system consistency:
-
-```bash
-npm run run:doctor -- \
-  --required opencode \
-  --system examples/target-model-binding-system.mmd
-```
-
-Inspect persisted run directory recovery prerequisites:
-
-```bash
-npm run run:doctor -- \
-  --run-dir .ogsystems/<run-id>
-```
-
-Doctor output contract:
-
-- `errors`: must-fix problems that make run/resume invalid
-- `warnings`: non-blocking inventory or compatibility issues
-- `notes`: informational diagnostics (supported modes, artifact policy count, scanned paths)
-- `run.resumePrerequisites`: explicit readiness checks for `state.json`, `state.json.graphState`, `sessions.json`
-
-## 12. Migration Notes
+## 11. Migration Notes
 
 - new docs and templates should use `model.bind.*`
 - during migration, `exec.bind.*` remains a compatibility path

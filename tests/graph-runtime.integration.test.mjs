@@ -6,7 +6,7 @@ import { lstat, mkdtemp, mkdir, readFile, readdir, symlink } from "node:fs/promi
 
 import { runSystemWithAdapter } from "../dist/runtime/adapter.js";
 
-test("adapter runs langgraph debate example with parallel branches, join, and bounded loop", async () => {
+test("adapter runs graph debate example with parallel branches, join, and bounded loop", async () => {
   const repoRoot = process.cwd();
   const tempRoot = await mkdtemp(path.join(os.tmpdir(), "ogsystem-langgraph-runtime-"));
 
@@ -114,7 +114,7 @@ test("adapter runs langgraph debate example with parallel branches, join, and bo
   assert.strictEqual(resumed.finalRoleId, "debate-summary");
 });
 
-test("adapter runs minimal expert consultation example with parallel specialists and final summary", async () => {
+test("adapter runs expert consultation example with parallel specialists and final summary", async () => {
   const repoRoot = process.cwd();
   const tempRoot = await mkdtemp(path.join(os.tmpdir(), "ogsystem-expert-runtime-"));
 

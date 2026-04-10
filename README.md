@@ -26,7 +26,6 @@ Product introduction:
 Detailed usage manual:
 
 - `docs/usage-manual.md`
-- `docs/product-introduction.md`
 
 Install:
 
@@ -173,10 +172,8 @@ node skills/ogsystem-nl-to-mmd/scripts/validate_ogsystem_mmd.mjs \
 
 - `docs/product-introduction.md`
 - `docs/DECISIONS.md`
-- `docs/product-introduction.md`
 - `docs/role-model-user-profile-minimal-spec.md`
 - `docs/usage-manual.md`
-- `docs/single-graph-runtime-execution-checklist.md`
 - `docs/langgraph-engine-example-systems.md` (active examples, historical filename)
 - `specs/mermaid-dsl-v0.1.md`
 
@@ -186,6 +183,7 @@ Architecture source of truth:
 
 ## Historical Docs
 
+- `docs/single-graph-runtime-execution-checklist.md` (completed migration record)
 - `docs/implementation-checklist-role-model-opencode-langgraph.md`
 - `docs/ogsystem-role-repo-minimal-plan.md`
 - `docs/opencode-single-serve-multi-session-plan.md`

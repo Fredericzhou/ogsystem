@@ -59,27 +59,6 @@ export function projectStateSnapshot(args: {
   };
 }
 
-export function allJoinSourcesReady(args: {
-  joinRoleId: string;
-  currentRoleId: string;
-  loopIteration: number;
-  state: GraphState;
-  plan: ExecutionPlan;
-  currentResult?: StoredRoleResult;
-}): boolean {
-  const joinNode = getExecutionPlanNode(args.plan, args.joinRoleId);
-  for (const sourceRoleId of joinNode.joinSources) {
-    if (sourceRoleId === args.currentRoleId) {
-      continue;
-    }
-    const result = args.state.roleResults[sourceRoleId];
-    if (!result || result.loopIteration !== args.loopIteration) {
-      return false;
-    }
-  }
-  return Boolean(args.currentResult || args.state.roleResults[args.currentRoleId]);
-}
-
 export function findCurrentBranch(state: GraphState, roleId: string): BranchRecord | undefined {
   const branches = Object.values(state.branchRecords).filter(
     (branch) => branch.roleId === roleId && branch.status === "active"

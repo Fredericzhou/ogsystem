@@ -3,7 +3,6 @@ import assert from "node:assert/strict";
 
 import { createExecutionPlan } from "../dist/runtime/execution-plan.js";
 import {
-  allJoinSourcesReady,
   createInitialState,
   getTargetLoopIteration,
   getActiveRoleIds,
@@ -69,12 +68,11 @@ test("graph runtime helpers cover loop budget, join readiness, and state project
     loopIteration: 1
   };
   assert.equal(
-    allJoinSourcesReady({
-      joinRoleId: "review",
+    isJoinNodeReady({
+      node: review,
       currentRoleId: "worker_a",
       loopIteration: 1,
-      state,
-      plan
+      state
     }),
     false
   );
@@ -85,16 +83,6 @@ test("graph runtime helpers cover loop budget, join readiness, and state project
     content: "b",
     loopIteration: 1
   };
-  assert.equal(
-    allJoinSourcesReady({
-      joinRoleId: "review",
-      currentRoleId: "worker_b",
-      loopIteration: 1,
-      state,
-      plan
-    }),
-    true
-  );
   assert.equal(
     isJoinNodeReady({
       node: review,
