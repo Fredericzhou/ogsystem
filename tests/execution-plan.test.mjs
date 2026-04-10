@@ -23,6 +23,7 @@ dispatch[Role:dispatch] -->|TO_A| workerA[Role:worker_a]
 dispatch[Role:dispatch] -->|TO_B| workerB[Role:worker_b]
 workerA[Role:worker_a] -->|A_DONE| review[Role:review]
 workerB[Role:worker_b] -->|B_DONE| review[Role:review]
+review[Role:review] -->|RETRY| dispatch[Role:dispatch]
 review[Role:review] -->|DONE| output
 `;
 
@@ -63,5 +64,5 @@ test("execution plan normalizes graph semantics and bindings", () => {
 
   assert.strictEqual(review.joinMode, "all_of");
   assert.deepStrictEqual(review.joinSources, ["worker_a", "worker_b"]);
-  assert.strictEqual(review.isTerminal, true);
+  assert.strictEqual(review.isTerminal, false);
 });

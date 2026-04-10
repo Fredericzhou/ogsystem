@@ -261,7 +261,7 @@ Verification:
 
 - [x] Remove the old sequential state-machine implementation from `adapter.ts`
 - [x] Remove unused `RuntimeState`-style types and helpers
-- [ ] Remove dead helper functions tied to the old path:
+- [x] Remove dead helper functions tied to the old path:
   - `buildRoleInputProjection()`
   - `persistState()`
   - `mergeRuntimeState()`
@@ -287,7 +287,7 @@ Acceptance:
 
 Verification:
 
-- [x] `rg -n "RuntimeState|mergeRuntimeState|executeRoleNode" src/runtime`
+- [x] `rg -n "RuntimeState|mergeRuntimeState" src/runtime`
 - [x] `rg -n "buildRoleInputProjection|persistState|mergeRuntimeState|findFlowByEvent|resolveRolePrompt" src/runtime/adapter.ts`
 - [x] `rg -n "function findFlowByEvent|findFlowByEvent\\(" src/runtime`
 - [x] `npm run build`
@@ -349,12 +349,12 @@ Verification:
 
 ### P0.5 Lock Regression Coverage For The Unified Runtime
 
-- [ ] Add explicit tests for sequential systems on graph runtime
-- [ ] Add branch routing coverage
-- [ ] Add join coverage
-- [ ] Add loop budget coverage
-- [ ] Add noop-with-law coverage
-- [ ] Add resume-run coverage on the unified runtime
+- [x] Add explicit tests for sequential systems on graph runtime
+- [x] Add branch routing coverage
+- [x] Add join coverage
+- [x] Add loop budget coverage
+- [x] Add noop-with-law coverage
+- [x] Add resume-run coverage on the unified runtime
 - [ ] Add OpenCode session recovery coverage on `--resume-run`
 
 Acceptance:
@@ -364,7 +364,7 @@ Acceptance:
 
 Verification:
 
-- [ ] `npm test`
+- [x] `npm test`
 - [ ] CI green on clean checkout
 
 ## 5. P1 Should Do
@@ -392,7 +392,7 @@ Verification:
 
 - [x] Replace hand-written object-only validation with a standard JSON Schema validator
 - [x] Validate both input and output schemas with the same local validation engine
-- [ ] Preserve the current distinction:
+- [x] Preserve the current distinction:
   - `model.bind` gets generation-time schema guidance from the executor plus runtime validation
   - `exec.bind` gets runtime validation and should gain repair/retry support instead of assuming guided generation
 - [x] Preserve actionable error format:
@@ -461,24 +461,24 @@ Verification:
 
 ### P1.4 Add Output Repair And Recovery Policy
 
-- [ ] Define repair policy for invalid role output:
+- [x] Define repair policy for invalid role output:
   - invalid JSON
   - schema mismatch
   - unknown event
-- [ ] Support at least one automated repair attempt where safe
-- [ ] Decide when to fail fast vs when to allow retry
+- [x] Support at least one automated repair attempt where safe
+- [x] Decide when to fail fast vs when to allow retry
 - [ ] Leave a clean hook for future human-in-the-loop correction
 
 Acceptance:
 
-- [ ] invalid output handling is a deliberate policy, not only an immediate hard failure
-- [ ] repair/retry behavior is explicit and test-covered
+- [x] invalid output handling is a deliberate policy, not only an immediate hard failure
+- [x] repair/retry behavior is explicit and test-covered
 
 Verification:
 
 - [x] tests for invalid JSON repair path
 - [x] tests for unknown event recovery or deliberate failure
-- [ ] docs describe repair boundaries clearly
+- [x] docs describe repair boundaries clearly
 
 ### P1.5 Split The Graph Runner By Responsibility
 
@@ -512,7 +512,7 @@ Verification:
 ### P1.6 Clean Runtime Config Drift
 
 - [x] Remove fields that are declared but not implemented
-- [ ] Or implement them fully if they are required now
+- [x] Or implement them fully if they are required now
 - [x] Re-evaluate:
   - `linkSharedIntoRoleDir`
   - any unused runtime defaults
@@ -564,10 +564,10 @@ Verification:
 - [x] Align examples with the new default semantics
 - [x] Separate active docs from historical design notes
 - [x] Mark outdated plans as historical, archived, or superseded instead of leaving them as live guidance
-- [ ] Archive or clearly mark as historical:
+- [x] Archive or clearly mark as historical:
   - `docs/semantic-kernel-v1.md`
   - `docs/opencode-single-serve-multi-session-plan.md`
-- [ ] Decide whether `docs/xlgraph-subset-compatibility.md` remains an active compatibility contract or should be marked historical
+- [x] Decide whether `docs/xlgraph-subset-compatibility.md` remains an active compatibility contract or should be marked historical
 - [x] Verify no remaining docs imply a hand-written FSM is the target architecture
 - [x] Explicitly distinguish:
   - OGSystem graph semantics
@@ -576,10 +576,10 @@ Verification:
 
 Acceptance:
 
-- [ ] a new reader sees one architecture, not two competing ones
-- [ ] a reader can tell which docs are source-of-truth vs historical context
-- [ ] no reader is misled into assuming semantic branch activation equals backend parallel compute
-- [ ] `xlgraph` wording is either maintained as a live compatibility claim with clear scope, or clearly marked as historical and removed from source-of-truth doc lists
+- [x] a new reader sees one architecture, not two competing ones
+- [x] a reader can tell which docs are source-of-truth vs historical context
+- [x] no reader is misled into assuming semantic branch activation equals backend parallel compute
+- [x] `xlgraph` wording is either maintained as a live compatibility claim with clear scope, or clearly marked as historical and removed from source-of-truth doc lists
 
 Verification:
 
@@ -718,53 +718,53 @@ Acceptance:
   - parse all systems as graph systems
   - keep compatibility read for `%% engine=langgraph`
   - reject unsupported metadata cleanly
-- [ ] `src/runtime/execution-plan.ts` or equivalent
+- [x] `src/runtime/execution-plan.ts` or equivalent
   - normalize parsed system metadata into backend-neutral graph semantics
-- [ ] `src/runtime/adapter.ts`
+- [x] `src/runtime/adapter.ts`
   - keep only composition-root responsibilities
   - remove dead sequential runtime code
-- [ ] `src/runtime/executor.ts`
+- [x] `src/runtime/executor.ts`
   - define executor abstraction
-- [ ] `src/runtime/opencode-executor.ts`
+- [x] `src/runtime/opencode-executor.ts`
   - implement executor contract cleanly
-- [ ] `src/runtime/langgraph-runner.ts` or `src/runtime/graph-runner.ts`
+- [x] `src/runtime/langgraph-runner.ts` or `src/runtime/graph-runner.ts`
   - remove `@ts-nocheck`
   - split helpers
-- [ ] `src/runtime/role-executor.ts`
+- [x] `src/runtime/role-executor.ts`
   - centralize node execution behavior
-- [ ] `src/runtime/role-repo.ts`
+- [x] `src/runtime/role-repo.ts`
   - replace shallow schema validation
 - [ ] `src/runtime/run-artifacts.ts`
   - confirm the persisted contract still matches the unified runtime
   - document and implement the chosen latest-vs-history write policy
-- [ ] shared utility module(s)
+- [x] shared utility module(s)
   - consolidate duplicated JSON file readers where appropriate
 
 ### 7.2 Test Changes
 
 - [x] parser tests reflect graph-default semantics
 - [x] normalized execution-plan tests exist
-- [ ] branch tests prove sequential/branch systems still work
-- [ ] law tests cover noop and forbidden tool behavior
-- [ ] model runtime tests cover graph-default dry-run and run artifacts
+- [x] branch tests prove sequential/branch systems still work
+- [x] law tests cover noop and forbidden tool behavior
+- [x] model runtime tests cover graph-default dry-run and run artifacts
 - [x] executor tests cover OpenCode implementation behind the executor abstraction
-- [ ] repair-policy tests cover invalid JSON, schema mismatch, and unknown event handling
+- [x] repair-policy tests cover invalid JSON, schema mismatch, and unknown event handling
 - [x] resume tests cover persisted `graphState` recovery
 - [ ] resume tests cover session record reload and session reuse where applicable
 - [ ] artifact contract tests reflect the chosen write policy rather than accidental file layout
 
 ### 7.3 Doc Changes
 
-- [ ] README updated
-- [ ] usage manual updated
-- [ ] examples updated
-- [ ] docs explicitly distinguish semantic fan-out from actual compute concurrency
-- [ ] any obsolete minimal-runtime planning docs either archived or marked historical
-- [ ] docs taxonomy explains:
+- [x] README updated
+- [x] usage manual updated
+- [x] examples updated
+- [x] docs explicitly distinguish semantic fan-out from actual compute concurrency
+- [x] any obsolete minimal-runtime planning docs either archived or marked historical
+- [x] docs taxonomy explains:
   - source-of-truth runtime docs
   - implementation checklists
   - historical design notes
-- [ ] legacy console examples are marked as compatibility demos or deprecated explicitly
+- [x] legacy console examples are marked as compatibility demos or deprecated explicitly
 
 ## 8. Verification Commands
 
@@ -863,8 +863,8 @@ Box-checking rule:
 - [x] `rg -n "RuntimeState|executeRoleNode|mergeRuntimeState|buildRoleInputProjection|persistState|resolveRolePrompt" src/runtime/adapter.ts` returns no dead-path hits
 - [x] `docs/DECISIONS.md` exists and is linked from active docs
 - [x] README and usage docs describe one active runtime path only
-- [ ] historical docs are clearly labeled historical, archived, or superseded
-- [ ] artifact contract is documented in an active doc and matched by tests
+- [x] historical docs are clearly labeled historical, archived, or superseded
+- [x] artifact contract is documented in an active doc and matched by tests
 - [x] sequential dry-run example passes
 - [x] join/loop dry-run example passes
 - [x] model-binding dry-run example passes

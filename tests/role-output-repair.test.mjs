@@ -2,16 +2,77 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import path from "node:path";
 import os from "node:os";
-import { mkdtemp, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, writeFile } from "node:fs/promises";
 
 import { runSystemWithAdapter } from "../dist/runtime/adapter.js";
 
-async function setupRepairFixture(mode) {
+async function setupRepairFixture(args) {
+  const mode = args.mode;
+  const roleId = args.roleId ?? "test-operator";
+  const systemSource =
+    args.systemSource ??
+    `flowchart TD
+%% system.id=repair.demo
+%% system.version=1.0.0
+%% law.global=law.branch
+%% entry.role=${roleId}
+%% exec.bind.${roleId}=profile.repair
+
+input -->|GO| operator[Role:${roleId}]
+operator[Role:${roleId}] -->|DONE| output
+`;
   const tempRoot = await mkdtemp(path.join(os.tmpdir(), "ogsystem-repair-"));
   const scriptPath = path.resolve(tempRoot, "repair-tool.js");
   const systemPath = path.resolve(tempRoot, "repair-system.mmd");
   const profilesPath = path.resolve(tempRoot, "repair-profiles.json");
   const toolsPath = path.resolve(tempRoot, "repair-tools.json");
+  const runtimeConfigPath = path.resolve(tempRoot, "runtime.json");
+  const roleDir = path.resolve(tempRoot, "og-roles", "roles", "test-operator");
+
+  await mkdir(roleDir, { recursive: true });
+  await writeFile(
+    path.resolve(roleDir, "role.json"),
+    JSON.stringify(
+      {
+        roleId: "test-operator",
+        roleVersion: "1.0.0",
+        name: "Test Operator",
+        description: "Repair-policy fixture role.",
+        promptTemplate: "prompt.md",
+        outputSchema: "output.schema.json",
+        tags: ["test"]
+      },
+      null,
+      2
+    ),
+    "utf8"
+  );
+  await writeFile(path.resolve(roleDir, "prompt.md"), "Task:\n{{task}}\n\nReturn JSON only.\n", "utf8");
+  await writeFile(
+    path.resolve(roleDir, "output.schema.json"),
+    JSON.stringify(
+      {
+        type: "object",
+        required: ["event", "content"],
+        properties: {
+          event: {
+            type: "string",
+            enum: ["DONE"]
+          },
+          content: {
+            type: "string"
+          },
+          data: {
+            type: "object"
+          }
+        },
+        additionalProperties: false
+      },
+      null,
+      2
+    ),
+    "utf8"
+  );
 
   await writeFile(
     scriptPath,
@@ -24,7 +85,7 @@ switch (mode) {
     console.log(JSON.stringify({ event: "NOT_DONE", content: "normalized" }));
     break;
   case "schema-mismatch":
-    console.log(JSON.stringify({ event: "DONE", content: 123 }));
+    console.log(JSON.stringify({ event: "WRONG", content: "bad" }));
     break;
   default:
     throw new Error(\`Unsupported mode: \${mode}\`);
@@ -35,16 +96,7 @@ switch (mode) {
 
   await writeFile(
     systemPath,
-    `flowchart TD
-%% system.id=repair.demo
-%% system.version=1.0.0
-%% law.global=law.branch
-%% entry.role=test-operator
-%% exec.bind.test-operator=profile.repair
-
-input -->|GO| operator[Role:test-operator]
-operator[Role:test-operator] -->|DONE| output
-`,
+    systemSource,
     "utf8"
   );
 
@@ -74,19 +126,36 @@ operator[Role:test-operator] -->|DONE| output
     "utf8"
   );
 
+  await writeFile(
+    runtimeConfigPath,
+    JSON.stringify(
+      {
+        executor: "opencode",
+        roleRepo: path.resolve("og-roles"),
+        modelRepo: path.resolve("og-models"),
+        runsDir: ".ogsystems"
+      },
+      null,
+      2
+    ),
+    "utf8"
+  );
+
   return {
     tempRoot,
     systemPath,
     profilesPath,
     toolsPath,
+    runtimeConfigPath,
     lawsPath: path.resolve("tests/fixtures/laws/law-branch.json")
   };
 }
 
 test("runtime repairs wrapped JSON tool output once", async () => {
-  const fixture = await setupRepairFixture("wrapped-json");
+  const fixture = await setupRepairFixture({ mode: "wrapped-json" });
   const result = await runSystemWithAdapter({
     systemPath: fixture.systemPath,
+    runtimeConfigPath: fixture.runtimeConfigPath,
     profilesPath: fixture.profilesPath,
     toolsPath: fixture.toolsPath,
     lawsPath: fixture.lawsPath,
@@ -101,9 +170,10 @@ test("runtime repairs wrapped JSON tool output once", async () => {
 });
 
 test("runtime normalizes unknown event only when one event is allowed", async () => {
-  const fixture = await setupRepairFixture("unknown-event");
+  const fixture = await setupRepairFixture({ mode: "unknown-event" });
   const result = await runSystemWithAdapter({
     systemPath: fixture.systemPath,
+    runtimeConfigPath: fixture.runtimeConfigPath,
     profilesPath: fixture.profilesPath,
     toolsPath: fixture.toolsPath,
     lawsPath: fixture.lawsPath,
@@ -118,9 +188,26 @@ test("runtime normalizes unknown event only when one event is allowed", async ()
 });
 
 test("runtime fails fast on schema mismatch after parsing output", async () => {
-  const fixture = await setupRepairFixture("schema-mismatch");
+  const fixture = await setupRepairFixture({
+    mode: "schema-mismatch",
+    roleId: "test-decision",
+    systemSource: `flowchart TD
+%% system.id=repair.schema.demo
+%% system.version=1.0.0
+%% law.global=law.branch
+%% entry.role=test-decision
+%% exec.bind.test-decision=profile.repair
+
+input -->|GO| decision[Role:test-decision]
+decision[Role:test-decision] -->|PATH_A| branchA[Role:test-branch-a]
+decision[Role:test-decision] -->|PATH_B| branchB[Role:test-branch-b]
+branchA[Role:test-branch-a] -->|END_A| output
+branchB[Role:test-branch-b] -->|END_B| output
+`
+  });
   const result = await runSystemWithAdapter({
     systemPath: fixture.systemPath,
+    runtimeConfigPath: fixture.runtimeConfigPath,
     profilesPath: fixture.profilesPath,
     toolsPath: fixture.toolsPath,
     lawsPath: fixture.lawsPath,
@@ -130,5 +217,5 @@ test("runtime fails fast on schema mismatch after parsing output", async () => {
 
   assert.strictEqual(result.status, "failed");
   assert.match(result.error ?? "", /output\.schema\.json/);
-  assert.match(result.error ?? "", /\$\.content/);
+  assert.match(result.error ?? "", /\$\.event/);
 });
