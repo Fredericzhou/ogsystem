@@ -111,6 +111,40 @@ export async function createNl2MmdConversation(args: {
   return conversation;
 }
 
+export async function runNl2MmdPreflight(args: {
+  conversation: Nl2MmdConversation;
+}): Promise<void> {
+  const conversation = args.conversation as ManagedConversation;
+  const startedAt = Date.now();
+  const result = await executeOpencodeModelRole({
+    roleId: "nl2mmd-preflight",
+    prompt:
+      'Preflight check. Return exactly one JSON object: {"status":"ok"}. Do not include markdown.',
+    schema: {
+      type: "object",
+      required: ["status"],
+      properties: {
+        status: {
+          type: "string"
+        }
+      },
+      additionalProperties: false
+    },
+    modelPackage: conversation.modelPackage,
+    workdir: conversation.workdir,
+    timeoutMs: Math.min(conversation.modelPackage.manifest.timeoutMs ?? 120000, 45000),
+    maxOutputBytes: Math.min(conversation.modelPackage.manifest.maxOutputBytes ?? 65536, 8192),
+    runClient: conversation.runClient,
+    sessionId: conversation.sessionId
+  });
+  conversation.sessionId = result.sessionId ?? conversation.sessionId;
+  logNl2MmdDebug("preflight.complete", {
+    modelId: conversation.modelPackage.manifest.modelId,
+    sessionId: conversation.sessionId ?? "(none)",
+    durationMs: Date.now() - startedAt
+  });
+}
+
 export async function runNl2MmdTurn(args: {
   conversation: Nl2MmdConversation;
   input: Nl2MmdTurnInput;

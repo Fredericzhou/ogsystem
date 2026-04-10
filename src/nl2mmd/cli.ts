@@ -6,6 +6,7 @@ import {
   createNl2MmdConversation,
   detectSemanticHints,
   loadNl2MmdContext,
+  runNl2MmdPreflight,
   runNl2MmdTurn,
   searchModels,
   searchRoles,
@@ -25,6 +26,7 @@ function usage(): string {
     "  --laws <file>          Laws JSON (optional)",
     "  --profiles <file>      Legacy profiles JSON for exec.bind validation (optional)",
     "  --user-profile <file>  User profile JSON for validation (optional)",
+    "  --no-preflight         Skip startup preflight (default is preflight enabled)",
     "  --workdir <path>       Working directory (default: cwd)",
     "  --help                 Show help",
     "",
@@ -137,6 +139,7 @@ async function main(): Promise<void> {
       laws: { type: "string" },
       profiles: { type: "string" },
       "user-profile": { type: "string" },
+      "no-preflight": { type: "boolean" },
       workdir: { type: "string" },
       help: { type: "boolean", short: "h" }
     },
@@ -206,7 +209,28 @@ async function main(): Promise<void> {
     return turn;
   }
 
+  async function runPreflightIfNeeded(): Promise<void> {
+    if (values["no-preflight"]) {
+      return;
+    }
+    printSection("Preflight", "checking opencode lifecycle and model subscription...");
+    const activeConversation = await ensureConversation();
+    try {
+      await runNl2MmdPreflight({
+        conversation: activeConversation
+      });
+    } catch (error) {
+      const detail = error instanceof Error ? error.message : String(error);
+      throw new Error(
+        `NL2MMD preflight failed: ${detail}\nHint: verify Opencode account/group subscription and model access permissions.`
+      );
+    }
+    printSection("Preflight", "ok");
+  }
+
   try {
+    await runPreflightIfNeeded();
+
     if (values.message) {
       await submit(values.message);
       return;
