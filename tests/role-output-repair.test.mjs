@@ -2,7 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import path from "node:path";
 import os from "node:os";
-import { mkdir, mkdtemp, writeFile } from "node:fs/promises";
+import { mkdtemp, writeFile } from "node:fs/promises";
 
 import { runSystemWithAdapter } from "../dist/runtime/adapter.js";
 
@@ -27,52 +27,6 @@ operator[Role:${roleId}] -->|DONE| output
   const profilesPath = path.resolve(tempRoot, "repair-profiles.json");
   const toolsPath = path.resolve(tempRoot, "repair-tools.json");
   const runtimeConfigPath = path.resolve(tempRoot, "runtime.json");
-  const roleDir = path.resolve(tempRoot, "og-roles", "roles", roleId);
-
-  await mkdir(roleDir, { recursive: true });
-  await writeFile(
-    path.resolve(roleDir, "role.json"),
-    JSON.stringify(
-      {
-        roleId,
-        roleVersion: "1.0.0",
-        name: "Test Operator",
-        description: "Repair-policy fixture role.",
-        promptTemplate: "prompt.md",
-        outputSchema: "output.schema.json",
-        tags: ["test"]
-      },
-      null,
-      2
-    ),
-    "utf8"
-  );
-  await writeFile(path.resolve(roleDir, "prompt.md"), "Task:\n{{task}}\n\nReturn JSON only.\n", "utf8");
-  await writeFile(
-    path.resolve(roleDir, "output.schema.json"),
-    JSON.stringify(
-      {
-        type: "object",
-        required: ["event", "content"],
-        properties: {
-          event: {
-            type: "string",
-            enum: ["DONE"]
-          },
-          content: {
-            type: "string"
-          },
-          data: {
-            type: "object"
-          }
-        },
-        additionalProperties: false
-      },
-      null,
-      2
-    ),
-    "utf8"
-  );
 
   await writeFile(
     scriptPath,
@@ -131,7 +85,7 @@ switch (mode) {
     JSON.stringify(
       {
         executor: "opencode",
-        roleRepo: path.resolve(tempRoot, "og-roles"),
+        roleRepo: path.resolve("og-roles"),
         modelRepo: path.resolve("og-models"),
         runsDir: ".ogsystems"
       },
