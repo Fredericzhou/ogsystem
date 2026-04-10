@@ -132,7 +132,7 @@ Orchestration semantics contract:
 - `parallel_split` activates all downstream targets of the current role in the same transition
 - default routing without `role.mode` is event-driven; runtime injects `allowed_events`, and non-parallel roles with outgoing flows must emit `event`
 - `join.mode.<roleId>=all_of` waits until every role listed in `join.sources.<roleId>` has produced a result under the same `lineageId`
-- `all_of` join projects upstream results into `{{context}}` as source-role-scoped sections rather than exposing raw runtime state
+- `all_of` join projects upstream results into `{{context}}` as a JSON string keyed by `join.sources` role ids (where each value contains that source's `event/content/data`) rather than exposing raw runtime state or plain-text sections
 - `loop.max.<roleId>=N` is both a parser-time cycle budget declaration and an execution-time guard; runtime also injects `round`
 - `branchId`, `lineageId`, and `sessionLineageId` are distinct runtime identifiers for branch instance, split/join lineage, and session reuse/isolation
 
