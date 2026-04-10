@@ -27,14 +27,14 @@ operator[Role:${roleId}] -->|DONE| output
   const profilesPath = path.resolve(tempRoot, "repair-profiles.json");
   const toolsPath = path.resolve(tempRoot, "repair-tools.json");
   const runtimeConfigPath = path.resolve(tempRoot, "runtime.json");
-  const roleDir = path.resolve(tempRoot, "og-roles", "roles", "test-operator");
+  const roleDir = path.resolve(tempRoot, "og-roles", "roles", roleId);
 
   await mkdir(roleDir, { recursive: true });
   await writeFile(
     path.resolve(roleDir, "role.json"),
     JSON.stringify(
       {
-        roleId: "test-operator",
+        roleId,
         roleVersion: "1.0.0",
         name: "Test Operator",
         description: "Repair-policy fixture role.",
@@ -131,7 +131,7 @@ switch (mode) {
     JSON.stringify(
       {
         executor: "opencode",
-        roleRepo: path.resolve("og-roles"),
+        roleRepo: path.resolve(tempRoot, "og-roles"),
         modelRepo: path.resolve("og-models"),
         runsDir: ".ogsystems"
       },
