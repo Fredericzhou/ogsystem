@@ -278,6 +278,51 @@ For graph-based runs, `state.json` also persists:
 - `loopIterations`
 - `graphState`
 
+## 9.1 Artifact Retention Policy Classes
+
+OGSystem classifies persisted run artifacts into three classes:
+
+- `runtime_consumed`: runtime-critical files read by resume and recovery logic (`state.json`, `sessions.json`)
+- `operator_latest`: latest operator-facing snapshots (`run.md`, `request.md`, `audit/*.md`, `roles/<roleId>/*.md|*.json`, `events.ndjson`)
+- `history_only`: immutable per-execution snapshots (`roles/<roleId>/executions/<executionId>/...`)
+
+This contract is implemented by:
+
+- `src/runtime/run-artifact-policy.ts`
+- `tests/run-artifact-policy.test.mjs`
+
+## 9.2 Doctor And Recovery Inspection
+
+Use `run:doctor` as runtime preflight and recovery inspection.
+
+Preflight command:
+
+```bash
+npm run run:doctor -- \
+  --required opencode \
+  --system examples/target-model-binding-system.mmd \
+  --laws .ogsystem/laws.json
+```
+
+Run-directory inspection (resume prerequisites):
+
+```bash
+npm run run:doctor -- \
+  --run-dir .ogsystems/<run-id>
+```
+
+`run:doctor` output separation:
+
+- `errors`: fail run/readiness checks
+- `warnings`: inventory or compatibility issues that do not block execution
+- `notes`: detected runtime capabilities and inspected metadata
+
+For recovery, prioritize:
+
+1. `state.json.graphState` exists and is readable
+2. `sessions.json` exists and contains role session records when session reuse is expected
+3. `report.run.resumePrerequisites` has required entries marked `ok: true`
+
 ## 10. Commands
 
 Preferred runtime command:
@@ -360,7 +405,31 @@ node skills/ogsystem-nl-to-mmd/scripts/validate_ogsystem_mmd.mjs \
   --run-dir .ogsystems/<run-id>
 ```
 
-## 11. Migration Notes
+## 11. Doctor And Recovery Diagnostics
+
+Preflight check runtime/law/system consistency:
+
+```bash
+npm run run:doctor -- \
+  --required opencode \
+  --system examples/target-model-binding-system.mmd
+```
+
+Inspect persisted run directory recovery prerequisites:
+
+```bash
+npm run run:doctor -- \
+  --run-dir .ogsystems/<run-id>
+```
+
+Doctor output contract:
+
+- `errors`: must-fix problems that make run/resume invalid
+- `warnings`: non-blocking inventory or compatibility issues
+- `notes`: informational diagnostics (supported modes, artifact policy count, scanned paths)
+- `run.resumePrerequisites`: explicit readiness checks for `state.json`, `state.json.graphState`, `sessions.json`
+
+## 12. Migration Notes
 
 - new docs and templates should use `model.bind.*`
 - during migration, `exec.bind.*` remains a compatibility path

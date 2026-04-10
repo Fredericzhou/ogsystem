@@ -19,9 +19,14 @@ Non-goals:
 
 ## Quick Start
 
+Product introduction:
+
+- `docs/product-introduction.md`
+
 Detailed usage manual:
 
 - `docs/usage-manual.md`
+- `docs/product-introduction.md`
 
 Install:
 
@@ -166,7 +171,9 @@ node skills/ogsystem-nl-to-mmd/scripts/validate_ogsystem_mmd.mjs \
 
 ## Active Docs
 
+- `docs/product-introduction.md`
 - `docs/DECISIONS.md`
+- `docs/product-introduction.md`
 - `docs/role-model-user-profile-minimal-spec.md`
 - `docs/usage-manual.md`
 - `docs/single-graph-runtime-execution-checklist.md`
