@@ -1,0 +1,313 @@
+import { stdin as input, stdout as output } from "node:process";
+import { parseArgs } from "node:util";
+import { createInterface } from "node:readline/promises";
+
+import {
+  createNl2MmdConversation,
+  detectSemanticHints,
+  loadNl2MmdContext,
+  runNl2MmdTurn,
+  searchModels,
+  searchRoles,
+  validateNl2MmdCandidate
+} from "./index.js";
+import type { Nl2MmdConversation, Nl2MmdContext, Nl2MmdTurnResult } from "./types.js";
+
+function usage(): string {
+  return [
+    "Usage:",
+    "  npm run run:nl2mmd -- [--message <text>] [--model <modelId>]",
+    "",
+    "Options:",
+    "  --message <text>       One-shot NL2MMD request; omit for interactive mode",
+    "  --model <modelId>      Default model id (default: fast-gpt54)",
+    "  --runtime <file>       Runtime config JSON (optional)",
+    "  --laws <file>          Laws JSON (optional)",
+    "  --profiles <file>      Legacy profiles JSON for exec.bind validation (optional)",
+    "  --user-profile <file>  User profile JSON for validation (optional)",
+    "  --workdir <path>       Working directory (default: cwd)",
+    "  --help                 Show help",
+    "",
+    "Interactive commands:",
+    "  /help                  Show commands",
+    "  /roles <query>         Search role repo",
+    "  /models <query>        Search model repo",
+    "  /laws                  List discovered law ids",
+    "  /use-model <modelId>   Switch the conversation model",
+    "  /status                Show current draft/model/session status",
+    "  /validate              Re-run local validation for the current Mermaid draft",
+    "  /clear                 Clear current draft/validation state",
+    "  /quit                  Exit"
+  ].join("\n");
+}
+
+function printSection(title: string, body?: string): void {
+  console.log(`\n${title}`);
+  if (body) {
+    console.log(body);
+  }
+}
+
+function formatRoleSearch(context: Nl2MmdContext, query: string): string {
+  const matches = searchRoles(context, query, 8);
+  if (matches.length === 0) {
+    return "(no role matches)";
+  }
+  return matches
+    .map(
+      (item) =>
+        `${item.item.roleId} | ${item.item.name} | events=${item.item.outputEvents.join(",") || "-"} | ${item.reason}`
+    )
+    .join("\n");
+}
+
+function formatModelSearch(context: Nl2MmdContext, query: string): string {
+  const matches = searchModels(context, query, 8);
+  if (matches.length === 0) {
+    return "(no model matches)";
+  }
+  return matches
+    .map(
+      (item) =>
+        `${item.item.modelId} | ${item.item.model} | reasoning=${item.item.reasoningEffort ?? "-"} | ${item.reason}`
+    )
+    .join("\n");
+}
+
+function formatSemanticHints(message: string): string {
+  const hints = detectSemanticHints(message);
+  if (hints.length === 0) {
+    return "(no fixed semantic hints detected)";
+  }
+  return hints.map((item) => `${item.label} | ${item.detail}`).join("\n");
+}
+
+function printSuggestions(context: Nl2MmdContext, message: string): void {
+  printSection("Detected Semantic Hints", formatSemanticHints(message));
+  printSection("Role Suggestions", formatRoleSearch(context, message));
+  printSection("Model Suggestions", formatModelSearch(context, message));
+}
+
+function printValidation(turn: Nl2MmdTurnResult): void {
+  if (!turn.validation) {
+    return;
+  }
+  const lines = [
+    `status=${turn.validation.status}`,
+    `errors=${turn.validation.errors.length}`,
+    `warnings=${turn.validation.warnings.length}`
+  ];
+  printSection("Validation", lines.join("\n"));
+  if (turn.validation.errors.length > 0) {
+    printSection("Validation Errors", turn.validation.errors.join("\n"));
+  }
+  if (turn.validation.warnings.length > 0) {
+    printSection("Validation Warnings", turn.validation.warnings.join("\n"));
+  }
+}
+
+function printTurn(turn: Nl2MmdTurnResult): void {
+  printSection("Mode", turn.mode);
+  printSection("Summary", turn.summary);
+
+  if (turn.questions.length > 0) {
+    printSection("Questions", turn.questions.map((item, index) => `${index + 1}. ${item}`).join("\n"));
+  }
+  if (turn.assumptions.length > 0) {
+    printSection("Assumptions", turn.assumptions.join("\n"));
+  }
+  if (turn.unresolvedItems.length > 0) {
+    printSection("Unresolved", turn.unresolvedItems.join("\n"));
+  }
+  if (turn.txtGraph) {
+    printSection("Txt Graph", turn.txtGraph);
+  }
+  if (turn.mermaid.trim()) {
+    printSection("Mermaid", turn.mermaid);
+  }
+  printValidation(turn);
+}
+
+async function main(): Promise<void> {
+  const { values } = parseArgs({
+    options: {
+      message: { type: "string" },
+      model: { type: "string" },
+      runtime: { type: "string" },
+      laws: { type: "string" },
+      profiles: { type: "string" },
+      "user-profile": { type: "string" },
+      workdir: { type: "string" },
+      help: { type: "boolean", short: "h" }
+    },
+    allowPositionals: false
+  });
+
+  if (values.help) {
+    console.log(usage());
+    return;
+  }
+
+  const workdir = values.workdir ?? process.cwd();
+  const context = await loadNl2MmdContext({
+    workdir,
+    runtimeConfigPath: values.runtime,
+    lawsPath: values.laws
+  });
+
+  let modelId = values.model ?? "fast-gpt54";
+  let draftMermaid = "";
+  let lastTurn: Nl2MmdTurnResult | undefined;
+  let conversation: Nl2MmdConversation | undefined;
+
+  async function ensureConversation(): Promise<Nl2MmdConversation> {
+    if (conversation) {
+      return conversation;
+    }
+    conversation = await createNl2MmdConversation({
+      workdir,
+      modelId,
+      runtimeConfigPath: values.runtime,
+      lawsPath: values.laws,
+      context
+    });
+    return conversation;
+  }
+
+  async function switchModel(nextModelId: string): Promise<void> {
+    if (!context.modelCatalog.some((item) => item.modelId === nextModelId)) {
+      throw new Error(`Unknown modelId "${nextModelId}"`);
+    }
+    conversation?.close();
+    conversation = undefined;
+    modelId = nextModelId;
+  }
+
+  async function submit(message: string): Promise<Nl2MmdTurnResult> {
+    printSuggestions(context, message);
+    const activeConversation = await ensureConversation();
+    const turn = await runNl2MmdTurn({
+      conversation: activeConversation,
+      input: {
+        message,
+        draftMermaid,
+        validationErrors: lastTurn?.validation?.errors,
+        validationWarnings: lastTurn?.validation?.warnings
+      },
+      lawsPath: values.laws,
+      profilesPath: values.profiles,
+      userProfilePath: values["user-profile"]
+    });
+    if (turn.mermaid.trim()) {
+      draftMermaid = turn.mermaid;
+    }
+    lastTurn = turn;
+    printTurn(turn);
+    return turn;
+  }
+
+  try {
+    if (values.message) {
+      await submit(values.message);
+      return;
+    }
+
+    console.log("OGSystem NL2MMD interactive CLI");
+    console.log(`workdir=${workdir}`);
+    console.log(`model=${modelId}`);
+    console.log('Type natural language requirements, or "/help" for commands.');
+
+    const rl = createInterface({ input, output });
+    try {
+      while (true) {
+        const line = (await rl.question("\nnl2mmd> ")).trim();
+        if (!line) {
+          continue;
+        }
+
+        if (line === "/quit" || line === "/exit") {
+          break;
+        }
+        if (line === "/help") {
+          console.log(usage());
+          continue;
+        }
+        if (line === "/laws") {
+          printSection("Laws", context.lawIds.length > 0 ? context.lawIds.join("\n") : "(none)");
+          continue;
+        }
+        if (line === "/status") {
+          printSection(
+            "Status",
+            [
+              `model=${modelId}`,
+              `session=${conversation?.sessionId ?? "(none)"}`,
+              `hasDraft=${draftMermaid ? "yes" : "no"}`,
+              `lastMode=${lastTurn?.mode ?? "(none)"}`
+            ].join("\n")
+          );
+          continue;
+        }
+        if (line === "/clear") {
+          draftMermaid = "";
+          lastTurn = undefined;
+          printSection("State", "draft cleared");
+          continue;
+        }
+        if (line.startsWith("/roles ")) {
+          printSection("Role Search", formatRoleSearch(context, line.slice("/roles ".length).trim()));
+          continue;
+        }
+        if (line.startsWith("/models ")) {
+          printSection("Model Search", formatModelSearch(context, line.slice("/models ".length).trim()));
+          continue;
+        }
+        if (line.startsWith("/use-model ")) {
+          await switchModel(line.slice("/use-model ".length).trim());
+          printSection("Model", `switched to ${modelId}`);
+          continue;
+        }
+        if (line === "/validate") {
+          if (!draftMermaid.trim()) {
+            printSection("Validation", "no draft Mermaid available");
+            continue;
+          }
+          const validation = await validateNl2MmdCandidate({
+            mermaid: draftMermaid,
+            context,
+            lawsPath: values.laws,
+            profilesPath: values.profiles,
+            userProfilePath: values["user-profile"]
+          });
+          printSection("Txt Graph", validation.txtGraph);
+          printSection(
+            "Validation",
+            [
+              `status=${validation.status}`,
+              `errors=${validation.errors.length}`,
+              `warnings=${validation.warnings.length}`
+            ].join("\n")
+          );
+          if (validation.errors.length > 0) {
+            printSection("Validation Errors", validation.errors.join("\n"));
+          }
+          if (validation.warnings.length > 0) {
+            printSection("Validation Warnings", validation.warnings.join("\n"));
+          }
+          continue;
+        }
+
+        await submit(line);
+      }
+    } finally {
+      rl.close();
+    }
+  } finally {
+    conversation?.close();
+  }
+}
+
+main().catch((error) => {
+  console.error(error instanceof Error ? error.stack ?? error.message : String(error));
+  process.exitCode = 1;
+});

@@ -9,6 +9,7 @@
     "test:examples": "npm run run:adapter -- --system examples/target-model-binding-system.mmd --prompt \"ci example\" --dry-run && npm run run:adapter -- --system examples/langgraph-debate-current/system.mmd --laws examples/langgraph-debate-current/laws.json --user-profile examples/langgraph-debate-current/user-profile.json --prompt \"ci graph example\" --dry-run",
     "test:doctor": "npm run run:doctor -- --system examples/target-model-binding-system.mmd --laws .ogsystem/laws.json",
     "run:adapter": "tsx src/runtime/cli.ts",
+    "run:nl2mmd": "tsx src/nl2mmd/cli.ts",
     "run:doctor": "tsx src/runtime/doctor.ts",
     "lint:system": "tsx src/runtime/lint.ts"
   },
