@@ -38,7 +38,7 @@ test("adapter runs graph debate example with parallel branches, join, and bounde
   assert.ok(result.auditTrail.some((item) => item.selectedEvent === "REBUTTAL_NEEDED"));
   assert.ok(result.auditTrail.some((item) => item.loopIteration === 2));
 
-  const runsDir = path.resolve(tempRoot, ".ogsystems");
+  const runsDir = path.resolve(tempRoot, "ogsystem-history");
   const runs = await readdir(runsDir);
   assert.strictEqual(runs.length, 1);
 
@@ -147,9 +147,9 @@ test("adapter runs expert consultation example with parallel specialists and fin
   assert.ok(result.auditTrail.some((item) => item.roleId === "diagnosis-imaging"));
   assert.ok(result.auditTrail.some((item) => item.selectedEvent === "CONSULTATION_READY"));
 
-  const runs = await readdir(path.resolve(tempRoot, ".ogsystems"));
+  const runs = await readdir(path.resolve(tempRoot, "ogsystem-history"));
   assert.strictEqual(runs.length, 1);
-  const runDir = path.resolve(tempRoot, ".ogsystems", runs[0]);
+  const runDir = path.resolve(tempRoot, "ogsystem-history", runs[0]);
   const chiefPrompt = await readFile(
     path.resolve(runDir, "roles", "diagnosis-chief-review", "prompt.md"),
     "utf8"

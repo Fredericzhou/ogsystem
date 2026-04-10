@@ -309,7 +309,7 @@ export function validateRuntimeConfig(value: unknown, filePath: string): Runtime
     executor: "opencode",
     roleRepo: expectOptionalString(record.roleRepo, filePath, "$.roleRepo") ?? "./og-roles",
     modelRepo: expectOptionalString(record.modelRepo, filePath, "$.modelRepo") ?? "./og-models",
-    runsDir: expectOptionalString(record.runsDir, filePath, "$.runsDir") ?? ".ogsystems",
+    runsDir: expectOptionalString(record.runsDir, filePath, "$.runsDir") ?? "ogsystem-history",
     sharedDir: expectOptionalString(record.sharedDir, filePath, "$.sharedDir"),
     workspace: {
       rolesDir:

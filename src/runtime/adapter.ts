@@ -103,7 +103,7 @@ async function loadRuntimeConfig(path: string | undefined, workdir: string): Pro
         executor: "opencode",
         roleRepo: "./og-roles",
         modelRepo: "./og-models",
-        runsDir: ".ogsystems",
+        runsDir: "ogsystem-history",
         workspace: {
           rolesDir: "roles",
           privateDirName: "private"

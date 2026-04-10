@@ -42,7 +42,7 @@ export type DoctorReport = {
 export function usage(): string {
   return [
     "Usage:",
-    "  npm run run:doctor -- [--required opencode] [--system file.mmd] [--run-dir .ogsystems/<run-id>]",
+    "  npm run run:doctor -- [--required opencode] [--system file.mmd] [--run-dir ogsystem-history/<run-id>]",
     "",
     "Options:",
     "  --required <csv>       Required commands. Missing required commands return exit code 2.",

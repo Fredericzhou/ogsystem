@@ -108,9 +108,10 @@ npm run run:doctor -- --required opencode
 - `model.bind` retries transient OpenCode/provider failures on the same role session while keeping the same run-level shared server.
 - The runtime supports `role.mode.*=parallel_split`, `join.mode.*=all_of`, `join.sources.*`, and `loop.max.*`. Legacy `%% engine=langgraph` metadata is accepted as compatibility input but is not required DSL semantics.
 - Role output repair is intentionally narrow: wrapped JSON object extraction and single-allowed-event normalization are auto-repaired; schema mismatch still fails fast.
-- Each run persists under `.ogsystems/<run-id>/`, including run-level state, `sessions.json`, and per-role execution history under `roles/<roleId>/executions/`.
-- Each run gets its own isolated `.ogsystems/<run-id>/shared/` directory, and role directories do not receive a `shared` symlink by default.
-- `.ogsystems/` is generated runtime state and should stay out of version control.
+- Each run persists under `ogsystem-history/<run-id>/`, including run-level state, `sessions.json`, and per-role execution history under `roles/<roleId>/executions/`.
+- Run-id format is `yyyy-MM-dd_HH24-mm-ss_xxxx` (`xxxx` = 4-char system code).
+- Each run gets its own isolated `ogsystem-history/<run-id>/shared/` directory, and role directories do not receive a `shared` symlink by default.
+- `ogsystem-history/` is generated runtime state and should stay out of version control.
 - `state.json.graphState` and `sessions.json` are the runtime-consumed resume sources. `events.ndjson` remains append-only audit history.
 - Runs persist `activeBranches`, `completedBranches`, `loopIterations`, and `graphState` inside `state.json`, and support `--resume-run` against the same run directory.
 - Roles without execution binding fail fast by default. A law may opt into `allowNoopWithoutExecutionBinding`, but noop remains explicit and is rejected on branching nodes.
@@ -145,7 +146,7 @@ node skills/ogsystem-nl-to-mmd/scripts/validate_ogsystem_mmd.mjs \
   --system examples/target-model-binding-system.mmd \
   --user-profile .ogsystem/user-profile.json \
   --laws .ogsystem/laws.json \
-  --run-dir .ogsystems/<run-id>
+  --run-dir ogsystem-history/<run-id>
 ```
 
 ## DSL Hard Rules

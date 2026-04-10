@@ -18,7 +18,7 @@ test("resume context reloads sessions.json and reuses session ids for role execu
   const systemPath = path.resolve("tests/fixtures/mermaid/law-system.mmd");
   const system = await loadSystemFromMermaid(systemPath);
   const plan = createExecutionPlan(system);
-  const runDir = path.resolve(workdir, ".ogsystems", "resume-run");
+  const runDir = path.resolve(workdir, "ogsystem-history", "resume-run");
   await mkdir(runDir, { recursive: true });
   await writeFile(
     path.resolve(runDir, "sessions.json"),
@@ -46,7 +46,7 @@ test("resume context reloads sessions.json and reuses session ids for role execu
       executor: "opencode",
       roleRepo: "./og-roles",
       modelRepo: "./og-models",
-      runsDir: ".ogsystems"
+      runsDir: "ogsystem-history"
     },
     "runtime.json"
   );
@@ -57,7 +57,7 @@ test("resume context reloads sessions.json and reuses session ids for role execu
     prompt: "resume prompt",
     workdir,
     runtimeConfig,
-    resumeRunDir: ".ogsystems/resume-run"
+    resumeRunDir: "ogsystem-history/resume-run"
   });
   const rolePackage = await loadRolePackage({
     roleId: "test-operator",

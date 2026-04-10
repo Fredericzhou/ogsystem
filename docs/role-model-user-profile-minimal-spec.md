@@ -134,7 +134,7 @@ project/
     laws.json
     user-profile.json
 
-  .ogsystems/
+  ogsystem-history/
     2026-04-09T12-30-22Z-architecture-debate/
       run.md
       request.md
@@ -341,7 +341,7 @@ User profile rules:
   "modelRepo": "./og-models",
 
   // Run output root.
-  "runsDir": ".ogsystems",
+  "runsDir": "ogsystem-history",
 
   // Role private workspace policy.
   "workspace": {
@@ -361,7 +361,7 @@ User profile rules:
 When `ogsystem` starts in a directory:
 
 - current working directory becomes the shared read/write workspace
-- runtime creates `.ogsystems/<timestamp>-<slug>/`
+- runtime creates `ogsystem-history/<yyyy-MM-dd_HH24-mm-ss_xxxx>/`
 - each role gets a private directory
 - one `model.bind` run may share one `OpenCode` server while keeping isolated per-role sessions
 

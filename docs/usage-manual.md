@@ -217,13 +217,15 @@ Example:
   "executor": "opencode",
   "roleRepo": "./og-roles",
   "modelRepo": "./og-models",
-  "runsDir": ".ogsystems"
+  "runsDir": "ogsystem-history"
 }
 ```
 
 ## 9. Run Directory Contract
 
-When a run starts, `.ogsystems/<run-id>/` should persist:
+When a run starts, `ogsystem-history/<run-id>/` should persist:
+
+- run-id format: `yyyy-MM-dd_HH24-mm-ss_xxxx` (`xxxx` = 4-char system code)
 
 - run-level files: `run.md`, `request.md`, `system.mmd`, `state.json`, `events.ndjson`
 - run-level OpenCode metadata: `opencode-server.json` for `model.bind` runs
@@ -245,11 +247,11 @@ Audit/operator artifacts:
 `state.json` is the authoritative runtime state snapshot.
 `events.ndjson` is append-only audit history.
 `inbox.md` is a projection of normalized runtime input, not a free-form summary.
-`.ogsystems/` is generated runtime state and should be ignored by git.
+`ogsystem-history/` is generated runtime state and should be ignored by git.
 
 Minimal shared-workspace rule:
 
-- default shared path is `.ogsystems/<run-id>/shared/`
+- default shared path is `ogsystem-history/<run-id>/shared/`
 - runtime exposes it through `OGSYSTEM_SHARED_DIR`
 - role directories do not receive a `shared` symlink by default
 
@@ -308,7 +310,7 @@ Run-directory inspection (resume prerequisites):
 
 ```bash
 npm run run:doctor -- \
-  --run-dir .ogsystems/<run-id>
+  --run-dir ogsystem-history/<run-id>
 ```
 
 `run:doctor` output separation:
@@ -383,7 +385,7 @@ npm run run:adapter -- \
   --system examples/langgraph-debate-current/system.mmd \
   --laws examples/langgraph-debate-current/laws.json \
   --user-profile examples/langgraph-debate-current/user-profile.json \
-  --resume-run .ogsystems/<run-id> \
+  --resume-run ogsystem-history/<run-id> \
   --prompt "是否应继续保持 OGSystem 最小化并延后 reducer 与恢复语义？" \
   --dry-run
 ```
@@ -402,7 +404,7 @@ node skills/ogsystem-nl-to-mmd/scripts/validate_ogsystem_mmd.mjs \
   --system examples/target-model-binding-system.mmd \
   --user-profile .ogsystem/user-profile.json \
   --laws .ogsystem/laws.json \
-  --run-dir .ogsystems/<run-id>
+  --run-dir ogsystem-history/<run-id>
 ```
 
 ## 11. Migration Notes

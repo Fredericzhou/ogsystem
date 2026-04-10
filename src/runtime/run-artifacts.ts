@@ -22,8 +22,24 @@ function slugify(value: string): string {
   return normalized || "run";
 }
 
+function pad2(value: number): string {
+  return String(value).padStart(2, "0");
+}
+
 function timestampForPath(date: Date): string {
-  return date.toISOString().replace(/[:.]/g, "-");
+  return [
+    `${date.getFullYear()}-${pad2(date.getMonth() + 1)}-${pad2(date.getDate())}`,
+    `${pad2(date.getHours())}-${pad2(date.getMinutes())}-${pad2(date.getSeconds())}`
+  ].join("_");
+}
+
+function runCodeForPath(systemId: string): string {
+  const compact = slugify(systemId).replace(/-/g, "");
+  return (compact || "run").slice(0, 4).padEnd(4, "x");
+}
+
+function buildRunDirectoryName(createdAt: Date, systemId: string): string {
+  return `${timestampForPath(createdAt)}_${runCodeForPath(systemId)}`;
 }
 
 export async function pathExists(path: string): Promise<boolean> {
@@ -123,7 +139,7 @@ export async function initializeRunContext(args: {
     : resolve(
         args.workdir,
         args.runtimeConfig.runsDir,
-        `${timestampForPath(createdAt)}-${slugify(args.system.systemId)}`
+        buildRunDirectoryName(createdAt, args.system.systemId)
       );
   const runId = basename(runDir);
   const auditDir = resolve(runDir, "audit");

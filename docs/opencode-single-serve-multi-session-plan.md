@@ -226,7 +226,7 @@ Use `directory` only.
 
 For each node:
 
-- `directory = .ogsystems/<run>/roles/<roleId>/`
+- `directory = ogsystem-history/<run>/roles/<roleId>/`
 
 Benefits:
 

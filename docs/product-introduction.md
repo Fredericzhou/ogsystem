@@ -39,8 +39,9 @@ OGSystem 将职责拆分为四层：
 - `src/runtime/run-artifacts.ts` + `src/runtime/run-artifact-policy.ts`：产物写入与契约策略
 - `src/runtime/doctor.ts`：运行前健康检查与 run-dir 恢复检查
 
-运行数据默认落盘到 `.ogsystems/<run-id>/`，其中：
+运行数据默认落盘到 `ogsystem-history/<run-id>/`，其中：
 
+- run-id 命名格式：`yyyy-MM-dd_HH24-mm-ss_xxxx`（`xxxx` 为系统ID派生的4位代码）
 - 运行恢复依赖：`state.json.graphState`、`sessions.json`
 - 审计与操作视图：`events.ndjson`、`audit/*.md`、`roles/<roleId>/...`
 

@@ -18,7 +18,7 @@ Move `OGSystem` toward this target:
 - `user profile` owns delivery preference
 - `OpenCode` is the default executor
 - each role runs in an independent process
-- each run is persisted under `.ogsystems/`
+- each run is persisted under `ogsystem-history/`
 - future `LangGraph` support is added on top of a stable runtime contract
 
 This checklist is ordered by dependency, not by desirability.
@@ -53,7 +53,7 @@ Acceptance:
 
 ### A2. Define Run Directory As The Runtime Contract
 
-- [x] Freeze `.ogsystems/<run-id>/` layout
+- [x] Freeze `ogsystem-history/<run-id>/` layout
 - [x] Freeze top-level files:
   - `run.md`
   - `request.md`
@@ -320,7 +320,7 @@ These items are likely to create churn if started too early.
 ## F. Recommended Execution Order
 
 1. Freeze semantics and naming
-2. Freeze `.ogsystems/` directory contract
+2. Freeze `ogsystem-history/` directory contract
 3. Freeze `OpenCode` process contract
 4. Introduce `model repo`
 5. Introduce `model.bind`

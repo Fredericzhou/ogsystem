@@ -13,7 +13,7 @@ test("adapter resume reloads sessions.json and reuses the same model session", a
   const tempRoot = await mkdtemp(path.join(os.tmpdir(), "ogsystem-resume-session-"));
   const systemPath = path.resolve(tempRoot, "resume-system.mmd");
   const runtimePath = path.resolve(tempRoot, "runtime.json");
-  const runDir = path.resolve(tempRoot, ".ogsystems", "existing-run");
+  const runDir = path.resolve(tempRoot, "ogsystem-history", "existing-run");
 
   const systemSource = `flowchart TD
 %% system.id=resume.session.demo
@@ -35,7 +35,7 @@ minimalist[Role:debate-minimalist] -->|MINIMALIST_DONE| output
         executor: "opencode",
         roleRepo: path.resolve("og-roles"),
         modelRepo: path.resolve("og-models"),
-        runsDir: ".ogsystems"
+        runsDir: "ogsystem-history"
       },
       null,
       2
@@ -81,7 +81,7 @@ minimalist[Role:debate-minimalist] -->|MINIMALIST_DONE| output
     runtimeConfigPath: runtimePath,
     lawsPath: path.resolve(".ogsystem", "laws.json"),
     workdir: tempRoot,
-    resumeRunDir: ".ogsystems/existing-run",
+    resumeRunDir: "ogsystem-history/existing-run",
     prompt: "resume session",
     dryRun: true
   });

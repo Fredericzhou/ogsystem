@@ -12,7 +12,7 @@ function usage(): string {
     "  --runtime <file>        Runtime config JSON (optional, defaults to .ogsystem/runtime.json)",
     "  --user-profile <file>   User profile JSON (optional, defaults to .ogsystem/user-profile.json)",
     "  --laws <file>           Law catalog JSON (optional, defaults to .ogsystem/laws.json)",
-    "  --resume-run <dir>      Reuse an existing .ogsystems/<run-id> directory",
+    "  --resume-run <dir>      Reuse an existing ogsystem-history/<run-id> directory",
     "  --profiles <file>       Legacy execution profiles JSON (optional)",
     "  --tools <file>          Legacy CLI tools JSON (optional)",
     "  --workdir <path>        Working directory and shared workspace (default: cwd)",

@@ -33,7 +33,7 @@ test("runtime config rejects removed linkSharedIntoRoleDir field", () => {
           executor: "opencode",
           roleRepo: "./og-roles",
           modelRepo: "./og-models",
-          runsDir: ".ogsystems",
+          runsDir: "ogsystem-history",
           workspace: {
             rolesDir: "roles",
             privateDirName: "private",
@@ -57,7 +57,7 @@ test("runtime config validates every supported runtime field", () => {
       executor: "opencode",
       roleRepo: "./og-roles",
       modelRepo: "./og-models",
-      runsDir: ".ogsystems",
+      runsDir: "ogsystem-history",
       sharedDir: "./shared-workspace",
       workspace: {
         rolesDir: "roles",
@@ -85,7 +85,7 @@ test("runtime config accepts every supported field", () => {
       executor: "opencode",
       roleRepo: "./og-roles",
       modelRepo: "./og-models",
-      runsDir: ".ogsystems",
+      runsDir: "ogsystem-history",
       sharedDir: "./shared-workspace",
       workspace: {
         rolesDir: "roles",
@@ -104,4 +104,17 @@ test("runtime config accepts every supported field", () => {
     rolesDir: "roles",
     privateDirName: "private"
   });
+});
+
+test("runtime config defaults runsDir to ogsystem-history", () => {
+  const config = validateRuntimeConfig(
+    {
+      executor: "opencode",
+      roleRepo: "./og-roles",
+      modelRepo: "./og-models"
+    },
+    "runtime.json"
+  );
+
+  assert.equal(config.runsDir, "ogsystem-history");
 });
