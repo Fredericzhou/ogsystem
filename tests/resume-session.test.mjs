@@ -364,6 +364,8 @@ minimalist[Role:debate-minimalist] -->|MINIMALIST_DONE| output
     (error) => {
       assert.ok(error instanceof Error);
       assert.match(error.message, /fingerprint mismatch/i);
+      assert.match(error.message, /system/);
+      assert.match(error.message, /modelPackages/);
       return true;
     }
   );
@@ -929,4 +931,243 @@ operator[Role:test-operator] -->|DONE| output
 
   const checkpointsAfterSecondResume = await readdir(path.resolve(runDir, "checkpoints"));
   assert.strictEqual(checkpointsAfterSecondResume.length, 1);
+});
+
+test("adapter resume backfills outcome reconciliation metadata when checkpoint already exists", async () => {
+  const tempRoot = await mkdtemp(path.join(os.tmpdir(), "ogsystem-resume-outcome-backfill-"));
+  const systemPath = path.resolve(tempRoot, "resume-system.mmd");
+  const runtimePath = path.resolve(tempRoot, "runtime.json");
+  const runDir = path.resolve(tempRoot, "ogsystem-history", "outcome-backfill-run");
+  const roleExecutionDir = path.resolve(
+    runDir,
+    "roles",
+    "test-operator",
+    "executions",
+    "0001-existing"
+  );
+
+  const systemSource = `flowchart TD
+%% system.id=resume.outcome.backfill.demo
+%% system.version=1.0.0
+%% law.global=law.console.base
+%% entry.role=test-operator
+%% model.bind.test-operator=balanced-gpt52
+
+input -->|GO| operator[Role:test-operator]
+operator[Role:test-operator] -->|DONE| output
+`;
+
+  await mkdir(roleExecutionDir, { recursive: true });
+  await writeFile(systemPath, systemSource, "utf8");
+  await writeFile(
+    runtimePath,
+    JSON.stringify(
+      {
+        executor: "opencode",
+        roleRepo: path.resolve("og-roles"),
+        modelRepo: path.resolve("og-models"),
+        runsDir: "ogsystem-history"
+      },
+      null,
+      2
+    ),
+    "utf8"
+  );
+
+  const system = parseSystemFromMermaidSource(systemSource);
+  const plan = createExecutionPlan(system);
+  const fingerprint = await buildRuntimeFingerprint(system);
+  const graphState = createInitialGraphState({
+    plan,
+    prompt: "resume outcome backfill"
+  });
+
+  await writeFile(
+    path.resolve(runDir, "state.json"),
+    JSON.stringify({ graphState }, null, 2),
+    "utf8"
+  );
+  await writeFile(path.resolve(runDir, "sessions.json"), JSON.stringify([], null, 2), "utf8");
+  await writeFile(
+    path.resolve(runDir, "plan-fingerprint.json"),
+    JSON.stringify(fingerprint, null, 2),
+    "utf8"
+  );
+  await writeFile(
+    path.resolve(roleExecutionDir, "execution.json"),
+    JSON.stringify(
+      {
+        executionId: "0001-existing",
+        executionIndex: 1,
+        executionDir: roleExecutionDir,
+        roleId: "test-operator",
+        sessionKey: "test-operator:test-operator@1#1",
+        sessionLineageId: "test-operator@1#1",
+        startedAt: "2026-04-10T00:00:00.000Z",
+        branchId: "test-operator@1#1",
+        loopIteration: 1
+      },
+      null,
+      2
+    ),
+    "utf8"
+  );
+  await writeFile(
+    path.resolve(roleExecutionDir, ROLE_EXECUTION_OUTCOME_FILE),
+    JSON.stringify(
+      {
+        version: 1,
+        executionId: "0001-existing",
+        roleId: "test-operator",
+        branchId: "test-operator@1#1",
+        loopIteration: 1,
+        sessionKey: "test-operator:test-operator@1#1",
+        branch: {
+          branchId: "test-operator@1#1",
+          roleId: "test-operator",
+          loopIteration: 1,
+          branchSequence: 1,
+          lineageId: "test-operator@1#1",
+          sessionLineageId: "test-operator@1#1",
+          status: "active"
+        },
+        committedAt: "2026-04-10T00:00:01.000Z",
+        status: "ok",
+        selectedEvent: "DONE",
+        storedResult: {
+          roleId: "test-operator",
+          event: "DONE",
+          content: "checkpoint already persisted",
+          branchId: "test-operator@1#1",
+          lineageId: "test-operator@1#1",
+          loopIteration: 1
+        },
+        audit: {
+          at: "2026-04-10T00:00:01.000Z",
+          roleId: "test-operator",
+          branchId: "test-operator@1#1",
+          loopIteration: 1,
+          lawRef: "law.console.base",
+          modelId: "balanced-gpt52",
+          toolRef: "model.balanced-gpt52",
+          command: "opencode-sdk",
+          args: [],
+          exitCode: 0,
+          durationMs: 1,
+          selectedEvent: "DONE",
+          status: "ok"
+        }
+      },
+      null,
+      2
+    ),
+    "utf8"
+  );
+
+  const runtimeConfig = validateRuntimeConfig(
+    {
+      executor: "opencode",
+      roleRepo: path.resolve("og-roles"),
+      modelRepo: path.resolve("og-models"),
+      runsDir: "ogsystem-history"
+    },
+    runtimePath
+  );
+  const runContext = await initializeRunContext({
+    system,
+    systemPath,
+    prompt: "resume outcome backfill",
+    workdir: tempRoot,
+    runtimeConfig,
+    resumeRunDir: "ogsystem-history/outcome-backfill-run"
+  });
+
+  await persistRuntimeCheckpoint({
+    context: runContext,
+    roleId: "test-operator",
+    branchId: "test-operator@1#1",
+    loopIteration: 1,
+    executionId: "0001-existing",
+    update: {
+      status: "done",
+      transitionCount: 1,
+      auditTrail: [
+        {
+          at: "2026-04-10T00:00:01.000Z",
+          roleId: "test-operator",
+          branchId: "test-operator@1#1",
+          loopIteration: 1,
+          lawRef: "law.console.base",
+          modelId: "balanced-gpt52",
+          toolRef: "model.balanced-gpt52",
+          command: "opencode-sdk",
+          args: [],
+          exitCode: 0,
+          durationMs: 1,
+          selectedEvent: "DONE",
+          status: "ok"
+        }
+      ],
+      roleResults: {
+        "test-operator@1#1": {
+          roleId: "test-operator",
+          event: "DONE",
+          content: "checkpoint already persisted",
+          branchId: "test-operator@1#1",
+          lineageId: "test-operator@1#1",
+          loopIteration: 1
+        }
+      },
+      branchRecords: {
+        "test-operator@1#1": {
+          branchId: "test-operator@1#1",
+          roleId: "test-operator",
+          loopIteration: 1,
+          branchSequence: 1,
+          lineageId: "test-operator@1#1",
+          sessionLineageId: "test-operator@1#1",
+          status: "completed"
+        }
+      },
+      loopIterations: {
+        "test-operator": 1
+      },
+      selectedEventByBranchId: {
+        "test-operator@1#1": "DONE"
+      },
+      finalOutput: "checkpoint already persisted",
+      finalRoleId: "test-operator",
+      lastExecutedRoleId: "test-operator",
+      nextBranchSequence: 2
+    }
+  });
+
+  const resumed = await runSystemWithAdapter({
+    systemPath,
+    runtimeConfigPath: runtimePath,
+    lawsPath: path.resolve(".ogsystem", "laws.json"),
+    workdir: tempRoot,
+    resumeRunDir: "ogsystem-history/outcome-backfill-run",
+    prompt: "resume outcome backfill",
+    dryRun: true
+  });
+
+  assert.strictEqual(resumed.status, "done");
+  assert.strictEqual(resumed.finalRoleId, "test-operator");
+  assert.strictEqual(resumed.finalOutput, "checkpoint already persisted");
+  assert.strictEqual(resumed.auditTrail.length, 1);
+
+  const executionDirsAfterResume = await readdir(
+    path.resolve(runDir, "roles", "test-operator", "executions")
+  );
+  assert.deepStrictEqual(executionDirsAfterResume, ["0001-existing"]);
+
+  const checkpointsAfterResume = await readdir(path.resolve(runDir, "checkpoints"));
+  assert.strictEqual(checkpointsAfterResume.length, 1);
+
+  const outcomeAfterResume = JSON.parse(
+    await readFile(path.resolve(roleExecutionDir, ROLE_EXECUTION_OUTCOME_FILE), "utf8")
+  );
+  assert.strictEqual(outcomeAfterResume.checkpointSequence, 1);
+  assert.ok(outcomeAfterResume.reconciledAt);
 });

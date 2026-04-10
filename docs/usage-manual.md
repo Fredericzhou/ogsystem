@@ -240,7 +240,7 @@ When a run starts, `ogsystem-history/<run-id>/` should persist:
 - run-level shared workspace: `shared/`
 - audit files: `audit/summary.md`, `audit/transitions.md`
 - per-role latest files: `role.md`, `execution.json`, `latest-session.json`, `inbox.md`, `prompt.md`, `result.json`, `outbox.md`, `audit.json`, `private/`
-- per-role history: `executions/<execution-id>/...` including `execution-outcome.json`
+- per-role history: `executions/<execution-id>/...` including `session.json` and `execution-outcome.json`
 
 Resume source of truth:
 
@@ -252,7 +252,9 @@ Resume source of truth:
 - all authority files are written atomically at their own file boundary
 - resume rejects partial/corrupted `graphState` snapshots before role execution starts
 - resume hard-fails when the runtime-loaded fingerprint changes (`system`, `rolePackages`, `modelPackages`, `effectiveLaw`)
+- fingerprint `sourceHints` are diagnostic-only path hints; they do not participate in the identity digest
 - resume reconciles committed execution outcomes into missing checkpoints before normal replay continues
+- if a checkpoint already exists but the durable outcome marker is still unreconciled, resume only backfills `checkpointSequence`/`reconciledAt` and does not emit a duplicate checkpoint
 
 Audit/operator artifacts:
 
@@ -260,6 +262,8 @@ Audit/operator artifacts:
 - Markdown projections such as `run.md`, `request.md`, `audit/summary.md`, and `audit/transitions.md`
 `state.json` is the authoritative runtime state snapshot.
 `events.ndjson` is append-only audit history.
+`latest-session.json` is an operator-facing latest snapshot only.
+Resume reloads `sessions.json`, not `latest-session.json` or per-execution `session.json`.
 `inbox.md` is a projection of normalized runtime input, not a free-form summary.
 `ogsystem-history/` is generated runtime state and should be ignored by git.
 
