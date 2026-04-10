@@ -473,6 +473,10 @@ const defaultTransport: OpencodeSdkTransport = {
   createClient
 };
 
+/**
+ * startOpencodeRunClient launches an 'opencode serve' process and creates
+ * a client to interact with it. It's used for model-based role executions.
+ */
 export async function startOpencodeRunClient(
   args: {
     timeoutMs: number;
@@ -499,6 +503,15 @@ export async function startOpencodeRunClient(
   };
 }
 
+/**
+ * executeOpencodeModelRole is the primary function for running a model-bound role.
+ * It manages:
+ * 1. Starting the OpenCode server (if not already provided).
+ * 2. Creating or reusing a session.
+ * 3. Sending the prompt and receiving the structured response.
+ * 4. Automatic retries for transient errors.
+ * 5. Simple output correction if the model fails to return valid JSON.
+ */
 export async function executeOpencodeModelRole(
   args: {
     roleId: string;

@@ -86,6 +86,11 @@ function mergeStatus(current: GraphRunStatus, update: GraphRunStatus): GraphRunS
   return update;
 }
 
+/**
+ * GraphStateAnnotation defines the LangGraph state structure.
+ * It uses custom reducers to manage how different parts of the state
+ * (like audit trails, results, and loop counts) are updated during execution.
+ */
 const GraphStateAnnotation = Annotation.Root({
   userPrompt: Annotation<string>,
   status: Annotation<GraphRunStatus>({
@@ -231,6 +236,15 @@ function buildFailureUpdate(args: {
   };
 }
 
+/**
+ * buildSuccessUpdate calculates the next state of the graph after a role
+ * successfully completes its execution. It handles:
+ * 1. Marking the current branch as completed.
+ * 2. Selecting target roles based on the routing mode (e.g., event-based or parallel).
+ * 3. Checking loop budgets to prevent infinite cycles.
+ * 4. Managing join nodes (waiting for all incoming paths if necessary).
+ * 5. Activating new execution branches for the next roles.
+ */
 function buildSuccessUpdate(args: {
   state: GraphState;
   plan: ExecutionPlan;
@@ -380,6 +394,16 @@ function buildSuccessUpdate(args: {
   };
 }
 
+/**
+ * runSystemWithGraphRunner is the main entry point for executing an agent system.
+ * It compiles the ExecutionPlan into a LangGraph StateGraph and executes it.
+ * 
+ * The process involves:
+ * 1. Adding a node for each role in the system.
+ * 2. Configuring edges (static and conditional) based on the flows defined in the plan.
+ * 3. Managing state persistence and audit logging throughout the run.
+ * 4. Returning a comprehensive AdapterRunResult upon completion.
+ */
 export async function runSystemWithGraphRunner(args: RunnerInput): Promise<AdapterRunResult> {
   const logger = createRunConsoleLogger(args.logRun);
   const graphBuilder = new StateGraph(GraphStateAnnotation) as StateGraph<

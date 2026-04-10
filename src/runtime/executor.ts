@@ -55,14 +55,44 @@ export type ExecutorServerMetadata = {
   startedAt?: string;
 };
 
+/**
+ * Executor is the interface for executing role actions.
+ * It abstracts away whether a role is executed by an LLM (model) 
+ * or by a local tool (profile).
+ */
 export interface Executor {
+  /**
+   * Starts any necessary background services (like the OpenCode server).
+   */
   start(): Promise<void>;
+  
+  /**
+   * Executes a single role request.
+   */
   execute(request: ExecutorRequest): Promise<ExecutorResult>;
+  
+  /**
+   * Aborts an ongoing session (for model-based execution).
+   */
   abortSession(args: { sessionId: string; workdir: string }): Promise<void>;
+  
+  /**
+   * Returns metadata about any running background services.
+   */
   getServerMetadata(): ExecutorServerMetadata;
+  
+  /**
+   * Shuts down background services and cleans up resources.
+   */
   close(): Promise<void>;
 }
 
+/**
+ * createDefaultExecutor creates the standard implementation of the Executor interface.
+ * It supports both OpenCode-based model execution and local CLI tool execution.
+ * In model mode, it manages a single 'opencode serve' instance to handle multiple
+ * sequential or parallel role sessions efficiently.
+ */
 export function createDefaultExecutor(args: {
   dryRun?: boolean;
   runContext: RunContext;

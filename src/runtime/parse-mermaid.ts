@@ -74,6 +74,11 @@ type ValidatedSystemGraph = ParsedSystemGraph & {
   graph?: GraphMetadata;
 };
 
+/**
+ * parseNodeToken parses a single Mermaid node definition.
+ * It supports standard nodes (e.g., node[Role:roleId]) and 
+ * boundary tokens (input, output).
+ */
 function parseNodeToken(token: string, lineNumber?: number): ParsedNodeToken {
   const trimmed = token.trim();
   const normalized = trimmed.toLowerCase();
@@ -161,6 +166,10 @@ function parseEdgeLine(line: string, lineNumber: number): TokenizedEdge | null {
   };
 }
 
+/**
+ * tokenizeMermaidSource performs the first pass of parsing.
+ * It extracts metadata (starting with %%) and edges (role transitions).
+ */
 function tokenizeMermaidSource(source: string): TokenizedMermaid {
   const lines = source.split(/\r?\n/);
   const metadata: Array<{ lineNumber: number; key: string; value: string }> = [];
@@ -319,6 +328,14 @@ function parseTokenizedMermaid(tokens: TokenizedMermaid): ParsedSystemGraph {
   };
 }
 
+/**
+ * validateParsedSystemGraph ensures the parsed graph is semantically correct.
+ * It checks for:
+ * 1. Required metadata (system.id, system.version, law.global).
+ * 2. Valid entry role and terminal roles.
+ * 3. Correct execution, talent, and model bindings.
+ * 4. Consistent join modes and loop budgets.
+ */
 function validateParsedSystemGraph(graph: ParsedSystemGraph): ValidatedSystemGraph {
   const metadataLine = (key: string): number | undefined => graph.metadataLineByKey.get(key);
   const engineValue = graph.metadata.get("engine");
@@ -670,6 +687,10 @@ function compileSystemDefinition(graph: ValidatedSystemGraph): SystemDefinition 
   };
 }
 
+/**
+ * parseSystemFromMermaidSource is the main entry point for converting
+ * a Mermaid DSL source into a formal SystemDefinition.
+ */
 export function parseSystemFromMermaidSource(source: string): SystemDefinition {
   return compileSystemDefinition(
     validateParsedSystemGraph(parseTokenizedMermaid(tokenizeMermaidSource(source)))

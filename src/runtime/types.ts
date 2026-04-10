@@ -1,3 +1,10 @@
+/**
+ * Core System & Graph Definitions
+ * -------------------------------
+ * Defines the static structure of the agent system, including roles, flows,
+ * and graph-level metadata (routing, joining, etc.).
+ */
+
 export type Flow = {
   fromRoleId: string;
   toRoleId: string;
@@ -34,6 +41,13 @@ export type SystemDefinition = {
   graph?: GraphMetadata;
 };
 
+/**
+ * Execution Plan
+ * --------------
+ * A compiled version of the SystemDefinition, optimized for the runtime engine.
+ * Maps roles to their execution bindings and defines graph topology for traversal.
+ */
+
 export type RoleExecutionBinding =
   | {
       kind: "model";
@@ -68,6 +82,13 @@ export type ExecutionPlan = {
   flows: Flow[];
   nodesByRoleId: Map<string, ExecutionPlanNode>;
 };
+
+/**
+ * Laws & Constraints
+ * ------------------
+ * Defines the safety boundaries and operational constraints (e.g., forbidden tools,
+ * max transitions) applied to the system during execution.
+ */
 
 export type ExecutionProfile = {
   profileId: string;
@@ -106,6 +127,13 @@ export type EffectiveLawConstraints = {
   maxTransitions?: number;
   allowNoopWithoutExecutionBinding: boolean;
 };
+
+/**
+ * Role & Model Packages
+ * ---------------------
+ * Metadata and manifests for the modular role and model definitions
+ * loaded from the repository.
+ */
 
 export type RoleExecutionOutput = {
   event?: string;
@@ -152,6 +180,13 @@ export type LoadedModelPackage = {
   resolvedPath: string;
   manifest: ModelPackageManifest;
 };
+
+/**
+ * Runtime Configuration & Context
+ * ------------------------------
+ * Environment settings, directory mappings, and the dynamic context
+ * maintained for a specific run.
+ */
 
 export type UserProfile = {
   userProfileId: string;
@@ -251,6 +286,13 @@ export type RunContext = {
   sharedDir: string;
 };
 
+/**
+ * Runtime State & Status
+ * ----------------------
+ * The live state of a graph execution, including active branches,
+ * role results, and the overall status.
+ */
+
 export type BranchRecord = {
   branchId: string;
   roleId: string;
@@ -349,6 +391,13 @@ export type AdapterRunResult = {
   errorEnvelope?: RuntimeErrorEnvelope;
 };
 
+/**
+ * Validation & Error Handling
+ * ---------------------------
+ * Types for JSON Schema validation, output repair strategies,
+ * and structured runtime errors.
+ */
+
 export type JsonSchemaValidationIssue = {
   path: string;
   message: string;
@@ -413,3 +462,4 @@ export type RuntimeErrorEnvelope = {
   branchId?: string;
   line?: number;
 };
+

@@ -94,6 +94,11 @@ function renderJoinContext(state: GraphState, joinSources: string[]): string {
   return sections.join("\n\n").trim() || state.userPrompt;
 }
 
+/**
+ * buildRolePromptInput prepares the data needed to render a role's prompt.
+ * It gathers the task, context (from upstream roles or the user), 
+ * allowed events, and user profile information.
+ */
 function buildRolePromptInput(args: {
   roleId: string;
   node: ExecutionPlanNode;
@@ -202,6 +207,11 @@ function extractJsonObjectCandidate(raw: string): string | undefined {
   return undefined;
 }
 
+/**
+ * parseRoleExecutionOutputWithRepair handles the raw output from a role execution.
+ * It attempts to parse it as JSON and applies repair strategies if the JSON
+ * is wrapped in other text or slightly malformed.
+ */
 export function parseRoleExecutionOutputWithRepair(args: {
   rawOutput: string;
   requireEvent: boolean;
@@ -423,6 +433,15 @@ function buildCorrectionRequest(args: {
   };
 }
 
+/**
+ * executeRoleNode is the high-level coordinator for executing a single role.
+ * It manages:
+ * 1. Budget checks (max transitions).
+ * 2. Prompt rendering and input validation.
+ * 3. Dispatching to the appropriate executor (model or profile-based).
+ * 4. Capturing and repairing output.
+ * 5. Persisting results and audit records.
+ */
 export async function executeRoleNode(args: {
   roleId: string;
   node: ExecutionPlanNode;
