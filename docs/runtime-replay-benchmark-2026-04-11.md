@@ -8,35 +8,37 @@ Command: `npm run bench:runtime-replay`
 
 This benchmark measures replay cost for a file-first resume path without adding checkpoint compaction or extra replay indexes.
 
-The current script intentionally benchmarks a worst-case stress path:
+The current script intentionally benchmarks a near-tail resume path:
 
 - one loop-bound role
 - `500` persisted checkpoint files
-- `state.json` reset to the initial graph state before resume
-- resume forced to replay the full checkpoint tail
+- `state.json` reconstructed through checkpoint `490`
+- resume forced to replay only the last `10` pending checkpoint files
 
-This is stricter than a normal tail resume, where `state.json.lastCheckpointSequence` is usually already near the frontier.
+This is closer to the production concern in the plan: crash near the tail, then replay a short pending WAL suffix.
 
 ## 2. Environment
 
 - platform: `darwin`
 - node: `v20.20.0`
 - loop budget: `500`
-- checkpoint count replayed: `500`
+- restored checkpoint sequence before resume: `490`
+- total checkpoint files: `500`
+- pending checkpoint files replayed on resume: `10`
 
-Measured at script timestamp: `2026-04-10T20:06:03.230Z`
+Measured at script timestamp: `2026-04-10T20:14:49.736Z`
 
 ## 3. Observed Results
 
-- `stateLoadMs`: `0.236`
-- `checkpointLoadMs`: `29.032`
-- `resumeTotalMs`: `86.503`
+- `stateLoadMs`: `1.602`
+- `checkpointLoadMs`: `1.025`
+- `resumeTotalMs`: `42.262`
 - final status: `done`
 - final role: `test-loop-probe`
 
 ## 4. Interpretation
 
-On the current machine, replaying `500` checkpoint files is comfortably below the plan's informal concern threshold.
+On the current machine, replaying the last `10` checkpoint files after restoring `state.json` through sequence `490` is comfortably below the plan's informal concern threshold.
 
 Current conclusion:
 

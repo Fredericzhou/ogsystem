@@ -48,10 +48,12 @@ Observed replay baseline on this machine:
 - command: `npm run bench:runtime-replay`
 - platform: `darwin`
 - node: `v20.20.0`
-- checkpoint count: `500`
-- `stateLoadMs`: `0.236`
-- `checkpointLoadMs`: `29.032`
-- `resumeTotalMs`: `86.503`
+- restored checkpoint sequence: `490`
+- total checkpoint files: `500`
+- pending checkpoint files: `10`
+- `stateLoadMs`: `1.602`
+- `checkpointLoadMs`: `1.025`
+- `resumeTotalMs`: `42.262`
 
 ## 3. Decision Summary
 

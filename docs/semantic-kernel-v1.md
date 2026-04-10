@@ -104,6 +104,7 @@ Mermaid DSL
 ## 9. Runtime Refinements
 
 - The runtime uses an explicit state loop that mirrors `SystemDefinition` directly. Current role, next role, status, and audit trail all live in one runtime state object.
+- Session 隔离采用物理会话隔离与逻辑投影分离机制，确保在 `all_of` 汇合前，分支间模型会话记忆互不可见；文件系统副作用是否隔离取决于运行目录策略与角色实现约束。
 - Legacy tool execution still expects `{"event":"EVENT_NAME","content":"..."}` on stdout. The runtime parses the full stdout as one JSON object and never falls back to regex or JSONL guessing.
 - Nodes without execution binding fail immediately unless the catalog law opts into `allowNoopWithoutExecutionBinding`. Even then, noop only works for terminal or single-outgoing roles.
 

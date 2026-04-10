@@ -5,7 +5,7 @@
 `ogsystem` 的设计遵循 **“物理白纸，逻辑灵魂”** 的原则：
 *   **物理层 (Physical Layer)**：通过 OpenCode Server 提供绝对干净、无差别的“对话房间”（Sessions）。
 *   **逻辑层 (Logic Layer)**：框架（Runtime）从全局状态中提取“脱水”后的关键信息，通过 **状态投影 (State Projection)** 注入到每个房间的提示词（Prompt）中。
-*   **血缘识别 (Lineage)**：以 `branchId/lineageId/sessionLineageId` 共同描述执行血缘。会话复用键为 `roleId + sessionLineageId`，用于控制并行路径与循环轮次的会话隔离与复用策略。
+*   **血缘识别 (Lineage)**：以 `branchId/lineageId/sessionLineageId` 共同描述执行血缘。会话复用键为 `roleId + sessionLineageId`，确保并行路径物理隔离，循环轮次按 `sessionLineageId` 策略进行隔离或复用。
 
 ---
 
@@ -17,10 +17,10 @@
 | :--- | :--- | :--- | :--- |
 | **Role (角色)** | **Git Repository** | 静态资产（Prompt, Schema）。 | 定义“我是谁”以及“我怎么做”。 |
 | **Node (节点)** | **代码中的函数调用** | Mermaid 图中的方框。 | 定义“我在图中的位置”以及“我的上下游”。 |
-| **Branch (分支)** | **Git Fork / Branch** | 运行时的动态实例（`branchId` + `lineageId/sessionLineageId`）。 | 承载“分支级执行状态与会话血缘”。当前实现中，同一 role 的分支默认共享 `roleDir`，不提供分支级独立工作目录。 |
+| **Branch (分支)** | **Git Fork / Branch** | 运行时的动态实例（`branchId` + `sessionLineageId`）。 | 承载“分支级执行状态与会话血缘”。注：相同 role 的分支默认共享 `roleDir`，不提供分支级独立工作目录。 |
 
 **Git Fork 类比**：
-当图发生并行（Parallel Split）时，系统为每个下游 Node 执行了一次 `git checkout -b <branchId>`。它们拥有相同的初始状态（上游 Context），但随后的对话历史（Commit History）物理隔离，互不干扰，直到最终汇合（Merge）。
+当图发生并行（Parallel Split）时，系统为每个下游 Node 执行了一次 `git checkout -b <sessionLineageId>`。它们拥有相同的初始状态（上游 Context），但随后的会话记忆物理隔离（注：此处主要指会话记忆层隔离，不代表文件系统隔离，相同 role 仍共用其私有工作目录）。
 
 ---
 
@@ -67,7 +67,7 @@
 
 ### 1. 框架层 (Framework) 职责
 *   **情报参谋**：负责数据的物理搬运与“脱水”提取（State Projection）。
-*   **安全守门员**：负责 Session 的物理隔离（基于 `branchId`）和资源控制。
+*   **安全守门员**：负责 Session 的物理隔离（基于 `sessionLineageId`）和资源控制。
 *   **审计员**：记录执行指纹，确保 Crash 后可基于 Checkpoint 进行自愈。
 
 ### 2. 逻辑层 (Logic/Role) 职责

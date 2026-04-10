@@ -15,6 +15,7 @@ import {
 } from "../../dist/runtime/run-artifacts.js";
 
 const LOOP_BUDGET = 500;
+const RESTORED_CHECKPOINT_SEQUENCE = 490;
 
 const systemSource = `flowchart TD
 %% system.id=benchmark.runtime.replay
@@ -28,6 +29,37 @@ input -->|GO| operator[Role:test-loop-probe]
 operator[Role:test-loop-probe] -->|RETRY| operator[Role:test-loop-probe]
 operator[Role:test-loop-probe] -->|DONE| output
 `;
+
+function applyGraphUpdate(state, update) {
+  return {
+    userPrompt: state.userPrompt,
+    status:
+      update.status === "failed" || state.status === "failed"
+        ? "failed"
+        : update.status === "done" || state.status === "done"
+          ? "done"
+          : state.status,
+    error: state.error || update.error || "",
+    errorEnvelope: state.errorEnvelope ?? update.errorEnvelope,
+    transitionCount: state.transitionCount + (update.transitionCount ?? 0),
+    auditTrail: state.auditTrail.concat(update.auditTrail ?? []),
+    roleResults: { ...state.roleResults, ...(update.roleResults ?? {}) },
+    branchRecords: { ...state.branchRecords, ...(update.branchRecords ?? {}) },
+    loopIterations: { ...state.loopIterations, ...(update.loopIterations ?? {}) },
+    selectedEventByBranchId: {
+      ...state.selectedEventByBranchId,
+      ...(update.selectedEventByBranchId ?? {})
+    },
+    finalOutput: update.finalOutput || state.finalOutput,
+    finalRoleId: update.finalRoleId || state.finalRoleId,
+    lastExecutedRoleId: update.lastExecutedRoleId ?? state.lastExecutedRoleId,
+    nextBranchSequence: update.nextBranchSequence ?? state.nextBranchSequence,
+    lastCheckpointSequence: Math.max(
+      state.lastCheckpointSequence,
+      update.lastCheckpointSequence ?? state.lastCheckpointSequence
+    )
+  };
+}
 
 async function main() {
   const repoRoot = process.cwd();
@@ -127,11 +159,10 @@ async function main() {
   const runDir = path.resolve(tempRoot, "ogsystem-history", runId);
   const system = parseSystemFromMermaidSource(systemSource);
   const plan = createExecutionPlan(system);
-  const initialGraphState = createInitialGraphState({
+  let reconstructedGraphState = createInitialGraphState({
     plan,
     prompt: "benchmark replay"
   });
-  await writeFile(path.resolve(runDir, "state.json"), JSON.stringify({ graphState: initialGraphState }, null, 2), "utf8");
 
   const runtimeConfig = validateRuntimeConfig(
     {
@@ -141,6 +172,31 @@ async function main() {
       runsDir: "ogsystem-history"
     },
     runtimePath
+  );
+  const reconstructionContext = await initializeRunContext({
+    system,
+    systemPath,
+    prompt: "benchmark replay",
+    workdir: tempRoot,
+    runtimeConfig,
+    resumeRunDir: `ogsystem-history/${runId}`
+  });
+  const allCheckpoints = await loadPendingRuntimeCheckpoints({
+    context: reconstructionContext,
+    afterSequence: 0
+  });
+  await reconstructionContext.releaseResumeLock?.();
+
+  for (const checkpoint of allCheckpoints) {
+    if (checkpoint.checkpointSequence > RESTORED_CHECKPOINT_SEQUENCE) {
+      break;
+    }
+    reconstructedGraphState = applyGraphUpdate(reconstructedGraphState, checkpoint.update);
+  }
+  await writeFile(
+    path.resolve(runDir, "state.json"),
+    JSON.stringify({ graphState: reconstructedGraphState }, null, 2),
+    "utf8"
   );
 
   const stateLoadStart = performance.now();
@@ -181,7 +237,9 @@ async function main() {
     platform: process.platform,
     node: process.version,
     loopBudget: LOOP_BUDGET,
-    checkpointCount: checkpoints.length,
+    restoredCheckpointSequence: RESTORED_CHECKPOINT_SEQUENCE,
+    totalCheckpointFiles: allCheckpoints.length,
+    pendingCheckpointFiles: checkpoints.length,
     stateLoadMs: Number(stateLoadMs.toFixed(3)),
     checkpointLoadMs: Number(checkpointLoadMs.toFixed(3)),
     resumeTotalMs: Number(resumeTotalMs.toFixed(3)),
