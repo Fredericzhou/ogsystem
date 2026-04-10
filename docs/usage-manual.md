@@ -175,7 +175,7 @@ Model rules:
 - `og-models/models/*` should stay a small curated alias layer
 - for `executor: "opencode"`, `model.bind` roles run through OpenCode SDK v2 structured output:
   - input = rendered role prompt + `output.schema.json` + model selection + role working directory
-  - output = one JSON object from `assistant.info.structured`
+  - output = one JSON object from `assistant.info.structured`; if `structured` is missing or string-encoded, runtime falls back to assistant text parts and JSON extraction
   - `args.reasoningEffort` is treated as the OpenCode `variant`
   - unsupported arbitrary CLI flags are not used on the SDK path
 

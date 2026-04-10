@@ -120,6 +120,8 @@ const TRANSIENT_OPENCODE_ERROR_PATTERNS = [
 
 const MAX_OPENCODE_ATTEMPTS = 3;
 const RETRY_BASE_DELAY_MS = 1000;
+const STRUCTURED_OUTPUT_CORRECTION_INSTRUCTION =
+  "Return exactly one JSON object that matches the provided JSON schema. Do not include markdown fences or extra commentary.";
 
 function splitModelRef(model: string): { providerID: string; modelID: string } {
   const separator = model.indexOf("/");
@@ -245,11 +247,69 @@ function summarizeParts(parts: Array<Record<string, unknown>> | undefined): stri
     .join("\n");
 }
 
-function normalizeStructuredOutput(structured: unknown): string {
-  if (typeof structured !== "object" || structured === null || Array.isArray(structured)) {
-    throw new Error("OpenCode structured output must be a JSON object");
+function collectStringLeaves(value: unknown, sink: string[], depth = 0): void {
+  if (depth > 6 || value === null || value === undefined) {
+    return;
   }
-  return JSON.stringify(structured, null, 2);
+  if (typeof value === "string") {
+    const trimmed = value.trim();
+    if (trimmed) {
+      sink.push(trimmed);
+    }
+    return;
+  }
+  if (Array.isArray(value)) {
+    for (const item of value) {
+      collectStringLeaves(item, sink, depth + 1);
+    }
+    return;
+  }
+  if (typeof value !== "object") {
+    return;
+  }
+  for (const [key, nested] of Object.entries(value as Record<string, unknown>)) {
+    if (key === "id" || key === "type" || key === "tool" || key === "status") {
+      continue;
+    }
+    collectStringLeaves(nested, sink, depth + 1);
+  }
+}
+
+function extractStructuredOutputFromParts(parts: Array<Record<string, unknown>> | undefined): string | undefined {
+  if (!parts?.length) {
+    return undefined;
+  }
+  const candidates: string[] = [];
+  for (const part of parts) {
+    collectStringLeaves(part, candidates);
+  }
+  const unique = Array.from(new Set(candidates));
+  if (unique.length === 0) {
+    return undefined;
+  }
+  const jsonLike = unique.find((item) => item.includes("{") && item.includes("}"));
+  return jsonLike ?? unique.join("\n");
+}
+
+function normalizeStructuredOutput(args: {
+  structured: unknown;
+  parts?: Array<Record<string, unknown>>;
+}): string {
+  if (
+    typeof args.structured === "object" &&
+    args.structured !== null &&
+    !Array.isArray(args.structured)
+  ) {
+    return JSON.stringify(args.structured, null, 2);
+  }
+  if (typeof args.structured === "string" && args.structured.trim()) {
+    return args.structured.trim();
+  }
+  const fallback = extractStructuredOutputFromParts(args.parts);
+  if (fallback) {
+    return fallback;
+  }
+  throw new Error("OpenCode structured output must be a JSON object");
 }
 
 function enforceOutputLimit(stdout: string, stderr: string, maxOutputBytes: number): void {
@@ -549,7 +609,66 @@ export async function executeOpencodeModelRole(
               });
             }
 
-            const stdout = normalizeStructuredOutput(info?.structured);
+            let stdout: string;
+            try {
+              stdout = normalizeStructuredOutput({
+                structured: info?.structured,
+                parts: response.data?.parts
+              });
+            } catch (error) {
+              if (getErrorMessage(error) !== "OpenCode structured output must be a JSON object") {
+                throw error;
+              }
+
+              const correctionResponse = await runClient.client.session.prompt({
+                sessionID: sessionId,
+                directory: args.workdir,
+                model: {
+                  providerID,
+                  modelID
+                },
+                variant,
+                format: {
+                  type: "json_schema",
+                  schema: args.schema as Record<string, unknown>
+                },
+                parts: [
+                  {
+                    type: "text",
+                    text: `${args.prompt}\n\n${STRUCTURED_OUTPUT_CORRECTION_INSTRUCTION}`
+                  }
+                ]
+              });
+
+              const correctionInfo = correctionResponse.data?.info;
+              messageId = correctionResponse.data?.id;
+              const correctionStderr = summarizeParts(correctionResponse.data?.parts);
+              stderr = [stderr, correctionStderr].filter(Boolean).join("\n");
+              if (correctionInfo?.error) {
+                const message =
+                  correctionInfo.error.data?.message || correctionInfo.error.name || "OpenCode execution failed";
+                throw new OpencodeExecutionError(message, {
+                  stderr,
+                  sessionId,
+                  messageId,
+                  serverPid: runClient.pid,
+                  args: buildExecutionArgs({
+                    runClient,
+                    workdir: args.workdir,
+                    sessionId,
+                    messageId,
+                    providerID,
+                    modelID,
+                    variant
+                  })
+                });
+              }
+
+              stdout = normalizeStructuredOutput({
+                structured: correctionInfo?.structured,
+                parts: correctionResponse.data?.parts
+              });
+            }
             enforceOutputLimit(stdout, stderr, args.maxOutputBytes);
 
             return {

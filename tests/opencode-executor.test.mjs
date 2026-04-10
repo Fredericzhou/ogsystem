@@ -530,3 +530,170 @@ test("executeOpencodeModelRole retries transient prompt failures on the same ses
     content: "recovered"
   });
 });
+
+test("executeOpencodeModelRole accepts JSON string structured output", async () => {
+  const result = await executeOpencodeModelRole({
+    roleId: "role-string-structured",
+    prompt: "return json text",
+    schema: {
+      type: "object",
+      required: ["event", "content"],
+      properties: {
+        event: { type: "string" },
+        content: { type: "string" }
+      },
+      additionalProperties: false
+    },
+    modelPackage: makeModelPackage(),
+    workdir: "/tmp/run/roles/role-string-structured",
+    timeoutMs: 5000,
+    maxOutputBytes: 4096,
+    runClient: makeRunClient({
+      client: {
+        session: {
+          async create() {
+            return { data: { id: "ses_string" } };
+          },
+          async prompt() {
+            return {
+              data: {
+                id: "msg_string",
+                info: {
+                  structured: '{"event":"NEXT","content":"string"}'
+                },
+                parts: [{ type: "step-start" }, { type: "step-finish" }]
+              }
+            };
+          },
+          async abort() {
+            return true;
+          }
+        }
+      }
+    })
+  });
+
+  assert.deepStrictEqual(JSON.parse(result.stdout), {
+    event: "NEXT",
+    content: "string"
+  });
+});
+
+test("executeOpencodeModelRole falls back to text parts when structured output is missing", async () => {
+  const result = await executeOpencodeModelRole({
+    roleId: "role-parts-fallback",
+    prompt: "return json in text",
+    schema: {
+      type: "object",
+      required: ["event", "content"],
+      properties: {
+        event: { type: "string" },
+        content: { type: "string" }
+      },
+      additionalProperties: false
+    },
+    modelPackage: makeModelPackage(),
+    workdir: "/tmp/run/roles/role-parts-fallback",
+    timeoutMs: 5000,
+    maxOutputBytes: 4096,
+    runClient: makeRunClient({
+      client: {
+        session: {
+          async create() {
+            return { data: { id: "ses_parts" } };
+          },
+          async prompt() {
+            return {
+              data: {
+                id: "msg_parts",
+                info: {},
+                parts: [
+                  { type: "step-start" },
+                  {
+                    type: "text",
+                    text: '{"event":"NEXT","content":"from-parts"}'
+                  }
+                ]
+              }
+            };
+          },
+          async abort() {
+            return true;
+          }
+        }
+      }
+    })
+  });
+
+  assert.deepStrictEqual(JSON.parse(result.stdout), {
+    event: "NEXT",
+    content: "from-parts"
+  });
+});
+
+test("executeOpencodeModelRole retries once with corrective prompt when structured output is missing", async () => {
+  const promptInputs = [];
+  let callCount = 0;
+
+  const result = await executeOpencodeModelRole({
+    roleId: "role-corrective-retry",
+    prompt: "return json",
+    schema: {
+      type: "object",
+      required: ["event", "content"],
+      properties: {
+        event: { type: "string" },
+        content: { type: "string" }
+      },
+      additionalProperties: false
+    },
+    modelPackage: makeModelPackage(),
+    workdir: "/tmp/run/roles/role-corrective-retry",
+    timeoutMs: 5000,
+    maxOutputBytes: 4096,
+    runClient: makeRunClient({
+      client: {
+        session: {
+          async create() {
+            return { data: { id: "ses_retry_structured" } };
+          },
+          async prompt(args) {
+            promptInputs.push(args.parts[0]?.text ?? "");
+            callCount += 1;
+            if (callCount === 1) {
+              return {
+                data: {
+                  id: "msg_retry_1",
+                  info: {},
+                  parts: [{ type: "step-start" }]
+                }
+              };
+            }
+            return {
+              data: {
+                id: "msg_retry_2",
+                info: {
+                  structured: {
+                    event: "NEXT",
+                    content: "corrected"
+                  }
+                },
+                parts: [{ type: "step-finish" }]
+              }
+            };
+          },
+          async abort() {
+            return true;
+          }
+        }
+      }
+    })
+  });
+
+  assert.strictEqual(callCount, 2);
+  assert.match(promptInputs[1], /Return exactly one JSON object/);
+  assert.deepStrictEqual(JSON.parse(result.stdout), {
+    event: "NEXT",
+    content: "corrected"
+  });
+});
