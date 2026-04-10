@@ -1,41 +1,67 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { readFile } from "node:fs/promises";
-import path from "node:path";
 
-import { createExecutionPlan, getExecutionPlanNode } from "../dist/runtime/execution-plan.js";
+import { createExecutionPlan } from "../dist/runtime/execution-plan.js";
 import { parseSystemFromMermaidSource } from "../dist/runtime/parse-mermaid.js";
 
-test("execution plan normalizes graph orchestration semantics from mermaid metadata", async () => {
-  const source = await readFile(
-    path.resolve("examples/langgraph-debate-current/system.mmd"),
-    "utf8"
-  );
+const source = `flowchart TD
+%% system.id=plan.demo
+%% system.version=1.0.0
+%% law.global=law.plan
+%% entry.role=dispatch
+%% role.mode.dispatch=parallel_split
+%% join.mode.review=all_of
+%% join.sources.review=worker_a,worker_b
+%% loop.max.dispatch=2
+%% model.bind.dispatch=model.fast
+%% exec.bind.worker_a=profile.a
+%% model.bind.worker_b=model.deep
+%% model.bind.review=model.deep
+
+input -->|ENTER| dispatch[Role:dispatch]
+dispatch[Role:dispatch] -->|TO_A| workerA[Role:worker_a]
+dispatch[Role:dispatch] -->|TO_B| workerB[Role:worker_b]
+workerA[Role:worker_a] -->|A_DONE| review[Role:review]
+workerB[Role:worker_b] -->|B_DONE| review[Role:review]
+review[Role:review] -->|DONE| output
+`;
+
+test("execution plan normalizes graph semantics and bindings", () => {
   const system = parseSystemFromMermaidSource(source);
   const plan = createExecutionPlan(system);
 
-  const moderator = getExecutionPlanNode(plan, "debate-moderator");
-  const judge = getExecutionPlanNode(plan, "debate-judge");
-  const summary = getExecutionPlanNode(plan, "debate-summary");
+  assert.strictEqual(plan.systemId, "plan.demo");
+  assert.strictEqual(plan.entryRoleId, "dispatch");
+  assert.deepStrictEqual(plan.roleIds, ["dispatch", "worker_a", "worker_b", "review"]);
 
-  assert.strictEqual(plan.entryRoleId, "debate-moderator");
-  assert.strictEqual(moderator.binding.kind, "model");
-  assert.strictEqual(moderator.binding.modelId, "fast-gpt54");
-  assert.strictEqual(moderator.routingMode, "parallel_split");
-  assert.strictEqual(moderator.loopMax, 2);
-  assert.strictEqual(judge.joinMode, "all_of");
-  assert.deepStrictEqual(judge.joinSources, ["debate-minimalist", "debate-alignmentist"]);
-  assert.strictEqual(summary.isTerminal, true);
-});
+  const dispatch = plan.nodesByRoleId.get("dispatch");
+  const workerA = plan.nodesByRoleId.get("worker_a");
+  const workerB = plan.nodesByRoleId.get("worker_b");
+  const review = plan.nodesByRoleId.get("review");
 
-test("execution plan keeps legacy exec.bind as compatibility binding inside the same plan", async () => {
-  const source = await readFile(path.resolve("tests/fixtures/mermaid/branch-system.mmd"), "utf8");
-  const system = parseSystemFromMermaidSource(source);
-  const plan = createExecutionPlan(system);
-  const decision = getExecutionPlanNode(plan, "test-decision");
+  assert.ok(dispatch);
+  assert.ok(workerA);
+  assert.ok(workerB);
+  assert.ok(review);
 
-  assert.strictEqual(decision.binding.kind, "profile");
-  assert.strictEqual(decision.binding.profileId, "profile.branch");
-  assert.strictEqual(decision.routingMode, undefined);
-  assert.strictEqual(decision.joinMode, undefined);
+  assert.strictEqual(dispatch.routingMode, "parallel_split");
+  assert.strictEqual(dispatch.loopMax, 2);
+  assert.deepStrictEqual(dispatch.joinSources, []);
+  assert.deepStrictEqual(dispatch.binding, {
+    kind: "model",
+    modelId: "model.fast"
+  });
+
+  assert.deepStrictEqual(workerA.binding, {
+    kind: "profile",
+    profileId: "profile.a"
+  });
+  assert.deepStrictEqual(workerB.binding, {
+    kind: "model",
+    modelId: "model.deep"
+  });
+
+  assert.strictEqual(review.joinMode, "all_of");
+  assert.deepStrictEqual(review.joinSources, ["worker_a", "worker_b"]);
+  assert.strictEqual(review.isTerminal, true);
 });
