@@ -71,3 +71,89 @@ test("output schema rejects invalid payload", async () => {
     })
   );
 });
+
+test("schema validation supports nested objects, arrays, enums, and additionalProperties", () => {
+  const schema = {
+    type: "object",
+    required: ["event", "content", "data"],
+    properties: {
+      event: {
+        type: "string",
+        enum: ["DONE"]
+      },
+      content: {
+        type: "string"
+      },
+      data: {
+        type: "object",
+        required: ["summary", "scores"],
+        properties: {
+          summary: {
+            type: "string"
+          },
+          scores: {
+            type: "array",
+            items: {
+              type: "integer"
+            }
+          }
+        },
+        additionalProperties: false
+      }
+    },
+    additionalProperties: false
+  };
+
+  assert.doesNotThrow(() =>
+    validateRoleOutputSchema({
+      output: {
+        event: "DONE",
+        content: "ok",
+        data: {
+          summary: "nested",
+          scores: [1, 2, 3]
+        }
+      },
+      schema,
+      roleId: "inline-role",
+      schemaPath: "inline-output.schema.json"
+    })
+  );
+
+  assert.throws(
+    () =>
+      validateRoleOutputSchema({
+        output: {
+          event: "DONE",
+          content: "ok",
+          data: {
+            summary: "nested",
+            scores: [1, 2],
+            extra: true
+          }
+        },
+        schema,
+        roleId: "inline-role",
+        schemaPath: "inline-output.schema.json"
+      }),
+    /inline-output\.schema\.json/
+  );
+
+  assert.throws(
+    () =>
+      validateRoleOutputSchema({
+        output: {
+          event: "OTHER",
+          content: "ok",
+          data: {
+            summary: "nested",
+            scores: [1, 2]
+          }
+        },
+        schema,
+        roleId: "inline-role",
+        schemaPath: "inline-output.schema.json"
+      }),
+    /allowed values/
+  );
+});
