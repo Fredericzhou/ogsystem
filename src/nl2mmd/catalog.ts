@@ -1,4 +1,4 @@
-import { access, readdir } from "node:fs/promises";
+import { readdir } from "node:fs/promises";
 import { resolve } from "node:path";
 
 import {
@@ -8,14 +8,34 @@ import {
 import { readJsonFile } from "../runtime/json-file.js";
 import { loadModelPackage } from "../runtime/model-repo.js";
 import { loadRolePackage } from "../runtime/role-repo.js";
+import { logNl2MmdDebug } from "./logger.js";
 import type { Nl2MmdContext, Nl2MmdRoleMention, Nl2MmdSupportedDictionary } from "./types.js";
 
-async function pathExists(path: string): Promise<boolean> {
+function isFileNotFoundError(error: unknown): error is NodeJS.ErrnoException {
+  return (
+    typeof error === "object" &&
+    error !== null &&
+    "code" in error &&
+    (error as { code?: unknown }).code === "ENOENT"
+  );
+}
+
+function isMissingPathError(error: unknown, path: string): boolean {
+  return (
+    isFileNotFoundError(error) &&
+    typeof (error as { path?: unknown }).path === "string" &&
+    (error as { path: string }).path === path
+  );
+}
+
+async function readJsonFileIfExists(path: string): Promise<unknown | undefined> {
   try {
-    await access(path);
-    return true;
-  } catch {
-    return false;
+    return await readJsonFile(path);
+  } catch (error) {
+    if (isFileNotFoundError(error)) {
+      return undefined;
+    }
+    throw error;
   }
 }
 
@@ -81,10 +101,13 @@ export async function loadNl2MmdContext(args: {
   runtimeConfigPath?: string;
   lawsPath?: string;
 }): Promise<Nl2MmdContext> {
+  const startedAt = Date.now();
   const runtimePath = args.runtimeConfigPath ?? resolve(args.workdir, ".ogsystem", "runtime.json");
-  const runtimeConfig = (await pathExists(runtimePath))
-    ? validateRuntimeConfig(await readJsonFile(runtimePath), runtimePath)
-    : getDefaultRuntimeConfig(runtimePath);
+  const runtimeConfigSource = await readJsonFileIfExists(runtimePath);
+  const runtimeConfig =
+    runtimeConfigSource !== undefined
+      ? validateRuntimeConfig(runtimeConfigSource, runtimePath)
+      : getDefaultRuntimeConfig(runtimePath);
 
   const roleRootDir = resolve(args.workdir, runtimeConfig.roleRepo, "roles");
   const modelRootDir = resolve(args.workdir, runtimeConfig.modelRepo);
@@ -98,10 +121,15 @@ export async function loadNl2MmdContext(args: {
   const roleCatalog: Nl2MmdContext["roleCatalog"] = [];
   for (const roleId of roleEntries) {
     const manifestPath = resolve(roleRootDir, roleId, "role.json");
-    if (!(await pathExists(manifestPath))) {
-      continue;
+    let rolePackage;
+    try {
+      rolePackage = await loadRolePackage({ roleId, roleRootDir });
+    } catch (error) {
+      if (isMissingPathError(error, manifestPath)) {
+        continue;
+      }
+      throw error;
     }
-    const rolePackage = await loadRolePackage({ roleId, roleRootDir });
     roleCatalog.push({
       roleId,
       name: rolePackage.manifest.name,
@@ -120,10 +148,15 @@ export async function loadNl2MmdContext(args: {
   const modelCatalog: Nl2MmdContext["modelCatalog"] = [];
   for (const modelId of modelEntries) {
     const manifestPath = resolve(modelRootDir, "models", modelId, "model.json");
-    if (!(await pathExists(manifestPath))) {
-      continue;
+    let modelPackage;
+    try {
+      modelPackage = await loadModelPackage({ modelId, modelRootDir });
+    } catch (error) {
+      if (isMissingPathError(error, manifestPath)) {
+        continue;
+      }
+      throw error;
     }
-    const modelPackage = await loadModelPackage({ modelId, modelRootDir });
     modelCatalog.push({
       modelId,
       model: modelPackage.manifest.model,
@@ -137,12 +170,13 @@ export async function loadNl2MmdContext(args: {
 
   let lawIds: string[] = [];
   const lawsPath = args.lawsPath ?? resolve(args.workdir, ".ogsystem", "laws.json");
-  if (await pathExists(lawsPath)) {
-    const laws = validateLawsConfig(await readJsonFile(lawsPath), lawsPath);
+  const lawsSource = await readJsonFileIfExists(lawsPath);
+  if (lawsSource !== undefined) {
+    const laws = validateLawsConfig(lawsSource, lawsPath);
     lawIds = laws.laws.map((item) => item.lawId).sort();
   }
 
-  return {
+  const context = {
     workdir: args.workdir,
     roleRootDir,
     modelRootDir,
@@ -151,6 +185,17 @@ export async function loadNl2MmdContext(args: {
     lawIds,
     supportedDictionary: getSupportedNl2MmdDictionary()
   };
+  logNl2MmdDebug("context.loaded", {
+    workdir: args.workdir,
+    runtimePath,
+    runtimeConfigSource: runtimeConfigSource !== undefined ? "file" : "default",
+    lawsPath,
+    lawsLoaded: lawsSource !== undefined,
+    roleCount: roleCatalog.length,
+    modelCount: modelCatalog.length,
+    durationMs: Date.now() - startedAt
+  });
+  return context;
 }
 
 export function extractRoleMentions(text: string): string[] {

@@ -7,10 +7,12 @@ import { loadModelPackage } from "../runtime/model-repo.js";
 import { buildNl2MmdSystemPrompt, buildNl2MmdTurnPrompt, getNl2MmdTurnSchema } from "./prompt.js";
 import { validateNl2MmdCandidate } from "./validate.js";
 import { loadNl2MmdContext } from "./catalog.js";
+import { logNl2MmdDebug } from "./logger.js";
 import type {
   Nl2MmdContext,
   Nl2MmdConversation,
   Nl2MmdModelResponse,
+  Nl2MmdTurnMode,
   Nl2MmdTurnInput,
   Nl2MmdTurnResult
 } from "./types.js";
@@ -26,26 +28,38 @@ function assertStringArray(value: unknown, field: string): string[] {
   return value;
 }
 
-function parseModelResponse(raw: string): Nl2MmdModelResponse {
-  const parsed = JSON.parse(raw) as Record<string, unknown>;
-  if (
-    parsed.mode !== "ask" &&
-    parsed.mode !== "draft" &&
-    parsed.mode !== "final"
-  ) {
-    throw new Error('Invalid NL2MMD response field "mode"');
+function isObjectRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function isValidMode(value: unknown): value is Nl2MmdTurnMode {
+  return value === "ask" || value === "draft" || value === "final";
+}
+
+function assertStringField(record: Record<string, unknown>, field: string): string {
+  const value = record[field];
+  if (typeof value !== "string") {
+    throw new Error(`Invalid NL2MMD response field "${field}"`);
   }
-  if (typeof parsed.summary !== "string" || typeof parsed.mermaid !== "string") {
-    throw new Error("Invalid NL2MMD response summary/mermaid");
+  return value;
+}
+
+function parseModelResponse(raw: string): Nl2MmdModelResponse {
+  const parsed: unknown = JSON.parse(raw);
+  if (!isObjectRecord(parsed)) {
+    throw new Error("Invalid NL2MMD response root: expected object");
+  }
+  if (!isValidMode(parsed.mode)) {
+    throw new Error('Invalid NL2MMD response field "mode"');
   }
   return {
     mode: parsed.mode,
-    summary: parsed.summary,
+    summary: assertStringField(parsed, "summary"),
     questions: assertStringArray(parsed.questions, "questions"),
     assumptions: assertStringArray(parsed.assumptions, "assumptions"),
     referencedRoles: assertStringArray(parsed.referencedRoles, "referencedRoles"),
     unresolvedItems: assertStringArray(parsed.unresolvedItems, "unresolvedItems"),
-    mermaid: parsed.mermaid
+    mermaid: assertStringField(parsed, "mermaid")
   };
 }
 
@@ -56,6 +70,7 @@ export async function createNl2MmdConversation(args: {
   lawsPath?: string;
   context?: Nl2MmdContext;
 }): Promise<Nl2MmdConversation> {
+  const startedAt = Date.now();
   const context =
     args.context ??
     (await loadNl2MmdContext({
@@ -85,6 +100,14 @@ export async function createNl2MmdConversation(args: {
     }
   };
 
+  logNl2MmdDebug("conversation.created", {
+    workdir: args.workdir,
+    modelId: args.modelId,
+    roleCount: context.roleCatalog.length,
+    modelCount: context.modelCatalog.length,
+    durationMs: Date.now() - startedAt
+  });
+
   return conversation;
 }
 
@@ -95,7 +118,15 @@ export async function runNl2MmdTurn(args: {
   profilesPath?: string;
   userProfilePath?: string;
 }): Promise<Nl2MmdTurnResult> {
+  const startedAt = Date.now();
   const conversation = args.conversation as ManagedConversation;
+  logNl2MmdDebug("turn.start", {
+    modelId: conversation.modelPackage.manifest.modelId,
+    hasSession: Boolean(conversation.sessionId),
+    hasDraft: Boolean(args.input.draftMermaid?.trim()),
+    validationErrorCount: args.input.validationErrors?.length ?? 0,
+    validationWarningCount: args.input.validationWarnings?.length ?? 0
+  });
 
   const prompt = [
     buildNl2MmdSystemPrompt(conversation.context),
@@ -119,6 +150,13 @@ export async function runNl2MmdTurn(args: {
   });
 
   const modelResponse = parseModelResponse(result.stdout);
+  logNl2MmdDebug("turn.model_response", {
+    mode: modelResponse.mode,
+    summaryLength: modelResponse.summary.length,
+    mermaidLength: modelResponse.mermaid.length,
+    questionCount: modelResponse.questions.length,
+    unresolvedCount: modelResponse.unresolvedItems.length
+  });
   if (modelResponse.mode === "ask" && modelResponse.mermaid.trim()) {
     throw new Error('NL2MMD response mode "ask" must not include Mermaid content');
   }
@@ -133,6 +171,7 @@ export async function runNl2MmdTurn(args: {
   let validation;
   let txtGraph;
   if (modelResponse.mermaid.trim()) {
+    const validationStartedAt = Date.now();
     validation = await validateNl2MmdCandidate({
       mermaid: modelResponse.mermaid,
       context: conversation.context,
@@ -141,13 +180,26 @@ export async function runNl2MmdTurn(args: {
       userProfilePath: args.userProfilePath
     });
     txtGraph = validation.txtGraph;
+    logNl2MmdDebug("turn.validation", {
+      status: validation.status,
+      errorCount: validation.errors.length,
+      warningCount: validation.warnings.length,
+      durationMs: Date.now() - validationStartedAt
+    });
   }
 
-  return {
+  const turnResult = {
     ...modelResponse,
     sessionId: result.sessionId,
     messageId: result.messageId,
     txtGraph,
     validation
   };
+  logNl2MmdDebug("turn.complete", {
+    mode: turnResult.mode,
+    sessionId: turnResult.sessionId ?? "(none)",
+    hasValidation: Boolean(turnResult.validation),
+    durationMs: Date.now() - startedAt
+  });
+  return turnResult;
 }

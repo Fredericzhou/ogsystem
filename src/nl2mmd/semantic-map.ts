@@ -6,6 +6,43 @@ import type {
   Nl2MmdSemanticHint
 } from "./types.js";
 
+type SearchField<T> = {
+  getter: (item: T) => string | string[] | undefined;
+  weight: number;
+};
+
+type WeightedHaystack = {
+  text: string;
+  weight: number;
+};
+
+type IndexedCatalogItem<T> = {
+  item: T;
+  haystacks: WeightedHaystack[];
+};
+
+type SearchIndex = {
+  roles: IndexedCatalogItem<Nl2MmdRoleSummary>[];
+  models: IndexedCatalogItem<Nl2MmdModelSummary>[];
+};
+
+const ROLE_SEARCH_FIELDS: SearchField<Nl2MmdRoleSummary>[] = [
+  { getter: (item) => item.roleId, weight: 5 },
+  { getter: (item) => item.name, weight: 4 },
+  { getter: (item) => item.tags, weight: 3 },
+  { getter: (item) => item.outputEvents, weight: 2 },
+  { getter: (item) => item.description, weight: 1 }
+];
+
+const MODEL_SEARCH_FIELDS: SearchField<Nl2MmdModelSummary>[] = [
+  { getter: (item) => item.modelId, weight: 5 },
+  { getter: (item) => item.model, weight: 4 },
+  { getter: (item) => item.tags, weight: 2 },
+  { getter: (item) => item.reasoningEffort, weight: 1 }
+];
+
+const searchIndexCache = new WeakMap<Nl2MmdContext, SearchIndex>();
+
 function normalize(text: string): string {
   return text.toLowerCase();
 }
@@ -22,22 +59,11 @@ function tokenize(text: string): string[] {
   );
 }
 
-function rankMatches<T>(args: {
-  query: string;
+function buildIndex<T>(args: {
   items: T[];
-  fields: Array<{
-    getter: (item: T) => string | string[] | undefined;
-    weight: number;
-  }>;
-}): Array<Nl2MmdCatalogSearchResult<T>> {
-  const query = normalize(args.query).trim();
-  const tokens = tokenize(query);
-  if (!query) {
-    return [];
-  }
-
-  const ranked: Array<Nl2MmdCatalogSearchResult<T>> = [];
-  for (const item of args.items) {
+  fields: SearchField<T>[];
+}): IndexedCatalogItem<T>[] {
+  return args.items.map((item) => {
     const haystacks = args.fields.flatMap((field) => {
       const value = field.getter(item);
       if (Array.isArray(value)) {
@@ -55,10 +81,48 @@ function rankMatches<T>(args: {
           ]
         : [];
     });
+    return {
+      item,
+      haystacks
+    };
+  });
+}
 
+function getSearchIndex(context: Nl2MmdContext): SearchIndex {
+  const cached = searchIndexCache.get(context);
+  if (cached) {
+    return cached;
+  }
+
+  const next: SearchIndex = {
+    roles: buildIndex({
+      items: context.roleCatalog,
+      fields: ROLE_SEARCH_FIELDS
+    }),
+    models: buildIndex({
+      items: context.modelCatalog,
+      fields: MODEL_SEARCH_FIELDS
+    })
+  };
+  searchIndexCache.set(context, next);
+  return next;
+}
+
+function rankMatches<T>(args: {
+  query: string;
+  index: IndexedCatalogItem<T>[];
+}): Array<Nl2MmdCatalogSearchResult<T>> {
+  const query = normalize(args.query).trim();
+  const tokens = tokenize(query);
+  if (!query) {
+    return [];
+  }
+
+  const ranked: Array<Nl2MmdCatalogSearchResult<T>> = [];
+  for (const entry of args.index) {
     let score = 0;
     const reasons: string[] = [];
-    for (const haystack of haystacks) {
+    for (const haystack of entry.haystacks) {
       const factor = haystack.weight;
       if (haystack.text === query) {
         score += 20 * factor;
@@ -80,7 +144,7 @@ function rankMatches<T>(args: {
 
     if (score > 0) {
       ranked.push({
-        item,
+        item: entry.item,
         score,
         reason: Array.from(new Set(reasons)).slice(0, 3).join(", ")
       });
@@ -96,16 +160,10 @@ export function searchRoles(
   query: string,
   limit = 8
 ): Array<Nl2MmdCatalogSearchResult<Nl2MmdRoleSummary>> {
+  const index = getSearchIndex(context);
   return rankMatches({
     query,
-    items: context.roleCatalog,
-    fields: [
-      { getter: (item) => item.roleId, weight: 5 },
-      { getter: (item) => item.name, weight: 4 },
-      { getter: (item) => item.tags, weight: 3 },
-      { getter: (item) => item.outputEvents, weight: 2 },
-      { getter: (item) => item.description, weight: 1 }
-    ]
+    index: index.roles
   }).slice(0, limit);
 }
 
@@ -114,15 +172,10 @@ export function searchModels(
   query: string,
   limit = 8
 ): Array<Nl2MmdCatalogSearchResult<Nl2MmdModelSummary>> {
+  const index = getSearchIndex(context);
   return rankMatches({
     query,
-    items: context.modelCatalog,
-    fields: [
-      { getter: (item) => item.modelId, weight: 5 },
-      { getter: (item) => item.model, weight: 4 },
-      { getter: (item) => item.tags, weight: 2 },
-      { getter: (item) => item.reasoningEffort, weight: 1 }
-    ]
+    index: index.models
   }).slice(0, limit);
 }
 
