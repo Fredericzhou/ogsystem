@@ -14,9 +14,11 @@ import { readJsonFile, writeTextFileAtomic } from "./json-file.js";
 import { createRuntimeError } from "./runtime-errors.js";
 import type {
   AuditRecord,
+  BranchRecord,
   GraphState,
   OpencodeSessionRecord,
   RoleExecutionOutput,
+  RoleExecutionOutcomeRecord,
   RoleExecutionRecord,
   RoleRunDirs,
   RuntimeCheckpointRecord,
@@ -27,6 +29,7 @@ import type {
 import { stringifyJson } from "./runtime-support.js";
 
 export const RUN_PLAN_FINGERPRINT_FILE = "plan-fingerprint.json";
+export const ROLE_EXECUTION_OUTCOME_FILE = "execution-outcome.json";
 const BUFFER_RECOVERY_DIR = ".buffer-recovery";
 
 export type RunPlanFingerprint = {
@@ -35,6 +38,10 @@ export type RunPlanFingerprint = {
   digest: string;
   payload: Record<string, unknown>;
 };
+
+export function buildRoleSessionKey(roleId: string, sessionLineageId: string): string {
+  return `${roleId}:${sessionLineageId}`;
+}
 
 type BufferedAppendBatch = {
   key: string;
@@ -45,6 +52,7 @@ type BufferedAppendBatch = {
 type BufferedAppendState = {
   pendingByKey: Map<string, BufferedAppendBatch>;
   flushPromise?: Promise<void>;
+  flushToken?: symbol;
 };
 
 const bufferedAppendStateByRunDir = new Map<string, BufferedAppendState>();
@@ -188,6 +196,37 @@ function isFingerprintRecord(value: unknown): value is RunPlanFingerprint {
   );
 }
 
+function listChangedFingerprintComponents(args: {
+  expected: RunPlanFingerprint;
+  stored: RunPlanFingerprint;
+}): string[] {
+  const expectedComponents =
+    typeof args.expected.payload.components === "object" &&
+    args.expected.payload.components !== null &&
+    !Array.isArray(args.expected.payload.components)
+      ? (args.expected.payload.components as Record<string, { digest?: unknown }>)
+      : undefined;
+  const storedComponents =
+    typeof args.stored.payload.components === "object" &&
+    args.stored.payload.components !== null &&
+    !Array.isArray(args.stored.payload.components)
+      ? (args.stored.payload.components as Record<string, { digest?: unknown }>)
+      : undefined;
+
+  if (!expectedComponents || !storedComponents) {
+    return [];
+  }
+
+  const componentNames = new Set([
+    ...Object.keys(expectedComponents),
+    ...Object.keys(storedComponents)
+  ]);
+  return Array.from(componentNames).filter(
+    (componentName) =>
+      expectedComponents[componentName]?.digest !== storedComponents[componentName]?.digest
+  );
+}
+
 async function restoreRoleExecutionCount(executionsDir: string): Promise<number> {
   if (!(await directoryExists(executionsDir))) {
     return 0;
@@ -232,13 +271,60 @@ function buildCheckpointFileName(sequence: number, executionId: string): string 
   return `${String(sequence).padStart(6, "0")}-${executionId}.json`;
 }
 
+function getRoleExecutionOutcomePath(executionDir: string): string {
+  return resolve(executionDir, ROLE_EXECUTION_OUTCOME_FILE);
+}
+
+function isBranchRecord(value: unknown): value is BranchRecord {
+  return (
+    typeof value === "object" &&
+    value !== null &&
+    !Array.isArray(value) &&
+    typeof (value as BranchRecord).branchId === "string" &&
+    typeof (value as BranchRecord).roleId === "string" &&
+    typeof (value as BranchRecord).loopIteration === "number" &&
+    typeof (value as BranchRecord).branchSequence === "number" &&
+    typeof (value as BranchRecord).lineageId === "string" &&
+    typeof (value as BranchRecord).sessionLineageId === "string" &&
+    ((value as BranchRecord).status === "active" || (value as BranchRecord).status === "completed")
+  );
+}
+
+function isRoleExecutionOutcomeRecord(value: unknown): value is RoleExecutionOutcomeRecord {
+  if (typeof value !== "object" || value === null || Array.isArray(value)) {
+    return false;
+  }
+  const record = value as RoleExecutionOutcomeRecord;
+  if (
+    record.version !== 1 ||
+    typeof record.executionId !== "string" ||
+    typeof record.roleId !== "string" ||
+    typeof record.branchId !== "string" ||
+    typeof record.loopIteration !== "number" ||
+    typeof record.sessionKey !== "string" ||
+    typeof record.committedAt !== "string" ||
+    !isBranchRecord(record.branch) ||
+    typeof record.audit !== "object" ||
+    record.audit === null
+  ) {
+    return false;
+  }
+  if (record.status === "failed") {
+    return typeof record.error === "string" && typeof record.failure === "object" && record.failure !== null;
+  }
+  return record.status === "ok" || record.status === "noop";
+}
+
 async function persistSessionSnapshot(context: RunContext): Promise<void> {
   await writeAtomicFile(
     context.sessionsPath,
     stringifyJson(
-      Array.from(context.sessionRecordsByRoleId.values()).sort((left, right) =>
-        left.roleId.localeCompare(right.roleId)
-      )
+      Array.from(context.sessionRecordsByKey.values()).sort((left, right) => {
+        if (left.roleId !== right.roleId) {
+          return left.roleId.localeCompare(right.roleId);
+        }
+        return left.sessionKey.localeCompare(right.sessionKey);
+      })
     )
   );
 }
@@ -320,7 +406,7 @@ export async function initializeRunContext(args: {
     const roleDir = resolve(rolesRootDir, roleId);
     const privateDir = resolve(roleDir, args.runtimeConfig.workspace.privateDirName);
     const executionsDir = resolve(roleDir, "executions");
-    const sessionPath = resolve(roleDir, "session.json");
+    const latestSessionPath = resolve(roleDir, "latest-session.json");
     await mkdir(privateDir, { recursive: true });
     await mkdir(executionsDir, { recursive: true });
     await writeIfMissing(
@@ -332,26 +418,27 @@ export async function initializeRunContext(args: {
         "Use this for scratch files, notes, and non-shared intermediate artifacts."
       ].join("\n")
     );
-    roleDirsById.set(roleId, { roleDir, privateDir, executionsDir, sessionPath });
+    roleDirsById.set(roleId, { roleDir, privateDir, executionsDir, latestSessionPath });
     roleExecutionCounts.set(roleId, await restoreRoleExecutionCount(executionsDir));
   }
 
   const sessionsPath = resolve(runDir, "sessions.json");
-  let sessionRecordsByRoleId = new Map<string, OpencodeSessionRecord>();
+  let sessionRecordsByKey = new Map<string, OpencodeSessionRecord>();
   if (await pathExists(sessionsPath)) {
     const existing = await readJsonFile(sessionsPath);
     if (Array.isArray(existing)) {
-      sessionRecordsByRoleId = new Map(
+      sessionRecordsByKey = new Map(
         existing
           .filter(
             (item): item is OpencodeSessionRecord =>
               typeof item === "object" &&
               item !== null &&
               !Array.isArray(item) &&
+              typeof (item as OpencodeSessionRecord).sessionKey === "string" &&
               typeof (item as OpencodeSessionRecord).roleId === "string" &&
               typeof (item as OpencodeSessionRecord).sessionId === "string"
           )
-          .map((item) => [item.roleId, item])
+          .map((item) => [item.sessionKey, item])
       );
     }
   }
@@ -371,7 +458,7 @@ export async function initializeRunContext(args: {
     checkpointsDir,
     roleDirsById,
     roleExecutionCounts,
-    sessionRecordsByRoleId,
+    sessionRecordsByKey,
     nextCheckpointSequence: await restoreCheckpointSequence(checkpointsDir),
     sharedDir
   };
@@ -508,13 +595,15 @@ export async function loadResumeGraphState(args: {
     });
   }
 
-  const seenRoleIds = new Set<string>();
+  const seenSessionKeys = new Set<string>();
   for (const item of sessions) {
     if (
       typeof item !== "object" ||
       item === null ||
       Array.isArray(item) ||
-      typeof (item as OpencodeSessionRecord).roleId !== "string"
+      typeof (item as OpencodeSessionRecord).sessionKey !== "string" ||
+      typeof (item as OpencodeSessionRecord).roleId !== "string" ||
+      typeof (item as OpencodeSessionRecord).sessionId !== "string"
     ) {
       throw createRuntimeError({
         errorCode: "RESUME_SESSIONS_INVALID",
@@ -526,25 +615,29 @@ export async function loadResumeGraphState(args: {
       });
     }
 
+    const sessionKey = (item as OpencodeSessionRecord).sessionKey;
     const roleId = (item as OpencodeSessionRecord).roleId;
-    if (seenRoleIds.has(roleId)) {
+    const sessionLineageId = (item as OpencodeSessionRecord).sessionLineageId;
+    if (seenSessionKeys.has(sessionKey)) {
       throw createRuntimeError({
         errorCode: "RESUME_SESSIONS_INVALID",
         errorCategory: "state",
-        message: `Resume session snapshot contains duplicate roleId "${roleId}": ${sessionsPath}`,
+        message: `Resume session snapshot contains duplicate sessionKey "${sessionKey}": ${sessionsPath}`,
         retryable: false,
         stage: "resume",
         runId: basename(args.runDir)
       });
     }
-    seenRoleIds.add(roleId);
+    seenSessionKeys.add(sessionKey);
 
     const hasAuditTrailEntry = graphState.auditTrail.some((entry) => entry.roleId === roleId);
     const hasRoleResult = Object.values(graphState.roleResults).some(
       (result) => result.roleId === roleId
     );
     const hasBranchRecord = Object.values(graphState.branchRecords).some(
-      (branch) => branch.roleId === roleId
+      (branch) =>
+        branch.roleId === roleId &&
+        (!sessionLineageId || branch.sessionLineageId === sessionLineageId)
     );
     const matchesLastExecution =
       graphState.lastExecutedRoleId === roleId || graphState.finalRoleId === roleId;
@@ -620,10 +713,18 @@ export async function validateResumePlanFingerprint(args: {
     stored.algorithm !== args.expectedFingerprint.algorithm ||
     stored.digest !== args.expectedFingerprint.digest
   ) {
+    const changedComponents = listChangedFingerprintComponents({
+      expected: args.expectedFingerprint,
+      stored
+    });
+    const mismatchScope =
+      changedComponents.length > 0
+        ? ` (${changedComponents.join(", ")})`
+        : "";
     throw createRuntimeError({
       errorCode: "RESUME_PLAN_FINGERPRINT_MISMATCH",
       errorCategory: "state",
-      message: `Resume plan fingerprint mismatch: expected ${args.expectedFingerprint.digest} but found ${stored.digest}`,
+      message: `Resume plan fingerprint mismatch${mismatchScope}: expected ${args.expectedFingerprint.digest} but found ${stored.digest}`,
       retryable: false,
       stage: "resume",
       runId
@@ -631,6 +732,12 @@ export async function validateResumePlanFingerprint(args: {
   }
 }
 
+/**
+ * Reliability: Implements a Write-Ahead Log (WAL) pattern using small checkpoint files.
+ * This allows for O(1) incremental updates during execution, achieving crash-idempotency 
+ * (preventing duplicate work on resume) without the I/O amplification of saving 
+ * the full state.json on every transition.
+ */
 export async function persistRuntimeCheckpoint(args: {
   context: RunContext;
   roleId: string;
@@ -661,6 +768,73 @@ export async function persistRuntimeCheckpoint(args: {
     stringifyJson(checkpoint)
   );
   return checkpoint;
+}
+
+export async function persistRoleExecutionOutcome(args: {
+  execution: RoleExecutionRecord;
+  outcome: RoleExecutionOutcomeRecord;
+}): Promise<void> {
+  await mkdir(args.execution.executionDir, { recursive: true });
+  await writeAtomicFile(
+    getRoleExecutionOutcomePath(args.execution.executionDir),
+    stringifyJson(args.outcome)
+  );
+}
+
+export async function markRoleExecutionOutcomeReconciled(args: {
+  executionDir: string;
+  checkpointSequence: number;
+}): Promise<RoleExecutionOutcomeRecord> {
+  const outcomePath = getRoleExecutionOutcomePath(args.executionDir);
+  const raw = await readJsonFile(outcomePath);
+  if (!isRoleExecutionOutcomeRecord(raw)) {
+    throw new Error(`Invalid role execution outcome: ${outcomePath}`);
+  }
+  const updated: RoleExecutionOutcomeRecord = {
+    ...raw,
+    checkpointSequence: args.checkpointSequence,
+    reconciledAt: new Date().toISOString()
+  };
+  await writeAtomicFile(outcomePath, stringifyJson(updated));
+  return updated;
+}
+
+export async function loadCommittedRoleExecutionOutcomes(args: {
+  context: RunContext;
+  unresolvedOnly?: boolean;
+}): Promise<RoleExecutionOutcomeRecord[]> {
+  const outcomes: RoleExecutionOutcomeRecord[] = [];
+
+  for (const roleDirs of args.context.roleDirsById.values()) {
+    const entries = await readdir(roleDirs.executionsDir, { withFileTypes: true });
+    const executionDirs = entries
+      .filter((entry) => entry.isDirectory())
+      .map((entry) => entry.name)
+      .sort((left, right) => left.localeCompare(right));
+
+    for (const executionDirName of executionDirs) {
+      const executionDir = resolve(roleDirs.executionsDir, executionDirName);
+      const outcomePath = getRoleExecutionOutcomePath(executionDir);
+      if (!(await pathExists(outcomePath))) {
+        continue;
+      }
+      const raw = await readJsonFile(outcomePath);
+      if (!isRoleExecutionOutcomeRecord(raw)) {
+        throw new Error(`Invalid role execution outcome: ${outcomePath}`);
+      }
+      if (args.unresolvedOnly && raw.checkpointSequence !== undefined) {
+        continue;
+      }
+      outcomes.push(raw);
+    }
+  }
+
+  return outcomes.sort((left, right) => {
+    if (left.committedAt !== right.committedAt) {
+      return left.committedAt.localeCompare(right.committedAt);
+    }
+    return left.executionId.localeCompare(right.executionId);
+  });
 }
 
 export async function loadPendingRuntimeCheckpoints(args: {
@@ -734,6 +908,8 @@ export async function cleanupHistoricalExecutionSnapshots(args: {
 export function allocateRoleExecution(args: {
   context: RunContext;
   roleId: string;
+  sessionKey: string;
+  sessionLineageId?: string;
   branchId?: string;
   loopIteration?: number;
 }): RoleExecutionRecord {
@@ -751,15 +927,19 @@ export function allocateRoleExecution(args: {
     executionIndex,
     executionDir: resolve(roleDirs.executionsDir, executionId),
     roleId: args.roleId,
-    sessionKey: args.roleId,
+    sessionKey: args.sessionKey,
+    sessionLineageId: args.sessionLineageId,
     startedAt,
     branchId: args.branchId,
     loopIteration: args.loopIteration
   };
 }
 
-export function getRoleSession(context: RunContext, roleId: string): OpencodeSessionRecord | undefined {
-  return context.sessionRecordsByRoleId.get(roleId);
+export function getRoleSession(
+  context: RunContext,
+  sessionKey: string
+): OpencodeSessionRecord | undefined {
+  return context.sessionRecordsByKey.get(sessionKey);
 }
 
 export async function persistRoleSession(args: {
@@ -773,10 +953,12 @@ export async function persistRoleSession(args: {
   if (!roleDirs) {
     throw new Error(`Role run directory missing for "${args.roleId}"`);
   }
-  const previous = args.context.sessionRecordsByRoleId.get(args.roleId);
+  const previous = args.context.sessionRecordsByKey.get(args.execution.sessionKey);
   const record: OpencodeSessionRecord = {
     sessionKey: args.execution.sessionKey,
     roleId: args.roleId,
+    sessionLineageId: args.execution.sessionLineageId,
+    branchId: args.execution.branchId,
     sessionId: args.sessionId,
     directory: roleDirs.roleDir,
     createdAt: previous?.createdAt ?? args.execution.startedAt,
@@ -785,10 +967,10 @@ export async function persistRoleSession(args: {
     promptCount:
       previous?.sessionId === args.sessionId ? previous.promptCount + 1 : (previous?.promptCount ?? 0) + 1
   };
-  args.context.sessionRecordsByRoleId.set(args.roleId, record);
+  args.context.sessionRecordsByKey.set(args.execution.sessionKey, record);
   const content = stringifyJson(record);
   await mkdir(args.execution.executionDir, { recursive: true });
-  await writeAtomicFile(roleDirs.sessionPath, content);
+  await writeAtomicFile(roleDirs.latestSessionPath, content);
   await writeAtomicFile(resolve(args.execution.executionDir, "session.json"), content);
   await persistSessionSnapshot(args.context);
   return record;
@@ -922,6 +1104,24 @@ export async function appendBufferedText(args: {
   });
 }
 
+export function chainBufferedFlush(
+  state: BufferedAppendState,
+  runFlush: () => Promise<void>
+): Promise<void> {
+  const flushToken = Symbol("flush");
+  const queuedFlush = (state.flushPromise ?? Promise.resolve()).then(runFlush);
+  const activeFlush = queuedFlush.finally(() => {
+    if (state.flushToken === flushToken && state.flushPromise === activeFlush) {
+      state.flushPromise = undefined;
+      state.flushToken = undefined;
+    }
+  });
+
+  state.flushToken = flushToken;
+  state.flushPromise = activeFlush;
+  return activeFlush;
+}
+
 export async function flushBufferedRunArtifacts(context: RunContext): Promise<void> {
   const state = getBufferedAppendState(context.runDir);
   const runFlush = async (): Promise<void> => {
@@ -942,13 +1142,5 @@ export async function flushBufferedRunArtifacts(context: RunContext): Promise<vo
     }
   };
 
-  state.flushPromise = (state.flushPromise ?? Promise.resolve())
-    .then(runFlush)
-    .finally(() => {
-      if (state.flushPromise) {
-        state.flushPromise = undefined;
-      }
-    });
-
-  await state.flushPromise;
+  await chainBufferedFlush(state, runFlush);
 }

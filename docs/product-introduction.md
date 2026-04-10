@@ -8,7 +8,7 @@ OGSystem 是一个面向多角色协作流程的控制台运行时，使用受�
 当前版本已经收敛为单一运行时路径：
 
 - 一个图执行模型（graph runtime）
-- 一套持久化状态模型（`state.json.graphState` + `sessions.json`）
+- 一套文件优先的恢复模型（`state.json.graphState` + `sessions.json` + `plan-fingerprint.json` + `checkpoints/` + `execution-outcome.json`）
 - 一套统一节点执行契约（role package + schema validation + executor abstraction）
 
 ## 2. 原理
@@ -42,7 +42,7 @@ OGSystem 将职责拆分为四层：
 运行数据默认落盘到 `ogsystem-history/<run-id>/`，其中：
 
 - run-id 命名格式：`yyyy-MM-dd_HH24-mm-ss_xxxx`（`xxxx` 为系统ID派生的4位代码）
-- 运行恢复依赖：`state.json.graphState`、`sessions.json`
+- 运行恢复依赖：`state.json.graphState`、`sessions.json`、`plan-fingerprint.json`、`checkpoints/`、`execution-outcome.json`
 - 审计与操作视图：`events.ndjson`、`audit/*.md`、`roles/<roleId>/...`
 
 ## 4. 安装

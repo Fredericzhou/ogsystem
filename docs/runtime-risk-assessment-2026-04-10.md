@@ -164,11 +164,11 @@ P2（中期）：
 ## 5. 执行进展（2026-04-10）
 
 - [x] P0.1 `exitCode` 语义修复：`runCliTool` 在子进程非 0 退出时抛出 `ToolExecutionError(exit_code)`，阻断 success 路径；已补回归测试覆盖非 0 退出分支。
-- [x] P0.2 resume 兼容性校验：新增 `plan-fingerprint.json`（基于 system/roles/models/law 绑定生成 SHA-256 指纹），新 run 持久化、resume 启动强校验，不匹配/缺失时失败；已补 mismatch 场景测试。
-- [x] P0.3 crash-idempotent 防重：新增 run 级 `checkpoints/` 序号文件；role 执行完成后先持久化状态增量 checkpoint，再由 graph loop 持久化 `state.json`。resume 会先重放 `lastCheckpointSequence` 之后的 pending checkpoint，避免重复执行。
+- [x] P0.2 resume 兼容性校验：新增 `plan-fingerprint.json`，指纹覆盖 Mermaid `system`、runtime loader 实际载入的 `rolePackages`/`modelPackages` 内容与 `effectiveLaw`；路径类 `sourceHints` 仅保留诊断用途，不纳入 identity digest；新 run 持久化、resume 启动强校验，不匹配/缺失时失败；已补 role/model/law drift 与 path-stable 场景测试。
+- [x] P0.3 crash-idempotent 防重：新增 run 级 `checkpoints/` WAL 与 per-execution `execution-outcome.json` durable marker；role 执行先提交 execution outcome，再由 graph loop 发出 checkpoint，resume 会先重放 pending checkpoint 并补齐缺失 checkpoint，避免重复执行。
 - [x] P0.4 环路静态校验：Mermaid parser 新增 SCC/自环检测；对所有检测到的环，若未配置任何 `loop.max.<role>`，直接以 `MERMAID_CYCLE_REQUIRES_LOOP_MAX` 拒绝运行。
 - [x] P1.1 审计/事件缓冲写：`events.ndjson` 与 `audit/transitions.md` 改为缓冲队列 + 显式 flush；flush 失败时写入 `.buffer-recovery/`，下次初始化自动回放。
-- [x] P1.2 并行同轮多实例：runtime 状态改为 `branchId` 唯一标识 + `lineageId` 关联；统一 scheduler 每次处理当前 role 的全部活跃 branch，支持非 join 多入边下同一 role 在同轮执行多次，并补集成回归。
+- [x] P1.2 并行同轮多实例：runtime 状态改为 `branchId` 唯一标识 + `lineageId` 关联，并新增 `sessionLineageId` 作为 session 复用/隔离维度；统一 scheduler 每次处理当前 role 的全部活跃 branch，支持非 join 多入边下同一 role 在同轮执行多次，并将 role 级 session 快照明确命名为 `latest-session.json`，避免与 `sessions.json` 的 runtime authority 语义混淆；已补集成回归。
 - [x] P1.3 `timeout/cancel` 语义贯通至 OpenCode 调用链：引入可传播取消信号，并在 `session.create`/`session.prompt`/纠偏 `prompt` 后执行取消检查；若超时先发生且 session 后创建，补偿 `abort` 会在创建返回后立即触发，避免会话泄漏。
 - [x] P2.1 结构化 metrics：新增 `metrics.json` 文件快照，包含 run 级 summary、error code 统计与 role 级执行计数/耗时汇总，并与 `state.json` 同步刷新。
 - [x] P2.2 故障演练回归：新增/补齐 timeout、部分写失败恢复、resume checkpoint replay 三类测试；同时增加 `npm run test:runtime-regression` 与 `npm run test:fault-injection` 作为回归入口。

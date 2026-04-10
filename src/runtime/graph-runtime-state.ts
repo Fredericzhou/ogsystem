@@ -120,6 +120,7 @@ export function activateBranch(args: {
   loopIteration: number;
   branchSequence: number;
   lineageId: string;
+  sessionLineageId: string;
   parentBranchId?: string;
   activatedByRoleId?: string;
   activatedByEvent?: string;
@@ -130,6 +131,7 @@ export function activateBranch(args: {
     loopIteration: args.loopIteration,
     branchSequence: args.branchSequence,
     lineageId: args.lineageId,
+    sessionLineageId: args.sessionLineageId,
     parentBranchId: args.parentBranchId,
     activatedByRoleId: args.activatedByRoleId,
     activatedByEvent: args.activatedByEvent,
@@ -143,6 +145,7 @@ export function completeBranch(args: {
   loopIteration: number;
   branchSequence: number;
   lineageId: string;
+  sessionLineageId: string;
   parentBranchId?: string;
   activatedByRoleId?: string;
   activatedByEvent?: string;
@@ -153,6 +156,7 @@ export function completeBranch(args: {
     loopIteration: args.loopIteration,
     branchSequence: args.branchSequence,
     lineageId: args.lineageId,
+    sessionLineageId: args.sessionLineageId,
     parentBranchId: args.parentBranchId,
     activatedByRoleId: args.activatedByRoleId,
     activatedByEvent: args.activatedByEvent,
@@ -179,6 +183,7 @@ export function createInitialGraphState(args: {
         loopIteration: 1,
         branchSequence: 1,
         lineageId: branchId,
+        sessionLineageId: branchId,
         status: "active"
       }
     },

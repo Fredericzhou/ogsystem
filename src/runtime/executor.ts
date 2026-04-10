@@ -24,6 +24,7 @@ export type ExecutorBinding =
 
 export type ExecutorRequest = {
   roleId: string;
+  sessionKey?: string;
   prompt: string;
   schema: unknown;
   binding: ExecutorBinding;
@@ -150,8 +151,8 @@ export function createDefaultExecutor(args: {
                 }),
                 stderr: "",
                 args: [] as string[],
-                sessionId: request.sessionId ?? `dryrun-session-${request.roleId}`,
-                messageId: `dryrun-message-${request.roleId}`
+                sessionId: request.sessionId ?? `dryrun-session-${request.sessionKey ?? request.roleId}`,
+                messageId: `dryrun-message-${request.sessionKey ?? request.roleId}`
               }
             : await executeOpencodeModelRole({
                 roleId: request.roleId,

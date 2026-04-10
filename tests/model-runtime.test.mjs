@@ -82,13 +82,20 @@ test("adapter auto-discovers runtime config and persists run artifacts for model
   );
   assert.match(minimalistExecutionPrompt, /讨论当前架构是否继续最小化/);
   const minimalistSession = JSON.parse(
-    await readFile(path.resolve(runDir, "roles", "debate-minimalist", "session.json"), "utf8")
+    await readFile(path.resolve(runDir, "roles", "debate-minimalist", "latest-session.json"), "utf8")
   );
-  assert.equal(minimalistSession.sessionId, "dryrun-session-debate-minimalist");
+  assert.equal(minimalistSession.sessionKey, "debate-minimalist:debate-minimalist@1#1");
+  assert.equal(
+    minimalistSession.sessionId,
+    "dryrun-session-debate-minimalist:debate-minimalist@1#1"
+  );
   const minimalistExecutionSession = JSON.parse(
     await readFile(path.resolve(minimalistExecutionDir, "session.json"), "utf8")
   );
-  assert.equal(minimalistExecutionSession.sessionId, "dryrun-session-debate-minimalist");
+  assert.equal(
+    minimalistExecutionSession.sessionId,
+    "dryrun-session-debate-minimalist:debate-minimalist@1#1"
+  );
   const minimalistAudit = JSON.parse(
     await readFile(path.resolve(runDir, "roles", "debate-minimalist", "audit.json"), "utf8")
   );

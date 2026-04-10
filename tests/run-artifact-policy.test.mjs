@@ -11,6 +11,19 @@ test("artifact policy documents runtime-consumed and operator-facing files", () 
   const policy = listRunArtifactPolicy();
   assert.ok(policy.some((entry) => entry.path === "state.json" && entry.resumeConsumed));
   assert.ok(policy.some((entry) => entry.path === "sessions.json" && entry.resumeConsumed));
+  assert.ok(policy.some((entry) => entry.path === "plan-fingerprint.json" && entry.resumeConsumed));
+  assert.ok(
+    policy.some(
+      (entry) => entry.path === "checkpoints/<sequence>-<executionId>.json" && entry.resumeConsumed
+    )
+  );
+  assert.ok(
+    policy.some(
+      (entry) =>
+        entry.path === "roles/<roleId>/executions/<executionId>/execution-outcome.json" &&
+        entry.resumeConsumed
+    )
+  );
   assert.ok(policy.some((entry) => entry.path === "events.ndjson" && !entry.resumeConsumed));
   assert.ok(
     policy.some(
@@ -55,18 +68,30 @@ test("model runtime artifacts match the documented contract", async () => {
 
   assert.ok(Array.isArray(sessions));
   await readFile(path.resolve(runDir, "state.json"), "utf8");
+  await readFile(path.resolve(runDir, "plan-fingerprint.json"), "utf8");
   await readFile(path.resolve(runDir, "events.ndjson"), "utf8");
   await readFile(path.resolve(runDir, "audit", "summary.md"), "utf8");
   await readFile(path.resolve(runDir, "audit", "transitions.md"), "utf8");
   await readFile(path.resolve(runDir, "roles", "debate-minimalist", "role.md"), "utf8");
-  await readFile(path.resolve(runDir, "roles", "debate-minimalist", "session.json"), "utf8");
+  await readFile(path.resolve(runDir, "roles", "debate-minimalist", "latest-session.json"), "utf8");
 
   const executions = await readdir(
     path.resolve(runDir, "roles", "debate-minimalist", "executions")
   );
   assert.equal(executions.length, 1);
   await readFile(
-    path.resolve(runDir, "roles", "debate-minimalist", "executions", executions[0], "prompt.md"),
+      path.resolve(runDir, "roles", "debate-minimalist", "executions", executions[0], "prompt.md"),
+    "utf8"
+  );
+  await readFile(
+    path.resolve(
+      runDir,
+      "roles",
+      "debate-minimalist",
+      "executions",
+      executions[0],
+      "execution-outcome.json"
+    ),
     "utf8"
   );
 });

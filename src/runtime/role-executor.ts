@@ -14,7 +14,9 @@ import {
 import { OpencodeExecutionError } from "./opencode-executor.js";
 import {
   allocateRoleExecution,
+  buildRoleSessionKey,
   getRoleSession,
+  persistRoleExecutionOutcome,
   persistRolePrelude,
   persistRoleResult,
   persistRoleSession
@@ -40,6 +42,8 @@ import type {
   LoadedModelPackage,
   LoadedRolePackage,
   RoleExecutionOutput,
+  RoleExecutionOutcomeRecord,
+  RoleExecutionRecord,
   RoleOutputRepairRecord,
   RuntimeErrorEnvelope,
   RunContext,
@@ -76,6 +80,77 @@ export type RoleExecutorResult =
       branchId: string;
       loopIteration: number;
     };
+
+type PersistedRoleExecutorResult =
+  | {
+      status: "ok" | "noop";
+      audit: AuditRecord;
+      storedResult?: StoredRoleResult;
+      selectedEvent?: string;
+      executionId: string;
+      branchId: string;
+      loopIteration: number;
+    }
+  | {
+      status: "failed";
+      error: string;
+      failure: RuntimeErrorEnvelope;
+      audit: AuditRecord;
+      executionId: string;
+      branchId: string;
+      loopIteration: number;
+    };
+
+function buildRoleExecutionOutcome(args: {
+  execution: RoleExecutionRecord;
+  branch: BranchRecord;
+  result: PersistedRoleExecutorResult;
+}): RoleExecutionOutcomeRecord {
+  const committedAt = new Date().toISOString();
+  if (args.result.status === "failed") {
+    return {
+      version: 1,
+      executionId: args.result.executionId,
+      roleId: args.execution.roleId,
+      branchId: args.result.branchId,
+      loopIteration: args.result.loopIteration,
+      sessionKey: args.execution.sessionKey,
+      branch: args.branch,
+      committedAt,
+      status: "failed",
+      error: args.result.error,
+      failure: args.result.failure,
+      audit: args.result.audit
+    };
+  }
+  return {
+    version: 1,
+    executionId: args.result.executionId,
+    roleId: args.execution.roleId,
+    branchId: args.result.branchId,
+    loopIteration: args.result.loopIteration,
+    sessionKey: args.execution.sessionKey,
+    branch: args.branch,
+    committedAt,
+    status: args.result.status,
+    selectedEvent: args.result.selectedEvent,
+    storedResult: args.result.storedResult,
+    audit: args.result.audit
+  };
+}
+
+async function persistCommittedExecutionResult(args: {
+  execution: RoleExecutionRecord;
+  branch: BranchRecord;
+  result: PersistedRoleExecutorResult;
+}): Promise<RoleExecutionOutcomeRecord> {
+  const outcome = buildRoleExecutionOutcome(args);
+  await persistRoleExecutionOutcome({
+    execution: args.execution,
+    outcome
+  });
+  return outcome;
+}
 
 function getDirectContext(state: GraphState, branch: BranchRecord): string {
   if (!branch.parentBranchId) {
@@ -478,6 +553,7 @@ export async function executeRoleNode(args: {
   }
   const loopIteration = currentBranch.loopIteration;
   const branchId = currentBranch.branchId;
+  const sessionKey = buildRoleSessionKey(args.roleId, currentBranch.sessionLineageId);
   const started = Date.now();
   const nextTransitionCount = args.state.transitionCount + 1;
   const lawRef = args.plan.lawBinding.globalLawRef;
@@ -485,6 +561,8 @@ export async function executeRoleNode(args: {
   const execution = allocateRoleExecution({
     context: args.runContext,
     roleId: args.roleId,
+    sessionKey,
+    sessionLineageId: currentBranch.sessionLineageId,
     branchId,
     loopIteration
   });
@@ -512,8 +590,7 @@ export async function executeRoleNode(args: {
       errorEnvelope: failure
     });
     await persistRoleResult({ roleId: args.roleId, context: args.runContext, execution, audit });
-    await appendAuditRecord(args.runContext, audit);
-    return {
+    const result: PersistedRoleExecutorResult = {
       status: "failed",
       error,
       failure,
@@ -522,6 +599,13 @@ export async function executeRoleNode(args: {
       branchId,
       loopIteration
     };
+    await persistCommittedExecutionResult({
+      execution,
+      branch: currentBranch,
+      result
+    });
+    await appendAuditRecord(args.runContext, audit);
+    return result;
   }
 
   if (!rolePackage) {
@@ -546,8 +630,7 @@ export async function executeRoleNode(args: {
       errorEnvelope: failure
     });
     await persistRoleResult({ roleId: args.roleId, context: args.runContext, execution, audit });
-    await appendAuditRecord(args.runContext, audit);
-    return {
+    const result: PersistedRoleExecutorResult = {
       status: "failed",
       error,
       failure,
@@ -556,6 +639,13 @@ export async function executeRoleNode(args: {
       branchId,
       loopIteration
     };
+    await persistCommittedExecutionResult({
+      execution,
+      branch: currentBranch,
+      result
+    });
+    await appendAuditRecord(args.runContext, audit);
+    return result;
   }
 
   const promptInput = buildRolePromptInput({
@@ -583,7 +673,7 @@ export async function executeRoleNode(args: {
   });
   const allowedEvents = args.node.outgoing.map((item) => item.eventType);
   const roleDirs = args.runContext.roleDirsById.get(args.roleId);
-  const existingSession = getRoleSession(args.runContext, args.roleId);
+  const existingSession = getRoleSession(args.runContext, sessionKey);
 
   let timeoutMs = 120000;
   let maxOutputBytes = 64 * 1024;
@@ -703,15 +793,7 @@ export async function executeRoleNode(args: {
         status: "noop"
       });
       await persistRoleResult({ roleId: args.roleId, context: args.runContext, execution, audit });
-      await appendAuditRecord(args.runContext, audit);
-      logger.roleDone({
-        roleId: args.roleId,
-        branchId,
-        status: "noop",
-        selectedEvent,
-        durationMs: audit.durationMs
-      });
-      return {
+      const result: PersistedRoleExecutorResult = {
         status: "noop",
         audit,
         selectedEvent,
@@ -719,10 +801,25 @@ export async function executeRoleNode(args: {
         branchId,
         loopIteration
       };
+      const outcome = await persistCommittedExecutionResult({
+        execution,
+        branch: currentBranch,
+        result
+      });
+      logger.roleDone({
+        roleId: args.roleId,
+        branchId,
+        status: "noop",
+        selectedEvent,
+        durationMs: audit.durationMs
+      });
+      await appendAuditRecord(args.runContext, audit);
+      return result;
     }
 
-    const result = await args.executor.execute({
+    const executionResult = await args.executor.execute({
       roleId: args.roleId,
+      sessionKey,
       prompt,
       schema: rolePackage.outputSchema,
       binding,
@@ -738,10 +835,10 @@ export async function executeRoleNode(args: {
       }),
       sessionId: existingSession?.sessionId
     });
-    lastStdout = result.stdout;
+    lastStdout = executionResult.stdout;
 
     const parsed = parseRoleExecutionOutputWithRepair({
-      rawOutput: result.stdout,
+      rawOutput: executionResult.stdout,
       requireEvent: args.node.outgoing.length > 0 && args.node.routingMode !== "parallel_split"
     });
     let repair = parsed.repair;
@@ -778,29 +875,29 @@ export async function executeRoleNode(args: {
       loopIteration,
       lawRef,
       started,
-      modelId: result.modelId ?? modelId,
-      profileId: result.profileId ?? profileId,
-      toolRef: result.toolRef ?? toolRef,
-      command: result.command ?? command,
-      resultArgs: result.args,
-      sessionId: result.sessionId,
-      messageId: result.messageId,
-      serverPid: result.serverPid,
-      exitCode: result.exitCode,
+      modelId: executionResult.modelId ?? modelId,
+      profileId: executionResult.profileId ?? profileId,
+      toolRef: executionResult.toolRef ?? toolRef,
+      command: executionResult.command ?? command,
+      resultArgs: executionResult.args,
+      sessionId: executionResult.sessionId,
+      messageId: executionResult.messageId,
+      serverPid: executionResult.serverPid,
+      exitCode: executionResult.exitCode,
       selectedEvent,
       status: "ok",
-      stdout: result.stdout,
-      stderr: result.stderr,
+      stdout: executionResult.stdout,
+      stderr: executionResult.stderr,
       repair
     });
 
-    if (result.sessionId) {
+    if (executionResult.sessionId) {
       await persistRoleSession({
         context: args.runContext,
         roleId: args.roleId,
         execution,
-        sessionId: result.sessionId,
-        messageId: result.messageId
+        sessionId: executionResult.sessionId,
+        messageId: executionResult.messageId
       });
     }
     await persistRoleResult({
@@ -810,16 +907,7 @@ export async function executeRoleNode(args: {
       output: parsed.output,
       audit
     });
-    await appendAuditRecord(args.runContext, audit);
-    logger.roleDone({
-      roleId: args.roleId,
-      branchId,
-      status: "ok",
-      selectedEvent,
-      durationMs: audit.durationMs
-    });
-
-    return {
+    const result: PersistedRoleExecutorResult = {
       status: "ok",
       audit,
       storedResult: {
@@ -836,6 +924,20 @@ export async function executeRoleNode(args: {
       branchId,
       loopIteration
     };
+    await persistCommittedExecutionResult({
+      execution,
+      branch: currentBranch,
+      result
+    });
+    logger.roleDone({
+      roleId: args.roleId,
+      branchId,
+      status: "ok",
+      selectedEvent,
+      durationMs: audit.durationMs
+    });
+    await appendAuditRecord(args.runContext, audit);
+    return result;
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     const category = error instanceof ToolExecutionError ? ` (${error.category})` : "";
@@ -895,15 +997,7 @@ export async function executeRoleNode(args: {
       });
     }
     await persistRoleResult({ roleId: args.roleId, context: args.runContext, execution, audit });
-    await appendAuditRecord(args.runContext, audit);
-    logger.roleDone({
-      roleId: args.roleId,
-      branchId,
-      status: "failed",
-      durationMs: audit.durationMs,
-      errorCode: failure.errorCode
-    });
-    return {
+    const result: PersistedRoleExecutorResult = {
       status: "failed",
       error: `${message}${category}`,
       failure,
@@ -912,5 +1006,19 @@ export async function executeRoleNode(args: {
       branchId,
       loopIteration
     };
+    await persistCommittedExecutionResult({
+      execution,
+      branch: currentBranch,
+      result
+    });
+    logger.roleDone({
+      roleId: args.roleId,
+      branchId,
+      status: "failed",
+      durationMs: audit.durationMs,
+      errorCode: failure.errorCode
+    });
+    await appendAuditRecord(args.runContext, audit);
+    return result;
   }
 }

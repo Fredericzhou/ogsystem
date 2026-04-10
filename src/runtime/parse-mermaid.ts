@@ -736,6 +736,12 @@ function validateParsedSystemGraph(graph: ParsedSystemGraph): ValidatedSystemGra
     }
   }
 
+  /**
+   * Reliability: Fail-Fast Static Analysis.
+   * Uses graph theory (Strongly Connected Components) to detect topological cycles 
+   * that lack an explicit loop.max budget. This prevents runaway LLM API costs 
+   * by rejecting unsafe graphs before execution begins.
+   */
   const cycleComponents = collectCyclicRoleComponents({
     roleIds,
     flows: graph.flows

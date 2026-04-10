@@ -8,6 +8,7 @@ import { getExecutionPlanNode } from "./execution-plan.js";
 import { isJoinNodeReady, selectRoutingTargets } from "./graph-mode-registry.js";
 import {
   activateBranch,
+  buildBranchId,
   completeBranch,
   createInitialGraphState,
   findRoleResult,
@@ -26,7 +27,9 @@ import { stringifyJson } from "./runtime-support.js";
 import {
   cleanupHistoricalExecutionSnapshots,
   flushBufferedRunArtifacts,
+  loadCommittedRoleExecutionOutcomes,
   loadPendingRuntimeCheckpoints,
+  markRoleExecutionOutcomeReconciled,
   persistRuntimeCheckpoint,
   writeAtomicFile
 } from "./run-artifacts.js";
@@ -45,15 +48,19 @@ import type {
   LoadedModelPackage,
   LoadedRolePackage,
   RunContext,
+  RuntimeCheckpointRecord,
   RuntimeErrorEnvelope,
   StoredRoleResult,
   GraphStateUpdate,
+  RoleExecutionOutcomeRecord,
   UserProfile
 } from "./types.js";
 
 type GraphUpdate = GraphStateUpdate;
 
 const SCHEDULER_NODE_ID = "__scheduler__";
+const DEFAULT_TRANSITION_BUDGET = 100;
+const GRAPH_RECURSION_MARGIN = 20;
 
 type RunnerInput = {
   plan: ExecutionPlan;
@@ -295,7 +302,10 @@ function projectMetricsSnapshot(args: {
 async function replayPendingRuntimeCheckpoints(args: {
   state: GraphState;
   runContext: RunContext;
-}): Promise<GraphState> {
+}): Promise<{
+  state: GraphState;
+  checkpoints: RuntimeCheckpointRecord[];
+}> {
   const checkpoints = await loadPendingRuntimeCheckpoints({
     context: args.runContext,
     afterSequence: args.state.lastCheckpointSequence
@@ -304,7 +314,106 @@ async function replayPendingRuntimeCheckpoints(args: {
   for (const checkpoint of checkpoints) {
     replayedState = applyGraphUpdate(replayedState, checkpoint.update);
   }
-  return replayedState;
+  return {
+    state: replayedState,
+    checkpoints
+  };
+}
+
+function calculateGraphRecursionLimit(maxTransitions?: number): number {
+  const transitionBudget = maxTransitions ?? DEFAULT_TRANSITION_BUDGET;
+  return transitionBudget * 2 + GRAPH_RECURSION_MARGIN;
+}
+
+function buildGraphUpdateFromOutcome(args: {
+  state: GraphState;
+  plan: ExecutionPlan;
+  outcome: RoleExecutionOutcomeRecord;
+  logger: ReturnType<typeof createRunConsoleLogger>;
+}): GraphUpdate {
+  if (args.outcome.status === "failed") {
+    return buildFailureUpdate({
+      roleId: args.outcome.roleId,
+      branch: args.outcome.branch,
+      error: args.outcome.error,
+      errorEnvelope: args.outcome.failure,
+      audit: args.outcome.audit
+    });
+  }
+
+  return buildSuccessUpdate({
+    state: args.state,
+    plan: args.plan,
+    roleId: args.outcome.roleId,
+    currentBranch: args.outcome.branch,
+    audit: args.outcome.audit,
+    selectedEvent: args.outcome.selectedEvent,
+    storedResult: args.outcome.storedResult,
+    mode: args.outcome.status,
+    logger: args.logger
+  });
+}
+
+async function reconcileCommittedRoleExecutionOutcomes(args: {
+  state: GraphState;
+  plan: ExecutionPlan;
+  runContext: RunContext;
+}): Promise<GraphState> {
+  const replay = await replayPendingRuntimeCheckpoints({
+    state: args.state,
+    runContext: args.runContext
+  });
+  let reconciledState = replay.state;
+  const pendingCheckpointByExecutionId = new Map(
+    replay.checkpoints.map((checkpoint) => [checkpoint.executionId, checkpoint])
+  );
+  const outcomes = await loadCommittedRoleExecutionOutcomes({
+    context: args.runContext,
+    unresolvedOnly: true
+  });
+  const logger = createRunConsoleLogger(false);
+
+  for (const outcome of outcomes) {
+    const pendingCheckpoint = pendingCheckpointByExecutionId.get(outcome.executionId);
+    if (pendingCheckpoint) {
+      const roleDirs = args.runContext.roleDirsById.get(outcome.roleId);
+      if (!roleDirs) {
+        throw new Error(`Role run directory missing for "${outcome.roleId}"`);
+      }
+      await markRoleExecutionOutcomeReconciled({
+        executionDir: resolve(roleDirs.executionsDir, outcome.executionId),
+        checkpointSequence: pendingCheckpoint.checkpointSequence
+      });
+      continue;
+    }
+
+    const update = buildGraphUpdateFromOutcome({
+      state: reconciledState,
+      plan: args.plan,
+      outcome,
+      logger
+    });
+    const checkpoint = await persistRuntimeCheckpoint({
+      context: args.runContext,
+      roleId: outcome.roleId,
+      branchId: outcome.branchId,
+      loopIteration: outcome.loopIteration,
+      executionId: outcome.executionId,
+      update
+    });
+    const roleDirs = args.runContext.roleDirsById.get(outcome.roleId);
+    if (!roleDirs) {
+      throw new Error(`Role run directory missing for "${outcome.roleId}"`);
+    }
+    await markRoleExecutionOutcomeReconciled({
+      executionDir: resolve(roleDirs.executionsDir, outcome.executionId),
+      checkpointSequence: checkpoint.checkpointSequence
+    });
+    pendingCheckpointByExecutionId.set(outcome.executionId, checkpoint);
+    reconciledState = applyGraphUpdate(reconciledState, checkpoint.update);
+  }
+
+  return reconciledState;
 }
 
 async function writeRunSummary(args: {
@@ -371,6 +480,25 @@ function buildFailureUpdate(args: {
       [args.branch.branchId]: completeBranch(args.branch)
     }
   };
+}
+
+function resolveNextSessionLineageId(args: {
+  currentNode: ExecutionPlanNode;
+  targetNode: ExecutionPlanNode;
+  currentBranch: BranchRecord;
+  targetRoleId: string;
+  nextLoopIteration: number;
+  nextBranchSequence: number;
+  activatedTargetCount: number;
+}): string {
+  if (
+    args.activatedTargetCount > 1 ||
+    args.currentNode.routingMode === "parallel_split" ||
+    args.targetNode.joinMode === "all_of"
+  ) {
+    return buildBranchId(args.targetRoleId, args.nextLoopIteration, args.nextBranchSequence);
+  }
+  return args.currentBranch.sessionLineageId;
 }
 
 /**
@@ -465,6 +593,15 @@ function buildSuccessUpdate(args: {
     loopUpdates[targetRoleId] = nextLoopIteration;
 
     const targetNode = getExecutionPlanNode(args.plan, targetRoleId);
+    const sessionLineageId = resolveNextSessionLineageId({
+      currentNode: node,
+      targetNode,
+      currentBranch: args.currentBranch,
+      targetRoleId,
+      nextLoopIteration,
+      nextBranchSequence,
+      activatedTargetCount: candidateTargets.length
+    });
     if (targetNode.joinMode === "all_of") {
       if (isJoinNodeReady({
         node: targetNode,
@@ -477,6 +614,7 @@ function buildSuccessUpdate(args: {
           loopIteration: nextLoopIteration,
           branchSequence: nextBranchSequence,
           lineageId: args.currentBranch.lineageId,
+          sessionLineageId,
           parentBranchId: args.currentBranch.branchId,
           activatedByRoleId: args.roleId,
           activatedByEvent: flow?.eventType ?? args.selectedEvent
@@ -508,6 +646,7 @@ function buildSuccessUpdate(args: {
       loopIteration: nextLoopIteration,
       branchSequence: nextBranchSequence,
       lineageId: args.currentBranch.lineageId,
+      sessionLineageId,
       parentBranchId: args.currentBranch.branchId,
       activatedByRoleId: args.roleId,
       activatedByEvent: flow?.eventType ?? args.selectedEvent
@@ -635,6 +774,14 @@ export async function runSystemWithGraphRunner(args: RunnerInput): Promise<Adapt
           executionId: result.executionId,
           update: branchUpdate
         });
+        const roleDirs = args.runContext.roleDirsById.get(roleId);
+        if (!roleDirs) {
+          throw new Error(`Role run directory missing for "${roleId}"`);
+        }
+        await markRoleExecutionOutcomeReconciled({
+          executionDir: resolve(roleDirs.executionsDir, result.executionId),
+          checkpointSequence: checkpoint.checkpointSequence
+        });
 
         workingState = applyGraphUpdate(workingState, checkpoint.update);
         combinedUpdate = mergeGraphUpdates(combinedUpdate, checkpoint.update);
@@ -664,8 +811,11 @@ export async function runSystemWithGraphRunner(args: RunnerInput): Promise<Adapt
   const graph = graphBuilder.compile();
   let finalState = args.initialState ?? createInitialGraphState({ plan: args.plan, prompt: args.prompt });
   if (args.initialState) {
-    finalState = await replayPendingRuntimeCheckpoints({
+    // Reliability: restore the exact state frontier by replaying checkpoint WAL first,
+    // then reconciling any committed role outcomes that crashed before checkpoint emission.
+    finalState = await reconcileCommittedRoleExecutionOutcomes({
       state: finalState,
+      plan: args.plan,
       runContext: args.runContext
     });
   }
@@ -677,7 +827,7 @@ export async function runSystemWithGraphRunner(args: RunnerInput): Promise<Adapt
   });
   await persistProjectedState({ state: finalState, plan: args.plan, runContext: args.runContext });
 
-  const recursionLimit = (args.effectiveLaw.maxTransitions ?? 100) + 20;
+  const recursionLimit = calculateGraphRecursionLimit(args.effectiveLaw.maxTransitions);
   const stream = await graph.stream(finalState, {
     streamMode: "values",
     recursionLimit

@@ -233,20 +233,26 @@ When a run starts, `ogsystem-history/<run-id>/` should persist:
 
 - run-id format: `yyyy-MM-dd_HH24-mm-ss_xxxx` (`xxxx` = 4-char system code)
 
-- run-level files: `run.md`, `request.md`, `system.mmd`, `state.json`, `events.ndjson`
+- run-level files: `run.md`, `request.md`, `system.mmd`, `state.json`, `metrics.json`, `events.ndjson`, `plan-fingerprint.json`
 - run-level OpenCode metadata: `opencode-server.json` for `model.bind` runs
 - run-level OpenCode session index: `sessions.json`
+- run-level checkpoint WAL: `checkpoints/<sequence>-<executionId>.json`
 - run-level shared workspace: `shared/`
 - audit files: `audit/summary.md`, `audit/transitions.md`
-- per-role latest files: `role.md`, `execution.json`, `session.json`, `inbox.md`, `prompt.md`, `result.json`, `outbox.md`, `audit.json`, `private/`
-- per-role history: `executions/<execution-id>/...`
+- per-role latest files: `role.md`, `execution.json`, `latest-session.json`, `inbox.md`, `prompt.md`, `result.json`, `outbox.md`, `audit.json`, `private/`
+- per-role history: `executions/<execution-id>/...` including `execution-outcome.json`
 
 Resume source of truth:
 
 - `state.json.graphState`
 - `sessions.json`
-- both files are written atomically
+- `plan-fingerprint.json`
+- `checkpoints/`
+- `roles/<roleId>/executions/<executionId>/execution-outcome.json`
+- all authority files are written atomically at their own file boundary
 - resume rejects partial/corrupted `graphState` snapshots before role execution starts
+- resume hard-fails when the runtime-loaded fingerprint changes (`system`, `rolePackages`, `modelPackages`, `effectiveLaw`)
+- resume reconciles committed execution outcomes into missing checkpoints before normal replay continues
 
 Audit/operator artifacts:
 
@@ -266,7 +272,9 @@ Minimal shared-workspace rule:
 OpenCode lifecycle rule for `model.bind`:
 
 - one OGSystem run starts one shared `opencode serve`
-- each role/node owns one isolated OpenCode `session` for the run and reuses it across repeated turns or loops
+- each role/node session is keyed by `roleId:sessionLineageId`
+- repeated turns on the same branch lineage reuse the same OpenCode `session`
+- sibling branches of the same role do not share a session
 - each node prompt still binds to that node's role directory
 - node audit records include `sessionId`, `messageId`, and shared `serverPid`
 - run events include `opencode_server_started` and `opencode_server_closed`
@@ -300,7 +308,7 @@ Optional history cleanup:
 
 OGSystem classifies persisted run artifacts into three classes:
 
-- `runtime_consumed`: runtime-critical files read by resume and recovery logic (`state.json`, `sessions.json`)
+- `runtime_consumed`: runtime-critical files read by resume and recovery logic (`state.json`, `sessions.json`, `plan-fingerprint.json`, `checkpoints/...`, `execution-outcome.json`)
 - `operator_latest`: latest operator-facing snapshots (`run.md`, `request.md`, `audit/*.md`, `roles/<roleId>/*.md|*.json`, `events.ndjson`)
 - `history_only`: immutable per-execution snapshots (`roles/<roleId>/executions/<executionId>/...`)
 

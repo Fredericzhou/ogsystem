@@ -14,6 +14,18 @@ const RUN_ARTIFACT_POLICY: RunArtifactPolicyEntry[] = [
     description: "Run-level executor session index used for session reload and reuse."
   },
   {
+    path: "plan-fingerprint.json",
+    retention: "runtime_consumed",
+    resumeConsumed: true,
+    description: "Runtime-loaded compatibility fingerprint used to hard-fail unsafe resume."
+  },
+  {
+    path: "checkpoints/<sequence>-<executionId>.json",
+    retention: "runtime_consumed",
+    resumeConsumed: true,
+    description: "Write-ahead graph update checkpoints replayed during resume/recovery."
+  },
+  {
     path: "events.ndjson",
     retention: "operator_latest",
     resumeConsumed: false,
@@ -104,10 +116,10 @@ const RUN_ARTIFACT_POLICY: RunArtifactPolicyEntry[] = [
     description: "Latest audit payload for the role."
   },
   {
-    path: "roles/<roleId>/session.json",
+    path: "roles/<roleId>/latest-session.json",
     retention: "operator_latest",
     resumeConsumed: false,
-    description: "Latest session snapshot for operators; runtime reload uses sessions.json."
+    description: "Latest operator-facing session snapshot; runtime reload uses sessions.json."
   },
   {
     path: "roles/<roleId>/private/",
@@ -120,6 +132,12 @@ const RUN_ARTIFACT_POLICY: RunArtifactPolicyEntry[] = [
     retention: "history_only",
     resumeConsumed: false,
     description: "Per-execution immutable history snapshot."
+  },
+  {
+    path: "roles/<roleId>/executions/<executionId>/execution-outcome.json",
+    retention: "history_only",
+    resumeConsumed: true,
+    description: "Durable execution outcome marker used to reconcile missing checkpoints after crashes."
   }
 ];
 

@@ -341,6 +341,11 @@ function throwIfCancelled(signal: AbortSignal, timeoutMs: number): void {
   throw createTimeoutError(timeoutMs);
 }
 
+/**
+ * Stability: Implements standard Cancellation Propagation using AbortController.
+ * Ensures that if a timeout occurs, the remote sandbox session is explicitly aborted 
+ * to prevent "Zombie Sessions" (resource leaks) on the OpenCode server.
+ */
 function withTimeout<T>(
   operation: (signal: AbortSignal) => Promise<T>,
   timeoutMs: number,

@@ -203,8 +203,28 @@ function sortedRoleIds(values: string[]): string[] {
   return [...values].sort((left, right) => left.localeCompare(right));
 }
 
-export function buildRunPlanFingerprint(system: SystemDefinition): RunPlanFingerprint {
-  const payload = {
+type FingerprintComponentName = "system" | "rolePackages" | "modelPackages" | "effectiveLaw";
+
+function normalizeFingerprintValue(value: unknown): unknown {
+  if (Array.isArray(value)) {
+    return value.map((entry) => normalizeFingerprintValue(entry));
+  }
+  if (value && typeof value === "object") {
+    return Object.fromEntries(
+      Object.keys(value as Record<string, unknown>)
+        .sort((left, right) => left.localeCompare(right))
+        .map((key) => [key, normalizeFingerprintValue((value as Record<string, unknown>)[key])])
+    );
+  }
+  return value ?? null;
+}
+
+function hashFingerprintValue(value: unknown): string {
+  return createHash("sha256").update(JSON.stringify(normalizeFingerprintValue(value))).digest("hex");
+}
+
+function buildSystemFingerprintComponent(system: SystemDefinition): Record<string, unknown> {
+  return {
     systemId: system.systemId,
     systemVersion: system.systemVersion,
     entryRoleId: system.entryRoleId,
@@ -239,10 +259,105 @@ export function buildRunPlanFingerprint(system: SystemDefinition): RunPlanFinger
         .sort(([left], [right]) => left.localeCompare(right))
     }
   };
+}
 
-  const digest = createHash("sha256").update(JSON.stringify(payload)).digest("hex");
+function buildRolePackageFingerprintComponent(
+  rolePackagesByRoleId: Map<string, LoadedRolePackage>
+): Array<{
+  identity: Record<string, unknown>;
+  sourceHints: Record<string, unknown>;
+}> {
+  return Array.from(rolePackagesByRoleId.entries())
+    .sort(([left], [right]) => left.localeCompare(right))
+    .map(([roleId, rolePackage]) => ({
+      identity: {
+        roleId,
+        manifest: normalizeFingerprintValue(rolePackage.manifest),
+        promptTemplate: rolePackage.promptTemplate,
+        inputSchema: normalizeFingerprintValue(rolePackage.inputSchema ?? null),
+        outputSchema: normalizeFingerprintValue(rolePackage.outputSchema),
+        persona: rolePackage.persona ?? null,
+        work: rolePackage.work ?? null
+      },
+      sourceHints: {
+        roleId,
+        resolvedPath: rolePackage.resolvedPath,
+        promptTemplatePath: resolve(rolePackage.resolvedPath, rolePackage.manifest.promptTemplate),
+        inputSchemaPath: rolePackage.inputSchemaPath ?? null,
+        outputSchemaPath: rolePackage.outputSchemaPath,
+        personaPath: rolePackage.persona !== undefined ? resolve(rolePackage.resolvedPath, "persona.md") : null,
+        workPath: rolePackage.work !== undefined ? resolve(rolePackage.resolvedPath, "work.md") : null
+      }
+    }));
+}
+
+function buildModelPackageFingerprintComponent(
+  modelsById: Map<string, LoadedModelPackage>
+): Array<{
+  identity: Record<string, unknown>;
+  sourceHints: Record<string, unknown>;
+}> {
+  return Array.from(modelsById.entries())
+    .sort(([left], [right]) => left.localeCompare(right))
+    .map(([modelId, modelPackage]) => ({
+      identity: {
+        modelId,
+        manifest: normalizeFingerprintValue(modelPackage.manifest)
+      },
+      sourceHints: {
+        modelId,
+        resolvedPath: modelPackage.resolvedPath,
+        manifestPath: resolve(modelPackage.resolvedPath, "model.json")
+      }
+    }));
+}
+
+export function buildRunPlanFingerprint(args: {
+  system: SystemDefinition;
+  rolePackagesByRoleId: Map<string, LoadedRolePackage>;
+  modelsById: Map<string, LoadedModelPackage>;
+  effectiveLaw: EffectiveLawConstraints;
+}): RunPlanFingerprint {
+  const rolePackageComponents = buildRolePackageFingerprintComponent(args.rolePackagesByRoleId);
+  const modelPackageComponents = buildModelPackageFingerprintComponent(args.modelsById);
+  const componentValues: Record<FingerprintComponentName, unknown> = {
+    system: buildSystemFingerprintComponent(args.system),
+    rolePackages: rolePackageComponents.map((component) => component.identity),
+    modelPackages: modelPackageComponents.map((component) => component.identity),
+    effectiveLaw: normalizeFingerprintValue(args.effectiveLaw)
+  };
+  const componentDigests = Object.fromEntries(
+    (Object.keys(componentValues) as FingerprintComponentName[]).map((componentName) => [
+      componentName,
+      hashFingerprintValue(componentValues[componentName])
+    ])
+  ) as Record<FingerprintComponentName, string>;
+  const payload = {
+    components: {
+      system: {
+        digest: componentDigests.system,
+        value: componentValues.system
+      },
+      rolePackages: {
+        digest: componentDigests.rolePackages,
+        value: componentValues.rolePackages,
+        sourceHints: rolePackageComponents.map((component) => component.sourceHints)
+      },
+      modelPackages: {
+        digest: componentDigests.modelPackages,
+        value: componentValues.modelPackages,
+        sourceHints: modelPackageComponents.map((component) => component.sourceHints)
+      },
+      effectiveLaw: {
+        digest: componentDigests.effectiveLaw,
+        value: componentValues.effectiveLaw
+      }
+    }
+  };
+
+  const digest = hashFingerprintValue(componentDigests);
   return {
-    version: 1,
+    version: 3,
     algorithm: "sha256",
     digest,
     payload
@@ -278,7 +393,6 @@ export async function runSystemWithAdapter(args: {
     | undefined;
   try {
     const system = await loadSystemFromMermaid(args.systemPath);
-    const planFingerprint = buildRunPlanFingerprint(system);
     const plan = createExecutionPlan(system);
     const runtimeConfig = await loadRuntimeConfig(args.runtimeConfigPath, args.workdir);
     const profiles = await loadProfiles(args.profilesPath);
@@ -294,6 +408,12 @@ export async function runSystemWithAdapter(args: {
       modelRootDir: resolve(args.workdir, runtimeConfig.modelRepo)
     });
     const effectiveLaw = resolveEffectiveLaw(system, lawCatalog);
+    const planFingerprint = buildRunPlanFingerprint({
+      system,
+      rolePackagesByRoleId,
+      modelsById,
+      effectiveLaw
+    });
     const runContext = await initializeRunContext({
       system,
       systemPath: args.systemPath,
@@ -358,6 +478,9 @@ export async function runSystemWithAdapter(args: {
     let initialState: GraphState | undefined;
     if (args.resumeRunDir) {
       try {
+        // Reliability: Verify state consistency via Plan Fingerprinting.
+        // Prevents resuming a state snapshot against a modified Mermaid graph or system
+        // definition, which would violate the internal integrity of the state machine.
         await validateResumePlanFingerprint({
           runDir: setup.runContext.runDir,
           expectedFingerprint: setup.planFingerprint

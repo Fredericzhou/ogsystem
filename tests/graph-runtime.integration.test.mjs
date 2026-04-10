@@ -240,6 +240,17 @@ decision[Role:test-decision] -->|PATH_B| output
     path.resolve(runDir, "roles", "test-decision", "executions")
   );
   assert.strictEqual(decisionExecutions.length, 2);
+  const sessionIndex = JSON.parse(await readFile(path.resolve(runDir, "sessions.json"), "utf8"));
+  const decisionSessions = sessionIndex.filter((entry) => entry.roleId === "test-decision");
+  assert.strictEqual(decisionSessions.length, 2);
+  assert.deepStrictEqual(
+    new Set(decisionSessions.map((entry) => entry.sessionKey)).size,
+    2
+  );
+  assert.deepStrictEqual(
+    new Set(decisionSessions.map((entry) => entry.sessionId)).size,
+    2
+  );
 });
 
 test("adapter optionally cleans historical execution snapshots without touching resume sources", async () => {
@@ -277,4 +288,114 @@ test("adapter optionally cleans historical execution snapshots without touching 
   assert.strictEqual(moderatorExecutions.length, 1);
   await readFile(path.resolve(runDir, "state.json"), "utf8");
   await readFile(path.resolve(runDir, "sessions.json"), "utf8");
+});
+
+test("adapter keeps scheduler recursion budget above loop-heavy transition counts", async () => {
+  const repoRoot = process.cwd();
+  const tempRoot = await mkdtemp(path.join(os.tmpdir(), "ogsystem-recursion-budget-"));
+  const systemPath = path.resolve(tempRoot, "system.mmd");
+  const lawsPath = path.resolve(tempRoot, "laws.json");
+  const runtimePath = path.resolve(tempRoot, ".ogsystem", "runtime.json");
+  const roleDir = path.resolve(tempRoot, "og-roles", "roles", "test-loop-probe");
+
+  await mkdir(path.resolve(tempRoot, ".ogsystem"), { recursive: true });
+  await symlink(path.resolve(repoRoot, "og-models"), path.resolve(tempRoot, "og-models"), "dir");
+  await mkdir(roleDir, { recursive: true });
+  await writeFile(
+    runtimePath,
+    JSON.stringify(
+      {
+        executor: "opencode",
+        roleRepo: "./og-roles",
+        modelRepo: "./og-models",
+        runsDir: "ogsystem-history"
+      },
+      null,
+      2
+    ),
+    "utf8"
+  );
+  await writeFile(
+    path.resolve(roleDir, "role.json"),
+    JSON.stringify(
+      {
+        roleId: "test-loop-probe",
+        roleVersion: "1.0.0",
+        name: "Loop Probe",
+        description: "Scheduler recursion stress role",
+        promptTemplate: "prompt.md",
+        outputSchema: "output.schema.json"
+      },
+      null,
+      2
+    ),
+    "utf8"
+  );
+  await writeFile(
+    path.resolve(roleDir, "prompt.md"),
+    ["Return a JSON object.", "Allowed events: {{allowed_events}}."].join("\n"),
+    "utf8"
+  );
+  await writeFile(
+    path.resolve(roleDir, "output.schema.json"),
+    JSON.stringify(
+      {
+        type: "object",
+        properties: {
+          event: {
+            type: "string",
+            enum: ["RETRY", "DONE"]
+          },
+          content: {
+            type: "string"
+          }
+        },
+        required: ["event"],
+        additionalProperties: true
+      },
+      null,
+      2
+    ),
+    "utf8"
+  );
+
+  const laws = JSON.parse(await readFile(path.resolve(repoRoot, ".ogsystem", "laws.json"), "utf8"));
+  const globalLaw = laws.laws.find((item) => item.lawId === "law.console.base");
+  assert.ok(globalLaw);
+  globalLaw.constraints = {
+    ...(globalLaw.constraints ?? {}),
+    maxTransitions: 40
+  };
+  await writeFile(lawsPath, JSON.stringify(laws, null, 2), "utf8");
+
+  await writeFile(
+    systemPath,
+    `flowchart TD
+%% system.id=test.scheduler.recursion
+%% system.version=1.0.0
+%% law.global=law.console.base
+%% entry.role=test-loop-probe
+%% loop.max.test-loop-probe=40
+%% model.bind.test-loop-probe=balanced-gpt52
+
+input -->|GO| operator[Role:test-loop-probe]
+operator[Role:test-loop-probe] -->|RETRY| operator[Role:test-loop-probe]
+operator[Role:test-loop-probe] -->|DONE| output
+`,
+    "utf8"
+  );
+
+  const result = await runSystemWithAdapter({
+    systemPath,
+    runtimeConfigPath: runtimePath,
+    lawsPath,
+    prompt: "stress scheduler recursion budget",
+    workdir: tempRoot,
+    dryRun: true
+  });
+
+  assert.strictEqual(result.status, "done");
+  assert.strictEqual(result.finalRoleId, "test-loop-probe");
+  assert.strictEqual(result.auditTrail.length, 40);
+  assert.strictEqual(result.systemState.transitionCount, 40);
 });

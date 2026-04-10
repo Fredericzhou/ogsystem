@@ -542,7 +542,7 @@ Verification:
   - operator-facing latest snapshot
   - per-execution history only
 - [x] If write duplication is reduced, update tests and docs together rather than treating it as an invisible internal change
-- [x] Re-evaluate `sessions.json`, `roleDir/session.json`, and `executionDir/session.json` ownership and purpose
+- [x] Re-evaluate `sessions.json`, `roleDir/latest-session.json`, and `executionDir/session.json` ownership and purpose
 
 Acceptance:
 

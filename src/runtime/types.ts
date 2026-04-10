@@ -247,7 +247,7 @@ export type RoleRunDirs = {
   roleDir: string;
   privateDir: string;
   executionsDir: string;
-  sessionPath: string;
+  latestSessionPath: string;
 };
 
 export type RoleExecutionRecord = {
@@ -256,6 +256,7 @@ export type RoleExecutionRecord = {
   executionDir: string;
   roleId: string;
   sessionKey: string;
+  sessionLineageId?: string;
   startedAt: string;
   branchId?: string;
   loopIteration?: number;
@@ -264,6 +265,8 @@ export type RoleExecutionRecord = {
 export type OpencodeSessionRecord = {
   sessionKey: string;
   roleId: string;
+  sessionLineageId?: string;
+  branchId?: string;
   sessionId: string;
   directory: string;
   createdAt: string;
@@ -284,7 +287,7 @@ export type RunContext = {
   checkpointsDir: string;
   roleDirsById: Map<string, RoleRunDirs>;
   roleExecutionCounts: Map<string, number>;
-  sessionRecordsByRoleId: Map<string, OpencodeSessionRecord>;
+  sessionRecordsByKey: Map<string, OpencodeSessionRecord>;
   nextCheckpointSequence: number;
   sharedDir: string;
 };
@@ -302,6 +305,7 @@ export type BranchRecord = {
   loopIteration: number;
   branchSequence: number;
   lineageId: string;
+  sessionLineageId: string;
   parentBranchId?: string;
   activatedByRoleId?: string;
   activatedByEvent?: string;
@@ -348,6 +352,40 @@ export type RuntimeCheckpointRecord = {
   executionId: string;
   update: GraphStateUpdate;
 };
+
+export type RoleExecutionOutcomeRecord =
+  | {
+      version: 1;
+      executionId: string;
+      roleId: string;
+      branchId: string;
+      loopIteration: number;
+      sessionKey: string;
+      branch: BranchRecord;
+      committedAt: string;
+      checkpointSequence?: number;
+      reconciledAt?: string;
+      status: "ok" | "noop";
+      selectedEvent?: string;
+      storedResult?: StoredRoleResult;
+      audit: AuditRecord;
+    }
+  | {
+      version: 1;
+      executionId: string;
+      roleId: string;
+      branchId: string;
+      loopIteration: number;
+      sessionKey: string;
+      branch: BranchRecord;
+      committedAt: string;
+      checkpointSequence?: number;
+      reconciledAt?: string;
+      status: "failed";
+      error: string;
+      failure: RuntimeErrorEnvelope;
+      audit: AuditRecord;
+    };
 
 export type RoleInputProjection = {
   role_id: string;

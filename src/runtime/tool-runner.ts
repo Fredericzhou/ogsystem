@@ -134,6 +134,9 @@ export async function runCliTool(args: {
     });
 
     child.on("close", (code) => {
+      // Reliability: Follow strict POSIX exit code semantics. 
+      // Non-zero exit codes MUST be treated as failures to prevent "silent failure" 
+      // where an error message in stderr is mistakenly consumed as a valid result by an LLM.
       const exitCode = code ?? 1;
       if (exitCode !== 0) {
         const stderrText = stderr.trim();
