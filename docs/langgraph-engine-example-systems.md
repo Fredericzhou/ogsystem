@@ -1,21 +1,24 @@
-# LangGraph Engine Example Systems
+# Graph Runtime Example Systems
 
 Date: 2026-04-09  
 Status: runnable minimal examples
 
-This document records the two Mermaid-first examples that match the current runtime:
+This document records the two Mermaid-first examples that match the current graph runtime:
 
 - debate: `parallel_split + all_of join + bounded loop`
 - expert consultation: `parallel_split + all_of join`
 
 Common metadata:
 
-- `%% engine=langgraph`
 - `%% role.mode.<roleId>=parallel_split`
 - `%% join.mode.<roleId>=all_of`
 - `%% join.sources.<roleId>=roleA,roleB,...`
 - `%% loop.max.<roleId>=N`
 - `%% model.bind.<roleId>=<modelId>`
+
+Compatibility note:
+
+- Legacy `%% engine=langgraph` may still appear in older diagrams, but active examples do not require it.
 
 Current curated model ids:
 
@@ -41,7 +44,6 @@ Goal:
 
 ```mermaid
 flowchart TD
-%% engine=langgraph
 %% system.id=medical.expert.consultation
 %% system.version=1.0.0
 %% law.global=law.medical.consultation.base
@@ -96,7 +98,6 @@ Goal:
 
 ```mermaid
 flowchart TD
-%% engine=langgraph
 %% system.id=architecture.debate.current
 %% system.version=1.0.0
 %% law.global=law.debate.base

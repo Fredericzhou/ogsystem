@@ -3,9 +3,9 @@ import { readFile } from "node:fs/promises";
 import { SYSTEM_END_ROLE_ID } from "./types.js";
 import type {
   Flow,
-  LangGraphHints,
-  LangGraphJoinMode,
-  LangGraphRoutingMode,
+  GraphJoinMode,
+  GraphMetadata,
+  GraphRoutingMode,
   SystemDefinition
 } from "./types.js";
 
@@ -50,7 +50,7 @@ type ValidatedSystemGraph = ParsedSystemGraph & {
   talentBinding: Record<string, string>;
   executionBinding: Record<string, string>;
   modelBinding: Record<string, string>;
-  langGraph?: LangGraphHints;
+  graph?: GraphMetadata;
 };
 
 function parseNodeToken(token: string): ParsedNodeToken {
@@ -287,8 +287,8 @@ function validateParsedSystemGraph(graph: ParsedSystemGraph): ValidatedSystemGra
   const talentBinding: Record<string, string> = {};
   const executionBinding: Record<string, string> = {};
   const modelBinding: Record<string, string> = {};
-  const routingModeByRoleId: Record<string, LangGraphRoutingMode> = {};
-  const joinModeByRoleId: Record<string, LangGraphJoinMode> = {};
+  const routingModeByRoleId: Record<string, GraphRoutingMode> = {};
+  const joinModeByRoleId: Record<string, GraphJoinMode> = {};
   const joinSourcesByRoleId: Record<string, string[]> = {};
   const loopMaxByRoleId: Record<string, number> = {};
   const exactMetadataKeys = new Set(["engine", "system.id", "system.version", "law.global", "entry.role"]);
@@ -463,7 +463,7 @@ function validateParsedSystemGraph(graph: ParsedSystemGraph): ValidatedSystemGra
     }
   }
 
-  const langGraph: LangGraphHints = {
+  const graphMetadata: GraphMetadata = {
     routingModeByRoleId,
     joinModeByRoleId,
     joinSourcesByRoleId,
@@ -480,7 +480,7 @@ function validateParsedSystemGraph(graph: ParsedSystemGraph): ValidatedSystemGra
     talentBinding,
     executionBinding,
     modelBinding,
-    langGraph
+    graph: graphMetadata
   };
 }
 
@@ -495,7 +495,7 @@ function compileSystemDefinition(graph: ValidatedSystemGraph): SystemDefinition 
     talentBinding: graph.talentBinding,
     executionBinding: graph.executionBinding,
     modelBinding: graph.modelBinding,
-    langGraph: graph.langGraph
+    graph: graph.graph
   };
 }
 

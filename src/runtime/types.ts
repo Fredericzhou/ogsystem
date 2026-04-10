@@ -6,13 +6,13 @@ export type Flow = {
 
 export const SYSTEM_END_ROLE_ID = "__system_end__";
 
-export type LangGraphRoutingMode = "parallel_split";
+export type GraphRoutingMode = "parallel_split";
 
-export type LangGraphJoinMode = "all_of";
+export type GraphJoinMode = "all_of";
 
-export type LangGraphHints = {
-  routingModeByRoleId: Record<string, LangGraphRoutingMode>;
-  joinModeByRoleId: Record<string, LangGraphJoinMode>;
+export type GraphMetadata = {
+  routingModeByRoleId: Record<string, GraphRoutingMode>;
+  joinModeByRoleId: Record<string, GraphJoinMode>;
   joinSourcesByRoleId: Record<string, string[]>;
   loopMaxByRoleId: Record<string, number>;
 };
@@ -31,7 +31,42 @@ export type SystemDefinition = {
   talentBinding: Record<string, string>;
   executionBinding: Record<string, string>;
   modelBinding: Record<string, string>;
-  langGraph?: LangGraphHints;
+  graph?: GraphMetadata;
+};
+
+export type RoleExecutionBinding =
+  | {
+      kind: "model";
+      modelId: string;
+    }
+  | {
+      kind: "profile";
+      profileId: string;
+    }
+  | {
+      kind: "noop";
+    };
+
+export type ExecutionPlanNode = {
+  roleId: string;
+  incoming: Flow[];
+  outgoing: Flow[];
+  routingMode?: GraphRoutingMode;
+  joinMode?: GraphJoinMode;
+  joinSources: string[];
+  loopMax?: number;
+  binding: RoleExecutionBinding;
+  isTerminal: boolean;
+};
+
+export type ExecutionPlan = {
+  systemId: string;
+  systemVersion: string;
+  lawBinding: LawBinding;
+  entryRoleId: string;
+  roleIds: string[];
+  flows: Flow[];
+  nodesByRoleId: Map<string, ExecutionPlanNode>;
 };
 
 export type ExecutionProfile = {
@@ -96,7 +131,9 @@ export type LoadedRolePackage = {
   manifest: RolePackageManifest;
   promptTemplate: string;
   inputSchema?: unknown;
+  inputSchemaPath?: string;
   outputSchema: unknown;
+  outputSchemaPath: string;
   persona?: string;
   work?: string;
 };
@@ -128,7 +165,6 @@ export type UserProfile = {
 export type RuntimeWorkspaceConfig = {
   rolesDir: string;
   privateDirName: string;
-  linkSharedIntoRoleDir: boolean;
 };
 
 export type RuntimeConfig = {
@@ -166,6 +202,7 @@ export type AuditRecord = {
   stdoutPreview?: string;
   stderrPreview?: string;
   error?: string;
+  repair?: RoleOutputRepairRecord;
 };
 
 export type RoleRunDirs = {
@@ -209,9 +246,6 @@ export type RunContext = {
   roleExecutionCounts: Map<string, number>;
   sessionRecordsByRoleId: Map<string, OpencodeSessionRecord>;
   sharedDir: string;
-  opencodeServerUrl?: string;
-  opencodeServerPid?: number;
-  opencodeServerStartedAt?: string;
 };
 
 export type BranchRecord = {
@@ -230,8 +264,36 @@ export type StoredRoleResult = {
   loopIteration: number;
 };
 
+export type GraphRunStatus = "running" | "done" | "failed";
+
+export type GraphState = {
+  userPrompt: string;
+  status: GraphRunStatus;
+  error: string;
+  transitionCount: number;
+  auditTrail: AuditRecord[];
+  roleResults: Record<string, StoredRoleResult>;
+  branchRecords: Record<string, BranchRecord>;
+  loopIterations: Record<string, number>;
+  selectedEventByRoleId: Record<string, string>;
+  finalOutput: string;
+  finalRoleId: string;
+  lastExecutedRoleId: string;
+};
+
+export type RoleInputProjection = {
+  role_id: string;
+  task: string;
+  context: string;
+  allowed_events: string[];
+  last_output: string;
+  system_notes: string;
+  round: number;
+  user_profile: UserProfile | Record<string, never>;
+};
+
 export type SystemStateSnapshot = {
-  status: "running" | "done" | "failed";
+  status: GraphRunStatus;
   currentRoleId: string;
   nextRoleId?: string;
   finalRoleId?: string;
@@ -261,4 +323,19 @@ export type AdapterRunResult = {
   stages: StageSnapshot[];
   auditTrail: AuditRecord[];
   error?: string;
+};
+
+export type JsonSchemaValidationIssue = {
+  path: string;
+  message: string;
+};
+
+export type RoleOutputFailureKind = "invalid_json" | "schema_mismatch" | "unknown_event";
+
+export type RoleOutputRepairRecord = {
+  kind: RoleOutputFailureKind;
+  attempted: boolean;
+  applied: boolean;
+  strategy: string;
+  detail: string;
 };

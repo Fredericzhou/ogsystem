@@ -66,7 +66,7 @@ npm run run:adapter -- \
   --dry-run
 ```
 
-Run LangGraph debate example:
+Run graph debate example:
 
 ```bash
 npm run run:adapter -- \
@@ -77,7 +77,7 @@ npm run run:adapter -- \
   --dry-run
 ```
 
-Run LangGraph expert consultation example:
+Run graph expert consultation example:
 
 ```bash
 npm run run:adapter -- \
@@ -102,10 +102,12 @@ npm run run:doctor -- --required opencode
 - Executable roles are resolved by `roleId` directly. For each Mermaid `Role:<roleId>`, the runtime loads `og-roles/roles/<roleId>/role.json`, renders `prompt.md`, validates optional `input.schema.json`, and validates `output.schema.json`.
 - The runtime now supports `model.bind.<roleId>=<modelId>` with auto-discovered `.ogsystem/runtime.json`, `.ogsystem/user-profile.json`, `.ogsystem/laws.json`, and `og-models/`.
 - `model.bind` retries transient OpenCode/provider failures on the same role session while keeping the same run-level shared server.
-- The runtime supports `role.mode.*=parallel_split`, `join.mode.*=all_of`, `join.sources.*`, and `loop.max.*`. Legacy `%% engine=langgraph` metadata is accepted but no longer required.
+- The runtime supports `role.mode.*=parallel_split`, `join.mode.*=all_of`, `join.sources.*`, and `loop.max.*`. Legacy `%% engine=langgraph` metadata is accepted as compatibility input but is not required DSL semantics.
+- Role output repair is intentionally narrow: wrapped JSON object extraction and single-allowed-event normalization are auto-repaired; schema mismatch still fails fast.
 - Each run persists under `.ogsystems/<run-id>/`, including run-level state, `sessions.json`, and per-role execution history under `roles/<roleId>/executions/`.
 - Each run gets its own isolated `.ogsystems/<run-id>/shared/` directory, and role directories do not receive a `shared` symlink by default.
 - `.ogsystems/` is generated runtime state and should stay out of version control.
+- `state.json.graphState` and `sessions.json` are the runtime-consumed resume sources. `events.ndjson` remains append-only audit history.
 - Runs persist `activeBranches`, `completedBranches`, `loopIterations`, and `graphState` inside `state.json`, and support `--resume-run` against the same run directory.
 - Roles without execution binding fail fast by default. A law may opt into `allowNoopWithoutExecutionBinding`, but noop remains explicit and is rejected on branching nodes.
 - `user-profile.json` is injected into role prompts as delivery preference; role packages decide how to apply it.
@@ -152,7 +154,10 @@ node skills/ogsystem-nl-to-mmd/scripts/validate_ogsystem_mmd.mjs \
 
 - `src/runtime/cli.ts`
 - `src/runtime/adapter.ts`
-- `src/runtime/langgraph-runner.ts`
+- `src/runtime/execution-plan.ts`
+- `src/runtime/executor.ts`
+- `src/runtime/graph-runner.ts`
+- `src/runtime/role-executor.ts`
 - `src/runtime/model-repo.ts`
 - `src/runtime/parse-mermaid.ts`
 - `src/runtime/stage-projector.ts`
@@ -161,11 +166,16 @@ node skills/ogsystem-nl-to-mmd/scripts/validate_ogsystem_mmd.mjs \
 
 ## Active Docs
 
+- `docs/DECISIONS.md`
 - `docs/role-model-user-profile-minimal-spec.md`
 - `docs/usage-manual.md`
 - `docs/single-graph-runtime-execution-checklist.md`
-- `docs/langgraph-engine-example-systems.md`
+- `docs/langgraph-engine-example-systems.md` (active examples, historical filename)
 - `specs/mermaid-dsl-v0.1.md`
+
+Architecture source of truth:
+
+- `docs/DECISIONS.md` records the active single-runtime contract.
 
 ## Historical Docs
 

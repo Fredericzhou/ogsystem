@@ -1,6 +1,6 @@
-import { readFile } from "node:fs/promises";
 import { resolve } from "node:path";
 
+import { readJsonFile } from "./json-file.js";
 import type { LoadedModelPackage, ModelPackageManifest } from "./types.js";
 
 type JsonValue = null | boolean | number | string | JsonValue[] | { [key: string]: JsonValue };
@@ -96,16 +96,6 @@ function expectOptionalArgsRecord(
     result[key] = entry;
   }
   return result;
-}
-
-async function readJsonFile(path: string): Promise<unknown> {
-  const source = await readFile(path, "utf8");
-  try {
-    return JSON.parse(source) as unknown;
-  } catch (error) {
-    const message = error instanceof Error ? error.message : String(error);
-    throw new Error(`Invalid JSON in ${path}: ${message}`);
-  }
 }
 
 export function validateModelPackageManifest(

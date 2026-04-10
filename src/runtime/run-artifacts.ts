@@ -1,6 +1,7 @@
 import { access, appendFile, mkdir, readFile, readdir, writeFile } from "node:fs/promises";
 import { basename, resolve } from "node:path";
 
+import { readJsonFile } from "./json-file.js";
 import type {
   AuditRecord,
   OpencodeSessionRecord,
@@ -31,16 +32,6 @@ export async function pathExists(path: string): Promise<boolean> {
     return true;
   } catch {
     return false;
-  }
-}
-
-export async function readJsonFile(path: string): Promise<unknown> {
-  const raw = await readFile(path, "utf8");
-  try {
-    return JSON.parse(raw);
-  } catch (error) {
-    const message = error instanceof Error ? error.message : String(error);
-    throw new Error(`Invalid JSON in ${path}: ${message}`);
   }
 }
 

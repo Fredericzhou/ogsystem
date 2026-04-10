@@ -1,4 +1,3 @@
-import { writeFile } from "node:fs/promises";
 import { resolve } from "node:path";
 
 import {
@@ -8,23 +7,20 @@ import {
   validateToolsConfig,
   validateUserProfileConfig
 } from "./config.js";
+import { createDefaultExecutor } from "./executor.js";
+import { createExecutionPlan } from "./execution-plan.js";
+import { runSystemWithGraphRunner } from "./graph-runner.js";
+import { readJsonFile } from "./json-file.js";
 import { loadModelPackage } from "./model-repo.js";
 import { loadSystemFromMermaid } from "./parse-mermaid.js";
-import {
-  appendEvent,
-  initializeRunContext,
-  pathExists,
-  readJsonFile
-} from "./run-artifacts.js";
 import { loadRolePackage } from "./role-repo.js";
-import { stringifyJson } from "./runtime-support.js";
-import { runSystemWithLangGraph } from "./langgraph-runner.js";
-import { type OpencodeRunClient, startOpencodeRunClient } from "./opencode-executor.js";
+import { initializeRunContext, pathExists } from "./run-artifacts.js";
 import type {
   AdapterRunResult,
   CliTool,
   EffectiveLawConstraints,
   ExecutionProfile,
+  GraphState,
   LawCatalog,
   LawSpec,
   LoadedModelPackage,
@@ -110,8 +106,7 @@ async function loadRuntimeConfig(path: string | undefined, workdir: string): Pro
         runsDir: ".ogsystems",
         workspace: {
           rolesDir: "roles",
-          privateDirName: "private",
-          linkSharedIntoRoleDir: false
+          privateDirName: "private"
         },
         opencode: {
           baseArgs: ["run"]
@@ -204,6 +199,7 @@ export async function runSystemWithAdapter(args: {
   dryRun?: boolean;
 }): Promise<AdapterRunResult> {
   const system = await loadSystemFromMermaid(args.systemPath);
+  const plan = createExecutionPlan(system);
   const runtimeConfig = await loadRuntimeConfig(args.runtimeConfigPath, args.workdir);
   const profiles = await loadProfiles(args.profilesPath);
   const tools = await loadTools(args.toolsPath);
@@ -229,41 +225,16 @@ export async function runSystemWithAdapter(args: {
 
   const profilesById = new Map(profiles.map((item) => [item.profileId, item]));
   const toolsByRef = new Map(tools.map((item) => [item.toolRef, item]));
-  const requiresOpencodeRunServer = !args.dryRun && modelsById.size > 0;
-  let opencodeRun: OpencodeRunClient | undefined;
+  const executor = createDefaultExecutor({
+    dryRun: args.dryRun,
+    runContext,
+    needsModelExecutor: modelsById.size > 0
+  });
 
   try {
-    if (requiresOpencodeRunServer) {
-      opencodeRun = await startOpencodeRunClient({
-        timeoutMs: 30000,
-        env: {
-          OGSYSTEM_RUN_DIR: runContext.runDir,
-          OGSYSTEM_SHARED_DIR: runContext.sharedDir
-        }
-      });
-      runContext.opencodeServerUrl = opencodeRun.url;
-      runContext.opencodeServerPid = opencodeRun.pid;
-      runContext.opencodeServerStartedAt = opencodeRun.startedAt;
-      await writeFile(
-        runContext.opencodeServerPath,
-        stringifyJson({
-          lifecycle: "single-serve-multi-session",
-          startedAt: runContext.opencodeServerStartedAt,
-          url: runContext.opencodeServerUrl,
-          pid: runContext.opencodeServerPid
-        }),
-        "utf8"
-      );
-      await appendEvent(runContext, {
-        type: "opencode_server_started",
-        at: runContext.opencodeServerStartedAt,
-        url: runContext.opencodeServerUrl,
-        pid: runContext.opencodeServerPid,
-        lifecycle: "single-serve-multi-session"
-      });
-    }
+    await executor.start();
 
-    let initialState: unknown;
+    let initialState: GraphState | undefined;
     if (args.resumeRunDir) {
       const resumeStatePath = resolve(runContext.runDir, "state.json");
       if (await pathExists(resumeStatePath)) {
@@ -274,48 +245,26 @@ export async function runSystemWithAdapter(args: {
           !Array.isArray(resumeState) &&
           "graphState" in resumeState
         ) {
-          initialState = (resumeState as Record<string, unknown>).graphState;
+          initialState = (resumeState as { graphState?: GraphState }).graphState;
         }
       }
     }
 
-    return await runSystemWithLangGraph({
-      system,
+    return await runSystemWithGraphRunner({
+      plan,
       effectiveLaw,
       profilesById,
       toolsByRef,
       modelsById,
-      runtimeConfig,
       userProfile,
       workdir: args.workdir,
       rolePackagesByRoleId,
       runContext,
-      opencodeRun,
+      executor,
       prompt: args.prompt,
-      dryRun: args.dryRun,
-      initialState: initialState as never
+      initialState
     });
   } finally {
-    if (opencodeRun) {
-      opencodeRun.close();
-      await writeFile(
-        runContext.opencodeServerPath,
-        stringifyJson({
-          lifecycle: "single-serve-multi-session",
-          startedAt: runContext.opencodeServerStartedAt,
-          closedAt: new Date().toISOString(),
-          url: runContext.opencodeServerUrl,
-          pid: runContext.opencodeServerPid
-        }),
-        "utf8"
-      );
-      await appendEvent(runContext, {
-        type: "opencode_server_closed",
-        at: new Date().toISOString(),
-        url: runContext.opencodeServerUrl,
-        pid: runContext.opencodeServerPid,
-        lifecycle: "single-serve-multi-session"
-      });
-    }
+    await executor.close();
   }
 }

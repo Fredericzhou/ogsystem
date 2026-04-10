@@ -49,7 +49,7 @@ test("parser accepts a minimal system", () => {
   assert.strictEqual(system.lawBinding.globalLawRef, "law.test");
   assert.strictEqual(system.executionBinding.intake, "profile.parser");
   assert.strictEqual(system.modelBinding.intake, "model.fast");
-  assert.deepStrictEqual(system.langGraph?.routingModeByRoleId, {});
+  assert.deepStrictEqual(system.graph?.routingModeByRoleId ?? {}, {});
 });
 
 test("parser rejects missing metadata", () => {
@@ -58,8 +58,8 @@ test("parser rejects missing metadata", () => {
 
 test("parser accepts graph metadata and compiles semantic hints without engine flag", () => {
   const system = parseSystemFromMermaidSource(graphSource);
-  assert.strictEqual(system.langGraph?.routingModeByRoleId.dispatch, "parallel_split");
-  assert.strictEqual(system.langGraph?.joinModeByRoleId.review, "all_of");
-  assert.deepStrictEqual(system.langGraph?.joinSourcesByRoleId.review, ["worker_a", "worker_b"]);
-  assert.strictEqual(system.langGraph?.loopMaxByRoleId.dispatch, 2);
+  assert.strictEqual(system.graph?.routingModeByRoleId.dispatch, "parallel_split");
+  assert.strictEqual(system.graph?.joinModeByRoleId.review, "all_of");
+  assert.deepStrictEqual(system.graph?.joinSourcesByRoleId.review, ["worker_a", "worker_b"]);
+  assert.strictEqual(system.graph?.loopMaxByRoleId.dispatch, 2);
 });

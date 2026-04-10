@@ -2,6 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import path from "node:path";
 
+import { validateRuntimeConfig } from "../dist/runtime/config.js";
 import { runSystemWithAdapter } from "../dist/runtime/adapter.js";
 
 test("adapter fails early on invalid profile config with file path and field path", async () => {
@@ -19,6 +20,32 @@ test("adapter fails early on invalid profile config with file path and field pat
       assert.ok(error instanceof Error);
       assert.match(error.message, /invalid-profiles\.json/);
       assert.match(error.message, /\$\[0\]\.toolPolicy/);
+      return true;
+    }
+  );
+});
+
+test("runtime config rejects removed linkSharedIntoRoleDir field", () => {
+  assert.throws(
+    () =>
+      validateRuntimeConfig(
+        {
+          executor: "opencode",
+          roleRepo: "./og-roles",
+          modelRepo: "./og-models",
+          runsDir: ".ogsystems",
+          workspace: {
+            rolesDir: "roles",
+            privateDirName: "private",
+            linkSharedIntoRoleDir: false
+          }
+        },
+        "runtime.json"
+      ),
+    (error) => {
+      assert.ok(error instanceof Error);
+      assert.match(error.message, /runtime\.json/);
+      assert.match(error.message, /\.workspace\.linkSharedIntoRoleDir/);
       return true;
     }
   );

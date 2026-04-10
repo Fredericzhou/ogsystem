@@ -2,17 +2,13 @@
 
 ## 1. Runtime Status
 
-This repository currently has two active runtime paths:
-
-- target architecture: `model.bind + model repo + user profile`
-- current graph runtime path: `role.mode/join.mode/loop.max`
-- legacy-compatible runtime path: `exec.bind + profiles/tools`
+This repository now has one active runtime path: the graph runtime.
 
 Use this rule:
 
-- preferred runtime path: use `model.bind.<roleId>=<modelId>`
-- add `role.mode/join.mode/loop.max` only when the system needs parallel split, `all_of` join, or bounded loop
-- legacy compatibility path: `exec.bind.<roleId>` still works when paired with `profiles/tools`
+- default execution path: use `model.bind.<roleId>=<modelId>`
+- graph semantics: add `role.mode/join.mode/loop.max` only when the system needs parallel split, `all_of` join, or bounded loop
+- compatibility execution mode: `exec.bind.<roleId>` still works when paired with `profiles/tools`, but it runs inside the same graph runtime rather than a separate engine
 
 ## 2. Semantic Layers
 
@@ -102,7 +98,7 @@ input -->|ENTER| analyst[Role:demo-analyst]
 analyst[Role:demo-analyst] -->|ANALYSIS_DONE| output
 ```
 
-Graph execution example (current adapter):
+Graph execution example:
 
 ```mermaid
 flowchart TD
@@ -212,7 +208,7 @@ User profile rules:
 - executor
 - repo roots
 - runs directory
-- shared workspace policy
+- workspace directory names
 
 Example:
 
@@ -237,8 +233,17 @@ When a run starts, `.ogsystems/<run-id>/` should persist:
 - per-role latest files: `role.md`, `execution.json`, `session.json`, `inbox.md`, `prompt.md`, `result.json`, `outbox.md`, `audit.json`, `private/`
 - per-role history: `executions/<execution-id>/...`
 
-Markdown files are human projections.
-`state.json` and `events.ndjson` are authoritative machine state.
+Resume source of truth:
+
+- `state.json.graphState`
+- `sessions.json`
+
+Audit/operator artifacts:
+
+- `events.ndjson`
+- Markdown projections such as `run.md`, `request.md`, `audit/summary.md`, and `audit/transitions.md`
+`state.json` is the authoritative runtime state snapshot.
+`events.ndjson` is append-only audit history.
 `inbox.md` is a projection of normalized runtime input, not a free-form summary.
 `.ogsystems/` is generated runtime state and should be ignored by git.
 
@@ -257,7 +262,13 @@ OpenCode lifecycle rule for `model.bind`:
 - run events include `opencode_server_started` and `opencode_server_closed`
 - transient provider/service failures are retried on the same role session
 - after node completion, session metadata can be retained for audit/resume while the shared server stays alive
-- parallel LangGraph branches therefore run as concurrent sessions on the same server process
+- parallel graph branches therefore run as concurrent sessions on the same server process
+
+Role output repair policy:
+
+- wrapped stdout that still contains one recoverable JSON object is normalized once
+- unknown event is auto-normalized only when the role has exactly one allowed outgoing event
+- schema mismatch fails fast and remains visible in the audit trail
 
 For graph-based runs, `state.json` also persists:
 
@@ -286,7 +297,7 @@ This path auto-discovers:
 - `og-models/`
 - `og-roles/`
 
-Legacy-compatible runtime command:
+Legacy-compatible binding command:
 
 ```bash
 npm run run:adapter -- \
@@ -298,7 +309,7 @@ npm run run:adapter -- \
   --dry-run
 ```
 
-LangGraph runtime command:
+Graph runtime command:
 
 ```bash
 npm run run:adapter -- \
@@ -320,7 +331,7 @@ npm run run:adapter -- \
   --dry-run
 ```
 
-Resume a LangGraph run from persisted `state.json.graphState`:
+Resume a graph runtime run from persisted `state.json.graphState`:
 
 ```bash
 npm run run:adapter -- \

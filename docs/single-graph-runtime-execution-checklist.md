@@ -236,79 +236,79 @@ These items are on the critical path. Do not start feature work before they are 
 
 ### P0.1 Freeze Single Runtime Architecture
 
-- [ ] Confirm the repository uses one active execution entry only
-- [ ] Remove any remaining branching based on `SystemDefinition.engine`
-- [ ] Remove `SystemEngine` from runtime types
-- [ ] Ensure graph metadata is optional OGSystem orchestration metadata, not engine selectors
-- [ ] Keep legacy `%% engine=langgraph` parsing only as compatibility input, not as required semantics
-- [ ] Document clearly that LangGraph is the current backend, not the DSL surface
+- [x] Confirm the repository uses one active execution entry only
+- [x] Remove any remaining branching based on `SystemDefinition.engine`
+- [x] Remove `SystemEngine` from runtime types
+- [x] Ensure graph metadata is optional OGSystem orchestration metadata, not engine selectors
+- [x] Keep legacy `%% engine=langgraph` parsing only as compatibility input, not as required semantics
+- [x] Document clearly that LangGraph is the current backend, not the DSL surface
 
 Acceptance:
 
-- [ ] `runSystemWithAdapter()` always calls the graph runner
-- [ ] `SystemDefinition` no longer models multiple runtime engines
-- [ ] graph metadata semantics are described without claiming they are LangGraph-native syntax
-- [ ] sequential systems run without any engine flag
+- [x] `runSystemWithAdapter()` always calls the graph runner
+- [x] `SystemDefinition` no longer models multiple runtime engines
+- [x] graph metadata semantics are described without claiming they are LangGraph-native syntax
+- [x] sequential systems run without any engine flag
 
 Verification:
 
-- [ ] `npm run build`
-- [ ] `npm test`
-- [ ] run one sequential dry-run example
-- [ ] run one join/loop dry-run example
+- [x] `npm run build`
+- [x] `npm test`
+- [x] run one sequential dry-run example
+- [x] run one join/loop dry-run example
 
 ### P0.2 Delete Dead Minimal Runtime Code
 
-- [ ] Remove the old sequential state-machine implementation from `adapter.ts`
-- [ ] Remove unused `RuntimeState`-style types and helpers
+- [x] Remove the old sequential state-machine implementation from `adapter.ts`
+- [x] Remove unused `RuntimeState`-style types and helpers
 - [ ] Remove dead helper functions tied to the old path:
   - `buildRoleInputProjection()`
   - `persistState()`
   - `mergeRuntimeState()`
   - `findFlowByEvent()`
   - `resolveRolePrompt()`
-- [ ] Make the fate of `findFlowByEvent()` explicit:
+- [x] Make the fate of `findFlowByEvent()` explicit:
   - delete it entirely if branch lookup is handled inline or by existing graph structures, or
   - move it into a shared helper only if another active runtime path truly needs it
-- [ ] Remove duplicated audit/prompt/execution logic left over from the old path
-- [ ] Ensure no dead code remains that suggests dual runtime support
+- [x] Remove duplicated audit/prompt/execution logic left over from the old path
+- [x] Ensure no dead code remains that suggests dual runtime support
 
 Acceptance:
 
-- [ ] `adapter.ts` contains orchestration only:
+- [x] `adapter.ts` contains orchestration only:
   - config load
   - repo load
   - run dir init
   - opencode lifecycle
   - resume state load
   - graph runner call
-- [ ] no unreachable state-machine executor remains in runtime code
-- [ ] branch-event lookup is either removed with the dead path or retained only as an intentional shared helper outside `adapter.ts`
+- [x] no unreachable state-machine executor remains in runtime code
+- [x] branch-event lookup is either removed with the dead path or retained only as an intentional shared helper outside `adapter.ts`
 
 Verification:
 
-- [ ] `rg -n "RuntimeState|mergeRuntimeState|executeRoleNode" src/runtime`
-- [ ] `rg -n "buildRoleInputProjection|persistState|mergeRuntimeState|findFlowByEvent|resolveRolePrompt" src/runtime/adapter.ts`
-- [ ] `rg -n "function findFlowByEvent|findFlowByEvent\\(" src/runtime`
-- [ ] `npm run build`
-- [ ] `npm test`
+- [x] `rg -n "RuntimeState|mergeRuntimeState|executeRoleNode" src/runtime`
+- [x] `rg -n "buildRoleInputProjection|persistState|mergeRuntimeState|findFlowByEvent|resolveRolePrompt" src/runtime/adapter.ts`
+- [x] `rg -n "function findFlowByEvent|findFlowByEvent\\(" src/runtime`
+- [x] `npm run build`
+- [x] `npm test`
 
 ### P0.3 Extract Shared Role Execution Layer
 
-- [ ] Create a dedicated `role-executor` module
-- [ ] Move prompt resolution into the shared execution layer
-- [ ] Move role input projection into the shared execution layer
-- [ ] Move model/profile/tool binding resolution into the shared execution layer
-- [ ] Move noop handling into the shared execution layer
-- [ ] Move parsed output validation into the shared execution layer
-- [ ] Choose one canonical naming scheme for prompt input resolution and projection
-- [ ] Return a typed execution result object instead of ad hoc state patches
+- [x] Create a dedicated `role-executor` module
+- [x] Move prompt resolution into the shared execution layer
+- [x] Move role input projection into the shared execution layer
+- [x] Move model/profile/tool binding resolution into the shared execution layer
+- [x] Move noop handling into the shared execution layer
+- [x] Move parsed output validation into the shared execution layer
+- [x] Choose one canonical naming scheme for prompt input resolution and projection
+- [x] Return a typed execution result object instead of ad hoc state patches
 
 Acceptance:
 
-- [ ] one role execution implementation serves all graph nodes
-- [ ] one shared role input projection implementation exists with aligned field semantics
-- [ ] no duplicated prompt/audit/tool selection logic remains across runtime modules
+- [x] one role execution implementation serves all graph nodes
+- [x] one shared role input projection implementation exists with aligned field semantics
+- [x] no duplicated prompt/audit/tool selection logic remains across runtime modules
 
 Recommended shape:
 
@@ -319,33 +319,33 @@ Recommended shape:
 
 Verification:
 
-- [ ] `rg -n "makeAuditRecord|resolveRolePrompt|validateRoleOutputSchema|runCliTool|executeOpencodeModelRole" src/runtime`
-- [ ] `rg -n "buildRoleInputProjection|resolvePromptInput|resolveRolePrompt" src/runtime`
-- [ ] inspect that each concern has one primary owner
+- [x] `rg -n "makeAuditRecord|resolveRolePrompt|validateRoleOutputSchema|runCliTool|executeOpencodeModelRole" src/runtime`
+- [x] `rg -n "buildRoleInputProjection|resolvePromptInput|resolveRolePrompt" src/runtime`
+- [x] inspect that each concern has one primary owner
 
 ### P0.4 Restore Type Safety In Graph Runner
 
-- [ ] Remove `// @ts-nocheck` from the graph runner
-- [ ] Replace `z.any()` usage where practical
-- [ ] Define strict types for:
+- [x] Remove `// @ts-nocheck` from the graph runner
+- [x] Replace `z.any()` usage where practical
+- [x] Define strict types for:
   - graph state
   - node patch shape
   - branch records
   - stored role results
   - audit payload construction
-- [ ] Eliminate `as never` casts on the main path
+- [x] Eliminate `as never` casts on the main path
 
 Acceptance:
 
-- [ ] graph runner builds under `strict: true`
-- [ ] state reducers and node outputs are type-checked
-- [ ] type regressions fail CI
+- [x] graph runner builds under `strict: true`
+- [x] state reducers and node outputs are type-checked
+- [x] type regressions fail CI
 
 Verification:
 
-- [ ] `npm run build`
+- [x] `npm run build`
 - [ ] add or update tests around typed state transitions
-- [ ] no `@ts-nocheck` remains in runtime sources
+- [x] no `@ts-nocheck` remains in runtime sources
 
 ### P0.5 Lock Regression Coverage For The Unified Runtime
 
@@ -373,78 +373,78 @@ These items should start immediately after P0 is stable.
 
 ### P1.1 Introduce Backend-Neutral Graph Semantics
 
-- [ ] Add an explicit `GraphIR` or `ExecutionPlan` layer between Mermaid parsing and LangGraph compilation
-- [ ] Compile OGSystem metadata into backend-neutral orchestration semantics first
-- [ ] Make the LangGraph builder consume the normalized plan rather than raw parsed metadata
-- [ ] Ensure future routing/join modes can be added without scattering direct backend checks across the runner
+- [x] Add an explicit `GraphIR` or `ExecutionPlan` layer between Mermaid parsing and LangGraph compilation
+- [x] Compile OGSystem metadata into backend-neutral orchestration semantics first
+- [x] Make the LangGraph builder consume the normalized plan rather than raw parsed metadata
+- [x] Ensure future routing/join modes can be added without scattering direct backend checks across the runner
 
 Acceptance:
 
-- [ ] DSL semantics are no longer encoded as ad hoc `if` branches tied directly to the LangGraph builder
-- [ ] the repository has a clear seam where another backend could be evaluated later
+- [x] DSL semantics are no longer encoded as ad hoc `if` branches tied directly to the LangGraph builder
+- [x] the repository has a clear seam where another backend could be evaluated later
 
 Verification:
 
-- [ ] add tests for normalized plan generation
-- [ ] ensure graph runner consumes the normalized plan rather than raw parser structures where possible
+- [x] add tests for normalized plan generation
+- [x] ensure graph runner consumes the normalized plan rather than raw parser structures where possible
 
 ### P1.2 Replace Shallow Schema Validation
 
-- [ ] Replace hand-written object-only validation with a standard JSON Schema validator
-- [ ] Validate both input and output schemas with the same local validation engine
+- [x] Replace hand-written object-only validation with a standard JSON Schema validator
+- [x] Validate both input and output schemas with the same local validation engine
 - [ ] Preserve the current distinction:
   - `model.bind` gets generation-time schema guidance from the executor plus runtime validation
   - `exec.bind` gets runtime validation and should gain repair/retry support instead of assuming guided generation
-- [ ] Preserve actionable error format:
+- [x] Preserve actionable error format:
   - file path
   - role id
   - failing field path
-- [ ] Ensure schema features used in role packages are truly supported
+- [x] Ensure schema features used in role packages are truly supported
 
 Acceptance:
 
-- [ ] runtime behavior matches documented schema contract
-- [ ] documentation clearly distinguishes generation-time schema guidance from runtime validation
-- [ ] nested object and enum validation are reliable
+- [x] runtime behavior matches documented schema contract
+- [x] documentation clearly distinguishes generation-time schema guidance from runtime validation
+- [x] nested object and enum validation are reliable
 
 Verification:
 
-- [ ] add tests for nested output schemas
-- [ ] add tests for invalid additional properties
-- [ ] add tests for invalid enum values
+- [x] add tests for nested output schemas
+- [x] add tests for invalid additional properties
+- [x] add tests for invalid enum values
 
 ### P1.3 Define Executor Abstraction And OpenCode Isolation Boundary
 
-- [ ] Introduce an `Executor` interface for model execution
-- [ ] Keep `OpenCode` as the default implementation behind that interface
-- [ ] Move executor-specific lifecycle and capability checks behind the abstraction
-- [ ] Define the minimum contract for executor implementations:
+- [x] Introduce an `Executor` interface for model execution
+- [x] Keep `OpenCode` as the default implementation behind that interface
+- [x] Move executor-specific lifecycle and capability checks behind the abstraction
+- [x] Define the minimum contract for executor implementations:
   - start or attach
   - execute structured role prompt
   - abort session
   - return structured execution metadata
-- [ ] Make OpenCode single-server lifecycle an implementation detail rather than a runtime-wide assumption
-- [ ] Define the executor contract explicitly:
+- [x] Make OpenCode single-server lifecycle an implementation detail rather than a runtime-wide assumption
+- [x] Define the executor contract explicitly:
   - required methods
   - parameter and return types
   - session management boundary
   - cleanup boundary
-- [ ] Decide whether executor registration is needed now or later
+- [x] Decide whether executor registration is needed now or later
 
 Acceptance:
 
-- [ ] OGSystem runtime depends on an executor contract, not directly on OpenCode implementation details everywhere
-- [ ] OpenCode remains the default path without remaining the only architectural shape
+- [x] OGSystem runtime depends on an executor contract, not directly on OpenCode implementation details everywhere
+- [x] OpenCode remains the default path without remaining the only architectural shape
 
 Verification:
 
-- [ ] executor tests cover OpenCode implementation
-- [ ] runtime entry path compiles against the abstract executor contract
+- [x] executor tests cover OpenCode implementation
+- [x] runtime entry path compiles against the abstract executor contract
 
 ### P1.3a Record Architecture Decisions Explicitly
 
-- [ ] Create `docs/DECISIONS.md`
-- [ ] Record at least these active decisions:
+- [x] Create `docs/DECISIONS.md`
+- [x] Record at least these active decisions:
   - why OGSystem uses one graph runtime
   - why LangGraph is the current backend implementation
   - why OpenCode is the current default executor
@@ -453,11 +453,11 @@ Verification:
 
 Acceptance:
 
-- [ ] contributors can find the current architectural truth without reading historical plans first
+- [x] contributors can find the current architectural truth without reading historical plans first
 
 Verification:
 
-- [ ] `docs/DECISIONS.md` exists and is linked from README or usage docs
+- [x] `docs/DECISIONS.md` exists and is linked from README or usage docs
 
 ### P1.4 Add Output Repair And Recovery Policy
 
@@ -476,8 +476,8 @@ Acceptance:
 
 Verification:
 
-- [ ] tests for invalid JSON repair path
-- [ ] tests for unknown event recovery or deliberate failure
+- [x] tests for invalid JSON repair path
+- [x] tests for unknown event recovery or deliberate failure
 - [ ] docs describe repair boundaries clearly
 
 ### P1.5 Split The Graph Runner By Responsibility
@@ -511,25 +511,25 @@ Verification:
 
 ### P1.6 Clean Runtime Config Drift
 
-- [ ] Remove fields that are declared but not implemented
+- [x] Remove fields that are declared but not implemented
 - [ ] Or implement them fully if they are required now
-- [ ] Re-evaluate:
+- [x] Re-evaluate:
   - `linkSharedIntoRoleDir`
   - any unused runtime defaults
   - compatibility-only settings that no longer matter
-- [ ] Make an explicit decision on `linkSharedIntoRoleDir`:
+- [x] Make an explicit decision on `linkSharedIntoRoleDir`:
   - remove it as dead config, or
   - implement it as supported behavior
 
 Acceptance:
 
-- [ ] `types.ts`, config validation, docs, and runtime behavior are 1:1 aligned
-- [ ] no field remains "declared but ignored"
+- [x] `types.ts`, config validation, docs, and runtime behavior are 1:1 aligned
+- [x] no field remains "declared but ignored"
 
 Verification:
 
 - [ ] config tests for every remaining runtime field
-- [ ] docs/examples updated accordingly
+- [x] docs/examples updated accordingly
 
 ### P1.7 Define Run Artifact Write Policy
 
@@ -557,19 +557,19 @@ Verification:
 
 ### P1.8 Unify Documentation Story
 
-- [ ] Update README to describe one runtime only
-- [ ] Update usage manual to describe graph runtime as default
-- [ ] Mark legacy `exec.bind` as compatibility mode, not peer architecture
-- [ ] Remove wording that implies `minimal` is still an active engine
-- [ ] Align examples with the new default semantics
-- [ ] Separate active docs from historical design notes
-- [ ] Mark outdated plans as historical, archived, or superseded instead of leaving them as live guidance
+- [x] Update README to describe one runtime only
+- [x] Update usage manual to describe graph runtime as default
+- [x] Mark legacy `exec.bind` as compatibility mode, not peer architecture
+- [x] Remove wording that implies `minimal` is still an active engine
+- [x] Align examples with the new default semantics
+- [x] Separate active docs from historical design notes
+- [x] Mark outdated plans as historical, archived, or superseded instead of leaving them as live guidance
 - [ ] Archive or clearly mark as historical:
   - `docs/semantic-kernel-v1.md`
   - `docs/opencode-single-serve-multi-session-plan.md`
 - [ ] Decide whether `docs/xlgraph-subset-compatibility.md` remains an active compatibility contract or should be marked historical
-- [ ] Verify no remaining docs imply a hand-written FSM is the target architecture
-- [ ] Explicitly distinguish:
+- [x] Verify no remaining docs imply a hand-written FSM is the target architecture
+- [x] Explicitly distinguish:
   - OGSystem graph semantics
   - LangGraph backend implementation
   - semantic fan-out vs actual compute concurrency
@@ -742,14 +742,14 @@ Acceptance:
 
 ### 7.2 Test Changes
 
-- [ ] parser tests reflect graph-default semantics
-- [ ] normalized execution-plan tests exist
+- [x] parser tests reflect graph-default semantics
+- [x] normalized execution-plan tests exist
 - [ ] branch tests prove sequential/branch systems still work
 - [ ] law tests cover noop and forbidden tool behavior
 - [ ] model runtime tests cover graph-default dry-run and run artifacts
-- [ ] executor tests cover OpenCode implementation behind the executor abstraction
+- [x] executor tests cover OpenCode implementation behind the executor abstraction
 - [ ] repair-policy tests cover invalid JSON, schema mismatch, and unknown event handling
-- [ ] resume tests cover persisted `graphState` recovery
+- [x] resume tests cover persisted `graphState` recovery
 - [ ] resume tests cover session record reload and session reuse where applicable
 - [ ] artifact contract tests reflect the chosen write policy rather than accidental file layout
 
@@ -839,7 +839,7 @@ npm run run:adapter -- \
 - [ ] runtime docs match actual behavior
 - [ ] build passes
 - [ ] tests pass
-- [ ] dry-run examples pass
+- [x] dry-run examples pass
 - [ ] resume behavior remains valid
 
 ## 9.1 Done Evidence
@@ -855,20 +855,20 @@ Box-checking rule:
   - grep result
   - inspectable file or doc change
 
-- [ ] `npm run build` passes
-- [ ] `npm test` passes
-- [ ] `rg -n "SystemEngine" src/runtime` returns no hits
-- [ ] `src/runtime/adapter.ts` shows one graph-runner handoff and no runtime-engine branching
-- [ ] `rg -n "@ts-nocheck" src/runtime` returns no runtime hits
-- [ ] `rg -n "RuntimeState|executeRoleNode|mergeRuntimeState|buildRoleInputProjection|persistState|resolveRolePrompt" src/runtime/adapter.ts` returns no dead-path hits
-- [ ] `docs/DECISIONS.md` exists and is linked from active docs
-- [ ] README and usage docs describe one active runtime path only
+- [x] `npm run build` passes
+- [x] `npm test` passes
+- [x] `rg -n "SystemEngine" src/runtime` returns no hits
+- [x] `src/runtime/adapter.ts` shows one graph-runner handoff and no runtime-engine branching
+- [x] `rg -n "@ts-nocheck" src/runtime` returns no runtime hits
+- [x] `rg -n "RuntimeState|executeRoleNode|mergeRuntimeState|buildRoleInputProjection|persistState|resolveRolePrompt" src/runtime/adapter.ts` returns no dead-path hits
+- [x] `docs/DECISIONS.md` exists and is linked from active docs
+- [x] README and usage docs describe one active runtime path only
 - [ ] historical docs are clearly labeled historical, archived, or superseded
 - [ ] artifact contract is documented in an active doc and matched by tests
-- [ ] sequential dry-run example passes
-- [ ] join/loop dry-run example passes
-- [ ] model-binding dry-run example passes
-- [ ] at least one resume test covers graph state reload
+- [x] sequential dry-run example passes
+- [x] join/loop dry-run example passes
+- [x] model-binding dry-run example passes
+- [x] at least one resume test covers graph state reload
 - [ ] at least one resume test covers session record reload where applicable
 - [ ] artifact contract tests match the chosen artifact persistence policy
 

@@ -1,6 +1,8 @@
 import { readFile } from "node:fs/promises";
 import { resolve } from "node:path";
 
+import { readJsonFile } from "./json-file.js";
+import { assertJsonSchema } from "./json-schema.js";
 import type {
   LoadedRolePackage,
   RoleExecutionOutput,
@@ -129,16 +131,6 @@ export function validateRolePackageManifest(
   };
 }
 
-async function readJsonFile(path: string): Promise<unknown> {
-  const source = await readFile(path, "utf8");
-  try {
-    return JSON.parse(source) as unknown;
-  } catch (error) {
-    const message = error instanceof Error ? error.message : String(error);
-    throw new Error(`Invalid JSON in ${path}: ${message}`);
-  }
-}
-
 export async function loadRolePackage(args: {
   roleId: string;
   roleRootDir: string;
@@ -179,7 +171,9 @@ export async function loadRolePackage(args: {
     manifest,
     promptTemplate,
     inputSchema,
+    inputSchemaPath,
     outputSchema,
+    outputSchemaPath,
     persona,
     work
   };
@@ -202,98 +196,32 @@ export function renderRolePrompt(args: {
   });
 }
 
-function validateObjectSchema(
-  value: unknown,
-  schema: Record<string, unknown>,
-  path: string
-): string[] {
-  const errors: string[] = [];
-  const type = schema.type;
-  if (type !== "object") {
-    errors.push(`${path}: only object schemas are supported`);
-    return errors;
-  }
-  if (typeof value !== "object" || value === null || Array.isArray(value)) {
-    errors.push(`${path}: expected object`);
-    return errors;
-  }
-
-  const record = value as Record<string, unknown>;
-  const properties =
-    typeof schema.properties === "object" && schema.properties !== null && !Array.isArray(schema.properties)
-      ? (schema.properties as Record<string, Record<string, unknown>>)
-      : {};
-  const required = Array.isArray(schema.required)
-    ? schema.required.filter((entry): entry is string => typeof entry === "string")
-    : [];
-  const additionalProperties = schema.additionalProperties;
-
-  for (const key of required) {
-    if (!(key in record)) {
-      errors.push(`${path}.${key}: required`);
-    }
-  }
-
-  for (const [key, entry] of Object.entries(record)) {
-    const propertySchema = properties[key];
-    if (!propertySchema) {
-      if (additionalProperties === false) {
-        errors.push(`${path}.${key}: additional property not allowed`);
-      }
-      continue;
-    }
-
-    const propertyType = propertySchema.type;
-    if (propertyType === "string" && typeof entry !== "string") {
-      errors.push(`${path}.${key}: expected string`);
-      continue;
-    }
-    if (propertyType === "object" && (typeof entry !== "object" || entry === null || Array.isArray(entry))) {
-      errors.push(`${path}.${key}: expected object`);
-      continue;
-    }
-    if (Array.isArray(propertySchema.enum) && !propertySchema.enum.includes(entry)) {
-      errors.push(`${path}.${key}: expected one of ${propertySchema.enum.join(", ")}`);
-    }
-  }
-
-  return errors;
-}
-
 export function validateRoleInputSchema(args: {
   input: Record<string, string>;
   schema: unknown;
   roleId: string;
+  schemaPath?: string;
 }): void {
-  if (typeof args.schema !== "object" || args.schema === null || Array.isArray(args.schema)) {
-    throw new Error(`Invalid input schema for role "${args.roleId}": expected JSON object`);
-  }
-
-  const errors = validateObjectSchema(args.input, args.schema as Record<string, unknown>, "$");
-  if (errors.length > 0) {
-    throw new Error(
-      `Role "${args.roleId}" input does not match schema: ${errors.join("; ")}`
-    );
-  }
+  assertJsonSchema({
+    schema: args.schema,
+    data: args.input,
+    schemaPath: args.schemaPath ?? "(inline input schema)",
+    roleId: args.roleId,
+    subject: "input"
+  });
 }
 
 export function validateRoleOutputSchema(args: {
   output: RoleExecutionOutput;
   schema: unknown;
   roleId: string;
+  schemaPath?: string;
 }): void {
-  if (typeof args.schema !== "object" || args.schema === null || Array.isArray(args.schema)) {
-    throw new Error(`Invalid output schema for role "${args.roleId}": expected JSON object`);
-  }
-
-  const errors = validateObjectSchema(
-    args.output,
-    args.schema as Record<string, unknown>,
-    "$"
-  );
-  if (errors.length > 0) {
-    throw new Error(
-      `Role "${args.roleId}" output does not match schema: ${errors.join("; ")}`
-    );
-  }
+  assertJsonSchema({
+    schema: args.schema,
+    data: args.output,
+    schemaPath: args.schemaPath ?? "(inline output schema)",
+    roleId: args.roleId,
+    subject: "output"
+  });
 }

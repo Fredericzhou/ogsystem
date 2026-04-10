@@ -17,6 +17,7 @@
   "dependencies": {
     "@langchain/langgraph": "^1.2.8",
     "@opencode-ai/sdk": "^1.4.1",
+    "ajv": "^8.18.0",
     "zod": "^3.25.76"
   }
 }

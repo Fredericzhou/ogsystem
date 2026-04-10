@@ -346,8 +346,7 @@ User profile rules:
   // Role private workspace policy.
   "workspace": {
     "rolesDir": "roles",
-    "privateDirName": "private",
-    "linkSharedIntoRoleDir": false
+    "privateDirName": "private"
   },
 
   // Common OpenCode arguments shared by all models unless overridden.
@@ -364,7 +363,16 @@ When `ogsystem` starts in a directory:
 - current working directory becomes the shared read/write workspace
 - runtime creates `.ogsystems/<timestamp>-<slug>/`
 - each role gets a private directory
-- each role runs in its own independent `OpenCode` process
+- one `model.bind` run may share one `OpenCode` server while keeping isolated per-role sessions
+
+Resume source of truth:
+
+- `state.json.graphState`
+- `sessions.json`
+
+Audit history:
+
+- `events.ndjson` is append-only event history, not a resume source
 
 Recommended files:
 

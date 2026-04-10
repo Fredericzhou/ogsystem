@@ -285,7 +285,7 @@ export function validateRuntimeConfig(value: unknown, filePath: string): Runtime
       : expectRecord(record.workspace, filePath, "$.workspace");
   expectNoExtraKeys(
     workspaceRecord,
-    ["rolesDir", "privateDirName", "linkSharedIntoRoleDir"],
+    ["rolesDir", "privateDirName"],
     filePath,
     "$.workspace"
   );
@@ -319,13 +319,7 @@ export function validateRuntimeConfig(value: unknown, filePath: string): Runtime
           workspaceRecord.privateDirName,
           filePath,
           "$.workspace.privateDirName"
-        ) ?? "private",
-      linkSharedIntoRoleDir:
-        expectOptionalBoolean(
-          workspaceRecord.linkSharedIntoRoleDir,
-          filePath,
-          "$.workspace.linkSharedIntoRoleDir"
-        ) ?? false
+        ) ?? "private"
     },
     opencode: {
       baseArgs
