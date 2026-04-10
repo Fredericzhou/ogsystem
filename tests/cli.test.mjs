@@ -28,6 +28,24 @@ test("cli fails when required args are missing", async () => {
   const { code, stderr } = await runCli(["--prompt", "hello"]);
   assert.strictEqual(code, 1);
   assert.match(stderr, /Missing required args/);
+  assert.match(stderr, /errorCode=CLI_MISSING_REQUIRED_ARGS/);
+  assert.match(stderr, /stage=cli/);
+});
+
+test("cli rejects invalid cleanup-executions with a stable envelope", async () => {
+  const { code, stderr } = await runCli([
+    "--system",
+    "examples/target-model-binding-system.mmd",
+    "--prompt",
+    "hello",
+    "--cleanup-executions",
+    "0"
+  ]);
+
+  assert.strictEqual(code, 1);
+  assert.match(stderr, /--cleanup-executions must be a positive integer/);
+  assert.match(stderr, /errorCode=CLI_INVALID_CLEANUP_EXECUTIONS/);
+  assert.match(stderr, /errorCategory=input/);
 });
 
 test("cli log-run prints runtime logs to stderr without breaking stdout json", async () => {

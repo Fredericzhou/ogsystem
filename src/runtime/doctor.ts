@@ -11,6 +11,12 @@ import { loadModelPackage } from "./model-repo.js";
 import { loadSystemFromMermaid } from "./parse-mermaid.js";
 import { loadRolePackage } from "./role-repo.js";
 import { listRunArtifactPolicy } from "./run-artifact-policy.js";
+import {
+  RuntimeError,
+  createRuntimeError,
+  formatRuntimeErrorEnvelope,
+  normalizeRuntimeError
+} from "./runtime-errors.js";
 
 type CheckResult = {
   command: string;
@@ -54,6 +60,39 @@ export function usage(): string {
     "  --workdir <path>       Working directory root (default: cwd)",
     "  --help                 Show help"
   ].join("\n");
+}
+
+function createDoctorInputError(errorCode: string, message: string): RuntimeError {
+  return createRuntimeError({
+    errorCode,
+    errorCategory: "input",
+    message,
+    retryable: false,
+    stage: "doctor"
+  });
+}
+
+function parseDoctorArgs() {
+  try {
+    return parseArgs({
+      options: {
+        required: { type: "string" },
+        runtime: { type: "string" },
+        laws: { type: "string" },
+        "user-profile": { type: "string" },
+        system: { type: "string" },
+        "run-dir": { type: "string" },
+        workdir: { type: "string" },
+        help: { type: "boolean", short: "h" }
+      },
+      allowPositionals: false
+    });
+  } catch (error) {
+    throw createDoctorInputError(
+      "DOCTOR_INVALID_ARGS",
+      error instanceof Error ? error.message : String(error)
+    );
+  }
 }
 
 function fileAccessible(path: string): boolean {
@@ -368,19 +407,7 @@ export async function runDoctor(args: {
 }
 
 async function main(): Promise<void> {
-  const { values } = parseArgs({
-    options: {
-      required: { type: "string" },
-      runtime: { type: "string" },
-      laws: { type: "string" },
-      "user-profile": { type: "string" },
-      system: { type: "string" },
-      "run-dir": { type: "string" },
-      workdir: { type: "string" },
-      help: { type: "boolean", short: "h" }
-    },
-    allowPositionals: false
-  });
+  const { values } = parseDoctorArgs();
 
   if (values.help) {
     console.log(usage());
@@ -411,8 +438,19 @@ const isMainModule =
 
 if (isMainModule) {
   main().catch((error) => {
-    const message = error instanceof Error ? error.stack ?? error.message : String(error);
-    console.error(message);
+    const runtimeError =
+      error instanceof RuntimeError
+        ? error
+        : createRuntimeError(
+            normalizeRuntimeError(error, {
+              errorCode: "DOCTOR_COMMAND_FAILED",
+              errorCategory: "system",
+              stage: "doctor",
+              retryable: false
+            })
+          );
+    console.error(runtimeError.message);
+    console.error(formatRuntimeErrorEnvelope(runtimeError.envelope));
     process.exitCode = 1;
   });
 }

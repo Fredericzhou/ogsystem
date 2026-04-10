@@ -50,5 +50,19 @@ test("lint cli hard-fails and prints line + errorCode + message", async () => {
   ]);
 
   assert.equal(code, 1);
-  assert.equal(stderr.trim(), '6 MERMAID_UNSUPPORTED_METADATA_KEY Unsupported metadata key "unsupported.flag"');
+  assert.match(
+    stderr,
+    /^6 MERMAID_UNSUPPORTED_METADATA_KEY Unsupported metadata key "unsupported\.flag"$/m
+  );
+  assert.match(stderr, /errorCode=MERMAID_UNSUPPORTED_METADATA_KEY/);
+  assert.match(stderr, /stage=validate/);
+});
+
+test("lint cli missing required args still emits a stable envelope", async () => {
+  const { code, stderr } = await runLintCli([]);
+
+  assert.equal(code, 1);
+  assert.match(stderr, /Missing required args/);
+  assert.match(stderr, /errorCode=LINT_MISSING_SYSTEM_ARG/);
+  assert.match(stderr, /errorCategory=input/);
 });

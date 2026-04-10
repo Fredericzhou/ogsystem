@@ -14,7 +14,7 @@ import { readJsonFile } from "./json-file.js";
 import { loadModelPackage } from "./model-repo.js";
 import { loadSystemFromMermaid } from "./parse-mermaid.js";
 import { loadRolePackage } from "./role-repo.js";
-import { RuntimeError, createRuntimeError } from "./runtime-errors.js";
+import { createRuntimeError, normalizeRuntimeError } from "./runtime-errors.js";
 import { initializeRunContext, loadResumeGraphState, pathExists } from "./run-artifacts.js";
 import type {
   AdapterRunResult,
@@ -201,6 +201,18 @@ export async function runSystemWithAdapter(args: {
   cleanupExecutionHistory?: number;
   logRun?: boolean;
 }): Promise<AdapterRunResult> {
+  let setup:
+    | {
+        plan: ReturnType<typeof createExecutionPlan>;
+        effectiveLaw: EffectiveLawConstraints;
+        profilesById: Map<string, ExecutionProfile>;
+        toolsByRef: Map<string, CliTool>;
+        modelsById: Map<string, LoadedModelPackage>;
+        userProfile?: UserProfile;
+        rolePackagesByRoleId: Map<string, LoadedRolePackage>;
+        runContext: Awaited<ReturnType<typeof initializeRunContext>>;
+      }
+    | undefined;
   try {
     const system = await loadSystemFromMermaid(args.systemPath);
     const plan = createExecutionPlan(system);
@@ -229,51 +241,127 @@ export async function runSystemWithAdapter(args: {
 
     const profilesById = new Map(profiles.map((item) => [item.profileId, item]));
     const toolsByRef = new Map(tools.map((item) => [item.toolRef, item]));
-    const executor = createDefaultExecutor({
-      dryRun: args.dryRun,
-      runContext,
-      needsModelExecutor: modelsById.size > 0
-    });
-
-    try {
-      await executor.start();
-
-      let initialState: GraphState | undefined;
-      if (args.resumeRunDir) {
-        initialState = await loadResumeGraphState({ runDir: runContext.runDir });
-      }
-
-      return await runSystemWithGraphRunner({
-        plan,
-        effectiveLaw,
-        profilesById,
-        toolsByRef,
-        modelsById,
-        userProfile,
-        workdir: args.workdir,
-        rolePackagesByRoleId,
-        runContext,
-        executor,
-        prompt: args.prompt,
-        initialState,
-        cleanupExecutionHistory: args.cleanupExecutionHistory,
-        logRun: args.logRun ?? false
-      });
-    } finally {
-      await executor.close();
-    }
+    setup = {
+      plan,
+      effectiveLaw,
+      profilesById,
+      toolsByRef,
+      modelsById,
+      userProfile,
+      rolePackagesByRoleId,
+      runContext
+    };
   } catch (error) {
-    if (error instanceof RuntimeError) {
-      throw error;
-    }
+    throw createRuntimeError(
+      normalizeRuntimeError(error, {
+        errorCode: "RUNTIME_SETUP_FAILED",
+        errorCategory: "config",
+        stage: "config",
+        retryable: false
+      })
+    );
+  }
+
+  if (!setup) {
     throw createRuntimeError({
       errorCode: "RUNTIME_SETUP_FAILED",
       errorCategory: "config",
-      message: error instanceof Error ? error.message : String(error),
+      message: "Runtime setup did not complete",
       retryable: false,
       stage: "config"
     });
-  } finally {
-    // No-op: outer try/catch ensures setup failures are normalized.
   }
+
+  const executor = createDefaultExecutor({
+    dryRun: args.dryRun,
+    runContext: setup.runContext,
+    needsModelExecutor: setup.modelsById.size > 0
+  });
+
+  let result: AdapterRunResult | undefined;
+  let executionError: unknown;
+
+  try {
+    await executor.start();
+
+    let initialState: GraphState | undefined;
+    if (args.resumeRunDir) {
+      try {
+        initialState = await loadResumeGraphState({ runDir: setup.runContext.runDir });
+      } catch (error) {
+        throw createRuntimeError(
+          normalizeRuntimeError(error, {
+            errorCode: "RUNTIME_RESUME_STATE_FAILED",
+            errorCategory: "state",
+            message: error instanceof Error ? error.message : String(error),
+            retryable: false,
+            stage: "resume",
+            runId: setup.runContext.runId
+          })
+        );
+      }
+    }
+
+    result = await runSystemWithGraphRunner({
+      plan: setup.plan,
+      effectiveLaw: setup.effectiveLaw,
+      profilesById: setup.profilesById,
+      toolsByRef: setup.toolsByRef,
+      modelsById: setup.modelsById,
+      userProfile: setup.userProfile,
+      workdir: args.workdir,
+      rolePackagesByRoleId: setup.rolePackagesByRoleId,
+      runContext: setup.runContext,
+      executor,
+      prompt: args.prompt,
+      initialState,
+      cleanupExecutionHistory: args.cleanupExecutionHistory,
+      logRun: args.logRun ?? false
+    });
+  } catch (error) {
+    executionError = createRuntimeError(
+      normalizeRuntimeError(error, {
+        errorCode: "RUNTIME_EXECUTION_FAILED",
+        errorCategory: "system",
+        message: error instanceof Error ? error.message : String(error),
+        retryable: false,
+        stage: "execute",
+        runId: setup.runContext.runId
+      })
+    );
+  }
+
+  try {
+    await executor.close();
+  } catch (error) {
+    if (!executionError) {
+      executionError = createRuntimeError(
+        normalizeRuntimeError(error, {
+          errorCode: "RUNTIME_EXECUTOR_CLOSE_FAILED",
+          errorCategory: "system",
+          message: error instanceof Error ? error.message : String(error),
+          retryable: false,
+          stage: "execute",
+          runId: setup.runContext.runId
+        })
+      );
+    }
+  }
+
+  if (executionError) {
+    throw executionError;
+  }
+
+  if (!result) {
+    throw createRuntimeError({
+      errorCode: "RUNTIME_EXECUTION_FAILED",
+      errorCategory: "system",
+      message: "Runtime execution completed without a result",
+      retryable: false,
+      stage: "execute",
+      runId: setup.runContext.runId
+    });
+  }
+
+  return result;
 }

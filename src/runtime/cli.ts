@@ -2,7 +2,12 @@ import { writeFile } from "node:fs/promises";
 import { parseArgs } from "node:util";
 
 import { runSystemWithAdapter } from "./adapter.js";
-import { RuntimeError, formatRuntimeErrorEnvelope } from "./runtime-errors.js";
+import {
+  RuntimeError,
+  createRuntimeError,
+  formatRuntimeErrorEnvelope,
+  normalizeRuntimeError
+} from "./runtime-errors.js";
 
 function usage(): string {
   return [
@@ -24,26 +29,47 @@ function usage(): string {
   ].join("\n");
 }
 
-async function main(): Promise<void> {
-  const { values } = parseArgs({
-    options: {
-      system: { type: "string" },
-      runtime: { type: "string" },
-      "user-profile": { type: "string" },
-      "resume-run": { type: "string" },
-      profiles: { type: "string" },
-      tools: { type: "string" },
-      laws: { type: "string" },
-      prompt: { type: "string" },
-      workdir: { type: "string" },
-      "cleanup-executions": { type: "string" },
-      "log-run": { type: "boolean" },
-      "trace-out": { type: "string" },
-      "dry-run": { type: "boolean" },
-      help: { type: "boolean", short: "h" }
-    },
-    allowPositionals: false
+function createCliInputError(errorCode: string, message: string): RuntimeError {
+  return createRuntimeError({
+    errorCode,
+    errorCategory: "input",
+    message,
+    retryable: false,
+    stage: "cli"
   });
+}
+
+function parseCliArgs() {
+  try {
+    return parseArgs({
+      options: {
+        system: { type: "string" },
+        runtime: { type: "string" },
+        "user-profile": { type: "string" },
+        "resume-run": { type: "string" },
+        profiles: { type: "string" },
+        tools: { type: "string" },
+        laws: { type: "string" },
+        prompt: { type: "string" },
+        workdir: { type: "string" },
+        "cleanup-executions": { type: "string" },
+        "log-run": { type: "boolean" },
+        "trace-out": { type: "string" },
+        "dry-run": { type: "boolean" },
+        help: { type: "boolean", short: "h" }
+      },
+      allowPositionals: false
+    });
+  } catch (error) {
+    throw createCliInputError(
+      "CLI_INVALID_ARGS",
+      error instanceof Error ? error.message : String(error)
+    );
+  }
+}
+
+async function main(): Promise<void> {
+  const { values } = parseCliArgs();
 
   if (values.help) {
     console.log(usage());
@@ -51,7 +77,7 @@ async function main(): Promise<void> {
   }
 
   if (!values.system || !values.prompt) {
-    throw new Error(`Missing required args.\n\n${usage()}`);
+    throw createCliInputError("CLI_MISSING_REQUIRED_ARGS", `Missing required args.\n\n${usage()}`);
   }
 
   const cleanupExecutionHistory =
@@ -62,7 +88,10 @@ async function main(): Promise<void> {
     cleanupExecutionHistory !== undefined &&
     (!Number.isInteger(cleanupExecutionHistory) || cleanupExecutionHistory <= 0)
   ) {
-    throw new Error("--cleanup-executions must be a positive integer");
+    throw createCliInputError(
+      "CLI_INVALID_CLEANUP_EXECUTIONS",
+      "--cleanup-executions must be a positive integer"
+    );
   }
 
   const result = await runSystemWithAdapter({
@@ -88,10 +117,18 @@ async function main(): Promise<void> {
 }
 
 main().catch((error) => {
-  const message = error instanceof Error ? error.stack ?? error.message : String(error);
-  console.error(message);
-  if (error instanceof RuntimeError) {
-    console.error(formatRuntimeErrorEnvelope(error.envelope));
-  }
+  const runtimeError =
+    error instanceof RuntimeError
+      ? error
+      : createRuntimeError(
+          normalizeRuntimeError(error, {
+            errorCode: "CLI_COMMAND_FAILED",
+            errorCategory: "system",
+            retryable: false,
+            stage: "cli"
+          })
+        );
+  console.error(runtimeError.message);
+  console.error(formatRuntimeErrorEnvelope(runtimeError.envelope));
   process.exitCode = 1;
 });

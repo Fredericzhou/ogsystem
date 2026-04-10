@@ -1,7 +1,12 @@
 import { parseArgs } from "node:util";
 
 import { loadSystemFromMermaid } from "./parse-mermaid.js";
-import { RuntimeError } from "./runtime-errors.js";
+import {
+  RuntimeError,
+  createRuntimeError,
+  formatRuntimeErrorEnvelope,
+  normalizeRuntimeError
+} from "./runtime-errors.js";
 
 function usage(): string {
   return [
@@ -20,14 +25,35 @@ function formatDiagnostic(error: RuntimeError): string {
   return `${line} ${envelope.errorCode} ${envelope.message}`;
 }
 
-async function main(): Promise<void> {
-  const { values } = parseArgs({
-    options: {
-      system: { type: "string" },
-      help: { type: "boolean", short: "h" }
-    },
-    allowPositionals: false
+function createLintInputError(errorCode: string, message: string): RuntimeError {
+  return createRuntimeError({
+    errorCode,
+    errorCategory: "input",
+    message,
+    retryable: false,
+    stage: "lint"
   });
+}
+
+function parseLintArgs() {
+  try {
+    return parseArgs({
+      options: {
+        system: { type: "string" },
+        help: { type: "boolean", short: "h" }
+      },
+      allowPositionals: false
+    });
+  } catch (error) {
+    throw createLintInputError(
+      "LINT_INVALID_ARGS",
+      error instanceof Error ? error.message : String(error)
+    );
+  }
+}
+
+async function main(): Promise<void> {
+  const { values } = parseLintArgs();
 
   if (values.help) {
     console.log(usage());
@@ -35,19 +61,30 @@ async function main(): Promise<void> {
   }
 
   if (!values.system) {
-    throw new Error(`Missing required args.\n\n${usage()}`);
+    throw createLintInputError("LINT_MISSING_SYSTEM_ARG", `Missing required args.\n\n${usage()}`);
   }
 
   await loadSystemFromMermaid(values.system);
 }
 
 main().catch((error) => {
-  if (error instanceof RuntimeError) {
-    console.error(formatDiagnostic(error));
-  } else if (error instanceof Error) {
-    console.error(error.message);
+  const runtimeError =
+    error instanceof RuntimeError
+      ? error
+      : createRuntimeError(
+          normalizeRuntimeError(error, {
+            errorCode: "LINT_COMMAND_FAILED",
+            errorCategory: "system",
+            retryable: false,
+            stage: "lint"
+          })
+        );
+
+  if (runtimeError.envelope.line !== undefined) {
+    console.error(formatDiagnostic(runtimeError));
   } else {
-    console.error(String(error));
+    console.error(runtimeError.message);
   }
+  console.error(formatRuntimeErrorEnvelope(runtimeError.envelope));
   process.exitCode = 1;
 });

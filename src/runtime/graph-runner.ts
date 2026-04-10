@@ -17,6 +17,7 @@ import {
   wouldExceedLoopBudget
 } from "./graph-runtime-state.js";
 import { executeRoleNode } from "./role-executor.js";
+import { createRuntimeError, normalizeRuntimeError } from "./runtime-errors.js";
 import { summarizeRun } from "./run-summary.js";
 import { projectStages } from "./stage-projector.js";
 import { stringifyJson } from "./runtime-support.js";
@@ -142,7 +143,65 @@ async function persistProjectedState(args: {
   plan: ExecutionPlan;
   runContext: RunContext;
 }): Promise<void> {
-  await writeAtomicFile(args.runContext.statePath, stringifyJson(projectStateSnapshot(args)));
+  try {
+    await writeAtomicFile(args.runContext.statePath, stringifyJson(projectStateSnapshot(args)));
+  } catch (error) {
+    throw createRuntimeError(
+      normalizeRuntimeError(error, {
+        errorCode: "RUNTIME_STATE_PERSIST_FAILED",
+        errorCategory: "io",
+        stage: "execute",
+        retryable: false,
+        runId: args.runContext.runId,
+        roleId: args.state.lastExecutedRoleId || undefined
+      })
+    );
+  }
+}
+
+async function writeRunSummary(args: {
+  state: GraphState;
+  runContext: RunContext;
+  content: string;
+}): Promise<void> {
+  try {
+    await writeAtomicFile(resolve(args.runContext.auditDir, "summary.md"), args.content);
+  } catch (error) {
+    throw createRuntimeError(
+      normalizeRuntimeError(error, {
+        errorCode: "RUNTIME_SUMMARY_WRITE_FAILED",
+        errorCategory: "io",
+        stage: "execute",
+        retryable: false,
+        runId: args.runContext.runId,
+        roleId: args.state.lastExecutedRoleId || undefined
+      })
+    );
+  }
+}
+
+async function cleanupExecutionHistory(args: {
+  state: GraphState;
+  runContext: RunContext;
+  keepLatest: number;
+}): Promise<void> {
+  try {
+    await cleanupHistoricalExecutionSnapshots({
+      context: args.runContext,
+      keepLatest: args.keepLatest
+    });
+  } catch (error) {
+    throw createRuntimeError(
+      normalizeRuntimeError(error, {
+        errorCode: "RUNTIME_EXECUTION_HISTORY_CLEANUP_FAILED",
+        errorCategory: "io",
+        stage: "execute",
+        retryable: false,
+        runId: args.runContext.runId,
+        roleId: args.state.lastExecutedRoleId || undefined
+      })
+    );
+  }
 }
 
 function buildFailureUpdate(args: {
@@ -471,9 +530,10 @@ export async function runSystemWithGraphRunner(args: RunnerInput): Promise<Adapt
     transitionCount: finalState.transitionCount
   });
   const serverMetadata = args.executor.getServerMetadata();
-  await writeAtomicFile(
-    resolve(args.runContext.auditDir, "summary.md"),
-    [
+  await writeRunSummary({
+    state: finalState,
+    runContext: args.runContext,
+    content: [
       "# Audit Summary",
       "",
       `- runId: ${args.runContext.runId}`,
@@ -490,11 +550,12 @@ export async function runSystemWithGraphRunner(args: RunnerInput): Promise<Adapt
       `- opencodeServerPid: ${serverMetadata.pid ?? ""}`,
       `- opencodeServerStartedAt: ${serverMetadata.startedAt ?? ""}`
     ].join("\n")
-  );
+  });
 
   if (args.cleanupExecutionHistory !== undefined) {
-    await cleanupHistoricalExecutionSnapshots({
-      context: args.runContext,
+    await cleanupExecutionHistory({
+      state: finalState,
+      runContext: args.runContext,
       keepLatest: args.cleanupExecutionHistory
     });
   }
