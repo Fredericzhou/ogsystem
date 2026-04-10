@@ -61,6 +61,7 @@ type GraphUpdate = GraphStateUpdate;
 const SCHEDULER_NODE_ID = "__scheduler__";
 const DEFAULT_TRANSITION_BUDGET = 100;
 const GRAPH_RECURSION_MARGIN = 20;
+const TEST_CRASH_AFTER_EXECUTION_OUTCOME_ENV = "OGSYSTEM_TEST_CRASH_AFTER_EXECUTION_OUTCOME";
 
 type RunnerInput = {
   plan: ExecutionPlan;
@@ -323,6 +324,16 @@ async function replayPendingRuntimeCheckpoints(args: {
 function calculateGraphRecursionLimit(maxTransitions?: number): number {
   const transitionBudget = maxTransitions ?? DEFAULT_TRANSITION_BUDGET;
   return transitionBudget * 2 + GRAPH_RECURSION_MARGIN;
+}
+
+function maybeCrashAfterExecutionOutcome(): never | void {
+  if (process.env[TEST_CRASH_AFTER_EXECUTION_OUTCOME_ENV] !== "1") {
+    return;
+  }
+  process.stderr.write(
+    `[test-failpoint] forced crash after execution outcome before checkpoint\n`
+  );
+  process.exit(91);
 }
 
 function buildGraphUpdateFromOutcome(args: {
@@ -766,6 +777,7 @@ export async function runSystemWithGraphRunner(args: RunnerInput): Promise<Adapt
                 logger
               });
 
+        maybeCrashAfterExecutionOutcome();
         const checkpoint = await persistRuntimeCheckpoint({
           context: args.runContext,
           roleId,

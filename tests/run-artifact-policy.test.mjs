@@ -12,6 +12,7 @@ test("artifact policy documents runtime-consumed and operator-facing files", () 
   assert.ok(policy.some((entry) => entry.path === "state.json" && entry.resumeConsumed));
   assert.ok(policy.some((entry) => entry.path === "sessions.json" && entry.resumeConsumed));
   assert.ok(policy.some((entry) => entry.path === "plan-fingerprint.json" && entry.resumeConsumed));
+  assert.ok(policy.some((entry) => entry.path === ".resume.lock" && entry.resumeConsumed));
   assert.ok(
     policy.some(
       (entry) => entry.path === "checkpoints/<sequence>-<executionId>.json" && entry.resumeConsumed

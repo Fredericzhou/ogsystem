@@ -335,6 +335,116 @@ test("executeOpencodeModelRole keeps sessions isolated on one shared server", as
   });
 });
 
+test("executeOpencodeModelRole keeps session-local memory isolated for sibling sessions of the same role", async () => {
+  let sequence = 0;
+  const memoryBySessionId = new Map();
+
+  const runClient = makeRunClient({
+    client: {
+      session: {
+        async create() {
+          sequence += 1;
+          return {
+            data: {
+              id: `ses_${sequence}`
+            }
+          };
+        },
+        async prompt(args) {
+          const prompt = args.parts[0].text;
+          const rememberMatch = prompt.match(/^remember:(.+)$/);
+          if (rememberMatch) {
+            memoryBySessionId.set(args.sessionID, rememberMatch[1]);
+            return {
+              data: {
+                id: `msg_${args.sessionID}_remember`,
+                info: {
+                  structured: {
+                    event: "NEXT",
+                    content: `stored:${rememberMatch[1]}`
+                  }
+                },
+                parts: [{ type: "step-finish" }]
+              }
+            };
+          }
+
+          return {
+            data: {
+              id: `msg_${args.sessionID}_recall`,
+              info: {
+                structured: {
+                  event: "NEXT",
+                  content: memoryBySessionId.get(args.sessionID) ?? "missing"
+                }
+              },
+              parts: [{ type: "step-finish" }]
+            }
+          };
+        },
+        async abort() {
+          return true;
+        }
+      }
+    }
+  });
+
+  const schema = {
+    type: "object",
+    required: ["event", "content"],
+    properties: {
+      event: { type: "string" },
+      content: { type: "string" }
+    },
+    additionalProperties: false
+  };
+
+  const first = await executeOpencodeModelRole({
+    roleId: "debate-summary",
+    prompt: "remember:branch-a",
+    schema,
+    modelPackage: makeModelPackage(),
+    workdir: "/tmp/run/roles/debate-summary",
+    timeoutMs: 5000,
+    maxOutputBytes: 4096,
+    runClient
+  });
+
+  const sibling = await executeOpencodeModelRole({
+    roleId: "debate-summary",
+    prompt: "recall",
+    schema,
+    modelPackage: makeModelPackage(),
+    workdir: "/tmp/run/roles/debate-summary",
+    timeoutMs: 5000,
+    maxOutputBytes: 4096,
+    runClient
+  });
+
+  const continued = await executeOpencodeModelRole({
+    roleId: "debate-summary",
+    prompt: "recall",
+    schema,
+    modelPackage: makeModelPackage(),
+    workdir: "/tmp/run/roles/debate-summary",
+    timeoutMs: 5000,
+    maxOutputBytes: 4096,
+    runClient,
+    sessionId: first.sessionId
+  });
+
+  assert.strictEqual(first.sessionId, "ses_1");
+  assert.strictEqual(sibling.sessionId, "ses_2");
+  assert.deepStrictEqual(JSON.parse(sibling.stdout), {
+    event: "NEXT",
+    content: "missing"
+  });
+  assert.deepStrictEqual(JSON.parse(continued.stdout), {
+    event: "NEXT",
+    content: "branch-a"
+  });
+});
+
 test("executeOpencodeModelRole reuses an existing session when provided", async () => {
   let createCalls = 0;
   let promptSessionId;
@@ -394,6 +504,101 @@ test("executeOpencodeModelRole reuses an existing session when provided", async 
   assert.strictEqual(promptSessionId, "ses_existing");
   assert.strictEqual(result.sessionId, "ses_existing");
   assert.strictEqual(result.messageId, "msg_loop");
+});
+
+test("executeOpencodeModelRole keeps session-local memory isolated across sessions", async () => {
+  let createCalls = 0;
+  const sessionMemory = new Map();
+
+  const schema = {
+    type: "object",
+    required: ["event", "content"],
+    properties: {
+      event: { type: "string" },
+      content: { type: "string" }
+    },
+    additionalProperties: false
+  };
+
+  const runClient = makeRunClient({
+    client: {
+      session: {
+        async create() {
+          createCalls += 1;
+          return {
+            data: {
+              id: `ses_${createCalls}`
+            }
+          };
+        },
+        async prompt(args) {
+          const command = args.parts[0].text.trim();
+          if (command.startsWith("remember:")) {
+            sessionMemory.set(args.sessionID, command.slice("remember:".length));
+          }
+          return {
+            data: {
+              id: `msg_${args.sessionID}_${sessionMemory.size}`,
+              info: {
+                structured: {
+                  event: "NEXT",
+                  content: sessionMemory.get(args.sessionID) ?? ""
+                }
+              },
+              parts: [{ type: "step-start" }, { type: "step-finish" }]
+            }
+          };
+        },
+        async abort() {
+          return true;
+        }
+      }
+    }
+  });
+
+  const branchAFirst = await executeOpencodeModelRole({
+    roleId: "role-shared",
+    prompt: "remember:branch-a-secret",
+    schema,
+    modelPackage: makeModelPackage(),
+    workdir: "/tmp/run/roles/role-shared",
+    timeoutMs: 5000,
+    maxOutputBytes: 4096,
+    runClient
+  });
+  const branchASecond = await executeOpencodeModelRole({
+    roleId: "role-shared",
+    prompt: "recall",
+    schema,
+    modelPackage: makeModelPackage(),
+    workdir: "/tmp/run/roles/role-shared",
+    timeoutMs: 5000,
+    maxOutputBytes: 4096,
+    runClient,
+    sessionId: branchAFirst.sessionId
+  });
+  const branchBFirst = await executeOpencodeModelRole({
+    roleId: "role-shared",
+    prompt: "recall",
+    schema,
+    modelPackage: makeModelPackage(),
+    workdir: "/tmp/run/roles/role-shared",
+    timeoutMs: 5000,
+    maxOutputBytes: 4096,
+    runClient
+  });
+
+  assert.strictEqual(branchAFirst.sessionId, "ses_1");
+  assert.strictEqual(branchASecond.sessionId, "ses_1");
+  assert.strictEqual(branchBFirst.sessionId, "ses_2");
+  assert.deepStrictEqual(JSON.parse(branchASecond.stdout), {
+    event: "NEXT",
+    content: "branch-a-secret"
+  });
+  assert.deepStrictEqual(JSON.parse(branchBFirst.stdout), {
+    event: "NEXT",
+    content: ""
+  });
 });
 
 test("executeOpencodeModelRole aborts only the timed out session", async () => {

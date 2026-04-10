@@ -14,7 +14,9 @@ import { parseSystemFromMermaidSource } from "../dist/runtime/parse-mermaid.js";
 import { loadRolePackage } from "../dist/runtime/role-repo.js";
 import {
   ROLE_EXECUTION_OUTCOME_FILE,
+  RESUME_RUN_LOCK_FILE,
   initializeRunContext,
+  pathExists,
   persistRuntimeCheckpoint
 } from "../dist/runtime/run-artifacts.js";
 
@@ -726,6 +728,7 @@ operator[Role:test-operator] -->|DONE| output
       nextBranchSequence: 2
     }
   });
+  await runContext.releaseResumeLock?.();
 
   const result = await runSystemWithAdapter({
     systemPath,
@@ -1141,6 +1144,7 @@ operator[Role:test-operator] -->|DONE| output
       nextBranchSequence: 2
     }
   });
+  await runContext.releaseResumeLock?.();
 
   const resumed = await runSystemWithAdapter({
     systemPath,
@@ -1170,4 +1174,117 @@ operator[Role:test-operator] -->|DONE| output
   );
   assert.strictEqual(outcomeAfterResume.checkpointSequence, 1);
   assert.ok(outcomeAfterResume.reconciledAt);
+});
+
+test("adapter resume rejects an active resume lock", async () => {
+  const systemSource = `flowchart TD
+%% system.id=resume.lock-active.demo
+%% system.version=1.0.0
+%% law.global=law.console.base
+%% entry.role=debate-minimalist
+%% model.bind.debate-minimalist=balanced-gpt52
+
+input -->|GO| minimalist[Role:debate-minimalist]
+minimalist[Role:debate-minimalist] -->|MINIMALIST_DONE| output
+`;
+
+  const fixture = await prepareRuntimeFingerprintResumeFixture({
+    tempPrefix: "ogsystem-resume-lock-active-",
+    runName: "lock-active-run",
+    systemSource,
+    prompt: "resume lock active"
+  });
+  await writeFile(
+    path.resolve(fixture.runDir, RESUME_RUN_LOCK_FILE),
+    JSON.stringify(
+      {
+        pid: process.pid,
+        hostname: os.hostname(),
+        acquiredAt: "2026-04-11T00:00:00.000Z",
+        command: "node dist/runtime/cli.js --resume-run"
+      },
+      null,
+      2
+    ),
+    "utf8"
+  );
+
+  await assert.rejects(
+    () =>
+      runSystemWithAdapter({
+        systemPath: fixture.systemPath,
+        runtimeConfigPath: fixture.runtimePath,
+        lawsPath: fixture.lawsPath,
+        workdir: fixture.tempRoot,
+        resumeRunDir: "ogsystem-history/lock-active-run",
+        prompt: "resume lock active",
+        dryRun: true
+      }),
+    (error) => {
+      assert.ok(error && typeof error === "object");
+      assert.equal(error.envelope?.errorCode, "RESUME_RUN_LOCK_HELD");
+      assert.match(error.message, /already active/i);
+      return true;
+    }
+  );
+});
+
+test("adapter resume replaces a stale lock and releases it on exit", async () => {
+  const systemSource = `flowchart TD
+%% system.id=resume.lock-stale.demo
+%% system.version=1.0.0
+%% law.global=law.console.base
+%% entry.role=debate-minimalist
+%% model.bind.debate-minimalist=balanced-gpt52
+
+input -->|GO| minimalist[Role:debate-minimalist]
+minimalist[Role:debate-minimalist] -->|MINIMALIST_DONE| output
+`;
+
+  const fixture = await prepareRuntimeFingerprintResumeFixture({
+    tempPrefix: "ogsystem-resume-lock-stale-",
+    runName: "lock-stale-run",
+    systemSource,
+    prompt: "resume lock stale"
+  });
+
+  let stalePid = process.pid + 100000;
+  while (true) {
+    try {
+      process.kill(stalePid, 0);
+      stalePid += 1;
+    } catch {
+      break;
+    }
+  }
+
+  const lockPath = path.resolve(fixture.runDir, RESUME_RUN_LOCK_FILE);
+  await writeFile(
+    lockPath,
+    JSON.stringify(
+      {
+        pid: stalePid,
+        hostname: os.hostname(),
+        acquiredAt: "2026-04-11T00:00:00.000Z",
+        command: "node dist/runtime/cli.js --resume-run"
+      },
+      null,
+      2
+    ),
+    "utf8"
+  );
+
+  const resumed = await runSystemWithAdapter({
+    systemPath: fixture.systemPath,
+    runtimeConfigPath: fixture.runtimePath,
+    lawsPath: fixture.lawsPath,
+    workdir: fixture.tempRoot,
+    resumeRunDir: "ogsystem-history/lock-stale-run",
+    prompt: "resume lock stale",
+    dryRun: true
+  });
+
+  assert.strictEqual(resumed.status, "done");
+  assert.strictEqual(resumed.finalRoleId, "debate-minimalist");
+  assert.strictEqual(await pathExists(lockPath), false);
 });

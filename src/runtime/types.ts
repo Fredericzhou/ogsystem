@@ -290,6 +290,7 @@ export type RunContext = {
   sessionRecordsByKey: Map<string, OpencodeSessionRecord>;
   nextCheckpointSequence: number;
   sharedDir: string;
+  releaseResumeLock?: () => Promise<void>;
 };
 
 /**

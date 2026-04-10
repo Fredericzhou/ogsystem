@@ -2,6 +2,7 @@ import {
   access,
   appendFile,
   mkdir,
+  open,
   readFile,
   readdir,
   rm,
@@ -9,6 +10,7 @@ import {
 } from "node:fs/promises";
 import { randomUUID } from "node:crypto";
 import { basename, resolve } from "node:path";
+import { hostname } from "node:os";
 
 import { readJsonFile, writeTextFileAtomic } from "./json-file.js";
 import { createRuntimeError } from "./runtime-errors.js";
@@ -30,6 +32,7 @@ import { stringifyJson } from "./runtime-support.js";
 
 export const RUN_PLAN_FINGERPRINT_FILE = "plan-fingerprint.json";
 export const ROLE_EXECUTION_OUTCOME_FILE = "execution-outcome.json";
+export const RESUME_RUN_LOCK_FILE = ".resume.lock";
 const BUFFER_RECOVERY_DIR = ".buffer-recovery";
 
 export type RunPlanFingerprint = {
@@ -53,6 +56,13 @@ type BufferedAppendState = {
   pendingByKey: Map<string, BufferedAppendBatch>;
   flushPromise?: Promise<void>;
   flushToken?: symbol;
+};
+
+type ResumeRunLockRecord = {
+  pid: number;
+  hostname: string;
+  acquiredAt: string;
+  command: string;
 };
 
 const bufferedAppendStateByRunDir = new Map<string, BufferedAppendState>();
@@ -100,6 +110,136 @@ async function directoryExists(path: string): Promise<boolean> {
     return Array.isArray(entries);
   } catch {
     return false;
+  }
+}
+
+function isResumeRunLockRecord(value: unknown): value is ResumeRunLockRecord {
+  return (
+    typeof value === "object" &&
+    value !== null &&
+    !Array.isArray(value) &&
+    typeof (value as ResumeRunLockRecord).pid === "number" &&
+    typeof (value as ResumeRunLockRecord).hostname === "string" &&
+    typeof (value as ResumeRunLockRecord).acquiredAt === "string" &&
+    typeof (value as ResumeRunLockRecord).command === "string"
+  );
+}
+
+function isProcessAlive(pid: number): boolean {
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch (error) {
+    if (
+      typeof error === "object" &&
+      error !== null &&
+      "code" in error &&
+      (error as { code?: string }).code === "EPERM"
+    ) {
+      return true;
+    }
+    return false;
+  }
+}
+
+async function acquireResumeRunLock(runDir: string): Promise<() => Promise<void>> {
+  const lockPath = resolve(runDir, RESUME_RUN_LOCK_FILE);
+  const owner: ResumeRunLockRecord = {
+    pid: process.pid,
+    hostname: hostname(),
+    acquiredAt: new Date().toISOString(),
+    command: process.argv.join(" ")
+  };
+
+  for (;;) {
+    try {
+      const handle = await open(lockPath, "wx");
+      try {
+        await handle.writeFile(stringifyJson(owner), "utf8");
+      } finally {
+        await handle.close();
+      }
+      return async () => {
+        if (!(await pathExists(lockPath))) {
+          return;
+        }
+        const raw = await readJsonFile(lockPath);
+        if (!isResumeRunLockRecord(raw)) {
+          return;
+        }
+        if (
+          raw.pid !== owner.pid ||
+          raw.hostname !== owner.hostname ||
+          raw.acquiredAt !== owner.acquiredAt ||
+          raw.command !== owner.command
+        ) {
+          return;
+        }
+        await rm(lockPath, { force: true });
+      };
+    } catch (error) {
+      if (
+        typeof error !== "object" ||
+        error === null ||
+        !("code" in error) ||
+        (error as { code?: string }).code !== "EEXIST"
+      ) {
+        throw error;
+      }
+
+      let existing: unknown;
+      try {
+        existing = await readJsonFile(lockPath);
+      } catch (lockReadError) {
+        const message =
+          lockReadError instanceof Error ? lockReadError.message : String(lockReadError);
+        throw createRuntimeError({
+          errorCode: "RESUME_RUN_LOCK_INVALID",
+          errorCategory: "state",
+          message: `Resume run lock is unreadable: ${lockPath} (${message})`,
+          retryable: false,
+          stage: "resume",
+          runId: basename(runDir)
+        });
+      }
+
+      if (!isResumeRunLockRecord(existing)) {
+        throw createRuntimeError({
+          errorCode: "RESUME_RUN_LOCK_INVALID",
+          errorCategory: "state",
+          message: `Resume run lock is invalid: ${lockPath}`,
+          retryable: false,
+          stage: "resume",
+          runId: basename(runDir)
+        });
+      }
+
+      if (existing.hostname !== owner.hostname) {
+        throw createRuntimeError({
+          errorCode: "RESUME_RUN_LOCK_HELD",
+          errorCategory: "state",
+          message:
+            `Resume run is locked by host "${existing.hostname}" pid ${existing.pid}: ${lockPath}`,
+          retryable: true,
+          stage: "resume",
+          runId: basename(runDir)
+        });
+      }
+
+      if (isProcessAlive(existing.pid)) {
+        throw createRuntimeError({
+          errorCode: "RESUME_RUN_LOCK_HELD",
+          errorCategory: "state",
+          message:
+            `Resume run is already active on pid ${existing.pid}: ${lockPath}`,
+          retryable: true,
+          stage: "resume",
+          runId: basename(runDir)
+        });
+      }
+
+      await rm(lockPath, { force: true });
+    }
   }
 }
 
@@ -370,6 +510,9 @@ export async function initializeRunContext(args: {
   });
   const roleDirsById = new Map<string, RoleRunDirs>();
   const roleExecutionCounts = new Map<string, number>();
+  const releaseResumeLock = args.resumeRunDir
+    ? await acquireResumeRunLock(runDir)
+    : undefined;
 
   await mkdir(auditDir, { recursive: true });
   await mkdir(checkpointsDir, { recursive: true });
@@ -460,7 +603,8 @@ export async function initializeRunContext(args: {
     roleExecutionCounts,
     sessionRecordsByKey,
     nextCheckpointSequence: await restoreCheckpointSequence(checkpointsDir),
-    sharedDir
+    sharedDir,
+    releaseResumeLock
   };
 }
 

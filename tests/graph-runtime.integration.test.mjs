@@ -251,6 +251,10 @@ decision[Role:test-decision] -->|PATH_B| output
     new Set(decisionSessions.map((entry) => entry.sessionId)).size,
     2
   );
+  assert.deepStrictEqual(
+    new Set(decisionSessions.map((entry) => entry.sessionLineageId)).size,
+    2
+  );
 });
 
 test("adapter optionally cleans historical execution snapshots without touching resume sources", async () => {

@@ -249,12 +249,14 @@ Resume source of truth:
 - `plan-fingerprint.json`
 - `checkpoints/`
 - `roles/<roleId>/executions/<executionId>/execution-outcome.json`
+- startup guard: `.resume.lock` (ephemeral advisory lock, not a state authority file)
 - all authority files are written atomically at their own file boundary
 - resume rejects partial/corrupted `graphState` snapshots before role execution starts
 - resume hard-fails when the runtime-loaded fingerprint changes (`system`, `rolePackages`, `modelPackages`, `effectiveLaw`)
 - fingerprint `sourceHints` are diagnostic-only path hints; they do not participate in the identity digest
 - resume reconciles committed execution outcomes into missing checkpoints before normal replay continues
 - if a checkpoint already exists but the durable outcome marker is still unreconciled, resume only backfills `checkpointSequence`/`reconciledAt` and does not emit a duplicate checkpoint
+- resume acquires `.resume.lock` on startup, releases it on clean exit, and replaces a stale same-host lock when the recorded pid is no longer alive
 
 Audit/operator artifacts:
 
@@ -279,6 +281,7 @@ OpenCode lifecycle rule for `model.bind`:
 - each role/node session is keyed by `roleId:sessionLineageId`
 - repeated turns on the same branch lineage reuse the same OpenCode `session`
 - sibling branches of the same role do not share a session
+- sibling branches of the same role still share the same role directory and private workspace; the isolation guarantee is model-session isolation, not per-branch file-system isolation
 - each node prompt still binds to that node's role directory
 - node audit records include `sessionId`, `messageId`, and shared `serverPid`
 - run events include `opencode_server_started` and `opencode_server_closed`
@@ -312,7 +315,7 @@ Optional history cleanup:
 
 OGSystem classifies persisted run artifacts into three classes:
 
-- `runtime_consumed`: runtime-critical files read by resume and recovery logic (`state.json`, `sessions.json`, `plan-fingerprint.json`, `checkpoints/...`, `execution-outcome.json`)
+- `runtime_consumed`: runtime-critical files read by resume and recovery logic (`state.json`, `sessions.json`, `plan-fingerprint.json`, `checkpoints/...`, `execution-outcome.json`, `.resume.lock`)
 - `operator_latest`: latest operator-facing snapshots (`run.md`, `request.md`, `audit/*.md`, `roles/<roleId>/*.md|*.json`, `events.ndjson`)
 - `history_only`: immutable per-execution snapshots (`roles/<roleId>/executions/<executionId>/...`)
 
@@ -442,6 +445,17 @@ npm run run:adapter -- \
   --resume-run ogsystem-history/<run-id> \
   --prompt "是否应继续保持 OGSystem 最小化并延后 reducer 与恢复语义？" \
   --dry-run
+```
+
+Operational note:
+
+- a second same-host `--resume-run` against the same `runDir` fails fast while `.resume.lock` is held
+- stale locks left by dead processes are replaced automatically on the next resume attempt
+
+Replay benchmark command:
+
+```bash
+npm run bench:runtime-replay
 ```
 
 Validation command for generated Mermaid:

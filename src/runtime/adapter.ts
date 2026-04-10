@@ -364,6 +364,21 @@ export function buildRunPlanFingerprint(args: {
   };
 }
 
+const TEST_HOLD_RESUME_LOCK_MS_ENV = "OGSYSTEM_TEST_HOLD_RESUME_LOCK_MS";
+
+async function maybeHoldResumeLockForTest(): Promise<void> {
+  const raw = process.env[TEST_HOLD_RESUME_LOCK_MS_ENV];
+  if (!raw) {
+    return;
+  }
+  const durationMs = Number.parseInt(raw, 10);
+  if (!Number.isInteger(durationMs) || durationMs <= 0) {
+    return;
+  }
+  process.stderr.write(`[test-failpoint] holding resume lock for ${durationMs}ms\n`);
+  await new Promise((resolve) => setTimeout(resolve, durationMs));
+}
+
 export async function runSystemWithAdapter(args: {
   systemPath: string;
   profilesPath?: string;
@@ -378,6 +393,9 @@ export async function runSystemWithAdapter(args: {
   cleanupExecutionHistory?: number;
   logRun?: boolean;
 }): Promise<AdapterRunResult> {
+  let runContextForCleanup: Awaited<ReturnType<typeof initializeRunContext>> | undefined;
+  let executionError: unknown;
+  let result: AdapterRunResult | undefined;
   let setup:
     | {
         plan: ReturnType<typeof createExecutionPlan>;
@@ -392,157 +410,184 @@ export async function runSystemWithAdapter(args: {
       }
     | undefined;
   try {
-    const system = await loadSystemFromMermaid(args.systemPath);
-    const plan = createExecutionPlan(system);
-    const runtimeConfig = await loadRuntimeConfig(args.runtimeConfigPath, args.workdir);
-    const profiles = await loadProfiles(args.profilesPath);
-    const tools = await loadTools(args.toolsPath);
-    const lawCatalog = await loadLaws(args.lawsPath, args.workdir);
-    const userProfile = await loadUserProfile(args.userProfilePath, args.workdir);
-    const rolePackagesByRoleId = await loadRolePackages({
-      system,
-      roleRootDir: resolve(args.workdir, runtimeConfig.roleRepo, "roles")
-    });
-    const modelsById = await loadModelPackages({
-      system,
-      modelRootDir: resolve(args.workdir, runtimeConfig.modelRepo)
-    });
-    const effectiveLaw = resolveEffectiveLaw(system, lawCatalog);
-    const planFingerprint = buildRunPlanFingerprint({
-      system,
-      rolePackagesByRoleId,
-      modelsById,
-      effectiveLaw
-    });
-    const runContext = await initializeRunContext({
-      system,
-      systemPath: args.systemPath,
-      prompt: args.prompt,
-      workdir: args.workdir,
-      runtimeConfig,
-      resumeRunDir: args.resumeRunDir
-    });
-    if (!args.resumeRunDir) {
-      await persistRunPlanFingerprint({
-        runDir: runContext.runDir,
-        fingerprint: planFingerprint
+    try {
+      const system = await loadSystemFromMermaid(args.systemPath);
+      const plan = createExecutionPlan(system);
+      const runtimeConfig = await loadRuntimeConfig(args.runtimeConfigPath, args.workdir);
+      const profiles = await loadProfiles(args.profilesPath);
+      const tools = await loadTools(args.toolsPath);
+      const lawCatalog = await loadLaws(args.lawsPath, args.workdir);
+      const userProfile = await loadUserProfile(args.userProfilePath, args.workdir);
+      const rolePackagesByRoleId = await loadRolePackages({
+        system,
+        roleRootDir: resolve(args.workdir, runtimeConfig.roleRepo, "roles")
+      });
+      const modelsById = await loadModelPackages({
+        system,
+        modelRootDir: resolve(args.workdir, runtimeConfig.modelRepo)
+      });
+      const effectiveLaw = resolveEffectiveLaw(system, lawCatalog);
+      const planFingerprint = buildRunPlanFingerprint({
+        system,
+        rolePackagesByRoleId,
+        modelsById,
+        effectiveLaw
+      });
+      const runContext = await initializeRunContext({
+        system,
+        systemPath: args.systemPath,
+        prompt: args.prompt,
+        workdir: args.workdir,
+        runtimeConfig,
+        resumeRunDir: args.resumeRunDir
+      });
+      runContextForCleanup = runContext;
+      if (!args.resumeRunDir) {
+        await persistRunPlanFingerprint({
+          runDir: runContext.runDir,
+          fingerprint: planFingerprint
+        });
+      }
+
+      const profilesById = new Map(profiles.map((item) => [item.profileId, item]));
+      const toolsByRef = new Map(tools.map((item) => [item.toolRef, item]));
+      setup = {
+        plan,
+        effectiveLaw,
+        profilesById,
+        toolsByRef,
+        modelsById,
+        userProfile,
+        rolePackagesByRoleId,
+        runContext,
+        planFingerprint
+      };
+    } catch (error) {
+      executionError = createRuntimeError(
+        normalizeRuntimeError(error, {
+          errorCode: "RUNTIME_SETUP_FAILED",
+          errorCategory: "config",
+          message: error instanceof Error ? error.message : String(error),
+          retryable: false,
+          stage: "config",
+          runId: runContextForCleanup?.runId
+        })
+      );
+    }
+
+    if (!setup && !executionError) {
+      executionError = createRuntimeError({
+        errorCode: "RUNTIME_SETUP_FAILED",
+        errorCategory: "config",
+        message: "Runtime setup did not complete",
+        retryable: false,
+        stage: "config",
+        runId: runContextForCleanup?.runId
       });
     }
 
-    const profilesById = new Map(profiles.map((item) => [item.profileId, item]));
-    const toolsByRef = new Map(tools.map((item) => [item.toolRef, item]));
-    setup = {
-      plan,
-      effectiveLaw,
-      profilesById,
-      toolsByRef,
-      modelsById,
-      userProfile,
-      rolePackagesByRoleId,
-      runContext,
-      planFingerprint
-    };
-  } catch (error) {
-    throw createRuntimeError(
-      normalizeRuntimeError(error, {
-        errorCode: "RUNTIME_SETUP_FAILED",
-        errorCategory: "config",
-        stage: "config",
-        retryable: false
-      })
-    );
-  }
+    if (setup) {
+      const executor = createDefaultExecutor({
+        dryRun: args.dryRun,
+        runContext: setup.runContext,
+        needsModelExecutor: setup.modelsById.size > 0
+      });
 
-  if (!setup) {
-    throw createRuntimeError({
-      errorCode: "RUNTIME_SETUP_FAILED",
-      errorCategory: "config",
-      message: "Runtime setup did not complete",
-      retryable: false,
-      stage: "config"
-    });
-  }
-
-  const executor = createDefaultExecutor({
-    dryRun: args.dryRun,
-    runContext: setup.runContext,
-    needsModelExecutor: setup.modelsById.size > 0
-  });
-
-  let result: AdapterRunResult | undefined;
-  let executionError: unknown;
-
-  try {
-    await executor.start();
-
-    let initialState: GraphState | undefined;
-    if (args.resumeRunDir) {
       try {
-        // Reliability: Verify state consistency via Plan Fingerprinting.
-        // Prevents resuming a state snapshot against a modified Mermaid graph or system
-        // definition, which would violate the internal integrity of the state machine.
-        await validateResumePlanFingerprint({
-          runDir: setup.runContext.runDir,
-          expectedFingerprint: setup.planFingerprint
+        if (args.resumeRunDir) {
+          await maybeHoldResumeLockForTest();
+        }
+        await executor.start();
+
+        let initialState: GraphState | undefined;
+        if (args.resumeRunDir) {
+          try {
+            // Reliability: Verify state consistency via Plan Fingerprinting.
+            // Prevents resuming a state snapshot against a modified Mermaid graph or system
+            // definition, which would violate the internal integrity of the state machine.
+            await validateResumePlanFingerprint({
+              runDir: setup.runContext.runDir,
+              expectedFingerprint: setup.planFingerprint
+            });
+            initialState = await loadResumeGraphState({ runDir: setup.runContext.runDir });
+          } catch (error) {
+            throw createRuntimeError(
+              normalizeRuntimeError(error, {
+                errorCode: "RUNTIME_RESUME_STATE_FAILED",
+                errorCategory: "state",
+                message: error instanceof Error ? error.message : String(error),
+                retryable: false,
+                stage: "resume",
+                runId: setup.runContext.runId
+              })
+            );
+          }
+        }
+
+        result = await runSystemWithGraphRunner({
+          plan: setup.plan,
+          effectiveLaw: setup.effectiveLaw,
+          profilesById: setup.profilesById,
+          toolsByRef: setup.toolsByRef,
+          modelsById: setup.modelsById,
+          userProfile: setup.userProfile,
+          workdir: args.workdir,
+          rolePackagesByRoleId: setup.rolePackagesByRoleId,
+          runContext: setup.runContext,
+          executor,
+          prompt: args.prompt,
+          initialState,
+          cleanupExecutionHistory: args.cleanupExecutionHistory,
+          logRun: args.logRun ?? false
         });
-        initialState = await loadResumeGraphState({ runDir: setup.runContext.runDir });
       } catch (error) {
-        throw createRuntimeError(
+        executionError = createRuntimeError(
           normalizeRuntimeError(error, {
-            errorCode: "RUNTIME_RESUME_STATE_FAILED",
-            errorCategory: "state",
+            errorCode: "RUNTIME_EXECUTION_FAILED",
+            errorCategory: "system",
             message: error instanceof Error ? error.message : String(error),
             retryable: false,
-            stage: "resume",
+            stage: "execute",
             runId: setup.runContext.runId
           })
         );
       }
+
+      try {
+        await executor.close();
+      } catch (error) {
+        if (!executionError) {
+          executionError = createRuntimeError(
+            normalizeRuntimeError(error, {
+              errorCode: "RUNTIME_EXECUTOR_CLOSE_FAILED",
+              errorCategory: "system",
+              message: error instanceof Error ? error.message : String(error),
+              retryable: false,
+              stage: "execute",
+              runId: setup.runContext.runId
+            })
+          );
+        }
+      }
     }
-
-    result = await runSystemWithGraphRunner({
-      plan: setup.plan,
-      effectiveLaw: setup.effectiveLaw,
-      profilesById: setup.profilesById,
-      toolsByRef: setup.toolsByRef,
-      modelsById: setup.modelsById,
-      userProfile: setup.userProfile,
-      workdir: args.workdir,
-      rolePackagesByRoleId: setup.rolePackagesByRoleId,
-      runContext: setup.runContext,
-      executor,
-      prompt: args.prompt,
-      initialState,
-      cleanupExecutionHistory: args.cleanupExecutionHistory,
-      logRun: args.logRun ?? false
-    });
-  } catch (error) {
-    executionError = createRuntimeError(
-      normalizeRuntimeError(error, {
-        errorCode: "RUNTIME_EXECUTION_FAILED",
-        errorCategory: "system",
-        message: error instanceof Error ? error.message : String(error),
-        retryable: false,
-        stage: "execute",
-        runId: setup.runContext.runId
-      })
-    );
-  }
-
-  try {
-    await executor.close();
-  } catch (error) {
-    if (!executionError) {
-      executionError = createRuntimeError(
-        normalizeRuntimeError(error, {
-          errorCode: "RUNTIME_EXECUTOR_CLOSE_FAILED",
-          errorCategory: "system",
-          message: error instanceof Error ? error.message : String(error),
-          retryable: false,
-          stage: "execute",
-          runId: setup.runContext.runId
-        })
-      );
+  } finally {
+    if (runContextForCleanup?.releaseResumeLock) {
+      try {
+        await runContextForCleanup.releaseResumeLock();
+      } catch (error) {
+        if (!executionError) {
+          executionError = createRuntimeError(
+            normalizeRuntimeError(error, {
+              errorCode: "RUNTIME_RESUME_LOCK_RELEASE_FAILED",
+              errorCategory: "system",
+              message: error instanceof Error ? error.message : String(error),
+              retryable: false,
+              stage: "resume",
+              runId: runContextForCleanup.runId
+            })
+          );
+        }
+      }
     }
   }
 
@@ -557,7 +602,7 @@ export async function runSystemWithAdapter(args: {
       message: "Runtime execution completed without a result",
       retryable: false,
       stage: "execute",
-      runId: setup.runContext.runId
+      runId: setup?.runContext.runId ?? runContextForCleanup?.runId
     });
   }
 

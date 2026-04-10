@@ -130,7 +130,7 @@ test("resume context reloads sessions.json and reuses session ids for role execu
   assert.equal(result.audit.sessionId, "ses_resume");
 });
 
-test("resume context restores branch-local sessions for sibling branches of the same role", async () => {
+test("resume context restores branch-local sessions and keeps sibling session memory isolated", async () => {
   const tempRoot = await mkdtemp(path.join(os.tmpdir(), "ogsystem-session-branch-recovery-"));
   const workdir = tempRoot;
   const systemPath = path.resolve(tempRoot, "branch-session-system.mmd");
@@ -263,6 +263,7 @@ summary[Role:debate-summary] -->|SUMMARY_READY| output
   };
 
   const seenSessionIds = [];
+  const sessionMemory = new Map();
   const executor = {
     async start() {},
     async close() {},
@@ -272,9 +273,20 @@ summary[Role:debate-summary] -->|SUMMARY_READY| output
     },
     async execute(request) {
       seenSessionIds.push(request.sessionId);
+      const token = request.prompt.includes("minimalist context")
+        ? "MIN"
+        : request.prompt.includes("alignment context")
+          ? "ALIGN"
+          : "UNKNOWN";
+      const history = sessionMemory.get(request.sessionId) ?? [];
+      history.push(token);
+      sessionMemory.set(request.sessionId, history);
       return {
         exitCode: 0,
-        stdout: JSON.stringify({ event: "SUMMARY_READY", content: "ok" }),
+        stdout: JSON.stringify({
+          event: "SUMMARY_READY",
+          content: history.join("|")
+        }),
         stderr: "",
         args: [],
         sessionId: request.sessionId,
@@ -309,12 +321,21 @@ summary[Role:debate-summary] -->|SUMMARY_READY| output
     ...baseArgs,
     branch: summaryBranchB
   });
+  const resultARepeat = await executeRoleNode({
+    ...baseArgs,
+    branch: summaryBranchA
+  });
 
   assert.equal(resultA.status, "ok");
   assert.equal(resultB.status, "ok");
-  assert.deepStrictEqual(seenSessionIds, ["ses_summary_a", "ses_summary_b"]);
+  assert.equal(resultARepeat.status, "ok");
+  assert.deepStrictEqual(seenSessionIds, ["ses_summary_a", "ses_summary_b", "ses_summary_a"]);
   assert.equal(resultA.audit.sessionId, "ses_summary_a");
   assert.equal(resultB.audit.sessionId, "ses_summary_b");
+  assert.equal(resultARepeat.audit.sessionId, "ses_summary_a");
+  assert.equal(resultA.storedResult.content, "MIN");
+  assert.equal(resultB.storedResult.content, "ALIGN");
+  assert.equal(resultARepeat.storedResult.content, "MIN|MIN");
 
   const sessions = JSON.parse(await readFile(path.resolve(runDir, "sessions.json"), "utf8"));
   const summarySessions = sessions
@@ -324,7 +345,7 @@ summary[Role:debate-summary] -->|SUMMARY_READY| output
     summarySessions.map((item) => [item.sessionKey, item.promptCount]),
     [
       ["debate-summary:debate-alignmentist@1#3", 2],
-      ["debate-summary:debate-minimalist@1#2", 2]
+      ["debate-summary:debate-minimalist@1#2", 3]
     ]
   );
 });

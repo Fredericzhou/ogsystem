@@ -26,6 +26,12 @@ const RUN_ARTIFACT_POLICY: RunArtifactPolicyEntry[] = [
     description: "Write-ahead graph update checkpoints replayed during resume/recovery."
   },
   {
+    path: ".resume.lock",
+    retention: "runtime_consumed",
+    resumeConsumed: true,
+    description: "Advisory single-run resume lock; prevents concurrent resume against the same run directory."
+  },
+  {
     path: "events.ndjson",
     retention: "operator_latest",
     resumeConsumed: false,
