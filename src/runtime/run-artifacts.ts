@@ -245,6 +245,29 @@ async function acquireResumeRunLock(runDir: string): Promise<() => Promise<void>
   }
 }
 
+function describeUnknownError(error: unknown): string {
+  if (error instanceof Error && error.message.trim()) {
+    return error.message;
+  }
+  return String(error);
+}
+
+export async function releaseResumeLockAfterSetupFailure(args: {
+  runDir: string;
+  releaseResumeLock?: () => Promise<void>;
+}): Promise<void> {
+  if (!args.releaseResumeLock) {
+    return;
+  }
+  try {
+    await args.releaseResumeLock();
+  } catch (error) {
+    process.stderr.write(
+      `[warn] failed to release resume lock after setup failure: runDir=${args.runDir} error=${describeUnknownError(error)}\n`
+    );
+  }
+}
+
 function resolveSharedDir(args: {
   runDir: string;
   workdir: string;
@@ -611,13 +634,10 @@ export async function initializeRunContext(args: {
       releaseResumeLock
     };
   } catch (error) {
-    if (releaseResumeLock) {
-      try {
-        await releaseResumeLock();
-      } catch {
-        // Prefer surfacing the initialization failure; lock-release failure should not mask it.
-      }
-    }
+    await releaseResumeLockAfterSetupFailure({
+      runDir,
+      releaseResumeLock
+    });
     throw error;
   }
 }

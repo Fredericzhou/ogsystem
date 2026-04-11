@@ -249,6 +249,20 @@ function pickDryRunEvent(args: {
   return allowed?.eventType ?? args.node.outgoing[0].eventType;
 }
 
+function resolveAuditNextRoleId(args: {
+  node: ExecutionPlanNode;
+  selectedEvent?: string;
+}): string | undefined {
+  if (args.node.routingMode === "parallel_split" || !args.selectedEvent) {
+    return undefined;
+  }
+  const selectedFlow = args.node.outgoing.find((flow) => flow.eventType === args.selectedEvent);
+  if (!selectedFlow || selectedFlow.toRoleId === SYSTEM_END_ROLE_ID) {
+    return undefined;
+  }
+  return selectedFlow.toRoleId;
+}
+
 function extractJsonObjectCandidate(raw: string): string | undefined {
   const fenced = raw.match(/```(?:json)?\s*([\s\S]*?)```/i);
   if (fenced?.[1]?.trim()) {
@@ -884,6 +898,10 @@ export async function executeRoleNode(args: {
       serverPid: executionResult.serverPid,
       exitCode: executionResult.exitCode,
       selectedEvent,
+      nextRoleId: resolveAuditNextRoleId({
+        node: args.node,
+        selectedEvent
+      }),
       status: "ok",
       stdout: executionResult.stdout,
       stderr: executionResult.stderr,

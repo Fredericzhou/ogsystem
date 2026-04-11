@@ -105,6 +105,10 @@ test("adapter runs graph debate example with parallel branches, join, and bounde
   assert.ok(result.auditTrail.some((item) => item.roleId === "debate-alignmentist"));
   assert.ok(result.auditTrail.some((item) => item.selectedEvent === "REBUTTAL_NEEDED"));
   assert.ok(result.auditTrail.some((item) => item.loopIteration === 2));
+  const minimalistAudits = result.auditTrail.filter((item) => item.roleId === "debate-minimalist");
+  const moderatorAudits = result.auditTrail.filter((item) => item.roleId === "debate-moderator");
+  assert.ok(minimalistAudits.every((item) => item.nextRoleId === "debate-judge"));
+  assert.ok(moderatorAudits.every((item) => item.nextRoleId === undefined));
 
   const runsDir = path.resolve(tempRoot, "ogsystem-history");
   const runs = await readdir(runsDir);
