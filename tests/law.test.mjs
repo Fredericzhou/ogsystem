@@ -11,6 +11,7 @@ const profilesPath = path.resolve("tests/fixtures/profiles/branch-profiles.json"
 const toolsPath = path.resolve("tests/fixtures/tools/branch-tools.json");
 const lawMissingPath = path.resolve("tests/fixtures/laws/law-branch.json");
 const lawForbidPath = path.resolve("tests/fixtures/laws/law-forbid.json");
+const lawNoNoopPath = path.resolve("tests/fixtures/laws/law-branch-no-noop.json");
 
 const buildArgs = (lawPath) => ({
   systemPath,
@@ -57,4 +58,20 @@ test("adapter langgraph allows noop when law enables it", async () => {
   });
   assert.strictEqual(result.status, "done");
   assert.strictEqual(result.finalRoleId, "test-operator");
+});
+
+test("adapter fails preflight when role has noop binding without law authorization", async () => {
+  await assert.rejects(
+    () =>
+      runSystemWithAdapter({
+        ...buildArgs(lawNoNoopPath),
+        systemPath: noopLanggraphSystemPath
+      }),
+    (error) => {
+      assert.ok(error && typeof error === "object");
+      assert.equal(error.envelope?.errorCode, "RUNTIME_SETUP_FAILED");
+      assert.match(error.message, /has no executable binding/);
+      return true;
+    }
+  );
 });

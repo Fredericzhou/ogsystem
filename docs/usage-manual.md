@@ -19,6 +19,7 @@ OGSystem 当前重点优化以下能力：
 - 文件优先恢复：`state.json`、`sessions.json`、`plan-fingerprint.json`、`checkpoints/`、`execution-outcome.json` 组成恢复权威集。
 - 会话血缘隔离：`roleId:sessionLineageId` 保证顺序流转可复用会话，并行 sibling 不串会话记忆。
 - Crash 自愈补偿：角色结果先 durable，再 checkpoint；恢复时补偿缺失 checkpoint，而不是盲目重跑节点。
+- 绑定预检：运行前静态扫描所有 role 节点，未绑定节点必须满足 noop 法律授权与单出口约束，避免中途才失败。
 - 运维可观察：`audit/`、`events.ndjson`、per-role execution snapshots 让每一步都有证据。
 
 ## Architecture Snapshot
@@ -288,6 +289,12 @@ Compatibility rule:
 - when `retention.enabled=true`, runtime can trigger cleanup automatically only when `executionDirCount > executionDirThreshold`
 - CLI `--cleanup-executions` has higher priority than runtime retention config for that run
 
+Config schema guard (editor/CI):
+
+- `schemas/runtime-config.schema.json`
+- `schemas/user-profile.schema.json`
+- these schema files are for static validation and IDE hints; runtime still uses `src/runtime/config.ts` as the single runtime validation authority
+
 ## 9. Run Directory Contract
 
 When a run starts, `ogsystem-history/<run-id>/` should persist:
@@ -326,7 +333,7 @@ Audit/operator artifacts:
 `state.json` is the authoritative runtime state snapshot.
 `events.ndjson` is append-only audit history.
 `latest-session.json` is an operator-facing latest snapshot only.
-`repro.sh` is a run-local resume repro script generated for troubleshooting handoff.
+`repro.sh` is a run-local resume repro script generated for troubleshooting handoff, with environment context comments (Node/OS/timestamp).
 Resume reloads `sessions.json`, not `latest-session.json` or per-execution `session.json`.
 `inbox.md` is a projection of normalized runtime input, not a free-form summary.
 `ogsystem-history/` is generated runtime state and should be ignored by git.

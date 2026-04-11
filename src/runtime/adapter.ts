@@ -203,6 +203,32 @@ function sortedRoleIds(values: string[]): string[] {
   return [...values].sort((left, right) => left.localeCompare(right));
 }
 
+function assertBindingPreflight(args: {
+  plan: ReturnType<typeof createExecutionPlan>;
+  effectiveLaw: EffectiveLawConstraints;
+}): void {
+  for (const roleId of args.plan.roleIds) {
+    const node = args.plan.nodesByRoleId.get(roleId);
+    if (!node) {
+      throw new Error(`Execution plan is missing role "${roleId}"`);
+    }
+    if (node.binding.kind !== "noop") {
+      continue;
+    }
+    if (!args.effectiveLaw.allowNoopWithoutExecutionBinding) {
+      throw new Error(
+        `Role "${roleId}" has no executable binding (model.bind/exec.bind). ` +
+          `Set binding or enable allowNoopWithoutExecutionBinding in effective law.`
+      );
+    }
+    if (node.outgoing.length > 1) {
+      throw new Error(
+        `Role "${roleId}" cannot use noop binding with ${node.outgoing.length} outgoing flows.`
+      );
+    }
+  }
+}
+
 type FingerprintComponentName = "system" | "rolePackages" | "modelPackages" | "effectiveLaw";
 
 function normalizeFingerprintValue(value: unknown): unknown {
@@ -423,6 +449,11 @@ export async function runSystemWithAdapter(args: {
       const tools = await loadTools(args.toolsPath);
       const lawCatalog = await loadLaws(args.lawsPath, args.workdir);
       const userProfile = await loadUserProfile(args.userProfilePath, args.workdir);
+      const effectiveLaw = resolveEffectiveLaw(system, lawCatalog);
+      assertBindingPreflight({
+        plan,
+        effectiveLaw
+      });
       const rolePackagesByRoleId = await loadRolePackages({
         system,
         roleRootDir: resolve(args.workdir, runtimeConfig.roleRepo, "roles")
@@ -431,7 +462,6 @@ export async function runSystemWithAdapter(args: {
         system,
         modelRootDir: resolve(args.workdir, runtimeConfig.modelRepo)
       });
-      const effectiveLaw = resolveEffectiveLaw(system, lawCatalog);
       const planFingerprint = buildRunPlanFingerprint({
         system,
         rolePackagesByRoleId,

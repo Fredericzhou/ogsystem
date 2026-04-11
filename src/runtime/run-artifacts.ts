@@ -12,7 +12,7 @@ import {
 import { createReadStream } from "node:fs";
 import { randomUUID } from "node:crypto";
 import { basename, resolve } from "node:path";
-import { hostname } from "node:os";
+import { arch, hostname, platform } from "node:os";
 import { createInterface } from "node:readline";
 
 import { readJsonFile, writeTextFileAtomic } from "./json-file.js";
@@ -104,11 +104,17 @@ function shellEscape(value: string): string {
 
 function buildRunReproScript(args: {
   workdir: string;
+  generatedAt: string;
 }): string {
   const workdir = shellEscape(args.workdir);
   return [
     "#!/usr/bin/env bash",
     "set -euo pipefail",
+    "",
+    "# Environment Context:",
+    `# Node.js: ${process.version}`,
+    `# OS: ${platform()} (${arch()})`,
+    `# Timestamp: ${args.generatedAt}`,
     "",
     "RUN_DIR=\"$(cd -- \"$(dirname -- \"$0\")\" && pwd)\"",
     `WORKDIR=${workdir}`,
@@ -623,7 +629,8 @@ export async function initializeRunContext(args: {
     await writeIfMissing(
       reproPath,
       buildRunReproScript({
-        workdir: args.workdir
+        workdir: args.workdir,
+        generatedAt: new Date().toISOString()
       })
     );
     await chmod(reproPath, 0o755);

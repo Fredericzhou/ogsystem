@@ -1,0 +1,37 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://ogsystem.dev/schemas/user-profile.schema.json",
+  "title": "OGSystem User Profile",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["userProfileId"],
+  "properties": {
+    "userProfileId": {
+      "type": "string",
+      "minLength": 1
+    },
+    "language": {
+      "type": "string",
+      "minLength": 1
+    },
+    "style": {
+      "type": "string",
+      "minLength": 1
+    },
+    "riskPreference": {
+      "type": "string",
+      "minLength": 1
+    },
+    "outputLength": {
+      "type": "string",
+      "minLength": 1
+    },
+    "domainBackground": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "minLength": 1
+      }
+    }
+  }
+}

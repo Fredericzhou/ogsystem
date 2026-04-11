@@ -73,6 +73,10 @@ test("model runtime artifacts match the documented contract", async () => {
   await readFile(path.resolve(runDir, "plan-fingerprint.json"), "utf8");
   await readFile(path.resolve(runDir, "events.ndjson"), "utf8");
   const reproScript = await readFile(path.resolve(runDir, "repro.sh"), "utf8");
+  assert.match(reproScript, /# Environment Context:/);
+  assert.match(reproScript, /# Node\.js:/);
+  assert.match(reproScript, /# OS:/);
+  assert.match(reproScript, /# Timestamp:/);
   assert.match(reproScript, /--resume-run "\$RUN_DIR"/);
   await readFile(path.resolve(runDir, "audit", "summary.md"), "utf8");
   await readFile(path.resolve(runDir, "audit", "transitions.md"), "utf8");

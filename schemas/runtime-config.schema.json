@@ -1,0 +1,78 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://ogsystem.dev/schemas/runtime-config.schema.json",
+  "title": "OGSystem Runtime Config",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["executor", "roleRepo", "modelRepo"],
+  "properties": {
+    "configVersion": {
+      "type": "string",
+      "enum": ["1"]
+    },
+    "executor": {
+      "type": "string",
+      "enum": ["opencode"]
+    },
+    "roleRepo": {
+      "type": "string",
+      "minLength": 1
+    },
+    "modelRepo": {
+      "type": "string",
+      "minLength": 1
+    },
+    "runsDir": {
+      "type": "string",
+      "minLength": 1
+    },
+    "sharedDir": {
+      "type": "string",
+      "minLength": 1
+    },
+    "workspace": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "rolesDir": {
+          "type": "string",
+          "minLength": 1
+        },
+        "privateDirName": {
+          "type": "string",
+          "minLength": 1
+        }
+      }
+    },
+    "retention": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "enabled": {
+          "type": "boolean"
+        },
+        "executionDirThreshold": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "keepLatest": {
+          "type": "integer",
+          "minimum": 1
+        }
+      }
+    },
+    "opencode": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "baseArgs": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
+        }
+      }
+    }
+  }
+}
