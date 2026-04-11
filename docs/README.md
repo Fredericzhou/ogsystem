@@ -33,6 +33,7 @@
 - `docs/runtime-remediation-plan-2026-04-11.md`
 - `docs/runtime-resilience-validation-plan-2026-04-11.md`
 - `docs/runtime-replay-benchmark-2026-04-11.md`
+- `docs/runtime-state-dehydration-plan-2026-04-11.md`
 
 ## 4. 历史参考
 

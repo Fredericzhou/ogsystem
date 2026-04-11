@@ -17,6 +17,7 @@ OGSystem 是一个面向多角色协作流程的单机编排内核。它使用�
 - **文件优先恢复**：运行状态落盘到 `ogsystem-history/<run-id>/`，以 `state.json`、`sessions.json`、`plan-fingerprint.json`、`checkpoints/` 和 `execution-outcome.json` 组成恢复权威集。
 - **会话血缘隔离**：OpenCode 会话按 `roleId:sessionLineageId` 复用或隔离，顺序链路复用记忆，并行 sibling 不串话。
 - **Crash 自愈补偿**：角色执行先提交 durable outcome，再由图调度层写 checkpoint；恢复时自动补齐缺失的 checkpoint，而不是重跑模型。
+- **状态脱水与显式治理**：`state.json` 保持轻量摘要，完整审计走 `events.ndjson`；支持 `runtime.retention` 阈值触发的显式快照清理。
 - **最小但完整的工程闭环**：解析、调度、执行、审计、恢复与检查能力都收敛在同一套内核工程里。
 
 ## 3. 架构特点

@@ -678,7 +678,7 @@ operator[Role:test-operator] -->|DONE| output
     update: {
       status: "done",
       transitionCount: 1,
-      auditTrail: [
+      recentAudits: [
         {
           at: "2026-04-10T00:00:01.000Z",
           roleId: "test-operator",
@@ -695,6 +695,23 @@ operator[Role:test-operator] -->|DONE| output
           status: "ok"
         }
       ],
+      auditSummary: {
+        okCount: 1,
+        failedCount: 0,
+        noopCount: 0,
+        repairAttemptedCount: 0,
+        repairAppliedCount: 0,
+        failureCountsByErrorCode: {}
+      },
+      roleMetricsByRoleId: {
+        "test-operator": {
+          total: 1,
+          ok: 1,
+          failed: 0,
+          noop: 0,
+          durationMsTotal: 1
+        }
+      },
       roleResults: {
         "test-operator@1#1": {
           roleId: "test-operator",
@@ -1094,7 +1111,7 @@ operator[Role:test-operator] -->|DONE| output
     update: {
       status: "done",
       transitionCount: 1,
-      auditTrail: [
+      recentAudits: [
         {
           at: "2026-04-10T00:00:01.000Z",
           roleId: "test-operator",
@@ -1111,6 +1128,23 @@ operator[Role:test-operator] -->|DONE| output
           status: "ok"
         }
       ],
+      auditSummary: {
+        okCount: 1,
+        failedCount: 0,
+        noopCount: 0,
+        repairAttemptedCount: 0,
+        repairAppliedCount: 0,
+        failureCountsByErrorCode: {}
+      },
+      roleMetricsByRoleId: {
+        "test-operator": {
+          total: 1,
+          ok: 1,
+          failed: 0,
+          noop: 0,
+          durationMsTotal: 1
+        }
+      },
       roleResults: {
         "test-operator@1#1": {
           roleId: "test-operator",

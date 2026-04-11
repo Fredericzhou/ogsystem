@@ -202,6 +202,12 @@ export type RuntimeWorkspaceConfig = {
   privateDirName: string;
 };
 
+export type RuntimeRetentionConfig = {
+  enabled: boolean;
+  executionDirThreshold: number;
+  keepLatest: number;
+};
+
 export type RuntimeConfig = {
   configVersion?: string;
   executor: "opencode";
@@ -210,6 +216,7 @@ export type RuntimeConfig = {
   runsDir: string;
   sharedDir?: string;
   workspace: RuntimeWorkspaceConfig;
+  retention?: RuntimeRetentionConfig;
   opencode?: {
     baseArgs?: string[];
   };
@@ -287,6 +294,7 @@ export type RunContext = {
   checkpointsDir: string;
   roleDirsById: Map<string, RoleRunDirs>;
   roleExecutionCounts: Map<string, number>;
+  executionDirCount: number;
   sessionRecordsByKey: Map<string, OpencodeSessionRecord>;
   nextCheckpointSequence: number;
   sharedDir: string;
@@ -325,13 +333,32 @@ export type StoredRoleResult = {
 
 export type GraphRunStatus = "running" | "done" | "failed";
 
+export type GraphAuditSummary = {
+  okCount: number;
+  failedCount: number;
+  noopCount: number;
+  repairAttemptedCount: number;
+  repairAppliedCount: number;
+  failureCountsByErrorCode: Record<string, number>;
+};
+
+export type GraphRoleMetricSummary = {
+  total: number;
+  ok: number;
+  failed: number;
+  noop: number;
+  durationMsTotal: number;
+};
+
 export type GraphState = {
   userPrompt: string;
   status: GraphRunStatus;
   error: string;
   errorEnvelope?: RuntimeErrorEnvelope;
   transitionCount: number;
-  auditTrail: AuditRecord[];
+  recentAudits: AuditRecord[];
+  auditSummary: GraphAuditSummary;
+  roleMetricsByRoleId: Record<string, GraphRoleMetricSummary>;
   roleResults: Record<string, StoredRoleResult>;
   branchRecords: Record<string, BranchRecord>;
   loopIterations: Record<string, number>;

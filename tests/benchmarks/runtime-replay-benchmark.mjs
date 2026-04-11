@@ -31,6 +31,34 @@ operator[Role:test-loop-probe] -->|DONE| output
 `;
 
 function applyGraphUpdate(state, update) {
+  const mergedFailureCountsByErrorCode = {
+    ...(state.auditSummary?.failureCountsByErrorCode ?? {})
+  };
+  for (const [errorCode, count] of Object.entries(update.auditSummary?.failureCountsByErrorCode ?? {})) {
+    mergedFailureCountsByErrorCode[errorCode] =
+      (mergedFailureCountsByErrorCode[errorCode] ?? 0) + count;
+  }
+
+  const mergedRoleMetricsByRoleId = {
+    ...(state.roleMetricsByRoleId ?? {})
+  };
+  for (const [roleId, incoming] of Object.entries(update.roleMetricsByRoleId ?? {})) {
+    const current = mergedRoleMetricsByRoleId[roleId] ?? {
+      total: 0,
+      ok: 0,
+      failed: 0,
+      noop: 0,
+      durationMsTotal: 0
+    };
+    mergedRoleMetricsByRoleId[roleId] = {
+      total: current.total + (incoming.total ?? 0),
+      ok: current.ok + (incoming.ok ?? 0),
+      failed: current.failed + (incoming.failed ?? 0),
+      noop: current.noop + (incoming.noop ?? 0),
+      durationMsTotal: current.durationMsTotal + (incoming.durationMsTotal ?? 0)
+    };
+  }
+
   return {
     userPrompt: state.userPrompt,
     status:
@@ -42,7 +70,20 @@ function applyGraphUpdate(state, update) {
     error: state.error || update.error || "",
     errorEnvelope: state.errorEnvelope ?? update.errorEnvelope,
     transitionCount: state.transitionCount + (update.transitionCount ?? 0),
-    auditTrail: state.auditTrail.concat(update.auditTrail ?? []),
+    recentAudits: state.recentAudits.concat(update.recentAudits ?? []).slice(-5),
+    auditSummary: {
+      okCount: (state.auditSummary?.okCount ?? 0) + (update.auditSummary?.okCount ?? 0),
+      failedCount: (state.auditSummary?.failedCount ?? 0) + (update.auditSummary?.failedCount ?? 0),
+      noopCount: (state.auditSummary?.noopCount ?? 0) + (update.auditSummary?.noopCount ?? 0),
+      repairAttemptedCount:
+        (state.auditSummary?.repairAttemptedCount ?? 0) +
+        (update.auditSummary?.repairAttemptedCount ?? 0),
+      repairAppliedCount:
+        (state.auditSummary?.repairAppliedCount ?? 0) +
+        (update.auditSummary?.repairAppliedCount ?? 0),
+      failureCountsByErrorCode: mergedFailureCountsByErrorCode
+    },
+    roleMetricsByRoleId: mergedRoleMetricsByRoleId,
     roleResults: { ...state.roleResults, ...(update.roleResults ?? {}) },
     branchRecords: { ...state.branchRecords, ...(update.branchRecords ?? {}) },
     loopIterations: { ...state.loopIterations, ...(update.loopIterations ?? {}) },

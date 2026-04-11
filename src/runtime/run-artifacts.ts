@@ -8,9 +8,11 @@ import {
   rm,
   writeFile
 } from "node:fs/promises";
+import { createReadStream } from "node:fs";
 import { randomUUID } from "node:crypto";
 import { basename, resolve } from "node:path";
 import { hostname } from "node:os";
+import { createInterface } from "node:readline";
 
 import { readJsonFile, writeTextFileAtomic } from "./json-file.js";
 import { createRuntimeError } from "./runtime-errors.js";
@@ -409,6 +411,14 @@ async function restoreRoleExecutionCount(executionsDir: string): Promise<number>
   }, 0);
 }
 
+async function countRoleExecutionDirs(executionsDir: string): Promise<number> {
+  if (!(await directoryExists(executionsDir))) {
+    return 0;
+  }
+  const entries = await readdir(executionsDir, { withFileTypes: true });
+  return entries.filter((entry) => entry.isDirectory()).length;
+}
+
 async function restoreCheckpointSequence(checkpointsDir: string): Promise<number> {
   if (!(await directoryExists(checkpointsDir))) {
     return 1;
@@ -537,6 +547,7 @@ export async function initializeRunContext(args: {
   });
   const roleDirsById = new Map<string, RoleRunDirs>();
   const roleExecutionCounts = new Map<string, number>();
+  let executionDirCount = 0;
   const releaseResumeLock = args.resumeRunDir
     ? await acquireResumeRunLock(runDir)
     : undefined;
@@ -590,6 +601,7 @@ export async function initializeRunContext(args: {
       );
       roleDirsById.set(roleId, { roleDir, privateDir, executionsDir, latestSessionPath });
       roleExecutionCounts.set(roleId, await restoreRoleExecutionCount(executionsDir));
+      executionDirCount += await countRoleExecutionDirs(executionsDir);
     }
 
     const sessionsPath = resolve(runDir, "sessions.json");
@@ -628,6 +640,7 @@ export async function initializeRunContext(args: {
       checkpointsDir,
       roleDirsById,
       roleExecutionCounts,
+      executionDirCount,
       sessionRecordsByKey,
       nextCheckpointSequence: await restoreCheckpointSequence(checkpointsDir),
       sharedDir,
@@ -721,7 +734,21 @@ export async function loadResumeGraphState(args: {
     typeof graphState.status !== "string" ||
     typeof graphState.error !== "string" ||
     typeof graphState.transitionCount !== "number" ||
-    !Array.isArray(graphState.auditTrail) ||
+    !Array.isArray(graphState.recentAudits) ||
+    typeof graphState.auditSummary !== "object" ||
+    graphState.auditSummary === null ||
+    Array.isArray(graphState.auditSummary) ||
+    typeof graphState.auditSummary.okCount !== "number" ||
+    typeof graphState.auditSummary.failedCount !== "number" ||
+    typeof graphState.auditSummary.noopCount !== "number" ||
+    typeof graphState.auditSummary.repairAttemptedCount !== "number" ||
+    typeof graphState.auditSummary.repairAppliedCount !== "number" ||
+    typeof graphState.auditSummary.failureCountsByErrorCode !== "object" ||
+    graphState.auditSummary.failureCountsByErrorCode === null ||
+    Array.isArray(graphState.auditSummary.failureCountsByErrorCode) ||
+    typeof graphState.roleMetricsByRoleId !== "object" ||
+    graphState.roleMetricsByRoleId === null ||
+    Array.isArray(graphState.roleMetricsByRoleId) ||
     typeof graphState.roleResults !== "object" ||
     graphState.roleResults === null ||
     Array.isArray(graphState.roleResults) ||
@@ -810,7 +837,9 @@ export async function loadResumeGraphState(args: {
     }
     seenSessionKeys.add(sessionKey);
 
-    const hasAuditTrailEntry = graphState.auditTrail.some((entry) => entry.roleId === roleId);
+    const hasRoleMetricEntry =
+      typeof graphState.roleMetricsByRoleId[roleId] === "object" &&
+      graphState.roleMetricsByRoleId[roleId] !== null;
     const hasRoleResult = Object.values(graphState.roleResults).some(
       (result) => result.roleId === roleId
     );
@@ -821,7 +850,7 @@ export async function loadResumeGraphState(args: {
     );
     const matchesLastExecution =
       graphState.lastExecutedRoleId === roleId || graphState.finalRoleId === roleId;
-    if (!hasAuditTrailEntry && !hasRoleResult && !hasBranchRecord && !matchesLastExecution) {
+    if (!hasRoleMetricEntry && !hasRoleResult && !hasBranchRecord && !matchesLastExecution) {
       throw createRuntimeError({
         errorCode: "RESUME_SNAPSHOT_INCONSISTENT",
         errorCategory: "state",
@@ -1082,6 +1111,7 @@ export async function cleanupHistoricalExecutionSnapshots(args: {
     await Promise.all(
       removable.map((entry) => rm(resolve(roleDirs.executionsDir, entry), { recursive: true, force: true }))
     );
+    args.context.executionDirCount = Math.max(0, args.context.executionDirCount - removable.length);
   }
 }
 
@@ -1100,6 +1130,7 @@ export function allocateRoleExecution(args: {
   const current = args.context.roleExecutionCounts.get(args.roleId) ?? 0;
   const executionIndex = current + 1;
   args.context.roleExecutionCounts.set(args.roleId, executionIndex);
+  args.context.executionDirCount += 1;
   const startedAt = new Date().toISOString();
   const executionId = buildExecutionId(executionIndex, startedAt);
   return {
@@ -1325,4 +1356,52 @@ export async function flushBufferedRunArtifacts(context: RunContext): Promise<vo
   };
 
   await chainBufferedFlush(state, runFlush);
+}
+
+export async function loadAuditTrailFromEvents(args: {
+  context: RunContext;
+  allowedRoleIds?: Set<string>;
+}): Promise<AuditRecord[]> {
+  if (!(await pathExists(args.context.eventsPath))) {
+    return [];
+  }
+
+  const audits: AuditRecord[] = [];
+  const reader = createInterface({
+    input: createReadStream(args.context.eventsPath, { encoding: "utf8" }),
+    crlfDelay: Infinity
+  });
+
+  for await (const line of reader) {
+    const trimmed = line.trim();
+    if (!trimmed) {
+      continue;
+    }
+    let parsed: unknown;
+    try {
+      parsed = JSON.parse(trimmed);
+    } catch {
+      continue;
+    }
+    if (
+      typeof parsed !== "object" ||
+      parsed === null ||
+      Array.isArray(parsed) ||
+      (parsed as { type?: unknown }).type !== "audit"
+    ) {
+      continue;
+    }
+    const { type: _type, ...rest } = parsed as Record<string, unknown>;
+    if (
+      args.allowedRoleIds &&
+      (!("roleId" in rest) ||
+        typeof rest.roleId !== "string" ||
+        !args.allowedRoleIds.has(rest.roleId))
+    ) {
+      continue;
+    }
+    audits.push(rest as AuditRecord);
+  }
+
+  return audits;
 }

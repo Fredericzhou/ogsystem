@@ -262,6 +262,7 @@ User profile rules:
 - repo roots
 - runs directory
 - workspace directory names
+- optional retention policy (explicit threshold cleanup)
 
 Example:
 
@@ -271,7 +272,12 @@ Example:
   "executor": "opencode",
   "roleRepo": "./og-roles",
   "modelRepo": "./og-models",
-  "runsDir": "ogsystem-history"
+  "runsDir": "ogsystem-history",
+  "retention": {
+    "enabled": false,
+    "executionDirThreshold": 2000,
+    "keepLatest": 100
+  }
 }
 ```
 
@@ -279,6 +285,8 @@ Compatibility rule:
 
 - `configVersion` is optional for the current repo default, but when present it must be `"1"`
 - unsupported config versions fail fast; the runtime does not provide in-place migration
+- when `retention.enabled=true`, runtime can trigger cleanup automatically only when `executionDirCount > executionDirThreshold`
+- CLI `--cleanup-executions` has higher priority than runtime retention config for that run
 
 ## 9. Run Directory Contract
 
@@ -380,13 +388,18 @@ For graph-based runs, `state.json` also persists:
 - `pendingJoinRoleIds`
 - `loopIterations`
 - `graphState`
+- `graphState.recentAudits` (fixed window, default 5)
+- `graphState.auditSummary` (aggregated counters for ok/failed/noop/repair/failure codes)
+- `graphState.roleMetricsByRoleId` (per-role totals, status split, accumulated duration)
 - run summary counters: `totalTransitions`, `okCount`, `failedCount`, `noopCount`
 - structured `failureCountsByErrorCode`
 
 Optional history cleanup:
 
 - `--cleanup-executions <n>` keeps only the latest `n` per-role `executions/<executionId>/` snapshots
+- runtime config can also enforce explicit threshold cleanup through `retention.enabled/executionDirThreshold/keepLatest`
 - cleanup never touches `state.json` or `sessions.json`
+- `metrics.json` now includes `rssBytes`, `stateWriteMs`, and `executionDirCount` for growth/I/O observability
 
 ## 9.1 Artifact Retention Policy Classes
 

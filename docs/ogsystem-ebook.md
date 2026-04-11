@@ -382,6 +382,12 @@ OGSystem 的指纹不只是系统 ID，而是对实际加载内容做哈希，�
 - 历史视图便于回放与审计。
 - 运行权威集和人类友好投影可以并存。
 
+在最新实现中，`state.json.graphState` 已做状态脱水：
+
+- 仅保留 `recentAudits`（固定窗口）用于近场排障。
+- 使用 `auditSummary` 与 `roleMetricsByRoleId` 保留累计统计。
+- 全量审计历史继续以 `events.ndjson` 作为观测面来源。
+
 ## 8. 这个项目真正的特点与价值
 
 ### 8.1 它把“可运行”和“可解释”同时保住了
@@ -416,21 +422,23 @@ OGSystem 没有引入数据库事务、消息队列或复杂分布式组件，�
 
 ## 9. 当前风险与下一步
 
-接下来最重要的不是再加入更多语义，而是把长期运行能力补齐。
+这轮版本已经完成三项关键稳定化：
 
-近期优先级应放在：
+1. 状态脱水（`recentAudits + auditSummary + roleMetricsByRoleId`）。
+2. 指标增强（`rssBytes/stateWriteMs/executionDirCount`）。
+3. 显式阈值清理（`runtime.retention`，默认关闭）。
 
-1. 审计日志流式化，减小 `state.json`。
-2. 产物保留与自动清理策略。
-3. 增长类与 I/O 类 metrics。
+因此下一步重点不再是“补功能”，而是“把运维策略跑实”：
 
-应明确延后的方向：
+- 结合真实运行样本校准 retention 阈值。
+- 用 replay benchmark 持续追踪 WAL 重放耗时。
+- 把容量与清理策略固化到运维手册与回归流程。
 
-- 语义兼容型 resume
-- 分布式锁 provider
-- 面向多机共享存储的协调机制
+继续延后事项保持不变：
 
-原因很简单：这些方向复杂度高，但并不是当前最现实的瓶颈。
+- 语义兼容型 resume。
+- 跨主机分布式锁 provider。
+- 共享存储多实例协调机制。
 
 ## 10. 如何阅读源码
 

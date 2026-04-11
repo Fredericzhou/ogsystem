@@ -21,12 +21,18 @@ import {
 } from "./graph-runtime-state.js";
 import { executeRoleNode } from "./role-executor.js";
 import { createRuntimeError, normalizeRuntimeError } from "./runtime-errors.js";
-import { summarizeRun } from "./run-summary.js";
+import {
+  buildAuditSummaryDelta,
+  createEmptyAuditSummary,
+  mergeAuditSummaries,
+  summarizeRunFromAuditSummary
+} from "./run-summary.js";
 import { projectStages } from "./stage-projector.js";
 import { stringifyJson } from "./runtime-support.js";
 import {
   cleanupHistoricalExecutionSnapshots,
   flushBufferedRunArtifacts,
+  loadAuditTrailFromEvents,
   loadCommittedRoleExecutionOutcomes,
   loadPendingRuntimeCheckpoints,
   markRoleExecutionOutcomeReconciled,
@@ -53,7 +59,8 @@ import type {
   StoredRoleResult,
   GraphStateUpdate,
   RoleExecutionOutcomeRecord,
-  UserProfile
+  UserProfile,
+  GraphRoleMetricSummary
 } from "./types.js";
 
 type GraphUpdate = GraphStateUpdate;
@@ -61,6 +68,7 @@ type GraphUpdate = GraphStateUpdate;
 const SCHEDULER_NODE_ID = "__scheduler__";
 const DEFAULT_TRANSITION_BUDGET = 100;
 const GRAPH_RECURSION_MARGIN = 20;
+const RECENT_AUDIT_WINDOW = 5;
 const TEST_CRASH_AFTER_EXECUTION_OUTCOME_ENV = "OGSYSTEM_TEST_CRASH_AFTER_EXECUTION_OUTCOME";
 
 type RunnerInput = {
@@ -77,6 +85,10 @@ type RunnerInput = {
   prompt: string;
   initialState?: GraphState;
   cleanupExecutionHistory?: number;
+  autoCleanupRetention?: {
+    executionDirThreshold: number;
+    keepLatest: number;
+  };
   logRun: boolean;
 };
 
@@ -130,9 +142,17 @@ const GraphStateAnnotation = Annotation.Root({
     reducer: (current, update) => current + update,
     default: () => 0
   }),
-  auditTrail: Annotation<AuditRecord[]>({
-    reducer: (current, update) => current.concat(update),
+  recentAudits: Annotation<AuditRecord[]>({
+    reducer: (current, update) => current.concat(update).slice(-RECENT_AUDIT_WINDOW),
     default: () => []
+  }),
+  auditSummary: Annotation<GraphState["auditSummary"]>({
+    reducer: (current, update) => mergeAuditSummaries(current, update),
+    default: () => createEmptyAuditSummary()
+  }),
+  roleMetricsByRoleId: Annotation<Record<string, GraphRoleMetricSummary>>({
+    reducer: (current, update) => mergeRoleMetrics(current, update),
+    default: () => ({})
   }),
   roleResults: Annotation<Record<string, StoredRoleResult>>({
     reducer: (current, update) => ({ ...current, ...update }),
@@ -181,7 +201,18 @@ function mergeGraphUpdates(current: GraphUpdate, update: GraphUpdate): GraphUpda
     error: current.error || update.error,
     errorEnvelope: current.errorEnvelope ?? update.errorEnvelope,
     transitionCount: (current.transitionCount ?? 0) + (update.transitionCount ?? 0),
-    auditTrail: [...(current.auditTrail ?? []), ...(update.auditTrail ?? [])],
+    recentAudits: [
+      ...(current.recentAudits ?? []),
+      ...(update.recentAudits ?? [])
+    ].slice(-RECENT_AUDIT_WINDOW),
+    auditSummary: mergeAuditSummaries(
+      current.auditSummary ?? createEmptyAuditSummary(),
+      update.auditSummary ?? createEmptyAuditSummary()
+    ),
+    roleMetricsByRoleId: mergeRoleMetrics(
+      current.roleMetricsByRoleId ?? {},
+      update.roleMetricsByRoleId ?? {}
+    ),
     roleResults: { ...(current.roleResults ?? {}), ...(update.roleResults ?? {}) },
     branchRecords: { ...(current.branchRecords ?? {}), ...(update.branchRecords ?? {}) },
     loopIterations: { ...(current.loopIterations ?? {}), ...(update.loopIterations ?? {}) },
@@ -207,7 +238,15 @@ function applyGraphUpdate(state: GraphState, update: GraphUpdate): GraphState {
     error: state.error || update.error || "",
     errorEnvelope: state.errorEnvelope ?? update.errorEnvelope,
     transitionCount: state.transitionCount + (update.transitionCount ?? 0),
-    auditTrail: state.auditTrail.concat(update.auditTrail ?? []),
+    recentAudits: state.recentAudits.concat(update.recentAudits ?? []).slice(-RECENT_AUDIT_WINDOW),
+    auditSummary: mergeAuditSummaries(
+      state.auditSummary,
+      update.auditSummary ?? createEmptyAuditSummary()
+    ),
+    roleMetricsByRoleId: mergeRoleMetrics(
+      state.roleMetricsByRoleId,
+      update.roleMetricsByRoleId ?? {}
+    ),
     roleResults: { ...state.roleResults, ...(update.roleResults ?? {}) },
     branchRecords: { ...state.branchRecords, ...(update.branchRecords ?? {}) },
     loopIterations: { ...state.loopIterations, ...(update.loopIterations ?? {}) },
@@ -232,10 +271,17 @@ async function persistProjectedState(args: {
   runContext: RunContext;
 }): Promise<void> {
   try {
+    const stateWriteStartedAt = Date.now();
     await writeAtomicFile(args.runContext.statePath, stringifyJson(projectStateSnapshot(args)));
+    const stateWriteMs = Date.now() - stateWriteStartedAt;
     await writeAtomicFile(
       args.runContext.metricsPath,
-      stringifyJson(projectMetricsSnapshot(args))
+      stringifyJson(
+        projectMetricsSnapshot({
+          ...args,
+          stateWriteMs
+        })
+      )
     );
     await flushBufferedRunArtifacts(args.runContext);
   } catch (error) {
@@ -256,36 +302,14 @@ function projectMetricsSnapshot(args: {
   state: GraphState;
   plan: ExecutionPlan;
   runContext: RunContext;
+  stateWriteMs: number;
 }): Record<string, unknown> {
-  const summary = summarizeRun({
-    auditTrail: args.state.auditTrail,
+  const summary = summarizeRunFromAuditSummary({
+    auditSummary: args.state.auditSummary,
     transitionCount: args.state.transitionCount,
     terminalStatus: args.state.status,
     terminalErrorEnvelope: args.state.errorEnvelope
   });
-  const roleMetrics = args.state.auditTrail.reduce<Record<string, Record<string, number>>>(
-    (accumulator, audit) => {
-      const current = accumulator[audit.roleId] ?? {
-        total: 0,
-        ok: 0,
-        failed: 0,
-        noop: 0,
-        durationMsTotal: 0
-      };
-      current.total += 1;
-      current.durationMsTotal += audit.durationMs;
-      if (audit.status === "ok") {
-        current.ok += 1;
-      } else if (audit.status === "failed") {
-        current.failed += 1;
-      } else {
-        current.noop += 1;
-      }
-      accumulator[audit.roleId] = current;
-      return accumulator;
-    },
-    {}
-  );
 
   return {
     runId: args.runContext.runId,
@@ -295,7 +319,46 @@ function projectMetricsSnapshot(args: {
     transitionCount: args.state.transitionCount,
     summary,
     failureCountsByErrorCode: summary.failureCountsByErrorCode,
-    roleMetrics
+    roleMetrics: args.state.roleMetricsByRoleId,
+    rssBytes: process.memoryUsage().rss,
+    stateWriteMs: args.stateWriteMs,
+    executionDirCount: args.runContext.executionDirCount
+  };
+}
+
+function mergeRoleMetrics(
+  left: Record<string, GraphRoleMetricSummary>,
+  right: Record<string, GraphRoleMetricSummary>
+): Record<string, GraphRoleMetricSummary> {
+  const merged: Record<string, GraphRoleMetricSummary> = { ...left };
+  for (const [roleId, rightMetrics] of Object.entries(right)) {
+    const leftMetrics = merged[roleId] ?? {
+      total: 0,
+      ok: 0,
+      failed: 0,
+      noop: 0,
+      durationMsTotal: 0
+    };
+    merged[roleId] = {
+      total: leftMetrics.total + rightMetrics.total,
+      ok: leftMetrics.ok + rightMetrics.ok,
+      failed: leftMetrics.failed + rightMetrics.failed,
+      noop: leftMetrics.noop + rightMetrics.noop,
+      durationMsTotal: leftMetrics.durationMsTotal + rightMetrics.durationMsTotal
+    };
+  }
+  return merged;
+}
+
+function buildRoleMetricsDelta(audit: AuditRecord): Record<string, GraphRoleMetricSummary> {
+  return {
+    [audit.roleId]: {
+      total: 1,
+      ok: audit.status === "ok" ? 1 : 0,
+      failed: audit.status === "failed" ? 1 : 0,
+      noop: audit.status === "noop" ? 1 : 0,
+      durationMsTotal: audit.durationMs
+    }
   };
 }
 
@@ -487,7 +550,9 @@ function buildFailureUpdate(args: {
     error: args.error,
     errorEnvelope: args.errorEnvelope,
     transitionCount: 1,
-    auditTrail: [args.audit],
+    recentAudits: [args.audit],
+    auditSummary: buildAuditSummaryDelta(args.audit),
+    roleMetricsByRoleId: buildRoleMetricsDelta(args.audit),
     finalRoleId: args.roleId,
     lastExecutedRoleId: args.roleId,
     branchRecords: {
@@ -697,7 +762,9 @@ function buildSuccessUpdate(args: {
     error: finalError,
     errorEnvelope: finalErrorEnvelope,
     transitionCount: 1,
-    auditTrail: [args.audit],
+    recentAudits: [args.audit],
+    auditSummary: buildAuditSummaryDelta(args.audit),
+    roleMetricsByRoleId: buildRoleMetricsDelta(args.audit),
     roleResults: storeRoleResult(args.currentBranch.branchId, args.storedResult),
     branchRecords: branchUpdates,
     loopIterations: loopUpdates,
@@ -859,11 +926,19 @@ export async function runSystemWithGraphRunner(args: RunnerInput): Promise<Adapt
     await persistProjectedState({ state: finalState, plan: args.plan, runContext: args.runContext });
   }
 
-  const auditTrail = finalState.auditTrail;
+  const auditTrailFromEvents = await loadAuditTrailFromEvents({
+    context: args.runContext,
+    allowedRoleIds: new Set(args.plan.roleIds)
+  });
+  const auditTrail = auditTrailFromEvents.length > 0
+    ? auditTrailFromEvents
+    : finalState.recentAudits;
   const stages = projectStages({ auditTrail });
-  const summary = summarizeRun({
-    auditTrail,
-    transitionCount: finalState.transitionCount
+  const summary = summarizeRunFromAuditSummary({
+    auditSummary: finalState.auditSummary,
+    transitionCount: finalState.transitionCount,
+    terminalStatus: finalState.status,
+    terminalErrorEnvelope: finalState.errorEnvelope
   });
   const serverMetadata = args.executor.getServerMetadata();
   await writeRunSummary({
@@ -894,6 +969,17 @@ export async function runSystemWithGraphRunner(args: RunnerInput): Promise<Adapt
       runContext: args.runContext,
       keepLatest: args.cleanupExecutionHistory
     });
+    await persistProjectedState({ state: finalState, plan: args.plan, runContext: args.runContext });
+  } else if (
+    args.autoCleanupRetention &&
+    args.runContext.executionDirCount > args.autoCleanupRetention.executionDirThreshold
+  ) {
+    await cleanupExecutionHistory({
+      state: finalState,
+      runContext: args.runContext,
+      keepLatest: args.autoCleanupRetention.keepLatest
+    });
+    await persistProjectedState({ state: finalState, plan: args.plan, runContext: args.runContext });
   }
 
   logger.runEnd({

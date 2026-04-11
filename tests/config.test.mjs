@@ -119,6 +119,74 @@ test("runtime config defaults runsDir to ogsystem-history", () => {
   assert.equal(config.runsDir, "ogsystem-history");
 });
 
+test("runtime config accepts retention policy with defaults", () => {
+  const config = validateRuntimeConfig(
+    {
+      executor: "opencode",
+      roleRepo: "./og-roles",
+      modelRepo: "./og-models",
+      retention: {}
+    },
+    "runtime.json"
+  );
+
+  assert.deepStrictEqual(config.retention, {
+    enabled: false,
+    executionDirThreshold: 2000,
+    keepLatest: 100
+  });
+});
+
+test("runtime config rejects invalid retention thresholds", () => {
+  assert.throws(
+    () =>
+      validateRuntimeConfig(
+        {
+          executor: "opencode",
+          roleRepo: "./og-roles",
+          modelRepo: "./og-models",
+          retention: {
+            enabled: true,
+            executionDirThreshold: 0,
+            keepLatest: -1
+          }
+        },
+        "runtime.json"
+      ),
+    (error) => {
+      assert.ok(error instanceof Error);
+      assert.match(error.message, /runtime\.json/);
+      assert.match(error.message, /\.retention\.executionDirThreshold/);
+      return true;
+    }
+  );
+});
+
+test("runtime config rejects invalid retention keepLatest", () => {
+  assert.throws(
+    () =>
+      validateRuntimeConfig(
+        {
+          executor: "opencode",
+          roleRepo: "./og-roles",
+          modelRepo: "./og-models",
+          retention: {
+            enabled: true,
+            executionDirThreshold: 10,
+            keepLatest: 0
+          }
+        },
+        "runtime.json"
+      ),
+    (error) => {
+      assert.ok(error instanceof Error);
+      assert.match(error.message, /runtime\.json/);
+      assert.match(error.message, /\.retention\.keepLatest/);
+      return true;
+    }
+  );
+});
+
 test("runtime config fails fast on unsupported config version", () => {
   assert.throws(
     () =>

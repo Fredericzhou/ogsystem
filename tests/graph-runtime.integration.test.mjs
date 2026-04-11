@@ -120,9 +120,21 @@ test("adapter runs graph debate example with parallel branches, join, and bounde
   assert.strictEqual(stateJson.finalRoleId, "debate-summary");
   assert.ok(Array.isArray(stateJson.completedBranches));
   assert.deepStrictEqual(stateJson.loopIterations["debate-moderator"], 2);
+  assert.ok(Array.isArray(stateJson.graphState.recentAudits));
+  assert.ok(stateJson.graphState.recentAudits.length <= 5);
+  assert.strictEqual(
+    stateJson.graphState.auditSummary.okCount +
+      stateJson.graphState.auditSummary.failedCount +
+      stateJson.graphState.auditSummary.noopCount,
+    stateJson.graphState.transitionCount
+  );
   assert.strictEqual(metricsJson.systemId, "architecture.debate.current");
   assert.strictEqual(metricsJson.roleMetrics["debate-moderator"].total, 2);
   assert.strictEqual(metricsJson.summary.totalTransitions, 9);
+  assert.ok(typeof metricsJson.rssBytes === "number");
+  assert.ok(typeof metricsJson.stateWriteMs === "number");
+  assert.ok(typeof metricsJson.executionDirCount === "number");
+  assert.ok(metricsJson.executionDirCount >= 1);
 
   const eventsText = await readFile(path.resolve(runDir, "events.ndjson"), "utf8");
   assert.match(eventsText, /"branchId":"debate-minimalist@1#\d+"/);
@@ -518,6 +530,154 @@ test("adapter optionally cleans historical execution snapshots without touching 
   assert.strictEqual(moderatorExecutions.length, 1);
   await readFile(path.resolve(runDir, "state.json"), "utf8");
   await readFile(path.resolve(runDir, "sessions.json"), "utf8");
+});
+
+test("adapter applies retention cleanup from runtime config when execution directories exceed threshold", async () => {
+  const repoRoot = process.cwd();
+  const tempRoot = await mkdtemp(path.join(os.tmpdir(), "ogsystem-retention-runtime-"));
+
+  await mkdir(path.resolve(tempRoot, ".ogsystem"), { recursive: true });
+  await symlink(path.resolve(repoRoot, "og-roles"), path.resolve(tempRoot, "og-roles"), "dir");
+  await symlink(path.resolve(repoRoot, "og-models"), path.resolve(tempRoot, "og-models"), "dir");
+  await writeFile(
+    path.resolve(tempRoot, ".ogsystem", "runtime.json"),
+    JSON.stringify(
+      {
+        executor: "opencode",
+        roleRepo: "./og-roles",
+        modelRepo: "./og-models",
+        runsDir: "ogsystem-history",
+        retention: {
+          enabled: true,
+          executionDirThreshold: 1,
+          keepLatest: 1
+        }
+      },
+      null,
+      2
+    ),
+    "utf8"
+  );
+  await symlink(
+    path.resolve(repoRoot, ".ogsystem", "user-profile.json"),
+    path.resolve(tempRoot, ".ogsystem", "user-profile.json")
+  );
+
+  await runSystemWithAdapter({
+    systemPath: path.resolve(repoRoot, "examples", "langgraph-debate-current", "system.mmd"),
+    lawsPath: path.resolve(repoRoot, "examples", "langgraph-debate-current", "laws.json"),
+    userProfilePath: path.resolve(repoRoot, "examples", "langgraph-debate-current", "user-profile.json"),
+    prompt: "retention cleanup threshold",
+    workdir: tempRoot,
+    dryRun: true
+  });
+
+  const runId = (await readdir(path.resolve(tempRoot, "ogsystem-history")))[0];
+  const runDir = path.resolve(tempRoot, "ogsystem-history", runId);
+  const moderatorExecutions = await readdir(
+    path.resolve(runDir, "roles", "debate-moderator", "executions")
+  );
+  const minimalistExecutions = await readdir(
+    path.resolve(runDir, "roles", "debate-minimalist", "executions")
+  );
+  const alignmentistExecutions = await readdir(
+    path.resolve(runDir, "roles", "debate-alignmentist", "executions")
+  );
+  const judgeExecutions = await readdir(
+    path.resolve(runDir, "roles", "debate-judge", "executions")
+  );
+  const summaryExecutions = await readdir(
+    path.resolve(runDir, "roles", "debate-summary", "executions")
+  );
+  assert.strictEqual(moderatorExecutions.length, 1);
+  assert.strictEqual(minimalistExecutions.length, 1);
+  assert.strictEqual(alignmentistExecutions.length, 1);
+  assert.strictEqual(judgeExecutions.length, 1);
+  assert.strictEqual(summaryExecutions.length, 1);
+
+  const metricsJson = JSON.parse(await readFile(path.resolve(runDir, "metrics.json"), "utf8"));
+  assert.strictEqual(metricsJson.executionDirCount, 5);
+});
+
+test("adapter persists metrics fields on failed graph runs", async () => {
+  const repoRoot = process.cwd();
+  const tempRoot = await mkdtemp(path.join(os.tmpdir(), "ogsystem-metrics-failure-"));
+  const systemPath = path.resolve(tempRoot, "system.mmd");
+  const lawsPath = path.resolve(tempRoot, "laws.json");
+  const runtimePath = path.resolve(tempRoot, ".ogsystem", "runtime.json");
+
+  await mkdir(path.resolve(tempRoot, ".ogsystem"), { recursive: true });
+  await symlink(path.resolve(repoRoot, "og-models"), path.resolve(tempRoot, "og-models"), "dir");
+  await symlink(
+    path.resolve(repoRoot, ".ogsystem", "user-profile.json"),
+    path.resolve(tempRoot, ".ogsystem", "user-profile.json")
+  );
+  await writeFile(
+    runtimePath,
+    JSON.stringify(
+      {
+        executor: "opencode",
+        roleRepo: "./og-roles",
+        modelRepo: "./og-models",
+        runsDir: "ogsystem-history"
+      },
+      null,
+      2
+    ),
+    "utf8"
+  );
+
+  await writeModelBoundRole({
+    rolesRoot: path.resolve(tempRoot, "og-roles", "roles"),
+    roleId: "test-budget-failure",
+    allowedEvents: ["RETRY", "DONE"]
+  });
+
+  const laws = JSON.parse(await readFile(path.resolve(repoRoot, ".ogsystem", "laws.json"), "utf8"));
+  const globalLaw = laws.laws.find((item) => item.lawId === "law.console.base");
+  assert.ok(globalLaw);
+  globalLaw.constraints = {
+    ...(globalLaw.constraints ?? {}),
+    maxTransitions: 2
+  };
+  await writeFile(lawsPath, JSON.stringify(laws, null, 2), "utf8");
+
+  await writeFile(
+    systemPath,
+    `flowchart TD
+%% system.id=test.metrics.failed
+%% system.version=1.0.0
+%% law.global=law.console.base
+%% entry.role=test-budget-failure
+%% loop.max.test-budget-failure=10
+%% model.bind.test-budget-failure=balanced-gpt52
+
+input -->|GO| worker[Role:test-budget-failure]
+worker[Role:test-budget-failure] -->|RETRY| worker[Role:test-budget-failure]
+worker[Role:test-budget-failure] -->|DONE| output
+`,
+    "utf8"
+  );
+
+  const result = await runSystemWithAdapter({
+    systemPath,
+    lawsPath,
+    userProfilePath: path.resolve(tempRoot, ".ogsystem", "user-profile.json"),
+    prompt: "trigger transition budget failure",
+    workdir: tempRoot,
+    dryRun: true
+  });
+
+  assert.strictEqual(result.status, "failed");
+  assert.ok(typeof result.errorEnvelope?.errorCode === "string");
+
+  const runId = (await readdir(path.resolve(tempRoot, "ogsystem-history")))[0];
+  const runDir = path.resolve(tempRoot, "ogsystem-history", runId);
+  const metricsJson = JSON.parse(await readFile(path.resolve(runDir, "metrics.json"), "utf8"));
+  assert.ok(typeof metricsJson.rssBytes === "number");
+  assert.ok(typeof metricsJson.stateWriteMs === "number");
+  assert.ok(typeof metricsJson.executionDirCount === "number");
+  assert.ok(metricsJson.summary.failedCount >= 1);
 });
 
 test("adapter keeps scheduler recursion budget above loop-heavy transition counts", async () => {

@@ -411,6 +411,7 @@ export async function runSystemWithAdapter(args: {
         rolePackagesByRoleId: Map<string, LoadedRolePackage>;
         runContext: Awaited<ReturnType<typeof initializeRunContext>>;
         planFingerprint: RunPlanFingerprint;
+        runtimeConfig: RuntimeConfig;
       }
     | undefined;
   try {
@@ -464,7 +465,8 @@ export async function runSystemWithAdapter(args: {
         userProfile,
         rolePackagesByRoleId,
         runContext,
-        planFingerprint
+        planFingerprint,
+        runtimeConfig
       };
     } catch (error) {
       executionError = createRuntimeError(
@@ -542,6 +544,14 @@ export async function runSystemWithAdapter(args: {
           prompt: args.prompt,
           initialState,
           cleanupExecutionHistory: args.cleanupExecutionHistory,
+          autoCleanupRetention:
+            args.cleanupExecutionHistory === undefined &&
+            setup.runtimeConfig.retention?.enabled
+              ? {
+                  executionDirThreshold: setup.runtimeConfig.retention.executionDirThreshold,
+                  keepLatest: setup.runtimeConfig.retention.keepLatest
+                }
+              : undefined,
           logRun: args.logRun ?? false
         });
       } catch (error) {

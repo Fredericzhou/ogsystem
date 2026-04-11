@@ -277,6 +277,7 @@ export function validateRuntimeConfig(value: unknown, filePath: string): Runtime
       "runsDir",
       "sharedDir",
       "workspace",
+      "retention",
       "opencode"
     ],
     filePath,
@@ -319,6 +320,42 @@ export function validateRuntimeConfig(value: unknown, filePath: string): Runtime
           expectString(entry, filePath, `$.opencode.baseArgs[${index}]`)
         );
 
+  const retentionRecord =
+    record.retention === undefined
+      ? undefined
+      : expectRecord(record.retention, filePath, "$.retention");
+  if (retentionRecord) {
+    expectNoExtraKeys(
+      retentionRecord,
+      ["enabled", "executionDirThreshold", "keepLatest"],
+      filePath,
+      "$.retention"
+    );
+  }
+  const retentionEnabled = expectOptionalBoolean(
+    retentionRecord?.enabled,
+    filePath,
+    "$.retention.enabled"
+  );
+  const retentionExecutionDirThreshold = expectOptionalPositiveInteger(
+    retentionRecord?.executionDirThreshold,
+    filePath,
+    "$.retention.executionDirThreshold"
+  );
+  const retentionKeepLatest = expectOptionalPositiveInteger(
+    retentionRecord?.keepLatest,
+    filePath,
+    "$.retention.keepLatest"
+  );
+  const retention =
+    retentionRecord === undefined
+      ? undefined
+      : {
+          enabled: retentionEnabled ?? false,
+          executionDirThreshold: retentionExecutionDirThreshold ?? 2000,
+          keepLatest: retentionKeepLatest ?? 100
+        };
+
   return {
     configVersion: configVersion ?? "1",
     executor: "opencode",
@@ -336,6 +373,7 @@ export function validateRuntimeConfig(value: unknown, filePath: string): Runtime
           "$.workspace.privateDirName"
         ) ?? "private"
     },
+    retention,
     opencode: {
       baseArgs
     }

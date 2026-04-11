@@ -1,5 +1,5 @@
 import { getExecutionPlanNode } from "./execution-plan.js";
-import { summarizeRun } from "./run-summary.js";
+import { createEmptyAuditSummary, summarizeRunFromAuditSummary } from "./run-summary.js";
 import type {
   BranchRecord,
   ExecutionPlan,
@@ -49,8 +49,8 @@ export function projectStateSnapshot(args: {
   state: GraphState;
   plan: ExecutionPlan;
 }): Record<string, unknown> {
-  const summary = summarizeRun({
-    auditTrail: args.state.auditTrail,
+  const summary = summarizeRunFromAuditSummary({
+    auditSummary: args.state.auditSummary,
     transitionCount: args.state.transitionCount,
     terminalStatus: args.state.status,
     terminalErrorEnvelope: args.state.errorEnvelope
@@ -174,7 +174,9 @@ export function createInitialGraphState(args: {
     status: "running",
     error: "",
     transitionCount: 0,
-    auditTrail: [],
+    recentAudits: [],
+    auditSummary: createEmptyAuditSummary(),
+    roleMetricsByRoleId: {},
     roleResults: {},
     branchRecords: {
       [branchId]: {
