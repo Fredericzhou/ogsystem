@@ -323,6 +323,15 @@ function parseTokenizedMermaid(tokens: TokenizedMermaid): ParsedSystemGraph {
   let hasOutputTransition = false;
 
   for (const item of tokens.metadata) {
+    const duplicateLine = metadataLineByKey.get(item.key);
+    if (duplicateLine !== undefined) {
+      failMermaid({
+        stage: "validate",
+        errorCode: "MERMAID_DUPLICATE_METADATA_KEY",
+        message: `Duplicate metadata key "${item.key}" at line ${item.lineNumber}; first declared at line ${duplicateLine}`,
+        lineNumber: item.lineNumber
+      });
+    }
     metadata.set(item.key, item.value);
     metadataLineByKey.set(item.key, item.lineNumber);
   }

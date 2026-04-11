@@ -2,11 +2,9 @@ import { appendAuditRecord, createAuditRecord } from "./audit-recorder.js";
 import { createRunConsoleLogger } from "./console-run-log.js";
 import type { RunConsoleLogger } from "./console-run-log.js";
 import type { Executor, ExecutorBinding } from "./executor.js";
-import { getExecutionPlanNode } from "./execution-plan.js";
 import {
   buildJoinId,
   getBranchResult,
-  getTargetLoopIteration,
   listActiveBranches,
   findRoleResult,
   wouldExceedLoopBudget
@@ -802,7 +800,7 @@ export async function executeRoleNode(args: {
         branchId,
         loopIteration
       };
-      const outcome = await persistCommittedExecutionResult({
+      await persistCommittedExecutionResult({
         execution,
         branch: currentBranch,
         result

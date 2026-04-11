@@ -1,4 +1,3 @@
-import { appendFile } from "node:fs/promises";
 import { resolve } from "node:path";
 
 import { appendBufferedText, appendEvent } from "./run-artifacts.js";

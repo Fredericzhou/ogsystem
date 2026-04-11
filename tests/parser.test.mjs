@@ -157,3 +157,21 @@ test("parser rejects all_of join when join.sources does not match incoming role 
     /MERMAID_JOIN_SOURCES_MISMATCH|join\.sources\.review must match exactly/
   );
 });
+
+test("parser rejects duplicate metadata keys instead of silently overriding", () => {
+  const duplicateLawSource = `flowchart TD
+%% system.id=test.duplicate.metadata
+%% system.version=0.1.0
+%% law.global=law.first
+%% law.global=law.second
+%% entry.role=intake
+%% model.bind.intake=model.fast
+input -->|GO| intake[Role:intake]
+intake[Role:intake] -->|DONE| output
+`;
+
+  assert.throws(
+    () => parseSystemFromMermaidSource(duplicateLawSource),
+    /MERMAID_DUPLICATE_METADATA_KEY|Duplicate metadata key "law\.global"/
+  );
+});

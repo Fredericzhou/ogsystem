@@ -800,6 +800,74 @@ test("executeOpencodeModelRole retries transient prompt failures on the same ses
   });
 });
 
+test("executeOpencodeModelRole continues retry when transient-error abort cleanup fails", async () => {
+  const promptedSessions = [];
+  let promptAttempts = 0;
+
+  const result = await executeOpencodeModelRole({
+    roleId: "role-retry-abort-failure",
+    prompt: "retry with abort failure",
+    schema: {
+      type: "object",
+      required: ["event", "content"],
+      properties: {
+        event: { type: "string" },
+        content: { type: "string" }
+      },
+      additionalProperties: false
+    },
+    modelPackage: makeModelPackage(),
+    workdir: "/tmp/run/roles/role-retry-abort-failure",
+    timeoutMs: 5000,
+    maxOutputBytes: 4096,
+    runClient: makeRunClient({
+      client: {
+        session: {
+          async create() {
+            return {
+              data: {
+                id: "ses_retry_abort_fail"
+              }
+            };
+          },
+          async prompt(args) {
+            promptedSessions.push(args.sessionID);
+            promptAttempts += 1;
+            if (promptAttempts === 1) {
+              throw new Error(
+                'Type validation failed: Value: {"error":{"type":"api_error","message":"Service temporarily unavailable"}}'
+              );
+            }
+            return {
+              data: {
+                id: "msg_retry_abort_fail",
+                info: {
+                  structured: {
+                    event: "NEXT",
+                    content: "recovered despite abort failure"
+                  }
+                },
+                parts: [{ type: "step-start" }, { type: "step-finish" }]
+              }
+            };
+          },
+          async abort() {
+            throw new Error("abort failed");
+          }
+        }
+      }
+    })
+  });
+
+  assert.deepStrictEqual(promptedSessions, ["ses_retry_abort_fail", "ses_retry_abort_fail"]);
+  assert.strictEqual(result.sessionId, "ses_retry_abort_fail");
+  assert.strictEqual(result.messageId, "msg_retry_abort_fail");
+  assert.deepStrictEqual(JSON.parse(result.stdout), {
+    event: "NEXT",
+    content: "recovered despite abort failure"
+  });
+});
+
 test("executeOpencodeModelRole accepts JSON string structured output", async () => {
   const result = await executeOpencodeModelRole({
     roleId: "role-string-structured",

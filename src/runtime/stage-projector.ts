@@ -4,10 +4,11 @@ export function projectStages(args: {
   auditTrail: AuditRecord[];
 }): StageSnapshot[] {
   const stages: StageSnapshot[] = [];
+  const terminalIndex = args.auditTrail.length - 1;
   for (let index = 0; index < args.auditTrail.length; index += 1) {
     const record = args.auditTrail[index];
     const phase: StageSnapshot["phase"] =
-      record.status === "failed" ? "FAILED" : record.nextRoleId ? "RUNNING" : "TERMINAL";
+      record.status === "failed" ? "FAILED" : index === terminalIndex ? "TERMINAL" : "RUNNING";
 
     stages.push({
       stageId: `stage.${index + 1}`,

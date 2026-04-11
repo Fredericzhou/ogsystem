@@ -1288,3 +1288,90 @@ minimalist[Role:debate-minimalist] -->|MINIMALIST_DONE| output
   assert.strictEqual(resumed.finalRoleId, "debate-minimalist");
   assert.strictEqual(await pathExists(lockPath), false);
 });
+
+test("adapter resume setup failure releases lock acquired during initialization", async () => {
+  const systemSource = `flowchart TD
+%% system.id=resume.lock-setup-failure.demo
+%% system.version=1.0.0
+%% law.global=law.console.base
+%% entry.role=debate-minimalist
+%% model.bind.debate-minimalist=balanced-gpt52
+
+input -->|GO| minimalist[Role:debate-minimalist]
+minimalist[Role:debate-minimalist] -->|MINIMALIST_DONE| output
+`;
+
+  const fixture = await prepareRuntimeFingerprintResumeFixture({
+    tempPrefix: "ogsystem-resume-lock-setup-failure-",
+    runName: "lock-setup-failure-run",
+    systemSource,
+    prompt: "resume lock setup failure"
+  });
+
+  const blockedSharedPath = path.resolve(fixture.tempRoot, "shared-blocked");
+  await writeFile(blockedSharedPath, "not-a-directory\n", "utf8");
+  await writeFile(
+    fixture.runtimePath,
+    JSON.stringify(
+      {
+        executor: "opencode",
+        roleRepo: "./og-roles",
+        modelRepo: "./og-models",
+        runsDir: "ogsystem-history",
+        sharedDir: "shared-blocked"
+      },
+      null,
+      2
+    ),
+    "utf8"
+  );
+
+  await assert.rejects(
+    () =>
+      runSystemWithAdapter({
+        systemPath: fixture.systemPath,
+        runtimeConfigPath: fixture.runtimePath,
+        lawsPath: fixture.lawsPath,
+        workdir: fixture.tempRoot,
+        resumeRunDir: "ogsystem-history/lock-setup-failure-run",
+        prompt: "resume lock setup failure",
+        dryRun: true
+      }),
+    (error) => {
+      assert.ok(error && typeof error === "object");
+      assert.equal(error.envelope?.errorCode, "RUNTIME_SETUP_FAILED");
+      return true;
+    }
+  );
+
+  const lockPath = path.resolve(fixture.runDir, RESUME_RUN_LOCK_FILE);
+  assert.strictEqual(await pathExists(lockPath), false);
+
+  await writeFile(
+    fixture.runtimePath,
+    JSON.stringify(
+      {
+        executor: "opencode",
+        roleRepo: "./og-roles",
+        modelRepo: "./og-models",
+        runsDir: "ogsystem-history"
+      },
+      null,
+      2
+    ),
+    "utf8"
+  );
+
+  const resumed = await runSystemWithAdapter({
+    systemPath: fixture.systemPath,
+    runtimeConfigPath: fixture.runtimePath,
+    lawsPath: fixture.lawsPath,
+    workdir: fixture.tempRoot,
+    resumeRunDir: "ogsystem-history/lock-setup-failure-run",
+    prompt: "resume lock setup failure",
+    dryRun: true
+  });
+
+  assert.strictEqual(resumed.status, "done");
+  assert.strictEqual(await pathExists(lockPath), false);
+});

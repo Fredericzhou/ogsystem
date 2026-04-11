@@ -790,10 +790,14 @@ export async function executeOpencodeModelRole(
             }
 
             if (sessionId) {
-              await runClient.client.session.abort({
-                sessionID: sessionId,
-                directory: args.workdir
-              });
+              try {
+                await runClient.client.session.abort({
+                  sessionID: sessionId,
+                  directory: args.workdir
+                });
+              } catch {
+                // Retry should still proceed when best-effort abort fails.
+              }
             }
             await sleep(RETRY_BASE_DELAY_MS * attempt);
           }

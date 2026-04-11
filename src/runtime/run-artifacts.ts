@@ -517,99 +517,109 @@ export async function initializeRunContext(args: {
   const releaseResumeLock = args.resumeRunDir
     ? await acquireResumeRunLock(runDir)
     : undefined;
+  try {
+    await mkdir(auditDir, { recursive: true });
+    await mkdir(checkpointsDir, { recursive: true });
+    await mkdir(rolesRootDir, { recursive: true });
+    await mkdir(sharedDir, { recursive: true });
 
-  await mkdir(auditDir, { recursive: true });
-  await mkdir(checkpointsDir, { recursive: true });
-  await mkdir(rolesRootDir, { recursive: true });
-  await mkdir(sharedDir, { recursive: true });
-
-  const sourceSystem = await readFile(args.systemPath, "utf8");
-  await writeIfMissing(resolve(runDir, "request.md"), `${args.prompt}\n`);
-  await writeIfMissing(resolve(runDir, "system.mmd"), sourceSystem);
-  await writeIfMissing(
-    resolve(runDir, "run.md"),
-    [
-      `# Run ${runId}`,
-      "",
-      `- systemId: ${args.system.systemId}`,
-      `- systemVersion: ${args.system.systemVersion}`,
-      `- entryRoleId: ${args.system.entryRoleId}`,
-      `- sharedDir: ${sharedDir}`
-    ].join("\n")
-  );
-  await writeIfMissing(resolve(auditDir, "summary.md"), "# Audit Summary\n");
-  await writeIfMissing(resolve(auditDir, "transitions.md"), "# Transitions\n");
-  await writeIfMissing(
-    resolve(sharedDir, "README.md"),
-    [
-      "# Shared Workspace",
-      "",
-      "Run-shared writable workspace.",
-      "Use this for files intentionally visible to multiple roles in the same run."
-    ].join("\n")
-  );
-
-  for (const roleId of args.system.roleIds) {
-    const roleDir = resolve(rolesRootDir, roleId);
-    const privateDir = resolve(roleDir, args.runtimeConfig.workspace.privateDirName);
-    const executionsDir = resolve(roleDir, "executions");
-    const latestSessionPath = resolve(roleDir, "latest-session.json");
-    await mkdir(privateDir, { recursive: true });
-    await mkdir(executionsDir, { recursive: true });
+    const sourceSystem = await readFile(args.systemPath, "utf8");
+    await writeIfMissing(resolve(runDir, "request.md"), `${args.prompt}\n`);
+    await writeIfMissing(resolve(runDir, "system.mmd"), sourceSystem);
     await writeIfMissing(
-      resolve(privateDir, "README.md"),
+      resolve(runDir, "run.md"),
       [
-        "# Private Workspace",
+        `# Run ${runId}`,
         "",
-        "Role-private writable workspace.",
-        "Use this for scratch files, notes, and non-shared intermediate artifacts."
+        `- systemId: ${args.system.systemId}`,
+        `- systemVersion: ${args.system.systemVersion}`,
+        `- entryRoleId: ${args.system.entryRoleId}`,
+        `- sharedDir: ${sharedDir}`
       ].join("\n")
     );
-    roleDirsById.set(roleId, { roleDir, privateDir, executionsDir, latestSessionPath });
-    roleExecutionCounts.set(roleId, await restoreRoleExecutionCount(executionsDir));
-  }
+    await writeIfMissing(resolve(auditDir, "summary.md"), "# Audit Summary\n");
+    await writeIfMissing(resolve(auditDir, "transitions.md"), "# Transitions\n");
+    await writeIfMissing(
+      resolve(sharedDir, "README.md"),
+      [
+        "# Shared Workspace",
+        "",
+        "Run-shared writable workspace.",
+        "Use this for files intentionally visible to multiple roles in the same run."
+      ].join("\n")
+    );
 
-  const sessionsPath = resolve(runDir, "sessions.json");
-  let sessionRecordsByKey = new Map<string, OpencodeSessionRecord>();
-  if (await pathExists(sessionsPath)) {
-    const existing = await readJsonFile(sessionsPath);
-    if (Array.isArray(existing)) {
-      sessionRecordsByKey = new Map(
-        existing
-          .filter(
-            (item): item is OpencodeSessionRecord =>
-              typeof item === "object" &&
-              item !== null &&
-              !Array.isArray(item) &&
-              typeof (item as OpencodeSessionRecord).sessionKey === "string" &&
-              typeof (item as OpencodeSessionRecord).roleId === "string" &&
-              typeof (item as OpencodeSessionRecord).sessionId === "string"
-          )
-          .map((item) => [item.sessionKey, item])
+    for (const roleId of args.system.roleIds) {
+      const roleDir = resolve(rolesRootDir, roleId);
+      const privateDir = resolve(roleDir, args.runtimeConfig.workspace.privateDirName);
+      const executionsDir = resolve(roleDir, "executions");
+      const latestSessionPath = resolve(roleDir, "latest-session.json");
+      await mkdir(privateDir, { recursive: true });
+      await mkdir(executionsDir, { recursive: true });
+      await writeIfMissing(
+        resolve(privateDir, "README.md"),
+        [
+          "# Private Workspace",
+          "",
+          "Role-private writable workspace.",
+          "Use this for scratch files, notes, and non-shared intermediate artifacts."
+        ].join("\n")
       );
+      roleDirsById.set(roleId, { roleDir, privateDir, executionsDir, latestSessionPath });
+      roleExecutionCounts.set(roleId, await restoreRoleExecutionCount(executionsDir));
     }
+
+    const sessionsPath = resolve(runDir, "sessions.json");
+    let sessionRecordsByKey = new Map<string, OpencodeSessionRecord>();
+    if (await pathExists(sessionsPath)) {
+      const existing = await readJsonFile(sessionsPath);
+      if (Array.isArray(existing)) {
+        sessionRecordsByKey = new Map(
+          existing
+            .filter(
+              (item): item is OpencodeSessionRecord =>
+                typeof item === "object" &&
+                item !== null &&
+                !Array.isArray(item) &&
+                typeof (item as OpencodeSessionRecord).sessionKey === "string" &&
+                typeof (item as OpencodeSessionRecord).roleId === "string" &&
+                typeof (item as OpencodeSessionRecord).sessionId === "string"
+            )
+            .map((item) => [item.sessionKey, item])
+        );
+      }
+    }
+
+    await replayBufferedAppendRecovery(runDir);
+    getBufferedAppendState(runDir);
+
+    return {
+      runId,
+      runDir,
+      auditDir,
+      eventsPath: resolve(runDir, "events.ndjson"),
+      statePath: resolve(runDir, "state.json"),
+      metricsPath: resolve(runDir, "metrics.json"),
+      opencodeServerPath: resolve(runDir, "opencode-server.json"),
+      sessionsPath,
+      checkpointsDir,
+      roleDirsById,
+      roleExecutionCounts,
+      sessionRecordsByKey,
+      nextCheckpointSequence: await restoreCheckpointSequence(checkpointsDir),
+      sharedDir,
+      releaseResumeLock
+    };
+  } catch (error) {
+    if (releaseResumeLock) {
+      try {
+        await releaseResumeLock();
+      } catch {
+        // Prefer surfacing the initialization failure; lock-release failure should not mask it.
+      }
+    }
+    throw error;
   }
-
-  await replayBufferedAppendRecovery(runDir);
-  getBufferedAppendState(runDir);
-
-  return {
-    runId,
-    runDir,
-    auditDir,
-    eventsPath: resolve(runDir, "events.ndjson"),
-    statePath: resolve(runDir, "state.json"),
-    metricsPath: resolve(runDir, "metrics.json"),
-    opencodeServerPath: resolve(runDir, "opencode-server.json"),
-    sessionsPath,
-    checkpointsDir,
-    roleDirsById,
-    roleExecutionCounts,
-    sessionRecordsByKey,
-    nextCheckpointSequence: await restoreCheckpointSequence(checkpointsDir),
-    sharedDir,
-    releaseResumeLock
-  };
 }
 
 export async function loadResumeGraphState(args: {
