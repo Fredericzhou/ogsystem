@@ -228,7 +228,7 @@ Expected main touch points:
 Potential secondary touch points:
 
 - `src/runtime/graph-runtime-state.ts`
-- `docs/runtime-risk-assessment-2026-04-10.md`
+- `docs/archive/delivery/runtime-risk-assessment-2026-04-10.md`
 
 ## 7. Test Plan
 
@@ -278,4 +278,4 @@ This plan is complete only when all conditions hold:
 - no duplicate execution occurs in the pre-checkpoint crash window
 - scheduler recursion budget is explicitly justified and tested
 - all new regressions are automated
-- `docs/runtime-risk-assessment-2026-04-10.md` is updated to reflect the remediation status
+- `docs/archive/delivery/runtime-risk-assessment-2026-04-10.md` is updated to reflect the remediation status

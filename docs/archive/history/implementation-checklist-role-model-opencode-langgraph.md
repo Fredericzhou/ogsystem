@@ -6,7 +6,7 @@ Status: historical / partially landed
 Historical note:
 
 - This checklist mixes landed work with older planning assumptions.
-- Use `docs/single-graph-runtime-execution-checklist.md` for the current cleanup and migration sequence.
+- Use `docs/archive/delivery/single-graph-runtime-execution-checklist.md` for the current cleanup and migration sequence.
 
 ## Goal
 

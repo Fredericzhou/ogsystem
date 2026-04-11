@@ -599,6 +599,57 @@ test("adapter applies retention cleanup from runtime config when execution direc
   assert.strictEqual(metricsJson.executionDirCount, 5);
 });
 
+test("adapter skips auto retention cleanup when retention is disabled", async () => {
+  const repoRoot = process.cwd();
+  const tempRoot = await mkdtemp(path.join(os.tmpdir(), "ogsystem-retention-disabled-"));
+
+  await mkdir(path.resolve(tempRoot, ".ogsystem"), { recursive: true });
+  await symlink(path.resolve(repoRoot, "og-roles"), path.resolve(tempRoot, "og-roles"), "dir");
+  await symlink(path.resolve(repoRoot, "og-models"), path.resolve(tempRoot, "og-models"), "dir");
+  await writeFile(
+    path.resolve(tempRoot, ".ogsystem", "runtime.json"),
+    JSON.stringify(
+      {
+        executor: "opencode",
+        roleRepo: "./og-roles",
+        modelRepo: "./og-models",
+        runsDir: "ogsystem-history",
+        retention: {
+          enabled: false,
+          executionDirThreshold: 1,
+          keepLatest: 1
+        }
+      },
+      null,
+      2
+    ),
+    "utf8"
+  );
+  await symlink(
+    path.resolve(repoRoot, ".ogsystem", "user-profile.json"),
+    path.resolve(tempRoot, ".ogsystem", "user-profile.json")
+  );
+
+  await runSystemWithAdapter({
+    systemPath: path.resolve(repoRoot, "examples", "langgraph-debate-current", "system.mmd"),
+    lawsPath: path.resolve(repoRoot, "examples", "langgraph-debate-current", "laws.json"),
+    userProfilePath: path.resolve(repoRoot, "examples", "langgraph-debate-current", "user-profile.json"),
+    prompt: "retention disabled should keep full history",
+    workdir: tempRoot,
+    dryRun: true
+  });
+
+  const runId = (await readdir(path.resolve(tempRoot, "ogsystem-history")))[0];
+  const runDir = path.resolve(tempRoot, "ogsystem-history", runId);
+  const moderatorExecutions = await readdir(
+    path.resolve(runDir, "roles", "debate-moderator", "executions")
+  );
+  assert.strictEqual(moderatorExecutions.length, 2);
+
+  const metricsJson = JSON.parse(await readFile(path.resolve(runDir, "metrics.json"), "utf8"));
+  assert.ok(metricsJson.executionDirCount >= 9);
+});
+
 test("adapter persists metrics fields on failed graph runs", async () => {
   const repoRoot = process.cwd();
   const tempRoot = await mkdtemp(path.join(os.tmpdir(), "ogsystem-metrics-failure-"));

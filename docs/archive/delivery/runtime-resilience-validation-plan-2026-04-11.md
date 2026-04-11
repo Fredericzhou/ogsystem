@@ -40,7 +40,7 @@ Artifacts added or updated:
 - `tests/opencode-executor.test.mjs`
 - `tests/graph-runtime.integration.test.mjs`
 - `tests/benchmarks/runtime-replay-benchmark.mjs`
-- `docs/runtime-replay-benchmark-2026-04-11.md`
+- `docs/archive/delivery/runtime-replay-benchmark-2026-04-11.md`
 - `docs/usage-manual.md`
 
 Observed replay baseline on this machine:

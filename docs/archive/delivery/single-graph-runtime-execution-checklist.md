@@ -565,9 +565,9 @@ Verification:
 - [x] Separate active docs from historical design notes
 - [x] Mark outdated plans as historical, archived, or superseded instead of leaving them as live guidance
 - [x] Archive or clearly mark as historical:
-  - `docs/semantic-kernel-v1.md`
-  - `docs/opencode-single-serve-multi-session-plan.md`
-- [x] Decide whether `docs/xlgraph-subset-compatibility.md` remains an active compatibility contract or should be marked historical
+  - `docs/archive/history/semantic-kernel-v1.md`
+  - `docs/archive/history/opencode-single-serve-multi-session-plan.md`
+- [x] Decide whether `docs/archive/history/xlgraph-subset-compatibility.md` remains an active compatibility contract or should be marked historical
 - [x] Verify no remaining docs imply a hand-written FSM is the target architecture
 - [x] Explicitly distinguish:
   - OGSystem graph semantics
@@ -586,7 +586,7 @@ Verification:
 - [x] `rg -n "minimal runtime|engine=langgraph|two layers|current LangGraph runtime path" README.md docs`
 - [x] `rg -n "xlgraph" README.md docs`
 - [x] historical docs are labeled consistently
-- [x] if `docs/xlgraph-subset-compatibility.md` is historical, README no longer presents it as an active runtime doc
+- [x] if `docs/archive/history/xlgraph-subset-compatibility.md` is historical, README no longer presents it as an active runtime doc
 
 ## 6. P2 Later Improvements
 
