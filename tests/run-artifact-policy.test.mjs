@@ -26,6 +26,7 @@ test("artifact policy documents runtime-consumed and operator-facing files", () 
     )
   );
   assert.ok(policy.some((entry) => entry.path === "events.ndjson" && !entry.resumeConsumed));
+  assert.ok(policy.some((entry) => entry.path === "repro.sh" && !entry.resumeConsumed));
   assert.ok(
     policy.some(
       (entry) =>
@@ -71,6 +72,8 @@ test("model runtime artifacts match the documented contract", async () => {
   await readFile(path.resolve(runDir, "state.json"), "utf8");
   await readFile(path.resolve(runDir, "plan-fingerprint.json"), "utf8");
   await readFile(path.resolve(runDir, "events.ndjson"), "utf8");
+  const reproScript = await readFile(path.resolve(runDir, "repro.sh"), "utf8");
+  assert.match(reproScript, /--resume-run "\$RUN_DIR"/);
   await readFile(path.resolve(runDir, "audit", "summary.md"), "utf8");
   await readFile(path.resolve(runDir, "audit", "transitions.md"), "utf8");
   await readFile(path.resolve(runDir, "roles", "debate-minimalist", "role.md"), "utf8");

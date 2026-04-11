@@ -44,3 +44,12 @@ test("doctor reports missing resume prerequisites in run dir inspection", async 
   assert.ok(report.errors.some((item) => item.includes("state.json.graphState")));
   assert.ok(report.warnings.some((item) => item.includes("sessions.json")));
 });
+
+test("doctor skips online check when system context is absent", async () => {
+  const report = await runDoctor({
+    onlineCheck: true,
+    workdir: process.cwd()
+  });
+
+  assert.ok(report.warnings.some((item) => item.includes("online check skipped")));
+});

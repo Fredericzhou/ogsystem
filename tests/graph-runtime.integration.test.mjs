@@ -117,6 +117,7 @@ test("adapter runs graph debate example with parallel branches, join, and bounde
   const runDir = path.resolve(runsDir, runs[0]);
   const stateJson = JSON.parse(await readFile(path.resolve(runDir, "state.json"), "utf8"));
   const metricsJson = JSON.parse(await readFile(path.resolve(runDir, "metrics.json"), "utf8"));
+  const summaryMarkdown = await readFile(path.resolve(runDir, "audit", "summary.md"), "utf8");
   assert.strictEqual(stateJson.finalRoleId, "debate-summary");
   assert.ok(Array.isArray(stateJson.completedBranches));
   assert.deepStrictEqual(stateJson.loopIterations["debate-moderator"], 2);
@@ -135,6 +136,8 @@ test("adapter runs graph debate example with parallel branches, join, and bounde
   assert.ok(typeof metricsJson.stateWriteMs === "number");
   assert.ok(typeof metricsJson.executionDirCount === "number");
   assert.ok(metricsJson.executionDirCount >= 1);
+  assert.match(summaryMarkdown, /```mermaid/);
+  assert.match(summaryMarkdown, /\ngantt\n/);
 
   const eventsText = await readFile(path.resolve(runDir, "events.ndjson"), "utf8");
   assert.match(eventsText, /"branchId":"debate-minimalist@1#\d+"/);

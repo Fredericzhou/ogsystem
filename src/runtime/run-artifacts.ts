@@ -1,6 +1,7 @@
 import {
   access,
   appendFile,
+  chmod,
   mkdir,
   open,
   readFile,
@@ -95,6 +96,53 @@ function runCodeForPath(systemId: string): string {
 
 function buildRunDirectoryName(createdAt: Date, systemId: string): string {
   return `${timestampForPath(createdAt)}_${runCodeForPath(systemId)}`;
+}
+
+function shellEscape(value: string): string {
+  return `'${value.replace(/'/g, `'\\''`)}'`;
+}
+
+function buildRunReproScript(args: {
+  workdir: string;
+}): string {
+  const workdir = shellEscape(args.workdir);
+  return [
+    "#!/usr/bin/env bash",
+    "set -euo pipefail",
+    "",
+    "RUN_DIR=\"$(cd -- \"$(dirname -- \"$0\")\" && pwd)\"",
+    `WORKDIR=${workdir}`,
+    "PROMPT_FILE=\"$RUN_DIR/request.md\"",
+    "SYSTEM_FILE=\"$RUN_DIR/system.mmd\"",
+    "RUNTIME_FILE=\"$WORKDIR/.ogsystem/runtime.json\"",
+    "LAWS_FILE=\"$WORKDIR/.ogsystem/laws.json\"",
+    "USER_PROFILE_FILE=\"$WORKDIR/.ogsystem/user-profile.json\"",
+    "",
+    "if [[ ! -f \"$PROMPT_FILE\" ]]; then",
+    "  echo \"missing prompt snapshot: $PROMPT_FILE\" >&2",
+    "  exit 1",
+    "fi",
+    "",
+    "ARGS=(",
+    "  --system \"$SYSTEM_FILE\"",
+    "  --prompt \"$(cat \"$PROMPT_FILE\")\"",
+    "  --workdir \"$WORKDIR\"",
+    "  --resume-run \"$RUN_DIR\"",
+    ")",
+    "",
+    "if [[ -f \"$RUNTIME_FILE\" ]]; then",
+    "  ARGS+=(--runtime \"$RUNTIME_FILE\")",
+    "fi",
+    "if [[ -f \"$LAWS_FILE\" ]]; then",
+    "  ARGS+=(--laws \"$LAWS_FILE\")",
+    "fi",
+    "if [[ -f \"$USER_PROFILE_FILE\" ]]; then",
+    "  ARGS+=(--user-profile \"$USER_PROFILE_FILE\")",
+    "fi",
+    "",
+    "npm run run:adapter -- \"${ARGS[@]}\"",
+    ""
+  ].join("\n");
 }
 
 export async function pathExists(path: string): Promise<boolean> {
@@ -571,6 +619,14 @@ export async function initializeRunContext(args: {
         `- sharedDir: ${sharedDir}`
       ].join("\n")
     );
+    const reproPath = resolve(runDir, "repro.sh");
+    await writeIfMissing(
+      reproPath,
+      buildRunReproScript({
+        workdir: args.workdir
+      })
+    );
+    await chmod(reproPath, 0o755);
     await writeIfMissing(resolve(auditDir, "summary.md"), "# Audit Summary\n");
     await writeIfMissing(resolve(auditDir, "transitions.md"), "# Transitions\n");
     await writeIfMissing(

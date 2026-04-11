@@ -50,6 +50,12 @@ const RUN_ARTIFACT_POLICY: RunArtifactPolicyEntry[] = [
     description: "Original user prompt snapshot."
   },
   {
+    path: "repro.sh",
+    retention: "operator_latest",
+    resumeConsumed: false,
+    description: "Run-local reproducible resume script with redacted prompt source from request.md."
+  },
+  {
     path: "system.mmd",
     retention: "operator_latest",
     resumeConsumed: false,

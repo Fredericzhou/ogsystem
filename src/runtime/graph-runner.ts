@@ -69,6 +69,7 @@ const SCHEDULER_NODE_ID = "__scheduler__";
 const DEFAULT_TRANSITION_BUDGET = 100;
 const GRAPH_RECURSION_MARGIN = 20;
 const RECENT_AUDIT_WINDOW = 5;
+const GANTT_RENDER_LIMIT = 200;
 const TEST_CRASH_AFTER_EXECUTION_OUTCOME_ENV = "OGSYSTEM_TEST_CRASH_AFTER_EXECUTION_OUTCOME";
 
 type RunnerInput = {
@@ -512,6 +513,59 @@ async function writeRunSummary(args: {
       })
     );
   }
+}
+
+function toGanttLabel(value: string): string {
+  return value.replace(/[^a-zA-Z0-9._/@-]+/g, "_");
+}
+
+function buildGanttSection(auditTrail: AuditRecord[]): string[] {
+  if (auditTrail.length === 0) {
+    return [];
+  }
+  if (auditTrail.length > GANTT_RENDER_LIMIT) {
+    return [
+      "",
+      "## Execution Timeline",
+      "",
+      `- skipped: transition count (${auditTrail.length}) exceeds render limit (${GANTT_RENDER_LIMIT}).`
+    ];
+  }
+
+  const lines = [
+    "",
+    "## Execution Timeline",
+    "",
+    "```mermaid",
+    "gantt",
+    "  title Logical Transition Timeline",
+    "  dateFormat  YYYY-MM-DDTHH:mm:ss.SSSZ",
+    "  axisFormat  %H:%M:%S",
+    "  section transitions"
+  ];
+
+  let stepIndex = 0;
+  for (const audit of auditTrail) {
+    const startedAt = new Date(audit.at);
+    if (Number.isNaN(startedAt.getTime())) {
+      continue;
+    }
+    const endedAt = new Date(startedAt.getTime() + Math.max(1, audit.durationMs));
+    const eventLabel = audit.selectedEvent ? `/${toGanttLabel(audit.selectedEvent)}` : "";
+    const taskLabel = `${toGanttLabel(audit.roleId)}${eventLabel}(${audit.status})`;
+    lines.push(
+      `  ${taskLabel} :t${stepIndex}, ${startedAt.toISOString()}, ${endedAt.toISOString()}`
+    );
+    stepIndex += 1;
+  }
+
+  if (stepIndex === 0) {
+    return [];
+  }
+  lines.push("```");
+  lines.push("");
+  lines.push("- note: timeline is for troubleshooting sequence visibility, not backend compute parallelism.");
+  return lines;
 }
 
 async function cleanupExecutionHistory(args: {
@@ -959,7 +1013,8 @@ export async function runSystemWithGraphRunner(args: RunnerInput): Promise<Adapt
       `- repairStats.appliedCount: ${summary.repairStats.appliedCount}`,
       `- opencodeServerUrl: ${serverMetadata.url ?? ""}`,
       `- opencodeServerPid: ${serverMetadata.pid ?? ""}`,
-      `- opencodeServerStartedAt: ${serverMetadata.startedAt ?? ""}`
+      `- opencodeServerStartedAt: ${serverMetadata.startedAt ?? ""}`,
+      ...buildGanttSection(auditTrail)
     ].join("\n")
   });
 

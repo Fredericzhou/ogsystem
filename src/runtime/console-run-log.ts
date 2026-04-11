@@ -3,11 +3,65 @@ type LoggerLine = {
   fields: Record<string, string | number | boolean | undefined>;
 };
 
-function formatLine(args: LoggerLine): string {
-  const pairs = Object.entries(args.fields)
+type ColorPalette = {
+  tagBlue: string;
+  ok: string;
+  failed: string;
+  noop: string;
+  reset: string;
+};
+
+const NO_COLOR: ColorPalette = {
+  tagBlue: "",
+  ok: "",
+  failed: "",
+  noop: "",
+  reset: ""
+};
+
+const ANSI_COLOR: ColorPalette = {
+  tagBlue: "\u001b[34m",
+  ok: "\u001b[32m",
+  failed: "\u001b[31m",
+  noop: "\u001b[90m",
+  reset: "\u001b[0m"
+};
+
+function shouldUseAnsiColor(): boolean {
+  return Boolean(process.stderr.isTTY) && !process.env.NO_COLOR;
+}
+
+function colorizeStatus(
+  status: string | number | boolean | undefined,
+  palette: ColorPalette
+): string | number | boolean | undefined {
+  if (status === "ok") {
+    return `${palette.ok}${status}${palette.reset}`;
+  }
+  if (status === "failed") {
+    return `${palette.failed}${status}${palette.reset}`;
+  }
+  if (status === "noop") {
+    return `${palette.noop}${status}${palette.reset}`;
+  }
+  return status;
+}
+
+function formatLine(args: LoggerLine, palette: ColorPalette): string {
+  const normalizedFields = Object.fromEntries(
+    Object.entries(args.fields).map(([key, value]) => [
+      key,
+      key === "status" ? colorizeStatus(value, palette) : value
+    ])
+  );
+  const tag =
+    args.tag === "transition"
+      ? `${palette.tagBlue}[${args.tag}]${palette.reset}`
+      : `[${args.tag}]`;
+  const normalizedPairs = Object.entries(normalizedFields)
     .filter(([, value]) => value !== undefined && value !== "")
     .map(([key, value]) => `${key}=${String(value)}`);
-  return [`[${args.tag}]`, ...pairs].join(" ");
+  return [tag, ...normalizedPairs].join(" ");
 }
 
 export type RunConsoleLogger = {
@@ -66,8 +120,9 @@ export function createRunConsoleLogger(enabled: boolean): RunConsoleLogger {
     return noopLogger;
   }
 
+  const palette = shouldUseAnsiColor() ? ANSI_COLOR : NO_COLOR;
   const print = (line: LoggerLine) => {
-    console.error(formatLine(line));
+    console.error(formatLine(line, palette));
   };
 
   return {

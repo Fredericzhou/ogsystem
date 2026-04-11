@@ -294,7 +294,7 @@ When a run starts, `ogsystem-history/<run-id>/` should persist:
 
 - run-id format: `yyyy-MM-dd_HH24-mm-ss_xxxx` (`xxxx` = 4-char system code)
 
-- run-level files: `run.md`, `request.md`, `system.mmd`, `state.json`, `metrics.json`, `events.ndjson`, `plan-fingerprint.json`
+- run-level files: `run.md`, `request.md`, `system.mmd`, `repro.sh`, `state.json`, `metrics.json`, `events.ndjson`, `plan-fingerprint.json`
 - run-level OpenCode metadata: `opencode-server.json` for `model.bind` runs
 - run-level OpenCode session index: `sessions.json`
 - run-level checkpoint WAL: `checkpoints/<sequence>-<executionId>.json`
@@ -326,6 +326,7 @@ Audit/operator artifacts:
 `state.json` is the authoritative runtime state snapshot.
 `events.ndjson` is append-only audit history.
 `latest-session.json` is an operator-facing latest snapshot only.
+`repro.sh` is a run-local resume repro script generated for troubleshooting handoff.
 Resume reloads `sessions.json`, not `latest-session.json` or per-execution `session.json`.
 `inbox.md` is a projection of normalized runtime input, not a free-form summary.
 `ogsystem-history/` is generated runtime state and should be ignored by git.
@@ -380,6 +381,7 @@ Role output repair policy:
 - unknown event is auto-normalized only when the role has exactly one allowed outgoing event
 - schema mismatch fails fast and remains visible in the audit trail
 - repair statistics are recorded in `audit/summary.md` and the adapter result JSON
+- `audit/summary.md` includes a Mermaid gantt timeline when transition count is within render threshold
 
 For graph-based runs, `state.json` also persists:
 
@@ -406,7 +408,7 @@ Optional history cleanup:
 OGSystem classifies persisted run artifacts into three classes:
 
 - `runtime_consumed`: runtime-critical files read by resume and recovery logic (`state.json`, `sessions.json`, `plan-fingerprint.json`, `checkpoints/...`, `execution-outcome.json`, `.resume.lock`)
-- `operator_latest`: latest operator-facing snapshots (`run.md`, `request.md`, `audit/*.md`, `roles/<roleId>/*.md|*.json`, `events.ndjson`)
+- `operator_latest`: latest operator-facing snapshots (`run.md`, `request.md`, `repro.sh`, `audit/*.md`, `roles/<roleId>/*.md|*.json`, `events.ndjson`)
 - `history_only`: immutable per-execution snapshots (`roles/<roleId>/executions/<executionId>/...`)
 
 This contract is implemented by:
@@ -451,7 +453,21 @@ npm run run:adapter -- \
 
 - `--log-run` is off by default
 - writes one-line run/role/transition progress logs to `stderr`
+- when `stderr` is TTY and `NO_COLOR` is not set, status and transition logs use ANSI colors for faster scanning
 - keeps the final adapter result JSON on `stdout`
+
+Graph preview link (optional):
+
+```bash
+npm run run:adapter -- \
+  --system examples/target-model-binding-system.mmd \
+  --prompt "demo" \
+  --dry-run \
+  --print-graph-link
+```
+
+- prints Mermaid Live URL to `stderr`
+- use for quick visual validation without changing runtime behavior
 
 Run-directory inspection (resume prerequisites):
 
@@ -459,6 +475,17 @@ Run-directory inspection (resume prerequisites):
 npm run run:doctor -- \
   --run-dir ogsystem-history/<run-id>
 ```
+
+Optional online connectivity precheck:
+
+```bash
+npm run run:doctor -- \
+  --system examples/target-model-binding-system.mmd \
+  --online-check
+```
+
+- `--online-check` is opt-in and may consume tokens
+- probes model connectivity through OpenCode before long runs
 
 `run:doctor` output separation:
 

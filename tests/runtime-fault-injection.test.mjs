@@ -380,6 +380,7 @@ test("resume rejects a concurrently held live lock on the same run directory", a
   assert.strictEqual(competingResume.code, 1);
   assert.match(competingResume.stderr, /errorCode=RESUME_RUN_LOCK_HELD/);
   assert.match(competingResume.stderr, /stage=resume/);
+  assert.match(competingResume.stderr, /\[hint\] To resume this run, use:/);
 
   const heldResume = await heldResumePromise;
   assert.strictEqual(heldResume.code, 0);

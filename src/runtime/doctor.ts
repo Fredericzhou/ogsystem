@@ -8,6 +8,7 @@ import { validateLawsConfig, validateRuntimeConfig, validateUserProfileConfig } 
 import { readJsonFile } from "./json-file.js";
 import { listSupportedJoinModes, listSupportedRoutingModes } from "./graph-mode-registry.js";
 import { loadModelPackage } from "./model-repo.js";
+import { executeOpencodeModelRole, startOpencodeRunClient } from "./opencode-executor.js";
 import { loadSystemFromMermaid } from "./parse-mermaid.js";
 import { loadRolePackage } from "./role-repo.js";
 import { listRunArtifactPolicy } from "./run-artifact-policy.js";
@@ -17,6 +18,7 @@ import {
   formatRuntimeErrorEnvelope,
   normalizeRuntimeError
 } from "./runtime-errors.js";
+import type { RuntimeConfig, SystemDefinition } from "./types.js";
 
 type CheckResult = {
   command: string;
@@ -57,6 +59,7 @@ export function usage(): string {
     "  --user-profile <file>  User profile JSON (default: .ogsystem/user-profile.json)",
     "  --system <file>        Mermaid system to validate with the active config/law catalog",
     "  --run-dir <dir>        Inspect an existing run directory for resume prerequisites",
+    "  --online-check         Optional online model connectivity probe (costs tokens)",
     "  --workdir <path>       Working directory root (default: cwd)",
     "  --help                 Show help"
   ].join("\n");
@@ -82,6 +85,7 @@ function parseDoctorArgs() {
         "user-profile": { type: "string" },
         system: { type: "string" },
         "run-dir": { type: "string" },
+        "online-check": { type: "boolean" },
         workdir: { type: "string" },
         help: { type: "boolean", short: "h" }
       },
@@ -293,6 +297,63 @@ async function inspectRunDir(report: DoctorReport, runDir: string): Promise<void
   addNote(report, `artifact policy entries: ${listRunArtifactPolicy().length}`);
 }
 
+async function runOnlineModelConnectivityCheck(args: {
+  report: DoctorReport;
+  workdir: string;
+  runtimeConfig: RuntimeConfig;
+  system: SystemDefinition;
+}): Promise<void> {
+  const modelIds = Array.from(new Set(Object.values(args.system.modelBinding)));
+  if (modelIds.length === 0) {
+    addWarning(args.report, "online check skipped: system does not bind any model");
+    return;
+  }
+
+  const runClient = await startOpencodeRunClient({
+    timeoutMs: 20000,
+    env: {
+      OPENCODE_CONFIG_CONTENT: JSON.stringify({})
+    },
+    directory: args.workdir
+  });
+
+  try {
+    const modelRootDir = resolve(args.workdir, args.runtimeConfig.modelRepo);
+    for (const modelId of modelIds) {
+      try {
+        const modelPackage = await loadModelPackage({
+          modelId,
+          modelRootDir
+        });
+        await executeOpencodeModelRole({
+          roleId: `doctor-online-${modelId}`,
+          prompt: 'Return exactly this JSON: {"ok": true}',
+          schema: {
+            type: "object",
+            properties: {
+              ok: {
+                type: "boolean"
+              }
+            },
+            required: ["ok"],
+            additionalProperties: false
+          },
+          modelPackage,
+          workdir: args.workdir,
+          timeoutMs: 20000,
+          maxOutputBytes: 4096,
+          runClient
+        });
+        addNote(args.report, `online connectivity ok: ${modelId}`);
+      } catch (error) {
+        addError(args.report, `online connectivity failed: ${modelId} (${String(error)})`);
+      }
+    }
+  } finally {
+    runClient.close();
+  }
+}
+
 export async function runDoctor(args: {
   requiredCsv?: string;
   runtimeConfigPath?: string;
@@ -300,6 +361,7 @@ export async function runDoctor(args: {
   lawsPath?: string;
   systemPath?: string;
   runDir?: string;
+  onlineCheck?: boolean;
   workdir?: string;
 }): Promise<DoctorReport> {
   const workdir = resolve(args.workdir ?? process.cwd());
@@ -332,8 +394,9 @@ export async function runDoctor(args: {
     addError(report, `missing required commands: ${report.missingRequired.join(", ")}`);
   }
 
+  let runtimeConfig: RuntimeConfig | undefined;
   try {
-    const runtimeConfig = validateRuntimeConfig(await readJsonFile(runtimePath), runtimePath);
+    runtimeConfig = validateRuntimeConfig(await readJsonFile(runtimePath), runtimePath);
     addNote(report, `runtime config: ${runtimePath}`);
     await inspectRoleRepoInventory(report, resolve(workdir, runtimeConfig.roleRepo));
     await inspectModelRepoInventory(report, resolve(workdir, runtimeConfig.modelRepo));
@@ -357,16 +420,19 @@ export async function runDoctor(args: {
     addError(report, `laws invalid: ${String(error)}`);
   }
 
+  let system: SystemDefinition | undefined;
   if (args.systemPath) {
     try {
-      const system = await loadSystemFromMermaid(resolve(workdir, args.systemPath));
+      system = await loadSystemFromMermaid(resolve(workdir, args.systemPath));
       addNote(report, `system: ${system.systemId}`);
       if (!lawIds.has(system.lawBinding.globalLawRef)) {
         addError(report, `system law reference missing from law catalog: ${system.lawBinding.globalLawRef}`);
       }
 
-      const runtimeConfig = validateRuntimeConfig(await readJsonFile(runtimePath), runtimePath);
-      const roleRepoRoot = resolve(workdir, runtimeConfig.roleRepo);
+      const loadedRuntimeConfig =
+        runtimeConfig ?? validateRuntimeConfig(await readJsonFile(runtimePath), runtimePath);
+      runtimeConfig = loadedRuntimeConfig;
+      const roleRepoRoot = resolve(workdir, loadedRuntimeConfig.roleRepo);
       const roleRootDir = resolve(roleRepoRoot, "roles");
       for (const roleId of system.roleIds) {
         try {
@@ -379,7 +445,7 @@ export async function runDoctor(args: {
         }
       }
 
-      const modelRepoRoot = resolve(workdir, runtimeConfig.modelRepo);
+      const modelRepoRoot = resolve(workdir, loadedRuntimeConfig.modelRepo);
       for (const modelId of new Set(Object.values(system.modelBinding))) {
         try {
           await loadModelPackage({
@@ -392,6 +458,19 @@ export async function runDoctor(args: {
       }
     } catch (error) {
       addError(report, `system invalid: ${String(error)}`);
+    }
+  }
+
+  if (args.onlineCheck) {
+    if (!system || !runtimeConfig) {
+      addWarning(report, "online check skipped: requires both valid runtime config and --system");
+    } else {
+      await runOnlineModelConnectivityCheck({
+        report,
+        workdir,
+        runtimeConfig,
+        system
+      });
     }
   }
 
@@ -421,6 +500,7 @@ async function main(): Promise<void> {
     userProfilePath: values["user-profile"],
     systemPath: values.system,
     runDir: values["run-dir"],
+    onlineCheck: values["online-check"] ?? false,
     workdir: values.workdir
   });
 

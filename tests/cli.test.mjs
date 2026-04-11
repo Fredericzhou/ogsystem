@@ -66,3 +66,17 @@ test("cli log-run prints runtime logs to stderr without breaking stdout json", a
   assert.match(stderr, /\[transition\]/);
   assert.match(stderr, /\[run:end\]/);
 });
+
+test("cli can print Mermaid Live graph preview URL", async () => {
+  const { code, stderr } = await runCli([
+    "--system",
+    "examples/target-model-binding-system.mmd",
+    "--prompt",
+    "graph link preview",
+    "--dry-run",
+    "--print-graph-link"
+  ]);
+
+  assert.strictEqual(code, 0);
+  assert.match(stderr, /\[graph\] Visual preview: https:\/\/mermaid\.live\/edit#base64:/);
+});
