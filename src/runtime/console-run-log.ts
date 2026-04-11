@@ -97,7 +97,7 @@ export type RunConsoleLogger = {
     waitingFor: string[];
   }): void;
   runEnd(args: {
-    status: "done" | "failed";
+    status: "done" | "failed" | "stopped";
     finalRoleId?: string;
     totalTransitions: number;
     okCount: number;

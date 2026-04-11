@@ -85,3 +85,14 @@
 *   **Join 上下文是可读投影，不是原始 state dump**：运行时注入的是以 `roleId` 为键的 JSON 投影，而不是整个 `graphState` 或任意内部结构。
 *   **隔离的是模型会话，不是分支文件系统**：并行 sibling branch 会拿到不同的 `sessionLineageId`，从而不会共享模型会话记忆；但相同 role 默认仍共用一个 role 私有目录。
 *   **顺序链路会继承 `sessionLineageId`**：只有并行分叉、一次激活多个目标，或进入 `all_of` join 时，运行时才会切换到新的会话血缘；普通单路顺序流转会沿用当前 branch 的 `sessionLineageId`。
+
+---
+
+## 八、 生命周期与落盘契约（2026-04-12）
+
+*   **运行根目录唯一化**：运行权威目录为 `.ogs/runs/<run-id>/`，不再使用旧 `ogsystem-history/` 路径。
+*   **run-id 规则**：`YYYYMMDD-HHMMSS-<shortHash>`，保证可排序和低碰撞。
+*   **配置快照**：每次 `run start` 写入 `resolved-config.json`，用于后续审计与复盘。
+*   **OpenCode 运行元数据**：落盘到 `.opencode/server.pid` 和 `.opencode/endpoint.json`，按 run 隔离。
+*   **日志双通道**：引擎日志 `logs/engine.ndjson`，角色日志 `logs/roles/<roleId>.ndjson`，同时保留 `events.ndjson` 作为完整事件流。
+*   **停止状态机**：支持 `running -> stopping -> stopped`，并在 `control/stop-request.json`、`control/stop-outcome.json` 保留操作证据。

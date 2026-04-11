@@ -1,5 +1,9 @@
 dist/
 node_modules/
 *.log
+.ogs/runs/
+.ogs/runs-index.json
+.ogs/project.json
+.ogs/providers/
 ogsystem-history/
 .claude/

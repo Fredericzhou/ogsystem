@@ -63,7 +63,7 @@ test("buffered append recovery replays content after a partial write failure", a
       executor: "opencode",
       roleRepo: path.resolve("og-roles"),
       modelRepo: path.resolve("og-models"),
-      runsDir: "ogsystem-history"
+      runsDir: ".ogs/runs"
     },
     path.resolve(tempRoot, "runtime.json")
   );
@@ -115,7 +115,7 @@ test("overlapping flush calls serialize without losing pending batches", async (
       executor: "opencode",
       roleRepo: path.resolve("og-roles"),
       modelRepo: path.resolve("og-models"),
-      runsDir: "ogsystem-history"
+      runsDir: ".ogs/runs"
     },
     path.resolve(tempRoot, "runtime.json")
   );
@@ -210,7 +210,7 @@ test("forced crash after durable outcome resumes without duplicate execution", a
         executor: "opencode",
         roleRepo: path.resolve(repoRoot, "og-roles"),
         modelRepo: path.resolve(repoRoot, "og-models"),
-        runsDir: "ogsystem-history"
+        runsDir: ".ogs/runs"
       },
       null,
       2
@@ -241,9 +241,9 @@ test("forced crash after durable outcome resumes without duplicate execution", a
   assert.strictEqual(crashed.code, 91);
   assert.match(crashed.stderr, /forced crash after execution outcome/i);
 
-  const runIds = await readdir(path.resolve(tempRoot, "ogsystem-history"));
+  const runIds = await readdir(path.resolve(tempRoot, ".ogs/runs"));
   assert.strictEqual(runIds.length, 1);
-  const runDir = path.resolve(tempRoot, "ogsystem-history", runIds[0]);
+  const runDir = path.resolve(tempRoot, ".ogs/runs", runIds[0]);
   const executionDirsAfterCrash = await readdir(
     path.resolve(runDir, "roles", "test-operator", "executions")
   );
@@ -255,7 +255,7 @@ test("forced crash after durable outcome resumes without duplicate execution", a
     [
       ...baseArgs,
       "--resume-run",
-      `ogsystem-history/${runIds[0]}`,
+      `.ogs/runs/${runIds[0]}`,
       "--trace-out",
       secondTracePath
     ]
@@ -295,7 +295,7 @@ test("forced crash after durable outcome resumes without duplicate execution", a
     [
       ...baseArgs,
       "--resume-run",
-      `ogsystem-history/${runIds[0]}`,
+      `.ogs/runs/${runIds[0]}`,
       "--trace-out",
       thirdTracePath
     ]
@@ -325,7 +325,7 @@ test("resume rejects a concurrently held live lock on the same run directory", a
         executor: "opencode",
         roleRepo: path.resolve(repoRoot, "og-roles"),
         modelRepo: path.resolve(repoRoot, "og-models"),
-        runsDir: "ogsystem-history"
+        runsDir: ".ogs/runs"
       },
       null,
       2
@@ -343,8 +343,8 @@ test("resume rejects a concurrently held live lock on the same run directory", a
   });
   assert.strictEqual(initial.status, "done");
 
-  const runId = (await readdir(path.resolve(tempRoot, "ogsystem-history")))[0];
-  const runDir = path.resolve(tempRoot, "ogsystem-history", runId);
+  const runId = (await readdir(path.resolve(tempRoot, ".ogs/runs")))[0];
+  const runDir = path.resolve(tempRoot, ".ogs/runs", runId);
   const baseArgs = [
     "--system",
     systemPath,
@@ -358,7 +358,7 @@ test("resume rejects a concurrently held live lock on the same run directory", a
     "resume lock live holder",
     "--dry-run",
     "--resume-run",
-    `ogsystem-history/${runId}`
+    `.ogs/runs/${runId}`
   ];
 
   const heldResumePromise = runCli(baseArgs, {

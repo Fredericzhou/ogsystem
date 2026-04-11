@@ -50,13 +50,13 @@ export type DoctorReport = {
 export function usage(): string {
   return [
     "Usage:",
-    "  npm run run:doctor -- [--required opencode] [--system file.mmd] [--run-dir ogsystem-history/<run-id>]",
+    "  pnpm run run:doctor -- [--required opencode] [--system file.mmd] [--run-dir .ogs/runs/<run-id>]",
     "",
     "Options:",
     "  --required <csv>       Required commands. Missing required commands return exit code 2.",
-    "  --runtime <file>       Runtime config JSON (default: .ogsystem/runtime.json)",
-    "  --laws <file>          Law catalog JSON (default: .ogsystem/laws.json)",
-    "  --user-profile <file>  User profile JSON (default: .ogsystem/user-profile.json)",
+    "  --runtime <file>       Runtime config JSON (default: .ogs/runtime.json)",
+    "  --laws <file>          Law catalog JSON (default: .ogs/laws.json)",
+    "  --user-profile <file>  User profile JSON (default: .ogs/user-profile.json)",
     "  --system <file>        Mermaid system to validate with the active config/law catalog",
     "  --run-dir <dir>        Inspect an existing run directory for resume prerequisites",
     "  --online-check         Optional online model connectivity probe (costs tokens)",
@@ -384,9 +384,9 @@ export async function runDoctor(args: {
   workdir?: string;
 }): Promise<DoctorReport> {
   const workdir = resolve(args.workdir ?? process.cwd());
-  const runtimePath = resolve(workdir, args.runtimeConfigPath ?? ".ogsystem/runtime.json");
-  const lawsPath = resolve(workdir, args.lawsPath ?? ".ogsystem/laws.json");
-  const userProfilePath = resolve(workdir, args.userProfilePath ?? ".ogsystem/user-profile.json");
+  const runtimePath = resolve(workdir, args.runtimeConfigPath ?? ".ogs/runtime.json");
+  const lawsPath = resolve(workdir, args.lawsPath ?? ".ogs/laws.json");
+  const userProfilePath = resolve(workdir, args.userProfilePath ?? ".ogs/user-profile.json");
   const required = Array.from(
     new Set(
       (args.requiredCsv ?? "")

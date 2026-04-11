@@ -116,13 +116,18 @@ export function createDefaultExecutor(args: {
       });
 
       await writeFile(
-        args.runContext.opencodeServerPath,
+        args.runContext.opencodeEndpointPath,
         stringifyJson({
           lifecycle: "single-serve-multi-session",
           startedAt: runClient.startedAt,
           url: runClient.url,
           pid: runClient.pid
         }),
+        "utf8"
+      );
+      await writeFile(
+        args.runContext.opencodePidPath,
+        `${runClient.pid ?? ""}\n`,
         "utf8"
       );
       await appendEvent(args.runContext, {
@@ -223,7 +228,7 @@ export function createDefaultExecutor(args: {
       const closedAt = new Date().toISOString();
       runClient.close();
       await writeFile(
-        args.runContext.opencodeServerPath,
+        args.runContext.opencodeEndpointPath,
         stringifyJson({
           lifecycle: "single-serve-multi-session",
           startedAt: runClient.startedAt,

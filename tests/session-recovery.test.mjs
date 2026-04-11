@@ -19,7 +19,7 @@ test("resume context reloads sessions.json and reuses session ids for role execu
   const systemPath = path.resolve("tests/fixtures/mermaid/law-system.mmd");
   const system = await loadSystemFromMermaid(systemPath);
   const plan = createExecutionPlan(system);
-  const runDir = path.resolve(workdir, "ogsystem-history", "resume-run");
+  const runDir = path.resolve(workdir, ".ogs/runs", "resume-run");
   await mkdir(runDir, { recursive: true });
   await writeFile(
     path.resolve(runDir, "sessions.json"),
@@ -49,7 +49,7 @@ test("resume context reloads sessions.json and reuses session ids for role execu
       executor: "opencode",
       roleRepo: "./og-roles",
       modelRepo: "./og-models",
-      runsDir: "ogsystem-history"
+      runsDir: ".ogs/runs"
     },
     "runtime.json"
   );
@@ -60,7 +60,7 @@ test("resume context reloads sessions.json and reuses session ids for role execu
     prompt: "resume prompt",
     workdir,
     runtimeConfig,
-    resumeRunDir: "ogsystem-history/resume-run"
+    resumeRunDir: ".ogs/runs/resume-run"
   });
   const rolePackage = await loadRolePackage({
     roleId: "test-operator",
@@ -154,7 +154,7 @@ summary[Role:debate-summary] -->|SUMMARY_READY| output
 `;
   const system = parseSystemFromMermaidSource(systemSource);
   const plan = createExecutionPlan(system);
-  const runDir = path.resolve(workdir, "ogsystem-history", "resume-branch-run");
+  const runDir = path.resolve(workdir, ".ogs/runs", "resume-branch-run");
   await mkdir(runDir, { recursive: true });
   await writeFile(systemPath, systemSource, "utf8");
   await writeFile(
@@ -197,7 +197,7 @@ summary[Role:debate-summary] -->|SUMMARY_READY| output
       executor: "opencode",
       roleRepo: "./og-roles",
       modelRepo: "./og-models",
-      runsDir: "ogsystem-history"
+      runsDir: ".ogs/runs"
     },
     "runtime.json"
   );
@@ -208,7 +208,7 @@ summary[Role:debate-summary] -->|SUMMARY_READY| output
     prompt: "resume branch prompt",
     workdir,
     runtimeConfig,
-    resumeRunDir: "ogsystem-history/resume-branch-run"
+    resumeRunDir: ".ogs/runs/resume-branch-run"
   });
   const summaryRolePackage = await loadRolePackage({
     roleId: "debate-summary",

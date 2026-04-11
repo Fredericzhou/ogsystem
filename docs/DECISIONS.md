@@ -1,6 +1,6 @@
 # OGSystem Decisions
 
-Date: 2026-04-10  
+Date: 2026-04-12  
 Status: active
 
 ## 1. One Runtime
@@ -61,9 +61,13 @@ Semantic fan-out is not the same thing as backend compute parallelism.
 
 Resume consumes a narrow set of artifacts.
 
+- canonical run root is `.ogs/runs/<run-id>/`
 - `state.json.graphState` is the runtime state snapshot
 - `sessions.json` is the executor session index for reload/reuse
-- `events.ndjson` and Markdown files are operator-facing audit projections
+- runtime writes `resolved-config.json` on run start for replay/audit stability
+- OpenCode run-local metadata is `.opencode/server.pid` + `.opencode/endpoint.json`
+- operator-facing logs are split by channel: `logs/engine.ndjson` and `logs/roles/<roleId>.ndjson`
+- `events.ndjson` stays as append-only full event history
 
 Reason:
 
@@ -80,3 +84,12 @@ Output repair is deliberately narrow.
 Reason:
 
 - broad auto-repair would hide role package defects and blur the runtime contract
+
+## 7. Lifecycle Surface
+
+`ogs` lifecycle commands are the primary operator surface.
+
+- `ogs project init`
+- `ogs project create <name> --template <templateId>`
+- `ogs run start|resume|stop|list|status|inspect|logs`
+- run stop follows `running -> stopping -> stopped` and persists stop intent/outcome in `control/`

@@ -45,7 +45,7 @@ function getDefaultRuntimeConfig(path: string) {
       executor: "opencode",
       roleRepo: "./og-roles",
       modelRepo: "./og-models",
-      runsDir: "ogsystem-history",
+      runsDir: ".ogs/runs",
       workspace: {
         rolesDir: "roles",
         privateDirName: "private"
@@ -102,7 +102,7 @@ export async function loadNl2MmdContext(args: {
   lawsPath?: string;
 }): Promise<Nl2MmdContext> {
   const startedAt = Date.now();
-  const runtimePath = args.runtimeConfigPath ?? resolve(args.workdir, ".ogsystem", "runtime.json");
+  const runtimePath = args.runtimeConfigPath ?? resolve(args.workdir, ".ogs", "runtime.json");
   const runtimeConfigSource = await readJsonFileIfExists(runtimePath);
   const runtimeConfig =
     runtimeConfigSource !== undefined
@@ -169,7 +169,11 @@ export async function loadNl2MmdContext(args: {
   }
 
   let lawIds: string[] = [];
-  const lawsPath = args.lawsPath ?? resolve(args.workdir, ".ogsystem", "laws.json");
+  const lawsPath =
+    args.lawsPath ??
+    (await readJsonFileIfExists(resolve(args.workdir, ".ogs", "laws.json")) !== undefined
+      ? resolve(args.workdir, ".ogs", "laws.json")
+      : resolve(args.workdir, ".ogsystem", "laws.json"));
   const lawsSource = await readJsonFileIfExists(lawsPath);
   if (lawsSource !== undefined) {
     const laws = validateLawsConfig(lawsSource, lawsPath);

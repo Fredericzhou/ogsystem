@@ -285,11 +285,20 @@ export type OpencodeSessionRecord = {
 export type RunContext = {
   runId: string;
   runDir: string;
+  resolvedConfigPath: string;
   auditDir: string;
+  logsDir: string;
+  engineLogPath: string;
+  roleLogsDir: string;
+  controlDir: string;
+  stopRequestPath: string;
+  stopOutcomePath: string;
   eventsPath: string;
   statePath: string;
   metricsPath: string;
-  opencodeServerPath: string;
+  opencodeDir: string;
+  opencodePidPath: string;
+  opencodeEndpointPath: string;
   sessionsPath: string;
   checkpointsDir: string;
   roleDirsById: Map<string, RoleRunDirs>;
@@ -331,7 +340,7 @@ export type StoredRoleResult = {
   loopIteration: number;
 };
 
-export type GraphRunStatus = "running" | "done" | "failed";
+export type GraphRunStatus = "running" | "stopping" | "stopped" | "done" | "failed";
 
 export type GraphAuditSummary = {
   okCount: number;
@@ -468,7 +477,7 @@ export type AdapterRunResult = {
   systemId: string;
   systemVersion: string;
   lawRef: string;
-  status: "done" | "failed";
+  status: "done" | "failed" | "stopped";
   finalRoleId?: string;
   finalOutput?: string;
   systemState: SystemStateSnapshot;

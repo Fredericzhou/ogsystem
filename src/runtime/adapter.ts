@@ -1,4 +1,5 @@
 import { createHash } from "node:crypto";
+import { homedir } from "node:os";
 import { resolve } from "node:path";
 
 import {
@@ -105,33 +106,107 @@ export function resolveEffectiveLaw(
 }
 
 async function loadRuntimeConfig(path: string | undefined, workdir: string): Promise<RuntimeConfig> {
-  const runtimePath = path ?? resolve(workdir, ".ogsystem", "runtime.json");
-  if (!(await pathExists(runtimePath))) {
-    return validateRuntimeConfig(
-      {
-        executor: "opencode",
-        roleRepo: "./og-roles",
-        modelRepo: "./og-models",
-        runsDir: "ogsystem-history",
-        workspace: {
-          rolesDir: "roles",
-          privateDirName: "private"
-        },
-        opencode: {
-          baseArgs: ["run"]
-        }
+  const defaultRuntimeRaw: Record<string, unknown> = {
+    configVersion: "1",
+    executor: "opencode",
+    roleRepo: "./og-roles",
+    modelRepo: "./og-models",
+    runsDir: ".ogs/runs",
+    workspace: {
+      rolesDir: "roles",
+      privateDirName: "private"
+    },
+    opencode: {
+      baseArgs: ["run"]
+    }
+  };
+
+  const globalRuntimePath = resolve(homedir(), ".ogs", "runtime.json");
+  const projectRuntimePath = resolve(workdir, ".ogs", "runtime.json");
+  const legacyProjectRuntimePath = resolve(workdir, ".ogsystem", "runtime.json");
+  const overrideRuntimePath = path ? resolve(workdir, path) : undefined;
+
+  let merged = { ...defaultRuntimeRaw };
+  const loadedPaths: string[] = [];
+
+  for (const candidate of [
+    globalRuntimePath,
+    projectRuntimePath,
+    legacyProjectRuntimePath,
+    overrideRuntimePath
+  ]) {
+    if (!candidate || !(await pathExists(candidate))) {
+      continue;
+    }
+    const overlay = await readJsonFile(candidate);
+    if (typeof overlay !== "object" || overlay === null || Array.isArray(overlay)) {
+      throw new Error(`Runtime config root must be a JSON object: ${candidate}`);
+    }
+    const overlayRecord = overlay as Record<string, unknown>;
+    merged = {
+      ...merged,
+      ...overlayRecord,
+      workspace: {
+        ...(typeof merged.workspace === "object" &&
+        merged.workspace &&
+        !Array.isArray(merged.workspace)
+          ? (merged.workspace as Record<string, unknown>)
+          : {}),
+        ...(typeof overlayRecord.workspace === "object" &&
+        overlayRecord.workspace &&
+        !Array.isArray(overlayRecord.workspace)
+          ? (overlayRecord.workspace as Record<string, unknown>)
+          : {})
       },
-      runtimePath
+      retention: {
+        ...(typeof merged.retention === "object" &&
+        merged.retention &&
+        !Array.isArray(merged.retention)
+          ? (merged.retention as Record<string, unknown>)
+          : {}),
+        ...(typeof overlayRecord.retention === "object" &&
+        overlayRecord.retention &&
+        !Array.isArray(overlayRecord.retention)
+          ? (overlayRecord.retention as Record<string, unknown>)
+          : {})
+      },
+      opencode: {
+        ...(typeof merged.opencode === "object" &&
+        merged.opencode &&
+        !Array.isArray(merged.opencode)
+          ? (merged.opencode as Record<string, unknown>)
+          : {}),
+        ...(typeof overlayRecord.opencode === "object" &&
+        overlayRecord.opencode &&
+        !Array.isArray(overlayRecord.opencode)
+          ? (overlayRecord.opencode as Record<string, unknown>)
+          : {})
+      }
+    };
+    loadedPaths.push(candidate);
+  }
+
+  const validated = validateRuntimeConfig(
+    merged,
+    loadedPaths.at(-1) ?? projectRuntimePath
+  );
+  if (validated.runsDir.includes("ogsystem-history")) {
+    throw new Error(
+      `Legacy runsDir is not supported in lifecycle mode: ${validated.runsDir}. Use ".ogs/runs".`
     );
   }
-  return validateRuntimeConfig(await readJsonFile(runtimePath), runtimePath);
+  return validated;
 }
 
 async function loadUserProfile(
   path: string | undefined,
   workdir: string
 ): Promise<UserProfile | undefined> {
-  const profilePath = path ?? resolve(workdir, ".ogsystem", "user-profile.json");
+  const profilePath =
+    path ??
+    (await pathExists(resolve(workdir, ".ogs", "user-profile.json"))
+      ? resolve(workdir, ".ogs", "user-profile.json")
+      : resolve(workdir, ".ogsystem", "user-profile.json"));
   if (!(await pathExists(profilePath))) {
     return undefined;
   }
@@ -153,7 +228,11 @@ async function loadTools(path?: string): Promise<CliTool[]> {
 }
 
 async function loadLaws(path: string | undefined, workdir: string): Promise<LawCatalog | undefined> {
-  const lawPath = path ?? resolve(workdir, ".ogsystem", "laws.json");
+  const lawPath =
+    path ??
+    (await pathExists(resolve(workdir, ".ogs", "laws.json"))
+      ? resolve(workdir, ".ogs", "laws.json")
+      : resolve(workdir, ".ogsystem", "laws.json"));
   if (!(await pathExists(lawPath))) {
     return undefined;
   }
@@ -468,12 +547,31 @@ export async function runSystemWithAdapter(args: {
         modelsById,
         effectiveLaw
       });
+      const resolvedConfigSnapshot: Record<string, unknown> = {
+        version: 1,
+        resolvedAt: new Date().toISOString(),
+        sources: {
+          runtimeConfigPath: args.runtimeConfigPath ?? ".ogs/runtime.json",
+          userProfilePath: args.userProfilePath ?? ".ogs/user-profile.json",
+          lawsPath: args.lawsPath ?? ".ogs/laws.json",
+          profilesPath: args.profilesPath ?? null,
+          toolsPath: args.toolsPath ?? null
+        },
+        effective: {
+          runtimeConfig,
+          roleRepoDir: resolve(args.workdir, runtimeConfig.roleRepo, "roles"),
+          modelRepoDir: resolve(args.workdir, runtimeConfig.modelRepo),
+          runsDir: resolve(args.workdir, runtimeConfig.runsDir),
+          workdir: args.workdir
+        }
+      };
       const runContext = await initializeRunContext({
         system,
         systemPath: args.systemPath,
         prompt: args.prompt,
         workdir: args.workdir,
         runtimeConfig,
+        resolvedConfigSnapshot,
         resumeRunDir: args.resumeRunDir
       });
       runContextForCleanup = runContext;

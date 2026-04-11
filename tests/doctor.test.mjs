@@ -30,13 +30,13 @@ test("doctor validates system/runtime/law inputs", async () => {
 
 test("doctor reports missing resume prerequisites in run dir inspection", async () => {
   const tempRoot = await mkdtemp(path.join(os.tmpdir(), "ogsystem-doctor-run-"));
-  const runDir = path.resolve(tempRoot, "ogsystem-history", "broken-run");
+  const runDir = path.resolve(tempRoot, ".ogs/runs", "broken-run");
   await mkdir(path.resolve(runDir, "audit"), { recursive: true });
   await mkdir(path.resolve(runDir, "roles"), { recursive: true });
   await writeFile(path.resolve(runDir, "state.json"), JSON.stringify({ status: "done" }), "utf8");
 
   const report = await runDoctor({
-    runDir: "ogsystem-history/broken-run",
+    runDir: ".ogs/runs/broken-run",
     workdir: tempRoot
   });
 

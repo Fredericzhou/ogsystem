@@ -1,0 +1,20 @@
+{
+  "laws": [
+    {
+      "lawId": "law.console.base",
+      "constraints": {
+        "forbiddenToolRefs": [],
+        "maxTransitions": 8,
+        "allowNoopWithoutExecutionBinding": false
+      }
+    },
+    {
+      "lawId": "law.minimal.base",
+      "constraints": {
+        "forbiddenToolRefs": [],
+        "maxTransitions": 8,
+        "allowNoopWithoutExecutionBinding": true
+      }
+    }
+  ]
+}

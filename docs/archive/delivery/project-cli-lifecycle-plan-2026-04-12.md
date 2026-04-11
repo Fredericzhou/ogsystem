@@ -1,17 +1,22 @@
-# OGSystem Project CLI & Lifecycle Plan (Proposed)
+# OGSystem Project CLI & Lifecycle Plan (Delivered)
 
 Archived: yes (delivery proposal; not active source of truth)  
 Stable-track interaction: if accepted, contract changes must be backported to `docs/usage-manual.md`, `docs/ogsystem-orchestration-semantics-v1.md`, and `docs/DECISIONS.md`.  
-Status: Proposed  
+Status: Delivered  
 Date: 2026-04-12  
 Owner: Runtime maintainers
 
 ## Implementation Snapshot (2026-04-12)
 
-- Phase 0 (toolchain baseline): partially completed.
+- Phase 0-6: completed.
 - `pnpm-only` baseline is enforced in `package.json` (`packageManager` + `preinstall` guard).
+- lifecycle CLI surface is delivered (`ogs project/run/...`) with `start/resume/stop/list/status/inspect/logs/reindex`.
+- runtime storage authority switched to `.ogs/runs/<run-id>/`.
+- run-id format switched to `YYYYMMDD-HHMMSS-<shortHash>`.
+- `resolved-config.json` is generated on run start.
+- stop lifecycle now persists `running -> stopping -> stopped` evidence in `control/stop-request.json` and `control/stop-outcome.json`.
+- log channels are split into `logs/engine.ndjson` and `logs/roles/<roleId>.ndjson` (with `events.ndjson` kept as full stream).
 - runtime regression gate is green under pnpm (`pnpm test`, `test:examples`, `test:doctor`).
-- lifecycle surface (`ogs project/run/logs`), `.ogs/runs/` authority switch, and stop/resume state machine are still pending implementation.
 
 ## 1. Objective
 
@@ -314,6 +319,8 @@ For engineering rollout, execute in the sequence below to minimize rollback risk
 
 ### Phase 0: Baseline & Toolchain Freeze
 
+Status: Done.
+
 - lock pnpm version and enforce pnpm-only installation
 - keep existing `run:adapter` path green (`pnpm test` baseline snapshot)
 - remove legacy compatibility assumptions from implementation plan before coding
@@ -323,6 +330,8 @@ Exit gate:
 - no regression on current runtime test suites
 
 ### Phase 1: Project Control Plane Skeleton
+
+Status: Done.
 
 - introduce `.ogs/project.json`, `.ogs/runtime.json`, `.ogs/providers/opencode.json`
 - implement run-id generator: `YYYYMMDD-HHMMSS-<shortHash>`
@@ -335,6 +344,8 @@ Exit gate:
 
 ### Phase 2: Run Authority Path Switch
 
+Status: Done.
+
 - write authority files to `.ogs/runs/<run-id>/...`
 - persist run-local `.opencode/server.pid` and `.opencode/endpoint.json`
 
@@ -343,6 +354,8 @@ Exit gate:
 - resume correctness tests (fingerprint/checkpoint/outcome/lock) pass on canonical path
 
 ### Phase 3: Stop/Resume Lifecycle Hardening
+
+Status: Done.
 
 - implement `ogs run stop` (`running -> stopping -> stopped`)
 - enforce inflight reconciliation before entering `stopped`
@@ -355,6 +368,8 @@ Exit gate:
 
 ### Phase 4: Observability & Logs
 
+Status: Done.
+
 - split engine log and role log channels
 - implement `ogs run logs --engine` and `ogs run logs --role`
 - emit config source and opencode state path in run start metadata
@@ -365,6 +380,8 @@ Exit gate:
 
 ### Phase 5: Project UX & Templates
 
+Status: Done.
+
 - implement `ogs project create --template`
 - ship `minimal`, `software-dev`, `consultation` templates
 
@@ -373,6 +390,8 @@ Exit gate:
 - template smoke tests pass on clean machine
 
 ### Phase 6: Hardening & Scale
+
+Status: Done.
 
 - `runs-index.json` stays rebuildable from run dirs
 - add operational tooling (`reindex`, integrity checks)

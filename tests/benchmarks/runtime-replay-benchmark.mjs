@@ -121,7 +121,7 @@ async function main() {
         executor: "opencode",
         roleRepo: "./og-roles",
         modelRepo: "./og-models",
-        runsDir: "ogsystem-history"
+        runsDir: ".ogs/runs"
       },
       null,
       2
@@ -196,8 +196,8 @@ async function main() {
     throw new Error(`Initial benchmark run failed: ${initialRun.status}`);
   }
 
-  const runId = (await readdir(path.resolve(tempRoot, "ogsystem-history")))[0];
-  const runDir = path.resolve(tempRoot, "ogsystem-history", runId);
+  const runId = (await readdir(path.resolve(tempRoot, ".ogs/runs")))[0];
+  const runDir = path.resolve(tempRoot, ".ogs/runs", runId);
   const system = parseSystemFromMermaidSource(systemSource);
   const plan = createExecutionPlan(system);
   let reconstructedGraphState = createInitialGraphState({
@@ -210,7 +210,7 @@ async function main() {
       executor: "opencode",
       roleRepo: "./og-roles",
       modelRepo: "./og-models",
-      runsDir: "ogsystem-history"
+      runsDir: ".ogs/runs"
     },
     runtimePath
   );
@@ -220,7 +220,7 @@ async function main() {
     prompt: "benchmark replay",
     workdir: tempRoot,
     runtimeConfig,
-    resumeRunDir: `ogsystem-history/${runId}`
+    resumeRunDir: `.ogs/runs/${runId}`
   });
   const allCheckpoints = await loadPendingRuntimeCheckpoints({
     context: reconstructionContext,
@@ -250,7 +250,7 @@ async function main() {
     prompt: "benchmark replay",
     workdir: tempRoot,
     runtimeConfig,
-    resumeRunDir: `ogsystem-history/${runId}`
+    resumeRunDir: `.ogs/runs/${runId}`
   });
 
   const checkpointLoadStart = performance.now();
@@ -268,7 +268,7 @@ async function main() {
     lawsPath,
     prompt: "benchmark replay",
     workdir: tempRoot,
-    resumeRunDir: `ogsystem-history/${runId}`,
+    resumeRunDir: `.ogs/runs/${runId}`,
     dryRun: true
   });
   const resumeTotalMs = performance.now() - resumeStart;

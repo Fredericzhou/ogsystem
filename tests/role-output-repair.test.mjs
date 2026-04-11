@@ -87,7 +87,7 @@ switch (mode) {
         executor: "opencode",
         roleRepo: path.resolve("og-roles"),
         modelRepo: path.resolve("og-models"),
-        runsDir: "ogsystem-history"
+        runsDir: ".ogs/runs"
       },
       null,
       2

@@ -8,7 +8,7 @@ OGSystem 当前是一套单机、文件优先、可恢复的图编排运行时�
 
 - 这是一个 graph runtime，不再维护第二套独立引擎。
 - Mermaid 图不是展示层，而是会被编译成真正的 `ExecutionPlan`。
-- `ogsystem-history/<run-id>/` 不是临时日志目录，而是运行时的数据平面与恢复依据。
+- `.ogs/runs/<run-id>/` 不是临时日志目录，而是运行时的数据平面与恢复依据。
 - Resume 的前提不是“目录还在”，而是“语义指纹、状态快照、会话索引和 checkpoint/WAL 仍然一致”。
 
 ## Capability Snapshot
@@ -73,10 +73,17 @@ Hard boundary:
 
 ```txt
 OGSystem/
-  .ogsystem/
+  .ogs/
     runtime.json
     user-profile.json
     laws.json
+    project.json
+    providers/
+      opencode.json
+    runs-index.json
+    runs/
+      <run-id>/
+        ...
 
   og-roles/
     roles/
@@ -237,7 +244,7 @@ Model rules:
 
 ## 7. User Profile Contract
 
-`.ogsystem/user-profile.json` contains delivery preference.
+`.ogs/user-profile.json` contains delivery preference.
 
 Example:
 
@@ -259,7 +266,7 @@ User profile rules:
 
 ## 8. Runtime Config
 
-`.ogsystem/runtime.json` keeps runtime-level defaults:
+`.ogs/runtime.json` keeps runtime-level defaults:
 
 - executor
 - repo roots
@@ -275,7 +282,7 @@ Example:
   "executor": "opencode",
   "roleRepo": "./og-roles",
   "modelRepo": "./og-models",
-  "runsDir": "ogsystem-history",
+  "runsDir": ".ogs/runs",
   "retention": {
     "enabled": false,
     "executionDirThreshold": 2000,
@@ -299,16 +306,18 @@ Config schema guard (editor/CI):
 
 ## 9. Run Directory Contract
 
-When a run starts, `ogsystem-history/<run-id>/` should persist:
+When a run starts, `.ogs/runs/<run-id>/` should persist:
 
-- run-id format: `yyyy-MM-dd_HH24-mm-ss_xxxx` (`xxxx` = 4-char system code)
+- run-id format: `YYYYMMDD-HHMMSS-<shortHash>`
 
 - run-level files: `run.md`, `request.md`, `system.mmd`, `repro.sh`, `state.json`, `metrics.json`, `events.ndjson`, `plan-fingerprint.json`
-- run-level OpenCode metadata: `opencode-server.json` for `model.bind` runs
+- run-level OpenCode metadata: `.opencode/server.pid`, `.opencode/endpoint.json` for `model.bind` runs
 - run-level OpenCode session index: `sessions.json`
 - run-level checkpoint WAL: `checkpoints/<sequence>-<executionId>.json`
 - run-level shared workspace: `shared/`
+- run-level lifecycle control: `control/stop-request.json`, `control/stop-outcome.json`
 - audit files: `audit/summary.md`, `audit/transitions.md`
+- log channels: `logs/engine.ndjson`, `logs/roles/<roleId>.ndjson`
 - per-role latest files: `role.md`, `execution.json`, `latest-session.json`, `inbox.md`, `prompt.md`, `result.json`, `outbox.md`, `audit.json`, `private/`
 - per-role history: `executions/<execution-id>/...` including `session.json` and `execution-outcome.json`
 
@@ -331,18 +340,20 @@ Resume source of truth:
 Audit/operator artifacts:
 
 - `events.ndjson`
+- `logs/engine.ndjson`
+- `logs/roles/<roleId>.ndjson`
 - Markdown projections such as `run.md`, `request.md`, `audit/summary.md`, and `audit/transitions.md`
 `state.json` is the authoritative runtime state snapshot.
-`events.ndjson` is append-only audit history.
+`events.ndjson` is append-only complete history; CLI logs filtering uses the split log channels first.
 `latest-session.json` is an operator-facing latest snapshot only.
 `repro.sh` is a run-local resume repro script generated for troubleshooting handoff, with environment context comments (Node/OS/timestamp).
 Resume reloads `sessions.json`, not `latest-session.json` or per-execution `session.json`.
 `inbox.md` is a projection of normalized runtime input, not a free-form summary.
-`ogsystem-history/` is generated runtime state and should be ignored by git.
+`.ogs/runs/` is generated runtime state and should be ignored by git.
 
 Minimal shared-workspace rule:
 
-- default shared path is `ogsystem-history/<run-id>/shared/`
+- default shared path is `.ogs/runs/<run-id>/shared/`
 - runtime exposes it through `OGSYSTEM_SHARED_DIR`
 - role directories do not receive a `shared` symlink by default
 
@@ -417,7 +428,7 @@ Optional history cleanup:
 OGSystem classifies persisted run artifacts into three classes:
 
 - `runtime_consumed`: runtime-critical files read by resume and recovery logic (`state.json`, `sessions.json`, `plan-fingerprint.json`, `checkpoints/...`, `execution-outcome.json`, `.resume.lock`)
-- `operator_latest`: latest operator-facing snapshots (`run.md`, `request.md`, `repro.sh`, `audit/*.md`, `roles/<roleId>/*.md|*.json`, `events.ndjson`)
+- `operator_latest`: latest operator-facing snapshots (`run.md`, `request.md`, `repro.sh`, `audit/*.md`, `roles/<roleId>/*.md|*.json`, `events.ndjson`, `logs/engine.ndjson`, `logs/roles/<roleId>.ndjson`)
 - `history_only`: immutable per-execution snapshots (`roles/<roleId>/executions/<executionId>/...`)
 
 This contract is implemented by:
@@ -435,7 +446,7 @@ Preflight command:
 pnpm run run:doctor -- \
   --required opencode \
   --system examples/target-model-binding-system.mmd \
-  --laws .ogsystem/laws.json
+  --laws .ogs/laws.json
 ```
 
 Lint command:
@@ -482,7 +493,7 @@ Run-directory inspection (resume prerequisites):
 
 ```bash
 pnpm run run:doctor -- \
-  --run-dir ogsystem-history/<run-id>
+  --run-dir .ogs/runs/<run-id>
 ```
 
 Optional online connectivity precheck:
@@ -510,6 +521,18 @@ For recovery, prioritize:
 
 ## 10. Commands
 
+Lifecycle CLI (preferred):
+
+```bash
+pnpm run run:adapter -- project init
+pnpm run run:adapter -- run start --system examples/target-model-binding-system.mmd --prompt "demo" --dry-run
+pnpm run run:adapter -- run list
+pnpm run run:adapter -- run status <run-id>
+pnpm run run:adapter -- run logs <run-id> --engine
+pnpm run run:adapter -- run resume <run-id> --dry-run
+pnpm run run:adapter -- run stop <run-id>
+```
+
 Preferred runtime command:
 
 ```bash
@@ -521,9 +544,9 @@ pnpm run run:adapter -- \
 
 This path auto-discovers:
 
-- `.ogsystem/runtime.json`
-- `.ogsystem/user-profile.json`
-- `.ogsystem/laws.json`
+- `.ogs/runtime.json`
+- `.ogs/user-profile.json`
+- `.ogs/laws.json`
 - `og-models/`
 - `og-roles/`
 
@@ -568,7 +591,7 @@ pnpm run run:adapter -- \
   --system examples/langgraph-debate-current/system.mmd \
   --laws examples/langgraph-debate-current/laws.json \
   --user-profile examples/langgraph-debate-current/user-profile.json \
-  --resume-run ogsystem-history/<run-id> \
+  --resume-run .ogs/runs/<run-id> \
   --prompt "是否应继续保持 OGSystem 最小化并延后 reducer 与恢复语义？" \
   --dry-run
 ```
@@ -596,9 +619,9 @@ Validation command for an actual generated run:
 ```bash
 node skills/ogsystem-nl-to-mmd/scripts/validate_ogsystem_mmd.mjs \
   --system examples/target-model-binding-system.mmd \
-  --user-profile .ogsystem/user-profile.json \
-  --laws .ogsystem/laws.json \
-  --run-dir ogsystem-history/<run-id>
+  --user-profile .ogs/user-profile.json \
+  --laws .ogs/laws.json \
+  --run-dir .ogs/runs/<run-id>
 ```
 
 ## 11. Migration Notes

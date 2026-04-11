@@ -74,10 +74,28 @@ const RUN_ARTIFACT_POLICY: RunArtifactPolicyEntry[] = [
     description: "Human-readable transition log."
   },
   {
-    path: "opencode-server.json",
+    path: ".opencode/server.pid",
+    retention: "operator_latest",
+    resumeConsumed: false,
+    description: "Run-local OpenCode server pid snapshot."
+  },
+  {
+    path: ".opencode/endpoint.json",
     retention: "operator_latest",
     resumeConsumed: false,
     description: "Run-level OpenCode server metadata."
+  },
+  {
+    path: "logs/engine.ndjson",
+    retention: "operator_latest",
+    resumeConsumed: false,
+    description: "Engine channel runtime log stream."
+  },
+  {
+    path: "logs/roles/<roleId>.ndjson",
+    retention: "operator_latest",
+    resumeConsumed: false,
+    description: "Role channel runtime log stream."
   },
   {
     path: "shared/",

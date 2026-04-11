@@ -68,7 +68,7 @@ async function prepareRuntimeFingerprintResumeFixture(args) {
   const tempRoot = await mkdtemp(path.join(os.tmpdir(), args.tempPrefix));
   const systemPath = path.resolve(tempRoot, "resume-system.mmd");
   const runtimePath = path.resolve(tempRoot, "runtime.json");
-  const runDir = path.resolve(tempRoot, "ogsystem-history", args.runName);
+  const runDir = path.resolve(tempRoot, ".ogs/runs", args.runName);
   const roleRootDir = path.resolve(tempRoot, "og-roles", "roles");
   const modelRootDir = path.resolve(tempRoot, "og-models");
   const lawsPath = path.resolve(tempRoot, "laws.json");
@@ -106,7 +106,7 @@ async function prepareRuntimeFingerprintResumeFixture(args) {
         executor: "opencode",
         roleRepo: "./og-roles",
         modelRepo: "./og-models",
-        runsDir: "ogsystem-history"
+        runsDir: ".ogs/runs"
       },
       null,
       2
@@ -148,7 +148,7 @@ test("adapter resume reloads sessions.json and reuses the same model session", a
   const tempRoot = await mkdtemp(path.join(os.tmpdir(), "ogsystem-resume-session-"));
   const systemPath = path.resolve(tempRoot, "resume-system.mmd");
   const runtimePath = path.resolve(tempRoot, "runtime.json");
-  const runDir = path.resolve(tempRoot, "ogsystem-history", "existing-run");
+  const runDir = path.resolve(tempRoot, ".ogs/runs", "existing-run");
 
   const systemSource = `flowchart TD
 %% system.id=resume.session.demo
@@ -170,7 +170,7 @@ minimalist[Role:debate-minimalist] -->|MINIMALIST_DONE| output
         executor: "opencode",
         roleRepo: path.resolve("og-roles"),
         modelRepo: path.resolve("og-models"),
-        runsDir: "ogsystem-history"
+        runsDir: ".ogs/runs"
       },
       null,
       2
@@ -221,7 +221,7 @@ minimalist[Role:debate-minimalist] -->|MINIMALIST_DONE| output
     runtimeConfigPath: runtimePath,
     lawsPath: path.resolve(".ogsystem", "laws.json"),
     workdir: tempRoot,
-    resumeRunDir: "ogsystem-history/existing-run",
+    resumeRunDir: ".ogs/runs/existing-run",
     prompt: "resume session",
     dryRun: true
   });
@@ -248,7 +248,7 @@ test("adapter resume rejects partial or corrupted state snapshots", async () => 
   const tempRoot = await mkdtemp(path.join(os.tmpdir(), "ogsystem-resume-corrupt-"));
   const systemPath = path.resolve(tempRoot, "resume-system.mmd");
   const runtimePath = path.resolve(tempRoot, "runtime.json");
-  const runDir = path.resolve(tempRoot, "ogsystem-history", "broken-run");
+  const runDir = path.resolve(tempRoot, ".ogs/runs", "broken-run");
 
   const systemSource = `flowchart TD
 %% system.id=resume.corrupt.demo
@@ -270,7 +270,7 @@ minimalist[Role:debate-minimalist] -->|MINIMALIST_DONE| output
         executor: "opencode",
         roleRepo: path.resolve("og-roles"),
         modelRepo: path.resolve("og-models"),
-        runsDir: "ogsystem-history"
+        runsDir: ".ogs/runs"
       },
       null,
       2
@@ -290,7 +290,7 @@ minimalist[Role:debate-minimalist] -->|MINIMALIST_DONE| output
         runtimeConfigPath: runtimePath,
         lawsPath: path.resolve(".ogsystem", "laws.json"),
         workdir: tempRoot,
-        resumeRunDir: "ogsystem-history/broken-run",
+        resumeRunDir: ".ogs/runs/broken-run",
         prompt: "resume corrupted",
         dryRun: true
       }),
@@ -306,7 +306,7 @@ test("adapter resume rejects plan fingerprint mismatch", async () => {
   const tempRoot = await mkdtemp(path.join(os.tmpdir(), "ogsystem-resume-fingerprint-mismatch-"));
   const systemPath = path.resolve(tempRoot, "resume-system.mmd");
   const runtimePath = path.resolve(tempRoot, "runtime.json");
-  const runDir = path.resolve(tempRoot, "ogsystem-history", "mismatch-run");
+  const runDir = path.resolve(tempRoot, ".ogs/runs", "mismatch-run");
 
   const initialSystemSource = `flowchart TD
 %% system.id=resume.fingerprint.demo
@@ -332,7 +332,7 @@ minimalist[Role:debate-minimalist] -->|MINIMALIST_DONE| output
         executor: "opencode",
         roleRepo: path.resolve("og-roles"),
         modelRepo: path.resolve("og-models"),
-        runsDir: "ogsystem-history"
+        runsDir: ".ogs/runs"
       },
       null,
       2
@@ -359,7 +359,7 @@ minimalist[Role:debate-minimalist] -->|MINIMALIST_DONE| output
         runtimeConfigPath: runtimePath,
         lawsPath: path.resolve(".ogsystem", "laws.json"),
         workdir: tempRoot,
-        resumeRunDir: "ogsystem-history/mismatch-run",
+        resumeRunDir: ".ogs/runs/mismatch-run",
         prompt: "resume mismatch",
         dryRun: true
       }),
@@ -409,7 +409,7 @@ minimalist[Role:debate-minimalist] -->|MINIMALIST_DONE| output
         executor: "opencode",
         roleRepo: "./alt-roles",
         modelRepo: "./alt-models",
-        runsDir: "ogsystem-history"
+        runsDir: ".ogs/runs"
       },
       null,
       2
@@ -422,7 +422,7 @@ minimalist[Role:debate-minimalist] -->|MINIMALIST_DONE| output
     runtimeConfigPath: altRuntimePath,
     lawsPath: altLawsPath,
     workdir: fixture.tempRoot,
-    resumeRunDir: "ogsystem-history/path-stable-run",
+    resumeRunDir: ".ogs/runs/path-stable-run",
     prompt: "resume path stable",
     dryRun: true
   });
@@ -466,7 +466,7 @@ minimalist[Role:debate-minimalist] -->|MINIMALIST_DONE| output
         runtimeConfigPath: fixture.runtimePath,
         lawsPath: fixture.lawsPath,
         workdir: fixture.tempRoot,
-        resumeRunDir: "ogsystem-history/role-drift-run",
+        resumeRunDir: ".ogs/runs/role-drift-run",
         prompt: "resume role drift",
         dryRun: true
       }),
@@ -514,7 +514,7 @@ minimalist[Role:debate-minimalist] -->|MINIMALIST_DONE| output
         runtimeConfigPath: fixture.runtimePath,
         lawsPath: fixture.lawsPath,
         workdir: fixture.tempRoot,
-        resumeRunDir: "ogsystem-history/model-drift-run",
+        resumeRunDir: ".ogs/runs/model-drift-run",
         prompt: "resume model drift",
         dryRun: true
       }),
@@ -557,7 +557,7 @@ minimalist[Role:debate-minimalist] -->|MINIMALIST_DONE| output
         runtimeConfigPath: fixture.runtimePath,
         lawsPath: fixture.lawsPath,
         workdir: fixture.tempRoot,
-        resumeRunDir: "ogsystem-history/law-drift-run",
+        resumeRunDir: ".ogs/runs/law-drift-run",
         prompt: "resume law drift",
         dryRun: true
       }),
@@ -574,7 +574,7 @@ test("adapter resume replays pending checkpoints without re-executing the role",
   const tempRoot = await mkdtemp(path.join(os.tmpdir(), "ogsystem-resume-checkpoint-replay-"));
   const systemPath = path.resolve(tempRoot, "resume-system.mmd");
   const runtimePath = path.resolve(tempRoot, "runtime.json");
-  const runDir = path.resolve(tempRoot, "ogsystem-history", "checkpoint-run");
+  const runDir = path.resolve(tempRoot, ".ogs/runs", "checkpoint-run");
   const roleExecutionDir = path.resolve(
     runDir,
     "roles",
@@ -604,7 +604,7 @@ operator[Role:test-operator] -->|DONE| output
         executor: "opencode",
         roleRepo: path.resolve("og-roles"),
         modelRepo: path.resolve("og-models"),
-        runsDir: "ogsystem-history"
+        runsDir: ".ogs/runs"
       },
       null,
       2
@@ -656,7 +656,7 @@ operator[Role:test-operator] -->|DONE| output
       executor: "opencode",
       roleRepo: path.resolve("og-roles"),
       modelRepo: path.resolve("og-models"),
-      runsDir: "ogsystem-history"
+      runsDir: ".ogs/runs"
     },
     runtimePath
   );
@@ -666,7 +666,7 @@ operator[Role:test-operator] -->|DONE| output
     prompt: "resume checkpoint",
     workdir: tempRoot,
     runtimeConfig,
-    resumeRunDir: "ogsystem-history/checkpoint-run"
+    resumeRunDir: ".ogs/runs/checkpoint-run"
   });
 
   await persistRuntimeCheckpoint({
@@ -752,7 +752,7 @@ operator[Role:test-operator] -->|DONE| output
     runtimeConfigPath: runtimePath,
     lawsPath: path.resolve(".ogsystem", "laws.json"),
     workdir: tempRoot,
-    resumeRunDir: "ogsystem-history/checkpoint-run",
+    resumeRunDir: ".ogs/runs/checkpoint-run",
     prompt: "resume checkpoint",
     dryRun: true
   });
@@ -775,7 +775,7 @@ test("adapter resume reconciles committed execution outcome without re-executing
   const tempRoot = await mkdtemp(path.join(os.tmpdir(), "ogsystem-resume-outcome-reconcile-"));
   const systemPath = path.resolve(tempRoot, "resume-system.mmd");
   const runtimePath = path.resolve(tempRoot, "runtime.json");
-  const runDir = path.resolve(tempRoot, "ogsystem-history", "outcome-run");
+  const runDir = path.resolve(tempRoot, ".ogs/runs", "outcome-run");
   const roleExecutionDir = path.resolve(
     runDir,
     "roles",
@@ -804,7 +804,7 @@ operator[Role:test-operator] -->|DONE| output
         executor: "opencode",
         roleRepo: path.resolve("og-roles"),
         modelRepo: path.resolve("og-models"),
-        runsDir: "ogsystem-history"
+        runsDir: ".ogs/runs"
       },
       null,
       2
@@ -907,7 +907,7 @@ operator[Role:test-operator] -->|DONE| output
     runtimeConfigPath: runtimePath,
     lawsPath: path.resolve(".ogsystem", "laws.json"),
     workdir: tempRoot,
-    resumeRunDir: "ogsystem-history/outcome-run",
+    resumeRunDir: ".ogs/runs/outcome-run",
     prompt: "resume outcome",
     dryRun: true
   });
@@ -936,7 +936,7 @@ operator[Role:test-operator] -->|DONE| output
     runtimeConfigPath: runtimePath,
     lawsPath: path.resolve(".ogsystem", "laws.json"),
     workdir: tempRoot,
-    resumeRunDir: "ogsystem-history/outcome-run",
+    resumeRunDir: ".ogs/runs/outcome-run",
     prompt: "resume outcome",
     dryRun: true
   });
@@ -957,7 +957,7 @@ test("adapter resume backfills outcome reconciliation metadata when checkpoint a
   const tempRoot = await mkdtemp(path.join(os.tmpdir(), "ogsystem-resume-outcome-backfill-"));
   const systemPath = path.resolve(tempRoot, "resume-system.mmd");
   const runtimePath = path.resolve(tempRoot, "runtime.json");
-  const runDir = path.resolve(tempRoot, "ogsystem-history", "outcome-backfill-run");
+  const runDir = path.resolve(tempRoot, ".ogs/runs", "outcome-backfill-run");
   const roleExecutionDir = path.resolve(
     runDir,
     "roles",
@@ -986,7 +986,7 @@ operator[Role:test-operator] -->|DONE| output
         executor: "opencode",
         roleRepo: path.resolve("og-roles"),
         modelRepo: path.resolve("og-models"),
-        runsDir: "ogsystem-history"
+        runsDir: ".ogs/runs"
       },
       null,
       2
@@ -1089,7 +1089,7 @@ operator[Role:test-operator] -->|DONE| output
       executor: "opencode",
       roleRepo: path.resolve("og-roles"),
       modelRepo: path.resolve("og-models"),
-      runsDir: "ogsystem-history"
+      runsDir: ".ogs/runs"
     },
     runtimePath
   );
@@ -1099,7 +1099,7 @@ operator[Role:test-operator] -->|DONE| output
     prompt: "resume outcome backfill",
     workdir: tempRoot,
     runtimeConfig,
-    resumeRunDir: "ogsystem-history/outcome-backfill-run"
+    resumeRunDir: ".ogs/runs/outcome-backfill-run"
   });
 
   await persistRuntimeCheckpoint({
@@ -1185,7 +1185,7 @@ operator[Role:test-operator] -->|DONE| output
     runtimeConfigPath: runtimePath,
     lawsPath: path.resolve(".ogsystem", "laws.json"),
     workdir: tempRoot,
-    resumeRunDir: "ogsystem-history/outcome-backfill-run",
+    resumeRunDir: ".ogs/runs/outcome-backfill-run",
     prompt: "resume outcome backfill",
     dryRun: true
   });
@@ -1250,7 +1250,7 @@ minimalist[Role:debate-minimalist] -->|MINIMALIST_DONE| output
         runtimeConfigPath: fixture.runtimePath,
         lawsPath: fixture.lawsPath,
         workdir: fixture.tempRoot,
-        resumeRunDir: "ogsystem-history/lock-active-run",
+        resumeRunDir: ".ogs/runs/lock-active-run",
         prompt: "resume lock active",
         dryRun: true
       }),
@@ -1313,7 +1313,7 @@ minimalist[Role:debate-minimalist] -->|MINIMALIST_DONE| output
     runtimeConfigPath: fixture.runtimePath,
     lawsPath: fixture.lawsPath,
     workdir: fixture.tempRoot,
-    resumeRunDir: "ogsystem-history/lock-stale-run",
+    resumeRunDir: ".ogs/runs/lock-stale-run",
     prompt: "resume lock stale",
     dryRun: true
   });
@@ -1351,7 +1351,7 @@ minimalist[Role:debate-minimalist] -->|MINIMALIST_DONE| output
         executor: "opencode",
         roleRepo: "./og-roles",
         modelRepo: "./og-models",
-        runsDir: "ogsystem-history",
+        runsDir: ".ogs/runs",
         sharedDir: "shared-blocked"
       },
       null,
@@ -1367,7 +1367,7 @@ minimalist[Role:debate-minimalist] -->|MINIMALIST_DONE| output
         runtimeConfigPath: fixture.runtimePath,
         lawsPath: fixture.lawsPath,
         workdir: fixture.tempRoot,
-        resumeRunDir: "ogsystem-history/lock-setup-failure-run",
+        resumeRunDir: ".ogs/runs/lock-setup-failure-run",
         prompt: "resume lock setup failure",
         dryRun: true
       }),
@@ -1388,7 +1388,7 @@ minimalist[Role:debate-minimalist] -->|MINIMALIST_DONE| output
         executor: "opencode",
         roleRepo: "./og-roles",
         modelRepo: "./og-models",
-        runsDir: "ogsystem-history"
+        runsDir: ".ogs/runs"
       },
       null,
       2
@@ -1401,7 +1401,7 @@ minimalist[Role:debate-minimalist] -->|MINIMALIST_DONE| output
     runtimeConfigPath: fixture.runtimePath,
     lawsPath: fixture.lawsPath,
     workdir: fixture.tempRoot,
-    resumeRunDir: "ogsystem-history/lock-setup-failure-run",
+    resumeRunDir: ".ogs/runs/lock-setup-failure-run",
     prompt: "resume lock setup failure",
     dryRun: true
   });

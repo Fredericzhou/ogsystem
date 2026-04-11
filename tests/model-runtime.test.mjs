@@ -27,10 +27,10 @@ test("adapter auto-discovers runtime config and persists run artifacts for model
   assert.strictEqual(result.status, "done");
   assert.strictEqual(result.finalRoleId, "debate-judge");
 
-  const runsDir = path.resolve(tempRoot, "ogsystem-history");
+  const runsDir = path.resolve(tempRoot, ".ogs/runs");
   const runs = await readdir(runsDir);
   assert.strictEqual(runs.length, 1);
-  assert.match(runs[0], /^\d{4}-\d{2}-\d{2}_\d{2}-\d{2}-\d{2}_[a-z0-9]{4}$/);
+  assert.match(runs[0], /^\d{8}-\d{6}-[a-f0-9]{8}$/);
 
   const runDir = path.resolve(runsDir, runs[0]);
   const stateJson = JSON.parse(await readFile(path.resolve(runDir, "state.json"), "utf8"));

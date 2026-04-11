@@ -63,9 +63,9 @@ test("model runtime artifacts match the documented contract", async () => {
     dryRun: true
   });
 
-  const runId = (await readdir(path.resolve(tempRoot, "ogsystem-history")))[0];
-  assert.match(runId, /^\d{4}-\d{2}-\d{2}_\d{2}-\d{2}-\d{2}_[a-z0-9]{4}$/);
-  const runDir = path.resolve(tempRoot, "ogsystem-history", runId);
+  const runId = (await readdir(path.resolve(tempRoot, ".ogs/runs")))[0];
+  assert.match(runId, /^\d{8}-\d{6}-[a-f0-9]{8}$/);
+  const runDir = path.resolve(tempRoot, ".ogs/runs", runId);
   const sessions = JSON.parse(await readFile(path.resolve(runDir, "sessions.json"), "utf8"));
 
   assert.ok(Array.isArray(sessions));

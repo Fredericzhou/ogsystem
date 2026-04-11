@@ -110,7 +110,7 @@ test("adapter runs graph debate example with parallel branches, join, and bounde
   assert.ok(minimalistAudits.every((item) => item.nextRoleId === "debate-judge"));
   assert.ok(moderatorAudits.every((item) => item.nextRoleId === undefined));
 
-  const runsDir = path.resolve(tempRoot, "ogsystem-history");
+  const runsDir = path.resolve(tempRoot, ".ogs/runs");
   const runs = await readdir(runsDir);
   assert.strictEqual(runs.length, 1);
 
@@ -283,9 +283,9 @@ test("adapter runs expert consultation example with parallel specialists and fin
   assert.ok(result.auditTrail.some((item) => item.roleId === "diagnosis-imaging"));
   assert.ok(result.auditTrail.some((item) => item.selectedEvent === "CONSULTATION_READY"));
 
-  const runs = await readdir(path.resolve(tempRoot, "ogsystem-history"));
+  const runs = await readdir(path.resolve(tempRoot, ".ogs/runs"));
   assert.strictEqual(runs.length, 1);
-  const runDir = path.resolve(tempRoot, "ogsystem-history", runs[0]);
+  const runDir = path.resolve(tempRoot, ".ogs/runs", runs[0]);
   const chiefPrompt = await readFile(
     path.resolve(runDir, "roles", "diagnosis-chief-review", "prompt.md"),
     "utf8"
@@ -316,7 +316,7 @@ test("adapter preserves session lineage semantics and join context projection ac
         executor: "opencode",
         roleRepo: "./og-roles",
         modelRepo: "./og-models",
-        runsDir: "ogsystem-history"
+        runsDir: ".ogs/runs"
       },
       null,
       2
@@ -388,8 +388,8 @@ summary[Role:summary] -->|DONE| output
   assert.strictEqual(result.status, "done");
   assert.strictEqual(result.finalRoleId, "summary");
 
-  const runId = (await readdir(path.resolve(tempRoot, "ogsystem-history")))[0];
-  const runDir = path.resolve(tempRoot, "ogsystem-history", runId);
+  const runId = (await readdir(path.resolve(tempRoot, ".ogs/runs")))[0];
+  const runDir = path.resolve(tempRoot, ".ogs/runs", runId);
   const sessionIndex = JSON.parse(await readFile(path.resolve(runDir, "sessions.json"), "utf8"));
   const sessionByRoleId = new Map(sessionIndex.map((entry) => [entry.roleId, entry]));
   const coordinatorSession = sessionByRoleId.get("coordinator");
@@ -474,8 +474,8 @@ decision[Role:test-decision] -->|PATH_B| output
 
   const runDir = path.resolve(
     tempRoot,
-    "ogsystem-history",
-    (await readdir(path.resolve(tempRoot, "ogsystem-history")))[0]
+    ".ogs/runs",
+    (await readdir(path.resolve(tempRoot, ".ogs/runs")))[0]
   );
   const decisionExecutions = await readdir(
     path.resolve(runDir, "roles", "test-decision", "executions")
@@ -524,8 +524,8 @@ test("adapter optionally cleans historical execution snapshots without touching 
     cleanupExecutionHistory: 1
   });
 
-  const runId = (await readdir(path.resolve(tempRoot, "ogsystem-history")))[0];
-  const runDir = path.resolve(tempRoot, "ogsystem-history", runId);
+  const runId = (await readdir(path.resolve(tempRoot, ".ogs/runs")))[0];
+  const runDir = path.resolve(tempRoot, ".ogs/runs", runId);
   const moderatorExecutions = await readdir(
     path.resolve(runDir, "roles", "debate-moderator", "executions")
   );
@@ -549,7 +549,7 @@ test("adapter applies retention cleanup from runtime config when execution direc
         executor: "opencode",
         roleRepo: "./og-roles",
         modelRepo: "./og-models",
-        runsDir: "ogsystem-history",
+        runsDir: ".ogs/runs",
         retention: {
           enabled: true,
           executionDirThreshold: 1,
@@ -575,8 +575,8 @@ test("adapter applies retention cleanup from runtime config when execution direc
     dryRun: true
   });
 
-  const runId = (await readdir(path.resolve(tempRoot, "ogsystem-history")))[0];
-  const runDir = path.resolve(tempRoot, "ogsystem-history", runId);
+  const runId = (await readdir(path.resolve(tempRoot, ".ogs/runs")))[0];
+  const runDir = path.resolve(tempRoot, ".ogs/runs", runId);
   const moderatorExecutions = await readdir(
     path.resolve(runDir, "roles", "debate-moderator", "executions")
   );
@@ -616,7 +616,7 @@ test("adapter skips auto retention cleanup when retention is disabled", async ()
         executor: "opencode",
         roleRepo: "./og-roles",
         modelRepo: "./og-models",
-        runsDir: "ogsystem-history",
+        runsDir: ".ogs/runs",
         retention: {
           enabled: false,
           executionDirThreshold: 1,
@@ -642,8 +642,8 @@ test("adapter skips auto retention cleanup when retention is disabled", async ()
     dryRun: true
   });
 
-  const runId = (await readdir(path.resolve(tempRoot, "ogsystem-history")))[0];
-  const runDir = path.resolve(tempRoot, "ogsystem-history", runId);
+  const runId = (await readdir(path.resolve(tempRoot, ".ogs/runs")))[0];
+  const runDir = path.resolve(tempRoot, ".ogs/runs", runId);
   const moderatorExecutions = await readdir(
     path.resolve(runDir, "roles", "debate-moderator", "executions")
   );
@@ -673,7 +673,7 @@ test("adapter persists metrics fields on failed graph runs", async () => {
         executor: "opencode",
         roleRepo: "./og-roles",
         modelRepo: "./og-models",
-        runsDir: "ogsystem-history"
+        runsDir: ".ogs/runs"
       },
       null,
       2
@@ -725,8 +725,8 @@ worker[Role:test-budget-failure] -->|DONE| output
   assert.strictEqual(result.status, "failed");
   assert.ok(typeof result.errorEnvelope?.errorCode === "string");
 
-  const runId = (await readdir(path.resolve(tempRoot, "ogsystem-history")))[0];
-  const runDir = path.resolve(tempRoot, "ogsystem-history", runId);
+  const runId = (await readdir(path.resolve(tempRoot, ".ogs/runs")))[0];
+  const runDir = path.resolve(tempRoot, ".ogs/runs", runId);
   const metricsJson = JSON.parse(await readFile(path.resolve(runDir, "metrics.json"), "utf8"));
   assert.ok(typeof metricsJson.rssBytes === "number");
   assert.ok(typeof metricsJson.stateWriteMs === "number");
@@ -752,7 +752,7 @@ test("adapter keeps scheduler recursion budget above loop-heavy transition count
         executor: "opencode",
         roleRepo: "./og-roles",
         modelRepo: "./og-models",
-        runsDir: "ogsystem-history"
+        runsDir: ".ogs/runs"
       },
       null,
       2
@@ -849,8 +849,8 @@ operator[Role:test-loop-probe] -->|DONE| output
 
   const runDir = path.resolve(
     tempRoot,
-    "ogsystem-history",
-    (await readdir(path.resolve(tempRoot, "ogsystem-history")))[0]
+    ".ogs/runs",
+    (await readdir(path.resolve(tempRoot, ".ogs/runs")))[0]
   );
   const executionDirs = (
     await readdir(path.resolve(runDir, "roles", "test-loop-probe", "executions"))

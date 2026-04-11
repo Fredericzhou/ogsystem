@@ -10,7 +10,7 @@ import {
   writeFile
 } from "node:fs/promises";
 import { createReadStream } from "node:fs";
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import { basename, resolve } from "node:path";
 import { arch, hostname, platform } from "node:os";
 import { createInterface } from "node:readline";
@@ -34,6 +34,7 @@ import type {
 import { stringifyJson } from "./runtime-support.js";
 
 export const RUN_PLAN_FINGERPRINT_FILE = "plan-fingerprint.json";
+export const RESOLVED_CONFIG_FILE = "resolved-config.json";
 export const ROLE_EXECUTION_OUTCOME_FILE = "execution-outcome.json";
 export const RESUME_RUN_LOCK_FILE = ".resume.lock";
 const BUFFER_RECOVERY_DIR = ".buffer-recovery";
@@ -68,34 +69,39 @@ type ResumeRunLockRecord = {
   command: string;
 };
 
-const bufferedAppendStateByRunDir = new Map<string, BufferedAppendState>();
+export type RunStopRequestRecord = {
+  version: 1;
+  requestedAt: string;
+  requestedByPid: number;
+  reason: string;
+};
 
-function slugify(value: string): string {
-  const normalized = value
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, "-")
-    .replace(/^-+|-+$/g, "");
-  return normalized || "run";
-}
+export type RunStopOutcomeRecord = {
+  version: 1;
+  status: "stopped" | "failed";
+  committedAt: string;
+  reason: string;
+};
+
+const bufferedAppendStateByRunDir = new Map<string, BufferedAppendState>();
 
 function pad2(value: number): string {
   return String(value).padStart(2, "0");
 }
 
-function timestampForPath(date: Date): string {
+function timestampForRunId(date: Date): string {
   return [
-    `${date.getFullYear()}-${pad2(date.getMonth() + 1)}-${pad2(date.getDate())}`,
-    `${pad2(date.getHours())}-${pad2(date.getMinutes())}-${pad2(date.getSeconds())}`
-  ].join("_");
+    `${date.getFullYear()}${pad2(date.getMonth() + 1)}${pad2(date.getDate())}`,
+    `${pad2(date.getHours())}${pad2(date.getMinutes())}${pad2(date.getSeconds())}`
+  ].join("-");
 }
 
-function runCodeForPath(systemId: string): string {
-  const compact = slugify(systemId).replace(/-/g, "");
-  return (compact || "run").slice(0, 4).padEnd(4, "x");
-}
-
-function buildRunDirectoryName(createdAt: Date, systemId: string): string {
-  return `${timestampForPath(createdAt)}_${runCodeForPath(systemId)}`;
+function buildRunId(createdAt: Date): string {
+  const entropy = createHash("sha256")
+    .update(`${process.pid}:${createdAt.toISOString()}:${randomUUID()}`)
+    .digest("hex")
+    .slice(0, 8);
+  return `${timestampForRunId(createdAt)}-${entropy}`;
 }
 
 function shellEscape(value: string): string {
@@ -120,9 +126,9 @@ function buildRunReproScript(args: {
     `WORKDIR=${workdir}`,
     "PROMPT_FILE=\"$RUN_DIR/request.md\"",
     "SYSTEM_FILE=\"$RUN_DIR/system.mmd\"",
-    "RUNTIME_FILE=\"$WORKDIR/.ogsystem/runtime.json\"",
-    "LAWS_FILE=\"$WORKDIR/.ogsystem/laws.json\"",
-    "USER_PROFILE_FILE=\"$WORKDIR/.ogsystem/user-profile.json\"",
+    "RUNTIME_FILE=\"$WORKDIR/.ogs/runtime.json\"",
+    "LAWS_FILE=\"$WORKDIR/.ogs/laws.json\"",
+    "USER_PROFILE_FILE=\"$WORKDIR/.ogs/user-profile.json\"",
     "",
     "if [[ ! -f \"$PROMPT_FILE\" ]]; then",
     "  echo \"missing prompt snapshot: $PROMPT_FILE\" >&2",
@@ -146,7 +152,7 @@ function buildRunReproScript(args: {
     "  ARGS+=(--user-profile \"$USER_PROFILE_FILE\")",
     "fi",
     "",
-    "npm run run:adapter -- \"${ARGS[@]}\"",
+    "pnpm run run:adapter -- \"${ARGS[@]}\"",
     ""
   ].join("\n");
 }
@@ -333,6 +339,80 @@ function resolveSharedDir(args: {
     return resolve(args.runDir, "shared");
   }
   return resolve(args.workdir, args.runtimeConfig.sharedDir);
+}
+
+function resolveRunControlDir(runDir: string): string {
+  return resolve(runDir, "control");
+}
+
+function resolveStopRequestPath(runDir: string): string {
+  return resolve(resolveRunControlDir(runDir), "stop-request.json");
+}
+
+function resolveStopOutcomePath(runDir: string): string {
+  return resolve(resolveRunControlDir(runDir), "stop-outcome.json");
+}
+
+function isRunStopRequestRecord(value: unknown): value is RunStopRequestRecord {
+  return (
+    typeof value === "object" &&
+    value !== null &&
+    !Array.isArray(value) &&
+    (value as RunStopRequestRecord).version === 1 &&
+    typeof (value as RunStopRequestRecord).requestedAt === "string" &&
+    typeof (value as RunStopRequestRecord).requestedByPid === "number" &&
+    typeof (value as RunStopRequestRecord).reason === "string"
+  );
+}
+
+export async function requestRunStop(args: {
+  runDir: string;
+  reason?: string;
+  requestedByPid?: number;
+}): Promise<RunStopRequestRecord> {
+  const controlDir = resolveRunControlDir(args.runDir);
+  await mkdir(controlDir, { recursive: true });
+  const request: RunStopRequestRecord = {
+    version: 1,
+    requestedAt: new Date().toISOString(),
+    requestedByPid: args.requestedByPid ?? process.pid,
+    reason: args.reason ?? "ogs run stop"
+  };
+  await writeAtomicFile(resolveStopRequestPath(args.runDir), stringifyJson(request));
+  return request;
+}
+
+export async function readRunStopRequest(runDir: string): Promise<RunStopRequestRecord | undefined> {
+  const requestPath = resolveStopRequestPath(runDir);
+  if (!(await pathExists(requestPath))) {
+    return undefined;
+  }
+  const raw = await readJsonFile(requestPath);
+  if (!isRunStopRequestRecord(raw)) {
+    return undefined;
+  }
+  return raw;
+}
+
+export async function clearRunStopRequest(runDir: string): Promise<void> {
+  await rm(resolveStopRequestPath(runDir), { force: true });
+}
+
+export async function persistRunStopOutcome(args: {
+  context: RunContext;
+  status: "stopped" | "failed";
+  reason: string;
+}): Promise<RunStopOutcomeRecord> {
+  await mkdir(args.context.controlDir, { recursive: true });
+  const outcome: RunStopOutcomeRecord = {
+    version: 1,
+    status: args.status,
+    committedAt: new Date().toISOString(),
+    reason: args.reason
+  };
+  await writeAtomicFile(args.context.stopOutcomePath, stringifyJson(outcome));
+  await rm(args.context.stopRequestPath, { force: true });
+  return outcome;
 }
 
 async function writeIfMissing(path: string, content: string): Promise<void> {
@@ -578,20 +658,29 @@ export async function initializeRunContext(args: {
   prompt: string;
   workdir: string;
   runtimeConfig: RuntimeConfig;
+  resolvedConfigSnapshot?: Record<string, unknown>;
   resumeRunDir?: string;
 }): Promise<RunContext> {
   // Fresh runs and resumed runs share the same directory contract. Initialization therefore
   // prefers idempotent setup and write-if-missing files so resume never overwrites evidence.
+  if (args.resumeRunDir?.includes("ogsystem-history")) {
+    throw createRuntimeError({
+      errorCode: "RUNTIME_LEGACY_RUN_PATH_UNSUPPORTED",
+      errorCategory: "input",
+      message: `Legacy resume path is not supported: ${args.resumeRunDir}`,
+      retryable: false,
+      stage: "resume"
+    });
+  }
   const createdAt = new Date();
+  const runId = args.resumeRunDir ? basename(resolve(args.workdir, args.resumeRunDir)) : buildRunId(createdAt);
   const runDir = args.resumeRunDir
     ? resolve(args.workdir, args.resumeRunDir)
-    : resolve(
-        args.workdir,
-        args.runtimeConfig.runsDir,
-        buildRunDirectoryName(createdAt, args.system.systemId)
-      );
-  const runId = basename(runDir);
+    : resolve(args.workdir, args.runtimeConfig.runsDir, runId);
   const auditDir = resolve(runDir, "audit");
+  const logsDir = resolve(runDir, "logs");
+  const roleLogsDir = resolve(logsDir, "roles");
+  const controlDir = resolve(runDir, "control");
   const checkpointsDir = resolve(runDir, "checkpoints");
   const rolesRootDir = resolve(runDir, args.runtimeConfig.workspace.rolesDir);
   const sharedDir = resolveSharedDir({
@@ -606,10 +695,15 @@ export async function initializeRunContext(args: {
     ? await acquireResumeRunLock(runDir)
     : undefined;
   try {
+    await mkdir(runDir, { recursive: true });
     await mkdir(auditDir, { recursive: true });
+    await mkdir(logsDir, { recursive: true });
+    await mkdir(roleLogsDir, { recursive: true });
+    await mkdir(controlDir, { recursive: true });
     await mkdir(checkpointsDir, { recursive: true });
     await mkdir(rolesRootDir, { recursive: true });
     await mkdir(sharedDir, { recursive: true });
+    await mkdir(resolve(runDir, ".opencode"), { recursive: true });
 
     const sourceSystem = await readFile(args.systemPath, "utf8");
     await writeIfMissing(resolve(runDir, "request.md"), `${args.prompt}\n`);
@@ -622,9 +716,16 @@ export async function initializeRunContext(args: {
         `- systemId: ${args.system.systemId}`,
         `- systemVersion: ${args.system.systemVersion}`,
         `- entryRoleId: ${args.system.entryRoleId}`,
-        `- sharedDir: ${sharedDir}`
+        `- sharedDir: ${sharedDir}`,
+        `- logsDir: ${logsDir}`
       ].join("\n")
     );
+    if (args.resolvedConfigSnapshot) {
+      await writeIfMissing(
+        resolve(runDir, RESOLVED_CONFIG_FILE),
+        `${stringifyJson(args.resolvedConfigSnapshot)}\n`
+      );
+    }
     const reproPath = resolve(runDir, "repro.sh");
     await writeIfMissing(
       reproPath,
@@ -694,11 +795,20 @@ export async function initializeRunContext(args: {
     return {
       runId,
       runDir,
+      resolvedConfigPath: resolve(runDir, RESOLVED_CONFIG_FILE),
       auditDir,
+      logsDir,
+      engineLogPath: resolve(logsDir, "engine.ndjson"),
+      roleLogsDir,
+      controlDir,
+      stopRequestPath: resolve(controlDir, "stop-request.json"),
+      stopOutcomePath: resolve(controlDir, "stop-outcome.json"),
       eventsPath: resolve(runDir, "events.ndjson"),
       statePath: resolve(runDir, "state.json"),
       metricsPath: resolve(runDir, "metrics.json"),
-      opencodeServerPath: resolve(runDir, "opencode-server.json"),
+      opencodeDir: resolve(runDir, ".opencode"),
+      opencodePidPath: resolve(runDir, ".opencode", "server.pid"),
+      opencodeEndpointPath: resolve(runDir, ".opencode", "endpoint.json"),
       sessionsPath,
       checkpointsDir,
       roleDirsById,
@@ -1356,11 +1466,30 @@ export async function appendEvent(
   context: RunContext,
   payload: Record<string, unknown>
 ): Promise<void> {
+  const encoded = `${JSON.stringify(payload)}\n`;
   const state = getBufferedAppendState(context.runDir);
   state.pendingByKey.set("events", {
     key: "events",
     path: context.eventsPath,
-    content: `${state.pendingByKey.get("events")?.content ?? ""}${JSON.stringify(payload)}\n`
+    content: `${state.pendingByKey.get("events")?.content ?? ""}${encoded}`
+  });
+
+  const payloadType = typeof payload.type === "string" ? payload.type : "";
+  const roleId = typeof payload.roleId === "string" ? payload.roleId : "";
+  if (payloadType === "audit" && roleId) {
+    const key = `role-log:${roleId}`;
+    state.pendingByKey.set(key, {
+      key,
+      path: resolve(context.roleLogsDir, `${roleId}.ndjson`),
+      content: `${state.pendingByKey.get(key)?.content ?? ""}${encoded}`
+    });
+    return;
+  }
+
+  state.pendingByKey.set("engine-log", {
+    key: "engine-log",
+    path: context.engineLogPath,
+    content: `${state.pendingByKey.get("engine-log")?.content ?? ""}${encoded}`
   });
 }
 

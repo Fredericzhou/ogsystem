@@ -30,13 +30,17 @@ import {
 import { projectStages } from "./stage-projector.js";
 import { stringifyJson } from "./runtime-support.js";
 import {
+  appendEvent,
+  clearRunStopRequest,
   cleanupHistoricalExecutionSnapshots,
   flushBufferedRunArtifacts,
   loadAuditTrailFromEvents,
   loadCommittedRoleExecutionOutcomes,
   loadPendingRuntimeCheckpoints,
   markRoleExecutionOutcomeReconciled,
+  persistRunStopOutcome,
   persistRuntimeCheckpoint,
+  readRunStopRequest,
   writeAtomicFile
 } from "./run-artifacts.js";
 import { SYSTEM_END_ROLE_ID } from "./types.js";
@@ -115,10 +119,16 @@ function mergeStatus(current: GraphRunStatus, update: GraphRunStatus): GraphRunS
   if (current === "failed" || update === "failed") {
     return "failed";
   }
+  if (current === "stopped" || update === "stopped") {
+    return "stopped";
+  }
   if (current === "done" || update === "done") {
     return "done";
   }
-  return update;
+  if (current === "stopping" || update === "stopping") {
+    return "stopping";
+  }
+  return "running";
 }
 
 /**
@@ -920,6 +930,22 @@ export async function runSystemWithGraphRunner(args: RunnerInput): Promise<Adapt
         workingState = applyGraphUpdate(workingState, checkpoint.update);
         combinedUpdate = mergeGraphUpdates(combinedUpdate, checkpoint.update);
 
+        if (workingState.status === "running") {
+          const stopRequest = await readRunStopRequest(args.runContext.runDir);
+          if (stopRequest) {
+            const stopUpdate: GraphUpdate = { status: "stopping" };
+            workingState = applyGraphUpdate(workingState, stopUpdate);
+            combinedUpdate = mergeGraphUpdates(combinedUpdate, stopUpdate);
+            await appendEvent(args.runContext, {
+              type: "run_stopping",
+              at: new Date().toISOString(),
+              requestedAt: stopRequest.requestedAt,
+              requestedByPid: stopRequest.requestedByPid,
+              reason: stopRequest.reason
+            });
+          }
+        }
+
         if (workingState.status !== "running") {
           break;
         }
@@ -980,6 +1006,29 @@ export async function runSystemWithGraphRunner(args: RunnerInput): Promise<Adapt
     await persistProjectedState({ state: finalState, plan: args.plan, runContext: args.runContext });
   }
 
+  if (finalState.status === "stopping") {
+    const stopRequest = await readRunStopRequest(args.runContext.runDir);
+    const stopReason = stopRequest?.reason ?? "stop requested";
+    finalState = {
+      ...finalState,
+      status: "stopped",
+      error: stopReason
+    };
+    await appendEvent(args.runContext, {
+      type: "run_stopped",
+      at: new Date().toISOString(),
+      reason: stopReason
+    });
+    await persistRunStopOutcome({
+      context: args.runContext,
+      status: "stopped",
+      reason: stopReason
+    });
+    await persistProjectedState({ state: finalState, plan: args.plan, runContext: args.runContext });
+  } else {
+    await clearRunStopRequest(args.runContext.runDir);
+  }
+
   const auditTrailFromEvents = await loadAuditTrailFromEvents({
     context: args.runContext,
     allowedRoleIds: new Set(args.plan.roleIds)
@@ -1038,7 +1087,12 @@ export async function runSystemWithGraphRunner(args: RunnerInput): Promise<Adapt
   }
 
   logger.runEnd({
-    status: finalState.status === "failed" ? "failed" : "done",
+    status:
+      finalState.status === "failed"
+        ? "failed"
+        : finalState.status === "stopped"
+          ? "stopped"
+          : "done",
     finalRoleId: finalState.finalRoleId || undefined,
     totalTransitions: summary.totalTransitions,
     okCount: summary.okCount,
@@ -1050,7 +1104,12 @@ export async function runSystemWithGraphRunner(args: RunnerInput): Promise<Adapt
     systemId: args.plan.systemId,
     systemVersion: args.plan.systemVersion,
     lawRef: args.plan.lawBinding.globalLawRef,
-    status: finalState.status === "failed" ? "failed" : "done",
+    status:
+      finalState.status === "failed"
+        ? "failed"
+        : finalState.status === "stopped"
+          ? "stopped"
+          : "done",
     finalRoleId: finalState.finalRoleId || undefined,
     finalOutput: finalState.finalOutput || undefined,
     systemState: {
