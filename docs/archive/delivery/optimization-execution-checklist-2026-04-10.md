@@ -1,5 +1,8 @@
 # OGSystem Reliability-First Execution Checklist
 
+Superseded by: `docs/todo-backlog.md` (2026-04-11)  
+Status: archived snapshot (P0/P1 completed)
+
 Date: 2026-04-10  
 Scope: reliability, consistency, stability, and persistence only
 

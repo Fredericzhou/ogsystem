@@ -24,11 +24,17 @@
 - `docs/ogsystem-orchestration-semantics-v1.md`：V1 编排语义的单一事实源。
 - `docs/DECISIONS.md`：重要架构决策与取舍。
 - `docs/long-term-stability-roadmap.md`：长期稳定性与扩展路线图。
+- `docs/todo-backlog.md`：统一待办入口（当前执行优先级与延后项）。
 - `docs/ogsystem-ebook.md`：面向工程读者的系统级说明书，覆盖模块、原理、能力与演进方向。
+
+活跃“计划类”文档只保留两类：
+
+- `roadmap`（长期方向）：`docs/long-term-stability-roadmap.md`
+- `backlog`（当前待办）：`docs/todo-backlog.md`
 
 ## 3. 交付记录（已归档）
 
-以下文档是已完成工作的交付记录、验证记录或阶段性快照。它们有价值，但默认不再作为当前规则的来源：
+以下文档是交付记录、阶段计划、验证记录或阶段性快照。它们有价值，但默认不再作为当前规则的来源：
 
 - `docs/archive/delivery/single-graph-runtime-execution-checklist.md`
 - `docs/archive/delivery/runtime-risk-assessment-2026-04-10.md`
@@ -37,6 +43,9 @@
 - `docs/archive/delivery/runtime-replay-benchmark-2026-04-11.md`
 - `docs/archive/delivery/runtime-state-dehydration-plan-2026-04-11.md`
 - `docs/archive/delivery/runtime-test-coverage-audit-2026-04-11.md`
+- `docs/archive/delivery/source-commenting-hardening-plan-2026-04-11.md`（proposed stage plan）
+- `docs/archive/delivery/vnext-execution-plan-2026-04-11.md`（proposed stage plan）
+- `docs/archive/delivery/optimization-execution-checklist-2026-04-10.md`
 
 ## 4. 历史参考（已归档）
 
@@ -62,7 +71,14 @@
    - `docs/usage-manual.md`
    - 本索引 `docs/README.md`
 
-## 6. 新文档准入规则
+## 6. 计划文档放置规则（防混淆）
+
+1. `docs/` 根目录不放阶段性执行计划、评估、基准、checklist（尤其是 `*-plan-YYYY-MM-DD.md`）。
+2. 阶段性计划/评估/复盘一律放 `docs/archive/delivery/`，并带日期后缀。
+3. 探索失败或历史方案放 `docs/archive/history/`。
+4. 若出现同主题双份文档（一个在 `docs/`、一个在 `archive/`），应立即保留归档版本并移除 `docs/` 根目录副本。
+
+## 7. 新文档准入规则
 
 新文档创建前，先判断它属于哪一类：
 
@@ -70,7 +86,7 @@
 - 如果是在记录“本次任务如何做、做到了什么”，应创建带日期的交付记录。
 - 如果只是中间思路、临时分析或未收敛方案，不应直接放进主索引；建议留在分支、Issue、PR 描述或临时笔记中。
 
-## 7. 推荐阅读路径
+## 8. 推荐阅读路径
 
 第一次进入项目，建议按以下顺序阅读：
 
