@@ -2,7 +2,12 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import path from "node:path";
 
-import { validateRuntimeConfig } from "../dist/runtime/config.js";
+import {
+  validateLawsConfig,
+  validateProfilesConfig,
+  validateRuntimeConfig,
+  validateToolsConfig
+} from "../dist/runtime/config.js";
 import { runSystemWithAdapter } from "../dist/runtime/adapter.js";
 
 test("adapter fails early on invalid profile config with file path and field path", async () => {
@@ -204,6 +209,92 @@ test("runtime config fails fast on unsupported config version", () => {
       assert.match(error.message, /runtime\.json/);
       assert.match(error.message, /\.configVersion/);
       assert.match(error.message, /unsupported config version "2"/);
+      return true;
+    }
+  );
+});
+
+test("profiles config rejects duplicate profileId entries", () => {
+  assert.throws(
+    () =>
+      validateProfilesConfig(
+        [
+          {
+            profileId: "profile.same",
+            toolRef: "tool.a"
+          },
+          {
+            profileId: "profile.same",
+            toolRef: "tool.b"
+          }
+        ],
+        "profiles.json"
+      ),
+    (error) => {
+      assert.ok(error instanceof Error);
+      assert.match(error.message, /profiles\.json/);
+      assert.match(error.message, /\$\[1\]\.profileId/);
+      assert.match(error.message, /duplicate profileId "profile\.same"/);
+      return true;
+    }
+  );
+});
+
+test("tools config rejects duplicate toolRef entries", () => {
+  assert.throws(
+    () =>
+      validateToolsConfig(
+        {
+          tools: [
+            {
+              toolRef: "tool.same",
+              runner: "local_shell",
+              command: "echo",
+              argsTemplate: [],
+              stdinMode: "none"
+            },
+            {
+              toolRef: "tool.same",
+              runner: "local_shell",
+              command: "cat",
+              argsTemplate: [],
+              stdinMode: "none"
+            }
+          ]
+        },
+        "tools.json"
+      ),
+    (error) => {
+      assert.ok(error instanceof Error);
+      assert.match(error.message, /tools\.json/);
+      assert.match(error.message, /\$\.tools\[1\]\.toolRef/);
+      assert.match(error.message, /duplicate toolRef "tool\.same"/);
+      return true;
+    }
+  );
+});
+
+test("laws config rejects duplicate lawId entries", () => {
+  assert.throws(
+    () =>
+      validateLawsConfig(
+        {
+          laws: [
+            {
+              lawId: "law.same"
+            },
+            {
+              lawId: "law.same"
+            }
+          ]
+        },
+        "laws.json"
+      ),
+    (error) => {
+      assert.ok(error instanceof Error);
+      assert.match(error.message, /laws\.json/);
+      assert.match(error.message, /\$\.laws\[1\]\.lawId/);
+      assert.match(error.message, /duplicate lawId "law\.same"/);
       return true;
     }
   );

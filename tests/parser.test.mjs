@@ -9,7 +9,6 @@ const validSource = `flowchart TD
 %% law.global=law.test
 %% entry.role=intake
 %% exec.bind.intake=profile.parser
-%% model.bind.intake=model.fast
 input -->|ENTER| intake[Role:intake]
 intake[Role:intake] -->|COMPLETE| output
 `;
@@ -116,7 +115,7 @@ test("parser accepts a minimal system", () => {
   assert.ok(system.flows.length >= 1);
   assert.strictEqual(system.lawBinding.globalLawRef, "law.test");
   assert.strictEqual(system.executionBinding.intake, "profile.parser");
-  assert.strictEqual(system.modelBinding.intake, "model.fast");
+  assert.strictEqual(system.modelBinding.intake, undefined);
   assert.deepStrictEqual(system.graph?.routingModeByRoleId ?? {}, {});
 });
 
@@ -173,5 +172,23 @@ intake[Role:intake] -->|DONE| output
   assert.throws(
     () => parseSystemFromMermaidSource(duplicateLawSource),
     /MERMAID_DUPLICATE_METADATA_KEY|Duplicate metadata key "law\.global"/
+  );
+});
+
+test("parser rejects role binding conflicts when model.bind and exec.bind coexist", () => {
+  const bindingConflictSource = `flowchart TD
+%% system.id=test.binding.conflict
+%% system.version=0.1.0
+%% law.global=law.test
+%% entry.role=intake
+%% exec.bind.intake=profile.parser
+%% model.bind.intake=model.fast
+input -->|GO| intake[Role:intake]
+intake[Role:intake] -->|DONE| output
+`;
+
+  assert.throws(
+    () => parseSystemFromMermaidSource(bindingConflictSource),
+    /defines both model\.bind\.intake=model\.fast and exec\.bind\.intake=profile\.parser/
   );
 });

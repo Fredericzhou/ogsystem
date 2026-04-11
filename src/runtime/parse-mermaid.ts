@@ -660,6 +660,22 @@ function validateParsedSystemGraph(graph: ParsedSystemGraph): ValidatedSystemGra
     }
   }
 
+  for (const roleId of roleIds) {
+    const modelRef = modelBinding[roleId];
+    const executionRef = executionBinding[roleId];
+    if (!modelRef || !executionRef) {
+      continue;
+    }
+    failMermaid({
+      stage: "validate",
+      errorCode: "MERMAID_ROLE_BINDING_CONFLICT",
+      message:
+        `Role "${roleId}" defines both model.bind.${roleId}=${modelRef} and ` +
+        `exec.bind.${roleId}=${executionRef}. A role must use exactly one binding type.`,
+      lineNumber: metadataLine(`model.bind.${roleId}`) ?? metadataLine(`exec.bind.${roleId}`)
+    });
+  }
+
   for (const roleId of Object.keys(routingModeByRoleId)) {
     if (!roleIds.includes(roleId)) {
       failMermaid({

@@ -116,15 +116,44 @@ function expectNoExtraKeys(
   }
 }
 
+function assertUniqueStringKey(args: {
+  key: string;
+  index: number;
+  seenByKey: Map<string, number>;
+  filePath: string;
+  fieldPath: string;
+  label: string;
+}): void {
+  const existingIndex = args.seenByKey.get(args.key);
+  if (existingIndex !== undefined) {
+    fail(
+      args.filePath,
+      args.fieldPath,
+      `duplicate ${args.label} "${args.key}" (first declared at index ${existingIndex})`
+    );
+  }
+  args.seenByKey.set(args.key, args.index);
+}
+
 export function validateProfilesConfig(value: unknown, filePath: string): ExecutionProfile[] {
   const items = expectArray(value, filePath, "$");
+  const seenProfileIds = new Map<string, number>();
   return items.map((item, index) => {
     const fieldPath = `$[${index}]`;
     const record = expectRecord(item, filePath, fieldPath);
     expectNoExtraKeys(record, ["profileId", "toolRef", "timeoutMs", "maxOutputBytes"], filePath, fieldPath);
+    const profileId = expectString(record.profileId, filePath, `${fieldPath}.profileId`);
+    assertUniqueStringKey({
+      key: profileId,
+      index,
+      seenByKey: seenProfileIds,
+      filePath,
+      fieldPath: `${fieldPath}.profileId`,
+      label: "profileId"
+    });
 
     return {
-      profileId: expectString(record.profileId, filePath, `${fieldPath}.profileId`),
+      profileId,
       toolRef: expectString(record.toolRef, filePath, `${fieldPath}.toolRef`),
       timeoutMs: expectOptionalPositiveInteger(record.timeoutMs, filePath, `${fieldPath}.timeoutMs`),
       maxOutputBytes: expectOptionalPositiveInteger(
@@ -167,9 +196,19 @@ function validateTool(value: unknown, filePath: string, fieldPath: string): CliT
 export function validateToolsConfig(value: unknown, filePath: string): CliToolRegistry {
   const record = expectRecord(value, filePath, "$");
   expectNoExtraKeys(record, ["tools"], filePath, "$");
-  const tools = expectArray(record.tools, filePath, "$.tools").map((item, index) =>
-    validateTool(item, filePath, `$.tools[${index}]`)
-  );
+  const seenToolRefs = new Map<string, number>();
+  const tools = expectArray(record.tools, filePath, "$.tools").map((item, index) => {
+    const tool = validateTool(item, filePath, `$.tools[${index}]`);
+    assertUniqueStringKey({
+      key: tool.toolRef,
+      index,
+      seenByKey: seenToolRefs,
+      filePath,
+      fieldPath: `$.tools[${index}].toolRef`,
+      label: "toolRef"
+    });
+    return tool;
+  });
   return { tools };
 }
 
@@ -225,9 +264,19 @@ function validateLawSpec(value: unknown, filePath: string, fieldPath: string): L
 export function validateLawsConfig(value: unknown, filePath: string): LawCatalog {
   const record = expectRecord(value, filePath, "$");
   expectNoExtraKeys(record, ["laws"], filePath, "$");
-  const laws = expectArray(record.laws, filePath, "$.laws").map((item, index) =>
-    validateLawSpec(item, filePath, `$.laws[${index}]`)
-  );
+  const seenLawIds = new Map<string, number>();
+  const laws = expectArray(record.laws, filePath, "$.laws").map((item, index) => {
+    const law = validateLawSpec(item, filePath, `$.laws[${index}]`);
+    assertUniqueStringKey({
+      key: law.lawId,
+      index,
+      seenByKey: seenLawIds,
+      filePath,
+      fieldPath: `$.laws[${index}].lawId`,
+      label: "lawId"
+    });
+    return law;
+  });
   return { laws };
 }
 
