@@ -4,6 +4,8 @@
 
 归档目录说明见：`docs/archive/README.md`。
 
+包管理命令基线：`pnpm-only`。活跃文档中的安装、构建、测试与运行命令示例不得使用 `npm`。
+
 ## 1. 文档优先级
 
 当多个文档描述不一致时，按以下顺序判定：
@@ -59,6 +61,7 @@
 - `docs/archive/history/xlgraph-subset-compatibility.md`
 - `docs/archive/history/role-model-user-profile-minimal-spec.md`
 - `docs/archive/history/langgraph-engine-example-systems.md`
+- `docs/archive/history/ogsystem-vnext-dev-plan.md`
 
 ## 5. 归档规则
 
@@ -71,6 +74,7 @@
    - `docs/ogsystem-orchestration-semantics-v1.md`
    - `docs/usage-manual.md`
    - 本索引 `docs/README.md`
+7. 包管理策略或命令入口发生变更时，必须同步更新 `README.md` 与 `docs/usage-manual.md` 的命令示例，保持 `pnpm-only` 一致性。
 
 ## 6. 计划文档放置规则（防混淆）
 

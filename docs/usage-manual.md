@@ -432,7 +432,7 @@ Use `run:doctor` as runtime preflight and recovery inspection.
 Preflight command:
 
 ```bash
-npm run run:doctor -- \
+pnpm run run:doctor -- \
   --required opencode \
   --system examples/target-model-binding-system.mmd \
   --laws .ogsystem/laws.json
@@ -441,7 +441,7 @@ npm run run:doctor -- \
 Lint command:
 
 ```bash
-npm run lint:system -- --system examples/target-model-binding-system.mmd
+pnpm run lint:system -- --system examples/target-model-binding-system.mmd
 ```
 
 Lint rules:
@@ -453,7 +453,7 @@ Lint rules:
 Console progress logging:
 
 ```bash
-npm run run:adapter -- \
+pnpm run run:adapter -- \
   --system examples/target-model-binding-system.mmd \
   --prompt "demo" \
   --dry-run \
@@ -468,7 +468,7 @@ npm run run:adapter -- \
 Graph preview link (optional):
 
 ```bash
-npm run run:adapter -- \
+pnpm run run:adapter -- \
   --system examples/target-model-binding-system.mmd \
   --prompt "demo" \
   --dry-run \
@@ -481,14 +481,14 @@ npm run run:adapter -- \
 Run-directory inspection (resume prerequisites):
 
 ```bash
-npm run run:doctor -- \
+pnpm run run:doctor -- \
   --run-dir ogsystem-history/<run-id>
 ```
 
 Optional online connectivity precheck:
 
 ```bash
-npm run run:doctor -- \
+pnpm run run:doctor -- \
   --system examples/target-model-binding-system.mmd \
   --online-check
 ```
@@ -513,7 +513,7 @@ For recovery, prioritize:
 Preferred runtime command:
 
 ```bash
-npm run run:adapter -- \
+pnpm run run:adapter -- \
   --system examples/target-model-binding-system.mmd \
   --prompt "讨论当前架构是否继续最小化" \
   --dry-run
@@ -530,7 +530,7 @@ This path auto-discovers:
 Legacy-compatible binding command:
 
 ```bash
-npm run run:adapter -- \
+pnpm run run:adapter -- \
   --system examples/console-system.mmd \
   --profiles examples/console-profiles.json \
   --tools examples/console-tools.json \
@@ -542,7 +542,7 @@ npm run run:adapter -- \
 Graph runtime command:
 
 ```bash
-npm run run:adapter -- \
+pnpm run run:adapter -- \
   --system examples/langgraph-debate-current/system.mmd \
   --laws examples/langgraph-debate-current/laws.json \
   --user-profile examples/langgraph-debate-current/user-profile.json \
@@ -553,7 +553,7 @@ npm run run:adapter -- \
 Minimal expert consultation command:
 
 ```bash
-npm run run:adapter -- \
+pnpm run run:adapter -- \
   --system examples/langgraph-expert-consultation/system.mmd \
   --laws examples/langgraph-expert-consultation/laws.json \
   --user-profile examples/langgraph-expert-consultation/user-profile.json \
@@ -564,7 +564,7 @@ npm run run:adapter -- \
 Resume a graph runtime run from persisted `state.json.graphState`:
 
 ```bash
-npm run run:adapter -- \
+pnpm run run:adapter -- \
   --system examples/langgraph-debate-current/system.mmd \
   --laws examples/langgraph-debate-current/laws.json \
   --user-profile examples/langgraph-debate-current/user-profile.json \
@@ -581,7 +581,7 @@ Operational note:
 Replay benchmark command:
 
 ```bash
-npm run bench:runtime-replay
+pnpm run bench:runtime-replay
 ```
 
 Validation command for generated Mermaid:

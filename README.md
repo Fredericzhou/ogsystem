@@ -32,19 +32,19 @@ Detailed usage manual:
 Install:
 
 ```bash
-npm install
+pnpm install
 ```
 
 Build:
 
 ```bash
-npm run build
+pnpm run build
 ```
 
 Run minimal example (no external CLI execution):
 
 ```bash
-npm run run:adapter -- \
+pnpm run run:adapter -- \
   --system examples/minimal-system.mmd \
   --laws examples/console-laws.json \
   --prompt "demo" \
@@ -54,7 +54,7 @@ npm run run:adapter -- \
 Run target model-binding example with auto-discovered `.ogsystem/` config:
 
 ```bash
-npm run run:adapter -- \
+pnpm run run:adapter -- \
   --system examples/target-model-binding-system.mmd \
   --prompt "讨论当前架构是否继续最小化" \
   --dry-run
@@ -63,7 +63,7 @@ npm run run:adapter -- \
 Run console example (legacy compatibility path):
 
 ```bash
-npm run run:adapter -- \
+pnpm run run:adapter -- \
   --system examples/console-system.mmd \
   --profiles examples/console-profiles.json \
   --tools examples/console-tools.json \
@@ -75,7 +75,7 @@ npm run run:adapter -- \
 Run graph debate example:
 
 ```bash
-npm run run:adapter -- \
+pnpm run run:adapter -- \
   --system examples/langgraph-debate-current/system.mmd \
   --laws examples/langgraph-debate-current/laws.json \
   --user-profile examples/langgraph-debate-current/user-profile.json \
@@ -86,7 +86,7 @@ npm run run:adapter -- \
 Run graph expert consultation example:
 
 ```bash
-npm run run:adapter -- \
+pnpm run run:adapter -- \
   --system examples/langgraph-expert-consultation/system.mmd \
   --laws examples/langgraph-expert-consultation/laws.json \
   --user-profile examples/langgraph-expert-consultation/user-profile.json \
@@ -97,19 +97,19 @@ npm run run:adapter -- \
 Check required CLI tools:
 
 ```bash
-npm run run:doctor -- --required opencode
+pnpm run run:doctor -- --required opencode
 ```
 
 Lint a system with the runtime parser/validator:
 
 ```bash
-npm run lint:system -- --system examples/target-model-binding-system.mmd
+pnpm run lint:system -- --system examples/target-model-binding-system.mmd
 ```
 
 Show simple role/transition progress in the console while keeping final JSON on stdout:
 
 ```bash
-npm run run:adapter -- \
+pnpm run run:adapter -- \
   --system examples/target-model-binding-system.mmd \
   --prompt "讨论当前架构是否继续最小化" \
   --dry-run \

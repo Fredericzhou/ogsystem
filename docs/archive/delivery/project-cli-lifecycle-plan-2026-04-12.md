@@ -6,6 +6,13 @@ Status: Proposed
 Date: 2026-04-12  
 Owner: Runtime maintainers
 
+## Implementation Snapshot (2026-04-12)
+
+- Phase 0 (toolchain baseline): partially completed.
+- `pnpm-only` baseline is enforced in `package.json` (`packageManager` + `preinstall` guard).
+- runtime regression gate is green under pnpm (`pnpm test`, `test:examples`, `test:doctor`).
+- lifecycle surface (`ogs project/run/logs`), `.ogs/runs/` authority switch, and stop/resume state machine are still pending implementation.
+
 ## 1. Objective
 
 Upgrade OGSystem from a run-command tool into a project-managed CLI product (`ogs`) with explicit lifecycle operations:
