@@ -303,25 +303,47 @@ async function runOnlineModelConnectivityCheck(args: {
   runtimeConfig: RuntimeConfig;
   system: SystemDefinition;
 }): Promise<void> {
+  const ONLINE_CHECK_MIN_TIMEOUT_MS = 20000;
+  const ONLINE_CHECK_MAX_TIMEOUT_MS = 90000;
+
   const modelIds = Array.from(new Set(Object.values(args.system.modelBinding)));
   if (modelIds.length === 0) {
     addWarning(args.report, "online check skipped: system does not bind any model");
     return;
   }
 
+  const modelRootDir = resolve(args.workdir, args.runtimeConfig.modelRepo);
+  let serverTimeoutMs = ONLINE_CHECK_MIN_TIMEOUT_MS;
+  for (const modelId of modelIds) {
+    try {
+      const modelPackage = await loadModelPackage({
+        modelId,
+        modelRootDir
+      });
+      const modelTimeoutMs = modelPackage.manifest.timeoutMs ?? ONLINE_CHECK_MIN_TIMEOUT_MS;
+      serverTimeoutMs = Math.max(serverTimeoutMs, modelTimeoutMs);
+    } catch {
+      // Keep doctor resilient: unresolved model packages will be reported in per-model checks.
+    }
+  }
+  serverTimeoutMs = Math.min(Math.max(serverTimeoutMs, ONLINE_CHECK_MIN_TIMEOUT_MS), ONLINE_CHECK_MAX_TIMEOUT_MS);
+
   const runClient = await startOpencodeRunClient({
-    timeoutMs: 20000,
+    timeoutMs: serverTimeoutMs,
     directory: args.workdir
   });
 
   try {
-    const modelRootDir = resolve(args.workdir, args.runtimeConfig.modelRepo);
     for (const modelId of modelIds) {
       try {
         const modelPackage = await loadModelPackage({
           modelId,
           modelRootDir
         });
+        const checkTimeoutMs = Math.min(
+          Math.max(modelPackage.manifest.timeoutMs ?? ONLINE_CHECK_MIN_TIMEOUT_MS, ONLINE_CHECK_MIN_TIMEOUT_MS),
+          ONLINE_CHECK_MAX_TIMEOUT_MS
+        );
         await executeOpencodeModelRole({
           roleId: `doctor-online-${modelId}`,
           prompt: 'Return exactly this JSON: {"ok": true}',
@@ -337,7 +359,7 @@ async function runOnlineModelConnectivityCheck(args: {
           },
           modelPackage,
           workdir: args.workdir,
-          timeoutMs: 20000,
+          timeoutMs: checkTimeoutMs,
           maxOutputBytes: 4096,
           runClient
         });

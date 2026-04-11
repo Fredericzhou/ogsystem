@@ -7,11 +7,11 @@ flowchart TD
 %% join.mode.debate-judge=all_of
 %% join.sources.debate-judge=debate-minimalist,debate-alignmentist
 %% loop.max.debate-moderator=2
-%% model.bind.debate-moderator=fast-gpt54
-%% model.bind.debate-minimalist=balanced-gpt52
-%% model.bind.debate-alignmentist=deep-o3
-%% model.bind.debate-judge=deep-o3
-%% model.bind.debate-summary=steady-gpt54
+%% model.bind.debate-moderator=general-fast
+%% model.bind.debate-minimalist=general-balanced
+%% model.bind.debate-alignmentist=general-steady
+%% model.bind.debate-judge=general-steady
+%% model.bind.debate-summary=general-steady
 
 input -->|DEBATE_REQUEST| debate-moderator[Role:debate-moderator]
 debate-moderator[Role:debate-moderator] -->|SEND_MINIMALIST| debate-minimalist[Role:debate-minimalist]

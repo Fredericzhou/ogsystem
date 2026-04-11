@@ -14,3 +14,5 @@ Rules:
 - model packages are bound from `system.mmd` via `model.bind.<roleId>=<modelId>`
 - legacy runtime may still use `exec.bind.*` during migration
 - curated `modelId` aliases should point to models that exist in `catalog/opencode-models.json`
+- prefer semantic alias names for `modelId` (for example `general-fast`, `general-balanced`, `general-steady`) instead of provider/version names
+- upgrade provider models by editing `models/<modelId>/model.json` mapping, so `system.mmd` remains stable across model refreshes

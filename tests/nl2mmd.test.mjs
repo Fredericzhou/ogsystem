@@ -63,7 +63,10 @@ test("nl2mmd txt graph renderer prints plain structure preview", async () => {
   assert.match(txt, /^ROLES$/m);
   assert.match(txt, /^\[input\]$/m);
   assert.match(txt, /--DEBATE_REQUEST--> debate-moderator/);
-  assert.match(txt, /debate-judge \[model=deep-o3, join=all_of, sources=debate-minimalist,debate-alignmentist\]/);
+  assert.match(
+    txt,
+    /debate-judge \[model=general-steady, join=all_of, sources=debate-minimalist,debate-alignmentist\]/
+  );
 });
 
 test("nl2mmd validator accepts the runnable debate example and returns txt preview", async () => {

@@ -1034,3 +1034,88 @@ test("executeOpencodeModelRole retries once with corrective prompt when structur
     content: "corrected"
   });
 });
+
+test("executeOpencodeModelRole surfaces SDK create error payload instead of generic session-id failure", async () => {
+  await assert.rejects(
+    executeOpencodeModelRole({
+      roleId: "role-create-error-payload",
+      prompt: "hello",
+      schema: {
+        type: "object",
+        properties: {
+          content: { type: "string" }
+        }
+      },
+      modelPackage: makeModelPackage(),
+      workdir: "/tmp/run/roles/role-create-error-payload",
+      timeoutMs: 5000,
+      maxOutputBytes: 4096,
+      runClient: makeRunClient({
+        client: {
+          session: {
+            async create() {
+              return {
+                error: {
+                  name: "UnknownError",
+                  data: {
+                    message: "DrizzleError: Failed to run session.create"
+                  }
+                }
+              };
+            },
+            async prompt() {
+              throw new Error("prompt should not be called");
+            },
+            async abort() {
+              return true;
+            }
+          }
+        }
+      })
+    }),
+    /DrizzleError: Failed to run session\.create/
+  );
+});
+
+test("executeOpencodeModelRole adds remediation hint for openai-compatible responses mismatch", async () => {
+  await assert.rejects(
+    executeOpencodeModelRole({
+      roleId: "role-openai-compatible-mismatch",
+      prompt: "hello",
+      schema: {
+        type: "object",
+        properties: {
+          content: { type: "string" }
+        }
+      },
+      modelPackage: makeModelPackage({
+        model: "openai/gpt-5.4"
+      }),
+      workdir: "/tmp/run/roles/role-openai-compatible-mismatch",
+      timeoutMs: 5000,
+      maxOutputBytes: 4096,
+      runClient: makeRunClient({
+        client: {
+          session: {
+            async create() {
+              return {
+                data: {
+                  id: "ses_mismatch"
+                }
+              };
+            },
+            async prompt() {
+              throw new Error(
+                "sdk.responses is not a function. (In 'sdk.responses(modelID)', 'sdk.responses' is undefined)"
+              );
+            },
+            async abort() {
+              return true;
+            }
+          }
+        }
+      })
+    }),
+    /@ai-sdk\/openai-compatible/
+  );
+});

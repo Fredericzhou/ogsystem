@@ -6,11 +6,11 @@ flowchart TD
 %% role.mode.diagnosis-dispatch=parallel_split
 %% join.mode.diagnosis-chief-review=all_of
 %% join.sources.diagnosis-chief-review=diagnosis-cardiology,diagnosis-neurology,diagnosis-imaging
-%% model.bind.diagnosis-dispatch=fast-gpt54
-%% model.bind.diagnosis-cardiology=balanced-gpt52
-%% model.bind.diagnosis-neurology=deep-o3
-%% model.bind.diagnosis-imaging=steady-gpt54
-%% model.bind.diagnosis-chief-review=deep-o3
+%% model.bind.diagnosis-dispatch=general-fast
+%% model.bind.diagnosis-cardiology=general-balanced
+%% model.bind.diagnosis-neurology=general-steady
+%% model.bind.diagnosis-imaging=general-steady
+%% model.bind.diagnosis-chief-review=general-steady
 
 input -->|CASE_RECEIVED| diagnosis-dispatch[Role:diagnosis-dispatch]
 

@@ -3,8 +3,8 @@ flowchart TD
 %% system.version=1.0.0
 %% law.global=law.console.base
 %% entry.role=debate-minimalist
-%% model.bind.debate-minimalist=balanced-gpt52
-%% model.bind.debate-judge=deep-o3
+%% model.bind.debate-minimalist=general-balanced
+%% model.bind.debate-judge=general-steady
 
 input -->|DEBATE_REQUEST| debate-minimalist[Role:debate-minimalist]
 debate-minimalist[Role:debate-minimalist] -->|MINIMALIST_DONE| debate-judge[Role:debate-judge]

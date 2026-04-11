@@ -13,12 +13,21 @@ export type StartedServer = {
 };
 
 type SessionCreateResponse = {
+  error?: {
+    name?: string;
+    data?: unknown;
+  };
   data?: {
     id?: string;
   };
+  id?: string;
 };
 
 type SessionPromptResponse = {
+  error?: {
+    name?: string;
+    data?: unknown;
+  };
   data?: {
     id?: string;
     info?: {
@@ -170,6 +179,60 @@ function getErrorMessage(error: unknown): string {
   return String(error);
 }
 
+function augmentKnownOpencodeError(
+  message: string,
+  modelRef: { providerID: string; modelID: string }
+): string {
+  if (message.includes("@ai-sdk/openai-compatible")) {
+    return message;
+  }
+  if (
+    /sdk\.responses is not a function/i.test(message) &&
+    modelRef.providerID === "openai" &&
+    /^gpt-5(?:$|[-.])/i.test(modelRef.modelID)
+  ) {
+    return [
+      message,
+      'Hint: OpenCode provider "openai" appears to use "@ai-sdk/openai-compatible", which does not expose responses().',
+      'Update ~/.config/opencode/opencode.json provider.openai.npm to "@ai-sdk/openai", or switch to a non-Responses model (for example openai/gpt-4.1).'
+    ].join("\n");
+  }
+  return message;
+}
+
+function extractSdkErrorMessage(
+  response: { error?: { name?: string; data?: unknown } } | undefined,
+  modelRef: { providerID: string; modelID: string }
+): string | undefined {
+  const payload = response?.error;
+  if (!payload) {
+    return undefined;
+  }
+  const messageFromData =
+    typeof payload.data === "object" &&
+    payload.data !== null &&
+    "message" in payload.data &&
+    typeof (payload.data as { message?: unknown }).message === "string"
+      ? (payload.data as { message: string }).message
+      : "";
+  const message = messageFromData || payload.name || "";
+  const normalized = message.trim();
+  if (!normalized) {
+    return undefined;
+  }
+  return augmentKnownOpencodeError(normalized, modelRef);
+}
+
+function isStructuredOutputMissingError(infoError: {
+  name?: string;
+  data?: {
+    message?: string;
+  };
+}): boolean {
+  const message = `${infoError.data?.message ?? ""} ${infoError.name ?? ""}`.trim();
+  return /structured output/i.test(message) || /did not produce structured/i.test(message);
+}
+
 function isTransientOpenCodeError(error: unknown): boolean {
   const message = getErrorMessage(error);
   return TRANSIENT_OPENCODE_ERROR_PATTERNS.some((pattern) => pattern.test(message));
@@ -200,10 +263,22 @@ function wrapExecutionError(args: {
   sessionId?: string;
   messageId?: string;
   serverPid?: number;
+  providerID?: string;
+  modelID?: string;
   executionArgs: string[];
 }): OpencodeExecutionError {
+  const baseMessage =
+    args.error instanceof OpencodeExecutionError ? args.error.message : getErrorMessage(args.error);
+  const message =
+    args.providerID && args.modelID
+      ? augmentKnownOpencodeError(baseMessage, {
+          providerID: args.providerID,
+          modelID: args.modelID
+        })
+      : baseMessage;
+
   if (args.error instanceof OpencodeExecutionError) {
-    return new OpencodeExecutionError(args.error.message, {
+    return new OpencodeExecutionError(message, {
       args: args.error.details?.args ?? args.executionArgs,
       stdout: args.error.details?.stdout,
       stderr: [args.stderr, args.error.details?.stderr].filter(Boolean).join("\n"),
@@ -213,7 +288,6 @@ function wrapExecutionError(args: {
     });
   }
 
-  const message = getErrorMessage(args.error);
   return new OpencodeExecutionError(message, {
     args: args.executionArgs,
     stderr: [args.stderr, message].filter(Boolean).join("\n"),
@@ -622,7 +696,17 @@ export async function executeOpencodeModelRole(
                 title: `${args.roleId}-${Date.now()}`,
                 directory: args.workdir
               });
-              sessionId = created.data?.id ?? "";
+              const createErrorMessage = extractSdkErrorMessage(created, {
+                providerID,
+                modelID
+              });
+              if (createErrorMessage) {
+                throw new Error(createErrorMessage);
+              }
+              sessionId =
+                created.data?.id ??
+                (typeof created.id === "string" ? created.id : "") ??
+                "";
               if (!sessionId) {
                 throw new Error("OpenCode SDK did not return a session id");
               }
@@ -651,12 +735,24 @@ export async function executeOpencodeModelRole(
             });
             await ensureNotCancelled();
 
+            const promptErrorMessage = extractSdkErrorMessage(response, {
+              providerID,
+              modelID
+            });
+            if (promptErrorMessage) {
+              throw new Error(promptErrorMessage);
+            }
             const info = response.data?.info;
             messageId = response.data?.id;
             stderr = summarizeParts(response.data?.parts);
-            if (info?.error) {
-              const message =
-                info.error.data?.message || info.error.name || "OpenCode execution failed";
+            if (info?.error && !isStructuredOutputMissingError(info.error)) {
+              const message = augmentKnownOpencodeError(
+                info.error.data?.message || info.error.name || "OpenCode execution failed",
+                {
+                  providerID,
+                  modelID
+                }
+              );
               throw new OpencodeExecutionError(message, {
                 stderr,
                 sessionId,
@@ -706,13 +802,27 @@ export async function executeOpencodeModelRole(
               });
               await ensureNotCancelled();
 
+              const correctionErrorMessage = extractSdkErrorMessage(correctionResponse, {
+                providerID,
+                modelID
+              });
+              if (correctionErrorMessage) {
+                throw new Error(correctionErrorMessage);
+              }
               const correctionInfo = correctionResponse.data?.info;
               messageId = correctionResponse.data?.id;
               const correctionStderr = summarizeParts(correctionResponse.data?.parts);
               stderr = [stderr, correctionStderr].filter(Boolean).join("\n");
-              if (correctionInfo?.error) {
-                const message =
-                  correctionInfo.error.data?.message || correctionInfo.error.name || "OpenCode execution failed";
+              if (correctionInfo?.error && !isStructuredOutputMissingError(correctionInfo.error)) {
+                const message = augmentKnownOpencodeError(
+                  correctionInfo.error.data?.message ||
+                    correctionInfo.error.name ||
+                    "OpenCode execution failed",
+                  {
+                    providerID,
+                    modelID
+                  }
+                );
                 throw new OpencodeExecutionError(message, {
                   stderr,
                   sessionId,
@@ -765,6 +875,8 @@ export async function executeOpencodeModelRole(
               sessionId,
               messageId,
               serverPid: runClient.pid,
+              providerID,
+              modelID,
               executionArgs: buildExecutionArgs({
                 runClient,
                 workdir: args.workdir,

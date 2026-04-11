@@ -50,7 +50,7 @@ test("adapter auto-discovers runtime config and persists run artifacts for model
     path.resolve(runDir, "roles", "debate-minimalist", "role.md"),
     "utf8"
   );
-  assert.match(minimalistRole, /modelId: balanced-gpt52/);
+  assert.match(minimalistRole, /modelId: general-balanced/);
   assert.match(minimalistRole, /preferredModelTags:/);
 
   const minimalistInbox = await readFile(

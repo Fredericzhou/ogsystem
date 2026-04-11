@@ -121,8 +121,8 @@ flowchart TD
 %% system.version=1.0.0
 %% law.global=law.console.base
 %% entry.role=debate-minimalist
-%% model.bind.debate-minimalist=balanced-gpt52
-%% model.bind.debate-judge=deep-o3
+%% model.bind.debate-minimalist=general-balanced
+%% model.bind.debate-judge=general-steady
 
 input -->|DEBATE_REQUEST| minimalist[Role:debate-minimalist]
 minimalist[Role:debate-minimalist] -->|MINIMALIST_DONE| judge[Role:debate-judge]
@@ -155,11 +155,11 @@ flowchart TD
 %% join.mode.debate-judge=all_of
 %% join.sources.debate-judge=debate-minimalist,debate-alignmentist
 %% loop.max.debate-moderator=2
-%% model.bind.debate-moderator=fast-gpt54
-%% model.bind.debate-minimalist=balanced-gpt52
-%% model.bind.debate-alignmentist=deep-o3
-%% model.bind.debate-judge=deep-o3
-%% model.bind.debate-summary=steady-gpt54
+%% model.bind.debate-moderator=general-fast
+%% model.bind.debate-minimalist=general-balanced
+%% model.bind.debate-alignmentist=general-steady
+%% model.bind.debate-judge=general-steady
+%% model.bind.debate-summary=general-steady
 
 input -->|DEBATE_REQUEST| debate-moderator[Role:debate-moderator]
 debate-moderator[Role:debate-moderator] -->|SEND_MINIMALIST| debate-minimalist[Role:debate-minimalist]
@@ -209,15 +209,15 @@ Example:
 
 ```json
 {
-  "modelId": "deep-o3",
+  "modelId": "general-steady",
   "executor": "opencode",
-  "model": "openai/o3",
+  "model": "openai/gpt-5.4",
   "args": {
-    "reasoningEffort": "high"
+    "reasoningEffort": "medium"
   },
-  "timeoutMs": 180000,
+  "timeoutMs": 120000,
   "maxOutputBytes": 65536,
-  "tags": ["reasoning", "long-context"]
+  "tags": ["general", "steady", "long-context"]
 }
 ```
 
@@ -227,6 +227,8 @@ Model rules:
 - model packages do not include routing logic
 - `og-models/catalog/opencode-models.json` is the raw availability snapshot
 - `og-models/models/*` should stay a small curated alias layer
+- prefer semantic aliases in `modelId` (for example `general-fast`, `general-balanced`, `general-steady`) and map them to concrete provider models in `model.json`
+- keep `system.mmd` stable by evolving model mapping in `og-models/models/*` instead of editing role flow definitions for every model upgrade
 - for `executor: "opencode"`, `model.bind` roles run through OpenCode SDK v2 structured output:
   - input = rendered role prompt + `output.schema.json` + model selection + role working directory
   - output = one JSON object from `assistant.info.structured`; if `structured` is missing or string-encoded, runtime falls back to assistant text parts and JSON extraction

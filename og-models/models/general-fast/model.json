@@ -1,0 +1,11 @@
+{
+  "modelId": "general-fast",
+  "executor": "opencode",
+  "model": "openai/gpt-5.4",
+  "args": {
+    "reasoningEffort": "low"
+  },
+  "timeoutMs": 60000,
+  "maxOutputBytes": 32768,
+  "tags": ["general", "fast", "low-cost"]
+}

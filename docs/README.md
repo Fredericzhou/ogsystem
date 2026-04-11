@@ -45,6 +45,7 @@
 - `docs/archive/delivery/runtime-test-coverage-audit-2026-04-11.md`
 - `docs/archive/delivery/source-commenting-hardening-plan-2026-04-11.md`（proposed stage plan）
 - `docs/archive/delivery/vnext-execution-plan-2026-04-11.md`（proposed stage plan）
+- `docs/archive/delivery/project-cli-lifecycle-plan-2026-04-12.md`（proposed lifecycle/productization plan）
 - `docs/archive/delivery/optimization-execution-checklist-2026-04-10.md`
 
 ## 4. 历史参考（已归档）
