@@ -572,9 +572,6 @@ export async function executeOpencodeModelRole(
     : await startOpencodeRunClient(
         {
           timeoutMs: Math.max(15000, Math.min(args.timeoutMs, 30000)),
-          env: {
-            OPENCODE_CONFIG_CONTENT: JSON.stringify({})
-          },
           directory: args.workdir
         },
         transport

@@ -311,9 +311,6 @@ async function runOnlineModelConnectivityCheck(args: {
 
   const runClient = await startOpencodeRunClient({
     timeoutMs: 20000,
-    env: {
-      OPENCODE_CONFIG_CONTENT: JSON.stringify({})
-    },
     directory: args.workdir
   });
 
