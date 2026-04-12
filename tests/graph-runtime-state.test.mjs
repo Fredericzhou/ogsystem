@@ -244,3 +244,65 @@ test("graph runtime helpers evaluate quorum_of readiness by unique completed sou
     true
   );
 });
+
+test("graph runtime helpers keep quorum_of readiness isolated by lineageId", () => {
+  const system = parseSystemFromMermaidSource(quorumSource);
+  const plan = createExecutionPlan(system);
+  const state = createInitialState(plan, "demo");
+  const review = plan.nodesByRoleId.get("review");
+  assert.ok(review);
+
+  const currentLineageWorkerB = {
+    branchId: "worker_b@1#3",
+    roleId: "worker_b",
+    loopIteration: 1,
+    branchSequence: 3,
+    lineageId: "dispatch@1#1",
+    sessionLineageId: "worker_b@1#3",
+    parentBranchId: "dispatch@1#1",
+    activatedByRoleId: "dispatch",
+    activatedByEvent: "TO_B",
+    status: "active"
+  };
+  const otherLineageWorkerA = {
+    branchId: "worker_a@1#8",
+    roleId: "worker_a",
+    loopIteration: 1,
+    branchSequence: 8,
+    lineageId: "dispatch@1#7",
+    sessionLineageId: "worker_a@1#8",
+    parentBranchId: "dispatch@1#7",
+    activatedByRoleId: "dispatch",
+    activatedByEvent: "TO_A",
+    status: "completed"
+  };
+  state.branchRecords[currentLineageWorkerB.branchId] = currentLineageWorkerB;
+  state.branchRecords[otherLineageWorkerA.branchId] = otherLineageWorkerA;
+
+  state.roleResults[currentLineageWorkerB.branchId] = {
+    roleId: "worker_b",
+    event: "B_DONE",
+    content: "b",
+    branchId: currentLineageWorkerB.branchId,
+    lineageId: currentLineageWorkerB.lineageId,
+    loopIteration: 1
+  };
+  state.roleResults[otherLineageWorkerA.branchId] = {
+    roleId: "worker_a",
+    event: "A_DONE",
+    content: "a",
+    branchId: otherLineageWorkerA.branchId,
+    lineageId: otherLineageWorkerA.lineageId,
+    loopIteration: 1
+  };
+
+  assert.equal(
+    isJoinNodeReady({
+      node: review,
+      currentBranch: currentLineageWorkerB,
+      state,
+      currentResult: state.roleResults[currentLineageWorkerB.branchId]
+    }),
+    false
+  );
+});
