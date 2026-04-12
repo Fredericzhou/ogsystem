@@ -2,7 +2,7 @@
 
 Date: 2026-04-12  
 Status: active  
-Sources: `docs/long-term-stability-roadmap.md`, `docs/archive/delivery/optimization-execution-checklist-2026-04-10.md`, `docs/archive/delivery/single-graph-runtime-execution-checklist.md`, `docs/archive/delivery/cross-platform-rust-validation-and-gap-analysis-2026-04-12.md`
+Sources: `docs/long-term-stability-roadmap.md`, `docs/archive/delivery/optimization-execution-checklist-2026-04-10.md`, `docs/archive/delivery/single-graph-runtime-execution-checklist.md`, `docs/archive/delivery/cross-platform-rust-validation-and-gap-analysis-2026-04-12.md`, `docs/archive/delivery/source-commenting-hardening-plan-2026-04-11.md`
 
 ## 1. 目的与边界
 
@@ -38,6 +38,14 @@ Sources: `docs/long-term-stability-roadmap.md`, `docs/archive/delivery/optimizat
 
 - [ ] 形成 retention 分层建议（开发/预发/生产）。
 - [ ] 明确“自动清理”和“一次性 CLI 清理”的启用准则。
+
+### P1. 源码注释治理收尾
+
+- [ ] 新增 `docs/commenting-style.md`，把当前已落地的注释规则、反例与评审清单从 archive 固化为活动规范。
+- [ ] 新增 `docs/file-sets.md`，沉淀 `src/runtime/*` 与 `src/nl2mmd/*` 的文件集划分、职责边界与相互引用关系。
+- [ ] 完成剩余 `src/runtime/*` 文件的文件头导读与必要关键路径注释，补齐 P2 范围的一致性收尾。
+- [ ] 完成全量 `src/nl2mmd/*` 文件的文件头导读、关键转换/校验链路注释与必要类型契约说明。
+- [ ] 增加轻量注释治理门禁，至少覆盖新增/改动源码的文件头存在性与“关键逻辑改动需同步更新注释”检查。
 
 ## 3. 稳定后再做（延后项）
 
