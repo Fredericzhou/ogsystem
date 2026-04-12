@@ -224,6 +224,28 @@ test("parser rejects quorum_of join.min outside source range", () => {
   );
 });
 
+test("parser rejects duplicate join.sources entries for all_of", () => {
+  const source = graphSource.replace(
+    /%% join\.sources\.review=.*/,
+    "%% join.sources.review=worker_a,worker_a,worker_b"
+  );
+  assert.throws(
+    () => parseSystemFromMermaidSource(source),
+    /MERMAID_DUPLICATE_JOIN_SOURCE|duplicate source role/
+  );
+});
+
+test("parser rejects duplicate join.sources entries for quorum_of before join.min validation", () => {
+  const source = quorumJoinWithProjectionSource.replace(
+    /%% join\.sources\.review=.*/,
+    "%% join.sources.review=worker_a,worker_a,worker_b,worker_c"
+  );
+  assert.throws(
+    () => parseSystemFromMermaidSource(source),
+    /MERMAID_DUPLICATE_JOIN_SOURCE|duplicate source role/
+  );
+});
+
 test("parser rejects join-only selector on non-join role", () => {
   const source = quorumJoinWithProjectionSource.replace(
     "%% context.map.worker_a.brief=direct.data.brief",

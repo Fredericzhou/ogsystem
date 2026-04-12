@@ -112,8 +112,8 @@ Use this rule:
 
 - default execution path: use `model.bind.<roleId>=<modelId>`
 - graph semantics: add `role.mode/join.mode/context.map/loop.max` only when the system needs parallel split, `all_of/quorum_of` join, field-level projection, or bounded loop
-- `join.mode.<roleId>=all_of` requires `join.sources.<roleId>` and that source list must match the role's Mermaid incoming edges exactly
-- `join.mode.<roleId>=quorum_of` requires both `join.sources.<roleId>` and `join.min.<roleId>`; readiness counts unique completed source roles under the same `lineageId + loopIteration`
+- `join.mode.<roleId>=all_of` requires `join.sources.<roleId>`; that source list must contain unique role ids and match the role's Mermaid incoming edges exactly
+- `join.mode.<roleId>=quorum_of` requires both `join.sources.<roleId>` and `join.min.<roleId>`; `join.sources` must contain unique role ids, and readiness counts unique completed source roles under the same `lineageId + loopIteration`
 - compatibility execution mode: `exec.bind.<roleId>` still works when paired with `profiles/tools`, but it runs inside the same graph runtime rather than a separate engine
 
 ## 2. Semantic Layers

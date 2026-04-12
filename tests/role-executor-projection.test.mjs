@@ -352,3 +352,211 @@ review[Role:review] -->|DONE| output
   assert.equal(result.failure.errorCode, "ROLE_CONTEXT_SOURCE_UNAVAILABLE");
   assert.equal(executeCount, 0);
 });
+
+test("executeRoleNode fails closed with ROLE_CONTEXT_PATH_MISSING for null direct.data path segments", async () => {
+  const fixture = await prepareRoleExecutorFixture({
+    tempPrefix: "ogsystem-role-projection-direct-path-missing-",
+    prompt: "path missing prompt",
+    systemSource: `flowchart TD
+%% system.id=role.projection.direct.path.missing
+%% system.version=1.0.0
+%% law.global=law.console.base
+%% entry.role=intake
+%% context.map.reviewer.missing=direct.data.detail.summary
+%% model.bind.intake=balanced-gpt52
+%% model.bind.reviewer=balanced-gpt52
+
+input -->|GO| intake[Role:intake]
+intake[Role:intake] -->|DONE| reviewer[Role:reviewer]
+reviewer[Role:reviewer] -->|DONE| output
+`,
+    roles: [
+      { roleId: "intake", allowedEvents: ["DONE"] },
+      { roleId: "reviewer", allowedEvents: ["DONE"] }
+    ]
+  });
+
+  const state = createInitialState(fixture.plan, "path missing prompt");
+  state.roleResults["intake@1#1"] = {
+    roleId: "intake",
+    event: "DONE",
+    content: "intake complete",
+    data: {
+      detail: null
+    },
+    branchId: "intake@1#1",
+    lineageId: "intake@1#1",
+    loopIteration: 1
+  };
+  const reviewerBranch = {
+    branchId: "reviewer@1#2",
+    roleId: "reviewer",
+    loopIteration: 1,
+    branchSequence: 2,
+    lineageId: "intake@1#1",
+    sessionLineageId: "reviewer@1#2",
+    parentBranchId: "intake@1#1",
+    activatedByRoleId: "intake",
+    activatedByEvent: "DONE",
+    status: "active"
+  };
+  state.branchRecords[reviewerBranch.branchId] = reviewerBranch;
+
+  let executeCount = 0;
+  const result = await executeRoleNode({
+    roleId: "reviewer",
+    node: getExecutionPlanNode(fixture.plan, "reviewer"),
+    plan: fixture.plan,
+    state,
+    branch: reviewerBranch,
+    effectiveLaw: {
+      forbiddenToolRefs: [],
+      allowNoopWithoutExecutionBinding: false
+    },
+    profilesById: new Map(),
+    toolsByRef: new Map(),
+    modelsById: fixture.modelsById,
+    rolePackagesByRoleId: fixture.rolePackagesByRoleId,
+    runContext: fixture.runContext,
+    executor: {
+      async start() {},
+      async close() {},
+      async abortSession() {},
+      getServerMetadata() {
+        return {};
+      },
+      async execute() {
+        executeCount += 1;
+        return {
+          exitCode: 0,
+          stdout: JSON.stringify({ event: "DONE", content: "ok" }),
+          stderr: "",
+          args: [],
+          sessionId: "ses_path_missing_direct",
+          messageId: "msg_path_missing_direct"
+        };
+      }
+    },
+    workdir: fixture.tempRoot
+  });
+
+  assert.equal(result.status, "failed");
+  assert.equal(result.failure.errorCode, "ROLE_CONTEXT_PATH_MISSING");
+  assert.equal(executeCount, 0);
+});
+
+test("executeRoleNode fails closed with ROLE_CONTEXT_PATH_MISSING for null join source path segments", async () => {
+  const fixture = await prepareRoleExecutorFixture({
+    tempPrefix: "ogsystem-role-projection-join-path-missing-",
+    prompt: "join path missing prompt",
+    systemSource: `flowchart TD
+%% system.id=role.projection.join.path.missing
+%% system.version=1.0.0
+%% law.global=law.console.base
+%% entry.role=dispatch
+%% role.mode.dispatch=parallel_split
+%% join.mode.review=quorum_of
+%% join.sources.review=worker_a,worker_b
+%% join.min.review=2
+%% context.map.review.primary_risk=source(worker_b).data.risks.primary
+%% model.bind.dispatch=balanced-gpt52
+%% model.bind.worker_a=balanced-gpt52
+%% model.bind.worker_b=balanced-gpt52
+%% model.bind.review=balanced-gpt52
+
+input -->|START| dispatch[Role:dispatch]
+dispatch[Role:dispatch] -->|TO_A| workerA[Role:worker_a]
+dispatch[Role:dispatch] -->|TO_B| workerB[Role:worker_b]
+workerA[Role:worker_a] -->|A_DONE| review[Role:review]
+workerB[Role:worker_b] -->|B_DONE| review[Role:review]
+review[Role:review] -->|DONE| output
+`,
+    roles: [
+      { roleId: "dispatch", allowedEvents: ["TO_A", "TO_B"], requireEvent: false },
+      { roleId: "worker_a", allowedEvents: ["A_DONE"] },
+      { roleId: "worker_b", allowedEvents: ["B_DONE"] },
+      { roleId: "review", allowedEvents: ["DONE"] }
+    ]
+  });
+
+  const state = createInitialState(fixture.plan, "join path missing prompt");
+  state.roleResults["worker_a@1#2"] = {
+    roleId: "worker_a",
+    event: "A_DONE",
+    content: "alpha",
+    data: {
+      risks: {
+        primary: "ok"
+      }
+    },
+    branchId: "worker_a@1#2",
+    lineageId: "dispatch@1#1",
+    loopIteration: 1
+  };
+  state.roleResults["worker_b@1#3"] = {
+    roleId: "worker_b",
+    event: "B_DONE",
+    content: "beta",
+    data: {
+      risks: null
+    },
+    branchId: "worker_b@1#3",
+    lineageId: "dispatch@1#1",
+    loopIteration: 1
+  };
+  const reviewBranch = {
+    branchId: "review@1#4",
+    roleId: "review",
+    loopIteration: 1,
+    branchSequence: 4,
+    lineageId: "dispatch@1#1",
+    sessionLineageId: "review@1#4",
+    parentBranchId: "worker_b@1#3",
+    activatedByRoleId: "worker_b",
+    activatedByEvent: "B_DONE",
+    status: "active"
+  };
+  state.branchRecords[reviewBranch.branchId] = reviewBranch;
+
+  let executeCount = 0;
+  const result = await executeRoleNode({
+    roleId: "review",
+    node: getExecutionPlanNode(fixture.plan, "review"),
+    plan: fixture.plan,
+    state,
+    branch: reviewBranch,
+    effectiveLaw: {
+      forbiddenToolRefs: [],
+      allowNoopWithoutExecutionBinding: false
+    },
+    profilesById: new Map(),
+    toolsByRef: new Map(),
+    modelsById: fixture.modelsById,
+    rolePackagesByRoleId: fixture.rolePackagesByRoleId,
+    runContext: fixture.runContext,
+    executor: {
+      async start() {},
+      async close() {},
+      async abortSession() {},
+      getServerMetadata() {
+        return {};
+      },
+      async execute() {
+        executeCount += 1;
+        return {
+          exitCode: 0,
+          stdout: JSON.stringify({ event: "DONE", content: "ok" }),
+          stderr: "",
+          args: [],
+          sessionId: "ses_path_missing_join",
+          messageId: "msg_path_missing_join"
+        };
+      }
+    },
+    workdir: fixture.tempRoot
+  });
+
+  assert.equal(result.status, "failed");
+  assert.equal(result.failure.errorCode, "ROLE_CONTEXT_PATH_MISSING");
+  assert.equal(executeCount, 0);
+});

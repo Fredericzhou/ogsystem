@@ -896,6 +896,18 @@ function validateParsedSystemGraph(graph: ParsedSystemGraph): ValidatedSystemGra
         lineNumber: metadataLine(`join.sources.${roleId}`)
       });
     }
+    const duplicateSourceRoleIds = sources.filter(
+      (sourceRoleId, index) => sources.indexOf(sourceRoleId) !== index
+    );
+    if (duplicateSourceRoleIds.length > 0) {
+      const duplicateSummary = Array.from(new Set(duplicateSourceRoleIds)).join(", ");
+      failMermaid({
+        stage: "validate",
+        errorCode: "MERMAID_DUPLICATE_JOIN_SOURCE",
+        message: `join.sources.${roleId} contains duplicate source role ids: ${duplicateSummary}`,
+        lineNumber: metadataLine(`join.sources.${roleId}`)
+      });
+    }
     for (const sourceRoleId of sources) {
       if (!roleIds.includes(sourceRoleId)) {
         failMermaid({

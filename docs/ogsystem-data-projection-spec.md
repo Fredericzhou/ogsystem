@@ -96,6 +96,7 @@ Rules:
 
 - `join.min.<roleId>` is required when `join.mode.<roleId>=quorum_of`
 - `1 <= join.min <= |join.sources|`
+- `join.sources.<roleId>` must not contain duplicate role ids
 - `join.min=1` is semantically equivalent to `any`
 - `join.min=|join.sources|` is semantically equivalent to `all`
 
@@ -210,6 +211,7 @@ To keep projection testable and replay-safe:
 - unknown `join.mode`
 - missing `join.min` for `quorum_of`
 - invalid `join.min`
+- duplicate role ids inside `join.sources`
 - `source(<roleId>)` referencing a role outside `join.sources`
 - `context.map.<targetRoleId>.*` referencing an undefined role
 - unsupported selector grammar
