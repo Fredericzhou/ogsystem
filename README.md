@@ -67,6 +67,20 @@ Build (all platforms):
 pnpm run build
 ```
 
+Validate and inspect coverage:
+
+```bash
+pnpm test
+pnpm run test:examples
+pnpm run test:doctor
+pnpm run test:coverage
+```
+
+Coverage note:
+
+- `pnpm run test:coverage` uses the Node test runner's built-in coverage table against `tests/*.mjs`.
+- When interpreting coverage deltas, prioritize compiled runtime entrypoints under `dist/runtime/*` and `dist/nl2mmd/*`; temporary fixture scripts and generated test helpers are not coverage gates.
+
 Package manager policy (best practice):
 
 - Install phase is hard-enforced as `pnpm-only` (`packageManager` + `preinstall` guard).

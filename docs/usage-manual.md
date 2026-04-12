@@ -88,7 +88,15 @@ pnpm run build
 pnpm test
 pnpm run test:examples
 pnpm run test:doctor
+pnpm run test:coverage
 ```
+
+覆盖率判读约定：
+
+- `pnpm run test:coverage` 会先构建 `dist/`，再用 Node 内置 coverage 对 `tests/*.mjs` 输出终端统计表。
+- 覆盖率回归优先看 `dist/runtime/*` 与 `dist/nl2mmd/*` 这些已编译主路径，不把临时目录下的 fixture/tool 脚本当成回归门禁。
+- 覆盖补强应优先补关键语义分支和公开入口测试，而不是只追求测试文件自身覆盖率。
+- 提交覆盖改动时，至少同时执行 `pnpm test` 与 `pnpm run test:coverage`，确保回归和覆盖统计一致。
 
 命令入口策略（最佳实践）：
 

@@ -83,6 +83,7 @@
    - `docs/usage-manual.md`
    - 本索引 `docs/README.md`
 7. 包管理策略或命令入口发生变更时，必须同步更新 `README.md` 与 `docs/usage-manual.md` 的命令示例，保持 `pnpm-only` 一致性。
+8. 覆盖率相关命令与判读说明必须沿用 `pnpm` 入口；若覆盖重点、推荐命令或回归要求发生变化，必须同步更新 `README.md`、`docs/usage-manual.md`，历史明细再进入归档交付记录。
 
 ## 6. 计划文档放置规则（防混淆）
 
