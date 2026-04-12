@@ -1,7 +1,7 @@
 import { resolve } from "node:path";
 
 import { appendBufferedText, appendEvent } from "./run-artifacts.js";
-import { preview } from "./runtime-support.js";
+import { preview, previewStructuredStdout } from "./runtime-support.js";
 import type {
   AuditRecord,
   RoleOutputCorrectionRequest,
@@ -58,7 +58,7 @@ export function createAuditRecord(args: AuditRecordInput): AuditRecord {
     selectedEvent: args.selectedEvent,
     nextRoleId: args.nextRoleId,
     status: args.status,
-    stdoutPreview: preview(args.stdout ?? ""),
+    stdoutPreview: previewStructuredStdout(args.stdout ?? ""),
     stderrPreview: preview(args.stderr ?? ""),
     error: args.error,
     errorEnvelope: args.errorEnvelope,
