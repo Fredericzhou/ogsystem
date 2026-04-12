@@ -177,7 +177,9 @@ pnpm run run:adapter -- \
 - Executable roles are resolved by `roleId` directly. For each Mermaid `Role:<roleId>`, the runtime loads `og-roles/roles/<roleId>/role.json`, renders `prompt.md`, validates optional `input.schema.json`, and validates `output.schema.json`.
 - The runtime now supports `model.bind.<roleId>=<modelId>` with auto-discovered `.ogs/runtime.json`, `.ogs/user-profile.json`, `.ogs/laws.json`, and `og-models/`.
 - `model.bind` retries transient OpenCode/provider failures on the same role session while keeping the same run-level shared server.
-- The runtime supports `role.mode.*=parallel_split`, `join.mode.*=all_of`, `join.sources.*`, and `loop.max.*`. Legacy `%% engine=langgraph` metadata is accepted as compatibility input but is not required DSL semantics.
+- The runtime supports `role.mode.*=parallel_split`, `join.mode.*=all_of|quorum_of`, `join.sources.*`, `join.min.*`, `context.map.*`, and `loop.max.*`. Legacy `%% engine=langgraph` metadata is accepted as compatibility input but is not required DSL semantics.
+- `quorum_of` counts unique completed source roles within the same `lineageId + loopIteration`, activates at most once, and records late arrivals without retriggering the join node.
+- `context.map.<roleId>.<field>` can replace the default `context` payload with a fail-closed, deterministic JSON projection built from `direct.*`, `source(<roleId>).*`, and `global.*` selectors.
 - Role output repair is intentionally narrow: wrapped JSON object extraction and single-allowed-event normalization are auto-repaired; schema mismatch still fails fast.
 - Runtime, audit, and CLI failures now carry one machine-parseable error envelope: `errorCode`, `errorCategory`, `message`, `retryable`, `stage`, plus role/run/branch/line context when available.
 - Each run persists under `.ogs/runs/<run-id>/`, including run-level state, `sessions.json`, and per-role execution history under `roles/<roleId>/executions/`.

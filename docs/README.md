@@ -34,6 +34,12 @@
 - `roadmap`（长期方向）：`docs/long-term-stability-roadmap.md`
 - `backlog`（当前待办）：`docs/todo-backlog.md`
 
+## 2.1 设计记录（非当前真相）
+
+以下文档保留在 `docs/` 根目录作为设计与交付背景参考，但不是当前运行时语义或行为的权威来源：
+
+- `docs/ogsystem-data-projection-spec.md`：数据投影与 `quorum_of` join 的最小扩展设计记录；能力已落地，但运行时真相仍以 `docs/ogsystem-orchestration-semantics-v1.md` 为准。
+
 ## 3. 交付记录（已归档）
 
 以下文档是交付记录、阶段计划、验证记录或阶段性快照。它们有价值，但默认不再作为当前规则的来源：
@@ -49,6 +55,7 @@
 - `docs/archive/delivery/vnext-execution-plan-2026-04-11.md`（proposed stage plan）
 - `docs/archive/delivery/project-cli-lifecycle-plan-2026-04-12.md`（delivered lifecycle/productization plan）
 - `docs/archive/delivery/cross-platform-rust-validation-and-gap-analysis-2026-04-12.md`（delivered cross-platform verification + gap analysis）
+- `docs/archive/delivery/data-projection-quorum-implementation-checklist-2026-04-12.md`（delivered implementation checklist with risk controls）
 - `docs/archive/delivery/optimization-execution-checklist-2026-04-10.md`
 
 ## 4. 历史参考（已归档）

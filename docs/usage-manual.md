@@ -15,7 +15,7 @@ OGSystem 当前是一套单机、文件优先、可恢复的图编排运行时�
 
 OGSystem 当前重点优化以下能力：
 
-- 显式图语义：`parallel_split`、`all_of` join、`loop.max` 都有解析期和执行期约束。
+- 显式图语义：`parallel_split`、`all_of/quorum_of` join、`context.map`、`loop.max` 都有解析期和执行期约束。
 - 文件优先恢复：`state.json`、`sessions.json`、`plan-fingerprint.json`、`checkpoints/`、`execution-outcome.json` 组成恢复权威集。
 - 会话血缘隔离：`roleId:sessionLineageId` 保证顺序流转可复用会话，并行 sibling 不串会话记忆。
 - Crash 自愈补偿：角色结果先 durable，再 checkpoint；恢复时补偿缺失 checkpoint，而不是盲目重跑节点。
@@ -103,8 +103,9 @@ This repository now has one active runtime path: the graph runtime.
 Use this rule:
 
 - default execution path: use `model.bind.<roleId>=<modelId>`
-- graph semantics: add `role.mode/join.mode/loop.max` only when the system needs parallel split, `all_of` join, or bounded loop
+- graph semantics: add `role.mode/join.mode/context.map/loop.max` only when the system needs parallel split, `all_of/quorum_of` join, field-level projection, or bounded loop
 - `join.mode.<roleId>=all_of` requires `join.sources.<roleId>` and that source list must match the role's Mermaid incoming edges exactly
+- `join.mode.<roleId>=quorum_of` requires both `join.sources.<roleId>` and `join.min.<roleId>`; readiness counts unique completed source roles under the same `lineageId + loopIteration`
 - compatibility execution mode: `exec.bind.<roleId>` still works when paired with `profiles/tools`, but it runs inside the same graph runtime rather than a separate engine
 
 ## 2. Semantic Layers
@@ -235,9 +236,22 @@ Orchestration semantics contract:
 - `parallel_split` activates all downstream targets of the current role in the same transition
 - default routing without `role.mode` is event-driven; runtime injects `allowed_events`, and non-parallel roles with outgoing flows must emit `event`
 - `join.mode.<roleId>=all_of` waits until every role listed in `join.sources.<roleId>` has produced a result under the same `lineageId`
-- `all_of` join projects upstream results into `{{context}}` as a JSON string keyed by `join.sources` role ids (where each value contains that source's `event/content/data`) rather than exposing raw runtime state or plain-text sections
+- `join.mode.<roleId>=quorum_of` activates after `join.min.<roleId>` unique sources in `join.sources.<roleId>` complete under the same `lineageId + loopIteration`, activates once only, and records late arrivals without retriggering
+- join nodes default to the same normalized JSON `{{context}}` namespace keyed by `join.sources` role ids (each value contains that source's `event/content/data`) rather than exposing raw runtime state or plain-text sections
+- `context.map.<roleId>.<field>=<selector>` replaces the default `context` payload with a stable JSON projection; supported selectors are `direct.*`, `source(<roleId>).*(join only)`, `global.task`, and `global.user_profile.*`
 - `loop.max.<roleId>=N` is both a parser-time cycle budget declaration and an execution-time guard; runtime also injects `round`
 - `branchId`, `lineageId`, and `sessionLineageId` are distinct runtime identifiers for branch instance, split/join lineage, and session reuse/isolation
+
+Minimal quorum/projection example:
+
+```mermaid
+%% join.mode.review=quorum_of
+%% join.sources.review=worker_a,worker_b,worker_c
+%% join.min.review=2
+%% context.map.review.a_summary=source(worker_a).content
+%% context.map.review.b_risk=source(worker_b).data.risks.primary
+%% context.map.review.task=global.task
+```
 
 ## 5. Role Package Contract
 
@@ -412,7 +426,7 @@ Minimal shared-workspace rule:
 Runtime prompt projection contract:
 
 - `task`: original user prompt
-- `context`: direct upstream `content`; for `join.mode=<roleId>: all_of`, runtime serializes a JSON string keyed by `join.sources` role ids, and each value carries that source branch's `event`/`content`/`data`
+- `context`: default is direct upstream `content`; for join nodes without `context.map`, runtime serializes a JSON string keyed by `join.sources` role ids, and each value carries that source branch's `event`/`content`/`data`; with `context.map`, runtime injects one stable JSON object built from the declared selectors
 - `allowed_events`: JSON array string of outgoing event ids
 - `last_output`: mirrors the current `context` projection
 - `round`: current loop iteration as a string
@@ -422,7 +436,7 @@ Runtime prompt projection contract:
 Lineage contract:
 
 - each active branch carries `branchId`, `lineageId`, and `sessionLineageId`
-- `lineageId` scopes branch-family correlation such as `all_of` join readiness and result lookup
+- `lineageId` scopes branch-family correlation such as `all_of/quorum_of` join readiness and result lookup
 - `sessionLineageId` scopes OpenCode session reuse and sibling-branch isolation
 - session keys are always `roleId:sessionLineageId`
 
@@ -433,7 +447,7 @@ OpenCode lifecycle rule for `model.bind`:
 - repeated turns on the same branch lineage reuse the same OpenCode `session`
 - sibling branches of the same role do not share a session
 - sibling branches of the same role still share the same role directory and private workspace; the isolation guarantee is model-session isolation, not per-branch file-system isolation
-- ordinary single-target sequential flow keeps the current `sessionLineageId`; fan-out and `all_of` join activation allocate a new lineage
+- ordinary single-target sequential flow keeps the current `sessionLineageId`; fan-out and `all_of/quorum_of` join activation allocate a new lineage
 - each node prompt still binds to that node's role directory
 - node audit records include `sessionId`, `messageId`, and shared `serverPid`
 - run events include `opencode_server_started` and `opencode_server_closed`
@@ -443,9 +457,11 @@ OpenCode lifecycle rule for `model.bind`:
 
 Join context projection rule:
 
-- when `join.mode.<roleId>=all_of`, runtime injects upstream results into `{{context}}` as one JSON object keyed by source `roleId`
+- when a join node does not declare `context.map.<roleId>.*`, runtime injects upstream results into `{{context}}` as one JSON object keyed by source `roleId`
 - each keyed value keeps the normalized `event`, `content`, and optional `data` fields from that upstream result
 - the injected join context is a normalized projection, not the raw `graphState`
+- when `context.map.<roleId>.*` is present, runtime serializes a new object in stable field-name order and mirrors it into `last_output`
+- selector evaluation is fail-closed: unsupported grammar, unauthorized sources, missing source results, or missing object paths fail execution explicitly
 
 Role output repair policy:
 
