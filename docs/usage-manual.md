@@ -90,6 +90,12 @@ pnpm run test:examples
 pnpm run test:doctor
 ```
 
+命令入口策略（最佳实践）：
+
+- 安装阶段：`pnpm-only` 硬约束（`packageManager` + `preinstall`）。
+- 执行阶段：统一规范使用 `pnpm run ...`（文档与 CI 全量一致）。
+- 兼容性说明：在依赖已安装时，`npm run ...` 可能仍可执行脚本；这属于生态兼容行为，不是项目支持入口。
+
 ## 1. Runtime Status
 
 This repository now has one active runtime path: the graph runtime.

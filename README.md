@@ -67,6 +67,12 @@ Build (all platforms):
 pnpm run build
 ```
 
+Package manager policy (best practice):
+
+- Install phase is hard-enforced as `pnpm-only` (`packageManager` + `preinstall` guard).
+- Script execution phase is standardized on `pnpm run ...` in docs and CI.
+- `npm run ...` may still work when dependencies are already installed; this is compatibility behavior, not the supported workflow.
+
 Lifecycle commands (preferred):
 
 ```bash

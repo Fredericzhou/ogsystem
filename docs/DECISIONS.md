@@ -93,3 +93,16 @@ Reason:
 - `ogs project create <name> --template <templateId>`
 - `ogs run start|resume|stop|list|status|inspect|logs`
 - run stop follows `running -> stopping -> stopped` and persists stop intent/outcome in `control/`
+
+## 8. Package Manager Policy
+
+Package management uses a split policy: hard enforcement at install time, standardized entry at run time.
+
+- install is `pnpm-only` (`packageManager` + `preinstall` guard)
+- docs and CI use `pnpm run ...` as the only command examples
+- runtime scripts are not hard-blocking `npm run ...`; if dependencies already exist, npm may still execute scripts
+
+Reason:
+
+- the main determinism gains come from lockfile/install/CI discipline
+- hard-blocking script execution harms ecosystem compatibility with limited additional stability benefit
