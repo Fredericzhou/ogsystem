@@ -12,7 +12,7 @@ Implemented scope:
 
 Non-goals:
 
-- No full platform parity
+- No cross-host distributed runtime
 - No recursive child-system runtime
 - No `start/end` boundary alias mode
 - No assembly layer
@@ -29,16 +29,52 @@ Detailed usage manual:
 
 - `docs/usage-manual.md`
 
-Install:
+Prerequisites:
 
 ```bash
-pnpm install
+node >= 20
+corepack enabled
+pnpm 10.14.0
 ```
 
-Build:
+Install (macOS/Linux):
+
+```bash
+corepack enable
+corepack prepare pnpm@10.14.0 --activate
+pnpm install --frozen-lockfile
+```
+
+Install (Windows PowerShell):
+
+```powershell
+corepack enable
+corepack prepare pnpm@10.14.0 --activate
+pnpm install --frozen-lockfile
+```
+
+Install (Windows CMD):
+
+```bat
+corepack enable
+corepack prepare pnpm@10.14.0 --activate
+pnpm install --frozen-lockfile
+```
+
+Build (all platforms):
 
 ```bash
 pnpm run build
+```
+
+Lifecycle commands (preferred):
+
+```bash
+pnpm run run:adapter -- project init
+pnpm run run:adapter -- run start --system examples/target-model-binding-system.mmd --prompt "demo" --dry-run
+pnpm run run:adapter -- run list
+pnpm run run:adapter -- run status <run-id>
+pnpm run run:adapter -- run logs <run-id> --engine
 ```
 
 Run minimal example (no external CLI execution):
@@ -51,7 +87,7 @@ pnpm run run:adapter -- \
   --dry-run
 ```
 
-Run target model-binding example with auto-discovered `.ogsystem/` config:
+Run target model-binding example with auto-discovered `.ogs/` config:
 
 ```bash
 pnpm run run:adapter -- \
@@ -94,6 +130,17 @@ pnpm run run:adapter -- \
   --dry-run
 ```
 
+Run Rust hello-world three-role full-flow validation (requires `cargo`):
+
+```bash
+pnpm run run:adapter -- \
+  --system examples/rust-hello-pipeline/system.mmd \
+  --profiles examples/rust-hello-pipeline/profiles.json \
+  --tools examples/rust-hello-pipeline/tools.json \
+  --laws .ogs/laws.json \
+  --prompt "validate rust hello pipeline"
+```
+
 Check required CLI tools:
 
 ```bash
@@ -122,15 +169,15 @@ pnpm run run:adapter -- \
 - Executable roles always resolve to one JSON object: `{"event":"EVENT_NAME","content":"..."}`. For `model.bind`, the runtime sends `prompt + output.schema.json` to OpenCode SDK v2 and reads `info.structured`; if `info.structured` is absent or string-encoded, the runtime falls back to assistant text parts and applies JSON extraction. For legacy `exec.bind`, the runtime still parses tool stdout as one JSON object. `event` is required for roles with outgoing flows and must match one Mermaid edge label exactly.
 - For `model.bind`, one run now starts one shared `opencode serve`, and each role/node keeps one isolated OpenCode session on that server for the duration of the run.
 - Executable roles are resolved by `roleId` directly. For each Mermaid `Role:<roleId>`, the runtime loads `og-roles/roles/<roleId>/role.json`, renders `prompt.md`, validates optional `input.schema.json`, and validates `output.schema.json`.
-- The runtime now supports `model.bind.<roleId>=<modelId>` with auto-discovered `.ogsystem/runtime.json`, `.ogsystem/user-profile.json`, `.ogsystem/laws.json`, and `og-models/`.
+- The runtime now supports `model.bind.<roleId>=<modelId>` with auto-discovered `.ogs/runtime.json`, `.ogs/user-profile.json`, `.ogs/laws.json`, and `og-models/`.
 - `model.bind` retries transient OpenCode/provider failures on the same role session while keeping the same run-level shared server.
 - The runtime supports `role.mode.*=parallel_split`, `join.mode.*=all_of`, `join.sources.*`, and `loop.max.*`. Legacy `%% engine=langgraph` metadata is accepted as compatibility input but is not required DSL semantics.
 - Role output repair is intentionally narrow: wrapped JSON object extraction and single-allowed-event normalization are auto-repaired; schema mismatch still fails fast.
 - Runtime, audit, and CLI failures now carry one machine-parseable error envelope: `errorCode`, `errorCategory`, `message`, `retryable`, `stage`, plus role/run/branch/line context when available.
-- Each run persists under `ogsystem-history/<run-id>/`, including run-level state, `sessions.json`, and per-role execution history under `roles/<roleId>/executions/`.
-- Run-id format is `yyyy-MM-dd_HH24-mm-ss_xxxx` (`xxxx` = 4-char system code).
-- Each run gets its own isolated `ogsystem-history/<run-id>/shared/` directory, and role directories do not receive a `shared` symlink by default.
-- `ogsystem-history/` is generated runtime state and should stay out of version control.
+- Each run persists under `.ogs/runs/<run-id>/`, including run-level state, `sessions.json`, and per-role execution history under `roles/<roleId>/executions/`.
+- Run-id format is `YYYYMMDD-HHMMSS-<shortHash>`.
+- Each run gets its own isolated `.ogs/runs/<run-id>/shared/` directory, and role directories do not receive a `shared` symlink by default.
+- `.ogs/runs/` is generated runtime state and should stay out of version control.
 - `state.json.graphState` and `sessions.json` are the runtime-consumed resume sources. `events.ndjson` remains append-only audit history.
 - `state.json` and `sessions.json` writes are atomic, and resume rejects partial/corrupted snapshots before execution starts.
 - Runs persist `activeBranches`, `completedBranches`, `loopIterations`, and `graphState` inside `state.json`, and support `--resume-run` against the same run directory.
@@ -154,10 +201,10 @@ pnpm run run:adapter -- \
 
 - `og-models/catalog/opencode-models.json` snapshots the current local `opencode models` list.
 - `og-models/models/*/model.json` provides curated reusable model bindings.
-- `.ogsystem/runtime.json` provides runtime defaults for role repo, model repo, and runs directory.
-- `.ogsystem/runtime.json` may include `configVersion: "1"`; unsupported versions fail fast.
-- `.ogsystem/user-profile.json` provides user delivery preference sample.
-- `.ogsystem/laws.json` provides sample law catalog colocated with runtime config.
+- `.ogs/runtime.json` provides runtime defaults for role repo, model repo, and runs directory.
+- `.ogs/runtime.json` may include `configVersion: "1"`; unsupported versions fail fast.
+- `.ogs/user-profile.json` provides user delivery preference sample.
+- `.ogs/laws.json` provides sample law catalog colocated with runtime config.
 - `examples/target-model-binding-system.mmd` shows `model.bind.*` usage.
 - `examples/langgraph-debate-current/` shows a minimal debate with loop + parallel + join.
 - `examples/langgraph-expert-consultation/` shows a minimal expert consultation with parallel + join.
@@ -167,9 +214,9 @@ Validate a generated run directory against the runtime contract:
 ```bash
 node skills/ogsystem-nl-to-mmd/scripts/validate_ogsystem_mmd.mjs \
   --system examples/target-model-binding-system.mmd \
-  --user-profile .ogsystem/user-profile.json \
-  --laws .ogsystem/laws.json \
-  --run-dir ogsystem-history/<run-id>
+  --user-profile .ogs/user-profile.json \
+  --laws .ogs/laws.json \
+  --run-dir .ogs/runs/<run-id>
 ```
 
 ## DSL Hard Rules

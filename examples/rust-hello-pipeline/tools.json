@@ -1,0 +1,31 @@
+{
+  "tools": [
+    {
+      "toolRef": "tool.rust.developer",
+      "runner": "local_shell",
+      "command": "node",
+      "argsTemplate": [
+        "examples/rust-hello-pipeline/scripts/developer.mjs"
+      ],
+      "stdinMode": "none"
+    },
+    {
+      "toolRef": "tool.rust.compiler",
+      "runner": "local_shell",
+      "command": "node",
+      "argsTemplate": [
+        "examples/rust-hello-pipeline/scripts/compiler.mjs"
+      ],
+      "stdinMode": "none"
+    },
+    {
+      "toolRef": "tool.rust.packager",
+      "runner": "local_shell",
+      "command": "node",
+      "argsTemplate": [
+        "examples/rust-hello-pipeline/scripts/packager.mjs"
+      ],
+      "stdinMode": "none"
+    }
+  ]
+}

@@ -1,0 +1,10 @@
+{
+  "roleId": "rust-developer",
+  "roleVersion": "1.0.0",
+  "name": "Rust Developer",
+  "description": "Create a minimal Rust hello-world project in the shared run workspace.",
+  "promptTemplate": "prompt.md",
+  "inputSchema": "../_shared/input.schema.json",
+  "outputSchema": "output.schema.json",
+  "tags": ["rust", "developer", "pipeline"]
+}

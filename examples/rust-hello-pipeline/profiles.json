@@ -1,0 +1,20 @@
+[
+  {
+    "profileId": "exec.rust.developer",
+    "toolRef": "tool.rust.developer",
+    "timeoutMs": 60000,
+    "maxOutputBytes": 32768
+  },
+  {
+    "profileId": "exec.rust.compiler",
+    "toolRef": "tool.rust.compiler",
+    "timeoutMs": 180000,
+    "maxOutputBytes": 131072
+  },
+  {
+    "profileId": "exec.rust.packager",
+    "toolRef": "tool.rust.packager",
+    "timeoutMs": 60000,
+    "maxOutputBytes": 65536
+  }
+]

@@ -44,6 +44,52 @@ OGSystem 当前重点优化以下能力：
 6. `docs/DECISIONS.md`
 7. `docs/ogsystem-ebook.md`
 
+## 0. 安装与构建（Win/macOS/Linux）
+
+前置要求：
+
+- Node.js `>= 20`
+- `corepack` 可用
+- `pnpm@10.14.0`
+
+macOS/Linux 安装：
+
+```bash
+corepack enable
+corepack prepare pnpm@10.14.0 --activate
+pnpm install --frozen-lockfile
+```
+
+Windows PowerShell 安装：
+
+```powershell
+corepack enable
+corepack prepare pnpm@10.14.0 --activate
+pnpm install --frozen-lockfile
+```
+
+Windows CMD 安装：
+
+```bat
+corepack enable
+corepack prepare pnpm@10.14.0 --activate
+pnpm install --frozen-lockfile
+```
+
+统一构建命令（所有平台）：
+
+```bash
+pnpm run build
+```
+
+统一验证命令（所有平台）：
+
+```bash
+pnpm test
+pnpm run test:examples
+pnpm run test:doctor
+```
+
 ## 1. Runtime Status
 
 This repository now has one active runtime path: the graph runtime.
@@ -583,6 +629,22 @@ pnpm run run:adapter -- \
   --prompt "患者间断高热、皮疹、胸闷、肌无力，常规检查未能解释原因，请组织多学科会诊。" \
   --dry-run
 ```
+
+Rust hello-world 三角色全流程验证（开发→编译→打包运行）：
+
+```bash
+pnpm run run:adapter -- \
+  --system examples/rust-hello-pipeline/system.mmd \
+  --profiles examples/rust-hello-pipeline/profiles.json \
+  --tools examples/rust-hello-pipeline/tools.json \
+  --laws .ogs/laws.json \
+  --prompt "validate rust hello pipeline"
+```
+
+说明：
+
+- 该流程需要本机 `cargo` 在 `PATH` 中可用。
+- 流程会在 `.ogs/runs/<run-id>/shared/` 下生成 Rust 项目、编译产物与打包产物。
 
 Resume a graph runtime run from persisted `state.json.graphState`:
 

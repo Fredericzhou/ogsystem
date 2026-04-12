@@ -12,7 +12,7 @@
     "test:fault-injection": "pnpm build && node --test tests/opencode-executor.test.mjs tests/resume-session.test.mjs tests/runtime-fault-injection.test.mjs",
     "bench:runtime-replay": "pnpm build && node tests/benchmarks/runtime-replay-benchmark.mjs",
     "test:examples": "pnpm run run:adapter --system examples/target-model-binding-system.mmd --prompt \"ci example\" --dry-run && pnpm run run:adapter --system examples/langgraph-debate-current/system.mmd --laws examples/langgraph-debate-current/laws.json --user-profile examples/langgraph-debate-current/user-profile.json --prompt \"ci graph example\" --dry-run",
-    "test:doctor": "pnpm run run:doctor --system examples/target-model-binding-system.mmd --laws .ogsystem/laws.json",
+    "test:doctor": "pnpm run run:doctor --system examples/target-model-binding-system.mmd --laws .ogs/laws.json",
     "run:adapter": "tsx src/runtime/cli.ts",
     "run:nl2mmd": "tsx src/nl2mmd/cli.ts",
     "run:doctor": "tsx src/runtime/doctor.ts",

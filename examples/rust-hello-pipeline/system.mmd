@@ -1,0 +1,13 @@
+flowchart TD
+%% system.id=demo.rust.hello.pipeline
+%% system.version=1.0.0
+%% law.global=law.console.base
+%% entry.role=rust-developer
+%% exec.bind.rust-developer=exec.rust.developer
+%% exec.bind.rust-compiler=exec.rust.compiler
+%% exec.bind.rust-packager=exec.rust.packager
+
+input -->|START| rust-developer[Role:rust-developer]
+rust-developer[Role:rust-developer] -->|DEVELOP_DONE| rust-compiler[Role:rust-compiler]
+rust-compiler[Role:rust-compiler] -->|COMPILE_DONE| rust-packager[Role:rust-packager]
+rust-packager[Role:rust-packager] -->|PACKAGE_DONE| output

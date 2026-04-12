@@ -746,6 +746,15 @@ export async function executeRoleNode(args: {
         profile,
         tool
       };
+      env = {
+        OGSYSTEM_RUN_DIR: args.runContext.runDir,
+        OGSYSTEM_SHARED_DIR: args.runContext.sharedDir,
+        OGSYSTEM_ROLE_DIR: roleDirs?.roleDir ?? args.workdir,
+        OGSYSTEM_ROLE_ID: args.roleId,
+        OGSYSTEM_PROFILE_ID: profile.profileId,
+        OGSYSTEM_TOOL_REF: tool.toolRef,
+        OGSYSTEM_ALLOWED_EVENTS: allowedEvents.join(",")
+      };
       bindingLabel = `profile:${profile.profileId}`;
     }
 
