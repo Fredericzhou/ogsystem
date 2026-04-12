@@ -8,18 +8,52 @@ export function preview(value: string): string | undefined {
   return normalized.slice(0, 400);
 }
 
-function normalizePreviewContent(value: string): string {
-  const normalized = value.trim();
-  if (!normalized) {
-    return value;
+function normalizeWhitespace(value: string): string {
+  return value.replace(/\s+/g, " ").trim();
+}
+
+function summarizeValue(value: unknown, depth = 0): string {
+  if (value === null || value === undefined) {
+    return "null";
   }
-  if (!normalized.startsWith("{") && !normalized.startsWith("[")) {
-    return value;
+  if (typeof value === "string") {
+    return normalizeWhitespace(value).replace(/"/g, "'");
+  }
+  if (typeof value === "number" || typeof value === "boolean") {
+    return String(value);
+  }
+  if (Array.isArray(value)) {
+    if (depth >= 1) {
+      return `[${value.length} items]`;
+    }
+    const head = value.slice(0, 3).map((item) => summarizeValue(item, depth + 1)).join(", ");
+    const suffix = value.length > 3 ? ", ..." : "";
+    return `[${head}${suffix}]`;
+  }
+  if (typeof value === "object") {
+    const entries = Object.entries(value as Record<string, unknown>);
+    if (depth >= 1) {
+      return `{${entries.length} keys}`;
+    }
+    const head = entries
+      .slice(0, 4)
+      .map(([key, item]) => `${key}:${summarizeValue(item, depth + 1)}`)
+      .join("; ");
+    const suffix = entries.length > 4 ? "; ..." : "";
+    return `{${head}${suffix}}`;
+  }
+  return String(value);
+}
+
+function summarizeContent(content: string): string {
+  const normalized = content.trim();
+  if (!normalized) {
+    return "";
   }
   try {
-    return stringifyJson(JSON.parse(normalized));
+    return summarizeValue(JSON.parse(normalized));
   } catch {
-    return value;
+    return summarizeValue(content);
   }
 }
 
@@ -34,22 +68,20 @@ export function previewStructuredStdout(value: string): string | undefined {
       return preview(value);
     }
     const payload = parsed as Record<string, unknown>;
-    const lines: string[] = [];
+    const parts: string[] = [];
     if (typeof payload.event === "string" && payload.event.trim()) {
-      lines.push(`event: ${payload.event.trim()}`);
+      parts.push(`event=${payload.event.trim()}`);
     }
     if (typeof payload.content === "string" && payload.content.trim()) {
-      lines.push("content:");
-      lines.push(normalizePreviewContent(payload.content));
+      parts.push(`content=${summarizeContent(payload.content)}`);
     }
     if (payload.data !== undefined) {
-      lines.push("data:");
-      lines.push(stringifyJson(payload.data));
+      parts.push(`data=${summarizeValue(payload.data)}`);
     }
-    if (lines.length === 0) {
+    if (parts.length === 0) {
       return preview(value);
     }
-    return preview(lines.join("\n"));
+    return preview(parts.join(" | "));
   } catch {
     return preview(value);
   }
