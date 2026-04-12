@@ -39,13 +39,38 @@ workerB[Role:worker_b] -->|B_DONE| review[Role:review]
 review[Role:review] -->|DONE| output
 `;
 
+const quorumSource = `flowchart TD
+%% system.id=graph.helpers.quorum
+%% system.version=1.0.0
+%% law.global=law.test
+%% entry.role=dispatch
+%% role.mode.dispatch=parallel_split
+%% join.mode.review=quorum_of
+%% join.sources.review=worker_a,worker_b,worker_c
+%% join.min.review=2
+%% exec.bind.dispatch=profile.dispatch
+%% exec.bind.worker_a=profile.worker
+%% exec.bind.worker_b=profile.worker
+%% exec.bind.worker_c=profile.worker
+%% exec.bind.review=profile.review
+
+input -->|ENTER| dispatch[Role:dispatch]
+dispatch[Role:dispatch] -->|TO_A| workerA[Role:worker_a]
+dispatch[Role:dispatch] -->|TO_B| workerB[Role:worker_b]
+dispatch[Role:dispatch] -->|TO_C| workerC[Role:worker_c]
+workerA[Role:worker_a] -->|A_DONE| review[Role:review]
+workerB[Role:worker_b] -->|B_DONE| review[Role:review]
+workerC[Role:worker_c] -->|C_DONE| review[Role:review]
+review[Role:review] -->|DONE| output
+`;
+
 test("graph runtime helpers cover loop budget, join readiness, and state projection", () => {
   const system = parseSystemFromMermaidSource(source);
   const plan = createExecutionPlan(system);
   const state = createInitialState(plan, "demo");
 
   assert.deepStrictEqual(listSupportedRoutingModes(), ["parallel_split"]);
-  assert.deepStrictEqual(listSupportedJoinModes(), ["all_of"]);
+  assert.deepStrictEqual(listSupportedJoinModes(), ["all_of", "quorum_of"]);
   assert.deepStrictEqual(getActiveRoleIds(state), ["dispatch"]);
 
   const dispatch = plan.nodesByRoleId.get("dispatch");
@@ -147,4 +172,75 @@ test("graph runtime helpers cover loop budget, join readiness, and state project
   const snapshot = projectStateSnapshot({ state, plan });
   assert.equal(snapshot.status, "running");
   assert.ok(Array.isArray(snapshot.activeBranches));
+});
+
+test("graph runtime helpers evaluate quorum_of readiness by unique completed sources", () => {
+  const system = parseSystemFromMermaidSource(quorumSource);
+  const plan = createExecutionPlan(system);
+  const state = createInitialState(plan, "demo");
+  const review = plan.nodesByRoleId.get("review");
+  assert.ok(review);
+
+  const workerABranch = {
+    branchId: "worker_a@1#2",
+    roleId: "worker_a",
+    loopIteration: 1,
+    branchSequence: 2,
+    lineageId: "dispatch@1#1",
+    sessionLineageId: "worker_a@1#2",
+    parentBranchId: "dispatch@1#1",
+    activatedByRoleId: "dispatch",
+    activatedByEvent: "TO_A",
+    status: "active"
+  };
+  const workerBBranch = {
+    branchId: "worker_b@1#3",
+    roleId: "worker_b",
+    loopIteration: 1,
+    branchSequence: 3,
+    lineageId: "dispatch@1#1",
+    sessionLineageId: "worker_b@1#3",
+    parentBranchId: "dispatch@1#1",
+    activatedByRoleId: "dispatch",
+    activatedByEvent: "TO_B",
+    status: "active"
+  };
+  state.branchRecords[workerABranch.branchId] = workerABranch;
+  state.branchRecords[workerBBranch.branchId] = workerBBranch;
+
+  state.roleResults[workerABranch.branchId] = {
+    roleId: "worker_a",
+    event: "A_DONE",
+    content: "a",
+    branchId: workerABranch.branchId,
+    lineageId: workerABranch.lineageId,
+    loopIteration: 1
+  };
+  assert.equal(
+    isJoinNodeReady({
+      node: review,
+      currentBranch: workerABranch,
+      state,
+      currentResult: state.roleResults[workerABranch.branchId]
+    }),
+    false
+  );
+
+  state.roleResults[workerBBranch.branchId] = {
+    roleId: "worker_b",
+    event: "B_DONE",
+    content: "b",
+    branchId: workerBBranch.branchId,
+    lineageId: workerBBranch.lineageId,
+    loopIteration: 1
+  };
+  assert.equal(
+    isJoinNodeReady({
+      node: review,
+      currentBranch: workerBBranch,
+      state,
+      currentResult: state.roleResults[workerBBranch.branchId]
+    }),
+    true
+  );
 });

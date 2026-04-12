@@ -24,7 +24,7 @@ import {
   validateRoleInputSchema,
   validateRoleOutputSchema
 } from "./role-repo.js";
-import { normalizeRuntimeError } from "./runtime-errors.js";
+import { createRuntimeError, normalizeRuntimeError } from "./runtime-errors.js";
 import { renderUserProfile, stringifyJson } from "./runtime-support.js";
 import { ToolExecutionError } from "./tool-runner.js";
 import { SYSTEM_END_ROLE_ID } from "./types.js";
@@ -189,6 +189,274 @@ function renderJoinContext(args: {
   return stringifyJson(namespace);
 }
 
+function failContextProjection(args: {
+  errorCode: string;
+  message: string;
+  roleId: string;
+  branchId: string;
+}): never {
+  throw createRuntimeError({
+    errorCode: args.errorCode,
+    errorCategory: "state",
+    message: args.message,
+    retryable: false,
+    stage: "execute",
+    roleId: args.roleId,
+    branchId: args.branchId
+  });
+}
+
+function resolveObjectPath(args: {
+  value: unknown;
+  path: string[];
+  selector: string;
+  roleId: string;
+  branchId: string;
+}): unknown {
+  let current = args.value;
+  for (const segment of args.path) {
+    if (
+      typeof current !== "object" ||
+      current === null ||
+      Array.isArray(current) ||
+      !Object.prototype.hasOwnProperty.call(current, segment)
+    ) {
+      failContextProjection({
+        errorCode: "ROLE_CONTEXT_PATH_MISSING",
+        message: `Role "${args.roleId}" selector "${args.selector}" is missing required path "${segment}".`,
+        roleId: args.roleId,
+        branchId: args.branchId
+      });
+    }
+    current = (current as Record<string, unknown>)[segment];
+  }
+  return current;
+}
+
+function resolveArtifactField(args: {
+  artifact: StoredRoleResult;
+  field: "content" | "event" | "data";
+  selector: string;
+  roleId: string;
+  branchId: string;
+}): unknown {
+  const value = args.artifact[args.field];
+  if (value === undefined) {
+    failContextProjection({
+      errorCode: "ROLE_CONTEXT_PATH_MISSING",
+      message: `Role "${args.roleId}" selector "${args.selector}" is missing required field "${args.field}".`,
+      roleId: args.roleId,
+      branchId: args.branchId
+    });
+  }
+  return value;
+}
+
+function getRequiredDirectArtifact(args: {
+  state: GraphState;
+  branch: BranchRecord;
+  roleId: string;
+}): StoredRoleResult {
+  if (!args.branch.parentBranchId) {
+    failContextProjection({
+      errorCode: "ROLE_CONTEXT_SOURCE_UNAVAILABLE",
+      message: `Role "${args.roleId}" cannot resolve direct.* selector without an upstream branch.`,
+      roleId: args.roleId,
+      branchId: args.branch.branchId
+    });
+  }
+  const upstream = getBranchResult(args.state, args.branch.parentBranchId);
+  if (!upstream) {
+    failContextProjection({
+      errorCode: "ROLE_CONTEXT_SOURCE_UNAVAILABLE",
+      message: `Role "${args.roleId}" requires an upstream result for direct.* selector evaluation.`,
+      roleId: args.roleId,
+      branchId: args.branch.branchId
+    });
+  }
+  return upstream;
+}
+
+function getRequiredJoinSourceArtifact(args: {
+  state: GraphState;
+  branch: BranchRecord;
+  roleId: string;
+  node: ExecutionPlanNode;
+  sourceRoleId: string;
+}): StoredRoleResult {
+  if (!args.node.joinMode) {
+    failContextProjection({
+      errorCode: "ROLE_CONTEXT_SELECTOR_UNAUTHORIZED",
+      message: `Role "${args.roleId}" cannot use source(...) selectors without join.mode.`,
+      roleId: args.roleId,
+      branchId: args.branch.branchId
+    });
+  }
+  if (!args.node.joinSources.includes(args.sourceRoleId)) {
+    failContextProjection({
+      errorCode: "ROLE_CONTEXT_SELECTOR_UNAUTHORIZED",
+      message:
+        `Role "${args.roleId}" selector source("${args.sourceRoleId}") is not declared in join.sources.`,
+      roleId: args.roleId,
+      branchId: args.branch.branchId
+    });
+  }
+  const result = findRoleResult({
+    state: args.state,
+    roleId: args.sourceRoleId,
+    lineageId: args.branch.lineageId,
+    loopIteration: args.branch.loopIteration
+  });
+  if (!result) {
+    failContextProjection({
+      errorCode: "ROLE_CONTEXT_SOURCE_UNAVAILABLE",
+      message:
+        `Role "${args.roleId}" selector source("${args.sourceRoleId}") is not available for the current lineage and loop iteration.`,
+      roleId: args.roleId,
+      branchId: args.branch.branchId
+    });
+  }
+  return result;
+}
+
+function evaluateContextSelector(args: {
+  selector: string;
+  roleId: string;
+  node: ExecutionPlanNode;
+  branch: BranchRecord;
+  state: GraphState;
+  userProfile?: UserProfile;
+}): unknown {
+  const selector = args.selector;
+  if (selector === "global.task") {
+    return args.state.userPrompt;
+  }
+  if (selector === "global.user_profile") {
+    if (!args.userProfile) {
+      failContextProjection({
+        errorCode: "ROLE_CONTEXT_SOURCE_UNAVAILABLE",
+        message: `Role "${args.roleId}" selector "${selector}" requires user_profile input.`,
+        roleId: args.roleId,
+        branchId: args.branch.branchId
+      });
+    }
+    return args.userProfile;
+  }
+  if (selector.startsWith("global.user_profile.")) {
+    if (!args.userProfile) {
+      failContextProjection({
+        errorCode: "ROLE_CONTEXT_SOURCE_UNAVAILABLE",
+        message: `Role "${args.roleId}" selector "${selector}" requires user_profile input.`,
+        roleId: args.roleId,
+        branchId: args.branch.branchId
+      });
+    }
+    return resolveObjectPath({
+      value: args.userProfile,
+      path: selector.slice("global.user_profile.".length).split("."),
+      selector,
+      roleId: args.roleId,
+      branchId: args.branch.branchId
+    });
+  }
+
+  if (selector === "direct.content" || selector === "direct.event" || selector === "direct.data") {
+    const artifact = getRequiredDirectArtifact({
+      state: args.state,
+      branch: args.branch,
+      roleId: args.roleId
+    });
+    return resolveArtifactField({
+      artifact,
+      field: selector.slice("direct.".length) as "content" | "event" | "data",
+      selector,
+      roleId: args.roleId,
+      branchId: args.branch.branchId
+    });
+  }
+
+  if (selector.startsWith("direct.data.")) {
+    const artifact = getRequiredDirectArtifact({
+      state: args.state,
+      branch: args.branch,
+      roleId: args.roleId
+    });
+    return resolveObjectPath({
+      value: resolveArtifactField({
+        artifact,
+        field: "data",
+        selector,
+        roleId: args.roleId,
+        branchId: args.branch.branchId
+      }),
+      path: selector.slice("direct.data.".length).split("."),
+      selector,
+      roleId: args.roleId,
+      branchId: args.branch.branchId
+    });
+  }
+
+  const sourceMatch = selector.match(/^source\(([A-Za-z0-9._:-]+)\)\.(content|event|data)(?:\.(.+))?$/);
+  if (sourceMatch) {
+    const [, sourceRoleId, field, nestedPath] = sourceMatch;
+    const artifact = getRequiredJoinSourceArtifact({
+      state: args.state,
+      branch: args.branch,
+      roleId: args.roleId,
+      node: args.node,
+      sourceRoleId
+    });
+    const fieldValue = resolveArtifactField({
+      artifact,
+      field: field as "content" | "event" | "data",
+      selector,
+      roleId: args.roleId,
+      branchId: args.branch.branchId
+    });
+    if (!nestedPath) {
+      return fieldValue;
+    }
+    return resolveObjectPath({
+      value: fieldValue,
+      path: nestedPath.split("."),
+      selector,
+      roleId: args.roleId,
+      branchId: args.branch.branchId
+    });
+  }
+
+  failContextProjection({
+    errorCode: "ROLE_CONTEXT_SELECTOR_UNSUPPORTED",
+    message: `Role "${args.roleId}" uses unsupported context selector "${selector}".`,
+    roleId: args.roleId,
+    branchId: args.branch.branchId
+  });
+}
+
+function buildProjectedContext(args: {
+  roleId: string;
+  node: ExecutionPlanNode;
+  branch: BranchRecord;
+  state: GraphState;
+  userProfile?: UserProfile;
+}): string {
+  const sortedEntries = Object.entries(args.node.contextMap ?? {}).sort(([left], [right]) =>
+    left.localeCompare(right)
+  );
+  const projected = Object.fromEntries(sortedEntries.map(([fieldName, selector]) => [
+    fieldName,
+    evaluateContextSelector({
+      selector,
+      roleId: args.roleId,
+      node: args.node,
+      branch: args.branch,
+      state: args.state,
+      userProfile: args.userProfile
+    })
+  ]));
+  return stringifyJson(projected);
+}
+
 /**
  * Prompt input is intentionally flattened into a small stable contract. Executors and prompt
  * templates should not depend on full runtime state or branch internals.
@@ -201,14 +469,17 @@ function buildRolePromptInput(args: {
   userProfile?: UserProfile;
 }): RolePromptInput {
   const allowedEvents = args.node.outgoing.map((item) => item.eventType);
+  const hasContextMap = Boolean(args.node.contextMap && Object.keys(args.node.contextMap).length > 0);
   const context =
-    args.node.joinMode === "all_of"
-      ? renderJoinContext({
-          state: args.state,
-          joinSources: args.node.joinSources,
-          branch: args.branch
-        })
-      : getDirectContext(args.state, args.branch);
+    hasContextMap
+      ? buildProjectedContext(args)
+      : args.node.joinMode
+        ? renderJoinContext({
+            state: args.state,
+            joinSources: args.node.joinSources,
+            branch: args.branch
+          })
+        : getDirectContext(args.state, args.branch);
 
   return {
     task: args.state.userPrompt,
@@ -594,6 +865,7 @@ export async function executeRoleNode(args: {
     const audit = createAuditRecord({
       roleId: args.roleId,
       branchId,
+      joinId: args.node.joinMode ? buildJoinId(args.roleId, loopIteration) : undefined,
       loopIteration,
       lawRef,
       started,
@@ -661,29 +933,6 @@ export async function executeRoleNode(args: {
     return result;
   }
 
-  const promptInput = buildRolePromptInput({
-    roleId: args.roleId,
-    node: args.node,
-    branch: currentBranch,
-    state: args.state,
-    userProfile: args.userProfile
-  });
-
-  if (rolePackage.inputSchema) {
-    validateRoleInputSchema({
-      input: promptInput,
-      schema: rolePackage.inputSchema,
-      schemaPath: rolePackage.inputSchemaPath,
-      roleId: args.roleId
-    });
-  }
-
-  const prompt = renderRolePrompt({
-    promptTemplate: rolePackage.promptTemplate,
-    persona: rolePackage.persona,
-    work: rolePackage.work,
-    values: promptInput
-  });
   const allowedEvents = args.node.outgoing.map((item) => item.eventType);
   const roleDirs = args.runContext.roleDirsById.get(args.roleId);
   const existingSession = getRoleSession(args.runContext, sessionKey);
@@ -699,9 +948,35 @@ export async function executeRoleNode(args: {
   let command: string | undefined;
   let lastStdout: string | undefined;
   let bindingLabel = "noop";
+  let promptInput!: RolePromptInput;
+  let prompt = "";
   const logger = args.logger ?? createRunConsoleLogger(false);
 
   try {
+    promptInput = buildRolePromptInput({
+      roleId: args.roleId,
+      node: args.node,
+      branch: currentBranch,
+      state: args.state,
+      userProfile: args.userProfile
+    });
+
+    if (rolePackage.inputSchema) {
+      validateRoleInputSchema({
+        input: promptInput,
+        schema: rolePackage.inputSchema,
+        schemaPath: rolePackage.inputSchemaPath,
+        roleId: args.roleId
+      });
+    }
+
+    prompt = renderRolePrompt({
+      promptTemplate: rolePackage.promptTemplate,
+      persona: rolePackage.persona,
+      work: rolePackage.work,
+      values: promptInput
+    });
+
     if (args.node.binding.kind === "model") {
       const modelPackage = args.modelsById.get(args.node.binding.modelId);
       if (!modelPackage) {
@@ -777,13 +1052,13 @@ export async function executeRoleNode(args: {
       sharedDir: args.runContext.sharedDir,
       privateDir: roleDirs?.privateDir ?? "",
       execution,
-      roleInputProjection: {
-        role_id: args.roleId,
-        task: args.state.userPrompt,
-        context: promptInput.context,
-        allowed_events: allowedEvents,
-        last_output: promptInput.last_output,
-        system_notes: promptInput.system_notes,
+        roleInputProjection: {
+          role_id: args.roleId,
+          task: args.state.userPrompt,
+          context: promptInput.context,
+          allowed_events: allowedEvents,
+          last_output: promptInput.last_output,
+          system_notes: promptInput.system_notes,
         round: loopIteration,
         user_profile: args.userProfile ?? {}
       },
@@ -893,7 +1168,7 @@ export async function executeRoleNode(args: {
     const audit = createAuditRecord({
       roleId: args.roleId,
       branchId,
-      joinId: args.node.joinMode === "all_of" ? buildJoinId(args.roleId, loopIteration) : undefined,
+      joinId: args.node.joinMode ? buildJoinId(args.roleId, loopIteration) : undefined,
       loopIteration,
       lawRef,
       started,

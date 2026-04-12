@@ -45,6 +45,8 @@ export function createExecutionPlan(system: SystemDefinition): ExecutionPlan {
       routingMode: system.graph?.routingModeByRoleId[roleId],
       joinMode: system.graph?.joinModeByRoleId[roleId],
       joinSources: system.graph?.joinSourcesByRoleId[roleId] ?? [],
+      joinMin: system.graph?.joinMinByRoleId[roleId],
+      contextMap: system.graph?.contextMapByRoleId[roleId],
       loopMax: system.graph?.loopMaxByRoleId[roleId],
       binding: resolveBinding(system, roleId),
       isTerminal:

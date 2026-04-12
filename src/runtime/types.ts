@@ -15,12 +15,16 @@ export const SYSTEM_END_ROLE_ID = "__system_end__";
 
 export type GraphRoutingMode = "parallel_split";
 
-export type GraphJoinMode = "all_of";
+export type GraphJoinMode = "all_of" | "quorum_of";
+
+export type ContextMapByRoleId = Record<string, Record<string, string>>;
 
 export type GraphMetadata = {
   routingModeByRoleId: Record<string, GraphRoutingMode>;
   joinModeByRoleId: Record<string, GraphJoinMode>;
   joinSourcesByRoleId: Record<string, string[]>;
+  joinMinByRoleId: Record<string, number>;
+  contextMapByRoleId: ContextMapByRoleId;
   loopMaxByRoleId: Record<string, number>;
 };
 
@@ -68,6 +72,8 @@ export type ExecutionPlanNode = {
   routingMode?: GraphRoutingMode;
   joinMode?: GraphJoinMode;
   joinSources: string[];
+  joinMin?: number;
+  contextMap?: Record<string, string>;
   loopMax?: number;
   binding: RoleExecutionBinding;
   isTerminal: boolean;

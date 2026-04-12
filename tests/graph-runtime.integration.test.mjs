@@ -415,6 +415,240 @@ summary[Role:summary] -->|DONE| output
   assert.match(mergerInbox, /"allowed_events": \[\s*"MERGED"\s*\]/);
 });
 
+test("adapter runs quorum_of join once, ignores late arrivals, and applies context.map projection", async () => {
+  const repoRoot = process.cwd();
+  const tempRoot = await mkdtemp(path.join(os.tmpdir(), "ogsystem-quorum-projection-"));
+  const systemPath = path.resolve(tempRoot, "system.mmd");
+  const runtimePath = path.resolve(tempRoot, ".ogsystem", "runtime.json");
+  const profilesPath = path.resolve(tempRoot, "profiles.json");
+  const toolsPath = path.resolve(tempRoot, "tools.json");
+  const toolScriptPath = path.resolve(tempRoot, "projection-tool.mjs");
+  const rolesRoot = path.resolve(tempRoot, "og-roles", "roles");
+
+  await mkdir(path.resolve(tempRoot, ".ogsystem"), { recursive: true });
+  await writeFile(
+    runtimePath,
+    JSON.stringify(
+      {
+        executor: "opencode",
+        roleRepo: "./og-roles",
+        modelRepo: path.resolve(repoRoot, "og-models"),
+        runsDir: ".ogs/runs"
+      },
+      null,
+      2
+    ),
+    "utf8"
+  );
+  await writeFile(
+    profilesPath,
+    JSON.stringify(
+      [
+        {
+          profileId: "profile.fixture",
+          toolRef: "tool.fixture"
+        }
+      ],
+      null,
+      2
+    ),
+    "utf8"
+  );
+  await writeFile(
+    toolsPath,
+    JSON.stringify(
+      {
+        tools: [
+          {
+            toolRef: "tool.fixture",
+            runner: "local_shell",
+            command: "node",
+            argsTemplate: [toolScriptPath],
+            stdinMode: "none"
+          }
+        ]
+      },
+      null,
+      2
+    ),
+    "utf8"
+  );
+  await writeFile(
+    toolScriptPath,
+    `#!/usr/bin/env node
+const roleId = process.env.OGSYSTEM_ROLE_ID;
+const outputs = {
+  coordinator: {
+    content: "dispatch plan",
+    data: {
+      brief: "dispatch brief"
+    }
+  },
+  worker_a: {
+    event: "A_DONE",
+    content: "alpha summary",
+    data: {
+      risks: {
+        primary: "alpha risk"
+      }
+    }
+  },
+  worker_b: {
+    event: "B_DONE",
+    content: "beta summary",
+    data: {
+      risks: {
+        primary: "beta risk"
+      }
+    }
+  },
+  worker_c: {
+    event: "C_DONE",
+    content: "gamma summary",
+    data: {
+      risks: {
+        primary: "gamma risk"
+      }
+    }
+  },
+  review: {
+    event: "DONE",
+    content: "review ready"
+  }
+};
+process.stdout.write(JSON.stringify(outputs[roleId] ?? { event: "DONE", content: roleId ?? "unknown" }));\n`,
+    "utf8"
+  );
+
+  await writeModelBoundRole({
+    rolesRoot,
+    roleId: "coordinator",
+    allowedEvents: ["TO_A", "TO_B", "TO_C"],
+    requireEvent: false
+  });
+  await writeModelBoundRole({
+    rolesRoot,
+    roleId: "worker_a",
+    allowedEvents: ["A_DONE"]
+  });
+  await writeModelBoundRole({
+    rolesRoot,
+    roleId: "worker_b",
+    allowedEvents: ["B_DONE"]
+  });
+  await writeModelBoundRole({
+    rolesRoot,
+    roleId: "worker_c",
+    allowedEvents: ["C_DONE"]
+  });
+  await writeModelBoundRole({
+    rolesRoot,
+    roleId: "review",
+    allowedEvents: ["DONE"]
+  });
+
+  await writeFile(
+    systemPath,
+    `flowchart TD
+%% system.id=test.quorum.projection.runtime
+%% system.version=1.0.0
+%% law.global=law.console.base
+%% entry.role=coordinator
+%% role.mode.coordinator=parallel_split
+%% join.mode.review=quorum_of
+%% join.sources.review=worker_a,worker_b,worker_c
+%% join.min.review=2
+%% context.map.worker_a.brief=direct.data.brief
+%% context.map.worker_a.language=global.user_profile.language
+%% context.map.worker_a.task=global.task
+%% context.map.review.a_summary=source(worker_a).content
+%% context.map.review.b_risk=source(worker_b).data.risks.primary
+%% context.map.review.task=global.task
+%% exec.bind.coordinator=profile.fixture
+%% exec.bind.worker_a=profile.fixture
+%% exec.bind.worker_b=profile.fixture
+%% exec.bind.worker_c=profile.fixture
+%% exec.bind.review=profile.fixture
+
+input -->|START| coordinator[Role:coordinator]
+coordinator[Role:coordinator] -->|TO_A| workerA[Role:worker_a]
+coordinator[Role:coordinator] -->|TO_B| workerB[Role:worker_b]
+coordinator[Role:coordinator] -->|TO_C| workerC[Role:worker_c]
+workerA[Role:worker_a] -->|A_DONE| review[Role:review]
+workerB[Role:worker_b] -->|B_DONE| review[Role:review]
+workerC[Role:worker_c] -->|C_DONE| review[Role:review]
+review[Role:review] -->|DONE| output
+`,
+    "utf8"
+  );
+
+  const result = await runSystemWithAdapter({
+    systemPath,
+    runtimeConfigPath: runtimePath,
+    profilesPath,
+    toolsPath,
+    lawsPath: path.resolve(repoRoot, ".ogsystem", "laws.json"),
+    userProfilePath: path.resolve(repoRoot, ".ogsystem", "user-profile.json"),
+    prompt: "quorum projection prompt",
+    workdir: tempRoot
+  });
+
+  assert.strictEqual(result.status, "done");
+  assert.strictEqual(result.finalRoleId, "review");
+  assert.strictEqual(result.auditTrail.filter((item) => item.roleId === "review").length, 1);
+
+  const runDir = path.resolve(
+    tempRoot,
+    ".ogs/runs",
+    (await readdir(path.resolve(tempRoot, ".ogs/runs")))[0]
+  );
+  const workerAInbox = parseJsonCodeBlock(
+    await readFile(path.resolve(runDir, "roles", "worker_a", "inbox.md"), "utf8")
+  );
+  const reviewInbox = parseJsonCodeBlock(
+    await readFile(path.resolve(runDir, "roles", "review", "inbox.md"), "utf8")
+  );
+  const workerAContext = JSON.parse(workerAInbox.context);
+  const reviewContext = JSON.parse(reviewInbox.context);
+  assert.deepStrictEqual(Object.keys(workerAContext), ["brief", "language", "task"]);
+  assert.deepStrictEqual(workerAContext, {
+    brief: "dispatch brief",
+    language: "zh-CN",
+    task: "quorum projection prompt"
+  });
+  assert.deepStrictEqual(Object.keys(reviewContext), ["a_summary", "b_risk", "task"]);
+  assert.deepStrictEqual(reviewContext, {
+    a_summary: "alpha summary",
+    b_risk: "beta risk",
+    task: "quorum projection prompt"
+  });
+
+  const reviewExecutions = await readdir(path.resolve(runDir, "roles", "review", "executions"));
+  assert.strictEqual(reviewExecutions.length, 1);
+  const eventsText = await readFile(path.resolve(runDir, "events.ndjson"), "utf8");
+  assert.match(eventsText, /"type":"join_quorum_reached"/);
+  assert.match(eventsText, /"type":"join_activated"/);
+  assert.match(eventsText, /"type":"join_late_arrival_ignored"/);
+
+  const resumed = await runSystemWithAdapter({
+    systemPath,
+    runtimeConfigPath: runtimePath,
+    profilesPath,
+    toolsPath,
+    lawsPath: path.resolve(repoRoot, ".ogsystem", "laws.json"),
+    userProfilePath: path.resolve(repoRoot, ".ogsystem", "user-profile.json"),
+    prompt: "quorum projection prompt",
+    workdir: tempRoot,
+    resumeRunDir: path.relative(tempRoot, runDir)
+  });
+  assert.strictEqual(resumed.status, "done");
+
+  const reviewExecutionsAfterResume = await readdir(
+    path.resolve(runDir, "roles", "review", "executions")
+  );
+  assert.strictEqual(reviewExecutionsAfterResume.length, 1);
+});
+
 test("adapter executes non-join multi-incoming role once per active branch", async () => {
   const repoRoot = process.cwd();
   const tempRoot = await mkdtemp(path.join(os.tmpdir(), "ogsystem-multi-branch-role-"));

@@ -10,8 +10,11 @@ const source = `flowchart TD
 %% law.global=law.plan
 %% entry.role=dispatch
 %% role.mode.dispatch=parallel_split
-%% join.mode.review=all_of
+%% join.mode.review=quorum_of
 %% join.sources.review=worker_a,worker_b
+%% join.min.review=1
+%% context.map.review.summary=source(worker_a).content
+%% context.map.review.task=global.task
 %% loop.max.dispatch=2
 %% model.bind.dispatch=model.fast
 %% exec.bind.worker_a=profile.a
@@ -62,7 +65,12 @@ test("execution plan normalizes graph semantics and bindings", () => {
     modelId: "model.deep"
   });
 
-  assert.strictEqual(review.joinMode, "all_of");
+  assert.strictEqual(review.joinMode, "quorum_of");
   assert.deepStrictEqual(review.joinSources, ["worker_a", "worker_b"]);
+  assert.strictEqual(review.joinMin, 1);
+  assert.deepStrictEqual(review.contextMap, {
+    summary: "source(worker_a).content",
+    task: "global.task"
+  });
   assert.strictEqual(review.isTerminal, false);
 });

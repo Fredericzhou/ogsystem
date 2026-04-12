@@ -769,6 +769,9 @@ export async function initializeRunContext(args: {
     }
 
     const sessionsPath = resolve(runDir, "sessions.json");
+    if (!args.resumeRunDir) {
+      await writeIfMissing(sessionsPath, "[]\n");
+    }
     let sessionRecordsByKey = new Map<string, OpencodeSessionRecord>();
     if (await pathExists(sessionsPath)) {
       const existing = await readJsonFile(sessionsPath);

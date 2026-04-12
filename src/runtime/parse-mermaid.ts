@@ -159,6 +159,145 @@ type ValidatedSystemGraph = ParsedSystemGraph & {
   graph?: GraphMetadata;
 };
 
+type ParsedContextMapMetadataKey = {
+  roleId: string;
+  fieldName: string;
+};
+
+const SELECTOR_PATH_SEGMENT_REGEX = /^[A-Za-z0-9_]+$/;
+const SOURCE_SELECTOR_ROLE_ID_REGEX = /^[A-Za-z0-9._:-]+$/;
+
+function isSupportedJoinMode(value: string): value is GraphJoinMode {
+  return value === "quorum_of" || hasJoinModeHandler(value);
+}
+
+function parseContextMapMetadataKey(
+  key: string,
+  lineNumber?: number
+): ParsedContextMapMetadataKey {
+  const raw = key.slice("context.map.".length);
+  const separatorIndex = raw.indexOf(".");
+  if (separatorIndex <= 0 || separatorIndex >= raw.length - 1) {
+    failMermaid({
+      stage: "validate",
+      errorCode: "MERMAID_INVALID_CONTEXT_MAP_KEY",
+      message: `Invalid metadata key "${key}". Expected context.map.<roleId>.<fieldName>.`,
+      lineNumber
+    });
+  }
+
+  const roleId = raw.slice(0, separatorIndex);
+  const fieldName = raw.slice(separatorIndex + 1);
+  return { roleId, fieldName };
+}
+
+function isValidSelectorPath(path: string): boolean {
+  if (!path) {
+    return false;
+  }
+  return path.split(".").every((segment) => SELECTOR_PATH_SEGMENT_REGEX.test(segment));
+}
+
+function validateContextSelector(args: {
+  selector: string;
+  targetRoleId: string;
+  roleIds: string[];
+  joinModeByRoleId: Record<string, GraphJoinMode>;
+  joinSourcesByRoleId: Record<string, string[]>;
+  metadataKey: string;
+  lineNumber?: number;
+}): void {
+  const selector = args.selector;
+  const fail = (errorCode: string, message: string): never =>
+    failMermaid({
+      stage: "validate",
+      errorCode,
+      message,
+      lineNumber: args.lineNumber
+    });
+  const isJoinNode = args.joinModeByRoleId[args.targetRoleId] !== undefined;
+
+  if (selector === "global.task" || selector === "global.user_profile") {
+    return;
+  }
+
+  if (selector.startsWith("global.user_profile.")) {
+    const path = selector.slice("global.user_profile.".length);
+    if (!isValidSelectorPath(path)) {
+      fail(
+        "MERMAID_INVALID_SELECTOR",
+        `${args.metadataKey} uses unsupported selector "${selector}".`
+      );
+    }
+    return;
+  }
+
+  if (selector === "direct.content" || selector === "direct.event" || selector === "direct.data") {
+    if (isJoinNode) {
+      fail(
+        "MERMAID_JOIN_SELECTOR_NOT_ALLOWED",
+        `${args.metadataKey} uses "${selector}" but join nodes do not allow direct.* selectors.`
+      );
+    }
+    return;
+  }
+
+  if (selector.startsWith("direct.data.")) {
+    if (isJoinNode) {
+      fail(
+        "MERMAID_JOIN_SELECTOR_NOT_ALLOWED",
+        `${args.metadataKey} uses "${selector}" but join nodes do not allow direct.* selectors.`
+      );
+    }
+    const path = selector.slice("direct.data.".length);
+    if (!isValidSelectorPath(path)) {
+      fail(
+        "MERMAID_INVALID_SELECTOR",
+        `${args.metadataKey} uses unsupported selector "${selector}".`
+      );
+    }
+    return;
+  }
+
+  const sourceMatch = selector.match(
+    /^source\(([A-Za-z0-9._:-]+)\)\.(content|event|data|data\.[A-Za-z0-9_]+(?:\.[A-Za-z0-9_]+)*)$/
+  );
+  if (sourceMatch) {
+    if (!isJoinNode) {
+      fail(
+        "MERMAID_JOIN_SELECTOR_REQUIRES_JOIN_MODE",
+        `${args.metadataKey} uses join-only selector "${selector}" on non-join role "${args.targetRoleId}".`
+      );
+    }
+    const sourceRoleId = sourceMatch[1];
+    if (!SOURCE_SELECTOR_ROLE_ID_REGEX.test(sourceRoleId)) {
+      fail(
+        "MERMAID_INVALID_SELECTOR",
+        `${args.metadataKey} uses unsupported selector "${selector}".`
+      );
+    }
+    if (!args.roleIds.includes(sourceRoleId)) {
+      fail(
+        "MERMAID_UNDEFINED_ROLE_REF",
+        `${args.metadataKey} references undefined role "${sourceRoleId}" in selector "${selector}".`
+      );
+    }
+    const allowedJoinSources = args.joinSourcesByRoleId[args.targetRoleId] ?? [];
+    if (!allowedJoinSources.includes(sourceRoleId)) {
+      fail(
+        "MERMAID_JOIN_SELECTOR_SOURCE_NOT_ALLOWED",
+        `${args.metadataKey} references source("${sourceRoleId}") not declared in join.sources.${args.targetRoleId}.`
+      );
+    }
+    return;
+  }
+
+  fail(
+    "MERMAID_INVALID_SELECTOR",
+    `${args.metadataKey} uses unsupported selector "${selector}".`
+  );
+}
+
 /**
  * Parsing is intentionally strict. A narrow node grammar keeps Mermaid readable and lets the
  * runtime reject ambiguous surface syntax before semantic validation begins.
@@ -486,6 +625,8 @@ function validateParsedSystemGraph(graph: ParsedSystemGraph): ValidatedSystemGra
   const routingModeByRoleId: Record<string, GraphRoutingMode> = {};
   const joinModeByRoleId: Record<string, GraphJoinMode> = {};
   const joinSourcesByRoleId: Record<string, string[]> = {};
+  const joinMinByRoleId: Record<string, number> = {};
+  const contextMapByRoleId: Record<string, Record<string, string>> = {};
   const loopMaxByRoleId: Record<string, number> = {};
   const exactMetadataKeys = new Set(["engine", "system.id", "system.version", "law.global", "entry.role"]);
 
@@ -528,7 +669,7 @@ function validateParsedSystemGraph(graph: ParsedSystemGraph): ValidatedSystemGra
 
     if (key.startsWith("join.mode.")) {
       const roleId = key.slice("join.mode.".length);
-      if (!hasJoinModeHandler(value)) {
+      if (!isSupportedJoinMode(value)) {
         failMermaid({
           stage: "validate",
           errorCode: "MERMAID_UNSUPPORTED_JOIN_MODE",
@@ -542,6 +683,23 @@ function validateParsedSystemGraph(graph: ParsedSystemGraph): ValidatedSystemGra
       continue;
     }
 
+    if (key.startsWith("join.min.")) {
+      const roleId = key.slice("join.min.".length);
+      const parsed = Number.parseInt(value, 10);
+      if (!Number.isInteger(parsed) || parsed <= 0) {
+        failMermaid({
+          stage: "validate",
+          errorCode: "MERMAID_INVALID_JOIN_MIN",
+          message: `Invalid join.min for ${roleId}: "${value}"`,
+          lineNumber: metadataLine(key)
+        });
+      }
+      if (roleId) {
+        joinMinByRoleId[roleId] = parsed;
+      }
+      continue;
+    }
+
     if (key.startsWith("join.sources.")) {
       const roleId = key.slice("join.sources.".length);
       if (roleId) {
@@ -550,6 +708,13 @@ function validateParsedSystemGraph(graph: ParsedSystemGraph): ValidatedSystemGra
           .map((item) => item.trim())
           .filter(Boolean);
       }
+      continue;
+    }
+
+    if (key.startsWith("context.map.")) {
+      const { roleId, fieldName } = parseContextMapMetadataKey(key, metadataLine(key));
+      const roleMap = (contextMapByRoleId[roleId] ??= {});
+      roleMap[fieldName] = value;
       continue;
     }
 
@@ -696,11 +861,19 @@ function validateParsedSystemGraph(graph: ParsedSystemGraph): ValidatedSystemGra
         lineNumber: metadataLine(`join.mode.${roleId}`)
       });
     }
-    if (joinModeByRoleId[roleId] === "all_of" && !joinSourcesByRoleId[roleId]?.length) {
+    if (!joinSourcesByRoleId[roleId]?.length) {
       failMermaid({
         stage: "validate",
         errorCode: "MERMAID_MISSING_JOIN_SOURCES",
-        message: `join.sources.${roleId} is required when join.mode.${roleId}=all_of`,
+        message: `join.sources.${roleId} is required when join.mode.${roleId}=${joinModeByRoleId[roleId]}`,
+        lineNumber: metadataLine(`join.mode.${roleId}`)
+      });
+    }
+    if (joinModeByRoleId[roleId] === "quorum_of" && joinMinByRoleId[roleId] === undefined) {
+      failMermaid({
+        stage: "validate",
+        errorCode: "MERMAID_MISSING_JOIN_MIN",
+        message: `join.min.${roleId} is required when join.mode.${roleId}=quorum_of`,
         lineNumber: metadataLine(`join.mode.${roleId}`)
       });
     }
@@ -778,6 +951,60 @@ function validateParsedSystemGraph(graph: ParsedSystemGraph): ValidatedSystemGra
     }
   }
 
+  for (const [roleId, joinMin] of Object.entries(joinMinByRoleId)) {
+    if (!roleIds.includes(roleId)) {
+      failMermaid({
+        stage: "validate",
+        errorCode: "MERMAID_UNDEFINED_ROLE_REF",
+        message: `join.min.${roleId} references undefined role`,
+        lineNumber: metadataLine(`join.min.${roleId}`)
+      });
+    }
+    const joinMode = joinModeByRoleId[roleId];
+    if (joinMode !== "quorum_of") {
+      failMermaid({
+        stage: "validate",
+        errorCode: "MERMAID_JOIN_MIN_REQUIRES_QUORUM_MODE",
+        message: `join.min.${roleId} requires join.mode.${roleId}=quorum_of`,
+        lineNumber: metadataLine(`join.min.${roleId}`)
+      });
+    }
+    const sourceCount = joinSourcesByRoleId[roleId]?.length ?? 0;
+    if (joinMin < 1 || joinMin > sourceCount) {
+      failMermaid({
+        stage: "validate",
+        errorCode: "MERMAID_INVALID_JOIN_MIN_RANGE",
+        message: `join.min.${roleId} must be within [1, ${sourceCount}] for join.mode.${roleId}=quorum_of`,
+        lineNumber: metadataLine(`join.min.${roleId}`)
+      });
+    }
+  }
+
+  for (const [roleId, contextMap] of Object.entries(contextMapByRoleId)) {
+    if (!roleIds.includes(roleId)) {
+      const firstField = Object.keys(contextMap)[0];
+      const key = firstField ? `context.map.${roleId}.${firstField}` : `context.map.${roleId}`;
+      failMermaid({
+        stage: "validate",
+        errorCode: "MERMAID_UNDEFINED_ROLE_REF",
+        message: `context.map.${roleId} references undefined role`,
+        lineNumber: metadataLine(key)
+      });
+    }
+
+    for (const [fieldName, selector] of Object.entries(contextMap)) {
+      validateContextSelector({
+        selector,
+        targetRoleId: roleId,
+        roleIds,
+        joinModeByRoleId,
+        joinSourcesByRoleId,
+        metadataKey: `context.map.${roleId}.${fieldName}`,
+        lineNumber: metadataLine(`context.map.${roleId}.${fieldName}`)
+      });
+    }
+  }
+
   for (const [roleId, loopMax] of Object.entries(loopMaxByRoleId)) {
     if (!roleIds.includes(roleId)) {
       failMermaid({
@@ -825,6 +1052,8 @@ function validateParsedSystemGraph(graph: ParsedSystemGraph): ValidatedSystemGra
     routingModeByRoleId,
     joinModeByRoleId,
     joinSourcesByRoleId,
+    joinMinByRoleId,
+    contextMapByRoleId,
     loopMaxByRoleId
   };
 

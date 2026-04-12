@@ -89,7 +89,7 @@ export function getSupportedNl2MmdDictionary(): Nl2MmdSupportedDictionary {
       "loop.max."
     ],
     roleModes: ["parallel_split"],
-    joinModes: ["all_of"],
+    joinModes: ["all_of", "quorum_of"],
     mentionPrefix: "@",
     nodeTokenPattern: "nodeId[Role:roleId]",
     edgePattern: "from -->|EVENT| to"

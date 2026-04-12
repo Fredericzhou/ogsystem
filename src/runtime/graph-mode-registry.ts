@@ -8,6 +8,13 @@ import type {
 } from "./types.js";
 import { findRoleResult } from "./graph-runtime-state.js";
 
+export type JoinReadiness = {
+  ready: boolean;
+  completedSourceRoleIds: string[];
+  missingSourceRoleIds: string[];
+  requiredSourceCount: number;
+};
+
 type RoutingModeHandler = {
   selectTargets(args: {
     node: ExecutionPlanNode;
@@ -17,12 +24,12 @@ type RoutingModeHandler = {
 };
 
 type JoinModeHandler = {
-  isReady(args: {
+  evaluate(args: {
     node: ExecutionPlanNode;
     currentBranch: BranchRecord;
     state: GraphState;
     currentResult?: StoredRoleResult;
-  }): boolean;
+  }): JoinReadiness;
 };
 
 const routingModeHandlers = new Map<GraphRoutingMode, RoutingModeHandler>();
@@ -77,14 +84,28 @@ export function isJoinNodeReady(args: {
   state: GraphState;
   currentResult?: StoredRoleResult;
 }): boolean {
+  return evaluateJoinNodeReadiness(args).ready;
+}
+
+export function evaluateJoinNodeReadiness(args: {
+  node: ExecutionPlanNode;
+  currentBranch: BranchRecord;
+  state: GraphState;
+  currentResult?: StoredRoleResult;
+}): JoinReadiness {
   if (!args.node.joinMode) {
-    return true;
+    return {
+      ready: true,
+      completedSourceRoleIds: [],
+      missingSourceRoleIds: [],
+      requiredSourceCount: 0
+    };
   }
   const handler = joinModeHandlers.get(args.node.joinMode);
   if (!handler) {
     throw new Error(`Join mode handler missing for "${args.node.joinMode}"`);
   }
-  return handler.isReady(args);
+  return handler.evaluate(args);
 }
 
 export function listSupportedRoutingModes(): GraphRoutingMode[] {
@@ -102,29 +123,59 @@ registerRoutingModeHandler("parallel_split", {
 });
 
 registerJoinModeHandler("all_of", {
-  isReady(args) {
-    for (const sourceRoleId of args.node.joinSources) {
+  evaluate(args) {
+    const declaredSources = Array.from(new Set(args.node.joinSources));
+    const completedSourceRoleIds = declaredSources.filter((sourceRoleId) => {
       if (sourceRoleId === args.currentBranch.roleId) {
-        continue;
+        return Boolean(args.currentResult);
       }
-      const result = findRoleResult({
-        state: args.state,
-        roleId: sourceRoleId,
-        lineageId: args.currentBranch.lineageId,
-        loopIteration: args.currentBranch.loopIteration
-      });
-      if (!result) {
-        return false;
-      }
-    }
-    return Boolean(
-      args.currentResult ??
+      return Boolean(
         findRoleResult({
           state: args.state,
-          roleId: args.currentBranch.roleId,
+          roleId: sourceRoleId,
           lineageId: args.currentBranch.lineageId,
           loopIteration: args.currentBranch.loopIteration
         })
+      );
+    });
+    const requiredSourceCount = declaredSources.length;
+    const missingSourceRoleIds = declaredSources.filter(
+      (sourceRoleId) => !completedSourceRoleIds.includes(sourceRoleId)
     );
+    return {
+      ready: completedSourceRoleIds.length >= requiredSourceCount,
+      completedSourceRoleIds,
+      missingSourceRoleIds,
+      requiredSourceCount
+    };
+  }
+});
+
+registerJoinModeHandler("quorum_of", {
+  evaluate(args) {
+    const declaredSources = Array.from(new Set(args.node.joinSources));
+    const completedSourceRoleIds = declaredSources.filter((sourceRoleId) => {
+      if (sourceRoleId === args.currentBranch.roleId) {
+        return Boolean(args.currentResult);
+      }
+      return Boolean(
+        findRoleResult({
+          state: args.state,
+          roleId: sourceRoleId,
+          lineageId: args.currentBranch.lineageId,
+          loopIteration: args.currentBranch.loopIteration
+        })
+      );
+    });
+    const requiredSourceCount = args.node.joinMin ?? declaredSources.length;
+    const missingSourceRoleIds = declaredSources.filter(
+      (sourceRoleId) => !completedSourceRoleIds.includes(sourceRoleId)
+    );
+    return {
+      ready: completedSourceRoleIds.length >= requiredSourceCount,
+      completedSourceRoleIds,
+      missingSourceRoleIds,
+      requiredSourceCount
+    };
   }
 });

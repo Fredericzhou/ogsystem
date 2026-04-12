@@ -109,6 +109,35 @@ worker_c[Role:worker_c] -->|DONE_C| review[Role:review]
 review[Role:review] -->|DONE| output
 `;
 
+const quorumJoinWithProjectionSource = `flowchart TD
+%% system.id=test.quorum.projection
+%% system.version=0.1.0
+%% law.global=law.test
+%% entry.role=dispatch
+%% role.mode.dispatch=parallel_split
+%% join.mode.review=quorum_of
+%% join.sources.review=worker_a,worker_b,worker_c
+%% join.min.review=2
+%% context.map.review.summary=source(worker_a).content
+%% context.map.review.risks=source(worker_b).data.risks
+%% context.map.review.task=global.task
+%% context.map.worker_a.brief=direct.data.brief
+%% context.map.worker_a.profile=global.user_profile.language
+%% model.bind.dispatch=model.fast
+%% model.bind.worker_a=model.fast
+%% model.bind.worker_b=model.fast
+%% model.bind.worker_c=model.fast
+%% model.bind.review=model.fast
+input -->|START| dispatch[Role:dispatch]
+dispatch[Role:dispatch] -->|A| worker_a[Role:worker_a]
+dispatch[Role:dispatch] -->|B| worker_b[Role:worker_b]
+dispatch[Role:dispatch] -->|C| worker_c[Role:worker_c]
+worker_a[Role:worker_a] -->|DONE_A| review[Role:review]
+worker_b[Role:worker_b] -->|DONE_B| review[Role:review]
+worker_c[Role:worker_c] -->|DONE_C| review[Role:review]
+review[Role:review] -->|DONE| output
+`;
+
 test("parser accepts a minimal system", () => {
   const system = parseSystemFromMermaidSource(validSource);
   assert.strictEqual(system.entryRoleId, "intake");
@@ -129,6 +158,28 @@ test("parser accepts graph metadata and compiles semantic hints without engine f
   assert.strictEqual(system.graph?.joinModeByRoleId.review, "all_of");
   assert.deepStrictEqual(system.graph?.joinSourcesByRoleId.review, ["worker_a", "worker_b"]);
   assert.strictEqual(system.graph?.loopMaxByRoleId.dispatch, 2);
+  assert.deepStrictEqual(system.graph?.joinMinByRoleId ?? {}, {});
+  assert.deepStrictEqual(system.graph?.contextMapByRoleId ?? {}, {});
+});
+
+test("parser accepts quorum_of join.min and context.map metadata", () => {
+  const system = parseSystemFromMermaidSource(quorumJoinWithProjectionSource);
+  assert.strictEqual(system.graph?.joinModeByRoleId.review, "quorum_of");
+  assert.deepStrictEqual(system.graph?.joinSourcesByRoleId.review, [
+    "worker_a",
+    "worker_b",
+    "worker_c"
+  ]);
+  assert.strictEqual(system.graph?.joinMinByRoleId.review, 2);
+  assert.deepStrictEqual(system.graph?.contextMapByRoleId.review, {
+    summary: "source(worker_a).content",
+    risks: "source(worker_b).data.risks",
+    task: "global.task"
+  });
+  assert.deepStrictEqual(system.graph?.contextMapByRoleId.worker_a, {
+    brief: "direct.data.brief",
+    profile: "global.user_profile.language"
+  });
 });
 
 test("parser rejects cyclic topology without explicit loop budget", () => {
@@ -154,6 +205,77 @@ test("parser rejects all_of join when join.sources does not match incoming role 
   assert.throws(
     () => parseSystemFromMermaidSource(joinSourcesMismatchSource),
     /MERMAID_JOIN_SOURCES_MISMATCH|join\.sources\.review must match exactly/
+  );
+});
+
+test("parser rejects quorum_of join without join.min", () => {
+  const source = quorumJoinWithProjectionSource.replace("%% join.min.review=2\n", "");
+  assert.throws(
+    () => parseSystemFromMermaidSource(source),
+    /MERMAID_MISSING_JOIN_MIN|join\.min\.review is required/
+  );
+});
+
+test("parser rejects quorum_of join.min outside source range", () => {
+  const source = quorumJoinWithProjectionSource.replace("%% join.min.review=2", "%% join.min.review=4");
+  assert.throws(
+    () => parseSystemFromMermaidSource(source),
+    /MERMAID_INVALID_JOIN_MIN_RANGE|must be within \[1, 3\]/
+  );
+});
+
+test("parser rejects join-only selector on non-join role", () => {
+  const source = quorumJoinWithProjectionSource.replace(
+    "%% context.map.worker_a.brief=direct.data.brief",
+    "%% context.map.worker_a.brief=source(worker_b).content"
+  );
+  assert.throws(
+    () => parseSystemFromMermaidSource(source),
+    /MERMAID_JOIN_SELECTOR_REQUIRES_JOIN_MODE|join-only selector/
+  );
+});
+
+test("parser rejects source selector that is outside join.sources", () => {
+  const source = quorumJoinWithProjectionSource.replace(
+    "%% context.map.review.summary=source(worker_a).content",
+    "%% context.map.review.summary=source(dispatch).content"
+  );
+  assert.throws(
+    () => parseSystemFromMermaidSource(source),
+    /MERMAID_JOIN_SELECTOR_SOURCE_NOT_ALLOWED|not declared in join\.sources\.review/
+  );
+});
+
+test("parser rejects source selector referencing undefined role", () => {
+  const source = quorumJoinWithProjectionSource.replace(
+    "%% context.map.review.summary=source(worker_a).content",
+    "%% context.map.review.summary=source(worker_x).content"
+  );
+  assert.throws(
+    () => parseSystemFromMermaidSource(source),
+    /MERMAID_UNDEFINED_ROLE_REF|references undefined role "worker_x"/
+  );
+});
+
+test("parser rejects invalid selector grammar", () => {
+  const source = quorumJoinWithProjectionSource.replace(
+    "%% context.map.worker_a.brief=direct.data.brief",
+    "%% context.map.worker_a.brief=direct.data[0]"
+  );
+  assert.throws(
+    () => parseSystemFromMermaidSource(source),
+    /MERMAID_INVALID_SELECTOR|unsupported selector/
+  );
+});
+
+test("parser rejects context.map referencing undefined role", () => {
+  const source = quorumJoinWithProjectionSource.replace(
+    "%% context.map.worker_a.profile=global.user_profile.language",
+    "%% context.map.ghost.profile=global.user_profile.language"
+  );
+  assert.throws(
+    () => parseSystemFromMermaidSource(source),
+    /MERMAID_UNDEFINED_ROLE_REF|context\.map\.ghost references undefined role/
   );
 });
 

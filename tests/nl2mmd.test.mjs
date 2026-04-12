@@ -24,7 +24,7 @@ test("nl2mmd context discovers supported dictionary, roles, and models", async (
   assert.ok(context.roleCatalog.some((item) => item.roleId === "debate-judge"));
   assert.ok(context.modelCatalog.some((item) => item.modelId === "fast-gpt54"));
   assert.deepStrictEqual(context.supportedDictionary.roleModes, ["parallel_split"]);
-  assert.deepStrictEqual(context.supportedDictionary.joinModes, ["all_of"]);
+  assert.deepStrictEqual(context.supportedDictionary.joinModes, ["all_of", "quorum_of"]);
 });
 
 test("nl2mmd resolves @role mentions against local role repo", async () => {

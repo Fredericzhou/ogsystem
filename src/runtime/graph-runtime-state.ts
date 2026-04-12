@@ -60,7 +60,7 @@ export function projectStateSnapshot(args: {
   const completedBranches = branches.filter((branch) => branch.status === "completed");
   const pendingJoinRoleIds = activeBranches
     .map((branch) => branch.roleId)
-    .filter((roleId) => getExecutionPlanNode(args.plan, roleId).joinMode === "all_of");
+    .filter((roleId) => getExecutionPlanNode(args.plan, roleId).joinMode !== undefined);
 
   return {
     status: args.state.status,
