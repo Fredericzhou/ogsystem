@@ -1,3 +1,11 @@
+/**
+ * Orchestrates runtime graph execution: it wires LangGraph nodes, translates role outcomes to state
+ * updates, persists checkpoints, and enforces recovery semantics (replay, reconcile, stop requests).
+ * Boundaries: the runner never touches role internals; it treats execution-plan metadata as the source
+ * of truth and exposes only GraphState/GraphUpdate transformations. Trade-off: the runner keeps explicit
+ * persistence calls (checkpoints, audit output) instead of hiding them behind helpers to keep
+ * crash handling transparent.
+ */
 import { resolve } from "node:path";
 
 import { Annotation, END, START, StateGraph } from "@langchain/langgraph";
@@ -473,6 +481,8 @@ async function reconcileCommittedRoleExecutionOutcomes(args: {
   });
   const logger = createRunConsoleLogger(false);
 
+  // Recovery semantics: after replaying WAL checkpoints, reconcile any committed outcomes that
+  // raced ahead of checkpoint writes so the state frontier reflects every durable execution.
   for (const outcome of outcomes) {
     const pendingCheckpoint = pendingCheckpointByExecutionId.get(outcome.executionId);
     if (pendingCheckpoint) {
@@ -742,6 +752,8 @@ function buildSuccessTransitionPlan(args: {
         plan: args.plan
       })
     ) {
+      // Failure window: exceeding the loop budget instantly terminates the run so we never cycle
+      // indefinitely even if downstream logic keeps reactivating the same role.
       finalStatus = "failed";
       finalError = `Loop budget exceeded for ${targetRoleId}`;
       finalErrorEnvelope = {
@@ -767,6 +779,9 @@ function buildSuccessTransitionPlan(args: {
 
     const targetNode = getExecutionPlanNode(args.plan, targetRoleId);
     if (targetNode.joinMode) {
+      // Invariant: join-mode nodes must hold off activation until the required sources replayed,
+      // so we only activate a new branch after `readiness.ready` returns true and preserve the
+      // pending list for diagnostics while the failure window is in-flight.
       const readiness = evaluateJoinNodeReadiness({
         node: targetNode,
         currentBranch: args.currentBranch,
@@ -801,6 +816,8 @@ function buildSuccessTransitionPlan(args: {
         continue;
       }
       if (!readiness.ready) {
+        // Trade-off: logging wait events keeps recovery transparent, though we delay activation
+        // until every required source materializes.
         args.logger.joinWait({
           roleId: targetRoleId,
           arrivedFrom: args.roleId,
@@ -1040,6 +1057,8 @@ export async function runSystemWithGraphRunner(args: RunnerInput): Promise<Adapt
         combinedUpdate = mergeGraphUpdates(combinedUpdate, checkpoint.update);
 
         if (workingState.status === "running") {
+          // Trade-off: stop requests are honored as soon as we see them but still let the current
+          // transition complete so auditing stays consistent.
           const stopRequest = await readRunStopRequest(args.runContext.runDir);
           if (stopRequest) {
             const stopUpdate: GraphUpdate = { status: "stopping" };
@@ -1066,6 +1085,8 @@ export async function runSystemWithGraphRunner(args: RunnerInput): Promise<Adapt
   }
 
   graphBuilder.addEdge(START, SCHEDULER_NODE_ID);
+  // Invariant: the scheduler can only move to END when no active roles remain so that every
+  // transition is explicitly drained before termination.
   graphBuilder.addConditionalEdges(SCHEDULER_NODE_ID, (state: GraphState) => {
     if (state.status !== "running") {
       return END;
@@ -1097,6 +1118,8 @@ export async function runSystemWithGraphRunner(args: RunnerInput): Promise<Adapt
   await persistProjectedState({ state: finalState, plan: args.plan, runContext: args.runContext });
 
   const recursionLimit = calculateGraphRecursionLimit(args.effectiveLaw.maxTransitions);
+  // Trade-off: we double the transition budget for the scheduler hops so recursion depth stays
+  // bounded even when LangGraph counts scheduler nodes and role nodes separately.
   const stream = await graph.stream(finalState, {
     streamMode: "values",
     recursionLimit
@@ -1115,6 +1138,8 @@ export async function runSystemWithGraphRunner(args: RunnerInput): Promise<Adapt
     await persistProjectedState({ state: finalState, plan: args.plan, runContext: args.runContext });
   }
 
+  // Invariant: a status of "stopping" means we already received a stop request and must persist
+  // the stop outcome before flagging the run as "stopped".
   if (finalState.status === "stopping") {
     const stopRequest = await readRunStopRequest(args.runContext.runDir);
     const stopReason = stopRequest?.reason ?? "stop requested";

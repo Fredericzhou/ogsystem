@@ -1,3 +1,8 @@
+/**
+ * Presents a single, normalized envelope for all runtime failures so downstream actors can
+ * decide retry, persistence, and resume flows without touching stack traces.
+ * This module avoids interpreting opaque errors; it only augments known variants with runtime metadata.
+ */
 import { ConfigValidationError } from "./config.js";
 import { OpencodeExecutionError } from "./opencode-executor.js";
 import { ToolExecutionError } from "./tool-runner.js";
@@ -7,6 +12,9 @@ import type {
   RuntimeErrorStage
 } from "./types.js";
 
+/**
+ * Holds the canonical envelope emitted by runtime stages so the error surface can remain immutable.
+ */
 export class RuntimeError extends Error {
   constructor(public readonly envelope: RuntimeErrorEnvelope) {
     super(envelope.message);
@@ -14,10 +22,17 @@ export class RuntimeError extends Error {
   }
 }
 
+/**
+ * Builds a RuntimeError without altering the envelope so callers can rethrow with preserved metadata.
+ */
 export function createRuntimeError(envelope: RuntimeErrorEnvelope): RuntimeError {
   return new RuntimeError(envelope);
 }
 
+/**
+ * Collapses runtime errors, config validation failures, and tool/opencode failures into a single envelope
+ * while carrying along the caller-defined metadata that controls retry/failure bits.
+ */
 export function normalizeRuntimeError(
   error: unknown,
   defaults: {
@@ -78,6 +93,7 @@ export function normalizeRuntimeError(
     };
   }
 
+  // Guarantee a non-empty envelope message even if upstream error lacks readable text.
   const message =
     defaults.message ??
     (error instanceof Error && error.message.trim() ? error.message : String(error));
@@ -95,6 +111,9 @@ export function normalizeRuntimeError(
   };
 }
 
+/**
+ * Serializes the envelope in a predictable order so operators can compare the failure metadata quickly.
+ */
 export function formatRuntimeErrorEnvelope(envelope: RuntimeErrorEnvelope): string {
   const parts = [
     `errorCode=${envelope.errorCode}`,

@@ -1,3 +1,9 @@
+/**
+ * Bridges CLI inputs, resume checkpoints, and fingerprinting into the runtime orchestrator.
+ * Responsibilities stop at config merging, artifact bookkeeping, and executor coordination;
+ * graph execution is delegated to graph-runner and the execution backends.
+ * Trade-off: deterministic fingerprinting gates resume safety instead of more expensive diffs.
+ */
 import { createHash } from "node:crypto";
 import { homedir } from "node:os";
 import { resolve } from "node:path";
@@ -82,6 +88,10 @@ function mergeLawConstraints(base: EffectiveLawConstraints, spec?: LawSpec): Eff
   return next;
 }
 
+/**
+ * Derives the effective law constraints that must remain stable for any resume checkpoint.
+ * Fails immediately if the bound global law is absent so resume integrity never observes a missing law.
+ */
 export function resolveEffectiveLaw(
   system: SystemDefinition,
   lawCatalog?: LawCatalog
@@ -286,6 +296,8 @@ function assertBindingPreflight(args: {
   plan: ReturnType<typeof createExecutionPlan>;
   effectiveLaw: EffectiveLawConstraints;
 }): void {
+  // Invariant: every active role must either have an execution binding or be allowed a noop under the current law,
+  // otherwise the runtime hits an undefined branch and resume semantics become invalid.
   for (const roleId of args.plan.roleIds) {
     const node = args.plan.nodesByRoleId.get(roleId);
     if (!node) {
@@ -419,6 +431,10 @@ function buildModelPackageFingerprintComponent(
     }));
 }
 
+/**
+ * Captures the immutable contract (graph, bindings, law, role/model bundles) that must match on resume.
+ * The fingerprint is versioned and sorted so the resume verifier can detect any divergence before replaying state.
+ */
 export function buildRunPlanFingerprint(args: {
   system: SystemDefinition;
   rolePackagesByRoleId: Map<string, LoadedRolePackage>;
@@ -488,6 +504,11 @@ async function maybeHoldResumeLockForTest(): Promise<void> {
   await new Promise((resolve) => setTimeout(resolve, durationMs));
 }
 
+/**
+ * Drives startup, resume verification, and executor lifetime for a CLI-driven run.
+ * Invariant: setup must produce a consistent plan fingerprint before any resume validation runs.
+ * Recovery semantics normalize thrown errors into RuntimeErrorEnvelope values so callers see one failure surface.
+ */
 export async function runSystemWithAdapter(args: {
   systemPath: string;
   profilesPath?: string;

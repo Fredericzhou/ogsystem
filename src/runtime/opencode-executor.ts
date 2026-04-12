@@ -5,6 +5,17 @@ import { createOpencodeClient } from "@opencode-ai/sdk/v2";
 import { ToolExecutionError } from "./tool-runner.js";
 import type { LoadedModelPackage } from "./types.js";
 
+/**
+ * Handles the OpenCode server lifecycle, sessions, and structured-output plumbing for model roles.
+ * Responsibilities: start/stop the server, retry transient failures, enforce JSON schema adherence,
+ * and translate OpenCode errors into runtime-friendly forms. Boundaries: does not mutate runtime state,
+ * and all CLI interactions happen elsewhere. Trade-off: uses correction prompts instead of schema-less fallbacks
+ * so callers either receive schema-shaped output or a failure.
+ */
+
+/**
+ * Represents the spawned OpenCode serve process; callers must call `close` to avoid leaks.
+ */
 export type StartedServer = {
   url: string;
   pid?: number;
@@ -78,6 +89,9 @@ type OpencodeClientLike = {
   session: SessionApi;
 };
 
+/**
+ * Transport layer allows injecting stubbed servers/clients for tests while production uses the CLI.
+ */
 export type OpencodeSdkTransport = {
   startServer(args: {
     timeoutMs: number;
@@ -89,6 +103,9 @@ export type OpencodeSdkTransport = {
   }): OpencodeClientLike;
 };
 
+/**
+ * Surface layer for a running OpenCode server; used to create sessions and collect diagnostics.
+ */
 export type OpencodeRunClient = {
   url: string;
   pid?: number;
@@ -98,6 +115,9 @@ export type OpencodeRunClient = {
   client: OpencodeClientLike;
 };
 
+/**
+ * Wraps OpenCode failures so Executor can understand retryability, runtime args, and session IDs.
+ */
 export class OpencodeExecutionError extends Error {
   constructor(
     message: string,
@@ -416,15 +436,15 @@ function throwIfCancelled(signal: AbortSignal, timeoutMs: number): void {
 }
 
 /**
- * Stability: Implements standard Cancellation Propagation using AbortController.
- * Ensures that if a timeout occurs, the remote sandbox session is explicitly aborted 
- * to prevent "Zombie Sessions" (resource leaks) on the OpenCode server.
+ * Stability: implements timeout-driven cancellation with AbortController.
+ * On timeout the executor issues a best-effort remote abort before surfacing the timeout error.
  */
 function withTimeout<T>(
   operation: (signal: AbortSignal) => Promise<T>,
   timeoutMs: number,
   onTimeout: (signal: AbortSignal) => void | Promise<void>
 ): Promise<T> {
+  // Timeout cleanup is best-effort: abort the remote session when possible, but surface the timeout either way.
   return new Promise((resolve, reject) => {
     let settled = false;
     const controller = new AbortController();
@@ -475,6 +495,7 @@ async function startServer(args: {
     stdio: ["ignore", "pipe", "pipe"]
   });
 
+  // stdout/stderr monitored so we can extract the listening URL and avoid waiting forever.
   let output = "";
   let settled = false;
 
@@ -612,6 +633,7 @@ export async function startOpencodeRunClient(
  * 3. Sending the prompt and receiving the structured response.
  * 4. Automatic retries for transient errors.
  * 5. Simple output correction if the model fails to return valid JSON.
+ * The call also enforces that timeouts abort remote sessions and non-transient failures stop retries.
  */
 export async function executeOpencodeModelRole(
   args: {
@@ -641,6 +663,7 @@ export async function executeOpencodeModelRole(
 
   const { providerID, modelID } = splitModelRef(args.modelPackage.manifest.model);
   const variant = resolveVariant(args.modelPackage.manifest.args);
+  // Start a local OpenCode server only when the caller has not already supplied one.
   const ownRunClient = args.runClient
     ? undefined
     : await startOpencodeRunClient(
@@ -899,6 +922,7 @@ export async function executeOpencodeModelRole(
             }
 
             if (sessionId) {
+              // Attempt a best-effort abort so the next retry starts fresh.
               try {
                 await runClient.client.session.abort({
                   sessionID: sessionId,

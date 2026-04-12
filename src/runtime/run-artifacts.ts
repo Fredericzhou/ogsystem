@@ -1,3 +1,11 @@
+/**
+ * Hosts the durable artifact operations that keep runs recoverable and audit-ready.
+ * Responsibilities: directory creation for runs, locking resume attempts, snapshot/plan validation,
+ * checkpoints, buffers, and role/graph persistence artifacts.
+ * Boundaries: this module only manages files that coordinate execution state and recovery evidence.
+ * Trade-off: writes a constellation of small JSON files instead of reserializing the entire graph
+ * on every transition to keep checkpointing cheap while still providing enough context for resume.
+ */
 import {
   access,
   appendFile,
@@ -205,8 +213,9 @@ function isProcessAlive(pid: number): boolean {
 }
 
 async function acquireResumeRunLock(runDir: string): Promise<() => Promise<void>> {
-  // Resume is single-master per run directory. A light advisory lock is sufficient for the
-  // current single-machine runtime: atomic create, stale same-host takeover, clean-exit release.
+  // Invariant: only one process may resume a directory, so the lock file is a single source of truth.
+  // Trade-off: we rely on an advisory lock that assumes the runner honors pid/hostname checks instead
+  // of cross-host distributed coordination, keeping recovery logic simple for the single-machine case.
   const lockPath = resolve(runDir, RESUME_RUN_LOCK_FILE);
   const owner: ResumeRunLockRecord = {
     pid: process.pid,
@@ -706,6 +715,8 @@ export async function initializeRunContext(args: {
     await mkdir(resolve(runDir, ".opencode"), { recursive: true });
 
     const sourceSystem = await readFile(args.systemPath, "utf8");
+    // Idempotency: resumed directories reuse existing snapshots so we don't lose checkpoints when
+    // rerunning setup after a crash.
     await writeIfMissing(resolve(runDir, "request.md"), `${args.prompt}\n`);
     await writeIfMissing(resolve(runDir, "system.mmd"), sourceSystem);
     await writeIfMissing(
@@ -823,6 +834,8 @@ export async function initializeRunContext(args: {
       releaseResumeLock
     };
   } catch (error) {
+    // Failure window: the caught error occurs before execution starts, so we must drop the resume
+    // lock to avoid a stale blocker for the next run attempt.
     await releaseResumeLockAfterSetupFailure({
       runDir,
       releaseResumeLock
@@ -1540,14 +1553,15 @@ export async function flushBufferedRunArtifacts(context: RunContext): Promise<vo
     const batches = Array.from(state.pendingByKey.values());
     state.pendingByKey.clear();
 
-    for (const batch of batches) {
-      try {
-        await appendFile(batch.path, batch.content, "utf8");
-      } catch (error) {
-        await writeBufferedAppendRecovery(context.runDir, batch);
-        throw error;
+      for (const batch of batches) {
+        try {
+          await appendFile(batch.path, batch.content, "utf8");
+        } catch (error) {
+          // Recovery semantics: persist the pending append in a replay bin so the next startup can finish it.
+          await writeBufferedAppendRecovery(context.runDir, batch);
+          throw error;
+        }
       }
-    }
   };
 
   await chainBufferedFlush(state, runFlush);

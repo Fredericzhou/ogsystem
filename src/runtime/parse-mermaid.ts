@@ -12,6 +12,15 @@ import type {
   SystemDefinition
 } from "./types.js";
 
+/**
+ * Parses a constrained Mermaid flowchart, validates runtime bindings, and compiles a
+ * deterministic SystemDefinition that the runtime can trust without further DSL analysis.
+ * Responsibilities: strict grammar, metadata resolution, join semantics, cycle budget checks.
+ * Boundaries: rejects all unsupported selectors/edges and does not interpret execution data.
+ * Trade-off: early validation ensures the runtime never runs ambiguous graphs, but it means
+ * Mermaid surfaces must follow the exact documented DSL or be rejected outright.
+ */
+
 type ParsedNodeToken =
   | {
       kind: "role";
@@ -46,6 +55,7 @@ type ParsedSystemGraph = {
   hasOutputTransition: boolean;
 };
 
+// Ensures loops without explicit loop.max budgets are caught before execution.
 function collectCyclicRoleComponents(args: {
   roleIds: string[];
   flows: Flow[];
@@ -131,6 +141,7 @@ function collectCyclicRoleComponents(args: {
   return components;
 }
 
+// Fail-fast guard: runtime aborts parsing/validation on the first invariant violation.
 function failMermaid(args: {
   stage: "parse" | "validate";
   errorCode: string;
@@ -399,6 +410,7 @@ function tokenizeMermaidSource(source: string): TokenizedMermaid {
   const edges: TokenizedEdge[] = [];
   let flowchartFound = false;
 
+  // The very first non-empty line must declare the flowchart orientation so we avoid ambiguous graphs.
   for (const [index, line] of lines.entries()) {
     const lineNumber = index + 1;
     const trimmed = line.trim();
@@ -591,6 +603,7 @@ function validateParsedSystemGraph(graph: ParsedSystemGraph): ValidatedSystemGra
     });
   }
 
+  // Enforcing a single input transition keeps runtime recovery deterministic.
   if (graph.inputEntryCandidates.size > 1) {
     failMermaid({
       stage: "validate",
@@ -930,6 +943,7 @@ function validateParsedSystemGraph(graph: ParsedSystemGraph): ValidatedSystemGra
       }
     }
     const joinMode = joinModeByRoleId[roleId];
+    // Join sources must exactly match incoming edges so branching execution remains reproducible.
     if (joinMode === "all_of" || joinMode === "quorum_of") {
       const declaredSources = [...sources].sort((left, right) => left.localeCompare(right));
       const incomingSources = Array.from(
@@ -1038,9 +1052,9 @@ function validateParsedSystemGraph(graph: ParsedSystemGraph): ValidatedSystemGra
 
   /**
    * Reliability: Fail-Fast Static Analysis.
-   * Uses graph theory (Strongly Connected Components) to detect topological cycles 
-   * that lack an explicit loop.max budget. This prevents runaway LLM API costs 
-   * by rejecting unsafe graphs before execution begins.
+   * Uses graph theory (Strongly Connected Components) to detect topological cycles
+   * that lack an explicit loop.max budget. Rejecting them here keeps the runtime from
+   * spinning forever and ensures recovery steps can assume any cycle always carries a budget.
    */
   const cycleComponents = collectCyclicRoleComponents({
     roleIds,
@@ -1100,6 +1114,7 @@ function compileSystemDefinition(graph: ValidatedSystemGraph): SystemDefinition 
 /**
  * After this point the runtime works only with SystemDefinition, not Mermaid source text. That
  * keeps execution and tests independent from the surface DSL representation.
+ * Throws on parse/validation failures because they reflect non-recoverable DSL violations.
  */
 export function parseSystemFromMermaidSource(source: string): SystemDefinition {
   return compileSystemDefinition(
@@ -1107,11 +1122,17 @@ export function parseSystemFromMermaidSource(source: string): SystemDefinition {
   );
 }
 
+/**
+ * Loads and parses a Mermaid file, keeping filesystem IO separate from DSL validation.
+ */
 export async function loadSystemFromMermaid(path: string): Promise<SystemDefinition> {
   const source = await readFile(path, "utf8");
   return parseSystemFromMermaidSource(source);
 }
 
+/**
+ * Non-exception diagnostics emitted during lint runs; stages reference where validation stopped.
+ */
 export type SystemLintDiagnostic = {
   line?: number;
   errorCode: string;
@@ -1119,6 +1140,9 @@ export type SystemLintDiagnostic = {
   stage: RuntimeErrorStage;
 };
 
+/**
+ * Runs parse/validation without throwing so callers can show diagnostics while keeping runtime untouched.
+ */
 export function lintSystemFromMermaidSource(source: string): SystemLintDiagnostic[] {
   try {
     parseSystemFromMermaidSource(source);

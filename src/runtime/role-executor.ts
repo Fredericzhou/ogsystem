@@ -1,3 +1,10 @@
+/**
+ * Coordinates single-role execution attempts, including context projection, binding selection,
+ * prompt rendering, executor invocation, auditing, and persistence of results/outcomes.
+ * Boundaries: does not manage branch activation, transitions, or graph resolution; that stays with
+ * graph-runner. Trade-off: keeps every attempt isolated (dedicated execution dirs + outcomes) so
+ * retries and diagnostics can replay without destroying prior evidence, at the cost of more files.
+ */
 import { appendAuditRecord, createAuditRecord } from "./audit-recorder.js";
 import { createRunConsoleLogger } from "./console-run-log.js";
 import type { RunConsoleLogger } from "./console-run-log.js";
@@ -850,9 +857,11 @@ export async function executeRoleNode(args: {
     branchId,
     loopIteration
   });
+  // Invariant: each allocation increments the per-role execution counter and uses a unique directory so retries/replays never clobber prior evidence.
   const maxTransitions = args.effectiveLaw.maxTransitions;
 
   if (maxTransitions !== undefined && nextTransitionCount > maxTransitions) {
+    // Failure window: exceeding the transition budget aborts before execution so we don't leave the graph in an over-consumed state.
     const error = `Transition budget exceeded: ${nextTransitionCount} > ${maxTransitions}`;
     const failure = buildFailureEnvelope({
       error: new Error(error),
@@ -1066,6 +1075,7 @@ export async function executeRoleNode(args: {
     });
 
     if (!binding) {
+      // Trade-off: explicit no-op execution is only allowed when laws permit and outgoing flow count is 1 to avoid injecting ambiguity.
       if (!args.effectiveLaw.allowNoopWithoutExecutionBinding) {
         throw new Error(`Role "${args.roleId}" has no execution binding`);
       }
@@ -1243,6 +1253,7 @@ export async function executeRoleNode(args: {
     const message = error instanceof Error ? error.message : String(error);
     const category = error instanceof ToolExecutionError ? ` (${error.category})` : "";
     const executionError = error instanceof OpencodeExecutionError ? error.details : undefined;
+    // Recovery semantics: every exception is normalized into a failure envelope so the graph runner can decide retry/recover policies consistently.
     const failure = buildFailureEnvelope({
       error,
       roleId: args.roleId,

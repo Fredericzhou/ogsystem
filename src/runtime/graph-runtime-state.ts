@@ -1,3 +1,11 @@
+/**
+ * Runtime state helpers for the OGSystem graph runner.
+ * Responsible for deterministic branch/loop identity, snapshots, and helper queries that keep the
+ * scheduler's view of the graph consistent without introducing any side effects.
+ * Boundary: this module does not mutate IO or persist anything; mutation logic belongs to the runner.
+ * Trade-off: the helpers stay minimal to keep recovery reasoning tight even if the runner gains new
+ * persistence strategies later.
+ */
 import { getExecutionPlanNode } from "./execution-plan.js";
 import { createEmptyAuditSummary, summarizeRunFromAuditSummary } from "./run-summary.js";
 import type {
@@ -42,6 +50,7 @@ export function wouldExceedLoopBudget(args: {
   if (targetNode.loopMax === undefined) {
     return false;
   }
+  // Failure window: the graph rejects any activation that would take the target node past its budget.
   return getTargetLoopIteration(args) > targetNode.loopMax;
 }
 
@@ -61,6 +70,8 @@ export function projectStateSnapshot(args: {
   const pendingJoinRoleIds = activeBranches
     .map((branch) => branch.roleId)
     .filter((roleId) => getExecutionPlanNode(args.plan, roleId).joinMode !== undefined);
+  // Snapshot is used for reporting and operator/debug inspection, so it mirrors the runtime
+  // contract while still embedding the raw graphState for resume-aware consumers.
 
   return {
     status: args.state.status,
@@ -110,6 +121,8 @@ export function getActiveRoleIds(state: GraphState): string[] {
     }
   }
 
+  // Invariant: there is at most one active branch per role in the scheduler's selection queue; the
+  // lowest branch sequence wins so that reruns or newer splits do not jump ahead unexpectedly.
   return Array.from(firstBranchByRoleId.entries())
     .sort((left, right) => left[1] - right[1])
     .map(([roleId]) => roleId);
@@ -169,6 +182,8 @@ export function createInitialGraphState(args: {
   prompt: string;
 }): GraphState {
   const branchId = buildBranchId(args.plan.entryRoleId, 1, 1);
+  // The graph starts with a single active entry branch so branch ids and lineage ids are seeded
+  // before any split, join, or loop logic runs.
   return {
     userPrompt: args.prompt,
     status: "running",
@@ -209,6 +224,7 @@ export function storeRoleResult(
   branchId: string,
   result: StoredRoleResult | undefined
 ): Record<string, StoredRoleResult> {
+  // Recovery semantics: only persisted role outcomes (non-undefined) get merged into checkpoints.
   return result ? { [branchId]: result } : {};
 }
 
@@ -228,6 +244,8 @@ export function findRoleResult(args: {
   lineageId: string;
   loopIteration: number;
 }): StoredRoleResult | undefined {
+  // Invariant: each (role, lineage, loopIteration) tuple should yield at most one recorded result,
+  // so a linear search is acceptable and deterministic for recovery checks.
   return Object.values(args.state.roleResults).find(
     (result) =>
       result.roleId === args.roleId &&

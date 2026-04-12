@@ -1,10 +1,16 @@
 /**
  * Core System & Graph Definitions
  * -------------------------------
- * Defines the static structure of the agent system, including roles, flows,
- * and graph-level metadata (routing, joining, etc.).
+ * Captures the immutable system contract that the runtime executes against.
+ * Responsibilities: describe role topology, binding metadata, and join/routing rules.
+ * Boundaries: this file does not cover live state or execution telemetry.
+ * Trade-off: keeping contracts lean keeps parsing/validation simple but requires extra
+ * annotations elsewhere when additional runtime features are added.
  */
 
+/**
+ * A deterministic transition that maps fromRoleId to toRoleId with a well-defined eventType.
+ */
 export type Flow = {
   fromRoleId: string;
   toRoleId: string;
@@ -19,6 +25,11 @@ export type GraphJoinMode = "all_of" | "quorum_of";
 
 export type ContextMapByRoleId = Record<string, Record<string, string>>;
 
+/**
+ * Computed graph metadata used to enforce join/routing invariants and loop budgets.
+ * The runtime assumes keys exist only when corresponding metadata was declared, making
+ * undefined entries equivalent to "default" behavior.
+ */
 export type GraphMetadata = {
   routingModeByRoleId: Record<string, GraphRoutingMode>;
   joinModeByRoleId: Record<string, GraphJoinMode>;
@@ -32,6 +43,10 @@ export type LawBinding = {
   globalLawRef: string;
 };
 
+/**
+ * Compiled description of a system that the runtime can safely execute.
+ * `graph` is optional metadata that supplements runtime planning when available.
+ */
 export type SystemDefinition = {
   systemId: string;
   systemVersion: string;
@@ -52,6 +67,9 @@ export type SystemDefinition = {
  * Maps roles to their execution bindings and defines graph topology for traversal.
  */
 
+/**
+ * Defines how a role is fulfilled. Only one binding kind is allowed, ensuring deterministic routing.
+ */
 export type RoleExecutionBinding =
   | {
       kind: "model";
@@ -65,6 +83,11 @@ export type RoleExecutionBinding =
       kind: "noop";
     };
 
+/**
+ * Represents a role within an execution plan, including outgoing/incoming flows and optional
+ * join/context metadata. For join nodes, `joinSources` carries the declared source role ids that
+ * readiness checks use at runtime.
+ */
 export type ExecutionPlanNode = {
   roleId: string;
   incoming: Flow[];
@@ -79,6 +102,10 @@ export type ExecutionPlanNode = {
   isTerminal: boolean;
 };
 
+/**
+ * ExecutionPlan is the runtime-ready graph. `nodesByRoleId` must include every role in `roleIds`,
+ * ensuring the planner can scan predictable maps when advancing the system.
+ */
 export type ExecutionPlan = {
   systemId: string;
   systemVersion: string;
@@ -228,6 +255,10 @@ export type RuntimeConfig = {
   };
 };
 
+/**
+ * Immutable log entry for every role execution. Optional IDs exist so recovery can trace
+ * specific sessions/branches when rerunning checkpoints or investigating failures.
+ */
 export type AuditRecord = {
   at: string;
   roleId: string;
@@ -288,6 +319,11 @@ export type OpencodeSessionRecord = {
   promptCount: number;
 };
 
+/**
+ * Captures directories, counters, and the optional resume-lock release callback maintained during
+ * a run. `roleExecutionCounts`/`executionDirCount` track allocated execution directories, and
+ * `releaseResumeLock` is present only when setup acquired an advisory resume lock.
+ */
 export type RunContext = {
   runId: string;
   runDir: string;
@@ -365,6 +401,10 @@ export type GraphRoleMetricSummary = {
   durationMsTotal: number;
 };
 
+/**
+ * Materialized runtime state persisted in `state.json` and reconstructed by replaying checkpoint
+ * updates. Branch/result maps are keyed by branch id so recovery can reconcile partial progress.
+ */
 export type GraphState = {
   userPrompt: string;
   status: GraphRunStatus;
@@ -387,6 +427,10 @@ export type GraphState = {
 
 export type GraphStateUpdate = Partial<GraphState>;
 
+/**
+ * Append-only WAL record written after a durable role outcome. `update` is intentionally partial so
+ * resume can replay only the state delta that became durable at that checkpoint.
+ */
 export type RuntimeCheckpointRecord = {
   checkpointSequence: number;
   roleId: string;
@@ -396,6 +440,10 @@ export type RuntimeCheckpointRecord = {
   update: GraphStateUpdate;
 };
 
+/**
+ * Durable per-execution outcome written before its matching checkpoint. `checkpointSequence` and
+ * `reconciledAt` stay unset until the graph runner either writes or matches the WAL entry.
+ */
 export type RoleExecutionOutcomeRecord =
   | {
       version: 1;
@@ -554,6 +602,10 @@ export type RuntimeErrorCategory =
   | "io"
   | "system";
 
+/**
+ * Standardized error payload enriched with stage/run identifiers so recovery logic can decide
+ * whether to retry, resume, or abort.
+ */
 export type RuntimeErrorEnvelope = {
   errorCode: string;
   errorCategory: RuntimeErrorCategory;

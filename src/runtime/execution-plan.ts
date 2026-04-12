@@ -1,3 +1,9 @@
+/**
+ * Translates a parsed system definition into a normalized execution plan so the runtime always sees a complete
+ * graph and binding snapshot.
+ * Boundaries: the plan is derived purely from system metadata and does not touch runtime state.
+ * Trade-off: the runtime keeps the plan in memory rather than re-parsing Mermaid on every run.
+ */
 import { SYSTEM_END_ROLE_ID } from "./types.js";
 import type { ExecutionPlan, ExecutionPlanNode, SystemDefinition } from "./types.js";
 
@@ -10,6 +16,7 @@ function buildOutgoing(system: SystemDefinition, roleId: string) {
 }
 
 function resolveBinding(system: SystemDefinition, roleId: string): ExecutionPlanNode["binding"] {
+  // Bindings prefer explicit model or profile contracts; absence results in a noop binding so the runtime can still reason about flow counts.
   const modelId = system.modelBinding[roleId];
   if (modelId) {
     return {
@@ -31,6 +38,11 @@ function resolveBinding(system: SystemDefinition, roleId: string): ExecutionPlan
   };
 }
 
+/**
+ * Builds the runtime execution plan and captures the graph/binding metadata used for fingerprinting and resume guards.
+ * Every declared role produces a node to keep the runtime from silently dropping branches; terminals are marked
+ * whenever a role has no outgoing flows or only routes to the system end marker.
+ */
 export function createExecutionPlan(system: SystemDefinition): ExecutionPlan {
   const nodesByRoleId = new Map<string, ExecutionPlanNode>();
 
@@ -65,6 +77,9 @@ export function createExecutionPlan(system: SystemDefinition): ExecutionPlan {
   };
 }
 
+/**
+ * Fetches the node for a role and fails early when the plan is incomplete so downstream logic never runs against undefined nodes.
+ */
 export function getExecutionPlanNode(plan: ExecutionPlan, roleId: string): ExecutionPlanNode {
   const node = plan.nodesByRoleId.get(roleId);
   if (!node) {

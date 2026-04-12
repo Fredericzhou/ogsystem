@@ -11,17 +11,32 @@ import type {
   RunContext
 } from "./types.js";
 
+/**
+ * Acts as the bridge between runtime role planning and actual execution engines.
+ * Responsibilities: manage the OpenCode server lifecycle, route model/profile bindings,
+ * and surface deterministic outputs for auditing. Boundaries: does not inspect schema outputs
+ * itself, it only orchestrates either OpenCode SDK or CLI tool runs.
+ */
+
+/**
+ * Describes how a role should be executed. Model bindings rely on OpenCode SDK runs,
+ * whereas profile bindings delegate to a CLI tool; callers must not mix the two.
+ */
 export type ExecutorBinding =
   | {
       kind: "model";
       modelPackage: LoadedModelPackage;
     }
   | {
-      kind: "profile";
-      profile: ExecutionProfile;
-      tool: CliTool;
-    };
+    kind: "profile";
+    profile: ExecutionProfile;
+    tool: CliTool;
+  };
 
+/**
+ * Input bundle for a single role execution, including the prompt, schema, and infrastructure bindings.
+ * `sessionKey` is optional but shared across retries; `dryRunOutputEvent` drives test instrumentation.
+ */
 export type ExecutorRequest = {
   roleId: string;
   sessionKey?: string;
@@ -36,6 +51,10 @@ export type ExecutorRequest = {
   sessionId?: string;
 };
 
+/**
+ * Result returned to the planner. `exitCode`/`stdout` reflect the external executor, while
+ * optional IDs capture the OpenCode session (or CLI profile) for auditing and recovery.
+ */
 export type ExecutorResult = {
   exitCode: number;
   stdout: string;
@@ -50,6 +69,9 @@ export type ExecutorResult = {
   command?: string;
 };
 
+/**
+ * Metadata that reflects the current OpenCode server state; empty when no server is running.
+ */
 export type ExecutorServerMetadata = {
   url?: string;
   pid?: number;
@@ -89,10 +111,10 @@ export interface Executor {
 }
 
 /**
- * createDefaultExecutor creates the standard implementation of the Executor interface.
- * It supports both OpenCode-based model execution and local CLI tool execution.
- * In model mode, it manages a single 'opencode serve' instance to handle multiple
- * sequential or parallel role sessions efficiently.
+ * createDefaultExecutor returns the default runtime executor.
+ * It manages an optional OpenCode server for model roles while leaving profile execution local.
+ * The implementation persists the OpenCode endpoint/pid for observability and keeps `start`/`close`
+ * idempotent so the runtime can safely call them during retries.
  */
 export function createDefaultExecutor(args: {
   dryRun?: boolean;
@@ -103,6 +125,7 @@ export function createDefaultExecutor(args: {
 
   return {
     async start() {
+      // Guard ensures model server is started only once and only when needed.
       if (args.dryRun || !args.needsModelExecutor || runClient) {
         return;
       }
@@ -115,6 +138,7 @@ export function createDefaultExecutor(args: {
         }
       });
 
+      // Persist endpoint metadata so the run directory records which OpenCode server handled model roles.
       await writeFile(
         args.runContext.opencodeEndpointPath,
         stringifyJson({
@@ -141,6 +165,7 @@ export function createDefaultExecutor(args: {
     },
 
     async execute(request) {
+      // Model-bound paths depend on the shared OpenCode client; throw if it's missing during active runs.
       if (request.binding.kind === "model") {
         if (!args.dryRun && !runClient) {
           throw new Error(`OpenCode run server missing for model-bound role "${request.roleId}"`);
@@ -179,6 +204,7 @@ export function createDefaultExecutor(args: {
         };
       }
 
+      // CLI tool executions are isolated per request and do not rely on OpenCode state.
       const result = await runCliTool({
         tool: request.binding.tool,
         vars: { prompt: request.prompt },
@@ -201,6 +227,7 @@ export function createDefaultExecutor(args: {
     },
 
     async abortSession(run) {
+      // No-op when the model server is not running; aborts only make sense for model-backed roles.
       if (!runClient) {
         return;
       }
@@ -221,6 +248,7 @@ export function createDefaultExecutor(args: {
     },
 
     async close() {
+      // Clean-up only runs when the OpenCode server was started; idempotent to allow repeated calls.
       if (!runClient) {
         return;
       }

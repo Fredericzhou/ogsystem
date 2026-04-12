@@ -1,5 +1,14 @@
+/**
+ * Defines how runtime-produced artifacts are retained, who consumes them, and whether resume expects them.
+ * This file does not perform retention cleanup itself; it purely documents the policy the runtime enforces elsewhere.
+ * Trade-off: keeping the policy centralized here avoids scattering knowledge across persistence utilities.
+ */
 import type { RunArtifactPolicyEntry } from "./types.js";
 
+/**
+ * The ordering of entries roughly matches their lifecycle: runtime resume needs first, operator visibility next,
+ * and finally immutable history. `resumeConsumed` entries describe the files recovery logic reads directly.
+ */
 const RUN_ARTIFACT_POLICY: RunArtifactPolicyEntry[] = [
   {
     path: "state.json",
@@ -25,6 +34,8 @@ const RUN_ARTIFACT_POLICY: RunArtifactPolicyEntry[] = [
     resumeConsumed: true,
     description: "Write-ahead graph update checkpoints replayed during resume/recovery."
   },
+  // Invariant: only one resume session may hold the run directory at any time, so this lock protects
+  // the files recovery logic reads directly from concurrent mutation.
   {
     path: ".resume.lock",
     retention: "runtime_consumed",
@@ -171,6 +182,10 @@ const RUN_ARTIFACT_POLICY: RunArtifactPolicyEntry[] = [
   }
 ];
 
+/**
+ * Returns a snapshot of the policy so consumers cannot mutate the shared array.
+ * Clients rely on the same retention/resume semantics shown above.
+ */
 export function listRunArtifactPolicy(): RunArtifactPolicyEntry[] {
   return RUN_ARTIFACT_POLICY.slice();
 }
