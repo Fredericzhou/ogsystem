@@ -929,10 +929,9 @@ function validateParsedSystemGraph(graph: ParsedSystemGraph): ValidatedSystemGra
         });
       }
     }
-    if (joinModeByRoleId[roleId] === "all_of") {
-      const declaredSources = Array.from(new Set(sources)).sort((left, right) =>
-        left.localeCompare(right)
-      );
+    const joinMode = joinModeByRoleId[roleId];
+    if (joinMode === "all_of" || joinMode === "quorum_of") {
+      const declaredSources = [...sources].sort((left, right) => left.localeCompare(right));
       const incomingSources = Array.from(
         new Set(
           graph.flows
@@ -956,7 +955,7 @@ function validateParsedSystemGraph(graph: ParsedSystemGraph): ValidatedSystemGra
         failMermaid({
           stage: "validate",
           errorCode: "MERMAID_JOIN_SOURCES_MISMATCH",
-          message: `join.sources.${roleId} must match exactly the incoming Mermaid role edges for join.mode.${roleId}=all_of (${details})`,
+          message: `join.sources.${roleId} must match exactly the incoming Mermaid role edges for join.mode.${roleId}=${joinMode} (${details})`,
           lineNumber: metadataLine(`join.sources.${roleId}`)
         });
       }

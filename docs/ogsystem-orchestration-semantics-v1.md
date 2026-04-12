@@ -29,7 +29,7 @@
 | 编排语义 | 原理说明 | 逻辑层 (Role/Prompt) 的具体工作 |
 | :--- | :--- | :--- |
 | **`join.mode: all_of`** | **全量汇合**。等待 `join.sources` 声明的全部上游在同一 `lineageId + loopIteration` 下完成；当前实现要求 `join.sources.<roleId>` 中的 source role 唯一，且与 Mermaid 中该节点的全部入边角色严格一致，避免隐式漏等/多等。 | **1. 命名空间打包**：运行时将多方产物整理为以 `roleId` 为键的 JSON 对象注入 `{{context}}`，值中保留 `event/content/data`。 <br> **2. 汇合判定**：由运行时按 `join.sources`、当前 `lineageId` 与当前轮次判断是否可激活 join 节点。 |
-| **`join.mode: quorum_of`** | **法定人数汇合**。等待 `join.sources` 中至少 `join.min.<roleId>` 个唯一上游在同一 `lineageId + loopIteration` 下完成；`join.sources.<roleId>` 本身也必须只声明唯一 source role；达到阈值后 join 节点只激活一次，迟到 source 只记审计、不重触发。 | **1. 阈值判定**：运行时按唯一 source role 计数，而不是按到达次数计数。 <br> **2. 默认上下文**：未配置 `context.map` 时，仍按 `join.sources` 归一化注入 JSON 命名空间。 |
+| **`join.mode: quorum_of`** | **法定人数汇合**。等待 `join.sources` 中至少 `join.min.<roleId>` 个唯一上游在同一 `lineageId + loopIteration` 下完成；`join.sources.<roleId>` 本身也必须只声明唯一 source role，并与 Mermaid 中该节点的全部入边角色严格一致；达到阈值后 join 节点只激活一次，迟到 source 只记审计、不重触发。 | **1. 阈值判定**：运行时按唯一 source role 计数，而不是按到达次数计数。 <br> **2. 默认上下文**：未配置 `context.map` 时，仍按 `join.sources` 归一化注入 JSON 命名空间。 |
 | **`context.map.<roleId>.*`** | **字段级上下文投影**。运行时用稳定字段顺序构造新的 JSON `context`，并让 `last_output` 继续镜像该投影。 | **1. 普通节点来源**：`direct.*`、`global.task`、`global.user_profile.*`。 <br> **2. Join 节点来源**：`source(<roleId>).*(仅限 join.sources)` 与 `global.*`。 <br> **3. Fail-closed**：缺字段、缺 source、非法 selector 均直接失败。 |
 | **默认事件路由（无 `role.mode`）** | **条件跳转**。由输出事件决定。 | **1. 选项锁定**：在 Prompt 注入 `allowed_events`。 <br> **2. 结构化约束**：在有出边且非并行模式下要求输出 `event`。 |
 | **`role.mode: parallel_split`** | **并行分发**。同时激活所有下游。 | **1. 任务分片**：在 Prompt 中明确当前分支的子任务目标。 <br> **2. 会话隔离**：运行时按 `sessionLineageId` 控制分支会话隔离；注意默认并非分支级独立工作目录，同一 role 仍共享其 `privateDir`。 |
@@ -83,7 +83,7 @@
 
 为避免将抽象语义理解成未落地能力，当前实现还有以下收敛约束：
 
-*   **Join 配置是显式且严格的**：`join.sources.<roleId>` 必须只包含唯一 source role；`join.mode.<roleId>=all_of` 时，它还必须与 Mermaid 中该节点的全部入边角色完全一致；`join.mode.<roleId>=quorum_of` 时，`join.min.<roleId>` 是必填项，且阈值按同一 `lineageId + loopIteration` 下的唯一 source role 计数。
+*   **Join 配置是显式且严格的**：`join.sources.<roleId>` 必须只包含唯一 source role，且对 `all_of` 与 `quorum_of` 都必须与 Mermaid 中该节点的全部入边角色完全一致；`join.mode.<roleId>=quorum_of` 时，`join.min.<roleId>` 是必填项，且阈值按同一 `lineageId + loopIteration` 下的唯一 source role 计数。
 *   **Join 上下文与字段投影都属于运行时契约**：默认 join `context` 是按 `roleId` 归一化后的 JSON 投影；若声明 `context.map.<roleId>.*`，运行时会以稳定字段顺序重建 `context`，并要求 selector 与 source 都合法。
 *   **隔离的是模型会话，不是分支文件系统**：并行 sibling branch 会拿到不同的 `sessionLineageId`，从而不会共享模型会话记忆；但相同 role 默认仍共用一个 role 私有目录。
 *   **顺序链路会继承 `sessionLineageId`**：只有并行分叉、一次激活多个目标，或进入任意 join（`all_of` / `quorum_of`）时，运行时才会切换到新的会话血缘；普通单路顺序流转会沿用当前 branch 的 `sessionLineageId`。

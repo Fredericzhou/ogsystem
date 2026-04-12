@@ -113,7 +113,7 @@ Use this rule:
 - default execution path: use `model.bind.<roleId>=<modelId>`
 - graph semantics: add `role.mode/join.mode/context.map/loop.max` only when the system needs parallel split, `all_of/quorum_of` join, field-level projection, or bounded loop
 - `join.mode.<roleId>=all_of` requires `join.sources.<roleId>`; that source list must contain unique role ids and match the role's Mermaid incoming edges exactly
-- `join.mode.<roleId>=quorum_of` requires both `join.sources.<roleId>` and `join.min.<roleId>`; `join.sources` must contain unique role ids, and readiness counts unique completed source roles under the same `lineageId + loopIteration`
+- `join.mode.<roleId>=quorum_of` requires both `join.sources.<roleId>` and `join.min.<roleId>`; `join.sources` must contain unique role ids, must match the role's Mermaid incoming edges exactly, and readiness counts unique completed source roles under the same `lineageId + loopIteration`
 - compatibility execution mode: `exec.bind.<roleId>` still works when paired with `profiles/tools`, but it runs inside the same graph runtime rather than a separate engine
 
 ## 2. Semantic Layers
@@ -245,6 +245,7 @@ Orchestration semantics contract:
 - default routing without `role.mode` is event-driven; runtime injects `allowed_events`, and non-parallel roles with outgoing flows must emit `event`
 - `join.mode.<roleId>=all_of` waits until every role listed in `join.sources.<roleId>` has produced a result under the same `lineageId`
 - `join.mode.<roleId>=quorum_of` activates after `join.min.<roleId>` unique sources in `join.sources.<roleId>` complete under the same `lineageId + loopIteration`, activates once only, and records late arrivals without retriggering
+- for both `all_of` and `quorum_of`, `join.sources.<roleId>` must match the join node's Mermaid incoming role edges exactly; undeclared incoming role edges are rejected at parse time rather than being ignored at runtime
 - join nodes default to the same normalized JSON `{{context}}` namespace keyed by `join.sources` role ids (each value contains that source's `event/content/data`) rather than exposing raw runtime state or plain-text sections
 - `context.map.<roleId>.<field>=<selector>` replaces the default `context` payload with a stable JSON projection; supported selectors are `direct.*`, `source(<roleId>).*(join only)`, `global.task`, and `global.user_profile.*`
 - `loop.max.<roleId>=N` is both a parser-time cycle budget declaration and an execution-time guard; runtime also injects `round`

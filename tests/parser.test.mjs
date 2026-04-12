@@ -208,6 +208,17 @@ test("parser rejects all_of join when join.sources does not match incoming role 
   );
 });
 
+test("parser rejects quorum_of join when join.sources does not match incoming role edges", () => {
+  const source = quorumJoinWithProjectionSource.replace(
+    /%% join\.sources\.review=.*/,
+    "%% join.sources.review=worker_a,worker_b"
+  );
+  assert.throws(
+    () => parseSystemFromMermaidSource(source),
+    /MERMAID_JOIN_SOURCES_MISMATCH|join\.sources\.review must match exactly/
+  );
+});
+
 test("parser rejects quorum_of join without join.min", () => {
   const source = quorumJoinWithProjectionSource.replace("%% join.min.review=2\n", "");
   assert.throws(
