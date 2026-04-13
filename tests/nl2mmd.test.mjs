@@ -96,7 +96,10 @@ test("nl2mmd prompt includes current dictionary and local catalog hints", async 
 
   const prompt = buildNl2MmdSystemPrompt(context);
 
-  assert.match(prompt, /Metadata prefixes allowed: talent\.bind\., exec\.bind\., model\.bind\., role\.mode\., join\.mode\., join\.sources\., loop\.max\./);
+  assert.match(
+    prompt,
+    /Metadata prefixes allowed: talent\.bind\., exec\.bind\., model\.bind\., role\.mode\., join\.mode\., join\.min\., join\.sources\., context\.map\., loop\.max\./
+  );
   assert.match(prompt, /Role catalog:/);
   assert.match(prompt, /debate-judge \| Debate Judge/);
   assert.match(prompt, /Model catalog:/);

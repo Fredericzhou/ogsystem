@@ -8,6 +8,7 @@ import { buildNl2MmdSystemPrompt, buildNl2MmdTurnPrompt, getNl2MmdTurnSchema } f
 import { validateNl2MmdCandidate } from "./validate.js";
 import { loadNl2MmdContext } from "./catalog.js";
 import { logNl2MmdDebug } from "./logger.js";
+import { stabilizeNl2MmdMermaidForRuntime } from "./normalize-mermaid.js";
 import type {
   Nl2MmdContext,
   Nl2MmdConversation,
@@ -184,19 +185,32 @@ export async function runNl2MmdTurn(args: {
   });
 
   const modelResponse = parseModelResponse(result.stdout);
+  const stabilizedMermaid =
+    modelResponse.mode === "ask" || !modelResponse.mermaid.trim()
+      ? modelResponse.mermaid
+      : stabilizeNl2MmdMermaidForRuntime({
+          mermaid: modelResponse.mermaid,
+          context: conversation.context
+        });
+  if (stabilizedMermaid !== modelResponse.mermaid) {
+    logNl2MmdDebug("turn.mermaid_stabilized", {
+      beforeLength: modelResponse.mermaid.length,
+      afterLength: stabilizedMermaid.length
+    });
+  }
   logNl2MmdDebug("turn.model_response", {
     mode: modelResponse.mode,
     summaryLength: modelResponse.summary.length,
-    mermaidLength: modelResponse.mermaid.length,
+    mermaidLength: stabilizedMermaid.length,
     questionCount: modelResponse.questions.length,
     unresolvedCount: modelResponse.unresolvedItems.length
   });
-  if (modelResponse.mode === "ask" && modelResponse.mermaid.trim()) {
+  if (modelResponse.mode === "ask" && stabilizedMermaid.trim()) {
     throw new Error('NL2MMD response mode "ask" must not include Mermaid content');
   }
   if (
     (modelResponse.mode === "draft" || modelResponse.mode === "final") &&
-    !modelResponse.mermaid.trim()
+    !stabilizedMermaid.trim()
   ) {
     throw new Error(`NL2MMD response mode "${modelResponse.mode}" must include Mermaid content`);
   }
@@ -204,10 +218,10 @@ export async function runNl2MmdTurn(args: {
 
   let validation;
   let txtGraph;
-  if (modelResponse.mermaid.trim()) {
+  if (stabilizedMermaid.trim()) {
     const validationStartedAt = Date.now();
     validation = await validateNl2MmdCandidate({
-      mermaid: modelResponse.mermaid,
+      mermaid: stabilizedMermaid,
       context: conversation.context,
       lawsPath: args.lawsPath,
       profilesPath: args.profilesPath,
@@ -224,6 +238,7 @@ export async function runNl2MmdTurn(args: {
 
   const turnResult = {
     ...modelResponse,
+    mermaid: stabilizedMermaid,
     sessionId: result.sessionId,
     messageId: result.messageId,
     txtGraph,

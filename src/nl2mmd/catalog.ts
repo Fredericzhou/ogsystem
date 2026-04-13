@@ -85,14 +85,16 @@ export function getSupportedNl2MmdDictionary(): Nl2MmdSupportedDictionary {
       "model.bind.",
       "role.mode.",
       "join.mode.",
+      "join.min.",
       "join.sources.",
+      "context.map.",
       "loop.max."
     ],
     roleModes: ["parallel_split"],
     joinModes: ["all_of", "quorum_of"],
     mentionPrefix: "@",
     nodeTokenPattern: "nodeId[Role:roleId]",
-    edgePattern: "from -->|EVENT| to"
+    edgePattern: "fromToken -->|EVENT| toToken (tokens: input/output or nodeId[Role:roleId])"
   };
 }
 

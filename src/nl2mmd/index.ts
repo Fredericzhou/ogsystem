@@ -10,6 +10,7 @@ export {
   buildNl2MmdTurnPrompt,
   getNl2MmdTurnSchema
 } from "./prompt.js";
+export { normalizeNl2MmdMermaid, stabilizeNl2MmdMermaidForRuntime } from "./normalize-mermaid.js";
 export { createNl2MmdConversation, runNl2MmdPreflight, runNl2MmdTurn } from "./service.js";
 export { renderTxtGraphFromMermaidSource } from "./txt-graph.js";
 export { validateNl2MmdCandidate } from "./validate.js";
