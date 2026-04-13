@@ -252,6 +252,7 @@ pnpm run run:adapter \
 - Runs persist `activeBranches`, `completedBranches`, `loopIterations`, and `graphState` inside `state.json`, and support `--resume-run` against the same run directory.
 - `audit/summary.md` and result JSON now expose `totalTransitions`, `okCount`, `failedCount`, `handledFailureCount`, `unhandledFailureCount`, `handledFailureByEvent`, `handledFailureByTargetRole`, `noopCount`, structured `failureCountsByErrorCode`, and repair statistics.
 - Runtime failure routing supports explicit `ERROR*` edges behind `runtime.error_edges.v1` (default `false`): exact `ERROR.<errorCode>` first, then fallback `ERROR`; no match remains fail-stop.
+- `ERROR*` routing is evaluated only after executor-level retries for the attempt are exhausted.
 - Mermaid parsing is fail-closed for reserved error events: only `ERROR` and `ERROR.<errorCode>` are accepted.
 - Role outputs cannot proactively emit `ERROR*` events; `ERROR*` is reserved for runtime failure routing only.
 - `--log-run` prints simple run/role/transition progress lines to `stderr`; final result JSON remains on `stdout`.

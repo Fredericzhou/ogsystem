@@ -976,6 +976,21 @@ export async function loadResumeGraphState(args: {
       runId: basename(args.runDir)
     });
   }
+  for (const [eventType, count] of Object.entries(
+    auditSummaryRecord.handledFailureByEvent as Record<string, unknown>
+  )) {
+    if (typeof count !== "number" || !Number.isFinite(count) || count < 0) {
+      throw createRuntimeError({
+        errorCode: "RESUME_STATE_INVALID",
+        errorCategory: "state",
+        message:
+          `Resume state snapshot has invalid graphState.auditSummary.handledFailureByEvent["${eventType}"]: ${statePath}`,
+        retryable: false,
+        stage: "resume",
+        runId: basename(args.runDir)
+      });
+    }
+  }
   if (auditSummaryRecord.handledFailureByTargetRole === undefined) {
     auditSummaryRecord.handledFailureByTargetRole = {};
   } else if (
@@ -992,6 +1007,21 @@ export async function loadResumeGraphState(args: {
       stage: "resume",
       runId: basename(args.runDir)
     });
+  }
+  for (const [targetRoleId, count] of Object.entries(
+    auditSummaryRecord.handledFailureByTargetRole as Record<string, unknown>
+  )) {
+    if (typeof count !== "number" || !Number.isFinite(count) || count < 0) {
+      throw createRuntimeError({
+        errorCode: "RESUME_STATE_INVALID",
+        errorCategory: "state",
+        message:
+          `Resume state snapshot has invalid graphState.auditSummary.handledFailureByTargetRole["${targetRoleId}"]: ${statePath}`,
+        retryable: false,
+        stage: "resume",
+        runId: basename(args.runDir)
+      });
+    }
   }
   if (
     typeof graphState.userPrompt !== "string" ||

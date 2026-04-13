@@ -286,11 +286,18 @@ Exception edge semantics (`ERROR*`, implemented, flag-gated):
 - syntax reuses existing edge labels: `ERROR` and `ERROR.<errorCode>`
 - node-level opt-in: only roles that declare `ERROR*` outgoing edges enable exception routing
 - trigger source is runtime failure only (execution/validation/io/state), not normal role success output
+- exception routing is evaluated only after executor-level retries are exhausted for that attempt
 - matching order is exact `ERROR.<errorCode>` first, then fallback `ERROR`
 - parser constraints: only one fallback `ERROR` edge per `fromRole`; each `ERROR.<code>` can map to one target only; `input` cannot declare `ERROR*`
 - fail-closed parsing: reserved `ERROR*` events must be exactly `ERROR` or `ERROR.<errorCode>`; invalid reserved forms are rejected
 - role-facing `allowed_events` excludes runtime-only `ERROR*` edges
 - rollout control: `runtime.error_edges.v1` (default `false`) for staged enablement and rollback
+
+When to use exception edges vs business event edges:
+
+- use business event edges for expected domain outcomes produced by successful role execution (approve/reject, route-A/route-B, etc.)
+- use `ERROR*` edges only for runtime failure handling and compensation (execution/validation/io/state failures)
+- do not encode expected business negatives as `ERROR*`; keep them in normal role output event vocabulary
 
 Handled failure artifact contract (runtime-generated `roleResults` payload):
 
@@ -303,7 +310,7 @@ Handled failure artifact contract (runtime-generated `roleResults` payload):
 - `branch_id`
 - `lineage_id`
 - `loop_iteration`
-- `last_context` (sanitized and length-capped)
+- `last_context` (failed role input context snapshot, sanitized and length-capped)
 
 Minimal quorum/projection example:
 

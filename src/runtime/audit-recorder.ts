@@ -44,6 +44,7 @@ type AuditRecordInput = {
   errorEnvelope?: RuntimeErrorEnvelope;
   repair?: RoleOutputRepairRecord;
   correctionRequest?: RoleOutputCorrectionRequest;
+  inputContext?: string;
 };
 
 /**
@@ -77,7 +78,8 @@ export function createAuditRecord(args: AuditRecordInput): AuditRecord {
     error: args.error,
     errorEnvelope: args.errorEnvelope,
     repair: args.repair,
-    correctionRequest: args.correctionRequest
+    correctionRequest: args.correctionRequest,
+    inputContext: args.inputContext
   };
 }
 

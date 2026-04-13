@@ -290,6 +290,7 @@ export type AuditRecord = {
   errorEnvelope?: RuntimeErrorEnvelope;
   repair?: RoleOutputRepairRecord;
   correctionRequest?: RoleOutputCorrectionRequest;
+  inputContext?: string;
   handledByEvent?: string;
   handledTargetRoleId?: string;
 };

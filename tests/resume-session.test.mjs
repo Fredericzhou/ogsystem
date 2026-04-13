@@ -371,6 +371,75 @@ minimalist[Role:debate-minimalist] -->|MINIMALIST_DONE| output
   );
 });
 
+test("adapter resume rejects invalid handled failure map value types", async () => {
+  const tempRoot = await mkdtemp(path.join(os.tmpdir(), "ogsystem-resume-handled-map-values-"));
+  const systemPath = path.resolve(tempRoot, "resume-system.mmd");
+  const runtimePath = path.resolve(tempRoot, "runtime.json");
+
+  const systemSource = `flowchart TD
+%% system.id=resume.handled.summary.map.values
+%% system.version=1.0.0
+%% law.global=law.console.base
+%% entry.role=debate-minimalist
+%% model.bind.debate-minimalist=balanced-gpt52
+
+input -->|GO| minimalist[Role:debate-minimalist]
+minimalist[Role:debate-minimalist] -->|MINIMALIST_DONE| output
+`;
+
+  await writeFile(systemPath, systemSource, "utf8");
+  await writeFile(
+    runtimePath,
+    JSON.stringify(
+      {
+        executor: "opencode",
+        roleRepo: path.resolve("og-roles"),
+        modelRepo: path.resolve("og-models"),
+        runsDir: ".ogs/runs"
+      },
+      null,
+      2
+    ),
+    "utf8"
+  );
+
+  const initial = await runSystemWithAdapter({
+    systemPath,
+    runtimeConfigPath: runtimePath,
+    lawsPath: path.resolve(".ogsystem", "laws.json"),
+    workdir: tempRoot,
+    prompt: "resume handled map values",
+    dryRun: true
+  });
+  assert.strictEqual(initial.status, "done");
+
+  const runIds = await readdir(path.resolve(tempRoot, ".ogs/runs"));
+  assert.strictEqual(runIds.length, 1);
+  const runDir = path.resolve(tempRoot, ".ogs/runs", runIds[0]);
+  const statePath = path.resolve(runDir, "state.json");
+  const stateJson = JSON.parse(await readFile(statePath, "utf8"));
+  stateJson.graphState.auditSummary.handledFailureByEvent = { ERROR: "invalid" };
+  await writeFile(statePath, JSON.stringify(stateJson, null, 2), "utf8");
+
+  await assert.rejects(
+    () =>
+      runSystemWithAdapter({
+        systemPath,
+        runtimeConfigPath: runtimePath,
+        lawsPath: path.resolve(".ogsystem", "laws.json"),
+        workdir: tempRoot,
+        resumeRunDir: `.ogs/runs/${runIds[0]}`,
+        prompt: "resume handled map values",
+        dryRun: true
+      }),
+    (error) => {
+      assert.ok(error instanceof Error);
+      assert.match(error.message, /handledFailureByEvent|RESUME_STATE_INVALID/);
+      return true;
+    }
+  );
+});
+
 test("adapter resume rejects plan fingerprint mismatch", async () => {
   const tempRoot = await mkdtemp(path.join(os.tmpdir(), "ogsystem-resume-fingerprint-mismatch-"));
   const systemPath = path.resolve(tempRoot, "resume-system.mmd");

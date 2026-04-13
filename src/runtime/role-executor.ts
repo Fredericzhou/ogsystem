@@ -473,6 +473,19 @@ function getSelectableOutgoingFlows(node: ExecutionPlanNode): Flow[] {
   return node.outgoing.filter((flow) => !isRuntimeOnlyErrorEvent(flow.eventType));
 }
 
+const ROLE_INPUT_CONTEXT_MAX_CHARS = 800;
+
+function sanitizeRoleInputContext(value: string): string {
+  const redacted = value.replace(
+    /\b(api[_-]?key|token|password|secret)\s*[:=]\s*[^\s,;]+/gi,
+    "$1=<redacted>"
+  );
+  if (redacted.length <= ROLE_INPUT_CONTEXT_MAX_CHARS) {
+    return redacted;
+  }
+  return `${redacted.slice(0, ROLE_INPUT_CONTEXT_MAX_CHARS)}...`;
+}
+
 /**
  * Prompt input is intentionally flattened into a small stable contract. Executors and prompt
  * templates should not depend on full runtime state or branch internals.
@@ -984,6 +997,7 @@ export async function executeRoleNode(args: {
   let lastStdout: string | undefined;
   let bindingLabel = "noop";
   let promptInput!: RolePromptInput;
+  let inputContextForAudit: string | undefined;
   let prompt = "";
   const logger = args.logger ?? createRunConsoleLogger(false);
 
@@ -995,6 +1009,7 @@ export async function executeRoleNode(args: {
       state: args.state,
       userProfile: args.userProfile
     });
+    inputContextForAudit = sanitizeRoleInputContext(promptInput.context);
 
     if (rolePackage.inputSchema) {
       validateRoleInputSchema({
@@ -1327,7 +1342,8 @@ export async function executeRoleNode(args: {
       error: `${message}${category}`,
       errorEnvelope: failure,
       repair,
-      correctionRequest
+      correctionRequest,
+      inputContext: inputContextForAudit
     });
     if (executionError?.sessionId) {
       await persistRoleSession({

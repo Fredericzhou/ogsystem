@@ -725,7 +725,11 @@ function sanitizeHandledFailureContext(value: string): string {
 function getHandledFailureLastContext(args: {
   state: GraphState;
   branch: BranchRecord;
+  failureInputContext?: string;
 }): string {
+  if (args.failureInputContext) {
+    return sanitizeHandledFailureContext(args.failureInputContext);
+  }
   if (!args.branch.parentBranchId) {
     return sanitizeHandledFailureContext(args.state.userPrompt);
   }
@@ -740,6 +744,7 @@ function buildHandledFailureArtifact(args: {
   handledByEvent: string;
   errorEnvelope: RuntimeErrorEnvelope;
   error?: string;
+  failureInputContext?: string;
 }): StoredRoleResult {
   const artifactData: HandledFailureArtifactData = {
     error_code: args.errorEnvelope.errorCode,
@@ -753,7 +758,8 @@ function buildHandledFailureArtifact(args: {
     loop_iteration: args.branch.loopIteration,
     last_context: getHandledFailureLastContext({
       state: args.state,
-      branch: args.branch
+      branch: args.branch,
+      failureInputContext: args.failureInputContext
     })
   };
   return {
@@ -814,7 +820,8 @@ function buildHandledFailureTransitionPlan(args: {
     branch: args.currentBranch,
     handledByEvent: matchedFailureEdge.eventType,
     errorEnvelope: args.errorEnvelope,
-    error: args.audit.error
+    error: args.audit.error,
+    failureInputContext: args.audit.inputContext
   });
   const branchUpdates: Record<string, BranchRecord> = {
     [args.currentBranch.branchId]: completeBranch(args.currentBranch)

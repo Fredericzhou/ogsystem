@@ -76,6 +76,8 @@ async function writeToolScript(args) {
     script = `process.stderr.write("intentional ${args.roleId} failure\\n"); process.exit(1);\n`;
   } else if (args.mode.kind === "content") {
     script = `console.log(JSON.stringify({ content: ${JSON.stringify(args.mode.content)} }));\n`;
+  } else if (args.mode.kind === "event-data") {
+    script = `console.log(JSON.stringify({ event: ${JSON.stringify(args.mode.event)}, content: ${JSON.stringify(args.mode.content ?? args.roleId)}, data: ${JSON.stringify(args.mode.data ?? {})} }));\n`;
   } else {
     script = `console.log(JSON.stringify({ event: ${JSON.stringify(args.mode.event)}, content: ${JSON.stringify(args.mode.content ?? args.roleId)} }));\n`;
   }
@@ -279,6 +281,62 @@ fallback[Role:fallback] -->|FB_DONE| output
   assert.ok(handledArtifact);
   assert.equal(typeof handledArtifact.data?.last_context, "string");
   assert.ok(handledArtifact.data.last_context.length > 0);
+});
+
+test("handled failure last_context uses failed role input context projection", async () => {
+  const fixture = await setupFixture({
+    id: "handled-last-context",
+    errorEdgesV1: true,
+    roles: [
+      {
+        roleId: "prep",
+        mode: {
+          kind: "event-data",
+          event: "PREP_DONE",
+          content: "raw-upstream-content",
+          data: { detail: "mapped-context-value" }
+        },
+        allowedEvents: ["PREP_DONE"]
+      },
+      {
+        roleId: "worker",
+        mode: { kind: "fail" },
+        allowedEvents: ["DONE"],
+        requireEvent: false
+      },
+      {
+        roleId: "fallback",
+        mode: { kind: "event", event: "FB_DONE", content: "fallback" },
+        allowedEvents: ["FB_DONE"]
+      }
+    ],
+    systemSource: `flowchart TD
+%% system.id=test.error.last.context
+%% system.version=1.0.0
+%% law.global=law.test.error.edge
+%% entry.role=prep
+%% exec.bind.prep=profile.prep
+%% exec.bind.worker=profile.worker
+%% exec.bind.fallback=profile.fallback
+%% context.map.worker.input=direct.data.detail
+
+input -->|START| prep[Role:prep]
+prep[Role:prep] -->|PREP_DONE| worker[Role:worker]
+worker[Role:worker] -->|ERROR| fallback[Role:fallback]
+fallback[Role:fallback] -->|FB_DONE| output
+`
+  });
+
+  const result = await runFixture(fixture, "last context projection");
+  assert.equal(result.status, "done");
+  const graphState = await readGraphStateSnapshot(fixture);
+  const handledArtifact = Object.values(graphState.roleResults).find(
+    (item) => item.roleId === "worker.__handled_failure"
+  );
+  assert.ok(handledArtifact);
+  assert.equal(typeof handledArtifact.data?.last_context, "string");
+  assert.match(handledArtifact.data.last_context, /mapped-context-value/);
+  assert.doesNotMatch(handledArtifact.data.last_context, /raw-upstream-content/);
 });
 
 test("runtime falls back to ERROR when no typed error edge matches", async () => {
