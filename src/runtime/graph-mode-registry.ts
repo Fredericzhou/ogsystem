@@ -49,6 +49,10 @@ const joinModeHandlers = new Map<GraphJoinMode, JoinModeHandler>();
 // The registry is the single extension seam for graph semantics. Parser validation and runtime
 // dispatch consult the same registry so a new mode fails closed until both phases support it.
 
+function isRuntimeOnlyErrorEvent(eventType: string): boolean {
+  return eventType === "ERROR" || eventType.startsWith("ERROR.");
+}
+
 /**
  * Registers a handler for the given routing mode.
  * Invariant: once registered, both parser and runtime will expect the handler to exist.
@@ -165,7 +169,10 @@ export function listSupportedJoinModes(): GraphJoinMode[] {
 
 registerRoutingModeHandler("parallel_split", {
   selectTargets(args) {
-    return args.node.outgoing.map((flow) => flow.toRoleId);
+    const targets = args.node.outgoing
+      .filter((flow) => !isRuntimeOnlyErrorEvent(flow.eventType))
+      .map((flow) => flow.toRoleId);
+    return Array.from(new Set(targets));
   }
 });
 

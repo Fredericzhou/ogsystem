@@ -1032,6 +1032,10 @@ function buildHandledFailureTransitionPlan(args: {
   };
 }
 
+function isRuntimeOnlyErrorEvent(eventType: string): boolean {
+  return eventType === "ERROR" || eventType.startsWith("ERROR.");
+}
+
 function resolveNextSessionLineageId(args: {
   currentNode: ExecutionPlanNode;
   targetNode: ExecutionPlanNode;
@@ -1115,7 +1119,9 @@ function buildSuccessTransitionPlan(args: {
     const flow = node.outgoing.find(
       (item) =>
         item.toRoleId === targetRoleId &&
-        (node.routingMode === "parallel_split" || item.eventType === args.selectedEvent)
+        (node.routingMode === "parallel_split"
+          ? !isRuntimeOnlyErrorEvent(item.eventType)
+          : item.eventType === args.selectedEvent)
     );
     if (targetRoleId === SYSTEM_END_ROLE_ID) {
       reachedSystemOutput = true;

@@ -539,3 +539,53 @@ final[Role:final] -->|FINAL_DONE| output
   assert.equal(result.runSummary.handledFailureCount, 1);
   assert.equal(result.runSummary.unhandledFailureCount, 0);
 });
+
+test("parallel_split success path ignores ERROR* edges and duplicate targets", async () => {
+  const fixture = await setupFixture({
+    id: "parallel-success-error-filter",
+    errorEdgesV1: true,
+    roles: [
+      {
+        roleId: "dispatch",
+        mode: { kind: "content", content: "parallel dispatch success" },
+        allowedEvents: [],
+        requireEvent: false
+      },
+      {
+        roleId: "worker_ok",
+        mode: { kind: "event", event: "OK_DONE", content: "ok branch" },
+        allowedEvents: ["OK_DONE"]
+      },
+      {
+        roleId: "compensate",
+        mode: { kind: "event", event: "COMP_DONE", content: "compensated" },
+        allowedEvents: ["COMP_DONE"]
+      }
+    ],
+    systemSource: `flowchart TD
+%% system.id=test.error.edge.parallel.success.filter
+%% system.version=1.0.0
+%% law.global=law.test.error.edge
+%% entry.role=dispatch
+%% role.mode.dispatch=parallel_split
+%% exec.bind.dispatch=profile.dispatch
+%% exec.bind.worker_ok=profile.worker_ok
+%% exec.bind.compensate=profile.compensate
+
+input -->|START| dispatch[Role:dispatch]
+dispatch[Role:dispatch] -->|TO_OK| worker_ok[Role:worker_ok]
+dispatch[Role:dispatch] -->|TO_OK_DUP| worker_ok[Role:worker_ok]
+dispatch[Role:dispatch] -->|ERROR| compensate[Role:compensate]
+dispatch[Role:dispatch] -->|ERROR.TOOL_EXECUTION_SPAWN| compensate[Role:compensate]
+worker_ok[Role:worker_ok] -->|OK_DONE| output
+compensate[Role:compensate] -->|COMP_DONE| output
+`
+  });
+
+  const result = await runFixture(fixture);
+  assert.equal(result.status, "done");
+  assert.equal(result.finalRoleId, "worker_ok");
+  assert.equal(result.auditTrail.filter((item) => item.roleId === "worker_ok").length, 1);
+  assert.equal(result.auditTrail.filter((item) => item.roleId === "compensate").length, 0);
+  assert.equal(result.runSummary.handledFailureCount, 0);
+});

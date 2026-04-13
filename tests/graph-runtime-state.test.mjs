@@ -64,6 +64,25 @@ workerC[Role:worker_c] -->|C_DONE| review[Role:review]
 review[Role:review] -->|DONE| output
 `;
 
+const parallelErrorFilterSource = `flowchart TD
+%% system.id=graph.helpers.parallel.error.filter
+%% system.version=1.0.0
+%% law.global=law.test
+%% entry.role=dispatch
+%% role.mode.dispatch=parallel_split
+%% exec.bind.dispatch=profile.dispatch
+%% exec.bind.worker_a=profile.worker
+%% exec.bind.compensate=profile.comp
+
+input -->|ENTER| dispatch[Role:dispatch]
+dispatch[Role:dispatch] -->|TO_A| workerA[Role:worker_a]
+dispatch[Role:dispatch] -->|TO_A_DUP| workerA[Role:worker_a]
+dispatch[Role:dispatch] -->|ERROR| compensate[Role:compensate]
+dispatch[Role:dispatch] -->|ERROR.TOOL_EXECUTION_SPAWN| compensate[Role:compensate]
+workerA[Role:worker_a] -->|DONE| output
+compensate[Role:compensate] -->|COMP_DONE| output
+`;
+
 test("graph runtime helpers cover loop budget, join readiness, and state projection", () => {
   const system = parseSystemFromMermaidSource(source);
   const plan = createExecutionPlan(system);
@@ -242,6 +261,21 @@ test("graph runtime helpers evaluate quorum_of readiness by unique completed sou
       currentResult: state.roleResults[workerBBranch.branchId]
     }),
     true
+  );
+});
+
+test("parallel_split routing excludes ERROR* edges and deduplicates target roles", () => {
+  const system = parseSystemFromMermaidSource(parallelErrorFilterSource);
+  const plan = createExecutionPlan(system);
+  const dispatch = plan.nodesByRoleId.get("dispatch");
+  assert.ok(dispatch);
+
+  assert.deepStrictEqual(
+    selectRoutingTargets({
+      node: dispatch,
+      mode: "ok"
+    }),
+    ["worker_a"]
   );
 });
 
