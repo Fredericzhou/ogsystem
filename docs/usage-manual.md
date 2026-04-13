@@ -168,6 +168,7 @@ OGSystem/
         model.json
 
   examples/
+    README.md
     target-model-binding-system.mmd
     error-edge-compensation/
       README.md
@@ -182,6 +183,18 @@ OGSystem/
       profiles.json
       tools.json
       laws.json
+    incident-response-playbook/
+      README.md
+      system.mmd
+      runtime.json
+      profiles.json
+      tools.json
+      laws.json
+    medical-quorum-consultation/
+      README.md
+      system.mmd
+      laws.json
+      user-profile.json
     langgraph-debate-current/
       system.mmd
       laws.json
@@ -552,7 +565,7 @@ Use `run:doctor` as runtime preflight and recovery inspection.
 Preflight command:
 
 ```bash
-pnpm run run:doctor -- \
+pnpm run run:doctor \
   --required opencode \
   --system examples/target-model-binding-system.mmd \
   --laws .ogs/laws.json
@@ -561,7 +574,7 @@ pnpm run run:doctor -- \
 Lint command:
 
 ```bash
-pnpm run lint:system -- --system examples/target-model-binding-system.mmd
+pnpm run lint:system --system examples/target-model-binding-system.mmd
 ```
 
 Lint rules:
@@ -573,7 +586,7 @@ Lint rules:
 Console progress logging:
 
 ```bash
-pnpm run run:adapter -- \
+pnpm run run:adapter \
   --system examples/target-model-binding-system.mmd \
   --prompt "demo" \
   --dry-run \
@@ -588,7 +601,7 @@ pnpm run run:adapter -- \
 Graph preview link (optional):
 
 ```bash
-pnpm run run:adapter -- \
+pnpm run run:adapter \
   --system examples/target-model-binding-system.mmd \
   --prompt "demo" \
   --dry-run \
@@ -601,14 +614,14 @@ pnpm run run:adapter -- \
 Run-directory inspection (resume prerequisites):
 
 ```bash
-pnpm run run:doctor -- \
+pnpm run run:doctor \
   --run-dir .ogs/runs/<run-id>
 ```
 
 Optional online connectivity precheck:
 
 ```bash
-pnpm run run:doctor -- \
+pnpm run run:doctor \
   --system examples/target-model-binding-system.mmd \
   --online-check
 ```
@@ -633,19 +646,19 @@ For recovery, prioritize:
 Lifecycle CLI (preferred):
 
 ```bash
-pnpm run run:adapter -- project init
-pnpm run run:adapter -- run start --system examples/target-model-binding-system.mmd --prompt "demo" --dry-run
-pnpm run run:adapter -- run list
-pnpm run run:adapter -- run status <run-id>
-pnpm run run:adapter -- run logs <run-id> --engine
-pnpm run run:adapter -- run resume <run-id> --dry-run
-pnpm run run:adapter -- run stop <run-id>
+pnpm run run:adapter project init
+pnpm run run:adapter run start --system examples/target-model-binding-system.mmd --prompt "demo" --dry-run
+pnpm run run:adapter run list
+pnpm run run:adapter run status <run-id>
+pnpm run run:adapter run logs <run-id> --engine
+pnpm run run:adapter run resume <run-id> --dry-run
+pnpm run run:adapter run stop <run-id>
 ```
 
 Preferred runtime command:
 
 ```bash
-pnpm run run:adapter -- \
+pnpm run run:adapter \
   --system examples/target-model-binding-system.mmd \
   --prompt "讨论当前架构是否继续最小化" \
   --dry-run
@@ -662,7 +675,7 @@ This path auto-discovers:
 Legacy-compatible binding command:
 
 ```bash
-pnpm run run:adapter -- \
+pnpm run run:adapter \
   --system examples/console-system.mmd \
   --profiles examples/console-profiles.json \
   --tools examples/console-tools.json \
@@ -674,7 +687,7 @@ pnpm run run:adapter -- \
 Graph runtime command:
 
 ```bash
-pnpm run run:adapter -- \
+pnpm run run:adapter \
   --system examples/langgraph-debate-current/system.mmd \
   --laws examples/langgraph-debate-current/laws.json \
   --user-profile examples/langgraph-debate-current/user-profile.json \
@@ -685,7 +698,7 @@ pnpm run run:adapter -- \
 Minimal expert consultation command:
 
 ```bash
-pnpm run run:adapter -- \
+pnpm run run:adapter \
   --system examples/langgraph-expert-consultation/system.mmd \
   --laws examples/langgraph-expert-consultation/laws.json \
   --user-profile examples/langgraph-expert-consultation/user-profile.json \
@@ -696,7 +709,7 @@ pnpm run run:adapter -- \
 Rust hello-world 三角色全流程验证（开发→编译→打包运行）：
 
 ```bash
-pnpm run run:adapter -- \
+pnpm run run:adapter \
   --system examples/rust-hello-pipeline/system.mmd \
   --profiles examples/rust-hello-pipeline/profiles.json \
   --tools examples/rust-hello-pipeline/tools.json \
@@ -708,6 +721,17 @@ pnpm run run:adapter -- \
 
 - 该流程需要本机 `cargo` 在 `PATH` 中可用。
 - 流程会在 `.ogs/runs/<run-id>/shared/` 下生成 Rust 项目、编译产物与打包产物。
+
+Medical quorum 会诊示例（`quorum_of + context.map`）：
+
+```bash
+pnpm run run:adapter \
+  --system examples/medical-quorum-consultation/system.mmd \
+  --laws examples/medical-quorum-consultation/laws.json \
+  --user-profile examples/medical-quorum-consultation/user-profile.json \
+  --prompt "患者发热伴神经与心血管症状，先形成会诊结论" \
+  --dry-run
+```
 
 Error-edge 补偿流示例（显式启用 `runtime.error_edges.v1`）：
 
@@ -732,10 +756,22 @@ pnpm run run:adapter \
   --prompt "run human gate workflow example"
 ```
 
+Incident response 一体化示例（异常补偿 + 人工 gate）：
+
+```bash
+pnpm run run:adapter \
+  --system examples/incident-response-playbook/system.mmd \
+  --runtime examples/incident-response-playbook/runtime.json \
+  --profiles examples/incident-response-playbook/profiles.json \
+  --tools examples/incident-response-playbook/tools.json \
+  --laws examples/incident-response-playbook/laws.json \
+  --prompt "生产环境发布后出现关键告警，触发应急处置流程"
+```
+
 Resume a graph runtime run from persisted `state.json.graphState`:
 
 ```bash
-pnpm run run:adapter -- \
+pnpm run run:adapter \
   --system examples/langgraph-debate-current/system.mmd \
   --laws examples/langgraph-debate-current/laws.json \
   --user-profile examples/langgraph-debate-current/user-profile.json \
@@ -761,6 +797,8 @@ Validation command for generated Mermaid:
 node skills/ogsystem-nl-to-mmd/scripts/validate_ogsystem_mmd.mjs \
   --system examples/target-model-binding-system.mmd
 ```
+
+示例培训手册：`examples/README.md`（最小示例集、覆盖矩阵、推荐学习顺序）。
 
 Validation command for an actual generated run:
 

@@ -28,6 +28,7 @@ Product introduction:
 Detailed usage manual:
 
 - `docs/usage-manual.md`
+- `examples/README.md` (minimal training set + capability coverage)
 
 Prerequisites:
 
@@ -90,17 +91,17 @@ Package manager policy (best practice):
 Lifecycle commands (preferred):
 
 ```bash
-pnpm run run:adapter -- project init
-pnpm run run:adapter -- run start --system examples/target-model-binding-system.mmd --prompt "demo" --dry-run
-pnpm run run:adapter -- run list
-pnpm run run:adapter -- run status <run-id>
-pnpm run run:adapter -- run logs <run-id> --engine
+pnpm run run:adapter project init
+pnpm run run:adapter run start --system examples/target-model-binding-system.mmd --prompt "demo" --dry-run
+pnpm run run:adapter run list
+pnpm run run:adapter run status <run-id>
+pnpm run run:adapter run logs <run-id> --engine
 ```
 
 Run minimal example (no external CLI execution):
 
 ```bash
-pnpm run run:adapter -- \
+pnpm run run:adapter \
   --system examples/minimal-system.mmd \
   --laws examples/console-laws.json \
   --prompt "demo" \
@@ -110,7 +111,7 @@ pnpm run run:adapter -- \
 Run target model-binding example with auto-discovered `.ogs/` config:
 
 ```bash
-pnpm run run:adapter -- \
+pnpm run run:adapter \
   --system examples/target-model-binding-system.mmd \
   --prompt "讨论当前架构是否继续最小化" \
   --dry-run
@@ -119,7 +120,7 @@ pnpm run run:adapter -- \
 Run console example (legacy compatibility path):
 
 ```bash
-pnpm run run:adapter -- \
+pnpm run run:adapter \
   --system examples/console-system.mmd \
   --profiles examples/console-profiles.json \
   --tools examples/console-tools.json \
@@ -131,7 +132,7 @@ pnpm run run:adapter -- \
 Run graph debate example:
 
 ```bash
-pnpm run run:adapter -- \
+pnpm run run:adapter \
   --system examples/langgraph-debate-current/system.mmd \
   --laws examples/langgraph-debate-current/laws.json \
   --user-profile examples/langgraph-debate-current/user-profile.json \
@@ -142,7 +143,7 @@ pnpm run run:adapter -- \
 Run graph expert consultation example:
 
 ```bash
-pnpm run run:adapter -- \
+pnpm run run:adapter \
   --system examples/langgraph-expert-consultation/system.mmd \
   --laws examples/langgraph-expert-consultation/laws.json \
   --user-profile examples/langgraph-expert-consultation/user-profile.json \
@@ -153,12 +154,23 @@ pnpm run run:adapter -- \
 Run Rust hello-world three-role full-flow validation (requires `cargo`):
 
 ```bash
-pnpm run run:adapter -- \
+pnpm run run:adapter \
   --system examples/rust-hello-pipeline/system.mmd \
   --profiles examples/rust-hello-pipeline/profiles.json \
   --tools examples/rust-hello-pipeline/tools.json \
   --laws .ogs/laws.json \
   --prompt "validate rust hello pipeline"
+```
+
+Run medical quorum consultation example:
+
+```bash
+pnpm run run:adapter \
+  --system examples/medical-quorum-consultation/system.mmd \
+  --laws examples/medical-quorum-consultation/laws.json \
+  --user-profile examples/medical-quorum-consultation/user-profile.json \
+  --prompt "患者发热伴神经与心血管症状，先形成会诊结论" \
+  --dry-run
 ```
 
 Run error-edge compensation example (feature-flag enabled runtime config):
@@ -184,22 +196,34 @@ pnpm run run:adapter \
   --prompt "run human gate workflow example"
 ```
 
+Run incident response playbook example (integrated exception + human gates):
+
+```bash
+pnpm run run:adapter \
+  --system examples/incident-response-playbook/system.mmd \
+  --runtime examples/incident-response-playbook/runtime.json \
+  --profiles examples/incident-response-playbook/profiles.json \
+  --tools examples/incident-response-playbook/tools.json \
+  --laws examples/incident-response-playbook/laws.json \
+  --prompt "生产环境发布后出现关键告警，触发应急处置流程"
+```
+
 Check required CLI tools:
 
 ```bash
-pnpm run run:doctor -- --required opencode
+pnpm run run:doctor --required opencode
 ```
 
 Lint a system with the runtime parser/validator:
 
 ```bash
-pnpm run lint:system -- --system examples/target-model-binding-system.mmd
+pnpm run lint:system --system examples/target-model-binding-system.mmd
 ```
 
 Show simple role/transition progress in the console while keeping final JSON on stdout:
 
 ```bash
-pnpm run run:adapter -- \
+pnpm run run:adapter \
   --system examples/target-model-binding-system.mmd \
   --prompt "讨论当前架构是否继续最小化" \
   --dry-run \
@@ -255,8 +279,11 @@ pnpm run run:adapter -- \
 - `examples/target-model-binding-system.mmd` shows `model.bind.*` usage.
 - `examples/langgraph-debate-current/` shows a minimal debate with loop + parallel + join.
 - `examples/langgraph-expert-consultation/` shows a minimal expert consultation with parallel + join.
+- `examples/medical-quorum-consultation/` shows quorum join + context projection in a professional consultation flow.
 - `examples/error-edge-compensation/` shows failure-to-compensation routing via `ERROR*` edges.
 - `examples/human-gate-workflow/` shows template-based human approval/signal gate flow.
+- `examples/incident-response-playbook/` shows integrated exception-routing + human-in-the-loop incident handling.
+- `examples/README.md` is the training handbook for minimal example set and coverage matrix.
 - `og-roles/roles/error-handler-base/`, `og-roles/roles/human-approve-gate/`, and `og-roles/roles/human-signal-wait/` provide reusable template role packages.
 
 Validate a generated run directory against the runtime contract:

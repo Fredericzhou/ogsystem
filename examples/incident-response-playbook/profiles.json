@@ -1,0 +1,22 @@
+[
+  {
+    "profileId": "profile.detector",
+    "toolRef": "tool.detector"
+  },
+  {
+    "profileId": "profile.error-handler",
+    "toolRef": "tool.error-handler"
+  },
+  {
+    "profileId": "profile.approve",
+    "toolRef": "tool.approve"
+  },
+  {
+    "profileId": "profile.signal",
+    "toolRef": "tool.signal"
+  },
+  {
+    "profileId": "profile.finalizer",
+    "toolRef": "tool.finalizer"
+  }
+]

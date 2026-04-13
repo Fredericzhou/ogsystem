@@ -1,0 +1,12 @@
+{
+  "configVersion": "1",
+  "executor": "opencode",
+  "roleRepo": "./og-roles",
+  "modelRepo": "./og-models",
+  "runsDir": ".ogs/runs",
+  "runtime": {
+    "error_edges": {
+      "v1": true
+    }
+  }
+}

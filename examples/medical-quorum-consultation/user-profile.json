@@ -1,0 +1,8 @@
+{
+  "userProfileId": "medical.quorum.zh.clinical",
+  "language": "zh-CN",
+  "style": "clinical",
+  "riskPreference": "high",
+  "outputLength": "short",
+  "domainBackground": ["medical-consultation"]
+}
