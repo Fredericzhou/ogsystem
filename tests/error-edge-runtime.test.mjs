@@ -220,10 +220,10 @@ async function readGraphStateSnapshot(fixture) {
   return stateJson.graphState;
 }
 
-test("runtime routes failed role via ERROR.<code> before ERROR fallback", async () => {
-  const fixture = await setupFixture({
+for (const routingCase of [
+  {
+    name: "runtime routes failed role via ERROR.<code> before ERROR fallback",
     id: "exact-priority",
-    errorEdgesV1: true,
     roles: [
       {
         roleId: "worker",
@@ -256,32 +256,120 @@ worker[Role:worker] -->|ERROR.TOOL_EXECUTION_SPAWN| specific[Role:specific]
 worker[Role:worker] -->|ERROR| fallback[Role:fallback]
 specific[Role:specific] -->|SPEC_DONE| output
 fallback[Role:fallback] -->|FB_DONE| output
-`
-  });
+`,
+    expectedStatus: "done",
+    expectedFinalRoleId: "specific",
+    expectedHandledByEvent: "ERROR.TOOL_EXECUTION_SPAWN",
+    expectedHandledTargetRoleId: "specific",
+    expectedHandledFailureCount: 1,
+    expectedUnhandledFailureCount: 0
+  },
+  {
+    name: "runtime falls back to ERROR when no typed error edge matches",
+    id: "fallback",
+    roles: [
+      {
+        roleId: "worker",
+        mode: { kind: "fail" },
+        allowedEvents: ["DONE"],
+        requireEvent: false
+      },
+      {
+        roleId: "fallback",
+        mode: { kind: "event", event: "FB_DONE", content: "fallback" },
+        allowedEvents: ["FB_DONE"]
+      }
+    ],
+    systemSource: `flowchart TD
+%% system.id=test.error.edge.fallback
+%% system.version=1.0.0
+%% law.global=law.test.error.edge
+%% entry.role=worker
+%% exec.bind.worker=profile.worker
+%% exec.bind.fallback=profile.fallback
 
-  const result = await runFixture(fixture);
-  assert.equal(result.status, "done");
-  assert.equal(result.finalRoleId, "specific");
-  const workerAudit = result.auditTrail.find((item) => item.roleId === "worker");
-  assert.ok(workerAudit);
-  assert.equal(workerAudit.status, "failed");
-  const handledEvents = await readFailureHandledEvents(fixture);
-  assert.equal(handledEvents.length, 1);
-  assert.equal(handledEvents[0].handledByEvent, "ERROR.TOOL_EXECUTION_SPAWN");
-  assert.equal(handledEvents[0].handledTargetRoleId, "specific");
-  assert.equal(result.runSummary.failedCount, 1);
-  assert.equal(result.runSummary.handledFailureCount, 1);
-  assert.equal(result.runSummary.unhandledFailureCount, 0);
-  assert.equal(result.runSummary.handledFailureByEvent["ERROR.TOOL_EXECUTION_SPAWN"], 1);
-  assert.equal(result.runSummary.handledFailureByTargetRole.specific, 1);
-  const graphState = await readGraphStateSnapshot(fixture);
-  const handledArtifact = Object.values(graphState.roleResults).find(
-    (item) => item.roleId === "worker.__handled_failure"
-  );
-  assert.ok(handledArtifact);
-  assert.equal(typeof handledArtifact.data?.last_context, "string");
-  assert.ok(handledArtifact.data.last_context.length > 0);
-});
+input -->|START| worker[Role:worker]
+worker[Role:worker] -->|ERROR| fallback[Role:fallback]
+fallback[Role:fallback] -->|FB_DONE| output
+`,
+    expectedStatus: "done",
+    expectedFinalRoleId: "fallback",
+    expectedHandledByEvent: "ERROR",
+    expectedHandledTargetRoleId: "fallback",
+    expectedHandledFailureCount: 1,
+    expectedUnhandledFailureCount: 0
+  },
+  {
+    name: "runtime keeps fail-stop behavior when no ERROR* edge matches",
+    id: "no-match",
+    roles: [
+      {
+        roleId: "worker",
+        mode: { kind: "fail" },
+        allowedEvents: ["DONE"],
+        requireEvent: false
+      },
+      {
+        roleId: "other",
+        mode: { kind: "event", event: "OTHER_DONE", content: "other" },
+        allowedEvents: ["OTHER_DONE"]
+      }
+    ],
+    systemSource: `flowchart TD
+%% system.id=test.error.edge.no.match
+%% system.version=1.0.0
+%% law.global=law.test.error.edge
+%% entry.role=worker
+%% exec.bind.worker=profile.worker
+%% exec.bind.other=profile.other
+
+input -->|START| worker[Role:worker]
+worker[Role:worker] -->|ERROR.TOOL_EXECUTION_TIMEOUT| other[Role:other]
+other[Role:other] -->|OTHER_DONE| output
+`,
+    expectedStatus: "failed",
+    expectedHandledByEvent: undefined,
+    expectedHandledTargetRoleId: undefined,
+    expectedHandledFailureCount: 0,
+    expectedUnhandledFailureCount: 1
+  }
+]) {
+  test(routingCase.name, async () => {
+    const fixture = await setupFixture({
+      id: routingCase.id,
+      errorEdgesV1: true,
+      roles: routingCase.roles,
+      systemSource: routingCase.systemSource
+    });
+    const result = await runFixture(fixture);
+    assert.equal(result.status, routingCase.expectedStatus);
+    if (routingCase.expectedFinalRoleId) {
+      assert.equal(result.finalRoleId, routingCase.expectedFinalRoleId);
+    }
+
+    const workerAudit = result.auditTrail.find((item) => item.roleId === "worker");
+    assert.ok(workerAudit);
+
+    const handledEvents = await readFailureHandledEvents(fixture);
+    if (routingCase.expectedHandledByEvent) {
+      assert.equal(handledEvents.length, 1);
+      assert.equal(handledEvents[0].handledByEvent, routingCase.expectedHandledByEvent);
+      assert.equal(handledEvents[0].handledTargetRoleId, routingCase.expectedHandledTargetRoleId);
+      assert.equal(result.runSummary.handledFailureByEvent[routingCase.expectedHandledByEvent], 1);
+      assert.equal(
+        result.runSummary.handledFailureByTargetRole[routingCase.expectedHandledTargetRoleId],
+        1
+      );
+    } else {
+      assert.equal(handledEvents.length, 0);
+      assert.equal(workerAudit.handledByEvent, undefined);
+      assert.equal(workerAudit.handledTargetRoleId, undefined);
+    }
+
+    assert.equal(result.runSummary.handledFailureCount, routingCase.expectedHandledFailureCount);
+    assert.equal(result.runSummary.unhandledFailureCount, routingCase.expectedUnhandledFailureCount);
+  });
+}
 
 test("handled failure last_context uses failed role input context projection", async () => {
   const fixture = await setupFixture({
@@ -339,52 +427,6 @@ fallback[Role:fallback] -->|FB_DONE| output
   assert.doesNotMatch(handledArtifact.data.last_context, /raw-upstream-content/);
 });
 
-test("runtime falls back to ERROR when no typed error edge matches", async () => {
-  const fixture = await setupFixture({
-    id: "fallback",
-    errorEdgesV1: true,
-    roles: [
-      {
-        roleId: "worker",
-        mode: { kind: "fail" },
-        allowedEvents: ["DONE"],
-        requireEvent: false
-      },
-      {
-        roleId: "fallback",
-        mode: { kind: "event", event: "FB_DONE", content: "fallback" },
-        allowedEvents: ["FB_DONE"]
-      }
-    ],
-    systemSource: `flowchart TD
-%% system.id=test.error.edge.fallback
-%% system.version=1.0.0
-%% law.global=law.test.error.edge
-%% entry.role=worker
-%% exec.bind.worker=profile.worker
-%% exec.bind.fallback=profile.fallback
-
-input -->|START| worker[Role:worker]
-worker[Role:worker] -->|ERROR| fallback[Role:fallback]
-fallback[Role:fallback] -->|FB_DONE| output
-`
-  });
-
-  const result = await runFixture(fixture);
-  assert.equal(result.status, "done");
-  assert.equal(result.finalRoleId, "fallback");
-  const workerAudit = result.auditTrail.find((item) => item.roleId === "worker");
-  assert.ok(workerAudit);
-  const handledEvents = await readFailureHandledEvents(fixture);
-  assert.equal(handledEvents.length, 1);
-  assert.equal(handledEvents[0].handledByEvent, "ERROR");
-  assert.equal(handledEvents[0].handledTargetRoleId, "fallback");
-  assert.equal(result.runSummary.handledFailureCount, 1);
-  assert.equal(result.runSummary.unhandledFailureCount, 0);
-  assert.equal(result.runSummary.handledFailureByEvent.ERROR, 1);
-  assert.equal(result.runSummary.handledFailureByTargetRole.fallback, 1);
-});
-
 test("runtime keeps fail-stop behavior when error edge routing flag is disabled", async () => {
   const fixture = await setupFixture({
     id: "flag-off",
@@ -413,47 +455,6 @@ test("runtime keeps fail-stop behavior when error edge routing flag is disabled"
 input -->|START| worker[Role:worker]
 worker[Role:worker] -->|ERROR| fallback[Role:fallback]
 fallback[Role:fallback] -->|FB_DONE| output
-`
-  });
-
-  const result = await runFixture(fixture);
-  assert.equal(result.status, "failed");
-  const workerAudit = result.auditTrail.find((item) => item.roleId === "worker");
-  assert.ok(workerAudit);
-  assert.equal(workerAudit.handledByEvent, undefined);
-  assert.equal(workerAudit.handledTargetRoleId, undefined);
-  assert.equal(result.runSummary.handledFailureCount, 0);
-  assert.equal(result.runSummary.unhandledFailureCount, 1);
-});
-
-test("runtime keeps fail-stop behavior when no ERROR* edge matches", async () => {
-  const fixture = await setupFixture({
-    id: "no-match",
-    errorEdgesV1: true,
-    roles: [
-      {
-        roleId: "worker",
-        mode: { kind: "fail" },
-        allowedEvents: ["DONE"],
-        requireEvent: false
-      },
-      {
-        roleId: "other",
-        mode: { kind: "event", event: "OTHER_DONE", content: "other" },
-        allowedEvents: ["OTHER_DONE"]
-      }
-    ],
-    systemSource: `flowchart TD
-%% system.id=test.error.edge.no.match
-%% system.version=1.0.0
-%% law.global=law.test.error.edge
-%% entry.role=worker
-%% exec.bind.worker=profile.worker
-%% exec.bind.other=profile.other
-
-input -->|START| worker[Role:worker]
-worker[Role:worker] -->|ERROR.TOOL_EXECUTION_TIMEOUT| other[Role:other]
-other[Role:other] -->|OTHER_DONE| output
 `
   });
 

@@ -52,6 +52,56 @@ function runCli(args, options = {}) {
   });
 }
 
+async function writeRuntimeConfigFile(runtimePath, repoRoot, runtimeOverrides = undefined) {
+  const runtimeConfig = {
+    executor: "opencode",
+    roleRepo: path.resolve(repoRoot, "og-roles"),
+    modelRepo: path.resolve(repoRoot, "og-models"),
+    runsDir: ".ogs/runs"
+  };
+  if (runtimeOverrides) {
+    runtimeConfig.runtime = runtimeOverrides;
+  }
+  await writeFile(runtimePath, JSON.stringify(runtimeConfig, null, 2), "utf8");
+}
+
+async function createCrashWindowFixture(args) {
+  const tempRoot = await mkdtemp(path.join(os.tmpdir(), args.tempPrefix));
+  const systemPath = path.resolve(tempRoot, "system.mmd");
+  const runtimePath = path.resolve(tempRoot, "runtime.json");
+  await writeFile(systemPath, args.systemSource, "utf8");
+  await writeRuntimeConfigFile(runtimePath, args.repoRoot, args.runtimeOverrides);
+  return { tempRoot, systemPath, runtimePath };
+}
+
+async function readSingleRunDirectory(tempRoot) {
+  const runIds = await readdir(path.resolve(tempRoot, ".ogs/runs"));
+  assert.strictEqual(runIds.length, 1);
+  const runId = runIds[0];
+  return {
+    runId,
+    runDir: path.resolve(tempRoot, ".ogs/runs", runId)
+  };
+}
+
+function withResumeRun(baseArgs, runId) {
+  return [...baseArgs, "--resume-run", `.ogs/runs/${runId}`];
+}
+
+async function runCrashAfterOutcome(baseArgs, options = {}) {
+  const crashed = await runCli(baseArgs, {
+    env: {
+      OGSYSTEM_TEST_CRASH_AFTER_EXECUTION_OUTCOME: "1",
+      ...(options.env ?? {})
+    }
+  });
+  assert.strictEqual(crashed.code, 91);
+  if (options.stderrPattern) {
+    assert.match(crashed.stderr, options.stderrPattern);
+  }
+  return crashed;
+}
+
 test("buffered append recovery replays content after a partial write failure", async () => {
   const tempRoot = await mkdtemp(path.join(os.tmpdir(), "ogsystem-buffer-recovery-"));
   const systemPath = path.resolve(tempRoot, "system.mmd");
@@ -195,28 +245,14 @@ test("buffered flush bookkeeping keeps newer queued flush active", async () => {
 
 test("forced crash after durable outcome resumes without duplicate execution", async () => {
   const repoRoot = process.cwd();
-  const tempRoot = await mkdtemp(path.join(os.tmpdir(), "ogsystem-crash-window-e2e-"));
-  const systemPath = path.resolve(tempRoot, "system.mmd");
-  const runtimePath = path.resolve(tempRoot, "runtime.json");
+  const { tempRoot, systemPath, runtimePath } = await createCrashWindowFixture({
+    tempPrefix: "ogsystem-crash-window-e2e-",
+    repoRoot,
+    systemSource
+  });
   const firstTracePath = path.resolve(tempRoot, "first-trace.json");
   const secondTracePath = path.resolve(tempRoot, "second-trace.json");
   const thirdTracePath = path.resolve(tempRoot, "third-trace.json");
-
-  await writeFile(systemPath, systemSource, "utf8");
-  await writeFile(
-    runtimePath,
-    JSON.stringify(
-      {
-        executor: "opencode",
-        roleRepo: path.resolve(repoRoot, "og-roles"),
-        modelRepo: path.resolve(repoRoot, "og-models"),
-        runsDir: ".ogs/runs"
-      },
-      null,
-      2
-    ),
-    "utf8"
-  );
 
   const baseArgs = [
     "--system",
@@ -232,18 +268,11 @@ test("forced crash after durable outcome resumes without duplicate execution", a
     "--dry-run"
   ];
 
-  const crashed = await runCli([...baseArgs, "--trace-out", firstTracePath], {
-    env: {
-      OGSYSTEM_TEST_CRASH_AFTER_EXECUTION_OUTCOME: "1"
-    }
+  await runCrashAfterOutcome([...baseArgs, "--trace-out", firstTracePath], {
+    stderrPattern: /forced crash after execution outcome/i
   });
 
-  assert.strictEqual(crashed.code, 91);
-  assert.match(crashed.stderr, /forced crash after execution outcome/i);
-
-  const runIds = await readdir(path.resolve(tempRoot, ".ogs/runs"));
-  assert.strictEqual(runIds.length, 1);
-  const runDir = path.resolve(tempRoot, ".ogs/runs", runIds[0]);
+  const { runId, runDir } = await readSingleRunDirectory(tempRoot);
   const executionDirsAfterCrash = await readdir(
     path.resolve(runDir, "roles", "test-operator", "executions")
   );
@@ -251,15 +280,7 @@ test("forced crash after durable outcome resumes without duplicate execution", a
   const checkpointsAfterCrash = await readdir(path.resolve(runDir, "checkpoints"));
   assert.deepStrictEqual(checkpointsAfterCrash, []);
 
-  const resumed = await runCli(
-    [
-      ...baseArgs,
-      "--resume-run",
-      `.ogs/runs/${runIds[0]}`,
-      "--trace-out",
-      secondTracePath
-    ]
-  );
+  const resumed = await runCli([...withResumeRun(baseArgs, runId), "--trace-out", secondTracePath]);
 
   assert.strictEqual(resumed.code, 0);
   const resumedResult = JSON.parse(await readFile(secondTracePath, "utf8"));
@@ -291,15 +312,7 @@ test("forced crash after durable outcome resumes without duplicate execution", a
   assert.strictEqual(outcome.checkpointSequence, 1);
   assert.ok(outcome.reconciledAt);
 
-  const resumedAgain = await runCli(
-    [
-      ...baseArgs,
-      "--resume-run",
-      `.ogs/runs/${runIds[0]}`,
-      "--trace-out",
-      thirdTracePath
-    ]
-  );
+  const resumedAgain = await runCli([...withResumeRun(baseArgs, runId), "--trace-out", thirdTracePath]);
 
   assert.strictEqual(resumedAgain.code, 0);
   const resumedAgainResult = JSON.parse(await readFile(thirdTracePath, "utf8"));
@@ -313,9 +326,32 @@ test("forced crash after durable outcome resumes without duplicate execution", a
 
 test("ERROR* handled failure survives crash window resume without duplicate routing events", async () => {
   const repoRoot = process.cwd();
-  const tempRoot = await mkdtemp(path.join(os.tmpdir(), "ogsystem-error-edge-crash-window-"));
-  const systemPath = path.resolve(tempRoot, "system.mmd");
-  const runtimePath = path.resolve(tempRoot, "runtime.json");
+  const { tempRoot, systemPath, runtimePath } = await createCrashWindowFixture({
+    tempPrefix: "ogsystem-error-edge-crash-window-",
+    repoRoot,
+    systemSource: `flowchart TD
+%% system.id=test.error.edge.crash.resume
+%% system.version=1.0.0
+%% law.global=law.error.edge.resume
+%% entry.role=test-branch-a
+%% exec.bind.test-branch-a=profile.detector
+%% exec.bind.error-handler-base=profile.handler
+%% exec.bind.test-operator=profile.finalizer
+
+input -->|START| source[Role:test-branch-a]
+source[Role:test-branch-a] -->|ERROR.TOOL_EXECUTION_SPAWN| handler[Role:error-handler-base]
+source[Role:test-branch-a] -->|ERROR| handler[Role:error-handler-base]
+handler[Role:error-handler-base] -->|COMPENSATED| finalizer[Role:test-operator]
+handler[Role:error-handler-base] -->|ESCALATED| output
+handler[Role:error-handler-base] -->|ABORTED| output
+finalizer[Role:test-operator] -->|DONE| output
+`,
+    runtimeOverrides: {
+      error_edges: {
+        v1: true
+      }
+    }
+  });
   const profilesPath = path.resolve(tempRoot, "profiles.json");
   const toolsPath = path.resolve(tempRoot, "tools.json");
   const lawsPath = path.resolve(tempRoot, "laws.json");
@@ -338,46 +374,6 @@ test("ERROR* handled failure survives crash window resume without duplicate rout
     "utf8"
   );
 
-  await writeFile(
-    systemPath,
-    `flowchart TD
-%% system.id=test.error.edge.crash.resume
-%% system.version=1.0.0
-%% law.global=law.error.edge.resume
-%% entry.role=test-branch-a
-%% exec.bind.test-branch-a=profile.detector
-%% exec.bind.error-handler-base=profile.handler
-%% exec.bind.test-operator=profile.finalizer
-
-input -->|START| source[Role:test-branch-a]
-source[Role:test-branch-a] -->|ERROR.TOOL_EXECUTION_SPAWN| handler[Role:error-handler-base]
-source[Role:test-branch-a] -->|ERROR| handler[Role:error-handler-base]
-handler[Role:error-handler-base] -->|COMPENSATED| finalizer[Role:test-operator]
-handler[Role:error-handler-base] -->|ESCALATED| output
-handler[Role:error-handler-base] -->|ABORTED| output
-finalizer[Role:test-operator] -->|DONE| output
-`,
-    "utf8"
-  );
-  await writeFile(
-    runtimePath,
-    JSON.stringify(
-      {
-        executor: "opencode",
-        roleRepo: path.resolve(repoRoot, "og-roles"),
-        modelRepo: path.resolve(repoRoot, "og-models"),
-        runsDir: ".ogs/runs",
-        runtime: {
-          error_edges: {
-            v1: true
-          }
-        }
-      },
-      null,
-      2
-    ),
-    "utf8"
-  );
   await writeFile(
     profilesPath,
     JSON.stringify(
@@ -462,16 +458,8 @@ finalizer[Role:test-operator] -->|DONE| output
     "error edge resume drill"
   ];
 
-  const crashed = await runCli(baseArgs, {
-    env: {
-      OGSYSTEM_TEST_CRASH_AFTER_EXECUTION_OUTCOME: "1"
-    }
-  });
-  assert.strictEqual(crashed.code, 91);
-
-  const runIds = await readdir(path.resolve(tempRoot, ".ogs/runs"));
-  assert.strictEqual(runIds.length, 1);
-  const runDir = path.resolve(tempRoot, ".ogs/runs", runIds[0]);
+  await runCrashAfterOutcome(baseArgs);
+  const { runId, runDir } = await readSingleRunDirectory(tempRoot);
 
   const sourceExecutionDirsAfterCrash = await readdir(
     path.resolve(runDir, "roles", "test-branch-a", "executions")
@@ -479,7 +467,7 @@ finalizer[Role:test-operator] -->|DONE| output
   assert.strictEqual(sourceExecutionDirsAfterCrash.length, 1);
   assert.deepStrictEqual(await readdir(path.resolve(runDir, "checkpoints")), []);
 
-  const resumeArgs = [...baseArgs, "--resume-run", `.ogs/runs/${runIds[0]}`];
+  const resumeArgs = withResumeRun(baseArgs, runId);
   const resumed = await runCli(resumeArgs);
   assert.strictEqual(resumed.code, 0);
   const resumedResult = JSON.parse(resumed.stdout);

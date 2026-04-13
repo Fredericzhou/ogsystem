@@ -205,23 +205,26 @@ test("parser rejects join.sources without an explicit join.mode", () => {
   );
 });
 
-test("parser rejects all_of join when join.sources does not match incoming role edges", () => {
-  assert.throws(
-    () => parseSystemFromMermaidSource(joinSourcesMismatchSource),
-    /MERMAID_JOIN_SOURCES_MISMATCH|join\.sources\.review must match exactly/
-  );
-});
-
-test("parser rejects quorum_of join when join.sources does not match incoming role edges", () => {
-  const source = quorumJoinWithProjectionSource.replace(
-    /%% join\.sources\.review=.*/,
-    "%% join.sources.review=worker_a,worker_b"
-  );
-  assert.throws(
-    () => parseSystemFromMermaidSource(source),
-    /MERMAID_JOIN_SOURCES_MISMATCH|join\.sources\.review must match exactly/
-  );
-});
+for (const joinSourcesMismatchCase of [
+  {
+    name: "parser rejects all_of join when join.sources does not match incoming role edges",
+    source: joinSourcesMismatchSource
+  },
+  {
+    name: "parser rejects quorum_of join when join.sources does not match incoming role edges",
+    source: quorumJoinWithProjectionSource.replace(
+      /%% join\.sources\.review=.*/,
+      "%% join.sources.review=worker_a,worker_b"
+    )
+  }
+]) {
+  test(joinSourcesMismatchCase.name, () => {
+    assert.throws(
+      () => parseSystemFromMermaidSource(joinSourcesMismatchCase.source),
+      /MERMAID_JOIN_SOURCES_MISMATCH|join\.sources\.review must match exactly/
+    );
+  });
+}
 
 test("parser rejects quorum_of join without join.min", () => {
   const source = quorumJoinWithProjectionSource.replace("%% join.min.review=2\n", "");
@@ -239,27 +242,29 @@ test("parser rejects quorum_of join.min outside source range", () => {
   );
 });
 
-test("parser rejects duplicate join.sources entries for all_of", () => {
-  const source = graphSource.replace(
-    /%% join\.sources\.review=.*/,
-    "%% join.sources.review=worker_a,worker_a,worker_b"
-  );
-  assert.throws(
-    () => parseSystemFromMermaidSource(source),
-    /MERMAID_DUPLICATE_JOIN_SOURCE|duplicate source role/
-  );
-});
-
-test("parser rejects duplicate join.sources entries for quorum_of before join.min validation", () => {
-  const source = quorumJoinWithProjectionSource.replace(
-    /%% join\.sources\.review=.*/,
-    "%% join.sources.review=worker_a,worker_a,worker_b,worker_c"
-  );
-  assert.throws(
-    () => parseSystemFromMermaidSource(source),
-    /MERMAID_DUPLICATE_JOIN_SOURCE|duplicate source role/
-  );
-});
+for (const duplicateJoinSourceCase of [
+  {
+    name: "parser rejects duplicate join.sources entries for all_of",
+    source: graphSource.replace(
+      /%% join\.sources\.review=.*/,
+      "%% join.sources.review=worker_a,worker_a,worker_b"
+    )
+  },
+  {
+    name: "parser rejects duplicate join.sources entries for quorum_of before join.min validation",
+    source: quorumJoinWithProjectionSource.replace(
+      /%% join\.sources\.review=.*/,
+      "%% join.sources.review=worker_a,worker_a,worker_b,worker_c"
+    )
+  }
+]) {
+  test(duplicateJoinSourceCase.name, () => {
+    assert.throws(
+      () => parseSystemFromMermaidSource(duplicateJoinSourceCase.source),
+      /MERMAID_DUPLICATE_JOIN_SOURCE|duplicate source role/
+    );
+  });
+}
 
 test("parser rejects join-only selector on non-join role", () => {
   const source = quorumJoinWithProjectionSource.replace(
@@ -411,8 +416,10 @@ worker[Role:worker] -->|DONE| output
   );
 });
 
-test("parser rejects invalid reserved ERROR* event forms", () => {
-  const invalidPrefixSource = `flowchart TD
+for (const invalidErrorEdgeEventCase of [
+  {
+    name: "parser rejects invalid reserved ERROR* event forms",
+    source: `flowchart TD
 %% system.id=test.error.invalid.prefix
 %% system.version=0.1.0
 %% law.global=law.test
@@ -420,16 +427,12 @@ test("parser rejects invalid reserved ERROR* event forms", () => {
 %% exec.bind.worker=profile.worker
 input -->|START| worker[Role:worker]
 worker[Role:worker] -->|ERROR_SPAWN| output
-`;
-
-  assert.throws(
-    () => parseSystemFromMermaidSource(invalidPrefixSource),
-    /MERMAID_INVALID_ERROR_EDGE_EVENT|reserved ERROR\* events must be exactly/
-  );
-});
-
-test("parser rejects ERROR.<code> with empty code", () => {
-  const emptyCodeSource = `flowchart TD
+`,
+    expectedMessage: /MERMAID_INVALID_ERROR_EDGE_EVENT|reserved ERROR\* events must be exactly/
+  },
+  {
+    name: "parser rejects ERROR.<code> with empty code",
+    source: `flowchart TD
 %% system.id=test.error.invalid.empty
 %% system.version=0.1.0
 %% law.global=law.test
@@ -437,13 +440,17 @@ test("parser rejects ERROR.<code> with empty code", () => {
 %% exec.bind.worker=profile.worker
 input -->|START| worker[Role:worker]
 worker[Role:worker] -->|ERROR.| output
-`;
-
-  assert.throws(
-    () => parseSystemFromMermaidSource(emptyCodeSource),
-    /MERMAID_INVALID_ERROR_EDGE_EVENT|non-empty <errorCode>/
-  );
-});
+`,
+    expectedMessage: /MERMAID_INVALID_ERROR_EDGE_EVENT|non-empty <errorCode>/
+  }
+]) {
+  test(invalidErrorEdgeEventCase.name, () => {
+    assert.throws(
+      () => parseSystemFromMermaidSource(invalidErrorEdgeEventCase.source),
+      invalidErrorEdgeEventCase.expectedMessage
+    );
+  });
+}
 
 test("nl2mmd validator ignores ERROR* edges when checking role output event enum", async () => {
   const tempRoot = await mkdtemp(path.join(tmpdir(), "ogsystem-nl2mmd-error-edge-"));

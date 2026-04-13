@@ -302,12 +302,7 @@ minimalist[Role:debate-minimalist] -->|MINIMALIST_DONE| output
   );
 });
 
-test("adapter resume rejects invalid handled failure summary field types", async () => {
-  const tempRoot = await mkdtemp(path.join(os.tmpdir(), "ogsystem-resume-handled-summary-"));
-  const systemPath = path.resolve(tempRoot, "resume-system.mmd");
-  const runtimePath = path.resolve(tempRoot, "runtime.json");
-
-  const systemSource = `flowchart TD
+const handledFailureResumeSource = `flowchart TD
 %% system.id=resume.handled.summary.demo
 %% system.version=1.0.0
 %% law.global=law.console.base
@@ -318,76 +313,11 @@ input -->|GO| minimalist[Role:debate-minimalist]
 minimalist[Role:debate-minimalist] -->|MINIMALIST_DONE| output
 `;
 
-  await writeFile(systemPath, systemSource, "utf8");
-  await writeFile(
-    runtimePath,
-    JSON.stringify(
-      {
-        executor: "opencode",
-        roleRepo: path.resolve("og-roles"),
-        modelRepo: path.resolve("og-models"),
-        runsDir: ".ogs/runs"
-      },
-      null,
-      2
-    ),
-    "utf8"
-  );
-
-  const initial = await runSystemWithAdapter({
-    systemPath,
-    runtimeConfigPath: runtimePath,
-    lawsPath: path.resolve(".ogsystem", "laws.json"),
-    workdir: tempRoot,
-    prompt: "resume handled summary",
-    dryRun: true
-  });
-  assert.strictEqual(initial.status, "done");
-
-  const runIds = await readdir(path.resolve(tempRoot, ".ogs/runs"));
-  assert.strictEqual(runIds.length, 1);
-  const runDir = path.resolve(tempRoot, ".ogs/runs", runIds[0]);
-  const statePath = path.resolve(runDir, "state.json");
-  const stateJson = JSON.parse(await readFile(statePath, "utf8"));
-  stateJson.graphState.auditSummary.handledFailureCount = "invalid";
-  await writeFile(statePath, JSON.stringify(stateJson, null, 2), "utf8");
-
-  await assert.rejects(
-    () =>
-      runSystemWithAdapter({
-        systemPath,
-        runtimeConfigPath: runtimePath,
-        lawsPath: path.resolve(".ogsystem", "laws.json"),
-        workdir: tempRoot,
-        resumeRunDir: `.ogs/runs/${runIds[0]}`,
-        prompt: "resume handled summary",
-        dryRun: true
-      }),
-    (error) => {
-      assert.ok(error instanceof Error);
-      assert.match(error.message, /handledFailureCount|RESUME_STATE_INVALID/);
-      return true;
-    }
-  );
-});
-
-test("adapter resume rejects invalid handled failure map value types", async () => {
-  const tempRoot = await mkdtemp(path.join(os.tmpdir(), "ogsystem-resume-handled-map-values-"));
+async function createHandledFailureResumeFixture(args) {
+  const tempRoot = await mkdtemp(path.join(os.tmpdir(), args.tempPrefix));
   const systemPath = path.resolve(tempRoot, "resume-system.mmd");
   const runtimePath = path.resolve(tempRoot, "runtime.json");
-
-  const systemSource = `flowchart TD
-%% system.id=resume.handled.summary.map.values
-%% system.version=1.0.0
-%% law.global=law.console.base
-%% entry.role=debate-minimalist
-%% model.bind.debate-minimalist=balanced-gpt52
-
-input -->|GO| minimalist[Role:debate-minimalist]
-minimalist[Role:debate-minimalist] -->|MINIMALIST_DONE| output
-`;
-
-  await writeFile(systemPath, systemSource, "utf8");
+  await writeFile(systemPath, handledFailureResumeSource, "utf8");
   await writeFile(
     runtimePath,
     JSON.stringify(
@@ -402,13 +332,12 @@ minimalist[Role:debate-minimalist] -->|MINIMALIST_DONE| output
     ),
     "utf8"
   );
-
   const initial = await runSystemWithAdapter({
     systemPath,
     runtimeConfigPath: runtimePath,
     lawsPath: path.resolve(".ogsystem", "laws.json"),
     workdir: tempRoot,
-    prompt: "resume handled map values",
+    prompt: args.prompt,
     dryRun: true
   });
   assert.strictEqual(initial.status, "done");
@@ -416,29 +345,63 @@ minimalist[Role:debate-minimalist] -->|MINIMALIST_DONE| output
   const runIds = await readdir(path.resolve(tempRoot, ".ogs/runs"));
   assert.strictEqual(runIds.length, 1);
   const runDir = path.resolve(tempRoot, ".ogs/runs", runIds[0]);
-  const statePath = path.resolve(runDir, "state.json");
-  const stateJson = JSON.parse(await readFile(statePath, "utf8"));
-  stateJson.graphState.auditSummary.handledFailureByEvent = { ERROR: "invalid" };
-  await writeFile(statePath, JSON.stringify(stateJson, null, 2), "utf8");
+  return {
+    tempRoot,
+    systemPath,
+    runtimePath,
+    runId: runIds[0],
+    statePath: path.resolve(runDir, "state.json")
+  };
+}
 
-  await assert.rejects(
-    () =>
-      runSystemWithAdapter({
-        systemPath,
-        runtimeConfigPath: runtimePath,
-        lawsPath: path.resolve(".ogsystem", "laws.json"),
-        workdir: tempRoot,
-        resumeRunDir: `.ogs/runs/${runIds[0]}`,
-        prompt: "resume handled map values",
-        dryRun: true
-      }),
-    (error) => {
-      assert.ok(error instanceof Error);
-      assert.match(error.message, /handledFailureByEvent|RESUME_STATE_INVALID/);
-      return true;
-    }
-  );
-});
+for (const handledCase of [
+  {
+    name: "adapter resume rejects non-integer handled failure summary counters",
+    tempPrefix: "ogsystem-resume-handled-summary-",
+    prompt: "resume handled summary",
+    mutateAuditSummary(auditSummary) {
+      auditSummary.handledFailureCount = 1.5;
+    },
+    expectedMessage: /handledFailureCount|RESUME_STATE_INVALID/
+  },
+  {
+    name: "adapter resume rejects non-integer handled failure map values",
+    tempPrefix: "ogsystem-resume-handled-map-values-",
+    prompt: "resume handled map values",
+    mutateAuditSummary(auditSummary) {
+      auditSummary.handledFailureByEvent = { ERROR: 1.25 };
+    },
+    expectedMessage: /handledFailureByEvent|RESUME_STATE_INVALID/
+  }
+]) {
+  test(handledCase.name, async () => {
+    const fixture = await createHandledFailureResumeFixture({
+      tempPrefix: handledCase.tempPrefix,
+      prompt: handledCase.prompt
+    });
+    const stateJson = JSON.parse(await readFile(fixture.statePath, "utf8"));
+    handledCase.mutateAuditSummary(stateJson.graphState.auditSummary);
+    await writeFile(fixture.statePath, JSON.stringify(stateJson, null, 2), "utf8");
+
+    await assert.rejects(
+      () =>
+        runSystemWithAdapter({
+          systemPath: fixture.systemPath,
+          runtimeConfigPath: fixture.runtimePath,
+          lawsPath: path.resolve(".ogsystem", "laws.json"),
+          workdir: fixture.tempRoot,
+          resumeRunDir: `.ogs/runs/${fixture.runId}`,
+          prompt: handledCase.prompt,
+          dryRun: true
+        }),
+      (error) => {
+        assert.ok(error instanceof Error);
+        assert.match(error.message, handledCase.expectedMessage);
+        return true;
+      }
+    );
+  });
+}
 
 test("adapter resume rejects plan fingerprint mismatch", async () => {
   const tempRoot = await mkdtemp(path.join(os.tmpdir(), "ogsystem-resume-fingerprint-mismatch-"));
