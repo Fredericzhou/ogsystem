@@ -209,6 +209,15 @@ async function readFailureHandledEvents(fixture) {
     .filter((record) => record && record.type === "failure_handled");
 }
 
+async function readGraphStateSnapshot(fixture) {
+  const runsDir = path.resolve(fixture.tempRoot, ".ogs", "runs");
+  const runIds = await readdir(runsDir);
+  assert.equal(runIds.length, 1);
+  const statePath = path.resolve(runsDir, runIds[0], "state.json");
+  const stateJson = JSON.parse(await readFile(statePath, "utf8"));
+  return stateJson.graphState;
+}
+
 test("runtime routes failed role via ERROR.<code> before ERROR fallback", async () => {
   const fixture = await setupFixture({
     id: "exact-priority",
@@ -261,6 +270,15 @@ fallback[Role:fallback] -->|FB_DONE| output
   assert.equal(result.runSummary.failedCount, 1);
   assert.equal(result.runSummary.handledFailureCount, 1);
   assert.equal(result.runSummary.unhandledFailureCount, 0);
+  assert.equal(result.runSummary.handledFailureByEvent["ERROR.TOOL_EXECUTION_SPAWN"], 1);
+  assert.equal(result.runSummary.handledFailureByTargetRole.specific, 1);
+  const graphState = await readGraphStateSnapshot(fixture);
+  const handledArtifact = Object.values(graphState.roleResults).find(
+    (item) => item.roleId === "worker.__handled_failure"
+  );
+  assert.ok(handledArtifact);
+  assert.equal(typeof handledArtifact.data?.last_context, "string");
+  assert.ok(handledArtifact.data.last_context.length > 0);
 });
 
 test("runtime falls back to ERROR when no typed error edge matches", async () => {
@@ -305,6 +323,8 @@ fallback[Role:fallback] -->|FB_DONE| output
   assert.equal(handledEvents[0].handledTargetRoleId, "fallback");
   assert.equal(result.runSummary.handledFailureCount, 1);
   assert.equal(result.runSummary.unhandledFailureCount, 0);
+  assert.equal(result.runSummary.handledFailureByEvent.ERROR, 1);
+  assert.equal(result.runSummary.handledFailureByTargetRole.fallback, 1);
 });
 
 test("runtime keeps fail-stop behavior when error edge routing flag is disabled", async () => {

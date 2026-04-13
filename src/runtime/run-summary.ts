@@ -24,6 +24,8 @@ export function createEmptyAuditSummary(): GraphAuditSummary {
     noopCount: 0,
     handledFailureCount: 0,
     unhandledFailureCount: 0,
+    handledFailureByEvent: {},
+    handledFailureByTargetRole: {},
     repairAttemptedCount: 0,
     repairAppliedCount: 0,
     failureCountsByErrorCode: {}
@@ -42,6 +44,10 @@ export function buildAuditSummaryDelta(audit: AuditRecord): GraphAuditSummary {
     summary.failedCount = 1;
     if (audit.handledByEvent) {
       summary.handledFailureCount = 1;
+      summary.handledFailureByEvent[audit.handledByEvent] = 1;
+      if (audit.handledTargetRoleId) {
+        summary.handledFailureByTargetRole[audit.handledTargetRoleId] = 1;
+      }
     } else {
       summary.unhandledFailureCount = 1;
     }
@@ -76,6 +82,19 @@ export function mergeAuditSummaries(
   for (const [errorCode, count] of Object.entries(right.failureCountsByErrorCode)) {
     failureCountsByErrorCode[errorCode] = (failureCountsByErrorCode[errorCode] ?? 0) + count;
   }
+  const handledFailureByEvent: Record<string, number> = {
+    ...(left.handledFailureByEvent ?? {})
+  };
+  for (const [eventType, count] of Object.entries(right.handledFailureByEvent ?? {})) {
+    handledFailureByEvent[eventType] = (handledFailureByEvent[eventType] ?? 0) + count;
+  }
+  const handledFailureByTargetRole: Record<string, number> = {
+    ...(left.handledFailureByTargetRole ?? {})
+  };
+  for (const [targetRoleId, count] of Object.entries(right.handledFailureByTargetRole ?? {})) {
+    handledFailureByTargetRole[targetRoleId] =
+      (handledFailureByTargetRole[targetRoleId] ?? 0) + count;
+  }
 
   return {
     okCount: (left.okCount ?? 0) + (right.okCount ?? 0),
@@ -83,6 +102,8 @@ export function mergeAuditSummaries(
     noopCount: (left.noopCount ?? 0) + (right.noopCount ?? 0),
     handledFailureCount: (left.handledFailureCount ?? 0) + (right.handledFailureCount ?? 0),
     unhandledFailureCount: (left.unhandledFailureCount ?? 0) + (right.unhandledFailureCount ?? 0),
+    handledFailureByEvent,
+    handledFailureByTargetRole,
     repairAttemptedCount: (left.repairAttemptedCount ?? 0) + (right.repairAttemptedCount ?? 0),
     repairAppliedCount: (left.repairAppliedCount ?? 0) + (right.repairAppliedCount ?? 0),
     failureCountsByErrorCode
@@ -103,6 +124,8 @@ export function summarizeRunFromAuditSummary(args: {
   let failedCount = args.auditSummary.failedCount ?? 0;
   let handledFailureCount = args.auditSummary.handledFailureCount ?? 0;
   let unhandledFailureCount = args.auditSummary.unhandledFailureCount ?? 0;
+  const handledFailureByEvent = { ...(args.auditSummary.handledFailureByEvent ?? {}) };
+  const handledFailureByTargetRole = { ...(args.auditSummary.handledFailureByTargetRole ?? {}) };
   const failureCountsByErrorCode = { ...args.auditSummary.failureCountsByErrorCode };
 
   if (
@@ -126,6 +149,8 @@ export function summarizeRunFromAuditSummary(args: {
     noopCount: args.auditSummary.noopCount ?? 0,
     handledFailureCount,
     unhandledFailureCount,
+    handledFailureByEvent,
+    handledFailureByTargetRole,
     failureCountsByErrorCode,
     repairStats: {
       attemptedCount: args.auditSummary.repairAttemptedCount ?? 0,

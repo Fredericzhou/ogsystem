@@ -44,6 +44,14 @@ switch (mode) {
   case "reserved-error-event":
     console.log(JSON.stringify({ event: "ERROR.TOOL_EXECUTION_SPAWN", content: "reserved" }));
     break;
+  case "allowed-events-echo":
+    console.log(
+      JSON.stringify({
+        event: "DONE",
+        content: process.env.OGSYSTEM_ALLOWED_EVENTS ?? ""
+      })
+    );
+    break;
   default:
     throw new Error(\`Unsupported mode: \${mode}\`);
 }
@@ -191,4 +199,36 @@ test('runtime rejects role outputs that proactively emit reserved "ERROR*" event
 
   assert.strictEqual(result.status, "failed");
   assert.match(result.error ?? "", /reserved prefix "ERROR\*"/);
+});
+
+test('runtime excludes ERROR* edges from role-facing allowed_events contract', async () => {
+  const fixture = await setupRepairFixture({
+    mode: "allowed-events-echo",
+    systemSource: `flowchart TD
+%% system.id=repair.allowed.events
+%% system.version=1.0.0
+%% law.global=law.branch
+%% entry.role=test-operator
+%% exec.bind.test-operator=profile.repair
+%% exec.bind.test-branch-a=profile.repair
+
+input -->|GO| operator[Role:test-operator]
+operator[Role:test-operator] -->|DONE| output
+operator[Role:test-operator] -->|ERROR| branchA[Role:test-branch-a]
+branchA[Role:test-branch-a] -->|DONE| output
+`
+  });
+  const result = await runSystemWithAdapter({
+    systemPath: fixture.systemPath,
+    runtimeConfigPath: fixture.runtimeConfigPath,
+    profilesPath: fixture.profilesPath,
+    toolsPath: fixture.toolsPath,
+    lawsPath: fixture.lawsPath,
+    prompt: "allowed events filtering",
+    workdir: fixture.tempRoot
+  });
+
+  assert.strictEqual(result.status, "done");
+  assert.strictEqual(result.finalRoleId, "test-operator");
+  assert.strictEqual(result.finalOutput, "DONE");
 });

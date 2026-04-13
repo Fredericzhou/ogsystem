@@ -50,6 +50,10 @@ type ParsedErrorEdgeEvent =
       kind: "none";
     }
   | {
+      kind: "invalid";
+      reason: string;
+    }
+  | {
       kind: "fallback";
     }
   | {
@@ -417,9 +421,28 @@ function parseErrorEdgeEvent(eventType: string): ParsedErrorEdgeEvent {
     return { kind: "fallback" };
   }
   if (eventType.startsWith("ERROR.")) {
+    const code = eventType.slice("ERROR.".length);
+    if (!code) {
+      return {
+        kind: "invalid",
+        reason: 'typed error edge must use "ERROR.<errorCode>" with a non-empty <errorCode>'
+      };
+    }
+    if (/\s/.test(code)) {
+      return {
+        kind: "invalid",
+        reason: "typed error edge code must not contain whitespace"
+      };
+    }
     return {
       kind: "typed",
-      code: eventType.slice("ERROR.".length)
+      code
+    };
+  }
+  if (eventType.startsWith("ERROR")) {
+    return {
+      kind: "invalid",
+      reason: 'reserved ERROR* events must be exactly "ERROR" or "ERROR.<errorCode>"'
     };
   }
   return { kind: "none" };
@@ -516,6 +539,14 @@ function parseTokenizedMermaid(tokens: TokenizedMermaid): ParsedSystemGraph {
 
   for (const edge of tokens.edges) {
     const parsedErrorEvent = parseErrorEdgeEvent(edge.eventType);
+    if (parsedErrorEvent.kind === "invalid") {
+      failMermaid({
+        stage: "validate",
+        errorCode: "MERMAID_INVALID_ERROR_EDGE_EVENT",
+        message: `Invalid error edge event "${edge.eventType}" at line ${edge.lineNumber}: ${parsedErrorEvent.reason}.`,
+        lineNumber: edge.lineNumber
+      });
+    }
 
     for (const node of [edge.from, edge.to]) {
       if (node.kind !== "role") {

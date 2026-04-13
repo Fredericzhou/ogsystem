@@ -919,6 +919,81 @@ export async function loadResumeGraphState(args: {
     });
   }
   if (
+    typeof graphState.auditSummary !== "object" ||
+    graphState.auditSummary === null ||
+    Array.isArray(graphState.auditSummary)
+  ) {
+    throw createRuntimeError({
+      errorCode: "RESUME_STATE_INVALID",
+      errorCategory: "state",
+      message: `Resume state snapshot is partial or corrupted: ${statePath}`,
+      retryable: false,
+      stage: "resume",
+      runId: basename(args.runDir)
+    });
+  }
+  const auditSummaryRecord = graphState.auditSummary as Record<string, unknown>;
+  if (auditSummaryRecord.handledFailureCount === undefined) {
+    auditSummaryRecord.handledFailureCount = 0;
+  } else if (typeof auditSummaryRecord.handledFailureCount !== "number") {
+    throw createRuntimeError({
+      errorCode: "RESUME_STATE_INVALID",
+      errorCategory: "state",
+      message:
+        `Resume state snapshot has invalid graphState.auditSummary.handledFailureCount: ${statePath}`,
+      retryable: false,
+      stage: "resume",
+      runId: basename(args.runDir)
+    });
+  }
+  if (auditSummaryRecord.unhandledFailureCount === undefined) {
+    auditSummaryRecord.unhandledFailureCount = 0;
+  } else if (typeof auditSummaryRecord.unhandledFailureCount !== "number") {
+    throw createRuntimeError({
+      errorCode: "RESUME_STATE_INVALID",
+      errorCategory: "state",
+      message:
+        `Resume state snapshot has invalid graphState.auditSummary.unhandledFailureCount: ${statePath}`,
+      retryable: false,
+      stage: "resume",
+      runId: basename(args.runDir)
+    });
+  }
+  if (auditSummaryRecord.handledFailureByEvent === undefined) {
+    auditSummaryRecord.handledFailureByEvent = {};
+  } else if (
+    typeof auditSummaryRecord.handledFailureByEvent !== "object" ||
+    auditSummaryRecord.handledFailureByEvent === null ||
+    Array.isArray(auditSummaryRecord.handledFailureByEvent)
+  ) {
+    throw createRuntimeError({
+      errorCode: "RESUME_STATE_INVALID",
+      errorCategory: "state",
+      message:
+        `Resume state snapshot has invalid graphState.auditSummary.handledFailureByEvent: ${statePath}`,
+      retryable: false,
+      stage: "resume",
+      runId: basename(args.runDir)
+    });
+  }
+  if (auditSummaryRecord.handledFailureByTargetRole === undefined) {
+    auditSummaryRecord.handledFailureByTargetRole = {};
+  } else if (
+    typeof auditSummaryRecord.handledFailureByTargetRole !== "object" ||
+    auditSummaryRecord.handledFailureByTargetRole === null ||
+    Array.isArray(auditSummaryRecord.handledFailureByTargetRole)
+  ) {
+    throw createRuntimeError({
+      errorCode: "RESUME_STATE_INVALID",
+      errorCategory: "state",
+      message:
+        `Resume state snapshot has invalid graphState.auditSummary.handledFailureByTargetRole: ${statePath}`,
+      retryable: false,
+      stage: "resume",
+      runId: basename(args.runDir)
+    });
+  }
+  if (
     typeof graphState.userPrompt !== "string" ||
     typeof graphState.status !== "string" ||
     typeof graphState.error !== "string" ||

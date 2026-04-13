@@ -288,7 +288,22 @@ Exception edge semantics (`ERROR*`, implemented, flag-gated):
 - trigger source is runtime failure only (execution/validation/io/state), not normal role success output
 - matching order is exact `ERROR.<errorCode>` first, then fallback `ERROR`
 - parser constraints: only one fallback `ERROR` edge per `fromRole`; each `ERROR.<code>` can map to one target only; `input` cannot declare `ERROR*`
+- fail-closed parsing: reserved `ERROR*` events must be exactly `ERROR` or `ERROR.<errorCode>`; invalid reserved forms are rejected
+- role-facing `allowed_events` excludes runtime-only `ERROR*` edges
 - rollout control: `runtime.error_edges.v1` (default `false`) for staged enablement and rollback
+
+Handled failure artifact contract (runtime-generated `roleResults` payload):
+
+- `error_code`
+- `error_category`
+- `error_message`
+- `retryable`
+- `stage`
+- `failed_role`
+- `branch_id`
+- `lineage_id`
+- `loop_iteration`
+- `last_context` (sanitized and length-capped)
 
 Minimal quorum/projection example:
 

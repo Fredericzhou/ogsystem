@@ -311,6 +311,213 @@ test("forced crash after durable outcome resumes without duplicate execution", a
   assert.deepStrictEqual(executionDirsAfterSecondResume, executionDirsAfterResume);
 });
 
+test("ERROR* handled failure survives crash window resume without duplicate routing events", async () => {
+  const repoRoot = process.cwd();
+  const tempRoot = await mkdtemp(path.join(os.tmpdir(), "ogsystem-error-edge-crash-window-"));
+  const systemPath = path.resolve(tempRoot, "system.mmd");
+  const runtimePath = path.resolve(tempRoot, "runtime.json");
+  const profilesPath = path.resolve(tempRoot, "profiles.json");
+  const toolsPath = path.resolve(tempRoot, "tools.json");
+  const lawsPath = path.resolve(tempRoot, "laws.json");
+  const scriptsDir = path.resolve(tempRoot, "scripts");
+  await mkdir(scriptsDir, { recursive: true });
+
+  await writeFile(
+    path.resolve(scriptsDir, "detector.mjs"),
+    'process.stderr.write("error-edge crash drill failure\\n"); process.exit(1);\n',
+    "utf8"
+  );
+  await writeFile(
+    path.resolve(scriptsDir, "handler.mjs"),
+    'console.log(JSON.stringify({ event: "COMPENSATED", content: "handled in resume drill" }));\n',
+    "utf8"
+  );
+  await writeFile(
+    path.resolve(scriptsDir, "finalizer.mjs"),
+    'console.log(JSON.stringify({ event: "DONE", content: "resume drill completed" }));\n',
+    "utf8"
+  );
+
+  await writeFile(
+    systemPath,
+    `flowchart TD
+%% system.id=test.error.edge.crash.resume
+%% system.version=1.0.0
+%% law.global=law.error.edge.resume
+%% entry.role=test-branch-a
+%% exec.bind.test-branch-a=profile.detector
+%% exec.bind.error-handler-base=profile.handler
+%% exec.bind.test-operator=profile.finalizer
+
+input -->|START| source[Role:test-branch-a]
+source[Role:test-branch-a] -->|ERROR.TOOL_EXECUTION_SPAWN| handler[Role:error-handler-base]
+source[Role:test-branch-a] -->|ERROR| handler[Role:error-handler-base]
+handler[Role:error-handler-base] -->|COMPENSATED| finalizer[Role:test-operator]
+handler[Role:error-handler-base] -->|ESCALATED| output
+handler[Role:error-handler-base] -->|ABORTED| output
+finalizer[Role:test-operator] -->|DONE| output
+`,
+    "utf8"
+  );
+  await writeFile(
+    runtimePath,
+    JSON.stringify(
+      {
+        executor: "opencode",
+        roleRepo: path.resolve(repoRoot, "og-roles"),
+        modelRepo: path.resolve(repoRoot, "og-models"),
+        runsDir: ".ogs/runs",
+        runtime: {
+          error_edges: {
+            v1: true
+          }
+        }
+      },
+      null,
+      2
+    ),
+    "utf8"
+  );
+  await writeFile(
+    profilesPath,
+    JSON.stringify(
+      [
+        { profileId: "profile.detector", toolRef: "tool.detector" },
+        { profileId: "profile.handler", toolRef: "tool.handler" },
+        { profileId: "profile.finalizer", toolRef: "tool.finalizer" }
+      ],
+      null,
+      2
+    ),
+    "utf8"
+  );
+  await writeFile(
+    toolsPath,
+    JSON.stringify(
+      {
+        tools: [
+          {
+            toolRef: "tool.detector",
+            runner: "local_shell",
+            command: "node",
+            argsTemplate: [path.resolve(scriptsDir, "detector.mjs")],
+            stdinMode: "none"
+          },
+          {
+            toolRef: "tool.handler",
+            runner: "local_shell",
+            command: "node",
+            argsTemplate: [path.resolve(scriptsDir, "handler.mjs")],
+            stdinMode: "none"
+          },
+          {
+            toolRef: "tool.finalizer",
+            runner: "local_shell",
+            command: "node",
+            argsTemplate: [path.resolve(scriptsDir, "finalizer.mjs")],
+            stdinMode: "none"
+          }
+        ]
+      },
+      null,
+      2
+    ),
+    "utf8"
+  );
+  await writeFile(
+    lawsPath,
+    JSON.stringify(
+      {
+        laws: [
+          {
+            lawId: "law.error.edge.resume",
+            constraints: {
+              forbiddenToolRefs: [],
+              maxTransitions: 24,
+              allowNoopWithoutExecutionBinding: false
+            }
+          }
+        ]
+      },
+      null,
+      2
+    ),
+    "utf8"
+  );
+
+  const baseArgs = [
+    "--system",
+    systemPath,
+    "--runtime",
+    runtimePath,
+    "--profiles",
+    profilesPath,
+    "--tools",
+    toolsPath,
+    "--laws",
+    lawsPath,
+    "--workdir",
+    tempRoot,
+    "--prompt",
+    "error edge resume drill"
+  ];
+
+  const crashed = await runCli(baseArgs, {
+    env: {
+      OGSYSTEM_TEST_CRASH_AFTER_EXECUTION_OUTCOME: "1"
+    }
+  });
+  assert.strictEqual(crashed.code, 91);
+
+  const runIds = await readdir(path.resolve(tempRoot, ".ogs/runs"));
+  assert.strictEqual(runIds.length, 1);
+  const runDir = path.resolve(tempRoot, ".ogs/runs", runIds[0]);
+
+  const sourceExecutionDirsAfterCrash = await readdir(
+    path.resolve(runDir, "roles", "test-branch-a", "executions")
+  );
+  assert.strictEqual(sourceExecutionDirsAfterCrash.length, 1);
+  assert.deepStrictEqual(await readdir(path.resolve(runDir, "checkpoints")), []);
+
+  const resumeArgs = [...baseArgs, "--resume-run", `.ogs/runs/${runIds[0]}`];
+  const resumed = await runCli(resumeArgs);
+  assert.strictEqual(resumed.code, 0);
+  const resumedResult = JSON.parse(resumed.stdout);
+  assert.strictEqual(resumedResult.status, "done");
+  assert.strictEqual(resumedResult.finalRoleId, "test-operator");
+  assert.strictEqual(resumedResult.runSummary.handledFailureCount, 1);
+  assert.strictEqual(resumedResult.runSummary.unhandledFailureCount, 0);
+
+  const eventsPath = path.resolve(runDir, "events.ndjson");
+  const countFailureHandledEvents = async () =>
+    (await readFile(eventsPath, "utf8"))
+      .split("\n")
+      .map((line) => line.trim())
+      .filter(Boolean)
+      .map((line) => {
+        try {
+          return JSON.parse(line);
+        } catch {
+          return undefined;
+        }
+      })
+      .filter((event) => event?.type === "failure_handled").length;
+
+  assert.strictEqual(await countFailureHandledEvents(), 1);
+
+  const resumedAgain = await runCli(resumeArgs);
+  assert.strictEqual(resumedAgain.code, 0);
+  const resumedAgainResult = JSON.parse(resumedAgain.stdout);
+  assert.strictEqual(resumedAgainResult.runSummary.handledFailureCount, 1);
+  assert.strictEqual(resumedAgainResult.runSummary.unhandledFailureCount, 0);
+  assert.strictEqual(await countFailureHandledEvents(), 1);
+
+  const sourceExecutionDirsAfterSecondResume = await readdir(
+    path.resolve(runDir, "roles", "test-branch-a", "executions")
+  );
+  assert.deepStrictEqual(sourceExecutionDirsAfterSecondResume, sourceExecutionDirsAfterCrash);
+});
+
 test("resume rejects a concurrently held live lock on the same run directory", async () => {
   const repoRoot = process.cwd();
   const tempRoot = await mkdtemp(path.join(os.tmpdir(), "ogsystem-resume-lock-live-"));

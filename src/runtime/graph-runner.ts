@@ -21,6 +21,7 @@ import {
   completeBranch,
   createInitialGraphState,
   getActiveRoleIds,
+  getBranchResult,
   getTargetLoopIteration,
   listActiveBranches,
   projectStateSnapshot,
@@ -72,7 +73,8 @@ import type {
   GraphStateUpdate,
   RoleExecutionOutcomeRecord,
   UserProfile,
-  GraphRoleMetricSummary
+  GraphRoleMetricSummary,
+  HandledFailureArtifactData
 } from "./types.js";
 
 type GraphUpdate = GraphStateUpdate;
@@ -707,30 +709,60 @@ function buildFailureUpdate(args: {
   };
 }
 
+const HANDLED_FAILURE_CONTEXT_MAX_CHARS = 800;
+
+function sanitizeHandledFailureContext(value: string): string {
+  const redacted = value.replace(
+    /\b(api[_-]?key|token|password|secret)\s*[:=]\s*[^\s,;]+/gi,
+    "$1=<redacted>"
+  );
+  if (redacted.length <= HANDLED_FAILURE_CONTEXT_MAX_CHARS) {
+    return redacted;
+  }
+  return `${redacted.slice(0, HANDLED_FAILURE_CONTEXT_MAX_CHARS)}...`;
+}
+
+function getHandledFailureLastContext(args: {
+  state: GraphState;
+  branch: BranchRecord;
+}): string {
+  if (!args.branch.parentBranchId) {
+    return sanitizeHandledFailureContext(args.state.userPrompt);
+  }
+  const upstream = getBranchResult(args.state, args.branch.parentBranchId);
+  return sanitizeHandledFailureContext(upstream?.content ?? args.state.userPrompt);
+}
+
 function buildHandledFailureArtifact(args: {
+  state: GraphState;
   roleId: string;
   branch: BranchRecord;
   handledByEvent: string;
   errorEnvelope: RuntimeErrorEnvelope;
   error?: string;
 }): StoredRoleResult {
+  const artifactData: HandledFailureArtifactData = {
+    error_code: args.errorEnvelope.errorCode,
+    error_category: args.errorEnvelope.errorCategory,
+    error_message: args.errorEnvelope.message,
+    retryable: args.errorEnvelope.retryable,
+    stage: args.errorEnvelope.stage,
+    failed_role: args.roleId,
+    branch_id: args.branch.branchId,
+    lineage_id: args.branch.lineageId,
+    loop_iteration: args.branch.loopIteration,
+    last_context: getHandledFailureLastContext({
+      state: args.state,
+      branch: args.branch
+    })
+  };
   return {
     // Keep this artifact available for direct context projection while preventing join-source
     // readiness from counting the failed source role as "completed".
     roleId: `${args.roleId}.__handled_failure`,
     event: args.handledByEvent,
     content: args.error ?? args.errorEnvelope.message,
-    data: {
-      error_code: args.errorEnvelope.errorCode,
-      error_category: args.errorEnvelope.errorCategory,
-      error_message: args.errorEnvelope.message,
-      retryable: args.errorEnvelope.retryable,
-      stage: args.errorEnvelope.stage,
-      failed_role: args.roleId,
-      branch_id: args.branch.branchId,
-      lineage_id: args.branch.lineageId,
-      loop_iteration: args.branch.loopIteration
-    },
+    data: artifactData,
     branchId: args.branch.branchId,
     lineageId: args.branch.lineageId,
     loopIteration: args.branch.loopIteration
@@ -777,6 +809,7 @@ function buildHandledFailureTransitionPlan(args: {
     handledTargetRoleId
   };
   const handledFailureArtifact = buildHandledFailureArtifact({
+    state: args.state,
     roleId: args.roleId,
     branch: args.currentBranch,
     handledByEvent: matchedFailureEdge.eventType,
@@ -1555,6 +1588,8 @@ export async function runSystemWithGraphRunner(args: RunnerInput): Promise<Adapt
       `- failedCount: ${summary.failedCount}`,
       `- handledFailureCount: ${summary.handledFailureCount}`,
       `- unhandledFailureCount: ${summary.unhandledFailureCount}`,
+      `- handledFailureByEvent: ${stringifyJson(summary.handledFailureByEvent)}`,
+      `- handledFailureByTargetRole: ${stringifyJson(summary.handledFailureByTargetRole)}`,
       `- noopCount: ${summary.noopCount}`,
       `- failureCountsByErrorCode: ${stringifyJson(summary.failureCountsByErrorCode)}`,
       `- repairStats.attemptedCount: ${summary.repairStats.attemptedCount}`,

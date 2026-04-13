@@ -43,6 +43,7 @@ import type {
   ExecutionPlan,
   ExecutionPlanNode,
   ExecutionProfile,
+  Flow,
   GraphState,
   LoadedModelPackage,
   LoadedRolePackage,
@@ -464,6 +465,14 @@ function buildProjectedContext(args: {
   return stringifyJson(projected);
 }
 
+function isRuntimeOnlyErrorEvent(eventType: string): boolean {
+  return eventType === "ERROR" || eventType.startsWith("ERROR.");
+}
+
+function getSelectableOutgoingFlows(node: ExecutionPlanNode): Flow[] {
+  return node.outgoing.filter((flow) => !isRuntimeOnlyErrorEvent(flow.eventType));
+}
+
 /**
  * Prompt input is intentionally flattened into a small stable contract. Executors and prompt
  * templates should not depend on full runtime state or branch internals.
@@ -475,7 +484,7 @@ function buildRolePromptInput(args: {
   state: GraphState;
   userProfile?: UserProfile;
 }): RolePromptInput {
-  const allowedEvents = args.node.outgoing.map((item) => item.eventType);
+  const allowedEvents = getSelectableOutgoingFlows(args.node).map((item) => item.eventType);
   const hasContextMap = Boolean(args.node.contextMap && Object.keys(args.node.contextMap).length > 0);
   const context =
     hasContextMap
@@ -505,16 +514,17 @@ function pickDryRunEvent(args: {
   state: GraphState;
   plan: ExecutionPlan;
 }): string | undefined {
+  const selectableOutgoing = getSelectableOutgoingFlows(args.node);
   if (args.node.routingMode === "parallel_split") {
     return undefined;
   }
-  if (args.node.outgoing.length === 0) {
+  if (selectableOutgoing.length === 0) {
     return undefined;
   }
-  if (args.node.outgoing.length === 1) {
-    return args.node.outgoing[0].eventType;
+  if (selectableOutgoing.length === 1) {
+    return selectableOutgoing[0].eventType;
   }
-  const allowed = args.node.outgoing.find(
+  const allowed = selectableOutgoing.find(
     (flow) =>
       flow.toRoleId === SYSTEM_END_ROLE_ID ||
       !wouldExceedLoopBudget({
@@ -524,7 +534,7 @@ function pickDryRunEvent(args: {
         plan: args.plan
       })
   );
-  return allowed?.eventType ?? args.node.outgoing[0].eventType;
+  return allowed?.eventType ?? selectableOutgoing[0].eventType;
 }
 
 function resolveAuditNextRoleId(args: {
@@ -957,7 +967,8 @@ export async function executeRoleNode(args: {
     return result;
   }
 
-  const allowedEvents = args.node.outgoing.map((item) => item.eventType);
+  const selectableOutgoing = getSelectableOutgoingFlows(args.node);
+  const allowedEvents = selectableOutgoing.map((item) => item.eventType);
   const roleDirs = args.runContext.roleDirsById.get(args.roleId);
   const existingSession = getRoleSession(args.runContext, sessionKey);
 
@@ -1094,14 +1105,14 @@ export async function executeRoleNode(args: {
       if (!args.effectiveLaw.allowNoopWithoutExecutionBinding) {
         throw new Error(`Role "${args.roleId}" has no execution binding`);
       }
-      if (args.node.outgoing.length > 1) {
+      if (selectableOutgoing.length > 1) {
         throw new Error(
           `Role "${args.roleId}" cannot use explicit noop mode with multiple outgoing flows`
         );
       }
 
-      const selectedToRoleId = args.node.outgoing[0]?.toRoleId;
-      const selectedEvent = args.node.outgoing[0]?.eventType;
+      const selectedToRoleId = selectableOutgoing[0]?.toRoleId;
+      const selectedEvent = selectableOutgoing[0]?.eventType;
       const audit = createAuditRecord({
         roleId: args.roleId,
         branchId,
@@ -1161,7 +1172,7 @@ export async function executeRoleNode(args: {
 
     const parsed = parseRoleExecutionOutputWithRepair({
       rawOutput: executionResult.stdout,
-      requireEvent: args.node.outgoing.length > 0 && args.node.routingMode !== "parallel_split"
+      requireEvent: selectableOutgoing.length > 0 && args.node.routingMode !== "parallel_split"
     });
     assertNoReservedErrorEventFromRoleOutput({
       roleId: args.roleId,
@@ -1186,8 +1197,8 @@ export async function executeRoleNode(args: {
     const selectedEvent = parsed.output.event;
     if (
       args.node.routingMode !== "parallel_split" &&
-      args.node.outgoing.length > 0 &&
-      !args.node.outgoing.find((flow) => flow.eventType === selectedEvent)
+      selectableOutgoing.length > 0 &&
+      !selectableOutgoing.find((flow) => flow.eventType === selectedEvent)
     ) {
       throw new Error(
         `Executable role output event "${selectedEvent ?? ""}" does not match any outgoing flow on role "${args.roleId}"`

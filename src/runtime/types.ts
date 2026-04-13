@@ -397,6 +397,8 @@ export type GraphAuditSummary = {
   noopCount: number;
   handledFailureCount: number;
   unhandledFailureCount: number;
+  handledFailureByEvent: Record<string, number>;
+  handledFailureByTargetRole: Record<string, number>;
   repairAttemptedCount: number;
   repairAppliedCount: number;
   failureCountsByErrorCode: Record<string, number>;
@@ -521,11 +523,26 @@ export type RunSummarySnapshot = {
   noopCount: number;
   handledFailureCount: number;
   unhandledFailureCount: number;
+  handledFailureByEvent: Record<string, number>;
+  handledFailureByTargetRole: Record<string, number>;
   failureCountsByErrorCode: Record<string, number>;
   repairStats: {
     attemptedCount: number;
     appliedCount: number;
   };
+};
+
+export type HandledFailureArtifactData = {
+  error_code: string;
+  error_category: string;
+  error_message: string;
+  retryable: boolean;
+  stage: string;
+  failed_role: string;
+  branch_id: string;
+  lineage_id: string;
+  loop_iteration: number;
+  last_context: string;
 };
 
 export type StageSnapshot = {

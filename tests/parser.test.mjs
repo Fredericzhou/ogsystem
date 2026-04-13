@@ -411,6 +411,40 @@ worker[Role:worker] -->|DONE| output
   );
 });
 
+test("parser rejects invalid reserved ERROR* event forms", () => {
+  const invalidPrefixSource = `flowchart TD
+%% system.id=test.error.invalid.prefix
+%% system.version=0.1.0
+%% law.global=law.test
+%% entry.role=worker
+%% exec.bind.worker=profile.worker
+input -->|START| worker[Role:worker]
+worker[Role:worker] -->|ERROR_SPAWN| output
+`;
+
+  assert.throws(
+    () => parseSystemFromMermaidSource(invalidPrefixSource),
+    /MERMAID_INVALID_ERROR_EDGE_EVENT|reserved ERROR\* events must be exactly/
+  );
+});
+
+test("parser rejects ERROR.<code> with empty code", () => {
+  const emptyCodeSource = `flowchart TD
+%% system.id=test.error.invalid.empty
+%% system.version=0.1.0
+%% law.global=law.test
+%% entry.role=worker
+%% exec.bind.worker=profile.worker
+input -->|START| worker[Role:worker]
+worker[Role:worker] -->|ERROR.| output
+`;
+
+  assert.throws(
+    () => parseSystemFromMermaidSource(emptyCodeSource),
+    /MERMAID_INVALID_ERROR_EDGE_EVENT|non-empty <errorCode>/
+  );
+});
+
 test("nl2mmd validator ignores ERROR* edges when checking role output event enum", async () => {
   const tempRoot = await mkdtemp(path.join(tmpdir(), "ogsystem-nl2mmd-error-edge-"));
   const roleRootDir = path.join(tempRoot, "roles");
