@@ -41,6 +41,9 @@ switch (mode) {
   case "schema-mismatch":
     console.log(JSON.stringify({ event: "WRONG", content: "bad" }));
     break;
+  case "reserved-error-event":
+    console.log(JSON.stringify({ event: "ERROR.TOOL_EXECUTION_SPAWN", content: "reserved" }));
+    break;
   default:
     throw new Error(\`Unsupported mode: \${mode}\`);
 }
@@ -172,4 +175,20 @@ branchB[Role:test-branch-b] -->|END_B| output
   assert.strictEqual(result.status, "failed");
   assert.match(result.error ?? "", /output\.schema\.json/);
   assert.match(result.error ?? "", /\$\.event/);
+});
+
+test('runtime rejects role outputs that proactively emit reserved "ERROR*" events', async () => {
+  const fixture = await setupRepairFixture({ mode: "reserved-error-event" });
+  const result = await runSystemWithAdapter({
+    systemPath: fixture.systemPath,
+    runtimeConfigPath: fixture.runtimeConfigPath,
+    profilesPath: fixture.profilesPath,
+    toolsPath: fixture.toolsPath,
+    lawsPath: fixture.lawsPath,
+    prompt: "reserved error event",
+    workdir: fixture.tempRoot
+  });
+
+  assert.strictEqual(result.status, "failed");
+  assert.match(result.error ?? "", /reserved prefix "ERROR\*"/);
 });

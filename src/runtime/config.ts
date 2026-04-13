@@ -10,14 +10,6 @@ import type {
 
 type JsonValue = null | boolean | number | string | JsonValue[] | { [key: string]: JsonValue };
 
-type RuntimeConfigWithErrorEdges = RuntimeConfig & {
-  runtime: {
-    error_edges: {
-      v1: boolean;
-    };
-  };
-};
-
 export class ConfigValidationError extends Error {
   constructor(
     public readonly filePath: string,
@@ -322,7 +314,7 @@ export function validateUserProfileConfig(value: unknown, filePath: string): Use
   };
 }
 
-export function validateRuntimeConfig(value: unknown, filePath: string): RuntimeConfigWithErrorEdges {
+export function validateRuntimeConfig(value: unknown, filePath: string): RuntimeConfig {
   const record = expectRecord(value, filePath, "$");
   expectNoExtraKeys(
     record,

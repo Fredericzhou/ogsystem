@@ -1,17 +1,17 @@
 # OGSystem 异常边语义（ERROR*）执行计划
 
 Date: 2026-04-13  
-Status: in_progress  
+Status: completed  
 Owner: runtime core
 
 ## 0. 当前进度（2026-04-13）
 
 - [x] 决策冻结：语义边界与非目标已确认
 - [x] C 线文档同步：语义手册/使用手册/决策/索引/产品与 ebook 口径已更新
-- [ ] M2 Parser 增强
-- [ ] M3 Runtime 路由增强
-- [ ] M4 审计与摘要增强
-- [ ] M5 模板与示例
+- [x] M2 Parser 增强
+- [x] M3 Runtime 路由增强
+- [x] M4 审计与摘要增强
+- [x] M5 模板与示例
 
 ## 1. 目标与边界
 

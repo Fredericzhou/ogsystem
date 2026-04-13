@@ -161,6 +161,29 @@ pnpm run run:adapter -- \
   --prompt "validate rust hello pipeline"
 ```
 
+Run error-edge compensation example (feature-flag enabled runtime config):
+
+```bash
+pnpm run run:adapter \
+  --system examples/error-edge-compensation/system.mmd \
+  --runtime examples/error-edge-compensation/runtime.json \
+  --profiles examples/error-edge-compensation/profiles.json \
+  --tools examples/error-edge-compensation/tools.json \
+  --laws examples/error-edge-compensation/laws.json \
+  --prompt "run error edge compensation example"
+```
+
+Run human-gate workflow example:
+
+```bash
+pnpm run run:adapter \
+  --system examples/human-gate-workflow/system.mmd \
+  --profiles examples/human-gate-workflow/profiles.json \
+  --tools examples/human-gate-workflow/tools.json \
+  --laws examples/human-gate-workflow/laws.json \
+  --prompt "run human gate workflow example"
+```
+
 Check required CLI tools:
 
 ```bash
@@ -203,7 +226,9 @@ pnpm run run:adapter -- \
 - `state.json.graphState` and `sessions.json` are the runtime-consumed resume sources. `events.ndjson` remains append-only audit history.
 - `state.json` and `sessions.json` writes are atomic, and resume rejects partial/corrupted snapshots before execution starts.
 - Runs persist `activeBranches`, `completedBranches`, `loopIterations`, and `graphState` inside `state.json`, and support `--resume-run` against the same run directory.
-- `audit/summary.md` and result JSON now expose `totalTransitions`, `okCount`, `failedCount`, `noopCount`, structured `failureCountsByErrorCode`, and repair statistics.
+- `audit/summary.md` and result JSON now expose `totalTransitions`, `okCount`, `failedCount`, `handledFailureCount`, `unhandledFailureCount`, `noopCount`, structured `failureCountsByErrorCode`, and repair statistics.
+- Runtime failure routing supports explicit `ERROR*` edges behind `runtime.error_edges.v1` (default `false`): exact `ERROR.<errorCode>` first, then fallback `ERROR`; no match remains fail-stop.
+- Role outputs cannot proactively emit `ERROR*` events; `ERROR*` is reserved for runtime failure routing only.
 - `--log-run` prints simple run/role/transition progress lines to `stderr`; final result JSON remains on `stdout`.
 - Roles without execution binding fail fast by default. A law may opt into `allowNoopWithoutExecutionBinding`, but noop remains explicit and is rejected on branching nodes.
 - `user-profile.json` is injected into role prompts as delivery preference; role packages decide how to apply it.
@@ -230,6 +255,9 @@ pnpm run run:adapter -- \
 - `examples/target-model-binding-system.mmd` shows `model.bind.*` usage.
 - `examples/langgraph-debate-current/` shows a minimal debate with loop + parallel + join.
 - `examples/langgraph-expert-consultation/` shows a minimal expert consultation with parallel + join.
+- `examples/error-edge-compensation/` shows failure-to-compensation routing via `ERROR*` edges.
+- `examples/human-gate-workflow/` shows template-based human approval/signal gate flow.
+- `og-roles/roles/error-handler-base/`, `og-roles/roles/human-approve-gate/`, and `og-roles/roles/human-signal-wait/` provide reusable template role packages.
 
 Validate a generated run directory against the runtime contract:
 

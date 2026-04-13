@@ -1,0 +1,12 @@
+{
+  "laws": [
+    {
+      "lawId": "law.example.human.gate",
+      "constraints": {
+        "forbiddenToolRefs": [],
+        "maxTransitions": 24,
+        "allowNoopWithoutExecutionBinding": false
+      }
+    }
+  ]
+}

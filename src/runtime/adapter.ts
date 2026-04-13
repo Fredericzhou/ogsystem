@@ -128,6 +128,11 @@ async function loadRuntimeConfig(path: string | undefined, workdir: string): Pro
     },
     opencode: {
       baseArgs: ["run"]
+    },
+    runtime: {
+      error_edges: {
+        v1: false
+      }
     }
   };
 
@@ -190,6 +195,18 @@ async function loadRuntimeConfig(path: string | undefined, workdir: string): Pro
         overlayRecord.opencode &&
         !Array.isArray(overlayRecord.opencode)
           ? (overlayRecord.opencode as Record<string, unknown>)
+          : {})
+      },
+      runtime: {
+        ...(typeof merged.runtime === "object" &&
+        merged.runtime &&
+        !Array.isArray(merged.runtime)
+          ? (merged.runtime as Record<string, unknown>)
+          : {}),
+        ...(typeof overlayRecord.runtime === "object" &&
+        overlayRecord.runtime &&
+        !Array.isArray(overlayRecord.runtime)
+          ? (overlayRecord.runtime as Record<string, unknown>)
           : {})
       }
     };
@@ -701,6 +718,7 @@ export async function runSystemWithAdapter(args: {
                   keepLatest: setup.runtimeConfig.retention.keepLatest
                 }
               : undefined,
+          errorEdgeRoutingEnabled: setup.runtimeConfig.runtime.error_edges.v1,
           logRun: args.logRun ?? false
         });
       } catch (error) {

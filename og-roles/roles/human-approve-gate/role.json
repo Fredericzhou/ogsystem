@@ -1,0 +1,10 @@
+{
+  "roleId": "human-approve-gate",
+  "roleVersion": "1.0.0",
+  "name": "Human Approve Gate",
+  "description": "Template role for explicit human approval gate decisions.",
+  "promptTemplate": "prompt.md",
+  "inputSchema": "../_shared/input.schema.json",
+  "outputSchema": "output.schema.json",
+  "tags": ["template", "human-gate", "approval"]
+}

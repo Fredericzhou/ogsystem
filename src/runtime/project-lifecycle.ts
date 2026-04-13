@@ -138,6 +138,11 @@ function createDefaultRuntimeConfig(): Record<string, unknown> {
     },
     opencode: {
       baseArgs: ["run"]
+    },
+    runtime: {
+      error_edges: {
+        v1: false
+      }
     }
   };
 }

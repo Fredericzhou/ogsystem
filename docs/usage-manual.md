@@ -16,7 +16,7 @@ OGSystem 当前是一套单机、文件优先、可恢复的图编排运行时�
 OGSystem 当前重点优化以下能力：
 
 - 显式图语义：`parallel_split`、`all_of/quorum_of` join、`context.map`、`loop.max` 都有解析期和执行期约束。
-- 异常边语义（`ERROR*`）已进入 V1 执行计划：按节点级 opt-in 引入运行时失败补偿流，未声明节点保持 fail-stop。
+- 异常边语义（`ERROR*`）已实现：按节点级 opt-in 引入运行时失败补偿流，默认由 `runtime.error_edges.v1=false` 控制灰度发布。
 - 文件优先恢复：`state.json`、`sessions.json`、`plan-fingerprint.json`、`checkpoints/`、`execution-outcome.json` 组成恢复权威集。
 - 会话血缘隔离：`roleId:sessionLineageId` 保证顺序流转可复用会话，并行 sibling 不串会话记忆。
 - Crash 自愈补偿：角色结果先 durable，再 checkpoint；恢复时补偿缺失 checkpoint，而不是盲目重跑节点。
@@ -118,7 +118,7 @@ Use this rule:
 - dynamic fan-out with uncertain `N` is not graph semantics; keep it inside one role (Heavy Node) or pre-expand before orchestration
 - controlled fan-out concurrency is an execution policy, not a flow semantic (it must not change graph reachability/join readiness)
 - compatibility execution mode: `exec.bind.<roleId>` still works when paired with `profiles/tools`, but it runs inside the same graph runtime rather than a separate engine
-- `ERROR*` exception edges are V1 in-progress semantics (feature-gated rollout); current behavior without `ERROR*` edges remains fail-stop
+- `ERROR*` exception edges are implemented semantics with feature-gated rollout (`runtime.error_edges.v1`, default `false`); behavior without `ERROR*` edges remains fail-stop
 
 ## 2. Semantic Layers
 
@@ -169,6 +169,19 @@ OGSystem/
 
   examples/
     target-model-binding-system.mmd
+    error-edge-compensation/
+      README.md
+      system.mmd
+      runtime.json
+      profiles.json
+      tools.json
+      laws.json
+    human-gate-workflow/
+      README.md
+      system.mmd
+      profiles.json
+      tools.json
+      laws.json
     langgraph-debate-current/
       system.mmd
       laws.json
@@ -255,13 +268,14 @@ Orchestration semantics contract:
 - `loop.max.<roleId>=N` is both a parser-time cycle budget declaration and an execution-time guard; runtime also injects `round`
 - `branchId`, `lineageId`, and `sessionLineageId` are distinct runtime identifiers for branch instance, split/join lineage, and session reuse/isolation
 
-Exception edge semantics (`ERROR*`, V1 in progress):
+Exception edge semantics (`ERROR*`, implemented, flag-gated):
 
 - syntax reuses existing edge labels: `ERROR` and `ERROR.<errorCode>`
 - node-level opt-in: only roles that declare `ERROR*` outgoing edges enable exception routing
 - trigger source is runtime failure only (execution/validation/io/state), not normal role success output
 - matching order is exact `ERROR.<errorCode>` first, then fallback `ERROR`
 - parser constraints: only one fallback `ERROR` edge per `fromRole`; each `ERROR.<code>` can map to one target only; `input` cannot declare `ERROR*`
+- rollout control: `runtime.error_edges.v1` (default `false`) for staged enablement and rollback
 
 Minimal quorum/projection example:
 
@@ -294,6 +308,12 @@ Role rules:
 - `role.json.roleId` must equal directory name
 - role packages do not define routing
 - role packages do not hard-bind model ids
+
+Recommended template roles:
+
+- `error-handler-base`: compensation skeleton with `COMPENSATED | ESCALATED | ABORTED`
+- `human-approve-gate`: human decision gate with `APPROVED | REJECTED | TIMEOUT`
+- `human-signal-wait`: waiting gate with `SIGNAL_OK | SIGNAL_FAIL | EXPIRED`
 
 ## 6. Model Package Contract
 
@@ -688,6 +708,29 @@ pnpm run run:adapter -- \
 
 - 该流程需要本机 `cargo` 在 `PATH` 中可用。
 - 流程会在 `.ogs/runs/<run-id>/shared/` 下生成 Rust 项目、编译产物与打包产物。
+
+Error-edge 补偿流示例（显式启用 `runtime.error_edges.v1`）：
+
+```bash
+pnpm run run:adapter \
+  --system examples/error-edge-compensation/system.mmd \
+  --runtime examples/error-edge-compensation/runtime.json \
+  --profiles examples/error-edge-compensation/profiles.json \
+  --tools examples/error-edge-compensation/tools.json \
+  --laws examples/error-edge-compensation/laws.json \
+  --prompt "run error edge compensation example"
+```
+
+Human gate 流示例（普通节点模板化）：
+
+```bash
+pnpm run run:adapter \
+  --system examples/human-gate-workflow/system.mmd \
+  --profiles examples/human-gate-workflow/profiles.json \
+  --tools examples/human-gate-workflow/tools.json \
+  --laws examples/human-gate-workflow/laws.json \
+  --prompt "run human gate workflow example"
+```
 
 Resume a graph runtime run from persisted `state.json.graphState`:
 

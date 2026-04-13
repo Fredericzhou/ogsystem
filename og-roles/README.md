@@ -18,6 +18,12 @@ Optional files:
 - `work.md`
 - `input.schema.json`
 
+Built-in templates:
+
+- `error-handler-base` (runtime failure compensation skeleton)
+- `human-approve-gate` (event vocabulary: `APPROVED | REJECTED | TIMEOUT`)
+- `human-signal-wait` (event vocabulary: `SIGNAL_OK | SIGNAL_FAIL | EXPIRED`)
+
 Rules:
 
 - `role.json.roleId` must equal the directory name.

@@ -93,9 +93,21 @@ type JoinTransitionEvent = {
   activatedBranchId?: string;
   reason?: string;
 };
-type SuccessTransitionPlan = {
+type FailureHandledTransitionEvent = {
+  type: "failure_handled";
+  at: string;
+  roleId: string;
+  branchId: string;
+  lineageId: string;
+  loopIteration: number;
+  errorCode: string;
+  handledByEvent: string;
+  handledTargetRoleId: string;
+};
+type RuntimeTransitionEvent = JoinTransitionEvent | FailureHandledTransitionEvent;
+type TransitionPlan = {
   update: GraphUpdate;
-  joinEvents: JoinTransitionEvent[];
+  events: RuntimeTransitionEvent[];
 };
 
 const SCHEDULER_NODE_ID = "__scheduler__";
@@ -123,6 +135,7 @@ type RunnerInput = {
     executionDirThreshold: number;
     keepLatest: number;
   };
+  errorEdgeRoutingEnabled: boolean;
   logRun: boolean;
 };
 
@@ -431,20 +444,62 @@ function maybeCrashAfterExecutionOutcome(): never | void {
   process.exit(91);
 }
 
+function resolveFailureEdge(args: {
+  node: ExecutionPlanNode;
+  errorCode: string;
+}): { eventType: string; toRoleId: string } | undefined {
+  const exactEvent = `ERROR.${args.errorCode}`;
+  const exact = args.node.outgoing.find((flow) => flow.eventType === exactEvent);
+  if (exact) {
+    return {
+      eventType: exact.eventType,
+      toRoleId: exact.toRoleId
+    };
+  }
+  const fallback = args.node.outgoing.find((flow) => flow.eventType === "ERROR");
+  if (!fallback) {
+    return undefined;
+  }
+  return {
+    eventType: fallback.eventType,
+    toRoleId: fallback.toRoleId
+  };
+}
+
 function buildGraphUpdateFromOutcome(args: {
   state: GraphState;
   plan: ExecutionPlan;
   outcome: RoleExecutionOutcomeRecord;
   logger: ReturnType<typeof createRunConsoleLogger>;
-}): GraphUpdate {
+  errorEdgeRoutingEnabled: boolean;
+}): TransitionPlan {
+  const node = getExecutionPlanNode(args.plan, args.outcome.roleId);
   if (args.outcome.status === "failed") {
-    return buildFailureUpdate({
-      roleId: args.outcome.roleId,
-      branch: args.outcome.branch,
-      error: args.outcome.error,
-      errorEnvelope: args.outcome.failure,
-      audit: args.outcome.audit
-    });
+    if (args.errorEdgeRoutingEnabled) {
+      const handledTransition = buildHandledFailureTransitionPlan({
+        state: args.state,
+        plan: args.plan,
+        node,
+        roleId: args.outcome.roleId,
+        currentBranch: args.outcome.branch,
+        audit: args.outcome.audit,
+        errorEnvelope: args.outcome.failure,
+        logger: args.logger
+      });
+      if (handledTransition) {
+        return handledTransition;
+      }
+    }
+    return {
+      update: buildFailureUpdate({
+        roleId: args.outcome.roleId,
+        branch: args.outcome.branch,
+        error: args.outcome.error,
+        errorEnvelope: args.outcome.failure,
+        audit: args.outcome.audit
+      }),
+      events: []
+    };
   }
 
   return buildSuccessTransitionPlan({
@@ -457,13 +512,14 @@ function buildGraphUpdateFromOutcome(args: {
     storedResult: args.outcome.storedResult,
     mode: args.outcome.status,
     logger: args.logger
-  }).update;
+  });
 }
 
 async function reconcileCommittedRoleExecutionOutcomes(args: {
   state: GraphState;
   plan: ExecutionPlan;
   runContext: RunContext;
+  errorEdgeRoutingEnabled: boolean;
 }): Promise<GraphState> {
   // Resume first trusts the existing checkpoint WAL, then heals only the crash window where
   // role execution committed durably but the checkpoint was never written or reconciled.
@@ -497,11 +553,12 @@ async function reconcileCommittedRoleExecutionOutcomes(args: {
       continue;
     }
 
-    const update = buildGraphUpdateFromOutcome({
+    const transitionPlan = buildGraphUpdateFromOutcome({
       state: reconciledState,
       plan: args.plan,
       outcome,
-      logger
+      logger,
+      errorEdgeRoutingEnabled: args.errorEdgeRoutingEnabled
     });
     const checkpoint = await persistRuntimeCheckpoint({
       context: args.runContext,
@@ -509,7 +566,7 @@ async function reconcileCommittedRoleExecutionOutcomes(args: {
       branchId: outcome.branchId,
       loopIteration: outcome.loopIteration,
       executionId: outcome.executionId,
-      update
+      update: transitionPlan.update
     });
     const roleDirs = args.runContext.roleDirsById.get(outcome.roleId);
     if (!roleDirs) {
@@ -519,6 +576,9 @@ async function reconcileCommittedRoleExecutionOutcomes(args: {
       executionDir: resolve(roleDirs.executionsDir, outcome.executionId),
       checkpointSequence: checkpoint.checkpointSequence
     });
+    for (const event of transitionPlan.events) {
+      await appendEvent(args.runContext, event);
+    }
     pendingCheckpointByExecutionId.set(outcome.executionId, checkpoint);
     reconciledState = applyGraphUpdate(reconciledState, checkpoint.update);
   }
@@ -647,6 +707,291 @@ function buildFailureUpdate(args: {
   };
 }
 
+function buildHandledFailureArtifact(args: {
+  roleId: string;
+  branch: BranchRecord;
+  handledByEvent: string;
+  errorEnvelope: RuntimeErrorEnvelope;
+  error?: string;
+}): StoredRoleResult {
+  return {
+    // Keep this artifact available for direct context projection while preventing join-source
+    // readiness from counting the failed source role as "completed".
+    roleId: `${args.roleId}.__handled_failure`,
+    event: args.handledByEvent,
+    content: args.error ?? args.errorEnvelope.message,
+    data: {
+      error_code: args.errorEnvelope.errorCode,
+      error_category: args.errorEnvelope.errorCategory,
+      error_message: args.errorEnvelope.message,
+      retryable: args.errorEnvelope.retryable,
+      stage: args.errorEnvelope.stage,
+      failed_role: args.roleId,
+      branch_id: args.branch.branchId,
+      lineage_id: args.branch.lineageId,
+      loop_iteration: args.branch.loopIteration
+    },
+    branchId: args.branch.branchId,
+    lineageId: args.branch.lineageId,
+    loopIteration: args.branch.loopIteration
+  };
+}
+
+function buildHandledFailureTransitionPlan(args: {
+  state: GraphState;
+  plan: ExecutionPlan;
+  node: ExecutionPlanNode;
+  roleId: string;
+  currentBranch: BranchRecord;
+  audit: AuditRecord;
+  errorEnvelope: RuntimeErrorEnvelope;
+  logger: ReturnType<typeof createRunConsoleLogger>;
+}): TransitionPlan | undefined {
+  const matchedFailureEdge = resolveFailureEdge({
+    node: args.node,
+    errorCode: args.errorEnvelope.errorCode
+  });
+  if (!matchedFailureEdge) {
+    return undefined;
+  }
+
+  const joinEvents: JoinTransitionEvent[] = [];
+  const handledTargetRoleId =
+    matchedFailureEdge.toRoleId === SYSTEM_END_ROLE_ID ? "output" : matchedFailureEdge.toRoleId;
+  const events: RuntimeTransitionEvent[] = [
+    {
+      type: "failure_handled",
+      at: new Date().toISOString(),
+      roleId: args.roleId,
+      branchId: args.currentBranch.branchId,
+      lineageId: args.currentBranch.lineageId,
+      loopIteration: args.currentBranch.loopIteration,
+      errorCode: args.errorEnvelope.errorCode,
+      handledByEvent: matchedFailureEdge.eventType,
+      handledTargetRoleId
+    }
+  ];
+  const handledAudit: AuditRecord = {
+    ...args.audit,
+    handledByEvent: matchedFailureEdge.eventType,
+    handledTargetRoleId
+  };
+  const handledFailureArtifact = buildHandledFailureArtifact({
+    roleId: args.roleId,
+    branch: args.currentBranch,
+    handledByEvent: matchedFailureEdge.eventType,
+    errorEnvelope: args.errorEnvelope,
+    error: args.audit.error
+  });
+  const branchUpdates: Record<string, BranchRecord> = {
+    [args.currentBranch.branchId]: completeBranch(args.currentBranch)
+  };
+  const loopUpdates: Record<string, number> = {
+    [args.roleId]: args.currentBranch.loopIteration
+  };
+  let nextBranchSequence = args.state.nextBranchSequence;
+  let finalStatus: GraphRunStatus = "running";
+  let finalOutput = "";
+  let finalRoleId = "";
+  let reachedSystemOutput = false;
+
+  if (matchedFailureEdge.toRoleId === SYSTEM_END_ROLE_ID) {
+    reachedSystemOutput = true;
+    finalOutput = args.audit.error ?? "";
+    args.logger.transition({
+      fromRoleId: args.roleId,
+      event: matchedFailureEdge.eventType,
+      toRoleId: "output",
+      branchId: args.currentBranch.branchId
+    });
+  } else if (
+    wouldExceedLoopBudget({
+      targetRoleId: matchedFailureEdge.toRoleId,
+      currentLoopIteration: args.currentBranch.loopIteration,
+      state: args.state,
+      plan: args.plan
+    })
+  ) {
+    return undefined;
+  } else {
+    const nextLoopIteration = getTargetLoopIteration({
+      targetRoleId: matchedFailureEdge.toRoleId,
+      currentLoopIteration: args.currentBranch.loopIteration,
+      state: args.state,
+      plan: args.plan
+    });
+    loopUpdates[matchedFailureEdge.toRoleId] = nextLoopIteration;
+    const targetNode = getExecutionPlanNode(args.plan, matchedFailureEdge.toRoleId);
+    if (targetNode.joinMode) {
+      const readiness = evaluateJoinNodeReadiness({
+        node: targetNode,
+        currentBranch: args.currentBranch,
+        state: args.state
+      });
+      const joinId = buildJoinId(matchedFailureEdge.toRoleId, nextLoopIteration);
+      const existingJoinBranch = findActivatedJoinBranch({
+        state: args.state,
+        roleId: matchedFailureEdge.toRoleId,
+        lineageId: args.currentBranch.lineageId,
+        loopIteration: nextLoopIteration
+      });
+      if (readiness.ready && existingJoinBranch) {
+        joinEvents.push({
+          type: "join_late_arrival_ignored",
+          at: new Date().toISOString(),
+          roleId: matchedFailureEdge.toRoleId,
+          joinId,
+          lineageId: args.currentBranch.lineageId,
+          loopIteration: nextLoopIteration,
+          joinMode: targetNode.joinMode,
+          joinMin: targetNode.joinMin,
+          joinSources: targetNode.joinSources,
+          requiredSourceCount: readiness.requiredSourceCount,
+          satisfiedSources: readiness.completedSourceRoleIds,
+          arrivedFromRoleId: args.roleId,
+          arrivedFromBranchId: args.currentBranch.branchId,
+          activatedBranchId: existingJoinBranch.branchId,
+          reason: "already_activated"
+        });
+      } else if (!readiness.ready) {
+        args.logger.joinWait({
+          roleId: matchedFailureEdge.toRoleId,
+          arrivedFrom: args.roleId,
+          waitingFor: listPendingJoinSources({
+            node: targetNode,
+            currentBranch: args.currentBranch,
+            state: args.state
+          })
+        });
+      } else {
+        const sessionLineageId = resolveNextSessionLineageId({
+          currentNode: args.node,
+          targetNode,
+          currentBranch: args.currentBranch,
+          targetRoleId: matchedFailureEdge.toRoleId,
+          nextLoopIteration,
+          nextBranchSequence,
+          activatedTargetCount: 1
+        });
+        const branch = activateBranch({
+          roleId: matchedFailureEdge.toRoleId,
+          loopIteration: nextLoopIteration,
+          branchSequence: nextBranchSequence,
+          lineageId: args.currentBranch.lineageId,
+          sessionLineageId,
+          parentBranchId: args.currentBranch.branchId,
+          activatedByRoleId: args.roleId,
+          activatedByEvent: matchedFailureEdge.eventType
+        });
+        nextBranchSequence += 1;
+        branchUpdates[branch.branchId] = branch;
+        if (targetNode.joinMode === "quorum_of") {
+          joinEvents.push({
+            type: "join_quorum_reached",
+            at: new Date().toISOString(),
+            roleId: matchedFailureEdge.toRoleId,
+            joinId,
+            lineageId: args.currentBranch.lineageId,
+            loopIteration: nextLoopIteration,
+            joinMode: targetNode.joinMode,
+            joinMin: targetNode.joinMin,
+            joinSources: targetNode.joinSources,
+            requiredSourceCount: readiness.requiredSourceCount,
+            satisfiedSources: readiness.completedSourceRoleIds,
+            arrivedFromRoleId: args.roleId,
+            arrivedFromBranchId: args.currentBranch.branchId,
+            activatedBranchId: branch.branchId
+          });
+        }
+        joinEvents.push({
+          type: "join_activated",
+          at: new Date().toISOString(),
+          roleId: matchedFailureEdge.toRoleId,
+          joinId,
+          lineageId: args.currentBranch.lineageId,
+          loopIteration: nextLoopIteration,
+          joinMode: targetNode.joinMode,
+          joinMin: targetNode.joinMin,
+          joinSources: targetNode.joinSources,
+          requiredSourceCount: readiness.requiredSourceCount,
+          satisfiedSources: readiness.completedSourceRoleIds,
+          arrivedFromRoleId: args.roleId,
+          arrivedFromBranchId: args.currentBranch.branchId,
+          activatedBranchId: branch.branchId
+        });
+        args.logger.transition({
+          fromRoleId: args.roleId,
+          event: matchedFailureEdge.eventType,
+          toRoleId: matchedFailureEdge.toRoleId,
+          branchId: args.currentBranch.branchId
+        });
+      }
+    } else {
+      const sessionLineageId = resolveNextSessionLineageId({
+        currentNode: args.node,
+        targetNode,
+        currentBranch: args.currentBranch,
+        targetRoleId: matchedFailureEdge.toRoleId,
+        nextLoopIteration,
+        nextBranchSequence,
+        activatedTargetCount: 1
+      });
+      const branch = activateBranch({
+        roleId: matchedFailureEdge.toRoleId,
+        loopIteration: nextLoopIteration,
+        branchSequence: nextBranchSequence,
+        lineageId: args.currentBranch.lineageId,
+        sessionLineageId,
+        parentBranchId: args.currentBranch.branchId,
+        activatedByRoleId: args.roleId,
+        activatedByEvent: matchedFailureEdge.eventType
+      });
+      nextBranchSequence += 1;
+      branchUpdates[branch.branchId] = branch;
+      args.logger.transition({
+        fromRoleId: args.roleId,
+        event: matchedFailureEdge.eventType,
+        toRoleId: matchedFailureEdge.toRoleId,
+        branchId: args.currentBranch.branchId
+      });
+    }
+  }
+
+  if (reachedSystemOutput) {
+    const hasOtherActiveBranches = Object.values(args.state.branchRecords).some(
+      (branch) => branch.status === "active" && branch.branchId !== args.currentBranch.branchId
+    );
+    const hasActivatedBranches = Object.values(branchUpdates).some(
+      (branch) => branch.status === "active"
+    );
+    if (!hasOtherActiveBranches && !hasActivatedBranches) {
+      finalStatus = "done";
+      finalRoleId = args.roleId;
+    }
+  }
+
+  return {
+    update: {
+      status: finalStatus,
+      transitionCount: 1,
+      recentAudits: [handledAudit],
+      auditSummary: buildAuditSummaryDelta(handledAudit),
+      roleMetricsByRoleId: buildRoleMetricsDelta(handledAudit),
+      roleResults: storeRoleResult(args.currentBranch.branchId, handledFailureArtifact),
+      branchRecords: branchUpdates,
+      loopIterations: loopUpdates,
+      selectedEventByBranchId: {
+        [args.currentBranch.branchId]: matchedFailureEdge.eventType
+      },
+      finalOutput,
+      finalRoleId,
+      lastExecutedRoleId: args.roleId,
+      nextBranchSequence
+    },
+    events: events.concat(joinEvents)
+  };
+}
+
 function resolveNextSessionLineageId(args: {
   currentNode: ExecutionPlanNode;
   targetNode: ExecutionPlanNode;
@@ -702,7 +1047,7 @@ function buildSuccessTransitionPlan(args: {
   storedResult?: StoredRoleResult;
   mode: "ok" | "noop";
   logger: ReturnType<typeof createRunConsoleLogger>;
-}): SuccessTransitionPlan {
+}): TransitionPlan {
   const node = getExecutionPlanNode(args.plan, args.roleId);
   const branchUpdates: Record<string, BranchRecord> = {
     [args.currentBranch.branchId]: completeBranch(args.currentBranch)
@@ -958,7 +1303,7 @@ function buildSuccessTransitionPlan(args: {
       lastExecutedRoleId: args.roleId,
       nextBranchSequence
     },
-    joinEvents
+    events: joinEvents
   };
 }
 
@@ -1010,16 +1355,33 @@ export async function runSystemWithGraphRunner(args: RunnerInput): Promise<Adapt
 
         const transitionPlan =
           result.status === "failed"
-            ? {
-                update: buildFailureUpdate({
-                  roleId,
-                  branch,
-                  error: result.error,
-                  errorEnvelope: result.failure,
-                  audit: result.audit
-                }),
-                joinEvents: [] as JoinTransitionEvent[]
-              }
+            ? (() => {
+                if (args.errorEdgeRoutingEnabled) {
+                  const handledTransition = buildHandledFailureTransitionPlan({
+                    state: workingState,
+                    plan: args.plan,
+                    node,
+                    roleId,
+                    currentBranch: branch,
+                    audit: result.audit,
+                    errorEnvelope: result.failure,
+                    logger
+                  });
+                  if (handledTransition) {
+                    return handledTransition;
+                  }
+                }
+                return {
+                  update: buildFailureUpdate({
+                    roleId,
+                    branch,
+                    error: result.error,
+                    errorEnvelope: result.failure,
+                    audit: result.audit
+                  }),
+                  events: [] as RuntimeTransitionEvent[]
+                };
+              })()
             : buildSuccessTransitionPlan({
                 state: workingState,
                 plan: args.plan,
@@ -1049,7 +1411,7 @@ export async function runSystemWithGraphRunner(args: RunnerInput): Promise<Adapt
           executionDir: resolve(roleDirs.executionsDir, result.executionId),
           checkpointSequence: checkpoint.checkpointSequence
         });
-        for (const event of transitionPlan.joinEvents) {
+        for (const event of transitionPlan.events) {
           await appendEvent(args.runContext, event);
         }
 
@@ -1106,7 +1468,8 @@ export async function runSystemWithGraphRunner(args: RunnerInput): Promise<Adapt
     finalState = await reconcileCommittedRoleExecutionOutcomes({
       state: finalState,
       plan: args.plan,
-      runContext: args.runContext
+      runContext: args.runContext,
+      errorEdgeRoutingEnabled: args.errorEdgeRoutingEnabled
     });
   }
   logger.runStart({
@@ -1190,6 +1553,8 @@ export async function runSystemWithGraphRunner(args: RunnerInput): Promise<Adapt
       `- totalTransitions: ${summary.totalTransitions}`,
       `- okCount: ${summary.okCount}`,
       `- failedCount: ${summary.failedCount}`,
+      `- handledFailureCount: ${summary.handledFailureCount}`,
+      `- unhandledFailureCount: ${summary.unhandledFailureCount}`,
       `- noopCount: ${summary.noopCount}`,
       `- failureCountsByErrorCode: ${stringifyJson(summary.failureCountsByErrorCode)}`,
       `- repairStats.attemptedCount: ${summary.repairStats.attemptedCount}`,

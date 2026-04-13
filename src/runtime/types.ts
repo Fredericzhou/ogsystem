@@ -253,6 +253,11 @@ export type RuntimeConfig = {
   opencode?: {
     baseArgs?: string[];
   };
+  runtime: {
+    error_edges: {
+      v1: boolean;
+    };
+  };
 };
 
 /**
@@ -285,6 +290,8 @@ export type AuditRecord = {
   errorEnvelope?: RuntimeErrorEnvelope;
   repair?: RoleOutputRepairRecord;
   correctionRequest?: RoleOutputCorrectionRequest;
+  handledByEvent?: string;
+  handledTargetRoleId?: string;
 };
 
 export type RoleRunDirs = {
@@ -388,6 +395,8 @@ export type GraphAuditSummary = {
   okCount: number;
   failedCount: number;
   noopCount: number;
+  handledFailureCount: number;
+  unhandledFailureCount: number;
   repairAttemptedCount: number;
   repairAppliedCount: number;
   failureCountsByErrorCode: Record<string, number>;
@@ -510,6 +519,8 @@ export type RunSummarySnapshot = {
   okCount: number;
   failedCount: number;
   noopCount: number;
+  handledFailureCount: number;
+  unhandledFailureCount: number;
   failureCountsByErrorCode: Record<string, number>;
   repairStats: {
     attemptedCount: number;

@@ -1,0 +1,25 @@
+{
+  "tools": [
+    {
+      "toolRef": "tool.worker",
+      "runner": "local_shell",
+      "command": "node",
+      "argsTemplate": ["examples/error-edge-compensation/scripts/worker.mjs"],
+      "stdinMode": "none"
+    },
+    {
+      "toolRef": "tool.error-handler",
+      "runner": "local_shell",
+      "command": "node",
+      "argsTemplate": ["examples/error-edge-compensation/scripts/error-handler.mjs"],
+      "stdinMode": "none"
+    },
+    {
+      "toolRef": "tool.finalizer",
+      "runner": "local_shell",
+      "command": "node",
+      "argsTemplate": ["examples/error-edge-compensation/scripts/finalizer.mjs"],
+      "stdinMode": "none"
+    }
+  ]
+}

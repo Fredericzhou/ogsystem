@@ -693,6 +693,21 @@ export function repairUnknownEvent(args: {
   };
 }
 
+function assertNoReservedErrorEventFromRoleOutput(args: {
+  roleId: string;
+  event?: string;
+}): void {
+  if (!args.event) {
+    return;
+  }
+  if (!args.event.startsWith("ERROR")) {
+    return;
+  }
+  throw new Error(
+    `Executable role output event "${args.event}" uses reserved prefix "ERROR*"; runtime-only failure routing must trigger it`
+  );
+}
+
 function mergeRepairRecord(
   left?: RoleOutputRepairRecord,
   right?: RoleOutputRepairRecord
@@ -1147,6 +1162,10 @@ export async function executeRoleNode(args: {
     const parsed = parseRoleExecutionOutputWithRepair({
       rawOutput: executionResult.stdout,
       requireEvent: args.node.outgoing.length > 0 && args.node.routingMode !== "parallel_split"
+    });
+    assertNoReservedErrorEventFromRoleOutput({
+      roleId: args.roleId,
+      event: parsed.output.event
     });
     let repair = parsed.repair;
     repair = mergeRepairRecord(

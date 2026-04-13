@@ -22,6 +22,8 @@ export function createEmptyAuditSummary(): GraphAuditSummary {
     okCount: 0,
     failedCount: 0,
     noopCount: 0,
+    handledFailureCount: 0,
+    unhandledFailureCount: 0,
     repairAttemptedCount: 0,
     repairAppliedCount: 0,
     failureCountsByErrorCode: {}
@@ -38,6 +40,11 @@ export function buildAuditSummaryDelta(audit: AuditRecord): GraphAuditSummary {
     summary.okCount = 1;
   } else if (audit.status === "failed") {
     summary.failedCount = 1;
+    if (audit.handledByEvent) {
+      summary.handledFailureCount = 1;
+    } else {
+      summary.unhandledFailureCount = 1;
+    }
     const errorCode = audit.errorEnvelope?.errorCode ?? "UNCLASSIFIED_FAILURE";
     summary.failureCountsByErrorCode[errorCode] = 1;
   } else {
@@ -71,11 +78,13 @@ export function mergeAuditSummaries(
   }
 
   return {
-    okCount: left.okCount + right.okCount,
-    failedCount: left.failedCount + right.failedCount,
-    noopCount: left.noopCount + right.noopCount,
-    repairAttemptedCount: left.repairAttemptedCount + right.repairAttemptedCount,
-    repairAppliedCount: left.repairAppliedCount + right.repairAppliedCount,
+    okCount: (left.okCount ?? 0) + (right.okCount ?? 0),
+    failedCount: (left.failedCount ?? 0) + (right.failedCount ?? 0),
+    noopCount: (left.noopCount ?? 0) + (right.noopCount ?? 0),
+    handledFailureCount: (left.handledFailureCount ?? 0) + (right.handledFailureCount ?? 0),
+    unhandledFailureCount: (left.unhandledFailureCount ?? 0) + (right.unhandledFailureCount ?? 0),
+    repairAttemptedCount: (left.repairAttemptedCount ?? 0) + (right.repairAttemptedCount ?? 0),
+    repairAppliedCount: (left.repairAppliedCount ?? 0) + (right.repairAppliedCount ?? 0),
     failureCountsByErrorCode
   };
 }
@@ -91,7 +100,9 @@ export function summarizeRunFromAuditSummary(args: {
   terminalStatus?: GraphRunStatus;
   terminalErrorEnvelope?: RuntimeErrorEnvelope;
 }): RunSummarySnapshot {
-  let failedCount = args.auditSummary.failedCount;
+  let failedCount = args.auditSummary.failedCount ?? 0;
+  let handledFailureCount = args.auditSummary.handledFailureCount ?? 0;
+  let unhandledFailureCount = args.auditSummary.unhandledFailureCount ?? 0;
   const failureCountsByErrorCode = { ...args.auditSummary.failureCountsByErrorCode };
 
   if (
@@ -103,19 +114,22 @@ export function summarizeRunFromAuditSummary(args: {
     const errorCode = args.terminalErrorEnvelope.errorCode;
     if ((failureCountsByErrorCode[errorCode] ?? 0) === 0) {
       failedCount += 1;
+      unhandledFailureCount += 1;
       failureCountsByErrorCode[errorCode] = 1;
     }
   }
 
   return {
     totalTransitions: args.transitionCount,
-    okCount: args.auditSummary.okCount,
+    okCount: args.auditSummary.okCount ?? 0,
     failedCount,
-    noopCount: args.auditSummary.noopCount,
+    noopCount: args.auditSummary.noopCount ?? 0,
+    handledFailureCount,
+    unhandledFailureCount,
     failureCountsByErrorCode,
     repairStats: {
-      attemptedCount: args.auditSummary.repairAttemptedCount,
-      appliedCount: args.auditSummary.repairAppliedCount
+      attemptedCount: args.auditSummary.repairAttemptedCount ?? 0,
+      appliedCount: args.auditSummary.repairAppliedCount ?? 0
     }
   };
 }

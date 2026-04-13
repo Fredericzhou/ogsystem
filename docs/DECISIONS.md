@@ -109,9 +109,9 @@ Reason:
 - the main determinism gains come from lockfile/install/CI discipline
 - hard-blocking script execution harms ecosystem compatibility with limited additional stability benefit
 
-## 9. Exception Edge Scope (V1 In Progress)
+## 9. Exception Edge Scope (V1 Delivered, Flag-Gated)
 
-`ERROR*` is a planned semantic extension with strict boundaries.
+`ERROR*` is implemented with strict boundaries and staged rollout control.
 
 - syntax reuses edge labels: `ERROR` and `ERROR.<errorCode>`
 - node-level opt-in: only nodes declaring `ERROR*` edges participate

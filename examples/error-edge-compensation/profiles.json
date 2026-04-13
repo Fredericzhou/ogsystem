@@ -1,0 +1,14 @@
+[
+  {
+    "profileId": "profile.worker",
+    "toolRef": "tool.worker"
+  },
+  {
+    "profileId": "profile.error-handler",
+    "toolRef": "tool.error-handler"
+  },
+  {
+    "profileId": "profile.finalizer",
+    "toolRef": "tool.finalizer"
+  }
+]

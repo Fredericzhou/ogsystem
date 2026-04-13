@@ -104,9 +104,9 @@
 
 ---
 
-## 九、 异常边语义（ERROR*，V1 in progress）
+## 九、 异常边语义（ERROR*，V1 delivered，默认 flag off）
 
-以下语义已冻结并进入执行计划，但默认行为仍以当前实现为准（未声明 `ERROR*` 边时保持 fail-stop）：
+以下语义已落地实现；默认发布策略仍由 `runtime.error_edges.v1=false` 控制（未启用或未声明 `ERROR*` 边时保持 fail-stop）：
 
 *   **语法沿用现有事件标签**：`ERROR` 与 `ERROR.<errorCode>`。
 *   **节点级 opt-in**：仅声明了 `ERROR*` 出边的节点启用异常流。

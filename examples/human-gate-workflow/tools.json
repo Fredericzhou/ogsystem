@@ -1,0 +1,25 @@
+{
+  "tools": [
+    {
+      "toolRef": "tool.approve",
+      "runner": "local_shell",
+      "command": "node",
+      "argsTemplate": ["examples/human-gate-workflow/scripts/approve-gate.mjs"],
+      "stdinMode": "none"
+    },
+    {
+      "toolRef": "tool.signal",
+      "runner": "local_shell",
+      "command": "node",
+      "argsTemplate": ["examples/human-gate-workflow/scripts/signal-wait.mjs"],
+      "stdinMode": "none"
+    },
+    {
+      "toolRef": "tool.finalizer",
+      "runner": "local_shell",
+      "command": "node",
+      "argsTemplate": ["examples/human-gate-workflow/scripts/finalizer.mjs"],
+      "stdinMode": "none"
+    }
+  ]
+}

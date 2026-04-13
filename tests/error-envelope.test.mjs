@@ -80,6 +80,7 @@ test("graph state persistence failures stay classified as execute/io", async () 
           async close() {}
         },
         prompt: "persist failure",
+        errorEdgeRoutingEnabled: false,
         logRun: false
       }),
     (error) => {

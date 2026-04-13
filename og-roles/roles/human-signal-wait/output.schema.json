@@ -1,0 +1,13 @@
+{
+  "type": "object",
+  "required": ["event", "content"],
+  "properties": {
+    "event": {
+      "type": "string",
+      "enum": ["SIGNAL_OK", "SIGNAL_FAIL", "EXPIRED"]
+    },
+    "content": { "type": "string" },
+    "data": { "type": "object" }
+  },
+  "additionalProperties": false
+}
