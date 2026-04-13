@@ -56,6 +56,7 @@
 - `docs/archive/delivery/project-cli-lifecycle-plan-2026-04-12.md`（delivered lifecycle/productization plan）
 - `docs/archive/delivery/cross-platform-rust-validation-and-gap-analysis-2026-04-12.md`（delivered cross-platform verification + gap analysis）
 - `docs/archive/delivery/data-projection-quorum-implementation-checklist-2026-04-12.md`（delivered implementation checklist with risk controls）
+- `docs/archive/delivery/error-edge-v1-execution-plan-2026-04-13.md`（in-progress exception-edge delivery plan）
 - `docs/archive/delivery/optimization-execution-checklist-2026-04-10.md`
 
 ## 4. 历史参考（已归档）

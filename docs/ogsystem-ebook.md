@@ -17,7 +17,7 @@ OGSystem 的回答很直接：把图语义、运行状态、恢复依据和操�
 
 ### 2.1 文件优先，而不是平台优先
 
-OGSystem 把一次运行当成一组可审计文件，而不是一段只存在于进程内存里的黑盒过程。默认运行目录是 `ogsystem-history/<run-id>/`，其中保存：
+OGSystem 把一次运行当成一组可审计文件，而不是一段只存在于进程内存里的黑盒过程。默认运行目录是 `.ogs/runs/<run-id>/`，其中保存：
 
 - 用户请求与系统定义副本
 - `state.json` 与 `sessions.json`
@@ -58,7 +58,7 @@ OGSystem 近期的重点始终是：
 
 可以把 OGSystem 理解为六层：
 
-1. **输入层**：CLI、`system.mmd`、`.ogsystem/runtime.json`、laws、user profile。
+1. **输入层**：CLI、`system.mmd`、`.ogs/runtime.json`、laws、user profile。
 2. **解析层**：把 Mermaid DSL 解析并验证成 `SystemDefinition`。
 3. **计划层**：把 `SystemDefinition` 进一步归一化为 `ExecutionPlan`。
 4. **执行层**：graph runner 调度 role executor，role executor 调用具体 executor。
@@ -160,6 +160,7 @@ Execution Plan 是运行时真正消费的计划对象。
 
 - `parallel_split`
 - `all_of`
+- `quorum_of`
 
 但这个小 registry 很重要，因为它把“语义扩展机制”从 graph runner 主流程中抽离出来了。
 
@@ -280,9 +281,10 @@ Role executor 只关心单节点执行。
 
 ### 5.2 Join 语义
 
-`all_of` join 不是“来一个就跑”，而是：
+`all_of/quorum_of` join 都不是“来一个就跑”，而是：
 
 - 必须等 `join.sources.<roleId>` 指定的所有上游都在同一 lineage 下产出结果。
+- `quorum_of` 还要求满足 `join.min.<roleId>` 的唯一 source role 阈值，并且达到阈值后只激活一次。
 - 上游结果会被投影为一个按 roleId 键控的 JSON 字符串注入 `{{context}}`。
 
 这保证了 join 节点看到的是结构化上游结果，而不是隐式共享的内部状态。
@@ -310,6 +312,16 @@ Resume 不是简单“接着跑”，而是先完成一套完整校验：
 - 是否存在未对账的 `execution-outcome.json`
 
 只有这些都通过，系统才会继续推进。
+
+### 5.5 异常控制流边界（V1 in progress）
+
+当前默认行为仍是运行时失败即 fail-stop。`ERROR*` 异常边语义已冻结并进入执行计划，边界如下：
+
+- `ERROR` 与 `ERROR.<errorCode>` 复用现有事件标签，不新增 DSL。
+- 仅声明了 `ERROR*` 出边的节点启用异常流（节点级 opt-in）。
+- 仅运行时失败可触发 `ERROR*`，普通成功输出不会触发。
+- 匹配顺序为 `ERROR.<errorCode> -> ERROR`；无匹配保持 fail-stop。
+- 动态 fan-out 的不确定 `N` 不进入图语义；受控并发属于执行策略。
 
 ## 6. 为什么当前方案可靠
 
@@ -357,7 +369,7 @@ OGSystem 的指纹不只是系统 ID，而是对实际加载内容做哈希，�
 
 ## 7. 运行目录是如何组织的
 
-一次运行通常会落到 `ogsystem-history/<run-id>/`，其中关键结构包括：
+一次运行通常会落到 `.ogs/runs/<run-id>/`，其中关键结构包括：
 
 - `run.md`
 - `request.md`

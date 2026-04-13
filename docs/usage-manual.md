@@ -16,6 +16,7 @@ OGSystem 当前是一套单机、文件优先、可恢复的图编排运行时�
 OGSystem 当前重点优化以下能力：
 
 - 显式图语义：`parallel_split`、`all_of/quorum_of` join、`context.map`、`loop.max` 都有解析期和执行期约束。
+- 异常边语义（`ERROR*`）已进入 V1 执行计划：按节点级 opt-in 引入运行时失败补偿流，未声明节点保持 fail-stop。
 - 文件优先恢复：`state.json`、`sessions.json`、`plan-fingerprint.json`、`checkpoints/`、`execution-outcome.json` 组成恢复权威集。
 - 会话血缘隔离：`roleId:sessionLineageId` 保证顺序流转可复用会话，并行 sibling 不串会话记忆。
 - Crash 自愈补偿：角色结果先 durable，再 checkpoint；恢复时补偿缺失 checkpoint，而不是盲目重跑节点。
@@ -114,7 +115,10 @@ Use this rule:
 - graph semantics: add `role.mode/join.mode/context.map/loop.max` only when the system needs parallel split, `all_of/quorum_of` join, field-level projection, or bounded loop
 - `join.mode.<roleId>=all_of` requires `join.sources.<roleId>`; that source list must contain unique role ids and match the role's Mermaid incoming edges exactly
 - `join.mode.<roleId>=quorum_of` requires both `join.sources.<roleId>` and `join.min.<roleId>`; `join.sources` must contain unique role ids, must match the role's Mermaid incoming edges exactly, and readiness counts unique completed source roles under the same `lineageId + loopIteration`
+- dynamic fan-out with uncertain `N` is not graph semantics; keep it inside one role (Heavy Node) or pre-expand before orchestration
+- controlled fan-out concurrency is an execution policy, not a flow semantic (it must not change graph reachability/join readiness)
 - compatibility execution mode: `exec.bind.<roleId>` still works when paired with `profiles/tools`, but it runs inside the same graph runtime rather than a separate engine
+- `ERROR*` exception edges are V1 in-progress semantics (feature-gated rollout); current behavior without `ERROR*` edges remains fail-stop
 
 ## 2. Semantic Layers
 
@@ -250,6 +254,14 @@ Orchestration semantics contract:
 - `context.map.<roleId>.<field>=<selector>` replaces the default `context` payload with a stable JSON projection; supported selectors are `direct.*`, `source(<roleId>).*(join only)`, `global.task`, and `global.user_profile.*`
 - `loop.max.<roleId>=N` is both a parser-time cycle budget declaration and an execution-time guard; runtime also injects `round`
 - `branchId`, `lineageId`, and `sessionLineageId` are distinct runtime identifiers for branch instance, split/join lineage, and session reuse/isolation
+
+Exception edge semantics (`ERROR*`, V1 in progress):
+
+- syntax reuses existing edge labels: `ERROR` and `ERROR.<errorCode>`
+- node-level opt-in: only roles that declare `ERROR*` outgoing edges enable exception routing
+- trigger source is runtime failure only (execution/validation/io/state), not normal role success output
+- matching order is exact `ERROR.<errorCode>` first, then fallback `ERROR`
+- parser constraints: only one fallback `ERROR` edge per `fromRole`; each `ERROR.<code>` can map to one target only; `input` cannot declare `ERROR*`
 
 Minimal quorum/projection example:
 

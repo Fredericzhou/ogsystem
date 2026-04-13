@@ -63,6 +63,9 @@
     *   **人工介入**：并行的每一项都需要**人类审批**或外部信号触发。
     *   **极限性能**：需要利用云端并发配额实现物理级并行加速（将 `N*T` 降为 `T`）。
 
+> 语义边界补充：动态 fan-out 的不确定 `N` 不进入图语义；它属于节点内部能力（Heavy Node）或预展开阶段。  
+> 受控并发（例如 fan-out 最大并发数）属于执行策略，不改变 Flow 可达性与 join 就绪语义。
+
 ---
 
 ## 六、 职责边界：框架 vs. 逻辑
@@ -98,3 +101,17 @@
 *   **OpenCode 运行元数据**：落盘到 `.opencode/server.pid` 和 `.opencode/endpoint.json`，按 run 隔离。
 *   **日志双通道**：引擎日志 `logs/engine.ndjson`，角色日志 `logs/roles/<roleId>.ndjson`，同时保留 `events.ndjson` 作为完整事件流。
 *   **停止状态机**：支持 `running -> stopping -> stopped`，并在 `control/stop-request.json`、`control/stop-outcome.json` 保留操作证据。
+
+---
+
+## 九、 异常边语义（ERROR*，V1 in progress）
+
+以下语义已冻结并进入执行计划，但默认行为仍以当前实现为准（未声明 `ERROR*` 边时保持 fail-stop）：
+
+*   **语法沿用现有事件标签**：`ERROR` 与 `ERROR.<errorCode>`。
+*   **节点级 opt-in**：仅声明了 `ERROR*` 出边的节点启用异常流。
+*   **触发来源限定**：仅运行时失败路径触发（execution/validation/io/state 等），不是普通成功输出事件。
+*   **匹配顺序**：先 `ERROR.<errorCode>`，后 `ERROR`，无匹配则保持 fail-stop。
+*   **解析约束**：同一 `fromRole` 仅允许一个 `ERROR` 兜底边；同一 `ERROR.<code>` 仅允许一个目标；`input` 不允许声明 `ERROR*`。
+
+执行计划见：`docs/archive/delivery/error-edge-v1-execution-plan-2026-04-13.md`。
