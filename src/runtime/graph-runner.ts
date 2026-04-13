@@ -29,6 +29,7 @@ import {
   wouldExceedLoopBudget
 } from "./graph-runtime-state.js";
 import { executeRoleNode } from "./role-executor.js";
+import { isRuntimeOnlyErrorEvent } from "./error-edge-utils.js";
 import { createRuntimeError, normalizeRuntimeError } from "./runtime-errors.js";
 import {
   buildAuditSummaryDelta,
@@ -1030,10 +1031,6 @@ function buildHandledFailureTransitionPlan(args: {
     },
     events: events.concat(joinEvents)
   };
-}
-
-function isRuntimeOnlyErrorEvent(eventType: string): boolean {
-  return eventType === "ERROR" || eventType.startsWith("ERROR.");
 }
 
 function resolveNextSessionLineageId(args: {

@@ -354,13 +354,13 @@ async function createHandledFailureResumeFixture(args) {
   };
 }
 
-for (const handledCase of [
+for (const resumeStateMutationCase of [
   {
     name: "adapter resume rejects non-integer handled failure summary counters",
     tempPrefix: "ogsystem-resume-handled-summary-",
     prompt: "resume handled summary",
-    mutateAuditSummary(auditSummary) {
-      auditSummary.handledFailureCount = 1.5;
+    mutateGraphState(graphState) {
+      graphState.auditSummary.handledFailureCount = 1.5;
     },
     expectedMessage: /handledFailureCount|RESUME_STATE_INVALID/
   },
@@ -368,19 +368,73 @@ for (const handledCase of [
     name: "adapter resume rejects non-integer handled failure map values",
     tempPrefix: "ogsystem-resume-handled-map-values-",
     prompt: "resume handled map values",
-    mutateAuditSummary(auditSummary) {
-      auditSummary.handledFailureByEvent = { ERROR: 1.25 };
+    mutateGraphState(graphState) {
+      graphState.auditSummary.handledFailureByEvent = { ERROR: 1.25 };
     },
     expectedMessage: /handledFailureByEvent|RESUME_STATE_INVALID/
+  },
+  {
+    name: "adapter resume rejects non-integer unhandled failure summary counters",
+    tempPrefix: "ogsystem-resume-unhandled-summary-",
+    prompt: "resume unhandled summary",
+    mutateGraphState(graphState) {
+      graphState.auditSummary.unhandledFailureCount = 2.5;
+    },
+    expectedMessage: /unhandledFailureCount|RESUME_STATE_INVALID/
+  },
+  {
+    name: "adapter resume rejects non-integer handled failure target-role map values",
+    tempPrefix: "ogsystem-resume-handled-target-map-values-",
+    prompt: "resume handled target map values",
+    mutateGraphState(graphState) {
+      graphState.auditSummary.handledFailureByTargetRole = { fallback: 3.25 };
+    },
+    expectedMessage: /handledFailureByTargetRole|RESUME_STATE_INVALID/
+  },
+  {
+    name: "adapter resume rejects non-integer transition counter",
+    tempPrefix: "ogsystem-resume-transition-count-",
+    prompt: "resume transition count",
+    mutateGraphState(graphState) {
+      graphState.transitionCount = 1.5;
+    },
+    expectedMessage: /graphState\.transitionCount|RESUME_STATE_INVALID/
+  },
+  {
+    name: "adapter resume rejects non-integer audit ok counter",
+    tempPrefix: "ogsystem-resume-audit-ok-count-",
+    prompt: "resume audit ok count",
+    mutateGraphState(graphState) {
+      graphState.auditSummary.okCount = 0.5;
+    },
+    expectedMessage: /graphState\.auditSummary\.okCount|RESUME_STATE_INVALID/
+  },
+  {
+    name: "adapter resume rejects non-integer branch sequence counter",
+    tempPrefix: "ogsystem-resume-branch-sequence-",
+    prompt: "resume branch sequence",
+    mutateGraphState(graphState) {
+      graphState.nextBranchSequence = 2.5;
+    },
+    expectedMessage: /graphState\.nextBranchSequence|RESUME_STATE_INVALID/
+  },
+  {
+    name: "adapter resume rejects non-integer checkpoint sequence counter",
+    tempPrefix: "ogsystem-resume-checkpoint-sequence-",
+    prompt: "resume checkpoint sequence",
+    mutateGraphState(graphState) {
+      graphState.lastCheckpointSequence = 1.5;
+    },
+    expectedMessage: /graphState\.lastCheckpointSequence|RESUME_STATE_INVALID/
   }
 ]) {
-  test(handledCase.name, async () => {
+  test(resumeStateMutationCase.name, async () => {
     const fixture = await createHandledFailureResumeFixture({
-      tempPrefix: handledCase.tempPrefix,
-      prompt: handledCase.prompt
+      tempPrefix: resumeStateMutationCase.tempPrefix,
+      prompt: resumeStateMutationCase.prompt
     });
     const stateJson = JSON.parse(await readFile(fixture.statePath, "utf8"));
-    handledCase.mutateAuditSummary(stateJson.graphState.auditSummary);
+    resumeStateMutationCase.mutateGraphState(stateJson.graphState);
     await writeFile(fixture.statePath, JSON.stringify(stateJson, null, 2), "utf8");
 
     await assert.rejects(
@@ -391,12 +445,12 @@ for (const handledCase of [
           lawsPath: path.resolve(".ogsystem", "laws.json"),
           workdir: fixture.tempRoot,
           resumeRunDir: `.ogs/runs/${fixture.runId}`,
-          prompt: handledCase.prompt,
+          prompt: resumeStateMutationCase.prompt,
           dryRun: true
         }),
       (error) => {
         assert.ok(error instanceof Error);
-        assert.match(error.message, handledCase.expectedMessage);
+        assert.match(error.message, resumeStateMutationCase.expectedMessage);
         return true;
       }
     );

@@ -31,6 +31,7 @@ import {
   validateRoleInputSchema,
   validateRoleOutputSchema
 } from "./role-repo.js";
+import { isRuntimeOnlyErrorEvent } from "./error-edge-utils.js";
 import { createRuntimeError, normalizeRuntimeError } from "./runtime-errors.js";
 import { renderUserProfile, stringifyJson } from "./runtime-support.js";
 import { ToolExecutionError } from "./tool-runner.js";
@@ -463,10 +464,6 @@ function buildProjectedContext(args: {
     })
   ]));
   return stringifyJson(projected);
-}
-
-function isRuntimeOnlyErrorEvent(eventType: string): boolean {
-  return eventType === "ERROR" || eventType.startsWith("ERROR.");
 }
 
 function getSelectableOutgoingFlows(node: ExecutionPlanNode): Flow[] {

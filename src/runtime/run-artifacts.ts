@@ -195,6 +195,10 @@ function isResumeRunLockRecord(value: unknown): value is ResumeRunLockRecord {
   );
 }
 
+function isNonNegativeInteger(value: unknown): value is number {
+  return typeof value === "number" && Number.isFinite(value) && Number.isInteger(value) && value >= 0;
+}
+
 function isProcessAlive(pid: number): boolean {
   try {
     process.kill(pid, 0);
@@ -935,7 +939,7 @@ export async function loadResumeGraphState(args: {
   const auditSummaryRecord = graphState.auditSummary as Record<string, unknown>;
   if (auditSummaryRecord.handledFailureCount === undefined) {
     auditSummaryRecord.handledFailureCount = 0;
-  } else if (typeof auditSummaryRecord.handledFailureCount !== "number") {
+  } else if (!isNonNegativeInteger(auditSummaryRecord.handledFailureCount)) {
     throw createRuntimeError({
       errorCode: "RESUME_STATE_INVALID",
       errorCategory: "state",
@@ -948,7 +952,7 @@ export async function loadResumeGraphState(args: {
   }
   if (auditSummaryRecord.unhandledFailureCount === undefined) {
     auditSummaryRecord.unhandledFailureCount = 0;
-  } else if (typeof auditSummaryRecord.unhandledFailureCount !== "number") {
+  } else if (!isNonNegativeInteger(auditSummaryRecord.unhandledFailureCount)) {
     throw createRuntimeError({
       errorCode: "RESUME_STATE_INVALID",
       errorCategory: "state",
@@ -979,7 +983,7 @@ export async function loadResumeGraphState(args: {
   for (const [eventType, count] of Object.entries(
     auditSummaryRecord.handledFailureByEvent as Record<string, unknown>
   )) {
-    if (typeof count !== "number" || !Number.isFinite(count) || count < 0) {
+    if (!isNonNegativeInteger(count)) {
       throw createRuntimeError({
         errorCode: "RESUME_STATE_INVALID",
         errorCategory: "state",
@@ -1011,7 +1015,7 @@ export async function loadResumeGraphState(args: {
   for (const [targetRoleId, count] of Object.entries(
     auditSummaryRecord.handledFailureByTargetRole as Record<string, unknown>
   )) {
-    if (typeof count !== "number" || !Number.isFinite(count) || count < 0) {
+    if (!isNonNegativeInteger(count)) {
       throw createRuntimeError({
         errorCode: "RESUME_STATE_INVALID",
         errorCategory: "state",
@@ -1069,6 +1073,55 @@ export async function loadResumeGraphState(args: {
       stage: "resume",
       runId: basename(args.runDir)
     });
+  }
+  const integerFieldChecks: Array<{
+    fieldPath: string;
+    value: unknown;
+  }> = [
+    {
+      fieldPath: "graphState.transitionCount",
+      value: graphState.transitionCount
+    },
+    {
+      fieldPath: "graphState.auditSummary.okCount",
+      value: graphState.auditSummary.okCount
+    },
+    {
+      fieldPath: "graphState.auditSummary.failedCount",
+      value: graphState.auditSummary.failedCount
+    },
+    {
+      fieldPath: "graphState.auditSummary.noopCount",
+      value: graphState.auditSummary.noopCount
+    },
+    {
+      fieldPath: "graphState.auditSummary.repairAttemptedCount",
+      value: graphState.auditSummary.repairAttemptedCount
+    },
+    {
+      fieldPath: "graphState.auditSummary.repairAppliedCount",
+      value: graphState.auditSummary.repairAppliedCount
+    },
+    {
+      fieldPath: "graphState.nextBranchSequence",
+      value: graphState.nextBranchSequence
+    },
+    {
+      fieldPath: "graphState.lastCheckpointSequence",
+      value: graphState.lastCheckpointSequence
+    }
+  ];
+  for (const check of integerFieldChecks) {
+    if (!isNonNegativeInteger(check.value)) {
+      throw createRuntimeError({
+        errorCode: "RESUME_STATE_INVALID",
+        errorCategory: "state",
+        message: `Resume state snapshot has invalid ${check.fieldPath}: ${statePath}`,
+        retryable: false,
+        stage: "resume",
+        runId: basename(args.runDir)
+      });
+    }
   }
 
   let sessions: unknown;

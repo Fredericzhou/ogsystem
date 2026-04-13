@@ -14,6 +14,7 @@ import type {
   StoredRoleResult
 } from "./types.js";
 import { findRoleResult } from "./graph-runtime-state.js";
+import { isRuntimeOnlyErrorEvent } from "./error-edge-utils.js";
 
 /**
  * Outcome returned by join-mode handlers so execution can decide if downstream roles may fire.
@@ -48,10 +49,6 @@ const routingModeHandlers = new Map<GraphRoutingMode, RoutingModeHandler>();
 const joinModeHandlers = new Map<GraphJoinMode, JoinModeHandler>();
 // The registry is the single extension seam for graph semantics. Parser validation and runtime
 // dispatch consult the same registry so a new mode fails closed until both phases support it.
-
-function isRuntimeOnlyErrorEvent(eventType: string): boolean {
-  return eventType === "ERROR" || eventType.startsWith("ERROR.");
-}
 
 /**
  * Registers a handler for the given routing mode.
