@@ -3,6 +3,7 @@
 Date: 2026-04-13  
 Status: completed  
 Owner: runtime core
+Follow-up delivery record: `docs/archive/delivery/error-edge-v1-hardening-followup-2026-04-13.md`
 
 ## 0. 当前进度（2026-04-13）
 
