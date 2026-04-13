@@ -10,6 +10,14 @@ import type {
 
 type JsonValue = null | boolean | number | string | JsonValue[] | { [key: string]: JsonValue };
 
+type RuntimeConfigWithErrorEdges = RuntimeConfig & {
+  runtime: {
+    error_edges: {
+      v1: boolean;
+    };
+  };
+};
+
 export class ConfigValidationError extends Error {
   constructor(
     public readonly filePath: string,
@@ -314,7 +322,7 @@ export function validateUserProfileConfig(value: unknown, filePath: string): Use
   };
 }
 
-export function validateRuntimeConfig(value: unknown, filePath: string): RuntimeConfig {
+export function validateRuntimeConfig(value: unknown, filePath: string): RuntimeConfigWithErrorEdges {
   const record = expectRecord(value, filePath, "$");
   expectNoExtraKeys(
     record,
@@ -327,7 +335,8 @@ export function validateRuntimeConfig(value: unknown, filePath: string): Runtime
       "sharedDir",
       "workspace",
       "retention",
-      "opencode"
+      "opencode",
+      "runtime"
     ],
     filePath,
     "$"
@@ -405,6 +414,25 @@ export function validateRuntimeConfig(value: unknown, filePath: string): Runtime
           keepLatest: retentionKeepLatest ?? 100
         };
 
+  const runtimeRecord =
+    record.runtime === undefined
+      ? undefined
+      : expectRecord(record.runtime, filePath, "$.runtime");
+  if (runtimeRecord) {
+    expectNoExtraKeys(runtimeRecord, ["error_edges"], filePath, "$.runtime");
+  }
+
+  const runtimeErrorEdgesRecord =
+    runtimeRecord?.error_edges === undefined
+      ? undefined
+      : expectRecord(runtimeRecord.error_edges, filePath, "$.runtime.error_edges");
+  if (runtimeErrorEdgesRecord) {
+    expectNoExtraKeys(runtimeErrorEdgesRecord, ["v1"], filePath, "$.runtime.error_edges");
+  }
+
+  const runtimeErrorEdgesV1 =
+    expectOptionalBoolean(runtimeErrorEdgesRecord?.v1, filePath, "$.runtime.error_edges.v1") ?? false;
+
   return {
     configVersion: configVersion ?? "1",
     executor: "opencode",
@@ -425,6 +453,11 @@ export function validateRuntimeConfig(value: unknown, filePath: string): Runtime
     retention,
     opencode: {
       baseArgs
+    },
+    runtime: {
+      error_edges: {
+        v1: runtimeErrorEdgesV1
+      }
     }
   };
 }

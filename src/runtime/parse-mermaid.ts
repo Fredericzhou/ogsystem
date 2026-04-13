@@ -45,6 +45,18 @@ type TokenizedMermaid = {
   edges: TokenizedEdge[];
 };
 
+type ParsedErrorEdgeEvent =
+  | {
+      kind: "none";
+    }
+  | {
+      kind: "fallback";
+    }
+  | {
+      kind: "typed";
+      code: string;
+    };
+
 type ParsedSystemGraph = {
   metadata: Map<string, string>;
   metadataLineByKey: Map<string, number>;
@@ -400,6 +412,19 @@ function parseEdgeLine(line: string, lineNumber: number): TokenizedEdge | null {
   };
 }
 
+function parseErrorEdgeEvent(eventType: string): ParsedErrorEdgeEvent {
+  if (eventType === "ERROR") {
+    return { kind: "fallback" };
+  }
+  if (eventType.startsWith("ERROR.")) {
+    return {
+      kind: "typed",
+      code: eventType.slice("ERROR.".length)
+    };
+  }
+  return { kind: "none" };
+}
+
 /**
  * tokenizeMermaidSource performs the first pass of parsing.
  * It extracts metadata (starting with %%) and edges (role transitions).
@@ -472,6 +497,8 @@ function parseTokenizedMermaid(tokens: TokenizedMermaid): ParsedSystemGraph {
   const flows: Flow[] = [];
   const inputEntryCandidates = new Set<string>();
   let hasOutputTransition = false;
+  const fallbackErrorLineByFromRole = new Map<string, number>();
+  const typedErrorLineByFromRole = new Map<string, Map<string, number>>();
 
   for (const item of tokens.metadata) {
     const duplicateLine = metadataLineByKey.get(item.key);
@@ -488,6 +515,8 @@ function parseTokenizedMermaid(tokens: TokenizedMermaid): ParsedSystemGraph {
   }
 
   for (const edge of tokens.edges) {
+    const parsedErrorEvent = parseErrorEdgeEvent(edge.eventType);
+
     for (const node of [edge.from, edge.to]) {
       if (node.kind !== "role") {
         continue;
@@ -525,8 +554,46 @@ function parseTokenizedMermaid(tokens: TokenizedMermaid): ParsedSystemGraph {
           lineNumber: edge.lineNumber
         });
       }
+      if (parsedErrorEvent.kind !== "none") {
+        failMermaid({
+          stage: "validate",
+          errorCode: "MERMAID_INPUT_ERROR_EDGE_NOT_ALLOWED",
+          message: `input boundary cannot declare ${edge.eventType} edges. ERROR* edges are role-only.`,
+          lineNumber: edge.lineNumber
+        });
+      }
       inputEntryCandidates.add(edge.to.roleId);
       continue;
+    }
+
+    if (parsedErrorEvent.kind === "fallback") {
+      const duplicateLine = fallbackErrorLineByFromRole.get(edge.from.roleId);
+      if (duplicateLine !== undefined) {
+        failMermaid({
+          stage: "validate",
+          errorCode: "MERMAID_DUPLICATE_ERROR_FALLBACK_EDGE",
+          message:
+            `Role "${edge.from.roleId}" declares duplicate ERROR fallback edges ` +
+            `(first declared at line ${duplicateLine}).`,
+          lineNumber: edge.lineNumber
+        });
+      }
+      fallbackErrorLineByFromRole.set(edge.from.roleId, edge.lineNumber);
+    } else if (parsedErrorEvent.kind === "typed") {
+      const seenCodes = typedErrorLineByFromRole.get(edge.from.roleId) ?? new Map<string, number>();
+      const duplicateLine = seenCodes.get(parsedErrorEvent.code);
+      if (duplicateLine !== undefined) {
+        failMermaid({
+          stage: "validate",
+          errorCode: "MERMAID_DUPLICATE_ERROR_CODE_EDGE",
+          message:
+            `Role "${edge.from.roleId}" declares duplicate ERROR.${parsedErrorEvent.code} edges ` +
+            `(first declared at line ${duplicateLine}).`,
+          lineNumber: edge.lineNumber
+        });
+      }
+      seenCodes.set(parsedErrorEvent.code, edge.lineNumber);
+      typedErrorLineByFromRole.set(edge.from.roleId, seenCodes);
     }
 
     if (edge.to.kind === "boundary") {

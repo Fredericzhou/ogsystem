@@ -1,7 +1,11 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import { mkdtemp, mkdir, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import path from "node:path";
 
 import { parseSystemFromMermaidSource } from "../dist/runtime/parse-mermaid.js";
+import { validateNl2MmdCandidate } from "../dist/nl2mmd/index.js";
 
 const validSource = `flowchart TD
 %% system.id=test.parser
@@ -346,4 +350,158 @@ intake[Role:intake] -->|DONE| output
     () => parseSystemFromMermaidSource(bindingConflictSource),
     /defines both model\.bind\.intake=model\.fast and exec\.bind\.intake=profile\.parser/
   );
+});
+
+test("parser rejects ERROR* edges declared from input boundary", () => {
+  const source = `flowchart TD
+%% system.id=test.error.input
+%% system.version=0.1.0
+%% law.global=law.test
+%% entry.role=intake
+%% exec.bind.intake=profile.intake
+input -->|ERROR| intake[Role:intake]
+intake[Role:intake] -->|DONE| output
+`;
+
+  assert.throws(
+    () => parseSystemFromMermaidSource(source),
+    /MERMAID_INPUT_ERROR_EDGE_NOT_ALLOWED|input boundary cannot declare ERROR/
+  );
+});
+
+test("parser rejects duplicate ERROR fallback edges from the same role", () => {
+  const source = `flowchart TD
+%% system.id=test.error.fallback.duplicate
+%% system.version=0.1.0
+%% law.global=law.test
+%% entry.role=worker
+%% exec.bind.worker=profile.worker
+%% exec.bind.comp_a=profile.worker
+%% exec.bind.comp_b=profile.worker
+input -->|START| worker[Role:worker]
+worker[Role:worker] -->|ERROR| comp_a[Role:comp_a]
+worker[Role:worker] -->|ERROR| comp_b[Role:comp_b]
+worker[Role:worker] -->|DONE| output
+`;
+
+  assert.throws(
+    () => parseSystemFromMermaidSource(source),
+    /MERMAID_DUPLICATE_ERROR_FALLBACK_EDGE|duplicate ERROR fallback edges/
+  );
+});
+
+test("parser rejects duplicate ERROR.<code> edges from the same role", () => {
+  const source = `flowchart TD
+%% system.id=test.error.code.duplicate
+%% system.version=0.1.0
+%% law.global=law.test
+%% entry.role=worker
+%% exec.bind.worker=profile.worker
+%% exec.bind.retry_a=profile.worker
+%% exec.bind.retry_b=profile.worker
+input -->|START| worker[Role:worker]
+worker[Role:worker] -->|ERROR.TOOL_EXECUTION_TIMEOUT| retry_a[Role:retry_a]
+worker[Role:worker] -->|ERROR.TOOL_EXECUTION_TIMEOUT| retry_b[Role:retry_b]
+worker[Role:worker] -->|DONE| output
+`;
+
+  assert.throws(
+    () => parseSystemFromMermaidSource(source),
+    /MERMAID_DUPLICATE_ERROR_CODE_EDGE|duplicate ERROR\.TOOL_EXECUTION_TIMEOUT edges/
+  );
+});
+
+test("nl2mmd validator ignores ERROR* edges when checking role output event enum", async () => {
+  const tempRoot = await mkdtemp(path.join(tmpdir(), "ogsystem-nl2mmd-error-edge-"));
+  const roleRootDir = path.join(tempRoot, "roles");
+  const modelRootDir = path.join(tempRoot, "models");
+  await mkdir(roleRootDir, { recursive: true });
+  await mkdir(modelRootDir, { recursive: true });
+
+  const writeRolePackage = async (roleId, eventEnum) => {
+    const roleDir = path.join(roleRootDir, roleId);
+    await mkdir(roleDir, { recursive: true });
+    await writeFile(
+      path.join(roleDir, "role.json"),
+      JSON.stringify(
+        {
+          roleId,
+          roleVersion: "0.1.0",
+          name: roleId,
+          description: `${roleId} test role`,
+          promptTemplate: "prompt.md",
+          outputSchema: "output.schema.json"
+        },
+        null,
+        2
+      )
+    );
+    await writeFile(path.join(roleDir, "prompt.md"), "test prompt");
+    await writeFile(
+      path.join(roleDir, "output.schema.json"),
+      JSON.stringify(
+        {
+          type: "object",
+          properties: {
+            event: {
+              type: "string",
+              enum: eventEnum
+            },
+            content: {
+              type: "string"
+            },
+            data: {
+              type: "object"
+            }
+          },
+          required: ["event", "content", "data"],
+          additionalProperties: true
+        },
+        null,
+        2
+      )
+    );
+  };
+
+  await writeRolePackage("worker", ["DONE"]);
+  await writeRolePackage("compensate", ["RECOVERED"]);
+
+  const mermaid = `flowchart TD
+%% system.id=test.nl2mmd.error.edge
+%% system.version=0.1.0
+%% law.global=law.test
+%% entry.role=worker
+%% exec.bind.worker=profile.worker
+%% exec.bind.compensate=profile.compensate
+input -->|START| worker[Role:worker]
+worker[Role:worker] -->|DONE| output
+worker[Role:worker] -->|ERROR.TOOL_EXECUTION_TIMEOUT| compensate[Role:compensate]
+compensate[Role:compensate] -->|RECOVERED| output
+`;
+
+  const validation = await validateNl2MmdCandidate({
+    mermaid,
+    context: {
+      workdir: tempRoot,
+      roleRootDir,
+      modelRootDir,
+      roleCatalog: [],
+      modelCatalog: [],
+      lawIds: [],
+      supportedDictionary: {
+        flowcharts: [],
+        boundaryTokens: [],
+        exactMetadataKeys: [],
+        metadataPrefixes: [],
+        roleModes: [],
+        joinModes: [],
+        mentionPrefix: "@",
+        nodeTokenPattern: "",
+        edgePattern: ""
+      }
+    }
+  });
+
+  assert.equal(validation.status, "ok");
+  assert.deepStrictEqual(validation.errors, []);
 });

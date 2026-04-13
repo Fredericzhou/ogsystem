@@ -61,6 +61,21 @@
         }
       }
     },
+    "runtime": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "error_edges": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "v1": {
+              "type": "boolean"
+            }
+          }
+        }
+      }
+    },
     "opencode": {
       "type": "object",
       "additionalProperties": false,

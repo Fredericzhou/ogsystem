@@ -214,6 +214,63 @@ test("runtime config fails fast on unsupported config version", () => {
   );
 });
 
+test("runtime config defaults runtime.error_edges.v1 to false", () => {
+  const config = validateRuntimeConfig(
+    {
+      executor: "opencode",
+      roleRepo: "./og-roles",
+      modelRepo: "./og-models"
+    },
+    "runtime.json"
+  );
+
+  assert.equal(config.runtime.error_edges.v1, false);
+});
+
+test("runtime config accepts runtime.error_edges.v1 when set to true", () => {
+  const config = validateRuntimeConfig(
+    {
+      executor: "opencode",
+      roleRepo: "./og-roles",
+      modelRepo: "./og-models",
+      runtime: {
+        error_edges: {
+          v1: true
+        }
+      }
+    },
+    "runtime.json"
+  );
+
+  assert.equal(config.runtime.error_edges.v1, true);
+});
+
+test("runtime config rejects unknown runtime error_edges fields", () => {
+  assert.throws(
+    () =>
+      validateRuntimeConfig(
+        {
+          executor: "opencode",
+          roleRepo: "./og-roles",
+          modelRepo: "./og-models",
+          runtime: {
+            error_edges: {
+              v1: true,
+              beta: true
+            }
+          }
+        },
+        "runtime.json"
+      ),
+    (error) => {
+      assert.ok(error instanceof Error);
+      assert.match(error.message, /runtime\.json/);
+      assert.match(error.message, /\.runtime\.error_edges\.beta/);
+      return true;
+    }
+  );
+});
+
 test("profiles config rejects duplicate profileId entries", () => {
   assert.throws(
     () =>

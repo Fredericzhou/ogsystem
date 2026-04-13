@@ -44,6 +44,43 @@ test("runtime config schema rejects unknown workspace fields", async () => {
   assert.equal(ok, false);
 });
 
+test("runtime config schema accepts runtime.error_edges.v1", async () => {
+  const runtimeSchema = await readJson(path.resolve("schemas/runtime-config.schema.json"));
+  const validate = createValidator(runtimeSchema);
+
+  const ok = validate({
+    executor: "opencode",
+    roleRepo: "./og-roles",
+    modelRepo: "./og-models",
+    runtime: {
+      error_edges: {
+        v1: true
+      }
+    }
+  });
+
+  assert.equal(ok, true, JSON.stringify(validate.errors, null, 2));
+});
+
+test("runtime config schema rejects unknown runtime error_edges fields", async () => {
+  const runtimeSchema = await readJson(path.resolve("schemas/runtime-config.schema.json"));
+  const validate = createValidator(runtimeSchema);
+
+  const ok = validate({
+    executor: "opencode",
+    roleRepo: "./og-roles",
+    modelRepo: "./og-models",
+    runtime: {
+      error_edges: {
+        v1: true,
+        beta: true
+      }
+    }
+  });
+
+  assert.equal(ok, false);
+});
+
 test("user profile schema accepts repository user-profile.json", async () => {
   const profileSchema = await readJson(path.resolve("schemas/user-profile.schema.json"));
   const userProfile = await readJson(path.resolve(".ogsystem/user-profile.json"));

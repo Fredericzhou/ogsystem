@@ -26,6 +26,10 @@ function getEventEnum(schema: unknown): string[] | null {
     : null;
 }
 
+function isRuntimeErrorEdgeEvent(event: string): boolean {
+  return event === "ERROR" || event.startsWith("ERROR.");
+}
+
 export async function validateNl2MmdCandidate(args: {
   mermaid: string;
   context: Nl2MmdContext;
@@ -93,6 +97,9 @@ export async function validateNl2MmdCandidate(args: {
 
       if (eventEnum) {
         for (const event of outgoingEvents) {
+          if (isRuntimeErrorEdgeEvent(event)) {
+            continue;
+          }
           if (!eventEnum.includes(event)) {
             errors.push(`role "${roleId}" output event enum is missing outgoing event "${event}"`);
           }
