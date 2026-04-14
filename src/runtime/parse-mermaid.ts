@@ -1,3 +1,12 @@
+/**
+ * @fileoverview Parser and validator for OGSystem restricted Mermaid DSL.
+ * File Set: runtime-core
+ * Responsibilities:
+ * - Tokenize/parse Mermaid source into graph tokens.
+ * - Validate metadata, bindings, join/loop/context invariants, and compile SystemDefinition.
+ * Boundaries:
+ * - No runtime execution; compile-time checks only.
+ */
 import { readFile } from "node:fs/promises";
 
 import { hasJoinModeHandler, hasRoutingModeHandler } from "./graph-mode-registry.js";

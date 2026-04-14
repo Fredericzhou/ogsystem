@@ -1,3 +1,12 @@
+/**
+ * @fileoverview Execution bridge that routes role requests to model or CLI backends.
+ * File Set: runtime-exec
+ * Responsibilities:
+ * - Manage shared OpenCode server lifecycle for model-bound roles.
+ * - Execute model/profile bindings with consistent result contracts.
+ * Boundaries:
+ * - Does not parse role output semantics or advance graph state.
+ */
 import { writeFile } from "node:fs/promises";
 
 import { executeOpencodeModelRole, startOpencodeRunClient } from "./opencode-executor.js";

@@ -1,3 +1,12 @@
+/**
+ * @fileoverview Shared AJV-backed JSON Schema validation helpers.
+ * File Set: runtime-support
+ * Responsibilities:
+ * - Compile/cache validators.
+ * - Normalize validation issues into stable path/message pairs.
+ * Boundaries:
+ * - Generic validation only; no runtime stage/error envelope decisions.
+ */
 import { Ajv, type AnySchema, type DefinedError, type ErrorObject, type ValidateFunction } from "ajv";
 
 import type { JsonSchemaValidationIssue } from "./types.js";

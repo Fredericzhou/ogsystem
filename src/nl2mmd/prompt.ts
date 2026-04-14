@@ -1,3 +1,12 @@
+/**
+ * @fileoverview Prompt/schema builders for NL2MMD model turns.
+ * File Set: nl2mmd-prompt
+ * Responsibilities:
+ * - Build strict response schema for NL2MMD interaction loop.
+ * - Render system/turn prompts with context, hints, and validation feedback.
+ * Boundaries:
+ * - Prompt construction only; no model execution.
+ */
 import { resolveRoleMentions } from "./catalog.js";
 import { detectSemanticHints, searchModels, searchRoles } from "./semantic-map.js";
 import type { Nl2MmdContext, Nl2MmdTurnInput } from "./types.js";

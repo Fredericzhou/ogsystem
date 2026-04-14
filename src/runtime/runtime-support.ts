@@ -1,3 +1,12 @@
+/**
+ * @fileoverview Pure utility helpers for previewing/serializing runtime values.
+ * File Set: runtime-support
+ * Responsibilities:
+ * - Produce compact previews for logs and structured stdout.
+ * - Build flow adjacency/incoming lookup maps.
+ * Boundaries:
+ * - No filesystem, execution, or graph-state mutation.
+ */
 import type { Flow, UserProfile } from "./types.js";
 
 export function preview(value: string): string | undefined {

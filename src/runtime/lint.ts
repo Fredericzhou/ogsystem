@@ -1,3 +1,12 @@
+/**
+ * @fileoverview CLI wrapper for Mermaid system linting.
+ * File Set: runtime-adapter
+ * Responsibilities:
+ * - Parse lint command arguments.
+ * - Run parse/validate pipeline and format diagnostics.
+ * Boundaries:
+ * - No runtime execution or artifact persistence.
+ */
 import { parseArgs } from "node:util";
 
 import { loadSystemFromMermaid } from "./parse-mermaid.js";

@@ -1,3 +1,12 @@
+/**
+ * @fileoverview OpenCode SDK execution adapter for model-bound roles.
+ * File Set: runtime-exec
+ * Responsibilities:
+ * - Start/stop OpenCode server and manage session prompts.
+ * - Enforce timeout/retry/output constraints and normalize execution errors.
+ * Boundaries:
+ * - Does not mutate graph state or persist run artifacts.
+ */
 import { spawn } from "node:child_process";
 
 import { createOpencodeClient } from "@opencode-ai/sdk/v2";

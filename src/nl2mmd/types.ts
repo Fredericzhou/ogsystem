@@ -1,3 +1,11 @@
+/**
+ * @fileoverview Shared NL2MMD domain types and API contracts.
+ * File Set: nl2mmd-types
+ * Responsibilities:
+ * - Define catalog, hinting, turn, validation, and conversation shapes.
+ * Boundaries:
+ * - Type contracts only; no behavior.
+ */
 import type { LoadedModelPackage, SystemDefinition } from "../runtime/types.js";
 
 export type Nl2MmdRoleSummary = {
@@ -54,6 +62,9 @@ export type Nl2MmdRoleMention = {
   exists: boolean;
 };
 
+/**
+ * Runtime-loaded NL2MMD context assembled from local role/model/law catalogs.
+ */
 export type Nl2MmdContext = {
   workdir: string;
   roleRootDir: string;
@@ -86,6 +97,9 @@ export type Nl2MmdModelResponse = {
   mermaid: string;
 };
 
+/**
+ * One NL2MMD turn output enriched with session and local validation metadata.
+ */
 export type Nl2MmdTurnResult = Nl2MmdModelResponse & {
   sessionId?: string;
   messageId?: string;
@@ -100,6 +114,9 @@ export type Nl2MmdTurnInput = {
   validationWarnings?: string[];
 };
 
+/**
+ * Long-lived conversation handle. Caller owns lifecycle and must call `close`.
+ */
 export type Nl2MmdConversation = {
   context: Nl2MmdContext;
   modelPackage: LoadedModelPackage;

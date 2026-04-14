@@ -1,3 +1,12 @@
+/**
+ * @fileoverview Runtime diagnostics command (`run:doctor`) for environment and run health checks.
+ * File Set: runtime-observability
+ * Responsibilities:
+ * - Verify required executables and config/repo integrity.
+ * - Inspect run-resume prerequisites and optional online model connectivity.
+ * Boundaries:
+ * - Diagnostic only; does not start graph execution.
+ */
 import { accessSync, constants } from "node:fs";
 import { readdir } from "node:fs/promises";
 import { delimiter, extname, join, resolve } from "node:path";
@@ -328,6 +337,8 @@ async function runOnlineModelConnectivityCheck(args: {
   }
   serverTimeoutMs = Math.min(Math.max(serverTimeoutMs, ONLINE_CHECK_MIN_TIMEOUT_MS), ONLINE_CHECK_MAX_TIMEOUT_MS);
 
+  // Trade-off: reuse one short-lived OpenCode server for all probes to keep doctor latency/cost
+  // bounded while still validating each model binding independently.
   const runClient = await startOpencodeRunClient({
     timeoutMs: serverTimeoutMs,
     directory: args.workdir

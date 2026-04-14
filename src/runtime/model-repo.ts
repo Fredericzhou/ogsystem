@@ -1,3 +1,12 @@
+/**
+ * @fileoverview Model package loader and manifest validator.
+ * File Set: runtime-exec
+ * Responsibilities:
+ * - Validate `model.json` shape and enforce supported executor contract.
+ * - Load model package metadata from local model repository.
+ * Boundaries:
+ * - Does not execute models or manage model sessions.
+ */
 import { resolve } from "node:path";
 
 import { readJsonFile } from "./json-file.js";

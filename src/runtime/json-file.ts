@@ -1,3 +1,12 @@
+/**
+ * @fileoverview Small JSON/text file helpers with atomic write semantics.
+ * File Set: runtime-support
+ * Responsibilities:
+ * - Read JSON with consistent parse errors.
+ * - Write JSON/text via temp-file rename to reduce partial-write risk.
+ * Boundaries:
+ * - No schema validation or domain-level error envelopes.
+ */
 import { randomUUID } from "node:crypto";
 import { unlink, writeFile, readFile, rename } from "node:fs/promises";
 import { dirname, join } from "node:path";

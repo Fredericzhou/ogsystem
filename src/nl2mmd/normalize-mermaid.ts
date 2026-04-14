@@ -1,3 +1,12 @@
+/**
+ * @fileoverview Mermaid normalizer/stabilizer for NL2MMD model outputs.
+ * File Set: nl2mmd-normalization
+ * Responsibilities:
+ * - Canonicalize boundary/node tokens, metadata ordering, and join metadata placement.
+ * - Repair common generation drift while preserving runtime-supported syntax.
+ * Boundaries:
+ * - Does not parse final runtime execution plan.
+ */
 import type { Nl2MmdContext } from "./types.js";
 
 const FLOWCHART_HEADER_REGEX = /^flowchart\s+(TD|LR)$/;
@@ -242,6 +251,8 @@ function repairMisplacedJoinMetadata(args: {
   metadataOrder: string[];
   edges: CanonicalizedEdge[];
 }): void {
+  // Recovery semantics for generation drift: if join metadata was attached to the wrong role
+  // but uniquely matches another role's incoming sources, move metadata to that role.
   const incomingSourcesByRole = buildIncomingSourcesByRole(args.edges);
   const joinRoleIds = Array.from(args.metadata.keys())
     .filter((key) => key.startsWith("join.mode."))
@@ -511,6 +522,8 @@ function canonicalizeWithRuntimeDefaults(args: {
     if (hasLoopBudget) {
       continue;
     }
+    // Fail-closed default: inject a conservative loop budget so generated cyclic graphs
+    // remain parseable by runtime validators without silently creating unbounded loops.
     const loopBudgetRole = pickLoopBudgetRole(component);
     const loopKey = `loop.max.${loopBudgetRole}`;
     metadata.set(loopKey, "3");

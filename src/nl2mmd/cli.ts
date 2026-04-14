@@ -1,3 +1,12 @@
+/**
+ * @fileoverview Interactive and one-shot CLI for NL2MMD drafting workflow.
+ * File Set: nl2mmd-entry
+ * Responsibilities:
+ * - Manage REPL/session lifecycle and user commands.
+ * - Run NL2MMD turns, show suggestions, and print validation feedback.
+ * Boundaries:
+ * - Delegates generation/validation details to NL2MMD service modules.
+ */
 import { stdin as input, stdout as output } from "node:process";
 import { parseArgs } from "node:util";
 import { createInterface } from "node:readline/promises";

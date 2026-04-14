@@ -1,3 +1,12 @@
+/**
+ * @fileoverview OGSystem CLI entrypoint and command dispatch.
+ * File Set: runtime-adapter
+ * Responsibilities:
+ * - Parse lifecycle and legacy adapter arguments.
+ * - Dispatch project/run commands and normalize CLI errors.
+ * Boundaries:
+ * - Delegates runtime execution and persistence to lower-level modules.
+ */
 import { readFile, writeFile } from "node:fs/promises";
 import { resolve } from "node:path";
 import { parseArgs } from "node:util";

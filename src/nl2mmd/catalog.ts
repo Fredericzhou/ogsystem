@@ -1,3 +1,12 @@
+/**
+ * @fileoverview NL2MMD catalog/context loader from local OGSystem repositories.
+ * File Set: nl2mmd-context
+ * Responsibilities:
+ * - Load runtime/law/role/model metadata into one prompt-ready context.
+ * - Resolve role mentions and expose supported DSL dictionary.
+ * Boundaries:
+ * - Does not call LLMs or generate Mermaid drafts.
+ */
 import { readdir } from "node:fs/promises";
 import { resolve } from "node:path";
 

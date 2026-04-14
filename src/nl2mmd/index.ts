@@ -1,3 +1,11 @@
+/**
+ * @fileoverview Barrel exports for NL2MMD public APIs and types.
+ * File Set: nl2mmd-entry
+ * Responsibilities:
+ * - Re-export NL2MMD context/search/prompt/service/validation modules.
+ * Boundaries:
+ * - No runtime logic.
+ */
 export {
   extractRoleMentions,
   getSupportedNl2MmdDictionary,

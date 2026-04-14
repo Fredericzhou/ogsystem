@@ -1,3 +1,12 @@
+/**
+ * @fileoverview Local validator for NL2MMD Mermaid candidates against runtime contracts.
+ * File Set: nl2mmd-validation
+ * Responsibilities:
+ * - Parse Mermaid with runtime parser and cross-check role/model/binding consistency.
+ * - Return structured errors/warnings and txt-graph preview.
+ * Boundaries:
+ * - Validation only; does not execute runs.
+ */
 import { readJsonFile } from "../runtime/json-file.js";
 import { loadModelPackage } from "../runtime/model-repo.js";
 import { parseSystemFromMermaidSource } from "../runtime/parse-mermaid.js";

@@ -1,3 +1,12 @@
+/**
+ * @fileoverview Console logger for run/role/transition lifecycle events.
+ * File Set: runtime-observability
+ * Responsibilities:
+ * - Render concise stderr log lines for run progress.
+ * - Apply optional ANSI coloring when terminal supports it.
+ * Boundaries:
+ * - Logging-only; does not persist audit artifacts.
+ */
 type LoggerLine = {
   tag: string;
   fields: Record<string, string | number | boolean | undefined>;

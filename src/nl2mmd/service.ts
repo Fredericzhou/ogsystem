@@ -1,3 +1,12 @@
+/**
+ * @fileoverview NL2MMD conversation service built on OpenCode model execution.
+ * File Set: nl2mmd-service
+ * Responsibilities:
+ * - Create managed conversation sessions and run preflight checks.
+ * - Execute NL2MMD turns, parse model responses, and run local validation.
+ * Boundaries:
+ * - Does not implement CLI interaction or repository indexing.
+ */
 import {
   executeOpencodeModelRole,
   startOpencodeRunClient,

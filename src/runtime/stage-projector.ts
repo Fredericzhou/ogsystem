@@ -1,3 +1,11 @@
+/**
+ * @fileoverview Projects audit trail entries into UI-friendly stage snapshots.
+ * File Set: runtime-observability
+ * Responsibilities:
+ * - Map ordered audit records to RUNNING/TERMINAL/FAILED stages.
+ * Boundaries:
+ * - Read-only projection; does not affect runtime state.
+ */
 import type { AuditRecord, StageSnapshot } from "./types.js";
 
 export function projectStages(args: {

@@ -1,3 +1,12 @@
+/**
+ * @fileoverview Project/run lifecycle utilities for `.ogs` workspace management.
+ * File Set: runtime-adapter
+ * Responsibilities:
+ * - Initialize project skeleton and templates.
+ * - Index/inspect/stop runs under the configured runs directory.
+ * Boundaries:
+ * - Does not execute graph runtime transitions.
+ */
 import { randomUUID } from "node:crypto";
 import { mkdir, readFile, readdir, stat, writeFile } from "node:fs/promises";
 import { basename, resolve } from "node:path";
@@ -251,6 +260,8 @@ export async function loadIndexedRuns(workdir: string): Promise<IndexedRun[]> {
     }
     const runDir = resolve(runsDir, entry.name);
     const stateRaw = await tryReadJson(resolve(runDir, "state.json"));
+    // Compatibility read: tolerate both flattened status fields and nested graphState snapshots
+    // so index rebuilding can survive schema transitions across runtime versions.
     const state =
       typeof stateRaw === "object" &&
       stateRaw !== null &&

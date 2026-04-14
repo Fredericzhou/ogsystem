@@ -1,3 +1,12 @@
+/**
+ * @fileoverview Lightweight debug logger for NL2MMD workflows.
+ * File Set: nl2mmd-observability
+ * Responsibilities:
+ * - Gate debug logs by environment flag.
+ * - Sanitize structured fields before printing.
+ * Boundaries:
+ * - No persistence or trace aggregation.
+ */
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }

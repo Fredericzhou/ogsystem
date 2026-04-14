@@ -1,3 +1,12 @@
+/**
+ * @fileoverview Role package loader, prompt rendering, and schema contract checks.
+ * File Set: runtime-exec
+ * Responsibilities:
+ * - Load role manifests/templates/schemas from role repository.
+ * - Validate role manifest shape and role I/O payloads against JSON Schema.
+ * Boundaries:
+ * - Does not schedule graph transitions or execute external tools/models.
+ */
 import { readFile } from "node:fs/promises";
 import { resolve } from "node:path";
 

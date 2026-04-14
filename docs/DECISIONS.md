@@ -116,7 +116,11 @@ Reason:
 - syntax reuses edge labels: `ERROR` and `ERROR.<errorCode>`
 - node-level opt-in: only nodes declaring `ERROR*` edges participate
 - trigger source is runtime failure only; normal success outputs cannot emit `ERROR*`
+- exception routing is evaluated only after executor-level retries are exhausted for that attempt
 - matching order is exact `ERROR.<errorCode>` then fallback `ERROR`
 - parser constraints: one fallback `ERROR` per `fromRole`, one target per `ERROR.<code>`, and no `ERROR*` on `input`
+- fail-closed parsing: reserved `ERROR*` events must be exactly `ERROR` or `ERROR.<errorCode>`
+- role-facing `allowed_events` excludes runtime-only `ERROR*` edges
+- use business event edges for expected successful domain outcomes; use `ERROR*` only for runtime-failure compensation/degrade paths
 - compatibility rule: no `ERROR*` edges means unchanged fail-stop behavior
 - rollout uses feature flag `runtime.error_edges.v1` for staged enablement and rollback

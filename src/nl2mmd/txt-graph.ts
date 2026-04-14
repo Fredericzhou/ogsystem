@@ -1,3 +1,12 @@
+/**
+ * @fileoverview Human-readable txt-graph renderer derived from Mermaid source.
+ * File Set: nl2mmd-observability
+ * Responsibilities:
+ * - Parse role/boundary edges from Mermaid.
+ * - Render compact role/binding/connection summary text.
+ * Boundaries:
+ * - Visualization only; does not validate runtime semantics.
+ */
 type ParsedNodeToken =
   | {
       kind: "boundary";

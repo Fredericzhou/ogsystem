@@ -410,6 +410,42 @@ for (const resumeStateMutationCase of [
     expectedMessage: /graphState\.auditSummary\.okCount|RESUME_STATE_INVALID/
   },
   {
+    name: "adapter resume rejects non-integer audit failed counter",
+    tempPrefix: "ogsystem-resume-audit-failed-count-",
+    prompt: "resume audit failed count",
+    mutateGraphState(graphState) {
+      graphState.auditSummary.failedCount = 1.5;
+    },
+    expectedMessage: /graphState\.auditSummary\.failedCount|RESUME_STATE_INVALID/
+  },
+  {
+    name: "adapter resume rejects non-integer audit noop counter",
+    tempPrefix: "ogsystem-resume-audit-noop-count-",
+    prompt: "resume audit noop count",
+    mutateGraphState(graphState) {
+      graphState.auditSummary.noopCount = 1.5;
+    },
+    expectedMessage: /graphState\.auditSummary\.noopCount|RESUME_STATE_INVALID/
+  },
+  {
+    name: "adapter resume rejects non-integer audit repair attempted counter",
+    tempPrefix: "ogsystem-resume-audit-repair-attempted-count-",
+    prompt: "resume audit repair attempted count",
+    mutateGraphState(graphState) {
+      graphState.auditSummary.repairAttemptedCount = 1.5;
+    },
+    expectedMessage: /graphState\.auditSummary\.repairAttemptedCount|RESUME_STATE_INVALID/
+  },
+  {
+    name: "adapter resume rejects non-integer audit repair applied counter",
+    tempPrefix: "ogsystem-resume-audit-repair-applied-count-",
+    prompt: "resume audit repair applied count",
+    mutateGraphState(graphState) {
+      graphState.auditSummary.repairAppliedCount = 1.5;
+    },
+    expectedMessage: /graphState\.auditSummary\.repairAppliedCount|RESUME_STATE_INVALID/
+  },
+  {
     name: "adapter resume rejects non-integer branch sequence counter",
     tempPrefix: "ogsystem-resume-branch-sequence-",
     prompt: "resume branch sequence",

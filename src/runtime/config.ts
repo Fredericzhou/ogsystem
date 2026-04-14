@@ -1,3 +1,12 @@
+/**
+ * @fileoverview Strict validators for runtime-side JSON configuration files.
+ * File Set: runtime-adapter
+ * Responsibilities:
+ * - Validate profiles/tools/laws/user-profile/runtime config payloads.
+ * - Return strongly typed structures with precise field-path errors.
+ * Boundaries:
+ * - No filesystem IO and no runtime execution side effects.
+ */
 import type {
   CliTool,
   CliToolRegistry,

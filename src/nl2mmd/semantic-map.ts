@@ -1,3 +1,12 @@
+/**
+ * @fileoverview Search/ranking and semantic hint extraction for NL2MMD prompts.
+ * File Set: nl2mmd-context
+ * Responsibilities:
+ * - Build reusable search index over role/model catalogs.
+ * - Rank query matches and extract fixed intent hints from user text.
+ * Boundaries:
+ * - Heuristic assistance only; no DSL validation.
+ */
 import type {
   Nl2MmdCatalogSearchResult,
   Nl2MmdContext,
