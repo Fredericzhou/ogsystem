@@ -24,12 +24,14 @@ LangGraph is the current backend implementation of the graph runtime, not the pu
 - OGSystem semantics live in Mermaid parsing plus the normalized execution plan
 - `role.mode.*`, `join.mode.*`, `join.sources.*`, and `loop.max.*` are OGSystem metadata
 - `join.sources.*` is only valid together with `join.mode.*`, and `all_of` sources must match the incoming Mermaid role edges exactly
+- `any_of` is represented by `join.mode=quorum_of + join.min=1` instead of adding a third join mode keyword
 - legacy `%% engine=langgraph` is accepted only as compatibility input
 
 Reason:
 
 - contributors need a stable semantic layer even if the backend changes later
 - OGSystem metadata should not be documented as native LangGraph syntax
+- keep `all_of` explicit for common full-join readability, while avoiding `any_of` keyword expansion that increases parser/test/compatibility surface without adding expressive power
 
 ## 3. Execution Boundary
 
@@ -50,7 +52,7 @@ Reason:
 Semantic fan-out is not the same thing as backend compute parallelism.
 
 - `parallel_split` means OGSystem activates multiple downstream branches
-- join readiness is tracked by `join.sources + lineageId`, not by raw node count alone
+- join readiness is tracked by `join.sources + lineageId + loopIteration`, not by raw node count alone
 - uncertain-`N` dynamic fan-out stays inside one role (Heavy Node) or pre-expansion, not as runtime-generated graph semantics
 - ordinary single-target sequential transitions keep the current `sessionLineageId`
 - `all_of` join activation allocates a fresh join session lineage after all declared sources are ready

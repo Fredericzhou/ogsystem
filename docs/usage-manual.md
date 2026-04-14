@@ -273,8 +273,10 @@ Orchestration semantics contract:
 
 - `parallel_split` activates all downstream targets of the current role in the same transition
 - default routing without `role.mode` is event-driven; runtime injects `allowed_events`, and non-parallel roles with outgoing flows must emit `event`
-- `join.mode.<roleId>=all_of` waits until every role listed in `join.sources.<roleId>` has produced a result under the same `lineageId`
+- default routing activates all outgoing flows whose `eventType` equals the emitted `event`; when `PASS/REJECT` point to the same target, it is still one event choice (the emitted event determines the matched flow set)
+- `join.mode.<roleId>=all_of` waits until every role listed in `join.sources.<roleId>` has produced a result under the same `lineageId + loopIteration`
 - `join.mode.<roleId>=quorum_of` activates after `join.min.<roleId>` unique sources in `join.sources.<roleId>` complete under the same `lineageId + loopIteration`, activates once only, and records late arrivals without retriggering
+- semantic aliases: `quorum_of + join.min=1` is equivalent to `any`; `quorum_of + join.min=|join.sources|` is equivalent to `all`; runtime keeps `all_of` and `quorum_of` as explicit DSL modes and does not add a separate `any_of` mode (preserves `all_of` readability while avoiding extra DSL keyword surface)
 - for both `all_of` and `quorum_of`, `join.sources.<roleId>` must match the join node's Mermaid incoming role edges exactly; undeclared incoming role edges are rejected at parse time rather than being ignored at runtime
 - join nodes default to the same normalized JSON `{{context}}` namespace keyed by `join.sources` role ids (each value contains that source's `event/content/data`) rather than exposing raw runtime state or plain-text sections
 - `context.map.<roleId>.<field>=<selector>` replaces the default `context` payload with a stable JSON projection; supported selectors are `direct.*`, `source(<roleId>).*(join only)`, `global.task`, and `global.user_profile.*`
@@ -515,6 +517,7 @@ Lineage contract:
 - `lineageId` scopes branch-family correlation such as `all_of/quorum_of` join readiness and result lookup
 - `sessionLineageId` scopes OpenCode session reuse and sibling-branch isolation
 - session keys are always `roleId:sessionLineageId`
+- `loop.max` counters are role-local: each role that declares `loop.max.<roleId>` counts activations independently; bypassing a role through a shortcut does not increment that role's counter, and any declared role exceeding its own budget fails the run
 
 OpenCode lifecycle rule for `model.bind`:
 

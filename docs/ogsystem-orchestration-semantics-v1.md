@@ -3,7 +3,7 @@
 ## 一、 核心架构哲学：物理隔离与逻辑投影
 
 `ogsystem` 的设计遵循 **“物理白纸，逻辑灵魂”** 的原则：
-*   **物理层 (Physical Layer)**：通过 OpenCode Server 提供绝对干净、无差别的“对话房间”（Sessions）。
+*   **物理层 (Physical Layer)**：通过 OpenCode Server 提供可隔离、可复用的“对话房间”（Sessions）。
 *   **逻辑层 (Logic Layer)**：框架（Runtime）从全局状态中提取“脱水”后的关键信息，通过 **状态投影 (State Projection)** 注入到每个房间的提示词（Prompt）中。
 *   **血缘识别 (Lineage)**：以 `branchId/lineageId/sessionLineageId` 共同描述执行血缘。会话复用键为 `roleId + sessionLineageId`，确保并行路径物理隔离，循环轮次按 `sessionLineageId` 策略进行隔离或复用。
 
@@ -17,10 +17,10 @@
 | :--- | :--- | :--- | :--- |
 | **Role (角色)** | **Git Repository** | 静态资产（Prompt, Schema）。 | 定义“我是谁”以及“我怎么做”。 |
 | **Node (节点)** | **代码中的函数调用** | Mermaid 图中的方框。 | 定义“我在图中的位置”以及“我的上下游”。 |
-| **Branch (分支)** | **Git Fork / Branch** | 运行时的动态实例（`branchId` + `sessionLineageId`）。 | 承载“分支级执行状态与会话血缘”。注：相同 role 的分支默认共享 `roleDir`，不提供分支级独立工作目录。 |
+| **Branch (分支)** | **Git Fork / Branch** | 运行时的动态实例（核心标识为 `branchId`，并携带 `lineageId/sessionLineageId`）。 | 承载“分支级执行状态与会话血缘”。注：相同 role 的分支默认共享 `roleDir`，不提供分支级独立工作目录。 |
 
 **Git Fork 类比**：
-当图发生并行（Parallel Split）时，系统为每个下游 Node 执行了一次 `git checkout -b <sessionLineageId>`。它们拥有相同的初始状态（上游 Context），但随后的会话记忆物理隔离（注：此处主要指会话记忆层隔离，不代表文件系统隔离，相同 role 仍共用其私有工作目录）。
+当一次转移会激活多个下游（典型是 `parallel_split`，也可能是同事件命中多个目标）或进入 join 节点时，系统会为目标分支切换到新的 `sessionLineageId`。它们拥有相同的初始状态（上游 Context），但随后的会话记忆物理隔离（注：此处主要指会话记忆层隔离，不代表文件系统隔离，相同 role 仍共用其私有工作目录）。
 
 ---
 
@@ -31,9 +31,9 @@
 | **`join.mode: all_of`** | **全量汇合**。等待 `join.sources` 声明的全部上游在同一 `lineageId + loopIteration` 下完成；当前实现要求 `join.sources.<roleId>` 中的 source role 唯一，且与 Mermaid 中该节点的全部入边角色严格一致，避免隐式漏等/多等。 | **1. 命名空间打包**：运行时将多方产物整理为以 `roleId` 为键的 JSON 对象注入 `{{context}}`，值中保留 `event/content/data`。 <br> **2. 汇合判定**：由运行时按 `join.sources`、当前 `lineageId` 与当前轮次判断是否可激活 join 节点。 |
 | **`join.mode: quorum_of`** | **法定人数汇合**。等待 `join.sources` 中至少 `join.min.<roleId>` 个唯一上游在同一 `lineageId + loopIteration` 下完成；`join.sources.<roleId>` 本身也必须只声明唯一 source role，并与 Mermaid 中该节点的全部入边角色严格一致；达到阈值后 join 节点只激活一次，迟到 source 只记审计、不重触发。 | **1. 阈值判定**：运行时按唯一 source role 计数，而不是按到达次数计数。 <br> **2. 默认上下文**：未配置 `context.map` 时，仍按 `join.sources` 归一化注入 JSON 命名空间。 |
 | **`context.map.<roleId>.*`** | **字段级上下文投影**。运行时用稳定字段顺序构造新的 JSON `context`，并让 `last_output` 继续镜像该投影。 | **1. 普通节点来源**：`direct.*`、`global.task`、`global.user_profile.*`。 <br> **2. Join 节点来源**：`source(<roleId>).*(仅限 join.sources)` 与 `global.*`。 <br> **3. Fail-closed**：缺字段、缺 source、非法 selector 均直接失败。 |
-| **默认事件路由（无 `role.mode`）** | **条件跳转**。由输出事件决定。 | **1. 选项锁定**：在 Prompt 注入 `allowed_events`。 <br> **2. 结构化约束**：在有出边且非并行模式下要求输出 `event`。 |
+| **默认事件路由（无 `role.mode`）** | **条件跳转**。由输出事件决定。 | **1. 选项锁定**：在 Prompt 注入 `allowed_events`。 <br> **2. 结构化约束**：在有出边且非并行模式下要求输出 `event`。 <br> **3. 命中规则**：运行时会激活所有 `eventType == 输出 event` 的出边；若 `PASS/REJECT` 指向同一目标，仍是单次二选一路由（由输出 event 决定命中哪一组边）。 <br> **4. `noop` 例外**：仅在 law 显式允许 `allowNoopWithoutExecutionBinding=true` 且该节点最多一个出边时，运行时可无模型执行直接走唯一出边。 |
 | **`role.mode: parallel_split`** | **并行分发**。同时激活所有下游。 | **1. 任务分片**：在 Prompt 中明确当前分支的子任务目标。 <br> **2. 会话隔离**：运行时按 `sessionLineageId` 控制分支会话隔离；注意默认并非分支级独立工作目录，同一 role 仍共享其 `privateDir`。 |
-| **`loop.max`** | **循环预算**。限制拓扑环路迭代。 | **1. 轮次感知**：注入 `round` 变量。 <br> **2. 运行时守卫**：环路在解析期要求存在 `loop.max.*`，执行期由 loop budget 进行拦截。 |
+| **`loop.max`** | **循环预算**。限制拓扑环路迭代。 | **1. 轮次感知**：注入 `round` 变量。 <br> **2. 运行时守卫**：解析期要求每个拓扑环至少有一个角色声明 `loop.max.*`；执行期由 loop budget 拦截超限激活。 |
 
 ---
 
@@ -87,13 +87,33 @@
 为避免将抽象语义理解成未落地能力，当前实现还有以下收敛约束：
 
 *   **Join 配置是显式且严格的**：`join.sources.<roleId>` 必须只包含唯一 source role，且对 `all_of` 与 `quorum_of` 都必须与 Mermaid 中该节点的全部入边角色完全一致；`join.mode.<roleId>=quorum_of` 时，`join.min.<roleId>` 是必填项，且阈值按同一 `lineageId + loopIteration` 下的唯一 source role 计数。
+*   **`all_of` 与 `quorum_of` 的关系是“语义特例”，不是新增模式**：`quorum_of + join.min=1` 等价“any”；`quorum_of + join.min=|sources|` 等价“all”。当前 DSL 不单独引入 `any_of`：`all_of` 保留为高频默认汇合语义（更少配置、更易审查），`any` 通过 `quorum_of + join.min=1` 表达（避免新增关键字带来的解析/测试/兼容面扩张）。
 *   **Join 上下文与字段投影都属于运行时契约**：默认 join `context` 是按 `roleId` 归一化后的 JSON 投影；若声明 `context.map.<roleId>.*`，运行时会以稳定字段顺序重建 `context`，并要求 selector 与 source 都合法。
+*   **`context.map` selector 为白名单语法**：仅支持 `global.task`、`global.user_profile(.path)`、`direct.content/event/data(.path)`、`source(<roleId>).content/event/data(.path)`；join 节点禁止 `direct.*`，非 join 节点禁止 `source(...)`。
+*   **`noop` 是受 law 约束的显式语义**：角色无 `model.bind/exec.bind` 时并不自动放行；只有 `allowNoopWithoutExecutionBinding=true` 且出边数不超过 1 才允许 `noop`，否则直接失败。
 *   **隔离的是模型会话，不是分支文件系统**：并行 sibling branch 会拿到不同的 `sessionLineageId`，从而不会共享模型会话记忆；但相同 role 默认仍共用一个 role 私有目录。
 *   **顺序链路会继承 `sessionLineageId`**：只有并行分叉、一次激活多个目标，或进入任意 join（`all_of` / `quorum_of`）时，运行时才会切换到新的会话血缘；普通单路顺序流转会沿用当前 branch 的 `sessionLineageId`。
+*   **状态机扩展事件是单触发语义**：`quorum_of` 达阈值后 join 分支只激活一次；迟到 source 仅追加 `join_late_arrival_ignored` 事件，不重复激活 join。
+*   **`loop.max` 是按“声明该 budget 的目标角色”独立计数**：进入该角色一次记一次；捷径若绕过该角色，不会增加该角色计数。若环上多个角色都声明了 `loop.max`，它们各自独立生效，任一超限都会触发失败。
 
 ---
 
-## 八、 生命周期与落盘契约（2026-04-12）
+## 八、 Mermaid DSL 硬约束（补充）
+
+*   **Header 必须严格匹配**：首个非空行必须是 `flowchart TD` 或 `flowchart LR`。
+*   **可执行行是封闭集合**：仅允许 `%% key=value` 元数据行与 `A -->|EVENT| B` 边定义；其他可执行语法直接失败。
+*   **节点 token 是严格格式**：仅支持 `nodeId[Role:roleId]`；边界 token 仅支持 `input/output`，并拒绝 `start/end/done`。
+*   **边界边语义固定**：只允许 `input -->|EVENT| Role` 与 `Role -->|EVENT| output`。
+*   **入口语义需单值一致**：入口来自 `entry.role` 或唯一 `input` 边目标；两者冲突或存在多个 `input` 目标都会失败。
+*   **元数据键是白名单**：仅支持 `engine/system.id/system.version/law.global/entry.role` 及 `talent.bind/model.bind/exec.bind/role.mode/join.mode/join.sources/join.min/context.map/loop.max` 前缀；重复 key 与未知 key 都会失败。
+*   **`engine` 仅保留兼容入口**：可省略；若声明则只能是 `langgraph`。
+*   **保留角色名禁止复用**：`input/output/start/end/done` 不能作为 `roleId`。
+*   **终止条件必须显式可达**：至少要有一个无下游 role 边的终止角色，或一条 `Role -->|EVENT| output` 边。
+*   **绑定冲突会被拒绝**：同一 role 不允许同时声明 `model.bind.<roleId>` 与 `exec.bind.<roleId>`。
+
+---
+
+## 九、 生命周期与落盘契约（2026-04-12）
 
 *   **运行根目录唯一化**：运行权威目录为 `.ogs/runs/<run-id>/`，不再使用旧 `ogsystem-history/` 路径。
 *   **run-id 规则**：`YYYYMMDD-HHMMSS-<shortHash>`，保证可排序和低碰撞。
