@@ -1,79 +1,55 @@
-# OGSystem Flow Contract 重构方案与语义优先级清单（2026-04-14）
+# OGSystem Flow Contract 重构方案（修订版，2026-04-14）
 
 Archived: yes (delivery proposal; not active source of truth)  
 Status: proposed  
 Date: 2026-04-14  
 Owner: Runtime maintainers
 
-## 1. 目标与结论
+## 1. 目标与核心结论
 
-本方案用于统一以下方向：
+本修订版明确采用三层分工，避免把业务合同和技术协议混在一起：
 
-1. 统一框架输出信封为 `event/content/data`（运行时可附加 `_meta` 技术字段）。
-2. `flow` 作为强合同（强制结构校验）载体。
-3. `role` 不再承担 `input/output schema` 的硬结构定义，而是表达能力边界（可文本化、可选标签化）。
-4. 编译/校验阶段提前暴露“合同超出角色能力范围”的风险。
+1. 技术层（Runtime Envelope）：统一 `event/content/data`，`_meta` 由运行时注入。
+2. 业务层（Flow Contract）：以 flow 为准，定义“这条边允许传什么”。
+3. 能力层（Role Capability）：角色表达“能做什么”，不直接定义场景合同。
 
-核心原则：
+结论：
 
-- 协作合同强制在流转层，不在角色层重复定义。
-- 角色层是能力声明，不是场景合同。
-- 运行时 fail-closed 只对 flow contract 生效；role capability 由编译策略决定是 warn 还是 error。
-
-可执行前置条件（必须先满足）：
-
-1. 解析器白名单先放行新 metadata 键，否则 `handoff.*` 在 parse 阶段即失败。
-2. `parallel_split` 的合同匹配规则先定稿（无 event 输出时如何匹配合同）。
-3. role `outputSchema` 的兼容迁移路径先实现（manifest/执行期/校验链路的阶段化改造）。
-4. `join.deadline.* / join.on_timeout.*` 不并入本方案主链；其上线依赖 `docs/ogsystem-wait-timeout-semantics-v2.md` 从 RFC 进入 Delivered。
+- 用户关注与配置重点应是业务合同（flow contract），不是技术字段。
+- 技术字段由框架统一约束；role 仅保留最小生成护栏（minimal schema）。
+- 编译期做主校验，运行期做 fail-closed 执行校验。
 
 ---
 
-## 2. 待补齐语义（按优先级）
+## 2. 当前实现约束与已知冲突
 
-### P0（必须先做）
+当前仓库已落地且必须兼容的事实：
 
-| 语义 | 说明 | 价值 | 风险 |
-| :--- | :--- | :--- | :--- |
-| `handoff.contract.<fromRoleId>.<eventType>.<toRoleId>.*` | 流转合同强制声明（schema/version/on_violation） | 交接确定性、审计性、可恢复性显著提升 | 合同迁移成本上升 |
-| `route.order.<fromRoleId>` | fromRole 级命中流转处理顺序（可选，默认 Mermaid 声明顺序） | 消除隐式顺序歧义，行为可复现 | 需要增加 lint 冲突规则 |
+1. Mermaid metadata 是白名单，未知 key 直接失败。
+2. 角色输出当前只允许 `event/content/data` 三个字段。
+3. `parallel_split` 可以在无 event 的情况下激活全部下游。
+4. `join` 通过 `all_of/quorum_of + join.sources + join.min` 判定就绪。
+5. `ERROR*` 是运行时失败路由，不是普通业务输出事件。
 
-### P0-Dependency（独立里程碑，不与合同主链同批上线）
+已知冲突（本修订必须规避）：
 
-| 语义 | 说明 | 依赖 | 结论 |
-| :--- | :--- | :--- | :--- |
-| `join.deadline.<roleId>` + `join.on_timeout.<roleId>` | join 超时治理 | `wait-timeout v2` 的 parser/config/runner/timer 全链路实现 | 独立发布，不纳入本计划 Phase 0/1 的上线闸门 |
-
-### P1（高收益增强）
-
-| 语义 | 说明 | 价值 | 风险 |
-| :--- | :--- | :--- | :--- |
-| `role.capability.<roleId>.*` | 角色能力文本/标签化声明（`can/cannot/notes/tags`） | 场景复用强，能力治理清晰 | 自动匹配准确率依赖规范化 |
-| `role.idempotency.<roleId>` | 副作用节点幂等键策略 | 降低重放/恢复重复副作用 | 幂等键错误会误去重 |
-| `role.retry.<roleId>.*` | 节点级重试策略 | 失败恢复稳定性提升 | 配置不当拉高时延/成本 |
-
-### P2（治理层扩展）
-
-| 语义 | 说明 | 价值 | 风险 |
-| :--- | :--- | :--- | :--- |
-| `route.when.<fromRoleId>.<toRoleId>` | 条件化路由（受限表达） | 业务路由显式可审计 | DSL 复杂度快速上升 |
-| `govern.approve.<roleId>` / `govern.veto.<roleId>` | 审批/否决关系语义 | 组织决策链可落盘 | 运行路径变长 |
-| `law.scope.*` | 多作用域策略优先级 | 长期规则体系可扩展 | 冲突解析复杂 |
-
-备注：`any_of` 不新增为独立关键字，继续用 `quorum_of + join.min=1` 表达，减少 DSL 面扩张。
+1. `handoff.contract.<from>.<event>.<to>.*` 作为 metadata key 有歧义风险。  
+原因：`roleId` 与 `eventType` 允许包含 `.`，按 `.` 分段不稳定。
+2. 若只改 parser 不改 NL2MMD，会出现“可写不可保留/可写不可生成”的链路断裂。
+3. 若直接移除 role output schema，会破坏执行器结构化生成约束与现有校验链路。
 
 ---
 
-## 3. Flow Contract 全量方案（目标态）
+## 3. 分层定义（建议作为后续文档回写口径）
 
-### 3.1 统一信封（runtime envelope）
+### 3.1 技术层：Runtime Envelope（统一、框架托管）
 
-运行时统一交接结构：
+运行时交接信封（角色无需输出 `_meta`）：
 
 ```json
 {
   "event": "PASS",
-  "content": "summary text",
+  "content": "summary",
   "data": {
     "score": 87
   },
@@ -84,273 +60,412 @@ Owner: Runtime maintainers
     "branchId": "review@1#2",
     "lineageId": "dispatch@1#1",
     "loopIteration": 1,
+    "contractId": "review.pass.to.decision.v1",
     "contractVersion": 1,
     "at": "2026-04-14T12:00:01.000Z"
   }
 }
 ```
 
-说明：
+边界：
 
-- `event/content/data` 为业务信封。
-- `_meta` 为技术字段，由运行时补齐，不要求 role 生成。
-- flow contract 可默认只约束 `event/content/data`，不强制约束 `_meta` 业务含义。
+- 业务合同默认仅约束 `event/content/data`。
+- `_meta` 是技术审计字段，不作为业务合同输入来源（除非显式允许只读引用）。
+- `_meta` 属于运行时临时交接信封，不进入持久化 `StoredRoleResult/result.json` 主体。
+- 若需要审计 `_meta`，应写入 `events.ndjson` 或专门的运行时审计事件，而不是回写为 role 输出事实。
 
-### 3.2 Mermaid 元数据口径
+### 3.2 业务层：Flow Contract（以 flow 为准）
+
+不再把 `from/event/to` 编进 metadata key。  
+改为独立合同清单文件，并在 Mermaid 只声明引用：
 
 ```txt
 %% handoff.mode=strict|compat
-%% handoff.contract.<fromRoleId>.<eventType>.<toRoleId>.schema=schemas/handoff/<name>.json
-%% handoff.contract.<fromRoleId>.<eventType>.<toRoleId>.version=1
-%% handoff.contract.<fromRoleId>.<eventType>.<toRoleId>.on_violation=FAIL|WARN
-%% handoff.contract.<fromRoleId>.__split__.<toRoleId>.schema=schemas/handoff/<name>.json
+%% handoff.contracts=contracts/handoff.contracts.json
 %% route.order.<fromRoleId>=<toRoleIdA>,<toRoleIdB>,...
 ```
 
-推荐：
-
-- `strict`：缺合同或合同校验失败直接失败。
-- `compat`：缺合同告警，合同存在时强校验。
-- `__split__`：仅用于 `role.mode.<fromRoleId>=parallel_split` 且 role 输出不依赖 event 的合同匹配。
-- `route.order`：仅定义命中集合的处理顺序，不改变命中集合本身。
-
-解析器迁移要求：
-
-- 在 Phase 0 增加 `handoff.mode` 与 `handoff.contract.*` 键白名单支持。
-- 在 Phase 0 增加 `route.order.*` 键白名单支持。
-- 在未实现运行时合同校验前，`handoff.*` 仅允许 lint 消费，不改变当前执行语义。
-
-### 3.3 `handoff.*` 字段分级（必选/可选/默认值）
-
-| 字段 | 级别 | 默认值 | 说明 |
-| :--- | :--- | :--- | :--- |
-| `handoff.mode` | 可选 | `compat`（Phase 1）；`strict`（Phase 2 起建议默认） | 全局合同执行模式。 |
-| `handoff.contract.<from>.<event>.<to>.schema` | 必选（strict）/可选（compat） | 无 | 指向 JSON Schema。 |
-| `handoff.contract.<from>.<event>.<to>.version` | 可选 | `1` | 合同版本号（审计与回放定位）。 |
-| `handoff.contract.<from>.<event>.<to>.on_violation` | 可选 | `FAIL` | strict 下仅允许 `FAIL`。 |
-| `handoff.contract.<from>.__split__.<to>.schema` | 条件必选（当 `from` 为 `parallel_split` 且 strict） | 无 | split 场景合同匹配锚点。 |
-| `handoff.contract.<from>.__split__.<to>.version` | 可选 | `1` | 同上。 |
-| `handoff.contract.<from>.__split__.<to>.on_violation` | 可选 | `FAIL` | strict 下仅允许 `FAIL`。 |
-
-额外约束：
-
-- 当 `role.mode.<fromRoleId>=parallel_split` 时，`__split__` 与 `<eventType>` 两种合同键不应混用；lint 直接报错，避免匹配歧义。
-- strict 下，任何命中流转都必须存在合同声明；缺失合同直接失败，不允许降级为 WARN。
-
-### 3.4 Role 能力口径（非强 schema）
-
-`role.json` 建议新增（或保留可选）：
+`contracts/handoff.contracts.json` 示例：
 
 ```json
 {
-  "roleId": "developer",
-  "name": "Developer",
-  "can": ["implement", "refactor"],
-  "cannot": ["approve_release"],
-  "capabilityNotes": "可开发 C/Java，当前团队 C 更稳定",
-  "tags": ["lang:c", "lang:java", "domain:backend"]
+  "version": 1,
+  "contracts": [
+    {
+      "id": "intake.pass.to.dispatch.v1",
+      "kind": "flow",
+      "match": {
+        "fromRoleId": "intake",
+        "eventType": "PASS",
+        "toRoleId": "dispatch"
+      },
+      "schema": "schemas/handoff/intake-pass.json",
+      "onViolation": "FAIL"
+    },
+    {
+      "id": "dispatch.split.to.worker_a.v1",
+      "kind": "flow",
+      "match": {
+        "fromRoleId": "dispatch",
+        "mode": "split",
+        "toRoleId": "worker_a"
+      },
+      "schema": "schemas/handoff/split-worker-task.json",
+      "onViolation": "FAIL"
+    },
+    {
+      "id": "review.join.input.v1",
+      "kind": "role_input",
+      "match": {
+        "roleId": "review"
+      },
+      "schema": "schemas/handoff/review-join-input.json",
+      "onViolation": "FAIL"
+    }
+  ]
 }
 ```
 
 说明：
 
-- `tags` 为可选治理增强，不是 flow 口径来源。
-- role 不再以 `input/output schema` 做硬阻断。
-- role 在迁移完成前仍保留现有 schema 字段以兼容现网运行路径。
+- `kind=flow`：校验 flow 上传递载荷。
+- `kind=role_input`：校验节点最终输入（特别适合 join + context.map，也适用于 split/普通接收节点的 `context.map` 投影输入）。
+- `mode=split`：用于 `parallel_split` 场景，不依赖 event 匹配。
+- `role_input` 是业务层输入合同；现有 `role.inputSchema` 继续保留为技术层 prompt-input 合同，两者并存但不互相替代。
 
-### 3.5 `route.order` 语义口径（fromRole 级）
+### 3.3 能力层：Role Capability（软约束）
 
-定义：
+`role.json` 建议口径：
 
-- `route.order.<fromRoleId>` 是可选配置，作用域为单个 fromRole。
-- 未配置时，命中流转按 Mermaid 声明顺序处理（默认行为）。
-- 配置后，仅重排“已命中流转”的处理顺序；不会改变是否命中。
+```json
+{
+  "roleId": "developer",
+  "name": "Developer",
+  "can": ["implement:c", "implement:java", "refactor"],
+  "cannot": ["approve_release"],
+  "capabilityNotes": "当前团队 C 交付稳定性更高",
+  "tags": ["lang:c", "lang:java", "domain:backend"]
+}
+```
 
-执行规则（建议）：
+能力匹配原则：
 
-1. 先按现有路由语义计算命中集合（默认事件路由按 `eventType == 输出 event`）。
-2. 使用 `route.order.<fromRoleId>` 对命中集合做稳定排序（按 `toRoleId` 位置）。
-3. 未在 `route.order` 中列出的命中目标，按 Mermaid 声明顺序追加在末尾。
+- flow contract 定义“本次业务需要什么”（例如必须 `lang:c`）。
+- role capability 仅用于编译期风险判定（warn/error 策略化），不默认替代合同校验。
 
-边界：
+范围收敛说明：
 
-- `route.order` 不用于表达“选哪条流转”，只用于“命中后先后次序”。
-- `parallel_split` 可保持现状（按声明顺序全量分发），不强制依赖 `route.order`。
-- 若同一 `fromRoleId + eventType + toRoleId` 存在重复流转，lint 应直接报错，避免顺序语义退化。
+- Role Capability 不属于本方案 Phase 0-2 主链。
+- 在当前实现中，`role.json` 校验器尚不接受 `can/cannot/capabilityNotes` 等字段，因此该部分仅保留为后续演进方向，不作为本次合同重构闸门。
+- 本次主链只处理：技术 envelope、flow contract、minimal schema、resume 一致性。
 
 ---
 
-## 4. 自动校验方案（编译期 + 运行期）
+## 4. 特殊节点实现示例
 
-### 4.1 编译期（lint/plan）
+### 4.1 `parallel_split`（无 event 分发）
 
-新增 `ContractPlan` 构建步骤：
+Mermaid：
 
-1. 从 Mermaid 收集所有 role-to-role 流转：
-   - 普通路由：`fromRoleId + eventType + toRoleId`
-   - `parallel_split`：`fromRoleId + __split__ + toRoleId`
-2. 校验每条流转的合同声明完整性（按 `handoff.mode` 决定是否必须）。
-   - 若 `fromRole` 为 `parallel_split`，必须使用 `__split__` 键空间。
-   - 若检测到 `parallel_split` 同时声明 `__split__` 与 `<eventType>` 合同，直接报错。
-3. 校验 `route.order.<fromRoleId>`（可选）：
-   - 每个 `toRoleId` 必须是该 `fromRoleId` 的实际下游目标之一。
-   - `route.order` 中不允许重复 `toRoleId`。
-4. 校验 schema 可加载/可编译（AJV）。
-5. 校验声明与流转一一对应（拒绝“无对应流转”的孤儿合同）。
-6. 对 role capability 做匹配分析并产出风险：
-   - `CAPABILITY_MISMATCH_WARN`
-   - `CAPABILITY_MISMATCH_ERROR`（由策略决定）
+```mermaid
+flowchart TD
+%% system.id=demo.split
+%% system.version=1.0.0
+%% law.global=law.default
+%% entry.role=dispatch
+%% role.mode.dispatch=parallel_split
+%% handoff.mode=strict
+%% handoff.contracts=contracts/handoff.split.json
+%% route.order.dispatch=worker_a,worker_b
+%% context.map.worker_a.task=direct.data.tasks.worker_a
+%% context.map.worker_b.task=direct.data.tasks.worker_b
 
-兼容性判定策略（建议）：
+input -->|START| dispatch[Role:dispatch]
+dispatch[Role:dispatch] -->|TASK_A| worker_a[Role:worker_a]
+dispatch[Role:dispatch] -->|TASK_B| worker_b[Role:worker_b]
+worker_a[Role:worker_a] -->|DONE_A| output
+worker_b[Role:worker_b] -->|DONE_B| output
+```
 
-- 先做受限匹配（字段覆盖、枚举匹配、关键标签匹配），避免全量 schema 子类型推导复杂度。
-- 匹配结果为“风险评估”，非默认硬阻断。
+合同匹配：
 
-### 4.2 运行期（execute/transition）
+1. `dispatch` 进入 split 时忽略输出 event。
+2. 对每个命中下游（`worker_a`、`worker_b`）按 `mode=split + from + to` 匹配 flow 合同。
+3. split 后若不同下游需要不同输入视图，不新增额外投影机制；统一由接收节点使用现有 `context.map.<roleId>.* = direct.*` 做接收侧投影。
+4. flow 合同校验共享上游 envelope；接收节点若声明 `role_input` 合同，则在其 `context.map` 投影后的结构化对象上校验最终输入，而不是校验字符串化后的 prompt context。
+5. 每条 flow 单独进入匹配集合，但 strict/compat 的激活策略按第 7 节统一处理。
 
-每次 role 输出后执行：
+### 4.2 `join.mode=all_of` + `context.map`
 
-1. 基础信封校验：输出必须是 `event/content/data` 结构。
-2. 运行时附加 `_meta` 技术字段形成交接信封（role 输出不需要 `_meta`）。
-3. 命中流转集合：
-   - 普通路由：按输出 `event` 匹配
-   - `parallel_split`：忽略 `event`，按 `__split__` 匹配所有下游
-4. 若配置 `route.order.<fromRoleId>`，对命中集合排序（仅改变处理顺序，不改变命中结果）。
-5. 对每条命中流转执行合同校验（schema）。
-6. 根据运行模式与 `on_violation` 处理结果。
-7. 通过后才激活下游节点。
+Mermaid：
 
-join 场景：
+```mermaid
+flowchart TD
+%% system.id=demo.join.allof
+%% system.version=1.0.0
+%% law.global=law.default
+%% entry.role=dispatch
+%% role.mode.dispatch=parallel_split
+%% join.mode.review=all_of
+%% join.sources.review=dev,qa
+%% context.map.review.dev_report=source(dev).data.report
+%% context.map.review.qa_risk=source(qa).data.risk
+%% context.map.review.task=global.task
+%% handoff.mode=strict
+%% handoff.contracts=contracts/handoff.join.json
 
-- 上游每条流转先各自过合同。
-- join 节点仍按现有 `all_of/quorum_of` 语义判断 readiness。
+input -->|START| dispatch[Role:dispatch]
+dispatch[Role:dispatch] -->|DEV| dev[Role:dev]
+dispatch[Role:dispatch] -->|QA| qa[Role:qa]
+dev[Role:dev] -->|DONE_DEV| review[Role:review]
+qa[Role:qa] -->|DONE_QA| review[Role:review]
+review[Role:review] -->|DONE| output
+```
 
-### 4.3 `strict/compat` 行为矩阵（消除歧义）
+推荐校验顺序：
+
+1. `dev -> review`、`qa -> review` 分别走 `kind=flow` 合同校验。  
+2. `all_of` 就绪后，运行 `context.map.review.*` 构建输入。  
+3. 对 `review` 执行 `kind=role_input` 合同校验。  
+4. 通过后才激活 `review`。
+
+### 4.3 `join.mode=quorum_of`（阈值激活）
+
+原则与 `all_of` 一致，只是就绪条件变为 `join.min`。  
+建议保留当前“激活一次，迟到 source 仅审计不重复激活”的语义。
+
+但需补一条 v1 硬约束：
+
+1. 当 `join.mode.<roleId>=quorum_of` 且 `join.min < |join.sources|` 时，`context.map.<roleId>.*` 不允许使用 `source(...)` selector。
+2. 原因：当前运行时允许任意满足 quorum 的 source 子集触发激活，但 `source(x)` 在缺席时会直接 fail-closed。
+3. 因此在现有实现下，`quorum_of` 节点的 `context.map` 仅允许：
+   - `global.*`
+   - 未来新增的显式 optional selector（本方案 v1 不包含）
+4. 若 `join.min == |join.sources|`，该 `quorum_of` 退化为事实上的全量到齐，此时 `source(...)` 才是安全的。
+
+---
+
+## 5. 字段冲突/字段不足处理规则
+
+### 5.1 编译期（必须失败）
+
+1. flow 合同引用 schema 不可加载/不可编译（AJV）。
+2. 合同与 flow 无绑定关系（孤儿合同）。
+3. flow 命中关系在 strict 下无合同覆盖。
+4. `role_input` 合同要求字段在 `context.map` 投影后不可达。
+5. 同一 target 字段多来源映射且类型冲突。
+6. `parallel_split` 同时声明 event 匹配合同与 split 匹配合同（语义歧义）。
+7. `quorum_of` 且 `join.min < |join.sources|` 时，若 `context.map` 使用 `source(...)`，直接报错。
+
+### 5.2 运行期（策略化）
+
+1. `strict`：合同失败 -> fail-closed，不激活对应 flow；在 `parallel_split` 等多目标场景下按第 7 节两阶段规则整体处理。
+2. `compat`：  
+   - 合同缺失 -> WARN + skip flow（避免脏数据透传）。  
+   - 合同存在但校验失败 -> 默认 FAIL（允许显式 WARN 仅用于过渡）。
+3. 若 `compat + skip flow` 会导致某个 join 条件变为不可达，则该情况必须升级为 `FAIL`，不能只保留告警。
+
+---
+
+## 6. `strict/compat` 与边界范围
+
+默认合同作用范围（v1）：
+
+1. role-to-role 业务边（普通事件边 + split 边）。
+2. 不默认覆盖 `ERROR*` 运行时异常边。
+3. 不强制覆盖 role->output 边（可选）。
+
+行为矩阵：
 
 | 场景 | strict | compat |
 | :--- | :--- | :--- |
-| 合同缺失 | FAIL | WARN |
+| 合同缺失（在作用范围内） | FAIL | WARN（默认不激活该 flow；若导致 join 不可达则升级为 FAIL） |
 | 合同 schema 无效 | FAIL | FAIL |
-| 合同校验失败 | FAIL | 按 `on_violation`（默认 FAIL） |
-| `on_violation=WARN` | 不允许（按配置错误处理） | 允许 |
-
-实现约束（必须）：
-
-- strict 模式下，`on_violation` 语义固定为 `FAIL`；若配置 `WARN`，按配置错误处理，不进入执行阶段。
-- compat 模式下，仅“合同缺失”允许 WARN；“schema 无效”永远 FAIL。
+| 合同校验失败 | FAIL | 按 `onViolation`（默认 FAIL） |
+| `onViolation=WARN` | 不允许 | 允许（过渡期） |
 
 ---
 
-## 5. 与现有实现关系
+## 7. 编译与运行实现清单
 
-当前实现已有：
+### 7.1 编译期（lint/plan）
 
-- role 输出 schema 作为模型格式约束 + 本地二次校验。
-- `context.map` 投影与 join 语义硬约束。
-- 解析器对 metadata key 采用白名单拒绝策略（未知 key 直接失败）。
-- `parallel_split` 当前允许 role 在无 event 情况下激活全部下游。
+新增 `ContractPlan`：
 
-目标迁移关系：
+1. 读取 `handoff.contracts` 指向的合同文件。
+2. 收集 flow：普通 `from+event+to` 与 split `from+mode=split+to`。
+3. 建立 `flow <-> contract` 唯一映射。
+4. 校验普通 flow 不允许重复声明（同一 `fromRoleId + eventType + toRoleId`）。
+5. 校验 `route.order.<fromRoleId>`：目标合法、无重复。
+6. 校验 `role_input` 合同与 `context.map` 可达性。
+7. 识别 `compat + skip flow` 是否会让 join 条件不可达；若不可达则直接报错或升级策略。
 
-1. 保留现有 `event/content/data` 信封。
-2. 引入 flow contract 作为新的强约束主面。
-3. role `input/output schema` 逐步降级并移除（分阶段）。
+### 7.2 运行期（execute/transition）
+
+每次 role 成功输出后：
+
+1. 先做 envelope 基础校验（`event/content/data`）。
+2. 运行时注入 `_meta`。
+3. 计算命中边集合（普通事件匹配或 split）。
+4. 应用 `route.order`（仅重排，不改命中集合）。
+5. `strict` 下采用两阶段语义：
+   - Phase A：先对全部命中 flow 做合同校验，不激活任何下游。
+   - Phase B：仅当全部通过时，再统一激活所有命中下游。
+6. `compat` 下允许逐 flow 处理：
+   - 单条 flow 校验通过则可激活该 flow 下游。
+   - 单条 flow 校验失败则按 `onViolation` 处理，且不影响其他已通过 flow。
+7. 下游节点在激活前，若声明 `role_input` 合同，则先构造其 `context.map` 投影后的结构化输入对象；`role_input` 合同只校验该对象，不校验字符串化后的 prompt context。
+8. `role.inputSchema` 若存在，继续只校验技术层 promptInput；不得把 `role_input` 业务合同并入或替代 `role.inputSchema`。
+9. flow 合同与 `role_input` 合同校验所用 envelope/输入对象均为运行时派生的临时结构；不得为此把 `StoredRoleResult` 改造成按 flow 分叉的持久化 artifact 模型。
+10. 通过后激活下游。
 
 ---
 
-## 6. 分阶段重构计划
+## 8. 最小约束（Minimal Schema）策略
 
-## Phase 0：文档与 lint 预埋（低风险）
+原则：
 
-- 先改解析器白名单，放行 `handoff.mode` / `handoff.contract.*` / `route.order.*`。
-- 增加语义文档章节：flow contract 口径与错误码。
-- 新增 `lint:contracts`（仅检查声明与 schema 可用性）。
-- 增加 `strict/compat` 行为矩阵校验，拒绝 strict + WARN 组合。
-- 增加 `route.order` lint 规则（目标合法性、重复项、与重复流转冲突检查）。
+1. 不再让每个 role schema 承担业务协作契约。
+2. role 保留最小技术护栏：输出 envelope 基础形状与基础类型。
+3. 业务约束全部放到 flow contract。
+
+Schema floor（建议）：
+
+1. 顶层仅允许 `event/content/data`。
+2. `event` 为可选非空字符串，`content` 为可选字符串，`data` 为可选对象。
+3. 不要求把 `ERROR*` 禁止编码进 schema；该规则继续由 runtime 独立强制。
+
+Lint policy（建议）：
+
+1. 若某 role 的普通业务事件集合稳定，继续建议保留 `event enum`。
+2. `event enum` 作为 lint/生成质量信号，不再是 flow 业务合同真源。
+3. 无稳定事件集的 role 可只使用 schema floor，由 flow contract 补业务约束。
+
+最小约束价值：
+
+1. 给模型输出提供稳定轨道（降低格式漂移）。
+2. 配合 runtime 规则，降低保留事件与非法字段误输出风险。
+3. 保持恢复/审计一致性（输出结构稳定）。
+
+---
+
+## 9. 分阶段计划（修订）
+
+## Phase 0：契约载体与工具链对齐（低风险）
+
+1. parser 白名单放行：`handoff.mode`、`handoff.contracts`、`route.order.*`。
+2. 新增合同文件加载与 `lint:contracts`。
+3. NL2MMD 同步支持上述 metadata；normalize 不再丢弃这些 key。
+4. `SystemDefinition` / `GraphMetadata` / plan 类型补充合同引用与 `route.order` 承载字段。
+5. 指纹补充完整语义字段（resume 一致性），至少包括：
+   - `routingModeByRoleId`
+   - `joinModeByRoleId`
+   - `joinSourcesByRoleId`
+   - `joinMinByRoleId`
+   - `contextMapByRoleId`
+   - `loopMaxByRoleId`
+   - `handoff.mode`
+   - 合同文件 digest
+   - `route.order.*`
+
+Phase 0 退出前必须冻结接口边界：
+
+1. parser 输入面
+2. `SystemDefinition` / execution plan 承载面
+3. resume 指纹面
+4. NL2MMD 生成与校验面
 
 ## Phase 1：运行时并行校验（兼容）
 
-- 保留 role output schema。
-- 新增 flow contract 校验（可 `compat` 模式）。
-- 报告 role capability 风险（warn）。
-- 落地 `parallel_split` 的 `__split__` 匹配路径，不改变现有 split 激活语义。
+1. 保留现有 role output schema。
+2. 增加 flow 合同校验（`compat` 默认）。
+3. split 合同匹配路径上线。
 
 ## Phase 2：Flow Contract 主导
 
-- `strict` 成为默认模式。
-- 缺合同视为配置错误（role-to-role 流转）。
-- role output schema 降为兼容层（可开关）。
-- 提供 `contract-only` 诊断模式，对 role schema 仅告警不阻断。
+1. `strict` 成为默认。
+2. 作用范围内缺合同直接失败。
+3. 支持基于 `context.map` 的节点 `role_input` 合同校验。
 
-## Phase 3：Role 去 schema 化
+## Phase 3：Role Schema 收敛（非移除）
 
-- `role.json` 中 `inputSchema/outputSchema` 改为可选，并在加载器中兼容缺省。
-- 执行器不再依赖 role output schema 作为二次硬校验；合同校验成为主路径。
-- 为旧 role 包提供迁移脚本：从 role output schema 生成初始 flow contract 模板。
-- role 保留能力定义（文本/标签）与提示用途。
-
-### 阶段闸门（Gate）
-
-| Gate | 必须完成项 | 回滚开关 |
-| :--- | :--- | :--- |
-| G0（Phase 0 出口） | 解析器已放行 `handoff.*` 与 `route.order.*`；`lint:contracts` 可运行；strict/WARN 冲突可被拦截 | 移除 `handoff.*` / `route.order.*` 配置即可回到旧语义 |
-| G1（Phase 1 出口） | `parallel_split` `__split__` 匹配生效；运行时合同校验可观测；不改变现有成功路径 | `handoff.mode=compat` + 保留 role schema 校验 |
-| G2（Phase 2 出口） | strict 成为默认；所有 role-to-role 流转具备合同 | 全局切回 `compat` |
-| G3（Phase 3 出口） | role schema 变可选；执行链不再硬依赖 role output schema | 打开 role schema 兼容开关 |
-
-Join timeout 专项闸门（独立于本表）：
-
-- GJ（wait-timeout v2 出口）：`join.deadline/on_timeout` 仅在 `wait-timeout v2` 标记 Delivered 且 parser/config/runner 全链路完成后上线。
+1. role schema 缩减为 minimal schema（技术护栏）。
+2. 业务字段约束从 role schema 迁移到 flow contract。
+3. capability 相关扩展若要继续推进，另开独立里程碑。
 
 ---
 
-## 7. 错误码与观测
+## 10. 错误码与观测（建议）
 
-建议新增错误码：
+建议新增：
 
 - `CONTRACT_MISSING`
 - `CONTRACT_SCHEMA_INVALID`
 - `CONTRACT_UNBOUND_FLOW`
 - `CONTRACT_VALIDATION_FAILED`
+- `CONTRACT_ROLE_INPUT_VALIDATION_FAILED`
+- `CONTRACT_PROJECTION_PATH_MISSING`
+- `CONTRACT_PROJECTION_TYPE_CONFLICT`
+
+保留为未来 phase 预留，不纳入本次实现范围：
+
 - `CAPABILITY_MISMATCH_WARN`
 - `CAPABILITY_MISMATCH_ERROR`
 
 审计建议：
 
-- 在 `events.ndjson` 增加 `contract_validation` 事件（包含 from/event/to/version/result）。
-- 在 `audit/summary.md` 增加合同校验统计。
+- `events.ndjson` 增加 `contract_validation`（from/event/to 或 role_input、contractId、result）。
+- `audit/summary.md` 增加合同通过率与失败分布。
 
 ---
 
-## 8. 验收标准（DoD）
-
-1. 任意 role-to-role 流转在 `strict` 模式下都可追溯到唯一合同。
-2. 合同缺失/不匹配可在 lint 阶段被发现。
-3. 运行时合同失败行为稳定可预期：strict 必须 fail-closed；compat 可按 `on_violation` 执行 WARN/FAIL。
-4. `all_of/quorum_of/context.map/loop.max` 既有语义回归为零。
-5. 文档、测试、错误码、CLI 诊断同步可用。
-
----
-
-## 9. 风险与回滚
+## 11. 风险与回滚
 
 主要风险：
 
-- 迁移期合同缺失导致大量阻断。
-- 存量 role 包兼容策略不一致。
-- schema 维护负担短期上升。
+1. 迁移期合同缺失导致严格模式阻断。
+2. 合同文件与 Mermaid 图漂移。
+3. 生成链路（NL2MMD）未同步导致配置被吞。
+4. 若 strict 未采用“两阶段校验 -> 统一激活”，split 会出现顺序相关的部分激活。
+5. 若未限制 `quorum_of + source(...)`，有 `context.map` 时 join 输入构建本身就可能 fail-closed。
+6. 若不把 `role_input` 校验对象固定为“投影后的结构化对象”，且不明确其与现有 `inputSchema` 的分层边界，会形成两套输入合同叠加。
+7. 若 `_meta` 进入持久化结果，会把单次 role 结果膨胀为按 flow 分叉的 artifact 模型，显著增加实现复杂度。
 
-回滚策略：
+回滚：
 
-- 全局切回 `handoff.mode=compat`。
-- 保留 role output schema 兼容开关直到 Phase 3 完成。
+1. 全局 `handoff.mode=compat`。
+2. 保留 role minimal schema + 现有输出校验兜底。
+3. 移除 `handoff.contracts` 引用即可回退到旧行为。
 
 ---
 
-## 10. 本次建议回写目标
+## 12. 与 wait-timeout v2 的关系
 
-若本方案被接受，需回写：
+`join.deadline/on_timeout` 不并入本方案主链。  
+其上线依赖 `docs/ogsystem-wait-timeout-semantics-v2.md` 从 RFC 进入 Delivered 后再做独立里程碑。
 
-1. `docs/ogsystem-orchestration-semantics-v1.md`（语义与约束）
-2. `docs/usage-manual.md`（配置、命令、排障）
-3. `docs/DECISIONS.md`（为何采用 flow 强合同 + role 软能力）
+---
+
+## 13. 回写目标（若采纳）
+
+1. `docs/ogsystem-orchestration-semantics-v1.md`
+2. `docs/usage-manual.md`
+3. `docs/DECISIONS.md`
+4. `docs/ogsystem-semantics-manual.md`
+
+---
+
+## 14. 实施前检查清单（已冻结项）
+
+1. 合同文件路径解析基准已冻结为：相对 `system.mmd` 所在目录解析；运行时归一为绝对路径用于加载与 fingerprint。
+2. JSON Schema 方言已冻结为：draft-07。
+3. `$ref` 策略已冻结为：仅允许本地文件引用；相对 `$ref` 以当前 schema 文件所在目录为基准解析；禁止远程 `http(s)://` 引用。
+4. 每个合同 schema 文件应显式声明 `$schema: "http://json-schema.org/draft-07/schema#"`。
+5. `compat` 默认动作已冻结为：`WARN + skip flow`；但若导致 join 不可达则升级为 `FAIL`。
+6. 指纹覆盖范围已冻结：必须纳入完整语义字段与合同 digest，不能只补增量字段。
+7. `role_input` 与 `role.inputSchema` 的边界已冻结：前者是业务层投影对象合同，后者是技术层 prompt-input 合同，两者并存但不互相替代。
+8. `role_input` 合同触发时机已冻结为：任何声明该合同且使用 `context.map` 构造业务输入的接收节点，都在激活前校验一次；且校验对象固定为投影后的结构化对象。
+9. `_meta` 生命周期已冻结：仅用于运行时校验/审计，不进入持久化 role 结果；flow 合同校验使用派生的临时 envelope，不改造 `StoredRoleResult` 持久化模型。
+10. `ERROR*` 合同策略：v1 继续排除，若需纳入另开 RFC。
+11. 迁移脚本策略：从现有 role output schema 自动生成 flow 合同草案并人工确认。
+12. schema floor 已冻结为：允许仅保留 `event/content/data` 基础形状；若业务事件集稳定，则保留 `event enum` 作为强建议 lint，而非硬合同真源。
