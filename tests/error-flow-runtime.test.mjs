@@ -87,7 +87,7 @@ async function writeToolScript(args) {
 
 async function setupFixture(args) {
   const repoRoot = process.cwd();
-  const tempRoot = await mkdtemp(path.join(os.tmpdir(), `ogsystem-error-edge-${args.id}-`));
+  const tempRoot = await mkdtemp(path.join(os.tmpdir(), `ogsystem-error-flow-${args.id}-`));
   const rolesRoot = path.resolve(tempRoot, "og-roles", "roles");
   await mkdir(rolesRoot, { recursive: true });
 
@@ -136,8 +136,8 @@ async function setupFixture(args) {
         modelRepo: path.resolve(repoRoot, "og-models"),
         runsDir: ".ogs/runs",
         runtime: {
-          error_edges: {
-            v1: args.errorEdgesV1
+          error_flows: {
+            v1: args.errorFlowsV1
           }
         }
       },
@@ -154,7 +154,7 @@ async function setupFixture(args) {
       {
         laws: [
           {
-            lawId: "law.test.error.edge",
+            lawId: "law.test.error.flow",
             constraints: {
               forbiddenToolRefs: [],
               maxTransitions: 24,
@@ -179,7 +179,7 @@ async function setupFixture(args) {
   };
 }
 
-async function runFixture(fixture, prompt = "error edge runtime test") {
+async function runFixture(fixture, prompt = "error flow runtime test") {
   return runSystemWithAdapter({
     systemPath: fixture.systemPath,
     runtimeConfigPath: fixture.runtimePath,
@@ -243,9 +243,9 @@ for (const routingCase of [
       }
     ],
     systemSource: `flowchart TD
-%% system.id=test.error.edge.priority
+%% system.id=test.error.flow.priority
 %% system.version=1.0.0
-%% law.global=law.test.error.edge
+%% law.global=law.test.error.flow
 %% entry.role=worker
 %% exec.bind.worker=profile.worker
 %% exec.bind.specific=profile.specific
@@ -265,7 +265,7 @@ fallback[Role:fallback] -->|FB_DONE| output
     expectedUnhandledFailureCount: 0
   },
   {
-    name: "runtime falls back to ERROR when no typed error edge matches",
+    name: "runtime falls back to ERROR when no typed error flow matches",
     id: "fallback",
     roles: [
       {
@@ -281,9 +281,9 @@ fallback[Role:fallback] -->|FB_DONE| output
       }
     ],
     systemSource: `flowchart TD
-%% system.id=test.error.edge.fallback
+%% system.id=test.error.flow.fallback
 %% system.version=1.0.0
-%% law.global=law.test.error.edge
+%% law.global=law.test.error.flow
 %% entry.role=worker
 %% exec.bind.worker=profile.worker
 %% exec.bind.fallback=profile.fallback
@@ -316,9 +316,9 @@ fallback[Role:fallback] -->|FB_DONE| output
       }
     ],
     systemSource: `flowchart TD
-%% system.id=test.error.edge.no.match
+%% system.id=test.error.flow.no.match
 %% system.version=1.0.0
-%% law.global=law.test.error.edge
+%% law.global=law.test.error.flow
 %% entry.role=worker
 %% exec.bind.worker=profile.worker
 %% exec.bind.other=profile.other
@@ -337,7 +337,7 @@ other[Role:other] -->|OTHER_DONE| output
   test(routingCase.name, async () => {
     const fixture = await setupFixture({
       id: routingCase.id,
-      errorEdgesV1: true,
+      errorFlowsV1: true,
       roles: routingCase.roles,
       systemSource: routingCase.systemSource
     });
@@ -374,7 +374,7 @@ other[Role:other] -->|OTHER_DONE| output
 test("handled failure last_context uses failed role input context projection", async () => {
   const fixture = await setupFixture({
     id: "handled-last-context",
-    errorEdgesV1: true,
+    errorFlowsV1: true,
     roles: [
       {
         roleId: "prep",
@@ -401,7 +401,7 @@ test("handled failure last_context uses failed role input context projection", a
     systemSource: `flowchart TD
 %% system.id=test.error.last.context
 %% system.version=1.0.0
-%% law.global=law.test.error.edge
+%% law.global=law.test.error.flow
 %% entry.role=prep
 %% exec.bind.prep=profile.prep
 %% exec.bind.worker=profile.worker
@@ -427,10 +427,10 @@ fallback[Role:fallback] -->|FB_DONE| output
   assert.doesNotMatch(handledArtifact.data.last_context, /raw-upstream-content/);
 });
 
-test("runtime keeps fail-stop behavior when error edge routing flag is disabled", async () => {
+test("runtime keeps fail-stop behavior when error flow routing flag is disabled", async () => {
   const fixture = await setupFixture({
     id: "flag-off",
-    errorEdgesV1: false,
+    errorFlowsV1: false,
     roles: [
       {
         roleId: "worker",
@@ -445,9 +445,9 @@ test("runtime keeps fail-stop behavior when error edge routing flag is disabled"
       }
     ],
     systemSource: `flowchart TD
-%% system.id=test.error.edge.flag.off
+%% system.id=test.error.flow.flag.off
 %% system.version=1.0.0
-%% law.global=law.test.error.edge
+%% law.global=law.test.error.flow
 %% entry.role=worker
 %% exec.bind.worker=profile.worker
 %% exec.bind.fallback=profile.fallback
@@ -471,7 +471,7 @@ fallback[Role:fallback] -->|FB_DONE| output
 test("runtime handles failure per-branch in parallel split and continues healthy branches", async () => {
   const fixture = await setupFixture({
     id: "parallel-branch",
-    errorEdgesV1: true,
+    errorFlowsV1: true,
     roles: [
       {
         roleId: "dispatch",
@@ -502,9 +502,9 @@ test("runtime handles failure per-branch in parallel split and continues healthy
       }
     ],
     systemSource: `flowchart TD
-%% system.id=test.error.edge.parallel
+%% system.id=test.error.flow.parallel
 %% system.version=1.0.0
-%% law.global=law.test.error.edge
+%% law.global=law.test.error.flow
 %% entry.role=dispatch
 %% role.mode.dispatch=parallel_split
 %% join.mode.final=all_of
@@ -544,7 +544,7 @@ final[Role:final] -->|FINAL_DONE| output
 test("parallel_split success path ignores ERROR* edges and duplicate targets", async () => {
   const fixture = await setupFixture({
     id: "parallel-success-error-filter",
-    errorEdgesV1: true,
+    errorFlowsV1: true,
     roles: [
       {
         roleId: "dispatch",
@@ -564,9 +564,9 @@ test("parallel_split success path ignores ERROR* edges and duplicate targets", a
       }
     ],
     systemSource: `flowchart TD
-%% system.id=test.error.edge.parallel.success.filter
+%% system.id=test.error.flow.parallel.success.filter
 %% system.version=1.0.0
-%% law.global=law.test.error.edge
+%% law.global=law.test.error.flow
 %% entry.role=dispatch
 %% role.mode.dispatch=parallel_split
 %% exec.bind.dispatch=profile.dispatch

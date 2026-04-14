@@ -130,7 +130,7 @@ async function loadRuntimeConfig(path: string | undefined, workdir: string): Pro
       baseArgs: ["run"]
     },
     runtime: {
-      error_edges: {
+      error_flows: {
         v1: false
       }
     }
@@ -718,7 +718,7 @@ export async function runSystemWithAdapter(args: {
                   keepLatest: setup.runtimeConfig.retention.keepLatest
                 }
               : undefined,
-          errorEdgeRoutingEnabled: setup.runtimeConfig.runtime.error_edges.v1,
+          errorFlowRoutingEnabled: setup.runtimeConfig.runtime.error_flows.v1,
           logRun: args.logRun ?? false
         });
       } catch (error) {

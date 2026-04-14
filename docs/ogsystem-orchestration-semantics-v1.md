@@ -124,9 +124,9 @@
 
 ---
 
-## 九、 异常边语义（ERROR*，V1 delivered，默认 flag off）
+## 九、 异常流语义（ERROR*，V1 delivered，默认 flag off）
 
-以下语义已落地实现；默认发布策略仍由 `runtime.error_edges.v1=false` 控制（未启用或未声明 `ERROR*` 边时保持 fail-stop）：
+以下语义已落地实现；默认发布策略仍由 `runtime.error_flows.v1=false` 控制（未启用或未声明 `ERROR*` 边时保持 fail-stop）：
 
 *   **语法沿用现有事件标签**：`ERROR` 与 `ERROR.<errorCode>`。
 *   **节点级 opt-in**：仅声明了 `ERROR*` 出边的节点启用异常流。
@@ -135,12 +135,12 @@
 *   **匹配顺序**：先 `ERROR.<errorCode>`，后 `ERROR`，无匹配则保持 fail-stop。
 *   **解析约束**：同一 `fromRole` 仅允许一个 `ERROR` 兜底边；同一 `ERROR.<code>` 仅允许一个目标；`input` 不允许声明 `ERROR*`。
 *   **fail-closed 约束**：保留前缀事件必须是 `ERROR` 或 `ERROR.<errorCode>`；其他 `ERROR*` 形式在解析期拒绝。
-*   **角色提示契约**：运行时注入给角色的 `allowed_events` 不包含 `ERROR*`（异常边仅由运行时失败路径触发）。
+*   **角色提示契约**：运行时注入给角色的 `allowed_events` 不包含 `ERROR*`（异常流仅由运行时失败路径触发）。
 
-判定建议（异常边 vs 业务事件边）：
+判定建议（异常流 vs 业务事件流）：
 
-*   **业务事件边**：用于“成功执行后的业务分支”（如 APPROVED/REJECTED、ROUTE_A/ROUTE_B）。
-*   **异常边**：用于“运行时失败后的补偿/降级分支”（execution/validation/io/state）。
+*   **业务事件流**：用于“成功执行后的业务分支”（如 APPROVED/REJECTED、ROUTE_A/ROUTE_B）。
+*   **异常流**：用于“运行时失败后的补偿/降级分支”（execution/validation/io/state）。
 *   **边界约束**：不要把预期业务否定路径建模为 `ERROR*`。
 
-执行计划见：`docs/archive/delivery/error-edge-v1-execution-plan-2026-04-13.md`。
+交付记录见：`docs/archive/delivery/error-flow-v1-execution-plan-2026-04-13.md`；术语对齐收口见：`docs/archive/delivery/ogsystem-flow-edge-alignment-execution-plan-2026-04-15.md`。

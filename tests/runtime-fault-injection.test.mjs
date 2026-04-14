@@ -327,12 +327,12 @@ test("forced crash after durable outcome resumes without duplicate execution", a
 test("ERROR* handled failure survives crash window resume without duplicate routing events", async () => {
   const repoRoot = process.cwd();
   const { tempRoot, systemPath, runtimePath } = await createCrashWindowFixture({
-    tempPrefix: "ogsystem-error-edge-crash-window-",
+    tempPrefix: "ogsystem-error-flow-crash-window-",
     repoRoot,
     systemSource: `flowchart TD
-%% system.id=test.error.edge.crash.resume
+%% system.id=test.error.flow.crash.resume
 %% system.version=1.0.0
-%% law.global=law.error.edge.resume
+%% law.global=law.error.flow.resume
 %% entry.role=test-branch-a
 %% exec.bind.test-branch-a=profile.detector
 %% exec.bind.error-handler-base=profile.handler
@@ -347,7 +347,7 @@ handler[Role:error-handler-base] -->|ABORTED| output
 finalizer[Role:test-operator] -->|DONE| output
 `,
     runtimeOverrides: {
-      error_edges: {
+      error_flows: {
         v1: true
       }
     }
@@ -360,7 +360,7 @@ finalizer[Role:test-operator] -->|DONE| output
 
   await writeFile(
     path.resolve(scriptsDir, "detector.mjs"),
-    'process.stderr.write("error-edge crash drill failure\\n"); process.exit(1);\n',
+    'process.stderr.write("error-flow crash drill failure\\n"); process.exit(1);\n',
     "utf8"
   );
   await writeFile(
@@ -426,7 +426,7 @@ finalizer[Role:test-operator] -->|DONE| output
       {
         laws: [
           {
-            lawId: "law.error.edge.resume",
+            lawId: "law.error.flow.resume",
             constraints: {
               forbiddenToolRefs: [],
               maxTransitions: 24,
@@ -455,7 +455,7 @@ finalizer[Role:test-operator] -->|DONE| output
     "--workdir",
     tempRoot,
     "--prompt",
-    "error edge resume drill"
+    "error flow resume drill"
   ];
 
   await runCrashAfterOutcome(baseArgs);

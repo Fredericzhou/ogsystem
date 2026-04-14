@@ -1,9 +1,11 @@
-# OGSystem 异常边语义（ERROR*）执行计划
+# OGSystem 异常流语义（ERROR*）执行计划（Archived）
 
 Date: 2026-04-13  
 Status: completed  
 Owner: runtime core
-Follow-up delivery record: `docs/archive/delivery/error-edge-v1-hardening-followup-2026-04-13.md`
+Archived: yes (delivery record; not active source of truth)  
+Terminology note: this record originated before the 2026-04-15 flow/edge alignment; active canonical naming is `error flow` / `runtime.error_flows.v1`.  
+Follow-up delivery record: `docs/archive/delivery/error-flow-v1-hardening-followup-2026-04-13.md`
 
 ## 0. 当前进度（2026-04-13）
 

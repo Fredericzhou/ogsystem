@@ -47,5 +47,5 @@ pnpm run run:adapter --system examples/incident-response-playbook/system.mmd --r
 - `target-model-binding-system.mmd`: smallest model-binding baseline.
 - `langgraph-expert-consultation/`: all-of expert consultation baseline.
 - `console-system.mmd`: legacy compatibility route for existing `profiles/tools`.
-- `error-edge-compensation/`: focused ERROR* routing baseline.
+- `error-flow-compensation/`: focused ERROR* routing baseline.
 - `human-gate-workflow/`: focused human gate baseline.

@@ -254,7 +254,7 @@ export type RuntimeConfig = {
     baseArgs?: string[];
   };
   runtime: {
-    error_edges: {
+    error_flows: {
       v1: boolean;
     };
   };

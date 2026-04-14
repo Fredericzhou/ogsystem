@@ -149,7 +149,7 @@ function createDefaultRuntimeConfig(): Record<string, unknown> {
       baseArgs: ["run"]
     },
     runtime: {
-      error_edges: {
+      error_flows: {
         v1: false
       }
     }

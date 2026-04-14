@@ -338,12 +338,12 @@ reviewNode[Role:review] -->|PASS| output
 
 #### 注意事项
 
-- 角色输出禁止使用 `ERROR*` 前缀事件；异常边只允许由运行时失败路径触发。
+- 角色输出禁止使用 `ERROR*` 前缀事件；异常流只允许由运行时失败路径触发。
 - 非并行且存在可选普通出边时，缺失 `event` 会失败（`ERROR*` 出边不计入该判定）。
 
 ---
 
-## 8. 异常边语义（`ERROR*`）
+## 8. 异常流语义（`ERROR*`）
 
 ### 8.1 失败补偿路由
 
@@ -373,7 +373,7 @@ fallbackNode[Role:fallback_handler] -->|DONE| output
 
 #### 注意事项
 
-- `ERROR*` 语义受 `runtime.error_edges.v1` 控制，默认 `false`。
+- `ERROR*` 语义受 `runtime.error_flows.v1` 控制，默认 `false`。
 - 未开启或无匹配时保持 fail-stop。
 - 同一来源角色最多一个 `ERROR` 兜底边；同一 `ERROR.<code>` 不可重复。
 - `input` 边界不允许声明 `ERROR*`。
@@ -464,12 +464,12 @@ C -->|noop| C1[取首条出边目标]
 C -->|parallel_split| C2[激活全部非 ERROR* 目标]
 C -->|默认事件路由| C3[按 selectedEvent 匹配出边]
 
-B -->|failed| D{runtime.error_edges.v1}
+B -->|failed| D{runtime.error_flows.v1}
 D -->|false| D1[fail-stop]
 D -->|true| E{匹配 ERROR.<code>?}
-E -->|yes| E1[走 typed 异常边]
+E -->|yes| E1[走 typed 异常流]
 E -->|no| F{匹配 ERROR?}
-F -->|yes| F1[走 fallback 异常边]
+F -->|yes| F1[走 fallback 异常流]
 F -->|no| D1
 
 C1 --> G{target 是 join?}
@@ -487,13 +487,13 @@ I -->|满足且未激活| I3[激活一次 join 分支]
 
 #### 含义
 
-- 成功与失败走两条不同判定链，失败链只有在 `runtime.error_edges.v1=true` 时才尝试异常边。
+- 成功与失败走两条不同判定链，失败链只有在 `runtime.error_flows.v1=true` 时才尝试异常流。
 - Join 不是“到边即执行”，而是“到边后再判 ready”，并且同一 `lineageId + loopIteration` 只激活一次。
 
 #### 注意事项
 
 - 失败链里，`ERROR.<code>` 永远优先于 `ERROR`。
-- 失败链命中异常边后，仍会经过 loop budget 与 join 语义检查，不是无条件放行。
+- 失败链命中异常流后，仍会经过 loop budget 与 join 语义检查，不是无条件放行。
 
 ### 13.2 优先级矩阵（冲突时谁生效）
 
@@ -559,10 +559,10 @@ fallback -->|DONE| output
 
 #### 注意事项
 
-- 异常边不是“高于一切”的特权路径，仍受循环预算与图约束控制。
+- 异常流不是“高于一切”的特权路径，仍受循环预算与图约束控制。
 - 建模时要同时检查补偿链是否会与 `loop.max` 冲突。
 
-### 13.5 组合场景 3：`noop` 与异常边并存的例外
+### 13.5 组合场景 3：`noop` 与异常流并存的例外
 
 #### 含义
 
@@ -571,7 +571,7 @@ fallback -->|DONE| output
 
 #### 注意事项
 
-- 即使角色不会主动输出 `ERROR*`，给 `noop` 节点再挂异常边也可能触发预检拒绝。
+- 即使角色不会主动输出 `ERROR*`，给 `noop` 节点再挂异常流也可能触发预检拒绝。
 - 最稳妥做法：`noop` 节点只保留单一路径，不承担异常补偿职责。
 
 ---
@@ -580,7 +580,7 @@ fallback -->|DONE| output
 
 ### 14.1 语义开关例外
 
-- `ERROR*` 边即使写进图里，`runtime.error_edges.v1=false` 时也不会参与失败路由。
+- `ERROR*` 边即使写进图里，`runtime.error_flows.v1=false` 时也不会参与失败路由。
 - 这类场景下，失败行为保持 fail-stop，不会自动降级到 fallback 节点。
 
 ### 14.2 事件可选集例外

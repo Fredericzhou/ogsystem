@@ -16,7 +16,7 @@ OGSystem 当前是一套单机、文件优先、可恢复的图编排运行时�
 OGSystem 当前重点优化以下能力：
 
 - 显式图语义：`parallel_split`、`all_of/quorum_of` join、`context.map`、`loop.max` 都有解析期和执行期约束。
-- 异常边语义（`ERROR*`）已实现：按节点级 opt-in 引入运行时失败补偿流，默认由 `runtime.error_edges.v1=false` 控制灰度发布。
+- 异常流语义（`ERROR*`）已实现：按节点级 opt-in 引入运行时失败补偿流，默认由 `runtime.error_flows.v1=false` 控制灰度发布。
 - 文件优先恢复：`state.json`、`sessions.json`、`plan-fingerprint.json`、`checkpoints/`、`execution-outcome.json` 组成恢复权威集。
 - 会话血缘隔离：`roleId:sessionLineageId` 保证顺序流转可复用会话，并行 sibling 不串会话记忆。
 - Crash 自愈补偿：角色结果先 durable，再 checkpoint；恢复时补偿缺失 checkpoint，而不是盲目重跑节点。
@@ -118,7 +118,7 @@ Use this rule:
 - dynamic fan-out with uncertain `N` is not graph semantics; keep it inside one role (Heavy Node) or pre-expand before orchestration
 - controlled fan-out concurrency is an execution policy, not a flow semantic (it must not change graph reachability/join readiness)
 - compatibility execution mode: `exec.bind.<roleId>` still works when paired with `profiles/tools`, but it runs inside the same graph runtime rather than a separate engine
-- `ERROR*` exception edges are implemented semantics with feature-gated rollout (`runtime.error_edges.v1`, default `false`); behavior without `ERROR*` edges remains fail-stop
+- `ERROR*` error-flow semantics are implemented behind a feature-gated rollout (`runtime.error_flows.v1`, default `false`); systems without matching `ERROR*` edges remain fail-stop
 
 ## 2. Semantic Layers
 
@@ -170,7 +170,7 @@ OGSystem/
   examples/
     README.md
     target-model-binding-system.mmd
-    error-edge-compensation/
+    error-flow-compensation/
       README.md
       system.mmd
       runtime.json
@@ -283,7 +283,7 @@ Orchestration semantics contract:
 - `loop.max.<roleId>=N` is both a parser-time cycle budget declaration and an execution-time guard; runtime also injects `round`
 - `branchId`, `lineageId`, and `sessionLineageId` are distinct runtime identifiers for branch instance, split/join lineage, and session reuse/isolation
 
-Exception edge semantics (`ERROR*`, implemented, flag-gated):
+Error flow semantics (`ERROR*`, implemented, flag-gated):
 
 - syntax reuses existing edge labels: `ERROR` and `ERROR.<errorCode>`
 - node-level opt-in: only roles that declare `ERROR*` outgoing edges enable exception routing
@@ -293,12 +293,12 @@ Exception edge semantics (`ERROR*`, implemented, flag-gated):
 - parser constraints: only one fallback `ERROR` edge per `fromRole`; each `ERROR.<code>` can map to one target only; `input` cannot declare `ERROR*`
 - fail-closed parsing: reserved `ERROR*` events must be exactly `ERROR` or `ERROR.<errorCode>`; invalid reserved forms are rejected
 - role-facing `allowed_events` excludes runtime-only `ERROR*` edges
-- rollout control: `runtime.error_edges.v1` (default `false`) for staged enablement and rollback
+- rollout control: `runtime.error_flows.v1` (default `false`) for staged enablement and rollback
 
-When to use exception edges vs business event edges:
+When to use error flows vs business event flows:
 
-- use business event edges for expected domain outcomes produced by successful role execution (approve/reject, route-A/route-B, etc.)
-- use `ERROR*` edges only for runtime failure handling and compensation (execution/validation/io/state failures)
+- use business event flows for expected domain outcomes produced by successful role execution (approve/reject, route-A/route-B, etc.)
+- use `ERROR*` edge labels only for runtime failure handling and compensation (execution/validation/io/state failures)
 - do not encode expected business negatives as `ERROR*`; keep them in normal role output event vocabulary
 
 Handled failure artifact contract (runtime-generated `roleResults` payload):
@@ -758,16 +758,16 @@ pnpm run run:adapter \
   --dry-run
 ```
 
-Error-edge 补偿流示例（显式启用 `runtime.error_edges.v1`）：
+异常流补偿示例（显式启用 `runtime.error_flows.v1`）：
 
 ```bash
 pnpm run run:adapter \
-  --system examples/error-edge-compensation/system.mmd \
-  --runtime examples/error-edge-compensation/runtime.json \
-  --profiles examples/error-edge-compensation/profiles.json \
-  --tools examples/error-edge-compensation/tools.json \
-  --laws examples/error-edge-compensation/laws.json \
-  --prompt "run error edge compensation example"
+  --system examples/error-flow-compensation/system.mmd \
+  --runtime examples/error-flow-compensation/runtime.json \
+  --profiles examples/error-flow-compensation/profiles.json \
+  --tools examples/error-flow-compensation/tools.json \
+  --laws examples/error-flow-compensation/laws.json \
+  --prompt "run error flow compensation example"
 ```
 
 Human gate 流示例（普通节点模板化）：

@@ -1,7 +1,7 @@
 {
   "laws": [
     {
-      "lawId": "law.example.error.edge",
+      "lawId": "law.example.error.flow",
       "constraints": {
         "forbiddenToolRefs": [],
         "maxTransitions": 24,

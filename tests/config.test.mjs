@@ -214,7 +214,7 @@ test("runtime config fails fast on unsupported config version", () => {
   );
 });
 
-test("runtime config defaults runtime.error_edges.v1 to false", () => {
+test("runtime config defaults runtime.error_flows.v1 to false", () => {
   const config = validateRuntimeConfig(
     {
       executor: "opencode",
@@ -224,17 +224,17 @@ test("runtime config defaults runtime.error_edges.v1 to false", () => {
     "runtime.json"
   );
 
-  assert.equal(config.runtime.error_edges.v1, false);
+  assert.equal(config.runtime.error_flows.v1, false);
 });
 
-test("runtime config accepts runtime.error_edges.v1 when set to true", () => {
+test("runtime config accepts runtime.error_flows.v1 when set to true", () => {
   const config = validateRuntimeConfig(
     {
       executor: "opencode",
       roleRepo: "./og-roles",
       modelRepo: "./og-models",
       runtime: {
-        error_edges: {
+        error_flows: {
           v1: true
         }
       }
@@ -242,10 +242,10 @@ test("runtime config accepts runtime.error_edges.v1 when set to true", () => {
     "runtime.json"
   );
 
-  assert.equal(config.runtime.error_edges.v1, true);
+  assert.equal(config.runtime.error_flows.v1, true);
 });
 
-test("runtime config rejects unknown runtime error_edges fields", () => {
+test("runtime config rejects unknown runtime error_flows fields", () => {
   assert.throws(
     () =>
       validateRuntimeConfig(
@@ -254,7 +254,7 @@ test("runtime config rejects unknown runtime error_edges fields", () => {
           roleRepo: "./og-roles",
           modelRepo: "./og-models",
           runtime: {
-            error_edges: {
+            error_flows: {
               v1: true,
               beta: true
             }
@@ -265,7 +265,7 @@ test("runtime config rejects unknown runtime error_edges fields", () => {
     (error) => {
       assert.ok(error instanceof Error);
       assert.match(error.message, /runtime\.json/);
-      assert.match(error.message, /\.runtime\.error_edges\.beta/);
+      assert.match(error.message, /\.runtime\.error_flows\.beta/);
       return true;
     }
   );

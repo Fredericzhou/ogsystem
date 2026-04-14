@@ -44,7 +44,7 @@ test("runtime config schema rejects unknown workspace fields", async () => {
   assert.equal(ok, false);
 });
 
-test("runtime config schema accepts runtime.error_edges.v1", async () => {
+test("runtime config schema accepts runtime.error_flows.v1", async () => {
   const runtimeSchema = await readJson(path.resolve("schemas/runtime-config.schema.json"));
   const validate = createValidator(runtimeSchema);
 
@@ -53,7 +53,7 @@ test("runtime config schema accepts runtime.error_edges.v1", async () => {
     roleRepo: "./og-roles",
     modelRepo: "./og-models",
     runtime: {
-      error_edges: {
+      error_flows: {
         v1: true
       }
     }
@@ -62,7 +62,7 @@ test("runtime config schema accepts runtime.error_edges.v1", async () => {
   assert.equal(ok, true, JSON.stringify(validate.errors, null, 2));
 });
 
-test("runtime config schema rejects unknown runtime error_edges fields", async () => {
+test("runtime config schema rejects unknown runtime error_flows fields", async () => {
   const runtimeSchema = await readJson(path.resolve("schemas/runtime-config.schema.json"));
   const validate = createValidator(runtimeSchema);
 
@@ -71,7 +71,7 @@ test("runtime config schema rejects unknown runtime error_edges fields", async (
     roleRepo: "./og-roles",
     modelRepo: "./og-models",
     runtime: {
-      error_edges: {
+      error_flows: {
         v1: true,
         beta: true
       }

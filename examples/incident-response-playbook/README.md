@@ -7,7 +7,7 @@ Capabilities covered:
 - runtime `ERROR*` routing (`ERROR.<code>` first, then `ERROR`)
 - compensation template role (`error-handler-base`)
 - human approval and signal gates (`human-approve-gate`, `human-signal-wait`)
-- feature-flagged rollout (`runtime.error_edges.v1=true` in local runtime override)
+- feature-flagged rollout (`runtime.error_flows.v1=true` in local runtime override)
 
 Run:
 

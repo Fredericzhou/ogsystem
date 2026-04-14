@@ -14,7 +14,7 @@ import type {
   StoredRoleResult
 } from "./types.js";
 import { findRoleResult } from "./graph-runtime-state.js";
-import { isRuntimeOnlyErrorEvent } from "./error-edge-utils.js";
+import { isRuntimeOnlyErrorEvent } from "./error-flow-utils.js";
 
 /**
  * Outcome returned by join-mode handlers so execution can decide if downstream roles may fire.

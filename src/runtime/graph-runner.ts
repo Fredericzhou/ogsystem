@@ -29,7 +29,7 @@ import {
   wouldExceedLoopBudget
 } from "./graph-runtime-state.js";
 import { executeRoleNode } from "./role-executor.js";
-import { isRuntimeOnlyErrorEvent } from "./error-edge-utils.js";
+import { isRuntimeOnlyErrorEvent } from "./error-flow-utils.js";
 import { createRuntimeError, normalizeRuntimeError } from "./runtime-errors.js";
 import {
   buildAuditSummaryDelta,
@@ -138,7 +138,7 @@ type RunnerInput = {
     executionDirThreshold: number;
     keepLatest: number;
   };
-  errorEdgeRoutingEnabled: boolean;
+  errorFlowRoutingEnabled: boolean;
   logRun: boolean;
 };
 
@@ -474,11 +474,11 @@ function buildGraphUpdateFromOutcome(args: {
   plan: ExecutionPlan;
   outcome: RoleExecutionOutcomeRecord;
   logger: ReturnType<typeof createRunConsoleLogger>;
-  errorEdgeRoutingEnabled: boolean;
+  errorFlowRoutingEnabled: boolean;
 }): TransitionPlan {
   const node = getExecutionPlanNode(args.plan, args.outcome.roleId);
   if (args.outcome.status === "failed") {
-    if (args.errorEdgeRoutingEnabled) {
+    if (args.errorFlowRoutingEnabled) {
       const handledTransition = buildHandledFailureTransitionPlan({
         state: args.state,
         plan: args.plan,
@@ -522,7 +522,7 @@ async function reconcileCommittedRoleExecutionOutcomes(args: {
   state: GraphState;
   plan: ExecutionPlan;
   runContext: RunContext;
-  errorEdgeRoutingEnabled: boolean;
+  errorFlowRoutingEnabled: boolean;
 }): Promise<GraphState> {
   // Resume first trusts the existing checkpoint WAL, then heals only the crash window where
   // role execution committed durably but the checkpoint was never written or reconciled.
@@ -561,7 +561,7 @@ async function reconcileCommittedRoleExecutionOutcomes(args: {
       plan: args.plan,
       outcome,
       logger,
-      errorEdgeRoutingEnabled: args.errorEdgeRoutingEnabled
+      errorFlowRoutingEnabled: args.errorFlowRoutingEnabled
     });
     const checkpoint = await persistRuntimeCheckpoint({
       context: args.runContext,
@@ -1399,7 +1399,7 @@ export async function runSystemWithGraphRunner(args: RunnerInput): Promise<Adapt
         const transitionPlan =
           result.status === "failed"
             ? (() => {
-                if (args.errorEdgeRoutingEnabled) {
+                if (args.errorFlowRoutingEnabled) {
                   const handledTransition = buildHandledFailureTransitionPlan({
                     state: workingState,
                     plan: args.plan,
@@ -1512,7 +1512,7 @@ export async function runSystemWithGraphRunner(args: RunnerInput): Promise<Adapt
       state: finalState,
       plan: args.plan,
       runContext: args.runContext,
-      errorEdgeRoutingEnabled: args.errorEdgeRoutingEnabled
+      errorFlowRoutingEnabled: args.errorFlowRoutingEnabled
     });
   }
   logger.runStart({

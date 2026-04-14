@@ -58,9 +58,12 @@
 - `docs/archive/delivery/project-cli-lifecycle-plan-2026-04-12.md`（delivered lifecycle/productization plan）
 - `docs/archive/delivery/cross-platform-rust-validation-and-gap-analysis-2026-04-12.md`（delivered cross-platform verification + gap analysis）
 - `docs/archive/delivery/data-projection-quorum-implementation-checklist-2026-04-12.md`（delivered implementation checklist with risk controls）
-- `docs/archive/delivery/error-edge-v1-execution-plan-2026-04-13.md`（delivered exception-edge execution record）
-- `docs/archive/delivery/error-edge-v1-hardening-followup-2026-04-13.md`（delivered follow-up hardening and test-maintainability closure）
+- `docs/archive/delivery/error-flow-v1-execution-plan-2026-04-13.md`（delivered error-flow execution record）
+- `docs/archive/delivery/error-flow-v1-hardening-followup-2026-04-13.md`（delivered follow-up hardening and test-maintainability closure）
 - `docs/archive/delivery/flow-contract-refactor-plan-2026-04-14.md`（proposed flow-contract-first semantics and refactor plan）
+- `docs/archive/delivery/ogsystem-naming-style-review-2026-04-14.md`（archived naming audit; `flow/edge` conclusion superseded by 2026-04-15 alignment review）
+- `docs/archive/delivery/ogsystem-flow-edge-alignment-review-2026-04-15.md`（delivered flow/edge alignment audit and canonical decision）
+- `docs/archive/delivery/ogsystem-flow-edge-alignment-execution-plan-2026-04-15.md`（delivered flow/edge alignment rollout and closure record）
 - `docs/archive/delivery/optimization-execution-checklist-2026-04-10.md`
 
 ## 4. 历史参考（已归档）

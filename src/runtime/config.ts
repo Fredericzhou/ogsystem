@@ -420,19 +420,19 @@ export function validateRuntimeConfig(value: unknown, filePath: string): Runtime
       ? undefined
       : expectRecord(record.runtime, filePath, "$.runtime");
   if (runtimeRecord) {
-    expectNoExtraKeys(runtimeRecord, ["error_edges"], filePath, "$.runtime");
+    expectNoExtraKeys(runtimeRecord, ["error_flows"], filePath, "$.runtime");
   }
 
-  const runtimeErrorEdgesRecord =
-    runtimeRecord?.error_edges === undefined
+  const runtimeErrorFlowsRecord =
+    runtimeRecord?.error_flows === undefined
       ? undefined
-      : expectRecord(runtimeRecord.error_edges, filePath, "$.runtime.error_edges");
-  if (runtimeErrorEdgesRecord) {
-    expectNoExtraKeys(runtimeErrorEdgesRecord, ["v1"], filePath, "$.runtime.error_edges");
+      : expectRecord(runtimeRecord.error_flows, filePath, "$.runtime.error_flows");
+  if (runtimeErrorFlowsRecord) {
+    expectNoExtraKeys(runtimeErrorFlowsRecord, ["v1"], filePath, "$.runtime.error_flows");
   }
 
-  const runtimeErrorEdgesV1 =
-    expectOptionalBoolean(runtimeErrorEdgesRecord?.v1, filePath, "$.runtime.error_edges.v1") ?? false;
+  const runtimeErrorFlowsV1 =
+    expectOptionalBoolean(runtimeErrorFlowsRecord?.v1, filePath, "$.runtime.error_flows.v1") ?? false;
 
   return {
     configVersion: configVersion ?? "1",
@@ -456,8 +456,8 @@ export function validateRuntimeConfig(value: unknown, filePath: string): Runtime
       baseArgs
     },
     runtime: {
-      error_edges: {
-        v1: runtimeErrorEdgesV1
+      error_flows: {
+        v1: runtimeErrorFlowsV1
       }
     }
   };

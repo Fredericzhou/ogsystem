@@ -453,7 +453,7 @@ worker[Role:worker] -->|ERROR.| output
 }
 
 test("nl2mmd validator ignores ERROR* edges when checking role output event enum", async () => {
-  const tempRoot = await mkdtemp(path.join(tmpdir(), "ogsystem-nl2mmd-error-edge-"));
+  const tempRoot = await mkdtemp(path.join(tmpdir(), "ogsystem-nl2mmd-error-flow-"));
   const roleRootDir = path.join(tempRoot, "roles");
   const modelRootDir = path.join(tempRoot, "models");
   await mkdir(roleRootDir, { recursive: true });

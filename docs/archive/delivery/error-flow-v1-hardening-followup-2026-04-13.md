@@ -4,6 +4,7 @@ Archived: yes (delivery record; not active source of truth)
 Status: Delivered  
 Date: 2026-04-13  
 Owner: runtime core
+Terminology note: active canonical naming is `error flow` / `runtime.error_flows.v1`; this archive keeps delivery-era wording only where helpful for historical context.
 
 ## 1. 目标
 
@@ -31,7 +32,7 @@ Owner: runtime core
 
 ```bash
 pnpm build
-node --test tests/resume-session.test.mjs tests/parser.test.mjs tests/error-edge-runtime.test.mjs tests/runtime-fault-injection.test.mjs
+node --test tests/resume-session.test.mjs tests/parser.test.mjs tests/error-flow-runtime.test.mjs tests/runtime-fault-injection.test.mjs
 pnpm test
 pnpm run test:examples
 ```

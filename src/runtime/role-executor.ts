@@ -31,7 +31,7 @@ import {
   validateRoleInputSchema,
   validateRoleOutputSchema
 } from "./role-repo.js";
-import { isRuntimeOnlyErrorEvent } from "./error-edge-utils.js";
+import { isRuntimeOnlyErrorEvent } from "./error-flow-utils.js";
 import { createRuntimeError, normalizeRuntimeError } from "./runtime-errors.js";
 import { renderUserProfile, stringifyJson } from "./runtime-support.js";
 import { ToolExecutionError } from "./tool-runner.js";

@@ -1,19 +1,29 @@
-# OGSystem 等待超时与并行汇合语义规范（v2 RFC）
+# OGSystem Join 等待超时语义规范（v2 RFC）
 
 更新时间：2026-04-14  
 状态：RFC / **未实现**（proposal-only）  
-适用范围：运行时编排层（Join 等待、并行汇合超时、全局兜底）  
+适用范围：运行时编排层（Join 等待、Join timeout 失败路由、resume 一致性）  
 权威级别：低于 `src/runtime/*` 与 `docs/ogsystem-orchestration-semantics-v1.md`
 
 ---
 
-## 0. 目的与结论
+## 0. 目的与范围冻结
 
-本 RFC 目标是给 Join 等待补齐“可超时”的系统护栏，同时保持配置和语义尽量简单：
+本 RFC 只解决一件事：**给 Join 增加可配置、可恢复、可失败路由的等待超时语义**。
 
-1. 仅保留两段等待：`first_packet` + `gap`。
-2. 执行超时与等待超时分层：`timeoutMs`（执行）与 `wait.*`（等待）分开。
-3. 不只依赖一个全局大超时：保留 `global.deadlineMs` 作为兜底，但不替代局部等待控制。
+本版范围固定如下：
+
+1. 仅支持 Mermaid metadata。
+2. 仅支持两段等待：`first_packet` 与 `gap`。
+3. 仅支持一个超时动作：`FAIL`。
+4. 执行超时与 Join 等待超时分层：`timeoutMs` 仍是执行预算；本 RFC 新增的是 Join 等待预算。
+
+本版明确**不包含**：
+
+1. Runtime YAML 配置面。
+2. alias（如 `join.deadline.*` / `join.on_timeout.*`）。
+3. `global.deadlineMs`。
+4. `PARTIAL_CONTINUE`、`SKIP` 等扩展动作。
 
 ---
 
@@ -21,266 +31,308 @@
 
 以下是当前代码现状，不是目标语义：
 
-1. Mermaid 元数据是白名单，`wait.*` / `join.deadline` / `join.on_timeout` 目前会被拒绝。
-2. `runtime` 配置白名单未包含等待超时相关键。
-3. 调度器主路径是事件驱动，不存在独立 wait timer/poll 机制。
-4. Join 在 readiness 未满足时不会激活分支，直接 `continue` 等待后续事件。
-5. `ERROR*` 入口当前绑定在“角色执行失败 outcome”；Join timeout 不是现成的执行失败路径。
+1. Mermaid 元数据白名单只接受既有 `join.mode/join.sources/join.min` 等前缀；`join.first_packet.*`、`join.gap.*`、`join.on_timeout.*` 当前会被拒绝。
+2. runtime 当前没有显式 `joinPending` 状态，也没有独立 timer/tick 机制。
+3. Join readiness 只根据 source 到达情况判断，不包含时间维度。
+4. scheduler 结束条件当前只看 `activeRoles.length === 0`；若未来引入等待窗口而不补 pending 语义，会提前 END。
+5. `ERROR*` 失败路由已经存在，但 Join timeout 目前没有对应的 runtime failure envelope 产出路径。
 
 ---
 
-## 2. 目标语义（To-Be）
+## 2. 目标达成语义清单（To-Be）
 
-### 2.1 时间分层
+本 RFC 落地后，目标语义必须同时满足：
 
-1. 执行时长：`timeoutMs`（节点执行预算）。
-2. 等待时长：`wait.first_packet` 与 `wait.gap`（Join 等待预算）。
+1. 仅交付 Mermaid metadata 语义，不引入 YAML 配置面。
+2. canonical 键固定为 `join.first_packet.*`、`join.gap.*`、`join.on_timeout.*`。
+3. 不采用 `wait_join_*` 扁平命名，也不再引入新的顶层 `wait.*` 域。
+4. 支持 `join.first_packet.default`、`join.first_packet.<roleId>`、`join.gap.default`、`join.gap.<roleId>`、`join.on_timeout.<roleId>`。
+5. 解析为 fail-closed：未知键、非法值、非法作用域直接失败。
+6. `join.first_packet/gap/on_timeout` 仅允许声明在 join 角色上；非 join 角色声明直接失败。
+7. `join.first_packet.*` 与 `join.gap.*` 必须是正整数毫秒。
+8. `join.on_timeout.*` 在 v2 仅允许 `FAIL`。
+9. `first_packet(roleId)` 解析顺序为 `role > default > fail`。
+10. `gap(roleId)` 解析顺序为 `role > default > first_packet(roleId)`。
+11. `first_packet` 从 join 进入 pending 观察态起算。
+12. `gap` 从最近一次有效 source 到达起算。
+13. `arrivalCount == 0` 时仅判 `first_packet`；`arrivalCount > 0` 时仅判 `gap`。
+14. 同一 `(roleId, lineageId, loopIteration, timeoutType)` 只允许一次超时路由，后续重复仅记审计不重复路由。
+15. Join timeout 失败码固定为：
+    - `GRAPH_JOIN_FIRST_PACKET_TIMEOUT`
+    - `GRAPH_JOIN_GAP_TIMEOUT`
+16. Join timeout 作为运行时失败进入统一失败链：`ERROR.<code>` -> `ERROR` -> fail-stop（受 `runtime.error_flows.v1` 控制）。
+17. scheduler 结束条件变为“无 active roles 且无 join pending”。
+18. resume 后按持久化 deadline 恢复；若已过期则立即触发超时路径。
+19. 未声明本 RFC 新键的旧图行为保持不变。
+20. 必须落审计事件，至少包含 run/branch/lineage/loop/role/timeoutType/budget/elapsed 等关键字段。
 
-二者不得混算。
+---
 
-### 2.2 Join 两段等待
+## 3. 命名与配置（Canonical）
+
+### 3.1 Canonical 键
+
+本版唯一 canonical 键如下：
+
+1. `join.first_packet.default`
+2. `join.first_packet.<roleId>`
+3. `join.gap.default`
+4. `join.gap.<roleId>`
+5. `join.on_timeout.<roleId>`
+
+说明：
+
+1. `default` 是唯一保留默认槽位。
+2. 除 `default` 外，尾段必须解析为已定义的 join 角色 `roleId`。
+3. 本版不定义 alias，不做双写兼容。
+
+### 3.2 解析顺序与继承
+
+对每个 join 角色 `roleId`：
+
+1. `first_packet(roleId)`：  
+   `join.first_packet.<roleId>` > `join.first_packet.default` > 解析失败。
+2. `gap(roleId)`：  
+   `join.gap.<roleId>` > `join.gap.default` > `first_packet(roleId)`。
+3. `on_timeout(roleId)`：  
+   `join.on_timeout.<roleId>` > `FAIL`。
+
+即：`role > default > fallback`。
+
+### 3.3 解析与校验（fail-closed）
+
+1. `join.first_packet.*` 与 `join.gap.*` 单位统一为毫秒（ms），且必须为正整数。
+2. `join.first_packet.*`、`join.gap.*`、`join.on_timeout.*` 仅允许声明在 join 角色上。
+3. `join.on_timeout.*` 在 v2 仅允许 `FAIL`。
+4. `join.first_packet.*` 缺失且无 `default` 时，解析期直接失败。
+5. `default` 之外的尾段若不是已定义 `roleId`，解析期直接失败。
+
+建议解析错误码沿用现有 `MERMAID_*` 风格，例如：
+
+1. `MERMAID_JOIN_WAIT_NON_JOIN_ROLE`
+2. `MERMAID_JOIN_WAIT_UNKNOWN_ROLE`
+3. `MERMAID_JOIN_WAIT_FIRST_PACKET_MISSING`
+4. `MERMAID_JOIN_WAIT_UNSUPPORTED_TIMEOUT_ACTION`
+
+---
+
+## 4. 时间语义与起算点
+
+### 4.1 两段等待
 
 1. `first_packet`：等待首个有效 source 到达的上限。
-2. `gap`：首包到达后，相邻有效 source 到达间隔的上限。
+2. `gap`：首个有效 source 到达后，相邻有效 source 到达间隔的上限。
+
+这里的“有效 source 到达”按**同一 `lineageId + loopIteration` 下的唯一 source role**计数，与当前 Join readiness 口径保持一致。
+
+### 4.2 Join Pending 起点
+
+为支持时间语义，必须引入显式 `joinPending` 观察态。定义：
+
+1. `joinPendingKey = roleId + lineageId + loopIteration`
+2. `tPendingStartedAtEpochMs`：某个 join 进入 pending 观察态的起点。
+3. `tLastArrivalAtEpochMs`：最近一次有效 source 到达的时刻。
+4. `arrivalCount`：已到达的唯一 source role 数。
+
+### 4.3 判定规则
+
+1. `first_packet` 判定：  
+   `arrivalCount == 0 && nowEpochMs >= firstPacketDeadlineAtEpochMs`
+2. `gap` 判定：  
+   `arrivalCount > 0 && nowEpochMs >= gapDeadlineAtEpochMs`
+
+建议直接持久化绝对 deadline：
+
+1. `firstPacketDeadlineAtEpochMs`
+2. `gapDeadlineAtEpochMs`
+
+这样 resume 不需要重算起点。
 
 ---
 
-## 3. 命名与配置（去歧义）
+## 5. 状态机与调度改造（最小闭环）
 
-### 3.1 配置面与归一（硬规则）
+要让 Join timeout 真正可触发，最小闭环至少包括：
 
-v2 目标支持两种配置面，但内部必须归一为同一 canonical 结构：
+1. GraphState 新增 `joinPendingByKey`。
+2. source 到达 join 且 readiness 未满足时，创建或更新 `joinPending`。
+3. readiness 满足并激活 join 后，立即清理对应 `joinPending`。
+4. scheduler 每轮在选择下一个 active role 前，先检查所有 `joinPending` 是否超时。
+5. scheduler 结束条件必须改为：  
+   `activeRoles.length === 0 && joinPendingCount === 0`
 
-1. Mermaid metadata 扁平键：
-   `wait.first_packet.default`、`wait.first_packet.<roleId>`、`wait.gap.default`、`wait.gap.<roleId>`、`wait.on_timeout.<roleId>`、`global.deadlineMs`。
-2. Runtime YAML 结构键：
-   `wait.first_packet.{default,<roleId>}`、`wait.gap.{default,<roleId>}`、`wait.on_timeout.{<roleId>}`、`global.deadlineMs`。
-3. 内部 canonical 归一后字段仅保留：
-   `wait.first_packet`、`wait.gap`、`wait.on_timeout`、`global.deadlineMs`。
-4. 跨配置面冲突不做“覆盖优先级”：
-   同一 canonical 字段若在两种配置面都声明，值必须一致；不一致则解析期直接失败（`WAIT_SURFACE_CONFLICT`）。
+否则“无活动角色但仍有 join 等待窗口”的场景会被提前结束。
 
-### 3.2 Canonical 键与别名
+### 5.1 `all_of` 与 `quorum_of` 下的 pending 生命周期
 
-推荐 canonical 键：
-
-1. `wait.first_packet.default`
-2. `wait.first_packet.<roleId>`
-3. `wait.gap.default`（可选）
-4. `wait.gap.<roleId>`
-5. `wait.on_timeout.<roleId>`（v2 默认 `FAIL`）
-6. `global.deadlineMs`（全局兜底）
-
-兼容别名：
-
-1. `join.deadline.<roleId>` -> `wait.first_packet.<roleId>`
-2. `join.on_timeout.<roleId>` -> `wait.on_timeout.<roleId>`
-
-### 3.3 别名冲突规则（硬规则）
-
-若 canonical 与 alias 同时出现：
-
-1. 值相同：接受，canonical 生效，记录一次兼容告警（可选）。
-2. 值不同：**解析期直接失败**（fail-closed）。
-
-建议错误码：`MERMAID_WAIT_ALIAS_CONFLICT`。
-
-### 3.4 默认值、优先级与继承（硬规则）
-
-每个 join 角色 `roleId` 的解析口径固定如下：
-
-1. `first_packet(roleId)` 解析顺序：  
-   `wait.first_packet.<roleId>` > `wait.first_packet.default` > 解析失败（`WAIT_FIRST_PACKET_MISSING`）。
-2. `gap(roleId)` 解析顺序：  
-   `wait.gap.<roleId>` > `wait.gap.default` > `first_packet(roleId)`（强制继承）。
-3. `on_timeout(roleId)` 解析顺序：  
-   `wait.on_timeout.<roleId>` > `FAIL`（v2 唯一必选动作）。
-
-即：`role > default > fallback`，其中 fallback 对 `first_packet` 是“失败退出”，对 `gap` 是“继承 first_packet”。
-
-### 3.5 解析与校验（fail-closed）
-
-1. `wait.first_packet.*` 与 `wait.gap.*` 单位统一为毫秒（ms），且必须是正整数。
-2. `wait.*` 仅允许配置在 join 角色上；非 join 角色声明 `wait.*` 直接失败（`WAIT_NON_JOIN_ROLE`）。
-3. `wait.*` 引用的 `roleId` 必须存在于图中；不存在直接失败（`WAIT_UNKNOWN_ROLE`）。
-4. `wait.on_timeout.*` 在 v2 仅允许 `FAIL`；其他枚举值直接失败（`WAIT_UNSUPPORTED_TIMEOUT_ACTION`）。
-5. `default` 是唯一保留默认槽位；除 `default` 外其余键必须被解析为已定义 `roleId`。
+1. `all_of`：直到全部 source 到齐前，join 一直处于 pending。
+2. `quorum_of`：达到阈值后立即激活一次并清理 pending；后续迟到 source 只记 `join_late_arrival_ignored` 审计，不重触发 join。
 
 ---
 
-## 4. 起算点定义（与现机制对齐）
+## 6. 超时失败与 ERROR* 路由
 
-### 4.1 first_packet 起点（修正）
+### 6.1 失败来源
 
-由于当前 Join “未 ready 不激活分支”，不能使用“Join 分支入队时刻”作为统一起点。  
-v2 建议引入显式 `joinPending` 观察状态，并定义：
+Join timeout 是**运行时状态失败**，不是角色执行失败。
 
-1. `t_pending_started`：某 `joinKey(roleId, lineageId, loopIteration)` 进入“待汇合观察态”的时刻。
-2. `first_packet` 判定：`now - t_pending_started > wait.first_packet` 且 `arrivalCount == 0`。
+因此失败 envelope 必须由 scheduler / join timeout 子系统产出，而不是 role executor 产出。
 
-### 4.2 gap 起点
+### 6.2 失败码
 
-1. `t_last_arrival`：最近一次有效 source 到达时刻。
-2. `gap` 判定：`now - t_last_arrival > wait.gap`（仅在 `arrivalCount > 0` 时）。
+本版固定使用：
 
----
+1. `GRAPH_JOIN_FIRST_PACKET_TIMEOUT`
+2. `GRAPH_JOIN_GAP_TIMEOUT`
 
-## 5. 时钟与 Resume（必须补充）
+### 6.3 路由规则
 
-仅使用 monotonic 会在跨进程 resume 后失去连续基准。v2 建议双轨：
+Join timeout 进入统一运行时失败链：
 
-1. 运行时判定使用 monotonic（进程内稳定）。
-2. 持久化使用 wall-clock deadline（`deadlineAtEpochMs`）。
-3. resume 时按 `deadlineAtEpochMs - nowEpochMs` 重建剩余预算；若已过期则立即触发超时路径。
+1. 若 `runtime.error_flows.v1=true` 且该 join 节点声明 `ERROR.<code>`，优先命中精确异常流。
+2. 否则若声明 `ERROR`，走 fallback 异常流。
+3. 若未启用异常流或无匹配，保持 fail-stop。
 
-这样可避免重启后超时漂移。
+### 6.4 单触发与去重
 
----
+同一 Join timeout 只允许路由一次。
 
-## 6. on_timeout 映射（与 ERROR* 对齐）
+建议去重键：
 
-`on_timeout=FAIL` 需要明确路径，不可隐含“等同 executeRoleNode 失败”。
+`dedupKey = roleId + lineageId + loopIteration + timeoutType`
 
-v2 建议：
+规则：
 
-1. 失败信封由调度器 wait-timer 子系统产出（不是 role executor）：
-   针对 `joinPending` 轮询判定超时后，直接构造 runtime failure envelope。
-2. 新增 Join timeout 失败代码：
-   - `GRAPH_JOIN_FIRST_PACKET_TIMEOUT`
-   - `GRAPH_JOIN_GAP_TIMEOUT`
-3. 进入统一“运行时失败路由”：
-   - 若启用 `error_edges.v1` 且 join 节点声明 `ERROR.<code>`/`ERROR`，走异常边。
-   - 否则进入现有 fail-stop。
-4. 审计落点必须包含：
-   `runId`、`branchId`、`lineageId`、`loopIteration`、`roleId`、`timeoutType`、`budgetMs`、`elapsedMs`、`onTimeoutAction`、`dedupKey`。
-5. 单触发硬约束：  
-   `dedupKey = roleId + lineageId + loopIteration + timeoutType`。首次触发写入并路由，后续重复仅记 `join_timeout_duplicate_ignored` 审计，不重复路由。
+1. 首次触发：写审计并进入失败路由。
+2. 后续重复：只记 `join_timeout_duplicate_ignored` 审计，不重复路由。
 
-注意：这是“运行时状态失败”，不是“角色执行失败”。
+### 6.5 审计字段
 
----
+超时审计至少应包含：
 
-## 7. 调度前置改造（最小闭环）
+1. `runId`
+2. `branchId`
+3. `lineageId`
+4. `loopIteration`
+5. `roleId`
+6. `timeoutType`
+7. `budgetMs`
+8. `elapsedMs`
+9. `arrivalCount`
+10. `satisfiedSources`
+11. `onTimeoutAction`
+12. `dedupKey`
 
-要让等待超时可触发，至少需要：
+建议事件类型：
 
-1. 增加 `joinPending` 状态（含 `t_pending_started`、`t_last_arrival`、`arrivalCount`）。
-2. 增加 timer 驱动能力（tick/poll 或等价机制）。
-3. 调整 scheduler 结束条件：  
-   不能只看 `activeRoles.length === 0`，还要看是否存在未完成 `joinPending`。
-
-否则在“无活动角色但有待汇合窗口”时会提前 END，超时永远不会触发。
+1. `join_timeout_fired`
+2. `join_timeout_duplicate_ignored`
 
 ---
 
-## 8. 并行超时策略
+## 7. 持久化与 Resume
 
-结论：不建议仅一个“大统一超时”。
+本版最小实现不引入 monotonic/wall-clock 双轨，直接使用**绝对 epoch deadline**。
 
-建议双层：
+持久化要求：
 
-1. `global.deadlineMs`：整轮兜底。
-2. `timeoutMs + wait.first_packet + wait.gap`：局部定位与局部失败控制。
+1. `joinPending` 必须进入 GraphState。
+2. `joinPending` 必须通过 checkpoint/WAL 持久化。
+3. 至少持久化：
+   - `tPendingStartedAtEpochMs`
+   - `tLastArrivalAtEpochMs`
+   - `firstPacketDeadlineAtEpochMs`
+   - `gapDeadlineAtEpochMs`
+   - `arrivalCount`
+   - `satisfiedSources`
+   - `timeoutFired`
 
-### 8.1 `maxTransitions` 与 `global.deadlineMs` 的终止顺序（硬规则）
+Resume 规则：
 
-为避免双重终止语义冲突，v2 约定：
-
-1. 运行中并行检查 `maxTransitions` 与 `global.deadlineMs`，谁先触发谁先终止。
-2. 若同一调度周期内两者同时满足，按固定优先级处理：先 `maxTransitions`，后 `global.deadlineMs`。
-3. 终止后走统一 fail-stop/审计出口，错误码必须区分触发源：
-   - `GRAPH_TRANSITION_BUDGET_EXCEEDED`
-   - `GRAPH_GLOBAL_DEADLINE_EXCEEDED`
-
----
-
-## 9. v2 最小动作集
-
-默认且唯一必选：`FAIL`。
-
-可扩展（后续版本）：
-
-1. `PARTIAL_CONTINUE`
-2. `SKIP`
-
-v2 不要求这些扩展动作落地。
+1. 恢复状态后，scheduler 在继续执行前先扫描 `joinPending`。
+2. 若任一 pending 已过期，则立即进入对应 timeout 路由。
+3. 已触发且已去重标记的 timeout，不得在 resume 后重复路由。
 
 ---
 
-## 10. 伪代码（概念级）
+## 8. 配置示例（Mermaid-only）
 
-```ts
-const key = joinKey(roleId, lineageId, loopIteration);
-const pending = getJoinPending(key);
-const nowMono = monotonicNow();
-const nowEpoch = Date.now();
+```mermaid
+flowchart TD
+%% system.id=demo.join.timeout
+%% system.version=1.0.0
+%% law.global=law.demo
+%% entry.role=dispatch
+%% exec.bind.dispatch=profile.dispatch
+%% exec.bind.worker_a=profile.worker_a
+%% exec.bind.worker_b=profile.worker_b
+%% exec.bind.review=profile.review
+%% exec.bind.timeout_handler=profile.timeout_handler
+%% role.mode.dispatch=parallel_split
+%% join.mode.review=all_of
+%% join.sources.review=worker_a,worker_b
+%% join.first_packet.default=120000
+%% join.gap.review=90000
+%% join.on_timeout.review=FAIL
 
-// resume-safe: deadlineAtEpochMs 优先用于“是否已到期”判定
-if (pending.arrivalCount === 0) {
-  if (
-    expiredByEpochOrMono(pending.firstPacketDeadlineAtEpochMs, nowEpoch, pending.tPendingStartedMono, nowMono, waitFirstPacket(roleId)) &&
-    markJoinTimeoutFiredOnce(key, "FIRST_PACKET")
-  ) {
-    failJoinTimeout("GRAPH_JOIN_FIRST_PACKET_TIMEOUT", key);
-  }
-} else {
-  if (
-    expiredByEpochOrMono(pending.gapDeadlineAtEpochMs, nowEpoch, pending.tLastArrivalMono, nowMono, waitGap(roleId)) &&
-    markJoinTimeoutFiredOnce(key, "GAP")
-  ) {
-    failJoinTimeout("GRAPH_JOIN_GAP_TIMEOUT", key);
-  }
-}
+input -->|START| dispatch[Role:dispatch]
+dispatch[Role:dispatch] -->|A| worker_a[Role:worker_a]
+dispatch[Role:dispatch] -->|B| worker_b[Role:worker_b]
+worker_a[Role:worker_a] -->|DONE_A| review[Role:review]
+worker_b[Role:worker_b] -->|DONE_B| review[Role:review]
+review[Role:review] -->|DONE| output
+review[Role:review] -->|ERROR.GRAPH_JOIN_FIRST_PACKET_TIMEOUT| timeout_handler[Role:timeout_handler]
+review[Role:review] -->|ERROR.GRAPH_JOIN_GAP_TIMEOUT| timeout_handler[Role:timeout_handler]
+timeout_handler[Role:timeout_handler] -->|DONE| output
 ```
 
----
+说明：
 
-## 11. 配置示例（提案）
-
-```yaml
-timeoutMs:
-  analyst: 120000
-  reviewer: 180000
-
-wait:
-  first_packet:
-    default: 120000
-    joiner: 240000
-  gap:
-    # 未配置可继承 first_packet.joiner
-    joiner: 90000
-  on_timeout:
-    joiner: FAIL
-
-global:
-  deadlineMs: 900000
-
-# 兼容别名
-join:
-  deadline:
-    joiner: 240000
-  on_timeout:
-    joiner: FAIL
-```
+1. `review` 未配置 `join.first_packet.review`，因此继承 `join.first_packet.default=120000`。
+2. `review` 明确配置 `join.gap.review=90000`。
+3. `join.on_timeout.review=FAIL` 表示超时进入运行时失败链，再决定是否命中 `ERROR*`。
 
 ---
 
-## 12. 落地前置检查清单（准确性门槛）
+## 9. 落地实现清单
 
-在宣称“已支持 v2”之前，需至少完成：
+在宣称“已支持 v2”之前，至少完成以下改造：
 
-1. `parse-mermaid.ts` 白名单扩展 + 别名冲突规则 + `wait` 数值/role/join-only 校验。
-2. `config.ts` 白名单扩展。
-3. `graph-runner.ts` 加入 `joinPending + timer + scheduler end 条件修正`。
-4. Join timeout 由调度器产出 envelope，并实现去重单触发与审计落盘。
-5. Join timeout 到 ERROR*/fail-stop 的显式路由实现。
-6. 跨配置面冲突策略（同值接受、异值失败）在解析期生效。
-7. `gap` 缺省继承 `first_packet` 与 `first_packet` 缺失 fail-closed 在解析期生效。
-8. resume 跨进程 deadline 持久化与恢复逻辑。
-9. 文档状态从 RFC 改为 Delivered，并回写主语义文档。
+1. `parse-mermaid.ts` 扩展白名单并加入 `join.first_packet/gap/on_timeout` 校验。
+2. `types.ts` / `execution-plan.ts` 补充 Join wait 策略字段。
+3. `graph-runtime-state.ts` 补充 `joinPending` 状态结构与初始投影。
+4. `graph-runner.ts` 加入：
+   - `joinPending` 生命周期管理
+   - timer/tick 等价检查
+   - scheduler 结束条件修正
+   - Join timeout failure envelope 产出
+   - Join timeout 到 `ERROR*` / fail-stop 的显式路由
+   - 单触发去重与审计
+5. checkpoint/resume 逻辑持久化并恢复 `joinPending` deadline。
+6. 单元与集成测试覆盖：
+   - parser 校验
+   - `first_packet` timeout
+   - `gap` timeout
+   - `ERROR.<code>` 优先级
+   - duplicate ignored
+   - crash-window + resume 幂等
+7. 文档状态从 RFC 改为 Delivered，并在主语义文档中回写“已交付能力”。
 
 ---
 
-## 13. 文档状态约定
+## 10. 验收门槛
 
-本文件在上述检查清单完成前，始终为“提案文档”，不是当前运行时语义真相。
+只有当以下条件全部满足时，才能把本 RFC 状态改成 Delivered：
+
+1. 未声明 `join.first_packet/gap/on_timeout` 的旧图行为完全不变。
+2. Join timeout 可稳定触发，且不会因 scheduler 提前 END 而失效。
+3. `GRAPH_JOIN_FIRST_PACKET_TIMEOUT` 与 `GRAPH_JOIN_GAP_TIMEOUT` 能正确路由到 `ERROR.<code>` / `ERROR` / fail-stop。
+4. 同一 timeout 仅触发一次；重复检查只记 duplicate 审计。
+5. resume 后不丢 timeout、不重复 timeout。
+6. parser/runtime/recovery 回归测试全部通过。
+
+---
+
+## 11. 文档状态约定
+
+本文件在上述实现清单与验收门槛完成前，始终是“提案文档”，不是当前运行时语义真相。

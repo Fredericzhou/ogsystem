@@ -315,7 +315,7 @@ Resume 不是简单“接着跑”，而是先完成一套完整校验：
 
 ### 5.5 异常控制流边界（V1 delivered，默认 flag off）
 
-`ERROR*` 异常边语义已实现，发布默认仍通过 `runtime.error_edges.v1=false` 灰度控制；边界如下：
+`ERROR*` 异常流语义已实现，发布默认仍通过 `runtime.error_flows.v1=false` 灰度控制；边界如下：
 
 - `ERROR` 与 `ERROR.<errorCode>` 复用现有事件标签，不新增 DSL。
 - 仅声明了 `ERROR*` 出边的节点启用异常流（节点级 opt-in）。

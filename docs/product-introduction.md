@@ -18,7 +18,7 @@ OGSystem 是一个面向多角色协作流程的单机编排内核。它使用�
 - **会话血缘隔离**：OpenCode 会话按 `roleId:sessionLineageId` 复用或隔离，顺序链路复用记忆，并行 sibling 不串话。
 - **Crash 自愈补偿**：角色执行先提交 durable outcome，再由图调度层写 checkpoint；恢复时自动补齐缺失的 checkpoint，而不是重跑模型。
 - **状态脱水与显式治理**：`state.json` 保持轻量摘要，完整审计走 `events.ndjson`；支持 `runtime.retention` 阈值触发的显式快照清理。
-- **语义边界清晰**：动态 fan-out 的不确定 `N` 不进入图语义；受控并发属于执行策略；`ERROR*` 异常边已按节点级 opt-in 实现并由 feature flag 控制发布面。
+- **语义边界清晰**：动态 fan-out 的不确定 `N` 不进入图语义；受控并发属于执行策略；`ERROR*` 异常流已按节点级 opt-in 实现并由 feature flag 控制发布面。
 - **最小但完整的工程闭环**：解析、调度、执行、审计、恢复与检查能力都收敛在同一套内核工程里。
 
 ## 3. 架构特点
@@ -45,7 +45,7 @@ OGSystem 目前是一个很强的单机文件型内核，但仍有明确边界�
 - `.resume.lock` 只覆盖同机 `--resume-run` 竞争，不解决跨主机共享存储上的并发恢复。
 - 指纹校验是严格模式。只要系统定义、角色内容、模型包或 law 变化，resume 就会拒绝继续。
 - 长期运行的主要压力来自状态与产物增长，不是当前语义正确性本身。
-- `ERROR*` 异常边语义已实现，默认由 `runtime.error_edges.v1=false` 灰度控制；未声明或未开启时保持 fail-stop 行为。
+- `ERROR*` 异常流语义已实现，默认由 `runtime.error_flows.v1=false` 灰度控制；未声明或未开启时保持 fail-stop 行为。
 
 这意味着它适合：
 

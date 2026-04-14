@@ -1,5 +1,5 @@
 /**
- * Runtime-only error-edge events are reserved for failure routing and must not
+ * Runtime-only error-flow events are reserved for failure routing and must not
  * be treated as normal selectable role output events.
  */
 export function isRuntimeOnlyErrorEvent(eventType: string): boolean {

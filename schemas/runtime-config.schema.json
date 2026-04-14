@@ -65,7 +65,7 @@
       "type": "object",
       "additionalProperties": false,
       "properties": {
-        "error_edges": {
+        "error_flows": {
           "type": "object",
           "additionalProperties": false,
           "properties": {

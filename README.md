@@ -173,16 +173,16 @@ pnpm run run:adapter \
   --dry-run
 ```
 
-Run error-edge compensation example (feature-flag enabled runtime config):
+Run error-flow compensation example (feature-flag enabled runtime config):
 
 ```bash
 pnpm run run:adapter \
-  --system examples/error-edge-compensation/system.mmd \
-  --runtime examples/error-edge-compensation/runtime.json \
-  --profiles examples/error-edge-compensation/profiles.json \
-  --tools examples/error-edge-compensation/tools.json \
-  --laws examples/error-edge-compensation/laws.json \
-  --prompt "run error edge compensation example"
+  --system examples/error-flow-compensation/system.mmd \
+  --runtime examples/error-flow-compensation/runtime.json \
+  --profiles examples/error-flow-compensation/profiles.json \
+  --tools examples/error-flow-compensation/tools.json \
+  --laws examples/error-flow-compensation/laws.json \
+  --prompt "run error flow compensation example"
 ```
 
 Run human-gate workflow example:
@@ -251,7 +251,7 @@ pnpm run run:adapter \
 - `state.json` and `sessions.json` writes are atomic, and resume rejects partial/corrupted snapshots before execution starts.
 - Runs persist `activeBranches`, `completedBranches`, `loopIterations`, and `graphState` inside `state.json`, and support `--resume-run` against the same run directory.
 - `audit/summary.md` and result JSON now expose `totalTransitions`, `okCount`, `failedCount`, `handledFailureCount`, `unhandledFailureCount`, `handledFailureByEvent`, `handledFailureByTargetRole`, `noopCount`, structured `failureCountsByErrorCode`, and repair statistics.
-- Runtime failure routing supports explicit `ERROR*` edges behind `runtime.error_edges.v1` (default `false`): exact `ERROR.<errorCode>` first, then fallback `ERROR`; no match remains fail-stop.
+- Runtime failure routing supports explicit error flows expressed as `ERROR*` edge labels behind `runtime.error_flows.v1` (default `false`): exact `ERROR.<errorCode>` first, then fallback `ERROR`; no match remains fail-stop.
 - `ERROR*` routing is evaluated only after executor-level retries for the attempt are exhausted.
 - Mermaid parsing is fail-closed for reserved error events: only `ERROR` and `ERROR.<errorCode>` are accepted.
 - Role outputs cannot proactively emit `ERROR*` events; `ERROR*` is reserved for runtime failure routing only.
@@ -282,7 +282,7 @@ pnpm run run:adapter \
 - `examples/langgraph-debate-current/` shows a minimal debate with loop + parallel + join.
 - `examples/langgraph-expert-consultation/` shows a minimal expert consultation with parallel + join.
 - `examples/medical-quorum-consultation/` shows quorum join + context projection in a professional consultation flow.
-- `examples/error-edge-compensation/` shows failure-to-compensation routing via `ERROR*` edges.
+- `examples/error-flow-compensation/` shows failure-to-compensation routing via error flows expressed as `ERROR*` edge labels.
 - `examples/human-gate-workflow/` shows template-based human approval/signal gate flow.
 - `examples/incident-response-playbook/` shows integrated exception-routing + human-in-the-loop incident handling.
 - `examples/README.md` is the training handbook for minimal example set and coverage matrix.

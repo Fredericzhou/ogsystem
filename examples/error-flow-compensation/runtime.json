@@ -5,7 +5,7 @@
   "modelRepo": "./og-models",
   "runsDir": ".ogs/runs",
   "runtime": {
-    "error_edges": {
+    "error_flows": {
       "v1": true
     }
   }
