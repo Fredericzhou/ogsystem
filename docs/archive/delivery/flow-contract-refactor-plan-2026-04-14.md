@@ -25,6 +25,7 @@ Owner: Runtime maintainers
 1. 解析器白名单先放行新 metadata 键，否则 `handoff.*` 在 parse 阶段即失败。
 2. `parallel_split` 的合同匹配规则先定稿（无 event 输出时如何匹配合同）。
 3. role `outputSchema` 的兼容迁移路径先实现（manifest/执行期/校验链路的阶段化改造）。
+4. `join.deadline.* / join.on_timeout.*` 不并入本方案主链；其上线依赖 `docs/ogsystem-wait-timeout-semantics-v2.md` 从 RFC 进入 Delivered。
 
 ---
 
@@ -35,8 +36,13 @@ Owner: Runtime maintainers
 | 语义 | 说明 | 价值 | 风险 |
 | :--- | :--- | :--- | :--- |
 | `handoff.contract.<fromRoleId>.<eventType>.<toRoleId>.*` | 流转合同强制声明（schema/version/on_violation） | 交接确定性、审计性、可恢复性显著提升 | 合同迁移成本上升 |
-| `route.order.<fromRoleId>` | 同事件多流转命中顺序 | 消除隐式顺序歧义，行为可复现 | 需要增加 lint 冲突规则 |
-| `join.deadline.<roleId>` + `join.on_timeout.<roleId>` | join 超时治理 | 防止汇合长尾卡死 | 与 retry/stop 语义耦合增加 |
+| `route.order.<fromRoleId>` | fromRole 级命中流转处理顺序（可选，默认 Mermaid 声明顺序） | 消除隐式顺序歧义，行为可复现 | 需要增加 lint 冲突规则 |
+
+### P0-Dependency（独立里程碑，不与合同主链同批上线）
+
+| 语义 | 说明 | 依赖 | 结论 |
+| :--- | :--- | :--- | :--- |
+| `join.deadline.<roleId>` + `join.on_timeout.<roleId>` | join 超时治理 | `wait-timeout v2` 的 parser/config/runner/timer 全链路实现 | 独立发布，不纳入本计划 Phase 0/1 的上线闸门 |
 
 ### P1（高收益增强）
 
@@ -98,6 +104,7 @@ Owner: Runtime maintainers
 %% handoff.contract.<fromRoleId>.<eventType>.<toRoleId>.version=1
 %% handoff.contract.<fromRoleId>.<eventType>.<toRoleId>.on_violation=FAIL|WARN
 %% handoff.contract.<fromRoleId>.__split__.<toRoleId>.schema=schemas/handoff/<name>.json
+%% route.order.<fromRoleId>=<toRoleIdA>,<toRoleIdB>,...
 ```
 
 推荐：
@@ -105,10 +112,12 @@ Owner: Runtime maintainers
 - `strict`：缺合同或合同校验失败直接失败。
 - `compat`：缺合同告警，合同存在时强校验。
 - `__split__`：仅用于 `role.mode.<fromRoleId>=parallel_split` 且 role 输出不依赖 event 的合同匹配。
+- `route.order`：仅定义命中集合的处理顺序，不改变命中集合本身。
 
 解析器迁移要求：
 
 - 在 Phase 0 增加 `handoff.mode` 与 `handoff.contract.*` 键白名单支持。
+- 在 Phase 0 增加 `route.order.*` 键白名单支持。
 - 在未实现运行时合同校验前，`handoff.*` 仅允许 lint 消费，不改变当前执行语义。
 
 ### 3.3 `handoff.*` 字段分级（必选/可选/默认值）
@@ -149,6 +158,26 @@ Owner: Runtime maintainers
 - role 不再以 `input/output schema` 做硬阻断。
 - role 在迁移完成前仍保留现有 schema 字段以兼容现网运行路径。
 
+### 3.5 `route.order` 语义口径（fromRole 级）
+
+定义：
+
+- `route.order.<fromRoleId>` 是可选配置，作用域为单个 fromRole。
+- 未配置时，命中流转按 Mermaid 声明顺序处理（默认行为）。
+- 配置后，仅重排“已命中流转”的处理顺序；不会改变是否命中。
+
+执行规则（建议）：
+
+1. 先按现有路由语义计算命中集合（默认事件路由按 `eventType == 输出 event`）。
+2. 使用 `route.order.<fromRoleId>` 对命中集合做稳定排序（按 `toRoleId` 位置）。
+3. 未在 `route.order` 中列出的命中目标，按 Mermaid 声明顺序追加在末尾。
+
+边界：
+
+- `route.order` 不用于表达“选哪条流转”，只用于“命中后先后次序”。
+- `parallel_split` 可保持现状（按声明顺序全量分发），不强制依赖 `route.order`。
+- 若同一 `fromRoleId + eventType + toRoleId` 存在重复流转，lint 应直接报错，避免顺序语义退化。
+
 ---
 
 ## 4. 自动校验方案（编译期 + 运行期）
@@ -163,9 +192,12 @@ Owner: Runtime maintainers
 2. 校验每条流转的合同声明完整性（按 `handoff.mode` 决定是否必须）。
    - 若 `fromRole` 为 `parallel_split`，必须使用 `__split__` 键空间。
    - 若检测到 `parallel_split` 同时声明 `__split__` 与 `<eventType>` 合同，直接报错。
-3. 校验 schema 可加载/可编译（AJV）。
-4. 校验声明与流转一一对应（拒绝“无对应流转”的孤儿合同）。
-5. 对 role capability 做匹配分析并产出风险：
+3. 校验 `route.order.<fromRoleId>`（可选）：
+   - 每个 `toRoleId` 必须是该 `fromRoleId` 的实际下游目标之一。
+   - `route.order` 中不允许重复 `toRoleId`。
+4. 校验 schema 可加载/可编译（AJV）。
+5. 校验声明与流转一一对应（拒绝“无对应流转”的孤儿合同）。
+6. 对 role capability 做匹配分析并产出风险：
    - `CAPABILITY_MISMATCH_WARN`
    - `CAPABILITY_MISMATCH_ERROR`（由策略决定）
 
@@ -183,9 +215,10 @@ Owner: Runtime maintainers
 3. 命中流转集合：
    - 普通路由：按输出 `event` 匹配
    - `parallel_split`：忽略 `event`，按 `__split__` 匹配所有下游
-4. 对每条命中流转执行合同校验（schema）。
-5. 根据运行模式与 `on_violation` 处理结果。
-6. 通过后才激活下游节点。
+4. 若配置 `route.order.<fromRoleId>`，对命中集合排序（仅改变处理顺序，不改变命中结果）。
+5. 对每条命中流转执行合同校验（schema）。
+6. 根据运行模式与 `on_violation` 处理结果。
+7. 通过后才激活下游节点。
 
 join 场景：
 
@@ -229,10 +262,11 @@ join 场景：
 
 ## Phase 0：文档与 lint 预埋（低风险）
 
-- 先改解析器白名单，放行 `handoff.mode` / `handoff.contract.*`。
+- 先改解析器白名单，放行 `handoff.mode` / `handoff.contract.*` / `route.order.*`。
 - 增加语义文档章节：flow contract 口径与错误码。
 - 新增 `lint:contracts`（仅检查声明与 schema 可用性）。
 - 增加 `strict/compat` 行为矩阵校验，拒绝 strict + WARN 组合。
+- 增加 `route.order` lint 规则（目标合法性、重复项、与重复流转冲突检查）。
 
 ## Phase 1：运行时并行校验（兼容）
 
@@ -259,10 +293,14 @@ join 场景：
 
 | Gate | 必须完成项 | 回滚开关 |
 | :--- | :--- | :--- |
-| G0（Phase 0 出口） | 解析器已放行 `handoff.*`；`lint:contracts` 可运行；strict/WARN 冲突可被拦截 | 移除 `handoff.*` 配置即可回到旧语义 |
+| G0（Phase 0 出口） | 解析器已放行 `handoff.*` 与 `route.order.*`；`lint:contracts` 可运行；strict/WARN 冲突可被拦截 | 移除 `handoff.*` / `route.order.*` 配置即可回到旧语义 |
 | G1（Phase 1 出口） | `parallel_split` `__split__` 匹配生效；运行时合同校验可观测；不改变现有成功路径 | `handoff.mode=compat` + 保留 role schema 校验 |
 | G2（Phase 2 出口） | strict 成为默认；所有 role-to-role 流转具备合同 | 全局切回 `compat` |
 | G3（Phase 3 出口） | role schema 变可选；执行链不再硬依赖 role output schema | 打开 role schema 兼容开关 |
+
+Join timeout 专项闸门（独立于本表）：
+
+- GJ（wait-timeout v2 出口）：`join.deadline/on_timeout` 仅在 `wait-timeout v2` 标记 Delivered 且 parser/config/runner 全链路完成后上线。
 
 ---
 

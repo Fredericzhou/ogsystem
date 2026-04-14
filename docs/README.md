@@ -40,6 +40,7 @@
 
 - `docs/ogsystem-data-projection-spec.md`：数据投影与 `quorum_of` join 的最小扩展设计记录；能力已落地，但运行时真相仍以 `docs/ogsystem-orchestration-semantics-v1.md` 为准。
 - `docs/ogsystem-semantics-manual.md`：实现对齐型语义手册（面向查阅与组合案例），非权威语义源；发生冲突时以 `src/runtime/` 与 `docs/ogsystem-orchestration-semantics-v1.md` 为准。
+- `docs/ogsystem-wait-timeout-semantics-v2.md`：Join 等待超时（`first_packet + gap`）RFC 提案，**未实现**；用于设计评审，不代表当前 DSL/运行时已支持。
 
 ## 3. 交付记录（已归档）
 
