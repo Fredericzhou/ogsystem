@@ -59,6 +59,7 @@
 - `docs/archive/delivery/data-projection-quorum-implementation-checklist-2026-04-12.md`（delivered implementation checklist with risk controls）
 - `docs/archive/delivery/error-edge-v1-execution-plan-2026-04-13.md`（delivered exception-edge execution record）
 - `docs/archive/delivery/error-edge-v1-hardening-followup-2026-04-13.md`（delivered follow-up hardening and test-maintainability closure）
+- `docs/archive/delivery/flow-contract-refactor-plan-2026-04-14.md`（proposed flow-contract-first semantics and refactor plan）
 - `docs/archive/delivery/optimization-execution-checklist-2026-04-10.md`
 
 ## 4. 历史参考（已归档）
