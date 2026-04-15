@@ -286,7 +286,7 @@ Orchestration semantics contract:
 Error flow semantics (`ERROR*`, implemented, flag-gated):
 
 - syntax reuses existing edge labels: `ERROR` and `ERROR.<errorCode>`
-- node-level opt-in: only roles that declare `ERROR*` outgoing edges enable exception routing
+- node-level opt-in: only roles whose Mermaid definitions declare `ERROR*` outgoing edges opt into runtime error-flow routing
 - trigger source is runtime failure only (execution/validation/io/state), not normal role success output
 - exception routing is evaluated only after executor-level retries are exhausted for that attempt
 - matching order is exact `ERROR.<errorCode>` first, then fallback `ERROR`
