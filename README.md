@@ -98,6 +98,12 @@ pnpm run run:adapter run status <run-id>
 pnpm run run:adapter run logs <run-id> --engine
 ```
 
+Local visualizer:
+
+```bash
+pnpm run run:visualizer -- --workdir .
+```
+
 Run minimal example (no external CLI execution):
 
 ```bash

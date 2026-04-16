@@ -654,6 +654,14 @@ pnpm run run:adapter \
 - when `stderr` is TTY and `NO_COLOR` is not set, status and transition logs use ANSI colors for faster scanning
 - keeps the final adapter result JSON on `stdout`
 
+Local visualizer:
+
+```bash
+pnpm run run:visualizer -- --workdir .
+```
+
+The visualizer is a lightweight read-only observability server that renders the current run list, run detail, event timeline, graph source, and live updates from `events.ndjson`.
+
 Graph preview link (optional):
 
 ```bash
@@ -709,6 +717,7 @@ pnpm run run:adapter run status <run-id>
 pnpm run run:adapter run logs <run-id> --engine
 pnpm run run:adapter run resume <run-id> --dry-run
 pnpm run run:adapter run stop <run-id>
+pnpm run run:visualizer -- --workdir .
 ```
 
 Preferred runtime command:
