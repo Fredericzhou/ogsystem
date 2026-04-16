@@ -32,7 +32,7 @@ function usage() {
     "  --profiles <file>      Optional profiles.json for exec.bind validation",
     "  --user-profile <file>  Optional user-profile.json validation",
     "  --laws <file>          Optional laws.json for law.global validation",
-    "  --run-dir <dir>        Optional generated .ogsystems run directory validation",
+    "  --run-dir <dir>        Optional generated .ogs/runs/<run-id> validation",
     "  --help                 Show help"
   ].join("\n");
 }

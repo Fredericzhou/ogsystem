@@ -274,8 +274,8 @@ Useful extended form:
 ```bash
 node skills/ogsystem-nl-to-mmd/scripts/validate_ogsystem_mmd.mjs \
   --system <file.mmd> \
-  --laws .ogsystem/laws.json \
-  --user-profile .ogsystem/user-profile.json
+  --laws .ogs/laws.json \
+  --user-profile .ogs/user-profile.json
 ```
 
 The validator checks:

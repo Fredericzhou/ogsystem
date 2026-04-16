@@ -26,7 +26,7 @@ import type { Nl2MmdConversation, Nl2MmdContext, Nl2MmdTurnResult } from "./type
 function usage(): string {
   return [
     "Usage:",
-    "  npm run run:nl2mmd -- [--message <text>] [--model <modelId>]",
+    "  pnpm run run:nl2mmd -- [--message <text>] [--model <modelId>]",
     "",
     "Options:",
     "  --message <text>       One-shot NL2MMD request; omit for interactive mode",

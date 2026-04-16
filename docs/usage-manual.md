@@ -123,6 +123,12 @@ Use this rule:
 - compatibility execution mode: `exec.bind.<roleId>` still works when paired with `profiles/tools`, but it runs inside the same graph runtime rather than a separate engine
 - `ERROR*` error-flow semantics are implemented behind a feature-gated rollout (`runtime.error_flows.v1`, default `false`); systems without matching `ERROR*` edges remain fail-stop
 
+### NL2MMD Authoring
+
+`nl2mmd` is the repository's natural-language-to-Mermaid drafting entry for the current graph runtime. It is useful when you want a conversation-driven way to turn requirements into a runnable `system.mmd`, then validate the result against local role and model packages.
+
+Use it with `pnpm run run:nl2mmd -- --message "..."` for one-shot drafting, or omit `--message` for the interactive loop. It targets the repository's supported Mermaid subset only; it is not a general Mermaid generator.
+
 ## 2. Semantic Layers
 
 - `system.mmd`: role graph, events, law binding, role-to-model binding
