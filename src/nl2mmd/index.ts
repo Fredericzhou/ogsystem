@@ -19,6 +19,12 @@ export {
   getNl2MmdTurnSchema
 } from "./prompt.js";
 export { normalizeNl2MmdMermaid, stabilizeNl2MmdMermaidForRuntime } from "./normalize-mermaid.js";
+export {
+  getNl2MmdStructureTemplate,
+  inferNl2MmdStructureTemplate,
+  listNl2MmdStructureTemplates,
+  suggestNl2MmdStructureTemplates
+} from "./structure-templates.js";
 export { createNl2MmdConversation, runNl2MmdPreflight, runNl2MmdTurn } from "./service.js";
 export { renderTxtGraphFromMermaidSource } from "./txt-graph.js";
 export { validateNl2MmdCandidate } from "./validate.js";
@@ -37,3 +43,9 @@ export type {
   Nl2MmdTurnResult,
   Nl2MmdValidationResult
 } from "./types.js";
+export type {
+  Nl2MmdStructureTemplate,
+  Nl2MmdStructureTemplateId,
+  Nl2MmdStructureTemplateMatch,
+  Nl2MmdStructureSlot
+} from "./structure-templates.js";
