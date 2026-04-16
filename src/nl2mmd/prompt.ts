@@ -110,6 +110,7 @@ export function buildNl2MmdSystemPrompt(context: Nl2MmdContext): string {
     "- join.mode.<roleId> and join.sources.<roleId> belong on the receiving merge role, and join.sources must match that role's incoming Mermaid edges exactly",
     "- Exact metadata keys allowed: " + dictionary.exactMetadataKeys.join(", "),
     "- Metadata prefixes allowed: " + dictionary.metadataPrefixes.join(", "),
+    "- Flow-contract metadata are also supported: handoff.mode, handoff.contracts, and route.order.<fromRoleId>",
     "- role.mode values allowed: " + dictionary.roleModes.join(", "),
     "- join.mode values allowed: " + dictionary.joinModes.join(", "),
     "- loop.max must be a positive integer",

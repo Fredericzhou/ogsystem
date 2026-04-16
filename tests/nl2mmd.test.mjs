@@ -25,6 +25,9 @@ test("nl2mmd context discovers supported dictionary, roles, and models", async (
   assert.ok(context.modelCatalog.some((item) => item.modelId === "fast-gpt54"));
   assert.deepStrictEqual(context.supportedDictionary.roleModes, ["parallel_split"]);
   assert.deepStrictEqual(context.supportedDictionary.joinModes, ["all_of", "quorum_of"]);
+  assert.ok(context.supportedDictionary.exactMetadataKeys.includes("handoff.mode"));
+  assert.ok(context.supportedDictionary.exactMetadataKeys.includes("handoff.contracts"));
+  assert.ok(context.supportedDictionary.metadataPrefixes.includes("route.order."));
 });
 
 test("nl2mmd resolves @role mentions against local role repo", async () => {
@@ -98,7 +101,15 @@ test("nl2mmd prompt includes current dictionary and local catalog hints", async 
 
   assert.match(
     prompt,
-    /Metadata prefixes allowed: talent\.bind\., exec\.bind\., model\.bind\., role\.mode\., join\.mode\., join\.min\., join\.sources\., context\.map\., loop\.max\./
+    /Metadata prefixes allowed: talent\.bind\., exec\.bind\., model\.bind\., role\.mode\., join\.mode\., join\.min\., join\.sources\., context\.map\., loop\.max\., route\.order\./
+  );
+  assert.match(
+    prompt,
+    /Exact metadata keys allowed: engine, system\.id, system\.version, law\.global, entry\.role, handoff\.mode, handoff\.contracts/
+  );
+  assert.match(
+    prompt,
+    /Flow-contract metadata are also supported: handoff\.mode, handoff\.contracts, and route\.order\.<fromRoleId>/
   );
   assert.match(prompt, /Role catalog:/);
   assert.match(prompt, /debate-judge \| Debate Judge/);

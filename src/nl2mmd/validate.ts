@@ -89,63 +89,75 @@ export async function validateNl2MmdCandidate(args: {
     outgoingByRole.set(flow.fromRoleId, bucket);
   }
 
-  for (const roleId of system.roleIds) {
-    try {
-      const rolePackage = await loadRolePackage({
-        roleId,
-        roleRootDir: args.context.roleRootDir
-      });
-      const outgoingEvents = outgoingByRole.get(roleId) ?? [];
-      const eventEnum = getEventEnum(rolePackage.outputSchema);
+  const roleChecks = await Promise.all(
+    system.roleIds.map(async (roleId) => {
+      const roleErrors: string[] = [];
+      const roleWarnings: string[] = [];
 
-      if (outgoingEvents.length > 0 && !eventEnum) {
-        warnings.push(
-          `role "${roleId}" has outgoing flows but output.schema.json does not constrain event enum`
-        );
-      }
+      try {
+        const rolePackage = await loadRolePackage({
+          roleId,
+          roleRootDir: args.context.roleRootDir
+        });
+        const outgoingEvents = outgoingByRole.get(roleId) ?? [];
+        const eventEnum = getEventEnum(rolePackage.outputSchema);
 
-      if (eventEnum) {
-        for (const event of outgoingEvents) {
-          if (isRuntimeErrorEdgeEvent(event)) {
-            continue;
-          }
-          if (!eventEnum.includes(event)) {
-            errors.push(`role "${roleId}" output event enum is missing outgoing event "${event}"`);
+        if (outgoingEvents.length > 0 && !eventEnum) {
+          roleWarnings.push(
+            `role "${roleId}" has outgoing flows but output.schema.json does not constrain event enum`
+          );
+        }
+
+        if (eventEnum) {
+          for (const event of outgoingEvents) {
+            if (isRuntimeErrorEdgeEvent(event)) {
+              continue;
+            }
+            if (!eventEnum.includes(event)) {
+              roleErrors.push(`role "${roleId}" output event enum is missing outgoing event "${event}"`);
+            }
           }
         }
-      }
-    } catch (error) {
-      errors.push(error instanceof Error ? error.message : String(error));
-      continue;
-    }
-
-    const modelId = system.modelBinding[roleId];
-    const profileId = system.executionBinding[roleId];
-
-    if (modelId) {
-      try {
-        await loadModelPackage({
-          modelId,
-          modelRootDir: args.context.modelRootDir
-        });
       } catch (error) {
-        errors.push(error instanceof Error ? error.message : String(error));
+        roleErrors.push(error instanceof Error ? error.message : String(error));
+        return { roleErrors, roleWarnings };
       }
-    }
 
-    if (profileId && profilesById && !profilesById.has(profileId)) {
-      errors.push(`exec.bind.${roleId} references missing profile "${profileId}"`);
-    }
+      const modelId = system.modelBinding[roleId];
+      const profileId = system.executionBinding[roleId];
 
-    if (!modelId && !profileId) {
-      if (allowNoopWithoutExecutionBinding) {
-        warnings.push(
-          `role "${roleId}" has no model.bind.${roleId} or exec.bind.${roleId}; current law allows noop only for unambiguous single-path roles`
-        );
-      } else {
-        errors.push(`role "${roleId}" is missing required model.bind.${roleId} or exec.bind.${roleId}`);
+      if (modelId) {
+        try {
+          await loadModelPackage({
+            modelId,
+            modelRootDir: args.context.modelRootDir
+          });
+        } catch (error) {
+          roleErrors.push(error instanceof Error ? error.message : String(error));
+        }
       }
-    }
+
+      if (profileId && profilesById && !profilesById.has(profileId)) {
+        roleErrors.push(`exec.bind.${roleId} references missing profile "${profileId}"`);
+      }
+
+      if (!modelId && !profileId) {
+        if (allowNoopWithoutExecutionBinding) {
+          roleWarnings.push(
+            `role "${roleId}" has no model.bind.${roleId} or exec.bind.${roleId}; current law allows noop only for unambiguous single-path roles`
+          );
+        } else {
+          roleErrors.push(`role "${roleId}" is missing required model.bind.${roleId} or exec.bind.${roleId}`);
+        }
+      }
+
+      return { roleErrors, roleWarnings };
+    })
+  );
+
+  for (const { roleErrors, roleWarnings } of roleChecks) {
+    errors.push(...roleErrors);
+    warnings.push(...roleWarnings);
   }
 
   return {

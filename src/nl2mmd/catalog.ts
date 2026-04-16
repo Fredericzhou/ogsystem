@@ -48,6 +48,10 @@ async function readJsonFileIfExists(path: string): Promise<unknown | undefined> 
   }
 }
 
+function compact<T>(items: Array<T | undefined>): T[] {
+  return items.filter((item): item is T => item !== undefined);
+}
+
 function getDefaultRuntimeConfig(path: string) {
   return validateRuntimeConfig(
     {
@@ -87,7 +91,15 @@ export function getSupportedNl2MmdDictionary(): Nl2MmdSupportedDictionary {
   return {
     flowcharts: ["flowchart TD", "flowchart LR"],
     boundaryTokens: ["input", "output"],
-    exactMetadataKeys: ["engine", "system.id", "system.version", "law.global", "entry.role"],
+    exactMetadataKeys: [
+      "engine",
+      "system.id",
+      "system.version",
+      "law.global",
+      "entry.role",
+      "handoff.mode",
+      "handoff.contracts"
+    ],
     metadataPrefixes: [
       "talent.bind.",
       "exec.bind.",
@@ -97,7 +109,8 @@ export function getSupportedNl2MmdDictionary(): Nl2MmdSupportedDictionary {
       "join.min.",
       "join.sources.",
       "context.map.",
-      "loop.max."
+      "loop.max.",
+      "route.order."
     ],
     roleModes: ["parallel_split"],
     joinModes: ["all_of", "quorum_of"],
@@ -129,55 +142,59 @@ export async function loadNl2MmdContext(args: {
     .filter((name) => !name.startsWith("_"))
     .sort();
 
-  const roleCatalog: Nl2MmdContext["roleCatalog"] = [];
-  for (const roleId of roleEntries) {
-    const manifestPath = resolve(roleRootDir, roleId, "role.json");
-    let rolePackage;
-    try {
-      rolePackage = await loadRolePackage({ roleId, roleRootDir });
-    } catch (error) {
-      if (isMissingPathError(error, manifestPath)) {
-        continue;
-      }
-      throw error;
-    }
-    roleCatalog.push({
-      roleId,
-      name: rolePackage.manifest.name,
-      description: rolePackage.manifest.description,
-      tags: rolePackage.manifest.tags ?? [],
-      preferredModelTags: rolePackage.manifest.preferredModelTags ?? [],
-      outputEvents: getOutputEvents(rolePackage.outputSchema)
-    });
-  }
+  const roleCatalog = compact(
+    await Promise.all(
+      roleEntries.map(async (roleId) => {
+        const manifestPath = resolve(roleRootDir, roleId, "role.json");
+        try {
+          const rolePackage = await loadRolePackage({ roleId, roleRootDir });
+          return {
+            roleId,
+            name: rolePackage.manifest.name,
+            description: rolePackage.manifest.description,
+            tags: rolePackage.manifest.tags ?? [],
+            preferredModelTags: rolePackage.manifest.preferredModelTags ?? [],
+            outputEvents: getOutputEvents(rolePackage.outputSchema)
+          };
+        } catch (error) {
+          if (isMissingPathError(error, manifestPath)) {
+            return undefined;
+          }
+          throw error;
+        }
+      })
+    )
+  );
 
   const modelEntries = (await readdir(resolve(modelRootDir, "models"), { withFileTypes: true }))
     .filter((entry) => entry.isDirectory())
     .map((entry) => entry.name)
     .sort();
 
-  const modelCatalog: Nl2MmdContext["modelCatalog"] = [];
-  for (const modelId of modelEntries) {
-    const manifestPath = resolve(modelRootDir, "models", modelId, "model.json");
-    let modelPackage;
-    try {
-      modelPackage = await loadModelPackage({ modelId, modelRootDir });
-    } catch (error) {
-      if (isMissingPathError(error, manifestPath)) {
-        continue;
-      }
-      throw error;
-    }
-    modelCatalog.push({
-      modelId,
-      model: modelPackage.manifest.model,
-      reasoningEffort:
-        typeof modelPackage.manifest.args?.reasoningEffort === "string"
-          ? modelPackage.manifest.args.reasoningEffort
-          : undefined,
-      tags: modelPackage.manifest.tags ?? []
-    });
-  }
+  const modelCatalog = compact(
+    await Promise.all(
+      modelEntries.map(async (modelId) => {
+        const manifestPath = resolve(modelRootDir, "models", modelId, "model.json");
+        try {
+          const modelPackage = await loadModelPackage({ modelId, modelRootDir });
+          return {
+            modelId,
+            model: modelPackage.manifest.model,
+            reasoningEffort:
+              typeof modelPackage.manifest.args?.reasoningEffort === "string"
+                ? modelPackage.manifest.args.reasoningEffort
+                : undefined,
+            tags: modelPackage.manifest.tags ?? []
+          };
+        } catch (error) {
+          if (isMissingPathError(error, manifestPath)) {
+            return undefined;
+          }
+          throw error;
+        }
+      })
+    )
+  );
 
   let lawIds: string[] = [];
   const lawsPath =
