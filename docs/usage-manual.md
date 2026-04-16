@@ -131,6 +131,20 @@ It also understands the current flow-contract surface, including `handoff.mode`,
 
 Use it with `pnpm run run:nl2mmd -- --message "..."` for one-shot drafting, or omit `--message` for the interactive loop. It targets the repository's supported Mermaid subset only; it is not a general Mermaid generator.
 
+### Command Layers
+
+- Base commands are the direct implementation entrypoints, such as `pnpm run run:nl2mmd -- ...` and `pnpm run run:adapter -- ...`.
+- Wrapper commands are the operator-facing `ogs` commands, such as `ogs project init` and `ogs project create <name> --template ...`.
+- Base commands are for function and runtime behavior.
+- Wrapper commands are for project lifecycle and default operational flow.
+
+For project management, `ogs` defaults to the current directory. Use `--workdir <path>` only when you need to operate on another project root. `ogs project init` creates the local control plane in the current directory, and `ogs project create <name> --template <...>` creates a new project folder under the current directory unless a different parent is explicitly provided.
+
+Recommended test split:
+
+- `tests/nl2mmd*.test.mjs` for base command and prompt/runtime behavior.
+- `tests/cli-lifecycle.test.mjs` for `ogs` wrapper lifecycle behavior.
+
 ## 2. Semantic Layers
 
 - `system.mmd`: role graph, events, law binding, role-to-model binding

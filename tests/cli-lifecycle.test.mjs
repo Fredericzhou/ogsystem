@@ -7,10 +7,10 @@ import path from "node:path";
 
 const cliPath = path.resolve("dist/runtime/cli.js");
 
-function runCli(args) {
+function runCli(args, options = {}) {
   return new Promise((resolve, reject) => {
     const child = spawn("node", [cliPath, ...args], {
-      cwd: process.cwd(),
+      cwd: options.cwd ?? process.cwd(),
       stdio: ["ignore", "pipe", "pipe"]
     });
     let stdout = "";
@@ -29,7 +29,7 @@ function runCli(args) {
 test("lifecycle cli project init/create commands scaffold project control plane", async () => {
   const tempRoot = await mkdtemp(path.join(os.tmpdir(), "ogsystem-cli-project-"));
 
-  const initResult = await runCli(["project", "init", "--workdir", tempRoot]);
+  const initResult = await runCli(["project", "init"], { cwd: tempRoot });
   assert.strictEqual(initResult.code, 0);
   const initPayload = JSON.parse(initResult.stdout);
   assert.equal(initPayload.command, "project init");
@@ -37,15 +37,10 @@ test("lifecycle cli project init/create commands scaffold project control plane"
   await stat(path.resolve(tempRoot, ".ogs", "project.json"));
   await stat(path.resolve(tempRoot, ".ogs", "runs-index.json"));
 
-  const createResult = await runCli([
-    "project",
-    "create",
-    "demo-app",
-    "--template",
-    "minimal",
-    "--workdir",
-    tempRoot
-  ]);
+  const createResult = await runCli(
+    ["project", "create", "demo-app", "--template", "minimal"],
+    { cwd: tempRoot }
+  );
   assert.strictEqual(createResult.code, 0);
   const createPayload = JSON.parse(createResult.stdout);
   assert.equal(createPayload.command, "project create");

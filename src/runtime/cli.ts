@@ -59,7 +59,9 @@ function usage(): string {
     "  --print-graph-link         Print Mermaid Live graph preview URL to stderr (run start only)",
     "  --trace-out <file>         Write final runtime result JSON",
     "  --dry-run                  Do not execute external commands",
-    "  --help                     Show help"
+    "  --help                     Show help",
+    "",
+    "Project commands default to the current directory; use --workdir only for an alternate project root."
   ].join("\n");
 }
 
