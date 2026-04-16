@@ -61,6 +61,7 @@
 - `docs/archive/delivery/error-flow-v1-execution-plan-2026-04-13.md`（delivered error-flow execution record）
 - `docs/archive/delivery/error-flow-v1-hardening-followup-2026-04-13.md`（delivered follow-up hardening and test-maintainability closure）
 - `docs/archive/delivery/flow-contract-refactor-plan-2026-04-14.md`（proposed flow-contract-first semantics and refactor plan）
+- `docs/archive/delivery/typed-compiler-execution-plan-2026-04-16.md`（proposed unified strong-type compiler execution checklist）
 - `docs/archive/delivery/ogsystem-naming-style-review-2026-04-14.md`（archived naming audit; `flow/edge` conclusion superseded by 2026-04-15 alignment review）
 - `docs/archive/delivery/ogsystem-flow-edge-alignment-review-2026-04-15.md`（delivered flow/edge alignment audit and canonical decision）
 - `docs/archive/delivery/ogsystem-flow-edge-alignment-execution-plan-2026-04-15.md`（delivered flow/edge alignment rollout and closure record）
