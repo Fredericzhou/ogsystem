@@ -192,6 +192,23 @@ test("parser accepts graph metadata and compiles semantic hints without engine f
   assert.deepStrictEqual(system.graph?.contextMapByRoleId ?? {}, {});
 });
 
+test("parser rejects handoff.contracts without handoff.mode", () => {
+  const source = `flowchart TD
+%% system.id=test.handoff.missing.mode
+%% system.version=0.1.0
+%% law.global=law.test
+%% entry.role=intake
+%% handoff.contracts=contracts/handoff.json
+%% exec.bind.intake=profile.parser
+input -->|ENTER| intake[Role:intake]
+intake[Role:intake] -->|COMPLETE| output
+`;
+  assert.throws(
+    () => parseSystemFromMermaidSource(source),
+    /MERMAID_MISSING_HANDOFF_MODE|handoff\.contracts requires handoff\.mode/
+  );
+});
+
 test("parser ignores runtime error edges when validating route order coverage", () => {
   const system = parseSystemFromMermaidSource(routeOrderIgnoresErrorEdgesSource);
   assert.deepStrictEqual(system.graph?.routeOrderByRoleId?.dispatch, ["worker_b", "worker_a"]);
@@ -215,6 +232,7 @@ test("loadSystemFromMermaid resolves handoff contract paths relative to the syst
 %% system.version=0.1.0
 %% law.global=law.test
 %% entry.role=intake
+%% handoff.mode=strict
 %% handoff.contracts=contracts/handoff.json
 %% exec.bind.intake=profile.parser
 input -->|ENTER| intake[Role:intake]

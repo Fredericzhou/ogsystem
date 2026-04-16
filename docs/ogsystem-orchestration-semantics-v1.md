@@ -91,6 +91,7 @@
 *   **Join 上下文与字段投影都属于运行时契约**：默认 join `context` 是按 `roleId` 归一化后的 JSON 投影；若声明 `context.map.<roleId>.*`，运行时会以稳定字段顺序重建 `context`，并要求 selector 与 source 都合法。
 *   **Flow contract 是独立的运行时合同层**：`handoff.mode` 只控制合同校验策略，`transition` 会跳过告警或缺失合同对应的 flow，`strict` 则硬失败；`handoff.contracts` 指向合同 bundle；`role_input` 只校验 `context.map` 投影后的结构化对象，不替代 `role.inputSchema`。
 *   **合同路径按系统文件解析**：`handoff.contracts` 相对 `system.mmd` 所在目录解析，运行时会先归一到绝对路径，再参与加载与 resume 指纹。
+*   **合同 schema 的 `$ref` 只允许本地文件引用**：相对引用按 schema 文件所在目录解析，支持嵌套本地引用与片段引用；远程 `http(s)://` 引用会直接失败。
 *   **`context.map` selector 为白名单语法**：仅支持 `global.task`、`global.user_profile(.path)`、`direct.content/event/data(.path)`、`source(<roleId>).content/event/data(.path)`；join 节点禁止 `direct.*`，非 join 节点禁止 `source(...)`。
 *   **`noop` 是受 law 约束的显式语义**：角色无 `model.bind/exec.bind` 时并不自动放行；只有 `allowNoopWithoutExecutionBinding=true` 且出边数不超过 1 才允许 `noop`，否则直接失败。
 *   **隔离的是模型会话，不是分支文件系统**：并行 sibling branch 会拿到不同的 `sessionLineageId`，从而不会共享模型会话记忆；但相同 role 默认仍共用一个 role 私有目录。

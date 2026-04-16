@@ -1018,6 +1018,7 @@ function buildHandledFailureTransitionPlan(args: {
     );
     if (!hasOtherActiveBranches && !hasActivatedBranches) {
       finalStatus = "done";
+      finalOutput = args.audit.error ?? "";
       finalRoleId = args.roleId;
     }
   }
@@ -1078,6 +1079,100 @@ function findActivatedJoinBranch(args: {
       branch.lineageId === args.lineageId &&
       branch.loopIteration === args.loopIteration
   );
+}
+
+function findOrphanedJoinGroup(args: {
+  state: GraphState;
+  plan: ExecutionPlan;
+  branchUpdates: Record<string, BranchRecord>;
+}):
+  | {
+      roleId: string;
+      lineageId: string;
+      loopIteration: number;
+      completedSourceRoleIds: string[];
+      requiredSourceCount: number;
+    }
+  | undefined {
+  const mergedBranches = {
+    ...args.state.branchRecords,
+    ...args.branchUpdates
+  };
+  const activeBranches = Object.values(mergedBranches).filter((branch) => branch.status === "active");
+
+  for (const node of args.plan.nodesByRoleId.values()) {
+    if (!node.joinMode) {
+      continue;
+    }
+
+    const sourceRoleIds = Array.from(new Set(node.joinSources));
+    const requiredSourceCount =
+      node.joinMode === "quorum_of" ? node.joinMin ?? sourceRoleIds.length : sourceRoleIds.length;
+    const completedByGroup = new Map<
+      string,
+      {
+        lineageId: string;
+        loopIteration: number;
+        completedSourceRoleIds: Set<string>;
+      }
+    >();
+
+    for (const branch of Object.values(mergedBranches)) {
+      if (branch.status !== "completed" || !sourceRoleIds.includes(branch.roleId)) {
+        continue;
+      }
+      const groupKey = `${branch.lineageId}::${branch.loopIteration}`;
+      const existing = completedByGroup.get(groupKey);
+      if (existing) {
+        existing.completedSourceRoleIds.add(branch.roleId);
+        continue;
+      }
+      completedByGroup.set(groupKey, {
+        lineageId: branch.lineageId,
+        loopIteration: branch.loopIteration,
+        completedSourceRoleIds: new Set([branch.roleId])
+      });
+    }
+
+    for (const group of completedByGroup.values()) {
+      if (
+        group.completedSourceRoleIds.size === 0 ||
+        group.completedSourceRoleIds.size >= requiredSourceCount
+      ) {
+        continue;
+      }
+
+      const hasJoinBranch = Object.values(mergedBranches).some(
+        (branch) =>
+          branch.roleId === node.roleId &&
+          branch.lineageId === group.lineageId &&
+          branch.loopIteration === group.loopIteration
+      );
+      if (hasJoinBranch) {
+        continue;
+      }
+
+      const hasActiveSourceBranch = activeBranches.some(
+        (branch) =>
+          branch.lineageId === group.lineageId &&
+          branch.loopIteration === group.loopIteration &&
+          sourceRoleIds.includes(branch.roleId)
+      );
+      if (hasActiveSourceBranch) {
+        continue;
+      }
+
+      return {
+        roleId: node.roleId,
+        lineageId: group.lineageId,
+        loopIteration: group.loopIteration,
+        completedSourceRoleIds: Array.from(group.completedSourceRoleIds),
+        requiredSourceCount
+      };
+    }
+  }
+
+  return undefined;
 }
 
 /**
@@ -1439,9 +1534,32 @@ function buildSuccessTransitionPlan(args: {
       (branch) => branch.status === "active"
     );
     if (!hasOtherActiveBranches && !hasActivatedBranches) {
-      finalStatus = "done";
-      finalOutput = terminalOutput;
-      finalRoleId = args.roleId;
+      const orphanedJoinGroup =
+        args.contractPlan?.handoffMode === "transition"
+          ? findOrphanedJoinGroup({
+              state: args.state,
+              plan: args.plan,
+              branchUpdates
+            })
+          : undefined;
+      if (orphanedJoinGroup) {
+        finalStatus = "failed";
+        finalError = `Join "${orphanedJoinGroup.roleId}" became unreachable in lineage ${orphanedJoinGroup.lineageId}#${orphanedJoinGroup.loopIteration} after transition skip; completed sources ${orphanedJoinGroup.completedSourceRoleIds.join(", ")} cannot reach required ${orphanedJoinGroup.requiredSourceCount}`;
+        finalErrorEnvelope = {
+          errorCode: "GRAPH_JOIN_UNREACHABLE_AFTER_TRANSITION_SKIP",
+          errorCategory: "state",
+          message: finalError,
+          retryable: false,
+          stage: "execute",
+          roleId: orphanedJoinGroup.roleId,
+          branchId: args.currentBranch.branchId
+        };
+        finalRoleId = orphanedJoinGroup.roleId;
+      } else {
+        finalStatus = "done";
+        finalOutput = terminalOutput;
+        finalRoleId = args.roleId;
+      }
     }
   }
 
@@ -1656,6 +1774,30 @@ export async function runSystemWithGraphRunner(args: RunnerInput): Promise<Adapt
   for await (const chunk of stream) {
     finalState = chunk;
     await persistProjectedState({ state: finalState, plan: args.plan, runContext: args.runContext });
+  }
+
+  if (finalState.status === "running" && args.contractPlan?.handoffMode === "transition") {
+    const orphanedJoinGroup = findOrphanedJoinGroup({
+      state: finalState,
+      plan: args.plan,
+      branchUpdates: {}
+    });
+    if (orphanedJoinGroup) {
+      finalState = {
+        ...finalState,
+        status: "failed",
+        error: `Join "${orphanedJoinGroup.roleId}" became unreachable in lineage ${orphanedJoinGroup.lineageId}#${orphanedJoinGroup.loopIteration} after transition skip; completed sources ${orphanedJoinGroup.completedSourceRoleIds.join(", ")} cannot reach required ${orphanedJoinGroup.requiredSourceCount}`,
+        errorEnvelope: {
+          errorCode: "GRAPH_JOIN_UNREACHABLE_AFTER_TRANSITION_SKIP",
+          errorCategory: "state",
+          message: `Join "${orphanedJoinGroup.roleId}" became unreachable in lineage ${orphanedJoinGroup.lineageId}#${orphanedJoinGroup.loopIteration} after transition skip; completed sources ${orphanedJoinGroup.completedSourceRoleIds.join(", ")} cannot reach required ${orphanedJoinGroup.requiredSourceCount}`,
+          retryable: false,
+          stage: "execute",
+          roleId: orphanedJoinGroup.roleId
+        }
+      };
+      await persistProjectedState({ state: finalState, plan: args.plan, runContext: args.runContext });
+    }
   }
 
   if (finalState.status === "running") {

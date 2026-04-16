@@ -54,6 +54,197 @@ function fail(message: string): never {
   throw new Error(message);
 }
 
+type SchemaResolutionState = {
+  rawDocuments: Map<string, unknown>;
+  resolvedDocuments: Map<string, unknown>;
+  resolvingKeys: Set<string>;
+};
+
+function createSchemaResolutionState(): SchemaResolutionState {
+  return {
+    rawDocuments: new Map<string, unknown>(),
+    resolvedDocuments: new Map<string, unknown>(),
+    resolvingKeys: new Set<string>()
+  };
+}
+
+function isRemoteSchemaReference(ref: string): boolean {
+  return /^[a-zA-Z][a-zA-Z0-9+.-]*:\/\//.test(ref);
+}
+
+function splitSchemaReference(ref: string): {
+  refPath: string;
+  fragment: string;
+} {
+  const hashIndex = ref.indexOf("#");
+  if (hashIndex < 0) {
+    return {
+      refPath: ref,
+      fragment: ""
+    };
+  }
+  return {
+    refPath: ref.slice(0, hashIndex),
+    fragment: ref.slice(hashIndex + 1)
+  };
+}
+
+function decodeJsonPointerSegment(segment: string): string {
+  return segment.replace(/~1/g, "/").replace(/~0/g, "~");
+}
+
+function resolveJsonPointerTarget(
+  document: unknown,
+  fragment: string,
+  schemaPath: string
+): unknown {
+  if (!fragment) {
+    return document;
+  }
+  if (fragment.startsWith("/")) {
+    const segments = fragment
+      .slice(1)
+      .split("/")
+      .filter((segment) => segment.length > 0)
+      .map(decodeJsonPointerSegment);
+    let current: unknown = document;
+    for (const segment of segments) {
+      if (typeof current !== "object" || current === null || Array.isArray(current)) {
+        fail(`Invalid JSON pointer in ${schemaPath}#${fragment}: "${segment}" is not addressable`);
+      }
+      const record = current as Record<string, unknown>;
+      if (!(segment in record)) {
+        fail(`Invalid JSON pointer in ${schemaPath}#${fragment}: missing key "${segment}"`);
+      }
+      current = record[segment];
+    }
+    return current;
+  }
+
+  fail(`Invalid JSON pointer in ${schemaPath}#${fragment}: expected fragment to start with "/"`);
+}
+
+async function loadSchemaDocument(
+  schemaPath: string,
+  state: SchemaResolutionState
+): Promise<unknown> {
+  const cached = state.rawDocuments.get(schemaPath);
+  if (cached !== undefined) {
+    return cached;
+  }
+  const document = await readJsonFile(schemaPath);
+  state.rawDocuments.set(schemaPath, document);
+  return document;
+}
+
+async function resolveContractSchemaReference(args: {
+  ref: string;
+  currentPath: string;
+  state: SchemaResolutionState;
+}): Promise<unknown> {
+  const ref = args.ref.trim();
+  if (!ref) {
+    fail(`Invalid contract schema in ${args.currentPath}: empty $ref is not allowed`);
+  }
+  if (isRemoteSchemaReference(ref)) {
+    fail(`Invalid contract schema in ${args.currentPath}: remote $ref "${ref}" is not allowed`);
+  }
+
+  const { refPath, fragment } = splitSchemaReference(ref);
+  const targetPath = refPath ? resolve(dirname(args.currentPath), refPath) : args.currentPath;
+  const cacheKey = fragment ? `${targetPath}#${fragment}` : targetPath;
+  const cached = args.state.resolvedDocuments.get(cacheKey);
+  if (cached !== undefined) {
+    return cached;
+  }
+  if (args.state.resolvingKeys.has(cacheKey)) {
+    fail(`Circular local $ref detected in ${args.currentPath}: "${ref}"`);
+  }
+
+  args.state.resolvingKeys.add(cacheKey);
+  try {
+    const document = await loadSchemaDocument(targetPath, args.state);
+    const target = resolveJsonPointerTarget(document, fragment, targetPath);
+    const resolved = await resolveContractSchemaNode({
+      schema: target,
+      currentPath: targetPath,
+      state: args.state
+    });
+    args.state.resolvedDocuments.set(cacheKey, resolved);
+    return resolved;
+  } finally {
+    args.state.resolvingKeys.delete(cacheKey);
+  }
+}
+
+async function resolveContractSchemaNode(args: {
+  schema: unknown;
+  currentPath: string;
+  state: SchemaResolutionState;
+}): Promise<unknown> {
+  if (Array.isArray(args.schema)) {
+    return Promise.all(
+      args.schema.map((entry) =>
+        resolveContractSchemaNode({
+          schema: entry,
+          currentPath: args.currentPath,
+          state: args.state
+        })
+      )
+    );
+  }
+
+  if (typeof args.schema !== "object" || args.schema === null) {
+    return args.schema;
+  }
+
+  const record = args.schema as Record<string, unknown>;
+  const ref = record.$ref;
+  if (typeof ref === "string") {
+    const siblingEntries = Object.entries(record).filter(([key]) => key !== "$ref");
+    const resolvedTarget = await resolveContractSchemaReference({
+      ref,
+      currentPath: args.currentPath,
+      state: args.state
+    });
+    if (siblingEntries.length === 0) {
+      return resolvedTarget;
+    }
+    const resolvedSiblings = await resolveContractSchemaNode({
+      schema: Object.fromEntries(siblingEntries),
+      currentPath: args.currentPath,
+      state: args.state
+    });
+    return {
+      allOf: [resolvedTarget, resolvedSiblings]
+    };
+  }
+
+  const entries = await Promise.all(
+    Object.entries(record).map(async ([key, value]) => [
+      key,
+      await resolveContractSchemaNode({
+        schema: value,
+        currentPath: args.currentPath,
+        state: args.state
+      })
+    ])
+  );
+  return Object.fromEntries(entries);
+}
+
+async function resolveContractSchema(
+  schemaPath: string,
+  state: SchemaResolutionState
+): Promise<unknown> {
+  const schema = await loadSchemaDocument(schemaPath, state);
+  return resolveContractSchemaNode({
+    schema,
+    currentPath: schemaPath,
+    state
+  });
+}
+
 function expectRecord(value: unknown, filePath: string, fieldPath: string): Record<string, unknown> {
   if (typeof value !== "object" || value === null || Array.isArray(value)) {
     fail(`Invalid contract file in ${filePath} at ${fieldPath}: expected object`);
@@ -223,6 +414,7 @@ export async function loadFlowContractPlan(args: {
 }): Promise<FlowContractPlan> {
   const source = expectContractFile(await readJsonFile(args.contractPath), args.contractPath);
   const baseDir = dirname(args.contractPath);
+  const schemaResolutionState = createSchemaResolutionState();
   const compiledContracts: Array<FlowContractSourceRecord & { schema: unknown }> = [];
   const flowContractsByKey = new Map<string, CompiledFlowContract>();
   const roleInputContractsByRoleId = new Map<string, CompiledFlowContract>();
@@ -230,7 +422,7 @@ export async function loadFlowContractPlan(args: {
   for (const contract of source.contracts) {
     const normalized = normalizeFlowContractDefinition(contract);
     const schemaPath = resolve(baseDir, normalized.schemaPath);
-    const schema = await readJsonFile(schemaPath);
+    const schema = await resolveContractSchema(schemaPath, schemaResolutionState);
     validateContractSchema(schema, schemaPath);
     compiledContracts.push({
       ...normalized,

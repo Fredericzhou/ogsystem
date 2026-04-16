@@ -935,6 +935,15 @@ function validateParsedSystemGraph(graph: ParsedSystemGraph): ValidatedSystemGra
     }
   }
 
+  if (handoffContracts && !handoffMode) {
+    failMermaid({
+      stage: "validate",
+      errorCode: "MERMAID_MISSING_HANDOFF_MODE",
+      message: "handoff.contracts requires handoff.mode to be declared",
+      lineNumber: metadataLine("handoff.contracts")
+    });
+  }
+
   const roleIds = Array.from(graph.nodeByRole.keys());
   if (!roleIds.includes(entryRoleId)) {
     failMermaid({
