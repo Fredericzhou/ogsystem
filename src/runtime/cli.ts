@@ -30,11 +30,64 @@ import {
   normalizeRuntimeError
 } from "./runtime-errors.js";
 
-function usage(): string {
+function usageRoot(): string {
+  return [
+    "Usage:",
+    "  ogs project init",
+    "  ogs project create <name> --template <minimal|software-dev|consultation>",
+    "  ogs run start --system <file.mmd> --prompt <text> [options]",
+    "  ogs run resume <run-id> [options]",
+    "  ogs run stop <run-id> [--reason <text>]",
+    "  ogs run list [--reindex]",
+    "  ogs run status <run-id>",
+    "  ogs run inspect <run-id>",
+    "  ogs run logs <run-id> [--engine|--role <roleId>] [--json]",
+    "  ogs run reindex",
+    "",
+    "Help:",
+    "  ogs help [project|run|legacy]",
+    "  ogs project --help",
+    "  ogs run --help",
+    "",
+    "Defaults:",
+    "  project commands use the current directory unless --workdir is provided",
+    "  run commands use the current directory unless --workdir is provided",
+    "  project create writes a new project folder under the current directory",
+    "",
+    "Legacy-compatible mode:",
+    "  pnpm run run:adapter -- --system <file.mmd> --prompt <text> [options]"
+  ].join("\n");
+}
+
+function usageProject(): string {
   return [
     "Usage:",
     "  ogs project init [--workdir <path>]",
     "  ogs project create <name> --template <minimal|software-dev|consultation> [--workdir <path>]",
+    "",
+    "Project lifecycle:",
+    "  init   create .ogs/project.json, .ogs/runtime.json, .ogs/providers/opencode.json, and .ogs/runs-index.json",
+    "  create scaffold a new project directory from a template",
+    "",
+    "Defaults:",
+    "  current directory is the project root unless --workdir is set",
+    "  create uses the current directory as the parent directory unless --workdir is set",
+    "  templates are intentionally limited to keep project management consistent",
+    "",
+    "Templates:",
+    "  minimal",
+    "  software-dev",
+    "  consultation",
+    "",
+    "Examples:",
+    "  ogs project init",
+    "  ogs project create demo-app --template minimal"
+  ].join("\n");
+}
+
+function usageRun(): string {
+  return [
+    "Usage:",
     "  ogs run start --system <file.mmd> --prompt <text> [options]",
     "  ogs run resume <run-id> [options]",
     "  ogs run stop <run-id> [--reason <text>] [--workdir <path>]",
@@ -43,9 +96,6 @@ function usage(): string {
     "  ogs run inspect <run-id> [--workdir <path>]",
     "  ogs run logs <run-id> [--engine|--role <roleId>] [--json] [--workdir <path>]",
     "  ogs run reindex [--workdir <path>]",
-    "",
-    "Legacy-compatible mode:",
-    "  pnpm run run:adapter -- --system <file.mmd> --prompt <text> [options]",
     "",
     "Common Run Options:",
     "  --runtime <file>           Runtime config JSON override",
@@ -59,10 +109,31 @@ function usage(): string {
     "  --print-graph-link         Print Mermaid Live graph preview URL to stderr (run start only)",
     "  --trace-out <file>         Write final runtime result JSON",
     "  --dry-run                  Do not execute external commands",
-    "  --help                     Show help",
-    "",
-    "Project commands default to the current directory; use --workdir only for an alternate project root."
+    "  --help                     Show help"
   ].join("\n");
+}
+
+function usageLegacy(): string {
+  return [
+    "Usage:",
+    "  pnpm run run:adapter -- --system <file.mmd> --prompt <text> [options]",
+    "",
+    "Legacy-compatible mode bridges the runtime directly.",
+    "Prefer ogs project/run commands for normal project management."
+  ].join("\n");
+}
+
+function usage(topic?: "project" | "run" | "legacy"): string {
+  if (topic === "project") {
+    return usageProject();
+  }
+  if (topic === "run") {
+    return usageRun();
+  }
+  if (topic === "legacy") {
+    return usageLegacy();
+  }
+  return usageRoot();
 }
 
 function createCliInputError(errorCode: string, message: string): RuntimeError {
@@ -353,7 +424,7 @@ async function runLegacyMode(argv?: string[]): Promise<void> {
 async function runProjectCommand(argv: string[]): Promise<void> {
   const subcommand = argv[0];
   if (!subcommand || subcommand === "help" || subcommand === "--help") {
-    console.log(usage());
+    console.log(usage("project"));
     return;
   }
 
@@ -364,7 +435,7 @@ async function runProjectCommand(argv: string[]): Promise<void> {
       help: { type: "boolean", short: "h" }
     });
     if (asBool(values.help)) {
-      console.log(usage());
+      console.log(usage("project"));
       return;
     }
     const workdir = asString(values.workdir) ?? process.cwd();
@@ -395,7 +466,7 @@ async function runProjectCommand(argv: string[]): Promise<void> {
       help: { type: "boolean", short: "h" }
     });
     if (asBool(values.help)) {
-      console.log(usage());
+      console.log(usage("project"));
       return;
     }
     const projectName = positionals[0];
@@ -458,7 +529,7 @@ async function runStartCommand(argv: string[]): Promise<void> {
     help: { type: "boolean", short: "h" }
   });
   if (asBool(values.help)) {
-    console.log(usage());
+    console.log(usage("run"));
     return;
   }
   const systemPath = asString(values.system);
@@ -510,7 +581,7 @@ async function runResumeCommand(argv: string[]): Promise<void> {
     help: { type: "boolean", short: "h" }
   });
   if (asBool(values.help)) {
-    console.log(usage());
+    console.log(usage("run"));
     return;
   }
   const runId = positionals[0];
@@ -545,7 +616,7 @@ async function runResumeCommand(argv: string[]): Promise<void> {
 async function runRunCommand(argv: string[]): Promise<void> {
   const subcommand = argv[0];
   if (!subcommand || subcommand === "help" || subcommand === "--help") {
-    console.log(usage());
+    console.log(usage("run"));
     return;
   }
 
@@ -564,7 +635,7 @@ async function runRunCommand(argv: string[]): Promise<void> {
       help: { type: "boolean", short: "h" }
     });
     if (asBool(values.help)) {
-      console.log(usage());
+      console.log(usage("run"));
       return;
     }
     const runId = positionals[0];
@@ -583,7 +654,7 @@ async function runRunCommand(argv: string[]): Promise<void> {
       help: { type: "boolean", short: "h" }
     });
     if (asBool(values.help)) {
-      console.log(usage());
+      console.log(usage("run"));
       return;
     }
     const workdir = asString(values.workdir) ?? process.cwd();
@@ -599,7 +670,7 @@ async function runRunCommand(argv: string[]): Promise<void> {
       help: { type: "boolean", short: "h" }
     });
     if (asBool(values.help)) {
-      console.log(usage());
+      console.log(usage("run"));
       return;
     }
     const runId = positionals[0];
@@ -634,7 +705,7 @@ async function runRunCommand(argv: string[]): Promise<void> {
       help: { type: "boolean", short: "h" }
     });
     if (asBool(values.help)) {
-      console.log(usage());
+      console.log(usage("run"));
       return;
     }
     const runId = positionals[0];
@@ -654,7 +725,7 @@ async function runRunCommand(argv: string[]): Promise<void> {
       help: { type: "boolean", short: "h" }
     });
     if (asBool(values.help)) {
-      console.log(usage());
+      console.log(usage("run"));
       return;
     }
     const runId = positionals[0];
@@ -699,7 +770,16 @@ async function main(): Promise<void> {
     console.log(usage());
     return;
   }
-  if (argv[0] === "--help" || argv[0] === "-h" || argv[0] === "help") {
+  if (argv[0] === "--help" || argv[0] === "-h") {
+    console.log(usage());
+    return;
+  }
+  if (argv[0] === "help") {
+    const topic = argv[1];
+    if (topic === "project" || topic === "run" || topic === "legacy") {
+      console.log(usage(topic));
+      return;
+    }
     console.log(usage());
     return;
   }
