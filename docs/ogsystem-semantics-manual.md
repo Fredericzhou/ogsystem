@@ -213,6 +213,8 @@ judgeNode[Role:judge] -->|DONE| output
 
 ## 5. 上下文投影语义（`context.map`）
 
+规范入口：当前 `context.map` selector 规则与祖先可达性说明，以 [context-map 投影说明](./context-map-projection-guide.md) 为准。
+
 ### 5.1 普通节点投影
 
 #### 图示
