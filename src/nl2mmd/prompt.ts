@@ -11,26 +11,6 @@ import { resolveRoleMentions } from "./catalog.js";
 import { detectSemanticHints, searchModels, searchRoles } from "./semantic-map.js";
 import type { Nl2MmdContext, Nl2MmdTurnInput } from "./types.js";
 
-function formatRoleCatalog(context: Nl2MmdContext): string {
-  return context.roleCatalog
-    .map((role) => {
-      const events = role.outputEvents.length > 0 ? role.outputEvents.join(",") : "(no enum)";
-      const tags = role.tags.length > 0 ? role.tags.join(",") : "-";
-      return `${role.roleId} | ${role.name} | events=${events} | tags=${tags} | ${role.description}`;
-    })
-    .join("\n");
-}
-
-function formatModelCatalog(context: Nl2MmdContext): string {
-  return context.modelCatalog
-    .map((model) => {
-      const reasoning = model.reasoningEffort ?? "-";
-      const tags = model.tags.length > 0 ? model.tags.join(",") : "-";
-      return `${model.modelId} | ${model.model} | reasoning=${reasoning} | tags=${tags}`;
-    })
-    .join("\n");
-}
-
 export function getNl2MmdTurnSchema(): Record<string, unknown> {
   return {
     type: "object",
@@ -98,6 +78,7 @@ export function buildNl2MmdSystemPrompt(context: Nl2MmdContext): string {
     "3. When the request is specific enough, set mode=draft or mode=final and output one Mermaid graph string.",
     "4. Never exceed current OGSystem support. Do not invent unsupported syntax, metadata, or routing modes.",
     "5. Prefer existing role ids from the role repo. If the user mentions an unknown @roleId, keep it in unresolvedItems and ask for clarification.",
+    "6. Keep the system prompt compact; use the turn prompt's ranked role/model suggestions instead of restating full catalogs.",
     "",
     "Authoring rules:",
     "- Mermaid header must be one of: " + dictionary.flowcharts.join(", "),
@@ -129,11 +110,8 @@ export function buildNl2MmdSystemPrompt(context: Nl2MmdContext): string {
     "",
     `Available laws: ${laws}`,
     "",
-    "Role catalog:",
-    formatRoleCatalog(context),
-    "",
-    "Model catalog:",
-    formatModelCatalog(context)
+    `Local role count: ${context.roleCatalog.length}`,
+    `Local model count: ${context.modelCatalog.length}`
   ].join("\n");
 }
 

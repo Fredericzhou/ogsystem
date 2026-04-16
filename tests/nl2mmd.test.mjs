@@ -111,10 +111,9 @@ test("nl2mmd prompt includes current dictionary and local catalog hints", async 
     prompt,
     /Flow-contract metadata are also supported: handoff\.mode, handoff\.contracts, and route\.order\.<fromRoleId>/
   );
-  assert.match(prompt, /Role catalog:/);
-  assert.match(prompt, /debate-judge \| Debate Judge/);
-  assert.match(prompt, /Model catalog:/);
-  assert.match(prompt, /fast-gpt54 \| openai\/gpt-5\.4-mini/);
+  assert.ok(prompt.length < 3000, `expected compact prompt, got length ${prompt.length}`);
+  assert.ok(!prompt.includes("Role catalog:"));
+  assert.ok(!prompt.includes("Model catalog:"));
 });
 
 test("nl2mmd semantic mapping detects common routing and loop intents", () => {
