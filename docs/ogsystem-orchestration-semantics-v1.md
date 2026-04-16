@@ -90,6 +90,7 @@
 *   **`all_of` 与 `quorum_of` 的关系是“语义特例”，不是新增模式**：`quorum_of + join.min=1` 等价“any”；`quorum_of + join.min=|sources|` 等价“all”。当前 DSL 不单独引入 `any_of`：`all_of` 保留为高频默认汇合语义（更少配置、更易审查），`any` 通过 `quorum_of + join.min=1` 表达（避免新增关键字带来的解析/测试/兼容面扩张）。
 *   **Join 上下文与字段投影都属于运行时契约**：默认 join `context` 是按 `roleId` 归一化后的 JSON 投影；若声明 `context.map.<roleId>.*`，运行时会以稳定字段顺序重建 `context`，并要求 selector 与 source 都合法。
 *   **Flow contract 是独立的运行时合同层**：`handoff.mode` 只控制合同校验策略，`transition` 会跳过告警或缺失合同对应的 flow，`strict` 则硬失败；`handoff.contracts` 指向合同 bundle；`role_input` 只校验 `context.map` 投影后的结构化对象，不替代 `role.inputSchema`。
+*   **Compiler facade 是静态摘要层**：`src/runtime/compiler.ts` 会收拢 system / role / contract / effective law 的稳定摘要，生成 `CompiledExecutionSnapshot` 与 compiler digest；运行时仍保留最后防线，不把 compiler 当作唯一真相源。
 *   **合同路径按系统文件解析**：`handoff.contracts` 相对 `system.mmd` 所在目录解析，运行时会先归一到绝对路径，再参与加载与 resume 指纹。
 *   **合同 schema 的 `$ref` 只允许本地文件引用**：相对引用按 schema 文件所在目录解析，支持嵌套本地引用与片段引用；远程 `http(s)://` 引用会直接失败。
 *   **`context.map` selector 为白名单语法**：仅支持 `global.task`、`global.user_profile(.path)`、`direct.content/event/data(.path)`、`source(<roleId>).content/event/data(.path)`；join 节点禁止 `direct.*`，非 join 节点禁止 `source(...)`。

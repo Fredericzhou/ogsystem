@@ -5,6 +5,7 @@ import os from "node:os";
 import { cp, mkdir, mkdtemp, readFile, readdir, writeFile } from "node:fs/promises";
 
 import { buildRunPlanFingerprint, runSystemWithAdapter } from "../dist/runtime/adapter.js";
+import { compileExecutionSnapshot } from "../dist/runtime/compiler.js";
 import { resolveEffectiveLaw } from "../dist/runtime/adapter.js";
 import { validateLawsConfig, validateRuntimeConfig } from "../dist/runtime/config.js";
 import { createExecutionPlan } from "../dist/runtime/execution-plan.js";
@@ -55,12 +56,18 @@ async function buildRuntimeFingerprintWithPaths(system, args) {
     JSON.parse(await readFile(args.lawsPath, "utf8")),
     args.lawsPath
   );
+  const compilerSnapshot = compileExecutionSnapshot({
+    system,
+    rolePackagesByRoleId,
+    effectiveLaw: resolveEffectiveLaw(system, lawCatalog)
+  }).snapshot;
 
   return buildRunPlanFingerprint({
     system,
     rolePackagesByRoleId,
     modelsById,
-    effectiveLaw: resolveEffectiveLaw(system, lawCatalog)
+    effectiveLaw: resolveEffectiveLaw(system, lawCatalog),
+    compilerSnapshot
   });
 }
 

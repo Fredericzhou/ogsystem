@@ -42,6 +42,8 @@ type AuditRecordInput = {
   stderr?: string;
   error?: string;
   errorEnvelope?: RuntimeErrorEnvelope;
+  compilerDigest?: string;
+  compilerDiagnosticCode?: string;
   repair?: RoleOutputRepairRecord;
   correctionRequest?: RoleOutputCorrectionRequest;
   inputContext?: string;
@@ -77,6 +79,8 @@ export function createAuditRecord(args: AuditRecordInput): AuditRecord {
     stderrPreview: preview(args.stderr ?? ""),
     error: args.error,
     errorEnvelope: args.errorEnvelope,
+    compilerDigest: args.compilerDigest,
+    compilerDiagnosticCode: args.compilerDiagnosticCode,
     repair: args.repair,
     correctionRequest: args.correctionRequest,
     inputContext: args.inputContext

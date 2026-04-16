@@ -35,6 +35,7 @@ import {
 } from "./graph-runtime-state.js";
 import { executeRoleNode } from "./role-executor.js";
 import { isRuntimeOnlyErrorEvent } from "./error-flow-utils.js";
+import type { CompiledExecutionSnapshot } from "./compiler.js";
 import { createRuntimeError, normalizeRuntimeError } from "./runtime-errors.js";
 import {
   buildAuditSummaryDelta,
@@ -130,6 +131,7 @@ type RunnerInput = {
   plan: ExecutionPlan;
   effectiveLaw: EffectiveLawConstraints;
   contractPlan?: FlowContractPlan;
+  compilerSnapshot?: CompiledExecutionSnapshot;
   profilesById: Map<string, ExecutionProfile>;
   toolsByRef: Map<string, CliTool>;
   modelsById: Map<string, LoadedModelPackage>;
@@ -1627,6 +1629,7 @@ export async function runSystemWithGraphRunner(args: RunnerInput): Promise<Adapt
           modelsById: args.modelsById,
           rolePackagesByRoleId: args.rolePackagesByRoleId,
           contractPlan: args.contractPlan,
+          compilerSnapshot: args.compilerSnapshot,
           runContext: args.runContext,
           executor: args.executor,
           userProfile: args.userProfile,

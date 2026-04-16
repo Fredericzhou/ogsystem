@@ -15,6 +15,7 @@ import {
   validateToolsConfig,
   validateUserProfileConfig
 } from "./config.js";
+import { compileExecutionSnapshot, type CompiledExecutionSnapshot } from "./compiler.js";
 import { createDefaultExecutor } from "./executor.js";
 import { createExecutionPlan } from "./execution-plan.js";
 import { loadFlowContractPlan } from "./flow-contract.js";
@@ -339,8 +340,6 @@ function assertBindingPreflight(args: {
   }
 }
 
-type FingerprintComponentName = "system" | "rolePackages" | "modelPackages" | "effectiveLaw";
-
 function normalizeFingerprintValue(value: unknown): unknown {
   if (Array.isArray(value)) {
     return value.map((entry) => normalizeFingerprintValue(entry));
@@ -459,6 +458,30 @@ function buildModelPackageFingerprintComponent(
     }));
 }
 
+function buildCompilerFingerprintComponent(
+  compilerSnapshot: CompiledExecutionSnapshot
+): {
+  identity: Record<string, unknown>;
+  sourceHints: Record<string, unknown>;
+} {
+  return {
+    identity: {
+      digest: compilerSnapshot.digest,
+      roleIds: sortedRoleIds(Object.keys(compilerSnapshot.roleSummaryByRoleId)),
+      contractIds: sortedRoleIds(Object.keys(compilerSnapshot.contractSummaryById))
+    },
+    sourceHints: {
+      digest: compilerSnapshot.digest,
+      diagnostics: compilerSnapshot.diagnostics.map((diagnostic) => ({
+        code: diagnostic.code,
+        roleId: diagnostic.roleId ?? null,
+        contractId: diagnostic.contractId ?? null,
+        fieldName: diagnostic.fieldName ?? null
+      }))
+    }
+  };
+}
+
 /**
  * Captures the immutable contract (graph, bindings, law, role/model bundles) that must match on resume.
  * The fingerprint is versioned and sorted so the resume verifier can detect any divergence before replaying state.
@@ -469,23 +492,30 @@ export function buildRunPlanFingerprint(args: {
   modelsById: Map<string, LoadedModelPackage>;
   effectiveLaw: EffectiveLawConstraints;
   contractPlan?: FlowContractPlan;
+  compilerSnapshot?: CompiledExecutionSnapshot;
 }): RunPlanFingerprint {
   // A run may resume only against the same executable contract: graph semantics, loaded role content,
   // loaded model config, and the effective law set must all remain identical.
   const rolePackageComponents = buildRolePackageFingerprintComponent(args.rolePackagesByRoleId);
   const modelPackageComponents = buildModelPackageFingerprintComponent(args.modelsById);
-  const componentValues: Record<FingerprintComponentName, unknown> = {
+  const compilerComponent = args.compilerSnapshot
+    ? buildCompilerFingerprintComponent(args.compilerSnapshot)
+    : undefined;
+  const componentValues: Record<string, unknown> = {
     system: buildSystemFingerprintComponent(args.system, args.contractPlan?.digest ?? null),
     rolePackages: rolePackageComponents.map((component) => component.identity),
     modelPackages: modelPackageComponents.map((component) => component.identity),
     effectiveLaw: normalizeFingerprintValue(args.effectiveLaw)
   };
+  if (compilerComponent) {
+    componentValues.compiler = compilerComponent.identity;
+  }
   const componentDigests = Object.fromEntries(
-    (Object.keys(componentValues) as FingerprintComponentName[]).map((componentName) => [
+    Object.keys(componentValues).map((componentName) => [
       componentName,
       hashFingerprintValue(componentValues[componentName])
     ])
-  ) as Record<FingerprintComponentName, string>;
+  ) as Record<string, string>;
   const payload = {
     components: {
       system: {
@@ -505,13 +535,22 @@ export function buildRunPlanFingerprint(args: {
       effectiveLaw: {
         digest: componentDigests.effectiveLaw,
         value: componentValues.effectiveLaw
-      }
+      },
+      ...(compilerComponent
+        ? {
+            compiler: {
+              digest: componentDigests.compiler,
+              value: compilerComponent.identity,
+              sourceHints: compilerComponent.sourceHints
+            }
+          }
+        : {})
     }
   };
 
   const digest = hashFingerprintValue(componentDigests);
   return {
-    version: 3,
+    version: 4,
     algorithm: "sha256",
     digest,
     payload
@@ -556,10 +595,11 @@ export async function runSystemWithAdapter(args: {
   let executionError: unknown;
   let result: AdapterRunResult | undefined;
   let setup:
-    | {
+      | {
         plan: ReturnType<typeof createExecutionPlan>;
         effectiveLaw: EffectiveLawConstraints;
         contractPlan?: FlowContractPlan;
+        compilerSnapshot: CompiledExecutionSnapshot;
         profilesById: Map<string, ExecutionProfile>;
         toolsByRef: Map<string, CliTool>;
         modelsById: Map<string, LoadedModelPackage>;
@@ -598,12 +638,19 @@ export async function runSystemWithAdapter(args: {
         system,
         modelRootDir: resolve(args.workdir, runtimeConfig.modelRepo)
       });
+      const compilerResult = compileExecutionSnapshot({
+        system,
+        rolePackagesByRoleId,
+        contractPlan,
+        effectiveLaw
+      });
       const planFingerprint = buildRunPlanFingerprint({
         system,
         rolePackagesByRoleId,
         modelsById,
         effectiveLaw,
-        contractPlan
+        contractPlan,
+        compilerSnapshot: compilerResult.snapshot
       });
       const resolvedConfigSnapshot: Record<string, unknown> = {
         version: 1,
@@ -620,7 +667,11 @@ export async function runSystemWithAdapter(args: {
           roleRepoDir: resolve(args.workdir, runtimeConfig.roleRepo, "roles"),
           modelRepoDir: resolve(args.workdir, runtimeConfig.modelRepo),
           runsDir: resolve(args.workdir, runtimeConfig.runsDir),
-          workdir: args.workdir
+          workdir: args.workdir,
+          compiler: {
+            digest: compilerResult.digest,
+            diagnostics: compilerResult.diagnostics
+          }
         }
       };
       const runContext = await initializeRunContext({
@@ -651,6 +702,7 @@ export async function runSystemWithAdapter(args: {
         modelsById,
         userProfile,
         rolePackagesByRoleId,
+        compilerSnapshot: compilerResult.snapshot,
         runContext,
         planFingerprint,
         runtimeConfig
@@ -721,6 +773,7 @@ export async function runSystemWithAdapter(args: {
           plan: setup.plan,
           effectiveLaw: setup.effectiveLaw,
           contractPlan: setup.contractPlan,
+          compilerSnapshot: setup.compilerSnapshot,
           profilesById: setup.profilesById,
           toolsByRef: setup.toolsByRef,
           modelsById: setup.modelsById,

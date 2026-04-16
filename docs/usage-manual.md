@@ -17,7 +17,7 @@ OGSystem 当前重点优化以下能力：
 
 - 显式图语义：`parallel_split`、`all_of/quorum_of` join、`context.map`、`loop.max` 都有解析期和执行期约束。
 - 异常流语义（`ERROR*`）已实现：按节点级 opt-in 引入运行时失败补偿流，默认由 `runtime.error_flows.v1=false` 控制灰度发布。
-- 文件优先恢复：`state.json`、`sessions.json`、`plan-fingerprint.json`、`checkpoints/`、`execution-outcome.json` 组成恢复权威集。
+- 文件优先恢复：`state.json`、`sessions.json`、`plan-fingerprint.json`、`checkpoints/`、`execution-outcome.json` 组成恢复权威集；`plan-fingerprint.json` 现在包含 compiler digest。
 - 会话血缘隔离：`roleId:sessionLineageId` 保证顺序流转可复用会话，并行 sibling 不串会话记忆。
 - Crash 自愈补偿：角色结果先 durable，再 checkpoint；恢复时补偿缺失 checkpoint，而不是盲目重跑节点。
 - 绑定预检：运行前静态扫描所有 role 节点，未绑定节点必须满足 noop 法律授权与单出口约束，避免中途才失败。
@@ -29,6 +29,7 @@ OGSystem 当前重点优化以下能力：
 
 - `adapter.ts`：加载系统、角色、模型、law，构造运行上下文并校验 resume 指纹。
 - `parse-mermaid.ts` + `execution-plan.ts`：把 Mermaid DSL 归一化为运行时可执行计划。
+- `compiler.ts`：汇总 system / role / contract / law 的静态摘要，生成 `CompiledExecutionSnapshot` 与 resume digest。
 - `graph-runner.ts`：推进图状态、管理 branch/lineage、写 checkpoint、处理 resume 补偿。
 - `role-executor.ts`：执行单个 role，做 prompt 投影、schema 校验、输出修复和结果落盘。
 - `flow-contract.ts`：加载 `handoff.contracts`，校验 flow / `role_input` 合同，并参与 resume 指纹。

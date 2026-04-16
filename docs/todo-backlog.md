@@ -12,6 +12,13 @@ Sources: `docs/long-term-stability-roadmap.md`, `docs/archive/delivery/optimizat
 
 ## 2. 当前优先（可立即执行）
 
+### P1. 编译器主线
+
+- [x] 建立 `src/runtime/compiler.ts` 静态编译入口，并把 compiler digest 纳入 `plan-fingerprint.json`。
+- [x] 增加 compiler 单元测试与负例诊断回归。
+- [x] 继续做 compiler shadow compare，把 runtime failure surface 和 compiler diagnostics 的对照补齐。
+- [x] 逐步把 compiler snapshot 消费面扩展到审计与恢复可观察项。
+
 ### P1. 跨平台产品化闭环
 
 - [ ] 在 CI 增加 Rust toolchain 维度的可选门禁作业（cargo 可用时执行 `tests/rust-hello-pipeline.test.mjs`）。

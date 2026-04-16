@@ -22,6 +22,10 @@ import {
 } from "./flow-contract.js";
 import { OpencodeExecutionError } from "./opencode-executor.js";
 import {
+  mapRuntimeErrorToCompilerDiagnosticCode,
+  type CompiledExecutionSnapshot
+} from "./compiler.js";
+import {
   allocateRoleExecution,
   buildRoleSessionKey,
   getRoleSession,
@@ -873,6 +877,51 @@ function buildCorrectionRequest(args: {
   };
 }
 
+function assertCompilerSnapshotConsistency(args: {
+  roleId: string;
+  node: ExecutionPlanNode;
+  branchId: string;
+  compilerSnapshot?: CompiledExecutionSnapshot;
+  roleInputContractPresent: boolean;
+}): void {
+  if (!args.compilerSnapshot) {
+    return;
+  }
+
+  const projectionSummary = args.compilerSnapshot.projectionSummaryByRoleId[args.roleId];
+  if (projectionSummary) {
+    const summaryEntries = projectionSummary.fields
+      .map((field) => [field.fieldName, field.selector] as const)
+      .sort(([left], [right]) => left.localeCompare(right));
+    const runtimeEntries = Object.entries(args.node.contextMap ?? {}).sort(([left], [right]) =>
+      left.localeCompare(right)
+    );
+    const matches =
+      summaryEntries.length === runtimeEntries.length &&
+      summaryEntries.every(([fieldName, selector], index) => {
+        const runtimeEntry = runtimeEntries[index];
+        return runtimeEntry !== undefined && runtimeEntry[0] === fieldName && runtimeEntry[1] === selector;
+      });
+    if (!matches) {
+      failContextProjection({
+        errorCode: "COMPILER_SNAPSHOT_INCONSISTENT",
+        message: `Compiler projection summary for role "${args.roleId}" does not match runtime context.map metadata.`,
+        roleId: args.roleId,
+        branchId: args.branchId
+      });
+    }
+  }
+
+  if (args.roleInputContractPresent && !args.compilerSnapshot.contractSummaryById[`role_input:${args.roleId}`]) {
+    failContextProjection({
+      errorCode: "COMPILER_SNAPSHOT_INCONSISTENT",
+      message: `Compiler contract summary for role "${args.roleId}" is missing role_input metadata.`,
+      roleId: args.roleId,
+      branchId: args.branchId
+    });
+  }
+}
+
 /**
  * Role execution deliberately stops at "run one node and persist durable evidence". Graph-level
  * progression, branch activation, join waiting, and terminal status are owned by graph-runner.
@@ -889,6 +938,7 @@ export async function executeRoleNode(args: {
   modelsById: Map<string, LoadedModelPackage>;
   rolePackagesByRoleId: Map<string, LoadedRolePackage>;
   contractPlan?: FlowContractPlan;
+  compilerSnapshot?: CompiledExecutionSnapshot;
   runContext: RunContext;
   executor: Executor;
   userProfile?: UserProfile;
@@ -915,6 +965,7 @@ export async function executeRoleNode(args: {
     branchId,
     loopIteration
   });
+  const compilerDigest = args.compilerSnapshot?.digest;
   // Invariant: each allocation increments the per-role execution counter and uses a unique directory so retries/replays never clobber prior evidence.
   const maxTransitions = args.effectiveLaw.maxTransitions;
 
@@ -939,7 +990,9 @@ export async function executeRoleNode(args: {
       exitCode: 1,
       status: "failed",
       error,
-      errorEnvelope: failure
+      errorEnvelope: failure,
+      compilerDigest,
+      compilerDiagnosticCode: mapRuntimeErrorToCompilerDiagnosticCode(failure)
     });
     await persistRoleResult({ roleId: args.roleId, context: args.runContext, execution, audit });
     const result: PersistedRoleExecutorResult = {
@@ -979,7 +1032,9 @@ export async function executeRoleNode(args: {
       exitCode: 1,
       status: "failed",
       error,
-      errorEnvelope: failure
+      errorEnvelope: failure,
+      compilerDigest,
+      compilerDiagnosticCode: mapRuntimeErrorToCompilerDiagnosticCode(failure)
     });
     await persistRoleResult({ roleId: args.roleId, context: args.runContext, execution, audit });
     const result: PersistedRoleExecutorResult = {
@@ -1042,6 +1097,13 @@ export async function executeRoleNode(args: {
       const roleInputContract = getRoleInputContract({
         plan: args.contractPlan,
         roleId: args.roleId
+      });
+      assertCompilerSnapshotConsistency({
+        roleId: args.roleId,
+        node: args.node,
+        branchId: currentBranch.branchId,
+        compilerSnapshot: args.compilerSnapshot,
+        roleInputContractPresent: roleInputContract !== undefined
       });
       if (roleInputContract) {
         const contractError = validateContractAgainstSchema({
@@ -1187,7 +1249,8 @@ export async function executeRoleNode(args: {
         selectedEvent,
         nextRoleId:
           !selectedToRoleId || selectedToRoleId === SYSTEM_END_ROLE_ID ? undefined : selectedToRoleId,
-        status: "noop"
+        status: "noop",
+        compilerDigest
       });
       await persistRoleResult({ roleId: args.roleId, context: args.runContext, execution, audit });
       const result: PersistedRoleExecutorResult = {
@@ -1293,7 +1356,8 @@ export async function executeRoleNode(args: {
       status: "ok",
       stdout: executionResult.stdout,
       stderr: executionResult.stderr,
-      repair
+      repair,
+      compilerDigest
     });
 
     if (executionResult.sessionId) {
@@ -1390,6 +1454,8 @@ export async function executeRoleNode(args: {
       stderr: executionError?.stderr,
       error: `${message}${category}`,
       errorEnvelope: failure,
+      compilerDigest,
+      compilerDiagnosticCode: mapRuntimeErrorToCompilerDiagnosticCode(failure),
       repair,
       correctionRequest,
       inputContext: inputContextForAudit

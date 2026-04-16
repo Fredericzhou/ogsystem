@@ -15,6 +15,7 @@ OGSystem 是一个面向多角色协作流程的单机编排内核。它使用�
 
 - **图语义硬化**：`parallel_split`、`all_of/quorum_of` join、`context.map`、`loop.max`、`handoff.mode`、`handoff.contracts` 都在解析和执行两侧被明确约束。
 - **流合同分层**：`flow contract` 负责边级业务约束，`role_input` 负责接收节点的投影输入校验，`role.inputSchema` 继续作为技术层护栏。
+- **静态编译入口**：`src/runtime/compiler.ts` 汇总 system / role / contract / law 的静态摘要，生成稳定 diagnostics 与 compiler digest，并参与 resume 指纹。
 - **文件优先恢复**：运行状态落盘到 `.ogs/runs/<run-id>/`，以 `state.json`、`sessions.json`、`plan-fingerprint.json`、`checkpoints/` 和 `execution-outcome.json` 组成恢复权威集。
 - **会话血缘隔离**：OpenCode 会话按 `roleId:sessionLineageId` 复用或隔离，顺序链路复用记忆，并行 sibling 不串话。
 - **Crash 自愈补偿**：角色执行先提交 durable outcome，再由图调度层写 checkpoint；恢复时自动补齐缺失的 checkpoint，而不是重跑模型。
@@ -28,6 +29,7 @@ OGSystem 当前采用单一 graph runtime 路径，核心模块分工很清晰�
 
 - `src/runtime/adapter.ts`：组合根，负责装配配置、系统定义、角色包、模型包与运行上下文。
 - `src/runtime/parse-mermaid.ts` 与 `src/runtime/execution-plan.ts`：把受限 Mermaid DSL 编译成可执行计划。
+- `src/runtime/compiler.ts`：收拢前置静态事实，生成 compiler snapshot、diagnostics 和 resume digest。
 - `src/runtime/graph-runner.ts`：负责图级状态推进、branch/lineage 管理、checkpoint 与 resume 补偿。
 - `src/runtime/role-executor.ts`：负责单节点 prompt 渲染、执行绑定、输出修复、schema 校验与审计落盘。
 - `src/runtime/run-artifacts.ts`：负责 run 目录、会话索引、`.resume.lock`、checkpoint、execution artifacts 与 buffered append。

@@ -5,6 +5,7 @@ import os from "node:os";
 import { mkdir, mkdtemp, readFile, writeFile } from "node:fs/promises";
 
 import { getExecutionPlanNode, createExecutionPlan } from "../dist/runtime/execution-plan.js";
+import { compileExecutionSnapshot } from "../dist/runtime/compiler.js";
 import { createInitialState } from "../dist/runtime/graph-runtime-state.js";
 import { loadModelPackage } from "../dist/runtime/model-repo.js";
 import { parseSystemFromMermaidSource } from "../dist/runtime/parse-mermaid.js";
@@ -124,6 +125,14 @@ async function prepareRoleExecutorFixture(args) {
     modelId: "balanced-gpt52",
     modelRootDir: path.resolve("og-models")
   });
+  const compilerSnapshot = compileExecutionSnapshot({
+    system,
+    rolePackagesByRoleId,
+    effectiveLaw: {
+      forbiddenToolRefs: [],
+      allowNoopWithoutExecutionBinding: false
+    }
+  }).snapshot;
 
   return {
     tempRoot,
@@ -131,6 +140,7 @@ async function prepareRoleExecutorFixture(args) {
     plan,
     runContext,
     rolePackagesByRoleId,
+    compilerSnapshot,
     modelsById: new Map([["balanced-gpt52", modelPackage]])
   };
 }
@@ -200,6 +210,7 @@ reviewer[Role:reviewer] -->|DONE| output
     toolsByRef: new Map(),
     modelsById: fixture.modelsById,
     rolePackagesByRoleId: fixture.rolePackagesByRoleId,
+    compilerSnapshot: fixture.compilerSnapshot,
     runContext: fixture.runContext,
     executor: {
       async start() {},
@@ -227,6 +238,7 @@ reviewer[Role:reviewer] -->|DONE| output
   });
 
   assert.equal(result.status, "ok");
+  assert.equal(result.audit.compilerDigest, fixture.compilerSnapshot.digest);
   const inbox = parseJsonCodeBlock(
     await readFile(
       path.resolve(fixture.runContext.runDir, "roles", "reviewer", "inbox.md"),
@@ -327,6 +339,7 @@ review[Role:review] -->|DONE| output
     toolsByRef: new Map(),
     modelsById: fixture.modelsById,
     rolePackagesByRoleId: fixture.rolePackagesByRoleId,
+    compilerSnapshot: fixture.compilerSnapshot,
     runContext: fixture.runContext,
     executor: {
       async start() {},
@@ -352,6 +365,8 @@ review[Role:review] -->|DONE| output
 
   assert.equal(result.status, "failed");
   assert.equal(result.failure.errorCode, "ROLE_CONTEXT_SOURCE_UNAVAILABLE");
+  assert.equal(result.audit.compilerDigest, fixture.compilerSnapshot.digest);
+  assert.equal(result.audit.compilerDiagnosticCode, "COMPILER_CONTEXT_SOURCE_UNDEFINED");
   assert.equal(executeCount, 0);
 });
 
@@ -419,6 +434,7 @@ reviewer[Role:reviewer] -->|DONE| output
     toolsByRef: new Map(),
     modelsById: fixture.modelsById,
     rolePackagesByRoleId: fixture.rolePackagesByRoleId,
+    compilerSnapshot: fixture.compilerSnapshot,
     runContext: fixture.runContext,
     executor: {
       async start() {},
@@ -444,6 +460,7 @@ reviewer[Role:reviewer] -->|DONE| output
 
   assert.equal(result.status, "failed");
   assert.equal(result.failure.errorCode, "ROLE_CONTEXT_PATH_MISSING");
+  assert.equal(result.audit.compilerDiagnosticCode, "COMPILER_CONTEXT_SELECTOR_INVALID");
   assert.equal(executeCount, 0);
 });
 
@@ -535,6 +552,7 @@ review[Role:review] -->|DONE| output
     toolsByRef: new Map(),
     modelsById: fixture.modelsById,
     rolePackagesByRoleId: fixture.rolePackagesByRoleId,
+    compilerSnapshot: fixture.compilerSnapshot,
     runContext: fixture.runContext,
     executor: {
       async start() {},
@@ -560,6 +578,7 @@ review[Role:review] -->|DONE| output
 
   assert.equal(result.status, "failed");
   assert.equal(result.failure.errorCode, "ROLE_CONTEXT_PATH_MISSING");
+  assert.equal(result.audit.compilerDiagnosticCode, "COMPILER_CONTEXT_SELECTOR_INVALID");
   assert.equal(executeCount, 0);
 });
 
@@ -638,6 +657,15 @@ reviewer[Role:reviewer] -->|DONE| output
     contractPath: path.resolve(contractsDir, "handoff.contracts.json")
   });
   assert.equal(contractPlan.roleInputContractsByRoleId.has("reviewer"), true);
+  const contractCompilerSnapshot = compileExecutionSnapshot({
+    system: fixture.system,
+    rolePackagesByRoleId: fixture.rolePackagesByRoleId,
+    effectiveLaw: {
+      forbiddenToolRefs: [],
+      allowNoopWithoutExecutionBinding: false
+    },
+    contractPlan
+  }).snapshot;
 
   const state = createInitialState(fixture.plan, "contract prompt");
   state.roleResults["intake@1#1"] = {
@@ -680,6 +708,7 @@ reviewer[Role:reviewer] -->|DONE| output
     toolsByRef: new Map(),
     modelsById: fixture.modelsById,
     rolePackagesByRoleId: fixture.rolePackagesByRoleId,
+    compilerSnapshot: contractCompilerSnapshot,
     contractPlan,
     runContext: fixture.runContext,
     executor: {
@@ -710,5 +739,6 @@ reviewer[Role:reviewer] -->|DONE| output
 
   assert.equal(result.status, "failed");
   assert.equal(result.failure.errorCode, "CONTRACT_ROLE_INPUT_VALIDATION_FAILED");
+  assert.equal(result.audit.compilerDiagnosticCode, "COMPILER_ROLE_INPUT_CONTEXT_MISSING");
   assert.equal(executeCount, 0);
 });

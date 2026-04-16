@@ -332,6 +332,8 @@ export type AuditRecord = {
   stderrPreview?: string;
   error?: string;
   errorEnvelope?: RuntimeErrorEnvelope;
+  compilerDigest?: string;
+  compilerDiagnosticCode?: string;
   repair?: RoleOutputRepairRecord;
   correctionRequest?: RoleOutputCorrectionRequest;
   inputContext?: string;
