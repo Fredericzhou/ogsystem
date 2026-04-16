@@ -25,6 +25,7 @@
 - `docs/usage-manual.md`：主手册，面向“如何理解并运行 OGSystem”。
 - `docs/ogsystem-orchestration-semantics-v1.md`：V1 编排语义的单一事实源。
 - `docs/compiler-semantics-v1.md`：compiler facade 的语义与 digest 约定。
+- `docs/nl2mmd-structure-templates.md`：`nl2mmd` 的结构模板与示例手册。
 - `docs/DECISIONS.md`：重要架构决策与取舍。
 - `docs/long-term-stability-roadmap.md`：长期稳定性与扩展路线图。
 - `docs/todo-backlog.md`：统一待办入口（当前执行优先级与延后项）。
@@ -63,6 +64,7 @@
 - `docs/archive/delivery/error-flow-v1-hardening-followup-2026-04-13.md`（delivered follow-up hardening and test-maintainability closure）
 - `docs/archive/delivery/flow-contract-refactor-plan-2026-04-14.md`（proposed flow-contract-first semantics and refactor plan）
 - `docs/archive/delivery/typed-compiler-execution-plan-2026-04-16.md`（proposed unified static compiler entry checklist）
+- `docs/archive/delivery/ogsystem-visualization-platform-solution-2026-04-16.md`（proposal for a runtime visualization and observability platform）
 - `docs/archive/delivery/ogsystem-naming-style-review-2026-04-14.md`（archived naming audit; `flow/edge` conclusion superseded by 2026-04-15 alignment review）
 - `docs/archive/delivery/ogsystem-flow-edge-alignment-review-2026-04-15.md`（delivered flow/edge alignment audit and canonical decision）
 - `docs/archive/delivery/ogsystem-flow-edge-alignment-execution-plan-2026-04-15.md`（delivered flow/edge alignment rollout and closure record）
@@ -119,7 +121,8 @@
 3. `docs/usage-manual.md`
 4. `docs/ogsystem-orchestration-semantics-v1.md`
 5. `docs/compiler-semantics-v1.md`
-6. `docs/DECISIONS.md`
-6. `docs/ogsystem-ebook.md`
+6. `docs/nl2mmd-structure-templates.md`
+7. `docs/DECISIONS.md`
+8. `docs/ogsystem-ebook.md`
 
 需要评估历史修复与验证过程时，再回看“交付记录”分组。

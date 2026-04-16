@@ -131,6 +131,8 @@ Use this rule:
 
 It also understands the current flow-contract surface, including `handoff.mode`, `handoff.contracts`, and `route.order.*`.
 
+For structure-first authoring, see [NL2MMD structure templates](./nl2mmd-structure-templates.md). It lists the current semantic skeletons and example Mermaid graphs for `linear_flow`, `fanout_fanin`, `quorum_consultation`, `contract_gated_handoff`, `error_compensation`, `bounded_loop`, `human_gate`, and `binding_compat`.
+
 Use it with `pnpm run run:nl2mmd -- --message "..."` for one-shot drafting, or omit `--message` for the interactive loop. It targets the repository's supported Mermaid subset only; it is not a general Mermaid generator.
 
 ### Command Layers
