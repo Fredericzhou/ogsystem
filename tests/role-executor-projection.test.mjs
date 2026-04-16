@@ -10,6 +10,7 @@ import { loadModelPackage } from "../dist/runtime/model-repo.js";
 import { parseSystemFromMermaidSource } from "../dist/runtime/parse-mermaid.js";
 import { loadRolePackage } from "../dist/runtime/role-repo.js";
 import { initializeRunContext } from "../dist/runtime/run-artifacts.js";
+import { loadFlowContractPlan } from "../dist/runtime/flow-contract.js";
 import { executeRoleNode } from "../dist/runtime/role-executor.js";
 import { validateRuntimeConfig } from "../dist/runtime/config.js";
 
@@ -126,6 +127,7 @@ async function prepareRoleExecutorFixture(args) {
 
   return {
     tempRoot,
+    system,
     plan,
     runContext,
     rolePackagesByRoleId,
@@ -253,7 +255,7 @@ test("executeRoleNode fails closed when join projection source is unavailable", 
 %% role.mode.dispatch=parallel_split
 %% join.mode.review=quorum_of
 %% join.sources.review=worker_a,worker_b,worker_c
-%% join.min.review=2
+%% join.min.review=3
 %% context.map.review.missing=source(worker_c).content
 %% model.bind.dispatch=balanced-gpt52
 %% model.bind.worker_a=balanced-gpt52
@@ -558,5 +560,155 @@ review[Role:review] -->|DONE| output
 
   assert.equal(result.status, "failed");
   assert.equal(result.failure.errorCode, "ROLE_CONTEXT_PATH_MISSING");
+  assert.equal(executeCount, 0);
+});
+
+test("executeRoleNode validates role_input contracts against projected context objects", async () => {
+  const fixture = await prepareRoleExecutorFixture({
+    tempPrefix: "ogsystem-role-projection-contract-",
+    prompt: "contract prompt",
+    systemSource: `flowchart TD
+%% system.id=role.projection.contract
+%% system.version=1.0.0
+%% law.global=law.console.base
+%% entry.role=intake
+%% handoff.mode=transition
+%% handoff.contracts=contracts/handoff.contracts.json
+%% context.map.reviewer.brief=direct.data.brief
+%% context.map.reviewer.language=global.user_profile.language
+%% context.map.reviewer.task=global.task
+%% model.bind.intake=balanced-gpt52
+%% model.bind.reviewer=balanced-gpt52
+
+input -->|GO| intake[Role:intake]
+intake[Role:intake] -->|DONE| reviewer[Role:reviewer]
+reviewer[Role:reviewer] -->|DONE| output
+`,
+    roles: [
+      { roleId: "intake", allowedEvents: ["DONE"] },
+      { roleId: "reviewer", allowedEvents: ["DONE"] }
+    ]
+  });
+
+  const contractsDir = path.resolve(fixture.tempRoot, "contracts");
+  await mkdir(contractsDir, { recursive: true });
+  await writeFile(
+    path.resolve(contractsDir, "reviewer-input.schema.json"),
+    JSON.stringify(
+      {
+        type: "object",
+        properties: {
+          summary: {
+            type: "string"
+          }
+        },
+        required: ["summary"],
+        additionalProperties: false
+      },
+      null,
+      2
+    ),
+    "utf8"
+  );
+  await writeFile(
+    path.resolve(contractsDir, "handoff.contracts.json"),
+    JSON.stringify(
+      {
+        version: 1,
+        contracts: [
+          {
+            id: "reviewer.input.v1",
+            kind: "role_input",
+            match: {
+              roleId: "reviewer"
+            },
+            schema: "reviewer-input.schema.json",
+            onViolation: "FAIL"
+          }
+        ]
+      },
+      null,
+      2
+    ),
+    "utf8"
+  );
+
+  const contractPlan = await loadFlowContractPlan({
+    system: fixture.system,
+    contractPath: path.resolve(contractsDir, "handoff.contracts.json")
+  });
+  assert.equal(contractPlan.roleInputContractsByRoleId.has("reviewer"), true);
+
+  const state = createInitialState(fixture.plan, "contract prompt");
+  state.roleResults["intake@1#1"] = {
+    roleId: "intake",
+    event: "DONE",
+    content: "intake complete",
+    data: {
+      brief: "short brief"
+    },
+    branchId: "intake@1#1",
+    lineageId: "intake@1#1",
+    loopIteration: 1
+  };
+  const reviewerBranch = {
+    branchId: "reviewer@1#2",
+    roleId: "reviewer",
+    loopIteration: 1,
+    branchSequence: 2,
+    lineageId: "intake@1#1",
+    sessionLineageId: "reviewer@1#2",
+    parentBranchId: "intake@1#1",
+    activatedByRoleId: "intake",
+    activatedByEvent: "DONE",
+    status: "active"
+  };
+  state.branchRecords[reviewerBranch.branchId] = reviewerBranch;
+
+  let executeCount = 0;
+  const result = await executeRoleNode({
+    roleId: "reviewer",
+    node: getExecutionPlanNode(fixture.plan, "reviewer"),
+    plan: fixture.plan,
+    state,
+    branch: reviewerBranch,
+    effectiveLaw: {
+      forbiddenToolRefs: [],
+      allowNoopWithoutExecutionBinding: false
+    },
+    profilesById: new Map(),
+    toolsByRef: new Map(),
+    modelsById: fixture.modelsById,
+    rolePackagesByRoleId: fixture.rolePackagesByRoleId,
+    contractPlan,
+    runContext: fixture.runContext,
+    executor: {
+      async start() {},
+      async close() {},
+      async abortSession() {},
+      getServerMetadata() {
+        return {};
+      },
+      async execute() {
+        executeCount += 1;
+        return {
+          exitCode: 0,
+          stdout: JSON.stringify({ event: "DONE", content: "ok" }),
+          stderr: "",
+          args: [],
+          sessionId: "ses_contract_fail",
+          messageId: "msg_contract_fail"
+        };
+      }
+    },
+    userProfile: {
+      userProfileId: "user.profile",
+      language: "zh-CN"
+    },
+    workdir: fixture.tempRoot
+  });
+
+  assert.equal(result.status, "failed");
+  assert.equal(result.failure.errorCode, "CONTRACT_ROLE_INPUT_VALIDATION_FAILED");
   assert.equal(executeCount, 0);
 });

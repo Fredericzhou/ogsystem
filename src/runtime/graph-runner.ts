@@ -13,6 +13,11 @@ import { Annotation, END, START, StateGraph } from "@langchain/langgraph";
 import { createRunConsoleLogger } from "./console-run-log.js";
 import type { Executor } from "./executor.js";
 import { getExecutionPlanNode } from "./execution-plan.js";
+import {
+  getFlowContractByTarget,
+  getSplitFlowContractByTarget,
+  validateContractAgainstSchema
+} from "./flow-contract.js";
 import { evaluateJoinNodeReadiness, selectRoutingTargets } from "./graph-mode-registry.js";
 import {
   activateBranch,
@@ -63,6 +68,7 @@ import type {
   ExecutionPlan,
   ExecutionPlanNode,
   ExecutionProfile,
+  FlowContractPlan,
   GraphRunStatus,
   GraphState,
   LoadedModelPackage,
@@ -123,6 +129,7 @@ const TEST_CRASH_AFTER_EXECUTION_OUTCOME_ENV = "OGSYSTEM_TEST_CRASH_AFTER_EXECUT
 type RunnerInput = {
   plan: ExecutionPlan;
   effectiveLaw: EffectiveLawConstraints;
+  contractPlan?: FlowContractPlan;
   profilesById: Map<string, ExecutionProfile>;
   toolsByRef: Map<string, CliTool>;
   modelsById: Map<string, LoadedModelPackage>;
@@ -472,6 +479,7 @@ function resolveFailureEdge(args: {
 function buildGraphUpdateFromOutcome(args: {
   state: GraphState;
   plan: ExecutionPlan;
+  contractPlan?: FlowContractPlan;
   outcome: RoleExecutionOutcomeRecord;
   logger: ReturnType<typeof createRunConsoleLogger>;
   errorFlowRoutingEnabled: boolean;
@@ -508,6 +516,7 @@ function buildGraphUpdateFromOutcome(args: {
   return buildSuccessTransitionPlan({
     state: args.state,
     plan: args.plan,
+    contractPlan: args.contractPlan,
     roleId: args.outcome.roleId,
     currentBranch: args.outcome.branch,
     audit: args.outcome.audit,
@@ -521,6 +530,7 @@ function buildGraphUpdateFromOutcome(args: {
 async function reconcileCommittedRoleExecutionOutcomes(args: {
   state: GraphState;
   plan: ExecutionPlan;
+  contractPlan?: FlowContractPlan;
   runContext: RunContext;
   errorFlowRoutingEnabled: boolean;
 }): Promise<GraphState> {
@@ -559,6 +569,7 @@ async function reconcileCommittedRoleExecutionOutcomes(args: {
     const transitionPlan = buildGraphUpdateFromOutcome({
       state: reconciledState,
       plan: args.plan,
+      contractPlan: args.contractPlan,
       outcome,
       logger,
       errorFlowRoutingEnabled: args.errorFlowRoutingEnabled
@@ -1081,6 +1092,7 @@ function findActivatedJoinBranch(args: {
 function buildSuccessTransitionPlan(args: {
   state: GraphState;
   plan: ExecutionPlan;
+  contractPlan?: FlowContractPlan;
   roleId: string;
   currentBranch: BranchRecord;
   audit: AuditRecord;
@@ -1111,6 +1123,110 @@ function buildSuccessTransitionPlan(args: {
     selectedEvent: args.selectedEvent,
     mode: args.mode
   });
+  const flowContractPayload: Record<string, unknown> = {};
+  if (args.storedResult?.event !== undefined) {
+    flowContractPayload.event = args.storedResult.event;
+  }
+  if (args.storedResult?.content !== undefined) {
+    flowContractPayload.content = args.storedResult.content;
+  }
+  if (args.storedResult?.data !== undefined) {
+    flowContractPayload.data = args.storedResult.data;
+  }
+
+  const skippedTargets = new Set<string>();
+  if (args.contractPlan?.handoffMode) {
+    const contractValidationFailures: Array<{
+      errorCode: string;
+      message: string;
+    }> = [];
+
+    for (const targetRoleId of candidateTargets) {
+      const flow = node.outgoing.find(
+        (item) =>
+          item.toRoleId === targetRoleId &&
+          (node.routingMode === "parallel_split"
+            ? !isRuntimeOnlyErrorEvent(item.eventType)
+            : item.eventType === args.selectedEvent)
+      );
+      if (!flow || targetRoleId === SYSTEM_END_ROLE_ID || isRuntimeOnlyErrorEvent(flow.eventType)) {
+        continue;
+      }
+      const contract =
+        node.routingMode === "parallel_split"
+          ? getSplitFlowContractByTarget({
+              plan: args.contractPlan,
+              fromRoleId: args.roleId,
+              toRoleId: targetRoleId
+            })
+          : getFlowContractByTarget({
+              plan: args.contractPlan,
+              fromRoleId: args.roleId,
+              toRoleId: targetRoleId,
+              eventType: flow.eventType
+            });
+
+      if (!contract) {
+        if (args.contractPlan.handoffMode === "strict") {
+          contractValidationFailures.push({
+            errorCode: "CONTRACT_MISSING",
+            message: `Missing flow contract for ${args.roleId} -> ${targetRoleId} (${flow.eventType}) under handoff.mode=strict`
+          });
+        } else {
+          skippedTargets.add(targetRoleId);
+        }
+      } else {
+        const contractError = validateContractAgainstSchema({
+          contract,
+          data: flowContractPayload,
+          subject: "flow"
+        });
+        if (contractError) {
+          if (contract.definition.onViolation === "WARN" && args.contractPlan.handoffMode === "transition") {
+            skippedTargets.add(targetRoleId);
+          } else {
+            contractValidationFailures.push({
+              errorCode: "CONTRACT_VALIDATION_FAILED",
+              message: contractError
+            });
+          }
+        }
+      }
+    }
+
+    if (contractValidationFailures.length > 0) {
+      const failure = contractValidationFailures[0];
+      const errorEnvelope: RuntimeErrorEnvelope = {
+        errorCode: failure.errorCode,
+        errorCategory: "validation",
+        message: failure.message,
+        retryable: false,
+        stage: "execute",
+        roleId: args.roleId,
+        branchId: args.currentBranch.branchId
+      };
+      return {
+        update: {
+          status: "failed",
+          error: failure.message,
+          errorEnvelope,
+          transitionCount: 1,
+          recentAudits: [args.audit],
+          auditSummary: buildAuditSummaryDelta(args.audit),
+          roleMetricsByRoleId: buildRoleMetricsDelta(args.audit),
+          roleResults: storeRoleResult(args.currentBranch.branchId, args.storedResult),
+          branchRecords: branchUpdates,
+          loopIterations: loopUpdates,
+          selectedEventByBranchId: args.selectedEvent
+            ? { [args.currentBranch.branchId]: args.selectedEvent }
+            : {},
+          finalRoleId: args.roleId,
+          lastExecutedRoleId: args.roleId
+        },
+        events: []
+      };
+    }
+  }
 
   for (const targetRoleId of candidateTargets) {
     const flow = node.outgoing.find(
@@ -1120,6 +1236,9 @@ function buildSuccessTransitionPlan(args: {
           ? !isRuntimeOnlyErrorEvent(item.eventType)
           : item.eventType === args.selectedEvent)
     );
+    if (args.contractPlan?.handoffMode && skippedTargets.has(targetRoleId)) {
+      continue;
+    }
     if (targetRoleId === SYSTEM_END_ROLE_ID) {
       reachedSystemOutput = true;
       terminalOutput = args.storedResult?.content ?? "";
@@ -1389,6 +1508,7 @@ export async function runSystemWithGraphRunner(args: RunnerInput): Promise<Adapt
           toolsByRef: args.toolsByRef,
           modelsById: args.modelsById,
           rolePackagesByRoleId: args.rolePackagesByRoleId,
+          contractPlan: args.contractPlan,
           runContext: args.runContext,
           executor: args.executor,
           userProfile: args.userProfile,
@@ -1428,6 +1548,7 @@ export async function runSystemWithGraphRunner(args: RunnerInput): Promise<Adapt
             : buildSuccessTransitionPlan({
                 state: workingState,
                 plan: args.plan,
+                contractPlan: args.contractPlan,
                 roleId,
                 currentBranch: branch,
                 audit: result.audit,
@@ -1511,6 +1632,7 @@ export async function runSystemWithGraphRunner(args: RunnerInput): Promise<Adapt
     finalState = await reconcileCommittedRoleExecutionOutcomes({
       state: finalState,
       plan: args.plan,
+      contractPlan: args.contractPlan,
       runContext: args.runContext,
       errorFlowRoutingEnabled: args.errorFlowRoutingEnabled
     });

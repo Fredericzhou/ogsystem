@@ -22,9 +22,18 @@ const ROLE_METADATA_PREFIXES = [
   "join.mode.",
   "join.min.",
   "join.sources.",
-  "loop.max."
+  "loop.max.",
+  "route.order."
 ];
-const SUPPORTED_EXACT_METADATA_KEYS = new Set(["engine", "system.id", "system.version", "law.global", "entry.role"]);
+const SUPPORTED_EXACT_METADATA_KEYS = new Set([
+  "engine",
+  "system.id",
+  "system.version",
+  "law.global",
+  "entry.role",
+  "handoff.mode",
+  "handoff.contracts"
+]);
 const SUPPORTED_METADATA_PREFIXES = [
   "talent.bind.",
   "exec.bind.",
@@ -34,7 +43,8 @@ const SUPPORTED_METADATA_PREFIXES = [
   "join.min.",
   "join.sources.",
   "context.map.",
-  "loop.max."
+  "loop.max.",
+  "route.order."
 ];
 
 function parseRoleToken(token: string): { nodeId: string; roleId: string } | null {

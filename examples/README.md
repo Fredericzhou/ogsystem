@@ -18,7 +18,7 @@ Use this small set first to cover most capabilities with minimum repetition:
 |---|---|---|---|
 | `minimal-system.mmd` | model.bind | linear flow | quick smoke check |
 | `langgraph-debate-current/` | model.bind | `parallel_split + all_of + loop.max` | multi-round orchestration |
-| `medical-quorum-consultation/` | model.bind | `parallel_split + quorum_of + context.map` | quorum decision and projected join context |
+| `medical-quorum-consultation/` | model.bind | `parallel_split + quorum_of + context.map + flow contract` | quorum decision, projected join context, and contract-backed validation |
 | `incident-response-playbook/` | exec.bind | `ERROR* + compensation + human gates` | exception routing and human-in-the-loop control |
 | `rust-hello-pipeline/` | exec.bind | sequential multi-role tool chain | side-effect workflow and artifact validation |
 
@@ -26,7 +26,7 @@ Use this small set first to cover most capabilities with minimum repetition:
 
 1. Start with `minimal-system.mmd`.
 2. Move to `langgraph-debate-current/` for core graph semantics.
-3. Run `medical-quorum-consultation/` for quorum + projection semantics.
+3. Run `medical-quorum-consultation/` for quorum + projection + flow contract semantics.
 4. Run `incident-response-playbook/` for runtime failure control and human gates.
 5. Run `rust-hello-pipeline/` if you need external toolchain workflows.
 

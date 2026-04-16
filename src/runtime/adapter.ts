@@ -17,6 +17,7 @@ import {
 } from "./config.js";
 import { createDefaultExecutor } from "./executor.js";
 import { createExecutionPlan } from "./execution-plan.js";
+import { loadFlowContractPlan } from "./flow-contract.js";
 import { runSystemWithGraphRunner } from "./graph-runner.js";
 import { readJsonFile } from "./json-file.js";
 import { loadModelPackage } from "./model-repo.js";
@@ -40,6 +41,7 @@ import type {
   LawSpec,
   LoadedModelPackage,
   LoadedRolePackage,
+  FlowContractPlan,
   RuntimeConfig,
   SystemDefinition,
   UserProfile
@@ -357,7 +359,10 @@ function hashFingerprintValue(value: unknown): string {
   return createHash("sha256").update(JSON.stringify(normalizeFingerprintValue(value))).digest("hex");
 }
 
-function buildSystemFingerprintComponent(system: SystemDefinition): Record<string, unknown> {
+function buildSystemFingerprintComponent(
+  system: SystemDefinition,
+  contractPlanDigest: string | null = null
+): Record<string, unknown> {
   return {
     systemId: system.systemId,
     systemVersion: system.systemVersion,
@@ -383,6 +388,12 @@ function buildSystemFingerprintComponent(system: SystemDefinition): Record<strin
     executionBinding: sortedRecordEntries(system.executionBinding),
     modelBinding: sortedRecordEntries(system.modelBinding),
     graph: {
+      handoffMode: system.graph?.handoffMode,
+      handoffContracts: null,
+      contractPlanDigest,
+      routeOrderByRoleId: Object.entries(system.graph?.routeOrderByRoleId ?? {})
+        .map(([roleId, order]) => [roleId, [...order]] as [string, string[]])
+        .sort(([left], [right]) => left.localeCompare(right)),
       routingModeByRoleId: sortedRecordEntries(system.graph?.routingModeByRoleId ?? {}),
       joinModeByRoleId: sortedRecordEntries(system.graph?.joinModeByRoleId ?? {}),
       joinSourcesByRoleId: Object.entries(system.graph?.joinSourcesByRoleId ?? {})
@@ -457,13 +468,14 @@ export function buildRunPlanFingerprint(args: {
   rolePackagesByRoleId: Map<string, LoadedRolePackage>;
   modelsById: Map<string, LoadedModelPackage>;
   effectiveLaw: EffectiveLawConstraints;
+  contractPlan?: FlowContractPlan;
 }): RunPlanFingerprint {
   // A run may resume only against the same executable contract: graph semantics, loaded role content,
   // loaded model config, and the effective law set must all remain identical.
   const rolePackageComponents = buildRolePackageFingerprintComponent(args.rolePackagesByRoleId);
   const modelPackageComponents = buildModelPackageFingerprintComponent(args.modelsById);
   const componentValues: Record<FingerprintComponentName, unknown> = {
-    system: buildSystemFingerprintComponent(args.system),
+    system: buildSystemFingerprintComponent(args.system, args.contractPlan?.digest ?? null),
     rolePackages: rolePackageComponents.map((component) => component.identity),
     modelPackages: modelPackageComponents.map((component) => component.identity),
     effectiveLaw: normalizeFingerprintValue(args.effectiveLaw)
@@ -547,6 +559,7 @@ export async function runSystemWithAdapter(args: {
     | {
         plan: ReturnType<typeof createExecutionPlan>;
         effectiveLaw: EffectiveLawConstraints;
+        contractPlan?: FlowContractPlan;
         profilesById: Map<string, ExecutionProfile>;
         toolsByRef: Map<string, CliTool>;
         modelsById: Map<string, LoadedModelPackage>;
@@ -567,6 +580,12 @@ export async function runSystemWithAdapter(args: {
       const lawCatalog = await loadLaws(args.lawsPath, args.workdir);
       const userProfile = await loadUserProfile(args.userProfilePath, args.workdir);
       const effectiveLaw = resolveEffectiveLaw(system, lawCatalog);
+      const contractPlan = system.graph?.handoffContracts
+        ? await loadFlowContractPlan({
+            system,
+            contractPath: system.graph.handoffContracts
+          })
+        : undefined;
       assertBindingPreflight({
         plan,
         effectiveLaw
@@ -583,7 +602,8 @@ export async function runSystemWithAdapter(args: {
         system,
         rolePackagesByRoleId,
         modelsById,
-        effectiveLaw
+        effectiveLaw,
+        contractPlan
       });
       const resolvedConfigSnapshot: Record<string, unknown> = {
         version: 1,
@@ -625,6 +645,7 @@ export async function runSystemWithAdapter(args: {
       setup = {
         plan,
         effectiveLaw,
+        contractPlan,
         profilesById,
         toolsByRef,
         modelsById,
@@ -699,6 +720,7 @@ export async function runSystemWithAdapter(args: {
         result = await runSystemWithGraphRunner({
           plan: setup.plan,
           effectiveLaw: setup.effectiveLaw,
+          contractPlan: setup.contractPlan,
           profilesById: setup.profilesById,
           toolsByRef: setup.toolsByRef,
           modelsById: setup.modelsById,

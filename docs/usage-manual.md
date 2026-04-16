@@ -31,6 +31,7 @@ OGSystem 当前重点优化以下能力：
 - `parse-mermaid.ts` + `execution-plan.ts`：把 Mermaid DSL 归一化为运行时可执行计划。
 - `graph-runner.ts`：推进图状态、管理 branch/lineage、写 checkpoint、处理 resume 补偿。
 - `role-executor.ts`：执行单个 role，做 prompt 投影、schema 校验、输出修复和结果落盘。
+- `flow-contract.ts`：加载 `handoff.contracts`，校验 flow / `role_input` 合同，并参与 resume 指纹。
 - `run-artifacts.ts`：管理 runDir、会话索引、`.resume.lock`、execution artifacts 与缓冲刷盘。
 
 ## Recommended Reading Order
@@ -115,6 +116,8 @@ Use this rule:
 - graph semantics: add `role.mode/join.mode/context.map/loop.max` only when the system needs parallel split, `all_of/quorum_of` join, field-level projection, or bounded loop
 - `join.mode.<roleId>=all_of` requires `join.sources.<roleId>`; that source list must contain unique role ids and match the role's Mermaid incoming edges exactly
 - `join.mode.<roleId>=quorum_of` requires both `join.sources.<roleId>` and `join.min.<roleId>`; `join.sources` must contain unique role ids, must match the role's Mermaid incoming edges exactly, and readiness counts unique completed source roles under the same `lineageId + loopIteration`
+- `handoff.mode=strict|transition` enables flow-contract validation; `transition` skips warned or missing contracts on the affected flow while `strict` hard-fails; `handoff.contracts` points to the contract bundle, and `route.order.<fromRoleId>` only reorders sibling fan-out targets without changing reachability
+- `role_input` contracts validate the projected `context.map` object before prompt rendering; they do not replace `role.inputSchema`
 - dynamic fan-out with uncertain `N` is not graph semantics; keep it inside one role (Heavy Node) or pre-expand before orchestration
 - controlled fan-out concurrency is an execution policy, not a flow semantic (it must not change graph reachability/join readiness)
 - compatibility execution mode: `exec.bind.<roleId>` still works when paired with `profiles/tools`, but it runs inside the same graph runtime rather than a separate engine
@@ -314,16 +317,18 @@ Handled failure artifact contract (runtime-generated `roleResults` payload):
 - `loop_iteration`
 - `last_context` (failed role input context snapshot, sanitized and length-capped)
 
-Minimal quorum/projection example:
+Quorum/projection example with source selectors:
 
 ```mermaid
 %% join.mode.review=quorum_of
 %% join.sources.review=worker_a,worker_b,worker_c
-%% join.min.review=2
+%% join.min.review=3
 %% context.map.review.a_summary=source(worker_a).content
 %% context.map.review.b_risk=source(worker_b).data.risks.primary
 %% context.map.review.task=global.task
 ```
+
+This keeps `join.min` equal to the source count, which is the current runtime-safe way to use `source(...)` selectors in a quorum node.
 
 ## 5. Role Package Contract
 
@@ -747,7 +752,7 @@ pnpm run run:adapter \
 - 该流程需要本机 `cargo` 在 `PATH` 中可用。
 - 流程会在 `.ogs/runs/<run-id>/shared/` 下生成 Rust 项目、编译产物与打包产物。
 
-Medical quorum 会诊示例（`quorum_of + context.map`）：
+Medical quorum 会诊示例（`quorum_of + context.map + flow contract`）：
 
 ```bash
 pnpm run run:adapter \

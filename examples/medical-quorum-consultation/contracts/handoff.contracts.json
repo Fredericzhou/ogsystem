@@ -1,0 +1,80 @@
+{
+  "version": 1,
+  "contracts": [
+    {
+      "id": "diagnosis-dispatch.to.cardiology.v1",
+      "kind": "flow",
+      "match": {
+        "fromRoleId": "diagnosis-dispatch",
+        "mode": "split",
+        "toRoleId": "diagnosis-cardiology"
+      },
+      "schema": "flow-envelope.schema.json",
+      "onViolation": "FAIL"
+    },
+    {
+      "id": "diagnosis-dispatch.to.neurology.v1",
+      "kind": "flow",
+      "match": {
+        "fromRoleId": "diagnosis-dispatch",
+        "mode": "split",
+        "toRoleId": "diagnosis-neurology"
+      },
+      "schema": "flow-envelope.schema.json",
+      "onViolation": "FAIL"
+    },
+    {
+      "id": "diagnosis-dispatch.to.imaging.v1",
+      "kind": "flow",
+      "match": {
+        "fromRoleId": "diagnosis-dispatch",
+        "mode": "split",
+        "toRoleId": "diagnosis-imaging"
+      },
+      "schema": "flow-envelope.schema.json",
+      "onViolation": "FAIL"
+    },
+    {
+      "id": "diagnosis-cardiology.to.review.v1",
+      "kind": "flow",
+      "match": {
+        "fromRoleId": "diagnosis-cardiology",
+        "eventType": "CARDIOLOGY_DONE",
+        "toRoleId": "diagnosis-chief-review"
+      },
+      "schema": "flow-envelope.schema.json",
+      "onViolation": "FAIL"
+    },
+    {
+      "id": "diagnosis-neurology.to.review.v1",
+      "kind": "flow",
+      "match": {
+        "fromRoleId": "diagnosis-neurology",
+        "eventType": "NEUROLOGY_DONE",
+        "toRoleId": "diagnosis-chief-review"
+      },
+      "schema": "flow-envelope.schema.json",
+      "onViolation": "FAIL"
+    },
+    {
+      "id": "diagnosis-imaging.to.review.v1",
+      "kind": "flow",
+      "match": {
+        "fromRoleId": "diagnosis-imaging",
+        "eventType": "IMAGING_DONE",
+        "toRoleId": "diagnosis-chief-review"
+      },
+      "schema": "flow-envelope.schema.json",
+      "onViolation": "FAIL"
+    },
+    {
+      "id": "diagnosis-chief-review.input.v1",
+      "kind": "role_input",
+      "match": {
+        "roleId": "diagnosis-chief-review"
+      },
+      "schema": "chief-review-input.schema.json",
+      "onViolation": "FAIL"
+    }
+  ]
+}

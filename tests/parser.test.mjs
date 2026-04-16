@@ -4,7 +4,10 @@ import { mkdtemp, mkdir, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 
-import { parseSystemFromMermaidSource } from "../dist/runtime/parse-mermaid.js";
+import {
+  loadSystemFromMermaid,
+  parseSystemFromMermaidSource
+} from "../dist/runtime/parse-mermaid.js";
 import { validateNl2MmdCandidate } from "../dist/nl2mmd/index.js";
 
 const validSource = `flowchart TD
@@ -28,7 +31,10 @@ const graphSource = `flowchart TD
 %% system.version=0.1.0
 %% law.global=law.test
 %% entry.role=dispatch
+%% handoff.mode=strict
+%% handoff.contracts=contracts/handoff.json
 %% role.mode.dispatch=parallel_split
+%% route.order.dispatch=worker_b,worker_a
 %% join.mode.review=all_of
 %% join.sources.review=worker_a,worker_b
 %% loop.max.dispatch=2
@@ -43,6 +49,23 @@ worker_a[Role:worker_a] -->|DONE_A| review[Role:review]
 worker_b[Role:worker_b] -->|DONE_B| review[Role:review]
 review[Role:review] -->|RETRY| dispatch[Role:dispatch]
 review[Role:review] -->|FINISH| output
+`;
+
+const routeOrderIgnoresErrorEdgesSource = `flowchart TD
+%% system.id=test.route.order.error
+%% system.version=0.1.0
+%% law.global=law.test
+%% entry.role=dispatch
+%% route.order.dispatch=worker_b,worker_a
+%% model.bind.dispatch=model.fast
+%% model.bind.worker_a=model.fast
+%% model.bind.worker_b=model.fast
+input -->|START| dispatch[Role:dispatch]
+dispatch[Role:dispatch] -->|A| worker_a[Role:worker_a]
+dispatch[Role:dispatch] -->|B| worker_b[Role:worker_b]
+dispatch[Role:dispatch] -->|ERROR.INVALID| output
+worker_a[Role:worker_a] -->|DONE_A| output
+worker_b[Role:worker_b] -->|DONE_B| output
 `;
 
 const cycleWithoutLoopBudgetSource = `flowchart TD
@@ -121,7 +144,7 @@ const quorumJoinWithProjectionSource = `flowchart TD
 %% role.mode.dispatch=parallel_split
 %% join.mode.review=quorum_of
 %% join.sources.review=worker_a,worker_b,worker_c
-%% join.min.review=2
+%% join.min.review=3
 %% context.map.review.summary=source(worker_a).content
 %% context.map.review.risks=source(worker_b).data.risks
 %% context.map.review.task=global.task
@@ -158,12 +181,53 @@ test("parser rejects missing metadata", () => {
 
 test("parser accepts graph metadata and compiles semantic hints without engine flag", () => {
   const system = parseSystemFromMermaidSource(graphSource);
+  assert.strictEqual(system.graph?.handoffMode, "strict");
+  assert.strictEqual(system.graph?.handoffContracts, "contracts/handoff.json");
   assert.strictEqual(system.graph?.routingModeByRoleId.dispatch, "parallel_split");
+  assert.deepStrictEqual(system.graph?.routeOrderByRoleId?.dispatch, ["worker_b", "worker_a"]);
   assert.strictEqual(system.graph?.joinModeByRoleId.review, "all_of");
   assert.deepStrictEqual(system.graph?.joinSourcesByRoleId.review, ["worker_a", "worker_b"]);
   assert.strictEqual(system.graph?.loopMaxByRoleId.dispatch, 2);
   assert.deepStrictEqual(system.graph?.joinMinByRoleId ?? {}, {});
   assert.deepStrictEqual(system.graph?.contextMapByRoleId ?? {}, {});
+});
+
+test("parser ignores runtime error edges when validating route order coverage", () => {
+  const system = parseSystemFromMermaidSource(routeOrderIgnoresErrorEdgesSource);
+  assert.deepStrictEqual(system.graph?.routeOrderByRoleId?.dispatch, ["worker_b", "worker_a"]);
+  assert.strictEqual(system.modelBinding.dispatch, "model.fast");
+});
+
+test("loadSystemFromMermaid resolves handoff contract paths relative to the system file", async () => {
+  const tempDir = await mkdtemp(path.join(tmpdir(), "ogsystem-system-"));
+  const contractsDir = path.join(tempDir, "contracts");
+  await mkdir(contractsDir, { recursive: true });
+  await writeFile(
+    path.join(contractsDir, "handoff.json"),
+    JSON.stringify({ version: 1, contracts: [] }),
+    "utf8"
+  );
+  const systemPath = path.join(tempDir, "system.mmd");
+  await writeFile(
+    systemPath,
+    `flowchart TD
+%% system.id=test.resolve.contracts
+%% system.version=0.1.0
+%% law.global=law.test
+%% entry.role=intake
+%% handoff.contracts=contracts/handoff.json
+%% exec.bind.intake=profile.parser
+input -->|ENTER| intake[Role:intake]
+intake[Role:intake] -->|DONE| output
+`,
+    "utf8"
+  );
+
+  const system = await loadSystemFromMermaid(systemPath);
+  assert.strictEqual(
+    system.graph?.handoffContracts,
+    path.resolve(contractsDir, "handoff.json")
+  );
 });
 
 test("parser accepts quorum_of join.min and context.map metadata", () => {
@@ -174,7 +238,7 @@ test("parser accepts quorum_of join.min and context.map metadata", () => {
     "worker_b",
     "worker_c"
   ]);
-  assert.strictEqual(system.graph?.joinMinByRoleId.review, 2);
+  assert.strictEqual(system.graph?.joinMinByRoleId.review, 3);
   assert.deepStrictEqual(system.graph?.contextMapByRoleId.review, {
     summary: "source(worker_a).content",
     risks: "source(worker_b).data.risks",
@@ -227,7 +291,7 @@ for (const joinSourcesMismatchCase of [
 }
 
 test("parser rejects quorum_of join without join.min", () => {
-  const source = quorumJoinWithProjectionSource.replace("%% join.min.review=2\n", "");
+  const source = quorumJoinWithProjectionSource.replace("%% join.min.review=3\n", "");
   assert.throws(
     () => parseSystemFromMermaidSource(source),
     /MERMAID_MISSING_JOIN_MIN|join\.min\.review is required/
@@ -235,10 +299,18 @@ test("parser rejects quorum_of join without join.min", () => {
 });
 
 test("parser rejects quorum_of join.min outside source range", () => {
-  const source = quorumJoinWithProjectionSource.replace("%% join.min.review=2", "%% join.min.review=4");
+  const source = quorumJoinWithProjectionSource.replace("%% join.min.review=3", "%% join.min.review=4");
   assert.throws(
     () => parseSystemFromMermaidSource(source),
     /MERMAID_INVALID_JOIN_MIN_RANGE|must be within \[1, 3\]/
+  );
+});
+
+test("parser rejects source selectors for quorum_of when join.min is below join.sources size", () => {
+  const source = quorumJoinWithProjectionSource.replace("%% join.min.review=3", "%% join.min.review=2");
+  assert.throws(
+    () => parseSystemFromMermaidSource(source),
+    /MERMAID_JOIN_SELECTOR_SOURCE_NOT_ALLOWED|join\.mode\.review=quorum_of/
   );
 });
 
@@ -355,6 +427,28 @@ intake[Role:intake] -->|DONE| output
     () => parseSystemFromMermaidSource(bindingConflictSource),
     /defines both model\.bind\.intake=model\.fast and exec\.bind\.intake=profile\.parser/
   );
+});
+
+test("parser accepts route order when multiple edges share the same target", () => {
+  const source = `flowchart TD
+%% system.id=test.route.order.duplicate.target
+%% system.version=0.1.0
+%% law.global=law.test
+%% entry.role=dispatch
+%% route.order.dispatch=worker_b,worker_a
+%% model.bind.dispatch=model.fast
+%% model.bind.worker_a=model.fast
+%% model.bind.worker_b=model.fast
+input -->|START| dispatch[Role:dispatch]
+dispatch[Role:dispatch] -->|A| worker_a[Role:worker_a]
+dispatch[Role:dispatch] -->|A2| worker_a[Role:worker_a]
+dispatch[Role:dispatch] -->|B| worker_b[Role:worker_b]
+worker_a[Role:worker_a] -->|DONE_A| output
+worker_b[Role:worker_b] -->|DONE_B| output
+`;
+
+  const system = parseSystemFromMermaidSource(source);
+  assert.deepStrictEqual(system.graph?.routeOrderByRoleId?.dispatch, ["worker_b", "worker_a"]);
 });
 
 test("parser rejects ERROR* edges declared from input boundary", () => {

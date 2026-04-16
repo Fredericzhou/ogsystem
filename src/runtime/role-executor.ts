@@ -16,6 +16,10 @@ import {
   findRoleResult,
   wouldExceedLoopBudget
 } from "./graph-runtime-state.js";
+import {
+  getRoleInputContract,
+  validateContractAgainstSchema
+} from "./flow-contract.js";
 import { OpencodeExecutionError } from "./opencode-executor.js";
 import {
   allocateRoleExecution,
@@ -48,6 +52,7 @@ import type {
   GraphState,
   LoadedModelPackage,
   LoadedRolePackage,
+  FlowContractPlan,
   RoleExecutionOutput,
   RoleExecutionOutcomeRecord,
   RoleExecutionRecord,
@@ -448,11 +453,11 @@ function buildProjectedContext(args: {
   branch: BranchRecord;
   state: GraphState;
   userProfile?: UserProfile;
-}): string {
+}): Record<string, unknown> {
   const sortedEntries = Object.entries(args.node.contextMap ?? {}).sort(([left], [right]) =>
     left.localeCompare(right)
   );
-  const projected = Object.fromEntries(sortedEntries.map(([fieldName, selector]) => [
+  return Object.fromEntries(sortedEntries.map(([fieldName, selector]) => [
     fieldName,
     evaluateContextSelector({
       selector,
@@ -463,7 +468,24 @@ function buildProjectedContext(args: {
       userProfile: args.userProfile
     })
   ]));
-  return stringifyJson(projected);
+}
+
+function renderProjectedContext(args: {
+  roleId: string;
+  node: ExecutionPlanNode;
+  branch: BranchRecord;
+  state: GraphState;
+  userProfile?: UserProfile;
+}): string {
+  return stringifyJson(
+    buildProjectedContext({
+      roleId: args.roleId,
+      node: args.node,
+      branch: args.branch,
+      state: args.state,
+      userProfile: args.userProfile
+    })
+  );
 }
 
 function getSelectableOutgoingFlows(node: ExecutionPlanNode): Flow[] {
@@ -498,7 +520,7 @@ function buildRolePromptInput(args: {
   const hasContextMap = Boolean(args.node.contextMap && Object.keys(args.node.contextMap).length > 0);
   const context =
     hasContextMap
-      ? buildProjectedContext(args)
+      ? renderProjectedContext(args)
       : args.node.joinMode
         ? renderJoinContext({
             state: args.state,
@@ -866,6 +888,7 @@ export async function executeRoleNode(args: {
   toolsByRef: Map<string, CliTool>;
   modelsById: Map<string, LoadedModelPackage>;
   rolePackagesByRoleId: Map<string, LoadedRolePackage>;
+  contractPlan?: FlowContractPlan;
   runContext: RunContext;
   executor: Executor;
   userProfile?: UserProfile;
@@ -1007,6 +1030,35 @@ export async function executeRoleNode(args: {
       userProfile: args.userProfile
     });
     inputContextForAudit = sanitizeRoleInputContext(promptInput.context);
+
+    if (args.contractPlan) {
+      const projectedContext = buildProjectedContext({
+        roleId: args.roleId,
+        node: args.node,
+        branch: currentBranch,
+        state: args.state,
+        userProfile: args.userProfile
+      });
+      const roleInputContract = getRoleInputContract({
+        plan: args.contractPlan,
+        roleId: args.roleId
+      });
+      if (roleInputContract) {
+        const contractError = validateContractAgainstSchema({
+          contract: roleInputContract,
+          data: projectedContext,
+          subject: "role_input"
+        });
+        if (contractError) {
+          failContextProjection({
+            errorCode: "CONTRACT_ROLE_INPUT_VALIDATION_FAILED",
+            message: contractError,
+            roleId: args.roleId,
+            branchId: currentBranch.branchId
+          });
+        }
+      }
+    }
 
     if (rolePackage.inputSchema) {
       validateRoleInputSchema({

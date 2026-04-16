@@ -1,0 +1,25 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "type": "object",
+  "properties": {
+    "case_task": {
+      "type": "string"
+    },
+    "cardiology_summary": {
+      "type": "string"
+    },
+    "neurology_summary": {
+      "type": "string"
+    },
+    "imaging_summary": {
+      "type": "string"
+    }
+  },
+  "required": [
+    "case_task",
+    "cardiology_summary",
+    "neurology_summary",
+    "imaging_summary"
+  ],
+  "additionalProperties": false
+}

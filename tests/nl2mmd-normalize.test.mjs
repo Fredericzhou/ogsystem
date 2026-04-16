@@ -15,7 +15,11 @@ test("normalizeNl2MmdMermaid converts standalone declarations and bare endpoints
 %% system.version=1
 %% law.global=law.console.base
 %% entry.role=debate-moderator
+%% handoff.mode=transition
+%% handoff.contracts=contracts/handoff.json
 %% role.mode.debate-moderator=parallel_split
+%% route.order.debate-moderator=debate-minimalist,debate-alignmentist
+%% route.order.debate-judge=debate-moderator,debate-summary
 %% model.bind.debate-moderator=general-fast
 %% model.bind.debate-minimalist=general-fast
 %% model.bind.debate-alignmentist=general-fast
@@ -42,6 +46,8 @@ debate-summary -->|SUMMARY_READY| output
   const normalized = normalizeNl2MmdMermaid(source);
   const normalizedLines = normalized.split("\n");
   assert.ok(normalized.includes("input -->|START| debate-moderator[Role:debate-moderator]"));
+  assert.ok(normalized.includes("%% handoff.mode=transition"));
+  assert.ok(normalized.includes("%% route.order.debate-moderator=debate-minimalist,debate-alignmentist"));
   assert.ok(!normalizedLines.includes("debate-moderator[Role:debate-moderator]"));
   assert.ok(
     normalized.includes(

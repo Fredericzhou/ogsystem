@@ -415,7 +415,7 @@ summary[Role:summary] -->|DONE| output
   assert.match(mergerInbox, /"allowed_events": \[\s*"MERGED"\s*\]/);
 });
 
-test("adapter runs quorum_of join once, ignores late arrivals, and applies context.map projection", async () => {
+test("adapter runs quorum_of join once and applies context.map projection", async () => {
   const repoRoot = process.cwd();
   const tempRoot = await mkdtemp(path.join(os.tmpdir(), "ogsystem-quorum-projection-"));
   const systemPath = path.resolve(tempRoot, "system.mmd");
@@ -557,7 +557,7 @@ process.stdout.write(JSON.stringify(outputs[roleId] ?? { event: "DONE", content:
 %% role.mode.coordinator=parallel_split
 %% join.mode.review=quorum_of
 %% join.sources.review=worker_a,worker_b,worker_c
-%% join.min.review=2
+%% join.min.review=3
 %% context.map.worker_a.brief=direct.data.brief
 %% context.map.worker_a.language=global.user_profile.language
 %% context.map.worker_a.task=global.task
@@ -628,7 +628,6 @@ review[Role:review] -->|DONE| output
   const eventsText = await readFile(path.resolve(runDir, "events.ndjson"), "utf8");
   assert.match(eventsText, /"type":"join_quorum_reached"/);
   assert.match(eventsText, /"type":"join_activated"/);
-  assert.match(eventsText, /"type":"join_late_arrival_ignored"/);
 
   const resumed = await runSystemWithAdapter({
     systemPath,
@@ -647,6 +646,272 @@ review[Role:review] -->|DONE| output
     path.resolve(runDir, "roles", "review", "executions")
   );
   assert.strictEqual(reviewExecutionsAfterResume.length, 1);
+});
+
+test("adapter transition skips warned contract violations and still activates valid flows", async () => {
+  const repoRoot = process.cwd();
+  const tempRoot = await mkdtemp(path.join(os.tmpdir(), "ogsystem-flow-contract-transition-"));
+  const systemPath = path.resolve(tempRoot, "system.mmd");
+  const runtimePath = path.resolve(tempRoot, ".ogsystem", "runtime.json");
+  const profilesPath = path.resolve(tempRoot, "profiles.json");
+  const toolsPath = path.resolve(tempRoot, "tools.json");
+  const toolScriptPath = path.resolve(tempRoot, "transition-tool.mjs");
+  const rolesRoot = path.resolve(tempRoot, "og-roles", "roles");
+  const contractsDir = path.resolve(tempRoot, "contracts");
+
+  await mkdir(path.resolve(tempRoot, ".ogsystem"), { recursive: true });
+  await mkdir(rolesRoot, { recursive: true });
+  await mkdir(contractsDir, { recursive: true });
+  await writeFile(
+    runtimePath,
+    JSON.stringify(
+      {
+        executor: "opencode",
+        roleRepo: "./og-roles",
+        modelRepo: path.resolve(repoRoot, "og-models"),
+        runsDir: ".ogs/runs"
+      },
+      null,
+      2
+    ),
+    "utf8"
+  );
+  await writeFile(
+    profilesPath,
+    JSON.stringify(
+      [
+        {
+          profileId: "profile.fixture",
+          toolRef: "tool.fixture"
+        }
+      ],
+      null,
+      2
+    ),
+    "utf8"
+  );
+  await writeFile(
+    toolsPath,
+    JSON.stringify(
+      {
+        tools: [
+          {
+            toolRef: "tool.fixture",
+            runner: "local_shell",
+            command: "node",
+            argsTemplate: [toolScriptPath],
+            stdinMode: "none"
+          }
+        ]
+      },
+      null,
+      2
+    ),
+    "utf8"
+  );
+  await writeFile(
+    toolScriptPath,
+    `#!/usr/bin/env node
+const roleId = process.env.OGSYSTEM_ROLE_ID;
+const outputs = {
+  dispatcher: {
+    event: "PASS",
+    content: "dispatch to the valid branch"
+  },
+  good: {
+    event: "DONE",
+    content: "good branch completed"
+  },
+  bad: {
+    event: "DONE",
+    content: "bad branch should not run"
+  }
+};
+process.stdout.write(JSON.stringify(outputs[roleId] ?? { event: "DONE", content: roleId ?? "unknown" }));\n`,
+    "utf8"
+  );
+
+  await writeModelBoundRole({
+    rolesRoot,
+    roleId: "dispatcher",
+    allowedEvents: ["PASS"],
+    requireEvent: false
+  });
+  await writeModelBoundRole({
+    rolesRoot,
+    roleId: "good",
+    allowedEvents: ["DONE"]
+  });
+  await writeModelBoundRole({
+    rolesRoot,
+    roleId: "bad",
+    allowedEvents: ["DONE"]
+  });
+
+  await writeFile(
+    path.resolve(contractsDir, "dispatch-good.schema.json"),
+    JSON.stringify(
+      {
+        "$schema": "http://json-schema.org/draft-07/schema#",
+        type: "object",
+        properties: {
+          event: {
+            type: "string",
+            enum: ["PASS"]
+          },
+          content: {
+            type: "string"
+          }
+        },
+        required: ["event", "content"],
+        additionalProperties: false
+      },
+      null,
+      2
+    ),
+    "utf8"
+  );
+  await writeFile(
+    path.resolve(contractsDir, "dispatch-bad.schema.json"),
+    JSON.stringify(
+      {
+        "$schema": "http://json-schema.org/draft-07/schema#",
+        type: "object",
+        properties: {
+          event: {
+            type: "string",
+            enum: ["PASS"]
+          },
+          content: {
+            type: "string",
+            enum: ["dispatch to the skipped branch"]
+          }
+        },
+        required: ["event", "content"],
+        additionalProperties: false
+      },
+      null,
+      2
+    ),
+    "utf8"
+  );
+  await writeFile(
+    path.resolve(contractsDir, "good-input.schema.json"),
+    JSON.stringify(
+      {
+        "$schema": "http://json-schema.org/draft-07/schema#",
+        type: "object",
+        properties: {
+          task: {
+            type: "string"
+          },
+          dispatch_note: {
+            type: "string"
+          }
+        },
+        required: ["task", "dispatch_note"],
+        additionalProperties: false
+      },
+      null,
+      2
+    ),
+    "utf8"
+  );
+  await writeFile(
+    path.resolve(contractsDir, "handoff.contracts.json"),
+    JSON.stringify(
+      {
+        version: 1,
+        contracts: [
+          {
+            id: "dispatcher.good.v1",
+            kind: "flow",
+            match: {
+              fromRoleId: "dispatcher",
+              eventType: "PASS",
+              toRoleId: "good"
+            },
+            schema: "dispatch-good.schema.json",
+            onViolation: "FAIL"
+          },
+          {
+            id: "dispatcher.bad.v1",
+            kind: "flow",
+            match: {
+              fromRoleId: "dispatcher",
+              eventType: "PASS",
+              toRoleId: "bad"
+            },
+            schema: "dispatch-bad.schema.json",
+            onViolation: "WARN"
+          },
+          {
+            id: "good.input.v1",
+            kind: "role_input",
+            match: {
+              roleId: "good"
+            },
+            schema: "good-input.schema.json",
+            onViolation: "FAIL"
+          }
+        ]
+      },
+      null,
+      2
+    ),
+    "utf8"
+  );
+  await writeFile(
+    systemPath,
+    `flowchart TD
+%% system.id=test.flow.contract.transition
+%% system.version=1.0.0
+%% law.global=law.console.base
+%% entry.role=dispatcher
+%% handoff.mode=transition
+%% handoff.contracts=contracts/handoff.contracts.json
+%% route.order.dispatcher=good,bad
+%% exec.bind.dispatcher=profile.fixture
+%% exec.bind.good=profile.fixture
+%% exec.bind.bad=profile.fixture
+%% context.map.good.task=global.task
+%% context.map.good.dispatch_note=direct.content
+
+input -->|START| dispatcher[Role:dispatcher]
+dispatcher[Role:dispatcher] -->|PASS| good[Role:good]
+dispatcher[Role:dispatcher] -->|PASS| bad[Role:bad]
+good[Role:good] -->|DONE| output
+bad[Role:bad] -->|DONE| output
+`,
+    "utf8"
+  );
+
+  const result = await runSystemWithAdapter({
+    systemPath,
+    runtimeConfigPath: runtimePath,
+    profilesPath,
+    toolsPath,
+    lawsPath: path.resolve(repoRoot, ".ogsystem", "laws.json"),
+    prompt: "transition contract prompt",
+    workdir: tempRoot
+  });
+
+  assert.strictEqual(result.status, "done");
+  assert.strictEqual(result.finalRoleId, "good");
+  assert.ok(result.auditTrail.some((item) => item.roleId === "dispatcher"));
+  assert.ok(result.auditTrail.some((item) => item.roleId === "good"));
+  assert.ok(!result.auditTrail.some((item) => item.roleId === "bad"));
+
+  const runs = await readdir(path.resolve(tempRoot, ".ogs/runs"));
+  assert.strictEqual(runs.length, 1);
+  const runDir = path.resolve(tempRoot, ".ogs/runs", runs[0]);
+  const goodInbox = parseJsonCodeBlock(
+    await readFile(path.resolve(runDir, "roles", "good", "inbox.md"), "utf8")
+  );
+  assert.deepStrictEqual(JSON.parse(goodInbox.context), {
+    task: "transition contract prompt",
+    dispatch_note: "dispatch to the valid branch"
+  });
 });
 
 test("adapter executes non-join multi-incoming role once per active branch", async () => {

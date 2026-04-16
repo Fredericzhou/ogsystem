@@ -7,12 +7,38 @@
 import { SYSTEM_END_ROLE_ID } from "./types.js";
 import type { ExecutionPlan, ExecutionPlanNode, SystemDefinition } from "./types.js";
 
+function buildOutgoingOrderIndex(system: SystemDefinition, roleId: string): Map<string, number> {
+  const orderedTargets = system.graph?.routeOrderByRoleId?.[roleId];
+  if (!orderedTargets?.length) {
+    return new Map<string, number>();
+  }
+  return new Map(orderedTargets.map((targetRoleId, index) => [targetRoleId, index]));
+}
+
 function buildIncoming(system: SystemDefinition, roleId: string) {
   return system.flows.filter((flow) => flow.toRoleId === roleId);
 }
 
 function buildOutgoing(system: SystemDefinition, roleId: string) {
-  return system.flows.filter((flow) => flow.fromRoleId === roleId);
+  const outgoing = system.flows.filter((flow) => flow.fromRoleId === roleId);
+  const orderIndex = buildOutgoingOrderIndex(system, roleId);
+  if (orderIndex.size === 0) {
+    return outgoing;
+  }
+  return [...outgoing].sort((left, right) => {
+    const leftIndex = orderIndex.get(left.toRoleId);
+    const rightIndex = orderIndex.get(right.toRoleId);
+    if (leftIndex !== undefined && rightIndex !== undefined && leftIndex !== rightIndex) {
+      return leftIndex - rightIndex;
+    }
+    if (leftIndex !== undefined) {
+      return -1;
+    }
+    if (rightIndex !== undefined) {
+      return 1;
+    }
+    return 0;
+  });
 }
 
 function resolveBinding(system: SystemDefinition, roleId: string): ExecutionPlanNode["binding"] {

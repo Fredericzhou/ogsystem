@@ -89,6 +89,8 @@
 *   **Join 配置是显式且严格的**：`join.sources.<roleId>` 必须只包含唯一 source role，且对 `all_of` 与 `quorum_of` 都必须与 Mermaid 中该节点的全部入边角色完全一致；`join.mode.<roleId>=quorum_of` 时，`join.min.<roleId>` 是必填项，且阈值按同一 `lineageId + loopIteration` 下的唯一 source role 计数。
 *   **`all_of` 与 `quorum_of` 的关系是“语义特例”，不是新增模式**：`quorum_of + join.min=1` 等价“any”；`quorum_of + join.min=|sources|` 等价“all”。当前 DSL 不单独引入 `any_of`：`all_of` 保留为高频默认汇合语义（更少配置、更易审查），`any` 通过 `quorum_of + join.min=1` 表达（避免新增关键字带来的解析/测试/兼容面扩张）。
 *   **Join 上下文与字段投影都属于运行时契约**：默认 join `context` 是按 `roleId` 归一化后的 JSON 投影；若声明 `context.map.<roleId>.*`，运行时会以稳定字段顺序重建 `context`，并要求 selector 与 source 都合法。
+*   **Flow contract 是独立的运行时合同层**：`handoff.mode` 只控制合同校验策略，`transition` 会跳过告警或缺失合同对应的 flow，`strict` 则硬失败；`handoff.contracts` 指向合同 bundle；`role_input` 只校验 `context.map` 投影后的结构化对象，不替代 `role.inputSchema`。
+*   **合同路径按系统文件解析**：`handoff.contracts` 相对 `system.mmd` 所在目录解析，运行时会先归一到绝对路径，再参与加载与 resume 指纹。
 *   **`context.map` selector 为白名单语法**：仅支持 `global.task`、`global.user_profile(.path)`、`direct.content/event/data(.path)`、`source(<roleId>).content/event/data(.path)`；join 节点禁止 `direct.*`，非 join 节点禁止 `source(...)`。
 *   **`noop` 是受 law 约束的显式语义**：角色无 `model.bind/exec.bind` 时并不自动放行；只有 `allowNoopWithoutExecutionBinding=true` 且出边数不超过 1 才允许 `noop`，否则直接失败。
 *   **隔离的是模型会话，不是分支文件系统**：并行 sibling branch 会拿到不同的 `sessionLineageId`，从而不会共享模型会话记忆；但相同 role 默认仍共用一个 role 私有目录。
@@ -105,7 +107,7 @@
 *   **节点 token 是严格格式**：仅支持 `nodeId[Role:roleId]`；边界 token 仅支持 `input/output`，并拒绝 `start/end/done`。
 *   **边界边语义固定**：只允许 `input -->|EVENT| Role` 与 `Role -->|EVENT| output`。
 *   **入口语义需单值一致**：入口来自 `entry.role` 或唯一 `input` 边目标；两者冲突或存在多个 `input` 目标都会失败。
-*   **元数据键是白名单**：仅支持 `engine/system.id/system.version/law.global/entry.role` 及 `talent.bind/model.bind/exec.bind/role.mode/join.mode/join.sources/join.min/context.map/loop.max` 前缀；重复 key 与未知 key 都会失败。
+*   **元数据键是白名单**：仅支持 `engine/system.id/system.version/law.global/entry.role` 及 `talent.bind/model.bind/exec.bind/role.mode/join.mode/join.sources/join.min/context.map/loop.max/handoff.mode/handoff.contracts/route.order.*` 前缀；重复 key 与未知 key 都会失败。
 *   **`engine` 仅保留兼容入口**：可省略；若声明则只能是 `langgraph`。
 *   **保留角色名禁止复用**：`input/output/start/end/done` 不能作为 `roleId`。
 *   **终止条件必须显式可达**：至少要有一个无下游 role 边的终止角色，或一条 `Role -->|EVENT| output` 边。

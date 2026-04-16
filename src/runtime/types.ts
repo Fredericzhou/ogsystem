@@ -23,6 +23,47 @@ export type GraphRoutingMode = "parallel_split";
 
 export type GraphJoinMode = "all_of" | "quorum_of";
 
+export type HandoffMode = "strict" | "transition";
+
+export type FlowContractKind = "flow" | "role_input";
+
+export type FlowContractViolationPolicy = "FAIL" | "WARN";
+
+export type FlowContractMatch = {
+  fromRoleId?: string;
+  eventType?: string;
+  toRoleId?: string;
+  mode?: "split";
+  roleId?: string;
+};
+
+export type FlowContractDefinition = {
+  id: string;
+  kind: FlowContractKind;
+  match: FlowContractMatch;
+  schema: string;
+  onViolation?: FlowContractViolationPolicy;
+};
+
+export type FlowContractFile = {
+  version: number;
+  contracts: FlowContractDefinition[];
+};
+
+export type CompiledFlowContract = {
+  definition: FlowContractDefinition;
+  schema: unknown;
+  schemaPath: string;
+};
+
+export type FlowContractPlan = {
+  handoffMode?: HandoffMode;
+  contractPath?: string;
+  digest: string;
+  flowContractsByKey: Map<string, CompiledFlowContract>;
+  roleInputContractsByRoleId: Map<string, CompiledFlowContract>;
+};
+
 export type ContextMapByRoleId = Record<string, Record<string, string>>;
 
 /**
@@ -31,6 +72,9 @@ export type ContextMapByRoleId = Record<string, Record<string, string>>;
  * undefined entries equivalent to "default" behavior.
  */
 export type GraphMetadata = {
+  handoffMode?: HandoffMode;
+  handoffContracts?: string;
+  routeOrderByRoleId?: Record<string, string[]>;
   routingModeByRoleId: Record<string, GraphRoutingMode>;
   joinModeByRoleId: Record<string, GraphJoinMode>;
   joinSourcesByRoleId: Record<string, string[]>;

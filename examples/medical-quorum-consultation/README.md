@@ -1,12 +1,14 @@
 # Medical Quorum Consultation
 
-Professional model-binding example for multi-specialist consultation with quorum-based review.
+Professional model-binding example for multi-specialist consultation with contract-backed review.
 
 Capabilities covered:
 
 - `parallel_split` fan-out from dispatcher to specialists
-- `join.mode=quorum_of` with `join.min`
+- `handoff.mode=strict` with `handoff.contracts`
+- `join.mode=quorum_of` with `join.min=3`
 - `context.map` projection from join sources + global task
+- `role_input` validation on the projected review input
 - model-first binding (`model.bind.*`) with dry-run friendly execution
 
 Run:

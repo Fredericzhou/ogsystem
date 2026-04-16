@@ -8,7 +8,9 @@
  * - No runtime execution; compile-time checks only.
  */
 import { readFile } from "node:fs/promises";
+import { dirname, resolve } from "node:path";
 
+import { isRuntimeOnlyErrorEvent } from "./error-flow-utils.js";
 import { hasJoinModeHandler, hasRoutingModeHandler } from "./graph-mode-registry.js";
 import { createRuntimeError, RuntimeError } from "./runtime-errors.js";
 import { SYSTEM_END_ROLE_ID } from "./types.js";
@@ -17,6 +19,7 @@ import type {
   GraphJoinMode,
   GraphMetadata,
   GraphRoutingMode,
+  HandoffMode,
   RuntimeErrorStage,
   SystemDefinition
 } from "./types.js";
@@ -207,6 +210,10 @@ function isSupportedJoinMode(value: string): value is GraphJoinMode {
   return value === "quorum_of" || hasJoinModeHandler(value);
 }
 
+function isSupportedHandoffMode(value: string): value is HandoffMode {
+  return value === "strict" || value === "transition";
+}
+
 function parseContextMapMetadataKey(
   key: string,
   lineNumber?: number
@@ -240,6 +247,7 @@ function validateContextSelector(args: {
   roleIds: string[];
   joinModeByRoleId: Record<string, GraphJoinMode>;
   joinSourcesByRoleId: Record<string, string[]>;
+  joinMinByRoleId: Record<string, number>;
   metadataKey: string;
   lineNumber?: number;
 }): void {
@@ -324,6 +332,16 @@ function validateContextSelector(args: {
         "MERMAID_JOIN_SELECTOR_SOURCE_NOT_ALLOWED",
         `${args.metadataKey} references source("${sourceRoleId}") not declared in join.sources.${args.targetRoleId}.`
       );
+    }
+    if (args.joinModeByRoleId[args.targetRoleId] === "quorum_of") {
+      const requiredSources = args.joinSourcesByRoleId[args.targetRoleId] ?? [];
+      const joinMin = args.joinMinByRoleId[args.targetRoleId];
+      if (joinMin !== undefined && joinMin < requiredSources.length) {
+        fail(
+          "MERMAID_JOIN_SELECTOR_SOURCE_NOT_ALLOWED",
+          `${args.metadataKey} uses source("${sourceRoleId}") but join.mode.${args.targetRoleId}=quorum_of with join.min.${args.targetRoleId}=${joinMin} below join.sources size ${requiredSources.length}.`
+        );
+      }
     }
     return;
   }
@@ -748,9 +766,30 @@ function validateParsedSystemGraph(graph: ParsedSystemGraph): ValidatedSystemGra
   const joinMinByRoleId: Record<string, number> = {};
   const contextMapByRoleId: Record<string, Record<string, string>> = {};
   const loopMaxByRoleId: Record<string, number> = {};
+  const routeOrderByRoleId: Record<string, string[]> = {};
+  let handoffMode: HandoffMode | undefined;
+  let handoffContracts: string | undefined;
   const exactMetadataKeys = new Set(["engine", "system.id", "system.version", "law.global", "entry.role"]);
 
   for (const [key, value] of graph.metadata.entries()) {
+    if (key === "handoff.mode") {
+      if (!isSupportedHandoffMode(value)) {
+        failMermaid({
+          stage: "validate",
+          errorCode: "MERMAID_UNSUPPORTED_HANDOFF_MODE",
+          message: `Unsupported handoff.mode "${value}". Expected strict or transition.`,
+          lineNumber: metadataLine(key)
+        });
+      }
+      handoffMode = value;
+      continue;
+    }
+
+    if (key === "handoff.contracts") {
+      handoffContracts = value;
+      continue;
+    }
+
     if (exactMetadataKeys.has(key)) {
       continue;
     }
@@ -852,6 +891,32 @@ function validateParsedSystemGraph(graph: ParsedSystemGraph): ValidatedSystemGra
       if (roleId) {
         loopMaxByRoleId[roleId] = parsed;
       }
+      continue;
+    }
+
+    if (key.startsWith("route.order.")) {
+      const roleId = key.slice("route.order.".length);
+      if (!roleId) {
+        failMermaid({
+          stage: "validate",
+          errorCode: "MERMAID_INVALID_ROUTE_ORDER",
+          message: `Invalid metadata key "${key}". Expected route.order.<fromRoleId>=<toRoleIdA>,<toRoleIdB>,...`,
+          lineNumber: metadataLine(key)
+        });
+      }
+      const orderedTargets = value
+        .split(",")
+        .map((item) => item.trim())
+        .filter(Boolean);
+      if (orderedTargets.length === 0) {
+        failMermaid({
+          stage: "validate",
+          errorCode: "MERMAID_INVALID_ROUTE_ORDER",
+          message: `Invalid route.order for ${roleId}: "${value}"`,
+          lineNumber: metadataLine(key)
+        });
+      }
+      routeOrderByRoleId[roleId] = orderedTargets;
       continue;
     }
 
@@ -1131,6 +1196,7 @@ function validateParsedSystemGraph(graph: ParsedSystemGraph): ValidatedSystemGra
         roleIds,
         joinModeByRoleId,
         joinSourcesByRoleId,
+        joinMinByRoleId,
         metadataKey: `context.map.${roleId}.${fieldName}`,
         lineNumber: metadataLine(`context.map.${roleId}.${fieldName}`)
       });
@@ -1153,6 +1219,51 @@ function validateParsedSystemGraph(graph: ParsedSystemGraph): ValidatedSystemGra
         errorCode: "MERMAID_INVALID_LOOP_MAX",
         message: `loop.max.${roleId} requires a positive budget on a reachable role`,
         lineNumber: metadataLine(`loop.max.${roleId}`)
+      });
+    }
+  }
+
+  for (const [roleId, orderedTargets] of Object.entries(routeOrderByRoleId)) {
+    if (!roleIds.includes(roleId)) {
+      failMermaid({
+        stage: "validate",
+        errorCode: "MERMAID_UNDEFINED_ROLE_REF",
+        message: `route.order.${roleId} references undefined role`,
+        lineNumber: metadataLine(`route.order.${roleId}`)
+      });
+    }
+
+    const outgoingTargets = graph.flows
+      .filter(
+        (flow) =>
+          flow.fromRoleId === roleId &&
+          flow.toRoleId !== SYSTEM_END_ROLE_ID &&
+          !isRuntimeOnlyErrorEvent(flow.eventType)
+      )
+      .map((flow) => flow.toRoleId);
+    const outgoingTargetSet = new Set(outgoingTargets);
+    const uniqueOrderedTargets = Array.from(new Set(orderedTargets));
+    if (uniqueOrderedTargets.length !== orderedTargets.length) {
+      failMermaid({
+        stage: "validate",
+        errorCode: "MERMAID_ROUTE_ORDER_MISMATCH",
+        message: `route.order.${roleId} must not contain duplicate target roles`,
+        lineNumber: metadataLine(`route.order.${roleId}`)
+      });
+    }
+    const hasExactCoverage =
+      outgoingTargetSet.size === uniqueOrderedTargets.length &&
+      uniqueOrderedTargets.every((targetRoleId) => outgoingTargetSet.has(targetRoleId));
+
+    if (!hasExactCoverage) {
+      const details = outgoingTargets.length
+        ? `expected [${outgoingTargets.join(", ")}]`
+        : "expected at least one outgoing role edge";
+      failMermaid({
+        stage: "validate",
+        errorCode: "MERMAID_ROUTE_ORDER_MISMATCH",
+        message: `route.order.${roleId} must match the outgoing role edges (${details})`,
+        lineNumber: metadataLine(`route.order.${roleId}`)
       });
     }
   }
@@ -1181,6 +1292,9 @@ function validateParsedSystemGraph(graph: ParsedSystemGraph): ValidatedSystemGra
   }
 
   const graphMetadata: GraphMetadata = {
+    handoffMode,
+    handoffContracts,
+    routeOrderByRoleId,
     routingModeByRoleId,
     joinModeByRoleId,
     joinSourcesByRoleId,
@@ -1234,7 +1348,18 @@ export function parseSystemFromMermaidSource(source: string): SystemDefinition {
  */
 export async function loadSystemFromMermaid(path: string): Promise<SystemDefinition> {
   const source = await readFile(path, "utf8");
-  return parseSystemFromMermaidSource(source);
+  const system = parseSystemFromMermaidSource(source);
+  if (!system.graph?.handoffContracts) {
+    return system;
+  }
+
+  return {
+    ...system,
+    graph: {
+      ...system.graph,
+      handoffContracts: resolve(dirname(path), system.graph.handoffContracts)
+    }
+  };
 }
 
 /**

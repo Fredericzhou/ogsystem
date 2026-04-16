@@ -516,7 +516,7 @@ flowchart LR
 %% role.mode.dispatch=parallel_split
 %% join.mode.judge=quorum_of
 %% join.sources.judge=a,b,c
-%% join.min.judge=2
+%% join.min.judge=3
 %% context.map.judge.a_view=source(a).content
 %% context.map.judge.task=global.task
 dispatch[Role:dispatch] -->|TO_A| a[Role:a]
@@ -531,13 +531,14 @@ judge -->|DONE| output
 #### 含义
 
 - `dispatch` 会并发激活 `a/b/c`。
-- `judge` 达到 2 个 source 完成即激活；第 3 个到达只记事件不重跑。
+- `judge` 达到 3 个 source 完成即激活；第 3 个到达前不会激活，达到阈值后只激活一次。
 - `context.map` 生效后，`judge` 的 `context` 按映射重建，不再用默认 join 命名空间全量注入。
 
 #### 注意事项
 
 - 一旦声明 `context.map`，字段缺失会 fail-closed；不会“自动补默认 join 上下文”。
 - `source(x)` 只能引用 `join.sources` 中的角色。
+- 这个示例把 `join.min` 设成了 `|join.sources|`，因此 `source(...)` 选择器在当前 runtime 规则下是合法的；若 `join.min < |join.sources|`，应改用 `direct.*` 或 `global.*`。
 
 ### 13.4 组合场景 2：`ERROR*` 与 loop budget 的取舍
 

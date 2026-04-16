@@ -9,10 +9,11 @@ const source = `flowchart TD
 %% system.version=1.0.0
 %% law.global=law.plan
 %% entry.role=dispatch
+%% route.order.dispatch=worker_b,worker_a
 %% role.mode.dispatch=parallel_split
 %% join.mode.review=quorum_of
 %% join.sources.review=worker_a,worker_b
-%% join.min.review=1
+%% join.min.review=2
 %% context.map.review.summary=source(worker_a).content
 %% context.map.review.task=global.task
 %% loop.max.dispatch=2
@@ -51,6 +52,10 @@ test("execution plan normalizes graph semantics and bindings", () => {
   assert.strictEqual(dispatch.routingMode, "parallel_split");
   assert.strictEqual(dispatch.loopMax, 2);
   assert.deepStrictEqual(dispatch.joinSources, []);
+  assert.deepStrictEqual(
+    dispatch.outgoing.map((flow) => flow.toRoleId),
+    ["worker_b", "worker_a"]
+  );
   assert.deepStrictEqual(dispatch.binding, {
     kind: "model",
     modelId: "model.fast"
@@ -67,7 +72,7 @@ test("execution plan normalizes graph semantics and bindings", () => {
 
   assert.strictEqual(review.joinMode, "quorum_of");
   assert.deepStrictEqual(review.joinSources, ["worker_a", "worker_b"]);
-  assert.strictEqual(review.joinMin, 1);
+  assert.strictEqual(review.joinMin, 2);
   assert.deepStrictEqual(review.contextMap, {
     summary: "source(worker_a).content",
     task: "global.task"
