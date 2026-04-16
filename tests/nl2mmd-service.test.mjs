@@ -142,10 +142,10 @@ test("nl2mmd service preflight creates one session and turn reuses it", async ()
   assert.strictEqual(promptCalls[1].sessionID, "ses_1");
   assert.match(
     promptCalls[1].parts[0].text,
-    /Resolved @role mentions: @debate-judge:resolved, @not-found-role:missing/
+    /Mentions: @debate-judge:resolved, @not-found-role:missing/
   );
-  assert.match(promptCalls[1].parts[0].text, /Validator errors:\nmissing entry\.role/);
-  assert.match(promptCalls[1].parts[0].text, /Validator warnings:\nusing inferred model binding/);
+  assert.match(promptCalls[1].parts[0].text, /Errors: missing entry\.role/);
+  assert.match(promptCalls[1].parts[0].text, /Warnings: using inferred model binding/);
   assert.strictEqual(result.mode, "ask");
   assert.strictEqual(result.validation, undefined);
   assert.strictEqual(result.txtGraph, undefined);
@@ -198,9 +198,9 @@ test("nl2mmd service validates draft mermaid output and preserves an existing se
 
   assert.strictEqual(createCalls.length, 0);
   assert.strictEqual(promptCalls[0].sessionID, "ses_existing");
-  assert.match(promptCalls[0].parts[0].text, /Current draft Mermaid:\nflowchart TD/);
-  assert.match(promptCalls[0].parts[0].text, /Validator errors:\n\(none\)/);
-  assert.match(promptCalls[0].parts[0].text, /Validator warnings:\n\(none\)/);
+  assert.match(promptCalls[0].parts[0].text, /Draft: flowchart TD/);
+  assert.match(promptCalls[0].parts[0].text, /Errors: \(none\)/);
+  assert.match(promptCalls[0].parts[0].text, /Warnings: \(none\)/);
   assert.strictEqual(result.mode, "draft");
   assert.strictEqual(result.sessionId, "ses_existing");
   assert.strictEqual(result.messageId, "msg_draft");

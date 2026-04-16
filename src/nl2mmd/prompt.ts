@@ -119,9 +119,10 @@ export function buildNl2MmdTurnPrompt(args: {
   context: Nl2MmdContext;
   input: Nl2MmdTurnInput;
 }): string {
+  const suggestionsLimit = 3;
   const mentions = resolveRoleMentions(args.input.message, args.context);
-  const roleMatches = searchRoles(args.context, args.input.message, 5);
-  const modelMatches = searchModels(args.context, args.input.message, 5);
+  const roleMatches = searchRoles(args.context, args.input.message, suggestionsLimit);
+  const modelMatches = searchModels(args.context, args.input.message, suggestionsLimit);
   const semanticHints = detectSemanticHints(args.input.message);
   const mentionSummary =
     mentions.length > 0
@@ -133,43 +134,35 @@ export function buildNl2MmdTurnPrompt(args: {
     roleMatches.length > 0
       ? roleMatches
           .map((item) => `${item.item.roleId} (${item.reason})`)
-          .join("\n")
+          .join("; ")
       : "(none)";
   const modelSummary =
     modelMatches.length > 0
       ? modelMatches
           .map((item) => `${item.item.modelId} (${item.reason})`)
-          .join("\n")
+          .join("; ")
       : "(none)";
   const hintSummary =
     semanticHints.length > 0
-      ? semanticHints.map((item) => `${item.label}: ${item.detail}`).join("\n")
+      ? semanticHints.map((item) => `${item.label}: ${item.detail}`).join("; ")
       : "(none)";
+  const draftSummary = args.input.draftMermaid?.trim() || "(none)";
+  const errorSummary = args.input.validationErrors?.length
+    ? args.input.validationErrors.join(" | ")
+    : "(none)";
+  const warningSummary = args.input.validationWarnings?.length
+    ? args.input.validationWarnings.join(" | ")
+    : "(none)";
 
   return [
-    "User message:",
-    args.input.message,
-    "",
-    `Resolved @role mentions: ${mentionSummary}`,
-    "",
-    "Suggested role matches:",
-    roleSummary,
-    "",
-    "Suggested model matches:",
-    modelSummary,
-    "",
-    "Detected semantic hints:",
-    hintSummary,
-    "",
-    "Current draft Mermaid:",
-    args.input.draftMermaid?.trim() || "(none)",
-    "",
-    "Validator errors:",
-    args.input.validationErrors?.length ? args.input.validationErrors.join("\n") : "(none)",
-    "",
-    "Validator warnings:",
-    args.input.validationWarnings?.length ? args.input.validationWarnings.join("\n") : "(none)",
-    "",
+    `User: ${args.input.message}`,
+    `Mentions: ${mentionSummary}`,
+    `Roles: ${roleSummary}`,
+    `Models: ${modelSummary}`,
+    `Hints: ${hintSummary}`,
+    `Draft: ${draftSummary}`,
+    `Errors: ${errorSummary}`,
+    `Warnings: ${warningSummary}`,
     "Return only the JSON object required by the schema."
   ].join("\n");
 }

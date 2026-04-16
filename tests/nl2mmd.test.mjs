@@ -5,6 +5,7 @@ import path from "node:path";
 
 import {
   buildNl2MmdSystemPrompt,
+  buildNl2MmdTurnPrompt,
   detectSemanticHints,
   loadNl2MmdContext,
   renderTxtGraphFromMermaidSource,
@@ -114,6 +115,32 @@ test("nl2mmd prompt includes current dictionary and local catalog hints", async 
   assert.ok(prompt.length < 3000, `expected compact prompt, got length ${prompt.length}`);
   assert.ok(!prompt.includes("Role catalog:"));
   assert.ok(!prompt.includes("Model catalog:"));
+});
+
+test("nl2mmd turn prompt stays compact and keeps ranked hints", async () => {
+  const context = await loadNl2MmdContext({
+    workdir: repoRoot
+  });
+
+  const prompt = buildNl2MmdTurnPrompt({
+    context,
+    input: {
+      message: "请用 @debate-judge 汇总，并检查未知的 @not-found-role 是否存在",
+      draftMermaid: "flowchart TD\ninput --> draft[Role:debate-judge]",
+      validationErrors: ["missing entry.role"],
+      validationWarnings: ["using inferred model binding"]
+    }
+  });
+
+  assert.ok(prompt.length < 1500, `expected compact turn prompt, got length ${prompt.length}`);
+  assert.match(prompt, /^User: 请用 @debate-judge 汇总，并检查未知的 @not-found-role 是否存在$/m);
+  assert.match(prompt, /^Mentions: @debate-judge:resolved, @not-found-role:missing$/m);
+  assert.match(prompt, /^Roles: /m);
+  assert.match(prompt, /^Models: /m);
+  assert.match(prompt, /^Hints: /m);
+  assert.match(prompt, /^Draft: flowchart TD$/m);
+  assert.match(prompt, /^Errors: missing entry\.role$/m);
+  assert.match(prompt, /^Warnings: using inferred model binding$/m);
 });
 
 test("nl2mmd semantic mapping detects common routing and loop intents", () => {
