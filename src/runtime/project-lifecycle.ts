@@ -360,6 +360,60 @@ export async function inspectRun(workdir: string, runId: string): Promise<Record
   };
 }
 
+function normalizeIsoTimestamp(value: string): number | undefined {
+  const timestamp = Date.parse(value);
+  if (Number.isNaN(timestamp)) {
+    return undefined;
+  }
+  return timestamp;
+}
+
+function filterLogRecords(records: Array<Record<string, unknown>>, args: {
+  roleId?: string;
+  since?: string;
+  tail?: number;
+}): Array<Record<string, unknown>> {
+  let filtered = records;
+
+  if (args.roleId) {
+    filtered = filtered.filter((item) => item.roleId === args.roleId);
+  }
+
+  if (args.since) {
+    const sinceTimestamp = normalizeIsoTimestamp(args.since);
+    if (sinceTimestamp === undefined) {
+      throw new Error(`Invalid --since timestamp: ${args.since}`);
+    }
+    filtered = filtered.filter((item) => {
+      const at = typeof item.at === "string" ? normalizeIsoTimestamp(item.at) : undefined;
+      return at !== undefined && at >= sinceTimestamp;
+    });
+  }
+
+  if (args.tail !== undefined) {
+    filtered = filtered.slice(-args.tail);
+  }
+
+  return filtered;
+}
+
+async function readLogRecordsFromPath(sourcePath: string): Promise<Array<Record<string, unknown>>> {
+  const content = await readFile(sourcePath, "utf8");
+  return parseJsonLines(content);
+}
+
+async function loadFallbackEventLogs(args: {
+  runDir: string;
+  roleId?: string;
+}): Promise<Array<Record<string, unknown>>> {
+  const content = await readFile(resolve(args.runDir, "events.ndjson"), "utf8");
+  const records = parseJsonLines(content);
+  if (args.roleId) {
+    return records.filter((item) => item.type === "audit" && item.roleId === args.roleId);
+  }
+  return records.filter((item) => item.type !== "audit");
+}
+
 export async function requestStop(workdir: string, runId: string, reason?: string): Promise<Record<string, unknown>> {
   const runDir = resolveRunDir(workdir, runId);
   const runStat = await stat(runDir).catch(() => undefined);
@@ -382,6 +436,8 @@ export async function loadRunLogs(args: {
   runId: string;
   roleId?: string;
   engine?: boolean;
+  tail?: number;
+  since?: string;
 }): Promise<Array<Record<string, unknown>>> {
   const runDir = resolveRunDir(args.workdir, args.runId);
   const runStat = await stat(runDir).catch(() => undefined);
@@ -396,19 +452,62 @@ export async function loadRunLogs(args: {
     ? resolve(runDir, "logs", "roles", `${args.roleId}.ndjson`)
     : resolve(runDir, "logs", "engine.ndjson");
   try {
-    const content = await readFile(sourcePath, "utf8");
-    return parseJsonLines(content);
+    return filterLogRecords(await readLogRecordsFromPath(sourcePath), args);
   } catch {
     try {
-      const content = await readFile(resolve(runDir, "events.ndjson"), "utf8");
-      const records = parseJsonLines(content);
-      if (args.roleId) {
-        return records.filter((item) => item.type === "audit" && item.roleId === args.roleId);
-      }
-      return records.filter((item) => item.type !== "audit");
+      return filterLogRecords(
+        await loadFallbackEventLogs({
+          runDir,
+          roleId: args.roleId
+        }),
+        args
+      );
     } catch {
       return [];
     }
+  }
+}
+
+export async function streamRunLogs(args: {
+  workdir: string;
+  runId: string;
+  roleId?: string;
+  engine?: boolean;
+  tail?: number;
+  since?: string;
+  pollIntervalMs?: number;
+  onRecord: (record: Record<string, unknown>) => void | Promise<void>;
+}): Promise<void> {
+  const pollIntervalMs = args.pollIntervalMs ?? 250;
+  let emittedCount = 0;
+
+  while (true) {
+    const records = await loadRunLogs(args);
+    const nextRecords = records.slice(emittedCount);
+    for (const record of nextRecords) {
+      await args.onRecord(record);
+    }
+    emittedCount = records.length;
+
+    const detail = await inspectRun(args.workdir, args.runId);
+    const summary =
+      typeof detail.summary === "object" &&
+      detail.summary !== null &&
+      !Array.isArray(detail.summary)
+        ? (detail.summary as { status?: string })
+        : undefined;
+    const state =
+      typeof detail.state === "object" &&
+      detail.state !== null &&
+      !Array.isArray(detail.state)
+        ? (detail.state as { status?: string; graphState?: { status?: string } })
+        : undefined;
+    const status = summary?.status ?? state?.status ?? state?.graphState?.status;
+    if (status && status !== "running" && status !== "stopping") {
+      return;
+    }
+
+    await new Promise((resolvePromise) => setTimeout(resolvePromise, pollIntervalMs));
   }
 }
 

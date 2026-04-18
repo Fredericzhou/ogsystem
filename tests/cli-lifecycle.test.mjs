@@ -127,6 +127,47 @@ test("lifecycle cli run start/list/status/logs/resume/stop works end-to-end", as
   assert.strictEqual(logs.code, 0);
   const logsPayload = JSON.parse(logs.stdout);
   assert.equal(Array.isArray(logsPayload), true);
+  const tailLogs = await runCli([
+    "run",
+    "logs",
+    runId,
+    "--engine",
+    "--json",
+    "--tail",
+    "1",
+    "--workdir",
+    tempRoot
+  ]);
+  assert.strictEqual(tailLogs.code, 0);
+  const tailLogsPayload = JSON.parse(tailLogs.stdout);
+  assert.equal(Array.isArray(tailLogsPayload), true);
+  assert.ok(tailLogsPayload.length <= 1);
+  const sinceLogs = await runCli([
+    "run",
+    "logs",
+    runId,
+    "--engine",
+    "--json",
+    "--since",
+    summary.updatedAt,
+    "--workdir",
+    tempRoot
+  ]);
+  assert.strictEqual(sinceLogs.code, 0);
+  const sinceLogsPayload = JSON.parse(sinceLogs.stdout);
+  assert.equal(Array.isArray(sinceLogsPayload), true);
+  const followLogs = await runCli([
+    "run",
+    "logs",
+    runId,
+    "--engine",
+    "--follow",
+    "--tail",
+    "1",
+    "--workdir",
+    tempRoot
+  ]);
+  assert.strictEqual(followLogs.code, 0);
 
   const resume = await runCli(["run", "resume", runId, "--dry-run", "--workdir", tempRoot]);
   assert.strictEqual(resume.code, 0);

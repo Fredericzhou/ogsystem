@@ -23,6 +23,7 @@ import {
   requestStop,
   resolveRunDir
 } from "./project-lifecycle.js";
+import { streamRunLogs } from "./project-lifecycle.js";
 import {
   RuntimeError,
   createRuntimeError,
@@ -41,7 +42,7 @@ function usageRoot(): string {
     "  ogs run list [--reindex]",
     "  ogs run status <run-id>",
     "  ogs run inspect <run-id>",
-    "  ogs run logs <run-id> [--engine|--role <roleId>] [--json]",
+    "  ogs run logs <run-id> [--engine|--role <roleId>] [--json] [--tail <n>] [--since <iso>] [--follow]",
     "  ogs run reindex",
     "",
     "Help:",
@@ -94,7 +95,7 @@ function usageRun(): string {
     "  ogs run list [--reindex] [--workdir <path>]",
     "  ogs run status <run-id> [--workdir <path>]",
     "  ogs run inspect <run-id> [--workdir <path>]",
-    "  ogs run logs <run-id> [--engine|--role <roleId>] [--json] [--workdir <path>]",
+    "  ogs run logs <run-id> [--engine|--role <roleId>] [--json] [--tail <n>] [--since <iso>] [--follow] [--workdir <path>]",
     "  ogs run reindex [--workdir <path>]",
     "",
     "Common Run Options:",
@@ -319,6 +320,23 @@ function asString(value: string | boolean | undefined): string | undefined {
 
 function asBool(value: string | boolean | undefined): boolean {
   return value === true;
+}
+
+function parsePositiveIntegerOption(args: {
+  optionName: string;
+  value: string | undefined;
+}): number | undefined {
+  if (args.value === undefined) {
+    return undefined;
+  }
+  const parsed = Number.parseInt(args.value, 10);
+  if (!Number.isInteger(parsed) || parsed <= 0) {
+    throw createCliInputError(
+      "CLI_INVALID_ARGS",
+      `${args.optionName} must be a positive integer`
+    );
+  }
+  return parsed;
 }
 
 function parseCleanupExecutionValue(value: string | undefined): number | undefined {
@@ -728,6 +746,9 @@ async function runRunCommand(argv: string[]): Promise<void> {
       workdir: { type: "string" },
       engine: { type: "boolean" },
       role: { type: "string" },
+      tail: { type: "string" },
+      since: { type: "string" },
+      follow: { type: "boolean" },
       json: { type: "boolean" },
       help: { type: "boolean", short: "h" }
     });
@@ -739,12 +760,43 @@ async function runRunCommand(argv: string[]): Promise<void> {
     if (!runId) {
       throw createCliInputError("CLI_RUN_LOGS_MISSING_RUN_ID", "run logs requires <run-id>");
     }
+    const tail = parsePositiveIntegerOption({
+      optionName: "--tail",
+      value: asString(values.tail)
+    });
+    const workdir = asString(values.workdir) ?? process.cwd();
     const records = await loadRunLogs({
-      workdir: asString(values.workdir) ?? process.cwd(),
+      workdir,
       runId,
       roleId: asString(values.role),
-      engine: asBool(values.engine)
+      engine: asBool(values.engine),
+      tail,
+      since: asString(values.since)
     });
+    if (asBool(values.follow)) {
+      const printRecord = (record: Record<string, unknown>) => {
+        if (asBool(values.json)) {
+          console.log(JSON.stringify(record));
+          return;
+        }
+        console.log(JSON.stringify(record));
+      };
+      for (const record of records) {
+        printRecord(record);
+      }
+      await streamRunLogs({
+        workdir,
+        runId,
+        roleId: asString(values.role),
+        engine: asBool(values.engine),
+        tail,
+        since: asString(values.since),
+        onRecord: async (record) => {
+          printRecord(record);
+        }
+      });
+      return;
+    }
     if (asBool(values.json)) {
       console.log(JSON.stringify(records, null, 2));
       return;

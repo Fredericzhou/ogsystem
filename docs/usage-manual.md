@@ -718,7 +718,9 @@ pnpm run run:adapter project init
 pnpm run run:adapter run start --system examples/target-model-binding-system.mmd --prompt "demo" --dry-run
 pnpm run run:adapter run list
 pnpm run run:adapter run status <run-id>
-pnpm run run:adapter run logs <run-id> --engine
+pnpm run run:adapter run logs <run-id> --engine --tail 50
+pnpm run run:adapter run logs <run-id> --role <role-id> --since 2026-04-18T10:00:00Z
+pnpm run run:adapter run logs <run-id> --engine --follow
 pnpm run run:adapter run resume <run-id> --dry-run
 pnpm run run:adapter run stop <run-id>
 pnpm run run:visualizer -- --workdir .

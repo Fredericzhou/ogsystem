@@ -569,7 +569,7 @@ Delivery status: delivered. `runtime-loader.ts`, `plan-fingerprint.ts`, and `run
 
 ## 13. 阶段 9：日志能力补齐
 
-Delivery status: pending.
+Delivery status: delivered. `project-lifecycle.ts` now owns `run logs` filtering/follow behavior and CLI exposes `--tail`, `--since`, and `--follow` without duplicating engine/role query logic.
 
 ### 13.1 目标
 
