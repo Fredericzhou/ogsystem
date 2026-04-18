@@ -123,7 +123,6 @@ Use this rule:
 - selector details and ancestor-access limits are documented in [context-map 投影说明](./context-map-projection-guide.md)
 - dynamic fan-out with uncertain `N` is not graph semantics; keep it inside one role (Heavy Node) or pre-expand before orchestration
 - controlled fan-out concurrency is an execution policy, not a flow semantic (it must not change graph reachability/join readiness)
-- compatibility path: `exec.bind.<roleId>` with `profiles/tools` runs inside the same graph runtime
 - `ERROR*` error-flow semantics are implemented behind a feature-gated rollout (`runtime.error_flows.v1`, default `false`); systems without matching `ERROR*` edges remain fail-stop
 
 ### NL2MMD Authoring
@@ -774,11 +773,3 @@ node skills/ogsystem-nl-to-mmd/scripts/validate_ogsystem_mmd.mjs \
   --laws .ogs/laws.json \
   --run-dir .ogs/runs/<run-id>
 ```
-
-## 11. Migration Notes
-
-- new docs and templates should use `model.bind.*`
-- during migration, `exec.bind.*` remains a compatibility path
-- runtime precedence is:
-  - `model.bind.<roleId>`
-  - then `exec.bind.<roleId>`
