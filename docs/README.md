@@ -1,6 +1,6 @@
 # OGSystem 文档索引与归档规则
 
-本文件是 `docs/` 目录的权威索引，也是文档生命周期规则。新增、调整、归档文档时，应同步更新本索引，避免“文档存在但无人知道它是否仍然有效”。
+本文件是 `docs/` 目录的权威索引和归档规则。
 
 归档目录说明见：`docs/archive/README.md`。
 
@@ -15,21 +15,21 @@
 3. `docs/DECISIONS.md`：架构决策与边界真相。
 4. `docs/usage-manual.md`：操作、目录、运行契约与入口手册。
 5. `docs/product-introduction.md`：能力总览与对外说明。
-6. 带日期的 plan / assessment / benchmark / checklist：历史记录，不覆盖上面的权威文档。
+6. 带日期的计划/评估/基准/checklist：历史记录。
 
 ## 2. 活跃文档
 
-以下文档属于当前活跃参考，应与代码保持同步：
+活跃文档：
 
-- `docs/product-introduction.md`：项目定位、能力亮点、边界与阅读入口。
-- `docs/usage-manual.md`：主手册，面向“如何理解并运行 OGSystem”。
-- `docs/ogsystem-orchestration-semantics-v1.md`：V1 编排语义的单一事实源。
-- `docs/compiler-semantics-v1.md`：compiler facade 的语义与 digest 约定。
-- `docs/nl2mmd-structure-templates.md`：`nl2mmd` 的结构模板与示例手册。
-- `docs/DECISIONS.md`：重要架构决策与取舍。
-- `docs/long-term-stability-roadmap.md`：长期稳定性与扩展路线图。
-- `docs/todo-backlog.md`：统一待办入口（当前执行优先级与延后项）。
-- `docs/ogsystem-ebook.md`：面向工程读者的系统级说明书，覆盖模块、原理、能力与演进方向。
+- `docs/product-introduction.md`
+- `docs/usage-manual.md`
+- `docs/ogsystem-orchestration-semantics-v1.md`
+- `docs/compiler-semantics-v1.md`
+- `docs/nl2mmd-structure-templates.md`
+- `docs/DECISIONS.md`
+- `docs/long-term-stability-roadmap.md`
+- `docs/todo-backlog.md`
+- `docs/ogsystem-ebook.md`
 
 活跃“计划类”文档只保留两类：
 
@@ -38,15 +38,15 @@
 
 ## 2.1 设计记录（非当前真相）
 
-以下文档保留在 `docs/` 根目录作为设计与交付背景参考，但不是当前运行时语义或行为的权威来源：
+以下文档保留在 `docs/` 根目录作为设计背景参考：
 
-- `docs/ogsystem-data-projection-spec.md`：数据投影与 `quorum_of` join 的最小扩展设计记录；能力已落地，但运行时真相仍以 `docs/ogsystem-orchestration-semantics-v1.md` 为准。
-- `docs/ogsystem-semantics-manual.md`：实现对齐型语义手册（面向查阅与组合案例），非权威语义源；发生冲突时以 `src/runtime/` 与 `docs/ogsystem-orchestration-semantics-v1.md` 为准。
-- `docs/ogsystem-wait-timeout-semantics-v2.md`：Join 等待超时（`first_packet + gap`）RFC 提案，**未实现**；用于设计评审，不代表当前 DSL/运行时已支持。
+- `docs/ogsystem-data-projection-spec.md`：`quorum_of` 数据投影记录。
+- `docs/ogsystem-semantics-manual.md`：对齐型语义手册。
+- `docs/ogsystem-wait-timeout-semantics-v2.md`：未实现的 join 超时提案。
 
 ## 3. 交付记录（已归档）
 
-以下文档是交付记录、阶段计划、验证记录或阶段性快照。它们有价值，但默认不再作为当前规则的来源：
+以下文档是交付记录或阶段快照：
 
 - `docs/archive/delivery/single-graph-runtime-execution-checklist.md`
 - `docs/archive/delivery/runtime-risk-assessment-2026-04-10.md`
@@ -73,7 +73,7 @@
 
 ## 4. 历史参考（已归档）
 
-以下文档保留为历史背景、兼容讨论或旧方案参考：
+以下文档保留为历史参考：
 
 - `docs/archive/history/implementation-checklist-role-model-opencode-langgraph.md`
 - `docs/archive/history/ogsystem-role-repo-minimal-plan.md`
@@ -86,24 +86,24 @@
 
 ## 5. 归档规则
 
-1. 优先原地更新权威文档，而不是继续堆叠新的“说明性补丁文档”。
-2. 只有计划、评估、基准、阶段复盘这类一次性材料，才应创建带日期的新文件，例如 `*-2026-04-11.md`。
-3. 带日期文档默认进入“交付记录”，不是新的 source of truth。若其中结论已经成为长期规则，应回写到活跃文档。
-4. 某文档失效时，先在本索引调整分类，再物理移动到 `docs/archive/`（`delivery/` 或 `history/`）。
-5. 若一份旧文档被新文档替代，应在旧文档开头或显著位置注明 `Superseded by:`，并把新文档加入本索引。
-6. 任何影响编排语义、恢复契约、运行目录契约的改动，必须在同一提交中同步更新：
+1. 优先原地更新权威文档。
+2. 计划、评估、基准、阶段复盘等一次性材料使用带日期的新文件。
+3. 带日期文档默认归入交付记录，不作为 source of truth。
+4. 文档失效时，先更新本索引，再移动到 `docs/archive/`。
+5. 被替代的旧文档应标注 `Superseded by:`，并更新本索引。
+6. 影响编排语义、恢复契约、运行目录契约的改动，同步更新：
    - `docs/ogsystem-orchestration-semantics-v1.md`
    - `docs/usage-manual.md`
    - 本索引 `docs/README.md`
-7. 包管理策略或命令入口发生变更时，必须同步更新 `README.md` 与 `docs/usage-manual.md` 的命令示例，保持 `pnpm-only` 一致性。
-8. 覆盖率相关命令与判读说明必须沿用 `pnpm` 入口；若覆盖重点、推荐命令或回归要求发生变化，必须同步更新 `README.md`、`docs/usage-manual.md`，历史明细再进入归档交付记录。
+7. 包管理策略或命令入口变更时，同步更新 `README.md` 和 `docs/usage-manual.md`。
+8. 覆盖率相关说明变更时，同步更新 `README.md` 和 `docs/usage-manual.md`。
 
 ## 6. 计划文档放置规则（防混淆）
 
-1. `docs/` 根目录不放阶段性执行计划、评估、基准、checklist（尤其是 `*-plan-YYYY-MM-DD.md`）。
-2. 阶段性计划/评估/复盘一律放 `docs/archive/delivery/`，并带日期后缀。
-3. 探索失败或历史方案放 `docs/archive/history/`。
-4. 若出现同主题双份文档（一个在 `docs/`、一个在 `archive/`），应立即保留归档版本并移除 `docs/` 根目录副本。
+1. `docs/` 根目录不放阶段性计划、评估、基准、checklist。
+2. 阶段性材料放 `docs/archive/delivery/`。
+3. 历史方案放 `docs/archive/history/`。
+4. 同主题双份文档时，保留归档版本并移除根目录副本。
 
 ## 7. 新文档准入规则
 
