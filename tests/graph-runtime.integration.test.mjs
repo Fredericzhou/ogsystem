@@ -117,8 +117,12 @@ test("adapter runs graph debate example with parallel branches, join, and bounde
   const runDir = path.resolve(runsDir, runs[0]);
   const stateJson = JSON.parse(await readFile(path.resolve(runDir, "state.json"), "utf8"));
   const metricsJson = JSON.parse(await readFile(path.resolve(runDir, "metrics.json"), "utf8"));
+  const summaryJson = JSON.parse(await readFile(path.resolve(runDir, "summary.json"), "utf8"));
   const summaryMarkdown = await readFile(path.resolve(runDir, "audit", "summary.md"), "utf8");
   assert.strictEqual(stateJson.finalRoleId, "debate-summary");
+  assert.strictEqual(summaryJson.status, "done");
+  assert.strictEqual(summaryJson.finalRoleId, "debate-summary");
+  assert.strictEqual(summaryJson.transitionCount, stateJson.graphState.transitionCount);
   assert.ok(Array.isArray(stateJson.completedBranches));
   assert.deepStrictEqual(stateJson.loopIterations["debate-moderator"], 2);
   assert.ok(Array.isArray(stateJson.graphState.recentAudits));
@@ -142,6 +146,10 @@ test("adapter runs graph debate example with parallel branches, join, and bounde
   const eventsText = await readFile(path.resolve(runDir, "events.ndjson"), "utf8");
   assert.match(eventsText, /"branchId":"debate-minimalist@1#\d+"/);
   assert.match(eventsText, /"joinId":"debate-judge@2"/);
+  const timelineText = await readFile(path.resolve(runDir, "timeline.jsonl"), "utf8");
+  assert.match(timelineText, /"type":"audit"/);
+  const checkpointEntries = await readdir(path.resolve(runDir, "checkpoints"));
+  assert.ok(checkpointEntries.length > 0);
 
   assert.ok((await lstat(path.resolve(runDir, "shared"))).isDirectory());
   await assert.rejects(lstat(path.resolve(runDir, "roles", "debate-minimalist", "shared")));
@@ -183,6 +191,25 @@ test("adapter runs graph debate example with parallel branches, join, and bounde
   );
   assert.strictEqual(moderatorFirstExecution.executionIndex, 1);
   assert.strictEqual(moderatorSecondExecution.executionIndex, 2);
+  const summaryExecutions = (
+    await readdir(path.resolve(runDir, "roles", "debate-summary", "executions"))
+  ).sort();
+  assert.strictEqual(summaryExecutions.length, 1);
+  const summaryOutcome = JSON.parse(
+    await readFile(
+      path.resolve(
+        runDir,
+        "roles",
+        "debate-summary",
+        "executions",
+        summaryExecutions[0],
+        "execution-outcome.json"
+      ),
+      "utf8"
+    )
+  );
+  assert.strictEqual(summaryOutcome.status, "ok");
+  assert.ok(summaryOutcome.checkpointSequence >= 1);
   const summaryPrompt = await readFile(
     path.resolve(runDir, "roles", "debate-summary", "prompt.md"),
     "utf8"

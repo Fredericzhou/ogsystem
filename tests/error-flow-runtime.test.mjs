@@ -220,6 +220,13 @@ async function readGraphStateSnapshot(fixture) {
   return stateJson.graphState;
 }
 
+async function readSingleRunDirectory(fixture) {
+  const runsDir = path.resolve(fixture.tempRoot, ".ogs", "runs");
+  const runIds = await readdir(runsDir);
+  assert.equal(runIds.length, 1);
+  return path.resolve(runsDir, runIds[0]);
+}
+
 for (const routingCase of [
   {
     name: "runtime routes failed role via ERROR.<code> before ERROR fallback",
@@ -539,6 +546,50 @@ final[Role:final] -->|FINAL_DONE| output
   assert.equal(result.runSummary.failedCount, 1);
   assert.equal(result.runSummary.handledFailureCount, 1);
   assert.equal(result.runSummary.unhandledFailureCount, 0);
+  const runDir = await readSingleRunDirectory(fixture);
+  const summaryJson = JSON.parse(await readFile(path.resolve(runDir, "summary.json"), "utf8"));
+  assert.equal(summaryJson.status, "done");
+  assert.equal(summaryJson.failedCount, 1);
+  const timelineText = await readFile(path.resolve(runDir, "timeline.jsonl"), "utf8");
+  assert.match(timelineText, /"type":"failure_handled"/);
+  const checkpointEntries = await readdir(path.resolve(runDir, "checkpoints"));
+  assert.ok(checkpointEntries.length > 0);
+  const failedRoleExecutions = await readdir(
+    path.resolve(runDir, "roles", "worker_fail", "executions")
+  );
+  const compensateExecutions = await readdir(
+    path.resolve(runDir, "roles", "compensate", "executions")
+  );
+  assert.strictEqual(failedRoleExecutions.length, 1);
+  assert.strictEqual(compensateExecutions.length, 1);
+  const failedOutcome = JSON.parse(
+    await readFile(
+      path.resolve(
+        runDir,
+        "roles",
+        "worker_fail",
+        "executions",
+        failedRoleExecutions[0],
+        "execution-outcome.json"
+      ),
+      "utf8"
+    )
+  );
+  const compensateOutcome = JSON.parse(
+    await readFile(
+      path.resolve(
+        runDir,
+        "roles",
+        "compensate",
+        "executions",
+        compensateExecutions[0],
+        "execution-outcome.json"
+      ),
+      "utf8"
+    )
+  );
+  assert.strictEqual(failedOutcome.status, "failed");
+  assert.strictEqual(compensateOutcome.status, "ok");
 });
 
 test("parallel_split success path ignores ERROR* edges and duplicate targets", async () => {

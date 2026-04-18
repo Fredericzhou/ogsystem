@@ -8,6 +8,8 @@
  */
 import { getExecutionPlanNode } from "./execution-plan.js";
 import { createEmptyAuditSummary, summarizeRunFromAuditSummary } from "./run-summary.js";
+import { buildRoleLineageLoopKey } from "./runtime-indexes.js";
+import type { RuntimeIndexes } from "./runtime-indexes.js";
 import type {
   BranchRecord,
   ExecutionPlan,
@@ -99,17 +101,41 @@ export function projectStateSnapshot(args: {
   };
 }
 
-export function findCurrentBranch(state: GraphState, roleId: string): BranchRecord | undefined {
-  return listActiveBranches(state, roleId).at(-1);
+export function findCurrentBranch(
+  state: GraphState,
+  roleId: string,
+  indexes?: RuntimeIndexes
+): BranchRecord | undefined {
+  return listActiveBranches(state, roleId, indexes).at(-1);
 }
 
-export function listActiveBranches(state: GraphState, roleId: string): BranchRecord[] {
+export function listActiveBranches(
+  state: GraphState,
+  roleId: string,
+  indexes?: RuntimeIndexes
+): BranchRecord[] {
+  if (indexes) {
+    return (indexes.activeBranchIdsByRoleId.get(roleId) ?? [])
+      .map((branchId) => indexes.branchById.get(branchId))
+      .filter((branch): branch is BranchRecord => branch !== undefined);
+  }
   return Object.values(state.branchRecords)
     .filter((branch) => branch.roleId === roleId && branch.status === "active")
     .sort((left, right) => left.branchSequence - right.branchSequence);
 }
 
-export function getActiveRoleIds(state: GraphState): string[] {
+export function getActiveRoleIds(state: GraphState, indexes?: RuntimeIndexes): string[] {
+  if (indexes) {
+    return Array.from(indexes.activeBranchIdsByRoleId.entries())
+      .sort((left, right) => {
+        const leftFirstBranchId = left[1][0];
+        const rightFirstBranchId = right[1][0];
+        const leftSequence = indexes.branchById.get(leftFirstBranchId ?? "")?.branchSequence ?? 0;
+        const rightSequence = indexes.branchById.get(rightFirstBranchId ?? "")?.branchSequence ?? 0;
+        return leftSequence - rightSequence;
+      })
+      .map(([roleId]) => roleId);
+  }
   const firstBranchByRoleId = new Map<string, number>();
   for (const branch of Object.values(state.branchRecords)) {
     if (branch.status !== "active") {
@@ -243,9 +269,17 @@ export function findRoleResult(args: {
   roleId: string;
   lineageId: string;
   loopIteration: number;
+  indexes?: RuntimeIndexes;
 }): StoredRoleResult | undefined {
-  // Invariant: each (role, lineage, loopIteration) tuple should yield at most one recorded result,
-  // so a linear search is acceptable and deterministic for recovery checks.
+  if (args.indexes) {
+    return args.indexes.resultByRoleLineageLoopKey.get(
+      buildRoleLineageLoopKey({
+        roleId: args.roleId,
+        lineageId: args.lineageId,
+        loopIteration: args.loopIteration
+      })
+    );
+  }
   return Object.values(args.state.roleResults).find(
     (result) =>
       result.roleId === args.roleId &&

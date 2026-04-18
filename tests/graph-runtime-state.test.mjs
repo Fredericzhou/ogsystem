@@ -4,11 +4,17 @@ import assert from "node:assert/strict";
 import { createExecutionPlan } from "../dist/runtime/execution-plan.js";
 import {
   createInitialState,
+  findRoleResult,
+  listActiveBranches,
   getTargetLoopIteration,
   getActiveRoleIds,
   projectStateSnapshot,
   wouldExceedLoopBudget
 } from "../dist/runtime/graph-runtime-state.js";
+import {
+  applyGraphUpdateToIndexes,
+  buildRuntimeIndexes
+} from "../dist/runtime/runtime-indexes.js";
 import {
   isJoinNodeReady,
   listSupportedJoinModes,
@@ -339,4 +345,92 @@ test("graph runtime helpers keep quorum_of readiness isolated by lineageId", () 
     }),
     false
   );
+});
+
+test("runtime indexes preserve active branch, result lookup, and join readiness semantics", () => {
+  const system = parseSystemFromMermaidSource(source);
+  const plan = createExecutionPlan(system);
+  const state = createInitialState(plan, "demo");
+  const review = plan.nodesByRoleId.get("review");
+  assert.ok(review);
+
+  const workerABranch = {
+    branchId: "worker_a@1#2",
+    roleId: "worker_a",
+    loopIteration: 1,
+    branchSequence: 2,
+    lineageId: "dispatch@1#1",
+    sessionLineageId: "worker_a@1#2",
+    parentBranchId: "dispatch@1#1",
+    activatedByRoleId: "dispatch",
+    activatedByEvent: "TO_A",
+    status: "active"
+  };
+  const workerBBranch = {
+    branchId: "worker_b@1#3",
+    roleId: "worker_b",
+    loopIteration: 1,
+    branchSequence: 3,
+    lineageId: "dispatch@1#1",
+    sessionLineageId: "worker_b@1#3",
+    parentBranchId: "dispatch@1#1",
+    activatedByRoleId: "dispatch",
+    activatedByEvent: "TO_B",
+    status: "active"
+  };
+  state.branchRecords[workerABranch.branchId] = workerABranch;
+  state.branchRecords[workerBBranch.branchId] = workerBBranch;
+  state.roleResults[workerABranch.branchId] = {
+    roleId: "worker_a",
+    event: "A_DONE",
+    content: "a",
+    branchId: workerABranch.branchId,
+    lineageId: workerABranch.lineageId,
+    loopIteration: 1
+  };
+  state.roleResults[workerBBranch.branchId] = {
+    roleId: "worker_b",
+    event: "B_DONE",
+    content: "b",
+    branchId: workerBBranch.branchId,
+    lineageId: workerBBranch.lineageId,
+    loopIteration: 1
+  };
+
+  const indexes = buildRuntimeIndexes(state);
+  assert.deepStrictEqual(
+    listActiveBranches(state, "worker_a", indexes).map((branch) => branch.branchId),
+    ["worker_a@1#2"]
+  );
+  assert.deepStrictEqual(getActiveRoleIds(state, indexes), getActiveRoleIds(state));
+  assert.deepStrictEqual(
+    findRoleResult({
+      state,
+      roleId: "worker_b",
+      lineageId: "dispatch@1#1",
+      loopIteration: 1,
+      indexes
+    }),
+    state.roleResults[workerBBranch.branchId]
+  );
+  assert.equal(
+    isJoinNodeReady({
+      node: review,
+      currentBranch: workerBBranch,
+      state,
+      currentResult: state.roleResults[workerBBranch.branchId],
+      indexes
+    }),
+    true
+  );
+
+  applyGraphUpdateToIndexes(indexes, {
+    branchRecords: {
+      [workerABranch.branchId]: {
+        ...workerABranch,
+        status: "completed"
+      }
+    }
+  });
+  assert.deepStrictEqual(listActiveBranches(state, "worker_a", indexes), []);
 });

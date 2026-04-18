@@ -678,6 +678,12 @@ async function runRunCommand(argv: string[]): Promise<void> {
       throw createCliInputError("CLI_RUN_STATUS_MISSING_RUN_ID", "run status requires <run-id>");
     }
     const detail = await inspectRun(asString(values.workdir) ?? process.cwd(), runId);
+    const summary =
+      typeof detail.summary === "object" &&
+      detail.summary !== null &&
+      !Array.isArray(detail.summary)
+        ? (detail.summary as { status?: string })
+        : undefined;
     const state =
       typeof detail.state === "object" &&
       detail.state !== null &&
@@ -689,9 +695,10 @@ async function runRunCommand(argv: string[]): Promise<void> {
         {
           runId,
           runDir: detail.runDir,
-          status: state?.status ?? state?.graphState?.status ?? "unknown",
+          status: summary?.status ?? state?.status ?? state?.graphState?.status ?? "unknown",
           stopRequest: detail.stopRequest ?? null,
-          stopOutcome: detail.stopOutcome ?? null
+          stopOutcome: detail.stopOutcome ?? null,
+          summary: detail.summary ?? null
         },
         null,
         2

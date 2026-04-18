@@ -17,6 +17,7 @@ import {
   rebuildRunsIndex,
   resolveRunDir
 } from "../runtime/project-lifecycle.js";
+import { loadTimelineSnapshot, projectTimelineRecord } from "../runtime/timeline-projector.js";
 
 type VisualizationServerOptions = {
   workdir: string;
@@ -37,6 +38,7 @@ type InspectRunRecord = {
   resolvedConfig: unknown;
   stopRequest: unknown;
   stopOutcome: unknown;
+  summary?: unknown;
 };
 
 type LoadedRunDetail = InspectRunRecord & {
@@ -139,18 +141,26 @@ function getAuditCount(graphState: Record<string, unknown> | undefined): number 
 
 function buildRunSnapshot(detail: LoadedRunDetail): RunSnapshot {
   const state = extractGraphState(detail.state);
+  const summary =
+    typeof detail.summary === "object" && detail.summary !== null && !Array.isArray(detail.summary)
+      ? (detail.summary as Record<string, unknown>)
+      : undefined;
   const status =
+    asString(summary?.status) ??
     asString(state?.status) ??
     asString((detail.state as Record<string, unknown> | undefined)?.status) ??
     "unknown";
   const transitionCount =
+    asNumber(summary?.transitionCount) ??
     asNumber(state?.transitionCount) ??
     asNumber((detail.state as Record<string, unknown> | undefined)?.transitionCount) ??
     0;
   const finalRoleId =
+    asString(summary?.finalRoleId) ??
     asString(state?.finalRoleId) ??
     asString((detail.state as Record<string, unknown> | undefined)?.finalRoleId);
   const lastExecutedRoleId =
+    asString(summary?.lastRoleId) ??
     asString(state?.lastExecutedRoleId) ??
     asString((detail.state as Record<string, unknown> | undefined)?.lastExecutedRoleId);
   const error =
@@ -165,7 +175,10 @@ function buildRunSnapshot(detail: LoadedRunDetail): RunSnapshot {
     finalRoleId,
     lastExecutedRoleId,
     error,
-    updatedAt: asString((detail.resolvedConfig as Record<string, unknown> | undefined)?.updatedAt) ?? "",
+    updatedAt:
+      asString(summary?.updatedAt) ??
+      asString((detail.resolvedConfig as Record<string, unknown> | undefined)?.updatedAt) ??
+      "",
     activeBranches: getBranchCount(state),
     recentAudits: getAuditCount(state),
     systemSource: detail.systemSource
@@ -195,6 +208,20 @@ async function loadRunDetail(workdir: string, runId: string): Promise<LoadedRunD
 }
 
 async function readRunEvents(runDir: string): Promise<NdjsonEntry[]> {
+  const timelinePath = resolve(runDir, "timeline.jsonl");
+  try {
+    await readFile(timelinePath, "utf8");
+    return (
+      await loadTimelineSnapshot({
+        timelinePath,
+        cursor: 0,
+        limit: Number.MAX_SAFE_INTEGER
+      })
+    ).events;
+  } catch {
+    // Fall back to raw events for older runs that do not have a projected timeline yet.
+  }
+
   const eventsPath = resolve(runDir, "events.ndjson");
   let content: string;
   try {
@@ -214,9 +241,16 @@ async function readRunEvents(runDir: string): Promise<NdjsonEntry[]> {
       if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) {
         continue;
       }
-      records.push({
+      const projected = projectTimelineRecord({
         cursor: records.length,
-        record: parsed as Record<string, unknown>
+        event: parsed as Record<string, unknown>
+      });
+      if (!projected) {
+        continue;
+      }
+      records.push({
+        cursor: projected.cursor,
+        record: projected
       });
     } catch {
       continue;

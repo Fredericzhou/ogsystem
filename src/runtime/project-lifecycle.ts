@@ -14,6 +14,7 @@ import { basename, resolve } from "node:path";
 import { readJsonFile, writeJsonFileAtomic } from "./json-file.js";
 import { requestRunStop } from "./run-artifacts.js";
 import { stringifyJson } from "./runtime-support.js";
+import type { RunSummaryProjection } from "./run-summary-schema.js";
 
 export const OGS_DIR = ".ogs";
 export const OGS_RUNS_DIR = ".ogs/runs";
@@ -182,6 +183,23 @@ async function tryReadJson(path: string): Promise<unknown | undefined> {
   }
 }
 
+function asSummaryProjection(value: unknown): RunSummaryProjection | undefined {
+  if (typeof value !== "object" || value === null || Array.isArray(value)) {
+    return undefined;
+  }
+  const record = value as Record<string, unknown>;
+  if (
+    record.version !== 1 ||
+    typeof record.runId !== "string" ||
+    typeof record.status !== "string" ||
+    typeof record.transitionCount !== "number" ||
+    typeof record.updatedAt !== "string"
+  ) {
+    return undefined;
+  }
+  return record as RunSummaryProjection;
+}
+
 async function ensureFile(path: string, value: string): Promise<void> {
   try {
     await stat(path);
@@ -259,7 +277,11 @@ export async function loadIndexedRuns(workdir: string): Promise<IndexedRun[]> {
       continue;
     }
     const runDir = resolve(runsDir, entry.name);
-    const stateRaw = await tryReadJson(resolve(runDir, "state.json"));
+    const [summaryRaw, stateRaw] = await Promise.all([
+      tryReadJson(resolve(runDir, "summary.json")),
+      tryReadJson(resolve(runDir, "state.json"))
+    ]);
+    const summary = asSummaryProjection(summaryRaw);
     // Compatibility read: tolerate both flattened status fields and nested graphState snapshots
     // so index rebuilding can survive schema transitions across runtime versions.
     const state =
@@ -278,10 +300,11 @@ export async function loadIndexedRuns(workdir: string): Promise<IndexedRun[]> {
     const runStat = await stat(runDir);
     runs.push({
       runId: entry.name,
-      status: state?.status ?? state?.graphState?.status ?? "unknown",
-      transitionCount: state?.transitionCount ?? state?.graphState?.transitionCount ?? 0,
-      finalRoleId: state?.finalRoleId ?? state?.graphState?.finalRoleId,
-      updatedAt: runStat.mtime.toISOString(),
+      status: summary?.status ?? state?.status ?? state?.graphState?.status ?? "unknown",
+      transitionCount:
+        summary?.transitionCount ?? state?.transitionCount ?? state?.graphState?.transitionCount ?? 0,
+      finalRoleId: summary?.finalRoleId ?? state?.finalRoleId ?? state?.graphState?.finalRoleId,
+      updatedAt: summary?.updatedAt ?? runStat.mtime.toISOString(),
       runDir
     });
   }
@@ -317,12 +340,13 @@ export async function inspectRun(workdir: string, runId: string): Promise<Record
   if (!runStat?.isDirectory()) {
     throw new Error(`Run not found: ${runId}`);
   }
-  const [state, metrics, resolvedConfig, stopRequest, stopOutcome] = await Promise.all([
+  const [state, metrics, resolvedConfig, stopRequest, stopOutcome, summary] = await Promise.all([
     tryReadJson(resolve(runDir, "state.json")),
     tryReadJson(resolve(runDir, "metrics.json")),
     tryReadJson(resolve(runDir, "resolved-config.json")),
     tryReadJson(resolve(runDir, "control", "stop-request.json")),
-    tryReadJson(resolve(runDir, "control", "stop-outcome.json"))
+    tryReadJson(resolve(runDir, "control", "stop-outcome.json")),
+    tryReadJson(resolve(runDir, "summary.json"))
   ]);
   return {
     runId,
@@ -331,7 +355,8 @@ export async function inspectRun(workdir: string, runId: string): Promise<Record
     metrics,
     resolvedConfig,
     stopRequest,
-    stopOutcome
+    stopOutcome,
+    summary: asSummaryProjection(summary)
   };
 }
 

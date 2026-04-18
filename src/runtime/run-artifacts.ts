@@ -112,6 +112,23 @@ function buildRunId(createdAt: Date): string {
   return `${timestampForRunId(createdAt)}-${entropy}`;
 }
 
+function parseCreatedAtFromRunId(runId: string): string | undefined {
+  const match = runId.match(/^(\d{4})(\d{2})(\d{2})-(\d{2})(\d{2})(\d{2})-[a-f0-9]{8}$/);
+  if (!match) {
+    return undefined;
+  }
+  const [, year, month, day, hour, minute, second] = match;
+  const createdAt = new Date(
+    Number(year),
+    Number(month) - 1,
+    Number(day),
+    Number(hour),
+    Number(minute),
+    Number(second)
+  );
+  return Number.isNaN(createdAt.getTime()) ? undefined : createdAt.toISOString();
+}
+
 function shellEscape(value: string): string {
   return `'${value.replace(/'/g, `'\\''`)}'`;
 }
@@ -687,6 +704,9 @@ export async function initializeRunContext(args: {
   }
   const createdAt = new Date();
   const runId = args.resumeRunDir ? basename(resolve(args.workdir, args.resumeRunDir)) : buildRunId(createdAt);
+  const runCreatedAt = args.resumeRunDir
+    ? parseCreatedAtFromRunId(runId) ?? createdAt.toISOString()
+    : createdAt.toISOString();
   const runDir = args.resumeRunDir
     ? resolve(args.workdir, args.resumeRunDir)
     : resolve(args.workdir, args.runtimeConfig.runsDir, runId);
@@ -812,6 +832,7 @@ export async function initializeRunContext(args: {
 
     return {
       runId,
+      createdAt: runCreatedAt,
       runDir,
       resolvedConfigPath: resolve(runDir, RESOLVED_CONFIG_FILE),
       auditDir,
@@ -824,6 +845,8 @@ export async function initializeRunContext(args: {
       eventsPath: resolve(runDir, "events.ndjson"),
       statePath: resolve(runDir, "state.json"),
       metricsPath: resolve(runDir, "metrics.json"),
+      summaryPath: resolve(runDir, "summary.json"),
+      timelinePath: resolve(runDir, "timeline.jsonl"),
       opencodeDir: resolve(runDir, ".opencode"),
       opencodePidPath: resolve(runDir, ".opencode", "server.pid"),
       opencodeEndpointPath: resolve(runDir, ".opencode", "endpoint.json"),

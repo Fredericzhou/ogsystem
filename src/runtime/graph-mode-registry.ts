@@ -14,6 +14,7 @@ import type {
   StoredRoleResult
 } from "./types.js";
 import { findRoleResult } from "./graph-runtime-state.js";
+import type { RuntimeIndexes } from "./runtime-indexes.js";
 import { isRuntimeOnlyErrorEvent } from "./error-flow-utils.js";
 
 /**
@@ -42,6 +43,7 @@ type JoinModeHandler = {
     currentBranch: BranchRecord;
     state: GraphState;
     currentResult?: StoredRoleResult;
+    indexes?: RuntimeIndexes;
   }): JoinReadiness;
 };
 
@@ -120,6 +122,7 @@ export function isJoinNodeReady(args: {
   currentBranch: BranchRecord;
   state: GraphState;
   currentResult?: StoredRoleResult;
+  indexes?: RuntimeIndexes;
 }): boolean {
   return evaluateJoinNodeReadiness(args).ready;
 }
@@ -133,6 +136,7 @@ export function evaluateJoinNodeReadiness(args: {
   currentBranch: BranchRecord;
   state: GraphState;
   currentResult?: StoredRoleResult;
+  indexes?: RuntimeIndexes;
 }): JoinReadiness {
   if (!args.node.joinMode) {
     return {
@@ -186,7 +190,8 @@ registerJoinModeHandler("all_of", {
           state: args.state,
           roleId: sourceRoleId,
           lineageId: args.currentBranch.lineageId,
-          loopIteration: args.currentBranch.loopIteration
+          loopIteration: args.currentBranch.loopIteration,
+          indexes: args.indexes
         })
       );
     });
@@ -216,7 +221,8 @@ registerJoinModeHandler("quorum_of", {
           state: args.state,
           roleId: sourceRoleId,
           lineageId: args.currentBranch.lineageId,
-          loopIteration: args.currentBranch.loopIteration
+          loopIteration: args.currentBranch.loopIteration,
+          indexes: args.indexes
         })
       );
     });

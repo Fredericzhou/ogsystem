@@ -5,15 +5,14 @@
  * graph-runner. Trade-off: keeps every attempt isolated (dedicated execution dirs + outcomes) so
  * retries and diagnostics can replay without destroying prior evidence, at the cost of more files.
  */
-import { appendAuditRecord, createAuditRecord } from "./audit-recorder.js";
+import { createAuditRecord } from "./audit-recorder.js";
+import { resolveExecutionBinding } from "./binding-resolver.js";
 import { createRunConsoleLogger } from "./console-run-log.js";
 import type { RunConsoleLogger } from "./console-run-log.js";
-import type { Executor, ExecutorBinding } from "./executor.js";
+import type { Executor } from "./executor.js";
 import {
   buildJoinId,
-  getBranchResult,
   listActiveBranches,
-  findRoleResult,
   wouldExceedLoopBudget
 } from "./graph-runtime-state.js";
 import {
@@ -28,20 +27,37 @@ import {
 import {
   allocateRoleExecution,
   buildRoleSessionKey,
-  getRoleSession,
-  persistRoleExecutionOutcome,
-  persistRolePrelude,
-  persistRoleResult,
-  persistRoleSession
+  getRoleSession
 } from "./run-artifacts.js";
 import {
   renderRolePrompt,
   validateRoleInputSchema,
   validateRoleOutputSchema
 } from "./role-repo.js";
-import { isRuntimeOnlyErrorEvent } from "./error-flow-utils.js";
-import { createRuntimeError, normalizeRuntimeError } from "./runtime-errors.js";
-import { renderUserProfile, stringifyJson } from "./runtime-support.js";
+import {
+  buildProjectedContext,
+  buildRolePromptInput,
+  failContextProjection,
+  getSelectableOutgoingFlows,
+  sanitizeRoleInputContext
+} from "./role-input-projector.js";
+import type { RolePromptInput } from "./role-input-projector.js";
+import {
+  assertNoReservedErrorEventFromRoleOutput,
+  buildCorrectionRequest,
+  mergeRepairRecord,
+  parseRoleExecutionOutputWithRepair,
+  repairUnknownEvent
+} from "./role-output-parser.js";
+import {
+  persistCommittedExecutionResult,
+  recordAudit,
+  recordRolePrelude,
+  recordRoleResult,
+  recordRoleSession
+} from "./role-execution-recorder.js";
+import type { PersistedRoleExecutorResult } from "./role-execution-recorder.js";
+import { normalizeRuntimeError } from "./runtime-errors.js";
 import { ToolExecutionError } from "./tool-runner.js";
 import { SYSTEM_END_ROLE_ID } from "./types.js";
 import type {
@@ -52,30 +68,16 @@ import type {
   ExecutionPlan,
   ExecutionPlanNode,
   ExecutionProfile,
-  Flow,
   GraphState,
   LoadedModelPackage,
   LoadedRolePackage,
   FlowContractPlan,
-  RoleExecutionOutput,
-  RoleExecutionOutcomeRecord,
-  RoleExecutionRecord,
   RoleOutputRepairRecord,
   RuntimeErrorEnvelope,
   RunContext,
   StoredRoleResult,
   UserProfile
 } from "./types.js";
-
-type RolePromptInput = {
-  task: string;
-  context: string;
-  allowed_events: string;
-  last_output: string;
-  system_notes: string;
-  round: string;
-  user_profile: string;
-};
 
 export type RoleExecutorResult =
   | {
@@ -95,454 +97,7 @@ export type RoleExecutorResult =
       executionId: string;
       branchId: string;
       loopIteration: number;
-    };
-
-type PersistedRoleExecutorResult =
-  | {
-      status: "ok" | "noop";
-      audit: AuditRecord;
-      storedResult?: StoredRoleResult;
-      selectedEvent?: string;
-      executionId: string;
-      branchId: string;
-      loopIteration: number;
-    }
-  | {
-      status: "failed";
-      error: string;
-      failure: RuntimeErrorEnvelope;
-      audit: AuditRecord;
-      executionId: string;
-      branchId: string;
-      loopIteration: number;
-    };
-
-function buildRoleExecutionOutcome(args: {
-  execution: RoleExecutionRecord;
-  branch: BranchRecord;
-  result: PersistedRoleExecutorResult;
-}): RoleExecutionOutcomeRecord {
-  const committedAt = new Date().toISOString();
-  if (args.result.status === "failed") {
-    return {
-      version: 1,
-      executionId: args.result.executionId,
-      roleId: args.execution.roleId,
-      branchId: args.result.branchId,
-      loopIteration: args.result.loopIteration,
-      sessionKey: args.execution.sessionKey,
-      branch: args.branch,
-      committedAt,
-      status: "failed",
-      error: args.result.error,
-      failure: args.result.failure,
-      audit: args.result.audit
-    };
-  }
-  return {
-    version: 1,
-    executionId: args.result.executionId,
-    roleId: args.execution.roleId,
-    branchId: args.result.branchId,
-    loopIteration: args.result.loopIteration,
-    sessionKey: args.execution.sessionKey,
-    branch: args.branch,
-    committedAt,
-    status: args.result.status,
-    selectedEvent: args.result.selectedEvent,
-    storedResult: args.result.storedResult,
-    audit: args.result.audit
-  };
-}
-
-async function persistCommittedExecutionResult(args: {
-  execution: RoleExecutionRecord;
-  branch: BranchRecord;
-  result: PersistedRoleExecutorResult;
-}): Promise<RoleExecutionOutcomeRecord> {
-  // This outcome file is the durable marker that a role attempt has finished. The graph runner
-  // may still crash before checkpointing, so resume relies on this marker to reconcile safely.
-  const outcome = buildRoleExecutionOutcome(args);
-  await persistRoleExecutionOutcome({
-    execution: args.execution,
-    outcome
-  });
-  return outcome;
-}
-
-function getDirectContext(state: GraphState, branch: BranchRecord): string {
-  if (!branch.parentBranchId) {
-    return state.userPrompt;
-  }
-  const upstream = getBranchResult(state, branch.parentBranchId);
-  return upstream?.content ?? state.userPrompt;
-}
-
-function renderJoinContext(args: {
-  state: GraphState;
-  joinSources: string[];
-  branch: BranchRecord;
-}): string {
-  // Join prompts receive a normalized projection keyed by declared sources rather than the raw
-  // graph state shape. This keeps role templates stable even if internal runtime state evolves.
-  const namespace = Object.fromEntries(args.joinSources.map((sourceRoleId) => {
-    const result = findRoleResult({
-      state: args.state,
-      roleId: sourceRoleId,
-      lineageId: args.branch.lineageId,
-      loopIteration: args.branch.loopIteration
-    });
-    const artifact: Record<string, unknown> = {};
-    if (result?.event) {
-      artifact.event = result.event;
-    }
-    if (result?.content !== undefined) {
-      artifact.content = result.content;
-    }
-    if (result?.data !== undefined) {
-      artifact.data = result.data;
-    }
-    return [sourceRoleId, artifact];
-  }));
-  return stringifyJson(namespace);
-}
-
-function failContextProjection(args: {
-  errorCode: string;
-  message: string;
-  roleId: string;
-  branchId: string;
-}): never {
-  throw createRuntimeError({
-    errorCode: args.errorCode,
-    errorCategory: "state",
-    message: args.message,
-    retryable: false,
-    stage: "execute",
-    roleId: args.roleId,
-    branchId: args.branchId
-  });
-}
-
-function resolveObjectPath(args: {
-  value: unknown;
-  path: string[];
-  selector: string;
-  roleId: string;
-  branchId: string;
-}): unknown {
-  let current = args.value;
-  for (const segment of args.path) {
-    if (
-      typeof current !== "object" ||
-      current === null ||
-      Array.isArray(current) ||
-      !Object.prototype.hasOwnProperty.call(current, segment)
-    ) {
-      failContextProjection({
-        errorCode: "ROLE_CONTEXT_PATH_MISSING",
-        message: `Role "${args.roleId}" selector "${args.selector}" is missing required path "${segment}".`,
-        roleId: args.roleId,
-        branchId: args.branchId
-      });
-    }
-    current = (current as Record<string, unknown>)[segment];
-  }
-  return current;
-}
-
-function resolveArtifactField(args: {
-  artifact: StoredRoleResult;
-  field: "content" | "event" | "data";
-  selector: string;
-  roleId: string;
-  branchId: string;
-}): unknown {
-  const value = args.artifact[args.field];
-  if (value === undefined) {
-    failContextProjection({
-      errorCode: "ROLE_CONTEXT_PATH_MISSING",
-      message: `Role "${args.roleId}" selector "${args.selector}" is missing required field "${args.field}".`,
-      roleId: args.roleId,
-      branchId: args.branchId
-    });
-  }
-  return value;
-}
-
-function getRequiredDirectArtifact(args: {
-  state: GraphState;
-  branch: BranchRecord;
-  roleId: string;
-}): StoredRoleResult {
-  if (!args.branch.parentBranchId) {
-    failContextProjection({
-      errorCode: "ROLE_CONTEXT_SOURCE_UNAVAILABLE",
-      message: `Role "${args.roleId}" cannot resolve direct.* selector without an upstream branch.`,
-      roleId: args.roleId,
-      branchId: args.branch.branchId
-    });
-  }
-  const upstream = getBranchResult(args.state, args.branch.parentBranchId);
-  if (!upstream) {
-    failContextProjection({
-      errorCode: "ROLE_CONTEXT_SOURCE_UNAVAILABLE",
-      message: `Role "${args.roleId}" requires an upstream result for direct.* selector evaluation.`,
-      roleId: args.roleId,
-      branchId: args.branch.branchId
-    });
-  }
-  return upstream;
-}
-
-function getRequiredJoinSourceArtifact(args: {
-  state: GraphState;
-  branch: BranchRecord;
-  roleId: string;
-  node: ExecutionPlanNode;
-  sourceRoleId: string;
-}): StoredRoleResult {
-  if (!args.node.joinMode) {
-    failContextProjection({
-      errorCode: "ROLE_CONTEXT_SELECTOR_UNAUTHORIZED",
-      message: `Role "${args.roleId}" cannot use source(...) selectors without join.mode.`,
-      roleId: args.roleId,
-      branchId: args.branch.branchId
-    });
-  }
-  if (!args.node.joinSources.includes(args.sourceRoleId)) {
-    failContextProjection({
-      errorCode: "ROLE_CONTEXT_SELECTOR_UNAUTHORIZED",
-      message:
-        `Role "${args.roleId}" selector source("${args.sourceRoleId}") is not declared in join.sources.`,
-      roleId: args.roleId,
-      branchId: args.branch.branchId
-    });
-  }
-  const result = findRoleResult({
-    state: args.state,
-    roleId: args.sourceRoleId,
-    lineageId: args.branch.lineageId,
-    loopIteration: args.branch.loopIteration
-  });
-  if (!result) {
-    failContextProjection({
-      errorCode: "ROLE_CONTEXT_SOURCE_UNAVAILABLE",
-      message:
-        `Role "${args.roleId}" selector source("${args.sourceRoleId}") is not available for the current lineage and loop iteration.`,
-      roleId: args.roleId,
-      branchId: args.branch.branchId
-    });
-  }
-  return result;
-}
-
-function evaluateContextSelector(args: {
-  selector: string;
-  roleId: string;
-  node: ExecutionPlanNode;
-  branch: BranchRecord;
-  state: GraphState;
-  userProfile?: UserProfile;
-}): unknown {
-  const selector = args.selector;
-  if (selector === "global.task") {
-    return args.state.userPrompt;
-  }
-  if (selector === "global.user_profile") {
-    if (!args.userProfile) {
-      failContextProjection({
-        errorCode: "ROLE_CONTEXT_SOURCE_UNAVAILABLE",
-        message: `Role "${args.roleId}" selector "${selector}" requires user_profile input.`,
-        roleId: args.roleId,
-        branchId: args.branch.branchId
-      });
-    }
-    return args.userProfile;
-  }
-  if (selector.startsWith("global.user_profile.")) {
-    if (!args.userProfile) {
-      failContextProjection({
-        errorCode: "ROLE_CONTEXT_SOURCE_UNAVAILABLE",
-        message: `Role "${args.roleId}" selector "${selector}" requires user_profile input.`,
-        roleId: args.roleId,
-        branchId: args.branch.branchId
-      });
-    }
-    return resolveObjectPath({
-      value: args.userProfile,
-      path: selector.slice("global.user_profile.".length).split("."),
-      selector,
-      roleId: args.roleId,
-      branchId: args.branch.branchId
-    });
-  }
-
-  if (selector === "direct.content" || selector === "direct.event" || selector === "direct.data") {
-    const artifact = getRequiredDirectArtifact({
-      state: args.state,
-      branch: args.branch,
-      roleId: args.roleId
-    });
-    return resolveArtifactField({
-      artifact,
-      field: selector.slice("direct.".length) as "content" | "event" | "data",
-      selector,
-      roleId: args.roleId,
-      branchId: args.branch.branchId
-    });
-  }
-
-  if (selector.startsWith("direct.data.")) {
-    const artifact = getRequiredDirectArtifact({
-      state: args.state,
-      branch: args.branch,
-      roleId: args.roleId
-    });
-    return resolveObjectPath({
-      value: resolveArtifactField({
-        artifact,
-        field: "data",
-        selector,
-        roleId: args.roleId,
-        branchId: args.branch.branchId
-      }),
-      path: selector.slice("direct.data.".length).split("."),
-      selector,
-      roleId: args.roleId,
-      branchId: args.branch.branchId
-    });
-  }
-
-  const sourceMatch = selector.match(/^source\(([A-Za-z0-9._:-]+)\)\.(content|event|data)(?:\.(.+))?$/);
-  if (sourceMatch) {
-    const [, sourceRoleId, field, nestedPath] = sourceMatch;
-    const artifact = getRequiredJoinSourceArtifact({
-      state: args.state,
-      branch: args.branch,
-      roleId: args.roleId,
-      node: args.node,
-      sourceRoleId
-    });
-    const fieldValue = resolveArtifactField({
-      artifact,
-      field: field as "content" | "event" | "data",
-      selector,
-      roleId: args.roleId,
-      branchId: args.branch.branchId
-    });
-    if (!nestedPath) {
-      return fieldValue;
-    }
-    return resolveObjectPath({
-      value: fieldValue,
-      path: nestedPath.split("."),
-      selector,
-      roleId: args.roleId,
-      branchId: args.branch.branchId
-    });
-  }
-
-  failContextProjection({
-    errorCode: "ROLE_CONTEXT_SELECTOR_UNSUPPORTED",
-    message: `Role "${args.roleId}" uses unsupported context selector "${selector}".`,
-    roleId: args.roleId,
-    branchId: args.branch.branchId
-  });
-}
-
-function buildProjectedContext(args: {
-  roleId: string;
-  node: ExecutionPlanNode;
-  branch: BranchRecord;
-  state: GraphState;
-  userProfile?: UserProfile;
-}): Record<string, unknown> {
-  const sortedEntries = Object.entries(args.node.contextMap ?? {}).sort(([left], [right]) =>
-    left.localeCompare(right)
-  );
-  return Object.fromEntries(sortedEntries.map(([fieldName, selector]) => [
-    fieldName,
-    evaluateContextSelector({
-      selector,
-      roleId: args.roleId,
-      node: args.node,
-      branch: args.branch,
-      state: args.state,
-      userProfile: args.userProfile
-    })
-  ]));
-}
-
-function renderProjectedContext(args: {
-  roleId: string;
-  node: ExecutionPlanNode;
-  branch: BranchRecord;
-  state: GraphState;
-  userProfile?: UserProfile;
-}): string {
-  return stringifyJson(
-    buildProjectedContext({
-      roleId: args.roleId,
-      node: args.node,
-      branch: args.branch,
-      state: args.state,
-      userProfile: args.userProfile
-    })
-  );
-}
-
-function getSelectableOutgoingFlows(node: ExecutionPlanNode): Flow[] {
-  return node.outgoing.filter((flow) => !isRuntimeOnlyErrorEvent(flow.eventType));
-}
-
-const ROLE_INPUT_CONTEXT_MAX_CHARS = 800;
-
-function sanitizeRoleInputContext(value: string): string {
-  const redacted = value.replace(
-    /\b(api[_-]?key|token|password|secret)\s*[:=]\s*[^\s,;]+/gi,
-    "$1=<redacted>"
-  );
-  if (redacted.length <= ROLE_INPUT_CONTEXT_MAX_CHARS) {
-    return redacted;
-  }
-  return `${redacted.slice(0, ROLE_INPUT_CONTEXT_MAX_CHARS)}...`;
-}
-
-/**
- * Prompt input is intentionally flattened into a small stable contract. Executors and prompt
- * templates should not depend on full runtime state or branch internals.
- */
-function buildRolePromptInput(args: {
-  roleId: string;
-  node: ExecutionPlanNode;
-  branch: BranchRecord;
-  state: GraphState;
-  userProfile?: UserProfile;
-}): RolePromptInput {
-  const allowedEvents = getSelectableOutgoingFlows(args.node).map((item) => item.eventType);
-  const hasContextMap = Boolean(args.node.contextMap && Object.keys(args.node.contextMap).length > 0);
-  const context =
-    hasContextMap
-      ? renderProjectedContext(args)
-      : args.node.joinMode
-        ? renderJoinContext({
-            state: args.state,
-            joinSources: args.node.joinSources,
-            branch: args.branch
-          })
-        : getDirectContext(args.state, args.branch);
-
-  return {
-    task: args.state.userPrompt,
-    context,
-    allowed_events: JSON.stringify(allowedEvents),
-    last_output: context,
-    system_notes: "",
-    round: String(args.branch.loopIteration),
-    user_profile: renderUserProfile(args.userProfile)
-  };
-}
+};
 
 function pickDryRunEvent(args: {
   node: ExecutionPlanNode;
@@ -585,193 +140,6 @@ function resolveAuditNextRoleId(args: {
     return undefined;
   }
   return selectedFlow.toRoleId;
-}
-
-function extractJsonObjectCandidate(raw: string): string | undefined {
-  const fenced = raw.match(/```(?:json)?\s*([\s\S]*?)```/i);
-  if (fenced?.[1]?.trim()) {
-    return fenced[1].trim();
-  }
-
-  const start = raw.indexOf("{");
-  if (start < 0) {
-    return undefined;
-  }
-
-  let depth = 0;
-  let inString = false;
-  let escaping = false;
-  for (let index = start; index < raw.length; index += 1) {
-    const character = raw[index];
-    if (inString) {
-      if (escaping) {
-        escaping = false;
-        continue;
-      }
-      if (character === "\\") {
-        escaping = true;
-        continue;
-      }
-      if (character === '"') {
-        inString = false;
-      }
-      continue;
-    }
-
-    if (character === '"') {
-      inString = true;
-      continue;
-    }
-    if (character === "{") {
-      depth += 1;
-      continue;
-    }
-    if (character === "}") {
-      depth -= 1;
-      if (depth === 0) {
-        return raw.slice(start, index + 1).trim();
-      }
-    }
-  }
-
-  return undefined;
-}
-
-/**
- * Output repair is intentionally narrow: recover a wrapped JSON object and normalize the only
- * allowed event when that choice is unambiguous. Anything broader would hide contract drift.
- */
-export function parseRoleExecutionOutputWithRepair(args: {
-  rawOutput: string;
-  requireEvent: boolean;
-}): { output: RoleExecutionOutput; repair?: RoleOutputRepairRecord } {
-  const trimmed = args.rawOutput.trim();
-  if (!trimmed) {
-    throw new Error("Executable role output is empty; expected JSON object");
-  }
-
-  let parsed: unknown;
-  let repair: RoleOutputRepairRecord | undefined;
-  try {
-    parsed = JSON.parse(trimmed);
-  } catch (error) {
-    const candidate = extractJsonObjectCandidate(trimmed);
-    if (candidate && candidate !== trimmed) {
-      try {
-        parsed = JSON.parse(candidate);
-        repair = {
-          kind: "invalid_json",
-          attempted: true,
-          applied: true,
-          strategy: "extract_json_object",
-          detail: "Recovered JSON object from wrapped stdout"
-        };
-      } catch {
-        const message = error instanceof Error ? error.message : String(error);
-        throw new Error(`Executable role output must be valid JSON: ${message}`);
-      }
-    } else {
-      const message = error instanceof Error ? error.message : String(error);
-      throw new Error(`Executable role output must be valid JSON: ${message}`);
-    }
-  }
-
-  if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) {
-    throw new Error("Executable role output must be a JSON object");
-  }
-
-  const record = parsed as Record<string, unknown>;
-  const allowedKeys = new Set(["event", "content", "data"]);
-  for (const key of Object.keys(record)) {
-    if (!allowedKeys.has(key)) {
-      throw new Error(`Executable role output contains unsupported field "${key}"`);
-    }
-  }
-
-  const output: RoleExecutionOutput = {};
-  if (record.event !== undefined) {
-    if (typeof record.event !== "string" || !record.event.trim()) {
-      throw new Error('Executable role output field "event" must be a non-empty string');
-    }
-    output.event = record.event.trim();
-  }
-  if (record.content !== undefined) {
-    if (typeof record.content !== "string") {
-      throw new Error('Executable role output field "content" must be a string');
-    }
-    output.content = record.content;
-  }
-  if (record.data !== undefined) {
-    if (typeof record.data !== "object" || record.data === null || Array.isArray(record.data)) {
-      throw new Error('Executable role output field "data" must be an object');
-    }
-    output.data = record.data as Record<string, unknown>;
-  }
-  if (args.requireEvent && !output.event) {
-    throw new Error('Executable role output must include "event" for roles with outgoing flows');
-  }
-
-  return {
-    output,
-    repair
-  };
-}
-
-export function repairUnknownEvent(args: {
-  output: RoleExecutionOutput;
-  allowedEvents: string[];
-}): RoleOutputRepairRecord | undefined {
-  if (args.allowedEvents.length !== 1) {
-    return undefined;
-  }
-  const [onlyAllowedEvent] = args.allowedEvents;
-  if (args.output.event === onlyAllowedEvent) {
-    return undefined;
-  }
-
-  args.output.event = onlyAllowedEvent;
-  return {
-    kind: "unknown_event",
-    attempted: true,
-    applied: true,
-    strategy: "single_allowed_event",
-    detail: `Normalized event to the only allowed transition "${onlyAllowedEvent}"`
-  };
-}
-
-function assertNoReservedErrorEventFromRoleOutput(args: {
-  roleId: string;
-  event?: string;
-}): void {
-  if (!args.event) {
-    return;
-  }
-  if (!args.event.startsWith("ERROR")) {
-    return;
-  }
-  throw new Error(
-    `Executable role output event "${args.event}" uses reserved prefix "ERROR*"; runtime-only failure routing must trigger it`
-  );
-}
-
-function mergeRepairRecord(
-  left?: RoleOutputRepairRecord,
-  right?: RoleOutputRepairRecord
-): RoleOutputRepairRecord | undefined {
-  if (!left) {
-    return right;
-  }
-  if (!right) {
-    return left;
-  }
-
-  return {
-    kind: right.kind,
-    attempted: left.attempted || right.attempted,
-    applied: left.applied || right.applied,
-    strategy: `${left.strategy},${right.strategy}`,
-    detail: `${left.detail}; ${right.detail}`
-  };
 }
 
 function buildFailureEnvelope(args: {
@@ -836,45 +204,6 @@ function buildFailureEnvelope(args: {
     runId: args.runId,
     branchId: args.branchId
   });
-}
-
-function inferCorrectionReason(message: string): RoleOutputRepairRecord["kind"] | undefined {
-  if (
-    /valid JSON/i.test(message) ||
-    /JSON object/i.test(message) ||
-    /unsupported field/i.test(message)
-  ) {
-    return "invalid_json";
-  }
-  if (/does not match schema/i.test(message)) {
-    return "schema_mismatch";
-  }
-  if (/does not match any outgoing flow/i.test(message)) {
-    return "unknown_event";
-  }
-  return undefined;
-}
-
-function buildCorrectionRequest(args: {
-  roleId: string;
-  message: string;
-  rawOutput?: string;
-  allowedEvents: string[];
-  schemaPath?: string;
-}) {
-  const reason = inferCorrectionReason(args.message);
-  if (!reason || !args.rawOutput?.trim()) {
-    return undefined;
-  }
-
-  return {
-    roleId: args.roleId,
-    reason,
-    rawOutput: args.rawOutput,
-    allowedEvents: args.allowedEvents,
-    schemaPath: args.schemaPath,
-    detail: args.message
-  };
 }
 
 function assertCompilerSnapshotConsistency(args: {
@@ -994,7 +323,7 @@ export async function executeRoleNode(args: {
       compilerDigest,
       compilerDiagnosticCode: mapRuntimeErrorToCompilerDiagnosticCode(failure)
     });
-    await persistRoleResult({ roleId: args.roleId, context: args.runContext, execution, audit });
+    await recordRoleResult({ roleId: args.roleId, context: args.runContext, execution, audit });
     const result: PersistedRoleExecutorResult = {
       status: "failed",
       error,
@@ -1009,7 +338,7 @@ export async function executeRoleNode(args: {
       branch: currentBranch,
       result
     });
-    await appendAuditRecord(args.runContext, audit);
+    await recordAudit({ context: args.runContext, audit });
     return result;
   }
 
@@ -1036,7 +365,7 @@ export async function executeRoleNode(args: {
       compilerDigest,
       compilerDiagnosticCode: mapRuntimeErrorToCompilerDiagnosticCode(failure)
     });
-    await persistRoleResult({ roleId: args.roleId, context: args.runContext, execution, audit });
+    await recordRoleResult({ roleId: args.roleId, context: args.runContext, execution, audit });
     const result: PersistedRoleExecutorResult = {
       status: "failed",
       error,
@@ -1051,7 +380,7 @@ export async function executeRoleNode(args: {
       branch: currentBranch,
       result
     });
-    await appendAuditRecord(args.runContext, audit);
+    await recordAudit({ context: args.runContext, audit });
     return result;
   }
 
@@ -1060,17 +389,23 @@ export async function executeRoleNode(args: {
   const roleDirs = args.runContext.roleDirsById.get(args.roleId);
   const existingSession = getRoleSession(args.runContext, sessionKey);
 
-  let timeoutMs = 120000;
-  let maxOutputBytes = 64 * 1024;
-  let workdir = args.workdir;
-  let env: Record<string, string> | undefined;
-  let binding: ExecutorBinding | undefined;
   let modelId: string | undefined;
   let profileId: string | undefined;
   let toolRef: string | undefined;
   let command: string | undefined;
   let lastStdout: string | undefined;
-  let bindingLabel = "noop";
+  let resolvedBinding = resolveExecutionBinding({
+    roleId: args.roleId,
+    node: args.node,
+    runContext: args.runContext,
+    baseWorkdir: args.workdir,
+    roleDirs,
+    allowedEvents,
+    effectiveLaw: args.effectiveLaw,
+    profilesById: args.profilesById,
+    toolsByRef: args.toolsByRef,
+    modelsById: args.modelsById
+  });
   let promptInput!: RolePromptInput;
   let inputContextForAudit: string | undefined;
   let prompt = "";
@@ -1138,70 +473,31 @@ export async function executeRoleNode(args: {
       values: promptInput
     });
 
-    if (args.node.binding.kind === "model") {
-      const modelPackage = args.modelsById.get(args.node.binding.modelId);
-      if (!modelPackage) {
-        throw new Error(`Model package not loaded for model "${args.node.binding.modelId}"`);
-      }
-      modelId = modelPackage.manifest.modelId;
-      timeoutMs = modelPackage.manifest.timeoutMs ?? timeoutMs;
-      maxOutputBytes = modelPackage.manifest.maxOutputBytes ?? maxOutputBytes;
-      workdir = roleDirs?.roleDir ?? args.workdir;
-      env = {
-        OGSYSTEM_RUN_DIR: args.runContext.runDir,
-        OGSYSTEM_SHARED_DIR: args.runContext.sharedDir,
-        OGSYSTEM_ROLE_DIR: roleDirs?.roleDir ?? workdir,
-        OGSYSTEM_ROLE_ID: args.roleId,
-        OGSYSTEM_MODEL_ID: modelPackage.manifest.modelId,
-        OGSYSTEM_ALLOWED_EVENTS: allowedEvents.join(",")
-      };
-      binding = {
-        kind: "model",
-        modelPackage
-      };
-      bindingLabel = `model:${modelPackage.manifest.modelId}`;
-    } else if (args.node.binding.kind === "profile") {
-      const profile = args.profilesById.get(args.node.binding.profileId);
-      if (!profile) {
-        throw new Error(`Execution profile not found: ${args.node.binding.profileId}`);
-      }
-      const tool = args.toolsByRef.get(profile.toolRef);
-      if (!tool) {
-        throw new Error(`Tool not found: ${profile.toolRef}`);
-      }
-      if (args.effectiveLaw.forbiddenToolRefs.includes(profile.toolRef)) {
-        throw new Error(`Tool is forbidden by effective law: ${profile.toolRef}`);
-      }
-      profileId = profile.profileId;
-      toolRef = tool.toolRef;
-      command = tool.command;
-      timeoutMs = profile.timeoutMs ?? timeoutMs;
-      maxOutputBytes = profile.maxOutputBytes ?? maxOutputBytes;
-      binding = {
-        kind: "profile",
-        profile,
-        tool
-      };
-      env = {
-        OGSYSTEM_RUN_DIR: args.runContext.runDir,
-        OGSYSTEM_SHARED_DIR: args.runContext.sharedDir,
-        OGSYSTEM_ROLE_DIR: roleDirs?.roleDir ?? args.workdir,
-        OGSYSTEM_ROLE_ID: args.roleId,
-        OGSYSTEM_PROFILE_ID: profile.profileId,
-        OGSYSTEM_TOOL_REF: tool.toolRef,
-        OGSYSTEM_ALLOWED_EVENTS: allowedEvents.join(",")
-      };
-      bindingLabel = `profile:${profile.profileId}`;
-    }
+    resolvedBinding = resolveExecutionBinding({
+      roleId: args.roleId,
+      node: args.node,
+      runContext: args.runContext,
+      baseWorkdir: args.workdir,
+      roleDirs,
+      allowedEvents,
+      effectiveLaw: args.effectiveLaw,
+      profilesById: args.profilesById,
+      toolsByRef: args.toolsByRef,
+      modelsById: args.modelsById
+    });
+    modelId = resolvedBinding.modelId;
+    profileId = resolvedBinding.profileId;
+    toolRef = resolvedBinding.toolRef;
+    command = resolvedBinding.command;
 
     logger.roleStart({
       roleId: args.roleId,
       branchId,
       loopIteration,
-      binding: binding ? bindingLabel : "noop"
+      binding: resolvedBinding.binding ? resolvedBinding.bindingLabel : "noop"
     });
 
-    await persistRolePrelude({
+    await recordRolePrelude({
       roleId: args.roleId,
       roleName: rolePackage.manifest.name ?? args.roleId,
       roleDescription: rolePackage.manifest.description ?? "",
@@ -1226,7 +522,7 @@ export async function executeRoleNode(args: {
       context: args.runContext
     });
 
-    if (!binding) {
+    if (!resolvedBinding.binding) {
       // Trade-off: explicit no-op execution is only allowed when laws permit and outgoing flow count is 1 to avoid injecting ambiguity.
       if (!args.effectiveLaw.allowNoopWithoutExecutionBinding) {
         throw new Error(`Role "${args.roleId}" has no execution binding`);
@@ -1252,7 +548,7 @@ export async function executeRoleNode(args: {
         status: "noop",
         compilerDigest
       });
-      await persistRoleResult({ roleId: args.roleId, context: args.runContext, execution, audit });
+      await recordRoleResult({ roleId: args.roleId, context: args.runContext, execution, audit });
       const result: PersistedRoleExecutorResult = {
         status: "noop",
         audit,
@@ -1273,7 +569,7 @@ export async function executeRoleNode(args: {
         selectedEvent,
         durationMs: audit.durationMs
       });
-      await appendAuditRecord(args.runContext, audit);
+      await recordAudit({ context: args.runContext, audit });
       return result;
     }
 
@@ -1282,11 +578,11 @@ export async function executeRoleNode(args: {
       sessionKey,
       prompt,
       schema: rolePackage.outputSchema,
-      binding,
-      workdir,
-      env,
-      timeoutMs,
-      maxOutputBytes,
+      binding: resolvedBinding.binding,
+      workdir: resolvedBinding.workdir,
+      env: resolvedBinding.env,
+      timeoutMs: resolvedBinding.timeoutMs,
+      maxOutputBytes: resolvedBinding.maxOutputBytes,
       dryRunOutputEvent: pickDryRunEvent({
         node: args.node,
         branch: currentBranch,
@@ -1361,7 +657,7 @@ export async function executeRoleNode(args: {
     });
 
     if (executionResult.sessionId) {
-      await persistRoleSession({
+      await recordRoleSession({
         context: args.runContext,
         roleId: args.roleId,
         execution,
@@ -1369,7 +665,7 @@ export async function executeRoleNode(args: {
         messageId: executionResult.messageId
       });
     }
-    await persistRoleResult({
+    await recordRoleResult({
       roleId: args.roleId,
       context: args.runContext,
       execution,
@@ -1405,7 +701,7 @@ export async function executeRoleNode(args: {
       selectedEvent,
       durationMs: audit.durationMs
     });
-    await appendAuditRecord(args.runContext, audit);
+    await recordAudit({ context: args.runContext, audit });
     return result;
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
@@ -1461,7 +757,7 @@ export async function executeRoleNode(args: {
       inputContext: inputContextForAudit
     });
     if (executionError?.sessionId) {
-      await persistRoleSession({
+      await recordRoleSession({
         context: args.runContext,
         roleId: args.roleId,
         execution,
@@ -1469,7 +765,7 @@ export async function executeRoleNode(args: {
         messageId: executionError.messageId
       });
     }
-    await persistRoleResult({ roleId: args.roleId, context: args.runContext, execution, audit });
+    await recordRoleResult({ roleId: args.roleId, context: args.runContext, execution, audit });
     const result: PersistedRoleExecutorResult = {
       status: "failed",
       error: `${message}${category}`,
@@ -1491,7 +787,7 @@ export async function executeRoleNode(args: {
       durationMs: audit.durationMs,
       errorCode: failure.errorCode
     });
-    await appendAuditRecord(args.runContext, audit);
+    await recordAudit({ context: args.runContext, audit });
     return result;
   }
 }

@@ -100,11 +100,28 @@ test("lifecycle cli run start/list/status/logs/resume/stop works end-to-end", as
   assert.equal(listPayload.runs.length, 1);
   const runId = listPayload.runs[0].runId;
   assert.match(runId, /^\d{8}-\d{6}-[a-f0-9]{8}$/);
+  const runDir = path.resolve(tempRoot, ".ogs", "runs", runId);
+  const summaryPath = path.resolve(runDir, "summary.json");
+  const timelinePath = path.resolve(runDir, "timeline.jsonl");
+  const summary = JSON.parse(await readFile(summaryPath, "utf8"));
+  assert.equal(summary.runId, runId);
+  assert.equal(summary.status, "done");
+  assert.equal(typeof summary.transitionCount, "number");
+  assert.equal(typeof summary.executionDirCount, "number");
+  assert.equal(typeof summary.okCount, "number");
+  assert.equal(typeof summary.failedCount, "number");
+  assert.equal(typeof summary.noopCount, "number");
+  const timeline = (await readFile(timelinePath, "utf8"))
+    .split("\n")
+    .map((line) => line.trim())
+    .filter(Boolean);
+  assert.ok(timeline.length > 0);
 
   const status = await runCli(["run", "status", runId, "--workdir", tempRoot]);
   assert.strictEqual(status.code, 0);
   const statusPayload = JSON.parse(status.stdout);
   assert.equal(statusPayload.status, "done");
+  assert.equal(statusPayload.summary.status, "done");
 
   const logs = await runCli(["run", "logs", runId, "--engine", "--json", "--workdir", tempRoot]);
   assert.strictEqual(logs.code, 0);
@@ -115,6 +132,22 @@ test("lifecycle cli run start/list/status/logs/resume/stop works end-to-end", as
   assert.strictEqual(resume.code, 0);
   const resumePayload = JSON.parse(resume.stdout);
   assert.equal(resumePayload.status, "done");
+
+  const statePath = path.resolve(runDir, "state.json");
+  const tamperedState = JSON.parse(await readFile(statePath, "utf8"));
+  tamperedState.status = "failed";
+  tamperedState.graphState.status = "failed";
+  await writeFile(statePath, JSON.stringify(tamperedState, null, 2), "utf8");
+
+  const statusAfterTamper = await runCli(["run", "status", runId, "--workdir", tempRoot]);
+  assert.strictEqual(statusAfterTamper.code, 0);
+  const statusAfterTamperPayload = JSON.parse(statusAfterTamper.stdout);
+  assert.equal(statusAfterTamperPayload.status, "done");
+
+  const listAfterTamper = await runCli(["run", "list", "--workdir", tempRoot]);
+  assert.strictEqual(listAfterTamper.code, 0);
+  const listAfterTamperPayload = JSON.parse(listAfterTamper.stdout);
+  assert.equal(listAfterTamperPayload.runs[0].status, "done");
 
   const stop = await runCli(["run", "stop", runId, "--workdir", tempRoot]);
   assert.strictEqual(stop.code, 0);

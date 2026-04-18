@@ -380,6 +380,7 @@ export type OpencodeSessionRecord = {
  */
 export type RunContext = {
   runId: string;
+  createdAt: string;
   runDir: string;
   resolvedConfigPath: string;
   auditDir: string;
@@ -392,6 +393,8 @@ export type RunContext = {
   eventsPath: string;
   statePath: string;
   metricsPath: string;
+  summaryPath: string;
+  timelinePath: string;
   opencodeDir: string;
   opencodePidPath: string;
   opencodeEndpointPath: string;

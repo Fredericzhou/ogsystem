@@ -13,7 +13,8 @@ import {
   appendBufferedText,
   chainBufferedFlush,
   flushBufferedRunArtifacts,
-  initializeRunContext
+  initializeRunContext,
+  requestRunStop
 } from "../dist/runtime/run-artifacts.js";
 
 const systemSource = `flowchart TD
@@ -65,6 +66,64 @@ async function writeRuntimeConfigFile(runtimePath, repoRoot, runtimeOverrides = 
   await writeFile(runtimePath, JSON.stringify(runtimeConfig, null, 2), "utf8");
 }
 
+async function writeRolePackage(args) {
+  const roleDir = path.resolve(args.rolesRoot, args.roleId);
+  await mkdir(roleDir, { recursive: true });
+  await writeFile(
+    path.resolve(roleDir, "role.json"),
+    JSON.stringify(
+      {
+        roleId: args.roleId,
+        roleVersion: "1.0.0",
+        name: args.roleId,
+        description: `${args.roleId} test role`,
+        promptTemplate: "prompt.md",
+        outputSchema: "output.schema.json"
+      },
+      null,
+      2
+    ),
+    "utf8"
+  );
+  await writeFile(
+    path.resolve(roleDir, "prompt.md"),
+    [
+      `Role: ${args.roleId}`,
+      "Task:",
+      "{{task}}",
+      "",
+      "Context:",
+      "{{context}}",
+      "",
+      "Allowed events: {{allowed_events}}",
+      "Round: {{round}}"
+    ].join("\n"),
+    "utf8"
+  );
+  await writeFile(
+    path.resolve(roleDir, "output.schema.json"),
+    JSON.stringify(
+      {
+        type: "object",
+        properties: {
+          event: {
+            type: "string",
+            enum: args.allowedEvents
+          },
+          content: {
+            type: "string"
+          }
+        },
+        required: ["event"],
+        additionalProperties: false
+      },
+      null,
+      2
+    ),
+    "utf8"
+  );
+}
+
 async function createCrashWindowFixture(args) {
   const tempRoot = await mkdtemp(path.join(os.tmpdir(), args.tempPrefix));
   const systemPath = path.resolve(tempRoot, "system.mmd");
@@ -86,6 +145,18 @@ async function readSingleRunDirectory(tempRoot) {
 
 function withResumeRun(baseArgs, runId) {
   return [...baseArgs, "--resume-run", `.ogs/runs/${runId}`];
+}
+
+async function waitForSingleRunDirectory(tempRoot, timeoutMs = 5000) {
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    try {
+      return await readSingleRunDirectory(tempRoot);
+    } catch {
+      await new Promise((resolve) => setTimeout(resolve, 25));
+    }
+  }
+  throw new Error(`Timed out waiting for run directory in ${tempRoot}`);
 }
 
 async function runCrashAfterOutcome(baseArgs, options = {}) {
@@ -580,4 +651,187 @@ test("resume rejects a concurrently held live lock on the same run directory", a
   const heldResume = await heldResumePromise;
   assert.strictEqual(heldResume.code, 0);
   await assert.rejects(() => readFile(path.resolve(runDir, RESUME_RUN_LOCK_FILE), "utf8"));
+});
+
+test("runner consumes stop request after current transition and lands in stopped state", async () => {
+  const repoRoot = process.cwd();
+  const tempRoot = await mkdtemp(path.join(os.tmpdir(), "ogsystem-stop-request-runtime-"));
+  const rolesRoot = path.resolve(tempRoot, "og-roles", "roles");
+  const scriptsDir = path.resolve(tempRoot, "scripts");
+  const systemPath = path.resolve(tempRoot, "system.mmd");
+  const runtimePath = path.resolve(tempRoot, "runtime.json");
+  const profilesPath = path.resolve(tempRoot, "profiles.json");
+  const toolsPath = path.resolve(tempRoot, "tools.json");
+  const tracePath = path.resolve(tempRoot, "stop-trace.json");
+  const secondRoleMarkerPath = path.resolve(tempRoot, "second-role-marker.txt");
+
+  await mkdir(rolesRoot, { recursive: true });
+  await mkdir(scriptsDir, { recursive: true });
+  await writeFile(
+    runtimePath,
+    JSON.stringify(
+      {
+        executor: "opencode",
+        roleRepo: "./og-roles",
+        modelRepo: path.resolve(repoRoot, "og-models"),
+        runsDir: ".ogs/runs"
+      },
+      null,
+      2
+    ),
+    "utf8"
+  );
+
+  await writeRolePackage({
+    rolesRoot,
+    roleId: "slow_role",
+    allowedEvents: ["NEXT"]
+  });
+  await writeRolePackage({
+    rolesRoot,
+    roleId: "second_role",
+    allowedEvents: ["DONE"]
+  });
+
+  await writeFile(
+    path.resolve(scriptsDir, "slow-role.mjs"),
+    [
+      "setTimeout(() => {",
+      '  console.log(JSON.stringify({ event: "NEXT", content: "slow role done" }));',
+      "}, 400);"
+    ].join("\n"),
+    "utf8"
+  );
+  await writeFile(
+    path.resolve(scriptsDir, "second-role.mjs"),
+    [
+      'import { writeFileSync } from "node:fs";',
+      `writeFileSync(${JSON.stringify(secondRoleMarkerPath)}, "ran", "utf8");`,
+      'console.log(JSON.stringify({ event: "DONE", content: "second role ran" }));'
+    ].join("\n"),
+    "utf8"
+  );
+
+  await writeFile(
+    profilesPath,
+    JSON.stringify(
+      [
+        { profileId: "profile.slow", toolRef: "tool.slow" },
+        { profileId: "profile.second", toolRef: "tool.second" }
+      ],
+      null,
+      2
+    ),
+    "utf8"
+  );
+  await writeFile(
+    toolsPath,
+    JSON.stringify(
+      {
+        tools: [
+          {
+            toolRef: "tool.slow",
+            runner: "local_shell",
+            command: "node",
+            argsTemplate: [path.resolve(scriptsDir, "slow-role.mjs")],
+            stdinMode: "none"
+          },
+          {
+            toolRef: "tool.second",
+            runner: "local_shell",
+            command: "node",
+            argsTemplate: [path.resolve(scriptsDir, "second-role.mjs")],
+            stdinMode: "none"
+          }
+        ]
+      },
+      null,
+      2
+    ),
+    "utf8"
+  );
+  await writeFile(
+    systemPath,
+    `flowchart TD
+%% system.id=test.stop.request.runtime
+%% system.version=1.0.0
+%% law.global=law.console.base
+%% entry.role=slow_role
+%% exec.bind.slow_role=profile.slow
+%% exec.bind.second_role=profile.second
+
+input -->|START| slow_role[Role:slow_role]
+slow_role[Role:slow_role] -->|NEXT| second_role[Role:second_role]
+second_role[Role:second_role] -->|DONE| output
+`,
+    "utf8"
+  );
+
+  const child = spawn(
+    "node",
+    [
+      cliPath,
+      "--system",
+      systemPath,
+      "--runtime",
+      runtimePath,
+      "--profiles",
+      profilesPath,
+      "--tools",
+      toolsPath,
+      "--laws",
+      path.resolve(repoRoot, ".ogsystem", "laws.json"),
+      "--workdir",
+      tempRoot,
+      "--prompt",
+      "stop request runtime test",
+      "--trace-out",
+      tracePath
+    ],
+    {
+      cwd: process.cwd(),
+      stdio: ["ignore", "pipe", "pipe"],
+      env: process.env
+    }
+  );
+
+  let stdout = "";
+  let stderr = "";
+  child.stdout.on("data", (chunk) => {
+    stdout += chunk.toString();
+  });
+  child.stderr.on("data", (chunk) => {
+    stderr += chunk.toString();
+  });
+
+  const { runDir } = await waitForSingleRunDirectory(tempRoot);
+  await requestRunStop({
+    runDir,
+    reason: "phase0 stop-consumption test"
+  });
+
+  const exitCode = await new Promise((resolve, reject) => {
+    child.on("error", reject);
+    child.on("close", resolve);
+  });
+  assert.strictEqual(exitCode, 0, stderr || stdout);
+
+  const tracedResult = JSON.parse(await readFile(tracePath, "utf8"));
+  assert.strictEqual(tracedResult.status, "stopped");
+  assert.strictEqual(tracedResult.finalRoleId, undefined);
+
+  const stateJson = JSON.parse(await readFile(path.resolve(runDir, "state.json"), "utf8"));
+  assert.strictEqual(stateJson.status, "stopped");
+  assert.strictEqual(stateJson.graphState.status, "stopped");
+  assert.strictEqual(stateJson.graphState.lastExecutedRoleId, "slow_role");
+
+  const eventsText = await readFile(path.resolve(runDir, "events.ndjson"), "utf8");
+  assert.match(eventsText, /"type":"run_stopping"/);
+  assert.match(eventsText, /"type":"run_stopped"/);
+
+  const slowExecutions = await readdir(path.resolve(runDir, "roles", "slow_role", "executions"));
+  const secondExecutions = await readdir(path.resolve(runDir, "roles", "second_role", "executions"));
+  assert.strictEqual(slowExecutions.length, 1);
+  assert.strictEqual(secondExecutions.length, 0);
+  await assert.rejects(() => readFile(secondRoleMarkerPath, "utf8"));
 });

@@ -65,6 +65,7 @@
 - `docs/archive/delivery/flow-contract-refactor-plan-2026-04-14.md`（proposed flow-contract-first semantics and refactor plan）
 - `docs/archive/delivery/typed-compiler-execution-plan-2026-04-16.md`（proposed unified static compiler entry checklist）
 - `docs/archive/delivery/ogsystem-visualization-platform-solution-2026-04-16.md`（proposal for a runtime visualization and observability platform）
+- `docs/archive/delivery/runtime-refactor-execution-checklist-2026-04-18.md`（delivered runtime refactor checklist; phases 0-6 delivered, later phases remain follow-up work）
 - `docs/archive/delivery/ogsystem-naming-style-review-2026-04-14.md`（archived naming audit; `flow/edge` conclusion superseded by 2026-04-15 alignment review）
 - `docs/archive/delivery/ogsystem-flow-edge-alignment-review-2026-04-15.md`（delivered flow/edge alignment audit and canonical decision）
 - `docs/archive/delivery/ogsystem-flow-edge-alignment-execution-plan-2026-04-15.md`（delivered flow/edge alignment rollout and closure record）

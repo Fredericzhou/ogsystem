@@ -272,6 +272,7 @@ async function main() {
     dryRun: true
   });
   const resumeTotalMs = performance.now() - resumeStart;
+  const metrics = JSON.parse(await readFile(path.resolve(runDir, "metrics.json"), "utf8"));
 
   const summary = {
     date: new Date().toISOString(),
@@ -281,7 +282,9 @@ async function main() {
     restoredCheckpointSequence: RESTORED_CHECKPOINT_SEQUENCE,
     totalCheckpointFiles: allCheckpoints.length,
     pendingCheckpointFiles: checkpoints.length,
+    transitionCount: metrics.transitionCount,
     stateLoadMs: Number(stateLoadMs.toFixed(3)),
+    stateWriteMs: metrics.stateWriteMs,
     checkpointLoadMs: Number(checkpointLoadMs.toFixed(3)),
     resumeTotalMs: Number(resumeTotalMs.toFixed(3)),
     finalStatus: resumed.status,

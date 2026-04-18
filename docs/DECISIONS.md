@@ -72,6 +72,7 @@ Resume consumes a narrow set of artifacts.
 - OpenCode run-local metadata is `.opencode/server.pid` + `.opencode/endpoint.json`
 - operator-facing logs are split by channel: `logs/engine.ndjson` and `logs/roles/<roleId>.ndjson`
 - `events.ndjson` stays as append-only full event history
+- `summary.json` and `timeline.jsonl` are operator-facing projections; resume must not depend on them
 
 Reason:
 

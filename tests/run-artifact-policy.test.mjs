@@ -26,6 +26,22 @@ test("artifact policy documents runtime-consumed and operator-facing files", () 
     )
   );
   assert.ok(policy.some((entry) => entry.path === "events.ndjson" && !entry.resumeConsumed));
+  assert.ok(
+    policy.some(
+      (entry) =>
+        entry.path === "summary.json" &&
+        entry.retention === "operator_latest" &&
+        !entry.resumeConsumed
+    )
+  );
+  assert.ok(
+    policy.some(
+      (entry) =>
+        entry.path === "timeline.jsonl" &&
+        entry.retention === "operator_latest" &&
+        !entry.resumeConsumed
+    )
+  );
   assert.ok(policy.some((entry) => entry.path === "repro.sh" && !entry.resumeConsumed));
   assert.ok(
     policy.some(
@@ -70,6 +86,8 @@ test("model runtime artifacts match the documented contract", async () => {
 
   assert.ok(Array.isArray(sessions));
   await readFile(path.resolve(runDir, "state.json"), "utf8");
+  await readFile(path.resolve(runDir, "summary.json"), "utf8");
+  await readFile(path.resolve(runDir, "timeline.jsonl"), "utf8");
   await readFile(path.resolve(runDir, "plan-fingerprint.json"), "utf8");
   await readFile(path.resolve(runDir, "events.ndjson"), "utf8");
   const reproScript = await readFile(path.resolve(runDir, "repro.sh"), "utf8");

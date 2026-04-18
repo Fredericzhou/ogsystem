@@ -49,6 +49,18 @@ const RUN_ARTIFACT_POLICY: RunArtifactPolicyEntry[] = [
     description: "Append-only audit/event history."
   },
   {
+    path: "summary.json",
+    retention: "operator_latest",
+    resumeConsumed: false,
+    description: "Machine-readable run summary projection for CLI, visualizer, and automation."
+  },
+  {
+    path: "timeline.jsonl",
+    retention: "operator_latest",
+    resumeConsumed: false,
+    description: "Machine-readable event timeline projection derived from events.ndjson."
+  },
+  {
     path: "run.md",
     retention: "operator_latest",
     resumeConsumed: false,

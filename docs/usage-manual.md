@@ -485,7 +485,7 @@ When a run starts, `.ogs/runs/<run-id>/` should persist:
 
 - run-id format: `YYYYMMDD-HHMMSS-<shortHash>`
 
-- run-level files: `run.md`, `request.md`, `system.mmd`, `repro.sh`, `state.json`, `metrics.json`, `events.ndjson`, `plan-fingerprint.json`
+- run-level files: `run.md`, `request.md`, `system.mmd`, `repro.sh`, `state.json`, `metrics.json`, `summary.json`, `events.ndjson`, `timeline.jsonl`, `plan-fingerprint.json`
 - run-level OpenCode metadata: `.opencode/server.pid`, `.opencode/endpoint.json` for `model.bind` runs
 - run-level OpenCode session index: `sessions.json`
 - run-level checkpoint WAL: `checkpoints/<sequence>-<executionId>.json`
@@ -515,11 +515,14 @@ Resume source of truth:
 Audit/operator artifacts:
 
 - `events.ndjson`
+- `summary.json`
+- `timeline.jsonl`
 - `logs/engine.ndjson`
 - `logs/roles/<roleId>.ndjson`
 - Markdown projections such as `run.md`, `request.md`, `audit/summary.md`, and `audit/transitions.md`
 `state.json` is the authoritative runtime state snapshot.
-`events.ndjson` is append-only complete history; CLI logs filtering uses the split log channels first.
+`summary.json` is the machine-readable run summary projection used by `run list`, `run status`, visualizer, and automation. It is not consumed by resume.
+`events.ndjson` is append-only complete history; `timeline.jsonl` is the machine-readable timeline projection derived from it. CLI logs filtering uses the split log channels first.
 `latest-session.json` is an operator-facing latest snapshot only.
 `repro.sh` is a run-local resume repro script generated for troubleshooting handoff, with environment context comments (Node/OS/timestamp).
 Resume reloads `sessions.json`, not `latest-session.json` or per-execution `session.json`.
@@ -606,7 +609,7 @@ Optional history cleanup:
 OGSystem classifies persisted run artifacts into three classes:
 
 - `runtime_consumed`: runtime-critical files read by resume and recovery logic (`state.json`, `sessions.json`, `plan-fingerprint.json`, `checkpoints/...`, `execution-outcome.json`, `.resume.lock`)
-- `operator_latest`: latest operator-facing snapshots (`run.md`, `request.md`, `repro.sh`, `audit/*.md`, `roles/<roleId>/*.md|*.json`, `events.ndjson`, `logs/engine.ndjson`, `logs/roles/<roleId>.ndjson`)
+- `operator_latest`: latest operator-facing snapshots (`run.md`, `request.md`, `repro.sh`, `audit/*.md`, `roles/<roleId>/*.md|*.json`, `summary.json`, `events.ndjson`, `timeline.jsonl`, `logs/engine.ndjson`, `logs/roles/<roleId>.ndjson`)
 - `history_only`: immutable per-execution snapshots (`roles/<roleId>/executions/<executionId>/...`)
 
 This contract is implemented by:
@@ -660,7 +663,7 @@ Local visualizer:
 pnpm run run:visualizer -- --workdir .
 ```
 
-The visualizer is a lightweight read-only observability server that renders the current run list, run detail, event timeline, graph source, and live updates from `events.ndjson`.
+The visualizer is a lightweight read-only observability server that renders the current run list, run detail, event timeline, graph source, and live updates. It prefers `summary.json` and `timeline.jsonl`, with fallback to `state.json` and `events.ndjson` for older runs.
 
 Graph preview link (optional):
 

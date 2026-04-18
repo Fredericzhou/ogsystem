@@ -61,6 +61,30 @@ async function createFixtureRun(workdir) {
   );
   await writeFile(path.resolve(runDir, "metrics.json"), JSON.stringify({ durationMs: 42 }, null, 2), "utf8");
   await writeFile(
+    path.resolve(runDir, "summary.json"),
+    JSON.stringify(
+      {
+        version: 1,
+        runId,
+        systemId: "viz.demo",
+        systemVersion: "1.0.0",
+        status: "done",
+        transitionCount: 5,
+        durationMs: 42,
+        lastRoleId: "alpha",
+        finalRoleId: "alpha",
+        executionDirCount: 1,
+        okCount: 1,
+        failedCount: 0,
+        noopCount: 0,
+        updatedAt: "2026-04-16T01:02:05.000Z"
+      },
+      null,
+      2
+    ),
+    "utf8"
+  );
+  await writeFile(
     path.resolve(runDir, "resolved-config.json"),
     JSON.stringify({ systemId: "viz.demo", runtime: "local" }, null, 2),
     "utf8"
@@ -82,6 +106,27 @@ async function createFixtureRun(workdir) {
       JSON.stringify({
         type: "audit",
         at: "2026-04-16T01:02:04.000Z",
+        roleId: "alpha",
+        status: "ok",
+        durationMs: 12
+      })
+    ].join("\n"),
+    "utf8"
+  );
+  await writeFile(
+    path.resolve(runDir, "timeline.jsonl"),
+    [
+      JSON.stringify({
+        version: 1,
+        cursor: 0,
+        at: "2026-04-16T01:02:03.000Z",
+        type: "run_start"
+      }),
+      JSON.stringify({
+        version: 1,
+        cursor: 1,
+        at: "2026-04-16T01:02:04.000Z",
+        type: "audit",
         roleId: "alpha",
         status: "ok",
         durationMs: 12
@@ -146,12 +191,15 @@ test("visualizer server serves run list, details, and live stream", async () => 
     const list = await listResponse.json();
     assert.equal(list.runs.length, 1);
     assert.equal(list.runs[0].runId, runId);
+    assert.equal(list.runs[0].status, "done");
 
     const detailResponse = await fetch(`${url}/api/v1/runs/${runId}`);
     assert.equal(detailResponse.status, 200);
     const detail = await detailResponse.json();
-    assert.equal(detail.snapshot.status, "running");
+    assert.equal(detail.snapshot.status, "done");
     assert.equal(detail.snapshot.activeBranches, 1);
+    assert.equal(detail.snapshot.transitionCount, 5);
+    assert.equal(detail.snapshot.finalRoleId, "alpha");
     assert.match(detail.systemSource, /alpha -->\|DONE\| output/);
 
     const eventsResponse = await fetch(`${url}/api/v1/runs/${runId}/events?cursor=0&limit=1`);
@@ -170,6 +218,7 @@ test("visualizer server serves run list, details, and live stream", async () => 
     assert.equal(stream.statusCode, 200);
     assert.equal(stream.contentType, "text/event-stream; charset=utf-8");
     assert.match(stream.chunk, /"type":"audit"/);
+    assert.match(stream.chunk, /"status":"ok"/);
   } finally {
     await new Promise((resolve) => server.close(resolve));
   }
