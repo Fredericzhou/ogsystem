@@ -14,8 +14,7 @@ import {
   inspectRun,
   loadIndexedRuns,
   loadRunLogs,
-  rebuildRunsIndex,
-  resolveRunDir
+  rebuildRunsIndex
 } from "../runtime/project-lifecycle.js";
 import { loadTimelineSnapshot, projectTimelineRecord } from "../runtime/timeline-projector.js";
 
@@ -195,7 +194,7 @@ async function readSystemSource(runDir: string): Promise<string | null> {
 
 async function loadRunDetail(workdir: string, runId: string): Promise<LoadedRunDetail> {
   const detail = (await inspectRun(workdir, runId)) as InspectRunRecord;
-  const runDir = resolveRunDir(workdir, runId);
+  const runDir = detail.runDir;
   const [systemSource, events] = await Promise.all([
     readSystemSource(runDir),
     readRunEvents(runDir)
@@ -268,7 +267,8 @@ async function loadRunEventsSnapshot(args: {
   branchId?: string;
   type?: string;
 }): Promise<{ events: NdjsonEntry[]; nextCursor: number }> {
-  const runDir = resolveRunDir(args.workdir, args.runId);
+  const detail = (await inspectRun(args.workdir, args.runId)) as { runDir: string };
+  const runDir = detail.runDir;
   const allEvents = await readRunEvents(runDir);
   const startCursor = Math.max(0, args.cursor ?? 0);
   const limit = args.limit ?? 500;
@@ -1069,7 +1069,8 @@ async function handleVisualizationRequest(
     return;
   }
   if (segments.length === 5 && segments[4] === "stream" && method === "GET") {
-    const runDir = resolveRunDir(args.workdir, runId);
+    const detail = (await inspectRun(args.workdir, runId)) as { runDir: string };
+    const runDir = detail.runDir;
     const startCursor = Math.max(0, Number(url.searchParams.get("cursor") ?? "0") || 0);
     response.writeHead(200, {
       "content-type": "text/event-stream; charset=utf-8",

@@ -25,6 +25,25 @@ function runNodeCli(cliPath, args, cwd = process.cwd()) {
   });
 }
 
+function runOgsBin(args, cwd = process.cwd()) {
+  return new Promise((resolve, reject) => {
+    const child = spawn(path.resolve("node_modules/.bin/ogs"), args, {
+      cwd,
+      stdio: ["ignore", "pipe", "pipe"]
+    });
+    let stdout = "";
+    let stderr = "";
+    child.stdout.on("data", (chunk) => {
+      stdout += chunk.toString();
+    });
+    child.stderr.on("data", (chunk) => {
+      stderr += chunk.toString();
+    });
+    child.on("error", reject);
+    child.on("close", (code) => resolve({ code, stdout, stderr }));
+  });
+}
+
 test("ogs help command surfaces layered guidance", async () => {
   const rootHelp = await runNodeCli(runtimeCliPath, ["help"]);
   assert.strictEqual(rootHelp.code, 0);
@@ -40,6 +59,12 @@ test("ogs help command surfaces layered guidance", async () => {
   assert.strictEqual(runHelp.code, 0);
   assert.match(runHelp.stdout, /ogs run start --system <file\.mmd> --prompt <text> \[options\]/);
   assert.match(runHelp.stdout, /--workdir <path>           Working directory \(default: cwd\)/);
+});
+
+test("ogs bin is wired through the local bin link", async () => {
+  const help = await runOgsBin(["help"]);
+  assert.strictEqual(help.code, 0);
+  assert.match(help.stdout, /ogs help \[project\|run\|legacy\]/);
 });
 
 test("nl2mmd help command highlights base entrypoint and defaults", async () => {

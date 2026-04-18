@@ -142,6 +142,13 @@ Use it with `pnpm run run:nl2mmd -- --message "..."` for one-shot drafting, or o
 - Base commands are for function and runtime behavior.
 - Wrapper commands are for project lifecycle and default operational flow.
 
+Local `ogs` command setup:
+
+- install or repair in a checkout with `pnpm install --frozen-lockfile`
+- run the wrapper without a global link via `pnpm exec ogs ...`
+- expose a bare `ogs` command with `pnpm link --global` from the repository root
+- remove the bare command with `pnpm unlink --global`
+
 For project management, `ogs` defaults to the current directory. Use `--workdir <path>` only when you need to operate on another project root. `ogs project init` creates the local control plane in the current directory, and `ogs project create <name> --template <...>` creates a new project folder under the current directory unless a different parent is explicitly provided.
 
 Recommended test split:

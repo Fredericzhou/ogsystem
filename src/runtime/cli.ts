@@ -21,7 +21,6 @@ import {
   loadRunLogs,
   rebuildRunsIndex,
   requestStop,
-  resolveRunDir
 } from "./project-lifecycle.js";
 import { streamRunLogs } from "./project-lifecycle.js";
 import {
@@ -608,7 +607,8 @@ async function runResumeCommand(argv: string[]): Promise<void> {
   }
 
   const workdir = asString(values.workdir) ?? process.cwd();
-  const runDir = resolveRunDir(workdir, runId);
+  const detail = (await inspectRun(workdir, runId)) as { runDir: string };
+  const runDir = detail.runDir;
   const systemPath = asString(values.system) ?? resolve(runDir, "system.mmd");
   const prompt =
     asString(values.prompt) ??
@@ -700,7 +700,13 @@ async function runRunCommand(argv: string[]): Promise<void> {
       typeof detail.summary === "object" &&
       detail.summary !== null &&
       !Array.isArray(detail.summary)
-        ? (detail.summary as { status?: string })
+        ? (detail.summary as {
+            status?: string;
+            durationMs?: number;
+            lastRoleId?: string;
+            lastErrorCode?: string;
+            finalRoleId?: string;
+          })
         : undefined;
     const state =
       typeof detail.state === "object" &&
@@ -708,12 +714,29 @@ async function runRunCommand(argv: string[]): Promise<void> {
       !Array.isArray(detail.state)
         ? (detail.state as { status?: string; graphState?: { status?: string } })
         : undefined;
+    const stopRequest =
+      typeof detail.stopRequest === "object" &&
+      detail.stopRequest !== null &&
+      !Array.isArray(detail.stopRequest)
+        ? (detail.stopRequest as { reason?: string })
+        : undefined;
+    const stopOutcome =
+      typeof detail.stopOutcome === "object" &&
+      detail.stopOutcome !== null &&
+      !Array.isArray(detail.stopOutcome)
+        ? (detail.stopOutcome as { reason?: string })
+        : undefined;
     console.log(
       JSON.stringify(
         {
           runId,
           runDir: detail.runDir,
           status: summary?.status ?? state?.status ?? state?.graphState?.status ?? "unknown",
+          durationMs: summary?.durationMs ?? 0,
+          lastRoleId: summary?.lastRoleId ?? null,
+          lastErrorCode: summary?.lastErrorCode ?? null,
+          stopReason: stopOutcome?.reason ?? stopRequest?.reason ?? null,
+          finalRoleId: summary?.finalRoleId ?? null,
           stopRequest: detail.stopRequest ?? null,
           stopOutcome: detail.stopOutcome ?? null,
           summary: detail.summary ?? null

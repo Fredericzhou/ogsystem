@@ -13,6 +13,7 @@ import { basename, resolve } from "node:path";
 
 import { readJsonFile, writeJsonFileAtomic } from "./json-file.js";
 import { requestRunStop } from "./run-artifacts.js";
+import { loadRuntimeConfig } from "./runtime-loader.js";
 import { stringifyJson } from "./runtime-support.js";
 import type { RunSummaryProjection } from "./run-summary-schema.js";
 
@@ -27,6 +28,10 @@ export type IndexedRun = {
   runId: string;
   status: string;
   transitionCount: number;
+  durationMs?: number;
+  lastRoleId?: string;
+  lastErrorCode?: string;
+  stopReason?: string;
   finalRoleId?: string;
   updatedAt: string;
   runDir: string;
@@ -230,6 +235,22 @@ export function resolveOgsPaths(workdir: string): {
   };
 }
 
+async function resolveConfiguredRunsDir(workdir: string): Promise<string> {
+  const runtimeConfig = await loadRuntimeConfig(undefined, workdir);
+  return resolve(workdir, runtimeConfig.runsDir);
+}
+
+export async function resolveRunDir(workdir: string, runId: string): Promise<string> {
+  if (runId.includes("ogsystem-history")) {
+    throw new Error(`Legacy run path is not supported: ${runId}`);
+  }
+  if (runId.includes("/") || runId.includes("\\")) {
+    throw new Error(`run-id must be a bare id, got: ${runId}`);
+  }
+  const runsDir = await resolveConfiguredRunsDir(workdir);
+  return resolve(runsDir, runId);
+}
+
 export async function ensureProjectSkeleton(args: {
   workdir: string;
   projectName?: string;
@@ -267,7 +288,7 @@ export async function ensureProjectSkeleton(args: {
 }
 
 export async function loadIndexedRuns(workdir: string): Promise<IndexedRun[]> {
-  const { runsDir } = resolveOgsPaths(workdir);
+  const runsDir = await resolveConfiguredRunsDir(workdir);
   let entries;
   try {
     entries = await readdir(runsDir, { withFileTypes: true });
@@ -281,11 +302,25 @@ export async function loadIndexedRuns(workdir: string): Promise<IndexedRun[]> {
       continue;
     }
     const runDir = resolve(runsDir, entry.name);
-    const [summaryRaw, stateRaw] = await Promise.all([
+    const [summaryRaw, stateRaw, stopRequestRaw, stopOutcomeRaw] = await Promise.all([
       tryReadJson(resolve(runDir, "summary.json")),
-      tryReadJson(resolve(runDir, "state.json"))
+      tryReadJson(resolve(runDir, "state.json")),
+      tryReadJson(resolve(runDir, "control", "stop-request.json")),
+      tryReadJson(resolve(runDir, "control", "stop-outcome.json"))
     ]);
     const summary = asSummaryProjection(summaryRaw);
+    const stopReason =
+      typeof stopOutcomeRaw === "object" &&
+      stopOutcomeRaw !== null &&
+      !Array.isArray(stopOutcomeRaw) &&
+      typeof (stopOutcomeRaw as { reason?: unknown }).reason === "string"
+        ? (stopOutcomeRaw as { reason: string }).reason
+        : typeof stopRequestRaw === "object" &&
+            stopRequestRaw !== null &&
+            !Array.isArray(stopRequestRaw) &&
+            typeof (stopRequestRaw as { reason?: unknown }).reason === "string"
+          ? (stopRequestRaw as { reason: string }).reason
+          : undefined;
     // Compatibility read: tolerate both flattened status fields and nested graphState snapshots
     // so index rebuilding can survive schema transitions across runtime versions.
     const state =
@@ -307,6 +342,10 @@ export async function loadIndexedRuns(workdir: string): Promise<IndexedRun[]> {
       status: summary?.status ?? state?.status ?? state?.graphState?.status ?? "unknown",
       transitionCount:
         summary?.transitionCount ?? state?.transitionCount ?? state?.graphState?.transitionCount ?? 0,
+      durationMs: summary?.durationMs,
+      lastRoleId: summary?.lastRoleId,
+      lastErrorCode: summary?.lastErrorCode,
+      stopReason,
       finalRoleId: summary?.finalRoleId ?? state?.finalRoleId ?? state?.graphState?.finalRoleId,
       updatedAt: summary?.updatedAt ?? runStat.mtime.toISOString(),
       runDir
@@ -328,18 +367,8 @@ export async function rebuildRunsIndex(workdir: string): Promise<RunsIndexFile> 
   return index;
 }
 
-export function resolveRunDir(workdir: string, runId: string): string {
-  if (runId.includes("ogsystem-history")) {
-    throw new Error(`Legacy run path is not supported: ${runId}`);
-  }
-  if (runId.includes("/") || runId.includes("\\")) {
-    throw new Error(`run-id must be a bare id, got: ${runId}`);
-  }
-  return resolve(workdir, OGS_RUNS_DIR, runId);
-}
-
 export async function inspectRun(workdir: string, runId: string): Promise<Record<string, unknown>> {
-  const runDir = resolveRunDir(workdir, runId);
+  const runDir = await resolveRunDir(workdir, runId);
   const runStat = await stat(runDir).catch(() => undefined);
   if (!runStat?.isDirectory()) {
     throw new Error(`Run not found: ${runId}`);
@@ -419,7 +448,7 @@ async function loadFallbackEventLogs(args: {
 }
 
 export async function requestStop(workdir: string, runId: string, reason?: string): Promise<Record<string, unknown>> {
-  const runDir = resolveRunDir(workdir, runId);
+  const runDir = await resolveRunDir(workdir, runId);
   const runStat = await stat(runDir).catch(() => undefined);
   if (!runStat?.isDirectory()) {
     throw new Error(`Run not found: ${runId}`);
@@ -443,7 +472,7 @@ export async function loadRunLogs(args: {
   tail?: number;
   since?: string;
 }): Promise<Array<Record<string, unknown>>> {
-  const runDir = resolveRunDir(args.workdir, args.runId);
+  const runDir = await resolveRunDir(args.workdir, args.runId);
   const runStat = await stat(runDir).catch(() => undefined);
   if (!runStat?.isDirectory()) {
     throw new Error(`Run not found: ${args.runId}`);

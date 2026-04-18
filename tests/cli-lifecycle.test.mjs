@@ -60,7 +60,7 @@ test("lifecycle cli run start/list/status/logs/resume/stop works end-to-end", as
         executor: "opencode",
         roleRepo: path.resolve(repoRoot, "og-roles"),
         modelRepo: path.resolve(repoRoot, "og-models"),
-        runsDir: ".ogs/runs"
+        runsDir: "runtime-runs"
       },
       null,
       2
@@ -100,7 +100,9 @@ test("lifecycle cli run start/list/status/logs/resume/stop works end-to-end", as
   assert.equal(listPayload.runs.length, 1);
   const runId = listPayload.runs[0].runId;
   assert.match(runId, /^\d{8}-\d{6}-[a-f0-9]{8}$/);
-  const runDir = path.resolve(tempRoot, ".ogs", "runs", runId);
+  const runDir = path.resolve(tempRoot, "runtime-runs", runId);
+  assert.equal(typeof listPayload.runs[0].durationMs, "number");
+  assert.equal(typeof listPayload.runs[0].lastRoleId, "string");
   const summaryPath = path.resolve(runDir, "summary.json");
   const timelinePath = path.resolve(runDir, "timeline.jsonl");
   const summary = JSON.parse(await readFile(summaryPath, "utf8"));
@@ -121,6 +123,9 @@ test("lifecycle cli run start/list/status/logs/resume/stop works end-to-end", as
   assert.strictEqual(status.code, 0);
   const statusPayload = JSON.parse(status.stdout);
   assert.equal(statusPayload.status, "done");
+  assert.equal(statusPayload.runDir, runDir);
+  assert.equal(typeof statusPayload.durationMs, "number");
+  assert.equal(typeof statusPayload.lastRoleId, "string");
   assert.equal(statusPayload.summary.status, "done");
 
   const logs = await runCli(["run", "logs", runId, "--engine", "--json", "--workdir", tempRoot]);
@@ -194,6 +199,6 @@ test("lifecycle cli run start/list/status/logs/resume/stop works end-to-end", as
   assert.strictEqual(stop.code, 0);
   const stopPayload = JSON.parse(stop.stdout);
   assert.equal(stopPayload.runId, runId);
-  const stopRequestPath = path.resolve(tempRoot, ".ogs", "runs", runId, "control", "stop-request.json");
+  const stopRequestPath = path.resolve(tempRoot, "runtime-runs", runId, "control", "stop-request.json");
   await stat(stopRequestPath);
 });
