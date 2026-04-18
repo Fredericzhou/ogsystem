@@ -15,6 +15,7 @@ export type ResolvedExecutionBinding = {
   timeoutMs: number;
   maxOutputBytes: number;
   workdir: string;
+  commandBaseDir?: string;
   env?: Record<string, string>;
   modelId?: string;
   profileId?: string;
@@ -92,6 +93,7 @@ export function resolveExecutionBinding(args: {
       timeoutMs: profile.timeoutMs ?? defaults.timeoutMs,
       maxOutputBytes: profile.maxOutputBytes ?? defaults.maxOutputBytes,
       workdir: sessionDirectory ?? args.baseWorkdir,
+      commandBaseDir: args.baseWorkdir,
       env: {
         OGSYSTEM_RUN_DIR: args.runContext.runDir,
         OGSYSTEM_SHARED_DIR: args.runContext.sharedDir,

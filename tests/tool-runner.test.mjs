@@ -1,5 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import path from "node:path";
 
 import { runCliTool } from "../dist/runtime/tool-runner.js";
 
@@ -24,6 +25,7 @@ test("dry run reports formatted content", async () => {
     tool: buildTool(["-e", "console.log('hello')"]),
     vars: {},
     workdir: process.cwd(),
+    commandBaseDir: process.cwd(),
     timeoutMs: 1000,
     maxOutputBytes: DEFAULT_MAX_OUTPUT_BYTES,
     dryRunOutput: {
@@ -41,10 +43,26 @@ test("runCliTool captures large stdout payloads", async () => {
     tool: buildTool(["-e", "console.log('x'.repeat(8192))"]),
     vars: {},
     workdir: process.cwd(),
+    commandBaseDir: process.cwd(),
     timeoutMs: 1000,
     maxOutputBytes: DEFAULT_MAX_OUTPUT_BYTES
   });
   assert.ok(result.stdout.length >= 8000);
+});
+
+test("runCliTool resolves path-like args from commandBaseDir", async () => {
+  const result = await runCliTool({
+    tool: buildTool(["tests/fixtures/scripts/branch-tool.js", "PATH_A"]),
+    vars: {},
+    workdir: process.cwd(),
+    commandBaseDir: process.cwd(),
+    timeoutMs: 1000,
+    maxOutputBytes: DEFAULT_MAX_OUTPUT_BYTES,
+    dryRun: true
+  });
+
+  assert.ok(path.isAbsolute(result.args[0]));
+  assert.match(result.args[0], /branch-tool\.js$/);
 });
 
 test("runCliTool rejects when output exceeds max bytes", async () => {
@@ -54,6 +72,7 @@ test("runCliTool rejects when output exceeds max bytes", async () => {
         tool: buildTool(["-e", "console.log('x'.repeat(8192))"]),
         vars: {},
         workdir: process.cwd(),
+        commandBaseDir: process.cwd(),
         timeoutMs: 1000,
         maxOutputBytes: 128
       }),
@@ -74,6 +93,7 @@ test("runCliTool rejects when process times out", async () => {
         tool: buildTool(["-e", "setTimeout(() => {}, 1000)"]),
         vars: {},
         workdir: process.cwd(),
+        commandBaseDir: process.cwd(),
         timeoutMs: 10,
         maxOutputBytes: DEFAULT_MAX_OUTPUT_BYTES
       }),
@@ -94,6 +114,7 @@ test("runCliTool rejects when process exits with non-zero code", async () => {
         tool: buildTool(["-e", "process.stderr.write('boom'); process.exit(17)"]),
         vars: {},
         workdir: process.cwd(),
+        commandBaseDir: process.cwd(),
         timeoutMs: 1000,
         maxOutputBytes: DEFAULT_MAX_OUTPUT_BYTES
       }),

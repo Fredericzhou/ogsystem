@@ -37,31 +37,24 @@ test("adapter rejects unknown global law", async () => {
 });
 
 test("adapter fails when execution bindings use forbidden tool", async () => {
-  await assert.rejects(
-    () => runSystemWithAdapter(buildArgs(lawForbidPath)),
-    (error) => {
-      assert.ok(error && typeof error === "object");
-      assert.equal(error.envelope?.errorCode, "RUNTIME_EXECUTION_FAILED");
-      assert.match(error.message, /Tool is forbidden by effective law/);
-      return true;
-    }
-  );
+  const result = await runSystemWithAdapter(buildArgs(lawForbidPath));
+  assert.equal(result.status, "failed");
+  assert.equal(result.errorEnvelope?.errorCode, "ROLE_EXECUTION_FAILED");
+  assert.equal(result.errorEnvelope?.errorCategory, "execution");
+  assert.match(result.errorEnvelope?.message ?? "", /Tool is forbidden by effective law/);
+  assert.equal(result.runSummary.failureCountsByErrorCode.ROLE_EXECUTION_FAILED, 1);
 });
 
 test("adapter langgraph fails when execution bindings use forbidden tool", async () => {
-  await assert.rejects(
-    () =>
-      runSystemWithAdapter({
-        ...buildArgs(lawForbidPath),
-        systemPath: langgraphSystemPath
-      }),
-    (error) => {
-      assert.ok(error && typeof error === "object");
-      assert.equal(error.envelope?.errorCode, "RUNTIME_EXECUTION_FAILED");
-      assert.match(error.message, /Tool is forbidden by effective law/);
-      return true;
-    }
-  );
+  const result = await runSystemWithAdapter({
+    ...buildArgs(lawForbidPath),
+    systemPath: langgraphSystemPath
+  });
+  assert.equal(result.status, "failed");
+  assert.equal(result.errorEnvelope?.errorCode, "ROLE_EXECUTION_FAILED");
+  assert.equal(result.errorEnvelope?.errorCategory, "execution");
+  assert.match(result.errorEnvelope?.message ?? "", /Tool is forbidden by effective law/);
+  assert.equal(result.runSummary.failureCountsByErrorCode.ROLE_EXECUTION_FAILED, 1);
 });
 
 test("adapter langgraph allows noop when law enables it", async () => {

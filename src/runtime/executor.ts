@@ -53,6 +53,7 @@ export type ExecutorRequest = {
   schema: unknown;
   binding: ExecutorBinding;
   workdir: string;
+  commandBaseDir?: string;
   env?: Record<string, string>;
   timeoutMs: number;
   maxOutputBytes: number;
@@ -218,6 +219,7 @@ export function createDefaultExecutor(args: {
         tool: request.binding.tool,
         vars: { prompt: request.prompt },
         env: request.env,
+        commandBaseDir: request.commandBaseDir ?? request.workdir,
         workdir: request.workdir,
         timeoutMs: request.timeoutMs,
         maxOutputBytes: request.maxOutputBytes,

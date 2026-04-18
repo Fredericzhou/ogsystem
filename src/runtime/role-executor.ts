@@ -7,6 +7,7 @@
  */
 import { createAuditRecord } from "./audit-recorder.js";
 import { resolveExecutionBinding } from "./binding-resolver.js";
+import type { ResolvedExecutionBinding } from "./binding-resolver.js";
 import { createRunConsoleLogger } from "./console-run-log.js";
 import type { RunConsoleLogger } from "./console-run-log.js";
 import type { Executor } from "./executor.js";
@@ -405,24 +406,25 @@ export async function executeRoleNode(args: {
   let toolRef: string | undefined;
   let command: string | undefined;
   let lastStdout: string | undefined;
-  let resolvedBinding = resolveExecutionBinding({
-    roleId: args.roleId,
-    node: args.node,
-    runContext: args.runContext,
-    baseWorkdir: args.workdir,
-    roleDirs: resolvedRoleDirs,
-    allowedEvents,
-    effectiveLaw: args.effectiveLaw,
-    profilesById: args.profilesById,
-    toolsByRef: args.toolsByRef,
-    modelsById: args.modelsById
-  });
+  let resolvedBinding: ResolvedExecutionBinding | undefined;
   let promptInput!: RolePromptInput;
   let inputContextForAudit: string | undefined;
   let prompt = "";
   const logger = args.logger ?? createRunConsoleLogger(false);
 
   try {
+    resolvedBinding = resolveExecutionBinding({
+      roleId: args.roleId,
+      node: args.node,
+      runContext: args.runContext,
+      baseWorkdir: args.workdir,
+      roleDirs: resolvedRoleDirs,
+      allowedEvents,
+      effectiveLaw: args.effectiveLaw,
+      profilesById: args.profilesById,
+      toolsByRef: args.toolsByRef,
+      modelsById: args.modelsById
+    });
     promptInput = buildRolePromptInput({
       roleId: args.roleId,
       node: args.node,
@@ -591,6 +593,7 @@ export async function executeRoleNode(args: {
       schema: rolePackage.outputSchema,
       binding: resolvedBinding.binding,
       workdir: resolvedBinding.workdir,
+      commandBaseDir: resolvedBinding.commandBaseDir,
       env: resolvedBinding.env,
       timeoutMs: resolvedBinding.timeoutMs,
       maxOutputBytes: resolvedBinding.maxOutputBytes,
@@ -775,7 +778,7 @@ export async function executeRoleNode(args: {
         execution,
         sessionId: executionError.sessionId,
         messageId: executionError.messageId,
-        sessionDirectory: resolvedBinding.sessionDirectory
+        sessionDirectory: resolvedBinding?.sessionDirectory
       });
     }
     await recordRoleResult({ roleId: args.roleId, context: args.runContext, execution, audit });

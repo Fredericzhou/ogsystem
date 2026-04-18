@@ -5,6 +5,8 @@
  * scheduling, prompt design, or result ingestion beyond returning structured stdout/stderr.
  */
 import { spawn } from "node:child_process";
+import { existsSync } from "node:fs";
+import { resolve } from "node:path";
 
 import type { CliTool } from "./types.js";
 
@@ -24,6 +26,14 @@ export class ToolExecutionError extends Error {
 
 function renderTemplate(value: string, vars: Record<string, string>): string {
   return value.replace(/\{\{([a-zA-Z0-9_.-]+)\}\}/g, (_all, key) => vars[key] ?? "");
+}
+
+function materializePathLikeArg(arg: string, baseDir: string): string {
+  if (!arg || arg.startsWith("-") || arg.startsWith("/") || arg.includes("://")) {
+    return arg;
+  }
+  const candidate = resolve(baseDir, arg);
+  return existsSync(candidate) ? candidate : arg;
 }
 
 /**
@@ -49,6 +59,7 @@ export async function runCliTool(args: {
   tool: CliTool;
   vars: Record<string, string>;
   env?: Record<string, string>;
+  commandBaseDir: string;
   workdir: string;
   timeoutMs: number;
   maxOutputBytes: number;
@@ -57,7 +68,9 @@ export async function runCliTool(args: {
     event?: string;
   };
 }): Promise<{ exitCode: number; stdout: string; stderr: string; args: string[] }> {
-  const renderedArgs = renderArgs(args.tool.argsTemplate, args.vars);
+  const renderedArgs = renderArgs(args.tool.argsTemplate, args.vars).map((item) =>
+    materializePathLikeArg(item, args.commandBaseDir)
+  );
 
   if (args.dryRun) {
     return {
