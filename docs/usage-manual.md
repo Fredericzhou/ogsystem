@@ -123,7 +123,7 @@ Use this rule:
 - selector details and ancestor-access limits are documented in [context-map 投影说明](./context-map-projection-guide.md)
 - dynamic fan-out with uncertain `N` is not graph semantics; keep it inside one role (Heavy Node) or pre-expand before orchestration
 - controlled fan-out concurrency is an execution policy, not a flow semantic (it must not change graph reachability/join readiness)
-- compatibility execution mode: `exec.bind.<roleId>` still works when paired with `profiles/tools`, but it runs inside the same graph runtime rather than a separate engine
+- compatibility path: `exec.bind.<roleId>` with `profiles/tools` runs inside the same graph runtime
 - `ERROR*` error-flow semantics are implemented behind a feature-gated rollout (`runtime.error_flows.v1`, default `false`); systems without matching `ERROR*` edges remain fail-stop
 
 ### NL2MMD Authoring
@@ -257,7 +257,7 @@ minimalist[Role:debate-minimalist] -->|MINIMALIST_DONE| judge[Role:debate-judge]
 judge[Role:debate-judge] -->|DECISION_READY| output
 ```
 
-Legacy-compatible execution example (current adapter):
+Compatibility execution example:
 
 ```mermaid
 flowchart TD
@@ -761,18 +761,6 @@ This path auto-discovers:
 - `.ogs/laws.json`
 - `og-models/`
 - `og-roles/`
-
-Legacy-compatible binding command:
-
-```bash
-pnpm run run:adapter \
-  --system examples/console-system.mmd \
-  --profiles examples/console-profiles.json \
-  --tools examples/console-tools.json \
-  --laws examples/console-laws.json \
-  --prompt "analyze this repository" \
-  --dry-run
-```
 
 Graph runtime command:
 
