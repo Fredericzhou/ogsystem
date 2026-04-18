@@ -42,6 +42,16 @@ pnpm run run:adapter --system examples/medical-quorum-consultation/system.mmd --
 pnpm run run:adapter --system examples/incident-response-playbook/system.mmd --runtime examples/incident-response-playbook/runtime.json --profiles examples/incident-response-playbook/profiles.json --tools examples/incident-response-playbook/tools.json --laws examples/incident-response-playbook/laws.json --prompt "生产环境发布后出现关键告警，触发应急处置流程"
 ```
 
+## Visual Inspection
+
+After running any example that creates `.ogs/runs/<run-id>/`, inspect the result with:
+
+```bash
+ogs visualizer
+```
+
+The visualizer starts in the current directory by default and stays read-only. Use it to review run list, detail, timeline, graph source, and command metadata without changing the example artifacts.
+
 ## Extended/Compatibility Examples
 
 - `target-model-binding-system.mmd`: smallest model-binding baseline.

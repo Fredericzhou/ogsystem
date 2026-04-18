@@ -141,6 +141,8 @@ Use it with `pnpm run run:nl2mmd -- --message "..."` for one-shot drafting, or o
 - Wrapper commands are the operator-facing `ogs` commands, such as `ogs project init` and `ogs project create <name> --template ...`.
 - Base commands are for function and runtime behavior.
 - Wrapper commands are for project lifecycle and default operational flow.
+- Command metadata should come from one shared registry so help text, parsing, and visual command graphs stay aligned.
+- `run:visualizer` reads from that same registry for read-only command graphs and Compose previews; it does not own command definitions or runtime state.
 
 Local `ogs` command setup:
 
@@ -686,10 +688,12 @@ pnpm run run:adapter \
 Local visualizer:
 
 ```bash
-pnpm run run:visualizer -- --workdir .
+ogs visualizer
 ```
 
-The visualizer is a lightweight read-only observability server that renders the current run list, run detail, event timeline, graph source, and live updates. It prefers `summary.json` and `timeline.jsonl`, with fallback to `state.json` and `events.ndjson` for older runs.
+`ogs visualizer` starts the read-only visualizer in the current directory by default and prints the local address after startup. Use `--workdir <path>` only when you want to inspect another project root.
+
+The visualizer is a lightweight read-only observability server that renders the current run list, run detail, event timeline, graph source, command registry, and live updates. It prefers `summary.json` and `timeline.jsonl`, with fallback to `state.json` and `events.ndjson` for older runs. Any Mermaid composition or `.mmd` saving stays in `run:nl2mmd`, while the visualizer stays in preview-only mode.
 
 Graph preview link (optional):
 
@@ -748,7 +752,7 @@ pnpm run run:adapter run logs <run-id> --role <role-id> --since 2026-04-18T10:00
 pnpm run run:adapter run logs <run-id> --engine --follow
 pnpm run run:adapter run resume <run-id> --dry-run
 pnpm run run:adapter run stop <run-id>
-pnpm run run:visualizer -- --workdir .
+ogs visualizer
 ```
 
 Preferred runtime command:

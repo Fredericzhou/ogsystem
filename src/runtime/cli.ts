@@ -13,6 +13,12 @@ import { parseArgs } from "node:util";
 
 import { runSystemWithAdapter } from "./adapter.js";
 import {
+  getRuntimeCliOptions,
+  getRuntimeCliSubcommandOptions,
+  getRuntimeCliUsage
+} from "./command-registry.js";
+import { startVisualizationServer } from "../visualizer/server.js";
+import {
   OGS_RUNS_DIR,
   createProjectFromTemplate,
   ensureProjectSkeleton,
@@ -31,104 +37,30 @@ import {
 } from "./runtime-errors.js";
 
 function usageRoot(): string {
-  return [
-    "Usage:",
-    "  ogs project init",
-    "  ogs project create <name> --template <minimal|software-dev|consultation>",
-    "  ogs run start --system <file.mmd> --prompt <text> [options]",
-    "  ogs run resume <run-id> [options]",
-    "  ogs run stop <run-id> [--reason <text>]",
-    "  ogs run list [--reindex]",
-    "  ogs run status <run-id>",
-    "  ogs run inspect <run-id>",
-    "  ogs run logs <run-id> [--engine|--role <roleId>] [--json] [--tail <n>] [--since <iso>] [--follow]",
-    "  ogs run reindex",
-    "",
-    "Help:",
-    "  ogs help [project|run|legacy]",
-    "  ogs project --help",
-    "  ogs run --help",
-    "",
-    "Defaults:",
-    "  project commands use the current directory unless --workdir is provided",
-    "  run commands use the current directory unless --workdir is provided",
-    "  project create writes a new project folder under the current directory",
-    "",
-    "Legacy-compatible mode:",
-    "  pnpm run run:adapter -- --system <file.mmd> --prompt <text> [options]"
-  ].join("\n");
+  return getRuntimeCliUsage();
 }
 
 function usageProject(): string {
-  return [
-    "Usage:",
-    "  ogs project init [--workdir <path>]",
-    "  ogs project create <name> --template <minimal|software-dev|consultation> [--workdir <path>]",
-    "",
-    "Project lifecycle:",
-    "  init   create .ogs/project.json, .ogs/runtime.json, .ogs/providers/opencode.json, and .ogs/runs-index.json",
-    "  create scaffold a new project directory from a template",
-    "",
-    "Defaults:",
-    "  current directory is the project root unless --workdir is set",
-    "  create uses the current directory as the parent directory unless --workdir is set",
-    "  templates are intentionally limited to keep project management consistent",
-    "",
-    "Templates:",
-    "  minimal",
-    "  software-dev",
-    "  consultation",
-    "",
-    "Examples:",
-    "  ogs project init",
-    "  ogs project create demo-app --template minimal"
-  ].join("\n");
+  return getRuntimeCliUsage("project");
 }
 
 function usageRun(): string {
-  return [
-    "Usage:",
-    "  ogs run start --system <file.mmd> --prompt <text> [options]",
-    "  ogs run resume <run-id> [options]",
-    "  ogs run stop <run-id> [--reason <text>] [--workdir <path>]",
-    "  ogs run list [--reindex] [--workdir <path>]",
-    "  ogs run status <run-id> [--workdir <path>]",
-    "  ogs run inspect <run-id> [--workdir <path>]",
-    "  ogs run logs <run-id> [--engine|--role <roleId>] [--json] [--tail <n>] [--since <iso>] [--follow] [--workdir <path>]",
-    "  ogs run reindex [--workdir <path>]",
-    "",
-    "Common Run Options:",
-    "  --runtime <file>           Runtime config JSON override",
-    "  --user-profile <file>      User profile JSON override",
-    "  --laws <file>              Law catalog JSON override",
-    "  --profiles <file>          Legacy execution profiles JSON (optional)",
-    "  --tools <file>             Legacy CLI tools JSON (optional)",
-    "  --workdir <path>           Working directory (default: cwd)",
-    "  --cleanup-executions <n>   Keep only latest n per-role execution snapshots",
-    "  --log-run                  Print role/transition runtime logs to stderr",
-    "  --print-graph-link         Print Mermaid Live graph preview URL to stderr (run start only)",
-    "  --trace-out <file>         Write final runtime result JSON",
-    "  --dry-run                  Do not execute external commands",
-    "  --help                     Show help"
-  ].join("\n");
+  return getRuntimeCliUsage("run");
 }
 
 function usageLegacy(): string {
-  return [
-    "Usage:",
-    "  pnpm run run:adapter -- --system <file.mmd> --prompt <text> [options]",
-    "",
-    "Legacy-compatible mode bridges the runtime directly.",
-    "Prefer ogs project/run commands for normal project management."
-  ].join("\n");
+  return getRuntimeCliUsage("legacy");
 }
 
-function usage(topic?: "project" | "run" | "legacy"): string {
+function usage(topic?: "project" | "run" | "visualizer" | "legacy"): string {
   if (topic === "project") {
     return usageProject();
   }
   if (topic === "run") {
     return usageRun();
+  }
+  if (topic === "visualizer") {
+    return getRuntimeCliUsage("visualizer");
   }
   if (topic === "legacy") {
     return usageLegacy();
@@ -266,23 +198,7 @@ function parseLegacyArgs(argv?: string[]) {
   try {
     return parseArgs({
       args: argv,
-      options: {
-        system: { type: "string" },
-        runtime: { type: "string" },
-        "user-profile": { type: "string" },
-        "resume-run": { type: "string" },
-        profiles: { type: "string" },
-        tools: { type: "string" },
-        laws: { type: "string" },
-        prompt: { type: "string" },
-        workdir: { type: "string" },
-        "cleanup-executions": { type: "string" },
-        "log-run": { type: "boolean" },
-        "print-graph-link": { type: "boolean" },
-        "trace-out": { type: "string" },
-        "dry-run": { type: "boolean" },
-        help: { type: "boolean", short: "h" }
-      },
+      options: getRuntimeCliOptions("legacy"),
       allowPositionals: false
     });
   } catch (error) {
@@ -353,6 +269,17 @@ function parseCleanupExecutionValue(value: string | undefined): number | undefin
   return cleanupExecutionHistory;
 }
 
+function parsePort(value: string | undefined): number {
+  if (!value) {
+    return 3337;
+  }
+  const parsed = Number.parseInt(value, 10);
+  if (!Number.isInteger(parsed) || parsed < 0 || parsed > 65535) {
+    throw createCliInputError("CLI_INVALID_ARGS", `Invalid port: ${value}`);
+  }
+  return parsed;
+}
+
 async function runAdapterCommand(args: {
   systemPath: string;
   prompt: string;
@@ -394,37 +321,41 @@ async function runAdapterCommand(args: {
 
 async function runLegacyMode(argv?: string[]): Promise<void> {
   const { values } = parseLegacyArgs(argv);
-  if (values.help) {
+  if (asBool(values.help)) {
     console.log(usage());
     return;
   }
-  if (!values.system || !values.prompt) {
+  const systemPath = asString(values.system);
+  const prompt = asString(values.prompt);
+  if (!systemPath || !prompt) {
     throw createCliInputError("CLI_MISSING_REQUIRED_ARGS", `Missing required args.\n\n${usage()}`);
   }
 
-  const workdir = values.workdir ?? process.cwd();
+  const workdir = asString(values.workdir) ?? process.cwd();
   await maybePrintGraphLink({
-    enabled: values["print-graph-link"] ?? false,
+    enabled: asBool(values["print-graph-link"]),
     workdir,
-    systemPath: values.system
+    systemPath
   });
 
-  const cleanupExecutionHistory = parseCleanupExecutionValue(values["cleanup-executions"]);
+  const cleanupExecutionHistory = parseCleanupExecutionValue(
+    asString(values["cleanup-executions"])
+  );
   try {
     await runAdapterCommand({
-      systemPath: values.system,
-      prompt: values.prompt,
-      runtimeConfigPath: values.runtime,
-      userProfilePath: values["user-profile"],
-      resumeRunDir: values["resume-run"],
-      profilesPath: values.profiles,
-      toolsPath: values.tools,
-      lawsPath: values.laws,
+      systemPath,
+      prompt,
+      runtimeConfigPath: asString(values.runtime),
+      userProfilePath: asString(values["user-profile"]),
+      resumeRunDir: asString(values["resume-run"]),
+      profilesPath: asString(values.profiles),
+      toolsPath: asString(values.tools),
+      lawsPath: asString(values.laws),
       workdir,
-      dryRun: values["dry-run"] ?? false,
+      dryRun: asBool(values["dry-run"]),
       cleanupExecutionHistory,
-      logRun: values["log-run"] ?? false,
-      traceOut: values["trace-out"]
+      logRun: asBool(values["log-run"]),
+      traceOut: asString(values["trace-out"])
     });
   } catch (error) {
     if (error instanceof RuntimeError) {
@@ -446,11 +377,10 @@ async function runProjectCommand(argv: string[]): Promise<void> {
   }
 
   if (subcommand === "init") {
-    const { values } = parseLifecycleArgs(argv.slice(1), {
-      workdir: { type: "string" },
-      name: { type: "string" },
-      help: { type: "boolean", short: "h" }
-    });
+    const { values } = parseLifecycleArgs(
+      argv.slice(1),
+      getRuntimeCliSubcommandOptions("project init")
+    );
     if (asBool(values.help)) {
       console.log(usage("project"));
       return;
@@ -477,11 +407,10 @@ async function runProjectCommand(argv: string[]): Promise<void> {
   }
 
   if (subcommand === "create") {
-    const { values, positionals } = parseLifecycleArgs(argv.slice(1), {
-      template: { type: "string" },
-      workdir: { type: "string" },
-      help: { type: "boolean", short: "h" }
-    });
+    const { values, positionals } = parseLifecycleArgs(
+      argv.slice(1),
+      getRuntimeCliSubcommandOptions("project create")
+    );
     if (asBool(values.help)) {
       console.log(usage("project"));
       return;
@@ -528,23 +457,26 @@ async function runProjectCommand(argv: string[]): Promise<void> {
   );
 }
 
-async function runStartCommand(argv: string[]): Promise<void> {
-  const { values } = parseLifecycleArgs(argv, {
-    system: { type: "string" },
-    runtime: { type: "string" },
-    "user-profile": { type: "string" },
-    profiles: { type: "string" },
-    tools: { type: "string" },
-    laws: { type: "string" },
-    prompt: { type: "string" },
-    workdir: { type: "string" },
-    "cleanup-executions": { type: "string" },
-    "log-run": { type: "boolean" },
-    "print-graph-link": { type: "boolean" },
-    "trace-out": { type: "string" },
-    "dry-run": { type: "boolean" },
-    help: { type: "boolean", short: "h" }
+async function runVisualizerCommand(argv: string[]): Promise<void> {
+  const { values } = parseLifecycleArgs(argv, getRuntimeCliSubcommandOptions("visualizer"));
+  if (asBool(values.help)) {
+    console.log(usage("visualizer"));
+    return;
+  }
+
+  const workdir = asString(values.workdir) ?? process.cwd();
+  const host = asString(values.host) ?? "127.0.0.1";
+  const port = parsePort(asString(values.port));
+  const result = await startVisualizationServer({
+    workdir,
+    host,
+    port
   });
+  console.log(`OGSystem Visualizer listening on ${result.url}`);
+}
+
+async function runStartCommand(argv: string[]): Promise<void> {
+  const { values } = parseLifecycleArgs(argv, getRuntimeCliSubcommandOptions("run start"));
   if (asBool(values.help)) {
     console.log(usage("run"));
     return;
@@ -582,21 +514,10 @@ async function runStartCommand(argv: string[]): Promise<void> {
 }
 
 async function runResumeCommand(argv: string[]): Promise<void> {
-  const { values, positionals } = parseLifecycleArgs(argv, {
-    system: { type: "string" },
-    runtime: { type: "string" },
-    "user-profile": { type: "string" },
-    profiles: { type: "string" },
-    tools: { type: "string" },
-    laws: { type: "string" },
-    prompt: { type: "string" },
-    workdir: { type: "string" },
-    "cleanup-executions": { type: "string" },
-    "log-run": { type: "boolean" },
-    "trace-out": { type: "string" },
-    "dry-run": { type: "boolean" },
-    help: { type: "boolean", short: "h" }
-  });
+  const { values, positionals } = parseLifecycleArgs(
+    argv,
+    getRuntimeCliSubcommandOptions("run resume")
+  );
   if (asBool(values.help)) {
     console.log(usage("run"));
     return;
@@ -647,11 +568,10 @@ async function runRunCommand(argv: string[]): Promise<void> {
     return;
   }
   if (subcommand === "stop") {
-    const { values, positionals } = parseLifecycleArgs(argv.slice(1), {
-      workdir: { type: "string" },
-      reason: { type: "string" },
-      help: { type: "boolean", short: "h" }
-    });
+    const { values, positionals } = parseLifecycleArgs(
+      argv.slice(1),
+      getRuntimeCliSubcommandOptions("run stop")
+    );
     if (asBool(values.help)) {
       console.log(usage("run"));
       return;
@@ -666,11 +586,10 @@ async function runRunCommand(argv: string[]): Promise<void> {
     return;
   }
   if (subcommand === "list") {
-    const { values } = parseLifecycleArgs(argv.slice(1), {
-      workdir: { type: "string" },
-      reindex: { type: "boolean" },
-      help: { type: "boolean", short: "h" }
-    });
+    const { values } = parseLifecycleArgs(
+      argv.slice(1),
+      getRuntimeCliSubcommandOptions("run list")
+    );
     if (asBool(values.help)) {
       console.log(usage("run"));
       return;
@@ -683,10 +602,10 @@ async function runRunCommand(argv: string[]): Promise<void> {
     return;
   }
   if (subcommand === "status") {
-    const { values, positionals } = parseLifecycleArgs(argv.slice(1), {
-      workdir: { type: "string" },
-      help: { type: "boolean", short: "h" }
-    });
+    const { values, positionals } = parseLifecycleArgs(
+      argv.slice(1),
+      getRuntimeCliSubcommandOptions("run status")
+    );
     if (asBool(values.help)) {
       console.log(usage("run"));
       return;
@@ -748,10 +667,10 @@ async function runRunCommand(argv: string[]): Promise<void> {
     return;
   }
   if (subcommand === "inspect") {
-    const { values, positionals } = parseLifecycleArgs(argv.slice(1), {
-      workdir: { type: "string" },
-      help: { type: "boolean", short: "h" }
-    });
+    const { values, positionals } = parseLifecycleArgs(
+      argv.slice(1),
+      getRuntimeCliSubcommandOptions("run inspect")
+    );
     if (asBool(values.help)) {
       console.log(usage("run"));
       return;
@@ -765,16 +684,10 @@ async function runRunCommand(argv: string[]): Promise<void> {
     return;
   }
   if (subcommand === "logs") {
-    const { values, positionals } = parseLifecycleArgs(argv.slice(1), {
-      workdir: { type: "string" },
-      engine: { type: "boolean" },
-      role: { type: "string" },
-      tail: { type: "string" },
-      since: { type: "string" },
-      follow: { type: "boolean" },
-      json: { type: "boolean" },
-      help: { type: "boolean", short: "h" }
-    });
+    const { values, positionals } = parseLifecycleArgs(
+      argv.slice(1),
+      getRuntimeCliSubcommandOptions("run logs")
+    );
     if (asBool(values.help)) {
       console.log(usage("run"));
       return;
@@ -830,10 +743,10 @@ async function runRunCommand(argv: string[]): Promise<void> {
     return;
   }
   if (subcommand === "reindex") {
-    const { values } = parseLifecycleArgs(argv.slice(1), {
-      workdir: { type: "string" },
-      help: { type: "boolean", short: "h" }
-    });
+    const { values } = parseLifecycleArgs(
+      argv.slice(1),
+      getRuntimeCliSubcommandOptions("run reindex")
+    );
     if (asBool(values.help)) {
       console.log(usage());
       return;
@@ -858,7 +771,7 @@ async function main(): Promise<void> {
   }
   if (argv[0] === "help") {
     const topic = argv[1];
-    if (topic === "project" || topic === "run" || topic === "legacy") {
+    if (topic === "project" || topic === "run" || topic === "visualizer" || topic === "legacy") {
       console.log(usage(topic));
       return;
     }
@@ -873,6 +786,10 @@ async function main(): Promise<void> {
     }
     if (command === "run") {
       await runRunCommand(rest);
+      return;
+    }
+    if (command === "visualizer") {
+      await runVisualizerCommand(rest);
       return;
     }
   }

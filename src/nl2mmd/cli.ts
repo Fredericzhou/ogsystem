@@ -21,43 +21,22 @@ import {
   searchRoles,
   validateNl2MmdCandidate
 } from "./index.js";
+import {
+  getNl2MmdCliOptions,
+  getNl2MmdCliUsage
+} from "../runtime/command-registry.js";
 import type { Nl2MmdConversation, Nl2MmdContext, Nl2MmdTurnResult } from "./types.js";
 
 function usage(): string {
-  return [
-    "Usage:",
-    "  pnpm run run:nl2mmd -- [--message <text>] [--model <modelId>]",
-    "",
-    "Base command:",
-    "  direct entrypoint for prompt generation and validation against local roles/models",
-    "",
-    "Options:",
-    "  --message <text>       One-shot NL2MMD request; omit for interactive mode",
-    "  --model <modelId>      Default model id (default: fast-gpt54)",
-    "  --runtime <file>       Runtime config JSON (optional)",
-    "  --laws <file>          Laws JSON (optional)",
-    "  --profiles <file>      Legacy profiles JSON for exec.bind validation (optional)",
-    "  --user-profile <file>  User profile JSON for validation (optional)",
-    "  --no-preflight         Skip startup preflight (default is preflight enabled)",
-    "  --workdir <path>       Working directory (default: cwd)",
-    "  --help                 Show help",
-    "",
-    "Defaults:",
-    "  workdir defaults to the current directory",
-    "  model defaults to fast-gpt54",
-    "  preflight runs before the first turn unless disabled",
-    "",
-    "Interactive commands:",
-    "  /help                  Show commands",
-    "  /roles <query>         Search role repo",
-    "  /models <query>        Search model repo",
-    "  /laws                  List discovered law ids",
-    "  /use-model <modelId>   Switch the conversation model",
-    "  /status                Show current draft/model/session status",
-    "  /validate              Re-run local validation for the current Mermaid draft",
-    "  /clear                 Clear current draft/validation state",
-    "  /quit                  Exit"
-  ].join("\n");
+  return getNl2MmdCliUsage();
+}
+
+function asString(value: string | boolean | undefined): string | undefined {
+  return typeof value === "string" ? value : undefined;
+}
+
+function asBool(value: string | boolean | undefined): boolean {
+  return value === true;
 }
 
 function printSection(title: string, body?: string): void {
@@ -149,33 +128,23 @@ function printTurn(turn: Nl2MmdTurnResult): void {
 
 async function main(): Promise<void> {
   const { values } = parseArgs({
-    options: {
-      message: { type: "string" },
-      model: { type: "string" },
-      runtime: { type: "string" },
-      laws: { type: "string" },
-      profiles: { type: "string" },
-      "user-profile": { type: "string" },
-      "no-preflight": { type: "boolean" },
-      workdir: { type: "string" },
-      help: { type: "boolean", short: "h" }
-    },
+    options: getNl2MmdCliOptions(),
     allowPositionals: false
   });
 
-  if (values.help) {
+  if (asBool(values.help)) {
     console.log(usage());
     return;
   }
 
-  const workdir = values.workdir ?? process.cwd();
+  const workdir = asString(values.workdir) ?? process.cwd();
   const context = await loadNl2MmdContext({
     workdir,
-    runtimeConfigPath: values.runtime,
-    lawsPath: values.laws
+    runtimeConfigPath: asString(values.runtime),
+    lawsPath: asString(values.laws)
   });
 
-  let modelId = values.model ?? "fast-gpt54";
+  let modelId = asString(values.model) ?? "fast-gpt54";
   let draftMermaid = "";
   let lastTurn: Nl2MmdTurnResult | undefined;
   let conversation: Nl2MmdConversation | undefined;
@@ -187,8 +156,8 @@ async function main(): Promise<void> {
     conversation = await createNl2MmdConversation({
       workdir,
       modelId,
-      runtimeConfigPath: values.runtime,
-      lawsPath: values.laws,
+      runtimeConfigPath: asString(values.runtime),
+      lawsPath: asString(values.laws),
       context
     });
     return conversation;
@@ -214,9 +183,9 @@ async function main(): Promise<void> {
         validationErrors: lastTurn?.validation?.errors,
         validationWarnings: lastTurn?.validation?.warnings
       },
-      lawsPath: values.laws,
-      profilesPath: values.profiles,
-      userProfilePath: values["user-profile"]
+      lawsPath: asString(values.laws),
+      profilesPath: asString(values.profiles),
+      userProfilePath: asString(values["user-profile"])
     });
     if (turn.mermaid.trim()) {
       draftMermaid = turn.mermaid;
@@ -227,7 +196,7 @@ async function main(): Promise<void> {
   }
 
   async function runPreflightIfNeeded(): Promise<void> {
-    if (values["no-preflight"]) {
+    if (asBool(values["no-preflight"])) {
       return;
     }
     printSection("Preflight", "checking opencode lifecycle and model subscription...");
@@ -248,8 +217,9 @@ async function main(): Promise<void> {
   try {
     await runPreflightIfNeeded();
 
-    if (values.message) {
-      await submit(values.message);
+    const message = asString(values.message);
+    if (message) {
+      await submit(message);
       return;
     }
 
@@ -316,9 +286,9 @@ async function main(): Promise<void> {
           const validation = await validateNl2MmdCandidate({
             mermaid: draftMermaid,
             context,
-            lawsPath: values.laws,
-            profilesPath: values.profiles,
-            userProfilePath: values["user-profile"]
+            lawsPath: asString(values.laws),
+            profilesPath: asString(values.profiles),
+            userProfilePath: asString(values["user-profile"])
           });
           printSection("Txt Graph", validation.txtGraph);
           printSection(

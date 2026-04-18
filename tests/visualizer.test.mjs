@@ -177,7 +177,29 @@ test("visualizer server serves run list, details, and live stream", async () => 
   const { server, url } = await startVisualizationServer({
     workdir,
     host: "127.0.0.1",
-    port: 0
+    port: 0,
+    previewHandler: async ({ workdir: previewWorkdir }) => ({
+      mode: "turn",
+      workdir: previewWorkdir,
+      context: { workdir: previewWorkdir },
+      turn: {
+        mode: "draft",
+        summary: "preview",
+        questions: [],
+        assumptions: [],
+        referencedRoles: [],
+        unresolvedItems: [],
+        mermaid: "flowchart TD\npreview --> done",
+        validation: {
+          status: "ok",
+          errors: [],
+          warnings: []
+        },
+        txtGraph: "preview -> done",
+        sessionId: "session-1",
+        messageId: "message-1"
+      }
+    })
   });
 
   try {
@@ -185,6 +207,8 @@ test("visualizer server serves run list, details, and live stream", async () => 
     assert.equal(root.status, 200);
     const rootHtml = await root.text();
     assert.match(rootHtml, /OGSystem Visualizer/);
+    assert.match(rootHtml, /Commands/);
+    assert.match(rootHtml, /Compose/);
 
     const listResponse = await fetch(`${url}/api/v1/runs`);
     assert.equal(listResponse.status, 200);
@@ -214,11 +238,76 @@ test("visualizer server serves run list, details, and live stream", async () => 
     const graph = await graphResponse.json();
     assert.match(graph.systemSource, /flowchart TD/);
 
+    const commandsResponse = await fetch(`${url}/api/v1/commands`);
+    assert.equal(commandsResponse.status, 200);
+    const commands = await commandsResponse.json();
+    assert.equal(commands.registry.runtimeRoot.title, "ogs");
+    assert.ok(commands.graph.nodes.length > 0);
+    assert.match(commands.graph.mermaid, /run:visualizer/);
+
+    const commandGraphResponse = await fetch(`${url}/api/v1/commands/graph`);
+    assert.equal(commandGraphResponse.status, 200);
+    const commandGraph = await commandGraphResponse.json();
+    assert.match(commandGraph.mermaid, /run start/);
+
+    const previewResponse = await fetch(`${url}/api/v1/nl2mmd/preview`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        message: "draft a linear flow",
+        modelId: "fast-gpt54",
+        draftMermaid: "flowchart TD\ninput --> output"
+      })
+    });
+    assert.equal(previewResponse.status, 200);
+    const preview = await previewResponse.json();
+    assert.equal(preview.mode, "turn");
+    assert.equal(preview.turn.mermaid, "flowchart TD\npreview --> done");
+    assert.equal(preview.turn.validation.status, "ok");
+
     const stream = await readFirstSseChunk(`${url}/api/v1/runs/${runId}/stream?cursor=1`);
     assert.equal(stream.statusCode, 200);
     assert.equal(stream.contentType, "text/event-stream; charset=utf-8");
     assert.match(stream.chunk, /"type":"audit"/);
     assert.match(stream.chunk, /"status":"ok"/);
+  } finally {
+    await new Promise((resolve) => server.close(resolve));
+  }
+});
+
+test("visualizer preview endpoint can be mocked for read-only flows", async () => {
+  const workdir = await mkdtemp(path.join(os.tmpdir(), "ogsystem-visualizer-preview-"));
+  const { server, url } = await startVisualizationServer({
+    workdir,
+    host: "127.0.0.1",
+    port: 0,
+    previewHandler: async ({ workdir: previewWorkdir, request }) => ({
+      mode: "validate",
+      workdir: previewWorkdir,
+      context: { workdir: previewWorkdir, request },
+      draftMermaid: request.draftMermaid || "",
+      validation: {
+        status: "ok",
+        errors: [],
+        warnings: []
+      }
+    })
+  });
+
+  try {
+    const response = await fetch(`${url}/api/v1/nl2mmd/preview`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        validateOnly: true,
+        draftMermaid: "flowchart TD\ninput --> output"
+      })
+    });
+    assert.equal(response.status, 200);
+    const body = await response.json();
+    assert.equal(body.mode, "validate");
+    assert.equal(body.validation.status, "ok");
+    assert.equal(body.draftMermaid, "flowchart TD\ninput --> output");
   } finally {
     await new Promise((resolve) => server.close(resolve));
   }

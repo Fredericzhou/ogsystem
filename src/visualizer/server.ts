@@ -1,27 +1,62 @@
 /**
- * @fileoverview Minimal read-only visualization server for OGSystem runs.
+ * @fileoverview Read-only visualization server for OGSystem.
  * Responsibilities:
- * - Serve run summaries, details, event snapshots, and a lightweight SSE stream.
- * - Render a single-page observability UI without a front-end build toolchain.
+ * - Serve run observability data from local run artifacts.
+ * - Expose command registry and command graph metadata as read-only APIs.
+ * - Provide a thin NL2MMD preview endpoint without writing runtime files.
  * Boundaries:
- * - Read-only; never mutates runtime artifacts.
+ * - Node HTTP only, no frontend framework, no database.
+ * - Never mutates run artifacts or writes files.
  */
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
 import { readFile } from "node:fs/promises";
 import { resolve } from "node:path";
 
 import {
-  inspectRun,
-  loadIndexedRuns,
-  loadRunLogs,
-  rebuildRunsIndex
-} from "../runtime/project-lifecycle.js";
+  createNl2MmdConversation,
+  loadNl2MmdContext,
+  runNl2MmdPreflight,
+  runNl2MmdTurn,
+  validateNl2MmdCandidate
+} from "../nl2mmd/index.js";
+import { inspectRun, loadIndexedRuns, loadRunLogs } from "../runtime/project-lifecycle.js";
 import { loadTimelineSnapshot, projectTimelineRecord } from "../runtime/timeline-projector.js";
+import {
+  buildVisualizerCommandGraphLiveUrl,
+  getVisualizerCommandGraph,
+  getVisualizerCommandGroups,
+  getVisualizerCommandRegistry,
+  getVisualizerCommands
+} from "./command-graph.js";
+
+type VisualizationPreviewRequest = Record<string, unknown> & {
+  message?: string;
+  draftMermaid?: string;
+  modelId?: string;
+  runtimeConfigPath?: string;
+  lawsPath?: string;
+  profilesPath?: string;
+  userProfilePath?: string;
+  validateOnly?: boolean;
+  preflight?: boolean;
+};
+
+type VisualizationPreviewHandlerArgs = {
+  workdir: string;
+  request: VisualizationPreviewRequest;
+  rawBody: string;
+  url: URL;
+};
+
+export type VisualizationPreviewHandler =
+  | ((args: VisualizationPreviewHandlerArgs) => Promise<unknown> | unknown)
+  | undefined;
 
 type VisualizationServerOptions = {
   workdir: string;
   host: string;
   port: number;
+  previewHandler?: VisualizationPreviewHandler;
 };
 
 type NdjsonEntry = {
@@ -50,8 +85,10 @@ type RunSnapshot = {
   runDir: string;
   status: string;
   transitionCount: number;
+  durationMs?: number;
+  lastRoleId?: string;
+  lastErrorCode?: string;
   finalRoleId?: string;
-  lastExecutedRoleId?: string;
   error?: string;
   updatedAt: string;
   activeBranches: number;
@@ -60,6 +97,7 @@ type RunSnapshot = {
 };
 
 const API_PREFIX = "/api/v1";
+const REQUEST_BODY_LIMIT = 1_000_000;
 
 function jsonResponse(
   response: ServerResponse,
@@ -102,84 +140,128 @@ function asString(value: unknown): string | undefined {
   return typeof value === "string" ? value : undefined;
 }
 
+function asBoolean(value: unknown): boolean {
+  return value === true || value === "true";
+}
+
 function asNumber(value: unknown): number | undefined {
   return typeof value === "number" && Number.isFinite(value) ? value : undefined;
 }
 
-function extractGraphState(state: unknown): Record<string, unknown> | undefined {
-  if (typeof state !== "object" || state === null || Array.isArray(state)) {
+function asStringArray(value: unknown): string[] | undefined {
+  if (!Array.isArray(value) || value.some((item) => typeof item !== "string")) {
     return undefined;
   }
-  const record = state as Record<string, unknown>;
-  const nested = record.graphState;
-  if (typeof nested === "object" && nested !== null && !Array.isArray(nested)) {
-    return nested as Record<string, unknown>;
-  }
-  return record;
+  return value;
 }
 
-function getBranchCount(graphState: Record<string, unknown> | undefined): number {
-  const branchRecords = graphState?.branchRecords;
-  if (typeof branchRecords !== "object" || branchRecords === null || Array.isArray(branchRecords)) {
+function asRecord(value: unknown): Record<string, unknown> | undefined {
+  if (typeof value !== "object" || value === null || Array.isArray(value)) {
+    return undefined;
+  }
+  return value as Record<string, unknown>;
+}
+
+function escapeMermaidLabel(value: string): string {
+  return value.replace(/"/g, '\\"');
+}
+
+async function readRequestBody(request: IncomingMessage): Promise<string> {
+  const chunks: Buffer[] = [];
+  let size = 0;
+  for await (const chunk of request) {
+    const buffer = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk);
+    size += buffer.length;
+    if (size > REQUEST_BODY_LIMIT) {
+      throw new Error("Request body too large");
+    }
+    chunks.push(buffer);
+  }
+  return Buffer.concat(chunks).toString("utf8");
+}
+
+async function readJsonRequestBody<T extends Record<string, unknown>>(
+  request: IncomingMessage
+): Promise<{ rawBody: string; body: T }> {
+  const rawBody = await readRequestBody(request);
+  if (!rawBody.trim()) {
+    return { rawBody, body: {} as T };
+  }
+  const parsed: unknown = JSON.parse(rawBody);
+  if (!asRecord(parsed)) {
+    throw new Error("Request body must be a JSON object");
+  }
+  return { rawBody, body: parsed as T };
+}
+
+function extractGraphState(state: unknown): Record<string, unknown> | undefined {
+  const record = asRecord(state);
+  if (!record) {
+    return undefined;
+  }
+  const nested = asRecord(record.graphState);
+  return nested ?? record;
+}
+
+function countActiveBranches(graphState: Record<string, unknown> | undefined): number {
+  const branchRecords = asRecord(graphState?.branchRecords);
+  if (!branchRecords) {
     return 0;
   }
-  return Object.values(branchRecords as Record<string, unknown>).filter((value) => {
-    return (
-      typeof value === "object" &&
-      value !== null &&
-      !Array.isArray(value) &&
-      asString((value as Record<string, unknown>).status) === "active"
-    );
+  return Object.values(branchRecords).filter((value) => {
+    const record = asRecord(value);
+    return asString(record?.status) === "active";
   }).length;
 }
 
-function getAuditCount(graphState: Record<string, unknown> | undefined): number {
-  const recentAudits = graphState?.recentAudits;
-  return Array.isArray(recentAudits) ? recentAudits.length : 0;
+function countRecentAudits(graphState: Record<string, unknown> | undefined): number {
+  return Array.isArray(graphState?.recentAudits) ? graphState!.recentAudits.length : 0;
 }
 
 function buildRunSnapshot(detail: LoadedRunDetail): RunSnapshot {
   const state = extractGraphState(detail.state);
-  const summary =
-    typeof detail.summary === "object" && detail.summary !== null && !Array.isArray(detail.summary)
-      ? (detail.summary as Record<string, unknown>)
-      : undefined;
+  const summary = asRecord(detail.summary);
+  const stateRecord = asRecord(detail.state);
   const status =
     asString(summary?.status) ??
     asString(state?.status) ??
-    asString((detail.state as Record<string, unknown> | undefined)?.status) ??
+    asString(stateRecord?.status) ??
     "unknown";
   const transitionCount =
     asNumber(summary?.transitionCount) ??
     asNumber(state?.transitionCount) ??
-    asNumber((detail.state as Record<string, unknown> | undefined)?.transitionCount) ??
+    asNumber(stateRecord?.transitionCount) ??
     0;
   const finalRoleId =
     asString(summary?.finalRoleId) ??
     asString(state?.finalRoleId) ??
-    asString((detail.state as Record<string, unknown> | undefined)?.finalRoleId);
-  const lastExecutedRoleId =
+    asString(stateRecord?.finalRoleId);
+  const lastRoleId =
     asString(summary?.lastRoleId) ??
     asString(state?.lastExecutedRoleId) ??
-    asString((detail.state as Record<string, unknown> | undefined)?.lastExecutedRoleId);
-  const error =
-    asString(state?.error) ??
-    asString((detail.state as Record<string, unknown> | undefined)?.error);
+    asString(stateRecord?.lastExecutedRoleId);
+  const lastErrorCode =
+    asString(summary?.lastErrorCode) ??
+    asString(state?.lastErrorCode) ??
+    asString(stateRecord?.lastErrorCode);
+  const error = asString(state?.error) ?? asString(stateRecord?.error);
 
   return {
     runId: detail.runId,
     runDir: detail.runDir,
     status,
     transitionCount,
+    durationMs: asNumber(summary?.durationMs),
+    lastRoleId,
+    lastErrorCode,
     finalRoleId,
-    lastExecutedRoleId,
     error,
     updatedAt:
       asString(summary?.updatedAt) ??
-      asString((detail.resolvedConfig as Record<string, unknown> | undefined)?.updatedAt) ??
+      asString(asRecord(detail.resolvedConfig)?.updatedAt) ??
       "",
-    activeBranches: getBranchCount(state),
-    recentAudits: getAuditCount(state),
+    activeBranches: countActiveBranches(state),
+    recentAudits: countRecentAudits(state),
     systemSource: detail.systemSource
   };
 }
@@ -190,6 +272,59 @@ async function readSystemSource(runDir: string): Promise<string | null> {
   } catch {
     return null;
   }
+}
+
+async function readRunEvents(runDir: string): Promise<NdjsonEntry[]> {
+  const timelinePath = resolve(runDir, "timeline.jsonl");
+  try {
+    await readFile(timelinePath, "utf8");
+    return (
+      await loadTimelineSnapshot({
+        timelinePath,
+        cursor: 0,
+        limit: Number.MAX_SAFE_INTEGER
+      })
+    ).events;
+  } catch {
+    // Fall back to raw events for older runs.
+  }
+
+  const eventsPath = resolve(runDir, "events.ndjson");
+  let content: string;
+  try {
+    content = await readFile(eventsPath, "utf8");
+  } catch {
+    return [];
+  }
+
+  const entries: NdjsonEntry[] = [];
+  for (const line of content.split(/\r?\n/)) {
+    const trimmed = line.trim();
+    if (!trimmed) {
+      continue;
+    }
+    try {
+      const parsed: unknown = JSON.parse(trimmed);
+      const record = asRecord(parsed);
+      if (!record) {
+        continue;
+      }
+      const projected = projectTimelineRecord({
+        cursor: entries.length,
+        event: record
+      });
+      if (!projected) {
+        continue;
+      }
+      entries.push({
+        cursor: projected.cursor,
+        record: projected
+      });
+    } catch {
+      continue;
+    }
+  }
+  return entries;
 }
 
 async function loadRunDetail(workdir: string, runId: string): Promise<LoadedRunDetail> {
@@ -206,58 +341,6 @@ async function loadRunDetail(workdir: string, runId: string): Promise<LoadedRunD
   };
 }
 
-async function readRunEvents(runDir: string): Promise<NdjsonEntry[]> {
-  const timelinePath = resolve(runDir, "timeline.jsonl");
-  try {
-    await readFile(timelinePath, "utf8");
-    return (
-      await loadTimelineSnapshot({
-        timelinePath,
-        cursor: 0,
-        limit: Number.MAX_SAFE_INTEGER
-      })
-    ).events;
-  } catch {
-    // Fall back to raw events for older runs that do not have a projected timeline yet.
-  }
-
-  const eventsPath = resolve(runDir, "events.ndjson");
-  let content: string;
-  try {
-    content = await readFile(eventsPath, "utf8");
-  } catch {
-    return [];
-  }
-
-  const records: NdjsonEntry[] = [];
-  for (const line of content.split(/\r?\n/)) {
-    const trimmed = line.trim();
-    if (!trimmed) {
-      continue;
-    }
-    try {
-      const parsed = JSON.parse(trimmed);
-      if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) {
-        continue;
-      }
-      const projected = projectTimelineRecord({
-        cursor: records.length,
-        event: parsed as Record<string, unknown>
-      });
-      if (!projected) {
-        continue;
-      }
-      records.push({
-        cursor: projected.cursor,
-        record: projected
-      });
-    } catch {
-      continue;
-    }
-  }
-  return records;
-}
-
 async function loadRunEventsSnapshot(args: {
   workdir: string;
   runId: string;
@@ -268,8 +351,7 @@ async function loadRunEventsSnapshot(args: {
   type?: string;
 }): Promise<{ events: NdjsonEntry[]; nextCursor: number }> {
   const detail = (await inspectRun(args.workdir, args.runId)) as { runDir: string };
-  const runDir = detail.runDir;
-  const allEvents = await readRunEvents(runDir);
+  const allEvents = await readRunEvents(detail.runDir);
   const startCursor = Math.max(0, args.cursor ?? 0);
   const limit = args.limit ?? 500;
   const filtered = allEvents
@@ -290,7 +372,6 @@ async function loadRunEventsSnapshot(args: {
       return true;
     })
     .slice(0, limit);
-
   return {
     events: filtered,
     nextCursor: allEvents.length
@@ -298,20 +379,33 @@ async function loadRunEventsSnapshot(args: {
 }
 
 async function handleApiRunsList(workdir: string, response: ServerResponse): Promise<void> {
-  const runs = await loadIndexedRuns(workdir);
-  jsonResponse(response, 200, { runs });
+  jsonResponse(response, 200, { runs: await loadIndexedRuns(workdir) });
 }
 
-async function handleApiRunDetail(workdir: string, runId: string, response: ServerResponse): Promise<void> {
-  const detail = await loadRunDetail(workdir, runId);
-  const snapshot = buildRunSnapshot(detail);
+async function handleApiRunsReindex(workdir: string, response: ServerResponse): Promise<void> {
   jsonResponse(response, 200, {
-    ...detail,
-    snapshot
+    status: "read-only",
+    runs: await loadIndexedRuns(workdir)
   });
 }
 
-async function handleApiRunState(workdir: string, runId: string, response: ServerResponse): Promise<void> {
+async function handleApiRunDetail(
+  workdir: string,
+  runId: string,
+  response: ServerResponse
+): Promise<void> {
+  const detail = await loadRunDetail(workdir, runId);
+  jsonResponse(response, 200, {
+    ...detail,
+    snapshot: buildRunSnapshot(detail)
+  });
+}
+
+async function handleApiRunState(
+  workdir: string,
+  runId: string,
+  response: ServerResponse
+): Promise<void> {
   const detail = await inspectRun(workdir, runId);
   jsonResponse(response, 200, detail.state ?? null);
 }
@@ -324,7 +418,7 @@ async function handleApiRunEvents(
 ): Promise<void> {
   const cursor = Number(url.searchParams.get("cursor") ?? "0");
   const limit = Number(url.searchParams.get("limit") ?? "500");
-  const roleId = url.searchParams.get("roleId") ?? undefined;
+  const roleId = url.searchParams.get("roleId") ?? url.searchParams.get("role") ?? undefined;
   const branchId = url.searchParams.get("branchId") ?? undefined;
   const type = url.searchParams.get("type") ?? undefined;
   const snapshot = await loadRunEventsSnapshot({
@@ -345,18 +439,115 @@ async function handleApiRunLogs(
   url: URL,
   response: ServerResponse
 ): Promise<void> {
-  const roleId = url.searchParams.get("roleId") ?? undefined;
-  const engine = url.searchParams.get("engine") === "true";
+  const roleId = url.searchParams.get("roleId") ?? url.searchParams.get("role") ?? undefined;
+  const engine = asBoolean(url.searchParams.get("engine"));
+  const tailParam = url.searchParams.get("tail");
+  const tailValue = tailParam !== null ? Number(tailParam) : undefined;
+  const since = url.searchParams.get("since") ?? undefined;
   const records = await loadRunLogs({
     workdir,
     runId,
     roleId,
-    engine
+    engine,
+    tail: tailValue !== undefined && Number.isFinite(tailValue) ? tailValue : undefined,
+    since
   });
   jsonResponse(response, 200, { records });
 }
 
-async function handleApiRunGraph(workdir: string, runId: string, response: ServerResponse): Promise<void> {
+function buildCommandsEndpointGraph(): {
+  direction: "TD";
+  mermaid: string;
+  liveUrl: string;
+  text: string;
+  nodes: Array<{ id: string; label: string; summary: string; parentId?: string }>;
+} {
+  const groups = getVisualizerCommandGroups();
+  const commands = getVisualizerCommands();
+  const lines = ["flowchart TD"];
+  const nodes = [
+    ...groups.map((group) => ({
+      id: group.id,
+      label: group.label,
+      summary: group.summary
+    })),
+    ...commands.map((command) => ({
+      id: command.id,
+      label: command.command,
+      summary: command.summary,
+      parentId: command.groupId
+    }))
+  ];
+
+  for (const group of groups) {
+    lines.push(`  ${group.id.replace(/[^A-Za-z0-9_]/g, "_")}["${escapeMermaidLabel(group.label)}"]`);
+  }
+  for (const command of commands) {
+    lines.push(
+      `  ${command.id.replace(/[^A-Za-z0-9_]/g, "_")}["${escapeMermaidLabel(command.command)}"]`
+    );
+  }
+  for (const command of commands) {
+    lines.push(
+      `  ${command.groupId.replace(/[^A-Za-z0-9_]/g, "_")} --> ${command.id.replace(/[^A-Za-z0-9_]/g, "_")}`
+    );
+  }
+
+  const mermaid = lines.join("\n");
+  return {
+    direction: "TD",
+    mermaid,
+    liveUrl: buildVisualizerCommandGraphLiveUrl(mermaid),
+    text: commands
+      .map((command) => `${command.command} | ${command.summary} | group=${command.groupId}`)
+      .join("\n"),
+    nodes
+  };
+}
+
+function buildCommandRegistryPathGraph(): {
+  direction: "TD";
+  mermaid: string;
+  liveUrl: string;
+  text: string;
+  nodes: Array<{ id: string; label: string; summary: string; parentId?: string }>;
+} {
+  const source = getVisualizerCommandGraph();
+  const nodes = source.nodes.map((node) => ({
+    id: node.id,
+    label: node.id,
+    summary: node.summary,
+    parentId: node.parentId
+  }));
+  const lines = ["flowchart TD"];
+  for (const node of nodes) {
+    lines.push(`  ${node.id.replace(/[^A-Za-z0-9_]/g, "_")}["${escapeMermaidLabel(node.label)}"]`);
+  }
+  for (const node of nodes) {
+    if (!node.parentId) {
+      continue;
+    }
+    lines.push(
+      `  ${node.parentId.replace(/[^A-Za-z0-9_]/g, "_")} --> ${node.id.replace(/[^A-Za-z0-9_]/g, "_")}`
+    );
+  }
+  const mermaid = lines.join("\n");
+  return {
+    direction: "TD",
+    mermaid,
+    liveUrl: buildVisualizerCommandGraphLiveUrl(mermaid),
+    text: nodes
+      .map((node) => `${node.id} | ${node.summary}${node.parentId ? ` | parent=${node.parentId}` : ""}`)
+      .join("\n"),
+    nodes
+  };
+}
+
+async function handleApiRunGraph(
+  workdir: string,
+  runId: string,
+  response: ServerResponse
+): Promise<void> {
   const detail = await loadRunDetail(workdir, runId);
   jsonResponse(response, 200, {
     runId: detail.runId,
@@ -364,11 +555,6 @@ async function handleApiRunGraph(workdir: string, runId: string, response: Serve
     state: detail.state ?? null,
     snapshot: buildRunSnapshot(detail)
   });
-}
-
-async function handleApiReindex(workdir: string, response: ServerResponse): Promise<void> {
-  const index = await rebuildRunsIndex(workdir);
-  jsonResponse(response, 200, index);
 }
 
 async function handleApiStop(
@@ -384,6 +570,127 @@ async function handleApiStop(
   });
 }
 
+async function handleApiCommands(response: ServerResponse): Promise<void> {
+  jsonResponse(response, 200, {
+    groups: getVisualizerCommandGroups(),
+    commands: getVisualizerCommands(),
+    registry: getVisualizerCommandRegistry(),
+    graph: buildCommandsEndpointGraph(),
+    registryGraph: getVisualizerCommandGraph()
+  });
+}
+
+async function handleApiCommandGraph(response: ServerResponse): Promise<void> {
+  jsonResponse(response, 200, buildCommandRegistryPathGraph());
+}
+
+function buildPreviewContextSummary(context: {
+  workdir: string;
+  roleCatalog?: unknown[];
+  modelCatalog?: unknown[];
+  lawIds?: unknown[];
+}): Record<string, unknown> {
+  return {
+    workdir: context.workdir,
+    roleCount: context.roleCatalog?.length ?? 0,
+    modelCount: context.modelCatalog?.length ?? 0,
+    lawCount: context.lawIds?.length ?? 0
+  };
+}
+
+async function defaultPreviewHandler(args: VisualizationPreviewHandlerArgs): Promise<unknown> {
+  const context = await loadNl2MmdContext({
+    workdir: args.workdir,
+    runtimeConfigPath: asString(args.request.runtimeConfigPath),
+    lawsPath: asString(args.request.lawsPath)
+  });
+  const message = asString(args.request.message);
+  const draftMermaid = asString(args.request.draftMermaid) ?? "";
+  const validateOnly = asBoolean(args.request.validateOnly);
+  const preflight = asBoolean(args.request.preflight);
+  const modelId = asString(args.request.modelId) ?? "fast-gpt54";
+
+  if (!message && !draftMermaid.trim()) {
+    throw new Error("Preview request requires message or draftMermaid");
+  }
+
+  if (validateOnly || !message) {
+    if (!draftMermaid.trim()) {
+      throw new Error("Preview validation requires draftMermaid");
+    }
+    const validation = await validateNl2MmdCandidate({
+      mermaid: draftMermaid,
+      context,
+      lawsPath: asString(args.request.lawsPath),
+      profilesPath: asString(args.request.profilesPath),
+      userProfilePath: asString(args.request.userProfilePath)
+    });
+    return {
+      mode: "validate",
+      workdir: args.workdir,
+      context: buildPreviewContextSummary(context),
+      draftMermaid,
+      txtGraph: validation.txtGraph,
+      validation
+    };
+  }
+
+  const conversation = await createNl2MmdConversation({
+    workdir: args.workdir,
+    modelId,
+    runtimeConfigPath: asString(args.request.runtimeConfigPath),
+    lawsPath: asString(args.request.lawsPath),
+    context
+  });
+
+  try {
+    if (preflight) {
+      await runNl2MmdPreflight({ conversation });
+    }
+    const turn = await runNl2MmdTurn({
+      conversation,
+      input: {
+        message,
+        draftMermaid,
+        validationErrors: asStringArray(args.request.validationErrors),
+        validationWarnings: asStringArray(args.request.validationWarnings)
+      },
+      lawsPath: asString(args.request.lawsPath),
+      profilesPath: asString(args.request.profilesPath),
+      userProfilePath: asString(args.request.userProfilePath)
+    });
+    return {
+      mode: "turn",
+      workdir: args.workdir,
+      context: buildPreviewContextSummary(context),
+      turn
+    };
+  } finally {
+    conversation.close();
+  }
+}
+
+async function handleApiNl2MmdPreview(
+  request: IncomingMessage,
+  response: ServerResponse,
+  args: VisualizationServerOptions,
+  url: URL
+): Promise<void> {
+  if ((request.method?.toUpperCase() ?? "GET") !== "POST") {
+    textResponse(response, 405, "Method Not Allowed");
+    return;
+  }
+  const { rawBody, body } = await readJsonRequestBody<VisualizationPreviewRequest>(request);
+  const handler = args.previewHandler ?? defaultPreviewHandler;
+  const payload = await handler({
+    workdir: args.workdir,
+    request: body,
+    rawBody,
+    url
+  });
+  jsonResponse(response, 200, payload);
+}
+
 function renderPageHtml(workdir: string): string {
   return `<!doctype html>
 <html lang="en">
@@ -394,35 +701,31 @@ function renderPageHtml(workdir: string): string {
   <style>
     :root {
       color-scheme: dark;
-      --bg: #0b1020;
-      --panel: rgba(16, 23, 44, 0.92);
-      --panel-soft: rgba(23, 31, 57, 0.85);
-      --border: rgba(148, 163, 184, 0.18);
-      --text: #e5eefb;
-      --muted: #8fa1c3;
-      --accent: #38bdf8;
-      --accent-2: #f59e0b;
+      --bg: #0a1020;
+      --panel: rgba(15, 20, 35, 0.92);
+      --panel-soft: rgba(21, 28, 49, 0.86);
+      --border: rgba(148, 163, 184, 0.2);
+      --text: #e6eefb;
+      --muted: #90a2c4;
+      --accent: #4fc3f7;
       --ok: #34d399;
       --warn: #fbbf24;
       --bad: #f87171;
-      --shadow: 0 24px 80px rgba(0, 0, 0, 0.32);
-      --radius: 18px;
-      --radius-sm: 12px;
+      --radius: 16px;
+      --shadow: 0 24px 72px rgba(0, 0, 0, 0.3);
       font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
     }
     * { box-sizing: border-box; }
     body {
       margin: 0;
       min-height: 100vh;
-      background:
-        radial-gradient(circle at top left, rgba(56, 189, 248, 0.18), transparent 30%),
-        radial-gradient(circle at top right, rgba(245, 158, 11, 0.15), transparent 26%),
-        linear-gradient(180deg, #09101d 0%, #0b1020 42%, #08111c 100%);
       color: var(--text);
+      background:
+        radial-gradient(circle at top left, rgba(79, 195, 247, 0.16), transparent 32%),
+        radial-gradient(circle at top right, rgba(251, 191, 36, 0.14), transparent 24%),
+        linear-gradient(180deg, #07101c 0%, #0a1020 45%, #08101a 100%);
     }
-    code, pre, input, button {
-      font: inherit;
-    }
+    code, pre, input, textarea, button { font: inherit; }
     .app {
       display: grid;
       grid-template-columns: 320px minmax(0, 1fr);
@@ -430,15 +733,15 @@ function renderPageHtml(workdir: string): string {
     }
     .sidebar {
       padding: 20px;
+      background: rgba(7, 12, 23, 0.8);
       border-right: 1px solid var(--border);
-      background: rgba(8, 13, 26, 0.78);
       backdrop-filter: blur(18px);
     }
     .brand {
       display: flex;
-      align-items: baseline;
       justify-content: space-between;
       gap: 12px;
+      align-items: baseline;
       margin-bottom: 18px;
     }
     .brand h1 {
@@ -446,35 +749,45 @@ function renderPageHtml(workdir: string): string {
       font-size: 20px;
       letter-spacing: 0.02em;
     }
-    .brand span {
+    .brand span, .hint, .meta, .subtle {
       color: var(--muted);
-      font-size: 12px;
-    }
-    .pill {
-      display: inline-flex;
-      align-items: center;
-      gap: 6px;
-      padding: 6px 10px;
-      border-radius: 999px;
-      border: 1px solid var(--border);
-      color: var(--muted);
-      background: rgba(255, 255, 255, 0.03);
       font-size: 12px;
     }
     .stack {
       display: grid;
       gap: 12px;
     }
-    .search {
+    .pill {
+      display: inline-flex;
+      gap: 8px;
+      align-items: center;
+      padding: 8px 10px;
+      border: 1px solid var(--border);
+      border-radius: 999px;
+      background: rgba(255, 255, 255, 0.03);
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+    .search, .field, textarea {
       width: 100%;
-      padding: 12px 14px;
       border: 1px solid var(--border);
       border-radius: 14px;
       background: rgba(255, 255, 255, 0.03);
       color: var(--text);
       outline: none;
     }
-    .search::placeholder { color: #6d7c9b; }
+    .search, .field {
+      padding: 12px 14px;
+    }
+    textarea {
+      min-height: 128px;
+      padding: 12px 14px;
+      resize: vertical;
+    }
+    .search::placeholder, .field::placeholder, textarea::placeholder {
+      color: #6980a8;
+    }
     .run-list {
       display: grid;
       gap: 10px;
@@ -483,33 +796,24 @@ function renderPageHtml(workdir: string): string {
       padding-right: 4px;
     }
     .run-card {
+      width: 100%;
+      text-align: left;
       padding: 14px;
       border: 1px solid var(--border);
-      border-radius: var(--radius-sm);
+      border-radius: 14px;
       background: rgba(255, 255, 255, 0.03);
+      color: var(--text);
       cursor: pointer;
-      transition: transform 120ms ease, border-color 120ms ease, background 120ms ease;
     }
-    .run-card:hover,
     .run-card.active {
-      transform: translateY(-1px);
-      border-color: rgba(56, 189, 248, 0.42);
-      background: rgba(56, 189, 248, 0.08);
+      border-color: rgba(79, 195, 247, 0.5);
+      background: rgba(79, 195, 247, 0.08);
     }
-    .run-title {
+    .run-title, .event-top, .actions {
       display: flex;
       justify-content: space-between;
-      gap: 8px;
+      gap: 10px;
       align-items: center;
-      font-weight: 600;
-      margin-bottom: 6px;
-    }
-    .meta {
-      color: var(--muted);
-      font-size: 12px;
-      display: flex;
-      flex-wrap: wrap;
-      gap: 8px;
     }
     .status {
       display: inline-flex;
@@ -537,7 +841,7 @@ function renderPageHtml(workdir: string): string {
       align-items: start;
       padding: 18px 20px;
       border: 1px solid var(--border);
-      border-radius: var(--radius);
+      border-radius: 18px;
       background: linear-gradient(180deg, rgba(255, 255, 255, 0.06), rgba(255, 255, 255, 0.03));
       box-shadow: var(--shadow);
     }
@@ -545,17 +849,7 @@ function renderPageHtml(workdir: string): string {
       margin: 4px 0 6px;
       font-size: clamp(22px, 3vw, 34px);
     }
-    .hero p {
-      margin: 0;
-      color: var(--muted);
-    }
-    .actions {
-      display: flex;
-      gap: 10px;
-      align-items: center;
-      flex-wrap: wrap;
-      justify-content: flex-end;
-    }
+    .hero p { margin: 0; color: var(--muted); }
     .button {
       border: 1px solid var(--border);
       background: rgba(255, 255, 255, 0.05);
@@ -564,7 +858,7 @@ function renderPageHtml(workdir: string): string {
       padding: 10px 14px;
       cursor: pointer;
     }
-    .button:hover { border-color: rgba(56, 189, 248, 0.4); }
+    .button:hover { border-color: rgba(79, 195, 247, 0.4); }
     .live {
       display: inline-flex;
       align-items: center;
@@ -597,15 +891,13 @@ function renderPageHtml(workdir: string): string {
       box-shadow: var(--shadow);
       overflow: hidden;
     }
-    .card header {
-      padding: 16px 18px 0;
-    }
+    .card header { padding: 16px 18px 0; }
     .card h3 {
       margin: 0;
       font-size: 15px;
       letter-spacing: 0.02em;
       text-transform: uppercase;
-      color: #c9d6ec;
+      color: #c8d7ed;
     }
     .card .body {
       padding: 16px 18px 18px;
@@ -613,6 +905,7 @@ function renderPageHtml(workdir: string): string {
       gap: 12px;
     }
     .span-5 { grid-column: span 5; }
+    .span-6 { grid-column: span 6; }
     .span-7 { grid-column: span 7; }
     .span-12 { grid-column: span 12; }
     .stat-grid {
@@ -631,10 +924,6 @@ function renderPageHtml(workdir: string): string {
       font-size: 22px;
       margin-bottom: 4px;
     }
-    .stat span {
-      color: var(--muted);
-      font-size: 12px;
-    }
     pre {
       margin: 0;
       padding: 14px;
@@ -643,7 +932,7 @@ function renderPageHtml(workdir: string): string {
       background: rgba(4, 8, 16, 0.8);
       color: #dce7f7;
       overflow: auto;
-      max-height: 520px;
+      max-height: 480px;
       white-space: pre-wrap;
       word-break: break-word;
     }
@@ -662,32 +951,56 @@ function renderPageHtml(workdir: string): string {
       display: grid;
       gap: 6px;
     }
-    .event-top {
+    .command-list {
+      display: grid;
+      gap: 10px;
+    }
+    .command-group {
+      border: 1px solid var(--border);
+      border-radius: 14px;
+      background: rgba(255, 255, 255, 0.03);
+      padding: 12px 14px;
+    }
+    .command-group h4 {
+      margin: 0 0 8px;
+      font-size: 13px;
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+      color: #ced9eb;
+    }
+    .command-chip {
       display: flex;
       justify-content: space-between;
+      gap: 12px;
+      padding: 8px 0;
+      border-top: 1px solid rgba(148, 163, 184, 0.14);
+    }
+    .command-chip:first-of-type { border-top: 0; padding-top: 0; }
+    .command-chip code { color: #9be7ff; }
+    .form-grid {
+      display: grid;
+      gap: 12px;
+    }
+    .form-row {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 12px;
+    }
+    .form-actions {
+      display: flex;
       gap: 10px;
       align-items: center;
-      font-size: 12px;
-      color: var(--muted);
-    }
-    .event strong {
-      font-size: 14px;
-    }
-    .event code {
-      color: #9be7ff;
-    }
-    .hint {
-      color: var(--muted);
-      font-size: 12px;
+      flex-wrap: wrap;
     }
     @media (max-width: 1180px) {
       .app { grid-template-columns: 1fr; }
       .sidebar { border-right: 0; border-bottom: 1px solid var(--border); }
       .run-list { max-height: 280px; }
-      .span-5, .span-7, .span-12 { grid-column: span 12; }
+      .span-5, .span-6, .span-7, .span-12 { grid-column: span 12; }
       .hero { flex-direction: column; }
       .actions { justify-content: flex-start; }
       .stat-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+      .form-row { grid-template-columns: 1fr; }
     }
   </style>
 </head>
@@ -742,6 +1055,31 @@ function renderPageHtml(workdir: string): string {
             <pre id="detail">No run selected.</pre>
           </div>
         </article>
+        <article class="card span-6">
+          <header><h3>Commands</h3></header>
+          <div class="body">
+            <div id="commands" class="command-list"></div>
+            <pre id="commands-graph">Loading command graph...</pre>
+          </div>
+        </article>
+        <article class="card span-6">
+          <header><h3>Compose</h3></header>
+          <div class="body">
+            <form id="compose-form" class="form-grid">
+              <div class="form-row">
+                <input id="compose-model" class="field" value="fast-gpt54" placeholder="model id" />
+                <label class="pill"><input id="compose-preflight" type="checkbox" /> run preflight</label>
+              </div>
+              <textarea id="compose-message" placeholder="Describe the flow you want visualized."></textarea>
+              <textarea id="compose-draft" placeholder="Optional draft Mermaid to validate or refine."></textarea>
+              <div class="form-actions">
+                <button class="button" type="submit">Preview</button>
+                <span class="subtle">Read-only preview only. No files are written.</span>
+              </div>
+            </form>
+            <pre id="compose-output">No preview yet.</pre>
+          </div>
+        </article>
       </section>
     </main>
   </div>
@@ -755,8 +1093,8 @@ function renderPageHtml(workdir: string): string {
       events: [],
       detail: null,
       stream: null,
-      refreshTimer: null,
-      listTimer: null
+      commands: null,
+      refreshTimer: null
     };
 
     const runListEl = document.getElementById("run-list");
@@ -769,6 +1107,14 @@ function renderPageHtml(workdir: string): string {
     const stateEl = document.getElementById("state");
     const detailEl = document.getElementById("detail");
     const liveEl = document.getElementById("live");
+    const commandsEl = document.getElementById("commands");
+    const commandsGraphEl = document.getElementById("commands-graph");
+    const composeFormEl = document.getElementById("compose-form");
+    const composeMessageEl = document.getElementById("compose-message");
+    const composeDraftEl = document.getElementById("compose-draft");
+    const composeModelEl = document.getElementById("compose-model");
+    const composePreflightEl = document.getElementById("compose-preflight");
+    const composeOutputEl = document.getElementById("compose-output");
 
     function escapeText(value) {
       return String(value ?? "")
@@ -779,14 +1125,14 @@ function renderPageHtml(workdir: string): string {
         .replace(/'/g, "&#39;");
     }
 
+    function formatJson(value) {
+      return JSON.stringify(value ?? null, null, 2);
+    }
+
     function formatTime(value) {
       if (!value) return "n/a";
       const date = new Date(value);
       return Number.isNaN(date.getTime()) ? String(value) : date.toLocaleString();
-    }
-
-    function formatJson(value) {
-      return JSON.stringify(value ?? null, null, 2);
     }
 
     function statusClass(status) {
@@ -795,16 +1141,17 @@ function renderPageHtml(workdir: string): string {
         : "unknown";
     }
 
-    async function requestJson(path, options) {
-      const response = await fetch(path, {
+    function requestJson(path, options) {
+      return fetch(path, {
         headers: { accept: "application/json" },
         cache: "no-store",
         ...(options || {})
+      }).then(function(response) {
+        if (!response.ok) {
+          throw new Error(response.status + " " + response.statusText);
+        }
+        return response.json();
       });
-      if (!response.ok) {
-        throw new Error(\`\${response.status} \${response.statusText}\`);
-      }
-      return response.json();
     }
 
     function setLive(mode, label) {
@@ -812,34 +1159,54 @@ function renderPageHtml(workdir: string): string {
       liveEl.textContent = label;
     }
 
+    function runCardHtml(run) {
+      return (
+        '<button class="run-card ' +
+        (run.runId === state.selectedRunId ? "active" : "") +
+        '" data-run-id="' +
+        escapeText(run.runId) +
+        '">' +
+        '<div class="run-title">' +
+        "<span>" +
+        escapeText(run.runId) +
+        "</span>" +
+        '<span class="status ' +
+        statusClass(run.status) +
+        '">' +
+        escapeText(run.status) +
+        "</span>" +
+        "</div>" +
+        '<div class="meta">' +
+        "<span>transitions " +
+        escapeText(run.transitionCount) +
+        "</span>" +
+        "<span>updated " +
+        escapeText(formatTime(run.updatedAt)) +
+        "</span>" +
+        "</div>" +
+        "</button>"
+      );
+    }
+
     function renderRuns() {
       const term = state.filter.trim().toLowerCase();
-      const runs = state.runs.filter((run) => {
+      const runs = state.runs.filter(function(run) {
         if (!term) return true;
-        return [run.runId, run.status, run.finalRoleId, run.lastExecutedRoleId]
+        return [run.runId, run.status, run.finalRoleId, run.lastRoleId]
           .filter(Boolean)
-          .some((item) => String(item).toLowerCase().includes(term));
+          .some(function(item) {
+            return String(item).toLowerCase().includes(term);
+          });
       });
       if (!runs.length) {
         runListEl.innerHTML = '<div class="hint">No runs match the filter.</div>';
         return;
       }
-      runListEl.innerHTML = runs
-        .map((run) => \`
-          <button class="run-card \${run.runId === state.selectedRunId ? "active" : ""}" data-run-id="\${escapeText(run.runId)}">
-            <div class="run-title">
-              <span>\${escapeText(run.runId)}</span>
-              <span class="status \${statusClass(run.status)}">\${escapeText(run.status)}</span>
-            </div>
-            <div class="meta">
-              <span>transitions \${escapeText(run.transitionCount)}</span>
-              <span>updated \${escapeText(formatTime(run.updatedAt))}</span>
-            </div>
-          </button>
-        \`)
-        .join("");
+      runListEl.innerHTML = runs.map(runCardHtml).join("");
       for (const button of runListEl.querySelectorAll("[data-run-id]")) {
-        button.addEventListener("click", () => selectRun(button.getAttribute("data-run-id")));
+        button.addEventListener("click", function() {
+          selectRun(button.getAttribute("data-run-id"));
+        });
       }
     }
 
@@ -855,13 +1222,60 @@ function renderPageHtml(workdir: string): string {
         ["recent audits", snapshot.recentAudits]
       ];
       statsEl.innerHTML = cards
-        .map(([label, value]) => \`
-          <div class="stat">
-            <strong>\${escapeText(value)}</strong>
-            <span>\${escapeText(label)}</span>
-          </div>
-        \`)
+        .map(function(item) {
+          const label = item[0];
+          const value = item[1];
+          return (
+            '<div class="stat">' +
+            "<strong>" +
+            escapeText(value) +
+            "</strong>" +
+            "<span>" +
+            escapeText(label) +
+            "</span>" +
+            "</div>"
+          );
+        })
         .join("");
+    }
+
+    function timelineEventHtml(entry) {
+      const record = entry.record || {};
+      const type = record.type || "event";
+      const role = record.roleId ? "<code>" + escapeText(record.roleId) + "</code>" : "";
+      const branch = record.branchId ? "<code>" + escapeText(record.branchId) + "</code>" : "";
+      const event = record.event ? "<code>" + escapeText(record.event) + "</code>" : "";
+      const status = record.status
+        ? '<span class="status ' +
+          statusClass(record.status) +
+          '">' +
+          escapeText(record.status) +
+          "</span>"
+        : "";
+      return (
+        '<div class="event">' +
+        '<div class="event-top">' +
+        "<span>#" +
+        escapeText(entry.cursor) +
+        " " +
+        escapeText(type) +
+        "</span>" +
+        "<span>" +
+        escapeText(record.at || "") +
+        "</span>" +
+        "</div>" +
+        "<strong>" +
+        role +
+        " " +
+        event +
+        " " +
+        status +
+        "</strong>" +
+        '<div class="hint">' +
+        branch +
+        "</div>" +
+        "</div>"
+      );
     }
 
     function renderTimeline(events) {
@@ -869,28 +1283,7 @@ function renderPageHtml(workdir: string): string {
         timelineEl.innerHTML = '<div class="hint">No events captured yet.</div>';
         return;
       }
-      timelineEl.innerHTML = events
-        .slice()
-        .reverse()
-        .map((entry) => {
-          const record = entry.record || {};
-          const type = record.type || "event";
-          const role = record.roleId ? \`<code>\${escapeText(record.roleId)}</code>\` : "";
-          const branch = record.branchId ? \`<code>\${escapeText(record.branchId)}</code>\` : "";
-          const event = record.event ? \`<code>\${escapeText(record.event)}</code>\` : "";
-          const status = record.status ? \`<span class="status \${statusClass(record.status)}">\${escapeText(record.status)}</span>\` : "";
-          return \`
-            <div class="event">
-              <div class="event-top">
-                <span>#\${escapeText(entry.cursor)} \${escapeText(type)}</span>
-                <span>\${escapeText(record.at || "")}</span>
-              </div>
-              <strong>\${role} \${event} \${status}</strong>
-              <div class="hint">\${branch}</div>
-            </div>
-          \`;
-        })
-        .join("");
+      timelineEl.innerHTML = events.slice().reverse().map(timelineEventHtml).join("");
     }
 
     function renderDetail(detail, snapshot, events) {
@@ -918,55 +1311,70 @@ function renderPageHtml(workdir: string): string {
     }
 
     function scheduleRefresh() {
-      clearTimeout(state.refreshTimer);
-      state.refreshTimer = setTimeout(() => {
+      window.clearTimeout(state.refreshTimer);
+      state.refreshTimer = window.setTimeout(function() {
         if (state.selectedRunId) {
           loadSelectedRun(state.selectedRunId, { keepStream: true });
         }
       }, 250);
     }
 
-    async function loadRuns() {
-      const payload = await requestJson(\`\${API_PREFIX}/runs\`);
-      state.runs = payload.runs || [];
-      renderRuns();
-      if (!state.selectedRunId && state.runs.length) {
-        await selectRun(state.runs[0].runId);
-      }
-      if (!state.runs.length) {
-        setLive("idle", "no runs");
-      }
+    function loadRuns() {
+      return requestJson(API_PREFIX + "/runs").then(function(payload) {
+        state.runs = payload.runs || [];
+        renderRuns();
+        if (!state.selectedRunId && state.runs.length) {
+          return selectRun(state.runs[0].runId);
+        }
+        if (!state.runs.length) {
+          setLive("idle", "no runs");
+        }
+      });
     }
 
-    async function loadSelectedRun(runId, options) {
-      const detail = await requestJson(\`\${API_PREFIX}/runs/\${encodeURIComponent(runId)}\`);
-      const eventsPayload = await requestJson(\`\${API_PREFIX}/runs/\${encodeURIComponent(runId)}/events?cursor=0&limit=250\`);
-      state.detail = detail;
-      state.events = eventsPayload.events || [];
-      state.eventCursor = eventsPayload.nextCursor || 0;
-      renderDetail(detail, detail.snapshot || null, state.events);
-      renderRuns();
-      if (!options || !options.keepStream) {
-        stopStream();
-        connectStream(runId, state.eventCursor);
-      }
-      const status = (detail.snapshot && detail.snapshot.status) || "unknown";
-      setLive(status === "running" || status === "stopping" ? "online" : "idle", status);
+    function loadSelectedRun(runId, options) {
+      return requestJson(API_PREFIX + "/runs/" + encodeURIComponent(runId))
+        .then(function(detail) {
+          return requestJson(
+            API_PREFIX + "/runs/" + encodeURIComponent(runId) + "/events?cursor=0&limit=250"
+          ).then(function(eventsPayload) {
+            return { detail: detail, eventsPayload: eventsPayload };
+          });
+        })
+        .then(function(result) {
+          const detail = result.detail;
+          const eventsPayload = result.eventsPayload;
+          state.detail = detail;
+          state.events = eventsPayload.events || [];
+          state.eventCursor = eventsPayload.nextCursor || 0;
+          renderDetail(detail, detail.snapshot || null, state.events);
+          renderRuns();
+          if (!options || !options.keepStream) {
+            stopStream();
+            connectStream(runId, state.eventCursor);
+          }
+          const status = (detail.snapshot && detail.snapshot.status) || "unknown";
+          setLive(status === "running" || status === "stopping" ? "online" : "idle", status);
+        });
     }
 
-    async function selectRun(runId) {
-      if (!runId) return;
+    function selectRun(runId) {
+      if (!runId) return Promise.resolve();
       state.selectedRunId = runId;
       renderRuns();
-      await loadSelectedRun(runId, { keepStream: false });
+      return loadSelectedRun(runId, { keepStream: false });
     }
 
     function connectStream(runId, cursor) {
       stopStream();
-      const stream = new EventSource(\`\${API_PREFIX}/runs/\${encodeURIComponent(runId)}/stream?cursor=\${cursor}\`);
+      const stream = new EventSource(
+        API_PREFIX + "/runs/" + encodeURIComponent(runId) + "/stream?cursor=" + cursor
+      );
       state.stream = stream;
-      stream.onopen = () => setLive("online", "live");
-      stream.onmessage = (message) => {
+      stream.onopen = function() {
+        setLive("online", "live");
+      };
+      stream.onmessage = function(message) {
         try {
           const payload = JSON.parse(message.data);
           if (payload && payload.record) {
@@ -979,33 +1387,123 @@ function renderPageHtml(workdir: string): string {
           // Ignore malformed stream payloads.
         }
       };
-      stream.onerror = () => {
+      stream.onerror = function() {
         setLive("idle", "stream reconnecting");
       };
     }
 
-    document.getElementById("refresh").addEventListener("click", async () => {
-      await loadRuns();
-      if (state.selectedRunId) {
-        await loadSelectedRun(state.selectedRunId, { keepStream: false });
+    function renderCommands(payload) {
+      const groups = payload.groups || [];
+      const commands = payload.commands || [];
+      const commandsByGroup = new Map(groups.map(function(group) {
+        return [group.id, []];
+      }));
+      for (const command of commands) {
+        if (!commandsByGroup.has(command.groupId)) {
+          commandsByGroup.set(command.groupId, []);
+        }
+        commandsByGroup.get(command.groupId).push(command);
       }
+      commandsEl.innerHTML = groups
+        .map(function(group) {
+          const items = commandsByGroup.get(group.id) || [];
+          return (
+            '<section class="command-group">' +
+            "<h4>" +
+            escapeText(group.label) +
+            "</h4>" +
+            '<div class="subtle">' +
+            escapeText(group.summary) +
+            "</div>" +
+            items
+              .map(function(command) {
+                return (
+                  '<div class="command-chip">' +
+                  "<div>" +
+                  "<code>" +
+                  escapeText(command.command) +
+                  "</code>" +
+                  '<div class="subtle">' +
+                  escapeText(command.summary) +
+                  "</div>" +
+                  "</div>" +
+                  "</div>"
+                );
+              })
+              .join("") +
+            "</section>"
+          );
+        })
+        .join("");
+      commandsGraphEl.textContent =
+        (payload.graph && payload.graph.mermaid) || "No command graph available.";
+    }
+
+    function loadCommands() {
+      return requestJson(API_PREFIX + "/commands").then(function(payload) {
+        state.commands = payload;
+        renderCommands(payload);
+      });
+    }
+
+    function submitPreview(event) {
+      event.preventDefault();
+      composeOutputEl.textContent = "Loading preview...";
+      const body = {
+        modelId: composeModelEl.value.trim() || "fast-gpt54",
+        message: composeMessageEl.value,
+        draftMermaid: composeDraftEl.value,
+        preflight: composePreflightEl.checked
+      };
+      return fetch(API_PREFIX + "/nl2mmd/preview", {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+          accept: "application/json"
+        },
+        body: JSON.stringify(body)
+      }).then(function(response) {
+        if (!response.ok) {
+          throw new Error(response.status + " " + response.statusText);
+        }
+        return response.json();
+      }).then(function(payload) {
+        composeOutputEl.textContent = formatJson(payload);
+      });
+    }
+
+    document.getElementById("refresh").addEventListener("click", function() {
+      return loadRuns()
+        .then(function() {
+          return loadCommands();
+        })
+        .then(function() {
+          if (state.selectedRunId) {
+            return loadSelectedRun(state.selectedRunId, { keepStream: false });
+          }
+        });
     });
 
-    searchEl.addEventListener("input", (event) => {
+    searchEl.addEventListener("input", function(event) {
       state.filter = event.target.value || "";
       renderRuns();
     });
 
-    loadRuns().catch((error) => {
-      runListEl.innerHTML = \`<div class="hint">Failed to load runs: \${escapeText(error.message || error)}</div>\`;
-      setLive("idle", "offline");
+    composeFormEl.addEventListener("submit", function(event) {
+      submitPreview(event).catch(function(error) {
+        composeOutputEl.textContent = "Preview failed: " + (error.message || error);
+      });
     });
 
-    state.listTimer = setInterval(() => {
-      loadRuns().catch(() => {
-        // keep the page usable even if a refresh fails
-      });
-    }, 15000);
+    Promise.all([loadRuns(), loadCommands()]).catch(function(error) {
+      runListEl.innerHTML =
+        '<div class="hint">Failed to load data: ' +
+        escapeText(error.message || error) +
+        "</div>";
+      setLive("idle", "offline");
+      commandsEl.innerHTML = '<div class="hint">Command data unavailable.</div>';
+      commandsGraphEl.textContent = "Command graph unavailable.";
+    });
   </script>
 </body>
 </html>`;
@@ -1017,7 +1515,10 @@ async function handleVisualizationRequest(
   args: VisualizationServerOptions
 ): Promise<void> {
   const method = request.method?.toUpperCase() ?? "GET";
-  const url = new URL(request.url ?? "/", `http://${request.headers.host ?? `${args.host}:${args.port}`}`);
+  const url = new URL(
+    request.url ?? "/",
+    `http://${request.headers.host ?? `${args.host}:${args.port}`}`
+  );
   const pathname = url.pathname;
   const segments = pathname.split("/").filter(Boolean);
 
@@ -1036,8 +1537,28 @@ async function handleVisualizationRequest(
     return;
   }
 
-  if (segments.length >= 3 && segments[2] === "runs" && segments[3] === "reindex" && method === "POST") {
-    await handleApiReindex(args.workdir, response);
+  if (
+    segments.length === 4 &&
+    segments[2] === "runs" &&
+    segments[3] === "reindex" &&
+    (method === "GET" || method === "POST")
+  ) {
+    await handleApiRunsReindex(args.workdir, response);
+    return;
+  }
+
+  if (segments.length === 3 && segments[2] === "commands" && method === "GET") {
+    await handleApiCommands(response);
+    return;
+  }
+
+  if (segments.length === 4 && segments[2] === "commands" && segments[3] === "graph" && method === "GET") {
+    await handleApiCommandGraph(response);
+    return;
+  }
+
+  if (segments.length === 4 && segments[2] === "nl2mmd" && segments[3] === "preview") {
+    await handleApiNl2MmdPreview(request, response, args, url);
     return;
   }
 
@@ -1070,14 +1591,13 @@ async function handleVisualizationRequest(
   }
   if (segments.length === 5 && segments[4] === "stream" && method === "GET") {
     const detail = (await inspectRun(args.workdir, runId)) as { runDir: string };
-    const runDir = detail.runDir;
     const startCursor = Math.max(0, Number(url.searchParams.get("cursor") ?? "0") || 0);
     response.writeHead(200, {
       "content-type": "text/event-stream; charset=utf-8",
       "cache-control": "no-cache, no-transform",
       connection: "keep-alive"
     });
-    response.write(`retry: 2000\n`);
+    response.write("retry: 2000\n");
 
     let active = true;
     let cursor = startCursor;
@@ -1089,11 +1609,11 @@ async function handleVisualizationRequest(
       }
       inFlight = true;
       try {
-        const events = await readRunEvents(runDir);
+        const events = await readRunEvents(detail.runDir);
         while (cursor < events.length && active) {
           const entry = events[cursor];
           response.write(`id: ${cursor}\n`);
-          response.write(`event: event\n`);
+          response.write("event: event\n");
           response.write(`data: ${JSON.stringify(entry)}\n\n`);
           cursor += 1;
         }
@@ -1113,7 +1633,7 @@ async function handleVisualizationRequest(
     await pushSnapshot();
     return;
   }
-  if (segments.length === 5 && segments[4] === "stop" && method === "POST") {
+  if (segments.length === 5 && segments[4] === "stop") {
     await handleApiStop(args.workdir, runId, response);
     return;
   }
@@ -1138,8 +1658,7 @@ export async function startVisualizationServer(args: VisualizationServerOptions)
   });
 
   const address = server.address();
-  const port =
-    typeof address === "object" && address && "port" in address ? address.port : args.port;
+  const port = typeof address === "object" && address && "port" in address ? address.port : args.port;
   return {
     server,
     url: `http://${args.host}:${port}`,
