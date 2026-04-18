@@ -527,7 +527,7 @@ Delivery status: delivered. Shared selector/cycle analysis now lives in `static-
 
 ## 12. 阶段 8：瘦身 `adapter`
 
-Delivery status: pending.
+Delivery status: delivered. `runtime-loader.ts`, `plan-fingerprint.ts`, and `runtime-setup.ts` now own config loading, fingerprint construction, and setup composition; `adapter.ts` is reduced to driver/resume/cleanup orchestration.
 
 ### 12.1 目标
 

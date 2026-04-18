@@ -27,7 +27,8 @@ OGSystem 当前重点优化以下能力：
 
 理解项目时，可以先按下面这条链路看：
 
-- `adapter.ts`：加载系统、角色、模型、law，构造运行上下文并校验 resume 指纹。
+- `adapter.ts`：setup composition driver，只负责准备 setup、调用 runner、处理 resume 校验和 cleanup。
+- `runtime-loader.ts` / `runtime-setup.ts` / `plan-fingerprint.ts`：分别承载配置加载、setup 组装、resume 指纹生成。
 - `parse-mermaid.ts` + `execution-plan.ts`：把 Mermaid DSL 归一化为运行时可执行计划。
 - `compiler.ts`：汇总 system / role / contract / law 的静态摘要，生成 `CompiledExecutionSnapshot`、静态 diagnostics 与 resume digest。
 - `graph-runner.ts`：推进图状态、管理 branch/lineage、写 checkpoint、处理 resume 补偿。
