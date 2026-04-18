@@ -448,6 +448,8 @@ User profile rules:
 - repo roots
 - runs directory
 - workspace directory names
+- workspace isolation mode
+- operator-facing redaction policy
 - optional retention policy (explicit threshold cleanup)
 
 Example:
@@ -459,6 +461,14 @@ Example:
   "roleRepo": "./og-roles",
   "modelRepo": "./og-models",
   "runsDir": ".ogs/runs",
+  "workspace": {
+    "rolesDir": "roles",
+    "privateDirName": "private",
+    "workspaceIsolation": "role"
+  },
+  "redaction": {
+    "enabled": true
+  },
   "retention": {
     "enabled": false,
     "executionDirThreshold": 2000,
@@ -471,6 +481,8 @@ Compatibility rule:
 
 - `configVersion` is optional for the current repo default, but when present it must be `"1"`
 - unsupported config versions fail fast; the runtime does not provide in-place migration
+- `workspace.workspaceIsolation` defaults to `role`; set it to `branch` only when same-role sibling branches need isolated private workspaces
+- `redaction.enabled` defaults to `true`; it only affects operator-facing prompt/audit/result/event projections and does not rewrite resume truth files
 - when `retention.enabled=true`, runtime can trigger cleanup automatically only when `executionDirCount > executionDirThreshold`
 - CLI `--cleanup-executions` has higher priority than runtime retention config for that run
 
@@ -496,6 +508,12 @@ When a run starts, `.ogs/runs/<run-id>/` should persist:
 - log channels: `logs/engine.ndjson`, `logs/roles/<roleId>.ndjson`
 - per-role latest files: `role.md`, `execution.json`, `latest-session.json`, `inbox.md`, `prompt.md`, `result.json`, `outbox.md`, `audit.json`, `private/`
 - per-role history: `executions/<execution-id>/...` including `session.json` and `execution-outcome.json`
+
+Workspace isolation:
+
+- `workspace.workspaceIsolation=role` keeps the historical behavior: same-role sibling branches share `roles/<roleId>/private/`
+- `workspace.workspaceIsolation=branch` allocates `roles/<roleId>/private/branches/<branchId>/` and records that directory into session metadata so execution, resume, and audit stay aligned
+- run-level `shared/` remains the cross-role writable workspace in both modes
 
 Resume source of truth:
 
@@ -528,6 +546,7 @@ Audit/operator artifacts:
 `repro.sh` is a run-local resume repro script generated for troubleshooting handoff, with environment context comments (Node/OS/timestamp).
 Resume reloads `sessions.json`, not `latest-session.json` or per-execution `session.json`.
 `inbox.md` is a projection of normalized runtime input, not a free-form summary.
+.operator-facing prompt/audit/result/event projections are redacted by default when `redaction.enabled=true`, including prompt text, input context previews, stdout/stderr snapshots, result payload mirrors, and event/timeline payload fragments.
 `.ogs/runs/` is generated runtime state and should be ignored by git.
 
 Minimal shared-workspace rule:
@@ -560,7 +579,7 @@ OpenCode lifecycle rule for `model.bind`:
 - each role/node session is keyed by `roleId:sessionLineageId`
 - repeated turns on the same branch lineage reuse the same OpenCode `session`
 - sibling branches of the same role do not share a session
-- sibling branches of the same role still share the same role directory and private workspace; the isolation guarantee is model-session isolation, not per-branch file-system isolation
+- sibling branches of the same role always share the same role directory; private workspace sharing depends on `workspace.workspaceIsolation` (`role` shares, `branch` isolates under `private/branches/<branchId>/`)
 - ordinary single-target sequential flow keeps the current `sessionLineageId`; fan-out and `all_of/quorum_of` join activation allocate a new lineage
 - each node prompt still binds to that node's role directory
 - node audit records include `sessionId`, `messageId`, and shared `serverPid`

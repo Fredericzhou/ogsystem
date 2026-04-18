@@ -41,6 +41,10 @@
         "privateDirName": {
           "type": "string",
           "minLength": 1
+        },
+        "workspaceIsolation": {
+          "type": "string",
+          "enum": ["role", "branch"]
         }
       }
     },
@@ -73,6 +77,15 @@
               "type": "boolean"
             }
           }
+        }
+      }
+    },
+    "redaction": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "enabled": {
+          "type": "boolean"
         }
       }
     },

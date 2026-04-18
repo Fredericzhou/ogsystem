@@ -2,9 +2,13 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import os from "node:os";
 import path from "node:path";
-import { mkdtemp, readFile, writeFile } from "node:fs/promises";
+import { mkdtemp, mkdir, readFile, writeFile } from "node:fs/promises";
 
-import { loadAuditTrailFromEvents } from "../dist/runtime/run-artifacts.js";
+import {
+  appendEvent,
+  flushBufferedRunArtifacts,
+  loadAuditTrailFromEvents
+} from "../dist/runtime/run-artifacts.js";
 import {
   loadTimelineSnapshot,
   rebuildTimelineProjection
@@ -132,4 +136,42 @@ test("timeline projection tolerates missing event source", async () => {
     timelinePath
   });
   assert.equal(await readFile(timelinePath, "utf8"), "");
+});
+
+test("appendEvent keeps redacted events as single-line jsonl records", async () => {
+  const tempRoot = await mkdtemp(path.join(os.tmpdir(), "ogsystem-events-append-"));
+  const logsDir = path.resolve(tempRoot, "logs");
+  const roleLogsDir = path.resolve(logsDir, "roles");
+  const runContext = {
+    runDir: tempRoot,
+    eventsPath: path.resolve(tempRoot, "events.ndjson"),
+    engineLogPath: path.resolve(logsDir, "engine.ndjson"),
+    roleLogsDir,
+    redaction: {
+      enabled: true
+    }
+  };
+
+  await mkdir(roleLogsDir, { recursive: true });
+  await appendEvent(runContext, {
+    type: "audit",
+    at: "2026-04-18T00:00:00.000Z",
+    roleId: "role-a",
+    status: "ok",
+    stdoutPreview: "token=secret-token-value"
+  });
+  await flushBufferedRunArtifacts(runContext);
+
+  const eventsLines = (await readFile(runContext.eventsPath, "utf8"))
+    .trim()
+    .split("\n");
+  assert.equal(eventsLines.length, 1);
+  const record = JSON.parse(eventsLines[0]);
+  assert.equal(record.type, "audit");
+  assert.equal(record.at, "2026-04-18T00:00:00.000Z");
+  assert.equal(record.roleId, "role-a");
+  assert.equal(record.status, "ok");
+  assert.equal(typeof record.stdoutPreview, "string");
+  assert.match(record.stdoutPreview, /\[REDACTED\]/);
+  assert.doesNotMatch(record.stdoutPreview, /secret-token-value/);
 });

@@ -277,12 +277,17 @@ export type UserProfile = {
 export type RuntimeWorkspaceConfig = {
   rolesDir: string;
   privateDirName: string;
+  workspaceIsolation?: "role" | "branch";
 };
 
 export type RuntimeRetentionConfig = {
   enabled: boolean;
   executionDirThreshold: number;
   keepLatest: number;
+};
+
+export type RuntimeRedactionConfig = {
+  enabled: boolean;
 };
 
 export type RuntimeConfig = {
@@ -294,6 +299,7 @@ export type RuntimeConfig = {
   sharedDir?: string;
   workspace: RuntimeWorkspaceConfig;
   retention?: RuntimeRetentionConfig;
+  redaction?: RuntimeRedactionConfig;
   opencode?: {
     baseArgs?: string[];
   };
@@ -406,6 +412,8 @@ export type RunContext = {
   sessionRecordsByKey: Map<string, OpencodeSessionRecord>;
   nextCheckpointSequence: number;
   sharedDir: string;
+  workspaceIsolation: "role" | "branch";
+  redaction: RuntimeRedactionConfig;
   releaseResumeLock?: () => Promise<void>;
 };
 

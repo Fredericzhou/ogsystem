@@ -25,6 +25,11 @@ import { createInterface } from "node:readline";
 
 import { readJsonFile, writeTextFileAtomic } from "./json-file.js";
 import { createRuntimeError } from "./runtime-errors.js";
+import {
+  redactJsonForStorage,
+  redactPromptText,
+  stringifyRedactedUnknown
+} from "./redaction.js";
 import type {
   AuditRecord,
   BranchRecord,
@@ -53,6 +58,17 @@ export type RunPlanFingerprint = {
   digest: string;
   payload: Record<string, unknown>;
 };
+
+export function resolvePrivateWorkspaceDir(args: {
+  roleDirs: RoleRunDirs;
+  workspaceIsolation: "role" | "branch";
+  branchId?: string;
+}): string {
+  if (args.workspaceIsolation !== "branch" || !args.branchId) {
+    return args.roleDirs.privateDir;
+  }
+  return resolve(args.roleDirs.privateDir, "branches", args.branchId);
+}
 
 export function buildRoleSessionKey(roleId: string, sessionLineageId: string): string {
   return `${roleId}:${sessionLineageId}`;
@@ -741,7 +757,10 @@ export async function initializeRunContext(args: {
     const sourceSystem = await readFile(args.systemPath, "utf8");
     // Idempotency: resumed directories reuse existing snapshots so we don't lose checkpoints when
     // rerunning setup after a crash.
-    await writeIfMissing(resolve(runDir, "request.md"), `${args.prompt}\n`);
+    await writeIfMissing(
+      resolve(runDir, "request.md"),
+      `${redactPromptText(args.prompt, args.runtimeConfig.redaction)}\n`
+    );
     await writeIfMissing(resolve(runDir, "system.mmd"), sourceSystem);
     await writeIfMissing(
       resolve(runDir, "run.md"),
@@ -788,6 +807,9 @@ export async function initializeRunContext(args: {
       const executionsDir = resolve(roleDir, "executions");
       const latestSessionPath = resolve(roleDir, "latest-session.json");
       await mkdir(privateDir, { recursive: true });
+      if (args.runtimeConfig.workspace.workspaceIsolation === "branch") {
+        await mkdir(resolve(privateDir, "branches"), { recursive: true });
+      }
       await mkdir(executionsDir, { recursive: true });
       await writeIfMissing(
         resolve(privateDir, "README.md"),
@@ -858,6 +880,8 @@ export async function initializeRunContext(args: {
       sessionRecordsByKey,
       nextCheckpointSequence: await restoreCheckpointSequence(checkpointsDir),
       sharedDir,
+      workspaceIsolation: args.runtimeConfig.workspace.workspaceIsolation ?? "role",
+      redaction: args.runtimeConfig.redaction ?? { enabled: true },
       releaseResumeLock
     };
   } catch (error) {
@@ -1529,6 +1553,7 @@ export async function persistRoleSession(args: {
   execution: RoleExecutionRecord;
   sessionId: string;
   messageId?: string;
+  sessionDirectory?: string;
 }): Promise<OpencodeSessionRecord> {
   const roleDirs = args.context.roleDirsById.get(args.roleId);
   if (!roleDirs) {
@@ -1541,7 +1566,7 @@ export async function persistRoleSession(args: {
     sessionLineageId: args.execution.sessionLineageId,
     branchId: args.execution.branchId,
     sessionId: args.sessionId,
-    directory: roleDirs.roleDir,
+    directory: args.sessionDirectory ?? roleDirs.roleDir,
     createdAt: previous?.createdAt ?? args.execution.startedAt,
     lastPromptAt: args.execution.startedAt,
     lastMessageId: args.messageId,
@@ -1549,7 +1574,7 @@ export async function persistRoleSession(args: {
       previous?.sessionId === args.sessionId ? previous.promptCount + 1 : (previous?.promptCount ?? 0) + 1
   };
   args.context.sessionRecordsByKey.set(args.execution.sessionKey, record);
-  const content = stringifyJson(record);
+  const content = redactJsonForStorage(record, args.context.redaction);
   await mkdir(args.execution.executionDir, { recursive: true });
   await writeAtomicFile(roleDirs.latestSessionPath, content);
   await writeAtomicFile(resolve(args.execution.executionDir, "session.json"), content);
@@ -1592,13 +1617,13 @@ export async function persistRolePrelude(args: {
           "",
           "Runtime Input Projection:",
           "```json",
-          stringifyJson(args.roleInputProjection),
+          redactJsonForStorage(args.roleInputProjection, args.context.redaction),
           "```"
         ].join("\n")
       },
       {
         path: "prompt.md",
-        content: `${args.prompt}\n`
+        content: `${redactPromptText(args.prompt, args.context.redaction)}\n`
       },
       {
         path: "role.md",
@@ -1617,7 +1642,7 @@ export async function persistRolePrelude(args: {
       },
       {
         path: "execution.json",
-        content: stringifyJson(args.execution)
+        content: redactJsonForStorage(args.execution, args.context.redaction)
       }
     ]
   });
@@ -1637,18 +1662,18 @@ export async function persistRoleResult(args: {
   const files: Array<{ path: string; content: string }> = [
     {
       path: "audit.json",
-      content: stringifyJson(args.audit)
+      content: redactJsonForStorage(args.audit, args.context.redaction)
     }
   ];
   if (args.output) {
     files.push(
       {
         path: "result.json",
-        content: stringifyJson(args.output)
+        content: redactJsonForStorage(args.output, args.context.redaction)
       },
       {
         path: "outbox.md",
-        content: `${args.output.content ?? ""}\n`
+        content: `${redactPromptText(args.output.content ?? "", args.context.redaction)}\n`
       }
     );
   }
@@ -1663,7 +1688,7 @@ export async function appendEvent(
   context: RunContext,
   payload: Record<string, unknown>
 ): Promise<void> {
-  const encoded = `${JSON.stringify(payload)}\n`;
+  const encoded = `${stringifyRedactedUnknown(payload, context.redaction)}\n`;
   const state = getBufferedAppendState(context.runDir);
   state.pendingByKey.set("events", {
     key: "events",

@@ -605,7 +605,7 @@ Delivery status: delivered. `project-lifecycle.ts` now owns `run logs` filtering
 
 ## 14. 阶段 10：脱敏与最小安全补面
 
-Delivery status: pending.
+Delivery status: delivered. Operator-facing projections now pass through a shared redaction layer by default, covering prompt/audit/result/event storage while leaving resume truth files readable by the runtime.
 
 ### 14.1 目标
 
@@ -646,7 +646,7 @@ Delivery status: pending.
 
 ## 15. 阶段 11：工作区隔离增强
 
-Delivery status: pending.
+Delivery status: delivered. `workspace.workspaceIsolation` now supports `role | branch` with default `role`; branch mode allocates per-branch private workspaces and carries the resolved session directory through execution and resume artifacts.
 
 ### 15.1 目标
 

@@ -10,6 +10,7 @@
 import { resolve } from "node:path";
 
 import { appendBufferedText, appendEvent } from "./run-artifacts.js";
+import { redactInputContext, redactOptionalText, redactUnknown } from "./redaction.js";
 import { preview, previewStructuredStdout } from "./runtime-support.js";
 import type {
   AuditRecord,
@@ -93,15 +94,27 @@ export function createAuditRecord(args: AuditRecordInput): AuditRecord {
  * the more structured record even if the markdown transition line fails to persist.
  */
 export async function appendAuditRecord(runContext: RunContext, audit: AuditRecord): Promise<void> {
+  const redactedAudit: AuditRecord = {
+    ...audit,
+    stdoutPreview: redactOptionalText(audit.stdoutPreview, runContext.redaction),
+    stderrPreview: redactOptionalText(audit.stderrPreview, runContext.redaction),
+    error: redactOptionalText(audit.error, runContext.redaction),
+    correctionRequest: redactUnknown(audit.correctionRequest, runContext.redaction) as
+      | RoleOutputCorrectionRequest
+      | undefined,
+    inputContext: redactInputContext(audit.inputContext, runContext.redaction)
+  };
   // Failure window: if appending the transition markdown fails after the event is written,
   // the runtime can still rely on the persistent event log.
-  await appendEvent(runContext, { type: "audit", ...audit });
+  await appendEvent(runContext, { type: "audit", ...redactedAudit });
   // Invariant: transition stream entry is appended after the event so readers see at least
   // the audit log even if conditional transition logging fails.
   await appendBufferedText({
     context: runContext,
     key: "transitions",
     path: resolve(runContext.auditDir, "transitions.md"),
-    content: `- ${audit.roleId}: ${audit.status}${audit.selectedEvent ? ` (${audit.selectedEvent})` : ""}\n`
+    content:
+      `- ${redactedAudit.roleId}: ${redactedAudit.status}` +
+      `${redactedAudit.selectedEvent ? ` (${redactedAudit.selectedEvent})` : ""}\n`
   });
 }

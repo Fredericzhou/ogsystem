@@ -144,7 +144,11 @@ function createDefaultRuntimeConfig(): Record<string, unknown> {
     runsDir: OGS_RUNS_DIR,
     workspace: {
       rolesDir: "roles",
-      privateDirName: "private"
+      privateDirName: "private",
+      workspaceIsolation: "role"
+    },
+    redaction: {
+      enabled: true
     },
     opencode: {
       baseArgs: ["run"]

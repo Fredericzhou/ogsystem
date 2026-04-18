@@ -81,6 +81,27 @@ test("runtime config schema rejects unknown runtime error_flows fields", async (
   assert.equal(ok, false);
 });
 
+test("runtime config schema accepts redaction and branch workspace isolation", async () => {
+  const runtimeSchema = await readJson(path.resolve("schemas/runtime-config.schema.json"));
+  const validate = createValidator(runtimeSchema);
+
+  const ok = validate({
+    executor: "opencode",
+    roleRepo: "./og-roles",
+    modelRepo: "./og-models",
+    redaction: {
+      enabled: true
+    },
+    workspace: {
+      rolesDir: "roles",
+      privateDirName: "private",
+      workspaceIsolation: "branch"
+    }
+  });
+
+  assert.equal(ok, true, JSON.stringify(validate.errors, null, 2));
+});
+
 test("user profile schema accepts repository user-profile.json", async () => {
   const profileSchema = await readJson(path.resolve("schemas/user-profile.schema.json"));
   const userProfile = await readJson(path.resolve(".ogsystem/user-profile.json"));

@@ -336,6 +336,7 @@ export function validateRuntimeConfig(value: unknown, filePath: string): Runtime
       "sharedDir",
       "workspace",
       "retention",
+      "redaction",
       "opencode",
       "runtime"
     ],
@@ -359,10 +360,26 @@ export function validateRuntimeConfig(value: unknown, filePath: string): Runtime
       : expectRecord(record.workspace, filePath, "$.workspace");
   expectNoExtraKeys(
     workspaceRecord,
-    ["rolesDir", "privateDirName"],
+    ["rolesDir", "privateDirName", "workspaceIsolation"],
     filePath,
     "$.workspace"
   );
+  const workspaceIsolation = expectOptionalString(
+    workspaceRecord.workspaceIsolation,
+    filePath,
+    "$.workspace.workspaceIsolation"
+  );
+  if (
+    workspaceIsolation !== undefined &&
+    workspaceIsolation !== "role" &&
+    workspaceIsolation !== "branch"
+  ) {
+    fail(
+      filePath,
+      "$.workspace.workspaceIsolation",
+      `expected "role" or "branch", received "${workspaceIsolation}"`
+    );
+  }
 
   const opencodeRecord =
     record.opencode === undefined
@@ -415,6 +432,17 @@ export function validateRuntimeConfig(value: unknown, filePath: string): Runtime
           keepLatest: retentionKeepLatest ?? 100
         };
 
+  const redactionRecord =
+    record.redaction === undefined
+      ? undefined
+      : expectRecord(record.redaction, filePath, "$.redaction");
+  if (redactionRecord) {
+    expectNoExtraKeys(redactionRecord, ["enabled"], filePath, "$.redaction");
+  }
+  const redaction = {
+    enabled: expectOptionalBoolean(redactionRecord?.enabled, filePath, "$.redaction.enabled") ?? true
+  };
+
   const runtimeRecord =
     record.runtime === undefined
       ? undefined
@@ -449,9 +477,11 @@ export function validateRuntimeConfig(value: unknown, filePath: string): Runtime
           workspaceRecord.privateDirName,
           filePath,
           "$.workspace.privateDirName"
-        ) ?? "private"
+        ) ?? "private",
+      workspaceIsolation: (workspaceIsolation as "role" | "branch" | undefined) ?? "role"
     },
     retention,
+    redaction,
     opencode: {
       baseArgs
     },

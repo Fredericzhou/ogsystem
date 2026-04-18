@@ -349,3 +349,91 @@ summary[Role:debate-summary] -->|SUMMARY_READY| output
     ]
   );
 });
+
+test("branch workspace isolation stores session directory under branch private workspace", async () => {
+  const tempRoot = await mkdtemp(path.join(os.tmpdir(), "ogsystem-session-branch-isolation-"));
+  const workdir = tempRoot;
+  const systemPath = path.resolve("examples/target-model-binding-system.mmd");
+  const system = await loadSystemFromMermaid(systemPath);
+  const plan = createExecutionPlan(system);
+  const runtimeConfig = validateRuntimeConfig(
+    {
+      executor: "opencode",
+      roleRepo: "./og-roles",
+      modelRepo: "./og-models",
+      runsDir: ".ogs/runs",
+      workspace: {
+        rolesDir: "roles",
+        privateDirName: "private",
+        workspaceIsolation: "branch"
+      }
+    },
+    "runtime.json"
+  );
+  const runContext = await initializeRunContext({
+    system,
+    systemPath,
+    prompt: "branch workspace prompt",
+    workdir,
+    runtimeConfig
+  });
+  const rolePackage = await loadRolePackage({
+    roleId: system.entryRoleId,
+    roleRootDir: path.resolve("og-roles/roles")
+  });
+  const modelPackage = await loadModelPackage({
+    modelId: "general-balanced",
+    modelRootDir: path.resolve("og-models")
+  });
+  const state = createInitialState(plan, "branch workspace prompt");
+  const seenWorkdirs = [];
+  const executor = {
+    async start() {},
+    async close() {},
+    async abortSession() {},
+    getServerMetadata() {
+      return {};
+    },
+    async execute(request) {
+      seenWorkdirs.push(request.workdir);
+      return {
+        exitCode: 0,
+        stdout: JSON.stringify({ event: "DONE", content: "ok" }),
+        stderr: "",
+        args: [],
+        sessionId: "ses_branch_private",
+        messageId: "msg_branch_private"
+      };
+    }
+  };
+
+  const result = await executeRoleNode({
+    roleId: system.entryRoleId,
+    node: getExecutionPlanNode(plan, system.entryRoleId),
+    plan,
+    state,
+    effectiveLaw: {
+      forbiddenToolRefs: [],
+      allowNoopWithoutExecutionBinding: false
+    },
+    profilesById: new Map(),
+    toolsByRef: new Map(),
+    modelsById: new Map([["general-balanced", modelPackage]]),
+    rolePackagesByRoleId: new Map([[system.entryRoleId, rolePackage]]),
+    runContext,
+    executor,
+    workdir
+  });
+
+  assert.equal(result.status, "ok");
+  assert.equal(seenWorkdirs.length, 1);
+  assert.match(
+    seenWorkdirs[0],
+    /roles\/debate-minimalist\/private\/branches\/debate-minimalist@1#1$/
+  );
+  const sessions = JSON.parse(await readFile(path.resolve(runContext.runDir, "sessions.json"), "utf8"));
+  assert.match(
+    sessions[0].directory,
+    /roles\/debate-minimalist\/private\/branches\/debate-minimalist@1#1$/
+  );
+});

@@ -742,3 +742,66 @@ reviewer[Role:reviewer] -->|DONE| output
   assert.equal(result.audit.compilerDiagnosticCode, "COMPILER_ROLE_INPUT_CONTEXT_MISSING");
   assert.equal(executeCount, 0);
 });
+
+test("executeRoleNode redacts prompt and audit artifacts by default", async () => {
+  const fixture = await prepareRoleExecutorFixture({
+    tempPrefix: "ogsystem-role-redaction-",
+    prompt: "token=secret-value",
+    systemSource: `flowchart TD
+%% system.id=role.redaction.default
+%% system.version=1.0.0
+%% law.global=law.console.base
+%% entry.role=reviewer
+%% model.bind.reviewer=balanced-gpt52
+input -->|GO| reviewer[Role:reviewer]
+reviewer[Role:reviewer] -->|DONE| output
+`,
+    roles: [{ roleId: "reviewer", allowedEvents: ["DONE"] }]
+  });
+
+  const state = createInitialState(fixture.plan, "token=secret-value");
+  const branch = state.branchRecords["reviewer@1#1"];
+  const result = await executeRoleNode({
+    roleId: "reviewer",
+    node: getExecutionPlanNode(fixture.plan, "reviewer"),
+    plan: fixture.plan,
+    state,
+    branch,
+    effectiveLaw: {
+      forbiddenToolRefs: [],
+      allowNoopWithoutExecutionBinding: false
+    },
+    profilesById: new Map(),
+    toolsByRef: new Map(),
+    modelsById: fixture.modelsById,
+    rolePackagesByRoleId: fixture.rolePackagesByRoleId,
+    compilerSnapshot: fixture.compilerSnapshot,
+    runContext: fixture.runContext,
+    executor: {
+      async start() {},
+      async close() {},
+      async abortSession() {},
+      getServerMetadata() {
+        return {};
+      },
+      async execute() {
+        return {
+          exitCode: 0,
+          stdout: JSON.stringify({ event: "DONE", content: "api_key=top-secret" }),
+          stderr: "Bearer abcdefghijklmnop",
+          args: [],
+          sessionId: "ses_redacted",
+          messageId: "msg_redacted"
+        };
+      }
+    },
+    workdir: fixture.tempRoot
+  });
+
+  assert.equal(result.status, "ok");
+  const reviewerDir = path.resolve(fixture.runContext.runDir, "roles", "reviewer");
+  const promptText = await readFile(path.resolve(reviewerDir, "prompt.md"), "utf8");
+  const audit = JSON.parse(await readFile(path.resolve(reviewerDir, "audit.json"), "utf8"));
+  assert.match(promptText, /\[REDACTED\]/);
+  assert.match(JSON.stringify(audit), /\[REDACTED\]/);
+});

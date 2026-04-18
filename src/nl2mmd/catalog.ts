@@ -61,7 +61,11 @@ function getDefaultRuntimeConfig(path: string) {
       runsDir: ".ogs/runs",
       workspace: {
         rolesDir: "roles",
-        privateDirName: "private"
+        privateDirName: "private",
+        workspaceIsolation: "role"
+      },
+      redaction: {
+        enabled: true
       },
       opencode: {
         baseArgs: ["run"]

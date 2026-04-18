@@ -27,7 +27,8 @@ import {
 import {
   allocateRoleExecution,
   buildRoleSessionKey,
-  getRoleSession
+  getRoleSession,
+  resolvePrivateWorkspaceDir
 } from "./run-artifacts.js";
 import {
   renderRolePrompt,
@@ -387,6 +388,16 @@ export async function executeRoleNode(args: {
   const selectableOutgoing = getSelectableOutgoingFlows(args.node);
   const allowedEvents = selectableOutgoing.map((item) => item.eventType);
   const roleDirs = args.runContext.roleDirsById.get(args.roleId);
+  const resolvedRoleDirs = roleDirs
+    ? {
+        ...roleDirs,
+        privateDir: resolvePrivateWorkspaceDir({
+          roleDirs,
+          workspaceIsolation: args.runContext.workspaceIsolation,
+          branchId
+        })
+      }
+    : undefined;
   const existingSession = getRoleSession(args.runContext, sessionKey);
 
   let modelId: string | undefined;
@@ -399,7 +410,7 @@ export async function executeRoleNode(args: {
     node: args.node,
     runContext: args.runContext,
     baseWorkdir: args.workdir,
-    roleDirs,
+    roleDirs: resolvedRoleDirs,
     allowedEvents,
     effectiveLaw: args.effectiveLaw,
     profilesById: args.profilesById,
@@ -478,7 +489,7 @@ export async function executeRoleNode(args: {
       node: args.node,
       runContext: args.runContext,
       baseWorkdir: args.workdir,
-      roleDirs,
+      roleDirs: resolvedRoleDirs,
       allowedEvents,
       effectiveLaw: args.effectiveLaw,
       profilesById: args.profilesById,
@@ -507,7 +518,7 @@ export async function executeRoleNode(args: {
       resolvedRolePath: rolePackage.resolvedPath,
       preferredModelTags: rolePackage.manifest.preferredModelTags,
       sharedDir: args.runContext.sharedDir,
-      privateDir: roleDirs?.privateDir ?? "",
+      privateDir: resolvedRoleDirs?.privateDir ?? "",
       execution,
         roleInputProjection: {
           role_id: args.roleId,
@@ -662,7 +673,8 @@ export async function executeRoleNode(args: {
         roleId: args.roleId,
         execution,
         sessionId: executionResult.sessionId,
-        messageId: executionResult.messageId
+        messageId: executionResult.messageId,
+        sessionDirectory: resolvedBinding.sessionDirectory
       });
     }
     await recordRoleResult({
@@ -762,7 +774,8 @@ export async function executeRoleNode(args: {
         roleId: args.roleId,
         execution,
         sessionId: executionError.sessionId,
-        messageId: executionError.messageId
+        messageId: executionError.messageId,
+        sessionDirectory: resolvedBinding.sessionDirectory
       });
     }
     await recordRoleResult({ roleId: args.roleId, context: args.runContext, execution, audit });

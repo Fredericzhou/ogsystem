@@ -20,6 +20,7 @@ export type ResolvedExecutionBinding = {
   profileId?: string;
   toolRef?: string;
   command?: string;
+  sessionDirectory?: string;
 };
 
 export function resolveExecutionBinding(args: {
@@ -38,13 +39,14 @@ export function resolveExecutionBinding(args: {
     timeoutMs: 120000,
     maxOutputBytes: 64 * 1024
   };
+  const sessionDirectory = args.roleDirs?.privateDir;
 
   if (args.node.binding.kind === "model") {
     const modelPackage = args.modelsById.get(args.node.binding.modelId);
     if (!modelPackage) {
       throw new Error(`Model package not loaded for model "${args.node.binding.modelId}"`);
     }
-    const workdir = args.roleDirs?.roleDir ?? args.baseWorkdir;
+    const workdir = sessionDirectory ?? args.roleDirs?.roleDir ?? args.baseWorkdir;
     return {
       binding: {
         kind: "model",
@@ -58,11 +60,13 @@ export function resolveExecutionBinding(args: {
         OGSYSTEM_RUN_DIR: args.runContext.runDir,
         OGSYSTEM_SHARED_DIR: args.runContext.sharedDir,
         OGSYSTEM_ROLE_DIR: args.roleDirs?.roleDir ?? workdir,
+        OGSYSTEM_PRIVATE_DIR: sessionDirectory ?? "",
         OGSYSTEM_ROLE_ID: args.roleId,
         OGSYSTEM_MODEL_ID: modelPackage.manifest.modelId,
         OGSYSTEM_ALLOWED_EVENTS: args.allowedEvents.join(",")
       },
-      modelId: modelPackage.manifest.modelId
+      modelId: modelPackage.manifest.modelId,
+      sessionDirectory
     };
   }
 
@@ -87,11 +91,12 @@ export function resolveExecutionBinding(args: {
       bindingLabel: `profile:${profile.profileId}`,
       timeoutMs: profile.timeoutMs ?? defaults.timeoutMs,
       maxOutputBytes: profile.maxOutputBytes ?? defaults.maxOutputBytes,
-      workdir: args.baseWorkdir,
+      workdir: sessionDirectory ?? args.baseWorkdir,
       env: {
         OGSYSTEM_RUN_DIR: args.runContext.runDir,
         OGSYSTEM_SHARED_DIR: args.runContext.sharedDir,
         OGSYSTEM_ROLE_DIR: args.roleDirs?.roleDir ?? args.baseWorkdir,
+        OGSYSTEM_PRIVATE_DIR: sessionDirectory ?? "",
         OGSYSTEM_ROLE_ID: args.roleId,
         OGSYSTEM_PROFILE_ID: profile.profileId,
         OGSYSTEM_TOOL_REF: tool.toolRef,
@@ -99,7 +104,8 @@ export function resolveExecutionBinding(args: {
       },
       profileId: profile.profileId,
       toolRef: tool.toolRef,
-      command: tool.command
+      command: tool.command,
+      sessionDirectory
     };
   }
 

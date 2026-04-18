@@ -79,7 +79,8 @@ test("runtime config validates every supported runtime field", () => {
   assert.equal(config.sharedDir, "./shared-workspace");
   assert.deepStrictEqual(config.workspace, {
     rolesDir: "roles",
-    privateDirName: "private"
+    privateDirName: "private",
+    workspaceIsolation: "role"
   });
   assert.deepStrictEqual(config.opencode?.baseArgs, ["run", "--json"]);
 });
@@ -107,7 +108,8 @@ test("runtime config accepts every supported field", () => {
   assert.deepStrictEqual(config.opencode?.baseArgs, ["run", "--json"]);
   assert.deepStrictEqual(config.workspace, {
     rolesDir: "roles",
-    privateDirName: "private"
+    privateDirName: "private",
+    workspaceIsolation: "role"
   });
 });
 
@@ -243,6 +245,28 @@ test("runtime config accepts runtime.error_flows.v1 when set to true", () => {
   );
 
   assert.equal(config.runtime.error_flows.v1, true);
+});
+
+test("runtime config accepts redaction and branch workspace isolation", () => {
+  const config = validateRuntimeConfig(
+    {
+      executor: "opencode",
+      roleRepo: "./og-roles",
+      modelRepo: "./og-models",
+      redaction: {
+        enabled: true
+      },
+      workspace: {
+        rolesDir: "roles",
+        privateDirName: "private",
+        workspaceIsolation: "branch"
+      }
+    },
+    "runtime.json"
+  );
+
+  assert.equal(config.redaction?.enabled, true);
+  assert.equal(config.workspace.workspaceIsolation, "branch");
 });
 
 test("runtime config rejects unknown runtime error_flows fields", () => {
