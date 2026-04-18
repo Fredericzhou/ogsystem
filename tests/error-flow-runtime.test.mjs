@@ -434,6 +434,107 @@ fallback[Role:fallback] -->|FB_DONE| output
   assert.doesNotMatch(handledArtifact.data.last_context, /raw-upstream-content/);
 });
 
+test("handled failure last_context falls back to upstream content and redacts secrets", async () => {
+  const fixture = await setupFixture({
+    id: "handled-last-context-upstream-fallback",
+    errorFlowsV1: true,
+    roles: [
+      {
+        roleId: "prep",
+        mode: {
+          kind: "event",
+          event: "PREP_DONE",
+          content: "token=secret-token-value upstream fallback"
+        },
+        allowedEvents: ["PREP_DONE"]
+      },
+      {
+        roleId: "worker",
+        mode: { kind: "fail" },
+        allowedEvents: ["DONE"],
+        requireEvent: false
+      },
+      {
+        roleId: "fallback",
+        mode: { kind: "event", event: "FB_DONE", content: "fallback" },
+        allowedEvents: ["FB_DONE"]
+      }
+    ],
+    systemSource: `flowchart TD
+%% system.id=test.error.last.context.upstream.fallback
+%% system.version=1.0.0
+%% law.global=law.test.error.flow
+%% entry.role=prep
+%% exec.bind.prep=profile.prep
+%% exec.bind.worker=profile.worker
+%% exec.bind.fallback=profile.fallback
+
+input -->|START| prep[Role:prep]
+prep[Role:prep] -->|PREP_DONE| worker[Role:worker]
+worker[Role:worker] -->|ERROR| fallback[Role:fallback]
+fallback[Role:fallback] -->|FB_DONE| output
+`
+  });
+
+  const result = await runFixture(fixture, "upstream fallback context");
+  assert.equal(result.status, "done");
+  const graphState = await readGraphStateSnapshot(fixture);
+  const handledArtifact = Object.values(graphState.roleResults).find(
+    (item) => item.roleId === "worker.__handled_failure"
+  );
+  assert.ok(handledArtifact);
+  assert.equal(typeof handledArtifact.data?.last_context, "string");
+  assert.match(handledArtifact.data.last_context, /token=<redacted>/i);
+  assert.doesNotMatch(handledArtifact.data.last_context, /secret-token-value/);
+  assert.doesNotMatch(handledArtifact.data.last_context, /^$/);
+});
+
+test("handled failure last_context falls back to user prompt and truncates long context", async () => {
+  const fixture = await setupFixture({
+    id: "handled-last-context-user-prompt-fallback",
+    errorFlowsV1: true,
+    roles: [
+      {
+        roleId: "worker",
+        mode: { kind: "fail" },
+        allowedEvents: ["DONE"],
+        requireEvent: false
+      },
+      {
+        roleId: "fallback",
+        mode: { kind: "event", event: "FB_DONE", content: "fallback" },
+        allowedEvents: ["FB_DONE"]
+      }
+    ],
+    systemSource: `flowchart TD
+%% system.id=test.error.last.context.user.prompt.fallback
+%% system.version=1.0.0
+%% law.global=law.test.error.flow
+%% entry.role=worker
+%% exec.bind.worker=profile.worker
+%% exec.bind.fallback=profile.fallback
+
+input -->|START| worker[Role:worker]
+worker[Role:worker] -->|ERROR| fallback[Role:fallback]
+fallback[Role:fallback] -->|FB_DONE| output
+`
+  });
+
+  const longPrompt = `secret=top-secret ${"x".repeat(900)}`;
+  const result = await runFixture(fixture, longPrompt);
+  assert.equal(result.status, "done");
+  const graphState = await readGraphStateSnapshot(fixture);
+  const handledArtifact = Object.values(graphState.roleResults).find(
+    (item) => item.roleId === "worker.__handled_failure"
+  );
+  assert.ok(handledArtifact);
+  assert.equal(typeof handledArtifact.data?.last_context, "string");
+  assert.match(handledArtifact.data.last_context, /secret=<redacted>/i);
+  assert.doesNotMatch(handledArtifact.data.last_context, /top-secret/);
+  assert.ok(handledArtifact.data.last_context.length <= 803);
+  assert.match(handledArtifact.data.last_context, /\.\.\.$/);
+});
+
 test("runtime keeps fail-stop behavior when error flow routing flag is disabled", async () => {
   const fixture = await setupFixture({
     id: "flag-off",

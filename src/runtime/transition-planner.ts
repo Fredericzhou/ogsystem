@@ -12,10 +12,12 @@ import {
   buildBranchId,
   buildJoinId,
   completeBranch,
+  getBranchResult,
   getTargetLoopIteration,
   storeRoleResult,
   wouldExceedLoopBudget
 } from "./graph-runtime-state.js";
+import { sanitizeRoleInputContext } from "./role-input-projector.js";
 import { buildAuditSummaryDelta } from "./run-summary.js";
 import type { RuntimeIndexes } from "./runtime-indexes.js";
 import { SYSTEM_END_ROLE_ID } from "./types.js";
@@ -163,6 +165,9 @@ function buildHandledFailureArtifact(args: {
   error?: string;
   failureInputContext?: string;
 }): StoredRoleResult {
+  const upstream = getBranchResult(args.state, args.branch.parentBranchId);
+  const lastContextSource =
+    args.failureInputContext ?? upstream?.content ?? args.state.userPrompt;
   const artifactData: HandledFailureArtifactData = {
     error_code: args.errorEnvelope.errorCode,
     error_category: args.errorEnvelope.errorCategory,
@@ -173,7 +178,7 @@ function buildHandledFailureArtifact(args: {
     branch_id: args.branch.branchId,
     lineage_id: args.branch.lineageId,
     loop_iteration: args.branch.loopIteration,
-    last_context: args.failureInputContext ?? ""
+    last_context: sanitizeRoleInputContext(lastContextSource)
   };
   return {
     // Keep this artifact available for direct context projection while preventing join-source
