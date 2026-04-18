@@ -13,6 +13,10 @@ import { dirname, resolve } from "node:path";
 import { isRuntimeOnlyErrorEvent } from "./error-flow-utils.js";
 import { hasJoinModeHandler, hasRoutingModeHandler } from "./graph-mode-registry.js";
 import { createRuntimeError, RuntimeError } from "./runtime-errors.js";
+import {
+  collectCycleComponents,
+  summarizeContextSelector
+} from "./static-semantics.js";
 import { SYSTEM_END_ROLE_ID } from "./types.js";
 import type {
   Flow,
@@ -83,92 +87,6 @@ type ParsedSystemGraph = {
   hasOutputTransition: boolean;
 };
 
-// Ensures loops without explicit loop.max budgets are caught before execution.
-function collectCyclicRoleComponents(args: {
-  roleIds: string[];
-  flows: Flow[];
-}): string[][] {
-  const roleSet = new Set(args.roleIds);
-  const adjacency = new Map<string, string[]>(
-    args.roleIds.map((roleId) => [roleId, [] as string[]])
-  );
-  for (const flow of args.flows) {
-    if (flow.toRoleId === SYSTEM_END_ROLE_ID) {
-      continue;
-    }
-    if (!roleSet.has(flow.fromRoleId) || !roleSet.has(flow.toRoleId)) {
-      continue;
-    }
-    adjacency.get(flow.fromRoleId)?.push(flow.toRoleId);
-  }
-
-  const indexByRoleId = new Map<string, number>();
-  const lowLinkByRoleId = new Map<string, number>();
-  const onStack = new Set<string>();
-  const stack: string[] = [];
-  const components: string[][] = [];
-  let cursor = 0;
-
-  const strongConnect = (roleId: string): void => {
-    indexByRoleId.set(roleId, cursor);
-    lowLinkByRoleId.set(roleId, cursor);
-    cursor += 1;
-    stack.push(roleId);
-    onStack.add(roleId);
-
-    for (const neighborRoleId of adjacency.get(roleId) ?? []) {
-      if (!indexByRoleId.has(neighborRoleId)) {
-        strongConnect(neighborRoleId);
-        const roleLowLink = lowLinkByRoleId.get(roleId) ?? 0;
-        const neighborLowLink = lowLinkByRoleId.get(neighborRoleId) ?? 0;
-        lowLinkByRoleId.set(roleId, Math.min(roleLowLink, neighborLowLink));
-      } else if (onStack.has(neighborRoleId)) {
-        const roleLowLink = lowLinkByRoleId.get(roleId) ?? 0;
-        const neighborIndex = indexByRoleId.get(neighborRoleId) ?? 0;
-        lowLinkByRoleId.set(roleId, Math.min(roleLowLink, neighborIndex));
-      }
-    }
-
-    if ((lowLinkByRoleId.get(roleId) ?? -1) !== (indexByRoleId.get(roleId) ?? -2)) {
-      return;
-    }
-
-    const component: string[] = [];
-    while (stack.length > 0) {
-      const popped = stack.pop();
-      if (!popped) {
-        break;
-      }
-      onStack.delete(popped);
-      component.push(popped);
-      if (popped === roleId) {
-        break;
-      }
-    }
-
-    if (component.length > 1) {
-      components.push(component);
-      return;
-    }
-    const [single] = component;
-    if (!single) {
-      return;
-    }
-    const hasSelfLoop = (adjacency.get(single) ?? []).includes(single);
-    if (hasSelfLoop) {
-      components.push(component);
-    }
-  };
-
-  for (const roleId of args.roleIds) {
-    if (!indexByRoleId.has(roleId)) {
-      strongConnect(roleId);
-    }
-  }
-
-  return components;
-}
-
 // Fail-fast guard: runtime aborts parsing/validation on the first invariant violation.
 function failMermaid(args: {
   stage: "parse" | "validate";
@@ -203,9 +121,6 @@ type ParsedContextMapMetadataKey = {
   fieldName: string;
 };
 
-const SELECTOR_PATH_SEGMENT_REGEX = /^[A-Za-z0-9_]+$/;
-const SOURCE_SELECTOR_ROLE_ID_REGEX = /^[A-Za-z0-9._:-]+$/;
-
 function isSupportedJoinMode(value: string): value is GraphJoinMode {
   return value === "quorum_of" || hasJoinModeHandler(value);
 }
@@ -234,13 +149,6 @@ function parseContextMapMetadataKey(
   return { roleId, fieldName };
 }
 
-function isValidSelectorPath(path: string): boolean {
-  if (!path) {
-    return false;
-  }
-  return path.split(".").every((segment) => SELECTOR_PATH_SEGMENT_REGEX.test(segment));
-}
-
 function validateContextSelector(args: {
   selector: string;
   targetRoleId: string;
@@ -252,6 +160,7 @@ function validateContextSelector(args: {
   lineNumber?: number;
 }): void {
   const selector = args.selector;
+  const selectorInfo = summarizeContextSelector(selector);
   const fail = (errorCode: string, message: string): never =>
     failMermaid({
       stage: "validate",
@@ -261,13 +170,12 @@ function validateContextSelector(args: {
     });
   const isJoinNode = args.joinModeByRoleId[args.targetRoleId] !== undefined;
 
-  if (selector === "global.task" || selector === "global.user_profile") {
+  if (selectorInfo.selectorKind === "global.task" || selectorInfo.selectorKind === "global.user_profile") {
     return;
   }
 
-  if (selector.startsWith("global.user_profile.")) {
-    const path = selector.slice("global.user_profile.".length);
-    if (!isValidSelectorPath(path)) {
+  if (selectorInfo.selectorKind === "global.user_profile.path") {
+    if (!selectorInfo.validPath) {
       fail(
         "MERMAID_INVALID_SELECTOR",
         `${args.metadataKey} uses unsupported selector "${selector}".`
@@ -276,7 +184,7 @@ function validateContextSelector(args: {
     return;
   }
 
-  if (selector === "direct.content" || selector === "direct.event" || selector === "direct.data") {
+  if (selectorInfo.selectorKind === "direct") {
     if (isJoinNode) {
       fail(
         "MERMAID_JOIN_SELECTOR_NOT_ALLOWED",
@@ -286,15 +194,14 @@ function validateContextSelector(args: {
     return;
   }
 
-  if (selector.startsWith("direct.data.")) {
+  if (selectorInfo.selectorKind === "direct.data.path") {
     if (isJoinNode) {
       fail(
         "MERMAID_JOIN_SELECTOR_NOT_ALLOWED",
         `${args.metadataKey} uses "${selector}" but join nodes do not allow direct.* selectors.`
       );
     }
-    const path = selector.slice("direct.data.".length);
-    if (!isValidSelectorPath(path)) {
+    if (!selectorInfo.validPath) {
       fail(
         "MERMAID_INVALID_SELECTOR",
         `${args.metadataKey} uses unsupported selector "${selector}".`
@@ -303,23 +210,14 @@ function validateContextSelector(args: {
     return;
   }
 
-  const sourceMatch = selector.match(
-    /^source\(([A-Za-z0-9._:-]+)\)\.(content|event|data|data\.[A-Za-z0-9_]+(?:\.[A-Za-z0-9_]+)*)$/
-  );
-  if (sourceMatch) {
+  if (selectorInfo.selectorKind === "source") {
     if (!isJoinNode) {
       fail(
         "MERMAID_JOIN_SELECTOR_REQUIRES_JOIN_MODE",
         `${args.metadataKey} uses join-only selector "${selector}" on non-join role "${args.targetRoleId}".`
       );
     }
-    const sourceRoleId = sourceMatch[1];
-    if (!SOURCE_SELECTOR_ROLE_ID_REGEX.test(sourceRoleId)) {
-      fail(
-        "MERMAID_INVALID_SELECTOR",
-        `${args.metadataKey} uses unsupported selector "${selector}".`
-      );
-    }
+    const sourceRoleId = selectorInfo.sourceRoleId ?? "";
     if (!args.roleIds.includes(sourceRoleId)) {
       fail(
         "MERMAID_UNDEFINED_ROLE_REF",
@@ -1283,9 +1181,10 @@ function validateParsedSystemGraph(graph: ParsedSystemGraph): ValidatedSystemGra
    * that lack an explicit loop.max budget. Rejecting them here keeps the runtime from
    * spinning forever and ensures recovery steps can assume any cycle always carries a budget.
    */
-  const cycleComponents = collectCyclicRoleComponents({
+  const cycleComponents = collectCycleComponents({
     roleIds,
-    flows: graph.flows
+    flows: graph.flows,
+    includeRuntimeOnlyErrorEvents: true
   });
   for (const cycleRoles of cycleComponents) {
     const hasLoopBudget = cycleRoles.some((roleId) => loopMaxByRoleId[roleId] !== undefined);

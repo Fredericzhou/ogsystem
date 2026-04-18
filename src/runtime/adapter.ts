@@ -312,32 +312,23 @@ function sortedRoleIds(values: string[]): string[] {
   return [...values].sort((left, right) => left.localeCompare(right));
 }
 
-function assertBindingPreflight(args: {
-  plan: ReturnType<typeof createExecutionPlan>;
-  effectiveLaw: EffectiveLawConstraints;
-}): void {
-  // Invariant: every active role must either have an execution binding or be allowed a noop under the current law,
-  // otherwise the runtime hits an undefined branch and resume semantics become invalid.
-  for (const roleId of args.plan.roleIds) {
-    const node = args.plan.nodesByRoleId.get(roleId);
-    if (!node) {
-      throw new Error(`Execution plan is missing role "${roleId}"`);
-    }
-    if (node.binding.kind !== "noop") {
-      continue;
-    }
-    if (!args.effectiveLaw.allowNoopWithoutExecutionBinding) {
-      throw new Error(
-        `Role "${roleId}" has no executable binding (model.bind/exec.bind). ` +
-          `Set binding or enable allowNoopWithoutExecutionBinding in effective law.`
-      );
-    }
-    if (node.outgoing.length > 1) {
-      throw new Error(
-        `Role "${roleId}" cannot use noop binding with ${node.outgoing.length} outgoing flows.`
-      );
-    }
-  }
+function formatCompilerDiagnosticsMessage(
+  diagnostics: CompiledExecutionSnapshot["diagnostics"]
+): string {
+  return diagnostics
+    .map((diagnostic) => {
+      const scope = [
+        diagnostic.roleId ? `role=${diagnostic.roleId}` : null,
+        diagnostic.contractId ? `contract=${diagnostic.contractId}` : null,
+        diagnostic.fieldName ? `field=${diagnostic.fieldName}` : null
+      ]
+        .filter(Boolean)
+        .join(" ");
+      return scope
+        ? `[${diagnostic.code}] ${scope}: ${diagnostic.message}`
+        : `[${diagnostic.code}] ${diagnostic.message}`;
+    })
+    .join("\n");
 }
 
 function normalizeFingerprintValue(value: unknown): unknown {
@@ -626,10 +617,6 @@ export async function runSystemWithAdapter(args: {
             contractPath: system.graph.handoffContracts
           })
         : undefined;
-      assertBindingPreflight({
-        plan,
-        effectiveLaw
-      });
       const rolePackagesByRoleId = await loadRolePackages({
         system,
         roleRootDir: resolve(args.workdir, runtimeConfig.roleRepo, "roles")
@@ -644,6 +631,13 @@ export async function runSystemWithAdapter(args: {
         contractPlan,
         effectiveLaw
       });
+      if (!compilerResult.ok) {
+        throw new Error(
+          `Compiler static semantics check failed:\n${formatCompilerDiagnosticsMessage(
+            compilerResult.diagnostics
+          )}`
+        );
+      }
       const planFingerprint = buildRunPlanFingerprint({
         system,
         rolePackagesByRoleId,

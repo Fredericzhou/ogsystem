@@ -164,3 +164,52 @@ test("compiler emits stable diagnostics for invalid join, context, loop, and con
   assert.ok(codes.has("COMPILER_FLOW_CONTRACT_UNBOUND"));
   assert.ok(codes.has("COMPILER_ROLE_INPUT_UNBOUND"));
 });
+
+test("compiler rejects noop roles that are unauthorized or ambiguously routed", async () => {
+  const source = `flowchart TD
+%% system.id=test.compiler.noop
+%% system.version=0.1.0
+%% law.global=law.test
+%% entry.role=test-operator
+%% exec.bind.test-decision=profile.test-decision
+input -->|START| operator[Role:test-operator]
+operator[Role:test-operator] -->|NEXT| decider[Role:test-decision]
+operator[Role:test-operator] -->|DONE| output
+decider[Role:test-decision] -->|DONE| output
+`;
+  const system = parseSystemFromMermaidSource(source);
+  const roleRootDir = path.resolve("og-roles", "roles");
+  const rolePackagesByRoleId = await loadRolePackages(system.roleIds, roleRootDir);
+
+  const missingBindingLaw = {
+    forbiddenToolRefs: [],
+    maxTransitions: undefined,
+    allowNoopWithoutExecutionBinding: false
+  };
+  const missingBindingResult = compileExecutionSnapshot({
+    system,
+    rolePackagesByRoleId,
+    effectiveLaw: missingBindingLaw
+  });
+  assert.equal(missingBindingResult.ok, false);
+  assert.deepStrictEqual(
+    missingBindingResult.diagnostics.map((diagnostic) => diagnostic.code),
+    ["COMPILER_ROLE_BINDING_MISSING"]
+  );
+
+  const ambiguousNoopLaw = {
+    forbiddenToolRefs: [],
+    maxTransitions: undefined,
+    allowNoopWithoutExecutionBinding: true
+  };
+  const ambiguousNoopResult = compileExecutionSnapshot({
+    system,
+    rolePackagesByRoleId,
+    effectiveLaw: ambiguousNoopLaw
+  });
+  assert.equal(ambiguousNoopResult.ok, false);
+  assert.deepStrictEqual(
+    ambiguousNoopResult.diagnostics.map((diagnostic) => diagnostic.code),
+    ["COMPILER_ROLE_NOOP_AMBIGUOUS"]
+  );
+});

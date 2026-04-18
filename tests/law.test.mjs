@@ -37,18 +37,31 @@ test("adapter rejects unknown global law", async () => {
 });
 
 test("adapter fails when execution bindings use forbidden tool", async () => {
-  const result = await runSystemWithAdapter(buildArgs(lawForbidPath));
-  assert.strictEqual(result.status, "failed");
-  assert.match(result.error ?? "", /Tool is forbidden by effective law/);
+  await assert.rejects(
+    () => runSystemWithAdapter(buildArgs(lawForbidPath)),
+    (error) => {
+      assert.ok(error && typeof error === "object");
+      assert.equal(error.envelope?.errorCode, "RUNTIME_EXECUTION_FAILED");
+      assert.match(error.message, /Tool is forbidden by effective law/);
+      return true;
+    }
+  );
 });
 
 test("adapter langgraph fails when execution bindings use forbidden tool", async () => {
-  const result = await runSystemWithAdapter({
-    ...buildArgs(lawForbidPath),
-    systemPath: langgraphSystemPath
-  });
-  assert.strictEqual(result.status, "failed");
-  assert.match(result.error ?? "", /Tool is forbidden by effective law/);
+  await assert.rejects(
+    () =>
+      runSystemWithAdapter({
+        ...buildArgs(lawForbidPath),
+        systemPath: langgraphSystemPath
+      }),
+    (error) => {
+      assert.ok(error && typeof error === "object");
+      assert.equal(error.envelope?.errorCode, "RUNTIME_EXECUTION_FAILED");
+      assert.match(error.message, /Tool is forbidden by effective law/);
+      return true;
+    }
+  );
 });
 
 test("adapter langgraph allows noop when law enables it", async () => {
@@ -70,7 +83,8 @@ test("adapter fails preflight when role has noop binding without law authorizati
     (error) => {
       assert.ok(error && typeof error === "object");
       assert.equal(error.envelope?.errorCode, "RUNTIME_SETUP_FAILED");
-      assert.match(error.message, /has no executable binding/);
+      assert.match(error.message, /Compiler static semantics check failed/);
+      assert.match(error.message, /COMPILER_ROLE_BINDING_MISSING/);
       return true;
     }
   );

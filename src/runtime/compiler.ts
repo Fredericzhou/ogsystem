@@ -13,6 +13,10 @@ import { createHash } from "node:crypto";
 import { SYSTEM_END_ROLE_ID } from "./types.js";
 import { createExecutionPlan } from "./execution-plan.js";
 import { isRuntimeOnlyErrorEvent } from "./error-flow-utils.js";
+import {
+  collectCycleComponents,
+  summarizeContextSelector
+} from "./static-semantics.js";
 import type {
   CompiledFlowContract,
   EffectiveLawConstraints,
@@ -178,123 +182,6 @@ function buildRoleSummary(rolePackage: LoadedRolePackage): RoleSummary {
   };
 }
 
-function summarizeSelector(selector: string): {
-  selectorKind: string;
-  sourceRoleId?: string;
-} {
-  if (selector === "global.task" || selector === "global.user_profile") {
-    return {
-      selectorKind: selector
-    };
-  }
-  if (selector.startsWith("global.user_profile.")) {
-    return {
-      selectorKind: "global.user_profile.path"
-    };
-  }
-  if (selector === "direct.content" || selector === "direct.event" || selector === "direct.data") {
-    return {
-      selectorKind: "direct"
-    };
-  }
-  if (selector.startsWith("direct.data.")) {
-    return {
-      selectorKind: "direct.data.path"
-    };
-  }
-  const sourceMatch = selector.match(/^source\(([A-Za-z0-9._:-]+)\)\./);
-  if (sourceMatch) {
-    return {
-      selectorKind: "source",
-      sourceRoleId: sourceMatch[1]
-    };
-  }
-  return {
-    selectorKind: "unsupported"
-  };
-}
-
-function collectCycleComponents(args: { roleIds: string[]; flows: Flow[] }): string[][] {
-  const roleSet = new Set(args.roleIds);
-  const adjacency = new Map<string, string[]>(
-    args.roleIds.map((roleId) => [roleId, [] as string[]])
-  );
-  for (const flow of args.flows) {
-    if (flow.toRoleId === SYSTEM_END_ROLE_ID || isRuntimeOnlyErrorEvent(flow.eventType)) {
-      continue;
-    }
-    if (!roleSet.has(flow.fromRoleId) || !roleSet.has(flow.toRoleId)) {
-      continue;
-    }
-    adjacency.get(flow.fromRoleId)?.push(flow.toRoleId);
-  }
-
-  const indexByRoleId = new Map<string, number>();
-  const lowLinkByRoleId = new Map<string, number>();
-  const onStack = new Set<string>();
-  const stack: string[] = [];
-  const components: string[][] = [];
-  let cursor = 0;
-
-  const strongConnect = (roleId: string): void => {
-    indexByRoleId.set(roleId, cursor);
-    lowLinkByRoleId.set(roleId, cursor);
-    cursor += 1;
-    stack.push(roleId);
-    onStack.add(roleId);
-
-    for (const neighborRoleId of adjacency.get(roleId) ?? []) {
-      if (!indexByRoleId.has(neighborRoleId)) {
-        strongConnect(neighborRoleId);
-        const roleLowLink = lowLinkByRoleId.get(roleId) ?? 0;
-        const neighborLowLink = lowLinkByRoleId.get(neighborRoleId) ?? 0;
-        lowLinkByRoleId.set(roleId, Math.min(roleLowLink, neighborLowLink));
-      } else if (onStack.has(neighborRoleId)) {
-        const roleLowLink = lowLinkByRoleId.get(roleId) ?? 0;
-        const neighborIndex = indexByRoleId.get(neighborRoleId) ?? 0;
-        lowLinkByRoleId.set(roleId, Math.min(roleLowLink, neighborIndex));
-      }
-    }
-
-    if ((lowLinkByRoleId.get(roleId) ?? -1) !== (indexByRoleId.get(roleId) ?? -2)) {
-      return;
-    }
-
-    const component: string[] = [];
-    while (stack.length > 0) {
-      const popped = stack.pop();
-      if (!popped) {
-        break;
-      }
-      onStack.delete(popped);
-      component.push(popped);
-      if (popped === roleId) {
-        break;
-      }
-    }
-
-    if (component.length > 1) {
-      components.push(component);
-      return;
-    }
-    const [single] = component;
-    if (!single) {
-      return;
-    }
-    if ((adjacency.get(single) ?? []).includes(single)) {
-      components.push(component);
-    }
-  };
-
-  for (const roleId of args.roleIds) {
-    if (!indexByRoleId.has(roleId)) {
-      strongConnect(roleId);
-    }
-  }
-
-  return components;
-}
-
 function createDiagnostic(args: {
   code: string;
   message: string;
@@ -368,7 +255,7 @@ function buildProjectionSummary(args: {
   for (const roleId of sortStrings(Object.keys(args.system.graph?.contextMapByRoleId ?? {}))) {
     const fields = Object.entries(args.system.graph?.contextMapByRoleId[roleId] ?? {})
       .map(([fieldName, selector]) => {
-        const selectorInfo = summarizeSelector(selector);
+        const selectorInfo = summarizeContextSelector(selector);
         return {
           fieldName,
           selector,
@@ -625,8 +512,8 @@ function validateContextMap(args: {
   const sourceRoleIds = new Set(args.system.roleIds);
 
   for (const [fieldName, selector] of Object.entries(contextMap)) {
-    const selectorInfo = summarizeSelector(selector);
-    if (selectorInfo.selectorKind === "unsupported") {
+    const selectorInfo = summarizeContextSelector(selector);
+    if (selectorInfo.selectorKind === "unsupported" || !selectorInfo.validPath) {
       args.diagnostics.push(
         createDiagnostic({
           code: "COMPILER_CONTEXT_SELECTOR_INVALID",
@@ -742,15 +629,33 @@ function validateBinding(args: {
     return;
   }
   if (node.binding.kind !== "noop" || args.effectiveLaw.allowNoopWithoutExecutionBinding) {
+    if (node.binding.kind !== "noop") {
+      return;
+    }
+  } else {
+    args.diagnostics.push(
+      createDiagnostic({
+        code: "COMPILER_ROLE_BINDING_MISSING",
+        message: `Role "${args.roleId}" has no executable binding (model.bind/exec.bind)`,
+        roleId: args.roleId
+      })
+    );
     return;
   }
-  args.diagnostics.push(
-    createDiagnostic({
-      code: "COMPILER_ROLE_BINDING_MISSING",
-      message: `Role "${args.roleId}" has no executable binding (model.bind/exec.bind)`,
-      roleId: args.roleId
-    })
-  );
+
+  const selectableOutgoingCount = node.outgoing.filter(
+    (flow) => !isRuntimeOnlyErrorEvent(flow.eventType)
+  ).length;
+  if (selectableOutgoingCount > 1) {
+    args.diagnostics.push(
+      createDiagnostic({
+        code: "COMPILER_ROLE_NOOP_AMBIGUOUS",
+        message:
+          `Role "${args.roleId}" cannot use noop binding with ${selectableOutgoingCount} selectable outgoing flows`,
+        roleId: args.roleId
+      })
+    );
+  }
 }
 
 function validateContracts(args: {

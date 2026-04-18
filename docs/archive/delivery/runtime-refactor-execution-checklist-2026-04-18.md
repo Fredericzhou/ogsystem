@@ -469,7 +469,7 @@ Delivery status: delivered for the first structural split. Input projection, bin
 
 ## 11. 阶段 7：收敛静态语义到 compiler 主线
 
-Delivery status: pending.
+Delivery status: delivered. Shared selector/cycle analysis now lives in `static-semantics.ts`; setup treats compiler diagnostics as the single static gate for noop legality and binding completeness, while parser keeps surface-level fail-closed.
 
 ### 11.1 目标
 
