@@ -68,6 +68,7 @@
 - `docs/archive/delivery/ogsystem-visualization-platform-solution-2026-04-16.md`（proposal for a runtime visualization and observability platform）
 - `docs/archive/delivery/runtime-refactor-execution-checklist-2026-04-18.md`（delivered runtime refactor checklist; phases 0-11 completed）
 - `docs/archive/delivery/installable-cli-release-notes-2026-04-20.md`（delivered installable CLI packaging, scaffolding, and operator-doc release notes）
+- `docs/archive/delivery/agency-agents-role-repo-integration-plan-2026-04-20.md`（recommended integration plan for importing `agency-agents` as an OGSystem-compatible derived role repository）
 - `docs/archive/delivery/ogsystem-naming-style-review-2026-04-14.md`（archived naming audit; `flow/edge` conclusion superseded by 2026-04-15 alignment review）
 - `docs/archive/delivery/ogsystem-flow-edge-alignment-review-2026-04-15.md`（delivered flow/edge alignment audit and canonical decision）
 - `docs/archive/delivery/ogsystem-flow-edge-alignment-execution-plan-2026-04-15.md`（delivered flow/edge alignment rollout and closure record）
