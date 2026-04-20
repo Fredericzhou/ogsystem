@@ -2,8 +2,13 @@
 
 Status: proposed execution plan  
 Target: latest-version only  
-Compatibility: not required  
+Compatibility: not required for the vnext cutover
 Scope: `output.schema -> context.map` 编译期联查、投影对象一等输入化、受控全局共享数据面
+Authority: 非当前权威语义，仅作为设计提案
+
+本文档不代表当前 runtime 已生效语义。
+若与 `src/runtime/*` 或活跃文档冲突，以当前实现和活跃文档为准。
+只有在方案落地并回写活跃文档后，本文档中的相关结论才可视为正式语义。
 
 ## 1. 目标
 
@@ -20,7 +25,7 @@ Scope: `output.schema -> context.map` 编译期联查、投影对象一等输入
 - 不回退到“自动读取任意 runtime state”的做法
 - 不引入表达式语言
 - 不牺牲当前图执行、join、loop、resume 的确定性
-- 不做兼容保留；按下一版本的统一新语义推进
+- 对 vnext 切换版本不保留兼容层；按下一版本的统一新语义推进
 
 ## 2. 当前基线
 
@@ -539,6 +544,15 @@ sharedData: Record<string, unknown>;
 - writer role 可把 `output.data.*` 投影进共享面
 - 非法共享 patch 在执行时 fail closed
 - resume 后 `sharedData` 不漂移
+
+### Adoption Gate
+
+只有在以下条件全部满足后，本提案才视为已采纳：
+
+- runtime implementation has landed
+- bundled roles/examples/tests have been migrated
+- active docs have been updated
+- resume / fingerprint semantics are frozen for the new contract
 
 ### Phase 4: 文档、可视化、运维工具
 
