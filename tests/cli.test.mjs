@@ -48,14 +48,13 @@ test("cli rejects invalid cleanup-executions with a stable envelope", async () =
   assert.match(stderr, /errorCategory=input/);
 });
 
-test("cli log-run prints runtime logs to stderr without breaking stdout json", async () => {
+test("cli prints runtime logs to stderr by default without breaking stdout json", async () => {
   const { code, stdout, stderr } = await runCli([
     "--system",
     "examples/target-model-binding-system.mmd",
     "--prompt",
     "cli log run",
-    "--dry-run",
-    "--log-run"
+    "--dry-run"
   ]);
 
   assert.strictEqual(code, 0);
@@ -65,6 +64,28 @@ test("cli log-run prints runtime logs to stderr without breaking stdout json", a
   assert.match(stderr, /\[role:start\]/);
   assert.match(stderr, /\[transition\]/);
   assert.match(stderr, /\[run:end\]/);
+});
+
+test("cli can attach a temporary visualizer server and auto-close it after run completion", async () => {
+  const { code, stdout, stderr } = await runCli([
+    "run",
+    "start",
+    "--system",
+    "examples/target-model-binding-system.mmd",
+    "--prompt",
+    "visualizer run",
+    "--dry-run",
+    "--visualize",
+    "--visualizer-port",
+    "0"
+  ]);
+
+  assert.strictEqual(code, 0);
+  const result = JSON.parse(stdout);
+  assert.equal(result.status, "done");
+  assert.match(stderr, /\[visualizer\] Listening on http:\/\/127\.0\.0\.1:\d+/);
+  assert.match(stderr, /\[visualizer\] Attached to current run; server will close on exit\./);
+  assert.match(stderr, /\[visualizer\] Closed attached server\./);
 });
 
 test("cli can print Mermaid Live graph preview URL", async () => {

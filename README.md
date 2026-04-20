@@ -54,6 +54,7 @@ Quick start with the installed CLI:
 ogs project create demo-app --template minimal
 cd demo-app
 ogs run start --system system.mmd --prompt "smoke" --dry-run
+ogs visualizer --workdir .
 ```
 
 Generated projects include `.ogs/`, `system.mmd`, and minimal local `og-roles/` / `og-models/` dependencies imported from the bundled template source.
@@ -128,7 +129,7 @@ For day-to-day use, start with `docs/usage-manual.md`. It keeps the command matr
 - `ERROR*` routing is evaluated only after executor-level retries for the attempt are exhausted.
 - Mermaid parsing is fail-closed for reserved error events: only `ERROR` and `ERROR.<errorCode>` are accepted.
 - Role outputs cannot proactively emit `ERROR*` events; `ERROR*` is reserved for runtime failure routing only.
-- `--log-run` prints simple run/role/transition progress lines to `stderr`; final result JSON remains on `stdout`.
+- run progress logs are printed to `stderr` by default; final result JSON remains on `stdout`. Use `--quiet-run` to silence progress logs.
 - Roles without execution binding fail fast by default. A law may opt into `allowNoopWithoutExecutionBinding`, but noop remains explicit and is rejected on branching nodes.
 - `user-profile.json` is injected into role prompts as delivery preference; role packages decide how to apply it.
 
@@ -155,6 +156,7 @@ For day-to-day use, start with `docs/usage-manual.md`. It keeps the command matr
 - `ogs project init` scaffolds the current directory as a runnable project using the selected template.
 - `ogs project create <name> --template <...>` scaffolds the same structure in a new project directory.
 - `ogs project sync --system <file.mmd>` imports only the roles/models referenced by that system into the project-local repos.
+- `ogs visualizer --workdir .` starts the read-only run visualizer, and `ogs run start --visualize` attaches a temporary visualizer that auto-closes when the run ends.
 - `examples/target-model-binding-system.mmd` shows `model.bind.*` usage.
 - `examples/langgraph-debate-current/` shows a minimal debate with loop + parallel + join.
 - `examples/langgraph-expert-consultation/` shows a minimal expert consultation with parallel + join.

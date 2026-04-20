@@ -8,10 +8,10 @@ import { startVisualizationServer } from "./server.js";
 function usage(): string {
   return [
     "Usage:",
-    "  ogs-visualizer [--workdir <path>] [--host <host>] [--port <n>]",
+    "  ogs-visualizer [--workdir <path>] [--host <host>] [--port <n|0>]",
     "",
     "Source repository equivalent:",
-    "  pnpm run run:visualizer -- [--workdir <path>] [--host <host>] [--port <n>]",
+    "  pnpm run run:visualizer -- [--workdir <path>] [--host <host>] [--port <n|0>]",
     "",
     "Defaults:",
     "  workdir: current directory",
@@ -29,7 +29,7 @@ function parsePort(value: string | undefined): number {
     return 3337;
   }
   const parsed = Number.parseInt(value, 10);
-  if (!Number.isInteger(parsed) || parsed <= 0 || parsed > 65535) {
+  if (!Number.isInteger(parsed) || parsed < 0 || parsed > 65535) {
     throw new Error(`Invalid port: ${value}`);
   }
   return parsed;

@@ -111,6 +111,177 @@ pnpm run test:coverage
 - 源码仓开发：继续使用 `pnpm run ...`，与 lockfile 和 CI 保持一致。
 - 文档默认面向安装态 CLI；只有在说明源码仓开发时才展示 `pnpm run ...`。
 
+## 0.1 从零到跑通（推荐路径）
+
+如果你只是想“先装上，再看到一次真正可运行的结果”，按下面这条路径走，不需要先理解全部语义细节。
+
+### Step 1. 安装 CLI 并确认命令可见
+
+已发布包：
+
+```bash
+npm install -g ogsystem
+hash -r
+ogs help
+```
+
+源码目录本地安装：
+
+```bash
+cd /path/to/ogsystem
+npm install -g .
+hash -r
+ogs help
+```
+
+如果 `ogs` 仍然提示 `command not found`，先检查全局 bin 目录是否在 `PATH`：
+
+```bash
+npm prefix -g
+pnpm bin -g
+```
+
+当前 shell 临时修复方式（macOS/Linux）：
+
+```bash
+export PATH="$(npm prefix -g)/bin:$PATH"
+hash -r
+ogs help
+```
+
+如果你是用 `pnpm add -g ...` 安装的，也可以改用：
+
+```bash
+export PATH="$(pnpm bin -g):$PATH"
+hash -r
+ogs help
+```
+
+### Step 2. 初始化项目
+
+在当前目录初始化：
+
+```bash
+mkdir demo-app
+cd demo-app
+ogs project init --template minimal
+```
+
+或者直接创建新目录：
+
+```bash
+ogs project create demo-app --template minimal
+cd demo-app
+```
+
+`init` 和 `create` 的区别只有一条：
+
+- `init`：把当前目录变成项目。
+- `create`：先新建一个项目目录，再把同样的项目结构写进去。
+
+初始化后你应该看到这些关键内容：
+
+- `.ogs/runtime.json`
+- `.ogs/laws.json`
+- `.ogs/user-profile.json`
+- `.ogs/providers/opencode.json`
+- `system.mmd`
+- 本地最小 `og-roles/`
+- 本地最小 `og-models/`
+
+### Step 3. 先做一次 dry-run
+
+这一步不调用外部模型，只验证项目结构、Mermaid 系统、角色/模型导入和运行主路径是否打通：
+
+```bash
+ogs run start --system system.mmd --prompt "请先做一次最小分析" --dry-run
+```
+
+如果命令返回 `status: "done"`，说明当前项目已经具备基本可运行结构。
+
+### Step 4. 真实运行前做环境检查
+
+`model.bind` 默认走 OpenCode。项目初始化会生成 `.ogs/providers/opencode.json`，但真实模型凭据和 provider 可用性仍由你本机的 OpenCode 环境负责。
+
+先做本地检查：
+
+```bash
+ogs-doctor --required opencode --system system.mmd
+```
+
+如果你要在真正运行前确认模型连通性，可以加在线探测：
+
+```bash
+ogs-doctor --required opencode --system system.mmd --online-check
+```
+
+注意：
+
+- `--online-check` 会实际探测模型连通性，可能消耗 token。
+- 如果这里失败，先修复本机 OpenCode/provider 配置，再继续运行 OGSystem。
+
+### Step 5. 进行一次真实运行
+
+```bash
+ogs run start --system system.mmd --prompt "请分析这个需求并给出简短结论"
+```
+
+默认会在 `stderr` 输出运行进度日志，同时把最终 JSON 结果保留在 `stdout`。
+
+如果你想显式关闭过程日志：
+
+```bash
+ogs run start \
+  --system system.mmd \
+  --prompt "请分析这个需求并给出简短结论" \
+  --quiet-run
+```
+
+这一步会真正启动一次运行，并在 `.ogs/runs/<run-id>/` 下写入运行状态、日志、audit 和恢复文件。
+
+### Step 6. 查看运行结果
+
+列出最近运行：
+
+```bash
+ogs run list
+```
+
+查看某次运行状态：
+
+```bash
+ogs run status <run-id>
+```
+
+查看引擎日志：
+
+```bash
+ogs run logs <run-id> --engine --tail 50
+```
+
+查看某个角色日志：
+
+```bash
+ogs run logs <run-id> --role demo-analyst --tail 50
+```
+
+运行目录里最常用的文件是：
+
+- `.ogs/runs/<run-id>/summary.json`
+- `.ogs/runs/<run-id>/state.json`
+- `.ogs/runs/<run-id>/timeline.jsonl`
+- `.ogs/runs/<run-id>/audit/summary.md`
+
+### Step 7. 修改系统后同步依赖
+
+如果你改了 `system.mmd`，引用了当前项目里还没有的角色或模型，不需要手工复制目录，直接同步：
+
+```bash
+ogs project sync --system system.mmd
+```
+
+这会把系统里用到但当前项目缺失的 role/model 从安装包自带模板源导入到当前项目本地仓库。
+
 ## 1. Runtime Status
 
 This repository now has one active runtime path: the graph runtime.
@@ -674,22 +845,34 @@ Console progress logging:
 ogs \
   --system examples/target-model-binding-system.mmd \
   --prompt "demo" \
-  --dry-run \
-  --log-run
+  --dry-run
 ```
 
-- `--log-run` is off by default
 - writes one-line run/role/transition progress logs to `stderr`
 - when `stderr` is TTY and `NO_COLOR` is not set, status and transition logs use ANSI colors for faster scanning
 - keeps the final adapter result JSON on `stdout`
+- use `--quiet-run` when you need silent `stderr`
 
 Local visualizer:
 
 ```bash
-ogs-visualizer --workdir .
+ogs visualizer --workdir .
 ```
 
 The visualizer is a lightweight read-only observability server that renders the current run list, run detail, event timeline, graph source, and live updates. It prefers `summary.json` and `timeline.jsonl`, with fallback to `state.json` and `events.ndjson` for older runs.
+
+Temporary visualizer attached to a run:
+
+```bash
+ogs run start \
+  --system system.mmd \
+  --prompt "demo" \
+  --visualize
+```
+
+- starts a temporary visualizer server before the run begins
+- prints the visualizer URL to `stderr`
+- closes the attached visualizer automatically when the run command exits
 
 Graph preview link (optional):
 
@@ -742,6 +925,7 @@ Lifecycle CLI (preferred):
 ogs project init
 ogs project sync --system system.mmd
 ogs run start --system examples/target-model-binding-system.mmd --prompt "demo" --dry-run
+ogs run start --system system.mmd --prompt "demo" --visualize
 ogs run list
 ogs run status <run-id>
 ogs run logs <run-id> --engine --tail 50
@@ -749,7 +933,7 @@ ogs run logs <run-id> --role <role-id> --since 2026-04-18T10:00:00Z
 ogs run logs <run-id> --engine --follow
 ogs run resume <run-id> --dry-run
 ogs run stop <run-id>
-ogs-visualizer --workdir .
+ogs visualizer --workdir .
 ```
 
 Preferred runtime command:

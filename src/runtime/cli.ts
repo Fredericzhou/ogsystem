@@ -32,6 +32,7 @@ import {
   formatRuntimeErrorEnvelope,
   normalizeRuntimeError
 } from "./runtime-errors.js";
+import { startVisualizationServer } from "../visualizer/server.js";
 
 function usageRoot(): string {
   return [
@@ -39,6 +40,7 @@ function usageRoot(): string {
     "  ogs project init",
     "  ogs project create <name> --template <minimal|software-dev|consultation>",
     "  ogs project sync --system <file.mmd>",
+    "  ogs visualizer [--workdir <path>] [--host <host>] [--port <n|0>]",
     "  ogs run start --system <file.mmd> --prompt <text> [options]",
     "  ogs run resume <run-id> [options]",
     "  ogs run stop <run-id> [--reason <text>]",
@@ -49,8 +51,9 @@ function usageRoot(): string {
     "  ogs run reindex",
     "",
     "Help:",
-    "  ogs help [project|run|legacy]",
+    "  ogs help [project|run|legacy|visualizer]",
     "  ogs project --help",
+    "  ogs visualizer --help",
     "  ogs run --help",
     "",
     "Defaults:",
@@ -113,11 +116,36 @@ function usageRun(): string {
     "  --tools <file>             Legacy CLI tools JSON (optional)",
     "  --workdir <path>           Working directory (default: cwd)",
     "  --cleanup-executions <n>   Keep only latest n per-role execution snapshots",
-    "  --log-run                  Print role/transition runtime logs to stderr",
+    "  --log-run                  Compatibility alias; run logs are enabled by default",
+    "  --quiet-run                Disable stderr run progress logs",
+    "  --visualize                Start a temporary visualizer server for this run",
+    "  --visualizer-host <host>   Visualizer bind host (default: 127.0.0.1)",
+    "  --visualizer-port <n|0>    Visualizer bind port (default: 0 auto)",
     "  --print-graph-link         Print Mermaid Live graph preview URL to stderr (run start only)",
     "  --trace-out <file>         Write final runtime result JSON",
     "  --dry-run                  Do not execute external commands",
     "  --help                     Show help"
+  ].join("\n");
+}
+
+function usageVisualizer(): string {
+  return [
+    "Usage:",
+    "  ogs visualizer [--workdir <path>] [--host <host>] [--port <n|0>]",
+    "",
+    "Visualizer server:",
+    "  Starts the lightweight read-only OGSystem run visualizer.",
+    "  The process stays alive until you stop it.",
+    "",
+    "Defaults:",
+    "  workdir: current directory",
+    "  host: 127.0.0.1",
+    "  port: 3337",
+    "",
+    "Examples:",
+    "  ogs visualizer --workdir .",
+    "  ogs visualizer --workdir . --port 3338",
+    "  ogs run start --system system.mmd --prompt \"demo\" --visualize"
   ].join("\n");
 }
 
@@ -132,12 +160,15 @@ function usageLegacy(): string {
   ].join("\n");
 }
 
-function usage(topic?: "project" | "run" | "legacy"): string {
+function usage(topic?: "project" | "run" | "legacy" | "visualizer"): string {
   if (topic === "project") {
     return usageProject();
   }
   if (topic === "run") {
     return usageRun();
+  }
+  if (topic === "visualizer") {
+    return usageVisualizer();
   }
   if (topic === "legacy") {
     return usageLegacy();
@@ -242,8 +273,17 @@ async function printResumeHint(args: {
   if (args.values["dry-run"] === true) {
     tokens.push("--dry-run");
   }
-  if (args.values["log-run"] === true) {
-    tokens.push("--log-run");
+  if (args.values["quiet-run"] === true) {
+    tokens.push("--quiet-run");
+  }
+  if (args.values.visualize === true) {
+    tokens.push("--visualize");
+  }
+  if (typeof args.values["visualizer-host"] === "string") {
+    tokens.push(`--visualizer-host ${shellEscape(args.values["visualizer-host"])}`);
+  }
+  if (typeof args.values["visualizer-port"] === "string") {
+    tokens.push(`--visualizer-port ${shellEscape(args.values["visualizer-port"])}`);
   }
 
   console.error(`[hint] run failed for runId=${runId}`);
@@ -287,6 +327,10 @@ function parseLegacyArgs(argv?: string[]) {
         workdir: { type: "string" },
         "cleanup-executions": { type: "string" },
         "log-run": { type: "boolean" },
+        "quiet-run": { type: "boolean" },
+        visualize: { type: "boolean" },
+        "visualizer-host": { type: "string" },
+        "visualizer-port": { type: "string" },
         "print-graph-link": { type: "boolean" },
         "trace-out": { type: "string" },
         "dry-run": { type: "boolean" },
@@ -347,6 +391,26 @@ function parsePositiveIntegerOption(args: {
   return parsed;
 }
 
+function parsePortOption(args: {
+  optionName: string;
+  value: string | undefined;
+  defaultValue: number;
+  allowZero?: boolean;
+}): number {
+  if (args.value === undefined) {
+    return args.defaultValue;
+  }
+  const parsed = Number.parseInt(args.value, 10);
+  const minimum = args.allowZero ? 0 : 1;
+  if (!Number.isInteger(parsed) || parsed < minimum || parsed > 65535) {
+    throw createCliInputError(
+      "CLI_INVALID_ARGS",
+      `${args.optionName} must be an integer between ${minimum} and 65535`
+    );
+  }
+  return parsed;
+}
+
 function parseCleanupExecutionValue(value: string | undefined): number | undefined {
   const cleanupExecutionHistory =
     value === undefined ? undefined : Number.parseInt(value, 10);
@@ -360,6 +424,22 @@ function parseCleanupExecutionValue(value: string | undefined): number | undefin
     );
   }
   return cleanupExecutionHistory;
+}
+
+function resolveLogRunOption(values: Record<string, string | boolean | undefined>): boolean {
+  const quietRun = asBool(values["quiet-run"]);
+  const logRun = asBool(values["log-run"]);
+  if (quietRun && logRun) {
+    throw createCliInputError(
+      "CLI_INVALID_ARGS",
+      "--log-run and --quiet-run cannot be used together"
+    );
+  }
+  return !quietRun;
+}
+
+async function closeServer(server: { close(callback: () => void): void }): Promise<void> {
+  await new Promise<void>((resolvePromise) => server.close(() => resolvePromise()));
 }
 
 async function runAdapterCommand(args: {
@@ -376,28 +456,56 @@ async function runAdapterCommand(args: {
   cleanupExecutionHistory?: number;
   logRun: boolean;
   traceOut?: string;
+  visualizer?: {
+    enabled: boolean;
+    host: string;
+    port: number;
+    autoClose: boolean;
+  };
 }): Promise<void> {
-  await ensureProjectSkeleton({ workdir: args.workdir });
-  const result = await runSystemWithAdapter({
-    systemPath: args.systemPath,
-    runtimeConfigPath: args.runtimeConfigPath,
-    userProfilePath: args.userProfilePath,
-    resumeRunDir: args.resumeRunDir,
-    profilesPath: args.profilesPath,
-    toolsPath: args.toolsPath,
-    lawsPath: args.lawsPath,
-    prompt: args.prompt,
-    workdir: args.workdir,
-    dryRun: args.dryRun,
-    cleanupExecutionHistory: args.cleanupExecutionHistory,
-    logRun: args.logRun
-  });
-  await rebuildRunsIndex(args.workdir);
+  const visualizer =
+    args.visualizer?.enabled
+      ? await startVisualizationServer({
+          workdir: args.workdir,
+          host: args.visualizer.host,
+          port: args.visualizer.port
+        })
+      : null;
+  if (visualizer) {
+    console.error(`[visualizer] Listening on ${visualizer.url}`);
+    if (args.visualizer?.autoClose) {
+      console.error("[visualizer] Attached to current run; server will close on exit.");
+    }
+  }
 
-  const output = JSON.stringify(result, null, 2);
-  console.log(output);
-  if (args.traceOut) {
-    await writeFile(args.traceOut, output, "utf8");
+  try {
+    await ensureProjectSkeleton({ workdir: args.workdir });
+    const result = await runSystemWithAdapter({
+      systemPath: args.systemPath,
+      runtimeConfigPath: args.runtimeConfigPath,
+      userProfilePath: args.userProfilePath,
+      resumeRunDir: args.resumeRunDir,
+      profilesPath: args.profilesPath,
+      toolsPath: args.toolsPath,
+      lawsPath: args.lawsPath,
+      prompt: args.prompt,
+      workdir: args.workdir,
+      dryRun: args.dryRun,
+      cleanupExecutionHistory: args.cleanupExecutionHistory,
+      logRun: args.logRun
+    });
+    await rebuildRunsIndex(args.workdir);
+
+    const output = JSON.stringify(result, null, 2);
+    console.log(output);
+    if (args.traceOut) {
+      await writeFile(args.traceOut, output, "utf8");
+    }
+  } finally {
+    if (visualizer && args.visualizer?.autoClose) {
+      await closeServer(visualizer.server);
+      console.error("[visualizer] Closed attached server.");
+    }
   }
 }
 
@@ -432,8 +540,19 @@ async function runLegacyMode(argv?: string[]): Promise<void> {
       workdir,
       dryRun: values["dry-run"] ?? false,
       cleanupExecutionHistory,
-      logRun: values["log-run"] ?? false,
-      traceOut: values["trace-out"]
+      logRun: resolveLogRunOption(values),
+      traceOut: values["trace-out"],
+      visualizer: {
+        enabled: asBool(values.visualize),
+        host: asString(values["visualizer-host"]) ?? "127.0.0.1",
+        port: parsePortOption({
+          optionName: "--visualizer-port",
+          value: asString(values["visualizer-port"]),
+          defaultValue: 0,
+          allowZero: true
+        }),
+        autoClose: true
+      }
     });
   } catch (error) {
     if (error instanceof RuntimeError) {
@@ -610,6 +729,10 @@ async function runStartCommand(argv: string[]): Promise<void> {
     workdir: { type: "string" },
     "cleanup-executions": { type: "string" },
     "log-run": { type: "boolean" },
+    "quiet-run": { type: "boolean" },
+    visualize: { type: "boolean" },
+    "visualizer-host": { type: "string" },
+    "visualizer-port": { type: "string" },
     "print-graph-link": { type: "boolean" },
     "trace-out": { type: "string" },
     "dry-run": { type: "boolean" },
@@ -646,8 +769,19 @@ async function runStartCommand(argv: string[]): Promise<void> {
     workdir,
     dryRun: asBool(values["dry-run"]),
     cleanupExecutionHistory: parseCleanupExecutionValue(asString(values["cleanup-executions"])),
-    logRun: asBool(values["log-run"]),
-    traceOut: asString(values["trace-out"])
+    logRun: resolveLogRunOption(values),
+    traceOut: asString(values["trace-out"]),
+    visualizer: {
+      enabled: asBool(values.visualize),
+      host: asString(values["visualizer-host"]) ?? "127.0.0.1",
+      port: parsePortOption({
+        optionName: "--visualizer-port",
+        value: asString(values["visualizer-port"]),
+        defaultValue: 0,
+        allowZero: true
+      }),
+      autoClose: true
+    }
   });
 }
 
@@ -663,6 +797,10 @@ async function runResumeCommand(argv: string[]): Promise<void> {
     workdir: { type: "string" },
     "cleanup-executions": { type: "string" },
     "log-run": { type: "boolean" },
+    "quiet-run": { type: "boolean" },
+    visualize: { type: "boolean" },
+    "visualizer-host": { type: "string" },
+    "visualizer-port": { type: "string" },
     "trace-out": { type: "string" },
     "dry-run": { type: "boolean" },
     help: { type: "boolean", short: "h" }
@@ -695,9 +833,46 @@ async function runResumeCommand(argv: string[]): Promise<void> {
     workdir,
     dryRun: asBool(values["dry-run"]),
     cleanupExecutionHistory: parseCleanupExecutionValue(asString(values["cleanup-executions"])),
-    logRun: asBool(values["log-run"]),
-    traceOut: asString(values["trace-out"])
+    logRun: resolveLogRunOption(values),
+    traceOut: asString(values["trace-out"]),
+    visualizer: {
+      enabled: asBool(values.visualize),
+      host: asString(values["visualizer-host"]) ?? "127.0.0.1",
+      port: parsePortOption({
+        optionName: "--visualizer-port",
+        value: asString(values["visualizer-port"]),
+        defaultValue: 0,
+        allowZero: true
+      }),
+      autoClose: true
+    }
   });
+}
+
+async function runVisualizerCommand(argv: string[]): Promise<void> {
+  const { values } = parseLifecycleArgs(argv, {
+    workdir: { type: "string" },
+    host: { type: "string" },
+    port: { type: "string" },
+    help: { type: "boolean", short: "h" }
+  });
+  if (asBool(values.help)) {
+    console.log(usage("visualizer"));
+    return;
+  }
+
+  const result = await startVisualizationServer({
+    workdir: asString(values.workdir) ?? process.cwd(),
+    host: asString(values.host) ?? "127.0.0.1",
+    port: parsePortOption({
+      optionName: "--port",
+      value: asString(values.port),
+      defaultValue: 3337,
+      allowZero: true
+    })
+  });
+
+  console.log(`OGSystem Visualizer listening on ${result.url}`);
 }
 
 async function runRunCommand(argv: string[]): Promise<void> {
@@ -904,7 +1079,7 @@ async function main(): Promise<void> {
   }
   if (argv[0] === "help") {
     const topic = argv[1];
-    if (topic === "project" || topic === "run" || topic === "legacy") {
+    if (topic === "project" || topic === "run" || topic === "legacy" || topic === "visualizer") {
       console.log(usage(topic));
       return;
     }
@@ -915,6 +1090,10 @@ async function main(): Promise<void> {
     const [command, ...rest] = argv;
     if (command === "project") {
       await runProjectCommand(rest);
+      return;
+    }
+    if (command === "visualizer") {
+      await runVisualizerCommand(rest);
       return;
     }
     if (command === "run") {
