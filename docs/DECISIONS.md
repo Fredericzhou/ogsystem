@@ -101,15 +101,15 @@ Reason:
 
 ## 8. Package Manager Policy
 
-Package management uses a split policy: hard enforcement at install time, standardized entry at run time.
+Package management now uses a split policy between published CLI installation and source-repository development.
 
-- install is `pnpm-only` (`packageManager` + `preinstall` guard)
-- docs and CI use `pnpm run ...` as the only command examples
-- runtime scripts are not hard-blocking `npm run ...`; if dependencies already exist, npm may still execute scripts
+- published package installs support `npm` and `pnpm`
+- source-repository development keeps `pnpm` enforced when the lockfile is present
+- docs prefer installed `ogs*` commands and mention `pnpm run ...` only as source-repository equivalents
 
 Reason:
 
-- the main determinism gains come from lockfile/install/CI discipline
+- the main determinism gains come from lockfile/install/CI discipline during repository development
 - hard-blocking script execution harms ecosystem compatibility with limited additional stability benefit
 
 ## 9. Exception Edge Scope (V1 Delivered, Flag-Gated)

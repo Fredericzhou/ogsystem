@@ -201,11 +201,7 @@ export async function loadNl2MmdContext(args: {
   );
 
   let lawIds: string[] = [];
-  const lawsPath =
-    args.lawsPath ??
-    (await readJsonFileIfExists(resolve(args.workdir, ".ogs", "laws.json")) !== undefined
-      ? resolve(args.workdir, ".ogs", "laws.json")
-      : resolve(args.workdir, ".ogsystem", "laws.json"));
+  const lawsPath = args.lawsPath ?? resolve(args.workdir, ".ogs", "laws.json");
   const lawsSource = await readJsonFileIfExists(lawsPath);
   if (lawsSource !== undefined) {
     const laws = validateLawsConfig(lawsSource, lawsPath);

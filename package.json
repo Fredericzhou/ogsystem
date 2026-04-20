@@ -1,12 +1,32 @@
 {
   "name": "ogsystem",
   "version": "0.1.0",
-  "private": true,
+  "private": false,
   "type": "module",
   "packageManager": "pnpm@10.14.0",
+  "bin": {
+    "ogs": "./bin/ogs.mjs",
+    "ogs-doctor": "./bin/ogs-doctor.mjs",
+    "ogs-lint-system": "./bin/ogs-lint-system.mjs",
+    "ogs-nl2mmd": "./bin/ogs-nl2mmd.mjs",
+    "ogs-visualizer": "./bin/ogs-visualizer.mjs"
+  },
+  "files": [
+    "bin/**",
+    "dist/**",
+    "og-models/**",
+    "og-roles/**",
+    "scripts/**",
+    "schemas/**",
+    "README.md"
+  ],
+  "engines": {
+    "node": ">=20"
+  },
   "scripts": {
-    "preinstall": "node -e \"if(!/pnpm\\//.test(process.env.npm_config_user_agent||'')){console.error('Use pnpm only.');process.exit(1)}\"",
+    "preinstall": "node scripts/preinstall.cjs",
     "build": "tsc -p tsconfig.json",
+    "prepack": "pnpm run build",
     "test": "pnpm build && node --test tests/*.mjs",
     "test:coverage": "pnpm build && node --test --experimental-test-coverage tests/*.mjs",
     "test:runtime-regression": "pnpm build && node --test tests/graph-runtime.integration.test.mjs tests/resume-session.test.mjs tests/session-recovery.test.mjs tests/runtime-fault-injection.test.mjs",

@@ -30,33 +30,35 @@ Detailed usage manual:
 - `docs/usage-manual.md`
 - `examples/README.md` (minimal training set + capability coverage)
 
-Prerequisites:
+CLI installation prerequisites:
 
 ```bash
 node >= 20
-corepack enabled
-pnpm 10.14.0
 ```
 
-Install (macOS/Linux):
+Install the published CLI with npm:
 
 ```bash
-corepack enable
-corepack prepare pnpm@10.14.0 --activate
-pnpm install --frozen-lockfile
+npm install -g ogsystem
 ```
 
-Install (Windows PowerShell):
+Install the published CLI with pnpm:
 
-```powershell
-corepack enable
-corepack prepare pnpm@10.14.0 --activate
-pnpm install --frozen-lockfile
+```bash
+pnpm add -g ogsystem
 ```
 
-Install (Windows CMD):
+Quick start with the installed CLI:
 
-```bat
+```bash
+ogs project create demo-app --template minimal
+cd demo-app
+ogs run start --system system.mmd --prompt "smoke" --dry-run
+```
+
+Develop from source (macOS/Linux/Windows):
+
+```bash
 corepack enable
 corepack prepare pnpm@10.14.0 --activate
 pnpm install --frozen-lockfile
@@ -82,11 +84,11 @@ Coverage note:
 - `pnpm run test:coverage` uses the Node test runner's built-in coverage table against `tests/*.mjs`.
 - When interpreting coverage deltas, prioritize compiled runtime entrypoints under `dist/runtime/*` and `dist/nl2mmd/*`; temporary fixture scripts and generated test helpers are not coverage gates.
 
-Package manager policy (best practice):
+Package manager policy:
 
-- Install phase is hard-enforced as `pnpm-only` (`packageManager` + `preinstall` guard).
-- Script execution phase is standardized on `pnpm run ...` in docs and CI.
-- `npm run ...` may still work when dependencies are already installed; this is compatibility behavior, not the supported workflow.
+- Published package installs support `npm` and `pnpm`.
+- Source repository development still expects `pnpm` and keeps the lockfile/CI workflow pinned to `pnpm@10.14.0`.
+- Repository docs use installed `ogs*` commands first, then note `pnpm run ...` equivalents where relevant.
 
 For day-to-day use, start with `docs/usage-manual.md`. It keeps the command matrix and example systems in one place and avoids repeating the same examples here.
 

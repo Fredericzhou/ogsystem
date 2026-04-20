@@ -25,7 +25,7 @@ async function buildRuntimeFingerprint(system) {
   return buildRuntimeFingerprintWithPaths(system, {
     roleRootDir: path.resolve("og-roles", "roles"),
     modelRootDir: path.resolve("og-models"),
-    lawsPath: path.resolve(".ogsystem", "laws.json")
+    lawsPath: path.resolve(".ogs", "laws.json")
   });
 }
 
@@ -104,7 +104,7 @@ async function prepareRuntimeFingerprintResumeFixture(args) {
     );
   }
 
-  await cp(path.resolve(".ogsystem", "laws.json"), lawsPath);
+  await cp(path.resolve(".ogs", "laws.json"), lawsPath);
   await writeFile(systemPath, args.systemSource, "utf8");
   await writeFile(
     runtimePath,
@@ -226,7 +226,7 @@ minimalist[Role:debate-minimalist] -->|MINIMALIST_DONE| output
   const result = await runSystemWithAdapter({
     systemPath,
     runtimeConfigPath: runtimePath,
-    lawsPath: path.resolve(".ogsystem", "laws.json"),
+    lawsPath: path.resolve(".ogs", "laws.json"),
     workdir: tempRoot,
     resumeRunDir: ".ogs/runs/existing-run",
     prompt: "resume session",
@@ -295,7 +295,7 @@ minimalist[Role:debate-minimalist] -->|MINIMALIST_DONE| output
       runSystemWithAdapter({
         systemPath,
         runtimeConfigPath: runtimePath,
-        lawsPath: path.resolve(".ogsystem", "laws.json"),
+        lawsPath: path.resolve(".ogs", "laws.json"),
         workdir: tempRoot,
         resumeRunDir: ".ogs/runs/broken-run",
         prompt: "resume corrupted",
@@ -342,7 +342,7 @@ async function createHandledFailureResumeFixture(args) {
   const initial = await runSystemWithAdapter({
     systemPath,
     runtimeConfigPath: runtimePath,
-    lawsPath: path.resolve(".ogsystem", "laws.json"),
+    lawsPath: path.resolve(".ogs", "laws.json"),
     workdir: tempRoot,
     prompt: args.prompt,
     dryRun: true
@@ -485,7 +485,7 @@ for (const resumeStateMutationCase of [
         runSystemWithAdapter({
           systemPath: fixture.systemPath,
           runtimeConfigPath: fixture.runtimePath,
-          lawsPath: path.resolve(".ogsystem", "laws.json"),
+          lawsPath: path.resolve(".ogs", "laws.json"),
           workdir: fixture.tempRoot,
           resumeRunDir: `.ogs/runs/${fixture.runId}`,
           prompt: resumeStateMutationCase.prompt,
@@ -555,7 +555,7 @@ minimalist[Role:debate-minimalist] -->|MINIMALIST_DONE| output
       runSystemWithAdapter({
         systemPath,
         runtimeConfigPath: runtimePath,
-        lawsPath: path.resolve(".ogsystem", "laws.json"),
+        lawsPath: path.resolve(".ogs", "laws.json"),
         workdir: tempRoot,
         resumeRunDir: ".ogs/runs/mismatch-run",
         prompt: "resume mismatch",
@@ -948,7 +948,7 @@ operator[Role:test-operator] -->|DONE| output
   const result = await runSystemWithAdapter({
     systemPath,
     runtimeConfigPath: runtimePath,
-    lawsPath: path.resolve(".ogsystem", "laws.json"),
+    lawsPath: path.resolve(".ogs", "laws.json"),
     workdir: tempRoot,
     resumeRunDir: ".ogs/runs/checkpoint-run",
     prompt: "resume checkpoint",
@@ -1103,7 +1103,7 @@ operator[Role:test-operator] -->|DONE| output
   const resumed = await runSystemWithAdapter({
     systemPath,
     runtimeConfigPath: runtimePath,
-    lawsPath: path.resolve(".ogsystem", "laws.json"),
+    lawsPath: path.resolve(".ogs", "laws.json"),
     workdir: tempRoot,
     resumeRunDir: ".ogs/runs/outcome-run",
     prompt: "resume outcome",
@@ -1132,7 +1132,7 @@ operator[Role:test-operator] -->|DONE| output
   const resumedAgain = await runSystemWithAdapter({
     systemPath,
     runtimeConfigPath: runtimePath,
-    lawsPath: path.resolve(".ogsystem", "laws.json"),
+    lawsPath: path.resolve(".ogs", "laws.json"),
     workdir: tempRoot,
     resumeRunDir: ".ogs/runs/outcome-run",
     prompt: "resume outcome",
@@ -1381,7 +1381,7 @@ operator[Role:test-operator] -->|DONE| output
   const resumed = await runSystemWithAdapter({
     systemPath,
     runtimeConfigPath: runtimePath,
-    lawsPath: path.resolve(".ogsystem", "laws.json"),
+    lawsPath: path.resolve(".ogs", "laws.json"),
     workdir: tempRoot,
     resumeRunDir: ".ogs/runs/outcome-backfill-run",
     prompt: "resume outcome backfill",

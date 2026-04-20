@@ -193,7 +193,12 @@ function buildRunReproScript(args: {
     "  ARGS+=(--user-profile \"$USER_PROFILE_FILE\")",
     "fi",
     "",
-    "pnpm run run:adapter -- \"${ARGS[@]}\"",
+    "if ! command -v ogs >/dev/null 2>&1; then",
+    "  echo \"missing ogs in PATH; install the ogsystem CLI package before replaying this run\" >&2",
+    "  exit 1",
+    "fi",
+    "",
+    "ogs \"${ARGS[@]}\"",
     ""
   ].join("\n");
 }

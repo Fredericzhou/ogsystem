@@ -11,7 +11,7 @@ import { resolveEffectiveLaw } from "../dist/runtime/adapter.js";
 import { validateLawsConfig } from "../dist/runtime/config.js";
 
 async function loadLawCatalog() {
-  const lawPath = path.resolve(".ogsystem", "laws.json");
+  const lawPath = path.resolve(".ogs", "laws.json");
   return validateLawsConfig(JSON.parse(await readFile(lawPath, "utf8")), lawPath);
 }
 

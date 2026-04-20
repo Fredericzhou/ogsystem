@@ -53,7 +53,6 @@ export async function loadRuntimeConfig(
 
   const globalRuntimePath = resolve(homedir(), ".ogs", "runtime.json");
   const projectRuntimePath = resolve(workdir, ".ogs", "runtime.json");
-  const legacyProjectRuntimePath = resolve(workdir, ".ogsystem", "runtime.json");
   const overrideRuntimePath = path ? resolve(workdir, path) : undefined;
 
   let merged = { ...defaultRuntimeRaw };
@@ -62,7 +61,6 @@ export async function loadRuntimeConfig(
   for (const candidate of [
     globalRuntimePath,
     projectRuntimePath,
-    legacyProjectRuntimePath,
     overrideRuntimePath
   ]) {
     if (!candidate || !(await pathExists(candidate))) {
@@ -144,11 +142,7 @@ export async function loadUserProfile(
   path: string | undefined,
   workdir: string
 ): Promise<UserProfile | undefined> {
-  const profilePath =
-    path ??
-    (await pathExists(resolve(workdir, ".ogs", "user-profile.json"))
-      ? resolve(workdir, ".ogs", "user-profile.json")
-      : resolve(workdir, ".ogsystem", "user-profile.json"));
+  const profilePath = path ?? resolve(workdir, ".ogs", "user-profile.json");
   if (!(await pathExists(profilePath))) {
     return undefined;
   }
@@ -173,11 +167,7 @@ export async function loadLaws(
   path: string | undefined,
   workdir: string
 ): Promise<LawCatalog | undefined> {
-  const lawPath =
-    path ??
-    (await pathExists(resolve(workdir, ".ogs", "laws.json"))
-      ? resolve(workdir, ".ogs", "laws.json")
-      : resolve(workdir, ".ogsystem", "laws.json"));
+  const lawPath = path ?? resolve(workdir, ".ogs", "laws.json");
   if (!(await pathExists(lawPath))) {
     return undefined;
   }

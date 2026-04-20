@@ -20,7 +20,10 @@ import {
 function usage(): string {
   return [
     "Usage:",
-    "  npm run lint:system -- --system <file.mmd>",
+    "  ogs-lint-system --system <file.mmd>",
+    "",
+    "Source repository equivalent:",
+    "  pnpm run lint:system -- --system <file.mmd>",
     "",
     "Options:",
     "  --system <file>        Mermaid system to validate",

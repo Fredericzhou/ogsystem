@@ -53,28 +53,22 @@ OGSystem 当前重点优化以下能力：
 前置要求：
 
 - Node.js `>= 20`
-- `corepack` 可用
-- `pnpm@10.14.0`
 
-macOS/Linux 安装：
+安装已发布 CLI（npm）：
 
 ```bash
-corepack enable
-corepack prepare pnpm@10.14.0 --activate
-pnpm install --frozen-lockfile
+npm install -g ogsystem
 ```
 
-Windows PowerShell 安装：
+安装已发布 CLI（pnpm）：
 
-```powershell
-corepack enable
-corepack prepare pnpm@10.14.0 --activate
-pnpm install --frozen-lockfile
+```bash
+pnpm add -g ogsystem
 ```
 
-Windows CMD 安装：
+源码仓开发安装：
 
-```bat
+```bash
 corepack enable
 corepack prepare pnpm@10.14.0 --activate
 pnpm install --frozen-lockfile
@@ -104,9 +98,9 @@ pnpm run test:coverage
 
 命令入口策略（最佳实践）：
 
-- 安装阶段：`pnpm-only` 硬约束（`packageManager` + `preinstall`）。
-- 执行阶段：统一规范使用 `pnpm run ...`（文档与 CI 全量一致）。
-- 兼容性说明：在依赖已安装时，`npm run ...` 可能仍可执行脚本；这属于生态兼容行为，不是项目支持入口。
+- 已安装 CLI：优先使用 `ogs`、`ogs-doctor`、`ogs-nl2mmd`、`ogs-visualizer`、`ogs-lint-system`。
+- 源码仓开发：继续使用 `pnpm run ...`，与 lockfile 和 CI 保持一致。
+- 文档默认面向安装态 CLI；只有在说明源码仓开发时才展示 `pnpm run ...`。
 
 ## 1. Runtime Status
 
@@ -133,12 +127,12 @@ It also understands the current flow-contract surface, including `handoff.mode`,
 
 For structure-first authoring, see [NL2MMD structure templates](./nl2mmd-structure-templates.md). It lists the current semantic skeletons and example Mermaid graphs for `linear_flow`, `fanout_fanin`, `quorum_consultation`, `contract_gated_handoff`, `error_compensation`, `bounded_loop`, `human_gate`, and `binding_compat`.
 
-Use it with `pnpm run run:nl2mmd -- --message "..."` for one-shot drafting, or omit `--message` for the interactive loop. It targets the repository's supported Mermaid subset only; it is not a general Mermaid generator.
+Use it with `ogs-nl2mmd --message "..."` for one-shot drafting, or omit `--message` for the interactive loop. In a source checkout, the equivalent command is `pnpm run run:nl2mmd -- --message "..."`. It targets the repository's supported Mermaid subset only; it is not a general Mermaid generator.
 
 ### Command Layers
 
-- Base commands are the direct implementation entrypoints, such as `pnpm run run:nl2mmd -- ...` and `pnpm run run:adapter -- ...`.
-- Wrapper commands are the operator-facing `ogs` commands, such as `ogs project init` and `ogs project create <name> --template ...`.
+- Installed commands are the operator-facing entrypoints, such as `ogs`, `ogs-nl2mmd`, `ogs-doctor`, and `ogs-visualizer`.
+- Source repository commands are the direct implementation entrypoints, such as `pnpm run run:nl2mmd -- ...` and `pnpm run run:adapter -- ...`.
 - Base commands are for function and runtime behavior.
 - Wrapper commands are for project lifecycle and default operational flow.
 
@@ -643,7 +637,7 @@ Use `run:doctor` as runtime preflight and recovery inspection.
 Preflight command:
 
 ```bash
-pnpm run run:doctor \
+ogs-doctor \
   --required opencode \
   --system examples/target-model-binding-system.mmd \
   --laws .ogs/laws.json
@@ -652,7 +646,7 @@ pnpm run run:doctor \
 Lint command:
 
 ```bash
-pnpm run lint:system --system examples/target-model-binding-system.mmd
+ogs-lint-system --system examples/target-model-binding-system.mmd
 ```
 
 Lint rules:
@@ -664,7 +658,7 @@ Lint rules:
 Console progress logging:
 
 ```bash
-pnpm run run:adapter \
+ogs \
   --system examples/target-model-binding-system.mmd \
   --prompt "demo" \
   --dry-run \
@@ -679,7 +673,7 @@ pnpm run run:adapter \
 Local visualizer:
 
 ```bash
-pnpm run run:visualizer -- --workdir .
+ogs-visualizer --workdir .
 ```
 
 The visualizer is a lightweight read-only observability server that renders the current run list, run detail, event timeline, graph source, and live updates. It prefers `summary.json` and `timeline.jsonl`, with fallback to `state.json` and `events.ndjson` for older runs.
@@ -687,7 +681,7 @@ The visualizer is a lightweight read-only observability server that renders the 
 Graph preview link (optional):
 
 ```bash
-pnpm run run:adapter \
+ogs \
   --system examples/target-model-binding-system.mmd \
   --prompt "demo" \
   --dry-run \
@@ -700,14 +694,14 @@ pnpm run run:adapter \
 Run-directory inspection (resume prerequisites):
 
 ```bash
-pnpm run run:doctor \
+ogs-doctor \
   --run-dir .ogs/runs/<run-id>
 ```
 
 Optional online connectivity precheck:
 
 ```bash
-pnpm run run:doctor \
+ogs-doctor \
   --system examples/target-model-binding-system.mmd \
   --online-check
 ```
@@ -732,22 +726,22 @@ For recovery, prioritize:
 Lifecycle CLI (preferred):
 
 ```bash
-pnpm run run:adapter project init
-pnpm run run:adapter run start --system examples/target-model-binding-system.mmd --prompt "demo" --dry-run
-pnpm run run:adapter run list
-pnpm run run:adapter run status <run-id>
-pnpm run run:adapter run logs <run-id> --engine --tail 50
-pnpm run run:adapter run logs <run-id> --role <role-id> --since 2026-04-18T10:00:00Z
-pnpm run run:adapter run logs <run-id> --engine --follow
-pnpm run run:adapter run resume <run-id> --dry-run
-pnpm run run:adapter run stop <run-id>
-pnpm run run:visualizer -- --workdir .
+ogs project init
+ogs run start --system examples/target-model-binding-system.mmd --prompt "demo" --dry-run
+ogs run list
+ogs run status <run-id>
+ogs run logs <run-id> --engine --tail 50
+ogs run logs <run-id> --role <role-id> --since 2026-04-18T10:00:00Z
+ogs run logs <run-id> --engine --follow
+ogs run resume <run-id> --dry-run
+ogs run stop <run-id>
+ogs-visualizer --workdir .
 ```
 
 Preferred runtime command:
 
 ```bash
-pnpm run run:adapter \
+ogs \
   --system examples/target-model-binding-system.mmd \
   --prompt "讨论当前架构是否继续最小化" \
   --dry-run

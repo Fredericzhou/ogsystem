@@ -26,10 +26,13 @@ import type { Nl2MmdConversation, Nl2MmdContext, Nl2MmdTurnResult } from "./type
 function usage(): string {
   return [
     "Usage:",
-    "  pnpm run run:nl2mmd -- [--message <text>] [--model <modelId>]",
+    "  ogs-nl2mmd [--message <text>] [--model <modelId>]",
     "",
     "Base command:",
     "  direct entrypoint for prompt generation and validation against local roles/models",
+    "",
+    "Source repository equivalent:",
+    "  pnpm run run:nl2mmd -- [--message <text>] [--model <modelId>]",
     "",
     "Options:",
     "  --message <text>       One-shot NL2MMD request; omit for interactive mode",

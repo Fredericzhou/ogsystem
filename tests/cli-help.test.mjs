@@ -30,6 +30,7 @@ test("ogs help command surfaces layered guidance", async () => {
   assert.strictEqual(rootHelp.code, 0);
   assert.match(rootHelp.stdout, /ogs help \[project\|run\|legacy\]/);
   assert.match(rootHelp.stdout, /project commands use the current directory/);
+  assert.match(rootHelp.stdout, /ogs --system <file\.mmd> --prompt <text> \[options\]/);
 
   const projectHelp = await runNodeCli(runtimeCliPath, ["help", "project"]);
   assert.strictEqual(projectHelp.code, 0);
@@ -45,6 +46,7 @@ test("ogs help command surfaces layered guidance", async () => {
 test("nl2mmd help command highlights base entrypoint and defaults", async () => {
   const help = await runNodeCli(nl2mmdCliPath, ["--help"]);
   assert.strictEqual(help.code, 0);
+  assert.match(help.stdout, /ogs-nl2mmd \[--message <text>\] \[--model <modelId>\]/);
   assert.match(help.stdout, /pnpm run run:nl2mmd -- \[--message <text>\] \[--model <modelId>\]/);
   assert.match(help.stdout, /Base command:/);
   assert.match(help.stdout, /workdir defaults to the current directory/);

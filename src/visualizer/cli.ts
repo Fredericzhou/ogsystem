@@ -8,6 +8,9 @@ import { startVisualizationServer } from "./server.js";
 function usage(): string {
   return [
     "Usage:",
+    "  ogs-visualizer [--workdir <path>] [--host <host>] [--port <n>]",
+    "",
+    "Source repository equivalent:",
     "  pnpm run run:visualizer -- [--workdir <path>] [--host <host>] [--port <n>]",
     "",
     "Defaults:",
@@ -65,4 +68,3 @@ void main().catch((error) => {
   console.error(error instanceof Error ? error.message : String(error));
   process.exitCode = 1;
 });
-

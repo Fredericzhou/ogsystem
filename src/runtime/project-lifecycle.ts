@@ -8,8 +8,9 @@
  * - Does not execute graph runtime transitions.
  */
 import { randomUUID } from "node:crypto";
-import { mkdir, readFile, readdir, stat, writeFile } from "node:fs/promises";
-import { basename, resolve } from "node:path";
+import { cp, mkdir, readFile, readdir, stat, writeFile } from "node:fs/promises";
+import { basename, dirname, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
 
 import { readJsonFile, writeJsonFileAtomic } from "./json-file.js";
 import { requestRunStop } from "./run-artifacts.js";
@@ -22,6 +23,7 @@ export const OGS_RUNS_INDEX_FILE = ".ogs/runs-index.json";
 const OGS_PROJECT_FILE = ".ogs/project.json";
 const OGS_RUNTIME_FILE = ".ogs/runtime.json";
 const OGS_PROVIDER_OPENCODE_FILE = ".ogs/providers/opencode.json";
+const BUNDLED_REPO_DIRS = ["og-models", "og-roles"] as const;
 
 export type IndexedRun = {
   runId: string;
@@ -51,7 +53,7 @@ const PROJECT_TEMPLATES: Record<ProjectTemplateId, { systemMmd: string; lawsJson
       "%% model.bind.demo-analyst=general-balanced",
       "",
       "input -->|ENTER| analyst[Role:demo-analyst]",
-      "analyst -->|ANALYSIS_DONE| output",
+      "analyst[Role:demo-analyst] -->|ANALYSIS_DONE| output",
       ""
     ].join("\n"),
     lawsJson: stringifyJson({
@@ -83,11 +85,11 @@ const PROJECT_TEMPLATES: Record<ProjectTemplateId, { systemMmd: string; lawsJson
       "%% model.bind.test-operator=general-steady",
       "",
       "input -->|TASK_IN| intake[Role:demo-intake]",
-      "intake -->|BRANCH_A| brancha[Role:test-branch-a]",
-      "intake -->|BRANCH_B| branchb[Role:test-branch-b]",
-      "brancha -->|A_DONE| testop[Role:test-operator]",
-      "branchb -->|B_DONE| testop[Role:test-operator]",
-      "testop -->|RESULT_READY| output",
+      "intake[Role:demo-intake] -->|BRANCH_A| brancha[Role:test-branch-a]",
+      "intake[Role:demo-intake] -->|BRANCH_B| branchb[Role:test-branch-b]",
+      "brancha[Role:test-branch-a] -->|A_DONE| testop[Role:test-operator]",
+      "branchb[Role:test-branch-b] -->|B_DONE| testop[Role:test-operator]",
+      "testop[Role:test-operator] -->|RESULT_READY| output",
       ""
     ].join("\n"),
     lawsJson: stringifyJson({
@@ -115,9 +117,9 @@ const PROJECT_TEMPLATES: Record<ProjectTemplateId, { systemMmd: string; lawsJson
       "%% model.bind.diagnosis-chief-review=general-steady",
       "",
       "input -->|CASE_IN| intake[Role:demo-intake]",
-      "intake -->|INTAKE_DONE| dispatch[Role:diagnosis-dispatch]",
-      "dispatch -->|DISPATCH_DONE| chief[Role:diagnosis-chief-review]",
-      "chief -->|REPORT_READY| output",
+      "intake[Role:demo-intake] -->|INTAKE_DONE| dispatch[Role:diagnosis-dispatch]",
+      "dispatch[Role:diagnosis-dispatch] -->|DISPATCH_DONE| chief[Role:diagnosis-chief-review]",
+      "chief[Role:diagnosis-chief-review] -->|REPORT_READY| output",
       ""
     ].join("\n"),
     lawsJson: stringifyJson({
@@ -159,6 +161,39 @@ function createDefaultRuntimeConfig(): Record<string, unknown> {
       }
     }
   };
+}
+
+function resolvePackageRootDir(): string {
+  return resolve(dirname(fileURLToPath(import.meta.url)), "../..");
+}
+
+async function scaffoldBundledRepo(args: {
+  packageRootDir: string;
+  projectDir: string;
+  repoDirName: (typeof BUNDLED_REPO_DIRS)[number];
+}): Promise<void> {
+  const sourceDir = resolve(args.packageRootDir, args.repoDirName);
+  const targetDir = resolve(args.projectDir, args.repoDirName);
+  const targetStat = await stat(targetDir).catch(() => undefined);
+  if (targetStat?.isDirectory()) {
+    return;
+  }
+  const sourceStat = await stat(sourceDir).catch(() => undefined);
+  if (!sourceStat?.isDirectory()) {
+    throw new Error(`Bundled repository not found: ${args.repoDirName}`);
+  }
+  await cp(sourceDir, targetDir, { recursive: true });
+}
+
+async function scaffoldBundledRepos(projectDir: string): Promise<void> {
+  const packageRootDir = resolvePackageRootDir();
+  for (const repoDirName of BUNDLED_REPO_DIRS) {
+    await scaffoldBundledRepo({
+      packageRootDir,
+      projectDir,
+      repoDirName
+    });
+  }
 }
 
 function parseJsonLines(content: string): Array<Record<string, unknown>> {
@@ -264,6 +299,7 @@ export async function ensureProjectSkeleton(args: {
       runs: []
     })}\n`
   );
+  await scaffoldBundledRepos(args.workdir);
 }
 
 export async function loadIndexedRuns(workdir: string): Promise<IndexedRun[]> {

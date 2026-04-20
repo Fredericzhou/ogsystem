@@ -56,7 +56,7 @@ function usageRoot(): string {
     "  project create writes a new project folder under the current directory",
     "",
     "Legacy-compatible mode:",
-    "  pnpm run run:adapter -- --system <file.mmd> --prompt <text> [options]"
+    "  ogs --system <file.mmd> --prompt <text> [options]"
   ].join("\n");
 }
 
@@ -117,9 +117,11 @@ function usageRun(): string {
 function usageLegacy(): string {
   return [
     "Usage:",
-    "  pnpm run run:adapter -- --system <file.mmd> --prompt <text> [options]",
+    "  ogs --system <file.mmd> --prompt <text> [options]",
     "",
     "Legacy-compatible mode bridges the runtime directly.",
+    "In the source repository, the equivalent command is:",
+    "  pnpm run run:adapter --system <file.mmd> --prompt <text> [options]",
     "Prefer ogs project/run commands for normal project management."
   ].join("\n");
 }
@@ -210,7 +212,7 @@ async function printResumeHint(args: {
       : `${runsDir}/${runId}`;
 
   const tokens: string[] = [
-    "pnpm run run:adapter --",
+    "ogs",
     `--system ${shellEscape(systemPath)}`,
     `--prompt ${shellEscape(prompt)}`,
     `--workdir ${shellEscape(args.workdir)}`,

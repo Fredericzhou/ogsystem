@@ -36,6 +36,8 @@ test("lifecycle cli project init/create commands scaffold project control plane"
   await stat(path.resolve(tempRoot, ".ogs", "runtime.json"));
   await stat(path.resolve(tempRoot, ".ogs", "project.json"));
   await stat(path.resolve(tempRoot, ".ogs", "runs-index.json"));
+  await stat(path.resolve(tempRoot, "og-roles", "roles", "demo-analyst", "role.json"));
+  await stat(path.resolve(tempRoot, "og-models", "models", "general-balanced", "model.json"));
 
   const createResult = await runCli(
     ["project", "create", "demo-app", "--template", "minimal"],
@@ -47,6 +49,8 @@ test("lifecycle cli project init/create commands scaffold project control plane"
   const createdDir = createPayload.projectDir;
   await stat(path.resolve(createdDir, ".ogs", "runtime.json"));
   await stat(path.resolve(createdDir, "system.mmd"));
+  await stat(path.resolve(createdDir, "og-roles", "roles", "demo-analyst", "role.json"));
+  await stat(path.resolve(createdDir, "og-models", "models", "general-balanced", "model.json"));
 });
 
 test("lifecycle cli run start/list/status/logs/resume/stop works end-to-end", async () => {

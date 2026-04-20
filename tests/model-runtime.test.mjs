@@ -10,12 +10,12 @@ test("adapter auto-discovers runtime config and persists run artifacts for model
   const repoRoot = process.cwd();
   const tempRoot = await mkdtemp(path.join(os.tmpdir(), "ogsystem-model-runtime-"));
 
-  await mkdir(path.resolve(tempRoot, ".ogsystem"), { recursive: true });
+  await mkdir(path.resolve(tempRoot, ".ogs"), { recursive: true });
   await symlink(path.resolve(repoRoot, "og-roles"), path.resolve(tempRoot, "og-roles"), "dir");
   await symlink(path.resolve(repoRoot, "og-models"), path.resolve(tempRoot, "og-models"), "dir");
-  await symlink(path.resolve(repoRoot, ".ogsystem", "runtime.json"), path.resolve(tempRoot, ".ogsystem", "runtime.json"));
-  await symlink(path.resolve(repoRoot, ".ogsystem", "user-profile.json"), path.resolve(tempRoot, ".ogsystem", "user-profile.json"));
-  await symlink(path.resolve(repoRoot, ".ogsystem", "laws.json"), path.resolve(tempRoot, ".ogsystem", "laws.json"));
+  await symlink(path.resolve(repoRoot, ".ogs", "runtime.json"), path.resolve(tempRoot, ".ogs", "runtime.json"));
+  await symlink(path.resolve(repoRoot, ".ogs", "user-profile.json"), path.resolve(tempRoot, ".ogs", "user-profile.json"));
+  await symlink(path.resolve(repoRoot, ".ogs", "laws.json"), path.resolve(tempRoot, ".ogs", "laws.json"));
 
   const result = await runSystemWithAdapter({
     systemPath: path.resolve(repoRoot, "examples/target-model-binding-system.mmd"),

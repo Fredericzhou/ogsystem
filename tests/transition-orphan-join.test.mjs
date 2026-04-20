@@ -72,11 +72,11 @@ test("transition mode fails closed when a skipped flow leaves a join orphaned", 
   const repoRoot = process.cwd();
   const tempRoot = await mkdtemp(path.join(os.tmpdir(), "ogsystem-transition-orphan-join-"));
   const systemPath = path.resolve(tempRoot, "system.mmd");
-  const runtimePath = path.resolve(tempRoot, ".ogsystem", "runtime.json");
+  const runtimePath = path.resolve(tempRoot, ".ogs", "runtime.json");
   const rolesRoot = path.resolve(tempRoot, "og-roles", "roles");
   const contractsDir = path.resolve(tempRoot, "contracts");
 
-  await mkdir(path.resolve(tempRoot, ".ogsystem"), { recursive: true });
+  await mkdir(path.resolve(tempRoot, ".ogs"), { recursive: true });
   await mkdir(rolesRoot, { recursive: true });
   await mkdir(contractsDir, { recursive: true });
 
@@ -221,8 +221,8 @@ review[Role:review] -->|DONE| output
   const result = await runSystemWithAdapter({
     systemPath,
     runtimeConfigPath: runtimePath,
-    lawsPath: path.resolve(repoRoot, ".ogsystem", "laws.json"),
-    userProfilePath: path.resolve(repoRoot, ".ogsystem", "user-profile.json"),
+    lawsPath: path.resolve(repoRoot, ".ogs", "laws.json"),
+    userProfilePath: path.resolve(repoRoot, ".ogs", "user-profile.json"),
     prompt: "orphan join prompt",
     workdir: tempRoot,
     dryRun: true

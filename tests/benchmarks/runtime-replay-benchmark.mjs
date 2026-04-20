@@ -107,10 +107,10 @@ async function main() {
   const tempRoot = await mkdtemp(path.join(os.tmpdir(), "ogsystem-runtime-replay-bench-"));
   const systemPath = path.resolve(tempRoot, "system.mmd");
   const lawsPath = path.resolve(tempRoot, "laws.json");
-  const runtimePath = path.resolve(tempRoot, ".ogsystem", "runtime.json");
+  const runtimePath = path.resolve(tempRoot, ".ogs", "runtime.json");
   const roleDir = path.resolve(tempRoot, "og-roles", "roles", "test-loop-probe");
 
-  await mkdir(path.resolve(tempRoot, ".ogsystem"), { recursive: true });
+  await mkdir(path.resolve(tempRoot, ".ogs"), { recursive: true });
   await mkdir(roleDir, { recursive: true });
   await symlink(path.resolve(repoRoot, "og-models"), path.resolve(tempRoot, "og-models"), "dir");
   await writeFile(systemPath, systemSource, "utf8");
@@ -172,7 +172,7 @@ async function main() {
     "utf8"
   );
 
-  const laws = JSON.parse(await readFile(path.resolve(repoRoot, ".ogsystem", "laws.json"), "utf8"));
+  const laws = JSON.parse(await readFile(path.resolve(repoRoot, ".ogs", "laws.json"), "utf8"));
   const globalLaw = laws.laws.find((item) => item.lawId === "law.console.base");
   if (!globalLaw) {
     throw new Error("Global law law.console.base not found");

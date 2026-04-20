@@ -78,16 +78,16 @@ test("adapter runs graph debate example with parallel branches, join, and bounde
   const repoRoot = process.cwd();
   const tempRoot = await mkdtemp(path.join(os.tmpdir(), "ogsystem-langgraph-runtime-"));
 
-  await mkdir(path.resolve(tempRoot, ".ogsystem"), { recursive: true });
+  await mkdir(path.resolve(tempRoot, ".ogs"), { recursive: true });
   await symlink(path.resolve(repoRoot, "og-roles"), path.resolve(tempRoot, "og-roles"), "dir");
   await symlink(path.resolve(repoRoot, "og-models"), path.resolve(tempRoot, "og-models"), "dir");
   await symlink(
-    path.resolve(repoRoot, ".ogsystem", "runtime.json"),
-    path.resolve(tempRoot, ".ogsystem", "runtime.json")
+    path.resolve(repoRoot, ".ogs", "runtime.json"),
+    path.resolve(tempRoot, ".ogs", "runtime.json")
   );
   await symlink(
-    path.resolve(repoRoot, ".ogsystem", "user-profile.json"),
-    path.resolve(tempRoot, ".ogsystem", "user-profile.json")
+    path.resolve(repoRoot, ".ogs", "user-profile.json"),
+    path.resolve(tempRoot, ".ogs", "user-profile.json")
   );
 
   const result = await runSystemWithAdapter({
@@ -281,12 +281,12 @@ test("adapter runs expert consultation example with parallel specialists and fin
   const repoRoot = process.cwd();
   const tempRoot = await mkdtemp(path.join(os.tmpdir(), "ogsystem-expert-runtime-"));
 
-  await mkdir(path.resolve(tempRoot, ".ogsystem"), { recursive: true });
+  await mkdir(path.resolve(tempRoot, ".ogs"), { recursive: true });
   await symlink(path.resolve(repoRoot, "og-roles"), path.resolve(tempRoot, "og-roles"), "dir");
   await symlink(path.resolve(repoRoot, "og-models"), path.resolve(tempRoot, "og-models"), "dir");
   await symlink(
-    path.resolve(repoRoot, ".ogsystem", "runtime.json"),
-    path.resolve(tempRoot, ".ogsystem", "runtime.json")
+    path.resolve(repoRoot, ".ogs", "runtime.json"),
+    path.resolve(tempRoot, ".ogs", "runtime.json")
   );
 
   const result = await runSystemWithAdapter({
@@ -330,14 +330,14 @@ test("adapter preserves session lineage semantics and join context projection ac
   const systemPath = path.resolve(tempRoot, "system.mmd");
   const rolesRoot = path.resolve(tempRoot, "og-roles", "roles");
 
-  await mkdir(path.resolve(tempRoot, ".ogsystem"), { recursive: true });
+  await mkdir(path.resolve(tempRoot, ".ogs"), { recursive: true });
   await symlink(path.resolve(repoRoot, "og-models"), path.resolve(tempRoot, "og-models"), "dir");
   await symlink(
-    path.resolve(repoRoot, ".ogsystem", "laws.json"),
-    path.resolve(tempRoot, ".ogsystem", "laws.json")
+    path.resolve(repoRoot, ".ogs", "laws.json"),
+    path.resolve(tempRoot, ".ogs", "laws.json")
   );
   await writeFile(
-    path.resolve(tempRoot, ".ogsystem", "runtime.json"),
+    path.resolve(tempRoot, ".ogs", "runtime.json"),
     JSON.stringify(
       {
         executor: "opencode",
@@ -446,13 +446,13 @@ test("adapter runs quorum_of join once and applies context.map projection", asyn
   const repoRoot = process.cwd();
   const tempRoot = await mkdtemp(path.join(os.tmpdir(), "ogsystem-quorum-projection-"));
   const systemPath = path.resolve(tempRoot, "system.mmd");
-  const runtimePath = path.resolve(tempRoot, ".ogsystem", "runtime.json");
+  const runtimePath = path.resolve(tempRoot, ".ogs", "runtime.json");
   const profilesPath = path.resolve(tempRoot, "profiles.json");
   const toolsPath = path.resolve(tempRoot, "tools.json");
   const toolScriptPath = path.resolve(tempRoot, "projection-tool.mjs");
   const rolesRoot = path.resolve(tempRoot, "og-roles", "roles");
 
-  await mkdir(path.resolve(tempRoot, ".ogsystem"), { recursive: true });
+  await mkdir(path.resolve(tempRoot, ".ogs"), { recursive: true });
   await writeFile(
     runtimePath,
     JSON.stringify(
@@ -614,8 +614,8 @@ review[Role:review] -->|DONE| output
     runtimeConfigPath: runtimePath,
     profilesPath,
     toolsPath,
-    lawsPath: path.resolve(repoRoot, ".ogsystem", "laws.json"),
-    userProfilePath: path.resolve(repoRoot, ".ogsystem", "user-profile.json"),
+    lawsPath: path.resolve(repoRoot, ".ogs", "laws.json"),
+    userProfilePath: path.resolve(repoRoot, ".ogs", "user-profile.json"),
     prompt: "quorum projection prompt",
     workdir: tempRoot
   });
@@ -661,8 +661,8 @@ review[Role:review] -->|DONE| output
     runtimeConfigPath: runtimePath,
     profilesPath,
     toolsPath,
-    lawsPath: path.resolve(repoRoot, ".ogsystem", "laws.json"),
-    userProfilePath: path.resolve(repoRoot, ".ogsystem", "user-profile.json"),
+    lawsPath: path.resolve(repoRoot, ".ogs", "laws.json"),
+    userProfilePath: path.resolve(repoRoot, ".ogs", "user-profile.json"),
     prompt: "quorum projection prompt",
     workdir: tempRoot,
     resumeRunDir: path.relative(tempRoot, runDir)
@@ -679,14 +679,14 @@ test("adapter transition skips warned contract violations and still activates va
   const repoRoot = process.cwd();
   const tempRoot = await mkdtemp(path.join(os.tmpdir(), "ogsystem-flow-contract-transition-"));
   const systemPath = path.resolve(tempRoot, "system.mmd");
-  const runtimePath = path.resolve(tempRoot, ".ogsystem", "runtime.json");
+  const runtimePath = path.resolve(tempRoot, ".ogs", "runtime.json");
   const profilesPath = path.resolve(tempRoot, "profiles.json");
   const toolsPath = path.resolve(tempRoot, "tools.json");
   const toolScriptPath = path.resolve(tempRoot, "transition-tool.mjs");
   const rolesRoot = path.resolve(tempRoot, "og-roles", "roles");
   const contractsDir = path.resolve(tempRoot, "contracts");
 
-  await mkdir(path.resolve(tempRoot, ".ogsystem"), { recursive: true });
+  await mkdir(path.resolve(tempRoot, ".ogs"), { recursive: true });
   await mkdir(rolesRoot, { recursive: true });
   await mkdir(contractsDir, { recursive: true });
   await writeFile(
@@ -918,7 +918,7 @@ bad[Role:bad] -->|DONE| output
     runtimeConfigPath: runtimePath,
     profilesPath,
     toolsPath,
-    lawsPath: path.resolve(repoRoot, ".ogsystem", "laws.json"),
+    lawsPath: path.resolve(repoRoot, ".ogs", "laws.json"),
     prompt: "transition contract prompt",
     workdir: tempRoot
   });
@@ -946,16 +946,16 @@ test("adapter executes non-join multi-incoming role once per active branch", asy
   const tempRoot = await mkdtemp(path.join(os.tmpdir(), "ogsystem-multi-branch-role-"));
   const systemPath = path.resolve(tempRoot, "system.mmd");
 
-  await mkdir(path.resolve(tempRoot, ".ogsystem"), { recursive: true });
+  await mkdir(path.resolve(tempRoot, ".ogs"), { recursive: true });
   await symlink(path.resolve(repoRoot, "og-roles"), path.resolve(tempRoot, "og-roles"), "dir");
   await symlink(path.resolve(repoRoot, "og-models"), path.resolve(tempRoot, "og-models"), "dir");
   await symlink(
-    path.resolve(repoRoot, ".ogsystem", "runtime.json"),
-    path.resolve(tempRoot, ".ogsystem", "runtime.json")
+    path.resolve(repoRoot, ".ogs", "runtime.json"),
+    path.resolve(tempRoot, ".ogs", "runtime.json")
   );
   await symlink(
-    path.resolve(repoRoot, ".ogsystem", "user-profile.json"),
-    path.resolve(tempRoot, ".ogsystem", "user-profile.json")
+    path.resolve(repoRoot, ".ogs", "user-profile.json"),
+    path.resolve(tempRoot, ".ogs", "user-profile.json")
   );
 
   await writeFile(
@@ -984,8 +984,8 @@ decision[Role:test-decision] -->|PATH_B| output
 
   const result = await runSystemWithAdapter({
     systemPath,
-    lawsPath: path.resolve(repoRoot, ".ogsystem", "laws.json"),
-    userProfilePath: path.resolve(repoRoot, ".ogsystem", "user-profile.json"),
+    lawsPath: path.resolve(repoRoot, ".ogs", "laws.json"),
+    userProfilePath: path.resolve(repoRoot, ".ogs", "user-profile.json"),
     prompt: "parallel converge without join",
     workdir: tempRoot,
     dryRun: true
@@ -1028,16 +1028,16 @@ test("adapter optionally cleans historical execution snapshots without touching 
   const repoRoot = process.cwd();
   const tempRoot = await mkdtemp(path.join(os.tmpdir(), "ogsystem-cleanup-runtime-"));
 
-  await mkdir(path.resolve(tempRoot, ".ogsystem"), { recursive: true });
+  await mkdir(path.resolve(tempRoot, ".ogs"), { recursive: true });
   await symlink(path.resolve(repoRoot, "og-roles"), path.resolve(tempRoot, "og-roles"), "dir");
   await symlink(path.resolve(repoRoot, "og-models"), path.resolve(tempRoot, "og-models"), "dir");
   await symlink(
-    path.resolve(repoRoot, ".ogsystem", "runtime.json"),
-    path.resolve(tempRoot, ".ogsystem", "runtime.json")
+    path.resolve(repoRoot, ".ogs", "runtime.json"),
+    path.resolve(tempRoot, ".ogs", "runtime.json")
   );
   await symlink(
-    path.resolve(repoRoot, ".ogsystem", "user-profile.json"),
-    path.resolve(tempRoot, ".ogsystem", "user-profile.json")
+    path.resolve(repoRoot, ".ogs", "user-profile.json"),
+    path.resolve(tempRoot, ".ogs", "user-profile.json")
   );
 
   await runSystemWithAdapter({
@@ -1065,11 +1065,11 @@ test("adapter applies retention cleanup from runtime config when execution direc
   const repoRoot = process.cwd();
   const tempRoot = await mkdtemp(path.join(os.tmpdir(), "ogsystem-retention-runtime-"));
 
-  await mkdir(path.resolve(tempRoot, ".ogsystem"), { recursive: true });
+  await mkdir(path.resolve(tempRoot, ".ogs"), { recursive: true });
   await symlink(path.resolve(repoRoot, "og-roles"), path.resolve(tempRoot, "og-roles"), "dir");
   await symlink(path.resolve(repoRoot, "og-models"), path.resolve(tempRoot, "og-models"), "dir");
   await writeFile(
-    path.resolve(tempRoot, ".ogsystem", "runtime.json"),
+    path.resolve(tempRoot, ".ogs", "runtime.json"),
     JSON.stringify(
       {
         executor: "opencode",
@@ -1088,8 +1088,8 @@ test("adapter applies retention cleanup from runtime config when execution direc
     "utf8"
   );
   await symlink(
-    path.resolve(repoRoot, ".ogsystem", "user-profile.json"),
-    path.resolve(tempRoot, ".ogsystem", "user-profile.json")
+    path.resolve(repoRoot, ".ogs", "user-profile.json"),
+    path.resolve(tempRoot, ".ogs", "user-profile.json")
   );
 
   await runSystemWithAdapter({
@@ -1132,11 +1132,11 @@ test("adapter skips auto retention cleanup when retention is disabled", async ()
   const repoRoot = process.cwd();
   const tempRoot = await mkdtemp(path.join(os.tmpdir(), "ogsystem-retention-disabled-"));
 
-  await mkdir(path.resolve(tempRoot, ".ogsystem"), { recursive: true });
+  await mkdir(path.resolve(tempRoot, ".ogs"), { recursive: true });
   await symlink(path.resolve(repoRoot, "og-roles"), path.resolve(tempRoot, "og-roles"), "dir");
   await symlink(path.resolve(repoRoot, "og-models"), path.resolve(tempRoot, "og-models"), "dir");
   await writeFile(
-    path.resolve(tempRoot, ".ogsystem", "runtime.json"),
+    path.resolve(tempRoot, ".ogs", "runtime.json"),
     JSON.stringify(
       {
         executor: "opencode",
@@ -1155,8 +1155,8 @@ test("adapter skips auto retention cleanup when retention is disabled", async ()
     "utf8"
   );
   await symlink(
-    path.resolve(repoRoot, ".ogsystem", "user-profile.json"),
-    path.resolve(tempRoot, ".ogsystem", "user-profile.json")
+    path.resolve(repoRoot, ".ogs", "user-profile.json"),
+    path.resolve(tempRoot, ".ogs", "user-profile.json")
   );
 
   await runSystemWithAdapter({
@@ -1184,13 +1184,13 @@ test("adapter persists metrics fields on failed graph runs", async () => {
   const tempRoot = await mkdtemp(path.join(os.tmpdir(), "ogsystem-metrics-failure-"));
   const systemPath = path.resolve(tempRoot, "system.mmd");
   const lawsPath = path.resolve(tempRoot, "laws.json");
-  const runtimePath = path.resolve(tempRoot, ".ogsystem", "runtime.json");
+  const runtimePath = path.resolve(tempRoot, ".ogs", "runtime.json");
 
-  await mkdir(path.resolve(tempRoot, ".ogsystem"), { recursive: true });
+  await mkdir(path.resolve(tempRoot, ".ogs"), { recursive: true });
   await symlink(path.resolve(repoRoot, "og-models"), path.resolve(tempRoot, "og-models"), "dir");
   await symlink(
-    path.resolve(repoRoot, ".ogsystem", "user-profile.json"),
-    path.resolve(tempRoot, ".ogsystem", "user-profile.json")
+    path.resolve(repoRoot, ".ogs", "user-profile.json"),
+    path.resolve(tempRoot, ".ogs", "user-profile.json")
   );
   await writeFile(
     runtimePath,
@@ -1213,7 +1213,7 @@ test("adapter persists metrics fields on failed graph runs", async () => {
     allowedEvents: ["RETRY", "DONE"]
   });
 
-  const laws = JSON.parse(await readFile(path.resolve(repoRoot, ".ogsystem", "laws.json"), "utf8"));
+  const laws = JSON.parse(await readFile(path.resolve(repoRoot, ".ogs", "laws.json"), "utf8"));
   const globalLaw = laws.laws.find((item) => item.lawId === "law.console.base");
   assert.ok(globalLaw);
   globalLaw.constraints = {
@@ -1242,7 +1242,7 @@ worker[Role:test-budget-failure] -->|DONE| output
   const result = await runSystemWithAdapter({
     systemPath,
     lawsPath,
-    userProfilePath: path.resolve(tempRoot, ".ogsystem", "user-profile.json"),
+    userProfilePath: path.resolve(tempRoot, ".ogs", "user-profile.json"),
     prompt: "trigger transition budget failure",
     workdir: tempRoot,
     dryRun: true
@@ -1265,10 +1265,10 @@ test("adapter keeps scheduler recursion budget above loop-heavy transition count
   const tempRoot = await mkdtemp(path.join(os.tmpdir(), "ogsystem-recursion-budget-"));
   const systemPath = path.resolve(tempRoot, "system.mmd");
   const lawsPath = path.resolve(tempRoot, "laws.json");
-  const runtimePath = path.resolve(tempRoot, ".ogsystem", "runtime.json");
+  const runtimePath = path.resolve(tempRoot, ".ogs", "runtime.json");
   const roleDir = path.resolve(tempRoot, "og-roles", "roles", "test-loop-probe");
 
-  await mkdir(path.resolve(tempRoot, ".ogsystem"), { recursive: true });
+  await mkdir(path.resolve(tempRoot, ".ogs"), { recursive: true });
   await symlink(path.resolve(repoRoot, "og-models"), path.resolve(tempRoot, "og-models"), "dir");
   await mkdir(roleDir, { recursive: true });
   await writeFile(
@@ -1333,7 +1333,7 @@ test("adapter keeps scheduler recursion budget above loop-heavy transition count
     "utf8"
   );
 
-  const laws = JSON.parse(await readFile(path.resolve(repoRoot, ".ogsystem", "laws.json"), "utf8"));
+  const laws = JSON.parse(await readFile(path.resolve(repoRoot, ".ogs", "laws.json"), "utf8"));
   const globalLaw = laws.laws.find((item) => item.lawId === "law.console.base");
   assert.ok(globalLaw);
   globalLaw.constraints = {

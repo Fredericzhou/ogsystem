@@ -59,6 +59,9 @@ export type DoctorReport = {
 export function usage(): string {
   return [
     "Usage:",
+    "  ogs-doctor [--required opencode] [--system file.mmd] [--run-dir .ogs/runs/<run-id>]",
+    "",
+    "Source repository equivalent:",
     "  pnpm run run:doctor -- [--required opencode] [--system file.mmd] [--run-dir .ogs/runs/<run-id>]",
     "",
     "Options:",

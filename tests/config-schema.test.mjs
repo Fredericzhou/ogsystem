@@ -19,7 +19,7 @@ function createValidator(schema) {
 
 test("runtime config schema accepts repository runtime.json", async () => {
   const runtimeSchema = await readJson(path.resolve("schemas/runtime-config.schema.json"));
-  const runtimeConfig = await readJson(path.resolve(".ogsystem/runtime.json"));
+  const runtimeConfig = await readJson(path.resolve(".ogs/runtime.json"));
 
   const validate = createValidator(runtimeSchema);
   const ok = validate(runtimeConfig);
@@ -104,7 +104,7 @@ test("runtime config schema accepts redaction and branch workspace isolation", a
 
 test("user profile schema accepts repository user-profile.json", async () => {
   const profileSchema = await readJson(path.resolve("schemas/user-profile.schema.json"));
-  const userProfile = await readJson(path.resolve(".ogsystem/user-profile.json"));
+  const userProfile = await readJson(path.resolve(".ogs/user-profile.json"));
 
   const validate = createValidator(profileSchema);
   const ok = validate(userProfile);

@@ -19,7 +19,7 @@ test("doctor keeps required command checks", async () => {
 test("doctor validates system/runtime/law inputs", async () => {
   const report = await runDoctor({
     systemPath: path.resolve("examples/target-model-binding-system.mmd"),
-    lawsPath: path.resolve(".ogsystem/laws.json"),
+    lawsPath: path.resolve(".ogs/laws.json"),
     workdir: process.cwd()
   });
 
