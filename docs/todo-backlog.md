@@ -56,7 +56,8 @@ Sources: `docs/long-term-stability-roadmap.md`, `docs/archive/delivery/optimizat
 
 ## 3. 稳定后再做（延后项）
 
-- [ ] 发布版本化 CLI 分发（npm 包 + 跨平台单文件分发策略）并定义升级路径。
+- [ ] 在 CI 增加 `pnpm pack` + 安装态 smoke test，覆盖 npm/pnpm 安装、`ogs help` 与模板项目启动。
+- [ ] 定义已发布 CLI 的版本升级、兼容窗口和弃用策略。
 - [ ] 增加 provider 凭据健康检查与最小权限模板（开发/CI/生产）。
 - [ ] 引入运行目录敏感字段脱敏策略（日志与审计输出）。
 - [ ] 语义兼容型 resume（宽容指纹/带损恢复）。

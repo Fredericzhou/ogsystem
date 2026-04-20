@@ -13,3 +13,8 @@
 2. 归档文档若有可复用结论，必须回写到活跃文档（`docs/usage-manual.md`、`docs/DECISIONS.md`、`docs/ogsystem-orchestration-semantics-v1.md`）。
 3. 新建归档文档时，需同步更新 `docs/README.md` 对应分组。
 4. 阶段性计划、评估、基准、checklist 应带日期后缀并放在 `delivery/`，避免与 `docs/` 根目录活跃文档混淆。
+
+补充说明：
+
+- 归档文档中若出现 `.ogsystem/`、`pnpm-only`、旧 CLI 入口等表述，应视为历史上下文，不代表当前行为。
+- 当前活跃路径以 `.ogs/` 和已安装的 `ogs*` CLI 为准。
