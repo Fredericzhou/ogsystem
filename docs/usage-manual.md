@@ -66,6 +66,15 @@ npm install -g ogsystem
 pnpm add -g ogsystem
 ```
 
+从源码目录本地安装 CLI：
+
+```bash
+npm install -g .
+
+# pnpm 全局安装请使用绝对路径，避免 `pnpm add -g .` 在部分环境下被错误解析
+pnpm add -g "$PWD"
+```
+
 源码仓开发安装：
 
 ```bash

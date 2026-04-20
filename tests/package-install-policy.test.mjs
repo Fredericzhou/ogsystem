@@ -41,6 +41,30 @@ test("preinstall rejects npm installs in repository-development checkouts", asyn
   assert.match(result.stderr, /Use pnpm only for repository development/);
 });
 
+test("preinstall allows npm global installs from repository-development checkouts", async () => {
+  const tempRoot = await mkdtemp(path.join(os.tmpdir(), "ogsystem-preinstall-global-"));
+  await writeFile(path.resolve(tempRoot, "pnpm-lock.yaml"), "lockfileVersion: '9.0'\n", "utf8");
+  const result = await new Promise((resolve, reject) => {
+    const child = spawn("node", [preinstallScriptPath], {
+      cwd: tempRoot,
+      env: {
+        ...process.env,
+        npm_config_user_agent: "npm/10.9.0 node/v22.21.1 darwin arm64",
+        npm_config_global: "true"
+      },
+      stdio: ["ignore", "pipe", "pipe"]
+    });
+    let stderr = "";
+    child.stderr.on("data", (chunk) => {
+      stderr += chunk.toString();
+    });
+    child.on("error", reject);
+    child.on("close", (code) => resolve({ code, stderr }));
+  });
+  assert.equal(result.code, 0);
+  assert.equal(result.stderr, "");
+});
+
 test("preinstall allows pnpm installs in repository-development checkouts", async () => {
   const tempRoot = await mkdtemp(path.join(os.tmpdir(), "ogsystem-preinstall-pnpm-"));
   await writeFile(path.resolve(tempRoot, "pnpm-lock.yaml"), "lockfileVersion: '9.0'\n", "utf8");

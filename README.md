@@ -56,6 +56,15 @@ cd demo-app
 ogs run start --system system.mmd --prompt "smoke" --dry-run
 ```
 
+Local source install:
+
+```bash
+npm install -g .
+
+# pnpm global installs should use an absolute path, not "."
+pnpm add -g "$PWD"
+```
+
 Develop from source (macOS/Linux/Windows):
 
 ```bash
