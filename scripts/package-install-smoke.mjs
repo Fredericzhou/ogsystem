@@ -104,7 +104,7 @@ async function main() {
 
   const startResult = await runCommand(
     "node",
-    [ogsBinPath, "run", "start", "--system", "system.mmd", "--prompt", "install smoke", "--dry-run"],
+    [ogsBinPath, "run", "start", "--system", "system.mmd", "--input", "install smoke", "--dry-run"],
     { cwd: projectDir }
   );
   assert.equal(startResult.code, 0, startResult.stderr);

@@ -67,7 +67,7 @@ test("lifecycle cli project init/create commands scaffold project control plane"
   await assert.rejects(() => stat(path.resolve(createdDir, "og-models", "models", "general-fast")), /ENOENT/);
 
   const startResult = await runCli(
-    ["run", "start", "--system", "system.mmd", "--prompt", "cli lifecycle template", "--dry-run"],
+    ["run", "start", "--system", "system.mmd", "--input", "cli lifecycle template", "--dry-run"],
     { cwd: createdDir }
   );
   assert.strictEqual(startResult.code, 0, startResult.stderr);
@@ -148,7 +148,7 @@ test("lifecycle cli run start/list/status/logs/resume/stop works end-to-end", { 
     "start",
     "--system",
     path.resolve(repoRoot, "examples", "target-model-binding-system.mmd"),
-    "--prompt",
+    "--input",
     "cli lifecycle smoke",
     "--dry-run",
     "--workdir",

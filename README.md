@@ -53,7 +53,7 @@ Quick start with the installed CLI:
 ```bash
 ogs project create demo-app --template minimal
 cd demo-app
-ogs run start --system system.mmd --prompt "smoke" --dry-run
+ogs run start --system system.mmd --input "smoke" --dry-run
 ogs visualizer --workdir .
 ```
 

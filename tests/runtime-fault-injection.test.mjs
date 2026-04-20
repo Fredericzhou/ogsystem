@@ -334,7 +334,7 @@ test("forced crash after durable outcome resumes without duplicate execution", a
     path.resolve(repoRoot, ".ogs", "laws.json"),
     "--workdir",
     tempRoot,
-    "--prompt",
+    "--input",
     "crash window drill",
     "--dry-run"
   ];
@@ -525,7 +525,7 @@ finalizer[Role:test-operator] -->|DONE| output
     lawsPath,
     "--workdir",
     tempRoot,
-    "--prompt",
+    "--input",
     "error flow resume drill"
   ];
 
@@ -620,7 +620,7 @@ test("resume rejects a concurrently held live lock on the same run directory", a
     path.resolve(repoRoot, ".ogs", "laws.json"),
     "--workdir",
     tempRoot,
-    "--prompt",
+    "--input",
     "resume lock live holder",
     "--dry-run",
     "--resume-run",
@@ -783,7 +783,7 @@ second_role[Role:second_role] -->|DONE| output
       path.resolve(repoRoot, ".ogs", "laws.json"),
       "--workdir",
       tempRoot,
-      "--prompt",
+      "--input",
       "stop request runtime test",
       "--trace-out",
       tracePath

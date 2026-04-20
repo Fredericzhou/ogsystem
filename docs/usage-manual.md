@@ -194,7 +194,7 @@ cd demo-app
 这一步不调用外部模型，只验证项目结构、Mermaid 系统、角色/模型导入和运行主路径是否打通：
 
 ```bash
-ogs run start --system system.mmd --prompt "请先做一次最小分析" --dry-run
+ogs run start --system system.mmd --input "请先做一次最小分析" --dry-run
 ```
 
 如果命令返回 `status: "done"`，说明当前项目已经具备基本可运行结构。
@@ -223,7 +223,7 @@ ogs-doctor --required opencode --system system.mmd --online-check
 ### Step 5. 进行一次真实运行
 
 ```bash
-ogs run start --system system.mmd --prompt "请分析这个需求并给出简短结论"
+ogs run start --system system.mmd --input "请分析这个需求并给出简短结论"
 ```
 
 默认会在 `stderr` 输出运行进度日志，同时把最终 JSON 结果保留在 `stdout`。
@@ -233,7 +233,7 @@ ogs run start --system system.mmd --prompt "请分析这个需求并给出简短
 ```bash
 ogs run start \
   --system system.mmd \
-  --prompt "请分析这个需求并给出简短结论" \
+  --input "请分析这个需求并给出简短结论" \
   --quiet-run
 ```
 
@@ -844,7 +844,7 @@ Console progress logging:
 ```bash
 ogs \
   --system examples/target-model-binding-system.mmd \
-  --prompt "demo" \
+  --input "demo" \
   --dry-run
 ```
 
@@ -866,7 +866,7 @@ Temporary visualizer attached to a run:
 ```bash
 ogs run start \
   --system system.mmd \
-  --prompt "demo" \
+  --input "demo" \
   --visualize
 ```
 
@@ -879,7 +879,7 @@ Graph preview link (optional):
 ```bash
 ogs \
   --system examples/target-model-binding-system.mmd \
-  --prompt "demo" \
+  --input "demo" \
   --dry-run \
   --print-graph-link
 ```
@@ -924,8 +924,8 @@ Lifecycle CLI (preferred):
 ```bash
 ogs project init
 ogs project sync --system system.mmd
-ogs run start --system examples/target-model-binding-system.mmd --prompt "demo" --dry-run
-ogs run start --system system.mmd --prompt "demo" --visualize
+ogs run start --system examples/target-model-binding-system.mmd --input "demo" --dry-run
+ogs run start --system system.mmd --input "demo" --visualize
 ogs run list
 ogs run status <run-id>
 ogs run logs <run-id> --engine --tail 50
@@ -941,7 +941,7 @@ Preferred runtime command:
 ```bash
 ogs \
   --system examples/target-model-binding-system.mmd \
-  --prompt "讨论当前架构是否继续最小化" \
+  --input "讨论当前架构是否继续最小化" \
   --dry-run
 ```
 

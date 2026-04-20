@@ -25,7 +25,7 @@ function runCli(args) {
 }
 
 test("cli fails when required args are missing", async () => {
-  const { code, stderr } = await runCli(["--prompt", "hello"]);
+  const { code, stderr } = await runCli(["--input", "hello"]);
   assert.strictEqual(code, 1);
   assert.match(stderr, /Missing required args/);
   assert.match(stderr, /errorCode=CLI_MISSING_REQUIRED_ARGS/);
@@ -36,7 +36,7 @@ test("cli rejects invalid cleanup-executions with a stable envelope", async () =
   const { code, stderr } = await runCli([
     "--system",
     "examples/target-model-binding-system.mmd",
-    "--prompt",
+    "--input",
     "hello",
     "--cleanup-executions",
     "0"
@@ -52,7 +52,7 @@ test("cli prints runtime logs to stderr by default without breaking stdout json"
   const { code, stdout, stderr } = await runCli([
     "--system",
     "examples/target-model-binding-system.mmd",
-    "--prompt",
+    "--input",
     "cli log run",
     "--dry-run"
   ]);
@@ -72,7 +72,7 @@ test("cli can attach a temporary visualizer server and auto-close it after run c
     "start",
     "--system",
     "examples/target-model-binding-system.mmd",
-    "--prompt",
+    "--input",
     "visualizer run",
     "--dry-run",
     "--visualize",
@@ -92,7 +92,7 @@ test("cli can print Mermaid Live graph preview URL", async () => {
   const { code, stderr } = await runCli([
     "--system",
     "examples/target-model-binding-system.mmd",
-    "--prompt",
+    "--input",
     "graph link preview",
     "--dry-run",
     "--print-graph-link"

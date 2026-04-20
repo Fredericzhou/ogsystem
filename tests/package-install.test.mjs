@@ -58,6 +58,9 @@ test("packed CLI installs and scaffolds a runnable project with imported local d
 
   // Mirror runtime dependencies into an installation-like node_modules layout without registry access.
   for (const dependencyName of Object.keys(installPackageJson.dependencies ?? {})) {
+    if (dependencyName === "ogsystem") {
+      continue;
+    }
     const targetPath = path.resolve(installNodeModulesDir, dependencyName);
     const sourcePath = path.resolve(repoRoot, "node_modules", dependencyName);
     await mkdir(path.dirname(targetPath), { recursive: true });
@@ -95,7 +98,7 @@ test("packed CLI installs and scaffolds a runnable project with imported local d
 
   const startResult = await runCommand(
     "node",
-    [ogsBinPath, "run", "start", "--system", "system.mmd", "--prompt", "packaged smoke", "--dry-run"],
+    [ogsBinPath, "run", "start", "--system", "system.mmd", "--input", "packaged smoke", "--dry-run"],
     { cwd: projectDir }
   );
   assert.equal(startResult.code, 0, startResult.stderr);

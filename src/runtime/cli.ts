@@ -41,7 +41,7 @@ function usageRoot(): string {
     "  ogs project create <name> --template <minimal|software-dev|consultation>",
     "  ogs project sync --system <file.mmd>",
     "  ogs visualizer [--workdir <path>] [--host <host>] [--port <n|0>]",
-    "  ogs run start --system <file.mmd> --prompt <text> [options]",
+    "  ogs run start --system <file.mmd> --input <text> [options]",
     "  ogs run resume <run-id> [options]",
     "  ogs run stop <run-id> [--reason <text>]",
     "  ogs run list [--reindex]",
@@ -62,7 +62,7 @@ function usageRoot(): string {
     "  project create writes a new project folder under the current directory",
     "",
     "Legacy entrypoint:",
-    "  ogs --system <file.mmd> --prompt <text> [options]"
+    "  ogs --system <file.mmd> --input <text> [options]"
   ].join("\n");
 }
 
@@ -99,7 +99,7 @@ function usageProject(): string {
 function usageRun(): string {
   return [
     "Usage:",
-    "  ogs run start --system <file.mmd> --prompt <text> [options]",
+    "  ogs run start --system <file.mmd> --input <text> [options]",
     "  ogs run resume <run-id> [options]",
     "  ogs run stop <run-id> [--reason <text>] [--workdir <path>]",
     "  ogs run list [--reindex] [--workdir <path>]",
@@ -145,17 +145,17 @@ function usageVisualizer(): string {
     "Examples:",
     "  ogs visualizer --workdir .",
     "  ogs visualizer --workdir . --port 3338",
-    "  ogs run start --system system.mmd --prompt \"demo\" --visualize"
+    "  ogs run start --system system.mmd --input \"demo\" --visualize"
   ].join("\n");
 }
 
 function usageLegacy(): string {
   return [
     "Usage:",
-    "  ogs --system <file.mmd> --prompt <text> [options]",
+    "  ogs --system <file.mmd> --input <text> [options]",
     "",
     "Source checkout equivalent:",
-    "  pnpm run run:adapter --system <file.mmd> --prompt <text> [options]",
+    "  pnpm run run:adapter --system <file.mmd> --input <text> [options]",
     "Prefer ogs project/run commands for normal project management."
   ].join("\n");
 }
@@ -238,7 +238,7 @@ async function printResumeHint(args: {
   }
 
   const systemPath = resolve(args.workdir, String(args.values.system ?? ""));
-  const prompt = String(args.values.prompt ?? "");
+  const prompt = String(args.values.input ?? "");
   const runsDir = await resolveRunsDir({
     runtimeConfigPath: typeof args.values.runtime === "string" ? args.values.runtime : undefined,
     workdir: args.workdir
@@ -251,7 +251,7 @@ async function printResumeHint(args: {
   const tokens: string[] = [
     "ogs",
     `--system ${shellEscape(systemPath)}`,
-    `--prompt ${shellEscape(prompt)}`,
+    `--input ${shellEscape(prompt)}`,
     `--workdir ${shellEscape(args.workdir)}`,
     `--resume-run ${shellEscape(resumeRun)}`
   ];
@@ -323,7 +323,7 @@ function parseLegacyArgs(argv?: string[]) {
         profiles: { type: "string" },
         tools: { type: "string" },
         laws: { type: "string" },
-        prompt: { type: "string" },
+        input: { type: "string" },
         workdir: { type: "string" },
         "cleanup-executions": { type: "string" },
         "log-run": { type: "boolean" },
@@ -515,7 +515,7 @@ async function runLegacyMode(argv?: string[]): Promise<void> {
     console.log(usage());
     return;
   }
-  if (!values.system || !values.prompt) {
+  if (!values.system || !values.input) {
     throw createCliInputError("CLI_MISSING_REQUIRED_ARGS", `Missing required args.\n\n${usage()}`);
   }
 
@@ -530,7 +530,7 @@ async function runLegacyMode(argv?: string[]): Promise<void> {
   try {
     await runAdapterCommand({
       systemPath: values.system,
-      prompt: values.prompt,
+      prompt: values.input,
       runtimeConfigPath: values.runtime,
       userProfilePath: values["user-profile"],
       resumeRunDir: values["resume-run"],
@@ -725,7 +725,7 @@ async function runStartCommand(argv: string[]): Promise<void> {
     profiles: { type: "string" },
     tools: { type: "string" },
     laws: { type: "string" },
-    prompt: { type: "string" },
+    input: { type: "string" },
     workdir: { type: "string" },
     "cleanup-executions": { type: "string" },
     "log-run": { type: "boolean" },
@@ -743,11 +743,11 @@ async function runStartCommand(argv: string[]): Promise<void> {
     return;
   }
   const systemPath = asString(values.system);
-  const prompt = asString(values.prompt);
+  const prompt = asString(values.input);
   if (!systemPath || !prompt) {
     throw createCliInputError(
       "CLI_MISSING_REQUIRED_ARGS",
-      "run start requires --system and --prompt"
+      "run start requires --system and --input"
     );
   }
 
@@ -793,7 +793,7 @@ async function runResumeCommand(argv: string[]): Promise<void> {
     profiles: { type: "string" },
     tools: { type: "string" },
     laws: { type: "string" },
-    prompt: { type: "string" },
+    input: { type: "string" },
     workdir: { type: "string" },
     "cleanup-executions": { type: "string" },
     "log-run": { type: "boolean" },
@@ -818,7 +818,7 @@ async function runResumeCommand(argv: string[]): Promise<void> {
   const runDir = resolveRunDir(workdir, runId);
   const systemPath = asString(values.system) ?? resolve(runDir, "system.mmd");
   const prompt =
-    asString(values.prompt) ??
+    asString(values.input) ??
     (await readFile(resolve(runDir, "request.md"), "utf8")).replace(/\s+$/, "");
 
   await runAdapterCommand({
@@ -1081,7 +1081,7 @@ function flushAndExit(code: number): void {
   });
 }
 
-function normalizeExitCode(value: number | string | undefined): number {
+function normalizeExitCode(value: number | string | null | undefined): number {
   return typeof value === "number" ? value : 0;
 }
 
