@@ -13,7 +13,11 @@ import { delimiter, extname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { parseArgs } from "node:util";
 
-import { resolveModelRepoRoot, resolveRoleRepoRoot, resolveRoleRootDir } from "./bundled-repos.js";
+import {
+  resolveProjectModelRepoRoot,
+  resolveProjectRoleRepoRoot,
+  resolveProjectRoleRootDir
+} from "./bundled-repos.js";
 import { validateLawsConfig, validateRuntimeConfig, validateUserProfileConfig } from "./config.js";
 import { readJsonFile } from "./json-file.js";
 import { listSupportedJoinModes, listSupportedRoutingModes } from "./graph-mode-registry.js";
@@ -325,7 +329,7 @@ async function runOnlineModelConnectivityCheck(args: {
     return;
   }
 
-  const modelRootDir = resolveModelRepoRoot(args.workdir, args.runtimeConfig.modelRepo);
+  const modelRootDir = resolveProjectModelRepoRoot(args.workdir, args.runtimeConfig.modelRepo);
   let serverTimeoutMs = ONLINE_CHECK_MIN_TIMEOUT_MS;
   for (const modelId of modelIds) {
     try {
@@ -432,8 +436,8 @@ export async function runDoctor(args: {
   try {
     runtimeConfig = validateRuntimeConfig(await readJsonFile(runtimePath), runtimePath);
     addNote(report, `runtime config: ${runtimePath}`);
-    await inspectRoleRepoInventory(report, resolveRoleRepoRoot(workdir, runtimeConfig.roleRepo));
-    await inspectModelRepoInventory(report, resolveModelRepoRoot(workdir, runtimeConfig.modelRepo));
+    await inspectRoleRepoInventory(report, resolveProjectRoleRepoRoot(workdir, runtimeConfig.roleRepo));
+    await inspectModelRepoInventory(report, resolveProjectModelRepoRoot(workdir, runtimeConfig.modelRepo));
   } catch (error) {
     addError(report, `runtime config invalid: ${String(error)}`);
   }
@@ -466,7 +470,7 @@ export async function runDoctor(args: {
       const loadedRuntimeConfig =
         runtimeConfig ?? validateRuntimeConfig(await readJsonFile(runtimePath), runtimePath);
       runtimeConfig = loadedRuntimeConfig;
-      const roleRootDir = resolveRoleRootDir(workdir, loadedRuntimeConfig.roleRepo);
+      const roleRootDir = resolveProjectRoleRootDir(workdir, loadedRuntimeConfig.roleRepo);
       for (const roleId of system.roleIds) {
         try {
           await loadRolePackage({
@@ -478,7 +482,7 @@ export async function runDoctor(args: {
         }
       }
 
-      const modelRepoRoot = resolveModelRepoRoot(workdir, loadedRuntimeConfig.modelRepo);
+      const modelRepoRoot = resolveProjectModelRepoRoot(workdir, loadedRuntimeConfig.modelRepo);
       for (const modelId of new Set(Object.values(system.modelBinding))) {
         try {
           await loadModelPackage({

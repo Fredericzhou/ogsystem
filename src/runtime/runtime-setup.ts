@@ -1,6 +1,6 @@
 import { resolve } from "node:path";
 
-import { resolveModelRepoRoot, resolveRoleRootDir } from "./bundled-repos.js";
+import { resolveProjectModelRepoRoot, resolveProjectRoleRootDir } from "./bundled-repos.js";
 import { compileExecutionSnapshot, type CompiledExecutionSnapshot } from "./compiler.js";
 import { createExecutionPlan } from "./execution-plan.js";
 import { loadFlowContractPlan } from "./flow-contract.js";
@@ -151,8 +151,8 @@ export async function prepareRuntimeSetup(args: {
   const lawCatalog = await loadLaws(args.lawsPath, args.workdir);
   const userProfile = await loadUserProfile(args.userProfilePath, args.workdir);
   const effectiveLaw = resolveEffectiveLaw(system, lawCatalog);
-  const roleRootDir = resolveRoleRootDir(args.workdir, runtimeConfig.roleRepo);
-  const modelRepoDir = resolveModelRepoRoot(args.workdir, runtimeConfig.modelRepo);
+  const roleRootDir = resolveProjectRoleRootDir(args.workdir, runtimeConfig.roleRepo);
+  const modelRepoDir = resolveProjectModelRepoRoot(args.workdir, runtimeConfig.modelRepo);
   const contractPlan = system.graph?.handoffContracts
     ? await loadFlowContractPlan({
         system,

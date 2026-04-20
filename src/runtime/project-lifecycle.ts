@@ -8,14 +8,25 @@
  * - Does not execute graph runtime transitions.
  */
 import { randomUUID } from "node:crypto";
-import { mkdir, readFile, readdir, stat, writeFile } from "node:fs/promises";
-import { basename, resolve } from "node:path";
+import { cp, mkdir, readFile, readdir, stat, writeFile } from "node:fs/promises";
+import { basename, dirname, resolve } from "node:path";
 
-import { DEFAULT_MODEL_REPO, DEFAULT_ROLE_REPO } from "./bundled-repos.js";
+import {
+  DEFAULT_MODEL_REPO,
+  DEFAULT_ROLE_REPO,
+  resolveProjectModelRepoRoot,
+  resolveProjectRoleRepoRoot,
+  resolveTemplateModelRepoRoot,
+  resolveTemplateRoleRepoRoot,
+  resolveTemplateRoleRootDir
+} from "./bundled-repos.js";
+import { validateRuntimeConfig } from "./config.js";
 import { readJsonFile, writeJsonFileAtomic } from "./json-file.js";
+import { loadSystemFromMermaid, parseSystemFromMermaidSource } from "./parse-mermaid.js";
 import { requestRunStop } from "./run-artifacts.js";
 import { stringifyJson } from "./runtime-support.js";
 import type { RunSummaryProjection } from "./run-summary-schema.js";
+import type { SystemDefinition } from "./types.js";
 
 export const OGS_DIR = ".ogs";
 export const OGS_RUNS_DIR = ".ogs/runs";
@@ -23,6 +34,8 @@ export const OGS_RUNS_INDEX_FILE = ".ogs/runs-index.json";
 const OGS_PROJECT_FILE = ".ogs/project.json";
 const OGS_RUNTIME_FILE = ".ogs/runtime.json";
 const OGS_PROVIDER_OPENCODE_FILE = ".ogs/providers/opencode.json";
+const OGS_LAWS_FILE = ".ogs/laws.json";
+const OGS_USER_PROFILE_FILE = ".ogs/user-profile.json";
 
 export type IndexedRun = {
   runId: string;
@@ -37,6 +50,13 @@ export type RunsIndexFile = {
   version: 1;
   generatedAt: string;
   runs: IndexedRun[];
+};
+
+export type ProjectDependencySyncResult = {
+  roleIds: string[];
+  modelIds: string[];
+  importedRoleIds: string[];
+  importedModelIds: string[];
 };
 
 type ProjectTemplateId = "minimal" | "software-dev" | "consultation";
@@ -162,6 +182,28 @@ function createDefaultRuntimeConfig(): Record<string, unknown> {
   };
 }
 
+function createDefaultUserProfile(): Record<string, unknown> {
+  return {
+    userProfileId: "default.zh.concise",
+    language: "zh-CN",
+    style: "concise",
+    riskPreference: "medium",
+    outputLength: "short",
+    domainBackground: ["software-architecture"]
+  };
+}
+
+function getProjectTemplate(templateId: ProjectTemplateId): {
+  systemMmd: string;
+  lawsJson: string;
+} {
+  const template = PROJECT_TEMPLATES[templateId];
+  if (!template) {
+    throw new Error(`Unsupported template: ${templateId}`);
+  }
+  return template;
+}
+
 function parseJsonLines(content: string): Array<Record<string, unknown>> {
   return content
     .split("\n")
@@ -213,6 +255,117 @@ async function ensureFile(path: string, value: string): Promise<void> {
   }
 }
 
+async function loadProjectRepoConfig(workdir: string): Promise<{
+  roleRepo: string;
+  modelRepo: string;
+}> {
+  const runtimePath = resolveOgsPaths(workdir).runtimePath;
+  try {
+    const runtimeConfig = validateRuntimeConfig(await readJsonFile(runtimePath), runtimePath);
+    return {
+      roleRepo: runtimeConfig.roleRepo,
+      modelRepo: runtimeConfig.modelRepo
+    };
+  } catch {
+    return {
+      roleRepo: DEFAULT_ROLE_REPO,
+      modelRepo: DEFAULT_MODEL_REPO
+    };
+  }
+}
+
+async function copyIfMissing(sourcePath: string, targetPath: string): Promise<boolean> {
+  const targetStat = await stat(targetPath).catch(() => undefined);
+  if (targetStat) {
+    return false;
+  }
+  await mkdir(dirname(targetPath), { recursive: true });
+  await cp(sourcePath, targetPath, { recursive: true });
+  return true;
+}
+
+function getSystemDependencies(system: SystemDefinition): {
+  roleIds: string[];
+  modelIds: string[];
+} {
+  return {
+    roleIds: [...system.roleIds].sort(),
+    modelIds: Array.from(new Set(Object.values(system.modelBinding))).sort()
+  };
+}
+
+async function loadSystemDefinitionForSync(args: {
+  workdir: string;
+  systemPath?: string;
+  systemSource?: string;
+}): Promise<SystemDefinition> {
+  if (args.systemSource !== undefined) {
+    return parseSystemFromMermaidSource(args.systemSource);
+  }
+  if (!args.systemPath) {
+    throw new Error("Missing system source for dependency sync");
+  }
+  return loadSystemFromMermaid(resolve(args.workdir, args.systemPath));
+}
+
+async function ensureProjectRepoMetadataFiles(workdir: string): Promise<void> {
+  const repoConfig = await loadProjectRepoConfig(workdir);
+  const projectRoleRepoRoot = resolveProjectRoleRepoRoot(workdir, repoConfig.roleRepo);
+  const projectModelRepoRoot = resolveProjectModelRepoRoot(workdir, repoConfig.modelRepo);
+  const templateRoleRepoRoot = resolveTemplateRoleRepoRoot();
+  const templateModelRepoRoot = resolveTemplateModelRepoRoot();
+
+  await copyIfMissing(
+    resolve(templateRoleRepoRoot, "README.md"),
+    resolve(projectRoleRepoRoot, "README.md")
+  );
+  await copyIfMissing(
+    resolve(templateModelRepoRoot, "README.md"),
+    resolve(projectModelRepoRoot, "README.md")
+  );
+  await copyIfMissing(
+    resolve(templateModelRepoRoot, "catalog"),
+    resolve(projectModelRepoRoot, "catalog")
+  );
+}
+
+async function importRolePackageIntoProject(args: {
+  workdir: string;
+  roleId: string;
+}): Promise<boolean> {
+  const templateRoleRootDir = resolveTemplateRoleRootDir();
+  const repoConfig = await loadProjectRepoConfig(args.workdir);
+  const projectRoleRootDir = resolve(
+    resolveProjectRoleRepoRoot(args.workdir, repoConfig.roleRepo),
+    "roles"
+  );
+  const importedShared = await copyIfMissing(
+    resolve(templateRoleRootDir, "_shared"),
+    resolve(projectRoleRootDir, "_shared")
+  );
+  const importedRole = await copyIfMissing(
+    resolve(templateRoleRootDir, args.roleId),
+    resolve(projectRoleRootDir, args.roleId)
+  );
+  await ensureProjectRepoMetadataFiles(args.workdir);
+  return importedShared || importedRole;
+}
+
+async function importModelPackageIntoProject(args: {
+  workdir: string;
+  modelId: string;
+}): Promise<boolean> {
+  const templateModelRepoRoot = resolveTemplateModelRepoRoot();
+  const repoConfig = await loadProjectRepoConfig(args.workdir);
+  const projectModelRepoRoot = resolveProjectModelRepoRoot(args.workdir, repoConfig.modelRepo);
+  const importedModel = await copyIfMissing(
+    resolve(templateModelRepoRoot, "models", args.modelId),
+    resolve(projectModelRepoRoot, "models", args.modelId)
+  );
+  await ensureProjectRepoMetadataFiles(args.workdir);
+  return importedModel;
+}
+
 export function resolveOgsPaths(workdir: string): {
   ogsDir: string;
   runsDir: string;
@@ -220,6 +373,8 @@ export function resolveOgsPaths(workdir: string): {
   projectPath: string;
   runtimePath: string;
   providerPath: string;
+  lawsPath: string;
+  userProfilePath: string;
 } {
   return {
     ogsDir: resolve(workdir, OGS_DIR),
@@ -227,7 +382,9 @@ export function resolveOgsPaths(workdir: string): {
     runsIndexPath: resolve(workdir, OGS_RUNS_INDEX_FILE),
     projectPath: resolve(workdir, OGS_PROJECT_FILE),
     runtimePath: resolve(workdir, OGS_RUNTIME_FILE),
-    providerPath: resolve(workdir, OGS_PROVIDER_OPENCODE_FILE)
+    providerPath: resolve(workdir, OGS_PROVIDER_OPENCODE_FILE),
+    lawsPath: resolve(workdir, OGS_LAWS_FILE),
+    userProfilePath: resolve(workdir, OGS_USER_PROFILE_FILE)
   };
 }
 
@@ -265,6 +422,47 @@ export async function ensureProjectSkeleton(args: {
       runs: []
     })}\n`
   );
+}
+
+export async function scaffoldProjectTemplate(args: {
+  workdir: string;
+  templateId: ProjectTemplateId;
+}): Promise<void> {
+  const template = getProjectTemplate(args.templateId);
+  const paths = resolveOgsPaths(args.workdir);
+  await ensureFile(resolve(args.workdir, "system.mmd"), `${template.systemMmd}\n`);
+  await ensureFile(paths.lawsPath, `${template.lawsJson}\n`);
+  await ensureFile(paths.userProfilePath, `${stringifyJson(createDefaultUserProfile())}\n`);
+}
+
+export async function syncProjectDependencies(args: {
+  workdir: string;
+  systemPath?: string;
+  systemSource?: string;
+}): Promise<ProjectDependencySyncResult> {
+  const system = await loadSystemDefinitionForSync(args);
+  const { roleIds, modelIds } = getSystemDependencies(system);
+  const importedRoleIds: string[] = [];
+  const importedModelIds: string[] = [];
+
+  for (const roleId of roleIds) {
+    if (await importRolePackageIntoProject({ workdir: args.workdir, roleId })) {
+      importedRoleIds.push(roleId);
+    }
+  }
+
+  for (const modelId of modelIds) {
+    if (await importModelPackageIntoProject({ workdir: args.workdir, modelId })) {
+      importedModelIds.push(modelId);
+    }
+  }
+
+  return {
+    roleIds,
+    modelIds,
+    importedRoleIds,
+    importedModelIds
+  };
 }
 
 export async function loadIndexedRuns(workdir: string): Promise<IndexedRun[]> {
@@ -521,30 +719,20 @@ export async function createProjectFromTemplate(args: {
   name: string;
   templateId: ProjectTemplateId;
 }): Promise<string> {
-  const template = PROJECT_TEMPLATES[args.templateId];
-  if (!template) {
-    throw new Error(`Unsupported template: ${args.templateId}`);
-  }
-
   const projectDir = resolve(args.parentDir, args.name);
   await mkdir(projectDir, { recursive: true });
   await ensureProjectSkeleton({
     workdir: projectDir,
     projectName: args.name
   });
-  await writeFile(resolve(projectDir, "system.mmd"), `${template.systemMmd}\n`, "utf8");
-  await writeFile(resolve(projectDir, ".ogs", "laws.json"), `${template.lawsJson}\n`, "utf8");
-  await writeFile(
-    resolve(projectDir, ".ogs", "user-profile.json"),
-    `${stringifyJson({
-      userProfileId: "default.zh.concise",
-      language: "zh-CN",
-      style: "concise",
-      riskPreference: "medium",
-      outputLength: "short"
-    })}\n`,
-    "utf8"
-  );
+  await scaffoldProjectTemplate({
+    workdir: projectDir,
+    templateId: args.templateId
+  });
+  await syncProjectDependencies({
+    workdir: projectDir,
+    systemPath: "system.mmd"
+  });
   await rebuildRunsIndex(projectDir);
   return projectDir;
 }

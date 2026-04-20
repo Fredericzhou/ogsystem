@@ -16,6 +16,8 @@ import {
   OGS_RUNS_DIR,
   createProjectFromTemplate,
   ensureProjectSkeleton,
+  scaffoldProjectTemplate,
+  syncProjectDependencies,
   inspectRun,
   loadIndexedRuns,
   loadRunLogs,
@@ -36,6 +38,7 @@ function usageRoot(): string {
     "Usage:",
     "  ogs project init",
     "  ogs project create <name> --template <minimal|software-dev|consultation>",
+    "  ogs project sync --system <file.mmd>",
     "  ogs run start --system <file.mmd> --prompt <text> [options]",
     "  ogs run resume <run-id> [options]",
     "  ogs run stop <run-id> [--reason <text>]",
@@ -63,12 +66,14 @@ function usageRoot(): string {
 function usageProject(): string {
   return [
     "Usage:",
-    "  ogs project init [--workdir <path>]",
+    "  ogs project init [--template <minimal|software-dev|consultation>] [--workdir <path>]",
     "  ogs project create <name> --template <minimal|software-dev|consultation> [--workdir <path>]",
+    "  ogs project sync --system <file.mmd> [--workdir <path>]",
     "",
     "Project lifecycle:",
-    "  init   create .ogs/project.json, .ogs/runtime.json, .ogs/providers/opencode.json, and .ogs/runs-index.json",
+    "  init   scaffold the current directory as a runnable project",
     "  create scaffold a new project directory from a template",
+    "  sync   import roles/models referenced by a Mermaid system into the local project repos",
     "",
     "Defaults:",
     "  current directory is the project root unless --workdir is set",
@@ -82,7 +87,9 @@ function usageProject(): string {
     "",
     "Examples:",
     "  ogs project init",
-    "  ogs project create demo-app --template minimal"
+    "  ogs project init --template software-dev",
+    "  ogs project create demo-app --template minimal",
+    "  ogs project sync --system system.mmd"
   ].join("\n");
 }
 
@@ -449,6 +456,7 @@ async function runProjectCommand(argv: string[]): Promise<void> {
 
   if (subcommand === "init") {
     const { values } = parseLifecycleArgs(argv.slice(1), {
+      template: { type: "string" },
       workdir: { type: "string" },
       name: { type: "string" },
       help: { type: "boolean", short: "h" }
@@ -458,9 +466,28 @@ async function runProjectCommand(argv: string[]): Promise<void> {
       return;
     }
     const workdir = asString(values.workdir) ?? process.cwd();
+    const template = asString(values.template) ?? "minimal";
+    if (
+      template !== "minimal" &&
+      template !== "software-dev" &&
+      template !== "consultation"
+    ) {
+      throw createCliInputError(
+        "CLI_PROJECT_INIT_INVALID_TEMPLATE",
+        "--template must be one of: minimal, software-dev, consultation"
+      );
+    }
     await ensureProjectSkeleton({
       workdir,
       projectName: asString(values.name)
+    });
+    await scaffoldProjectTemplate({
+      workdir,
+      templateId: template
+    });
+    const syncResult = await syncProjectDependencies({
+      workdir,
+      systemPath: "system.mmd"
     });
     const index = await rebuildRunsIndex(workdir);
     console.log(
@@ -468,8 +495,11 @@ async function runProjectCommand(argv: string[]): Promise<void> {
         {
           status: "ok",
           command: "project init",
+          template,
           workdir,
-          runCount: index.runs.length
+          runCount: index.runs.length,
+          importedRoleIds: syncResult.importedRoleIds,
+          importedModelIds: syncResult.importedModelIds
         },
         null,
         2
@@ -516,6 +546,44 @@ async function runProjectCommand(argv: string[]): Promise<void> {
           command: "project create",
           template,
           projectDir
+        },
+        null,
+        2
+      )
+    );
+    return;
+  }
+
+  if (subcommand === "sync") {
+    const { values } = parseLifecycleArgs(argv.slice(1), {
+      system: { type: "string" },
+      workdir: { type: "string" },
+      help: { type: "boolean", short: "h" }
+    });
+    if (asBool(values.help)) {
+      console.log(usage("project"));
+      return;
+    }
+    const systemPath = asString(values.system);
+    if (!systemPath) {
+      throw createCliInputError("CLI_PROJECT_SYNC_MISSING_SYSTEM", "project sync requires --system");
+    }
+    const workdir = asString(values.workdir) ?? process.cwd();
+    const syncResult = await syncProjectDependencies({
+      workdir,
+      systemPath
+    });
+    console.log(
+      JSON.stringify(
+        {
+          status: "ok",
+          command: "project sync",
+          workdir,
+          systemPath,
+          roleIds: syncResult.roleIds,
+          modelIds: syncResult.modelIds,
+          importedRoleIds: syncResult.importedRoleIds,
+          importedModelIds: syncResult.importedModelIds
         },
         null,
         2

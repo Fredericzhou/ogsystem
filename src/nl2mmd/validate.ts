@@ -19,6 +19,63 @@ import {
 import { renderTxtGraphFromMermaidSource } from "./txt-graph.js";
 import type { Nl2MmdContext, Nl2MmdValidationResult } from "./types.js";
 
+function isFileNotFoundError(error: unknown): error is NodeJS.ErrnoException {
+  return (
+    typeof error === "object" &&
+    error !== null &&
+    "code" in error &&
+    (error as { code?: unknown }).code === "ENOENT"
+  );
+}
+
+async function loadRolePackageForValidation(args: {
+  roleId: string;
+  context: Nl2MmdContext;
+}) {
+  try {
+    return await loadRolePackage({
+      roleId: args.roleId,
+      roleRootDir: args.context.roleRootDir
+    });
+  } catch (error) {
+    if (
+      isFileNotFoundError(error) &&
+      args.context.templateRoleRootDir &&
+      args.context.templateRoleRootDir !== args.context.roleRootDir
+    ) {
+      return loadRolePackage({
+        roleId: args.roleId,
+        roleRootDir: args.context.templateRoleRootDir
+      });
+    }
+    throw error;
+  }
+}
+
+async function loadModelPackageForValidation(args: {
+  modelId: string;
+  context: Nl2MmdContext;
+}) {
+  try {
+    return await loadModelPackage({
+      modelId: args.modelId,
+      modelRootDir: args.context.modelRootDir
+    });
+  } catch (error) {
+    if (
+      isFileNotFoundError(error) &&
+      args.context.templateModelRootDir &&
+      args.context.templateModelRootDir !== args.context.modelRootDir
+    ) {
+      return loadModelPackage({
+        modelId: args.modelId,
+        modelRootDir: args.context.templateModelRootDir
+      });
+    }
+    throw error;
+  }
+}
+
 function getEventEnum(schema: unknown): string[] | null {
   if (typeof schema !== "object" || schema === null || Array.isArray(schema)) {
     return null;
@@ -95,9 +152,9 @@ export async function validateNl2MmdCandidate(args: {
       const roleWarnings: string[] = [];
 
       try {
-        const rolePackage = await loadRolePackage({
+        const rolePackage = await loadRolePackageForValidation({
           roleId,
-          roleRootDir: args.context.roleRootDir
+          context: args.context
         });
         const outgoingEvents = outgoingByRole.get(roleId) ?? [];
         const eventEnum = getEventEnum(rolePackage.outputSchema);
@@ -128,9 +185,9 @@ export async function validateNl2MmdCandidate(args: {
 
       if (modelId) {
         try {
-          await loadModelPackage({
+          await loadModelPackageForValidation({
             modelId,
-            modelRootDir: args.context.modelRootDir
+            context: args.context
           });
         } catch (error) {
           roleErrors.push(error instanceof Error ? error.message : String(error));

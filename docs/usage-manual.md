@@ -145,7 +145,7 @@ Use it with `ogs-nl2mmd --message "..."` for one-shot drafting, or omit `--messa
 - Base commands are for function and runtime behavior.
 - Wrapper commands are for project lifecycle and default operational flow.
 
-For project management, `ogs` defaults to the current directory. Use `--workdir <path>` only when you need to operate on another project root. `ogs project init` creates the local control plane in the current directory, and `ogs project create <name> --template <...>` creates a new project folder under the current directory unless a different parent is explicitly provided. These commands do not copy the bundled role/model catalogs into the project; local `og-roles/` and `og-models/` are optional override repos only.
+For project management, `ogs` defaults to the current directory. Use `--workdir <path>` only when you need to operate on another project root. `ogs project init` scaffolds the current directory as a runnable project, and `ogs project create <name> --template <...>` creates the same structure in a new project folder under the current directory unless a different parent is explicitly provided. Both commands materialize project-local `og-roles/` and `og-models/` with only the dependencies required by the chosen template. `ogs project sync --system <file.mmd>` imports any additional role/model dependencies referenced by a Mermaid system into the local project repos.
 
 Recommended test split:
 
@@ -182,7 +182,6 @@ OGSystem/
       <run-id>/
         ...
 
-  # optional local override repo
   og-roles/
     roles/
       <roleId>/
@@ -193,7 +192,6 @@ OGSystem/
         work.md
         input.schema.json
 
-  # optional local override repo
   og-models/
     catalog/
       opencode-models.json
@@ -392,7 +390,7 @@ Recommended template roles:
 
 `og-models/models/<modelId>/model.json` defines execution configuration.
 
-Projects can rely on the installed CLI's bundled `og-models/` catalog. Create a local `og-models/` only when you need to override or extend it for one project.
+The installed CLI ships a bundled model catalog as a template source. Projects execute against their own local `og-models/`, and `project init/create/sync` import the minimal set of model packages needed by the current system.
 
 Example:
 
@@ -483,7 +481,7 @@ Example:
 }
 ```
 
-Default `roleRepo` / `modelRepo` values still point to `./og-roles` and `./og-models`. If those directories are absent, the installed CLI automatically falls back to its bundled catalogs. If you set custom repo paths, those paths must exist.
+Default `roleRepo` / `modelRepo` values point to `./og-roles` and `./og-models`, and runtime execution expects those project-local repos to exist. The installed CLI's bundled role/model catalogs are template sources for `project init/create/sync` and NL2MMD-assisted import, not runtime fallback dependencies. If you set custom repo paths, those paths must exist.
 
 Compatibility rule:
 
@@ -742,6 +740,7 @@ Lifecycle CLI (preferred):
 
 ```bash
 ogs project init
+ogs project sync --system system.mmd
 ogs run start --system examples/target-model-binding-system.mmd --prompt "demo" --dry-run
 ogs run list
 ogs run status <run-id>
@@ -767,8 +766,8 @@ This path auto-discovers:
 - `.ogs/runtime.json`
 - `.ogs/user-profile.json`
 - `.ogs/laws.json`
-- local `og-models/` or the bundled model catalog
-- local `og-roles/` or the bundled role catalog
+- local `og-models/`
+- local `og-roles/`
 
 Scenario-specific examples and the longer training matrix live in `examples/README.md`.
 

@@ -10,7 +10,14 @@
 import { readdir } from "node:fs/promises";
 import { resolve } from "node:path";
 
-import { DEFAULT_MODEL_REPO, DEFAULT_ROLE_REPO, resolveModelRepoRoot, resolveRoleRootDir } from "../runtime/bundled-repos.js";
+import {
+  DEFAULT_MODEL_REPO,
+  DEFAULT_ROLE_REPO,
+  resolveProjectModelRepoRoot,
+  resolveProjectRoleRootDir,
+  resolveTemplateModelRepoRoot,
+  resolveTemplateRoleRootDir
+} from "../runtime/bundled-repos.js";
 import {
   validateLawsConfig,
   validateRuntimeConfig
@@ -51,6 +58,34 @@ async function readJsonFileIfExists(path: string): Promise<unknown | undefined> 
 
 function compact<T>(items: Array<T | undefined>): T[] {
   return items.filter((item): item is T => item !== undefined);
+}
+
+async function listDirectoryNamesIfExists(path: string): Promise<string[]> {
+  try {
+    return (await readdir(path, { withFileTypes: true }))
+      .filter((entry) => entry.isDirectory())
+      .map((entry) => entry.name)
+      .sort();
+  } catch (error) {
+    if (isFileNotFoundError(error)) {
+      return [];
+    }
+    throw error;
+  }
+}
+
+function dedupeByKey<T>(items: T[], keyFor: (item: T) => string): T[] {
+  const seen = new Set<string>();
+  const deduped: T[] = [];
+  for (const item of items) {
+    const key = keyFor(item);
+    if (seen.has(key)) {
+      continue;
+    }
+    seen.add(key);
+    deduped.push(item);
+  }
+  return deduped;
 }
 
 function getDefaultRuntimeConfig(path: string) {
@@ -138,63 +173,86 @@ export async function loadNl2MmdContext(args: {
       ? validateRuntimeConfig(runtimeConfigSource, runtimePath)
       : getDefaultRuntimeConfig(runtimePath);
 
-  const roleRootDir = resolveRoleRootDir(args.workdir, runtimeConfig.roleRepo);
-  const modelRootDir = resolveModelRepoRoot(args.workdir, runtimeConfig.modelRepo);
+  const roleRootDir = resolveProjectRoleRootDir(args.workdir, runtimeConfig.roleRepo);
+  const modelRootDir = resolveProjectModelRepoRoot(args.workdir, runtimeConfig.modelRepo);
+  const templateRoleRootDir = resolveTemplateRoleRootDir();
+  const templateModelRootDir = resolveTemplateModelRepoRoot();
 
-  const roleEntries = (await readdir(roleRootDir, { withFileTypes: true }))
-    .filter((entry) => entry.isDirectory())
-    .map((entry) => entry.name)
-    .filter((name) => !name.startsWith("_"))
-    .sort();
+  const roleEntries = dedupeByKey(
+    [
+      ...(await listDirectoryNamesIfExists(roleRootDir)),
+      ...(await listDirectoryNamesIfExists(templateRoleRootDir))
+    ].filter((name) => !name.startsWith("_")),
+    (name) => name
+  );
 
   const roleCatalog = compact(
     await Promise.all(
       roleEntries.map(async (roleId) => {
-        const manifestPath = resolve(roleRootDir, roleId, "role.json");
+        const rootsToTry = [roleRootDir, templateRoleRootDir];
         try {
-          const rolePackage = await loadRolePackage({ roleId, roleRootDir });
-          return {
-            roleId,
-            name: rolePackage.manifest.name,
-            description: rolePackage.manifest.description,
-            tags: rolePackage.manifest.tags ?? [],
-            preferredModelTags: rolePackage.manifest.preferredModelTags ?? [],
-            outputEvents: getOutputEvents(rolePackage.outputSchema)
-          };
-        } catch (error) {
-          if (isMissingPathError(error, manifestPath)) {
-            return undefined;
+          for (const candidateRoot of rootsToTry) {
+            const manifestPath = resolve(candidateRoot, roleId, "role.json");
+            try {
+              const rolePackage = await loadRolePackage({ roleId, roleRootDir: candidateRoot });
+              return {
+                roleId,
+                name: rolePackage.manifest.name,
+                description: rolePackage.manifest.description,
+                tags: rolePackage.manifest.tags ?? [],
+                preferredModelTags: rolePackage.manifest.preferredModelTags ?? [],
+                outputEvents: getOutputEvents(rolePackage.outputSchema)
+              };
+            } catch (error) {
+              if (isMissingPathError(error, manifestPath)) {
+                continue;
+              }
+              throw error;
+            }
           }
+          return undefined;
+        } catch (error) {
           throw error;
         }
       })
     )
   );
 
-  const modelEntries = (await readdir(resolve(modelRootDir, "models"), { withFileTypes: true }))
-    .filter((entry) => entry.isDirectory())
-    .map((entry) => entry.name)
-    .sort();
+  const modelEntries = dedupeByKey(
+    [
+      ...(await listDirectoryNamesIfExists(resolve(modelRootDir, "models"))),
+      ...(await listDirectoryNamesIfExists(resolve(templateModelRootDir, "models")))
+    ],
+    (name) => name
+  );
 
   const modelCatalog = compact(
     await Promise.all(
       modelEntries.map(async (modelId) => {
-        const manifestPath = resolve(modelRootDir, "models", modelId, "model.json");
+        const rootsToTry = [modelRootDir, templateModelRootDir];
         try {
-          const modelPackage = await loadModelPackage({ modelId, modelRootDir });
-          return {
-            modelId,
-            model: modelPackage.manifest.model,
-            reasoningEffort:
-              typeof modelPackage.manifest.args?.reasoningEffort === "string"
-                ? modelPackage.manifest.args.reasoningEffort
-                : undefined,
-            tags: modelPackage.manifest.tags ?? []
-          };
-        } catch (error) {
-          if (isMissingPathError(error, manifestPath)) {
-            return undefined;
+          for (const candidateRoot of rootsToTry) {
+            const manifestPath = resolve(candidateRoot, "models", modelId, "model.json");
+            try {
+              const modelPackage = await loadModelPackage({ modelId, modelRootDir: candidateRoot });
+              return {
+                modelId,
+                model: modelPackage.manifest.model,
+                reasoningEffort:
+                  typeof modelPackage.manifest.args?.reasoningEffort === "string"
+                    ? modelPackage.manifest.args.reasoningEffort
+                    : undefined,
+                tags: modelPackage.manifest.tags ?? []
+              };
+            } catch (error) {
+              if (isMissingPathError(error, manifestPath)) {
+                continue;
+              }
+              throw error;
+            }
           }
+          return undefined;
+        } catch (error) {
           throw error;
         }
       })
@@ -213,6 +271,8 @@ export async function loadNl2MmdContext(args: {
     workdir: args.workdir,
     roleRootDir,
     modelRootDir,
+    templateRoleRootDir,
+    templateModelRootDir,
     roleCatalog,
     modelCatalog,
     lawIds,

@@ -8,7 +8,7 @@ Implemented scope:
 - Root semantics: `Law / System / AuditTrail`
 - Runtime outputs: `SystemState / Stage`
 - Engine: one graph runtime for sequential, branching, parallel, join, and loop systems
-- Role resolution: auto-load from local `og-roles/roles/<roleId>/` or bundled package repos
+- Role resolution: auto-load from project-local `og-roles/roles/<roleId>/`
 
 Non-goals:
 
@@ -56,8 +56,7 @@ cd demo-app
 ogs run start --system system.mmd --prompt "smoke" --dry-run
 ```
 
-Generated projects keep only `.ogs/` and `system.mmd` by default.
-`og-roles/` and `og-models/` are optional local override repos; otherwise the CLI uses its bundled catalogs.
+Generated projects include `.ogs/`, `system.mmd`, and minimal local `og-roles/` / `og-models/` dependencies imported from the bundled template source.
 
 Local source install:
 
@@ -109,8 +108,8 @@ For day-to-day use, start with `docs/usage-manual.md`. It keeps the command matr
 - The adapter runs one graph-based execution model. The entry role becomes the initial active branch, each role execution emits one structured result, and completion happens only when active branches are exhausted or a transition reaches the terminal `output` boundary.
 - Executable roles always resolve to one JSON object: `{"event":"EVENT_NAME","content":"..."}`. For `model.bind`, the runtime sends `prompt + output.schema.json` to OpenCode SDK v2 and reads `info.structured`; if `info.structured` is absent or string-encoded, the runtime falls back to assistant text parts and applies JSON extraction. For legacy `exec.bind`, the runtime still parses tool stdout as one JSON object. `event` is required for roles with outgoing flows and must match one Mermaid edge label exactly.
 - For `model.bind`, one run now starts one shared `opencode serve`, and each role/node keeps one isolated OpenCode session on that server for the duration of the run.
-- Executable roles are resolved by `roleId` directly. For each Mermaid `Role:<roleId>`, the runtime loads `og-roles/roles/<roleId>/role.json`, renders `prompt.md`, validates optional `input.schema.json`, and validates `output.schema.json`. If the project does not provide a local role repo, the CLI falls back to its bundled role catalog.
-- The runtime now supports `model.bind.<roleId>=<modelId>` with auto-discovered `.ogs/runtime.json`, `.ogs/user-profile.json`, `.ogs/laws.json`, and `og-models/`. If the project does not provide a local model repo, the CLI falls back to its bundled model catalog.
+- Executable roles are resolved by `roleId` directly from the project-local role repo. For each Mermaid `Role:<roleId>`, the runtime loads `og-roles/roles/<roleId>/role.json`, renders `prompt.md`, validates optional `input.schema.json`, and validates `output.schema.json`.
+- The runtime now supports `model.bind.<roleId>=<modelId>` with auto-discovered `.ogs/runtime.json`, `.ogs/user-profile.json`, `.ogs/laws.json`, and project-local `og-models/`.
 - `model.bind` retries transient OpenCode/provider failures on the same role session while keeping the same run-level shared server.
 - The runtime supports `role.mode.*=parallel_split`, `join.mode.*=all_of|quorum_of`, `join.sources.*`, `join.min.*`, `context.map.*`, and `loop.max.*`. `join.sources.*` must list unique source role ids and match the join node's Mermaid incoming role edges exactly. Legacy `%% engine=langgraph` metadata is accepted as compatibility input but is not required DSL semantics.
 - `quorum_of` counts unique completed source roles within the same `lineageId + loopIteration`, activates at most once, and records late arrivals without retriggering the join node.
@@ -135,14 +134,14 @@ For day-to-day use, start with `docs/usage-manual.md`. It keeps the command matr
 
 ## Configuration Boundaries
 
-- Target architecture uses `model.bind.<roleId>=<modelId>` with `og-models/` provided either locally or by the installed package.
+- Target architecture uses `model.bind.<roleId>=<modelId>` with project-local `og-models/`.
 - Legacy runtime still reads `exec.bind.<roleId>` with `profiles/tools`.
 - Profiles are single-tool only: `profileId`, `toolRef`, optional `timeoutMs`, optional `maxOutputBytes`.
 - Tools are minimal shell adapters: `toolRef`, `runner`, `command`, `argsTemplate`, `stdinMode`.
 - The law catalog currently resolves only `law.global` and the constraints `forbiddenToolRefs`, `maxTransitions`, `allowNoopWithoutExecutionBinding`.
 - `talentBinding` is preserved as metadata-only sidecar in the parsed system definition. It is not part of runtime execution.
 - Role packages live under `og-roles/roles/<roleId>/` and provide `role.json`, `prompt.md`, optional `persona.md`, optional `work.md`, optional `input.schema.json`, and required `output.schema.json`.
-- Projects may omit `og-roles/` and `og-models/` entirely when they rely on the CLI's bundled catalogs.
+- The installed CLI ships bundled role/model templates, but those are import sources, not runtime execution dependencies.
 - `system.mmd` owns flow and role-to-model binding (`model.bind.*`; `exec.bind.*` in legacy runtime); role packages own prompt and I/O contract.
 
 ## Target Scaffolding
@@ -153,7 +152,9 @@ For day-to-day use, start with `docs/usage-manual.md`. It keeps the command matr
 - `.ogs/runtime.json` may include `configVersion: "1"`; unsupported versions fail fast.
 - `.ogs/user-profile.json` provides user delivery preference sample.
 - `.ogs/laws.json` provides sample law catalog colocated with runtime config.
-- `ogs project init/create` does not copy `og-roles/` or `og-models/` into the project; add them only when you need local overrides.
+- `ogs project init` scaffolds the current directory as a runnable project using the selected template.
+- `ogs project create <name> --template <...>` scaffolds the same structure in a new project directory.
+- `ogs project sync --system <file.mmd>` imports only the roles/models referenced by that system into the project-local repos.
 - `examples/target-model-binding-system.mmd` shows `model.bind.*` usage.
 - `examples/langgraph-debate-current/` shows a minimal debate with loop + parallel + join.
 - `examples/langgraph-expert-consultation/` shows a minimal expert consultation with parallel + join.

@@ -73,6 +73,39 @@ function parseModelResponse(raw: string): Nl2MmdModelResponse {
   };
 }
 
+function isFileNotFoundError(error: unknown): error is NodeJS.ErrnoException {
+  return (
+    typeof error === "object" &&
+    error !== null &&
+    "code" in error &&
+    (error as { code?: unknown }).code === "ENOENT"
+  );
+}
+
+async function loadConversationModelPackage(args: {
+  context: Nl2MmdContext;
+  modelId: string;
+}) {
+  try {
+    return await loadModelPackage({
+      modelId: args.modelId,
+      modelRootDir: args.context.modelRootDir
+    });
+  } catch (error) {
+    if (
+      isFileNotFoundError(error) &&
+      args.context.templateModelRootDir &&
+      args.context.templateModelRootDir !== args.context.modelRootDir
+    ) {
+      return loadModelPackage({
+        modelId: args.modelId,
+        modelRootDir: args.context.templateModelRootDir
+      });
+    }
+    throw error;
+  }
+}
+
 export async function createNl2MmdConversation(args: {
   workdir: string;
   modelId: string;
@@ -88,9 +121,9 @@ export async function createNl2MmdConversation(args: {
       runtimeConfigPath: args.runtimeConfigPath,
       lawsPath: args.lawsPath
     }));
-  const modelPackage = await loadModelPackage({
-    modelId: args.modelId,
-    modelRootDir: context.modelRootDir
+  const modelPackage = await loadConversationModelPackage({
+    context,
+    modelId: args.modelId
   });
   const runClient = await startOpencodeRunClient({
     timeoutMs: 30000,

@@ -26,18 +26,28 @@ function runCli(args, options = {}) {
   });
 }
 
-test("lifecycle cli project init/create commands scaffold project control plane", async () => {
+test("lifecycle cli project init/create commands scaffold project control plane", { concurrency: false }, async () => {
   const tempRoot = await mkdtemp(path.join(os.tmpdir(), "ogsystem-cli-project-"));
 
   const initResult = await runCli(["project", "init"], { cwd: tempRoot });
   assert.strictEqual(initResult.code, 0);
   const initPayload = JSON.parse(initResult.stdout);
   assert.equal(initPayload.command, "project init");
+  assert.equal(initPayload.template, "minimal");
   await stat(path.resolve(tempRoot, ".ogs", "runtime.json"));
   await stat(path.resolve(tempRoot, ".ogs", "project.json"));
+  await stat(path.resolve(tempRoot, ".ogs", "laws.json"));
+  await stat(path.resolve(tempRoot, ".ogs", "user-profile.json"));
   await stat(path.resolve(tempRoot, ".ogs", "runs-index.json"));
-  await assert.rejects(() => stat(path.resolve(tempRoot, "og-roles")), /ENOENT/);
-  await assert.rejects(() => stat(path.resolve(tempRoot, "og-models")), /ENOENT/);
+  await stat(path.resolve(tempRoot, "system.mmd"));
+  await stat(path.resolve(tempRoot, "og-roles", "README.md"));
+  await stat(path.resolve(tempRoot, "og-roles", "roles", "_shared", "input.schema.json"));
+  await stat(path.resolve(tempRoot, "og-roles", "roles", "demo-analyst", "role.json"));
+  await assert.rejects(() => stat(path.resolve(tempRoot, "og-roles", "roles", "debate-judge")), /ENOENT/);
+  await stat(path.resolve(tempRoot, "og-models", "README.md"));
+  await stat(path.resolve(tempRoot, "og-models", "catalog", "opencode-models.json"));
+  await stat(path.resolve(tempRoot, "og-models", "models", "general-balanced", "model.json"));
+  await assert.rejects(() => stat(path.resolve(tempRoot, "og-models", "models", "general-fast")), /ENOENT/);
 
   const createResult = await runCli(
     ["project", "create", "demo-app", "--template", "minimal"],
@@ -48,9 +58,13 @@ test("lifecycle cli project init/create commands scaffold project control plane"
   assert.equal(createPayload.command, "project create");
   const createdDir = createPayload.projectDir;
   await stat(path.resolve(createdDir, ".ogs", "runtime.json"));
+  await stat(path.resolve(createdDir, ".ogs", "laws.json"));
+  await stat(path.resolve(createdDir, ".ogs", "user-profile.json"));
   await stat(path.resolve(createdDir, "system.mmd"));
-  await assert.rejects(() => stat(path.resolve(createdDir, "og-roles")), /ENOENT/);
-  await assert.rejects(() => stat(path.resolve(createdDir, "og-models")), /ENOENT/);
+  await stat(path.resolve(createdDir, "og-roles", "roles", "demo-analyst", "role.json"));
+  await assert.rejects(() => stat(path.resolve(createdDir, "og-roles", "roles", "debate-judge")), /ENOENT/);
+  await stat(path.resolve(createdDir, "og-models", "models", "general-balanced", "model.json"));
+  await assert.rejects(() => stat(path.resolve(createdDir, "og-models", "models", "general-fast")), /ENOENT/);
 
   const startResult = await runCli(
     ["run", "start", "--system", "system.mmd", "--prompt", "cli lifecycle template", "--dry-run"],
@@ -59,9 +73,48 @@ test("lifecycle cli project init/create commands scaffold project control plane"
   assert.strictEqual(startResult.code, 0, startResult.stderr);
   const startPayload = JSON.parse(startResult.stdout);
   assert.equal(startPayload.status, "done");
+
+  await writeFile(
+    path.resolve(createdDir, "system.mmd"),
+    [
+      "flowchart TD",
+      "%% system.id=template.software-dev",
+      "%% system.version=1.0.0",
+      "%% law.global=law.software-dev.base",
+      "%% entry.role=demo-intake",
+      "%% role.mode.demo-intake=parallel_split",
+      "%% join.mode.test-operator=all_of",
+      "%% join.sources.test-operator=test-branch-a,test-branch-b",
+      "%% model.bind.demo-intake=general-fast",
+      "%% model.bind.test-branch-a=general-balanced",
+      "%% model.bind.test-branch-b=general-balanced",
+      "%% model.bind.test-operator=general-steady",
+      "",
+      "input -->|TASK_IN| intake[Role:demo-intake]",
+      "intake[Role:demo-intake] -->|BRANCH_A| brancha[Role:test-branch-a]",
+      "intake[Role:demo-intake] -->|BRANCH_B| branchb[Role:test-branch-b]",
+      "brancha[Role:test-branch-a] -->|A_DONE| testop[Role:test-operator]",
+      "branchb[Role:test-branch-b] -->|B_DONE| testop[Role:test-operator]",
+      "testop[Role:test-operator] -->|RESULT_READY| output",
+      ""
+    ].join("\n"),
+    "utf8"
+  );
+  const syncResult = await runCli(["project", "sync", "--system", "system.mmd"], {
+    cwd: createdDir
+  });
+  assert.strictEqual(syncResult.code, 0, syncResult.stderr);
+  const syncPayload = JSON.parse(syncResult.stdout);
+  assert.equal(syncPayload.command, "project sync");
+  assert.deepEqual(syncPayload.importedRoleIds.sort(), ["demo-intake", "test-branch-a", "test-branch-b", "test-operator"]);
+  assert.deepEqual(syncPayload.importedModelIds.sort(), ["general-fast", "general-steady"]);
+  await stat(path.resolve(createdDir, "og-roles", "roles", "demo-intake", "role.json"));
+  await stat(path.resolve(createdDir, "og-roles", "roles", "test-branch-a", "role.json"));
+  await stat(path.resolve(createdDir, "og-models", "models", "general-fast", "model.json"));
+  await stat(path.resolve(createdDir, "og-models", "models", "general-steady", "model.json"));
 });
 
-test("lifecycle cli run start/list/status/logs/resume/stop works end-to-end", async () => {
+test("lifecycle cli run start/list/status/logs/resume/stop works end-to-end", { concurrency: false }, async () => {
   const repoRoot = process.cwd();
   const tempRoot = await mkdtemp(path.join(os.tmpdir(), "ogsystem-cli-run-"));
   await mkdir(path.resolve(tempRoot, ".ogs"), { recursive: true });

@@ -3,6 +3,12 @@
 Status: delivered  
 Scope: packaging, install workflow, project scaffolding, operator documentation
 
+Superseded by later scaffolding changes:
+
+- current `project init/create` no longer copy the full bundled `og-roles/` / `og-models/` trees
+- current projects import only the role/model dependencies required by the selected template or system
+- bundled repos remain template sources shipped with the CLI package
+
 ## Summary
 
 This release turns OGSystem from a source-checkout-oriented runtime into an installable CLI package.

@@ -30,7 +30,7 @@ function runCommand(command, args, options = {}) {
   });
 }
 
-test("packed CLI installs and scaffolds a runnable project backed by bundled repos", async () => {
+test("packed CLI installs and scaffolds a runnable project with imported local dependencies", async () => {
   const packDir = await mkdtemp(path.join(os.tmpdir(), "ogsystem-pack-"));
   const installDir = await mkdtemp(path.join(os.tmpdir(), "ogsystem-install-"));
   const appParent = await mkdtemp(path.join(os.tmpdir(), "ogsystem-app-parent-"));
@@ -88,8 +88,10 @@ test("packed CLI installs and scaffolds a runnable project backed by bundled rep
   const createPayload = JSON.parse(createResult.stdout);
   const projectDir = createPayload.projectDir;
 
-  await assert.rejects(() => stat(path.resolve(projectDir, "og-roles")), /ENOENT/);
-  await assert.rejects(() => stat(path.resolve(projectDir, "og-models")), /ENOENT/);
+  await stat(path.resolve(projectDir, "og-roles", "roles", "demo-analyst", "role.json"));
+  await assert.rejects(() => stat(path.resolve(projectDir, "og-roles", "roles", "debate-judge")), /ENOENT/);
+  await stat(path.resolve(projectDir, "og-models", "models", "general-balanced", "model.json"));
+  await assert.rejects(() => stat(path.resolve(projectDir, "og-models", "models", "general-fast")), /ENOENT/);
 
   const startResult = await runCommand(
     "node",

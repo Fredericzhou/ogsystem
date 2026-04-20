@@ -69,6 +69,8 @@ export type Nl2MmdContext = {
   workdir: string;
   roleRootDir: string;
   modelRootDir: string;
+  templateRoleRootDir?: string;
+  templateModelRootDir?: string;
   roleCatalog: Nl2MmdRoleSummary[];
   modelCatalog: Nl2MmdModelSummary[];
   lawIds: string[];

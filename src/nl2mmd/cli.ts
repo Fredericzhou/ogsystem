@@ -21,6 +21,7 @@ import {
   searchRoles,
   validateNl2MmdCandidate
 } from "./index.js";
+import { syncProjectDependencies } from "../runtime/project-lifecycle.js";
 import type { Nl2MmdConversation, Nl2MmdContext, Nl2MmdTurnResult } from "./types.js";
 
 function usage(): string {
@@ -209,7 +210,7 @@ async function main(): Promise<void> {
   async function submit(message: string): Promise<Nl2MmdTurnResult> {
     printSuggestions(context, message);
     const activeConversation = await ensureConversation();
-    const turn = await runNl2MmdTurn({
+    let turn = await runNl2MmdTurn({
       conversation: activeConversation,
       input: {
         message,
@@ -222,6 +223,31 @@ async function main(): Promise<void> {
       userProfilePath: values["user-profile"]
     });
     if (turn.mermaid.trim()) {
+      const syncResult = await syncProjectDependencies({
+        workdir,
+        systemSource: turn.mermaid
+      });
+      if (syncResult.importedRoleIds.length > 0 || syncResult.importedModelIds.length > 0) {
+        printSection(
+          "Imported Project Dependencies",
+          [
+            `roles=${syncResult.importedRoleIds.join(", ") || "-"}`,
+            `models=${syncResult.importedModelIds.join(", ") || "-"}`
+          ].join("\n")
+        );
+      }
+      const validation = await validateNl2MmdCandidate({
+        mermaid: turn.mermaid,
+        context,
+        lawsPath: values.laws,
+        profilesPath: values.profiles,
+        userProfilePath: values["user-profile"]
+      });
+      turn = {
+        ...turn,
+        validation,
+        txtGraph: validation.txtGraph
+      };
       draftMermaid = turn.mermaid;
     }
     lastTurn = turn;
