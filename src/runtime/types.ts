@@ -224,7 +224,6 @@ export type RolePackageManifest = {
   name: string;
   description: string;
   promptTemplate: string;
-  inputSchema?: string;
   outputSchema: string;
   talent?: Record<string, string>;
   preferredModelTags?: string[];
@@ -235,8 +234,6 @@ export type LoadedRolePackage = {
   resolvedPath: string;
   manifest: RolePackageManifest;
   promptTemplate: string;
-  inputSchema?: unknown;
-  inputSchemaPath?: string;
   outputSchema: unknown;
   outputSchemaPath: string;
   persona?: string;

@@ -4,7 +4,6 @@
   "name": "Error Handler Base",
   "description": "Template role for handling runtime failures and deciding compensation actions.",
   "promptTemplate": "prompt.md",
-  "inputSchema": "../_shared/input.schema.json",
   "outputSchema": "output.schema.json",
   "tags": ["template", "error-edge", "compensation"]
 }

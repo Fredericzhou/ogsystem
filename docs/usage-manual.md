@@ -293,7 +293,7 @@ Use this rule:
 - `join.mode.<roleId>=all_of` requires `join.sources.<roleId>`; that source list must contain unique role ids and match the role's Mermaid incoming edges exactly
 - `join.mode.<roleId>=quorum_of` requires both `join.sources.<roleId>` and `join.min.<roleId>`; `join.sources` must contain unique role ids, must match the role's Mermaid incoming edges exactly, and readiness counts unique completed source roles under the same `lineageId + loopIteration`
 - `handoff.mode=strict|transition` enables flow-contract validation; `transition` skips warned or missing contracts on the affected flow while `strict` hard-fails, and will fail closed if the skip would orphan a downstream join; `handoff.contracts` points to the contract bundle, and `route.order.<fromRoleId>` only reorders sibling fan-out targets without changing reachability
-- `role_input` contracts validate the projected `context.map` object before prompt rendering; they do not replace `role.inputSchema`
+- `role_input` contracts validate the projected `context.map` object before prompt rendering; they do not replace the built-in runtime prompt-input schema
 - selector details and ancestor-access limits are documented in [context-map 投影说明](./context-map-projection-guide.md)
 - dynamic fan-out with uncertain `N` is not graph semantics; keep it inside one role (Heavy Node) or pre-expand before orchestration
 - controlled fan-out concurrency is an execution policy, not a flow semantic (it must not change graph reachability/join readiness)
@@ -361,7 +361,6 @@ OGSystem/
         output.schema.json
         persona.md
         work.md
-        input.schema.json
 
   og-models/
     catalog/
@@ -542,7 +541,6 @@ Optional:
 
 - `persona.md`
 - `work.md`
-- `input.schema.json`
 - `talent` and `preferredModelTags` in `role.json` (soft hints only)
 
 Role rules:
@@ -550,6 +548,7 @@ Role rules:
 - `role.json.roleId` must equal directory name
 - role packages do not define routing
 - role packages do not hard-bind model ids
+- runtime always validates the built-in prompt-input shell with `task`, `context`, `allowed_events`, `last_output`, `system_notes`, `round`, and `user_profile`
 
 Recommended template roles:
 

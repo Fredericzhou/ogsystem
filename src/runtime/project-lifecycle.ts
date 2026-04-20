@@ -339,16 +339,12 @@ async function importRolePackageIntoProject(args: {
     resolveProjectRoleRepoRoot(args.workdir, repoConfig.roleRepo),
     "roles"
   );
-  const importedShared = await copyIfMissing(
-    resolve(templateRoleRootDir, "_shared"),
-    resolve(projectRoleRootDir, "_shared")
-  );
   const importedRole = await copyIfMissing(
     resolve(templateRoleRootDir, args.roleId),
     resolve(projectRoleRootDir, args.roleId)
   );
   await ensureProjectRepoMetadataFiles(args.workdir);
-  return importedShared || importedRole;
+  return importedRole;
 }
 
 async function importModelPackageIntoProject(args: {

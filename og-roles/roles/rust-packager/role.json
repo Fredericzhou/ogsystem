@@ -4,7 +4,6 @@
   "name": "Rust Packager Runner",
   "description": "Package the compiled binary, run it, and verify output correctness.",
   "promptTemplate": "prompt.md",
-  "inputSchema": "../_shared/input.schema.json",
   "outputSchema": "output.schema.json",
   "tags": ["rust", "package", "runner", "pipeline"]
 }

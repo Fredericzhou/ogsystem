@@ -4,7 +4,6 @@
   "name": "Rust Compiler",
   "description": "Compile the Rust hello-world project and verify the executable is produced.",
   "promptTemplate": "prompt.md",
-  "inputSchema": "../_shared/input.schema.json",
   "outputSchema": "output.schema.json",
   "tags": ["rust", "compiler", "pipeline"]
 }

@@ -4,7 +4,6 @@
   "name": "Human Signal Wait",
   "description": "Template role for waiting and evaluating human signal outcomes.",
   "promptTemplate": "prompt.md",
-  "inputSchema": "../_shared/input.schema.json",
   "outputSchema": "output.schema.json",
   "tags": ["template", "human-gate", "signal"]
 }

@@ -14,6 +14,10 @@ import { SYSTEM_END_ROLE_ID } from "./types.js";
 import { createExecutionPlan } from "./execution-plan.js";
 import { isRuntimeOnlyErrorEvent } from "./error-flow-utils.js";
 import {
+  RUNTIME_ROLE_PROMPT_INPUT_SCHEMA,
+  RUNTIME_ROLE_PROMPT_INPUT_SCHEMA_PATH
+} from "./role-prompt-input-schema.js";
+import {
   collectCycleComponents,
   summarizeContextSelector
 } from "./static-semantics.js";
@@ -47,7 +51,6 @@ export type RoleSummary = {
   name: string;
   description: string;
   promptTemplateDigest: string;
-  inputSchemaDigest?: string;
   outputSchemaDigest: string;
   personaDigest?: string;
   workDigest?: string;
@@ -111,6 +114,8 @@ export type CompiledExecutionSnapshot = {
   basePlan: ExecutionPlan;
   diagnostics: CompilerDiagnostic[];
   digest: string;
+  runtimePromptInputSchemaDigest: string;
+  runtimePromptInputSchemaPath: string;
   roleSummaryByRoleId: Record<string, RoleSummary>;
   flowSummaryByKey: Record<string, FlowSummary>;
   projectionSummaryByRoleId: Record<string, ContextProjectionSummary>;
@@ -172,8 +177,6 @@ function buildRoleSummary(rolePackage: LoadedRolePackage): RoleSummary {
     name: rolePackage.manifest.name,
     description: rolePackage.manifest.description,
     promptTemplateDigest: digestValue(rolePackage.promptTemplate),
-    inputSchemaDigest:
-      rolePackage.inputSchema !== undefined ? digestValue(rolePackage.inputSchema) : undefined,
     outputSchemaDigest: digestValue(rolePackage.outputSchema),
     personaDigest: rolePackage.persona !== undefined ? digestValue(rolePackage.persona) : undefined,
     workDigest: rolePackage.work !== undefined ? digestValue(rolePackage.work) : undefined,
@@ -731,6 +734,7 @@ function validateContracts(args: {
 
 function buildCompilerDigestValue(args: {
   system: SystemDefinition;
+  runtimePromptInputSchemaDigest: string;
   roleSummaryByRoleId: Record<string, RoleSummary>;
   flowSummaryByKey: Record<string, FlowSummary>;
   projectionSummaryByRoleId: Record<string, ContextProjectionSummary>;
@@ -741,7 +745,7 @@ function buildCompilerDigestValue(args: {
   lawSummary: LawSummary;
 }): unknown {
   return {
-    compilerVersion: 1,
+    compilerVersion: 2,
     system: {
       systemId: args.system.systemId,
       systemVersion: args.system.systemVersion,
@@ -763,6 +767,7 @@ function buildCompilerDigestValue(args: {
           return left.toRoleId.localeCompare(right.toRoleId);
         })
     },
+    runtimePromptInputSchemaDigest: args.runtimePromptInputSchemaDigest,
     roleSummaryByRoleId: sortEntries(args.roleSummaryByRoleId).map(([roleId, summary]) => [roleId, summary]),
     flowSummaryByKey: sortEntries(args.flowSummaryByKey),
     projectionSummaryByRoleId: sortEntries(args.projectionSummaryByRoleId),
@@ -847,10 +852,12 @@ export function compileExecutionSnapshot(args: CompilerInput): CompilerResult {
   });
   const bindingSummaryByRoleId = buildBindingSummary(basePlan);
   const lawSummary = buildLawSummary(args.effectiveLaw, args.system);
+  const runtimePromptInputSchemaDigest = digestValue(RUNTIME_ROLE_PROMPT_INPUT_SCHEMA);
 
   const digest = digestValue(
     buildCompilerDigestValue({
       system: args.system,
+      runtimePromptInputSchemaDigest,
       roleSummaryByRoleId,
       flowSummaryByKey,
       projectionSummaryByRoleId,
@@ -883,6 +890,8 @@ export function compileExecutionSnapshot(args: CompilerInput): CompilerResult {
       return left.message.localeCompare(right.message);
     }),
     digest,
+    runtimePromptInputSchemaDigest,
+    runtimePromptInputSchemaPath: RUNTIME_ROLE_PROMPT_INPUT_SCHEMA_PATH,
     roleSummaryByRoleId,
     flowSummaryByKey,
     projectionSummaryByRoleId,

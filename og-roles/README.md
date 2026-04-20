@@ -16,7 +16,6 @@ Optional files:
 
 - `persona.md`
 - `work.md`
-- `input.schema.json`
 
 Built-in templates:
 
@@ -31,4 +30,5 @@ Rules:
 - Role packages do not bind tools or models.
 - `system.mmd` owns orchestration and role-to-model binding (`model.bind.*`; `exec.bind.*` in legacy runtime).
 - runtime injects `user_profile` into prompt variables; role packages decide how to apply it.
+- runtime validates one built-in prompt-input shell for every role: `task`, `context`, `allowed_events`, `last_output`, `system_notes`, `round`, `user_profile`.
 - `talent` and `preferredModelTags` in `role.json` are soft hints only. They are not hard bindings.

@@ -109,7 +109,7 @@ For day-to-day use, start with `docs/usage-manual.md`. It keeps the command matr
 - The adapter runs one graph-based execution model. The entry role becomes the initial active branch, each role execution emits one structured result, and completion happens only when active branches are exhausted or a transition reaches the terminal `output` boundary.
 - Executable roles always resolve to one JSON object: `{"event":"EVENT_NAME","content":"..."}`. For `model.bind`, the runtime sends `prompt + output.schema.json` to OpenCode SDK v2 and reads `info.structured`; if `info.structured` is absent or string-encoded, the runtime falls back to assistant text parts and applies JSON extraction. For legacy `exec.bind`, the runtime still parses tool stdout as one JSON object. `event` is required for roles with outgoing flows and must match one Mermaid edge label exactly.
 - For `model.bind`, one run now starts one shared `opencode serve`, and each role/node keeps one isolated OpenCode session on that server for the duration of the run.
-- Executable roles are resolved by `roleId` directly from the project-local role repo. For each Mermaid `Role:<roleId>`, the runtime loads `og-roles/roles/<roleId>/role.json`, renders `prompt.md`, validates optional `input.schema.json`, and validates `output.schema.json`.
+- Executable roles are resolved by `roleId` directly from the project-local role repo. For each Mermaid `Role:<roleId>`, the runtime loads `og-roles/roles/<roleId>/role.json`, renders `prompt.md`, validates the built-in runtime prompt-input shell, and validates `output.schema.json`.
 - The runtime now supports `model.bind.<roleId>=<modelId>` with auto-discovered `.ogs/runtime.json`, `.ogs/user-profile.json`, `.ogs/laws.json`, and project-local `og-models/`.
 - `model.bind` retries transient OpenCode/provider failures on the same role session while keeping the same run-level shared server.
 - The runtime supports `role.mode.*=parallel_split`, `join.mode.*=all_of|quorum_of`, `join.sources.*`, `join.min.*`, `context.map.*`, and `loop.max.*`. `join.sources.*` must list unique source role ids and match the join node's Mermaid incoming role edges exactly. Legacy `%% engine=langgraph` metadata is accepted as compatibility input but is not required DSL semantics.
@@ -141,7 +141,8 @@ For day-to-day use, start with `docs/usage-manual.md`. It keeps the command matr
 - Tools are minimal shell adapters: `toolRef`, `runner`, `command`, `argsTemplate`, `stdinMode`.
 - The law catalog currently resolves only `law.global` and the constraints `forbiddenToolRefs`, `maxTransitions`, `allowNoopWithoutExecutionBinding`.
 - `talentBinding` is preserved as metadata-only sidecar in the parsed system definition. It is not part of runtime execution.
-- Role packages live under `og-roles/roles/<roleId>/` and provide `role.json`, `prompt.md`, optional `persona.md`, optional `work.md`, optional `input.schema.json`, and required `output.schema.json`.
+- Role packages live under `og-roles/roles/<roleId>/` and provide `role.json`, `prompt.md`, optional `persona.md`, optional `work.md`, and required `output.schema.json`.
+- The runtime-owned prompt-input shell remains fixed across roles and currently exposes `task`, `context`, `allowed_events`, `last_output`, `system_notes`, `round`, and `user_profile`.
 - The installed CLI ships bundled role/model templates, but those are import sources, not runtime execution dependencies.
 - `system.mmd` owns flow and role-to-model binding (`model.bind.*`; `exec.bind.*` in legacy runtime); role packages own prompt and I/O contract.
 

@@ -109,7 +109,6 @@ export function validateRolePackageManifest(
       "name",
       "description",
       "promptTemplate",
-      "inputSchema",
       "outputSchema",
       "talent",
       "preferredModelTags",
@@ -125,10 +124,6 @@ export function validateRolePackageManifest(
     name: expectString(record.name, filePath, "$.name"),
     description: expectString(record.description, filePath, "$.description"),
     promptTemplate: expectString(record.promptTemplate, filePath, "$.promptTemplate"),
-    inputSchema:
-      record.inputSchema === undefined
-        ? undefined
-        : expectString(record.inputSchema, filePath, "$.inputSchema"),
     outputSchema: expectString(record.outputSchema, filePath, "$.outputSchema"),
     talent: expectOptionalTalent(record.talent, filePath, "$.talent"),
     preferredModelTags: expectOptionalStringArray(
@@ -155,10 +150,8 @@ export async function loadRolePackage(args: {
   }
 
   const promptTemplatePath = resolve(resolvedPath, manifest.promptTemplate);
-  const inputSchemaPath = manifest.inputSchema ? resolve(resolvedPath, manifest.inputSchema) : undefined;
   const outputSchemaPath = resolve(resolvedPath, manifest.outputSchema);
   const promptTemplate = await readFile(promptTemplatePath, "utf8");
-  const inputSchema = inputSchemaPath ? await readJsonFile(inputSchemaPath) : undefined;
   const outputSchema = await readJsonFile(outputSchemaPath);
 
   let persona: string | undefined;
@@ -179,8 +172,6 @@ export async function loadRolePackage(args: {
     resolvedPath,
     manifest,
     promptTemplate,
-    inputSchema,
-    inputSchemaPath,
     outputSchema,
     outputSchemaPath,
     persona,

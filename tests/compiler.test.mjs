@@ -53,6 +53,11 @@ test("compiler snapshot digest is stable across role package ordering", async ()
   assert.equal(forwardResult.ok, true);
   assert.equal(forwardResult.diagnostics.length, 0);
   assert.equal(forwardResult.digest, reverseResult.digest);
+  assert.equal(
+    forwardResult.snapshot.runtimePromptInputSchemaPath,
+    "(builtin runtime prompt input schema)"
+  );
+  assert.match(forwardResult.snapshot.runtimePromptInputSchemaDigest, /^[a-f0-9]{64}$/);
   assert.deepStrictEqual(forwardResult.snapshot.basePlan, createExecutionPlan(system));
   assert.deepStrictEqual(
     forwardResult.snapshot.roleSummaryByRoleId,

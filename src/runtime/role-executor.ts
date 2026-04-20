@@ -45,6 +45,10 @@ import {
 } from "./role-input-projector.js";
 import type { RolePromptInput } from "./role-input-projector.js";
 import {
+  RUNTIME_ROLE_PROMPT_INPUT_SCHEMA,
+  RUNTIME_ROLE_PROMPT_INPUT_SCHEMA_PATH
+} from "./role-prompt-input-schema.js";
+import {
   assertNoReservedErrorEventFromRoleOutput,
   buildCorrectionRequest,
   mergeRepairRecord,
@@ -470,14 +474,12 @@ export async function executeRoleNode(args: {
       }
     }
 
-    if (rolePackage.inputSchema) {
-      validateRoleInputSchema({
-        input: promptInput,
-        schema: rolePackage.inputSchema,
-        schemaPath: rolePackage.inputSchemaPath,
-        roleId: args.roleId
-      });
-    }
+    validateRoleInputSchema({
+      input: promptInput,
+      schema: RUNTIME_ROLE_PROMPT_INPUT_SCHEMA,
+      schemaPath: RUNTIME_ROLE_PROMPT_INPUT_SCHEMA_PATH,
+      roleId: args.roleId
+    });
 
     prompt = renderRolePrompt({
       promptTemplate: rolePackage.promptTemplate,

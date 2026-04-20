@@ -4,7 +4,6 @@
   "name": "Test Decision",
   "description": "Branch selector used by parser and transition tests.",
   "promptTemplate": "prompt.md",
-  "inputSchema": "../_shared/input.schema.json",
   "outputSchema": "output.schema.json",
   "tags": ["test"]
 }

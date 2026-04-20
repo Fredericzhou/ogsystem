@@ -84,9 +84,6 @@ async function prepareRuntimeFingerprintResumeFixture(args) {
   await mkdir(roleRootDir, { recursive: true });
   await mkdir(path.resolve(modelRootDir, "models"), { recursive: true });
   await mkdir(runDir, { recursive: true });
-  await cp(path.resolve("og-roles", "roles", "_shared"), path.resolve(roleRootDir, "_shared"), {
-    recursive: true
-  });
 
   for (const roleId of system.roleIds) {
     await cp(

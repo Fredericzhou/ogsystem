@@ -79,7 +79,6 @@ async function prepareRoleExecutorFixture(args) {
   const rolesRoot = path.resolve(tempRoot, "og-roles", "roles");
 
   await mkdir(rolesRoot, { recursive: true });
-  await mkdir(path.resolve(rolesRoot, "_shared"), { recursive: true });
   await writeFile(systemPath, args.systemSource, "utf8");
 
   for (const role of args.roles) {

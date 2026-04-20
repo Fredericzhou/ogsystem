@@ -14,7 +14,7 @@ OGSystem 是一个面向多角色协作流程的单机编排内核。它使用�
 ## 2. 它擅长什么
 
 - **图语义硬化**：`parallel_split`、`all_of/quorum_of` join、`context.map`、`loop.max`、`handoff.mode`、`handoff.contracts` 都在解析和执行两侧被明确约束。
-- **流合同分层**：`flow contract` 负责边级业务约束，`role_input` 负责接收节点的投影输入校验，`role.inputSchema` 继续作为技术层护栏。
+- **流合同分层**：`flow contract` 负责边级业务约束，`role_input` 负责接收节点的投影输入校验，runtime 内建 prompt-input schema 继续作为技术层护栏。
 - **静态编译入口**：`src/runtime/compiler.ts` 汇总 system / role / contract / law 的静态摘要，生成稳定 diagnostics 与 compiler digest，并参与 resume 指纹。
 - **文件优先恢复**：运行状态落盘到 `.ogs/runs/<run-id>/`，以 `state.json`、`sessions.json`、`plan-fingerprint.json`、`checkpoints/` 和 `execution-outcome.json` 组成恢复权威集。
 - **会话血缘隔离**：OpenCode 会话按 `roleId:sessionLineageId` 复用或隔离，顺序链路复用记忆，并行 sibling 不串话。

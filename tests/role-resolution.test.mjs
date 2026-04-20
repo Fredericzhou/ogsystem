@@ -6,8 +6,10 @@ import {
   loadRolePackage,
   renderRolePrompt,
   validateRoleInputSchema,
+  validateRolePackageManifest,
   validateRoleOutputSchema
 } from "../dist/runtime/role-repo.js";
+import { RUNTIME_ROLE_PROMPT_INPUT_SCHEMA } from "../dist/runtime/role-prompt-input-schema.js";
 
 const roleRootDir = path.resolve("og-roles/roles");
 
@@ -16,7 +18,6 @@ test("loadRolePackage resolves role directory and renders contextual fields", as
     roleId: "debate-minimalist",
     roleRootDir
   });
-  assert.ok(rolePackage.inputSchema);
 
   const values = {
     task: "Explain why minimalism matters",
@@ -31,7 +32,7 @@ test("loadRolePackage resolves role directory and renders contextual fields", as
   assert.doesNotThrow(() =>
     validateRoleInputSchema({
       input: values,
-      schema: rolePackage.inputSchema,
+      schema: RUNTIME_ROLE_PROMPT_INPUT_SCHEMA,
       roleId: "debate-minimalist"
     })
   );
@@ -69,6 +70,25 @@ test("loop-aware role prompts can render the injected round field", async () => 
 
   assert.match(rendered, /Round:\s*2/);
   assert.match(rendered, /judge requested another round/);
+});
+
+test("role manifests reject legacy inputSchema fields", () => {
+  assert.throws(
+    () =>
+      validateRolePackageManifest(
+        {
+          roleId: "legacy-role",
+          roleVersion: "1.0.0",
+          name: "Legacy Role",
+          description: "legacy",
+          promptTemplate: "prompt.md",
+          inputSchema: "../_shared/input.schema.json",
+          outputSchema: "output.schema.json"
+        },
+        "legacy-role/role.json"
+      ),
+    /unknown field/
+  );
 });
 
 test("output schema rejects invalid payload", async () => {

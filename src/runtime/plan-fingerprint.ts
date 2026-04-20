@@ -3,6 +3,10 @@ import { resolve } from "node:path";
 
 import type { CompiledExecutionSnapshot } from "./compiler.js";
 import type { RunPlanFingerprint } from "./run-artifacts.js";
+import {
+  RUNTIME_ROLE_PROMPT_INPUT_SCHEMA,
+  RUNTIME_ROLE_PROMPT_INPUT_SCHEMA_PATH
+} from "./role-prompt-input-schema.js";
 import type {
   EffectiveLawConstraints,
   FlowContractPlan,
@@ -97,7 +101,6 @@ function buildRolePackageFingerprintComponent(
         roleId,
         manifest: normalizeFingerprintValue(rolePackage.manifest),
         promptTemplate: rolePackage.promptTemplate,
-        inputSchema: normalizeFingerprintValue(rolePackage.inputSchema ?? null),
         outputSchema: normalizeFingerprintValue(rolePackage.outputSchema),
         persona: rolePackage.persona ?? null,
         work: rolePackage.work ?? null
@@ -106,13 +109,26 @@ function buildRolePackageFingerprintComponent(
         roleId,
         resolvedPath: rolePackage.resolvedPath,
         promptTemplatePath: resolve(rolePackage.resolvedPath, rolePackage.manifest.promptTemplate),
-        inputSchemaPath: rolePackage.inputSchemaPath ?? null,
         outputSchemaPath: rolePackage.outputSchemaPath,
         personaPath:
           rolePackage.persona !== undefined ? resolve(rolePackage.resolvedPath, "persona.md") : null,
         workPath: rolePackage.work !== undefined ? resolve(rolePackage.resolvedPath, "work.md") : null
       }
     }));
+}
+
+function buildRuntimePromptInputFingerprintComponent(): {
+  identity: Record<string, unknown>;
+  sourceHints: Record<string, unknown>;
+} {
+  return {
+    identity: {
+      schema: normalizeFingerprintValue(RUNTIME_ROLE_PROMPT_INPUT_SCHEMA)
+    },
+    sourceHints: {
+      schemaPath: RUNTIME_ROLE_PROMPT_INPUT_SCHEMA_PATH
+    }
+  };
 }
 
 function buildModelPackageFingerprintComponent(
@@ -145,11 +161,13 @@ function buildCompilerFingerprintComponent(
   return {
     identity: {
       digest: compilerSnapshot.digest,
+      runtimePromptInputSchemaDigest: compilerSnapshot.runtimePromptInputSchemaDigest,
       roleIds: sortedRoleIds(Object.keys(compilerSnapshot.roleSummaryByRoleId)),
       contractIds: sortedRoleIds(Object.keys(compilerSnapshot.contractSummaryById))
     },
     sourceHints: {
       digest: compilerSnapshot.digest,
+      runtimePromptInputSchemaPath: compilerSnapshot.runtimePromptInputSchemaPath,
       diagnostics: compilerSnapshot.diagnostics.map((diagnostic) => ({
         code: diagnostic.code,
         roleId: diagnostic.roleId ?? null,
@@ -170,6 +188,7 @@ export function buildRunPlanFingerprint(args: {
 }): RunPlanFingerprint {
   const rolePackageComponents = buildRolePackageFingerprintComponent(args.rolePackagesByRoleId);
   const modelPackageComponents = buildModelPackageFingerprintComponent(args.modelsById);
+  const runtimePromptInputComponent = buildRuntimePromptInputFingerprintComponent();
   const compilerComponent = args.compilerSnapshot
     ? buildCompilerFingerprintComponent(args.compilerSnapshot)
     : undefined;
@@ -177,6 +196,7 @@ export function buildRunPlanFingerprint(args: {
     system: buildSystemFingerprintComponent(args.system, args.contractPlan?.digest ?? null),
     rolePackages: rolePackageComponents.map((component) => component.identity),
     modelPackages: modelPackageComponents.map((component) => component.identity),
+    runtimePromptInput: runtimePromptInputComponent.identity,
     effectiveLaw: normalizeFingerprintValue(args.effectiveLaw)
   };
   if (compilerComponent) {
@@ -204,6 +224,11 @@ export function buildRunPlanFingerprint(args: {
         value: componentValues.modelPackages,
         sourceHints: modelPackageComponents.map((component) => component.sourceHints)
       },
+      runtimePromptInput: {
+        digest: componentDigests.runtimePromptInput,
+        value: componentValues.runtimePromptInput,
+        sourceHints: runtimePromptInputComponent.sourceHints
+      },
       effectiveLaw: {
         digest: componentDigests.effectiveLaw,
         value: componentValues.effectiveLaw
@@ -222,7 +247,7 @@ export function buildRunPlanFingerprint(args: {
 
   const digest = hashFingerprintValue(componentDigests);
   return {
-    version: 4,
+    version: 5,
     algorithm: "sha256",
     digest,
     payload

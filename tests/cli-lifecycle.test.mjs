@@ -41,7 +41,7 @@ test("lifecycle cli project init/create commands scaffold project control plane"
   await stat(path.resolve(tempRoot, ".ogs", "runs-index.json"));
   await stat(path.resolve(tempRoot, "system.mmd"));
   await stat(path.resolve(tempRoot, "og-roles", "README.md"));
-  await stat(path.resolve(tempRoot, "og-roles", "roles", "_shared", "input.schema.json"));
+  await assert.rejects(() => stat(path.resolve(tempRoot, "og-roles", "roles", "_shared")), /ENOENT/);
   await stat(path.resolve(tempRoot, "og-roles", "roles", "demo-analyst", "role.json"));
   await assert.rejects(() => stat(path.resolve(tempRoot, "og-roles", "roles", "debate-judge")), /ENOENT/);
   await stat(path.resolve(tempRoot, "og-models", "README.md"));
@@ -61,6 +61,7 @@ test("lifecycle cli project init/create commands scaffold project control plane"
   await stat(path.resolve(createdDir, ".ogs", "laws.json"));
   await stat(path.resolve(createdDir, ".ogs", "user-profile.json"));
   await stat(path.resolve(createdDir, "system.mmd"));
+  await assert.rejects(() => stat(path.resolve(createdDir, "og-roles", "roles", "_shared")), /ENOENT/);
   await stat(path.resolve(createdDir, "og-roles", "roles", "demo-analyst", "role.json"));
   await assert.rejects(() => stat(path.resolve(createdDir, "og-roles", "roles", "debate-judge")), /ENOENT/);
   await stat(path.resolve(createdDir, "og-models", "models", "general-balanced", "model.json"));

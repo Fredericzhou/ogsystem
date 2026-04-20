@@ -10,7 +10,6 @@
   },
   "preferredModelTags": ["fast", "instruction-following"],
   "promptTemplate": "prompt.md",
-  "inputSchema": "../_shared/input.schema.json",
   "outputSchema": "output.schema.json",
   "tags": ["debate", "coordination"]
 }

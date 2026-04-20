@@ -10,7 +10,6 @@
   },
   "preferredModelTags": ["fast", "long-context"],
   "promptTemplate": "prompt.md",
-  "inputSchema": "../_shared/input.schema.json",
   "outputSchema": "output.schema.json",
   "tags": ["diagnosis", "dispatch"]
 }
