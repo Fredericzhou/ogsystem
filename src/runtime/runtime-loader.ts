@@ -1,6 +1,7 @@
 import { homedir } from "node:os";
 import { resolve } from "node:path";
 
+import { DEFAULT_MODEL_REPO, DEFAULT_ROLE_REPO } from "./bundled-repos.js";
 import {
   validateLawsConfig,
   validateProfilesConfig,
@@ -30,8 +31,8 @@ export async function loadRuntimeConfig(
   const defaultRuntimeRaw: Record<string, unknown> = {
     configVersion: "1",
     executor: "opencode",
-    roleRepo: "./og-roles",
-    modelRepo: "./og-models",
+    roleRepo: DEFAULT_ROLE_REPO,
+    modelRepo: DEFAULT_MODEL_REPO,
     runsDir: ".ogs/runs",
     workspace: {
       rolesDir: "roles",

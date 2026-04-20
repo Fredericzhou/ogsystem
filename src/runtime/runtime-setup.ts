@@ -1,5 +1,6 @@
 import { resolve } from "node:path";
 
+import { resolveModelRepoRoot, resolveRoleRootDir } from "./bundled-repos.js";
 import { compileExecutionSnapshot, type CompiledExecutionSnapshot } from "./compiler.js";
 import { createExecutionPlan } from "./execution-plan.js";
 import { loadFlowContractPlan } from "./flow-contract.js";
@@ -150,6 +151,8 @@ export async function prepareRuntimeSetup(args: {
   const lawCatalog = await loadLaws(args.lawsPath, args.workdir);
   const userProfile = await loadUserProfile(args.userProfilePath, args.workdir);
   const effectiveLaw = resolveEffectiveLaw(system, lawCatalog);
+  const roleRootDir = resolveRoleRootDir(args.workdir, runtimeConfig.roleRepo);
+  const modelRepoDir = resolveModelRepoRoot(args.workdir, runtimeConfig.modelRepo);
   const contractPlan = system.graph?.handoffContracts
     ? await loadFlowContractPlan({
         system,
@@ -158,11 +161,11 @@ export async function prepareRuntimeSetup(args: {
     : undefined;
   const rolePackagesByRoleId = await loadRolePackages({
     system,
-    roleRootDir: resolve(args.workdir, runtimeConfig.roleRepo, "roles")
+    roleRootDir
   });
   const modelsById = await loadModelPackages({
     system,
-    modelRootDir: resolve(args.workdir, runtimeConfig.modelRepo)
+    modelRootDir: modelRepoDir
   });
   const compilerResult = compileExecutionSnapshot({
     system,
@@ -197,8 +200,8 @@ export async function prepareRuntimeSetup(args: {
     },
     effective: {
       runtimeConfig,
-      roleRepoDir: resolve(args.workdir, runtimeConfig.roleRepo, "roles"),
-      modelRepoDir: resolve(args.workdir, runtimeConfig.modelRepo),
+      roleRepoDir: roleRootDir,
+      modelRepoDir,
       runsDir: resolve(args.workdir, runtimeConfig.runsDir),
       workdir: args.workdir,
       compiler: {

@@ -30,7 +30,7 @@ function runCommand(command, args, options = {}) {
   });
 }
 
-test("packed CLI installs and scaffolds a runnable self-contained project", async () => {
+test("packed CLI installs and scaffolds a runnable project backed by bundled repos", async () => {
   const packDir = await mkdtemp(path.join(os.tmpdir(), "ogsystem-pack-"));
   const installDir = await mkdtemp(path.join(os.tmpdir(), "ogsystem-install-"));
   const appParent = await mkdtemp(path.join(os.tmpdir(), "ogsystem-app-parent-"));
@@ -88,8 +88,8 @@ test("packed CLI installs and scaffolds a runnable self-contained project", asyn
   const createPayload = JSON.parse(createResult.stdout);
   const projectDir = createPayload.projectDir;
 
-  await stat(path.resolve(projectDir, "og-roles", "roles", "demo-analyst", "role.json"));
-  await stat(path.resolve(projectDir, "og-models", "models", "general-balanced", "model.json"));
+  await assert.rejects(() => stat(path.resolve(projectDir, "og-roles")), /ENOENT/);
+  await assert.rejects(() => stat(path.resolve(projectDir, "og-models")), /ENOENT/);
 
   const startResult = await runCommand(
     "node",

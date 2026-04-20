@@ -97,8 +97,8 @@ async function main() {
 
   const createPayload = JSON.parse(createResult.stdout);
   const projectDir = createPayload.projectDir;
-  await stat(path.resolve(projectDir, "og-roles", "roles", "demo-analyst", "role.json"));
-  await stat(path.resolve(projectDir, "og-models", "models", "general-balanced", "model.json"));
+  await assert.rejects(() => stat(path.resolve(projectDir, "og-roles")), /ENOENT/);
+  await assert.rejects(() => stat(path.resolve(projectDir, "og-models")), /ENOENT/);
 
   const startResult = await runCommand(
     "node",

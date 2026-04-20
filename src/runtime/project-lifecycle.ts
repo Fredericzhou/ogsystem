@@ -8,10 +8,10 @@
  * - Does not execute graph runtime transitions.
  */
 import { randomUUID } from "node:crypto";
-import { cp, mkdir, readFile, readdir, stat, writeFile } from "node:fs/promises";
-import { basename, dirname, resolve } from "node:path";
-import { fileURLToPath } from "node:url";
+import { mkdir, readFile, readdir, stat, writeFile } from "node:fs/promises";
+import { basename, resolve } from "node:path";
 
+import { DEFAULT_MODEL_REPO, DEFAULT_ROLE_REPO } from "./bundled-repos.js";
 import { readJsonFile, writeJsonFileAtomic } from "./json-file.js";
 import { requestRunStop } from "./run-artifacts.js";
 import { stringifyJson } from "./runtime-support.js";
@@ -23,7 +23,6 @@ export const OGS_RUNS_INDEX_FILE = ".ogs/runs-index.json";
 const OGS_PROJECT_FILE = ".ogs/project.json";
 const OGS_RUNTIME_FILE = ".ogs/runtime.json";
 const OGS_PROVIDER_OPENCODE_FILE = ".ogs/providers/opencode.json";
-const BUNDLED_REPO_DIRS = ["og-models", "og-roles"] as const;
 
 export type IndexedRun = {
   runId: string;
@@ -141,8 +140,8 @@ function createDefaultRuntimeConfig(): Record<string, unknown> {
   return {
     configVersion: "1",
     executor: "opencode",
-    roleRepo: "./og-roles",
-    modelRepo: "./og-models",
+    roleRepo: DEFAULT_ROLE_REPO,
+    modelRepo: DEFAULT_MODEL_REPO,
     runsDir: OGS_RUNS_DIR,
     workspace: {
       rolesDir: "roles",
@@ -161,39 +160,6 @@ function createDefaultRuntimeConfig(): Record<string, unknown> {
       }
     }
   };
-}
-
-function resolvePackageRootDir(): string {
-  return resolve(dirname(fileURLToPath(import.meta.url)), "../..");
-}
-
-async function scaffoldBundledRepo(args: {
-  packageRootDir: string;
-  projectDir: string;
-  repoDirName: (typeof BUNDLED_REPO_DIRS)[number];
-}): Promise<void> {
-  const sourceDir = resolve(args.packageRootDir, args.repoDirName);
-  const targetDir = resolve(args.projectDir, args.repoDirName);
-  const targetStat = await stat(targetDir).catch(() => undefined);
-  if (targetStat?.isDirectory()) {
-    return;
-  }
-  const sourceStat = await stat(sourceDir).catch(() => undefined);
-  if (!sourceStat?.isDirectory()) {
-    throw new Error(`Bundled repository not found: ${args.repoDirName}`);
-  }
-  await cp(sourceDir, targetDir, { recursive: true });
-}
-
-async function scaffoldBundledRepos(projectDir: string): Promise<void> {
-  const packageRootDir = resolvePackageRootDir();
-  for (const repoDirName of BUNDLED_REPO_DIRS) {
-    await scaffoldBundledRepo({
-      packageRootDir,
-      projectDir,
-      repoDirName
-    });
-  }
 }
 
 function parseJsonLines(content: string): Array<Record<string, unknown>> {
@@ -299,7 +265,6 @@ export async function ensureProjectSkeleton(args: {
       runs: []
     })}\n`
   );
-  await scaffoldBundledRepos(args.workdir);
 }
 
 export async function loadIndexedRuns(workdir: string): Promise<IndexedRun[]> {

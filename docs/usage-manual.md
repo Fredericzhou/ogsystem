@@ -145,7 +145,7 @@ Use it with `ogs-nl2mmd --message "..."` for one-shot drafting, or omit `--messa
 - Base commands are for function and runtime behavior.
 - Wrapper commands are for project lifecycle and default operational flow.
 
-For project management, `ogs` defaults to the current directory. Use `--workdir <path>` only when you need to operate on another project root. `ogs project init` creates the local control plane in the current directory, and `ogs project create <name> --template <...>` creates a new project folder under the current directory unless a different parent is explicitly provided.
+For project management, `ogs` defaults to the current directory. Use `--workdir <path>` only when you need to operate on another project root. `ogs project init` creates the local control plane in the current directory, and `ogs project create <name> --template <...>` creates a new project folder under the current directory unless a different parent is explicitly provided. These commands do not copy the bundled role/model catalogs into the project; local `og-roles/` and `og-models/` are optional override repos only.
 
 Recommended test split:
 
@@ -182,6 +182,7 @@ OGSystem/
       <run-id>/
         ...
 
+  # optional local override repo
   og-roles/
     roles/
       <roleId>/
@@ -192,6 +193,7 @@ OGSystem/
         work.md
         input.schema.json
 
+  # optional local override repo
   og-models/
     catalog/
       opencode-models.json
@@ -390,6 +392,8 @@ Recommended template roles:
 
 `og-models/models/<modelId>/model.json` defines execution configuration.
 
+Projects can rely on the installed CLI's bundled `og-models/` catalog. Create a local `og-models/` only when you need to override or extend it for one project.
+
 Example:
 
 ```json
@@ -478,6 +482,8 @@ Example:
   }
 }
 ```
+
+Default `roleRepo` / `modelRepo` values still point to `./og-roles` and `./og-models`. If those directories are absent, the installed CLI automatically falls back to its bundled catalogs. If you set custom repo paths, those paths must exist.
 
 Compatibility rule:
 
@@ -761,8 +767,8 @@ This path auto-discovers:
 - `.ogs/runtime.json`
 - `.ogs/user-profile.json`
 - `.ogs/laws.json`
-- `og-models/`
-- `og-roles/`
+- local `og-models/` or the bundled model catalog
+- local `og-roles/` or the bundled role catalog
 
 Scenario-specific examples and the longer training matrix live in `examples/README.md`.
 

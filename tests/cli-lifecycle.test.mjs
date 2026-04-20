@@ -36,8 +36,8 @@ test("lifecycle cli project init/create commands scaffold project control plane"
   await stat(path.resolve(tempRoot, ".ogs", "runtime.json"));
   await stat(path.resolve(tempRoot, ".ogs", "project.json"));
   await stat(path.resolve(tempRoot, ".ogs", "runs-index.json"));
-  await stat(path.resolve(tempRoot, "og-roles", "roles", "demo-analyst", "role.json"));
-  await stat(path.resolve(tempRoot, "og-models", "models", "general-balanced", "model.json"));
+  await assert.rejects(() => stat(path.resolve(tempRoot, "og-roles")), /ENOENT/);
+  await assert.rejects(() => stat(path.resolve(tempRoot, "og-models")), /ENOENT/);
 
   const createResult = await runCli(
     ["project", "create", "demo-app", "--template", "minimal"],
@@ -49,8 +49,16 @@ test("lifecycle cli project init/create commands scaffold project control plane"
   const createdDir = createPayload.projectDir;
   await stat(path.resolve(createdDir, ".ogs", "runtime.json"));
   await stat(path.resolve(createdDir, "system.mmd"));
-  await stat(path.resolve(createdDir, "og-roles", "roles", "demo-analyst", "role.json"));
-  await stat(path.resolve(createdDir, "og-models", "models", "general-balanced", "model.json"));
+  await assert.rejects(() => stat(path.resolve(createdDir, "og-roles")), /ENOENT/);
+  await assert.rejects(() => stat(path.resolve(createdDir, "og-models")), /ENOENT/);
+
+  const startResult = await runCli(
+    ["run", "start", "--system", "system.mmd", "--prompt", "cli lifecycle template", "--dry-run"],
+    { cwd: createdDir }
+  );
+  assert.strictEqual(startResult.code, 0, startResult.stderr);
+  const startPayload = JSON.parse(startResult.stdout);
+  assert.equal(startPayload.status, "done");
 });
 
 test("lifecycle cli run start/list/status/logs/resume/stop works end-to-end", async () => {

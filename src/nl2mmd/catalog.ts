@@ -10,6 +10,7 @@
 import { readdir } from "node:fs/promises";
 import { resolve } from "node:path";
 
+import { DEFAULT_MODEL_REPO, DEFAULT_ROLE_REPO, resolveModelRepoRoot, resolveRoleRootDir } from "../runtime/bundled-repos.js";
 import {
   validateLawsConfig,
   validateRuntimeConfig
@@ -56,8 +57,8 @@ function getDefaultRuntimeConfig(path: string) {
   return validateRuntimeConfig(
     {
       executor: "opencode",
-      roleRepo: "./og-roles",
-      modelRepo: "./og-models",
+      roleRepo: DEFAULT_ROLE_REPO,
+      modelRepo: DEFAULT_MODEL_REPO,
       runsDir: ".ogs/runs",
       workspace: {
         rolesDir: "roles",
@@ -137,8 +138,8 @@ export async function loadNl2MmdContext(args: {
       ? validateRuntimeConfig(runtimeConfigSource, runtimePath)
       : getDefaultRuntimeConfig(runtimePath);
 
-  const roleRootDir = resolve(args.workdir, runtimeConfig.roleRepo, "roles");
-  const modelRootDir = resolve(args.workdir, runtimeConfig.modelRepo);
+  const roleRootDir = resolveRoleRootDir(args.workdir, runtimeConfig.roleRepo);
+  const modelRootDir = resolveModelRepoRoot(args.workdir, runtimeConfig.modelRepo);
 
   const roleEntries = (await readdir(roleRootDir, { withFileTypes: true }))
     .filter((entry) => entry.isDirectory())
