@@ -1067,6 +1067,24 @@ async function runRunCommand(argv: string[]): Promise<void> {
   throw createCliInputError("CLI_UNKNOWN_SUBCOMMAND", `Unknown run subcommand: ${subcommand}`);
 }
 
+function shouldKeepProcessAlive(argv: string[]): boolean {
+  if (argv[0] === "visualizer") {
+    return true;
+  }
+  return argv[0] === "run" && argv[1] === "logs" && argv.includes("--follow");
+}
+
+function flushAndExit(code: number): void {
+  const exit = () => process.exit(code);
+  process.stdout.write("", () => {
+    process.stderr.write("", exit);
+  });
+}
+
+function normalizeExitCode(value: number | string | undefined): number {
+  return typeof value === "number" ? value : 0;
+}
+
 async function main(): Promise<void> {
   const argv = process.argv.slice(2);
   if (argv.length === 0) {
@@ -1105,19 +1123,32 @@ async function main(): Promise<void> {
   await runLegacyMode(argv);
 }
 
-main().catch((error) => {
-  const runtimeError =
-    error instanceof RuntimeError
-      ? error
-      : createRuntimeError(
-          normalizeRuntimeError(error, {
-            errorCode: "CLI_COMMAND_FAILED",
-            errorCategory: "system",
-            retryable: false,
-            stage: "cli"
-          })
-        );
-  console.error(runtimeError.message);
-  console.error(formatRuntimeErrorEnvelope(runtimeError.envelope));
-  process.exitCode = 1;
-});
+const cliArgv = process.argv.slice(2);
+const keepAlive = shouldKeepProcessAlive(cliArgv);
+
+main()
+  .then(() => {
+    if (!keepAlive) {
+      flushAndExit(normalizeExitCode(process.exitCode));
+    }
+  })
+  .catch((error) => {
+    const runtimeError =
+      error instanceof RuntimeError
+        ? error
+        : createRuntimeError(
+            normalizeRuntimeError(error, {
+              errorCode: "CLI_COMMAND_FAILED",
+              errorCategory: "system",
+              retryable: false,
+              stage: "cli"
+            })
+          );
+    console.error(runtimeError.message);
+    console.error(formatRuntimeErrorEnvelope(runtimeError.envelope));
+    if (!keepAlive) {
+      flushAndExit(1);
+      return;
+    }
+    process.exitCode = 1;
+  });

@@ -265,7 +265,7 @@ export function createDefaultExecutor(args: {
       }
 
       const closedAt = new Date().toISOString();
-      runClient.close();
+      await runClient.close();
       await writeFile(
         args.runContext.opencodeEndpointPath,
         stringifyJson({

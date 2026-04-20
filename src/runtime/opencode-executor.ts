@@ -28,7 +28,7 @@ import type { LoadedModelPackage } from "./types.js";
 export type StartedServer = {
   url: string;
   pid?: number;
-  close(): void;
+  close(): Promise<void>;
   getOutput(): string;
 };
 
@@ -119,7 +119,7 @@ export type OpencodeRunClient = {
   url: string;
   pid?: number;
   startedAt: string;
-  close(): void;
+  close(): Promise<void>;
   getOutput(): string;
   client: OpencodeClientLike;
 };
@@ -527,10 +527,32 @@ async function startServer(args: {
       resolve({
         url,
         pid: child.pid,
-        close() {
-          if (!child.killed) {
-            child.kill("SIGTERM");
+        async close() {
+          if (child.exitCode !== null || child.signalCode !== null) {
+            return;
           }
+          await new Promise<void>((resolveClose) => {
+            let resolved = false;
+            const finish = () => {
+              if (resolved) {
+                return;
+              }
+              resolved = true;
+              clearTimeout(forceKillTimer);
+              resolveClose();
+            };
+            const onExit = () => finish();
+            const forceKillTimer = setTimeout(() => {
+              if (!child.killed) {
+                child.kill("SIGKILL");
+              }
+            }, 3000);
+            child.once("exit", onExit);
+            child.once("error", onExit);
+            if (!child.killed) {
+              child.kill("SIGTERM");
+            }
+          });
         },
         getOutput() {
           return output.trim();
@@ -621,8 +643,8 @@ export async function startOpencodeRunClient(
     url: server.url,
     pid: server.pid,
     startedAt: new Date().toISOString(),
-    close() {
-      server.close();
+    async close() {
+      await server.close();
     },
     getOutput() {
       return server.getOutput();

@@ -388,7 +388,7 @@ async function runOnlineModelConnectivityCheck(args: {
       }
     }
   } finally {
-    runClient.close();
+    await runClient.close();
   }
 }
 
