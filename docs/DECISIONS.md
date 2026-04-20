@@ -95,7 +95,7 @@ Reason:
 `ogs` lifecycle commands are the primary operator surface.
 
 - `ogs project init`
-- `ogs project create <name> --template <templateId>`
+- `ogs project create <name> [--template <templateId>]`
 - `ogs run start|resume|stop|list|status|inspect|logs`
 - run stop follows `running -> stopping -> stopped` and persists stop intent/outcome in `control/`
 

@@ -38,7 +38,7 @@ function usageRoot(): string {
   return [
     "Usage:",
     "  ogs project init",
-    "  ogs project create <name> --template <minimal|software-dev|consultation>",
+    "  ogs project create <name> [--template <empty|minimal|software-dev|consultation>]",
     "  ogs project sync --system <file.mmd>",
     "  ogs visualizer [--workdir <path>] [--host <host>] [--port <n|0>]",
     "  ogs run start --system <file.mmd> --input <text> [options]",
@@ -69,8 +69,8 @@ function usageRoot(): string {
 function usageProject(): string {
   return [
     "Usage:",
-    "  ogs project init [--template <minimal|software-dev|consultation>] [--workdir <path>]",
-    "  ogs project create <name> --template <minimal|software-dev|consultation> [--workdir <path>]",
+    "  ogs project init [--template <empty|minimal|software-dev|consultation>] [--workdir <path>]",
+    "  ogs project create <name> [--template <empty|minimal|software-dev|consultation>] [--workdir <path>]",
     "  ogs project sync --system <file.mmd> [--workdir <path>]",
     "",
     "Project lifecycle:",
@@ -81,15 +81,17 @@ function usageProject(): string {
     "Defaults:",
     "  current directory is the project root unless --workdir is set",
     "  create uses the current directory as the parent directory unless --workdir is set",
-    "  templates are intentionally limited to keep project management consistent",
+    "  init defaults to minimal; create defaults to empty",
     "",
     "Templates:",
+    "  empty",
     "  minimal",
     "  software-dev",
     "  consultation",
     "",
     "Examples:",
     "  ogs project init",
+    "  ogs project create demo-app",
     "  ogs project init --template software-dev",
     "  ogs project create demo-app --template minimal",
     "  ogs project sync --system system.mmd"
@@ -184,6 +186,17 @@ function createCliInputError(errorCode: string, message: string): RuntimeError {
     retryable: false,
     stage: "cli"
   });
+}
+
+function isProjectTemplateId(
+  value: string | undefined
+): value is "empty" | "minimal" | "software-dev" | "consultation" {
+  return (
+    value === "empty" ||
+    value === "minimal" ||
+    value === "software-dev" ||
+    value === "consultation"
+  );
 }
 
 function shellEscape(value: string): string {
@@ -586,28 +599,31 @@ async function runProjectCommand(argv: string[]): Promise<void> {
     }
     const workdir = asString(values.workdir) ?? process.cwd();
     const template = asString(values.template) ?? "minimal";
-    if (
-      template !== "minimal" &&
-      template !== "software-dev" &&
-      template !== "consultation"
-    ) {
+    if (!isProjectTemplateId(template)) {
       throw createCliInputError(
         "CLI_PROJECT_INIT_INVALID_TEMPLATE",
-        "--template must be one of: minimal, software-dev, consultation"
+        "--template must be one of: empty, minimal, software-dev, consultation"
       );
     }
     await ensureProjectSkeleton({
       workdir,
       projectName: asString(values.name)
     });
-    await scaffoldProjectTemplate({
+    const templateSpec = await scaffoldProjectTemplate({
       workdir,
       templateId: template
     });
-    const syncResult = await syncProjectDependencies({
-      workdir,
-      systemPath: "system.mmd"
-    });
+    const syncResult = templateSpec.syncDependencies
+      ? await syncProjectDependencies({
+          workdir,
+          systemPath: "system.mmd"
+        })
+      : {
+          roleIds: [],
+          modelIds: [],
+          importedRoleIds: [],
+          importedModelIds: []
+        };
     const index = await rebuildRunsIndex(workdir);
     console.log(
       JSON.stringify(
@@ -641,15 +657,11 @@ async function runProjectCommand(argv: string[]): Promise<void> {
     if (!projectName) {
       throw createCliInputError("CLI_PROJECT_CREATE_MISSING_NAME", "Missing project name");
     }
-    const template = asString(values.template);
-    if (
-      template !== "minimal" &&
-      template !== "software-dev" &&
-      template !== "consultation"
-    ) {
+    const template = asString(values.template) ?? "empty";
+    if (!isProjectTemplateId(template)) {
       throw createCliInputError(
         "CLI_PROJECT_CREATE_INVALID_TEMPLATE",
-        "--template must be one of: minimal, software-dev, consultation"
+        "--template must be one of: empty, minimal, software-dev, consultation"
       );
     }
     const parentDir = asString(values.workdir) ?? process.cwd();

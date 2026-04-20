@@ -170,6 +170,20 @@ ogs project init --template minimal
 或者直接创建新目录：
 
 ```bash
+ogs project create demo-app
+cd demo-app
+```
+
+默认 `create` 会生成“空项目骨架”：
+
+- 有 `.ogs/` 配置与本地 `og-roles/` / `og-models/` 目录
+- 有可编辑的 `system.mmd`
+- 有参考用的 `system.example.mmd`
+- 不会先导入任何 role/model 依赖
+
+如果你想直接拿到可运行示例，再显式选择 runnable 模板：
+
+```bash
 ogs project create demo-app --template minimal
 cd demo-app
 ```
@@ -186,6 +200,7 @@ cd demo-app
 - `.ogs/user-profile.json`
 - `.ogs/providers/opencode.json`
 - `system.mmd`
+- `system.example.mmd`（仅 `create` 默认空模板）
 - 本地最小 `og-roles/`
 - 本地最小 `og-models/`
 
@@ -316,7 +331,7 @@ Use it with `ogs-nl2mmd --message "..."` for one-shot drafting, or omit `--messa
 - Base commands are for function and runtime behavior.
 - Wrapper commands are for project lifecycle and default operational flow.
 
-For project management, `ogs` defaults to the current directory. Use `--workdir <path>` only when you need to operate on another project root. `ogs project init` scaffolds the current directory as a runnable project, and `ogs project create <name> --template <...>` creates the same structure in a new project folder under the current directory unless a different parent is explicitly provided. Both commands materialize project-local `og-roles/` and `og-models/` with only the dependencies required by the chosen template. `ogs project sync --system <file.mmd>` imports any additional role/model dependencies referenced by a Mermaid system into the local project repos.
+For project management, `ogs` defaults to the current directory. Use `--workdir <path>` only when you need to operate on another project root. `ogs project init` scaffolds the current directory as a runnable project by default, while `ogs project create <name>` creates a new empty project folder unless you pass a runnable `--template`. Both commands materialize project-local `og-roles/` and `og-models/`; runnable templates import only the dependencies they reference, and empty scaffolds leave dependency import to a later `ogs project sync --system <file.mmd>`.
 
 Recommended test split:
 
@@ -740,6 +755,146 @@ Runtime prompt projection contract:
 - `round`: current loop iteration as a string
 - `system_notes`: reserved runtime hint channel; currently only populated selectively
 - `user_profile`: serialized user-profile payload
+
+How upstream output becomes downstream input:
+
+- upstream roles emit one normalized envelope: `event`, `content`, and optional `data`
+- downstream roles do not receive that envelope directly as their whole input
+- instead, runtime always builds one prompt-input shell with `task/context/allowed_events/last_output/system_notes/round/user_profile`
+- the only part that varies by graph context is `context` (and `last_output`, which mirrors it)
+- ordinary single-upstream nodes default to `context = upstream.content`
+- join nodes default to `context = { sourceRoleId: { event, content, data } }`
+- `context.map` replaces that default `context` payload with a new projected object
+
+Practical meaning of `content` vs `data`:
+
+- `content` is the human-readable result and the default downstream context for ordinary nodes
+- `data` is optional structured payload for machine-stable downstream field extraction
+- if a downstream role needs structured values, prefer putting them in upstream `data` and reading them through `context.map`
+
+Ordinary node input example:
+
+Upstream role output:
+
+```json
+{
+  "event": "ANALYSIS_DONE",
+  "content": "Authentication flow looks riskiest.",
+  "data": {
+    "brief": "Authentication flow looks riskiest.",
+    "risk_level": "high"
+  }
+}
+```
+
+Without `context.map`, the downstream prompt-input shell looks like:
+
+```json
+{
+  "task": "Assess the current request",
+  "context": "Authentication flow looks riskiest.",
+  "allowed_events": "[\"REVIEW_DONE\",\"NEED_MORE_INFO\"]",
+  "last_output": "Authentication flow looks riskiest.",
+  "system_notes": "",
+  "round": "1",
+  "user_profile": "{\"language\":\"zh-CN\",\"style\":\"concise\"}"
+}
+```
+
+With:
+
+```mermaid
+%% context.map.reviewer.brief=direct.data.brief
+%% context.map.reviewer.risk_level=direct.data.risk_level
+%% context.map.reviewer.task=global.task
+```
+
+the downstream prompt-input shell becomes:
+
+```json
+{
+  "task": "Assess the current request",
+  "context": "{\"brief\":\"Authentication flow looks riskiest.\",\"risk_level\":\"high\",\"task\":\"Assess the current request\"}",
+  "allowed_events": "[\"REVIEW_DONE\",\"NEED_MORE_INFO\"]",
+  "last_output": "{\"brief\":\"Authentication flow looks riskiest.\",\"risk_level\":\"high\",\"task\":\"Assess the current request\"}",
+  "system_notes": "",
+  "round": "1",
+  "user_profile": "{\"language\":\"zh-CN\",\"style\":\"concise\"}"
+}
+```
+
+Join node input example:
+
+When a join node does not declare `context.map`, runtime injects all declared sources:
+
+```json
+{
+  "task": "Produce a final review",
+  "context": "{\"worker_a\":{\"event\":\"DONE\",\"content\":\"Cardiology risk is high\",\"data\":{\"score\":8}},\"worker_b\":{\"event\":\"DONE\",\"content\":\"Neurology risk is low\",\"data\":{\"score\":2}}}",
+  "allowed_events": "[\"REPORT_READY\"]",
+  "last_output": "{\"worker_a\":{\"event\":\"DONE\",\"content\":\"Cardiology risk is high\",\"data\":{\"score\":8}},\"worker_b\":{\"event\":\"DONE\",\"content\":\"Neurology risk is low\",\"data\":{\"score\":2}}}",
+  "system_notes": "",
+  "round": "1",
+  "user_profile": "{\"language\":\"zh-CN\",\"style\":\"concise\"}"
+}
+```
+
+With:
+
+```mermaid
+%% join.mode.review=all_of
+%% join.sources.review=worker_a,worker_b
+%% context.map.review.a_summary=source(worker_a).content
+%% context.map.review.a_score=source(worker_a).data.score
+%% context.map.review.b_summary=source(worker_b).content
+%% context.map.review.task=global.task
+```
+
+the join input becomes one projected object instead:
+
+```json
+{
+  "task": "Produce a final review",
+  "context": "{\"a_summary\":\"Cardiology risk is high\",\"a_score\":8,\"b_summary\":\"Neurology risk is low\",\"task\":\"Produce a final review\"}",
+  "allowed_events": "[\"REPORT_READY\"]",
+  "last_output": "{\"a_summary\":\"Cardiology risk is high\",\"a_score\":8,\"b_summary\":\"Neurology risk is low\",\"task\":\"Produce a final review\"}",
+  "system_notes": "",
+  "round": "1",
+  "user_profile": "{\"language\":\"zh-CN\",\"style\":\"concise\"}"
+}
+```
+
+Prompt template interpretation:
+
+- role `prompt.md` is a template, not the final prompt sent to the model
+- runtime first renders `{{persona}}`, `{{work}}`, `{{task}}`, `{{context}}`, `{{user_profile}}`, `{{allowed_events}}`, and `{{last_output}}`
+- the rendered prompt plus `output.schema.json` is then passed to the model executor
+- `Return JSON only.` in the prompt is just one instruction layer; actual output shape is still enforced by `output.schema.json` and runtime validation
+
+`context.map` selector quick reference:
+
+- `global.task`
+- `global.user_profile`
+- `global.user_profile.<path>`
+- `direct.content`
+- `direct.event`
+- `direct.data`
+- `direct.data.<path>`
+- `source(<roleId>).content`
+- `source(<roleId>).event`
+- `source(<roleId>).data`
+- `source(<roleId>).data.<path>`
+
+`context.map` usage rules:
+
+- `context.map.<targetRoleId>.<fieldName>=<selector>`
+- ordinary nodes can use `direct.*` and `global.*`
+- join nodes can use `source(<roleId>).*` and `global.*`
+- join nodes must not use `direct.*`
+- non-join nodes must not use `source(...)`
+- `source(<roleId>)` must be present in `join.sources.<targetRoleId>`
+- missing `data` fields or missing nested paths fail closed at execution time
+- for reliable downstream structure, pair `context.map` with a `role_input` contract
 
 Lineage contract:
 

@@ -59,9 +59,60 @@ export type ProjectDependencySyncResult = {
   importedModelIds: string[];
 };
 
-type ProjectTemplateId = "minimal" | "software-dev" | "consultation";
+type ProjectTemplateId = "empty" | "minimal" | "software-dev" | "consultation";
 
-const PROJECT_TEMPLATES: Record<ProjectTemplateId, { systemMmd: string; lawsJson: string }> = {
+type ProjectTemplateSpec = {
+  systemMmd: string;
+  lawsJson: string;
+  exampleSystemMmd?: string;
+  syncDependencies: boolean;
+};
+
+const PROJECT_TEMPLATES: Record<ProjectTemplateId, ProjectTemplateSpec> = {
+  empty: {
+    systemMmd: [
+      "flowchart TD",
+      "%% Starter scaffold only. Replace this stub with a runnable Mermaid system.",
+      "%% Then run: ogs project sync --system system.mmd",
+      "%% Or copy system.example.mmd as your starting point.",
+      "%%",
+      "%% Suggested metadata:",
+      "%% system.id=project.starter",
+      "%% system.version=1.0.0",
+      "%% law.global=law.project.base",
+      "%% entry.role=demo-analyst",
+      "%% model.bind.demo-analyst=general-balanced",
+      "%%",
+      "%% input -->|ENTER| analyst[Role:demo-analyst]",
+      "%% analyst[Role:demo-analyst] -->|ANALYSIS_DONE| output",
+      ""
+    ].join("\n"),
+    lawsJson: stringifyJson({
+      laws: [
+        {
+          lawId: "law.project.base",
+          constraints: {
+            forbiddenToolRefs: [],
+            maxTransitions: 8,
+            allowNoopWithoutExecutionBinding: true
+          }
+        }
+      ]
+    }),
+    exampleSystemMmd: [
+      "flowchart TD",
+      "%% system.id=project.example.minimal",
+      "%% system.version=1.0.0",
+      "%% law.global=law.project.base",
+      "%% entry.role=demo-analyst",
+      "%% model.bind.demo-analyst=general-balanced",
+      "",
+      "input -->|ENTER| analyst[Role:demo-analyst]",
+      "analyst[Role:demo-analyst] -->|ANALYSIS_DONE| output",
+      ""
+    ].join("\n"),
+    syncDependencies: false
+  },
   minimal: {
     systemMmd: [
       "flowchart TD",
@@ -86,7 +137,8 @@ const PROJECT_TEMPLATES: Record<ProjectTemplateId, { systemMmd: string; lawsJson
           }
         }
       ]
-    })
+    }),
+    syncDependencies: true
   },
   "software-dev": {
     systemMmd: [
@@ -122,7 +174,8 @@ const PROJECT_TEMPLATES: Record<ProjectTemplateId, { systemMmd: string; lawsJson
           }
         }
       ]
-    })
+    }),
+    syncDependencies: true
   },
   consultation: {
     systemMmd: [
@@ -152,7 +205,8 @@ const PROJECT_TEMPLATES: Record<ProjectTemplateId, { systemMmd: string; lawsJson
           }
         }
       ]
-    })
+    }),
+    syncDependencies: true
   }
 };
 
@@ -193,10 +247,7 @@ function createDefaultUserProfile(): Record<string, unknown> {
   };
 }
 
-function getProjectTemplate(templateId: ProjectTemplateId): {
-  systemMmd: string;
-  lawsJson: string;
-} {
+function getProjectTemplate(templateId: ProjectTemplateId): ProjectTemplateSpec {
   const template = PROJECT_TEMPLATES[templateId];
   if (!template) {
     throw new Error(`Unsupported template: ${templateId}`);
@@ -423,12 +474,16 @@ export async function ensureProjectSkeleton(args: {
 export async function scaffoldProjectTemplate(args: {
   workdir: string;
   templateId: ProjectTemplateId;
-}): Promise<void> {
+}): Promise<ProjectTemplateSpec> {
   const template = getProjectTemplate(args.templateId);
   const paths = resolveOgsPaths(args.workdir);
   await ensureFile(resolve(args.workdir, "system.mmd"), `${template.systemMmd}\n`);
+  if (template.exampleSystemMmd) {
+    await ensureFile(resolve(args.workdir, "system.example.mmd"), `${template.exampleSystemMmd}\n`);
+  }
   await ensureFile(paths.lawsPath, `${template.lawsJson}\n`);
   await ensureFile(paths.userProfilePath, `${stringifyJson(createDefaultUserProfile())}\n`);
+  return template;
 }
 
 export async function syncProjectDependencies(args: {
@@ -721,14 +776,16 @@ export async function createProjectFromTemplate(args: {
     workdir: projectDir,
     projectName: args.name
   });
-  await scaffoldProjectTemplate({
+  const template = await scaffoldProjectTemplate({
     workdir: projectDir,
     templateId: args.templateId
   });
-  await syncProjectDependencies({
-    workdir: projectDir,
-    systemPath: "system.mmd"
-  });
+  if (template.syncDependencies) {
+    await syncProjectDependencies({
+      workdir: projectDir,
+      systemPath: "system.mmd"
+    });
+  }
   await rebuildRunsIndex(projectDir);
   return projectDir;
 }

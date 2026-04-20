@@ -38,10 +38,14 @@ test("ogs help command surfaces layered guidance", async () => {
   assert.strictEqual(projectHelp.code, 0);
   assert.match(
     projectHelp.stdout,
-    /ogs project init \[--template <minimal\|software-dev\|consultation>\] \[--workdir <path>\]/
+    /ogs project init \[--template <empty\|minimal\|software-dev\|consultation>\] \[--workdir <path>\]/
+  );
+  assert.match(
+    projectHelp.stdout,
+    /ogs project create <name> \[--template <empty\|minimal\|software-dev\|consultation>\] \[--workdir <path>\]/
   );
   assert.match(projectHelp.stdout, /ogs project sync --system <file\.mmd> \[--workdir <path>\]/);
-  assert.match(projectHelp.stdout, /templates are intentionally limited/);
+  assert.match(projectHelp.stdout, /init defaults to minimal; create defaults to empty/);
 
   const runHelp = await runNodeCli(runtimeCliPath, ["run", "--help"]);
   assert.strictEqual(runHelp.code, 0);

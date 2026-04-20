@@ -51,13 +51,23 @@ pnpm add -g ogsystem
 Quick start with the installed CLI:
 
 ```bash
+ogs project create demo-app
+cd demo-app
+
+# for a runnable starter graph instead of an empty scaffold:
+# ogs project create demo-app --template minimal
+```
+
+Minimal runnable quick start:
+
+```bash
 ogs project create demo-app --template minimal
 cd demo-app
 ogs run start --system system.mmd --input "smoke" --dry-run
 ogs visualizer --workdir .
 ```
 
-Generated projects include `.ogs/`, `system.mmd`, and minimal local `og-roles/` / `og-models/` dependencies imported from the bundled template source.
+Generated projects always include `.ogs/`, `system.mmd`, and local `og-roles/` / `og-models/` repos. The default `create` scaffold is empty and also writes `system.example.mmd`; runnable templates import only the role/model dependencies they reference.
 
 Local source install:
 
@@ -155,7 +165,7 @@ For day-to-day use, start with `docs/usage-manual.md`. It keeps the command matr
 - `.ogs/user-profile.json` provides user delivery preference sample.
 - `.ogs/laws.json` provides sample law catalog colocated with runtime config.
 - `ogs project init` scaffolds the current directory as a runnable project using the selected template.
-- `ogs project create <name> --template <...>` scaffolds the same structure in a new project directory.
+- `ogs project create <name> [--template <...>]` scaffolds the same structure in a new project directory.
 - `ogs project sync --system <file.mmd>` imports only the roles/models referenced by that system into the project-local repos.
 - `ogs visualizer --workdir .` starts the read-only run visualizer, and `ogs run start --visualize` attaches a temporary visualizer that auto-closes when the run ends.
 - `examples/target-model-binding-system.mmd` shows `model.bind.*` usage.
