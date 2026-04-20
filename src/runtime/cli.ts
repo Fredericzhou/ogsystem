@@ -119,8 +119,7 @@ function usageLegacy(): string {
     "Usage:",
     "  ogs --system <file.mmd> --prompt <text> [options]",
     "",
-    "Legacy-compatible mode bridges the runtime directly.",
-    "In the source repository, the equivalent command is:",
+    "Source checkout equivalent:",
     "  pnpm run run:adapter --system <file.mmd> --prompt <text> [options]",
     "Prefer ogs project/run commands for normal project management."
   ].join("\n");

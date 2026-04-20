@@ -40,6 +40,7 @@
 
 以下文档保留在 `docs/` 根目录作为设计背景参考：
 
+- `docs/context-map-projection-guide.md`：`context.map` selector 与祖先可达性说明。
 - `docs/ogsystem-data-projection-spec.md`：`quorum_of` 数据投影记录。
 - `docs/ogsystem-semantics-manual.md`：对齐型语义手册。
 - `docs/ogsystem-wait-timeout-semantics-v2.md`：未实现的 join 超时提案。
@@ -84,6 +85,9 @@
 - `docs/archive/history/role-model-user-profile-minimal-spec.md`
 - `docs/archive/history/langgraph-engine-example-systems.md`
 - `docs/archive/history/ogsystem-vnext-dev-plan.md`
+- `docs/archive/history/mermaid-dsl-v0.1.md`
+- `docs/archive/history/ogsystem-design-philosophy.md`
+- `docs/archive/history/role-md-open-source-projects.md`
 
 ## 5. 归档规则
 

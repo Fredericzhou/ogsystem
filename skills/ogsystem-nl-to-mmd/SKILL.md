@@ -295,7 +295,7 @@ Read these in order when needed:
 - `src/nl2mmd/*.ts`
 - `docs/usage-manual.md`
 - `docs/DECISIONS.md`
-- `specs/mermaid-dsl-v0.1.md`
+- `docs/archive/history/mermaid-dsl-v0.1.md`
 - `og-roles/roles/*`
 - `og-models/models/*`
 
