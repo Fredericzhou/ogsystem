@@ -30,6 +30,7 @@ test("ogs help command surfaces layered guidance", async () => {
   assert.strictEqual(rootHelp.code, 0);
   assert.match(rootHelp.stdout, /ogs help \[project\|run\|legacy\]/);
   assert.match(rootHelp.stdout, /project commands use the current directory/);
+  assert.match(rootHelp.stdout, /Legacy entrypoint:/);
   assert.match(rootHelp.stdout, /ogs --system <file\.mmd> --prompt <text> \[options\]/);
 
   const projectHelp = await runNodeCli(runtimeCliPath, ["help", "project"]);

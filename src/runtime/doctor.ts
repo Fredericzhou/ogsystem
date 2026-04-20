@@ -518,7 +518,7 @@ export async function runDoctor(args: {
   return report;
 }
 
-async function main(): Promise<void> {
+export async function main(): Promise<void> {
   const { values } = parseDoctorArgs();
 
   if (values.help) {
@@ -546,24 +546,27 @@ async function main(): Promise<void> {
     process.exitCode = 1;
   }
 }
+
+export function handleDoctorCliError(error: unknown): void {
+  const runtimeError =
+    error instanceof RuntimeError
+      ? error
+      : createRuntimeError(
+          normalizeRuntimeError(error, {
+            errorCode: "DOCTOR_COMMAND_FAILED",
+            errorCategory: "system",
+            stage: "doctor",
+            retryable: false
+          })
+        );
+  console.error(runtimeError.message);
+  console.error(formatRuntimeErrorEnvelope(runtimeError.envelope));
+  process.exitCode = 1;
+}
+
 const isMainModule =
   typeof process.argv[1] === "string" && fileURLToPath(import.meta.url) === resolve(process.argv[1]);
 
 if (isMainModule) {
-  main().catch((error) => {
-    const runtimeError =
-      error instanceof RuntimeError
-        ? error
-        : createRuntimeError(
-            normalizeRuntimeError(error, {
-              errorCode: "DOCTOR_COMMAND_FAILED",
-              errorCategory: "system",
-              stage: "doctor",
-              retryable: false
-            })
-          );
-    console.error(runtimeError.message);
-    console.error(formatRuntimeErrorEnvelope(runtimeError.envelope));
-    process.exitCode = 1;
-  });
+  main().catch(handleDoctorCliError);
 }

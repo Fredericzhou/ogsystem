@@ -1,3 +1,5 @@
 #!/usr/bin/env node
 
-import "../dist/runtime/doctor.js";
+import { handleDoctorCliError, main } from "../dist/runtime/doctor.js";
+
+main().catch(handleDoctorCliError);

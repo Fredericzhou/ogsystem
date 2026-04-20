@@ -55,7 +55,7 @@ function usageRoot(): string {
     "  run commands use the current directory unless --workdir is provided",
     "  project create writes a new project folder under the current directory",
     "",
-    "Legacy-compatible mode:",
+    "Legacy entrypoint:",
     "  ogs --system <file.mmd> --prompt <text> [options]"
   ].join("\n");
 }

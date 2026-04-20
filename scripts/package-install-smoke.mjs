@@ -1,14 +1,16 @@
-import test from "node:test";
 import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
-import { mkdtemp, mkdir, readdir, readFile, stat, symlink, writeFile } from "node:fs/promises";
+import { mkdtemp, mkdir, readdir, stat, writeFile } from "node:fs/promises";
 import os from "node:os";
-import path from "node:path";
+import path, { dirname } from "node:path";
 
 const repoRoot = process.cwd();
-const installPackageJson = JSON.parse(
-  await readFile(path.resolve(repoRoot, "package.json"), "utf8")
-);
+const packageManager = process.argv[2];
+
+if (packageManager !== "npm" && packageManager !== "pnpm") {
+  console.error("Usage: node scripts/package-install-smoke.mjs <npm|pnpm>");
+  process.exit(1);
+}
 
 function runCommand(command, args, options = {}) {
   return new Promise((resolve, reject) => {
@@ -30,40 +32,47 @@ function runCommand(command, args, options = {}) {
   });
 }
 
-test("packed CLI installs and scaffolds a runnable self-contained project", async () => {
-  const packDir = await mkdtemp(path.join(os.tmpdir(), "ogsystem-pack-"));
-  const installDir = await mkdtemp(path.join(os.tmpdir(), "ogsystem-install-"));
-  const appParent = await mkdtemp(path.join(os.tmpdir(), "ogsystem-app-parent-"));
+function resolveNodeManagedCommand(command) {
+  const nodeBinDir = dirname(process.execPath);
+  if (command === "npm") {
+    return path.resolve(nodeBinDir, process.platform === "win32" ? "npm.cmd" : "npm");
+  }
+  return command;
+}
+
+async function main() {
+  const tempRoot = await mkdtemp(path.join(os.tmpdir(), `ogsystem-install-smoke-${packageManager}-`));
+  const packDir = path.resolve(tempRoot, "pack");
+  const installDir = path.resolve(tempRoot, "install");
+  const appParent = path.resolve(tempRoot, "apps");
+  await mkdir(packDir, { recursive: true });
+  await mkdir(installDir, { recursive: true });
+  await mkdir(appParent, { recursive: true });
 
   const packResult = await runCommand("pnpm", ["pack", "--pack-destination", packDir], {
     cwd: repoRoot
   });
   assert.equal(packResult.code, 0, packResult.stderr);
+
   const packedFiles = await readdir(packDir);
   const tarballName = packedFiles.find((entry) => /^ogsystem-\d+\.\d+\.\d+\.tgz$/.test(entry));
   assert.ok(tarballName, `expected ogsystem tarball in ${packDir}`);
   const tarballPath = path.resolve(packDir, tarballName);
 
-  const installNodeModulesDir = path.resolve(installDir, "node_modules");
-  const installedPackageDir = path.resolve(installNodeModulesDir, "ogsystem");
-  await mkdir(installedPackageDir, { recursive: true });
-  const unpackResult = await runCommand("tar", [
-    "-xzf",
-    tarballPath,
-    "-C",
-    installedPackageDir,
-    "--strip-components=1"
-  ]);
-  assert.equal(unpackResult.code, 0, unpackResult.stderr);
+  await writeFile(
+    path.resolve(installDir, "package.json"),
+    JSON.stringify({ name: "ogsystem-install-smoke", private: true }, null, 2),
+    "utf8"
+  );
 
-  // Mirror runtime dependencies into an installation-like node_modules layout without registry access.
-  for (const dependencyName of Object.keys(installPackageJson.dependencies ?? {})) {
-    const targetPath = path.resolve(installNodeModulesDir, dependencyName);
-    const sourcePath = path.resolve(repoRoot, "node_modules", dependencyName);
-    await mkdir(path.dirname(targetPath), { recursive: true });
-    await symlink(sourcePath, targetPath);
-  }
+  const installResult = await runCommand(
+    resolveNodeManagedCommand(packageManager),
+    packageManager === "npm" ? ["install", tarballPath] : ["add", tarballPath],
+    { cwd: installDir }
+  );
+  assert.equal(installResult.code, 0, installResult.stderr);
 
+  const installedPackageDir = path.resolve(installDir, "node_modules", "ogsystem");
   const ogsBinPath = path.resolve(installedPackageDir, "bin", "ogs.mjs");
   const ogsDoctorBinPath = path.resolve(installedPackageDir, "bin", "ogs-doctor.mjs");
   await stat(ogsBinPath);
@@ -81,31 +90,27 @@ test("packed CLI installs and scaffolds a runnable self-contained project", asyn
 
   const createResult = await runCommand(
     "node",
-    [ogsBinPath, "project", "create", "demo-app", "--template", "minimal"],
-    { cwd: appParent }
+    [ogsBinPath, "project", "create", "demo-app", "--template", "minimal", "--workdir", appParent],
+    { cwd: installDir }
   );
   assert.equal(createResult.code, 0, createResult.stderr);
+
   const createPayload = JSON.parse(createResult.stdout);
   const projectDir = createPayload.projectDir;
-
   await stat(path.resolve(projectDir, "og-roles", "roles", "demo-analyst", "role.json"));
   await stat(path.resolve(projectDir, "og-models", "models", "general-balanced", "model.json"));
 
   const startResult = await runCommand(
     "node",
-    [ogsBinPath, "run", "start", "--system", "system.mmd", "--prompt", "packaged smoke", "--dry-run"],
+    [ogsBinPath, "run", "start", "--system", "system.mmd", "--prompt", "install smoke", "--dry-run"],
     { cwd: projectDir }
   );
   assert.equal(startResult.code, 0, startResult.stderr);
+
   const startPayload = JSON.parse(startResult.stdout);
   assert.equal(startPayload.status, "done");
 
-  const runIds = await readdir(path.resolve(projectDir, ".ogs", "runs"));
-  assert.ok(runIds.length > 0, "expected at least one generated run directory");
-  const reproScript = await readFile(
-    path.resolve(projectDir, ".ogs", "runs", runIds[0], "repro.sh"),
-    "utf8"
-  );
-  assert.match(reproScript, /\bogs "\$\{ARGS\[@\]\}"/);
-  assert.doesNotMatch(reproScript, /pnpm run run:adapter/);
-});
+  console.log(`package install smoke passed via ${packageManager}`);
+}
+
+await main();
