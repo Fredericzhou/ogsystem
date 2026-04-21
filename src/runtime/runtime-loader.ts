@@ -147,18 +147,42 @@ export async function loadUserProfile(
   return validateUserProfileConfig(await readJsonFile(profilePath), profilePath);
 }
 
-export async function loadProfiles(path?: string): Promise<ExecutionProfile[]> {
-  if (!path) {
-    return [];
+function resolveOptionalProjectFile(args: {
+  path?: string;
+  workdir?: string;
+  defaultBasename: string;
+}): string | undefined {
+  if (args.path) {
+    return args.path;
   }
-  return validateProfilesConfig(await readJsonFile(path), path);
+  if (!args.workdir) {
+    return undefined;
+  }
+  return resolve(args.workdir, args.defaultBasename);
 }
 
-export async function loadTools(path?: string): Promise<CliTool[]> {
-  if (!path) {
+export async function loadProfiles(path?: string, workdir?: string): Promise<ExecutionProfile[]> {
+  const profilePath = resolveOptionalProjectFile({
+    path,
+    workdir,
+    defaultBasename: "profiles.json"
+  });
+  if (!profilePath || !(await pathExists(profilePath))) {
     return [];
   }
-  return validateToolsConfig(await readJsonFile(path), path).tools;
+  return validateProfilesConfig(await readJsonFile(profilePath), profilePath);
+}
+
+export async function loadTools(path?: string, workdir?: string): Promise<CliTool[]> {
+  const toolsPath = resolveOptionalProjectFile({
+    path,
+    workdir,
+    defaultBasename: "tools.json"
+  });
+  if (!toolsPath || !(await pathExists(toolsPath))) {
+    return [];
+  }
+  return validateToolsConfig(await readJsonFile(toolsPath), toolsPath).tools;
 }
 
 export async function loadLaws(

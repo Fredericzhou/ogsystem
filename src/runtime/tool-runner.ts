@@ -4,9 +4,9 @@
  * helpers and feeding them the runtime's template variables, so it does not manage
  * scheduling, prompt design, or result ingestion beyond returning structured stdout/stderr.
  */
-import { spawn } from "node:child_process";
-import { existsSync } from "node:fs";
-import { resolve } from "node:path";
+import { spawn, spawnSync } from "node:child_process";
+import { accessSync, constants, existsSync } from "node:fs";
+import { delimiter, join, resolve } from "node:path";
 
 import type { CliTool } from "./types.js";
 
@@ -23,6 +23,13 @@ export class ToolExecutionError extends Error {
     this.name = "ToolExecutionError";
   }
 }
+
+type ResolveCliCommandOptions = {
+  execPath?: string;
+  env?: NodeJS.ProcessEnv;
+  probeCommand?: (command: string) => boolean;
+  lookupVoltaNode?: (env: NodeJS.ProcessEnv) => string | undefined;
+};
 
 function renderTemplate(value: string, vars: Record<string, string>): string {
   return value.replace(/\{\{([a-zA-Z0-9_.-]+)\}\}/g, (_all, key) => vars[key] ?? "");
@@ -48,6 +55,113 @@ function buildDryRunContent(command: string, args: string[]): string {
   return `[dry-run] ${command} ${args.join(" ")}`.trimEnd();
 }
 
+function canExecuteFile(candidate: string): boolean {
+  try {
+    accessSync(candidate, constants.X_OK);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+function collectPathCommandCandidates(command: string, envPath?: string): string[] {
+  if (!envPath) {
+    return [];
+  }
+
+  const candidates: string[] = [];
+  for (const entry of envPath.split(delimiter)) {
+    if (!entry) {
+      continue;
+    }
+    const candidate = join(entry, command);
+    if (canExecuteFile(candidate)) {
+      candidates.push(candidate);
+    }
+  }
+  return candidates;
+}
+
+function probeCommand(command: string): boolean {
+  const result = spawnSync(command, ["-p", "process.execPath"], {
+    stdio: "ignore"
+  });
+  return !result.error && result.status === 0;
+}
+
+function lookupVoltaNode(env: NodeJS.ProcessEnv): string | undefined {
+  const voltaCommandCandidates = [
+    env.VOLTA_HOME ? join(env.VOLTA_HOME, "bin", "volta") : undefined,
+    "volta"
+  ].filter((candidate): candidate is string => Boolean(candidate));
+
+  for (const candidate of voltaCommandCandidates) {
+    const result = spawnSync(candidate, ["which", "node"], {
+      encoding: "utf8",
+      env: {
+        ...process.env,
+        ...env
+      }
+    });
+
+    if (result.error || result.status !== 0) {
+      continue;
+    }
+
+    const resolvedNode = result.stdout.trim();
+    if (resolvedNode) {
+      return resolvedNode;
+    }
+  }
+
+  return undefined;
+}
+
+function appendUnique(target: string[], value: string | undefined) {
+  if (!value || target.includes(value)) {
+    return;
+  }
+  target.push(value);
+}
+export function resolveCliCommand(
+  command: string,
+  options: ResolveCliCommandOptions = {}
+): string {
+  if (command !== "node") {
+    return command;
+  }
+
+  const env = options.env ?? process.env;
+  const probe = options.probeCommand ?? probeCommand;
+  const lookupVoltaNodeFn = options.lookupVoltaNode ?? lookupVoltaNode;
+  const candidates: string[] = [];
+
+  appendUnique(candidates, env.OGSYSTEM_NODE_BIN);
+  appendUnique(candidates, options.execPath ?? process.execPath);
+  appendUnique(candidates, lookupVoltaNodeFn(env));
+
+  for (const candidate of collectPathCommandCandidates("node", env.PATH)) {
+    appendUnique(candidates, candidate);
+  }
+
+  for (const candidate of [
+    "/opt/homebrew/bin/node",
+    "/usr/local/bin/node",
+    "/usr/bin/node",
+    "node"
+  ]) {
+    appendUnique(candidates, candidate);
+  }
+
+  for (const candidate of candidates) {
+    if (probe(candidate)) {
+      return candidate;
+    }
+  }
+
+  return command;
+}
+
 /**
  * Launches the CLI tool described by `CliTool`, enforcing the timeout/output invariants.
  * Failure window: after `settled` flips, the promise is immutable and the tool must not touch
@@ -71,13 +185,14 @@ export async function runCliTool(args: {
   const renderedArgs = renderArgs(args.tool.argsTemplate, args.vars).map((item) =>
     materializePathLikeArg(item, args.commandBaseDir)
   );
+  const resolvedCommand = resolveCliCommand(args.tool.command);
 
   if (args.dryRun) {
     return {
       exitCode: 0,
       stdout: JSON.stringify({
         event: args.dryRunOutput?.event,
-        content: buildDryRunContent(args.tool.command, renderedArgs)
+        content: buildDryRunContent(resolvedCommand, renderedArgs)
       }),
       stderr: "",
       args: renderedArgs
@@ -90,7 +205,7 @@ export async function runCliTool(args: {
     let stderr = "";
     let totalBytes = 0;
 
-    const child = spawn(args.tool.command, renderedArgs, {
+    const child = spawn(resolvedCommand, renderedArgs, {
       cwd: args.workdir,
       env: {
         ...process.env,

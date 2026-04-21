@@ -2,7 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import path from "node:path";
 
-import { runCliTool } from "../dist/runtime/tool-runner.js";
+import { resolveCliCommand, runCliTool } from "../dist/runtime/tool-runner.js";
 
 const DEFAULT_MAX_OUTPUT_BYTES = 64 * 1024;
 
@@ -35,7 +35,8 @@ test("dry run reports formatted content", async () => {
   });
   const parsed = JSON.parse(result.stdout);
   assert.strictEqual(parsed.event, "TEST_EVENT");
-  assert.ok(parsed.content.startsWith("[dry-run] node"));
+  assert.match(parsed.content, /^\[dry-run\] /);
+  assert.match(parsed.content, /console\.log\('hello'\)/);
 });
 
 test("runCliTool captures large stdout payloads", async () => {
@@ -125,4 +126,44 @@ test("runCliTool rejects when process exits with non-zero code", async () => {
       return true;
     }
   );
+});
+
+test("resolveCliCommand keeps non-node commands unchanged", () => {
+  assert.equal(resolveCliCommand("bash"), "bash");
+});
+
+test("resolveCliCommand prefers the current execPath when it is healthy", () => {
+  const resolved = resolveCliCommand("node", {
+    execPath: "/runtime/node",
+    probeCommand: (candidate) => candidate === "/runtime/node",
+    lookupVoltaNode: () => "/volta/node"
+  });
+
+  assert.equal(resolved, "/runtime/node");
+});
+
+test("resolveCliCommand falls back to Volta when execPath is unhealthy", () => {
+  const resolved = resolveCliCommand("node", {
+    execPath: "/broken/node",
+    env: {
+      PATH: "/broken/bin:/fallback/bin"
+    },
+    probeCommand: (candidate) => candidate === "/volta/node",
+    lookupVoltaNode: () => "/volta/node"
+  });
+
+  assert.equal(resolved, "/volta/node");
+});
+
+test("resolveCliCommand falls back to plain node when no candidate passes health checks", () => {
+  const resolved = resolveCliCommand("node", {
+    execPath: "/broken/node",
+    env: {
+      PATH: "/broken/bin"
+    },
+    probeCommand: () => false,
+    lookupVoltaNode: () => undefined
+  });
+
+  assert.equal(resolved, "node");
 });

@@ -33,6 +33,14 @@ import type {
   UserProfile
 } from "./types.js";
 
+function resolveOptionalProjectPath(args: {
+  workdir: string;
+  explicitPath?: string;
+  defaultBasename: string;
+}): string | undefined {
+  return args.explicitPath ?? resolve(args.workdir, args.defaultBasename);
+}
+
 function mergeLawConstraints(base: EffectiveLawConstraints, spec?: LawSpec): EffectiveLawConstraints {
   if (!spec?.constraints) {
     return base;
@@ -152,8 +160,18 @@ export async function prepareRuntimeSetup(args: {
     catalog: modelCatalog
   });
   const plan = createExecutionPlan(system, resolvedModelSelection.resolvedByRoleId);
-  const profiles = await loadProfiles(args.profilesPath);
-  const tools = await loadTools(args.toolsPath);
+  const resolvedProfilesPath = resolveOptionalProjectPath({
+    workdir: args.workdir,
+    explicitPath: args.profilesPath,
+    defaultBasename: "profiles.json"
+  });
+  const resolvedToolsPath = resolveOptionalProjectPath({
+    workdir: args.workdir,
+    explicitPath: args.toolsPath,
+    defaultBasename: "tools.json"
+  });
+  const profiles = await loadProfiles(args.profilesPath, args.workdir);
+  const tools = await loadTools(args.toolsPath, args.workdir);
   const lawCatalog = await loadLaws(args.lawsPath, args.workdir);
   const userProfile = await loadUserProfile(args.userProfilePath, args.workdir);
   const effectiveLaw = resolveEffectiveLaw(system, lawCatalog);
@@ -199,8 +217,8 @@ export async function prepareRuntimeSetup(args: {
       modelCatalogPath: ".ogs/model-catalog.json",
       userProfilePath: args.userProfilePath ?? ".ogs/user-profile.json",
       lawsPath: args.lawsPath ?? ".ogs/laws.json",
-      profilesPath: args.profilesPath ?? null,
-      toolsPath: args.toolsPath ?? null
+      profilesPath: profiles.length > 0 ? resolvedProfilesPath ?? null : null,
+      toolsPath: tools.length > 0 ? resolvedToolsPath ?? null : null
     },
     effective: {
       runtimeConfig,

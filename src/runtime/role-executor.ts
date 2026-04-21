@@ -5,6 +5,8 @@
  * graph-runner. Trade-off: keeps every attempt isolated (dedicated execution dirs + outcomes) so
  * retries and diagnostics can replay without destroying prior evidence, at the cost of more files.
  */
+import { mkdir } from "node:fs/promises";
+
 import { createAuditRecord } from "./audit-recorder.js";
 import { resolveExecutionBinding } from "./binding-resolver.js";
 import type { ResolvedExecutionBinding } from "./binding-resolver.js";
@@ -583,6 +585,8 @@ export async function executeRoleNode(args: {
       await recordAudit({ context: args.runContext, audit });
       return result;
     }
+
+    await mkdir(resolvedBinding.workdir, { recursive: true });
 
     const executionResult = await args.executor.execute({
       roleId: args.roleId,

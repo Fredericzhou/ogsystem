@@ -2,7 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import path from "node:path";
 import os from "node:os";
-import { mkdir, mkdtemp, readFile, writeFile } from "node:fs/promises";
+import { access, mkdir, mkdtemp, readFile, writeFile } from "node:fs/promises";
 
 import { createExecutionPlan, getExecutionPlanNode } from "../dist/runtime/execution-plan.js";
 import { createInitialState } from "../dist/runtime/graph-runtime-state.js";
@@ -428,6 +428,7 @@ test("branch workspace isolation stores session directory under branch private w
     seenWorkdirs[0],
     /roles\/debate-minimalist\/private\/branches\/debate-minimalist@1#1$/
   );
+  await access(seenWorkdirs[0]);
   const sessions = JSON.parse(await readFile(path.resolve(runContext.runDir, "sessions.json"), "utf8"));
   assert.match(
     sessions[0].directory,
