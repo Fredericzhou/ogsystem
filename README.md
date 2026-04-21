@@ -53,9 +53,6 @@ Quick start with the installed CLI:
 ```bash
 ogs project create demo-app
 cd demo-app
-
-# for a runnable starter graph instead of an empty scaffold:
-# ogs project create demo-app --template minimal
 ```
 
 Minimal runnable quick start:
@@ -67,7 +64,7 @@ ogs run start --system system.mmd --input "smoke" --dry-run
 ogs visualizer --workdir .
 ```
 
-Generated projects always include `.ogs/`, `system.mmd`, and local `og-roles/` / `og-models/` repos. The default `create` scaffold is empty and also writes `system.example.mmd`; runnable templates import only the role/model dependencies they reference.
+Generated projects always include `.ogs/`, `system.mmd`, and local `og-roles/` / `og-models/` repos. `project create` now defaults to the runnable `minimal` template; other runnable templates import only the role/model dependencies they reference.
 
 Local source install:
 

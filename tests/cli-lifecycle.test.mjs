@@ -53,16 +53,15 @@ test("lifecycle cli project init/create commands scaffold project control plane"
   assert.strictEqual(createResult.code, 0);
   const createPayload = JSON.parse(createResult.stdout);
   assert.equal(createPayload.command, "project create");
-  assert.equal(createPayload.template, "empty");
+  assert.equal(createPayload.template, "minimal");
   const createdDir = createPayload.projectDir;
   await stat(path.resolve(createdDir, ".ogs", "runtime.json"));
   await stat(path.resolve(createdDir, ".ogs", "laws.json"));
   await stat(path.resolve(createdDir, ".ogs", "user-profile.json"));
   await stat(path.resolve(createdDir, "system.mmd"));
-  await stat(path.resolve(createdDir, "system.example.mmd"));
   await assert.rejects(() => stat(path.resolve(createdDir, "og-roles", "roles", "_shared")), /ENOENT/);
-  await assert.rejects(() => stat(path.resolve(createdDir, "og-roles", "roles", "demo-analyst", "role.json")), /ENOENT/);
-  await assert.rejects(() => stat(path.resolve(createdDir, "og-models", "models", "general-balanced", "model.json")), /ENOENT/);
+  await stat(path.resolve(createdDir, "og-roles", "roles", "demo-analyst", "role.json"));
+  await stat(path.resolve(createdDir, "og-models", "models", "general-balanced", "model.json"));
 
   await writeFile(
     path.resolve(createdDir, "system.mmd"),
@@ -70,7 +69,7 @@ test("lifecycle cli project init/create commands scaffold project control plane"
       "flowchart TD",
       "%% system.id=template.linear",
       "%% system.version=1.0.0",
-      "%% law.global=law.project.base",
+      "%% law.global=law.minimal.base",
       "%% entry.role=debate-minimalist",
       "%% model.bind.debate-minimalist=general-balanced",
       "%% model.bind.debate-judge=general-steady",
@@ -89,7 +88,7 @@ test("lifecycle cli project init/create commands scaffold project control plane"
   const syncPayload = JSON.parse(syncResult.stdout);
   assert.equal(syncPayload.command, "project sync");
   assert.deepEqual(syncPayload.importedRoleIds.sort(), ["debate-judge", "debate-minimalist"]);
-  assert.deepEqual(syncPayload.importedModelIds.sort(), ["general-balanced", "general-steady"]);
+  assert.deepEqual(syncPayload.importedModelIds.sort(), ["general-steady"]);
   await stat(path.resolve(createdDir, "og-roles", "roles", "debate-minimalist", "role.json"));
   await stat(path.resolve(createdDir, "og-roles", "roles", "debate-judge", "role.json"));
   await stat(path.resolve(createdDir, "og-models", "models", "general-balanced", "model.json"));

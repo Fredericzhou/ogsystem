@@ -174,14 +174,7 @@ ogs project create demo-app
 cd demo-app
 ```
 
-默认 `create` 会生成“空项目骨架”：
-
-- 有 `.ogs/` 配置与本地 `og-roles/` / `og-models/` 目录
-- 有可编辑的 `system.mmd`
-- 有参考用的 `system.example.mmd`
-- 不会先导入任何 role/model 依赖
-
-如果你想直接拿到可运行示例，再显式选择 runnable 模板：
+默认 `create` 会生成可运行的 `minimal` 模板：
 
 ```bash
 ogs project create demo-app --template minimal
@@ -192,6 +185,7 @@ cd demo-app
 
 - `init`：把当前目录变成项目。
 - `create`：先新建一个项目目录，再把同样的项目结构写进去。
+- 两者默认都是 `minimal`，都会先导入对应模板依赖。
 
 初始化后你应该看到这些关键内容：
 
@@ -200,7 +194,6 @@ cd demo-app
 - `.ogs/user-profile.json`
 - `.ogs/providers/opencode.json`
 - `system.mmd`
-- `system.example.mmd`（仅 `create` 默认空模板）
 - 本地最小 `og-roles/`
 - 本地最小 `og-models/`
 
@@ -331,7 +324,7 @@ Use it with `ogs-nl2mmd --message "..."` for one-shot drafting, or omit `--messa
 - Base commands are for function and runtime behavior.
 - Wrapper commands are for project lifecycle and default operational flow.
 
-For project management, `ogs` defaults to the current directory. Use `--workdir <path>` only when you need to operate on another project root. `ogs project init` scaffolds the current directory as a runnable project by default, while `ogs project create <name>` creates a new empty project folder unless you pass a runnable `--template`. Both commands materialize project-local `og-roles/` and `og-models/`; runnable templates import only the dependencies they reference, and empty scaffolds leave dependency import to a later `ogs project sync --system <file.mmd>`.
+For project management, `ogs` defaults to the current directory. Use `--workdir <path>` only when you need to operate on another project root. `ogs project init` scaffolds the current directory as a runnable project by default, and `ogs project create <name>` scaffolds the same runnable `minimal` template in a new project folder by default. Both commands materialize project-local `og-roles/` and `og-models/`, and runnable templates import only the dependencies they reference.
 
 Recommended test split:
 

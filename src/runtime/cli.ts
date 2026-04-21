@@ -81,7 +81,7 @@ function usageProject(): string {
     "Defaults:",
     "  current directory is the project root unless --workdir is set",
     "  create uses the current directory as the parent directory unless --workdir is set",
-    "  init defaults to minimal; create defaults to empty",
+    "  init defaults to minimal; create defaults to minimal",
     "",
     "Templates:",
     "  empty",
@@ -662,7 +662,7 @@ async function runProjectCommand(argv: string[]): Promise<void> {
     if (!projectName) {
       throw createCliInputError("CLI_PROJECT_CREATE_MISSING_NAME", "Missing project name");
     }
-    const template = asString(values.template) ?? "empty";
+    const template = asString(values.template) ?? "minimal";
     if (!isProjectTemplateId(template)) {
       throw createCliInputError(
         "CLI_PROJECT_CREATE_INVALID_TEMPLATE",
