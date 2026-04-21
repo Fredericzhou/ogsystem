@@ -41,12 +41,14 @@ test("lifecycle cli project init/create commands scaffold project control plane"
   assert.equal(initPayload.command, "project init");
   assert.equal(initPayload.template, "minimal");
   await stat(path.resolve(tempRoot, ".ogs", "runtime.json"));
+  const initReadmePath = path.resolve(tempRoot, ".ogs", "README.md");
   await stat(path.resolve(tempRoot, ".ogs", "model-catalog.json"));
   await stat(path.resolve(tempRoot, ".ogs", "model-selection.json"));
   await stat(path.resolve(tempRoot, ".ogs", "project.json"));
   await stat(path.resolve(tempRoot, ".ogs", "laws.json"));
   await stat(path.resolve(tempRoot, ".ogs", "user-profile.json"));
   await stat(path.resolve(tempRoot, ".ogs", "runs-index.json"));
+  const initReadme = await readFile(initReadmePath, "utf8");
   const initProviderConfig = JSON.parse(
     await readFile(path.resolve(tempRoot, ".ogs", "providers", "opencode.json"), "utf8")
   );
@@ -65,6 +67,9 @@ test("lifecycle cli project init/create commands scaffold project control plane"
     initProviderConfig.recommendedProviderEntry?.openai?.options?.setCacheKey,
     true
   );
+  assert.match(initReadme, /runtime\.json/);
+  assert.match(initReadme, /model-selection\.json/);
+  assert.match(initReadme, /valid JSON with no comments/);
 
   const createResult = await runCli(["project", "create", "demo-app"], { cwd: tempRoot });
   assert.strictEqual(createResult.code, 0);
@@ -73,10 +78,12 @@ test("lifecycle cli project init/create commands scaffold project control plane"
   assert.equal(createPayload.template, "minimal");
   const createdDir = createPayload.projectDir;
   await stat(path.resolve(createdDir, ".ogs", "runtime.json"));
+  const createdReadmePath = path.resolve(createdDir, ".ogs", "README.md");
   await stat(path.resolve(createdDir, ".ogs", "model-catalog.json"));
   await stat(path.resolve(createdDir, ".ogs", "model-selection.json"));
   await stat(path.resolve(createdDir, ".ogs", "laws.json"));
   await stat(path.resolve(createdDir, ".ogs", "user-profile.json"));
+  const createdReadme = await readFile(createdReadmePath, "utf8");
   const createdProviderConfig = JSON.parse(
     await readFile(path.resolve(createdDir, ".ogs", "providers", "opencode.json"), "utf8")
   );
@@ -89,6 +96,8 @@ test("lifecycle cli project init/create commands scaffold project control plane"
     createdProviderConfig.recommendedProviderEntry?.openai?.models?.["gpt-5.4"]?.name,
     "GPT-5.4"
   );
+  assert.match(createdReadme, /model-catalog\.json/);
+  assert.match(createdReadme, /workspaceIsolation/);
 
   await writeFile(
     path.resolve(createdDir, "system.mmd"),

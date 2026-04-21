@@ -350,7 +350,7 @@ Use it with `ogs-nl2mmd --message "..."` for one-shot drafting, or omit `--messa
 - Base commands are for function and runtime behavior.
 - Wrapper commands are for project lifecycle and default operational flow.
 
-For project management, `ogs` defaults to the current directory. Use `--workdir <path>` only when you need to operate on another project root. `ogs project init` scaffolds the current directory as a runnable project by default, and `ogs project create <name>` scaffolds the same runnable `minimal` template in a new project folder by default. Both commands materialize a project-local `og-roles/` repo, `.ogs/model-catalog.json`, and `.ogs/model-selection.json`; runnable templates import only the roles they reference.
+For project management, `ogs` defaults to the current directory. Use `--workdir <path>` only when you need to operate on another project root. `ogs project init` scaffolds the current directory as a runnable project by default, and `ogs project create <name>` scaffolds the same runnable `minimal` template in a new project folder by default. Both commands materialize a project-local `og-roles/` repo, `.ogs/model-catalog.json`, `.ogs/model-selection.json`, and `.ogs/README.md`; runnable templates import only the roles they reference. The generated README carries editable examples so the runtime JSON files can stay strict and comment-free.
 
 Recommended test split:
 
@@ -377,6 +377,7 @@ Hard boundary:
 ```txt
 OGSystem/
   .ogs/
+    README.md
     runtime.json
     model-catalog.json
     model-selection.json

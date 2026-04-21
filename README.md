@@ -64,7 +64,7 @@ ogs run start --system system.mmd --input "smoke" --dry-run
 ogs visualizer --workdir .
 ```
 
-Generated projects always include `.ogs/`, `system.mmd`, and a local `og-roles/` repo. Model defaults now live under `.ogs/model-selection.json`, and `.ogs/model-catalog.json` records the latest local `opencode models --verbose` snapshot used for scaffolding and diagnostics.
+Generated projects always include `.ogs/`, `system.mmd`, and a local `og-roles/` repo. Model defaults now live under `.ogs/model-selection.json`, and `.ogs/model-catalog.json` records the latest local `opencode models --verbose` snapshot used for scaffolding and diagnostics. The scaffold also writes `.ogs/README.md` with operator notes and JSON examples; keep the runtime JSON files comment-free and use that README for local guidance.
 
 Generated projects also include `.ogs/providers/opencode.json` as a reference sample for your local OpenCode provider entry. Runtime execution still uses your machine-level `~/.config/opencode/opencode.json`; do not commit real API keys into the project copy.
 
