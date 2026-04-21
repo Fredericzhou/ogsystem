@@ -136,5 +136,6 @@ Runtime executes one canonical role package shape.
 - role main text is `agent.md`; runtime no longer reads `persona.md` or `work.md`
 - prompt templates consume the fixed shell `allowed_events`, `user_preferences`, `task`, `input`
 - `task` remains the original user request across loops; `input` carries the per-hop changing context
-- `source.json` and `og-roles/sources.lock.json` are traceability metadata only; they do not participate in runtime manifest validation
+- prompt-shell naming and selector naming are separate layers: the shell uses `user_preferences`, while selector syntax remains `global.user_profile.*`
+- `source.json` and `tools/agent-source/sources.lock.json` are traceability metadata only; they do not participate in runtime manifest validation
 - upstream repositories under `agent-sources/` are development-only checkouts and must be normalized through importer adapters before they become executable roles

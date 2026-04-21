@@ -3,9 +3,9 @@
 import { execFile as execFileCallback } from "node:child_process";
 import { mkdir, readFile, readdir, rm, writeFile } from "node:fs/promises";
 import { promisify } from "node:util";
-import { dirname, join, resolve } from "node:path";
+import { dirname, join, relative, resolve } from "node:path";
 
-import { agencyAgentsAdapter } from "../importers/agency-agents.mjs";
+import { agencyAgentsAdapter } from "./importers/agency-agents.mjs";
 
 const execFile = promisify(execFileCallback);
 
@@ -59,7 +59,7 @@ function parseArgs(argv) {
     sourceId: undefined,
     sourceRoot: undefined,
     rolesRoot: resolve("og-roles/roles"),
-    lockFile: resolve("og-roles/sources.lock.json")
+    lockFile: resolve("tools/agent-source/sources.lock.json")
   };
 
   for (let index = 0; index < argv.length; index += 1) {
@@ -105,12 +105,12 @@ function printUsage() {
   console.log(
     [
       "Usage:",
-      "  node og-roles/scripts/sync-agent-sources.mjs --source <source-id> [options]",
+      "  node tools/agent-source/sync-agent-sources.mjs --source <source-id> [options]",
       "",
       "Options:",
       "  --source-root <path>  Source checkout root (default: agent-sources/<source-id>)",
       "  --roles-root <path>   Canonical role output root (default: og-roles/roles)",
-      "  --lock-file <path>    Source lock file path (default: og-roles/sources.lock.json)"
+      "  --lock-file <path>    Source lock file path (default: tools/agent-source/sources.lock.json)"
     ].join("\n")
   );
 }
@@ -158,14 +158,22 @@ async function writeText(filePath, value) {
   await writeFile(filePath, `${value.trimEnd()}\n`, "utf8");
 }
 
-async function removeMissingImportedRoles(rolesRoot, sourceRoleIds) {
+function normalizeStoredPath(filePath) {
+  const relativePath = relative(process.cwd(), filePath).replaceAll("\\", "/");
+  if (!relativePath || relativePath.startsWith("..")) {
+    return filePath;
+  }
+  return relativePath;
+}
+
+async function removeMissingImportedRoles(rolesRoot, rolePrefix, sourceRoleIds) {
   const entries = await readdir(rolesRoot, { withFileTypes: true }).catch(() => []);
   const currentRoleIds = new Set(sourceRoleIds);
   for (const entry of entries) {
-    if (!entry.isDirectory() || !entry.name.startsWith("imported.")) {
+    if (!entry.isDirectory() || !entry.name.startsWith(rolePrefix)) {
       continue;
     }
-    if (entry.name.startsWith("imported.agency.") && !currentRoleIds.has(entry.name)) {
+    if (!currentRoleIds.has(entry.name)) {
       await rm(join(rolesRoot, entry.name), { recursive: true, force: true });
     }
   }
@@ -180,6 +188,8 @@ async function syncSource(args) {
   if (!detected) {
     throw new Error(`Source root does not match adapter "${args.sourceId}": ${args.sourceRoot}`);
   }
+  const rolePrefix =
+    typeof adapter.rolePrefix === "function" ? adapter.rolePrefix(args.sourceId) : `imported.${args.sourceId}.`;
 
   const git = await getGitMetadata(args.sourceRoot);
   const listedAgents = await adapter.listAgents(args.sourceRoot);
@@ -230,6 +240,7 @@ async function syncSource(args) {
 
   await removeMissingImportedRoles(
     args.rolesRoot,
+    rolePrefix,
     normalized.map((role) => role.roleId)
   );
 
@@ -237,7 +248,7 @@ async function syncSource(args) {
   lock.generatedAt = generatedAt;
   lock.sources[args.sourceId] = {
     sourceType: adapter.sourceType,
-    sourceRoot: args.sourceRoot,
+    sourceRoot: normalizeStoredPath(args.sourceRoot),
     commit: git.commit,
     branch: git.branch,
     remote: git.remote,

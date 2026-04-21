@@ -30,6 +30,6 @@ Rules:
 - Role packages do not bind tools or models.
 - `system.mmd` owns orchestration and role-to-model binding (`model.bind.*`; `exec.bind.*` in legacy runtime).
 - runtime injects `allowed_events`, `user_preferences`, `task`, and `input` into prompt variables; role packages decide how to apply them.
-- runtime only executes canonical role packages from `roles/<roleId>/`; `source.json` and `sources.lock.json` are traceability metadata, not runtime contract.
+- runtime only executes canonical role packages from `roles/<roleId>/`; `source.json` and `tools/agent-source/sources.lock.json` are traceability metadata, not runtime contract.
 - upstream source checkouts under `agent-sources/` are development-only and must be normalized through an importer before they become executable roles.
 - `talent` and `preferredModelTags` in `role.json` are soft hints only. They are not hard bindings.

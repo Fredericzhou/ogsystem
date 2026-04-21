@@ -52,6 +52,10 @@ function pickHeading(content) {
 export function createGenericMarkdownAdapter(options) {
   return {
     sourceType: options.sourceType,
+    rolePrefix(sourceId) {
+      const sourceSlug = options.roleNamespace ?? slugify(sourceId);
+      return `imported.${sourceSlug}.`;
+    },
     async detect(rootDir) {
       if (options.detect) {
         return options.detect(rootDir);
@@ -75,13 +79,13 @@ export function createGenericMarkdownAdapter(options) {
         pickMetadataLine(content, "description") ??
         options.defaultDescription?.(record) ??
         `${title} imported from ${context.sourceId}`;
-      const sourceSlug = options.roleNamespace ?? slugify(context.sourceId);
+      const sourcePrefix = this.rolePrefix(context.sourceId);
       const normalizedSlug = slugify(
         options.roleSlug?.(record) ?? basename(record.fileName, ".md")
       );
 
       return {
-        roleId: `imported.${sourceSlug}.${normalizedSlug}`,
+        roleId: `${sourcePrefix}${normalizedSlug}`,
         roleName: title,
         description,
         roleVersion: context.sourceCommit ? `imported-${context.sourceCommit.slice(0, 12)}` : "imported-dev",

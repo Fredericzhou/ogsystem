@@ -4,7 +4,7 @@
   "sources": {
     "agency-agents": {
       "sourceType": "agency-agents",
-      "sourceRoot": "/Users/fred/WorkSpace/AI/ogsystem/agent-sources/agency-agents",
+      "sourceRoot": "agent-sources/agency-agents",
       "commit": "783f6a72bfd7f3135700ac273c619d92821b419a",
       "branch": "main",
       "remote": "https://github.com/msitarzewski/agency-agents",

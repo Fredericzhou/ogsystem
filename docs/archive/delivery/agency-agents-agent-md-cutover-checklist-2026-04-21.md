@@ -12,10 +12,17 @@ Authority: 非当前权威语义，仅作为执行清单
 - runtime 已切到 `agent.md` 与 `allowed_events / user_preferences / task / input`
 - 仓内内置 roles、测试与活跃文档已完成回写
 - `agency-agents` 已接入为首个 importer source，并完成抽样导入与 smoke 验证
+- dev-only source-sync 工具已迁到 `tools/agent-source/`，不再作为 canonical role package 的一部分发布
 
 本文档不代表当前 runtime 已生效语义。
 若与 `src/runtime/*` 或活跃文档冲突，以当前实现和活跃文档为准。
 只有在方案落地并回写活跃文档后，本文档中的相关结论才可视为正式语义。
+
+历史分期说明：
+
+- 下文 Phase A / B / C 是 2026-04-21 当日的执行计划，不再代表当前实施边界。
+- 最终交付在 2026-04-21 以一次合并 cutover 落地；当前权威以活跃文档和运行时代码为准。
+- selector surface 仍保留 `global.user_profile.*`，但 prompt shell 已改为 `user_preferences`。
 
 ## 1. 目标
 
@@ -51,13 +58,15 @@ og-roles/
       prompt.md
       output.schema.json
       source.json
-  importers/
-    agency-agents.mjs
-    generic-markdown.mjs
-    other-agent-repo.mjs
-  scripts/
+
+tools/
+  agent-source/
+    importers/
+      agency-agents.mjs
+      generic-markdown.mjs
+      other-agent-repo.mjs
     sync-agent-sources.mjs
-  sources.lock.json
+    sources.lock.json
 ```
 
 约束：
@@ -69,7 +78,7 @@ og-roles/
 - `prompt.md` 只负责 OGSystem 输入壳包装。
 - `source.json` 记录上游来源信息；不要把来源元数据塞进 `role.json`。
 - runtime 不依赖任何 importer 专属目录结构。
-- 安装态产物默认继续只包含 `og-roles/**`，不包含 `agent-sources/**`；只有 canonical role package 进入发布包。
+- 安装态产物只发布 canonical role package（`og-roles/roles/**`）及运行所需入口；不包含 `agent-sources/**` 或 `tools/agent-source/**`。
 
 ## 3.0 Canonical Import Strategy
 
@@ -77,7 +86,7 @@ og-roles/
 
 1. runtime 只消费 canonical role package
 2. 上游仓库差异全部由 importer adapter 收敛
-3. `source.json` / `sources.lock.json` 只做溯源与同步，不参与执行契约
+3. `source.json` / `tools/agent-source/sources.lock.json` 只做溯源与同步，不参与执行契约
 4. `agency-agents` 只是第一个 source adapter，不是特殊 runtime 入口
 
 建议 importer 接口：
@@ -252,7 +261,7 @@ Input:
 
 ### 6.2 转换脚本
 
-- [ ] 新增 `og-roles/scripts/sync-agent-sources.mjs`
+- [ ] 新增 `tools/agent-source/sync-agent-sources.mjs`
 - [ ] 为首批 source 实现 importer adapter
 - [ ] 定义通用上游 agent 到 canonical `roles/<roleId>/` 的命名规则
 - [ ] 生成 `role.json`
@@ -260,7 +269,7 @@ Input:
 - [ ] 生成 `prompt.md`
 - [ ] 生成 `output.schema.json`
 - [ ] 生成 `source.json`
-- [ ] 更新 `sources.lock.json`
+- [ ] 更新 `tools/agent-source/sources.lock.json`
 
 建议生成规则：
 
@@ -343,7 +352,7 @@ Input:
 控制：
 
 - 转换逻辑尽量只依赖稳定文件路径与最少 frontmatter 字段
-- 将上游来源信息写入 `source.json` 与 `sources.lock.json`
+- 将上游来源信息写入 `source.json` 与 `tools/agent-source/sources.lock.json`
 - 为关键目录结构新增 smoke test
 
 ### 风险 1a：runtime 被迫理解多个外部仓库格式

@@ -6,6 +6,12 @@ import { lstat, mkdtemp, mkdir, readFile, readdir, symlink } from "node:fs/promi
 
 import { runSystemWithAdapter } from "../dist/runtime/adapter.js";
 
+function extractInboxProjection(markdown) {
+  const match = markdown.match(/```json\n([\s\S]*?)\n```/);
+  assert.ok(match, "expected inbox.md to contain a JSON projection block");
+  return JSON.parse(match[1]);
+}
+
 test("adapter auto-discovers runtime config and persists run artifacts for model.bind systems", async () => {
   const repoRoot = process.cwd();
   const tempRoot = await mkdtemp(path.join(os.tmpdir(), "ogsystem-model-runtime-"));
@@ -60,6 +66,19 @@ test("adapter auto-discovers runtime config and persists run artifacts for model
   assert.match(minimalistInbox, /Runtime Input Projection:/);
   assert.match(minimalistInbox, /"user_preferences"/);
   assert.match(minimalistInbox, /"allowed_events"/);
+  const minimalistProjection = extractInboxProjection(minimalistInbox);
+  assert.deepStrictEqual(Object.keys(minimalistProjection).sort(), [
+    "allowed_events",
+    "input",
+    "role_id",
+    "task",
+    "user_preferences"
+  ]);
+  assert.ok(!("context" in minimalistProjection));
+  assert.ok(!("user_profile" in minimalistProjection));
+  assert.ok(!("last_output" in minimalistProjection));
+  assert.ok(!("round" in minimalistProjection));
+  assert.ok(!("system_notes" in minimalistProjection));
 
   const minimalistPrivateStat = await lstat(
     path.resolve(runDir, "roles", "debate-minimalist", "private")

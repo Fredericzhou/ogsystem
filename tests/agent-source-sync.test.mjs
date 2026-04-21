@@ -63,7 +63,7 @@ test("sync-agent-sources generates canonical agency roles and runtime can load t
   });
 
   const sync = await runCommand("node", [
-    "og-roles/scripts/sync-agent-sources.mjs",
+    "tools/agent-source/sync-agent-sources.mjs",
     "--source",
     "agency-agents",
     "--source-root",
@@ -172,7 +172,7 @@ test("sync-agent-sources removes stale imported agency roles on re-sync", async 
   });
 
   const firstSync = await runCommand("node", [
-    "og-roles/scripts/sync-agent-sources.mjs",
+    "tools/agent-source/sync-agent-sources.mjs",
     "--source",
     "agency-agents",
     "--source-root",
@@ -187,7 +187,7 @@ test("sync-agent-sources removes stale imported agency roles on re-sync", async 
   await rm(path.resolve(sourceRoot, "testing", "testing-code-reviewer.md"));
 
   const secondSync = await runCommand("node", [
-    "og-roles/scripts/sync-agent-sources.mjs",
+    "tools/agent-source/sync-agent-sources.mjs",
     "--source",
     "agency-agents",
     "--source-root",

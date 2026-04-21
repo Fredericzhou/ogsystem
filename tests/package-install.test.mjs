@@ -71,6 +71,15 @@ test("packed CLI installs and scaffolds a runnable project with imported local d
   const ogsDoctorBinPath = path.resolve(installedPackageDir, "bin", "ogs-doctor.mjs");
   await stat(ogsBinPath);
   await stat(ogsDoctorBinPath);
+  await stat(path.resolve(installedPackageDir, "scripts", "preinstall.cjs"));
+  await assert.rejects(() => stat(path.resolve(installedPackageDir, "og-roles", "importers")), /ENOENT/);
+  await assert.rejects(() => stat(path.resolve(installedPackageDir, "og-roles", "scripts")), /ENOENT/);
+  await assert.rejects(
+    () => stat(path.resolve(installedPackageDir, "og-roles", "sources.lock.json")),
+    /ENOENT/
+  );
+  await assert.rejects(() => stat(path.resolve(installedPackageDir, "agent-sources")), /ENOENT/);
+  await assert.rejects(() => stat(path.resolve(installedPackageDir, "tools", "agent-source")), /ENOENT/);
 
   const helpResult = await runCommand("node", [ogsBinPath, "help"], { cwd: installDir });
   assert.equal(helpResult.code, 0, helpResult.stderr);

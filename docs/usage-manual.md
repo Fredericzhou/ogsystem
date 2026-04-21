@@ -561,7 +561,8 @@ Importer boundary:
 
 - `agent-sources/<source-id>/` is a development-only checkout root for upstream agent repositories
 - runtime never executes those upstream directories directly
-- `node og-roles/scripts/sync-agent-sources.mjs --source agency-agents` normalizes upstream markdown into canonical `og-roles/roles/imported.<source>.*` packages and updates `og-roles/sources.lock.json`
+- `node tools/agent-source/sync-agent-sources.mjs --source agency-agents` normalizes upstream markdown into canonical `og-roles/roles/imported.<source>.*` packages and updates `tools/agent-source/sources.lock.json`
+- prompt-shell field names and selector syntax are intentionally distinct: prompts use `user_preferences`, while selector syntax still uses `global.user_profile.*`
 
 Role rules:
 
