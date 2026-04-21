@@ -1,0 +1,14 @@
+{
+  "roleId": "imported.agency.seo-specialist",
+  "roleVersion": "imported-783f6a72bfd7",
+  "name": "Marketing SEO Specialist",
+  "description": "Marketing SEO Specialist imported from agency-agents",
+  "promptTemplate": "prompt.md",
+  "outputSchema": "output.schema.json",
+  "tags": [
+    "imported",
+    "agency-agents",
+    "marketing",
+    "seo-specialist"
+  ]
+}

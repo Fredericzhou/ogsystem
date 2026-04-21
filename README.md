@@ -151,8 +151,10 @@ For day-to-day use, start with `docs/usage-manual.md`. It keeps the command matr
 - Tools are minimal shell adapters: `toolRef`, `runner`, `command`, `argsTemplate`, `stdinMode`.
 - The law catalog currently resolves only `law.global` and the constraints `forbiddenToolRefs`, `maxTransitions`, `allowNoopWithoutExecutionBinding`.
 - `talentBinding` is preserved as metadata-only sidecar in the parsed system definition. It is not part of runtime execution.
-- Role packages live under `og-roles/roles/<roleId>/` and provide `role.json`, `prompt.md`, optional `persona.md`, optional `work.md`, and required `output.schema.json`.
-- The runtime-owned prompt-input shell remains fixed across roles and currently exposes `task`, `context`, `allowed_events`, `last_output`, `system_notes`, `round`, and `user_profile`.
+- Role packages live under `og-roles/roles/<roleId>/` and provide `role.json`, `agent.md`, `prompt.md`, `output.schema.json`, and optional `source.json`.
+- The runtime-owned prompt-input shell remains fixed across roles and exposes `allowed_events`, `user_preferences`, `task`, and `input`.
+- Upstream agent repositories live under `agent-sources/` only during development; runtime executes only canonical role packages under `og-roles/roles/`.
+- `node og-roles/scripts/sync-agent-sources.mjs --source agency-agents` imports an upstream checkout into canonical `imported.<source>.*` role packages and updates `og-roles/sources.lock.json`.
 - The installed CLI ships bundled role/model templates, but those are import sources, not runtime execution dependencies.
 - `system.mmd` owns flow and role-to-model binding (`model.bind.*`; `exec.bind.*` in legacy runtime); role packages own prompt and I/O contract.
 

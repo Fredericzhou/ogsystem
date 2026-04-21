@@ -2,23 +2,12 @@ export const RUNTIME_ROLE_PROMPT_INPUT_SCHEMA_PATH = "(builtin runtime prompt in
 
 export const RUNTIME_ROLE_PROMPT_INPUT_SCHEMA = {
   type: "object",
-  required: [
-    "task",
-    "context",
-    "allowed_events",
-    "last_output",
-    "system_notes",
-    "round",
-    "user_profile"
-  ],
+  required: ["allowed_events", "user_preferences", "task", "input"],
   properties: {
-    task: { type: "string" },
-    context: { type: "string" },
     allowed_events: { type: "string" },
-    last_output: { type: "string" },
-    system_notes: { type: "string" },
-    round: { type: "string" },
-    user_profile: { type: "string" }
+    user_preferences: { type: "string" },
+    task: { type: "string" },
+    input: { type: "string" }
   },
   additionalProperties: false
 } as const;

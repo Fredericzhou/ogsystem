@@ -1,0 +1,14 @@
+{
+  "roleId": "imported.agency.video-optimization-specialist",
+  "roleVersion": "imported-783f6a72bfd7",
+  "name": "Marketing Video Optimization Specialist Agent",
+  "description": "Marketing Video Optimization Specialist Agent imported from agency-agents",
+  "promptTemplate": "prompt.md",
+  "outputSchema": "output.schema.json",
+  "tags": [
+    "imported",
+    "agency-agents",
+    "marketing",
+    "video-optimization-specialist"
+  ]
+}

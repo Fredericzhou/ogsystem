@@ -476,14 +476,19 @@ async function runAdapterCommand(args: {
     autoClose: boolean;
   };
 }): Promise<void> {
-  const visualizer =
-    args.visualizer?.enabled
-      ? await startVisualizationServer({
-          workdir: args.workdir,
-          host: args.visualizer.host,
-          port: args.visualizer.port
-        })
-      : null;
+  let visualizer = null;
+  if (args.visualizer?.enabled) {
+    try {
+      visualizer = await startVisualizationServer({
+        workdir: args.workdir,
+        host: args.visualizer.host,
+        port: args.visualizer.port
+      });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      console.error(`[visualizer] Unable to attach server; continuing without visualization. ${message}`);
+    }
+  }
   if (visualizer) {
     console.error(`[visualizer] Listening on ${visualizer.url}`);
     if (args.visualizer?.autoClose) {

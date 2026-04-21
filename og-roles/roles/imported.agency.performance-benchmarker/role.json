@@ -1,0 +1,14 @@
+{
+  "roleId": "imported.agency.performance-benchmarker",
+  "roleVersion": "imported-783f6a72bfd7",
+  "name": "Performance Benchmarker Agent Personality",
+  "description": "Performance Benchmarker Agent Personality imported from agency-agents",
+  "promptTemplate": "prompt.md",
+  "outputSchema": "output.schema.json",
+  "tags": [
+    "imported",
+    "agency-agents",
+    "testing",
+    "performance-benchmarker"
+  ]
+}

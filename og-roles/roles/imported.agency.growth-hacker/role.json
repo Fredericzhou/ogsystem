@@ -1,0 +1,14 @@
+{
+  "roleId": "imported.agency.growth-hacker",
+  "roleVersion": "imported-783f6a72bfd7",
+  "name": "Marketing Growth Hacker Agent",
+  "description": "Marketing Growth Hacker Agent imported from agency-agents",
+  "promptTemplate": "prompt.md",
+  "outputSchema": "output.schema.json",
+  "tags": [
+    "imported",
+    "agency-agents",
+    "marketing",
+    "growth-hacker"
+  ]
+}

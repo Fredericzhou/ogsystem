@@ -1,0 +1,14 @@
+{
+  "roleId": "imported.agency.short-video-editing-coach",
+  "roleVersion": "imported-783f6a72bfd7",
+  "name": "Marketing Short-Video Editing Coach",
+  "description": "Marketing Short-Video Editing Coach imported from agency-agents",
+  "promptTemplate": "prompt.md",
+  "outputSchema": "output.schema.json",
+  "tags": [
+    "imported",
+    "agency-agents",
+    "marketing",
+    "short-video-editing-coach"
+  ]
+}

@@ -1,0 +1,14 @@
+{
+  "roleId": "imported.agency.agents-orchestrator",
+  "roleVersion": "imported-783f6a72bfd7",
+  "name": "AgentsOrchestrator Agent Personality",
+  "description": "AgentsOrchestrator Agent Personality imported from agency-agents",
+  "promptTemplate": "prompt.md",
+  "outputSchema": "output.schema.json",
+  "tags": [
+    "imported",
+    "agency-agents",
+    "specialized",
+    "agents-orchestrator"
+  ]
+}

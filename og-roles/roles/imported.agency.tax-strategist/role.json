@@ -1,0 +1,14 @@
+{
+  "roleId": "imported.agency.tax-strategist",
+  "roleVersion": "imported-783f6a72bfd7",
+  "name": "🏛️ Tax Strategist Agent",
+  "description": "🏛️ Tax Strategist Agent imported from agency-agents",
+  "promptTemplate": "prompt.md",
+  "outputSchema": "output.schema.json",
+  "tags": [
+    "imported",
+    "agency-agents",
+    "finance",
+    "tax-strategist"
+  ]
+}

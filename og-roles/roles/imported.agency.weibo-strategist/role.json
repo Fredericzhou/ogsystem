@@ -1,0 +1,14 @@
+{
+  "roleId": "imported.agency.weibo-strategist",
+  "roleVersion": "imported-783f6a72bfd7",
+  "name": "Marketing Weibo Strategist",
+  "description": "Marketing Weibo Strategist imported from agency-agents",
+  "promptTemplate": "prompt.md",
+  "outputSchema": "output.schema.json",
+  "tags": [
+    "imported",
+    "agency-agents",
+    "marketing",
+    "weibo-strategist"
+  ]
+}

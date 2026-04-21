@@ -1,0 +1,14 @@
+{
+  "roleId": "imported.agency.test-results-analyzer",
+  "roleVersion": "imported-783f6a72bfd7",
+  "name": "Test Results Analyzer Agent Personality",
+  "description": "Test Results Analyzer Agent Personality imported from agency-agents",
+  "promptTemplate": "prompt.md",
+  "outputSchema": "output.schema.json",
+  "tags": [
+    "imported",
+    "agency-agents",
+    "testing",
+    "test-results-analyzer"
+  ]
+}

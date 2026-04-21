@@ -1,0 +1,14 @@
+{
+  "roleId": "imported.agency.level-designer",
+  "roleVersion": "imported-783f6a72bfd7",
+  "name": "Level Designer Agent Personality",
+  "description": "Level Designer Agent Personality imported from agency-agents",
+  "promptTemplate": "prompt.md",
+  "outputSchema": "output.schema.json",
+  "tags": [
+    "imported",
+    "agency-agents",
+    "game-development",
+    "level-designer"
+  ]
+}

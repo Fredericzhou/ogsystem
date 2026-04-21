@@ -236,8 +236,7 @@ export type LoadedRolePackage = {
   promptTemplate: string;
   outputSchema: unknown;
   outputSchemaPath: string;
-  persona?: string;
-  work?: string;
+  agent: string;
 };
 
 export type ModelPackageManifest = {
@@ -547,12 +546,9 @@ export type RoleExecutionOutcomeRecord =
 export type RoleInputProjection = {
   role_id: string;
   task: string;
-  context: string;
+  input: string;
   allowed_events: string[];
-  last_output: string;
-  system_notes: string;
-  round: number;
-  user_profile: UserProfile | Record<string, never>;
+  user_preferences: UserProfile | Record<string, never>;
 };
 
 export type SystemStateSnapshot = {

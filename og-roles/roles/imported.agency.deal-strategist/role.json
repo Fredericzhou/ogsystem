@@ -1,0 +1,14 @@
+{
+  "roleId": "imported.agency.deal-strategist",
+  "roleVersion": "imported-783f6a72bfd7",
+  "name": "Deal Strategist Agent",
+  "description": "Deal Strategist Agent imported from agency-agents",
+  "promptTemplate": "prompt.md",
+  "outputSchema": "output.schema.json",
+  "tags": [
+    "imported",
+    "agency-agents",
+    "sales",
+    "deal-strategist"
+  ]
+}

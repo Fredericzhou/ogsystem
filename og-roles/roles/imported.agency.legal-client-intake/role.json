@@ -1,0 +1,14 @@
+{
+  "roleId": "imported.agency.legal-client-intake",
+  "roleVersion": "imported-783f6a72bfd7",
+  "name": "📋 Legal Client Intake Agent",
+  "description": "📋 Legal Client Intake Agent imported from agency-agents",
+  "promptTemplate": "prompt.md",
+  "outputSchema": "output.schema.json",
+  "tags": [
+    "imported",
+    "agency-agents",
+    "specialized",
+    "legal-client-intake"
+  ]
+}

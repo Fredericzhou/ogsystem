@@ -372,10 +372,9 @@ OGSystem/
     roles/
       <roleId>/
         role.json
+        agent.md
         prompt.md
         output.schema.json
-        persona.md
-        work.md
 
   og-models/
     catalog/
@@ -495,9 +494,9 @@ Orchestration semantics contract:
 - `join.mode.<roleId>=quorum_of` activates after `join.min.<roleId>` unique sources in `join.sources.<roleId>` complete under the same `lineageId + loopIteration`, activates once only, and records late arrivals without retriggering
 - semantic aliases: `quorum_of + join.min=1` is equivalent to `any`; `quorum_of + join.min=|join.sources|` is equivalent to `all`; runtime keeps `all_of` and `quorum_of` as explicit DSL modes and does not add a separate `any_of` mode (preserves `all_of` readability while avoiding extra DSL keyword surface)
 - for both `all_of` and `quorum_of`, `join.sources.<roleId>` must match the join node's Mermaid incoming role edges exactly; undeclared incoming role edges are rejected at parse time rather than being ignored at runtime
-- join nodes default to the same normalized JSON `{{context}}` namespace keyed by `join.sources` role ids (each value contains that source's `event/content/data`) rather than exposing raw runtime state or plain-text sections
-- `context.map.<roleId>.<field>=<selector>` replaces the default `context` payload with a stable JSON projection; supported selectors are `direct.*`, `source(<roleId>).*(join only)`, `global.task`, and `global.user_profile.*`
-- `loop.max.<roleId>=N` is both a parser-time cycle budget declaration and an execution-time guard; runtime also injects `round`
+- join nodes default to the same normalized JSON `{{input}}` namespace keyed by `join.sources` role ids (each value contains that source's `event/content/data`) rather than exposing raw runtime state or plain-text sections
+- `context.map.<roleId>.<field>=<selector>` replaces the default `input` payload with a stable JSON projection; supported selectors are `direct.*`, `source(<roleId>).*(join only)`, `global.task`, and `global.user_profile.*`
+- `loop.max.<roleId>=N` is both a parser-time cycle budget declaration and an execution-time guard; `task` stays equal to the original user request while `input` carries the current hop's changing context
 - `branchId`, `lineageId`, and `sessionLineageId` are distinct runtime identifiers for branch instance, split/join lineage, and session reuse/isolation
 
 Error flow semantics (`ERROR*`, implemented, flag-gated):
@@ -549,21 +548,28 @@ This keeps `join.min` equal to the source count, which is the current runtime-sa
 Required:
 
 - `role.json`
+- `agent.md`
 - `prompt.md`
 - `output.schema.json`
 
 Optional:
 
-- `persona.md`
-- `work.md`
+- `source.json`
 - `talent` and `preferredModelTags` in `role.json` (soft hints only)
+
+Importer boundary:
+
+- `agent-sources/<source-id>/` is a development-only checkout root for upstream agent repositories
+- runtime never executes those upstream directories directly
+- `node og-roles/scripts/sync-agent-sources.mjs --source agency-agents` normalizes upstream markdown into canonical `og-roles/roles/imported.<source>.*` packages and updates `og-roles/sources.lock.json`
 
 Role rules:
 
 - `role.json.roleId` must equal directory name
 - role packages do not define routing
 - role packages do not hard-bind model ids
-- runtime always validates the built-in prompt-input shell with `task`, `context`, `allowed_events`, `last_output`, `system_notes`, `round`, and `user_profile`
+- runtime always validates the built-in prompt-input shell with `allowed_events`, `user_preferences`, `task`, and `input`
+- `source.json` is importer traceability metadata only and is not part of runtime manifest validation
 
 Recommended template roles:
 
@@ -748,23 +754,20 @@ Minimal shared-workspace rule:
 
 Runtime prompt projection contract:
 
-- `task`: original user prompt
-- `context`: default is direct upstream `content`; for join nodes without `context.map`, runtime serializes a JSON string keyed by `join.sources` role ids, and each value carries that source branch's `event`/`content`/`data`; with `context.map`, runtime injects one stable JSON object built from the declared selectors
 - `allowed_events`: JSON array string of outgoing event ids
-- `last_output`: mirrors the current `context` projection
-- `round`: current loop iteration as a string
-- `system_notes`: reserved runtime hint channel; currently only populated selectively
-- `user_profile`: serialized user-profile payload
+- `user_preferences`: serialized user-profile payload
+- `task`: original user prompt; it remains stable across loops and downstream hops
+- `input`: default is direct upstream `content`; for join nodes without `context.map`, runtime serializes a JSON string keyed by `join.sources` role ids, and each value carries that source branch's `event`/`content`/`data`; with `context.map`, runtime injects one stable JSON object built from the declared selectors
 
 How upstream output becomes downstream input:
 
 - upstream roles emit one normalized envelope: `event`, `content`, and optional `data`
 - downstream roles do not receive that envelope directly as their whole input
-- instead, runtime always builds one prompt-input shell with `task/context/allowed_events/last_output/system_notes/round/user_profile`
-- the only part that varies by graph context is `context` (and `last_output`, which mirrors it)
-- ordinary single-upstream nodes default to `context = upstream.content`
-- join nodes default to `context = { sourceRoleId: { event, content, data } }`
-- `context.map` replaces that default `context` payload with a new projected object
+- instead, runtime always builds one prompt-input shell with `allowed_events/user_preferences/task/input`
+- the stable prefix is `allowed_events`, `user_preferences`, and `task`; the part that varies by graph context is `input`
+- ordinary single-upstream nodes default to `input = upstream.content`
+- join nodes default to `input = { sourceRoleId: { event, content, data } }`
+- `context.map` replaces that default `input` payload with a new projected object
 
 Practical meaning of `content` vs `data`:
 
@@ -791,13 +794,10 @@ Without `context.map`, the downstream prompt-input shell looks like:
 
 ```json
 {
-  "task": "Assess the current request",
-  "context": "Authentication flow looks riskiest.",
   "allowed_events": "[\"REVIEW_DONE\",\"NEED_MORE_INFO\"]",
-  "last_output": "Authentication flow looks riskiest.",
-  "system_notes": "",
-  "round": "1",
-  "user_profile": "{\"language\":\"zh-CN\",\"style\":\"concise\"}"
+  "user_preferences": "{\"language\":\"zh-CN\",\"style\":\"concise\"}",
+  "task": "Assess the current request",
+  "input": "Authentication flow looks riskiest."
 }
 ```
 
@@ -813,13 +813,10 @@ the downstream prompt-input shell becomes:
 
 ```json
 {
-  "task": "Assess the current request",
-  "context": "{\"brief\":\"Authentication flow looks riskiest.\",\"risk_level\":\"high\",\"task\":\"Assess the current request\"}",
   "allowed_events": "[\"REVIEW_DONE\",\"NEED_MORE_INFO\"]",
-  "last_output": "{\"brief\":\"Authentication flow looks riskiest.\",\"risk_level\":\"high\",\"task\":\"Assess the current request\"}",
-  "system_notes": "",
-  "round": "1",
-  "user_profile": "{\"language\":\"zh-CN\",\"style\":\"concise\"}"
+  "user_preferences": "{\"language\":\"zh-CN\",\"style\":\"concise\"}",
+  "task": "Assess the current request",
+  "input": "{\"brief\":\"Authentication flow looks riskiest.\",\"risk_level\":\"high\",\"task\":\"Assess the current request\"}"
 }
 ```
 
@@ -829,13 +826,10 @@ When a join node does not declare `context.map`, runtime injects all declared so
 
 ```json
 {
-  "task": "Produce a final review",
-  "context": "{\"worker_a\":{\"event\":\"DONE\",\"content\":\"Cardiology risk is high\",\"data\":{\"score\":8}},\"worker_b\":{\"event\":\"DONE\",\"content\":\"Neurology risk is low\",\"data\":{\"score\":2}}}",
   "allowed_events": "[\"REPORT_READY\"]",
-  "last_output": "{\"worker_a\":{\"event\":\"DONE\",\"content\":\"Cardiology risk is high\",\"data\":{\"score\":8}},\"worker_b\":{\"event\":\"DONE\",\"content\":\"Neurology risk is low\",\"data\":{\"score\":2}}}",
-  "system_notes": "",
-  "round": "1",
-  "user_profile": "{\"language\":\"zh-CN\",\"style\":\"concise\"}"
+  "user_preferences": "{\"language\":\"zh-CN\",\"style\":\"concise\"}",
+  "task": "Produce a final review",
+  "input": "{\"worker_a\":{\"event\":\"DONE\",\"content\":\"Cardiology risk is high\",\"data\":{\"score\":8}},\"worker_b\":{\"event\":\"DONE\",\"content\":\"Neurology risk is low\",\"data\":{\"score\":2}}}"
 }
 ```
 
@@ -854,20 +848,17 @@ the join input becomes one projected object instead:
 
 ```json
 {
-  "task": "Produce a final review",
-  "context": "{\"a_summary\":\"Cardiology risk is high\",\"a_score\":8,\"b_summary\":\"Neurology risk is low\",\"task\":\"Produce a final review\"}",
   "allowed_events": "[\"REPORT_READY\"]",
-  "last_output": "{\"a_summary\":\"Cardiology risk is high\",\"a_score\":8,\"b_summary\":\"Neurology risk is low\",\"task\":\"Produce a final review\"}",
-  "system_notes": "",
-  "round": "1",
-  "user_profile": "{\"language\":\"zh-CN\",\"style\":\"concise\"}"
+  "user_preferences": "{\"language\":\"zh-CN\",\"style\":\"concise\"}",
+  "task": "Produce a final review",
+  "input": "{\"a_summary\":\"Cardiology risk is high\",\"a_score\":8,\"b_summary\":\"Neurology risk is low\",\"task\":\"Produce a final review\"}"
 }
 ```
 
 Prompt template interpretation:
 
 - role `prompt.md` is a template, not the final prompt sent to the model
-- runtime first renders `{{persona}}`, `{{work}}`, `{{task}}`, `{{context}}`, `{{user_profile}}`, `{{allowed_events}}`, and `{{last_output}}`
+- runtime first renders `{{agent}}`, `{{allowed_events}}`, `{{user_preferences}}`, `{{task}}`, and `{{input}}`
 - the rendered prompt plus `output.schema.json` is then passed to the model executor
 - `Return JSON only.` in the prompt is just one instruction layer; actual output shape is still enforced by `output.schema.json` and runtime validation
 
@@ -921,10 +912,10 @@ OpenCode lifecycle rule for `model.bind`:
 
 Join context projection rule:
 
-- when a join node does not declare `context.map.<roleId>.*`, runtime injects upstream results into `{{context}}` as one JSON object keyed by source `roleId`
+- when a join node does not declare `context.map.<roleId>.*`, runtime injects upstream results into `{{input}}` as one JSON object keyed by source `roleId`
 - each keyed value keeps the normalized `event`, `content`, and optional `data` fields from that upstream result
 - the injected join context is a normalized projection, not the raw `graphState`
-- when `context.map.<roleId>.*` is present, runtime serializes a new object in stable field-name order and mirrors it into `last_output`
+- when `context.map.<roleId>.*` is present, runtime serializes a new object in stable field-name order and injects it into `input`
 - selector evaluation is fail-closed: unsupported grammar, unauthorized sources, missing source results, or missing object paths fail execution explicitly
 
 Role output repair policy:

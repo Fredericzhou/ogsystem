@@ -1,0 +1,13 @@
+{
+  "version": 1,
+  "sourceType": "agency-agents",
+  "sourceId": "agency-agents",
+  "importedAt": "2026-04-21T05:39:09.338Z",
+  "roleId": "imported.agency.auditor",
+  "upstream": {
+    "path": "paid-media/paid-media-auditor.md",
+    "commit": "783f6a72bfd7f3135700ac273c619d92821b419a",
+    "branch": "main",
+    "remote": "https://github.com/msitarzewski/agency-agents"
+  }
+}

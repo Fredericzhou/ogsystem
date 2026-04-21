@@ -1,0 +1,14 @@
+{
+  "roleId": "imported.agency.bilibili-content-strategist",
+  "roleVersion": "imported-783f6a72bfd7",
+  "name": "Marketing Bilibili Content Strategist",
+  "description": "Marketing Bilibili Content Strategist imported from agency-agents",
+  "promptTemplate": "prompt.md",
+  "outputSchema": "output.schema.json",
+  "tags": [
+    "imported",
+    "agency-agents",
+    "marketing",
+    "bilibili-content-strategist"
+  ]
+}

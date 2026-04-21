@@ -28,16 +28,25 @@ async function writeRolePackage(args) {
   await writeFile(
     path.resolve(roleDir, "prompt.md"),
     [
-      `Role: ${args.roleId}`,
+      "{{agent}}",
+      "",
+      "Allowed events:",
+      "{{allowed_events}}",
+      "",
+      "User preferences:",
+      "{{user_preferences}}",
+      "",
       "Task:",
       "{{task}}",
       "",
-      "Context:",
-      "{{context}}",
-      "",
-      "Allowed events: {{allowed_events}}",
-      "Round: {{round}}"
+      "Input:",
+      "{{input}}"
     ].join("\n"),
+    "utf8"
+  );
+  await writeFile(
+    path.resolve(roleDir, "agent.md"),
+    `# ${args.roleId}\n\n${args.roleId} test role\n`,
     "utf8"
   );
 

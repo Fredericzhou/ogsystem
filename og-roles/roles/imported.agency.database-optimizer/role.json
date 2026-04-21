@@ -1,0 +1,14 @@
+{
+  "roleId": "imported.agency.database-optimizer",
+  "roleVersion": "imported-783f6a72bfd7",
+  "name": "🗄️ Database Optimizer",
+  "description": "🗄️ Database Optimizer imported from agency-agents",
+  "promptTemplate": "prompt.md",
+  "outputSchema": "output.schema.json",
+  "tags": [
+    "imported",
+    "agency-agents",
+    "engineering",
+    "database-optimizer"
+  ]
+}

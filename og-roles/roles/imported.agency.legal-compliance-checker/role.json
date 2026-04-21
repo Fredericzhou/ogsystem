@@ -1,0 +1,14 @@
+{
+  "roleId": "imported.agency.legal-compliance-checker",
+  "roleVersion": "imported-783f6a72bfd7",
+  "name": "Legal Compliance Checker Agent Personality",
+  "description": "Legal Compliance Checker Agent Personality imported from agency-agents",
+  "promptTemplate": "prompt.md",
+  "outputSchema": "output.schema.json",
+  "tags": [
+    "imported",
+    "agency-agents",
+    "support",
+    "legal-compliance-checker"
+  ]
+}

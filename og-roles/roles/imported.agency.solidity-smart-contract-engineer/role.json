@@ -1,0 +1,14 @@
+{
+  "roleId": "imported.agency.solidity-smart-contract-engineer",
+  "roleVersion": "imported-783f6a72bfd7",
+  "name": "Solidity Smart Contract Engineer",
+  "description": "Solidity Smart Contract Engineer imported from agency-agents",
+  "promptTemplate": "prompt.md",
+  "outputSchema": "output.schema.json",
+  "tags": [
+    "imported",
+    "agency-agents",
+    "engineering",
+    "solidity-smart-contract-engineer"
+  ]
+}

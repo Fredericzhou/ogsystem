@@ -1,0 +1,14 @@
+{
+  "roleId": "imported.agency.data-engineer",
+  "roleVersion": "imported-783f6a72bfd7",
+  "name": "Data Engineer Agent",
+  "description": "Data Engineer Agent imported from agency-agents",
+  "promptTemplate": "prompt.md",
+  "outputSchema": "output.schema.json",
+  "tags": [
+    "imported",
+    "agency-agents",
+    "engineering",
+    "data-engineer"
+  ]
+}

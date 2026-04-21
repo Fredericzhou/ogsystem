@@ -1,0 +1,14 @@
+{
+  "roleId": "imported.agency.sales-data-extraction-agent",
+  "roleVersion": "imported-783f6a72bfd7",
+  "name": "Sales Data Extraction Agent",
+  "description": "Sales Data Extraction Agent imported from agency-agents",
+  "promptTemplate": "prompt.md",
+  "outputSchema": "output.schema.json",
+  "tags": [
+    "imported",
+    "agency-agents",
+    "specialized",
+    "sales-data-extraction-agent"
+  ]
+}

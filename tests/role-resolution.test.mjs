@@ -1,6 +1,8 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import path from "node:path";
+import os from "node:os";
+import { mkdir, mkdtemp, writeFile } from "node:fs/promises";
 
 import {
   loadRolePackage,
@@ -20,13 +22,10 @@ test("loadRolePackage resolves role directory and renders contextual fields", as
   });
 
   const values = {
-    task: "Explain why minimalism matters",
-    context: "current debate round 1",
     allowed_events: JSON.stringify(["MINIMALIST_DONE", "REBUTTAL_NEEDED"]),
-    last_output: "previous message",
-    system_notes: "",
-    round: "1",
-    user_profile: "{\"language\":\"zh-CN\"}"
+    user_preferences: "{\"language\":\"zh-CN\"}",
+    task: "Explain why minimalism matters",
+    input: "current debate round 1"
   };
 
   assert.doesNotThrow(() =>
@@ -39,15 +38,15 @@ test("loadRolePackage resolves role directory and renders contextual fields", as
 
   const rendered = renderRolePrompt({
     promptTemplate: rolePackage.promptTemplate,
-    persona: rolePackage.persona,
-    work: rolePackage.work,
+    agent: rolePackage.agent,
     values
   });
   assert.ok(rendered.includes("Explain why minimalism matters"));
   assert.ok(rendered.includes("MINIMALIST_DONE"));
+  assert.ok(rendered.includes("\"language\":\"zh-CN\""));
 });
 
-test("loop-aware role prompts can render the injected round field", async () => {
+test("role prompts render the new input and user_preferences fields", async () => {
   const rolePackage = await loadRolePackage({
     roleId: "debate-moderator",
     roleRootDir
@@ -55,21 +54,55 @@ test("loop-aware role prompts can render the injected round field", async () => 
 
   const rendered = renderRolePrompt({
     promptTemplate: rolePackage.promptTemplate,
-    persona: rolePackage.persona,
-    work: rolePackage.work,
+    agent: rolePackage.agent,
     values: {
-      task: "Coordinate the next debate turn",
-      context: "judge requested another round",
       allowed_events: JSON.stringify(["SEND_MINIMALIST", "SEND_ALIGNMENTIST"]),
-      last_output: "judge requested another round",
-      system_notes: "",
-      round: "2",
-      user_profile: "{\"language\":\"zh-CN\"}"
+      user_preferences: "{\"language\":\"zh-CN\"}",
+      task: "Coordinate the next debate turn",
+      input: "judge requested another round"
     }
   });
 
-  assert.match(rendered, /Round:\s*2/);
+  assert.match(rendered, /User preferences:/);
   assert.match(rendered, /judge requested another round/);
+});
+
+test("loadRolePackage fails fast when agent.md is missing", async () => {
+  const tempRoot = await mkdtemp(path.join(os.tmpdir(), "ogsystem-role-missing-agent-"));
+  const rolesRoot = path.resolve(tempRoot, "roles");
+  const roleDir = path.resolve(rolesRoot, "missing-agent");
+  await mkdir(roleDir, { recursive: true });
+  await writeFile(
+    path.resolve(roleDir, "role.json"),
+    JSON.stringify(
+      {
+        roleId: "missing-agent",
+        roleVersion: "1.0.0",
+        name: "Missing Agent",
+        description: "fixture",
+        promptTemplate: "prompt.md",
+        outputSchema: "output.schema.json"
+      },
+      null,
+      2
+    ),
+    "utf8"
+  );
+  await writeFile(path.resolve(roleDir, "prompt.md"), "{{agent}}\n\n{{task}}\n", "utf8");
+  await writeFile(
+    path.resolve(roleDir, "output.schema.json"),
+    JSON.stringify({ type: "object", additionalProperties: true }, null, 2),
+    "utf8"
+  );
+
+  await assert.rejects(
+    () =>
+      loadRolePackage({
+        roleId: "missing-agent",
+        roleRootDir: rolesRoot
+      }),
+    /agent\.md|ENOENT/
+  );
 });
 
 test("role manifests reject legacy inputSchema fields", () => {

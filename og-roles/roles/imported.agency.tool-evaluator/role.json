@@ -1,0 +1,14 @@
+{
+  "roleId": "imported.agency.tool-evaluator",
+  "roleVersion": "imported-783f6a72bfd7",
+  "name": "Tool Evaluator Agent Personality",
+  "description": "Tool Evaluator Agent Personality imported from agency-agents",
+  "promptTemplate": "prompt.md",
+  "outputSchema": "output.schema.json",
+  "tags": [
+    "imported",
+    "agency-agents",
+    "testing",
+    "tool-evaluator"
+  ]
+}

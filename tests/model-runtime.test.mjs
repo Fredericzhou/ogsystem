@@ -58,7 +58,7 @@ test("adapter auto-discovers runtime config and persists run artifacts for model
     "utf8"
   );
   assert.match(minimalistInbox, /Runtime Input Projection:/);
-  assert.match(minimalistInbox, /"user_profile"/);
+  assert.match(minimalistInbox, /"user_preferences"/);
   assert.match(minimalistInbox, /"allowed_events"/);
 
   const minimalistPrivateStat = await lstat(

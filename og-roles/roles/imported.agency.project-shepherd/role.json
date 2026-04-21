@@ -1,0 +1,14 @@
+{
+  "roleId": "imported.agency.project-shepherd",
+  "roleVersion": "imported-783f6a72bfd7",
+  "name": "Project Shepherd Agent Personality",
+  "description": "Project Shepherd Agent Personality imported from agency-agents",
+  "promptTemplate": "prompt.md",
+  "outputSchema": "output.schema.json",
+  "tags": [
+    "imported",
+    "agency-agents",
+    "project-management",
+    "project-shepherd"
+  ]
+}

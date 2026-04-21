@@ -1,0 +1,1031 @@
+{
+  "version": 1,
+  "generatedAt": "2026-04-21T05:39:09.338Z",
+  "sources": {
+    "agency-agents": {
+      "sourceType": "agency-agents",
+      "sourceRoot": "/Users/fred/WorkSpace/AI/ogsystem/agent-sources/agency-agents",
+      "commit": "783f6a72bfd7f3135700ac273c619d92821b419a",
+      "branch": "main",
+      "remote": "https://github.com/msitarzewski/agency-agents",
+      "roleIds": [
+        "imported.agency.anthropologist",
+        "imported.agency.geographer",
+        "imported.agency.historian",
+        "imported.agency.narratologist",
+        "imported.agency.psychologist",
+        "imported.agency.brand-guardian",
+        "imported.agency.image-prompt-engineer",
+        "imported.agency.inclusive-visuals-specialist",
+        "imported.agency.ui-designer",
+        "imported.agency.ux-architect",
+        "imported.agency.ux-researcher",
+        "imported.agency.visual-storyteller",
+        "imported.agency.whimsy-injector",
+        "imported.agency.ai-data-remediation-engineer",
+        "imported.agency.ai-engineer",
+        "imported.agency.autonomous-optimization-architect",
+        "imported.agency.backend-architect",
+        "imported.agency.cms-developer",
+        "imported.agency.code-reviewer",
+        "imported.agency.codebase-onboarding-engineer",
+        "imported.agency.data-engineer",
+        "imported.agency.database-optimizer",
+        "imported.agency.devops-automator",
+        "imported.agency.email-intelligence-engineer",
+        "imported.agency.embedded-firmware-engineer",
+        "imported.agency.feishu-integration-developer",
+        "imported.agency.filament-optimization-specialist",
+        "imported.agency.frontend-developer",
+        "imported.agency.git-workflow-master",
+        "imported.agency.incident-response-commander",
+        "imported.agency.minimal-change-engineer",
+        "imported.agency.mobile-app-builder",
+        "imported.agency.rapid-prototyper",
+        "imported.agency.security-engineer",
+        "imported.agency.senior-developer",
+        "imported.agency.software-architect",
+        "imported.agency.solidity-smart-contract-engineer",
+        "imported.agency.sre",
+        "imported.agency.technical-writer",
+        "imported.agency.threat-detection-engineer",
+        "imported.agency.voice-ai-integration-engineer",
+        "imported.agency.wechat-mini-program-developer",
+        "imported.agency.bookkeeper-controller",
+        "imported.agency.financial-analyst",
+        "imported.agency.fpa-analyst",
+        "imported.agency.investment-researcher",
+        "imported.agency.tax-strategist",
+        "imported.agency.game-audio-engineer",
+        "imported.agency.game-designer",
+        "imported.agency.level-designer",
+        "imported.agency.narrative-designer",
+        "imported.agency.technical-artist",
+        "imported.agency.agentic-search-optimizer",
+        "imported.agency.ai-citation-strategist",
+        "imported.agency.app-store-optimizer",
+        "imported.agency.baidu-seo-specialist",
+        "imported.agency.bilibili-content-strategist",
+        "imported.agency.book-co-author",
+        "imported.agency.carousel-growth-engine",
+        "imported.agency.china-ecommerce-operator",
+        "imported.agency.china-market-localization-strategist",
+        "imported.agency.content-creator",
+        "imported.agency.cross-border-ecommerce",
+        "imported.agency.douyin-strategist",
+        "imported.agency.growth-hacker",
+        "imported.agency.instagram-curator",
+        "imported.agency.kuaishou-strategist",
+        "imported.agency.linkedin-content-creator",
+        "imported.agency.livestream-commerce-coach",
+        "imported.agency.podcast-strategist",
+        "imported.agency.private-domain-operator",
+        "imported.agency.reddit-community-builder",
+        "imported.agency.seo-specialist",
+        "imported.agency.short-video-editing-coach",
+        "imported.agency.social-media-strategist",
+        "imported.agency.tiktok-strategist",
+        "imported.agency.twitter-engager",
+        "imported.agency.video-optimization-specialist",
+        "imported.agency.wechat-official-account",
+        "imported.agency.weibo-strategist",
+        "imported.agency.xiaohongshu-specialist",
+        "imported.agency.zhihu-strategist",
+        "imported.agency.auditor",
+        "imported.agency.creative-strategist",
+        "imported.agency.paid-social-strategist",
+        "imported.agency.ppc-strategist",
+        "imported.agency.programmatic-buyer",
+        "imported.agency.search-query-analyst",
+        "imported.agency.tracking-specialist",
+        "imported.agency.behavioral-nudge-engine",
+        "imported.agency.feedback-synthesizer",
+        "imported.agency.manager",
+        "imported.agency.sprint-prioritizer",
+        "imported.agency.trend-researcher",
+        "imported.agency.experiment-tracker",
+        "imported.agency.jira-workflow-steward",
+        "imported.agency.project-shepherd",
+        "imported.agency.studio-operations",
+        "imported.agency.studio-producer",
+        "imported.agency.project-manager-senior",
+        "imported.agency.account-strategist",
+        "imported.agency.coach",
+        "imported.agency.deal-strategist",
+        "imported.agency.discovery-coach",
+        "imported.agency.engineer",
+        "imported.agency.outbound-strategist",
+        "imported.agency.pipeline-analyst",
+        "imported.agency.proposal-strategist",
+        "imported.agency.macos-spatial-metal-engineer",
+        "imported.agency.terminal-integration-specialist",
+        "imported.agency.visionos-spatial-engineer",
+        "imported.agency.xr-cockpit-interaction-specialist",
+        "imported.agency.xr-immersive-developer",
+        "imported.agency.xr-interface-architect",
+        "imported.agency.accounts-payable-agent",
+        "imported.agency.agentic-identity-trust",
+        "imported.agency.agents-orchestrator",
+        "imported.agency.automation-governance-architect",
+        "imported.agency.blockchain-security-auditor",
+        "imported.agency.compliance-auditor",
+        "imported.agency.corporate-training-designer",
+        "imported.agency.customer-service",
+        "imported.agency.data-consolidation-agent",
+        "imported.agency.government-digital-presales-consultant",
+        "imported.agency.healthcare-customer-service",
+        "imported.agency.healthcare-marketing-compliance",
+        "imported.agency.hospitality-guest-services",
+        "imported.agency.hr-onboarding",
+        "imported.agency.identity-graph-operator",
+        "imported.agency.language-translator",
+        "imported.agency.legal-billing-time-tracking",
+        "imported.agency.legal-client-intake",
+        "imported.agency.legal-document-review",
+        "imported.agency.loan-officer-assistant",
+        "imported.agency.lsp-index-engineer",
+        "imported.agency.real-estate-buyer-seller",
+        "imported.agency.recruitment-specialist",
+        "imported.agency.report-distribution-agent",
+        "imported.agency.retail-customer-returns",
+        "imported.agency.sales-data-extraction-agent",
+        "imported.agency.sales-outreach",
+        "imported.agency.chief-of-staff",
+        "imported.agency.civil-engineer",
+        "imported.agency.cultural-intelligence-strategist",
+        "imported.agency.developer-advocate",
+        "imported.agency.document-generator",
+        "imported.agency.french-consulting-market",
+        "imported.agency.korean-business-navigator",
+        "imported.agency.mcp-builder",
+        "imported.agency.model-qa",
+        "imported.agency.salesforce-architect",
+        "imported.agency.workflow-architect",
+        "imported.agency.study-abroad-advisor",
+        "imported.agency.supply-chain-strategist",
+        "imported.agency.zk-steward",
+        "imported.agency.analytics-reporter",
+        "imported.agency.executive-summary-generator",
+        "imported.agency.finance-tracker",
+        "imported.agency.infrastructure-maintainer",
+        "imported.agency.legal-compliance-checker",
+        "imported.agency.support-responder",
+        "imported.agency.accessibility-auditor",
+        "imported.agency.api-tester",
+        "imported.agency.evidence-collector",
+        "imported.agency.performance-benchmarker",
+        "imported.agency.reality-checker",
+        "imported.agency.test-results-analyzer",
+        "imported.agency.tool-evaluator",
+        "imported.agency.workflow-optimizer"
+      ],
+      "records": [
+        {
+          "roleId": "imported.agency.anthropologist",
+          "roleName": "Anthropologist Agent Personality",
+          "sourcePath": "academic/academic-anthropologist.md"
+        },
+        {
+          "roleId": "imported.agency.geographer",
+          "roleName": "Geographer Agent Personality",
+          "sourcePath": "academic/academic-geographer.md"
+        },
+        {
+          "roleId": "imported.agency.historian",
+          "roleName": "Historian Agent Personality",
+          "sourcePath": "academic/academic-historian.md"
+        },
+        {
+          "roleId": "imported.agency.narratologist",
+          "roleName": "Narratologist Agent Personality",
+          "sourcePath": "academic/academic-narratologist.md"
+        },
+        {
+          "roleId": "imported.agency.psychologist",
+          "roleName": "Psychologist Agent Personality",
+          "sourcePath": "academic/academic-psychologist.md"
+        },
+        {
+          "roleId": "imported.agency.brand-guardian",
+          "roleName": "Brand Guardian Agent Personality",
+          "sourcePath": "design/design-brand-guardian.md"
+        },
+        {
+          "roleId": "imported.agency.image-prompt-engineer",
+          "roleName": "Image Prompt Engineer Agent",
+          "sourcePath": "design/design-image-prompt-engineer.md"
+        },
+        {
+          "roleId": "imported.agency.inclusive-visuals-specialist",
+          "roleName": "📸 Inclusive Visuals Specialist",
+          "sourcePath": "design/design-inclusive-visuals-specialist.md"
+        },
+        {
+          "roleId": "imported.agency.ui-designer",
+          "roleName": "UI Designer Agent Personality",
+          "sourcePath": "design/design-ui-designer.md"
+        },
+        {
+          "roleId": "imported.agency.ux-architect",
+          "roleName": "ArchitectUX Agent Personality",
+          "sourcePath": "design/design-ux-architect.md"
+        },
+        {
+          "roleId": "imported.agency.ux-researcher",
+          "roleName": "UX Researcher Agent Personality",
+          "sourcePath": "design/design-ux-researcher.md"
+        },
+        {
+          "roleId": "imported.agency.visual-storyteller",
+          "roleName": "Visual Storyteller Agent",
+          "sourcePath": "design/design-visual-storyteller.md"
+        },
+        {
+          "roleId": "imported.agency.whimsy-injector",
+          "roleName": "Whimsy Injector Agent Personality",
+          "sourcePath": "design/design-whimsy-injector.md"
+        },
+        {
+          "roleId": "imported.agency.ai-data-remediation-engineer",
+          "roleName": "AI Data Remediation Engineer Agent",
+          "sourcePath": "engineering/engineering-ai-data-remediation-engineer.md"
+        },
+        {
+          "roleId": "imported.agency.ai-engineer",
+          "roleName": "AI Engineer Agent",
+          "sourcePath": "engineering/engineering-ai-engineer.md"
+        },
+        {
+          "roleId": "imported.agency.autonomous-optimization-architect",
+          "roleName": "⚙️ Autonomous Optimization Architect",
+          "sourcePath": "engineering/engineering-autonomous-optimization-architect.md"
+        },
+        {
+          "roleId": "imported.agency.backend-architect",
+          "roleName": "Backend Architect Agent Personality",
+          "sourcePath": "engineering/engineering-backend-architect.md"
+        },
+        {
+          "roleId": "imported.agency.cms-developer",
+          "roleName": "🧱 CMS Developer",
+          "sourcePath": "engineering/engineering-cms-developer.md"
+        },
+        {
+          "roleId": "imported.agency.code-reviewer",
+          "roleName": "Code Reviewer Agent",
+          "sourcePath": "engineering/engineering-code-reviewer.md"
+        },
+        {
+          "roleId": "imported.agency.codebase-onboarding-engineer",
+          "roleName": "Codebase Onboarding Engineer Agent",
+          "sourcePath": "engineering/engineering-codebase-onboarding-engineer.md"
+        },
+        {
+          "roleId": "imported.agency.data-engineer",
+          "roleName": "Data Engineer Agent",
+          "sourcePath": "engineering/engineering-data-engineer.md"
+        },
+        {
+          "roleId": "imported.agency.database-optimizer",
+          "roleName": "🗄️ Database Optimizer",
+          "sourcePath": "engineering/engineering-database-optimizer.md"
+        },
+        {
+          "roleId": "imported.agency.devops-automator",
+          "roleName": "DevOps Automator Agent Personality",
+          "sourcePath": "engineering/engineering-devops-automator.md"
+        },
+        {
+          "roleId": "imported.agency.email-intelligence-engineer",
+          "roleName": "Email Intelligence Engineer Agent",
+          "sourcePath": "engineering/engineering-email-intelligence-engineer.md"
+        },
+        {
+          "roleId": "imported.agency.embedded-firmware-engineer",
+          "roleName": "Embedded Firmware Engineer",
+          "sourcePath": "engineering/engineering-embedded-firmware-engineer.md"
+        },
+        {
+          "roleId": "imported.agency.feishu-integration-developer",
+          "roleName": "Feishu Integration Developer",
+          "sourcePath": "engineering/engineering-feishu-integration-developer.md"
+        },
+        {
+          "roleId": "imported.agency.filament-optimization-specialist",
+          "roleName": "Agent Personality",
+          "sourcePath": "engineering/engineering-filament-optimization-specialist.md"
+        },
+        {
+          "roleId": "imported.agency.frontend-developer",
+          "roleName": "Frontend Developer Agent Personality",
+          "sourcePath": "engineering/engineering-frontend-developer.md"
+        },
+        {
+          "roleId": "imported.agency.git-workflow-master",
+          "roleName": "Git Workflow Master Agent",
+          "sourcePath": "engineering/engineering-git-workflow-master.md"
+        },
+        {
+          "roleId": "imported.agency.incident-response-commander",
+          "roleName": "Incident Response Commander Agent",
+          "sourcePath": "engineering/engineering-incident-response-commander.md"
+        },
+        {
+          "roleId": "imported.agency.minimal-change-engineer",
+          "roleName": "Minimal Change Engineer Agent",
+          "sourcePath": "engineering/engineering-minimal-change-engineer.md"
+        },
+        {
+          "roleId": "imported.agency.mobile-app-builder",
+          "roleName": "Mobile App Builder Agent Personality",
+          "sourcePath": "engineering/engineering-mobile-app-builder.md"
+        },
+        {
+          "roleId": "imported.agency.rapid-prototyper",
+          "roleName": "Rapid Prototyper Agent Personality",
+          "sourcePath": "engineering/engineering-rapid-prototyper.md"
+        },
+        {
+          "roleId": "imported.agency.security-engineer",
+          "roleName": "Security Engineer Agent",
+          "sourcePath": "engineering/engineering-security-engineer.md"
+        },
+        {
+          "roleId": "imported.agency.senior-developer",
+          "roleName": "Developer Agent Personality",
+          "sourcePath": "engineering/engineering-senior-developer.md"
+        },
+        {
+          "roleId": "imported.agency.software-architect",
+          "roleName": "Software Architect Agent",
+          "sourcePath": "engineering/engineering-software-architect.md"
+        },
+        {
+          "roleId": "imported.agency.solidity-smart-contract-engineer",
+          "roleName": "Solidity Smart Contract Engineer",
+          "sourcePath": "engineering/engineering-solidity-smart-contract-engineer.md"
+        },
+        {
+          "roleId": "imported.agency.sre",
+          "roleName": "SRE (Site Reliability Engineer) Agent",
+          "sourcePath": "engineering/engineering-sre.md"
+        },
+        {
+          "roleId": "imported.agency.technical-writer",
+          "roleName": "Technical Writer Agent",
+          "sourcePath": "engineering/engineering-technical-writer.md"
+        },
+        {
+          "roleId": "imported.agency.threat-detection-engineer",
+          "roleName": "Threat Detection Engineer Agent",
+          "sourcePath": "engineering/engineering-threat-detection-engineer.md"
+        },
+        {
+          "roleId": "imported.agency.voice-ai-integration-engineer",
+          "roleName": "🎙️ Voice AI Integration Engineer Agent",
+          "sourcePath": "engineering/engineering-voice-ai-integration-engineer.md"
+        },
+        {
+          "roleId": "imported.agency.wechat-mini-program-developer",
+          "roleName": "WeChat Mini Program Developer Agent Personality",
+          "sourcePath": "engineering/engineering-wechat-mini-program-developer.md"
+        },
+        {
+          "roleId": "imported.agency.bookkeeper-controller",
+          "roleName": "📒 Bookkeeper & Controller Agent",
+          "sourcePath": "finance/finance-bookkeeper-controller.md"
+        },
+        {
+          "roleId": "imported.agency.financial-analyst",
+          "roleName": "📊 Financial Analyst Agent",
+          "sourcePath": "finance/finance-financial-analyst.md"
+        },
+        {
+          "roleId": "imported.agency.fpa-analyst",
+          "roleName": "📈 FP&A Analyst Agent",
+          "sourcePath": "finance/finance-fpa-analyst.md"
+        },
+        {
+          "roleId": "imported.agency.investment-researcher",
+          "roleName": "🔍 Investment Researcher Agent",
+          "sourcePath": "finance/finance-investment-researcher.md"
+        },
+        {
+          "roleId": "imported.agency.tax-strategist",
+          "roleName": "🏛️ Tax Strategist Agent",
+          "sourcePath": "finance/finance-tax-strategist.md"
+        },
+        {
+          "roleId": "imported.agency.game-audio-engineer",
+          "roleName": "Game Audio Engineer Agent Personality",
+          "sourcePath": "game-development/game-audio-engineer.md"
+        },
+        {
+          "roleId": "imported.agency.game-designer",
+          "roleName": "Game Designer Agent Personality",
+          "sourcePath": "game-development/game-designer.md"
+        },
+        {
+          "roleId": "imported.agency.level-designer",
+          "roleName": "Level Designer Agent Personality",
+          "sourcePath": "game-development/level-designer.md"
+        },
+        {
+          "roleId": "imported.agency.narrative-designer",
+          "roleName": "Narrative Designer Agent Personality",
+          "sourcePath": "game-development/narrative-designer.md"
+        },
+        {
+          "roleId": "imported.agency.technical-artist",
+          "roleName": "Technical Artist Agent Personality",
+          "sourcePath": "game-development/technical-artist.md"
+        },
+        {
+          "roleId": "imported.agency.agentic-search-optimizer",
+          "roleName": "WebMCP Readiness Audit: [Site/Product Name]",
+          "sourcePath": "marketing/marketing-agentic-search-optimizer.md"
+        },
+        {
+          "roleId": "imported.agency.ai-citation-strategist",
+          "roleName": "Your Identity & Memory",
+          "sourcePath": "marketing/marketing-ai-citation-strategist.md"
+        },
+        {
+          "roleId": "imported.agency.app-store-optimizer",
+          "roleName": "App Store Optimizer Agent Personality",
+          "sourcePath": "marketing/marketing-app-store-optimizer.md"
+        },
+        {
+          "roleId": "imported.agency.baidu-seo-specialist",
+          "roleName": "Marketing Baidu SEO Specialist",
+          "sourcePath": "marketing/marketing-baidu-seo-specialist.md"
+        },
+        {
+          "roleId": "imported.agency.bilibili-content-strategist",
+          "roleName": "Marketing Bilibili Content Strategist",
+          "sourcePath": "marketing/marketing-bilibili-content-strategist.md"
+        },
+        {
+          "roleId": "imported.agency.book-co-author",
+          "roleName": "Book Co-Author",
+          "sourcePath": "marketing/marketing-book-co-author.md"
+        },
+        {
+          "roleId": "imported.agency.carousel-growth-engine",
+          "roleName": "Marketing Carousel Growth Engine",
+          "sourcePath": "marketing/marketing-carousel-growth-engine.md"
+        },
+        {
+          "roleId": "imported.agency.china-ecommerce-operator",
+          "roleName": "Marketing China E-Commerce Operator",
+          "sourcePath": "marketing/marketing-china-ecommerce-operator.md"
+        },
+        {
+          "roleId": "imported.agency.china-market-localization-strategist",
+          "roleName": "China Market Localization Strategist",
+          "sourcePath": "marketing/marketing-china-market-localization-strategist.md"
+        },
+        {
+          "roleId": "imported.agency.content-creator",
+          "roleName": "Marketing Content Creator Agent",
+          "sourcePath": "marketing/marketing-content-creator.md"
+        },
+        {
+          "roleId": "imported.agency.cross-border-ecommerce",
+          "roleName": "Marketing Cross-Border E-Commerce Specialist",
+          "sourcePath": "marketing/marketing-cross-border-ecommerce.md"
+        },
+        {
+          "roleId": "imported.agency.douyin-strategist",
+          "roleName": "Marketing Douyin Strategist",
+          "sourcePath": "marketing/marketing-douyin-strategist.md"
+        },
+        {
+          "roleId": "imported.agency.growth-hacker",
+          "roleName": "Marketing Growth Hacker Agent",
+          "sourcePath": "marketing/marketing-growth-hacker.md"
+        },
+        {
+          "roleId": "imported.agency.instagram-curator",
+          "roleName": "Marketing Instagram Curator",
+          "sourcePath": "marketing/marketing-instagram-curator.md"
+        },
+        {
+          "roleId": "imported.agency.kuaishou-strategist",
+          "roleName": "Marketing Kuaishou Strategist",
+          "sourcePath": "marketing/marketing-kuaishou-strategist.md"
+        },
+        {
+          "roleId": "imported.agency.linkedin-content-creator",
+          "roleName": "LinkedIn Content Creator",
+          "sourcePath": "marketing/marketing-linkedin-content-creator.md"
+        },
+        {
+          "roleId": "imported.agency.livestream-commerce-coach",
+          "roleName": "Marketing Livestream Commerce Coach",
+          "sourcePath": "marketing/marketing-livestream-commerce-coach.md"
+        },
+        {
+          "roleId": "imported.agency.podcast-strategist",
+          "roleName": "Marketing Podcast Strategist",
+          "sourcePath": "marketing/marketing-podcast-strategist.md"
+        },
+        {
+          "roleId": "imported.agency.private-domain-operator",
+          "roleName": "Marketing Private Domain Operator",
+          "sourcePath": "marketing/marketing-private-domain-operator.md"
+        },
+        {
+          "roleId": "imported.agency.reddit-community-builder",
+          "roleName": "Marketing Reddit Community Builder",
+          "sourcePath": "marketing/marketing-reddit-community-builder.md"
+        },
+        {
+          "roleId": "imported.agency.seo-specialist",
+          "roleName": "Marketing SEO Specialist",
+          "sourcePath": "marketing/marketing-seo-specialist.md"
+        },
+        {
+          "roleId": "imported.agency.short-video-editing-coach",
+          "roleName": "Marketing Short-Video Editing Coach",
+          "sourcePath": "marketing/marketing-short-video-editing-coach.md"
+        },
+        {
+          "roleId": "imported.agency.social-media-strategist",
+          "roleName": "Social Media Strategist Agent",
+          "sourcePath": "marketing/marketing-social-media-strategist.md"
+        },
+        {
+          "roleId": "imported.agency.tiktok-strategist",
+          "roleName": "Marketing TikTok Strategist",
+          "sourcePath": "marketing/marketing-tiktok-strategist.md"
+        },
+        {
+          "roleId": "imported.agency.twitter-engager",
+          "roleName": "Marketing Twitter Engager",
+          "sourcePath": "marketing/marketing-twitter-engager.md"
+        },
+        {
+          "roleId": "imported.agency.video-optimization-specialist",
+          "roleName": "Marketing Video Optimization Specialist Agent",
+          "sourcePath": "marketing/marketing-video-optimization-specialist.md"
+        },
+        {
+          "roleId": "imported.agency.wechat-official-account",
+          "roleName": "Marketing WeChat Official Account Manager",
+          "sourcePath": "marketing/marketing-wechat-official-account.md"
+        },
+        {
+          "roleId": "imported.agency.weibo-strategist",
+          "roleName": "Marketing Weibo Strategist",
+          "sourcePath": "marketing/marketing-weibo-strategist.md"
+        },
+        {
+          "roleId": "imported.agency.xiaohongshu-specialist",
+          "roleName": "Marketing Xiaohongshu Specialist",
+          "sourcePath": "marketing/marketing-xiaohongshu-specialist.md"
+        },
+        {
+          "roleId": "imported.agency.zhihu-strategist",
+          "roleName": "Marketing Zhihu Strategist",
+          "sourcePath": "marketing/marketing-zhihu-strategist.md"
+        },
+        {
+          "roleId": "imported.agency.auditor",
+          "roleName": "Paid Media Auditor Agent",
+          "sourcePath": "paid-media/paid-media-auditor.md"
+        },
+        {
+          "roleId": "imported.agency.creative-strategist",
+          "roleName": "Paid Media Ad Creative Strategist Agent",
+          "sourcePath": "paid-media/paid-media-creative-strategist.md"
+        },
+        {
+          "roleId": "imported.agency.paid-social-strategist",
+          "roleName": "Paid Media Paid Social Strategist Agent",
+          "sourcePath": "paid-media/paid-media-paid-social-strategist.md"
+        },
+        {
+          "roleId": "imported.agency.ppc-strategist",
+          "roleName": "Paid Media PPC Campaign Strategist Agent",
+          "sourcePath": "paid-media/paid-media-ppc-strategist.md"
+        },
+        {
+          "roleId": "imported.agency.programmatic-buyer",
+          "roleName": "Paid Media Programmatic & Display Buyer Agent",
+          "sourcePath": "paid-media/paid-media-programmatic-buyer.md"
+        },
+        {
+          "roleId": "imported.agency.search-query-analyst",
+          "roleName": "Paid Media Search Query Analyst Agent",
+          "sourcePath": "paid-media/paid-media-search-query-analyst.md"
+        },
+        {
+          "roleId": "imported.agency.tracking-specialist",
+          "roleName": "Paid Media Tracking & Measurement Specialist Agent",
+          "sourcePath": "paid-media/paid-media-tracking-specialist.md"
+        },
+        {
+          "roleId": "imported.agency.behavioral-nudge-engine",
+          "roleName": "🧠 Behavioral Nudge Engine",
+          "sourcePath": "product/product-behavioral-nudge-engine.md"
+        },
+        {
+          "roleId": "imported.agency.feedback-synthesizer",
+          "roleName": "Product Feedback Synthesizer Agent",
+          "sourcePath": "product/product-feedback-synthesizer.md"
+        },
+        {
+          "roleId": "imported.agency.manager",
+          "roleName": "🧭 Product Manager Agent",
+          "sourcePath": "product/product-manager.md"
+        },
+        {
+          "roleId": "imported.agency.sprint-prioritizer",
+          "roleName": "Product Sprint Prioritizer Agent",
+          "sourcePath": "product/product-sprint-prioritizer.md"
+        },
+        {
+          "roleId": "imported.agency.trend-researcher",
+          "roleName": "Product Trend Researcher Agent",
+          "sourcePath": "product/product-trend-researcher.md"
+        },
+        {
+          "roleId": "imported.agency.experiment-tracker",
+          "roleName": "Experiment Tracker Agent Personality",
+          "sourcePath": "project-management/project-management-experiment-tracker.md"
+        },
+        {
+          "roleId": "imported.agency.jira-workflow-steward",
+          "roleName": "Jira Workflow Steward Agent",
+          "sourcePath": "project-management/project-management-jira-workflow-steward.md"
+        },
+        {
+          "roleId": "imported.agency.project-shepherd",
+          "roleName": "Project Shepherd Agent Personality",
+          "sourcePath": "project-management/project-management-project-shepherd.md"
+        },
+        {
+          "roleId": "imported.agency.studio-operations",
+          "roleName": "Studio Operations Agent Personality",
+          "sourcePath": "project-management/project-management-studio-operations.md"
+        },
+        {
+          "roleId": "imported.agency.studio-producer",
+          "roleName": "Studio Producer Agent Personality",
+          "sourcePath": "project-management/project-management-studio-producer.md"
+        },
+        {
+          "roleId": "imported.agency.project-manager-senior",
+          "roleName": "Project Manager Agent Personality",
+          "sourcePath": "project-management/project-manager-senior.md"
+        },
+        {
+          "roleId": "imported.agency.account-strategist",
+          "roleName": "Account Strategist Agent",
+          "sourcePath": "sales/sales-account-strategist.md"
+        },
+        {
+          "roleId": "imported.agency.coach",
+          "roleName": "Sales Coach Agent",
+          "sourcePath": "sales/sales-coach.md"
+        },
+        {
+          "roleId": "imported.agency.deal-strategist",
+          "roleName": "Deal Strategist Agent",
+          "sourcePath": "sales/sales-deal-strategist.md"
+        },
+        {
+          "roleId": "imported.agency.discovery-coach",
+          "roleName": "Discovery Coach Agent",
+          "sourcePath": "sales/sales-discovery-coach.md"
+        },
+        {
+          "roleId": "imported.agency.engineer",
+          "roleName": "Sales Engineer Agent",
+          "sourcePath": "sales/sales-engineer.md"
+        },
+        {
+          "roleId": "imported.agency.outbound-strategist",
+          "roleName": "Outbound Strategist Agent",
+          "sourcePath": "sales/sales-outbound-strategist.md"
+        },
+        {
+          "roleId": "imported.agency.pipeline-analyst",
+          "roleName": "Pipeline Analyst Agent",
+          "sourcePath": "sales/sales-pipeline-analyst.md"
+        },
+        {
+          "roleId": "imported.agency.proposal-strategist",
+          "roleName": "Proposal Strategist Agent",
+          "sourcePath": "sales/sales-proposal-strategist.md"
+        },
+        {
+          "roleId": "imported.agency.macos-spatial-metal-engineer",
+          "roleName": "macOS Spatial/Metal Engineer Agent Personality",
+          "sourcePath": "spatial-computing/macos-spatial-metal-engineer.md"
+        },
+        {
+          "roleId": "imported.agency.terminal-integration-specialist",
+          "roleName": "Terminal Integration Specialist",
+          "sourcePath": "spatial-computing/terminal-integration-specialist.md"
+        },
+        {
+          "roleId": "imported.agency.visionos-spatial-engineer",
+          "roleName": "visionOS Spatial Engineer",
+          "sourcePath": "spatial-computing/visionos-spatial-engineer.md"
+        },
+        {
+          "roleId": "imported.agency.xr-cockpit-interaction-specialist",
+          "roleName": "XR Cockpit Interaction Specialist Agent Personality",
+          "sourcePath": "spatial-computing/xr-cockpit-interaction-specialist.md"
+        },
+        {
+          "roleId": "imported.agency.xr-immersive-developer",
+          "roleName": "XR Immersive Developer Agent Personality",
+          "sourcePath": "spatial-computing/xr-immersive-developer.md"
+        },
+        {
+          "roleId": "imported.agency.xr-interface-architect",
+          "roleName": "XR Interface Architect Agent Personality",
+          "sourcePath": "spatial-computing/xr-interface-architect.md"
+        },
+        {
+          "roleId": "imported.agency.accounts-payable-agent",
+          "roleName": "Accounts Payable Agent Personality",
+          "sourcePath": "specialized/accounts-payable-agent.md"
+        },
+        {
+          "roleId": "imported.agency.agentic-identity-trust",
+          "roleName": "Agentic Identity & Trust Architect",
+          "sourcePath": "specialized/agentic-identity-trust.md"
+        },
+        {
+          "roleId": "imported.agency.agents-orchestrator",
+          "roleName": "AgentsOrchestrator Agent Personality",
+          "sourcePath": "specialized/agents-orchestrator.md"
+        },
+        {
+          "roleId": "imported.agency.automation-governance-architect",
+          "roleName": "Automation Governance Architect",
+          "sourcePath": "specialized/automation-governance-architect.md"
+        },
+        {
+          "roleId": "imported.agency.blockchain-security-auditor",
+          "roleName": "Blockchain Security Auditor",
+          "sourcePath": "specialized/blockchain-security-auditor.md"
+        },
+        {
+          "roleId": "imported.agency.compliance-auditor",
+          "roleName": "Compliance Auditor Agent",
+          "sourcePath": "specialized/compliance-auditor.md"
+        },
+        {
+          "roleId": "imported.agency.corporate-training-designer",
+          "roleName": "Corporate Training Designer",
+          "sourcePath": "specialized/corporate-training-designer.md"
+        },
+        {
+          "roleId": "imported.agency.customer-service",
+          "roleName": "🎧 Customer Service Agent",
+          "sourcePath": "specialized/customer-service.md"
+        },
+        {
+          "roleId": "imported.agency.data-consolidation-agent",
+          "roleName": "Data Consolidation Agent",
+          "sourcePath": "specialized/data-consolidation-agent.md"
+        },
+        {
+          "roleId": "imported.agency.government-digital-presales-consultant",
+          "roleName": "Government Digital Presales Consultant",
+          "sourcePath": "specialized/government-digital-presales-consultant.md"
+        },
+        {
+          "roleId": "imported.agency.healthcare-customer-service",
+          "roleName": "🏥 Healthcare Customer Service Agent",
+          "sourcePath": "specialized/healthcare-customer-service.md"
+        },
+        {
+          "roleId": "imported.agency.healthcare-marketing-compliance",
+          "roleName": "Healthcare Marketing Compliance Specialist",
+          "sourcePath": "specialized/healthcare-marketing-compliance.md"
+        },
+        {
+          "roleId": "imported.agency.hospitality-guest-services",
+          "roleName": "🏨 Hospitality Guest Services Agent",
+          "sourcePath": "specialized/hospitality-guest-services.md"
+        },
+        {
+          "roleId": "imported.agency.hr-onboarding",
+          "roleName": "🤝 HR Onboarding Agent",
+          "sourcePath": "specialized/hr-onboarding.md"
+        },
+        {
+          "roleId": "imported.agency.identity-graph-operator",
+          "roleName": "Identity Graph Operator",
+          "sourcePath": "specialized/identity-graph-operator.md"
+        },
+        {
+          "roleId": "imported.agency.language-translator",
+          "roleName": "🌐 Language Translator",
+          "sourcePath": "specialized/language-translator.md"
+        },
+        {
+          "roleId": "imported.agency.legal-billing-time-tracking",
+          "roleName": "⏱️ Legal Billing & Time Tracking Agent",
+          "sourcePath": "specialized/legal-billing-time-tracking.md"
+        },
+        {
+          "roleId": "imported.agency.legal-client-intake",
+          "roleName": "📋 Legal Client Intake Agent",
+          "sourcePath": "specialized/legal-client-intake.md"
+        },
+        {
+          "roleId": "imported.agency.legal-document-review",
+          "roleName": "⚖️ Legal Document Review Agent",
+          "sourcePath": "specialized/legal-document-review.md"
+        },
+        {
+          "roleId": "imported.agency.loan-officer-assistant",
+          "roleName": "🏦 Loan Officer Assistant Agent",
+          "sourcePath": "specialized/loan-officer-assistant.md"
+        },
+        {
+          "roleId": "imported.agency.lsp-index-engineer",
+          "roleName": "LSP/Index Engineer Agent Personality",
+          "sourcePath": "specialized/lsp-index-engineer.md"
+        },
+        {
+          "roleId": "imported.agency.real-estate-buyer-seller",
+          "roleName": "🏠 Real Estate Buyer & Seller Agent",
+          "sourcePath": "specialized/real-estate-buyer-seller.md"
+        },
+        {
+          "roleId": "imported.agency.recruitment-specialist",
+          "roleName": "Recruitment Specialist Agent",
+          "sourcePath": "specialized/recruitment-specialist.md"
+        },
+        {
+          "roleId": "imported.agency.report-distribution-agent",
+          "roleName": "Report Distribution Agent",
+          "sourcePath": "specialized/report-distribution-agent.md"
+        },
+        {
+          "roleId": "imported.agency.retail-customer-returns",
+          "roleName": "🛒 Retail Customer Returns Agent",
+          "sourcePath": "specialized/retail-customer-returns.md"
+        },
+        {
+          "roleId": "imported.agency.sales-data-extraction-agent",
+          "roleName": "Sales Data Extraction Agent",
+          "sourcePath": "specialized/sales-data-extraction-agent.md"
+        },
+        {
+          "roleId": "imported.agency.sales-outreach",
+          "roleName": "🎯 Sales Outreach Agent",
+          "sourcePath": "specialized/sales-outreach.md"
+        },
+        {
+          "roleId": "imported.agency.chief-of-staff",
+          "roleName": "🧭 Chief of Staff",
+          "sourcePath": "specialized/specialized-chief-of-staff.md"
+        },
+        {
+          "roleId": "imported.agency.civil-engineer",
+          "roleName": "Civil Engineer Agent",
+          "sourcePath": "specialized/specialized-civil-engineer.md"
+        },
+        {
+          "roleId": "imported.agency.cultural-intelligence-strategist",
+          "roleName": "🌍 Cultural Intelligence Strategist",
+          "sourcePath": "specialized/specialized-cultural-intelligence-strategist.md"
+        },
+        {
+          "roleId": "imported.agency.developer-advocate",
+          "roleName": "Developer Advocate Agent",
+          "sourcePath": "specialized/specialized-developer-advocate.md"
+        },
+        {
+          "roleId": "imported.agency.document-generator",
+          "roleName": "Document Generator Agent",
+          "sourcePath": "specialized/specialized-document-generator.md"
+        },
+        {
+          "roleId": "imported.agency.french-consulting-market",
+          "roleName": "🧠 Your Identity & Memory",
+          "sourcePath": "specialized/specialized-french-consulting-market.md"
+        },
+        {
+          "roleId": "imported.agency.korean-business-navigator",
+          "roleName": "🧠 Your Identity & Memory",
+          "sourcePath": "specialized/specialized-korean-business-navigator.md"
+        },
+        {
+          "roleId": "imported.agency.mcp-builder",
+          "roleName": "MCP Builder Agent",
+          "sourcePath": "specialized/specialized-mcp-builder.md"
+        },
+        {
+          "roleId": "imported.agency.model-qa",
+          "roleName": "Model QA Specialist",
+          "sourcePath": "specialized/specialized-model-qa.md"
+        },
+        {
+          "roleId": "imported.agency.salesforce-architect",
+          "roleName": "🧠 Your Identity & Memory",
+          "sourcePath": "specialized/specialized-salesforce-architect.md"
+        },
+        {
+          "roleId": "imported.agency.workflow-architect",
+          "roleName": "Workflow Architect Agent Personality",
+          "sourcePath": "specialized/specialized-workflow-architect.md"
+        },
+        {
+          "roleId": "imported.agency.study-abroad-advisor",
+          "roleName": "Study Abroad Advisor",
+          "sourcePath": "specialized/study-abroad-advisor.md"
+        },
+        {
+          "roleId": "imported.agency.supply-chain-strategist",
+          "roleName": "Supply Chain Strategist Agent",
+          "sourcePath": "specialized/supply-chain-strategist.md"
+        },
+        {
+          "roleId": "imported.agency.zk-steward",
+          "roleName": "ZK Steward Agent",
+          "sourcePath": "specialized/zk-steward.md"
+        },
+        {
+          "roleId": "imported.agency.analytics-reporter",
+          "roleName": "Analytics Reporter Agent Personality",
+          "sourcePath": "support/support-analytics-reporter.md"
+        },
+        {
+          "roleId": "imported.agency.executive-summary-generator",
+          "roleName": "Executive Summary Generator Agent Personality",
+          "sourcePath": "support/support-executive-summary-generator.md"
+        },
+        {
+          "roleId": "imported.agency.finance-tracker",
+          "roleName": "Finance Tracker Agent Personality",
+          "sourcePath": "support/support-finance-tracker.md"
+        },
+        {
+          "roleId": "imported.agency.infrastructure-maintainer",
+          "roleName": "Infrastructure Maintainer Agent Personality",
+          "sourcePath": "support/support-infrastructure-maintainer.md"
+        },
+        {
+          "roleId": "imported.agency.legal-compliance-checker",
+          "roleName": "Legal Compliance Checker Agent Personality",
+          "sourcePath": "support/support-legal-compliance-checker.md"
+        },
+        {
+          "roleId": "imported.agency.support-responder",
+          "roleName": "Support Responder Agent Personality",
+          "sourcePath": "support/support-support-responder.md"
+        },
+        {
+          "roleId": "imported.agency.accessibility-auditor",
+          "roleName": "Accessibility Auditor Agent Personality",
+          "sourcePath": "testing/testing-accessibility-auditor.md"
+        },
+        {
+          "roleId": "imported.agency.api-tester",
+          "roleName": "API Tester Agent Personality",
+          "sourcePath": "testing/testing-api-tester.md"
+        },
+        {
+          "roleId": "imported.agency.evidence-collector",
+          "roleName": "QA Agent Personality",
+          "sourcePath": "testing/testing-evidence-collector.md"
+        },
+        {
+          "roleId": "imported.agency.performance-benchmarker",
+          "roleName": "Performance Benchmarker Agent Personality",
+          "sourcePath": "testing/testing-performance-benchmarker.md"
+        },
+        {
+          "roleId": "imported.agency.reality-checker",
+          "roleName": "Integration Agent Personality",
+          "sourcePath": "testing/testing-reality-checker.md"
+        },
+        {
+          "roleId": "imported.agency.test-results-analyzer",
+          "roleName": "Test Results Analyzer Agent Personality",
+          "sourcePath": "testing/testing-test-results-analyzer.md"
+        },
+        {
+          "roleId": "imported.agency.tool-evaluator",
+          "roleName": "Tool Evaluator Agent Personality",
+          "sourcePath": "testing/testing-tool-evaluator.md"
+        },
+        {
+          "roleId": "imported.agency.workflow-optimizer",
+          "roleName": "Workflow Optimizer Agent Personality",
+          "sourcePath": "testing/testing-workflow-optimizer.md"
+        }
+      ]
+    }
+  }
+}

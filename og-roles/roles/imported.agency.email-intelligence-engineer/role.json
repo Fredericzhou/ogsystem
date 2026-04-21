@@ -1,0 +1,14 @@
+{
+  "roleId": "imported.agency.email-intelligence-engineer",
+  "roleVersion": "imported-783f6a72bfd7",
+  "name": "Email Intelligence Engineer Agent",
+  "description": "Email Intelligence Engineer Agent imported from agency-agents",
+  "promptTemplate": "prompt.md",
+  "outputSchema": "output.schema.json",
+  "tags": [
+    "imported",
+    "agency-agents",
+    "engineering",
+    "email-intelligence-engineer"
+  ]
+}

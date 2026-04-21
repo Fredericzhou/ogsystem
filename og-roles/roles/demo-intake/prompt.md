@@ -1,14 +1,15 @@
-{{persona}}
+{{agent}}
 
-{{work}}
-
-Task:
-{{task}}
-
-User profile:
-{{user_profile}}
+Return one JSON object only.
 
 Allowed events:
 {{allowed_events}}
 
-Return JSON only.
+User preferences:
+{{user_preferences}}
+
+Task:
+{{task}}
+
+Input:
+{{input}}

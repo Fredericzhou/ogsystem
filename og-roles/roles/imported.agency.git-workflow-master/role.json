@@ -1,0 +1,14 @@
+{
+  "roleId": "imported.agency.git-workflow-master",
+  "roleVersion": "imported-783f6a72bfd7",
+  "name": "Git Workflow Master Agent",
+  "description": "Git Workflow Master Agent imported from agency-agents",
+  "promptTemplate": "prompt.md",
+  "outputSchema": "output.schema.json",
+  "tags": [
+    "imported",
+    "agency-agents",
+    "engineering",
+    "git-workflow-master"
+  ]
+}

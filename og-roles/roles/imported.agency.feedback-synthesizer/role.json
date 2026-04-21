@@ -1,0 +1,14 @@
+{
+  "roleId": "imported.agency.feedback-synthesizer",
+  "roleVersion": "imported-783f6a72bfd7",
+  "name": "Product Feedback Synthesizer Agent",
+  "description": "Product Feedback Synthesizer Agent imported from agency-agents",
+  "promptTemplate": "prompt.md",
+  "outputSchema": "output.schema.json",
+  "tags": [
+    "imported",
+    "agency-agents",
+    "product",
+    "feedback-synthesizer"
+  ]
+}

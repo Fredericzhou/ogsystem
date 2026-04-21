@@ -1,0 +1,14 @@
+{
+  "roleId": "imported.agency.xr-cockpit-interaction-specialist",
+  "roleVersion": "imported-783f6a72bfd7",
+  "name": "XR Cockpit Interaction Specialist Agent Personality",
+  "description": "XR Cockpit Interaction Specialist Agent Personality imported from agency-agents",
+  "promptTemplate": "prompt.md",
+  "outputSchema": "output.schema.json",
+  "tags": [
+    "imported",
+    "agency-agents",
+    "spatial-computing",
+    "xr-cockpit-interaction-specialist"
+  ]
+}

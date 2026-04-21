@@ -15,13 +15,10 @@ import type {
 } from "./types.js";
 
 export type RolePromptInput = {
-  task: string;
-  context: string;
   allowed_events: string;
-  last_output: string;
-  system_notes: string;
-  round: string;
-  user_profile: string;
+  user_preferences: string;
+  task: string;
+  input: string;
 };
 
 function getDirectContext(state: GraphState, branch: BranchRecord): string {
@@ -382,12 +379,9 @@ export function buildRolePromptInput(args: {
         : getDirectContext(args.state, args.branch);
 
   return {
-    task: args.state.userPrompt,
-    context,
     allowed_events: JSON.stringify(allowedEvents),
-    last_output: context,
-    system_notes: "",
-    round: String(args.branch.loopIteration),
-    user_profile: renderUserProfile(args.userProfile)
+    user_preferences: renderUserProfile(args.userProfile),
+    task: args.state.userPrompt,
+    input: context
   };
 }

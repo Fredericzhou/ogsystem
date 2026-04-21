@@ -153,20 +153,7 @@ export async function loadRolePackage(args: {
   const outputSchemaPath = resolve(resolvedPath, manifest.outputSchema);
   const promptTemplate = await readFile(promptTemplatePath, "utf8");
   const outputSchema = await readJsonFile(outputSchemaPath);
-
-  let persona: string | undefined;
-  try {
-    persona = await readFile(resolve(resolvedPath, "persona.md"), "utf8");
-  } catch {
-    persona = undefined;
-  }
-
-  let work: string | undefined;
-  try {
-    work = await readFile(resolve(resolvedPath, "work.md"), "utf8");
-  } catch {
-    work = undefined;
-  }
+  const agent = await readFile(resolve(resolvedPath, "agent.md"), "utf8");
 
   return {
     resolvedPath,
@@ -174,20 +161,17 @@ export async function loadRolePackage(args: {
     promptTemplate,
     outputSchema,
     outputSchemaPath,
-    persona,
-    work
+    agent
   };
 }
 
 export function renderRolePrompt(args: {
   promptTemplate: string;
-  persona?: string;
-  work?: string;
+  agent: string;
   values: Record<string, string>;
 }): string {
   const variables: Record<string, string> = {
-    persona: args.persona?.trim() ?? "",
-    work: args.work?.trim() ?? "",
+    agent: args.agent.trim(),
     ...args.values
   };
 

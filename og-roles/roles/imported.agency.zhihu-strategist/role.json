@@ -1,0 +1,14 @@
+{
+  "roleId": "imported.agency.zhihu-strategist",
+  "roleVersion": "imported-783f6a72bfd7",
+  "name": "Marketing Zhihu Strategist",
+  "description": "Marketing Zhihu Strategist imported from agency-agents",
+  "promptTemplate": "prompt.md",
+  "outputSchema": "output.schema.json",
+  "tags": [
+    "imported",
+    "agency-agents",
+    "marketing",
+    "zhihu-strategist"
+  ]
+}

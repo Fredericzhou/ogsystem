@@ -1,0 +1,14 @@
+{
+  "roleId": "imported.agency.tiktok-strategist",
+  "roleVersion": "imported-783f6a72bfd7",
+  "name": "Marketing TikTok Strategist",
+  "description": "Marketing TikTok Strategist imported from agency-agents",
+  "promptTemplate": "prompt.md",
+  "outputSchema": "output.schema.json",
+  "tags": [
+    "imported",
+    "agency-agents",
+    "marketing",
+    "tiktok-strategist"
+  ]
+}

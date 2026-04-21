@@ -1,0 +1,14 @@
+{
+  "roleId": "imported.agency.book-co-author",
+  "roleVersion": "imported-783f6a72bfd7",
+  "name": "Book Co-Author",
+  "description": "Book Co-Author imported from agency-agents",
+  "promptTemplate": "prompt.md",
+  "outputSchema": "output.schema.json",
+  "tags": [
+    "imported",
+    "agency-agents",
+    "marketing",
+    "book-co-author"
+  ]
+}

@@ -1,0 +1,14 @@
+{
+  "roleId": "imported.agency.proposal-strategist",
+  "roleVersion": "imported-783f6a72bfd7",
+  "name": "Proposal Strategist Agent",
+  "description": "Proposal Strategist Agent imported from agency-agents",
+  "promptTemplate": "prompt.md",
+  "outputSchema": "output.schema.json",
+  "tags": [
+    "imported",
+    "agency-agents",
+    "sales",
+    "proposal-strategist"
+  ]
+}

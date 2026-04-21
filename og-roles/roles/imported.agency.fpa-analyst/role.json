@@ -1,0 +1,14 @@
+{
+  "roleId": "imported.agency.fpa-analyst",
+  "roleVersion": "imported-783f6a72bfd7",
+  "name": "📈 FP&A Analyst Agent",
+  "description": "📈 FP&A Analyst Agent imported from agency-agents",
+  "promptTemplate": "prompt.md",
+  "outputSchema": "output.schema.json",
+  "tags": [
+    "imported",
+    "agency-agents",
+    "finance",
+    "fpa-analyst"
+  ]
+}

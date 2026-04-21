@@ -1,0 +1,14 @@
+{
+  "roleId": "imported.agency.historian",
+  "roleVersion": "imported-783f6a72bfd7",
+  "name": "Historian Agent Personality",
+  "description": "Historian Agent Personality imported from agency-agents",
+  "promptTemplate": "prompt.md",
+  "outputSchema": "output.schema.json",
+  "tags": [
+    "imported",
+    "agency-agents",
+    "academic",
+    "historian"
+  ]
+}

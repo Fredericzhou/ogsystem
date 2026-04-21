@@ -1,0 +1,14 @@
+{
+  "roleId": "imported.agency.finance-tracker",
+  "roleVersion": "imported-783f6a72bfd7",
+  "name": "Finance Tracker Agent Personality",
+  "description": "Finance Tracker Agent Personality imported from agency-agents",
+  "promptTemplate": "prompt.md",
+  "outputSchema": "output.schema.json",
+  "tags": [
+    "imported",
+    "agency-agents",
+    "support",
+    "finance-tracker"
+  ]
+}

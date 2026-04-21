@@ -1,0 +1,14 @@
+{
+  "roleId": "imported.agency.study-abroad-advisor",
+  "roleVersion": "imported-783f6a72bfd7",
+  "name": "Study Abroad Advisor",
+  "description": "Study Abroad Advisor imported from agency-agents",
+  "promptTemplate": "prompt.md",
+  "outputSchema": "output.schema.json",
+  "tags": [
+    "imported",
+    "agency-agents",
+    "specialized",
+    "study-abroad-advisor"
+  ]
+}

@@ -1,20 +1,19 @@
-{{persona}}
+{{agent}}
 
-{{work}}
-
-Task:
-{{task}}
+Return one JSON object only.
 
 Allowed events:
 {{allowed_events}}
 
-Last output:
-{{last_output}}
+User preferences:
+{{user_preferences}}
 
-User profile:
-{{user_profile}}
+Task:
+{{task}}
+
+Input:
+{{input}}
 
 Output requirements:
-- Return JSON only.
 - event must be from allowed_events.
 - content must describe how to extend system alignment safely.

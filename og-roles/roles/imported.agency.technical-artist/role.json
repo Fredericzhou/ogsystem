@@ -1,0 +1,14 @@
+{
+  "roleId": "imported.agency.technical-artist",
+  "roleVersion": "imported-783f6a72bfd7",
+  "name": "Technical Artist Agent Personality",
+  "description": "Technical Artist Agent Personality imported from agency-agents",
+  "promptTemplate": "prompt.md",
+  "outputSchema": "output.schema.json",
+  "tags": [
+    "imported",
+    "agency-agents",
+    "game-development",
+    "technical-artist"
+  ]
+}

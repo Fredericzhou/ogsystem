@@ -1,20 +1,19 @@
-{{persona}}
+{{agent}}
 
-{{work}}
-
-Task:
-{{task}}
-
-Context:
-{{context}}
-
-User profile:
-{{user_profile}}
+Return one JSON object only.
 
 Allowed events:
 {{allowed_events}}
 
+User preferences:
+{{user_preferences}}
+
+Task:
+{{task}}
+
+Input:
+{{input}}
+
 Output requirements:
-- Return JSON only.
 - event is optional for parallel_split nodes and may be omitted.
 - content must contain the dispatch instructions.

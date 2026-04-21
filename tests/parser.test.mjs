@@ -589,7 +589,8 @@ test("nl2mmd validator ignores ERROR* edges when checking role output event enum
         2
       )
     );
-    await writeFile(path.join(roleDir, "prompt.md"), "test prompt");
+    await writeFile(path.join(roleDir, "prompt.md"), "{{agent}}\n\ntest prompt");
+    await writeFile(path.join(roleDir, "agent.md"), `# ${roleId}\n\ntest agent\n`);
     await writeFile(
       path.join(roleDir, "output.schema.json"),
       JSON.stringify(

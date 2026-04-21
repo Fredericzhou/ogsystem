@@ -34,16 +34,25 @@ async function writeModelBoundRole(args) {
   await writeFile(
     path.resolve(roleDir, "prompt.md"),
     [
-      `Role: ${args.roleId}`,
+      "{{agent}}",
+      "",
+      "Allowed events:",
+      "{{allowed_events}}",
+      "",
+      "User preferences:",
+      "{{user_preferences}}",
+      "",
       "Task:",
       "{{task}}",
       "",
-      "Context:",
-      "{{context}}",
-      "",
-      "Allowed events: {{allowed_events}}",
-      "Round: {{round}}"
+      "Input:",
+      "{{input}}"
     ].join("\n"),
+    "utf8"
+  );
+  await writeFile(
+    path.resolve(roleDir, "agent.md"),
+    `# ${args.roleId}\n\n${args.description ?? `${args.roleId} test role`}\n`,
     "utf8"
   );
   await writeFile(
@@ -238,11 +247,14 @@ test("adapter runs graph debate example with parallel branches, join, and bounde
   const judgeInbox = parseJsonCodeBlock(
     await readFile(path.resolve(runDir, "roles", "debate-judge", "inbox.md"), "utf8")
   );
-  const judgeContext = JSON.parse(judgeInbox.context);
+  const judgeContext = JSON.parse(judgeInbox.input);
   assert.match(moderatorPrompt, /architecture\.review\.zh\.executive/);
-  assert.match(moderatorPrompt, /Round:\s*2/);
-  assert.match(moderatorInbox, /"round": 2/);
-  assert.strictEqual(moderatorSecondInbox.round, 2);
+  assert.match(moderatorPrompt, /Allowed events:/);
+  assert.match(moderatorInbox, /"input":/);
+  assert.equal(moderatorSecondInbox.user_preferences.userProfileId, "architecture.review.zh.executive");
+  assert.equal(moderatorSecondInbox.user_preferences.language, "zh-CN");
+  assert.equal(moderatorSecondInbox.user_preferences.style, "executive");
+  assert.equal(moderatorSecondInbox.user_preferences.riskPreference, "high");
   assert.deepStrictEqual(Object.keys(judgeContext), [
     "debate-minimalist",
     "debate-alignmentist"
@@ -251,7 +263,7 @@ test("adapter runs graph debate example with parallel branches, join, and bounde
   assert.strictEqual(judgeContext["debate-alignmentist"].event, "ALIGNMENTIST_DONE");
   assert.match(judgePrompt, /"debate-minimalist"/);
   assert.match(judgePrompt, /"debate-alignmentist"/);
-  assert.match(summaryPrompt, /Context:/);
+  assert.match(summaryPrompt, /Input:/);
   assert.match(summaryPrompt, /\[dry-run\] opencode-sdk/);
   assert.match(summaryPrompt, /SUMMARY_READY/);
 
@@ -438,7 +450,7 @@ summary[Role:summary] -->|DONE| output
   const mergerInbox = await readFile(path.resolve(runDir, "roles", "merger", "inbox.md"), "utf8");
   assert.match(mergerInbox, /\\"analyst_a\\"/);
   assert.match(mergerInbox, /\\"analyst_b\\"/);
-  assert.match(mergerInbox, /"round": 1/);
+  assert.match(mergerInbox, /"input":/);
   assert.match(mergerInbox, /"allowed_events": \[\s*"MERGED"\s*\]/);
 });
 
@@ -635,8 +647,8 @@ review[Role:review] -->|DONE| output
   const reviewInbox = parseJsonCodeBlock(
     await readFile(path.resolve(runDir, "roles", "review", "inbox.md"), "utf8")
   );
-  const workerAContext = JSON.parse(workerAInbox.context);
-  const reviewContext = JSON.parse(reviewInbox.context);
+  const workerAContext = JSON.parse(workerAInbox.input);
+  const reviewContext = JSON.parse(reviewInbox.input);
   assert.deepStrictEqual(Object.keys(workerAContext), ["brief", "language", "task"]);
   assert.deepStrictEqual(workerAContext, {
     brief: "dispatch brief",
@@ -935,7 +947,7 @@ bad[Role:bad] -->|DONE| output
   const goodInbox = parseJsonCodeBlock(
     await readFile(path.resolve(runDir, "roles", "good", "inbox.md"), "utf8")
   );
-  assert.deepStrictEqual(JSON.parse(goodInbox.context), {
+  assert.deepStrictEqual(JSON.parse(goodInbox.input), {
     task: "transition contract prompt",
     dispatch_note: "dispatch to the valid branch"
   });
@@ -1306,8 +1318,14 @@ test("adapter keeps scheduler recursion budget above loop-heavy transition count
     [
       "Return a JSON object.",
       "Allowed events: {{allowed_events}}.",
-      "Round: {{round}}."
+      "Task: {{task}}.",
+      "Input: {{input}}."
     ].join("\n"),
+    "utf8"
+  );
+  await writeFile(
+    path.resolve(roleDir, "agent.md"),
+    "# test-loop-probe\n\nScheduler recursion stress role\n",
     "utf8"
   );
   await writeFile(
@@ -1392,5 +1410,6 @@ operator[Role:test-loop-probe] -->|DONE| output
     ),
     "utf8"
   );
-  assert.match(lastPrompt, /Round: 40\./);
+  assert.match(lastPrompt, /Task: stress scheduler recursion budget\./);
+  assert.match(lastPrompt, /Input: \[dry-run\] opencode-sdk\./);
 });

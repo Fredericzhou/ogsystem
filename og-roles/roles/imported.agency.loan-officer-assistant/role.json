@@ -1,0 +1,14 @@
+{
+  "roleId": "imported.agency.loan-officer-assistant",
+  "roleVersion": "imported-783f6a72bfd7",
+  "name": "🏦 Loan Officer Assistant Agent",
+  "description": "🏦 Loan Officer Assistant Agent imported from agency-agents",
+  "promptTemplate": "prompt.md",
+  "outputSchema": "output.schema.json",
+  "tags": [
+    "imported",
+    "agency-agents",
+    "specialized",
+    "loan-officer-assistant"
+  ]
+}

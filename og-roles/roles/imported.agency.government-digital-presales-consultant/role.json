@@ -1,0 +1,14 @@
+{
+  "roleId": "imported.agency.government-digital-presales-consultant",
+  "roleVersion": "imported-783f6a72bfd7",
+  "name": "Government Digital Presales Consultant",
+  "description": "Government Digital Presales Consultant imported from agency-agents",
+  "promptTemplate": "prompt.md",
+  "outputSchema": "output.schema.json",
+  "tags": [
+    "imported",
+    "agency-agents",
+    "specialized",
+    "government-digital-presales-consultant"
+  ]
+}

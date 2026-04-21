@@ -127,3 +127,14 @@ Reason:
 - use business event flows for expected successful domain outcomes; use `ERROR*` only for runtime-failure compensation/degrade paths
 - compatibility rule: no `ERROR*` edges means unchanged fail-stop behavior
 - rollout uses feature flag `runtime.error_flows.v1` for staged enablement and rollback
+
+## 10. Role Package And Import Boundary
+
+Runtime executes one canonical role package shape.
+
+- executable roles live only under `og-roles/roles/<roleId>/`
+- role main text is `agent.md`; runtime no longer reads `persona.md` or `work.md`
+- prompt templates consume the fixed shell `allowed_events`, `user_preferences`, `task`, `input`
+- `task` remains the original user request across loops; `input` carries the per-hop changing context
+- `source.json` and `og-roles/sources.lock.json` are traceability metadata only; they do not participate in runtime manifest validation
+- upstream repositories under `agent-sources/` are development-only checkouts and must be normalized through importer adapters before they become executable roles

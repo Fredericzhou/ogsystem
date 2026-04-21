@@ -1,0 +1,14 @@
+{
+  "roleId": "imported.agency.bookkeeper-controller",
+  "roleVersion": "imported-783f6a72bfd7",
+  "name": "📒 Bookkeeper & Controller Agent",
+  "description": "📒 Bookkeeper & Controller Agent imported from agency-agents",
+  "promptTemplate": "prompt.md",
+  "outputSchema": "output.schema.json",
+  "tags": [
+    "imported",
+    "agency-agents",
+    "finance",
+    "bookkeeper-controller"
+  ]
+}

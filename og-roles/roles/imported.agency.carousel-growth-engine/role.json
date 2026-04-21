@@ -1,0 +1,14 @@
+{
+  "roleId": "imported.agency.carousel-growth-engine",
+  "roleVersion": "imported-783f6a72bfd7",
+  "name": "Marketing Carousel Growth Engine",
+  "description": "Marketing Carousel Growth Engine imported from agency-agents",
+  "promptTemplate": "prompt.md",
+  "outputSchema": "output.schema.json",
+  "tags": [
+    "imported",
+    "agency-agents",
+    "marketing",
+    "carousel-growth-engine"
+  ]
+}

@@ -1,0 +1,14 @@
+{
+  "roleId": "imported.agency.language-translator",
+  "roleVersion": "imported-783f6a72bfd7",
+  "name": "🌐 Language Translator",
+  "description": "🌐 Language Translator imported from agency-agents",
+  "promptTemplate": "prompt.md",
+  "outputSchema": "output.schema.json",
+  "tags": [
+    "imported",
+    "agency-agents",
+    "specialized",
+    "language-translator"
+  ]
+}

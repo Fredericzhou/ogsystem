@@ -1,0 +1,14 @@
+{
+  "roleId": "imported.agency.chief-of-staff",
+  "roleVersion": "imported-783f6a72bfd7",
+  "name": "🧭 Chief of Staff",
+  "description": "🧭 Chief of Staff imported from agency-agents",
+  "promptTemplate": "prompt.md",
+  "outputSchema": "output.schema.json",
+  "tags": [
+    "imported",
+    "agency-agents",
+    "specialized",
+    "chief-of-staff"
+  ]
+}

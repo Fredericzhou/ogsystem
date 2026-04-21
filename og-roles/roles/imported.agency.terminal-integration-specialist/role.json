@@ -1,0 +1,14 @@
+{
+  "roleId": "imported.agency.terminal-integration-specialist",
+  "roleVersion": "imported-783f6a72bfd7",
+  "name": "Terminal Integration Specialist",
+  "description": "Terminal Integration Specialist imported from agency-agents",
+  "promptTemplate": "prompt.md",
+  "outputSchema": "output.schema.json",
+  "tags": [
+    "imported",
+    "agency-agents",
+    "spatial-computing",
+    "terminal-integration-specialist"
+  ]
+}

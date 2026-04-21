@@ -1,0 +1,14 @@
+{
+  "roleId": "imported.agency.devops-automator",
+  "roleVersion": "imported-783f6a72bfd7",
+  "name": "DevOps Automator Agent Personality",
+  "description": "DevOps Automator Agent Personality imported from agency-agents",
+  "promptTemplate": "prompt.md",
+  "outputSchema": "output.schema.json",
+  "tags": [
+    "imported",
+    "agency-agents",
+    "engineering",
+    "devops-automator"
+  ]
+}

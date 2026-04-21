@@ -1,0 +1,3 @@
+[submodule "agent-sources/agency-agents"]
+	path = agent-sources/agency-agents
+	url = https://github.com/msitarzewski/agency-agents

@@ -42,7 +42,26 @@ async function writeRolePackage(args) {
   );
   await writeFile(
     path.resolve(roleDir, "prompt.md"),
-    ["Task:", "{{task}}", "", "Context:", "{{context}}", "", "Allowed events: {{allowed_events}}"].join("\n"),
+    [
+      "{{agent}}",
+      "",
+      "Allowed events:",
+      "{{allowed_events}}",
+      "",
+      "User preferences:",
+      "{{user_preferences}}",
+      "",
+      "Task:",
+      "{{task}}",
+      "",
+      "Input:",
+      "{{input}}"
+    ].join("\n"),
+    "utf8"
+  );
+  await writeFile(
+    path.resolve(roleDir, "agent.md"),
+    `# ${args.roleId}\n\nTest fixture role.\n`,
     "utf8"
   );
   await writeFile(
@@ -244,14 +263,17 @@ reviewer[Role:reviewer] -->|DONE| output
       "utf8"
     )
   );
-  const context = JSON.parse(inbox.context);
-  assert.deepStrictEqual(Object.keys(context), ["brief", "language", "task"]);
-  assert.deepStrictEqual(context, {
+  const input = JSON.parse(inbox.input);
+  assert.deepStrictEqual(Object.keys(input), ["brief", "language", "task"]);
+  assert.deepStrictEqual(input, {
     brief: "short brief",
     language: "zh-CN",
     task: "projection prompt"
   });
-  assert.strictEqual(inbox.last_output, inbox.context);
+  assert.deepStrictEqual(inbox.user_preferences, {
+    userProfileId: "user.profile",
+    language: "zh-CN"
+  });
 });
 
 test("executeRoleNode fails closed when join projection source is unavailable", async () => {

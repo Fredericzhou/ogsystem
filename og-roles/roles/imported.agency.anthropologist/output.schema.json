@@ -1,0 +1,24 @@
+{
+  "type": "object",
+  "properties": {
+    "event": {
+      "type": "string",
+      "enum": [
+        "DONE",
+        "NEEDS_CLARIFICATION",
+        "BLOCKED"
+      ]
+    },
+    "content": {
+      "type": "string"
+    },
+    "data": {
+      "type": "object",
+      "additionalProperties": true
+    }
+  },
+  "required": [
+    "event"
+  ],
+  "additionalProperties": false
+}

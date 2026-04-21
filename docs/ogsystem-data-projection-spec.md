@@ -21,14 +21,13 @@ Current OGSystem behavior is the compatibility baseline and must remain unchange
 
 ### 2.1 Ordinary nodes
 
-- `context` is the direct upstream branch `content`
-- `last_output` mirrors `context`
+- `input` is the direct upstream branch `content`
 - no full `graphState` is injected into prompts
 
 ### 2.2 `all_of` join nodes
 
 - readiness is gated by `join.sources + lineageId + loopIteration`
-- `context` is a JSON namespace keyed by `join.sources`
+- `input` is a JSON namespace keyed by `join.sources`
 - each source value retains `event`, `content`, and optional `data`
 
 ### 2.3 Multi-incoming without join
@@ -140,10 +139,9 @@ context.map.<targetRoleId>.<fieldName>=<selector>
 
 ### 6.2 Runtime effect
 
-- if no `context.map.<roleId>.*` exists, keep current `context` behavior
+- if no `context.map.<roleId>.*` exists, keep current `input` behavior
 - if one or more `context.map.<roleId>.*` entries exist, runtime builds one projected object
-- the projected object is serialized into the existing `context` field
-- `last_output` continues to mirror `context`
+- the projected object is serialized into the existing `input` field
 
 This keeps the prompt input contract stable while allowing finer-grained context shaping.
 

@@ -1,0 +1,14 @@
+{
+  "roleId": "imported.agency.outbound-strategist",
+  "roleVersion": "imported-783f6a72bfd7",
+  "name": "Outbound Strategist Agent",
+  "description": "Outbound Strategist Agent imported from agency-agents",
+  "promptTemplate": "prompt.md",
+  "outputSchema": "output.schema.json",
+  "tags": [
+    "imported",
+    "agency-agents",
+    "sales",
+    "outbound-strategist"
+  ]
+}

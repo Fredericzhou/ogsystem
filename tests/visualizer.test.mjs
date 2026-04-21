@@ -171,14 +171,31 @@ async function readFirstSseChunk(url) {
   });
 }
 
-test("visualizer server serves run list, details, and live stream", async () => {
+test("visualizer server serves run list, details, and live stream", async (t) => {
   const workdir = await mkdtemp(path.join(os.tmpdir(), "ogsystem-visualizer-"));
   const { runId } = await createFixtureRun(workdir);
-  const { server, url } = await startVisualizationServer({
-    workdir,
-    host: "127.0.0.1",
-    port: 0
-  });
+  let started;
+  try {
+    started = await startVisualizationServer({
+      workdir,
+      host: "127.0.0.1",
+      port: 0
+    });
+  } catch (error) {
+    const errorCode =
+      typeof error === "object" && error !== null && "code" in error
+        ? error.code
+        : undefined;
+    if (
+      errorCode === "EPERM" ||
+      errorCode === "EACCES"
+    ) {
+      t.skip(`visualizer listen unavailable in sandbox: ${errorCode}`);
+      return;
+    }
+    throw error;
+  }
+  const { server, url } = started;
 
   try {
     const root = await fetch(url);

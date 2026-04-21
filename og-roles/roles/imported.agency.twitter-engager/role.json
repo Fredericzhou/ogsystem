@@ -1,0 +1,14 @@
+{
+  "roleId": "imported.agency.twitter-engager",
+  "roleVersion": "imported-783f6a72bfd7",
+  "name": "Marketing Twitter Engager",
+  "description": "Marketing Twitter Engager imported from agency-agents",
+  "promptTemplate": "prompt.md",
+  "outputSchema": "output.schema.json",
+  "tags": [
+    "imported",
+    "agency-agents",
+    "marketing",
+    "twitter-engager"
+  ]
+}

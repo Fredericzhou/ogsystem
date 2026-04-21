@@ -1,0 +1,14 @@
+{
+  "roleId": "imported.agency.api-tester",
+  "roleVersion": "imported-783f6a72bfd7",
+  "name": "API Tester Agent Personality",
+  "description": "API Tester Agent Personality imported from agency-agents",
+  "promptTemplate": "prompt.md",
+  "outputSchema": "output.schema.json",
+  "tags": [
+    "imported",
+    "agency-agents",
+    "testing",
+    "api-tester"
+  ]
+}

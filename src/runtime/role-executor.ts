@@ -436,7 +436,7 @@ export async function executeRoleNode(args: {
       state: args.state,
       userProfile: args.userProfile
     });
-    inputContextForAudit = sanitizeRoleInputContext(promptInput.context);
+    inputContextForAudit = sanitizeRoleInputContext(promptInput.input);
 
     if (args.contractPlan) {
       const projectedContext = buildProjectedContext({
@@ -483,8 +483,7 @@ export async function executeRoleNode(args: {
 
     prompt = renderRolePrompt({
       promptTemplate: rolePackage.promptTemplate,
-      persona: rolePackage.persona,
-      work: rolePackage.work,
+      agent: rolePackage.agent,
       values: promptInput
     });
 
@@ -527,13 +526,10 @@ export async function executeRoleNode(args: {
         roleInputProjection: {
           role_id: args.roleId,
           task: args.state.userPrompt,
-          context: promptInput.context,
+          input: promptInput.input,
           allowed_events: allowedEvents,
-          last_output: promptInput.last_output,
-          system_notes: promptInput.system_notes,
-        round: loopIteration,
-        user_profile: args.userProfile ?? {}
-      },
+          user_preferences: args.userProfile ?? {}
+        },
       context: args.runContext
     });
 

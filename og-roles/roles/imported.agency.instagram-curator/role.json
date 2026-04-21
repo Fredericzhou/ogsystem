@@ -1,0 +1,14 @@
+{
+  "roleId": "imported.agency.instagram-curator",
+  "roleVersion": "imported-783f6a72bfd7",
+  "name": "Marketing Instagram Curator",
+  "description": "Marketing Instagram Curator imported from agency-agents",
+  "promptTemplate": "prompt.md",
+  "outputSchema": "output.schema.json",
+  "tags": [
+    "imported",
+    "agency-agents",
+    "marketing",
+    "instagram-curator"
+  ]
+}

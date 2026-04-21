@@ -52,8 +52,7 @@ export type RoleSummary = {
   description: string;
   promptTemplateDigest: string;
   outputSchemaDigest: string;
-  personaDigest?: string;
-  workDigest?: string;
+  agentDigest: string;
   preferredModelTags: string[];
   tags: string[];
 };
@@ -178,8 +177,7 @@ function buildRoleSummary(rolePackage: LoadedRolePackage): RoleSummary {
     description: rolePackage.manifest.description,
     promptTemplateDigest: digestValue(rolePackage.promptTemplate),
     outputSchemaDigest: digestValue(rolePackage.outputSchema),
-    personaDigest: rolePackage.persona !== undefined ? digestValue(rolePackage.persona) : undefined,
-    workDigest: rolePackage.work !== undefined ? digestValue(rolePackage.work) : undefined,
+    agentDigest: digestValue(rolePackage.agent),
     preferredModelTags: sortStrings(rolePackage.manifest.preferredModelTags ?? []),
     tags: sortStrings(rolePackage.manifest.tags ?? [])
   };

@@ -1,0 +1,14 @@
+{
+  "roleId": "imported.agency.auditor",
+  "roleVersion": "imported-783f6a72bfd7",
+  "name": "Paid Media Auditor Agent",
+  "description": "Paid Media Auditor Agent imported from agency-agents",
+  "promptTemplate": "prompt.md",
+  "outputSchema": "output.schema.json",
+  "tags": [
+    "imported",
+    "agency-agents",
+    "paid-media",
+    "auditor"
+  ]
+}

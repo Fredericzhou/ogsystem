@@ -1,0 +1,14 @@
+{
+  "roleId": "imported.agency.codebase-onboarding-engineer",
+  "roleVersion": "imported-783f6a72bfd7",
+  "name": "Codebase Onboarding Engineer Agent",
+  "description": "Codebase Onboarding Engineer Agent imported from agency-agents",
+  "promptTemplate": "prompt.md",
+  "outputSchema": "output.schema.json",
+  "tags": [
+    "imported",
+    "agency-agents",
+    "engineering",
+    "codebase-onboarding-engineer"
+  ]
+}

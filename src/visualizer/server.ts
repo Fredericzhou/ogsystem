@@ -1132,8 +1132,18 @@ export async function startVisualizationServer(args: VisualizationServerOptions)
     });
   });
 
-  await new Promise<void>((resolvePromise) => {
-    server.listen(args.port, args.host, () => resolvePromise());
+  await new Promise<void>((resolvePromise, rejectPromise) => {
+    const handleError = (error: Error): void => {
+      server.off("listening", handleListening);
+      rejectPromise(error);
+    };
+    const handleListening = (): void => {
+      server.off("error", handleError);
+      resolvePromise();
+    };
+    server.once("error", handleError);
+    server.once("listening", handleListening);
+    server.listen(args.port, args.host);
   });
 
   const address = server.address();

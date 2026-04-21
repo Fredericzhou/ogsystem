@@ -1,0 +1,14 @@
+{
+  "roleId": "imported.agency.search-query-analyst",
+  "roleVersion": "imported-783f6a72bfd7",
+  "name": "Paid Media Search Query Analyst Agent",
+  "description": "Paid Media Search Query Analyst Agent imported from agency-agents",
+  "promptTemplate": "prompt.md",
+  "outputSchema": "output.schema.json",
+  "tags": [
+    "imported",
+    "agency-agents",
+    "paid-media",
+    "search-query-analyst"
+  ]
+}

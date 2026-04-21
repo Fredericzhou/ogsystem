@@ -1,0 +1,14 @@
+{
+  "roleId": "imported.agency.agentic-search-optimizer",
+  "roleVersion": "imported-783f6a72bfd7",
+  "name": "WebMCP Readiness Audit: [Site/Product Name]",
+  "description": "WebMCP Readiness Audit: [Site/Product Name] imported from agency-agents",
+  "promptTemplate": "prompt.md",
+  "outputSchema": "output.schema.json",
+  "tags": [
+    "imported",
+    "agency-agents",
+    "marketing",
+    "agentic-search-optimizer"
+  ]
+}

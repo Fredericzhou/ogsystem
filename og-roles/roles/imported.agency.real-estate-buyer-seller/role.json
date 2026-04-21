@@ -1,0 +1,14 @@
+{
+  "roleId": "imported.agency.real-estate-buyer-seller",
+  "roleVersion": "imported-783f6a72bfd7",
+  "name": "🏠 Real Estate Buyer & Seller Agent",
+  "description": "🏠 Real Estate Buyer & Seller Agent imported from agency-agents",
+  "promptTemplate": "prompt.md",
+  "outputSchema": "output.schema.json",
+  "tags": [
+    "imported",
+    "agency-agents",
+    "specialized",
+    "real-estate-buyer-seller"
+  ]
+}

@@ -1,0 +1,14 @@
+{
+  "roleId": "imported.agency.embedded-firmware-engineer",
+  "roleVersion": "imported-783f6a72bfd7",
+  "name": "Embedded Firmware Engineer",
+  "description": "Embedded Firmware Engineer imported from agency-agents",
+  "promptTemplate": "prompt.md",
+  "outputSchema": "output.schema.json",
+  "tags": [
+    "imported",
+    "agency-agents",
+    "engineering",
+    "embedded-firmware-engineer"
+  ]
+}

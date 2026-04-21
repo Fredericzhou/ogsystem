@@ -1,0 +1,14 @@
+{
+  "roleId": "imported.agency.sre",
+  "roleVersion": "imported-783f6a72bfd7",
+  "name": "SRE (Site Reliability Engineer) Agent",
+  "description": "SRE (Site Reliability Engineer) Agent imported from agency-agents",
+  "promptTemplate": "prompt.md",
+  "outputSchema": "output.schema.json",
+  "tags": [
+    "imported",
+    "agency-agents",
+    "engineering",
+    "sre"
+  ]
+}

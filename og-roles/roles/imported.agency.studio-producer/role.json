@@ -1,0 +1,14 @@
+{
+  "roleId": "imported.agency.studio-producer",
+  "roleVersion": "imported-783f6a72bfd7",
+  "name": "Studio Producer Agent Personality",
+  "description": "Studio Producer Agent Personality imported from agency-agents",
+  "promptTemplate": "prompt.md",
+  "outputSchema": "output.schema.json",
+  "tags": [
+    "imported",
+    "agency-agents",
+    "project-management",
+    "studio-producer"
+  ]
+}

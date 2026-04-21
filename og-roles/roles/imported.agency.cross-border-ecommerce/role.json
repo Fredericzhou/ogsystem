@@ -1,0 +1,14 @@
+{
+  "roleId": "imported.agency.cross-border-ecommerce",
+  "roleVersion": "imported-783f6a72bfd7",
+  "name": "Marketing Cross-Border E-Commerce Specialist",
+  "description": "Marketing Cross-Border E-Commerce Specialist imported from agency-agents",
+  "promptTemplate": "prompt.md",
+  "outputSchema": "output.schema.json",
+  "tags": [
+    "imported",
+    "agency-agents",
+    "marketing",
+    "cross-border-ecommerce"
+  ]
+}

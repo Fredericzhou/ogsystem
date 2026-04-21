@@ -1,0 +1,14 @@
+{
+  "roleId": "imported.agency.support-responder",
+  "roleVersion": "imported-783f6a72bfd7",
+  "name": "Support Responder Agent Personality",
+  "description": "Support Responder Agent Personality imported from agency-agents",
+  "promptTemplate": "prompt.md",
+  "outputSchema": "output.schema.json",
+  "tags": [
+    "imported",
+    "agency-agents",
+    "support",
+    "support-responder"
+  ]
+}

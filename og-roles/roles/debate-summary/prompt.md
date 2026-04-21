@@ -1,20 +1,19 @@
-{{persona}}
+{{agent}}
 
-{{work}}
-
-Task:
-{{task}}
-
-Context:
-{{context}}
-
-User profile:
-{{user_profile}}
+Return one JSON object only.
 
 Allowed events:
 {{allowed_events}}
 
+User preferences:
+{{user_preferences}}
+
+Task:
+{{task}}
+
+Input:
+{{input}}
+
 Output requirements:
-- Return JSON only.
 - event must come from allowed_events.
 - content must contain the final decision, both sides' strongest points, and the recommended next step.

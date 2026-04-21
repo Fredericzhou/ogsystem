@@ -1,0 +1,14 @@
+{
+  "roleId": "imported.agency.code-reviewer",
+  "roleVersion": "imported-783f6a72bfd7",
+  "name": "Code Reviewer Agent",
+  "description": "Code Reviewer Agent imported from agency-agents",
+  "promptTemplate": "prompt.md",
+  "outputSchema": "output.schema.json",
+  "tags": [
+    "imported",
+    "agency-agents",
+    "engineering",
+    "code-reviewer"
+  ]
+}

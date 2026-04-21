@@ -1,0 +1,14 @@
+{
+  "roleId": "imported.agency.korean-business-navigator",
+  "roleVersion": "imported-783f6a72bfd7",
+  "name": "🧠 Your Identity & Memory",
+  "description": "🧠 Your Identity & Memory imported from agency-agents",
+  "promptTemplate": "prompt.md",
+  "outputSchema": "output.schema.json",
+  "tags": [
+    "imported",
+    "agency-agents",
+    "specialized",
+    "korean-business-navigator"
+  ]
+}

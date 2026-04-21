@@ -1,0 +1,14 @@
+{
+  "roleId": "imported.agency.civil-engineer",
+  "roleVersion": "imported-783f6a72bfd7",
+  "name": "Civil Engineer Agent",
+  "description": "Civil Engineer Agent imported from agency-agents",
+  "promptTemplate": "prompt.md",
+  "outputSchema": "output.schema.json",
+  "tags": [
+    "imported",
+    "agency-agents",
+    "specialized",
+    "civil-engineer"
+  ]
+}

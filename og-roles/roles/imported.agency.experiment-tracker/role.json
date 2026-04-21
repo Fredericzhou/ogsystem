@@ -1,0 +1,14 @@
+{
+  "roleId": "imported.agency.experiment-tracker",
+  "roleVersion": "imported-783f6a72bfd7",
+  "name": "Experiment Tracker Agent Personality",
+  "description": "Experiment Tracker Agent Personality imported from agency-agents",
+  "promptTemplate": "prompt.md",
+  "outputSchema": "output.schema.json",
+  "tags": [
+    "imported",
+    "agency-agents",
+    "project-management",
+    "experiment-tracker"
+  ]
+}

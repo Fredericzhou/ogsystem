@@ -1,0 +1,14 @@
+{
+  "roleId": "imported.agency.discovery-coach",
+  "roleVersion": "imported-783f6a72bfd7",
+  "name": "Discovery Coach Agent",
+  "description": "Discovery Coach Agent imported from agency-agents",
+  "promptTemplate": "prompt.md",
+  "outputSchema": "output.schema.json",
+  "tags": [
+    "imported",
+    "agency-agents",
+    "sales",
+    "discovery-coach"
+  ]
+}

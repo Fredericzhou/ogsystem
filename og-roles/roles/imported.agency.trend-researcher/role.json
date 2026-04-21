@@ -1,0 +1,14 @@
+{
+  "roleId": "imported.agency.trend-researcher",
+  "roleVersion": "imported-783f6a72bfd7",
+  "name": "Product Trend Researcher Agent",
+  "description": "Product Trend Researcher Agent imported from agency-agents",
+  "promptTemplate": "prompt.md",
+  "outputSchema": "output.schema.json",
+  "tags": [
+    "imported",
+    "agency-agents",
+    "product",
+    "trend-researcher"
+  ]
+}

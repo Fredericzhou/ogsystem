@@ -102,17 +102,14 @@ function buildRolePackageFingerprintComponent(
         manifest: normalizeFingerprintValue(rolePackage.manifest),
         promptTemplate: rolePackage.promptTemplate,
         outputSchema: normalizeFingerprintValue(rolePackage.outputSchema),
-        persona: rolePackage.persona ?? null,
-        work: rolePackage.work ?? null
+        agent: rolePackage.agent
       },
       sourceHints: {
         roleId,
         resolvedPath: rolePackage.resolvedPath,
         promptTemplatePath: resolve(rolePackage.resolvedPath, rolePackage.manifest.promptTemplate),
         outputSchemaPath: rolePackage.outputSchemaPath,
-        personaPath:
-          rolePackage.persona !== undefined ? resolve(rolePackage.resolvedPath, "persona.md") : null,
-        workPath: rolePackage.work !== undefined ? resolve(rolePackage.resolvedPath, "work.md") : null
+        agentPath: resolve(rolePackage.resolvedPath, "agent.md")
       }
     }));
 }
@@ -247,7 +244,7 @@ export function buildRunPlanFingerprint(args: {
 
   const digest = hashFingerprintValue(componentDigests);
   return {
-    version: 5,
+    version: 6,
     algorithm: "sha256",
     digest,
     payload

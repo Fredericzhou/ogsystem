@@ -1,0 +1,14 @@
+{
+  "roleId": "imported.agency.behavioral-nudge-engine",
+  "roleVersion": "imported-783f6a72bfd7",
+  "name": "🧠 Behavioral Nudge Engine",
+  "description": "🧠 Behavioral Nudge Engine imported from agency-agents",
+  "promptTemplate": "prompt.md",
+  "outputSchema": "output.schema.json",
+  "tags": [
+    "imported",
+    "agency-agents",
+    "product",
+    "behavioral-nudge-engine"
+  ]
+}

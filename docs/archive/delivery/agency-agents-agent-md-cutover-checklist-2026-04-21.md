@@ -1,11 +1,17 @@
 # 通用 Agent Source Importer 与 `agent.md` 单文件切换任务清单
 
 Date: 2026-04-21
-Status: proposed execution checklist
+Status: delivered and archived after implementation
 Target: latest-version only
 Compatibility: not required
 Scope: OGSystem role 从 `persona.md + work.md` 收敛为 `agent.md`；外部 agent 仓库通过 importer adapter 导入为 canonical role package
 Authority: 非当前权威语义，仅作为执行清单
+
+执行结果（2026-04-21）：
+
+- runtime 已切到 `agent.md` 与 `allowed_events / user_preferences / task / input`
+- 仓内内置 roles、测试与活跃文档已完成回写
+- `agency-agents` 已接入为首个 importer source，并完成抽样导入与 smoke 验证
 
 本文档不代表当前 runtime 已生效语义。
 若与 `src/runtime/*` 或活跃文档冲突，以当前实现和活跃文档为准。
