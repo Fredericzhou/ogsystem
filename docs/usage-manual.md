@@ -346,7 +346,7 @@ Use it with `ogs-nl2mmd --message "..."` for one-shot drafting, or omit `--messa
 ### Command Layers
 
 - Installed commands are the operator-facing entrypoints, such as `ogs`, `ogs-nl2mmd`, `ogs-doctor`, and `ogs-visualizer`.
-- Source repository commands are the direct implementation entrypoints, such as `pnpm run run:nl2mmd -- ...` and `pnpm run run:adapter -- ...`.
+- Source repository commands are contributor implementation entrypoints, such as `pnpm run run:nl2mmd -- ...`; the operator path documented here uses installed `ogs*` commands.
 - Base commands are for function and runtime behavior.
 - Wrapper commands are for project lifecycle and default operational flow.
 

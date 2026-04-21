@@ -59,12 +59,21 @@ test("ogs help command surfaces layered guidance", async () => {
   assert.match(runStartHelp.stdout, /--host <host>          Visualizer bind host/);
   assert.match(runStartHelp.stdout, /--port <n\|0>           Visualizer bind port/);
   assert.doesNotMatch(runStartHelp.stdout, /visualizer-port/);
+  assert.doesNotMatch(runStartHelp.stdout, /--profiles/);
+  assert.doesNotMatch(runStartHelp.stdout, /--tools/);
+  assert.doesNotMatch(runStartHelp.stdout, /--log-run/);
 
   const runLogsHelp = await runNodeCli(runtimeCliPath, ["run", "logs", "--help"]);
   assert.strictEqual(runLogsHelp.code, 0);
   assert.match(runLogsHelp.stdout, /--json          Emit one JSON array/);
   assert.match(runLogsHelp.stdout, /--ndjson        Emit one JSON object per line/);
   assert.match(runLogsHelp.stdout, /default text    human-readable one-line summaries/);
+
+  const runResumeHelp = await runNodeCli(runtimeCliPath, ["run", "resume", "--help"]);
+  assert.strictEqual(runResumeHelp.code, 0);
+  assert.doesNotMatch(runResumeHelp.stdout, /--profiles/);
+  assert.doesNotMatch(runResumeHelp.stdout, /--tools/);
+  assert.doesNotMatch(runResumeHelp.stdout, /--log-run/);
 
   const visualizerHelp = await runNodeCli(runtimeCliPath, ["visualizer", "--help"]);
   assert.strictEqual(visualizerHelp.code, 0);

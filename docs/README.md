@@ -73,7 +73,7 @@
 - `docs/archive/delivery/runtime-governance-hardening-plan-2026-04-21.md`（proposed 30-day plan for runtime governance, reliability gates, and minimal execution-policy hardening）
 - `docs/archive/delivery/opencode-provider-reference-and-error-surfacing-2026-04-21.md`（delivered provider reference scaffolding and provider-error surfacing correction for OpenCode model.bind runs）
 - `docs/archive/delivery/opencode-model-selection-redesign-plan-2026-04-21.md`（delivered and archived cutover record for `.ogs/model-selection.json`, direct `provider/model`, and NL2MMD/runtime cleanup）
-- `docs/archive/delivery/cli-followup-checklist-2026-04-22.md`（proposed checklist for modern CLI resume guidance, unknown-command handling, and hidden-legacy flag removal）
+- `docs/archive/delivery/cli-followup-checklist-2026-04-22.md`（delivered follow-up record for modern CLI resume guidance, unknown-command handling, hidden-legacy flag removal, and latest-only active-doc wording）
 - `docs/archive/delivery/ogsystem-naming-style-review-2026-04-14.md`（archived naming audit; `flow/edge` conclusion superseded by 2026-04-15 alignment review）
 - `docs/archive/delivery/ogsystem-flow-edge-alignment-review-2026-04-15.md`（delivered flow/edge alignment audit and canonical decision）
 - `docs/archive/delivery/ogsystem-flow-edge-alignment-execution-plan-2026-04-15.md`（delivered flow/edge alignment rollout and closure record）

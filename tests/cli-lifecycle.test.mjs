@@ -185,6 +185,16 @@ test("lifecycle cli run start/list/status/logs/resume/stop works end-to-end", { 
     await readFile(path.resolve(repoRoot, ".ogs", "laws.json"), "utf8"),
     "utf8"
   );
+  await writeFile(
+    path.resolve(tempRoot, ".ogs", "user-profile.json"),
+    await readFile(path.resolve(repoRoot, ".ogs", "user-profile.json"), "utf8"),
+    "utf8"
+  );
+  await writeFile(
+    path.resolve(tempRoot, ".ogs", "laws.json"),
+    await readFile(path.resolve(repoRoot, ".ogs", "laws.json"), "utf8"),
+    "utf8"
+  );
 
   const start = await runCli([
     "run",
@@ -326,4 +336,138 @@ test("lifecycle cli run start/list/status/logs/resume/stop works end-to-end", { 
   assert.equal(stopPayload.runId, runId);
   const stopRequestPath = path.resolve(tempRoot, ".ogs", "runs", runId, "control", "stop-request.json");
   await stat(stopRequestPath);
+});
+
+test("lifecycle cli modern run failures print modern resume hints and reject hidden legacy flags", { concurrency: false }, async () => {
+  const repoRoot = process.cwd();
+  const tempRoot = await mkdtemp(path.join(os.tmpdir(), "ogsystem-cli-modern-failure-"));
+  await mkdir(path.resolve(tempRoot, ".ogs"), { recursive: true });
+  await writeFile(
+    path.resolve(tempRoot, ".ogs", "runtime.json"),
+    JSON.stringify(
+      {
+        configVersion: "2",
+        executor: "opencode",
+        roleRepo: path.resolve(repoRoot, "og-roles"),
+        runsDir: ".ogs/runs"
+      },
+      null,
+      2
+    ),
+    "utf8"
+  );
+  await writeFile(
+    path.resolve(tempRoot, ".ogs", "model-selection.json"),
+    await readFile(path.resolve(repoRoot, ".ogs", "model-selection.json"), "utf8"),
+    "utf8"
+  );
+  await writeFile(
+    path.resolve(tempRoot, ".ogs", "model-catalog.json"),
+    await readFile(path.resolve(repoRoot, ".ogs", "model-catalog.json"), "utf8"),
+    "utf8"
+  );
+
+  const modernInputError = await runCli([
+    "run",
+    "start",
+    "--system",
+    path.resolve(repoRoot, "examples", "target-model-binding-system.mmd"),
+    "--workdir",
+    tempRoot
+  ]);
+  assert.strictEqual(modernInputError.code, 1);
+  assert.match(modernInputError.stderr, /run start requires --system and --input/);
+  assert.doesNotMatch(modernInputError.stderr, /\[hint\]/);
+
+  const hiddenProfiles = await runCli([
+    "run",
+    "start",
+    "--system",
+    path.resolve(repoRoot, "examples", "target-model-binding-system.mmd"),
+    "--input",
+    "reject hidden profiles",
+    "--profiles",
+    "profiles.json",
+    "--dry-run",
+    "--workdir",
+    tempRoot
+  ]);
+  assert.strictEqual(hiddenProfiles.code, 1);
+  assert.match(hiddenProfiles.stderr, /--profiles/);
+  assert.match(hiddenProfiles.stderr, /errorCode=CLI_INVALID_ARGS/);
+
+  const hiddenLogRun = await runCli([
+    "run",
+    "start",
+    "--system",
+    path.resolve(repoRoot, "examples", "target-model-binding-system.mmd"),
+    "--input",
+    "reject hidden log run",
+    "--log-run",
+    "--dry-run",
+    "--workdir",
+    tempRoot
+  ]);
+  assert.strictEqual(hiddenLogRun.code, 1);
+  assert.match(hiddenLogRun.stderr, /--log-run/);
+  assert.match(hiddenLogRun.stderr, /errorCode=CLI_INVALID_ARGS/);
+
+  const failedStart = await runCli([
+    "run",
+    "start",
+    "--system",
+    path.resolve(repoRoot, "examples", "target-model-binding-system.mmd"),
+    "--input",
+    "modern resume hint",
+    "--dry-run",
+    "--workdir",
+    tempRoot
+  ], {
+    env: {
+      OGSYSTEM_TEST_FORCE_RUNTIME_ERROR_AFTER_SETUP: "1"
+    }
+  });
+  assert.strictEqual(failedStart.code, 1);
+  assert.match(failedStart.stderr, /Forced runtime error after setup for CLI regression coverage/);
+  const failedStartRunId = failedStart.stderr.match(/runId=(\d{8}-\d{6}-[a-f0-9]{8})/)?.[1];
+  assert.ok(failedStartRunId, failedStart.stderr);
+  assert.match(failedStart.stderr, new RegExp(String.raw`\[hint\] ogs run resume '${failedStartRunId}'`));
+  assert.match(failedStart.stderr, /--dry-run/);
+  assert.doesNotMatch(failedStart.stderr, /--resume-run/);
+  assert.doesNotMatch(failedStart.stderr, /--profiles/);
+  assert.doesNotMatch(failedStart.stderr, /--tools/);
+  assert.doesNotMatch(failedStart.stderr, /--visualizer-port/);
+
+  const hiddenTools = await runCli([
+    "run",
+    "resume",
+    failedStartRunId,
+    "--tools",
+    "tools.json",
+    "--workdir",
+    tempRoot
+  ]);
+  assert.strictEqual(hiddenTools.code, 1);
+  assert.match(hiddenTools.stderr, /--tools/);
+  assert.match(hiddenTools.stderr, /errorCode=CLI_INVALID_ARGS/);
+
+  const failedResume = await runCli([
+    "run",
+    "resume",
+    failedStartRunId,
+    "--dry-run",
+    "--workdir",
+    tempRoot
+  ], {
+    env: {
+      OGSYSTEM_TEST_FORCE_RUNTIME_ERROR_AFTER_SETUP: "1"
+    }
+  });
+  assert.strictEqual(failedResume.code, 1);
+  assert.match(failedResume.stderr, /Forced runtime error after setup for CLI regression coverage/);
+  assert.match(failedResume.stderr, new RegExp(String.raw`\[hint\] ogs run resume '${failedStartRunId}'`));
+  assert.match(failedResume.stderr, /--dry-run/);
+  assert.doesNotMatch(failedResume.stderr, /--resume-run/);
+  assert.doesNotMatch(failedResume.stderr, /--profiles/);
+  assert.doesNotMatch(failedResume.stderr, /--tools/);
 });

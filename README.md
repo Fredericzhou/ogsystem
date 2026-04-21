@@ -146,9 +146,6 @@ For day-to-day use, start with `docs/usage-manual.md`. It keeps the command matr
 ## Configuration Boundaries
 
 - Target architecture uses direct `provider/model` refs plus `.ogs/model-selection.json` for project/system/role defaults.
-- Legacy runtime still reads `exec.bind.<roleId>` with `profiles/tools`.
-- Profiles are single-tool only: `profileId`, `toolRef`, optional `timeoutMs`, optional `maxOutputBytes`.
-- Tools are minimal shell adapters: `toolRef`, `runner`, `command`, `argsTemplate`, `stdinMode`.
 - The law catalog currently resolves only `law.global` and the constraints `forbiddenToolRefs`, `maxTransitions`, `allowNoopWithoutExecutionBinding`.
 - `talentBinding` is preserved as metadata-only sidecar in the parsed system definition. It is not part of runtime execution.
 - Role packages live under `og-roles/roles/<roleId>/` and provide `role.json`, `agent.md`, `prompt.md`, `output.schema.json`, and optional `source.json`.
@@ -157,7 +154,7 @@ For day-to-day use, start with `docs/usage-manual.md`. It keeps the command matr
 - `node tools/agent-source/sync-agent-sources.mjs --source agency-agents` imports an upstream checkout into canonical `imported.<source>.*` role packages and updates `tools/agent-source/sources.lock.json`.
 - Prompt-shell field names and selector syntax are separate layers: prompts use `user_preferences`, while `context.map` selectors still use `global.user_profile.*`.
 - The installed CLI ships bundled role/model templates, but those are import sources, not runtime execution dependencies.
-- `system.mmd` owns flow and role-to-model binding (`model.bind.*`; `exec.bind.*` in legacy runtime); role packages own prompt and I/O contract.
+- `system.mmd` owns flow and role-to-model binding (`model.bind.*`); role packages own prompt and I/O contract.
 
 ## Target Scaffolding
 

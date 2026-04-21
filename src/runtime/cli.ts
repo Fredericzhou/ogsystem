@@ -43,6 +43,28 @@ type HelpTopic = "project" | "run" | "legacy" | "visualizer";
 type ProjectSubcommand = "init" | "create" | "sync" | "sync-models";
 type RunSubcommand = "start" | "resume" | "stop" | "list" | "status" | "inspect" | "logs" | "reindex";
 
+const LEGACY_OPTION_NAMES = new Set([
+  "system",
+  "runtime",
+  "user-profile",
+  "resume-run",
+  "profiles",
+  "tools",
+  "laws",
+  "input",
+  "workdir",
+  "cleanup-executions",
+  "log-run",
+  "quiet-run",
+  "visualize",
+  "visualizer-host",
+  "visualizer-port",
+  "print-graph-link",
+  "trace-out",
+  "dry-run",
+  "help"
+]);
+
 function usageRoot(): string {
   return [
     "Usage:",
@@ -450,9 +472,83 @@ async function resolveRunsDir(args: {
   return OGS_RUNS_DIR;
 }
 
-async function printResumeHint(args: {
+type CliValueMap = Record<string, string | boolean | undefined>;
+
+function appendModernResumeOptions(args: {
+  tokens: string[];
+  values: CliValueMap;
+  includeSystemAndInput: boolean;
+}): void {
+  if (args.includeSystemAndInput && typeof args.values.system === "string") {
+    args.tokens.push(`--system ${shellEscape(args.values.system)}`);
+  }
+  if (args.includeSystemAndInput && typeof args.values.input === "string") {
+    args.tokens.push(`--input ${shellEscape(args.values.input)}`);
+  }
+  if (typeof args.values.runtime === "string") {
+    args.tokens.push(`--runtime ${shellEscape(args.values.runtime)}`);
+  }
+  if (typeof args.values["user-profile"] === "string") {
+    args.tokens.push(`--user-profile ${shellEscape(args.values["user-profile"])}`);
+  }
+  if (typeof args.values.laws === "string") {
+    args.tokens.push(`--laws ${shellEscape(args.values.laws)}`);
+  }
+  if (typeof args.values["cleanup-executions"] === "string") {
+    args.tokens.push(`--cleanup-executions ${shellEscape(args.values["cleanup-executions"])}`);
+  }
+  if (args.values["quiet-run"] === true) {
+    args.tokens.push("--quiet-run");
+  }
+  if (args.values["dry-run"] === true) {
+    args.tokens.push("--dry-run");
+  }
+  if (args.values.visualize === true) {
+    args.tokens.push("--visualize");
+  }
+  if (typeof args.values.host === "string") {
+    args.tokens.push(`--host ${shellEscape(args.values.host)}`);
+  }
+  if (typeof args.values.port === "string") {
+    args.tokens.push(`--port ${shellEscape(args.values.port)}`);
+  }
+  if (typeof args.values["trace-out"] === "string") {
+    args.tokens.push(`--trace-out ${shellEscape(args.values["trace-out"])}`);
+  }
+}
+
+async function printModernResumeHint(args: {
   error: RuntimeError;
-  values: Record<string, string | boolean | undefined>;
+  values: CliValueMap;
+  workdir: string;
+  includeSystemAndInput: boolean;
+}): Promise<void> {
+  const runId = args.error.envelope.runId;
+  if (!runId) {
+    return;
+  }
+
+  const tokens: string[] = [
+    "ogs",
+    "run",
+    "resume",
+    shellEscape(runId),
+    `--workdir ${shellEscape(args.workdir)}`
+  ];
+  appendModernResumeOptions({
+    tokens,
+    values: args.values,
+    includeSystemAndInput: args.includeSystemAndInput
+  });
+
+  console.error(`[hint] run failed for runId=${runId}`);
+  console.error("[hint] To resume this run, use:");
+  console.error(`[hint] ${tokens.join(" ")}`);
+}
+
+async function printLegacyResumeHint(args: {
+  error: RuntimeError;
+  values: CliValueMap;
   workdir: string;
 }): Promise<void> {
   const runId = args.error.envelope.runId;
@@ -512,6 +608,56 @@ async function printResumeHint(args: {
   console.error(`[hint] run failed for runId=${runId}`);
   console.error("[hint] To resume this run, use:");
   console.error(`[hint] ${tokens.join(" ")}`);
+}
+
+function extractLongOptionName(token: string): string | undefined {
+  if (!token.startsWith("--")) {
+    return undefined;
+  }
+  return token.slice(2).split("=", 1)[0];
+}
+
+function matchesLegacyCompatArgv(argv: string[]): boolean {
+  let sawLegacyOption = false;
+  for (const token of argv) {
+    if (token === "--") {
+      return false;
+    }
+    if (token.startsWith("--")) {
+      const optionName = extractLongOptionName(token);
+      if (!optionName || !LEGACY_OPTION_NAMES.has(optionName)) {
+        return false;
+      }
+      sawLegacyOption = true;
+      continue;
+    }
+    if (token.startsWith("-")) {
+      if (token !== "-h") {
+        return false;
+      }
+      sawLegacyOption = true;
+    }
+  }
+  return sawLegacyOption;
+}
+
+function findFirstUnknownOptionToken(argv: string[]): string | undefined {
+  for (const token of argv) {
+    if (token === "--") {
+      return token;
+    }
+    if (token.startsWith("--")) {
+      const optionName = extractLongOptionName(token);
+      if (!optionName || !LEGACY_OPTION_NAMES.has(optionName)) {
+        return token;
+      }
+      continue;
+    }
+    if (token.startsWith("-") && token !== "-h") {
+      return token;
+    }
+  }
+  return undefined;
 }
 
 async function maybePrintGraphLink(args: {
@@ -829,7 +975,7 @@ async function runLegacyMode(argv?: string[]): Promise<void> {
     });
   } catch (error) {
     if (error instanceof RuntimeError) {
-      await printResumeHint({
+      await printLegacyResumeHint({
         error,
         values,
         workdir
@@ -1030,13 +1176,10 @@ async function runStartCommand(argv: string[]): Promise<void> {
     system: { type: "string" },
     runtime: { type: "string" },
     "user-profile": { type: "string" },
-    profiles: { type: "string" },
-    tools: { type: "string" },
     laws: { type: "string" },
     input: { type: "string" },
     workdir: { type: "string" },
     "cleanup-executions": { type: "string" },
-    "log-run": { type: "boolean" },
     "quiet-run": { type: "boolean" },
     visualize: { type: "boolean" },
     host: { type: "string" },
@@ -1066,31 +1209,41 @@ async function runStartCommand(argv: string[]): Promise<void> {
     systemPath
   });
 
-  await runAdapterCommand({
-    systemPath,
-    prompt,
-    runtimeConfigPath: asString(values.runtime),
-    userProfilePath: asString(values["user-profile"]),
-    profilesPath: asString(values.profiles),
-    toolsPath: asString(values.tools),
-    lawsPath: asString(values.laws),
-    workdir,
-    dryRun: asBool(values["dry-run"]),
-    cleanupExecutionHistory: parseCleanupExecutionValue(asString(values["cleanup-executions"])),
-    logRun: resolveLogRunOption(values),
-    traceOut: asString(values["trace-out"]),
-    visualizer: {
-      enabled: asBool(values.visualize),
-      host: asString(values.host) ?? "127.0.0.1",
-      port: parsePortOption({
-        optionName: "--port",
-        value: asString(values.port),
-        defaultValue: 0,
-        allowZero: true
-      }),
-      autoClose: true
+  try {
+    await runAdapterCommand({
+      systemPath,
+      prompt,
+      runtimeConfigPath: asString(values.runtime),
+      userProfilePath: asString(values["user-profile"]),
+      lawsPath: asString(values.laws),
+      workdir,
+      dryRun: asBool(values["dry-run"]),
+      cleanupExecutionHistory: parseCleanupExecutionValue(asString(values["cleanup-executions"])),
+      logRun: resolveLogRunOption(values),
+      traceOut: asString(values["trace-out"]),
+      visualizer: {
+        enabled: asBool(values.visualize),
+        host: asString(values.host) ?? "127.0.0.1",
+        port: parsePortOption({
+          optionName: "--port",
+          value: asString(values.port),
+          defaultValue: 0,
+          allowZero: true
+        }),
+        autoClose: true
+      }
+    });
+  } catch (error) {
+    if (error instanceof RuntimeError) {
+      await printModernResumeHint({
+        error,
+        values,
+        workdir,
+        includeSystemAndInput: false
+      });
     }
-  });
+    throw error;
+  }
 }
 
 async function runResumeCommand(argv: string[]): Promise<void> {
@@ -1098,13 +1251,10 @@ async function runResumeCommand(argv: string[]): Promise<void> {
     system: { type: "string" },
     runtime: { type: "string" },
     "user-profile": { type: "string" },
-    profiles: { type: "string" },
-    tools: { type: "string" },
     laws: { type: "string" },
     input: { type: "string" },
     workdir: { type: "string" },
     "cleanup-executions": { type: "string" },
-    "log-run": { type: "boolean" },
     "quiet-run": { type: "boolean" },
     visualize: { type: "boolean" },
     host: { type: "string" },
@@ -1129,32 +1279,42 @@ async function runResumeCommand(argv: string[]): Promise<void> {
     asString(values.input) ??
     (await readFile(resolve(runDir, "request.md"), "utf8")).replace(/\s+$/, "");
 
-  await runAdapterCommand({
-    systemPath,
-    prompt,
-    runtimeConfigPath: asString(values.runtime),
-    userProfilePath: asString(values["user-profile"]),
-    resumeRunDir: resolve(runDir),
-    profilesPath: asString(values.profiles),
-    toolsPath: asString(values.tools),
-    lawsPath: asString(values.laws),
-    workdir,
-    dryRun: asBool(values["dry-run"]),
-    cleanupExecutionHistory: parseCleanupExecutionValue(asString(values["cleanup-executions"])),
-    logRun: resolveLogRunOption(values),
-    traceOut: asString(values["trace-out"]),
-    visualizer: {
-      enabled: asBool(values.visualize),
-      host: asString(values.host) ?? "127.0.0.1",
-      port: parsePortOption({
-        optionName: "--port",
-        value: asString(values.port),
-        defaultValue: 0,
-        allowZero: true
-      }),
-      autoClose: true
+  try {
+    await runAdapterCommand({
+      systemPath,
+      prompt,
+      runtimeConfigPath: asString(values.runtime),
+      userProfilePath: asString(values["user-profile"]),
+      resumeRunDir: resolve(runDir),
+      lawsPath: asString(values.laws),
+      workdir,
+      dryRun: asBool(values["dry-run"]),
+      cleanupExecutionHistory: parseCleanupExecutionValue(asString(values["cleanup-executions"])),
+      logRun: resolveLogRunOption(values),
+      traceOut: asString(values["trace-out"]),
+      visualizer: {
+        enabled: asBool(values.visualize),
+        host: asString(values.host) ?? "127.0.0.1",
+        port: parsePortOption({
+          optionName: "--port",
+          value: asString(values.port),
+          defaultValue: 0,
+          allowZero: true
+        }),
+        autoClose: true
+      }
+    });
+  } catch (error) {
+    if (error instanceof RuntimeError) {
+      await printModernResumeHint({
+        error,
+        values,
+        workdir,
+        includeSystemAndInput: true
+      });
     }
-  });
+    throw error;
+  }
 }
 
 async function runVisualizerCommand(argv: string[]): Promise<void> {
@@ -1439,9 +1599,17 @@ async function main(): Promise<void> {
       await runRunCommand(rest);
       return;
     }
+    throw createCliInputError("CLI_UNKNOWN_COMMAND", `Unknown command: ${command}\n\n${usage()}`);
   }
 
-  await runLegacyMode(argv);
+  if (matchesLegacyCompatArgv(argv)) {
+    await runLegacyMode(argv);
+    return;
+  }
+  throw createCliInputError(
+    "CLI_INVALID_ARGS",
+    `Unknown option: ${findFirstUnknownOptionToken(argv) ?? argv[0]}\n\n${usage()}`
+  );
 }
 
 const cliArgv = process.argv.slice(2);

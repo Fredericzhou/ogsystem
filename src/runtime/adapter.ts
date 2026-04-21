@@ -14,6 +14,7 @@ export { buildRunPlanFingerprint } from "./plan-fingerprint.js";
 export { resolveEffectiveLaw } from "./runtime-setup.js";
 
 const TEST_HOLD_RESUME_LOCK_MS_ENV = "OGSYSTEM_TEST_HOLD_RESUME_LOCK_MS";
+const TEST_FORCE_RUNTIME_ERROR_AFTER_SETUP_ENV = "OGSYSTEM_TEST_FORCE_RUNTIME_ERROR_AFTER_SETUP";
 
 async function maybeHoldResumeLockForTest(): Promise<void> {
   const raw = process.env[TEST_HOLD_RESUME_LOCK_MS_ENV];
@@ -76,6 +77,17 @@ export async function runSystemWithAdapter(args: {
     }
 
     if (setup) {
+      if (process.env[TEST_FORCE_RUNTIME_ERROR_AFTER_SETUP_ENV] === "1") {
+        throw createRuntimeError({
+          errorCode: "RUNTIME_TEST_FORCED_AFTER_SETUP",
+          errorCategory: "system",
+          message: "Forced runtime error after setup for CLI regression coverage",
+          retryable: false,
+          stage: "execute",
+          runId: setup.runContext.runId
+        });
+      }
+
       const executor = createDefaultExecutor({
         dryRun: args.dryRun,
         runContext: setup.runContext,

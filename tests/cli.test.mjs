@@ -48,6 +48,40 @@ test("cli rejects invalid cleanup-executions with a stable envelope", async () =
   assert.match(stderr, /errorCategory=input/);
 });
 
+test("cli rejects unknown top-level commands at the command layer", async () => {
+  const { code, stderr } = await runCli(["foo"]);
+  assert.strictEqual(code, 1);
+  assert.match(stderr, /Unknown command: foo/);
+  assert.match(stderr, /errorCode=CLI_UNKNOWN_COMMAND/);
+  assert.match(stderr, /ogs project <init\|create\|sync\|sync-models>/);
+});
+
+test("cli accepts top-level legacy flags only when argv positively matches legacy mode", async () => {
+  const { code, stdout } = await runCli([
+    "--system",
+    "examples/target-model-binding-system.mmd",
+    "--input",
+    "legacy top-level",
+    "--dry-run"
+  ]);
+
+  assert.strictEqual(code, 0);
+  const result = JSON.parse(stdout);
+  assert.equal(result.status, "done");
+});
+
+test("modern run start input errors do not print resume hints", async () => {
+  const { code, stderr } = await runCli([
+    "run",
+    "start",
+    "--system",
+    "examples/target-model-binding-system.mmd"
+  ]);
+  assert.strictEqual(code, 1);
+  assert.match(stderr, /run start requires --system and --input/);
+  assert.doesNotMatch(stderr, /\[hint\]/);
+});
+
 test("cli prints runtime logs to stderr by default without breaking stdout json", async () => {
   const { code, stdout, stderr } = await runCli([
     "--system",
