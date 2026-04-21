@@ -39,6 +39,9 @@ test("lifecycle cli project init/create commands scaffold project control plane"
   await stat(path.resolve(tempRoot, ".ogs", "laws.json"));
   await stat(path.resolve(tempRoot, ".ogs", "user-profile.json"));
   await stat(path.resolve(tempRoot, ".ogs", "runs-index.json"));
+  const initProviderConfig = JSON.parse(
+    await readFile(path.resolve(tempRoot, ".ogs", "providers", "opencode.json"), "utf8")
+  );
   await stat(path.resolve(tempRoot, "system.mmd"));
   await stat(path.resolve(tempRoot, "og-roles", "README.md"));
   await assert.rejects(() => stat(path.resolve(tempRoot, "og-roles", "roles", "_shared")), /ENOENT/);
@@ -48,6 +51,15 @@ test("lifecycle cli project init/create commands scaffold project control plane"
   await stat(path.resolve(tempRoot, "og-models", "catalog", "opencode-models.json"));
   await stat(path.resolve(tempRoot, "og-models", "models", "general-balanced", "model.json"));
   await assert.rejects(() => stat(path.resolve(tempRoot, "og-models", "models", "general-fast")), /ENOENT/);
+  assert.equal(initProviderConfig.configPath, "~/.config/opencode/opencode.json");
+  assert.equal(
+    initProviderConfig.recommendedProviderEntry?.openai?.npm,
+    "@ai-sdk/openai-compatible"
+  );
+  assert.equal(
+    initProviderConfig.recommendedProviderEntry?.openai?.options?.setCacheKey,
+    true
+  );
 
   const createResult = await runCli(["project", "create", "demo-app"], { cwd: tempRoot });
   assert.strictEqual(createResult.code, 0);
@@ -58,10 +70,18 @@ test("lifecycle cli project init/create commands scaffold project control plane"
   await stat(path.resolve(createdDir, ".ogs", "runtime.json"));
   await stat(path.resolve(createdDir, ".ogs", "laws.json"));
   await stat(path.resolve(createdDir, ".ogs", "user-profile.json"));
+  const createdProviderConfig = JSON.parse(
+    await readFile(path.resolve(createdDir, ".ogs", "providers", "opencode.json"), "utf8")
+  );
   await stat(path.resolve(createdDir, "system.mmd"));
   await assert.rejects(() => stat(path.resolve(createdDir, "og-roles", "roles", "_shared")), /ENOENT/);
   await stat(path.resolve(createdDir, "og-roles", "roles", "demo-analyst", "role.json"));
   await stat(path.resolve(createdDir, "og-models", "models", "general-balanced", "model.json"));
+  assert.equal(createdProviderConfig.configPath, "~/.config/opencode/opencode.json");
+  assert.equal(
+    createdProviderConfig.recommendedProviderEntry?.openai?.models?.["gpt-5.4"]?.name,
+    "GPT-5.4"
+  );
 
   await writeFile(
     path.resolve(createdDir, "system.mmd"),

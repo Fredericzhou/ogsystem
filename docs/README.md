@@ -70,6 +70,8 @@
 - `docs/archive/delivery/installable-cli-release-notes-2026-04-20.md`（delivered installable CLI packaging, scaffolding, and operator-doc release notes）
 - `docs/archive/delivery/agency-agents-role-repo-integration-plan-2026-04-20.md`（recommended integration plan for importing `agency-agents` as an OGSystem-compatible derived role repository）
 - `docs/archive/delivery/runtime-input-contract-vnext-plan-2026-04-21.md`（proposed latest-version plan for schema-linked projected input and controlled shared data）
+- `docs/archive/delivery/runtime-governance-hardening-plan-2026-04-21.md`（proposed 30-day plan for runtime governance, reliability gates, and minimal execution-policy hardening）
+- `docs/archive/delivery/opencode-provider-reference-and-error-surfacing-2026-04-21.md`（delivered provider reference scaffolding and provider-error surfacing correction for OpenCode model.bind runs）
 - `docs/archive/delivery/ogsystem-naming-style-review-2026-04-14.md`（archived naming audit; `flow/edge` conclusion superseded by 2026-04-15 alignment review）
 - `docs/archive/delivery/ogsystem-flow-edge-alignment-review-2026-04-15.md`（delivered flow/edge alignment audit and canonical decision）
 - `docs/archive/delivery/ogsystem-flow-edge-alignment-execution-plan-2026-04-15.md`（delivered flow/edge alignment rollout and closure record）

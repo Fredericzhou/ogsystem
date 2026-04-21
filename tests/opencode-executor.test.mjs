@@ -1035,6 +1035,69 @@ test("executeOpencodeModelRole retries once with corrective prompt when structur
   });
 });
 
+test("executeOpencodeModelRole surfaces provider diagnostics instead of generic structured-output errors", async () => {
+  let promptCalls = 0;
+
+  await assert.rejects(
+    executeOpencodeModelRole({
+      roleId: "role-provider-model-not-found",
+      prompt: "hello",
+      schema: {
+        type: "object",
+        properties: {
+          content: { type: "string" }
+        }
+      },
+      modelPackage: makeModelPackage({
+        model: "openai/gpt-5.4"
+      }),
+      workdir: "/tmp/run/roles/role-provider-model-not-found",
+      timeoutMs: 5000,
+      maxOutputBytes: 4096,
+      runClient: makeRunClient({
+        getOutput() {
+          return [
+            "Warning: OPENCODE_SERVER_PASSWORD is not set; server is unsecured.",
+            "opencode server listening on http://127.0.0.1:4096",
+            "ProviderModelNotFoundError: ProviderModelNotFoundError",
+            " data: {",
+            '  providerID: "openai",',
+            '  modelID: "gpt-5.4",',
+            " }"
+          ].join("\n");
+        },
+        client: {
+          session: {
+            async create() {
+              return {
+                data: {
+                  id: "ses_provider_missing"
+                }
+              };
+            },
+            async prompt() {
+              promptCalls += 1;
+              return {
+                data: {
+                  id: "msg_provider_missing",
+                  info: {},
+                  parts: [{ type: "step-start" }]
+                }
+              };
+            },
+            async abort() {
+              return true;
+            }
+          }
+        }
+      })
+    }),
+    /ProviderModelNotFoundError: provider "openai" does not expose model "gpt-5\.4"/
+  );
+
+  assert.strictEqual(promptCalls, 1);
+});
+
 test("executeOpencodeModelRole surfaces SDK create error payload instead of generic session-id failure", async () => {
   await assert.rejects(
     executeOpencodeModelRole({

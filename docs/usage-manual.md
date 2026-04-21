@@ -211,6 +211,30 @@ ogs run start --system system.mmd --input "请先做一次最小分析" --dry-ru
 
 `model.bind` 默认走 OpenCode。项目初始化会生成 `.ogs/providers/opencode.json`，但真实模型凭据和 provider 可用性仍由你本机的 OpenCode 环境负责。
 
+`.ogs/providers/opencode.json` 只是项目内参考样板。真正生效的仍是你本机的 `~/.config/opencode/opencode.json`。新脚手架会附带一个推荐的 `provider.openai` 骨架，便于接入 OpenAI-compatible 网关，但占位密钥需要你本地替换，不能提交进仓库。
+
+最小参考形状：
+
+```json
+{
+  "provider": {
+    "openai": {
+      "npm": "@ai-sdk/openai-compatible",
+      "options": {
+        "baseURL": "https://your-openai-compatible-endpoint/v1",
+        "apiKey": "REPLACE_WITH_REAL_API_KEY",
+        "setCacheKey": true
+      },
+      "models": {
+        "gpt-5.4": {
+          "name": "GPT-5.4"
+        }
+      }
+    }
+  }
+}
+```
+
 先做本地检查：
 
 ```bash
@@ -227,6 +251,7 @@ ogs-doctor --required opencode --system system.mmd --online-check
 
 - `--online-check` 会实际探测模型连通性，可能消耗 token。
 - 如果这里失败，先修复本机 OpenCode/provider 配置，再继续运行 OGSystem。
+- 如果模型或 provider 本身不可用，运行时现在会优先透传上游 provider 错误，比如 `ProviderModelNotFoundError`，而不是只报泛化的 structured output 错误。
 
 ### Step 5. 进行一次真实运行
 
@@ -604,6 +629,7 @@ Model rules:
 - for `executor: "opencode"`, `model.bind` roles run through OpenCode SDK v2 structured output:
   - input = rendered role prompt + `output.schema.json` + model selection + role working directory
   - output = one JSON object from `assistant.info.structured`; if `structured` is missing or string-encoded, runtime falls back to assistant text parts and JSON extraction
+  - provider/model failures are surfaced directly when diagnostics are available; the generic structured-output error is now only a last resort
   - `args.reasoningEffort` is treated as the OpenCode `variant`
   - unsupported arbitrary CLI flags are not used on the SDK path
 
@@ -667,6 +693,8 @@ Example:
 ```
 
 Default `roleRepo` / `modelRepo` values point to `./og-roles` and `./og-models`, and runtime execution expects those project-local repos to exist. The installed CLI's bundled role/model catalogs are template sources for `project init/create/sync` and NL2MMD-assisted import, not runtime fallback dependencies. If you set custom repo paths, those paths must exist.
+
+`.ogs/providers/opencode.json` is not a runtime-consumed config file. It is a project-local reference sample that points to the real OpenCode config path and shows a recommended OpenAI-compatible provider entry with `setCacheKey: true`.
 
 Compatibility rule:
 

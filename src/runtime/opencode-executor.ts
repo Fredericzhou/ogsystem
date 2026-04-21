@@ -158,6 +158,7 @@ const TRANSIENT_OPENCODE_ERROR_PATTERNS = [
 
 const MAX_OPENCODE_ATTEMPTS = 3;
 const RETRY_BASE_DELAY_MS = 1000;
+const STRUCTURED_OUTPUT_OBJECT_ERROR = "OpenCode structured output must be a JSON object";
 const STRUCTURED_OUTPUT_CORRECTION_INSTRUCTION =
   "Return exactly one JSON object that matches the provided JSON schema. Do not include markdown fences or extra commentary.";
 
@@ -252,6 +253,78 @@ function extractSdkErrorMessage(
   return augmentKnownOpencodeError(normalized, modelRef);
 }
 
+function isGenericStructuredOutputObjectError(message: string): boolean {
+  return message.trim() === STRUCTURED_OUTPUT_OBJECT_ERROR;
+}
+
+function extractProviderModelNotFoundMessage(args: {
+  diagnostics: string;
+  modelRef: { providerID: string; modelID: string };
+}): string | undefined {
+  if (!/ProviderModelNotFoundError/i.test(args.diagnostics)) {
+    return undefined;
+  }
+  const providerID =
+    args.diagnostics.match(/providerID:\s*"([^"]+)"/)?.[1] ?? args.modelRef.providerID;
+  const modelID = args.diagnostics.match(/modelID:\s*"([^"]+)"/)?.[1] ?? args.modelRef.modelID;
+  return `ProviderModelNotFoundError: provider "${providerID}" does not expose model "${modelID}"`;
+}
+
+function extractDiagnosticErrorLine(diagnostics: string): string | undefined {
+  const lines = diagnostics
+    .split("\n")
+    .map((line) => line.trim())
+    .filter(Boolean);
+
+  for (const line of lines) {
+    if (/^Warning:/i.test(line) || /^opencode server listening/i.test(line)) {
+      continue;
+    }
+
+    const namedError = line.match(/^([A-Za-z][\w]+Error):\s*(.+)$/);
+    if (namedError) {
+      return namedError[2] === namedError[1] ? namedError[1] : `${namedError[1]}: ${namedError[2]}`;
+    }
+
+    if (/error/i.test(line)) {
+      return line;
+    }
+  }
+
+  return undefined;
+}
+
+function deriveExecutionMessage(args: {
+  message: string;
+  diagnostics?: string;
+  modelRef: { providerID: string; modelID: string };
+}): string {
+  const baseMessage = augmentKnownOpencodeError(args.message, args.modelRef);
+  if (!isGenericStructuredOutputObjectError(baseMessage)) {
+    return baseMessage;
+  }
+
+  const diagnostics = args.diagnostics?.trim() ?? "";
+  if (!diagnostics) {
+    return baseMessage;
+  }
+
+  const providerModelNotFoundMessage = extractProviderModelNotFoundMessage({
+    diagnostics,
+    modelRef: args.modelRef
+  });
+  if (providerModelNotFoundMessage) {
+    return providerModelNotFoundMessage;
+  }
+
+  const diagnosticErrorLine = extractDiagnosticErrorLine(diagnostics);
+  if (!diagnosticErrorLine) {
+    return baseMessage;
+  }
+
+  return augmentKnownOpencodeError(diagnosticErrorLine, args.modelRef);
+}
+
 function isStructuredOutputMissingError(infoError: {
   name?: string;
   data?: {
@@ -298,11 +371,18 @@ function wrapExecutionError(args: {
 }): OpencodeExecutionError {
   const baseMessage =
     args.error instanceof OpencodeExecutionError ? args.error.message : getErrorMessage(args.error);
+  const diagnostics = [args.stderr, args.error instanceof OpencodeExecutionError ? args.error.details?.stderr : ""]
+    .filter(Boolean)
+    .join("\n");
   const message =
     args.providerID && args.modelID
-      ? augmentKnownOpencodeError(baseMessage, {
-          providerID: args.providerID,
-          modelID: args.modelID
+      ? deriveExecutionMessage({
+          message: baseMessage,
+          diagnostics,
+          modelRef: {
+            providerID: args.providerID,
+            modelID: args.modelID
+          }
         })
       : baseMessage;
 
@@ -412,7 +492,7 @@ function normalizeStructuredOutput(args: {
   if (fallback) {
     return fallback;
   }
-  throw new Error("OpenCode structured output must be a JSON object");
+  throw new Error(STRUCTURED_OUTPUT_OBJECT_ERROR);
 }
 
 function enforceOutputLimit(stdout: string, stderr: string, maxOutputBytes: number): void {
@@ -831,8 +911,35 @@ export async function executeOpencodeModelRole(
                 parts: response.data?.parts
               });
             } catch (error) {
-              if (getErrorMessage(error) !== "OpenCode structured output must be a JSON object") {
+              if (!isGenericStructuredOutputObjectError(getErrorMessage(error))) {
                 throw error;
+              }
+
+              const promptDiagnostics = [stderr, runClient.getOutput()].filter(Boolean).join("\n");
+              const promptFailureMessage = deriveExecutionMessage({
+                message: getErrorMessage(error),
+                diagnostics: promptDiagnostics,
+                modelRef: {
+                  providerID,
+                  modelID
+                }
+              });
+              if (!isGenericStructuredOutputObjectError(promptFailureMessage)) {
+                throw new OpencodeExecutionError(promptFailureMessage, {
+                  stderr,
+                  sessionId,
+                  messageId,
+                  serverPid: runClient.pid,
+                  args: buildExecutionArgs({
+                    runClient,
+                    workdir: args.workdir,
+                    sessionId,
+                    messageId,
+                    providerID,
+                    modelID,
+                    variant
+                  })
+                });
               }
 
               const correctionResponse = await runClient.client.session.prompt({
@@ -988,10 +1095,19 @@ export async function executeOpencodeModelRole(
   } catch (error) {
     if (error instanceof OpencodeExecutionError) {
       const serverOutput = runClient.getOutput();
-      throw new OpencodeExecutionError(error.message, {
+      const mergedStderr = [error.details?.stderr, serverOutput].filter(Boolean).join("\n");
+      const message = deriveExecutionMessage({
+        message: error.message,
+        diagnostics: mergedStderr,
+        modelRef: {
+          providerID,
+          modelID
+        }
+      });
+      throw new OpencodeExecutionError(message, {
         args: error.details?.args,
         stdout: error.details?.stdout,
-        stderr: [error.details?.stderr, serverOutput].filter(Boolean).join("\n"),
+        stderr: mergedStderr,
         sessionId: error.details?.sessionId,
         messageId: error.details?.messageId,
         serverPid: error.details?.serverPid

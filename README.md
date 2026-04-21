@@ -66,6 +66,8 @@ ogs visualizer --workdir .
 
 Generated projects always include `.ogs/`, `system.mmd`, and local `og-roles/` / `og-models/` repos. `project create` now defaults to the runnable `minimal` template; other runnable templates import only the role/model dependencies they reference.
 
+Generated projects also include `.ogs/providers/opencode.json` as a reference sample for your local OpenCode provider entry. Runtime execution still uses your machine-level `~/.config/opencode/opencode.json`; do not commit real API keys into the project copy.
+
 Local source install:
 
 ```bash
@@ -115,6 +117,7 @@ For day-to-day use, start with `docs/usage-manual.md`. It keeps the command matr
 
 - The adapter runs one graph-based execution model. The entry role becomes the initial active branch, each role execution emits one structured result, and completion happens only when active branches are exhausted or a transition reaches the terminal `output` boundary.
 - Executable roles always resolve to one JSON object: `{"event":"EVENT_NAME","content":"..."}`. For `model.bind`, the runtime sends `prompt + output.schema.json` to OpenCode SDK v2 and reads `info.structured`; if `info.structured` is absent or string-encoded, the runtime falls back to assistant text parts and applies JSON extraction. For legacy `exec.bind`, the runtime still parses tool stdout as one JSON object. `event` is required for roles with outgoing flows and must match one Mermaid edge label exactly.
+- When OpenCode/provider/model resolution fails, runtime now preserves the upstream provider error as the top-level failure instead of collapsing it into a generic structured-output message.
 - For `model.bind`, one run now starts one shared `opencode serve`, and each role/node keeps one isolated OpenCode session on that server for the duration of the run.
 - Executable roles are resolved by `roleId` directly from the project-local role repo. For each Mermaid `Role:<roleId>`, the runtime loads `og-roles/roles/<roleId>/role.json`, renders `prompt.md`, validates the built-in runtime prompt-input shell, and validates `output.schema.json`.
 - The runtime now supports `model.bind.<roleId>=<modelId>` with auto-discovered `.ogs/runtime.json`, `.ogs/user-profile.json`, `.ogs/laws.json`, and project-local `og-models/`.
@@ -161,6 +164,7 @@ For day-to-day use, start with `docs/usage-manual.md`. It keeps the command matr
 - `og-models/catalog/opencode-models.json` snapshots the current local `opencode models` list.
 - `og-models/models/*/model.json` provides curated reusable model bindings.
 - `.ogs/runtime.json` provides runtime defaults for role repo, model repo, and runs directory.
+- `.ogs/providers/opencode.json` is a project-local reference sample that mirrors a recommended `provider.openai` entry for `~/.config/opencode/opencode.json`.
 - `.ogs/runtime.json` may include `configVersion: "1"`; unsupported versions fail fast.
 - `.ogs/user-profile.json` provides user delivery preference sample.
 - `.ogs/laws.json` provides sample law catalog colocated with runtime config.

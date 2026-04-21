@@ -236,6 +236,34 @@ function createDefaultRuntimeConfig(): Record<string, unknown> {
   };
 }
 
+function createDefaultOpencodeProviderReference(): Record<string, unknown> {
+  return {
+    provider: "opencode",
+    lifecycle: "single-serve-multi-session",
+    configPath: "~/.config/opencode/opencode.json",
+    note: [
+      "Reference only.",
+      "Copy recommendedProviderEntry.openai into ~/.config/opencode/opencode.json under provider.openai.",
+      "Replace placeholder secrets locally and do not commit real API keys."
+    ].join(" "),
+    recommendedProviderEntry: {
+      openai: {
+        npm: "@ai-sdk/openai-compatible",
+        options: {
+          baseURL: "https://your-openai-compatible-endpoint/v1",
+          apiKey: "REPLACE_WITH_REAL_API_KEY",
+          setCacheKey: true
+        },
+        models: {
+          "gpt-5.4": {
+            name: "GPT-5.4"
+          }
+        }
+      }
+    }
+  };
+}
+
 function createDefaultUserProfile(): Record<string, unknown> {
   return {
     userProfileId: "default.zh.concise",
@@ -456,10 +484,7 @@ export async function ensureProjectSkeleton(args: {
   await ensureFile(paths.runtimePath, `${stringifyJson(createDefaultRuntimeConfig())}\n`);
   await ensureFile(
     paths.providerPath,
-    `${stringifyJson({
-      provider: "opencode",
-      lifecycle: "single-serve-multi-session"
-    })}\n`
+    `${stringifyJson(createDefaultOpencodeProviderReference())}\n`
   );
   await ensureFile(
     paths.runsIndexPath,
