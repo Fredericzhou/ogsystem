@@ -199,10 +199,9 @@ test("runtime config fails fast on unsupported config version", () => {
     () =>
       validateRuntimeConfig(
         {
-          configVersion: "2",
+          configVersion: "999",
           executor: "opencode",
-          roleRepo: "./og-roles",
-          modelRepo: "./og-models"
+          roleRepo: "./og-roles"
         },
         "runtime.json"
       ),
@@ -210,7 +209,7 @@ test("runtime config fails fast on unsupported config version", () => {
       assert.ok(error instanceof Error);
       assert.match(error.message, /runtime\.json/);
       assert.match(error.message, /\.configVersion/);
-      assert.match(error.message, /unsupported config version "2"/);
+      assert.match(error.message, /unsupported config version "999"/);
       return true;
     }
   );

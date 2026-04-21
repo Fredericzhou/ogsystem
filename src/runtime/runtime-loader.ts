@@ -29,10 +29,9 @@ export async function loadRuntimeConfig(
   workdir: string
 ): Promise<RuntimeConfig> {
   const defaultRuntimeRaw: Record<string, unknown> = {
-    configVersion: "1",
+    configVersion: "2",
     executor: "opencode",
     roleRepo: DEFAULT_ROLE_REPO,
-    modelRepo: DEFAULT_MODEL_REPO,
     runsDir: ".ogs/runs",
     workspace: {
       rolesDir: "roles",

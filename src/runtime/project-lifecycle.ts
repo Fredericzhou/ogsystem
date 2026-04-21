@@ -12,19 +12,18 @@ import { cp, mkdir, readFile, readdir, stat, writeFile } from "node:fs/promises"
 import { basename, dirname, resolve } from "node:path";
 
 import {
-  DEFAULT_MODEL_REPO,
   DEFAULT_ROLE_REPO,
-  resolveProjectModelRepoRoot,
   resolveProjectRoleRepoRoot,
-  resolveTemplateModelRepoRoot,
   resolveTemplateRoleRepoRoot,
   resolveTemplateRoleRootDir
 } from "./bundled-repos.js";
 import { validateRuntimeConfig } from "./config.js";
 import { readJsonFile, writeJsonFileAtomic } from "./json-file.js";
+import { chooseDefaultModelFromCatalog, refreshModelCatalog } from "./model-catalog.js";
 import { loadSystemFromMermaid, parseSystemFromMermaidSource } from "./parse-mermaid.js";
 import { requestRunStop } from "./run-artifacts.js";
 import { stringifyJson } from "./runtime-support.js";
+import type { ModelCatalog, ModelSelectionConfig } from "./types.js";
 import type { RunSummaryProjection } from "./run-summary-schema.js";
 import type { SystemDefinition } from "./types.js";
 
@@ -33,6 +32,8 @@ export const OGS_RUNS_DIR = ".ogs/runs";
 export const OGS_RUNS_INDEX_FILE = ".ogs/runs-index.json";
 const OGS_PROJECT_FILE = ".ogs/project.json";
 const OGS_RUNTIME_FILE = ".ogs/runtime.json";
+const OGS_MODEL_CATALOG_FILE = ".ogs/model-catalog.json";
+const OGS_MODEL_SELECTION_FILE = ".ogs/model-selection.json";
 const OGS_PROVIDER_OPENCODE_FILE = ".ogs/providers/opencode.json";
 const OGS_LAWS_FILE = ".ogs/laws.json";
 const OGS_USER_PROFILE_FILE = ".ogs/user-profile.json";
@@ -74,6 +75,7 @@ const PROJECT_TEMPLATES: Record<ProjectTemplateId, ProjectTemplateSpec> = {
       "flowchart TD",
       "%% Starter scaffold only. Replace this stub with a runnable Mermaid system.",
       "%% Then run: ogs project sync --system system.mmd",
+      "%% And refresh local models with: ogs project sync-models",
       "%% Or copy system.example.mmd as your starting point.",
       "%%",
       "%% Suggested metadata:",
@@ -81,7 +83,6 @@ const PROJECT_TEMPLATES: Record<ProjectTemplateId, ProjectTemplateSpec> = {
       "%% system.version=1.0.0",
       "%% law.global=law.project.base",
       "%% entry.role=demo-analyst",
-      "%% model.bind.demo-analyst=general-balanced",
       "%%",
       "%% input -->|ENTER| analyst[Role:demo-analyst]",
       "%% analyst[Role:demo-analyst] -->|ANALYSIS_DONE| output",
@@ -105,7 +106,6 @@ const PROJECT_TEMPLATES: Record<ProjectTemplateId, ProjectTemplateSpec> = {
       "%% system.version=1.0.0",
       "%% law.global=law.project.base",
       "%% entry.role=demo-analyst",
-      "%% model.bind.demo-analyst=general-balanced",
       "",
       "input -->|ENTER| analyst[Role:demo-analyst]",
       "analyst[Role:demo-analyst] -->|ANALYSIS_DONE| output",
@@ -120,7 +120,6 @@ const PROJECT_TEMPLATES: Record<ProjectTemplateId, ProjectTemplateSpec> = {
       "%% system.version=1.0.0",
       "%% law.global=law.minimal.base",
       "%% entry.role=demo-analyst",
-      "%% model.bind.demo-analyst=general-balanced",
       "",
       "input -->|ENTER| analyst[Role:demo-analyst]",
       "analyst[Role:demo-analyst] -->|ANALYSIS_DONE| output",
@@ -150,10 +149,6 @@ const PROJECT_TEMPLATES: Record<ProjectTemplateId, ProjectTemplateSpec> = {
       "%% role.mode.demo-intake=parallel_split",
       "%% join.mode.test-operator=all_of",
       "%% join.sources.test-operator=test-branch-a,test-branch-b",
-      "%% model.bind.demo-intake=general-fast",
-      "%% model.bind.test-branch-a=general-balanced",
-      "%% model.bind.test-branch-b=general-balanced",
-      "%% model.bind.test-operator=general-steady",
       "",
       "input -->|TASK_IN| intake[Role:demo-intake]",
       "intake[Role:demo-intake] -->|BRANCH_A| brancha[Role:test-branch-a]",
@@ -184,9 +179,6 @@ const PROJECT_TEMPLATES: Record<ProjectTemplateId, ProjectTemplateSpec> = {
       "%% system.version=1.0.0",
       "%% law.global=law.consultation.base",
       "%% entry.role=demo-intake",
-      "%% model.bind.demo-intake=general-balanced",
-      "%% model.bind.diagnosis-dispatch=general-steady",
-      "%% model.bind.diagnosis-chief-review=general-steady",
       "",
       "input -->|CASE_IN| intake[Role:demo-intake]",
       "intake[Role:demo-intake] -->|INTAKE_DONE| dispatch[Role:diagnosis-dispatch]",
@@ -212,10 +204,9 @@ const PROJECT_TEMPLATES: Record<ProjectTemplateId, ProjectTemplateSpec> = {
 
 function createDefaultRuntimeConfig(): Record<string, unknown> {
   return {
-    configVersion: "1",
+    configVersion: "2",
     executor: "opencode",
     roleRepo: DEFAULT_ROLE_REPO,
-    modelRepo: DEFAULT_MODEL_REPO,
     runsDir: OGS_RUNS_DIR,
     workspace: {
       rolesDir: "roles",
@@ -336,19 +327,16 @@ async function ensureFile(path: string, value: string): Promise<void> {
 
 async function loadProjectRepoConfig(workdir: string): Promise<{
   roleRepo: string;
-  modelRepo: string;
 }> {
   const runtimePath = resolveOgsPaths(workdir).runtimePath;
   try {
     const runtimeConfig = validateRuntimeConfig(await readJsonFile(runtimePath), runtimePath);
     return {
-      roleRepo: runtimeConfig.roleRepo,
-      modelRepo: runtimeConfig.modelRepo
+      roleRepo: runtimeConfig.roleRepo
     };
   } catch {
     return {
-      roleRepo: DEFAULT_ROLE_REPO,
-      modelRepo: DEFAULT_MODEL_REPO
+      roleRepo: DEFAULT_ROLE_REPO
     };
   }
 }
@@ -390,21 +378,11 @@ async function loadSystemDefinitionForSync(args: {
 async function ensureProjectRepoMetadataFiles(workdir: string): Promise<void> {
   const repoConfig = await loadProjectRepoConfig(workdir);
   const projectRoleRepoRoot = resolveProjectRoleRepoRoot(workdir, repoConfig.roleRepo);
-  const projectModelRepoRoot = resolveProjectModelRepoRoot(workdir, repoConfig.modelRepo);
   const templateRoleRepoRoot = resolveTemplateRoleRepoRoot();
-  const templateModelRepoRoot = resolveTemplateModelRepoRoot();
 
   await copyIfMissing(
     resolve(templateRoleRepoRoot, "README.md"),
     resolve(projectRoleRepoRoot, "README.md")
-  );
-  await copyIfMissing(
-    resolve(templateModelRepoRoot, "README.md"),
-    resolve(projectModelRepoRoot, "README.md")
-  );
-  await copyIfMissing(
-    resolve(templateModelRepoRoot, "catalog"),
-    resolve(projectModelRepoRoot, "catalog")
   );
 }
 
@@ -426,27 +404,14 @@ async function importRolePackageIntoProject(args: {
   return importedRole;
 }
 
-async function importModelPackageIntoProject(args: {
-  workdir: string;
-  modelId: string;
-}): Promise<boolean> {
-  const templateModelRepoRoot = resolveTemplateModelRepoRoot();
-  const repoConfig = await loadProjectRepoConfig(args.workdir);
-  const projectModelRepoRoot = resolveProjectModelRepoRoot(args.workdir, repoConfig.modelRepo);
-  const importedModel = await copyIfMissing(
-    resolve(templateModelRepoRoot, "models", args.modelId),
-    resolve(projectModelRepoRoot, "models", args.modelId)
-  );
-  await ensureProjectRepoMetadataFiles(args.workdir);
-  return importedModel;
-}
-
 export function resolveOgsPaths(workdir: string): {
   ogsDir: string;
   runsDir: string;
   runsIndexPath: string;
   projectPath: string;
   runtimePath: string;
+  modelCatalogPath: string;
+  modelSelectionPath: string;
   providerPath: string;
   lawsPath: string;
   userProfilePath: string;
@@ -457,9 +422,43 @@ export function resolveOgsPaths(workdir: string): {
     runsIndexPath: resolve(workdir, OGS_RUNS_INDEX_FILE),
     projectPath: resolve(workdir, OGS_PROJECT_FILE),
     runtimePath: resolve(workdir, OGS_RUNTIME_FILE),
+    modelCatalogPath: resolve(workdir, OGS_MODEL_CATALOG_FILE),
+    modelSelectionPath: resolve(workdir, OGS_MODEL_SELECTION_FILE),
     providerPath: resolve(workdir, OGS_PROVIDER_OPENCODE_FILE),
     lawsPath: resolve(workdir, OGS_LAWS_FILE),
     userProfilePath: resolve(workdir, OGS_USER_PROFILE_FILE)
+  };
+}
+
+function createDefaultModelSelection(args: {
+  catalog: ModelCatalog;
+  system?: SystemDefinition;
+}): ModelSelectionConfig {
+  const selected = chooseDefaultModelFromCatalog(args.catalog);
+  if (!selected) {
+    throw new Error(
+      "No active text-output toolcall model was discovered from `opencode models --verbose`."
+    );
+  }
+
+  return {
+    configVersion: "1",
+    defaults: {
+      model: selected.ref,
+      variant: selected.variants.includes("medium") ? "medium" : undefined,
+      timeoutMs: 120000,
+      maxOutputBytes: 65536
+    },
+    systems: args.system
+      ? {
+          [args.system.systemId]: {
+            defaults: {
+              model: selected.ref,
+              variant: selected.variants.includes("medium") ? "medium" : undefined
+            }
+          }
+        }
+      : undefined
   };
 }
 
@@ -519,7 +518,6 @@ export async function syncProjectDependencies(args: {
   const system = await loadSystemDefinitionForSync(args);
   const { roleIds, modelIds } = getSystemDependencies(system);
   const importedRoleIds: string[] = [];
-  const importedModelIds: string[] = [];
 
   for (const roleId of roleIds) {
     if (await importRolePackageIntoProject({ workdir: args.workdir, roleId })) {
@@ -527,17 +525,62 @@ export async function syncProjectDependencies(args: {
     }
   }
 
-  for (const modelId of modelIds) {
-    if (await importModelPackageIntoProject({ workdir: args.workdir, modelId })) {
-      importedModelIds.push(modelId);
-    }
-  }
-
   return {
     roleIds,
     modelIds,
     importedRoleIds,
-    importedModelIds
+    importedModelIds: []
+  };
+}
+
+export async function syncProjectModels(args: {
+  workdir: string;
+  systemPath?: string;
+  rewriteDefault?: boolean;
+}): Promise<{
+  catalogPath: string;
+  selectionPath: string;
+  generatedSelection: boolean;
+  selectedModel?: string;
+}> {
+  const paths = resolveOgsPaths(args.workdir);
+  const catalog = await refreshModelCatalog({
+    workdir: args.workdir
+  });
+  await writeJsonFileAtomic(paths.modelCatalogPath, catalog);
+
+  const hasSelection = await stat(paths.modelSelectionPath).then(() => true).catch(() => false);
+  if (!hasSelection || args.rewriteDefault) {
+    const system = args.systemPath
+      ? await loadSystemFromMermaid(resolve(args.workdir, args.systemPath))
+      : undefined;
+    const selection = createDefaultModelSelection({
+      catalog,
+      system
+    });
+    await writeJsonFileAtomic(paths.modelSelectionPath, selection);
+    return {
+      catalogPath: paths.modelCatalogPath,
+      selectionPath: paths.modelSelectionPath,
+      generatedSelection: true,
+      selectedModel: selection.defaults?.model
+    };
+  }
+
+  const existingSelection = await readJsonFile(paths.modelSelectionPath);
+  const selectedModel =
+    typeof existingSelection === "object" &&
+    existingSelection !== null &&
+    !Array.isArray(existingSelection) &&
+    typeof (existingSelection as { defaults?: { model?: unknown } }).defaults?.model === "string"
+      ? (existingSelection as { defaults: { model: string } }).defaults.model
+      : undefined;
+
+  return {
+    catalogPath: paths.modelCatalogPath,
+    selectionPath: paths.modelSelectionPath,
+    generatedSelection: false,
+    selectedModel
   };
 }
 
@@ -804,6 +847,10 @@ export async function createProjectFromTemplate(args: {
   const template = await scaffoldProjectTemplate({
     workdir: projectDir,
     templateId: args.templateId
+  });
+  await syncProjectModels({
+    workdir: projectDir,
+    systemPath: "system.mmd"
   });
   if (template.syncDependencies) {
     await syncProjectDependencies({

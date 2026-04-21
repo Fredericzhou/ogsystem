@@ -2,6 +2,7 @@ import { createHash } from "node:crypto";
 import { resolve } from "node:path";
 
 import type { CompiledExecutionSnapshot } from "./compiler.js";
+import type { ResolvedModelRuntimeConfig } from "./model-selection.js";
 import type { RunPlanFingerprint } from "./run-artifacts.js";
 import {
   RUNTIME_ROLE_PROMPT_INPUT_SCHEMA,
@@ -128,23 +129,26 @@ function buildRuntimePromptInputFingerprintComponent(): {
   };
 }
 
-function buildModelPackageFingerprintComponent(
-  modelsById: Map<string, LoadedModelPackage>
+function buildModelSelectionFingerprintComponent(
+  resolvedModelsByRoleId: Map<string, ResolvedModelRuntimeConfig>
 ): Array<{
   identity: Record<string, unknown>;
   sourceHints: Record<string, unknown>;
 }> {
-  return Array.from(modelsById.entries())
+  return Array.from(resolvedModelsByRoleId.entries())
     .sort(([left], [right]) => left.localeCompare(right))
-    .map(([modelId, modelPackage]) => ({
+    .map(([roleId, resolvedModel]) => ({
       identity: {
-        modelId,
-        manifest: normalizeFingerprintValue(modelPackage.manifest)
+        roleId,
+        modelRef: resolvedModel.modelRef,
+        variant: resolvedModel.variant ?? null,
+        timeoutMs: resolvedModel.timeoutMs ?? null,
+        maxOutputBytes: resolvedModel.maxOutputBytes ?? null,
+        bindingSource: resolvedModel.bindingSource
       },
       sourceHints: {
-        modelId,
-        resolvedPath: modelPackage.resolvedPath,
-        manifestPath: resolve(modelPackage.resolvedPath, "model.json")
+        roleId,
+        modelRef: resolvedModel.modelRef
       }
     }));
 }
@@ -178,13 +182,27 @@ function buildCompilerFingerprintComponent(
 export function buildRunPlanFingerprint(args: {
   system: SystemDefinition;
   rolePackagesByRoleId: Map<string, LoadedRolePackage>;
-  modelsById: Map<string, LoadedModelPackage>;
+  resolvedModelsByRoleId?: Map<string, ResolvedModelRuntimeConfig>;
+  modelsById?: Map<string, LoadedModelPackage>;
   effectiveLaw: EffectiveLawConstraints;
   contractPlan?: FlowContractPlan;
   compilerSnapshot?: CompiledExecutionSnapshot;
 }): RunPlanFingerprint {
   const rolePackageComponents = buildRolePackageFingerprintComponent(args.rolePackagesByRoleId);
-  const modelPackageComponents = buildModelPackageFingerprintComponent(args.modelsById);
+  const modelSelectionComponents = args.resolvedModelsByRoleId
+    ? buildModelSelectionFingerprintComponent(args.resolvedModelsByRoleId)
+    : Array.from(args.modelsById?.entries() ?? [])
+        .sort(([left], [right]) => left.localeCompare(right))
+        .map(([modelId, modelPackage]) => ({
+          identity: {
+            legacyModelId: modelId,
+            manifest: normalizeFingerprintValue(modelPackage.manifest)
+          },
+          sourceHints: {
+            legacyModelId: modelId,
+            resolvedPath: modelPackage.resolvedPath
+          }
+        }));
   const runtimePromptInputComponent = buildRuntimePromptInputFingerprintComponent();
   const compilerComponent = args.compilerSnapshot
     ? buildCompilerFingerprintComponent(args.compilerSnapshot)
@@ -192,7 +210,7 @@ export function buildRunPlanFingerprint(args: {
   const componentValues: Record<string, unknown> = {
     system: buildSystemFingerprintComponent(args.system, args.contractPlan?.digest ?? null),
     rolePackages: rolePackageComponents.map((component) => component.identity),
-    modelPackages: modelPackageComponents.map((component) => component.identity),
+    modelSelection: modelSelectionComponents.map((component) => component.identity),
     runtimePromptInput: runtimePromptInputComponent.identity,
     effectiveLaw: normalizeFingerprintValue(args.effectiveLaw)
   };
@@ -216,10 +234,10 @@ export function buildRunPlanFingerprint(args: {
         value: componentValues.rolePackages,
         sourceHints: rolePackageComponents.map((component) => component.sourceHints)
       },
-      modelPackages: {
-        digest: componentDigests.modelPackages,
-        value: componentValues.modelPackages,
-        sourceHints: modelPackageComponents.map((component) => component.sourceHints)
+      modelSelection: {
+        digest: componentDigests.modelSelection,
+        value: componentValues.modelSelection,
+        sourceHints: modelSelectionComponents.map((component) => component.sourceHints)
       },
       runtimePromptInput: {
         digest: componentDigests.runtimePromptInput,

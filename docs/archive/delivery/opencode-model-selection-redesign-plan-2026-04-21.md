@@ -1,7 +1,14 @@
 # OpenCode Model Selection Redesign Plan
 
 Date: 2026-04-21  
-Status: proposed
+Status: delivered
+
+Delivered scope summary:
+
+- runtime 主路径切换到 `.ogs/model-selection.json` + direct `provider/model`
+- `project init/create/sync-models` 已生成并刷新 `.ogs/model-catalog.json` / `.ogs/model-selection.json`
+- runtime / fingerprint / resume / audit / doctor / CLI / packaging / docs 已按新入口收口
+- 旧 `og-models` 路径不再作为默认脚手架或安装产物主入口；仓内保留的少量 legacy helper 仅用于内部兼容测试调用，不属于用户主路径
 
 ## 1. Decision Summary
 
@@ -399,19 +406,19 @@ catalog 在 runtime 内的职责应限制为：
 
 实施项：
 
-- [ ] 新增 `src/runtime/model-catalog.ts`
-- [ ] 新增 `src/runtime/model-selection.ts`
-- [ ] 新增 `schemas/model-catalog.schema.json`
-- [ ] 新增 `schemas/model-selection.schema.json`
-- [ ] 直接引入 `configVersion: "2"`
-- [ ] 更新 `src/runtime/types.ts`
-- [ ] 修改 `src/runtime/project-lifecycle.ts`
-- [ ] `project init/create` 自动执行 `opencode models --verbose`
-- [ ] 生成 `.ogs/model-catalog.json`
-- [ ] 生成 `.ogs/model-selection.json`
-- [ ] 最小模板默认写 runnable config
-- [ ] `project init/create` 不再复制 `og-models/`
-- [ ] 明确 catalog 仅用于 scaffold / doctor，不进入 runtime 硬校验
+- [x] 新增 `src/runtime/model-catalog.ts`
+- [x] 新增 `src/runtime/model-selection.ts`
+- [x] 新增 `schemas/model-catalog.schema.json`
+- [x] 新增 `schemas/model-selection.schema.json`
+- [x] 直接引入 `configVersion: "2"`
+- [x] 更新 `src/runtime/types.ts`
+- [x] 修改 `src/runtime/project-lifecycle.ts`
+- [x] `project init/create` 自动执行 `opencode models --verbose`
+- [x] 生成 `.ogs/model-catalog.json`
+- [x] 生成 `.ogs/model-selection.json`
+- [x] 最小模板默认写 runnable config
+- [x] `project init/create` 不再复制 `og-models/`
+- [x] 明确 catalog 仅用于 scaffold / doctor，不进入 runtime 硬校验
 
 交付标准：
 
@@ -424,17 +431,17 @@ catalog 在 runtime 内的职责应限制为：
 
 实施项：
 
-- [ ] 修改 `src/runtime/runtime-setup.ts`
-- [ ] 修改 plan fingerprint 输入，覆盖新模型选择面
-- [ ] 修改 resume 一致性校验，避免旧 fingerprint 误判
-- [ ] 梳理 parser / nl2mmd / examples 对新解析路径的影响
-- [ ] 在 runtime setup 阶段加载 selection
-- [ ] 将 catalog 从 runtime 硬判定中剥离，保留 advisory 角色
-- [ ] 实现 `systemId + roleId + model.bind` 的解析优先级
-- [ ] executor 仅接收 concrete `provider/model`
-- [ ] 不在本阶段引入 `model.bind=default`
-- [ ] 删除 `modelRepo` / `providerAliases` 运行路径
-- [ ] 增加明确错误码与错误消息
+- [x] 修改 `src/runtime/runtime-setup.ts`
+- [x] 修改 plan fingerprint 输入，覆盖新模型选择面
+- [x] 修改 resume 一致性校验，避免旧 fingerprint 误判
+- [x] 梳理 parser / nl2mmd / examples 对新解析路径的影响
+- [x] 在 runtime setup 阶段加载 selection
+- [x] 将 catalog 从 runtime 硬判定中剥离，保留 advisory 角色
+- [x] 实现 `systemId + roleId + model.bind` 的解析优先级
+- [x] executor 仅接收 concrete `provider/model`
+- [x] 不在本阶段引入 `model.bind=default`
+- [x] 删除 `modelRepo` / `providerAliases` 运行路径
+- [x] 增加明确错误码与错误消息
 
 交付标准：
 
@@ -448,14 +455,14 @@ catalog 在 runtime 内的职责应限制为：
 
 实施项：
 
-- [ ] 新项目停止复制 `og-models/`
-- [ ] 文档改为 `.ogs/model-selection.json` 主路径
-- [ ] README / usage manual / examples 更新
-- [ ] 删除 `providerAliases` 文档主路径
-- [ ] 删除 `og-models/` 作为默认模型仓
-- [ ] 增加 `ogs project sync-models`
-- [ ] 新增 doctor 检查：selection 是否命中 catalog
-- [ ] 重新评估是否真的需要 `model.bind=default`
+- [x] 新项目停止复制 `og-models/`
+- [x] 文档改为 `.ogs/model-selection.json` 主路径
+- [x] README / usage manual / examples 更新
+- [x] 删除 `providerAliases` 文档主路径
+- [x] 删除 `og-models/` 作为默认模型仓
+- [x] 增加 `ogs project sync-models`
+- [x] 新增 doctor 检查：selection 是否命中 catalog
+- [x] 重新评估是否真的需要 `model.bind=default`
 
 交付标准：
 
@@ -498,54 +505,54 @@ catalog 在 runtime 内的职责应限制为：
 
 ### 7.1 Unit
 
-- [ ] `provider/model` 解析校验
-- [ ] `model-selection.json` schema 校验
-- [ ] resolution precedence 校验
-- [ ] invalid catalog / invalid selection 报错校验
-- [ ] catalog 中无该模型时生成 advisory warning，而非默认 runtime blocker
+- [x] `provider/model` 解析校验
+- [x] `model-selection.json` schema 校验
+- [x] resolution precedence 校验
+- [x] invalid catalog / invalid selection 报错校验
+- [x] catalog 中无该模型时生成 advisory warning，而非默认 runtime blocker
 
 ### 7.2 CLI
 
-- [ ] `ogs project init` 自动生成 `.ogs/model-catalog.json`
-- [ ] `ogs project init` 自动生成 `.ogs/model-selection.json`
-- [ ] `ogs project create` 默认生成 runnable minimal 模板
-- [ ] `ogs project sync-models` 不覆盖已有用户选择
-- [ ] OpenCode 不可用时 CLI 返回明确错误
+- [x] `ogs project init` 自动生成 `.ogs/model-catalog.json`
+- [x] `ogs project init` 自动生成 `.ogs/model-selection.json`
+- [x] `ogs project create` 默认生成 runnable minimal 模板
+- [x] `ogs project sync-models` 不覆盖已有用户选择
+- [x] OpenCode 不可用时 CLI 返回明确错误
 
 ### 7.3 Runtime
 
-- [ ] default selection 可驱动最小模板成功执行
-- [ ] system override 生效
-- [ ] role override 生效
-- [ ] direct `model.bind.<roleId>=provider/model` 生效
-- [ ] auditTrail 正确记录 resolved model
-- [ ] runtime 不因 catalog 过期而拒绝执行
-- [ ] resume/fingerprint 在新模型解析面下保持稳定
+- [x] default selection 可驱动最小模板成功执行
+- [x] system override 生效
+- [x] role override 生效
+- [x] direct `model.bind.<roleId>=provider/model` 生效
+- [x] auditTrail 正确记录 resolved model
+- [x] runtime 不因 catalog 过期而拒绝执行
+- [x] resume/fingerprint 在新模型解析面下保持稳定
 
 ### 7.4 Error Propagation
 
-- [ ] 缺失 `.ogs/model-selection.json` 的错误清晰
-- [ ] selection 中模型不在 catalog 时表现为 advisory warning，除非另有显式 strict 模式
-- [ ] OpenCode `ProviderModelNotFoundError` 不再伪装成 structured-output 错误
-- [ ] generic structured-output fallback 只在无更具体诊断时触发
+- [x] 缺失 `.ogs/model-selection.json` 的错误清晰
+- [x] selection 中模型不在 catalog 时表现为 advisory warning，除非另有显式 strict 模式
+- [x] OpenCode `ProviderModelNotFoundError` 不再伪装成 structured-output 错误
+- [x] generic structured-output fallback 只在无更具体诊断时触发
 
 ### 7.5 Docs And Packaging
 
-- [ ] 新模板文档不再要求编辑 `providerAliases`
-- [ ] 安装产物不再以 `og-models/**` 为主配置入口
-- [ ] 文档不再把 `providerAliases` 当作可用主路径
+- [x] 新模板文档不再要求编辑 `providerAliases`
+- [x] 安装产物不再以 `og-models/**` 为主配置入口
+- [x] 文档不再把 `providerAliases` 当作可用主路径
 
 ## 8. Acceptance Checklist
 
-- [ ] 用户只需要理解两个模型文件：catalog 与 selection
-- [ ] 用户在 selection 中只写 direct OpenCode refs
-- [ ] 新项目默认创建后即可运行最小系统
-- [ ] runtime 不再按环境猜 provider
-- [ ] runtime 不会仅因 catalog 缺失或过期而失败
-- [ ] test 不再依赖机器环境差异来通过
-- [ ] 错误信息能明确区分配置问题与执行问题
-- [ ] 文档主路径逐步不再把 `og-models` 当作推荐模型配置方式
-- [ ] 下一版不再保留第二条模型配置主路径
+- [x] 用户只需要理解两个模型文件：catalog 与 selection
+- [x] 用户在 selection 中只写 direct OpenCode refs
+- [x] 新项目默认创建后即可运行最小系统
+- [x] runtime 不再按环境猜 provider
+- [x] runtime 不会仅因 catalog 缺失或过期而失败
+- [x] test 不再依赖机器环境差异来通过
+- [x] 错误信息能明确区分配置问题与执行问题
+- [x] 文档主路径逐步不再把 `og-models` 当作推荐模型配置方式
+- [x] 下一版不再保留第二条模型配置主路径
 
 ## 9. Recommended Execution Order
 

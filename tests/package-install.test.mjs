@@ -6,6 +6,7 @@ import os from "node:os";
 import path from "node:path";
 
 const repoRoot = process.cwd();
+const opencodeModelsFixturePath = path.resolve(repoRoot, "tests/fixtures/opencode-models-verbose.txt");
 const installPackageJson = JSON.parse(
   await readFile(path.resolve(repoRoot, "package.json"), "utf8")
 );
@@ -14,7 +15,11 @@ function runCommand(command, args, options = {}) {
   return new Promise((resolve, reject) => {
     const child = spawn(command, args, {
       cwd: options.cwd ?? repoRoot,
-      env: options.env ?? process.env,
+      env: {
+        ...process.env,
+        OGSYSTEM_OPENCODE_MODELS_STDOUT_FILE: opencodeModelsFixturePath,
+        ...(options.env ?? {})
+      },
       stdio: ["ignore", "pipe", "pipe"]
     });
     let stdout = "";
@@ -78,6 +83,7 @@ test("packed CLI installs and scaffolds a runnable project with imported local d
     () => stat(path.resolve(installedPackageDir, "og-roles", "sources.lock.json")),
     /ENOENT/
   );
+  await assert.rejects(() => stat(path.resolve(installedPackageDir, "og-models")), /ENOENT/);
   await assert.rejects(() => stat(path.resolve(installedPackageDir, "agent-sources")), /ENOENT/);
   await assert.rejects(() => stat(path.resolve(installedPackageDir, "tools", "agent-source")), /ENOENT/);
 
@@ -102,8 +108,9 @@ test("packed CLI installs and scaffolds a runnable project with imported local d
 
   await stat(path.resolve(projectDir, "og-roles", "roles", "demo-analyst", "role.json"));
   await assert.rejects(() => stat(path.resolve(projectDir, "og-roles", "roles", "debate-judge")), /ENOENT/);
-  await stat(path.resolve(projectDir, "og-models", "models", "general-balanced", "model.json"));
-  await assert.rejects(() => stat(path.resolve(projectDir, "og-models", "models", "general-fast")), /ENOENT/);
+  await stat(path.resolve(projectDir, ".ogs", "model-catalog.json"));
+  await stat(path.resolve(projectDir, ".ogs", "model-selection.json"));
+  await assert.rejects(() => stat(path.resolve(projectDir, "og-models")), /ENOENT/);
 
   const startResult = await runCommand(
     "node",

@@ -345,7 +345,7 @@ export function validateRuntimeConfig(value: unknown, filePath: string): Runtime
   );
 
   const configVersion = expectOptionalString(record.configVersion, filePath, "$.configVersion");
-  if (configVersion !== undefined && configVersion !== "1") {
+  if (configVersion !== undefined && configVersion !== "1" && configVersion !== "2") {
     fail(filePath, "$.configVersion", `unsupported config version "${configVersion}"`);
   }
 
@@ -463,10 +463,10 @@ export function validateRuntimeConfig(value: unknown, filePath: string): Runtime
     expectOptionalBoolean(runtimeErrorFlowsRecord?.v1, filePath, "$.runtime.error_flows.v1") ?? false;
 
   return {
-    configVersion: configVersion ?? "1",
+    configVersion: configVersion ?? "2",
     executor: "opencode",
     roleRepo: expectOptionalString(record.roleRepo, filePath, "$.roleRepo") ?? "./og-roles",
-    modelRepo: expectOptionalString(record.modelRepo, filePath, "$.modelRepo") ?? "./og-models",
+    modelRepo: expectOptionalString(record.modelRepo, filePath, "$.modelRepo"),
     runsDir: expectOptionalString(record.runsDir, filePath, "$.runsDir") ?? ".ogs/runs",
     sharedDir: expectOptionalString(record.sharedDir, filePath, "$.sharedDir"),
     workspace: {

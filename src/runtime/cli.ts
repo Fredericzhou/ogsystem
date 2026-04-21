@@ -18,6 +18,7 @@ import {
   ensureProjectSkeleton,
   scaffoldProjectTemplate,
   syncProjectDependencies,
+  syncProjectModels,
   inspectRun,
   loadIndexedRuns,
   loadRunLogs,
@@ -40,6 +41,7 @@ function usageRoot(): string {
     "  ogs project init",
     "  ogs project create <name> [--template <empty|minimal|software-dev|consultation>]",
     "  ogs project sync --system <file.mmd>",
+    "  ogs project sync-models",
     "  ogs visualizer [--workdir <path>] [--host <host>] [--port <n|0>]",
     "  ogs run start --system <file.mmd> --input <text> [options]",
     "  ogs run resume <run-id> [options]",
@@ -72,11 +74,13 @@ function usageProject(): string {
     "  ogs project init [--template <empty|minimal|software-dev|consultation>] [--workdir <path>]",
     "  ogs project create <name> [--template <empty|minimal|software-dev|consultation>] [--workdir <path>]",
     "  ogs project sync --system <file.mmd> [--workdir <path>]",
+    "  ogs project sync-models [--workdir <path>]",
     "",
     "Project lifecycle:",
     "  init   scaffold the current directory as a runnable project",
     "  create scaffold a new project directory from a template",
-    "  sync   import roles/models referenced by a Mermaid system into the local project repos",
+    "  sync   import roles referenced by a Mermaid system into the local project role repo",
+    "  sync-models   refresh .ogs/model-catalog.json and seed .ogs/model-selection.json when missing",
     "",
     "Defaults:",
     "  current directory is the project root unless --workdir is set",
@@ -94,7 +98,8 @@ function usageProject(): string {
     "  ogs project create demo-app",
     "  ogs project init --template software-dev",
     "  ogs project create demo-app --template minimal",
-    "  ogs project sync --system system.mmd"
+    "  ogs project sync --system system.mmd",
+    "  ogs project sync-models"
   ].join("\n");
 }
 
@@ -618,6 +623,10 @@ async function runProjectCommand(argv: string[]): Promise<void> {
       workdir,
       templateId: template
     });
+    const modelSyncResult = await syncProjectModels({
+      workdir,
+      systemPath: "system.mmd"
+    });
     const syncResult = templateSpec.syncDependencies
       ? await syncProjectDependencies({
           workdir,
@@ -638,6 +647,9 @@ async function runProjectCommand(argv: string[]): Promise<void> {
           template,
           workdir,
           runCount: index.runs.length,
+          modelCatalogPath: modelSyncResult.catalogPath,
+          modelSelectionPath: modelSyncResult.selectionPath,
+          selectedModel: modelSyncResult.selectedModel,
           importedRoleIds: syncResult.importedRoleIds,
           importedModelIds: syncResult.importedModelIds
         },
@@ -720,6 +732,37 @@ async function runProjectCommand(argv: string[]): Promise<void> {
           modelIds: syncResult.modelIds,
           importedRoleIds: syncResult.importedRoleIds,
           importedModelIds: syncResult.importedModelIds
+        },
+        null,
+        2
+      )
+    );
+    return;
+  }
+
+  if (subcommand === "sync-models") {
+    const { values } = parseLifecycleArgs(argv.slice(1), {
+      workdir: { type: "string" },
+      help: { type: "boolean", short: "h" }
+    });
+    if (asBool(values.help)) {
+      console.log(usage("project"));
+      return;
+    }
+    const workdir = asString(values.workdir) ?? process.cwd();
+    const syncResult = await syncProjectModels({
+      workdir
+    });
+    console.log(
+      JSON.stringify(
+        {
+          status: "ok",
+          command: "project sync-models",
+          workdir,
+          catalogPath: syncResult.catalogPath,
+          selectionPath: syncResult.selectionPath,
+          generatedSelection: syncResult.generatedSelection,
+          selectedModel: syncResult.selectedModel
         },
         null,
         2

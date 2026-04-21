@@ -18,8 +18,15 @@ test("adapter auto-discovers runtime config and persists run artifacts for model
 
   await mkdir(path.resolve(tempRoot, ".ogs"), { recursive: true });
   await symlink(path.resolve(repoRoot, "og-roles"), path.resolve(tempRoot, "og-roles"), "dir");
-  await symlink(path.resolve(repoRoot, "og-models"), path.resolve(tempRoot, "og-models"), "dir");
   await symlink(path.resolve(repoRoot, ".ogs", "runtime.json"), path.resolve(tempRoot, ".ogs", "runtime.json"));
+  await symlink(
+    path.resolve(repoRoot, ".ogs", "model-selection.json"),
+    path.resolve(tempRoot, ".ogs", "model-selection.json")
+  );
+  await symlink(
+    path.resolve(repoRoot, ".ogs", "model-catalog.json"),
+    path.resolve(tempRoot, ".ogs", "model-catalog.json")
+  );
   await symlink(path.resolve(repoRoot, ".ogs", "user-profile.json"), path.resolve(tempRoot, ".ogs", "user-profile.json"));
   await symlink(path.resolve(repoRoot, ".ogs", "laws.json"), path.resolve(tempRoot, ".ogs", "laws.json"));
 
@@ -56,7 +63,7 @@ test("adapter auto-discovers runtime config and persists run artifacts for model
     path.resolve(runDir, "roles", "debate-minimalist", "role.md"),
     "utf8"
   );
-  assert.match(minimalistRole, /modelId: general-balanced/);
+  assert.match(minimalistRole, /modelId: opencode\/gpt-5-nano/);
   assert.match(minimalistRole, /preferredModelTags:/);
 
   const minimalistInbox = await readFile(

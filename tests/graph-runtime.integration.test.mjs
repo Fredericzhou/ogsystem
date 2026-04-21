@@ -12,6 +12,26 @@ function parseJsonCodeBlock(markdown) {
   return JSON.parse(match[1]);
 }
 
+async function writeDefaultModelSelection(workdir) {
+  await mkdir(path.resolve(workdir, ".ogs"), { recursive: true });
+  await writeFile(
+    path.resolve(workdir, ".ogs", "model-selection.json"),
+    JSON.stringify(
+      {
+        configVersion: "1",
+        defaults: {
+          model: "opencode/gpt-5-nano",
+          timeoutMs: 120000,
+          maxOutputBytes: 65536
+        }
+      },
+      null,
+      2
+    ),
+    "utf8"
+  );
+}
+
 async function writeModelBoundRole(args) {
   const roleDir = path.resolve(args.rolesRoot, args.roleId);
   await mkdir(roleDir, { recursive: true });
@@ -98,6 +118,7 @@ test("adapter runs graph debate example with parallel branches, join, and bounde
     path.resolve(repoRoot, ".ogs", "user-profile.json"),
     path.resolve(tempRoot, ".ogs", "user-profile.json")
   );
+  await writeDefaultModelSelection(tempRoot);
 
   const result = await runSystemWithAdapter({
     systemPath: path.resolve(repoRoot, "examples", "langgraph-debate-current", "system.mmd"),
@@ -300,6 +321,7 @@ test("adapter runs expert consultation example with parallel specialists and fin
     path.resolve(repoRoot, ".ogs", "runtime.json"),
     path.resolve(tempRoot, ".ogs", "runtime.json")
   );
+  await writeDefaultModelSelection(tempRoot);
 
   const result = await runSystemWithAdapter({
     systemPath: path.resolve(repoRoot, "examples", "langgraph-expert-consultation", "system.mmd"),
@@ -362,6 +384,7 @@ test("adapter preserves session lineage semantics and join context projection ac
     ),
     "utf8"
   );
+  await writeDefaultModelSelection(tempRoot);
 
   await writeModelBoundRole({
     rolesRoot,
@@ -479,6 +502,7 @@ test("adapter runs quorum_of join once and applies context.map projection", asyn
     ),
     "utf8"
   );
+  await writeDefaultModelSelection(tempRoot);
   await writeFile(
     profilesPath,
     JSON.stringify(
@@ -715,6 +739,7 @@ test("adapter transition skips warned contract violations and still activates va
     ),
     "utf8"
   );
+  await writeDefaultModelSelection(tempRoot);
   await writeFile(
     profilesPath,
     JSON.stringify(
@@ -969,6 +994,7 @@ test("adapter executes non-join multi-incoming role once per active branch", asy
     path.resolve(repoRoot, ".ogs", "user-profile.json"),
     path.resolve(tempRoot, ".ogs", "user-profile.json")
   );
+  await writeDefaultModelSelection(tempRoot);
 
   await writeFile(
     systemPath,
@@ -1051,6 +1077,7 @@ test("adapter optionally cleans historical execution snapshots without touching 
     path.resolve(repoRoot, ".ogs", "user-profile.json"),
     path.resolve(tempRoot, ".ogs", "user-profile.json")
   );
+  await writeDefaultModelSelection(tempRoot);
 
   await runSystemWithAdapter({
     systemPath: path.resolve(repoRoot, "examples", "langgraph-debate-current", "system.mmd"),
@@ -1099,6 +1126,7 @@ test("adapter applies retention cleanup from runtime config when execution direc
     ),
     "utf8"
   );
+  await writeDefaultModelSelection(tempRoot);
   await symlink(
     path.resolve(repoRoot, ".ogs", "user-profile.json"),
     path.resolve(tempRoot, ".ogs", "user-profile.json")
@@ -1166,6 +1194,7 @@ test("adapter skips auto retention cleanup when retention is disabled", async ()
     ),
     "utf8"
   );
+  await writeDefaultModelSelection(tempRoot);
   await symlink(
     path.resolve(repoRoot, ".ogs", "user-profile.json"),
     path.resolve(tempRoot, ".ogs", "user-profile.json")
@@ -1218,6 +1247,7 @@ test("adapter persists metrics fields on failed graph runs", async () => {
     ),
     "utf8"
   );
+  await writeDefaultModelSelection(tempRoot);
 
   await writeModelBoundRole({
     rolesRoot: path.resolve(tempRoot, "og-roles", "roles"),
@@ -1297,6 +1327,7 @@ test("adapter keeps scheduler recursion budget above loop-heavy transition count
     ),
     "utf8"
   );
+  await writeDefaultModelSelection(tempRoot);
   await writeFile(
     path.resolve(roleDir, "role.json"),
     JSON.stringify(

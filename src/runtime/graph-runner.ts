@@ -69,7 +69,6 @@ import type {
   FlowContractPlan,
   GraphRunStatus,
   GraphState,
-  LoadedModelPackage,
   LoadedRolePackage,
   RunContext,
   RuntimeCheckpointRecord,
@@ -97,7 +96,6 @@ type RunnerInput = {
   compilerSnapshot?: CompiledExecutionSnapshot;
   profilesById: Map<string, ExecutionProfile>;
   toolsByRef: Map<string, CliTool>;
-  modelsById: Map<string, LoadedModelPackage>;
   userProfile?: UserProfile;
   workdir: string;
   rolePackagesByRoleId: Map<string, LoadedRolePackage>;
@@ -661,7 +659,6 @@ export async function runSystemWithGraphRunner(args: RunnerInput): Promise<Adapt
           effectiveLaw: args.effectiveLaw,
           profilesById: args.profilesById,
           toolsByRef: args.toolsByRef,
-          modelsById: args.modelsById,
           rolePackagesByRoleId: args.rolePackagesByRoleId,
           contractPlan: args.contractPlan,
           compilerSnapshot: args.compilerSnapshot,

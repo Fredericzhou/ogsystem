@@ -174,7 +174,7 @@ export async function loadNl2MmdContext(args: {
       : getDefaultRuntimeConfig(runtimePath);
 
   const roleRootDir = resolveProjectRoleRootDir(args.workdir, runtimeConfig.roleRepo);
-  const modelRootDir = resolveProjectModelRepoRoot(args.workdir, runtimeConfig.modelRepo);
+  const modelRootDir = resolveProjectModelRepoRoot(args.workdir, runtimeConfig.modelRepo ?? "./og-models");
   const templateRoleRootDir = resolveTemplateRoleRootDir();
   const templateModelRootDir = resolveTemplateModelRepoRoot();
 

@@ -1,6 +1,8 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import os from "node:os";
 import path from "node:path";
+import { mkdtemp, symlink } from "node:fs/promises";
 
 import { runSystemWithAdapter } from "../dist/runtime/adapter.js";
 
@@ -67,11 +69,14 @@ test("adapter langgraph allows noop when law enables it", async () => {
 });
 
 test("adapter fails preflight when role has noop binding without law authorization", async () => {
+  const tempRoot = await mkdtemp(path.join(os.tmpdir(), "ogsystem-law-noop-"));
+  await symlink(path.resolve("og-roles"), path.resolve(tempRoot, "og-roles"), "dir");
   await assert.rejects(
     () =>
       runSystemWithAdapter({
         ...buildArgs(lawNoNoopPath),
-        systemPath: noopLanggraphSystemPath
+        systemPath: noopLanggraphSystemPath,
+        workdir: tempRoot
       }),
     (error) => {
       assert.ok(error && typeof error === "object");

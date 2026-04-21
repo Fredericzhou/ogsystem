@@ -30,6 +30,26 @@ operator[Role:test-operator] -->|DONE| output
 
 const cliPath = path.resolve("dist/runtime/cli.js");
 
+async function writeDefaultModelSelection(workdir) {
+  await mkdir(path.resolve(workdir, ".ogs"), { recursive: true });
+  await writeFile(
+    path.resolve(workdir, ".ogs", "model-selection.json"),
+    JSON.stringify(
+      {
+        configVersion: "1",
+        defaults: {
+          model: "opencode/gpt-5-nano",
+          timeoutMs: 120000,
+          maxOutputBytes: 65536
+        }
+      },
+      null,
+      2
+    ),
+    "utf8"
+  );
+}
+
 function runCli(args, options = {}) {
   return new Promise((resolve, reject) => {
     const child = spawn("node", [cliPath, ...args], {
@@ -139,6 +159,7 @@ async function createCrashWindowFixture(args) {
   const runtimePath = path.resolve(tempRoot, "runtime.json");
   await writeFile(systemPath, args.systemSource, "utf8");
   await writeRuntimeConfigFile(runtimePath, args.repoRoot, args.runtimeOverrides);
+  await writeDefaultModelSelection(tempRoot);
   return { tempRoot, systemPath, runtimePath };
 }
 
@@ -607,6 +628,7 @@ test("resume rejects a concurrently held live lock on the same run directory", a
     ),
     "utf8"
   );
+  await writeDefaultModelSelection(tempRoot);
 
   const initial = await runSystemWithAdapter({
     systemPath,
@@ -690,6 +712,7 @@ test("runner consumes stop request after current transition and lands in stopped
     ),
     "utf8"
   );
+  await writeDefaultModelSelection(tempRoot);
 
   await writeRolePackage({
     rolesRoot,

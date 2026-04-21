@@ -8,6 +8,25 @@ import { spawn } from "node:child_process";
 import { runSystemWithAdapter } from "../dist/runtime/adapter.js";
 import { loadRolePackage } from "../dist/runtime/role-repo.js";
 
+async function writeDefaultModelSelection(workdir) {
+  await writeFile(
+    path.resolve(workdir, ".ogs", "model-selection.json"),
+    JSON.stringify(
+      {
+        configVersion: "1",
+        defaults: {
+          model: "opencode/gpt-5-nano",
+          timeoutMs: 120000,
+          maxOutputBytes: 65536
+        }
+      },
+      null,
+      2
+    ),
+    "utf8"
+  );
+}
+
 function runCommand(command, args, options = {}) {
   return new Promise((resolve, reject) => {
     const child = spawn(command, args, {
@@ -112,6 +131,7 @@ test("sync-agent-sources generates canonical agency roles and runtime can load t
     ),
     "utf8"
   );
+  await writeDefaultModelSelection(runtimeRoot);
   await writeFile(
     path.resolve(runtimeRoot, ".ogs", "laws.json"),
     JSON.stringify(

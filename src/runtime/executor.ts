@@ -13,12 +13,7 @@ import { executeOpencodeModelRole, startOpencodeRunClient } from "./opencode-exe
 import { appendEvent, flushBufferedRunArtifacts } from "./run-artifacts.js";
 import { stringifyJson } from "./runtime-support.js";
 import { runCliTool } from "./tool-runner.js";
-import type {
-  CliTool,
-  ExecutionProfile,
-  LoadedModelPackage,
-  RunContext
-} from "./types.js";
+import type { CliTool, ExecutionProfile, RunContext } from "./types.js";
 
 /**
  * Acts as the bridge between runtime role planning and actual execution engines.
@@ -34,7 +29,8 @@ import type {
 export type ExecutorBinding =
   | {
       kind: "model";
-      modelPackage: LoadedModelPackage;
+      modelRef: string;
+      variant?: string;
     }
   | {
     kind: "profile";
@@ -198,7 +194,8 @@ export function createDefaultExecutor(args: {
                 roleId: request.roleId,
                 prompt: request.prompt,
                 schema: request.schema,
-                modelPackage: request.binding.modelPackage,
+                modelRef: request.binding.modelRef,
+                variant: request.binding.variant,
                 workdir: request.workdir,
                 timeoutMs: request.timeoutMs,
                 maxOutputBytes: request.maxOutputBytes,
@@ -208,8 +205,8 @@ export function createDefaultExecutor(args: {
 
         return {
           ...result,
-          modelId: request.binding.modelPackage.manifest.modelId,
-          toolRef: `model.${request.binding.modelPackage.manifest.modelId}`,
+          modelId: request.binding.modelRef,
+          toolRef: `model.${request.binding.modelRef}`,
           command: "opencode-sdk"
         };
       }

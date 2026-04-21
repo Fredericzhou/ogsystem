@@ -270,7 +270,7 @@ export async function executeRoleNode(args: {
   effectiveLaw: EffectiveLawConstraints;
   profilesById: Map<string, ExecutionProfile>;
   toolsByRef: Map<string, CliTool>;
-  modelsById: Map<string, LoadedModelPackage>;
+  modelsById?: Map<string, LoadedModelPackage>;
   rolePackagesByRoleId: Map<string, LoadedRolePackage>;
   contractPlan?: FlowContractPlan;
   compilerSnapshot?: CompiledExecutionSnapshot;
@@ -499,7 +499,7 @@ export async function executeRoleNode(args: {
       toolsByRef: args.toolsByRef,
       modelsById: args.modelsById
     });
-    modelId = resolvedBinding.modelId;
+    modelId = resolvedBinding.modelRef;
     profileId = resolvedBinding.profileId;
     toolRef = resolvedBinding.toolRef;
     command = resolvedBinding.command;

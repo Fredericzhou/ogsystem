@@ -6,12 +6,18 @@ import os from "node:os";
 import path from "node:path";
 
 const cliPath = path.resolve("dist/runtime/cli.js");
+const opencodeModelsFixturePath = path.resolve("tests/fixtures/opencode-models-verbose.txt");
 
 function runCli(args, options = {}) {
   return new Promise((resolve, reject) => {
     const child = spawn("node", [cliPath, ...args], {
       cwd: options.cwd ?? process.cwd(),
-      stdio: ["ignore", "pipe", "pipe"]
+      stdio: ["ignore", "pipe", "pipe"],
+      env: {
+        ...process.env,
+        OGSYSTEM_OPENCODE_MODELS_STDOUT_FILE: opencodeModelsFixturePath,
+        ...(options.env ?? {})
+      }
     });
     let stdout = "";
     let stderr = "";
@@ -35,6 +41,8 @@ test("lifecycle cli project init/create commands scaffold project control plane"
   assert.equal(initPayload.command, "project init");
   assert.equal(initPayload.template, "minimal");
   await stat(path.resolve(tempRoot, ".ogs", "runtime.json"));
+  await stat(path.resolve(tempRoot, ".ogs", "model-catalog.json"));
+  await stat(path.resolve(tempRoot, ".ogs", "model-selection.json"));
   await stat(path.resolve(tempRoot, ".ogs", "project.json"));
   await stat(path.resolve(tempRoot, ".ogs", "laws.json"));
   await stat(path.resolve(tempRoot, ".ogs", "user-profile.json"));
@@ -47,10 +55,7 @@ test("lifecycle cli project init/create commands scaffold project control plane"
   await assert.rejects(() => stat(path.resolve(tempRoot, "og-roles", "roles", "_shared")), /ENOENT/);
   await stat(path.resolve(tempRoot, "og-roles", "roles", "demo-analyst", "role.json"));
   await assert.rejects(() => stat(path.resolve(tempRoot, "og-roles", "roles", "debate-judge")), /ENOENT/);
-  await stat(path.resolve(tempRoot, "og-models", "README.md"));
-  await stat(path.resolve(tempRoot, "og-models", "catalog", "opencode-models.json"));
-  await stat(path.resolve(tempRoot, "og-models", "models", "general-balanced", "model.json"));
-  await assert.rejects(() => stat(path.resolve(tempRoot, "og-models", "models", "general-fast")), /ENOENT/);
+  await assert.rejects(() => stat(path.resolve(tempRoot, "og-models")), /ENOENT/);
   assert.equal(initProviderConfig.configPath, "~/.config/opencode/opencode.json");
   assert.equal(
     initProviderConfig.recommendedProviderEntry?.openai?.npm,
@@ -68,6 +73,8 @@ test("lifecycle cli project init/create commands scaffold project control plane"
   assert.equal(createPayload.template, "minimal");
   const createdDir = createPayload.projectDir;
   await stat(path.resolve(createdDir, ".ogs", "runtime.json"));
+  await stat(path.resolve(createdDir, ".ogs", "model-catalog.json"));
+  await stat(path.resolve(createdDir, ".ogs", "model-selection.json"));
   await stat(path.resolve(createdDir, ".ogs", "laws.json"));
   await stat(path.resolve(createdDir, ".ogs", "user-profile.json"));
   const createdProviderConfig = JSON.parse(
@@ -76,7 +83,7 @@ test("lifecycle cli project init/create commands scaffold project control plane"
   await stat(path.resolve(createdDir, "system.mmd"));
   await assert.rejects(() => stat(path.resolve(createdDir, "og-roles", "roles", "_shared")), /ENOENT/);
   await stat(path.resolve(createdDir, "og-roles", "roles", "demo-analyst", "role.json"));
-  await stat(path.resolve(createdDir, "og-models", "models", "general-balanced", "model.json"));
+  await assert.rejects(() => stat(path.resolve(createdDir, "og-models")), /ENOENT/);
   assert.equal(createdProviderConfig.configPath, "~/.config/opencode/opencode.json");
   assert.equal(
     createdProviderConfig.recommendedProviderEntry?.openai?.models?.["gpt-5.4"]?.name,
@@ -91,8 +98,6 @@ test("lifecycle cli project init/create commands scaffold project control plane"
       "%% system.version=1.0.0",
       "%% law.global=law.minimal.base",
       "%% entry.role=debate-minimalist",
-      "%% model.bind.debate-minimalist=general-balanced",
-      "%% model.bind.debate-judge=general-steady",
       "",
       "input -->|DEBATE_REQUEST| minimalist[Role:debate-minimalist]",
       "minimalist[Role:debate-minimalist] -->|MINIMALIST_DONE| judge[Role:debate-judge]",
@@ -108,11 +113,10 @@ test("lifecycle cli project init/create commands scaffold project control plane"
   const syncPayload = JSON.parse(syncResult.stdout);
   assert.equal(syncPayload.command, "project sync");
   assert.deepEqual(syncPayload.importedRoleIds.sort(), ["debate-judge", "debate-minimalist"]);
-  assert.deepEqual(syncPayload.importedModelIds.sort(), ["general-steady"]);
+  assert.deepEqual(syncPayload.importedModelIds.sort(), []);
   await stat(path.resolve(createdDir, "og-roles", "roles", "debate-minimalist", "role.json"));
   await stat(path.resolve(createdDir, "og-roles", "roles", "debate-judge", "role.json"));
-  await stat(path.resolve(createdDir, "og-models", "models", "general-balanced", "model.json"));
-  await stat(path.resolve(createdDir, "og-models", "models", "general-steady", "model.json"));
+  await assert.rejects(() => stat(path.resolve(createdDir, "og-models")), /ENOENT/);
 
   const startResult = await runCli(
     ["run", "start", "--system", "system.mmd", "--input", "cli lifecycle template", "--dry-run"],
@@ -131,14 +135,35 @@ test("lifecycle cli run start/list/status/logs/resume/stop works end-to-end", { 
     path.resolve(tempRoot, ".ogs", "runtime.json"),
     JSON.stringify(
       {
+        configVersion: "2",
         executor: "opencode",
         roleRepo: path.resolve(repoRoot, "og-roles"),
-        modelRepo: path.resolve(repoRoot, "og-models"),
         runsDir: ".ogs/runs"
       },
       null,
       2
     ),
+    "utf8"
+  );
+  await writeFile(
+    path.resolve(tempRoot, ".ogs", "model-selection.json"),
+    JSON.stringify(
+      {
+        configVersion: "1",
+        defaults: {
+          model: "opencode/gpt-5-nano",
+          timeoutMs: 120000,
+          maxOutputBytes: 65536
+        }
+      },
+      null,
+      2
+    ),
+    "utf8"
+  );
+  await writeFile(
+    path.resolve(tempRoot, ".ogs", "model-catalog.json"),
+    await readFile(path.resolve(repoRoot, ".ogs", "model-catalog.json"), "utf8"),
     "utf8"
   );
   await writeFile(

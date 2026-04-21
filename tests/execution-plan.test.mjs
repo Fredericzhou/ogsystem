@@ -58,6 +58,8 @@ test("execution plan normalizes graph semantics and bindings", () => {
   );
   assert.deepStrictEqual(dispatch.binding, {
     kind: "model",
+    modelRef: "model.fast",
+    bindingSource: "system",
     modelId: "model.fast"
   });
 
@@ -67,6 +69,8 @@ test("execution plan normalizes graph semantics and bindings", () => {
   });
   assert.deepStrictEqual(workerB.binding, {
     kind: "model",
+    modelRef: "model.deep",
+    bindingSource: "system",
     modelId: "model.deep"
   });
 

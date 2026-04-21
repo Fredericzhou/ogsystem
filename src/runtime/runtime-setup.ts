@@ -1,15 +1,16 @@
 import { resolve } from "node:path";
 
-import { resolveProjectModelRepoRoot, resolveProjectRoleRootDir } from "./bundled-repos.js";
+import { resolveProjectRoleRootDir } from "./bundled-repos.js";
 import { compileExecutionSnapshot, type CompiledExecutionSnapshot } from "./compiler.js";
 import { createExecutionPlan } from "./execution-plan.js";
 import { loadFlowContractPlan } from "./flow-contract.js";
+import { loadModelCatalog } from "./model-catalog.js";
+import { loadModelSelection, resolveModelSelectionForSystem } from "./model-selection.js";
 import { loadSystemFromMermaid } from "./parse-mermaid.js";
 import { buildRunPlanFingerprint } from "./plan-fingerprint.js";
 import { initializeRunContext, persistRunPlanFingerprint } from "./run-artifacts.js";
 import {
   loadLaws,
-  loadModelPackages,
   loadProfiles,
   loadRolePackages,
   loadRuntimeConfig,
@@ -25,7 +26,6 @@ import type {
   FlowContractPlan,
   LawCatalog,
   LawSpec,
-  LoadedModelPackage,
   LoadedRolePackage,
   RuntimeConfig,
   RunContext,
@@ -124,7 +124,6 @@ export type RuntimeAdapterSetup = {
   compilerSnapshot: CompiledExecutionSnapshot;
   profilesById: Map<string, ExecutionProfile>;
   toolsByRef: Map<string, CliTool>;
-  modelsById: Map<string, LoadedModelPackage>;
   userProfile?: UserProfile;
   rolePackagesByRoleId: Map<string, LoadedRolePackage>;
   runContext: RunContext;
@@ -144,15 +143,21 @@ export async function prepareRuntimeSetup(args: {
   workdir: string;
 }): Promise<RuntimeAdapterSetup> {
   const system = await loadSystemFromMermaid(args.systemPath);
-  const plan = createExecutionPlan(system);
   const runtimeConfig = await loadRuntimeConfig(args.runtimeConfigPath, args.workdir);
+  const modelSelection = await loadModelSelection(resolve(args.workdir, ".ogs", "model-selection.json"));
+  const modelCatalog = await loadModelCatalog(resolve(args.workdir, ".ogs", "model-catalog.json"));
+  const resolvedModelSelection = resolveModelSelectionForSystem({
+    system,
+    selection: modelSelection,
+    catalog: modelCatalog
+  });
+  const plan = createExecutionPlan(system, resolvedModelSelection.resolvedByRoleId);
   const profiles = await loadProfiles(args.profilesPath);
   const tools = await loadTools(args.toolsPath);
   const lawCatalog = await loadLaws(args.lawsPath, args.workdir);
   const userProfile = await loadUserProfile(args.userProfilePath, args.workdir);
   const effectiveLaw = resolveEffectiveLaw(system, lawCatalog);
   const roleRootDir = resolveProjectRoleRootDir(args.workdir, runtimeConfig.roleRepo);
-  const modelRepoDir = resolveProjectModelRepoRoot(args.workdir, runtimeConfig.modelRepo);
   const contractPlan = system.graph?.handoffContracts
     ? await loadFlowContractPlan({
         system,
@@ -163,15 +168,12 @@ export async function prepareRuntimeSetup(args: {
     system,
     roleRootDir
   });
-  const modelsById = await loadModelPackages({
-    system,
-    modelRootDir: modelRepoDir
-  });
   const compilerResult = compileExecutionSnapshot({
     system,
     rolePackagesByRoleId,
     contractPlan,
-    effectiveLaw
+    effectiveLaw,
+    resolvedModelsByRoleId: resolvedModelSelection.resolvedByRoleId
   });
   if (!compilerResult.ok) {
     throw new Error(
@@ -183,7 +185,7 @@ export async function prepareRuntimeSetup(args: {
   const planFingerprint = buildRunPlanFingerprint({
     system,
     rolePackagesByRoleId,
-    modelsById,
+    resolvedModelsByRoleId: resolvedModelSelection.resolvedByRoleId,
     effectiveLaw,
     contractPlan,
     compilerSnapshot: compilerResult.snapshot
@@ -193,6 +195,8 @@ export async function prepareRuntimeSetup(args: {
     resolvedAt: new Date().toISOString(),
     sources: {
       runtimeConfigPath: args.runtimeConfigPath ?? ".ogs/runtime.json",
+      modelSelectionPath: ".ogs/model-selection.json",
+      modelCatalogPath: ".ogs/model-catalog.json",
       userProfilePath: args.userProfilePath ?? ".ogs/user-profile.json",
       lawsPath: args.lawsPath ?? ".ogs/laws.json",
       profilesPath: args.profilesPath ?? null,
@@ -201,7 +205,13 @@ export async function prepareRuntimeSetup(args: {
     effective: {
       runtimeConfig,
       roleRepoDir: roleRootDir,
-      modelRepoDir,
+      resolvedModelSelection: Object.fromEntries(
+        Array.from(resolvedModelSelection.resolvedByRoleId.entries()).map(([roleId, selection]) => [
+          roleId,
+          selection
+        ])
+      ),
+      advisoryWarnings: resolvedModelSelection.warnings,
       runsDir: resolve(args.workdir, runtimeConfig.runsDir),
       workdir: args.workdir,
       compiler: {
@@ -232,7 +242,6 @@ export async function prepareRuntimeSetup(args: {
     contractPlan,
     profilesById: new Map(profiles.map((item) => [item.profileId, item])),
     toolsByRef: new Map(tools.map((item) => [item.toolRef, item])),
-    modelsById,
     userProfile,
     rolePackagesByRoleId,
     compilerSnapshot: compilerResult.snapshot,

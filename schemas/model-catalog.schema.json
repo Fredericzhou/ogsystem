@@ -1,0 +1,96 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://ogsystem.dev/schemas/model-catalog.schema.json",
+  "title": "OGSystem Model Catalog",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["catalogVersion", "generatedAt", "source", "models"],
+  "properties": {
+    "catalogVersion": {
+      "type": "string",
+      "enum": ["1"]
+    },
+    "generatedAt": {
+      "type": "string",
+      "minLength": 1
+    },
+    "source": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["command"],
+      "properties": {
+        "command": {
+          "type": "string",
+          "minLength": 1
+        }
+      }
+    },
+    "models": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["ref", "provider", "model", "capabilities", "variants"],
+        "properties": {
+          "ref": {
+            "type": "string",
+            "pattern": "^[^/]+/.+$"
+          },
+          "provider": {
+            "type": "string",
+            "minLength": 1
+          },
+          "model": {
+            "type": "string",
+            "minLength": 1
+          },
+          "name": {
+            "type": "string",
+            "minLength": 1
+          },
+          "status": {
+            "type": "string",
+            "minLength": 1
+          },
+          "capabilities": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["textInput", "textOutput", "toolcall"],
+            "properties": {
+              "textInput": {
+                "type": "boolean"
+              },
+              "textOutput": {
+                "type": "boolean"
+              },
+              "toolcall": {
+                "type": "boolean"
+              }
+            }
+          },
+          "variants": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "minLength": 1
+            }
+          },
+          "raw": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "id": {
+                "type": "string",
+                "minLength": 1
+              },
+              "providerID": {
+                "type": "string",
+                "minLength": 1
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}

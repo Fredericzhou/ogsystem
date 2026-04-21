@@ -6,6 +6,25 @@ import { mkdtemp, mkdir, writeFile } from "node:fs/promises";
 
 import { runSystemWithAdapter } from "../dist/runtime/adapter.js";
 
+async function writeDefaultModelSelection(workdir) {
+  await writeFile(
+    path.resolve(workdir, ".ogs", "model-selection.json"),
+    JSON.stringify(
+      {
+        configVersion: "1",
+        defaults: {
+          model: "opencode/gpt-5-nano",
+          timeoutMs: 120000,
+          maxOutputBytes: 65536
+        }
+      },
+      null,
+      2
+    ),
+    "utf8"
+  );
+}
+
 async function writeModelBoundRole(args) {
   const roleDir = path.resolve(args.rolesRoot, args.roleId);
   await mkdir(roleDir, { recursive: true });
@@ -103,6 +122,7 @@ test("transition mode fails closed when a skipped flow leaves a join orphaned", 
     ),
     "utf8"
   );
+  await writeDefaultModelSelection(tempRoot);
 
   await writeModelBoundRole({
     rolesRoot,

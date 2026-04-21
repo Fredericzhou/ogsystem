@@ -751,7 +751,9 @@ export async function executeOpencodeModelRole(
     roleId: string;
     prompt: string;
     schema: unknown;
-    modelPackage: LoadedModelPackage;
+    modelPackage?: LoadedModelPackage;
+    modelRef?: string;
+    variant?: string;
     workdir: string;
     timeoutMs: number;
     maxOutputBytes: number;
@@ -772,8 +774,12 @@ export async function executeOpencodeModelRole(
     throw new Error(`Role "${args.roleId}" output schema must be a JSON object`);
   }
 
-  const { providerID, modelID } = splitModelRef(args.modelPackage.manifest.model);
-  const variant = resolveVariant(args.modelPackage.manifest.args);
+  const resolvedModelRef = args.modelRef ?? args.modelPackage?.manifest.model;
+  if (!resolvedModelRef) {
+    throw new Error(`Role "${args.roleId}" is missing a concrete model reference`);
+  }
+  const { providerID, modelID } = splitModelRef(resolvedModelRef);
+  const variant = args.variant ?? resolveVariant(args.modelPackage?.manifest.args);
   // Start a local OpenCode server only when the caller has not already supplied one.
   const ownRunClient = args.runClient
     ? undefined

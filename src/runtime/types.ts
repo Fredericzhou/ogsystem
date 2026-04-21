@@ -117,7 +117,11 @@ export type SystemDefinition = {
 export type RoleExecutionBinding =
   | {
       kind: "model";
-      modelId: string;
+      modelRef: string;
+      variant?: string;
+      timeoutMs?: number;
+      maxOutputBytes?: number;
+      bindingSource: "system" | "selection";
     }
   | {
       kind: "profile";
@@ -290,7 +294,7 @@ export type RuntimeConfig = {
   configVersion?: string;
   executor: "opencode";
   roleRepo: string;
-  modelRepo: string;
+  modelRepo?: string;
   runsDir: string;
   sharedDir?: string;
   workspace: RuntimeWorkspaceConfig;
@@ -304,6 +308,61 @@ export type RuntimeConfig = {
       v1: boolean;
     };
   };
+};
+
+export type ModelCatalogCapabilitySummary = {
+  textInput: boolean;
+  textOutput: boolean;
+  toolcall: boolean;
+};
+
+export type ModelCatalogEntry = {
+  ref: string;
+  provider: string;
+  model: string;
+  name?: string;
+  status?: string;
+  capabilities: ModelCatalogCapabilitySummary;
+  variants: string[];
+  raw?: {
+    id?: string;
+    providerID?: string;
+  };
+};
+
+export type ModelCatalog = {
+  catalogVersion: "1";
+  generatedAt: string;
+  source: {
+    command: string;
+  };
+  models: ModelCatalogEntry[];
+};
+
+export type ModelSelectionDefaults = {
+  model?: string;
+  variant?: string;
+  timeoutMs?: number;
+  maxOutputBytes?: number;
+};
+
+export type ModelSelectionRoleOverride = {
+  model?: string;
+  variant?: string;
+  timeoutMs?: number;
+  maxOutputBytes?: number;
+};
+
+export type ModelSelectionSystemOverride = {
+  defaults?: ModelSelectionDefaults;
+  roles?: Record<string, ModelSelectionRoleOverride>;
+};
+
+export type ModelSelectionConfig = {
+  configVersion: "1";
+  defaults?: ModelSelectionDefaults;
+  systems?: Record<string, ModelSelectionSystemOverride>;
+  roles?: Record<string, ModelSelectionRoleOverride>;
 };
 
 /**

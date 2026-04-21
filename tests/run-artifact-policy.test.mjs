@@ -71,6 +71,10 @@ test("model runtime artifacts match the documented contract", async () => {
     path.resolve(repoRoot, ".ogs", "laws.json"),
     path.resolve(tempRoot, ".ogs", "laws.json")
   );
+  await symlink(
+    path.resolve(repoRoot, ".ogs", "model-selection.json"),
+    path.resolve(tempRoot, ".ogs", "model-selection.json")
+  );
 
   await runSystemWithAdapter({
     systemPath: path.resolve(repoRoot, "examples/target-model-binding-system.mmd"),

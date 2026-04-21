@@ -13,6 +13,7 @@ import { createHash } from "node:crypto";
 import { SYSTEM_END_ROLE_ID } from "./types.js";
 import { createExecutionPlan } from "./execution-plan.js";
 import { isRuntimeOnlyErrorEvent } from "./error-flow-utils.js";
+import type { ResolvedModelRuntimeConfig } from "./model-selection.js";
 import {
   RUNTIME_ROLE_PROMPT_INPUT_SCHEMA,
   RUNTIME_ROLE_PROMPT_INPUT_SCHEMA_PATH
@@ -98,7 +99,8 @@ export type LoopSummary = {
 export type BindingSummary = {
   roleId: string;
   kind: RoleExecutionBinding["kind"];
-  modelId?: string;
+  modelRef?: string;
+  bindingSource?: "system" | "selection";
   profileId?: string;
 };
 
@@ -137,6 +139,7 @@ type CompilerInput = {
   rolePackagesByRoleId: Map<string, LoadedRolePackage>;
   effectiveLaw: EffectiveLawConstraints;
   contractPlan?: FlowContractPlan;
+  resolvedModelsByRoleId?: Map<string, ResolvedModelRuntimeConfig>;
 };
 
 function normalizeValue(value: unknown): unknown {
@@ -360,7 +363,8 @@ function buildBindingSummary(basePlan: ExecutionPlan): Record<string, BindingSum
       kind: node.binding.kind
     };
     if (node.binding.kind === "model") {
-      summary.modelId = node.binding.modelId;
+      summary.modelRef = node.binding.modelRef;
+      summary.bindingSource = node.binding.bindingSource;
     }
     if (node.binding.kind === "profile") {
       summary.profileId = node.binding.profileId;
@@ -778,7 +782,7 @@ function buildCompilerDigestValue(args: {
 }
 
 export function compileExecutionSnapshot(args: CompilerInput): CompilerResult {
-  const basePlan = createExecutionPlan(args.system);
+  const basePlan = createExecutionPlan(args.system, args.resolvedModelsByRoleId);
   const diagnostics: CompilerDiagnostic[] = [];
 
   for (const roleId of args.system.roleIds) {

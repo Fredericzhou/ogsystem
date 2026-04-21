@@ -14,14 +14,14 @@ import { fileURLToPath } from "node:url";
 import { parseArgs } from "node:util";
 
 import {
-  resolveProjectModelRepoRoot,
   resolveProjectRoleRepoRoot,
   resolveProjectRoleRootDir
 } from "./bundled-repos.js";
 import { validateLawsConfig, validateRuntimeConfig, validateUserProfileConfig } from "./config.js";
 import { readJsonFile } from "./json-file.js";
 import { listSupportedJoinModes, listSupportedRoutingModes } from "./graph-mode-registry.js";
-import { loadModelPackage } from "./model-repo.js";
+import { loadModelCatalog } from "./model-catalog.js";
+import { loadModelSelection, resolveModelSelectionForSystem } from "./model-selection.js";
 import { executeOpencodeModelRole, startOpencodeRunClient } from "./opencode-executor.js";
 import { loadSystemFromMermaid } from "./parse-mermaid.js";
 import { loadRolePackage } from "./role-repo.js";
@@ -209,30 +209,19 @@ async function inspectRoleRepoInventory(report: DoctorReport, roleRepoRoot: stri
   addNote(report, `role repo inventory scanned: ${rolesRoot}`);
 }
 
-async function inspectModelRepoInventory(report: DoctorReport, modelRepoRoot: string): Promise<void> {
-  const modelsRoot = resolve(modelRepoRoot, "models");
-  let entries;
+async function inspectModelCatalog(report: DoctorReport, workdir: string): Promise<void> {
+  const catalogPath = resolve(workdir, ".ogs", "model-catalog.json");
   try {
-    entries = await readdir(modelsRoot, { withFileTypes: true });
+    const catalog = await loadModelCatalog(catalogPath);
+    if (!catalog) {
+      addWarning(report, `model catalog unavailable: ${catalogPath}`);
+      return;
+    }
+    addNote(report, `model catalog loaded: ${catalog.models.length} entries`);
   } catch (error) {
-    addError(report, `model repo missing or unreadable: ${modelsRoot} (${String(error)})`);
+    addError(report, `model catalog invalid: ${catalogPath} (${String(error)})`);
     return;
   }
-
-  for (const entry of entries) {
-    if (!entry.isDirectory()) {
-      continue;
-    }
-    try {
-      await loadModelPackage({
-        modelId: entry.name,
-        modelRootDir: modelRepoRoot
-      });
-    } catch (error) {
-      addWarning(report, `model package inventory warning: ${entry.name} (${String(error)})`);
-    }
-  }
-  addNote(report, `model repo inventory scanned: ${modelsRoot}`);
 }
 
 async function inspectRunDir(report: DoctorReport, runDir: string): Promise<void> {
@@ -317,31 +306,27 @@ async function inspectRunDir(report: DoctorReport, runDir: string): Promise<void
 async function runOnlineModelConnectivityCheck(args: {
   report: DoctorReport;
   workdir: string;
-  runtimeConfig: RuntimeConfig;
   system: SystemDefinition;
 }): Promise<void> {
   const ONLINE_CHECK_MIN_TIMEOUT_MS = 20000;
   const ONLINE_CHECK_MAX_TIMEOUT_MS = 90000;
 
-  const modelIds = Array.from(new Set(Object.values(args.system.modelBinding)));
-  if (modelIds.length === 0) {
+  const selection = await loadModelSelection(resolve(args.workdir, ".ogs", "model-selection.json"));
+  const catalog = await loadModelCatalog(resolve(args.workdir, ".ogs", "model-catalog.json"));
+  const resolvedSelection = resolveModelSelectionForSystem({
+    system: args.system,
+    selection,
+    catalog
+  });
+  const resolvedModels = Array.from(resolvedSelection.resolvedByRoleId.entries());
+  if (resolvedModels.length === 0) {
     addWarning(args.report, "online check skipped: system does not bind any model");
     return;
   }
 
-  const modelRootDir = resolveProjectModelRepoRoot(args.workdir, args.runtimeConfig.modelRepo);
   let serverTimeoutMs = ONLINE_CHECK_MIN_TIMEOUT_MS;
-  for (const modelId of modelIds) {
-    try {
-      const modelPackage = await loadModelPackage({
-        modelId,
-        modelRootDir
-      });
-      const modelTimeoutMs = modelPackage.manifest.timeoutMs ?? ONLINE_CHECK_MIN_TIMEOUT_MS;
-      serverTimeoutMs = Math.max(serverTimeoutMs, modelTimeoutMs);
-    } catch {
-      // Keep doctor resilient: unresolved model packages will be reported in per-model checks.
-    }
+  for (const [, selectionConfig] of resolvedModels) {
+    serverTimeoutMs = Math.max(serverTimeoutMs, selectionConfig.timeoutMs ?? ONLINE_CHECK_MIN_TIMEOUT_MS);
   }
   serverTimeoutMs = Math.min(Math.max(serverTimeoutMs, ONLINE_CHECK_MIN_TIMEOUT_MS), ONLINE_CHECK_MAX_TIMEOUT_MS);
 
@@ -353,18 +338,14 @@ async function runOnlineModelConnectivityCheck(args: {
   });
 
   try {
-    for (const modelId of modelIds) {
+    for (const [roleId, selectionConfig] of resolvedModels) {
       try {
-        const modelPackage = await loadModelPackage({
-          modelId,
-          modelRootDir
-        });
         const checkTimeoutMs = Math.min(
-          Math.max(modelPackage.manifest.timeoutMs ?? ONLINE_CHECK_MIN_TIMEOUT_MS, ONLINE_CHECK_MIN_TIMEOUT_MS),
+          Math.max(selectionConfig.timeoutMs ?? ONLINE_CHECK_MIN_TIMEOUT_MS, ONLINE_CHECK_MIN_TIMEOUT_MS),
           ONLINE_CHECK_MAX_TIMEOUT_MS
         );
         await executeOpencodeModelRole({
-          roleId: `doctor-online-${modelId}`,
+          roleId: `doctor-online-${roleId}`,
           prompt: 'Return exactly this JSON: {"ok": true}',
           schema: {
             type: "object",
@@ -376,15 +357,19 @@ async function runOnlineModelConnectivityCheck(args: {
             required: ["ok"],
             additionalProperties: false
           },
-          modelPackage,
+          modelRef: selectionConfig.modelRef,
+          variant: selectionConfig.variant,
           workdir: args.workdir,
           timeoutMs: checkTimeoutMs,
-          maxOutputBytes: 4096,
+          maxOutputBytes: selectionConfig.maxOutputBytes ?? 4096,
           runClient
         });
-        addNote(args.report, `online connectivity ok: ${modelId}`);
+        addNote(args.report, `online connectivity ok: ${roleId} -> ${selectionConfig.modelRef}`);
       } catch (error) {
-        addError(args.report, `online connectivity failed: ${modelId} (${String(error)})`);
+        addError(
+          args.report,
+          `online connectivity failed: ${roleId} -> ${selectionConfig.modelRef} (${String(error)})`
+        );
       }
     }
   } finally {
@@ -437,7 +422,7 @@ export async function runDoctor(args: {
     runtimeConfig = validateRuntimeConfig(await readJsonFile(runtimePath), runtimePath);
     addNote(report, `runtime config: ${runtimePath}`);
     await inspectRoleRepoInventory(report, resolveProjectRoleRepoRoot(workdir, runtimeConfig.roleRepo));
-    await inspectModelRepoInventory(report, resolveProjectModelRepoRoot(workdir, runtimeConfig.modelRepo));
+    await inspectModelCatalog(report, workdir);
   } catch (error) {
     addError(report, `runtime config invalid: ${String(error)}`);
   }
@@ -481,18 +466,17 @@ export async function runDoctor(args: {
           addError(report, `system role package invalid: ${roleId} (${String(error)})`);
         }
       }
-
-      const modelRepoRoot = resolveProjectModelRepoRoot(workdir, loadedRuntimeConfig.modelRepo);
-      for (const modelId of new Set(Object.values(system.modelBinding))) {
-        try {
-          await loadModelPackage({
-            modelId,
-            modelRootDir: modelRepoRoot
-          });
-        } catch (error) {
-          addError(report, `system model package invalid: ${modelId} (${String(error)})`);
-        }
+      const selection = await loadModelSelection(resolve(workdir, ".ogs", "model-selection.json"));
+      const catalog = await loadModelCatalog(resolve(workdir, ".ogs", "model-catalog.json"));
+      const resolvedSelection = resolveModelSelectionForSystem({
+        system,
+        selection,
+        catalog
+      });
+      for (const warning of resolvedSelection.warnings) {
+        addWarning(report, warning);
       }
+      addNote(report, `resolved model bindings: ${resolvedSelection.resolvedByRoleId.size}`);
     } catch (error) {
       addError(report, `system invalid: ${String(error)}`);
     }
@@ -505,7 +489,6 @@ export async function runDoctor(args: {
       await runOnlineModelConnectivityCheck({
         report,
         workdir,
-        runtimeConfig,
         system
       });
     }

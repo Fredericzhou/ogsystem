@@ -17,7 +17,7 @@ export type ResolvedExecutionBinding = {
   workdir: string;
   commandBaseDir?: string;
   env?: Record<string, string>;
-  modelId?: string;
+  modelRef?: string;
   profileId?: string;
   toolRef?: string;
   command?: string;
@@ -34,7 +34,7 @@ export function resolveExecutionBinding(args: {
   effectiveLaw: EffectiveLawConstraints;
   profilesById: Map<string, ExecutionProfile>;
   toolsByRef: Map<string, CliTool>;
-  modelsById: Map<string, LoadedModelPackage>;
+  modelsById?: Map<string, LoadedModelPackage>;
 }): ResolvedExecutionBinding {
   const defaults = {
     timeoutMs: 120000,
@@ -43,19 +43,36 @@ export function resolveExecutionBinding(args: {
   const sessionDirectory = args.roleDirs?.privateDir;
 
   if (args.node.binding.kind === "model") {
-    const modelPackage = args.modelsById.get(args.node.binding.modelId);
-    if (!modelPackage) {
-      throw new Error(`Model package not loaded for model "${args.node.binding.modelId}"`);
-    }
     const workdir = sessionDirectory ?? args.roleDirs?.roleDir ?? args.baseWorkdir;
+    const legacyModelId =
+      "modelId" in (args.node.binding as unknown as Record<string, unknown>) &&
+      typeof (args.node.binding as unknown as { modelId?: unknown }).modelId === "string"
+        ? (args.node.binding as unknown as { modelId: string }).modelId
+        : undefined;
+    const legacyModelPackage = legacyModelId ? args.modelsById?.get(legacyModelId) : undefined;
+    const modelRef = args.node.binding.modelRef ?? legacyModelPackage?.manifest.model;
+    const variant =
+      args.node.binding.variant ??
+      (typeof legacyModelPackage?.manifest.args?.variant === "string"
+        ? legacyModelPackage.manifest.args.variant
+        : typeof legacyModelPackage?.manifest.args?.reasoningEffort === "string"
+          ? legacyModelPackage.manifest.args.reasoningEffort
+          : undefined);
+    if (!modelRef) {
+      throw new Error(`Concrete model ref not resolved for role "${args.roleId}"`);
+    }
     return {
       binding: {
         kind: "model",
-        modelPackage
+        modelRef,
+        variant
       },
-      bindingLabel: `model:${modelPackage.manifest.modelId}`,
-      timeoutMs: modelPackage.manifest.timeoutMs ?? defaults.timeoutMs,
-      maxOutputBytes: modelPackage.manifest.maxOutputBytes ?? defaults.maxOutputBytes,
+      bindingLabel: `model:${legacyModelId ?? modelRef}`,
+      timeoutMs: args.node.binding.timeoutMs ?? legacyModelPackage?.manifest.timeoutMs ?? defaults.timeoutMs,
+      maxOutputBytes:
+        args.node.binding.maxOutputBytes ??
+        legacyModelPackage?.manifest.maxOutputBytes ??
+        defaults.maxOutputBytes,
       workdir,
       env: {
         OGSYSTEM_RUN_DIR: args.runContext.runDir,
@@ -63,10 +80,10 @@ export function resolveExecutionBinding(args: {
         OGSYSTEM_ROLE_DIR: args.roleDirs?.roleDir ?? workdir,
         OGSYSTEM_PRIVATE_DIR: sessionDirectory ?? "",
         OGSYSTEM_ROLE_ID: args.roleId,
-        OGSYSTEM_MODEL_ID: modelPackage.manifest.modelId,
+        OGSYSTEM_MODEL_ID: legacyModelId ?? modelRef,
         OGSYSTEM_ALLOWED_EVENTS: args.allowedEvents.join(",")
       },
-      modelId: modelPackage.manifest.modelId,
+      modelRef,
       sessionDirectory
     };
   }

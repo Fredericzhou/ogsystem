@@ -4,11 +4,11 @@
   "title": "OGSystem Runtime Config",
   "type": "object",
   "additionalProperties": false,
-  "required": ["executor", "roleRepo", "modelRepo"],
+  "required": ["executor", "roleRepo"],
   "properties": {
     "configVersion": {
       "type": "string",
-      "enum": ["1"]
+      "enum": ["1", "2"]
     },
     "executor": {
       "type": "string",

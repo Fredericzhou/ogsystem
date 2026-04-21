@@ -6,11 +6,12 @@ import { cp, mkdir, mkdtemp, readFile, readdir, writeFile } from "node:fs/promis
 
 import { buildRunPlanFingerprint, runSystemWithAdapter } from "../dist/runtime/adapter.js";
 import { compileExecutionSnapshot } from "../dist/runtime/compiler.js";
+import { loadModelCatalog } from "../dist/runtime/model-catalog.js";
+import { loadModelSelection, resolveModelSelectionForSystem } from "../dist/runtime/model-selection.js";
 import { resolveEffectiveLaw } from "../dist/runtime/adapter.js";
 import { validateLawsConfig, validateRuntimeConfig } from "../dist/runtime/config.js";
 import { createExecutionPlan } from "../dist/runtime/execution-plan.js";
 import { createInitialGraphState } from "../dist/runtime/graph-runtime-state.js";
-import { loadModelPackage } from "../dist/runtime/model-repo.js";
 import { parseSystemFromMermaidSource } from "../dist/runtime/parse-mermaid.js";
 import { loadRolePackage } from "../dist/runtime/role-repo.js";
 import {
@@ -21,10 +22,24 @@ import {
   persistRuntimeCheckpoint
 } from "../dist/runtime/run-artifacts.js";
 
+async function seedModelSelectionFiles(tempRoot) {
+  await mkdir(path.resolve(tempRoot, ".ogs"), { recursive: true });
+  await writeFile(
+    path.resolve(tempRoot, ".ogs", "model-selection.json"),
+    await readFile(path.resolve(".ogs", "model-selection.json"), "utf8"),
+    "utf8"
+  );
+  await writeFile(
+    path.resolve(tempRoot, ".ogs", "model-catalog.json"),
+    await readFile(path.resolve(".ogs", "model-catalog.json"), "utf8"),
+    "utf8"
+  );
+}
+
 async function buildRuntimeFingerprint(system) {
   return buildRuntimeFingerprintWithPaths(system, {
+    workdir: process.cwd(),
     roleRootDir: path.resolve("og-roles", "roles"),
-    modelRootDir: path.resolve("og-models"),
     lawsPath: path.resolve(".ogs", "laws.json")
   });
 }
@@ -41,31 +56,28 @@ async function buildRuntimeFingerprintWithPaths(system, args) {
     );
   }
 
-  const modelsById = new Map();
-  for (const modelId of new Set(Object.values(system.modelBinding))) {
-    modelsById.set(
-      modelId,
-      await loadModelPackage({
-        modelId,
-        modelRootDir: args.modelRootDir
-      })
-    );
-  }
-
   const lawCatalog = validateLawsConfig(
     JSON.parse(await readFile(args.lawsPath, "utf8")),
     args.lawsPath
   );
+  const selection = await loadModelSelection(path.resolve(args.workdir, ".ogs", "model-selection.json"));
+  const catalog = await loadModelCatalog(path.resolve(args.workdir, ".ogs", "model-catalog.json"));
+  const resolvedModelSelection = resolveModelSelectionForSystem({
+    system,
+    selection,
+    catalog
+  });
   const compilerSnapshot = compileExecutionSnapshot({
     system,
     rolePackagesByRoleId,
-    effectiveLaw: resolveEffectiveLaw(system, lawCatalog)
+    effectiveLaw: resolveEffectiveLaw(system, lawCatalog),
+    resolvedModelsByRoleId: resolvedModelSelection.resolvedByRoleId
   }).snapshot;
 
   return buildRunPlanFingerprint({
     system,
     rolePackagesByRoleId,
-    modelsById,
+    resolvedModelsByRoleId: resolvedModelSelection.resolvedByRoleId,
     effectiveLaw: resolveEffectiveLaw(system, lawCatalog),
     compilerSnapshot
   });
@@ -81,6 +93,7 @@ async function prepareRuntimeFingerprintResumeFixture(args) {
   const lawsPath = path.resolve(tempRoot, "laws.json");
 
   const system = parseSystemFromMermaidSource(args.systemSource);
+  await seedModelSelectionFiles(tempRoot);
   await mkdir(roleRootDir, { recursive: true });
   await mkdir(path.resolve(modelRootDir, "models"), { recursive: true });
   await mkdir(runDir, { recursive: true });
@@ -107,9 +120,9 @@ async function prepareRuntimeFingerprintResumeFixture(args) {
     runtimePath,
     JSON.stringify(
       {
+        configVersion: "2",
         executor: "opencode",
         roleRepo: "./og-roles",
-        modelRepo: "./og-models",
         runsDir: ".ogs/runs"
       },
       null,
@@ -124,8 +137,8 @@ async function prepareRuntimeFingerprintResumeFixture(args) {
     prompt: args.prompt
   });
   const fingerprint = await buildRuntimeFingerprintWithPaths(system, {
+    workdir: tempRoot,
     roleRootDir,
-    modelRootDir,
     lawsPath
   });
 
@@ -150,6 +163,7 @@ async function prepareRuntimeFingerprintResumeFixture(args) {
 
 test("adapter resume reloads sessions.json and reuses the same model session", async () => {
   const tempRoot = await mkdtemp(path.join(os.tmpdir(), "ogsystem-resume-session-"));
+  await seedModelSelectionFiles(tempRoot);
   const systemPath = path.resolve(tempRoot, "resume-system.mmd");
   const runtimePath = path.resolve(tempRoot, "runtime.json");
   const runDir = path.resolve(tempRoot, ".ogs/runs", "existing-run");
@@ -166,14 +180,15 @@ minimalist[Role:debate-minimalist] -->|MINIMALIST_DONE| output
 `;
 
   await mkdir(runDir, { recursive: true });
+  await seedModelSelectionFiles(tempRoot);
   await writeFile(systemPath, systemSource, "utf8");
   await writeFile(
     runtimePath,
     JSON.stringify(
       {
+        configVersion: "2",
         executor: "opencode",
         roleRepo: path.resolve("og-roles"),
-        modelRepo: path.resolve("og-models"),
         runsDir: ".ogs/runs"
       },
       null,
@@ -250,6 +265,7 @@ minimalist[Role:debate-minimalist] -->|MINIMALIST_DONE| output
 
 test("adapter resume rejects partial or corrupted state snapshots", async () => {
   const tempRoot = await mkdtemp(path.join(os.tmpdir(), "ogsystem-resume-corrupt-"));
+  await seedModelSelectionFiles(tempRoot);
   const systemPath = path.resolve(tempRoot, "resume-system.mmd");
   const runtimePath = path.resolve(tempRoot, "runtime.json");
   const runDir = path.resolve(tempRoot, ".ogs/runs", "broken-run");
@@ -321,14 +337,15 @@ async function createHandledFailureResumeFixture(args) {
   const tempRoot = await mkdtemp(path.join(os.tmpdir(), args.tempPrefix));
   const systemPath = path.resolve(tempRoot, "resume-system.mmd");
   const runtimePath = path.resolve(tempRoot, "runtime.json");
+  await seedModelSelectionFiles(tempRoot);
   await writeFile(systemPath, handledFailureResumeSource, "utf8");
   await writeFile(
     runtimePath,
     JSON.stringify(
       {
+        configVersion: "2",
         executor: "opencode",
         roleRepo: path.resolve("og-roles"),
-        modelRepo: path.resolve("og-models"),
         runsDir: ".ogs/runs"
       },
       null,
@@ -499,6 +516,7 @@ for (const resumeStateMutationCase of [
 
 test("adapter resume rejects plan fingerprint mismatch", async () => {
   const tempRoot = await mkdtemp(path.join(os.tmpdir(), "ogsystem-resume-fingerprint-mismatch-"));
+  await seedModelSelectionFiles(tempRoot);
   const systemPath = path.resolve(tempRoot, "resume-system.mmd");
   const runtimePath = path.resolve(tempRoot, "runtime.json");
   const runDir = path.resolve(tempRoot, ".ogs/runs", "mismatch-run");
@@ -562,7 +580,6 @@ minimalist[Role:debate-minimalist] -->|MINIMALIST_DONE| output
       assert.ok(error instanceof Error);
       assert.match(error.message, /fingerprint mismatch/i);
       assert.match(error.message, /system/);
-      assert.match(error.message, /modelPackages/);
       return true;
     }
   );
@@ -674,7 +691,7 @@ minimalist[Role:debate-minimalist] -->|MINIMALIST_DONE| output
   );
 });
 
-test("adapter resume rejects model manifest drift", async () => {
+test("adapter resume ignores legacy model manifest drift once selection owns runtime models", async () => {
   const systemSource = `flowchart TD
 %% system.id=resume.model-drift.demo
 %% system.version=1.0.0
@@ -702,24 +719,18 @@ minimalist[Role:debate-minimalist] -->|MINIMALIST_DONE| output
   modelManifest.timeoutMs = (modelManifest.timeoutMs ?? 120000) + 1;
   await writeFile(modelManifestPath, JSON.stringify(modelManifest, null, 2), "utf8");
 
-  await assert.rejects(
-    () =>
-      runSystemWithAdapter({
-        systemPath: fixture.systemPath,
-        runtimeConfigPath: fixture.runtimePath,
-        lawsPath: fixture.lawsPath,
-        workdir: fixture.tempRoot,
-        resumeRunDir: ".ogs/runs/model-drift-run",
-        prompt: "resume model drift",
-        dryRun: true
-      }),
-    (error) => {
-      assert.ok(error instanceof Error);
-      assert.match(error.message, /fingerprint mismatch/i);
-      assert.match(error.message, /modelPackages/);
-      return true;
-    }
-  );
+  const resumed = await runSystemWithAdapter({
+    systemPath: fixture.systemPath,
+    runtimeConfigPath: fixture.runtimePath,
+    lawsPath: fixture.lawsPath,
+    workdir: fixture.tempRoot,
+    resumeRunDir: ".ogs/runs/model-drift-run",
+    prompt: "resume model drift",
+    dryRun: true
+  });
+
+  assert.strictEqual(resumed.status, "done");
+  assert.strictEqual(resumed.finalRoleId, "debate-minimalist");
 });
 
 test("adapter resume rejects effective law drift", async () => {
@@ -767,6 +778,7 @@ minimalist[Role:debate-minimalist] -->|MINIMALIST_DONE| output
 
 test("adapter resume replays pending checkpoints without re-executing the role", async () => {
   const tempRoot = await mkdtemp(path.join(os.tmpdir(), "ogsystem-resume-checkpoint-replay-"));
+  await seedModelSelectionFiles(tempRoot);
   const systemPath = path.resolve(tempRoot, "resume-system.mmd");
   const runtimePath = path.resolve(tempRoot, "runtime.json");
   const runDir = path.resolve(tempRoot, ".ogs/runs", "checkpoint-run");
@@ -968,6 +980,7 @@ operator[Role:test-operator] -->|DONE| output
 
 test("adapter resume reconciles committed execution outcome without re-executing the role", async () => {
   const tempRoot = await mkdtemp(path.join(os.tmpdir(), "ogsystem-resume-outcome-reconcile-"));
+  await seedModelSelectionFiles(tempRoot);
   const systemPath = path.resolve(tempRoot, "resume-system.mmd");
   const runtimePath = path.resolve(tempRoot, "runtime.json");
   const runDir = path.resolve(tempRoot, ".ogs/runs", "outcome-run");
@@ -1150,6 +1163,7 @@ operator[Role:test-operator] -->|DONE| output
 
 test("adapter resume backfills outcome reconciliation metadata when checkpoint already exists", async () => {
   const tempRoot = await mkdtemp(path.join(os.tmpdir(), "ogsystem-resume-outcome-backfill-"));
+  await seedModelSelectionFiles(tempRoot);
   const systemPath = path.resolve(tempRoot, "resume-system.mmd");
   const runtimePath = path.resolve(tempRoot, "runtime.json");
   const runDir = path.resolve(tempRoot, ".ogs/runs", "outcome-backfill-run");

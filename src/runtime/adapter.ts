@@ -79,7 +79,8 @@ export async function runSystemWithAdapter(args: {
       const executor = createDefaultExecutor({
         dryRun: args.dryRun,
         runContext: setup.runContext,
-        needsModelExecutor: setup.modelsById.size > 0
+        needsModelExecutor:
+          Array.from(setup.plan.nodesByRoleId.values()).some((node) => node.binding.kind === "model")
       });
 
       try {
@@ -117,7 +118,6 @@ export async function runSystemWithAdapter(args: {
           compilerSnapshot: setup.compilerSnapshot,
           profilesById: setup.profilesById,
           toolsByRef: setup.toolsByRef,
-          modelsById: setup.modelsById,
           userProfile: setup.userProfile,
           workdir: args.workdir,
           rolePackagesByRoleId: setup.rolePackagesByRoleId,

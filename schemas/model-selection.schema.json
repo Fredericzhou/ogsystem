@@ -1,0 +1,65 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://ogsystem.dev/schemas/model-selection.schema.json",
+  "title": "OGSystem Model Selection",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["configVersion"],
+  "properties": {
+    "configVersion": {
+      "type": "string",
+      "enum": ["1"]
+    },
+    "defaults": {
+      "$ref": "#/$defs/selectionDefaults"
+    },
+    "roles": {
+      "type": "object",
+      "additionalProperties": {
+        "$ref": "#/$defs/selectionDefaults"
+      }
+    },
+    "systems": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "defaults": {
+            "$ref": "#/$defs/selectionDefaults"
+          },
+          "roles": {
+            "type": "object",
+            "additionalProperties": {
+              "$ref": "#/$defs/selectionDefaults"
+            }
+          }
+        }
+      }
+    }
+  },
+  "$defs": {
+    "selectionDefaults": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "model": {
+          "type": "string",
+          "pattern": "^[^/]+/.+$"
+        },
+        "variant": {
+          "type": "string",
+          "minLength": 1
+        },
+        "timeoutMs": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "maxOutputBytes": {
+          "type": "integer",
+          "minimum": 1
+        }
+      }
+    }
+  }
+}

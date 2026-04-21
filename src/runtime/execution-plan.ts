@@ -5,6 +5,7 @@
  * Trade-off: the runtime keeps the plan in memory rather than re-parsing Mermaid on every run.
  */
 import { SYSTEM_END_ROLE_ID } from "./types.js";
+import type { ResolvedModelRuntimeConfig } from "./model-selection.js";
 import type { ExecutionPlan, ExecutionPlanNode, SystemDefinition } from "./types.js";
 
 function buildOutgoingOrderIndex(system: SystemDefinition, roleId: string): Map<string, number> {
@@ -41,22 +42,40 @@ function buildOutgoing(system: SystemDefinition, roleId: string) {
   });
 }
 
-function resolveBinding(system: SystemDefinition, roleId: string): ExecutionPlanNode["binding"] {
+function resolveBinding(args: {
+  system: SystemDefinition;
+  roleId: string;
+  resolvedModelsByRoleId?: Map<string, ResolvedModelRuntimeConfig>;
+}): ExecutionPlanNode["binding"] {
   // Bindings prefer explicit model or profile contracts; absence results in a noop binding so the runtime can still reason about flow counts.
-  const modelId = system.modelBinding[roleId];
-  if (modelId) {
-    return {
-      kind: "model",
-      modelId
-    };
-  }
-
-  const profileId = system.executionBinding[roleId];
+  const profileId = args.system.executionBinding[args.roleId];
   if (profileId) {
     return {
       kind: "profile",
       profileId
     };
+  }
+
+  const resolvedModel = args.resolvedModelsByRoleId?.get(args.roleId);
+  if (resolvedModel) {
+    return {
+      kind: "model",
+      modelRef: resolvedModel.modelRef,
+      variant: resolvedModel.variant,
+      timeoutMs: resolvedModel.timeoutMs,
+      maxOutputBytes: resolvedModel.maxOutputBytes,
+      bindingSource: resolvedModel.bindingSource
+    };
+  }
+
+  const legacyModelId = args.system.modelBinding[args.roleId];
+  if (legacyModelId) {
+    return {
+      kind: "model",
+      modelRef: legacyModelId,
+      bindingSource: "system",
+      modelId: legacyModelId
+    } as ExecutionPlanNode["binding"];
   }
 
   return {
@@ -69,7 +88,10 @@ function resolveBinding(system: SystemDefinition, roleId: string): ExecutionPlan
  * Every declared role produces a node to keep the runtime from silently dropping branches; terminals are marked
  * whenever a role has no outgoing flows or only routes to the system end marker.
  */
-export function createExecutionPlan(system: SystemDefinition): ExecutionPlan {
+export function createExecutionPlan(
+  system: SystemDefinition,
+  resolvedModelsByRoleId?: Map<string, ResolvedModelRuntimeConfig>
+): ExecutionPlan {
   const nodesByRoleId = new Map<string, ExecutionPlanNode>();
 
   for (const roleId of system.roleIds) {
@@ -86,7 +108,11 @@ export function createExecutionPlan(system: SystemDefinition): ExecutionPlan {
       joinMin: system.graph?.joinMinByRoleId[roleId],
       contextMap: system.graph?.contextMapByRoleId[roleId],
       loopMax: system.graph?.loopMaxByRoleId[roleId],
-      binding: resolveBinding(system, roleId),
+      binding: resolveBinding({
+        system,
+        roleId,
+        resolvedModelsByRoleId
+      }),
       isTerminal:
         outgoing.length === 0 || outgoing.every((flow) => flow.toRoleId === SYSTEM_END_ROLE_ID)
     });

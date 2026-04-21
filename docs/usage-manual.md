@@ -195,7 +195,8 @@ cd demo-app
 - `.ogs/providers/opencode.json`
 - `system.mmd`
 - 本地最小 `og-roles/`
-- 本地最小 `og-models/`
+- `.ogs/model-selection.json`
+- `.ogs/model-catalog.json`
 
 ### Step 3. 先做一次 dry-run
 
@@ -334,7 +335,7 @@ Use this rule:
 
 ### NL2MMD Authoring
 
-`nl2mmd` is the repository's natural-language-to-Mermaid drafting entry for the current graph runtime. It is useful when you want a conversation-driven way to turn requirements into a runnable `system.mmd`, then validate the result against local role and model packages.
+`nl2mmd` is the repository's natural-language-to-Mermaid drafting entry for the current graph runtime. It is useful when you want a conversation-driven way to turn requirements into a runnable `system.mmd`, then validate the result against the local role repo plus the current model catalog/selection context.
 
 It also understands the current flow-contract surface, including `handoff.mode`, `handoff.contracts`, and `route.order.*`.
 
@@ -349,7 +350,7 @@ Use it with `ogs-nl2mmd --message "..."` for one-shot drafting, or omit `--messa
 - Base commands are for function and runtime behavior.
 - Wrapper commands are for project lifecycle and default operational flow.
 
-For project management, `ogs` defaults to the current directory. Use `--workdir <path>` only when you need to operate on another project root. `ogs project init` scaffolds the current directory as a runnable project by default, and `ogs project create <name>` scaffolds the same runnable `minimal` template in a new project folder by default. Both commands materialize project-local `og-roles/` and `og-models/`, and runnable templates import only the dependencies they reference.
+For project management, `ogs` defaults to the current directory. Use `--workdir <path>` only when you need to operate on another project root. `ogs project init` scaffolds the current directory as a runnable project by default, and `ogs project create <name>` scaffolds the same runnable `minimal` template in a new project folder by default. Both commands materialize a project-local `og-roles/` repo, `.ogs/model-catalog.json`, and `.ogs/model-selection.json`; runnable templates import only the roles they reference.
 
 Recommended test split:
 
@@ -360,7 +361,8 @@ Recommended test split:
 
 - `system.mmd`: role graph, events, law binding, role-to-model binding
 - `role repo`: role semantics and I/O contracts
-- `model repo`: executor and model runtime config
+- `.ogs/model-selection.json`: executor-ready model defaults and overrides
+- `.ogs/model-catalog.json`: advisory local model snapshot
 - `user profile`: delivery preference only
 
 Hard boundary:
@@ -376,6 +378,8 @@ Hard boundary:
 OGSystem/
   .ogs/
     runtime.json
+    model-catalog.json
+    model-selection.json
     user-profile.json
     laws.json
     project.json
@@ -393,13 +397,6 @@ OGSystem/
         agent.md
         prompt.md
         output.schema.json
-
-  og-models/
-    catalog/
-      opencode-models.json
-    models/
-      <modelId>/
-        model.json
 
   examples/
     README.md
@@ -596,36 +593,48 @@ Recommended template roles:
 - `human-approve-gate`: human decision gate with `APPROVED | REJECTED | TIMEOUT`
 - `human-signal-wait`: waiting gate with `SIGNAL_OK | SIGNAL_FAIL | EXPIRED`
 
-## 6. Model Package Contract
+## 6. Model Selection Contract
 
-`og-models/models/<modelId>/model.json` defines execution configuration.
+`.ogs/model-selection.json` defines runtime model defaults and direct `provider/model` overrides.
 
-The installed CLI ships a bundled model catalog as a template source. Projects execute against their own local `og-models/`, and `project init/create/sync` import the minimal set of model packages needed by the current system.
+`.ogs/model-catalog.json` is a generated advisory snapshot from `opencode models --verbose`. The installed CLI uses it for scaffolding, `project sync-models`, and diagnostics; runtime execution does not hard-fail just because the catalog is missing or stale.
 
 Example:
 
 ```json
 {
-  "modelId": "general-steady",
-  "executor": "opencode",
-  "model": "openai/gpt-5.4",
-  "args": {
-    "reasoningEffort": "medium"
+  "configVersion": "1",
+  "defaults": {
+    "model": "opencode/gpt-5-nano",
+    "variant": "medium",
+    "timeoutMs": 120000,
+    "maxOutputBytes": 65536
   },
-  "timeoutMs": 120000,
-  "maxOutputBytes": 65536,
-  "tags": ["general", "steady", "long-context"]
+  "systems": {
+    "template.minimal": {
+      "roles": {
+        "demo-analyst": {
+          "model": "opencode/gpt-5-nano",
+          "variant": "medium"
+        }
+      }
+    }
+  },
+  "roles": {
+    "test-operator": {
+      "model": "opencode/gpt-5-nano",
+      "variant": "low"
+    }
+  }
 }
 ```
 
 Model rules:
 
-- model packages do not include persona/prompt logic
-- model packages do not include routing logic
-- `og-models/catalog/opencode-models.json` is the raw availability snapshot
-- `og-models/models/*` should stay a small curated alias layer
-- prefer semantic aliases in `modelId` (for example `general-fast`, `general-balanced`, `general-steady`) and map them to concrete provider models in `model.json`
-- keep `system.mmd` stable by evolving model mapping in `og-models/models/*` instead of editing role flow definitions for every model upgrade
+- `.ogs/model-catalog.json` is the raw availability snapshot
+- `.ogs/model-selection.json` is the runtime authority for project defaults and role/system overrides
+- prefer direct `provider/model` refs in `model.bind` and selection files
+- keep `system.mmd` stable by evolving `.ogs/model-selection.json` instead of editing role flow definitions for every model upgrade
 - for `executor: "opencode"`, `model.bind` roles run through OpenCode SDK v2 structured output:
   - input = rendered role prompt + `output.schema.json` + model selection + role working directory
   - output = one JSON object from `assistant.info.structured`; if `structured` is missing or string-encoded, runtime falls back to assistant text parts and JSON extraction
@@ -660,7 +669,7 @@ User profile rules:
 `.ogs/runtime.json` keeps runtime-level defaults:
 
 - executor
-- repo roots
+- role repo root
 - runs directory
 - workspace directory names
 - workspace isolation mode
@@ -671,10 +680,9 @@ Example:
 
 ```json
 {
-  "configVersion": "1",
+  "configVersion": "2",
   "executor": "opencode",
   "roleRepo": "./og-roles",
-  "modelRepo": "./og-models",
   "runsDir": ".ogs/runs",
   "workspace": {
     "rolesDir": "roles",
@@ -692,13 +700,13 @@ Example:
 }
 ```
 
-Default `roleRepo` / `modelRepo` values point to `./og-roles` and `./og-models`, and runtime execution expects those project-local repos to exist. The installed CLI's bundled role/model catalogs are template sources for `project init/create/sync` and NL2MMD-assisted import, not runtime fallback dependencies. If you set custom repo paths, those paths must exist.
+Default `roleRepo` points to `./og-roles`. Model runtime control is no longer configured in `runtime.json`; use `.ogs/model-selection.json` instead. `.ogs/model-catalog.json` is advisory only.
 
 `.ogs/providers/opencode.json` is not a runtime-consumed config file. It is a project-local reference sample that points to the real OpenCode config path and shows a recommended OpenAI-compatible provider entry with `setCacheKey: true`.
 
 Compatibility rule:
 
-- `configVersion` is optional for the current repo default, but when present it must be `"1"`
+- `configVersion` is optional for the current repo default, but when present it must be `"2"`
 - unsupported config versions fail fast; the runtime does not provide in-place migration
 - `workspace.workspaceIsolation` defaults to `role`; set it to `branch` only when same-role sibling branches need isolated private workspaces
 - `redaction.enabled` defaults to `true`; it only affects operator-facing prompt/audit/result/event projections and does not rewrite resume truth files
@@ -1115,9 +1123,10 @@ ogs \
 This path auto-discovers:
 
 - `.ogs/runtime.json`
+- `.ogs/model-selection.json`
+- `.ogs/model-catalog.json`
 - `.ogs/user-profile.json`
 - `.ogs/laws.json`
-- local `og-models/`
 - local `og-roles/`
 
 Scenario-specific examples and the longer training matrix live in `examples/README.md`.
