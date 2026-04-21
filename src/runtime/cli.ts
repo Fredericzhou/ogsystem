@@ -8,6 +8,7 @@
  * - Delegates runtime execution and persistence to lower-level modules.
  */
 import { readFile, writeFile } from "node:fs/promises";
+import { createRequire } from "node:module";
 import { resolve } from "node:path";
 import { parseArgs } from "node:util";
 
@@ -35,46 +36,112 @@ import {
 } from "./runtime-errors.js";
 import { startVisualizationServer } from "../visualizer/server.js";
 
+const require = createRequire(import.meta.url);
+const { version: CLI_VERSION } = require("../../package.json") as { version: string };
+
+type HelpTopic = "project" | "run" | "legacy" | "visualizer";
+type ProjectSubcommand = "init" | "create" | "sync" | "sync-models";
+type RunSubcommand = "start" | "resume" | "stop" | "list" | "status" | "inspect" | "logs" | "reindex";
+
 function usageRoot(): string {
   return [
     "Usage:",
-    "  ogs project init",
-    "  ogs project create <name> [--template <empty|minimal|software-dev|consultation>]",
-    "  ogs project sync --system <file.mmd>",
-    "  ogs project sync-models",
+    "  ogs project <init|create|sync|sync-models>",
+    "  ogs run <start|resume|stop|list|status|inspect|logs|reindex>",
     "  ogs visualizer [--workdir <path>] [--host <host>] [--port <n|0>]",
-    "  ogs run start --system <file.mmd> --input <text> [options]",
-    "  ogs run resume <run-id> [options]",
-    "  ogs run stop <run-id> [--reason <text>]",
-    "  ogs run list [--reindex]",
-    "  ogs run status <run-id>",
-    "  ogs run inspect <run-id>",
-    "  ogs run logs <run-id> [--engine|--role <roleId>] [--json] [--tail <n>] [--since <iso>] [--follow]",
-    "  ogs run reindex",
+    "  ogs --version",
     "",
     "Help:",
-    "  ogs help [project|run|legacy|visualizer]",
-    "  ogs project --help",
+    "  ogs help [project|run|visualizer|legacy]",
+    "  ogs help run logs",
+    "  ogs help project init",
     "  ogs visualizer --help",
-    "  ogs run --help",
+    "  ogs run start --help",
+    "  ogs project create --help",
     "",
     "Defaults:",
     "  project commands use the current directory unless --workdir is provided",
     "  run commands use the current directory unless --workdir is provided",
     "  project create writes a new project folder under the current directory",
-    "",
-    "Legacy entrypoint:",
-    "  ogs --system <file.mmd> --input <text> [options]"
   ].join("\n");
 }
 
-function usageProject(): string {
+function usageProject(subcommand?: ProjectSubcommand): string {
+  if (subcommand === "init") {
+    return [
+      "Usage:",
+      "  ogs project init [--template <empty|minimal|software-dev|consultation>] [--workdir <path>]",
+      "",
+      "Options:",
+      "  --template <id>  Template to scaffold (default: minimal)",
+      "  --workdir <path> Project root to initialize (default: cwd)",
+      "  --help           Show help",
+      "",
+      "Examples:",
+      "  ogs project init",
+      "  ogs project init --template software-dev",
+      "  ogs project init --workdir ./demo-app"
+    ].join("\n");
+  }
+
+  if (subcommand === "create") {
+    return [
+      "Usage:",
+      "  ogs project create <name> [--template <empty|minimal|software-dev|consultation>] [--workdir <path>]",
+      "",
+      "Arguments:",
+      "  <name>           New project directory name",
+      "",
+      "Options:",
+      "  --template <id>  Template to scaffold (default: minimal)",
+      "  --workdir <path> Parent directory for the new project (default: cwd)",
+      "  --help           Show help",
+      "",
+      "Examples:",
+      "  ogs project create demo-app",
+      "  ogs project create demo-app --template consultation",
+      "  ogs project create demo-app --workdir ./sandbox"
+    ].join("\n");
+  }
+
+  if (subcommand === "sync") {
+    return [
+      "Usage:",
+      "  ogs project sync --system <file.mmd> [--workdir <path>]",
+      "",
+      "Options:",
+      "  --system <file>  Mermaid system source to scan for role dependencies",
+      "  --workdir <path> Project root (default: cwd)",
+      "  --help           Show help",
+      "",
+      "Example:",
+      "  ogs project sync --system system.mmd"
+    ].join("\n");
+  }
+
+  if (subcommand === "sync-models") {
+    return [
+      "Usage:",
+      "  ogs project sync-models [--workdir <path>]",
+      "",
+      "Options:",
+      "  --workdir <path> Project root (default: cwd)",
+      "  --help           Show help",
+      "",
+      "Behavior:",
+      "  Refreshes .ogs/model-catalog.json and seeds .ogs/model-selection.json when missing.",
+      "",
+      "Example:",
+      "  ogs project sync-models"
+    ].join("\n");
+  }
+
   return [
     "Usage:",
-    "  ogs project init [--template <empty|minimal|software-dev|consultation>] [--workdir <path>]",
-    "  ogs project create <name> [--template <empty|minimal|software-dev|consultation>] [--workdir <path>]",
-    "  ogs project sync --system <file.mmd> [--workdir <path>]",
-    "  ogs project sync-models [--workdir <path>]",
+    "  ogs project init [options]",
+    "  ogs project create <name> [options]",
+    "  ogs project sync --system <file.mmd> [options]",
+    "  ogs project sync-models [options]",
     "",
     "Project lifecycle:",
     "  init   scaffold the current directory as a runnable project",
@@ -82,56 +149,189 @@ function usageProject(): string {
     "  sync   import roles referenced by a Mermaid system into the local project role repo",
     "  sync-models   refresh .ogs/model-catalog.json and seed .ogs/model-selection.json when missing",
     "",
-    "Defaults:",
-    "  current directory is the project root unless --workdir is set",
-    "  create uses the current directory as the parent directory unless --workdir is set",
-    "  init defaults to minimal; create defaults to minimal",
-    "",
-    "Templates:",
-    "  empty",
-    "  minimal",
-    "  software-dev",
-    "  consultation",
-    "",
-    "Examples:",
-    "  ogs project init",
-    "  ogs project create demo-app",
-    "  ogs project init --template software-dev",
-    "  ogs project create demo-app --template minimal",
-    "  ogs project sync --system system.mmd",
-    "  ogs project sync-models"
+    "Drill down:",
+    "  ogs project init --help",
+    "  ogs project create --help",
+    "  ogs project sync --help",
+    "  ogs project sync-models --help"
   ].join("\n");
 }
 
-function usageRun(): string {
+function usageRun(subcommand?: RunSubcommand): string {
+  if (subcommand === "start") {
+    return [
+      "Usage:",
+      "  ogs run start --system <file.mmd> --input <text> [options]",
+      "",
+      "Required:",
+      "  --system <file>        Mermaid system source to execute",
+      "  --input <text>         Initial user input",
+      "",
+      "Options:",
+      "  --runtime <file>       Runtime config JSON override",
+      "  --user-profile <file>  User profile JSON override",
+      "  --laws <file>          Law catalog JSON override",
+      "  --workdir <path>       Working directory (default: cwd)",
+      "  --cleanup-executions <n>",
+      "                         Keep only latest n per-role execution snapshots",
+      "  --quiet-run            Disable stderr run progress logs",
+      "  --visualize            Start a temporary visualizer server for this run",
+      "  --host <host>          Visualizer bind host when --visualize is enabled (default: 127.0.0.1)",
+      "  --port <n|0>           Visualizer bind port when --visualize is enabled (default: 0 auto)",
+      "  --print-graph-link     Print Mermaid Live graph preview URL to stderr",
+      "  --trace-out <file>     Write final runtime result JSON",
+      "  --dry-run              Do not execute external commands",
+      "  --help                 Show help",
+      "",
+      "Examples:",
+      "  ogs run start --system system.mmd --input \"smoke\" --dry-run",
+      "  ogs run start --system system.mmd --input \"demo\" --visualize --port 0"
+    ].join("\n");
+  }
+
+  if (subcommand === "resume") {
+    return [
+      "Usage:",
+      "  ogs run resume <run-id> [options]",
+      "",
+      "Arguments:",
+      "  <run-id>               Existing run identifier",
+      "",
+      "Options:",
+      "  --system <file>        Override system source (default: run snapshot system.mmd)",
+      "  --input <text>         Override request text (default: stored request.md)",
+      "  --runtime <file>       Runtime config JSON override",
+      "  --user-profile <file>  User profile JSON override",
+      "  --laws <file>          Law catalog JSON override",
+      "  --workdir <path>       Working directory (default: cwd)",
+      "  --cleanup-executions <n>",
+      "                         Keep only latest n per-role execution snapshots",
+      "  --quiet-run            Disable stderr run progress logs",
+      "  --visualize            Start a temporary visualizer server for this run",
+      "  --host <host>          Visualizer bind host when --visualize is enabled (default: 127.0.0.1)",
+      "  --port <n|0>           Visualizer bind port when --visualize is enabled (default: 0 auto)",
+      "  --trace-out <file>     Write final runtime result JSON",
+      "  --dry-run              Do not execute external commands",
+      "  --help                 Show help",
+      "",
+      "Example:",
+      "  ogs run resume <run-id> --dry-run"
+    ].join("\n");
+  }
+
+  if (subcommand === "stop") {
+    return [
+      "Usage:",
+      "  ogs run stop <run-id> [--reason <text>] [--workdir <path>]",
+      "",
+      "Arguments:",
+      "  <run-id>        Existing run identifier",
+      "",
+      "Options:",
+      "  --reason <text> Optional stop reason stored in control metadata",
+      "  --workdir <path> Working directory (default: cwd)",
+      "  --help          Show help"
+    ].join("\n");
+  }
+
+  if (subcommand === "list") {
+    return [
+      "Usage:",
+      "  ogs run list [--reindex] [--workdir <path>]",
+      "",
+      "Options:",
+      "  --reindex       Rebuild .ogs/runs-index.json before listing",
+      "  --workdir <path> Working directory (default: cwd)",
+      "  --help          Show help"
+    ].join("\n");
+  }
+
+  if (subcommand === "status") {
+    return [
+      "Usage:",
+      "  ogs run status <run-id> [--workdir <path>]",
+      "",
+      "Arguments:",
+      "  <run-id>        Existing run identifier",
+      "",
+      "Options:",
+      "  --workdir <path> Working directory (default: cwd)",
+      "  --help          Show help"
+    ].join("\n");
+  }
+
+  if (subcommand === "inspect") {
+    return [
+      "Usage:",
+      "  ogs run inspect <run-id> [--workdir <path>]",
+      "",
+      "Arguments:",
+      "  <run-id>        Existing run identifier",
+      "",
+      "Options:",
+      "  --workdir <path> Working directory (default: cwd)",
+      "  --help          Show help"
+    ].join("\n");
+  }
+
+  if (subcommand === "logs") {
+    return [
+      "Usage:",
+      "  ogs run logs <run-id> [--engine|--role <roleId>] [--tail <n>] [--since <iso>] [--follow] [--json|--ndjson] [--workdir <path>]",
+      "",
+      "Arguments:",
+      "  <run-id>        Existing run identifier",
+      "",
+      "Options:",
+      "  --engine        Read engine logs (default when no role is selected)",
+      "  --role <roleId> Read logs for one role",
+      "  --tail <n>      Return only the latest n log records",
+      "  --since <iso>   Return only records at or after the given ISO timestamp",
+      "  --follow        Stream appended records until the run completes",
+      "  --json          Emit one JSON array (not allowed with --follow)",
+      "  --ndjson        Emit one JSON object per line",
+      "  --workdir <path> Working directory (default: cwd)",
+      "  --help          Show help",
+      "",
+      "Output modes:",
+      "  default text    human-readable one-line summaries",
+      "  --json          pretty JSON array for batch tooling",
+      "  --ndjson        newline-delimited JSON for pipelines and follow mode",
+      "",
+      "Examples:",
+      "  ogs run logs <run-id> --engine",
+      "  ogs run logs <run-id> --engine --json",
+      "  ogs run logs <run-id> --engine --follow --ndjson"
+    ].join("\n");
+  }
+
+  if (subcommand === "reindex") {
+    return [
+      "Usage:",
+      "  ogs run reindex [--workdir <path>]",
+      "",
+      "Options:",
+      "  --workdir <path> Working directory (default: cwd)",
+      "  --help          Show help"
+    ].join("\n");
+  }
+
   return [
     "Usage:",
     "  ogs run start --system <file.mmd> --input <text> [options]",
     "  ogs run resume <run-id> [options]",
-    "  ogs run stop <run-id> [--reason <text>] [--workdir <path>]",
-    "  ogs run list [--reindex] [--workdir <path>]",
-    "  ogs run status <run-id> [--workdir <path>]",
-    "  ogs run inspect <run-id> [--workdir <path>]",
-    "  ogs run logs <run-id> [--engine|--role <roleId>] [--json] [--tail <n>] [--since <iso>] [--follow] [--workdir <path>]",
-    "  ogs run reindex [--workdir <path>]",
+    "  ogs run stop <run-id> [options]",
+    "  ogs run list [options]",
+    "  ogs run status <run-id> [options]",
+    "  ogs run inspect <run-id> [options]",
+    "  ogs run logs <run-id> [options]",
+    "  ogs run reindex [options]",
     "",
-    "Common Run Options:",
-    "  --runtime <file>           Runtime config JSON override",
-    "  --user-profile <file>      User profile JSON override",
-    "  --laws <file>              Law catalog JSON override",
-    "  --profiles <file>          Legacy execution profiles JSON (optional)",
-    "  --tools <file>             Legacy CLI tools JSON (optional)",
-    "  --workdir <path>           Working directory (default: cwd)",
-    "  --cleanup-executions <n>   Keep only latest n per-role execution snapshots",
-    "  --log-run                  Compatibility alias; run logs are enabled by default",
-    "  --quiet-run                Disable stderr run progress logs",
-    "  --visualize                Start a temporary visualizer server for this run",
-    "  --visualizer-host <host>   Visualizer bind host (default: 127.0.0.1)",
-    "  --visualizer-port <n|0>    Visualizer bind port (default: 0 auto)",
-    "  --print-graph-link         Print Mermaid Live graph preview URL to stderr (run start only)",
-    "  --trace-out <file>         Write final runtime result JSON",
-    "  --dry-run                  Do not execute external commands",
-    "  --help                     Show help"
+    "Drill down:",
+    "  ogs run start --help",
+    "  ogs run resume --help",
+    "  ogs run logs --help",
+    "  ogs run reindex --help"
   ].join("\n");
 }
 
@@ -163,16 +363,21 @@ function usageLegacy(): string {
     "",
     "Source checkout equivalent:",
     "  pnpm run run:adapter --system <file.mmd> --input <text> [options]",
-    "Prefer ogs project/run commands for normal project management."
+    "Prefer ogs project/run commands for normal project management.",
+    "",
+    "Compatibility-only options still accepted here include:",
+    "  --profiles <file>",
+    "  --tools <file>",
+    "  --resume-run <run-dir>"
   ].join("\n");
 }
 
-function usage(topic?: "project" | "run" | "legacy" | "visualizer"): string {
+function usage(topic?: HelpTopic, subcommand?: ProjectSubcommand | RunSubcommand): string {
   if (topic === "project") {
-    return usageProject();
+    return usageProject(subcommand as ProjectSubcommand | undefined);
   }
   if (topic === "run") {
-    return usageRun();
+    return usageRun(subcommand as RunSubcommand | undefined);
   }
   if (topic === "visualizer") {
     return usageVisualizer();
@@ -456,6 +661,51 @@ function resolveLogRunOption(values: Record<string, string | boolean | undefined
   return !quietRun;
 }
 
+function resolveLogOutputMode(values: Record<string, string | boolean | undefined>): "text" | "json" | "ndjson" {
+  const json = asBool(values.json);
+  const ndjson = asBool(values.ndjson);
+  const follow = asBool(values.follow);
+  if (json && ndjson) {
+    throw createCliInputError("CLI_INVALID_ARGS", "--json and --ndjson cannot be used together");
+  }
+  if (json && follow) {
+    throw createCliInputError("CLI_INVALID_ARGS", "--json cannot be used with --follow; use --ndjson");
+  }
+  if (json) {
+    return "json";
+  }
+  if (ndjson) {
+    return "ndjson";
+  }
+  return "text";
+}
+
+function formatLogRecord(record: Record<string, unknown>): string {
+  const at = typeof record.at === "string" ? record.at : undefined;
+  const roleId = typeof record.roleId === "string" ? record.roleId : undefined;
+  const type =
+    typeof record.type === "string"
+      ? record.type
+      : typeof record.event === "string"
+        ? record.event
+        : "record";
+  const summary =
+    typeof record.message === "string"
+      ? record.message
+      : typeof record.detail === "string"
+        ? record.detail
+        : typeof record.content === "string"
+          ? record.content
+          : typeof record.status === "string"
+            ? `status=${record.status}`
+            : undefined;
+  const prefix = [at, roleId ? `[${roleId}]` : undefined, type].filter(Boolean).join(" ");
+  if (summary) {
+    return `${prefix} ${summary}`;
+  }
+  return `${prefix} ${JSON.stringify(record)}`;
+}
+
 async function closeServer(server: { close(callback: () => void): void }): Promise<void> {
   await new Promise<void>((resolvePromise) => server.close(() => resolvePromise()));
 }
@@ -600,11 +850,10 @@ async function runProjectCommand(argv: string[]): Promise<void> {
     const { values } = parseLifecycleArgs(argv.slice(1), {
       template: { type: "string" },
       workdir: { type: "string" },
-      name: { type: "string" },
       help: { type: "boolean", short: "h" }
     });
     if (asBool(values.help)) {
-      console.log(usage("project"));
+      console.log(usage("project", "init"));
       return;
     }
     const workdir = asString(values.workdir) ?? process.cwd();
@@ -616,8 +865,7 @@ async function runProjectCommand(argv: string[]): Promise<void> {
       );
     }
     await ensureProjectSkeleton({
-      workdir,
-      projectName: asString(values.name)
+      workdir
     });
     const templateSpec = await scaffoldProjectTemplate({
       workdir,
@@ -667,7 +915,7 @@ async function runProjectCommand(argv: string[]): Promise<void> {
       help: { type: "boolean", short: "h" }
     });
     if (asBool(values.help)) {
-      console.log(usage("project"));
+      console.log(usage("project", "create"));
       return;
     }
     const projectName = positionals[0];
@@ -709,7 +957,7 @@ async function runProjectCommand(argv: string[]): Promise<void> {
       help: { type: "boolean", short: "h" }
     });
     if (asBool(values.help)) {
-      console.log(usage("project"));
+      console.log(usage("project", "sync"));
       return;
     }
     const systemPath = asString(values.system);
@@ -746,7 +994,7 @@ async function runProjectCommand(argv: string[]): Promise<void> {
       help: { type: "boolean", short: "h" }
     });
     if (asBool(values.help)) {
-      console.log(usage("project"));
+      console.log(usage("project", "sync-models"));
       return;
     }
     const workdir = asString(values.workdir) ?? process.cwd();
@@ -773,7 +1021,7 @@ async function runProjectCommand(argv: string[]): Promise<void> {
 
   throw createCliInputError(
     "CLI_UNKNOWN_SUBCOMMAND",
-    `Unknown project subcommand: ${subcommand}`
+    `Unknown project subcommand: ${subcommand}\n\n${usage("project")}`
   );
 }
 
@@ -791,15 +1039,15 @@ async function runStartCommand(argv: string[]): Promise<void> {
     "log-run": { type: "boolean" },
     "quiet-run": { type: "boolean" },
     visualize: { type: "boolean" },
-    "visualizer-host": { type: "string" },
-    "visualizer-port": { type: "string" },
+    host: { type: "string" },
+    port: { type: "string" },
     "print-graph-link": { type: "boolean" },
     "trace-out": { type: "string" },
     "dry-run": { type: "boolean" },
     help: { type: "boolean", short: "h" }
   });
   if (asBool(values.help)) {
-    console.log(usage("run"));
+    console.log(usage("run", "start"));
     return;
   }
   const systemPath = asString(values.system);
@@ -833,10 +1081,10 @@ async function runStartCommand(argv: string[]): Promise<void> {
     traceOut: asString(values["trace-out"]),
     visualizer: {
       enabled: asBool(values.visualize),
-      host: asString(values["visualizer-host"]) ?? "127.0.0.1",
+      host: asString(values.host) ?? "127.0.0.1",
       port: parsePortOption({
-        optionName: "--visualizer-port",
-        value: asString(values["visualizer-port"]),
+        optionName: "--port",
+        value: asString(values.port),
         defaultValue: 0,
         allowZero: true
       }),
@@ -859,14 +1107,14 @@ async function runResumeCommand(argv: string[]): Promise<void> {
     "log-run": { type: "boolean" },
     "quiet-run": { type: "boolean" },
     visualize: { type: "boolean" },
-    "visualizer-host": { type: "string" },
-    "visualizer-port": { type: "string" },
+    host: { type: "string" },
+    port: { type: "string" },
     "trace-out": { type: "string" },
     "dry-run": { type: "boolean" },
     help: { type: "boolean", short: "h" }
   });
   if (asBool(values.help)) {
-    console.log(usage("run"));
+    console.log(usage("run", "resume"));
     return;
   }
   const runId = positionals[0];
@@ -897,10 +1145,10 @@ async function runResumeCommand(argv: string[]): Promise<void> {
     traceOut: asString(values["trace-out"]),
     visualizer: {
       enabled: asBool(values.visualize),
-      host: asString(values["visualizer-host"]) ?? "127.0.0.1",
+      host: asString(values.host) ?? "127.0.0.1",
       port: parsePortOption({
-        optionName: "--visualizer-port",
-        value: asString(values["visualizer-port"]),
+        optionName: "--port",
+        value: asString(values.port),
         defaultValue: 0,
         allowZero: true
       }),
@@ -957,7 +1205,7 @@ async function runRunCommand(argv: string[]): Promise<void> {
       help: { type: "boolean", short: "h" }
     });
     if (asBool(values.help)) {
-      console.log(usage("run"));
+      console.log(usage("run", "stop"));
       return;
     }
     const runId = positionals[0];
@@ -976,7 +1224,7 @@ async function runRunCommand(argv: string[]): Promise<void> {
       help: { type: "boolean", short: "h" }
     });
     if (asBool(values.help)) {
-      console.log(usage("run"));
+      console.log(usage("run", "list"));
       return;
     }
     const workdir = asString(values.workdir) ?? process.cwd();
@@ -992,7 +1240,7 @@ async function runRunCommand(argv: string[]): Promise<void> {
       help: { type: "boolean", short: "h" }
     });
     if (asBool(values.help)) {
-      console.log(usage("run"));
+      console.log(usage("run", "status"));
       return;
     }
     const runId = positionals[0];
@@ -1034,7 +1282,7 @@ async function runRunCommand(argv: string[]): Promise<void> {
       help: { type: "boolean", short: "h" }
     });
     if (asBool(values.help)) {
-      console.log(usage("run"));
+      console.log(usage("run", "inspect"));
       return;
     }
     const runId = positionals[0];
@@ -1054,10 +1302,11 @@ async function runRunCommand(argv: string[]): Promise<void> {
       since: { type: "string" },
       follow: { type: "boolean" },
       json: { type: "boolean" },
+      ndjson: { type: "boolean" },
       help: { type: "boolean", short: "h" }
     });
     if (asBool(values.help)) {
-      console.log(usage("run"));
+      console.log(usage("run", "logs"));
       return;
     }
     const runId = positionals[0];
@@ -1069,6 +1318,7 @@ async function runRunCommand(argv: string[]): Promise<void> {
       value: asString(values.tail)
     });
     const workdir = asString(values.workdir) ?? process.cwd();
+    const outputMode = resolveLogOutputMode(values);
     const records = await loadRunLogs({
       workdir,
       runId,
@@ -1079,11 +1329,11 @@ async function runRunCommand(argv: string[]): Promise<void> {
     });
     if (asBool(values.follow)) {
       const printRecord = (record: Record<string, unknown>) => {
-        if (asBool(values.json)) {
+        if (outputMode === "ndjson") {
           console.log(JSON.stringify(record));
           return;
         }
-        console.log(JSON.stringify(record));
+        console.log(formatLogRecord(record));
       };
       for (const record of records) {
         printRecord(record);
@@ -1101,12 +1351,18 @@ async function runRunCommand(argv: string[]): Promise<void> {
       });
       return;
     }
-    if (asBool(values.json)) {
+    if (outputMode === "json") {
       console.log(JSON.stringify(records, null, 2));
       return;
     }
+    if (outputMode === "ndjson") {
+      for (const record of records) {
+        console.log(JSON.stringify(record));
+      }
+      return;
+    }
     for (const record of records) {
-      console.log(JSON.stringify(record));
+      console.log(formatLogRecord(record));
     }
     return;
   }
@@ -1116,7 +1372,7 @@ async function runRunCommand(argv: string[]): Promise<void> {
       help: { type: "boolean", short: "h" }
     });
     if (asBool(values.help)) {
-      console.log(usage());
+      console.log(usage("run", "reindex"));
       return;
     }
     const index = await rebuildRunsIndex(asString(values.workdir) ?? process.cwd());
@@ -1124,7 +1380,7 @@ async function runRunCommand(argv: string[]): Promise<void> {
     return;
   }
 
-  throw createCliInputError("CLI_UNKNOWN_SUBCOMMAND", `Unknown run subcommand: ${subcommand}`);
+  throw createCliInputError("CLI_UNKNOWN_SUBCOMMAND", `Unknown run subcommand: ${subcommand}\n\n${usage("run")}`);
 }
 
 function shouldKeepProcessAlive(argv: string[]): boolean {
@@ -1151,14 +1407,19 @@ async function main(): Promise<void> {
     console.log(usage());
     return;
   }
+  if (argv[0] === "--version" || argv[0] === "-V" || argv[0] === "version") {
+    console.log(`ogs ${CLI_VERSION}`);
+    return;
+  }
   if (argv[0] === "--help" || argv[0] === "-h") {
     console.log(usage());
     return;
   }
   if (argv[0] === "help") {
     const topic = argv[1];
+    const subcommand = argv[2];
     if (topic === "project" || topic === "run" || topic === "legacy" || topic === "visualizer") {
-      console.log(usage(topic));
+      console.log(usage(topic, subcommand as ProjectSubcommand | RunSubcommand | undefined));
       return;
     }
     console.log(usage());

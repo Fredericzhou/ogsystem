@@ -89,7 +89,7 @@ test("packed CLI installs and scaffolds a runnable project with imported local d
 
   const helpResult = await runCommand("node", [ogsBinPath, "help"], { cwd: installDir });
   assert.equal(helpResult.code, 0, helpResult.stderr);
-  assert.match(helpResult.stdout, /ogs project create <name> \[--template/);
+  assert.match(helpResult.stdout, /ogs project <init\|create\|sync\|sync-models>/);
 
   const doctorHelpResult = await runCommand("node", [ogsDoctorBinPath, "--help"], {
     cwd: installDir

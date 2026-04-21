@@ -76,7 +76,7 @@ test("cli can attach a temporary visualizer server and auto-close it after run c
     "visualizer run",
     "--dry-run",
     "--visualize",
-    "--visualizer-port",
+    "--port",
     "0"
   ]);
 

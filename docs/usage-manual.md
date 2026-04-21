@@ -1098,6 +1098,9 @@ For recovery, prioritize:
 Lifecycle CLI (preferred):
 
 ```bash
+ogs help run
+ogs run start --help
+ogs run logs --help
 ogs project init
 ogs project sync --system system.mmd
 ogs run start --system examples/target-model-binding-system.mmd --input "demo" --dry-run
@@ -1105,8 +1108,9 @@ ogs run start --system system.mmd --input "demo" --visualize
 ogs run list
 ogs run status <run-id>
 ogs run logs <run-id> --engine --tail 50
+ogs run logs <run-id> --engine --json
+ogs run logs <run-id> --engine --follow --ndjson
 ogs run logs <run-id> --role <role-id> --since 2026-04-18T10:00:00Z
-ogs run logs <run-id> --engine --follow
 ogs run resume <run-id> --dry-run
 ogs run stop <run-id>
 ogs visualizer --workdir .

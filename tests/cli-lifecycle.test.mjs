@@ -235,6 +235,16 @@ test("lifecycle cli run start/list/status/logs/resume/stop works end-to-end", { 
   assert.strictEqual(logs.code, 0);
   const logsPayload = JSON.parse(logs.stdout);
   assert.equal(Array.isArray(logsPayload), true);
+  const textLogs = await runCli(["run", "logs", runId, "--engine", "--workdir", tempRoot]);
+  assert.strictEqual(textLogs.code, 0);
+  if (textLogs.stdout.trim()) {
+    assert.doesNotMatch(textLogs.stdout, /^\s*\[/);
+  }
+  const ndjsonLogs = await runCli(["run", "logs", runId, "--engine", "--ndjson", "--workdir", tempRoot]);
+  assert.strictEqual(ndjsonLogs.code, 0);
+  if (ndjsonLogs.stdout.trim()) {
+    assert.match(ndjsonLogs.stdout, /\{.*\}\n?/);
+  }
   const tailLogs = await runCli([
     "run",
     "logs",
@@ -276,6 +286,18 @@ test("lifecycle cli run start/list/status/logs/resume/stop works end-to-end", { 
     tempRoot
   ]);
   assert.strictEqual(followLogs.code, 0);
+  const followJsonLogs = await runCli([
+    "run",
+    "logs",
+    runId,
+    "--engine",
+    "--follow",
+    "--json",
+    "--workdir",
+    tempRoot
+  ]);
+  assert.strictEqual(followJsonLogs.code, 1);
+  assert.match(followJsonLogs.stderr, /--json cannot be used with --follow/);
 
   const resume = await runCli(["run", "resume", runId, "--dry-run", "--workdir", tempRoot]);
   assert.strictEqual(resume.code, 0);

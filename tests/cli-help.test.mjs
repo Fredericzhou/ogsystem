@@ -28,36 +28,52 @@ function runNodeCli(cliPath, args, cwd = process.cwd()) {
 test("ogs help command surfaces layered guidance", async () => {
   const rootHelp = await runNodeCli(runtimeCliPath, ["help"]);
   assert.strictEqual(rootHelp.code, 0);
-  assert.match(rootHelp.stdout, /ogs help \[project\|run\|legacy\|visualizer\]/);
+  assert.match(rootHelp.stdout, /ogs help \[project\|run\|visualizer\|legacy\]/);
+  assert.match(rootHelp.stdout, /ogs help run logs/);
+  assert.match(rootHelp.stdout, /ogs project create --help/);
   assert.match(rootHelp.stdout, /project commands use the current directory/);
-  assert.match(rootHelp.stdout, /Legacy entrypoint:/);
-  assert.match(rootHelp.stdout, /ogs --system <file\.mmd> --input <text> \[options\]/);
   assert.match(rootHelp.stdout, /ogs visualizer \[--workdir <path>\] \[--host <host>\] \[--port <n\|0>\]/);
 
   const projectHelp = await runNodeCli(runtimeCliPath, ["help", "project"]);
   assert.strictEqual(projectHelp.code, 0);
+  assert.match(projectHelp.stdout, /ogs project init \[options\]/);
+  assert.match(projectHelp.stdout, /ogs project sync-models \[options\]/);
+  assert.match(projectHelp.stdout, /ogs project init --help/);
+
+  const projectInitHelp = await runNodeCli(runtimeCliPath, ["project", "init", "--help"]);
+  assert.strictEqual(projectInitHelp.code, 0);
   assert.match(
-    projectHelp.stdout,
+    projectInitHelp.stdout,
     /ogs project init \[--template <empty\|minimal\|software-dev\|consultation>\] \[--workdir <path>\]/
   );
-  assert.match(
-    projectHelp.stdout,
-    /ogs project create <name> \[--template <empty\|minimal\|software-dev\|consultation>\] \[--workdir <path>\]/
-  );
-  assert.match(projectHelp.stdout, /ogs project sync --system <file\.mmd> \[--workdir <path>\]/);
-  assert.match(projectHelp.stdout, /init defaults to minimal; create defaults to minimal/);
+  assert.match(projectInitHelp.stdout, /Template to scaffold \(default: minimal\)/);
 
   const runHelp = await runNodeCli(runtimeCliPath, ["run", "--help"]);
   assert.strictEqual(runHelp.code, 0);
   assert.match(runHelp.stdout, /ogs run start --system <file\.mmd> --input <text> \[options\]/);
-  assert.match(runHelp.stdout, /--workdir <path>           Working directory \(default: cwd\)/);
-  assert.match(runHelp.stdout, /--visualize                Start a temporary visualizer server for this run/);
-  assert.match(runHelp.stdout, /--quiet-run                Disable stderr run progress logs/);
+  assert.match(runHelp.stdout, /ogs run logs <run-id> \[options\]/);
+  assert.match(runHelp.stdout, /ogs run logs --help/);
+
+  const runStartHelp = await runNodeCli(runtimeCliPath, ["run", "start", "--help"]);
+  assert.strictEqual(runStartHelp.code, 0);
+  assert.match(runStartHelp.stdout, /--host <host>          Visualizer bind host/);
+  assert.match(runStartHelp.stdout, /--port <n\|0>           Visualizer bind port/);
+  assert.doesNotMatch(runStartHelp.stdout, /visualizer-port/);
+
+  const runLogsHelp = await runNodeCli(runtimeCliPath, ["run", "logs", "--help"]);
+  assert.strictEqual(runLogsHelp.code, 0);
+  assert.match(runLogsHelp.stdout, /--json          Emit one JSON array/);
+  assert.match(runLogsHelp.stdout, /--ndjson        Emit one JSON object per line/);
+  assert.match(runLogsHelp.stdout, /default text    human-readable one-line summaries/);
 
   const visualizerHelp = await runNodeCli(runtimeCliPath, ["visualizer", "--help"]);
   assert.strictEqual(visualizerHelp.code, 0);
   assert.match(visualizerHelp.stdout, /ogs visualizer \[--workdir <path>\] \[--host <host>\] \[--port <n\|0>\]/);
   assert.match(visualizerHelp.stdout, /read-only OGSystem run visualizer/);
+
+  const version = await runNodeCli(runtimeCliPath, ["--version"]);
+  assert.strictEqual(version.code, 0);
+  assert.match(version.stdout, /^ogs \d+\.\d+\.\d+\s*$/);
 });
 
 test("nl2mmd help command highlights base entrypoint and defaults", async () => {
