@@ -43,8 +43,8 @@ flowchart TD
 %% system.version=1.0.0
 %% law.global=law.console.base
 %% entry.role=intake
-%% model.bind.intake=balanced-gpt52
-%% model.bind.writer=balanced-gpt52
+%% model.bind.intake=opencode/gpt-5-nano
+%% model.bind.writer=opencode/gpt-5-nano
 
 input -->|GO| intake[Role:intake]
 intake[Role:intake] -->|DONE| writer[Role:writer]
@@ -72,10 +72,10 @@ flowchart TD
 %% role.mode.dispatch=parallel_split
 %% join.mode.review=all_of
 %% join.sources.review=worker_a,worker_b
-%% model.bind.dispatch=balanced-gpt52
-%% model.bind.worker_a=balanced-gpt52
-%% model.bind.worker_b=balanced-gpt52
-%% model.bind.review=balanced-gpt52
+%% model.bind.dispatch=opencode/gpt-5-nano
+%% model.bind.worker_a=opencode/gpt-5-nano
+%% model.bind.worker_b=opencode/gpt-5-nano
+%% model.bind.review=opencode/gpt-5-nano
 
 input -->|START| dispatch[Role:dispatch]
 dispatch[Role:dispatch] -->|TO_A| worker_a[Role:worker_a]
@@ -107,11 +107,11 @@ flowchart TD
 %% join.sources.review=expert_a,expert_b,expert_c
 %% join.min.review=2
 %% context.map.review.summary=source(expert_a).content
-%% model.bind.lead=balanced-gpt52
-%% model.bind.expert_a=balanced-gpt52
-%% model.bind.expert_b=balanced-gpt52
-%% model.bind.expert_c=balanced-gpt52
-%% model.bind.review=balanced-gpt52
+%% model.bind.lead=opencode/gpt-5-nano
+%% model.bind.expert_a=opencode/gpt-5-nano
+%% model.bind.expert_b=opencode/gpt-5-nano
+%% model.bind.expert_c=opencode/gpt-5-nano
+%% model.bind.review=opencode/gpt-5-nano
 
 input -->|START| lead[Role:lead]
 lead[Role:lead] -->|ASK_A| expert_a[Role:expert_a]
@@ -144,9 +144,9 @@ flowchart TD
 %% handoff.mode=strict
 %% handoff.contracts=contracts/handoff.contracts.json
 %% route.order.intake=reviewer,observer
-%% model.bind.intake=balanced-gpt52
-%% model.bind.reviewer=balanced-gpt52
-%% model.bind.observer=balanced-gpt52
+%% model.bind.intake=opencode/gpt-5-nano
+%% model.bind.reviewer=opencode/gpt-5-nano
+%% model.bind.observer=opencode/gpt-5-nano
 
 input -->|GO| intake[Role:intake]
 intake[Role:intake] -->|REVIEW| reviewer[Role:reviewer]
@@ -174,8 +174,8 @@ flowchart TD
 %% law.global=law.console.base
 %% entry.role=main
 %% runtime.error_flows.v1=true
-%% model.bind.main=balanced-gpt52
-%% model.bind.recovery=balanced-gpt52
+%% model.bind.main=opencode/gpt-5-nano
+%% model.bind.recovery=opencode/gpt-5-nano
 
 input -->|START| main[Role:main]
 main[Role:main] -->|DONE| output
@@ -202,7 +202,7 @@ flowchart TD
 %% law.global=law.console.base
 %% entry.role=review
 %% loop.max.review=3
-%% model.bind.review=balanced-gpt52
+%% model.bind.review=opencode/gpt-5-nano
 
 input -->|START| review[Role:review]
 review[Role:review] -->|RETRY| review[Role:review]
@@ -253,7 +253,7 @@ flowchart TD
 %% system.version=1.0.0
 %% law.global=law.console.base
 %% entry.role=reviewer
-%% model.bind.reviewer=balanced-gpt52
+%% model.bind.reviewer=opencode/gpt-5-nano
 %% exec.bind.reviewer=ops-human
 
 input -->|START| reviewer[Role:reviewer]
@@ -266,4 +266,3 @@ reviewer[Role:reviewer] -->|DONE| output
 - 如果一个需求能被两个模板描述，优先选择更保守、更具体的那个。
 - 生成时要先保证必填槽位齐全，再补可选槽位。
 - 对已有系统做修改时，优先保持模板不变，只更新槽位内容。
-

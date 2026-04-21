@@ -142,7 +142,6 @@ async function setupFixture(args) {
       {
         executor: "opencode",
         roleRepo: "./og-roles",
-        modelRepo: path.resolve(repoRoot, "og-models"),
         runsDir: ".ogs/runs",
         runtime: {
           error_flows: {

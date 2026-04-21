@@ -37,7 +37,6 @@ test("runtime config rejects removed linkSharedIntoRoleDir field", () => {
         {
           executor: "opencode",
           roleRepo: "./og-roles",
-          modelRepo: "./og-models",
           runsDir: ".ogs/runs",
           workspace: {
             rolesDir: "roles",
@@ -56,12 +55,31 @@ test("runtime config rejects removed linkSharedIntoRoleDir field", () => {
   );
 });
 
+test("runtime config rejects removed modelRepo field", () => {
+  assert.throws(
+    () =>
+      validateRuntimeConfig(
+        {
+          executor: "opencode",
+          roleRepo: "./og-roles",
+          modelRepo: "./og-models"
+        },
+        "runtime.json"
+      ),
+    (error) => {
+      assert.ok(error instanceof Error);
+      assert.match(error.message, /runtime\.json/);
+      assert.match(error.message, /\.modelRepo/);
+      return true;
+    }
+  );
+});
+
 test("runtime config validates every supported runtime field", () => {
   const config = validateRuntimeConfig(
     {
       executor: "opencode",
       roleRepo: "./og-roles",
-      modelRepo: "./og-models",
       runsDir: ".ogs/runs",
       sharedDir: "./shared-workspace",
       workspace: {
@@ -90,7 +108,6 @@ test("runtime config accepts every supported field", () => {
     {
       executor: "opencode",
       roleRepo: "./og-roles",
-      modelRepo: "./og-models",
       runsDir: ".ogs/runs",
       sharedDir: "./shared-workspace",
       workspace: {
@@ -117,8 +134,7 @@ test("runtime config defaults runsDir to .ogs/runs", () => {
   const config = validateRuntimeConfig(
     {
       executor: "opencode",
-      roleRepo: "./og-roles",
-      modelRepo: "./og-models"
+      roleRepo: "./og-roles"
     },
     "runtime.json"
   );
@@ -131,7 +147,6 @@ test("runtime config accepts retention policy with defaults", () => {
     {
       executor: "opencode",
       roleRepo: "./og-roles",
-      modelRepo: "./og-models",
       retention: {}
     },
     "runtime.json"
@@ -151,7 +166,6 @@ test("runtime config rejects invalid retention thresholds", () => {
         {
           executor: "opencode",
           roleRepo: "./og-roles",
-          modelRepo: "./og-models",
           retention: {
             enabled: true,
             executionDirThreshold: 0,
@@ -176,7 +190,6 @@ test("runtime config rejects invalid retention keepLatest", () => {
         {
           executor: "opencode",
           roleRepo: "./og-roles",
-          modelRepo: "./og-models",
           retention: {
             enabled: true,
             executionDirThreshold: 10,
@@ -219,8 +232,7 @@ test("runtime config defaults runtime.error_flows.v1 to false", () => {
   const config = validateRuntimeConfig(
     {
       executor: "opencode",
-      roleRepo: "./og-roles",
-      modelRepo: "./og-models"
+      roleRepo: "./og-roles"
     },
     "runtime.json"
   );
@@ -233,7 +245,6 @@ test("runtime config accepts runtime.error_flows.v1 when set to true", () => {
     {
       executor: "opencode",
       roleRepo: "./og-roles",
-      modelRepo: "./og-models",
       runtime: {
         error_flows: {
           v1: true
@@ -251,7 +262,6 @@ test("runtime config accepts redaction and branch workspace isolation", () => {
     {
       executor: "opencode",
       roleRepo: "./og-roles",
-      modelRepo: "./og-models",
       redaction: {
         enabled: true
       },
@@ -275,7 +285,6 @@ test("runtime config rejects unknown runtime error_flows fields", () => {
         {
           executor: "opencode",
           roleRepo: "./og-roles",
-          modelRepo: "./og-models",
           runtime: {
             error_flows: {
               v1: true,

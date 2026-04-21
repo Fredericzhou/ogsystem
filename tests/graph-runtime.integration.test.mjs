@@ -376,7 +376,6 @@ test("adapter preserves session lineage semantics and join context projection ac
       {
         executor: "opencode",
         roleRepo: "./og-roles",
-        modelRepo: "./og-models",
         runsDir: ".ogs/runs"
       },
       null,
@@ -494,7 +493,6 @@ test("adapter runs quorum_of join once and applies context.map projection", asyn
       {
         executor: "opencode",
         roleRepo: "./og-roles",
-        modelRepo: path.resolve(repoRoot, "og-models"),
         runsDir: ".ogs/runs"
       },
       null,
@@ -731,7 +729,6 @@ test("adapter transition skips warned contract violations and still activates va
       {
         executor: "opencode",
         roleRepo: "./og-roles",
-        modelRepo: path.resolve(repoRoot, "og-models"),
         runsDir: ".ogs/runs"
       },
       null,
@@ -1113,7 +1110,6 @@ test("adapter applies retention cleanup from runtime config when execution direc
       {
         executor: "opencode",
         roleRepo: "./og-roles",
-        modelRepo: "./og-models",
         runsDir: ".ogs/runs",
         retention: {
           enabled: true,
@@ -1181,7 +1177,6 @@ test("adapter skips auto retention cleanup when retention is disabled", async ()
       {
         executor: "opencode",
         roleRepo: "./og-roles",
-        modelRepo: "./og-models",
         runsDir: ".ogs/runs",
         retention: {
           enabled: false,
@@ -1239,7 +1234,6 @@ test("adapter persists metrics fields on failed graph runs", async () => {
       {
         executor: "opencode",
         roleRepo: "./og-roles",
-        modelRepo: "./og-models",
         runsDir: ".ogs/runs"
       },
       null,
@@ -1319,7 +1313,6 @@ test("adapter keeps scheduler recursion budget above loop-heavy transition count
       {
         executor: "opencode",
         roleRepo: "./og-roles",
-        modelRepo: "./og-models",
         runsDir: ".ogs/runs"
       },
       null,

@@ -322,7 +322,7 @@ This repository now has one active runtime path: the graph runtime.
 
 Use this rule:
 
-- default execution path: use `model.bind.<roleId>=<modelId>`
+- default execution path: use `model.bind.<roleId>=<provider/model>`
 - graph semantics: add `role.mode/join.mode/context.map/loop.max` only when the system needs parallel split, `all_of/quorum_of` join, field-level projection, or bounded loop
 - `join.mode.<roleId>=all_of` requires `join.sources.<roleId>`; that source list must contain unique role ids and match the role's Mermaid incoming edges exactly
 - `join.mode.<roleId>=quorum_of` requires both `join.sources.<roleId>` and `join.min.<roleId>`; `join.sources` must contain unique role ids, must match the role's Mermaid incoming edges exactly, and readiness counts unique completed source roles under the same `lineageId + loopIteration`
@@ -450,8 +450,8 @@ flowchart TD
 %% system.version=1.0.0
 %% law.global=law.console.base
 %% entry.role=debate-minimalist
-%% model.bind.debate-minimalist=general-balanced
-%% model.bind.debate-judge=general-steady
+%% model.bind.debate-minimalist=opencode/gpt-5-nano
+%% model.bind.debate-judge=opencode/gpt-5-nano
 
 input -->|DEBATE_REQUEST| minimalist[Role:debate-minimalist]
 minimalist[Role:debate-minimalist] -->|MINIMALIST_DONE| judge[Role:debate-judge]
@@ -484,11 +484,11 @@ flowchart TD
 %% join.mode.debate-judge=all_of
 %% join.sources.debate-judge=debate-minimalist,debate-alignmentist
 %% loop.max.debate-moderator=2
-%% model.bind.debate-moderator=general-fast
-%% model.bind.debate-minimalist=general-balanced
-%% model.bind.debate-alignmentist=general-steady
-%% model.bind.debate-judge=general-steady
-%% model.bind.debate-summary=general-steady
+%% model.bind.debate-moderator=opencode/gpt-5-nano
+%% model.bind.debate-minimalist=opencode/gpt-5-nano
+%% model.bind.debate-alignmentist=opencode/gpt-5-nano
+%% model.bind.debate-judge=opencode/gpt-5-nano
+%% model.bind.debate-summary=opencode/gpt-5-nano
 
 input -->|DEBATE_REQUEST| debate-moderator[Role:debate-moderator]
 debate-moderator[Role:debate-moderator] -->|SEND_MINIMALIST| debate-minimalist[Role:debate-minimalist]

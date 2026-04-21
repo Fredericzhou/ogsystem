@@ -63,8 +63,11 @@ test("ogs help command surfaces layered guidance", async () => {
 test("nl2mmd help command highlights base entrypoint and defaults", async () => {
   const help = await runNodeCli(nl2mmdCliPath, ["--help"]);
   assert.strictEqual(help.code, 0);
-  assert.match(help.stdout, /ogs-nl2mmd \[--message <text>\] \[--model <modelId>\]/);
-  assert.match(help.stdout, /pnpm run run:nl2mmd -- \[--message <text>\] \[--model <modelId>\]/);
+  assert.match(help.stdout, /ogs-nl2mmd \[--message <text>\] \[--model <provider\/model>\]/);
+  assert.match(
+    help.stdout,
+    /pnpm run run:nl2mmd -- \[--message <text>\] \[--model <provider\/model>\]/
+  );
   assert.match(help.stdout, /Base command:/);
   assert.match(help.stdout, /workdir defaults to the current directory/);
   assert.match(help.stdout, /Interactive commands:/);

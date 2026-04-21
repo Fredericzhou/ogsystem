@@ -1,5 +1,5 @@
 /**
- * @fileoverview NL2MMD catalog/context loader from local OGSystem repositories.
+ * @fileoverview NL2MMD catalog/context loader from local OGSystem project metadata.
  * File Set: nl2mmd-context
  * Responsibilities:
  * - Load runtime/law/role/model metadata into one prompt-ready context.
@@ -11,11 +11,8 @@ import { readdir } from "node:fs/promises";
 import { resolve } from "node:path";
 
 import {
-  DEFAULT_MODEL_REPO,
   DEFAULT_ROLE_REPO,
-  resolveProjectModelRepoRoot,
   resolveProjectRoleRootDir,
-  resolveTemplateModelRepoRoot,
   resolveTemplateRoleRootDir
 } from "../runtime/bundled-repos.js";
 import {
@@ -23,7 +20,8 @@ import {
   validateRuntimeConfig
 } from "../runtime/config.js";
 import { readJsonFile } from "../runtime/json-file.js";
-import { loadModelPackage } from "../runtime/model-repo.js";
+import { chooseDefaultModelFromCatalog, loadModelCatalog } from "../runtime/model-catalog.js";
+import { isDirectModelRef, loadModelSelection } from "../runtime/model-selection.js";
 import { loadRolePackage } from "../runtime/role-repo.js";
 import { logNl2MmdDebug } from "./logger.js";
 import type { Nl2MmdContext, Nl2MmdRoleMention, Nl2MmdSupportedDictionary } from "./types.js";
@@ -93,7 +91,6 @@ function getDefaultRuntimeConfig(path: string) {
     {
       executor: "opencode",
       roleRepo: DEFAULT_ROLE_REPO,
-      modelRepo: DEFAULT_MODEL_REPO,
       runsDir: ".ogs/runs",
       workspace: {
         rolesDir: "roles",
@@ -160,6 +157,34 @@ export function getSupportedNl2MmdDictionary(): Nl2MmdSupportedDictionary {
   };
 }
 
+function splitModelRef(modelRef: string): { provider: string; model: string } {
+  const separator = modelRef.indexOf("/");
+  if (separator <= 0 || separator === modelRef.length - 1) {
+    return {
+      provider: "unknown",
+      model: modelRef
+    };
+  }
+  return {
+    provider: modelRef.slice(0, separator),
+    model: modelRef.slice(separator + 1)
+  };
+}
+
+function gatherSelectionModelRefs(context: Nl2MmdContext["modelSelection"]): string[] {
+  if (!context) {
+    return [];
+  }
+  return [
+    context.defaults?.model,
+    ...Object.values(context.roles ?? {}).map((entry) => entry.model),
+    ...Object.values(context.systems ?? {}).flatMap((systemEntry) => [
+      systemEntry.defaults?.model,
+      ...Object.values(systemEntry.roles ?? {}).map((roleEntry) => roleEntry.model)
+    ])
+  ].filter((value): value is string => isDirectModelRef(value));
+}
+
 export async function loadNl2MmdContext(args: {
   workdir: string;
   runtimeConfigPath?: string;
@@ -174,9 +199,11 @@ export async function loadNl2MmdContext(args: {
       : getDefaultRuntimeConfig(runtimePath);
 
   const roleRootDir = resolveProjectRoleRootDir(args.workdir, runtimeConfig.roleRepo);
-  const modelRootDir = resolveProjectModelRepoRoot(args.workdir, runtimeConfig.modelRepo ?? "./og-models");
   const templateRoleRootDir = resolveTemplateRoleRootDir();
-  const templateModelRootDir = resolveTemplateModelRepoRoot();
+  const modelCatalogPath = resolve(args.workdir, ".ogs", "model-catalog.json");
+  const modelSelectionPath = resolve(args.workdir, ".ogs", "model-selection.json");
+  const rawModelCatalog = await loadModelCatalog(modelCatalogPath);
+  const modelSelection = await loadModelSelection(modelSelectionPath);
 
   const roleEntries = dedupeByKey(
     [
@@ -218,46 +245,46 @@ export async function loadNl2MmdContext(args: {
     )
   );
 
-  const modelEntries = dedupeByKey(
+  const modelCatalog = dedupeByKey(
     [
-      ...(await listDirectoryNamesIfExists(resolve(modelRootDir, "models"))),
-      ...(await listDirectoryNamesIfExists(resolve(templateModelRootDir, "models")))
-    ],
-    (name) => name
-  );
-
-  const modelCatalog = compact(
-    await Promise.all(
-      modelEntries.map(async (modelId) => {
-        const rootsToTry = [modelRootDir, templateModelRootDir];
-        try {
-          for (const candidateRoot of rootsToTry) {
-            const manifestPath = resolve(candidateRoot, "models", modelId, "model.json");
-            try {
-              const modelPackage = await loadModelPackage({ modelId, modelRootDir: candidateRoot });
-              return {
-                modelId,
-                model: modelPackage.manifest.model,
-                reasoningEffort:
-                  typeof modelPackage.manifest.args?.reasoningEffort === "string"
-                    ? modelPackage.manifest.args.reasoningEffort
-                    : undefined,
-                tags: modelPackage.manifest.tags ?? []
-              };
-            } catch (error) {
-              if (isMissingPathError(error, manifestPath)) {
-                continue;
-              }
-              throw error;
-            }
-          }
-          return undefined;
-        } catch (error) {
-          throw error;
-        }
+      ...(rawModelCatalog?.models.map((entry) => ({
+        modelRef: entry.ref,
+        provider: entry.provider,
+        model: entry.model,
+        name: entry.name,
+        status: entry.status,
+        reasoningEffort: undefined,
+        variants: entry.variants,
+        tags: [
+          ...(entry.status ? [entry.status] : []),
+          ...(entry.capabilities.toolcall ? ["toolcall"] : []),
+          ...(entry.capabilities.textInput ? ["text-input"] : []),
+          ...(entry.capabilities.textOutput ? ["text-output"] : [])
+        ]
+      })) ?? []),
+      ...gatherSelectionModelRefs(modelSelection).map((modelRef) => {
+        const { provider, model } = splitModelRef(modelRef);
+        return {
+          modelRef,
+          provider,
+          model,
+          name: undefined,
+          status: undefined,
+          reasoningEffort: undefined,
+          variants: [],
+          tags: ["selection"]
+        };
       })
-    )
-  );
+    ],
+    (item) => item.modelRef
+  ).sort((left, right) => left.modelRef.localeCompare(right.modelRef));
+
+  const defaultCatalogModel = rawModelCatalog ? chooseDefaultModelFromCatalog(rawModelCatalog) : undefined;
+  const defaultModelRef =
+    modelSelection?.defaults?.model ?? defaultCatalogModel?.ref ?? modelCatalog[0]?.modelRef;
+  const defaultModelVariant = modelSelection?.defaults?.variant;
+  const defaultTimeoutMs = modelSelection?.defaults?.timeoutMs ?? 120000;
+  const defaultMaxOutputBytes = modelSelection?.defaults?.maxOutputBytes ?? 65536;
 
   let lawIds: string[] = [];
   const lawsPath = args.lawsPath ?? resolve(args.workdir, ".ogs", "laws.json");
@@ -270,11 +297,15 @@ export async function loadNl2MmdContext(args: {
   const context = {
     workdir: args.workdir,
     roleRootDir,
-    modelRootDir,
     templateRoleRootDir,
-    templateModelRootDir,
     roleCatalog,
     modelCatalog,
+    rawModelCatalog,
+    modelSelection,
+    defaultModelRef,
+    defaultModelVariant,
+    defaultTimeoutMs,
+    defaultMaxOutputBytes,
     lawIds,
     supportedDictionary: getSupportedNl2MmdDictionary()
   };
@@ -282,6 +313,11 @@ export async function loadNl2MmdContext(args: {
     workdir: args.workdir,
     runtimePath,
     runtimeConfigSource: runtimeConfigSource !== undefined ? "file" : "default",
+    modelCatalogPath,
+    modelCatalogLoaded: rawModelCatalog !== undefined,
+    modelSelectionPath,
+    modelSelectionLoaded: modelSelection !== undefined,
+    defaultModelRef: defaultModelRef ?? "(none)",
     lawsPath,
     lawsLoaded: lawsSource !== undefined,
     roleCount: roleCatalog.length,

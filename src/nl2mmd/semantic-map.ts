@@ -44,9 +44,13 @@ const ROLE_SEARCH_FIELDS: SearchField<Nl2MmdRoleSummary>[] = [
 ];
 
 const MODEL_SEARCH_FIELDS: SearchField<Nl2MmdModelSummary>[] = [
-  { getter: (item) => item.modelId, weight: 5 },
+  { getter: (item) => item.modelRef, weight: 5 },
+  { getter: (item) => item.provider, weight: 3 },
+  { getter: (item) => item.name, weight: 3 },
   { getter: (item) => item.model, weight: 4 },
   { getter: (item) => item.tags, weight: 2 },
+  { getter: (item) => item.variants, weight: 2 },
+  { getter: (item) => item.status, weight: 1 },
   { getter: (item) => item.reasoningEffort, weight: 1 }
 ];
 
@@ -239,7 +243,7 @@ const HINT_RULES: HintRule[] = [
     hint: {
       kind: "model_lookup",
       label: "model.bind",
-      detail: "Detected model-selection intent. Prefer local curated `model.bind.<roleId>=<modelId>`."
+      detail: 'Detected model-selection intent. Prefer `model.bind.<roleId>=provider/model` or project defaults in `.ogs/model-selection.json`.'
     }
   },
   {

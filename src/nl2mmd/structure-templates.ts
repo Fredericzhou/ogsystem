@@ -71,7 +71,7 @@ const TEMPLATES: readonly Nl2MmdStructureTemplate[] = [
     requiredSlots: [
       slot("entry", "Declare the entry role and the main linear path.", ["entry.role=debate-minimalist"]),
       slot("roles", "List the ordered roles in the single chain.", ["input -> role_a -> role_b -> output"]),
-      slot("bindings", "Bind each active role to a model or legacy executor.", ["model.bind.role_a=balanced-gpt52"])
+      slot("bindings", "Bind each active role to a direct model ref or legacy executor.", ["model.bind.role_a=opencode/gpt-5-nano"])
     ],
     optionalSlots: [
       slot("notes", "Capture any lightweight constraints or delivery preferences.", ["user profile style notes"], false)
@@ -175,7 +175,7 @@ const TEMPLATES: readonly Nl2MmdStructureTemplate[] = [
     requiredSlots: [
       slot("handoff", "Declare the handoff mode and contract bundle.", ["handoff.mode=strict", "handoff.contracts=contracts/handoff.contracts.json"]),
       slot("routes", "List deterministic sibling targets in route order when needed.", ["route.order.dispatch=reviewer,observer"]),
-      slot("binds", "Bind roles that own the handoff decision.", ["model.bind.reviewer=balanced-gpt52"])
+      slot("binds", "Bind roles that own the handoff decision.", ["model.bind.reviewer=opencode/gpt-5-nano"])
     ],
     optionalSlots: [
       slot("warnings", "Note transition behavior for warned contracts.", ["handoff.mode=transition skips warned contracts"], false)
@@ -274,7 +274,7 @@ const TEMPLATES: readonly Nl2MmdStructureTemplate[] = [
     semanticHintLabels: ["binding_policy"],
     requiredMetadataKeys: ["system.id", "system.version", "law.global", "entry.role"],
     requiredSlots: [
-      slot("primary-binding", "Declare the preferred modern binding.", ["model.bind.reviewer=balanced-gpt52"]),
+      slot("primary-binding", "Declare the preferred modern binding.", ["model.bind.reviewer=opencode/gpt-5-nano"]),
       slot("legacy-binding", "Keep the legacy compatibility binding if required.", ["exec.bind.reviewer=review-profile"]),
       slot("migration-note", "Record which binding path is authoritative.", ["model.bind is primary; exec.bind is compatibility-only"])
     ],
@@ -287,7 +287,7 @@ const TEMPLATES: readonly Nl2MmdStructureTemplate[] = [
       "%% system.version=1.0.0",
       "%% law.global=<law.ref>",
       "%% entry.role=<entry-role>",
-      "%% model.bind.<role>=<model-id>",
+      "%% model.bind.<role>=<provider/model>",
       "%% exec.bind.<role>=<profile-id>",
       "input -->|<EVENT>| <role>[Role:<role>]",
       "<role>[Role:<role>] -->|DONE| output"

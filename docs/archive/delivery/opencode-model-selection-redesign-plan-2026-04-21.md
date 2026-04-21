@@ -1,14 +1,16 @@
 # OpenCode Model Selection Redesign Plan
 
 Date: 2026-04-21  
-Status: delivered
+Status: delivered and archived
 
 Delivered scope summary:
 
 - runtime 主路径切换到 `.ogs/model-selection.json` + direct `provider/model`
 - `project init/create/sync-models` 已生成并刷新 `.ogs/model-catalog.json` / `.ogs/model-selection.json`
 - runtime / fingerprint / resume / audit / doctor / CLI / packaging / docs 已按新入口收口
-- 旧 `og-models` 路径不再作为默认脚手架或安装产物主入口；仓内保留的少量 legacy helper 仅用于内部兼容测试调用，不属于用户主路径
+- `runtime.json` 已移除 `modelRepo` 配置面，NL2MMD 已不再把 `og-models` 当作模型上下文来源
+- active docs / examples / tests 已统一改为 direct `provider/model` 或 `.ogs/model-selection.json` 主路径
+- 旧 `og-models` 路径不再作为默认脚手架或安装产物主入口；仓内保留的少量 legacy helper 仅用于低层内部兼容测试，不属于用户主路径
 
 ## 1. Decision Summary
 

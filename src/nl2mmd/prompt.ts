@@ -97,7 +97,7 @@ export function buildNl2MmdSystemPrompt(context: Nl2MmdContext): string {
     "- loop.max must be a positive integer",
     "- engine is compatibility-only and may only be langgraph when explicitly needed",
     "- entry.role must exist in the graph",
-    "- Every role with execution intent should use model.bind.<roleId> with a discovered model id unless the user explicitly requests legacy exec.bind compatibility",
+    '- Every role with execution intent should use model.bind.<roleId>=provider/model, or rely on .ogs/model-selection.json defaults when direct per-role binding is unnecessary',
     "- Event names must be uppercase snake case and must match outgoing role schema enums when using known roles",
     "",
     "Output policy:",
@@ -139,7 +139,7 @@ export function buildNl2MmdTurnPrompt(args: {
   const modelSummary =
     modelMatches.length > 0
       ? modelMatches
-          .map((item) => `${item.item.modelId} (${item.reason})`)
+          .map((item) => `${item.item.modelRef} (${item.reason})`)
           .join("; ")
       : "(none)";
   const hintSummary =

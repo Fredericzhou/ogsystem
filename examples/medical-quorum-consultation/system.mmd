@@ -14,11 +14,11 @@ flowchart TD
 %% context.map.diagnosis-chief-review.cardiology_summary=source(diagnosis-cardiology).content
 %% context.map.diagnosis-chief-review.neurology_summary=source(diagnosis-neurology).content
 %% context.map.diagnosis-chief-review.imaging_summary=source(diagnosis-imaging).content
-%% model.bind.diagnosis-dispatch=general-fast
-%% model.bind.diagnosis-cardiology=general-balanced
-%% model.bind.diagnosis-neurology=general-steady
-%% model.bind.diagnosis-imaging=general-steady
-%% model.bind.diagnosis-chief-review=general-steady
+%% model.bind.diagnosis-dispatch=opencode/gpt-5-nano
+%% model.bind.diagnosis-cardiology=opencode/gpt-5-nano
+%% model.bind.diagnosis-neurology=opencode/gpt-5-nano
+%% model.bind.diagnosis-imaging=opencode/gpt-5-nano
+%% model.bind.diagnosis-chief-review=opencode/gpt-5-nano
 
 input -->|CASE_RECEIVED| diagnosis-dispatch[Role:diagnosis-dispatch]
 

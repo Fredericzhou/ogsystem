@@ -1,7 +1,7 @@
 import { homedir } from "node:os";
 import { resolve } from "node:path";
 
-import { DEFAULT_MODEL_REPO, DEFAULT_ROLE_REPO } from "./bundled-repos.js";
+import { DEFAULT_ROLE_REPO } from "./bundled-repos.js";
 import {
   validateLawsConfig,
   validateProfilesConfig,
@@ -10,14 +10,12 @@ import {
   validateUserProfileConfig
 } from "./config.js";
 import { readJsonFile } from "./json-file.js";
-import { loadModelPackage } from "./model-repo.js";
 import { loadRolePackage } from "./role-repo.js";
 import { pathExists } from "./run-artifacts.js";
 import type {
   CliTool,
   ExecutionProfile,
   LawCatalog,
-  LoadedModelPackage,
   LoadedRolePackage,
   RuntimeConfig,
   SystemDefinition,
@@ -189,22 +187,4 @@ export async function loadRolePackages(args: {
   }
 
   return rolePackagesByRoleId;
-}
-
-export async function loadModelPackages(args: {
-  system: SystemDefinition;
-  modelRootDir: string;
-}): Promise<Map<string, LoadedModelPackage>> {
-  const modelsById = new Map<string, LoadedModelPackage>();
-  const referencedModelIds = new Set(Object.values(args.system.modelBinding));
-
-  for (const modelId of referencedModelIds) {
-    const modelPackage = await loadModelPackage({
-      modelId,
-      modelRootDir: args.modelRootDir
-    });
-    modelsById.set(modelId, modelPackage);
-  }
-
-  return modelsById;
 }

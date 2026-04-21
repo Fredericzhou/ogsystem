@@ -11,6 +11,7 @@ import { stdin as input, stdout as output } from "node:process";
 import { parseArgs } from "node:util";
 import { createInterface } from "node:readline/promises";
 
+import { isDirectModelRef } from "../runtime/model-selection.js";
 import {
   createNl2MmdConversation,
   detectSemanticHints,
@@ -27,17 +28,17 @@ import type { Nl2MmdConversation, Nl2MmdContext, Nl2MmdTurnResult } from "./type
 function usage(): string {
   return [
     "Usage:",
-    "  ogs-nl2mmd [--message <text>] [--model <modelId>]",
+    "  ogs-nl2mmd [--message <text>] [--model <provider/model>]",
     "",
     "Base command:",
-    "  direct entrypoint for prompt generation and validation against local roles/models",
+    "  direct entrypoint for prompt generation and validation against local roles plus .ogs model-selection/model-catalog",
     "",
     "Source repository equivalent:",
-    "  pnpm run run:nl2mmd -- [--message <text>] [--model <modelId>]",
+    "  pnpm run run:nl2mmd -- [--message <text>] [--model <provider/model>]",
     "",
     "Options:",
     "  --message <text>       One-shot NL2MMD request; omit for interactive mode",
-    "  --model <modelId>      Default model id (default: fast-gpt54)",
+    "  --model <provider/model>  Direct default model ref (overrides .ogs/model-selection.json defaults)",
     "  --runtime <file>       Runtime config JSON (optional)",
     "  --laws <file>          Laws JSON (optional)",
     "  --profiles <file>      Legacy profiles JSON for exec.bind validation (optional)",
@@ -48,15 +49,15 @@ function usage(): string {
     "",
     "Defaults:",
     "  workdir defaults to the current directory",
-    "  model defaults to fast-gpt54",
+    "  model defaults to .ogs/model-selection.json, then .ogs/model-catalog.json",
     "  preflight runs before the first turn unless disabled",
     "",
     "Interactive commands:",
     "  /help                  Show commands",
     "  /roles <query>         Search role repo",
-    "  /models <query>        Search model repo",
+    "  /models <query>        Search local model catalog",
     "  /laws                  List discovered law ids",
-    "  /use-model <modelId>   Switch the conversation model",
+    "  /use-model <provider/model>   Switch the conversation model",
     "  /status                Show current draft/model/session status",
     "  /validate              Re-run local validation for the current Mermaid draft",
     "  /clear                 Clear current draft/validation state",
@@ -92,7 +93,7 @@ function formatModelSearch(context: Nl2MmdContext, query: string): string {
   return matches
     .map(
       (item) =>
-        `${item.item.modelId} | ${item.item.model} | reasoning=${item.item.reasoningEffort ?? "-"} | ${item.reason}`
+        `${item.item.modelRef} | ${item.item.model} | variants=${item.item.variants.join(",") || "-"} | ${item.reason}`
     )
     .join("\n");
 }
@@ -179,7 +180,13 @@ async function main(): Promise<void> {
     lawsPath: values.laws
   });
 
-  let modelId = values.model ?? "fast-gpt54";
+  const initialModelRef = values.model ?? context.defaultModelRef ?? context.modelCatalog[0]?.modelRef;
+  if (!initialModelRef || !isDirectModelRef(initialModelRef)) {
+    throw new Error(
+      "No usable NL2MMD model ref found. Set --model <provider/model> or configure .ogs/model-selection.json."
+    );
+  }
+  let modelRef = initialModelRef;
   let draftMermaid = "";
   let lastTurn: Nl2MmdTurnResult | undefined;
   let conversation: Nl2MmdConversation | undefined;
@@ -190,7 +197,7 @@ async function main(): Promise<void> {
     }
     conversation = await createNl2MmdConversation({
       workdir,
-      modelId,
+      modelRef,
       runtimeConfigPath: values.runtime,
       lawsPath: values.laws,
       context
@@ -198,13 +205,13 @@ async function main(): Promise<void> {
     return conversation;
   }
 
-  async function switchModel(nextModelId: string): Promise<void> {
-    if (!context.modelCatalog.some((item) => item.modelId === nextModelId)) {
-      throw new Error(`Unknown modelId "${nextModelId}"`);
+  async function switchModel(nextModelRef: string): Promise<void> {
+    if (!isDirectModelRef(nextModelRef)) {
+      throw new Error(`Invalid model ref "${nextModelRef}". Expected provider/model.`);
     }
     conversation?.close();
     conversation = undefined;
-    modelId = nextModelId;
+    modelRef = nextModelRef;
   }
 
   async function submit(message: string): Promise<Nl2MmdTurnResult> {
@@ -284,7 +291,7 @@ async function main(): Promise<void> {
 
     console.log("OGSystem NL2MMD interactive CLI");
     console.log(`workdir=${workdir}`);
-    console.log(`model=${modelId}`);
+    console.log(`model=${modelRef}`);
     console.log('Type natural language requirements, or "/help" for commands.');
 
     const rl = createInterface({ input, output });
@@ -310,7 +317,7 @@ async function main(): Promise<void> {
           printSection(
             "Status",
             [
-              `model=${modelId}`,
+              `model=${modelRef}`,
               `session=${conversation?.sessionId ?? "(none)"}`,
               `hasDraft=${draftMermaid ? "yes" : "no"}`,
               `lastMode=${lastTurn?.mode ?? "(none)"}`
@@ -334,7 +341,7 @@ async function main(): Promise<void> {
         }
         if (line.startsWith("/use-model ")) {
           await switchModel(line.slice("/use-model ".length).trim());
-          printSection("Model", `switched to ${modelId}`);
+          printSection("Model", `switched to ${modelRef}`);
           continue;
         }
         if (line === "/validate") {

@@ -27,7 +27,6 @@ test(
         {
           executor: "opencode",
           roleRepo: "./og-roles",
-          modelRepo: "./og-models",
           runsDir
         },
         null,

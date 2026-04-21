@@ -115,7 +115,6 @@ async function prepareRoleExecutorFixture(args) {
     {
       executor: "opencode",
       roleRepo: "./og-roles",
-      modelRepo: path.resolve("og-models"),
       runsDir: ".ogs/runs"
     },
     "runtime.json"

@@ -48,7 +48,6 @@ test("resume context reloads sessions.json and reuses session ids for role execu
     {
       executor: "opencode",
       roleRepo: "./og-roles",
-      modelRepo: "./og-models",
       runsDir: ".ogs/runs"
     },
     "runtime.json"
@@ -196,7 +195,6 @@ summary[Role:debate-summary] -->|SUMMARY_READY| output
     {
       executor: "opencode",
       roleRepo: "./og-roles",
-      modelRepo: "./og-models",
       runsDir: ".ogs/runs"
     },
     "runtime.json"
@@ -360,7 +358,6 @@ test("branch workspace isolation stores session directory under branch private w
     {
       executor: "opencode",
       roleRepo: "./og-roles",
-      modelRepo: "./og-models",
       runsDir: ".ogs/runs",
       workspace: {
         rolesDir: "roles",

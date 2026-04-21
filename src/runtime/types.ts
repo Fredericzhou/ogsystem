@@ -294,7 +294,6 @@ export type RuntimeConfig = {
   configVersion?: string;
   executor: "opencode";
   roleRepo: string;
-  modelRepo?: string;
   runsDir: string;
   sharedDir?: string;
   workspace: RuntimeWorkspaceConfig;

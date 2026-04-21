@@ -120,7 +120,6 @@ async function main() {
       {
         executor: "opencode",
         roleRepo: "./og-roles",
-        modelRepo: "./og-models",
         runsDir: ".ogs/runs"
       },
       null,
@@ -209,7 +208,6 @@ async function main() {
     {
       executor: "opencode",
       roleRepo: "./og-roles",
-      modelRepo: "./og-models",
       runsDir: ".ogs/runs"
     },
     runtimePath

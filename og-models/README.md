@@ -1,18 +1,11 @@
-# OGSystem Model Repository
+# OGSystem Legacy Model Repository
 
-The model repo has two layers:
+`og-models/` is no longer the active user-facing model configuration path.
 
-- `catalog/opencode-models.json`: snapshot of models currently available from local `opencode models`
-- `models/<modelId>/model.json`: small set of reusable bindings used by systems
+Current runtime and scaffolding use:
 
-Model packages define execution configuration, not role semantics.
+- `.ogs/model-selection.json` for defaults and overrides
+- `.ogs/model-catalog.json` for local `opencode models --verbose` snapshots
+- direct `model.bind.<roleId>=provider/model` refs when a system needs explicit per-role binding
 
-Rules:
-
-- model packages do not include role persona/prompt logic
-- model packages do not include system routing
-- model packages are bound from `system.mmd` via `model.bind.<roleId>=<modelId>`
-- legacy runtime may still use `exec.bind.*` during migration
-- curated `modelId` aliases should point to models that exist in `catalog/opencode-models.json`
-- prefer semantic alias names for `modelId` (for example `general-fast`, `general-balanced`, `general-steady`) instead of provider/version names
-- upgrade provider models by editing `models/<modelId>/model.json` mapping, so `system.mmd` remains stable across model refreshes
+This directory remains only as a legacy/internal compatibility fixture for older low-level tests and archived design history. New projects should not read from or write to `og-models/`.

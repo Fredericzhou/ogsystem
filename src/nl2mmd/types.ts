@@ -6,7 +6,7 @@
  * Boundaries:
  * - Type contracts only; no behavior.
  */
-import type { LoadedModelPackage, SystemDefinition } from "../runtime/types.js";
+import type { ModelCatalog, ModelSelectionConfig, SystemDefinition } from "../runtime/types.js";
 
 export type Nl2MmdRoleSummary = {
   roleId: string;
@@ -18,9 +18,13 @@ export type Nl2MmdRoleSummary = {
 };
 
 export type Nl2MmdModelSummary = {
-  modelId: string;
+  modelRef: string;
+  provider: string;
   model: string;
+  name?: string;
+  status?: string;
   reasoningEffort?: string;
+  variants: string[];
   tags: string[];
 };
 
@@ -68,11 +72,15 @@ export type Nl2MmdRoleMention = {
 export type Nl2MmdContext = {
   workdir: string;
   roleRootDir: string;
-  modelRootDir: string;
   templateRoleRootDir?: string;
-  templateModelRootDir?: string;
   roleCatalog: Nl2MmdRoleSummary[];
   modelCatalog: Nl2MmdModelSummary[];
+  rawModelCatalog?: ModelCatalog;
+  modelSelection?: ModelSelectionConfig;
+  defaultModelRef?: string;
+  defaultModelVariant?: string;
+  defaultTimeoutMs?: number;
+  defaultMaxOutputBytes?: number;
   lawIds: string[];
   supportedDictionary: Nl2MmdSupportedDictionary;
 };
@@ -121,7 +129,10 @@ export type Nl2MmdTurnInput = {
  */
 export type Nl2MmdConversation = {
   context: Nl2MmdContext;
-  modelPackage: LoadedModelPackage;
+  modelRef: string;
+  variant?: string;
+  timeoutMs: number;
+  maxOutputBytes: number;
   workdir: string;
   sessionId?: string;
   close(): void;

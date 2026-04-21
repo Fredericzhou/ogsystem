@@ -123,7 +123,6 @@ test("sync-agent-sources generates canonical agency roles and runtime can load t
       {
         executor: "opencode",
         roleRepo: rolesRepoRoot,
-        modelRepo: path.resolve("og-models"),
         runsDir: ".ogs/runs"
       },
       null,

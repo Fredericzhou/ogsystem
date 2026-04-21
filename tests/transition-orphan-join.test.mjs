@@ -114,7 +114,6 @@ test("transition mode fails closed when a skipped flow leaves a join orphaned", 
       {
         executor: "opencode",
         roleRepo: "./og-roles",
-        modelRepo: path.resolve(repoRoot, "og-models"),
         runsDir: ".ogs/runs"
       },
       null,

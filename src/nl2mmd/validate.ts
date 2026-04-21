@@ -8,7 +8,7 @@
  * - Validation only; does not execute runs.
  */
 import { readJsonFile } from "../runtime/json-file.js";
-import { loadModelPackage } from "../runtime/model-repo.js";
+import { resolveModelSelectionForSystem } from "../runtime/model-selection.js";
 import { parseSystemFromMermaidSource } from "../runtime/parse-mermaid.js";
 import { loadRolePackage } from "../runtime/role-repo.js";
 import {
@@ -46,30 +46,6 @@ async function loadRolePackageForValidation(args: {
       return loadRolePackage({
         roleId: args.roleId,
         roleRootDir: args.context.templateRoleRootDir
-      });
-    }
-    throw error;
-  }
-}
-
-async function loadModelPackageForValidation(args: {
-  modelId: string;
-  context: Nl2MmdContext;
-}) {
-  try {
-    return await loadModelPackage({
-      modelId: args.modelId,
-      modelRootDir: args.context.modelRootDir
-    });
-  } catch (error) {
-    if (
-      isFileNotFoundError(error) &&
-      args.context.templateModelRootDir &&
-      args.context.templateModelRootDir !== args.context.modelRootDir
-    ) {
-      return loadModelPackage({
-        modelId: args.modelId,
-        modelRootDir: args.context.templateModelRootDir
       });
     }
     throw error;
@@ -115,6 +91,19 @@ export async function validateNl2MmdCandidate(args: {
       errors: [error instanceof Error ? error.message : String(error)],
       warnings: []
     };
+  }
+
+  let resolvedModelsByRoleId = new Map<string, { modelRef: string }>();
+  try {
+    const resolvedModelSelection = resolveModelSelectionForSystem({
+      system,
+      selection: args.context.modelSelection,
+      catalog: args.context.rawModelCatalog
+    });
+    resolvedModelsByRoleId = resolvedModelSelection.resolvedByRoleId;
+    warnings.push(...resolvedModelSelection.warnings);
+  } catch (error) {
+    errors.push(error instanceof Error ? error.message : String(error));
   }
 
   let allowNoopWithoutExecutionBinding = false;
@@ -180,25 +169,21 @@ export async function validateNl2MmdCandidate(args: {
         return { roleErrors, roleWarnings };
       }
 
-      const modelId = system.modelBinding[roleId];
+      const modelBinding = system.modelBinding[roleId];
       const profileId = system.executionBinding[roleId];
+      const resolvedModel = resolvedModelsByRoleId.get(roleId);
 
-      if (modelId) {
-        try {
-          await loadModelPackageForValidation({
-            modelId,
-            context: args.context
-          });
-        } catch (error) {
-          roleErrors.push(error instanceof Error ? error.message : String(error));
-        }
+      if (modelBinding && resolvedModel && resolvedModel.modelRef !== modelBinding) {
+        roleWarnings.push(
+          `role "${roleId}" uses legacy model.bind.${roleId}="${modelBinding}" but resolves via "${resolvedModel.modelRef}" from .ogs/model-selection.json`
+        );
       }
 
       if (profileId && profilesById && !profilesById.has(profileId)) {
         roleErrors.push(`exec.bind.${roleId} references missing profile "${profileId}"`);
       }
 
-      if (!modelId && !profileId) {
+      if (!resolvedModel && !profileId) {
         if (allowNoopWithoutExecutionBinding) {
           roleWarnings.push(
             `role "${roleId}" has no model.bind.${roleId} or exec.bind.${roleId}; current law allows noop only for unambiguous single-path roles`

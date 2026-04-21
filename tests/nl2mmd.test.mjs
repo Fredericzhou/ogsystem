@@ -23,7 +23,7 @@ test("nl2mmd context discovers supported dictionary, roles, and models", async (
   });
 
   assert.ok(context.roleCatalog.some((item) => item.roleId === "debate-judge"));
-  assert.ok(context.modelCatalog.some((item) => item.modelId === "fast-gpt54"));
+  assert.ok(context.modelCatalog.some((item) => item.modelRef === "opencode/gpt-5-nano"));
   assert.deepStrictEqual(context.supportedDictionary.roleModes, ["parallel_split"]);
   assert.deepStrictEqual(context.supportedDictionary.joinModes, ["all_of", "quorum_of"]);
   assert.ok(context.supportedDictionary.exactMetadataKeys.includes("handoff.mode"));
@@ -69,7 +69,7 @@ test("nl2mmd txt graph renderer prints plain structure preview", async () => {
   assert.match(txt, /--DEBATE_REQUEST--> debate-moderator/);
   assert.match(
     txt,
-    /debate-judge \[model=general-steady, join=all_of, sources=debate-minimalist,debate-alignmentist\]/
+    /debate-judge \[model=opencode\/gpt-5-nano, join=all_of, sources=debate-minimalist,debate-alignmentist\]/
   );
 });
 
@@ -158,8 +158,8 @@ test("nl2mmd search helpers suggest likely roles and models from free text", asy
   });
 
   const roleMatches = searchRoles(context, "judge summary");
-  const modelMatches = searchModels(context, "fast low-cost");
+  const modelMatches = searchModels(context, "gpt 5 nano");
 
   assert.ok(roleMatches.slice(0, 3).some((item) => item.item.roleId === "debate-judge"));
-  assert.strictEqual(modelMatches[0].item.modelId, "fast-gpt54");
+  assert.strictEqual(modelMatches[0].item.modelRef, "opencode/gpt-5-nano");
 });

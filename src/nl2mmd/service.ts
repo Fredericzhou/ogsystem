@@ -12,7 +12,7 @@ import {
   startOpencodeRunClient,
   type OpencodeRunClient
 } from "../runtime/opencode-executor.js";
-import { loadModelPackage } from "../runtime/model-repo.js";
+import { isDirectModelRef } from "../runtime/model-selection.js";
 import { buildNl2MmdSystemPrompt, buildNl2MmdTurnPrompt, getNl2MmdTurnSchema } from "./prompt.js";
 import { validateNl2MmdCandidate } from "./validate.js";
 import { loadNl2MmdContext } from "./catalog.js";
@@ -82,33 +82,32 @@ function isFileNotFoundError(error: unknown): error is NodeJS.ErrnoException {
   );
 }
 
-async function loadConversationModelPackage(args: {
+function resolveConversationModel(args: {
   context: Nl2MmdContext;
-  modelId: string;
-}) {
-  try {
-    return await loadModelPackage({
-      modelId: args.modelId,
-      modelRootDir: args.context.modelRootDir
-    });
-  } catch (error) {
-    if (
-      isFileNotFoundError(error) &&
-      args.context.templateModelRootDir &&
-      args.context.templateModelRootDir !== args.context.modelRootDir
-    ) {
-      return loadModelPackage({
-        modelId: args.modelId,
-        modelRootDir: args.context.templateModelRootDir
-      });
-    }
-    throw error;
+  modelRef?: string;
+}): {
+  modelRef: string;
+  variant?: string;
+  timeoutMs: number;
+  maxOutputBytes: number;
+} {
+  const modelRef = args.modelRef ?? args.context.defaultModelRef;
+  if (!isDirectModelRef(modelRef)) {
+    throw new Error(
+      "NL2MMD requires a direct model ref in provider/model format. Set --model or .ogs/model-selection.json defaults."
+    );
   }
+  return {
+    modelRef,
+    variant: args.context.defaultModelVariant,
+    timeoutMs: args.context.defaultTimeoutMs ?? 120000,
+    maxOutputBytes: args.context.defaultMaxOutputBytes ?? 65536
+  };
 }
 
 export async function createNl2MmdConversation(args: {
   workdir: string;
-  modelId: string;
+  modelRef?: string;
   runtimeConfigPath?: string;
   lawsPath?: string;
   context?: Nl2MmdContext;
@@ -121,9 +120,9 @@ export async function createNl2MmdConversation(args: {
       runtimeConfigPath: args.runtimeConfigPath,
       lawsPath: args.lawsPath
     }));
-  const modelPackage = await loadConversationModelPackage({
+  const resolvedModel = resolveConversationModel({
     context,
-    modelId: args.modelId
+    modelRef: args.modelRef
   });
   const runClient = await startOpencodeRunClient({
     timeoutMs: 30000,
@@ -134,7 +133,10 @@ export async function createNl2MmdConversation(args: {
 
   const conversation: ManagedConversation = {
     context,
-    modelPackage,
+    modelRef: resolvedModel.modelRef,
+    variant: resolvedModel.variant,
+    timeoutMs: resolvedModel.timeoutMs,
+    maxOutputBytes: resolvedModel.maxOutputBytes,
     workdir: args.workdir,
     sessionId: undefined,
     runClient,
@@ -145,7 +147,8 @@ export async function createNl2MmdConversation(args: {
 
   logNl2MmdDebug("conversation.created", {
     workdir: args.workdir,
-    modelId: args.modelId,
+    modelRef: resolvedModel.modelRef,
+    variant: resolvedModel.variant ?? "(default)",
     roleCount: context.roleCatalog.length,
     modelCount: context.modelCatalog.length,
     durationMs: Date.now() - startedAt
@@ -173,16 +176,17 @@ export async function runNl2MmdPreflight(args: {
       },
       additionalProperties: false
     },
-    modelPackage: conversation.modelPackage,
+    modelRef: conversation.modelRef,
+    variant: conversation.variant,
     workdir: conversation.workdir,
-    timeoutMs: Math.min(conversation.modelPackage.manifest.timeoutMs ?? 120000, 45000),
-    maxOutputBytes: Math.min(conversation.modelPackage.manifest.maxOutputBytes ?? 65536, 8192),
+    timeoutMs: Math.min(conversation.timeoutMs, 45000),
+    maxOutputBytes: Math.min(conversation.maxOutputBytes, 8192),
     runClient: conversation.runClient,
     sessionId: conversation.sessionId
   });
   conversation.sessionId = result.sessionId ?? conversation.sessionId;
   logNl2MmdDebug("preflight.complete", {
-    modelId: conversation.modelPackage.manifest.modelId,
+    modelRef: conversation.modelRef,
     sessionId: conversation.sessionId ?? "(none)",
     durationMs: Date.now() - startedAt
   });
@@ -198,7 +202,7 @@ export async function runNl2MmdTurn(args: {
   const startedAt = Date.now();
   const conversation = args.conversation as ManagedConversation;
   logNl2MmdDebug("turn.start", {
-    modelId: conversation.modelPackage.manifest.modelId,
+    modelRef: conversation.modelRef,
     hasSession: Boolean(conversation.sessionId),
     hasDraft: Boolean(args.input.draftMermaid?.trim()),
     validationErrorCount: args.input.validationErrors?.length ?? 0,
@@ -218,10 +222,11 @@ export async function runNl2MmdTurn(args: {
     roleId: "nl2mmd",
     prompt,
     schema: getNl2MmdTurnSchema(),
-    modelPackage: conversation.modelPackage,
+    modelRef: conversation.modelRef,
+    variant: conversation.variant,
     workdir: conversation.workdir,
-    timeoutMs: conversation.modelPackage.manifest.timeoutMs ?? 120000,
-    maxOutputBytes: conversation.modelPackage.manifest.maxOutputBytes ?? 65536,
+    timeoutMs: conversation.timeoutMs,
+    maxOutputBytes: conversation.maxOutputBytes,
     runClient: conversation.runClient,
     sessionId: conversation.sessionId
   });

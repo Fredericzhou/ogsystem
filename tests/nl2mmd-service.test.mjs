@@ -9,7 +9,6 @@ import {
   runNl2MmdTurn
 } from "../dist/nl2mmd/index.js";
 import { logNl2MmdDebug } from "../dist/nl2mmd/logger.js";
-import { loadModelPackage } from "../dist/runtime/model-repo.js";
 
 const repoRoot = path.resolve(".");
 
@@ -21,17 +20,16 @@ async function loadFixtures() {
       const context = await loadNl2MmdContext({
         workdir: repoRoot
       });
-      const modelPackage = await loadModelPackage({
-        modelId: "fast-gpt54",
-        modelRootDir: context.modelRootDir
-      });
+      const modelRef = context.defaultModelRef ?? "opencode/gpt-5-nano";
       const validMermaid = await readFile(
         path.resolve(repoRoot, "examples/langgraph-debate-current/system.mmd"),
         "utf8"
       );
       return {
         context,
-        modelPackage,
+        modelRef,
+        timeoutMs: context.defaultTimeoutMs ?? 120000,
+        maxOutputBytes: context.defaultMaxOutputBytes ?? 65536,
         validMermaid,
         lawsPath: path.resolve(repoRoot, "examples/langgraph-debate-current/laws.json")
       };
@@ -95,7 +93,7 @@ function makeRunClient(responses) {
 }
 
 test("nl2mmd service preflight creates one session and turn reuses it", async () => {
-  const { context, modelPackage } = await loadFixtures();
+  const { context, modelRef, timeoutMs, maxOutputBytes } = await loadFixtures();
   const { runClient, createCalls, promptCalls } = makeRunClient([
     structuredResponse({ status: "ok" }, "msg_preflight"),
     structuredResponse(
@@ -114,7 +112,9 @@ test("nl2mmd service preflight creates one session and turn reuses it", async ()
 
   const conversation = {
     context,
-    modelPackage,
+    modelRef,
+    timeoutMs,
+    maxOutputBytes,
     workdir: repoRoot,
     sessionId: undefined,
     close() {},
@@ -154,7 +154,8 @@ test("nl2mmd service preflight creates one session and turn reuses it", async ()
 });
 
 test("nl2mmd service validates draft mermaid output and preserves an existing session", async () => {
-  const { context, modelPackage, validMermaid, lawsPath } = await loadFixtures();
+  const { context, modelRef, timeoutMs, maxOutputBytes, validMermaid, lawsPath } =
+    await loadFixtures();
   const { runClient, createCalls, promptCalls } = makeRunClient([
     structuredResponse(
       {
@@ -178,7 +179,9 @@ test("nl2mmd service validates draft mermaid output and preserves an existing se
 
   const conversation = {
     context,
-    modelPackage,
+    modelRef,
+    timeoutMs,
+    maxOutputBytes,
     workdir: repoRoot,
     sessionId: "ses_existing",
     close() {},
@@ -209,7 +212,7 @@ test("nl2mmd service validates draft mermaid output and preserves an existing se
 });
 
 test("nl2mmd service rejects invalid response fields from the model", async () => {
-  const { context, modelPackage } = await loadFixtures();
+  const { context, modelRef, timeoutMs, maxOutputBytes } = await loadFixtures();
   const { runClient } = makeRunClient([
     structuredResponse({
       mode: "draft",
@@ -224,7 +227,9 @@ test("nl2mmd service rejects invalid response fields from the model", async () =
 
   const conversation = {
     context,
-    modelPackage,
+    modelRef,
+    timeoutMs,
+    maxOutputBytes,
     workdir: repoRoot,
     sessionId: "ses_existing",
     close() {},
@@ -243,7 +248,7 @@ test("nl2mmd service rejects invalid response fields from the model", async () =
 });
 
 test("nl2mmd service rejects ask responses that include mermaid content", async () => {
-  const { context, modelPackage } = await loadFixtures();
+  const { context, modelRef, timeoutMs, maxOutputBytes } = await loadFixtures();
   const { runClient } = makeRunClient([
     structuredResponse({
       mode: "ask",
@@ -258,7 +263,9 @@ test("nl2mmd service rejects ask responses that include mermaid content", async 
 
   const conversation = {
     context,
-    modelPackage,
+    modelRef,
+    timeoutMs,
+    maxOutputBytes,
     workdir: repoRoot,
     sessionId: "ses_existing",
     close() {},
@@ -277,7 +284,7 @@ test("nl2mmd service rejects ask responses that include mermaid content", async 
 });
 
 test("nl2mmd service rejects final responses without mermaid content", async () => {
-  const { context, modelPackage } = await loadFixtures();
+  const { context, modelRef, timeoutMs, maxOutputBytes } = await loadFixtures();
   const { runClient } = makeRunClient([
     structuredResponse({
       mode: "final",
@@ -292,7 +299,9 @@ test("nl2mmd service rejects final responses without mermaid content", async () 
 
   const conversation = {
     context,
-    modelPackage,
+    modelRef,
+    timeoutMs,
+    maxOutputBytes,
     workdir: repoRoot,
     sessionId: "ses_existing",
     close() {},

@@ -200,15 +200,8 @@ function isSupportedMetadataKey(key: string): boolean {
   return SUPPORTED_METADATA_PREFIXES.some((prefix) => key.startsWith(prefix));
 }
 
-function chooseDefaultModelId(context: Nl2MmdContext, roleId: string): string | undefined {
-  const available = new Set(context.modelCatalog.map((item) => item.modelId));
-  const pick = (candidates: string[]): string | undefined => candidates.find((id) => available.has(id));
-  const isAggregatorRole = /judge|summary|review/i.test(roleId);
-  const preferred = isAggregatorRole
-    ? ["general-balanced", "balanced-gpt52", "steady-gpt54", "general-steady", "general-fast", "fast-gpt54"]
-    : ["general-fast", "fast-gpt54", "general-steady", "steady-gpt54", "general-balanced", "balanced-gpt52"];
-  const selected = pick(preferred);
-  return selected ?? context.modelCatalog[0]?.modelId;
+function chooseDefaultModelRef(context: Nl2MmdContext): string | undefined {
+  return context.defaultModelRef ?? context.modelCatalog[0]?.modelRef;
 }
 
 type CanonicalizedEdge = {
@@ -518,11 +511,11 @@ function canonicalizeWithRuntimeDefaults(args: {
     if (metadata.has(modelKey) || metadata.has(execKey)) {
       continue;
     }
-    const defaultModelId = chooseDefaultModelId(args.context, roleId);
-    if (!defaultModelId) {
+    const defaultModelRef = chooseDefaultModelRef(args.context);
+    if (!defaultModelRef) {
       continue;
     }
-    metadata.set(modelKey, defaultModelId);
+    metadata.set(modelKey, defaultModelRef);
     metadataOrder.push(modelKey);
   }
 

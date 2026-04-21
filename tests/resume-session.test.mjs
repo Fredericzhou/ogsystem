@@ -289,7 +289,6 @@ minimalist[Role:debate-minimalist] -->|MINIMALIST_DONE| output
       {
         executor: "opencode",
         roleRepo: path.resolve("og-roles"),
-        modelRepo: path.resolve("og-models"),
         runsDir: ".ogs/runs"
       },
       null,
@@ -544,7 +543,6 @@ minimalist[Role:debate-minimalist] -->|MINIMALIST_DONE| output
       {
         executor: "opencode",
         roleRepo: path.resolve("og-roles"),
-        modelRepo: path.resolve("og-models"),
         runsDir: ".ogs/runs"
       },
       null,
@@ -620,7 +618,6 @@ minimalist[Role:debate-minimalist] -->|MINIMALIST_DONE| output
       {
         executor: "opencode",
         roleRepo: "./alt-roles",
-        modelRepo: "./alt-models",
         runsDir: ".ogs/runs"
       },
       null,
@@ -810,7 +807,6 @@ operator[Role:test-operator] -->|DONE| output
       {
         executor: "opencode",
         roleRepo: path.resolve("og-roles"),
-        modelRepo: path.resolve("og-models"),
         runsDir: ".ogs/runs"
       },
       null,
@@ -862,7 +858,6 @@ operator[Role:test-operator] -->|DONE| output
     {
       executor: "opencode",
       roleRepo: path.resolve("og-roles"),
-      modelRepo: path.resolve("og-models"),
       runsDir: ".ogs/runs"
     },
     runtimePath
@@ -1011,7 +1006,6 @@ operator[Role:test-operator] -->|DONE| output
       {
         executor: "opencode",
         roleRepo: path.resolve("og-roles"),
-        modelRepo: path.resolve("og-models"),
         runsDir: ".ogs/runs"
       },
       null,
@@ -1194,7 +1188,6 @@ operator[Role:test-operator] -->|DONE| output
       {
         executor: "opencode",
         roleRepo: path.resolve("og-roles"),
-        modelRepo: path.resolve("og-models"),
         runsDir: ".ogs/runs"
       },
       null,
@@ -1297,7 +1290,6 @@ operator[Role:test-operator] -->|DONE| output
     {
       executor: "opencode",
       roleRepo: path.resolve("og-roles"),
-      modelRepo: path.resolve("og-models"),
       runsDir: ".ogs/runs"
     },
     runtimePath
@@ -1559,7 +1551,6 @@ minimalist[Role:debate-minimalist] -->|MINIMALIST_DONE| output
       {
         executor: "opencode",
         roleRepo: "./og-roles",
-        modelRepo: "./og-models",
         runsDir: ".ogs/runs",
         sharedDir: "shared-blocked"
       },
@@ -1596,7 +1587,6 @@ minimalist[Role:debate-minimalist] -->|MINIMALIST_DONE| output
       {
         executor: "opencode",
         roleRepo: "./og-roles",
-        modelRepo: "./og-models",
         runsDir: ".ogs/runs"
       },
       null,

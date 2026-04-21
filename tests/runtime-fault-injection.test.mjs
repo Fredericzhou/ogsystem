@@ -77,7 +77,6 @@ async function writeRuntimeConfigFile(runtimePath, repoRoot, runtimeOverrides = 
   const runtimeConfig = {
     executor: "opencode",
     roleRepo: path.resolve(repoRoot, "og-roles"),
-    modelRepo: path.resolve(repoRoot, "og-models"),
     runsDir: ".ogs/runs"
   };
   if (runtimeOverrides) {
@@ -213,7 +212,6 @@ test("buffered append recovery replays content after a partial write failure", a
     {
       executor: "opencode",
       roleRepo: path.resolve("og-roles"),
-      modelRepo: path.resolve("og-models"),
       runsDir: ".ogs/runs"
     },
     path.resolve(tempRoot, "runtime.json")
@@ -265,7 +263,6 @@ test("overlapping flush calls serialize without losing pending batches", async (
     {
       executor: "opencode",
       roleRepo: path.resolve("og-roles"),
-      modelRepo: path.resolve("og-models"),
       runsDir: ".ogs/runs"
     },
     path.resolve(tempRoot, "runtime.json")
@@ -620,7 +617,6 @@ test("resume rejects a concurrently held live lock on the same run directory", a
       {
         executor: "opencode",
         roleRepo: path.resolve(repoRoot, "og-roles"),
-        modelRepo: path.resolve(repoRoot, "og-models"),
         runsDir: ".ogs/runs"
       },
       null,
@@ -704,7 +700,6 @@ test("runner consumes stop request after current transition and lands in stopped
       {
         executor: "opencode",
         roleRepo: "./og-roles",
-        modelRepo: path.resolve(repoRoot, "og-models"),
         runsDir: ".ogs/runs"
       },
       null,

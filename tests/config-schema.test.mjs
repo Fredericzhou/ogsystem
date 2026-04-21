@@ -33,12 +33,24 @@ test("runtime config schema rejects unknown workspace fields", async () => {
   const ok = validate({
     executor: "opencode",
     roleRepo: "./og-roles",
-    modelRepo: "./og-models",
     workspace: {
       rolesDir: "roles",
       privateDirName: "private",
       linkSharedIntoRoleDir: false
     }
+  });
+
+  assert.equal(ok, false);
+});
+
+test("runtime config schema rejects removed modelRepo field", async () => {
+  const runtimeSchema = await readJson(path.resolve("schemas/runtime-config.schema.json"));
+  const validate = createValidator(runtimeSchema);
+
+  const ok = validate({
+    executor: "opencode",
+    roleRepo: "./og-roles",
+    modelRepo: "./og-models"
   });
 
   assert.equal(ok, false);
@@ -51,7 +63,6 @@ test("runtime config schema accepts runtime.error_flows.v1", async () => {
   const ok = validate({
     executor: "opencode",
     roleRepo: "./og-roles",
-    modelRepo: "./og-models",
     runtime: {
       error_flows: {
         v1: true
@@ -69,7 +80,6 @@ test("runtime config schema rejects unknown runtime error_flows fields", async (
   const ok = validate({
     executor: "opencode",
     roleRepo: "./og-roles",
-    modelRepo: "./og-models",
     runtime: {
       error_flows: {
         v1: true,
@@ -88,7 +98,6 @@ test("runtime config schema accepts redaction and branch workspace isolation", a
   const ok = validate({
     executor: "opencode",
     roleRepo: "./og-roles",
-    modelRepo: "./og-models",
     redaction: {
       enabled: true
     },

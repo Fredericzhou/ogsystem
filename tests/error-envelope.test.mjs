@@ -40,7 +40,6 @@ test("graph state persistence failures stay classified as execute/io", async () 
     {
       executor: "opencode",
       roleRepo: "./og-roles",
-      modelRepo: "./og-models",
       runsDir: ".ogs/runs"
     },
     "runtime.json"
