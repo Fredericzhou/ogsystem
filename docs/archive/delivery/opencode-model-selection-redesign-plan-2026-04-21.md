@@ -5,7 +5,7 @@ Status: proposed
 
 ## 1. Decision Summary
 
-本文件是下一阶段 redesign 提案，不是对当天已交付 contract 的直接替换批准。
+本文件是下一版本的 redesign 提案，按未发布开发态直接 cutover 制定，不要求兼容当前开发版本的旧模型配置路径。
 
 长期方向仍然是：
 
@@ -15,17 +15,17 @@ Status: proposed
 - `project init/create` 默认生成可运行的最小模板，而不是空壳
 - runtime 与 test 都只读取显式项目配置，不按环境猜 provider
 
-但当前阶段必须同时承认三点：
+当前仓库现状仍然有三点需要正视：
 
-- `providerAliases` 已在 2026-04-21 作为显式配置路径交付并验证，当前仍是现行 contract
+- `providerAliases` 已在 2026-04-21 作为显式配置路径交付并验证
 - `og-models/models/<modelId>/model.json` 仍深度参与 runtime setup、fingerprint、resume 与测试
-- 本提案只有在补齐 runtime-setup、resume/fingerprint、nl2mmd/parser、兼容迁移策略后，才适合进入 implementation approval
+- 若要切到新方案，必须同步补齐 runtime-setup、resume/fingerprint、nl2mmd/parser 与脚手架切换
 
 因此，这份文档的正确定位是：
 
 - 同意长期方向
-- 约束当前落地方式
-- 为后续 cutover 提供修改后的实施边界
+- 直接定义下一版 cutover 边界
+- 不为旧开发态提供额外兼容层
 
 ## 2. Current Problems
 
@@ -211,13 +211,11 @@ runtime、tests、CLI scaffolding 统一依赖显式文件：
 3. `.ogs/model-selection.json -> roles.<roleId>`
 4. `.ogs/model-selection.json -> systems.<systemId>.defaults`
 5. `.ogs/model-selection.json -> defaults`
-6. 兼容期内才允许回退到 legacy `og-models/models/<modelId>/model.json`
 
 解释：
 
 - 1 是 explicit direct ref，优先级最高
 - 2-5 是新的权威配置层
-- 6 仅作为过渡路径，帮助旧系统迁移，不作为新模板推荐用法
 - catalog 不在 runtime precedence 中，只用于 advisory 能力感知
 
 ### 4.3 `system.mmd` Contract
@@ -227,8 +225,6 @@ runtime、tests、CLI scaffolding 统一依赖显式文件：
 - 允许 explicit direct ref：
   - `model.bind.<roleId>=gkgk/gpt-5.4`
 - 允许通过 `.ogs/model-selection.json` 对 system / role 给出 concrete 选择
-- 旧项目兼容期继续允许 legacy model package id：
-  - `model.bind.<roleId>=general-balanced`
 - `model.bind.<roleId>=default` 延后到后续阶段，再视 runtime-setup 与迁移成本决定是否引入
 
 推荐理由：
@@ -249,7 +245,7 @@ runtime、tests、CLI scaffolding 统一依赖显式文件：
 3. 自动挑选一个默认模型写入 `.ogs/model-selection.json`
 4. 生成 runnable `system.mmd`
 5. 生成 `.ogs/runtime.json`
-6. 兼容窗口内保留当前必要的 `og-models/` 脚手架；待 runtime cutover 完成后再移除默认复制
+6. 不再生成 `og-models/`
 
 默认模型选择建议：
 
@@ -266,7 +262,7 @@ runtime、tests、CLI scaffolding 统一依赖显式文件：
 
 - catalog 生成失败时，应给出明确 scaffold 错误
 - selection 应尽量生成 runnable 默认值
-- 在兼容窗口结束前，不应因引入 selection 就假定 `og-models/` 已彻底退出运行时
+- 新模板不再依赖 `og-models/`
 
 ### 4.4.2 New Command
 
@@ -316,7 +312,7 @@ catalog 在 runtime 内的职责应限制为：
 
 ### 4.6 Runtime Config Simplification
 
-`.ogs/runtime.json` 的收敛应视为后续阶段目标，而不是当前提案的立即变更。
+`.ogs/runtime.json` 在下一版中直接收敛，不保留旧模型配置面。
 
 建议目标：
 
@@ -342,16 +338,12 @@ catalog 在 runtime 内的职责应限制为：
 }
 ```
 
-但当前阶段需要明确：
+下一版目标：
 
-- 不应立刻废弃 `modelRepo`
-- 不应立刻废弃 `opencode.providerAliases`
-- `providerAliases` 在当前仓库仍是正式交付且已验证的显式配置路径
-
-因此更稳妥的策略是：
-
-- 近阶段：在现有 `configVersion: "1"` 上增量引入 `model-selection`
-- 后阶段：待 runtime-setup、resume/fingerprint、nl2mmd/parser 全部迁完后，再评估 `configVersion: "2"` 收口
+- 删除 `modelRepo`
+- 删除 `opencode.providerAliases`
+- 模型控制完全转移到 `.ogs/model-selection.json`
+- 使用新的 `configVersion: "2"`
 
 ### 4.7 Error Model
 
@@ -383,30 +375,21 @@ catalog 在 runtime 内的职责应限制为：
 
 这四类问题必须在日志与最终结果中可直接区分，不能再混成一个 generic structured-output 错误。
 
-### 4.8 Compatibility Strategy
+### 4.8 Cutover Strategy
 
-由于当前仓库仍大量引用 `og-models`，且 `providerAliases` 已是现行 contract，建议采用“增量切入 + 兼容窗”，而不是直接替换：
+由于当前仓库仍大量引用 `og-models`，切换时必须按单次 cutover 处理，而不是再增加一层兼容路径：
 
 ### 新项目
 
-- 从第一天开始不再生成 `og-models/`
-- 不再推荐 `providerAliases`
-- 默认走 `.ogs/model-catalog.json` + `.ogs/model-selection.json`
+- 不再生成 `og-models/`
+- 不再提供 `providerAliases`
+- 默认新增 `.ogs/model-catalog.json` + `.ogs/model-selection.json` 作为主路径
 
-### 旧项目
+### 已有开发态项目
 
-- runtime 暂时保留 legacy fallback：
-  - 若 `model.bind.<roleId>` 不是 `provider/model`
-  - 且 `.ogs/model-selection.json` 无法给出 concrete ref
-  - 则尝试读取 `og-models/models/<modelId>/model.json`
-
-- `providerAliases` 继续保持可用，直到 direct-ref / selection 成为稳定主路径
-
-### 兼容窗口结束后
-
-- 删除 `providerAliases`
-- 删除 `modelRepo`
-- 删除 `og-models/` 作为默认安装态资产
+- 需要一次性迁移到 `.ogs/model-selection.json`
+- 不提供 legacy fallback
+- 不保证旧 `modelRepo` / `providerAliases` 配置继续可运行
 
 ## 5. Implementation Plan
 
@@ -420,19 +403,20 @@ catalog 在 runtime 内的职责应限制为：
 - [ ] 新增 `src/runtime/model-selection.ts`
 - [ ] 新增 `schemas/model-catalog.schema.json`
 - [ ] 新增 `schemas/model-selection.schema.json`
-- [ ] 在不破坏 `configVersion: "1"` 的前提下扩展配置读取
+- [ ] 直接引入 `configVersion: "2"`
 - [ ] 更新 `src/runtime/types.ts`
 - [ ] 修改 `src/runtime/project-lifecycle.ts`
 - [ ] `project init/create` 自动执行 `opencode models --verbose`
 - [ ] 生成 `.ogs/model-catalog.json`
 - [ ] 生成 `.ogs/model-selection.json`
 - [ ] 最小模板默认写 runnable config
+- [ ] `project init/create` 不再复制 `og-models/`
 - [ ] 明确 catalog 仅用于 scaffold / doctor，不进入 runtime 硬校验
 
 交付标准：
 
 - `ogs project create demo-app` 产物可直接运行
-- 在兼容窗口内不破坏现有 `providerAliases` contract
+- 新模板不再暴露 `modelRepo` / `providerAliases`
 
 ### Phase 2: Runtime Resolution
 
@@ -444,11 +428,12 @@ catalog 在 runtime 内的职责应限制为：
 - [ ] 修改 plan fingerprint 输入，覆盖新模型选择面
 - [ ] 修改 resume 一致性校验，避免旧 fingerprint 误判
 - [ ] 梳理 parser / nl2mmd / examples 对新解析路径的影响
-- [ ] 在 runtime setup 阶段加载 catalog + selection
+- [ ] 在 runtime setup 阶段加载 selection
 - [ ] 将 catalog 从 runtime 硬判定中剥离，保留 advisory 角色
 - [ ] 实现 `systemId + roleId + model.bind` 的解析优先级
 - [ ] executor 仅接收 concrete `provider/model`
 - [ ] 不在本阶段引入 `model.bind=default`
+- [ ] 删除 `modelRepo` / `providerAliases` 运行路径
 - [ ] 增加明确错误码与错误消息
 
 交付标准：
@@ -457,17 +442,17 @@ catalog 在 runtime 内的职责应限制为：
 - 对不存在模型和 provider-model 不匹配的错误能稳定区分
 - 对 catalog 缺失或过期不会制造 runtime 假阴性
 
-### Phase 3: Compatibility And Cleanup
+### Phase 3: Cleanup
 
-目标：收口旧路径并降低后续维护成本。
+目标：删除旧模型入口并完成文档收口。
 
 实施项：
 
 - [ ] 新项目停止复制 `og-models/`
 - [ ] 文档改为 `.ogs/model-selection.json` 主路径
 - [ ] README / usage manual / examples 更新
-- [ ] `providerAliases` 文档降级为过渡说明
-- [ ] `og-models/` 标记为 legacy compatibility only
+- [ ] 删除 `providerAliases` 文档主路径
+- [ ] 删除 `og-models/` 作为默认模型仓
 - [ ] 增加 `ogs project sync-models`
 - [ ] 新增 doctor 检查：selection 是否命中 catalog
 - [ ] 重新评估是否真的需要 `model.bind=default`
@@ -475,7 +460,7 @@ catalog 在 runtime 内的职责应限制为：
 交付标准：
 
 - 新用户不需要接触 `og-models`
-- 旧项目仍可迁移，不出现静默行为变化
+- 下一版只有一个模型配置主路径
 
 ## 6. File-Level Change List
 
@@ -489,7 +474,6 @@ catalog 在 runtime 内的职责应限制为：
 - `src/runtime/opencode-executor.ts`
 - `src/runtime/adapter.ts`
 - `src/runtime/executor.ts`
-- `src/runtime/model-repo.ts`
 - `src/runtime/plan-fingerprint.ts`
 - `src/runtime/doctor.ts`
 - `src/runtime/cli.ts`
@@ -534,7 +518,6 @@ catalog 在 runtime 内的职责应限制为：
 - [ ] system override 生效
 - [ ] role override 生效
 - [ ] direct `model.bind.<roleId>=provider/model` 生效
-- [ ] legacy `og-models` fallback 在兼容窗内生效
 - [ ] auditTrail 正确记录 resolved model
 - [ ] runtime 不因 catalog 过期而拒绝执行
 - [ ] resume/fingerprint 在新模型解析面下保持稳定
@@ -549,8 +532,8 @@ catalog 在 runtime 内的职责应限制为：
 ### 7.5 Docs And Packaging
 
 - [ ] 新模板文档不再要求编辑 `providerAliases`
-- [ ] 安装产物最终不再以 `og-models/**` 为主配置入口
-- [ ] 归档文档明确 `providerAliases` 为当前有效、长期待收口的过渡方案
+- [ ] 安装产物不再以 `og-models/**` 为主配置入口
+- [ ] 文档不再把 `providerAliases` 当作可用主路径
 
 ## 8. Acceptance Checklist
 
@@ -562,24 +545,24 @@ catalog 在 runtime 内的职责应限制为：
 - [ ] test 不再依赖机器环境差异来通过
 - [ ] 错误信息能明确区分配置问题与执行问题
 - [ ] 文档主路径逐步不再把 `og-models` 当作推荐模型配置方式
-- [ ] 当前已交付的 `providerAliases` contract 在迁移完成前保持自洽
+- [ ] 下一版不再保留第二条模型配置主路径
 
 ## 9. Recommended Execution Order
 
 推荐按以下顺序落地，以降低 blast radius：
 
 1. 先新增 `model-catalog` / `model-selection` 读写与 schema，并明确 catalog 是 advisory。
-2. 再改 `project init/create`，保证新建项目有完整样板，但不立即拆掉兼容脚手架。
+2. 再改 `project init/create`，保证新建项目只有新样板。
 3. 再改 runtime-setup / fingerprint / resume / nl2mmd 相关路径，把 executor 输入改成 concrete ref。
-4. 再补 error code / doctor / docs。
-5. 最后再决定是否清理 `providerAliases`、`modelRepo` 与 `og-models` 默认脚手架路径。
+4. 同步删除 `providerAliases`、`modelRepo` 与 `og-models` 默认脚手架路径。
+5. 最后补 error code / doctor / docs 收口。
 
 原因：
 
 - 先把契约与脚手架落地，能避免 runtime 改完却没有可用项目样板
 - 先显式写清 blast radius，能避免把 `model.bind=default` 误判成小改
-- 先保留兼容 fallback，能降低一次切换对现有测试面的冲击
-- 文档与 cleanup 放最后，便于以最终实现为准一次性收口
+- 删除旧路径要与 runtime cutover 同轮完成，避免双轨维护
+- 文档放最后，便于以最终实现为准一次性收口
 
 ## 10. Final Recommendation
 
@@ -596,6 +579,4 @@ catalog 在 runtime 内的职责应限制为：
 - `og-models/models/<modelId>/model.json`
 - 运行时按环境探测 provider
 
-但在真正 cutover 完成前，`providerAliases` 仍是当前有效 contract，不应在文档上被表述成“已经可以无缝移除”。
-
-按这个修订版推进，既满足“自动获取模型列表是关键”，也满足“用户只配置 OpenCode 可直接执行的模型参数”，同时不会把 catalog 误升格为 runtime 强校验源，也不会低估 `runtime-setup / resume / fingerprint / nl2mmd` 的实际改动面。
+按这个修订版推进，既满足“自动获取模型列表是关键”，也满足“用户只配置 OpenCode 可直接执行的模型参数”，同时不会把 catalog 误升格为 runtime 强校验源，也会把 `runtime-setup / resume / fingerprint / nl2mmd` 的实际改动面纳入一次性 cutover。
