@@ -14,7 +14,7 @@
 - 有“ERROR”“补偿”“恢复”语义，用 `error_compensation`。
 - 有“循环”“重试”“最多 N 次”语义，用 `bounded_loop`。
 - 有“人工审核”“确认”“审批”语义，用 `human_gate`。
-- 有 `model.bind` / `exec.bind` 混用迁移语义，用 `binding_compat`。
+- 有 `model.bind` / `exec.bind` 混用语义，用 `mixed_binding`。
 - 如果没有明显结构信号，先退回 `linear_flow`。
 
 当多个模板都可能命中时，优先更具体的结构：
@@ -235,21 +235,21 @@ triage[Role:triage] -->|REJECT| output
 approver[Role:approver] -->|DONE| output
 ```
 
-### 2.8 `binding_compat`
+### 2.8 `mixed_binding`
 
-适合当前还在兼容旧 `exec.bind` 的迁移场景。
+适合同时存在 `model.bind` 和 `exec.bind` 的混合执行场景。
 
 必填槽位：
 
-- `primary-binding`
-- `legacy-binding`
-- `migration-note`
+- `model-binding`
+- `exec-binding`
+- `binding-note`
 
 示例：
 
 ```mermaid
 flowchart TD
-%% system.id=demo.binding.compat
+%% system.id=demo.binding.mixed
 %% system.version=1.0.0
 %% law.global=law.console.base
 %% entry.role=reviewer

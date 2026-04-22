@@ -111,7 +111,8 @@ test("model runtime artifacts match the documented contract", async () => {
   assert.match(reproScript, /# Node\.js:/);
   assert.match(reproScript, /# OS:/);
   assert.match(reproScript, /# Timestamp:/);
-  assert.match(reproScript, /--resume-run "\$RUN_DIR"/);
+  assert.match(reproScript, /ARGS=\(\n  run\n  resume\n  "\$RUN_ID"/);
+  assert.match(reproScript, /--workdir "\$WORKDIR"/);
   await readFile(path.resolve(runDir, "audit", "summary.md"), "utf8");
   await readFile(path.resolve(runDir, "audit", "transitions.md"), "utf8");
   await readFile(path.resolve(runDir, "roles", "debate-minimalist", "role.md"), "utf8");

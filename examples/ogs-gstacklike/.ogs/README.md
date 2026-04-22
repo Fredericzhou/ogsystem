@@ -10,6 +10,7 @@
 - `laws.json`: 当前示例使用的 law 约束。
 - `user-profile.json`: 注入到角色提示中的默认用户偏好。
 - `runs/`: 运行生成目录。每个 run 一个子目录，包含状态快照、review control plane、审计和共享产物。
+- `project.json` / `providers/`: 本地初始化生成物，不是示例语义的一部分，默认忽略。
 
 ## 本示例关心的点
 

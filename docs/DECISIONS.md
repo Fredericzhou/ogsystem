@@ -8,7 +8,7 @@ Status: active
 OGSystem uses one active runtime path: the graph runtime.
 
 - `model.bind` is the default execution binding surface
-- `exec.bind` remains supported as a compatibility execution mode
+- `exec.bind` remains supported as the local-shell execution mode
 - `exec.bind` does not imply a separate engine or a fallback FSM
 
 Reason:
@@ -25,13 +25,13 @@ LangGraph is the current backend implementation of the graph runtime, not the pu
 - `role.mode.*`, `join.mode.*`, `join.sources.*`, and `loop.max.*` are OGSystem metadata
 - `join.sources.*` is only valid together with `join.mode.*`, and `all_of` sources must match the incoming Mermaid role edges exactly
 - `any_of` is represented by `join.mode=quorum_of + join.min=1` instead of adding a third join mode keyword
-- legacy `%% engine=langgraph` is accepted only as compatibility input
+- `%% engine=langgraph` is not part of the active OGSystem semantic surface
 
 Reason:
 
 - contributors need a stable semantic layer even if the backend changes later
 - OGSystem metadata should not be documented as native LangGraph syntax
-- keep `all_of` explicit for common full-join readability, while avoiding `any_of` keyword expansion that increases parser/test/compatibility surface without adding expressive power
+- keep `all_of` explicit for common full-join readability, while avoiding `any_of` keyword expansion that increases parser/test surface without adding expressive power
 
 ## 3. Execution Boundary
 
@@ -110,7 +110,7 @@ Package management now uses a split policy between published CLI installation an
 Reason:
 
 - the main determinism gains come from lockfile/install/CI discipline during repository development
-- hard-blocking script execution harms ecosystem compatibility with limited additional stability benefit
+- hard-blocking script execution harms portability with limited additional stability benefit
 
 ## 9. Exception Edge Scope (V1 Delivered, Flag-Gated)
 
@@ -125,7 +125,7 @@ Reason:
 - fail-closed parsing: reserved `ERROR*` events must be exactly `ERROR` or `ERROR.<errorCode>`
 - role-facing `allowed_events` excludes runtime-only `ERROR*` edges
 - use business event flows for expected successful domain outcomes; use `ERROR*` only for runtime-failure compensation/degrade paths
-- compatibility rule: no `ERROR*` edges means unchanged fail-stop behavior
+- behavior rule: no `ERROR*` edges means unchanged fail-stop behavior
 - rollout uses feature flag `runtime.error_flows.v1` for staged enablement and rollback
 
 ## 10. Role Package And Import Boundary

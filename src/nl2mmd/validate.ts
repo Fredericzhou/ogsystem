@@ -175,7 +175,7 @@ export async function validateNl2MmdCandidate(args: {
 
       if (modelBinding && resolvedModel && resolvedModel.modelRef !== modelBinding) {
         roleWarnings.push(
-          `role "${roleId}" uses legacy model.bind.${roleId}="${modelBinding}" but resolves via "${resolvedModel.modelRef}" from .ogs/model-selection.json`
+          `role "${roleId}" declares model.bind.${roleId}="${modelBinding}" but resolves via "${resolvedModel.modelRef}" from .ogs/model-selection.json`
         );
       }
 

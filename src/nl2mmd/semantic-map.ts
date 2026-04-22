@@ -251,7 +251,7 @@ const HINT_RULES: HintRule[] = [
     hint: {
       kind: "binding_policy",
       label: "exec.bind",
-      detail: "Detected compatibility intent. Use `exec.bind` only if legacy profiles/tools are required."
+      detail: "Detected exec-binding intent. Use `exec.bind` for local shell or tool-backed roles."
     }
   }
 ];

@@ -26,7 +26,7 @@ const RUN_ARTIFACT_POLICY: RunArtifactPolicyEntry[] = [
     path: "plan-fingerprint.json",
     retention: "runtime_consumed",
     resumeConsumed: true,
-    description: "Runtime-loaded compatibility fingerprint used to hard-fail unsafe resume."
+    description: "Runtime-loaded plan fingerprint used to hard-fail unsafe resume."
   },
   {
     path: "checkpoints/<sequence>-<executionId>.json",

@@ -18,7 +18,7 @@ export type Nl2MmdStructureTemplateId =
   | "error_compensation"
   | "bounded_loop"
   | "human_gate"
-  | "binding_compat";
+  | "mixed_binding";
 
 export type Nl2MmdStructureSlot = {
   key: string;
@@ -71,7 +71,7 @@ const TEMPLATES: readonly Nl2MmdStructureTemplate[] = [
     requiredSlots: [
       slot("entry", "Declare the entry role and the main linear path.", ["entry.role=debate-minimalist"]),
       slot("roles", "List the ordered roles in the single chain.", ["input -> role_a -> role_b -> output"]),
-      slot("bindings", "Bind each active role to a direct model ref or legacy executor.", ["model.bind.role_a=opencode/gpt-5-nano"])
+      slot("bindings", "Bind each active role to a direct model ref or exec-bound local tool.", ["model.bind.role_a=opencode/gpt-5-nano"])
     ],
     optionalSlots: [
       slot("notes", "Capture any lightweight constraints or delivery preferences.", ["user profile style notes"], false)
@@ -267,19 +267,19 @@ const TEMPLATES: readonly Nl2MmdStructureTemplate[] = [
     ]
   },
   {
-    id: "binding_compat",
-    title: "Binding Compatibility",
-    summary: "Legacy migration template for mixed model.bind and exec.bind systems.",
-    triggerPatterns: [/exec\.bind|model\.bind|兼容|迁移|legacy|binding/i],
+    id: "mixed_binding",
+    title: "Mixed Binding",
+    summary: "Template for systems that intentionally mix model.bind and exec.bind roles.",
+    triggerPatterns: [/exec\.bind|model\.bind|binding|mixed/i],
     semanticHintLabels: ["binding_policy"],
     requiredMetadataKeys: ["system.id", "system.version", "law.global", "entry.role"],
     requiredSlots: [
-      slot("primary-binding", "Declare the preferred modern binding.", ["model.bind.reviewer=opencode/gpt-5-nano"]),
-      slot("legacy-binding", "Keep the legacy compatibility binding if required.", ["exec.bind.reviewer=review-profile"]),
-      slot("migration-note", "Record which binding path is authoritative.", ["model.bind is primary; exec.bind is compatibility-only"])
+      slot("model-binding", "Declare the model-bound role.", ["model.bind.reviewer=opencode/gpt-5-nano"]),
+      slot("exec-binding", "Declare the local-shell exec-bound role.", ["exec.bind.reviewer=review-profile"]),
+      slot("binding-note", "Record which roles use each binding path.", ["review uses model.bind; ship uses exec.bind"])
     ],
     optionalSlots: [
-      slot("transition", "Note any gradual migration or fallback conditions.", ["compatibility mode"], false)
+      slot("binding-policy", "Capture any explicit binding policy or rationale.", ["keep exec.bind only for local shell roles"], false)
     ],
     skeleton: [
       "flowchart TD",

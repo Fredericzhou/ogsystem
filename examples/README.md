@@ -23,7 +23,6 @@ Use this small set first to cover most capabilities with minimum repetition:
 | `runtime-native-human-review/` | model.bind | `review.* + runtime-native human review` | stop-for-review, operator decision, resume |
 | `ogs-gstacklike/` | exec.bind | `review.* + ERROR* + shared artifacts + local role repo` | project-style delivery flow with native human review, compensation, and run-level artifact handoff |
 | `rust-hello-pipeline/` | exec.bind | sequential multi-role tool chain | side-effect workflow and artifact validation |
-| `incident-response-playbook/` | exec.bind | `ERROR* + compensation + legacy human gates` | compatibility example for role-node-based human control |
 
 ## Recommended Order
 
@@ -33,27 +32,24 @@ Use this small set first to cover most capabilities with minimum repetition:
 4. Run `runtime-native-human-review/` for native stop-review-resume semantics.
 5. Run `ogs-gstacklike/` for a full project-style example with local role repo, native review, shared artifacts, and compensation.
 6. Run `rust-hello-pipeline/` if you need external toolchain workflows.
-7. Use `incident-response-playbook/` only if you need the legacy role-node human gate pattern.
 
 ## Fast Commands
 
 ```bash
-pnpm run run:adapter --system examples/minimal-system.mmd --laws examples/console-laws.json --prompt "smoke" --dry-run
+ogs run start --system examples/minimal-system.mmd --laws examples/console-laws.json --input "smoke" --dry-run
 
-pnpm run run:adapter --system examples/langgraph-debate-current/system.mmd --laws examples/langgraph-debate-current/laws.json --user-profile examples/langgraph-debate-current/user-profile.json --prompt "是否继续保持最小化" --dry-run
+ogs run start --system examples/langgraph-debate-current/system.mmd --laws examples/langgraph-debate-current/laws.json --user-profile examples/langgraph-debate-current/user-profile.json --input "是否继续保持最小化" --dry-run
 
-pnpm run run:adapter --system examples/medical-quorum-consultation/system.mmd --laws examples/medical-quorum-consultation/laws.json --user-profile examples/medical-quorum-consultation/user-profile.json --prompt "患者发热伴神经与心血管症状，先形成会诊结论" --dry-run
+ogs run start --system examples/medical-quorum-consultation/system.mmd --laws examples/medical-quorum-consultation/laws.json --user-profile examples/medical-quorum-consultation/user-profile.json --input "患者发热伴神经与心血管症状，先形成会诊结论" --dry-run
 
 ogs run start --system examples/ogs-gstacklike/system.mmd --input "构建一个html页面，要求显示hello world" --workdir examples/ogs-gstacklike
 
 bash examples/ogs-gstacklike/scripts/validate-scenarios.sh
 ```
 
-## Extended/Compatibility Examples
+## Extended Examples
 
 - `target-model-binding-system.mmd`: smallest model-binding baseline.
 - `langgraph-expert-consultation/`: all-of expert consultation baseline.
-- `console-system.mmd`: legacy compatibility route for existing `profiles/tools`.
+- `console-system.mmd`: smallest local-shell exec.bind baseline.
 - `error-flow-compensation/`: focused ERROR* routing baseline.
-- `human-gate-workflow/`: legacy role-node human gate baseline.
-- `incident-response-playbook/`: integrated exception-routing plus legacy role-node human control.

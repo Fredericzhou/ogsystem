@@ -186,6 +186,48 @@ test("lifecycle cli project init/create commands scaffold project control plane"
   assert.equal(startPayload.status, "done");
 });
 
+test("lifecycle cli run start resolves --system relative to --workdir", { concurrency: false }, async () => {
+  const repoRoot = process.cwd();
+  const tempRoot = await mkdtemp(path.join(os.tmpdir(), "ogsystem-cli-run-workdir-"));
+  await seedRuntimeProject(tempRoot);
+  await writeFile(
+    path.resolve(tempRoot, "system.mmd"),
+    [
+      "flowchart TD",
+      "%% system.id=test.cli.run.workdir.relative-system",
+      "%% system.version=1.0.0",
+      "%% law.global=law.console.base",
+      "%% entry.role=debate-minimalist",
+      "",
+      "input -->|DEBATE_REQUEST| minimalist[Role:debate-minimalist]",
+      "minimalist[Role:debate-minimalist] -->|MINIMALIST_DONE| judge[Role:debate-judge]",
+      "judge[Role:debate-judge] -->|DECISION_READY| output"
+    ].join("\n"),
+    "utf8"
+  );
+
+  const result = await runCli(
+    [
+      "run",
+      "start",
+      "--system",
+      "system.mmd",
+      "--input",
+      "relative workdir system path",
+      "--dry-run",
+      "--print-graph-link",
+      "--workdir",
+      tempRoot
+    ],
+    { cwd: repoRoot }
+  );
+
+  assert.strictEqual(result.code, 0, result.stderr);
+  const payload = JSON.parse(result.stdout);
+  assert.equal(payload.status, "done");
+  assert.match(result.stderr, /\[graph\] Visual preview: https:\/\/mermaid\.live\/edit#base64:/);
+});
+
 test("lifecycle cli run start/list/status/logs/resume/stop works end-to-end", { concurrency: false }, async () => {
   const repoRoot = process.cwd();
   const tempRoot = await mkdtemp(path.join(os.tmpdir(), "ogsystem-cli-run-"));
@@ -778,7 +820,7 @@ test("lifecycle cli review status normalization tracks rework rounds and rejects
   assert.match(invalidTerminateScope.stderr, /invalid --scope value/);
 });
 
-test("lifecycle cli modern run failures print modern resume hints and reject hidden legacy flags", { concurrency: false }, async () => {
+test("lifecycle cli modern run failures print modern resume hints and reject removed hidden flags", { concurrency: false }, async () => {
   const repoRoot = process.cwd();
   const tempRoot = await mkdtemp(path.join(os.tmpdir(), "ogsystem-cli-modern-failure-"));
   await mkdir(path.resolve(tempRoot, ".ogs"), { recursive: true });

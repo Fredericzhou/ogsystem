@@ -28,7 +28,7 @@ function runNodeCli(cliPath, args, cwd = process.cwd()) {
 test("ogs help command surfaces layered guidance", async () => {
   const rootHelp = await runNodeCli(runtimeCliPath, ["help"]);
   assert.strictEqual(rootHelp.code, 0);
-  assert.match(rootHelp.stdout, /ogs help \[project\|run\|visualizer\|legacy\]/);
+  assert.match(rootHelp.stdout, /ogs help \[project\|run\|visualizer\]/);
   assert.match(rootHelp.stdout, /ogs help run logs/);
   assert.match(rootHelp.stdout, /ogs project create --help/);
   assert.match(rootHelp.stdout, /project commands use the current directory/);

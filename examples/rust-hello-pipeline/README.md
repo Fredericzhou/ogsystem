@@ -9,12 +9,11 @@ Three-role full-flow validation example:
 Run command:
 
 ```bash
-pnpm run run:adapter \
+ogs run start \
   --system examples/rust-hello-pipeline/system.mmd \
-  --profiles examples/rust-hello-pipeline/profiles.json \
-  --tools examples/rust-hello-pipeline/tools.json \
   --laws .ogs/laws.json \
-  --prompt "validate rust hello pipeline"
+  --workdir examples/rust-hello-pipeline \
+  --input "validate rust hello pipeline"
 ```
 
 Requirements:

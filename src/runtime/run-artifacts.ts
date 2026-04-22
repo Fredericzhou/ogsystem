@@ -180,8 +180,8 @@ function buildRunReproScript(args: {
     "",
     "RUN_DIR=\"$(cd -- \"$(dirname -- \"$0\")\" && pwd)\"",
     `WORKDIR=${workdir}`,
+    "RUN_ID=\"$(basename -- \"$RUN_DIR\")\"",
     "INPUT_FILE=\"$RUN_DIR/request.md\"",
-    "SYSTEM_FILE=\"$RUN_DIR/system.mmd\"",
     "RUNTIME_FILE=\"$WORKDIR/.ogs/runtime.json\"",
     "LAWS_FILE=\"$WORKDIR/.ogs/laws.json\"",
     "USER_PROFILE_FILE=\"$WORKDIR/.ogs/user-profile.json\"",
@@ -192,10 +192,10 @@ function buildRunReproScript(args: {
     "fi",
     "",
     "ARGS=(",
-    "  --system \"$SYSTEM_FILE\"",
-    "  --input \"$(cat \"$INPUT_FILE\")\"",
+    "  run",
+    "  resume",
+    "  \"$RUN_ID\"",
     "  --workdir \"$WORKDIR\"",
-    "  --resume-run \"$RUN_DIR\"",
     ")",
     "",
     "if [[ -f \"$RUNTIME_FILE\" ]]; then",
@@ -733,9 +733,9 @@ export async function initializeRunContext(args: {
   // prefers idempotent setup and write-if-missing files so resume never overwrites evidence.
   if (args.resumeRunDir?.includes("ogsystem-history")) {
     throw createRuntimeError({
-      errorCode: "RUNTIME_LEGACY_RUN_PATH_UNSUPPORTED",
+      errorCode: "RUNTIME_INVALID_RUN_PATH",
       errorCategory: "input",
-      message: `Legacy resume path is not supported: ${args.resumeRunDir}`,
+      message: `Unsupported resume path: ${args.resumeRunDir}`,
       retryable: false,
       stage: "resume"
     });
@@ -1840,7 +1840,7 @@ export async function persistRolePrelude(args: {
         content: [
           `# Role ${args.roleId}`,
           "",
-          `- modelId: ${args.modelId ?? "legacy-profile"}`,
+          `- modelId: ${args.modelId ?? "exec-profile"}`,
           `- allowedEvents: ${args.allowedEvents.join(", ") || "(none)"}`,
           `- resolvedRolePath: ${args.resolvedRolePath ?? ""}`,
           `- preferredModelTags: ${(args.preferredModelTags ?? []).join(", ") || "(none)"}`,

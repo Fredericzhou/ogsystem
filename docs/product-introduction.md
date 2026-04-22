@@ -45,7 +45,7 @@ OGSystem 当前采用单一 graph runtime 路径，核心模块分工很清晰�
 OGSystem 目前是一个很强的单机文件型内核，但仍有明确边界：
 
 - 重点解决的是单机正确性、恢复能力和操作安全，不是分布式调度。
-- `.resume.lock` 只覆盖同机 `--resume-run` 竞争，不解决跨主机共享存储上的并发恢复。
+- `.resume.lock` 只覆盖同机 `ogs run resume <run-id>` 竞争，不解决跨主机共享存储上的并发恢复。
 - 指纹校验是严格模式。只要系统定义、角色内容、模型包或 law 变化，resume 就会拒绝继续。
 - 长期运行的主要压力来自状态与产物增长，不是当前语义正确性本身。
 - `ERROR*` 异常流语义已实现，默认由 `runtime.error_flows.v1=false` 灰度控制；未声明或未开启时保持 fail-stop 行为。

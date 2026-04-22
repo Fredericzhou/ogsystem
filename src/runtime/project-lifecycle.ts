@@ -959,7 +959,7 @@ export async function rebuildRunsIndex(workdir: string): Promise<RunsIndexFile> 
 
 export function resolveRunDir(workdir: string, runId: string): string {
   if (runId.includes("ogsystem-history")) {
-    throw new Error(`Legacy run path is not supported: ${runId}`);
+    throw new Error(`Unsupported run path: ${runId}`);
   }
   if (runId.includes("/") || runId.includes("\\")) {
     throw new Error(`run-id must be a bare id, got: ${runId}`);
@@ -1049,10 +1049,7 @@ export async function listHumanReviews(workdir: string, runId: string): Promise<
         }),
         requestSnapshot,
         decisionSnapshot,
-        currentState,
-        request: requestSnapshot,
-        decision: decisionSnapshot,
-        state: currentState
+        currentState
       };
     })
   );
@@ -1101,10 +1098,7 @@ export async function inspectHumanReview(
     }),
     requestSnapshot,
     decisionSnapshot,
-    currentState,
-    request: requestSnapshot,
-    decision: decisionSnapshot,
-    pendingReview: currentState
+    currentState
   };
 }
 

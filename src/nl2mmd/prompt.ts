@@ -95,7 +95,7 @@ export function buildNl2MmdSystemPrompt(context: Nl2MmdContext): string {
     "- role.mode values allowed: " + dictionary.roleModes.join(", "),
     "- join.mode values allowed: " + dictionary.joinModes.join(", "),
     "- loop.max must be a positive integer",
-    "- engine is compatibility-only and may only be langgraph when explicitly needed",
+    "- Do not emit engine metadata unless the user explicitly asks for it",
     "- entry.role must exist in the graph",
     '- Every role with execution intent should use model.bind.<roleId>=provider/model, or rely on .ogs/model-selection.json defaults when direct per-role binding is unnecessary',
     "- Event names must be uppercase snake case and must match outgoing role schema enums when using known roles",

@@ -12,11 +12,10 @@ Flow:
 Run:
 
 ```bash
-pnpm run run:adapter \
-  --system examples/error-flow-compensation/system.mmd \
-  --runtime examples/error-flow-compensation/runtime.json \
-  --profiles examples/error-flow-compensation/profiles.json \
-  --tools examples/error-flow-compensation/tools.json \
-  --laws examples/error-flow-compensation/laws.json \
-  --prompt "run error flow compensation example"
+ogs run start \
+  --system system.mmd \
+  --runtime runtime.json \
+  --laws laws.json \
+  --workdir examples/error-flow-compensation \
+  --input "run error flow compensation example"
 ```

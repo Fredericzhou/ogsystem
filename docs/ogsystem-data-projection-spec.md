@@ -15,9 +15,9 @@ Target outcomes:
 - support `N-of-M` join readiness without adding multiple overlapping join modes
 - remain fail-closed and easy to test
 
-## 2. Current Baseline
+## 2. Current Behavior
 
-Current OGSystem behavior is the compatibility baseline and must remain unchanged when the new metadata is absent.
+Current OGSystem behavior remains unchanged when the new metadata is absent.
 
 ### 2.1 Ordinary nodes
 
@@ -288,7 +288,7 @@ The implementation of this spec should add contract tests for:
 7. invalid selectors fail closed
 8. unauthorized source references fail validation
 
-## 12. Migration Guidance
+## 12. Usage Guidance
 
 - existing systems using default direct-context or `all_of` join require no changes
 - prefer `quorum_of` over introducing a separate `any_of`

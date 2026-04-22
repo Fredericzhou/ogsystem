@@ -33,7 +33,7 @@ ogs run start --system examples/ogs-gstacklike/system.mmd --input "构建一个h
 
 这也是为什么“运行后仍然未生成 html”：只有审核通过并 `resume` 之后，`ship-deploy` 才会真正写出页面产物。
 
-当审核结论是 `rework` 时，runtime 会直接重新激活 `ship`，而不是跳到额外的 `review-feedback` / human gate 节点。
+当审核结论是 `rework` 时，runtime 会直接重新激活 `ship`，不会插入额外中间节点。
 
 - `ship` 首轮执行时没有 human review 上下文
 - rework 分支会自动拿到 `human_review_comment`、`human_review_round`、`previous_ship_output`

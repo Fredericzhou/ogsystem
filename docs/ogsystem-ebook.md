@@ -38,7 +38,7 @@ OGSystem 故意不追求“大而全”。它把目标限定为：
 
 - 执行受限 Mermaid DSL。
 - 驱动多角色节点。
-- 绑定模型或兼容 profile/tool 执行路径。
+- 绑定模型或本地 profile/tool 执行路径。
 - 生成可恢复、可审计的运行产物。
 
 这让系统可以在较低复杂度下，把正确性和可靠性做得足够扎实。
@@ -211,13 +211,13 @@ Role executor 只关心单节点执行。
 
 - `executor.ts` 定义统一执行器接口。
 - `opencode-executor.ts` 负责 OpenCode 路径。
-- `tool-runner.ts` 负责兼容 profile/tool 调用。
+- `tool-runner.ts` 负责 profile/tool 调用。
 
 它们的设计价值是：
 
 - 把编排语义和模型调用细节隔开。
 - 让 role executor 只面对统一合同。
-- 保留兼容路径，但不再引入第二套调度引擎。
+- 保留统一执行接口，但不再引入第二套调度引擎。
 
 ### 4.10 `src/runtime/run-artifacts.ts`
 
@@ -355,7 +355,7 @@ OGSystem 的指纹不只是系统 ID，而是对实际加载内容做哈希，�
 
 - 同一个 `runDir` 在同一时刻只能由一个本机进程进行 resume。
 
-这足以拦截最现实的误操作风险：两个终端同时对同一个 run 目录执行 `--resume-run`。
+这足以拦截最现实的误操作风险：两个终端同时对同一个 run 目录执行 `ogs run resume <run-id>`。
 
 ### 6.4 缓冲刷盘保护
 

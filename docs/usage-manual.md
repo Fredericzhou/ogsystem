@@ -359,7 +359,7 @@ Use this rule:
 
 It also understands the current flow-contract surface, including `handoff.mode`, `handoff.contracts`, and `route.order.*`.
 
-For structure-first authoring, see [NL2MMD structure templates](./nl2mmd-structure-templates.md). It lists the current semantic skeletons and example Mermaid graphs for `linear_flow`, `fanout_fanin`, `quorum_consultation`, `contract_gated_handoff`, `error_compensation`, `bounded_loop`, `human_gate`, and `binding_compat`.
+For structure-first authoring, see [NL2MMD structure templates](./nl2mmd-structure-templates.md). It lists the current semantic skeletons and example Mermaid graphs for `linear_flow`, `fanout_fanin`, `quorum_consultation`, `contract_gated_handoff`, `error_compensation`, `bounded_loop`, `human_gate`, and `mixed_binding`.
 
 Use it with `ogs-nl2mmd --message "..."` for one-shot drafting, or omit `--message` for the interactive loop. In a source checkout, the equivalent command is `pnpm run run:nl2mmd -- --message "..."`. It targets the repository's supported Mermaid subset only; it is not a general Mermaid generator.
 
@@ -445,19 +445,6 @@ OGSystem/
         roles/
           <roleId>/
             ...
-    human-gate-workflow/
-      README.md
-      system.mmd
-      profiles.json
-      tools.json
-      laws.json
-    incident-response-playbook/
-      README.md
-      system.mmd
-      runtime.json
-      profiles.json
-      tools.json
-      laws.json
     medical-quorum-consultation/
       README.md
       system.mmd
@@ -495,7 +482,7 @@ minimalist[Role:debate-minimalist] -->|MINIMALIST_DONE| judge[Role:debate-judge]
 judge[Role:debate-judge] -->|DECISION_READY| output
 ```
 
-Compatibility execution example:
+Local-shell execution example:
 
 ```mermaid
 flowchart TD
@@ -627,7 +614,6 @@ Role rules:
 Recommended template roles:
 
 - `error-handler-base`: compensation skeleton with `COMPENSATED | ESCALATED | ABORTED`
-- `human-approve-gate` / `human-signal-wait`: legacy compatibility templates only; new systems should prefer runtime-native `review.*`
 
 ## 6. Model Selection Contract
 
@@ -740,10 +726,10 @@ Default `roleRepo` points to `./og-roles`. Model runtime control is no longer co
 
 `.ogs/providers/opencode.json` is not a runtime-consumed config file. It is a project-local reference sample that points to the real OpenCode config path and shows a recommended OpenAI-compatible provider entry with `setCacheKey: true`.
 
-Compatibility rule:
+Current rules:
 
 - `configVersion` is optional for the current repo default, but when present it must be `"2"`
-- unsupported config versions fail fast; the runtime does not provide in-place migration
+- unsupported config versions fail fast
 - `workspace.workspaceIsolation` defaults to `role`; set it to `branch` only when same-role sibling branches need isolated private workspaces
 - `redaction.enabled` defaults to `true`; it only affects operator-facing prompt/audit/result/event projections and does not rewrite resume truth files
 - when `retention.enabled=true`, runtime can trigger cleanup automatically only when `executionDirCount > executionDirThreshold`
@@ -1119,7 +1105,7 @@ ogs-doctor \
 `run:doctor` output separation:
 
 - `errors`: fail run/readiness checks
-- `warnings`: inventory or compatibility issues that do not block execution
+- `warnings`: inventory or other non-blocking issues
 - `notes`: detected runtime capabilities and inspected metadata
 
 For recovery, prioritize:

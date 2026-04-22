@@ -2,7 +2,7 @@
  * @fileoverview OGSystem CLI entrypoint and command dispatch.
  * File Set: runtime-adapter
  * Responsibilities:
- * - Parse lifecycle and legacy adapter arguments.
+ * - Parse lifecycle arguments.
  * - Dispatch project/run commands and normalize CLI errors.
  * Boundaries:
  * - Delegates runtime execution and persistence to lower-level modules.
@@ -43,31 +43,9 @@ import { startVisualizationServer } from "../visualizer/server.js";
 const require = createRequire(import.meta.url);
 const { version: CLI_VERSION } = require("../../package.json") as { version: string };
 
-type HelpTopic = "project" | "run" | "legacy" | "visualizer";
+type HelpTopic = "project" | "run" | "visualizer";
 type ProjectSubcommand = "init" | "create" | "sync" | "sync-models";
 type RunSubcommand = "start" | "resume" | "stop" | "list" | "status" | "inspect" | "logs" | "reindex" | "review";
-
-const LEGACY_OPTION_NAMES = new Set([
-  "system",
-  "runtime",
-  "user-profile",
-  "resume-run",
-  "profiles",
-  "tools",
-  "laws",
-  "input",
-  "workdir",
-  "cleanup-executions",
-  "log-run",
-  "quiet-run",
-  "visualize",
-  "visualizer-host",
-  "visualizer-port",
-  "print-graph-link",
-  "trace-out",
-  "dry-run",
-  "help"
-]);
 
 function usageRoot(): string {
   return [
@@ -78,7 +56,7 @@ function usageRoot(): string {
     "  ogs --version",
     "",
     "Help:",
-    "  ogs help [project|run|visualizer|legacy]",
+    "  ogs help [project|run|visualizer]",
     "  ogs help run logs",
     "  ogs help project init",
     "  ogs visualizer --help",
@@ -399,22 +377,6 @@ function usageVisualizer(): string {
   ].join("\n");
 }
 
-function usageLegacy(): string {
-  return [
-    "Usage:",
-    "  ogs --system <file.mmd> --input <text> [options]",
-    "",
-    "Source checkout equivalent:",
-    "  pnpm run run:adapter --system <file.mmd> --input <text> [options]",
-    "Prefer ogs project/run commands for normal project management.",
-    "",
-    "Compatibility-only options still accepted here include:",
-    "  --profiles <file>",
-    "  --tools <file>",
-    "  --resume-run <run-dir>"
-  ].join("\n");
-}
-
 function usage(topic?: HelpTopic, subcommand?: ProjectSubcommand | RunSubcommand): string {
   if (topic === "project") {
     return usageProject(subcommand as ProjectSubcommand | undefined);
@@ -424,9 +386,6 @@ function usage(topic?: HelpTopic, subcommand?: ProjectSubcommand | RunSubcommand
   }
   if (topic === "visualizer") {
     return usageVisualizer();
-  }
-  if (topic === "legacy") {
-    return usageLegacy();
   }
   return usageRoot();
 }
@@ -567,171 +526,21 @@ async function printModernResumeHint(args: {
   console.error(`[hint] ${tokens.join(" ")}`);
 }
 
-async function printLegacyResumeHint(args: {
-  error: RuntimeError;
-  values: CliValueMap;
-  workdir: string;
-}): Promise<void> {
-  const runId = args.error.envelope.runId;
-  if (!runId) {
-    return;
-  }
-
-  const systemPath = resolve(args.workdir, String(args.values.system ?? ""));
-  const prompt = String(args.values.input ?? "");
-  const runsDir = await resolveRunsDir({
-    runtimeConfigPath: typeof args.values.runtime === "string" ? args.values.runtime : undefined,
-    workdir: args.workdir
-  });
-  const resumeRun =
-    typeof args.values["resume-run"] === "string" && args.values["resume-run"].trim()
-      ? args.values["resume-run"]
-      : `${runsDir}/${runId}`;
-
-  const tokens: string[] = [
-    "ogs",
-    `--system ${shellEscape(systemPath)}`,
-    `--input ${shellEscape(prompt)}`,
-    `--workdir ${shellEscape(args.workdir)}`,
-    `--resume-run ${shellEscape(resumeRun)}`
-  ];
-  if (typeof args.values.runtime === "string") {
-    tokens.push(`--runtime ${shellEscape(args.values.runtime)}`);
-  }
-  if (typeof args.values["user-profile"] === "string") {
-    tokens.push(`--user-profile ${shellEscape(args.values["user-profile"])}`);
-  }
-  if (typeof args.values.laws === "string") {
-    tokens.push(`--laws ${shellEscape(args.values.laws)}`);
-  }
-  if (typeof args.values.profiles === "string") {
-    tokens.push(`--profiles ${shellEscape(args.values.profiles)}`);
-  }
-  if (typeof args.values.tools === "string") {
-    tokens.push(`--tools ${shellEscape(args.values.tools)}`);
-  }
-  if (args.values["dry-run"] === true) {
-    tokens.push("--dry-run");
-  }
-  if (args.values["quiet-run"] === true) {
-    tokens.push("--quiet-run");
-  }
-  if (args.values.visualize === true) {
-    tokens.push("--visualize");
-  }
-  if (typeof args.values["visualizer-host"] === "string") {
-    tokens.push(`--visualizer-host ${shellEscape(args.values["visualizer-host"])}`);
-  }
-  if (typeof args.values["visualizer-port"] === "string") {
-    tokens.push(`--visualizer-port ${shellEscape(args.values["visualizer-port"])}`);
-  }
-
-  console.error(`[hint] run failed for runId=${runId}`);
-  console.error("[hint] To resume this run, use:");
-  console.error(`[hint] ${tokens.join(" ")}`);
-}
-
-function extractLongOptionName(token: string): string | undefined {
-  if (!token.startsWith("--")) {
-    return undefined;
-  }
-  return token.slice(2).split("=", 1)[0];
-}
-
-function matchesLegacyCompatArgv(argv: string[]): boolean {
-  let sawLegacyOption = false;
-  for (const token of argv) {
-    if (token === "--") {
-      return false;
-    }
-    if (token.startsWith("--")) {
-      const optionName = extractLongOptionName(token);
-      if (!optionName || !LEGACY_OPTION_NAMES.has(optionName)) {
-        return false;
-      }
-      sawLegacyOption = true;
-      continue;
-    }
-    if (token.startsWith("-")) {
-      if (token !== "-h") {
-        return false;
-      }
-      sawLegacyOption = true;
-    }
-  }
-  return sawLegacyOption;
-}
-
-function findFirstUnknownOptionToken(argv: string[]): string | undefined {
-  for (const token of argv) {
-    if (token === "--") {
-      return token;
-    }
-    if (token.startsWith("--")) {
-      const optionName = extractLongOptionName(token);
-      if (!optionName || !LEGACY_OPTION_NAMES.has(optionName)) {
-        return token;
-      }
-      continue;
-    }
-    if (token.startsWith("-") && token !== "-h") {
-      return token;
-    }
-  }
-  return undefined;
-}
-
 async function maybePrintGraphLink(args: {
   enabled: boolean;
-  workdir: string;
   systemPath: string;
 }): Promise<void> {
   if (!args.enabled) {
     return;
   }
   try {
-    const source = await readFile(resolve(args.workdir, args.systemPath), "utf8");
+    const source = await readFile(args.systemPath, "utf8");
     const url = buildMermaidLiveEditUrl(source);
     console.error("[graph] System graph initialized.");
     console.error(`[graph] Visual preview: ${url}`);
   } catch (error) {
     console.error(
       `[graph] preview unavailable: ${error instanceof Error ? error.message : String(error)}`
-    );
-  }
-}
-
-function parseLegacyArgs(argv?: string[]) {
-  try {
-    return parseArgs({
-      args: argv,
-      options: {
-        system: { type: "string" },
-        runtime: { type: "string" },
-        "user-profile": { type: "string" },
-        "resume-run": { type: "string" },
-        profiles: { type: "string" },
-        tools: { type: "string" },
-        laws: { type: "string" },
-        input: { type: "string" },
-        workdir: { type: "string" },
-        "cleanup-executions": { type: "string" },
-        "log-run": { type: "boolean" },
-        "quiet-run": { type: "boolean" },
-        visualize: { type: "boolean" },
-        "visualizer-host": { type: "string" },
-        "visualizer-port": { type: "string" },
-        "print-graph-link": { type: "boolean" },
-        "trace-out": { type: "string" },
-        "dry-run": { type: "boolean" },
-        help: { type: "boolean", short: "h" }
-      },
-      allowPositionals: false
-    });
-  } catch (error) {
-    throw createCliInputError(
-      "CLI_INVALID_ARGS",
-      error instanceof Error ? error.message : String(error)
     );
   }
 }
@@ -754,6 +563,10 @@ function parseLifecycleArgs(args: string[], options: Record<string, LifecycleOpt
       error instanceof Error ? error.message : String(error)
     );
   }
+}
+
+function resolveCliSystemPath(workdir: string, systemPath: string): string {
+  return resolve(workdir, systemPath);
 }
 
 function asString(value: string | boolean | undefined): string | undefined {
@@ -883,8 +696,6 @@ async function runAdapterCommand(args: {
   runtimeConfigPath?: string;
   userProfilePath?: string;
   resumeRunDir?: string;
-  profilesPath?: string;
-  toolsPath?: string;
   lawsPath?: string;
   workdir: string;
   dryRun: boolean;
@@ -925,8 +736,6 @@ async function runAdapterCommand(args: {
       runtimeConfigPath: args.runtimeConfigPath,
       userProfilePath: args.userProfilePath,
       resumeRunDir: args.resumeRunDir,
-      profilesPath: args.profilesPath,
-      toolsPath: args.toolsPath,
       lawsPath: args.lawsPath,
       prompt: args.prompt,
       workdir: args.workdir,
@@ -946,63 +755,6 @@ async function runAdapterCommand(args: {
       await closeServer(visualizer.server);
       console.error("[visualizer] Closed attached server.");
     }
-  }
-}
-
-async function runLegacyMode(argv?: string[]): Promise<void> {
-  const { values } = parseLegacyArgs(argv);
-  if (values.help) {
-    console.log(usage());
-    return;
-  }
-  if (!values.system || !values.input) {
-    throw createCliInputError("CLI_MISSING_REQUIRED_ARGS", `Missing required args.\n\n${usage()}`);
-  }
-
-  const workdir = values.workdir ?? process.cwd();
-  await maybePrintGraphLink({
-    enabled: values["print-graph-link"] ?? false,
-    workdir,
-    systemPath: values.system
-  });
-
-  const cleanupExecutionHistory = parseCleanupExecutionValue(values["cleanup-executions"]);
-  try {
-    await runAdapterCommand({
-      systemPath: values.system,
-      prompt: values.input,
-      runtimeConfigPath: values.runtime,
-      userProfilePath: values["user-profile"],
-      resumeRunDir: values["resume-run"],
-      profilesPath: values.profiles,
-      toolsPath: values.tools,
-      lawsPath: values.laws,
-      workdir,
-      dryRun: values["dry-run"] ?? false,
-      cleanupExecutionHistory,
-      logRun: resolveLogRunOption(values),
-      traceOut: values["trace-out"],
-      visualizer: {
-        enabled: asBool(values.visualize),
-        host: asString(values["visualizer-host"]) ?? "127.0.0.1",
-        port: parsePortOption({
-          optionName: "--visualizer-port",
-          value: asString(values["visualizer-port"]),
-          defaultValue: 0,
-          allowZero: true
-        }),
-        autoClose: true
-      }
-    });
-  } catch (error) {
-    if (error instanceof RuntimeError) {
-      await printLegacyResumeHint({
-        error,
-        values,
-        workdir
-      });
-    }
-    throw error;
   }
 }
 
@@ -1224,15 +976,15 @@ async function runStartCommand(argv: string[]): Promise<void> {
   }
 
   const workdir = asString(values.workdir) ?? process.cwd();
+  const resolvedSystemPath = resolveCliSystemPath(workdir, systemPath);
   await maybePrintGraphLink({
     enabled: asBool(values["print-graph-link"]),
-    workdir,
-    systemPath
+    systemPath: resolvedSystemPath
   });
 
   try {
     await runAdapterCommand({
-      systemPath,
+      systemPath: resolvedSystemPath,
       prompt,
       runtimeConfigPath: asString(values.runtime),
       userProfilePath: asString(values["user-profile"]),
@@ -1296,13 +1048,14 @@ async function runResumeCommand(argv: string[]): Promise<void> {
   const workdir = asString(values.workdir) ?? process.cwd();
   const runDir = resolveRunDir(workdir, runId);
   const systemPath = asString(values.system) ?? resolve(runDir, "system.mmd");
+  const resolvedSystemPath = resolveCliSystemPath(workdir, systemPath);
   const prompt =
     asString(values.input) ??
     (await readFile(resolve(runDir, "request.md"), "utf8")).replace(/\s+$/, "");
 
   try {
     await runAdapterCommand({
-      systemPath,
+      systemPath: resolvedSystemPath,
       prompt,
       runtimeConfigPath: asString(values.runtime),
       userProfilePath: asString(values["user-profile"]),
@@ -1717,7 +1470,7 @@ async function main(): Promise<void> {
   if (argv[0] === "help") {
     const topic = argv[1];
     const subcommand = argv[2];
-    if (topic === "project" || topic === "run" || topic === "legacy" || topic === "visualizer") {
+    if (topic === "project" || topic === "run" || topic === "visualizer") {
       console.log(usage(topic, subcommand as ProjectSubcommand | RunSubcommand | undefined));
       return;
     }
@@ -1741,14 +1494,7 @@ async function main(): Promise<void> {
     throw createCliInputError("CLI_UNKNOWN_COMMAND", `Unknown command: ${command}\n\n${usage()}`);
   }
 
-  if (matchesLegacyCompatArgv(argv)) {
-    await runLegacyMode(argv);
-    return;
-  }
-  throw createCliInputError(
-    "CLI_INVALID_ARGS",
-    `Unknown option: ${findFirstUnknownOptionToken(argv) ?? argv[0]}\n\n${usage()}`
-  );
+  throw createCliInputError("CLI_INVALID_ARGS", `Unknown option: ${argv[0]}\n\n${usage()}`);
 }
 
 const cliArgv = process.argv.slice(2);

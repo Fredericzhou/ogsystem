@@ -1,7 +1,7 @@
 {
   "configVersion": "2",
   "executor": "opencode",
-  "roleRepo": "./og-roles",
+  "roleRepo": "../../og-roles",
   "runsDir": ".ogs/runs",
   "runtime": {
     "error_flows": {

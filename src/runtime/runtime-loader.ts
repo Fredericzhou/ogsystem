@@ -130,7 +130,7 @@ export async function loadRuntimeConfig(
   );
   if (validated.runsDir.includes("ogsystem-history")) {
     throw new Error(
-      `Legacy runsDir is not supported in lifecycle mode: ${validated.runsDir}. Use ".ogs/runs".`
+      `Unsupported runsDir in lifecycle mode: ${validated.runsDir}. Use ".ogs/runs".`
     );
   }
   return validated;

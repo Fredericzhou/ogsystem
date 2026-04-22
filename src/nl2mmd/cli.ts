@@ -41,7 +41,7 @@ function usage(): string {
     "  --model <provider/model>  Direct default model ref (overrides .ogs/model-selection.json defaults)",
     "  --runtime <file>       Runtime config JSON (optional)",
     "  --laws <file>          Laws JSON (optional)",
-    "  --profiles <file>      Legacy profiles JSON for exec.bind validation (optional)",
+    "  --profiles <file>      Profiles JSON for exec.bind validation (optional)",
     "  --user-profile <file>  User profile JSON for validation (optional)",
     "  --no-preflight         Skip startup preflight (default is preflight enabled)",
     "  --workdir <path>       Working directory (default: cwd)",

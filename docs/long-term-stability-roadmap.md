@@ -21,7 +21,7 @@ Status: active (post-dehydration baseline)
 - 严格指纹校验（系统定义、角色内容、模型包、law）。
 - 会话血缘隔离（`roleId:sessionLineageId`）。
 - Durable outcome + checkpoint 对账补偿（crash-idempotent）。
-- 同机 `--resume-run` 互斥（`.resume.lock`）。
+- 同机 `ogs run resume <run-id>` 互斥（`.resume.lock`）。
 - 状态体积控制与写盘耗时可观测（脱水 + metrics）。
 
 ## 3. 下一阶段优先级（不加复杂度）

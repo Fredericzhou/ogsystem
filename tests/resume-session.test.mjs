@@ -688,7 +688,7 @@ minimalist[Role:debate-minimalist] -->|MINIMALIST_DONE| output
   );
 });
 
-test("adapter resume ignores legacy model manifest drift once selection owns runtime models", async () => {
+test("adapter resume ignores model manifest drift once selection owns runtime models", async () => {
   const systemSource = `flowchart TD
 %% system.id=resume.model-drift.demo
 %% system.version=1.0.0
@@ -1436,7 +1436,7 @@ minimalist[Role:debate-minimalist] -->|MINIMALIST_DONE| output
         pid: process.pid,
         hostname: os.hostname(),
         acquiredAt: "2026-04-11T00:00:00.000Z",
-        command: "node dist/runtime/cli.js --resume-run"
+        command: "node dist/runtime/cli.js run resume"
       },
       null,
       2
@@ -1501,7 +1501,7 @@ minimalist[Role:debate-minimalist] -->|MINIMALIST_DONE| output
         pid: stalePid,
         hostname: os.hostname(),
         acquiredAt: "2026-04-11T00:00:00.000Z",
-        command: "node dist/runtime/cli.js --resume-run"
+        command: "node dist/runtime/cli.js run resume"
       },
       null,
       2

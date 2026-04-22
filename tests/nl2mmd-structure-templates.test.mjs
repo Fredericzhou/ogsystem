@@ -18,7 +18,7 @@ test("nl2mmd structure template registry exposes the expected semantic skeletons
     "error_compensation",
     "bounded_loop",
     "human_gate",
-    "binding_compat"
+    "mixed_binding"
   ]);
 
   const quorum = getNl2MmdStructureTemplate("quorum_consultation");
@@ -41,8 +41,8 @@ test("nl2mmd structure template suggestions track current OGSystem semantics", (
   const errorFlow = inferNl2MmdStructureTemplate("失败后要走 ERROR 补偿分支并触发恢复");
   assert.equal(errorFlow.template.id, "error_compensation");
 
-  const bindingCompat = inferNl2MmdStructureTemplate("旧系统里还需要兼容 exec.bind，同时引入 model.bind");
-  assert.equal(bindingCompat.template.id, "binding_compat");
+  const mixedBinding = inferNl2MmdStructureTemplate("一个角色走 model.bind，另一个角色走 exec.bind");
+  assert.equal(mixedBinding.template.id, "mixed_binding");
 
   const suggestions = suggestNl2MmdStructureTemplates("多学科会诊，至少两名专家形成共识后再输出");
   assert.equal(suggestions[0].template.id, "quorum_consultation");

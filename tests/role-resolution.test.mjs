@@ -105,20 +105,20 @@ test("loadRolePackage fails fast when agent.md is missing", async () => {
   );
 });
 
-test("role manifests reject legacy inputSchema fields", () => {
+test("role manifests reject removed inputSchema fields", () => {
   assert.throws(
     () =>
       validateRolePackageManifest(
         {
-          roleId: "legacy-role",
+          roleId: "invalid-old-field-role",
           roleVersion: "1.0.0",
-          name: "Legacy Role",
-          description: "legacy",
+          name: "Invalid Old Field Role",
+          description: "invalid old field",
           promptTemplate: "prompt.md",
           inputSchema: "../_shared/input.schema.json",
           outputSchema: "output.schema.json"
         },
-        "legacy-role/role.json"
+        "invalid-old-field-role/role.json"
       ),
     /unknown field/
   );

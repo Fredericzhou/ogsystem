@@ -14,4 +14,4 @@
 - `ship` 既承担首轮交付草稿，也承担 rework 回流点
 - reviewer comment 通过 `global.human_review.current.*?` 直接投影到 `ship`
 - `qa -> ship` / `ship -> ship-deploy` / `retro -> learn` 都走小型结构化 payload
-- 不再保留额外的 `review-feedback` 或 `human-approve-gate` 节点模板
+- 不再通过额外中间节点承接 review 回流

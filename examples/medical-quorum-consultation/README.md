@@ -14,10 +14,10 @@ Capabilities covered:
 Run:
 
 ```bash
-pnpm run run:adapter \
+ogs run start \
   --system examples/medical-quorum-consultation/system.mmd \
   --laws examples/medical-quorum-consultation/laws.json \
   --user-profile examples/medical-quorum-consultation/user-profile.json \
-  --prompt "患者发热伴神经与心血管症状，先形成会诊结论" \
+  --input "患者发热伴神经与心血管症状，先形成会诊结论" \
   --dry-run
 ```

@@ -25,15 +25,17 @@ function runCli(args) {
 }
 
 test("cli fails when required args are missing", async () => {
-  const { code, stderr } = await runCli(["--input", "hello"]);
+  const { code, stderr } = await runCli(["run", "start", "--input", "hello"]);
   assert.strictEqual(code, 1);
-  assert.match(stderr, /Missing required args/);
+  assert.match(stderr, /run start requires --system and --input/);
   assert.match(stderr, /errorCode=CLI_MISSING_REQUIRED_ARGS/);
   assert.match(stderr, /stage=cli/);
 });
 
 test("cli rejects invalid cleanup-executions with a stable envelope", async () => {
   const { code, stderr } = await runCli([
+    "run",
+    "start",
     "--system",
     "examples/target-model-binding-system.mmd",
     "--input",
@@ -56,18 +58,18 @@ test("cli rejects unknown top-level commands at the command layer", async () => 
   assert.match(stderr, /ogs project <init\|create\|sync\|sync-models>/);
 });
 
-test("cli accepts top-level legacy flags only when argv positively matches legacy mode", async () => {
-  const { code, stdout } = await runCli([
+test("cli rejects removed top-level adapter flags", async () => {
+  const { code, stderr } = await runCli([
     "--system",
     "examples/target-model-binding-system.mmd",
     "--input",
-    "legacy top-level",
+    "top-level flags removed",
     "--dry-run"
   ]);
 
-  assert.strictEqual(code, 0);
-  const result = JSON.parse(stdout);
-  assert.equal(result.status, "done");
+  assert.strictEqual(code, 1);
+  assert.match(stderr, /Unknown option: --system/);
+  assert.match(stderr, /errorCode=CLI_INVALID_ARGS/);
 });
 
 test("modern run start input errors do not print resume hints", async () => {
@@ -84,6 +86,8 @@ test("modern run start input errors do not print resume hints", async () => {
 
 test("cli prints runtime logs to stderr by default without breaking stdout json", async () => {
   const { code, stdout, stderr } = await runCli([
+    "run",
+    "start",
     "--system",
     "examples/target-model-binding-system.mmd",
     "--input",
@@ -128,6 +132,8 @@ test("cli can attach a temporary visualizer server and auto-close it after run c
 
 test("cli can print Mermaid Live graph preview URL", async () => {
   const { code, stderr } = await runCli([
+    "run",
+    "start",
     "--system",
     "examples/target-model-binding-system.mmd",
     "--input",

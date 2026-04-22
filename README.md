@@ -116,13 +116,13 @@ For day-to-day use, start with `docs/usage-manual.md`. It keeps the command matr
 ## Runtime Guarantees
 
 - The adapter runs one graph-based execution model. The entry role becomes the initial active branch, each role execution emits one structured result, and completion happens only when active branches are exhausted or a transition reaches the terminal `output` boundary.
-- Executable roles always resolve to one JSON object: `{"event":"EVENT_NAME","content":"..."}`. For `model.bind`, the runtime sends `prompt + output.schema.json` to OpenCode SDK v2 and reads `info.structured`; if `info.structured` is absent or string-encoded, the runtime falls back to assistant text parts and applies JSON extraction. For legacy `exec.bind`, the runtime still parses tool stdout as one JSON object. `event` is required for roles with outgoing flows and must match one Mermaid edge label exactly.
+- Executable roles always resolve to one JSON object: `{"event":"EVENT_NAME","content":"..."}`. For `model.bind`, the runtime sends `prompt + output.schema.json` to OpenCode SDK v2 and reads `info.structured`; if `info.structured` is absent or string-encoded, the runtime falls back to assistant text parts and applies JSON extraction. For `exec.bind`, the runtime parses tool stdout as one JSON object. `event` is required for roles with outgoing flows and must match one Mermaid edge label exactly.
 - When OpenCode/provider/model resolution fails, runtime now preserves the upstream provider error as the top-level failure instead of collapsing it into a generic structured-output message.
 - For `model.bind`, one run now starts one shared `opencode serve`, and each role/node keeps one isolated OpenCode session on that server for the duration of the run.
 - Executable roles are resolved by `roleId` directly from the project-local role repo. For each Mermaid `Role:<roleId>`, the runtime loads `og-roles/roles/<roleId>/role.json`, renders `prompt.md`, validates the built-in runtime prompt-input shell, and validates `output.schema.json`.
 - The runtime now supports direct `model.bind.<roleId>=provider/model` plus `.ogs/model-selection.json` defaults with auto-discovered `.ogs/runtime.json`, `.ogs/user-profile.json`, and `.ogs/laws.json`.
 - `model.bind` retries transient OpenCode/provider failures on the same role session while keeping the same run-level shared server.
-- The runtime supports `role.mode.*=parallel_split`, `join.mode.*=all_of|quorum_of`, `join.sources.*`, `join.min.*`, `context.map.*`, and `loop.max.*`. `join.sources.*` must list unique source role ids and match the join node's Mermaid incoming role edges exactly. Legacy `%% engine=langgraph` metadata is accepted as compatibility input but is not required DSL semantics.
+- The runtime supports `role.mode.*=parallel_split`, `join.mode.*=all_of|quorum_of`, `join.sources.*`, `join.min.*`, `context.map.*`, and `loop.max.*`. `join.sources.*` must list unique source role ids and match the join node's Mermaid incoming role edges exactly.
 - `quorum_of` counts unique completed source roles within the same `lineageId + loopIteration`, activates at most once, and records late arrivals without retriggering the join node.
 - `context.map.<roleId>.<field>` can replace the default `context` payload with a fail-closed, deterministic JSON projection built from `direct.*`, `source(<roleId>).*`, and `global.*` selectors.
 - Role output repair is intentionally narrow: wrapped JSON object extraction and single-allowed-event normalization are auto-repaired; schema mismatch still fails fast.
@@ -133,7 +133,7 @@ For day-to-day use, start with `docs/usage-manual.md`. It keeps the command matr
 - `.ogs/runs/` is generated runtime state and should stay out of version control.
 - `state.json.graphState` and `sessions.json` are the runtime-consumed resume sources. `events.ndjson` remains append-only audit history.
 - `state.json` and `sessions.json` writes are atomic, and resume rejects partial/corrupted snapshots before execution starts.
-- Runs persist `activeBranches`, `completedBranches`, `loopIterations`, and `graphState` inside `state.json`, and support `--resume-run` against the same run directory.
+- Runs persist `activeBranches`, `completedBranches`, `loopIterations`, and `graphState` inside `state.json`, and support `ogs run resume <run-id>` against the same run directory.
 - `audit/summary.md` and result JSON now expose `totalTransitions`, `okCount`, `failedCount`, `handledFailureCount`, `unhandledFailureCount`, `handledFailureByEvent`, `handledFailureByTargetRole`, `noopCount`, structured `failureCountsByErrorCode`, and repair statistics.
 - Runtime failure routing supports explicit error flows expressed as `ERROR*` edge labels behind `runtime.error_flows.v1` (default `false`): exact `ERROR.<errorCode>` first, then fallback `ERROR`; no match remains fail-stop.
 - `ERROR*` routing is evaluated only after executor-level retries for the attempt are exhausted.
@@ -177,9 +177,8 @@ For day-to-day use, start with `docs/usage-manual.md`. It keeps the command matr
 - `examples/error-flow-compensation/` shows failure-to-compensation routing via error flows expressed as `ERROR*` edge labels.
 - `examples/runtime-native-human-review/` shows the smallest runtime-native stop-review-resume path.
 - `examples/ogs-gstacklike/` shows a project-style flow with project-local `og-roles/`, runtime-native human review, run-level shared artifacts, and compensation routing.
-- `examples/human-gate-workflow/` and `examples/incident-response-playbook/` remain as legacy compatibility examples for role-node-based human gates.
 - `examples/README.md` is the training handbook for minimal example set and coverage matrix.
-- `og-roles/roles/error-handler-base/`, `og-roles/roles/human-approve-gate/`, and `og-roles/roles/human-signal-wait/` provide reusable template role packages.
+- `og-roles/roles/error-handler-base/` provides the reusable compensation template role package.
 
 Validate a generated run directory against the runtime contract:
 

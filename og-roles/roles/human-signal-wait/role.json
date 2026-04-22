@@ -1,9 +1,0 @@
-{
-  "roleId": "human-signal-wait",
-  "roleVersion": "1.0.0",
-  "name": "Human Signal Wait",
-  "description": "Template role for waiting and evaluating human signal outcomes.",
-  "promptTemplate": "prompt.md",
-  "outputSchema": "output.schema.json",
-  "tags": ["template", "human-gate", "signal"]
-}

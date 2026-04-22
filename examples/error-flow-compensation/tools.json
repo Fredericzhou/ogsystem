@@ -4,21 +4,21 @@
       "toolRef": "tool.worker",
       "runner": "local_shell",
       "command": "node",
-      "argsTemplate": ["examples/error-flow-compensation/scripts/worker.mjs"],
+      "argsTemplate": ["scripts/worker.mjs"],
       "stdinMode": "none"
     },
     {
       "toolRef": "tool.error-handler",
       "runner": "local_shell",
       "command": "node",
-      "argsTemplate": ["examples/error-flow-compensation/scripts/error-handler.mjs"],
+      "argsTemplate": ["scripts/error-handler.mjs"],
       "stdinMode": "none"
     },
     {
       "toolRef": "tool.finalizer",
       "runner": "local_shell",
       "command": "node",
-      "argsTemplate": ["examples/error-flow-compensation/scripts/finalizer.mjs"],
+      "argsTemplate": ["scripts/finalizer.mjs"],
       "stdinMode": "none"
     }
   ]

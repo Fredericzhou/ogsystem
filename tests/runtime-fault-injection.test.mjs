@@ -173,7 +173,7 @@ async function readSingleRunDirectory(tempRoot) {
 }
 
 function withResumeRun(baseArgs, runId) {
-  return [...baseArgs, "--resume-run", `.ogs/runs/${runId}`];
+  return ["run", "resume", runId, ...baseArgs.slice(2)];
 }
 
 async function waitForSingleRunDirectory(tempRoot, timeoutMs = 5000) {
@@ -353,6 +353,8 @@ test("forced crash after durable outcome resumes without duplicate execution", a
   const thirdTracePath = path.resolve(tempRoot, "third-trace.json");
 
   const baseArgs = [
+    "run",
+    "start",
     "--system",
     systemPath,
     "--runtime",
@@ -540,14 +542,12 @@ finalizer[Role:test-operator] -->|DONE| output
   );
 
   const baseArgs = [
+    "run",
+    "start",
     "--system",
     systemPath,
     "--runtime",
     runtimePath,
-    "--profiles",
-    profilesPath,
-    "--tools",
-    toolsPath,
     "--laws",
     lawsPath,
     "--workdir",
@@ -639,6 +639,9 @@ test("resume rejects a concurrently held live lock on the same run directory", a
   const runId = (await readdir(path.resolve(tempRoot, ".ogs/runs")))[0];
   const runDir = path.resolve(tempRoot, ".ogs/runs", runId);
   const baseArgs = [
+    "run",
+    "resume",
+    runId,
     "--system",
     systemPath,
     "--runtime",
@@ -649,9 +652,7 @@ test("resume rejects a concurrently held live lock on the same run directory", a
     tempRoot,
     "--input",
     "resume lock live holder",
-    "--dry-run",
-    "--resume-run",
-    `.ogs/runs/${runId}`
+    "--dry-run"
   ];
 
   const heldResumePromise = runCli(baseArgs, {
@@ -798,14 +799,12 @@ second_role[Role:second_role] -->|DONE| output
     "node",
     [
       cliPath,
+      "run",
+      "start",
       "--system",
       systemPath,
       "--runtime",
       runtimePath,
-      "--profiles",
-      profilesPath,
-      "--tools",
-      toolsPath,
       "--laws",
       path.resolve(repoRoot, ".ogs", "laws.json"),
       "--workdir",

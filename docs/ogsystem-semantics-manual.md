@@ -502,7 +502,7 @@ I -->|满足且未激活| I3[激活一次 join 分支]
 | 主题 | 优先级/顺序 | 取舍说明 |
 | :--- | :--- | :--- |
 | 入口角色决定 | `input` 边界目标 与 `entry.role` 二选一且必须一致 | 入口冲突直接拒绝，避免恢复时入口漂移 |
-| 节点绑定 | `model.bind` > `exec.bind` > `noop` | 明确优先执行模型绑定，保留兼容 profile 绑定 |
+| 节点绑定 | `model.bind` > `exec.bind` > `noop` | 明确优先执行模型绑定，`exec.bind` 用于本地 shell / tool 路径 |
 | 上下文来源 | `context.map` > `join 默认命名空间` > `direct 上游内容` | 显式映射优先，防止隐式 context 漂移 |
 | 成功路由 | `routingMode handler`（如 `parallel_split`）> 默认事件匹配 | 扩展模式优先，默认模式兜底 |
 | 失败路由 | `ERROR.<code>` > `ERROR` > fail-stop | typed 优先保证补偿精确性 |
