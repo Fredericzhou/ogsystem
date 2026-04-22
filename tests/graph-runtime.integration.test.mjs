@@ -5,6 +5,7 @@ import os from "node:os";
 import { lstat, mkdtemp, mkdir, readFile, readdir, symlink, writeFile } from "node:fs/promises";
 
 import { runSystemWithAdapter } from "../dist/runtime/adapter.js";
+import { writeHumanReviewDecision } from "../dist/runtime/project-lifecycle.js";
 
 function parseJsonCodeBlock(markdown) {
   const match = markdown.match(/```json\n([\s\S]*?)\n```/);
@@ -474,6 +475,297 @@ summary[Role:summary] -->|DONE| output
   assert.match(mergerInbox, /\\"analyst_b\\"/);
   assert.match(mergerInbox, /"input":/);
   assert.match(mergerInbox, /"allowed_events": \[\s*"MERGED"\s*\]/);
+});
+
+test("adapter stops with pending human review and keeps reviewed output unreleased", async () => {
+  const repoRoot = process.cwd();
+  const tempRoot = await mkdtemp(path.join(os.tmpdir(), "ogsystem-human-review-runtime-"));
+  const systemPath = path.resolve(tempRoot, "system.mmd");
+  const rolesRoot = path.resolve(tempRoot, "og-roles", "roles");
+
+  await mkdir(path.resolve(tempRoot, ".ogs"), { recursive: true });
+  await symlink(path.resolve(repoRoot, "og-models"), path.resolve(tempRoot, "og-models"), "dir");
+  await symlink(
+    path.resolve(repoRoot, ".ogs", "laws.json"),
+    path.resolve(tempRoot, ".ogs", "laws.json")
+  );
+  await writeFile(
+    path.resolve(tempRoot, ".ogs", "runtime.json"),
+    JSON.stringify(
+      {
+        executor: "opencode",
+        roleRepo: "./og-roles",
+        runsDir: ".ogs/runs"
+      },
+      null,
+      2
+    ),
+    "utf8"
+  );
+  await writeDefaultModelSelection(tempRoot);
+
+  await writeModelBoundRole({
+    rolesRoot,
+    roleId: "writer",
+    allowedEvents: ["DONE"]
+  });
+
+  await writeFile(
+    systemPath,
+    `flowchart TD
+%% system.id=test.runtime.human-review.wait
+%% system.version=1.0.0
+%% law.global=law.console.base
+%% entry.role=writer
+%% model.bind.writer=balanced-gpt52
+%% review.mode.writer=required
+%% review.timeout.writer=300
+%% review.rework.max.writer=2
+input -->|GO| writer[Role:writer]
+writer[Role:writer] -->|DONE| output
+`,
+    "utf8"
+  );
+
+  const result = await runSystemWithAdapter({
+    systemPath,
+    prompt: "等待人工审核",
+    workdir: tempRoot,
+    dryRun: true
+  });
+
+  assert.strictEqual(result.status, "stopped");
+
+  const runId = (await readdir(path.resolve(tempRoot, ".ogs/runs")))[0];
+  const runDir = path.resolve(tempRoot, ".ogs/runs", runId);
+  const stateJson = JSON.parse(await readFile(path.resolve(runDir, "state.json"), "utf8"));
+  const summaryJson = JSON.parse(await readFile(path.resolve(runDir, "summary.json"), "utf8"));
+  const reviewFiles = await readdir(path.resolve(runDir, "control", "reviews"));
+
+  assert.strictEqual(summaryJson.status, "stopped");
+  assert.strictEqual(summaryJson.pendingReviewCount, 1);
+  assert.strictEqual(summaryJson.hasWaitingHumanReview, true);
+  assert.strictEqual(stateJson.graphState.status, "stopped");
+  assert.strictEqual(stateJson.graphState.error, "waiting for human review");
+  assert.deepStrictEqual(stateJson.graphState.roleResults, {});
+  assert.strictEqual(Object.keys(stateJson.graphState.pendingReviewsById).length, 1);
+  assert.strictEqual(stateJson.graphState.branchRecords["writer@1#1"].status, "waiting_review");
+  assert.ok(reviewFiles.includes("review.writer@1#1.r1.request.json"));
+  assert.match(
+    await readFile(path.resolve(runDir, "events.ndjson"), "utf8"),
+    /"type":"human_review_requested"/
+  );
+});
+
+test("adapter resume applies approved human review and releases the reviewed result", async () => {
+  const repoRoot = process.cwd();
+  const tempRoot = await mkdtemp(path.join(os.tmpdir(), "ogsystem-human-review-resume-"));
+  const systemPath = path.resolve(tempRoot, "system.mmd");
+  const rolesRoot = path.resolve(tempRoot, "og-roles", "roles");
+
+  await mkdir(path.resolve(tempRoot, ".ogs"), { recursive: true });
+  await symlink(path.resolve(repoRoot, "og-models"), path.resolve(tempRoot, "og-models"), "dir");
+  await symlink(
+    path.resolve(repoRoot, ".ogs", "laws.json"),
+    path.resolve(tempRoot, ".ogs", "laws.json")
+  );
+  await writeFile(
+    path.resolve(tempRoot, ".ogs", "runtime.json"),
+    JSON.stringify(
+      {
+        executor: "opencode",
+        roleRepo: "./og-roles",
+        runsDir: ".ogs/runs"
+      },
+      null,
+      2
+    ),
+    "utf8"
+  );
+  await writeDefaultModelSelection(tempRoot);
+
+  await writeModelBoundRole({
+    rolesRoot,
+    roleId: "writer",
+    allowedEvents: ["DONE"]
+  });
+
+  await writeFile(
+    systemPath,
+    `flowchart TD
+%% system.id=test.runtime.human-review.resume
+%% system.version=1.0.0
+%% law.global=law.console.base
+%% entry.role=writer
+%% model.bind.writer=balanced-gpt52
+%% review.mode.writer=required
+input -->|GO| writer[Role:writer]
+writer[Role:writer] -->|DONE| output
+`,
+    "utf8"
+  );
+
+  const firstRun = await runSystemWithAdapter({
+    systemPath,
+    prompt: "先停在人工审核",
+    workdir: tempRoot,
+    dryRun: true
+  });
+  assert.strictEqual(firstRun.status, "stopped");
+
+  const runId = (await readdir(path.resolve(tempRoot, ".ogs/runs")))[0];
+  await writeHumanReviewDecision({
+    workdir: tempRoot,
+    runId,
+    reviewId: "review.writer@1#1.r1",
+    decision: "approve",
+    actor: "tester",
+    comment: "approved"
+  });
+
+  const resumed = await runSystemWithAdapter({
+    systemPath,
+    prompt: "先停在人工审核",
+    workdir: tempRoot,
+    resumeRunDir: `.ogs/runs/${runId}`,
+    dryRun: true
+  });
+
+  assert.strictEqual(resumed.status, "done");
+  assert.strictEqual(resumed.finalRoleId, "writer");
+
+  const runDir = path.resolve(tempRoot, ".ogs/runs", runId);
+  const stateJson = JSON.parse(await readFile(path.resolve(runDir, "state.json"), "utf8"));
+  const summaryJson = JSON.parse(await readFile(path.resolve(runDir, "summary.json"), "utf8"));
+  const decisionJson = JSON.parse(
+    await readFile(
+      path.resolve(runDir, "control", "reviews", "review.writer@1#1.r1.decision.json"),
+      "utf8"
+    )
+  );
+
+  assert.strictEqual(summaryJson.status, "done");
+  assert.strictEqual(summaryJson.pendingReviewCount, 0);
+  assert.strictEqual(summaryJson.hasWaitingHumanReview, false);
+  assert.strictEqual(stateJson.graphState.pendingReviewsById["review.writer@1#1.r1"].status, "resolved");
+  assert.strictEqual(stateJson.graphState.roleResults["writer@1#1"].event, "DONE");
+  assert.ok(decisionJson.checkpointSequence >= 1);
+  assert.ok(typeof decisionJson.appliedAt === "string");
+  assert.ok(typeof decisionJson.reconciledAt === "string");
+});
+
+test("adapter resume backfills applied human review decision metadata without duplicating events", async () => {
+  const repoRoot = process.cwd();
+  const tempRoot = await mkdtemp(path.join(os.tmpdir(), "ogsystem-human-review-backfill-"));
+  const systemPath = path.resolve(tempRoot, "system.mmd");
+  const rolesRoot = path.resolve(tempRoot, "og-roles", "roles");
+
+  await mkdir(path.resolve(tempRoot, ".ogs"), { recursive: true });
+  await symlink(path.resolve(repoRoot, "og-models"), path.resolve(tempRoot, "og-models"), "dir");
+  await symlink(
+    path.resolve(repoRoot, ".ogs", "laws.json"),
+    path.resolve(tempRoot, ".ogs", "laws.json")
+  );
+  await writeFile(
+    path.resolve(tempRoot, ".ogs", "runtime.json"),
+    JSON.stringify(
+      {
+        executor: "opencode",
+        roleRepo: "./og-roles",
+        runsDir: ".ogs/runs"
+      },
+      null,
+      2
+    ),
+    "utf8"
+  );
+  await writeDefaultModelSelection(tempRoot);
+
+  await writeModelBoundRole({
+    rolesRoot,
+    roleId: "writer",
+    allowedEvents: ["DONE"]
+  });
+
+  await writeFile(
+    systemPath,
+    `flowchart TD
+%% system.id=test.runtime.human-review.backfill
+%% system.version=1.0.0
+%% law.global=law.console.base
+%% entry.role=writer
+%% model.bind.writer=balanced-gpt52
+%% review.mode.writer=required
+input -->|GO| writer[Role:writer]
+writer[Role:writer] -->|DONE| output
+`,
+    "utf8"
+  );
+
+  const firstRun = await runSystemWithAdapter({
+    systemPath,
+    prompt: "先停在人工审核",
+    workdir: tempRoot,
+    dryRun: true
+  });
+  assert.strictEqual(firstRun.status, "stopped");
+
+  const runId = (await readdir(path.resolve(tempRoot, ".ogs/runs")))[0];
+  await writeHumanReviewDecision({
+    workdir: tempRoot,
+    runId,
+    reviewId: "review.writer@1#1.r1",
+    decision: "approve",
+    actor: "tester",
+    comment: "approved"
+  });
+
+  const runDir = path.resolve(tempRoot, ".ogs/runs", runId);
+  const decisionPath = path.resolve(runDir, "control", "reviews", "review.writer@1#1.r1.decision.json");
+
+  const resumed = await runSystemWithAdapter({
+    systemPath,
+    prompt: "先停在人工审核",
+    workdir: tempRoot,
+    resumeRunDir: `.ogs/runs/${runId}`,
+    dryRun: true
+  });
+  assert.strictEqual(resumed.status, "done");
+
+  const eventsBeforeBackfill = (await readFile(path.resolve(runDir, "events.ndjson"), "utf8")).trim();
+  const approvalEventsBeforeBackfill = eventsBeforeBackfill
+    .split("\n")
+    .filter((line) => line.includes('"type":"human_review_approved"'));
+  const checkpointsBeforeBackfill = await readdir(path.resolve(runDir, "checkpoints"));
+
+  const decisionWithoutMarkers = JSON.parse(await readFile(decisionPath, "utf8"));
+  delete decisionWithoutMarkers.checkpointSequence;
+  delete decisionWithoutMarkers.appliedAt;
+  delete decisionWithoutMarkers.reconciledAt;
+  await writeFile(decisionPath, JSON.stringify(decisionWithoutMarkers, null, 2), "utf8");
+
+  const resumedAgain = await runSystemWithAdapter({
+    systemPath,
+    prompt: "先停在人工审核",
+    workdir: tempRoot,
+    resumeRunDir: `.ogs/runs/${runId}`,
+    dryRun: true
+  });
+  assert.strictEqual(resumedAgain.status, "done");
+
+  const decisionAfterBackfill = JSON.parse(await readFile(decisionPath, "utf8"));
+  const eventsAfterBackfill = (await readFile(path.resolve(runDir, "events.ndjson"), "utf8")).trim();
+  const approvalEventsAfterBackfill = eventsAfterBackfill
+    .split("\n")
+    .filter((line) => line.includes('"type":"human_review_approved"'));
+  const checkpointsAfterBackfill = await readdir(path.resolve(runDir, "checkpoints"));
+
+  assert.ok(decisionAfterBackfill.checkpointSequence >= 1);
+  assert.ok(typeof decisionAfterBackfill.appliedAt === "string");
+  assert.ok(typeof decisionAfterBackfill.reconciledAt === "string");
+  assert.strictEqual(approvalEventsBeforeBackfill.length, 1);
+  assert.strictEqual(approvalEventsAfterBackfill.length, 1);
+  assert.deepStrictEqual(checkpointsAfterBackfill, checkpointsBeforeBackfill);
 });
 
 test("adapter runs quorum_of join once and applies context.map projection", async () => {

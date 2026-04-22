@@ -23,6 +23,7 @@ import type {
   GraphJoinMode,
   GraphMetadata,
   GraphRoutingMode,
+  HumanReviewSpec,
   HandoffMode,
   RuntimeErrorStage,
   SystemDefinition
@@ -175,6 +176,25 @@ function validateContextSelector(args: {
   }
 
   if (selectorInfo.selectorKind === "global.user_profile.path") {
+    if (!selectorInfo.validPath) {
+      fail(
+        "MERMAID_INVALID_SELECTOR",
+        `${args.metadataKey} uses unsupported selector "${selector}".`
+      );
+    }
+    return;
+  }
+
+  if (
+    selectorInfo.selectorKind === "global.human_review.current" ||
+    selectorInfo.selectorKind === "global.human_review.current.comment" ||
+    selectorInfo.selectorKind === "global.human_review.current.round" ||
+    selectorInfo.selectorKind === "global.human_review.current.previous_output"
+  ) {
+    return;
+  }
+
+  if (selectorInfo.selectorKind === "global.human_review.current.previous_output.path") {
     if (!selectorInfo.validPath) {
       fail(
         "MERMAID_INVALID_SELECTOR",
@@ -665,6 +685,12 @@ function validateParsedSystemGraph(graph: ParsedSystemGraph): ValidatedSystemGra
   const contextMapByRoleId: Record<string, Record<string, string>> = {};
   const loopMaxByRoleId: Record<string, number> = {};
   const routeOrderByRoleId: Record<string, string[]> = {};
+  const reviewModeByRoleId: Record<string, HumanReviewSpec["mode"]> = {};
+  const reviewTimeoutByRoleId: Record<string, number> = {};
+  const reviewTimeoutActionByRoleId: Record<string, HumanReviewSpec["timeoutAction"]> = {};
+  const reviewReworkTargetByRoleId: Record<string, string> = {};
+  const reviewReworkMaxByRoleId: Record<string, number> = {};
+  const reviewTerminateScopeByRoleId: Record<string, HumanReviewSpec["terminateScope"]> = {};
   let handoffMode: HandoffMode | undefined;
   let handoffContracts: string | undefined;
   const exactMetadataKeys = new Set(["engine", "system.id", "system.version", "law.global", "entry.role"]);
@@ -815,6 +841,102 @@ function validateParsedSystemGraph(graph: ParsedSystemGraph): ValidatedSystemGra
         });
       }
       routeOrderByRoleId[roleId] = orderedTargets;
+      continue;
+    }
+
+    if (key.startsWith("review.mode.")) {
+      const roleId = key.slice("review.mode.".length);
+      if (value !== "required") {
+        failMermaid({
+          stage: "validate",
+          errorCode: "MERMAID_UNSUPPORTED_REVIEW_MODE",
+          message: `Unsupported review.mode for ${roleId}: "${value}"`,
+          lineNumber: metadataLine(key)
+        });
+      }
+      if (roleId) {
+        reviewModeByRoleId[roleId] = value;
+      }
+      continue;
+    }
+
+    if (key.startsWith("review.timeout.action.")) {
+      const roleId = key.slice("review.timeout.action.".length);
+      if (value !== "pause" && value !== "terminate") {
+        failMermaid({
+          stage: "validate",
+          errorCode: "MERMAID_INVALID_REVIEW_TIMEOUT_ACTION",
+          message: `Unsupported review.timeout.action for ${roleId}: "${value}"`,
+          lineNumber: metadataLine(key)
+        });
+      }
+      if (roleId) {
+        reviewTimeoutActionByRoleId[roleId] = value;
+      }
+      continue;
+    }
+
+    if (key.startsWith("review.timeout.")) {
+      const roleId = key.slice("review.timeout.".length);
+      const parsed = Number.parseInt(value, 10);
+      if (!Number.isInteger(parsed) || parsed < 0) {
+        failMermaid({
+          stage: "validate",
+          errorCode: "MERMAID_INVALID_REVIEW_TIMEOUT",
+          message: `Invalid review.timeout for ${roleId}: "${value}"`,
+          lineNumber: metadataLine(key)
+        });
+      }
+      if (roleId) {
+        reviewTimeoutByRoleId[roleId] = parsed;
+      }
+      continue;
+    }
+
+    if (key.startsWith("review.rework.target.")) {
+      const roleId = key.slice("review.rework.target.".length);
+      if (!roleId || !value.trim()) {
+        failMermaid({
+          stage: "validate",
+          errorCode: "MERMAID_INVALID_REVIEW_REWORK_TARGET",
+          message: `Invalid review.rework.target for ${roleId}: "${value}"`,
+          lineNumber: metadataLine(key)
+        });
+      }
+      reviewReworkTargetByRoleId[roleId] = value.trim();
+      continue;
+    }
+
+    if (key.startsWith("review.rework.max.")) {
+      const roleId = key.slice("review.rework.max.".length);
+      const parsed = Number.parseInt(value, 10);
+      if (!Number.isInteger(parsed) || parsed <= 0) {
+        failMermaid({
+          stage: "validate",
+          errorCode: "MERMAID_INVALID_REVIEW_REWORK_MAX",
+          message: `Invalid review.rework.max for ${roleId}: "${value}"`,
+          lineNumber: metadataLine(key)
+        });
+      }
+      if (roleId) {
+        reviewReworkMaxByRoleId[roleId] = parsed;
+      }
+      continue;
+    }
+
+    if (key.startsWith("review.terminate.scope.")) {
+      const roleId = key.slice("review.terminate.scope.".length);
+      if (value !== "branch" && value !== "run") {
+        failMermaid({
+          stage: "validate",
+          errorCode: "MERMAID_INVALID_REVIEW_TERMINATE_SCOPE",
+          message: `Unsupported review.terminate.scope for ${roleId}: "${value}"`,
+          lineNumber: metadataLine(key)
+        });
+      }
+      if (roleId) {
+        reviewTerminateScopeByRoleId[roleId] = value;
+      }
       continue;
     }
 
@@ -1175,6 +1297,60 @@ function validateParsedSystemGraph(graph: ParsedSystemGraph): ValidatedSystemGra
     }
   }
 
+  const reviewRoleIds = new Set<string>([
+    ...Object.keys(reviewModeByRoleId),
+    ...Object.keys(reviewTimeoutByRoleId),
+    ...Object.keys(reviewTimeoutActionByRoleId),
+    ...Object.keys(reviewReworkTargetByRoleId),
+    ...Object.keys(reviewReworkMaxByRoleId),
+    ...Object.keys(reviewTerminateScopeByRoleId)
+  ]);
+  const reviewByRoleId: Record<string, HumanReviewSpec> = {};
+  for (const roleId of reviewRoleIds) {
+    if (!graph.nodeByRole.has(roleId)) {
+      const key =
+        `review.mode.${roleId}` in Object.fromEntries(graph.metadata.entries())
+          ? `review.mode.${roleId}`
+          : `review.timeout.${roleId}`;
+      failMermaid({
+        stage: "validate",
+        errorCode: "MERMAID_UNDEFINED_ROLE_REF",
+        message: `review.* metadata references undefined role "${roleId}"`,
+        lineNumber: metadataLine(key)
+      });
+    }
+    if (!reviewModeByRoleId[roleId]) {
+      failMermaid({
+        stage: "validate",
+        errorCode: "MERMAID_MISSING_REVIEW_MODE",
+        message: `review.* metadata for "${roleId}" requires review.mode.${roleId}=required`,
+        lineNumber:
+          metadataLine(`review.timeout.${roleId}`) ??
+          metadataLine(`review.timeout.action.${roleId}`) ??
+          metadataLine(`review.rework.target.${roleId}`) ??
+          metadataLine(`review.rework.max.${roleId}`) ??
+          metadataLine(`review.terminate.scope.${roleId}`)
+      });
+    }
+    const reworkTargetRoleId = reviewReworkTargetByRoleId[roleId] ?? roleId;
+    if (!graph.nodeByRole.has(reworkTargetRoleId)) {
+      failMermaid({
+        stage: "validate",
+        errorCode: "MERMAID_UNDEFINED_ROLE_REF",
+        message: `review.rework.target.${roleId} references undefined role "${reworkTargetRoleId}"`,
+        lineNumber: metadataLine(`review.rework.target.${roleId}`)
+      });
+    }
+    reviewByRoleId[roleId] = {
+      mode: "required",
+      timeoutSeconds: reviewTimeoutByRoleId[roleId],
+      timeoutAction: reviewTimeoutActionByRoleId[roleId] ?? "pause",
+      reworkTargetRoleId,
+      reworkMax: reviewReworkMaxByRoleId[roleId],
+      terminateScope: reviewTerminateScopeByRoleId[roleId] ?? "branch"
+    };
+  }
+
   /**
    * Reliability: Fail-Fast Static Analysis.
    * Uses graph theory (Strongly Connected Components) to detect topological cycles
@@ -1208,7 +1384,8 @@ function validateParsedSystemGraph(graph: ParsedSystemGraph): ValidatedSystemGra
     joinSourcesByRoleId,
     joinMinByRoleId,
     contextMapByRoleId,
-    loopMaxByRoleId
+    loopMaxByRoleId,
+    reviewByRoleId
   };
 
   return {

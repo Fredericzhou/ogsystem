@@ -108,6 +108,7 @@ export function createExecutionPlan(
       joinMin: system.graph?.joinMinByRoleId[roleId],
       contextMap: system.graph?.contextMapByRoleId[roleId],
       loopMax: system.graph?.loopMaxByRoleId[roleId],
+      review: system.graph?.reviewByRoleId?.[roleId],
       binding: resolveBinding({
         system,
         roleId,

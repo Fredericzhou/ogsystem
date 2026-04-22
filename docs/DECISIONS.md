@@ -139,3 +139,21 @@ Runtime executes one canonical role package shape.
 - prompt-shell naming and selector naming are separate layers: the shell uses `user_preferences`, while selector syntax remains `global.user_profile.*`
 - `source.json` and `tools/agent-source/sources.lock.json` are traceability metadata only; they do not participate in runtime manifest validation
 - upstream repositories under `agent-sources/` are development-only checkouts and must be normalized through importer adapters before they become executable roles
+
+## 11. Runtime-Native Human Review
+
+Human review is a runtime control-plane capability, not a role-node pattern.
+
+- reviewed roles declare `review.*` metadata on the role itself
+- reviewed execution first produces a durable draft result, not an immediately released `roleResults` entry
+- the owning branch moves to `waiting_review`
+- operator surfaces expose `pendingReviewCount` and `hasWaitingHumanReview` as derived fields without expanding `GraphRunStatus`
+- review decisions are persisted under `control/reviews/<reviewId>.decision.json`
+- approve / rework / pause / terminate are reconciled by runtime resume/apply logic
+- rework feedback is projected through `global.human_review.current.*` selectors
+
+Reason:
+
+- keeps human control in the runtime control plane instead of faking it as another autonomous role
+- preserves durable audit/reconcile semantics for stop-review-resume workflows
+- avoids building a second “human gate node” abstraction that duplicates branch/state machinery

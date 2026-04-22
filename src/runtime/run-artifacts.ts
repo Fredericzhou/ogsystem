@@ -23,7 +23,12 @@ import { basename, resolve } from "node:path";
 import { arch, hostname, platform } from "node:os";
 import { createInterface } from "node:readline";
 
-import { readJsonFile, writeTextFileAtomic } from "./json-file.js";
+import { readJsonFile, writeJsonFileAtomic, writeTextFileAtomic } from "./json-file.js";
+import {
+  isHumanReviewContext,
+  isHumanReviewDecisionRecord,
+  isPendingHumanReview
+} from "./human-review.js";
 import { createRuntimeError } from "./runtime-errors.js";
 import {
   redactJsonForStorage,
@@ -34,7 +39,9 @@ import type {
   AuditRecord,
   BranchRecord,
   GraphState,
+  HumanReviewDecisionRecord,
   OpencodeSessionRecord,
+  PendingHumanReview,
   RoleExecutionOutput,
   RoleExecutionOutcomeRecord,
   RoleExecutionRecord,
@@ -92,6 +99,14 @@ type ResumeRunLockRecord = {
   acquiredAt: string;
   command: string;
 };
+
+export function buildHumanReviewRequestPath(context: RunContext, reviewId: string): string {
+  return resolve(context.reviewsDir, `${reviewId}.request.json`);
+}
+
+export function buildHumanReviewDecisionPath(context: RunContext, reviewId: string): string {
+  return resolve(context.reviewsDir, `${reviewId}.decision.json`);
+}
 
 export type RunStopRequestRecord = {
   version: 1;
@@ -646,7 +661,9 @@ function isBranchRecord(value: unknown): value is BranchRecord {
     typeof (value as BranchRecord).branchSequence === "number" &&
     typeof (value as BranchRecord).lineageId === "string" &&
     typeof (value as BranchRecord).sessionLineageId === "string" &&
-    ((value as BranchRecord).status === "active" || (value as BranchRecord).status === "completed")
+    ((value as BranchRecord).status === "active" ||
+      (value as BranchRecord).status === "waiting_review" ||
+      (value as BranchRecord).status === "completed")
   );
 }
 
@@ -735,6 +752,7 @@ export async function initializeRunContext(args: {
   const logsDir = resolve(runDir, "logs");
   const roleLogsDir = resolve(logsDir, "roles");
   const controlDir = resolve(runDir, "control");
+  const reviewsDir = resolve(controlDir, "reviews");
   const checkpointsDir = resolve(runDir, "checkpoints");
   const rolesRootDir = resolve(runDir, args.runtimeConfig.workspace.rolesDir);
   const sharedDir = resolveSharedDir({
@@ -754,6 +772,7 @@ export async function initializeRunContext(args: {
     await mkdir(logsDir, { recursive: true });
     await mkdir(roleLogsDir, { recursive: true });
     await mkdir(controlDir, { recursive: true });
+    await mkdir(reviewsDir, { recursive: true });
     await mkdir(checkpointsDir, { recursive: true });
     await mkdir(rolesRootDir, { recursive: true });
     await mkdir(sharedDir, { recursive: true });
@@ -867,6 +886,7 @@ export async function initializeRunContext(args: {
       engineLogPath: resolve(logsDir, "engine.ndjson"),
       roleLogsDir,
       controlDir,
+      reviewsDir,
       stopRequestPath: resolve(controlDir, "stop-request.json"),
       stopOutcomePath: resolve(controlDir, "stop-outcome.json"),
       eventsPath: resolve(runDir, "events.ndjson"),
@@ -1080,6 +1100,31 @@ export async function loadResumeGraphState(args: {
     }
   }
   if (
+    graphState.nextBranchSequence === undefined &&
+    typeof graphState.branchRecords === "object" &&
+    graphState.branchRecords !== null &&
+    !Array.isArray(graphState.branchRecords)
+  ) {
+    const maxBranchSequence = Object.values(graphState.branchRecords as Record<string, unknown>).reduce<number>(
+      (currentMax, branch) => {
+        if (
+          typeof branch === "object" &&
+          branch !== null &&
+          !Array.isArray(branch) &&
+          typeof (branch as { branchSequence?: unknown }).branchSequence === "number"
+        ) {
+          return Math.max(currentMax, (branch as { branchSequence: number }).branchSequence);
+        }
+        return currentMax;
+      },
+      0
+    );
+    graphState.nextBranchSequence = maxBranchSequence + 1;
+  }
+  if (graphState.humanReviewContextByBranchId === undefined) {
+    graphState.humanReviewContextByBranchId = {};
+  }
+  if (
     typeof graphState.userPrompt !== "string" ||
     typeof graphState.status !== "string" ||
     typeof graphState.error !== "string" ||
@@ -1102,6 +1147,18 @@ export async function loadResumeGraphState(args: {
     typeof graphState.roleResults !== "object" ||
     graphState.roleResults === null ||
     Array.isArray(graphState.roleResults) ||
+    typeof graphState.pendingReviewsById !== "object" ||
+    graphState.pendingReviewsById === null ||
+    Array.isArray(graphState.pendingReviewsById) ||
+    typeof graphState.reviewHistoryByBranchId !== "object" ||
+    graphState.reviewHistoryByBranchId === null ||
+    Array.isArray(graphState.reviewHistoryByBranchId) ||
+    typeof graphState.humanReviewContextByBranchId !== "object" ||
+    graphState.humanReviewContextByBranchId === null ||
+    Array.isArray(graphState.humanReviewContextByBranchId) ||
+    typeof graphState.reviewRoundByRoleLineageKey !== "object" ||
+    graphState.reviewRoundByRoleLineageKey === null ||
+    Array.isArray(graphState.reviewRoundByRoleLineageKey) ||
     typeof graphState.branchRecords !== "object" ||
     graphState.branchRecords === null ||
     Array.isArray(graphState.branchRecords) ||
@@ -1125,6 +1182,46 @@ export async function loadResumeGraphState(args: {
       stage: "resume",
       runId: basename(args.runDir)
     });
+  }
+  for (const [reviewId, review] of Object.entries(graphState.pendingReviewsById as Record<string, unknown>)) {
+    if (!isPendingHumanReview(review)) {
+      throw createRuntimeError({
+        errorCode: "RESUME_STATE_INVALID",
+        errorCategory: "state",
+        message: `Resume state snapshot has invalid pending review "${reviewId}": ${statePath}`,
+        retryable: false,
+        stage: "resume",
+        runId: basename(args.runDir)
+      });
+    }
+  }
+  for (const [branchId, history] of Object.entries(
+    graphState.reviewHistoryByBranchId as Record<string, unknown>
+  )) {
+    if (!Array.isArray(history) || !history.every((entry) => isHumanReviewDecisionRecord(entry))) {
+      throw createRuntimeError({
+        errorCode: "RESUME_STATE_INVALID",
+        errorCategory: "state",
+        message: `Resume state snapshot has invalid review history for branch "${branchId}": ${statePath}`,
+        retryable: false,
+        stage: "resume",
+        runId: basename(args.runDir)
+      });
+    }
+  }
+  for (const [branchId, context] of Object.entries(
+    graphState.humanReviewContextByBranchId as Record<string, unknown>
+  )) {
+    if (!isHumanReviewContext(context)) {
+      throw createRuntimeError({
+        errorCode: "RESUME_STATE_INVALID",
+        errorCategory: "state",
+        message: `Resume state snapshot has invalid human review context for branch "${branchId}": ${statePath}`,
+        retryable: false,
+        stage: "resume",
+        runId: basename(args.runDir)
+      });
+    }
   }
   const integerFieldChecks: Array<{
     fieldPath: string;
@@ -1404,6 +1501,114 @@ export async function markRoleExecutionOutcomeReconciled(args: {
     reconciledAt: new Date().toISOString()
   };
   await writeAtomicFile(outcomePath, stringifyJson(updated));
+  return updated;
+}
+
+export async function persistHumanReviewRequest(args: {
+  context: RunContext;
+  review: PendingHumanReview;
+}): Promise<void> {
+  await mkdir(args.context.reviewsDir, { recursive: true });
+  await writeAtomicFile(
+    buildHumanReviewRequestPath(args.context, args.review.reviewId),
+    stringifyJson(args.review)
+  );
+}
+
+export async function loadHumanReviewRequests(args: {
+  context: RunContext;
+}): Promise<PendingHumanReview[]> {
+  if (!(await directoryExists(args.context.reviewsDir))) {
+    return [];
+  }
+  const entries = await readdir(args.context.reviewsDir, { withFileTypes: true });
+  const reviews: PendingHumanReview[] = [];
+  for (const entry of entries) {
+    if (!entry.isFile() || !entry.name.endsWith(".request.json")) {
+      continue;
+    }
+    const raw = await readJsonFile(resolve(args.context.reviewsDir, entry.name));
+    if (!isPendingHumanReview(raw)) {
+      throw new Error(`Invalid human review request: ${resolve(args.context.reviewsDir, entry.name)}`);
+    }
+    reviews.push(raw);
+  }
+  return reviews.sort((left, right) => left.reviewId.localeCompare(right.reviewId));
+}
+
+export async function persistHumanReviewDecision(args: {
+  context: RunContext;
+  decision: HumanReviewDecisionRecord;
+}): Promise<void> {
+  await mkdir(args.context.reviewsDir, { recursive: true });
+  await writeAtomicFile(
+    buildHumanReviewDecisionPath(args.context, args.decision.reviewId),
+    stringifyJson(args.decision)
+  );
+}
+
+export async function loadHumanReviewDecisions(args: {
+  context: RunContext;
+  unresolvedOnly?: boolean;
+}): Promise<HumanReviewDecisionRecord[]> {
+  if (!(await directoryExists(args.context.reviewsDir))) {
+    return [];
+  }
+  const entries = await readdir(args.context.reviewsDir, { withFileTypes: true });
+  const decisions: HumanReviewDecisionRecord[] = [];
+  for (const entry of entries) {
+    if (!entry.isFile() || !entry.name.endsWith(".decision.json")) {
+      continue;
+    }
+    const raw = await readJsonFile(resolve(args.context.reviewsDir, entry.name));
+    if (!isHumanReviewDecisionRecord(raw)) {
+      throw new Error(`Invalid human review decision: ${resolve(args.context.reviewsDir, entry.name)}`);
+    }
+    if (args.unresolvedOnly && raw.reconciledAt && raw.appliedAt && raw.checkpointSequence !== undefined) {
+      continue;
+    }
+    decisions.push(raw);
+  }
+  return decisions.sort((left, right) => left.reviewId.localeCompare(right.reviewId));
+}
+
+export async function markHumanReviewDecisionApplied(args: {
+  context: RunContext;
+  reviewId: string;
+  checkpointSequence: number;
+  appliedAt?: string;
+  reconciledAt?: string;
+}): Promise<HumanReviewDecisionRecord> {
+  const path = buildHumanReviewDecisionPath(args.context, args.reviewId);
+  const raw = await readJsonFile(path);
+  if (!isHumanReviewDecisionRecord(raw)) {
+    throw new Error(`Invalid human review decision: ${path}`);
+  }
+  const updated: HumanReviewDecisionRecord = {
+    ...raw,
+    checkpointSequence: args.checkpointSequence,
+    appliedAt: args.appliedAt ?? raw.appliedAt ?? new Date().toISOString(),
+    reconciledAt: args.reconciledAt ?? raw.reconciledAt
+  };
+  await writeJsonFileAtomic(path, updated);
+  return updated;
+}
+
+export async function markHumanReviewDecisionReconciled(args: {
+  context: RunContext;
+  reviewId: string;
+  reconciledAt?: string;
+}): Promise<HumanReviewDecisionRecord> {
+  const path = buildHumanReviewDecisionPath(args.context, args.reviewId);
+  const raw = await readJsonFile(path);
+  if (!isHumanReviewDecisionRecord(raw)) {
+    throw new Error(`Invalid human review decision: ${path}`);
+  }
+  const updated: HumanReviewDecisionRecord = {
+    ...raw,
+    reconciledAt: args.reconciledAt ?? new Date().toISOString()
+  };
+  await writeJsonFileAtomic(path, updated);
   return updated;
 }
 

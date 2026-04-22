@@ -13,6 +13,7 @@ import { Annotation, END, START, StateGraph } from "@langchain/langgraph";
 import { createRunConsoleLogger } from "./console-run-log.js";
 import type { Executor } from "./executor.js";
 import { getExecutionPlanNode } from "./execution-plan.js";
+import { countPendingHumanReviews } from "./human-review.js";
 import {
   getFlowContractByTarget,
   getSplitFlowContractByTarget,
@@ -47,14 +48,22 @@ import {
   flushBufferedRunArtifacts,
   loadAuditTrailFromEvents,
   loadCommittedRoleExecutionOutcomes,
+  loadHumanReviewDecisions,
+  persistHumanReviewRequest,
   loadPendingRuntimeCheckpoints,
+  markHumanReviewDecisionApplied,
+  markHumanReviewDecisionReconciled,
   markRoleExecutionOutcomeReconciled,
   persistRunStopOutcome,
   persistRuntimeCheckpoint,
   readRunStopRequest,
   writeAtomicFile
 } from "./run-artifacts.js";
-import { findOrphanedJoinGroup, planTransition } from "./transition-planner.js";
+import {
+  findOrphanedJoinGroup,
+  planHumanReviewDecisionTransition,
+  planTransition
+} from "./transition-planner.js";
 import type { TransitionPlan } from "./transition-planner.js";
 import { SYSTEM_END_ROLE_ID } from "./types.js";
 import type {
@@ -128,6 +137,18 @@ function mergeStatus(current: GraphRunStatus, update: GraphRunStatus): GraphRunS
   return "running";
 }
 
+function liftWaitingHumanReviewStop(state: GraphState): GraphState {
+  if (state.status !== "stopped" || state.error !== "waiting for human review") {
+    return state;
+  }
+  return {
+    ...state,
+    status: "running",
+    error: "",
+    errorEnvelope: undefined
+  };
+}
+
 /**
  * LangGraph nodes emit incremental GraphUpdate objects, while OGSystem persists materialized
  * GraphState snapshots. Reducers bridge those two views and keep checkpoint-sized updates composable.
@@ -165,6 +186,26 @@ const GraphStateAnnotation = Annotation.Root({
   roleResults: Annotation<Record<string, StoredRoleResult>>({
     reducer: (current, update) => ({ ...current, ...update }),
     default: () => ({})
+  }),
+  pendingReviewsById: Annotation<GraphState["pendingReviewsById"]>({
+    reducer: (current, update) => ({ ...current, ...update }),
+    default: () => ({})
+  }),
+  reviewHistoryByBranchId: Annotation<GraphState["reviewHistoryByBranchId"]>({
+    reducer: (current, update) => ({ ...current, ...update }),
+    default: () => ({})
+  }),
+  humanReviewContextByBranchId: Annotation<GraphState["humanReviewContextByBranchId"]>({
+    reducer: (current, update) => ({ ...current, ...update }),
+    default: () => ({})
+  }),
+  reviewRoundByRoleLineageKey: Annotation<GraphState["reviewRoundByRoleLineageKey"]>({
+    reducer: (current, update) => ({ ...current, ...update }),
+    default: () => ({})
+  }),
+  lastWaitingReviewId: Annotation<string | undefined>({
+    reducer: (_current, update) => update,
+    default: () => undefined
   }),
   branchRecords: Annotation<Record<string, BranchRecord>>({
     reducer: (current, update) => ({ ...current, ...update }),
@@ -222,6 +263,20 @@ function mergeGraphUpdates(current: GraphUpdate, update: GraphUpdate): GraphUpda
       update.roleMetricsByRoleId ?? {}
     ),
     roleResults: { ...(current.roleResults ?? {}), ...(update.roleResults ?? {}) },
+    pendingReviewsById: { ...(current.pendingReviewsById ?? {}), ...(update.pendingReviewsById ?? {}) },
+    reviewHistoryByBranchId: {
+      ...(current.reviewHistoryByBranchId ?? {}),
+      ...(update.reviewHistoryByBranchId ?? {})
+    },
+    humanReviewContextByBranchId: {
+      ...(current.humanReviewContextByBranchId ?? {}),
+      ...(update.humanReviewContextByBranchId ?? {})
+    },
+    reviewRoundByRoleLineageKey: {
+      ...(current.reviewRoundByRoleLineageKey ?? {}),
+      ...(update.reviewRoundByRoleLineageKey ?? {})
+    },
+    lastWaitingReviewId: update.lastWaitingReviewId ?? current.lastWaitingReviewId,
     branchRecords: { ...(current.branchRecords ?? {}), ...(update.branchRecords ?? {}) },
     loopIterations: { ...(current.loopIterations ?? {}), ...(update.loopIterations ?? {}) },
     selectedEventByBranchId: {
@@ -256,6 +311,20 @@ function applyGraphUpdate(state: GraphState, update: GraphUpdate): GraphState {
       update.roleMetricsByRoleId ?? {}
     ),
     roleResults: { ...state.roleResults, ...(update.roleResults ?? {}) },
+    pendingReviewsById: { ...state.pendingReviewsById, ...(update.pendingReviewsById ?? {}) },
+    reviewHistoryByBranchId: {
+      ...state.reviewHistoryByBranchId,
+      ...(update.reviewHistoryByBranchId ?? {})
+    },
+    humanReviewContextByBranchId: {
+      ...state.humanReviewContextByBranchId,
+      ...(update.humanReviewContextByBranchId ?? {})
+    },
+    reviewRoundByRoleLineageKey: {
+      ...state.reviewRoundByRoleLineageKey,
+      ...(update.reviewRoundByRoleLineageKey ?? {})
+    },
+    lastWaitingReviewId: update.lastWaitingReviewId ?? state.lastWaitingReviewId,
     branchRecords: { ...state.branchRecords, ...(update.branchRecords ?? {}) },
     loopIterations: { ...state.loopIterations, ...(update.loopIterations ?? {}) },
     selectedEventByBranchId: {
@@ -491,6 +560,12 @@ async function reconcileCommittedRoleExecutionOutcomes(args: {
       errorFlowRoutingEnabled: args.errorFlowRoutingEnabled,
       indexes
     });
+    for (const reviewRequest of transitionPlan.reviewRequests ?? []) {
+      await persistHumanReviewRequest({
+        context: args.runContext,
+        review: reviewRequest
+      });
+    }
     const checkpoint = await persistRuntimeCheckpoint({
       context: args.runContext,
       roleId: outcome.roleId,
@@ -511,6 +586,112 @@ async function reconcileCommittedRoleExecutionOutcomes(args: {
       await appendEvent(args.runContext, event);
     }
     pendingCheckpointByExecutionId.set(outcome.executionId, checkpoint);
+    reconciledState = applyGraphUpdate(reconciledState, checkpoint.update);
+    indexes = applyGraphUpdateToIndexes(indexes, checkpoint.update);
+  }
+
+  return {
+    state: reconciledState,
+    indexes
+  };
+}
+
+function hasAppliedHumanReviewDecision(args: {
+  state: GraphState;
+  reviewId: string;
+  branchId: string;
+  decidedAt: string;
+}): boolean {
+  return (args.state.reviewHistoryByBranchId[args.branchId] ?? []).some(
+    (entry) => entry.reviewId === args.reviewId && entry.decidedAt === args.decidedAt
+  );
+}
+
+async function reconcileCommittedHumanReviewDecisions(args: {
+  state: GraphState;
+  plan: ExecutionPlan;
+  contractPlan?: FlowContractPlan;
+  runContext: RunContext;
+}): Promise<{
+  state: GraphState;
+  indexes: RuntimeIndexes;
+}> {
+  let reconciledState = args.state;
+  let indexes = buildRuntimeIndexes(reconciledState);
+  const decisions = await loadHumanReviewDecisions({
+    context: args.runContext,
+    unresolvedOnly: true
+  });
+  const logger = createRunConsoleLogger(false);
+  let touchedDecision = false;
+
+  for (const decision of decisions) {
+    if (!touchedDecision) {
+      reconciledState = liftWaitingHumanReviewStop(reconciledState);
+      indexes = buildRuntimeIndexes(reconciledState);
+      touchedDecision = true;
+    }
+    const pendingReview = reconciledState.pendingReviewsById[decision.reviewId];
+    const alreadyApplied =
+      hasAppliedHumanReviewDecision({
+        state: reconciledState,
+        reviewId: decision.reviewId,
+        branchId: pendingReview?.branchId ?? "",
+        decidedAt: decision.decidedAt
+      }) ||
+      (pendingReview !== undefined && pendingReview.status === "resolved");
+
+    if (alreadyApplied) {
+      const appliedDecision = await markHumanReviewDecisionApplied({
+        context: args.runContext,
+        reviewId: decision.reviewId,
+        checkpointSequence: decision.checkpointSequence ?? reconciledState.lastCheckpointSequence,
+        appliedAt: decision.appliedAt ?? new Date().toISOString(),
+        reconciledAt: decision.reconciledAt ?? new Date().toISOString()
+      });
+      await markHumanReviewDecisionReconciled({
+        context: args.runContext,
+        reviewId: appliedDecision.reviewId,
+        reconciledAt: appliedDecision.reconciledAt
+      });
+      continue;
+    }
+
+    if (!pendingReview) {
+      continue;
+    }
+
+    const transitionPlan = planHumanReviewDecisionTransition({
+      state: reconciledState,
+      plan: args.plan,
+      contractPlan: args.contractPlan,
+      review: pendingReview,
+      decision,
+      logger,
+      indexes
+    });
+    const checkpoint = await persistRuntimeCheckpoint({
+      context: args.runContext,
+      roleId: pendingReview.roleId,
+      branchId: pendingReview.branchId,
+      loopIteration: pendingReview.loopIteration,
+      executionId: pendingReview.executionId,
+      update: transitionPlan.update
+    });
+    for (const event of transitionPlan.events) {
+      await appendEvent(args.runContext, event);
+    }
+    await markHumanReviewDecisionApplied({
+      context: args.runContext,
+      reviewId: decision.reviewId,
+      checkpointSequence: checkpoint.checkpointSequence,
+      appliedAt: new Date().toISOString(),
+      reconciledAt: new Date().toISOString()
+    });
+    await markHumanReviewDecisionReconciled({
+      context: args.runContext,
+      reviewId: decision.reviewId
+    });
     reconciledState = applyGraphUpdate(reconciledState, checkpoint.update);
     indexes = applyGraphUpdateToIndexes(indexes, checkpoint.update);
   }
@@ -700,6 +881,12 @@ export async function runSystemWithGraphRunner(args: RunnerInput): Promise<Adapt
           errorFlowRoutingEnabled: args.errorFlowRoutingEnabled,
           indexes: runtimeIndexes
         });
+        for (const reviewRequest of transitionPlan.reviewRequests ?? []) {
+          await persistHumanReviewRequest({
+            context: args.runContext,
+            review: reviewRequest
+          });
+        }
 
         maybeCrashAfterExecutionOutcome();
         const checkpoint = await persistRuntimeCheckpoint({
@@ -781,8 +968,14 @@ export async function runSystemWithGraphRunner(args: RunnerInput): Promise<Adapt
       runContext: args.runContext,
       errorFlowRoutingEnabled: args.errorFlowRoutingEnabled
     });
-    finalState = reconciled.state;
-    runtimeIndexes = reconciled.indexes;
+    const reviewReconciled = await reconcileCommittedHumanReviewDecisions({
+      state: reconciled.state,
+      plan: args.plan,
+      contractPlan: args.contractPlan,
+      runContext: args.runContext
+    });
+    finalState = reviewReconciled.state;
+    runtimeIndexes = reviewReconciled.indexes;
   } else {
     runtimeIndexes = buildRuntimeIndexes(finalState);
   }
@@ -832,10 +1025,17 @@ export async function runSystemWithGraphRunner(args: RunnerInput): Promise<Adapt
   }
 
   if (finalState.status === "running") {
-    finalState = {
-      ...finalState,
-      status: "done"
-    };
+    finalState =
+      countPendingHumanReviews(finalState) > 0
+        ? {
+            ...finalState,
+            status: "stopped",
+            error: "waiting for human review"
+          }
+        : {
+            ...finalState,
+            status: "done"
+          };
     await persistProjectedState({ state: finalState, plan: args.plan, runContext: args.runContext });
   }
 
@@ -964,7 +1164,13 @@ export async function runSystemWithGraphRunner(args: RunnerInput): Promise<Adapt
       failureCountsByErrorCode: summary.failureCountsByErrorCode,
       lastOutput: finalState.finalOutput || undefined,
       error: finalState.error || undefined,
-      errorEnvelope: finalState.errorEnvelope || undefined
+      errorEnvelope: finalState.errorEnvelope || undefined,
+      pendingReviewCount: Object.values(finalState.pendingReviewsById).filter(
+        (review) => review.status === "pending" || review.status === "paused"
+      ).length,
+      hasWaitingHumanReview: Object.values(finalState.pendingReviewsById).some(
+        (review) => review.status === "pending" || review.status === "paused"
+      )
     },
     runSummary: summary,
     stages,

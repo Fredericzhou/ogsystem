@@ -192,6 +192,54 @@ test("parser accepts graph metadata and compiles semantic hints without engine f
   assert.deepStrictEqual(system.graph?.contextMapByRoleId ?? {}, {});
 });
 
+test("parser accepts review metadata with defaults and explicit overrides", () => {
+  const source = `flowchart TD
+%% system.id=test.review.metadata
+%% system.version=0.1.0
+%% law.global=law.test
+%% entry.role=writer
+%% exec.bind.writer=profile.writer
+%% exec.bind.reviewer=profile.reviewer
+%% review.mode.reviewer=required
+%% review.timeout.reviewer=3600
+%% review.rework.target.reviewer=writer
+%% review.rework.max.reviewer=2
+input -->|START| writer[Role:writer]
+writer[Role:writer] -->|DONE| reviewer[Role:reviewer]
+reviewer[Role:reviewer] -->|APPROVED| output
+`;
+
+  const system = parseSystemFromMermaidSource(source);
+  assert.deepStrictEqual(system.graph?.reviewByRoleId?.reviewer, {
+    mode: "required",
+    timeoutSeconds: 3600,
+    timeoutAction: "pause",
+    reworkTargetRoleId: "writer",
+    reworkMax: 2,
+    terminateScope: "branch"
+  });
+});
+
+test("parser rejects review metadata without review.mode", () => {
+  const source = `flowchart TD
+%% system.id=test.review.missing.mode
+%% system.version=0.1.0
+%% law.global=law.test
+%% entry.role=writer
+%% exec.bind.writer=profile.writer
+%% exec.bind.reviewer=profile.reviewer
+%% review.timeout.reviewer=120
+input -->|START| writer[Role:writer]
+writer[Role:writer] -->|DONE| reviewer[Role:reviewer]
+reviewer[Role:reviewer] -->|APPROVED| output
+`;
+
+  assert.throws(
+    () => parseSystemFromMermaidSource(source),
+    /MERMAID_MISSING_REVIEW_MODE|requires review\.mode\.reviewer=required/
+  );
+});
+
 test("parser rejects handoff.contracts without handoff.mode", () => {
   const source = `flowchart TD
 %% system.id=test.handoff.missing.mode

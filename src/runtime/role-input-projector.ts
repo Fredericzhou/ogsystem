@@ -186,6 +186,24 @@ function getRequiredJoinSourceArtifact(args: {
   return result;
 }
 
+function getRequiredHumanReviewContext(args: {
+  state: GraphState;
+  branch: BranchRecord;
+  roleId: string;
+}): NonNullable<GraphState["humanReviewContextByBranchId"][string]> {
+  const context = args.state.humanReviewContextByBranchId[args.branch.branchId];
+  if (!context) {
+    failContextProjection({
+      errorCode: "ROLE_CONTEXT_SOURCE_UNAVAILABLE",
+      message:
+        `Role "${args.roleId}" selector requires human review context, but branch "${args.branch.branchId}" has none.`,
+      roleId: args.roleId,
+      branchId: args.branch.branchId
+    });
+  }
+  return context;
+}
+
 function evaluateContextSelector(args: {
   selector: string;
   roleId: string;
@@ -221,6 +239,49 @@ function evaluateContextSelector(args: {
     return resolveObjectPath({
       value: args.userProfile,
       path: selector.slice("global.user_profile.".length).split("."),
+      selector,
+      roleId: args.roleId,
+      branchId: args.branch.branchId
+    });
+  }
+
+  if (selector === "global.human_review.current") {
+    return getRequiredHumanReviewContext({
+      state: args.state,
+      branch: args.branch,
+      roleId: args.roleId
+    });
+  }
+  if (selector === "global.human_review.current.comment") {
+    return getRequiredHumanReviewContext({
+      state: args.state,
+      branch: args.branch,
+      roleId: args.roleId
+    }).comment;
+  }
+  if (selector === "global.human_review.current.round") {
+    return getRequiredHumanReviewContext({
+      state: args.state,
+      branch: args.branch,
+      roleId: args.roleId
+    }).round;
+  }
+  if (selector === "global.human_review.current.previous_output") {
+    return getRequiredHumanReviewContext({
+      state: args.state,
+      branch: args.branch,
+      roleId: args.roleId
+    }).previousOutput;
+  }
+  if (selector.startsWith("global.human_review.current.previous_output.")) {
+    const context = getRequiredHumanReviewContext({
+      state: args.state,
+      branch: args.branch,
+      roleId: args.roleId
+    });
+    return resolveObjectPath({
+      value: context.previousOutput,
+      path: selector.slice("global.human_review.current.previous_output.".length).split("."),
       selector,
       roleId: args.roleId,
       branchId: args.branch.branchId

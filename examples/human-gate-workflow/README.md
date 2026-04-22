@@ -1,6 +1,8 @@
 # Human Gate Workflow Example
 
-This example demonstrates template-based human gates as normal role nodes.
+This example demonstrates the legacy template-based approach that models human gates as normal role nodes.
+
+New systems should prefer `examples/runtime-native-human-review/`, where review is declared with `review.*` metadata and applied through runtime control files plus `ogs run review ...`.
 
 Flow:
 

@@ -11,6 +11,7 @@ Use this small set first to cover most capabilities with minimum repetition:
 3. `medical-quorum-consultation/`
 4. `incident-response-playbook/`
 5. `rust-hello-pipeline/`
+6. `runtime-native-human-review/`
 
 ## Coverage Matrix
 
@@ -19,6 +20,7 @@ Use this small set first to cover most capabilities with minimum repetition:
 | `minimal-system.mmd` | model.bind | linear flow | quick smoke check |
 | `langgraph-debate-current/` | model.bind | `parallel_split + all_of + loop.max` | multi-round orchestration |
 | `medical-quorum-consultation/` | model.bind | `parallel_split + quorum_of + context.map + flow contract` | quorum decision, projected join context, and contract-backed validation |
+| `runtime-native-human-review/` | model.bind | `review.* + runtime-native human review` | stop-for-review, operator decision, resume |
 | `incident-response-playbook/` | exec.bind | `ERROR* + compensation + human gates` | exception routing and human-in-the-loop control |
 | `rust-hello-pipeline/` | exec.bind | sequential multi-role tool chain | side-effect workflow and artifact validation |
 
@@ -27,8 +29,9 @@ Use this small set first to cover most capabilities with minimum repetition:
 1. Start with `minimal-system.mmd`.
 2. Move to `langgraph-debate-current/` for core graph semantics.
 3. Run `medical-quorum-consultation/` for quorum + projection + flow contract semantics.
-4. Run `incident-response-playbook/` for runtime failure control and human gates.
-5. Run `rust-hello-pipeline/` if you need external toolchain workflows.
+4. Run `runtime-native-human-review/` for native stop-review-resume semantics.
+5. Run `incident-response-playbook/` for runtime failure control and legacy role-node human gates.
+6. Run `rust-hello-pipeline/` if you need external toolchain workflows.
 
 ## Fast Commands
 
@@ -48,4 +51,4 @@ pnpm run run:adapter --system examples/incident-response-playbook/system.mmd --r
 - `langgraph-expert-consultation/`: all-of expert consultation baseline.
 - `console-system.mmd`: legacy compatibility route for existing `profiles/tools`.
 - `error-flow-compensation/`: focused ERROR* routing baseline.
-- `human-gate-workflow/`: focused human gate baseline.
+- `human-gate-workflow/`: legacy role-node human gate baseline.

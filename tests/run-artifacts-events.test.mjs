@@ -138,6 +138,57 @@ test("timeline projection tolerates missing event source", async () => {
   assert.equal(await readFile(timelinePath, "utf8"), "");
 });
 
+test("timeline projection preserves human review events", async () => {
+  const tempRoot = await mkdtemp(path.join(os.tmpdir(), "ogsystem-timeline-human-review-"));
+  const eventsPath = path.resolve(tempRoot, "events.ndjson");
+  const timelinePath = path.resolve(tempRoot, "timeline.jsonl");
+
+  await writeFile(
+    eventsPath,
+    [
+      JSON.stringify({ type: "run_start", at: "2026-04-22T00:00:00.000Z" }),
+      JSON.stringify({
+        type: "human_review_requested",
+        at: "2026-04-22T00:00:01.000Z",
+        roleId: "writer",
+        branchId: "writer@1#1",
+        lineageId: "writer@1#1",
+        loopIteration: 1,
+        reviewId: "review.writer@1#1.r1",
+        round: 1
+      }),
+      JSON.stringify({
+        type: "human_review_approved",
+        at: "2026-04-22T00:00:02.000Z",
+        roleId: "writer",
+        branchId: "writer@1#1",
+        lineageId: "writer@1#1",
+        loopIteration: 1,
+        reviewId: "review.writer@1#1.r1",
+        decidedAt: "2026-04-22T00:00:02.000Z"
+      })
+    ].join("\n"),
+    "utf8"
+  );
+
+  await rebuildTimelineProjection({ eventsPath, timelinePath });
+  const records = (await readFile(timelinePath, "utf8"))
+    .trim()
+    .split("\n")
+    .map((line) => JSON.parse(line));
+
+  assert.deepStrictEqual(
+    records.map((record) => record.type),
+    ["run_start", "human_review_requested", "human_review_approved"]
+  );
+  assert.deepStrictEqual(
+    records.map((record) => record.cursor),
+    [0, 1, 2]
+  );
+  assert.equal(records[1].reviewId, "review.writer@1#1.r1");
+  assert.equal(records[2].reviewId, "review.writer@1#1.r1");
+});
+
 test("appendEvent keeps redacted events as single-line jsonl records", async () => {
   const tempRoot = await mkdtemp(path.join(os.tmpdir(), "ogsystem-events-append-"));
   const logsDir = path.resolve(tempRoot, "logs");

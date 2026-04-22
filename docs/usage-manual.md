@@ -287,6 +287,22 @@ ogs run list
 ogs run status <run-id>
 ```
 
+如果某个 role 配置了 `review.*`，运行可能停在人工审核态：
+
+```bash
+ogs run review list <run-id>
+ogs run review inspect <run-id> <review-id>
+ogs run review decide <run-id> <review-id> --decision approve --comment "approved"
+ogs run resume <run-id> --dry-run
+```
+
+这条路径是 runtime-native human review：
+
+- reviewed role 先产出 durable draft result
+- runtime 把 branch 置为 `waiting_review`
+- `summary.json` / `state.json` 会暴露 `pendingReviewCount` 与 `hasWaitingHumanReview`
+- approve / rework / pause / terminate 通过 `ogs run review decide` 写入 control plane，而不是再插一个独立 human-gate role 节点
+
 查看引擎日志：
 
 ```bash
@@ -1111,6 +1127,9 @@ ogs run logs <run-id> --engine --tail 50
 ogs run logs <run-id> --engine --json
 ogs run logs <run-id> --engine --follow --ndjson
 ogs run logs <run-id> --role <role-id> --since 2026-04-18T10:00:00Z
+ogs run review list <run-id>
+ogs run review inspect <run-id> <review-id>
+ogs run review decide <run-id> <review-id> --decision approve
 ogs run resume <run-id> --dry-run
 ogs run stop <run-id>
 ogs visualizer --workdir .

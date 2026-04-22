@@ -56,6 +56,8 @@ type RunSnapshot = {
   error?: string;
   updatedAt: string;
   activeBranches: number;
+  pendingReviewCount: number;
+  hasWaitingHumanReview: boolean;
   recentAudits: number;
   systemSource: string | null;
 };
@@ -139,6 +141,39 @@ function getAuditCount(graphState: Record<string, unknown> | undefined): number 
   return Array.isArray(recentAudits) ? recentAudits.length : 0;
 }
 
+function getPendingReviewCount(
+  graphState: Record<string, unknown> | undefined,
+  summary: Record<string, unknown> | undefined
+): number {
+  const summaryCount = asNumber(summary?.pendingReviewCount);
+  if (summaryCount !== undefined) {
+    return summaryCount;
+  }
+  const pendingReviews = graphState?.pendingReviewsById;
+  if (typeof pendingReviews !== "object" || pendingReviews === null || Array.isArray(pendingReviews)) {
+    return 0;
+  }
+  return Object.values(pendingReviews as Record<string, unknown>).filter((value) => {
+    return (
+      typeof value === "object" &&
+      value !== null &&
+      !Array.isArray(value) &&
+      ["pending", "paused"].includes(asString((value as Record<string, unknown>).status) ?? "")
+    );
+  }).length;
+}
+
+function getHasWaitingHumanReview(
+  graphState: Record<string, unknown> | undefined,
+  summary: Record<string, unknown> | undefined
+): boolean {
+  const summaryFlag = summary?.hasWaitingHumanReview;
+  if (typeof summaryFlag === "boolean") {
+    return summaryFlag;
+  }
+  return getPendingReviewCount(graphState, summary) > 0;
+}
+
 function buildRunSnapshot(detail: LoadedRunDetail): RunSnapshot {
   const state = extractGraphState(detail.state);
   const summary =
@@ -166,6 +201,8 @@ function buildRunSnapshot(detail: LoadedRunDetail): RunSnapshot {
   const error =
     asString(state?.error) ??
     asString((detail.state as Record<string, unknown> | undefined)?.error);
+  const pendingReviewCount = getPendingReviewCount(state, summary);
+  const hasWaitingHumanReview = getHasWaitingHumanReview(state, summary);
 
   return {
     runId: detail.runId,
@@ -180,6 +217,8 @@ function buildRunSnapshot(detail: LoadedRunDetail): RunSnapshot {
       asString((detail.resolvedConfig as Record<string, unknown> | undefined)?.updatedAt) ??
       "",
     activeBranches: getBranchCount(state),
+    pendingReviewCount,
+    hasWaitingHumanReview,
     recentAudits: getAuditCount(state),
     systemSource: detail.systemSource
   };
@@ -852,6 +891,7 @@ function renderPageHtml(workdir: string): string {
         ["status", snapshot.status],
         ["transitions", snapshot.transitionCount],
         ["active branches", snapshot.activeBranches],
+        ["pending reviews", snapshot.pendingReviewCount],
         ["recent audits", snapshot.recentAudits]
       ];
       statsEl.innerHTML = cards
@@ -951,7 +991,12 @@ function renderPageHtml(workdir: string): string {
         connectStream(runId, state.eventCursor);
       }
       const status = (detail.snapshot && detail.snapshot.status) || "unknown";
-      setLive(status === "running" || status === "stopping" ? "online" : "idle", status);
+      const hasWaitingHumanReview = Boolean(detail.snapshot && detail.snapshot.hasWaitingHumanReview);
+      if (hasWaitingHumanReview) {
+        setLive("idle", "waiting_review");
+      } else {
+        setLive(status === "running" || status === "stopping" ? "online" : "idle", status);
+      }
     }
 
     async function selectRun(runId) {

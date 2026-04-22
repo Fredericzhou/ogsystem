@@ -17,15 +17,18 @@ import {
   OGS_RUNS_DIR,
   createProjectFromTemplate,
   ensureProjectSkeleton,
+  inspectHumanReview,
   scaffoldProjectTemplate,
   syncProjectDependencies,
   syncProjectModels,
   inspectRun,
+  listHumanReviews,
   loadIndexedRuns,
   loadRunLogs,
   rebuildRunsIndex,
   requestStop,
-  resolveRunDir
+  resolveRunDir,
+  writeHumanReviewDecision
 } from "./project-lifecycle.js";
 import { streamRunLogs } from "./project-lifecycle.js";
 import {
@@ -34,6 +37,7 @@ import {
   formatRuntimeErrorEnvelope,
   normalizeRuntimeError
 } from "./runtime-errors.js";
+import type { RunSummaryProjection } from "./run-summary-schema.js";
 import { startVisualizationServer } from "../visualizer/server.js";
 
 const require = createRequire(import.meta.url);
@@ -41,7 +45,7 @@ const { version: CLI_VERSION } = require("../../package.json") as { version: str
 
 type HelpTopic = "project" | "run" | "legacy" | "visualizer";
 type ProjectSubcommand = "init" | "create" | "sync" | "sync-models";
-type RunSubcommand = "start" | "resume" | "stop" | "list" | "status" | "inspect" | "logs" | "reindex";
+type RunSubcommand = "start" | "resume" | "stop" | "list" | "status" | "inspect" | "logs" | "reindex" | "review";
 
 const LEGACY_OPTION_NAMES = new Set([
   "system",
@@ -69,7 +73,7 @@ function usageRoot(): string {
   return [
     "Usage:",
     "  ogs project <init|create|sync|sync-models>",
-    "  ogs run <start|resume|stop|list|status|inspect|logs|reindex>",
+    "  ogs run <start|resume|stop|list|status|inspect|logs|reindex|review>",
     "  ogs visualizer [--workdir <path>] [--host <host>] [--port <n|0>]",
     "  ogs --version",
     "",
@@ -338,6 +342,21 @@ function usageRun(subcommand?: RunSubcommand): string {
     ].join("\n");
   }
 
+  if (subcommand === "review") {
+    return [
+      "Usage:",
+      "  ogs run review list <run-id> [--workdir <path>]",
+      "  ogs run review inspect <run-id> <review-id> [--workdir <path>]",
+      "  ogs run review decide <run-id> <review-id> --decision <approve|rework|pause|terminate> [--comment <text>] [--actor <name>] [--scope <branch|run>] [--workdir <path>]",
+      "",
+      "Examples:",
+      "  ogs run review list <run-id>",
+      "  ogs run review inspect <run-id> <review-id>",
+      "  ogs run review decide <run-id> <review-id> --decision approve",
+      "  ogs run review decide <run-id> <review-id> --decision rework --comment \"missing evidence\""
+    ].join("\n");
+  }
+
   return [
     "Usage:",
     "  ogs run start --system <file.mmd> --input <text> [options]",
@@ -348,12 +367,14 @@ function usageRun(subcommand?: RunSubcommand): string {
     "  ogs run inspect <run-id> [options]",
     "  ogs run logs <run-id> [options]",
     "  ogs run reindex [options]",
+    "  ogs run review <list|inspect|decide> ...",
     "",
     "Drill down:",
     "  ogs run start --help",
     "  ogs run resume --help",
     "  ogs run logs --help",
-    "  ogs run reindex --help"
+    "  ogs run reindex --help",
+    "  ogs run review --help"
   ].join("\n");
 }
 
@@ -1412,7 +1433,7 @@ async function runRunCommand(argv: string[]): Promise<void> {
       typeof detail.summary === "object" &&
       detail.summary !== null &&
       !Array.isArray(detail.summary)
-        ? (detail.summary as { status?: string })
+        ? (detail.summary as RunSummaryProjection)
         : undefined;
     const state =
       typeof detail.state === "object" &&
@@ -1426,6 +1447,18 @@ async function runRunCommand(argv: string[]): Promise<void> {
           runId,
           runDir: detail.runDir,
           status: summary?.status ?? state?.status ?? state?.graphState?.status ?? "unknown",
+          pendingReviewCount:
+            typeof summary?.pendingReviewCount === "number"
+              ? summary.pendingReviewCount
+              : typeof detail.pendingReviewCount === "number"
+                ? detail.pendingReviewCount
+                : undefined,
+          hasWaitingHumanReview:
+            typeof summary?.hasWaitingHumanReview === "boolean"
+              ? summary.hasWaitingHumanReview
+              : typeof detail.hasWaitingHumanReview === "boolean"
+                ? detail.hasWaitingHumanReview
+              : undefined,
           stopRequest: detail.stopRequest ?? null,
           stopOutcome: detail.stopOutcome ?? null,
           summary: detail.summary ?? null
@@ -1452,6 +1485,100 @@ async function runRunCommand(argv: string[]): Promise<void> {
     const detail = await inspectRun(asString(values.workdir) ?? process.cwd(), runId);
     console.log(JSON.stringify(detail, null, 2));
     return;
+  }
+  if (subcommand === "review") {
+    const nested = argv[1];
+    const nestedArgv = argv.slice(2);
+    if (!nested || nested === "--help" || nested === "-h") {
+      console.log(usage("run", "review"));
+      return;
+    }
+    if (nested === "list") {
+      const { values, positionals } = parseLifecycleArgs(nestedArgv, {
+        workdir: { type: "string" },
+        help: { type: "boolean", short: "h" }
+      });
+      if (asBool(values.help)) {
+        console.log(usage("run", "review"));
+        return;
+      }
+      const runId = positionals[0];
+      if (!runId) {
+        throw createCliInputError("CLI_RUN_REVIEW_LIST_MISSING_RUN_ID", "run review list requires <run-id>");
+      }
+      const result = await listHumanReviews(asString(values.workdir) ?? process.cwd(), runId);
+      console.log(JSON.stringify(result, null, 2));
+      return;
+    }
+    if (nested === "inspect") {
+      const { values, positionals } = parseLifecycleArgs(nestedArgv, {
+        workdir: { type: "string" },
+        help: { type: "boolean", short: "h" }
+      });
+      if (asBool(values.help)) {
+        console.log(usage("run", "review"));
+        return;
+      }
+      const runId = positionals[0];
+      const reviewId = positionals[1];
+      if (!runId || !reviewId) {
+        throw createCliInputError(
+          "CLI_RUN_REVIEW_INSPECT_MISSING_IDS",
+          "run review inspect requires <run-id> <review-id>"
+        );
+      }
+      const result = await inspectHumanReview(asString(values.workdir) ?? process.cwd(), runId, reviewId);
+      console.log(JSON.stringify(result, null, 2));
+      return;
+    }
+    if (nested === "decide") {
+      const { values, positionals } = parseLifecycleArgs(nestedArgv, {
+        workdir: { type: "string" },
+        decision: { type: "string" },
+        comment: { type: "string" },
+        actor: { type: "string" },
+        scope: { type: "string" },
+        help: { type: "boolean", short: "h" }
+      });
+      if (asBool(values.help)) {
+        console.log(usage("run", "review"));
+        return;
+      }
+      const runId = positionals[0];
+      const reviewId = positionals[1];
+      const decision = asString(values.decision);
+      if (!runId || !reviewId || !decision) {
+        throw createCliInputError(
+          "CLI_RUN_REVIEW_DECIDE_MISSING_ARGS",
+          "run review decide requires <run-id> <review-id> --decision <approve|rework|pause|terminate>"
+        );
+      }
+      if (!["approve", "rework", "pause", "terminate"].includes(decision)) {
+        throw createCliInputError(
+          "CLI_RUN_REVIEW_DECIDE_INVALID_DECISION",
+          `invalid --decision value: ${decision}`
+        );
+      }
+      const scope = asString(values.scope);
+      if (scope !== undefined && scope !== "branch" && scope !== "run") {
+        throw createCliInputError(
+          "CLI_RUN_REVIEW_DECIDE_INVALID_SCOPE",
+          `invalid --scope value: ${scope}`
+        );
+      }
+      const result = await writeHumanReviewDecision({
+        workdir: asString(values.workdir) ?? process.cwd(),
+        runId,
+        reviewId,
+        decision: decision as "approve" | "rework" | "pause" | "terminate",
+        comment: asString(values.comment),
+        actor: asString(values.actor),
+        scope: scope as "branch" | "run" | undefined
+      });
+      console.log(JSON.stringify(result, null, 2));
+      return;
+    }
+    throw createCliInputError("CLI_RUN_REVIEW_UNKNOWN_SUBCOMMAND", `unknown run review subcommand: ${nested}`);
   }
   if (subcommand === "logs") {
     const { values, positionals } = parseLifecycleArgs(argv.slice(1), {

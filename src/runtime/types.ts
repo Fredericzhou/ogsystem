@@ -66,6 +66,17 @@ export type FlowContractPlan = {
 
 export type ContextMapByRoleId = Record<string, Record<string, string>>;
 
+export type HumanReviewDecision = "approve" | "rework" | "pause" | "terminate";
+
+export type HumanReviewSpec = {
+  mode: "required";
+  timeoutSeconds?: number;
+  timeoutAction: "pause" | "terminate";
+  reworkTargetRoleId: string;
+  reworkMax?: number;
+  terminateScope: "branch" | "run";
+};
+
 /**
  * Computed graph metadata used to enforce join/routing invariants and loop budgets.
  * The runtime assumes keys exist only when corresponding metadata was declared, making
@@ -81,6 +92,7 @@ export type GraphMetadata = {
   joinMinByRoleId: Record<string, number>;
   contextMapByRoleId: ContextMapByRoleId;
   loopMaxByRoleId: Record<string, number>;
+  reviewByRoleId?: Record<string, HumanReviewSpec>;
 };
 
 export type LawBinding = {
@@ -146,6 +158,7 @@ export type ExecutionPlanNode = {
   joinMin?: number;
   contextMap?: Record<string, string>;
   loopMax?: number;
+  review?: HumanReviewSpec;
   binding: RoleExecutionBinding;
   isTerminal: boolean;
 };
@@ -448,6 +461,7 @@ export type RunContext = {
   engineLogPath: string;
   roleLogsDir: string;
   controlDir: string;
+  reviewsDir: string;
   stopRequestPath: string;
   stopOutcomePath: string;
   eventsPath: string;
@@ -488,7 +502,7 @@ export type BranchRecord = {
   parentBranchId?: string;
   activatedByRoleId?: string;
   activatedByEvent?: string;
-  status: "active" | "completed";
+  status: "active" | "waiting_review" | "completed";
 };
 
 export type StoredRoleResult = {
@@ -499,6 +513,43 @@ export type StoredRoleResult = {
   branchId: string;
   lineageId: string;
   loopIteration: number;
+};
+
+export type PendingHumanReview = {
+  reviewId: string;
+  roleId: string;
+  branchId: string;
+  lineageId: string;
+  loopIteration: number;
+  executionId: string;
+  selectedEvent?: string;
+  draftResult: StoredRoleResult;
+  requestedAt: string;
+  requestedByExecutionId: string;
+  status: "pending" | "paused" | "resolved" | "expired";
+  round: number;
+  spec: HumanReviewSpec;
+};
+
+export type HumanReviewContext = {
+  reviewId: string;
+  branchId: string;
+  round: number;
+  comment?: string;
+  previousOutput: StoredRoleResult;
+};
+
+export type HumanReviewDecisionRecord = {
+  reviewId: string;
+  committedAt: string;
+  decidedAt: string;
+  decision: HumanReviewDecision;
+  comment?: string;
+  actor?: string;
+  scope?: "branch" | "run";
+  checkpointSequence?: number;
+  appliedAt?: string;
+  reconciledAt?: string;
 };
 
 export type GraphRunStatus = "running" | "stopping" | "stopped" | "done" | "failed";
@@ -538,6 +589,11 @@ export type GraphState = {
   auditSummary: GraphAuditSummary;
   roleMetricsByRoleId: Record<string, GraphRoleMetricSummary>;
   roleResults: Record<string, StoredRoleResult>;
+  pendingReviewsById: Record<string, PendingHumanReview>;
+  reviewHistoryByBranchId: Record<string, HumanReviewDecisionRecord[]>;
+  humanReviewContextByBranchId: Record<string, HumanReviewContext>;
+  reviewRoundByRoleLineageKey: Record<string, number>;
+  lastWaitingReviewId?: string;
   branchRecords: Record<string, BranchRecord>;
   loopIterations: Record<string, number>;
   selectedEventByBranchId: Record<string, string>;
@@ -623,6 +679,8 @@ export type SystemStateSnapshot = {
   lastOutput?: string;
   error?: string;
   errorEnvelope?: RuntimeErrorEnvelope;
+  pendingReviewCount?: number;
+  hasWaitingHumanReview?: boolean;
 };
 
 export type RunSummarySnapshot = {
@@ -639,6 +697,8 @@ export type RunSummarySnapshot = {
     attemptedCount: number;
     appliedCount: number;
   };
+  pendingReviewCount?: number;
+  hasWaitingHumanReview?: boolean;
 };
 
 export type HandledFailureArtifactData = {

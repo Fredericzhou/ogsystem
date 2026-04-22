@@ -34,6 +34,18 @@ const RUN_ARTIFACT_POLICY: RunArtifactPolicyEntry[] = [
     resumeConsumed: true,
     description: "Write-ahead graph update checkpoints replayed during resume/recovery."
   },
+  {
+    path: "control/reviews/<reviewId>.request.json",
+    retention: "runtime_consumed",
+    resumeConsumed: true,
+    description: "Durable human review request marker used to recover waiting-review control state."
+  },
+  {
+    path: "control/reviews/<reviewId>.decision.json",
+    retention: "runtime_consumed",
+    resumeConsumed: true,
+    description: "Durable human review decision marker used to reconcile apply/reconcile progress on resume."
+  },
   // Invariant: only one resume session may hold the run directory at any time, so this lock protects
   // the files recovery logic reads directly from concurrent mutation.
   {

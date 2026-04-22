@@ -9,6 +9,7 @@ export type TimelineProjectionRecord = {
   type: string;
   roleId?: string;
   branchId?: string;
+  reviewId?: string;
   lineageId?: string;
   loopIteration?: number;
   event?: string;
@@ -71,6 +72,7 @@ export function projectTimelineRecord(args: {
     type,
     roleId: asString(args.event.roleId),
     branchId: asString(args.event.branchId),
+    reviewId: asString(args.event.reviewId),
     lineageId: asString(args.event.lineageId),
     loopIteration: asNumber(args.event.loopIteration),
     event: asString(args.event.event) ?? asString(args.event.selectedEvent),

@@ -218,3 +218,77 @@ decider[Role:test-decision] -->|DONE| output
     ["COMPILER_ROLE_NOOP_AMBIGUOUS"]
   );
 });
+
+test("compiler fingerprints review metadata and rejects review on noop bindings", async () => {
+  const sourceWithPause = `flowchart TD
+%% system.id=test.compiler.review
+%% system.version=0.1.0
+%% law.global=law.test
+%% entry.role=test-operator
+%% exec.bind.test-operator=profile.test-operator
+%% exec.bind.test-decision=profile.test-decision
+%% review.mode.test-decision=required
+%% review.timeout.test-decision=600
+%% review.rework.target.test-decision=test-operator
+%% review.terminate.scope.test-decision=branch
+input -->|START| operator[Role:test-operator]
+operator[Role:test-operator] -->|NEXT| decider[Role:test-decision]
+decider[Role:test-decision] -->|DONE| output
+`;
+  const sourceWithTerminate = sourceWithPause.replace(
+    "%% review.terminate.scope.test-decision=branch",
+    "%% review.terminate.scope.test-decision=run"
+  );
+  const roleRootDir = path.resolve("og-roles", "roles");
+
+  const pauseSystem = parseSystemFromMermaidSource(sourceWithPause);
+  const terminateSystem = parseSystemFromMermaidSource(sourceWithTerminate);
+  const pausePackages = await loadRolePackages(pauseSystem.roleIds, roleRootDir);
+  const terminatePackages = await loadRolePackages(terminateSystem.roleIds, roleRootDir);
+  const effectiveLaw = {
+    forbiddenToolRefs: [],
+    maxTransitions: undefined,
+    allowNoopWithoutExecutionBinding: true
+  };
+
+  const pauseResult = compileExecutionSnapshot({
+    system: pauseSystem,
+    rolePackagesByRoleId: pausePackages,
+    effectiveLaw
+  });
+  const terminateResult = compileExecutionSnapshot({
+    system: terminateSystem,
+    rolePackagesByRoleId: terminatePackages,
+    effectiveLaw
+  });
+
+  assert.equal(pauseResult.ok, true);
+  assert.deepStrictEqual(pauseResult.snapshot.reviewSummaryByRoleId, {
+    "test-decision": {
+      roleId: "test-decision",
+      mode: "required",
+      timeoutSeconds: 600,
+      timeoutAction: "pause",
+      reworkTargetRoleId: "test-operator",
+      reworkMax: undefined,
+      terminateScope: "branch"
+    }
+  });
+  assert.notStrictEqual(pauseResult.digest, terminateResult.digest);
+
+  const noopReviewSystem = parseSystemFromMermaidSource(
+    sourceWithPause.replace("%% exec.bind.test-decision=profile.test-decision\n", "")
+  );
+  const noopReviewPackages = await loadRolePackages(noopReviewSystem.roleIds, roleRootDir);
+  const noopReviewResult = compileExecutionSnapshot({
+    system: noopReviewSystem,
+    rolePackagesByRoleId: noopReviewPackages,
+    effectiveLaw
+  });
+
+  assert.equal(noopReviewResult.ok, false);
+  assert.deepStrictEqual(
+    noopReviewResult.diagnostics.map((diagnostic) => diagnostic.code),
+    ["COMPILER_REVIEW_REQUIRES_EXECUTION_BINDING"]
+  );
+});

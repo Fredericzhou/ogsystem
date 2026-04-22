@@ -16,6 +16,12 @@ const source = `flowchart TD
 %% join.min.review=2
 %% context.map.review.summary=source(worker_a).content
 %% context.map.review.task=global.task
+%% review.mode.review=required
+%% review.timeout.review=900
+%% review.timeout.action.review=terminate
+%% review.rework.target.review=dispatch
+%% review.rework.max.review=3
+%% review.terminate.scope.review=run
 %% loop.max.dispatch=2
 %% model.bind.dispatch=model.fast
 %% exec.bind.worker_a=profile.a
@@ -80,6 +86,14 @@ test("execution plan normalizes graph semantics and bindings", () => {
   assert.deepStrictEqual(review.contextMap, {
     summary: "source(worker_a).content",
     task: "global.task"
+  });
+  assert.deepStrictEqual(review.review, {
+    mode: "required",
+    timeoutSeconds: 900,
+    timeoutAction: "terminate",
+    reworkTargetRoleId: "dispatch",
+    reworkMax: 3,
+    terminateScope: "run"
   });
   assert.strictEqual(review.isTerminal, false);
 });

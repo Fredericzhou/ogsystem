@@ -7,6 +7,7 @@
  * persistence strategies later.
  */
 import { getExecutionPlanNode } from "./execution-plan.js";
+import { countPendingHumanReviews, hasWaitingHumanReview } from "./human-review.js";
 import { createEmptyAuditSummary, summarizeRunFromAuditSummary } from "./run-summary.js";
 import { buildRoleLineageLoopKey } from "./runtime-indexes.js";
 import type { RuntimeIndexes } from "./runtime-indexes.js";
@@ -89,11 +90,18 @@ export function projectStateSnapshot(args: {
     lastOutput: args.state.finalOutput || undefined,
     error: args.state.error || undefined,
     errorEnvelope: args.state.errorEnvelope || undefined,
+    pendingReviewCount: countPendingHumanReviews(args.state),
+    hasWaitingHumanReview: hasWaitingHumanReview(args.state),
     activeBranches,
     completedBranches,
     pendingJoinRoleIds,
     loopIterations: args.state.loopIterations,
     roleResults: args.state.roleResults,
+    pendingReviewsById: args.state.pendingReviewsById,
+    reviewHistoryByBranchId: args.state.reviewHistoryByBranchId,
+    humanReviewContextByBranchId: args.state.humanReviewContextByBranchId,
+    reviewRoundByRoleLineageKey: args.state.reviewRoundByRoleLineageKey,
+    lastWaitingReviewId: args.state.lastWaitingReviewId,
     selectedEventByBranchId: args.state.selectedEventByBranchId,
     nextBranchSequence: args.state.nextBranchSequence,
     lastCheckpointSequence: args.state.lastCheckpointSequence,
@@ -203,6 +211,31 @@ export function completeBranch(args: {
   };
 }
 
+export function waitForHumanReview(args: {
+  branchId: string;
+  roleId: string;
+  loopIteration: number;
+  branchSequence: number;
+  lineageId: string;
+  sessionLineageId: string;
+  parentBranchId?: string;
+  activatedByRoleId?: string;
+  activatedByEvent?: string;
+}): BranchRecord {
+  return {
+    branchId: args.branchId,
+    roleId: args.roleId,
+    loopIteration: args.loopIteration,
+    branchSequence: args.branchSequence,
+    lineageId: args.lineageId,
+    sessionLineageId: args.sessionLineageId,
+    parentBranchId: args.parentBranchId,
+    activatedByRoleId: args.activatedByRoleId,
+    activatedByEvent: args.activatedByEvent,
+    status: "waiting_review"
+  };
+}
+
 export function createInitialGraphState(args: {
   plan: ExecutionPlan;
   prompt: string;
@@ -219,6 +252,11 @@ export function createInitialGraphState(args: {
     auditSummary: createEmptyAuditSummary(),
     roleMetricsByRoleId: {},
     roleResults: {},
+    pendingReviewsById: {},
+    reviewHistoryByBranchId: {},
+    humanReviewContextByBranchId: {},
+    reviewRoundByRoleLineageKey: {},
+    lastWaitingReviewId: undefined,
     branchRecords: {
       [branchId]: {
         branchId,

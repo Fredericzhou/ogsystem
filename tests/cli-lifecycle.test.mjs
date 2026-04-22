@@ -338,6 +338,160 @@ test("lifecycle cli run start/list/status/logs/resume/stop works end-to-end", { 
   await stat(stopRequestPath);
 });
 
+test("lifecycle cli review commands expose pending human review state and can approve resume", { concurrency: false }, async () => {
+  const repoRoot = process.cwd();
+  const tempRoot = await mkdtemp(path.join(os.tmpdir(), "ogsystem-cli-review-"));
+  const systemPath = path.resolve(tempRoot, "system.mmd");
+
+  await mkdir(path.resolve(tempRoot, ".ogs"), { recursive: true });
+  await writeFile(
+    path.resolve(tempRoot, ".ogs", "runtime.json"),
+    JSON.stringify(
+      {
+        configVersion: "2",
+        executor: "opencode",
+        roleRepo: path.resolve(repoRoot, "og-roles"),
+        runsDir: ".ogs/runs"
+      },
+      null,
+      2
+    ),
+    "utf8"
+  );
+  await writeFile(
+    path.resolve(tempRoot, ".ogs", "model-selection.json"),
+    JSON.stringify(
+      {
+        configVersion: "1",
+        defaults: {
+          model: "opencode/gpt-5-nano",
+          timeoutMs: 120000,
+          maxOutputBytes: 65536
+        }
+      },
+      null,
+      2
+    ),
+    "utf8"
+  );
+  await writeFile(
+    path.resolve(tempRoot, ".ogs", "model-catalog.json"),
+    await readFile(path.resolve(repoRoot, ".ogs", "model-catalog.json"), "utf8"),
+    "utf8"
+  );
+  await writeFile(
+    path.resolve(tempRoot, ".ogs", "user-profile.json"),
+    await readFile(path.resolve(repoRoot, ".ogs", "user-profile.json"), "utf8"),
+    "utf8"
+  );
+  await writeFile(
+    path.resolve(tempRoot, ".ogs", "laws.json"),
+    await readFile(path.resolve(repoRoot, ".ogs", "laws.json"), "utf8"),
+    "utf8"
+  );
+  await writeFile(
+    systemPath,
+    [
+      "flowchart TD",
+      "%% system.id=cli.review.demo",
+      "%% system.version=1.0.0",
+      "%% law.global=law.console.base",
+      "%% entry.role=test-operator",
+      "%% model.bind.test-operator=balanced-gpt52",
+      "%% review.mode.test-operator=required",
+      "",
+      "input -->|GO| operator[Role:test-operator]",
+      "operator[Role:test-operator] -->|DONE| output",
+      ""
+    ].join("\n"),
+    "utf8"
+  );
+
+  const start = await runCli([
+    "run",
+    "start",
+    "--system",
+    systemPath,
+    "--input",
+    "cli review flow",
+    "--dry-run",
+    "--workdir",
+    tempRoot
+  ]);
+  assert.strictEqual(start.code, 0, start.stderr);
+  const startPayload = JSON.parse(start.stdout);
+  assert.equal(startPayload.status, "stopped");
+  const list = await runCli(["run", "list", "--workdir", tempRoot]);
+  assert.strictEqual(list.code, 0);
+  const listPayload = JSON.parse(list.stdout);
+  assert.equal(listPayload.runs.length, 1);
+  const runId = listPayload.runs[0].runId;
+  const status = await runCli(["run", "status", runId, "--workdir", tempRoot]);
+  assert.strictEqual(status.code, 0);
+  const statusPayload = JSON.parse(status.stdout);
+  assert.equal(statusPayload.status, "stopped");
+  assert.equal(statusPayload.pendingReviewCount, 1);
+  assert.equal(statusPayload.hasWaitingHumanReview, true);
+
+  const inspect = await runCli(["run", "inspect", runId, "--workdir", tempRoot]);
+  assert.strictEqual(inspect.code, 0);
+  const inspectPayload = JSON.parse(inspect.stdout);
+  assert.equal(inspectPayload.pendingReviewCount, 1);
+  assert.equal(inspectPayload.hasWaitingHumanReview, true);
+
+  const reviewList = await runCli(["run", "review", "list", runId, "--workdir", tempRoot]);
+  assert.strictEqual(reviewList.code, 0);
+  const reviewListPayload = JSON.parse(reviewList.stdout);
+  assert.equal(reviewListPayload.reviews.length, 1);
+  assert.equal(reviewListPayload.reviews[0].reviewId, "review.test-operator@1#1.r1");
+  assert.equal(reviewListPayload.reviews[0].request.status, "pending");
+
+  const reviewInspect = await runCli([
+    "run",
+    "review",
+    "inspect",
+    runId,
+    "review.test-operator@1#1.r1",
+    "--workdir",
+    tempRoot
+  ]);
+  assert.strictEqual(reviewInspect.code, 0);
+  const reviewInspectPayload = JSON.parse(reviewInspect.stdout);
+  assert.equal(reviewInspectPayload.pendingReview.status, "pending");
+  assert.equal(reviewInspectPayload.request.reviewId, "review.test-operator@1#1.r1");
+
+  const decide = await runCli([
+    "run",
+    "review",
+    "decide",
+    runId,
+    "review.test-operator@1#1.r1",
+    "--decision",
+    "approve",
+    "--actor",
+    "tester",
+    "--comment",
+    "approved",
+    "--workdir",
+    tempRoot
+  ]);
+  assert.strictEqual(decide.code, 0);
+  const decidePayload = JSON.parse(decide.stdout);
+  assert.equal(decidePayload.decision.decision, "approve");
+
+  const resume = await runCli(["run", "resume", runId, "--dry-run", "--workdir", tempRoot]);
+  assert.strictEqual(resume.code, 0, resume.stderr);
+  const resumePayload = JSON.parse(resume.stdout);
+  assert.equal(resumePayload.status, "done");
+
+  const statusAfterResume = await runCli(["run", "status", runId, "--workdir", tempRoot]);
+  assert.strictEqual(statusAfterResume.code, 0);
+  const statusAfterResumePayload = JSON.parse(statusAfterResume.stdout);
+  assert.equal(statusAfterResumePayload.status, "done");
+  assert.equal(statusAfterResumePayload.pendingReviewCount, 0);
+  assert.equal(statusAfterResumePayload.hasWaitingHumanReview, false);
+});
+
 test("lifecycle cli modern run failures print modern resume hints and reject hidden legacy flags", { concurrency: false }, async () => {
   const repoRoot = process.cwd();
   const tempRoot = await mkdtemp(path.join(os.tmpdir(), "ogsystem-cli-modern-failure-"));

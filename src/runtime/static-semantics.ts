@@ -9,6 +9,11 @@ export type SelectorSummary = {
     | "global.task"
     | "global.user_profile"
     | "global.user_profile.path"
+    | "global.human_review.current"
+    | "global.human_review.current.comment"
+    | "global.human_review.current.round"
+    | "global.human_review.current.previous_output"
+    | "global.human_review.current.previous_output.path"
     | "direct"
     | "direct.data.path"
     | "source"
@@ -35,6 +40,38 @@ export function summarizeContextSelector(selector: string): SelectorSummary {
     return {
       selectorKind: "global.user_profile.path",
       validPath: isValidSelectorPath(selector.slice("global.user_profile.".length))
+    };
+  }
+  if (selector === "global.human_review.current") {
+    return {
+      selectorKind: "global.human_review.current",
+      validPath: true
+    };
+  }
+  if (selector === "global.human_review.current.comment") {
+    return {
+      selectorKind: "global.human_review.current.comment",
+      validPath: true
+    };
+  }
+  if (selector === "global.human_review.current.round") {
+    return {
+      selectorKind: "global.human_review.current.round",
+      validPath: true
+    };
+  }
+  if (selector === "global.human_review.current.previous_output") {
+    return {
+      selectorKind: "global.human_review.current.previous_output",
+      validPath: true
+    };
+  }
+  if (selector.startsWith("global.human_review.current.previous_output.")) {
+    return {
+      selectorKind: "global.human_review.current.previous_output.path",
+      validPath: isValidSelectorPath(
+        selector.slice("global.human_review.current.previous_output.".length)
+      )
     };
   }
   if (selector === "direct.content" || selector === "direct.event" || selector === "direct.data") {

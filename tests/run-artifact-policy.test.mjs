@@ -21,6 +21,18 @@ test("artifact policy documents runtime-consumed and operator-facing files", () 
   assert.ok(
     policy.some(
       (entry) =>
+        entry.path === "control/reviews/<reviewId>.request.json" && entry.resumeConsumed
+    )
+  );
+  assert.ok(
+    policy.some(
+      (entry) =>
+        entry.path === "control/reviews/<reviewId>.decision.json" && entry.resumeConsumed
+    )
+  );
+  assert.ok(
+    policy.some(
+      (entry) =>
         entry.path === "roles/<roleId>/executions/<executionId>/execution-outcome.json" &&
         entry.resumeConsumed
     )

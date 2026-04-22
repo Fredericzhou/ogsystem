@@ -8,6 +8,7 @@
  * - Does not execute graph runtime transitions.
  */
 import { randomUUID } from "node:crypto";
+import type { Dirent } from "node:fs";
 import { cp, mkdir, readFile, readdir, stat, writeFile } from "node:fs/promises";
 import { basename, dirname, resolve } from "node:path";
 
@@ -23,7 +24,12 @@ import { chooseDefaultModelFromCatalog, refreshModelCatalog } from "./model-cata
 import { loadSystemFromMermaid, parseSystemFromMermaidSource } from "./parse-mermaid.js";
 import { requestRunStop } from "./run-artifacts.js";
 import { stringifyJson } from "./runtime-support.js";
-import type { ModelCatalog, ModelSelectionConfig } from "./types.js";
+import type {
+  HumanReviewDecision,
+  HumanReviewDecisionRecord,
+  ModelCatalog,
+  ModelSelectionConfig
+} from "./types.js";
 import type { RunSummaryProjection } from "./run-summary-schema.js";
 import type { SystemDefinition } from "./types.js";
 
@@ -44,6 +50,8 @@ export type IndexedRun = {
   status: string;
   transitionCount: number;
   finalRoleId?: string;
+  pendingReviewCount?: number;
+  hasWaitingHumanReview?: boolean;
   updatedAt: string;
   runDir: string;
 };
@@ -68,6 +76,18 @@ type ProjectTemplateSpec = {
   lawsJson: string;
   exampleSystemMmd?: string;
   syncDependencies: boolean;
+};
+
+type IndexedRunStateSnapshot = {
+  status: string;
+  transitionCount?: number;
+  finalRoleId?: string;
+  graphState?: {
+    status?: string;
+    transitionCount?: number;
+    finalRoleId?: string;
+    pendingReviewsById?: Record<string, unknown>;
+  };
 };
 
 const PROJECT_TEMPLATES: Record<ProjectTemplateId, ProjectTemplateSpec> = {
@@ -419,6 +439,53 @@ function asSummaryProjection(value: unknown): RunSummaryProjection | undefined {
   return record as RunSummaryProjection;
 }
 
+function asGraphStateRecord(value: unknown): Record<string, unknown> | undefined {
+  if (typeof value !== "object" || value === null || Array.isArray(value)) {
+    return undefined;
+  }
+  const graphState = (value as { graphState?: unknown }).graphState;
+  if (typeof graphState !== "object" || graphState === null || Array.isArray(graphState)) {
+    return undefined;
+  }
+  return graphState as Record<string, unknown>;
+}
+
+function countPendingReviewsFromGraphState(graphState: Record<string, unknown> | undefined): number | undefined {
+  const pendingReviewsById = graphState?.pendingReviewsById;
+  if (
+    typeof pendingReviewsById !== "object" ||
+    pendingReviewsById === null ||
+    Array.isArray(pendingReviewsById)
+  ) {
+    return undefined;
+  }
+  return Object.values(pendingReviewsById).filter(
+    (review) =>
+      typeof review === "object" &&
+      review !== null &&
+      ((review as { status?: unknown }).status === "pending" ||
+        (review as { status?: unknown }).status === "paused")
+  ).length;
+}
+
+function derivePendingReviewFields(args: {
+  summary?: RunSummaryProjection;
+  state?: unknown;
+}): {
+  pendingReviewCount?: number;
+  hasWaitingHumanReview?: boolean;
+} {
+  const graphState = asGraphStateRecord(args.state);
+  const pendingReviewCount =
+    args.summary?.pendingReviewCount ?? countPendingReviewsFromGraphState(graphState);
+  return {
+    pendingReviewCount,
+    hasWaitingHumanReview:
+      args.summary?.hasWaitingHumanReview ??
+      (pendingReviewCount !== undefined ? pendingReviewCount > 0 : undefined)
+  };
+}
+
 async function ensureFile(path: string, value: string): Promise<void> {
   try {
     await stat(path);
@@ -691,7 +758,7 @@ export async function syncProjectModels(args: {
 
 export async function loadIndexedRuns(workdir: string): Promise<IndexedRun[]> {
   const { runsDir } = resolveOgsPaths(workdir);
-  let entries;
+  let entries: Dirent[];
   try {
     entries = await readdir(runsDir, { withFileTypes: true });
   } catch {
@@ -709,6 +776,10 @@ export async function loadIndexedRuns(workdir: string): Promise<IndexedRun[]> {
       tryReadJson(resolve(runDir, "state.json"))
     ]);
     const summary = asSummaryProjection(summaryRaw);
+    const reviewFields = derivePendingReviewFields({
+      summary,
+      state: stateRaw
+    });
     // Compatibility read: tolerate both flattened status fields and nested graphState snapshots
     // so index rebuilding can survive schema transitions across runtime versions.
     const state =
@@ -724,13 +795,20 @@ export async function loadIndexedRuns(workdir: string): Promise<IndexedRun[]> {
             graphState?: { status?: string; transitionCount?: number; finalRoleId?: string };
           })
         : undefined;
+    const indexedState = state as IndexedRunStateSnapshot | undefined;
     const runStat = await stat(runDir);
     runs.push({
       runId: entry.name,
-      status: summary?.status ?? state?.status ?? state?.graphState?.status ?? "unknown",
+      status: summary?.status ?? indexedState?.status ?? indexedState?.graphState?.status ?? "unknown",
       transitionCount:
-        summary?.transitionCount ?? state?.transitionCount ?? state?.graphState?.transitionCount ?? 0,
-      finalRoleId: summary?.finalRoleId ?? state?.finalRoleId ?? state?.graphState?.finalRoleId,
+        summary?.transitionCount ??
+        indexedState?.transitionCount ??
+        indexedState?.graphState?.transitionCount ??
+        0,
+      finalRoleId:
+        summary?.finalRoleId ?? indexedState?.finalRoleId ?? indexedState?.graphState?.finalRoleId,
+      pendingReviewCount: reviewFields.pendingReviewCount,
+      hasWaitingHumanReview: reviewFields.hasWaitingHumanReview,
       updatedAt: summary?.updatedAt ?? runStat.mtime.toISOString(),
       runDir
     });
@@ -775,6 +853,11 @@ export async function inspectRun(workdir: string, runId: string): Promise<Record
     tryReadJson(resolve(runDir, "control", "stop-outcome.json")),
     tryReadJson(resolve(runDir, "summary.json"))
   ]);
+  const summaryProjection = asSummaryProjection(summary);
+  const reviewFields = derivePendingReviewFields({
+    summary: summaryProjection,
+    state
+  });
   return {
     runId,
     runDir,
@@ -783,7 +866,135 @@ export async function inspectRun(workdir: string, runId: string): Promise<Record
     resolvedConfig,
     stopRequest,
     stopOutcome,
-    summary: asSummaryProjection(summary)
+    summary: summaryProjection,
+    pendingReviewCount: reviewFields.pendingReviewCount,
+    hasWaitingHumanReview: reviewFields.hasWaitingHumanReview
+  };
+}
+
+function resolveReviewsDir(runDir: string): string {
+  return resolve(runDir, "control", "reviews");
+}
+
+async function loadReviewRecord(path: string): Promise<unknown | undefined> {
+  return tryReadJson(path);
+}
+
+export async function listHumanReviews(workdir: string, runId: string): Promise<Record<string, unknown>> {
+  const runDir = resolveRunDir(workdir, runId);
+  const state = await tryReadJson(resolve(runDir, "state.json"));
+  const reviewsDir = resolveReviewsDir(runDir);
+  let entries: Dirent[];
+  try {
+    entries = await readdir(reviewsDir, { withFileTypes: true });
+  } catch {
+    entries = [];
+  }
+  const reviewIds = new Set<string>();
+  for (const entry of entries) {
+    if (!entry.isFile()) {
+      continue;
+    }
+    if (entry.name.endsWith(".request.json")) {
+      reviewIds.add(entry.name.slice(0, -".request.json".length));
+    }
+    if (entry.name.endsWith(".decision.json")) {
+      reviewIds.add(entry.name.slice(0, -".decision.json".length));
+    }
+  }
+  const pendingReviewsById =
+    typeof state === "object" &&
+    state !== null &&
+    !Array.isArray(state) &&
+    typeof (state as { graphState?: { pendingReviewsById?: unknown } }).graphState?.pendingReviewsById === "object" &&
+    (state as { graphState: { pendingReviewsById: Record<string, unknown> } }).graphState.pendingReviewsById !== null
+      ? (state as { graphState: { pendingReviewsById: Record<string, unknown> } }).graphState.pendingReviewsById
+      : {};
+
+  const reviews = await Promise.all(
+    [...reviewIds].sort((left, right) => left.localeCompare(right)).map(async (reviewId) => {
+      const [request, decision] = await Promise.all([
+        loadReviewRecord(resolve(reviewsDir, `${reviewId}.request.json`)),
+        loadReviewRecord(resolve(reviewsDir, `${reviewId}.decision.json`))
+      ]);
+      return {
+        reviewId,
+        request,
+        decision,
+        state: pendingReviewsById[reviewId]
+      };
+    })
+  );
+  return {
+    runId,
+    runDir,
+    reviews
+  };
+}
+
+export async function inspectHumanReview(
+  workdir: string,
+  runId: string,
+  reviewId: string
+): Promise<Record<string, unknown>> {
+  const runDir = resolveRunDir(workdir, runId);
+  const detail = await inspectRun(workdir, runId);
+  const reviewsDir = resolveReviewsDir(runDir);
+  const [request, decision] = await Promise.all([
+    loadReviewRecord(resolve(reviewsDir, `${reviewId}.request.json`)),
+    loadReviewRecord(resolve(reviewsDir, `${reviewId}.decision.json`))
+  ]);
+  const graphState =
+    typeof detail.state === "object" &&
+    detail.state !== null &&
+    !Array.isArray(detail.state) &&
+    typeof (detail.state as { graphState?: unknown }).graphState === "object" &&
+    (detail.state as { graphState?: unknown }).graphState !== null
+      ? ((detail.state as { graphState: Record<string, unknown> }).graphState ?? {})
+      : {};
+  const pendingReview =
+    typeof graphState.pendingReviewsById === "object" &&
+    graphState.pendingReviewsById !== null &&
+    !Array.isArray(graphState.pendingReviewsById)
+      ? (graphState.pendingReviewsById as Record<string, unknown>)[reviewId]
+      : undefined;
+  return {
+    runId,
+    runDir,
+    reviewId,
+    request,
+    decision,
+    pendingReview
+  };
+}
+
+export async function writeHumanReviewDecision(args: {
+  workdir: string;
+  runId: string;
+  reviewId: string;
+  decision: HumanReviewDecision;
+  comment?: string;
+  actor?: string;
+  scope?: "branch" | "run";
+}): Promise<Record<string, unknown>> {
+  const runDir = resolveRunDir(args.workdir, args.runId);
+  const reviewsDir = resolveReviewsDir(runDir);
+  await mkdir(reviewsDir, { recursive: true });
+  const record: HumanReviewDecisionRecord = {
+    reviewId: args.reviewId,
+    committedAt: new Date().toISOString(),
+    decidedAt: new Date().toISOString(),
+    decision: args.decision,
+    comment: args.comment,
+    actor: args.actor,
+    scope: args.scope
+  };
+  await writeJsonFileAtomic(resolve(reviewsDir, `${args.reviewId}.decision.json`), record);
+  return {
+    runId: args.runId,
+    runDir,
+    reviewId: args.reviewId,
+    decision: record
   };
 }
 

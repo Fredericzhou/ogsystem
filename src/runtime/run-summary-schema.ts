@@ -1,3 +1,4 @@
+import { countPendingHumanReviews, hasWaitingHumanReview } from "./human-review.js";
 import { summarizeRunFromAuditSummary } from "./run-summary.js";
 import type { ExecutionPlan, GraphState, GraphRunStatus, RunContext } from "./types.js";
 
@@ -16,6 +17,8 @@ export type RunSummaryProjection = {
   okCount: number;
   failedCount: number;
   noopCount: number;
+  pendingReviewCount?: number;
+  hasWaitingHumanReview?: boolean;
   updatedAt: string;
 };
 
@@ -54,6 +57,8 @@ export function buildRunSummaryProjection(args: {
     okCount: summary.okCount,
     failedCount: summary.failedCount,
     noopCount: summary.noopCount,
+    pendingReviewCount: countPendingHumanReviews(args.state),
+    hasWaitingHumanReview: hasWaitingHumanReview(args.state),
     updatedAt
   };
 }

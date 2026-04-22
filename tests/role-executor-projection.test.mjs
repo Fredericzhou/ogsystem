@@ -275,6 +275,123 @@ reviewer[Role:reviewer] -->|DONE| output
   });
 });
 
+test("executeRoleNode projects current human review feedback for rework branches", async () => {
+  const fixture = await prepareRoleExecutorFixture({
+    tempPrefix: "ogsystem-role-projection-human-review-",
+    prompt: "rework prompt",
+    systemSource: `flowchart TD
+%% system.id=role.projection.human-review
+%% system.version=1.0.0
+%% law.global=law.console.base
+%% entry.role=writer
+%% context.map.writer.review=global.human_review.current
+%% context.map.writer.comment=global.human_review.current.comment
+%% context.map.writer.round=global.human_review.current.round
+%% context.map.writer.previous_output=global.human_review.current.previous_output.content
+%% context.map.writer.previous_score=global.human_review.current.previous_output.data.score
+%% model.bind.writer=balanced-gpt52
+
+input -->|GO| writer[Role:writer]
+writer[Role:writer] -->|DONE| output
+`,
+    roles: [{ roleId: "writer", allowedEvents: ["DONE"] }]
+  });
+
+  const state = createInitialState(fixture.plan, "rework prompt");
+  const writerBranch = state.branchRecords["writer@1#1"];
+  state.humanReviewContextByBranchId[writerBranch.branchId] = {
+    reviewId: "review.writer@1#1.r2",
+    branchId: "writer@1#1",
+    round: 2,
+    comment: "Please tighten the argument.",
+    previousOutput: {
+      roleId: "writer",
+      event: "DONE",
+      content: "v1 draft",
+      data: {
+        score: 67
+      },
+      branchId: "writer@1#1",
+      lineageId: "writer@1#1",
+      loopIteration: 1
+    }
+  };
+
+  const result = await executeRoleNode({
+    roleId: "writer",
+    node: getExecutionPlanNode(fixture.plan, "writer"),
+    plan: fixture.plan,
+    state,
+    branch: writerBranch,
+    effectiveLaw: {
+      forbiddenToolRefs: [],
+      allowNoopWithoutExecutionBinding: false
+    },
+    profilesById: new Map(),
+    toolsByRef: new Map(),
+    modelsById: fixture.modelsById,
+    rolePackagesByRoleId: fixture.rolePackagesByRoleId,
+    compilerSnapshot: fixture.compilerSnapshot,
+    runContext: fixture.runContext,
+    executor: {
+      async start() {},
+      async close() {},
+      async abortSession() {},
+      getServerMetadata() {
+        return {};
+      },
+      async execute() {
+        return {
+          exitCode: 0,
+          stdout: JSON.stringify({ event: "DONE", content: "ok" }),
+          stderr: "",
+          args: [],
+          sessionId: "ses_review_projection",
+          messageId: "msg_review_projection"
+        };
+      }
+    },
+    userProfile: undefined,
+    workdir: fixture.tempRoot
+  });
+
+  assert.equal(result.status, "ok");
+  const inbox = parseJsonCodeBlock(
+    await readFile(path.resolve(fixture.runContext.runDir, "roles", "writer", "inbox.md"), "utf8")
+  );
+  const input = JSON.parse(inbox.input);
+  assert.deepStrictEqual(Object.keys(input), [
+    "comment",
+    "previous_output",
+    "previous_score",
+    "review",
+    "round"
+  ]);
+  assert.deepStrictEqual(input, {
+    comment: "Please tighten the argument.",
+    previous_output: "v1 draft",
+    previous_score: 67,
+    review: {
+      reviewId: "review.writer@1#1.r2",
+      branchId: "writer@1#1",
+      round: 2,
+      comment: "Please tighten the argument.",
+      previousOutput: {
+        roleId: "writer",
+        event: "DONE",
+        content: "v1 draft",
+        data: {
+          score: 67
+        },
+        branchId: "writer@1#1",
+        lineageId: "writer@1#1",
+        loopIteration: 1
+      }
+    },
+    round: 2
+  });
+});
+
 test("executeRoleNode fails closed when join projection source is unavailable", async () => {
   const fixture = await prepareRoleExecutorFixture({
     tempPrefix: "ogsystem-role-projection-join-fail-",

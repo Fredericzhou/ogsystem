@@ -96,6 +96,16 @@ export type LoopSummary = {
   isInCycle: boolean;
 };
 
+export type ReviewSummary = {
+  roleId: string;
+  mode: "required";
+  timeoutSeconds?: number;
+  timeoutAction: "pause" | "terminate";
+  reworkTargetRoleId: string;
+  reworkMax?: number;
+  terminateScope: "branch" | "run";
+};
+
 export type BindingSummary = {
   roleId: string;
   kind: RoleExecutionBinding["kind"];
@@ -123,6 +133,7 @@ export type CompiledExecutionSnapshot = {
   joinSummaryByRoleId: Record<string, JoinSummary>;
   contractSummaryById: Record<string, ContractSummary>;
   loopSummaryByRoleId: Record<string, LoopSummary>;
+  reviewSummaryByRoleId: Record<string, ReviewSummary>;
   bindingSummaryByRoleId: Record<string, BindingSummary>;
   lawSummary: LawSummary;
 };
@@ -374,6 +385,31 @@ function buildBindingSummary(basePlan: ExecutionPlan): Record<string, BindingSum
   return Object.fromEntries(summaries);
 }
 
+function buildReviewSummary(args: {
+  basePlan: ExecutionPlan;
+}): Record<string, ReviewSummary> {
+  const summaries: Array<[string, ReviewSummary]> = [];
+  for (const roleId of args.basePlan.roleIds) {
+    const review = args.basePlan.nodesByRoleId.get(roleId)?.review;
+    if (!review) {
+      continue;
+    }
+    summaries.push([
+      roleId,
+      {
+        roleId,
+        mode: review.mode,
+        timeoutSeconds: review.timeoutSeconds,
+        timeoutAction: review.timeoutAction,
+        reworkTargetRoleId: review.reworkTargetRoleId,
+        reworkMax: review.reworkMax,
+        terminateScope: review.terminateScope
+      }
+    ]);
+  }
+  return Object.fromEntries(summaries);
+}
+
 function buildRoleSummaryByRoleId(args: {
   system: SystemDefinition;
   rolePackagesByRoleId: Map<string, LoadedRolePackage>;
@@ -596,6 +632,26 @@ function validateContextMap(args: {
   }
 }
 
+function validateReview(args: {
+  basePlan: ExecutionPlan;
+  roleId: string;
+  diagnostics: CompilerDiagnostic[];
+}): void {
+  const node = args.basePlan.nodesByRoleId.get(args.roleId);
+  if (!node?.review) {
+    return;
+  }
+  if (node.binding.kind === "noop") {
+    args.diagnostics.push(
+      createDiagnostic({
+        code: "COMPILER_REVIEW_REQUIRES_EXECUTION_BINDING",
+        message: `Role "${args.roleId}" cannot declare review.mode=${node.review.mode} with noop binding`,
+        roleId: args.roleId
+      })
+    );
+  }
+}
+
 function validateLoopBudget(args: {
   system: SystemDefinition;
   roleId: string;
@@ -743,6 +799,7 @@ function buildCompilerDigestValue(args: {
   joinSummaryByRoleId: Record<string, JoinSummary>;
   contractSummaryById: Record<string, ContractSummary>;
   loopSummaryByRoleId: Record<string, LoopSummary>;
+  reviewSummaryByRoleId: Record<string, ReviewSummary>;
   bindingSummaryByRoleId: Record<string, BindingSummary>;
   lawSummary: LawSummary;
 }): unknown {
@@ -776,6 +833,7 @@ function buildCompilerDigestValue(args: {
     joinSummaryByRoleId: sortEntries(args.joinSummaryByRoleId),
     contractSummaryById: sortEntries(args.contractSummaryById),
     loopSummaryByRoleId: sortEntries(args.loopSummaryByRoleId),
+    reviewSummaryByRoleId: sortEntries(args.reviewSummaryByRoleId),
     bindingSummaryByRoleId: sortEntries(args.bindingSummaryByRoleId),
     lawSummary: args.lawSummary
   };
@@ -812,6 +870,11 @@ export function compileExecutionSnapshot(args: CompilerInput): CompilerResult {
     });
     validateLoopBudget({
       system: args.system,
+      roleId,
+      diagnostics
+    });
+    validateReview({
+      basePlan,
       roleId,
       diagnostics
     });
@@ -852,6 +915,9 @@ export function compileExecutionSnapshot(args: CompilerInput): CompilerResult {
   const loopSummaryByRoleId = buildLoopSummary({
     system: args.system
   });
+  const reviewSummaryByRoleId = buildReviewSummary({
+    basePlan
+  });
   const bindingSummaryByRoleId = buildBindingSummary(basePlan);
   const lawSummary = buildLawSummary(args.effectiveLaw, args.system);
   const runtimePromptInputSchemaDigest = digestValue(RUNTIME_ROLE_PROMPT_INPUT_SCHEMA);
@@ -866,6 +932,7 @@ export function compileExecutionSnapshot(args: CompilerInput): CompilerResult {
       joinSummaryByRoleId,
       contractSummaryById,
       loopSummaryByRoleId,
+      reviewSummaryByRoleId,
       bindingSummaryByRoleId,
       lawSummary
     })
@@ -900,6 +967,7 @@ export function compileExecutionSnapshot(args: CompilerInput): CompilerResult {
     joinSummaryByRoleId,
     contractSummaryById,
     loopSummaryByRoleId,
+    reviewSummaryByRoleId,
     bindingSummaryByRoleId,
     lawSummary
   };
