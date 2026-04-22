@@ -1,13 +1,17 @@
 import os from "node:os";
 import path from "node:path";
-import { mkdtemp, mkdir, readFile, readdir, symlink, writeFile } from "node:fs/promises";
+import { mkdtemp, mkdir, readFile, readdir, writeFile } from "node:fs/promises";
 import { performance } from "node:perf_hooks";
 
 import { runSystemWithAdapter } from "../../dist/runtime/adapter.js";
 import { validateRuntimeConfig } from "../../dist/runtime/config.js";
 import { createExecutionPlan } from "../../dist/runtime/execution-plan.js";
-import { createInitialGraphState } from "../../dist/runtime/graph-runtime-state.js";
+import {
+  createInitialGraphState,
+  projectStateSnapshot
+} from "../../dist/runtime/graph-runtime-state.js";
 import { parseSystemFromMermaidSource } from "../../dist/runtime/parse-mermaid.js";
+import { createEmptyAuditSummary, mergeAuditSummaries } from "../../dist/runtime/run-summary.js";
 import {
   initializeRunContext,
   loadPendingRuntimeCheckpoints,
@@ -23,68 +27,78 @@ const systemSource = `flowchart TD
 %% law.global=law.console.base
 %% entry.role=test-loop-probe
 %% loop.max.test-loop-probe=${LOOP_BUDGET}
-%% model.bind.test-loop-probe=balanced-gpt52
+%% model.bind.test-loop-probe=opencode/gpt-5-nano
 
 input -->|GO| operator[Role:test-loop-probe]
 operator[Role:test-loop-probe] -->|RETRY| operator[Role:test-loop-probe]
 operator[Role:test-loop-probe] -->|DONE| output
 `;
 
-function applyGraphUpdate(state, update) {
-  const mergedFailureCountsByErrorCode = {
-    ...(state.auditSummary?.failureCountsByErrorCode ?? {})
-  };
-  for (const [errorCode, count] of Object.entries(update.auditSummary?.failureCountsByErrorCode ?? {})) {
-    mergedFailureCountsByErrorCode[errorCode] =
-      (mergedFailureCountsByErrorCode[errorCode] ?? 0) + count;
+function mergeStatus(current, update) {
+  if (current === "failed" || update === "failed") {
+    return "failed";
   }
+  if (current === "stopped" || update === "stopped") {
+    return "stopped";
+  }
+  if (current === "done" || update === "done") {
+    return "done";
+  }
+  if (current === "stopping" || update === "stopping") {
+    return "stopping";
+  }
+  return "running";
+}
 
-  const mergedRoleMetricsByRoleId = {
-    ...(state.roleMetricsByRoleId ?? {})
-  };
-  for (const [roleId, incoming] of Object.entries(update.roleMetricsByRoleId ?? {})) {
-    const current = mergedRoleMetricsByRoleId[roleId] ?? {
+function mergeRoleMetrics(left, right) {
+  const merged = { ...left };
+  for (const [roleId, rightMetrics] of Object.entries(right)) {
+    const leftMetrics = merged[roleId] ?? {
       total: 0,
       ok: 0,
       failed: 0,
       noop: 0,
       durationMsTotal: 0
     };
-    mergedRoleMetricsByRoleId[roleId] = {
-      total: current.total + (incoming.total ?? 0),
-      ok: current.ok + (incoming.ok ?? 0),
-      failed: current.failed + (incoming.failed ?? 0),
-      noop: current.noop + (incoming.noop ?? 0),
-      durationMsTotal: current.durationMsTotal + (incoming.durationMsTotal ?? 0)
+    merged[roleId] = {
+      total: leftMetrics.total + rightMetrics.total,
+      ok: leftMetrics.ok + rightMetrics.ok,
+      failed: leftMetrics.failed + rightMetrics.failed,
+      noop: leftMetrics.noop + rightMetrics.noop,
+      durationMsTotal: leftMetrics.durationMsTotal + rightMetrics.durationMsTotal
     };
   }
+  return merged;
+}
 
+function applyGraphUpdate(state, update) {
   return {
     userPrompt: state.userPrompt,
-    status:
-      update.status === "failed" || state.status === "failed"
-        ? "failed"
-        : update.status === "done" || state.status === "done"
-          ? "done"
-          : state.status,
+    status: update.status ? mergeStatus(state.status, update.status) : state.status,
     error: state.error || update.error || "",
     errorEnvelope: state.errorEnvelope ?? update.errorEnvelope,
     transitionCount: state.transitionCount + (update.transitionCount ?? 0),
     recentAudits: state.recentAudits.concat(update.recentAudits ?? []).slice(-5),
-    auditSummary: {
-      okCount: (state.auditSummary?.okCount ?? 0) + (update.auditSummary?.okCount ?? 0),
-      failedCount: (state.auditSummary?.failedCount ?? 0) + (update.auditSummary?.failedCount ?? 0),
-      noopCount: (state.auditSummary?.noopCount ?? 0) + (update.auditSummary?.noopCount ?? 0),
-      repairAttemptedCount:
-        (state.auditSummary?.repairAttemptedCount ?? 0) +
-        (update.auditSummary?.repairAttemptedCount ?? 0),
-      repairAppliedCount:
-        (state.auditSummary?.repairAppliedCount ?? 0) +
-        (update.auditSummary?.repairAppliedCount ?? 0),
-      failureCountsByErrorCode: mergedFailureCountsByErrorCode
-    },
-    roleMetricsByRoleId: mergedRoleMetricsByRoleId,
+    auditSummary: mergeAuditSummaries(
+      state.auditSummary,
+      update.auditSummary ?? createEmptyAuditSummary()
+    ),
+    roleMetricsByRoleId: mergeRoleMetrics(state.roleMetricsByRoleId, update.roleMetricsByRoleId ?? {}),
     roleResults: { ...state.roleResults, ...(update.roleResults ?? {}) },
+    pendingReviewsById: { ...state.pendingReviewsById, ...(update.pendingReviewsById ?? {}) },
+    reviewHistoryByBranchId: {
+      ...state.reviewHistoryByBranchId,
+      ...(update.reviewHistoryByBranchId ?? {})
+    },
+    humanReviewContextByBranchId: {
+      ...state.humanReviewContextByBranchId,
+      ...(update.humanReviewContextByBranchId ?? {})
+    },
+    reviewRoundByRoleLineageKey: {
+      ...state.reviewRoundByRoleLineageKey,
+      ...(update.reviewRoundByRoleLineageKey ?? {})
+    },
+    lastWaitingReviewId: update.lastWaitingReviewId ?? state.lastWaitingReviewId,
     branchRecords: { ...state.branchRecords, ...(update.branchRecords ?? {}) },
     loopIterations: { ...state.loopIterations, ...(update.loopIterations ?? {}) },
     selectedEventByBranchId: {
@@ -112,7 +126,6 @@ async function main() {
 
   await mkdir(path.resolve(tempRoot, ".ogs"), { recursive: true });
   await mkdir(roleDir, { recursive: true });
-  await symlink(path.resolve(repoRoot, "og-models"), path.resolve(tempRoot, "og-models"), "dir");
   await writeFile(systemPath, systemSource, "utf8");
   await writeFile(
     runtimePath,
@@ -146,6 +159,11 @@ async function main() {
   await writeFile(
     path.resolve(roleDir, "prompt.md"),
     ["Return a JSON object.", "Allowed events: {{allowed_events}}."].join("\n"),
+    "utf8"
+  );
+  await writeFile(
+    path.resolve(roleDir, "agent.md"),
+    "# Loop Probe\n\nBenchmark role fixture for runtime replay measurements.\n",
     "utf8"
   );
   await writeFile(
@@ -234,7 +252,14 @@ async function main() {
   }
   await writeFile(
     path.resolve(runDir, "state.json"),
-    JSON.stringify({ graphState: reconstructedGraphState }, null, 2),
+    JSON.stringify(
+      projectStateSnapshot({
+        state: reconstructedGraphState,
+        plan
+      }),
+      null,
+      2
+    ),
     "utf8"
   );
 

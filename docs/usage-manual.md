@@ -11,6 +11,30 @@ OGSystem 当前是一套单机、文件优先、可恢复的图编排运行时�
 - `.ogs/runs/<run-id>/` 不是临时日志目录，而是运行时的数据平面与恢复依据。
 - Resume 的前提不是“目录还在”，而是“语义指纹、状态快照、会话索引和 checkpoint/WAL 仍然一致”。
 
+## Why This Runtime Stays Trustworthy
+
+如果把 OGSystem 的运行原理压缩成一句话，就是：
+
+- 它优先保证 run 目录里的真相可落盘、可校验、可恢复，再在这个基础上提供执行、审计和人工审核控制面。
+
+这直接对应四个用户最关心的结果：
+
+- 长流程不中断：
+  运行中的 graph frontier、branch 状态、session 索引、checkpoint 序号都持续落在 `.ogs/runs/<run-id>/` 下。即使进程退出，只要恢复权威集还一致，`ogs run resume <run-id>` 就能从已知 frontier 继续，而不是从头再来。
+- 出事能恢复：
+  角色执行先写 durable `execution-outcome.json`，再由 graph runner 追加 checkpoint。若在这两步之间崩溃，resume 会先回放 checkpoint WAL，再对账“已落 outcome 但未入 checkpoint”的窗口，避免重复执行已经成功提交的节点。
+- 审计可追：
+  `events.ndjson`、`audit/summary.md`、`audit/transitions.md`、per-role execution snapshots 会保留运行证据；`summary.json` 和 `timeline.jsonl` 提供面向 CLI / visualizer / 自动化的投影。也就是说，恢复依赖的真相文件和给操作员看的摘要文件是分层的，不会混成一团。
+- review 可对账：
+  人工审核不是临时插进去的 role hack，而是 runtime-native control plane。review request / decision 持久化在 `control/reviews/`，approve / rework / pause / terminate 都通过 resume/apply/reconcile 主链收敛，并带 `checkpointSequence`、`appliedAt`、`reconciledAt` 这类对账标记，保证多轮审核和 crash 恢复后仍能判断“是否已经真正生效”。
+
+这四点背后的共同特点是：
+
+- 文件优先，而不是内存优先。
+- fail-closed，而不是猜测恢复。
+- 恢复权威集与操作员投影分层，而不是共用一份模糊状态。
+- review / stop / resume / compensate 都走同一条持久化主链，而不是旁路脚本。
+
 ## Capability Snapshot
 
 OGSystem 当前重点优化以下能力：
@@ -96,6 +120,8 @@ pnpm test
 pnpm run test:examples
 pnpm run test:doctor
 pnpm run test:coverage
+pnpm run smoke:package-install:npm
+pnpm run smoke:package-install:pnpm
 ```
 
 覆盖率判读约定：
@@ -304,6 +330,7 @@ ogs run resume <run-id> --dry-run
 - `ogs run review list` / `inspect` 会暴露顶层 `currentStatus`，同时把 `requestSnapshot` 和 `currentState` 分开命名
 - `summary.json` 会把 `wallClockDurationMs`、`executionDurationMs`、`humanReviewWaitDurationMs` 分开
 - approve / rework / pause / terminate 通过 `ogs run review decide` 写入 control plane，而不是再插一个独立 human-gate role 节点
+- 每个 decision 通过 apply / reconcile 标记进入 checkpoint 主链，所以多轮 review 或 crash 恢复后仍能判断“请求已写入”与“决策已生效”的区别
 - rework branch 可以通过 `global.human_review.current.*` 读取 reviewer comment / round / previous output
 - 如果某个 role 既要支持首轮执行、又要支持 rework 回流，可用可选 selector：`global.human_review.current.*?`
 
@@ -779,6 +806,7 @@ Resume source of truth:
 - resume reconciles committed execution outcomes into missing checkpoints before normal replay continues
 - if a checkpoint already exists but the durable outcome marker is still unreconciled, resume only backfills `checkpointSequence`/`reconciledAt` and does not emit a duplicate checkpoint
 - resume acquires `.resume.lock` on startup, releases it on clean exit, and replaces a stale same-host lock when the recorded pid is no longer alive
+- 这也是“长流程不中断、出事能恢复”的核心约束：恢复只信这组权威文件，不信临时日志或操作员投影
 
 Audit/operator artifacts:
 
@@ -1164,9 +1192,14 @@ Useful helpers:
 
 ```bash
 pnpm run bench:runtime-replay
+pnpm run smoke:package-install:npm
+pnpm run smoke:package-install:pnpm
 node skills/ogsystem-nl-to-mmd/scripts/validate_ogsystem_mmd.mjs \
   --system examples/target-model-binding-system.mmd \
   --user-profile .ogs/user-profile.json \
   --laws .ogs/laws.json \
   --run-dir .ogs/runs/<run-id>
 ```
+
+- `bench:runtime-replay` measures resume replay cost against the current role package/runtime contract, including direct `provider/model` refs and role-local `agent.md`.
+- `smoke:package-install:*` packs the current CLI, installs it into an isolated temporary environment, and verifies the installed entrypoints, scaffold, and dry-run path without depending on your user-level npm cache state.

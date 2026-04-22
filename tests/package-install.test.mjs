@@ -1,9 +1,11 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
+import { existsSync } from "node:fs";
 import { mkdtemp, mkdir, readdir, readFile, stat, symlink, writeFile } from "node:fs/promises";
+import { homedir } from "node:os";
 import os from "node:os";
-import path from "node:path";
+import path, { dirname } from "node:path";
 
 const repoRoot = process.cwd();
 const opencodeModelsFixturePath = path.resolve(repoRoot, "tests/fixtures/opencode-models-verbose.txt");
@@ -35,14 +37,53 @@ function runCommand(command, args, options = {}) {
   });
 }
 
+function resolveNodeManagedCommand(command) {
+  const nodeBinDir = dirname(process.execPath);
+  const executable = process.platform === "win32" ? `${command}.cmd` : command;
+  if (command === "npm") {
+    return {
+      command: path.resolve(nodeBinDir, executable),
+      argsPrefix: []
+    };
+  }
+  if (command === "pnpm") {
+    const pathCandidates = (process.env.PATH ?? "")
+      .split(path.delimiter)
+      .filter(Boolean)
+      .map((entry) => path.resolve(entry, executable));
+    const extraCandidates = [
+      path.resolve(homedir(), "Library", "pnpm", executable),
+      path.resolve(homedir(), ".volta", "bin", executable)
+    ];
+    const directCandidate = [...pathCandidates, ...extraCandidates].find((candidate) => existsSync(candidate));
+    if (directCandidate) {
+      return {
+        command: directCandidate,
+        argsPrefix: []
+      };
+    }
+    return {
+      command: path.resolve(nodeBinDir, process.platform === "win32" ? "corepack.cmd" : "corepack"),
+      argsPrefix: ["pnpm"]
+    };
+  }
+  return {
+    command,
+    argsPrefix: []
+  };
+}
+
 test("packed CLI installs and scaffolds a runnable project with imported local dependencies", async () => {
   const packDir = await mkdtemp(path.join(os.tmpdir(), "ogsystem-pack-"));
   const installDir = await mkdtemp(path.join(os.tmpdir(), "ogsystem-install-"));
   const appParent = await mkdtemp(path.join(os.tmpdir(), "ogsystem-app-parent-"));
 
-  const packResult = await runCommand("pnpm", ["pack", "--pack-destination", packDir], {
-    cwd: repoRoot
-  });
+  const packManager = resolveNodeManagedCommand("pnpm");
+  const packResult = await runCommand(
+    packManager.command,
+    [...packManager.argsPrefix, "pack", "--pack-destination", packDir],
+    { cwd: repoRoot }
+  );
   assert.equal(packResult.code, 0, packResult.stderr);
   const packedFiles = await readdir(packDir);
   const tarballName = packedFiles.find((entry) => /^ogsystem-\d+\.\d+\.\d+\.tgz$/.test(entry));
