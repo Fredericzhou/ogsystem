@@ -64,7 +64,7 @@ export type DoctorReport = {
 export function usage(): string {
   return [
     "Usage:",
-    "  ogs-doctor [--required opencode] [--system file.mmd] [--run-dir .ogs/runs/<run-id>]",
+    "  ogs doctor [--required opencode] [--system file.mmd] [--run-dir .ogs/runs/<run-id>]",
     "",
     "Source repository equivalent:",
     "  pnpm run run:doctor -- [--required opencode] [--system file.mmd] [--run-dir .ogs/runs/<run-id>]",
@@ -554,6 +554,18 @@ export function handleDoctorCliError(error: unknown): void {
 const isMainModule =
   typeof process.argv[1] === "string" && fileURLToPath(import.meta.url) === resolve(process.argv[1]);
 
+export async function runDoctorCli(args: string[] = process.argv.slice(2)): Promise<void> {
+  const originalArgv = process.argv;
+  process.argv = [originalArgv[0] ?? "node", originalArgv[1] ?? "ogs", ...args];
+  try {
+    await main();
+  } catch (error) {
+    handleDoctorCliError(error);
+  } finally {
+    process.argv = originalArgv;
+  }
+}
+
 if (isMainModule) {
-  main().catch(handleDoctorCliError);
+  void runDoctorCli();
 }

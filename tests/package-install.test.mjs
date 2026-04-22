@@ -114,9 +114,11 @@ test("packed CLI installs and scaffolds a runnable project with imported local d
   }
 
   const ogsBinPath = path.resolve(installedPackageDir, "bin", "ogs.mjs");
-  const ogsDoctorBinPath = path.resolve(installedPackageDir, "bin", "ogs-doctor.mjs");
   await stat(ogsBinPath);
-  await stat(ogsDoctorBinPath);
+  await assert.rejects(() => stat(path.resolve(installedPackageDir, "bin", "ogs-doctor.mjs")), /ENOENT/);
+  await assert.rejects(() => stat(path.resolve(installedPackageDir, "bin", "ogs-lint-system.mjs")), /ENOENT/);
+  await assert.rejects(() => stat(path.resolve(installedPackageDir, "bin", "ogs-nl2mmd.mjs")), /ENOENT/);
+  await assert.rejects(() => stat(path.resolve(installedPackageDir, "bin", "ogs-visualizer.mjs")), /ENOENT/);
   await stat(path.resolve(installedPackageDir, "scripts", "preinstall.cjs"));
   await assert.rejects(() => stat(path.resolve(installedPackageDir, "og-roles", "importers")), /ENOENT/);
   await assert.rejects(() => stat(path.resolve(installedPackageDir, "og-roles", "scripts")), /ENOENT/);
@@ -132,7 +134,7 @@ test("packed CLI installs and scaffolds a runnable project with imported local d
   assert.equal(helpResult.code, 0, helpResult.stderr);
   assert.match(helpResult.stdout, /ogs project <init\|create\|sync\|sync-models>/);
 
-  const doctorHelpResult = await runCommand("node", [ogsDoctorBinPath, "--help"], {
+  const doctorHelpResult = await runCommand("node", [ogsBinPath, "doctor", "--help"], {
     cwd: installDir
   });
   assert.equal(doctorHelpResult.code, 0, doctorHelpResult.stderr);

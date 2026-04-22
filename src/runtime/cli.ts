@@ -37,28 +37,37 @@ import {
   formatRuntimeErrorEnvelope,
   normalizeRuntimeError
 } from "./runtime-errors.js";
+import { runDoctorCli, usage as doctorUsage } from "./doctor.js";
+import { runLintCli, usage as lintUsage } from "./lint.js";
 import type { RunSummaryProjection } from "./run-summary-schema.js";
 import { startVisualizationServer } from "../visualizer/server.js";
+import { runNl2MmdCli, usage as nl2mmdUsage } from "../nl2mmd/cli.js";
 
 const require = createRequire(import.meta.url);
 const { version: CLI_VERSION } = require("../../package.json") as { version: string };
 
-type HelpTopic = "project" | "run" | "visualizer";
+type HelpTopic = "doctor" | "lint" | "nl2mmd" | "project" | "run" | "visualizer";
 type ProjectSubcommand = "init" | "create" | "sync" | "sync-models";
-type RunSubcommand = "start" | "resume" | "stop" | "list" | "status" | "inspect" | "logs" | "reindex" | "review";
+type RunSubcommand = "start" | "resume" | "stop" | "list" | "status" | "inspect" | "logs" | "review";
 
 function usageRoot(): string {
   return [
     "Usage:",
+    "  ogs doctor [options]",
+    "  ogs lint --system <file.mmd>",
+    "  ogs nl2mmd [options]",
     "  ogs project <init|create|sync|sync-models>",
-    "  ogs run <start|resume|stop|list|status|inspect|logs|reindex|review>",
+    "  ogs run <start|resume|stop|list|status|inspect|logs|review>",
     "  ogs visualizer [--workdir <path>] [--host <host>] [--port <n|0>]",
     "  ogs --version",
     "",
     "Help:",
-    "  ogs help [project|run|visualizer]",
+    "  ogs help [doctor|lint|nl2mmd|project|run|visualizer]",
     "  ogs help run logs",
     "  ogs help project init",
+    "  ogs doctor --help",
+    "  ogs lint --help",
+    "  ogs nl2mmd --help",
     "  ogs visualizer --help",
     "  ogs run start --help",
     "  ogs project create --help",
@@ -309,17 +318,6 @@ function usageRun(subcommand?: RunSubcommand): string {
     ].join("\n");
   }
 
-  if (subcommand === "reindex") {
-    return [
-      "Usage:",
-      "  ogs run reindex [--workdir <path>]",
-      "",
-      "Options:",
-      "  --workdir <path> Working directory (default: cwd)",
-      "  --help          Show help"
-    ].join("\n");
-  }
-
   if (subcommand === "review") {
     return [
       "Usage:",
@@ -344,14 +342,12 @@ function usageRun(subcommand?: RunSubcommand): string {
     "  ogs run status <run-id> [options]",
     "  ogs run inspect <run-id> [options]",
     "  ogs run logs <run-id> [options]",
-    "  ogs run reindex [options]",
     "  ogs run review <list|inspect|decide> ...",
     "",
     "Drill down:",
     "  ogs run start --help",
     "  ogs run resume --help",
     "  ogs run logs --help",
-    "  ogs run reindex --help",
     "  ogs run review --help"
   ].join("\n");
 }
@@ -378,6 +374,15 @@ function usageVisualizer(): string {
 }
 
 function usage(topic?: HelpTopic, subcommand?: ProjectSubcommand | RunSubcommand): string {
+  if (topic === "doctor") {
+    return doctorUsage();
+  }
+  if (topic === "lint") {
+    return lintUsage();
+  }
+  if (topic === "nl2mmd") {
+    return nl2mmdUsage();
+  }
   if (topic === "project") {
     return usageProject(subcommand as ProjectSubcommand | undefined);
   }
@@ -1418,20 +1423,6 @@ async function runRunCommand(argv: string[]): Promise<void> {
     }
     return;
   }
-  if (subcommand === "reindex") {
-    const { values } = parseLifecycleArgs(argv.slice(1), {
-      workdir: { type: "string" },
-      help: { type: "boolean", short: "h" }
-    });
-    if (asBool(values.help)) {
-      console.log(usage("run", "reindex"));
-      return;
-    }
-    const index = await rebuildRunsIndex(asString(values.workdir) ?? process.cwd());
-    console.log(JSON.stringify(index, null, 2));
-    return;
-  }
-
   throw createCliInputError("CLI_UNKNOWN_SUBCOMMAND", `Unknown run subcommand: ${subcommand}\n\n${usage("run")}`);
 }
 
@@ -1470,7 +1461,14 @@ async function main(): Promise<void> {
   if (argv[0] === "help") {
     const topic = argv[1];
     const subcommand = argv[2];
-    if (topic === "project" || topic === "run" || topic === "visualizer") {
+    if (
+      topic === "doctor" ||
+      topic === "lint" ||
+      topic === "nl2mmd" ||
+      topic === "project" ||
+      topic === "run" ||
+      topic === "visualizer"
+    ) {
       console.log(usage(topic, subcommand as ProjectSubcommand | RunSubcommand | undefined));
       return;
     }
@@ -1479,6 +1477,18 @@ async function main(): Promise<void> {
   }
   if (!argv[0].startsWith("-")) {
     const [command, ...rest] = argv;
+    if (command === "doctor") {
+      await runDoctorCli(rest);
+      return;
+    }
+    if (command === "lint") {
+      await runLintCli(rest);
+      return;
+    }
+    if (command === "nl2mmd") {
+      await runNl2MmdCli(rest);
+      return;
+    }
     if (command === "project") {
       await runProjectCommand(rest);
       return;

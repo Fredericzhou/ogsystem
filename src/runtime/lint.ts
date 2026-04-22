@@ -7,6 +7,8 @@
  * Boundaries:
  * - No runtime execution or artifact persistence.
  */
+import { resolve } from "node:path";
+import { fileURLToPath } from "node:url";
 import { parseArgs } from "node:util";
 
 import { loadSystemFromMermaid } from "./parse-mermaid.js";
@@ -17,10 +19,10 @@ import {
   normalizeRuntimeError
 } from "./runtime-errors.js";
 
-function usage(): string {
+export function usage(): string {
   return [
     "Usage:",
-    "  ogs-lint-system --system <file.mmd>",
+    "  ogs lint --system <file.mmd>",
     "",
     "Source repository equivalent:",
     "  pnpm run lint:system -- --system <file.mmd>",
@@ -64,7 +66,7 @@ function parseLintArgs() {
   }
 }
 
-async function main(): Promise<void> {
+export async function main(): Promise<void> {
   const { values } = parseLintArgs();
 
   if (values.help) {
@@ -79,7 +81,7 @@ async function main(): Promise<void> {
   await loadSystemFromMermaid(values.system);
 }
 
-main().catch((error) => {
+export function handleLintCliError(error: unknown): void {
   const runtimeError =
     error instanceof RuntimeError
       ? error
@@ -99,4 +101,23 @@ main().catch((error) => {
   }
   console.error(formatRuntimeErrorEnvelope(runtimeError.envelope));
   process.exitCode = 1;
-});
+}
+
+const isMainModule =
+  typeof process.argv[1] === "string" && fileURLToPath(import.meta.url) === resolve(process.argv[1]);
+
+export async function runLintCli(args: string[] = process.argv.slice(2)): Promise<void> {
+  const originalArgv = process.argv;
+  process.argv = [originalArgv[0] ?? "node", originalArgv[1] ?? "ogs", ...args];
+  try {
+    await main();
+  } catch (error) {
+    handleLintCliError(error);
+  } finally {
+    process.argv = originalArgv;
+  }
+}
+
+if (isMainModule) {
+  void runLintCli();
+}

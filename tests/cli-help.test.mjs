@@ -28,11 +28,22 @@ function runNodeCli(cliPath, args, cwd = process.cwd()) {
 test("ogs help command surfaces layered guidance", async () => {
   const rootHelp = await runNodeCli(runtimeCliPath, ["help"]);
   assert.strictEqual(rootHelp.code, 0);
-  assert.match(rootHelp.stdout, /ogs help \[project\|run\|visualizer\]/);
+  assert.match(rootHelp.stdout, /ogs help \[doctor\|lint\|nl2mmd\|project\|run\|visualizer\]/);
+  assert.match(rootHelp.stdout, /ogs doctor \[options\]/);
+  assert.match(rootHelp.stdout, /ogs lint --system <file\.mmd>/);
+  assert.match(rootHelp.stdout, /ogs nl2mmd \[options\]/);
   assert.match(rootHelp.stdout, /ogs help run logs/);
   assert.match(rootHelp.stdout, /ogs project create --help/);
   assert.match(rootHelp.stdout, /project commands use the current directory/);
   assert.match(rootHelp.stdout, /ogs visualizer \[--workdir <path>\] \[--host <host>\] \[--port <n\|0>\]/);
+
+  const doctorHelp = await runNodeCli(runtimeCliPath, ["doctor", "--help"]);
+  assert.strictEqual(doctorHelp.code, 0);
+  assert.match(doctorHelp.stdout, /ogs doctor \[--required opencode\] \[--system file\.mmd\]/);
+
+  const lintHelp = await runNodeCli(runtimeCliPath, ["lint", "--help"]);
+  assert.strictEqual(lintHelp.code, 0);
+  assert.match(lintHelp.stdout, /ogs lint --system <file\.mmd>/);
 
   const projectHelp = await runNodeCli(runtimeCliPath, ["help", "project"]);
   assert.strictEqual(projectHelp.code, 0);
@@ -53,6 +64,7 @@ test("ogs help command surfaces layered guidance", async () => {
   assert.match(runHelp.stdout, /ogs run start --system <file\.mmd> --input <text> \[options\]/);
   assert.match(runHelp.stdout, /ogs run logs <run-id> \[options\]/);
   assert.match(runHelp.stdout, /ogs run logs --help/);
+  assert.doesNotMatch(runHelp.stdout, /run reindex/);
 
   const runStartHelp = await runNodeCli(runtimeCliPath, ["run", "start", "--help"]);
   assert.strictEqual(runStartHelp.code, 0);
@@ -88,7 +100,7 @@ test("ogs help command surfaces layered guidance", async () => {
 test("nl2mmd help command highlights base entrypoint and defaults", async () => {
   const help = await runNodeCli(nl2mmdCliPath, ["--help"]);
   assert.strictEqual(help.code, 0);
-  assert.match(help.stdout, /ogs-nl2mmd \[--message <text>\] \[--model <provider\/model>\]/);
+  assert.match(help.stdout, /ogs nl2mmd \[--message <text>\] \[--model <provider\/model>\]/);
   assert.match(
     help.stdout,
     /pnpm run run:nl2mmd -- \[--message <text>\] \[--model <provider\/model>\]/

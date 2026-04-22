@@ -133,7 +133,7 @@ pnpm run smoke:package-install:pnpm
 
 命令入口策略（最佳实践）：
 
-- 已安装 CLI：优先使用 `ogs`、`ogs-doctor`、`ogs-nl2mmd`、`ogs-visualizer`、`ogs-lint-system`。
+- 已安装 CLI：统一使用 `ogs ...` 子命令。
 - 源码仓开发：继续使用 `pnpm run ...`，与 lockfile 和 CI 保持一致。
 - 文档默认面向安装态 CLI；只有在说明源码仓开发时才展示 `pnpm run ...`。
 
@@ -265,13 +265,13 @@ ogs run start --system system.mmd --input "请先做一次最小分析" --dry-ru
 先做本地检查：
 
 ```bash
-ogs-doctor --required opencode --system system.mmd
+ogs doctor --required opencode --system system.mmd
 ```
 
 如果你要在真正运行前确认模型连通性，可以加在线探测：
 
 ```bash
-ogs-doctor --required opencode --system system.mmd --online-check
+ogs doctor --required opencode --system system.mmd --online-check
 ```
 
 注意：
@@ -388,12 +388,12 @@ It also understands the current flow-contract surface, including `handoff.mode`,
 
 For structure-first authoring, see [NL2MMD structure templates](./nl2mmd-structure-templates.md). It lists the current semantic skeletons and example Mermaid graphs for `linear_flow`, `fanout_fanin`, `quorum_consultation`, `contract_gated_handoff`, `error_compensation`, `bounded_loop`, `human_gate`, and `mixed_binding`.
 
-Use it with `ogs-nl2mmd --message "..."` for one-shot drafting, or omit `--message` for the interactive loop. In a source checkout, the equivalent command is `pnpm run run:nl2mmd -- --message "..."`. It targets the repository's supported Mermaid subset only; it is not a general Mermaid generator.
+Use it with `ogs nl2mmd --message "..."` for one-shot drafting, or omit `--message` for the interactive loop. In a source checkout, the equivalent command is `pnpm run run:nl2mmd -- --message "..."`. It targets the repository's supported Mermaid subset only; it is not a general Mermaid generator.
 
 ### Command Layers
 
-- Installed commands are the operator-facing entrypoints, such as `ogs`, `ogs-nl2mmd`, `ogs-doctor`, and `ogs-visualizer`.
-- Source repository commands are contributor implementation entrypoints, such as `pnpm run run:nl2mmd -- ...`; the operator path documented here uses installed `ogs*` commands.
+- Installed commands are the operator-facing entrypoints, and they are all exposed through `ogs`.
+- Source repository commands are contributor implementation entrypoints, such as `pnpm run run:nl2mmd -- ...`; the operator path documented here uses installed `ogs ...` commands.
 - Base commands are for function and runtime behavior.
 - Wrapper commands are for project lifecycle and default operational flow.
 
@@ -1046,7 +1046,7 @@ Use `run:doctor` as runtime preflight and recovery inspection.
 Preflight command:
 
 ```bash
-ogs-doctor \
+ogs doctor \
   --required opencode \
   --system examples/target-model-binding-system.mmd \
   --laws .ogs/laws.json
@@ -1055,7 +1055,7 @@ ogs-doctor \
 Lint command:
 
 ```bash
-ogs-lint-system --system examples/target-model-binding-system.mmd
+ogs lint --system examples/target-model-binding-system.mmd
 ```
 
 Lint rules:
@@ -1115,14 +1115,14 @@ ogs \
 Run-directory inspection (resume prerequisites):
 
 ```bash
-ogs-doctor \
+ogs doctor \
   --run-dir .ogs/runs/<run-id>
 ```
 
 Optional online connectivity precheck:
 
 ```bash
-ogs-doctor \
+ogs doctor \
   --system examples/target-model-binding-system.mmd \
   --online-check
 ```

@@ -8,7 +8,9 @@
  * - Delegates generation/validation details to NL2MMD service modules.
  */
 import { stdin as input, stdout as output } from "node:process";
+import { resolve } from "node:path";
 import { parseArgs } from "node:util";
+import { fileURLToPath } from "node:url";
 import { createInterface } from "node:readline/promises";
 
 import { isDirectModelRef } from "../runtime/model-selection.js";
@@ -25,10 +27,10 @@ import {
 import { syncProjectDependencies } from "../runtime/project-lifecycle.js";
 import type { Nl2MmdConversation, Nl2MmdContext, Nl2MmdTurnResult } from "./types.js";
 
-function usage(): string {
+export function usage(): string {
   return [
     "Usage:",
-    "  ogs-nl2mmd [--message <text>] [--model <provider/model>]",
+    "  ogs nl2mmd [--message <text>] [--model <provider/model>]",
     "",
     "Base command:",
     "  direct entrypoint for prompt generation and validation against local roles plus .ogs model-selection/model-catalog",
@@ -152,7 +154,7 @@ function printTurn(turn: Nl2MmdTurnResult): void {
   printValidation(turn);
 }
 
-async function main(): Promise<void> {
+export async function main(): Promise<void> {
   const { values } = parseArgs({
     options: {
       message: { type: "string" },
@@ -384,7 +386,26 @@ async function main(): Promise<void> {
   }
 }
 
-main().catch((error) => {
+export function handleNl2MmdCliError(error: unknown): void {
   console.error(error instanceof Error ? error.stack ?? error.message : String(error));
   process.exitCode = 1;
-});
+}
+
+const isMainModule =
+  typeof process.argv[1] === "string" && fileURLToPath(import.meta.url) === resolve(process.argv[1]);
+
+export async function runNl2MmdCli(args: string[] = process.argv.slice(2)): Promise<void> {
+  const originalArgv = process.argv;
+  process.argv = [originalArgv[0] ?? "node", originalArgv[1] ?? "ogs", ...args];
+  try {
+    await main();
+  } catch (error) {
+    handleNl2MmdCliError(error);
+  } finally {
+    process.argv = originalArgv;
+  }
+}
+
+if (isMainModule) {
+  void runNl2MmdCli();
+}

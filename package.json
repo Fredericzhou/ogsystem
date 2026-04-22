@@ -5,11 +5,7 @@
   "type": "module",
   "packageManager": "pnpm@10.14.0",
   "bin": {
-    "ogs": "./bin/ogs.mjs",
-    "ogs-doctor": "./bin/ogs-doctor.mjs",
-    "ogs-lint-system": "./bin/ogs-lint-system.mjs",
-    "ogs-nl2mmd": "./bin/ogs-nl2mmd.mjs",
-    "ogs-visualizer": "./bin/ogs-visualizer.mjs"
+    "ogs": "./bin/ogs.mjs"
   },
   "files": [
     "bin/**",
