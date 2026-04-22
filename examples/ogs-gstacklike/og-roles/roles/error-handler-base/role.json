@@ -1,0 +1,9 @@
+{
+  "roleId": "error-handler-base",
+  "roleVersion": "1.0.0",
+  "name": "Error Handler Base",
+  "description": "Template role for handling runtime failures and deciding compensation actions.",
+  "promptTemplate": "prompt.md",
+  "outputSchema": "output.schema.json",
+  "tags": ["template", "error-edge", "compensation"]
+}

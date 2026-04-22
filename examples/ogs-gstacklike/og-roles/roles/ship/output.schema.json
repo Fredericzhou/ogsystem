@@ -1,0 +1,13 @@
+{
+  "type": "object",
+  "required": ["event", "content"],
+  "properties": {
+    "event": {
+      "type": "string",
+      "enum": ["READY_TO_DEPLOY", "SHIP_BLOCKED"]
+    },
+    "content": { "type": "string" },
+    "data": { "type": "object" }
+  },
+  "additionalProperties": false
+}

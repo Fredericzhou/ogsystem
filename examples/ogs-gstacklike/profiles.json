@@ -1,0 +1,39 @@
+[
+  {
+    "profileId": "profile.office-hours",
+    "toolRef": "tool.office-hours"
+  },
+  {
+    "profileId": "profile.review",
+    "toolRef": "tool.review"
+  },
+  {
+    "profileId": "profile.review-feedback",
+    "toolRef": "tool.review-feedback"
+  },
+  {
+    "profileId": "profile.qa",
+    "toolRef": "tool.qa"
+  },
+  {
+    "profileId": "profile.ship",
+    "toolRef": "tool.ship"
+  },
+  {
+    "profileId": "profile.ship-deploy",
+    "toolRef": "tool.ship-deploy",
+    "timeoutMs": 10000
+  },
+  {
+    "profileId": "profile.error-handler",
+    "toolRef": "tool.error-handler"
+  },
+  {
+    "profileId": "profile.retro",
+    "toolRef": "tool.retro"
+  },
+  {
+    "profileId": "profile.learn",
+    "toolRef": "tool.learn"
+  }
+]

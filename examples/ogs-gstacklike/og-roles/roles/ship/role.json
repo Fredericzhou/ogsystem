@@ -1,0 +1,9 @@
+{
+  "roleId": "ship",
+  "roleVersion": "1.0.0",
+  "name": "Ship",
+  "description": "Pre-release ship coordination that produces deploy-ready output for runtime review.",
+  "promptTemplate": "prompt.md",
+  "outputSchema": "output.schema.json",
+  "tags": ["gstacklike", "ship"]
+}

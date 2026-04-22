@@ -1,0 +1,9 @@
+{
+  "roleId": "ship-deploy",
+  "roleVersion": "1.0.0",
+  "name": "Ship Deploy",
+  "description": "Executes deployment after runtime review approval and lets runtime failures route into compensation.",
+  "promptTemplate": "prompt.md",
+  "outputSchema": "output.schema.json",
+  "tags": ["gstacklike", "deploy"]
+}

@@ -425,6 +425,22 @@ OGSystem/
       profiles.json
       tools.json
       laws.json
+    runtime-native-human-review/
+      README.md
+      system.mmd
+    ogs-gstacklike/
+      README.md
+      system.mmd
+      scenarios/
+        *.mmd
+      .ogs/
+        runtime.json
+        laws.json
+        user-profile.json
+      og-roles/
+        roles/
+          <roleId>/
+            ...
     human-gate-workflow/
       README.md
       system.mmd

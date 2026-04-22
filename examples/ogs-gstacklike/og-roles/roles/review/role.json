@@ -1,0 +1,9 @@
+{
+  "roleId": "review",
+  "roleVersion": "1.0.0",
+  "name": "Review",
+  "description": "Readiness review and phase gate for implementation quality.",
+  "promptTemplate": "prompt.md",
+  "outputSchema": "output.schema.json",
+  "tags": ["gstacklike", "review"]
+}

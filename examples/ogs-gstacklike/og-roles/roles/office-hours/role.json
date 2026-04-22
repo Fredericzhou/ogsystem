@@ -1,0 +1,9 @@
+{
+  "roleId": "office-hours",
+  "roleVersion": "1.0.0",
+  "name": "Office Hours",
+  "description": "Intake, clarification, scope shaping, and routing readiness.",
+  "promptTemplate": "prompt.md",
+  "outputSchema": "output.schema.json",
+  "tags": ["gstacklike", "intake"]
+}

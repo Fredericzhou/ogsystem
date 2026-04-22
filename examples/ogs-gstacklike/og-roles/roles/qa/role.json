@@ -1,0 +1,9 @@
+{
+  "roleId": "qa",
+  "roleVersion": "1.0.0",
+  "name": "QA",
+  "description": "Quality assessment stage with pass, fail, and blocked outcomes.",
+  "promptTemplate": "prompt.md",
+  "outputSchema": "output.schema.json",
+  "tags": ["gstacklike", "qa"]
+}

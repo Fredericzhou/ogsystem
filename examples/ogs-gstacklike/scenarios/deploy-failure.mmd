@@ -1,0 +1,40 @@
+flowchart TD
+%% system.id=ogs.gstacklike.deploy-failure
+%% system.version=1.0.0
+%% law.global=law.gstacklike.base
+%% entry.role=office-hours
+%% exec.bind.office-hours=profile.office-hours
+%% exec.bind.review=profile.review
+%% exec.bind.qa=profile.qa
+%% exec.bind.ship=profile.ship
+%% exec.bind.ship-deploy=profile.ship-deploy
+%% exec.bind.error-handler-base=profile.error-handler
+%% review.mode.ship=required
+%% review.timeout.ship=86400
+%% review.timeout.action.ship=pause
+%% review.rework.target.ship=review
+%% review.rework.max.ship=2
+%% review.terminate.scope.ship=run
+
+input -->|REQUEST_IN| office-hours[Role:office-hours]
+office-hours[Role:office-hours] -->|READY_FOR_REVIEW| review[Role:review]
+office-hours[Role:office-hours] -->|NEEDS_MORE_INPUT| output
+office-hours[Role:office-hours] -->|REJECTED| output
+
+review[Role:review] -->|APPROVED| qa[Role:qa]
+review[Role:review] -->|CHANGES_REQUIRED| output
+review[Role:review] -->|BLOCKED| output
+
+qa[Role:qa] -->|QA_PASS| ship[Role:ship]
+qa[Role:qa] -->|QA_FAIL| output
+qa[Role:qa] -->|QA_BLOCKED| output
+
+ship[Role:ship] -->|READY_TO_DEPLOY| ship-deploy[Role:ship-deploy]
+ship[Role:ship] -->|SHIP_BLOCKED| output
+
+ship-deploy[Role:ship-deploy] -->|SHIPPED| output
+ship-deploy[Role:ship-deploy] -->|ERROR| error-handler-base[Role:error-handler-base]
+
+error-handler-base[Role:error-handler-base] -->|COMPENSATED| output
+error-handler-base[Role:error-handler-base] -->|ESCALATED| output
+error-handler-base[Role:error-handler-base] -->|ABORTED| output

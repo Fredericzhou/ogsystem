@@ -1,0 +1,9 @@
+{
+  "roleId": "review-feedback",
+  "roleVersion": "1.0.0",
+  "name": "Review Feedback",
+  "description": "Dedicated post-review rework role for projected human feedback.",
+  "promptTemplate": "prompt.md",
+  "outputSchema": "output.schema.json",
+  "tags": ["gstacklike", "human-review", "rework"]
+}

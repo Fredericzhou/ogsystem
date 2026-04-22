@@ -1,0 +1,9 @@
+{
+  "roleId": "learn",
+  "roleVersion": "1.0.0",
+  "name": "Learn",
+  "description": "Converts retrospective output into durable learning.",
+  "promptTemplate": "prompt.md",
+  "outputSchema": "output.schema.json",
+  "tags": ["gstacklike", "learn"]
+}

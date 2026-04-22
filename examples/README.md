@@ -9,9 +9,9 @@ Use this small set first to cover most capabilities with minimum repetition:
 1. `minimal-system.mmd`
 2. `langgraph-debate-current/`
 3. `medical-quorum-consultation/`
-4. `incident-response-playbook/`
-5. `rust-hello-pipeline/`
-6. `runtime-native-human-review/`
+4. `runtime-native-human-review/`
+5. `ogs-gstacklike/`
+6. `rust-hello-pipeline/`
 
 ## Coverage Matrix
 
@@ -21,8 +21,9 @@ Use this small set first to cover most capabilities with minimum repetition:
 | `langgraph-debate-current/` | model.bind | `parallel_split + all_of + loop.max` | multi-round orchestration |
 | `medical-quorum-consultation/` | model.bind | `parallel_split + quorum_of + context.map + flow contract` | quorum decision, projected join context, and contract-backed validation |
 | `runtime-native-human-review/` | model.bind | `review.* + runtime-native human review` | stop-for-review, operator decision, resume |
-| `incident-response-playbook/` | exec.bind | `ERROR* + compensation + human gates` | exception routing and human-in-the-loop control |
+| `ogs-gstacklike/` | exec.bind | `review.* + ERROR* + shared artifacts + local role repo` | project-style delivery flow with native human review, compensation, and run-level artifact handoff |
 | `rust-hello-pipeline/` | exec.bind | sequential multi-role tool chain | side-effect workflow and artifact validation |
+| `incident-response-playbook/` | exec.bind | `ERROR* + compensation + legacy human gates` | compatibility example for role-node-based human control |
 
 ## Recommended Order
 
@@ -30,8 +31,9 @@ Use this small set first to cover most capabilities with minimum repetition:
 2. Move to `langgraph-debate-current/` for core graph semantics.
 3. Run `medical-quorum-consultation/` for quorum + projection + flow contract semantics.
 4. Run `runtime-native-human-review/` for native stop-review-resume semantics.
-5. Run `incident-response-playbook/` for runtime failure control and legacy role-node human gates.
+5. Run `ogs-gstacklike/` for a full project-style example with local role repo, native review, shared artifacts, and compensation.
 6. Run `rust-hello-pipeline/` if you need external toolchain workflows.
+7. Use `incident-response-playbook/` only if you need the legacy role-node human gate pattern.
 
 ## Fast Commands
 
@@ -42,7 +44,9 @@ pnpm run run:adapter --system examples/langgraph-debate-current/system.mmd --law
 
 pnpm run run:adapter --system examples/medical-quorum-consultation/system.mmd --laws examples/medical-quorum-consultation/laws.json --user-profile examples/medical-quorum-consultation/user-profile.json --prompt "患者发热伴神经与心血管症状，先形成会诊结论" --dry-run
 
-pnpm run run:adapter --system examples/incident-response-playbook/system.mmd --runtime examples/incident-response-playbook/runtime.json --profiles examples/incident-response-playbook/profiles.json --tools examples/incident-response-playbook/tools.json --laws examples/incident-response-playbook/laws.json --prompt "生产环境发布后出现关键告警，触发应急处置流程"
+ogs run start --system examples/ogs-gstacklike/system.mmd --input "构建一个html页面，要求显示hello world" --workdir examples/ogs-gstacklike
+
+bash examples/ogs-gstacklike/scripts/validate-scenarios.sh
 ```
 
 ## Extended/Compatibility Examples
@@ -52,3 +56,4 @@ pnpm run run:adapter --system examples/incident-response-playbook/system.mmd --r
 - `console-system.mmd`: legacy compatibility route for existing `profiles/tools`.
 - `error-flow-compensation/`: focused ERROR* routing baseline.
 - `human-gate-workflow/`: legacy role-node human gate baseline.
+- `incident-response-playbook/`: integrated exception-routing plus legacy role-node human control.

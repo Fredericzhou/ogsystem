@@ -175,8 +175,9 @@ For day-to-day use, start with `docs/usage-manual.md`. It keeps the command matr
 - `examples/langgraph-expert-consultation/` shows a minimal expert consultation with parallel + join.
 - `examples/medical-quorum-consultation/` shows quorum join + context projection in a professional consultation flow.
 - `examples/error-flow-compensation/` shows failure-to-compensation routing via error flows expressed as `ERROR*` edge labels.
-- `examples/human-gate-workflow/` shows template-based human approval/signal gate flow.
-- `examples/incident-response-playbook/` shows integrated exception-routing + human-in-the-loop incident handling.
+- `examples/runtime-native-human-review/` shows the smallest runtime-native stop-review-resume path.
+- `examples/ogs-gstacklike/` shows a project-style flow with project-local `og-roles/`, runtime-native human review, run-level shared artifacts, and compensation routing.
+- `examples/human-gate-workflow/` and `examples/incident-response-playbook/` remain as legacy compatibility examples for role-node-based human gates.
 - `examples/README.md` is the training handbook for minimal example set and coverage matrix.
 - `og-roles/roles/error-handler-base/`, `og-roles/roles/human-approve-gate/`, and `og-roles/roles/human-signal-wait/` provide reusable template role packages.
 

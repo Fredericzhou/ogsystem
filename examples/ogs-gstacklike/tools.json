@@ -1,0 +1,67 @@
+{
+  "tools": [
+    {
+      "toolRef": "tool.office-hours",
+      "runner": "local_shell",
+      "command": "node",
+      "argsTemplate": ["scripts/emit-role-result.mjs", "office-hours", "OFFICE_HOURS_EVENT", "READY_FOR_REVIEW"],
+      "stdinMode": "none"
+    },
+    {
+      "toolRef": "tool.review",
+      "runner": "local_shell",
+      "command": "node",
+      "argsTemplate": ["scripts/emit-review-result.mjs"],
+      "stdinMode": "text"
+    },
+    {
+      "toolRef": "tool.review-feedback",
+      "runner": "local_shell",
+      "command": "node",
+      "argsTemplate": ["scripts/emit-review-result.mjs"],
+      "stdinMode": "text"
+    },
+    {
+      "toolRef": "tool.qa",
+      "runner": "local_shell",
+      "command": "node",
+      "argsTemplate": ["scripts/emit-role-result.mjs", "qa", "QA_EVENT", "QA_PASS"],
+      "stdinMode": "none"
+    },
+    {
+      "toolRef": "tool.ship",
+      "runner": "local_shell",
+      "command": "node",
+      "argsTemplate": ["scripts/emit-role-result.mjs", "ship", "SHIP_EVENT", "READY_TO_DEPLOY"],
+      "stdinMode": "none"
+    },
+    {
+      "toolRef": "tool.ship-deploy",
+      "runner": "local_shell",
+      "command": "node",
+      "argsTemplate": ["scripts/ship-deploy.mjs"],
+      "stdinMode": "text"
+    },
+    {
+      "toolRef": "tool.error-handler",
+      "runner": "local_shell",
+      "command": "node",
+      "argsTemplate": ["scripts/emit-role-result.mjs", "error-handler-base", "ERROR_HANDLER_EVENT", "COMPENSATED"],
+      "stdinMode": "none"
+    },
+    {
+      "toolRef": "tool.retro",
+      "runner": "local_shell",
+      "command": "node",
+      "argsTemplate": ["scripts/emit-role-result.mjs", "retro", "RETRO_EVENT", "RETRO_DONE"],
+      "stdinMode": "none"
+    },
+    {
+      "toolRef": "tool.learn",
+      "runner": "local_shell",
+      "command": "node",
+      "argsTemplate": ["scripts/emit-role-result.mjs", "learn", "LEARN_EVENT", "LEARNED"],
+      "stdinMode": "none"
+    }
+  ]
+}
