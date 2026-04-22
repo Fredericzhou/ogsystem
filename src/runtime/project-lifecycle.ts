@@ -52,6 +52,7 @@ export type IndexedRun = {
   finalRoleId?: string;
   pendingReviewCount?: number;
   hasWaitingHumanReview?: boolean;
+  latestPendingReviewId?: string;
   updatedAt: string;
   runDir: string;
 };
@@ -468,12 +469,136 @@ function countPendingReviewsFromGraphState(graphState: Record<string, unknown> |
   ).length;
 }
 
+function getPendingReviewsByIdFromGraphState(
+  graphState: Record<string, unknown> | undefined
+): Record<string, Record<string, unknown>> {
+  const pendingReviewsById = graphState?.pendingReviewsById;
+  if (
+    typeof pendingReviewsById !== "object" ||
+    pendingReviewsById === null ||
+    Array.isArray(pendingReviewsById)
+  ) {
+    return {};
+  }
+  return Object.fromEntries(
+    Object.entries(pendingReviewsById).filter(
+      ([, value]) => typeof value === "object" && value !== null && !Array.isArray(value)
+    )
+  ) as Record<string, Record<string, unknown>>;
+}
+
+function parseIsoTimestamp(value: string | undefined): number | undefined {
+  if (!value) {
+    return undefined;
+  }
+  const timestamp = Date.parse(value);
+  return Number.isNaN(timestamp) ? undefined : timestamp;
+}
+
+function compareReviewSnapshots(
+  left: Record<string, unknown>,
+  right: Record<string, unknown>
+): number {
+  const leftRequestedAt =
+    parseIsoTimestamp(typeof left.requestedAt === "string" ? left.requestedAt : undefined) ??
+    Number.NEGATIVE_INFINITY;
+  const rightRequestedAt =
+    parseIsoTimestamp(typeof right.requestedAt === "string" ? right.requestedAt : undefined) ??
+    Number.NEGATIVE_INFINITY;
+  if (leftRequestedAt !== rightRequestedAt) {
+    return leftRequestedAt - rightRequestedAt;
+  }
+  const leftRound = typeof left.round === "number" ? left.round : Number.NEGATIVE_INFINITY;
+  const rightRound = typeof right.round === "number" ? right.round : Number.NEGATIVE_INFINITY;
+  if (leftRound !== rightRound) {
+    return leftRound - rightRound;
+  }
+  return String(left.reviewId ?? "").localeCompare(String(right.reviewId ?? ""));
+}
+
+function getLatestPendingReviewIdFromGraphState(
+  graphState: Record<string, unknown> | undefined
+): string | undefined {
+  const latest = Object.values(getPendingReviewsByIdFromGraphState(graphState))
+    .filter((review) => review.status === "pending" || review.status === "paused")
+    .sort(compareReviewSnapshots)
+    .at(-1);
+  return typeof latest?.reviewId === "string" ? latest.reviewId : undefined;
+}
+
+function deriveCurrentReviewStatus(args: {
+  requestSnapshot?: unknown;
+  decisionSnapshot?: unknown;
+  currentState?: unknown;
+}): string {
+  const currentState =
+    typeof args.currentState === "object" &&
+    args.currentState !== null &&
+    !Array.isArray(args.currentState)
+      ? (args.currentState as { status?: unknown })
+      : undefined;
+  if (typeof currentState?.status === "string") {
+    return currentState.status;
+  }
+
+  if (
+    typeof args.decisionSnapshot === "object" &&
+    args.decisionSnapshot !== null &&
+    !Array.isArray(args.decisionSnapshot)
+  ) {
+    return "resolved";
+  }
+
+  const requestSnapshot =
+    typeof args.requestSnapshot === "object" &&
+    args.requestSnapshot !== null &&
+    !Array.isArray(args.requestSnapshot)
+      ? (args.requestSnapshot as { status?: unknown })
+      : undefined;
+  if (typeof requestSnapshot?.status === "string") {
+    return requestSnapshot.status;
+  }
+
+  return "unknown";
+}
+
+function deriveEffectiveTerminateScope(args: {
+  requestSnapshot?: unknown;
+  currentState?: unknown;
+}): "branch" | "run" | undefined {
+  const currentState =
+    typeof args.currentState === "object" &&
+    args.currentState !== null &&
+    !Array.isArray(args.currentState)
+      ? (args.currentState as { spec?: { terminateScope?: unknown } })
+      : undefined;
+  if (currentState?.spec?.terminateScope === "branch" || currentState?.spec?.terminateScope === "run") {
+    return currentState.spec.terminateScope;
+  }
+
+  const requestSnapshot =
+    typeof args.requestSnapshot === "object" &&
+    args.requestSnapshot !== null &&
+    !Array.isArray(args.requestSnapshot)
+      ? (args.requestSnapshot as { spec?: { terminateScope?: unknown } })
+      : undefined;
+  if (
+    requestSnapshot?.spec?.terminateScope === "branch" ||
+    requestSnapshot?.spec?.terminateScope === "run"
+  ) {
+    return requestSnapshot.spec.terminateScope;
+  }
+
+  return undefined;
+}
+
 function derivePendingReviewFields(args: {
   summary?: RunSummaryProjection;
   state?: unknown;
 }): {
   pendingReviewCount?: number;
   hasWaitingHumanReview?: boolean;
+  latestPendingReviewId?: string;
 } {
   const graphState = asGraphStateRecord(args.state);
   const pendingReviewCount =
@@ -482,7 +607,9 @@ function derivePendingReviewFields(args: {
     pendingReviewCount,
     hasWaitingHumanReview:
       args.summary?.hasWaitingHumanReview ??
-      (pendingReviewCount !== undefined ? pendingReviewCount > 0 : undefined)
+      (pendingReviewCount !== undefined ? pendingReviewCount > 0 : undefined),
+    latestPendingReviewId:
+      args.summary?.latestPendingReviewId ?? getLatestPendingReviewIdFromGraphState(graphState)
   };
 }
 
@@ -809,6 +936,7 @@ export async function loadIndexedRuns(workdir: string): Promise<IndexedRun[]> {
         summary?.finalRoleId ?? indexedState?.finalRoleId ?? indexedState?.graphState?.finalRoleId,
       pendingReviewCount: reviewFields.pendingReviewCount,
       hasWaitingHumanReview: reviewFields.hasWaitingHumanReview,
+      latestPendingReviewId: reviewFields.latestPendingReviewId,
       updatedAt: summary?.updatedAt ?? runStat.mtime.toISOString(),
       runDir
     });
@@ -868,7 +996,8 @@ export async function inspectRun(workdir: string, runId: string): Promise<Record
     stopOutcome,
     summary: summaryProjection,
     pendingReviewCount: reviewFields.pendingReviewCount,
-    hasWaitingHumanReview: reviewFields.hasWaitingHumanReview
+    hasWaitingHumanReview: reviewFields.hasWaitingHumanReview,
+    latestPendingReviewId: reviewFields.latestPendingReviewId
   };
 }
 
@@ -902,32 +1031,35 @@ export async function listHumanReviews(workdir: string, runId: string): Promise<
       reviewIds.add(entry.name.slice(0, -".decision.json".length));
     }
   }
-  const pendingReviewsById =
-    typeof state === "object" &&
-    state !== null &&
-    !Array.isArray(state) &&
-    typeof (state as { graphState?: { pendingReviewsById?: unknown } }).graphState?.pendingReviewsById === "object" &&
-    (state as { graphState: { pendingReviewsById: Record<string, unknown> } }).graphState.pendingReviewsById !== null
-      ? (state as { graphState: { pendingReviewsById: Record<string, unknown> } }).graphState.pendingReviewsById
-      : {};
+  const pendingReviewsById = getPendingReviewsByIdFromGraphState(asGraphStateRecord(state));
 
   const reviews = await Promise.all(
     [...reviewIds].sort((left, right) => left.localeCompare(right)).map(async (reviewId) => {
-      const [request, decision] = await Promise.all([
+      const [requestSnapshot, decisionSnapshot] = await Promise.all([
         loadReviewRecord(resolve(reviewsDir, `${reviewId}.request.json`)),
         loadReviewRecord(resolve(reviewsDir, `${reviewId}.decision.json`))
       ]);
+      const currentState = pendingReviewsById[reviewId];
       return {
         reviewId,
-        request,
-        decision,
-        state: pendingReviewsById[reviewId]
+        currentStatus: deriveCurrentReviewStatus({
+          requestSnapshot,
+          decisionSnapshot,
+          currentState
+        }),
+        requestSnapshot,
+        decisionSnapshot,
+        currentState,
+        request: requestSnapshot,
+        decision: decisionSnapshot,
+        state: currentState
       };
     })
   );
   return {
     runId,
     runDir,
+    latestPendingReviewId: getLatestPendingReviewIdFromGraphState(asGraphStateRecord(state)),
     reviews
   };
 }
@@ -940,7 +1072,7 @@ export async function inspectHumanReview(
   const runDir = resolveRunDir(workdir, runId);
   const detail = await inspectRun(workdir, runId);
   const reviewsDir = resolveReviewsDir(runDir);
-  const [request, decision] = await Promise.all([
+  const [requestSnapshot, decisionSnapshot] = await Promise.all([
     loadReviewRecord(resolve(reviewsDir, `${reviewId}.request.json`)),
     loadReviewRecord(resolve(reviewsDir, `${reviewId}.decision.json`))
   ]);
@@ -952,7 +1084,7 @@ export async function inspectHumanReview(
     (detail.state as { graphState?: unknown }).graphState !== null
       ? ((detail.state as { graphState: Record<string, unknown> }).graphState ?? {})
       : {};
-  const pendingReview =
+  const currentState =
     typeof graphState.pendingReviewsById === "object" &&
     graphState.pendingReviewsById !== null &&
     !Array.isArray(graphState.pendingReviewsById)
@@ -962,9 +1094,17 @@ export async function inspectHumanReview(
     runId,
     runDir,
     reviewId,
-    request,
-    decision,
-    pendingReview
+    currentStatus: deriveCurrentReviewStatus({
+      requestSnapshot,
+      decisionSnapshot,
+      currentState
+    }),
+    requestSnapshot,
+    decisionSnapshot,
+    currentState,
+    request: requestSnapshot,
+    decision: decisionSnapshot,
+    pendingReview: currentState
   };
 }
 
@@ -977,6 +1117,39 @@ export async function writeHumanReviewDecision(args: {
   actor?: string;
   scope?: "branch" | "run";
 }): Promise<Record<string, unknown>> {
+  const currentReview = await inspectHumanReview(args.workdir, args.runId, args.reviewId);
+  const currentStatus =
+    typeof currentReview.currentStatus === "string" ? currentReview.currentStatus : "unknown";
+  if (
+    currentReview.requestSnapshot === undefined &&
+    currentReview.currentState === undefined &&
+    currentReview.decisionSnapshot === undefined
+  ) {
+    throw new Error(`Review not found: ${args.reviewId}`);
+  }
+  if (currentStatus === "resolved" || currentStatus === "expired") {
+    throw new Error(`Review "${args.reviewId}" is already ${currentStatus}; refusing to overwrite it.`);
+  }
+  if (currentStatus !== "pending" && currentStatus !== "paused") {
+    throw new Error(`Review "${args.reviewId}" is not actionable; currentStatus=${currentStatus}.`);
+  }
+  if (args.scope !== undefined && args.decision !== "terminate") {
+    throw new Error("--scope is only valid with --decision terminate");
+  }
+  const effectiveScope =
+    args.decision === "terminate"
+      ? args.scope ??
+        deriveEffectiveTerminateScope({
+          requestSnapshot: currentReview.requestSnapshot,
+          currentState: currentReview.currentState
+        })
+      : undefined;
+  if (args.decision === "terminate" && effectiveScope === undefined) {
+    throw new Error(
+      `Review "${args.reviewId}" does not expose a valid terminate scope; expected "branch" or "run".`
+    );
+  }
+
   const runDir = resolveRunDir(args.workdir, args.runId);
   const reviewsDir = resolveReviewsDir(runDir);
   await mkdir(reviewsDir, { recursive: true });
@@ -987,7 +1160,7 @@ export async function writeHumanReviewDecision(args: {
     decision: args.decision,
     comment: args.comment,
     actor: args.actor,
-    scope: args.scope
+    scope: effectiveScope
   };
   await writeJsonFileAtomic(resolve(reviewsDir, `${args.reviewId}.decision.json`), record);
   return {

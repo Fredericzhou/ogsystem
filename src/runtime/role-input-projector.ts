@@ -204,6 +204,13 @@ function getRequiredHumanReviewContext(args: {
   return context;
 }
 
+function getOptionalHumanReviewContext(args: {
+  state: GraphState;
+  branch: BranchRecord;
+}): NonNullable<GraphState["humanReviewContextByBranchId"][string]> | undefined {
+  return args.state.humanReviewContextByBranchId[args.branch.branchId];
+}
+
 function evaluateContextSelector(args: {
   selector: string;
   roleId: string;
@@ -213,79 +220,76 @@ function evaluateContextSelector(args: {
   userProfile?: UserProfile;
 }): unknown {
   const selector = args.selector;
-  if (selector === "global.task") {
+  const optional = selector.endsWith("?");
+  const normalizedSelector = optional ? selector.slice(0, -1) : selector;
+  if (normalizedSelector === "global.task") {
     return args.state.userPrompt;
   }
-  if (selector === "global.user_profile") {
+  if (normalizedSelector === "global.user_profile") {
     if (!args.userProfile) {
       failContextProjection({
         errorCode: "ROLE_CONTEXT_SOURCE_UNAVAILABLE",
-        message: `Role "${args.roleId}" selector "${selector}" requires user_profile input.`,
+        message: `Role "${args.roleId}" selector "${normalizedSelector}" requires user_profile input.`,
         roleId: args.roleId,
         branchId: args.branch.branchId
       });
     }
     return args.userProfile;
   }
-  if (selector.startsWith("global.user_profile.")) {
+  if (normalizedSelector.startsWith("global.user_profile.")) {
     if (!args.userProfile) {
       failContextProjection({
         errorCode: "ROLE_CONTEXT_SOURCE_UNAVAILABLE",
-        message: `Role "${args.roleId}" selector "${selector}" requires user_profile input.`,
+        message: `Role "${args.roleId}" selector "${normalizedSelector}" requires user_profile input.`,
         roleId: args.roleId,
         branchId: args.branch.branchId
       });
     }
     return resolveObjectPath({
       value: args.userProfile,
-      path: selector.slice("global.user_profile.".length).split("."),
+      path: normalizedSelector.slice("global.user_profile.".length).split("."),
       selector,
       roleId: args.roleId,
       branchId: args.branch.branchId
     });
   }
 
-  if (selector === "global.human_review.current") {
-    return getRequiredHumanReviewContext({
-      state: args.state,
-      branch: args.branch,
-      roleId: args.roleId
-    });
-  }
-  if (selector === "global.human_review.current.comment") {
-    return getRequiredHumanReviewContext({
-      state: args.state,
-      branch: args.branch,
-      roleId: args.roleId
-    }).comment;
-  }
-  if (selector === "global.human_review.current.round") {
-    return getRequiredHumanReviewContext({
-      state: args.state,
-      branch: args.branch,
-      roleId: args.roleId
-    }).round;
-  }
-  if (selector === "global.human_review.current.previous_output") {
-    return getRequiredHumanReviewContext({
-      state: args.state,
-      branch: args.branch,
-      roleId: args.roleId
-    }).previousOutput;
-  }
-  if (selector.startsWith("global.human_review.current.previous_output.")) {
-    const context = getRequiredHumanReviewContext({
-      state: args.state,
-      branch: args.branch,
-      roleId: args.roleId
-    });
-    return resolveObjectPath({
-      value: context.previousOutput,
-      path: selector.slice("global.human_review.current.previous_output.".length).split("."),
-      selector,
-      roleId: args.roleId,
-      branchId: args.branch.branchId
-    });
+  if (normalizedSelector.startsWith("global.human_review.current")) {
+    const humanReviewContext = optional
+      ? getOptionalHumanReviewContext({
+          state: args.state,
+          branch: args.branch
+        })
+      : getRequiredHumanReviewContext({
+          state: args.state,
+          branch: args.branch,
+          roleId: args.roleId
+        });
+
+    if (normalizedSelector === "global.human_review.current") {
+      return humanReviewContext;
+    }
+    if (normalizedSelector === "global.human_review.current.comment") {
+      return humanReviewContext?.comment;
+    }
+    if (normalizedSelector === "global.human_review.current.round") {
+      return humanReviewContext?.round;
+    }
+    if (normalizedSelector === "global.human_review.current.previous_output") {
+      return humanReviewContext?.previousOutput;
+    }
+    if (normalizedSelector.startsWith("global.human_review.current.previous_output.")) {
+      if (!humanReviewContext) {
+        return undefined;
+      }
+      return resolveObjectPath({
+        value: humanReviewContext.previousOutput,
+        path: normalizedSelector.slice("global.human_review.current.previous_output.".length).split("."),
+        selector,
+        roleId: args.roleId,
+        branchId: args.branch.branchId
+      });
+    }
   }
 
   if (selector === "direct.content" || selector === "direct.event" || selector === "direct.data") {
@@ -371,17 +375,21 @@ export function buildProjectedContext(args: {
   const sortedEntries = Object.entries(args.node.contextMap ?? {}).sort(([left], [right]) =>
     left.localeCompare(right)
   );
-  return Object.fromEntries(sortedEntries.map(([fieldName, selector]) => [
-    fieldName,
-    evaluateContextSelector({
-      selector,
-      roleId: args.roleId,
-      node: args.node,
-      branch: args.branch,
-      state: args.state,
-      userProfile: args.userProfile
-    })
-  ]));
+  return Object.fromEntries(
+    sortedEntries
+      .map(([fieldName, selector]) => [
+        fieldName,
+        evaluateContextSelector({
+          selector,
+          roleId: args.roleId,
+          node: args.node,
+          branch: args.branch,
+          state: args.state,
+          userProfile: args.userProfile
+        })
+      ])
+      .filter(([, value]) => value !== undefined)
+  );
 }
 
 function renderProjectedContext(args: {

@@ -220,6 +220,26 @@ reviewer[Role:reviewer] -->|APPROVED| output
   });
 });
 
+test("parser accepts optional human review selectors in context.map", () => {
+  const source = `flowchart TD
+%% system.id=test.review.selector.optional
+%% system.version=0.1.0
+%% law.global=law.test
+%% entry.role=writer
+%% exec.bind.writer=profile.writer
+%% context.map.writer.review_comment=global.human_review.current.comment?
+%% context.map.writer.previous_content=global.human_review.current.previous_output.content?
+input -->|START| writer[Role:writer]
+writer[Role:writer] -->|DONE| output
+`;
+
+  const system = parseSystemFromMermaidSource(source);
+  assert.deepStrictEqual(system.graph?.contextMapByRoleId?.writer, {
+    review_comment: "global.human_review.current.comment?",
+    previous_content: "global.human_review.current.previous_output.content?"
+  });
+});
+
 test("parser rejects review metadata without review.mode", () => {
   const source = `flowchart TD
 %% system.id=test.review.missing.mode

@@ -5,17 +5,10 @@
       "runner": "local_shell",
       "command": "node",
       "argsTemplate": ["scripts/emit-role-result.mjs", "office-hours", "OFFICE_HOURS_EVENT", "READY_FOR_REVIEW"],
-      "stdinMode": "none"
-    },
-    {
-      "toolRef": "tool.review",
-      "runner": "local_shell",
-      "command": "node",
-      "argsTemplate": ["scripts/emit-review-result.mjs"],
       "stdinMode": "text"
     },
     {
-      "toolRef": "tool.review-feedback",
+      "toolRef": "tool.review",
       "runner": "local_shell",
       "command": "node",
       "argsTemplate": ["scripts/emit-review-result.mjs"],
@@ -26,14 +19,14 @@
       "runner": "local_shell",
       "command": "node",
       "argsTemplate": ["scripts/emit-role-result.mjs", "qa", "QA_EVENT", "QA_PASS"],
-      "stdinMode": "none"
+      "stdinMode": "text"
     },
     {
       "toolRef": "tool.ship",
       "runner": "local_shell",
       "command": "node",
       "argsTemplate": ["scripts/emit-role-result.mjs", "ship", "SHIP_EVENT", "READY_TO_DEPLOY"],
-      "stdinMode": "none"
+      "stdinMode": "text"
     },
     {
       "toolRef": "tool.ship-deploy",
@@ -54,14 +47,14 @@
       "runner": "local_shell",
       "command": "node",
       "argsTemplate": ["scripts/emit-role-result.mjs", "retro", "RETRO_EVENT", "RETRO_DONE"],
-      "stdinMode": "none"
+      "stdinMode": "text"
     },
     {
       "toolRef": "tool.learn",
       "runner": "local_shell",
       "command": "node",
       "argsTemplate": ["scripts/emit-role-result.mjs", "learn", "LEARN_EVENT", "LEARNED"],
-      "stdinMode": "none"
+      "stdinMode": "text"
     }
   ]
 }

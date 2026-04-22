@@ -300,8 +300,12 @@ ogs run resume <run-id> --dry-run
 
 - reviewed role 先产出 durable draft result
 - runtime 把 branch 置为 `waiting_review`
-- `summary.json` / `state.json` 会暴露 `pendingReviewCount` 与 `hasWaitingHumanReview`
+- `ogs run status` 会暴露 `pendingReviewCount`、`hasWaitingHumanReview`、`latestPendingReviewId`
+- `ogs run review list` / `inspect` 会暴露顶层 `currentStatus`，同时把 `requestSnapshot` 和 `currentState` 分开命名
+- `summary.json` 会把 `wallClockDurationMs`、`executionDurationMs`、`humanReviewWaitDurationMs` 分开
 - approve / rework / pause / terminate 通过 `ogs run review decide` 写入 control plane，而不是再插一个独立 human-gate role 节点
+- rework branch 可以通过 `global.human_review.current.*` 读取 reviewer comment / round / previous output
+- 如果某个 role 既要支持首轮执行、又要支持 rework 回流，可用可选 selector：`global.human_review.current.*?`
 
 查看引擎日志：
 
@@ -623,8 +627,7 @@ Role rules:
 Recommended template roles:
 
 - `error-handler-base`: compensation skeleton with `COMPENSATED | ESCALATED | ABORTED`
-- `human-approve-gate`: human decision gate with `APPROVED | REJECTED | TIMEOUT`
-- `human-signal-wait`: waiting gate with `SIGNAL_OK | SIGNAL_FAIL | EXPIRED`
+- `human-approve-gate` / `human-signal-wait`: legacy compatibility templates only; new systems should prefer runtime-native `review.*`
 
 ## 6. Model Selection Contract
 

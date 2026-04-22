@@ -8,10 +8,6 @@
     "toolRef": "tool.review"
   },
   {
-    "profileId": "profile.review-feedback",
-    "toolRef": "tool.review-feedback"
-  },
-  {
     "profileId": "profile.qa",
     "toolRef": "tool.qa"
   },

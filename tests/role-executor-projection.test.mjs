@@ -392,6 +392,75 @@ writer[Role:writer] -->|DONE| output
   });
 });
 
+test("executeRoleNode omits optional human review fields when no rework context is present", async () => {
+  const fixture = await prepareRoleExecutorFixture({
+    tempPrefix: "ogsystem-role-projection-human-review-optional-",
+    prompt: "first pass prompt",
+    systemSource: `flowchart TD
+%% system.id=role.projection.human-review.optional
+%% system.version=1.0.0
+%% law.global=law.console.base
+%% entry.role=writer
+%% context.map.writer.comment=global.human_review.current.comment?
+%% context.map.writer.round=global.human_review.current.round?
+%% context.map.writer.previous_output=global.human_review.current.previous_output.content?
+%% model.bind.writer=balanced-gpt52
+
+input -->|GO| writer[Role:writer]
+writer[Role:writer] -->|DONE| output
+`,
+    roles: [{ roleId: "writer", allowedEvents: ["DONE"] }]
+  });
+
+  const state = createInitialState(fixture.plan, "first pass prompt");
+  const writerBranch = state.branchRecords["writer@1#1"];
+
+  const result = await executeRoleNode({
+    roleId: "writer",
+    node: getExecutionPlanNode(fixture.plan, "writer"),
+    plan: fixture.plan,
+    state,
+    branch: writerBranch,
+    effectiveLaw: {
+      forbiddenToolRefs: [],
+      allowNoopWithoutExecutionBinding: false
+    },
+    profilesById: new Map(),
+    toolsByRef: new Map(),
+    modelsById: fixture.modelsById,
+    rolePackagesByRoleId: fixture.rolePackagesByRoleId,
+    compilerSnapshot: fixture.compilerSnapshot,
+    runContext: fixture.runContext,
+    executor: {
+      async start() {},
+      async close() {},
+      async abortSession() {},
+      getServerMetadata() {
+        return {};
+      },
+      async execute() {
+        return {
+          exitCode: 0,
+          stdout: JSON.stringify({ event: "DONE", content: "ok" }),
+          stderr: "",
+          args: [],
+          sessionId: "ses_review_optional",
+          messageId: "msg_review_optional"
+        };
+      }
+    },
+    userProfile: undefined,
+    workdir: fixture.tempRoot
+  });
+
+  assert.equal(result.status, "ok");
+  const inbox = parseJsonCodeBlock(
+    await readFile(path.resolve(fixture.runContext.runDir, "roles", "writer", "inbox.md"), "utf8")
+  );
+  const input = JSON.parse(inbox.input);
+  assert.deepStrictEqual(input, {});
+});
+
 test("executeRoleNode fails closed when join projection source is unavailable", async () => {
   const fixture = await prepareRoleExecutorFixture({
     tempPrefix: "ogsystem-role-projection-join-fail-",

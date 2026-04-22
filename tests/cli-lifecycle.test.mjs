@@ -32,6 +32,56 @@ function runCli(args, options = {}) {
   });
 }
 
+async function seedRuntimeProject(tempRoot) {
+  const repoRoot = process.cwd();
+  await mkdir(path.resolve(tempRoot, ".ogs"), { recursive: true });
+  await writeFile(
+    path.resolve(tempRoot, ".ogs", "runtime.json"),
+    JSON.stringify(
+      {
+        configVersion: "2",
+        executor: "opencode",
+        roleRepo: path.resolve(repoRoot, "og-roles"),
+        runsDir: ".ogs/runs"
+      },
+      null,
+      2
+    ),
+    "utf8"
+  );
+  await writeFile(
+    path.resolve(tempRoot, ".ogs", "model-selection.json"),
+    JSON.stringify(
+      {
+        configVersion: "1",
+        defaults: {
+          model: "opencode/gpt-5-nano",
+          timeoutMs: 120000,
+          maxOutputBytes: 65536
+        }
+      },
+      null,
+      2
+    ),
+    "utf8"
+  );
+  await writeFile(
+    path.resolve(tempRoot, ".ogs", "model-catalog.json"),
+    await readFile(path.resolve(repoRoot, ".ogs", "model-catalog.json"), "utf8"),
+    "utf8"
+  );
+  await writeFile(
+    path.resolve(tempRoot, ".ogs", "user-profile.json"),
+    await readFile(path.resolve(repoRoot, ".ogs", "user-profile.json"), "utf8"),
+    "utf8"
+  );
+  await writeFile(
+    path.resolve(tempRoot, ".ogs", "laws.json"),
+    await readFile(path.resolve(repoRoot, ".ogs", "laws.json"), "utf8"),
+    "utf8"
+  );
+}
+
 test("lifecycle cli project init/create commands scaffold project control plane", { concurrency: false }, async () => {
   const tempRoot = await mkdtemp(path.join(os.tmpdir(), "ogsystem-cli-project-"));
 
@@ -339,56 +389,10 @@ test("lifecycle cli run start/list/status/logs/resume/stop works end-to-end", { 
 });
 
 test("lifecycle cli review commands expose pending human review state and can approve resume", { concurrency: false }, async () => {
-  const repoRoot = process.cwd();
   const tempRoot = await mkdtemp(path.join(os.tmpdir(), "ogsystem-cli-review-"));
   const systemPath = path.resolve(tempRoot, "system.mmd");
 
-  await mkdir(path.resolve(tempRoot, ".ogs"), { recursive: true });
-  await writeFile(
-    path.resolve(tempRoot, ".ogs", "runtime.json"),
-    JSON.stringify(
-      {
-        configVersion: "2",
-        executor: "opencode",
-        roleRepo: path.resolve(repoRoot, "og-roles"),
-        runsDir: ".ogs/runs"
-      },
-      null,
-      2
-    ),
-    "utf8"
-  );
-  await writeFile(
-    path.resolve(tempRoot, ".ogs", "model-selection.json"),
-    JSON.stringify(
-      {
-        configVersion: "1",
-        defaults: {
-          model: "opencode/gpt-5-nano",
-          timeoutMs: 120000,
-          maxOutputBytes: 65536
-        }
-      },
-      null,
-      2
-    ),
-    "utf8"
-  );
-  await writeFile(
-    path.resolve(tempRoot, ".ogs", "model-catalog.json"),
-    await readFile(path.resolve(repoRoot, ".ogs", "model-catalog.json"), "utf8"),
-    "utf8"
-  );
-  await writeFile(
-    path.resolve(tempRoot, ".ogs", "user-profile.json"),
-    await readFile(path.resolve(repoRoot, ".ogs", "user-profile.json"), "utf8"),
-    "utf8"
-  );
-  await writeFile(
-    path.resolve(tempRoot, ".ogs", "laws.json"),
-    await readFile(path.resolve(repoRoot, ".ogs", "laws.json"), "utf8"),
-    "utf8"
-  );
+  await seedRuntimeProject(tempRoot);
   await writeFile(
     systemPath,
     [
@@ -431,6 +435,7 @@ test("lifecycle cli review commands expose pending human review state and can ap
   const statusPayload = JSON.parse(status.stdout);
   assert.equal(statusPayload.status, "stopped");
   assert.equal(statusPayload.pendingReviewCount, 1);
+  assert.equal(statusPayload.latestPendingReviewId, "review.test-operator@1#1.r1");
   assert.equal(statusPayload.hasWaitingHumanReview, true);
 
   const inspect = await runCli(["run", "inspect", runId, "--workdir", tempRoot]);
@@ -444,7 +449,9 @@ test("lifecycle cli review commands expose pending human review state and can ap
   const reviewListPayload = JSON.parse(reviewList.stdout);
   assert.equal(reviewListPayload.reviews.length, 1);
   assert.equal(reviewListPayload.reviews[0].reviewId, "review.test-operator@1#1.r1");
-  assert.equal(reviewListPayload.reviews[0].request.status, "pending");
+  assert.equal(reviewListPayload.latestPendingReviewId, "review.test-operator@1#1.r1");
+  assert.equal(reviewListPayload.reviews[0].currentStatus, "pending");
+  assert.equal(reviewListPayload.reviews[0].requestSnapshot.status, "pending");
 
   const reviewInspect = await runCli([
     "run",
@@ -457,8 +464,9 @@ test("lifecycle cli review commands expose pending human review state and can ap
   ]);
   assert.strictEqual(reviewInspect.code, 0);
   const reviewInspectPayload = JSON.parse(reviewInspect.stdout);
-  assert.equal(reviewInspectPayload.pendingReview.status, "pending");
-  assert.equal(reviewInspectPayload.request.reviewId, "review.test-operator@1#1.r1");
+  assert.equal(reviewInspectPayload.currentStatus, "pending");
+  assert.equal(reviewInspectPayload.currentState.status, "pending");
+  assert.equal(reviewInspectPayload.requestSnapshot.reviewId, "review.test-operator@1#1.r1");
 
   const decide = await runCli([
     "run",
@@ -489,7 +497,285 @@ test("lifecycle cli review commands expose pending human review state and can ap
   const statusAfterResumePayload = JSON.parse(statusAfterResume.stdout);
   assert.equal(statusAfterResumePayload.status, "done");
   assert.equal(statusAfterResumePayload.pendingReviewCount, 0);
+  assert.equal(statusAfterResumePayload.latestPendingReviewId, undefined);
   assert.equal(statusAfterResumePayload.hasWaitingHumanReview, false);
+
+  const reviewInspectAfterResume = await runCli([
+    "run",
+    "review",
+    "inspect",
+    runId,
+    "review.test-operator@1#1.r1",
+    "--workdir",
+    tempRoot
+  ]);
+  assert.strictEqual(reviewInspectAfterResume.code, 0);
+  const reviewInspectAfterResumePayload = JSON.parse(reviewInspectAfterResume.stdout);
+  assert.equal(reviewInspectAfterResumePayload.currentStatus, "resolved");
+  assert.equal(reviewInspectAfterResumePayload.currentState.status, "resolved");
+  assert.equal(reviewInspectAfterResumePayload.decisionSnapshot.decision, "approve");
+});
+
+test("lifecycle cli review commands preserve paused status and allow a later approve on the same review", { concurrency: false }, async () => {
+  const tempRoot = await mkdtemp(path.join(os.tmpdir(), "ogsystem-cli-review-pause-"));
+  const systemPath = path.resolve(tempRoot, "system.mmd");
+
+  await seedRuntimeProject(tempRoot);
+  await writeFile(
+    systemPath,
+    [
+      "flowchart TD",
+      "%% system.id=cli.review.pause",
+      "%% system.version=1.0.0",
+      "%% law.global=law.console.base",
+      "%% entry.role=test-operator",
+      "%% model.bind.test-operator=balanced-gpt52",
+      "%% review.mode.test-operator=required",
+      "",
+      "input -->|GO| operator[Role:test-operator]",
+      "operator[Role:test-operator] -->|DONE| output",
+      ""
+    ].join("\n"),
+    "utf8"
+  );
+
+  const start = await runCli([
+    "run",
+    "start",
+    "--system",
+    systemPath,
+    "--input",
+    "cli review pause flow",
+    "--dry-run",
+    "--workdir",
+    tempRoot
+  ]);
+  assert.strictEqual(start.code, 0, start.stderr);
+
+  const list = await runCli(["run", "list", "--workdir", tempRoot]);
+  assert.strictEqual(list.code, 0);
+  const runId = JSON.parse(list.stdout).runs[0].runId;
+  const reviewId = "review.test-operator@1#1.r1";
+
+  const pause = await runCli([
+    "run",
+    "review",
+    "decide",
+    runId,
+    reviewId,
+    "--decision",
+    "pause",
+    "--comment",
+    "hold",
+    "--workdir",
+    tempRoot
+  ]);
+  assert.strictEqual(pause.code, 0, pause.stderr);
+
+  const resumeAfterPause = await runCli(["run", "resume", runId, "--dry-run", "--workdir", tempRoot]);
+  assert.strictEqual(resumeAfterPause.code, 0, resumeAfterPause.stderr);
+  const pausedStatus = await runCli(["run", "status", runId, "--workdir", tempRoot]);
+  assert.strictEqual(pausedStatus.code, 0);
+  const pausedStatusPayload = JSON.parse(pausedStatus.stdout);
+  assert.equal(pausedStatusPayload.status, "stopped");
+  assert.equal(pausedStatusPayload.latestPendingReviewId, reviewId);
+
+  const pausedInspect = await runCli([
+    "run",
+    "review",
+    "inspect",
+    runId,
+    reviewId,
+    "--workdir",
+    tempRoot
+  ]);
+  assert.strictEqual(pausedInspect.code, 0);
+  const pausedInspectPayload = JSON.parse(pausedInspect.stdout);
+  assert.equal(pausedInspectPayload.currentStatus, "paused");
+  assert.equal(pausedInspectPayload.currentState.status, "paused");
+  assert.equal(pausedInspectPayload.decisionSnapshot.decision, "pause");
+
+  const approve = await runCli([
+    "run",
+    "review",
+    "decide",
+    runId,
+    reviewId,
+    "--decision",
+    "approve",
+    "--comment",
+    "approved after hold",
+    "--workdir",
+    tempRoot
+  ]);
+  assert.strictEqual(approve.code, 0, approve.stderr);
+
+  const resumeAfterApprove = await runCli(["run", "resume", runId, "--dry-run", "--workdir", tempRoot]);
+  assert.strictEqual(resumeAfterApprove.code, 0, resumeAfterApprove.stderr);
+  const finalStatus = await runCli(["run", "status", runId, "--workdir", tempRoot]);
+  assert.strictEqual(finalStatus.code, 0);
+  const finalStatusPayload = JSON.parse(finalStatus.stdout);
+  assert.equal(finalStatusPayload.status, "done");
+  assert.equal(finalStatusPayload.latestPendingReviewId, undefined);
+
+  const resolvedInspect = await runCli([
+    "run",
+    "review",
+    "inspect",
+    runId,
+    reviewId,
+    "--workdir",
+    tempRoot
+  ]);
+  assert.strictEqual(resolvedInspect.code, 0);
+  const resolvedInspectPayload = JSON.parse(resolvedInspect.stdout);
+  assert.equal(resolvedInspectPayload.currentStatus, "resolved");
+  assert.equal(resolvedInspectPayload.currentState.status, "resolved");
+  assert.equal(resolvedInspectPayload.decisionSnapshot.decision, "approve");
+});
+
+test("lifecycle cli review status normalization tracks rework rounds and rejects stale or invalid decisions", { concurrency: false }, async () => {
+  const tempRoot = await mkdtemp(path.join(os.tmpdir(), "ogsystem-cli-review-rework-"));
+  const systemPath = path.resolve(tempRoot, "system.mmd");
+
+  await seedRuntimeProject(tempRoot);
+  await writeFile(
+    systemPath,
+    [
+      "flowchart TD",
+      "%% system.id=cli.review.rework",
+      "%% system.version=1.0.0",
+      "%% law.global=law.console.base",
+      "%% entry.role=test-operator",
+      "%% model.bind.test-operator=balanced-gpt52",
+      "%% review.mode.test-operator=required",
+      "%% review.rework.target.test-operator=test-operator",
+      "",
+      "input -->|GO| operator[Role:test-operator]",
+      "operator[Role:test-operator] -->|DONE| output",
+      ""
+    ].join("\n"),
+    "utf8"
+  );
+
+  const start = await runCli([
+    "run",
+    "start",
+    "--system",
+    systemPath,
+    "--input",
+    "cli review rework flow",
+    "--dry-run",
+    "--workdir",
+    tempRoot
+  ]);
+  assert.strictEqual(start.code, 0, start.stderr);
+
+  const list = await runCli(["run", "list", "--workdir", tempRoot]);
+  assert.strictEqual(list.code, 0);
+  const runId = JSON.parse(list.stdout).runs[0].runId;
+  const firstReviewId = "review.test-operator@1#1.r1";
+
+  const rework = await runCli([
+    "run",
+    "review",
+    "decide",
+    runId,
+    firstReviewId,
+    "--decision",
+    "rework",
+    "--comment",
+    "needs another pass",
+    "--workdir",
+    tempRoot
+  ]);
+  assert.strictEqual(rework.code, 0, rework.stderr);
+
+  const resume = await runCli(["run", "resume", runId, "--dry-run", "--workdir", tempRoot]);
+  assert.strictEqual(resume.code, 0, resume.stderr);
+
+  const statusAfterRework = await runCli(["run", "status", runId, "--workdir", tempRoot]);
+  assert.strictEqual(statusAfterRework.code, 0);
+  const statusAfterReworkPayload = JSON.parse(statusAfterRework.stdout);
+  assert.equal(statusAfterReworkPayload.status, "stopped");
+  assert.equal(typeof statusAfterReworkPayload.latestPendingReviewId, "string");
+  assert.notEqual(statusAfterReworkPayload.latestPendingReviewId, firstReviewId);
+
+  const firstReviewInspect = await runCli([
+    "run",
+    "review",
+    "inspect",
+    runId,
+    firstReviewId,
+    "--workdir",
+    tempRoot
+  ]);
+  assert.strictEqual(firstReviewInspect.code, 0);
+  const firstReviewInspectPayload = JSON.parse(firstReviewInspect.stdout);
+  assert.equal(firstReviewInspectPayload.currentStatus, "resolved");
+  assert.equal(firstReviewInspectPayload.requestSnapshot.status, "pending");
+  assert.equal(firstReviewInspectPayload.currentState.status, "resolved");
+  assert.equal(firstReviewInspectPayload.decisionSnapshot.decision, "rework");
+
+  const staleDecision = await runCli([
+    "run",
+    "review",
+    "decide",
+    runId,
+    firstReviewId,
+    "--decision",
+    "approve",
+    "--workdir",
+    tempRoot
+  ]);
+  assert.strictEqual(staleDecision.code, 1);
+  assert.match(staleDecision.stderr, /already resolved/);
+
+  const missingReview = await runCli([
+    "run",
+    "review",
+    "decide",
+    runId,
+    "review.missing",
+    "--decision",
+    "approve",
+    "--workdir",
+    tempRoot
+  ]);
+  assert.strictEqual(missingReview.code, 1);
+  assert.match(missingReview.stderr, /Review not found/);
+
+  const invalidScope = await runCli([
+    "run",
+    "review",
+    "decide",
+    runId,
+    statusAfterReworkPayload.latestPendingReviewId,
+    "--decision",
+    "approve",
+    "--scope",
+    "run",
+    "--workdir",
+    tempRoot
+  ]);
+  assert.strictEqual(invalidScope.code, 1);
+  assert.match(invalidScope.stderr, /only valid with --decision terminate/);
+
+  const invalidTerminateScope = await runCli([
+    "run",
+    "review",
+    "decide",
+    runId,
+    statusAfterReworkPayload.latestPendingReviewId,
+    "--decision",
+    "terminate",
+    "--scope",
+    "invalid",
+    "--workdir",
+    tempRoot
+  ]);
+  assert.strictEqual(invalidTerminateScope.code, 1);
+  assert.match(invalidTerminateScope.stderr, /invalid --scope value/);
 });
 
 test("lifecycle cli modern run failures print modern resume hints and reject hidden legacy flags", { concurrency: false }, async () => {

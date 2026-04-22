@@ -8,7 +8,10 @@
 
 - 项目流程角色：`office-hours`、`review`、`qa`、`ship`、`ship-deploy`、`retro`、`learn`
 - 补偿模板角色：`error-handler-base`
-- rework 投影验证角色：`review-feedback`
-- 兼容参考模板：`human-approve-gate`
 
-这里保留 `human-approve-gate` 只是为了对照历史用法；当前主路径的人机协作依赖的是 runtime-native human review，而不是额外的人工 gate 节点。
+当前主路径的人机协作依赖的是 runtime-native human review。
+
+- `ship` 既承担首轮交付草稿，也承担 rework 回流点
+- reviewer comment 通过 `global.human_review.current.*?` 直接投影到 `ship`
+- `qa -> ship` / `ship -> ship-deploy` / `retro -> learn` 都走小型结构化 payload
+- 不再保留额外的 `review-feedback` 或 `human-approve-gate` 节点模板

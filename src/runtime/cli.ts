@@ -1453,6 +1453,12 @@ async function runRunCommand(argv: string[]): Promise<void> {
               : typeof detail.pendingReviewCount === "number"
                 ? detail.pendingReviewCount
                 : undefined,
+          latestPendingReviewId:
+            typeof summary?.latestPendingReviewId === "string"
+              ? summary.latestPendingReviewId
+              : typeof detail.latestPendingReviewId === "string"
+                ? detail.latestPendingReviewId
+                : undefined,
           hasWaitingHumanReview:
             typeof summary?.hasWaitingHumanReview === "boolean"
               ? summary.hasWaitingHumanReview
@@ -1564,6 +1570,12 @@ async function runRunCommand(argv: string[]): Promise<void> {
         throw createCliInputError(
           "CLI_RUN_REVIEW_DECIDE_INVALID_SCOPE",
           `invalid --scope value: ${scope}`
+        );
+      }
+      if (scope !== undefined && decision !== "terminate") {
+        throw createCliInputError(
+          "CLI_RUN_REVIEW_DECIDE_SCOPE_REQUIRES_TERMINATE",
+          "--scope is only valid with --decision terminate"
         );
       }
       const result = await writeHumanReviewDecision({

@@ -12,9 +12,12 @@ flowchart TD
 %% review.mode.ship=required
 %% review.timeout.ship=86400
 %% review.timeout.action.ship=pause
-%% review.rework.target.ship=review
+%% review.rework.target.ship=ship
 %% review.rework.max.ship=2
 %% review.terminate.scope.ship=run
+%% context.map.ship.human_review_comment=global.human_review.current.comment?
+%% context.map.ship.human_review_round=global.human_review.current.round?
+%% context.map.ship.previous_ship_output=global.human_review.current.previous_output.content?
 
 input -->|REQUEST_IN| office-hours[Role:office-hours]
 office-hours[Role:office-hours] -->|READY_FOR_REVIEW| review[Role:review]

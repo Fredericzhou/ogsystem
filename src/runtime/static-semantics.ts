@@ -20,6 +20,7 @@ export type SelectorSummary = {
     | "unsupported";
   sourceRoleId?: string;
   validPath: boolean;
+  optional?: boolean;
 };
 
 function isValidSelectorPath(path: string): boolean {
@@ -30,75 +31,101 @@ function isValidSelectorPath(path: string): boolean {
 }
 
 export function summarizeContextSelector(selector: string): SelectorSummary {
-  if (selector === "global.task" || selector === "global.user_profile") {
+  const optional = selector.endsWith("?");
+  const normalizedSelector = optional ? selector.slice(0, -1) : selector;
+
+  if (optional && !normalizedSelector.startsWith("global.human_review.current")) {
     return {
-      selectorKind: selector,
-      validPath: true
+      selectorKind: "unsupported",
+      validPath: false,
+      optional
     };
   }
-  if (selector.startsWith("global.user_profile.")) {
+
+  if (normalizedSelector === "global.task" || normalizedSelector === "global.user_profile") {
+    return {
+      selectorKind: normalizedSelector,
+      validPath: true,
+      optional
+    };
+  }
+  if (normalizedSelector.startsWith("global.user_profile.")) {
     return {
       selectorKind: "global.user_profile.path",
-      validPath: isValidSelectorPath(selector.slice("global.user_profile.".length))
+      validPath: isValidSelectorPath(normalizedSelector.slice("global.user_profile.".length)),
+      optional
     };
   }
-  if (selector === "global.human_review.current") {
+  if (normalizedSelector === "global.human_review.current") {
     return {
       selectorKind: "global.human_review.current",
-      validPath: true
+      validPath: true,
+      optional
     };
   }
-  if (selector === "global.human_review.current.comment") {
+  if (normalizedSelector === "global.human_review.current.comment") {
     return {
       selectorKind: "global.human_review.current.comment",
-      validPath: true
+      validPath: true,
+      optional
     };
   }
-  if (selector === "global.human_review.current.round") {
+  if (normalizedSelector === "global.human_review.current.round") {
     return {
       selectorKind: "global.human_review.current.round",
-      validPath: true
+      validPath: true,
+      optional
     };
   }
-  if (selector === "global.human_review.current.previous_output") {
+  if (normalizedSelector === "global.human_review.current.previous_output") {
     return {
       selectorKind: "global.human_review.current.previous_output",
-      validPath: true
+      validPath: true,
+      optional
     };
   }
-  if (selector.startsWith("global.human_review.current.previous_output.")) {
+  if (normalizedSelector.startsWith("global.human_review.current.previous_output.")) {
     return {
       selectorKind: "global.human_review.current.previous_output.path",
       validPath: isValidSelectorPath(
-        selector.slice("global.human_review.current.previous_output.".length)
-      )
+        normalizedSelector.slice("global.human_review.current.previous_output.".length)
+      ),
+      optional
     };
   }
-  if (selector === "direct.content" || selector === "direct.event" || selector === "direct.data") {
+  if (
+    normalizedSelector === "direct.content" ||
+    normalizedSelector === "direct.event" ||
+    normalizedSelector === "direct.data"
+  ) {
     return {
       selectorKind: "direct",
-      validPath: true
+      validPath: true,
+      optional
     };
   }
-  if (selector.startsWith("direct.data.")) {
+  if (normalizedSelector.startsWith("direct.data.")) {
     return {
       selectorKind: "direct.data.path",
-      validPath: isValidSelectorPath(selector.slice("direct.data.".length))
+      validPath: isValidSelectorPath(normalizedSelector.slice("direct.data.".length)),
+      optional
     };
   }
-  const sourceMatch = selector.match(
+  const sourceMatch = normalizedSelector.match(
     /^source\(([A-Za-z0-9._:-]+)\)\.(content|event|data|data\.[A-Za-z0-9_]+(?:\.[A-Za-z0-9_]+)*)$/
   );
   if (sourceMatch) {
     return {
       selectorKind: "source",
       sourceRoleId: sourceMatch[1],
-      validPath: true
+      validPath: true,
+      optional
     };
   }
   return {
     selectorKind: "unsupported",
-    validPath: false
+    validPath: false,
+    optional
   };
 }
 
