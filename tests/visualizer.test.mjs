@@ -683,11 +683,11 @@ test("visualizer server serves run list, details, and live stream", async (t) =>
     const detailResponse = await fetch(`${url}/api/v1/runs/${runId}`);
     assert.equal(detailResponse.status, 200);
     const detail = await detailResponse.json();
-    assert.equal(detail.snapshot.status, "done");
-    assert.equal(detail.snapshot.activeBranches, 1);
-    assert.equal(detail.snapshot.transitionCount, 5);
-    assert.equal(detail.snapshot.finalRoleId, "alpha");
-    assert.equal(detail.snapshot.isSimulation, true);
+    assert.equal(detail.header.status, "done");
+    assert.equal(detail.header.activeBranches, 1);
+    assert.equal(detail.header.transitionCount, 5);
+    assert.equal(detail.header.finalRoleId, "alpha");
+    assert.equal(detail.header.isSimulation, true);
     assert.match(detail.systemSource, /alpha\[Role:alpha\] -->\|DONE\| output/);
 
     const eventsResponse = await fetch(`${url}/api/v1/runs/${runId}/events?cursor=0&limit=1`);
@@ -775,10 +775,10 @@ test("visualizer server exposes pending human review fields on waiting-review ru
     const detailResponse = await fetch(`${url}/api/v1/runs/${runId}`);
     assert.equal(detailResponse.status, 200);
     const detail = await detailResponse.json();
-    assert.equal(detail.snapshot.status, "stopped");
-    assert.equal(detail.snapshot.pendingReviewCount, 1);
-    assert.equal(detail.snapshot.hasWaitingHumanReview, true);
-    assert.equal(detail.snapshot.activeBranches, 0);
+    assert.equal(detail.header.status, "stopped");
+    assert.equal(detail.header.pendingReviewCount, 1);
+    assert.equal(detail.header.hasWaitingHumanReview, true);
+    assert.equal(detail.header.activeBranches, 0);
     const eventsResponse = await fetch(`${url}/api/v1/runs/${runId}/events?cursor=0&limit=1`);
     assert.equal(eventsResponse.status, 200);
     const events = await eventsResponse.json();
@@ -879,6 +879,57 @@ test("visualizer server writes review decisions, stop requests, and reindex thro
     const stop = await stopResponse.json();
     assert.equal(stop.runId, runId);
     assert.equal(stop.request.reason, "stop from visualizer test");
+  } finally {
+    await new Promise((resolve) => server.close(resolve));
+  }
+});
+
+test("visualizer server keeps idle run list stable until reindex refreshes the cache", async (t) => {
+  const workdir = await mkdtemp(path.join(os.tmpdir(), "ogsystem-visualizer-runs-cache-"));
+  await seedProjectFixture(workdir);
+  const firstRun = await createFixtureRun(workdir);
+  let started;
+  try {
+    started = await startVisualizationServer({
+      workdir,
+      host: "127.0.0.1",
+      port: 0
+    });
+  } catch (error) {
+    const errorCode =
+      typeof error === "object" && error !== null && "code" in error ? error.code : undefined;
+    if (errorCode === "EPERM" || errorCode === "EACCES") {
+      t.skip(`visualizer listen unavailable in sandbox: ${errorCode}`);
+      return;
+    }
+    throw error;
+  }
+  const { server, url } = started;
+
+  try {
+    const firstListResponse = await fetch(`${url}/api/v1/runs`);
+    assert.equal(firstListResponse.status, 200);
+    const firstList = await firstListResponse.json();
+    assert.equal(firstList.runs.length, 1);
+    assert.equal(firstList.runs[0].runId, firstRun.runId);
+
+    const secondRun = await createWaitingReviewFixtureRun(workdir);
+    const cachedListResponse = await fetch(`${url}/api/v1/runs`);
+    assert.equal(cachedListResponse.status, 200);
+    const cachedList = await cachedListResponse.json();
+    assert.equal(cachedList.runs.length, 1);
+    assert.equal(cachedList.runs[0].runId, firstRun.runId);
+
+    const reindexResponse = await fetch(`${url}/api/v1/runs/reindex`, { method: "POST" });
+    assert.equal(reindexResponse.status, 200);
+    const reindex = await reindexResponse.json();
+    assert.equal(reindex.runs.length, 2);
+
+    const refreshedListResponse = await fetch(`${url}/api/v1/runs`);
+    assert.equal(refreshedListResponse.status, 200);
+    const refreshedList = await refreshedListResponse.json();
+    assert.equal(refreshedList.runs.length, 2);
+    assert.ok(refreshedList.runs.some((run) => run.runId === secondRun.runId));
   } finally {
     await new Promise((resolve) => server.close(resolve));
   }

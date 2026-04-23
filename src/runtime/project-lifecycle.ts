@@ -1097,6 +1097,58 @@ export async function rebuildRunsIndex(workdir: string): Promise<RunsIndexFile> 
   return index;
 }
 
+export async function loadPersistedRunsIndex(workdir: string): Promise<RunsIndexFile | undefined> {
+  const indexPath = resolve(workdir, OGS_RUNS_INDEX_FILE);
+  const raw = await readJsonFile(indexPath).catch(() => undefined);
+  if (typeof raw !== "object" || raw === null || Array.isArray(raw)) {
+    return undefined;
+  }
+  const record = raw as Record<string, unknown>;
+  if (record.version !== 1 || !Array.isArray(record.runs)) {
+    return undefined;
+  }
+  const runs = record.runs.flatMap((value) => {
+    if (typeof value !== "object" || value === null || Array.isArray(value)) {
+      return [];
+    }
+    const item = value as Record<string, unknown>;
+    const runId = typeof item.runId === "string" ? item.runId : undefined;
+    const status = typeof item.status === "string" ? item.status : undefined;
+    const transitionCount =
+      typeof item.transitionCount === "number" && Number.isFinite(item.transitionCount)
+        ? item.transitionCount
+        : undefined;
+    const updatedAt = typeof item.updatedAt === "string" ? item.updatedAt : undefined;
+    const runDir = typeof item.runDir === "string" ? item.runDir : undefined;
+    if (!runId || !status || transitionCount === undefined || !updatedAt || !runDir) {
+      return [];
+    }
+    return [
+      {
+        runId,
+        status,
+        transitionCount,
+        finalRoleId: typeof item.finalRoleId === "string" ? item.finalRoleId : undefined,
+        pendingReviewCount:
+          typeof item.pendingReviewCount === "number" && Number.isFinite(item.pendingReviewCount)
+            ? item.pendingReviewCount
+            : undefined,
+        hasWaitingHumanReview:
+          typeof item.hasWaitingHumanReview === "boolean" ? item.hasWaitingHumanReview : undefined,
+        latestPendingReviewId:
+          typeof item.latestPendingReviewId === "string" ? item.latestPendingReviewId : undefined,
+        updatedAt,
+        runDir
+      } satisfies IndexedRun
+    ];
+  });
+  return {
+    version: 1,
+    generatedAt: typeof record.generatedAt === "string" ? record.generatedAt : "",
+    runs
+  };
+}
+
 export function resolveRunDir(workdir: string, runId: string): string {
   if (runId.includes("ogsystem-history")) {
     throw new Error(`Unsupported run path: ${runId}`);

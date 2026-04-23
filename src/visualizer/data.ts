@@ -683,6 +683,64 @@ function parseCheckpointSequence(filePath: string): number | undefined {
   return Number.isInteger(parsed) ? parsed : undefined;
 }
 
+type ResumeDiagnosticsCacheEntry = {
+  token: string;
+  expiresAt: number;
+  value: Promise<Record<string, unknown>>;
+};
+
+const RESUME_DIAGNOSTICS_TTL_MS = 5_000;
+const resumeDiagnosticsCache = new Map<string, ResumeDiagnosticsCacheEntry>();
+
+async function getMtimeToken(path: string): Promise<string> {
+  const fileStat = await stat(path).catch(() => undefined);
+  return fileStat ? `${path}:${fileStat.mtimeMs}:${fileStat.size}` : `${path}:missing`;
+}
+
+async function listExecutionOutcomeStatTokens(runDir: string): Promise<string[]> {
+  const rolesDir = resolve(runDir, "roles");
+  let roleEntries;
+  try {
+    roleEntries = await readdir(rolesDir, { withFileTypes: true });
+  } catch {
+    return [];
+  }
+  const tokens: string[] = [];
+  for (const roleEntry of roleEntries) {
+    if (!roleEntry.isDirectory()) {
+      continue;
+    }
+    const executionsDir = resolve(rolesDir, roleEntry.name, "executions");
+    let executionEntries;
+    try {
+      executionEntries = await readdir(executionsDir, { withFileTypes: true });
+    } catch {
+      continue;
+    }
+    for (const executionEntry of executionEntries) {
+      if (!executionEntry.isDirectory()) {
+        continue;
+      }
+      tokens.push(await getMtimeToken(resolve(executionsDir, executionEntry.name, "execution-outcome.json")));
+    }
+  }
+  return tokens.sort((left, right) => left.localeCompare(right));
+}
+
+async function computeResumeDiagnosticsCacheToken(workdir: string, runId: string): Promise<string> {
+  const runDir = resolveRunDir(workdir, runId);
+  const staticTokens = await Promise.all([
+    getMtimeToken(resolve(runDir, "state.json")),
+    getMtimeToken(resolve(runDir, "sessions.json")),
+    getMtimeToken(resolve(runDir, "plan-fingerprint.json")),
+    getMtimeToken(resolve(runDir, "control", "reviews")),
+    getMtimeToken(resolve(runDir, "checkpoints")),
+    getMtimeToken(resolve(runDir, ".resume.lock"))
+  ]);
+  const outcomeTokens = await listExecutionOutcomeStatTokens(runDir);
+  return staticTokens.concat(outcomeTokens).join("|");
+}
+
 async function computeExpectedFingerprint(workdir: string, runDir: string): Promise<JsonRecord> {
   const systemPath = resolve(runDir, "system.mmd");
   const system = await loadSystemFromMermaid(systemPath);
@@ -750,6 +808,13 @@ function toDiagnosticCheck(args: {
 }
 
 export async function inspectRunResumeDiagnostics(workdir: string, runId: string): Promise<Record<string, unknown>> {
+  const cacheKey = `${workdir}:${runId}`;
+  const token = await computeResumeDiagnosticsCacheToken(workdir, runId);
+  const cached = resumeDiagnosticsCache.get(cacheKey);
+  if (cached && cached.token === token && cached.expiresAt > Date.now()) {
+    return cached.value;
+  }
+  const value = (async (): Promise<Record<string, unknown>> => {
   const runDir = resolveRunDir(workdir, runId);
   const detail = await inspectRun(workdir, runId);
   const graphState = extractGraphState(detail.state);
@@ -1055,6 +1120,18 @@ export async function inspectRunResumeDiagnostics(workdir: string, runId: string
     checks,
     recommendations
   };
+  })();
+  resumeDiagnosticsCache.set(cacheKey, {
+    token,
+    expiresAt: Date.now() + RESUME_DIAGNOSTICS_TTL_MS,
+    value
+  });
+  try {
+    return await value;
+  } catch (error) {
+    resumeDiagnosticsCache.delete(cacheKey);
+    throw error;
+  }
 }
 
 export async function listRunReviewsVisualization(workdir: string, runId: string): Promise<Record<string, unknown>> {

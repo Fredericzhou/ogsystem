@@ -5,12 +5,14 @@ import path from "node:path";
 import { mkdtemp, mkdir, symlink, writeFile } from "node:fs/promises";
 
 import {
-  inspectProjectConfigVisualization,
-  inspectProjectSystemVisualization,
-  inspectProjectVisualization,
-  inspectRunGraphVisualization,
   inspectRunResumeDiagnostics
 } from "../dist/visualizer/data.js";
+import {
+  inspectProjectConfigVisualization,
+  inspectProjectSystemVisualization,
+  inspectProjectVisualization
+} from "../dist/visualizer/project-projection.js";
+import { inspectRunGraphVisualization } from "../dist/visualizer/run-graph-projection.js";
 import { inspectHumanReview, listHumanReviews } from "../dist/runtime/project-lifecycle.js";
 
 async function seedProjectFixture(workdir) {

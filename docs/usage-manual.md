@@ -1086,6 +1086,13 @@ ogs visualizer --workdir .
 
 The visualizer is a lightweight read-mostly observability server. It renders project summary, run detail, graph view, review inbox/detail, resume diagnostics, event timeline, logs, and live updates. It prefers `summary.json`, `timeline.jsonl`, `runs-index.json`, and other projections first, with fallback to `state.json` / `events.ndjson` where needed.
 
+Operational notes:
+
+- live timeline updates append incrementally from `timeline.jsonl`; they no longer trigger a full run/review/log/diagnostics reload on every event
+- resume diagnostics are loaded on demand from the UI and refreshed explicitly when needed
+- sidebar run lists prefer cached / persisted index data during idle steady state instead of rescanning the runs directory on every refresh
+- review decision / stop / reindex actions now ask for confirmation, and review / stop actions capture operator audit input before writing control-plane records
+
 Current API/control-plane shape:
 
 - `GET /api/v1/project`, `/project/system`, `/project/config`, `/project/roles`
