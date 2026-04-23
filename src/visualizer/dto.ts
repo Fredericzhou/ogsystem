@@ -34,6 +34,7 @@ export type RunDetailView = {
 export type ReviewListItem = {
   reviewId: string;
   currentStatus: string;
+  decisionPhase?: "recorded" | "pending_reconcile" | "applied";
   roleId?: string;
   branchId?: string;
   branchStatus?: string;
@@ -43,6 +44,11 @@ export type ReviewListItem = {
   actor?: string;
   comment?: string;
   scope?: "branch" | "run";
+  decidedAt?: string;
+  committedAt?: string;
+  checkpointSequence?: number;
+  appliedAt?: string;
+  reconciledAt?: string;
 };
 
 export type ReviewDetailView = ReviewListItem & {
@@ -54,11 +60,6 @@ export type ReviewDetailView = ReviewListItem & {
   requestedByExecutionId?: string;
   selectedEvent?: string;
   spec?: unknown;
-  decidedAt?: string;
-  committedAt?: string;
-  checkpointSequence?: number;
-  appliedAt?: string;
-  reconciledAt?: string;
   requestSnapshot?: unknown;
   decisionSnapshot?: unknown;
   currentState?: unknown;
@@ -147,6 +148,12 @@ export function mapReviewListItem(value: unknown): ReviewListItem | undefined {
   return {
     reviewId,
     currentStatus,
+    decisionPhase:
+      source.decisionPhase === "recorded" ||
+      source.decisionPhase === "pending_reconcile" ||
+      source.decisionPhase === "applied"
+        ? source.decisionPhase
+        : undefined,
     roleId: asString(source.roleId),
     branchId: asString(source.branchId),
     branchStatus: asString(source.branchStatus),
@@ -155,7 +162,12 @@ export function mapReviewListItem(value: unknown): ReviewListItem | undefined {
     decision: asString(source.decision),
     actor: asString(source.actor),
     comment: asString(source.comment),
-    scope: scopeValue === "branch" || scopeValue === "run" ? scopeValue : undefined
+    scope: scopeValue === "branch" || scopeValue === "run" ? scopeValue : undefined,
+    decidedAt: asString(source.decidedAt),
+    committedAt: asString(source.committedAt),
+    checkpointSequence: asNumber(source.checkpointSequence),
+    appliedAt: asString(source.appliedAt),
+    reconciledAt: asString(source.reconciledAt)
   };
 }
 
@@ -175,11 +187,6 @@ export function mapReviewDetailView(value: unknown): ReviewDetailView {
     requestedByExecutionId: asString(record.requestedByExecutionId),
     selectedEvent: asString(record.selectedEvent),
     spec: record.spec,
-    decidedAt: asString(record.decidedAt),
-    committedAt: asString(record.committedAt),
-    checkpointSequence: asNumber(record.checkpointSequence),
-    appliedAt: asString(record.appliedAt),
-    reconciledAt: asString(record.reconciledAt),
     requestSnapshot: record.requestSnapshot,
     decisionSnapshot: record.decisionSnapshot,
     currentState: record.currentState,

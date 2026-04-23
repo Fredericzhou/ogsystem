@@ -282,6 +282,7 @@ async function createFixtureRun(workdir) {
 
 async function createWaitingReviewFixtureRun(workdir, options = {}) {
   const includeDecision = options.includeDecision !== false;
+  const decisionMarkers = options.decisionMarkers ?? {};
   const runId = "20260422-091500-feedface";
   const runDir = path.resolve(workdir, ".ogs", "runs", runId);
   await mkdir(path.resolve(runDir, "logs", "roles"), { recursive: true });
@@ -511,7 +512,8 @@ async function createWaitingReviewFixtureRun(workdir, options = {}) {
           decidedAt: "2026-04-22T09:15:01.000Z",
           decision: "approve",
           actor: "qa",
-          comment: "ship it"
+          comment: "ship it",
+          ...decisionMarkers
         },
         null,
         2
@@ -798,6 +800,8 @@ test("visualizer server exposes pending human review fields on waiting-review ru
     assert.equal(reviews.reviews[0].roleId, "demo-analyst");
     assert.equal(reviews.reviews[0].branchStatus, "waiting_review");
     assert.equal(reviews.reviews[0].decision, "approve");
+    assert.equal(reviews.reviews[0].currentStatus, "pending");
+    assert.equal(reviews.reviews[0].decisionPhase, "recorded");
 
     const reviewDetailResponse = await fetch(
       `${url}/api/v1/runs/${runId}/reviews/review.demo-analyst@1%231.r1`
@@ -806,6 +810,8 @@ test("visualizer server exposes pending human review fields on waiting-review ru
     const reviewDetail = await reviewDetailResponse.json();
     assert.equal(reviewDetail.roleId, "demo-analyst");
     assert.equal(reviewDetail.comment, "ship it");
+    assert.equal(reviewDetail.currentStatus, "pending");
+    assert.equal(reviewDetail.decisionPhase, "recorded");
 
     const diagnosticsResponse = await fetch(`${url}/api/v1/runs/${runId}/resume-diagnostics`);
     assert.equal(diagnosticsResponse.status, 200);
@@ -813,6 +819,54 @@ test("visualizer server exposes pending human review fields on waiting-review ru
     assert.equal(diagnostics.status, "dirty");
     assert.ok(diagnostics.checks.some((check) => check.id === "review-decisions"));
     assert.ok(diagnostics.checks.some((check) => check.id === "execution-outcomes"));
+  } finally {
+    await new Promise((resolve) => server.close(resolve));
+  }
+});
+
+test("visualizer server exposes applied review decision phases without changing lifecycle status", async (t) => {
+  const workdir = await mkdtemp(path.join(os.tmpdir(), "ogsystem-visualizer-review-phase-"));
+  await seedProjectFixture(workdir);
+  const { runId } = await createWaitingReviewFixtureRun(workdir, {
+    decisionMarkers: {
+      checkpointSequence: 7,
+      appliedAt: "2026-04-22T09:15:02.000Z",
+      reconciledAt: "2026-04-22T09:15:03.000Z"
+    }
+  });
+  let started;
+  try {
+    started = await startVisualizationServer({
+      workdir,
+      host: "127.0.0.1",
+      port: 0
+    });
+  } catch (error) {
+    const errorCode =
+      typeof error === "object" && error !== null && "code" in error ? error.code : undefined;
+    if (errorCode === "EPERM" || errorCode === "EACCES") {
+      t.skip(`visualizer listen unavailable in sandbox: ${errorCode}`);
+      return;
+    }
+    throw error;
+  }
+  const { server, url } = started;
+
+  try {
+    const reviewsResponse = await fetch(`${url}/api/v1/runs/${runId}/reviews`);
+    assert.equal(reviewsResponse.status, 200);
+    const reviews = await reviewsResponse.json();
+    assert.equal(reviews.reviews[0].currentStatus, "pending");
+    assert.equal(reviews.reviews[0].decisionPhase, "applied");
+
+    const reviewDetailResponse = await fetch(
+      `${url}/api/v1/runs/${runId}/reviews/review.demo-analyst@1%231.r1`
+    );
+    assert.equal(reviewDetailResponse.status, 200);
+    const reviewDetail = await reviewDetailResponse.json();
+    assert.equal(reviewDetail.currentStatus, "pending");
+    assert.equal(reviewDetail.decisionPhase, "applied");
+    assert.equal(reviewDetail.reconciledAt, "2026-04-22T09:15:03.000Z");
   } finally {
     await new Promise((resolve) => server.close(resolve));
   }

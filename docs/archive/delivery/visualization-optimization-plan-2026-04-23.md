@@ -245,3 +245,5 @@ Move from interface-only confidence to user-path confidence.
 - Client-side partial refresh and server-side incremental tail reading are treated as one continuous milestone.
 - DTO boundaries are established before file splitting.
 - Idle runs-list behavior must stop scanning the runs directory every 15 seconds without new runs or user action.
+- Review lifecycle actionability stays on `currentStatus`, while operator-facing durable-decision progress is exposed separately as `decisionPhase`.
+- Front-end regression now includes lightweight DOM/fetch/EventSource user-path coverage without adding a browser dependency.

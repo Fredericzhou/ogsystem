@@ -183,7 +183,8 @@ async function createSimulationRun(workdir) {
   return { runId, runDir };
 }
 
-async function createWaitingReviewRun(workdir) {
+async function createWaitingReviewRun(workdir, options = {}) {
+  const decisionMarkers = options.decisionMarkers ?? {};
   const runId = "20260422-091500-feedface";
   const runDir = path.resolve(workdir, ".ogs", "runs", runId);
   await mkdir(path.resolve(runDir, "logs", "roles"), { recursive: true });
@@ -400,7 +401,8 @@ async function createWaitingReviewRun(workdir) {
         decidedAt: "2026-04-22T09:15:01.000Z",
         decision: "approve",
         actor: "qa",
-        comment: "ship it"
+        comment: "ship it",
+        ...decisionMarkers
       },
       null,
       2
@@ -611,12 +613,15 @@ test("visualizer data normalizes reviews and resume diagnostics", async () => {
   assert.equal(reviews.reviews[0].branchStatus, "waiting_review");
   assert.equal(reviews.reviews[0].roleId, "demo-analyst");
   assert.equal(reviews.reviews[0].decision, "approve");
+  assert.equal(reviews.reviews[0].decisionPhase, "recorded");
   assert.equal(reviews.reviews[0].history.length, 1);
 
   const reviewDetail = await inspectHumanReview(workdir, runId, "review.demo-analyst@1#1.r1");
   assert.equal(reviewDetail.branchStatus, "waiting_review");
   assert.equal(reviewDetail.roleId, "demo-analyst");
   assert.equal(reviewDetail.comment, "ship it");
+  assert.equal(reviewDetail.currentStatus, "pending");
+  assert.equal(reviewDetail.decisionPhase, "recorded");
   assert.equal(reviewDetail.humanReviewContext.comment, "ship it");
 
   const diagnostics = await inspectRunResumeDiagnostics(workdir, runId);
@@ -625,6 +630,49 @@ test("visualizer data normalizes reviews and resume diagnostics", async () => {
   assert.ok(diagnostics.checks.some((check) => check.id === "review-decisions"));
   assert.ok(diagnostics.checks.some((check) => check.id === "execution-outcomes"));
   assert.ok(diagnostics.recommendations.some((item) => item.action === "inspect-project"));
+});
+
+test("visualizer data derives review decision phases from durable markers", async () => {
+  const recordedWorkdir = await mkdtemp(path.join(os.tmpdir(), "ogsystem-visualizer-data-review-phase-recorded-"));
+  await seedProjectFixture(recordedWorkdir);
+  const recordedRun = await createWaitingReviewRun(recordedWorkdir, {
+    decisionMarkers: {}
+  });
+
+  const pendingWorkdir = await mkdtemp(path.join(os.tmpdir(), "ogsystem-visualizer-data-review-phase-pending-"));
+  await seedProjectFixture(pendingWorkdir);
+  const pendingReconcileRun = await createWaitingReviewRun(pendingWorkdir, {
+    decisionMarkers: {
+      checkpointSequence: 7,
+      appliedAt: "2026-04-22T09:15:02.000Z"
+    }
+  });
+
+  const appliedWorkdir = await mkdtemp(path.join(os.tmpdir(), "ogsystem-visualizer-data-review-phase-applied-"));
+  await seedProjectFixture(appliedWorkdir);
+  const appliedRun = await createWaitingReviewRun(appliedWorkdir, {
+    decisionMarkers: {
+      checkpointSequence: 8,
+      appliedAt: "2026-04-22T09:15:02.000Z",
+      reconciledAt: "2026-04-22T09:15:03.000Z"
+    }
+  });
+
+  const recorded = await inspectHumanReview(recordedWorkdir, recordedRun.runId, "review.demo-analyst@1#1.r1");
+  assert.equal(recorded.currentStatus, "pending");
+  assert.equal(recorded.decisionPhase, "recorded");
+
+  const pendingReconcile = await inspectHumanReview(
+    pendingWorkdir,
+    pendingReconcileRun.runId,
+    "review.demo-analyst@1#1.r1"
+  );
+  assert.equal(pendingReconcile.currentStatus, "pending");
+  assert.equal(pendingReconcile.decisionPhase, "pending_reconcile");
+
+  const applied = await inspectHumanReview(appliedWorkdir, appliedRun.runId, "review.demo-analyst@1#1.r1");
+  assert.equal(applied.currentStatus, "pending");
+  assert.equal(applied.decisionPhase, "applied");
 });
 
 test("visualizer data projects join waiting sources for graph view", async () => {

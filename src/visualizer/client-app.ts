@@ -101,6 +101,17 @@ export function getStreamRefreshPlan(type: string | undefined): StreamRefreshPla
   };
 }
 
+export function formatReviewStatusLabel(status: string | undefined): string {
+  switch (status) {
+    case "pending_reconcile":
+      return "pending reconcile";
+    case "waiting_review":
+      return "waiting review";
+    default:
+      return String(status || "unknown").replace(/_/g, " ");
+  }
+}
+
 export function buildClientAppScript(apiPrefix: string): string {
   return `
     const API_PREFIX = ${JSON.stringify(apiPrefix)};
@@ -108,6 +119,7 @@ export function buildClientAppScript(apiPrefix: string): string {
     const buildRouteSearch = ${buildRouteSearch.toString()};
     const appendStreamEntry = ${appendStreamEntry.toString()};
     const getStreamRefreshPlan = ${getStreamRefreshPlan.toString()};
+    const formatReviewStatusLabel = ${formatReviewStatusLabel.toString()};
     const state = {
       project: null,
       runs: [],
@@ -190,7 +202,23 @@ export function buildClientAppScript(apiPrefix: string): string {
     }
 
     function statusClass(status) {
-      return ["running", "stopping", "stopped", "done", "failed", "waiting_review", "active", "idle", "simulation", "completed"].includes(status)
+      return [
+        "running",
+        "stopping",
+        "stopped",
+        "done",
+        "failed",
+        "waiting_review",
+        "active",
+        "idle",
+        "simulation",
+        "completed",
+        "recorded",
+        "pending_reconcile",
+        "applied",
+        "pending",
+        "paused"
+      ].includes(status)
         ? status
         : "unknown";
     }
@@ -469,6 +497,65 @@ export function buildClientAppScript(apiPrefix: string): string {
       stateEl.textContent = formatJson(state.detail?.state ?? null);
     }
 
+    function describeReviewDecisionPhase(detail) {
+      const phase = detail?.decisionPhase || "";
+      if (phase === "recorded") {
+        return "Decision recorded in the control plane; runtime apply has not been confirmed yet.";
+      }
+      if (phase === "pending_reconcile") {
+        return "Decision has a checkpoint marker but reconcile is still pending.";
+      }
+      if (phase === "applied") {
+        return "Decision applied and reconciled into runtime state.";
+      }
+      return "No durable decision recorded yet.";
+    }
+
+    function describeReviewStatus(detail) {
+      const status = detail?.currentStatus || "unknown";
+      if (status === "pending") {
+        return "Awaiting human decision.";
+      }
+      if (status === "paused") {
+        return "Review is paused and waiting for a follow-up decision.";
+      }
+      if (status === "expired") {
+        return "Review request expired before a durable decision was applied.";
+      }
+      return "Review state unavailable.";
+    }
+
+    function formatReviewDetail(detail) {
+      if (!detail) {
+        return "No review selected.";
+      }
+      return [
+        "reviewId: " + (detail.reviewId || "n/a"),
+        "roleId: " + (detail.roleId || "n/a"),
+        "branchId: " + (detail.branchId || "n/a"),
+        "round: " + (detail.round ?? "n/a"),
+        "status: " + formatReviewStatusLabel(detail.currentStatus),
+        "statusSummary: " + describeReviewStatus(detail),
+        "decisionPhase: " + formatReviewStatusLabel(detail.decisionPhase || "none"),
+        "decisionPhaseSummary: " + describeReviewDecisionPhase(detail),
+        "decision: " + (detail.decision || "n/a"),
+        "actor: " + (detail.actor || "n/a"),
+        "comment: " + (detail.comment || "n/a"),
+        "requestedAt: " + (detail.requestedAt || "n/a"),
+        "decidedAt: " + (detail.decidedAt || "n/a"),
+        "committedAt: " + (detail.committedAt || "n/a"),
+        "checkpointSequence: " + (detail.checkpointSequence ?? "n/a"),
+        "appliedAt: " + (detail.appliedAt || "n/a"),
+        "reconciledAt: " + (detail.reconciledAt || "n/a"),
+        "",
+        "history:",
+        formatJson(detail.history || []),
+        "",
+        "humanReviewContext:",
+        formatJson(detail.humanReviewContext ?? null)
+      ].join("\\n");
+    }
+
     function renderReviews() {
       if (!state.reviews?.reviews?.length) {
         reviewsEl.innerHTML = '<div class="hint">No reviews for this run.</div>';
@@ -482,11 +569,13 @@ export function buildClientAppScript(apiPrefix: string): string {
           '<button class="run-card ' + (review.reviewId === state.selectedReviewId ? "active" : "") + '" data-review-id="' + escapeText(review.reviewId) + '">' +
             '<div class="run-title">' +
               "<span><code>" + escapeText(review.reviewId) + "</code></span>" +
-              '<span class="status ' + statusClass(review.currentStatus || "unknown") + '">' + escapeText(review.currentStatus || "unknown") + "</span>" +
+              '<span class="status ' + statusClass(review.currentStatus || "unknown") + '">' + escapeText(formatReviewStatusLabel(review.currentStatus || "unknown")) + "</span>" +
             "</div>" +
             '<div class="meta">' +
               "<span>" + escapeText(review.roleId || "n/a") + "</span>" +
               "<span>" + escapeText(review.branchStatus || "n/a") + "</span>" +
+              "<span>" + escapeText(review.decision || "no-decision") + "</span>" +
+              "<span>" + escapeText("phase " + formatReviewStatusLabel(review.decisionPhase || "none")) + "</span>" +
             "</div>" +
           "</button>"
         )
@@ -496,22 +585,7 @@ export function buildClientAppScript(apiPrefix: string): string {
         button.addEventListener("click", () => selectReview(state.selectedRunId, button.getAttribute("data-review-id")));
       }
       const detail = state.reviewDetail;
-      reviewDetailEl.textContent = detail
-        ? formatJson({
-            reviewId: detail.reviewId,
-            roleId: detail.roleId,
-            branchId: detail.branchId,
-            round: detail.round,
-            currentStatus: detail.currentStatus,
-            decision: detail.decision,
-            actor: detail.actor,
-            comment: detail.comment,
-            appliedAt: detail.appliedAt,
-            reconciledAt: detail.reconciledAt,
-            history: detail.history,
-            humanReviewContext: detail.humanReviewContext
-          })
-        : "No review selected.";
+      reviewDetailEl.textContent = formatReviewDetail(detail);
       const actionable = detail && (detail.currentStatus === "pending" || detail.currentStatus === "paused");
       reviewActionsEl.innerHTML = actionable
         ? [

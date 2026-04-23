@@ -628,6 +628,43 @@ function deriveCurrentReviewStatus(args: {
   return "unknown";
 }
 
+function deriveReviewDecisionPhase(decisionSnapshot: unknown):
+  | "recorded"
+  | "pending_reconcile"
+  | "applied"
+  | undefined {
+  const decision =
+    typeof decisionSnapshot === "object" &&
+    decisionSnapshot !== null &&
+    !Array.isArray(decisionSnapshot)
+      ? (decisionSnapshot as {
+          committedAt?: unknown;
+          checkpointSequence?: unknown;
+          appliedAt?: unknown;
+          reconciledAt?: unknown;
+          decision?: unknown;
+          decidedAt?: unknown;
+        })
+      : undefined;
+  if (!decision) {
+    return undefined;
+  }
+  if (typeof decision.reconciledAt === "string") {
+    return "applied";
+  }
+  if (typeof decision.appliedAt === "string" || typeof decision.checkpointSequence === "number") {
+    return "pending_reconcile";
+  }
+  if (
+    typeof decision.committedAt === "string" ||
+    typeof decision.decidedAt === "string" ||
+    typeof decision.decision === "string"
+  ) {
+    return "recorded";
+  }
+  return undefined;
+}
+
 function deriveEffectiveTerminateScope(args: {
   requestSnapshot?: unknown;
   currentState?: unknown;
@@ -690,6 +727,7 @@ function normalizeReviewProjection(args: {
   return {
     reviewId: args.reviewId,
     currentStatus: deriveCurrentReviewStatus(args),
+    decisionPhase: deriveReviewDecisionPhase(decisionSnapshot),
     roleId: asString(source?.roleId),
     branchId: asString(source?.branchId),
     lineageId: asString(source?.lineageId),

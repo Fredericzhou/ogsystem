@@ -7,7 +7,7 @@ import { readJsonFile } from "../runtime/json-file.js";
 import { loadModelCatalog } from "../runtime/model-catalog.js";
 import { loadModelSelection, resolveModelSelectionForSystem } from "../runtime/model-selection.js";
 import { parseSystemFromMermaidSource } from "../runtime/parse-mermaid.js";
-import { loadIndexedRuns, resolveOgsPaths } from "../runtime/project-lifecycle.js";
+import { loadPersistedRunsIndex, resolveOgsPaths } from "../runtime/project-lifecycle.js";
 import { loadLaws, loadRolePackages, loadRuntimeConfig, loadUserProfile } from "../runtime/runtime-loader.js";
 import { resolveEffectiveLaw } from "../runtime/runtime-setup.js";
 import { resolveProjectRoleRepoRoot, resolveProjectRoleRootDir } from "../runtime/bundled-repos.js";
@@ -100,7 +100,7 @@ async function assembleProjectContext(workdir: string): Promise<{
 export async function inspectProjectVisualization(workdir: string): Promise<Record<string, unknown>> {
   const ogsPaths = resolveOgsPaths(workdir);
   const context = await assembleProjectContext(workdir);
-  const recentIndexedRuns = await loadIndexedRuns(workdir);
+  const persistedIndex = await loadPersistedRunsIndex(workdir);
 
   return {
     workdir,
@@ -148,7 +148,7 @@ export async function inspectProjectVisualization(workdir: string): Promise<Reco
         projectPath: ogsPaths.projectPath
       }
     },
-    recentRuns: recentIndexedRuns.slice(0, 10)
+    recentRuns: persistedIndex?.runs.slice(0, 10) ?? []
   };
 }
 

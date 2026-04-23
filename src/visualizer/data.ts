@@ -11,7 +11,7 @@ import { loadSystemFromMermaid, parseSystemFromMermaidSource } from "../runtime/
 import { buildRunPlanFingerprint } from "../runtime/plan-fingerprint.js";
 import {
   inspectRun,
-  loadIndexedRuns,
+  loadPersistedRunsIndex,
   listHumanReviews,
   resolveOgsPaths,
   resolveRunDir
@@ -164,7 +164,7 @@ async function assembleProjectContext(workdir: string): Promise<{
 export async function inspectProjectVisualization(workdir: string): Promise<Record<string, unknown>> {
   const ogsPaths = resolveOgsPaths(workdir);
   const context = await assembleProjectContext(workdir);
-  const recentIndexedRuns = await loadIndexedRuns(workdir);
+  const persistedIndex = await loadPersistedRunsIndex(workdir);
 
   return {
     workdir,
@@ -212,7 +212,7 @@ export async function inspectProjectVisualization(workdir: string): Promise<Reco
         projectPath: ogsPaths.projectPath
       }
     },
-    recentRuns: recentIndexedRuns.slice(0, 10)
+    recentRuns: persistedIndex?.runs.slice(0, 10) ?? []
   };
 }
 

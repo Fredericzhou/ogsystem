@@ -1091,7 +1091,9 @@ Operational notes:
 - live timeline updates append incrementally from `timeline.jsonl`; they no longer trigger a full run/review/log/diagnostics reload on every event
 - resume diagnostics are loaded on demand from the UI and refreshed explicitly when needed
 - sidebar run lists prefer cached / persisted index data during idle steady state instead of rescanning the runs directory on every refresh
+- project cold-start reads stay on persisted projections and no longer force a normal-page-load runs-directory scan
 - review decision / stop / reindex actions now ask for confirmation, and review / stop actions capture operator audit input before writing control-plane records
+- review projections expose lifecycle `currentStatus` separately from durable `decisionPhase`; the UI uses `decisionPhase` to show `recorded`, `pending_reconcile`, and `applied` without changing actionability rules
 
 Current API/control-plane shape:
 
