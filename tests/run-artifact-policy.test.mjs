@@ -99,6 +99,7 @@ test("model runtime artifacts match the documented contract", async () => {
   assert.match(runId, /^\d{8}-\d{6}-[a-f0-9]{8}$/);
   const runDir = path.resolve(tempRoot, ".ogs/runs", runId);
   const sessions = JSON.parse(await readFile(path.resolve(runDir, "sessions.json"), "utf8"));
+  const resolvedConfig = JSON.parse(await readFile(path.resolve(runDir, "resolved-config.json"), "utf8"));
 
   assert.ok(Array.isArray(sessions));
   await readFile(path.resolve(runDir, "state.json"), "utf8");
@@ -115,6 +116,7 @@ test("model runtime artifacts match the documented contract", async () => {
   assert.match(reproScript, /--workdir "\$WORKDIR"/);
   await readFile(path.resolve(runDir, "audit", "summary.md"), "utf8");
   await readFile(path.resolve(runDir, "audit", "transitions.md"), "utf8");
+  assert.equal(resolvedConfig.effective?.invocation?.dryRun, true);
   await readFile(path.resolve(runDir, "roles", "debate-minimalist", "role.md"), "utf8");
   await readFile(path.resolve(runDir, "roles", "debate-minimalist", "latest-session.json"), "utf8");
 

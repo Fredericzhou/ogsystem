@@ -1084,7 +1084,15 @@ Local visualizer:
 ogs visualizer --workdir .
 ```
 
-The visualizer is a lightweight read-only observability server that renders the current run list, run detail, event timeline, graph source, and live updates. It prefers `summary.json` and `timeline.jsonl`, with fallback to `state.json` and `events.ndjson` for older runs.
+The visualizer is a lightweight read-mostly observability server. It renders project summary, run detail, graph view, review inbox/detail, resume diagnostics, event timeline, logs, and live updates. It prefers `summary.json`, `timeline.jsonl`, `runs-index.json`, and other projections first, with fallback to `state.json` / `events.ndjson` where needed.
+
+Current API/control-plane shape:
+
+- `GET /api/v1/project`, `/project/system`, `/project/config`, `/project/roles`
+- `GET /api/v1/runs/:runId/graph`, `/reviews`, `/reviews/:reviewId`, `/resume-diagnostics`
+- `POST /api/v1/runs/:runId/reviews/:reviewId/decide` reuses lifecycle review-decision validation and only records the decision; actual apply/reconcile still happens on resume/runtime.
+- `POST /api/v1/runs/:runId/stop` reuses the lifecycle stop-request entrypoint and records a stop request; it does not mean the run is already stopped.
+- `POST /api/v1/runs/reindex` rebuilds `runs-index.json`.
 
 Temporary visualizer attached to a run:
 

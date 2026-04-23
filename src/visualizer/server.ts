@@ -1,23 +1,35 @@
 /**
- * @fileoverview Minimal read-only visualization server for OGSystem runs.
+ * @fileoverview Minimal read-mostly visualization server for OGSystem runs.
  * Responsibilities:
  * - Serve run summaries, details, event snapshots, and a lightweight SSE stream.
  * - Render a single-page observability UI without a front-end build toolchain.
  * Boundaries:
- * - Read-only; never mutates runtime artifacts.
+ * - Read-mostly; mutations are limited to lifecycle/control-plane entrypoints.
  */
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
 import { readFile } from "node:fs/promises";
 import { resolve } from "node:path";
 
 import {
+  inspectHumanReview,
   inspectRun,
+  listHumanReviews,
   loadIndexedRuns,
   loadRunLogs,
+  requestStop,
   rebuildRunsIndex,
-  resolveRunDir
+  resolveRunDir,
+  writeHumanReviewDecision
 } from "../runtime/project-lifecycle.js";
 import { loadTimelineSnapshot, projectTimelineRecord } from "../runtime/timeline-projector.js";
+import {
+  inspectProjectConfigVisualization,
+  inspectProjectSystemVisualization,
+  inspectProjectVisualization,
+  inspectRunGraphVisualization,
+  inspectRunResumeDiagnostics,
+  listProjectRolesVisualization
+} from "./data.js";
 
 type VisualizationServerOptions = {
   workdir: string;
@@ -60,6 +72,8 @@ type RunSnapshot = {
   hasWaitingHumanReview: boolean;
   recentAudits: number;
   systemSource: string | null;
+  isSimulation: boolean;
+  runMode: "simulation" | "runtime";
 };
 
 const API_PREFIX = "/api/v1";
@@ -107,6 +121,26 @@ function asString(value: unknown): string | undefined {
 
 function asNumber(value: unknown): number | undefined {
   return typeof value === "number" && Number.isFinite(value) ? value : undefined;
+}
+
+function isSimulationRun(resolvedConfig: unknown): boolean {
+  const record =
+    typeof resolvedConfig === "object" && resolvedConfig !== null && !Array.isArray(resolvedConfig)
+      ? (resolvedConfig as Record<string, unknown>)
+      : undefined;
+  const effective =
+    typeof record?.effective === "object" &&
+    record.effective !== null &&
+    !Array.isArray(record.effective)
+      ? (record.effective as Record<string, unknown>)
+      : undefined;
+  const invocation =
+    typeof effective?.invocation === "object" &&
+    effective.invocation !== null &&
+    !Array.isArray(effective.invocation)
+      ? (effective.invocation as Record<string, unknown>)
+      : undefined;
+  return invocation?.dryRun === true;
 }
 
 function extractGraphState(state: unknown): Record<string, unknown> | undefined {
@@ -220,7 +254,9 @@ function buildRunSnapshot(detail: LoadedRunDetail): RunSnapshot {
     pendingReviewCount,
     hasWaitingHumanReview,
     recentAudits: getAuditCount(state),
-    systemSource: detail.systemSource
+    systemSource: detail.systemSource,
+    isSimulation: isSimulationRun(detail.resolvedConfig),
+    runMode: isSimulationRun(detail.resolvedConfig) ? "simulation" : "runtime"
   };
 }
 
@@ -306,6 +342,9 @@ async function loadRunEventsSnapshot(args: {
   roleId?: string;
   branchId?: string;
   type?: string;
+  reviewId?: string;
+  status?: string;
+  errorCode?: string;
 }): Promise<{ events: NdjsonEntry[]; nextCursor: number }> {
   const runDir = resolveRunDir(args.workdir, args.runId);
   const allEvents = await readRunEvents(runDir);
@@ -326,6 +365,15 @@ async function loadRunEventsSnapshot(args: {
       if (args.branchId && branchId !== args.branchId) {
         return false;
       }
+      if (args.reviewId && asString(entry.record.reviewId) !== args.reviewId) {
+        return false;
+      }
+      if (args.status && asString(entry.record.status) !== args.status) {
+        return false;
+      }
+      if (args.errorCode && asString(entry.record.errorCode) !== args.errorCode) {
+        return false;
+      }
       return true;
     })
     .slice(0, limit);
@@ -339,6 +387,22 @@ async function loadRunEventsSnapshot(args: {
 async function handleApiRunsList(workdir: string, response: ServerResponse): Promise<void> {
   const runs = await loadIndexedRuns(workdir);
   jsonResponse(response, 200, { runs });
+}
+
+async function handleApiProjectSummary(workdir: string, response: ServerResponse): Promise<void> {
+  jsonResponse(response, 200, await inspectProjectVisualization(workdir));
+}
+
+async function handleApiProjectSystem(workdir: string, response: ServerResponse): Promise<void> {
+  jsonResponse(response, 200, await inspectProjectSystemVisualization(workdir));
+}
+
+async function handleApiProjectConfig(workdir: string, response: ServerResponse): Promise<void> {
+  jsonResponse(response, 200, await inspectProjectConfigVisualization(workdir));
+}
+
+async function handleApiProjectRoles(workdir: string, response: ServerResponse): Promise<void> {
+  jsonResponse(response, 200, await listProjectRolesVisualization(workdir));
 }
 
 async function handleApiRunDetail(workdir: string, runId: string, response: ServerResponse): Promise<void> {
@@ -366,6 +430,9 @@ async function handleApiRunEvents(
   const roleId = url.searchParams.get("roleId") ?? undefined;
   const branchId = url.searchParams.get("branchId") ?? undefined;
   const type = url.searchParams.get("type") ?? undefined;
+  const reviewId = url.searchParams.get("reviewId") ?? undefined;
+  const status = url.searchParams.get("status") ?? undefined;
+  const errorCode = url.searchParams.get("errorCode") ?? undefined;
   const snapshot = await loadRunEventsSnapshot({
     workdir,
     runId,
@@ -373,7 +440,10 @@ async function handleApiRunEvents(
     limit: Number.isFinite(limit) ? limit : 500,
     roleId,
     branchId,
-    type
+    type,
+    reviewId,
+    status,
+    errorCode
   });
   jsonResponse(response, 200, snapshot);
 }
@@ -386,23 +456,55 @@ async function handleApiRunLogs(
 ): Promise<void> {
   const roleId = url.searchParams.get("roleId") ?? undefined;
   const engine = url.searchParams.get("engine") === "true";
+  const since = url.searchParams.get("since") ?? undefined;
+  const tailValue = url.searchParams.get("tail");
+  const tail = tailValue === null ? undefined : Number(tailValue);
   const records = await loadRunLogs({
     workdir,
     runId,
     roleId,
-    engine
+    engine,
+    since,
+    tail: Number.isFinite(tail) ? tail : undefined
   });
   jsonResponse(response, 200, { records });
 }
 
 async function handleApiRunGraph(workdir: string, runId: string, response: ServerResponse): Promise<void> {
   const detail = await loadRunDetail(workdir, runId);
-  jsonResponse(response, 200, {
-    runId: detail.runId,
-    systemSource: detail.systemSource,
-    state: detail.state ?? null,
-    snapshot: buildRunSnapshot(detail)
-  });
+  jsonResponse(
+    response,
+    200,
+    await inspectRunGraphVisualization({
+      workdir,
+      runId,
+      state: detail.state,
+      resolvedConfig: detail.resolvedConfig,
+      systemSource: detail.systemSource,
+      summary: detail.summary
+    })
+  );
+}
+
+async function handleApiRunReviews(workdir: string, runId: string, response: ServerResponse): Promise<void> {
+  jsonResponse(response, 200, await listHumanReviews(workdir, runId));
+}
+
+async function handleApiRunReviewDetail(
+  workdir: string,
+  runId: string,
+  reviewId: string,
+  response: ServerResponse
+): Promise<void> {
+  jsonResponse(response, 200, await inspectHumanReview(workdir, runId, reviewId));
+}
+
+async function handleApiRunResumeDiagnostics(
+  workdir: string,
+  runId: string,
+  response: ServerResponse
+): Promise<void> {
+  jsonResponse(response, 200, await inspectRunResumeDiagnostics(workdir, runId));
 }
 
 async function handleApiReindex(workdir: string, response: ServerResponse): Promise<void> {
@@ -410,17 +512,61 @@ async function handleApiReindex(workdir: string, response: ServerResponse): Prom
   jsonResponse(response, 200, index);
 }
 
+async function readJsonRequest(request: IncomingMessage): Promise<Record<string, unknown>> {
+  const chunks: Buffer[] = [];
+  for await (const chunk of request) {
+    chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
+  }
+  if (chunks.length === 0) {
+    return {};
+  }
+  const raw = Buffer.concat(chunks).toString("utf8").trim();
+  if (!raw) {
+    return {};
+  }
+  const parsed = JSON.parse(raw);
+  if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) {
+    throw new Error("Expected a JSON object request body.");
+  }
+  return parsed as Record<string, unknown>;
+}
+
+async function handleApiRunReviewDecision(
+  workdir: string,
+  runId: string,
+  reviewId: string,
+  request: IncomingMessage,
+  response: ServerResponse
+): Promise<void> {
+  const body = await readJsonRequest(request);
+  const decision = asString(body.decision);
+  if (decision !== "approve" && decision !== "rework" && decision !== "pause" && decision !== "terminate") {
+    throw new Error("Expected decision to be one of: approve, rework, pause, terminate.");
+  }
+  const scopeValue = asString(body.scope);
+  jsonResponse(
+    response,
+    200,
+    await writeHumanReviewDecision({
+      workdir,
+      runId,
+      reviewId,
+      decision,
+      comment: asString(body.comment),
+      actor: asString(body.actor),
+      scope: scopeValue === "branch" || scopeValue === "run" ? scopeValue : undefined
+    })
+  );
+}
+
 async function handleApiStop(
   workdir: string,
   runId: string,
+  request: IncomingMessage,
   response: ServerResponse
 ): Promise<void> {
-  jsonResponse(response, 200, {
-    status: "unsupported",
-    runId,
-    workdir,
-    message: "Stop requests are intentionally handled by the runtime CLI, not the visualizer."
-  });
+  const body = await readJsonRequest(request);
+  jsonResponse(response, 200, await requestStop(workdir, runId, asString(body.reason)));
 }
 
 function renderPageHtml(workdir: string): string {
@@ -433,14 +579,12 @@ function renderPageHtml(workdir: string): string {
   <style>
     :root {
       color-scheme: dark;
-      --bg: #0b1020;
       --panel: rgba(16, 23, 44, 0.92);
       --panel-soft: rgba(23, 31, 57, 0.85);
       --border: rgba(148, 163, 184, 0.18);
       --text: #e5eefb;
       --muted: #8fa1c3;
       --accent: #38bdf8;
-      --accent-2: #f59e0b;
       --ok: #34d399;
       --warn: #fbbf24;
       --bad: #f87171;
@@ -459,7 +603,7 @@ function renderPageHtml(workdir: string): string {
         linear-gradient(180deg, #09101d 0%, #0b1020 42%, #08111c 100%);
       color: var(--text);
     }
-    code, pre, input, button {
+    code, pre, input, button, select {
       font: inherit;
     }
     .app {
@@ -504,7 +648,7 @@ function renderPageHtml(workdir: string): string {
       display: grid;
       gap: 12px;
     }
-    .search {
+    .search, .select {
       width: 100%;
       padding: 12px 14px;
       border: 1px solid var(--border);
@@ -528,6 +672,7 @@ function renderPageHtml(workdir: string): string {
       background: rgba(255, 255, 255, 0.03);
       cursor: pointer;
       transition: transform 120ms ease, border-color 120ms ease, background 120ms ease;
+      text-align: left;
     }
     .run-card:hover,
     .run-card.active {
@@ -535,13 +680,11 @@ function renderPageHtml(workdir: string): string {
       border-color: rgba(56, 189, 248, 0.42);
       background: rgba(56, 189, 248, 0.08);
     }
-    .run-title {
+    .run-title, .row {
       display: flex;
       justify-content: space-between;
       gap: 8px;
       align-items: center;
-      font-weight: 600;
-      margin-bottom: 6px;
     }
     .meta {
       color: var(--muted);
@@ -560,9 +703,10 @@ function renderPageHtml(workdir: string): string {
       border: 1px solid transparent;
     }
     .status.running, .status.stopping { color: var(--warn); border-color: rgba(251, 191, 36, 0.22); background: rgba(251, 191, 36, 0.08); }
-    .status.done { color: var(--ok); border-color: rgba(52, 211, 153, 0.22); background: rgba(52, 211, 153, 0.08); }
+    .status.done, .status.simulation { color: var(--ok); border-color: rgba(52, 211, 153, 0.22); background: rgba(52, 211, 153, 0.08); }
     .status.failed { color: var(--bad); border-color: rgba(248, 113, 113, 0.22); background: rgba(248, 113, 113, 0.08); }
-    .status.unknown, .status.stopped { color: var(--muted); border-color: rgba(148, 163, 184, 0.22); background: rgba(148, 163, 184, 0.06); }
+    .status.unknown, .status.stopped, .status.idle { color: var(--muted); border-color: rgba(148, 163, 184, 0.22); background: rgba(148, 163, 184, 0.06); }
+    .status.waiting_review, .status.active { color: var(--accent); border-color: rgba(56, 189, 248, 0.22); background: rgba(56, 189, 248, 0.08); }
     .content {
       padding: 24px;
       display: grid;
@@ -651,12 +795,13 @@ function renderPageHtml(workdir: string): string {
       display: grid;
       gap: 12px;
     }
-    .span-5 { grid-column: span 5; }
-    .span-7 { grid-column: span 7; }
+    .span-4 { grid-column: span 4; }
+    .span-6 { grid-column: span 6; }
+    .span-8 { grid-column: span 8; }
     .span-12 { grid-column: span 12; }
     .stat-grid {
       display: grid;
-      grid-template-columns: repeat(4, minmax(0, 1fr));
+      grid-template-columns: repeat(6, minmax(0, 1fr));
       gap: 12px;
     }
     .stat {
@@ -723,7 +868,7 @@ function renderPageHtml(workdir: string): string {
       .app { grid-template-columns: 1fr; }
       .sidebar { border-right: 0; border-bottom: 1px solid var(--border); }
       .run-list { max-height: 280px; }
-      .span-5, .span-7, .span-12 { grid-column: span 12; }
+      .span-4, .span-6, .span-8, .span-12 { grid-column: span 12; }
       .hero { flex-direction: column; }
       .actions { justify-content: flex-start; }
       .stat-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
@@ -746,33 +891,72 @@ function renderPageHtml(workdir: string): string {
     <main class="content">
       <section class="hero">
         <div>
-          <p class="hint">runtime observability</p>
+          <p class="hint">project + runtime observability</p>
           <h2 id="selected-title">Select a run</h2>
-          <p id="selected-subtitle">Load a run to inspect progress, audit trail, and artifacts.</p>
+          <p id="selected-subtitle">Load a run to inspect project context, graph progress, review state, diagnostics, and artifacts.</p>
         </div>
         <div class="actions">
+          <button id="project-home" class="button">Project</button>
+          <button id="reindex" class="button">Reindex</button>
+          <button id="stop-run" class="button">Stop</button>
           <button id="refresh" class="button">Refresh</button>
           <div id="live" class="live">idle</div>
         </div>
       </section>
       <section class="grid">
         <article class="card span-12">
+          <header><h3>Project Overview</h3></header>
+          <div class="body">
+            <pre id="project-summary">Loading project...</pre>
+          </div>
+        </article>
+        <article class="card span-12">
           <header><h3>Run Snapshot</h3></header>
           <div class="body">
             <div class="stat-grid" id="stats"></div>
           </div>
         </article>
-        <article class="card span-7">
+        <article class="card span-8">
           <header><h3>Timeline</h3></header>
           <div class="body">
             <div id="timeline" class="timeline"></div>
           </div>
         </article>
-        <article class="card span-5">
-          <header><h3>Graph / State</h3></header>
+        <article class="card span-4">
+          <header><h3>Graph View</h3></header>
           <div class="body">
-            <pre id="graph">No run selected.</pre>
+            <div id="graph-view" class="timeline"><div class="hint">No run selected.</div></div>
             <pre id="state">No run selected.</pre>
+          </div>
+        </article>
+        <article class="card span-6">
+          <header><h3>Reviews</h3></header>
+          <div class="body">
+            <div id="reviews" class="timeline"><div class="hint">No run selected.</div></div>
+            <div id="review-actions" class="actions"></div>
+            <pre id="review-detail">No review selected.</pre>
+          </div>
+        </article>
+        <article class="card span-6">
+          <header><h3>Resume Diagnostics</h3></header>
+          <div class="body">
+            <div id="resume-diagnostics" class="timeline"><div class="hint">No run selected.</div></div>
+          </div>
+        </article>
+        <article class="card span-12">
+          <header>
+            <div class="row">
+              <h3>Logs</h3>
+              <select id="log-role" class="select">
+                <option value="">Latest role</option>
+              </select>
+              <input id="log-tail" class="select" type="number" min="1" placeholder="tail" />
+              <input id="log-since" class="select" type="datetime-local" />
+            </div>
+          </header>
+          <div class="body">
+            <div id="logs-filters" class="hint"></div>
+            <pre id="logs">No run selected.</pre>
           </div>
         </article>
         <article class="card span-12">
@@ -787,12 +971,24 @@ function renderPageHtml(workdir: string): string {
   <script>
     const API_PREFIX = ${JSON.stringify(API_PREFIX)};
     const state = {
+      project: null,
       runs: [],
       filter: "",
+      projectHome: false,
       selectedRunId: "",
+      selectedReviewId: "",
+      selectedLogRoleId: "",
+      logTail: "",
+      logSince: "",
       eventCursor: 0,
       events: [],
       detail: null,
+      graph: null,
+      reviews: null,
+      reviewDetail: null,
+      resumeDiagnostics: null,
+      engineLogs: [],
+      roleLogs: [],
       stream: null,
       refreshTimer: null,
       listTimer: null
@@ -802,12 +998,22 @@ function renderPageHtml(workdir: string): string {
     const searchEl = document.getElementById("search");
     const selectedTitleEl = document.getElementById("selected-title");
     const selectedSubtitleEl = document.getElementById("selected-subtitle");
+    const projectSummaryEl = document.getElementById("project-summary");
     const statsEl = document.getElementById("stats");
     const timelineEl = document.getElementById("timeline");
-    const graphEl = document.getElementById("graph");
+    const graphViewEl = document.getElementById("graph-view");
     const stateEl = document.getElementById("state");
+    const reviewsEl = document.getElementById("reviews");
+    const reviewActionsEl = document.getElementById("review-actions");
+    const reviewDetailEl = document.getElementById("review-detail");
+    const resumeEl = document.getElementById("resume-diagnostics");
+    const logsFiltersEl = document.getElementById("logs-filters");
+    const logsEl = document.getElementById("logs");
     const detailEl = document.getElementById("detail");
     const liveEl = document.getElementById("live");
+    const logRoleEl = document.getElementById("log-role");
+    const logTailEl = document.getElementById("log-tail");
+    const logSinceEl = document.getElementById("log-since");
 
     function escapeText(value) {
       return String(value ?? "")
@@ -829,7 +1035,7 @@ function renderPageHtml(workdir: string): string {
     }
 
     function statusClass(status) {
-      return ["running", "stopping", "stopped", "done", "failed"].includes(status)
+      return ["running", "stopping", "stopped", "done", "failed", "waiting_review", "active", "idle", "simulation"].includes(status)
         ? status
         : "unknown";
     }
@@ -846,9 +1052,110 @@ function renderPageHtml(workdir: string): string {
       return response.json();
     }
 
+    async function requestAction(path, body) {
+      return requestJson(path, {
+        method: "POST",
+        headers: {
+          accept: "application/json",
+          "content-type": "application/json"
+        },
+        body: JSON.stringify(body || {})
+      });
+    }
+
+    function readRouteFromLocation() {
+      const params = new URLSearchParams(window.location.search);
+      return {
+        view: params.get("view") || "",
+        runId: params.get("runId") || "",
+        reviewId: params.get("reviewId") || "",
+        logRoleId: params.get("logRoleId") || "",
+        tail: params.get("tail") || "",
+        since: params.get("since") || ""
+      };
+    }
+
+    function writeRouteToLocation() {
+      const params = new URLSearchParams();
+      if (state.projectHome && !state.selectedRunId) {
+        params.set("view", "project");
+      }
+      if (state.selectedRunId) {
+        params.set("runId", state.selectedRunId);
+      }
+      if (state.selectedReviewId) {
+        params.set("reviewId", state.selectedReviewId);
+      }
+      if (state.selectedLogRoleId) {
+        params.set("logRoleId", state.selectedLogRoleId);
+      }
+      if (state.logTail) {
+        params.set("tail", state.logTail);
+      }
+      if (state.logSince) {
+        params.set("since", state.logSince);
+      }
+      const query = params.toString();
+      window.history.replaceState(null, "", query ? "?" + query : window.location.pathname);
+    }
+
+    function buildLogsQuery(runId, extra) {
+      const params = new URLSearchParams();
+      if (extra.engine) {
+        params.set("engine", "true");
+      }
+      if (extra.roleId) {
+        params.set("roleId", extra.roleId);
+      }
+      if (state.logTail) {
+        params.set("tail", state.logTail);
+      }
+      if (state.logSince) {
+        const normalized = state.logSince.includes(":") && state.logSince.length === 16
+          ? new Date(state.logSince).toISOString()
+          : state.logSince;
+        params.set("since", normalized);
+      }
+      return API_PREFIX + "/runs/" + encodeURIComponent(runId) + "/logs?" + params.toString();
+    }
+
     function setLive(mode, label) {
       liveEl.className = "live" + (mode === "online" ? " online" : "");
       liveEl.textContent = label;
+    }
+
+    function renderProject() {
+      if (!state.project) {
+        projectSummaryEl.textContent = "Project data unavailable.";
+        return;
+      }
+      const summary = state.project.summary?.project ?? {};
+      const roles = state.project.roles?.roles ?? [];
+      projectSummaryEl.textContent = [
+        "projectName: " + (summary.projectName ?? "n/a"),
+        "projectId: " + (summary.projectId ?? "n/a"),
+        "systemId: " + (summary.systemId ?? "n/a"),
+        "systemVersion: " + (summary.systemVersion ?? "n/a"),
+        "entryRoleId: " + (summary.entryRoleId ?? "n/a"),
+        "roleCount: " + (summary.roleCount ?? 0),
+        "flowCount: " + (summary.flowCount ?? 0),
+        "runsDir: " + (summary.runsDir ?? "n/a"),
+        "reviewedRoleIds: " + ((summary.reviewedRoleIds ?? []).join(", ") || "none"),
+        "joinRoleIds: " + ((summary.joinRoleIds ?? []).join(", ") || "none"),
+        "loopRoleIds: " + ((summary.loopRoleIds ?? []).join(", ") || "none"),
+        "contextMappedRoleIds: " + ((summary.contextMappedRoleIds ?? []).join(", ") || "none"),
+        "",
+        "roles:",
+        ...roles.map((role) => "- " + role.roleId + " [binding=" + (role.binding?.bindingKind || "n/a") + " review=" + (role.review ? "yes" : "no") + " join=" + (role.join ? "yes" : "no") + " loop=" + (role.loop ? "yes" : "no") + "]"),
+        "",
+        "modelSelectionWarnings:",
+        ...((state.project.config?.modelSelectionWarnings ?? []).length
+          ? state.project.config.modelSelectionWarnings.map((warning) => "- " + warning)
+          : ["- none"]),
+        "",
+        "system.mmd:",
+        state.project.system?.systemSource ?? "n/a"
+      ].join("\n");
     }
 
     function renderRuns() {
@@ -882,13 +1189,14 @@ function renderPageHtml(workdir: string): string {
       }
     }
 
-    function renderStats(snapshot) {
+    function renderStats(snapshot, graphPayload) {
       if (!snapshot) {
         statsEl.innerHTML = "";
         return;
       }
       const cards = [
         ["status", snapshot.status],
+        ["mode", graphPayload?.simulation?.mode || snapshot.runMode || "runtime"],
         ["transitions", snapshot.transitionCount],
         ["active branches", snapshot.activeBranches],
         ["pending reviews", snapshot.pendingReviewCount],
@@ -917,6 +1225,7 @@ function renderPageHtml(workdir: string): string {
           const type = record.type || "event";
           const role = record.roleId ? \`<code>\${escapeText(record.roleId)}</code>\` : "";
           const branch = record.branchId ? \`<code>\${escapeText(record.branchId)}</code>\` : "";
+          const review = record.reviewId ? \`<code>\${escapeText(record.reviewId)}</code>\` : "";
           const event = record.event ? \`<code>\${escapeText(record.event)}</code>\` : "";
           const status = record.status ? \`<span class="status \${statusClass(record.status)}">\${escapeText(record.status)}</span>\` : "";
           return \`
@@ -926,28 +1235,177 @@ function renderPageHtml(workdir: string): string {
                 <span>\${escapeText(record.at || "")}</span>
               </div>
               <strong>\${role} \${event} \${status}</strong>
-              <div class="hint">\${branch}</div>
+              <div class="hint">\${branch} \${review}</div>
             </div>
           \`;
         })
         .join("");
     }
 
-    function renderDetail(detail, snapshot, events) {
-      selectedTitleEl.textContent = detail.runId;
-      selectedSubtitleEl.textContent = detail.runDir;
-      renderStats(snapshot);
-      renderTimeline(events);
-      graphEl.textContent = detail.systemSource || "No system.mmd found in run directory.";
-      stateEl.textContent = formatJson(detail.state);
-      detailEl.textContent = formatJson({
-        runId: detail.runId,
-        runDir: detail.runDir,
-        metrics: detail.metrics,
-        resolvedConfig: detail.resolvedConfig,
-        stopRequest: detail.stopRequest,
-        stopOutcome: detail.stopOutcome
+    function renderGraph() {
+      if (!state.graph) {
+        graphViewEl.innerHTML = '<div class="hint">No run selected.</div>';
+        stateEl.textContent = "No run selected.";
+        return;
+      }
+      const graph = state.graph.graph;
+      if (!graph) {
+        graphViewEl.innerHTML = '<div class="hint">Graph projection unavailable.</div>';
+        stateEl.textContent = formatJson(state.detail?.state ?? null);
+        return;
+      }
+      const nodes = graph.nodes || [];
+      const edges = (graph.edges || []).filter((edge) => edge.recentlyActivated || edge.isErrorFlow);
+      graphViewEl.innerHTML = [
+        '<div class="event"><strong>' + escapeText(graph.systemId || "unknown") + '</strong><div class="hint">entry ' + escapeText(graph.entryRoleId || "n/a") + " · roles " + escapeText(graph.roleCount || 0) + " · flows " + escapeText(graph.flowCount || 0) + "</div></div>",
+        ...nodes.map((node) =>
+          '<div class="event">' +
+            '<div class="event-top">' +
+              '<span><code>' + escapeText(node.roleId) + "</code> · " + escapeText(node.nodeType) + "</span>" +
+              '<span class="status ' + statusClass(node.status) + '">' + escapeText(node.status) + "</span>" +
+            "</div>" +
+            "<strong>binding=" + escapeText(node.bindingKind) + " · active=" + escapeText(node.activeBranchCount) + " · waitingReview=" + escapeText(node.waitingReviewCount) + " · loop=" + escapeText(node.loopIteration) + "</strong>" +
+            '<div class="hint">' + escapeText(node.lastErrorCode || "no error") + (node.missingSources?.length ? " · missing join sources " + escapeText(node.missingSources.join(", ")) : "") + "</div>" +
+          "</div>"
+        ),
+        ...(edges.length > 0
+          ? edges.map((edge) =>
+              '<div class="event">' +
+                '<div class="event-top">' +
+                  '<span><code>' + escapeText(edge.sourceRoleId) + "</code> -> <code>" + escapeText(edge.targetRoleId) + "</code></span>" +
+                  "<span>" + (edge.recentlyActivated ? "recent" : edge.isErrorFlow ? "error-flow" : "") + "</span>" +
+                "</div>" +
+                "<strong>" + escapeText(edge.event) + "</strong>" +
+              "</div>"
+            )
+          : ['<div class="hint">No activated or error-flow edges in the current snapshot.</div>'])
+      ].join("");
+      stateEl.textContent = formatJson(state.detail?.state ?? null);
+    }
+
+    function renderReviews() {
+      if (!state.reviews?.reviews?.length) {
+        reviewsEl.innerHTML = '<div class="hint">No reviews for this run.</div>';
+        reviewActionsEl.innerHTML = "";
+        reviewDetailEl.textContent = "No review selected.";
+        return;
+      }
+      reviewsEl.innerHTML = state.reviews.reviews
+        .map((review) =>
+          '<button class="run-card ' + (review.reviewId === state.selectedReviewId ? "active" : "") + '" data-review-id="' + escapeText(review.reviewId) + '">' +
+            '<div class="run-title">' +
+              "<span><code>" + escapeText(review.reviewId) + "</code></span>" +
+              '<span class="status ' + statusClass(review.currentStatus || "unknown") + '">' + escapeText(review.currentStatus || "unknown") + "</span>" +
+            "</div>" +
+            '<div class="meta">' +
+              "<span>" + escapeText(review.roleId || "n/a") + "</span>" +
+              "<span>" + escapeText(review.branchStatus || "n/a") + "</span>" +
+            "</div>" +
+          "</button>"
+        )
+        .join("");
+      for (const button of reviewsEl.querySelectorAll("[data-review-id]")) {
+        button.addEventListener("click", () => selectReview(state.selectedRunId, button.getAttribute("data-review-id")));
+      }
+      const detail = state.reviewDetail;
+      reviewDetailEl.textContent = detail
+        ? formatJson({
+            reviewId: detail.reviewId,
+            roleId: detail.roleId,
+            branchId: detail.branchId,
+            round: detail.round,
+            currentStatus: detail.currentStatus,
+            decision: detail.decision,
+            comment: detail.comment,
+            history: detail.history,
+            humanReviewContext: detail.humanReviewContext
+          })
+        : "No review selected.";
+      const actionable = detail && (detail.currentStatus === "pending" || detail.currentStatus === "paused");
+      reviewActionsEl.innerHTML = actionable
+        ? [
+          '<button class="button" data-review-action="approve">Approve</button>',
+          '<button class="button" data-review-action="rework">Rework</button>',
+          '<button class="button" data-review-action="pause">Pause</button>',
+          '<button class="button" data-review-action="terminate" data-review-scope="' + escapeText(detail.scope || "branch") + '">Terminate</button>'
+          ].join("")
+        : "";
+      for (const button of reviewActionsEl.querySelectorAll("[data-review-action]")) {
+        button.addEventListener("click", () =>
+          submitReviewDecision(button.getAttribute("data-review-action"), button.getAttribute("data-review-scope"))
+        );
+      }
+    }
+
+    function renderResumeDiagnostics() {
+      if (!state.resumeDiagnostics) {
+        resumeEl.innerHTML = '<div class="hint">No run selected.</div>';
+        return;
+      }
+      const checks = state.resumeDiagnostics.checks || [];
+      const recommendations = state.resumeDiagnostics.recommendations || [];
+      resumeEl.innerHTML = [
+        '<div class="event"><div class="event-top"><span>resume status</span><span class="status ' + statusClass(state.resumeDiagnostics.status) + '">' + escapeText(state.resumeDiagnostics.status) + "</span></div><strong>" + escapeText(state.resumeDiagnostics.fingerprint?.mismatch ? "fingerprint mismatch" : "authority set inspected") + "</strong></div>",
+        ...checks.map((check) =>
+          '<div class="event">' +
+            '<div class="event-top">' +
+              "<span>" + escapeText(check.label) + "</span>" +
+              '<span class="status ' + statusClass(check.ok ? "done" : check.severity === "warning" ? "waiting_review" : "failed") + '">' + escapeText(check.severity) + "</span>" +
+            "</div>" +
+            "<strong>" + escapeText(check.ok ? "ok" : "attention") + "</strong>" +
+            '<div class="hint">' + escapeText(check.message || "") + "</div>" +
+          "</div>"
+        ),
+        ...(recommendations.length > 0
+          ? recommendations.map((recommendation) =>
+              '<div class="event">' +
+                '<div class="event-top"><span>next action</span><span>' + escapeText(recommendation.action) + "</span></div>" +
+                "<strong>" + escapeText(recommendation.label) + "</strong>" +
+              "</div>"
+            )
+          : ['<div class="hint">No additional recovery recommendations.</div>'])
+      ].join("");
+    }
+
+    function renderLogs() {
+      logsFiltersEl.textContent = "role=" + (state.selectedLogRoleId || "latest") + " tail=" + (state.logTail || "all") + " since=" + (state.logSince || "n/a");
+      logsEl.textContent = formatJson({
+        selectedRoleId: state.selectedLogRoleId || null,
+        engine: state.engineLogs,
+        role: state.roleLogs
       });
+    }
+
+    function renderDetail() {
+      detailEl.textContent = formatJson({
+        detail: state.detail,
+        graph: state.graph,
+        reviews: state.reviews,
+        resumeDiagnostics: state.resumeDiagnostics
+      });
+    }
+
+    function renderSelectedRun() {
+      const detail = state.detail;
+      const snapshot = detail?.snapshot || null;
+      const graphPayload = state.graph;
+      if (!detail || !snapshot || state.projectHome) {
+        selectedTitleEl.textContent = "Project Overview";
+        selectedSubtitleEl.textContent = "Use query-state deep links or the run list to switch between project, run, and review details.";
+      } else {
+        const simulation = graphPayload?.simulation?.isSimulation ? "simulation" : "runtime";
+        selectedTitleEl.textContent = graphPayload?.simulation?.isSimulation ? \`\${detail.runId} [simulation]\` : detail.runId;
+        selectedSubtitleEl.textContent = state.selectedReviewId
+          ? \`\${detail.runDir} · \${simulation} · review \${state.selectedReviewId}\`
+          : \`\${detail.runDir} · \${simulation}\`;
+      }
+      renderStats(snapshot, graphPayload);
+      renderTimeline(state.events);
+      renderGraph();
+      renderReviews();
+      renderResumeDiagnostics();
+      renderLogs();
+      renderDetail();
     }
 
     function stopStream() {
@@ -966,11 +1424,31 @@ function renderPageHtml(workdir: string): string {
       }, 250);
     }
 
+    function populateLogRoleOptions(graphPayload, fallbackRoleId) {
+      const roleIds = (graphPayload?.graph?.nodes || []).map((node) => node.roleId).filter(Boolean);
+      const selected = state.selectedLogRoleId || fallbackRoleId || "";
+      const options = ['<option value="">Latest role</option>']
+        .concat(roleIds.map((roleId) => \`<option value="\${escapeText(roleId)}" \${roleId === selected ? "selected" : ""}>\${escapeText(roleId)}</option>\`));
+      logRoleEl.innerHTML = options.join("");
+      state.selectedLogRoleId = selected;
+    }
+
+    async function loadProject() {
+      const [summary, system, config, roles] = await Promise.all([
+        requestJson(\`\${API_PREFIX}/project\`),
+        requestJson(\`\${API_PREFIX}/project/system\`),
+        requestJson(\`\${API_PREFIX}/project/config\`),
+        requestJson(\`\${API_PREFIX}/project/roles\`)
+      ]);
+      state.project = { summary, system, config, roles };
+      renderProject();
+    }
+
     async function loadRuns() {
       const payload = await requestJson(\`\${API_PREFIX}/runs\`);
       state.runs = payload.runs || [];
       renderRuns();
-      if (!state.selectedRunId && state.runs.length) {
+      if (!state.projectHome && !state.selectedRunId && state.runs.length) {
         await selectRun(state.runs[0].runId);
       }
       if (!state.runs.length) {
@@ -978,14 +1456,60 @@ function renderPageHtml(workdir: string): string {
       }
     }
 
+    async function loadRoleLogs(runId, roleId) {
+      if (!roleId) {
+        state.roleLogs = [];
+        renderLogs();
+        return;
+      }
+      const roleLogsPayload = await requestJson(buildLogsQuery(runId, { roleId }));
+      state.roleLogs = roleLogsPayload.records || [];
+      renderLogs();
+    }
+
+    async function loadEngineLogs(runId) {
+      const engineLogsPayload = await requestJson(buildLogsQuery(runId, { engine: true }));
+      state.engineLogs = engineLogsPayload.records || [];
+      renderLogs();
+    }
+
     async function loadSelectedRun(runId, options) {
-      const detail = await requestJson(\`\${API_PREFIX}/runs/\${encodeURIComponent(runId)}\`);
-      const eventsPayload = await requestJson(\`\${API_PREFIX}/runs/\${encodeURIComponent(runId)}/events?cursor=0&limit=250\`);
+      const [
+        detail,
+        eventsPayload,
+        graphPayload,
+        reviewsPayload,
+        resumePayload
+      ] = await Promise.all([
+        requestJson(\`\${API_PREFIX}/runs/\${encodeURIComponent(runId)}\`),
+        requestJson(\`\${API_PREFIX}/runs/\${encodeURIComponent(runId)}/events?cursor=0&limit=250\`),
+        requestJson(\`\${API_PREFIX}/runs/\${encodeURIComponent(runId)}/graph\`),
+        requestJson(\`\${API_PREFIX}/runs/\${encodeURIComponent(runId)}/reviews\`),
+        requestJson(\`\${API_PREFIX}/runs/\${encodeURIComponent(runId)}/resume-diagnostics\`)
+      ]);
+
       state.detail = detail;
       state.events = eventsPayload.events || [];
       state.eventCursor = eventsPayload.nextCursor || 0;
-      renderDetail(detail, detail.snapshot || null, state.events);
+      state.graph = graphPayload;
+      state.reviews = reviewsPayload;
+      state.resumeDiagnostics = resumePayload;
+      const fallbackRoleId = detail.snapshot?.lastExecutedRoleId || detail.snapshot?.finalRoleId || "";
+      if (!state.selectedReviewId) {
+        state.selectedReviewId = reviewsPayload.latestPendingReviewId || "";
+      }
+      state.reviewDetail = state.selectedReviewId
+        ? await requestJson(\`\${API_PREFIX}/runs/\${encodeURIComponent(runId)}/reviews/\${encodeURIComponent(state.selectedReviewId)}\`).catch(() => null)
+        : null;
+      populateLogRoleOptions(graphPayload, fallbackRoleId);
+      await Promise.all([
+        loadEngineLogs(runId),
+        loadRoleLogs(runId, state.selectedLogRoleId || fallbackRoleId)
+      ]);
+      renderSelectedRun();
       renderRuns();
+      writeRouteToLocation();
+
       if (!options || !options.keepStream) {
         stopStream();
         connectStream(runId, state.eventCursor);
@@ -1001,9 +1525,73 @@ function renderPageHtml(workdir: string): string {
 
     async function selectRun(runId) {
       if (!runId) return;
+      state.projectHome = false;
       state.selectedRunId = runId;
+      state.selectedReviewId = "";
       renderRuns();
       await loadSelectedRun(runId, { keepStream: false });
+    }
+
+    function selectProjectHome() {
+      stopStream();
+      state.projectHome = true;
+      state.selectedRunId = "";
+      state.selectedReviewId = "";
+      state.detail = null;
+      state.graph = null;
+      state.reviews = null;
+      state.reviewDetail = null;
+      state.resumeDiagnostics = null;
+      state.events = [];
+      state.engineLogs = [];
+      state.roleLogs = [];
+      renderSelectedRun();
+      renderRuns();
+      writeRouteToLocation();
+      setLive("idle", "project");
+    }
+
+    async function selectReview(runId, reviewId) {
+      if (!runId || !reviewId) {
+        return;
+      }
+      if (state.selectedRunId !== runId) {
+        state.selectedRunId = runId;
+      }
+      state.projectHome = false;
+      state.selectedReviewId = reviewId;
+      state.reviewDetail = await requestJson(
+        \`\${API_PREFIX}/runs/\${encodeURIComponent(runId)}/reviews/\${encodeURIComponent(reviewId)}\`
+      );
+      renderSelectedRun();
+      writeRouteToLocation();
+    }
+
+    async function submitReviewDecision(decision, scope) {
+      if (!state.selectedRunId || !state.selectedReviewId) {
+        return;
+      }
+      await requestAction(
+        \`\${API_PREFIX}/runs/\${encodeURIComponent(state.selectedRunId)}/reviews/\${encodeURIComponent(state.selectedReviewId)}/decide\`,
+        {
+          decision,
+          scope: decision === "terminate" ? scope : undefined,
+          actor: "visualizer",
+          comment: \`recorded via visualizer (\${decision})\`
+        }
+      );
+      await loadSelectedRun(state.selectedRunId, { keepStream: true });
+    }
+
+    async function submitStopRequest() {
+      if (!state.selectedRunId) {
+        return;
+      }
+      await requestAction(
+        \`\${API_PREFIX}/runs/\${encodeURIComponent(state.selectedRunId)}/stop\`,
+        { reason: "requested via visualizer" }
+      );
+      await loadSelectedRun(state.selectedRunId, { keepStream: true });
     }
 
     function connectStream(runId, cursor) {
@@ -1029,11 +1617,60 @@ function renderPageHtml(workdir: string): string {
       };
     }
 
+    document.getElementById("project-home").addEventListener("click", () => {
+      selectProjectHome();
+    });
+
+    document.getElementById("reindex").addEventListener("click", async () => {
+      await requestAction(\`\${API_PREFIX}/runs/reindex\`);
+      await loadRuns();
+    });
+
+    document.getElementById("stop-run").addEventListener("click", async () => {
+      await submitStopRequest();
+    });
+
     document.getElementById("refresh").addEventListener("click", async () => {
+      await loadProject();
       await loadRuns();
       if (state.selectedRunId) {
         await loadSelectedRun(state.selectedRunId, { keepStream: false });
+      } else {
+        renderSelectedRun();
       }
+    });
+
+    logRoleEl.addEventListener("change", async (event) => {
+      state.selectedLogRoleId = event.target.value || "";
+      if (state.selectedRunId) {
+        await Promise.all([
+          loadEngineLogs(state.selectedRunId),
+          loadRoleLogs(state.selectedRunId, state.selectedLogRoleId || state.detail?.snapshot?.lastExecutedRoleId || "")
+        ]);
+        writeRouteToLocation();
+      }
+    });
+
+    logTailEl.addEventListener("change", async (event) => {
+      state.logTail = event.target.value || "";
+      if (state.selectedRunId) {
+        await Promise.all([
+          loadEngineLogs(state.selectedRunId),
+          loadRoleLogs(state.selectedRunId, state.selectedLogRoleId || state.detail?.snapshot?.lastExecutedRoleId || "")
+        ]);
+      }
+      writeRouteToLocation();
+    });
+
+    logSinceEl.addEventListener("change", async (event) => {
+      state.logSince = event.target.value || "";
+      if (state.selectedRunId) {
+        await Promise.all([
+          loadEngineLogs(state.selectedRunId),
+          loadRoleLogs(state.selectedRunId, state.selectedLogRoleId || state.detail?.snapshot?.lastExecutedRoleId || "")
+        ]);
+      }
+      writeRouteToLocation();
     });
 
     searchEl.addEventListener("input", (event) => {
@@ -1041,10 +1678,29 @@ function renderPageHtml(workdir: string): string {
       renderRuns();
     });
 
-    loadRuns().catch((error) => {
-      runListEl.innerHTML = \`<div class="hint">Failed to load runs: \${escapeText(error.message || error)}</div>\`;
-      setLive("idle", "offline");
-    });
+    const initialRoute = readRouteFromLocation();
+    state.projectHome = initialRoute.view === "project";
+    state.selectedRunId = initialRoute.runId;
+    state.selectedReviewId = initialRoute.reviewId;
+    state.selectedLogRoleId = initialRoute.logRoleId;
+    state.logTail = initialRoute.tail;
+    state.logSince = initialRoute.since;
+    logTailEl.value = state.logTail;
+    logSinceEl.value = state.logSince;
+
+    Promise.all([loadProject(), loadRuns()])
+      .then(async () => {
+        if (state.selectedRunId) {
+          await loadSelectedRun(state.selectedRunId, { keepStream: false });
+        } else {
+          renderSelectedRun();
+        }
+      })
+      .catch((error) => {
+        runListEl.innerHTML = \`<div class="hint">Failed to load visualizer data: \${escapeText(error.message || error)}</div>\`;
+        projectSummaryEl.textContent = \`Failed to load project: \${error.message || error}\`;
+        setLive("idle", "offline");
+      });
 
     state.listTimer = setInterval(() => {
       loadRuns().catch(() => {
@@ -1064,7 +1720,13 @@ async function handleVisualizationRequest(
   const method = request.method?.toUpperCase() ?? "GET";
   const url = new URL(request.url ?? "/", `http://${request.headers.host ?? `${args.host}:${args.port}`}`);
   const pathname = url.pathname;
-  const segments = pathname.split("/").filter(Boolean);
+  let segments: string[];
+  try {
+    segments = pathname.split("/").filter(Boolean).map((segment) => decodeURIComponent(segment));
+  } catch {
+    textResponse(response, 400, "Invalid path encoding");
+    return;
+  }
 
   if (method === "GET" && (pathname === "/" || pathname === "/index.html")) {
     textResponse(response, 200, renderPageHtml(args.workdir), "text/html; charset=utf-8");
@@ -1073,6 +1735,26 @@ async function handleVisualizationRequest(
 
   if (segments[0] !== "api" || segments[1] !== "v1") {
     textResponse(response, 404, "Not found");
+    return;
+  }
+
+  if (segments.length === 3 && segments[2] === "project" && method === "GET") {
+    await handleApiProjectSummary(args.workdir, response);
+    return;
+  }
+
+  if (segments.length === 4 && segments[2] === "project" && segments[3] === "system" && method === "GET") {
+    await handleApiProjectSystem(args.workdir, response);
+    return;
+  }
+
+  if (segments.length === 4 && segments[2] === "project" && segments[3] === "config" && method === "GET") {
+    await handleApiProjectConfig(args.workdir, response);
+    return;
+  }
+
+  if (segments.length === 4 && segments[2] === "project" && segments[3] === "roles" && method === "GET") {
+    await handleApiProjectRoles(args.workdir, response);
     return;
   }
 
@@ -1111,6 +1793,22 @@ async function handleVisualizationRequest(
   }
   if (segments.length === 5 && segments[4] === "graph" && method === "GET") {
     await handleApiRunGraph(args.workdir, runId, response);
+    return;
+  }
+  if (segments.length === 5 && segments[4] === "reviews" && method === "GET") {
+    await handleApiRunReviews(args.workdir, runId, response);
+    return;
+  }
+  if (segments.length === 5 && segments[4] === "resume-diagnostics" && method === "GET") {
+    await handleApiRunResumeDiagnostics(args.workdir, runId, response);
+    return;
+  }
+  if (segments.length === 7 && segments[4] === "reviews" && segments[6] === "decide" && method === "POST") {
+    await handleApiRunReviewDecision(args.workdir, runId, segments[5], request, response);
+    return;
+  }
+  if (segments.length === 6 && segments[4] === "reviews" && method === "GET") {
+    await handleApiRunReviewDetail(args.workdir, runId, segments[5], response);
     return;
   }
   if (segments.length === 5 && segments[4] === "stream" && method === "GET") {
@@ -1158,7 +1856,7 @@ async function handleVisualizationRequest(
     return;
   }
   if (segments.length === 5 && segments[4] === "stop" && method === "POST") {
-    await handleApiStop(args.workdir, runId, response);
+    await handleApiStop(args.workdir, runId, request, response);
     return;
   }
 

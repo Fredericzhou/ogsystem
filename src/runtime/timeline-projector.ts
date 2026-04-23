@@ -108,6 +108,9 @@ export async function loadTimelineSnapshot(args: {
   roleId?: string;
   branchId?: string;
   type?: string;
+  reviewId?: string;
+  status?: string;
+  errorCode?: string;
 }): Promise<{ events: Array<{ cursor: number; record: TimelineProjectionRecord }>; nextCursor: number }> {
   let content: string;
   try {
@@ -146,6 +149,15 @@ export async function loadTimelineSnapshot(args: {
         return false;
       }
       if (args.branchId && entry.record.branchId !== args.branchId) {
+        return false;
+      }
+      if (args.reviewId && entry.record.reviewId !== args.reviewId) {
+        return false;
+      }
+      if (args.status && entry.record.status !== args.status) {
+        return false;
+      }
+      if (args.errorCode && entry.record.errorCode !== args.errorCode) {
         return false;
       }
       return true;

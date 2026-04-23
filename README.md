@@ -169,7 +169,7 @@ For day-to-day use, start with `docs/usage-manual.md`. It keeps the command matr
 - `ogs project create <name> [--template <...>]` scaffolds the same structure in a new project directory.
 - `ogs project sync --system <file.mmd>` imports only the roles referenced by that system into the project-local role repo.
 - `ogs project sync-models` refreshes `.ogs/model-catalog.json` and seeds `.ogs/model-selection.json` when missing.
-- `ogs visualizer --workdir .` starts the read-only run visualizer, and `ogs run start --visualize` attaches a temporary visualizer that auto-closes when the run ends.
+- `ogs visualizer --workdir .` starts the read-mostly run visualizer. It keeps project/run/review/resume projections read-first, and routes review decide / stop / reindex through existing lifecycle entrypoints. `ogs run start --visualize` attaches a temporary visualizer that auto-closes when the run ends.
 - `examples/target-model-binding-system.mmd` shows `model.bind.*` usage.
 - `examples/langgraph-debate-current/` shows a minimal debate with loop + parallel + join.
 - `examples/langgraph-expert-consultation/` shows a minimal expert consultation with parallel + join.

@@ -1,0 +1,638 @@
+import test from "node:test";
+import assert from "node:assert/strict";
+import os from "node:os";
+import path from "node:path";
+import { mkdtemp, mkdir, symlink, writeFile } from "node:fs/promises";
+
+import {
+  inspectProjectConfigVisualization,
+  inspectProjectSystemVisualization,
+  inspectProjectVisualization,
+  inspectRunGraphVisualization,
+  inspectRunResumeDiagnostics
+} from "../dist/visualizer/data.js";
+import { inspectHumanReview, listHumanReviews } from "../dist/runtime/project-lifecycle.js";
+
+async function seedProjectFixture(workdir) {
+  const repoRoot = process.cwd();
+  await mkdir(path.resolve(workdir, ".ogs"), { recursive: true });
+  await symlink(path.resolve(repoRoot, "og-roles"), path.resolve(workdir, "og-roles"), "dir");
+  for (const file of [
+    "runtime.json",
+    "model-selection.json",
+    "model-catalog.json",
+    "laws.json",
+    "user-profile.json"
+  ]) {
+    await symlink(path.resolve(repoRoot, ".ogs", file), path.resolve(workdir, ".ogs", file));
+  }
+  await writeFile(
+    path.resolve(workdir, ".ogs", "project.json"),
+    JSON.stringify(
+      {
+        projectId: "viz.project.demo",
+        createdAt: "2026-04-23T00:00:00.000Z"
+      },
+      null,
+      2
+    ),
+    "utf8"
+  );
+  await writeFile(
+    path.resolve(workdir, "system.mmd"),
+    [
+      "flowchart TD",
+      "%% system.id=viz.project.demo",
+      "%% system.version=1.0.0",
+      "%% law.global=law.minimal.base",
+      "%% entry.role=demo-analyst",
+      "%% model.bind.demo-analyst=opencode/gpt-5.4",
+      "%% review.mode.demo-analyst=required",
+      "%% review.timeout.demo-analyst=3600",
+      "%% review.timeout.action.demo-analyst=pause",
+      "%% review.rework.target.demo-analyst=demo-analyst",
+      "%% review.rework.max.demo-analyst=2",
+      "%% review.terminate.scope.demo-analyst=branch",
+      "input -->|ENTER| analyst[Role:demo-analyst]",
+      "analyst[Role:demo-analyst] -->|DONE| output",
+      ""
+    ].join("\n"),
+    "utf8"
+  );
+}
+
+async function createSimulationRun(workdir) {
+  const runId = "20260416-010203-deadbeef";
+  const runDir = path.resolve(workdir, ".ogs", "runs", runId);
+  await mkdir(path.resolve(runDir, "logs", "roles"), { recursive: true });
+  await writeFile(
+    path.resolve(runDir, "state.json"),
+    JSON.stringify(
+      {
+        status: "running",
+        error: "",
+        transitionCount: 3,
+        recentAudits: [
+          { roleId: "alpha", status: "ok", at: "2026-04-16T01:02:03.000Z" },
+          {
+            roleId: "alpha",
+            status: "failed",
+            at: "2026-04-16T01:02:04.500Z",
+            errorEnvelope: { errorCode: "E_VIS_TEST" }
+          }
+        ],
+        auditSummary: {
+          okCount: 1,
+          failedCount: 1,
+          noopCount: 0,
+          handledFailureCount: 0,
+          unhandledFailureCount: 1,
+          handledFailureByEvent: {},
+          handledFailureByTargetRole: {},
+          repairAttemptedCount: 0,
+          repairAppliedCount: 0,
+          failureCountsByErrorCode: { E_VIS_TEST: 1 }
+        },
+        roleMetricsByRoleId: {},
+        roleResults: {},
+        pendingReviewsById: {},
+        reviewHistoryByBranchId: {},
+        humanReviewContextByBranchId: {},
+        reviewRoundByRoleLineageKey: {},
+        branchRecords: {
+          branch_a: {
+            branchId: "branch_a",
+            roleId: "alpha",
+            loopIteration: 0,
+            branchSequence: 1,
+            lineageId: "lineage_a",
+            sessionLineageId: "session_a",
+            status: "active"
+          }
+        },
+        loopIterations: {},
+        selectedEventByBranchId: {},
+        finalOutput: "",
+        finalRoleId: "",
+        lastExecutedRoleId: "alpha",
+        nextBranchSequence: 2,
+        lastCheckpointSequence: 3
+      },
+      null,
+      2
+    ),
+    "utf8"
+  );
+  await writeFile(
+    path.resolve(runDir, "summary.json"),
+    JSON.stringify(
+      {
+        version: 1,
+        runId,
+        systemId: "viz.demo",
+        systemVersion: "1.0.0",
+        status: "done",
+        transitionCount: 5,
+        durationMs: 42,
+        lastRoleId: "alpha",
+        finalRoleId: "alpha",
+        executionDirCount: 1,
+        okCount: 1,
+        failedCount: 0,
+        noopCount: 0,
+        updatedAt: "2026-04-16T01:02:05.000Z"
+      },
+      null,
+      2
+    ),
+    "utf8"
+  );
+  await writeFile(
+    path.resolve(runDir, "resolved-config.json"),
+    JSON.stringify(
+      {
+        systemId: "viz.demo",
+        runtime: "local",
+        effective: {
+          invocation: {
+            dryRun: true
+          }
+        }
+      },
+      null,
+      2
+    ),
+    "utf8"
+  );
+  await writeFile(
+    path.resolve(runDir, "system.mmd"),
+    [
+      "flowchart TD",
+      "%% system.id=viz.demo",
+      "%% system.version=1.0.0",
+      "%% law.global=law.minimal.base",
+      "%% entry.role=alpha",
+      "input -->|ENTER| alpha[Role:alpha]",
+      "alpha[Role:alpha] -->|DONE| output",
+      ""
+    ].join("\n"),
+    "utf8"
+  );
+  return { runId, runDir };
+}
+
+async function createWaitingReviewRun(workdir) {
+  const runId = "20260422-091500-feedface";
+  const runDir = path.resolve(workdir, ".ogs", "runs", runId);
+  await mkdir(path.resolve(runDir, "logs", "roles"), { recursive: true });
+  await mkdir(path.resolve(runDir, "control", "reviews"), { recursive: true });
+  await mkdir(path.resolve(runDir, "roles", "demo-analyst", "executions", "0001-exec-1"), {
+    recursive: true
+  });
+  await mkdir(path.resolve(runDir, "checkpoints"), { recursive: true });
+  await writeFile(path.resolve(runDir, "sessions.json"), JSON.stringify({}, null, 2), "utf8");
+  await writeFile(
+    path.resolve(runDir, "state.json"),
+    JSON.stringify(
+      {
+        status: "stopped",
+        error: "waiting for human review",
+        transitionCount: 1,
+        recentAudits: [{ roleId: "demo-analyst", status: "ok", at: "2026-04-22T09:15:00.000Z" }],
+        auditSummary: {
+          okCount: 1,
+          failedCount: 0,
+          noopCount: 0,
+          handledFailureCount: 0,
+          unhandledFailureCount: 0,
+          handledFailureByEvent: {},
+          handledFailureByTargetRole: {},
+          repairAttemptedCount: 0,
+          repairAppliedCount: 0,
+          failureCountsByErrorCode: {}
+        },
+        roleMetricsByRoleId: {},
+        roleResults: {},
+        pendingReviewsById: {
+          "review.demo-analyst@1#1.r1": {
+            reviewId: "review.demo-analyst@1#1.r1",
+            roleId: "demo-analyst",
+            branchId: "demo-analyst@1#1",
+            lineageId: "demo-analyst@1#1",
+            loopIteration: 1,
+            executionId: "exec-1",
+            selectedEvent: "DONE",
+            draftResult: {
+              roleId: "demo-analyst",
+              event: "DONE",
+              content: "draft",
+              branchId: "demo-analyst@1#1",
+              lineageId: "demo-analyst@1#1",
+              loopIteration: 1
+            },
+            requestedAt: "2026-04-22T09:15:00.000Z",
+            requestedByExecutionId: "exec-1",
+            status: "pending",
+            round: 1,
+            spec: {
+              mode: "required",
+              timeoutAction: "pause",
+              reworkTargetRoleId: "demo-analyst",
+              terminateScope: "branch"
+            }
+          }
+        },
+        reviewHistoryByBranchId: {
+          "demo-analyst@1#1": [
+            {
+              reviewId: "review.demo-analyst@1#1.r1",
+              committedAt: "2026-04-22T09:15:01.000Z",
+              decidedAt: "2026-04-22T09:15:01.000Z",
+              decision: "approve",
+              actor: "qa",
+              comment: "ship it"
+            }
+          ]
+        },
+        humanReviewContextByBranchId: {
+          "demo-analyst@1#1": {
+            reviewId: "review.demo-analyst@1#1.r1",
+            branchId: "demo-analyst@1#1",
+            round: 1,
+            comment: "ship it",
+            previousOutput: {
+              roleId: "demo-analyst",
+              event: "DONE",
+              content: "draft",
+              branchId: "demo-analyst@1#1",
+              lineageId: "demo-analyst@1#1",
+              loopIteration: 1
+            }
+          }
+        },
+        reviewRoundByRoleLineageKey: {
+          "demo-analyst::demo-analyst@1#1": 1
+        },
+        lastWaitingReviewId: "review.demo-analyst@1#1.r1",
+        branchRecords: {
+          "demo-analyst@1#1": {
+            branchId: "demo-analyst@1#1",
+            roleId: "demo-analyst",
+            loopIteration: 1,
+            branchSequence: 1,
+            lineageId: "demo-analyst@1#1",
+            sessionLineageId: "demo-analyst@1#1",
+            status: "waiting_review"
+          }
+        },
+        loopIterations: { "demo-analyst": 1 },
+        selectedEventByBranchId: {},
+        finalOutput: "",
+        finalRoleId: "",
+        lastExecutedRoleId: "demo-analyst",
+        nextBranchSequence: 2,
+        lastCheckpointSequence: 1
+      },
+      null,
+      2
+    ),
+    "utf8"
+  );
+  await writeFile(
+    path.resolve(runDir, "summary.json"),
+    JSON.stringify(
+      {
+        version: 1,
+        runId,
+        systemId: "viz.review.demo",
+        systemVersion: "1.0.0",
+        status: "stopped",
+        transitionCount: 1,
+        durationMs: 10,
+        lastRoleId: "demo-analyst",
+        executionDirCount: 1,
+        okCount: 1,
+        failedCount: 0,
+        noopCount: 0,
+        pendingReviewCount: 1,
+        hasWaitingHumanReview: true,
+        updatedAt: "2026-04-22T09:15:01.000Z"
+      },
+      null,
+      2
+    ),
+    "utf8"
+  );
+  await writeFile(
+    path.resolve(runDir, "resolved-config.json"),
+    JSON.stringify(
+      {
+        systemId: "viz.review.demo",
+        runtime: "local",
+        effective: {
+          invocation: {
+            dryRun: false
+          }
+        }
+      },
+      null,
+      2
+    ),
+    "utf8"
+  );
+  await writeFile(
+    path.resolve(runDir, "system.mmd"),
+    [
+      "flowchart TD",
+      "%% system.id=viz.review.demo",
+      "%% system.version=1.0.0",
+      "%% law.global=law.minimal.base",
+      "%% entry.role=demo-analyst",
+      "input -->|GO| analyst[Role:demo-analyst]",
+      "analyst[Role:demo-analyst] -->|DONE| output",
+      ""
+    ].join("\n"),
+    "utf8"
+  );
+  await writeFile(
+    path.resolve(runDir, "control", "reviews", "review.demo-analyst@1#1.r1.request.json"),
+    JSON.stringify(
+      {
+        reviewId: "review.demo-analyst@1#1.r1",
+        roleId: "demo-analyst",
+        branchId: "demo-analyst@1#1",
+        lineageId: "demo-analyst@1#1",
+        loopIteration: 1,
+        executionId: "exec-1",
+        selectedEvent: "DONE",
+        draftResult: {
+          roleId: "demo-analyst",
+          event: "DONE",
+          content: "draft",
+          branchId: "demo-analyst@1#1",
+          lineageId: "demo-analyst@1#1",
+          loopIteration: 1
+        },
+        requestedAt: "2026-04-22T09:15:00.000Z",
+        requestedByExecutionId: "exec-1",
+        status: "pending",
+        round: 1,
+        spec: {
+          mode: "required",
+          timeoutAction: "pause",
+          reworkTargetRoleId: "demo-analyst",
+          terminateScope: "branch"
+        }
+      },
+      null,
+      2
+    ),
+    "utf8"
+  );
+  await writeFile(
+    path.resolve(runDir, "control", "reviews", "review.demo-analyst@1#1.r1.decision.json"),
+    JSON.stringify(
+      {
+        reviewId: "review.demo-analyst@1#1.r1",
+        committedAt: "2026-04-22T09:15:01.000Z",
+        decidedAt: "2026-04-22T09:15:01.000Z",
+        decision: "approve",
+        actor: "qa",
+        comment: "ship it"
+      },
+      null,
+      2
+    ),
+    "utf8"
+  );
+  await writeFile(
+    path.resolve(
+      runDir,
+      "roles",
+      "demo-analyst",
+      "executions",
+      "0001-exec-1",
+      "execution-outcome.json"
+    ),
+    JSON.stringify(
+      {
+        version: 1,
+        executionId: "exec-1",
+        roleId: "demo-analyst",
+        branchId: "demo-analyst@1#1",
+        loopIteration: 1,
+        sessionKey: "demo-analyst:demo-analyst@1#1",
+        branch: {
+          branchId: "demo-analyst@1#1",
+          roleId: "demo-analyst",
+          loopIteration: 1,
+          branchSequence: 1,
+          lineageId: "demo-analyst@1#1",
+          sessionLineageId: "demo-analyst@1#1",
+          status: "waiting_review"
+        },
+        committedAt: "2026-04-22T09:15:00.000Z",
+        status: "ok",
+        selectedEvent: "DONE",
+        storedResult: {
+          roleId: "demo-analyst",
+          event: "DONE",
+          content: "draft",
+          branchId: "demo-analyst@1#1",
+          lineageId: "demo-analyst@1#1",
+          loopIteration: 1
+        },
+        audit: {
+          at: "2026-04-22T09:15:00.000Z",
+          roleId: "demo-analyst",
+          exitCode: 0,
+          durationMs: 5,
+          status: "ok"
+        }
+      },
+      null,
+      2
+    ),
+    "utf8"
+  );
+  await writeFile(
+    path.resolve(runDir, "plan-fingerprint.json"),
+    JSON.stringify(
+      {
+        version: 1,
+        algorithm: "sha256",
+        digest: "stored-digest",
+        payload: {
+          components: {
+            system: { digest: "system-old" },
+            rolePackages: { digest: "roles-old" }
+          }
+        }
+      },
+      null,
+      2
+    ),
+    "utf8"
+  );
+  await writeFile(
+    path.resolve(runDir, "checkpoints", "1-exec-1.json"),
+    JSON.stringify(
+      {
+        checkpointSequence: 1,
+        executionId: "exec-1",
+        branchId: "demo-analyst@1#1"
+      },
+      null,
+      2
+    ),
+    "utf8"
+  );
+  return { runId, runDir };
+}
+
+async function createJoinRun(workdir) {
+  const runId = "20260423-101500-joinbeef";
+  const runDir = path.resolve(workdir, ".ogs", "runs", runId);
+  await mkdir(path.resolve(runDir, "logs", "roles"), { recursive: true });
+  await writeFile(
+    path.resolve(runDir, "state.json"),
+    JSON.stringify(
+      {
+        status: "running",
+        error: "",
+        transitionCount: 3,
+        recentAudits: [],
+        auditSummary: {
+          okCount: 0,
+          failedCount: 0,
+          noopCount: 0,
+          handledFailureCount: 0,
+          unhandledFailureCount: 0,
+          handledFailureByEvent: {},
+          handledFailureByTargetRole: {},
+          repairAttemptedCount: 0,
+          repairAppliedCount: 0,
+          failureCountsByErrorCode: {}
+        },
+        roleMetricsByRoleId: {},
+        roleResults: {},
+        pendingReviewsById: {},
+        reviewHistoryByBranchId: {},
+        humanReviewContextByBranchId: {},
+        reviewRoundByRoleLineageKey: {},
+        branchRecords: {
+          "test-operator@1#1": {
+            branchId: "test-operator@1#1",
+            roleId: "test-operator",
+            loopIteration: 0,
+            branchSequence: 3,
+            lineageId: "test-operator@1#1",
+            sessionLineageId: "test-operator@1#1",
+            status: "active",
+            activatedByRoleId: "test-branch-a",
+            activatedByEvent: "A_DONE"
+          }
+        },
+        loopIterations: {},
+        selectedEventByBranchId: {},
+        finalOutput: "",
+        finalRoleId: "",
+        lastExecutedRoleId: "test-branch-a",
+        nextBranchSequence: 4,
+        lastCheckpointSequence: 0
+      },
+      null,
+      2
+    ),
+    "utf8"
+  );
+  await writeFile(
+    path.resolve(runDir, "system.mmd"),
+    [
+      "flowchart TD",
+      "%% system.id=viz.join.demo",
+      "%% system.version=1.0.0",
+      "%% law.global=law.minimal.base",
+      "%% entry.role=demo-intake",
+      "%% role.mode.demo-intake=parallel_split",
+      "%% join.mode.test-operator=all_of",
+      "%% join.sources.test-operator=test-branch-a,test-branch-b",
+      "input -->|TASK_IN| intake[Role:demo-intake]",
+      "intake[Role:demo-intake] -->|BRANCH_A| brancha[Role:test-branch-a]",
+      "intake[Role:demo-intake] -->|BRANCH_B| branchb[Role:test-branch-b]",
+      "brancha[Role:test-branch-a] -->|A_DONE| testop[Role:test-operator]",
+      "branchb[Role:test-branch-b] -->|B_DONE| testop[Role:test-operator]",
+      "testop[Role:test-operator] -->|RESULT_READY| output",
+      ""
+    ].join("\n"),
+    "utf8"
+  );
+  return { runId, runDir };
+}
+
+test("visualizer data projects project and graph information", async () => {
+  const workdir = await mkdtemp(path.join(os.tmpdir(), "ogsystem-visualizer-data-project-"));
+  await seedProjectFixture(workdir);
+  const { runId } = await createSimulationRun(workdir);
+
+  const project = await inspectProjectVisualization(workdir);
+  assert.equal(project.project.systemId, "viz.project.demo");
+  assert.equal(project.project.reviewedRoleIds[0], "demo-analyst");
+  assert.ok(project.project.bindingSummaryByRoleId["demo-analyst"]);
+
+  const projectSystem = await inspectProjectSystemVisualization(workdir);
+  assert.match(projectSystem.systemSource, /Role:demo-analyst/);
+
+  const projectConfig = await inspectProjectConfigVisualization(workdir);
+  assert.ok(projectConfig.modelCatalog);
+  assert.ok(projectConfig.runtime);
+
+  const graph = await inspectRunGraphVisualization({ workdir, runId });
+  assert.equal(graph.simulation.isSimulation, true);
+  assert.equal(graph.simulation.summary.simulatedNodeCount, 1);
+  assert.equal(graph.simulation.summary.simulatedExternalCallCount, 0);
+  assert.ok(Array.isArray(graph.simulation.summary.expectedPathRoleIds));
+  assert.match(graph.simulation.summary.mermaidLiveUrl, /mermaid\.live/);
+  assert.equal(graph.graph.nodes[0].roleId, "alpha");
+  assert.equal(graph.graph.nodes[0].status, "active");
+  assert.equal(graph.graph.nodes[0].lastErrorCode, "E_VIS_TEST");
+  assert.equal(graph.graph.edges[0].event, "DONE");
+});
+
+test("visualizer data normalizes reviews and resume diagnostics", async () => {
+  const workdir = await mkdtemp(path.join(os.tmpdir(), "ogsystem-visualizer-data-review-"));
+  await seedProjectFixture(workdir);
+  const { runId } = await createWaitingReviewRun(workdir);
+
+  const reviews = await listHumanReviews(workdir, runId);
+  assert.equal(reviews.reviews.length, 1);
+  assert.equal(reviews.reviews[0].branchStatus, "waiting_review");
+  assert.equal(reviews.reviews[0].roleId, "demo-analyst");
+  assert.equal(reviews.reviews[0].decision, "approve");
+  assert.equal(reviews.reviews[0].history.length, 1);
+
+  const reviewDetail = await inspectHumanReview(workdir, runId, "review.demo-analyst@1#1.r1");
+  assert.equal(reviewDetail.branchStatus, "waiting_review");
+  assert.equal(reviewDetail.roleId, "demo-analyst");
+  assert.equal(reviewDetail.comment, "ship it");
+  assert.equal(reviewDetail.humanReviewContext.comment, "ship it");
+
+  const diagnostics = await inspectRunResumeDiagnostics(workdir, runId);
+  assert.equal(diagnostics.status, "mismatch");
+  assert.ok(diagnostics.fingerprint.mismatch);
+  assert.ok(diagnostics.checks.some((check) => check.id === "review-decisions"));
+  assert.ok(diagnostics.checks.some((check) => check.id === "execution-outcomes"));
+  assert.ok(diagnostics.recommendations.some((item) => item.action === "inspect-project"));
+});
+
+test("visualizer data projects join waiting sources for graph view", async () => {
+  const workdir = await mkdtemp(path.join(os.tmpdir(), "ogsystem-visualizer-data-join-"));
+  await seedProjectFixture(workdir);
+  const { runId } = await createJoinRun(workdir);
+
+  const graph = await inspectRunGraphVisualization({ workdir, runId });
+  const joinNode = graph.graph.nodes.find((node) => node.roleId === "test-operator");
+  assert.deepEqual(joinNode.expectedSources, ["test-branch-a", "test-branch-b"]);
+  assert.deepEqual(joinNode.readySources, ["test-branch-a"]);
+  assert.deepEqual(joinNode.missingSources, ["test-branch-b"]);
+});

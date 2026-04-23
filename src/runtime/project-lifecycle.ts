@@ -423,6 +423,14 @@ async function tryReadJson(path: string): Promise<unknown | undefined> {
   }
 }
 
+function asString(value: unknown): string | undefined {
+  return typeof value === "string" ? value : undefined;
+}
+
+function asNumber(value: unknown): number | undefined {
+  return typeof value === "number" && Number.isFinite(value) ? value : undefined;
+}
+
 function asSummaryProjection(value: unknown): RunSummaryProjection | undefined {
   if (typeof value !== "object" || value === null || Array.isArray(value)) {
     return undefined;
@@ -444,11 +452,12 @@ function asGraphStateRecord(value: unknown): Record<string, unknown> | undefined
   if (typeof value !== "object" || value === null || Array.isArray(value)) {
     return undefined;
   }
-  const graphState = (value as { graphState?: unknown }).graphState;
-  if (typeof graphState !== "object" || graphState === null || Array.isArray(graphState)) {
-    return undefined;
+  const record = value as Record<string, unknown>;
+  const graphState = record.graphState;
+  if (typeof graphState === "object" && graphState !== null && !Array.isArray(graphState)) {
+    return graphState as Record<string, unknown>;
   }
-  return graphState as Record<string, unknown>;
+  return record;
 }
 
 function countPendingReviewsFromGraphState(graphState: Record<string, unknown> | undefined): number | undefined {
@@ -482,6 +491,63 @@ function getPendingReviewsByIdFromGraphState(
   }
   return Object.fromEntries(
     Object.entries(pendingReviewsById).filter(
+      ([, value]) => typeof value === "object" && value !== null && !Array.isArray(value)
+    )
+  ) as Record<string, Record<string, unknown>>;
+}
+
+function getReviewHistoryByBranchIdFromGraphState(
+  graphState: Record<string, unknown> | undefined
+): Record<string, Record<string, unknown>[]> {
+  const reviewHistoryByBranchId = graphState?.reviewHistoryByBranchId;
+  if (
+    typeof reviewHistoryByBranchId !== "object" ||
+    reviewHistoryByBranchId === null ||
+    Array.isArray(reviewHistoryByBranchId)
+  ) {
+    return {};
+  }
+  return Object.fromEntries(
+    Object.entries(reviewHistoryByBranchId).map(([branchId, value]) => [
+      branchId,
+      Array.isArray(value)
+        ? value.filter((entry) => typeof entry === "object" && entry !== null && !Array.isArray(entry))
+        : []
+    ])
+  ) as Record<string, Record<string, unknown>[]>;
+}
+
+function getHumanReviewContextByBranchIdFromGraphState(
+  graphState: Record<string, unknown> | undefined
+): Record<string, Record<string, unknown>> {
+  const humanReviewContextByBranchId = graphState?.humanReviewContextByBranchId;
+  if (
+    typeof humanReviewContextByBranchId !== "object" ||
+    humanReviewContextByBranchId === null ||
+    Array.isArray(humanReviewContextByBranchId)
+  ) {
+    return {};
+  }
+  return Object.fromEntries(
+    Object.entries(humanReviewContextByBranchId).filter(
+      ([, value]) => typeof value === "object" && value !== null && !Array.isArray(value)
+    )
+  ) as Record<string, Record<string, unknown>>;
+}
+
+function getBranchRecordsFromGraphState(
+  graphState: Record<string, unknown> | undefined
+): Record<string, Record<string, unknown>> {
+  const branchRecords = graphState?.branchRecords;
+  if (
+    typeof branchRecords !== "object" ||
+    branchRecords === null ||
+    Array.isArray(branchRecords)
+  ) {
+    return {};
+  }
+  return Object.fromEntries(
+    Object.entries(branchRecords).filter(
       ([, value]) => typeof value === "object" && value !== null && !Array.isArray(value)
     )
   ) as Record<string, Record<string, unknown>>;
@@ -590,6 +656,80 @@ function deriveEffectiveTerminateScope(args: {
   }
 
   return undefined;
+}
+
+function normalizeReviewProjection(args: {
+  reviewId: string;
+  requestSnapshot?: unknown;
+  decisionSnapshot?: unknown;
+  currentState?: unknown;
+  branchRecord?: Record<string, unknown>;
+  history?: Record<string, unknown>[];
+  humanReviewContext?: Record<string, unknown>;
+}): Record<string, unknown> {
+  const requestSnapshot =
+    typeof args.requestSnapshot === "object" &&
+    args.requestSnapshot !== null &&
+    !Array.isArray(args.requestSnapshot)
+      ? (args.requestSnapshot as Record<string, unknown>)
+      : undefined;
+  const currentState =
+    typeof args.currentState === "object" &&
+    args.currentState !== null &&
+    !Array.isArray(args.currentState)
+      ? (args.currentState as Record<string, unknown>)
+      : undefined;
+  const decisionSnapshot =
+    typeof args.decisionSnapshot === "object" &&
+    args.decisionSnapshot !== null &&
+    !Array.isArray(args.decisionSnapshot)
+      ? (args.decisionSnapshot as Record<string, unknown>)
+      : undefined;
+  const source = currentState ?? requestSnapshot;
+
+  return {
+    reviewId: args.reviewId,
+    currentStatus: deriveCurrentReviewStatus(args),
+    roleId: asString(source?.roleId),
+    branchId: asString(source?.branchId),
+    lineageId: asString(source?.lineageId),
+    loopIteration: asNumber(source?.loopIteration),
+    executionId: asString(source?.executionId),
+    requestedAt: asString(source?.requestedAt),
+    requestedByExecutionId: asString(source?.requestedByExecutionId),
+    round: asNumber(source?.round),
+    selectedEvent: asString(source?.selectedEvent),
+    draftResult:
+      typeof source?.draftResult === "object" &&
+      source?.draftResult !== null &&
+      !Array.isArray(source?.draftResult)
+        ? source.draftResult
+        : undefined,
+    spec:
+      typeof source?.spec === "object" &&
+      source?.spec !== null &&
+      !Array.isArray(source?.spec)
+        ? source.spec
+        : undefined,
+    decision: asString(decisionSnapshot?.decision),
+    decidedAt: asString(decisionSnapshot?.decidedAt),
+    committedAt: asString(decisionSnapshot?.committedAt),
+    actor: asString(decisionSnapshot?.actor),
+    comment: asString(decisionSnapshot?.comment),
+    scope:
+      (decisionSnapshot?.scope === "branch" || decisionSnapshot?.scope === "run"
+        ? decisionSnapshot.scope
+        : deriveEffectiveTerminateScope(args)) ?? undefined,
+    checkpointSequence: asNumber(decisionSnapshot?.checkpointSequence),
+    appliedAt: asString(decisionSnapshot?.appliedAt),
+    reconciledAt: asString(decisionSnapshot?.reconciledAt),
+    branchStatus: asString(args.branchRecord?.status),
+    requestSnapshot: args.requestSnapshot,
+    decisionSnapshot: args.decisionSnapshot,
+    currentState: args.currentState,
+    history: args.history ?? [],
+    humanReviewContext: args.humanReviewContext
+  };
 }
 
 function derivePendingReviewFields(args: {
@@ -1031,7 +1171,14 @@ export async function listHumanReviews(workdir: string, runId: string): Promise<
       reviewIds.add(entry.name.slice(0, -".decision.json".length));
     }
   }
-  const pendingReviewsById = getPendingReviewsByIdFromGraphState(asGraphStateRecord(state));
+  const graphState = asGraphStateRecord(state);
+  const pendingReviewsById = getPendingReviewsByIdFromGraphState(graphState);
+  const reviewHistoryByBranchId = getReviewHistoryByBranchIdFromGraphState(graphState);
+  const humanReviewContextByBranchId = getHumanReviewContextByBranchIdFromGraphState(graphState);
+  const branchRecordsById = getBranchRecordsFromGraphState(graphState);
+  for (const reviewId of Object.keys(pendingReviewsById)) {
+    reviewIds.add(reviewId);
+  }
 
   const reviews = await Promise.all(
     [...reviewIds].sort((left, right) => left.localeCompare(right)).map(async (reviewId) => {
@@ -1040,24 +1187,29 @@ export async function listHumanReviews(workdir: string, runId: string): Promise<
         loadReviewRecord(resolve(reviewsDir, `${reviewId}.decision.json`))
       ]);
       const currentState = pendingReviewsById[reviewId];
-      return {
+      const source =
+        typeof currentState === "object" && currentState !== null && !Array.isArray(currentState)
+          ? currentState
+          : typeof requestSnapshot === "object" && requestSnapshot !== null && !Array.isArray(requestSnapshot)
+            ? (requestSnapshot as Record<string, unknown>)
+            : undefined;
+      const branchId = asString(source?.branchId);
+      return normalizeReviewProjection({
         reviewId,
-        currentStatus: deriveCurrentReviewStatus({
-          requestSnapshot,
-          decisionSnapshot,
-          currentState
-        }),
         requestSnapshot,
         decisionSnapshot,
-        currentState
-      };
+        currentState,
+        branchRecord: branchId ? branchRecordsById[branchId] : undefined,
+        history: branchId ? reviewHistoryByBranchId[branchId] : undefined,
+        humanReviewContext: branchId ? humanReviewContextByBranchId[branchId] : undefined
+      });
     })
   );
   return {
     runId,
     runDir,
-    latestPendingReviewId: getLatestPendingReviewIdFromGraphState(asGraphStateRecord(state)),
-    reviews
+    latestPendingReviewId: getLatestPendingReviewIdFromGraphState(graphState),
+    reviews: reviews.sort(compareReviewSnapshots)
   };
 }
 
@@ -1073,32 +1225,35 @@ export async function inspectHumanReview(
     loadReviewRecord(resolve(reviewsDir, `${reviewId}.request.json`)),
     loadReviewRecord(resolve(reviewsDir, `${reviewId}.decision.json`))
   ]);
-  const graphState =
-    typeof detail.state === "object" &&
-    detail.state !== null &&
-    !Array.isArray(detail.state) &&
-    typeof (detail.state as { graphState?: unknown }).graphState === "object" &&
-    (detail.state as { graphState?: unknown }).graphState !== null
-      ? ((detail.state as { graphState: Record<string, unknown> }).graphState ?? {})
-      : {};
+  const graphState = asGraphStateRecord(detail.state) ?? {};
   const currentState =
     typeof graphState.pendingReviewsById === "object" &&
     graphState.pendingReviewsById !== null &&
     !Array.isArray(graphState.pendingReviewsById)
       ? (graphState.pendingReviewsById as Record<string, unknown>)[reviewId]
       : undefined;
+  const source =
+    typeof currentState === "object" && currentState !== null && !Array.isArray(currentState)
+      ? (currentState as Record<string, unknown>)
+      : typeof requestSnapshot === "object" && requestSnapshot !== null && !Array.isArray(requestSnapshot)
+        ? (requestSnapshot as Record<string, unknown>)
+        : undefined;
+  const branchId = asString(source?.branchId);
+  const historyByBranchId = getReviewHistoryByBranchIdFromGraphState(graphState);
+  const humanReviewContextByBranchId = getHumanReviewContextByBranchIdFromGraphState(graphState);
+  const branchRecordsById = getBranchRecordsFromGraphState(graphState);
   return {
     runId,
     runDir,
-    reviewId,
-    currentStatus: deriveCurrentReviewStatus({
+    ...normalizeReviewProjection({
+      reviewId,
       requestSnapshot,
       decisionSnapshot,
-      currentState
-    }),
-    requestSnapshot,
-    decisionSnapshot,
-    currentState
+      currentState,
+      branchRecord: branchId ? branchRecordsById[branchId] : undefined,
+      history: branchId ? historyByBranchId[branchId] : undefined,
+      humanReviewContext: branchId ? humanReviewContextByBranchId[branchId] : undefined
+    })
   };
 }
 

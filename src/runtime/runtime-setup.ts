@@ -149,6 +149,7 @@ export async function prepareRuntimeSetup(args: {
   resumeRunDir?: string;
   prompt: string;
   workdir: string;
+  dryRun?: boolean;
 }): Promise<RuntimeAdapterSetup> {
   const system = await loadSystemFromMermaid(args.systemPath);
   const runtimeConfig = await loadRuntimeConfig(args.runtimeConfigPath, args.workdir);
@@ -223,6 +224,9 @@ export async function prepareRuntimeSetup(args: {
     effective: {
       runtimeConfig,
       roleRepoDir: roleRootDir,
+      invocation: {
+        dryRun: args.dryRun === true
+      },
       resolvedModelSelection: Object.fromEntries(
         Array.from(resolvedModelSelection.resolvedByRoleId.entries()).map(([roleId, selection]) => [
           roleId,
