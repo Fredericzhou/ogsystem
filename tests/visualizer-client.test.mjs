@@ -17,6 +17,12 @@ const PAGE_ELEMENT_IDS = [
   "flash",
   "selected-title",
   "selected-subtitle",
+  "workdir",
+  "workbench-meta",
+  "workbench-status",
+  "workbench-actions",
+  "workbench-tabs",
+  "workbench-body",
   "project-summary",
   "stats",
   "timeline",
@@ -34,8 +40,15 @@ const PAGE_ELEMENT_IDS = [
   "log-role",
   "log-tail",
   "log-since",
+  "sidebar",
+  "sidebar-overlay",
+  "sidebar-toggle",
   "project-home",
+  "project-load",
+  "project-export",
   "reindex",
+  "start-run",
+  "resume-run",
   "stop-run",
   "refresh"
 ];
@@ -132,6 +145,18 @@ class FakeElement {
 class FakeDocument {
   constructor() {
     this.elements = new Map();
+    this.body = {
+      classList: {
+        classes: new Set(),
+        toggle(name, enabled) {
+          if (enabled) {
+            this.classes.add(name);
+          } else {
+            this.classes.delete(name);
+          }
+        }
+      }
+    };
     for (const id of PAGE_ELEMENT_IDS) {
       this.elements.set(id, new FakeElement(this, id));
     }
@@ -152,7 +177,7 @@ class FakeDocument {
 
   parseChildren(html) {
     const children = [];
-    const matcher = /<(button|input|select|option)\b([^>]*)>/g;
+    const matcher = /<(button|input|select|option|textarea)\b([^>]*)>/g;
     for (const match of html.matchAll(matcher)) {
       const tagName = match[1];
       const attributes = parseAttributes(match[2] ?? "");
@@ -164,6 +189,10 @@ class FakeDocument {
       }
     }
     return children;
+  }
+
+  createElement(tagName) {
+    return new FakeElement(this, "", tagName, {}, true);
   }
 }
 
@@ -190,8 +219,16 @@ function createResponse(payload, status = 200, statusText = "OK") {
     ok: status >= 200 && status < 300,
     status,
     statusText,
+    headers: {
+      get(name) {
+        return name.toLowerCase() === "content-type" ? "application/json; charset=utf-8" : null;
+      }
+    },
     async json() {
       return cloneJson(payload);
+    },
+    async text() {
+      return typeof payload === "string" ? payload : JSON.stringify(payload);
     }
   };
 }
@@ -329,6 +366,104 @@ function createBackend(options = {}) {
       if (pathname === "/api/v1/project/system") {
         return createResponse({ systemSource: "flowchart TD" });
       }
+      if (pathname === "/api/v1/project/system/workbench") {
+        return createResponse({
+          workdir: "/tmp/demo",
+          systemPath: "/tmp/demo/system.mmd",
+          systemSource: "flowchart TD\n%% system.id=viz.review.demo\n%% system.version=1.0.0\n%% law.global=law.minimal.base\n%% entry.role=demo-analyst\ninput -->|GO| analyst[Role:demo-analyst]\nanalyst[Role:demo-analyst] -->|DONE| output\n",
+          validation: {
+            ok: true,
+            diagnostics: [],
+            structure: {
+              systemId: "viz.review.demo",
+              systemVersion: "1.0.0",
+              entryRoleId: "demo-analyst",
+              roleCount: 1,
+              flowCount: 1,
+              roles: [{ roleId: "demo-analyst", bindingKind: "model", reviewMode: "required" }],
+              flows: [{ fromRoleId: "demo-analyst", toRoleId: "output", eventType: "DONE" }]
+            }
+          }
+        });
+      }
+      if (pathname === "/api/v1/project/system/validate" && method === "POST") {
+        const body = JSON.parse(request.body ?? "{}");
+        const valid = !String(body.systemSource || "").includes("INVALID");
+        return createResponse({
+          ok: valid,
+          diagnostics: valid
+            ? []
+            : [{ code: "MERMAID_PARSE_FAILED", message: "bad line", severity: "error", stage: "parse", line: 2 }],
+          structure: valid
+            ? {
+                systemId: "viz.review.demo",
+                systemVersion: "1.0.0",
+                entryRoleId: "demo-analyst",
+                roleCount: 1,
+                flowCount: 1,
+                roles: [{ roleId: "demo-analyst", bindingKind: "model", reviewMode: "required" }],
+                flows: [{ fromRoleId: "demo-analyst", toRoleId: "output", eventType: "DONE" }]
+              }
+            : null
+        });
+      }
+      if ((pathname === "/api/v1/project/system/save" || pathname === "/api/v1/project/system/save-as") && method === "POST") {
+        const body = JSON.parse(request.body ?? "{}");
+        return createResponse({
+          savedPath: body.saveAsPath ? `/tmp/demo/${body.saveAsPath}` : "/tmp/demo/system.mmd",
+          validation: {
+            ok: true,
+            diagnostics: [],
+            structure: {
+              systemId: "viz.review.demo",
+              systemVersion: "1.0.0",
+              entryRoleId: "demo-analyst",
+              roleCount: 1,
+              flowCount: 1,
+              roles: [{ roleId: "demo-analyst", bindingKind: "model", reviewMode: "required" }],
+              flows: [{ fromRoleId: "demo-analyst", toRoleId: "output", eventType: "DONE" }]
+            }
+          },
+          followUpActions: [{ action: "refresh-project-summary", label: "Reload project and graph views to reflect the saved system." }]
+        });
+      }
+      if (pathname === "/api/v1/project/export" && method === "POST") {
+        return createResponse({
+          mode: "single-project-v1",
+          project: {
+            systemPath: "system.mmd",
+            systemSource: "flowchart TD",
+            runtime: {},
+            modelSelection: {},
+            modelCatalog: {},
+            laws: {},
+            userProfile: {},
+            project: {}
+          }
+        });
+      }
+      if (pathname === "/api/v1/project/load" && method === "POST") {
+        const body = JSON.parse(request.body ?? "{}");
+        return createResponse({
+          workdir: body.workdir || "/tmp/other",
+          mode: "single-project-v1",
+          loadedFiles: ["system.mmd", ".ogs/"],
+          validation: {
+            ok: true,
+            diagnostics: [],
+            structure: {
+              systemId: "viz.loaded.demo",
+              systemVersion: "1.0.0",
+              entryRoleId: "demo-analyst",
+              roleCount: 1,
+              flowCount: 1,
+              roles: [{ roleId: "demo-analyst", bindingKind: "model" }],
+              flows: [{ fromRoleId: "demo-analyst", toRoleId: "output", eventType: "DONE" }]
+            }
+          },
+          followUpActions: [{ action: "project-rebound", label: "Visualizer workdir rebound." }]
+        });
+      }
       if (pathname === "/api/v1/project/config") {
         return createResponse({ modelSelectionWarnings: [] });
       }
@@ -349,6 +484,18 @@ function createBackend(options = {}) {
               hasWaitingHumanReview: true
             }
           ]
+        });
+      }
+      if (pathname === "/api/v1/runs/start" && method === "POST") {
+        this.lastStartBody = JSON.parse(request.body ?? "{}");
+        return createResponse({
+          runId,
+          status: "done",
+          resultSummary: {
+            systemId: "viz.review.demo",
+            transitionCount: 1
+          },
+          followUpActions: [{ action: "open-run-detail", label: "Open run." }]
         });
       }
       if (pathname === `/api/v1/runs/${runId}`) {
@@ -400,6 +547,18 @@ function createBackend(options = {}) {
           recommendations: []
         });
       }
+      if (pathname === `/api/v1/runs/${runId}/resume` && method === "POST") {
+        this.lastResumeBody = JSON.parse(request.body ?? "{}");
+        return createResponse({
+          runId,
+          status: "done",
+          resultSummary: {
+            systemId: "viz.review.demo",
+            transitionCount: 2
+          },
+          followUpActions: [{ action: "open-run-detail", label: "Open run." }]
+        });
+      }
       if (pathname === `/api/v1/runs/${runId}/logs`) {
         return createResponse({
           records: [{ at: "2026-04-23T09:15:00.000Z", message: parsed.search || "log" }]
@@ -430,9 +589,19 @@ function createBackend(options = {}) {
           committedAt: "2026-04-23T09:15:05.000Z"
         };
         return createResponse({
-          decision: {
+          runId,
+          action: "review:" + this.lastDecisionBody.decision,
+          accepted: true,
+          semanticStatus: this.lastDecisionBody.decision === "pause" ? "human-review-paused" : "human-review-approved",
+          detail: {
             reviewId,
-            decision: this.lastDecisionBody.decision
+            note: "Decision recorded in the control plane; runtime reconcile may still be pending.",
+            lifecycle: {
+              decision: {
+                reviewId,
+                decision: this.lastDecisionBody.decision
+              }
+            }
           }
         });
       }
@@ -451,6 +620,7 @@ async function settle() {
 async function createClientHarness(options = {}) {
   const document = new FakeDocument();
   const backend = options.backend ?? createBackend(options);
+  const storage = new Map();
   const prompts = [...(options.prompts ?? [])];
   const promptCalls = [];
   const confirmCalls = [];
@@ -472,6 +642,17 @@ async function createClientHarness(options = {}) {
           windowObject.location.pathname = url;
           windowObject.location.search = "";
         }
+      }
+    },
+    localStorage: {
+      getItem(key) {
+        return storage.get(key) ?? null;
+      },
+      setItem(key, value) {
+        storage.set(key, String(value));
+      },
+      removeItem(key) {
+        storage.delete(key);
       }
     },
     prompt(label, initialValue) {
@@ -513,12 +694,27 @@ async function createClientHarness(options = {}) {
     Date,
     JSON,
     console,
-    encodeURIComponent
+    encodeURIComponent,
+    Blob: class FakeBlob {
+      constructor(parts, options) {
+        this.parts = parts;
+        this.type = options?.type ?? "";
+      }
+    },
+    URL: {
+      createObjectURL() {
+        return "blob:test";
+      },
+      revokeObjectURL() {}
+    }
   });
   vm.runInContext(buildClientAppScript("/api/v1"), context);
-  for (let attempt = 0; attempt < 25; attempt += 1) {
+  for (let attempt = 0; attempt < 80; attempt += 1) {
     await settle();
-    if (document.getElementById("resume-controls").innerHTML.includes("Load diagnostics")) {
+    if (
+      document.getElementById("resume-controls").innerHTML.includes("Load diagnostics") &&
+      document.getElementById("review-detail").textContent.includes("decisionPhase:")
+    ) {
       break;
     }
   }
@@ -657,7 +853,10 @@ test("visualizer client review action captures audit input, disables controls wh
     actor: "operator-a",
     comment: "looks good"
   });
-  assert.equal(harness.document.getElementById("flash").textContent, 'Decision "approve" recorded; reconcile may still be pending.');
+  assert.equal(
+    harness.document.getElementById("flash").textContent,
+    "Review action recorded for review-1: human-review-approved. Decision recorded in the control plane; runtime reconcile may still be pending."
+  );
   assert.ok(
     harness.document.getElementById("review-detail").textContent.includes("decisionPhase: recorded")
   );
@@ -721,4 +920,54 @@ test("visualizer client appends SSE timeline entries and refreshes only targeted
   assert.equal(logCallsAfter, logCallsBefore);
   assert.ok(detailCallsAfter > detailCallsBefore);
   assert.ok(reviewCallsAfter > reviewCallsBefore);
+});
+
+test("visualizer client edits the Mermaid workbench, saves, and starts a run", async () => {
+  const harness = await createClientHarness({
+    prompts: ["system.mmd", "ship a smoke test", "yes", "", "", ""]
+  });
+
+  const newDraftButton = harness.document.getElementById("workbench-new-draft");
+  assert.ok(newDraftButton);
+  await newDraftButton.click();
+  await settle();
+
+  const editor = harness.document.getElementById("workbench-editor");
+  assert.ok(editor);
+  await editor.input(
+    [
+      "flowchart TD",
+      "%% system.id=viz.review.demo",
+      "%% system.version=1.0.0",
+      "%% law.global=law.minimal.base",
+      "%% entry.role=demo-analyst",
+      "input -->|GO| analyst[Role:demo-analyst]",
+      "analyst[Role:demo-analyst] -->|DONE| output",
+      ""
+    ].join("\n")
+  );
+  await harness.flushTimers();
+
+  assert.ok(
+    harness.backend.fetchCalls.some((call) => call.path === "/api/v1/project/system/validate")
+  );
+
+  const saveButton = harness.document.getElementById("workbench-save");
+  assert.ok(saveButton);
+  await saveButton.click();
+  await settle();
+
+  assert.ok(
+    harness.backend.fetchCalls.some((call) => call.path === "/api/v1/project/system/save")
+  );
+
+  const startRunButton = harness.document.getElementById("start-run");
+  assert.ok(startRunButton);
+  await startRunButton.click();
+  await settle();
+
+  assert.ok(harness.backend.fetchCalls.some((call) => call.path === "/api/v1/runs/start"));
+  assert.equal(harness.backend.lastStartBody.systemPath, "system.mmd");
+  assert.equal(harness.backend.lastStartBody.input, "ship a smoke test");
+  assert.equal(harness.document.getElementById("flash").textContent, "Start completed for run-123 (done).");
 });

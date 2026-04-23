@@ -122,6 +122,16 @@ export function buildClientAppScript(apiPrefix: string): string {
     const formatReviewStatusLabel = ${formatReviewStatusLabel.toString()};
     const state = {
       project: null,
+      workbench: null,
+      workbenchView: "render",
+      workbenchSource: "",
+      workbenchDiskSource: "",
+      workbenchSavedPath: "system.mmd",
+      workbenchHasDraft: false,
+      workbenchValidationTimer: null,
+      workbenchValidationRequestId: 0,
+      workbenchValidating: false,
+      sidebarOpen: false,
       runs: [],
       filter: "",
       projectHome: false,
@@ -160,7 +170,13 @@ export function buildClientAppScript(apiPrefix: string): string {
     const flashEl = document.getElementById("flash");
     const selectedTitleEl = document.getElementById("selected-title");
     const selectedSubtitleEl = document.getElementById("selected-subtitle");
+    const workdirEl = document.getElementById("workdir");
     const projectSummaryEl = document.getElementById("project-summary");
+    const workbenchMetaEl = document.getElementById("workbench-meta");
+    const workbenchStatusEl = document.getElementById("workbench-status");
+    const workbenchActionsEl = document.getElementById("workbench-actions");
+    const workbenchTabsEl = document.getElementById("workbench-tabs");
+    const workbenchBodyEl = document.getElementById("workbench-body");
     const statsEl = document.getElementById("stats");
     const timelineEl = document.getElementById("timeline");
     const graphViewEl = document.getElementById("graph-view");
@@ -177,8 +193,15 @@ export function buildClientAppScript(apiPrefix: string): string {
     const logRoleEl = document.getElementById("log-role");
     const logTailEl = document.getElementById("log-tail");
     const logSinceEl = document.getElementById("log-since");
+    const sidebarEl = document.getElementById("sidebar");
+    const sidebarOverlayEl = document.getElementById("sidebar-overlay");
+    const sidebarToggleButton = document.getElementById("sidebar-toggle");
     const projectHomeButton = document.getElementById("project-home");
+    const projectLoadButton = document.getElementById("project-load");
+    const projectExportButton = document.getElementById("project-export");
     const reindexButton = document.getElementById("reindex");
+    const startRunButton = document.getElementById("start-run");
+    const resumeRunButton = document.getElementById("resume-run");
     const stopRunButton = document.getElementById("stop-run");
     const refreshButton = document.getElementById("refresh");
 
@@ -199,6 +222,54 @@ export function buildClientAppScript(apiPrefix: string): string {
 
     function formatJson(value) {
       return JSON.stringify(value ?? null, null, 2);
+    }
+
+    function getCurrentWorkdir() {
+      return state.project?.summary?.workdir || workdirEl?.textContent || "";
+    }
+
+    function relativeToWorkdir(path) {
+      if (!path) {
+        return "";
+      }
+      const workdir = getCurrentWorkdir();
+      if (workdir && path.startsWith(workdir)) {
+        return path.slice(workdir.length).replace(/^[/\\\\]/, "") || ".";
+      }
+      return path;
+    }
+
+    function draftStorageKey() {
+      const workdir = getCurrentWorkdir();
+      return "ogs.visualizer.workbench:" + workdir;
+    }
+
+    function loadDraftSource() {
+      try {
+        return window.localStorage.getItem(draftStorageKey()) || "";
+      } catch {
+        return "";
+      }
+    }
+
+    function persistDraftSource(source) {
+      try {
+        if (!source) {
+          window.localStorage.removeItem(draftStorageKey());
+        } else {
+          window.localStorage.setItem(draftStorageKey(), source);
+        }
+      } catch {
+        // best effort only
+      }
+      state.workbenchHasDraft = Boolean(loadDraftSource());
+    }
+
+    function readApiError(payload, fallback) {
+      if (payload && payload.error && payload.error.message) {
+        return payload.error.message;
+      }
+      return fallback;
     }
 
     function statusClass(status) {
@@ -229,10 +300,14 @@ export function buildClientAppScript(apiPrefix: string): string {
         cache: "no-store",
         ...(options || {})
       });
+      const contentType = response.headers.get("content-type") || "";
+      const payload = contentType.includes("application/json")
+        ? await response.json().catch(() => null)
+        : await response.text().catch(() => "");
       if (!response.ok) {
-        throw new Error(\`\${response.status} \${response.statusText}\`);
+        throw new Error(readApiError(payload, \`\${response.status} \${response.statusText}\`));
       }
-      return response.json();
+      return payload;
     }
 
     async function requestAction(path, body) {
@@ -303,15 +378,241 @@ export function buildClientAppScript(apiPrefix: string): string {
       renderActionState();
     }
 
+    function canRequestStop() {
+      const status = state.detail?.header?.status || "";
+      if (!state.selectedRunId) {
+        return false;
+      }
+      return !["done", "failed", "stopped"].includes(status);
+    }
+
     function renderActionState() {
       const disabled = Boolean(state.actionBusy);
+      const stopDisabled = disabled || !canRequestStop();
       projectHomeButton.disabled = disabled;
+      projectLoadButton.disabled = disabled;
+      projectExportButton.disabled = disabled;
       reindexButton.disabled = disabled;
-      stopRunButton.disabled = disabled || !state.selectedRunId;
+      startRunButton.disabled = disabled;
+      resumeRunButton.disabled = disabled || !state.selectedRunId;
+      stopRunButton.disabled = stopDisabled;
       refreshButton.disabled = disabled;
+      if (sidebarToggleButton) {
+        sidebarToggleButton.disabled = disabled;
+      }
+      for (const button of workbenchActionsEl.querySelectorAll("button")) {
+        button.disabled = disabled || button.disabled;
+      }
+      for (const button of workbenchTabsEl.querySelectorAll("button")) {
+        button.disabled = disabled;
+      }
       for (const button of reviewActionsEl.querySelectorAll("[data-review-action]")) {
         button.disabled = disabled;
       }
+    }
+
+    function setSidebarOpen(nextValue) {
+      state.sidebarOpen = nextValue;
+      document.body.classList.toggle("drawer-open", nextValue);
+    }
+
+    function renderWorkbenchPreviewSvg(structure) {
+      if (!structure || !Array.isArray(structure.roles) || !structure.roles.length) {
+        return '<div class="hint">Rendered view is available after Mermaid validation succeeds.</div>';
+      }
+      const columns = Math.min(3, Math.max(1, Math.ceil(Math.sqrt(structure.roles.length))));
+      const nodeWidth = 180;
+      const nodeHeight = 76;
+      const gapX = 64;
+      const gapY = 96;
+      const padding = 36;
+      const positions = {};
+      const nodes = structure.roles.map((role, index) => {
+        const column = index % columns;
+        const row = Math.floor(index / columns);
+        const x = padding + (column * (nodeWidth + gapX));
+        const y = padding + (row * (nodeHeight + gapY));
+        positions[role.roleId] = { x, y };
+        const fill =
+          role.bindingKind === "model"
+            ? "rgba(56, 189, 248, 0.14)"
+            : role.bindingKind === "profile"
+              ? "rgba(52, 211, 153, 0.14)"
+              : "rgba(148, 163, 184, 0.1)";
+        return ''
+          + '<g>'
+          + '<rect x="' + x + '" y="' + y + '" rx="18" ry="18" width="' + nodeWidth + '" height="' + nodeHeight + '" fill="' + fill + '" stroke="rgba(148,163,184,0.28)" />'
+          + '<text x="' + (x + 18) + '" y="' + (y + 30) + '" fill="#e5eefb" font-size="16" font-family="IBM Plex Sans, sans-serif">' + escapeText(role.roleId) + '</text>'
+          + '<text x="' + (x + 18) + '" y="' + (y + 54) + '" fill="#8fa1c3" font-size="12" font-family="IBM Plex Sans, sans-serif">'
+          + escapeText(role.bindingKind + (role.reviewMode ? " · review " + role.reviewMode : role.joinMode ? " · join " + role.joinMode : ""))
+          + '</text>'
+          + '</g>';
+      });
+      const edges = (structure.flows || []).map((flow) => {
+        const from = positions[flow.fromRoleId];
+        const to = positions[flow.toRoleId];
+        if (!from || !to) {
+          return "";
+        }
+        const x1 = from.x + (nodeWidth / 2);
+        const y1 = from.y + nodeHeight;
+        const x2 = to.x + (nodeWidth / 2);
+        const y2 = to.y;
+        const midX = (x1 + x2) / 2;
+        const midY = (y1 + y2) / 2;
+        return ''
+          + '<g>'
+          + '<line x1="' + x1 + '" y1="' + y1 + '" x2="' + x2 + '" y2="' + y2 + '" stroke="rgba(148,163,184,0.42)" stroke-width="2" marker-end="url(#arrow)" />'
+          + '<rect x="' + (midX - 48) + '" y="' + (midY - 12) + '" rx="10" ry="10" width="96" height="24" fill="rgba(8,13,26,0.92)" stroke="rgba(148,163,184,0.18)" />'
+          + '<text x="' + midX + '" y="' + (midY + 4) + '" text-anchor="middle" fill="#9be7ff" font-size="11" font-family="IBM Plex Mono, monospace">' + escapeText(flow.eventType) + '</text>'
+          + '</g>';
+      });
+      const rows = Math.ceil(structure.roles.length / columns);
+      const width = padding * 2 + (columns * nodeWidth) + ((columns - 1) * gapX);
+      const height = padding * 2 + (rows * nodeHeight) + (Math.max(0, rows - 1) * gapY);
+      return ''
+        + '<svg viewBox="0 0 ' + width + ' ' + height + '" role="img" aria-label="Mermaid workbench render">'
+        + '<defs><marker id="arrow" viewBox="0 0 10 10" refX="7" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z" fill="rgba(148,163,184,0.52)"></path></marker></defs>'
+        + edges.join("")
+        + nodes.join("")
+        + '</svg>';
+    }
+
+    function renderWorkbenchStructure(structure) {
+      if (!structure) {
+        return '<div class="hint">Structure view appears after a valid Mermaid parse and compile pass.</div>';
+      }
+      return [
+        '<div class="structure-list">',
+        '<div class="event"><div class="event-top"><span>system</span><span>' + escapeText(structure.systemVersion || "n/a") + '</span></div><strong>' + escapeText(structure.systemId || "unknown") + '</strong><div class="hint">entry ' + escapeText(structure.entryRoleId || "n/a") + ' · roles ' + escapeText(structure.roleCount || 0) + ' · flows ' + escapeText(structure.flowCount || 0) + '</div></div>',
+        ...(structure.roles || []).map((role) =>
+          '<div class="event"><div class="event-top"><span><code>' + escapeText(role.roleId) + '</code></span><span>' + escapeText(role.bindingKind) + '</span></div><strong>'
+          + escapeText(role.reviewMode || role.joinMode || role.routingMode || "standard role")
+          + '</strong><div class="hint">'
+          + escapeText([role.routingMode ? "route " + role.routingMode : "", role.joinMode ? "join " + role.joinMode : "", role.reviewMode ? "review " + role.reviewMode : ""].filter(Boolean).join(" · ") || "no special graph metadata")
+          + '</div></div>'
+        ),
+        ...(structure.flows || []).map((flow) =>
+          '<div class="event"><div class="event-top"><span><code>' + escapeText(flow.fromRoleId) + '</code> -> <code>' + escapeText(flow.toRoleId) + '</code></span><span>flow</span></div><strong>' + escapeText(flow.eventType) + '</strong></div>'
+        ),
+        '</div>'
+      ].join("");
+    }
+
+    function renderWorkbench() {
+      const validation = state.workbench?.validation || null;
+      const diagnostics = validation?.diagnostics || [];
+      const structure = validation?.structure || null;
+      const dirty = state.workbenchSource !== state.workbenchDiskSource;
+      state.workbenchHasDraft = Boolean(loadDraftSource());
+      workbenchMetaEl.textContent = state.selectedRunId && state.detail?.systemSource
+        ? "Editing the project system.mmd only. Selected run snapshots remain immutable and are shown in run detail."
+        : "Load project source from disk, validate changes, and prepare start or resume actions.";
+      const statusPills = [
+        '<span class="pill' + (dirty ? " warn" : "") + '">' + escapeText(dirty ? "unsaved changes" : "disk in sync") + '</span>',
+        '<span class="pill">' + escapeText(relativeToWorkdir(state.workbenchSavedPath || "system.mmd")) + '</span>',
+        state.workbenchHasDraft ? '<span class="pill warn">draft cached</span>' : "",
+        validation
+          ? '<span class="pill' + (validation.ok ? "" : " warn") + '">' + escapeText(validation.ok ? "validation ok" : diagnostics.length + " diagnostics") + '</span>'
+          : '<span class="pill">validation pending</span>',
+        state.workbenchValidating ? '<span class="pill warn">validating…</span>' : ""
+      ].filter(Boolean);
+      workbenchStatusEl.innerHTML = statusPills.join("");
+      workbenchTabsEl.innerHTML = [
+        '<button class="button subtle ' + (state.workbenchView === "source" ? "active" : "") + '" data-workbench-view="source">Source</button>',
+        '<button class="button subtle ' + (state.workbenchView === "render" ? "active" : "") + '" data-workbench-view="render">Rendered</button>',
+        '<button class="button subtle ' + (state.workbenchView === "structure" ? "active" : "") + '" data-workbench-view="structure">Structure</button>'
+      ].join("");
+      workbenchActionsEl.innerHTML = [
+        '<button class="button subtle" id="workbench-new-draft">New draft</button>',
+        '<button class="button subtle" id="workbench-recover-draft"' + (state.workbenchHasDraft ? "" : " disabled") + '>Recover draft</button>',
+        '<button class="button subtle" id="workbench-revert"' + (dirty ? "" : " disabled") + '>Revert to disk</button>',
+        '<button class="button primary" id="workbench-save"' + (dirty ? "" : " disabled") + '>Save</button>',
+        '<button class="button" id="workbench-save-as">Save as</button>'
+      ].join("");
+      if (state.workbenchView === "source") {
+        workbenchBodyEl.innerHTML = '<textarea id="workbench-editor" class="editor" spellcheck="false">' + escapeText(state.workbenchSource || "") + '</textarea>';
+      } else if (state.workbenchView === "render") {
+        workbenchBodyEl.innerHTML = [
+          '<div class="preview">' + renderWorkbenchPreviewSvg(structure) + '</div>',
+          diagnostics.length
+            ? '<div class="structure-list">' + diagnostics.map((diagnostic) =>
+                '<div class="event"><div class="event-top"><span>' + escapeText(diagnostic.code) + '</span><span>' + escapeText(diagnostic.line ? "line " + diagnostic.line : diagnostic.stage) + '</span></div><strong>' + escapeText(diagnostic.message) + '</strong></div>'
+              ).join("") + '</div>'
+            : '<div class="hint">Rendered preview keeps the last successful graph structure while validation stays clean.</div>'
+        ].join("");
+      } else {
+        workbenchBodyEl.innerHTML = renderWorkbenchStructure(structure);
+      }
+      const editor = document.getElementById("workbench-editor");
+      if (editor) {
+        editor.addEventListener("input", (event) => {
+          state.workbenchSource = event.target.value || "";
+          persistDraftSource(state.workbenchSource !== state.workbenchDiskSource ? state.workbenchSource : "");
+          renderWorkbench();
+          scheduleWorkbenchValidation();
+        });
+      }
+      for (const button of workbenchTabsEl.querySelectorAll("[data-workbench-view]")) {
+        button.addEventListener("click", () => {
+          state.workbenchView = button.getAttribute("data-workbench-view") || "render";
+          renderWorkbench();
+        });
+      }
+      const newDraftButton = document.getElementById("workbench-new-draft");
+      if (newDraftButton) {
+        newDraftButton.addEventListener("click", () => {
+          state.workbenchSource = [
+            "flowchart TD",
+            "%% system.id=workspace.draft",
+            "%% system.version=0.0.1",
+            "%% law.global=law.minimal.base",
+            "%% entry.role=author",
+            "input -->|START| author[Role:author]",
+            "author[Role:author] -->|DONE| output",
+            ""
+          ].join("\\n");
+          state.workbenchView = "source";
+          persistDraftSource(state.workbenchSource);
+          renderWorkbench();
+          scheduleWorkbenchValidation();
+        });
+      }
+      const recoverDraftButton = document.getElementById("workbench-recover-draft");
+      if (recoverDraftButton) {
+        recoverDraftButton.addEventListener("click", () => {
+          const draft = loadDraftSource();
+          if (!draft) {
+            return;
+          }
+          state.workbenchSource = draft;
+          state.workbenchView = "source";
+          renderWorkbench();
+          scheduleWorkbenchValidation();
+        });
+      }
+      const revertButton = document.getElementById("workbench-revert");
+      if (revertButton) {
+        revertButton.addEventListener("click", () => {
+          state.workbenchSource = state.workbenchDiskSource;
+          persistDraftSource("");
+          renderWorkbench();
+          scheduleWorkbenchValidation();
+        });
+      }
+      const saveButton = document.getElementById("workbench-save");
+      if (saveButton) {
+        saveButton.addEventListener("click", async () => {
+          await saveWorkbench(false);
+        });
+      }
+      const saveAsButton = document.getElementById("workbench-save-as");
+      if (saveAsButton) {
+        saveAsButton.addEventListener("click", async () => {
+          await saveWorkbench(true);
+        });
+      }
+      renderActionState();
     }
 
     function upsertRunFromHeader(header) {
@@ -342,6 +643,9 @@ export function buildClientAppScript(apiPrefix: string): string {
         projectSummaryEl.textContent = "Project data unavailable.";
         return;
       }
+      if (workdirEl) {
+        workdirEl.textContent = state.project.summary?.workdir || workdirEl.textContent;
+      }
       const summary = state.project.summary?.project ?? {};
       const roles = state.project.roles?.roles ?? [];
       projectSummaryEl.textContent = [
@@ -366,8 +670,8 @@ export function buildClientAppScript(apiPrefix: string): string {
           ? state.project.config.modelSelectionWarnings.map((warning) => "- " + warning)
           : ["- none"]),
         "",
-        "system.mmd:",
-        state.project.system?.systemSource ?? "n/a"
+        "systemPath: " + (state.workbenchSavedPath || "system.mmd"),
+        "currentWorkbenchValidation: " + (state.workbench?.validation?.ok ? "ok" : "pending or failed")
       ].join("\\n");
     }
 
@@ -387,8 +691,8 @@ export function buildClientAppScript(apiPrefix: string): string {
         .map((run) => \`
           <button class="run-card \${run.runId === state.selectedRunId ? "active" : ""}" data-run-id="\${escapeText(run.runId)}">
             <div class="run-title">
-              <span>\${escapeText(run.runId)}</span>
-              <span class="status \${statusClass(run.status)}">\${escapeText(run.status)}</span>
+              <span class="truncate" title="\${escapeText(run.runId)}">\${escapeText(run.runId)}</span>
+              <span class="status \${statusClass(run.status)}" title="\${escapeText(run.status)}">\${escapeText(run.status)}</span>
             </div>
             <div class="meta">
               <span>transitions \${escapeText(run.transitionCount)}</span>
@@ -568,7 +872,7 @@ export function buildClientAppScript(apiPrefix: string): string {
         .map((review) =>
           '<button class="run-card ' + (review.reviewId === state.selectedReviewId ? "active" : "") + '" data-review-id="' + escapeText(review.reviewId) + '">' +
             '<div class="run-title">' +
-              "<span><code>" + escapeText(review.reviewId) + "</code></span>" +
+              '<span class="truncate" title="' + escapeText(review.reviewId) + '"><code>' + escapeText(review.reviewId) + "</code></span>" +
               '<span class="status ' + statusClass(review.currentStatus || "unknown") + '">' + escapeText(formatReviewStatusLabel(review.currentStatus || "unknown")) + "</span>" +
             "</div>" +
             '<div class="meta">' +
@@ -589,10 +893,10 @@ export function buildClientAppScript(apiPrefix: string): string {
       const actionable = detail && (detail.currentStatus === "pending" || detail.currentStatus === "paused");
       reviewActionsEl.innerHTML = actionable
         ? [
-          '<button class="button" data-review-action="approve">Approve</button>',
-          '<button class="button" data-review-action="rework">Rework</button>',
-          '<button class="button" data-review-action="pause">Pause</button>',
-          '<button class="button" data-review-action="terminate" data-review-scope="' + escapeText(detail.scope || "branch") + '">Terminate</button>'
+          '<button class="button primary" data-review-action="approve">Approve review</button>',
+          '<button class="button" data-review-action="rework">Request rework</button>',
+          '<button class="button warn" data-review-action="pause">Pause review</button>',
+          '<button class="button danger" data-review-action="terminate" data-review-scope="' + escapeText(detail.scope || "branch") + '">Terminate ' + escapeText(detail.scope || "branch") + '</button>'
           ].join("")
         : "";
       for (const button of reviewActionsEl.querySelectorAll("[data-review-action]")) {
@@ -688,6 +992,7 @@ export function buildClientAppScript(apiPrefix: string): string {
           ? \`\${detail.runDir} · \${simulation} · review \${state.selectedReviewId}\`
           : \`\${detail.runDir} · \${simulation}\`;
       }
+      renderWorkbench();
       renderStats(header, graphPayload);
       renderTimeline(state.events);
       renderGraph();
@@ -714,6 +1019,214 @@ export function buildClientAppScript(apiPrefix: string): string {
       state.selectedLogRoleId = selected;
     }
 
+    async function runWorkbenchValidation(force) {
+      const requestId = ++state.workbenchValidationRequestId;
+      state.workbenchValidating = true;
+      renderWorkbench();
+      try {
+        const payload = await requestAction(\`\${API_PREFIX}/project/system/validate\`, {
+          systemSource: state.workbenchSource,
+          systemPath: state.workbenchSavedPath
+        });
+        if (requestId !== state.workbenchValidationRequestId && !force) {
+          return;
+        }
+        state.workbench = {
+          ...(state.workbench || {}),
+          validation: payload
+        };
+      } finally {
+        if (requestId === state.workbenchValidationRequestId) {
+          state.workbenchValidating = false;
+        }
+        renderWorkbench();
+        renderProject();
+      }
+    }
+
+    function scheduleWorkbenchValidation() {
+      clearTimeout(state.workbenchValidationTimer);
+      state.workbenchValidationTimer = setTimeout(() => {
+        void runWorkbenchValidation(false).catch((error) => {
+          state.workbenchValidating = false;
+          setFlash("error", "Workbench validation failed: " + (error.message || error));
+          renderWorkbench();
+        });
+      }, 250);
+    }
+
+    async function loadWorkbench() {
+      const payload = await requestJson(\`\${API_PREFIX}/project/system/workbench\`);
+      state.workbench = payload;
+      state.workbenchDiskSource = payload.systemSource || "";
+      state.workbenchSavedPath = relativeToWorkdir(payload.systemPath || "system.mmd") || "system.mmd";
+      const draft = loadDraftSource();
+      state.workbenchSource = draft || state.workbenchDiskSource;
+      state.workbenchHasDraft = Boolean(draft);
+      renderWorkbench();
+      if (draft) {
+        await runWorkbenchValidation(true);
+      }
+    }
+
+    async function saveWorkbench(saveAs) {
+      const targetPath = saveAs
+        ? promptText("Save Mermaid source as (relative path)", state.workbenchSavedPath || "drafts/system-copy.mmd")
+        : state.workbenchSavedPath;
+      if (saveAs && targetPath === null) {
+        return;
+      }
+      await runAction(saveAs ? "workbench:save-as" : "workbench:save", async () => {
+        const payload = await requestAction(
+          saveAs ? \`\${API_PREFIX}/project/system/save-as\` : \`\${API_PREFIX}/project/system/save\`,
+          {
+            systemSource: state.workbenchSource,
+            saveAsPath: saveAs ? targetPath : undefined
+          }
+        );
+        state.workbenchDiskSource = state.workbenchSource;
+        state.workbenchSavedPath = relativeToWorkdir(payload.savedPath || targetPath || "system.mmd") || "system.mmd";
+        state.workbench = {
+          ...(state.workbench || {}),
+          validation: payload.validation
+        };
+        persistDraftSource("");
+        renderWorkbench();
+        renderProject();
+        setFlash(
+          "success",
+          "Mermaid source saved to " + state.workbenchSavedPath + ". "
+            + (payload.followUpActions?.map((item) => item.label).join(" ") || "Consider project sync, sync-models, or a new run for verification.")
+        );
+      });
+    }
+
+    function promptBoolean(message, initialValue) {
+      const choice = window.prompt(message + " (yes/no)", initialValue ? "yes" : "no");
+      if (choice === null) {
+        return null;
+      }
+      return !/^n(o)?$/i.test(choice.trim());
+    }
+
+    async function startRunFromWorkbench() {
+      const systemPath = promptText("System file for start", state.workbenchSavedPath || "system.mmd");
+      if (systemPath === null) {
+        return;
+      }
+      const input = promptText("Run input / prompt", "");
+      if (input === null || !input) {
+        return;
+      }
+      const dryRun = promptBoolean("Dry-run for this start request?", true);
+      if (dryRun === null) {
+        return;
+      }
+      const runtimePath = promptText("Optional runtime config path", "");
+      if (runtimePath === null) {
+        return;
+      }
+      const userProfilePath = promptText("Optional user-profile path", "");
+      if (userProfilePath === null) {
+        return;
+      }
+      const lawsPath = promptText("Optional laws path", "");
+      if (lawsPath === null) {
+        return;
+      }
+      await runAction("run:start", async () => {
+        const payload = await requestAction(\`\${API_PREFIX}/runs/start\`, {
+          systemPath,
+          input,
+          dryRun,
+          runtimePath: runtimePath || undefined,
+          userProfilePath: userProfilePath || undefined,
+          lawsPath: lawsPath || undefined
+        });
+        setFlash("success", "Start completed for " + payload.runId + " (" + payload.status + ").");
+        await loadProject();
+        await loadRuns();
+        if (payload.runId) {
+          await selectRun(payload.runId);
+        }
+      });
+    }
+
+    async function resumeSelectedRun() {
+      if (!state.selectedRunId) {
+        return;
+      }
+      const systemPath = promptText("Optional system override for resume", state.workbenchSavedPath || "");
+      if (systemPath === null) {
+        return;
+      }
+      const input = promptText("Optional input override for resume", "");
+      if (input === null) {
+        return;
+      }
+      const dryRun = promptBoolean("Dry-run for this resume request?", false);
+      if (dryRun === null) {
+        return;
+      }
+      const runtimePath = promptText("Optional runtime config path", "");
+      if (runtimePath === null) {
+        return;
+      }
+      const userProfilePath = promptText("Optional user-profile path", "");
+      if (userProfilePath === null) {
+        return;
+      }
+      const lawsPath = promptText("Optional laws path", "");
+      if (lawsPath === null) {
+        return;
+      }
+      await runAction("run:resume", async () => {
+        const payload = await requestAction(
+          \`\${API_PREFIX}/runs/\${encodeURIComponent(state.selectedRunId)}/resume\`,
+          {
+            systemPath: systemPath || undefined,
+            input: input || undefined,
+            dryRun,
+            runtimePath: runtimePath || undefined,
+            userProfilePath: userProfilePath || undefined,
+            lawsPath: lawsPath || undefined
+          }
+        );
+        setFlash("success", "Resume finished for " + payload.runId + " (" + payload.status + ").");
+        await loadProject();
+        await loadRuns();
+        await loadSelectedRunBoot(payload.runId, { keepStream: false });
+      });
+    }
+
+    async function rebindProject() {
+      const target = promptText("Project workdir to load", getCurrentWorkdir());
+      if (target === null || !target) {
+        return;
+      }
+      await runAction("project:load", async () => {
+        const payload = await requestAction(\`\${API_PREFIX}/project/load\`, { workdir: target });
+        setFlash("success", "Project rebound to " + payload.workdir + ".");
+        setSidebarOpen(false);
+        await loadProject();
+        await loadRuns();
+        selectProjectHome();
+      });
+    }
+
+    async function exportProject() {
+      await runAction("project:export", async () => {
+        const payload = await requestAction(\`\${API_PREFIX}/project/export\`);
+        const blob = new Blob([JSON.stringify(payload, null, 2) + "\\n"], { type: "application/json" });
+        const anchor = document.createElement("a");
+        anchor.href = URL.createObjectURL(blob);
+        anchor.download = "ogs-project-export-" + new Date().toISOString().slice(0, 19).replace(/[:T]/g, "-") + ".json";
+        anchor.click();
+        URL.revokeObjectURL(anchor.href);
+        setFlash("success", "Project export generated. It excludes .ogs/runs and runtime artifacts.");
+      });
+    }
+
     async function loadProject() {
       const [summary, system, config, roles] = await Promise.all([
         requestJson(\`\${API_PREFIX}/project\`),
@@ -722,6 +1235,7 @@ export function buildClientAppScript(apiPrefix: string): string {
         requestJson(\`\${API_PREFIX}/project/roles\`)
       ]);
       state.project = { summary, system, config, roles };
+      await loadWorkbench();
       renderProject();
     }
 
@@ -884,6 +1398,7 @@ export function buildClientAppScript(apiPrefix: string): string {
       state.projectHome = false;
       state.selectedRunId = runId;
       state.selectedReviewId = "";
+      setSidebarOpen(false);
       renderRuns();
       await loadSelectedRunBoot(runId, { keepStream: false });
     }
@@ -967,7 +1482,7 @@ export function buildClientAppScript(apiPrefix: string): string {
         return;
       }
       await runAction("review:" + decision, async () => {
-        await requestAction(
+        const payload = await requestAction(
           \`\${API_PREFIX}/runs/\${encodeURIComponent(state.selectedRunId)}/reviews/\${encodeURIComponent(state.selectedReviewId)}/decide\`,
           {
             decision,
@@ -977,7 +1492,11 @@ export function buildClientAppScript(apiPrefix: string): string {
           }
         );
         state.resumeDiagnosticsStale = true;
-        setFlash("success", \`Decision "\${decision}" recorded; reconcile may still be pending.\`);
+        setFlash(
+          "success",
+          'Review action recorded for ' + state.selectedReviewId + ': ' + (payload.semanticStatus || decision) + '. '
+            + (payload.detail?.note || "")
+        );
         await refreshRunDetailAndGraph(state.selectedRunId);
         await refreshReviews(state.selectedRunId);
       });
@@ -995,12 +1514,20 @@ export function buildClientAppScript(apiPrefix: string): string {
         return;
       }
       await runAction("stop", async () => {
-        await requestAction(
+        const payload = await requestAction(
           \`\${API_PREFIX}/runs/\${encodeURIComponent(state.selectedRunId)}/stop\`,
           { reason }
         );
         state.resumeDiagnosticsStale = true;
-        setFlash("success", "Stop request recorded.");
+        const detail = payload.detail || {};
+        setFlash(
+          "success",
+          "Stop request recorded for " + state.selectedRunId
+            + ". request=" + (detail.requestRecorded ? "yes" : "no")
+            + " outcome=" + (detail.stopOutcomeApplied ? "applied" : "pending")
+            + " status=" + (detail.runStatus || "unknown")
+            + " converged=" + (detail.converged ? "yes" : "no")
+        );
         await refreshRunDetailAndGraph(state.selectedRunId);
       });
     }
@@ -1089,6 +1616,25 @@ export function buildClientAppScript(apiPrefix: string): string {
       selectProjectHome();
     });
 
+    if (sidebarToggleButton) {
+      sidebarToggleButton.addEventListener("click", () => {
+        setSidebarOpen(!state.sidebarOpen);
+      });
+    }
+    if (sidebarOverlayEl) {
+      sidebarOverlayEl.addEventListener("click", () => {
+        setSidebarOpen(false);
+      });
+    }
+
+    projectLoadButton.addEventListener("click", async () => {
+      await rebindProject();
+    });
+
+    projectExportButton.addEventListener("click", async () => {
+      await exportProject();
+    });
+
     reindexButton.addEventListener("click", async () => {
       if (!window.confirm("Rebuild runs index now?")) {
         return;
@@ -1103,6 +1649,14 @@ export function buildClientAppScript(apiPrefix: string): string {
 
     stopRunButton.addEventListener("click", async () => {
       await submitStopRequest();
+    });
+
+    startRunButton.addEventListener("click", async () => {
+      await startRunFromWorkbench();
+    });
+
+    resumeRunButton.addEventListener("click", async () => {
+      await resumeSelectedRun();
     });
 
     refreshButton.addEventListener("click", async () => {

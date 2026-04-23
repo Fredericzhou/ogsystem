@@ -692,6 +692,18 @@ type ResumeDiagnosticsCacheEntry = {
 const RESUME_DIAGNOSTICS_TTL_MS = 5_000;
 const resumeDiagnosticsCache = new Map<string, ResumeDiagnosticsCacheEntry>();
 
+export function invalidateResumeDiagnosticsCache(workdir: string, runId?: string): void {
+  if (runId) {
+    resumeDiagnosticsCache.delete(`${workdir}:${runId}`);
+    return;
+  }
+  for (const key of resumeDiagnosticsCache.keys()) {
+    if (key.startsWith(`${workdir}:`)) {
+      resumeDiagnosticsCache.delete(key);
+    }
+  }
+}
+
 async function getMtimeToken(path: string): Promise<string> {
   const fileStat = await stat(path).catch(() => undefined);
   return fileStat ? `${path}:${fileStat.mtimeMs}:${fileStat.size}` : `${path}:missing`;

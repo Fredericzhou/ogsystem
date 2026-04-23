@@ -24,6 +24,7 @@
     "build": "tsc -p tsconfig.json",
     "prepack": "pnpm run build",
     "test": "pnpm build && node --test tests/*.mjs",
+    "test:visualizer": "pnpm build && node --test tests/visualizer-client.test.mjs tests/visualizer-data.test.mjs tests/visualizer.test.mjs",
     "test:coverage": "pnpm build && node --test --experimental-test-coverage tests/*.mjs",
     "test:runtime-regression": "pnpm build && node --test tests/graph-runtime.integration.test.mjs tests/resume-session.test.mjs tests/session-recovery.test.mjs tests/runtime-fault-injection.test.mjs",
     "test:fault-injection": "pnpm build && node --test tests/opencode-executor.test.mjs tests/resume-session.test.mjs tests/runtime-fault-injection.test.mjs",

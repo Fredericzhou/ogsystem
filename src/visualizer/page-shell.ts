@@ -22,17 +22,19 @@ export function renderPageHtml(workdir: string, apiPrefix: string): string {
       color-scheme: dark;
       --panel: rgba(16, 23, 44, 0.92);
       --panel-soft: rgba(23, 31, 57, 0.85);
+      --panel-deep: rgba(7, 12, 24, 0.92);
       --border: rgba(148, 163, 184, 0.18);
       --text: #e5eefb;
       --muted: #8fa1c3;
       --accent: #38bdf8;
+      --accent-soft: rgba(56, 189, 248, 0.12);
       --ok: #34d399;
       --warn: #fbbf24;
       --bad: #f87171;
       --shadow: 0 24px 80px rgba(0, 0, 0, 0.32);
       --radius: 18px;
       --radius-sm: 12px;
-      font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      font-family: "IBM Plex Sans", "Segoe UI", system-ui, sans-serif;
     }
     * { box-sizing: border-box; }
     body {
@@ -47,16 +49,34 @@ export function renderPageHtml(workdir: string, apiPrefix: string): string {
     code, pre, input, button, select {
       font: inherit;
     }
+    textarea {
+      font: 500 14px/1.6 "IBM Plex Mono", "SFMono-Regular", ui-monospace, monospace;
+    }
     .app {
       display: grid;
       grid-template-columns: 320px minmax(0, 1fr);
       min-height: 100vh;
+    }
+    .sidebar-overlay {
+      position: fixed;
+      inset: 0;
+      background: rgba(2, 6, 23, 0.62);
+      opacity: 0;
+      pointer-events: none;
+      transition: opacity 160ms ease;
+      z-index: 20;
+    }
+    body.drawer-open .sidebar-overlay {
+      opacity: 1;
+      pointer-events: auto;
     }
     .sidebar {
       padding: 20px;
       border-right: 1px solid var(--border);
       background: rgba(8, 13, 26, 0.78);
       backdrop-filter: blur(18px);
+      min-width: 0;
+      z-index: 30;
     }
     .brand {
       display: flex;
@@ -85,6 +105,11 @@ export function renderPageHtml(workdir: string, apiPrefix: string): string {
       background: rgba(255, 255, 255, 0.03);
       font-size: 12px;
     }
+    .pill.warn {
+      color: var(--warn);
+      background: rgba(251, 191, 36, 0.08);
+      border-color: rgba(251, 191, 36, 0.24);
+    }
     .stack {
       display: grid;
       gap: 12px;
@@ -99,6 +124,12 @@ export function renderPageHtml(workdir: string, apiPrefix: string): string {
       outline: none;
     }
     .search::placeholder { color: #6d7c9b; }
+    .truncate {
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+      min-width: 0;
+    }
     .run-list {
       display: grid;
       gap: 10px;
@@ -126,6 +157,7 @@ export function renderPageHtml(workdir: string, apiPrefix: string): string {
       justify-content: space-between;
       gap: 8px;
       align-items: center;
+      flex-wrap: wrap;
     }
     .meta {
       color: var(--muted);
@@ -155,6 +187,7 @@ export function renderPageHtml(workdir: string, apiPrefix: string): string {
       display: grid;
       gap: 16px;
       align-content: start;
+      min-width: 0;
     }
     .flash {
       padding: 12px 16px;
@@ -193,6 +226,18 @@ export function renderPageHtml(workdir: string, apiPrefix: string): string {
       margin: 0;
       color: var(--muted);
     }
+    .hero-copy {
+      display: grid;
+      gap: 8px;
+      min-width: 0;
+    }
+    .hero-toolbar {
+      display: flex;
+      gap: 10px;
+      flex-wrap: wrap;
+      align-items: center;
+      justify-content: flex-end;
+    }
     .actions {
       display: flex;
       gap: 10px;
@@ -206,9 +251,34 @@ export function renderPageHtml(workdir: string, apiPrefix: string): string {
       color: var(--text);
       border-radius: 12px;
       padding: 10px 14px;
+      min-height: 42px;
+      min-width: 120px;
       cursor: pointer;
+      transition: border-color 120ms ease, background 120ms ease, transform 120ms ease;
     }
-    .button:hover { border-color: rgba(56, 189, 248, 0.4); }
+    .button:hover {
+      border-color: rgba(56, 189, 248, 0.4);
+      background: rgba(255, 255, 255, 0.08);
+      transform: translateY(-1px);
+    }
+    .button.primary {
+      background: linear-gradient(180deg, rgba(56, 189, 248, 0.24), rgba(14, 165, 233, 0.12));
+      border-color: rgba(56, 189, 248, 0.45);
+    }
+    .button.subtle {
+      background: rgba(148, 163, 184, 0.06);
+      color: var(--muted);
+    }
+    .button.warn {
+      border-color: rgba(251, 191, 36, 0.28);
+      background: rgba(251, 191, 36, 0.08);
+      color: #fcd34d;
+    }
+    .button.danger {
+      border-color: rgba(248, 113, 113, 0.28);
+      background: rgba(248, 113, 113, 0.08);
+      color: #fca5a5;
+    }
     .button:disabled,
     .run-card:disabled {
       cursor: not-allowed;
@@ -261,11 +331,23 @@ export function renderPageHtml(workdir: string, apiPrefix: string): string {
       padding: 16px 18px 18px;
       display: grid;
       gap: 12px;
+      min-width: 0;
     }
     .span-4 { grid-column: span 4; }
     .span-6 { grid-column: span 6; }
     .span-8 { grid-column: span 8; }
     .span-12 { grid-column: span 12; }
+    .card-header {
+      display: flex;
+      justify-content: space-between;
+      gap: 12px;
+      align-items: center;
+    }
+    .header-copy {
+      display: grid;
+      gap: 6px;
+      min-width: 0;
+    }
     .stat-grid {
       display: grid;
       grid-template-columns: repeat(6, minmax(0, 1fr));
@@ -294,14 +376,78 @@ export function renderPageHtml(workdir: string, apiPrefix: string): string {
       background: rgba(4, 8, 16, 0.8);
       color: #dce7f7;
       overflow: auto;
-      max-height: 520px;
+      max-height: 420px;
       white-space: pre-wrap;
       word-break: break-word;
+    }
+    .editor-shell {
+      display: grid;
+      gap: 14px;
+    }
+    .toolbar-row {
+      display: flex;
+      justify-content: space-between;
+      gap: 12px;
+      align-items: center;
+      flex-wrap: wrap;
+    }
+    .toolbar-group {
+      display: flex;
+      gap: 10px;
+      flex-wrap: wrap;
+      align-items: center;
+      min-width: 0;
+    }
+    .segmented {
+      display: inline-flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      padding: 6px;
+      border-radius: 14px;
+      border: 1px solid var(--border);
+      background: rgba(255, 255, 255, 0.03);
+    }
+    .segmented .button {
+      padding: 8px 12px;
+      border-radius: 10px;
+    }
+    .segmented .button.active {
+      background: rgba(56, 189, 248, 0.14);
+      border-color: rgba(56, 189, 248, 0.36);
+      color: #b5ecff;
+    }
+    .editor {
+      width: 100%;
+      min-height: 360px;
+      resize: vertical;
+      border-radius: 16px;
+      border: 1px solid var(--border);
+      background: var(--panel-deep);
+      color: #dce7f7;
+      padding: 16px;
+      outline: none;
+    }
+    .preview {
+      min-height: 360px;
+      border-radius: 16px;
+      border: 1px solid var(--border);
+      background: linear-gradient(180deg, rgba(8, 13, 26, 0.94), rgba(15, 23, 42, 0.88));
+      overflow: auto;
+      padding: 18px;
+    }
+    .preview svg {
+      display: block;
+      width: 100%;
+      height: auto;
+    }
+    .structure-list {
+      display: grid;
+      gap: 10px;
     }
     .timeline {
       display: grid;
       gap: 10px;
-      max-height: 620px;
+      max-height: 520px;
       overflow: auto;
       padding-right: 4px;
     }
@@ -331,20 +477,102 @@ export function renderPageHtml(workdir: string, apiPrefix: string): string {
       color: var(--muted);
       font-size: 12px;
     }
+    .split-inline {
+      display: flex;
+      gap: 12px;
+      align-items: center;
+      flex-wrap: wrap;
+      min-width: 0;
+    }
+    .sidebar-toggle {
+      display: none;
+    }
     @media (max-width: 1180px) {
       .app { grid-template-columns: 1fr; }
-      .sidebar { border-right: 0; border-bottom: 1px solid var(--border); }
+      .sidebar {
+        position: fixed;
+        left: 0;
+        top: 0;
+        bottom: 0;
+        width: min(360px, calc(100vw - 36px));
+        border-right: 1px solid var(--border);
+        border-bottom: 0;
+        transform: translateX(-102%);
+        transition: transform 180ms ease;
+      }
+      body.drawer-open .sidebar {
+        transform: translateX(0);
+      }
       .run-list { max-height: 280px; }
       .span-4, .span-6, .span-8, .span-12 { grid-column: span 12; }
       .hero { flex-direction: column; }
-      .actions { justify-content: flex-start; }
+      .hero-toolbar, .actions { justify-content: flex-start; }
       .stat-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+      .sidebar-toggle {
+        display: inline-flex;
+      }
+    }
+    @media (max-width: 960px) {
+      .content { padding: 18px; }
+      .hero-toolbar {
+        width: 100%;
+        justify-content: flex-start;
+      }
+      .toolbar-row,
+      .row {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        align-items: stretch;
+      }
+      .toolbar-row > *,
+      .row > * {
+        min-width: 0;
+      }
+      .button {
+        width: 100%;
+      }
+    }
+    @media (max-width: 768px) {
+      .content { padding: 16px; }
+      .hero { padding: 16px; }
+      .stat-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+      .toolbar-row,
+      .row {
+        grid-template-columns: 1fr;
+      }
+      .preview,
+      .editor {
+        min-height: 280px;
+      }
+      pre,
+      .timeline {
+        max-height: 320px;
+      }
+    }
+    @media (max-width: 480px) {
+      .content { padding: 12px; }
+      .sidebar {
+        width: calc(100vw - 18px);
+      }
+      .stat-grid { grid-template-columns: 1fr; }
+      .button {
+        min-width: 0;
+        padding: 10px 12px;
+      }
+      .run-card,
+      .event,
+      pre,
+      .preview,
+      .editor {
+        border-radius: 12px;
+      }
     }
   </style>
 </head>
 <body>
+  <div id="sidebar-overlay" class="sidebar-overlay"></div>
   <div class="app">
-    <aside class="sidebar">
+    <aside id="sidebar" class="sidebar">
       <div class="brand">
         <h1>OGSystem Visualizer</h1>
         <span>local</span>
@@ -358,20 +586,52 @@ export function renderPageHtml(workdir: string, apiPrefix: string): string {
     <main class="content">
       <div id="flash" class="flash hidden"></div>
       <section class="hero">
-        <div>
+        <div class="hero-copy">
+          <div class="split-inline">
+            <button id="sidebar-toggle" class="button subtle sidebar-toggle">Runs</button>
+            <p class="hint">project + runtime observability</p>
+          </div>
           <p class="hint">project + runtime observability</p>
           <h2 id="selected-title">Select a run</h2>
-          <p id="selected-subtitle">Load a run to inspect project context, graph progress, review state, diagnostics, and artifacts.</p>
+          <p id="selected-subtitle" class="truncate">Load a run to inspect project context, graph progress, review state, diagnostics, and artifacts.</p>
         </div>
-        <div class="actions">
-          <button id="project-home" class="button">Project</button>
-          <button id="reindex" class="button">Reindex</button>
-          <button id="stop-run" class="button">Stop</button>
-          <button id="refresh" class="button">Refresh</button>
+        <div class="hero-toolbar">
+          <div class="actions">
+            <button id="project-home" class="button subtle">Project</button>
+            <button id="project-load" class="button subtle">Load project</button>
+            <button id="project-export" class="button subtle">Export project</button>
+            <button id="reindex" class="button subtle">Reindex</button>
+          </div>
+          <div class="actions">
+            <button id="start-run" class="button primary">Start run</button>
+            <button id="resume-run" class="button">Resume selected</button>
+            <button id="stop-run" class="button warn">Request stop</button>
+            <button id="refresh" class="button">Refresh</button>
+          </div>
           <div id="live" class="live">idle</div>
         </div>
       </section>
       <section class="grid">
+        <article class="card span-12">
+          <header>
+            <div class="card-header">
+              <div class="header-copy">
+                <h3 id="workbench-title">Mermaid Workbench</h3>
+                <div id="workbench-meta" class="hint">Load project source from disk, validate changes, and prepare start or resume actions.</div>
+              </div>
+              <div id="workbench-actions" class="actions"></div>
+            </div>
+          </header>
+          <div class="body">
+            <div class="editor-shell">
+              <div class="toolbar-row">
+                <div id="workbench-status" class="toolbar-group"></div>
+                <div id="workbench-tabs" class="segmented"></div>
+              </div>
+              <div id="workbench-body"></div>
+            </div>
+          </div>
+        </article>
         <article class="card span-12">
           <header><h3>Project Overview</h3></header>
           <div class="body">

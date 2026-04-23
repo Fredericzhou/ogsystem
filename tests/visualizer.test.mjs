@@ -64,6 +64,85 @@ async function seedProjectFixture(workdir) {
   );
 }
 
+async function seedAlternateProjectFixture(workdir) {
+  await seedProjectFixture(workdir);
+  await writeFile(
+    path.resolve(workdir, ".ogs", "project.json"),
+    JSON.stringify(
+      {
+        projectId: "viz.project.loaded",
+        createdAt: "2026-04-23T12:00:00.000Z"
+      },
+      null,
+      2
+    ),
+    "utf8"
+  );
+  await writeFile(
+    path.resolve(workdir, "system.mmd"),
+    [
+      "flowchart TD",
+      "%% system.id=viz.project.loaded",
+      "%% system.version=2.0.0",
+      "%% law.global=law.minimal.base",
+      "%% entry.role=demo-analyst",
+      "%% model.bind.demo-analyst=opencode/gpt-5.4",
+      "input -->|ENTER| analyst[Role:demo-analyst]",
+      "analyst[Role:demo-analyst] -->|DONE| output",
+      ""
+    ].join("\n"),
+    "utf8"
+  );
+}
+
+async function seedRunnableReviewProjectFixture(workdir) {
+  const repoRoot = process.cwd();
+  await mkdir(path.resolve(workdir, ".ogs"), { recursive: true });
+  await symlink(path.resolve(repoRoot, "og-roles"), path.resolve(workdir, "og-roles"), "dir");
+  for (const file of [
+    "runtime.json",
+    "model-selection.json",
+    "model-catalog.json",
+    "laws.json",
+    "user-profile.json"
+  ]) {
+    await symlink(path.resolve(repoRoot, ".ogs", file), path.resolve(workdir, ".ogs", file));
+  }
+  await writeFile(
+    path.resolve(workdir, ".ogs", "project.json"),
+    JSON.stringify(
+      {
+        projectId: "viz.runtime.review.demo",
+        createdAt: "2026-04-23T00:00:00.000Z"
+      },
+      null,
+      2
+    ),
+    "utf8"
+  );
+  await writeFile(
+    path.resolve(workdir, "system.mmd"),
+    [
+      "flowchart TD",
+      "%% system.id=viz.runtime.review.demo",
+      "%% system.version=1.0.0",
+      "%% law.global=law.minimal.base",
+      "%% entry.role=imported.agency.experiment-tracker",
+      "%% model.bind.imported.agency.experiment-tracker=opencode/gpt-5.4",
+      "%% review.mode.imported.agency.experiment-tracker=required",
+      "%% review.timeout.imported.agency.experiment-tracker=3600",
+      "%% review.timeout.action.imported.agency.experiment-tracker=pause",
+      "%% review.rework.target.imported.agency.experiment-tracker=imported.agency.experiment-tracker",
+      "%% review.rework.max.imported.agency.experiment-tracker=2",
+      "%% review.terminate.scope.imported.agency.experiment-tracker=branch",
+      "input -->|ENTER| tracker[Role:imported.agency.experiment-tracker]",
+      "tracker[Role:imported.agency.experiment-tracker] -->|DONE| output",
+      ""
+    ].join("\n"),
+    "utf8"
+  );
+}
+
 async function writeMatchingPlanFingerprint(workdir, runDir, systemSource) {
   const system = parseSystemFromMermaidSource(systemSource);
   const runtimeConfig = await loadRuntimeConfig(undefined, workdir);
@@ -914,7 +993,9 @@ test("visualizer server writes review decisions, stop requests, and reindex thro
     );
     assert.equal(decisionResponse.status, 200);
     const decision = await decisionResponse.json();
-    assert.equal(decision.decision.decision, "approve");
+    assert.equal(decision.action, "review:approve");
+    assert.equal(decision.semanticStatus, "human-review-approved");
+    assert.equal(decision.detail.reviewId, "review.demo-analyst@1#1.r1");
 
     const reviewDetailResponse = await fetch(
       `${url}/api/v1/runs/${runId}/reviews/review.demo-analyst@1%231.r1`
@@ -932,7 +1013,8 @@ test("visualizer server writes review decisions, stop requests, and reindex thro
     assert.equal(stopResponse.status, 200);
     const stop = await stopResponse.json();
     assert.equal(stop.runId, runId);
-    assert.equal(stop.request.reason, "stop from visualizer test");
+    assert.equal(stop.action, "run-stop");
+    assert.equal(stop.detail.lifecycle.request.reason, "stop from visualizer test");
   } finally {
     await new Promise((resolve) => server.close(resolve));
   }
@@ -984,6 +1066,184 @@ test("visualizer server keeps idle run list stable until reindex refreshes the c
     const refreshedList = await refreshedListResponse.json();
     assert.equal(refreshedList.runs.length, 2);
     assert.ok(refreshedList.runs.some((run) => run.runId === secondRun.runId));
+  } finally {
+    await new Promise((resolve) => server.close(resolve));
+  }
+});
+
+test("visualizer server exposes Mermaid workbench APIs and project export", async (t) => {
+  const workdir = await mkdtemp(path.join(os.tmpdir(), "ogsystem-visualizer-workbench-"));
+  await seedProjectFixture(workdir);
+  let started;
+  try {
+    started = await startVisualizationServer({
+      workdir,
+      host: "127.0.0.1",
+      port: 0
+    });
+  } catch (error) {
+    const errorCode =
+      typeof error === "object" && error !== null && "code" in error ? error.code : undefined;
+    if (errorCode === "EPERM" || errorCode === "EACCES") {
+      t.skip(`visualizer listen unavailable in sandbox: ${errorCode}`);
+      return;
+    }
+    throw error;
+  }
+  const { server, url } = started;
+
+  try {
+    const workbenchResponse = await fetch(`${url}/api/v1/project/system/workbench`);
+    assert.equal(workbenchResponse.status, 200);
+    const workbench = await workbenchResponse.json();
+    assert.equal(workbench.validation.ok, true);
+    assert.equal(workbench.validation.structure.roleCount, 1);
+
+    const invalidValidateResponse = await fetch(`${url}/api/v1/project/system/validate`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        systemSource: "flowchart TD\nINVALID"
+      })
+    });
+    assert.equal(invalidValidateResponse.status, 200);
+    const invalidValidation = await invalidValidateResponse.json();
+    assert.equal(invalidValidation.ok, false);
+    assert.ok(invalidValidation.diagnostics.length > 0);
+
+    const saveAsResponse = await fetch(`${url}/api/v1/project/system/save-as`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        systemSource: workbench.systemSource,
+        saveAsPath: "drafts/system-copy.mmd"
+      })
+    });
+    assert.equal(saveAsResponse.status, 200);
+    const saveAs = await saveAsResponse.json();
+    assert.equal(saveAs.validation.ok, true);
+    assert.match(saveAs.savedPath, /drafts\/system-copy\.mmd$/);
+
+    const exportResponse = await fetch(`${url}/api/v1/project/export`, { method: "POST" });
+    assert.equal(exportResponse.status, 200);
+    const exported = await exportResponse.json();
+    assert.equal(exported.mode, "single-project-v1");
+    assert.match(exported.project.systemSource, /viz\.project\.demo/);
+    assert.equal(Object.hasOwn(exported.project, "runs"), false);
+  } finally {
+    await new Promise((resolve) => server.close(resolve));
+  }
+});
+
+test("visualizer server starts and resumes runs through lifecycle APIs", async (t) => {
+  const workdir = await mkdtemp(path.join(os.tmpdir(), "ogsystem-visualizer-run-lifecycle-"));
+  await seedRunnableReviewProjectFixture(workdir);
+  let started;
+  try {
+    started = await startVisualizationServer({
+      workdir,
+      host: "127.0.0.1",
+      port: 0
+    });
+  } catch (error) {
+    const errorCode =
+      typeof error === "object" && error !== null && "code" in error ? error.code : undefined;
+    if (errorCode === "EPERM" || errorCode === "EACCES") {
+      t.skip(`visualizer listen unavailable in sandbox: ${errorCode}`);
+      return;
+    }
+    throw error;
+  }
+  const { server, url } = started;
+
+  try {
+    const startResponse = await fetch(`${url}/api/v1/runs/start`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        systemPath: "system.mmd",
+        input: "operator smoke",
+        dryRun: true
+      })
+    });
+    assert.equal(startResponse.status, 200);
+    const startedRun = await startResponse.json();
+    assert.equal(startedRun.status, "stopped");
+    assert.ok(startedRun.runId);
+
+    const reviewsResponse = await fetch(`${url}/api/v1/runs/${startedRun.runId}/reviews`);
+    assert.equal(reviewsResponse.status, 200);
+    const reviews = await reviewsResponse.json();
+    assert.ok(reviews.latestPendingReviewId);
+
+    const decisionResponse = await fetch(
+      `${url}/api/v1/runs/${startedRun.runId}/reviews/${encodeURIComponent(reviews.latestPendingReviewId)}/decide`,
+      {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          decision: "approve",
+          actor: "qa",
+          comment: "resume now"
+        })
+      }
+    );
+    assert.equal(decisionResponse.status, 200);
+
+    const resumeResponse = await fetch(`${url}/api/v1/runs/${startedRun.runId}/resume`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        dryRun: true
+      })
+    });
+    assert.equal(resumeResponse.status, 200);
+    const resumed = await resumeResponse.json();
+    assert.equal(resumed.runId, startedRun.runId);
+    assert.equal(resumed.status, "done");
+  } finally {
+    await new Promise((resolve) => server.close(resolve));
+  }
+});
+
+test("visualizer server rebinds the active project to another workdir", async (t) => {
+  const workdir = await mkdtemp(path.join(os.tmpdir(), "ogsystem-visualizer-project-a-"));
+  const alternateWorkdir = await mkdtemp(path.join(os.tmpdir(), "ogsystem-visualizer-project-b-"));
+  await seedProjectFixture(workdir);
+  await seedAlternateProjectFixture(alternateWorkdir);
+  let started;
+  try {
+    started = await startVisualizationServer({
+      workdir,
+      host: "127.0.0.1",
+      port: 0
+    });
+  } catch (error) {
+    const errorCode =
+      typeof error === "object" && error !== null && "code" in error ? error.code : undefined;
+    if (errorCode === "EPERM" || errorCode === "EACCES") {
+      t.skip(`visualizer listen unavailable in sandbox: ${errorCode}`);
+      return;
+    }
+    throw error;
+  }
+  const { server, url } = started;
+
+  try {
+    const loadResponse = await fetch(`${url}/api/v1/project/load`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ workdir: alternateWorkdir })
+    });
+    assert.equal(loadResponse.status, 200);
+    const loaded = await loadResponse.json();
+    assert.equal(loaded.workdir, alternateWorkdir);
+
+    const projectResponse = await fetch(`${url}/api/v1/project`);
+    assert.equal(projectResponse.status, 200);
+    const project = await projectResponse.json();
+    assert.equal(project.project.systemId, "viz.project.loaded");
+    assert.equal(project.project.projectId, "viz.project.loaded");
   } finally {
     await new Promise((resolve) => server.close(resolve));
   }

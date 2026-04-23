@@ -7,18 +7,21 @@
  * - Read-mostly; mutations are limited to lifecycle/control-plane entrypoints.
  */
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
-import { readFile, stat } from "node:fs/promises";
-import { resolve } from "node:path";
+import { readdir, readFile, stat } from "node:fs/promises";
+import { resolve, sep } from "node:path";
 
+import { runSystemWithAdapter } from "../runtime/adapter.js";
 import {
+  ensureProjectSkeleton,
   inspectHumanReview,
   inspectRun,
   listHumanReviews,
   loadPersistedRunsIndex,
   loadIndexedRuns,
   loadRunLogs,
-  requestStop,
   rebuildRunsIndex,
+  requestStop,
+  resolveOgsPaths,
   resolveRunDir,
   writeHumanReviewDecision
 } from "../runtime/project-lifecycle.js";
@@ -26,21 +29,32 @@ import {
   loadTimelineTailSnapshot,
   projectTimelineRecord
 } from "../runtime/timeline-projector.js";
+import { inspectRunResumeDiagnostics } from "./data.js";
 import {
-  inspectRunResumeDiagnostics,
-} from "./data.js";
-import {
+  exportProjectBundle,
   inspectProjectConfigVisualization,
   inspectProjectSystemVisualization,
+  inspectProjectSystemWorkbench,
   inspectProjectVisualization,
-  listProjectRolesVisualization
+  invalidateProjectProjectionCache,
+  listProjectRolesVisualization,
+  saveProjectSystemSource,
+  validateProjectSystemSource
 } from "./project-projection.js";
 import { inspectRunGraphVisualization } from "./run-graph-projection.js";
 import {
+  mapControlActionView,
+  mapErrorView,
+  mapProjectLoadView,
+  mapProjectTransferView,
   mapResumeDiagnosticsView,
   mapReviewDetailView,
   mapReviewListItem,
   mapRunDetailView,
+  mapRunLifecycleView,
+  mapWorkbenchSaveView,
+  mapWorkbenchValidationView,
+  mapWorkbenchView,
   type RunHeader
 } from "./dto.js";
 import { renderPageHtml as renderVisualizerPageHtml } from "./page-shell.js";
@@ -49,6 +63,10 @@ type VisualizationServerOptions = {
   workdir: string;
   host: string;
   port: number;
+};
+
+type VisualizationServerState = {
+  workdir: string;
 };
 
 type NdjsonEntry = {
@@ -76,6 +94,20 @@ type RunsListCacheEntry = {
   runs: unknown[];
   indexMtimeMs?: number;
 };
+
+class HttpError extends Error {
+  statusCode: number;
+  errorCode: string;
+  details?: unknown;
+
+  constructor(statusCode: number, errorCode: string, message: string, details?: unknown) {
+    super(message);
+    this.name = "HttpError";
+    this.statusCode = statusCode;
+    this.errorCode = errorCode;
+    this.details = details;
+  }
+}
 
 const API_PREFIX = "/api/v1";
 const runsListCache = new Map<string, RunsListCacheEntry>();
@@ -108,15 +140,6 @@ function textResponse(
   response.end(value);
 }
 
-function escapeHtml(value: string): string {
-  return value
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
-    .replace(/"/g, "&quot;")
-    .replace(/'/g, "&#39;");
-}
-
 function asString(value: unknown): string | undefined {
   return typeof value === "string" ? value : undefined;
 }
@@ -125,23 +148,16 @@ function asNumber(value: unknown): number | undefined {
   return typeof value === "number" && Number.isFinite(value) ? value : undefined;
 }
 
+function asRecord(value: unknown): Record<string, unknown> | undefined {
+  return typeof value === "object" && value !== null && !Array.isArray(value)
+    ? (value as Record<string, unknown>)
+    : undefined;
+}
+
 function isSimulationRun(resolvedConfig: unknown): boolean {
-  const record =
-    typeof resolvedConfig === "object" && resolvedConfig !== null && !Array.isArray(resolvedConfig)
-      ? (resolvedConfig as Record<string, unknown>)
-      : undefined;
-  const effective =
-    typeof record?.effective === "object" &&
-    record.effective !== null &&
-    !Array.isArray(record.effective)
-      ? (record.effective as Record<string, unknown>)
-      : undefined;
-  const invocation =
-    typeof effective?.invocation === "object" &&
-    effective.invocation !== null &&
-    !Array.isArray(effective.invocation)
-      ? (effective.invocation as Record<string, unknown>)
-      : undefined;
+  const record = asRecord(resolvedConfig);
+  const effective = asRecord(record?.effective);
+  const invocation = asRecord(effective?.invocation);
   return invocation?.dryRun === true;
 }
 
@@ -259,6 +275,40 @@ function buildRunHeader(detail: LoadedRunDetail): RunHeader {
     systemSource: detail.systemSource,
     isSimulation: isSimulationRun(detail.resolvedConfig),
     runMode: isSimulationRun(detail.resolvedConfig) ? "simulation" : "runtime"
+  };
+}
+
+function invalidateAllProjectCaches(workdir: string): void {
+  runsListCache.delete(workdir);
+  invalidateProjectProjectionCache(workdir);
+}
+
+function resolveRuntimePathWithinProject(workdir: string, inputPath: string, label: string): string {
+  const resolvedWorkdir = resolve(workdir);
+  const resolvedPath = resolve(workdir, inputPath);
+  if (
+    resolvedPath !== resolvedWorkdir &&
+    !resolvedPath.startsWith(`${resolvedWorkdir}${sep}`)
+  ) {
+    throw new HttpError(400, "PROJECT_PATH_OUTSIDE_WORKDIR", `${label} must stay within the current workdir.`, {
+      inputPath
+    });
+  }
+  return resolvedPath;
+}
+
+function summarizeAdapterResult(result: unknown): Record<string, unknown> {
+  const record = asRecord(result) ?? {};
+  const runSummary = asRecord(record.runSummary) ?? {};
+  const errorEnvelope = asRecord(record.errorEnvelope) ?? {};
+  return {
+    systemId: asString(record.systemId),
+    systemVersion: asString(record.systemVersion),
+    finalRoleId: asString(record.finalRoleId),
+    transitionCount: asNumber(runSummary.totalTransitions),
+    stageCount: Array.isArray(record.stages) ? record.stages.length : undefined,
+    error: asString(record.error),
+    errorCode: asString(errorEnvelope.errorCode)
   };
 }
 
@@ -437,12 +487,155 @@ async function handleApiProjectSystem(workdir: string, response: ServerResponse)
   jsonResponse(response, 200, await inspectProjectSystemVisualization(workdir));
 }
 
+async function handleApiProjectWorkbench(workdir: string, response: ServerResponse): Promise<void> {
+  jsonResponse(response, 200, mapWorkbenchView(await inspectProjectSystemWorkbench({ workdir })));
+}
+
 async function handleApiProjectConfig(workdir: string, response: ServerResponse): Promise<void> {
   jsonResponse(response, 200, await inspectProjectConfigVisualization(workdir));
 }
 
 async function handleApiProjectRoles(workdir: string, response: ServerResponse): Promise<void> {
   jsonResponse(response, 200, await listProjectRolesVisualization(workdir));
+}
+
+async function readJsonRequest(request: IncomingMessage): Promise<Record<string, unknown>> {
+  const chunks: Buffer[] = [];
+  for await (const chunk of request) {
+    chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
+  }
+  if (chunks.length === 0) {
+    return {};
+  }
+  const raw = Buffer.concat(chunks).toString("utf8").trim();
+  if (!raw) {
+    return {};
+  }
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(raw);
+  } catch (error) {
+    throw new HttpError(400, "INVALID_JSON_BODY", "Request body must be valid JSON.", {
+      cause: error instanceof Error ? error.message : String(error)
+    });
+  }
+  if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) {
+    throw new HttpError(400, "INVALID_JSON_BODY", "Expected a JSON object request body.");
+  }
+  return parsed as Record<string, unknown>;
+}
+
+async function handleApiProjectValidate(
+  workdir: string,
+  request: IncomingMessage,
+  response: ServerResponse
+): Promise<void> {
+  const body = await readJsonRequest(request);
+  const systemSource = asString(body.systemSource);
+  if (!systemSource) {
+    throw new HttpError(400, "SYSTEM_SOURCE_REQUIRED", "systemSource is required.");
+  }
+  const systemPath = asString(body.systemPath);
+  jsonResponse(
+    response,
+    200,
+    mapWorkbenchValidationView(await validateProjectSystemSource({ workdir, systemPath, systemSource }))
+  );
+}
+
+async function handleApiProjectSave(
+  workdir: string,
+  request: IncomingMessage,
+  response: ServerResponse,
+  saveAs: boolean
+): Promise<void> {
+  const body = await readJsonRequest(request);
+  const systemSource = asString(body.systemSource);
+  if (!systemSource) {
+    throw new HttpError(400, "SYSTEM_SOURCE_REQUIRED", "systemSource is required.");
+  }
+  const saveAsPath = asString(body.saveAsPath);
+  if (saveAs && !saveAsPath) {
+    throw new HttpError(400, "SAVE_AS_PATH_REQUIRED", "saveAsPath is required for save-as.");
+  }
+  const result = await saveProjectSystemSource({
+    workdir,
+    systemSource,
+    saveAsPath
+  });
+  invalidateAllProjectCaches(workdir);
+  jsonResponse(response, 200, mapWorkbenchSaveView(result));
+}
+
+async function handleApiProjectLoad(
+  state: VisualizationServerState,
+  request: IncomingMessage,
+  response: ServerResponse
+): Promise<void> {
+  const body = await readJsonRequest(request);
+  const requestedWorkdir = asString(body.workdir);
+  if (!requestedWorkdir) {
+    throw new HttpError(400, "PROJECT_WORKDIR_REQUIRED", "workdir is required.");
+  }
+  const targetWorkdir = resolve(requestedWorkdir);
+  const systemStat = await stat(resolve(targetWorkdir, "system.mmd")).catch(() => undefined);
+  const ogsStat = await stat(resolve(targetWorkdir, ".ogs")).catch(() => undefined);
+  if (!systemStat?.isFile() || !ogsStat?.isDirectory()) {
+    throw new HttpError(
+      400,
+      "PROJECT_INVALID_WORKDIR",
+      "Expected a project directory containing system.mmd and .ogs/."
+    );
+  }
+  const workbench = await inspectProjectSystemWorkbench({ workdir: targetWorkdir });
+  const workbenchRecord = asRecord(workbench) ?? {};
+  const validation = asRecord(workbenchRecord.validation);
+  if (validation?.ok !== true) {
+    throw new HttpError(
+      409,
+      "PROJECT_REBIND_VALIDATION_FAILED",
+      "Target project failed Mermaid validation and cannot be rebound.",
+      validation
+    );
+  }
+  const previousWorkdir = state.workdir;
+  invalidateAllProjectCaches(previousWorkdir);
+  invalidateAllProjectCaches(targetWorkdir);
+  state.workdir = targetWorkdir;
+  await rebuildRunsIndex(targetWorkdir).catch(() => undefined);
+  jsonResponse(
+    response,
+    200,
+    mapProjectLoadView({
+      workdir: targetWorkdir,
+      mode: "single-project-v1",
+      loadedFiles: ["system.mmd", ".ogs/"],
+      validation,
+      followUpActions: [
+        {
+          action: "project-rebound",
+          label: `Visualizer workdir rebound from ${previousWorkdir} to ${targetWorkdir}.`
+        },
+        {
+          action: "reload-runs",
+          label: "Refresh project and run projections for the new workdir."
+        }
+      ]
+    })
+  );
+}
+
+async function handleApiProjectExport(workdir: string, response: ServerResponse): Promise<void> {
+  const exported = await exportProjectBundle(workdir);
+  jsonResponse(
+    response,
+    200,
+    mapProjectTransferView({
+      ...asRecord(exported),
+      sensitivityNotice:
+        "Export mode omits .ogs/runs, logs, timeline, checkpoints, and review artifacts."
+    })
+  );
 }
 
 async function handleApiRunDetail(workdir: string, runId: string, response: ServerResponse): Promise<void> {
@@ -582,23 +775,123 @@ async function handleApiReindex(workdir: string, response: ServerResponse): Prom
   jsonResponse(response, 200, index);
 }
 
-async function readJsonRequest(request: IncomingMessage): Promise<Record<string, unknown>> {
-  const chunks: Buffer[] = [];
-  for await (const chunk of request) {
-    chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
+async function detectNewRunId(workdir: string, beforeIds: Set<string>): Promise<string> {
+  const indexed = await loadIndexedRuns(workdir).catch(() => []);
+  const created = indexed.find((run) => {
+    const record = asRecord(run);
+    const runId = asString(record?.runId);
+    return runId !== undefined && !beforeIds.has(runId);
+  });
+  const createdRunId = asString(asRecord(created)?.runId);
+  if (createdRunId) {
+    return createdRunId;
   }
-  if (chunks.length === 0) {
-    return {};
+  const runsDir = resolveOgsPaths(workdir).runsDir;
+  const entries = (await readdir(runsDir).catch(() => []))
+    .sort((left, right) => right.localeCompare(left));
+  const fallback = entries.find((entry) => !beforeIds.has(entry));
+  if (fallback) {
+    return fallback;
   }
-  const raw = Buffer.concat(chunks).toString("utf8").trim();
-  if (!raw) {
-    return {};
+  throw new HttpError(500, "RUN_ID_DISCOVERY_FAILED", "Run completed but no runId could be determined.");
+}
+
+async function handleApiRunStart(
+  workdir: string,
+  request: IncomingMessage,
+  response: ServerResponse
+): Promise<void> {
+  const body = await readJsonRequest(request);
+  const systemPath = asString(body.systemPath);
+  const prompt = asString(body.input);
+  if (!systemPath || !prompt) {
+    throw new HttpError(400, "RUN_START_INPUT_REQUIRED", "systemPath and input are required.");
   }
-  const parsed = JSON.parse(raw);
-  if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) {
-    throw new Error("Expected a JSON object request body.");
-  }
-  return parsed as Record<string, unknown>;
+  const beforeIds = new Set(
+    (await loadIndexedRuns(workdir).catch(() => []))
+      .map((run) => asString(asRecord(run)?.runId))
+      .filter((runId): runId is string => Boolean(runId))
+  );
+  await ensureProjectSkeleton({ workdir });
+  const result = await runSystemWithAdapter({
+    systemPath: resolveRuntimePathWithinProject(workdir, systemPath, "systemPath"),
+    prompt,
+    runtimeConfigPath: asString(body.runtimePath),
+    userProfilePath: asString(body.userProfilePath),
+    lawsPath: asString(body.lawsPath),
+    workdir,
+    dryRun: body.dryRun === true,
+    cleanupExecutionHistory: asNumber(body.cleanupExecutionHistory),
+    logRun: false
+  });
+  await rebuildRunsIndex(workdir);
+  const runId = await detectNewRunId(workdir, beforeIds);
+  jsonResponse(
+    response,
+    200,
+    mapRunLifecycleView({
+      runId,
+      status: asString(asRecord(result)?.status) ?? "unknown",
+      resultSummary: summarizeAdapterResult(result),
+      followUpActions: [
+        {
+          action: "open-run-detail",
+          label: `Open run ${runId} to inspect graph, logs, and reviews.`
+        },
+        {
+          action: "refresh-runs",
+          label: "Runs index was rebuilt after start."
+        }
+      ]
+    })
+  );
+}
+
+async function handleApiRunResume(
+  workdir: string,
+  runId: string,
+  request: IncomingMessage,
+  response: ServerResponse
+): Promise<void> {
+  const body = await readJsonRequest(request);
+  const runDir = resolveRunDir(workdir, runId);
+  const systemPath =
+    asString(body.systemPath) ?? resolve(runDir, "system.mmd");
+  const prompt =
+    asString(body.input) ??
+    (await readFile(resolve(runDir, "request.md"), "utf8")).replace(/\s+$/, "");
+  const result = await runSystemWithAdapter({
+    systemPath: resolveRuntimePathWithinProject(workdir, systemPath, "systemPath"),
+    prompt,
+    runtimeConfigPath: asString(body.runtimePath),
+    userProfilePath: asString(body.userProfilePath),
+    lawsPath: asString(body.lawsPath),
+    resumeRunDir: runDir,
+    workdir,
+    dryRun: body.dryRun === true,
+    cleanupExecutionHistory: asNumber(body.cleanupExecutionHistory),
+    logRun: false
+  });
+  await rebuildRunsIndex(workdir);
+  jsonResponse(
+    response,
+    200,
+    mapRunLifecycleView({
+      runId,
+      status: asString(asRecord(result)?.status) ?? "unknown",
+      resultSummary: summarizeAdapterResult(result),
+      followUpActions: [
+        {
+          action: "open-run-detail",
+          label: `Resume finished for ${runId}; inspect the updated run detail.`
+        },
+        {
+          action: "check-resume-diagnostics",
+          label: "Refresh resume diagnostics and review state after the resume run."
+        }
+      ]
+    })
+  );
 }
 
 async function handleApiRunReviewDecision(
@@ -611,20 +904,52 @@ async function handleApiRunReviewDecision(
   const body = await readJsonRequest(request);
   const decision = asString(body.decision);
   if (decision !== "approve" && decision !== "rework" && decision !== "pause" && decision !== "terminate") {
-    throw new Error("Expected decision to be one of: approve, rework, pause, terminate.");
+    throw new HttpError(
+      400,
+      "INVALID_REVIEW_DECISION",
+      "decision must be one of: approve, rework, pause, terminate."
+    );
   }
   const scopeValue = asString(body.scope);
+  if (scopeValue !== undefined && scopeValue !== "branch" && scopeValue !== "run") {
+    throw new HttpError(400, "INVALID_TERMINATE_SCOPE", "scope must be branch or run.");
+  }
+  if (scopeValue !== undefined && decision !== "terminate") {
+    throw new HttpError(400, "INVALID_TERMINATE_SCOPE", "--scope is only valid with decision=terminate.");
+  }
+  const detail = await writeHumanReviewDecision({
+    workdir,
+    runId,
+    reviewId,
+    decision,
+    comment: asString(body.comment),
+    actor: asString(body.actor),
+    scope: scopeValue
+  });
+  const semanticStatus =
+    decision === "pause"
+      ? "human-review-paused"
+      : decision === "terminate"
+        ? `human-review-terminated:${scopeValue ?? "branch"}`
+        : `human-review-${decision}d`;
   jsonResponse(
     response,
     200,
-    await writeHumanReviewDecision({
-      workdir,
+    mapControlActionView({
       runId,
-      reviewId,
-      decision,
-      comment: asString(body.comment),
-      actor: asString(body.actor),
-      scope: scopeValue === "branch" || scopeValue === "run" ? scopeValue : undefined
+      action: `review:${decision}`,
+      accepted: true,
+      semanticStatus,
+      detail: {
+        reviewId,
+        note:
+          decision === "pause"
+            ? "This pause only affects the human review node, not the whole run."
+            : decision === "terminate"
+              ? `Terminate scope=${scopeValue ?? "branch"} applies to the review target, not a generic run pause.`
+              : "Decision recorded in the control plane; runtime reconcile may still be pending.",
+        lifecycle: detail
+      }
     })
   );
 }
@@ -636,110 +961,190 @@ async function handleApiStop(
   response: ServerResponse
 ): Promise<void> {
   const body = await readJsonRequest(request);
-  jsonResponse(response, 200, await requestStop(workdir, runId, asString(body.reason)));
+  const detail = await requestStop(workdir, runId, asString(body.reason));
+  const runDetail = await loadRunDetail(workdir, runId).catch(() => undefined);
+  jsonResponse(
+    response,
+    200,
+    mapControlActionView({
+      runId,
+      action: "run-stop",
+      accepted: true,
+      semanticStatus: "stop-request-recorded",
+      detail: {
+        requestRecorded: true,
+        stopOutcomeApplied: Boolean(asRecord(runDetail?.stopOutcome)),
+        runStatus:
+          asString(asRecord(runDetail?.summary)?.status) ??
+          asString(asRecord(runDetail?.state)?.status),
+        converged:
+          ["done", "failed", "stopped"].includes(
+            asString(asRecord(runDetail?.summary)?.status) ??
+              asString(asRecord(runDetail?.state)?.status) ??
+              ""
+          ),
+        lifecycle: detail
+      }
+    })
+  );
 }
 
 function renderPageHtml(workdir: string): string {
   return renderVisualizerPageHtml(workdir, API_PREFIX);
 }
 
+function normalizeError(error: unknown): HttpError {
+  if (error instanceof HttpError) {
+    return error;
+  }
+  const message = error instanceof Error ? error.message : String(error);
+  if (/^Run not found:/i.test(message)) {
+    return new HttpError(404, "RUN_NOT_FOUND", message);
+  }
+  if (/^Review not found:/i.test(message)) {
+    return new HttpError(404, "REVIEW_NOT_FOUND", message);
+  }
+  if (/already resolved|already expired|not actionable/i.test(message)) {
+    return new HttpError(409, "REVIEW_NOT_ACTIONABLE", message);
+  }
+  if (/^Choose either --engine or --role/i.test(message) || /^Invalid --since/i.test(message)) {
+    return new HttpError(400, "INVALID_LOG_QUERY", message);
+  }
+  if (error instanceof Error && "envelope" in error) {
+    const envelope = asRecord((error as { envelope?: unknown }).envelope);
+    return new HttpError(
+      400,
+      asString(envelope?.errorCode) ?? "RUNTIME_ERROR",
+      asString(envelope?.message) ?? message,
+      envelope
+    );
+  }
+  return new HttpError(500, "VISUALIZER_INTERNAL_ERROR", message);
+}
+
 async function handleVisualizationRequest(
   request: IncomingMessage,
   response: ServerResponse,
-  args: VisualizationServerOptions
+  state: VisualizationServerState,
+  options: VisualizationServerOptions
 ): Promise<void> {
   const method = request.method?.toUpperCase() ?? "GET";
-  const url = new URL(request.url ?? "/", `http://${request.headers.host ?? `${args.host}:${args.port}`}`);
+  const url = new URL(request.url ?? "/", `http://${request.headers.host ?? `${options.host}:${options.port}`}`);
   const pathname = url.pathname;
   let segments: string[];
   try {
     segments = pathname.split("/").filter(Boolean).map((segment) => decodeURIComponent(segment));
   } catch {
-    textResponse(response, 400, "Invalid path encoding");
-    return;
+    throw new HttpError(400, "INVALID_PATH_ENCODING", "Invalid path encoding.");
   }
 
   if (method === "GET" && (pathname === "/" || pathname === "/index.html")) {
-    textResponse(response, 200, renderPageHtml(args.workdir), "text/html; charset=utf-8");
+    textResponse(response, 200, renderPageHtml(state.workdir), "text/html; charset=utf-8");
     return;
   }
 
   if (segments[0] !== "api" || segments[1] !== "v1") {
-    textResponse(response, 404, "Not found");
-    return;
+    throw new HttpError(404, "NOT_FOUND", "Not found");
   }
 
   if (segments.length === 3 && segments[2] === "project" && method === "GET") {
-    await handleApiProjectSummary(args.workdir, response);
+    await handleApiProjectSummary(state.workdir, response);
     return;
   }
-
   if (segments.length === 4 && segments[2] === "project" && segments[3] === "system" && method === "GET") {
-    await handleApiProjectSystem(args.workdir, response);
+    await handleApiProjectSystem(state.workdir, response);
     return;
   }
-
+  if (segments.length === 5 && segments[2] === "project" && segments[3] === "system" && segments[4] === "workbench" && method === "GET") {
+    await handleApiProjectWorkbench(state.workdir, response);
+    return;
+  }
+  if (segments.length === 5 && segments[2] === "project" && segments[3] === "system" && segments[4] === "validate" && method === "POST") {
+    await handleApiProjectValidate(state.workdir, request, response);
+    return;
+  }
+  if (segments.length === 5 && segments[2] === "project" && segments[3] === "system" && segments[4] === "save" && method === "POST") {
+    await handleApiProjectSave(state.workdir, request, response, false);
+    return;
+  }
+  if (segments.length === 5 && segments[2] === "project" && segments[3] === "system" && segments[4] === "save-as" && method === "POST") {
+    await handleApiProjectSave(state.workdir, request, response, true);
+    return;
+  }
   if (segments.length === 4 && segments[2] === "project" && segments[3] === "config" && method === "GET") {
-    await handleApiProjectConfig(args.workdir, response);
+    await handleApiProjectConfig(state.workdir, response);
     return;
   }
-
   if (segments.length === 4 && segments[2] === "project" && segments[3] === "roles" && method === "GET") {
-    await handleApiProjectRoles(args.workdir, response);
+    await handleApiProjectRoles(state.workdir, response);
+    return;
+  }
+  if (segments.length === 4 && segments[2] === "project" && segments[3] === "load" && method === "POST") {
+    await handleApiProjectLoad(state, request, response);
+    return;
+  }
+  if (segments.length === 4 && segments[2] === "project" && segments[3] === "export" && method === "POST") {
+    await handleApiProjectExport(state.workdir, response);
     return;
   }
 
   if (segments.length === 3 && segments[2] === "runs" && method === "GET") {
-    await handleApiRunsList(args.workdir, response);
+    await handleApiRunsList(state.workdir, response);
     return;
   }
-
+  if (segments.length === 4 && segments[2] === "runs" && segments[3] === "start" && method === "POST") {
+    await handleApiRunStart(state.workdir, request, response);
+    return;
+  }
   if (segments.length >= 3 && segments[2] === "runs" && segments[3] === "reindex" && method === "POST") {
-    await handleApiReindex(args.workdir, response);
+    await handleApiReindex(state.workdir, response);
     return;
   }
 
   if (segments.length < 4 || segments[2] !== "runs") {
-    textResponse(response, 404, "Not found");
-    return;
+    throw new HttpError(404, "NOT_FOUND", "Not found");
   }
 
   const runId = segments[3];
 
   if (segments.length === 4 && method === "GET") {
-    await handleApiRunDetail(args.workdir, runId, response);
+    await handleApiRunDetail(state.workdir, runId, response);
     return;
   }
   if (segments.length === 5 && segments[4] === "state" && method === "GET") {
-    await handleApiRunState(args.workdir, runId, response);
+    await handleApiRunState(state.workdir, runId, response);
     return;
   }
   if (segments.length === 5 && segments[4] === "events" && method === "GET") {
-    await handleApiRunEvents(args.workdir, runId, url, response);
+    await handleApiRunEvents(state.workdir, runId, url, response);
     return;
   }
   if (segments.length === 5 && segments[4] === "logs" && method === "GET") {
-    await handleApiRunLogs(args.workdir, runId, url, response);
+    await handleApiRunLogs(state.workdir, runId, url, response);
     return;
   }
   if (segments.length === 5 && segments[4] === "graph" && method === "GET") {
-    await handleApiRunGraph(args.workdir, runId, response);
+    await handleApiRunGraph(state.workdir, runId, response);
     return;
   }
   if (segments.length === 5 && segments[4] === "reviews" && method === "GET") {
-    await handleApiRunReviews(args.workdir, runId, response);
+    await handleApiRunReviews(state.workdir, runId, response);
     return;
   }
   if (segments.length === 5 && segments[4] === "resume-diagnostics" && method === "GET") {
-    await handleApiRunResumeDiagnostics(args.workdir, runId, response);
+    await handleApiRunResumeDiagnostics(state.workdir, runId, response);
+    return;
+  }
+  if (segments.length === 5 && segments[4] === "resume" && method === "POST") {
+    await handleApiRunResume(state.workdir, runId, request, response);
     return;
   }
   if (segments.length === 7 && segments[4] === "reviews" && segments[6] === "decide" && method === "POST") {
-    await handleApiRunReviewDecision(args.workdir, runId, segments[5], request, response);
+    await handleApiRunReviewDecision(state.workdir, runId, segments[5], request, response);
     return;
   }
   if (segments.length === 6 && segments[4] === "reviews" && method === "GET") {
-    await handleApiRunReviewDetail(args.workdir, runId, segments[5], response);
+    await handleApiRunReviewDetail(state.workdir, runId, segments[5], response);
     return;
   }
   if (segments.length === 5 && segments[4] === "stream" && method === "GET") {
@@ -749,7 +1154,7 @@ async function handleVisualizationRequest(
       "cache-control": "no-cache, no-transform",
       connection: "keep-alive"
     });
-    response.write(`retry: 2000\n`);
+    response.write("retry: 2000\n");
 
     let active = true;
     let cursor = startCursor;
@@ -762,7 +1167,7 @@ async function handleVisualizationRequest(
       inFlight = true;
       try {
         const snapshot = await loadRunEventsSnapshot({
-          workdir: args.workdir,
+          workdir: state.workdir,
           runId,
           cursor,
           limit: 500
@@ -772,7 +1177,7 @@ async function handleVisualizationRequest(
             break;
           }
           response.write(`id: ${cursor}\n`);
-          response.write(`event: event\n`);
+          response.write("event: event\n");
           response.write(`data: ${JSON.stringify(entry)}\n\n`);
           cursor = entry.cursor + 1;
         }
@@ -793,11 +1198,11 @@ async function handleVisualizationRequest(
     return;
   }
   if (segments.length === 5 && segments[4] === "stop" && method === "POST") {
-    await handleApiStop(args.workdir, runId, request, response);
+    await handleApiStop(state.workdir, runId, request, response);
     return;
   }
 
-  textResponse(response, 404, "Not found");
+  throw new HttpError(404, "NOT_FOUND", "Not found");
 }
 
 export async function startVisualizationServer(args: VisualizationServerOptions): Promise<{
@@ -805,10 +1210,21 @@ export async function startVisualizationServer(args: VisualizationServerOptions)
   url: string;
   port: number;
 }> {
+  const state: VisualizationServerState = {
+    workdir: resolve(args.workdir)
+  };
   const server = createServer((request, response) => {
-    void handleVisualizationRequest(request, response, args).catch((error) => {
-      const message = error instanceof Error ? error.message : String(error);
-      textResponse(response, 500, message);
+    void handleVisualizationRequest(request, response, state, args).catch((error) => {
+      const normalized = normalizeError(error);
+      jsonResponse(
+        response,
+        normalized.statusCode,
+        mapErrorView({
+          code: normalized.errorCode,
+          message: normalized.message,
+          details: normalized.details
+        })
+      );
     });
   });
 

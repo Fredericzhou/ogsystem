@@ -1,5 +1,121 @@
 export type JsonRecord = Record<string, unknown>;
 
+export type ErrorView = {
+  error: {
+    code: string;
+    message: string;
+    details?: unknown;
+  };
+};
+
+export type ValidationDiagnosticView = {
+  code: string;
+  message: string;
+  severity: "error";
+  stage: "parse" | "compile";
+  roleId?: string;
+  fieldName?: string;
+  selector?: string;
+  line?: number;
+};
+
+export type WorkbenchStructureRoleView = {
+  roleId: string;
+  bindingKind: "model" | "profile" | "noop";
+  routingMode?: string;
+  joinMode?: string;
+  reviewMode?: string;
+};
+
+export type WorkbenchStructureFlowView = {
+  fromRoleId: string;
+  toRoleId: string;
+  eventType: string;
+};
+
+export type WorkbenchStructureView = {
+  systemId: string;
+  systemVersion: string;
+  entryRoleId: string;
+  roleCount: number;
+  flowCount: number;
+  roles: WorkbenchStructureRoleView[];
+  flows: WorkbenchStructureFlowView[];
+};
+
+export type WorkbenchValidationView = {
+  ok: boolean;
+  diagnostics: ValidationDiagnosticView[];
+  structure: WorkbenchStructureView | null;
+};
+
+export type WorkbenchView = {
+  workdir: string;
+  systemPath: string;
+  systemSource: string;
+  validation: WorkbenchValidationView;
+};
+
+export type FollowUpActionView = {
+  action: string;
+  label: string;
+  detail?: unknown;
+};
+
+export type WorkbenchSaveView = {
+  workdir: string;
+  savedPath: string;
+  validation: WorkbenchValidationView;
+  followUpActions: FollowUpActionView[];
+};
+
+export type ProjectTransferView = {
+  mode: "single-project-v1";
+  project: {
+    systemPath: string;
+    systemSource: string;
+    runtime: unknown | null;
+    modelSelection: unknown | null;
+    modelCatalog: unknown | null;
+    laws: unknown | null;
+    userProfile: unknown | null;
+    project: unknown | null;
+  };
+};
+
+export type ProjectLoadView = {
+  workdir: string;
+  mode: "single-project-v1";
+  loadedFiles: string[];
+  validation: WorkbenchValidationView;
+  followUpActions: FollowUpActionView[];
+};
+
+export type RunResultSummaryView = {
+  systemId?: string;
+  systemVersion?: string;
+  finalRoleId?: string;
+  transitionCount?: number;
+  stageCount?: number;
+  error?: string;
+  errorCode?: string;
+};
+
+export type RunLifecycleView = {
+  runId: string;
+  status: string;
+  resultSummary: RunResultSummaryView;
+  followUpActions: FollowUpActionView[];
+};
+
+export type ControlActionView = {
+  runId: string;
+  action: string;
+  accepted: boolean;
+  semanticStatus: string;
+  detail: unknown;
+};
+
 export type RunHeader = {
   runId: string;
   runDir: string;
@@ -91,6 +207,10 @@ export type ResumeDiagnosticsView = {
   checks: ResumeDiagnosticsCheckView[];
   recommendations: ResumeDiagnosticsRecommendationView[];
 };
+
+function asArray(value: unknown): unknown[] | undefined {
+  return Array.isArray(value) ? value : undefined;
+}
 
 function asRecord(value: unknown): JsonRecord | undefined {
   return typeof value === "object" && value !== null && !Array.isArray(value)
@@ -247,5 +367,180 @@ export function mapResumeDiagnosticsView(value: unknown): ResumeDiagnosticsView 
     counts: record.counts ?? null,
     checks,
     recommendations
+  };
+}
+
+export function mapErrorView(args: {
+  code: string;
+  message: string;
+  details?: unknown;
+}): ErrorView {
+  return {
+    error: {
+      code: args.code,
+      message: args.message,
+      details: args.details
+    }
+  };
+}
+
+export function mapWorkbenchValidationView(value: unknown): WorkbenchValidationView {
+  const record = asRecord(value) ?? {};
+  const diagnostics = asArray(record.diagnostics)?.flatMap((item) => {
+    const diagnostic = asRecord(item);
+    const code = asString(diagnostic?.code);
+    const message = asString(diagnostic?.message);
+    const severity = asString(diagnostic?.severity);
+    const stage = asString(diagnostic?.stage);
+    if (!code || !message || severity !== "error" || (stage !== "parse" && stage !== "compile")) {
+      return [];
+    }
+    return [{
+      code,
+      message,
+      severity,
+      stage,
+      roleId: asString(diagnostic?.roleId),
+      fieldName: asString(diagnostic?.fieldName),
+      selector: asString(diagnostic?.selector),
+      line: asNumber(diagnostic?.line)
+    } satisfies ValidationDiagnosticView];
+  }) ?? [];
+  const structureRecord = asRecord(record.structure);
+  return {
+    ok: asBoolean(record.ok) === true,
+    diagnostics,
+    structure: structureRecord
+      ? {
+          systemId: asString(structureRecord.systemId) ?? "",
+          systemVersion: asString(structureRecord.systemVersion) ?? "",
+          entryRoleId: asString(structureRecord.entryRoleId) ?? "",
+          roleCount: asNumber(structureRecord.roleCount) ?? 0,
+          flowCount: asNumber(structureRecord.flowCount) ?? 0,
+          roles: asArray(structureRecord.roles)?.flatMap((item) => {
+            const role = asRecord(item);
+            const roleId = asString(role?.roleId);
+            const bindingKind = asString(role?.bindingKind);
+            if (!roleId || (bindingKind !== "model" && bindingKind !== "profile" && bindingKind !== "noop")) {
+              return [];
+            }
+            return [{
+              roleId,
+              bindingKind,
+              routingMode: asString(role?.routingMode),
+              joinMode: asString(role?.joinMode),
+              reviewMode: asString(role?.reviewMode)
+            } satisfies WorkbenchStructureRoleView];
+          }) ?? [],
+          flows: asArray(structureRecord.flows)?.flatMap((item) => {
+            const flow = asRecord(item);
+            const fromRoleId = asString(flow?.fromRoleId);
+            const toRoleId = asString(flow?.toRoleId);
+            const eventType = asString(flow?.eventType);
+            if (!fromRoleId || !toRoleId || !eventType) {
+              return [];
+            }
+            return [{ fromRoleId, toRoleId, eventType } satisfies WorkbenchStructureFlowView];
+          }) ?? []
+        }
+      : null
+  };
+}
+
+export function mapWorkbenchView(value: unknown): WorkbenchView {
+  const record = asRecord(value) ?? {};
+  return {
+    workdir: asString(record.workdir) ?? "",
+    systemPath: asString(record.systemPath) ?? "",
+    systemSource: asString(record.systemSource) ?? "",
+    validation: mapWorkbenchValidationView(record.validation)
+  };
+}
+
+export function mapFollowUpActions(value: unknown): FollowUpActionView[] {
+  return asArray(value)?.flatMap((item) => {
+    const action = asRecord(item);
+    const id = asString(action?.action);
+    const label = asString(action?.label);
+    if (!id || !label) {
+      return [];
+    }
+    return [{
+      action: id,
+      label,
+      detail: action?.detail
+    } satisfies FollowUpActionView];
+  }) ?? [];
+}
+
+export function mapWorkbenchSaveView(value: unknown): WorkbenchSaveView {
+  const record = asRecord(value) ?? {};
+  return {
+    workdir: asString(record.workdir) ?? "",
+    savedPath: asString(record.savedPath) ?? "",
+    validation: mapWorkbenchValidationView(record.validation),
+    followUpActions: mapFollowUpActions(record.followUpActions)
+  };
+}
+
+export function mapProjectTransferView(value: unknown): ProjectTransferView {
+  const record = asRecord(value) ?? {};
+  const project = asRecord(record.project) ?? {};
+  return {
+    mode: record.mode === "single-project-v1" ? "single-project-v1" : "single-project-v1",
+    project: {
+      systemPath: asString(project.systemPath) ?? "system.mmd",
+      systemSource: asString(project.systemSource) ?? "",
+      runtime: project.runtime ?? null,
+      modelSelection: project.modelSelection ?? null,
+      modelCatalog: project.modelCatalog ?? null,
+      laws: project.laws ?? null,
+      userProfile: project.userProfile ?? null,
+      project: project.project ?? null
+    }
+  };
+}
+
+export function mapProjectLoadView(value: unknown): ProjectLoadView {
+  const record = asRecord(value) ?? {};
+  const loadedFiles = asArray(record.loadedFiles)
+    ?.map((item) => asString(item))
+    .filter((item): item is string => Boolean(item)) ?? [];
+  return {
+    workdir: asString(record.workdir) ?? "",
+    mode: record.mode === "single-project-v1" ? "single-project-v1" : "single-project-v1",
+    loadedFiles,
+    validation: mapWorkbenchValidationView(record.validation),
+    followUpActions: mapFollowUpActions(record.followUpActions)
+  };
+}
+
+export function mapRunLifecycleView(value: unknown): RunLifecycleView {
+  const record = asRecord(value) ?? {};
+  const resultSummary = asRecord(record.resultSummary) ?? {};
+  return {
+    runId: asString(record.runId) ?? "",
+    status: asString(record.status) ?? "unknown",
+    resultSummary: {
+      systemId: asString(resultSummary.systemId),
+      systemVersion: asString(resultSummary.systemVersion),
+      finalRoleId: asString(resultSummary.finalRoleId),
+      transitionCount: asNumber(resultSummary.transitionCount),
+      stageCount: asNumber(resultSummary.stageCount),
+      error: asString(resultSummary.error),
+      errorCode: asString(resultSummary.errorCode)
+    },
+    followUpActions: mapFollowUpActions(record.followUpActions)
+  };
+}
+
+export function mapControlActionView(value: unknown): ControlActionView {
+  const record = asRecord(value) ?? {};
+  return {
+    runId: asString(record.runId) ?? "",
+    action: asString(record.action) ?? "",
+    accepted: asBoolean(record.accepted) === true,
+    semanticStatus: asString(record.semanticStatus) ?? "unknown",
+    detail: record.detail ?? null
   };
 }
