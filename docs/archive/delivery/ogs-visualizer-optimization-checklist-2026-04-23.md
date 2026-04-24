@@ -29,9 +29,10 @@ Scope: 在保持当前轻量、read-mostly 观测面边界的前提下，补齐�
 
 验收：
 
-- [x] 顶部按钮、筛选输入、状态标签在 768px 及以下不再发生重叠
-- [x] 手机宽度下可完成“选 run -> 看图 -> 看 review -> stop/review decide”基础路径
-- [x] 主要操作不再依赖横向滚动
+- [x] 已落地 768px 及以下的响应式规则与控件换行/抽屉策略
+- [x] 已落地手机宽度下“先列表后详情”的单列交互路径
+- [x] 主要操作已按不依赖横向滚动的布局策略实现
+- [x] 仓库内可独立证明实现与自动化回归存在；未单独留存人工视口检查记录
 
 ## 3. P0 现有控制面语义澄清
 
@@ -189,7 +190,7 @@ Scope: 在保持当前轻量、read-mostly 观测面边界的前提下，补齐�
 - [x] 补 project load / export API 测试
 - [x] 补失败路径覆盖：无效 mermaid、结构化 4xx / 5xx
 
-### 9.3 Smoke
+### 9.3 自动化 Smoke
 
 - [x] 编辑 `system.mmd`
 - [x] 实时预览 Mermaid
@@ -200,7 +201,8 @@ Scope: 在保持当前轻量、read-mostly 观测面边界的前提下，补齐�
 
 说明：
 
-- [x] 在当前 sandbox 中以前端 harness、服务端 API 回归、runtime integration 回归完成 smoke 与回归验证
+- [x] 在当前 sandbox 中以前端 harness、服务端 API 回归、runtime integration 回归完成自动化 smoke 与回归验证
+- [x] 未单独留存 1440 / 1180 / 960 / 768 / 480 断点的人工视口检查记录
 
 ## 10. 关键风险与前置决策
 
@@ -212,7 +214,7 @@ Scope: 在保持当前轻量、read-mostly 观测面边界的前提下，补齐�
 
 ## 11. Definition Of Done
 
-- [x] 页面在桌面端和移动端均无明显布局重叠
+- [x] 页面已落地桌面端与移动端响应式规则，并具备相关自动化回归；人工视口检查未单独留档
 - [x] visualizer 可以编辑并实时渲染 `system.mmd`
 - [x] visualizer 可以发起 `start` / `resume` / `stop`
 - [x] review `pause` / `terminate` 与 run `stop` 语义清晰区分
