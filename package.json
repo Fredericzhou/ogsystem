@@ -3,7 +3,7 @@
   "version": "0.1.0",
   "private": false,
   "type": "module",
-  "packageManager": "pnpm@10.14.0",
+  "packageManager": "pnpm@10.33.1",
   "bin": {
     "ogs": "./bin/ogs.mjs"
   },
@@ -51,6 +51,7 @@
     "@langchain/langgraph": "^1.2.8",
     "@opencode-ai/sdk": "^1.4.1",
     "ajv": "^8.18.0",
+    "ogsystem": "link:",
     "zod": "^3.25.76"
   }
 }
