@@ -140,6 +140,12 @@ export function buildClientAppScript(apiPrefix: string): string {
       selectedLogRoleId: "",
       logTail: "",
       logSince: "",
+      timelineRoleId: "",
+      timelineBranchId: "",
+      timelineType: "",
+      timelineReviewId: "",
+      timelineStatus: "",
+      timelineErrorCode: "",
       eventCursor: 0,
       events: [],
       detail: null,
@@ -179,6 +185,14 @@ export function buildClientAppScript(apiPrefix: string): string {
     const workbenchBodyEl = document.getElementById("workbench-body");
     const statsEl = document.getElementById("stats");
     const timelineEl = document.getElementById("timeline");
+    const timelineRoleEl = document.getElementById("timeline-role");
+    const timelineTypeEl = document.getElementById("timeline-type");
+    const timelineStatusEl = document.getElementById("timeline-status");
+    const timelineBranchEl = document.getElementById("timeline-branch");
+    const timelineReviewEl = document.getElementById("timeline-review");
+    const timelineErrorEl = document.getElementById("timeline-error");
+    const timelineApplyButton = document.getElementById("timeline-apply");
+    const timelineClearButton = document.getElementById("timeline-clear");
     const graphViewEl = document.getElementById("graph-view");
     const stateEl = document.getElementById("state");
     const reviewsEl = document.getElementById("reviews");
@@ -358,6 +372,74 @@ export function buildClientAppScript(apiPrefix: string): string {
       return API_PREFIX + "/runs/" + encodeURIComponent(runId) + "/logs?" + params.toString();
     }
 
+    function buildTimelineQuery(runId, extra) {
+      const params = new URLSearchParams();
+      params.set("cursor", String(extra.cursor ?? 0));
+      params.set("limit", String(extra.limit ?? 250));
+      if (state.timelineRoleId) {
+        params.set("roleId", state.timelineRoleId);
+      }
+      if (state.timelineBranchId) {
+        params.set("branchId", state.timelineBranchId);
+      }
+      if (state.timelineType) {
+        params.set("type", state.timelineType);
+      }
+      if (state.timelineReviewId) {
+        params.set("reviewId", state.timelineReviewId);
+      }
+      if (state.timelineStatus) {
+        params.set("status", state.timelineStatus);
+      }
+      if (state.timelineErrorCode) {
+        params.set("errorCode", state.timelineErrorCode);
+      }
+      return API_PREFIX + "/runs/" + encodeURIComponent(runId) + "/events?" + params.toString();
+    }
+
+    function recordMatchesTimelineFilters(record) {
+      if (!record) {
+        return false;
+      }
+      if (state.timelineRoleId && record.roleId !== state.timelineRoleId) {
+        return false;
+      }
+      if (state.timelineBranchId && record.branchId !== state.timelineBranchId) {
+        return false;
+      }
+      if (state.timelineType && record.type !== state.timelineType) {
+        return false;
+      }
+      if (state.timelineReviewId && record.reviewId !== state.timelineReviewId) {
+        return false;
+      }
+      if (state.timelineStatus && record.status !== state.timelineStatus) {
+        return false;
+      }
+      if (state.timelineErrorCode && record.errorCode !== state.timelineErrorCode) {
+        return false;
+      }
+      return true;
+    }
+
+    function syncTimelineFilterInputs() {
+      if (timelineRoleEl) timelineRoleEl.value = state.timelineRoleId;
+      if (timelineTypeEl) timelineTypeEl.value = state.timelineType;
+      if (timelineStatusEl) timelineStatusEl.value = state.timelineStatus;
+      if (timelineBranchEl) timelineBranchEl.value = state.timelineBranchId;
+      if (timelineReviewEl) timelineReviewEl.value = state.timelineReviewId;
+      if (timelineErrorEl) timelineErrorEl.value = state.timelineErrorCode;
+    }
+
+    function readTimelineFiltersFromInputs() {
+      state.timelineRoleId = timelineRoleEl?.value || "";
+      state.timelineType = timelineTypeEl?.value.trim() || "";
+      state.timelineStatus = timelineStatusEl?.value || "";
+      state.timelineBranchId = timelineBranchEl?.value.trim() || "";
+      state.timelineReviewId = timelineReviewEl?.value.trim() || "";
+      state.timelineErrorCode = timelineErrorEl?.value.trim() || "";
+    }
+
     function setFlash(kind, message) {
       state.flash = message ? { kind, message } : null;
       renderFlash();
@@ -397,6 +479,24 @@ export function buildClientAppScript(apiPrefix: string): string {
       resumeRunButton.disabled = disabled || !state.selectedRunId;
       stopRunButton.disabled = stopDisabled;
       refreshButton.disabled = disabled;
+      if (timelineApplyButton) {
+        timelineApplyButton.disabled = disabled || !state.selectedRunId;
+      }
+      if (timelineClearButton) {
+        timelineClearButton.disabled = disabled || !state.selectedRunId;
+      }
+      for (const input of [
+        timelineRoleEl,
+        timelineTypeEl,
+        timelineStatusEl,
+        timelineBranchEl,
+        timelineReviewEl,
+        timelineErrorEl
+      ]) {
+        if (input) {
+          input.disabled = disabled || !state.selectedRunId;
+        }
+      }
       if (sidebarToggleButton) {
         sidebarToggleButton.disabled = disabled;
       }
@@ -499,11 +599,13 @@ export function buildClientAppScript(apiPrefix: string): string {
       ].join("");
     }
 
-    function renderWorkbench() {
+    function renderWorkbench(options) {
       const validation = state.workbench?.validation || null;
       const diagnostics = validation?.diagnostics || [];
       const structure = validation?.structure || null;
       const dirty = state.workbenchSource !== state.workbenchDiskSource;
+      const preserveEditor = Boolean(options?.preserveEditor);
+      const existingEditor = document.getElementById("workbench-editor");
       state.workbenchHasDraft = Boolean(loadDraftSource());
       workbenchMetaEl.textContent = state.selectedRunId && state.detail?.systemSource
         ? "Editing the project system.mmd only. Selected run snapshots remain immutable and are shown in run detail."
@@ -530,7 +632,11 @@ export function buildClientAppScript(apiPrefix: string): string {
         '<button class="button primary" id="workbench-save"' + (dirty ? "" : " disabled") + '>Save</button>',
         '<button class="button" id="workbench-save-as">Save as</button>'
       ].join("");
-      if (state.workbenchView === "source") {
+      if (state.workbenchView === "source" && preserveEditor && existingEditor) {
+        if (existingEditor.value !== state.workbenchSource) {
+          existingEditor.value = state.workbenchSource || "";
+        }
+      } else if (state.workbenchView === "source") {
         workbenchBodyEl.innerHTML = '<textarea id="workbench-editor" class="editor" spellcheck="false">' + escapeText(state.workbenchSource || "") + '</textarea>';
       } else if (state.workbenchView === "render") {
         workbenchBodyEl.innerHTML = [
@@ -545,11 +651,11 @@ export function buildClientAppScript(apiPrefix: string): string {
         workbenchBodyEl.innerHTML = renderWorkbenchStructure(structure);
       }
       const editor = document.getElementById("workbench-editor");
-      if (editor) {
+      if (editor && (!preserveEditor || editor !== existingEditor)) {
         editor.addEventListener("input", (event) => {
           state.workbenchSource = event.target.value || "";
           persistDraftSource(state.workbenchSource !== state.workbenchDiskSource ? state.workbenchSource : "");
-          renderWorkbench();
+          renderWorkbench({ preserveEditor: true });
           scheduleWorkbenchValidation();
         });
       }
@@ -731,33 +837,47 @@ export function buildClientAppScript(apiPrefix: string): string {
     }
 
     function renderTimeline(events) {
+      const activeFilters = [
+        state.timelineRoleId ? "role=" + state.timelineRoleId : "",
+        state.timelineType ? "type=" + state.timelineType : "",
+        state.timelineStatus ? "status=" + state.timelineStatus : "",
+        state.timelineBranchId ? "branch=" + state.timelineBranchId : "",
+        state.timelineReviewId ? "review=" + state.timelineReviewId : "",
+        state.timelineErrorCode ? "error=" + state.timelineErrorCode : ""
+      ].filter(Boolean);
       if (!events.length) {
-        timelineEl.innerHTML = '<div class="hint">No events captured yet.</div>';
+        timelineEl.innerHTML = activeFilters.length
+          ? '<div class="hint">No events match the active filters: ' + escapeText(activeFilters.join(" · ")) + ".</div>"
+          : '<div class="hint">No events captured yet.</div>';
         return;
       }
-      timelineEl.innerHTML = events
-        .slice()
-        .reverse()
-        .map((entry) => {
-          const record = entry.record || {};
-          const type = record.type || "event";
-          const role = record.roleId ? \`<code>\${escapeText(record.roleId)}</code>\` : "";
-          const branch = record.branchId ? \`<code>\${escapeText(record.branchId)}</code>\` : "";
-          const review = record.reviewId ? \`<code>\${escapeText(record.reviewId)}</code>\` : "";
-          const event = record.event ? \`<code>\${escapeText(record.event)}</code>\` : "";
-          const status = record.status ? \`<span class="status \${statusClass(record.status)}">\${escapeText(record.status)}</span>\` : "";
-          return \`
-            <div class="event">
-              <div class="event-top">
-                <span>#\${escapeText(entry.cursor)} \${escapeText(type)}</span>
-                <span>\${escapeText(record.at || "")}</span>
+      timelineEl.innerHTML = [
+        activeFilters.length
+          ? '<div class="hint">filtered by ' + escapeText(activeFilters.join(" · ")) + "</div>"
+          : "",
+        ...events
+          .slice()
+          .reverse()
+          .map((entry) => {
+            const record = entry.record || {};
+            const type = record.type || "event";
+            const role = record.roleId ? \`<code>\${escapeText(record.roleId)}</code>\` : "";
+            const branch = record.branchId ? \`<code>\${escapeText(record.branchId)}</code>\` : "";
+            const review = record.reviewId ? \`<code>\${escapeText(record.reviewId)}</code>\` : "";
+            const event = record.event ? \`<code>\${escapeText(record.event)}</code>\` : "";
+            const status = record.status ? \`<span class="status \${statusClass(record.status)}">\${escapeText(record.status)}</span>\` : "";
+            return \`
+              <div class="event">
+                <div class="event-top">
+                  <span>#\${escapeText(entry.cursor)} \${escapeText(type)}</span>
+                  <span>\${escapeText(record.at || "")}</span>
+                </div>
+                <strong>\${role} \${event} \${status}</strong>
+                <div class="hint">\${branch} \${review}</div>
               </div>
-              <strong>\${role} \${event} \${status}</strong>
-              <div class="hint">\${branch} \${review}</div>
-            </div>
-          \`;
-        })
-        .join("");
+            \`;
+          })
+      ].join("");
     }
 
     function renderGraph() {
@@ -773,30 +893,46 @@ export function buildClientAppScript(apiPrefix: string): string {
         return;
       }
       const nodes = graph.nodes || [];
-      const edges = (graph.edges || []).filter((edge) => edge.recentlyActivated || edge.isErrorFlow);
+      const edges = graph.edges || [];
       graphViewEl.innerHTML = [
         '<div class="event"><strong>' + escapeText(graph.systemId || "unknown") + '</strong><div class="hint">entry ' + escapeText(graph.entryRoleId || "n/a") + " · roles " + escapeText(graph.roleCount || 0) + " · flows " + escapeText(graph.flowCount || 0) + "</div></div>",
+        '<div class="event"><div class="event-top"><span>roles</span><span>' + escapeText(nodes.length) + '</span></div><strong>Runtime node states</strong><div class="hint">Shows role status, branch counts, join gaps, and last observed selection/error signals.</div></div>',
         ...nodes.map((node) =>
           '<div class="event">' +
             '<div class="event-top">' +
               '<span><code>' + escapeText(node.roleId) + "</code> · " + escapeText(node.nodeType) + "</span>" +
               '<span class="status ' + statusClass(node.status) + '">' + escapeText(node.status) + "</span>" +
             "</div>" +
-            "<strong>binding=" + escapeText(node.bindingKind) + " · active=" + escapeText(node.activeBranchCount) + " · waitingReview=" + escapeText(node.waitingReviewCount) + " · loop=" + escapeText(node.loopIteration) + "</strong>" +
-            '<div class="hint">' + escapeText(node.lastErrorCode || "no error") + (node.missingSources?.length ? " · missing join sources " + escapeText(node.missingSources.join(", ")) : "") + "</div>" +
+            "<strong>binding=" + escapeText(node.bindingKind) + " · active=" + escapeText(node.activeBranchCount) + " · completed=" + escapeText(node.completedBranchCount || 0) + " · pendingReview=" + escapeText(node.pendingReviewCount || 0) + " · waitingReview=" + escapeText(node.waitingReviewCount) + " · loop=" + escapeText(node.loopIteration) + "</strong>" +
+            '<div class="hint">' + escapeText(node.lastSelectedEvent ? "last event " + node.lastSelectedEvent : "no selected event")
+              + (node.lastErrorCode ? " · last error " + escapeText(node.lastErrorCode) : " · no error")
+              + (node.joinMode ? " · join " + escapeText(node.joinMode) : "")
+              + (node.routingMode ? " · route " + escapeText(node.routingMode) : "")
+              + (node.missingSources?.length ? " · missing join sources " + escapeText(node.missingSources.join(", ")) : "")
+              + (node.contextFields?.length ? " · context " + escapeText(node.contextFields.join(", ")) : "")
+              + "</div>" +
           "</div>"
         ),
+        '<div class="event"><div class="event-top"><span>flows</span><span>' + escapeText(edges.length) + '</span></div><strong>Complete topology</strong><div class="hint">Recent and error flows are annotated instead of hiding the rest of the graph.</div></div>',
         ...(edges.length > 0
           ? edges.map((edge) =>
               '<div class="event">' +
                 '<div class="event-top">' +
                   '<span><code>' + escapeText(edge.sourceRoleId) + "</code> -> <code>" + escapeText(edge.targetRoleId) + "</code></span>" +
-                  "<span>" + (edge.recentlyActivated ? "recent" : edge.isErrorFlow ? "error-flow" : "") + "</span>" +
+                  "<span>" + escapeText(
+                    edge.recentlyActivated && edge.isErrorFlow
+                      ? "recent · error-flow"
+                      : edge.recentlyActivated
+                        ? "recent"
+                        : edge.isErrorFlow
+                          ? "error-flow"
+                          : "flow"
+                  ) + "</span>" +
                 "</div>" +
                 "<strong>" + escapeText(edge.event) + "</strong>" +
               "</div>"
             )
-          : ['<div class="hint">No activated or error-flow edges in the current snapshot.</div>'])
+          : ['<div class="hint">No flows declared for this graph snapshot.</div>'])
       ].join("");
       stateEl.textContent = formatJson(state.detail?.state ?? null);
     }
@@ -1019,10 +1155,37 @@ export function buildClientAppScript(apiPrefix: string): string {
       state.selectedLogRoleId = selected;
     }
 
+    function populateTimelineRoleOptions(graphPayload) {
+      const roleIds = (graphPayload?.graph?.nodes || []).map((node) => node.roleId).filter(Boolean);
+      if (state.timelineRoleId && !roleIds.includes(state.timelineRoleId)) {
+        state.timelineRoleId = "";
+      }
+      const options = ['<option value="">All roles</option>']
+        .concat(roleIds.map((roleId) => \`<option value="\${escapeText(roleId)}" \${roleId === state.timelineRoleId ? "selected" : ""}>\${escapeText(roleId)}</option>\`));
+      if (timelineRoleEl) {
+        timelineRoleEl.innerHTML = options.join("");
+      }
+      syncTimelineFilterInputs();
+    }
+
+    async function reloadTimeline(runId) {
+      if (!runId) {
+        state.events = [];
+        state.eventCursor = 0;
+        renderTimeline(state.events);
+        return;
+      }
+      const eventsPayload = await requestJson(buildTimelineQuery(runId, { cursor: 0, limit: 250 }));
+      state.events = eventsPayload.events || [];
+      state.eventCursor = eventsPayload.nextCursor || 0;
+      renderTimeline(state.events);
+      renderDetail();
+    }
+
     async function runWorkbenchValidation(force) {
       const requestId = ++state.workbenchValidationRequestId;
       state.workbenchValidating = true;
-      renderWorkbench();
+      renderWorkbench({ preserveEditor: true });
       try {
         const payload = await requestAction(\`\${API_PREFIX}/project/system/validate\`, {
           systemSource: state.workbenchSource,
@@ -1039,7 +1202,7 @@ export function buildClientAppScript(apiPrefix: string): string {
         if (requestId === state.workbenchValidationRequestId) {
           state.workbenchValidating = false;
         }
-        renderWorkbench();
+        renderWorkbench({ preserveEditor: true });
         renderProject();
       }
     }
@@ -1050,7 +1213,7 @@ export function buildClientAppScript(apiPrefix: string): string {
         void runWorkbenchValidation(false).catch((error) => {
           state.workbenchValidating = false;
           setFlash("error", "Workbench validation failed: " + (error.message || error));
-          renderWorkbench();
+          renderWorkbench({ preserveEditor: true });
         });
       }, 250);
     }
@@ -1315,6 +1478,7 @@ export function buildClientAppScript(apiPrefix: string): string {
       upsertRunFromHeader(detail.header);
       const fallbackRoleId = detail.header?.lastExecutedRoleId || detail.header?.finalRoleId || "";
       populateLogRoleOptions(graphPayload, fallbackRoleId);
+      populateTimelineRoleOptions(graphPayload);
       renderSelectedRun();
       renderRuns();
       writeRouteToLocation();
@@ -1352,7 +1516,7 @@ export function buildClientAppScript(apiPrefix: string): string {
     async function loadSelectedRunBoot(runId, options) {
       const [detail, eventsPayload, graphPayload, reviewsPayload] = await Promise.all([
         requestJson(\`\${API_PREFIX}/runs/\${encodeURIComponent(runId)}\`),
-        requestJson(\`\${API_PREFIX}/runs/\${encodeURIComponent(runId)}/events?cursor=0&limit=250\`),
+        requestJson(buildTimelineQuery(runId, { cursor: 0, limit: 250 })),
         requestJson(\`\${API_PREFIX}/runs/\${encodeURIComponent(runId)}/graph\`),
         requestJson(\`\${API_PREFIX}/runs/\${encodeURIComponent(runId)}/reviews\`)
       ]);
@@ -1372,6 +1536,7 @@ export function buildClientAppScript(apiPrefix: string): string {
       }
       await refreshSelectedReviewDetail(runId, { allowMissing: true });
       populateLogRoleOptions(graphPayload, fallbackRoleId);
+      populateTimelineRoleOptions(graphPayload);
       await Promise.all([
         loadEngineLogs(runId),
         loadRoleLogs(runId, state.selectedLogRoleId || fallbackRoleId)
@@ -1418,6 +1583,7 @@ export function buildClientAppScript(apiPrefix: string): string {
       state.events = [];
       state.engineLogs = [];
       state.roleLogs = [];
+      syncTimelineFilterInputs();
       renderSelectedRun();
       renderRuns();
       writeRouteToLocation();
@@ -1600,8 +1766,10 @@ export function buildClientAppScript(apiPrefix: string): string {
             return;
           }
           state.eventCursor = payload.cursor + 1;
-          state.events = appendStreamEntry(state.events, payload, 250);
-          renderTimeline(state.events);
+          if (recordMatchesTimelineFilters(payload.record)) {
+            state.events = appendStreamEntry(state.events, payload, 250);
+            renderTimeline(state.events);
+          }
           scheduleStreamRefresh(getStreamRefreshPlan(payload.record.type));
         } catch {
           // Ignore malformed stream payloads.
@@ -1672,6 +1840,32 @@ export function buildClientAppScript(apiPrefix: string): string {
       });
     });
 
+    timelineApplyButton.addEventListener("click", async () => {
+      readTimelineFiltersFromInputs();
+      if (state.selectedRunId) {
+        await reloadTimeline(state.selectedRunId);
+      } else {
+        renderTimeline([]);
+      }
+      renderActionState();
+    });
+
+    timelineClearButton.addEventListener("click", async () => {
+      state.timelineRoleId = "";
+      state.timelineType = "";
+      state.timelineStatus = "";
+      state.timelineBranchId = "";
+      state.timelineReviewId = "";
+      state.timelineErrorCode = "";
+      syncTimelineFilterInputs();
+      if (state.selectedRunId) {
+        await reloadTimeline(state.selectedRunId);
+      } else {
+        renderTimeline([]);
+      }
+      renderActionState();
+    });
+
     logRoleEl.addEventListener("change", async (event) => {
       state.selectedLogRoleId = event.target.value || "";
       if (state.selectedRunId) {
@@ -1719,6 +1913,7 @@ export function buildClientAppScript(apiPrefix: string): string {
     state.logSince = initialRoute.since;
     logTailEl.value = state.logTail;
     logSinceEl.value = state.logSince;
+    syncTimelineFilterInputs();
 
     Promise.all([loadProject(), loadRuns()])
       .then(async () => {

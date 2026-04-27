@@ -647,6 +647,27 @@ export function renderPageHtml(workdir: string, apiPrefix: string): string {
         <article class="card span-8">
           <header><h3>Timeline</h3></header>
           <div class="body">
+            <div class="row">
+              <select id="timeline-role" class="select">
+                <option value="">All roles</option>
+              </select>
+              <input id="timeline-type" class="select" placeholder="event type" />
+              <select id="timeline-status" class="select">
+                <option value="">All statuses</option>
+                <option value="pending">pending</option>
+                <option value="paused">paused</option>
+                <option value="running">running</option>
+                <option value="stopped">stopped</option>
+                <option value="done">done</option>
+                <option value="failed">failed</option>
+                <option value="waiting_review">waiting_review</option>
+              </select>
+              <input id="timeline-branch" class="select" placeholder="branch id" />
+              <input id="timeline-review" class="select" placeholder="review id" />
+              <input id="timeline-error" class="select" placeholder="error code" />
+              <button id="timeline-apply" class="button subtle">Apply filters</button>
+              <button id="timeline-clear" class="button subtle">Clear filters</button>
+            </div>
             <div id="timeline" class="timeline"></div>
           </div>
         </article>

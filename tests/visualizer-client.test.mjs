@@ -26,6 +26,14 @@ const PAGE_ELEMENT_IDS = [
   "project-summary",
   "stats",
   "timeline",
+  "timeline-role",
+  "timeline-type",
+  "timeline-status",
+  "timeline-branch",
+  "timeline-review",
+  "timeline-error",
+  "timeline-apply",
+  "timeline-clear",
   "graph-view",
   "state",
   "reviews",
@@ -502,18 +510,52 @@ function createBackend(options = {}) {
         return createResponse(detail);
       }
       if (pathname === `/api/v1/runs/${runId}/events`) {
-        return createResponse({
-          events: [
-            {
-              cursor: 0,
-              record: {
-                type: "human_review_requested",
-                at: "2026-04-23T09:15:00.000Z",
-                reviewId
-              }
+        const events = [
+          {
+            cursor: 0,
+            record: {
+              type: "human_review_requested",
+              at: "2026-04-23T09:15:00.000Z",
+              reviewId,
+              roleId: "demo-analyst",
+              status: "pending",
+              branchId: "demo-analyst@1#1"
             }
-          ],
-          nextCursor: 1
+          },
+          {
+            cursor: 1,
+            record: {
+              type: "runtime_error",
+              at: "2026-04-23T09:15:30.000Z",
+              roleId: "qa",
+              errorCode: "E_DEMO"
+            }
+          }
+        ];
+        const filtered = events.filter((entry) => {
+          if (parsed.searchParams.get("roleId") && entry.record.roleId !== parsed.searchParams.get("roleId")) {
+            return false;
+          }
+          if (parsed.searchParams.get("branchId") && entry.record.branchId !== parsed.searchParams.get("branchId")) {
+            return false;
+          }
+          if (parsed.searchParams.get("type") && entry.record.type !== parsed.searchParams.get("type")) {
+            return false;
+          }
+          if (parsed.searchParams.get("reviewId") && entry.record.reviewId !== parsed.searchParams.get("reviewId")) {
+            return false;
+          }
+          if (parsed.searchParams.get("status") && entry.record.status !== parsed.searchParams.get("status")) {
+            return false;
+          }
+          if (parsed.searchParams.get("errorCode") && entry.record.errorCode !== parsed.searchParams.get("errorCode")) {
+            return false;
+          }
+          return true;
+        });
+        return createResponse({
+          events: filtered,
+          nextCursor: events.length
         });
       }
       if (pathname === `/api/v1/runs/${runId}/graph`) {
@@ -902,11 +944,13 @@ test("visualizer client appends SSE timeline entries and refreshes only targeted
   const stream = harness.eventSources.at(-1);
   assert.ok(stream);
   stream.emit({
-    cursor: 1,
+    cursor: 2,
     record: {
       type: "human_review_requested",
       at: "2026-04-23T09:16:00.000Z",
-      reviewId: "review-1"
+      reviewId: "review-1",
+      roleId: "demo-analyst",
+      status: "pending"
     }
   });
   await harness.flushTimers();
@@ -915,11 +959,68 @@ test("visualizer client appends SSE timeline entries and refreshes only targeted
   const detailCallsAfter = harness.backend.fetchCalls.filter((call) => call.path === "/api/v1/runs/run-123").length;
   const reviewCallsAfter = harness.backend.fetchCalls.filter((call) => call.path === "/api/v1/runs/run-123/reviews").length;
 
-  assert.ok(harness.document.getElementById("timeline").innerHTML.includes("#1"));
+  assert.ok(harness.document.getElementById("timeline").innerHTML.includes("#2"));
   assert.ok(harness.document.getElementById("resume-controls").textContent.includes("diagnostics stale"));
   assert.equal(logCallsAfter, logCallsBefore);
   assert.ok(detailCallsAfter > detailCallsBefore);
   assert.ok(reviewCallsAfter > reviewCallsBefore);
+});
+
+test("visualizer client keeps the workbench editor visible with source intact during validation", async () => {
+  const harness = await createClientHarness();
+
+  const newDraftButton = harness.document.getElementById("workbench-new-draft");
+  assert.ok(newDraftButton);
+  await newDraftButton.click();
+  await settle();
+
+  const editor = harness.document.getElementById("workbench-editor");
+  assert.ok(editor);
+
+  await editor.input(
+    [
+      "flowchart TD",
+      "%% system.id=viz.review.demo",
+      "%% system.version=1.0.0",
+      "%% law.global=law.minimal.base",
+      "%% entry.role=demo-analyst",
+      "input -->|GO| analyst[Role:demo-analyst]",
+      "analyst[Role:demo-analyst] -->|DONE| output",
+      ""
+    ].join("\n")
+  );
+  await harness.flushTimers();
+
+  const editorAfter = harness.document.getElementById("workbench-editor");
+  assert.ok(editorAfter);
+  assert.equal(editorAfter.value, editor.value);
+});
+
+test("visualizer client applies timeline filters through the events API", async () => {
+  const harness = await createClientHarness();
+
+  const roleSelect = harness.document.getElementById("timeline-role");
+  const typeInput = harness.document.getElementById("timeline-type");
+  const applyButton = harness.document.getElementById("timeline-apply");
+
+  assert.ok(roleSelect);
+  assert.ok(typeInput);
+  assert.ok(applyButton);
+
+  await roleSelect.change("demo-analyst");
+  await typeInput.input("human_review_requested");
+  await applyButton.click();
+  await settle();
+
+  assert.ok(
+    harness.backend.fetchCalls.some((call) =>
+      call.path.includes("/api/v1/runs/run-123/events?") &&
+      call.path.includes("roleId=demo-analyst") &&
+      call.path.includes("type=human_review_requested")
+    )
+  );
+  assert.ok(harness.document.getElementById("timeline").innerHTML.includes("filtered by"));
+  assert.ok(!harness.document.getElementById("timeline").innerHTML.includes("runtime_error"));
 });
 
 test("visualizer client edits the Mermaid workbench, saves, and starts a run", async () => {
