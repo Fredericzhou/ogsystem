@@ -17,6 +17,7 @@ const PAGE_ELEMENT_IDS = [
   "flash",
   "selected-title",
   "selected-subtitle",
+  "action-form",
   "workdir",
   "workbench-meta",
   "workbench-status",
@@ -41,6 +42,7 @@ const PAGE_ELEMENT_IDS = [
   "review-detail",
   "resume-diagnostics",
   "resume-controls",
+  "logs-controls",
   "logs-filters",
   "logs",
   "detail",
@@ -256,6 +258,7 @@ function createBackend(options = {}) {
   const runId = "run-123";
   const reviewId = "review-1";
   const decisionPhase = options.decisionPhase;
+  const runStatus = options.runStatus ?? "stopped";
   const reviewBase = {
     reviewId,
     currentStatus: "pending",
@@ -284,7 +287,7 @@ function createBackend(options = {}) {
     header: {
       runId,
       runDir: `/tmp/${runId}`,
-      status: "stopped",
+      status: runStatus,
       transitionCount: 1,
       finalRoleId: "",
       lastExecutedRoleId: "demo-analyst",
@@ -297,7 +300,7 @@ function createBackend(options = {}) {
       isSimulation: false,
       runMode: "runtime"
     },
-    state: { status: "stopped" },
+    state: { status: runStatus },
     metrics: null,
     resolvedConfig: null,
     stopRequest: null,
@@ -310,7 +313,7 @@ function createBackend(options = {}) {
     graph: {
       systemId: "viz.review.demo",
       entryRoleId: "demo-analyst",
-      roleCount: 1,
+      roleCount: 2,
       flowCount: 1,
       nodes: [
         {
@@ -323,9 +326,29 @@ function createBackend(options = {}) {
           loopIteration: 1,
           lastErrorCode: "",
           missingSources: []
+        },
+        {
+          roleId: "qa",
+          nodeType: "role",
+          status: "idle",
+          bindingKind: "profile",
+          activeBranchCount: 0,
+          waitingReviewCount: 0,
+          pendingReviewCount: 0,
+          loopIteration: 0,
+          lastSelectedEvent: "DONE",
+          missingSources: []
         }
       ],
-      edges: []
+      edges: [
+        {
+          sourceRoleId: "demo-analyst",
+          targetRoleId: "qa",
+          event: "DONE",
+          isErrorFlow: false,
+          recentlyActivated: true
+        }
+      ]
     }
   };
   const backend = {
@@ -484,7 +507,7 @@ function createBackend(options = {}) {
             {
               runId,
               runDir: `/tmp/${runId}`,
-              status: "stopped",
+              status: runStatus,
               transitionCount: 1,
               lastExecutedRoleId: "demo-analyst",
               updatedAt: "2026-04-23T09:15:01.000Z",
@@ -599,6 +622,20 @@ function createBackend(options = {}) {
             transitionCount: 2
           },
           followUpActions: [{ action: "open-run-detail", label: "Open run." }]
+        });
+      }
+      if (pathname === `/api/v1/runs/${runId}/stop` && method === "POST") {
+        this.lastStopBody = JSON.parse(request.body ?? "{}");
+        return createResponse({
+          runId,
+          action: "stop",
+          accepted: true,
+          detail: {
+            requestRecorded: true,
+            stopOutcomeApplied: false,
+            runStatus: "stopping",
+            converged: false
+          }
         });
       }
       if (pathname === `/api/v1/runs/${runId}/logs`) {
@@ -755,7 +792,7 @@ async function createClientHarness(options = {}) {
     await settle();
     if (
       document.getElementById("resume-controls").innerHTML.includes("Load diagnostics") &&
-      document.getElementById("review-detail").textContent.includes("decisionPhase:")
+      document.getElementById("review-detail").textContent.includes("Decision trail")
     ) {
       break;
     }
@@ -843,12 +880,17 @@ test("visualizer client keeps diagnostics lazy and renders decision phase detail
   });
 
   assert.ok(
-    harness.document.getElementById("review-detail").textContent.includes("decisionPhase: recorded")
+    harness.document.getElementById("review-detail").textContent.includes("Decision trail")
   );
   assert.equal(
     harness.backend.fetchCalls.some((call) => call.path === "/api/v1/runs/run-123/resume-diagnostics"),
     false
   );
+  assert.equal(
+    harness.backend.fetchCalls.some((call) => call.path.startsWith("/api/v1/runs/run-123/logs")),
+    false
+  );
+  assert.ok(harness.document.getElementById("graph-view").innerHTML.includes('aria-label="Run topology graph"'));
 
   const loadDiagnosticsButton =
     harness.document.getElementById("load-diagnostics") ??
@@ -864,12 +906,37 @@ test("visualizer client keeps diagnostics lazy and renders decision phase detail
   assert.match(harness.document.getElementById("resume-diagnostics").innerHTML, /Review decisions/);
 });
 
+test("visualizer client loads logs on demand and keeps filter changes lazy until loaded", async () => {
+  const harness = await createClientHarness();
+
+  const logCallsBefore = harness.backend.fetchCalls.filter((call) => call.path.startsWith("/api/v1/runs/run-123/logs")).length;
+  assert.equal(logCallsBefore, 0);
+  assert.match(harness.document.getElementById("logs").textContent, /Logs load on demand/);
+
+  await harness.document.getElementById("log-tail").change("25");
+  await settle();
+
+  const logCallsAfterFilterOnly = harness.backend.fetchCalls.filter((call) => call.path.startsWith("/api/v1/runs/run-123/logs")).length;
+  assert.equal(logCallsAfterFilterOnly, 0);
+
+  const loadLogsButton = harness.document.getElementById("load-logs");
+  assert.ok(loadLogsButton);
+  await loadLogsButton.click();
+  await settle();
+
+  const logCallsAfterLoad = harness.backend.fetchCalls.filter((call) => call.path.startsWith("/api/v1/runs/run-123/logs")).length;
+  assert.equal(logCallsAfterLoad, 2);
+  assert.ok(
+    harness.backend.fetchCalls.some((call) =>
+      call.path.startsWith("/api/v1/runs/run-123/logs") && call.path.includes("tail=25")
+    )
+  );
+});
+
 test("visualizer client review action captures audit input, disables controls while busy, and flashes success", async () => {
   const decisionDeferred = createDeferred();
   const harness = await createClientHarness({
-    backend: createBackend({ decisionDeferred }),
-    prompts: ["operator-a", "looks good"],
-    confirms: [true]
+    backend: createBackend({ decisionDeferred })
   });
 
   const approveButton = harness.document
@@ -878,13 +945,25 @@ test("visualizer client review action captures audit input, disables controls wh
     .find((button) => button.getAttribute("data-review-action") === "approve");
   assert.ok(approveButton);
 
-  const pendingClick = approveButton.click();
+  await approveButton.click();
   await settle();
 
-  assert.equal(approveButton.disabled, true);
+  const actorInput = harness.document.getElementById("action-review-actor");
+  const commentInput = harness.document.getElementById("action-review-comment");
+  const submitButton = harness.document.getElementById("action-form-submit");
+  assert.ok(actorInput);
+  assert.ok(commentInput);
+  assert.ok(submitButton);
+
+  await actorInput.input("operator-a");
+  await commentInput.input("looks good");
+
+  const pendingClick = submitButton.click();
+  await settle();
+
   assert.equal(harness.document.getElementById("project-home").disabled, true);
-  assert.deepEqual(harness.promptCalls.map((call) => call.label), ["Actor", "Comment"]);
-  assert.equal(harness.confirmCalls[0], 'Record review decision "approve" for review-1?');
+  assert.equal(harness.promptCalls.length, 0);
+  assert.equal(harness.confirmCalls.length, 0);
 
   decisionDeferred.resolve();
   await pendingClick;
@@ -900,15 +979,13 @@ test("visualizer client review action captures audit input, disables controls wh
     "Review action recorded for review-1: human-review-approved. Decision recorded in the control plane; runtime reconcile may still be pending."
   );
   assert.ok(
-    harness.document.getElementById("review-detail").textContent.includes("decisionPhase: recorded")
+    harness.document.getElementById("review-detail").textContent.includes("recorded")
   );
 });
 
 test("visualizer client action failures stay local and show an error flash", async () => {
   const harness = await createClientHarness({
-    backend: createBackend({ failDecision: true }),
-    prompts: ["operator-a", "retry later"],
-    confirms: [true]
+    backend: createBackend({ failDecision: true })
   });
 
   const approveButton = harness.document
@@ -919,11 +996,46 @@ test("visualizer client action failures stay local and show an error flash", asy
 
   await approveButton.click();
   await settle();
+  await harness.document.getElementById("action-review-actor").input("operator-a");
+  await harness.document.getElementById("action-review-comment").input("retry later");
+  await harness.document.getElementById("action-form-submit").click();
+  await settle();
 
   assert.match(harness.document.getElementById("flash").textContent, /500 Internal Server Error/);
   assert.ok(
-    harness.document.getElementById("review-detail").textContent.includes("decisionPhase: none")
+    harness.document.getElementById("review-detail").textContent.includes("pending")
   );
+});
+
+test("visualizer client resumes and stops runs through inline forms", async () => {
+  const harness = await createClientHarness({
+    backend: createBackend({ runStatus: "running" })
+  });
+
+  await harness.document.getElementById("resume-run").click();
+  await settle();
+  await harness.document.getElementById("action-resume-input").input("resume with operator note");
+  await harness.document.getElementById("action-form-submit").click();
+  await settle();
+
+  assert.deepEqual(harness.backend.lastResumeBody, {
+    systemPath: "system.mmd",
+    input: "resume with operator note",
+    dryRun: false
+  });
+  assert.equal(harness.promptCalls.length, 0);
+  assert.equal(harness.confirmCalls.length, 0);
+
+  await harness.document.getElementById("stop-run").click();
+  await settle();
+  await harness.document.getElementById("action-stop-reason").input("operator stop");
+  await harness.document.getElementById("action-form-submit").click();
+  await settle();
+
+  assert.deepEqual(harness.backend.lastStopBody, {
+    reason: "operator stop"
+  });
+  assert.match(harness.document.getElementById("flash").textContent, /Stop request recorded/);
 });
 
 test("visualizer client appends SSE timeline entries and refreshes only targeted panels", async () => {
@@ -1024,9 +1136,7 @@ test("visualizer client applies timeline filters through the events API", async 
 });
 
 test("visualizer client edits the Mermaid workbench, saves, and starts a run", async () => {
-  const harness = await createClientHarness({
-    prompts: ["system.mmd", "ship a smoke test", "yes", "", "", ""]
-  });
+  const harness = await createClientHarness();
 
   const newDraftButton = harness.document.getElementById("workbench-new-draft");
   assert.ok(newDraftButton);
@@ -1066,9 +1176,13 @@ test("visualizer client edits the Mermaid workbench, saves, and starts a run", a
   assert.ok(startRunButton);
   await startRunButton.click();
   await settle();
+  await harness.document.getElementById("action-start-input").input("ship a smoke test");
+  await harness.document.getElementById("action-form-submit").click();
+  await settle();
 
   assert.ok(harness.backend.fetchCalls.some((call) => call.path === "/api/v1/runs/start"));
   assert.equal(harness.backend.lastStartBody.systemPath, "system.mmd");
   assert.equal(harness.backend.lastStartBody.input, "ship a smoke test");
+  assert.equal(harness.promptCalls.length, 0);
   assert.equal(harness.document.getElementById("flash").textContent, "Start completed for run-123 (done).");
 });

@@ -444,6 +444,42 @@ export function renderPageHtml(workdir: string, apiPrefix: string): string {
       display: grid;
       gap: 10px;
     }
+    .form-shell {
+      display: grid;
+      gap: 12px;
+    }
+    .form-grid {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 12px;
+    }
+    .field {
+      display: grid;
+      gap: 6px;
+      min-width: 0;
+    }
+    .field span {
+      color: var(--muted);
+      font-size: 12px;
+    }
+    .field textarea,
+    .field input,
+    .field select {
+      width: 100%;
+      padding: 12px 14px;
+      border: 1px solid var(--border);
+      border-radius: 14px;
+      background: rgba(255, 255, 255, 0.03);
+      color: var(--text);
+      outline: none;
+    }
+    .field textarea {
+      min-height: 120px;
+      resize: vertical;
+    }
+    .field.full {
+      grid-column: 1 / -1;
+    }
     .timeline {
       display: grid;
       gap: 10px;
@@ -540,6 +576,9 @@ export function renderPageHtml(workdir: string, apiPrefix: string): string {
       .row {
         grid-template-columns: 1fr;
       }
+      .form-grid {
+        grid-template-columns: 1fr;
+      }
       .preview,
       .editor {
         min-height: 280px;
@@ -613,6 +652,12 @@ export function renderPageHtml(workdir: string, apiPrefix: string): string {
       </section>
       <section class="grid">
         <article class="card span-12">
+          <header><h3>Action Form</h3></header>
+          <div class="body">
+            <div id="action-form" class="form-shell"><div class="hint">Select start, resume, stop, or review actions to edit structured inputs inline.</div></div>
+          </div>
+        </article>
+        <article class="card span-12">
           <header>
             <div class="card-header">
               <div class="header-copy">
@@ -635,7 +680,7 @@ export function renderPageHtml(workdir: string, apiPrefix: string): string {
         <article class="card span-12">
           <header><h3>Project Overview</h3></header>
           <div class="body">
-            <pre id="project-summary">Loading project...</pre>
+            <div id="project-summary" class="structure-list">Loading project...</div>
           </div>
         </article>
         <article class="card span-12">
@@ -674,7 +719,7 @@ export function renderPageHtml(workdir: string, apiPrefix: string): string {
         <article class="card span-4">
           <header><h3>Graph View</h3></header>
           <div class="body">
-            <div id="graph-view" class="timeline"><div class="hint">No run selected.</div></div>
+            <div id="graph-view" class="structure-list"><div class="hint">No run selected.</div></div>
             <pre id="state">No run selected.</pre>
           </div>
         </article>
@@ -683,7 +728,7 @@ export function renderPageHtml(workdir: string, apiPrefix: string): string {
           <div class="body">
             <div id="reviews" class="timeline"><div class="hint">No run selected.</div></div>
             <div id="review-actions" class="actions"></div>
-            <pre id="review-detail">No review selected.</pre>
+            <div id="review-detail" class="structure-list">No review selected.</div>
           </div>
         </article>
         <article class="card span-6">
@@ -699,18 +744,23 @@ export function renderPageHtml(workdir: string, apiPrefix: string): string {
         </article>
         <article class="card span-12">
           <header>
-            <div class="row">
-              <h3>Logs</h3>
-              <select id="log-role" class="select">
+            <div class="toolbar-row">
+              <div class="toolbar-group">
+                <h3>Logs</h3>
+                <div id="logs-controls" class="actions"></div>
+              </div>
+              <div class="toolbar-group">
+                <select id="log-role" class="select">
                 <option value="">Latest role</option>
-              </select>
-              <input id="log-tail" class="select" type="number" min="1" placeholder="tail" />
-              <input id="log-since" class="select" type="datetime-local" />
+                </select>
+                <input id="log-tail" class="select" type="number" min="1" placeholder="tail" />
+                <input id="log-since" class="select" type="datetime-local" />
+              </div>
             </div>
           </header>
           <div class="body">
             <div id="logs-filters" class="hint"></div>
-            <pre id="logs">No run selected.</pre>
+            <div id="logs" class="structure-list">No run selected.</div>
           </div>
         </article>
         <article class="card span-12">

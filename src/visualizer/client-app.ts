@@ -1,3 +1,13 @@
+import {
+  bindingTone,
+  renderLogsPanel,
+  renderProjectSummaryPanel,
+  renderReviewDetailPanel,
+  renderRunTopologySvg,
+  renderWorkbenchTopologySvg,
+  statusTone
+} from "./client-renderers.js";
+
 type RouteState = {
   view: string;
   runId: string;
@@ -120,6 +130,13 @@ export function buildClientAppScript(apiPrefix: string): string {
     const appendStreamEntry = ${appendStreamEntry.toString()};
     const getStreamRefreshPlan = ${getStreamRefreshPlan.toString()};
     const formatReviewStatusLabel = ${formatReviewStatusLabel.toString()};
+    const statusTone = ${statusTone.toString()};
+    const bindingTone = ${bindingTone.toString()};
+    const renderProjectSummaryPanel = ${renderProjectSummaryPanel.toString()};
+    const renderReviewDetailPanel = ${renderReviewDetailPanel.toString()};
+    const renderLogsPanel = ${renderLogsPanel.toString()};
+    const renderRunTopologySvg = ${renderRunTopologySvg.toString()};
+    const renderWorkbenchTopologySvg = ${renderWorkbenchTopologySvg.toString()};
     const state = {
       project: null,
       workbench: null,
@@ -157,10 +174,13 @@ export function buildClientAppScript(apiPrefix: string): string {
       resumeDiagnosticsStale: false,
       engineLogs: [],
       roleLogs: [],
+      logsLoaded: false,
+      logsStale: false,
       stream: null,
       listTimer: null,
       flash: null,
       actionBusy: "",
+      actionForm: null,
       streamRefreshPlan: {
         detailGraph: false,
         reviews: false,
@@ -176,6 +196,7 @@ export function buildClientAppScript(apiPrefix: string): string {
     const flashEl = document.getElementById("flash");
     const selectedTitleEl = document.getElementById("selected-title");
     const selectedSubtitleEl = document.getElementById("selected-subtitle");
+    const actionFormEl = document.getElementById("action-form");
     const workdirEl = document.getElementById("workdir");
     const projectSummaryEl = document.getElementById("project-summary");
     const workbenchMetaEl = document.getElementById("workbench-meta");
@@ -200,6 +221,7 @@ export function buildClientAppScript(apiPrefix: string): string {
     const reviewDetailEl = document.getElementById("review-detail");
     const resumeEl = document.getElementById("resume-diagnostics");
     const resumeControlsEl = document.getElementById("resume-controls");
+    const logsControlsEl = document.getElementById("logs-controls");
     const logsFiltersEl = document.getElementById("logs-filters");
     const logsEl = document.getElementById("logs");
     const detailEl = document.getElementById("detail");
@@ -457,6 +479,8 @@ export function buildClientAppScript(apiPrefix: string): string {
 
     function setActionBusy(actionId) {
       state.actionBusy = actionId;
+      renderActionForm();
+      renderLogs();
       renderActionState();
     }
 
@@ -466,6 +490,17 @@ export function buildClientAppScript(apiPrefix: string): string {
         return false;
       }
       return !["done", "failed", "stopped"].includes(status);
+    }
+
+    function isRunActiveStatus(status) {
+      return status === "running" || status === "stopping";
+    }
+
+    function shouldPollRunsList() {
+      if (document.visibilityState === "hidden" || state.actionBusy || !state.selectedRunId) {
+        return false;
+      }
+      return isRunActiveStatus(state.detail?.header?.status || "");
     }
 
     function renderActionState() {
@@ -517,65 +552,7 @@ export function buildClientAppScript(apiPrefix: string): string {
     }
 
     function renderWorkbenchPreviewSvg(structure) {
-      if (!structure || !Array.isArray(structure.roles) || !structure.roles.length) {
-        return '<div class="hint">Rendered view is available after Mermaid validation succeeds.</div>';
-      }
-      const columns = Math.min(3, Math.max(1, Math.ceil(Math.sqrt(structure.roles.length))));
-      const nodeWidth = 180;
-      const nodeHeight = 76;
-      const gapX = 64;
-      const gapY = 96;
-      const padding = 36;
-      const positions = {};
-      const nodes = structure.roles.map((role, index) => {
-        const column = index % columns;
-        const row = Math.floor(index / columns);
-        const x = padding + (column * (nodeWidth + gapX));
-        const y = padding + (row * (nodeHeight + gapY));
-        positions[role.roleId] = { x, y };
-        const fill =
-          role.bindingKind === "model"
-            ? "rgba(56, 189, 248, 0.14)"
-            : role.bindingKind === "profile"
-              ? "rgba(52, 211, 153, 0.14)"
-              : "rgba(148, 163, 184, 0.1)";
-        return ''
-          + '<g>'
-          + '<rect x="' + x + '" y="' + y + '" rx="18" ry="18" width="' + nodeWidth + '" height="' + nodeHeight + '" fill="' + fill + '" stroke="rgba(148,163,184,0.28)" />'
-          + '<text x="' + (x + 18) + '" y="' + (y + 30) + '" fill="#e5eefb" font-size="16" font-family="IBM Plex Sans, sans-serif">' + escapeText(role.roleId) + '</text>'
-          + '<text x="' + (x + 18) + '" y="' + (y + 54) + '" fill="#8fa1c3" font-size="12" font-family="IBM Plex Sans, sans-serif">'
-          + escapeText(role.bindingKind + (role.reviewMode ? " · review " + role.reviewMode : role.joinMode ? " · join " + role.joinMode : ""))
-          + '</text>'
-          + '</g>';
-      });
-      const edges = (structure.flows || []).map((flow) => {
-        const from = positions[flow.fromRoleId];
-        const to = positions[flow.toRoleId];
-        if (!from || !to) {
-          return "";
-        }
-        const x1 = from.x + (nodeWidth / 2);
-        const y1 = from.y + nodeHeight;
-        const x2 = to.x + (nodeWidth / 2);
-        const y2 = to.y;
-        const midX = (x1 + x2) / 2;
-        const midY = (y1 + y2) / 2;
-        return ''
-          + '<g>'
-          + '<line x1="' + x1 + '" y1="' + y1 + '" x2="' + x2 + '" y2="' + y2 + '" stroke="rgba(148,163,184,0.42)" stroke-width="2" marker-end="url(#arrow)" />'
-          + '<rect x="' + (midX - 48) + '" y="' + (midY - 12) + '" rx="10" ry="10" width="96" height="24" fill="rgba(8,13,26,0.92)" stroke="rgba(148,163,184,0.18)" />'
-          + '<text x="' + midX + '" y="' + (midY + 4) + '" text-anchor="middle" fill="#9be7ff" font-size="11" font-family="IBM Plex Mono, monospace">' + escapeText(flow.eventType) + '</text>'
-          + '</g>';
-      });
-      const rows = Math.ceil(structure.roles.length / columns);
-      const width = padding * 2 + (columns * nodeWidth) + ((columns - 1) * gapX);
-      const height = padding * 2 + (rows * nodeHeight) + (Math.max(0, rows - 1) * gapY);
-      return ''
-        + '<svg viewBox="0 0 ' + width + ' ' + height + '" role="img" aria-label="Mermaid workbench render">'
-        + '<defs><marker id="arrow" viewBox="0 0 10 10" refX="7" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z" fill="rgba(148,163,184,0.52)"></path></marker></defs>'
-        + edges.join("")
-        + nodes.join("")
-        + '</svg>';
+      return renderWorkbenchTopologySvg(structure);
     }
 
     function renderWorkbenchStructure(structure) {
@@ -744,6 +721,103 @@ export function buildClientAppScript(apiPrefix: string): string {
       }
     }
 
+    function closeActionForm() {
+      state.actionForm = null;
+      renderActionForm();
+    }
+
+    function openActionForm(kind, fields) {
+      state.actionForm = {
+        kind,
+        fields: Object.assign({}, fields || {})
+      };
+      renderActionForm();
+    }
+
+    function readActionFieldValue(fieldId) {
+      const element = document.getElementById(fieldId);
+      if (!element) {
+        return "";
+      }
+      return typeof element.value === "string" ? element.value.trim() : "";
+    }
+
+    function renderActionForm() {
+      if (!actionFormEl) {
+        return;
+      }
+      const form = state.actionForm;
+      if (!form) {
+        actionFormEl.innerHTML = '<div class="hint">Select start, resume, stop, or review actions to edit structured inputs inline.</div>';
+        return;
+      }
+      const disabled = state.actionBusy ? " disabled" : "";
+      if (form.kind === "start") {
+        actionFormEl.innerHTML = [
+          '<div class="event"><div class="event-top"><span>start run</span><span>from workbench</span></div><strong>Prepare a new run request</strong><div class="hint">Use the validated Mermaid path plus minimal runtime overrides.</div></div>',
+          '<div class="form-grid">',
+          '<label class="field"><span>System path</span><input id="action-start-system-path" value="' + escapeText(form.fields.systemPath || "") + '"' + disabled + ' /></label>',
+          '<label class="field"><span>Dry run</span><select id="action-start-dry-run"' + disabled + '><option value="true"' + (form.fields.dryRun ? " selected" : "") + '>yes</option><option value="false"' + (!form.fields.dryRun ? " selected" : "") + '>no</option></select></label>',
+          '<label class="field full"><span>Run input</span><textarea id="action-start-input"' + disabled + '>' + escapeText(form.fields.input || "") + '</textarea></label>',
+          '<label class="field"><span>Runtime config path</span><input id="action-start-runtime-path" value="' + escapeText(form.fields.runtimePath || "") + '"' + disabled + ' /></label>',
+          '<label class="field"><span>User profile path</span><input id="action-start-user-profile-path" value="' + escapeText(form.fields.userProfilePath || "") + '"' + disabled + ' /></label>',
+          '<label class="field full"><span>Laws path</span><input id="action-start-laws-path" value="' + escapeText(form.fields.lawsPath || "") + '"' + disabled + ' /></label>',
+          '</div>',
+          '<div class="actions"><button id="action-form-cancel" class="button subtle"' + disabled + '>Cancel</button><button id="action-form-submit" class="button primary"' + disabled + '>Start run</button></div>'
+        ].join("");
+      } else if (form.kind === "resume") {
+        actionFormEl.innerHTML = [
+          '<div class="event"><div class="event-top"><span>resume run</span><span>' + escapeText(state.selectedRunId || "n/a") + '</span></div><strong>Prepare a resume request</strong><div class="hint">All overrides are optional except the action itself.</div></div>',
+          '<div class="form-grid">',
+          '<label class="field"><span>System override</span><input id="action-resume-system-path" value="' + escapeText(form.fields.systemPath || "") + '"' + disabled + ' /></label>',
+          '<label class="field"><span>Dry run</span><select id="action-resume-dry-run"' + disabled + '><option value="false"' + (!form.fields.dryRun ? " selected" : "") + '>no</option><option value="true"' + (form.fields.dryRun ? " selected" : "") + '>yes</option></select></label>',
+          '<label class="field full"><span>Input override</span><textarea id="action-resume-input"' + disabled + '>' + escapeText(form.fields.input || "") + '</textarea></label>',
+          '<label class="field"><span>Runtime config path</span><input id="action-resume-runtime-path" value="' + escapeText(form.fields.runtimePath || "") + '"' + disabled + ' /></label>',
+          '<label class="field"><span>User profile path</span><input id="action-resume-user-profile-path" value="' + escapeText(form.fields.userProfilePath || "") + '"' + disabled + ' /></label>',
+          '<label class="field full"><span>Laws path</span><input id="action-resume-laws-path" value="' + escapeText(form.fields.lawsPath || "") + '"' + disabled + ' /></label>',
+          '</div>',
+          '<div class="actions"><button id="action-form-cancel" class="button subtle"' + disabled + '>Cancel</button><button id="action-form-submit" class="button primary"' + disabled + '>Resume run</button></div>'
+        ].join("");
+      } else if (form.kind === "stop") {
+        actionFormEl.innerHTML = [
+          '<div class="event"><div class="event-top"><span>stop request</span><span>' + escapeText(state.selectedRunId || "n/a") + '</span></div><strong>Record a structured stop request</strong><div class="hint">The runtime will reconcile the request asynchronously when applicable.</div></div>',
+          '<label class="field full"><span>Reason</span><textarea id="action-stop-reason"' + disabled + '>' + escapeText(form.fields.reason || "") + '</textarea></label>',
+          '<div class="actions"><button id="action-form-cancel" class="button subtle"' + disabled + '>Cancel</button><button id="action-form-submit" class="button warn"' + disabled + '>Record stop request</button></div>'
+        ].join("");
+      } else if (form.kind === "review") {
+        actionFormEl.innerHTML = [
+          '<div class="event"><div class="event-top"><span>review decision</span><span>' + escapeText(form.fields.reviewId || state.selectedReviewId || "n/a") + '</span></div><strong>' + escapeText(form.fields.decision || "decision") + '</strong><div class="hint">Capture operator identity, rationale, and scope before writing a durable review action.</div></div>',
+          '<div class="form-grid">',
+          '<label class="field"><span>Actor</span><input id="action-review-actor" value="' + escapeText(form.fields.actor || "") + '"' + disabled + ' /></label>',
+          '<label class="field"><span>Decision</span><input id="action-review-decision" value="' + escapeText(form.fields.decision || "") + '" disabled /></label>',
+          '<label class="field full"><span>Comment</span><textarea id="action-review-comment"' + disabled + '>' + escapeText(form.fields.comment || "") + '</textarea></label>',
+          (form.fields.decision === "terminate"
+            ? '<label class="field"><span>Terminate scope</span><select id="action-review-scope"' + disabled + '><option value="branch"' + ((form.fields.scope || "branch") === "branch" ? " selected" : "") + '>branch</option><option value="run"' + (form.fields.scope === "run" ? " selected" : "") + '>run</option></select></label>'
+            : ""),
+          '</div>',
+          '<div class="actions"><button id="action-form-cancel" class="button subtle"' + disabled + '>Cancel</button><button id="action-form-submit" class="button primary"' + disabled + '>Record review decision</button></div>'
+        ].join("");
+      } else {
+        actionFormEl.innerHTML = '<div class="hint">Unsupported action.</div>';
+      }
+      const cancelButton = document.getElementById("action-form-cancel");
+      if (cancelButton) {
+        cancelButton.addEventListener("click", () => {
+          if (!state.actionBusy) {
+            closeActionForm();
+          }
+        });
+      }
+      const submitButton = document.getElementById("action-form-submit");
+      if (submitButton) {
+        submitButton.addEventListener("click", async () => {
+          if (!state.actionBusy) {
+            await submitCurrentActionForm();
+          }
+        });
+      }
+    }
+
     function renderProject() {
       if (!state.project) {
         projectSummaryEl.textContent = "Project data unavailable.";
@@ -754,31 +828,13 @@ export function buildClientAppScript(apiPrefix: string): string {
       }
       const summary = state.project.summary?.project ?? {};
       const roles = state.project.roles?.roles ?? [];
-      projectSummaryEl.textContent = [
-        "projectName: " + (summary.projectName ?? "n/a"),
-        "projectId: " + (summary.projectId ?? "n/a"),
-        "systemId: " + (summary.systemId ?? "n/a"),
-        "systemVersion: " + (summary.systemVersion ?? "n/a"),
-        "entryRoleId: " + (summary.entryRoleId ?? "n/a"),
-        "roleCount: " + (summary.roleCount ?? 0),
-        "flowCount: " + (summary.flowCount ?? 0),
-        "runsDir: " + (summary.runsDir ?? "n/a"),
-        "reviewedRoleIds: " + ((summary.reviewedRoleIds ?? []).join(", ") || "none"),
-        "joinRoleIds: " + ((summary.joinRoleIds ?? []).join(", ") || "none"),
-        "loopRoleIds: " + ((summary.loopRoleIds ?? []).join(", ") || "none"),
-        "contextMappedRoleIds: " + ((summary.contextMappedRoleIds ?? []).join(", ") || "none"),
-        "",
-        "roles:",
-        ...roles.map((role) => "- " + role.roleId + " [binding=" + (role.binding?.bindingKind || "n/a") + " review=" + (role.review ? "yes" : "no") + " join=" + (role.join ? "yes" : "no") + " loop=" + (role.loop ? "yes" : "no") + "]"),
-        "",
-        "modelSelectionWarnings:",
-        ...((state.project.config?.modelSelectionWarnings ?? []).length
-          ? state.project.config.modelSelectionWarnings.map((warning) => "- " + warning)
-          : ["- none"]),
-        "",
-        "systemPath: " + (state.workbenchSavedPath || "system.mmd"),
-        "currentWorkbenchValidation: " + (state.workbench?.validation?.ok ? "ok" : "pending or failed")
-      ].join("\\n");
+      projectSummaryEl.innerHTML = renderProjectSummaryPanel({
+        summary,
+        roles,
+        warnings: state.project.config?.modelSelectionWarnings ?? [],
+        workbenchSavedPath: state.workbenchSavedPath || "system.mmd",
+        validationOk: Boolean(state.workbench?.validation?.ok)
+      });
     }
 
     function renderRuns() {
@@ -896,43 +952,8 @@ export function buildClientAppScript(apiPrefix: string): string {
       const edges = graph.edges || [];
       graphViewEl.innerHTML = [
         '<div class="event"><strong>' + escapeText(graph.systemId || "unknown") + '</strong><div class="hint">entry ' + escapeText(graph.entryRoleId || "n/a") + " · roles " + escapeText(graph.roleCount || 0) + " · flows " + escapeText(graph.flowCount || 0) + "</div></div>",
-        '<div class="event"><div class="event-top"><span>roles</span><span>' + escapeText(nodes.length) + '</span></div><strong>Runtime node states</strong><div class="hint">Shows role status, branch counts, join gaps, and last observed selection/error signals.</div></div>',
-        ...nodes.map((node) =>
-          '<div class="event">' +
-            '<div class="event-top">' +
-              '<span><code>' + escapeText(node.roleId) + "</code> · " + escapeText(node.nodeType) + "</span>" +
-              '<span class="status ' + statusClass(node.status) + '">' + escapeText(node.status) + "</span>" +
-            "</div>" +
-            "<strong>binding=" + escapeText(node.bindingKind) + " · active=" + escapeText(node.activeBranchCount) + " · completed=" + escapeText(node.completedBranchCount || 0) + " · pendingReview=" + escapeText(node.pendingReviewCount || 0) + " · waitingReview=" + escapeText(node.waitingReviewCount) + " · loop=" + escapeText(node.loopIteration) + "</strong>" +
-            '<div class="hint">' + escapeText(node.lastSelectedEvent ? "last event " + node.lastSelectedEvent : "no selected event")
-              + (node.lastErrorCode ? " · last error " + escapeText(node.lastErrorCode) : " · no error")
-              + (node.joinMode ? " · join " + escapeText(node.joinMode) : "")
-              + (node.routingMode ? " · route " + escapeText(node.routingMode) : "")
-              + (node.missingSources?.length ? " · missing join sources " + escapeText(node.missingSources.join(", ")) : "")
-              + (node.contextFields?.length ? " · context " + escapeText(node.contextFields.join(", ")) : "")
-              + "</div>" +
-          "</div>"
-        ),
-        '<div class="event"><div class="event-top"><span>flows</span><span>' + escapeText(edges.length) + '</span></div><strong>Complete topology</strong><div class="hint">Recent and error flows are annotated instead of hiding the rest of the graph.</div></div>',
-        ...(edges.length > 0
-          ? edges.map((edge) =>
-              '<div class="event">' +
-                '<div class="event-top">' +
-                  '<span><code>' + escapeText(edge.sourceRoleId) + "</code> -> <code>" + escapeText(edge.targetRoleId) + "</code></span>" +
-                  "<span>" + escapeText(
-                    edge.recentlyActivated && edge.isErrorFlow
-                      ? "recent · error-flow"
-                      : edge.recentlyActivated
-                        ? "recent"
-                        : edge.isErrorFlow
-                          ? "error-flow"
-                          : "flow"
-                  ) + "</span>" +
-                "</div>" +
-                "<strong>" + escapeText(edge.event) + "</strong>" +
-              "</div>"
-            )
-          : ['<div class="hint">No flows declared for this graph snapshot.</div>'])
+        renderRunTopologySvg(graph),
+        '<div class="event"><div class="event-top"><span>runtime summary</span><span>' + escapeText(nodes.length) + " nodes · " + escapeText(edges.length) + '</span></div><strong>Topology layout with runtime state overlay</strong><div class="hint">Recent paths and error flows stay highlighted without hiding the rest of the graph.</div></div>'
       ].join("");
       stateEl.textContent = formatJson(state.detail?.state ?? null);
     }
@@ -1000,7 +1021,7 @@ export function buildClientAppScript(apiPrefix: string): string {
       if (!state.reviews?.reviews?.length) {
         reviewsEl.innerHTML = '<div class="hint">No reviews for this run.</div>';
         reviewActionsEl.innerHTML = "";
-        reviewDetailEl.textContent = "No review selected.";
+        reviewDetailEl.innerHTML = '<div class="hint">No review selected.</div>';
         renderActionState();
         return;
       }
@@ -1025,7 +1046,7 @@ export function buildClientAppScript(apiPrefix: string): string {
         button.addEventListener("click", () => selectReview(state.selectedRunId, button.getAttribute("data-review-id")));
       }
       const detail = state.reviewDetail;
-      reviewDetailEl.textContent = formatReviewDetail(detail);
+      reviewDetailEl.innerHTML = renderReviewDetailPanel(detail);
       const actionable = detail && (detail.currentStatus === "pending" || detail.currentStatus === "paused");
       reviewActionsEl.innerHTML = actionable
         ? [
@@ -1037,7 +1058,13 @@ export function buildClientAppScript(apiPrefix: string): string {
         : "";
       for (const button of reviewActionsEl.querySelectorAll("[data-review-action]")) {
         button.addEventListener("click", () =>
-          submitReviewDecision(button.getAttribute("data-review-action"), button.getAttribute("data-review-scope"))
+          openActionForm("review", {
+            reviewId: state.selectedReviewId,
+            decision: button.getAttribute("data-review-action"),
+            scope: button.getAttribute("data-review-scope") || detail.scope || "branch",
+            actor: detail.actor || "visualizer",
+            comment: detail.comment || \`recorded via visualizer (\${button.getAttribute("data-review-action")})\`
+          })
         );
       }
       renderActionState();
@@ -1096,9 +1123,24 @@ export function buildClientAppScript(apiPrefix: string): string {
     }
 
     function renderLogs() {
-      logsFiltersEl.textContent = "role=" + (state.selectedLogRoleId || "latest") + " tail=" + (state.logTail || "all") + " since=" + (state.logSince || "n/a");
-      logsEl.textContent = formatJson({
-        selectedRoleId: state.selectedLogRoleId || null,
+      if (!state.selectedRunId) {
+        logsControlsEl.innerHTML = "";
+        logsFiltersEl.textContent = "No run selected.";
+        logsEl.innerHTML = '<div class="hint">No run selected.</div>';
+        return;
+      }
+      logsControlsEl.innerHTML = '<button id="load-logs" class="button subtle"' + (state.actionBusy ? " disabled" : "") + '>' + (state.logsLoaded ? "Refresh logs" : "Load logs") + '</button>';
+      const loadLogsButton = document.getElementById("load-logs");
+      if (loadLogsButton) {
+        loadLogsButton.addEventListener("click", async () => {
+          await loadSelectedLogs(state.selectedRunId, { force: true });
+        });
+      }
+      logsFiltersEl.textContent = "role=" + (state.selectedLogRoleId || "latest") + " tail=" + (state.logTail || "all") + " since=" + (state.logSince || "n/a") + (state.logsStale ? " · stale" : "");
+      logsEl.innerHTML = renderLogsPanel({
+        loaded: state.logsLoaded,
+        stale: state.logsStale,
+        selectedRoleId: state.selectedLogRoleId || state.detail?.header?.lastExecutedRoleId || "",
         engine: state.engineLogs,
         role: state.roleLogs
       });
@@ -1129,6 +1171,7 @@ export function buildClientAppScript(apiPrefix: string): string {
           : \`\${detail.runDir} · \${simulation}\`;
       }
       renderWorkbench();
+      renderActionForm();
       renderStats(header, graphPayload);
       renderTimeline(state.events);
       renderGraph();
@@ -1221,6 +1264,9 @@ export function buildClientAppScript(apiPrefix: string): string {
     async function loadWorkbench() {
       const payload = await requestJson(\`\${API_PREFIX}/project/system/workbench\`);
       state.workbench = payload;
+      if (workdirEl && payload.workdir) {
+        workdirEl.textContent = payload.workdir;
+      }
       state.workbenchDiskSource = payload.systemSource || "";
       state.workbenchSavedPath = relativeToWorkdir(payload.systemPath || "system.mmd") || "system.mmd";
       const draft = loadDraftSource();
@@ -1264,48 +1310,21 @@ export function buildClientAppScript(apiPrefix: string): string {
       });
     }
 
-    function promptBoolean(message, initialValue) {
-      const choice = window.prompt(message + " (yes/no)", initialValue ? "yes" : "no");
-      if (choice === null) {
-        return null;
-      }
-      return !/^n(o)?$/i.test(choice.trim());
-    }
-
-    async function startRunFromWorkbench() {
-      const systemPath = promptText("System file for start", state.workbenchSavedPath || "system.mmd");
-      if (systemPath === null) {
-        return;
-      }
-      const input = promptText("Run input / prompt", "");
-      if (input === null || !input) {
-        return;
-      }
-      const dryRun = promptBoolean("Dry-run for this start request?", true);
-      if (dryRun === null) {
-        return;
-      }
-      const runtimePath = promptText("Optional runtime config path", "");
-      if (runtimePath === null) {
-        return;
-      }
-      const userProfilePath = promptText("Optional user-profile path", "");
-      if (userProfilePath === null) {
-        return;
-      }
-      const lawsPath = promptText("Optional laws path", "");
-      if (lawsPath === null) {
+    async function startRunFromWorkbench(args) {
+      if (!args.input) {
+        setFlash("error", "Run input is required.");
         return;
       }
       await runAction("run:start", async () => {
         const payload = await requestAction(\`\${API_PREFIX}/runs/start\`, {
-          systemPath,
-          input,
-          dryRun,
-          runtimePath: runtimePath || undefined,
-          userProfilePath: userProfilePath || undefined,
-          lawsPath: lawsPath || undefined
+          systemPath: args.systemPath,
+          input: args.input,
+          dryRun: args.dryRun,
+          runtimePath: args.runtimePath || undefined,
+          userProfilePath: args.userProfilePath || undefined,
+          lawsPath: args.lawsPath || undefined
         });
+        closeActionForm();
         setFlash("success", "Start completed for " + payload.runId + " (" + payload.status + ").");
         await loadProject();
         await loadRuns();
@@ -1315,51 +1334,81 @@ export function buildClientAppScript(apiPrefix: string): string {
       });
     }
 
-    async function resumeSelectedRun() {
+    async function resumeSelectedRun(args) {
       if (!state.selectedRunId) {
-        return;
-      }
-      const systemPath = promptText("Optional system override for resume", state.workbenchSavedPath || "");
-      if (systemPath === null) {
-        return;
-      }
-      const input = promptText("Optional input override for resume", "");
-      if (input === null) {
-        return;
-      }
-      const dryRun = promptBoolean("Dry-run for this resume request?", false);
-      if (dryRun === null) {
-        return;
-      }
-      const runtimePath = promptText("Optional runtime config path", "");
-      if (runtimePath === null) {
-        return;
-      }
-      const userProfilePath = promptText("Optional user-profile path", "");
-      if (userProfilePath === null) {
-        return;
-      }
-      const lawsPath = promptText("Optional laws path", "");
-      if (lawsPath === null) {
         return;
       }
       await runAction("run:resume", async () => {
         const payload = await requestAction(
           \`\${API_PREFIX}/runs/\${encodeURIComponent(state.selectedRunId)}/resume\`,
           {
-            systemPath: systemPath || undefined,
-            input: input || undefined,
-            dryRun,
-            runtimePath: runtimePath || undefined,
-            userProfilePath: userProfilePath || undefined,
-            lawsPath: lawsPath || undefined
+            systemPath: args.systemPath || undefined,
+            input: args.input || undefined,
+            dryRun: args.dryRun,
+            runtimePath: args.runtimePath || undefined,
+            userProfilePath: args.userProfilePath || undefined,
+            lawsPath: args.lawsPath || undefined
           }
         );
+        closeActionForm();
         setFlash("success", "Resume finished for " + payload.runId + " (" + payload.status + ").");
         await loadProject();
         await loadRuns();
         await loadSelectedRunBoot(payload.runId, { keepStream: false });
       });
+    }
+
+    async function submitCurrentActionForm() {
+      const form = state.actionForm;
+      if (!form) {
+        return;
+      }
+      if (form.kind === "start") {
+        const payload = {
+          systemPath: readActionFieldValue("action-start-system-path") || state.workbenchSavedPath || "system.mmd",
+          input: readActionFieldValue("action-start-input"),
+          dryRun: readActionFieldValue("action-start-dry-run") !== "false",
+          runtimePath: readActionFieldValue("action-start-runtime-path"),
+          userProfilePath: readActionFieldValue("action-start-user-profile-path"),
+          lawsPath: readActionFieldValue("action-start-laws-path")
+        };
+        state.actionForm.fields = Object.assign({}, form.fields, payload);
+        await startRunFromWorkbench(payload);
+        return;
+      }
+      if (form.kind === "resume") {
+        const payload = {
+          systemPath: readActionFieldValue("action-resume-system-path"),
+          input: readActionFieldValue("action-resume-input"),
+          dryRun: readActionFieldValue("action-resume-dry-run") === "true",
+          runtimePath: readActionFieldValue("action-resume-runtime-path"),
+          userProfilePath: readActionFieldValue("action-resume-user-profile-path"),
+          lawsPath: readActionFieldValue("action-resume-laws-path")
+        };
+        state.actionForm.fields = Object.assign({}, form.fields, payload);
+        await resumeSelectedRun(payload);
+        return;
+      }
+      if (form.kind === "stop") {
+        const payload = {
+          reason: readActionFieldValue("action-stop-reason") || "requested via visualizer"
+        };
+        state.actionForm.fields = Object.assign({}, form.fields, payload);
+        await submitStopRequest(payload);
+        return;
+      }
+      if (form.kind === "review") {
+        const payload = {
+          decision: form.fields.decision,
+          scope: form.fields.decision === "terminate"
+            ? readActionFieldValue("action-review-scope") || form.fields.scope || "branch"
+            : undefined,
+          actor: readActionFieldValue("action-review-actor") || "visualizer",
+          comment: readActionFieldValue("action-review-comment") || \`recorded via visualizer (\${form.fields.decision})\`
+        };
+        state.actionForm.fields = Object.assign({}, form.fields, payload);
+        await submitReviewDecision(payload);
+      }
     }
 
     async function rebindProject() {
@@ -1417,18 +1466,36 @@ export function buildClientAppScript(apiPrefix: string): string {
     async function loadRoleLogs(runId, roleId) {
       if (!roleId) {
         state.roleLogs = [];
-        renderLogs();
         return;
       }
       const roleLogsPayload = await requestJson(buildLogsQuery(runId, { roleId }));
       state.roleLogs = roleLogsPayload.records || [];
-      renderLogs();
     }
 
     async function loadEngineLogs(runId) {
       const engineLogsPayload = await requestJson(buildLogsQuery(runId, { engine: true }));
       state.engineLogs = engineLogsPayload.records || [];
-      renderLogs();
+    }
+
+    async function loadSelectedLogs(runId, options) {
+      if (!runId) {
+        return;
+      }
+      const load = async () => {
+        const fallbackRoleId = state.detail?.header?.lastExecutedRoleId || state.detail?.header?.finalRoleId || "";
+        await Promise.all([
+          loadEngineLogs(runId),
+          loadRoleLogs(runId, state.selectedLogRoleId || fallbackRoleId)
+        ]);
+        state.logsLoaded = true;
+        state.logsStale = false;
+        renderLogs();
+      };
+      if (options?.internal) {
+        await load();
+        return;
+      }
+      await runAction(options?.force ? "logs:refresh" : "logs:load", load);
     }
 
     async function refreshSelectedReviewDetail(runId, options) {
@@ -1529,6 +1596,10 @@ export function buildClientAppScript(apiPrefix: string): string {
       state.resumeDiagnostics = null;
       state.resumeDiagnosticsLoaded = false;
       state.resumeDiagnosticsStale = false;
+      state.engineLogs = [];
+      state.roleLogs = [];
+      state.logsLoaded = false;
+      state.logsStale = false;
       upsertRunFromHeader(detail.header);
       const fallbackRoleId = detail.header?.lastExecutedRoleId || detail.header?.finalRoleId || "";
       if (!state.selectedReviewId) {
@@ -1537,10 +1608,6 @@ export function buildClientAppScript(apiPrefix: string): string {
       await refreshSelectedReviewDetail(runId, { allowMissing: true });
       populateLogRoleOptions(graphPayload, fallbackRoleId);
       populateTimelineRoleOptions(graphPayload);
-      await Promise.all([
-        loadEngineLogs(runId),
-        loadRoleLogs(runId, state.selectedLogRoleId || fallbackRoleId)
-      ]);
       renderSelectedRun();
       renderRuns();
       writeRouteToLocation();
@@ -1563,6 +1630,7 @@ export function buildClientAppScript(apiPrefix: string): string {
       state.projectHome = false;
       state.selectedRunId = runId;
       state.selectedReviewId = "";
+      closeActionForm();
       setSidebarOpen(false);
       renderRuns();
       await loadSelectedRunBoot(runId, { keepStream: false });
@@ -1583,6 +1651,9 @@ export function buildClientAppScript(apiPrefix: string): string {
       state.events = [];
       state.engineLogs = [];
       state.roleLogs = [];
+      state.logsLoaded = false;
+      state.logsStale = false;
+      closeActionForm();
       syncTimelineFilterInputs();
       renderSelectedRun();
       renderRuns();
@@ -1599,6 +1670,7 @@ export function buildClientAppScript(apiPrefix: string): string {
       }
       state.projectHome = false;
       state.selectedReviewId = reviewId;
+      closeActionForm();
       await refreshSelectedReviewDetail(runId, { allowMissing: false });
       renderSelectedRun();
       writeRouteToLocation();
@@ -1623,44 +1695,25 @@ export function buildClientAppScript(apiPrefix: string): string {
       return value === null ? null : value.trim();
     }
 
-    async function submitReviewDecision(decision, scope) {
+    async function submitReviewDecision(args) {
       if (!state.selectedRunId || !state.selectedReviewId) {
         return;
       }
-      const detail = state.reviewDetail || {};
-      const actor = promptText("Actor", detail.actor || "visualizer");
-      if (actor === null) {
-        return;
-      }
-      const comment = promptText("Comment", detail.comment || \`recorded via visualizer (\${decision})\`);
-      if (comment === null) {
-        return;
-      }
-      let effectiveScope = scope;
-      if (decision === "terminate") {
-        const promptedScope = promptText("Terminate scope (branch|run)", scope || detail.scope || "branch");
-        if (promptedScope === null) {
-          return;
-        }
-        effectiveScope = promptedScope;
-      }
-      if (!window.confirm(\`Record review decision "\${decision}" for \${state.selectedReviewId}?\`)) {
-        return;
-      }
-      await runAction("review:" + decision, async () => {
+      await runAction("review:" + args.decision, async () => {
         const payload = await requestAction(
           \`\${API_PREFIX}/runs/\${encodeURIComponent(state.selectedRunId)}/reviews/\${encodeURIComponent(state.selectedReviewId)}/decide\`,
           {
-            decision,
-            scope: decision === "terminate" ? effectiveScope : undefined,
-            actor,
-            comment
+            decision: args.decision,
+            scope: args.decision === "terminate" ? args.scope : undefined,
+            actor: args.actor,
+            comment: args.comment
           }
         );
         state.resumeDiagnosticsStale = true;
+        closeActionForm();
         setFlash(
           "success",
-          'Review action recorded for ' + state.selectedReviewId + ': ' + (payload.semanticStatus || decision) + '. '
+          'Review action recorded for ' + state.selectedReviewId + ': ' + (payload.semanticStatus || args.decision) + '. '
             + (payload.detail?.note || "")
         );
         await refreshRunDetailAndGraph(state.selectedRunId);
@@ -1668,23 +1721,17 @@ export function buildClientAppScript(apiPrefix: string): string {
       });
     }
 
-    async function submitStopRequest() {
+    async function submitStopRequest(args) {
       if (!state.selectedRunId) {
-        return;
-      }
-      const reason = promptText("Stop reason", "requested via visualizer");
-      if (reason === null) {
-        return;
-      }
-      if (!window.confirm(\`Record a stop request for \${state.selectedRunId}?\`)) {
         return;
       }
       await runAction("stop", async () => {
         const payload = await requestAction(
           \`\${API_PREFIX}/runs/\${encodeURIComponent(state.selectedRunId)}/stop\`,
-          { reason }
+          { reason: args.reason }
         );
         state.resumeDiagnosticsStale = true;
+        closeActionForm();
         const detail = payload.detail || {};
         setFlash(
           "success",
@@ -1720,7 +1767,9 @@ export function buildClientAppScript(apiPrefix: string): string {
       };
       if (plan.markDiagnosticsStale) {
         state.resumeDiagnosticsStale = state.resumeDiagnosticsLoaded || state.resumeDiagnosticsStale;
+        state.logsStale = state.logsLoaded || state.logsStale;
         renderResumeDiagnostics();
+        renderLogs();
         renderDetail();
       }
       if (!plan.detailGraph && !plan.reviews && !plan.reviewDetail) {
@@ -1816,23 +1865,49 @@ export function buildClientAppScript(apiPrefix: string): string {
     });
 
     stopRunButton.addEventListener("click", async () => {
-      await submitStopRequest();
+      if (!state.selectedRunId) {
+        return;
+      }
+      openActionForm("stop", {
+        reason: "requested via visualizer"
+      });
     });
 
     startRunButton.addEventListener("click", async () => {
-      await startRunFromWorkbench();
+      openActionForm("start", {
+        systemPath: state.workbenchSavedPath || "system.mmd",
+        input: "",
+        dryRun: true,
+        runtimePath: "",
+        userProfilePath: "",
+        lawsPath: ""
+      });
     });
 
     resumeRunButton.addEventListener("click", async () => {
-      await resumeSelectedRun();
+      if (!state.selectedRunId) {
+        return;
+      }
+      openActionForm("resume", {
+        systemPath: state.workbenchSavedPath || "",
+        input: "",
+        dryRun: false,
+        runtimePath: "",
+        userProfilePath: "",
+        lawsPath: ""
+      });
     });
 
     refreshButton.addEventListener("click", async () => {
       await runAction("refresh", async () => {
+        const reloadLogs = state.logsLoaded;
         await loadProject();
         await loadRuns();
         if (state.selectedRunId) {
           await loadSelectedRunBoot(state.selectedRunId, { keepStream: false });
+          if (reloadLogs) {
+            await loadSelectedLogs(state.selectedRunId, { force: true, internal: true });
+          }
         } else {
           renderSelectedRun();
         }
@@ -1868,33 +1943,30 @@ export function buildClientAppScript(apiPrefix: string): string {
 
     logRoleEl.addEventListener("change", async (event) => {
       state.selectedLogRoleId = event.target.value || "";
-      if (state.selectedRunId) {
-        await Promise.all([
-          loadEngineLogs(state.selectedRunId),
-          loadRoleLogs(state.selectedRunId, state.selectedLogRoleId || state.detail?.header?.lastExecutedRoleId || "")
-        ]);
-        writeRouteToLocation();
+      if (state.selectedRunId && state.logsLoaded) {
+        await loadSelectedLogs(state.selectedRunId, { force: true });
+      } else {
+        renderLogs();
       }
+      writeRouteToLocation();
     });
 
     logTailEl.addEventListener("change", async (event) => {
       state.logTail = event.target.value || "";
-      if (state.selectedRunId) {
-        await Promise.all([
-          loadEngineLogs(state.selectedRunId),
-          loadRoleLogs(state.selectedRunId, state.selectedLogRoleId || state.detail?.header?.lastExecutedRoleId || "")
-        ]);
+      if (state.selectedRunId && state.logsLoaded) {
+        await loadSelectedLogs(state.selectedRunId, { force: true });
+      } else {
+        renderLogs();
       }
       writeRouteToLocation();
     });
 
     logSinceEl.addEventListener("change", async (event) => {
       state.logSince = event.target.value || "";
-      if (state.selectedRunId) {
-        await Promise.all([
-          loadEngineLogs(state.selectedRunId),
-          loadRoleLogs(state.selectedRunId, state.selectedLogRoleId || state.detail?.header?.lastExecutedRoleId || "")
-        ]);
+      if (state.selectedRunId && state.logsLoaded) {
+        await loadSelectedLogs(state.selectedRunId, { force: true });
+      } else {
+        renderLogs();
       }
       writeRouteToLocation();
     });
@@ -1930,7 +2002,7 @@ export function buildClientAppScript(apiPrefix: string): string {
       });
 
     state.listTimer = setInterval(() => {
-      if (document.visibilityState === "hidden" || state.actionBusy) {
+      if (!shouldPollRunsList()) {
         return;
       }
       loadRuns().catch(() => {
