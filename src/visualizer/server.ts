@@ -53,6 +53,15 @@ import {
 } from "./project-projection.js";
 import { inspectRunGraphVisualization } from "./run-graph-projection.js";
 import {
+  importMermaidToAuthoring,
+  inspectStudioBridgeDraft,
+  loadStudioAuthoringDraft,
+  saveStudioAuthoringDraft,
+  serializeAuthoringToMermaid,
+  type StudioAuthoringDocument
+} from "./studio-authoring.js";
+import { listStudioAuthoringTemplates } from "./studio-templates.js";
+import {
   mapControlActionView,
   mapErrorView,
   mapFailureProjectionView,
@@ -599,6 +608,83 @@ async function handleApiProjectSave(
   jsonResponse(response, 200, mapWorkbenchSaveView(result));
 }
 
+async function handleApiStudioBridgeInspect(
+  workdir: string,
+  request: IncomingMessage,
+  response: ServerResponse
+): Promise<void> {
+  const body = request.method?.toUpperCase() === "POST" ? await readJsonRequest(request) : {};
+  const systemSource = asString(body.systemSource);
+  const systemPath = asString(body.systemPath);
+  jsonResponse(response, 200, await inspectStudioBridgeDraft({ workdir, systemPath, systemSource }));
+}
+
+async function handleApiStudioAuthoringGet(workdir: string, response: ServerResponse): Promise<void> {
+  jsonResponse(response, 200, await loadStudioAuthoringDraft(workdir));
+}
+
+async function handleApiStudioAuthoringSave(
+  workdir: string,
+  request: IncomingMessage,
+  response: ServerResponse
+): Promise<void> {
+  const body = await readJsonRequest(request);
+  const authoring = body.authoring;
+  if (!authoring || typeof authoring !== "object" || Array.isArray(authoring)) {
+    throw new HttpError(400, "AUTHORING_DOCUMENT_REQUIRED", "authoring is required.");
+  }
+  jsonResponse(response, 200, await saveStudioAuthoringDraft({ workdir, authoring }));
+}
+
+async function handleApiStudioAuthoringImportMmd(
+  workdir: string,
+  request: IncomingMessage,
+  response: ServerResponse
+): Promise<void> {
+  const body = await readJsonRequest(request);
+  const systemSource = asString(body.systemSource);
+  if (!systemSource) {
+    throw new HttpError(400, "SYSTEM_SOURCE_REQUIRED", "systemSource is required.");
+  }
+  const systemPath = asString(body.systemPath) ?? resolve(workdir, "system.mmd");
+  const authoring = importMermaidToAuthoring({ workdir, systemPath, systemSource });
+  jsonResponse(response, 200, {
+    workdir,
+    systemPath,
+    authoring
+  });
+}
+
+async function handleApiStudioAuthoringGenerateMmd(
+  workdir: string,
+  request: IncomingMessage,
+  response: ServerResponse
+): Promise<void> {
+  const body = await readJsonRequest(request);
+  const authoring = body.authoring;
+  if (!authoring || typeof authoring !== "object" || Array.isArray(authoring)) {
+    throw new HttpError(400, "AUTHORING_DOCUMENT_REQUIRED", "authoring is required.");
+  }
+  const systemSource = serializeAuthoringToMermaid(authoring as StudioAuthoringDocument);
+  const validation = await validateProjectSystemSource({
+    workdir,
+    systemPath: resolve(workdir, "system.mmd"),
+    systemSource
+  });
+  jsonResponse(response, 200, {
+    workdir,
+    systemPath: resolve(workdir, "system.mmd"),
+    systemSource,
+    validation
+  });
+}
+
+async function handleApiStudioTemplates(response: ServerResponse): Promise<void> {
+  jsonResponse(response, 200, {
+    templates: listStudioAuthoringTemplates()
+  });
+}
+
 async function handleApiProjectLoad(
   state: VisualizationServerState,
   request: IncomingMessage,
@@ -1122,6 +1208,68 @@ async function handleVisualizationRequest(
   }
   if (segments.length === 5 && segments[2] === "project" && segments[3] === "system" && segments[4] === "save-as" && method === "POST") {
     await handleApiProjectSave(state.workdir, request, response, true);
+    return;
+  }
+  if (
+    segments.length === 5 &&
+    segments[2] === "project" &&
+    segments[3] === "studio" &&
+    segments[4] === "bridge" &&
+    (method === "GET" || method === "POST")
+  ) {
+    await handleApiStudioBridgeInspect(state.workdir, request, response);
+    return;
+  }
+  if (
+    segments.length === 5 &&
+    segments[2] === "project" &&
+    segments[3] === "studio" &&
+    segments[4] === "authoring" &&
+    method === "GET"
+  ) {
+    await handleApiStudioAuthoringGet(state.workdir, response);
+    return;
+  }
+  if (
+    segments.length === 5 &&
+    segments[2] === "project" &&
+    segments[3] === "studio" &&
+    segments[4] === "authoring" &&
+    method === "POST"
+  ) {
+    await handleApiStudioAuthoringSave(state.workdir, request, response);
+    return;
+  }
+  if (
+    segments.length === 6 &&
+    segments[2] === "project" &&
+    segments[3] === "studio" &&
+    segments[4] === "authoring" &&
+    segments[5] === "import-mmd" &&
+    method === "POST"
+  ) {
+    await handleApiStudioAuthoringImportMmd(state.workdir, request, response);
+    return;
+  }
+  if (
+    segments.length === 6 &&
+    segments[2] === "project" &&
+    segments[3] === "studio" &&
+    segments[4] === "authoring" &&
+    segments[5] === "generate-mmd" &&
+    method === "POST"
+  ) {
+    await handleApiStudioAuthoringGenerateMmd(state.workdir, request, response);
+    return;
+  }
+  if (
+    segments.length === 5 &&
+    segments[2] === "project" &&
+    segments[3] === "studio" &&
+    segments[4] === "templates" &&
+    method === "GET"
+  ) {
+    await handleApiStudioTemplates(response);
     return;
   }
   if (segments.length === 4 && segments[2] === "project" && segments[3] === "config" && method === "GET") {

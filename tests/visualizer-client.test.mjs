@@ -106,6 +106,15 @@ function matchesSelector(element, selector) {
   if (selector === "[data-console-tab]") {
     return Object.hasOwn(element.attributes, "data-console-tab");
   }
+  if (selector === "[data-studio-role-id]") {
+    return Object.hasOwn(element.attributes, "data-studio-role-id");
+  }
+  if (selector === "[data-studio-flow-key]") {
+    return Object.hasOwn(element.attributes, "data-studio-flow-key");
+  }
+  if (selector === "[data-workbench-view]") {
+    return Object.hasOwn(element.attributes, "data-workbench-view");
+  }
   return false;
 }
 
@@ -645,8 +654,34 @@ function createBackend(options = {}) {
       }
       if ((pathname === "/api/v1/project/system/save" || pathname === "/api/v1/project/system/save-as") && method === "POST") {
         const body = JSON.parse(request.body ?? "{}");
+        const valid = !String(body.systemSource || "").includes("INVALID");
         return createResponse({
           savedPath: body.saveAsPath ? `/tmp/demo/${body.saveAsPath}` : "/tmp/demo/system.mmd",
+          validation: {
+            ok: valid,
+            diagnostics: valid
+              ? []
+              : [{ code: "MERMAID_PARSE_FAILED", message: "bad line", severity: "error", stage: "parse", line: 2 }],
+            structure: valid ? {
+              systemId: "viz.review.demo",
+              systemVersion: "1.0.0",
+              entryRoleId: "demo-analyst",
+              roleCount: 1,
+              flowCount: 1,
+              roles: [{ roleId: "demo-analyst", bindingKind: "model", reviewMode: "required" }],
+              flows: [{ fromRoleId: "demo-analyst", toRoleId: "output", eventType: "DONE" }]
+            } : null
+          },
+          followUpActions: [{ action: "refresh-project-summary", label: "Reload project and graph views to reflect the saved system." }]
+        });
+      }
+      if (pathname === "/api/v1/project/studio/bridge" && method === "POST") {
+        const body = JSON.parse(request.body ?? "{}");
+        this.lastStudioBridgeBody = body;
+        return createResponse({
+          workdir: "/tmp/demo",
+          systemPath: "/tmp/demo/system.mmd",
+          systemSource: body.systemSource || "",
           validation: {
             ok: true,
             diagnostics: [],
@@ -660,7 +695,76 @@ function createBackend(options = {}) {
               flows: [{ fromRoleId: "demo-analyst", toRoleId: "output", eventType: "DONE" }]
             }
           },
-          followUpActions: [{ action: "refresh-project-summary", label: "Reload project and graph views to reflect the saved system." }]
+          authoring: {
+            version: 1,
+            project: { workdir: "/tmp/demo", systemPath: "/tmp/demo/system.mmd" },
+            system: {
+              systemId: "viz.review.demo",
+              systemVersion: "1.0.0",
+              entryRoleId: "demo-analyst",
+              lawGlobalRef: "law.minimal.base"
+            },
+            roles: {
+              "demo-analyst": {
+                roleId: "demo-analyst",
+                bindingKind: "model",
+                modelRef: "opencode/gpt-5.4",
+                review: { mode: "required", timeoutAction: "pause", reworkTargetRoleId: "demo-analyst", terminateScope: "branch" }
+              }
+            },
+            flows: {
+              "1:demo-analyst:DONE:output": {
+                flowId: "1:demo-analyst:DONE:output",
+                fromRoleId: "demo-analyst",
+                toRoleId: "__system_end__",
+                eventType: "DONE"
+              }
+            },
+            layout: { nodes: { "demo-analyst": { x: 120, y: 120 } } }
+          },
+          extracted: {
+            systemId: "viz.review.demo",
+            systemVersion: "1.0.0",
+            entryRoleId: "demo-analyst",
+            lawGlobal: "law.minimal.base",
+            roles: [{
+              roleId: "demo-analyst",
+              bindingKind: "model",
+              modelRef: "opencode/gpt-5.4",
+              review: { mode: "required" },
+              incomingFlowCount: 0,
+              outgoingFlowCount: 1,
+              allowedEvents: ["DONE"],
+              badges: ["entry", "M", "R"]
+            }],
+            flows: [{
+              flowId: "1:demo-analyst:DONE:output",
+              flowKey: "demo-analyst:DONE:output",
+              fromRoleId: "demo-analyst",
+              toRoleId: "__system_end__",
+              eventType: "DONE",
+              runtimeOnlyErrorFlow: false,
+              participatesInJoin: false
+            }]
+          }
+        });
+      }
+      if (pathname === "/api/v1/project/studio/authoring" && method === "POST") {
+        this.lastAuthoringSaveBody = JSON.parse(request.body ?? "{}");
+        return createResponse({
+          workdir: "/tmp/demo",
+          draftPath: "/tmp/demo/.ogs/studio/system.authoring.json",
+          authoring: this.lastAuthoringSaveBody.authoring,
+          validation: { ok: true, diagnostics: [], structure: null }
+        });
+      }
+      if (pathname === "/api/v1/project/studio/authoring/generate-mmd" && method === "POST") {
+        this.lastAuthoringGenerateBody = JSON.parse(request.body ?? "{}");
+        return createResponse({
+          workdir: "/tmp/demo",
+          systemPath: "/tmp/demo/system.mmd",
+          systemSource: "flowchart TD\n%% system.id=viz.review.demo\n%% system.version=1.0.0\n%% law.global=law.minimal.base\n%% entry.role=demo-analyst\nr1[Role:demo-analyst] -->|DONE| output\n",
+          validation: { ok: true, diagnostics: [], structure: null }
         });
       }
       if (pathname === "/api/v1/project/export" && method === "POST") {
@@ -826,8 +930,8 @@ function createBackend(options = {}) {
         return createResponse({
           workdir: "/tmp/ogsystem-visualizer",
           systemId: "viz.review.demo",
-          canDryRun: false,
-          blockers: [
+          canDryRun: options.readinessCanDryRun === true,
+          blockers: options.readinessCanDryRun === true ? [] : [
             {
               code: "READINESS_STRICT_HANDOFF_CONTRACT_MISSING",
               message: "Missing strict handoff contract for qa:APPROVE:output",
@@ -1629,7 +1733,7 @@ test("visualizer client applies timeline filters through the events API", async 
 });
 
 test("visualizer client edits the Mermaid workbench, saves, and starts a run", async () => {
-  const harness = await createClientHarness();
+  const harness = await createClientHarness({ readinessCanDryRun: true });
 
   const newDraftButton = harness.document.getElementById("workbench-new-draft");
   assert.ok(newDraftButton);
@@ -1678,6 +1782,40 @@ test("visualizer client edits the Mermaid workbench, saves, and starts a run", a
   assert.equal(harness.backend.lastStartBody.input, "ship a smoke test");
   assert.equal(harness.promptCalls.length, 0);
   assert.equal(harness.document.getElementById("flash").textContent, "Start completed for run-123 (done).");
+});
+
+test("visualizer client opens Studio Bridge, saves an authoring draft, and dry-runs into run detail", async () => {
+  const harness = await createClientHarness({ readinessCanDryRun: true });
+
+  const openBridgeButton = harness.document.getElementById("workbench-open-bridge");
+  assert.ok(openBridgeButton);
+  await openBridgeButton.click();
+  await settle();
+
+  assert.ok(harness.backend.fetchCalls.some((call) => call.path === "/api/v1/project/studio/bridge"));
+  assert.match(harness.document.getElementById("workbench-tabs").textContent, /Studio Bridge/);
+  assert.match(harness.document.getElementById("workbench-body").textContent, /demo-analyst/);
+  assert.match(harness.document.getElementById("workbench-body").textContent, /role inspector/);
+
+  const draftButton = harness.document.getElementById("studio-bridge-save-draft");
+  assert.ok(draftButton);
+  await draftButton.click();
+  await settle();
+  assert.ok(harness.backend.fetchCalls.some((call) => call.path === "/api/v1/project/studio/authoring"));
+  assert.equal(harness.backend.lastAuthoringSaveBody.authoring.version, 1);
+
+  const dryRunButton = harness.document.getElementById("studio-bridge-dry-run");
+  assert.ok(dryRunButton);
+  await dryRunButton.click();
+  await settle();
+  await harness.document.getElementById("action-start-input").input("bridge smoke");
+  await harness.document.getElementById("action-form-submit").click();
+  await settle();
+
+  assert.ok(harness.backend.fetchCalls.some((call) => call.path === "/api/v1/runs/start"));
+  assert.equal(harness.backend.lastStartBody.dryRun, true);
+  assert.equal(harness.backend.lastStartBody.systemPath, "system.mmd");
+  assert.match(harness.document.getElementById("selected-title").textContent, /run-123/);
 });
 
 test("visualizer client saves copies, loads projects, and reindexes through inline forms", async () => {

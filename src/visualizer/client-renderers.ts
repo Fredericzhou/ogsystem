@@ -248,6 +248,115 @@ export function renderProjectReadinessPanel(args: {
   ].join("");
 }
 
+export function renderStudioBridgePanel(args: {
+  bridge: JsonRecord | null | undefined;
+  readiness: JsonRecord | null | undefined;
+  selectedRoleId: string;
+  selectedFlowKey: string;
+  actionBusy: string;
+}): string {
+  const bridge = args.bridge ?? {};
+  const validation = (bridge.validation ?? {}) as JsonRecord;
+  const extracted = (bridge.extracted ?? {}) as JsonRecord;
+  const roles = Array.isArray(extracted.roles) ? extracted.roles as JsonRecord[] : [];
+  const flows = Array.isArray(extracted.flows) ? extracted.flows as JsonRecord[] : [];
+  const selectedRole = roles.find((role) => role.roleId === args.selectedRoleId) ?? roles[0];
+  const selectedFlow = flows.find((flow) => flow.flowKey === args.selectedFlowKey) ?? flows[0];
+  const diagnostics = Array.isArray(validation.diagnostics) ? validation.diagnostics as JsonRecord[] : [];
+  const readiness = args.readiness ?? {};
+  const blockers = Array.isArray(readiness.blockers) ? readiness.blockers as JsonRecord[] : [];
+  const busy = args.actionBusy ? " disabled" : "";
+  if (!bridge || Object.keys(bridge).length === 0) {
+    return '<div class="hint">Studio Bridge data unavailable.</div>';
+  }
+  const roleButtons = roles.length
+    ? roles.map((role) => {
+        const roleId = String(role.roleId ?? "");
+        const active = selectedRole && selectedRole.roleId === roleId ? " active" : "";
+        const badges = Array.isArray(role.badges) ? role.badges.join(" ") : "";
+        return (
+          '<button class="run-card' + active + '" data-studio-role-id="' + escapeText(roleId) + '"' + busy + ">" +
+          '<div class="run-title"><span><code>' + escapeText(roleId) + '</code></span><span class="status ' +
+          escapeText(bindingTone(String(role.bindingKind ?? "noop"))) + '">' + escapeText(String(role.bindingKind ?? "noop")) +
+          '</span></div><div class="meta"><span>' + escapeText(badges || "standard") + '</span><span>events ' +
+          escapeText(String((role.allowedEvents as unknown[] | undefined)?.length ?? 0)) + "</span></div></button>"
+        );
+      })
+    : ['<div class="hint">No roles extracted from the current Mermaid source.</div>'];
+  const flowButtons = flows.length
+    ? flows.map((flow) => {
+        const key = String(flow.flowKey ?? "");
+        const active = selectedFlow && selectedFlow.flowKey === key ? " active" : "";
+        return (
+          '<button class="run-card' + active + '" data-studio-flow-key="' + escapeText(key) + '"' + busy + ">" +
+          '<div class="run-title"><span><code>' + escapeText(String(flow.fromRoleId ?? "")) + '</code> -> <code>' +
+          escapeText(String(flow.toRoleId ?? "")) + '</code></span><span>' + escapeText(String(flow.eventType ?? "")) +
+          '</span></div><div class="meta"><span>' + escapeText(flow.runtimeOnlyErrorFlow ? "runtime error flow" : "design flow") +
+          '</span><span>' + escapeText(flow.participatesInJoin ? "join source" : "standard") + "</span></div></button>"
+        );
+      })
+    : ['<div class="hint">No flows extracted from the current Mermaid source.</div>'];
+  const roleInspector = selectedRole
+    ? [
+        '<div class="event"><div class="event-top"><span>role inspector</span><span>' + escapeText(String(selectedRole.bindingKind ?? "noop")) + '</span></div><strong><code>' + escapeText(String(selectedRole.roleId ?? "")) + '</code></strong>',
+        '<div class="hint">model ' + escapeText(String(selectedRole.modelRef ?? "n/a")) +
+          " · exec " + escapeText(String(selectedRole.profileId ?? "n/a")) +
+          " · route " + escapeText(String(selectedRole.routingMode ?? "standard")) + "</div></div>",
+        '<div class="event"><div class="event-top"><span>metadata</span><span>read only</span></div><strong>' +
+          escapeText([
+            selectedRole.joinMode ? "join " + selectedRole.joinMode : "",
+            selectedRole.loopMax ? "loop " + selectedRole.loopMax : "",
+            selectedRole.review ? "review required" : "",
+            selectedRole.contextMap ? "context map" : ""
+          ].filter(Boolean).join(" · ") || "no special metadata") +
+          '</strong><div class="hint">incoming ' + escapeText(String(selectedRole.incomingFlowCount ?? 0)) +
+          " · outgoing " + escapeText(String(selectedRole.outgoingFlowCount ?? 0)) + "</div></div>"
+      ].join("")
+    : '<div class="hint">Select a role to inspect metadata.</div>';
+  const flowInspector = selectedFlow
+    ? '<div class="event"><div class="event-top"><span>flow inspector</span><span>' + escapeText(String(selectedFlow.eventType ?? "")) +
+      '</span></div><strong><code>' + escapeText(String(selectedFlow.fromRoleId ?? "")) + '</code> -> <code>' +
+      escapeText(String(selectedFlow.toRoleId ?? "")) + '</code></strong><div class="hint">' +
+      escapeText(selectedFlow.runtimeOnlyErrorFlow ? "runtime-only error path" : "authoring design path") +
+      " · " + escapeText(selectedFlow.participatesInJoin ? "participates in join.sources" : "not a join source") + "</div></div>"
+    : '<div class="hint">Select a flow to inspect event metadata.</div>';
+  const diagnosticCards = diagnostics.length
+    ? diagnostics.slice(0, 5).map((diagnostic) =>
+        '<div class="event"><div class="event-top"><span>' + escapeText(String(diagnostic.code ?? "DIAGNOSTIC")) +
+        '</span><span>' + escapeText(String(diagnostic.stage ?? "validate")) + '</span></div><strong>' +
+        escapeText(String(diagnostic.message ?? "")) + '</strong><div class="hint">' +
+        escapeText(String(diagnostic.roleId ?? diagnostic.selector ?? diagnostic.line ?? "")) + "</div></div>"
+      )
+    : ['<div class="event"><div class="event-top"><span>diagnostics</span><span>ok</span></div><strong>No parse or compile diagnostics.</strong></div>'];
+  return [
+    '<div class="structure-list studio-bridge">',
+    '<div class="toolbar-row">',
+    '<div class="toolbar-group">',
+    '<button class="button primary" id="studio-bridge-dry-run"' + busy + '>Dry Run</button>',
+    '<button class="button" id="studio-bridge-validate"' + busy + '>Validate</button>',
+    '<button class="button" id="studio-bridge-save"' + busy + '>Save system.mmd</button>',
+    '<button class="button subtle" id="studio-bridge-save-draft"' + busy + '>Save Draft</button>',
+    '<button class="button subtle" id="studio-bridge-generate"' + busy + '>Generate MMD</button>',
+    '</div>',
+    '<div class="toolbar-group"><span class="pill' + (validation.ok ? "" : " warn") + '">' +
+      escapeText(validation.ok ? "validation ok" : diagnostics.length + " diagnostics") + '</span><span class="pill' +
+      (blockers.length ? " warn" : "") + '">' + escapeText(blockers.length ? blockers.length + " readiness blockers" : "readiness ready") + "</span></div>",
+    "</div>",
+    '<div class="grid">',
+    '<div class="span-4 structure-list"><div class="event"><div class="event-top"><span>roles</span><span>' + escapeText(String(roles.length)) +
+      '</span></div><strong>Structured role draft</strong><div class="hint">Bridge reads the current workbench source.</div></div>' + roleButtons.join("") + "</div>",
+    '<div class="span-4 structure-list"><div class="event"><div class="event-top"><span>flows</span><span>' + escapeText(String(flows.length)) +
+      '</span></div><strong>Structured flow draft</strong><div class="hint">Event types and join participation stay visible.</div></div>' + flowButtons.join("") + "</div>",
+    '<div class="span-4 structure-list"><div class="event"><div class="event-top"><span>system</span><span>' + escapeText(String(extracted.systemVersion ?? "n/a")) +
+      '</span></div><strong>' + escapeText(String(extracted.systemId ?? "unknown")) + '</strong><div class="hint">entry ' +
+      escapeText(String(extracted.entryRoleId ?? "n/a")) + " · law " + escapeText(String(extracted.lawGlobal ?? "n/a")) + "</div></div>" +
+      roleInspector + flowInspector + "</div>",
+    '<div class="span-12 structure-list">' + diagnosticCards.join("") + "</div>",
+    "</div>",
+    "</div>"
+  ].join("");
+}
+
 export function renderFailureSummaryPanel(args: {
   failure: Record<string, unknown> | null | undefined;
   loaded: boolean;

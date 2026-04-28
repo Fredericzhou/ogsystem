@@ -14,6 +14,7 @@ import {
   renderReviewDetailPanel,
   renderRolePackagePanel,
   renderRunStatePanel,
+  renderStudioBridgePanel,
   renderSuggestedNextChecksPanel,
   renderRunTopologySvg,
   renderWorkbenchTopologySvg,
@@ -165,6 +166,7 @@ export function buildClientAppScript(apiPrefix: string): string {
     const renderLogsPanel = ${renderLogsPanel.toString()};
     const renderOpsSummaryPanel = ${renderOpsSummaryPanel.toString()};
     const renderProjectReadinessPanel = ${renderProjectReadinessPanel.toString()};
+    const renderStudioBridgePanel = ${renderStudioBridgePanel.toString()};
     const renderRunStatePanel = ${renderRunStatePanel.toString()};
     const renderSuggestedNextChecksPanel = ${renderSuggestedNextChecksPanel.toString()};
     const renderRunTopologySvg = ${renderRunTopologySvg.toString()};
@@ -183,6 +185,12 @@ export function buildClientAppScript(apiPrefix: string): string {
       workbenchValidationTimer: null,
       workbenchValidationRequestId: 0,
       workbenchValidating: false,
+      studioBridge: null,
+      studioBridgeLoaded: false,
+      studioBridgeStale: false,
+      studioBridgeSelectedRoleId: "",
+      studioBridgeSelectedFlowKey: "",
+      studioBridgeLastDryRunId: "",
       sidebarOpen: false,
       runs: [],
       filter: "",
@@ -672,6 +680,72 @@ export function buildClientAppScript(apiPrefix: string): string {
       ].join("");
     }
 
+    function renderStudioBridge() {
+      const bridge = state.studioBridge || {
+        validation: state.workbench?.validation || null,
+        extracted: state.workbench?.validation?.structure || null
+      };
+      workbenchBodyEl.innerHTML = renderStudioBridgePanel({
+        bridge,
+        readiness: state.projectReadiness,
+        selectedRoleId: state.studioBridgeSelectedRoleId,
+        selectedFlowKey: state.studioBridgeSelectedFlowKey,
+        actionBusy: state.actionBusy
+      });
+      for (const button of workbenchBodyEl.querySelectorAll("[data-studio-role-id]")) {
+        button.addEventListener("click", () => {
+          state.studioBridgeSelectedRoleId = button.getAttribute("data-studio-role-id") || "";
+          state.studioBridgeSelectedFlowKey = "";
+          renderStudioBridge();
+        });
+      }
+      for (const button of workbenchBodyEl.querySelectorAll("[data-studio-flow-key]")) {
+        button.addEventListener("click", () => {
+          state.studioBridgeSelectedFlowKey = button.getAttribute("data-studio-flow-key") || "";
+          state.studioBridgeSelectedRoleId = "";
+          renderStudioBridge();
+        });
+      }
+      const validateButton = document.getElementById("studio-bridge-validate");
+      if (validateButton) {
+        validateButton.addEventListener("click", async () => {
+          await runWorkbenchValidation(true);
+          await refreshStudioBridge();
+        });
+      }
+      const saveButton = document.getElementById("studio-bridge-save");
+      if (saveButton) {
+        saveButton.addEventListener("click", async () => {
+          await saveWorkbench();
+        });
+      }
+      const dryRunButton = document.getElementById("studio-bridge-dry-run");
+      if (dryRunButton) {
+        dryRunButton.addEventListener("click", () => {
+          openActionForm("start", {
+            systemPath: state.workbenchSavedPath || "system.mmd",
+            input: "",
+            dryRun: true,
+            runtimePath: "",
+            userProfilePath: "",
+            lawsPath: ""
+          });
+        });
+      }
+      const saveDraftButton = document.getElementById("studio-bridge-save-draft");
+      if (saveDraftButton) {
+        saveDraftButton.addEventListener("click", async () => {
+          await saveStudioAuthoringDraft();
+        });
+      }
+      const generateButton = document.getElementById("studio-bridge-generate");
+      if (generateButton) {
+        generateButton.addEventListener("click", async () => {
+          await generateMmdFromStudioBridge();
+        });
+      }
+    }
+
     function renderWorkbench(options) {
       const validation = state.workbench?.validation || null;
       const diagnostics = validation?.diagnostics || [];
@@ -696,9 +770,11 @@ export function buildClientAppScript(apiPrefix: string): string {
       workbenchTabsEl.innerHTML = [
         '<button class="button subtle ' + (state.workbenchView === "source" ? "active" : "") + '" data-workbench-view="source">Source</button>',
         '<button class="button subtle ' + (state.workbenchView === "render" ? "active" : "") + '" data-workbench-view="render">Rendered</button>',
-        '<button class="button subtle ' + (state.workbenchView === "structure" ? "active" : "") + '" data-workbench-view="structure">Structure</button>'
+        '<button class="button subtle ' + (state.workbenchView === "structure" ? "active" : "") + '" data-workbench-view="structure">Structure</button>',
+        '<button class="button subtle ' + (state.workbenchView === "bridge" ? "active" : "") + '" data-workbench-view="bridge">Studio Bridge</button>'
       ].join("");
       workbenchActionsEl.innerHTML = [
+        '<button class="button primary" id="workbench-open-bridge">Open Studio Bridge</button>',
         '<button class="button subtle" id="workbench-new-draft">New draft</button>',
         '<button class="button subtle" id="workbench-recover-draft"' + (state.workbenchHasDraft ? "" : " disabled") + '>Recover draft</button>',
         '<button class="button subtle" id="workbench-revert"' + (dirty ? "" : " disabled") + '>Revert to disk</button>',
@@ -720,6 +796,8 @@ export function buildClientAppScript(apiPrefix: string): string {
               ).join("") + '</div>'
             : '<div class="hint">Rendered preview keeps the last successful graph structure while validation stays clean.</div>'
         ].join("");
+      } else if (state.workbenchView === "bridge") {
+        renderStudioBridge();
       } else {
         workbenchBodyEl.innerHTML = renderWorkbenchStructure(structure);
       }
@@ -727,6 +805,7 @@ export function buildClientAppScript(apiPrefix: string): string {
       if (editor && (!preserveEditor || editor !== existingEditor)) {
         editor.addEventListener("input", (event) => {
           state.workbenchSource = event.target.value || "";
+          state.studioBridgeStale = true;
           persistDraftSource(state.workbenchSource !== state.workbenchDiskSource ? state.workbenchSource : "");
           renderWorkbench({ preserveEditor: true });
           scheduleWorkbenchValidation();
@@ -736,6 +815,21 @@ export function buildClientAppScript(apiPrefix: string): string {
         button.addEventListener("click", () => {
           state.workbenchView = button.getAttribute("data-workbench-view") || "render";
           renderWorkbench();
+          if (state.workbenchView === "bridge" && (!state.studioBridgeLoaded || state.studioBridgeStale)) {
+            void refreshStudioBridge().catch((error) => {
+              setFlash("error", "Studio Bridge refresh failed: " + (error.message || error));
+            });
+          }
+        });
+      }
+      const openBridgeButton = document.getElementById("workbench-open-bridge");
+      if (openBridgeButton) {
+        openBridgeButton.addEventListener("click", () => {
+          state.workbenchView = "bridge";
+          renderWorkbench();
+          void refreshStudioBridge().catch((error) => {
+            setFlash("error", "Studio Bridge refresh failed: " + (error.message || error));
+          });
         });
       }
       const newDraftButton = document.getElementById("workbench-new-draft");
@@ -1435,6 +1529,91 @@ export function buildClientAppScript(apiPrefix: string): string {
       renderDetail();
     }
 
+    async function refreshProjectDiagnostics() {
+      const [summary, config, roles, opsSummary, readiness, bindings, contracts, rolePackages] = await Promise.all([
+        requestJson(\`\${API_PREFIX}/project\`),
+        requestJson(\`\${API_PREFIX}/project/config\`),
+        requestJson(\`\${API_PREFIX}/project/roles\`),
+        requestJson(\`\${API_PREFIX}/project/ops-summary\`),
+        requestJson(\`\${API_PREFIX}/project/readiness\`),
+        requestJson(\`\${API_PREFIX}/project/bindings\`),
+        requestJson(\`\${API_PREFIX}/project/contracts\`),
+        requestJson(\`\${API_PREFIX}/project/role-packages\`)
+      ]);
+      state.project = Object.assign({}, state.project || {}, { summary, config, roles });
+      state.opsSummary = opsSummary;
+      state.projectReadiness = readiness;
+      state.bindings = bindings;
+      state.contracts = contracts;
+      state.rolePackages = rolePackages;
+      renderProject();
+    }
+
+    async function refreshStudioBridge() {
+      const payload = await requestAction(\`\${API_PREFIX}/project/studio/bridge\`, {
+        systemSource: state.workbenchSource,
+        systemPath: state.workbenchSavedPath || "system.mmd"
+      });
+      state.studioBridge = payload;
+      state.studioBridgeLoaded = true;
+      state.studioBridgeStale = false;
+      const roles = payload.extracted?.roles || [];
+      const flows = payload.extracted?.flows || [];
+      if (!state.studioBridgeSelectedRoleId && roles[0]?.roleId) {
+        state.studioBridgeSelectedRoleId = roles[0].roleId;
+      }
+      if (!state.studioBridgeSelectedFlowKey && flows[0]?.flowKey) {
+        state.studioBridgeSelectedFlowKey = flows[0].flowKey;
+      }
+      state.workbench = {
+        ...(state.workbench || {}),
+        validation: payload.validation || state.workbench?.validation
+      };
+      renderWorkbench();
+      renderProject();
+    }
+
+    async function saveStudioAuthoringDraft() {
+      if (!state.studioBridge?.authoring) {
+        await refreshStudioBridge();
+      }
+      if (!state.studioBridge?.authoring) {
+        setFlash("error", "Studio Bridge cannot save a draft until Mermaid parses successfully.");
+        return;
+      }
+      await runAction("studio:draft-save", async () => {
+        const payload = await requestAction(\`\${API_PREFIX}/project/studio/authoring\`, {
+          authoring: state.studioBridge.authoring
+        });
+        setFlash("success", "Studio draft saved to " + relativeToWorkdir(payload.draftPath || ".ogs/studio/system.authoring.json") + ".");
+      });
+    }
+
+    async function generateMmdFromStudioBridge() {
+      if (!state.studioBridge?.authoring) {
+        await refreshStudioBridge();
+      }
+      if (!state.studioBridge?.authoring) {
+        setFlash("error", "Studio Bridge cannot generate Mermaid until the source parses successfully.");
+        return;
+      }
+      await runAction("studio:generate-mmd", async () => {
+        const payload = await requestAction(\`\${API_PREFIX}/project/studio/authoring/generate-mmd\`, {
+          authoring: state.studioBridge.authoring
+        });
+        state.workbenchSource = payload.systemSource || state.workbenchSource;
+        state.workbenchView = "source";
+        state.workbench = {
+          ...(state.workbench || {}),
+          validation: payload.validation || state.workbench?.validation
+        };
+        state.studioBridgeStale = true;
+        persistDraftSource(state.workbenchSource !== state.workbenchDiskSource ? state.workbenchSource : "");
+        renderWorkbench();
+        setFlash("success", "Generated deterministic Mermaid into the Workbench source view.");
+      });
+    }
+
     async function runWorkbenchValidation(force) {
       const requestId = ++state.workbenchValidationRequestId;
       state.workbenchValidating = true;
@@ -1451,6 +1630,7 @@ export function buildClientAppScript(apiPrefix: string): string {
           ...(state.workbench || {}),
           validation: payload
         };
+        state.studioBridgeStale = true;
       } finally {
         if (requestId === state.workbenchValidationRequestId) {
           state.workbenchValidating = false;
@@ -1496,15 +1676,26 @@ export function buildClientAppScript(apiPrefix: string): string {
             systemSource: state.workbenchSource
           }
         );
+        if (payload.validation?.ok !== true) {
+          state.workbench = {
+            ...(state.workbench || {}),
+            validation: payload.validation
+          };
+          renderWorkbench();
+          renderProject();
+          setFlash("error", "Save blocked by Mermaid validation diagnostics.");
+          return;
+        }
         state.workbenchDiskSource = state.workbenchSource;
         state.workbenchSavedPath = relativeToWorkdir(payload.savedPath || state.workbenchSavedPath || "system.mmd") || "system.mmd";
         state.workbench = {
           ...(state.workbench || {}),
           validation: payload.validation
         };
+        state.studioBridgeStale = true;
         persistDraftSource("");
         renderWorkbench();
-        renderProject();
+        await refreshProjectDiagnostics();
         setFlash(
           "success",
           "Mermaid source saved to " + state.workbenchSavedPath + ". "
@@ -1523,16 +1714,27 @@ export function buildClientAppScript(apiPrefix: string): string {
           systemSource: state.workbenchSource,
           saveAsPath
         });
+        if (payload.validation?.ok !== true) {
+          state.workbench = {
+            ...(state.workbench || {}),
+            validation: payload.validation
+          };
+          renderWorkbench();
+          renderProject();
+          setFlash("error", "Save copy blocked by Mermaid validation diagnostics.");
+          return;
+        }
         state.workbenchDiskSource = state.workbenchSource;
         state.workbenchSavedPath = relativeToWorkdir(payload.savedPath || saveAsPath || "system.mmd") || "system.mmd";
         state.workbench = {
           ...(state.workbench || {}),
           validation: payload.validation
         };
+        state.studioBridgeStale = true;
         persistDraftSource("");
         closeActionForm();
         renderWorkbench();
-        renderProject();
+        await refreshProjectDiagnostics();
         setFlash(
           "success",
           "Mermaid source saved to " + state.workbenchSavedPath + ". "
@@ -1546,6 +1748,13 @@ export function buildClientAppScript(apiPrefix: string): string {
         setFlash("error", "Run input is required.");
         return;
       }
+      const readinessBlockers = state.projectReadiness?.blockers || [];
+      if (args.dryRun && state.projectReadiness && state.projectReadiness.canDryRun === false) {
+        setFlash("error", "Dry-run blocked by Project Readiness: " + (readinessBlockers[0]?.message || "resolve readiness blockers first."));
+        state.consoleTab = "project";
+        renderConsoleTabs();
+        return;
+      }
       await runAction("run:start", async () => {
         const payload = await requestAction(\`\${API_PREFIX}/runs/start\`, {
           systemPath: args.systemPath,
@@ -1557,6 +1766,9 @@ export function buildClientAppScript(apiPrefix: string): string {
         });
         closeActionForm();
         setFlash("success", "Start completed for " + payload.runId + " (" + payload.status + ").");
+        if (args.dryRun && payload.runId) {
+          state.studioBridgeLastDryRunId = payload.runId;
+        }
         await loadProject();
         await loadRuns();
         if (payload.runId) {

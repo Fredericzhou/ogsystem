@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import os from "node:os";
 import path from "node:path";
 import http from "node:http";
-import { mkdtemp, mkdir, symlink, writeFile } from "node:fs/promises";
+import { mkdtemp, mkdir, readFile, symlink, writeFile } from "node:fs/promises";
 
 import { resolveProjectRoleRootDir } from "../dist/runtime/bundled-repos.js";
 import { compileExecutionSnapshot } from "../dist/runtime/compiler.js";
@@ -1210,6 +1210,63 @@ test("visualizer server exposes Mermaid workbench APIs and project export", asyn
     const invalidValidation = await invalidValidateResponse.json();
     assert.equal(invalidValidation.ok, false);
     assert.ok(invalidValidation.diagnostics.length > 0);
+
+    const originalSystemSource = await readFile(path.resolve(workdir, "system.mmd"), "utf8");
+    const invalidSaveResponse = await fetch(`${url}/api/v1/project/system/save`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        systemSource: "flowchart TD\nINVALID"
+      })
+    });
+    assert.equal(invalidSaveResponse.status, 200);
+    const invalidSave = await invalidSaveResponse.json();
+    assert.equal(invalidSave.validation.ok, false);
+    assert.equal(await readFile(path.resolve(workdir, "system.mmd"), "utf8"), originalSystemSource);
+
+    const bridgeResponse = await fetch(`${url}/api/v1/project/studio/bridge`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        systemSource: workbench.systemSource,
+        systemPath: "system.mmd"
+      })
+    });
+    assert.equal(bridgeResponse.status, 200);
+    const bridge = await bridgeResponse.json();
+    assert.equal(bridge.validation.ok, true);
+    assert.equal(bridge.extracted.systemId, "viz.project.demo");
+    assert.equal(bridge.extracted.roles.some((role) => role.roleId === "demo-analyst" && role.bindingKind === "model"), true);
+    assert.equal(bridge.extracted.flows.some((flow) => flow.eventType === "DONE"), true);
+
+    const templatesResponse = await fetch(`${url}/api/v1/project/studio/templates`);
+    assert.equal(templatesResponse.status, 200);
+    const templates = await templatesResponse.json();
+    assert.deepEqual(templates.templates.map((template) => template.id).sort(), ["consultation", "debate", "review"]);
+
+    const draftSaveResponse = await fetch(`${url}/api/v1/project/studio/authoring`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        authoring: bridge.authoring
+      })
+    });
+    assert.equal(draftSaveResponse.status, 200);
+    const draftSave = await draftSaveResponse.json();
+    assert.match(draftSave.draftPath, /\.ogs\/studio\/system\.authoring\.json$/);
+    assert.equal(await readFile(path.resolve(workdir, "system.mmd"), "utf8"), originalSystemSource);
+
+    const generateResponse = await fetch(`${url}/api/v1/project/studio/authoring/generate-mmd`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        authoring: bridge.authoring
+      })
+    });
+    assert.equal(generateResponse.status, 200);
+    const generated = await generateResponse.json();
+    assert.equal(generated.validation.ok, true);
+    assert.match(generated.systemSource, /%% system\.id=viz\.project\.demo/);
 
     const saveAsResponse = await fetch(`${url}/api/v1/project/system/save-as`, {
       method: "POST",
