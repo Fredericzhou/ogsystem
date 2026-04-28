@@ -1,7 +1,7 @@
 {
   "configVersion": "1",
   "defaults": {
-    "model": "opencode/gpt-5-nano",
+    "model": "gkgk/gpt-5.4",
     "timeoutMs": 600000,
     "maxOutputBytes": 65536
   }

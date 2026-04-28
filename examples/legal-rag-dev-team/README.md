@@ -84,9 +84,10 @@ node dist/runtime/cli.js run start \
 
 说明：
 
-- 该示例使用 `model.bind.*=opencode/gpt-5-nano`
+- 该示例使用本机已验证较稳定的 `model.bind.*=gkgk/gpt-5.4`
 - 真实运行前，需要你本机已经配置可用的 OpenCode provider
 - 如果 `ogs doctor` 提示缺少 `.ogs/model-catalog.json`，先执行 `ogs project sync-models`；catalog 是本机可用模型快照，缺失时是诊断告警，不是 runtime 硬失败
+- 如果你改回 `opencode/gpt-5-nano`，注意该模型在本机 OpenCode SDK structured-output 场景中可能长时间等待后返回 `terminated`
 - 长时间执行时，控制台会区分 `role:waiting kind=technical` 和 `run:waiting kind=business reason=human_review`
 - `delivery-lead` 角色开启了 runtime-native human review，第一轮运行大概率会停在待审核状态
 
