@@ -1,8 +1,18 @@
 import {
   bindingTone,
+  renderArtifactsPanel,
+  renderBindingExplainPanel,
+  renderContractPanel,
+  renderFailureDetailPanel,
+  renderFailureSummaryPanel,
   renderLogsPanel,
   renderProjectSummaryPanel,
+  renderResumeReadinessPanel,
+  renderReviewQueuePanel,
   renderReviewDetailPanel,
+  renderRolePackagePanel,
+  renderRunStatePanel,
+  renderSuggestedNextChecksPanel,
   renderRunTopologySvg,
   renderWorkbenchTopologySvg,
   statusTone
@@ -21,6 +31,8 @@ type StreamRefreshPlan = {
   detailGraph: boolean;
   reviews: boolean;
   reviewDetail: boolean;
+  failure: boolean;
+  resumeReadiness: boolean;
   markDiagnosticsStale: boolean;
 };
 
@@ -84,6 +96,8 @@ export function getStreamRefreshPlan(type: string | undefined): StreamRefreshPla
       detailGraph: true,
       reviews: true,
       reviewDetail: true,
+      failure: false,
+      resumeReadiness: true,
       markDiagnosticsStale: true
     };
   }
@@ -100,6 +114,8 @@ export function getStreamRefreshPlan(type: string | undefined): StreamRefreshPla
       detailGraph: true,
       reviews: false,
       reviewDetail: false,
+      failure: true,
+      resumeReadiness: true,
       markDiagnosticsStale: true
     };
   }
@@ -107,6 +123,8 @@ export function getStreamRefreshPlan(type: string | undefined): StreamRefreshPla
     detailGraph: false,
     reviews: false,
     reviewDetail: false,
+    failure: false,
+    resumeReadiness: false,
     markDiagnosticsStale: true
   };
 }
@@ -132,9 +150,19 @@ export function buildClientAppScript(apiPrefix: string): string {
     const formatReviewStatusLabel = ${formatReviewStatusLabel.toString()};
     const statusTone = ${statusTone.toString()};
     const bindingTone = ${bindingTone.toString()};
+    const renderArtifactsPanel = ${renderArtifactsPanel.toString()};
+    const renderBindingExplainPanel = ${renderBindingExplainPanel.toString()};
+    const renderContractPanel = ${renderContractPanel.toString()};
+    const renderFailureDetailPanel = ${renderFailureDetailPanel.toString()};
+    const renderFailureSummaryPanel = ${renderFailureSummaryPanel.toString()};
     const renderProjectSummaryPanel = ${renderProjectSummaryPanel.toString()};
+    const renderResumeReadinessPanel = ${renderResumeReadinessPanel.toString()};
+    const renderReviewQueuePanel = ${renderReviewQueuePanel.toString()};
     const renderReviewDetailPanel = ${renderReviewDetailPanel.toString()};
+    const renderRolePackagePanel = ${renderRolePackagePanel.toString()};
     const renderLogsPanel = ${renderLogsPanel.toString()};
+    const renderRunStatePanel = ${renderRunStatePanel.toString()};
+    const renderSuggestedNextChecksPanel = ${renderSuggestedNextChecksPanel.toString()};
     const renderRunTopologySvg = ${renderRunTopologySvg.toString()};
     const renderWorkbenchTopologySvg = ${renderWorkbenchTopologySvg.toString()};
     const state = {
@@ -167,8 +195,17 @@ export function buildClientAppScript(apiPrefix: string): string {
       events: [],
       detail: null,
       graph: null,
+      failure: null,
+      failureLoaded: false,
+      failureStale: false,
       reviews: null,
       reviewDetail: null,
+      bindings: null,
+      contracts: null,
+      rolePackages: null,
+      resumeReadiness: null,
+      resumeReadinessLoaded: false,
+      resumeReadinessStale: false,
       resumeDiagnostics: null,
       resumeDiagnosticsLoaded: false,
       resumeDiagnosticsStale: false,
@@ -185,6 +222,8 @@ export function buildClientAppScript(apiPrefix: string): string {
         detailGraph: false,
         reviews: false,
         reviewDetail: false,
+        failure: false,
+        resumeReadiness: false,
         markDiagnosticsStale: false
       },
       streamRefreshTimer: null,
@@ -205,6 +244,10 @@ export function buildClientAppScript(apiPrefix: string): string {
     const workbenchTabsEl = document.getElementById("workbench-tabs");
     const workbenchBodyEl = document.getElementById("workbench-body");
     const statsEl = document.getElementById("stats");
+    const failureControlsEl = document.getElementById("failure-controls");
+    const failureSummaryEl = document.getElementById("failure-summary");
+    const failureDetailEl = document.getElementById("failure-detail");
+    const failureNextChecksEl = document.getElementById("failure-next-checks");
     const timelineEl = document.getElementById("timeline");
     const timelineRoleEl = document.getElementById("timeline-role");
     const timelineTypeEl = document.getElementById("timeline-type");
@@ -219,6 +262,10 @@ export function buildClientAppScript(apiPrefix: string): string {
     const reviewsEl = document.getElementById("reviews");
     const reviewActionsEl = document.getElementById("review-actions");
     const reviewDetailEl = document.getElementById("review-detail");
+    const bindingExplainEl = document.getElementById("binding-explain");
+    const rolePackagesEl = document.getElementById("role-packages");
+    const contractExplainEl = document.getElementById("contract-explain");
+    const resumeReadinessEl = document.getElementById("resume-readiness");
     const resumeEl = document.getElementById("resume-diagnostics");
     const resumeControlsEl = document.getElementById("resume-controls");
     const logsControlsEl = document.getElementById("logs-controls");
@@ -686,13 +733,15 @@ export function buildClientAppScript(apiPrefix: string): string {
       const saveButton = document.getElementById("workbench-save");
       if (saveButton) {
         saveButton.addEventListener("click", async () => {
-          await saveWorkbench(false);
+          await saveWorkbench();
         });
       }
       const saveAsButton = document.getElementById("workbench-save-as");
       if (saveAsButton) {
         saveAsButton.addEventListener("click", async () => {
-          await saveWorkbench(true);
+          openActionForm("saveAs", {
+            saveAsPath: state.workbenchSavedPath || "drafts/system-copy.mmd"
+          });
         });
       }
       renderActionState();
@@ -797,6 +846,23 @@ export function buildClientAppScript(apiPrefix: string): string {
           '</div>',
           '<div class="actions"><button id="action-form-cancel" class="button subtle"' + disabled + '>Cancel</button><button id="action-form-submit" class="button primary"' + disabled + '>Record review decision</button></div>'
         ].join("");
+      } else if (form.kind === "saveAs") {
+        actionFormEl.innerHTML = [
+          '<div class="event"><div class="event-top"><span>save mermaid</span><span>save as</span></div><strong>Write a copy of the current workbench source</strong><div class="hint">Use a project-relative path so the new Mermaid file stays inside the workspace.</div></div>',
+          '<label class="field full"><span>Relative path</span><input id="action-save-as-path" value="' + escapeText(form.fields.saveAsPath || "") + '"' + disabled + ' /></label>',
+          '<div class="actions"><button id="action-form-cancel" class="button subtle"' + disabled + '>Cancel</button><button id="action-form-submit" class="button primary"' + disabled + '>Save copy</button></div>'
+        ].join("");
+      } else if (form.kind === "projectLoad") {
+        actionFormEl.innerHTML = [
+          '<div class="event"><div class="event-top"><span>project load</span><span>workspace</span></div><strong>Rebind the visualizer to another project directory</strong><div class="hint">This swaps project metadata, workbench source, and run list to the selected workdir.</div></div>',
+          '<label class="field full"><span>Project workdir</span><input id="action-project-workdir" value="' + escapeText(form.fields.workdir || "") + '"' + disabled + ' /></label>',
+          '<div class="actions"><button id="action-form-cancel" class="button subtle"' + disabled + '>Cancel</button><button id="action-form-submit" class="button primary"' + disabled + '>Load project</button></div>'
+        ].join("");
+      } else if (form.kind === "reindex") {
+        actionFormEl.innerHTML = [
+          '<div class="event"><div class="event-top"><span>runs index</span><span>maintenance</span></div><strong>Rebuild the persisted run list</strong><div class="hint">Use this after manual filesystem changes or if run headers look stale.</div></div>',
+          '<div class="actions"><button id="action-form-cancel" class="button subtle"' + disabled + '>Cancel</button><button id="action-form-submit" class="button warn"' + disabled + '>Rebuild index</button></div>'
+        ].join("");
       } else {
         actionFormEl.innerHTML = '<div class="hint">Unsupported action.</div>';
       }
@@ -821,6 +887,9 @@ export function buildClientAppScript(apiPrefix: string): string {
     function renderProject() {
       if (!state.project) {
         projectSummaryEl.textContent = "Project data unavailable.";
+        bindingExplainEl.innerHTML = '<div class="hint">Project binding data unavailable.</div>';
+        rolePackagesEl.innerHTML = '<div class="hint">Role package data unavailable.</div>';
+        contractExplainEl.innerHTML = '<div class="hint">Contract data unavailable.</div>';
         return;
       }
       if (workdirEl) {
@@ -835,6 +904,38 @@ export function buildClientAppScript(apiPrefix: string): string {
         workbenchSavedPath: state.workbenchSavedPath || "system.mmd",
         validationOk: Boolean(state.workbench?.validation?.ok)
       });
+      bindingExplainEl.innerHTML = renderBindingExplainPanel({
+        bindings: state.bindings,
+        stale: false
+      });
+      rolePackagesEl.innerHTML = renderRolePackagePanel({
+        rolePackages: state.rolePackages
+      });
+      contractExplainEl.innerHTML = renderContractPanel({
+        contracts: state.contracts
+      });
+    }
+
+    function bindPanelJumpButtons() {
+      const jumpTargets = [
+        ["failure-check-input", "failure-detail"],
+        ["failure-check-binding", "binding-explain"],
+        ["failure-check-role-package", "role-packages"],
+        ["failure-check-contract", "contract-explain"],
+        ["failure-check-resume", "resume-readiness"]
+      ];
+      for (const [buttonId, targetId] of jumpTargets) {
+        const button = document.getElementById(buttonId);
+        if (!button) {
+          continue;
+        }
+        button.addEventListener("click", () => {
+          const target = document.getElementById(targetId);
+          if (target && typeof target.scrollIntoView === "function") {
+            target.scrollIntoView({ behavior: "smooth", block: "start" });
+          }
+        });
+      }
     }
 
     function renderRuns() {
@@ -939,13 +1040,17 @@ export function buildClientAppScript(apiPrefix: string): string {
     function renderGraph() {
       if (!state.graph) {
         graphViewEl.innerHTML = '<div class="hint">No run selected.</div>';
-        stateEl.textContent = "No run selected.";
+        stateEl.innerHTML = '<div class="hint">No run selected.</div>';
         return;
       }
       const graph = state.graph.graph;
       if (!graph) {
         graphViewEl.innerHTML = '<div class="hint">Graph projection unavailable.</div>';
-        stateEl.textContent = formatJson(state.detail?.state ?? null);
+        stateEl.innerHTML = renderRunStatePanel({
+          state: state.detail?.state ?? null,
+          header: state.detail?.header ?? null,
+          graph: null
+        });
         return;
       }
       const nodes = graph.nodes || [];
@@ -955,7 +1060,11 @@ export function buildClientAppScript(apiPrefix: string): string {
         renderRunTopologySvg(graph),
         '<div class="event"><div class="event-top"><span>runtime summary</span><span>' + escapeText(nodes.length) + " nodes · " + escapeText(edges.length) + '</span></div><strong>Topology layout with runtime state overlay</strong><div class="hint">Recent paths and error flows stay highlighted without hiding the rest of the graph.</div></div>'
       ].join("");
-      stateEl.textContent = formatJson(state.detail?.state ?? null);
+      stateEl.innerHTML = renderRunStatePanel({
+        state: state.detail?.state ?? null,
+        header: state.detail?.header ?? null,
+        graph
+      });
     }
 
     function describeReviewDecisionPhase(detail) {
@@ -1025,22 +1134,10 @@ export function buildClientAppScript(apiPrefix: string): string {
         renderActionState();
         return;
       }
-      reviewsEl.innerHTML = state.reviews.reviews
-        .map((review) =>
-          '<button class="run-card ' + (review.reviewId === state.selectedReviewId ? "active" : "") + '" data-review-id="' + escapeText(review.reviewId) + '">' +
-            '<div class="run-title">' +
-              '<span class="truncate" title="' + escapeText(review.reviewId) + '"><code>' + escapeText(review.reviewId) + "</code></span>" +
-              '<span class="status ' + statusClass(review.currentStatus || "unknown") + '">' + escapeText(formatReviewStatusLabel(review.currentStatus || "unknown")) + "</span>" +
-            "</div>" +
-            '<div class="meta">' +
-              "<span>" + escapeText(review.roleId || "n/a") + "</span>" +
-              "<span>" + escapeText(review.branchStatus || "n/a") + "</span>" +
-              "<span>" + escapeText(review.decision || "no-decision") + "</span>" +
-              "<span>" + escapeText("phase " + formatReviewStatusLabel(review.decisionPhase || "none")) + "</span>" +
-            "</div>" +
-          "</button>"
-        )
-        .join("");
+      reviewsEl.innerHTML = renderReviewQueuePanel({
+        reviews: state.reviews,
+        selectedReviewId: state.selectedReviewId
+      });
       for (const button of reviewsEl.querySelectorAll("[data-review-id]")) {
         button.disabled = Boolean(state.actionBusy);
         button.addEventListener("click", () => selectReview(state.selectedRunId, button.getAttribute("data-review-id")));
@@ -1070,18 +1167,63 @@ export function buildClientAppScript(apiPrefix: string): string {
       renderActionState();
     }
 
+    function renderFailure() {
+      if (!state.selectedRunId) {
+        failureControlsEl.innerHTML = "";
+        failureSummaryEl.innerHTML = '<div class="hint">No run selected.</div>';
+        failureDetailEl.innerHTML = '<div class="hint">No run selected.</div>';
+        failureNextChecksEl.innerHTML = '<div class="hint">No run selected.</div>';
+        return;
+      }
+      failureControlsEl.innerHTML = [
+        '<button class="button subtle" id="refresh-failure"' + (state.actionBusy ? " disabled" : "") + '>Refresh failure</button>',
+        state.failureLoaded && state.failureStale ? '<span class="hint">failure data stale</span>' : ""
+      ].filter(Boolean).join("");
+      const refreshFailureButton = document.getElementById("refresh-failure");
+      if (refreshFailureButton) {
+        refreshFailureButton.addEventListener("click", async () => {
+          await loadFailure(state.selectedRunId, { force: true });
+        });
+      }
+      failureSummaryEl.innerHTML = renderFailureSummaryPanel({
+        failure: state.failure,
+        loaded: state.failureLoaded,
+        stale: state.failureStale
+      });
+      failureDetailEl.innerHTML = renderFailureDetailPanel({
+        failure: state.failure,
+        loaded: state.failureLoaded
+      });
+      failureNextChecksEl.innerHTML = renderSuggestedNextChecksPanel({
+        failure: state.failure,
+        loaded: state.failureLoaded
+      });
+      bindPanelJumpButtons();
+    }
+
     function renderResumeDiagnostics() {
       const controls = [];
       if (!state.selectedRunId) {
         resumeControlsEl.innerHTML = "";
+        resumeReadinessEl.innerHTML = '<div class="hint">No run selected.</div>';
         resumeEl.innerHTML = '<div class="hint">No run selected.</div>';
         return;
       }
+      controls.push('<button class="button subtle" id="refresh-readiness"' + (state.actionBusy ? " disabled" : "") + '>Refresh readiness</button>');
       controls.push('<button class="button" id="load-diagnostics">' + (state.resumeDiagnosticsLoaded ? "Refresh diagnostics" : "Load diagnostics") + '</button>');
+      if (state.resumeReadinessLoaded && state.resumeReadinessStale) {
+        controls.push('<span class="hint">readiness stale</span>');
+      }
       if (state.resumeDiagnosticsLoaded && state.resumeDiagnosticsStale) {
         controls.push('<span class="hint">diagnostics stale</span>');
       }
       resumeControlsEl.innerHTML = controls.join("");
+      const refreshReadinessButton = document.getElementById("refresh-readiness");
+      if (refreshReadinessButton) {
+        refreshReadinessButton.addEventListener("click", async () => {
+          await loadResumeReadiness(state.selectedRunId, { force: true });
+        });
+      }
       const loadDiagnosticsButton = document.getElementById("load-diagnostics");
       if (loadDiagnosticsButton) {
         loadDiagnosticsButton.disabled = Boolean(state.actionBusy);
@@ -1089,6 +1231,12 @@ export function buildClientAppScript(apiPrefix: string): string {
           await loadResumeDiagnostics(state.selectedRunId, { force: true });
         });
       }
+      resumeReadinessEl.innerHTML = renderResumeReadinessPanel({
+        readiness: state.resumeReadiness,
+        loaded: state.resumeReadinessLoaded,
+        stale: state.resumeReadinessStale,
+        diagnostics: state.resumeDiagnosticsLoaded ? state.resumeDiagnostics : null
+      });
       if (!state.resumeDiagnosticsLoaded) {
         resumeEl.innerHTML = '<div class="hint">Resume diagnostics are loaded on demand.</div>';
         return;
@@ -1100,7 +1248,6 @@ export function buildClientAppScript(apiPrefix: string): string {
       const checks = state.resumeDiagnostics.checks || [];
       const recommendations = state.resumeDiagnostics.recommendations || [];
       resumeEl.innerHTML = [
-        '<div class="event"><div class="event-top"><span>resume status</span><span class="status ' + statusClass(state.resumeDiagnostics.status) + '">' + escapeText(state.resumeDiagnostics.status) + "</span></div><strong>" + escapeText(state.resumeDiagnostics.fingerprint?.mismatch ? "fingerprint mismatch" : "authority set inspected") + "</strong></div>",
         ...checks.map((check) =>
           '<div class="event">' +
             '<div class="event-top">' +
@@ -1147,7 +1294,7 @@ export function buildClientAppScript(apiPrefix: string): string {
     }
 
     function renderDetail() {
-      detailEl.textContent = formatJson({
+      detailEl.innerHTML = renderArtifactsPanel({
         detail: state.detail,
         graph: state.graph,
         reviews: state.reviews,
@@ -1173,6 +1320,7 @@ export function buildClientAppScript(apiPrefix: string): string {
       renderWorkbench();
       renderActionForm();
       renderStats(header, graphPayload);
+      renderFailure();
       renderTimeline(state.events);
       renderGraph();
       renderReviews();
@@ -1278,28 +1426,49 @@ export function buildClientAppScript(apiPrefix: string): string {
       }
     }
 
-    async function saveWorkbench(saveAs) {
-      const targetPath = saveAs
-        ? promptText("Save Mermaid source as (relative path)", state.workbenchSavedPath || "drafts/system-copy.mmd")
-        : state.workbenchSavedPath;
-      if (saveAs && targetPath === null) {
-        return;
-      }
-      await runAction(saveAs ? "workbench:save-as" : "workbench:save", async () => {
+    async function saveWorkbench() {
+      await runAction("workbench:save", async () => {
         const payload = await requestAction(
-          saveAs ? \`\${API_PREFIX}/project/system/save-as\` : \`\${API_PREFIX}/project/system/save\`,
+          \`\${API_PREFIX}/project/system/save\`,
           {
-            systemSource: state.workbenchSource,
-            saveAsPath: saveAs ? targetPath : undefined
+            systemSource: state.workbenchSource
           }
         );
         state.workbenchDiskSource = state.workbenchSource;
-        state.workbenchSavedPath = relativeToWorkdir(payload.savedPath || targetPath || "system.mmd") || "system.mmd";
+        state.workbenchSavedPath = relativeToWorkdir(payload.savedPath || state.workbenchSavedPath || "system.mmd") || "system.mmd";
         state.workbench = {
           ...(state.workbench || {}),
           validation: payload.validation
         };
         persistDraftSource("");
+        renderWorkbench();
+        renderProject();
+        setFlash(
+          "success",
+          "Mermaid source saved to " + state.workbenchSavedPath + ". "
+            + (payload.followUpActions?.map((item) => item.label).join(" ") || "Consider project sync, sync-models, or a new run for verification.")
+        );
+      });
+    }
+
+    async function saveWorkbenchAs(saveAsPath) {
+      if (!saveAsPath) {
+        setFlash("error", "A relative save path is required.");
+        return;
+      }
+      await runAction("workbench:save-as", async () => {
+        const payload = await requestAction(\`\${API_PREFIX}/project/system/save-as\`, {
+          systemSource: state.workbenchSource,
+          saveAsPath
+        });
+        state.workbenchDiskSource = state.workbenchSource;
+        state.workbenchSavedPath = relativeToWorkdir(payload.savedPath || saveAsPath || "system.mmd") || "system.mmd";
+        state.workbench = {
+          ...(state.workbench || {}),
+          validation: payload.validation
+        };
+        persistDraftSource("");
+        closeActionForm();
         renderWorkbench();
         renderProject();
         setFlash(
@@ -1408,21 +1577,52 @@ export function buildClientAppScript(apiPrefix: string): string {
         };
         state.actionForm.fields = Object.assign({}, form.fields, payload);
         await submitReviewDecision(payload);
+        return;
+      }
+      if (form.kind === "saveAs") {
+        const payload = {
+          saveAsPath: readActionFieldValue("action-save-as-path")
+        };
+        state.actionForm.fields = Object.assign({}, form.fields, payload);
+        await saveWorkbenchAs(payload.saveAsPath);
+        return;
+      }
+      if (form.kind === "projectLoad") {
+        const payload = {
+          workdir: readActionFieldValue("action-project-workdir")
+        };
+        state.actionForm.fields = Object.assign({}, form.fields, payload);
+        await rebindProject(payload.workdir);
+        return;
+      }
+      if (form.kind === "reindex") {
+        await reindexRuns();
       }
     }
 
-    async function rebindProject() {
-      const target = promptText("Project workdir to load", getCurrentWorkdir());
-      if (target === null || !target) {
+    async function rebindProject(target) {
+      if (!target) {
+        setFlash("error", "Project workdir is required.");
         return;
       }
       await runAction("project:load", async () => {
         const payload = await requestAction(\`\${API_PREFIX}/project/load\`, { workdir: target });
+        closeActionForm();
         setFlash("success", "Project rebound to " + payload.workdir + ".");
         setSidebarOpen(false);
         await loadProject();
         await loadRuns();
         selectProjectHome();
+      });
+    }
+
+    async function reindexRuns() {
+      await runAction("reindex", async () => {
+        const payload = await requestAction(\`\${API_PREFIX}/runs/reindex\`);
+        state.runs = payload.runs || [];
+        closeActionForm();
+        renderRuns();
+        setFlash("success", "Runs index rebuilt.");
       });
     }
 
@@ -1440,13 +1640,19 @@ export function buildClientAppScript(apiPrefix: string): string {
     }
 
     async function loadProject() {
-      const [summary, system, config, roles] = await Promise.all([
+      const [summary, system, config, roles, bindings, contracts, rolePackages] = await Promise.all([
         requestJson(\`\${API_PREFIX}/project\`),
         requestJson(\`\${API_PREFIX}/project/system\`),
         requestJson(\`\${API_PREFIX}/project/config\`),
-        requestJson(\`\${API_PREFIX}/project/roles\`)
+        requestJson(\`\${API_PREFIX}/project/roles\`),
+        requestJson(\`\${API_PREFIX}/project/bindings\`),
+        requestJson(\`\${API_PREFIX}/project/contracts\`),
+        requestJson(\`\${API_PREFIX}/project/role-packages\`)
       ]);
       state.project = { summary, system, config, roles };
+      state.bindings = bindings;
+      state.contracts = contracts;
+      state.rolePackages = rolePackages;
       await loadWorkbench();
       renderProject();
     }
@@ -1558,6 +1764,55 @@ export function buildClientAppScript(apiPrefix: string): string {
       }
     }
 
+    async function loadFailure(runId, options) {
+      if (!runId) {
+        return;
+      }
+      if (state.actionBusy && !options?.internal) {
+        return;
+      }
+      if (state.failureLoaded && !state.failureStale && !options?.force) {
+        return;
+      }
+      try {
+        state.failure = await requestJson(\`\${API_PREFIX}/runs/\${encodeURIComponent(runId)}/failure\`);
+        state.failureLoaded = true;
+        state.failureStale = false;
+      } catch (error) {
+        state.failure = null;
+        state.failureLoaded = true;
+        if (!options?.suppressFlash) {
+          setFlash("error", "Failed to load failure triage: " + (error.message || error));
+        }
+      }
+      renderFailure();
+    }
+
+    async function loadResumeReadiness(runId, options) {
+      if (!runId) {
+        return;
+      }
+      if (state.actionBusy && !options?.internal) {
+        return;
+      }
+      if (state.resumeReadinessLoaded && !state.resumeReadinessStale && !options?.force) {
+        return;
+      }
+      try {
+        state.resumeReadiness = await requestJson(\`\${API_PREFIX}/runs/\${encodeURIComponent(runId)}/resume-readiness\`);
+        state.resumeReadinessLoaded = true;
+        state.resumeReadinessStale = false;
+      } catch (error) {
+        state.resumeReadiness = null;
+        state.resumeReadinessLoaded = true;
+        if (!options?.suppressFlash) {
+          setFlash("error", "Failed to load resume readiness: " + (error.message || error));
+        }
+      }
+      renderResumeDiagnostics();
+      renderDetail();
+    }
+
     async function loadResumeDiagnostics(runId, options) {
       if (!runId) {
         return;
@@ -1593,6 +1848,12 @@ export function buildClientAppScript(apiPrefix: string): string {
       state.eventCursor = eventsPayload.nextCursor || 0;
       state.graph = graphPayload;
       state.reviews = reviewsPayload;
+      state.failure = null;
+      state.failureLoaded = false;
+      state.failureStale = false;
+      state.resumeReadiness = null;
+      state.resumeReadinessLoaded = false;
+      state.resumeReadinessStale = false;
       state.resumeDiagnostics = null;
       state.resumeDiagnosticsLoaded = false;
       state.resumeDiagnosticsStale = false;
@@ -1616,6 +1877,10 @@ export function buildClientAppScript(apiPrefix: string): string {
         stopStream();
         connectStream(runId, state.eventCursor);
       }
+      await Promise.allSettled([
+        loadFailure(runId, { force: true, internal: true, suppressFlash: true }),
+        loadResumeReadiness(runId, { force: true, internal: true, suppressFlash: true })
+      ]);
       const status = detail.header?.status || "unknown";
       const hasWaitingHumanReview = Boolean(detail.header?.hasWaitingHumanReview);
       if (hasWaitingHumanReview) {
@@ -1643,8 +1908,14 @@ export function buildClientAppScript(apiPrefix: string): string {
       state.selectedReviewId = "";
       state.detail = null;
       state.graph = null;
+      state.failure = null;
+      state.failureLoaded = false;
+      state.failureStale = false;
       state.reviews = null;
       state.reviewDetail = null;
+      state.resumeReadiness = null;
+      state.resumeReadinessLoaded = false;
+      state.resumeReadinessStale = false;
       state.resumeDiagnostics = null;
       state.resumeDiagnosticsLoaded = false;
       state.resumeDiagnosticsStale = false;
@@ -1690,11 +1961,6 @@ export function buildClientAppScript(apiPrefix: string): string {
       }
     }
 
-    function promptText(label, initialValue) {
-      const value = window.prompt(label, initialValue || "");
-      return value === null ? null : value.trim();
-    }
-
     async function submitReviewDecision(args) {
       if (!state.selectedRunId || !state.selectedReviewId) {
         return;
@@ -1718,6 +1984,8 @@ export function buildClientAppScript(apiPrefix: string): string {
         );
         await refreshRunDetailAndGraph(state.selectedRunId);
         await refreshReviews(state.selectedRunId);
+        state.resumeReadinessStale = state.resumeReadinessLoaded || state.resumeReadinessStale;
+        await loadResumeReadiness(state.selectedRunId, { force: true, internal: true });
       });
     }
 
@@ -1742,6 +2010,8 @@ export function buildClientAppScript(apiPrefix: string): string {
             + " converged=" + (detail.converged ? "yes" : "no")
         );
         await refreshRunDetailAndGraph(state.selectedRunId);
+        await loadFailure(state.selectedRunId, { force: true, internal: true });
+        await loadResumeReadiness(state.selectedRunId, { force: true, internal: true });
       });
     }
 
@@ -1750,6 +2020,8 @@ export function buildClientAppScript(apiPrefix: string): string {
         detailGraph: state.streamRefreshPlan.detailGraph || nextPlan.detailGraph,
         reviews: state.streamRefreshPlan.reviews || nextPlan.reviews,
         reviewDetail: state.streamRefreshPlan.reviewDetail || nextPlan.reviewDetail,
+        failure: state.streamRefreshPlan.failure || nextPlan.failure,
+        resumeReadiness: state.streamRefreshPlan.resumeReadiness || nextPlan.resumeReadiness,
         markDiagnosticsStale: state.streamRefreshPlan.markDiagnosticsStale || nextPlan.markDiagnosticsStale
       };
     }
@@ -1763,23 +2035,34 @@ export function buildClientAppScript(apiPrefix: string): string {
         detailGraph: false,
         reviews: false,
         reviewDetail: false,
+        failure: false,
+        resumeReadiness: false,
         markDiagnosticsStale: false
       };
+      if (plan.failure) {
+        state.failureStale = state.failureLoaded || state.failureStale;
+      }
+      if (plan.resumeReadiness) {
+        state.resumeReadinessStale = state.resumeReadinessLoaded || state.resumeReadinessStale;
+      }
       if (plan.markDiagnosticsStale) {
         state.resumeDiagnosticsStale = state.resumeDiagnosticsLoaded || state.resumeDiagnosticsStale;
         state.logsStale = state.logsLoaded || state.logsStale;
+        renderFailure();
         renderResumeDiagnostics();
         renderLogs();
         renderDetail();
       }
-      if (!plan.detailGraph && !plan.reviews && !plan.reviewDetail) {
+      if (!plan.detailGraph && !plan.reviews && !plan.reviewDetail && !plan.failure && !plan.resumeReadiness) {
         return;
       }
       state.streamRefreshInFlight = true;
       try {
-        if (plan.detailGraph) {
-          await refreshRunDetailAndGraph(state.selectedRunId);
-        }
+        await Promise.all([
+          plan.detailGraph ? refreshRunDetailAndGraph(state.selectedRunId) : Promise.resolve(),
+          plan.failure ? loadFailure(state.selectedRunId, { force: true, internal: true, suppressFlash: true }) : Promise.resolve(),
+          plan.resumeReadiness ? loadResumeReadiness(state.selectedRunId, { force: true, internal: true, suppressFlash: true }) : Promise.resolve()
+        ]);
         if (plan.reviews) {
           await refreshReviews(state.selectedRunId);
         } else if (plan.reviewDetail) {
@@ -1845,7 +2128,9 @@ export function buildClientAppScript(apiPrefix: string): string {
     }
 
     projectLoadButton.addEventListener("click", async () => {
-      await rebindProject();
+      openActionForm("projectLoad", {
+        workdir: getCurrentWorkdir()
+      });
     });
 
     projectExportButton.addEventListener("click", async () => {
@@ -1853,15 +2138,7 @@ export function buildClientAppScript(apiPrefix: string): string {
     });
 
     reindexButton.addEventListener("click", async () => {
-      if (!window.confirm("Rebuild runs index now?")) {
-        return;
-      }
-      await runAction("reindex", async () => {
-        const payload = await requestAction(\`\${API_PREFIX}/runs/reindex\`);
-        state.runs = payload.runs || [];
-        renderRuns();
-        setFlash("success", "Runs index rebuilt.");
-      });
+      openActionForm("reindex", {});
     });
 
     stopRunButton.addEventListener("click", async () => {

@@ -112,6 +112,285 @@ export function renderProjectSummaryPanel(args: {
   ].join("");
 }
 
+export function renderFailureSummaryPanel(args: {
+  failure: Record<string, unknown> | null | undefined;
+  loaded: boolean;
+  stale: boolean;
+}): string {
+  if (!args.loaded) {
+    return '<div class="hint">Failure triage loads with the selected run.</div>';
+  }
+  if (!args.failure) {
+    return '<div class="hint">No recent failure captured for this run.</div>';
+  }
+  const summary = ((args.failure.summary ?? args.failure) || {}) as JsonRecord;
+  const detail = ((args.failure.detail ?? {}) || {}) as JsonRecord;
+  const errorCode = String(summary.errorCode ?? detail.errorCode ?? "none");
+  const stage = String(summary.stage ?? detail.stage ?? "n/a");
+  const message = String(summary.message ?? detail.message ?? "No failure message recorded.");
+  const roleId = String(summary.roleId ?? detail.roleId ?? "n/a");
+  const branchId = String(summary.branchId ?? detail.branchId ?? "n/a");
+  const retryable = Boolean(summary.retryable ?? detail.retryable);
+  const durationMs = summary.durationMs ?? detail.durationMs ?? "n/a";
+  const timeoutMs =
+    detail.timeoutMs ??
+    ((detail.selectedBinding as JsonRecord | undefined)?.timeoutMs ?? (summary.timeoutMs as unknown));
+  const classifyError = (): string => {
+    if (errorCode === "TOOL_EXECUTION_TIMEOUT") return "timeout budget exhausted";
+    if (errorCode.includes("CONTRACT")) return "contract handoff violation";
+    if (errorCode.includes("SCHEMA")) return "schema mismatch";
+    if (errorCode.includes("PROVIDER") || errorCode.includes("MODEL")) return "provider or model failure";
+    if (errorCode === "ROLE_EXECUTION_FAILED") return "role execution failed";
+    return "runtime failure";
+  };
+  const summaryCards = [
+    '<div class="event"><div class="event-top"><span>recent failed role</span><span>' +
+      escapeText(stage) +
+      '</span></div><strong><code>' +
+      escapeText(roleId) +
+      '</code></strong><div class="hint">' +
+      escapeText(branchId + " · " + classifyError()) +
+      "</div></div>",
+    '<div class="event"><div class="event-top"><span>error code</span><span>' +
+      escapeText(retryable ? "retryable" : "terminal") +
+      '</span></div><strong>' +
+      escapeText(errorCode) +
+      '</strong><div class="hint">' +
+      escapeText(message) +
+      "</div></div>",
+    '<div class="event"><div class="event-top"><span>budget</span><span>' +
+      escapeText(args.stale ? "stale" : "fresh") +
+      '</span></div><strong>' +
+      escapeText("duration " + durationMs + " ms") +
+      '</strong><div class="hint">' +
+      escapeText(timeoutMs ? "timeout budget " + timeoutMs + " ms" : "timeout budget unavailable") +
+      "</div></div>"
+  ];
+  return ['<div class="structure-list">', ...summaryCards, "</div>"].join("");
+}
+
+export function renderFailureDetailPanel(args: {
+  failure: Record<string, unknown> | null | undefined;
+  loaded: boolean;
+}): string {
+  if (!args.loaded) {
+    return '<div class="hint">Failure detail is not loaded yet.</div>';
+  }
+  if (!args.failure) {
+    return '<div class="hint">No failure detail available.</div>';
+  }
+  const summary = ((args.failure.summary ?? args.failure) || {}) as JsonRecord;
+  const detail = ((args.failure.detail ?? {}) || {}) as JsonRecord;
+  const selectedBinding = ((detail.selectedBinding ?? summary.selectedBinding) || {}) as JsonRecord;
+  const upstreamRoleIds = Array.isArray(detail.upstreamRoleIds) ? detail.upstreamRoleIds : [];
+  const allowedEvents = Array.isArray(detail.allowedEvents) ? detail.allowedEvents : [];
+  const contract = ((detail.contract ?? summary.contract) || {}) as JsonRecord;
+  const schemaPath = detail.schemaPath ?? contract.schemaPath ?? "n/a";
+  const rawOutput = detail.rawOutput ?? detail.rawModelOutput ?? summary.rawOutput ?? null;
+  return [
+    '<div class="structure-list">',
+    '<div class="event"><div class="event-top"><span>projected input</span><span>' +
+      escapeText(Array.isArray(detail.inputContext) ? "array" : typeof detail.inputContext) +
+      '</span></div><strong>' +
+      escapeText(detail.correctionRequest ? "correction request present" : "input context available") +
+      '</strong><div class="hint">' +
+      escapeText("schema " + schemaPath) +
+      '</div>' +
+      (detail.inputContext ? '<pre>' + escapeText(formatJson(detail.inputContext)) + "</pre>" : "") +
+      "</div>",
+    '<div class="event"><div class="event-top"><span>binding resolution</span><span>' +
+      escapeText(String(selectedBinding.bindingKind ?? selectedBinding.kind ?? "n/a")) +
+      '</span></div><strong>' +
+      escapeText(String(selectedBinding.resolvedBinding ?? selectedBinding.bindingRef ?? "binding unavailable")) +
+      '</strong><div class="hint">' +
+      escapeText(
+        "declared " + String(selectedBinding.declaredBinding ?? "n/a")
+          + " · timeout " + String(selectedBinding.timeoutMs ?? detail.timeoutMs ?? "n/a")
+          + " ms · output budget " + String(selectedBinding.maxOutputBytes ?? "n/a")
+      ) +
+      "</div></div>",
+    '<div class="event"><div class="event-top"><span>contract</span><span>' +
+      escapeText(String(contract.kind ?? "n/a")) +
+      '</span></div><strong>' +
+      escapeText(String(contract.contractId ?? "contract unavailable")) +
+      '</strong><div class="hint">' +
+      escapeText(
+        "flow " + String(contract.flowKey ?? "n/a")
+          + " · schema " + String(contract.schemaPath ?? schemaPath)
+      ) +
+      "</div></div>",
+    '<div class="event"><div class="event-top"><span>role schema</span><span>' +
+      escapeText(String(allowedEvents.length)) +
+      '</span></div><strong>' +
+      escapeText(allowedEvents.length ? allowedEvents.join(", ") : "allowed events unavailable") +
+      '</strong><div class="hint">' +
+      escapeText("upstream " + (upstreamRoleIds.length ? upstreamRoleIds.join(", ") : "none")) +
+      "</div></div>",
+    rawOutput
+      ? '<div class="event"><div class="event-top"><span>raw output</span><span>captured</span></div><strong>Provider / role raw output snapshot</strong><pre>' +
+        escapeText(typeof rawOutput === "string" ? rawOutput : formatJson(rawOutput)) +
+        "</pre></div>"
+      : '<div class="event"><div class="event-top"><span>raw output</span><span>missing</span></div><strong>No raw output snapshot captured</strong></div>',
+    "</div>"
+  ].join("");
+}
+
+export function renderSuggestedNextChecksPanel(args: {
+  failure: Record<string, unknown> | null | undefined;
+  loaded: boolean;
+}): string {
+  if (!args.loaded) {
+    return '<div class="hint">Suggested checks appear after failure data loads.</div>';
+  }
+  if (!args.failure) {
+    return '<div class="hint">No failure-specific next checks are needed right now.</div>';
+  }
+  return [
+    '<div class="structure-list">',
+    '<div class="event"><div class="event-top"><span>suggested next checks</span><span>actions</span></div><strong>Move directly to the likely root-cause surfaces</strong><div class="hint">These actions jump to the panel that explains the failing input, binding, schema, contract, or resume blockers.</div></div>',
+    '<div class="actions">',
+    '<button class="button subtle" id="failure-check-input">Inspect projected input</button>',
+    '<button class="button subtle" id="failure-check-binding">Inspect binding resolution</button>',
+    '<button class="button subtle" id="failure-check-role-package">Inspect role schema</button>',
+    '<button class="button subtle" id="failure-check-contract">Inspect contract</button>',
+    '<button class="button subtle" id="failure-check-resume">Inspect resume readiness</button>',
+    "</div>",
+    "</div>"
+  ].join("");
+}
+
+export function renderBindingExplainPanel(args: {
+  bindings: Record<string, unknown> | null | undefined;
+  stale?: boolean;
+}): string {
+  const bindings = args.bindings ?? {};
+  const roles = Array.isArray(bindings.roles)
+    ? bindings.roles as JsonRecord[]
+    : Array.isArray(bindings.bindings)
+      ? bindings.bindings as JsonRecord[]
+      : Array.isArray(bindings.entries)
+        ? bindings.entries as JsonRecord[]
+        : [];
+  if (!roles.length) {
+    return '<div class="hint">Binding explain data unavailable.</div>';
+  }
+  return [
+    '<div class="structure-list">',
+    '<div class="event"><div class="event-top"><span>binding explain</span><span>' +
+      escapeText(args.stale ? "stale" : "fresh") +
+      '</span></div><strong>' +
+      escapeText(roles.length + " roles resolved from system + model-selection") +
+      "</strong></div>",
+    ...roles.map((role) =>
+      '<div class="event"><div class="event-top"><span><code>' +
+      escapeText(role.roleId ?? "n/a") +
+      '</code></span><span>' +
+      escapeText(role.bindingKind ?? "n/a") +
+      "</span></div><strong>" +
+      escapeText(
+        String(role.declaredBinding ?? "undeclared")
+          + " -> " + String(role.resolvedBinding ?? role.effectiveBinding ?? "unresolved")
+      ) +
+      '</strong><div class="hint">' +
+      escapeText(
+        "effective " + String(role.effectiveBinding ?? role.resolvedBinding ?? "n/a")
+          + " · timeout " + String(role.timeoutMs ?? "n/a")
+          + " ms · output budget " + String(role.maxOutputBytes ?? "n/a")
+          + " · source " + String(role.source ?? "unknown")
+      ) +
+      "</div></div>"
+    ),
+    "</div>"
+  ].join("");
+}
+
+export function renderRolePackagePanel(args: {
+  rolePackages: Record<string, unknown> | null | undefined;
+}): string {
+  const rolePackages = args.rolePackages ?? {};
+  const roles = Array.isArray(rolePackages.roles)
+    ? rolePackages.roles as JsonRecord[]
+    : Array.isArray(rolePackages.entries)
+      ? rolePackages.entries as JsonRecord[]
+      : [];
+  if (!roles.length) {
+    return '<div class="hint">Role package summaries unavailable.</div>';
+  }
+  return [
+    '<div class="structure-list">',
+    '<div class="event"><div class="event-top"><span>role packages</span><span>' +
+      escapeText(roles.length) +
+      '</span></div><strong>Role package health and schema coverage</strong></div>',
+    ...roles.map((role) => {
+      const files = ((role.files ?? role.health) || {}) as JsonRecord;
+      const allowedEvents = Array.isArray(role.allowedEvents) ? role.allowedEvents : [];
+      const presentFiles = Object.entries(files)
+        .filter(([, present]) => Boolean(present))
+        .map(([key]) => key);
+      return (
+        '<div class="event"><div class="event-top"><span><code>' +
+        escapeText(role.roleId ?? "n/a") +
+        '</code></span><span>' +
+        escapeText(role.summary ?? role.label ?? "package") +
+        "</span></div><strong>" +
+        escapeText(String(role.outputSchemaPath ?? role.schemaPath ?? "output schema unavailable")) +
+        '</strong><div class="hint">' +
+        escapeText(
+          "allowed events " + (allowedEvents.length ? allowedEvents.join(", ") : "unknown")
+            + " · files " + (presentFiles.length ? presentFiles.join(", ") : "none")
+        ) +
+        "</div></div>"
+      );
+    }),
+    "</div>"
+  ].join("");
+}
+
+export function renderContractPanel(args: {
+  contracts: Record<string, unknown> | null | undefined;
+}): string {
+  const contracts = args.contracts ?? {};
+  const flows = Array.isArray(contracts.flows)
+    ? contracts.flows as JsonRecord[]
+    : Array.isArray(contracts.contracts)
+      ? contracts.contracts as JsonRecord[]
+      : Array.isArray(contracts.entries)
+        ? contracts.entries as JsonRecord[]
+        : [];
+  const uncoveredEdges = Array.isArray(contracts.uncoveredEdges) ? contracts.uncoveredEdges : [];
+  if (!flows.length && !uncoveredEdges.length) {
+    return '<div class="hint">Contract coverage data unavailable.</div>';
+  }
+  return [
+    '<div class="structure-list">',
+    '<div class="event"><div class="event-top"><span>contract coverage</span><span>' +
+      escapeText(uncoveredEdges.length ? uncoveredEdges.length + " uncovered" : "complete") +
+      '</span></div><strong>Strict handoff coverage across flows and role inputs</strong></div>',
+    ...flows.map((flow) =>
+      '<div class="event"><div class="event-top"><span>' +
+      escapeText(String(flow.flowKey ?? flow.edgeKey ?? "flow")) +
+      "</span><span>" +
+      escapeText(String(flow.kind ?? "flow")) +
+      "</span></div><strong>" +
+      escapeText(String(flow.contractId ?? "missing contract")) +
+      '</strong><div class="hint">' +
+      escapeText(
+        "schema " + String(flow.schemaPath ?? "n/a")
+          + " · status " + String(flow.lastStatus ?? flow.coverage ?? "unknown")
+      ) +
+      "</div></div>"
+    ),
+    ...uncoveredEdges.map((edge) =>
+      '<div class="event"><div class="event-top"><span>missing contract</span><span>coverage gap</span></div><strong>' +
+      escapeText(String(edge.flowKey ?? edge.edgeKey ?? "uncovered edge")) +
+      '</strong><div class="hint">' +
+      escapeText(String(edge.fromRoleId ?? "n/a") + " -> " + String(edge.toRoleId ?? "n/a")) +
+      "</div></div>"
+    ),
+    "</div>"
+  ].join("");
+}
+
 export function renderReviewDetailPanel(detail: Record<string, unknown> | null | undefined): string {
   if (!detail) {
     return '<div class="hint">No review selected.</div>';
@@ -133,6 +412,14 @@ export function renderReviewDetailPanel(detail: Record<string, unknown> | null |
         );
       })
     : ['<div class="hint">No prior decision history.</div>'];
+  const nextActionSummary =
+    detail.currentStatus === "pending"
+      ? "Awaiting approve, rework, pause, or terminate."
+      : detail.decisionPhase === "recorded"
+        ? "Decision recorded; runtime reconcile should be inspected next."
+        : detail.decisionPhase === "pending_reconcile"
+          ? "Decision has checkpoint state but still blocks clean resume."
+          : "No immediate action available.";
   return [
     '<div class="structure-list">',
     '<div class="event"><div class="event-top"><span>review</span><span>' + escapeText(detail.currentStatus ?? "unknown") + "</span></div><strong>" +
@@ -155,11 +442,147 @@ export function renderReviewDetailPanel(detail: Record<string, unknown> | null |
       '</strong><div class="hint">' +
       escapeText("execution " + (detail.executionId ?? "n/a") + " · requestedBy " + (detail.requestedByExecutionId ?? "n/a")) +
       "</div></div>",
+    '<div class="event"><div class="event-top"><span>next step</span><span>' + escapeText(detail.branchStatus ?? "n/a") + '</span></div><strong>' +
+      escapeText(nextActionSummary) +
+      '</strong><div class="hint">' +
+      escapeText("selected event " + (detail.selectedEvent ?? "n/a") + " · branch " + (detail.branchId ?? "n/a")) +
+      "</div></div>",
     '<div class="event"><div class="event-top"><span>history</span><span>' + escapeText(history.length) + '</span></div><strong>Decision trail</strong></div>',
     ...historyCards,
+    '<div class="event"><div class="event-top"><span>request snapshot</span><span>captured</span></div><strong>Review request context</strong><pre>' +
+      escapeText(formatJson(detail.reviewRequestSnapshot ?? detail.requestSnapshot ?? detail.spec ?? null)) +
+      "</pre></div>",
+    '<div class="event"><div class="event-top"><span>decision snapshot</span><span>captured</span></div><strong>Decision durability snapshot</strong><pre>' +
+      escapeText(formatJson(detail.decisionSnapshot ?? {
+        decision: detail.decision ?? null,
+        actor: detail.actor ?? null,
+        comment: detail.comment ?? null,
+        decidedAt: detail.decidedAt ?? null,
+        committedAt: detail.committedAt ?? null,
+        checkpointSequence: detail.checkpointSequence ?? null,
+        appliedAt: detail.appliedAt ?? null,
+        reconciledAt: detail.reconciledAt ?? null
+      })) +
+      "</pre></div>",
     '<div class="event"><div class="event-top"><span>context</span><span>snapshot</span></div><strong>Human review context</strong><pre>' +
       escapeText(formatJson(detail.humanReviewContext ?? null)) +
       "</pre></div>",
+    "</div>"
+  ].join("");
+}
+
+export function renderReviewQueuePanel(args: {
+  reviews: Record<string, unknown> | null | undefined;
+  selectedReviewId: string;
+}): string {
+  const reviewList = Array.isArray(args.reviews?.reviews) ? args.reviews?.reviews as JsonRecord[] : [];
+  if (!reviewList.length) {
+    return '<div class="hint">No reviews for this run.</div>';
+  }
+  const statusCounts = reviewList.reduce<Record<string, number>>((counts, review) => {
+    const key = String(review.currentStatus ?? "unknown");
+    counts[key] = (counts[key] ?? 0) + 1;
+    return counts;
+  }, {});
+  return [
+    '<div class="structure-list">',
+    '<div class="event"><div class="event-top"><span>queue summary</span><span>' +
+      escapeText(reviewList.length) +
+      '</span></div><strong>' +
+      escapeText(
+        Object.entries(statusCounts)
+          .map(([status, count]) => status.replace(/_/g, " ") + " " + count)
+          .join(" · ")
+      ) +
+      "</strong></div>",
+    ...reviewList.map((review) =>
+      '<button class="run-card ' + (review.reviewId === args.selectedReviewId ? "active" : "") + '" data-review-id="' + escapeText(review.reviewId) + '">' +
+      '<div class="run-title"><span class="truncate" title="' + escapeText(review.reviewId) + '"><code>' + escapeText(review.reviewId) + '</code></span>' +
+      '<span class="status ' + escapeText(String(review.currentStatus ?? "unknown")) + '">' + escapeText(String(review.currentStatus ?? "unknown").replace(/_/g, " ")) + "</span></div>" +
+      '<div class="meta">' +
+      '<span>' + escapeText(String(review.roleId ?? "n/a")) + "</span>" +
+      '<span>' + escapeText("round " + String(review.round ?? "n/a")) + "</span>" +
+      '<span>' + escapeText("phase " + String(review.decisionPhase ?? "none").replace(/_/g, " ")) + "</span>" +
+      '<span>' + escapeText(String(review.actor ?? "unassigned")) + "</span>" +
+      '<span>' + escapeText(String(review.reworkTarget ?? review.reworkRoleId ?? "no rework target")) + "</span>" +
+      "</div>" +
+      (review.comment ? '<div class="hint">' + escapeText(String(review.comment)) + "</div>" : "") +
+      "</button>"
+    ),
+    "</div>"
+  ].join("");
+}
+
+export function renderResumeReadinessPanel(args: {
+  readiness: Record<string, unknown> | null | undefined;
+  loaded: boolean;
+  stale: boolean;
+  diagnostics: Record<string, unknown> | null | undefined;
+}): string {
+  if (!args.loaded) {
+    return '<div class="hint">Resume readiness loads with the selected run.</div>';
+  }
+  if (!args.readiness) {
+    return '<div class="hint">Resume readiness unavailable.</div>';
+  }
+  const blockers = Array.isArray(args.readiness.blockers)
+    ? args.readiness.blockers as JsonRecord[]
+    : Array.isArray(args.readiness.blockingIssues)
+      ? args.readiness.blockingIssues as JsonRecord[]
+      : Array.isArray(args.readiness.issues)
+        ? args.readiness.issues as JsonRecord[]
+        : [];
+  const driftBySource = (args.readiness.driftBySource ?? args.readiness.driftSources ?? {}) as JsonRecord;
+  const checks = Array.isArray(args.diagnostics?.checks) ? args.diagnostics?.checks as JsonRecord[] : [];
+  const canResume =
+    typeof args.readiness.canResume === "boolean"
+      ? args.readiness.canResume
+      : args.readiness.status === "ready";
+  return [
+    '<div class="structure-list">',
+    '<div class="event"><div class="event-top"><span>resume readiness</span><span>' +
+      escapeText(args.stale ? "stale" : "fresh") +
+      '</span></div><strong>' +
+      escapeText(canResume ? "can resume" : "resume blocked") +
+      '</strong><div class="hint">' +
+      escapeText(
+        "status " + String(args.readiness.status ?? "unknown")
+          + " · " + String(args.readiness.reason ?? args.readiness.summary ?? "no summary")
+      ) +
+      "</div></div>",
+    ...(blockers.length
+      ? blockers.map((blocker) =>
+          '<div class="event"><div class="event-top"><span>' +
+          escapeText(String(blocker.kind ?? blocker.code ?? "blocker")) +
+          "</span><span>" +
+          escapeText(String(blocker.severity ?? "blocking")) +
+          "</span></div><strong>" +
+          escapeText(String(blocker.title ?? blocker.label ?? blocker.message ?? "resume blocker")) +
+          '</strong><div class="hint">' +
+          escapeText(String(blocker.detail ?? blocker.source ?? "")) +
+          "</div></div>"
+        )
+      : ['<div class="event"><div class="event-top"><span>blockers</span><span>0</span></div><strong>No blocking issues reported</strong></div>']),
+    ...Object.entries(driftBySource).map(([source, value]) =>
+      '<div class="event"><div class="event-top"><span>drift source</span><span>' +
+      escapeText(source) +
+      '</span></div><strong>' +
+      escapeText(Array.isArray(value) ? value.length + " issue(s)" : typeof value === "object" ? "details available" : String(value)) +
+      '</strong>' +
+      (value ? '<pre>' + escapeText(formatJson(value)) + "</pre>" : "") +
+      "</div>"
+    ),
+    ...(checks.length
+      ? checks.map((check) =>
+          '<div class="event"><div class="event-top"><span>diagnostic check</span><span>' +
+          escapeText(String(check.ok ? "ok" : check.severity ?? "warn")) +
+          '</span></div><strong>' +
+          escapeText(String(check.label ?? check.id ?? "check")) +
+          '</strong><div class="hint">' +
+          escapeText(String(check.message ?? "")) +
+          "</div></div>"
+        )
+      : ['<div class="hint">Detailed resume diagnostics remain on-demand.</div>']),
     "</div>"
   ].join("");
 }
@@ -211,6 +634,178 @@ export function renderLogsPanel(args: {
     '<div class="structure-list">',
     renderLogEntries("engine log", args.engine),
     renderLogEntries("role log", args.role),
+    "</div>"
+  ].join("");
+}
+
+export function renderRunStatePanel(args: {
+  state: unknown;
+  header: JsonRecord | null | undefined;
+  graph: JsonRecord | null | undefined;
+}): string {
+  const summarizeValue = (value: unknown): { label: string; detail?: string } => {
+    if (Array.isArray(value)) {
+      return {
+        label: `array · ${value.length} item${value.length === 1 ? "" : "s"}`,
+        detail: value.length ? formatJson(value) : undefined
+      };
+    }
+    if (value && typeof value === "object") {
+      const keys = Object.keys(value as JsonRecord);
+      return {
+        label: `object · ${keys.length} key${keys.length === 1 ? "" : "s"}`,
+        detail: keys.length ? formatJson(value) : undefined
+      };
+    }
+    if (typeof value === "boolean") {
+      return { label: value ? "true" : "false" };
+    }
+    if (value === null || value === undefined || value === "") {
+      return { label: "empty" };
+    }
+    return { label: String(value) };
+  };
+  const renderStructuredValueCards = (title: string, value: unknown): string[] => {
+    const record = value && typeof value === "object" && !Array.isArray(value)
+      ? value as JsonRecord
+      : undefined;
+    if (!record) {
+      const summary = summarizeValue(value);
+      return [
+        '<div class="event"><div class="event-top"><span>' + escapeText(title) + '</span><span>value</span></div><strong>' +
+        escapeText(summary.label) +
+        '</strong>' +
+        (summary.detail ? '<pre>' + escapeText(summary.detail) + "</pre>" : "") +
+        "</div>"
+      ];
+    }
+    const keys = Object.keys(record);
+    if (!keys.length) {
+      return [
+        '<div class="event"><div class="event-top"><span>' + escapeText(title) + '</span><span>empty</span></div><strong>no fields</strong></div>'
+      ];
+    }
+    return keys.map((key) => {
+      const summary = summarizeValue(record[key]);
+      return (
+        '<div class="event"><div class="event-top"><span>' +
+        escapeText(`${title}.${key}`) +
+        "</span><span>" +
+        escapeText(summary.label) +
+        "</span></div><strong>" +
+        escapeText(key) +
+        "</strong>" +
+        (summary.detail ? '<pre>' + escapeText(summary.detail) + "</pre>" : "") +
+        "</div>"
+      );
+    });
+  };
+  if (args.state === null || args.state === undefined) {
+    return '<div class="hint">Runtime state unavailable.</div>';
+  }
+  const header = args.header ?? {};
+  const graph = args.graph ?? {};
+  const graphNodes = Array.isArray(graph.nodes) ? graph.nodes.length : 0;
+  const graphEdges = Array.isArray(graph.edges) ? graph.edges.length : 0;
+  return [
+    '<div class="structure-list">',
+    '<div class="event"><div class="event-top"><span>runtime</span><span>' + escapeText(header.status ?? "unknown") + "</span></div><strong>" +
+      escapeText(String((args.state as JsonRecord | undefined)?.status ?? header.status ?? "state available")) +
+      '</strong><div class="hint">active branches ' + escapeText(header.activeBranches ?? 0) +
+      " · pending reviews " + escapeText(header.pendingReviewCount ?? 0) + "</div></div>",
+    '<div class="event"><div class="event-top"><span>graph snapshot</span><span>' + escapeText(graphNodes) + " nodes</span></div><strong>" +
+      escapeText(`flows ${graphEdges}`) +
+      '</strong><div class="hint">last role ' + escapeText(header.lastExecutedRoleId ?? "n/a") +
+      " · final role " + escapeText(header.finalRoleId ?? "n/a") + "</div></div>",
+    ...renderStructuredValueCards("state", args.state),
+    "</div>"
+  ].join("");
+}
+
+export function renderArtifactsPanel(args: {
+  detail: Record<string, unknown> | null | undefined;
+  graph: Record<string, unknown> | null | undefined;
+  reviews: Record<string, unknown> | null | undefined;
+  reviewDetail: Record<string, unknown> | null | undefined;
+  resumeDiagnostics: Record<string, unknown> | null | undefined;
+}): string {
+  const summarizeValue = (value: unknown): { label: string; detail?: string } => {
+    if (Array.isArray(value)) {
+      return {
+        label: `array · ${value.length} item${value.length === 1 ? "" : "s"}`,
+        detail: value.length ? formatJson(value) : undefined
+      };
+    }
+    if (value && typeof value === "object") {
+      const keys = Object.keys(value as JsonRecord);
+      return {
+        label: `object · ${keys.length} key${keys.length === 1 ? "" : "s"}`,
+        detail: keys.length ? formatJson(value) : undefined
+      };
+    }
+    if (typeof value === "boolean") {
+      return { label: value ? "true" : "false" };
+    }
+    if (value === null || value === undefined || value === "") {
+      return { label: "empty" };
+    }
+    return { label: String(value) };
+  };
+  const renderStructuredValueCards = (title: string, value: unknown): string[] => {
+    const record = value && typeof value === "object" && !Array.isArray(value)
+      ? value as JsonRecord
+      : undefined;
+    if (!record) {
+      const summary = summarizeValue(value);
+      return [
+        '<div class="event"><div class="event-top"><span>' + escapeText(title) + '</span><span>value</span></div><strong>' +
+        escapeText(summary.label) +
+        '</strong>' +
+        (summary.detail ? '<pre>' + escapeText(summary.detail) + "</pre>" : "") +
+        "</div>"
+      ];
+    }
+    const keys = Object.keys(record);
+    if (!keys.length) {
+      return [
+        '<div class="event"><div class="event-top"><span>' + escapeText(title) + '</span><span>empty</span></div><strong>no fields</strong></div>'
+      ];
+    }
+    return keys.map((key) => {
+      const summary = summarizeValue(record[key]);
+      return (
+        '<div class="event"><div class="event-top"><span>' +
+        escapeText(`${title}.${key}`) +
+        "</span><span>" +
+        escapeText(summary.label) +
+        "</span></div><strong>" +
+        escapeText(key) +
+        "</strong>" +
+        (summary.detail ? '<pre>' + escapeText(summary.detail) + "</pre>" : "") +
+        "</div>"
+      );
+    });
+  };
+  if (!args.detail) {
+    return '<div class="hint">No run selected.</div>';
+  }
+  const header = (args.detail.header ?? {}) as JsonRecord;
+  const reviewList = Array.isArray(args.reviews?.reviews) ? args.reviews.reviews as unknown[] : [];
+  return [
+    '<div class="structure-list">',
+    '<div class="event"><div class="event-top"><span>run</span><span>' + escapeText(header.status ?? "unknown") + "</span></div><strong>" +
+      escapeText(args.detail.runId ?? "n/a") +
+      '</strong><div class="hint">' +
+      escapeText((args.detail.runDir ?? "n/a") + " · updated " + (header.updatedAt ?? "n/a")) +
+      "</div></div>",
+    '<div class="event"><div class="event-top"><span>artifacts</span><span>' + escapeText(reviewList.length) + " reviews</span></div><strong>" +
+      escapeText(`graph ${args.graph?.graph ? "available" : "missing"} · diagnostics ${args.resumeDiagnostics ? "loaded" : "lazy"}`) +
+      '</strong><div class="hint">selected review ' + escapeText(args.reviewDetail?.reviewId ?? "none") + "</div></div>",
+    ...renderStructuredValueCards("summary", args.detail.summary ?? null),
+    ...renderStructuredValueCards("metrics", args.detail.metrics ?? null),
+    ...renderStructuredValueCards("resolvedConfig", args.detail.resolvedConfig ?? null),
+    ...renderStructuredValueCards("stopRequest", args.detail.stopRequest ?? null),
+    ...renderStructuredValueCards("stopOutcome", args.detail.stopOutcome ?? null),
     "</div>"
   ].join("");
 }

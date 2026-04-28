@@ -689,6 +689,19 @@ export function renderPageHtml(workdir: string, apiPrefix: string): string {
             <div class="stat-grid" id="stats"></div>
           </div>
         </article>
+        <article class="card span-12">
+          <header>
+            <div class="row">
+              <h3>Failure Triage</h3>
+              <div id="failure-controls" class="actions"></div>
+            </div>
+          </header>
+          <div class="body">
+            <div id="failure-summary" class="structure-list"><div class="hint">No run selected.</div></div>
+            <div id="failure-detail" class="structure-list"><div class="hint">No run selected.</div></div>
+            <div id="failure-next-checks" class="structure-list"><div class="hint">No run selected.</div></div>
+          </div>
+        </article>
         <article class="card span-8">
           <header><h3>Timeline</h3></header>
           <div class="body">
@@ -720,11 +733,11 @@ export function renderPageHtml(workdir: string, apiPrefix: string): string {
           <header><h3>Graph View</h3></header>
           <div class="body">
             <div id="graph-view" class="structure-list"><div class="hint">No run selected.</div></div>
-            <pre id="state">No run selected.</pre>
+            <div id="state" class="structure-list"><div class="hint">No run selected.</div></div>
           </div>
         </article>
         <article class="card span-6">
-          <header><h3>Reviews</h3></header>
+          <header><h3>Review Queue</h3></header>
           <div class="body">
             <div id="reviews" class="timeline"><div class="hint">No run selected.</div></div>
             <div id="review-actions" class="actions"></div>
@@ -734,12 +747,21 @@ export function renderPageHtml(workdir: string, apiPrefix: string): string {
         <article class="card span-6">
           <header>
             <div class="row">
-              <h3>Resume Diagnostics</h3>
+              <h3>Resume Readiness</h3>
               <div id="resume-controls" class="actions"></div>
             </div>
           </header>
           <div class="body">
+            <div id="resume-readiness" class="structure-list"><div class="hint">No run selected.</div></div>
             <div id="resume-diagnostics" class="timeline"><div class="hint">No run selected.</div></div>
+          </div>
+        </article>
+        <article class="card span-12">
+          <header><h3>Config Explain</h3></header>
+          <div class="body">
+            <div id="binding-explain" class="structure-list">Loading binding resolution...</div>
+            <div id="role-packages" class="structure-list">Loading role packages...</div>
+            <div id="contract-explain" class="structure-list">Loading contracts...</div>
           </div>
         </article>
         <article class="card span-12">
@@ -766,7 +788,7 @@ export function renderPageHtml(workdir: string, apiPrefix: string): string {
         <article class="card span-12">
           <header><h3>Artifacts</h3></header>
           <div class="body">
-            <pre id="detail">No run selected.</pre>
+            <div id="detail" class="structure-list"><div class="hint">No run selected.</div></div>
           </div>
         </article>
       </section>
