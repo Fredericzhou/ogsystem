@@ -1,7 +1,7 @@
 # OGSystem Debug-First Console Roadmap
 
 Date: 2026-04-28  
-Status: proposal  
+Status: delivered Phase 0-3; Phase 4-5 pending  
 Scope: 以调试和失败解释为优先目标，推进 `visualizer -> console`，优先解决 run 诊断、配置对账和恢复操作问题，而不是先做可视 authoring
 
 Related:

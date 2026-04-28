@@ -797,6 +797,13 @@ test("visualizer server serves run list, details, and live stream", async (t) =>
     assert.equal(failure.summary.errorCode, "E_VIS_TEST");
     assert.equal(Array.isArray(failure.suggestedNextChecks), true);
 
+    for (const debugEndpoint of ["failure", "resume-readiness"]) {
+      const missingResponse = await fetch(`${url}/api/v1/runs/missing-run/${debugEndpoint}`);
+      assert.equal(missingResponse.status, 404);
+      const missing = await missingResponse.json();
+      assert.equal(missing.error.code, "RUN_NOT_FOUND");
+    }
+
     const eventsResponse = await fetch(`${url}/api/v1/runs/${runId}/events?cursor=0&limit=1`);
     assert.equal(eventsResponse.status, 200);
     const events = await eventsResponse.json();
@@ -842,6 +849,44 @@ test("visualizer server serves run list, details, and live stream", async (t) =>
     assert.equal(stream.contentType, "text/event-stream; charset=utf-8");
     assert.match(stream.chunk, /"type":"audit"/);
     assert.match(stream.chunk, /"status":"ok"/);
+  } finally {
+    await new Promise((resolve) => server.close(resolve));
+  }
+});
+
+test("visualizer server maps config explain API setup failures to error envelopes", async (t) => {
+  const workdir = await mkdtemp(path.join(os.tmpdir(), "ogsystem-visualizer-config-error-"));
+  let started;
+  try {
+    started = await startVisualizationServer({
+      workdir,
+      host: "127.0.0.1",
+      port: 0
+    });
+  } catch (error) {
+    const errorCode =
+      typeof error === "object" && error !== null && "code" in error
+        ? error.code
+        : undefined;
+    if (
+      errorCode === "EPERM" ||
+      errorCode === "EACCES"
+    ) {
+      t.skip(`visualizer listen unavailable in sandbox: ${errorCode}`);
+      return;
+    }
+    throw error;
+  }
+  const { server, url } = started;
+
+  try {
+    for (const endpoint of ["bindings", "contracts", "role-packages"]) {
+      const response = await fetch(`${url}/api/v1/project/${endpoint}`);
+      assert.equal(response.status, 500);
+      const body = await response.json();
+      assert.equal(body.error.code, "VISUALIZER_INTERNAL_ERROR");
+      assert.match(body.error.message, /system\.mmd/);
+    }
   } finally {
     await new Promise((resolve) => server.close(resolve));
   }
