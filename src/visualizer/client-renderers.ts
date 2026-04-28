@@ -310,9 +310,11 @@ export function renderRolePackagePanel(args: {
   const rolePackages = args.rolePackages ?? {};
   const roles = Array.isArray(rolePackages.roles)
     ? rolePackages.roles as JsonRecord[]
-    : Array.isArray(rolePackages.entries)
-      ? rolePackages.entries as JsonRecord[]
-      : [];
+    : Array.isArray(rolePackages.rolePackages)
+      ? rolePackages.rolePackages as JsonRecord[]
+      : Array.isArray(rolePackages.entries)
+        ? rolePackages.entries as JsonRecord[]
+        : [];
   if (!roles.length) {
     return '<div class="hint">Role package summaries unavailable.</div>';
   }
@@ -532,7 +534,19 @@ export function renderResumeReadinessPanel(args: {
       : Array.isArray(args.readiness.issues)
         ? args.readiness.issues as JsonRecord[]
         : [];
-  const driftBySource = (args.readiness.driftBySource ?? args.readiness.driftSources ?? {}) as JsonRecord;
+  const driftSources = Array.isArray(args.readiness.driftSources)
+    ? args.readiness.driftSources as JsonRecord[]
+    : Object.entries((args.readiness.driftBySource ?? {}) as JsonRecord).map(([source, value]) => ({
+        source,
+        detail: value,
+        changed: Boolean(value),
+        blocking: false,
+        message: Array.isArray(value)
+          ? value.length + " issue(s)"
+          : typeof value === "object" && value !== null
+            ? "details available"
+            : String(value)
+      }));
   const checks = Array.isArray(args.diagnostics?.checks) ? args.diagnostics?.checks as JsonRecord[] : [];
   const canResume =
     typeof args.readiness.canResume === "boolean"
@@ -553,25 +567,31 @@ export function renderResumeReadinessPanel(args: {
     ...(blockers.length
       ? blockers.map((blocker) =>
           '<div class="event"><div class="event-top"><span>' +
-          escapeText(String(blocker.kind ?? blocker.code ?? "blocker")) +
+          escapeText(String(blocker.category ?? blocker.kind ?? blocker.code ?? blocker.id ?? "blocker")) +
           "</span><span>" +
-          escapeText(String(blocker.severity ?? "blocking")) +
+          escapeText(String(blocker.blocking === false ? "non-blocking" : blocker.severity ?? "blocking")) +
           "</span></div><strong>" +
           escapeText(String(blocker.title ?? blocker.label ?? blocker.message ?? "resume blocker")) +
           '</strong><div class="hint">' +
-          escapeText(String(blocker.detail ?? blocker.source ?? "")) +
+          escapeText(String(blocker.source ?? "")) +
+          (blocker.detail ? '<pre>' + escapeText(formatJson(blocker.detail)) + "</pre>" : "") +
           "</div></div>"
         )
       : ['<div class="event"><div class="event-top"><span>blockers</span><span>0</span></div><strong>No blocking issues reported</strong></div>']),
-    ...Object.entries(driftBySource).map(([source, value]) =>
+    ...driftSources.map((drift) =>
       '<div class="event"><div class="event-top"><span>drift source</span><span>' +
-      escapeText(source) +
+      escapeText(String(drift.source ?? "unknown")) +
       '</span></div><strong>' +
-      escapeText(Array.isArray(value) ? value.length + " issue(s)" : typeof value === "object" ? "details available" : String(value)) +
-      '</strong>' +
-      (value ? '<pre>' + escapeText(formatJson(value)) + "</pre>" : "") +
+      escapeText(String(drift.message ?? (drift.changed ? "changed" : "unchanged"))) +
+      '</strong><div class="hint">' +
+      escapeText(String(drift.blocking ? "blocking" : drift.changed ? "changed" : "stable")) +
+      '</div>' +
+      (drift.detail ? '<pre>' + escapeText(formatJson(drift.detail)) + "</pre>" : "") +
       "</div>"
     ),
+    ...(driftSources.length ? [] : [
+      '<div class="event"><div class="event-top"><span>drift source</span><span>0</span></div><strong>No drift sources reported</strong></div>'
+    ]),
     ...(checks.length
       ? checks.map((check) =>
           '<div class="event"><div class="event-top"><span>diagnostic check</span><span>' +

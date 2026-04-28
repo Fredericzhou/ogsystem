@@ -2,18 +2,22 @@ import { basename, dirname, relative, resolve, sep } from "node:path";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 
 import { compileExecutionSnapshot } from "../runtime/compiler.js";
-import { loadFlowContractPlan } from "../runtime/flow-contract.js";
+import { resolveProjectRoleRepoRoot, resolveProjectRoleRootDir } from "../runtime/bundled-repos.js";
+import { isRuntimeOnlyErrorEvent } from "../runtime/error-flow-utils.js";
+import { buildFlowContractKeyForFlow, loadFlowContractPlan } from "../runtime/flow-contract.js";
 import { readJsonFile, writeJsonFileAtomic } from "../runtime/json-file.js";
 import { loadModelCatalog } from "../runtime/model-catalog.js";
 import { loadModelSelection, resolveModelSelectionForSystem } from "../runtime/model-selection.js";
 import { RuntimeError } from "../runtime/runtime-errors.js";
 import { parseSystemFromMermaidSource } from "../runtime/parse-mermaid.js";
 import { loadPersistedRunsIndex, resolveOgsPaths } from "../runtime/project-lifecycle.js";
+import { pathExists } from "../runtime/run-artifacts.js";
 import { loadLaws, loadRolePackages, loadRuntimeConfig, loadUserProfile } from "../runtime/runtime-loader.js";
 import { resolveEffectiveLaw } from "../runtime/runtime-setup.js";
-import { resolveProjectRoleRepoRoot, resolveProjectRoleRootDir } from "../runtime/bundled-repos.js";
+import { SYSTEM_END_ROLE_ID } from "../runtime/types.js";
 import type { CompilerDiagnostic } from "../runtime/compiler.js";
-import type { SystemDefinition } from "../runtime/types.js";
+import type { ResolvedModelRuntimeConfig } from "../runtime/model-selection.js";
+import type { LoadedRolePackage, SystemDefinition } from "../runtime/types.js";
 
 type JsonRecord = Record<string, unknown>;
 
@@ -28,7 +32,10 @@ type ProjectContext = {
   userProfile: unknown;
   compilerSnapshot: ReturnType<typeof compileExecutionSnapshot>["snapshot"];
   resolvedModelWarnings: string[];
+  resolvedModelsByRoleId: Map<string, ResolvedModelRuntimeConfig>;
   roleRepoRoot: string;
+  rolePackagesByRoleId: Map<string, LoadedRolePackage>;
+  contractPlan: Awaited<ReturnType<typeof loadFlowContractPlan>> | undefined;
   projectMeta: unknown;
 };
 
@@ -131,7 +138,10 @@ async function assembleProjectContextFromSource(args: {
     userProfile,
     compilerSnapshot: compilerResult.snapshot,
     resolvedModelWarnings: resolvedModelSelection.warnings,
+    resolvedModelsByRoleId: resolvedModelSelection.resolvedByRoleId,
     roleRepoRoot,
+    rolePackagesByRoleId,
+    contractPlan,
     projectMeta
   };
 }
@@ -540,5 +550,183 @@ export async function listProjectRolesVisualization(workdir: string): Promise<Re
     workdir,
     roleRepoRoot: context.roleRepoRoot,
     roles
+  };
+}
+
+function listRoleAllowedEvents(system: SystemDefinition, roleId: string): string[] {
+  return Array.from(
+    new Set(
+      system.flows
+        .filter((flow) => flow.fromRoleId === roleId && !isRuntimeOnlyErrorEvent(flow.eventType))
+        .map((flow) => flow.eventType)
+    )
+  ).sort((left, right) => left.localeCompare(right));
+}
+
+function getBindingSourceLabel(args: {
+  roleId: string;
+  context: ProjectContext;
+  resolvedModel?: ResolvedModelRuntimeConfig;
+}): string {
+  if (args.context.system.executionBinding[args.roleId]) {
+    return "system.mmd:exec.bind";
+  }
+  if (args.resolvedModel?.bindingSource === "system") {
+    return "system.mmd:model.bind";
+  }
+  if (args.resolvedModel?.bindingSource === "selection") {
+    return ".ogs/model-selection.json";
+  }
+  return "none";
+}
+
+export async function inspectProjectBindingVisualization(workdir: string): Promise<Record<string, unknown>> {
+  const context = await assembleProjectContext(workdir);
+  const bindings = context.system.roleIds
+    .slice()
+    .sort((left, right) => left.localeCompare(right))
+    .map((roleId) => {
+      const binding = context.compilerSnapshot.bindingSummaryByRoleId[roleId];
+      const resolvedModel = context.resolvedModelsByRoleId.get(roleId);
+      const bindingKind = binding?.kind ?? "noop";
+      return {
+        roleId,
+        bindingKind,
+        declaredBinding: context.system.executionBinding[roleId] ?? context.system.modelBinding[roleId],
+        resolvedBinding:
+          bindingKind === "profile"
+            ? context.system.executionBinding[roleId]
+            : resolvedModel?.modelRef ?? binding?.modelRef,
+        variant: resolvedModel?.variant,
+        timeoutMs: resolvedModel?.timeoutMs,
+        maxOutputBytes: resolvedModel?.maxOutputBytes,
+        source: getBindingSourceLabel({ roleId, context, resolvedModel })
+      };
+    });
+  return {
+    workdir,
+    systemId: context.system.systemId,
+    compilerDigest: context.compilerSnapshot.digest,
+    warnings: context.resolvedModelWarnings,
+    bindings
+  };
+}
+
+export async function inspectProjectRolePackagesVisualization(workdir: string): Promise<Record<string, unknown>> {
+  const context = await assembleProjectContext(workdir);
+  const rolePackages = await Promise.all(
+    context.system.roleIds
+      .slice()
+      .sort((left, right) => left.localeCompare(right))
+      .map(async (roleId) => {
+        const rolePackage = context.rolePackagesByRoleId.get(roleId);
+        if (!rolePackage) {
+          return {
+            roleId,
+            resolvedPath: resolve(context.roleRepoRoot, roleId),
+            manifestPath: resolve(context.roleRepoRoot, roleId, "role.json"),
+            allowedEvents: listRoleAllowedEvents(context.system, roleId),
+            files: {
+              roleJson: false,
+              promptTemplate: false,
+              outputSchema: false,
+              agent: false,
+              source: false
+            }
+          };
+        }
+        const manifestPath = resolve(rolePackage.resolvedPath, "role.json");
+        const promptTemplatePath = resolve(rolePackage.resolvedPath, rolePackage.manifest.promptTemplate);
+        const outputSchemaPath = rolePackage.outputSchemaPath;
+        const agentPath = resolve(rolePackage.resolvedPath, "agent.md");
+        const sourcePath = resolve(rolePackage.resolvedPath, "source.json");
+        return {
+          roleId,
+          roleVersion: rolePackage.manifest.roleVersion,
+          name: rolePackage.manifest.name,
+          resolvedPath: rolePackage.resolvedPath,
+          manifestPath,
+          promptTemplatePath,
+          outputSchemaPath,
+          allowedEvents: listRoleAllowedEvents(context.system, roleId),
+          files: {
+            roleJson: await pathExists(manifestPath),
+            promptTemplate: await pathExists(promptTemplatePath),
+            outputSchema: await pathExists(outputSchemaPath),
+            agent: await pathExists(agentPath),
+            source: await pathExists(sourcePath)
+          }
+        };
+      })
+  );
+  return {
+    workdir,
+    systemId: context.system.systemId,
+    roleRepoRoot: context.roleRepoRoot,
+    rolePackages
+  };
+}
+
+export async function inspectProjectContractVisualization(workdir: string): Promise<Record<string, unknown>> {
+  const context = await assembleProjectContext(workdir);
+  const eligibleFlows = context.system.flows.filter(
+    (flow) => flow.toRoleId !== SYSTEM_END_ROLE_ID && !isRuntimeOnlyErrorEvent(flow.eventType)
+  );
+  const contractItems = eligibleFlows
+    .map((flow) => {
+      const flowKey = `${flow.fromRoleId}:${flow.eventType}:${flow.toRoleId}`;
+      const contract = context.contractPlan?.flowContractsByKey.get(
+        buildFlowContractKeyForFlow({
+          fromRoleId: flow.fromRoleId,
+          toRoleId: flow.toRoleId,
+          eventType: flow.eventType
+        })
+      );
+      return {
+        flowKey,
+        contractId: contract?.definition.id,
+        kind: "flow" as const,
+        schemaPath: contract?.schemaPath,
+        lastStatus: contract ? "covered" : "missing",
+        onViolation: contract?.definition.onViolation ?? "FAIL",
+        fromRoleId: flow.fromRoleId,
+        toRoleId: flow.toRoleId,
+        eventType: flow.eventType
+      };
+    })
+    .sort((left, right) => left.flowKey.localeCompare(right.flowKey));
+  const roleInputItems = [...(context.contractPlan?.roleInputContractsByRoleId.entries() ?? [])]
+    .sort(([left], [right]) => left.localeCompare(right))
+    .map(([roleId, contract]) => ({
+      flowKey: `role_input:${roleId}`,
+      contractId: contract.definition.id,
+      kind: "role_input" as const,
+      schemaPath: contract.schemaPath,
+      lastStatus: "covered",
+      onViolation: contract.definition.onViolation ?? "FAIL",
+      roleId
+    }));
+  const uncoveredEdges = contractItems
+    .filter((item) => item.lastStatus === "missing")
+    .map((item) => ({
+      flowKey: item.flowKey,
+      fromRoleId: item.fromRoleId,
+      toRoleId: item.toRoleId,
+      eventType: item.eventType,
+      reason: "missing flow contract"
+    }));
+  return {
+    workdir,
+    systemId: context.system.systemId,
+    handoffMode: context.system.graph?.handoffMode ?? null,
+    contractPath: context.contractPlan?.contractPath ?? null,
+    coverage: {
+      eligibleFlowCount: eligibleFlows.length,
+      coveredFlowCount: contractItems.filter((item) => item.lastStatus === "covered").length,
+      missingFlowCount: contractItems.filter((item) => item.lastStatus === "missing").length,
+      roleInputCount: roleInputItems.length
+    },
+    uncoveredEdges,
+    contracts: [...contractItems, ...roleInputItems]
   };
 }

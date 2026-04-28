@@ -74,6 +74,9 @@
 - `docs/archive/delivery/opencode-provider-reference-and-error-surfacing-2026-04-21.md`（delivered provider reference scaffolding and provider-error surfacing correction for OpenCode model.bind runs）
 - `docs/archive/delivery/opencode-model-selection-redesign-plan-2026-04-21.md`（delivered and archived cutover record for `.ogs/model-selection.json`, direct `provider/model`, and NL2MMD/runtime cleanup）
 - `docs/archive/delivery/cli-followup-checklist-2026-04-22.md`（delivered follow-up record for modern CLI resume guidance, unknown-command handling, hidden-legacy flag removal, and latest-only active-doc wording）
+- `docs/archive/delivery/ogsystem-studio-visual-authoring-solution-2026-04-28.md`（proposal for a Studio-first visual authoring shell that keeps `system.mmd` as generated runtime artifact without changing the kernel）
+- `docs/archive/delivery/ogsystem-debug-first-console-roadmap-2026-04-28.md`（proposal for prioritizing run debugging, config explainability, and review/resume operability before Studio authoring）
+- `docs/archive/delivery/ogsystem-debug-first-console-checklist-2026-04-28.md`（execution checklist for debug-first console phases 0-3 across visualizer projections, API, client panels, and tests）
 - `docs/archive/delivery/ogsystem-naming-style-review-2026-04-14.md`（archived naming audit; `flow/edge` conclusion superseded by 2026-04-15 alignment review）
 - `docs/archive/delivery/ogsystem-flow-edge-alignment-review-2026-04-15.md`（delivered flow/edge alignment audit and canonical decision）
 - `docs/archive/delivery/ogsystem-flow-edge-alignment-execution-plan-2026-04-15.md`（delivered flow/edge alignment rollout and closure record）

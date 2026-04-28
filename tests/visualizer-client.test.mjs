@@ -740,7 +740,7 @@ function createBackend(options = {}) {
       }
       if (pathname === "/api/v1/project/role-packages") {
         return createResponse({
-          roles: [
+          rolePackages: [
             {
               roleId: "demo-analyst",
               summary: "primary answer generator",

@@ -90,7 +90,7 @@ test("ogs help command surfaces layered guidance", async () => {
   const visualizerHelp = await runNodeCli(runtimeCliPath, ["visualizer", "--help"]);
   assert.strictEqual(visualizerHelp.code, 0);
   assert.match(visualizerHelp.stdout, /ogs visualizer \[--workdir <path>\] \[--host <host>\] \[--port <n\|0>\]/);
-  assert.match(visualizerHelp.stdout, /read-only OGSystem run visualizer/);
+  assert.match(visualizerHelp.stdout, /read-mostly OGSystem run visualizer/);
 
   const version = await runNodeCli(runtimeCliPath, ["--version"]);
   assert.strictEqual(version.code, 0);

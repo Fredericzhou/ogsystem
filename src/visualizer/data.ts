@@ -26,7 +26,6 @@ import type {
   BranchRecord,
   GraphState,
   PendingHumanReview,
-  RuntimeErrorEnvelope,
   RunArtifactPolicyEntry,
   StoredRoleResult,
   SystemDefinition
@@ -669,6 +668,19 @@ function compareFingerprintComponents(args: { expected: JsonRecord; stored: Json
   });
 }
 
+function extractFingerprintComponentDigests(fingerprint: JsonRecord | undefined): Record<string, string> {
+  const components = asRecord(asRecord(fingerprint?.payload)?.components);
+  if (!components) {
+    return {};
+  }
+  return Object.fromEntries(
+    Object.entries(components).flatMap(([componentName, value]) => {
+      const digest = asString(asRecord(value)?.digest);
+      return digest ? [[componentName, digest]] : [];
+    })
+  );
+}
+
 function extractReviewId(filePath: string, suffix: string): string {
   const name = basename(filePath);
   return name.endsWith(suffix) ? name.slice(0, -suffix.length) : name;
@@ -853,14 +865,15 @@ export async function inspectRunResumeDiagnostics(workdir: string, runId: string
 
   let fingerprintMismatch = false;
   let fingerprintChangedComponents: string[] = [];
+  let expectedFingerprint: JsonRecord | undefined;
   let fingerprintExpectedError: string | undefined;
   if (storedFingerprint) {
     try {
-      const expectedFingerprint = await computeExpectedFingerprint(workdir, runDir);
+      expectedFingerprint = await computeExpectedFingerprint(workdir, runDir);
       fingerprintMismatch = asString(expectedFingerprint.digest) !== asString(storedFingerprint.digest);
       fingerprintChangedComponents = fingerprintMismatch
         ? compareFingerprintComponents({
-            expected: expectedFingerprint,
+          expected: expectedFingerprint,
             stored: storedFingerprint
           })
         : [];
@@ -1113,8 +1126,13 @@ export async function inspectRunResumeDiagnostics(workdir: string, runId: string
     })),
     fingerprint: {
       storedDigest: asString(storedFingerprint?.digest),
+      expectedDigest: asString(expectedFingerprint?.digest),
       mismatch: fingerprintMismatch,
       changedComponents: fingerprintChangedComponents,
+      componentDigests: {
+        stored: extractFingerprintComponentDigests(storedFingerprint),
+        expected: extractFingerprintComponentDigests(expectedFingerprint)
+      },
       expectedError: fingerprintExpectedError
     },
     counts: {
@@ -1144,6 +1162,393 @@ export async function inspectRunResumeDiagnostics(workdir: string, runId: string
     resumeDiagnosticsCache.delete(cacheKey);
     throw error;
   }
+}
+
+function findLatestFailureAudit(state: GraphState | undefined) {
+  if (!state) {
+    return undefined;
+  }
+  const recentAudits = Array.isArray(state.recentAudits) ? state.recentAudits : [];
+  for (let index = recentAudits.length - 1; index >= 0; index -= 1) {
+    const audit = recentAudits[index];
+    if (audit.status === "failed" || audit.errorEnvelope) {
+      return audit;
+    }
+  }
+  if (state.errorEnvelope || state.error) {
+    return {
+      at: "",
+      roleId: state.lastExecutedRoleId,
+      branchId: undefined,
+      exitCode: 1,
+      durationMs: 0,
+      status: "failed" as const,
+      error: state.error,
+      errorEnvelope: state.errorEnvelope
+    };
+  }
+  return undefined;
+}
+
+async function findLatestFailureEvent(runDir: string): Promise<JsonRecord | undefined> {
+  const candidates: JsonRecord[] = [];
+  for (const fileName of ["events.ndjson", "timeline.jsonl"]) {
+    const text = await readFile(resolve(runDir, fileName), "utf8").catch(() => "");
+    for (const line of text.split(/\r?\n/)) {
+      if (!line.trim()) {
+        continue;
+      }
+      let parsed: unknown;
+      try {
+        parsed = JSON.parse(line) as unknown;
+      } catch {
+        continue;
+      }
+      const record = asRecord(parsed);
+      if (
+        record &&
+        (record.status === "failed" || record.type === "runtime_error" || asRecord(record.errorEnvelope))
+      ) {
+        candidates.push(record);
+      }
+    }
+  }
+  return candidates.at(-1);
+}
+
+function listAllowedEventsForRole(system: SystemDefinition, roleId: string): string[] {
+  return Array.from(
+    new Set(
+      system.flows
+        .filter((flow) => flow.fromRoleId === roleId && !isRuntimeOnlyErrorEvent(flow.eventType))
+        .map((flow) => flow.eventType)
+    )
+  ).sort((left, right) => left.localeCompare(right));
+}
+
+function listUpstreamRoleIds(system: SystemDefinition, roleId: string): string[] {
+  return Array.from(
+    new Set(
+      system.flows
+        .filter((flow) => flow.toRoleId === roleId && !isRuntimeOnlyErrorEvent(flow.eventType))
+        .map((flow) => flow.fromRoleId)
+    )
+  ).sort((left, right) => left.localeCompare(right));
+}
+
+async function resolveBindingVisualizationForRole(args: {
+  workdir: string;
+  system: SystemDefinition;
+  roleId: string;
+}): Promise<Record<string, unknown>> {
+  if (args.system.executionBinding[args.roleId]) {
+    const profileId = args.system.executionBinding[args.roleId];
+    return {
+      roleId: args.roleId,
+      bindingKind: "profile",
+      declaredBinding: profileId,
+      resolvedBinding: profileId,
+      source: "system.mmd:exec.bind"
+    };
+  }
+  const modelSelection = await loadModelSelection(resolve(args.workdir, ".ogs", "model-selection.json"));
+  const modelCatalog = await loadModelCatalog(resolve(args.workdir, ".ogs", "model-catalog.json"));
+  const resolvedModelSelection = resolveModelSelectionForSystem({
+    system: args.system,
+    selection: modelSelection,
+    catalog: modelCatalog
+  });
+  const resolvedModel = resolvedModelSelection.resolvedByRoleId.get(args.roleId);
+  if (!resolvedModel) {
+    return {
+      roleId: args.roleId,
+      bindingKind: "noop",
+      source: "none"
+    };
+  }
+  return {
+    roleId: args.roleId,
+    bindingKind: "model",
+    declaredBinding: args.system.modelBinding[args.roleId],
+    resolvedBinding: resolvedModel.modelRef,
+    variant: resolvedModel.variant,
+    timeoutMs: resolvedModel.timeoutMs,
+    maxOutputBytes: resolvedModel.maxOutputBytes,
+    source: resolvedModel.bindingSource === "system" ? "system.mmd:model.bind" : ".ogs/model-selection.json"
+  };
+}
+
+export async function inspectRunFailureVisualization(workdir: string, runId: string): Promise<Record<string, unknown>> {
+  const detail = await inspectRun(workdir, runId);
+  const runDir = resolveRunDir(workdir, runId);
+  const systemSource = await readFile(resolve(runDir, "system.mmd"), "utf8").catch(() => null);
+  const system = systemSource ? parseSystemFromMermaidSource(systemSource) : undefined;
+  const state = extractGraphState(detail.state);
+  const latestFailure = findLatestFailureAudit(state) ?? await findLatestFailureEvent(runDir);
+  if (!latestFailure) {
+    return {
+      runId,
+      runDir,
+      status: "ok",
+      summary: null,
+      detail: null,
+      suggestedNextChecks: []
+    };
+  }
+  const failureRecord = asRecord(latestFailure) ?? {};
+  const envelope = asRecord(failureRecord.errorEnvelope);
+  const correctionRequest = asRecord(failureRecord.correctionRequest);
+  const roleId = asString(failureRecord.roleId) || state?.lastExecutedRoleId;
+  const selectedBinding =
+    system && roleId
+      ? await resolveBindingVisualizationForRole({ workdir, system, roleId })
+      : undefined;
+  const summary = {
+    errorCode: asString(envelope?.errorCode) ?? asString(failureRecord.errorCode) ?? "ROLE_EXECUTION_FAILED",
+    errorCategory: asString(envelope?.errorCategory) ?? asString(failureRecord.errorCategory),
+    message: asString(envelope?.message) ?? asString(failureRecord.error) ?? state?.error ?? "Run failed.",
+    stage: asString(envelope?.stage) ?? asString(failureRecord.stage),
+    roleId,
+    branchId: asString(failureRecord.branchId) ?? asString(envelope?.branchId),
+    retryable: asBoolean(envelope?.retryable) ?? asBoolean(failureRecord.retryable),
+    durationMs: asNumber(failureRecord.durationMs)
+  };
+  const detailView = roleId && system
+    ? {
+        allowedEvents: listAllowedEventsForRole(system, roleId),
+        inputContext: asString(failureRecord.inputContext),
+        rawOutput:
+          asString(correctionRequest?.rawOutput) ??
+          asString(failureRecord.stdoutPreview) ??
+          asString(failureRecord.stderrPreview),
+        schemaPath: asString(correctionRequest?.schemaPath),
+        selectedBinding,
+        upstreamRoleIds: listUpstreamRoleIds(system, roleId),
+        correctionKind: asString(correctionRequest?.reason),
+        correctionDetail: asString(correctionRequest?.detail),
+        providerError: asString(failureRecord.error)
+      }
+    : {
+        allowedEvents: [],
+        upstreamRoleIds: [],
+        selectedBinding,
+        inputContext: asString(failureRecord.inputContext),
+        rawOutput:
+          asString(correctionRequest?.rawOutput) ??
+          asString(failureRecord.stdoutPreview) ??
+          asString(failureRecord.stderrPreview),
+        schemaPath: asString(correctionRequest?.schemaPath),
+        correctionKind: asString(correctionRequest?.reason),
+        correctionDetail: asString(correctionRequest?.detail),
+        providerError: asString(failureRecord.error)
+      };
+  const suggestedNextChecks = [
+    {
+      action: "inspect-projected-input",
+      label: "Inspect projected input",
+      detail: { roleId }
+    },
+    {
+      action: "inspect-binding-resolution",
+      label: "Inspect binding resolution",
+      detail: { roleId }
+    },
+    {
+      action: "inspect-role-schema",
+      label: "Inspect role schema",
+      detail: { roleId, schemaPath: asString(correctionRequest?.schemaPath) }
+    },
+    {
+      action: "inspect-contract",
+      label: "Inspect contract",
+      detail: { roleId, upstreamRoleIds: detailView.upstreamRoleIds }
+    },
+    {
+      action: "inspect-resume-diagnostics",
+      label: "Inspect resume diagnostics",
+      detail: { runId }
+    }
+  ];
+  return {
+    runId,
+    runDir,
+    status: "failed",
+    summary,
+    detail: detailView,
+    suggestedNextChecks
+  };
+}
+
+function toReadinessBlocker(args: {
+  id: string;
+  category: string;
+  severity: "info" | "warning" | "error";
+  blocking: boolean;
+  message: string;
+  source?: string;
+  detail?: unknown;
+}): Record<string, unknown> {
+  return args;
+}
+
+export async function inspectRunResumeReadiness(workdir: string, runId: string): Promise<Record<string, unknown>> {
+  const diagnostics = await inspectRunResumeDiagnostics(workdir, runId);
+  const record = asRecord(diagnostics) ?? {};
+  const status = asString(record.status) ?? "unknown";
+  const counts = asRecord(record.counts) ?? {};
+  const fingerprint = asRecord(record.fingerprint) ?? {};
+  const changedComponents = Array.isArray(fingerprint.changedComponents)
+    ? fingerprint.changedComponents.map((item) => asString(item)).filter((item): item is string => Boolean(item))
+    : [];
+  const componentDigests = asRecord(fingerprint.componentDigests);
+  const expectedDigests = asRecord(componentDigests?.expected);
+  const storedDigests = asRecord(componentDigests?.stored);
+  const runDir = asString(record.runDir) ?? resolveRunDir(workdir, runId);
+  const systemSource = await readFile(resolve(runDir, "system.mmd"), "utf8").catch(() => null);
+  const system = systemSource ? parseSystemFromMermaidSource(systemSource) : undefined;
+
+  const blockers: Record<string, unknown>[] = [];
+  if (asBoolean(fingerprint.mismatch) === true) {
+    blockers.push(
+      toReadinessBlocker({
+        id: "fingerprint-drift",
+        category: "fingerprint drift",
+        severity: "error",
+        blocking: true,
+        message:
+          changedComponents.length > 0
+            ? `Resume fingerprint drift detected: ${changedComponents.join(", ")}`
+            : "Resume fingerprint drift detected.",
+        source: "plan-fingerprint.json",
+        detail: {
+          changedComponents,
+          storedDigest: asString(fingerprint.storedDigest),
+          expectedDigest: asString(fingerprint.expectedDigest)
+        }
+      })
+    );
+  }
+  if ((asNumber(counts.missingRequestFiles) ?? 0) > 0 || (asNumber(counts.missingDecisionFiles) ?? 0) > 0) {
+    blockers.push(
+      toReadinessBlocker({
+        id: "review-files-missing",
+        category: "missing files",
+        severity: "error",
+        blocking: true,
+        message: "Review authority artifacts are missing.",
+        source: "control/reviews",
+        detail: counts
+      })
+    );
+  }
+  if ((asNumber(counts.unresolvedDecisions) ?? 0) > 0) {
+    blockers.push(
+      toReadinessBlocker({
+        id: "review-not-applied",
+        category: "review not applied",
+        severity: "warning",
+        blocking: false,
+        message: "Review decisions are recorded but not fully applied.",
+        source: "control/reviews",
+        detail: { unresolvedDecisions: counts.unresolvedDecisions }
+      })
+    );
+  }
+  if ((asNumber(counts.missingCheckpoints) ?? 0) > 0) {
+    blockers.push(
+      toReadinessBlocker({
+        id: "checkpoint-mismatch",
+        category: "checkpoint mismatch",
+        severity: "error",
+        blocking: true,
+        message: "Checkpoint WAL has gaps that block safe resume.",
+        source: "checkpoints",
+        detail: { missingCheckpoints: counts.missingCheckpoints }
+      })
+    );
+  }
+  if ((asNumber(counts.orphanOutcomes) ?? 0) > 0) {
+    blockers.push(
+      toReadinessBlocker({
+        id: "orphan-outcomes",
+        category: "checkpoint mismatch",
+        severity: "error",
+        blocking: true,
+        message: "Execution outcomes are orphaned from active branches or pending reviews.",
+        source: "roles/*/executions/*/execution-outcome.json",
+        detail: { orphanOutcomes: counts.orphanOutcomes }
+      })
+    );
+  }
+  const driftSources = [
+    {
+      source: "system.mmd",
+      changed: changedComponents.includes("system"),
+      blocking: changedComponents.includes("system"),
+      message: changedComponents.includes("system") ? "Run graph or binding metadata drifted." : "No system drift detected.",
+      detail: {
+        storedDigest: asString(storedDigests?.system),
+        expectedDigest: asString(expectedDigests?.system)
+      }
+    },
+    {
+      source: "role packages",
+      changed: changedComponents.includes("rolePackages"),
+      blocking: changedComponents.includes("rolePackages"),
+      message: changedComponents.includes("rolePackages") ? "Role package contents drifted." : "No role package drift detected.",
+      detail: {
+        storedDigest: asString(storedDigests?.rolePackages),
+        expectedDigest: asString(expectedDigests?.rolePackages)
+      }
+    },
+    {
+      source: "model selection",
+      changed: changedComponents.includes("modelSelection"),
+      blocking: changedComponents.includes("modelSelection"),
+      message: changedComponents.includes("modelSelection") ? "Resolved model selection drifted." : "No model selection drift detected.",
+      detail: {
+        storedDigest: asString(storedDigests?.modelSelection),
+        expectedDigest: asString(expectedDigests?.modelSelection)
+      }
+    },
+    {
+      source: "law",
+      changed: changedComponents.includes("effectiveLaw"),
+      blocking: changedComponents.includes("effectiveLaw"),
+      message: changedComponents.includes("effectiveLaw") ? "Effective law policy drifted." : "No law drift detected.",
+      detail: {
+        storedDigest: asString(storedDigests?.effectiveLaw),
+        expectedDigest: asString(expectedDigests?.effectiveLaw)
+      }
+    },
+    {
+      source: "contracts",
+      changed:
+        changedComponents.includes("system") && Boolean(system?.graph?.handoffContracts),
+      blocking:
+        changedComponents.includes("system") && Boolean(system?.graph?.handoffContracts),
+      message:
+        changedComponents.includes("system") && system?.graph?.handoffContracts
+          ? "System or handoff contract bundle drifted."
+          : "No contract drift detected.",
+      detail: {
+        contractPath: system?.graph?.handoffContracts
+      }
+    }
+  ];
+  const canResume = !blockers.some((blocker) => blocker.blocking === true);
+  return {
+    runId,
+    runDir,
+    status,
+    canResume,
+    blockers,
+    driftSources,
+    fingerprint: record.fingerprint ?? null,
+    counts: record.counts ?? null,
+    checks: Array.isArray(record.checks) ? record.checks : [],
+    recommendations: Array.isArray(record.recommendations) ? record.recommendations : []
+  };
 }
 
 export async function listRunReviewsVisualization(workdir: string, runId: string): Promise<Record<string, unknown>> {

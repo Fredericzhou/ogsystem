@@ -87,6 +87,24 @@ function findLastSelectedEvent(args: { state: GraphState; roleId: string }): str
   return selected?.event;
 }
 
+function findLatestFailureForRole(args: { state: GraphState; roleId: string }): Record<string, unknown> | undefined {
+  for (let index = args.state.recentAudits.length - 1; index >= 0; index -= 1) {
+    const audit = args.state.recentAudits[index];
+    if (audit.roleId === args.roleId && (audit.status === "failed" || audit.errorEnvelope)) {
+      return {
+        errorCode: audit.errorEnvelope?.errorCode,
+        errorCategory: audit.errorEnvelope?.errorCategory,
+        message: audit.errorEnvelope?.message ?? audit.error,
+        retryable: audit.errorEnvelope?.retryable,
+        stage: audit.errorEnvelope?.stage,
+        durationMs: audit.durationMs,
+        branchId: audit.branchId
+      };
+    }
+  }
+  return undefined;
+}
+
 function buildGraphNodeStatus(args: {
   state: GraphState;
   roleId: string;
@@ -131,6 +149,7 @@ function buildRunGraphView(args: {
       (review) => review.roleId === roleId && (review.status === "pending" || review.status === "paused")
     ).length;
     const lastErrorCode = state ? findLastErrorCode({ state, roleId }) : undefined;
+    const lastFailure = state ? findLatestFailureForRole({ state, roleId }) : undefined;
     const expectedSources = args.system.graph?.joinSourcesByRoleId[roleId] ?? [];
     const readySources = state
       ? Array.from(
@@ -178,10 +197,19 @@ function buildRunGraphView(args: {
       expectedSources,
       readySources,
       missingSources: expectedSources.filter((sourceRoleId) => !readySources.includes(sourceRoleId)),
+      joinWaitingSummary:
+        expectedSources.length > 0
+          ? {
+              expectedCount: expectedSources.length,
+              readyCount: readySources.length,
+              missingCount: expectedSources.filter((sourceRoleId) => !readySources.includes(sourceRoleId)).length
+            }
+          : null,
       joinMin: args.system.graph?.joinMinByRoleId[roleId],
       loopMax: args.system.graph?.loopMaxByRoleId[roleId],
       contextFields: Object.keys(args.system.graph?.contextMapByRoleId[roleId] ?? {}),
-      review: args.system.graph?.reviewByRoleId?.[roleId]
+      review: args.system.graph?.reviewByRoleId?.[roleId],
+      lastFailure
     };
   });
 

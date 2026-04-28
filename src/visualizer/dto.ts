@@ -183,6 +183,13 @@ export type ReviewDetailView = ReviewListItem & {
   humanReviewContext?: unknown;
 };
 
+export type ReviewQueueView = {
+  runId: string;
+  runDir: string;
+  latestPendingReviewId?: string;
+  reviews: ReviewListItem[];
+};
+
 export type ResumeDiagnosticsCheckView = {
   id: string;
   label: string;
@@ -202,6 +209,111 @@ export type ResumeDiagnosticsView = {
   runId: string;
   runDir: string;
   status: string;
+  fingerprint: unknown;
+  counts: unknown;
+  checks: ResumeDiagnosticsCheckView[];
+  recommendations: ResumeDiagnosticsRecommendationView[];
+};
+
+export type BindingResolutionView = {
+  roleId: string;
+  bindingKind: "model" | "profile" | "noop";
+  declaredBinding?: string;
+  resolvedBinding?: string;
+  variant?: string;
+  timeoutMs?: number;
+  maxOutputBytes?: number;
+  source: string;
+};
+
+export type FailureSummaryView = {
+  errorCode: string;
+  errorCategory?: string;
+  message: string;
+  stage?: string;
+  roleId?: string;
+  branchId?: string;
+  retryable?: boolean;
+  durationMs?: number;
+};
+
+export type FailureDetailView = {
+  allowedEvents: string[];
+  inputContext?: string;
+  rawOutput?: string;
+  schemaPath?: string;
+  selectedBinding?: BindingResolutionView;
+  upstreamRoleIds: string[];
+  correctionKind?: string;
+  correctionDetail?: string;
+  providerError?: string;
+};
+
+export type FailureProjectionView = {
+  runId: string;
+  runDir: string;
+  status: string;
+  summary: FailureSummaryView | null;
+  detail: FailureDetailView | null;
+  suggestedNextChecks: FollowUpActionView[];
+};
+
+export type RolePackageSummaryView = {
+  roleId: string;
+  roleVersion?: string;
+  name?: string;
+  resolvedPath: string;
+  manifestPath: string;
+  promptTemplatePath?: string;
+  outputSchemaPath?: string;
+  allowedEvents: string[];
+  files: {
+    roleJson: boolean;
+    promptTemplate: boolean;
+    outputSchema: boolean;
+    agent: boolean;
+    source: boolean;
+  };
+};
+
+export type ContractSummaryView = {
+  flowKey: string;
+  contractId?: string;
+  kind: "flow" | "role_input";
+  schemaPath?: string;
+  lastStatus: string;
+  onViolation?: "FAIL" | "WARN";
+  fromRoleId?: string;
+  toRoleId?: string;
+  eventType?: string;
+  roleId?: string;
+};
+
+export type ResumeReadinessBlockerView = {
+  id: string;
+  category: string;
+  severity: "info" | "warning" | "error";
+  blocking: boolean;
+  message: string;
+  source?: string;
+  detail?: unknown;
+};
+
+export type ResumeDriftSourceView = {
+  source: string;
+  changed: boolean;
+  blocking: boolean;
+  message: string;
+  detail?: unknown;
+};
+
+export type ResumeReadinessView = {
+  runId: string;
+  runDir: string;
+  status: string;
+  canResume: boolean;
+  blockers: ResumeReadinessBlockerView[];
+  driftSources: ResumeDriftSourceView[];
   fingerprint: unknown;
   counts: unknown;
   checks: ResumeDiagnosticsCheckView[];
@@ -315,6 +427,19 @@ export function mapReviewDetailView(value: unknown): ReviewDetailView {
   };
 }
 
+export function mapReviewQueueView(value: unknown): ReviewQueueView {
+  const record = asRecord(value) ?? {};
+  return {
+    runId: asString(record.runId) ?? "",
+    runDir: asString(record.runDir) ?? "",
+    latestPendingReviewId: asString(record.latestPendingReviewId),
+    reviews: asArray(record.reviews)?.flatMap((item) => {
+      const mapped = mapReviewListItem(item);
+      return mapped ? [mapped] : [];
+    }) ?? []
+  };
+}
+
 export function mapResumeDiagnosticsView(value: unknown): ResumeDiagnosticsView {
   const record = asRecord(value) ?? {};
   const checks = Array.isArray(record.checks)
@@ -367,6 +492,184 @@ export function mapResumeDiagnosticsView(value: unknown): ResumeDiagnosticsView 
     counts: record.counts ?? null,
     checks,
     recommendations
+  };
+}
+
+export function mapBindingResolutionView(value: unknown): BindingResolutionView | undefined {
+  const record = asRecord(value);
+  const roleId = asString(record?.roleId);
+  const bindingKind = asString(record?.bindingKind);
+  const source = asString(record?.source);
+  if (
+    !roleId ||
+    !source ||
+    (bindingKind !== "model" && bindingKind !== "profile" && bindingKind !== "noop")
+  ) {
+    return undefined;
+  }
+  return {
+    roleId,
+    bindingKind,
+    declaredBinding: asString(record?.declaredBinding),
+    resolvedBinding: asString(record?.resolvedBinding),
+    variant: asString(record?.variant),
+    timeoutMs: asNumber(record?.timeoutMs),
+    maxOutputBytes: asNumber(record?.maxOutputBytes),
+    source
+  };
+}
+
+export function mapFailureProjectionView(value: unknown): FailureProjectionView {
+  const record = asRecord(value) ?? {};
+  const summaryRecord = asRecord(record.summary);
+  const detailRecord = asRecord(record.detail);
+  const summary = summaryRecord
+    ? {
+        errorCode: asString(summaryRecord.errorCode) ?? "UNKNOWN_FAILURE",
+        errorCategory: asString(summaryRecord.errorCategory),
+        message: asString(summaryRecord.message) ?? "",
+        stage: asString(summaryRecord.stage),
+        roleId: asString(summaryRecord.roleId),
+        branchId: asString(summaryRecord.branchId),
+        retryable: asBoolean(summaryRecord.retryable),
+        durationMs: asNumber(summaryRecord.durationMs)
+      } satisfies FailureSummaryView
+    : null;
+  const detail = detailRecord
+    ? {
+        allowedEvents:
+          asArray(detailRecord.allowedEvents)
+            ?.map((item) => asString(item))
+            .filter((item): item is string => Boolean(item)) ?? [],
+        inputContext: asString(detailRecord.inputContext),
+        rawOutput: asString(detailRecord.rawOutput),
+        schemaPath: asString(detailRecord.schemaPath),
+        selectedBinding: mapBindingResolutionView(detailRecord.selectedBinding),
+        upstreamRoleIds:
+          asArray(detailRecord.upstreamRoleIds)
+            ?.map((item) => asString(item))
+            .filter((item): item is string => Boolean(item)) ?? [],
+        correctionKind: asString(detailRecord.correctionKind),
+        correctionDetail: asString(detailRecord.correctionDetail),
+        providerError: asString(detailRecord.providerError)
+      } satisfies FailureDetailView
+    : null;
+  return {
+    runId: asString(record.runId) ?? "",
+    runDir: asString(record.runDir) ?? "",
+    status: asString(record.status) ?? "unknown",
+    summary,
+    detail,
+    suggestedNextChecks: mapFollowUpActions(record.suggestedNextChecks)
+  };
+}
+
+export function mapRolePackageSummaryView(value: unknown): RolePackageSummaryView | undefined {
+  const record = asRecord(value);
+  const files = asRecord(record?.files);
+  const roleId = asString(record?.roleId);
+  const resolvedPath = asString(record?.resolvedPath);
+  const manifestPath = asString(record?.manifestPath);
+  if (!roleId || !resolvedPath || !manifestPath || !files) {
+    return undefined;
+  }
+  return {
+    roleId,
+    roleVersion: asString(record?.roleVersion),
+    name: asString(record?.name),
+    resolvedPath,
+    manifestPath,
+    promptTemplatePath: asString(record?.promptTemplatePath),
+    outputSchemaPath: asString(record?.outputSchemaPath),
+    allowedEvents:
+      asArray(record?.allowedEvents)
+        ?.map((item) => asString(item))
+        .filter((item): item is string => Boolean(item)) ?? [],
+    files: {
+      roleJson: asBoolean(files.roleJson) === true,
+      promptTemplate: asBoolean(files.promptTemplate) === true,
+      outputSchema: asBoolean(files.outputSchema) === true,
+      agent: asBoolean(files.agent) === true,
+      source: asBoolean(files.source) === true
+    }
+  };
+}
+
+export function mapContractSummaryView(value: unknown): ContractSummaryView | undefined {
+  const record = asRecord(value);
+  const flowKey = asString(record?.flowKey);
+  const kind = asString(record?.kind);
+  const lastStatus = asString(record?.lastStatus);
+  if (!flowKey || !lastStatus || (kind !== "flow" && kind !== "role_input")) {
+    return undefined;
+  }
+  const onViolation = asString(record?.onViolation);
+  return {
+    flowKey,
+    contractId: asString(record?.contractId),
+    kind,
+    schemaPath: asString(record?.schemaPath),
+    lastStatus,
+    onViolation: onViolation === "FAIL" || onViolation === "WARN" ? onViolation : undefined,
+    fromRoleId: asString(record?.fromRoleId),
+    toRoleId: asString(record?.toRoleId),
+    eventType: asString(record?.eventType),
+    roleId: asString(record?.roleId)
+  };
+}
+
+export function mapResumeReadinessView(value: unknown): ResumeReadinessView {
+  const record = asRecord(value) ?? {};
+  const blockers = asArray(record.blockers)?.flatMap((item) => {
+    const blocker = asRecord(item);
+    const id = asString(blocker?.id);
+    const category = asString(blocker?.category);
+    const severity = asString(blocker?.severity);
+    const message = asString(blocker?.message);
+    const blocking = asBoolean(blocker?.blocking);
+    if (!id || !category || !message || blocking === undefined) {
+      return [];
+    }
+    return [{
+      id,
+      category,
+      severity:
+        severity === "info" || severity === "warning" || severity === "error" ? severity : "error",
+      blocking,
+      message,
+      source: asString(blocker?.source),
+      detail: blocker?.detail
+    } satisfies ResumeReadinessBlockerView];
+  }) ?? [];
+  const driftSources = asArray(record.driftSources)?.flatMap((item) => {
+    const drift = asRecord(item);
+    const source = asString(drift?.source);
+    const changed = asBoolean(drift?.changed);
+    const blocking = asBoolean(drift?.blocking);
+    const message = asString(drift?.message);
+    if (!source || changed === undefined || blocking === undefined || !message) {
+      return [];
+    }
+    return [{
+      source,
+      changed,
+      blocking,
+      message,
+      detail: drift?.detail
+    } satisfies ResumeDriftSourceView];
+  }) ?? [];
+  const diagnostics = mapResumeDiagnosticsView(value);
+  return {
+    runId: diagnostics.runId,
+    runDir: diagnostics.runDir,
+    status: asString(record.status) ?? diagnostics.status,
+    canResume: asBoolean(record.canResume) === true,
+    blockers,
+    driftSources,
+    fingerprint: diagnostics.fingerprint,
+    counts: diagnostics.counts,
+    checks: diagnostics.checks,
+    recommendations: diagnostics.recommendations
   };
 }
 

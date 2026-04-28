@@ -5,10 +5,15 @@ import path from "node:path";
 import { mkdtemp, mkdir, symlink, writeFile } from "node:fs/promises";
 
 import {
-  inspectRunResumeDiagnostics
+  inspectRunFailureVisualization,
+  inspectRunResumeDiagnostics,
+  inspectRunResumeReadiness
 } from "../dist/visualizer/data.js";
 import {
+  inspectProjectBindingVisualization,
   inspectProjectConfigVisualization,
+  inspectProjectContractVisualization,
+  inspectProjectRolePackagesVisualization,
   inspectProjectSystemVisualization,
   inspectProjectVisualization
 } from "../dist/visualizer/project-projection.js";
@@ -59,6 +64,101 @@ async function seedProjectFixture(workdir) {
       "analyst[Role:demo-analyst] -->|DONE| output",
       ""
     ].join("\n"),
+    "utf8"
+  );
+}
+
+async function seedStrictContractProjectFixture(workdir) {
+  await seedProjectFixture(workdir);
+  const contractBundlePath = path.resolve(workdir, "contracts", "handoff.contracts.json");
+  await mkdir(path.resolve(workdir, "contracts"), { recursive: true });
+  await writeFile(
+    path.resolve(workdir, "system.mmd"),
+    [
+      "flowchart TD",
+      "%% system.id=viz.project.contract.demo",
+      "%% system.version=1.0.0",
+      "%% law.global=law.minimal.base",
+      "%% entry.role=demo-analyst",
+      "%% handoff.mode=strict",
+      `%% handoff.contracts=${contractBundlePath}`,
+      "%% model.bind.demo-analyst=opencode/gpt-5.4",
+      "%% model.bind.diagnosis-dispatch=opencode/gpt-5.4",
+      "%% context.map.diagnosis-dispatch.content=direct.content",
+      "input -->|ENTER| analyst[Role:demo-analyst]",
+      "analyst[Role:demo-analyst] -->|ANALYSIS_DONE| tracker[Role:diagnosis-dispatch]",
+      "tracker[Role:diagnosis-dispatch] -->|DONE| output",
+      ""
+    ].join("\n"),
+    "utf8"
+  );
+  await writeFile(
+    path.resolve(workdir, "contracts", "flow-envelope.schema.json"),
+    JSON.stringify(
+      {
+        "$schema": "http://json-schema.org/draft-07/schema#",
+        type: "object",
+        properties: {
+          event: { type: "string" },
+          content: { type: "string" },
+          data: { type: "object" }
+        },
+        required: ["content"],
+        additionalProperties: false
+      },
+      null,
+      2
+    ),
+    "utf8"
+  );
+  await writeFile(
+    path.resolve(workdir, "contracts", "tracker-input.schema.json"),
+    JSON.stringify(
+      {
+        "$schema": "http://json-schema.org/draft-07/schema#",
+        type: "object",
+        properties: {
+          content: { type: "string" }
+        },
+        required: ["content"],
+        additionalProperties: true
+      },
+      null,
+      2
+    ),
+    "utf8"
+  );
+  await writeFile(
+    path.resolve(workdir, "contracts", "handoff.contracts.json"),
+    JSON.stringify(
+      {
+        version: 1,
+        contracts: [
+          {
+            id: "demo-analyst.to.tracker.v1",
+            kind: "flow",
+            match: {
+              fromRoleId: "demo-analyst",
+              eventType: "ANALYSIS_DONE",
+              toRoleId: "diagnosis-dispatch"
+            },
+            schema: "flow-envelope.schema.json",
+            onViolation: "FAIL"
+          },
+          {
+            id: "tracker.input.v1",
+            kind: "role_input",
+            match: {
+              roleId: "diagnosis-dispatch"
+            },
+            schema: "tracker-input.schema.json",
+            onViolation: "FAIL"
+          }
+        ]
+      },
+      null,
+      2
+    ),
     "utf8"
   );
 }
@@ -600,6 +700,7 @@ test("visualizer data projects project and graph information", async () => {
   assert.equal(graph.graph.nodes[0].roleId, "alpha");
   assert.equal(graph.graph.nodes[0].status, "active");
   assert.equal(graph.graph.nodes[0].lastErrorCode, "E_VIS_TEST");
+  assert.equal(graph.graph.nodes[0].lastFailure.errorCode, "E_VIS_TEST");
   assert.equal(graph.graph.edges[0].event, "DONE");
 });
 
@@ -630,6 +731,54 @@ test("visualizer data normalizes reviews and resume diagnostics", async () => {
   assert.ok(diagnostics.checks.some((check) => check.id === "review-decisions"));
   assert.ok(diagnostics.checks.some((check) => check.id === "execution-outcomes"));
   assert.ok(diagnostics.recommendations.some((item) => item.action === "inspect-project"));
+});
+
+test("visualizer data projects failure triage and resume readiness", async () => {
+  const workdir = await mkdtemp(path.join(os.tmpdir(), "ogsystem-visualizer-data-failure-"));
+  await seedProjectFixture(workdir);
+  const { runId } = await createSimulationRun(workdir);
+
+  const failure = await inspectRunFailureVisualization(workdir, runId);
+  assert.equal(failure.status, "failed");
+  assert.equal(failure.summary.errorCode, "E_VIS_TEST");
+  assert.equal(failure.detail.allowedEvents.includes("DONE"), true);
+  assert.equal(failure.suggestedNextChecks.some((item) => item.action === "inspect-binding-resolution"), true);
+
+  const reviewWorkdir = await mkdtemp(path.join(os.tmpdir(), "ogsystem-visualizer-data-readiness-"));
+  await seedProjectFixture(reviewWorkdir);
+  const { runId: readinessRunId } = await createWaitingReviewRun(reviewWorkdir, { includeDecision: false });
+  const readiness = await inspectRunResumeReadiness(reviewWorkdir, readinessRunId);
+  assert.equal(readiness.canResume, false);
+  assert.equal(readiness.blockers.some((item) => item.blocking === true), true);
+  assert.equal(readiness.driftSources.some((item) => item.source === "system.mmd"), true);
+});
+
+test("visualizer data projects binding, role package, and contract explainability", async () => {
+  const workdir = await mkdtemp(path.join(os.tmpdir(), "ogsystem-visualizer-data-bindings-"));
+  await seedStrictContractProjectFixture(workdir);
+
+  const bindings = await inspectProjectBindingVisualization(workdir);
+  assert.equal(bindings.bindings.length, 2);
+  assert.equal(bindings.bindings[0].source.startsWith("system.mmd"), true);
+
+  const rolePackages = await inspectProjectRolePackagesVisualization(workdir);
+  assert.equal(rolePackages.rolePackages.length, 2);
+  assert.equal(rolePackages.rolePackages[0].files.roleJson, true);
+  assert.equal(rolePackages.rolePackages[0].files.outputSchema, true);
+
+  const contracts = await inspectProjectContractVisualization(workdir);
+  assert.equal(contracts.coverage.coveredFlowCount, 1);
+  assert.equal(contracts.coverage.missingFlowCount, 0);
+  assert.equal(contracts.uncoveredEdges.length, 0);
+  assert.equal(contracts.coverage.roleInputCount, 1);
+  assert.equal(
+    contracts.contracts.some((entry) => entry.kind === "flow" && entry.contractId === "demo-analyst.to.tracker.v1"),
+    true
+  );
+  assert.equal(
+    contracts.contracts.some((entry) => entry.kind === "role_input" && entry.contractId === "tracker.input.v1"),
+    true
+  );
 });
 
 test("visualizer data derives review decision phases from durable markers", async () => {

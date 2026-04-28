@@ -723,8 +723,10 @@ test("visualizer server serves run list, details, and live stream", async (t) =>
     const rootHtml = await root.text();
     assert.match(rootHtml, /OGSystem Visualizer/);
     assert.match(rootHtml, /Project Overview/);
-    assert.match(rootHtml, /Reviews/);
-    assert.match(rootHtml, /Resume Diagnostics/);
+    assert.match(rootHtml, /Failure Triage/);
+    assert.match(rootHtml, /Review Queue/);
+    assert.match(rootHtml, /Resume Readiness/);
+    assert.match(rootHtml, /Config Explain/);
     assert.match(rootHtml, /Logs/);
 
     const projectHome = await fetch(`${url}/?view=project`);
@@ -754,6 +756,23 @@ test("visualizer server serves run list, details, and live stream", async (t) =>
     assert.equal(projectRoles.roles.length, 1);
     assert.equal(projectRoles.roles[0].roleId, "demo-analyst");
 
+    const projectBindingsResponse = await fetch(`${url}/api/v1/project/bindings`);
+    assert.equal(projectBindingsResponse.status, 200);
+    const projectBindings = await projectBindingsResponse.json();
+    assert.equal(projectBindings.bindings.length, 1);
+    assert.equal(projectBindings.bindings[0].roleId, "demo-analyst");
+
+    const projectRolePackagesResponse = await fetch(`${url}/api/v1/project/role-packages`);
+    assert.equal(projectRolePackagesResponse.status, 200);
+    const projectRolePackages = await projectRolePackagesResponse.json();
+    assert.equal(projectRolePackages.rolePackages.length, 1);
+    assert.equal(projectRolePackages.rolePackages[0].files.roleJson, true);
+
+    const projectContractsResponse = await fetch(`${url}/api/v1/project/contracts`);
+    assert.equal(projectContractsResponse.status, 200);
+    const projectContracts = await projectContractsResponse.json();
+    assert.equal(Array.isArray(projectContracts.contracts), true);
+
     const listResponse = await fetch(`${url}/api/v1/runs`);
     assert.equal(listResponse.status, 200);
     const list = await listResponse.json();
@@ -770,6 +789,13 @@ test("visualizer server serves run list, details, and live stream", async (t) =>
     assert.equal(detail.header.finalRoleId, "alpha");
     assert.equal(detail.header.isSimulation, true);
     assert.match(detail.systemSource, /alpha\[Role:alpha\] -->\|DONE\| output/);
+
+    const failureResponse = await fetch(`${url}/api/v1/runs/${runId}/failure`);
+    assert.equal(failureResponse.status, 200);
+    const failure = await failureResponse.json();
+    assert.equal(failure.status, "failed");
+    assert.equal(failure.summary.errorCode, "E_VIS_TEST");
+    assert.equal(Array.isArray(failure.suggestedNextChecks), true);
 
     const eventsResponse = await fetch(`${url}/api/v1/runs/${runId}/events?cursor=0&limit=1`);
     assert.equal(eventsResponse.status, 200);
@@ -898,6 +924,13 @@ test("visualizer server exposes pending human review fields on waiting-review ru
     assert.equal(diagnostics.status, "dirty");
     assert.ok(diagnostics.checks.some((check) => check.id === "review-decisions"));
     assert.ok(diagnostics.checks.some((check) => check.id === "execution-outcomes"));
+
+    const readinessResponse = await fetch(`${url}/api/v1/runs/${runId}/resume-readiness`);
+    assert.equal(readinessResponse.status, 200);
+    const readiness = await readinessResponse.json();
+    assert.equal(Array.isArray(readiness.blockers), true);
+    assert.equal(Array.isArray(readiness.driftSources), true);
+    assert.equal(readiness.status, "dirty");
   } finally {
     await new Promise((resolve) => server.close(resolve));
   }
