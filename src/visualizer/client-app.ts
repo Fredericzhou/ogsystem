@@ -173,6 +173,7 @@ export function buildClientAppScript(apiPrefix: string): string {
       project: null,
       opsSummary: null,
       projectReadiness: null,
+      consoleTab: "debug",
       workbench: null,
       workbenchView: "render",
       workbenchSource: "",
@@ -243,6 +244,7 @@ export function buildClientAppScript(apiPrefix: string): string {
     const selectedTitleEl = document.getElementById("selected-title");
     const selectedSubtitleEl = document.getElementById("selected-subtitle");
     const actionFormEl = document.getElementById("action-form");
+    const consoleTabsEl = document.getElementById("console-tabs");
     const workdirEl = document.getElementById("workdir");
     const projectSummaryEl = document.getElementById("project-summary");
     const opsSummaryEl = document.getElementById("ops-summary");
@@ -597,6 +599,11 @@ export function buildClientAppScript(apiPrefix: string): string {
       for (const button of workbenchTabsEl.querySelectorAll("button")) {
         button.disabled = disabled;
       }
+      if (consoleTabsEl) {
+        for (const button of consoleTabsEl.querySelectorAll("[data-console-tab]")) {
+          button.disabled = disabled;
+        }
+      }
       for (const button of reviewActionsEl.querySelectorAll("[data-review-action]")) {
         button.disabled = disabled;
       }
@@ -605,6 +612,39 @@ export function buildClientAppScript(apiPrefix: string): string {
     function setSidebarOpen(nextValue) {
       state.sidebarOpen = nextValue;
       document.body.classList.toggle("drawer-open", nextValue);
+    }
+
+    function renderConsoleTabs() {
+      if (!consoleTabsEl) {
+        return;
+      }
+      const tabs = [
+        ["debug", "Run Debug", "failure, timeline, graph, review, resume"],
+        ["project", "Project", "workbench, overview, readiness"],
+        ["ops", "Ops", "failure and resume aggregates"],
+        ["config", "Config", "bindings, role packages, contracts"],
+        ["logs", "Logs", "engine and role log channels"],
+        ["artifacts", "Artifacts", "raw run snapshots"]
+      ];
+      consoleTabsEl.innerHTML = tabs.map(([id, label, hint]) =>
+        '<button class="button subtle ' + (state.consoleTab === id ? "active" : "") +
+        '" data-console-tab="' + escapeText(id) +
+        '" title="' + escapeText(hint) +
+        '">' + escapeText(label) + '</button>'
+      ).join("");
+      for (const [id] of tabs) {
+        const panel = document.getElementById("console-panel-" + id);
+        if (panel) {
+          panel.hidden = state.consoleTab !== id;
+        }
+      }
+      for (const button of consoleTabsEl.querySelectorAll("[data-console-tab]")) {
+        button.addEventListener("click", () => {
+          state.consoleTab = button.getAttribute("data-console-tab") || "debug";
+          renderConsoleTabs();
+          renderActionState();
+        });
+      }
     }
 
     function renderWorkbenchPreviewSvg(structure) {
@@ -1925,6 +1965,10 @@ export function buildClientAppScript(apiPrefix: string): string {
     async function selectRun(runId) {
       if (!runId) return;
       state.projectHome = false;
+      if (state.consoleTab === "project") {
+        state.consoleTab = "debug";
+        renderConsoleTabs();
+      }
       state.selectedRunId = runId;
       state.selectedReviewId = "";
       closeActionForm();
@@ -1936,6 +1980,7 @@ export function buildClientAppScript(apiPrefix: string): string {
     function selectProjectHome() {
       stopStream();
       state.projectHome = true;
+      state.consoleTab = "project";
       state.selectedRunId = "";
       state.selectedReviewId = "";
       state.detail = null;
@@ -1960,6 +2005,7 @@ export function buildClientAppScript(apiPrefix: string): string {
       closeActionForm();
       syncTimelineFilterInputs();
       renderSelectedRun();
+      renderConsoleTabs();
       renderRuns();
       writeRouteToLocation();
       setLive("idle", "project");
@@ -2286,8 +2332,14 @@ export function buildClientAppScript(apiPrefix: string): string {
       renderRuns();
     });
 
+    renderConsoleTabs();
+
     const initialRoute = readRouteStateFromSearch(window.location.search);
     state.projectHome = initialRoute.view === "project";
+    if (state.projectHome) {
+      state.consoleTab = "project";
+      renderConsoleTabs();
+    }
     state.selectedRunId = initialRoute.runId;
     state.selectedReviewId = initialRoute.reviewId;
     state.selectedLogRoleId = initialRoute.logRoleId;

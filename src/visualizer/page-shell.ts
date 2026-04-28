@@ -441,6 +441,32 @@ export function renderPageHtml(workdir: string, apiPrefix: string): string {
       border-color: rgba(56, 189, 248, 0.36);
       color: #b5ecff;
     }
+    .console-tabs {
+      position: sticky;
+      top: 0;
+      z-index: 12;
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      padding: 8px;
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      background: rgba(8, 13, 26, 0.86);
+      backdrop-filter: blur(14px);
+      box-shadow: var(--shadow);
+    }
+    .console-tabs .button {
+      flex: 1 1 128px;
+      justify-content: center;
+    }
+    .console-tabs .button.active {
+      background: rgba(56, 189, 248, 0.16);
+      border-color: rgba(56, 189, 248, 0.44);
+      color: #b5ecff;
+    }
+    .console-panel[hidden] {
+      display: none;
+    }
     .editor {
       width: 100%;
       min-height: 300px;
@@ -697,6 +723,7 @@ export function renderPageHtml(workdir: string, apiPrefix: string): string {
           <div id="live" class="live">idle</div>
         </div>
       </section>
+      <nav id="console-tabs" class="console-tabs" aria-label="Visualizer sections"></nav>
       <section class="grid">
         <article class="card span-12">
           <header><h3>Action Form</h3></header>
@@ -704,6 +731,8 @@ export function renderPageHtml(workdir: string, apiPrefix: string): string {
             <div id="action-form" class="form-shell"><div class="hint">Select start, resume, stop, or review actions to edit structured inputs inline.</div></div>
           </div>
         </article>
+      </section>
+      <section id="console-panel-project" class="console-panel grid" data-console-panel="project" hidden>
         <article class="card span-12">
           <header>
             <div class="card-header">
@@ -730,22 +759,18 @@ export function renderPageHtml(workdir: string, apiPrefix: string): string {
             <div id="project-summary" class="structure-list">Loading project...</div>
           </div>
         </article>
-        <article class="card span-4">
-          <header><h3>Run Snapshot</h3></header>
-          <div class="body">
-            <div class="stat-grid" id="stats"></div>
-          </div>
-        </article>
-        <article class="card span-12">
-          <header><h3>Ops Summary</h3></header>
-          <div class="body">
-            <div id="ops-summary" class="structure-list">Loading ops summary...</div>
-          </div>
-        </article>
         <article class="card span-12">
           <header><h3>Project Readiness</h3></header>
           <div class="body">
             <div id="project-readiness" class="structure-list">Loading project readiness...</div>
+          </div>
+        </article>
+      </section>
+      <section id="console-panel-debug" class="console-panel grid" data-console-panel="debug">
+        <article class="card span-4">
+          <header><h3>Run Snapshot</h3></header>
+          <div class="body">
+            <div class="stat-grid" id="stats"></div>
           </div>
         </article>
         <article class="card span-12">
@@ -815,6 +840,16 @@ export function renderPageHtml(workdir: string, apiPrefix: string): string {
             <div id="resume-diagnostics" class="timeline"><div class="hint">No run selected.</div></div>
           </div>
         </article>
+      </section>
+      <section id="console-panel-ops" class="console-panel grid" data-console-panel="ops" hidden>
+        <article class="card span-12">
+          <header><h3>Ops Summary</h3></header>
+          <div class="body">
+            <div id="ops-summary" class="structure-list">Loading ops summary...</div>
+          </div>
+        </article>
+      </section>
+      <section id="console-panel-config" class="console-panel grid" data-console-panel="config" hidden>
         <article class="card span-12">
           <header><h3>Config Explain</h3></header>
           <div class="body">
@@ -823,6 +858,8 @@ export function renderPageHtml(workdir: string, apiPrefix: string): string {
             <div id="contract-explain" class="structure-list">Loading contracts...</div>
           </div>
         </article>
+      </section>
+      <section id="console-panel-logs" class="console-panel grid" data-console-panel="logs" hidden>
         <article class="card span-12">
           <header>
             <div class="toolbar-row">
@@ -844,6 +881,8 @@ export function renderPageHtml(workdir: string, apiPrefix: string): string {
             <div id="logs" class="structure-list">No run selected.</div>
           </div>
         </article>
+      </section>
+      <section id="console-panel-artifacts" class="console-panel grid" data-console-panel="artifacts" hidden>
         <article class="card span-12">
           <header><h3>Artifacts</h3></header>
           <div class="body">

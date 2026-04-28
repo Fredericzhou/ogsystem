@@ -18,6 +18,13 @@ const PAGE_ELEMENT_IDS = [
   "selected-title",
   "selected-subtitle",
   "action-form",
+  "console-tabs",
+  "console-panel-debug",
+  "console-panel-project",
+  "console-panel-ops",
+  "console-panel-config",
+  "console-panel-logs",
+  "console-panel-artifacts",
   "workdir",
   "workbench-meta",
   "workbench-status",
@@ -95,6 +102,9 @@ function matchesSelector(element, selector) {
   }
   if (selector === "[data-review-action]") {
     return Object.hasOwn(element.attributes, "data-review-action");
+  }
+  if (selector === "[data-console-tab]") {
+    return Object.hasOwn(element.attributes, "data-console-tab");
   }
   return false;
 }
@@ -1325,6 +1335,35 @@ test("visualizer client renders config explain panels and failure next checks", 
   assert.match(harness.document.getElementById("contract-explain").textContent, /flow.answer.done/);
   assert.ok(harness.document.getElementById("failure-check-binding"));
   assert.ok(harness.document.getElementById("failure-check-resume"));
+});
+
+test("visualizer client switches top-level console tabs without unloading data", async () => {
+  const harness = await createClientHarness();
+  const tabs = harness.document.getElementById("console-tabs").querySelectorAll("[data-console-tab]");
+  const opsTab = tabs.find((button) => button.getAttribute("data-console-tab") === "ops");
+  const configTab = tabs.find((button) => button.getAttribute("data-console-tab") === "config");
+  const projectTab = tabs.find((button) => button.getAttribute("data-console-tab") === "project");
+
+  assert.ok(opsTab);
+  assert.ok(configTab);
+  assert.ok(projectTab);
+  assert.equal(harness.document.getElementById("console-panel-debug").hidden, false);
+  assert.equal(harness.document.getElementById("console-panel-ops").hidden, true);
+
+  await opsTab.click();
+  assert.equal(harness.document.getElementById("console-panel-debug").hidden, true);
+  assert.equal(harness.document.getElementById("console-panel-ops").hidden, false);
+  assert.match(harness.document.getElementById("ops-summary").textContent, /TOOL_EXECUTION_TIMEOUT/);
+
+  await configTab.click();
+  assert.equal(harness.document.getElementById("console-panel-ops").hidden, true);
+  assert.equal(harness.document.getElementById("console-panel-config").hidden, false);
+  assert.match(harness.document.getElementById("contract-explain").textContent, /flow.answer.done/);
+
+  await projectTab.click();
+  assert.equal(harness.document.getElementById("console-panel-config").hidden, true);
+  assert.equal(harness.document.getElementById("console-panel-project").hidden, false);
+  assert.match(harness.document.getElementById("project-readiness").textContent, /dry-run readiness/);
 });
 
 test("visualizer client loads logs on demand and keeps filter changes lazy until loaded", async () => {
