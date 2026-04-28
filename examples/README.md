@@ -12,6 +12,7 @@ Use this small set first to cover most capabilities with minimum repetition:
 4. `runtime-native-human-review/`
 5. `ogs-gstacklike/`
 6. `rust-hello-pipeline/`
+7. `legal-rag-dev-team/`
 
 ## Coverage Matrix
 
@@ -23,6 +24,7 @@ Use this small set first to cover most capabilities with minimum repetition:
 | `runtime-native-human-review/` | model.bind | `review.* + runtime-native human review` | stop-for-review, operator decision, resume |
 | `ogs-gstacklike/` | exec.bind | `review.* + ERROR* + shared artifacts + local role repo` | project-style delivery flow with native human review, compensation, and run-level artifact handoff |
 | `rust-hello-pipeline/` | exec.bind | sequential multi-role tool chain | side-effect workflow and artifact validation |
+| `legal-rag-dev-team/` | model.bind | `parallel_split + all_of + context.map + strict handoff + review.*` | software-team orchestration for a legal RAG service with citation requirements |
 
 ## Recommended Order
 
@@ -32,6 +34,7 @@ Use this small set first to cover most capabilities with minimum repetition:
 4. Run `runtime-native-human-review/` for native stop-review-resume semantics.
 5. Run `ogs-gstacklike/` for a full project-style example with local role repo, native review, shared artifacts, and compensation.
 6. Run `rust-hello-pipeline/` if you need external toolchain workflows.
+7. Run `legal-rag-dev-team/` if you want a project-planning pattern for a citation-heavy legal RAG service.
 
 ## Fast Commands
 
@@ -44,6 +47,8 @@ ogs run start --system examples/medical-quorum-consultation/system.mmd --laws ex
 
 ogs run start --system examples/ogs-gstacklike/system.mmd --input "构建一个html页面，要求显示hello world" --workdir examples/ogs-gstacklike
 
+ogs run start --system system.mmd --workdir examples/legal-rag-dev-team --input "开发一个法律RAG问答服务，要求回答时给出可核验信源" --dry-run
+
 bash examples/ogs-gstacklike/scripts/validate-scenarios.sh
 ```
 
@@ -53,3 +58,4 @@ bash examples/ogs-gstacklike/scripts/validate-scenarios.sh
 - `langgraph-expert-consultation/`: all-of expert consultation baseline.
 - `console-system.mmd`: smallest local-shell exec.bind baseline.
 - `error-flow-compensation/`: focused ERROR* routing baseline.
+- `legal-rag-dev-team/`: project-planning workflow for a legal RAG team with explicit citation engineering.

@@ -1,0 +1,9 @@
+{
+  "roleId": "solution-architect",
+  "roleVersion": "1.0.0",
+  "name": "Solution Architect",
+  "description": "Decompose the legal RAG service into parallel technical workstreams.",
+  "promptTemplate": "prompt.md",
+  "outputSchema": "output.schema.json",
+  "tags": ["legal-rag", "architecture"]
+}

@@ -1,0 +1,8 @@
+{
+  "userProfileId": "legal.rag.architecture.zh",
+  "language": "zh-CN",
+  "style": "concise",
+  "riskPreference": "medium",
+  "outputLength": "medium",
+  "domainBackground": ["software-architecture", "rag", "legal-tech"]
+}

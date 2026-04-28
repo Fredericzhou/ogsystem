@@ -1,0 +1,9 @@
+{
+  "roleId": "delivery-lead",
+  "roleVersion": "1.0.0",
+  "name": "Delivery Lead",
+  "description": "Merge the specialist workstreams into a phased implementation plan, staffing proposal, and delivery roadmap.",
+  "promptTemplate": "prompt.md",
+  "outputSchema": "output.schema.json",
+  "tags": ["legal-rag", "delivery"]
+}

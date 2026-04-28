@@ -1,0 +1,9 @@
+{
+  "roleId": "evaluation-engineer",
+  "roleVersion": "1.0.0",
+  "name": "Evaluation Engineer",
+  "description": "Design the evaluation dataset, citation metrics, and regression gates for the legal RAG service.",
+  "promptTemplate": "prompt.md",
+  "outputSchema": "output.schema.json",
+  "tags": ["legal-rag", "evaluation"]
+}

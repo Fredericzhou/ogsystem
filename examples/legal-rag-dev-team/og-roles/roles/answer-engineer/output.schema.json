@@ -1,0 +1,17 @@
+{
+  "type": "object",
+  "required": ["event", "content"],
+  "properties": {
+    "event": {
+      "type": "string",
+      "enum": ["ANSWER_PLAN_READY"]
+    },
+    "content": {
+      "type": "string"
+    },
+    "data": {
+      "type": "object"
+    }
+  },
+  "additionalProperties": false
+}

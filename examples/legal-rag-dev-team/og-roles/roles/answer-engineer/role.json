@@ -1,0 +1,9 @@
+{
+  "roleId": "answer-engineer",
+  "roleVersion": "1.0.0",
+  "name": "Answer Engineer",
+  "description": "Design the answer generation policy, refusal behavior, and grounded response format.",
+  "promptTemplate": "prompt.md",
+  "outputSchema": "output.schema.json",
+  "tags": ["legal-rag", "answering"]
+}

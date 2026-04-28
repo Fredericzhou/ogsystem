@@ -1,0 +1,9 @@
+{
+  "roleId": "legal-knowledge-engineer",
+  "roleVersion": "1.0.0",
+  "name": "Legal Knowledge Engineer",
+  "description": "Design the legal corpus, versioning, metadata, and source traceability model.",
+  "promptTemplate": "prompt.md",
+  "outputSchema": "output.schema.json",
+  "tags": ["legal-rag", "knowledge-base"]
+}

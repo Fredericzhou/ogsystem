@@ -1,0 +1,9 @@
+{
+  "roleId": "citation-engineer",
+  "roleVersion": "1.0.0",
+  "name": "Citation Engineer",
+  "description": "Design claim-to-source binding, citation rendering, and evidence traceability for legal answers.",
+  "promptTemplate": "prompt.md",
+  "outputSchema": "output.schema.json",
+  "tags": ["legal-rag", "citation"]
+}

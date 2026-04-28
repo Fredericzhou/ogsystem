@@ -1,0 +1,9 @@
+{
+  "roleId": "legal-product-manager",
+  "roleVersion": "1.0.0",
+  "name": "Legal Product Manager",
+  "description": "Clarify the product scope, source boundaries, user profile, and MVP requirements for a legal RAG service.",
+  "promptTemplate": "prompt.md",
+  "outputSchema": "output.schema.json",
+  "tags": ["legal-rag", "product"]
+}

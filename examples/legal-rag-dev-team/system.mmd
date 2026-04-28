@@ -1,0 +1,50 @@
+flowchart TD
+%% system.id=legal.rag.dev.team
+%% system.version=1.0.0
+%% law.global=law.legal.rag.dev.base
+%% entry.role=legal-product-manager
+%% handoff.mode=strict
+%% handoff.contracts=contracts/handoff.contracts.json
+%% model.bind.legal-product-manager=opencode/gpt-5-nano
+%% model.bind.solution-architect=opencode/gpt-5-nano
+%% role.mode.solution-architect=parallel_split
+%% route.order.solution-architect=legal-knowledge-engineer,retrieval-engineer,answer-engineer,citation-engineer,evaluation-engineer
+%% model.bind.legal-knowledge-engineer=opencode/gpt-5-nano
+%% model.bind.retrieval-engineer=opencode/gpt-5-nano
+%% model.bind.answer-engineer=opencode/gpt-5-nano
+%% model.bind.citation-engineer=opencode/gpt-5-nano
+%% model.bind.evaluation-engineer=opencode/gpt-5-nano
+%% join.mode.delivery-lead=all_of
+%% join.sources.delivery-lead=legal-knowledge-engineer,retrieval-engineer,answer-engineer,citation-engineer,evaluation-engineer
+%% context.map.delivery-lead.project_goal=global.task
+%% context.map.delivery-lead.knowledge_plan=source(legal-knowledge-engineer).content
+%% context.map.delivery-lead.retrieval_plan=source(retrieval-engineer).content
+%% context.map.delivery-lead.answer_plan=source(answer-engineer).content
+%% context.map.delivery-lead.citation_plan=source(citation-engineer).content
+%% context.map.delivery-lead.evaluation_plan=source(evaluation-engineer).content
+%% context.map.delivery-lead.review_comment=global.human_review.current.comment?
+%% context.map.delivery-lead.review_round=global.human_review.current.round?
+%% model.bind.delivery-lead=opencode/gpt-5-nano
+%% review.mode.delivery-lead=required
+%% review.timeout.delivery-lead=86400
+%% review.timeout.action.delivery-lead=pause
+%% review.rework.target.delivery-lead=delivery-lead
+%% review.rework.max.delivery-lead=2
+%% review.terminate.scope.delivery-lead=branch
+
+input -->|PROJECT_REQUEST| legal-product-manager[Role:legal-product-manager]
+legal-product-manager[Role:legal-product-manager] -->|REQUIREMENTS_READY| solution-architect[Role:solution-architect]
+
+solution-architect[Role:solution-architect] -->|START_KNOWLEDGE| legal-knowledge-engineer[Role:legal-knowledge-engineer]
+solution-architect[Role:solution-architect] -->|START_RETRIEVAL| retrieval-engineer[Role:retrieval-engineer]
+solution-architect[Role:solution-architect] -->|START_ANSWERING| answer-engineer[Role:answer-engineer]
+solution-architect[Role:solution-architect] -->|START_CITATION| citation-engineer[Role:citation-engineer]
+solution-architect[Role:solution-architect] -->|START_EVALUATION| evaluation-engineer[Role:evaluation-engineer]
+
+legal-knowledge-engineer[Role:legal-knowledge-engineer] -->|KNOWLEDGE_PLAN_READY| delivery-lead[Role:delivery-lead]
+retrieval-engineer[Role:retrieval-engineer] -->|RETRIEVAL_PLAN_READY| delivery-lead[Role:delivery-lead]
+answer-engineer[Role:answer-engineer] -->|ANSWER_PLAN_READY| delivery-lead[Role:delivery-lead]
+citation-engineer[Role:citation-engineer] -->|CITATION_PLAN_READY| delivery-lead[Role:delivery-lead]
+evaluation-engineer[Role:evaluation-engineer] -->|EVAL_PLAN_READY| delivery-lead[Role:delivery-lead]
+
+delivery-lead[Role:delivery-lead] -->|IMPLEMENTATION_READY| output

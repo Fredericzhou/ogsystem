@@ -1,0 +1,23 @@
+{
+  "type": "object",
+  "required": ["content"],
+  "properties": {
+    "event": {
+      "type": "string",
+      "enum": [
+        "START_KNOWLEDGE",
+        "START_RETRIEVAL",
+        "START_ANSWERING",
+        "START_CITATION",
+        "START_EVALUATION"
+      ]
+    },
+    "content": {
+      "type": "string"
+    },
+    "data": {
+      "type": "object"
+    }
+  },
+  "additionalProperties": false
+}

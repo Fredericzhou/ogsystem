@@ -1,0 +1,135 @@
+{
+  "version": 1,
+  "contracts": [
+    {
+      "id": "pm.to.architect.v1",
+      "kind": "flow",
+      "match": {
+        "fromRoleId": "legal-product-manager",
+        "eventType": "REQUIREMENTS_READY",
+        "toRoleId": "solution-architect"
+      },
+      "schema": "flow-envelope.schema.json",
+      "onViolation": "FAIL"
+    },
+    {
+      "id": "architect.to.knowledge.v1",
+      "kind": "flow",
+      "match": {
+        "fromRoleId": "solution-architect",
+        "mode": "split",
+        "toRoleId": "legal-knowledge-engineer"
+      },
+      "schema": "flow-envelope.schema.json",
+      "onViolation": "FAIL"
+    },
+    {
+      "id": "architect.to.retrieval.v1",
+      "kind": "flow",
+      "match": {
+        "fromRoleId": "solution-architect",
+        "mode": "split",
+        "toRoleId": "retrieval-engineer"
+      },
+      "schema": "flow-envelope.schema.json",
+      "onViolation": "FAIL"
+    },
+    {
+      "id": "architect.to.answer.v1",
+      "kind": "flow",
+      "match": {
+        "fromRoleId": "solution-architect",
+        "mode": "split",
+        "toRoleId": "answer-engineer"
+      },
+      "schema": "flow-envelope.schema.json",
+      "onViolation": "FAIL"
+    },
+    {
+      "id": "architect.to.citation.v1",
+      "kind": "flow",
+      "match": {
+        "fromRoleId": "solution-architect",
+        "mode": "split",
+        "toRoleId": "citation-engineer"
+      },
+      "schema": "flow-envelope.schema.json",
+      "onViolation": "FAIL"
+    },
+    {
+      "id": "architect.to.evaluation.v1",
+      "kind": "flow",
+      "match": {
+        "fromRoleId": "solution-architect",
+        "mode": "split",
+        "toRoleId": "evaluation-engineer"
+      },
+      "schema": "flow-envelope.schema.json",
+      "onViolation": "FAIL"
+    },
+    {
+      "id": "knowledge.to.delivery.v1",
+      "kind": "flow",
+      "match": {
+        "fromRoleId": "legal-knowledge-engineer",
+        "eventType": "KNOWLEDGE_PLAN_READY",
+        "toRoleId": "delivery-lead"
+      },
+      "schema": "flow-envelope.schema.json",
+      "onViolation": "FAIL"
+    },
+    {
+      "id": "retrieval.to.delivery.v1",
+      "kind": "flow",
+      "match": {
+        "fromRoleId": "retrieval-engineer",
+        "eventType": "RETRIEVAL_PLAN_READY",
+        "toRoleId": "delivery-lead"
+      },
+      "schema": "flow-envelope.schema.json",
+      "onViolation": "FAIL"
+    },
+    {
+      "id": "answer.to.delivery.v1",
+      "kind": "flow",
+      "match": {
+        "fromRoleId": "answer-engineer",
+        "eventType": "ANSWER_PLAN_READY",
+        "toRoleId": "delivery-lead"
+      },
+      "schema": "flow-envelope.schema.json",
+      "onViolation": "FAIL"
+    },
+    {
+      "id": "citation.to.delivery.v1",
+      "kind": "flow",
+      "match": {
+        "fromRoleId": "citation-engineer",
+        "eventType": "CITATION_PLAN_READY",
+        "toRoleId": "delivery-lead"
+      },
+      "schema": "flow-envelope.schema.json",
+      "onViolation": "FAIL"
+    },
+    {
+      "id": "evaluation.to.delivery.v1",
+      "kind": "flow",
+      "match": {
+        "fromRoleId": "evaluation-engineer",
+        "eventType": "EVAL_PLAN_READY",
+        "toRoleId": "delivery-lead"
+      },
+      "schema": "flow-envelope.schema.json",
+      "onViolation": "FAIL"
+    },
+    {
+      "id": "delivery.input.v1",
+      "kind": "role_input",
+      "match": {
+        "roleId": "delivery-lead"
+      },
+      "schema": "delivery-lead-input.schema.json",
+      "onViolation": "FAIL"
+    }
+  ]
+}
