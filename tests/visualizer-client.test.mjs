@@ -25,6 +25,8 @@ const PAGE_ELEMENT_IDS = [
   "workbench-tabs",
   "workbench-body",
   "project-summary",
+  "ops-summary",
+  "project-readiness",
   "stats",
   "failure-controls",
   "failure-summary",
@@ -771,6 +773,85 @@ function createBackend(options = {}) {
       if (pathname === "/api/v1/project/roles") {
         return createResponse({ roles: [{ roleId: "demo-analyst", binding: { bindingKind: "model" }, review: {} }] });
       }
+      if (pathname === "/api/v1/project/ops-summary") {
+        return createResponse({
+          summary: {
+            recentFailureCount: options.includeSecondRun ? 2 : 1,
+            pendingReviewCount: 1,
+            pendingReworkCount: 1,
+            resumeBlockedRunCount: options.includeSecondRun ? 2 : 1
+          },
+          recentFailures: [
+            {
+              runId,
+              roleId: "demo-analyst",
+              errorCode: "TOOL_EXECUTION_TIMEOUT",
+              errorCategory: "timeout",
+              message: "Command timeout after 120000ms"
+            }
+          ],
+          failureGroups: {
+            byRole: [{ key: "demo-analyst", count: 1 }],
+            byErrorCode: [{ key: "TOOL_EXECUTION_TIMEOUT", count: 1 }],
+            byErrorCategory: [{ key: "timeout", count: 1 }]
+          },
+          reviewRework: {
+            pendingReviewCount: 1,
+            pausedReviewCount: 0,
+            pendingReworkCount: 1,
+            pendingReviewByRole: [{ key: "demo-analyst", count: 1 }],
+            pendingReworkByRole: [{ key: "answer-engineer", count: 1 }]
+          },
+          resumeReadiness: {
+            inspectedRunCount: 1,
+            blockedRunCount: 1,
+            readyRunCount: 0,
+            blockingByCategory: [{ key: "fingerprint drift", count: 1 }],
+            driftSources: [{ key: "system.mmd", count: 1 }],
+            runs: [{ runId, canResume: false, status: "mismatch", blockingCount: 1 }]
+          }
+        });
+      }
+      if (pathname === "/api/v1/project/readiness") {
+        return createResponse({
+          workdir: "/tmp/ogsystem-visualizer",
+          systemId: "viz.review.demo",
+          canDryRun: false,
+          blockers: [
+            {
+              code: "READINESS_STRICT_HANDOFF_CONTRACT_MISSING",
+              message: "Missing strict handoff contract for qa:APPROVE:output",
+              severity: "blocker",
+              flowKey: "qa:APPROVE:output"
+            }
+          ],
+          warnings: [],
+          missingBindings: [],
+          contractCoverage: {
+            handoffMode: "strict",
+            eligibleFlowCount: 2,
+            coveredFlowCount: 1,
+            missingFlowCount: 1
+          },
+          roleRepoHealth: {
+            roleRepoRoot: "/tmp/ogsystem-visualizer/og-roles",
+            roles: [
+              {
+                roleId: "demo-analyst",
+                status: "ok",
+                files: {
+                  roleJson: true,
+                  promptTemplate: true,
+                  outputSchema: true,
+                  agent: true,
+                  source: false
+                },
+                missingFiles: []
+              }
+            ]
+          }
+        });
+      }
       if (pathname === "/api/v1/runs") {
         return createResponse({
           runs: [...runFixtures.values()].map((fixture) => ({
@@ -1216,6 +1297,14 @@ test("visualizer client renders config explain panels and failure next checks", 
   const harness = await createClientHarness();
 
   assert.equal(
+    harness.backend.fetchCalls.some((call) => call.path === "/api/v1/project/ops-summary"),
+    true
+  );
+  assert.equal(
+    harness.backend.fetchCalls.some((call) => call.path === "/api/v1/project/readiness"),
+    true
+  );
+  assert.equal(
     harness.backend.fetchCalls.some((call) => call.path === "/api/v1/project/bindings"),
     true
   );
@@ -1228,6 +1317,10 @@ test("visualizer client renders config explain panels and failure next checks", 
     true
   );
   assert.match(harness.document.getElementById("binding-explain").textContent, /opencode\/gpt-5-nano/);
+  assert.match(harness.document.getElementById("ops-summary").textContent, /TOOL_EXECUTION_TIMEOUT/);
+  assert.match(harness.document.getElementById("ops-summary").textContent, /active rework branches/);
+  assert.match(harness.document.getElementById("project-readiness").textContent, /dry-run readiness/);
+  assert.match(harness.document.getElementById("project-readiness").textContent, /READINESS_STRICT_HANDOFF_CONTRACT_MISSING/);
   assert.match(harness.document.getElementById("role-packages").textContent, /output\.schema\.json/);
   assert.match(harness.document.getElementById("contract-explain").textContent, /flow.answer.done/);
   assert.ok(harness.document.getElementById("failure-check-binding"));

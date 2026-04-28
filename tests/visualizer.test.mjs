@@ -723,6 +723,7 @@ test("visualizer server serves run list, details, and live stream", async (t) =>
     const rootHtml = await root.text();
     assert.match(rootHtml, /OGSystem Visualizer/);
     assert.match(rootHtml, /Project Overview/);
+    assert.match(rootHtml, /Ops Summary/);
     assert.match(rootHtml, /Failure Triage/);
     assert.match(rootHtml, /Review Queue/);
     assert.match(rootHtml, /Resume Readiness/);
@@ -755,6 +756,21 @@ test("visualizer server serves run list, details, and live stream", async (t) =>
     const projectRoles = await projectRolesResponse.json();
     assert.equal(projectRoles.roles.length, 1);
     assert.equal(projectRoles.roles[0].roleId, "demo-analyst");
+
+    const projectOpsResponse = await fetch(`${url}/api/v1/project/ops-summary`);
+    assert.equal(projectOpsResponse.status, 200);
+    const projectOps = await projectOpsResponse.json();
+    assert.equal(projectOps.summary.recentFailureCount, 1);
+    assert.equal(projectOps.failureGroups.byErrorCode[0].key, "E_VIS_TEST");
+    assert.equal(projectOps.reviewRework.pendingReviewCount, 0);
+    assert.equal(Array.isArray(projectOps.resumeReadiness.runs), true);
+
+    const projectReadinessResponse = await fetch(`${url}/api/v1/project/readiness`);
+    assert.equal(projectReadinessResponse.status, 200);
+    const projectReadiness = await projectReadinessResponse.json();
+    assert.equal(projectReadiness.systemId, "viz.project.demo");
+    assert.equal(projectReadiness.canDryRun, true);
+    assert.equal(projectReadiness.roleRepoHealth.roles[0].status, "ok");
 
     const projectBindingsResponse = await fetch(`${url}/api/v1/project/bindings`);
     assert.equal(projectBindingsResponse.status, 200);
@@ -797,7 +813,13 @@ test("visualizer server serves run list, details, and live stream", async (t) =>
     assert.equal(failure.summary.errorCode, "E_VIS_TEST");
     assert.equal(Array.isArray(failure.suggestedNextChecks), true);
 
-    for (const debugEndpoint of ["failure", "resume-readiness"]) {
+    const runContractsResponse = await fetch(`${url}/api/v1/runs/${runId}/contracts`);
+    assert.equal(runContractsResponse.status, 200);
+    const runContracts = await runContractsResponse.json();
+    assert.equal(runContracts.status, "pass");
+    assert.equal(runContracts.runId, runId);
+
+    for (const debugEndpoint of ["failure", "contracts", "resume-readiness"]) {
       const missingResponse = await fetch(`${url}/api/v1/runs/missing-run/${debugEndpoint}`);
       assert.equal(missingResponse.status, 404);
       const missing = await missingResponse.json();

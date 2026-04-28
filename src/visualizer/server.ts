@@ -30,10 +30,13 @@ import {
   projectTimelineRecord
 } from "../runtime/timeline-projector.js";
 import {
+  inspectRunContractStatusVisualization,
   inspectRunFailureVisualization,
   inspectRunResumeDiagnostics,
   inspectRunResumeReadiness
 } from "./data.js";
+import { inspectProjectOpsSummaryVisualization } from "./ops-summary-projection.js";
+import { inspectProjectReadiness } from "./project-readiness.js";
 import {
   exportProjectBundle,
   inspectProjectBindingVisualization,
@@ -508,6 +511,10 @@ async function handleApiProjectRoles(workdir: string, response: ServerResponse):
   jsonResponse(response, 200, await listProjectRolesVisualization(workdir));
 }
 
+async function handleApiProjectOpsSummary(workdir: string, response: ServerResponse): Promise<void> {
+  jsonResponse(response, 200, await inspectProjectOpsSummaryVisualization(workdir));
+}
+
 async function handleApiProjectBindings(workdir: string, response: ServerResponse): Promise<void> {
   jsonResponse(response, 200, await inspectProjectBindingVisualization(workdir));
 }
@@ -518,6 +525,10 @@ async function handleApiProjectContracts(workdir: string, response: ServerRespon
 
 async function handleApiProjectRolePackages(workdir: string, response: ServerResponse): Promise<void> {
   jsonResponse(response, 200, await inspectProjectRolePackagesVisualization(workdir));
+}
+
+async function handleApiProjectReadiness(workdir: string, response: ServerResponse): Promise<void> {
+  jsonResponse(response, 200, await inspectProjectReadiness(workdir));
 }
 
 async function readJsonRequest(request: IncomingMessage): Promise<Record<string, unknown>> {
@@ -788,6 +799,14 @@ async function handleApiRunFailure(
   response: ServerResponse
 ): Promise<void> {
   jsonResponse(response, 200, mapFailureProjectionView(await inspectRunFailureVisualization(workdir, runId)));
+}
+
+async function handleApiRunContractStatus(
+  workdir: string,
+  runId: string,
+  response: ServerResponse
+): Promise<void> {
+  jsonResponse(response, 200, await inspectRunContractStatusVisualization(workdir, runId));
 }
 
 async function handleApiRunResumeReadiness(
@@ -1113,6 +1132,10 @@ async function handleVisualizationRequest(
     await handleApiProjectRoles(state.workdir, response);
     return;
   }
+  if (segments.length === 4 && segments[2] === "project" && segments[3] === "ops-summary" && method === "GET") {
+    await handleApiProjectOpsSummary(state.workdir, response);
+    return;
+  }
   if (segments.length === 4 && segments[2] === "project" && segments[3] === "bindings" && method === "GET") {
     await handleApiProjectBindings(state.workdir, response);
     return;
@@ -1123,6 +1146,10 @@ async function handleVisualizationRequest(
   }
   if (segments.length === 4 && segments[2] === "project" && segments[3] === "role-packages" && method === "GET") {
     await handleApiProjectRolePackages(state.workdir, response);
+    return;
+  }
+  if (segments.length === 4 && segments[2] === "project" && segments[3] === "readiness" && method === "GET") {
+    await handleApiProjectReadiness(state.workdir, response);
     return;
   }
   if (segments.length === 4 && segments[2] === "project" && segments[3] === "load" && method === "POST") {
@@ -1179,6 +1206,10 @@ async function handleVisualizationRequest(
   }
   if (segments.length === 5 && segments[4] === "failure" && method === "GET") {
     await handleApiRunFailure(state.workdir, runId, response);
+    return;
+  }
+  if (segments.length === 5 && segments[4] === "contracts" && method === "GET") {
+    await handleApiRunContractStatus(state.workdir, runId, response);
     return;
   }
   if (segments.length === 5 && segments[4] === "resume-diagnostics" && method === "GET") {

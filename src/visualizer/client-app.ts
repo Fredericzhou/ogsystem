@@ -6,6 +6,8 @@ import {
   renderFailureDetailPanel,
   renderFailureSummaryPanel,
   renderLogsPanel,
+  renderOpsSummaryPanel,
+  renderProjectReadinessPanel,
   renderProjectSummaryPanel,
   renderResumeReadinessPanel,
   renderReviewQueuePanel,
@@ -161,12 +163,16 @@ export function buildClientAppScript(apiPrefix: string): string {
     const renderReviewDetailPanel = ${renderReviewDetailPanel.toString()};
     const renderRolePackagePanel = ${renderRolePackagePanel.toString()};
     const renderLogsPanel = ${renderLogsPanel.toString()};
+    const renderOpsSummaryPanel = ${renderOpsSummaryPanel.toString()};
+    const renderProjectReadinessPanel = ${renderProjectReadinessPanel.toString()};
     const renderRunStatePanel = ${renderRunStatePanel.toString()};
     const renderSuggestedNextChecksPanel = ${renderSuggestedNextChecksPanel.toString()};
     const renderRunTopologySvg = ${renderRunTopologySvg.toString()};
     const renderWorkbenchTopologySvg = ${renderWorkbenchTopologySvg.toString()};
     const state = {
       project: null,
+      opsSummary: null,
+      projectReadiness: null,
       workbench: null,
       workbenchView: "render",
       workbenchSource: "",
@@ -202,6 +208,7 @@ export function buildClientAppScript(apiPrefix: string): string {
       reviewDetail: null,
       bindings: null,
       contracts: null,
+      contractRuntimeStatus: null,
       rolePackages: null,
       resumeReadiness: null,
       resumeReadinessLoaded: false,
@@ -238,6 +245,8 @@ export function buildClientAppScript(apiPrefix: string): string {
     const actionFormEl = document.getElementById("action-form");
     const workdirEl = document.getElementById("workdir");
     const projectSummaryEl = document.getElementById("project-summary");
+    const opsSummaryEl = document.getElementById("ops-summary");
+    const projectReadinessEl = document.getElementById("project-readiness");
     const workbenchMetaEl = document.getElementById("workbench-meta");
     const workbenchStatusEl = document.getElementById("workbench-status");
     const workbenchActionsEl = document.getElementById("workbench-actions");
@@ -887,6 +896,8 @@ export function buildClientAppScript(apiPrefix: string): string {
     function renderProject() {
       if (!state.project) {
         projectSummaryEl.textContent = "Project data unavailable.";
+        if (opsSummaryEl) opsSummaryEl.innerHTML = '<div class="hint">Ops summary unavailable.</div>';
+        if (projectReadinessEl) projectReadinessEl.innerHTML = '<div class="hint">Project readiness unavailable.</div>';
         bindingExplainEl.innerHTML = '<div class="hint">Project binding data unavailable.</div>';
         rolePackagesEl.innerHTML = '<div class="hint">Role package data unavailable.</div>';
         contractExplainEl.innerHTML = '<div class="hint">Contract data unavailable.</div>';
@@ -904,6 +915,16 @@ export function buildClientAppScript(apiPrefix: string): string {
         workbenchSavedPath: state.workbenchSavedPath || "system.mmd",
         validationOk: Boolean(state.workbench?.validation?.ok)
       });
+      if (opsSummaryEl) {
+        opsSummaryEl.innerHTML = renderOpsSummaryPanel({
+          opsSummary: state.opsSummary
+        });
+      }
+      if (projectReadinessEl) {
+        projectReadinessEl.innerHTML = renderProjectReadinessPanel({
+          readiness: state.projectReadiness
+        });
+      }
       bindingExplainEl.innerHTML = renderBindingExplainPanel({
         bindings: state.bindings,
         stale: false
@@ -912,7 +933,8 @@ export function buildClientAppScript(apiPrefix: string): string {
         rolePackages: state.rolePackages
       });
       contractExplainEl.innerHTML = renderContractPanel({
-        contracts: state.contracts
+        contracts: state.contracts,
+        runtimeStatus: state.contractRuntimeStatus
       });
     }
 
@@ -1640,16 +1662,20 @@ export function buildClientAppScript(apiPrefix: string): string {
     }
 
     async function loadProject() {
-      const [summary, system, config, roles, bindings, contracts, rolePackages] = await Promise.all([
+      const [summary, system, config, roles, opsSummary, readiness, bindings, contracts, rolePackages] = await Promise.all([
         requestJson(\`\${API_PREFIX}/project\`),
         requestJson(\`\${API_PREFIX}/project/system\`),
         requestJson(\`\${API_PREFIX}/project/config\`),
         requestJson(\`\${API_PREFIX}/project/roles\`),
+        requestJson(\`\${API_PREFIX}/project/ops-summary\`),
+        requestJson(\`\${API_PREFIX}/project/readiness\`),
         requestJson(\`\${API_PREFIX}/project/bindings\`),
         requestJson(\`\${API_PREFIX}/project/contracts\`),
         requestJson(\`\${API_PREFIX}/project/role-packages\`)
       ]);
       state.project = { summary, system, config, roles };
+      state.opsSummary = opsSummary;
+      state.projectReadiness = readiness;
       state.bindings = bindings;
       state.contracts = contracts;
       state.rolePackages = rolePackages;
@@ -1742,18 +1768,21 @@ export function buildClientAppScript(apiPrefix: string): string {
     }
 
     async function refreshRunDetailAndGraph(runId) {
-      const [detail, graphPayload] = await Promise.all([
+      const [detail, graphPayload, contractRuntimeStatus] = await Promise.all([
         requestJson(\`\${API_PREFIX}/runs/\${encodeURIComponent(runId)}\`),
-        requestJson(\`\${API_PREFIX}/runs/\${encodeURIComponent(runId)}/graph\`)
+        requestJson(\`\${API_PREFIX}/runs/\${encodeURIComponent(runId)}/graph\`),
+        requestJson(\`\${API_PREFIX}/runs/\${encodeURIComponent(runId)}/contracts\`).catch(() => null)
       ]);
       state.detail = detail;
       state.graph = graphPayload;
+      state.contractRuntimeStatus = contractRuntimeStatus;
       upsertRunFromHeader(detail.header);
       const fallbackRoleId = detail.header?.lastExecutedRoleId || detail.header?.finalRoleId || "";
       populateLogRoleOptions(graphPayload, fallbackRoleId);
       populateTimelineRoleOptions(graphPayload);
       renderSelectedRun();
       renderRuns();
+      renderProject();
       writeRouteToLocation();
       const status = detail.header?.status || "unknown";
       const hasWaitingHumanReview = Boolean(detail.header?.hasWaitingHumanReview);
@@ -1836,11 +1865,12 @@ export function buildClientAppScript(apiPrefix: string): string {
     }
 
     async function loadSelectedRunBoot(runId, options) {
-      const [detail, eventsPayload, graphPayload, reviewsPayload] = await Promise.all([
+      const [detail, eventsPayload, graphPayload, reviewsPayload, contractRuntimeStatus] = await Promise.all([
         requestJson(\`\${API_PREFIX}/runs/\${encodeURIComponent(runId)}\`),
         requestJson(buildTimelineQuery(runId, { cursor: 0, limit: 250 })),
         requestJson(\`\${API_PREFIX}/runs/\${encodeURIComponent(runId)}/graph\`),
-        requestJson(\`\${API_PREFIX}/runs/\${encodeURIComponent(runId)}/reviews\`)
+        requestJson(\`\${API_PREFIX}/runs/\${encodeURIComponent(runId)}/reviews\`),
+        requestJson(\`\${API_PREFIX}/runs/\${encodeURIComponent(runId)}/contracts\`).catch(() => null)
       ]);
 
       state.detail = detail;
@@ -1848,6 +1878,7 @@ export function buildClientAppScript(apiPrefix: string): string {
       state.eventCursor = eventsPayload.nextCursor || 0;
       state.graph = graphPayload;
       state.reviews = reviewsPayload;
+      state.contractRuntimeStatus = contractRuntimeStatus;
       state.failure = null;
       state.failureLoaded = false;
       state.failureStale = false;
@@ -1871,6 +1902,7 @@ export function buildClientAppScript(apiPrefix: string): string {
       populateTimelineRoleOptions(graphPayload);
       renderSelectedRun();
       renderRuns();
+      renderProject();
       writeRouteToLocation();
 
       if (!options || !options.keepStream) {
@@ -1908,6 +1940,7 @@ export function buildClientAppScript(apiPrefix: string): string {
       state.selectedReviewId = "";
       state.detail = null;
       state.graph = null;
+      state.contractRuntimeStatus = null;
       state.failure = null;
       state.failureLoaded = false;
       state.failureStale = false;

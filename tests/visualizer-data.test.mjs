@@ -5,6 +5,7 @@ import path from "node:path";
 import { mkdtemp, mkdir, symlink, writeFile } from "node:fs/promises";
 
 import {
+  inspectRunContractStatusVisualization,
   inspectRunFailureVisualization,
   inspectRunResumeDiagnostics,
   inspectRunResumeReadiness
@@ -280,6 +281,122 @@ async function createSimulationRun(workdir) {
     ].join("\n"),
     "utf8"
   );
+  return { runId, runDir };
+}
+
+async function createContractFailureRun(workdir) {
+  const runId = "20260416-020304-contract";
+  const runDir = path.resolve(workdir, ".ogs", "runs", runId);
+  await mkdir(runDir, { recursive: true });
+  await writeFile(
+    path.resolve(runDir, "state.json"),
+    JSON.stringify(
+      {
+        status: "failed",
+        error: "Strict handoff contract violation.",
+        lastExecutedRoleId: "demo-analyst",
+        recentAudits: [
+          {
+            roleId: "demo-analyst",
+            status: "failed",
+            at: "2026-04-16T02:03:04.000Z",
+            errorEnvelope: {
+              errorCode: "CONTRACT_VIOLATION",
+              errorCategory: "contract handoff violation",
+              message: "Strict handoff contract violation.",
+              stage: "contract",
+              contract: {
+                contractId: "demo-analyst.to.tracker.v1",
+                flowKey: "demo-analyst:ANALYSIS_DONE:diagnosis-dispatch"
+              }
+            }
+          }
+        ],
+        auditSummary: {
+          okCount: 0,
+          failedCount: 1,
+          noopCount: 0,
+          handledFailureCount: 0,
+          unhandledFailureCount: 1,
+          handledFailureByEvent: {},
+          handledFailureByTargetRole: {},
+          repairAttemptedCount: 0,
+          repairAppliedCount: 0,
+          failureCountsByErrorCode: { CONTRACT_VIOLATION: 1 }
+        },
+        branchRecords: {},
+        roleMetricsByRoleId: {},
+        roleResults: {},
+        pendingReviewsById: {},
+        reviewHistoryByBranchId: {},
+        humanReviewContextByBranchId: {},
+        reviewRoundByRoleLineageKey: {},
+        loopIterations: {},
+        selectedEventByBranchId: {}
+      },
+      null,
+      2
+    ),
+    "utf8"
+  );
+  await writeFile(
+    path.resolve(runDir, "summary.json"),
+    JSON.stringify(
+      {
+        version: 1,
+        runId,
+        status: "failed",
+        failedCount: 1,
+        lastRoleId: "demo-analyst",
+        lastErrorCode: "CONTRACT_VIOLATION",
+        updatedAt: "2026-04-16T02:03:05.000Z",
+        terminalErrorEnvelope: {
+          errorCode: "CONTRACT_VIOLATION",
+          message: "Strict handoff contract violation.",
+          stage: "contract"
+        }
+      },
+      null,
+      2
+    ),
+    "utf8"
+  );
+  return { runId, runDir };
+}
+
+async function createUnknownContractRun(workdir) {
+  const runId = "20260416-030405-unknown";
+  const runDir = path.resolve(workdir, ".ogs", "runs", runId);
+  await mkdir(runDir, { recursive: true });
+  await writeFile(
+    path.resolve(runDir, "state.json"),
+    JSON.stringify(
+      {
+        status: "running",
+        recentAudits: [{ roleId: "demo-analyst", status: "ok", at: "2026-04-16T03:04:05.000Z" }],
+        auditSummary: { okCount: 1, failedCount: 0 },
+        branchRecords: {},
+        roleMetricsByRoleId: {},
+        roleResults: {},
+        pendingReviewsById: {},
+        reviewHistoryByBranchId: {},
+        humanReviewContextByBranchId: {},
+        reviewRoundByRoleLineageKey: {},
+        loopIterations: {},
+        selectedEventByBranchId: {}
+      },
+      null,
+      2
+    ),
+    "utf8"
+  );
+  return { runId, runDir };
+}
+
+async function createNoRuntimeSignalRun(workdir) {
+  const runId = "20260416-040506-empty";
+  const runDir = path.resolve(workdir, ".ogs", "runs", runId);
+  await mkdir(runDir, { recursive: true });
   return { runId, runDir };
 }
 
@@ -751,6 +868,31 @@ test("visualizer data projects failure triage and resume readiness", async () =>
   assert.equal(readiness.canResume, false);
   assert.equal(readiness.blockers.some((item) => item.blocking === true), true);
   assert.equal(readiness.driftSources.some((item) => item.source === "system.mmd"), true);
+});
+
+test("visualizer data projects run contract status pass fail unknown and missing signals", async () => {
+  const workdir = await mkdtemp(path.join(os.tmpdir(), "ogsystem-visualizer-contract-status-"));
+
+  const passRun = await createSimulationRun(workdir);
+  const passStatus = await inspectRunContractStatusVisualization(workdir, passRun.runId);
+  assert.equal(passStatus.status, "pass");
+  assert.equal(passStatus.latestContractFailure, null);
+
+  const failRun = await createContractFailureRun(workdir);
+  const failStatus = await inspectRunContractStatusVisualization(workdir, failRun.runId);
+  assert.equal(failStatus.status, "fail");
+  assert.equal(failStatus.attribution.errorCode, "CONTRACT_VIOLATION");
+  assert.equal(failStatus.attribution.contract.contractId, "demo-analyst.to.tracker.v1");
+
+  const unknownRun = await createUnknownContractRun(workdir);
+  const unknownStatus = await inspectRunContractStatusVisualization(workdir, unknownRun.runId);
+  assert.equal(unknownStatus.status, "unknown");
+  assert.match(unknownStatus.reason, /runtime artifacts exist/);
+
+  const emptyRun = await createNoRuntimeSignalRun(workdir);
+  const emptyStatus = await inspectRunContractStatusVisualization(workdir, emptyRun.runId);
+  assert.equal(emptyStatus.status, "no-runtime-signal");
+  assert.equal(emptyStatus.signalCount, 0);
 });
 
 test("visualizer data projects binding, role package, and contract explainability", async () => {

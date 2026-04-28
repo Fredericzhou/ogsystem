@@ -737,6 +737,18 @@ export function renderPageHtml(workdir: string, apiPrefix: string): string {
           </div>
         </article>
         <article class="card span-12">
+          <header><h3>Ops Summary</h3></header>
+          <div class="body">
+            <div id="ops-summary" class="structure-list">Loading ops summary...</div>
+          </div>
+        </article>
+        <article class="card span-12">
+          <header><h3>Project Readiness</h3></header>
+          <div class="body">
+            <div id="project-readiness" class="structure-list">Loading project readiness...</div>
+          </div>
+        </article>
+        <article class="card span-12">
           <header>
             <div class="row">
               <h3>Failure Triage</h3>

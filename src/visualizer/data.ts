@@ -88,6 +88,174 @@ function getRunSimulation(detail: JsonRecord): {
   };
 }
 
+function isContractErrorCode(errorCode: string | undefined): boolean {
+  return Boolean(errorCode && (errorCode.includes("CONTRACT") || errorCode.includes("SCHEMA")));
+}
+
+function isContractSignal(record: JsonRecord): boolean {
+  const envelope = asRecord(record.errorEnvelope) ?? record;
+  const errorCode = asString(envelope.errorCode) ?? asString(record.errorCode);
+  const category = asString(envelope.errorCategory) ?? asString(record.errorCategory);
+  const message = asString(envelope.message) ?? asString(record.message) ?? asString(record.error);
+  return (
+    isContractErrorCode(errorCode) ||
+    category === "contract" ||
+    category === "contract handoff violation" ||
+    Boolean(message?.toLowerCase().includes("contract violation")) ||
+    Boolean(message?.toLowerCase().includes("handoff contract"))
+  );
+}
+
+function buildContractFailureEvidence(record: JsonRecord, source: string): JsonRecord {
+  const envelope = asRecord(record.errorEnvelope) ?? record;
+  return {
+    source,
+    at: asString(record.at) ?? asString(record.updatedAt),
+    type: asString(record.type),
+    roleId: asString(record.roleId) ?? asString(envelope.roleId),
+    branchId: asString(record.branchId) ?? asString(envelope.branchId),
+    errorCode: asString(envelope.errorCode) ?? asString(record.errorCode),
+    errorCategory: asString(envelope.errorCategory) ?? asString(record.errorCategory),
+    stage: asString(envelope.stage) ?? asString(record.stage),
+    message: asString(envelope.message) ?? asString(record.message) ?? asString(record.error),
+    contract: asRecord(envelope.contract) ?? asRecord(record.contract) ?? null
+  };
+}
+
+function collectInlineRuntimeSignals(detail: JsonRecord): JsonRecord[] {
+  const state = extractGraphState(detail.state);
+  const summary = asRecord(detail.summary);
+  const signals: JsonRecord[] = [];
+  for (const audit of Array.isArray(state?.recentAudits) ? state.recentAudits : []) {
+    const record = asRecord(audit);
+    if (record) {
+      signals.push({ ...record, source: "state.recentAudits" });
+    }
+  }
+  const stateErrorEnvelope = asRecord(state?.errorEnvelope);
+  if (stateErrorEnvelope) {
+    signals.push({ ...stateErrorEnvelope, source: "state.errorEnvelope", at: asString(asRecord(state)?.updatedAt) });
+  }
+  const summaryTerminalEnvelope = asRecord(summary?.terminalErrorEnvelope);
+  if (summaryTerminalEnvelope) {
+    signals.push({
+      ...summaryTerminalEnvelope,
+      source: "summary.terminalErrorEnvelope",
+      at: asString(summary?.updatedAt)
+    });
+  }
+  const summaryLastErrorCode = asString(summary?.lastErrorCode);
+  if (summaryLastErrorCode) {
+    signals.push({
+      source: "summary.lastErrorCode",
+      errorCode: summaryLastErrorCode,
+      at: asString(summary?.updatedAt),
+      roleId: asString(summary?.lastRoleId)
+    });
+  }
+  return signals;
+}
+
+async function readRuntimeEventSignals(runDir: string): Promise<JsonRecord[]> {
+  const paths = [
+    { path: resolve(runDir, "timeline.jsonl"), source: "timeline.jsonl" },
+    { path: resolve(runDir, "events.ndjson"), source: "events.ndjson" }
+  ];
+  const signals: JsonRecord[] = [];
+  for (const entry of paths) {
+    const content = await readFile(entry.path, "utf8").catch(() => "");
+    for (const line of content.split(/\r?\n/)) {
+      const trimmed = line.trim();
+      if (!trimmed) {
+        continue;
+      }
+      try {
+        const parsed = asRecord(JSON.parse(trimmed));
+        if (parsed) {
+          signals.push({ ...parsed, source: entry.source });
+        }
+      } catch {
+        continue;
+      }
+    }
+  }
+  return signals;
+}
+
+function compareSignalRecency(left: JsonRecord, right: JsonRecord): number {
+  const leftTime = parseIsoTimestamp(asString(left.at) ?? asString(left.updatedAt)) ?? -1;
+  const rightTime = parseIsoTimestamp(asString(right.at) ?? asString(right.updatedAt)) ?? -1;
+  if (leftTime !== rightTime) {
+    return leftTime - rightTime;
+  }
+  return 0;
+}
+
+export async function inspectRunContractStatusVisualization(
+  workdir: string,
+  runId: string
+): Promise<Record<string, unknown>> {
+  const runDir = resolveRunDir(workdir, runId);
+  const detail = (await inspectRun(workdir, runId)) as JsonRecord;
+  const state = extractGraphState(detail.state);
+  const summary = asRecord(detail.summary);
+  const signals = [...collectInlineRuntimeSignals(detail), ...(await readRuntimeEventSignals(runDir))]
+    .filter((signal) => Object.keys(signal).length > 0)
+    .sort(compareSignalRecency);
+  const contractFailures = signals.filter(isContractSignal);
+  const latestContractFailure = contractFailures.at(-1);
+  const runStatus = asString(summary?.status) ?? asString(state?.status) ?? asString(detail.status);
+  const failedCount =
+    asNumber(summary?.failedCount) ??
+    asNumber(asRecord(state?.auditSummary)?.failedCount) ??
+    asNumber(asRecord(detail.metrics)?.failedCount);
+  const hasRuntimeSignal = signals.length > 0 || state !== undefined || summary !== undefined;
+  const terminalPass = (runStatus === "done" || runStatus === "completed") && (failedCount === undefined || failedCount === 0);
+  const terminalPassTime = parseIsoTimestamp(asString(summary?.updatedAt)) ?? Number.POSITIVE_INFINITY;
+  const latestContractFailureTime = latestContractFailure
+    ? (parseIsoTimestamp(asString(latestContractFailure.at) ?? asString(latestContractFailure.updatedAt)) ??
+      Number.POSITIVE_INFINITY)
+    : Number.NEGATIVE_INFINITY;
+
+  let status: "pass" | "fail" | "unknown" | "no-runtime-signal";
+  let reason: string;
+  let evidence: JsonRecord | null = null;
+
+  if (terminalPass && terminalPassTime >= latestContractFailureTime) {
+    status = "pass";
+    reason = "completed run has runtime artifacts and no newer contract-related failure signal";
+    evidence = {
+      source: summary ? "summary" : "state",
+      status: runStatus,
+      updatedAt: asString(summary?.updatedAt),
+      failedCount: failedCount ?? 0
+    };
+  } else if (latestContractFailure) {
+    status = "fail";
+    reason = "latest contract-related error envelope or runtime event indicates a violation";
+    evidence = buildContractFailureEvidence(latestContractFailure, asString(latestContractFailure.source) ?? "runtime");
+  } else if (!hasRuntimeSignal) {
+    status = "no-runtime-signal";
+    reason = "run artifacts do not contain state, summary, audit, timeline, or event signals";
+  } else {
+    status = "unknown";
+    reason = "runtime artifacts exist but the run has no terminal successful contract signal or contract failure";
+  }
+
+  return {
+    runId,
+    runDir,
+    status,
+    reason,
+    runStatus: runStatus ?? "unknown",
+    signalCount: signals.length,
+    attribution: evidence,
+    latestContractFailure: latestContractFailure
+      ? buildContractFailureEvidence(latestContractFailure, asString(latestContractFailure.source) ?? "runtime")
+      : null
+  };
+}
+
 async function assembleProjectContext(workdir: string): Promise<{
   systemPath: string;
   systemSource: string;

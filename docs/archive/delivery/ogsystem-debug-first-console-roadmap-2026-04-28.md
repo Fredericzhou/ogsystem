@@ -1,7 +1,7 @@
 # OGSystem Debug-First Console Roadmap
 
 Date: 2026-04-28  
-Status: delivered Phase 0-3; Phase 4-5 pending  
+Status: delivered Phase 0-4; Phase 5 pending
 Scope: 以调试和失败解释为优先目标，推进 `visualizer -> console`，优先解决 run 诊断、配置对账和恢复操作问题，而不是先做可视 authoring
 
 Related:
@@ -116,6 +116,11 @@ Run Debuggability
 - 最近 review/rework 最多的节点有哪些
 - resume 拒绝主要由哪些 drift 引起
 - provider timeout / schema mismatch / contract violation 各占多少
+
+Delivery status:
+
+- 已通过 `GET /api/v1/project/ops-summary` 和 `Ops Summary` 面板落地。
+- 当前聚合 recent failures、role/errorCode/errorCategory 分布、review/rework pending、resume blocking 和 drift source。
 
 ### 5.3 Project Home
 
@@ -271,6 +276,11 @@ Run Debuggability
 - 合同 schema 是什么
 - 当前 run 的最近一次通过/失败情况
 
+Delivery status:
+
+- 已通过 `GET /api/v1/runs/:runId/contracts` 和 `Config Explain > Contract` 面板补齐 run-level contract runtime status。
+- `pass` 是 visualizer 层基于“completed run 且未发现 contract failure signal”的确定性推断；runtime 当前没有显式持久化 contract-pass event。
+
 ## Phase 3. Review / Resume Operability
 
 目标：
@@ -334,6 +344,12 @@ Run Debuggability
 
 - `Project Readiness` 必须放在 `Phase 0-3` 之后。
 - 它依赖前面已经建好的 failure/config/review/resume explainability 投影，才能避免再次发明第二套不一致的项目检查逻辑。
+
+Delivery status:
+
+- 已通过 `GET /api/v1/project/readiness` 和 `Project Readiness` 面板落地。
+- 当前检查 `canDryRun`、missing bindings、strict handoff contract coverage、role package required file health，并输出 blockers/warnings。
+- 实现限定在 visualizer read-only projection/API/UI/test surface，没有改 runtime 执行内核。
 
 ## Phase 5. Studio Bridge
 
@@ -429,3 +445,12 @@ MVP 只需要：
 简化成一句话：
 
 OGSystem 当前最缺的不是“更好画图”，而是“更好解释为什么这张图这样运行、这样失败、这样不能恢复”；只有这条解释链打通后，Studio 才会真的提升可用性。
+
+## 13. Implementation Status
+
+截至 2026-04-28：
+
+- `Phase 0-3` 已交付为 debug-first console 主路径。
+- `Ops` 已交付为项目级聚合视图。
+- `Phase 4 Project Readiness` 已交付为运行前只读检查视图。
+- `Phase 5 Studio Bridge` 仍 pending，不应在诊断底座之外另起不一致的 authoring 逻辑。

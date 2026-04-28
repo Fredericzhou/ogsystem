@@ -112,6 +112,142 @@ export function renderProjectSummaryPanel(args: {
   ].join("");
 }
 
+export function renderOpsSummaryPanel(args: {
+  opsSummary: JsonRecord | null | undefined;
+}): string {
+  const summary = (args.opsSummary?.summary ?? {}) as JsonRecord;
+  const failureGroups = (args.opsSummary?.failureGroups ?? {}) as JsonRecord;
+  const reviewRework = (args.opsSummary?.reviewRework ?? {}) as JsonRecord;
+  const resumeReadiness = (args.opsSummary?.resumeReadiness ?? {}) as JsonRecord;
+  const recentFailures = Array.isArray(args.opsSummary?.recentFailures)
+    ? args.opsSummary.recentFailures as JsonRecord[]
+    : [];
+  const topErrorCodes = Array.isArray(failureGroups.byErrorCode)
+    ? failureGroups.byErrorCode as JsonRecord[]
+    : [];
+  const driftSources = Array.isArray(resumeReadiness.driftSources)
+    ? resumeReadiness.driftSources as JsonRecord[]
+    : [];
+  const blockingByCategory = Array.isArray(resumeReadiness.blockingByCategory)
+    ? resumeReadiness.blockingByCategory as JsonRecord[]
+    : [];
+  const cards = [
+    '<div class="event"><div class="event-top"><span>recent failures</span><span>' +
+      escapeText(String(summary.recentFailureCount ?? 0)) +
+      '</span></div><strong>' +
+      escapeText(
+        topErrorCodes.length
+          ? topErrorCodes.slice(0, 3).map((item) => String(item.key) + " x" + String(item.count)).join(" · ")
+          : "no recent failures"
+      ) +
+      '</strong><div class="hint">grouped by role, errorCode, and errorCategory for operator triage</div></div>',
+    '<div class="event"><div class="event-top"><span>review / rework pending</span><span>' +
+      escapeText(String(summary.pendingReviewCount ?? 0)) +
+      ' reviews</span></div><strong>' +
+      escapeText(String(reviewRework.pendingReworkCount ?? 0) + " active rework branches") +
+      '</strong><div class="hint">paused reviews ' +
+      escapeText(String(reviewRework.pausedReviewCount ?? 0)) +
+      '</div></div>',
+    '<div class="event"><div class="event-top"><span>resume blocking</span><span>' +
+      escapeText(String(resumeReadiness.blockedRunCount ?? summary.resumeBlockedRunCount ?? 0)) +
+      ' runs</span></div><strong>' +
+      escapeText(
+        blockingByCategory.length
+          ? blockingByCategory.slice(0, 3).map((item) => String(item.key) + " x" + String(item.count)).join(" · ")
+          : "no blocking categories"
+      ) +
+      '</strong><div class="hint">drift sources ' +
+      escapeText(
+        driftSources.length
+          ? driftSources.slice(0, 3).map((item) => String(item.key) + " x" + String(item.count)).join(" · ")
+          : "none"
+      ) +
+      "</div></div>"
+  ];
+  const failureCards = recentFailures.length
+    ? recentFailures.slice(0, 5).map((failure) =>
+        '<div class="event"><div class="event-top"><span><code>' +
+        escapeText(String(failure.roleId ?? "unknown")) +
+        '</code></span><span>' +
+        escapeText(String(failure.errorCategory ?? "runtime")) +
+        '</span></div><strong>' +
+        escapeText(String(failure.errorCode ?? "ROLE_EXECUTION_FAILED")) +
+        '</strong><div class="hint">' +
+        escapeText(String(failure.runId ?? "unknown") + " · " + String(failure.message ?? "No message")) +
+        "</div></div>"
+      )
+    : ['<div class="event"><div class="event-top"><span>recent failure list</span><span>0</span></div><strong>No failure entries in the sampled runs</strong></div>'];
+  return ['<div class="structure-list">', ...cards, ...failureCards, "</div>"].join("");
+}
+
+export function renderProjectReadinessPanel(args: {
+  readiness: JsonRecord | null | undefined;
+}): string {
+  const readiness = args.readiness ?? {};
+  const blockers = Array.isArray(readiness.blockers) ? readiness.blockers as JsonRecord[] : [];
+  const warnings = Array.isArray(readiness.warnings) ? readiness.warnings as JsonRecord[] : [];
+  const missingBindings = Array.isArray(readiness.missingBindings) ? readiness.missingBindings as JsonRecord[] : [];
+  const contractCoverage = (readiness.contractCoverage ?? {}) as JsonRecord;
+  const roleRepoHealth = (readiness.roleRepoHealth ?? {}) as JsonRecord;
+  const roles = Array.isArray(roleRepoHealth.roles) ? roleRepoHealth.roles as JsonRecord[] : [];
+  const unhealthyRoles = roles.filter((role) => role.status !== "ok");
+  const status = readiness.canDryRun ? (warnings.length ? "warning" : "ready") : "blocked";
+  const issueCards = [...blockers, ...warnings].slice(0, 6).map((issue) =>
+    '<div class="event"><div class="event-top"><span>' +
+    escapeText(String(issue.code ?? "READINESS_ISSUE")) +
+    '</span><span>' +
+    escapeText(String(issue.severity ?? "warning")) +
+    '</span></div><strong>' +
+    escapeText(String(issue.message ?? "No readiness message.")) +
+    '</strong><div class="hint">' +
+    escapeText(String(issue.roleId ?? issue.flowKey ?? issue.path ?? "")) +
+    "</div></div>"
+  );
+  if (!readiness || Object.keys(readiness).length === 0) {
+    return '<div class="hint">Project readiness data unavailable.</div>';
+  }
+  return [
+    '<div class="structure-list">',
+    '<div class="event"><div class="event-top"><span>dry-run readiness</span><span>' +
+      escapeText(status) +
+      '</span></div><strong>' +
+      escapeText(readiness.canDryRun ? "Project can dry-run with current structural checks." : "Project has dry-run blockers.") +
+      '</strong><div class="hint">blockers ' +
+      escapeText(String(blockers.length)) +
+      " · warnings " +
+      escapeText(String(warnings.length)) +
+      " · system " +
+      escapeText(String(readiness.systemId ?? "n/a")) +
+      "</div></div>",
+    '<div class="event"><div class="event-top"><span>missing bindings</span><span>' +
+      escapeText(String(missingBindings.length)) +
+      '</span></div><strong>' +
+      escapeText(missingBindings.length ? missingBindings.map((item) => String(item.roleId)).join(", ") : "none") +
+      '</strong><div class="hint">checks exec.bind, model.bind, and model-selection resolution</div></div>',
+    '<div class="event"><div class="event-top"><span>contract coverage</span><span>' +
+      escapeText(String(contractCoverage.missingFlowCount ?? 0) + " missing") +
+      '</span></div><strong>' +
+      escapeText(
+        String(contractCoverage.coveredFlowCount ?? 0) +
+          " / " +
+          String(contractCoverage.eligibleFlowCount ?? 0) +
+          " eligible flows covered"
+      ) +
+      '</strong><div class="hint">handoff mode ' +
+      escapeText(String(contractCoverage.handoffMode ?? "n/a")) +
+      "</div></div>",
+    '<div class="event"><div class="event-top"><span>role repo health</span><span>' +
+      escapeText(String(unhealthyRoles.length) + " unhealthy") +
+      '</span></div><strong>' +
+      escapeText(unhealthyRoles.length ? unhealthyRoles.map((role) => String(role.roleId)).join(", ") : "all required files present") +
+      '</strong><div class="hint">' +
+      escapeText(String(roles.length) + " role package(s) inspected") +
+      "</div></div>",
+    ...issueCards,
+    "</div>"
+  ].join("");
+}
+
 export function renderFailureSummaryPanel(args: {
   failure: Record<string, unknown> | null | undefined;
   loaded: boolean;
@@ -350,8 +486,10 @@ export function renderRolePackagePanel(args: {
 
 export function renderContractPanel(args: {
   contracts: Record<string, unknown> | null | undefined;
+  runtimeStatus?: Record<string, unknown> | null | undefined;
 }): string {
   const contracts = args.contracts ?? {};
+  const runtimeStatus = args.runtimeStatus ?? null;
   const flows = Array.isArray(contracts.flows)
     ? contracts.flows as JsonRecord[]
     : Array.isArray(contracts.contracts)
@@ -360,11 +498,27 @@ export function renderContractPanel(args: {
         ? contracts.entries as JsonRecord[]
         : [];
   const uncoveredEdges = Array.isArray(contracts.uncoveredEdges) ? contracts.uncoveredEdges : [];
-  if (!flows.length && !uncoveredEdges.length) {
+  if (!flows.length && !uncoveredEdges.length && !runtimeStatus) {
     return '<div class="hint">Contract coverage data unavailable.</div>';
   }
+  const runtimeCard = runtimeStatus
+    ? '<div class="event"><div class="event-top"><span>run contract status</span><span>' +
+      escapeText(String(runtimeStatus.status ?? "unknown")) +
+      '</span></div><strong>' +
+      escapeText(String(runtimeStatus.reason ?? "Runtime contract signal unavailable.")) +
+      '</strong><div class="hint">' +
+      escapeText(
+        "run " + String(runtimeStatus.runId ?? "n/a")
+          + " · runtime " + String(runtimeStatus.runStatus ?? "unknown")
+          + " · signals " + String(runtimeStatus.signalCount ?? 0)
+      ) +
+      "</div>" +
+      (runtimeStatus.attribution ? '<pre>' + escapeText(formatJson(runtimeStatus.attribution)) + "</pre>" : "") +
+      "</div>"
+    : "";
   return [
     '<div class="structure-list">',
+    runtimeCard,
     '<div class="event"><div class="event-top"><span>contract coverage</span><span>' +
       escapeText(uncoveredEdges.length ? uncoveredEdges.length + " uncovered" : "complete") +
       '</span></div><strong>Strict handoff coverage across flows and role inputs</strong></div>',
