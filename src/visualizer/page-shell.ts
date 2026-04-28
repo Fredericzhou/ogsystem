@@ -76,6 +76,8 @@ export function renderPageHtml(workdir: string, apiPrefix: string): string {
       background: rgba(8, 13, 26, 0.78);
       backdrop-filter: blur(18px);
       min-width: 0;
+      overflow-x: hidden;
+      overflow-y: auto;
       z-index: 30;
     }
     .brand {
@@ -95,9 +97,10 @@ export function renderPageHtml(workdir: string, apiPrefix: string): string {
       font-size: 12px;
     }
     .pill {
-      display: inline-flex;
+      display: flex;
       align-items: center;
       gap: 6px;
+      width: 100%;
       padding: 5px 8px;
       border-radius: 999px;
       border: 1px solid var(--border);
@@ -109,6 +112,8 @@ export function renderPageHtml(workdir: string, apiPrefix: string): string {
       overflow: hidden;
     }
     .pill code {
+      display: block;
+      flex: 1 1 auto;
       min-width: 0;
       overflow: hidden;
       text-overflow: ellipsis;
@@ -122,7 +127,10 @@ export function renderPageHtml(workdir: string, apiPrefix: string): string {
     .stack {
       display: grid;
       gap: 8px;
+      width: 100%;
+      max-width: 100%;
       min-width: 0;
+      overflow: hidden;
     }
     .search, .select {
       width: 100%;
@@ -147,8 +155,11 @@ export function renderPageHtml(workdir: string, apiPrefix: string): string {
       max-height: calc(100vh - 136px);
       overflow: auto;
       padding-right: 4px;
+      min-width: 0;
     }
     .run-card {
+      width: 100%;
+      min-width: 0;
       padding: 10px;
       border: 1px solid var(--border);
       border-radius: var(--radius-sm);
@@ -156,6 +167,7 @@ export function renderPageHtml(workdir: string, apiPrefix: string): string {
       cursor: pointer;
       transition: transform 120ms ease, border-color 120ms ease, background 120ms ease;
       text-align: left;
+      overflow: hidden;
     }
     .run-card:hover,
     .run-card.active {
