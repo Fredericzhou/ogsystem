@@ -31,9 +31,9 @@ export function renderPageHtml(workdir: string, apiPrefix: string): string {
       --ok: #34d399;
       --warn: #fbbf24;
       --bad: #f87171;
-      --shadow: 0 24px 80px rgba(0, 0, 0, 0.32);
-      --radius: 18px;
-      --radius-sm: 12px;
+      --shadow: 0 14px 44px rgba(0, 0, 0, 0.26);
+      --radius: 12px;
+      --radius-sm: 8px;
       font-family: "IBM Plex Sans", "Segoe UI", system-ui, sans-serif;
     }
     * { box-sizing: border-box; }
@@ -54,7 +54,7 @@ export function renderPageHtml(workdir: string, apiPrefix: string): string {
     }
     .app {
       display: grid;
-      grid-template-columns: 320px minmax(0, 1fr);
+      grid-template-columns: 288px minmax(0, 1fr);
       min-height: 100vh;
     }
     .sidebar-overlay {
@@ -71,7 +71,7 @@ export function renderPageHtml(workdir: string, apiPrefix: string): string {
       pointer-events: auto;
     }
     .sidebar {
-      padding: 20px;
+      padding: 14px;
       border-right: 1px solid var(--border);
       background: rgba(8, 13, 26, 0.78);
       backdrop-filter: blur(18px);
@@ -83,11 +83,11 @@ export function renderPageHtml(workdir: string, apiPrefix: string): string {
       align-items: baseline;
       justify-content: space-between;
       gap: 12px;
-      margin-bottom: 18px;
+      margin-bottom: 12px;
     }
     .brand h1 {
       margin: 0;
-      font-size: 20px;
+      font-size: 17px;
       letter-spacing: 0.02em;
     }
     .brand span {
@@ -98,12 +98,21 @@ export function renderPageHtml(workdir: string, apiPrefix: string): string {
       display: inline-flex;
       align-items: center;
       gap: 6px;
-      padding: 6px 10px;
+      padding: 5px 8px;
       border-radius: 999px;
       border: 1px solid var(--border);
       color: var(--muted);
       background: rgba(255, 255, 255, 0.03);
       font-size: 12px;
+      min-width: 0;
+      max-width: 100%;
+      overflow: hidden;
+    }
+    .pill code {
+      min-width: 0;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
     }
     .pill.warn {
       color: var(--warn);
@@ -112,13 +121,15 @@ export function renderPageHtml(workdir: string, apiPrefix: string): string {
     }
     .stack {
       display: grid;
-      gap: 12px;
+      gap: 8px;
+      min-width: 0;
     }
     .search, .select {
       width: 100%;
-      padding: 12px 14px;
+      min-width: 0;
+      padding: 8px 10px;
       border: 1px solid var(--border);
-      border-radius: 14px;
+      border-radius: 9px;
       background: rgba(255, 255, 255, 0.03);
       color: var(--text);
       outline: none;
@@ -132,13 +143,13 @@ export function renderPageHtml(workdir: string, apiPrefix: string): string {
     }
     .run-list {
       display: grid;
-      gap: 10px;
-      max-height: calc(100vh - 180px);
+      gap: 8px;
+      max-height: calc(100vh - 136px);
       overflow: auto;
       padding-right: 4px;
     }
     .run-card {
-      padding: 14px;
+      padding: 10px;
       border: 1px solid var(--border);
       border-radius: var(--radius-sm);
       background: rgba(255, 255, 255, 0.03);
@@ -158,19 +169,21 @@ export function renderPageHtml(workdir: string, apiPrefix: string): string {
       gap: 8px;
       align-items: center;
       flex-wrap: wrap;
+      min-width: 0;
     }
     .meta {
       color: var(--muted);
       font-size: 12px;
       display: flex;
       flex-wrap: wrap;
-      gap: 8px;
+      gap: 6px;
+      min-width: 0;
     }
     .status {
       display: inline-flex;
       align-items: center;
       gap: 6px;
-      padding: 5px 10px;
+      padding: 3px 8px;
       border-radius: 999px;
       font-size: 12px;
       border: 1px solid transparent;
@@ -183,15 +196,15 @@ export function renderPageHtml(workdir: string, apiPrefix: string): string {
     .status.pending, .status.paused, .status.recorded, .status.pending_reconcile { color: var(--warn); border-color: rgba(251, 191, 36, 0.22); background: rgba(251, 191, 36, 0.08); }
     .status.applied { color: var(--ok); border-color: rgba(52, 211, 153, 0.22); background: rgba(52, 211, 153, 0.08); }
     .content {
-      padding: 24px;
+      padding: 14px;
       display: grid;
-      gap: 16px;
+      gap: 12px;
       align-content: start;
       min-width: 0;
     }
     .flash {
-      padding: 12px 16px;
-      border-radius: 14px;
+      padding: 9px 12px;
+      border-radius: 10px;
       border: 1px solid var(--border);
       background: rgba(255, 255, 255, 0.04);
       color: var(--text);
@@ -210,17 +223,17 @@ export function renderPageHtml(workdir: string, apiPrefix: string): string {
     .hero {
       display: flex;
       justify-content: space-between;
-      gap: 16px;
+      gap: 12px;
       align-items: start;
-      padding: 18px 20px;
+      padding: 12px 14px;
       border: 1px solid var(--border);
       border-radius: var(--radius);
       background: linear-gradient(180deg, rgba(255, 255, 255, 0.06), rgba(255, 255, 255, 0.03));
       box-shadow: var(--shadow);
     }
     .hero h2 {
-      margin: 4px 0 6px;
-      font-size: clamp(22px, 3vw, 34px);
+      margin: 2px 0 4px;
+      font-size: clamp(19px, 2.3vw, 27px);
     }
     .hero p {
       margin: 0;
@@ -228,19 +241,19 @@ export function renderPageHtml(workdir: string, apiPrefix: string): string {
     }
     .hero-copy {
       display: grid;
-      gap: 8px;
+      gap: 5px;
       min-width: 0;
     }
     .hero-toolbar {
       display: flex;
-      gap: 10px;
+      gap: 8px;
       flex-wrap: wrap;
       align-items: center;
       justify-content: flex-end;
     }
     .actions {
       display: flex;
-      gap: 10px;
+      gap: 7px;
       align-items: center;
       flex-wrap: wrap;
       justify-content: flex-end;
@@ -249,10 +262,10 @@ export function renderPageHtml(workdir: string, apiPrefix: string): string {
       border: 1px solid var(--border);
       background: rgba(255, 255, 255, 0.05);
       color: var(--text);
-      border-radius: 12px;
-      padding: 10px 14px;
-      min-height: 42px;
-      min-width: 120px;
+      border-radius: 9px;
+      padding: 7px 10px;
+      min-height: 34px;
+      min-width: 0;
       cursor: pointer;
       transition: border-color 120ms ease, background 120ms ease, transform 120ms ease;
     }
@@ -289,8 +302,8 @@ export function renderPageHtml(workdir: string, apiPrefix: string): string {
       display: inline-flex;
       align-items: center;
       gap: 8px;
-      padding: 10px 14px;
-      border-radius: 12px;
+      padding: 7px 10px;
+      border-radius: 9px;
       background: rgba(255, 255, 255, 0.04);
       border: 1px solid var(--border);
       color: var(--muted);
@@ -308,7 +321,7 @@ export function renderPageHtml(workdir: string, apiPrefix: string): string {
     .grid {
       display: grid;
       grid-template-columns: repeat(12, minmax(0, 1fr));
-      gap: 16px;
+      gap: 12px;
     }
     .card {
       border: 1px solid var(--border);
@@ -318,19 +331,19 @@ export function renderPageHtml(workdir: string, apiPrefix: string): string {
       overflow: hidden;
     }
     .card header {
-      padding: 16px 18px 0;
+      padding: 10px 12px 0;
     }
     .card h3 {
       margin: 0;
-      font-size: 15px;
+      font-size: 13px;
       letter-spacing: 0.02em;
       text-transform: uppercase;
       color: #c9d6ec;
     }
     .card .body {
-      padding: 16px 18px 18px;
+      padding: 10px 12px 12px;
       display: grid;
-      gap: 12px;
+      gap: 8px;
       min-width: 0;
     }
     .span-4 { grid-column: span 4; }
@@ -351,18 +364,18 @@ export function renderPageHtml(workdir: string, apiPrefix: string): string {
     .stat-grid {
       display: grid;
       grid-template-columns: repeat(6, minmax(0, 1fr));
-      gap: 12px;
+      gap: 8px;
     }
     .stat {
-      padding: 14px;
-      border-radius: 14px;
+      padding: 10px;
+      border-radius: 9px;
       background: var(--panel-soft);
       border: 1px solid var(--border);
     }
     .stat strong {
       display: block;
-      font-size: 22px;
-      margin-bottom: 4px;
+      font-size: 18px;
+      margin-bottom: 2px;
     }
     .stat span {
       color: var(--muted);
@@ -370,30 +383,30 @@ export function renderPageHtml(workdir: string, apiPrefix: string): string {
     }
     pre {
       margin: 0;
-      padding: 14px;
-      border-radius: 14px;
+      padding: 10px;
+      border-radius: 9px;
       border: 1px solid var(--border);
       background: rgba(4, 8, 16, 0.8);
       color: #dce7f7;
       overflow: auto;
-      max-height: 420px;
+      max-height: 340px;
       white-space: pre-wrap;
       word-break: break-word;
     }
     .editor-shell {
       display: grid;
-      gap: 14px;
+      gap: 8px;
     }
     .toolbar-row {
       display: flex;
       justify-content: space-between;
-      gap: 12px;
+      gap: 8px;
       align-items: center;
       flex-wrap: wrap;
     }
     .toolbar-group {
       display: flex;
-      gap: 10px;
+      gap: 7px;
       flex-wrap: wrap;
       align-items: center;
       min-width: 0;
@@ -401,15 +414,15 @@ export function renderPageHtml(workdir: string, apiPrefix: string): string {
     .segmented {
       display: inline-flex;
       flex-wrap: wrap;
-      gap: 8px;
-      padding: 6px;
-      border-radius: 14px;
+      gap: 6px;
+      padding: 4px;
+      border-radius: 10px;
       border: 1px solid var(--border);
       background: rgba(255, 255, 255, 0.03);
     }
     .segmented .button {
-      padding: 8px 12px;
-      border-radius: 10px;
+      padding: 6px 9px;
+      border-radius: 8px;
     }
     .segmented .button.active {
       background: rgba(56, 189, 248, 0.14);
@@ -418,22 +431,22 @@ export function renderPageHtml(workdir: string, apiPrefix: string): string {
     }
     .editor {
       width: 100%;
-      min-height: 360px;
+      min-height: 300px;
       resize: vertical;
-      border-radius: 16px;
+      border-radius: 10px;
       border: 1px solid var(--border);
       background: var(--panel-deep);
       color: #dce7f7;
-      padding: 16px;
+      padding: 12px;
       outline: none;
     }
     .preview {
-      min-height: 360px;
-      border-radius: 16px;
+      min-height: 300px;
+      border-radius: 10px;
       border: 1px solid var(--border);
       background: linear-gradient(180deg, rgba(8, 13, 26, 0.94), rgba(15, 23, 42, 0.88));
       overflow: auto;
-      padding: 18px;
+      padding: 12px;
     }
     .preview svg {
       display: block;
@@ -442,16 +455,17 @@ export function renderPageHtml(workdir: string, apiPrefix: string): string {
     }
     .structure-list {
       display: grid;
-      gap: 10px;
+      gap: 8px;
+      min-width: 0;
     }
     .form-shell {
       display: grid;
-      gap: 12px;
+      gap: 8px;
     }
     .form-grid {
       display: grid;
       grid-template-columns: repeat(2, minmax(0, 1fr));
-      gap: 12px;
+      gap: 8px;
     }
     .field {
       display: grid;
@@ -466,9 +480,9 @@ export function renderPageHtml(workdir: string, apiPrefix: string): string {
     .field input,
     .field select {
       width: 100%;
-      padding: 12px 14px;
+      padding: 8px 10px;
       border: 1px solid var(--border);
-      border-radius: 14px;
+      border-radius: 9px;
       background: rgba(255, 255, 255, 0.03);
       color: var(--text);
       outline: none;
@@ -482,26 +496,34 @@ export function renderPageHtml(workdir: string, apiPrefix: string): string {
     }
     .timeline {
       display: grid;
-      gap: 10px;
-      max-height: 520px;
+      gap: 8px;
+      max-height: 430px;
       overflow: auto;
       padding-right: 4px;
     }
     .event {
-      border-radius: 14px;
+      border-radius: 9px;
       border: 1px solid var(--border);
       background: rgba(255, 255, 255, 0.03);
-      padding: 12px 14px;
+      padding: 9px 10px;
       display: grid;
-      gap: 6px;
+      gap: 5px;
+      min-width: 0;
     }
     .event-top {
       display: flex;
       justify-content: space-between;
-      gap: 10px;
+      gap: 8px;
       align-items: center;
       font-size: 12px;
       color: var(--muted);
+      min-width: 0;
+    }
+    .event-top > *,
+    .event strong,
+    .hint {
+      min-width: 0;
+      overflow-wrap: anywhere;
     }
     .event strong {
       font-size: 14px;
@@ -512,6 +534,14 @@ export function renderPageHtml(workdir: string, apiPrefix: string): string {
     .hint {
       color: var(--muted);
       font-size: 12px;
+    }
+    .timeline-controls {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(128px, 1fr));
+      align-items: stretch;
+    }
+    .timeline-controls .button {
+      width: 100%;
     }
     .split-inline {
       display: flex;
@@ -549,7 +579,7 @@ export function renderPageHtml(workdir: string, apiPrefix: string): string {
       }
     }
     @media (max-width: 960px) {
-      .content { padding: 18px; }
+      .content { padding: 12px; }
       .hero-toolbar {
         width: 100%;
         justify-content: flex-start;
@@ -567,13 +597,19 @@ export function renderPageHtml(workdir: string, apiPrefix: string): string {
       .button {
         width: 100%;
       }
+      .timeline-controls {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+      }
     }
     @media (max-width: 768px) {
-      .content { padding: 16px; }
-      .hero { padding: 16px; }
+      .content { padding: 10px; }
+      .hero { padding: 10px; }
       .stat-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
       .toolbar-row,
       .row {
+        grid-template-columns: 1fr;
+      }
+      .timeline-controls {
         grid-template-columns: 1fr;
       }
       .form-grid {
@@ -589,21 +625,21 @@ export function renderPageHtml(workdir: string, apiPrefix: string): string {
       }
     }
     @media (max-width: 480px) {
-      .content { padding: 12px; }
+      .content { padding: 8px; }
       .sidebar {
         width: calc(100vw - 18px);
       }
       .stat-grid { grid-template-columns: 1fr; }
       .button {
         min-width: 0;
-        padding: 10px 12px;
+        padding: 8px 10px;
       }
       .run-card,
       .event,
       pre,
       .preview,
       .editor {
-        border-radius: 12px;
+        border-radius: 9px;
       }
     }
   </style>
@@ -630,7 +666,6 @@ export function renderPageHtml(workdir: string, apiPrefix: string): string {
             <button id="sidebar-toggle" class="button subtle sidebar-toggle">Runs</button>
             <p class="hint">project + runtime observability</p>
           </div>
-          <p class="hint">project + runtime observability</p>
           <h2 id="selected-title">Select a run</h2>
           <p id="selected-subtitle" class="truncate">Load a run to inspect project context, graph progress, review state, diagnostics, and artifacts.</p>
         </div>
@@ -677,13 +712,13 @@ export function renderPageHtml(workdir: string, apiPrefix: string): string {
             </div>
           </div>
         </article>
-        <article class="card span-12">
+        <article class="card span-8">
           <header><h3>Project Overview</h3></header>
           <div class="body">
             <div id="project-summary" class="structure-list">Loading project...</div>
           </div>
         </article>
-        <article class="card span-12">
+        <article class="card span-4">
           <header><h3>Run Snapshot</h3></header>
           <div class="body">
             <div class="stat-grid" id="stats"></div>
@@ -705,7 +740,7 @@ export function renderPageHtml(workdir: string, apiPrefix: string): string {
         <article class="card span-8">
           <header><h3>Timeline</h3></header>
           <div class="body">
-            <div class="row">
+            <div class="row timeline-controls">
               <select id="timeline-role" class="select">
                 <option value="">All roles</option>
               </select>
