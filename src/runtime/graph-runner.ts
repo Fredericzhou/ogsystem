@@ -1025,8 +1025,9 @@ export async function runSystemWithGraphRunner(args: RunnerInput): Promise<Adapt
   }
 
   if (finalState.status === "running") {
+    const pendingReviewCount = countPendingHumanReviews(finalState);
     finalState =
-      countPendingHumanReviews(finalState) > 0
+      pendingReviewCount > 0
         ? {
             ...finalState,
             status: "stopped",
@@ -1036,6 +1037,20 @@ export async function runSystemWithGraphRunner(args: RunnerInput): Promise<Adapt
             ...finalState,
             status: "done"
           };
+    if (finalState.status === "stopped" && finalState.error === "waiting for human review") {
+      logger.runWaiting({
+        waitKind: "business",
+        reason: "human_review",
+        pendingReviewCount
+      });
+      await appendEvent(args.runContext, {
+        type: "run_waiting",
+        at: new Date().toISOString(),
+        waitKind: "business",
+        reason: "human_review",
+        pendingReviewCount
+      });
+    }
     await persistProjectedState({ state: finalState, plan: args.plan, runContext: args.runContext });
   }
 

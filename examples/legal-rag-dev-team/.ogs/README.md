@@ -59,6 +59,7 @@ Common edits:
 ```
 
 Use `ogs project sync-models` to refresh `model-catalog.json` first, then pick refs from that catalog.
+For this example, `model-selection.json` and `system.mmd` default to `opencode/gpt-5-nano`; keep them aligned if you switch to another locally available model.
 
 ## Example: laws.json
 

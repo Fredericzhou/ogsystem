@@ -85,6 +85,16 @@ export type RunConsoleLogger = {
     branchId: string;
     loopIteration: number;
     binding: string;
+    timeoutMs?: number;
+  }): void;
+  roleWaiting(args: {
+    roleId: string;
+    branchId: string;
+    waitKind: "technical";
+    stage: string;
+    elapsedMs: number;
+    timeoutMs?: number;
+    binding?: string;
   }): void;
   roleDone(args: {
     roleId: string;
@@ -105,6 +115,11 @@ export type RunConsoleLogger = {
     arrivedFrom: string;
     waitingFor: string[];
   }): void;
+  runWaiting(args: {
+    waitKind: "business";
+    reason: string;
+    pendingReviewCount?: number;
+  }): void;
   runEnd(args: {
     status: "done" | "failed" | "stopped";
     finalRoleId?: string;
@@ -118,9 +133,11 @@ export type RunConsoleLogger = {
 const noopLogger: RunConsoleLogger = {
   runStart() {},
   roleStart() {},
+  roleWaiting() {},
   roleDone() {},
   transition() {},
   joinWait() {},
+  runWaiting() {},
   runEnd() {}
 };
 
@@ -153,6 +170,21 @@ export function createRunConsoleLogger(enabled: boolean): RunConsoleLogger {
           role: args.roleId,
           branch: args.branchId,
           loop: args.loopIteration,
+          binding: args.binding,
+          timeout: args.timeoutMs === undefined ? undefined : `${args.timeoutMs}ms`
+        }
+      });
+    },
+    roleWaiting(args) {
+      print({
+        tag: "role:waiting",
+        fields: {
+          kind: args.waitKind,
+          role: args.roleId,
+          branch: args.branchId,
+          stage: args.stage,
+          elapsed: `${args.elapsedMs}ms`,
+          timeout: args.timeoutMs === undefined ? undefined : `${args.timeoutMs}ms`,
           binding: args.binding
         }
       });
@@ -188,6 +220,16 @@ export function createRunConsoleLogger(enabled: boolean): RunConsoleLogger {
           role: args.roleId,
           arrived: args.arrivedFrom,
           waiting: args.waitingFor.join(",")
+        }
+      });
+    },
+    runWaiting(args) {
+      print({
+        tag: "run:waiting",
+        fields: {
+          kind: args.waitKind,
+          reason: args.reason,
+          pendingReviewCount: args.pendingReviewCount
         }
       });
     },

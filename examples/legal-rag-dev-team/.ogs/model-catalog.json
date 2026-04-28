@@ -1,0 +1,141 @@
+{
+  "catalogVersion": "1",
+  "generatedAt": "2026-04-28T18:18:39.117Z",
+  "source": {
+    "command": "opencode models --verbose"
+  },
+  "models": [
+    {
+      "ref": "opencode/big-pickle",
+      "provider": "opencode",
+      "model": "big-pickle",
+      "name": "Big Pickle",
+      "status": "active",
+      "capabilities": {
+        "textInput": true,
+        "textOutput": true,
+        "toolcall": true
+      },
+      "variants": [],
+      "raw": {
+        "id": "big-pickle",
+        "providerID": "opencode"
+      }
+    },
+    {
+      "ref": "opencode/gpt-5-nano",
+      "provider": "opencode",
+      "model": "gpt-5-nano",
+      "name": "GPT-5 Nano",
+      "status": "active",
+      "capabilities": {
+        "textInput": true,
+        "textOutput": true,
+        "toolcall": true
+      },
+      "variants": [
+        "high",
+        "low",
+        "medium",
+        "minimal"
+      ],
+      "raw": {
+        "id": "gpt-5-nano",
+        "providerID": "opencode"
+      }
+    },
+    {
+      "ref": "opencode/hy3-preview-free",
+      "provider": "opencode",
+      "model": "hy3-preview-free",
+      "name": "Hy3 preview Free",
+      "status": "active",
+      "capabilities": {
+        "textInput": true,
+        "textOutput": true,
+        "toolcall": true
+      },
+      "variants": [
+        "high",
+        "low",
+        "medium"
+      ],
+      "raw": {
+        "id": "hy3-preview-free",
+        "providerID": "opencode"
+      }
+    },
+    {
+      "ref": "opencode/ling-2.6-flash-free",
+      "provider": "opencode",
+      "model": "ling-2.6-flash-free",
+      "name": "Ling 2.6 Flash Free",
+      "status": "active",
+      "capabilities": {
+        "textInput": true,
+        "textOutput": true,
+        "toolcall": true
+      },
+      "variants": [],
+      "raw": {
+        "id": "ling-2.6-flash-free",
+        "providerID": "opencode"
+      }
+    },
+    {
+      "ref": "opencode/minimax-m2.5-free",
+      "provider": "opencode",
+      "model": "minimax-m2.5-free",
+      "name": "MiniMax M2.5 Free",
+      "status": "active",
+      "capabilities": {
+        "textInput": true,
+        "textOutput": true,
+        "toolcall": true
+      },
+      "variants": [],
+      "raw": {
+        "id": "minimax-m2.5-free",
+        "providerID": "opencode"
+      }
+    },
+    {
+      "ref": "opencode/nemotron-3-super-free",
+      "provider": "opencode",
+      "model": "nemotron-3-super-free",
+      "name": "Nemotron 3 Super Free",
+      "status": "active",
+      "capabilities": {
+        "textInput": true,
+        "textOutput": true,
+        "toolcall": true
+      },
+      "variants": [
+        "high",
+        "low",
+        "medium"
+      ],
+      "raw": {
+        "id": "nemotron-3-super-free",
+        "providerID": "opencode"
+      }
+    },
+    {
+      "ref": "gkgk/gpt-5.4",
+      "provider": "gkgk",
+      "model": "gpt-5.4",
+      "name": "GPT-5.4",
+      "status": "active",
+      "capabilities": {
+        "textInput": true,
+        "textOutput": true,
+        "toolcall": true
+      },
+      "variants": [],
+      "raw": {
+        "id": "gpt-5.4",
+        "providerID": "gkgk"
+      }
+    }
+  ]
+}

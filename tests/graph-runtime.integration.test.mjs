@@ -551,10 +551,11 @@ writer[Role:writer] -->|DONE| output
   assert.strictEqual(Object.keys(stateJson.graphState.pendingReviewsById).length, 1);
   assert.strictEqual(stateJson.graphState.branchRecords["writer@1#1"].status, "waiting_review");
   assert.ok(reviewFiles.includes("review.writer@1#1.r1.request.json"));
-  assert.match(
-    await readFile(path.resolve(runDir, "events.ndjson"), "utf8"),
-    /"type":"human_review_requested"/
-  );
+  const eventsLog = await readFile(path.resolve(runDir, "events.ndjson"), "utf8");
+  assert.match(eventsLog, /"type":"human_review_requested"/);
+  assert.match(eventsLog, /"type":"run_waiting"/);
+  assert.match(eventsLog, /"waitKind":"business"/);
+  assert.match(eventsLog, /"reason":"human_review"/);
 });
 
 test("adapter resume applies approved human review and releases the reviewed result", async () => {

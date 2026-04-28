@@ -275,6 +275,86 @@ reviewer[Role:reviewer] -->|DONE| output
   });
 });
 
+test("executeRoleNode emits technical wait heartbeats while executor is still running", async (t) => {
+  const previousHeartbeat = process.env.OGSYSTEM_ROLE_WAIT_HEARTBEAT_MS;
+  process.env.OGSYSTEM_ROLE_WAIT_HEARTBEAT_MS = "10";
+  t.after(() => {
+    if (previousHeartbeat === undefined) {
+      delete process.env.OGSYSTEM_ROLE_WAIT_HEARTBEAT_MS;
+    } else {
+      process.env.OGSYSTEM_ROLE_WAIT_HEARTBEAT_MS = previousHeartbeat;
+    }
+  });
+
+  const fixture = await prepareRoleExecutorFixture({
+    tempPrefix: "ogsystem-role-wait-heartbeat-",
+    prompt: "slow prompt",
+    systemSource: `flowchart TD
+%% system.id=role.wait.heartbeat
+%% system.version=1.0.0
+%% law.global=law.console.base
+%% entry.role=writer
+%% model.bind.writer=balanced-gpt52
+
+input -->|GO| writer[Role:writer]
+writer[Role:writer] -->|DONE| output
+`,
+    roles: [{ roleId: "writer", allowedEvents: ["DONE"] }]
+  });
+
+  const state = createInitialState(fixture.plan, "slow prompt");
+  const writerBranch = state.branchRecords["writer@1#1"];
+
+  const result = await executeRoleNode({
+    roleId: "writer",
+    node: getExecutionPlanNode(fixture.plan, "writer"),
+    plan: fixture.plan,
+    state,
+    branch: writerBranch,
+    effectiveLaw: {
+      forbiddenToolRefs: [],
+      allowNoopWithoutExecutionBinding: false
+    },
+    profilesById: new Map(),
+    toolsByRef: new Map(),
+    modelsById: fixture.modelsById,
+    rolePackagesByRoleId: fixture.rolePackagesByRoleId,
+    compilerSnapshot: fixture.compilerSnapshot,
+    runContext: fixture.runContext,
+    executor: {
+      async start() {},
+      async close() {},
+      async abortSession() {},
+      getServerMetadata() {
+        return {};
+      },
+      async execute() {
+        await new Promise((resolve) => setTimeout(resolve, 35));
+        return {
+          exitCode: 0,
+          stdout: JSON.stringify({ event: "DONE", content: "ok" }),
+          stderr: "",
+          args: [],
+          sessionId: "ses_wait",
+          messageId: "msg_wait"
+        };
+      }
+    },
+    userProfile: undefined,
+    workdir: fixture.tempRoot
+  });
+
+  assert.equal(result.status, "ok");
+  const engineLog = await readFile(fixture.runContext.engineLogPath, "utf8");
+  const roleLog = await readFile(
+    path.resolve(fixture.runContext.roleLogsDir, "writer.ndjson"),
+    "utf8"
+  );
+  assert.match(engineLog, /"type":"role_waiting"/);
+  assert.match(engineLog, /"waitKind":"technical"/);
+  assert.match(roleLog, /"type":"role_waiting"/);
+});
+
 test("executeRoleNode projects current human review feedback for rework branches", async () => {
   const fixture = await prepareRoleExecutorFixture({
     tempPrefix: "ogsystem-role-projection-human-review-",

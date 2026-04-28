@@ -1908,14 +1908,16 @@ export async function appendEvent(
 
   const payloadType = typeof payload.type === "string" ? payload.type : "";
   const roleId = typeof payload.roleId === "string" ? payload.roleId : "";
-  if (payloadType === "audit" && roleId) {
+  if ((payloadType === "audit" || payloadType === "role_waiting") && roleId) {
     const key = `role-log:${roleId}`;
     state.pendingByKey.set(key, {
       key,
       path: resolve(context.roleLogsDir, `${roleId}.ndjson`),
       content: `${state.pendingByKey.get(key)?.content ?? ""}${encoded}`
     });
-    return;
+    if (payloadType === "audit") {
+      return;
+    }
   }
 
   state.pendingByKey.set("engine-log", {

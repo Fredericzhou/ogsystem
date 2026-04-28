@@ -28,8 +28,10 @@ import {
   type CompiledExecutionSnapshot
 } from "./compiler.js";
 import {
+  appendEvent,
   allocateRoleExecution,
   buildRoleSessionKey,
+  flushBufferedRunArtifacts,
   getRoleSession,
   resolvePrivateWorkspaceDir
 } from "./run-artifacts.js";
@@ -105,7 +107,83 @@ export type RoleExecutorResult =
       executionId: string;
       branchId: string;
       loopIteration: number;
-};
+    };
+
+const DEFAULT_ROLE_WAIT_HEARTBEAT_MS = 15000;
+
+function resolveRoleWaitHeartbeatMs(): number {
+  const raw = process.env.OGSYSTEM_ROLE_WAIT_HEARTBEAT_MS?.trim();
+  if (!raw) {
+    return DEFAULT_ROLE_WAIT_HEARTBEAT_MS;
+  }
+  const parsed = Number.parseInt(raw, 10);
+  if (!Number.isFinite(parsed) || parsed < 0) {
+    return DEFAULT_ROLE_WAIT_HEARTBEAT_MS;
+  }
+  return parsed;
+}
+
+function startRoleWaitHeartbeat(args: {
+  logger: RunConsoleLogger;
+  runContext: RunContext;
+  roleId: string;
+  branchId: string;
+  binding: string;
+  stage: string;
+  timeoutMs?: number;
+}): () => Promise<void> {
+  const heartbeatMs = resolveRoleWaitHeartbeatMs();
+  if (heartbeatMs <= 0) {
+    return async () => {};
+  }
+
+  const startedAt = Date.now();
+  let writing = false;
+  let pendingWrite: Promise<void> | undefined;
+  const emit = async () => {
+    if (writing) {
+      return;
+    }
+    writing = true;
+    const elapsedMs = Date.now() - startedAt;
+    try {
+      args.logger.roleWaiting({
+        roleId: args.roleId,
+        branchId: args.branchId,
+        waitKind: "technical",
+        stage: args.stage,
+        elapsedMs,
+        timeoutMs: args.timeoutMs,
+        binding: args.binding
+      });
+      await appendEvent(args.runContext, {
+        type: "role_waiting",
+        at: new Date().toISOString(),
+        waitKind: "technical",
+        roleId: args.roleId,
+        branchId: args.branchId,
+        stage: args.stage,
+        elapsedMs,
+        timeoutMs: args.timeoutMs,
+        binding: args.binding
+      });
+      await flushBufferedRunArtifacts(args.runContext);
+    } catch {
+      // Observability must never change role execution outcome.
+    } finally {
+      writing = false;
+    }
+  };
+
+  const timer = setInterval(() => {
+    pendingWrite = emit();
+  }, heartbeatMs);
+
+  return async () => {
+    clearInterval(timer);
+    await pendingWrite;
+  };
+}
 
 function pickDryRunEvent(args: {
   node: ExecutionPlanNode;
@@ -510,7 +588,8 @@ export async function executeRoleNode(args: {
       roleId: args.roleId,
       branchId,
       loopIteration,
-      binding: resolvedBinding.binding ? resolvedBinding.bindingLabel : "noop"
+      binding: resolvedBinding.binding ? resolvedBinding.bindingLabel : "noop",
+      timeoutMs: resolvedBinding.binding ? resolvedBinding.timeoutMs : undefined
     });
 
     await recordRolePrelude({
@@ -588,25 +667,39 @@ export async function executeRoleNode(args: {
 
     await mkdir(resolvedBinding.workdir, { recursive: true });
 
-    const executionResult = await args.executor.execute({
+    const stopRoleWaitHeartbeat = startRoleWaitHeartbeat({
+      logger,
+      runContext: args.runContext,
       roleId: args.roleId,
-      sessionKey,
-      prompt,
-      schema: rolePackage.outputSchema,
-      binding: resolvedBinding.binding,
-      workdir: resolvedBinding.workdir,
-      commandBaseDir: resolvedBinding.commandBaseDir,
-      env: resolvedBinding.env,
-      timeoutMs: resolvedBinding.timeoutMs,
-      maxOutputBytes: resolvedBinding.maxOutputBytes,
-      dryRunOutputEvent: pickDryRunEvent({
-        node: args.node,
-        branch: currentBranch,
-        state: args.state,
-        plan: args.plan
-      }),
-      sessionId: existingSession?.sessionId
+      branchId,
+      binding: resolvedBinding.bindingLabel,
+      stage: resolvedBinding.binding.kind === "model" ? "model_provider" : "cli_tool",
+      timeoutMs: resolvedBinding.timeoutMs
     });
+    let executionResult;
+    try {
+      executionResult = await args.executor.execute({
+        roleId: args.roleId,
+        sessionKey,
+        prompt,
+        schema: rolePackage.outputSchema,
+        binding: resolvedBinding.binding,
+        workdir: resolvedBinding.workdir,
+        commandBaseDir: resolvedBinding.commandBaseDir,
+        env: resolvedBinding.env,
+        timeoutMs: resolvedBinding.timeoutMs,
+        maxOutputBytes: resolvedBinding.maxOutputBytes,
+        dryRunOutputEvent: pickDryRunEvent({
+          node: args.node,
+          branch: currentBranch,
+          state: args.state,
+          plan: args.plan
+        }),
+        sessionId: existingSession?.sessionId
+      });
+    } finally {
+      await stopRoleWaitHeartbeat();
+    }
     lastStdout = executionResult.stdout;
 
     const parsed = parseRoleExecutionOutputWithRepair({

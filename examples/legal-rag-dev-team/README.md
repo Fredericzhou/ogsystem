@@ -63,6 +63,16 @@ node dist/runtime/cli.js run start \
   --dry-run
 ```
 
+如果你已经把 `ogs` 链接到当前仓库，也可以在示例目录内直接运行：
+
+```bash
+ogs project sync-models
+ogs doctor
+ogs run start \
+  --system system.mmd \
+  --input "开发一个面向企业法务的法律RAG问答服务，要求支持法条、司法解释、指导案例检索，并在回答中给出可核验信源"
+```
+
 真实运行：
 
 ```bash
@@ -76,6 +86,8 @@ node dist/runtime/cli.js run start \
 
 - 该示例使用 `model.bind.*=opencode/gpt-5-nano`
 - 真实运行前，需要你本机已经配置可用的 OpenCode provider
+- 如果 `ogs doctor` 提示缺少 `.ogs/model-catalog.json`，先执行 `ogs project sync-models`；catalog 是本机可用模型快照，缺失时是诊断告警，不是 runtime 硬失败
+- 长时间执行时，控制台会区分 `role:waiting kind=technical` 和 `run:waiting kind=business reason=human_review`
 - `delivery-lead` 角色开启了 runtime-native human review，第一轮运行大概率会停在待审核状态
 
 ## 审核与继续执行
