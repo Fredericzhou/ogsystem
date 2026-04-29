@@ -572,6 +572,10 @@ export function renderPageHtml(workdir: string, apiPrefix: string, i18n: PageI18
       background: rgba(4, 8, 16, 0.54);
       align-items: center;
     }
+    .studio-graph-root {
+      min-height: 390px;
+      min-width: 0;
+    }
     .studio-node,
     .studio-edge {
       min-width: 0;
@@ -1127,6 +1131,7 @@ export function renderPageHtml(workdir: string, apiPrefix: string, i18n: PageI18
       </section>
     </main>
   </div>
+  <script src="/assets/studio-graph.js"></script>
   <script>
 ${clientScript}
   </script>

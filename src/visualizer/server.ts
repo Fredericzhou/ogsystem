@@ -8,7 +8,8 @@
  */
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
 import { readdir, readFile, stat } from "node:fs/promises";
-import { resolve, sep } from "node:path";
+import { dirname, resolve, sep } from "node:path";
+import { fileURLToPath } from "node:url";
 
 import { runSystemWithAdapter } from "../runtime/adapter.js";
 import {
@@ -140,6 +141,19 @@ class HttpError extends Error {
 }
 
 const API_PREFIX = "/api/v1";
+const VISUALIZER_MODULE_DIR = dirname(fileURLToPath(import.meta.url));
+const STUDIO_GRAPH_ASSET_PATH = VISUALIZER_MODULE_DIR.endsWith(`${sep}src${sep}visualizer`)
+  ? resolve(VISUALIZER_MODULE_DIR, "..", "..", "dist", "visualizer", "studio-client", "studio-graph.js")
+  : resolve(VISUALIZER_MODULE_DIR, "studio-client", "studio-graph.js");
+const STATIC_ASSET_ROUTES = new Map<string, { filePath: string; contentType: string }>([
+  [
+    "/assets/studio-graph.js",
+    {
+      filePath: STUDIO_GRAPH_ASSET_PATH,
+      contentType: "application/javascript; charset=utf-8"
+    }
+  ]
+]);
 const runsListCache = new Map<string, RunsListCacheEntry>();
 
 function jsonResponse(
@@ -1230,6 +1244,15 @@ async function handleVisualizationRequest(
 
   if (method === "GET" && (pathname === "/" || pathname === "/index.html")) {
     textResponse(response, 200, renderPageHtml(state.workdir, resolveServerLocale(url, request)), "text/html; charset=utf-8");
+    return;
+  }
+
+  if (method === "GET" && pathname.startsWith("/assets/")) {
+    const asset = STATIC_ASSET_ROUTES.get(pathname);
+    if (!asset) {
+      throw new HttpError(404, "NOT_FOUND", "Not found");
+    }
+    textResponse(response, 200, await readFile(asset.filePath, "utf8"), asset.contentType);
     return;
   }
 

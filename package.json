@@ -21,10 +21,14 @@
   },
   "scripts": {
     "preinstall": "node scripts/preinstall.cjs",
-    "build": "tsc -p tsconfig.json",
+    "typecheck:studio-client": "tsc -p tsconfig.visualizer-client.json --noEmit",
+    "build:studio-client": "esbuild src/visualizer/studio-client/main.ts --bundle --format=iife --global-name=OGSStudioGraphBundle --outfile=dist/visualizer/studio-client/studio-graph.js",
+    "build": "pnpm run typecheck:studio-client && pnpm run build:studio-client && tsc -p tsconfig.json",
     "prepack": "pnpm run build",
     "test": "pnpm build && node --test tests/*.mjs",
-    "test:visualizer": "pnpm build && node --test tests/visualizer-client.test.mjs tests/visualizer-data.test.mjs tests/visualizer-ops-summary.test.mjs tests/visualizer-project-readiness.test.mjs tests/visualizer-studio-authoring.test.mjs tests/visualizer.test.mjs",
+    "test:studio-import-guardrails": "node --test tests/visualizer-studio-import-guardrails.test.mjs",
+    "test:visualizer-browser": "pnpm build && playwright test tests-e2e/visualizer-studio-graph.spec.ts",
+    "test:visualizer": "pnpm build && pnpm run test:studio-import-guardrails && node --test tests/visualizer-client.test.mjs tests/visualizer-data.test.mjs tests/visualizer-ops-summary.test.mjs tests/visualizer-project-readiness.test.mjs tests/visualizer-studio-authoring.test.mjs tests/visualizer.test.mjs",
     "test:coverage": "pnpm build && node --test --experimental-test-coverage tests/*.mjs",
     "test:runtime-regression": "pnpm build && node --test tests/graph-runtime.integration.test.mjs tests/resume-session.test.mjs tests/session-recovery.test.mjs tests/runtime-fault-injection.test.mjs",
     "test:fault-injection": "pnpm build && node --test tests/opencode-executor.test.mjs tests/resume-session.test.mjs tests/runtime-fault-injection.test.mjs",
@@ -43,14 +47,22 @@
     "lint:system": "tsx src/runtime/lint.ts"
   },
   "devDependencies": {
+    "@playwright/test": "^1.59.1",
+    "@types/dagre": "^0.7.54",
     "@types/node": "^24.6.0",
+    "esbuild": "^0.28.0",
     "tsx": "^4.20.6",
     "typescript": "^5.9.3"
   },
   "dependencies": {
+    "@antv/x6": "^2.19.2",
+    "@antv/x6-plugin-history": "^2.2.4",
+    "@antv/x6-plugin-keyboard": "^2.2.3",
+    "@antv/x6-plugin-selection": "^2.2.2",
     "@langchain/langgraph": "^1.2.8",
     "@opencode-ai/sdk": "^1.4.1",
     "ajv": "^8.18.0",
+    "dagre": "^0.8.5",
     "ogsystem": "link:",
     "zod": "^3.25.76"
   }

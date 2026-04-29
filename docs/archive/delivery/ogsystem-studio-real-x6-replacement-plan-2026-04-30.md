@@ -1,410 +1,430 @@
-# OGSystem Studio Real X6 Replacement Plan
+# OGSystem Studio Graph Island X6 Plan
 
 Date: 2026-04-30
-Status: replacement plan
-Scope: 将当前 X6-style MVP 替换为真实 `@antv/x6` view layer，同时保持 Studio authoring/API/runtime contract 不变。
+Status: implemented and verified
+Scope: 用隔离的真实 `@antv/x6` Studio Graph Island 升级 Studio Bridge 图编辑能力，同时不改变 runtime/parser/compiler 内核。
 
-## 1. Goal
+## 1. Decision
 
-当前 Studio Bridge 已交付 X6-style graph-first MVP，但没有安装或运行 `@antv/x6`。
+当前 Studio Bridge 已有 X6-style graph-first MVP，但图编辑仍是轻量 HTML/CSS/JS surface，不是真实 X6 交互。
 
-本方案目标是把当前 `renderStudioGraphCanvas` 替换为真实 `@antv/x6` 画布层，同时保持：
-
-- `StudioAuthoringDocument` 仍是 authoring truth。
-- `StudioCanvasDocument` 仍是 canvas/view adapter contract。
-- `system.mmd` 仍是 runtime truth。
-- `src/runtime/*`、parser、compiler 不引入 X6。
-- 现有 validate/save/dry-run/Run Console 调试闭环不变。
-
-## 2. Target Data Flow
-
-真实 X6 替换后，数据流必须保持为：
+本轮不做“把 `renderStudioGraphCanvas()` 原地替换成 X6”的改造。更稳的方案是参考 `/Users/maple/Documents/WorkSpace/OpipeX/opipex/visual-gateway/` 的图谱方案，引入一个隔离的浏览器端 Studio Graph Island：
 
 ```text
-StudioAuthoringDocument
--> StudioCanvasDocument
--> X6 Graph cells
+existing visualizer shell / Studio Bridge control plane
+-> isolated Studio Graph Island bundle
+-> @antv/x6 canvas
+-> existing Studio authoring APIs
+-> generated system.mmd
+-> existing validate/save/dry-run/Run Console
+```
+
+这个方案必须同时满足：
+
+- 图编辑体验显著升级：真实画布、端口连线、拖拽、选择、删除、fit、auto layout、undo/redo、错误提示。
+- 现有基本功能不回退：Project Readiness、Config Explain、Ops Summary、Run Console、validate/save/dry-run 保持可用。
+- 内核不受影响：`src/runtime/*`、parser、compiler 不引入 X6，也不消费 X6 cells。
+- 项目真相不改变：`StudioAuthoringDocument` 是 authoring truth，`system.mmd` 是 runtime truth。
+
+旧 X6-style UI 兼容只是迁移期策略，最终必须删除。内核隔离和 truth 分层不是迁移策略，而是长期架构约束。
+
+## 2. Non-Goals
+
+本轮不做：
+
+- 不把 X6 cells 持久化为项目真相。
+- 不让 runtime、parser、compiler import X6。
+- 不让 X6 直接生成或写入 `.ogs/runs`。
+- 不重写 visualizer 整体 UI。
+- 不引入独立后端服务或数据库。
+- 不把 Studio authoring 绕过 `system.mmd` 直接接入运行内核。
+
+## 3. Migration Phases
+
+### Phase 1: Transition
+
+Keep the old X6-style MVP as a development and rollback guard while the real `@antv/x6` Graph Island is wired.
+
+Exit criteria:
+
+- real X6 renders the Studio graph.
+- selection updates the existing inspector.
+- drag updates canvas layout.
+- connect/delete update authoring commands.
+- Generate MMD, save, and dry-run still use existing flows.
+- import guardrails pass.
+- browser smoke passes.
+- `pnpm run test:visualizer` passes.
+
+### Phase 2: Switch
+
+Real X6 is the default graph editor. The old X6-style UI may exist only as a hidden fallback or feature flag for release diagnostics.
+
+Rules:
+
+- no user-facing duplicate graph editors.
+- fallback must not be the default path.
+- fallback must not introduce a second runtime path or second authoring truth.
+
+### Phase 3: Final State
+
+Remove the old X6-style center graph UI and related event handlers. Only the real `@antv/x6` Graph Island remains.
+
+Permanent constraints still apply:
+
+- runtime/parser/compiler still do not import `@antv/x6`.
+- `system.mmd` remains runtime truth.
+- X6 cells never become project truth.
+- `StudioAuthoringDocument` remains authoring truth.
+
+## 4. Core Architecture
+
+新增一个纯浏览器端 bundle：
+
+```text
+src/visualizer/studio-client/
+  main.ts
+  studio-graph.ts
+  studio-graph-render.ts
+  studio-graph-adapter.ts
+  studio-graph-commands.ts
+  studio-graph-rules.ts
+  styles.ts
+```
+
+新增一个纯 contract 文件，供 Node 端和 browser bundle 共享类型：
+
+```text
+src/visualizer/studio-contracts.ts
+```
+
+`studio-contracts.ts` 只能包含类型、常量和纯数据 helper，不得 import：
+
+- `node:*`
+- `src/runtime/*`
+- parser/compiler/project projection
+- `@antv/x6`
+
+现有 `src/visualizer/studio-authoring.ts` 继续负责 parse/serialize/validate/save authoring draft；browser bundle 不得 value import 该文件。
+
+## 5. Data Contract
+
+保持现有 truth 分层：
+
+```text
+StudioAuthoringDocument  authoring truth
+StudioCanvasDocument     view/layout + flow adapter boundary
+system.mmd               runtime truth
+```
+
+新增浏览器端投影 contract：
+
+```text
+StudioGraphProjection
+  nodes: role nodes + input/output boundary nodes
+  edges: flow edges
+  capabilities: editable flags
+  validation: node/edge diagnostics
+```
+
+X6 只消费 `StudioGraphProjection`，不消费 runtime 内部结构。
+
+## 6. Edit Flow
+
+编辑事件分为两类，不能混用。
+
+### 6.1 Canvas Patch
+
+只用于不会改变 authoring 结构的编辑：
+
+- move node
+- resize node
+- update viewport
+- fit / auto layout
+
+流程：
+
+```text
+X6 graph snapshot
 -> StudioCanvasDocument
 -> POST /api/v1/project/studio/authoring/apply-canvas
--> generated system.mmd
--> existing validate/save/dry-run
+-> generated systemSource + validation
 ```
 
-禁止：
+### 6.2 Authoring Command
+
+用于会改变 authoring 结构或语义的编辑：
+
+- add role
+- delete role
+- update role title/binding metadata
+- connect edge
+- delete edge
+- change edge eventType
+
+流程：
 
 ```text
-X6 cells -> system.mmd
-X6 cells -> runtime
-X6 cells -> .ogs/runs
-X6 cells -> parser/compiler direct import
+X6 interaction
+-> StudioAuthoringCommand
+-> update StudioAuthoringDocument in client state
+-> derive StudioCanvasDocument
+-> POST /api/v1/project/studio/authoring/apply-canvas
+-> generated systemSource + validation
 ```
-
-## 3. Frontend Build Strategy
-
-当前 visualizer 是服务端生成 HTML + 内联原生 JS。真实 `@antv/x6` 需要浏览器 bundle。
-
-推荐引入最小打包链：
-
-- `esbuild`：轻量 browser bundle。
-- `@antv/x6`：画布、节点、连线、缩放、拖拽。
-- 可选 `@antv/x6-plugin-minimap`：如需 minimap。
-- 可选 `@antv/x6-plugin-selection`：如需框选增强。
-- 可选 `@antv/x6-plugin-transform`：如需节点尺寸调整。
-
-建议新增脚本：
-
-```json
-{
-  "scripts": {
-    "build:visualizer-client": "esbuild src/visualizer/client/main.ts --bundle --format=iife --global-name=OGSVisualizerClient --outfile=dist/visualizer/client/visualizer.js",
-    "build": "pnpm run build:visualizer-client && tsc -p tsconfig.json"
-  }
-}
-```
-
-如果不想让全局 `build` 依赖前端 bundle，可先新增独立脚本：
-
-```json
-{
-  "scripts": {
-    "build:visualizer-client": "esbuild src/visualizer/client/main.ts --bundle --format=iife --global-name=OGSVisualizerClient --outfile=dist/visualizer/client/visualizer.js"
-  }
-}
-```
-
-再由 visualizer 测试或发布流程显式调用。
 
 执行约束：
 
-- 如果页面固定加载 `/assets/visualizer-client.js`，则 `pnpm build` 必须生成这个 bundle。
-- 不允许只提供独立脚本但不接入默认 build；否则包发布、测试环境或用户本地运行时容易缺静态文件。
-- 可在迁移早期保留独立脚本做开发验证，但最终合入前必须让默认 build 覆盖 browser bundle。
-
-## 4. Suggested Module Layout
-
-新增浏览器端模块：
-
-```text
-src/visualizer/client/
-  main.ts
-  studio-x6-canvas.ts
-  studio-canvas-adapter.ts
-  studio-x6-styles.css
-```
-
-职责：
-
-- `main.ts`
-  - 暴露全局 `mountStudioX6Bridge(...)`。
-  - 负责从服务端内联 app 接收 bridge/canvas state。
-
-- `studio-x6-canvas.ts`
-  - 初始化 X6 `Graph`。
-  - 注册节点、边、事件处理。
-  - 处理 select、drag、connect、delete、fit、zoom。
-
-- `studio-canvas-adapter.ts`
-  - `StudioCanvasDocument -> X6 cells`。
-  - `X6 cells -> StudioCanvasDocument`。
-  - 不包含 Mermaid serializer。
-  - 不 import runtime。
-
-- `studio-x6-styles.css`
-  - X6 container 和节点/边样式。
-  - 可先由 esbuild loader inline，或由 server 静态服务。
-
-Import 约束：
-
-- `@antv/x6` 只能出现在 `src/visualizer/client/*` 浏览器端模块中。
-- `src/visualizer/client-app.ts` 不得直接 import `@antv/x6`。
-- `src/visualizer/server.ts` 不得直接 import `@antv/x6`。
-- `src/visualizer/page-shell.ts` 不得直接 import `@antv/x6`。
-- `src/runtime/*` 不得直接或间接 import `@antv/x6`。
-- 当前 inline app 仍是控制面；它只能通过 `window.OGSVisualizerClient.mountStudioX6Bridge(...)` 调用 bundle。
-
-TypeScript 约束：
-
-- 当前主 `tsconfig` 使用 NodeNext 语义时，相对 import 需要兼容 `tsc`。
-- 如果浏览器端模块的 import 形式或 loader 配置与主 `tsconfig` 冲突，应新增 `tsconfig.visualizer-client.json` 给 esbuild/browser bundle 使用。
-- 不要为了 X6 browser bundle 降低主工程 TypeScript 约束。
-
-## 5. Server Static Asset Route
-
-新增静态资源路由：
-
-```text
-GET /assets/visualizer-client.js
-GET /assets/studio-x6-styles.css
-```
-
-初期可只服务 JS bundle：
-
-```text
-dist/visualizer/client/visualizer.js
-```
-
-安全约束：
-
-- 静态资源路由只服务固定 allowlist 文件。
-- 不做通用目录静态服务。
-- 不允许通过 URL path 任意读取 `dist/` 或项目文件。
-- 推荐 allowlist：
-
-```text
-/assets/visualizer-client.js -> dist/visualizer/client/visualizer.js
-/assets/studio-x6-styles.css -> dist/visualizer/client/studio-x6-styles.css
-```
-
-页面壳在 `renderPageHtml()` 中插入：
-
-```html
-<script src="/assets/visualizer-client.js"></script>
-```
-
-或者按需加载：
-
-```js
-await import("/assets/visualizer-client.js");
-```
-
-如果使用 IIFE bundle，则由全局对象调用：
-
-```js
-window.OGSVisualizerClient.mountStudioX6Bridge(...)
-```
-
-## 6. Studio Bridge Integration
-
-当前 `renderStudioBridgePanel()` 中心画布区域应替换为 mount point：
-
-```html
-<div id="studio-x6-root" class="studio-x6-root"></div>
-```
-
-原有 role/flow navigator 和 right inspector 可以保留，X6 selection 只同步现有 state：
-
-```text
-X6 node selected -> state.studioBridgeSelectedRoleId
-X6 edge selected -> state.studioBridgeSelectedFlowKey
-state change -> renderStudioBridge() / inspector update
-```
-
-真实 X6 只替换中间画布，不重写 Project Readiness、Config Explain、Ops Summary、Run Console。
+- 新增/删除 role 必须先更新 `StudioAuthoringDocument.roles`，不能只把 X6 node 放进 canvas。
+- 删除 role 必须同步删除相关 authoring flows 和 layout。
+- 连接 edge 必须生成或更新 `StudioAuthoringDocument.flows`，默认 `eventType = "DONE"`。
+- `apply-canvas` 仍然不写 `system.mmd`，只返回 generated Mermaid 和 validation。
 
 ## 7. X6 Interaction Contract
 
-### 7.1 Node
+必须支持：
 
-Role node:
+- Select role node -> right inspector role view.
+- Select edge -> right inspector flow view.
+- Drag node -> dirty layout state.
+- Connect role output port to role/input port -> create flow command.
+- Delete selected role -> confirm, block entry role deletion.
+- Delete selected edge -> remove flow command.
+- Fit view -> `graph.zoomToFit({ padding })`.
+- Auto layout -> update canvas layout only.
+- Undo/redo -> X6 history + resync draft.
+- Blank click -> clear selection.
+- Validation diagnostics -> node/edge warning/error styling.
 
-- label: `roleId` or `title`
-- badges:
-  - `entry`
-  - `M` for `model.bind`
-  - `E` for `exec.bind`
-  - `P` for `parallel_split`
-  - `J` for join
-  - `L` for loop
-  - `R` for review
+Node display:
 
-Boundary node:
+- label: `title || roleId`
+- badges: `entry`, `M`, `E`, `P`, `J`, `L`, `R`
+- boundary nodes: `input/start`, `output/__system_end__`
+- boundary nodes are view-only and never persisted as roles.
 
-- `input/start`
-- `output/__system_end__`
-- boundary nodes are not persisted as roles.
+Edge display:
 
-### 7.2 Edge
-
-Edge label:
-
-- `eventType`
-
-Edge state:
-
-- `ERROR*` uses warning/error styling.
-- join source edge gets join marker.
+- label: `eventType`
+- `ERROR*` edges use warning/error styling.
+- join source edges get a join marker.
 - selected edge highlights.
 
-### 7.3 Editing
+## 8. UX Shape
 
-Required MVP behavior:
+Keep the current Studio Bridge shell and replace only the center graph area:
 
-- Select node -> right inspector role view.
-- Select edge -> right inspector flow view.
-- Drag node -> update `StudioCanvasDocument.nodes[].x/y`.
-- Connect edge -> create canvas edge with default `eventType = "DONE"`.
-- Delete node -> delete role and related canvas edges, except entry role.
-- Delete edge -> remove canvas edge.
-- Fit view -> X6 `graph.zoomToFit()` / `graph.centerContent()`.
-- Generate MMD -> call existing generate flow.
-- Save system.mmd -> existing save flow.
-- Dry Run -> existing start action.
-
-## 8. API Contract
-
-Continue using:
-
-```text
-POST /api/v1/project/studio/authoring/apply-canvas
+```html
+<div id="studio-graph-root" class="studio-graph-root"></div>
 ```
 
-Request:
+The existing shell call boundary remains:
 
-```json
-{
-  "authoring": {},
-  "canvas": {}
-}
+```ts
+window.OGSVisualizerClient.mountStudioX6Bridge(root, options)
 ```
 
-Response:
+The old X6-style center graph controls are a migration fallback only. During Phase 1 they stay available while the real X6 editing path is wired. During Phase 2 real X6 is default and the old UI may exist only as a hidden fallback or feature flag. During Phase 3 remove the old HTML node/edge buttons and MVP controls such as add-edge/add-role/nudge-left/nudge-right. Those actions move into the X6 toolbar, context menu, and authoring command callbacks.
 
-```json
-{
-  "authoring": {},
-  "canvas": {},
-  "systemSource": "flowchart TD...",
-  "validation": {}
-}
+The graph island owns:
+
+- X6 graph lifecycle.
+- toolbar: zoom in/out, fit, auto layout, undo, redo, delete.
+- context menu: add downstream role, add upstream role where valid, duplicate role, delete role.
+- connection validation and toast feedback.
+- non-empty / loading / error states.
+
+The existing shell owns:
+
+- Studio top actions.
+- right inspector.
+- Project Readiness.
+- Config Explain.
+- Ops Summary.
+- Run Console.
+- validate/save/generate/dry-run actions.
+
+The graph island must expose the existing visualizer client global API:
+
+```ts
+window.OGSVisualizerClient.mountStudioX6Bridge(root, options)
+window.OGSVisualizerClient.disposeStudioX6Bridge(root)
 ```
 
-Server rules:
+The inline app and the bundle must both merge into the shared global object and must not replace the whole object:
 
-- Validate generated Mermaid.
-- Do not write `system.mmd`.
-- Do not write run artifacts.
-- Do not import X6.
-
-## 9. Adapter Rules
-
-`StudioCanvasDocument -> X6 cells`:
-
-```text
-canvas.nodes[] -> x6 node cells
-canvas.edges[] -> x6 edge cells
-node badges -> node attrs / data
-edge eventType -> edge label
+```ts
+window.OGSVisualizerClient = window.OGSVisualizerClient || {};
+Object.assign(window.OGSVisualizerClient, {
+  mountStudioX6Bridge,
+  disposeStudioX6Bridge
+});
 ```
 
-`X6 cells -> StudioCanvasDocument`:
+The page may load the bundle before or after the inline app. Both sides must tolerate either order by using the same merge-only pattern.
 
-```text
-x6 node position -> canvas.nodes[].x/y
-x6 node size -> canvas.nodes[].width/height
-x6 edge source/target -> canvas.edges[].source/target
-x6 edge label/data.eventType -> canvas.edges[].eventType
-```
+`mountStudioX6Bridge` must be idempotent. If the same root is remounted, it must update the existing graph instead of leaking X6 instances.
 
-Do not serialize X6-only fields:
+## 9. Build Strategy
 
-- selection state
-- hover state
-- z-index
-- ports internal ids
-- plugin metadata
-- X6 cell schema itself
-
-## 10. Testing Plan
-
-### 10.1 Unit Tests
-
-Add tests for `studio-canvas-adapter.ts`:
-
-- role nodes convert to X6 cells with badges.
-- boundary nodes convert correctly.
-- X6 edge converts back to canvas edge with `eventType`.
-- X6-only metadata is dropped.
-- layout does not enter generated Mermaid.
-
-### 10.2 Server/API Tests
-
-Keep existing coverage:
-
-- `tests/visualizer-studio-authoring.test.mjs`
-- `tests/visualizer.test.mjs`
-
-Add if needed:
-
-- static asset route returns JS bundle.
-- apply-canvas still does not write `system.mmd`.
-
-### 10.3 Client Tests
-
-Current fake DOM tests should still verify:
-
-- Studio Bridge mount point exists.
-- open Bridge loads data.
-- save draft works.
-- generate MMD works.
-- dry-run opens run detail.
-
-Fake DOM is not enough for X6 canvas behavior. Add browser smoke tests.
-
-### 10.4 Browser Smoke Tests
-
-Use Playwright or equivalent:
-
-- Load visualizer page.
-- Open Studio Bridge.
-- Assert X6 container is non-empty.
-- Assert at least one node is visible.
-- Select node and verify inspector updates.
-- Drag node and call apply-canvas.
-- Create edge and verify generated Mermaid validates.
-- Fit view does not blank canvas.
-
-执行约束：
-
-- Fake DOM 测试必须保留，用于覆盖 inline app 的控制面、API 调用和非 X6 面板。
-- 真实 X6 行为必须通过 Playwright 或等价 browser smoke 验证。
-- 不允许只靠 fake DOM 声明 X6 canvas 可用，因为 fake DOM 无法验证真实 canvas/SVG/HTML interaction。
-
-## 11. Implementation Order
-
-1. Install dependencies:
+Install dependencies:
 
 ```bash
-pnpm add @antv/x6
-pnpm add -D esbuild
+pnpm add @antv/x6 @antv/x6-plugin-history @antv/x6-plugin-keyboard @antv/x6-plugin-selection dagre
+pnpm add -D esbuild @types/dagre @playwright/test
 ```
 
-2. Add browser bundle script.
+Add scripts:
 
-3. Add static asset route.
+```json
+{
+  "scripts": {
+    "typecheck:studio-client": "tsc -p tsconfig.visualizer-client.json --noEmit",
+    "build:studio-client": "esbuild src/visualizer/studio-client/main.ts --bundle --format=iife --global-name=OGSStudioGraphBundle --outfile=dist/visualizer/studio-client/studio-graph.js",
+    "test:studio-import-guardrails": "node --test tests/visualizer-studio-import-guardrails.test.mjs",
+    "test:visualizer-browser": "pnpm build && playwright test tests-e2e/visualizer-studio-graph.spec.ts",
+    "build": "pnpm run typecheck:studio-client && pnpm run build:studio-client && tsc -p tsconfig.json",
+    "test:visualizer": "pnpm build && pnpm run test:studio-import-guardrails && node --test tests/visualizer-client.test.mjs tests/visualizer-data.test.mjs tests/visualizer-ops-summary.test.mjs tests/visualizer-project-readiness.test.mjs tests/visualizer-studio-authoring.test.mjs tests/visualizer.test.mjs"
+  }
+}
+```
 
-4. Add `src/visualizer/client/*` modules.
+`OGSStudioGraphBundle` is only an internal IIFE namespace produced by esbuild. The shell must never call `window.OGSStudioGraphBundle` directly. The only shell-facing API is `window.OGSVisualizerClient.mountStudioX6Bridge(...)`.
 
-5. Replace Studio Bridge center canvas with `#studio-x6-root`.
+Add `tsconfig.visualizer-client.json`:
 
-6. Wire mount lifecycle:
+```json
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "lib": ["ES2022", "DOM", "DOM.Iterable"],
+    "types": [],
+    "noEmit": true
+  },
+  "include": ["src/visualizer/studio-client/**/*.ts", "src/visualizer/studio-contracts.ts"]
+}
+```
+
+Update root `tsconfig.json`:
+
+```json
+{
+  "exclude": ["src/visualizer/studio-client/**"]
+}
+```
+
+Reason: the browser bundle has DOM/X6 dependencies and must not weaken the NodeNext constraints of the main project.
+
+`styles.ts` injects the graph island CSS into the root element. Keep the first implementation to one JS asset so the server does not need a second static route.
+
+## 10. Static Asset Route
+
+Add allowlisted asset routes only:
 
 ```text
-renderStudioBridge()
--> mountStudioX6Bridge(root, { authoring, canvas, selectedRoleId, selectedFlowKey })
+GET /assets/studio-graph.js -> dist/visualizer/studio-client/studio-graph.js
 ```
 
-7. Wire X6 events:
+Rules:
+
+- No generic static directory serving.
+- No URL path to filesystem mapping.
+- Return `404` for any non-allowlisted asset.
+- `pnpm build` must always produce the JS bundle before packaging or tests.
+
+Page shell loads:
+
+```html
+<script src="/assets/studio-graph.js"></script>
+```
+
+## 11. Integration Steps
+
+1. Extract pure shared types from `studio-authoring.ts` into `studio-contracts.ts`.
+2. Add `studio-client` bundle with a minimal non-editing X6 render.
+3. Add allowlisted `/assets/studio-graph.js` route.
+4. Replace `renderStudioGraphCanvas()` center HTML with `#studio-graph-root`.
+5. Keep the old center graph controls temporarily as a fallback while real X6 render/edit paths are being wired.
+6. In `renderStudioBridge()`, call `mountStudioX6Bridge(root, options)` after shell render.
+7. Wire selection callbacks to existing `state.studioBridgeSelectedRoleId` and `state.studioBridgeSelectedFlowKey`.
+8. Add canvas patch support for drag/fit/auto layout.
+9. Add authoring commands for add/delete role and add/delete edge.
+10. Add X6 history, keyboard, selection, and connection rules.
+11. Pass import guardrails and browser smoke for the full X6 editing path.
+12. Remove old center-graph event handlers and controls for `studio-bridge-add-role`, `studio-bridge-add-edge`, `studio-bridge-delete-role`, `studio-bridge-fit`, `studio-bridge-nudge-left`, and `studio-bridge-nudge-right`.
+13. Add final regression tests and run regression.
+
+## 12. Import Guardrails
+
+Add a hard CI test, preferably `tests/visualizer-studio-import-guardrails.test.mjs`, and run it through `node --test`. It must fail if:
 
 ```text
-node:selected
-edge:selected
-node:moved
-edge:connected
-node:removed
-edge:removed
+@antv/x6 appears outside src/visualizer/studio-client/**
+src/visualizer/studio-client/** imports src/runtime/**
+src/visualizer/studio-client/** imports src/visualizer/studio-authoring.ts
+src/runtime/** imports @antv/x6
 ```
 
-8. On edit, submit:
+The bundle must also avoid Node built-ins:
 
 ```text
-X6 graph -> StudioCanvasDocument -> apply-canvas
+node:fs
+node:path
+node:http
+node:url
 ```
 
-9. Update tests.
+## 13. Phase Gates
 
-10. Run regression.
+Phase 1 cannot exit until both gates pass:
 
-## 12. Regression Commands
+1. Import guardrails pass and prove X6 is isolated to `src/visualizer/studio-client/**`.
+2. Browser smoke passes the full user path: render, select, drag, connect, delete, validate, generate MMD, save through the existing flow, dry-run through the existing flow.
+
+Only after both gates pass may Phase 2 make real X6 the default editor. Phase 3 removes the old X6-style center graph controls. The final shipped state must not contain two graph editors.
+
+## 14. Testing Plan
+
+Unit tests:
+
+- `StudioGraphProjection -> X6 cells` maps role nodes, boundary nodes, badges, edges.
+- `X6 graph snapshot -> StudioCanvasDocument` drops X6-only fields.
+- authoring commands add/delete roles and flows correctly.
+- entry role deletion is blocked.
+- layout changes do not enter generated Mermaid semantics.
+
+Server/API tests:
+
+- `/assets/studio-graph.js` serves only the bundle.
+- unknown `/assets/*` returns 404.
+- `apply-canvas` still does not write `system.mmd`.
+- generated `system.mmd` remains deterministic.
+- import guardrails pass.
+
+Client fake DOM tests:
+
+- Studio Bridge mount point exists.
+- opening Studio Bridge loads data.
+- selection callback updates inspector state.
+- save draft works.
+- generate MMD works.
+- dry-run opens existing run action.
+- Phase 3 final state has no old center graph edit buttons.
+
+Browser smoke tests:
+
+- load visualizer.
+- open Studio Bridge.
+- X6 container is non-empty.
+- at least one role node is visible.
+- select node and inspector updates.
+- drag node and validation remains ok.
+- connect role edge and generated Mermaid validates.
+- delete edge and generated Mermaid validates.
+- fit view does not blank canvas.
+- Run Console and Project Readiness still render.
+
+## 15. Regression Commands
 
 Minimum:
 
@@ -418,66 +438,84 @@ Full:
 pnpm test
 ```
 
-User-path smoke:
+Browser:
+
+```bash
+pnpm run test:visualizer-browser
+```
+
+Manual user path:
 
 ```bash
 pnpm exec tsx src/visualizer/cli.ts --workdir examples/ogs-gstacklike --host 127.0.0.1 --port 0
 ```
 
-Then verify:
+Verify:
 
-- page loads
-- Studio Bridge opens
-- X6 canvas renders nodes/edges
-- apply-canvas validation ok
-- generate-mmd validation ok
-- Project Readiness remains available
+- page loads.
+- Studio Bridge opens.
+- X6 graph renders nodes/edges.
+- graph edit -> validation ok.
+- Generate MMD -> validation ok.
+- Save system.mmd uses existing save flow.
+- Dry Run opens existing start flow.
+- Project Readiness and Run Console remain available.
 
-## 13. Acceptance Criteria
+## 16. Acceptance Criteria
 
-The replacement is complete when:
+Complete when:
 
-- `@antv/x6` is present only in visualizer client bundle code.
-- `src/runtime/*` does not import X6.
+- Real `@antv/x6` renders the Studio graph.
+- X6 import is limited to `src/visualizer/studio-client/**`.
+- browser bundle does not import runtime/parser/compiler/Node built-ins.
 - `StudioAuthoringDocument` remains canonical authoring truth.
-- `StudioCanvasDocument` remains the X6 adapter boundary.
-- X6 cells never become persisted project truth.
-- `system.mmd` output remains deterministic.
+- `system.mmd` remains runtime truth.
+- X6 cells are never persisted as project truth.
+- add/delete role and add/delete edge go through authoring commands.
+- layout edits go through canvas patch.
+- Phase 1 keeps old controls only as migration fallback.
+- Phase 2 defaults to real X6 and allows old UI only as hidden fallback or feature flag.
+- Phase 3 removes old X6-style center graph controls, so there is only one graph editor.
+- import guardrails and browser smoke are passing phase gates.
 - `apply-canvas` does not write `system.mmd`.
-- Existing visualizer tests pass.
-- Full test suite passes.
-- Browser smoke confirms X6 canvas is non-blank and editable.
+- existing visualizer and project/debug panels still work.
+- fake DOM tests, API tests, import guardrails, and browser smoke pass.
 
-## 14. Final Delivery Record Wording
+## 17. Delivery Record Wording
 
-最终交付记录必须明确区分两个阶段：
+Before implementation, delivery notes may only say:
 
 ```text
-Before replacement:
 X6-style MVP delivered.
-No @antv/x6 installed or running.
-Graph-first editing is implemented by lightweight HTML/CSS/JS visualizer surface.
-
-After replacement:
-Real @antv/x6 introduced in visualizer client bundle.
-X6 remains view/editor layer only.
-StudioAuthoringDocument remains authoring truth.
-system.mmd remains runtime truth.
+Real @antv/x6 replacement is planned as an isolated Studio Graph Island.
+Runtime/parser/compiler remain unchanged.
 ```
 
-禁止在真实替换完成前写：
+After implementation, delivery notes must include:
 
-```text
-@antv/x6 delivered
-X6 runtime installed
-real X6 canvas editing complete
-```
+- `@antv/x6` dependency and exact client path.
+- bundle output path.
+- static asset allowlist.
+- import guardrail result.
+- browser smoke result.
+- `pnpm run test:visualizer` result.
+- `pnpm test` result.
 
-真实替换完成后，交付记录应同时写清：
+Do not claim “real X6 editing complete” until browser smoke confirms non-blank render and editable node/edge interactions.
 
-- `@antv/x6` 已引入的位置。
-- browser bundle 产物路径。
-- server 静态资源 allowlist。
-- runtime/parser/compiler import graph 未引入 X6。
-- Playwright/browser smoke 结果。
-- `pnpm run test:visualizer` 和 `pnpm test` 结果。
+## 18. Delivery Record
+
+Implemented on 2026-04-30.
+
+- `@antv/x6` dependency: `@antv/x6@^2.19.2`, isolated under `src/visualizer/studio-client/**`.
+- X6 plugins: `@antv/x6-plugin-history`, `@antv/x6-plugin-keyboard`, `@antv/x6-plugin-selection`; layout uses `dagre`.
+- Shared contract path: `src/visualizer/studio-contracts.ts`.
+- Browser bundle entry: `src/visualizer/studio-client/main.ts`.
+- Bundle output path: `dist/visualizer/studio-client/studio-graph.js`.
+- Static asset allowlist: `GET /assets/studio-graph.js` only; unknown `/assets/*` returns `404`.
+- Studio Bridge mount point: `#studio-graph-root`.
+- Old center graph edit controls removed: `studio-bridge-add-role`, `studio-bridge-add-edge`, `studio-bridge-delete-role`, `studio-bridge-fit`, `studio-bridge-nudge-left`, `studio-bridge-nudge-right`.
+- Import guardrail result: `pnpm run test:studio-import-guardrails` passed.
+- Browser smoke result: `pnpm run test:visualizer-browser` passed.
+- Visualizer regression result: `pnpm run test:visualizer` passed.
+- Full regression result: `pnpm test` passed.

@@ -85,68 +85,21 @@ export function normalizeStudioTargetRoleId(roleId: unknown): string {
 }
 
 export function renderStudioGraphCanvas(args: {
-  roles: JsonRecord[];
-  flows: JsonRecord[];
   selectedRoleId: string;
   selectedFlowKey: string;
   busy: string;
   t?: Translator;
 }): string {
   const t: Translator = typeof args.t === "function" ? args.t : (_key, _vars, fallback) => fallback ?? _key;
-  const roleIds = args.roles.map((role) => String(role.roleId ?? "")).filter(Boolean);
-  const columns = ["input", ...roleIds, "output"];
-  const nodeById = new Map(args.roles.map((role) => [String(role.roleId ?? ""), role]));
-  const nodeButtons = columns.map((roleId, index) => {
-    const isBoundary = roleId === "input" || roleId === "output";
-    const role = nodeById.get(roleId) ?? {};
-    const selected = !isBoundary && args.selectedRoleId === roleId ? " active" : "";
-    const badges = isBoundary
-      ? [roleId === "input" ? "START" : "END"]
-      : Array.isArray(role.badges) ? role.badges.map((badge) => String(badge)) : [];
-    const binding = isBoundary ? "boundary" : String(role.bindingKind ?? "noop");
-    const style = "grid-column:" + (index + 1) + ";grid-row:1;";
-    const selectable = isBoundary ? "" : ' data-studio-role-id="' + escapeText(roleId) + '"';
-    return (
-      '<button class="studio-node' + selected + (isBoundary ? " boundary" : "") + '" style="' + style + '"' + selectable + args.busy + ">" +
-      '<span class="studio-node-title">' + escapeText(isBoundary ? roleId : roleId) + '</span>' +
-      '<span class="studio-node-meta">' + escapeText(binding) + "</span>" +
-      '<span class="studio-badges">' + badges.map((badge) => '<span>' + escapeText(badge) + "</span>").join("") + "</span>" +
-      "</button>"
-    );
-  });
-  const edgeButtons = args.flows.map((flow, index) => {
-    const fromRoleId = String(flow.fromRoleId ?? "");
-    const toRoleId = normalizeStudioTargetRoleId(flow.toRoleId);
-    const sourceColumn = Math.max(columns.indexOf(fromRoleId), 0) + 1;
-    const targetColumn = Math.max(columns.indexOf(toRoleId), sourceColumn) + 1;
-    const start = Math.min(sourceColumn, targetColumn);
-    const end = Math.max(sourceColumn, targetColumn);
-    const key = String(flow.flowKey ?? flow.flowId ?? `${fromRoleId}:${flow.eventType ?? ""}:${toRoleId}`);
-    const selected = args.selectedFlowKey === key ? " active" : "";
-    const error = flow.runtimeOnlyErrorFlow ? " error" : "";
-    const style = "grid-column:" + start + " / " + (end + 1) + ";grid-row:" + (index + 2) + ";";
-    return (
-      '<button class="studio-edge' + selected + error + '" style="' + style + '" data-studio-flow-key="' + escapeText(key) + '"' + args.busy + ">" +
-      '<span><code>' + escapeText(fromRoleId) + '</code> -> <code>' + escapeText(toRoleId) + '</code></span>' +
-      '<strong>' + escapeText(String(flow.eventType ?? "")) + '</strong>' +
-      '<span class="hint">' + escapeText(flow.participatesInJoin ? "join source" : "flow") + "</span>" +
-      "</button>"
-    );
-  });
+  const selection = args.selectedRoleId
+    ? t("studio.roleInspector", undefined, "role inspector") + " " + args.selectedRoleId
+    : args.selectedFlowKey
+      ? t("studio.flowInspector", undefined, "flow inspector") + " " + args.selectedFlowKey
+      : t("studio.selectRole", undefined, "Select a role to inspect metadata.");
   return [
     '<div class="studio-canvas-shell">',
-    '<div class="studio-canvas-toolbar"><span class="hint">' + escapeText(t("studio.graphPreview", undefined, "Graph-first draft preview")) + '</span><div class="actions">',
-    '<button class="button subtle" id="studio-bridge-add-role"' + args.busy + '>' + escapeText(t("studio.addRole", undefined, "Add role")) + '</button>',
-    '<button class="button subtle" id="studio-bridge-add-edge"' + args.busy + '>' + escapeText(t("studio.addEdge", undefined, "Add edge")) + '</button>',
-    '<button class="button danger" id="studio-bridge-delete-role"' + args.busy + '>' + escapeText(t("studio.deleteRole", undefined, "Delete role")) + '</button>',
-    '<button class="button subtle" id="studio-bridge-fit"' + args.busy + '>' + escapeText(t("studio.fit", undefined, "Fit")) + '</button>',
-    '<button class="button subtle" id="studio-bridge-nudge-left"' + args.busy + '>' + escapeText(t("studio.moveLeft", undefined, "Move left")) + '</button>',
-    '<button class="button subtle" id="studio-bridge-nudge-right"' + args.busy + '>' + escapeText(t("studio.moveRight", undefined, "Move right")) + '</button>',
-    "</div></div>",
-    '<div class="studio-canvas" style="grid-template-columns: repeat(' + Math.max(columns.length, 2) + ', minmax(150px, 1fr));">',
-    ...nodeButtons,
-    ...edgeButtons,
-    "</div>",
+    '<div class="studio-canvas-toolbar"><span class="hint">' + escapeText(t("studio.realGraph", undefined, "Studio Graph")) + '</span><span class="hint">' + escapeText(selection) + '</span></div>',
+    '<div id="studio-graph-root" class="studio-graph-root" data-selected-role-id="' + escapeText(args.selectedRoleId) + '" data-selected-flow-key="' + escapeText(args.selectedFlowKey) + '"' + args.busy + "></div>",
     "</div>"
   ].join("");
 }
@@ -376,8 +329,6 @@ export function renderStudioBridgePanel(args: {
     return '<div class="hint">' + escapeText(t("studio.dataUnavailable", undefined, "Studio Bridge data unavailable.")) + '</div>';
   }
   const graphCanvas = renderStudioGraphCanvas({
-    roles,
-    flows,
     selectedRoleId: args.selectedRoleId,
     selectedFlowKey: args.selectedFlowKey,
     busy,

@@ -218,7 +218,7 @@ class FakeDocument {
 
   parseChildren(html) {
     const children = [];
-    const matcher = /<(button|input|select|option|textarea)\b([^>]*)>/g;
+    const matcher = /<(button|input|select|option|textarea|div|span)\b([^>]*)>/g;
     for (const match of html.matchAll(matcher)) {
       const tagName = match[1];
       const attributes = parseAttributes(match[2] ?? "");
@@ -1872,6 +1872,10 @@ test("visualizer client edits the Mermaid workbench, saves, and starts a run", a
 
 test("visualizer client opens Studio Bridge, saves an authoring draft, and dry-runs into run detail", async () => {
   const harness = await createClientHarness({ readinessCanDryRun: true });
+  const mountCalls = [];
+  harness.window.OGSVisualizerClient.mountStudioX6Bridge = (root, options) => {
+    mountCalls.push({ root, options });
+  };
 
   const openBridgeButton = harness.document.getElementById("workbench-open-bridge");
   assert.ok(openBridgeButton);
@@ -1882,19 +1886,53 @@ test("visualizer client opens Studio Bridge, saves an authoring draft, and dry-r
   assert.match(harness.document.getElementById("workbench-tabs").textContent, /Studio Bridge/);
   assert.match(harness.document.getElementById("workbench-body").textContent, /demo-analyst/);
   assert.match(harness.document.getElementById("workbench-body").textContent, /role inspector/);
-  assert.match(harness.document.getElementById("workbench-body").textContent, /Graph-first draft preview/);
+  assert.match(harness.document.getElementById("workbench-body").textContent, /Studio Graph/);
+  assert.ok(harness.document.getElementById("studio-graph-root"));
+  assert.equal(mountCalls.length > 0, true);
+  for (const oldButtonId of [
+    "studio-bridge-add-role",
+    "studio-bridge-add-edge",
+    "studio-bridge-delete-role",
+    "studio-bridge-fit",
+    "studio-bridge-nudge-left",
+    "studio-bridge-nudge-right"
+  ]) {
+    assert.equal(harness.document.getElementById(oldButtonId), null);
+  }
 
-  const moveRightButton = harness.document.getElementById("studio-bridge-nudge-right");
-  assert.ok(moveRightButton);
-  await moveRightButton.click();
+  let latestMount = mountCalls.at(-1).options;
+  await latestMount.onApplyCanvas({
+    ...latestMount.canvas,
+    nodes: latestMount.canvas.nodes.map((node) =>
+      node.roleId === "demo-analyst" ? { ...node, x: 160 } : node
+    )
+  });
   await settle();
   assert.ok(harness.backend.fetchCalls.some((call) => call.path === "/api/v1/project/studio/authoring/apply-canvas"));
   assert.equal(harness.backend.lastAuthoringApplyCanvasBody.canvas.nodes[0].x, 160);
-  assert.match(harness.document.getElementById("flash").textContent, /Studio canvas draft updated/);
+  assert.match(harness.document.getElementById("flash").textContent, /Studio canvas layout updated/);
 
-  const addRoleButton = harness.document.getElementById("studio-bridge-add-role");
-  assert.ok(addRoleButton);
-  await addRoleButton.click();
+  latestMount = mountCalls.at(-1).options;
+  const addRoleAuthoring = cloneJson(latestMount.authoring);
+  const addRoleCanvas = cloneJson(latestMount.canvas);
+  addRoleAuthoring.roles["new-role"] = { roleId: "new-role", title: "New role", bindingKind: "noop" };
+  addRoleAuthoring.layout.nodes["new-role"] = { x: 380, y: 120, width: 180, height: 84 };
+  addRoleCanvas.nodes.push({
+    id: "new-role",
+    roleId: "new-role",
+    x: 380,
+    y: 120,
+    width: 180,
+    height: 84,
+    label: "New role",
+    badges: [],
+    bindingKind: "noop"
+  });
+  await latestMount.onApplyCommand({
+    authoring: addRoleAuthoring,
+    canvas: addRoleCanvas,
+    selectedRoleId: "new-role"
+  });
   await settle();
   assert.equal(harness.backend.lastAuthoringApplyCanvasBody.authoring.roles["new-role"].bindingKind, "noop");
   assert.equal(
@@ -1902,23 +1940,33 @@ test("visualizer client opens Studio Bridge, saves an authoring draft, and dry-r
     true
   );
 
-  const addEdgeButton = harness.document.getElementById("studio-bridge-add-edge");
-  assert.ok(addEdgeButton);
-  await addEdgeButton.click();
+  latestMount = mountCalls.at(-1).options;
+  const addEdgeAuthoring = cloneJson(latestMount.authoring);
+  const addEdgeCanvas = cloneJson(latestMount.canvas);
+  addEdgeAuthoring.flows["2:new-role:DONE:output"] = {
+    flowId: "2:new-role:DONE:output",
+    fromRoleId: "new-role",
+    toRoleId: "__system_end__",
+    eventType: "DONE"
+  };
+  addEdgeCanvas.edges.push({
+    id: "2:new-role:DONE:output",
+    source: "new-role",
+    target: "__system_end__",
+    label: "DONE",
+    eventType: "DONE",
+    runtimeOnlyErrorFlow: false,
+    participatesInJoin: false
+  });
+  await latestMount.onApplyCommand({
+    authoring: addEdgeAuthoring,
+    canvas: addEdgeCanvas,
+    selectedFlowKey: "new-role:DONE:output"
+  });
   await settle();
   assert.equal(
     harness.backend.lastAuthoringApplyCanvasBody.canvas.edges.some((edge) => edge.source === "new-role" && edge.target === "__system_end__"),
     true
-  );
-
-  const deleteRoleButton = harness.document.getElementById("studio-bridge-delete-role");
-  assert.ok(deleteRoleButton);
-  await deleteRoleButton.click();
-  await settle();
-  assert.equal(Object.hasOwn(harness.backend.lastAuthoringApplyCanvasBody.authoring.roles, "new-role"), false);
-  assert.equal(
-    harness.backend.lastAuthoringApplyCanvasBody.canvas.nodes.some((node) => node.roleId === "new-role"),
-    false
   );
 
   const draftButton = harness.document.getElementById("studio-bridge-save-draft");

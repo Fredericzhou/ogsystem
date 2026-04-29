@@ -5,79 +5,20 @@ import { isRuntimeOnlyErrorEvent } from "../runtime/error-flow-utils.js";
 import { readJsonFile, writeJsonFileAtomic } from "../runtime/json-file.js";
 import { parseSystemFromMermaidSource } from "../runtime/parse-mermaid.js";
 import { SYSTEM_END_ROLE_ID } from "../runtime/types.js";
-import type { Flow, HumanReviewSpec, SystemDefinition } from "../runtime/types.js";
+import type { Flow, SystemDefinition } from "../runtime/types.js";
 import { validateProjectSystemSource } from "./project-projection.js";
-
-export type StudioAuthoringDocument = {
-  version: 1;
-  project: {
-    workdir: string;
-    systemPath: string;
-  };
-  system: {
-    systemId: string;
-    systemVersion: string;
-    entryRoleId: string;
-    lawGlobalRef: string;
-    handoffMode?: string;
-    handoffContracts?: string;
-  };
-  roles: Record<string, StudioAuthoringRole>;
-  flows: Record<string, StudioAuthoringFlow>;
-  layout: {
-    nodes: Record<string, { x: number; y: number; width?: number; height?: number }>;
-    viewport?: { x: number; y: number; zoom: number };
-  };
-};
-
-export type StudioAuthoringRole = {
-  roleId: string;
-  title?: string;
-  bindingKind: "model" | "exec" | "noop";
-  modelRef?: string;
-  profileId?: string;
-  routingMode?: "parallel_split";
-  routeOrder?: string[];
-  joinMode?: "all_of" | "quorum_of";
-  joinMin?: number;
-  joinSources?: string[];
-  loopMax?: number;
-  review?: HumanReviewSpec;
-  contextMap?: Record<string, string>;
-};
-
-export type StudioAuthoringFlow = {
-  flowId: string;
-  fromRoleId: string;
-  toRoleId: string;
-  eventType: string;
-  runtimeOnlyErrorFlow?: boolean;
-};
-
-export type StudioCanvasDocument = {
-  version: 1;
-  nodes: Array<{
-    id: string;
-    roleId: string;
-    x: number;
-    y: number;
-    width: number;
-    height: number;
-    label: string;
-    badges: string[];
-    bindingKind: StudioAuthoringRole["bindingKind"];
-  }>;
-  edges: Array<{
-    id?: string;
-    source: string;
-    target: string;
-    label: string;
-    eventType: string;
-    runtimeOnlyErrorFlow: boolean;
-    participatesInJoin: boolean;
-  }>;
-  viewport?: { x: number; y: number; zoom: number };
-};
+export type {
+  StudioAuthoringDocument,
+  StudioAuthoringFlow,
+  StudioAuthoringRole,
+  StudioCanvasDocument
+} from "./studio-contracts.js";
+import type {
+  StudioAuthoringDocument,
+  StudioAuthoringFlow,
+  StudioAuthoringRole,
+  StudioCanvasDocument
+} from "./studio-contracts.js";
 
 type StudioBridgeRole = StudioAuthoringRole & {
   incomingFlowCount: number;

@@ -731,7 +731,16 @@ test("visualizer server serves run list, details, and live stream", async (t) =>
     assert.match(rootHtml, /Config Explain/);
     assert.match(rootHtml, /Logs/);
     assert.match(rootHtml, /debug-graph-body/);
+    assert.match(rootHtml, /<script src="\/assets\/studio-graph\.js"><\/script>/);
     assert.match(rootHtml, /<article class="card span-12">\s*<header><h3>Timeline<\/h3><\/header>/);
+
+    const studioGraphAsset = await fetch(`${url}/assets/studio-graph.js`);
+    assert.equal(studioGraphAsset.status, 200);
+    assert.match(studioGraphAsset.headers.get("content-type") ?? "", /application\/javascript/);
+    assert.match(await studioGraphAsset.text(), /mountStudioX6Bridge/);
+
+    const unknownAsset = await fetch(`${url}/assets/not-allowed.js`);
+    assert.equal(unknownAsset.status, 404);
 
     const zhRoot = await fetch(`${url}/?lang=zh-CN`);
     assert.equal(zhRoot.status, 200);

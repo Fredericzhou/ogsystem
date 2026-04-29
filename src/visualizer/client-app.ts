@@ -166,6 +166,7 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
     const INITIAL_LOCALE = ${JSON.stringify(locale)};
     const I18N_MESSAGES = ${JSON.stringify(messagesByLocale)};
     const I18N_STORAGE_KEY = "ogs.visualizer.lang";
+    window.OGSVisualizerClient = window.OGSVisualizerClient || {};
     const readRouteStateFromSearch = ${readRouteStateFromSearch.toString()};
     const buildRouteSearch = ${buildRouteSearch.toString()};
     const appendStreamEntry = ${appendStreamEntry.toString()};
@@ -733,6 +734,9 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
       renderActionForm();
       renderLogs();
       renderActionState();
+      if (state.workbench) {
+        renderWorkbench({ preserveEditor: true });
+      }
     }
 
     function canRequestStop() {
@@ -933,42 +937,52 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
           await generateMmdFromStudioBridge();
         });
       }
-      const addRoleButton = document.getElementById("studio-bridge-add-role");
-      if (addRoleButton) {
-        addRoleButton.addEventListener("click", async () => {
-          await applyStudioCanvasEdit("add-role");
-        });
+      mountStudioGraphIsland();
+    }
+
+    function mountStudioGraphIsland() {
+      const root = document.getElementById("studio-graph-root");
+      if (!root) {
+        return;
       }
-      const addEdgeButton = document.getElementById("studio-bridge-add-edge");
-      if (addEdgeButton) {
-        addEdgeButton.addEventListener("click", async () => {
-          await applyStudioCanvasEdit("add-edge");
-        });
+      const visualizerClient = window.OGSVisualizerClient || {};
+      const mount = visualizerClient.mountStudioX6Bridge;
+      if (typeof mount !== "function") {
+        root.innerHTML = '<div class="studio-graph-empty">Studio graph bundle loading...</div>';
+        return;
       }
-      const deleteRoleButton = document.getElementById("studio-bridge-delete-role");
-      if (deleteRoleButton) {
-        deleteRoleButton.addEventListener("click", async () => {
-          await applyStudioCanvasEdit("delete-role");
-        });
-      }
-      const fitButton = document.getElementById("studio-bridge-fit");
-      if (fitButton) {
-        fitButton.addEventListener("click", async () => {
-          await applyStudioCanvasEdit("fit");
-        });
-      }
-      const nudgeLeftButton = document.getElementById("studio-bridge-nudge-left");
-      if (nudgeLeftButton) {
-        nudgeLeftButton.addEventListener("click", async () => {
-          await applyStudioCanvasEdit("left");
-        });
-      }
-      const nudgeRightButton = document.getElementById("studio-bridge-nudge-right");
-      if (nudgeRightButton) {
-        nudgeRightButton.addEventListener("click", async () => {
-          await applyStudioCanvasEdit("right");
-        });
-      }
+      mount(root, {
+        authoring: state.studioBridge?.authoring || null,
+        canvas: state.studioCanvas || buildStudioCanvasFromBridge(state.studioBridge),
+        validation: state.studioBridge?.validation || state.workbench?.validation || null,
+        selectedRoleId: state.studioBridgeSelectedRoleId,
+        selectedFlowKey: state.studioBridgeSelectedFlowKey,
+        busy: Boolean(state.actionBusy),
+        onSelectRole: (roleId) => {
+          state.studioBridgeSelectedRoleId = roleId || "";
+          state.studioBridgeSelectedFlowKey = "";
+          renderStudioBridge();
+        },
+        onSelectFlow: (flowKey) => {
+          state.studioBridgeSelectedFlowKey = flowKey || "";
+          state.studioBridgeSelectedRoleId = "";
+          renderStudioBridge();
+        },
+        onClearSelection: () => {
+          state.studioBridgeSelectedRoleId = "";
+          state.studioBridgeSelectedFlowKey = "";
+          renderStudioBridge();
+        },
+        onApplyCanvas: async (canvas) => {
+          await applyStudioGraphCanvasPatch(canvas);
+        },
+        onApplyCommand: async (result) => {
+          await applyStudioGraphAuthoringCommand(result);
+        },
+        onToast: (tone, message) => {
+          setFlash(tone === "error" ? "error" : "success", message);
+        }
+      });
     }
 
     function renderWorkbench(options) {
@@ -1980,6 +1994,76 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
         renderProject();
         setFlash("success", "Studio canvas draft updated.");
       });
+    }
+
+    async function applyStudioGraphCanvasPatch(canvas) {
+      if (!state.studioBridge?.authoring) {
+        await refreshStudioBridge();
+      }
+      if (!state.studioBridge?.authoring) {
+        setFlash("error", "Studio Bridge cannot edit the graph until Mermaid parses successfully.");
+        return;
+      }
+      await runAction("studio:apply-canvas", async () => {
+        await applyStudioGraphPayload({
+          authoring: state.studioBridge.authoring,
+          canvas,
+          successMessage: "Studio canvas layout updated."
+        });
+      });
+    }
+
+    async function applyStudioGraphAuthoringCommand(result) {
+      if (!result?.authoring || !result?.canvas) {
+        setFlash("error", result?.blockedReason || "Studio graph command did not produce a valid draft.");
+        return;
+      }
+      await runAction("studio:apply-canvas", async () => {
+        await applyStudioGraphPayload({
+          authoring: result.authoring,
+          canvas: result.canvas,
+          selectedRoleId: result.selectedRoleId,
+          selectedFlowKey: result.selectedFlowKey,
+          successMessage: "Studio graph draft updated."
+        });
+      });
+    }
+
+    async function applyStudioGraphPayload(args) {
+      const payload = await requestAction(\`\${API_PREFIX}/project/studio/authoring/apply-canvas\`, {
+        authoring: args.authoring,
+        canvas: args.canvas
+      });
+      state.workbenchSource = payload.systemSource || state.workbenchSource;
+      persistDraftSource(state.workbenchSource !== state.workbenchDiskSource ? state.workbenchSource : "");
+      const bridgePayload = await requestAction(\`\${API_PREFIX}/project/studio/bridge\`, {
+        systemSource: state.workbenchSource,
+        systemPath: state.workbenchSavedPath || "system.mmd"
+      });
+      state.studioBridge = {
+        ...bridgePayload,
+        authoring: payload.authoring,
+        validation: payload.validation || bridgePayload.validation
+      };
+      state.studioCanvas = payload.canvas || args.canvas;
+      if (args.selectedRoleId !== undefined) {
+        state.studioBridgeSelectedRoleId = args.selectedRoleId || "";
+        state.studioBridgeSelectedFlowKey = "";
+      }
+      if (args.selectedFlowKey !== undefined) {
+        state.studioBridgeSelectedFlowKey = args.selectedFlowKey || "";
+        state.studioBridgeSelectedRoleId = "";
+      }
+      state.workbench = {
+        ...(state.workbench || {}),
+        validation: payload.validation || state.workbench?.validation
+      };
+      state.studioBridgeStale = false;
+      renderWorkbench();
+      renderProject();
+      if (args.successMessage) {
+        setFlash("success", args.successMessage);
+      }
     }
 
     async function saveStudioAuthoringDraft() {
