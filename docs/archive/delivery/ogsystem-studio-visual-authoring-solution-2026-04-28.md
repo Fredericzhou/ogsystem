@@ -978,21 +978,23 @@ dry-run 失败能打开 Run Console 定位原因
 
 ## 14. Recommended Frontend Stack
 
-如果目标是类似 X6 的交互，推荐直接采用 X6 作为画布引擎，但只把它当作 view layer。
+当前交付是 X6-style MVP：使用现有轻量 `HTML/CSS/JS` visualizer surface 实现 graph-first authoring 交互，没有安装或运行 `@antv/x6`。
+
+如果后续要把 MVP 替换成真实 X6 运行时，推荐采用 X6 作为画布引擎，但只把它当作 view layer。
 
 推荐边界：
 
-- `@antv/x6`: 画布、拖拽、连线、节点布局、缩放、minimap
-- 原生 `HTML/CSS/JS` 或轻量客户端脚本：页面壳与状态
+- 当前：原生 `HTML/CSS/JS` 或轻量客户端脚本承载页面壳、状态和 X6-style graph-first MVP。
+- 后续可选：`@antv/x6` 承载画布、拖拽、连线、节点布局、缩放、minimap。
 - Node 内置 `http`: 服务端
 
 确认后的产品决策：
 
-- 应引入 X6，实现画布内节点和连线编辑能力。
-- X6 只属于 visualizer/studio 前端层，不影响 runtime、parser、compiler 或现有 CLI 能力。
+- 本轮已先交付 X6-style graph-first MVP，实现画布内节点和连线编辑能力。
+- 后续如引入真实 X6，只属于 visualizer/studio 前端层，不影响 runtime、parser、compiler 或现有 CLI 能力。
 - 节点位置不写入项目文件；默认使用自动布局，用户调整只进入浏览器缓存或当前 session。
 - 即使浏览器缓存清空，Studio 也必须能从 `system.mmd` / authoring draft 自动恢复可读布局。
-- 不为了 X6 引入重型前端重构；优先在现有 visualizer surface 内按需增加客户端依赖和轻量 bundling。
+- 不为了真实 X6 引入重型前端重构；优先在现有 visualizer surface 内按需增加客户端依赖和轻量 bundling。
 
 不建议一开始做的事：
 
