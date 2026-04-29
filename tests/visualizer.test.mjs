@@ -15,6 +15,7 @@ import { buildRunPlanFingerprint } from "../dist/runtime/plan-fingerprint.js";
 import { loadLaws, loadRolePackages, loadRuntimeConfig } from "../dist/runtime/runtime-loader.js";
 import { resolveEffectiveLaw } from "../dist/runtime/runtime-setup.js";
 import { startVisualizationServer } from "../dist/visualizer/server.js";
+import { authoringToCanvasDocument } from "../dist/visualizer/studio-authoring.js";
 
 async function seedProjectFixture(workdir) {
   const repoRoot = process.cwd();
@@ -1267,6 +1268,41 @@ test("visualizer server exposes Mermaid workbench APIs and project export", asyn
     const generated = await generateResponse.json();
     assert.equal(generated.validation.ok, true);
     assert.match(generated.systemSource, /%% system\.id=viz\.project\.demo/);
+
+    const canvas = authoringToCanvasDocument(bridge.authoring);
+    const applyCanvasResponse = await fetch(`${url}/api/v1/project/studio/authoring/apply-canvas`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        authoring: bridge.authoring,
+        canvas: {
+          ...canvas,
+          nodes: canvas.nodes.map((node) =>
+            node.roleId === "demo-analyst"
+              ? { ...node, x: 500, y: 600, width: 210, height: 100 }
+              : node
+          ),
+          edges: [
+            ...canvas.edges.filter((edge) => edge.eventType !== "DONE"),
+            {
+              source: "demo-analyst",
+              target: "__system_end__",
+              label: "COMPLETE",
+              eventType: "COMPLETE",
+              runtimeOnlyErrorFlow: false,
+              participatesInJoin: false
+            }
+          ]
+        }
+      })
+    });
+    assert.equal(applyCanvasResponse.status, 200);
+    const appliedCanvas = await applyCanvasResponse.json();
+    assert.equal(appliedCanvas.validation.ok, true);
+    assert.match(appliedCanvas.systemSource, /\|COMPLETE\| output/);
+    assert.equal(appliedCanvas.authoring.layout.nodes["demo-analyst"].x, 500);
+    assert.equal(appliedCanvas.canvas.edges.some((edge) => edge.eventType === "COMPLETE"), true);
+    assert.equal(await readFile(path.resolve(workdir, "system.mmd"), "utf8"), originalSystemSource);
 
     const saveAsResponse = await fetch(`${url}/api/v1/project/system/save-as`, {
       method: "POST",

@@ -375,7 +375,7 @@ export function renderPageHtml(workdir: string, apiPrefix: string): string {
     }
     .stat-grid {
       display: grid;
-      grid-template-columns: repeat(6, minmax(0, 1fr));
+      grid-template-columns: repeat(auto-fit, minmax(128px, 1fr));
       gap: 8px;
     }
     .stat {
@@ -383,15 +383,21 @@ export function renderPageHtml(workdir: string, apiPrefix: string): string {
       border-radius: 9px;
       background: var(--panel-soft);
       border: 1px solid var(--border);
+      min-width: 0;
     }
     .stat strong {
       display: block;
       font-size: 18px;
       margin-bottom: 2px;
+      min-width: 0;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
     }
     .stat span {
       color: var(--muted);
       font-size: 12px;
+      overflow-wrap: anywhere;
     }
     pre {
       margin: 0;
@@ -485,6 +491,136 @@ export function renderPageHtml(workdir: string, apiPrefix: string): string {
       background: linear-gradient(180deg, rgba(8, 13, 26, 0.94), rgba(15, 23, 42, 0.88));
       overflow: auto;
       padding: 12px;
+    }
+    .project-overview-grid {
+      grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+      align-items: stretch;
+    }
+    .studio-bridge-layout {
+      display: grid;
+      grid-template-columns: minmax(180px, 240px) minmax(0, 1fr) minmax(220px, 300px);
+      gap: 12px;
+      align-items: start;
+      min-width: 0;
+    }
+    .studio-navigator,
+    .studio-inspector,
+    .studio-graph-column {
+      min-width: 0;
+    }
+    .studio-graph-column {
+      display: grid;
+      gap: 8px;
+    }
+    .studio-diagnostics {
+      grid-column: 1 / -1;
+    }
+    .studio-canvas-shell {
+      display: grid;
+      gap: 8px;
+      min-width: 0;
+    }
+    .studio-canvas-toolbar {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 8px;
+      min-width: 0;
+    }
+    .studio-canvas {
+      display: grid;
+      gap: 10px 14px;
+      min-height: 260px;
+      min-width: 0;
+      overflow: auto;
+      padding: 12px;
+      border-radius: 10px;
+      border: 1px solid var(--border);
+      background: rgba(4, 8, 16, 0.54);
+      align-items: center;
+    }
+    .studio-node,
+    .studio-edge {
+      min-width: 0;
+      border: 1px solid var(--border);
+      background: rgba(255, 255, 255, 0.04);
+      color: var(--text);
+      border-radius: 8px;
+      text-align: left;
+    }
+    .studio-node {
+      min-height: 84px;
+      padding: 10px;
+      display: grid;
+      gap: 6px;
+    }
+    .studio-node.active,
+    .studio-edge.active {
+      border-color: rgba(56, 189, 248, 0.5);
+      background: rgba(56, 189, 248, 0.12);
+    }
+    .studio-node.boundary {
+      border-style: dashed;
+      color: var(--muted);
+    }
+    .studio-node-title,
+    .studio-node-meta {
+      min-width: 0;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+    .studio-badges {
+      display: flex;
+      gap: 5px;
+      flex-wrap: wrap;
+    }
+    .studio-badges span {
+      padding: 2px 6px;
+      border-radius: 999px;
+      border: 1px solid rgba(148, 163, 184, 0.22);
+      color: var(--muted);
+      font-size: 11px;
+    }
+    .studio-edge {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) auto auto;
+      gap: 8px;
+      align-items: center;
+      padding: 7px 9px;
+      position: relative;
+    }
+    .studio-edge::before {
+      content: "";
+      height: 2px;
+      background: rgba(148, 163, 184, 0.45);
+      position: absolute;
+      left: 10px;
+      right: 10px;
+      top: -6px;
+    }
+    .studio-edge.error::before {
+      background: rgba(248, 113, 113, 0.68);
+    }
+    .log-toolbar {
+      display: grid;
+      grid-template-columns: minmax(160px, 1fr) minmax(110px, 140px) minmax(90px, 120px) minmax(160px, 1fr);
+      gap: 8px;
+      align-items: center;
+    }
+    .log-stream-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+      gap: 8px;
+    }
+    .artifact-tabs {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+    }
+    .artifact-section {
+      display: grid;
+      gap: 8px;
     }
     .preview svg {
       display: block;
@@ -609,9 +745,9 @@ export function renderPageHtml(workdir: string, apiPrefix: string): string {
       }
       .run-list { max-height: 280px; }
       .span-4, .span-6, .span-8, .span-12 { grid-column: span 12; }
+      .studio-bridge-layout { grid-template-columns: 1fr; }
       .hero { flex-direction: column; }
       .hero-toolbar, .actions { justify-content: flex-start; }
-      .stat-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
       .sidebar-toggle {
         display: inline-flex;
       }
@@ -638,11 +774,13 @@ export function renderPageHtml(workdir: string, apiPrefix: string): string {
       .timeline-controls {
         grid-template-columns: repeat(2, minmax(0, 1fr));
       }
+      .log-toolbar {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+      }
     }
     @media (max-width: 768px) {
       .content { padding: 10px; }
       .hero { padding: 10px; }
-      .stat-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
       .toolbar-row,
       .row {
         grid-template-columns: 1fr;
@@ -651,6 +789,9 @@ export function renderPageHtml(workdir: string, apiPrefix: string): string {
         grid-template-columns: 1fr;
       }
       .form-grid {
+        grid-template-columns: 1fr;
+      }
+      .log-toolbar {
         grid-template-columns: 1fr;
       }
       .preview,
@@ -667,7 +808,6 @@ export function renderPageHtml(workdir: string, apiPrefix: string): string {
       .sidebar {
         width: calc(100vw - 18px);
       }
-      .stat-grid { grid-template-columns: 1fr; }
       .button {
         min-width: 0;
         padding: 8px 10px;
@@ -767,23 +907,10 @@ export function renderPageHtml(workdir: string, apiPrefix: string): string {
         </article>
       </section>
       <section id="console-panel-debug" class="console-panel grid" data-console-panel="debug">
-        <article class="card span-4">
+        <article class="card span-12">
           <header><h3>Run Snapshot</h3></header>
           <div class="body">
             <div class="stat-grid" id="stats"></div>
-          </div>
-        </article>
-        <article class="card span-12">
-          <header>
-            <div class="row">
-              <h3>Failure Triage</h3>
-              <div id="failure-controls" class="actions"></div>
-            </div>
-          </header>
-          <div class="body">
-            <div id="failure-summary" class="structure-list"><div class="hint">No run selected.</div></div>
-            <div id="failure-detail" class="structure-list"><div class="hint">No run selected.</div></div>
-            <div id="failure-next-checks" class="structure-list"><div class="hint">No run selected.</div></div>
           </div>
         </article>
         <article class="card span-8">
@@ -818,6 +945,19 @@ export function renderPageHtml(workdir: string, apiPrefix: string): string {
           <div class="body">
             <div id="graph-view" class="structure-list"><div class="hint">No run selected.</div></div>
             <div id="state" class="structure-list"><div class="hint">No run selected.</div></div>
+          </div>
+        </article>
+        <article class="card span-12">
+          <header>
+            <div class="row">
+              <h3>Failure Triage</h3>
+              <div id="failure-controls" class="actions"></div>
+            </div>
+          </header>
+          <div class="body">
+            <div id="failure-summary" class="structure-list"><div class="hint">No run selected.</div></div>
+            <div id="failure-detail" class="structure-list"><div class="hint">No run selected.</div></div>
+            <div id="failure-next-checks" class="structure-list"><div class="hint">No run selected.</div></div>
           </div>
         </article>
         <article class="card span-6">
@@ -867,9 +1007,15 @@ export function renderPageHtml(workdir: string, apiPrefix: string): string {
                 <h3>Logs</h3>
                 <div id="logs-controls" class="actions"></div>
               </div>
-              <div class="toolbar-group">
+              <div class="log-toolbar">
                 <select id="log-role" class="select">
-                <option value="">Latest role</option>
+                <option value="">All roles</option>
+                </select>
+                <select id="log-page-size" class="select">
+                  <option value="100">100</option>
+                  <option value="500">500</option>
+                  <option value="1000">1000</option>
+                  <option value="">All</option>
                 </select>
                 <input id="log-tail" class="select" type="number" min="1" placeholder="tail" />
                 <input id="log-since" class="select" type="datetime-local" />

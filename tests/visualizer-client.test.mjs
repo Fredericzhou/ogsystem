@@ -65,6 +65,7 @@ const PAGE_ELEMENT_IDS = [
   "detail",
   "live",
   "log-role",
+  "log-page-size",
   "log-tail",
   "log-since",
   "sidebar",
@@ -767,6 +768,30 @@ function createBackend(options = {}) {
           validation: { ok: true, diagnostics: [], structure: null }
         });
       }
+      if (pathname === "/api/v1/project/studio/authoring/apply-canvas" && method === "POST") {
+        this.lastAuthoringApplyCanvasBody = JSON.parse(request.body ?? "{}");
+        const moved = this.lastAuthoringApplyCanvasBody.canvas?.nodes?.find((node) => node.roleId === "demo-analyst");
+        return createResponse({
+          workdir: "/tmp/demo",
+          systemPath: "/tmp/demo/system.mmd",
+          authoring: {
+            ...this.lastAuthoringApplyCanvasBody.authoring,
+            layout: {
+              nodes: {
+                "demo-analyst": {
+                  x: moved?.x ?? 120,
+                  y: moved?.y ?? 120,
+                  width: moved?.width ?? 180,
+                  height: moved?.height ?? 84
+                }
+              }
+            }
+          },
+          canvas: this.lastAuthoringApplyCanvasBody.canvas,
+          systemSource: "flowchart TD\n%% system.id=viz.review.demo\n%% system.version=1.0.0\n%% law.global=law.minimal.base\n%% entry.role=demo-analyst\nr1[Role:demo-analyst] -->|DONE| output\n",
+          validation: { ok: true, diagnostics: [], structure: null }
+        });
+      }
       if (pathname === "/api/v1/project/export" && method === "POST") {
         return createResponse({
           mode: "single-project-v1",
@@ -1094,8 +1119,13 @@ function createBackend(options = {}) {
       }
       if (runLogsMatch) {
         const fixture = getRunFixture(runLogsMatch[1]);
+        const roleId = parsed.searchParams.get("roleId");
         return createResponse({
-          records: [{ at: "2026-04-23T09:15:00.000Z", message: parsed.search || fixture?.logMessage || "log" }]
+          records: [{
+            at: "2026-04-23T09:15:00.000Z",
+            roleId: roleId || undefined,
+            message: parsed.search || fixture?.logMessage || "log"
+          }]
         });
       }
       if (pathname === "/api/v1/runs/reindex" && method === "POST") {
@@ -1489,12 +1519,13 @@ test("visualizer client loads logs on demand and keeps filter changes lazy until
   await settle();
 
   const logCallsAfterLoad = harness.backend.fetchCalls.filter((call) => call.path.startsWith("/api/v1/runs/run-123/logs")).length;
-  assert.equal(logCallsAfterLoad, 2);
+  assert.equal(logCallsAfterLoad, 3);
   assert.ok(
     harness.backend.fetchCalls.some((call) =>
       call.path.startsWith("/api/v1/runs/run-123/logs") && call.path.includes("tail=25")
     )
   );
+  assert.match(harness.document.getElementById("logs").textContent, /combined log stream/);
 });
 
 test("visualizer client refreshes failure panels when switching runs", async () => {
@@ -1796,6 +1827,44 @@ test("visualizer client opens Studio Bridge, saves an authoring draft, and dry-r
   assert.match(harness.document.getElementById("workbench-tabs").textContent, /Studio Bridge/);
   assert.match(harness.document.getElementById("workbench-body").textContent, /demo-analyst/);
   assert.match(harness.document.getElementById("workbench-body").textContent, /role inspector/);
+  assert.match(harness.document.getElementById("workbench-body").textContent, /Graph-first draft preview/);
+
+  const moveRightButton = harness.document.getElementById("studio-bridge-nudge-right");
+  assert.ok(moveRightButton);
+  await moveRightButton.click();
+  await settle();
+  assert.ok(harness.backend.fetchCalls.some((call) => call.path === "/api/v1/project/studio/authoring/apply-canvas"));
+  assert.equal(harness.backend.lastAuthoringApplyCanvasBody.canvas.nodes[0].x, 160);
+  assert.match(harness.document.getElementById("flash").textContent, /Studio canvas draft updated/);
+
+  const addRoleButton = harness.document.getElementById("studio-bridge-add-role");
+  assert.ok(addRoleButton);
+  await addRoleButton.click();
+  await settle();
+  assert.equal(harness.backend.lastAuthoringApplyCanvasBody.authoring.roles["new-role"].bindingKind, "noop");
+  assert.equal(
+    harness.backend.lastAuthoringApplyCanvasBody.canvas.nodes.some((node) => node.roleId === "new-role"),
+    true
+  );
+
+  const addEdgeButton = harness.document.getElementById("studio-bridge-add-edge");
+  assert.ok(addEdgeButton);
+  await addEdgeButton.click();
+  await settle();
+  assert.equal(
+    harness.backend.lastAuthoringApplyCanvasBody.canvas.edges.some((edge) => edge.source === "new-role" && edge.target === "__system_end__"),
+    true
+  );
+
+  const deleteRoleButton = harness.document.getElementById("studio-bridge-delete-role");
+  assert.ok(deleteRoleButton);
+  await deleteRoleButton.click();
+  await settle();
+  assert.equal(Object.hasOwn(harness.backend.lastAuthoringApplyCanvasBody.authoring.roles, "new-role"), false);
+  assert.equal(
+    harness.backend.lastAuthoringApplyCanvasBody.canvas.nodes.some((node) => node.roleId === "new-role"),
+    false
+  );
 
   const draftButton = harness.document.getElementById("studio-bridge-save-draft");
   assert.ok(draftButton);

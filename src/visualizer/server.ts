@@ -53,12 +53,15 @@ import {
 } from "./project-projection.js";
 import { inspectRunGraphVisualization } from "./run-graph-projection.js";
 import {
+  applyCanvasDocumentToAuthoring,
+  authoringToCanvasDocument,
   importMermaidToAuthoring,
   inspectStudioBridgeDraft,
   loadStudioAuthoringDraft,
   saveStudioAuthoringDraft,
   serializeAuthoringToMermaid,
-  type StudioAuthoringDocument
+  type StudioAuthoringDocument,
+  type StudioCanvasDocument
 } from "./studio-authoring.js";
 import { listStudioAuthoringTemplates } from "./studio-templates.js";
 import {
@@ -679,6 +682,38 @@ async function handleApiStudioAuthoringGenerateMmd(
   });
 }
 
+async function handleApiStudioAuthoringApplyCanvas(
+  workdir: string,
+  request: IncomingMessage,
+  response: ServerResponse
+): Promise<void> {
+  const body = await readJsonRequest(request);
+  const authoring = body.authoring;
+  const canvas = body.canvas;
+  if (!authoring || typeof authoring !== "object" || Array.isArray(authoring)) {
+    throw new HttpError(400, "AUTHORING_DOCUMENT_REQUIRED", "authoring is required.");
+  }
+  if (!canvas || typeof canvas !== "object" || Array.isArray(canvas)) {
+    throw new HttpError(400, "CANVAS_DOCUMENT_REQUIRED", "canvas is required.");
+  }
+  const appliedAuthoring = applyCanvasDocumentToAuthoring({
+    authoring: authoring as StudioAuthoringDocument,
+    canvas: canvas as StudioCanvasDocument
+  });
+  const systemSource = serializeAuthoringToMermaid(appliedAuthoring);
+  const validation = await validateProjectSystemSource({
+    workdir,
+    systemPath: resolve(workdir, "system.mmd"),
+    systemSource
+  });
+  jsonResponse(response, 200, {
+    authoring: appliedAuthoring,
+    canvas: authoringToCanvasDocument(appliedAuthoring),
+    systemSource,
+    validation
+  });
+}
+
 async function handleApiStudioTemplates(response: ServerResponse): Promise<void> {
   jsonResponse(response, 200, {
     templates: listStudioAuthoringTemplates()
@@ -1260,6 +1295,17 @@ async function handleVisualizationRequest(
     method === "POST"
   ) {
     await handleApiStudioAuthoringGenerateMmd(state.workdir, request, response);
+    return;
+  }
+  if (
+    segments.length === 6 &&
+    segments[2] === "project" &&
+    segments[3] === "studio" &&
+    segments[4] === "authoring" &&
+    segments[5] === "apply-canvas" &&
+    method === "POST"
+  ) {
+    await handleApiStudioAuthoringApplyCanvas(state.workdir, request, response);
     return;
   }
   if (

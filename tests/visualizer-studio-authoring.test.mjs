@@ -113,6 +113,138 @@ test("Studio canvas adapter keeps layout state out of generated Mermaid", () => 
   assert.equal(parseSystemFromMermaidSource(generated).systemId, "test.studio.authoring");
 });
 
+test("Studio canvas apply rebuilds flows from edges and preserves existing role layout", () => {
+  const authoring = importMermaidToAuthoring({
+    workdir: "/tmp/project",
+    systemPath: "/tmp/project/system.mmd",
+    systemSource: source
+  });
+  const canvas = authoringToCanvasDocument(authoring);
+  const applied = applyCanvasDocumentToAuthoring({
+    authoring,
+    canvas: {
+      ...canvas,
+      nodes: canvas.nodes.map((node) =>
+        node.roleId === "worker"
+          ? { ...node, x: 333, y: 444, width: 200, height: 90 }
+          : node
+      ),
+      edges: [
+        ...canvas.edges.filter((edge) => edge.eventType !== "APPROVED"),
+        {
+          id: "new-worker-approved-output",
+          source: "worker",
+          target: "__system_end__",
+          label: "APPROVED",
+          eventType: "APPROVED",
+          runtimeOnlyErrorFlow: false,
+          participatesInJoin: false
+        }
+      ]
+    }
+  });
+
+  assert.equal(applied.layout.nodes.worker.x, 333);
+  assert.equal(applied.flows["new-worker-approved-output"].toRoleId, "__system_end__");
+  assert.equal(Object.values(applied.flows).some((flow) => flow.fromRoleId === "review" && flow.eventType === "APPROVED"), false);
+  assert.equal(Object.values(applied.flows).some((flow) => flow.eventType === "APPROVED"), true);
+  const generated = serializeAuthoringToMermaid(applied);
+  assert.equal(parseSystemFromMermaidSource(generated).flows.some((flow) => flow.fromRoleId === "review" && flow.eventType === "APPROVED"), false);
+  assert.doesNotMatch(generated, /333|444|viewport|width|height/);
+});
+
+test("Studio canvas apply stabilizes missing and duplicate edge ids", () => {
+  const authoring = importMermaidToAuthoring({
+    workdir: "/tmp/project",
+    systemPath: "/tmp/project/system.mmd",
+    systemSource: source
+  });
+  const canvas = authoringToCanvasDocument(authoring);
+  const applied = applyCanvasDocumentToAuthoring({
+    authoring,
+    canvas: {
+      ...canvas,
+      edges: [
+        {
+          source: "dispatch",
+          target: "worker",
+          label: "WORK",
+          eventType: "WORK",
+          runtimeOnlyErrorFlow: false,
+          participatesInJoin: false
+        },
+        {
+          id: "duplicate-edge",
+          source: "dispatch",
+          target: "review",
+          label: "REVIEW",
+          eventType: "REVIEW",
+          runtimeOnlyErrorFlow: false,
+          participatesInJoin: false
+        },
+        {
+          id: "duplicate-edge",
+          source: "worker",
+          target: "review",
+          label: "DONE",
+          eventType: "DONE",
+          runtimeOnlyErrorFlow: false,
+          participatesInJoin: true
+        }
+      ]
+    }
+  });
+
+  assert.deepEqual(Object.keys(applied.flows), [
+    "1:dispatch:WORK:worker",
+    "duplicate-edge",
+    "3:worker:DONE:review"
+  ]);
+  assert.equal(applied.flows["3:worker:DONE:review"].fromRoleId, "worker");
+  assert.equal(applied.flows["3:worker:DONE:review"].toRoleId, "review");
+  assert.equal(serializeAuthoringToMermaid(applied), serializeAuthoringToMermaid(applied));
+});
+
+test("Studio canvas apply ignores edges that reference missing roles", () => {
+  const authoring = importMermaidToAuthoring({
+    workdir: "/tmp/project",
+    systemPath: "/tmp/project/system.mmd",
+    systemSource: source
+  });
+  const canvas = authoringToCanvasDocument(authoring);
+  const applied = applyCanvasDocumentToAuthoring({
+    authoring,
+    canvas: {
+      ...canvas,
+      edges: [
+        ...canvas.edges,
+        {
+          id: "missing-source",
+          source: "missing",
+          target: "review",
+          label: "BAD",
+          eventType: "BAD",
+          runtimeOnlyErrorFlow: false,
+          participatesInJoin: false
+        },
+        {
+          id: "missing-target",
+          source: "dispatch",
+          target: "missing",
+          label: "BAD",
+          eventType: "BAD",
+          runtimeOnlyErrorFlow: false,
+          participatesInJoin: false
+        }
+      ]
+    }
+  });
+
+  assert.equal(Object.hasOwn(applied.flows, "missing-source"), false);
+  assert.equal(Object.hasOwn(applied.flows, "missing-target"), false);
+  assert.equal(Object.values(applied.flows).length, canvas.edges.length);
+});
+
 test("Studio assisted authoring templates and Mermaid drafts produce valid authoring documents", () => {
   const templates = listStudioAuthoringTemplates();
   assert.deepEqual(templates.map((template) => template.id).sort(), ["consultation", "debate", "review"]);

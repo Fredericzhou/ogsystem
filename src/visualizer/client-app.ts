@@ -1,5 +1,6 @@
 import {
   bindingTone,
+  normalizeStudioTargetRoleId,
   renderArtifactsPanel,
   renderBindingExplainPanel,
   renderContractPanel,
@@ -14,6 +15,7 @@ import {
   renderReviewDetailPanel,
   renderRolePackagePanel,
   renderRunStatePanel,
+  renderStudioGraphCanvas,
   renderStudioBridgePanel,
   renderSuggestedNextChecksPanel,
   renderRunTopologySvg,
@@ -153,6 +155,8 @@ export function buildClientAppScript(apiPrefix: string): string {
     const formatReviewStatusLabel = ${formatReviewStatusLabel.toString()};
     const statusTone = ${statusTone.toString()};
     const bindingTone = ${bindingTone.toString()};
+    const normalizeStudioTargetRoleId = ${normalizeStudioTargetRoleId.toString()};
+    const renderStudioGraphCanvas = ${renderStudioGraphCanvas.toString()};
     const renderArtifactsPanel = ${renderArtifactsPanel.toString()};
     const renderBindingExplainPanel = ${renderBindingExplainPanel.toString()};
     const renderContractPanel = ${renderContractPanel.toString()};
@@ -186,6 +190,7 @@ export function buildClientAppScript(apiPrefix: string): string {
       workbenchValidationRequestId: 0,
       workbenchValidating: false,
       studioBridge: null,
+      studioCanvas: null,
       studioBridgeLoaded: false,
       studioBridgeStale: false,
       studioBridgeSelectedRoleId: "",
@@ -199,6 +204,7 @@ export function buildClientAppScript(apiPrefix: string): string {
       selectedReviewId: "",
       selectedLogRoleId: "",
       logTail: "",
+      logPageSize: "100",
       logSince: "",
       timelineRoleId: "",
       timelineBranchId: "",
@@ -293,6 +299,7 @@ export function buildClientAppScript(apiPrefix: string): string {
     const detailEl = document.getElementById("detail");
     const liveEl = document.getElementById("live");
     const logRoleEl = document.getElementById("log-role");
+    const logPageSizeEl = document.getElementById("log-page-size");
     const logTailEl = document.getElementById("log-tail");
     const logSinceEl = document.getElementById("log-since");
     const sidebarEl = document.getElementById("sidebar");
@@ -448,8 +455,9 @@ export function buildClientAppScript(apiPrefix: string): string {
       if (extra.roleId) {
         params.set("roleId", extra.roleId);
       }
-      if (state.logTail) {
-        params.set("tail", state.logTail);
+      const effectiveTail = state.logTail || state.logPageSize;
+      if (effectiveTail) {
+        params.set("tail", effectiveTail);
       }
       if (state.logSince) {
         const normalized = state.logSince.includes(":") && state.logSince.length === 16
@@ -458,6 +466,46 @@ export function buildClientAppScript(apiPrefix: string): string {
         params.set("since", normalized);
       }
       return API_PREFIX + "/runs/" + encodeURIComponent(runId) + "/logs?" + params.toString();
+    }
+
+    function buildStudioCanvasFromBridge(bridge) {
+      const authoring = bridge?.authoring || null;
+      const extracted = bridge?.extracted || {};
+      const roles = extracted.roles || [];
+      const flows = extracted.flows || [];
+      const layoutNodes = authoring?.layout?.nodes || {};
+      return {
+        version: 1,
+        nodes: roles.map((role, index) => {
+          const roleId = role.roleId || "";
+          const layout = layoutNodes[roleId] || {};
+          return {
+            id: roleId,
+            roleId,
+            x: Number.isFinite(layout.x) ? layout.x : 120 + (index * 260),
+            y: Number.isFinite(layout.y) ? layout.y : 120,
+            width: Number.isFinite(layout.width) ? layout.width : 180,
+            height: Number.isFinite(layout.height) ? layout.height : 84,
+            label: role.title || roleId,
+            badges: role.badges || [],
+            bindingKind: role.bindingKind || "noop"
+          };
+        }),
+        edges: flows.map((flow) => ({
+          id: flow.flowId,
+          source: flow.fromRoleId,
+          target: flow.toRoleId,
+          label: flow.eventType,
+          eventType: flow.eventType,
+          runtimeOnlyErrorFlow: Boolean(flow.runtimeOnlyErrorFlow),
+          participatesInJoin: Boolean(flow.participatesInJoin)
+        })),
+        viewport: authoring?.layout?.viewport
+      };
+    }
+
+    function cloneJson(value) {
+      return JSON.parse(JSON.stringify(value ?? null));
     }
 
     function buildTimelineQuery(runId, extra) {
@@ -612,6 +660,9 @@ export function buildClientAppScript(apiPrefix: string): string {
           button.disabled = disabled;
         }
       }
+      if (logPageSizeEl) {
+        logPageSizeEl.disabled = disabled || !state.selectedRunId;
+      }
       for (const button of reviewActionsEl.querySelectorAll("[data-review-action]")) {
         button.disabled = disabled;
       }
@@ -742,6 +793,42 @@ export function buildClientAppScript(apiPrefix: string): string {
       if (generateButton) {
         generateButton.addEventListener("click", async () => {
           await generateMmdFromStudioBridge();
+        });
+      }
+      const addRoleButton = document.getElementById("studio-bridge-add-role");
+      if (addRoleButton) {
+        addRoleButton.addEventListener("click", async () => {
+          await applyStudioCanvasEdit("add-role");
+        });
+      }
+      const addEdgeButton = document.getElementById("studio-bridge-add-edge");
+      if (addEdgeButton) {
+        addEdgeButton.addEventListener("click", async () => {
+          await applyStudioCanvasEdit("add-edge");
+        });
+      }
+      const deleteRoleButton = document.getElementById("studio-bridge-delete-role");
+      if (deleteRoleButton) {
+        deleteRoleButton.addEventListener("click", async () => {
+          await applyStudioCanvasEdit("delete-role");
+        });
+      }
+      const fitButton = document.getElementById("studio-bridge-fit");
+      if (fitButton) {
+        fitButton.addEventListener("click", async () => {
+          await applyStudioCanvasEdit("fit");
+        });
+      }
+      const nudgeLeftButton = document.getElementById("studio-bridge-nudge-left");
+      if (nudgeLeftButton) {
+        nudgeLeftButton.addEventListener("click", async () => {
+          await applyStudioCanvasEdit("left");
+        });
+      }
+      const nudgeRightButton = document.getElementById("studio-bridge-nudge-right");
+      if (nudgeRightButton) {
+        nudgeRightButton.addEventListener("click", async () => {
+          await applyStudioCanvasEdit("right");
         });
       }
     }
@@ -1432,18 +1519,35 @@ export function buildClientAppScript(apiPrefix: string): string {
         logsEl.innerHTML = '<div class="hint">No run selected.</div>';
         return;
       }
-      logsControlsEl.innerHTML = '<button id="load-logs" class="button subtle"' + (state.actionBusy ? " disabled" : "") + '>' + (state.logsLoaded ? "Refresh logs" : "Load logs") + '</button>';
+      logsControlsEl.innerHTML = [
+        '<button id="load-logs" class="button subtle"' + (state.actionBusy ? " disabled" : "") + '>' + (state.logsLoaded ? "Refresh logs" : "Load logs") + '</button>',
+        '<button id="load-more-logs" class="button subtle"' + (state.actionBusy || !state.logsLoaded ? " disabled" : "") + '>Load more</button>'
+      ].join("");
       const loadLogsButton = document.getElementById("load-logs");
       if (loadLogsButton) {
         loadLogsButton.addEventListener("click", async () => {
           await loadSelectedLogs(state.selectedRunId, { force: true });
         });
       }
-      logsFiltersEl.textContent = "role=" + (state.selectedLogRoleId || "latest") + " tail=" + (state.logTail || "all") + " since=" + (state.logSince || "n/a") + (state.logsStale ? " · stale" : "");
+      const loadMoreLogsButton = document.getElementById("load-more-logs");
+      if (loadMoreLogsButton) {
+        loadMoreLogsButton.addEventListener("click", async () => {
+          const current = Number(state.logPageSize || state.logTail || "100");
+          state.logTail = "";
+          state.logPageSize = String(Number.isFinite(current) ? Math.min(current * 2, 5000) : 500);
+          if (logPageSizeEl) logPageSizeEl.value = state.logPageSize;
+          await loadSelectedLogs(state.selectedRunId, { force: true });
+        });
+      }
+      logsFiltersEl.textContent =
+        "role=" + (state.selectedLogRoleId || "all")
+        + " pageSize=" + (state.logTail || state.logPageSize || "all")
+        + " since=" + (state.logSince || "n/a")
+        + (state.logsStale ? " · stale" : "");
       logsEl.innerHTML = renderLogsPanel({
         loaded: state.logsLoaded,
         stale: state.logsStale,
-        selectedRoleId: state.selectedLogRoleId || state.detail?.header?.lastExecutedRoleId || "",
+        selectedRoleId: state.selectedLogRoleId,
         engine: state.engineLogs,
         role: state.roleLogs
       });
@@ -1495,8 +1599,8 @@ export function buildClientAppScript(apiPrefix: string): string {
 
     function populateLogRoleOptions(graphPayload, fallbackRoleId) {
       const roleIds = (graphPayload?.graph?.nodes || []).map((node) => node.roleId).filter(Boolean);
-      const selected = state.selectedLogRoleId || fallbackRoleId || "";
-      const options = ['<option value="">Latest role</option>']
+      const selected = state.selectedLogRoleId || "";
+      const options = ['<option value="">All roles</option>']
         .concat(roleIds.map((roleId) => \`<option value="\${escapeText(roleId)}" \${roleId === selected ? "selected" : ""}>\${escapeText(roleId)}</option>\`));
       logRoleEl.innerHTML = options.join("");
       state.selectedLogRoleId = selected;
@@ -1555,6 +1659,7 @@ export function buildClientAppScript(apiPrefix: string): string {
         systemPath: state.workbenchSavedPath || "system.mmd"
       });
       state.studioBridge = payload;
+      state.studioCanvas = buildStudioCanvasFromBridge(payload);
       state.studioBridgeLoaded = true;
       state.studioBridgeStale = false;
       const roles = payload.extracted?.roles || [];
@@ -1571,6 +1676,153 @@ export function buildClientAppScript(apiPrefix: string): string {
       };
       renderWorkbench();
       renderProject();
+    }
+
+    function nextStudioEditPayload(kind) {
+      const bridge = state.studioBridge;
+      const authoring = cloneJson(bridge?.authoring || {});
+      const canvas = cloneJson(state.studioCanvas || buildStudioCanvasFromBridge(bridge));
+      authoring.roles = authoring.roles || {};
+      authoring.flows = authoring.flows || {};
+      authoring.layout = authoring.layout || { nodes: {} };
+      authoring.layout.nodes = authoring.layout.nodes || {};
+      canvas.nodes = canvas.nodes || [];
+      canvas.edges = canvas.edges || [];
+      const selectedRoleId = state.studioBridgeSelectedRoleId || canvas.nodes?.[0]?.roleId || "";
+      if (kind === "fit") {
+        return {
+          authoring,
+          canvas: {
+          ...canvas,
+          nodes: (canvas.nodes || []).map((node, index) => ({
+            ...node,
+            x: 120 + (index * 260),
+            y: 120
+          })),
+          viewport: { x: 0, y: 0, zoom: 1 }
+          }
+        };
+      }
+      if (kind === "add-role") {
+        let index = 1;
+        let roleId = "new-role";
+        while (authoring.roles[roleId]) {
+          index += 1;
+          roleId = "new-role-" + index;
+        }
+        const x = 120 + (canvas.nodes.length * 260);
+        authoring.roles[roleId] = {
+          roleId,
+          title: "New role",
+          bindingKind: "noop"
+        };
+        authoring.layout.nodes[roleId] = { x, y: 120, width: 180, height: 84 };
+        canvas.nodes.push({
+          id: roleId,
+          roleId,
+          x,
+          y: 120,
+          width: 180,
+          height: 84,
+          label: "New role",
+          badges: [],
+          bindingKind: "noop"
+        });
+        state.studioBridgeSelectedRoleId = roleId;
+        state.studioBridgeSelectedFlowKey = "";
+        return { authoring, canvas };
+      }
+      if (kind === "delete-role") {
+        if (!selectedRoleId || selectedRoleId === authoring.system?.entryRoleId) {
+          return { authoring, canvas };
+        }
+        delete authoring.roles[selectedRoleId];
+        delete authoring.layout.nodes[selectedRoleId];
+        authoring.flows = Object.fromEntries(
+          Object.entries(authoring.flows).filter(([, flow]) =>
+            flow.fromRoleId !== selectedRoleId && flow.toRoleId !== selectedRoleId
+          )
+        );
+        canvas.nodes = canvas.nodes.filter((node) => node.roleId !== selectedRoleId);
+        canvas.edges = canvas.edges.filter((edge) => edge.source !== selectedRoleId && edge.target !== selectedRoleId);
+        state.studioBridgeSelectedRoleId = canvas.nodes[0]?.roleId || "";
+        state.studioBridgeSelectedFlowKey = "";
+        return { authoring, canvas };
+      }
+      if (kind === "add-edge") {
+        const sourceRoleId = selectedRoleId || canvas.nodes[0]?.roleId || "";
+        if (!sourceRoleId) {
+          return { authoring, canvas };
+        }
+        let eventType = "DONE";
+        let suffix = 2;
+        while (canvas.edges.some((edge) => edge.source === sourceRoleId && edge.target === "__system_end__" && edge.eventType === eventType)) {
+          eventType = "DONE_" + suffix;
+          suffix += 1;
+        }
+        canvas.edges.push({
+          source: sourceRoleId,
+          target: "__system_end__",
+          label: eventType,
+          eventType,
+          runtimeOnlyErrorFlow: false,
+          participatesInJoin: false
+        });
+        state.studioBridgeSelectedFlowKey = sourceRoleId + ":" + eventType + ":output";
+        return { authoring, canvas };
+      }
+      if (!selectedRoleId) {
+        return { authoring, canvas };
+      }
+      const delta = kind === "left" ? -40 : 40;
+      return {
+        authoring,
+        canvas: {
+          ...canvas,
+          nodes: (canvas.nodes || []).map((node) =>
+            node.roleId === selectedRoleId
+              ? { ...node, x: Math.max(0, Number(node.x || 0) + delta) }
+              : node
+          )
+        }
+      };
+    }
+
+    async function applyStudioCanvasEdit(kind) {
+      if (!state.studioBridge?.authoring) {
+        await refreshStudioBridge();
+      }
+      if (!state.studioBridge?.authoring) {
+        setFlash("error", "Studio Bridge cannot edit the graph until Mermaid parses successfully.");
+        return;
+      }
+      await runAction("studio:apply-canvas", async () => {
+        const { authoring, canvas } = nextStudioEditPayload(kind);
+        const payload = await requestAction(\`\${API_PREFIX}/project/studio/authoring/apply-canvas\`, {
+          authoring,
+          canvas
+        });
+        state.workbenchSource = payload.systemSource || state.workbenchSource;
+        persistDraftSource(state.workbenchSource !== state.workbenchDiskSource ? state.workbenchSource : "");
+        const bridgePayload = await requestAction(\`\${API_PREFIX}/project/studio/bridge\`, {
+          systemSource: state.workbenchSource,
+          systemPath: state.workbenchSavedPath || "system.mmd"
+        });
+        state.studioBridge = {
+          ...bridgePayload,
+          authoring: payload.authoring,
+          validation: payload.validation || bridgePayload.validation
+        };
+        state.studioCanvas = payload.canvas || canvas;
+        state.workbench = {
+          ...(state.workbench || {}),
+          validation: payload.validation || state.workbench?.validation
+        };
+        state.studioBridgeStale = false;
+        renderWorkbench();
+        renderProject();
+        setFlash("success", "Studio canvas draft updated.");
+      });
     }
 
     async function saveStudioAuthoringDraft() {
@@ -1956,6 +2208,16 @@ export function buildClientAppScript(apiPrefix: string): string {
       state.roleLogs = roleLogsPayload.records || [];
     }
 
+    async function loadAllRoleLogs(runId) {
+      const roleIds = (state.graph?.graph?.nodes || []).map((node) => node.roleId).filter(Boolean);
+      if (!roleIds.length) {
+        state.roleLogs = [];
+        return;
+      }
+      const payloads = await Promise.all(roleIds.map((roleId) => requestJson(buildLogsQuery(runId, { roleId }))));
+      state.roleLogs = payloads.flatMap((payload) => payload.records || []);
+    }
+
     async function loadEngineLogs(runId) {
       const engineLogsPayload = await requestJson(buildLogsQuery(runId, { engine: true }));
       state.engineLogs = engineLogsPayload.records || [];
@@ -1966,10 +2228,9 @@ export function buildClientAppScript(apiPrefix: string): string {
         return;
       }
       const load = async () => {
-        const fallbackRoleId = state.detail?.header?.lastExecutedRoleId || state.detail?.header?.finalRoleId || "";
         await Promise.all([
           loadEngineLogs(runId),
-          loadRoleLogs(runId, state.selectedLogRoleId || fallbackRoleId)
+          state.selectedLogRoleId ? loadRoleLogs(runId, state.selectedLogRoleId) : loadAllRoleLogs(runId)
         ]);
         state.logsLoaded = true;
         state.logsStale = false;
@@ -2529,6 +2790,15 @@ export function buildClientAppScript(apiPrefix: string): string {
       writeRouteToLocation();
     });
 
+    logPageSizeEl.addEventListener("change", async (event) => {
+      state.logPageSize = event.target.value || "";
+      if (state.selectedRunId && state.logsLoaded) {
+        await loadSelectedLogs(state.selectedRunId, { force: true });
+      } else {
+        renderLogs();
+      }
+    });
+
     logSinceEl.addEventListener("change", async (event) => {
       state.logSince = event.target.value || "";
       if (state.selectedRunId && state.logsLoaded) {
@@ -2558,6 +2828,7 @@ export function buildClientAppScript(apiPrefix: string): string {
     state.logTail = initialRoute.tail;
     state.logSince = initialRoute.since;
     logTailEl.value = state.logTail;
+    logPageSizeEl.value = state.logPageSize;
     logSinceEl.value = state.logSince;
     syncTimelineFilterInputs();
 

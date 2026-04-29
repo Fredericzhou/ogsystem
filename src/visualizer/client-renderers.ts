@@ -59,6 +59,76 @@ export function bindingTone(bindingKind: string | undefined): string {
   }
 }
 
+export function normalizeStudioTargetRoleId(roleId: unknown): string {
+  const value = String(roleId ?? "");
+  return value === "__system_end__" ? "output" : value;
+}
+
+export function renderStudioGraphCanvas(args: {
+  roles: JsonRecord[];
+  flows: JsonRecord[];
+  selectedRoleId: string;
+  selectedFlowKey: string;
+  busy: string;
+}): string {
+  const roleIds = args.roles.map((role) => String(role.roleId ?? "")).filter(Boolean);
+  const columns = ["input", ...roleIds, "output"];
+  const nodeById = new Map(args.roles.map((role) => [String(role.roleId ?? ""), role]));
+  const nodeButtons = columns.map((roleId, index) => {
+    const isBoundary = roleId === "input" || roleId === "output";
+    const role = nodeById.get(roleId) ?? {};
+    const selected = !isBoundary && args.selectedRoleId === roleId ? " active" : "";
+    const badges = isBoundary
+      ? [roleId === "input" ? "START" : "END"]
+      : Array.isArray(role.badges) ? role.badges.map((badge) => String(badge)) : [];
+    const binding = isBoundary ? "boundary" : String(role.bindingKind ?? "noop");
+    const style = "grid-column:" + (index + 1) + ";grid-row:1;";
+    const selectable = isBoundary ? "" : ' data-studio-role-id="' + escapeText(roleId) + '"';
+    return (
+      '<button class="studio-node' + selected + (isBoundary ? " boundary" : "") + '" style="' + style + '"' + selectable + args.busy + ">" +
+      '<span class="studio-node-title">' + escapeText(isBoundary ? roleId : roleId) + '</span>' +
+      '<span class="studio-node-meta">' + escapeText(binding) + "</span>" +
+      '<span class="studio-badges">' + badges.map((badge) => '<span>' + escapeText(badge) + "</span>").join("") + "</span>" +
+      "</button>"
+    );
+  });
+  const edgeButtons = args.flows.map((flow, index) => {
+    const fromRoleId = String(flow.fromRoleId ?? "");
+    const toRoleId = normalizeStudioTargetRoleId(flow.toRoleId);
+    const sourceColumn = Math.max(columns.indexOf(fromRoleId), 0) + 1;
+    const targetColumn = Math.max(columns.indexOf(toRoleId), sourceColumn) + 1;
+    const start = Math.min(sourceColumn, targetColumn);
+    const end = Math.max(sourceColumn, targetColumn);
+    const key = String(flow.flowKey ?? flow.flowId ?? `${fromRoleId}:${flow.eventType ?? ""}:${toRoleId}`);
+    const selected = args.selectedFlowKey === key ? " active" : "";
+    const error = flow.runtimeOnlyErrorFlow ? " error" : "";
+    const style = "grid-column:" + start + " / " + (end + 1) + ";grid-row:" + (index + 2) + ";";
+    return (
+      '<button class="studio-edge' + selected + error + '" style="' + style + '" data-studio-flow-key="' + escapeText(key) + '"' + args.busy + ">" +
+      '<span><code>' + escapeText(fromRoleId) + '</code> -> <code>' + escapeText(toRoleId) + '</code></span>' +
+      '<strong>' + escapeText(String(flow.eventType ?? "")) + '</strong>' +
+      '<span class="hint">' + escapeText(flow.participatesInJoin ? "join source" : "flow") + "</span>" +
+      "</button>"
+    );
+  });
+  return [
+    '<div class="studio-canvas-shell">',
+    '<div class="studio-canvas-toolbar"><span class="hint">Graph-first draft preview</span><div class="actions">',
+    '<button class="button subtle" id="studio-bridge-add-role"' + args.busy + '>Add role</button>',
+    '<button class="button subtle" id="studio-bridge-add-edge"' + args.busy + '>Add edge</button>',
+    '<button class="button danger" id="studio-bridge-delete-role"' + args.busy + '>Delete role</button>',
+    '<button class="button subtle" id="studio-bridge-fit"' + args.busy + '>Fit</button>',
+    '<button class="button subtle" id="studio-bridge-nudge-left"' + args.busy + '>Move left</button>',
+    '<button class="button subtle" id="studio-bridge-nudge-right"' + args.busy + '>Move right</button>',
+    "</div></div>",
+    '<div class="studio-canvas" style="grid-template-columns: repeat(' + Math.max(columns.length, 2) + ', minmax(150px, 1fr));">',
+    ...nodeButtons,
+    ...edgeButtons,
+    "</div>",
+    "</div>"
+  ].join("");
+}
+
 export function renderProjectSummaryPanel(args: {
   summary: JsonRecord | null | undefined;
   roles: Array<Record<string, unknown>>;
@@ -93,7 +163,7 @@ export function renderProjectSummaryPanel(args: {
     : ['<div class="event"><div class="event-top"><span>model warning</span><span>ok</span></div><strong>none</strong></div>'];
 
   return [
-    '<div class="structure-list">',
+    '<div class="structure-list project-overview-grid">',
     '<div class="event"><div class="event-top"><span>project</span><span>' + escapeText(summary.projectId ?? "n/a") + "</span></div><strong>" +
       escapeText(summary.projectName ?? "unknown") + '</strong><div class="hint">system ' + escapeText(summary.systemId ?? "n/a") +
       " · version " + escapeText(summary.systemVersion ?? "n/a") +
@@ -269,6 +339,13 @@ export function renderStudioBridgePanel(args: {
   if (!bridge || Object.keys(bridge).length === 0) {
     return '<div class="hint">Studio Bridge data unavailable.</div>';
   }
+  const graphCanvas = renderStudioGraphCanvas({
+    roles,
+    flows,
+    selectedRoleId: args.selectedRoleId,
+    selectedFlowKey: args.selectedFlowKey,
+    busy
+  });
   const roleButtons = roles.length
     ? roles.map((role) => {
         const roleId = String(role.roleId ?? "");
@@ -342,16 +419,16 @@ export function renderStudioBridgePanel(args: {
       escapeText(validation.ok ? "validation ok" : diagnostics.length + " diagnostics") + '</span><span class="pill' +
       (blockers.length ? " warn" : "") + '">' + escapeText(blockers.length ? blockers.length + " readiness blockers" : "readiness ready") + "</span></div>",
     "</div>",
-    '<div class="grid">',
-    '<div class="span-4 structure-list"><div class="event"><div class="event-top"><span>roles</span><span>' + escapeText(String(roles.length)) +
+    '<div class="studio-bridge-layout">',
+    '<div class="studio-navigator structure-list"><div class="event"><div class="event-top"><span>roles</span><span>' + escapeText(String(roles.length)) +
       '</span></div><strong>Structured role draft</strong><div class="hint">Bridge reads the current workbench source.</div></div>' + roleButtons.join("") + "</div>",
-    '<div class="span-4 structure-list"><div class="event"><div class="event-top"><span>flows</span><span>' + escapeText(String(flows.length)) +
-      '</span></div><strong>Structured flow draft</strong><div class="hint">Event types and join participation stay visible.</div></div>' + flowButtons.join("") + "</div>",
-    '<div class="span-4 structure-list"><div class="event"><div class="event-top"><span>system</span><span>' + escapeText(String(extracted.systemVersion ?? "n/a")) +
+    '<div class="studio-graph-column">' + graphCanvas + '<div class="structure-list studio-flow-list"><div class="event"><div class="event-top"><span>flows</span><span>' + escapeText(String(flows.length)) +
+      '</span></div><strong>Structured flow draft</strong><div class="hint">Event types and join participation stay visible.</div></div>' + flowButtons.join("") + "</div></div>",
+    '<div class="studio-inspector structure-list"><div class="event"><div class="event-top"><span>system</span><span>' + escapeText(String(extracted.systemVersion ?? "n/a")) +
       '</span></div><strong>' + escapeText(String(extracted.systemId ?? "unknown")) + '</strong><div class="hint">entry ' +
       escapeText(String(extracted.entryRoleId ?? "n/a")) + " · law " + escapeText(String(extracted.lawGlobal ?? "n/a")) + "</div></div>" +
       roleInspector + flowInspector + "</div>",
-    '<div class="span-12 structure-list">' + diagnosticCards.join("") + "</div>",
+    '<div class="studio-diagnostics structure-list">' + diagnosticCards.join("") + "</div>",
     "</div>",
     "</div>"
   ].join("");
@@ -521,6 +598,7 @@ export function renderBindingExplainPanel(args: {
   }
   return [
     '<div class="structure-list">',
+    '<div class="toolbar-row"><div class="toolbar-group"><span class="pill">role cards</span><span class="pill">flow cards</span></div><div class="toolbar-group"><span class="pill">all</span><span class="pill warn">missing</span><span class="pill">warning</span></div></div>',
     '<div class="event"><div class="event-top"><span>binding explain</span><span>' +
       escapeText(args.stale ? "stale" : "fresh") +
       '</span></div><strong>' +
@@ -628,6 +706,7 @@ export function renderContractPanel(args: {
   return [
     '<div class="structure-list">',
     runtimeCard,
+    '<div class="toolbar-row"><div class="toolbar-group"><span class="pill">flow cards</span><span class="pill">covered</span><span class="pill warn">missing</span></div></div>',
     '<div class="event"><div class="event-top"><span>contract coverage</span><span>' +
       escapeText(uncoveredEdges.length ? uncoveredEdges.length + " uncovered" : "complete") +
       '</span></div><strong>Strict handoff coverage across flows and role inputs</strong></div>',
@@ -878,8 +957,14 @@ export function renderLogsPanel(args: {
   role: unknown[];
 }): string {
   if (!args.loaded) {
-    return '<div class="hint">Logs load on demand. Use the control above when you need engine or role traces.</div>';
+    return '<div class="hint">Logs load on demand. The default view combines engine and role traces without a role filter.</div>';
   }
+
+  const timestampOf = (record: JsonRecord): string => String(record.at ?? record.timestamp ?? "");
+  const combined = [
+    ...args.engine.map((item) => ({ source: "engine", record: (item ?? {}) as JsonRecord })),
+    ...args.role.map((item) => ({ source: String(((item ?? {}) as JsonRecord).roleId ?? args.selectedRoleId ?? "role"), record: (item ?? {}) as JsonRecord }))
+  ].sort((left, right) => timestampOf(left.record).localeCompare(timestampOf(right.record)));
 
   const renderLogEntries = (label: string, records: unknown[]): string => {
     if (!records.length) {
@@ -913,10 +998,43 @@ export function renderLogsPanel(args: {
     ].join("");
   };
 
+  const renderCombinedEntries = (): string => {
+    if (!combined.length) {
+      return '<div class="event"><div class="event-top"><span>combined log stream</span><span>0</span></div><strong>no records</strong></div>';
+    }
+    return [
+      '<div class="event"><div class="event-top"><span>combined log stream</span><span>' + escapeText(String(combined.length)) +
+        '</span></div><strong>' + escapeText(args.selectedRoleId ? "engine + " + args.selectedRoleId : "engine + all loaded roles") +
+        '</strong><div class="hint">' + escapeText(args.stale ? "stale since last stream event" : "fresh") + "</div></div>",
+      ...combined.map((item) => {
+        const record = item.record;
+        const summary = typeof record.message === "string"
+          ? record.message
+          : typeof record.line === "string"
+            ? record.line
+            : formatJson(record);
+        return (
+          '<div class="event"><div class="event-top"><span>' +
+          escapeText(item.source) +
+          "</span><span>" +
+          escapeText(timestampOf(record) || "n/a") +
+          "</span></div><strong>" +
+          escapeText(summary) +
+          '</strong><div class="hint">' +
+          escapeText(String(record.level ?? record.type ?? "log")) +
+          "</div></div>"
+        );
+      })
+    ].join("");
+  };
+
   return [
     '<div class="structure-list">',
-    renderLogEntries("engine log", args.engine),
-    renderLogEntries("role log", args.role),
+    renderCombinedEntries(),
+    '<div class="log-stream-grid">',
+    '<div class="structure-list">' + renderLogEntries("engine log", args.engine) + "</div>",
+    '<div class="structure-list">' + renderLogEntries(args.selectedRoleId ? "role log" : "role logs", args.role) + "</div>",
+    "</div>",
     "</div>"
   ].join("");
 }
@@ -1074,21 +1192,31 @@ export function renderArtifactsPanel(args: {
   }
   const header = (args.detail.header ?? {}) as JsonRecord;
   const reviewList = Array.isArray(args.reviews?.reviews) ? args.reviews.reviews as unknown[] : [];
+  const graph = (args.graph?.graph ?? args.graph ?? {}) as JsonRecord;
+  const graphNodes = Array.isArray(graph.nodes) ? graph.nodes.length : 0;
+  const graphEdges = Array.isArray(graph.edges) ? graph.edges.length : 0;
+  const sections = [
+    '<div class="artifact-tabs"><span class="pill">Summary</span><span class="pill">Metrics</span><span class="pill">State</span><span class="pill">Audit</span><span class="pill">Timeline</span><span class="pill">Raw</span></div>',
+    '<div class="artifact-section"><div class="event"><div class="event-top"><span>summary</span><span>' + escapeText(header.status ?? "unknown") +
+      "</span></div><strong>" + escapeText(args.detail.runId ?? "n/a") +
+      '</strong><div class="hint">' + escapeText((args.detail.runDir ?? "n/a") + " · updated " + (header.updatedAt ?? "n/a")) + "</div></div>" +
+      '<div class="event"><div class="event-top"><span>artifact map</span><span>' + escapeText(reviewList.length) +
+      " reviews</span></div><strong>" + escapeText(`graph ${graphNodes} nodes / ${graphEdges} edges`) +
+      '</strong><div class="hint">resume diagnostics ' + escapeText(args.resumeDiagnostics ? "loaded" : "lazy") + " · selected review " +
+      escapeText(args.reviewDetail?.reviewId ?? "none") + "</div></div></div>",
+    '<div class="artifact-section"><div class="event"><div class="event-top"><span>metrics</span><span>snapshot</span></div><strong>Run metrics</strong></div>' +
+      renderStructuredValueCards("metrics", args.detail.metrics ?? null).join("") + "</div>",
+    '<div class="artifact-section"><div class="event"><div class="event-top"><span>state</span><span>snapshot</span></div><strong>Runtime state and stop controls</strong></div>' +
+      renderStructuredValueCards("state", args.detail.state ?? null).join("") +
+      renderStructuredValueCards("stopRequest", args.detail.stopRequest ?? null).join("") +
+      renderStructuredValueCards("stopOutcome", args.detail.stopOutcome ?? null).join("") + "</div>",
+    '<div class="artifact-section"><div class="event"><div class="event-top"><span>raw</span><span>fallback</span></div><strong>Resolved config and summary payloads</strong></div>' +
+      renderStructuredValueCards("summary", args.detail.summary ?? null).join("") +
+      renderStructuredValueCards("resolvedConfig", args.detail.resolvedConfig ?? null).join("") + "</div>"
+  ];
   return [
     '<div class="structure-list">',
-    '<div class="event"><div class="event-top"><span>run</span><span>' + escapeText(header.status ?? "unknown") + "</span></div><strong>" +
-      escapeText(args.detail.runId ?? "n/a") +
-      '</strong><div class="hint">' +
-      escapeText((args.detail.runDir ?? "n/a") + " · updated " + (header.updatedAt ?? "n/a")) +
-      "</div></div>",
-    '<div class="event"><div class="event-top"><span>artifacts</span><span>' + escapeText(reviewList.length) + " reviews</span></div><strong>" +
-      escapeText(`graph ${args.graph?.graph ? "available" : "missing"} · diagnostics ${args.resumeDiagnostics ? "loaded" : "lazy"}`) +
-      '</strong><div class="hint">selected review ' + escapeText(args.reviewDetail?.reviewId ?? "none") + "</div></div>",
-    ...renderStructuredValueCards("summary", args.detail.summary ?? null),
-    ...renderStructuredValueCards("metrics", args.detail.metrics ?? null),
-    ...renderStructuredValueCards("resolvedConfig", args.detail.resolvedConfig ?? null),
-    ...renderStructuredValueCards("stopRequest", args.detail.stopRequest ?? null),
-    ...renderStructuredValueCards("stopOutcome", args.detail.stopOutcome ?? null),
+    ...sections,
     "</div>"
   ].join("");
 }
@@ -1147,6 +1275,15 @@ export function renderRunTopologySvg(graph: Record<string, unknown> | null | und
         queue.push(target);
       }
     }
+  }
+  if (indegree.has("input")) {
+    levels.set("input", 0);
+  }
+  if (indegree.has("output")) {
+    levels.set("output", Math.max(1, ...levels.values(), 0) + 1);
+  }
+  if (indegree.has("__system_end__")) {
+    levels.set("__system_end__", Math.max(1, ...levels.values(), 0) + 1);
   }
   let fallbackLevel = Math.max(0, ...levels.values(), 0);
   for (const node of nodes) {
@@ -1250,7 +1387,20 @@ export function renderWorkbenchTopologySvg(structure: Record<string, unknown> | 
   const roles = structure.roles as JsonRecord[];
   const flows = Array.isArray(structure.flows) ? structure.flows as JsonRecord[] : [];
   const knownRoleIds = new Set(roles.map((role) => String(role.roleId ?? "")));
-  const terminalNodes: JsonRecord[] = [];
+  const terminalNodes: JsonRecord[] = [
+    {
+      roleId: "input",
+      bindingKind: "terminal",
+      nodeType: "boundary"
+    },
+    {
+      roleId: "output",
+      bindingKind: "terminal",
+      nodeType: "boundary"
+    }
+  ];
+  knownRoleIds.add("input");
+  knownRoleIds.add("output");
   for (const flow of flows) {
     for (const endpoint of [flow.fromRoleId, flow.toRoleId]) {
       const roleId = String(endpoint ?? "");
@@ -1265,6 +1415,23 @@ export function renderWorkbenchTopologySvg(structure: Record<string, unknown> | 
       });
     }
   }
+  const previewFlows = flows.map((flow) => ({
+    sourceRoleId: flow.fromRoleId,
+    targetRoleId: flow.toRoleId,
+    event: flow.eventType,
+    isErrorFlow: false,
+    recentlyActivated: false
+  }));
+  const hasInputEdge = previewFlows.some((flow) => String(flow.sourceRoleId ?? "") === "input");
+  if (!hasInputEdge && structure.entryRoleId) {
+    previewFlows.unshift({
+      sourceRoleId: "input",
+      targetRoleId: structure.entryRoleId,
+      event: "START",
+      isErrorFlow: false,
+      recentlyActivated: false
+    });
+  }
   return renderRunTopologySvg({
     entryRoleId: structure.entryRoleId,
     nodes: roles.concat(terminalNodes).map((role) => ({
@@ -1277,12 +1444,6 @@ export function renderWorkbenchTopologySvg(structure: Record<string, unknown> | 
       pendingReviewCount: 0,
       lastSelectedEvent: role.reviewMode || role.joinMode || role.routingMode || "structure"
     })),
-    edges: flows.map((flow) => ({
-          sourceRoleId: flow.fromRoleId,
-          targetRoleId: flow.toRoleId,
-          event: flow.eventType,
-          isErrorFlow: false,
-          recentlyActivated: false
-        }))
+    edges: previewFlows
   }).replace("Run topology graph", "Mermaid workbench topology");
 }

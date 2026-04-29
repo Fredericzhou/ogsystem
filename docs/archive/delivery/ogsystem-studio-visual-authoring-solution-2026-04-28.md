@@ -1,7 +1,7 @@
 # OGSystem Studio Visual Authoring Solution
 
 Date: 2026-04-28  
-Status: revised proposal; depends on delivered debug-first console Phase 0-4
+Status: delivered; Studio Bridge graph-first MVP, visual authoring model, console UX remediation, and regression complete
 Scope: 在不影响现有内核的前提下，为 OGSystem 增加 Studio Bridge 和后续 X6 风格可视化编辑工作台，并稳定生成 `system.mmd`
 
 ## 1. Decision Summary
@@ -10,11 +10,11 @@ OGSystem 不应长期把 `mmd` 文本编辑作为主 authoring 入口。
 
 但根据当前项目状态，Studio 不应跳过已经交付的 debug-first console、Ops Summary 和 Project Readiness 直接进入“大画布重构”。
 
-最佳实践应调整为：
+最佳实践已经调整为：
 
-1. 先做 `Studio Bridge`，把现有 Mermaid Workbench、Project Readiness、Config Explain、Ops Summary、Run Console 串成一条 authoring-to-debug 闭环。
-2. 再引入独立的 `Studio Authoring Document` 作为设计真相。
-3. 最后把 authoring document 投影到 X6 风格画布，并稳定导出 `system.mmd` 供现有 runtime 使用。
+1. 已先完成 `Studio Bridge / authoring model`，把现有 Mermaid Workbench、Project Readiness、Config Explain、Ops Summary、Run Console 串成一条 authoring-to-debug 闭环。
+2. 已引入独立的 `Studio Authoring Document` 和 deterministic Mermaid serializer，作为后续设计层基础。
+3. 已把 authoring document 投影到 X6 风格画布工作区，补齐 graph-first MVP editing，并稳定导出 `system.mmd` 供现有 runtime 使用。
 
 推荐主路径：
 
@@ -36,7 +36,7 @@ Studio Authoring Document
 
 这条路径的关键点是：
 
-1. 短期不把画布作为第一步，而是先把现有调试底座接入 authoring 流程。
+1. Bridge 阶段已经把现有调试底座接入 authoring 流程，避免了大画布先行。
 2. 长期画布编辑的真相不是 Mermaid 字符串，而是 Studio Authoring Document。
 3. `system.mmd` 是 runtime truth，也是可读、可 diff、可运行的标准产物。
 4. 现有 `src/runtime/*` 不改执行语义，只继续消费 `system.mmd`。
@@ -49,7 +49,8 @@ Studio Authoring Document
 - `Phase 4 Project Readiness` 已交付：`GET /api/v1/project/readiness` 和 `Project Readiness` 面板可以在运行前暴露 missing bindings、strict handoff contract coverage、role repo health。
 - `Ops Summary` 已交付：`GET /api/v1/project/ops-summary` 和 `Ops Summary` 面板可以聚合 recent failures、role/errorCode/errorCategory 分布、review/rework pending、resume blocking 和 drift sources。
 - `Mermaid Workbench` 已存在：支持 project source load、validate、save、save-as、rendered/structure/source 视图和 run start/resume 控制面。
-- `Studio Bridge / visual authoring` 仍 pending。
+- `Studio Bridge / authoring model` 已交付：Workbench 入口、Bridge inspector、authoring draft、deterministic Mermaid serializer、canvas model projection、template draft 已有 visualizer client/API/unit 测试。
+- `X6-style graph-first editing` 已交付 MVP：Bridge 中心画布、role/flow selection、add role、delete role、add edge、fit/move layout、apply-canvas API、deterministic generated MMD、Run Debug/Project/Config/Logs/Artifacts UX 优化已有 visualizer client/API/unit 测试。
 
 因此，Studio 方案必须以这些现有能力为底座，而不是重新发明第二套 readiness、binding、contract、failure 或 resume diagnostics。
 
@@ -66,7 +67,8 @@ Studio Authoring Document
 | Ops Summary | 已存在 | `src/visualizer/ops-summary-projection.ts`、`GET /api/v1/project/ops-summary`、`tests/visualizer-ops-summary.test.mjs` | Studio 不复制 ops 聚合，只提供回链和上下文入口。 |
 | Failure / Resume / Review 调试面板 | 已存在 | `src/visualizer/data.ts`、`src/visualizer/client-renderers.ts`、`tests/visualizer-data.test.mjs`、`tests/visualizer-client.test.mjs` | 节点和 flow 的 debug 信息应作为 read-only projection 展示。 |
 | Runtime 主链 | 已存在且应保持稳定 | `src/runtime/*`、`src/parser/*`、`src/runtime/compiler.ts` | Studio 只能生成 `system.mmd`，不能绕过 parser/compiler/runtime。 |
-| Studio Bridge / visual authoring | 未交付 | roadmap 中仍为 Phase 5 / pending | 下一步应优先做 Bridge，而不是直接上完整 X6 画布。 |
+| Studio Bridge / authoring model | 已交付 | `src/visualizer/studio-authoring.ts`、`src/visualizer/studio-templates.ts`、`POST /api/v1/project/studio/bridge`、`tests/visualizer-studio-authoring.test.mjs` | Bridge、authoring draft 和 graph-first MVP 已可用，且不引入 runtime 依赖。 |
+| X6-style graph-first visual editing | 已交付 MVP | `renderStudioGraphCanvas`、`POST /api/v1/project/studio/authoring/apply-canvas`、`applyCanvasDocumentToAuthoring`、`tests/visualizer-client.test.mjs` | 以现有轻量 visualizer 前端交付 graph-first editing，不引入 runtime 依赖。 |
 
 当前测试入口：
 
@@ -80,7 +82,7 @@ pnpm run test:visualizer
 
 本方案必须同时满足以下约束：
 
-1. UI 形态直接决定可用性，但下一步必须先补 `Studio Bridge`，而不是立即引入大前端重构。
+1. UI 形态直接决定可用性；已在 `Studio Bridge / authoring model` 基础上补 X6-style graph-first editing 和 UX backlog，没有另起大前端重构。
 2. 不影响现有内核。现有 `parse-mermaid -> SystemDefinition -> compiler -> runtime` 主链保持不变。
 3. `system.mmd` 仍然保留为项目内可读、可 diff、可运行的标准产物。
 4. Studio 生成、保存、dry-run 后必须能直接跳到现有 Run Console 调试，不允许形成独立诊断孤岛。
@@ -164,7 +166,7 @@ Studio 只负责：
 
 ### 4.5 Studio Bridge
 
-这是当前最合适的下一步，而不是直接上完整 X6。
+这是已经完成的过渡层，用于稳定 authoring、validation、graph-first editing 和 debug 闭环。
 
 Studio Bridge 面向“边改边知道会不会跑、为什么不能跑”。
 
@@ -348,6 +350,176 @@ dry-run 完成后必须提供：
 
 如果 run 失败，Studio 不应只显示“运行失败”，而应链接到现有 failure projection 给出的 deterministic next checks。
 
+## 5.7 Console UX Remediation Plan
+
+在引入 X6 前后，现有 console 的信息架构也需要收敛。目标不是增加复杂度，而是减少空白、重叠和平铺 JSON，让 Studio 和 Run Debug 都像成熟产品一样稳定可扫。
+
+### 5.7.1 Run Debug
+
+当前问题：
+
+- `Run Snapshot` 在窄宽度或长状态文本下可能重叠。
+- `Timeline` 下方容易出现大量空白，主调试视图视觉重心不稳。
+
+推荐改造：
+
+- `Run Snapshot` 使用稳定的 `auto-fit/minmax` stats grid。
+- stats 数字和状态文本必须 `min-width: 0`、可换行或省略，不能撑破卡片。
+- `Timeline` 与 `Graph View / State` 组成主工作区：桌面端 Timeline 占主列，Graph/State 占侧列；移动端单列堆叠。
+- Timeline 卡片高度随内容收缩，长日志或事件列表使用内部滚动，不让 grid 留出空洞。
+- Failure Triage、Review Queue、Resume Readiness 作为第二层调试区域，不挤压主工作区。
+
+验收：
+
+- 1366px、1024px、390px 宽度下 `Run Snapshot` 无重叠。
+- Timeline 下方无明显无内容空白。
+- 选中失败 run 时，Failure / Resume / Logs 的入口仍在首屏附近可达。
+
+### 5.7.2 Project Overview And Rendered Preview
+
+Project 首页应更像项目控制面，而不是长列表：
+
+- `Project Overview` 拆成紧凑多栏：
+  - system summary
+  - binding summary
+  - special roles
+  - validation/readiness status
+  - recent warnings
+- 多栏使用 responsive grid，桌面端 3-4 列，移动端 1 列。
+- role 列表只展示摘要，详细信息交给 Studio Bridge / Config Explain。
+
+`Rendered` 不再承担编辑真相，但要成为可用的图预览：
+
+- 使用 X6 或与 X6 同源的 canvas projection 渲染，而不是只读 SVG 列表。
+- 支持 pan、zoom in/out、fit view。
+- 支持拖拽节点进行临时布局调整。
+- 增加显式 `input/start` boundary node 和 `output/__system_end__` boundary node。
+- 自动布局必须固定方向：start/input 在左，output/end 在右，role 按拓扑层级排列。
+- 修复“看似反向箭头”的布局问题：禁止将 entry role 放到 start/input 左侧，也禁止将 `__system_end__` 放到 role 左侧。
+
+约束：
+
+- Rendered/Canvas 中的拖拽位置只进浏览器缓存或 session state。
+- 不写入 `system.mmd`。
+- 默认布局必须足够好，即使没有缓存也能正确表达方向。
+
+### 5.7.3 Studio Bridge Graph-First Editing
+
+Studio Bridge 不应长期以 role/flow 列表为主入口。列表只能作为导航，主编辑面必须是 X6 graph。
+
+推荐布局：
+
+```text
++----------------------------------------------------------------------------------+
+| Toolbar: Validate | Save system.mmd | Save Draft | Generate MMD | Dry Run | Fit |
++----------------------+--------------------------------------+--------------------+
+| Navigator / Palette  | X6 Canvas                            | Inspector          |
+| - roles              | - draggable nodes                    | Role / Flow fields |
+| - flows              | - connectable edges                  | Diagnostics        |
+| - templates          | - boundary start/end nodes           | Config links       |
++----------------------+--------------------------------------+--------------------+
+```
+
+编辑能力：
+
+- 新增 role node。
+- 删除 role node，必须提示会删除相关 flows。
+- 拖出 edge 创建 flow，并在 Inspector 中填写 `eventType`。
+- 点击 node 编辑 binding、review、join、loop、context map。
+- 点击 edge 编辑 from/to/eventType，并显示 contract/readiness 状态。
+- 自动维护 join role 的 `join.sources`，高级模式允许覆盖。
+- `parallel_split`、review、join、loop 作为 role badges 和 Inspector 字段，不作为独立 BPMN 节点。
+
+技术边界：
+
+- 引入 `@antv/x6` 是推荐路径。
+- X6 cell schema 只作为 view/editor state，不作为持久 authoring truth。
+- X6 不进入 `src/runtime/*` import graph。
+- X6 不直接读写 `.ogs/runs/*`。
+- X6 编辑结果必须先投影到 `StudioAuthoringDocument`，再生成 Mermaid，再走现有 validate/save/dry-run。
+
+### 5.7.4 Config Explain
+
+Config Explain 应按 role/flow 卡片组织，而不是平铺：
+
+- Role card：
+  - `roleId`
+  - binding kind
+  - declared binding
+  - resolved model/profile
+  - role package path
+  - schema health
+  - warnings
+- Flow card：
+  - `fromRoleId -> toRoleId`
+  - `eventType`
+  - contract id
+  - schema path
+  - status：covered / missing / failed / pass / unknown
+  - missing reason
+
+交互：
+
+- 支持按 role、flow、missing、warning 过滤。
+- 从 Studio Bridge 选中 node/edge 后，可以定位到对应 Config card。
+- 保持数据来源为现有 binding / contract / role package projection，不复制规则。
+
+### 5.7.5 Logs
+
+Logs 保留现有筛选，但默认视图要支持“不筛选完整查看”：
+
+- 默认展示合并日志流：
+  - engine logs
+  - role logs
+  - lifecycle/audit log 摘要
+- 支持分页或 `Load more`。
+- 支持 page size：100 / 500 / 1000。
+- role / tail / since / type 筛选作为 refinement，而不是默认只能看 latest role。
+- 大日志仍按需加载，避免一次性读取所有历史文件。
+
+约束：
+
+- 不改变 run artifact 格式。
+- 不让前端直接读文件系统。
+- 继续通过 visualizer API 做分页和筛选。
+
+### 5.7.6 Artifacts
+
+Artifacts 需要从 raw dump 改成分组：
+
+- `Summary`
+- `Metrics`
+- `State`
+- `Audit`
+- `Timeline`
+- `Raw`
+
+推荐默认：
+
+- 首屏展示 Summary + Metrics 卡片。
+- State / Audit / Timeline 放到二级 tab 或折叠区。
+- Raw JSON 只作为最后的 fallback。
+- 大 JSON 使用折叠和复制按钮，避免平铺撑爆页面。
+
+### 5.7.7 Delivery Order
+
+实施顺序已按以下路径落地：
+
+1. 已修 Run Debug 重叠和 Timeline 空白。
+2. 已压缩 Project Overview，多栏卡片化。
+3. 已引入 X6-style Project Rendered，并补 start/end boundary 和默认拓扑布局。
+4. 已将 Studio Bridge 升级为 X6-style graph-first editing MVP。
+5. 已将 Config Explain role/flow card 化。
+6. 已给 Logs 增加默认完整分页查看。
+7. 已给 Artifacts 增加分类 tab / 卡片。
+
+每一步都必须保持：
+
+- 不改 runtime 执行语义。
+- 不改 parser/compiler 语义。
+- 不让 X6 或浏览器 UI 状态成为 runtime truth。
+- 测试入口至少覆盖 `pnpm run test:visualizer`。
+
 ## 6. Authoring Data Model
 
 完整 Studio 需要一个独立于 `mmd` 的 canonical 数据结构。建议新增：
@@ -392,9 +564,10 @@ type StudioAuthoringDocument = {
     toRoleId: string;
     eventType: string;
   }>;
-  layout: {
-    nodes: Record<string, { x: number; y: number; width?: number; height?: number }>;
+  transientLayout?: {
+    nodes?: Record<string, { x: number; y: number; width?: number; height?: number }>;
     viewport?: { x: number; y: number; zoom: number };
+    source: "browser_cache" | "session" | "auto_layout";
   };
 };
 ```
@@ -404,6 +577,8 @@ type StudioAuthoringDocument = {
 - 运行时语义字段和画布布局字段分开。
 - 只保留 OGSystem 真正执行需要的概念。
 - 不把纯 UI 状态混进 `system.mmd`。
+- 节点位置、viewport、selection 属于临时 UI 状态，默认不写入项目文件；可以用浏览器缓存提升体验，但每次打开必须能从 authoring document 自动布局恢复。
+- `transientLayout` 只是类型层面的 UI cache envelope，默认不写入 `.ogs/studio/system.authoring.json`；如果后续允许显式保存 layout，也必须标记为纯 UI cache，不能参与 Mermaid 生成、validation、doctor、compiler 或 runtime。
 
 对当前阶段，`StudioAuthoringDocument` 不应一次性替换 Mermaid Workbench。
 
@@ -436,16 +611,23 @@ StudioAuthoringDocument
 - role -> node
 - flow -> edge
 - role metadata -> node badges / node hints
-- layout -> node positions
+- auto layout / browser cached layout -> node positions
 
 ### 7.2 `canvas -> authoring`
 
 用于用户拖拽和连接后的保存：
 
-- 更新节点位置
 - 更新拓扑连接
 - 保留 role/flow 语义字段
 - 删除和新增 role/flow
+
+节点拖拽、缩放、viewport、selection 不作为 authoring truth 保存。推荐策略：
+
+- 默认每次打开基于拓扑和 role metadata 自动布局。
+- 用户拖拽位置只写入浏览器缓存或当前 session state。
+- 浏览器缓存 miss 时不影响打开和运行。
+- `system.mmd` 和 `.ogs/studio/system.authoring.json` 都不能依赖画布坐标才能恢复语义。
+- 即使后续提供“保存布局”开关，保存对象也只能是 UI cache，不能改变 Mermaid serializer 输出，不能改变 validation/readiness 结果，不能被 runtime 消费。
 
 注意：
 
@@ -769,7 +951,8 @@ Studio 只能做两类事：
    - 先并存：Workbench 作为 source / advanced mode，Studio Bridge 作为结构化编辑入口。
 3. 画布状态和运行状态混写
    - 布局、选中态、viewport、调试缓存不能写进 `system.mmd`。
-   - 这些只能放入 `.ogs/studio/system.authoring.json` 或前端状态。
+   - 默认只放入浏览器缓存或当前 session state。
+   - 如果后续提供显式保存 layout，保存对象也只能是纯 UI cache，不得成为 authoring truth、Mermaid serializer 输入、validation 输入或 runtime artifact。
 
 风险分级：
 
@@ -803,12 +986,21 @@ dry-run 失败能打开 Run Console 定位原因
 - 原生 `HTML/CSS/JS` 或轻量客户端脚本：页面壳与状态
 - Node 内置 `http`: 服务端
 
+确认后的产品决策：
+
+- 应引入 X6，实现画布内节点和连线编辑能力。
+- X6 只属于 visualizer/studio 前端层，不影响 runtime、parser、compiler 或现有 CLI 能力。
+- 节点位置不写入项目文件；默认使用自动布局，用户调整只进入浏览器缓存或当前 session。
+- 即使浏览器缓存清空，Studio 也必须能从 `system.mmd` / authoring draft 自动恢复可读布局。
+- 不为了 X6 引入重型前端重构；优先在现有 visualizer surface 内按需增加客户端依赖和轻量 bundling。
+
 不建议一开始做的事：
 
 - 不要把 X6 的 cell schema 直接当永久存储格式
 - 不要让前端直接读写 `.ogs/runs/*`
 - 不要要求用户先学 Mermaid 再学画布
 - 不要把 run observability 和 Studio 编辑混成一个单页长面板
+- 不要把 layout、selection、viewport、hover state 写入 `system.mmd` 或 runtime artifacts
 
 ## 15. Suggested Module Layout
 
@@ -823,6 +1015,8 @@ src/visualizer/
   studio-authoring-import.ts
   studio-authoring-export-mermaid.ts
   studio-authoring-validate.ts
+  studio-x6-canvas.ts
+  studio-layout.ts
   studio-client-renderers.ts
 ```
 
@@ -854,6 +1048,10 @@ src/console/
   - `authoring -> mmd`
 - `canvas-model.ts`
   - `authoring <-> canvas`
+- `studio-x6-canvas.ts`
+  - X6 graph 初始化、节点/边交互、zoom/pan/fit、selection bridge
+- `studio-layout.ts`
+  - 从 topology 生成默认布局，处理 start/end boundary 和方向约束
 - `authoring-validate.ts`
   - Studio 前置诊断和现有静态校验编排
 
@@ -881,10 +1079,14 @@ src/console/
 
 ### Phase 2: Visual Studio
 
-- X6 画布
+- 引入 X6 画布作为 view/editor layer
+- Project Rendered 支持 start/end boundary、zoom、pan、fit、默认拓扑布局
+- Studio Bridge 升级为 graph-first editing，而不是列表主视图
 - role/edge Inspector
 - 自动 `join.sources`
 - 诊断内联高亮
+- 节点位置仅缓存到浏览器或 session，不写入 `system.mmd` / authoring truth
+- Run Debug / Project Overview / Config / Logs / Artifacts 进行轻量信息架构优化
 
 ### Phase 3: Assisted Authoring
 
@@ -947,9 +1149,9 @@ Phase 1 完成定义：
 pnpm run test:visualizer
 ```
 
-### 17.3 Phase 2: Visual Studio
+### 17.3 Phase 2: Canvas Model And Graph-First MVP
 
-目标：引入 X6 风格画布，但 X6 只作为 view layer。
+目标：交付 canvas model、rich projection、selection inspector 和 X6-style graph-first editing MVP。
 
 | 状态 | 任务 | 交付物 | 验收方式 |
 | --- | --- | --- | --- |
@@ -958,15 +1160,18 @@ pnpm run test:visualizer
 | [x] | Rich flow link | Bridge/Canvas flow projection 包含 eventType、runtime error flow、join source 状态 | client/unit test 覆盖 flow projection |
 | [x] | Canvas selection -> Inspector | Bridge role/flow selection 进入对应 inspector | `tests/visualizer-client.test.mjs` 覆盖 selection state |
 | [x] | Inline diagnostics | validate/readiness/failure next-checks 在 Bridge 与现有 debug 面板内联展示 | client/data test 覆盖 projection mapping |
-| [x] | Layout state 隔离 | layout/viewport 只保存在 authoring/canvas document，不进入 `system.mmd` | serializer test 覆盖无 UI 状态泄漏 |
+| [x] | Layout state 隔离 | layout/viewport 不进入 `system.mmd`；默认不写 `.ogs/studio/system.authoring.json`，仅作为 browser/session UI state | serializer test 覆盖无 UI 状态泄漏 |
+| [x] | Graph-first editing MVP | Bridge 中心画布、add role、delete role、add edge、fit/move、right inspector | `tests/visualizer-client.test.mjs` 覆盖用户动作 |
 
 Phase 2 完成定义：
 
 ```text
-X6/canvas 不进入 runtime import graph
+canvas model 不进入 runtime import graph
 system.mmd deterministic output
 pnpm run test:visualizer
 ```
+
+X6-style graph-first MVP 已交付；后续若需要真实 `@antv/x6` 运行时，可在不改变 authoring/runtime contract 的前提下替换 view layer。
 
 ### 17.4 Phase 3: Assisted Authoring
 
@@ -978,6 +1183,22 @@ pnpm run test:visualizer
 | [x] | 从示例生成初稿 | `createStudioAuthoringFromMermaidDraft` 可把 Mermaid example 转成 authoring draft | fixture-style unit test 覆盖 Mermaid draft |
 | [x] | `nl2mmd` 接入 Studio 初稿 | nl2mmd Mermaid output 复用 `createStudioAuthoringFromMermaidDraft` 进入 Bridge draft | integration-style unit test 覆盖生成后 parse/serialize |
 | [x] | 一键调试闭环 | Bridge `Generate MMD` / `Dry Run` -> existing start action -> Run Console | end-to-end visualizer client test |
+
+### 17.5 UX / X6-Style Follow-up Backlog
+
+这些任务来自当前产品验收反馈，已作为本轮 visualizer/studio UI 层改造落地，不进入 runtime 内核。
+
+| 状态 | 任务 | 交付物 | 验收方式 |
+| --- | --- | --- | --- |
+| [x] | 修复 Run Snapshot 重叠 | responsive stats grid、文本溢出处理 | `pnpm run test:visualizer` |
+| [x] | 减少 Timeline 下方空白 | Run Debug 主工作区重排，Timeline/Graph 优先，Failure 二层区域 | `pnpm run test:visualizer` |
+| [x] | Project Overview 紧凑多栏 | system/binding/special roles/readiness cards responsive grid | `pnpm run test:visualizer` |
+| [x] | 引入 X6-style Project Rendered | graph preview、start/end boundary、默认拓扑方向约束 | `pnpm run test:visualizer` |
+| [x] | Studio Bridge graph-first editing | canvas-first work area、right inspector、add role、delete role、add edge、fit/move | `tests/visualizer-client.test.mjs` |
+| [x] | X6-style layout 不持久化 | layout/viewport 不进入 `system.mmd`，apply-canvas 不直接写项目文件 | `tests/visualizer-studio-authoring.test.mjs`、`tests/visualizer.test.mjs` |
+| [x] | Config Explain role/flow 卡片化 | role cards、flow cards、missing/warning filter affordance | `pnpm run test:visualizer` |
+| [x] | Logs 默认完整分页查看 | merged logs view、Load more、page size 100/500/1000、all-role default | `tests/visualizer-client.test.mjs` |
+| [x] | Artifacts 分类组织 | Summary/Metrics/State/Audit/Timeline/Raw grouped cards | `pnpm run test:visualizer` |
 
 ### 17.6 Delivered Implementation Evidence
 
@@ -1011,13 +1232,27 @@ pnpm run test:runtime-regression
 pnpm test
 ```
 
-最终回归结果：
+最新回归记录：
 
 ```text
+Date: 2026-04-29
+pnpm run test:visualizer
+1..45
+# pass 45
+
 pnpm test
-1..314
-# pass 314
+1..317
+# pass 317
+
+HTTP user-path smoke:
+workdir examples/ogs-gstacklike
+Studio Bridge roles 8 / flows 18
+apply-canvas validation ok
+generate-mmd validation ok
+Project Readiness canDryRun true / blockers 0
 ```
+
+说明：本轮任务完成后已重新执行 visualizer 回归，并用真实示例项目完成用户路径烟测。
 
 内核影响判断：
 
@@ -1025,7 +1260,7 @@ pnpm test
 - 未修改 parser/compiler/runtime 执行语义。
 - Studio Bridge、Authoring Document、Canvas Document 都位于 `src/visualizer/*`，只生成或验证 `system.mmd`，runtime 仍只消费现有 `system.mmd` 主链。
 
-### 17.5 Tracking Rules
+### 17.7 Tracking Rules
 
 执行过程中每个任务必须同时更新：
 
@@ -1048,12 +1283,12 @@ pnpm test
 
 ## 19. Final Recommendation
 
-如果目标是“像 X6 一样可视化编辑，但不破坏现有 OGSystem”，正确做法不是把文本编辑器换成画布，而是：
+如果目标是“像 X6 一样可视化编辑，但不破坏现有 OGSystem”，正确做法不是把文本编辑器换成画布，而是沿着已经落地的 Bridge 路径继续演进：
 
-1. 先做 `Studio Bridge`，把现有 Workbench、Project Readiness、Config Explain、Ops Summary 和 Run Console 串起来。
-2. 再新增 `Studio Authoring Document` 作为设计真相。
+1. 保持已交付的 `Studio Bridge / authoring model`，继续复用 Workbench、Project Readiness、Config Explain、Ops Summary 和 Run Console。
+2. 以已新增的 `Studio Authoring Document` 作为设计层基础。
 3. 用 Inspector 承接 OGSystem 的 metadata 语义。
-4. 在诊断闭环稳定后引入 X6 风格画布。
+4. 保持 X6-style 画布作为 view/editor layer，后续可按需替换为真实 `@antv/x6` 实现。
 5. 稳定导出 `system.mmd`。
 6. 继续让现有内核消费 `system.mmd`。
 
@@ -1061,4 +1296,4 @@ pnpm test
 
 简化成一句话：
 
-Studio 的下一步不是“大画布先行”，而是“authoring 每一步都能解释、验证、dry-run，并能立刻跳回 Run Console 调试”。
+Studio 当前已经做到：在已交付 Bridge 和 authoring model 上提供 X6-style preview、graph-first editing 与 UX remediation，同时保持“authoring 每一步都能解释、验证、dry-run，并能立刻跳回 Run Console 调试”。

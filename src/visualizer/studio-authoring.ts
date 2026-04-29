@@ -68,7 +68,7 @@ export type StudioCanvasDocument = {
     bindingKind: StudioAuthoringRole["bindingKind"];
   }>;
   edges: Array<{
-    id: string;
+    id?: string;
     source: string;
     target: string;
     label: string;
@@ -236,6 +236,30 @@ function buildBridgeFlows(authoring: StudioAuthoringDocument): StudioBridgeFlow[
     }));
 }
 
+function deterministicCanvasEdgeId(edge: StudioCanvasDocument["edges"][number], index: number): string {
+  const target = edge.target === SYSTEM_END_ROLE_ID ? "output" : edge.target;
+  return `${index + 1}:${edge.source}:${edge.eventType}:${target}`;
+}
+
+function normalizeCanvasEdgeId(args: {
+  edge: StudioCanvasDocument["edges"][number];
+  index: number;
+  usedFlowIds: Set<string>;
+}): string {
+  const preferred = typeof args.edge.id === "string" ? args.edge.id.trim() : "";
+  const base = preferred && !args.usedFlowIds.has(preferred)
+    ? preferred
+    : deterministicCanvasEdgeId(args.edge, args.index);
+  let candidate = base;
+  let suffix = 2;
+  while (args.usedFlowIds.has(candidate)) {
+    candidate = `${base}#${suffix}`;
+    suffix += 1;
+  }
+  args.usedFlowIds.add(candidate);
+  return candidate;
+}
+
 export function authoringToCanvasDocument(authoring: StudioAuthoringDocument): StudioCanvasDocument {
   const bridgeRoles = buildBridgeRoles(authoring);
   const bridgeFlows = buildBridgeFlows(authoring);
@@ -288,15 +312,17 @@ export function applyCanvasDocumentToAuthoring(args: {
     };
   }
   const flows: StudioAuthoringDocument["flows"] = {};
-  for (const edge of args.canvas.edges) {
+  const usedFlowIds = new Set<string>();
+  for (const [index, edge] of args.canvas.edges.entries()) {
     const fromExists = Boolean(args.authoring.roles[edge.source]);
     const toExists = edge.target === SYSTEM_END_ROLE_ID || Boolean(args.authoring.roles[edge.target]);
     if (!fromExists || !toExists) {
       continue;
     }
-    const existing = args.authoring.flows[edge.id];
-    flows[edge.id] = {
-      flowId: edge.id,
+    const flowId = normalizeCanvasEdgeId({ edge, index, usedFlowIds });
+    const existing = typeof edge.id === "string" ? args.authoring.flows[edge.id] : undefined;
+    flows[flowId] = {
+      flowId,
       fromRoleId: edge.source,
       toRoleId: edge.target,
       eventType: edge.eventType,
