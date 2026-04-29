@@ -78,7 +78,8 @@ const PAGE_ELEMENT_IDS = [
   "start-run",
   "resume-run",
   "stop-run",
-  "refresh"
+  "refresh",
+  "locale-select"
 ];
 
 function cloneJson(value) {
@@ -1225,7 +1226,8 @@ async function createClientHarness(options = {}) {
   const windowObject = {
     location: {
       pathname: "/",
-      search: options.search ?? ""
+      search: options.search ?? "",
+      href: "/"
     },
     history: {
       replaceState(_state, _title, url) {
@@ -1301,7 +1303,7 @@ async function createClientHarness(options = {}) {
       revokeObjectURL() {}
     }
   });
-  vm.runInContext(buildClientAppScript("/api/v1"), context);
+  vm.runInContext(buildClientAppScript("/api/v1", options.i18n), context);
   for (let attempt = 0; attempt < 80; attempt += 1) {
     await settle();
     if (
@@ -1316,6 +1318,7 @@ async function createClientHarness(options = {}) {
     confirmCalls,
     document,
     eventSources,
+    window: windowObject,
     promptCalls,
     async flushTimers() {
       while (timers.size > 0) {
@@ -1392,6 +1395,27 @@ test("visualizer client formats review decision phase labels", () => {
   assert.equal(formatReviewStatusLabel("pending_reconcile"), "pending reconcile");
   assert.equal(formatReviewStatusLabel("waiting_review"), "waiting review");
   assert.equal(formatReviewStatusLabel("applied"), "applied");
+});
+
+test("visualizer client renders zh-CN chrome while preserving runtime identifiers", async () => {
+  const harness = await createClientHarness({
+    i18n: { locale: "zh-CN" }
+  });
+
+  assert.match(harness.document.getElementById("console-tabs").textContent, /运行调试/);
+  assert.match(harness.document.getElementById("action-form").textContent, /选择启动/);
+  assert.match(harness.document.getElementById("failure-summary").textContent, /TOOL_EXECUTION_TIMEOUT/);
+});
+
+test("visualizer client language switch stores locale and refreshes with lang query", async () => {
+  const harness = await createClientHarness();
+
+  await harness.document.getElementById("locale-select").change("zh-CN");
+
+  assert.equal(harness.window.localStorage.getItem("ogs.visualizer.lang"), "zh-CN");
+  assert.match(harness.window.location.href, /^\//);
+  assert.match(harness.window.location.href, /[?&]lang=zh-CN/);
+  assert.match(harness.window.location.href, /[?&]runId=run-123/);
 });
 
 test("visualizer client keeps diagnostics lazy and renders decision phase detail", async () => {

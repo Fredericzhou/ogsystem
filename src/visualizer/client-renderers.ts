@@ -1,4 +1,5 @@
 type JsonRecord = Record<string, unknown>;
+type Translator = (key: string, vars?: Record<string, unknown>, fallback?: string) => string;
 
 function escapeText(value: unknown): string {
   return String(value ?? "")
@@ -70,7 +71,9 @@ export function renderStudioGraphCanvas(args: {
   selectedRoleId: string;
   selectedFlowKey: string;
   busy: string;
+  t?: Translator;
 }): string {
+  const t: Translator = typeof args.t === "function" ? args.t : (_key, _vars, fallback) => fallback ?? _key;
   const roleIds = args.roles.map((role) => String(role.roleId ?? "")).filter(Boolean);
   const columns = ["input", ...roleIds, "output"];
   const nodeById = new Map(args.roles.map((role) => [String(role.roleId ?? ""), role]));
@@ -113,13 +116,13 @@ export function renderStudioGraphCanvas(args: {
   });
   return [
     '<div class="studio-canvas-shell">',
-    '<div class="studio-canvas-toolbar"><span class="hint">Graph-first draft preview</span><div class="actions">',
-    '<button class="button subtle" id="studio-bridge-add-role"' + args.busy + '>Add role</button>',
-    '<button class="button subtle" id="studio-bridge-add-edge"' + args.busy + '>Add edge</button>',
-    '<button class="button danger" id="studio-bridge-delete-role"' + args.busy + '>Delete role</button>',
-    '<button class="button subtle" id="studio-bridge-fit"' + args.busy + '>Fit</button>',
-    '<button class="button subtle" id="studio-bridge-nudge-left"' + args.busy + '>Move left</button>',
-    '<button class="button subtle" id="studio-bridge-nudge-right"' + args.busy + '>Move right</button>',
+    '<div class="studio-canvas-toolbar"><span class="hint">' + escapeText(t("studio.graphPreview", undefined, "Graph-first draft preview")) + '</span><div class="actions">',
+    '<button class="button subtle" id="studio-bridge-add-role"' + args.busy + '>' + escapeText(t("studio.addRole", undefined, "Add role")) + '</button>',
+    '<button class="button subtle" id="studio-bridge-add-edge"' + args.busy + '>' + escapeText(t("studio.addEdge", undefined, "Add edge")) + '</button>',
+    '<button class="button danger" id="studio-bridge-delete-role"' + args.busy + '>' + escapeText(t("studio.deleteRole", undefined, "Delete role")) + '</button>',
+    '<button class="button subtle" id="studio-bridge-fit"' + args.busy + '>' + escapeText(t("studio.fit", undefined, "Fit")) + '</button>',
+    '<button class="button subtle" id="studio-bridge-nudge-left"' + args.busy + '>' + escapeText(t("studio.moveLeft", undefined, "Move left")) + '</button>',
+    '<button class="button subtle" id="studio-bridge-nudge-right"' + args.busy + '>' + escapeText(t("studio.moveRight", undefined, "Move right")) + '</button>',
     "</div></div>",
     '<div class="studio-canvas" style="grid-template-columns: repeat(' + Math.max(columns.length, 2) + ', minmax(150px, 1fr));">',
     ...nodeButtons,
@@ -252,7 +255,9 @@ export function renderOpsSummaryPanel(args: {
 
 export function renderProjectReadinessPanel(args: {
   readiness: JsonRecord | null | undefined;
+  t?: Translator;
 }): string {
+  const t: Translator = typeof args.t === "function" ? args.t : (_key, _vars, fallback) => fallback ?? _key;
   const readiness = args.readiness ?? {};
   const blockers = Array.isArray(readiness.blockers) ? readiness.blockers as JsonRecord[] : [];
   const warnings = Array.isArray(readiness.warnings) ? readiness.warnings as JsonRecord[] : [];
@@ -274,44 +279,42 @@ export function renderProjectReadinessPanel(args: {
     "</div></div>"
   );
   if (!readiness || Object.keys(readiness).length === 0) {
-    return '<div class="hint">Project readiness data unavailable.</div>';
+    return '<div class="hint">' + escapeText(t("readiness.dataUnavailable", undefined, "Project readiness data unavailable.")) + '</div>';
   }
   return [
     '<div class="structure-list">',
-    '<div class="event"><div class="event-top"><span>dry-run readiness</span><span>' +
-      escapeText(status) +
+    '<div class="event"><div class="event-top"><span>' + escapeText(t("readiness.dryRunReadiness", undefined, "dry-run readiness")) + '</span><span>' +
+      escapeText(t("readiness." + status, undefined, status)) +
       '</span></div><strong>' +
-      escapeText(readiness.canDryRun ? "Project can dry-run with current structural checks." : "Project has dry-run blockers.") +
-      '</strong><div class="hint">blockers ' +
-      escapeText(String(blockers.length)) +
-      " · warnings " +
-      escapeText(String(warnings.length)) +
-      " · system " +
-      escapeText(String(readiness.systemId ?? "n/a")) +
+      escapeText(readiness.canDryRun ? t("readiness.canDryRun", undefined, "Project can dry-run with current structural checks.") : t("readiness.hasBlockers", undefined, "Project has dry-run blockers.")) +
+      '</strong><div class="hint">' +
+      escapeText(t("readiness.blockersWarningsSystem", {
+        blockers: blockers.length,
+        warnings: warnings.length,
+        systemId: String(readiness.systemId ?? "n/a")
+      }, "blockers " + blockers.length + " · warnings " + warnings.length + " · system " + String(readiness.systemId ?? "n/a"))) +
       "</div></div>",
-    '<div class="event"><div class="event-top"><span>missing bindings</span><span>' +
+    '<div class="event"><div class="event-top"><span>' + escapeText(t("readiness.missingBindings", undefined, "missing bindings")) + '</span><span>' +
       escapeText(String(missingBindings.length)) +
       '</span></div><strong>' +
-      escapeText(missingBindings.length ? missingBindings.map((item) => String(item.roleId)).join(", ") : "none") +
-      '</strong><div class="hint">checks exec.bind, model.bind, and model-selection resolution</div></div>',
-    '<div class="event"><div class="event-top"><span>contract coverage</span><span>' +
-      escapeText(String(contractCoverage.missingFlowCount ?? 0) + " missing") +
+      escapeText(missingBindings.length ? missingBindings.map((item) => String(item.roleId)).join(", ") : t("readiness.none", undefined, "none")) +
+      '</strong><div class="hint">' + escapeText(t("readiness.bindingChecks", undefined, "checks exec.bind, model.bind, and model-selection resolution")) + '</div></div>',
+    '<div class="event"><div class="event-top"><span>' + escapeText(t("readiness.contractCoverage", undefined, "contract coverage")) + '</span><span>' +
+      escapeText(t("readiness.missing", { count: String(contractCoverage.missingFlowCount ?? 0) }, String(contractCoverage.missingFlowCount ?? 0) + " missing")) +
       '</span></div><strong>' +
-      escapeText(
-        String(contractCoverage.coveredFlowCount ?? 0) +
-          " / " +
-          String(contractCoverage.eligibleFlowCount ?? 0) +
-          " eligible flows covered"
-      ) +
-      '</strong><div class="hint">handoff mode ' +
-      escapeText(String(contractCoverage.handoffMode ?? "n/a")) +
-      "</div></div>",
-    '<div class="event"><div class="event-top"><span>role repo health</span><span>' +
-      escapeText(String(unhealthyRoles.length) + " unhealthy") +
-      '</span></div><strong>' +
-      escapeText(unhealthyRoles.length ? unhealthyRoles.map((role) => String(role.roleId)).join(", ") : "all required files present") +
+      escapeText(t("readiness.flowsCovered", {
+        covered: String(contractCoverage.coveredFlowCount ?? 0),
+        eligible: String(contractCoverage.eligibleFlowCount ?? 0)
+      }, String(contractCoverage.coveredFlowCount ?? 0) + " / " + String(contractCoverage.eligibleFlowCount ?? 0) + " eligible flows covered")) +
       '</strong><div class="hint">' +
-      escapeText(String(roles.length) + " role package(s) inspected") +
+      escapeText(t("readiness.handoffMode", { mode: String(contractCoverage.handoffMode ?? "n/a") }, "handoff mode " + String(contractCoverage.handoffMode ?? "n/a"))) +
+      "</div></div>",
+    '<div class="event"><div class="event-top"><span>' + escapeText(t("readiness.roleRepoHealth", undefined, "role repo health")) + '</span><span>' +
+      escapeText(t("readiness.unhealthy", { count: unhealthyRoles.length }, String(unhealthyRoles.length) + " unhealthy")) +
+      '</span></div><strong>' +
+      escapeText(unhealthyRoles.length ? unhealthyRoles.map((role) => String(role.roleId)).join(", ") : t("readiness.allFilesPresent", undefined, "all required files present")) +
+      '</strong><div class="hint">' +
+      escapeText(t("readiness.rolesInspected", { count: roles.length }, String(roles.length) + " role package(s) inspected")) +
       "</div></div>",
     ...issueCards,
     "</div>"
@@ -324,7 +327,9 @@ export function renderStudioBridgePanel(args: {
   selectedRoleId: string;
   selectedFlowKey: string;
   actionBusy: string;
+  t?: Translator;
 }): string {
+  const t: Translator = typeof args.t === "function" ? args.t : (_key, _vars, fallback) => fallback ?? _key;
   const bridge = args.bridge ?? {};
   const validation = (bridge.validation ?? {}) as JsonRecord;
   const extracted = (bridge.extracted ?? {}) as JsonRecord;
@@ -337,14 +342,15 @@ export function renderStudioBridgePanel(args: {
   const blockers = Array.isArray(readiness.blockers) ? readiness.blockers as JsonRecord[] : [];
   const busy = args.actionBusy ? " disabled" : "";
   if (!bridge || Object.keys(bridge).length === 0) {
-    return '<div class="hint">Studio Bridge data unavailable.</div>';
+    return '<div class="hint">' + escapeText(t("studio.dataUnavailable", undefined, "Studio Bridge data unavailable.")) + '</div>';
   }
   const graphCanvas = renderStudioGraphCanvas({
     roles,
     flows,
     selectedRoleId: args.selectedRoleId,
     selectedFlowKey: args.selectedFlowKey,
-    busy
+    busy,
+    t
   });
   const roleButtons = roles.length
     ? roles.map((role) => {
@@ -409,21 +415,21 @@ export function renderStudioBridgePanel(args: {
     '<div class="structure-list studio-bridge">',
     '<div class="toolbar-row">',
     '<div class="toolbar-group">',
-    '<button class="button primary" id="studio-bridge-dry-run"' + busy + '>Dry Run</button>',
-    '<button class="button" id="studio-bridge-validate"' + busy + '>Validate</button>',
-    '<button class="button" id="studio-bridge-save"' + busy + '>Save system.mmd</button>',
-    '<button class="button subtle" id="studio-bridge-save-draft"' + busy + '>Save Draft</button>',
-    '<button class="button subtle" id="studio-bridge-generate"' + busy + '>Generate MMD</button>',
+    '<button class="button primary" id="studio-bridge-dry-run"' + busy + '>' + escapeText(t("studio.dryRun", undefined, "Dry run")) + '</button>',
+    '<button class="button" id="studio-bridge-validate"' + busy + '>' + escapeText(t("action.validate", undefined, "Validate")) + '</button>',
+    '<button class="button" id="studio-bridge-save"' + busy + '>' + escapeText(t("action.saveSystem", undefined, "Save system.mmd")) + '</button>',
+    '<button class="button subtle" id="studio-bridge-save-draft"' + busy + '>' + escapeText(t("studio.saveDraft", undefined, "Save draft")) + '</button>',
+    '<button class="button subtle" id="studio-bridge-generate"' + busy + '>' + escapeText(t("studio.generateMmd", undefined, "Generate MMD")) + '</button>',
     '</div>',
     '<div class="toolbar-group"><span class="pill' + (validation.ok ? "" : " warn") + '">' +
       escapeText(validation.ok ? "validation ok" : diagnostics.length + " diagnostics") + '</span><span class="pill' +
       (blockers.length ? " warn" : "") + '">' + escapeText(blockers.length ? blockers.length + " readiness blockers" : "readiness ready") + "</span></div>",
     "</div>",
     '<div class="studio-bridge-layout">',
-    '<div class="studio-navigator structure-list"><div class="event"><div class="event-top"><span>roles</span><span>' + escapeText(String(roles.length)) +
-      '</span></div><strong>Structured role draft</strong><div class="hint">Bridge reads the current workbench source.</div></div>' + roleButtons.join("") + "</div>",
-    '<div class="studio-graph-column">' + graphCanvas + '<div class="structure-list studio-flow-list"><div class="event"><div class="event-top"><span>flows</span><span>' + escapeText(String(flows.length)) +
-      '</span></div><strong>Structured flow draft</strong><div class="hint">Event types and join participation stay visible.</div></div>' + flowButtons.join("") + "</div></div>",
+    '<div class="studio-navigator structure-list"><div class="event"><div class="event-top"><span>' + escapeText(t("studio.roles", undefined, "roles")) + '</span><span>' + escapeText(String(roles.length)) +
+      '</span></div><strong>' + escapeText(t("studio.structuredRoleDraft", undefined, "Structured role draft")) + '</strong><div class="hint">' + escapeText(t("studio.bridgeReadsWorkbench", undefined, "Bridge reads the current workbench source.")) + '</div></div>' + roleButtons.join("") + "</div>",
+    '<div class="studio-graph-column">' + graphCanvas + '<div class="structure-list studio-flow-list"><div class="event"><div class="event-top"><span>' + escapeText(t("studio.flows", undefined, "flows")) + '</span><span>' + escapeText(String(flows.length)) +
+      '</span></div><strong>' + escapeText(t("studio.structuredFlowDraft", undefined, "Structured flow draft")) + '</strong><div class="hint">' + escapeText(t("studio.eventsVisible", undefined, "Event types and join participation stay visible.")) + '</div></div>' + flowButtons.join("") + "</div></div>",
     '<div class="studio-inspector structure-list"><div class="event"><div class="event-top"><span>system</span><span>' + escapeText(String(extracted.systemVersion ?? "n/a")) +
       '</span></div><strong>' + escapeText(String(extracted.systemId ?? "unknown")) + '</strong><div class="hint">entry ' +
       escapeText(String(extracted.entryRoleId ?? "n/a")) + " · law " + escapeText(String(extracted.lawGlobal ?? "n/a")) + "</div></div>" +
@@ -955,9 +961,11 @@ export function renderLogsPanel(args: {
   selectedRoleId: string;
   engine: unknown[];
   role: unknown[];
+  t?: Translator;
 }): string {
+  const t: Translator = typeof args.t === "function" ? args.t : (_key, _vars, fallback) => fallback ?? _key;
   if (!args.loaded) {
-    return '<div class="hint">Logs load on demand. The default view combines engine and role traces without a role filter.</div>';
+    return '<div class="hint">' + escapeText(t("logs.onDemandHint", undefined, "Logs load on demand. The default view combines engine and role traces without a role filter.")) + '</div>';
   }
 
   const timestampOf = (record: JsonRecord): string => String(record.at ?? record.timestamp ?? "");
@@ -971,13 +979,13 @@ export function renderLogsPanel(args: {
       return (
         '<div class="event"><div class="event-top"><span>' +
         escapeText(label) +
-        '</span><span>0</span></div><strong>no records</strong></div>'
+        '</span><span>0</span></div><strong>' + escapeText(t("logs.noRecords", undefined, "no records")) + '</strong></div>'
       );
     }
     return [
       '<div class="event"><div class="event-top"><span>' + escapeText(label) + '</span><span>' + escapeText(records.length) + '</span></div><strong>' +
-        escapeText(label === "role log" ? (args.selectedRoleId || "latest role") : "engine stream") +
-        '</strong><div class="hint">' + escapeText(args.stale ? "stale since last stream event" : "fresh") + "</div></div>",
+        escapeText(label === t("logs.roleLog", undefined, "role log") ? (args.selectedRoleId || "latest role") : t("logs.engineStream", undefined, "engine stream")) +
+        '</strong><div class="hint">' + escapeText(args.stale ? t("logs.stale", undefined, "stale since last stream event") : t("logs.fresh", undefined, "fresh")) + "</div></div>",
       ...records.map((item) => {
         const record = (item ?? {}) as JsonRecord;
         const summary = typeof record.message === "string"
@@ -1000,12 +1008,12 @@ export function renderLogsPanel(args: {
 
   const renderCombinedEntries = (): string => {
     if (!combined.length) {
-      return '<div class="event"><div class="event-top"><span>combined log stream</span><span>0</span></div><strong>no records</strong></div>';
+      return '<div class="event"><div class="event-top"><span>' + escapeText(t("logs.combinedStream", undefined, "combined log stream")) + '</span><span>0</span></div><strong>' + escapeText(t("logs.noRecords", undefined, "no records")) + '</strong></div>';
     }
     return [
-      '<div class="event"><div class="event-top"><span>combined log stream</span><span>' + escapeText(String(combined.length)) +
-        '</span></div><strong>' + escapeText(args.selectedRoleId ? "engine + " + args.selectedRoleId : "engine + all loaded roles") +
-        '</strong><div class="hint">' + escapeText(args.stale ? "stale since last stream event" : "fresh") + "</div></div>",
+      '<div class="event"><div class="event-top"><span>' + escapeText(t("logs.combinedStream", undefined, "combined log stream")) + '</span><span>' + escapeText(String(combined.length)) +
+        '</span></div><strong>' + escapeText(args.selectedRoleId ? "engine + " + args.selectedRoleId : t("logs.engineAllRoles", undefined, "engine + all loaded roles")) +
+        '</strong><div class="hint">' + escapeText(args.stale ? t("logs.stale", undefined, "stale since last stream event") : t("logs.fresh", undefined, "fresh")) + "</div></div>",
       ...combined.map((item) => {
         const record = item.record;
         const summary = typeof record.message === "string"
@@ -1032,8 +1040,8 @@ export function renderLogsPanel(args: {
     '<div class="structure-list">',
     renderCombinedEntries(),
     '<div class="log-stream-grid">',
-    '<div class="structure-list">' + renderLogEntries("engine log", args.engine) + "</div>",
-    '<div class="structure-list">' + renderLogEntries(args.selectedRoleId ? "role log" : "role logs", args.role) + "</div>",
+    '<div class="structure-list">' + renderLogEntries(t("logs.engineLog", undefined, "engine log"), args.engine) + "</div>",
+    '<div class="structure-list">' + renderLogEntries(args.selectedRoleId ? t("logs.roleLog", undefined, "role log") : t("logs.roleLogs", undefined, "role logs"), args.role) + "</div>",
     "</div>",
     "</div>"
   ].join("");
@@ -1129,7 +1137,9 @@ export function renderArtifactsPanel(args: {
   reviews: Record<string, unknown> | null | undefined;
   reviewDetail: Record<string, unknown> | null | undefined;
   resumeDiagnostics: Record<string, unknown> | null | undefined;
+  t?: Translator;
 }): string {
+  const t: Translator = typeof args.t === "function" ? args.t : (_key, _vars, fallback) => fallback ?? _key;
   const summarizeValue = (value: unknown): { label: string; detail?: string } => {
     if (Array.isArray(value)) {
       return {
@@ -1188,7 +1198,7 @@ export function renderArtifactsPanel(args: {
     });
   };
   if (!args.detail) {
-    return '<div class="hint">No run selected.</div>';
+    return '<div class="hint">' + escapeText(t("state.noRunSelected", undefined, "No run selected.")) + '</div>';
   }
   const header = (args.detail.header ?? {}) as JsonRecord;
   const reviewList = Array.isArray(args.reviews?.reviews) ? args.reviews.reviews as unknown[] : [];
@@ -1196,7 +1206,7 @@ export function renderArtifactsPanel(args: {
   const graphNodes = Array.isArray(graph.nodes) ? graph.nodes.length : 0;
   const graphEdges = Array.isArray(graph.edges) ? graph.edges.length : 0;
   const sections = [
-    '<div class="artifact-tabs"><span class="pill">Summary</span><span class="pill">Metrics</span><span class="pill">State</span><span class="pill">Audit</span><span class="pill">Timeline</span><span class="pill">Raw</span></div>',
+    '<div class="artifact-tabs"><span class="pill">' + escapeText(t("artifacts.summary", undefined, "Summary")) + '</span><span class="pill">' + escapeText(t("artifacts.metrics", undefined, "Metrics")) + '</span><span class="pill">' + escapeText(t("artifacts.state", undefined, "State")) + '</span><span class="pill">' + escapeText(t("artifacts.audit", undefined, "Audit")) + '</span><span class="pill">' + escapeText(t("artifacts.timeline", undefined, "Timeline")) + '</span><span class="pill">' + escapeText(t("artifacts.raw", undefined, "Raw")) + '</span></div>',
     '<div class="artifact-section"><div class="event"><div class="event-top"><span>summary</span><span>' + escapeText(header.status ?? "unknown") +
       "</span></div><strong>" + escapeText(args.detail.runId ?? "n/a") +
       '</strong><div class="hint">' + escapeText((args.detail.runDir ?? "n/a") + " · updated " + (header.updatedAt ?? "n/a")) + "</div></div>" +

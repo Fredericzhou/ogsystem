@@ -1,4 +1,5 @@
 import { buildClientAppScript } from "./client-app.js";
+import { createTranslator, getDictionary, type Dictionary, type Locale } from "./i18n/index.js";
 
 function escapeHtml(value: string): string {
   return value
@@ -9,14 +10,22 @@ function escapeHtml(value: string): string {
     .replace(/'/g, "&#39;");
 }
 
-export function renderPageHtml(workdir: string, apiPrefix: string): string {
-  const clientScript = buildClientAppScript(apiPrefix);
+export type PageI18nOptions = {
+  locale?: Locale;
+  messages?: Dictionary;
+};
+
+export function renderPageHtml(workdir: string, apiPrefix: string, i18n: PageI18nOptions = {}): string {
+  const locale = i18n.locale ?? "en";
+  const messages = i18n.messages ?? getDictionary(locale);
+  const t = createTranslator(locale);
+  const clientScript = buildClientAppScript(apiPrefix, { locale, messages });
   return `<!doctype html>
-<html lang="en">
+<html lang="${escapeHtml(locale)}">
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>OGSystem Visualizer</title>
+  <title>${escapeHtml(t("app.title"))}</title>
   <style>
     :root {
       color-scheme: dark;
@@ -827,12 +836,12 @@ export function renderPageHtml(workdir: string, apiPrefix: string): string {
   <div class="app">
     <aside id="sidebar" class="sidebar">
       <div class="brand">
-        <h1>OGSystem Visualizer</h1>
-        <span>local</span>
+        <h1>${escapeHtml(t("app.title"))}</h1>
+        <span>${escapeHtml(t("app.local"))}</span>
       </div>
       <div class="stack">
-        <div class="pill">workdir <code id="workdir">${escapeHtml(workdir)}</code></div>
-        <input id="search" class="search" placeholder="Filter runs by id, status, role..." />
+        <div class="pill">${escapeHtml(t("app.workdir"))} <code id="workdir">${escapeHtml(workdir)}</code></div>
+        <input id="search" class="search" placeholder="${escapeHtml(t("search.placeholder"))}" />
         <div id="run-list" class="run-list"></div>
       </div>
     </aside>
@@ -841,34 +850,41 @@ export function renderPageHtml(workdir: string, apiPrefix: string): string {
       <section class="hero">
         <div class="hero-copy">
           <div class="split-inline">
-            <button id="sidebar-toggle" class="button subtle sidebar-toggle">Runs</button>
-            <p class="hint">project + runtime observability</p>
+            <button id="sidebar-toggle" class="button subtle sidebar-toggle">${escapeHtml(t("hero.runs"))}</button>
+            <p class="hint">${escapeHtml(t("hero.subtitle"))}</p>
           </div>
-          <h2 id="selected-title">Select a run</h2>
-          <p id="selected-subtitle" class="truncate">Load a run to inspect project context, graph progress, review state, diagnostics, and artifacts.</p>
+          <h2 id="selected-title">${escapeHtml(t("hero.selectRun"))}</h2>
+          <p id="selected-subtitle" class="truncate">${escapeHtml(t("hero.selectRunHint"))}</p>
         </div>
         <div class="hero-toolbar">
           <div class="actions">
-            <button id="project-home" class="button subtle">Project</button>
-            <button id="project-load" class="button subtle">Load project</button>
-            <button id="project-export" class="button subtle">Export project</button>
-            <button id="reindex" class="button subtle">Reindex</button>
+            <button id="project-home" class="button subtle">${escapeHtml(t("action.project"))}</button>
+            <button id="project-load" class="button subtle">${escapeHtml(t("action.loadProject"))}</button>
+            <button id="project-export" class="button subtle">${escapeHtml(t("action.exportProject"))}</button>
+            <button id="reindex" class="button subtle">${escapeHtml(t("action.reindex"))}</button>
           </div>
           <div class="actions">
-            <button id="start-run" class="button primary">Start run</button>
-            <button id="resume-run" class="button">Resume selected</button>
-            <button id="stop-run" class="button warn">Request stop</button>
-            <button id="refresh" class="button">Refresh</button>
+            <button id="start-run" class="button primary">${escapeHtml(t("action.startRun"))}</button>
+            <button id="resume-run" class="button">${escapeHtml(t("action.resumeSelected"))}</button>
+            <button id="stop-run" class="button warn">${escapeHtml(t("action.requestStop"))}</button>
+            <button id="refresh" class="button">${escapeHtml(t("action.refresh"))}</button>
           </div>
-          <div id="live" class="live">idle</div>
+          <label class="field locale-field">
+            <span>${escapeHtml(t("app.locale"))}</span>
+            <select id="locale-select" class="select">
+              <option value="en"${locale === "en" ? " selected" : ""}>English</option>
+              <option value="zh-CN"${locale === "zh-CN" ? " selected" : ""}>中文</option>
+            </select>
+          </label>
+          <div id="live" class="live">${escapeHtml(t("state.idle"))}</div>
         </div>
       </section>
       <nav id="console-tabs" class="console-tabs" aria-label="Visualizer sections"></nav>
       <section class="grid">
         <article class="card span-12">
-          <header><h3>Action Form</h3></header>
+          <header><h3>${escapeHtml(t("section.actionForm"))}</h3></header>
           <div class="body">
-            <div id="action-form" class="form-shell"><div class="hint">Select start, resume, stop, or review actions to edit structured inputs inline.</div></div>
+            <div id="action-form" class="form-shell"><div class="hint">${escapeHtml(t("form.emptyHint"))}</div></div>
           </div>
         </article>
       </section>
@@ -877,8 +893,8 @@ export function renderPageHtml(workdir: string, apiPrefix: string): string {
           <header>
             <div class="card-header">
               <div class="header-copy">
-                <h3 id="workbench-title">Mermaid Workbench</h3>
-                <div id="workbench-meta" class="hint">Load project source from disk, validate changes, and prepare start or resume actions.</div>
+                <h3 id="workbench-title">${escapeHtml(t("section.mermaidWorkbench"))}</h3>
+                <div id="workbench-meta" class="hint">${escapeHtml(t("workbench.defaultMeta"))}</div>
               </div>
               <div id="workbench-actions" class="actions"></div>
             </div>
@@ -894,35 +910,35 @@ export function renderPageHtml(workdir: string, apiPrefix: string): string {
           </div>
         </article>
         <article class="card span-8">
-          <header><h3>Project Overview</h3></header>
+          <header><h3>${escapeHtml(t("section.projectOverview"))}</h3></header>
           <div class="body">
-            <div id="project-summary" class="structure-list">Loading project...</div>
+            <div id="project-summary" class="structure-list">${escapeHtml(t("state.loadingProject"))}</div>
           </div>
         </article>
         <article class="card span-12">
-          <header><h3>Project Readiness</h3></header>
+          <header><h3>${escapeHtml(t("section.projectReadiness"))}</h3></header>
           <div class="body">
-            <div id="project-readiness" class="structure-list">Loading project readiness...</div>
+            <div id="project-readiness" class="structure-list">${escapeHtml(t("state.loadingProjectReadiness"))}</div>
           </div>
         </article>
       </section>
       <section id="console-panel-debug" class="console-panel grid" data-console-panel="debug">
         <article class="card span-12">
-          <header><h3>Run Snapshot</h3></header>
+          <header><h3>${escapeHtml(t("section.runSnapshot"))}</h3></header>
           <div class="body">
             <div class="stat-grid" id="stats"></div>
           </div>
         </article>
         <article class="card span-8">
-          <header><h3>Timeline</h3></header>
+          <header><h3>${escapeHtml(t("section.timeline"))}</h3></header>
           <div class="body">
             <div class="row timeline-controls">
               <select id="timeline-role" class="select">
-                <option value="">All roles</option>
+                <option value="">${escapeHtml(t("timeline.allRoles"))}</option>
               </select>
-              <input id="timeline-type" class="select" placeholder="event type" />
+              <input id="timeline-type" class="select" placeholder="${escapeHtml(t("timeline.eventType"))}" />
               <select id="timeline-status" class="select">
-                <option value="">All statuses</option>
+                <option value="">${escapeHtml(t("timeline.allStatuses"))}</option>
                 <option value="pending">pending</option>
                 <option value="paused">paused</option>
                 <option value="running">running</option>
@@ -931,71 +947,71 @@ export function renderPageHtml(workdir: string, apiPrefix: string): string {
                 <option value="failed">failed</option>
                 <option value="waiting_review">waiting_review</option>
               </select>
-              <input id="timeline-branch" class="select" placeholder="branch id" />
-              <input id="timeline-review" class="select" placeholder="review id" />
-              <input id="timeline-error" class="select" placeholder="error code" />
-              <button id="timeline-apply" class="button subtle">Apply filters</button>
-              <button id="timeline-clear" class="button subtle">Clear filters</button>
+              <input id="timeline-branch" class="select" placeholder="${escapeHtml(t("timeline.branchId"))}" />
+              <input id="timeline-review" class="select" placeholder="${escapeHtml(t("timeline.reviewId"))}" />
+              <input id="timeline-error" class="select" placeholder="${escapeHtml(t("timeline.errorCode"))}" />
+              <button id="timeline-apply" class="button subtle">${escapeHtml(t("action.applyFilters"))}</button>
+              <button id="timeline-clear" class="button subtle">${escapeHtml(t("action.clearFilters"))}</button>
             </div>
             <div id="timeline" class="timeline"></div>
           </div>
         </article>
         <article class="card span-4">
-          <header><h3>Graph View</h3></header>
+          <header><h3>${escapeHtml(t("section.graphView"))}</h3></header>
           <div class="body">
-            <div id="graph-view" class="structure-list"><div class="hint">No run selected.</div></div>
-            <div id="state" class="structure-list"><div class="hint">No run selected.</div></div>
+            <div id="graph-view" class="structure-list"><div class="hint">${escapeHtml(t("state.noRunSelected"))}</div></div>
+            <div id="state" class="structure-list"><div class="hint">${escapeHtml(t("state.noRunSelected"))}</div></div>
           </div>
         </article>
         <article class="card span-12">
           <header>
             <div class="row">
-              <h3>Failure Triage</h3>
+              <h3>${escapeHtml(t("section.failureTriage"))}</h3>
               <div id="failure-controls" class="actions"></div>
             </div>
           </header>
           <div class="body">
-            <div id="failure-summary" class="structure-list"><div class="hint">No run selected.</div></div>
-            <div id="failure-detail" class="structure-list"><div class="hint">No run selected.</div></div>
-            <div id="failure-next-checks" class="structure-list"><div class="hint">No run selected.</div></div>
+            <div id="failure-summary" class="structure-list"><div class="hint">${escapeHtml(t("state.noRunSelected"))}</div></div>
+            <div id="failure-detail" class="structure-list"><div class="hint">${escapeHtml(t("state.noRunSelected"))}</div></div>
+            <div id="failure-next-checks" class="structure-list"><div class="hint">${escapeHtml(t("state.noRunSelected"))}</div></div>
           </div>
         </article>
         <article class="card span-6">
-          <header><h3>Review Queue</h3></header>
+          <header><h3>${escapeHtml(t("section.reviewQueue"))}</h3></header>
           <div class="body">
-            <div id="reviews" class="timeline"><div class="hint">No run selected.</div></div>
+            <div id="reviews" class="timeline"><div class="hint">${escapeHtml(t("state.noRunSelected"))}</div></div>
             <div id="review-actions" class="actions"></div>
-            <div id="review-detail" class="structure-list">No review selected.</div>
+            <div id="review-detail" class="structure-list">${escapeHtml(t("state.noReviewSelected"))}</div>
           </div>
         </article>
         <article class="card span-6">
           <header>
             <div class="row">
-              <h3>Resume Readiness</h3>
+              <h3>${escapeHtml(t("section.resumeReadiness"))}</h3>
               <div id="resume-controls" class="actions"></div>
             </div>
           </header>
           <div class="body">
-            <div id="resume-readiness" class="structure-list"><div class="hint">No run selected.</div></div>
-            <div id="resume-diagnostics" class="timeline"><div class="hint">No run selected.</div></div>
+            <div id="resume-readiness" class="structure-list"><div class="hint">${escapeHtml(t("state.noRunSelected"))}</div></div>
+            <div id="resume-diagnostics" class="timeline"><div class="hint">${escapeHtml(t("state.noRunSelected"))}</div></div>
           </div>
         </article>
       </section>
       <section id="console-panel-ops" class="console-panel grid" data-console-panel="ops" hidden>
         <article class="card span-12">
-          <header><h3>Ops Summary</h3></header>
+          <header><h3>${escapeHtml(t("section.opsSummary"))}</h3></header>
           <div class="body">
-            <div id="ops-summary" class="structure-list">Loading ops summary...</div>
+            <div id="ops-summary" class="structure-list">${escapeHtml(t("state.loadingOpsSummary"))}</div>
           </div>
         </article>
       </section>
       <section id="console-panel-config" class="console-panel grid" data-console-panel="config" hidden>
         <article class="card span-12">
-          <header><h3>Config Explain</h3></header>
+          <header><h3>${escapeHtml(t("section.configExplain"))}</h3></header>
           <div class="body">
-            <div id="binding-explain" class="structure-list">Loading binding resolution...</div>
-            <div id="role-packages" class="structure-list">Loading role packages...</div>
-            <div id="contract-explain" class="structure-list">Loading contracts...</div>
+            <div id="binding-explain" class="structure-list">${escapeHtml(t("state.loadingBindingResolution"))}</div>
+            <div id="role-packages" class="structure-list">${escapeHtml(t("state.loadingRolePackages"))}</div>
+            <div id="contract-explain" class="structure-list">${escapeHtml(t("state.loadingContracts"))}</div>
           </div>
         </article>
       </section>
@@ -1004,35 +1020,35 @@ export function renderPageHtml(workdir: string, apiPrefix: string): string {
           <header>
             <div class="toolbar-row">
               <div class="toolbar-group">
-                <h3>Logs</h3>
+                <h3>${escapeHtml(t("section.logs"))}</h3>
                 <div id="logs-controls" class="actions"></div>
               </div>
               <div class="log-toolbar">
                 <select id="log-role" class="select">
-                <option value="">All roles</option>
+                <option value="">${escapeHtml(t("timeline.allRoles"))}</option>
                 </select>
                 <select id="log-page-size" class="select">
                   <option value="100">100</option>
                   <option value="500">500</option>
                   <option value="1000">1000</option>
-                  <option value="">All</option>
+                  <option value="">${escapeHtml(t("logs.all"))}</option>
                 </select>
-                <input id="log-tail" class="select" type="number" min="1" placeholder="tail" />
+                <input id="log-tail" class="select" type="number" min="1" placeholder="${escapeHtml(t("logs.tail"))}" />
                 <input id="log-since" class="select" type="datetime-local" />
               </div>
             </div>
           </header>
           <div class="body">
             <div id="logs-filters" class="hint"></div>
-            <div id="logs" class="structure-list">No run selected.</div>
+            <div id="logs" class="structure-list">${escapeHtml(t("state.noRunSelected"))}</div>
           </div>
         </article>
       </section>
       <section id="console-panel-artifacts" class="console-panel grid" data-console-panel="artifacts" hidden>
         <article class="card span-12">
-          <header><h3>Artifacts</h3></header>
+          <header><h3>${escapeHtml(t("section.artifacts"))}</h3></header>
           <div class="body">
-            <div id="detail" class="structure-list"><div class="hint">No run selected.</div></div>
+            <div id="detail" class="structure-list"><div class="hint">${escapeHtml(t("state.noRunSelected"))}</div></div>
           </div>
         </article>
       </section>

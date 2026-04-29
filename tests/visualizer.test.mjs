@@ -731,6 +731,27 @@ test("visualizer server serves run list, details, and live stream", async (t) =>
     assert.match(rootHtml, /Config Explain/);
     assert.match(rootHtml, /Logs/);
 
+    const zhRoot = await fetch(`${url}/?lang=zh-CN`);
+    assert.equal(zhRoot.status, 200);
+    const zhRootHtml = await zhRoot.text();
+    assert.match(zhRootHtml, /<html lang="zh-CN">/);
+    assert.match(zhRootHtml, /项目概览/);
+    assert.match(zhRootHtml, /运行调试/);
+
+    const acceptLanguageRoot = await fetch(url, {
+      headers: { "accept-language": "fr-CA, zh;q=0.9, en;q=0.4" }
+    });
+    assert.equal(acceptLanguageRoot.status, 200);
+    assert.match(await acceptLanguageRoot.text(), /<html lang="zh-CN">/);
+
+    const unsupportedRoot = await fetch(`${url}/?lang=fr`, {
+      headers: { "accept-language": "zh-CN" }
+    });
+    assert.equal(unsupportedRoot.status, 200);
+    const unsupportedRootHtml = await unsupportedRoot.text();
+    assert.match(unsupportedRootHtml, /<html lang="en">/);
+    assert.match(unsupportedRootHtml, /Project Overview/);
+
     const projectHome = await fetch(`${url}/?view=project`);
     assert.equal(projectHome.status, 200);
 

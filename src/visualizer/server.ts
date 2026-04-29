@@ -82,6 +82,12 @@ import {
   type RunHeader
 } from "./dto.js";
 import { renderPageHtml as renderVisualizerPageHtml } from "./page-shell.js";
+import {
+  getDictionary,
+  resolveLocaleFromAcceptLanguage,
+  resolveLocaleFromQuery,
+  type Locale
+} from "./i18n/index.js";
 
 type VisualizationServerOptions = {
   workdir: string;
@@ -1163,8 +1169,18 @@ async function handleApiStop(
   );
 }
 
-function renderPageHtml(workdir: string): string {
-  return renderVisualizerPageHtml(workdir, API_PREFIX);
+function resolveServerLocale(url: URL, request: IncomingMessage): Locale {
+  if (url.searchParams.has("lang")) {
+    return resolveLocaleFromQuery(url.searchParams);
+  }
+  return resolveLocaleFromAcceptLanguage(request.headers["accept-language"]) ?? "en";
+}
+
+function renderPageHtml(workdir: string, locale: Locale): string {
+  return renderVisualizerPageHtml(workdir, API_PREFIX, {
+    locale,
+    messages: getDictionary(locale)
+  });
 }
 
 function normalizeError(error: unknown): HttpError {
@@ -1213,7 +1229,7 @@ async function handleVisualizationRequest(
   }
 
   if (method === "GET" && (pathname === "/" || pathname === "/index.html")) {
-    textResponse(response, 200, renderPageHtml(state.workdir), "text/html; charset=utf-8");
+    textResponse(response, 200, renderPageHtml(state.workdir, resolveServerLocale(url, request)), "text/html; charset=utf-8");
     return;
   }
 

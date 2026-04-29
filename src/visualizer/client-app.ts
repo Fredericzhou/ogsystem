@@ -22,6 +22,7 @@ import {
   renderWorkbenchTopologySvg,
   statusTone
 } from "./client-renderers.js";
+import { getDictionary, type Dictionary, type Locale } from "./i18n/index.js";
 
 type RouteState = {
   view: string;
@@ -39,6 +40,12 @@ type StreamRefreshPlan = {
   failure: boolean;
   resumeReadiness: boolean;
   markDiagnosticsStale: boolean;
+};
+
+export type ClientI18nOptions = {
+  locale?: Locale;
+  messages?: Dictionary;
+  messagesByLocale?: Partial<Record<Locale, Dictionary>>;
 };
 
 export function readRouteStateFromSearch(search: string): RouteState {
@@ -145,9 +152,19 @@ export function formatReviewStatusLabel(status: string | undefined): string {
   }
 }
 
-export function buildClientAppScript(apiPrefix: string): string {
+export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions = {}): string {
+  const locale = i18n.locale ?? "en";
+  const messagesByLocale: Record<Locale, Dictionary> = {
+    en: getDictionary("en"),
+    "zh-CN": getDictionary("zh-CN"),
+    ...(i18n.messagesByLocale ?? {})
+  };
+  messagesByLocale[locale] = i18n.messages ?? messagesByLocale[locale];
   return `
     const API_PREFIX = ${JSON.stringify(apiPrefix)};
+    const INITIAL_LOCALE = ${JSON.stringify(locale)};
+    const I18N_MESSAGES = ${JSON.stringify(messagesByLocale)};
+    const I18N_STORAGE_KEY = "ogs.visualizer.lang";
     const readRouteStateFromSearch = ${readRouteStateFromSearch.toString()};
     const buildRouteSearch = ${buildRouteSearch.toString()};
     const appendStreamEntry = ${appendStreamEntry.toString()};
@@ -175,7 +192,64 @@ export function buildClientAppScript(apiPrefix: string): string {
     const renderSuggestedNextChecksPanel = ${renderSuggestedNextChecksPanel.toString()};
     const renderRunTopologySvg = ${renderRunTopologySvg.toString()};
     const renderWorkbenchTopologySvg = ${renderWorkbenchTopologySvg.toString()};
+    function canonicalLocale(locale) {
+      const normalized = String(locale || "").trim().replace(/_/g, "-").toLowerCase();
+      if (!normalized || normalized === "*") {
+        return "";
+      }
+      if (normalized === "en" || normalized.indexOf("en-") === 0) {
+        return "en";
+      }
+      if (normalized === "zh" || normalized.indexOf("zh-") === 0) {
+        return "zh-CN";
+      }
+      return I18N_MESSAGES[normalized] ? normalized : "";
+    }
+    function readLangSearchParam() {
+      try {
+        const params = new URLSearchParams(window.location.search || "");
+        return params.get("lang") || "";
+      } catch {
+        return "";
+      }
+    }
+    function readStoredLocale() {
+      try {
+        return canonicalLocale(window.localStorage.getItem(I18N_STORAGE_KEY));
+      } catch {
+        return "";
+      }
+    }
+    function writeStoredLocale(locale) {
+      try {
+        window.localStorage.setItem(I18N_STORAGE_KEY, locale);
+      } catch {
+        // Ignore storage failures in private or restricted browser contexts.
+      }
+    }
+    function resolveClientLocale() {
+      const queryLocale = canonicalLocale(readLangSearchParam());
+      if (queryLocale) {
+        writeStoredLocale(queryLocale);
+        return queryLocale;
+      }
+      const storedLocale = readStoredLocale();
+      if (storedLocale) {
+        return storedLocale;
+      }
+      return canonicalLocale(INITIAL_LOCALE) || "en";
+    }
+    function interpolateMessage(template, vars) {
+      if (!vars) {
+        return String(template ?? "");
+      }
+      return String(template ?? "").replace(/\\{([A-Za-z0-9_.-]+)\\}/g, (placeholder, name) => {
+        return Object.prototype.hasOwnProperty.call(vars, name) ? String(vars[name] ?? "") : placeholder;
+      });
+    }
+    const resolvedLocale = resolveClientLocale();
     const state = {
+      locale: resolvedLocale,
       project: null,
       opsSummary: null,
       projectReadiness: null,
@@ -313,6 +387,7 @@ export function buildClientAppScript(apiPrefix: string): string {
     const resumeRunButton = document.getElementById("resume-run");
     const stopRunButton = document.getElementById("stop-run");
     const refreshButton = document.getElementById("refresh");
+    const localeSelectEl = document.getElementById("locale-select");
 
     function escapeText(value) {
       return String(value ?? "")
@@ -321,6 +396,52 @@ export function buildClientAppScript(apiPrefix: string): string {
         .replace(/>/g, "&gt;")
         .replace(/"/g, "&quot;")
         .replace(/'/g, "&#39;");
+    }
+
+    function t(key, vars, fallback) {
+      const dict = I18N_MESSAGES[state.locale] || {};
+      const fallbackDict = I18N_MESSAGES.en || {};
+      return interpolateMessage(dict[key] ?? fallbackDict[key] ?? fallback ?? key, vars);
+    }
+
+    function setLocaleFromControl(locale) {
+      const nextLocale = canonicalLocale(locale);
+      if (!nextLocale) {
+        return;
+      }
+      writeStoredLocale(nextLocale);
+      const params = new URLSearchParams(window.location.search || "");
+      params.set("lang", nextLocale);
+      const nextSearch = "?" + params.toString();
+      window.location.href = (window.location.pathname || "/") + nextSearch;
+    }
+
+    function applyStaticLocalizedContent() {
+      const textTargets = [
+        [sidebarToggleButton, "hero.runs"],
+        [projectHomeButton, "action.project"],
+        [projectLoadButton, "action.loadProject"],
+        [projectExportButton, "action.exportProject"],
+        [reindexButton, "action.reindex"],
+        [startRunButton, "action.startRun"],
+        [resumeRunButton, "action.resumeSelected"],
+        [stopRunButton, "action.requestStop"],
+        [refreshButton, "action.refresh"],
+        [timelineApplyButton, "action.applyFilters"],
+        [timelineClearButton, "action.clearFilters"]
+      ];
+      for (const [element, key] of textTargets) {
+        if (element) {
+          element.textContent = t(key);
+        }
+      }
+      if (searchEl) searchEl.placeholder = t("search.placeholder");
+      if (timelineTypeEl) timelineTypeEl.placeholder = t("timeline.eventType");
+      if (timelineBranchEl) timelineBranchEl.placeholder = t("timeline.branchId");
+      if (timelineReviewEl) timelineReviewEl.placeholder = t("timeline.reviewId");
+      if (timelineErrorEl) timelineErrorEl.placeholder = t("timeline.errorCode");
+      if (logTailEl) logTailEl.placeholder = t("logs.tail");
+      if (localeSelectEl) localeSelectEl.value = state.locale;
     }
 
     function formatTime(value) {
@@ -436,14 +557,18 @@ export function buildClientAppScript(apiPrefix: string): string {
     }
 
     function writeRouteToLocation() {
-      const query = buildRouteSearch({
+      const params = new URLSearchParams(buildRouteSearch({
         projectHome: state.projectHome,
         selectedRunId: state.selectedRunId,
         selectedReviewId: state.selectedReviewId,
         selectedLogRoleId: state.selectedLogRoleId,
         logTail: state.logTail,
         logSince: state.logSince
-      });
+      }));
+      if (state.locale && state.locale !== "en") {
+        params.set("lang", state.locale);
+      }
+      const query = params.toString();
       window.history.replaceState(null, "", query ? "?" + query : window.location.pathname);
     }
 
@@ -678,12 +803,12 @@ export function buildClientAppScript(apiPrefix: string): string {
         return;
       }
       const tabs = [
-        ["debug", "Run Debug", "failure, timeline, graph, review, resume"],
-        ["project", "Project", "workbench, overview, readiness"],
-        ["ops", "Ops", "failure and resume aggregates"],
-        ["config", "Config", "bindings, role packages, contracts"],
-        ["logs", "Logs", "engine and role log channels"],
-        ["artifacts", "Artifacts", "raw run snapshots"]
+        ["debug", t("nav.runDebug"), "failure, timeline, graph, review, resume"],
+        ["project", t("nav.project"), "workbench, overview, readiness"],
+        ["ops", t("nav.ops"), "failure and resume aggregates"],
+        ["config", t("nav.config"), "bindings, role packages, contracts"],
+        ["logs", t("nav.logs"), "engine and role log channels"],
+        ["artifacts", t("nav.artifacts"), "raw run snapshots"]
       ];
       consoleTabsEl.innerHTML = tabs.map(([id, label, hint]) =>
         '<button class="button subtle ' + (state.consoleTab === id ? "active" : "") +
@@ -712,7 +837,7 @@ export function buildClientAppScript(apiPrefix: string): string {
 
     function renderWorkbenchStructure(structure) {
       if (!structure) {
-        return '<div class="hint">Structure view appears after a valid Mermaid parse and compile pass.</div>';
+        return '<div class="hint">' + escapeText(t("workbench.structurePending")) + '</div>';
       }
       return [
         '<div class="structure-list">',
@@ -741,7 +866,8 @@ export function buildClientAppScript(apiPrefix: string): string {
         readiness: state.projectReadiness,
         selectedRoleId: state.studioBridgeSelectedRoleId,
         selectedFlowKey: state.studioBridgeSelectedFlowKey,
-        actionBusy: state.actionBusy
+        actionBusy: state.actionBusy,
+        t
       });
       for (const button of workbenchBodyEl.querySelectorAll("[data-studio-role-id]")) {
         button.addEventListener("click", () => {
@@ -842,31 +968,31 @@ export function buildClientAppScript(apiPrefix: string): string {
       const existingEditor = document.getElementById("workbench-editor");
       state.workbenchHasDraft = Boolean(loadDraftSource());
       workbenchMetaEl.textContent = state.selectedRunId && state.detail?.systemSource
-        ? "Editing the project system.mmd only. Selected run snapshots remain immutable and are shown in run detail."
-        : "Load project source from disk, validate changes, and prepare start or resume actions.";
+        ? t("workbench.immutableRunMeta")
+        : t("workbench.defaultMeta");
       const statusPills = [
-        '<span class="pill' + (dirty ? " warn" : "") + '">' + escapeText(dirty ? "unsaved changes" : "disk in sync") + '</span>',
+        '<span class="pill' + (dirty ? " warn" : "") + '">' + escapeText(dirty ? t("workbench.unsavedChanges") : t("workbench.diskInSync")) + '</span>',
         '<span class="pill">' + escapeText(relativeToWorkdir(state.workbenchSavedPath || "system.mmd")) + '</span>',
-        state.workbenchHasDraft ? '<span class="pill warn">draft cached</span>' : "",
+        state.workbenchHasDraft ? '<span class="pill warn">' + escapeText(t("workbench.draftCached")) + '</span>' : "",
         validation
-          ? '<span class="pill' + (validation.ok ? "" : " warn") + '">' + escapeText(validation.ok ? "validation ok" : diagnostics.length + " diagnostics") + '</span>'
-          : '<span class="pill">validation pending</span>',
-        state.workbenchValidating ? '<span class="pill warn">validating…</span>' : ""
+          ? '<span class="pill' + (validation.ok ? "" : " warn") + '">' + escapeText(validation.ok ? t("workbench.validationOk") : t("workbench.diagnostics", { count: diagnostics.length })) + '</span>'
+          : '<span class="pill">' + escapeText(t("workbench.validationPending")) + '</span>',
+        state.workbenchValidating ? '<span class="pill warn">' + escapeText(t("workbench.validating")) + '</span>' : ""
       ].filter(Boolean);
       workbenchStatusEl.innerHTML = statusPills.join("");
       workbenchTabsEl.innerHTML = [
-        '<button class="button subtle ' + (state.workbenchView === "source" ? "active" : "") + '" data-workbench-view="source">Source</button>',
-        '<button class="button subtle ' + (state.workbenchView === "render" ? "active" : "") + '" data-workbench-view="render">Rendered</button>',
-        '<button class="button subtle ' + (state.workbenchView === "structure" ? "active" : "") + '" data-workbench-view="structure">Structure</button>',
-        '<button class="button subtle ' + (state.workbenchView === "bridge" ? "active" : "") + '" data-workbench-view="bridge">Studio Bridge</button>'
+        '<button class="button subtle ' + (state.workbenchView === "source" ? "active" : "") + '" data-workbench-view="source">' + escapeText(t("workbench.source")) + '</button>',
+        '<button class="button subtle ' + (state.workbenchView === "render" ? "active" : "") + '" data-workbench-view="render">' + escapeText(t("workbench.rendered")) + '</button>',
+        '<button class="button subtle ' + (state.workbenchView === "structure" ? "active" : "") + '" data-workbench-view="structure">' + escapeText(t("workbench.structure")) + '</button>',
+        '<button class="button subtle ' + (state.workbenchView === "bridge" ? "active" : "") + '" data-workbench-view="bridge">' + escapeText(t("workbench.bridge")) + '</button>'
       ].join("");
       workbenchActionsEl.innerHTML = [
-        '<button class="button primary" id="workbench-open-bridge">Open Studio Bridge</button>',
-        '<button class="button subtle" id="workbench-new-draft">New draft</button>',
-        '<button class="button subtle" id="workbench-recover-draft"' + (state.workbenchHasDraft ? "" : " disabled") + '>Recover draft</button>',
-        '<button class="button subtle" id="workbench-revert"' + (dirty ? "" : " disabled") + '>Revert to disk</button>',
-        '<button class="button primary" id="workbench-save"' + (dirty ? "" : " disabled") + '>Save</button>',
-        '<button class="button" id="workbench-save-as">Save as</button>'
+        '<button class="button primary" id="workbench-open-bridge">' + escapeText(t("studio.openBridge")) + '</button>',
+        '<button class="button subtle" id="workbench-new-draft">' + escapeText(t("action.newDraft")) + '</button>',
+        '<button class="button subtle" id="workbench-recover-draft"' + (state.workbenchHasDraft ? "" : " disabled") + '>' + escapeText(t("action.recoverDraft")) + '</button>',
+        '<button class="button subtle" id="workbench-revert"' + (dirty ? "" : " disabled") + '>' + escapeText(t("action.revertToDisk")) + '</button>',
+        '<button class="button primary" id="workbench-save"' + (dirty ? "" : " disabled") + '>' + escapeText(t("action.save")) + '</button>',
+        '<button class="button" id="workbench-save-as">' + escapeText(t("action.saveAs")) + '</button>'
       ].join("");
       if (state.workbenchView === "source" && preserveEditor && existingEditor) {
         if (existingEditor.value !== state.workbenchSource) {
@@ -881,7 +1007,7 @@ export function buildClientAppScript(apiPrefix: string): string {
             ? '<div class="structure-list">' + diagnostics.map((diagnostic) =>
                 '<div class="event"><div class="event-top"><span>' + escapeText(diagnostic.code) + '</span><span>' + escapeText(diagnostic.line ? "line " + diagnostic.line : diagnostic.stage) + '</span></div><strong>' + escapeText(diagnostic.message) + '</strong></div>'
               ).join("") + '</div>'
-            : '<div class="hint">Rendered preview keeps the last successful graph structure while validation stays clean.</div>'
+            : '<div class="hint">' + escapeText(t("workbench.renderClean")) + '</div>'
         ].join("");
       } else if (state.workbenchView === "bridge") {
         renderStudioBridge();
@@ -1027,7 +1153,7 @@ export function buildClientAppScript(apiPrefix: string): string {
       }
       const form = state.actionForm;
       if (!form) {
-        actionFormEl.innerHTML = '<div class="hint">Select start, resume, stop, or review actions to edit structured inputs inline.</div>';
+        actionFormEl.innerHTML = '<div class="hint">' + escapeText(t("form.emptyHint")) + '</div>';
         return;
       }
       const disabled = state.actionBusy ? " disabled" : "";
@@ -1094,7 +1220,7 @@ export function buildClientAppScript(apiPrefix: string): string {
           '<div class="actions"><button id="action-form-cancel" class="button subtle"' + disabled + '>Cancel</button><button id="action-form-submit" class="button warn"' + disabled + '>Rebuild index</button></div>'
         ].join("");
       } else {
-        actionFormEl.innerHTML = '<div class="hint">Unsupported action.</div>';
+        actionFormEl.innerHTML = '<div class="hint">' + escapeText(t("form.unsupported")) + '</div>';
       }
       const cancelButton = document.getElementById("action-form-cancel");
       if (cancelButton) {
@@ -1143,7 +1269,8 @@ export function buildClientAppScript(apiPrefix: string): string {
       }
       if (projectReadinessEl) {
         projectReadinessEl.innerHTML = renderProjectReadinessPanel({
-          readiness: state.projectReadiness
+          readiness: state.projectReadiness,
+          t
         });
       }
       bindingExplainEl.innerHTML = renderBindingExplainPanel({
@@ -1190,7 +1317,7 @@ export function buildClientAppScript(apiPrefix: string): string {
           .some((item) => String(item).toLowerCase().includes(term));
       });
       if (!runs.length) {
-        runListEl.innerHTML = '<div class="hint">No runs match the filter.</div>';
+        runListEl.innerHTML = '<div class="hint">' + escapeText(t("run.noMatches")) + '</div>';
         return;
       }
       runListEl.innerHTML = runs
@@ -1201,8 +1328,8 @@ export function buildClientAppScript(apiPrefix: string): string {
               <span class="status \${statusClass(run.status)}" title="\${escapeText(run.status)}">\${escapeText(run.status)}</span>
             </div>
             <div class="meta">
-              <span>transitions \${escapeText(run.transitionCount)}</span>
-              <span>updated \${escapeText(formatTime(run.updatedAt))}</span>
+              <span>\${escapeText(t("run.transitions"))} \${escapeText(run.transitionCount)}</span>
+              <span>\${escapeText(t("run.updated"))} \${escapeText(formatTime(run.updatedAt))}</span>
             </div>
           </button>
         \`)
@@ -1219,12 +1346,12 @@ export function buildClientAppScript(apiPrefix: string): string {
         return;
       }
       const cards = [
-        ["status", header.status],
-        ["mode", graphPayload?.simulation?.mode || header.runMode || "runtime"],
-        ["transitions", header.transitionCount],
-        ["active branches", header.activeBranches],
-        ["pending reviews", header.pendingReviewCount],
-        ["recent audits", header.recentAudits]
+        [t("stats.status"), header.status],
+        [t("stats.mode"), graphPayload?.simulation?.mode || header.runMode || "runtime"],
+        [t("stats.transitions"), header.transitionCount],
+        [t("stats.activeBranches"), header.activeBranches],
+        [t("stats.pendingReviews"), header.pendingReviewCount],
+        [t("stats.recentAudits"), header.recentAudits]
       ];
       statsEl.innerHTML = cards
         .map(([label, value]) => \`
@@ -1515,13 +1642,13 @@ export function buildClientAppScript(apiPrefix: string): string {
     function renderLogs() {
       if (!state.selectedRunId) {
         logsControlsEl.innerHTML = "";
-        logsFiltersEl.textContent = "No run selected.";
-        logsEl.innerHTML = '<div class="hint">No run selected.</div>';
+        logsFiltersEl.textContent = t("state.noRunSelected");
+        logsEl.innerHTML = '<div class="hint">' + escapeText(t("state.noRunSelected")) + '</div>';
         return;
       }
       logsControlsEl.innerHTML = [
-        '<button id="load-logs" class="button subtle"' + (state.actionBusy ? " disabled" : "") + '>' + (state.logsLoaded ? "Refresh logs" : "Load logs") + '</button>',
-        '<button id="load-more-logs" class="button subtle"' + (state.actionBusy || !state.logsLoaded ? " disabled" : "") + '>Load more</button>'
+        '<button id="load-logs" class="button subtle"' + (state.actionBusy ? " disabled" : "") + '>' + escapeText(state.logsLoaded ? t("logs.refresh") : t("logs.load")) + '</button>',
+        '<button id="load-more-logs" class="button subtle"' + (state.actionBusy || !state.logsLoaded ? " disabled" : "") + '>' + escapeText(t("logs.loadMore")) + '</button>'
       ].join("");
       const loadLogsButton = document.getElementById("load-logs");
       if (loadLogsButton) {
@@ -1549,7 +1676,8 @@ export function buildClientAppScript(apiPrefix: string): string {
         stale: state.logsStale,
         selectedRoleId: state.selectedLogRoleId,
         engine: state.engineLogs,
-        role: state.roleLogs
+        role: state.roleLogs,
+        t
       });
     }
 
@@ -1559,7 +1687,8 @@ export function buildClientAppScript(apiPrefix: string): string {
         graph: state.graph,
         reviews: state.reviews,
         reviewDetail: state.reviewDetail,
-        resumeDiagnostics: state.resumeDiagnosticsLoaded ? state.resumeDiagnostics : null
+        resumeDiagnostics: state.resumeDiagnosticsLoaded ? state.resumeDiagnostics : null,
+        t
       });
     }
 
@@ -1568,7 +1697,7 @@ export function buildClientAppScript(apiPrefix: string): string {
       const header = detail?.header || null;
       const graphPayload = state.graph;
       if (!detail || !header || state.projectHome) {
-        selectedTitleEl.textContent = "Project Overview";
+        selectedTitleEl.textContent = t("section.projectOverview");
         selectedSubtitleEl.textContent = "Use query-state deep links or the run list to switch between project, run, and review details.";
       } else {
         const simulation = graphPayload?.simulation?.isSimulation ? "simulation" : "runtime";
@@ -1600,7 +1729,7 @@ export function buildClientAppScript(apiPrefix: string): string {
     function populateLogRoleOptions(graphPayload, fallbackRoleId) {
       const roleIds = (graphPayload?.graph?.nodes || []).map((node) => node.roleId).filter(Boolean);
       const selected = state.selectedLogRoleId || "";
-      const options = ['<option value="">All roles</option>']
+      const options = ['<option value="">' + escapeText(t("timeline.allRoles")) + '</option>']
         .concat(roleIds.map((roleId) => \`<option value="\${escapeText(roleId)}" \${roleId === selected ? "selected" : ""}>\${escapeText(roleId)}</option>\`));
       logRoleEl.innerHTML = options.join("");
       state.selectedLogRoleId = selected;
@@ -1611,7 +1740,7 @@ export function buildClientAppScript(apiPrefix: string): string {
       if (state.timelineRoleId && !roleIds.includes(state.timelineRoleId)) {
         state.timelineRoleId = "";
       }
-      const options = ['<option value="">All roles</option>']
+      const options = ['<option value="">' + escapeText(t("timeline.allRoles")) + '</option>']
         .concat(roleIds.map((roleId) => \`<option value="\${escapeText(roleId)}" \${roleId === state.timelineRoleId ? "selected" : ""}>\${escapeText(roleId)}</option>\`));
       if (timelineRoleEl) {
         timelineRoleEl.innerHTML = options.join("");
@@ -2814,6 +2943,14 @@ export function buildClientAppScript(apiPrefix: string): string {
       renderRuns();
     });
 
+    if (localeSelectEl) {
+      localeSelectEl.value = state.locale;
+      localeSelectEl.addEventListener("change", (event) => {
+        setLocaleFromControl(event.target.value || "");
+      });
+    }
+
+    applyStaticLocalizedContent();
     renderConsoleTabs();
 
     const initialRoute = readRouteStateFromSearch(window.location.search);
