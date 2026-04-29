@@ -227,6 +227,15 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
         // Ignore storage failures in private or restricted browser contexts.
       }
     }
+    function navigateToLocale(locale) {
+      const nextLocale = canonicalLocale(locale);
+      if (!nextLocale) {
+        return;
+      }
+      const params = new URLSearchParams(window.location.search || "");
+      params.set("lang", nextLocale);
+      window.location.href = (window.location.pathname || "/") + "?" + params.toString();
+    }
     function resolveClientLocale() {
       const queryLocale = canonicalLocale(readLangSearchParam());
       if (queryLocale) {
@@ -235,6 +244,10 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
       }
       const storedLocale = readStoredLocale();
       if (storedLocale) {
+        const injectedLocale = canonicalLocale(INITIAL_LOCALE) || "en";
+        if (storedLocale !== injectedLocale) {
+          navigateToLocale(storedLocale);
+        }
         return storedLocale;
       }
       return canonicalLocale(INITIAL_LOCALE) || "en";
@@ -410,10 +423,7 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
         return;
       }
       writeStoredLocale(nextLocale);
-      const params = new URLSearchParams(window.location.search || "");
-      params.set("lang", nextLocale);
-      const nextSearch = "?" + params.toString();
-      window.location.href = (window.location.pathname || "/") + nextSearch;
+      navigateToLocale(nextLocale);
     }
 
     function applyStaticLocalizedContent() {

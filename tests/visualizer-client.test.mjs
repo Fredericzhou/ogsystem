@@ -1214,7 +1214,7 @@ async function settle() {
 async function createClientHarness(options = {}) {
   const document = new FakeDocument();
   const backend = options.backend ?? createBackend(options);
-  const storage = new Map();
+  const storage = new Map(Object.entries(options.storage ?? {}));
   const prompts = [...(options.prompts ?? [])];
   const promptCalls = [];
   const confirmCalls = [];
@@ -1416,6 +1416,19 @@ test("visualizer client language switch stores locale and refreshes with lang qu
   assert.match(harness.window.location.href, /^\//);
   assert.match(harness.window.location.href, /[?&]lang=zh-CN/);
   assert.match(harness.window.location.href, /[?&]runId=run-123/);
+});
+
+test("visualizer client redirects stored locale into the URL to keep server shell consistent", async () => {
+  const harness = await createClientHarness({
+    search: "?view=project",
+    storage: {
+      "ogs.visualizer.lang": "zh-CN"
+    }
+  });
+
+  assert.match(harness.window.location.href, /^\//);
+  assert.match(harness.window.location.href, /[?&]view=project/);
+  assert.match(harness.window.location.href, /[?&]lang=zh-CN/);
 });
 
 test("visualizer client keeps diagnostics lazy and renders decision phase detail", async () => {

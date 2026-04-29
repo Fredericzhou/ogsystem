@@ -11,6 +11,7 @@ Scope: 为 OGSystem Visualizer / Studio Bridge / Run Console / Ops / Config / Lo
 - 新增 `src/visualizer/i18n/`，支持 `en` 与 `zh-CN` 字典、locale canonicalization、`Accept-Language` 解析、纯文本 `t()` 和插值。
 - server 首屏按 `?lang` -> `Accept-Language` -> `en` 解析 locale，并渲染 `<html lang>`、title、shell 文案和初始字典。
 - client 按 `?lang` -> `localStorage` -> injected server locale -> `en` 解析 locale；Phase 1 语言切换写入 `ogs.visualizer.lang` 并通过 `?lang=<locale>` 刷新页面。
+- 当 URL 没有 `?lang`、但 `localStorage` locale 与 server 注入 locale 不一致时，client 会保留现有 query state 并重定向到 `?lang=<storedLocale>`，避免 server shell 与 client 动态 UI 出现中英混杂首屏。
 - inline app 继续作为控制面，renderer 只通过参数接收 `t`，不依赖闭包里的 i18n import。
 - `t()` 只返回纯文本；写入 HTML 的位置继续使用现有 `escapeText()` / `escapeHtml()`。
 - 只翻译 panel chrome、导航、按钮、空状态、筛选、统计标签等 UI 文案；runtime 返回的 message、errorCode、roleId、runId、eventType、schema path、raw JSON 等机器事实保持原样。
