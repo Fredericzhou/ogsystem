@@ -377,8 +377,20 @@ function buildRunFixture({
         isSimulation: false,
         runMode: "runtime"
       },
-      state: { status: runStatus },
-      metrics: null,
+      state: {
+        status: runStatus,
+        transitionCount: 1,
+        totalTransitions: 3,
+        noopCount: 1,
+        pendingReviewCount: 1,
+        stopOutcome: null
+      },
+      metrics: {
+        summary: {
+          totalTransitions: 3,
+          noopCount: 1
+        }
+      },
       resolvedConfig: null,
       stopRequest: null,
       stopOutcome: null,
@@ -1405,6 +1417,12 @@ test("visualizer client renders zh-CN chrome while preserving runtime identifier
   assert.match(harness.document.getElementById("console-tabs").textContent, /运行调试/);
   assert.match(harness.document.getElementById("action-form").textContent, /选择启动/);
   assert.match(harness.document.getElementById("failure-summary").textContent, /TOOL_EXECUTION_TIMEOUT/);
+  assert.match(harness.document.getElementById("failure-summary").textContent, /超时预算耗尽/);
+  assert.match(harness.document.getElementById("resume-controls").textContent, /加载诊断/);
+  assert.match(harness.document.getElementById("state").textContent, /执行状态/);
+  assert.match(harness.document.getElementById("state").textContent, /总转换次数/);
+  assert.match(harness.document.getElementById("state").textContent, /空操作次数/);
+  assert.match(harness.document.getElementById("detail").textContent, /指标/);
 });
 
 test("visualizer client language switch stores locale and refreshes with lang query", async () => {

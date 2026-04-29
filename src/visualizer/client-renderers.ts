@@ -14,6 +14,25 @@ function formatJson(value: unknown): string {
   return JSON.stringify(value ?? null, null, 2);
 }
 
+export function displayUiToken(value: unknown, t: Translator): string {
+  const text = String(value ?? "");
+  if (!text || text === "n/a" || text === "undefined") {
+    return t("common.notAvailable", undefined, "n/a");
+  }
+  const normalized = text.toLowerCase();
+  if (normalized === "model") return t("token.model", undefined, "model");
+  if (normalized === "profile") return t("token.profile", undefined, "profile");
+  if (normalized === "role") return t("token.role", undefined, "role");
+  if (normalized === "execution") return t("token.execution", undefined, "execution");
+  if (normalized === "execute") return t("token.execute", undefined, "execution");
+  if (normalized === "role_input") return t("token.roleInput", undefined, "role input");
+  if (normalized === "flow") return t("token.flow", undefined, "flow");
+  if (normalized === "audit") return t("token.audit", undefined, "audit");
+  if (normalized === "parse") return t("token.parse", undefined, "parse");
+  if (normalized === "event") return t("token.event", undefined, "event");
+  return text;
+}
+
 export function statusTone(status: string | undefined): {
   fill: string;
   stroke: string;
@@ -138,7 +157,9 @@ export function renderProjectSummaryPanel(args: {
   warnings: string[];
   workbenchSavedPath: string;
   validationOk: boolean;
+  t?: Translator;
 }): string {
+  const t: Translator = typeof args.t === "function" ? args.t : (_key, _vars, fallback) => fallback ?? _key;
   const summary = args.summary ?? {};
   const roleCards = args.roles.map((role) => {
     const roleId = escapeText(role.roleId);
@@ -152,33 +173,40 @@ export function renderProjectSummaryPanel(args: {
     return (
       '<div class="event">' +
       '<div class="event-top"><span><code>' + roleId + "</code></span><span>" + binding + "</span></div>" +
-      "<strong>" + escapeText(flags.join(" · ") || "standard role") + "</strong>" +
-      '<div class="hint">' + escapeText((role.summary as JsonRecord | undefined)?.label ?? "role package available") + "</div>" +
+      "<strong>" + escapeText(flags.join(" · ") || t("project.standardRole", undefined, "standard role")) + "</strong>" +
+      '<div class="hint">' + escapeText((role.summary as JsonRecord | undefined)?.label ?? t("project.rolePackageAvailable", undefined, "role package available")) + "</div>" +
       "</div>"
     );
   });
   const warningCards = args.warnings.length > 0
     ? args.warnings.map((warning) =>
-        '<div class="event"><div class="event-top"><span>model warning</span><span>attention</span></div><strong>' +
+        '<div class="event"><div class="event-top"><span>' + escapeText(t("project.modelWarning", undefined, "model warning")) + '</span><span>' + escapeText(t("common.attention", undefined, "attention")) + '</span></div><strong>' +
         escapeText(warning) +
         "</strong></div>"
       )
-    : ['<div class="event"><div class="event-top"><span>model warning</span><span>ok</span></div><strong>none</strong></div>'];
+    : ['<div class="event"><div class="event-top"><span>' + escapeText(t("project.modelWarning", undefined, "model warning")) + '</span><span>' + escapeText(t("common.ok", undefined, "ok")) + '</span></div><strong>' + escapeText(t("common.none", undefined, "none")) + '</strong></div>'];
 
   return [
     '<div class="structure-list project-overview-grid">',
-    '<div class="event"><div class="event-top"><span>project</span><span>' + escapeText(summary.projectId ?? "n/a") + "</span></div><strong>" +
-      escapeText(summary.projectName ?? "unknown") + '</strong><div class="hint">system ' + escapeText(summary.systemId ?? "n/a") +
-      " · version " + escapeText(summary.systemVersion ?? "n/a") +
-      " · entry " + escapeText(summary.entryRoleId ?? "n/a") + "</div></div>",
-    '<div class="event"><div class="event-top"><span>structure</span><span>' + escapeText(summary.roleCount ?? 0) + " roles</span></div><strong>" +
-      escapeText("flows " + String(summary.flowCount ?? 0) + " · workbench " + (args.validationOk ? "validated" : "needs attention")) +
-      '</strong><div class="hint">system path ' + escapeText(args.workbenchSavedPath || "system.mmd") + "</div></div>",
-    '<div class="event"><div class="event-top"><span>special roles</span><span>graph metadata</span></div><strong>' +
-      escapeText("review " + ((summary.reviewedRoleIds as unknown[] | undefined)?.join(", ") || "none")) +
-      '</strong><div class="hint">join ' + escapeText((summary.joinRoleIds as unknown[] | undefined)?.join(", ") || "none") +
-      " · loop " + escapeText((summary.loopRoleIds as unknown[] | undefined)?.join(", ") || "none") +
-      " · context " + escapeText((summary.contextMappedRoleIds as unknown[] | undefined)?.join(", ") || "none") + "</div></div>",
+    '<div class="event"><div class="event-top"><span>' + escapeText(t("project.project", undefined, "project")) + '</span><span>' + escapeText(summary.projectId ?? "n/a") + "</span></div><strong>" +
+      escapeText(summary.projectName ?? t("common.unknown", undefined, "unknown")) + '</strong><div class="hint">' +
+      escapeText(t("project.systemVersionEntry", {
+        systemId: String(summary.systemId ?? "n/a"),
+        version: String(summary.systemVersion ?? "n/a"),
+        entryRoleId: String(summary.entryRoleId ?? "n/a")
+      }, "system " + String(summary.systemId ?? "n/a") + " · version " + String(summary.systemVersion ?? "n/a") + " · entry " + String(summary.entryRoleId ?? "n/a"))) +
+      "</div></div>",
+    '<div class="event"><div class="event-top"><span>' + escapeText(t("project.structure", undefined, "structure")) + '</span><span>' + escapeText(summary.roleCount ?? 0) + " " + escapeText(t("common.roles", undefined, "roles")) + '</span></div><strong>' +
+      escapeText(t("project.roleFlowWorkbench", {
+        flowCount: String(summary.flowCount ?? 0),
+        workbenchStatus: args.validationOk ? t("project.validated", undefined, "validated") : t("project.needsAttention", undefined, "needs attention")
+      }, "flows " + String(summary.flowCount ?? 0) + " · workbench " + (args.validationOk ? "validated" : "needs attention"))) +
+      '</strong><div class="hint">' + escapeText(t("project.systemPath", { path: args.workbenchSavedPath || "system.mmd" }, "system path " + (args.workbenchSavedPath || "system.mmd"))) + "</div></div>",
+    '<div class="event"><div class="event-top"><span>' + escapeText(t("project.specialRoles", undefined, "special roles")) + '</span><span>' + escapeText(t("project.graphMetadata", undefined, "graph metadata")) + '</span></div><strong>' +
+      escapeText(t("common.review", undefined, "review") + " " + ((summary.reviewedRoleIds as unknown[] | undefined)?.join(", ") || t("common.none", undefined, "none"))) +
+      '</strong><div class="hint">' + escapeText(t("common.join", undefined, "join") + " " + ((summary.joinRoleIds as unknown[] | undefined)?.join(", ") || t("common.none", undefined, "none"))) +
+      " · " + escapeText(t("common.loop", undefined, "loop") + " " + ((summary.loopRoleIds as unknown[] | undefined)?.join(", ") || t("common.none", undefined, "none"))) +
+      " · " + escapeText(t("common.context", undefined, "context") + " " + ((summary.contextMappedRoleIds as unknown[] | undefined)?.join(", ") || t("common.none", undefined, "none"))) + "</div></div>",
     ...warningCards,
     ...roleCards,
     "</div>"
@@ -187,7 +215,9 @@ export function renderProjectSummaryPanel(args: {
 
 export function renderOpsSummaryPanel(args: {
   opsSummary: JsonRecord | null | undefined;
+  t?: Translator;
 }): string {
+  const t: Translator = typeof args.t === "function" ? args.t : (_key, _vars, fallback) => fallback ?? _key;
   const summary = (args.opsSummary?.summary ?? {}) as JsonRecord;
   const failureGroups = (args.opsSummary?.failureGroups ?? {}) as JsonRecord;
   const reviewRework = (args.opsSummary?.reviewRework ?? {}) as JsonRecord;
@@ -205,36 +235,37 @@ export function renderOpsSummaryPanel(args: {
     ? resumeReadiness.blockingByCategory as JsonRecord[]
     : [];
   const cards = [
-    '<div class="event"><div class="event-top"><span>recent failures</span><span>' +
+    '<div class="event"><div class="event-top"><span>' + escapeText(t("ops.recentFailures", undefined, "recent failures")) + '</span><span>' +
       escapeText(String(summary.recentFailureCount ?? 0)) +
       '</span></div><strong>' +
       escapeText(
         topErrorCodes.length
           ? topErrorCodes.slice(0, 3).map((item) => String(item.key) + " x" + String(item.count)).join(" · ")
-          : "no recent failures"
+          : t("ops.noRecentFailures", undefined, "no recent failures")
       ) +
-      '</strong><div class="hint">grouped by role, errorCode, and errorCategory for operator triage</div></div>',
-    '<div class="event"><div class="event-top"><span>review / rework pending</span><span>' +
+      '</strong><div class="hint">' + escapeText(t("ops.failureGroupingHint", undefined, "grouped by role, errorCode, and errorCategory for operator triage")) + '</div></div>',
+    '<div class="event"><div class="event-top"><span>' + escapeText(t("ops.reviewReworkPending", undefined, "review / rework pending")) + '</span><span>' +
       escapeText(String(summary.pendingReviewCount ?? 0)) +
-      ' reviews</span></div><strong>' +
-      escapeText(String(reviewRework.pendingReworkCount ?? 0) + " active rework branches") +
-      '</strong><div class="hint">paused reviews ' +
-      escapeText(String(reviewRework.pausedReviewCount ?? 0)) +
+      " " + escapeText(t("common.reviews", undefined, "reviews")) + '</span></div><strong>' +
+      escapeText(t("ops.activeReworkBranches", { count: String(reviewRework.pendingReworkCount ?? 0) }, String(reviewRework.pendingReworkCount ?? 0) + " active rework branches")) +
+      '</strong><div class="hint">' +
+      escapeText(t("ops.pausedReviews", { count: String(reviewRework.pausedReviewCount ?? 0) }, "paused reviews " + String(reviewRework.pausedReviewCount ?? 0))) +
       '</div></div>',
-    '<div class="event"><div class="event-top"><span>resume blocking</span><span>' +
+    '<div class="event"><div class="event-top"><span>' + escapeText(t("ops.resumeBlocking", undefined, "resume blocking")) + '</span><span>' +
       escapeText(String(resumeReadiness.blockedRunCount ?? summary.resumeBlockedRunCount ?? 0)) +
-      ' runs</span></div><strong>' +
+      " " + escapeText(t("common.runs", undefined, "runs")) + '</span></div><strong>' +
       escapeText(
         blockingByCategory.length
           ? blockingByCategory.slice(0, 3).map((item) => String(item.key) + " x" + String(item.count)).join(" · ")
-          : "no blocking categories"
+          : t("ops.noBlockingCategories", undefined, "no blocking categories")
       ) +
-      '</strong><div class="hint">drift sources ' +
-      escapeText(
+      '</strong><div class="hint">' +
+      escapeText(t("ops.driftSources", {
+        sources:
         driftSources.length
           ? driftSources.slice(0, 3).map((item) => String(item.key) + " x" + String(item.count)).join(" · ")
-          : "none"
-      ) +
+          : t("common.none", undefined, "none")
+      }, "drift sources " + (driftSources.length ? driftSources.slice(0, 3).map((item) => String(item.key) + " x" + String(item.count)).join(" · ") : "none"))) +
       "</div></div>"
   ];
   const failureCards = recentFailures.length
@@ -249,7 +280,7 @@ export function renderOpsSummaryPanel(args: {
         escapeText(String(failure.runId ?? "unknown") + " · " + String(failure.message ?? "No message")) +
         "</div></div>"
       )
-    : ['<div class="event"><div class="event-top"><span>recent failure list</span><span>0</span></div><strong>No failure entries in the sampled runs</strong></div>'];
+    : ['<div class="event"><div class="event-top"><span>' + escapeText(t("ops.recentFailureList", undefined, "recent failure list")) + '</span><span>0</span></div><strong>' + escapeText(t("ops.noFailureEntries", undefined, "No failure entries in the sampled runs")) + '</strong></div>'];
   return ['<div class="structure-list">', ...cards, ...failureCards, "</div>"].join("");
 }
 
@@ -361,11 +392,11 @@ export function renderStudioBridgePanel(args: {
           '<button class="run-card' + active + '" data-studio-role-id="' + escapeText(roleId) + '"' + busy + ">" +
           '<div class="run-title"><span><code>' + escapeText(roleId) + '</code></span><span class="status ' +
           escapeText(bindingTone(String(role.bindingKind ?? "noop"))) + '">' + escapeText(String(role.bindingKind ?? "noop")) +
-          '</span></div><div class="meta"><span>' + escapeText(badges || "standard") + '</span><span>events ' +
-          escapeText(String((role.allowedEvents as unknown[] | undefined)?.length ?? 0)) + "</span></div></button>"
+          '</span></div><div class="meta"><span>' + escapeText(badges || t("studio.standard", undefined, "standard")) + '</span><span>' +
+          escapeText(t("studio.events", { count: String((role.allowedEvents as unknown[] | undefined)?.length ?? 0) }, "events " + String((role.allowedEvents as unknown[] | undefined)?.length ?? 0))) + "</span></div></button>"
         );
       })
-    : ['<div class="hint">No roles extracted from the current Mermaid source.</div>'];
+    : ['<div class="hint">' + escapeText(t("studio.noRolesExtracted", undefined, "No roles extracted from the current Mermaid source.")) + '</div>'];
   const flowButtons = flows.length
     ? flows.map((flow) => {
         const key = String(flow.flowKey ?? "");
@@ -374,35 +405,39 @@ export function renderStudioBridgePanel(args: {
           '<button class="run-card' + active + '" data-studio-flow-key="' + escapeText(key) + '"' + busy + ">" +
           '<div class="run-title"><span><code>' + escapeText(String(flow.fromRoleId ?? "")) + '</code> -> <code>' +
           escapeText(String(flow.toRoleId ?? "")) + '</code></span><span>' + escapeText(String(flow.eventType ?? "")) +
-          '</span></div><div class="meta"><span>' + escapeText(flow.runtimeOnlyErrorFlow ? "runtime error flow" : "design flow") +
-          '</span><span>' + escapeText(flow.participatesInJoin ? "join source" : "standard") + "</span></div></button>"
+          '</span></div><div class="meta"><span>' + escapeText(flow.runtimeOnlyErrorFlow ? t("studio.runtimeErrorFlow", undefined, "runtime error flow") : t("studio.designFlow", undefined, "design flow")) +
+          '</span><span>' + escapeText(flow.participatesInJoin ? t("studio.joinSource", undefined, "join source") : t("studio.standard", undefined, "standard")) + "</span></div></button>"
         );
       })
-    : ['<div class="hint">No flows extracted from the current Mermaid source.</div>'];
+    : ['<div class="hint">' + escapeText(t("studio.noFlowsExtracted", undefined, "No flows extracted from the current Mermaid source.")) + '</div>'];
   const roleInspector = selectedRole
     ? [
-        '<div class="event"><div class="event-top"><span>role inspector</span><span>' + escapeText(String(selectedRole.bindingKind ?? "noop")) + '</span></div><strong><code>' + escapeText(String(selectedRole.roleId ?? "")) + '</code></strong>',
-        '<div class="hint">model ' + escapeText(String(selectedRole.modelRef ?? "n/a")) +
-          " · exec " + escapeText(String(selectedRole.profileId ?? "n/a")) +
-          " · route " + escapeText(String(selectedRole.routingMode ?? "standard")) + "</div></div>",
-        '<div class="event"><div class="event-top"><span>metadata</span><span>read only</span></div><strong>' +
+        '<div class="event"><div class="event-top"><span>' + escapeText(t("studio.roleInspector", undefined, "role inspector")) + '</span><span>' + escapeText(String(selectedRole.bindingKind ?? "noop")) + '</span></div><strong><code>' + escapeText(String(selectedRole.roleId ?? "")) + '</code></strong>',
+        '<div class="hint">' + escapeText(t("studio.modelExecRoute", {
+          modelRef: String(selectedRole.modelRef ?? "n/a"),
+          profileId: String(selectedRole.profileId ?? "n/a"),
+          routingMode: String(selectedRole.routingMode ?? t("studio.standard", undefined, "standard"))
+        }, "model " + String(selectedRole.modelRef ?? "n/a") + " · exec " + String(selectedRole.profileId ?? "n/a") + " · route " + String(selectedRole.routingMode ?? "standard"))) + "</div></div>",
+        '<div class="event"><div class="event-top"><span>' + escapeText(t("common.metadata", undefined, "metadata")) + '</span><span>' + escapeText(t("common.readOnly", undefined, "read only")) + '</span></div><strong>' +
           escapeText([
-            selectedRole.joinMode ? "join " + selectedRole.joinMode : "",
-            selectedRole.loopMax ? "loop " + selectedRole.loopMax : "",
-            selectedRole.review ? "review required" : "",
-            selectedRole.contextMap ? "context map" : ""
-          ].filter(Boolean).join(" · ") || "no special metadata") +
-          '</strong><div class="hint">incoming ' + escapeText(String(selectedRole.incomingFlowCount ?? 0)) +
-          " · outgoing " + escapeText(String(selectedRole.outgoingFlowCount ?? 0)) + "</div></div>"
+            selectedRole.joinMode ? t("common.join", undefined, "join") + " " + selectedRole.joinMode : "",
+            selectedRole.loopMax ? t("common.loop", undefined, "loop") + " " + selectedRole.loopMax : "",
+            selectedRole.review ? t("studio.reviewRequired", undefined, "review required") : "",
+            selectedRole.contextMap ? t("studio.contextMap", undefined, "context map") : ""
+          ].filter(Boolean).join(" · ") || t("project.noSpecialGraphMetadata", undefined, "no special metadata")) +
+          '</strong><div class="hint">' + escapeText(t("studio.incomingOutgoing", {
+            incoming: String(selectedRole.incomingFlowCount ?? 0),
+            outgoing: String(selectedRole.outgoingFlowCount ?? 0)
+          }, "incoming " + String(selectedRole.incomingFlowCount ?? 0) + " · outgoing " + String(selectedRole.outgoingFlowCount ?? 0))) + "</div></div>"
       ].join("")
-    : '<div class="hint">Select a role to inspect metadata.</div>';
+    : '<div class="hint">' + escapeText(t("studio.selectRole", undefined, "Select a role to inspect metadata.")) + '</div>';
   const flowInspector = selectedFlow
-    ? '<div class="event"><div class="event-top"><span>flow inspector</span><span>' + escapeText(String(selectedFlow.eventType ?? "")) +
+    ? '<div class="event"><div class="event-top"><span>' + escapeText(t("studio.flowInspector", undefined, "flow inspector")) + '</span><span>' + escapeText(String(selectedFlow.eventType ?? "")) +
       '</span></div><strong><code>' + escapeText(String(selectedFlow.fromRoleId ?? "")) + '</code> -> <code>' +
       escapeText(String(selectedFlow.toRoleId ?? "")) + '</code></strong><div class="hint">' +
-      escapeText(selectedFlow.runtimeOnlyErrorFlow ? "runtime-only error path" : "authoring design path") +
-      " · " + escapeText(selectedFlow.participatesInJoin ? "participates in join.sources" : "not a join source") + "</div></div>"
-    : '<div class="hint">Select a flow to inspect event metadata.</div>';
+      escapeText(selectedFlow.runtimeOnlyErrorFlow ? t("studio.runtimeOnlyErrorPath", undefined, "runtime-only error path") : t("studio.authoringDesignPath", undefined, "authoring design path")) +
+      " · " + escapeText(selectedFlow.participatesInJoin ? t("studio.participatesInJoin", undefined, "participates in join.sources") : t("studio.notJoinSource", undefined, "not a join source")) + "</div></div>"
+    : '<div class="hint">' + escapeText(t("studio.selectFlow", undefined, "Select a flow to inspect event metadata.")) + '</div>';
   const diagnosticCards = diagnostics.length
     ? diagnostics.slice(0, 5).map((diagnostic) =>
         '<div class="event"><div class="event-top"><span>' + escapeText(String(diagnostic.code ?? "DIAGNOSTIC")) +
@@ -410,7 +445,7 @@ export function renderStudioBridgePanel(args: {
         escapeText(String(diagnostic.message ?? "")) + '</strong><div class="hint">' +
         escapeText(String(diagnostic.roleId ?? diagnostic.selector ?? diagnostic.line ?? "")) + "</div></div>"
       )
-    : ['<div class="event"><div class="event-top"><span>diagnostics</span><span>ok</span></div><strong>No parse or compile diagnostics.</strong></div>'];
+    : ['<div class="event"><div class="event-top"><span>' + escapeText(t("common.diagnostics", undefined, "diagnostics")) + '</span><span>' + escapeText(t("common.ok", undefined, "ok")) + '</span></div><strong>' + escapeText(t("studio.noParseCompileDiagnostics", undefined, "No parse or compile diagnostics.")) + '</strong></div>'];
   return [
     '<div class="structure-list studio-bridge">',
     '<div class="toolbar-row">',
@@ -422,17 +457,17 @@ export function renderStudioBridgePanel(args: {
     '<button class="button subtle" id="studio-bridge-generate"' + busy + '>' + escapeText(t("studio.generateMmd", undefined, "Generate MMD")) + '</button>',
     '</div>',
     '<div class="toolbar-group"><span class="pill' + (validation.ok ? "" : " warn") + '">' +
-      escapeText(validation.ok ? "validation ok" : diagnostics.length + " diagnostics") + '</span><span class="pill' +
-      (blockers.length ? " warn" : "") + '">' + escapeText(blockers.length ? blockers.length + " readiness blockers" : "readiness ready") + "</span></div>",
+      escapeText(validation.ok ? t("workbench.validationOk", undefined, "validation ok") : t("workbench.diagnostics", { count: String(diagnostics.length) }, diagnostics.length + " diagnostics")) + '</span><span class="pill' +
+      (blockers.length ? " warn" : "") + '">' + escapeText(blockers.length ? t("studio.readinessBlockers", { count: String(blockers.length) }, blockers.length + " readiness blockers") : t("studio.readinessReady", undefined, "readiness ready")) + "</span></div>",
     "</div>",
     '<div class="studio-bridge-layout">',
     '<div class="studio-navigator structure-list"><div class="event"><div class="event-top"><span>' + escapeText(t("studio.roles", undefined, "roles")) + '</span><span>' + escapeText(String(roles.length)) +
       '</span></div><strong>' + escapeText(t("studio.structuredRoleDraft", undefined, "Structured role draft")) + '</strong><div class="hint">' + escapeText(t("studio.bridgeReadsWorkbench", undefined, "Bridge reads the current workbench source.")) + '</div></div>' + roleButtons.join("") + "</div>",
     '<div class="studio-graph-column">' + graphCanvas + '<div class="structure-list studio-flow-list"><div class="event"><div class="event-top"><span>' + escapeText(t("studio.flows", undefined, "flows")) + '</span><span>' + escapeText(String(flows.length)) +
       '</span></div><strong>' + escapeText(t("studio.structuredFlowDraft", undefined, "Structured flow draft")) + '</strong><div class="hint">' + escapeText(t("studio.eventsVisible", undefined, "Event types and join participation stay visible.")) + '</div></div>' + flowButtons.join("") + "</div></div>",
-    '<div class="studio-inspector structure-list"><div class="event"><div class="event-top"><span>system</span><span>' + escapeText(String(extracted.systemVersion ?? "n/a")) +
-      '</span></div><strong>' + escapeText(String(extracted.systemId ?? "unknown")) + '</strong><div class="hint">entry ' +
-      escapeText(String(extracted.entryRoleId ?? "n/a")) + " · law " + escapeText(String(extracted.lawGlobal ?? "n/a")) + "</div></div>" +
+    '<div class="studio-inspector structure-list"><div class="event"><div class="event-top"><span>' + escapeText(t("common.system", undefined, "system")) + '</span><span>' + escapeText(String(extracted.systemVersion ?? "n/a")) +
+      '</span></div><strong>' + escapeText(String(extracted.systemId ?? "unknown")) + '</strong><div class="hint">' + escapeText(t("common.entry", undefined, "entry")) + " " +
+      escapeText(String(extracted.entryRoleId ?? "n/a")) + " · " + escapeText(t("common.law", undefined, "law")) + " " + escapeText(String(extracted.lawGlobal ?? "n/a")) + "</div></div>" +
       roleInspector + flowInspector + "</div>",
     '<div class="studio-diagnostics structure-list">' + diagnosticCards.join("") + "</div>",
     "</div>",
@@ -444,54 +479,56 @@ export function renderFailureSummaryPanel(args: {
   failure: Record<string, unknown> | null | undefined;
   loaded: boolean;
   stale: boolean;
+  t?: Translator;
 }): string {
+  const t: Translator = typeof args.t === "function" ? args.t : (_key, _vars, fallback) => fallback ?? _key;
   if (!args.loaded) {
-    return '<div class="hint">Failure triage loads with the selected run.</div>';
+    return '<div class="hint">' + escapeText(t("failure.loadsWithRun", undefined, "Failure triage loads with the selected run.")) + '</div>';
   }
   if (!args.failure) {
-    return '<div class="hint">No recent failure captured for this run.</div>';
+    return '<div class="hint">' + escapeText(t("failure.noRecentCaptured", undefined, "No recent failure captured for this run.")) + '</div>';
   }
   const summary = ((args.failure.summary ?? args.failure) || {}) as JsonRecord;
   const detail = ((args.failure.detail ?? {}) || {}) as JsonRecord;
   const errorCode = String(summary.errorCode ?? detail.errorCode ?? "none");
-  const stage = String(summary.stage ?? detail.stage ?? "n/a");
-  const message = String(summary.message ?? detail.message ?? "No failure message recorded.");
-  const roleId = String(summary.roleId ?? detail.roleId ?? "n/a");
-  const branchId = String(summary.branchId ?? detail.branchId ?? "n/a");
+  const stage = String(summary.stage ?? detail.stage ?? t("common.notAvailable", undefined, "n/a"));
+  const message = String(summary.message ?? detail.message ?? t("failure.noMessage", undefined, "No failure message recorded."));
+  const roleId = String(summary.roleId ?? detail.roleId ?? t("common.notAvailable", undefined, "n/a"));
+  const branchId = String(summary.branchId ?? detail.branchId ?? t("common.notAvailable", undefined, "n/a"));
   const retryable = Boolean(summary.retryable ?? detail.retryable);
   const durationMs = summary.durationMs ?? detail.durationMs ?? "n/a";
   const timeoutMs =
     detail.timeoutMs ??
     ((detail.selectedBinding as JsonRecord | undefined)?.timeoutMs ?? (summary.timeoutMs as unknown));
   const classifyError = (): string => {
-    if (errorCode === "TOOL_EXECUTION_TIMEOUT") return "timeout budget exhausted";
-    if (errorCode.includes("CONTRACT")) return "contract handoff violation";
-    if (errorCode.includes("SCHEMA")) return "schema mismatch";
-    if (errorCode.includes("PROVIDER") || errorCode.includes("MODEL")) return "provider or model failure";
-    if (errorCode === "ROLE_EXECUTION_FAILED") return "role execution failed";
-    return "runtime failure";
+    if (errorCode === "TOOL_EXECUTION_TIMEOUT") return t("failure.class.timeoutBudgetExhausted", undefined, "timeout budget exhausted");
+    if (errorCode.includes("CONTRACT")) return t("failure.class.contractHandoffViolation", undefined, "contract handoff violation");
+    if (errorCode.includes("SCHEMA")) return t("failure.class.schemaMismatch", undefined, "schema mismatch");
+    if (errorCode.includes("PROVIDER") || errorCode.includes("MODEL")) return t("failure.class.providerModelFailure", undefined, "provider or model failure");
+    if (errorCode === "ROLE_EXECUTION_FAILED") return t("failure.class.roleExecutionFailed", undefined, "role execution failed");
+    return t("failure.class.runtimeFailure", undefined, "runtime failure");
   };
   const summaryCards = [
-    '<div class="event"><div class="event-top"><span>recent failed role</span><span>' +
-      escapeText(stage) +
+    '<div class="event"><div class="event-top"><span>' + escapeText(t("failure.recentFailedRole", undefined, "recent failed role")) + '</span><span>' +
+      escapeText(displayUiToken(stage, t)) +
       '</span></div><strong><code>' +
       escapeText(roleId) +
       '</code></strong><div class="hint">' +
       escapeText(branchId + " · " + classifyError()) +
       "</div></div>",
-    '<div class="event"><div class="event-top"><span>error code</span><span>' +
-      escapeText(retryable ? "retryable" : "terminal") +
+    '<div class="event"><div class="event-top"><span>' + escapeText(t("failure.errorCode", undefined, "error code")) + '</span><span>' +
+      escapeText(retryable ? t("failure.retryable", undefined, "retryable") : t("failure.terminal", undefined, "terminal")) +
       '</span></div><strong>' +
       escapeText(errorCode) +
       '</strong><div class="hint">' +
       escapeText(message) +
       "</div></div>",
-    '<div class="event"><div class="event-top"><span>budget</span><span>' +
-      escapeText(args.stale ? "stale" : "fresh") +
+    '<div class="event"><div class="event-top"><span>' + escapeText(t("failure.budget", undefined, "budget")) + '</span><span>' +
+      escapeText(args.stale ? t("common.stale", undefined, "stale") : t("common.fresh", undefined, "fresh")) +
       '</span></div><strong>' +
-      escapeText("duration " + durationMs + " ms") +
+      escapeText(t("failure.durationMs", { durationMs: String(durationMs) }, "duration " + durationMs + " ms")) +
       '</strong><div class="hint">' +
-      escapeText(timeoutMs ? "timeout budget " + timeoutMs + " ms" : "timeout budget unavailable") +
+      escapeText(timeoutMs ? t("failure.timeoutBudgetMs", { timeoutMs: String(timeoutMs) }, "timeout budget " + timeoutMs + " ms") : t("failure.timeoutBudgetUnavailable", undefined, "timeout budget unavailable")) +
       "</div></div>"
   ];
   return ['<div class="structure-list">', ...summaryCards, "</div>"].join("");
@@ -500,12 +537,14 @@ export function renderFailureSummaryPanel(args: {
 export function renderFailureDetailPanel(args: {
   failure: Record<string, unknown> | null | undefined;
   loaded: boolean;
+  t?: Translator;
 }): string {
+  const t: Translator = typeof args.t === "function" ? args.t : (_key, _vars, fallback) => fallback ?? _key;
   if (!args.loaded) {
-    return '<div class="hint">Failure detail is not loaded yet.</div>';
+    return '<div class="hint">' + escapeText(t("failure.detailNotLoaded", undefined, "Failure detail is not loaded yet.")) + '</div>';
   }
   if (!args.failure) {
-    return '<div class="hint">No failure detail available.</div>';
+    return '<div class="hint">' + escapeText(t("failure.noDetail", undefined, "No failure detail available.")) + '</div>';
   }
   const summary = ((args.failure.summary ?? args.failure) || {}) as JsonRecord;
   const detail = ((args.failure.detail ?? {}) || {}) as JsonRecord;
@@ -517,48 +556,48 @@ export function renderFailureDetailPanel(args: {
   const rawOutput = detail.rawOutput ?? detail.rawModelOutput ?? summary.rawOutput ?? null;
   return [
     '<div class="structure-list">',
-    '<div class="event"><div class="event-top"><span>projected input</span><span>' +
+    '<div class="event"><div class="event-top"><span>' + escapeText(t("failure.projectedInput", undefined, "projected input")) + '</span><span>' +
       escapeText(Array.isArray(detail.inputContext) ? "array" : typeof detail.inputContext) +
       '</span></div><strong>' +
-      escapeText(detail.correctionRequest ? "correction request present" : "input context available") +
+      escapeText(detail.correctionRequest ? t("failure.correctionRequestPresent", undefined, "correction request present") : t("failure.inputContextAvailable", undefined, "input context available")) +
       '</strong><div class="hint">' +
-      escapeText("schema " + schemaPath) +
+      escapeText(t("failure.schema", { schemaPath: String(schemaPath) }, "schema " + schemaPath)) +
       '</div>' +
       (detail.inputContext ? '<pre>' + escapeText(formatJson(detail.inputContext)) + "</pre>" : "") +
       "</div>",
-    '<div class="event"><div class="event-top"><span>binding resolution</span><span>' +
-      escapeText(String(selectedBinding.bindingKind ?? selectedBinding.kind ?? "n/a")) +
+    '<div class="event"><div class="event-top"><span>' + escapeText(t("failure.bindingResolution", undefined, "binding resolution")) + '</span><span>' +
+      escapeText(displayUiToken(selectedBinding.bindingKind ?? selectedBinding.kind ?? "n/a", t)) +
       '</span></div><strong>' +
-      escapeText(String(selectedBinding.resolvedBinding ?? selectedBinding.bindingRef ?? "binding unavailable")) +
+      escapeText(String(selectedBinding.resolvedBinding ?? selectedBinding.bindingRef ?? t("failure.bindingUnavailable", undefined, "binding unavailable"))) +
       '</strong><div class="hint">' +
-      escapeText(
-        "declared " + String(selectedBinding.declaredBinding ?? "n/a")
-          + " · timeout " + String(selectedBinding.timeoutMs ?? detail.timeoutMs ?? "n/a")
-          + " ms · output budget " + String(selectedBinding.maxOutputBytes ?? "n/a")
-      ) +
+      escapeText(t("failure.declaredTimeoutBudget", {
+        declared: String(selectedBinding.declaredBinding ?? t("common.notAvailable", undefined, "n/a")),
+        timeoutMs: String(selectedBinding.timeoutMs ?? detail.timeoutMs ?? t("common.notAvailable", undefined, "n/a")),
+        maxOutputBytes: String(selectedBinding.maxOutputBytes ?? t("common.notAvailable", undefined, "n/a"))
+      }, "declared " + String(selectedBinding.declaredBinding ?? "n/a") + " · timeout " + String(selectedBinding.timeoutMs ?? detail.timeoutMs ?? "n/a") + " ms · output budget " + String(selectedBinding.maxOutputBytes ?? "n/a"))) +
       "</div></div>",
-    '<div class="event"><div class="event-top"><span>contract</span><span>' +
-      escapeText(String(contract.kind ?? "n/a")) +
+    '<div class="event"><div class="event-top"><span>' + escapeText(t("failure.contract", undefined, "contract")) + '</span><span>' +
+      escapeText(displayUiToken(contract.kind ?? "n/a", t)) +
       '</span></div><strong>' +
-      escapeText(String(contract.contractId ?? "contract unavailable")) +
+      escapeText(String(contract.contractId ?? t("failure.contractUnavailable", undefined, "contract unavailable"))) +
       '</strong><div class="hint">' +
-      escapeText(
-        "flow " + String(contract.flowKey ?? "n/a")
-          + " · schema " + String(contract.schemaPath ?? schemaPath)
-      ) +
+      escapeText(t("failure.flowSchema", {
+        flowKey: String(contract.flowKey ?? t("common.notAvailable", undefined, "n/a")),
+        schemaPath: String(contract.schemaPath ?? schemaPath)
+      }, "flow " + String(contract.flowKey ?? "n/a") + " · schema " + String(contract.schemaPath ?? schemaPath))) +
       "</div></div>",
-    '<div class="event"><div class="event-top"><span>role schema</span><span>' +
+    '<div class="event"><div class="event-top"><span>' + escapeText(t("failure.roleSchema", undefined, "role schema")) + '</span><span>' +
       escapeText(String(allowedEvents.length)) +
       '</span></div><strong>' +
-      escapeText(allowedEvents.length ? allowedEvents.join(", ") : "allowed events unavailable") +
+      escapeText(allowedEvents.length ? allowedEvents.join(", ") : t("failure.allowedEventsUnavailable", undefined, "allowed events unavailable")) +
       '</strong><div class="hint">' +
-      escapeText("upstream " + (upstreamRoleIds.length ? upstreamRoleIds.join(", ") : "none")) +
+      escapeText(t("failure.upstream", { roles: upstreamRoleIds.length ? upstreamRoleIds.join(", ") : t("common.none", undefined, "none") }, "upstream " + (upstreamRoleIds.length ? upstreamRoleIds.join(", ") : "none"))) +
       "</div></div>",
     rawOutput
-      ? '<div class="event"><div class="event-top"><span>raw output</span><span>captured</span></div><strong>Provider / role raw output snapshot</strong><pre>' +
+      ? '<div class="event"><div class="event-top"><span>' + escapeText(t("failure.rawOutput", undefined, "raw output")) + '</span><span>' + escapeText(t("common.captured", undefined, "captured")) + '</span></div><strong>' + escapeText(t("failure.providerRawSnapshot", undefined, "Provider / role raw output snapshot")) + '</strong><pre>' +
         escapeText(typeof rawOutput === "string" ? rawOutput : formatJson(rawOutput)) +
         "</pre></div>"
-      : '<div class="event"><div class="event-top"><span>raw output</span><span>missing</span></div><strong>No raw output snapshot captured</strong></div>',
+      : '<div class="event"><div class="event-top"><span>' + escapeText(t("failure.rawOutput", undefined, "raw output")) + '</span><span>' + escapeText(t("common.missing", undefined, "missing")) + '</span></div><strong>' + escapeText(t("failure.noRawOutputSnapshot", undefined, "No raw output snapshot captured")) + '</strong></div>',
     "</div>"
   ].join("");
 }
@@ -566,22 +605,24 @@ export function renderFailureDetailPanel(args: {
 export function renderSuggestedNextChecksPanel(args: {
   failure: Record<string, unknown> | null | undefined;
   loaded: boolean;
+  t?: Translator;
 }): string {
+  const t: Translator = typeof args.t === "function" ? args.t : (_key, _vars, fallback) => fallback ?? _key;
   if (!args.loaded) {
-    return '<div class="hint">Suggested checks appear after failure data loads.</div>';
+    return '<div class="hint">' + escapeText(t("failure.suggestedChecksAfterLoad", undefined, "Suggested checks appear after failure data loads.")) + '</div>';
   }
   if (!args.failure) {
-    return '<div class="hint">No failure-specific next checks are needed right now.</div>';
+    return '<div class="hint">' + escapeText(t("failure.noSpecificChecks", undefined, "No failure-specific next checks are needed right now.")) + '</div>';
   }
   return [
     '<div class="structure-list">',
-    '<div class="event"><div class="event-top"><span>suggested next checks</span><span>actions</span></div><strong>Move directly to the likely root-cause surfaces</strong><div class="hint">These actions jump to the panel that explains the failing input, binding, schema, contract, or resume blockers.</div></div>',
+    '<div class="event"><div class="event-top"><span>' + escapeText(t("failure.suggestedNextChecks", undefined, "suggested next checks")) + '</span><span>' + escapeText(t("failure.actions", undefined, "actions")) + '</span></div><strong>' + escapeText(t("failure.nextChecksSummary", undefined, "Move directly to the likely root-cause surfaces")) + '</strong><div class="hint">' + escapeText(t("failure.nextChecksHint", undefined, "These actions jump to the panel that explains the failing input, binding, schema, contract, or resume blockers.")) + '</div></div>',
     '<div class="actions">',
-    '<button class="button subtle" id="failure-check-input">Inspect projected input</button>',
-    '<button class="button subtle" id="failure-check-binding">Inspect binding resolution</button>',
-    '<button class="button subtle" id="failure-check-role-package">Inspect role schema</button>',
-    '<button class="button subtle" id="failure-check-contract">Inspect contract</button>',
-    '<button class="button subtle" id="failure-check-resume">Inspect resume readiness</button>',
+    '<button class="button subtle" id="failure-check-input">' + escapeText(t("failure.inspectProjectedInput", undefined, "Inspect projected input")) + '</button>',
+    '<button class="button subtle" id="failure-check-binding">' + escapeText(t("failure.inspectBindingResolution", undefined, "Inspect binding resolution")) + '</button>',
+    '<button class="button subtle" id="failure-check-role-package">' + escapeText(t("failure.inspectRoleSchema", undefined, "Inspect role schema")) + '</button>',
+    '<button class="button subtle" id="failure-check-contract">' + escapeText(t("failure.inspectContract", undefined, "Inspect contract")) + '</button>',
+    '<button class="button subtle" id="failure-check-resume">' + escapeText(t("failure.inspectResumeReadiness", undefined, "Inspect resume readiness")) + '</button>',
     "</div>",
     "</div>"
   ].join("");
@@ -590,7 +631,9 @@ export function renderSuggestedNextChecksPanel(args: {
 export function renderBindingExplainPanel(args: {
   bindings: Record<string, unknown> | null | undefined;
   stale?: boolean;
+  t?: Translator;
 }): string {
+  const t: Translator = typeof args.t === "function" ? args.t : (_key, _vars, fallback) => fallback ?? _key;
   const bindings = args.bindings ?? {};
   const roles = Array.isArray(bindings.roles)
     ? bindings.roles as JsonRecord[]
@@ -600,15 +643,15 @@ export function renderBindingExplainPanel(args: {
         ? bindings.entries as JsonRecord[]
         : [];
   if (!roles.length) {
-    return '<div class="hint">Binding explain data unavailable.</div>';
+    return '<div class="hint">' + escapeText(t("config.bindingUnavailable", undefined, "Binding explain data unavailable.")) + '</div>';
   }
   return [
     '<div class="structure-list">',
-    '<div class="toolbar-row"><div class="toolbar-group"><span class="pill">role cards</span><span class="pill">flow cards</span></div><div class="toolbar-group"><span class="pill">all</span><span class="pill warn">missing</span><span class="pill">warning</span></div></div>',
-    '<div class="event"><div class="event-top"><span>binding explain</span><span>' +
-      escapeText(args.stale ? "stale" : "fresh") +
+    '<div class="toolbar-row"><div class="toolbar-group"><span class="pill">' + escapeText(t("config.roleCards", undefined, "role cards")) + '</span><span class="pill">' + escapeText(t("config.flowCards", undefined, "flow cards")) + '</span></div><div class="toolbar-group"><span class="pill">' + escapeText(t("config.all", undefined, "all")) + '</span><span class="pill warn">' + escapeText(t("common.missing", undefined, "missing")) + '</span><span class="pill">' + escapeText(t("readiness.warning", undefined, "warning")) + '</span></div></div>',
+    '<div class="event"><div class="event-top"><span>' + escapeText(t("config.bindingExplain", undefined, "binding explain")) + '</span><span>' +
+      escapeText(args.stale ? t("common.stale", undefined, "stale") : t("common.fresh", undefined, "fresh")) +
       '</span></div><strong>' +
-      escapeText(roles.length + " roles resolved from system + model-selection") +
+      escapeText(t("config.rolesResolved", { count: roles.length }, roles.length + " roles resolved from system + model-selection")) +
       "</strong></div>",
     ...roles.map((role) =>
       '<div class="event"><div class="event-top"><span><code>' +
@@ -621,12 +664,12 @@ export function renderBindingExplainPanel(args: {
           + " -> " + String(role.resolvedBinding ?? role.effectiveBinding ?? "unresolved")
       ) +
       '</strong><div class="hint">' +
-      escapeText(
-        "effective " + String(role.effectiveBinding ?? role.resolvedBinding ?? "n/a")
-          + " · timeout " + String(role.timeoutMs ?? "n/a")
-          + " ms · output budget " + String(role.maxOutputBytes ?? "n/a")
-          + " · source " + String(role.source ?? "unknown")
-      ) +
+      escapeText(t("config.effectiveTimeoutBudgetSource", {
+        effective: String(role.effectiveBinding ?? role.resolvedBinding ?? "n/a"),
+        timeoutMs: String(role.timeoutMs ?? "n/a"),
+        maxOutputBytes: String(role.maxOutputBytes ?? "n/a"),
+        source: String(role.source ?? t("common.unknown", undefined, "unknown"))
+      }, "effective " + String(role.effectiveBinding ?? role.resolvedBinding ?? "n/a") + " · timeout " + String(role.timeoutMs ?? "n/a") + " ms · output budget " + String(role.maxOutputBytes ?? "n/a") + " · source " + String(role.source ?? "unknown"))) +
       "</div></div>"
     ),
     "</div>"
@@ -635,7 +678,9 @@ export function renderBindingExplainPanel(args: {
 
 export function renderRolePackagePanel(args: {
   rolePackages: Record<string, unknown> | null | undefined;
+  t?: Translator;
 }): string {
+  const t: Translator = typeof args.t === "function" ? args.t : (_key, _vars, fallback) => fallback ?? _key;
   const rolePackages = args.rolePackages ?? {};
   const roles = Array.isArray(rolePackages.roles)
     ? rolePackages.roles as JsonRecord[]
@@ -645,13 +690,13 @@ export function renderRolePackagePanel(args: {
         ? rolePackages.entries as JsonRecord[]
         : [];
   if (!roles.length) {
-    return '<div class="hint">Role package summaries unavailable.</div>';
+    return '<div class="hint">' + escapeText(t("config.rolePackagesUnavailable", undefined, "Role package summaries unavailable.")) + '</div>';
   }
   return [
     '<div class="structure-list">',
-    '<div class="event"><div class="event-top"><span>role packages</span><span>' +
+    '<div class="event"><div class="event-top"><span>' + escapeText(t("config.rolePackages", undefined, "role packages")) + '</span><span>' +
       escapeText(roles.length) +
-      '</span></div><strong>Role package health and schema coverage</strong></div>',
+      '</span></div><strong>' + escapeText(t("config.rolePackageHealth", undefined, "Role package health and schema coverage")) + '</strong></div>',
     ...roles.map((role) => {
       const files = ((role.files ?? role.health) || {}) as JsonRecord;
       const allowedEvents = Array.isArray(role.allowedEvents) ? role.allowedEvents : [];
@@ -662,14 +707,14 @@ export function renderRolePackagePanel(args: {
         '<div class="event"><div class="event-top"><span><code>' +
         escapeText(role.roleId ?? "n/a") +
         '</code></span><span>' +
-        escapeText(role.summary ?? role.label ?? "package") +
+        escapeText(role.summary ?? role.label ?? t("config.package", undefined, "package")) +
         "</span></div><strong>" +
-        escapeText(String(role.outputSchemaPath ?? role.schemaPath ?? "output schema unavailable")) +
+        escapeText(String(role.outputSchemaPath ?? role.schemaPath ?? t("config.outputSchemaUnavailable", undefined, "output schema unavailable"))) +
         '</strong><div class="hint">' +
-        escapeText(
-          "allowed events " + (allowedEvents.length ? allowedEvents.join(", ") : "unknown")
-            + " · files " + (presentFiles.length ? presentFiles.join(", ") : "none")
-        ) +
+        escapeText(t("config.allowedEventsFiles", {
+          events: allowedEvents.length ? allowedEvents.join(", ") : t("common.unknown", undefined, "unknown"),
+          files: presentFiles.length ? presentFiles.join(", ") : t("common.none", undefined, "none")
+        }, "allowed events " + (allowedEvents.length ? allowedEvents.join(", ") : "unknown") + " · files " + (presentFiles.length ? presentFiles.join(", ") : "none"))) +
         "</div></div>"
       );
     }),
@@ -680,7 +725,9 @@ export function renderRolePackagePanel(args: {
 export function renderContractPanel(args: {
   contracts: Record<string, unknown> | null | undefined;
   runtimeStatus?: Record<string, unknown> | null | undefined;
+  t?: Translator;
 }): string {
+  const t: Translator = typeof args.t === "function" ? args.t : (_key, _vars, fallback) => fallback ?? _key;
   const contracts = args.contracts ?? {};
   const runtimeStatus = args.runtimeStatus ?? null;
   const flows = Array.isArray(contracts.flows)
@@ -692,19 +739,19 @@ export function renderContractPanel(args: {
         : [];
   const uncoveredEdges = Array.isArray(contracts.uncoveredEdges) ? contracts.uncoveredEdges : [];
   if (!flows.length && !uncoveredEdges.length && !runtimeStatus) {
-    return '<div class="hint">Contract coverage data unavailable.</div>';
+    return '<div class="hint">' + escapeText(t("config.contractCoverageUnavailable", undefined, "Contract coverage data unavailable.")) + '</div>';
   }
   const runtimeCard = runtimeStatus
-    ? '<div class="event"><div class="event-top"><span>run contract status</span><span>' +
-      escapeText(String(runtimeStatus.status ?? "unknown")) +
+    ? '<div class="event"><div class="event-top"><span>' + escapeText(t("config.runContractStatus", undefined, "run contract status")) + '</span><span>' +
+      escapeText(String(runtimeStatus.status ?? t("common.unknown", undefined, "unknown"))) +
       '</span></div><strong>' +
-      escapeText(String(runtimeStatus.reason ?? "Runtime contract signal unavailable.")) +
+      escapeText(String(runtimeStatus.reason ?? t("config.runtimeContractSignalUnavailable", undefined, "Runtime contract signal unavailable."))) +
       '</strong><div class="hint">' +
-      escapeText(
-        "run " + String(runtimeStatus.runId ?? "n/a")
-          + " · runtime " + String(runtimeStatus.runStatus ?? "unknown")
-          + " · signals " + String(runtimeStatus.signalCount ?? 0)
-      ) +
+      escapeText(t("config.runRuntimeSignals", {
+        runId: String(runtimeStatus.runId ?? "n/a"),
+        runStatus: String(runtimeStatus.runStatus ?? t("common.unknown", undefined, "unknown")),
+        signalCount: String(runtimeStatus.signalCount ?? 0)
+      }, "run " + String(runtimeStatus.runId ?? "n/a") + " · runtime " + String(runtimeStatus.runStatus ?? "unknown") + " · signals " + String(runtimeStatus.signalCount ?? 0))) +
       "</div>" +
       (runtimeStatus.attribution ? '<pre>' + escapeText(formatJson(runtimeStatus.attribution)) + "</pre>" : "") +
       "</div>"
@@ -712,26 +759,26 @@ export function renderContractPanel(args: {
   return [
     '<div class="structure-list">',
     runtimeCard,
-    '<div class="toolbar-row"><div class="toolbar-group"><span class="pill">flow cards</span><span class="pill">covered</span><span class="pill warn">missing</span></div></div>',
-    '<div class="event"><div class="event-top"><span>contract coverage</span><span>' +
-      escapeText(uncoveredEdges.length ? uncoveredEdges.length + " uncovered" : "complete") +
-      '</span></div><strong>Strict handoff coverage across flows and role inputs</strong></div>',
+    '<div class="toolbar-row"><div class="toolbar-group"><span class="pill">' + escapeText(t("config.flowCards", undefined, "flow cards")) + '</span><span class="pill">' + escapeText(t("config.covered", undefined, "covered")) + '</span><span class="pill warn">' + escapeText(t("common.missing", undefined, "missing")) + '</span></div></div>',
+    '<div class="event"><div class="event-top"><span>' + escapeText(t("readiness.contractCoverage", undefined, "contract coverage")) + '</span><span>' +
+      escapeText(uncoveredEdges.length ? t("config.uncovered", { count: uncoveredEdges.length }, uncoveredEdges.length + " uncovered") : t("common.complete", undefined, "complete")) +
+      '</span></div><strong>' + escapeText(t("config.strictHandoffCoverage", undefined, "Strict handoff coverage across flows and role inputs")) + '</strong></div>',
     ...flows.map((flow) =>
       '<div class="event"><div class="event-top"><span>' +
       escapeText(String(flow.flowKey ?? flow.edgeKey ?? "flow")) +
       "</span><span>" +
       escapeText(String(flow.kind ?? "flow")) +
       "</span></div><strong>" +
-      escapeText(String(flow.contractId ?? "missing contract")) +
+      escapeText(String(flow.contractId ?? t("config.missingContract", undefined, "missing contract"))) +
       '</strong><div class="hint">' +
-      escapeText(
-        "schema " + String(flow.schemaPath ?? "n/a")
-          + " · status " + String(flow.lastStatus ?? flow.coverage ?? "unknown")
-      ) +
+      escapeText(t("config.schemaStatus", {
+        schemaPath: String(flow.schemaPath ?? "n/a"),
+        status: String(flow.lastStatus ?? flow.coverage ?? t("common.unknown", undefined, "unknown"))
+      }, "schema " + String(flow.schemaPath ?? "n/a") + " · status " + String(flow.lastStatus ?? flow.coverage ?? "unknown"))) +
       "</div></div>"
     ),
     ...uncoveredEdges.map((edge) =>
-      '<div class="event"><div class="event-top"><span>missing contract</span><span>coverage gap</span></div><strong>' +
+      '<div class="event"><div class="event-top"><span>' + escapeText(t("config.missingContract", undefined, "missing contract")) + '</span><span>' + escapeText(t("config.coverageGap", undefined, "coverage gap")) + '</span></div><strong>' +
       escapeText(String(edge.flowKey ?? edge.edgeKey ?? "uncovered edge")) +
       '</strong><div class="hint">' +
       escapeText(String(edge.fromRoleId ?? "n/a") + " -> " + String(edge.toRoleId ?? "n/a")) +
@@ -741,9 +788,10 @@ export function renderContractPanel(args: {
   ].join("");
 }
 
-export function renderReviewDetailPanel(detail: Record<string, unknown> | null | undefined): string {
+export function renderReviewDetailPanel(detail: Record<string, unknown> | null | undefined, t?: Translator): string {
+  const tr: Translator = typeof t === "function" ? t : (_key, _vars, fallback) => fallback ?? _key;
   if (!detail) {
-    return '<div class="hint">No review selected.</div>';
+    return '<div class="hint">' + escapeText(tr("state.noReviewSelected", undefined, "No review selected.")) + '</div>';
   }
   const history = Array.isArray(detail.history) ? detail.history : [];
   const historyCards = history.length > 0
@@ -755,54 +803,60 @@ export function renderReviewDetailPanel(detail: Record<string, unknown> | null |
           "</span><span>" +
           escapeText(record.decidedAt ?? record.committedAt ?? "n/a") +
           "</span></div><strong>" +
-          escapeText(record.actor ?? "unknown actor") +
-          '</strong><div class="hint">' +
-          escapeText(record.comment ?? "no comment") +
-          "</div></div>"
-        );
-      })
-    : ['<div class="hint">No prior decision history.</div>'];
+      escapeText(record.actor ?? tr("common.unknown", undefined, "unknown")) +
+      '</strong><div class="hint">' +
+      escapeText(record.comment ?? tr("review.noComment", undefined, "no comment")) +
+      "</div></div>"
+    );
+  })
+    : ['<div class="hint">' + escapeText(tr("review.noPriorDecisionHistory", undefined, "No prior decision history.")) + '</div>'];
   const nextActionSummary =
     detail.currentStatus === "pending"
-      ? "Awaiting approve, rework, pause, or terminate."
+      ? tr("review.awaitingDecision", undefined, "Awaiting approve, rework, pause, or terminate.")
       : detail.decisionPhase === "recorded"
-        ? "Decision recorded; runtime reconcile should be inspected next."
+        ? tr("review.decisionRecorded", undefined, "Decision recorded; runtime reconcile should be inspected next.")
         : detail.decisionPhase === "pending_reconcile"
-          ? "Decision has checkpoint state but still blocks clean resume."
-          : "No immediate action available.";
+          ? tr("review.pendingReconcile", undefined, "Decision has checkpoint state but still blocks clean resume.")
+          : tr("review.noImmediateAction", undefined, "No immediate action available.");
   return [
     '<div class="structure-list">',
-    '<div class="event"><div class="event-top"><span>review</span><span>' + escapeText(detail.currentStatus ?? "unknown") + "</span></div><strong>" +
+    '<div class="event"><div class="event-top"><span>' + escapeText(tr("review.review", undefined, "review")) + '</span><span>' + escapeText(detail.currentStatus ?? "unknown") + "</span></div><strong>" +
       escapeText(detail.reviewId ?? "n/a") +
       '</strong><div class="hint">' +
       escapeText((detail.roleId ?? "n/a") + " · " + (detail.branchId ?? "n/a")) +
       "</div></div>",
-    '<div class="event"><div class="event-top"><span>decision</span><span>' + escapeText(detail.decisionPhase ?? "none") + "</span></div><strong>" +
+    '<div class="event"><div class="event-top"><span>' + escapeText(tr("review.decision", undefined, "decision")) + '</span><span>' + escapeText(detail.decisionPhase ?? tr("common.none", undefined, "none")) + "</span></div><strong>" +
       escapeText(detail.decision ?? "pending") +
       '</strong><div class="hint">' +
-      escapeText((detail.actor ?? "n/a") + " · " + (detail.comment ?? "no comment")) +
+      escapeText((detail.actor ?? "n/a") + " · " + (detail.comment ?? tr("review.noComment", undefined, "no comment"))) +
       "</div></div>",
-    '<div class="event"><div class="event-top"><span>timing</span><span>round ' + escapeText(detail.round ?? "n/a") + '</span></div><strong>' +
-      escapeText("requested " + (detail.requestedAt ?? "n/a")) +
+    '<div class="event"><div class="event-top"><span>' + escapeText(tr("review.timing", undefined, "timing")) + '</span><span>' + escapeText(tr("review.round", { round: String(detail.round ?? "n/a") }, "round " + String(detail.round ?? "n/a"))) + '</span></div><strong>' +
+      escapeText(tr("review.requestedAt", { at: String(detail.requestedAt ?? "n/a") }, "requested " + String(detail.requestedAt ?? "n/a"))) +
       '</strong><div class="hint">' +
-      escapeText("decided " + (detail.decidedAt ?? "n/a") + " · applied " + (detail.appliedAt ?? "n/a")) +
+      escapeText(tr("review.decidedApplied", { decidedAt: String(detail.decidedAt ?? "n/a"), appliedAt: String(detail.appliedAt ?? "n/a") }, "decided " + String(detail.decidedAt ?? "n/a") + " · applied " + String(detail.appliedAt ?? "n/a"))) +
       "</div></div>",
-    '<div class="event"><div class="event-top"><span>selected event</span><span>' + escapeText(detail.scope ?? "n/a") + '</span></div><strong>' +
+    '<div class="event"><div class="event-top"><span>' + escapeText(tr("review.selectedEvent", undefined, "selected event")) + '</span><span>' + escapeText(detail.scope ?? "n/a") + '</span></div><strong>' +
       escapeText(detail.selectedEvent ?? "n/a") +
       '</strong><div class="hint">' +
-      escapeText("execution " + (detail.executionId ?? "n/a") + " · requestedBy " + (detail.requestedByExecutionId ?? "n/a")) +
+      escapeText(tr("review.executionRequestedBy", {
+        executionId: String(detail.executionId ?? "n/a"),
+        requestedByExecutionId: String(detail.requestedByExecutionId ?? "n/a")
+      }, "execution " + String(detail.executionId ?? "n/a") + " · requestedBy " + String(detail.requestedByExecutionId ?? "n/a"))) +
       "</div></div>",
-    '<div class="event"><div class="event-top"><span>next step</span><span>' + escapeText(detail.branchStatus ?? "n/a") + '</span></div><strong>' +
+    '<div class="event"><div class="event-top"><span>' + escapeText(tr("review.nextStep", undefined, "next step")) + '</span><span>' + escapeText(detail.branchStatus ?? "n/a") + '</span></div><strong>' +
       escapeText(nextActionSummary) +
       '</strong><div class="hint">' +
-      escapeText("selected event " + (detail.selectedEvent ?? "n/a") + " · branch " + (detail.branchId ?? "n/a")) +
+      escapeText(tr("review.selectedEventBranch", {
+        event: String(detail.selectedEvent ?? "n/a"),
+        branchId: String(detail.branchId ?? "n/a")
+      }, "selected event " + String(detail.selectedEvent ?? "n/a") + " · branch " + String(detail.branchId ?? "n/a"))) +
       "</div></div>",
-    '<div class="event"><div class="event-top"><span>history</span><span>' + escapeText(history.length) + '</span></div><strong>Decision trail</strong></div>',
+    '<div class="event"><div class="event-top"><span>' + escapeText(tr("review.history", undefined, "history")) + '</span><span>' + escapeText(history.length) + '</span></div><strong>' + escapeText(tr("review.decisionTrail", undefined, "Decision trail")) + '</strong></div>',
     ...historyCards,
-    '<div class="event"><div class="event-top"><span>request snapshot</span><span>captured</span></div><strong>Review request context</strong><pre>' +
+    '<div class="event"><div class="event-top"><span>' + escapeText(tr("review.requestSnapshot", undefined, "request snapshot")) + '</span><span>' + escapeText(tr("common.captured", undefined, "captured")) + '</span></div><strong>' + escapeText(tr("review.requestContext", undefined, "Review request context")) + '</strong><pre>' +
       escapeText(formatJson(detail.reviewRequestSnapshot ?? detail.requestSnapshot ?? detail.spec ?? null)) +
       "</pre></div>",
-    '<div class="event"><div class="event-top"><span>decision snapshot</span><span>captured</span></div><strong>Decision durability snapshot</strong><pre>' +
+    '<div class="event"><div class="event-top"><span>' + escapeText(tr("review.decisionSnapshot", undefined, "decision snapshot")) + '</span><span>' + escapeText(tr("common.captured", undefined, "captured")) + '</span></div><strong>' + escapeText(tr("review.decisionDurabilitySnapshot", undefined, "Decision durability snapshot")) + '</strong><pre>' +
       escapeText(formatJson(detail.decisionSnapshot ?? {
         decision: detail.decision ?? null,
         actor: detail.actor ?? null,
@@ -814,7 +868,7 @@ export function renderReviewDetailPanel(detail: Record<string, unknown> | null |
         reconciledAt: detail.reconciledAt ?? null
       })) +
       "</pre></div>",
-    '<div class="event"><div class="event-top"><span>context</span><span>snapshot</span></div><strong>Human review context</strong><pre>' +
+    '<div class="event"><div class="event-top"><span>' + escapeText(tr("review.context", undefined, "context")) + '</span><span>' + escapeText(tr("common.snapshot", undefined, "snapshot")) + '</span></div><strong>' + escapeText(tr("review.humanReviewContext", undefined, "Human review context")) + '</strong><pre>' +
       escapeText(formatJson(detail.humanReviewContext ?? null)) +
       "</pre></div>",
     "</div>"
@@ -824,10 +878,12 @@ export function renderReviewDetailPanel(detail: Record<string, unknown> | null |
 export function renderReviewQueuePanel(args: {
   reviews: Record<string, unknown> | null | undefined;
   selectedReviewId: string;
+  t?: Translator;
 }): string {
+  const t: Translator = typeof args.t === "function" ? args.t : (_key, _vars, fallback) => fallback ?? _key;
   const reviewList = Array.isArray(args.reviews?.reviews) ? args.reviews?.reviews as JsonRecord[] : [];
   if (!reviewList.length) {
-    return '<div class="hint">No reviews for this run.</div>';
+    return '<div class="hint">' + escapeText(t("review.noReviews", undefined, "No reviews for this run.")) + '</div>';
   }
   const statusCounts = reviewList.reduce<Record<string, number>>((counts, review) => {
     const key = String(review.currentStatus ?? "unknown");
@@ -836,7 +892,7 @@ export function renderReviewQueuePanel(args: {
   }, {});
   return [
     '<div class="structure-list">',
-    '<div class="event"><div class="event-top"><span>queue summary</span><span>' +
+    '<div class="event"><div class="event-top"><span>' + escapeText(t("review.queueSummary", undefined, "queue summary")) + '</span><span>' +
       escapeText(reviewList.length) +
       '</span></div><strong>' +
       escapeText(
@@ -851,10 +907,10 @@ export function renderReviewQueuePanel(args: {
       '<span class="status ' + escapeText(String(review.currentStatus ?? "unknown")) + '">' + escapeText(String(review.currentStatus ?? "unknown").replace(/_/g, " ")) + "</span></div>" +
       '<div class="meta">' +
       '<span>' + escapeText(String(review.roleId ?? "n/a")) + "</span>" +
-      '<span>' + escapeText("round " + String(review.round ?? "n/a")) + "</span>" +
-      '<span>' + escapeText("phase " + String(review.decisionPhase ?? "none").replace(/_/g, " ")) + "</span>" +
-      '<span>' + escapeText(String(review.actor ?? "unassigned")) + "</span>" +
-      '<span>' + escapeText(String(review.reworkTarget ?? review.reworkRoleId ?? "no rework target")) + "</span>" +
+      '<span>' + escapeText(t("review.round", { round: String(review.round ?? "n/a") }, "round " + String(review.round ?? "n/a"))) + "</span>" +
+      '<span>' + escapeText(t("review.phase", { phase: String(review.decisionPhase ?? "none").replace(/_/g, " ") }, "phase " + String(review.decisionPhase ?? "none").replace(/_/g, " "))) + "</span>" +
+      '<span>' + escapeText(String(review.actor ?? t("review.unassigned", undefined, "unassigned"))) + "</span>" +
+      '<span>' + escapeText(String(review.reworkTarget ?? review.reworkRoleId ?? t("review.noReworkTarget", undefined, "no rework target"))) + "</span>" +
       "</div>" +
       (review.comment ? '<div class="hint">' + escapeText(String(review.comment)) + "</div>" : "") +
       "</button>"
@@ -868,12 +924,14 @@ export function renderResumeReadinessPanel(args: {
   loaded: boolean;
   stale: boolean;
   diagnostics: Record<string, unknown> | null | undefined;
+  t?: Translator;
 }): string {
+  const t: Translator = typeof args.t === "function" ? args.t : (_key, _vars, fallback) => fallback ?? _key;
   if (!args.loaded) {
-    return '<div class="hint">Resume readiness loads with the selected run.</div>';
+    return '<div class="hint">' + escapeText(t("resume.loadsWithRun", undefined, "Resume readiness loads with the selected run.")) + '</div>';
   }
   if (!args.readiness) {
-    return '<div class="hint">Resume readiness unavailable.</div>';
+    return '<div class="hint">' + escapeText(t("resume.unavailable", undefined, "Resume readiness unavailable.")) + '</div>';
   }
   const blockers = Array.isArray(args.readiness.blockers)
     ? args.readiness.blockers as JsonRecord[]
@@ -890,9 +948,9 @@ export function renderResumeReadinessPanel(args: {
         changed: Boolean(value),
         blocking: false,
         message: Array.isArray(value)
-          ? value.length + " issue(s)"
+      ? value.length + " issue(s)"
           : typeof value === "object" && value !== null
-            ? "details available"
+            ? t("resume.detailsAvailable", undefined, "details available")
             : String(value)
       }));
   const checks = Array.isArray(args.diagnostics?.checks) ? args.diagnostics?.checks as JsonRecord[] : [];
@@ -902,22 +960,22 @@ export function renderResumeReadinessPanel(args: {
       : args.readiness.status === "ready";
   return [
     '<div class="structure-list">',
-    '<div class="event"><div class="event-top"><span>resume readiness</span><span>' +
-      escapeText(args.stale ? "stale" : "fresh") +
+    '<div class="event"><div class="event-top"><span>' + escapeText(t("section.resumeReadiness", undefined, "Resume Readiness")) + '</span><span>' +
+      escapeText(args.stale ? t("common.stale", undefined, "stale") : t("common.fresh", undefined, "fresh")) +
       '</span></div><strong>' +
-      escapeText(canResume ? "can resume" : "resume blocked") +
+      escapeText(canResume ? t("resume.canResume", undefined, "can resume") : t("resume.resumeBlocked", undefined, "resume blocked")) +
       '</strong><div class="hint">' +
-      escapeText(
-        "status " + String(args.readiness.status ?? "unknown")
-          + " · " + String(args.readiness.reason ?? args.readiness.summary ?? "no summary")
-      ) +
+      escapeText(t("resume.statusReason", {
+        status: String(args.readiness.status ?? t("common.unknown", undefined, "unknown")),
+        reason: String(args.readiness.reason ?? args.readiness.summary ?? "no summary")
+      }, "status " + String(args.readiness.status ?? "unknown") + " · " + String(args.readiness.reason ?? args.readiness.summary ?? "no summary"))) +
       "</div></div>",
     ...(blockers.length
       ? blockers.map((blocker) =>
           '<div class="event"><div class="event-top"><span>' +
           escapeText(String(blocker.category ?? blocker.kind ?? blocker.code ?? blocker.id ?? "blocker")) +
           "</span><span>" +
-          escapeText(String(blocker.blocking === false ? "non-blocking" : blocker.severity ?? "blocking")) +
+          escapeText(String(blocker.blocking === false ? t("resume.nonBlocking", undefined, "non-blocking") : blocker.severity ?? t("resume.blocking", undefined, "blocking"))) +
           "</span></div><strong>" +
           escapeText(String(blocker.title ?? blocker.label ?? blocker.message ?? "resume blocker")) +
           '</strong><div class="hint">' +
@@ -925,32 +983,32 @@ export function renderResumeReadinessPanel(args: {
           (blocker.detail ? '<pre>' + escapeText(formatJson(blocker.detail)) + "</pre>" : "") +
           "</div></div>"
         )
-      : ['<div class="event"><div class="event-top"><span>blockers</span><span>0</span></div><strong>No blocking issues reported</strong></div>']),
+      : ['<div class="event"><div class="event-top"><span>' + escapeText(t("resume.blockers", undefined, "blockers")) + '</span><span>0</span></div><strong>' + escapeText(t("resume.noBlockingIssues", undefined, "No blocking issues reported")) + '</strong></div>']),
     ...driftSources.map((drift) =>
-      '<div class="event"><div class="event-top"><span>drift source</span><span>' +
-      escapeText(String(drift.source ?? "unknown")) +
+      '<div class="event"><div class="event-top"><span>' + escapeText(t("resume.driftSource", undefined, "drift source")) + '</span><span>' +
+      escapeText(String(drift.source ?? t("common.unknown", undefined, "unknown"))) +
       '</span></div><strong>' +
-      escapeText(String(drift.message ?? (drift.changed ? "changed" : "unchanged"))) +
+      escapeText(String(drift.message ?? (drift.changed ? t("common.changed", undefined, "changed") : t("common.unchanged", undefined, "unchanged")))) +
       '</strong><div class="hint">' +
-      escapeText(String(drift.blocking ? "blocking" : drift.changed ? "changed" : "stable")) +
+      escapeText(String(drift.blocking ? t("resume.blocking", undefined, "blocking") : drift.changed ? t("common.changed", undefined, "changed") : t("common.stable", undefined, "stable"))) +
       '</div>' +
       (drift.detail ? '<pre>' + escapeText(formatJson(drift.detail)) + "</pre>" : "") +
       "</div>"
     ),
     ...(driftSources.length ? [] : [
-      '<div class="event"><div class="event-top"><span>drift source</span><span>0</span></div><strong>No drift sources reported</strong></div>'
+      '<div class="event"><div class="event-top"><span>' + escapeText(t("resume.driftSource", undefined, "drift source")) + '</span><span>0</span></div><strong>' + escapeText(t("resume.noDriftSources", undefined, "No drift sources reported")) + '</strong></div>'
     ]),
     ...(checks.length
       ? checks.map((check) =>
-          '<div class="event"><div class="event-top"><span>diagnostic check</span><span>' +
-          escapeText(String(check.ok ? "ok" : check.severity ?? "warn")) +
+          '<div class="event"><div class="event-top"><span>' + escapeText(t("resume.diagnosticCheck", undefined, "diagnostic check")) + '</span><span>' +
+          escapeText(String(check.ok ? t("common.ok", undefined, "ok") : check.severity ?? "warn")) +
           '</span></div><strong>' +
           escapeText(String(check.label ?? check.id ?? "check")) +
           '</strong><div class="hint">' +
           escapeText(String(check.message ?? "")) +
           "</div></div>"
         )
-      : ['<div class="hint">Detailed resume diagnostics remain on-demand.</div>']),
+      : ['<div class="hint">' + escapeText(t("resume.diagnosticsOnDemand", undefined, "Detailed resume diagnostics remain on-demand.")) + '</div>']),
     "</div>"
   ].join("");
 }
@@ -1051,18 +1109,20 @@ export function renderRunStatePanel(args: {
   state: unknown;
   header: JsonRecord | null | undefined;
   graph: JsonRecord | null | undefined;
+  t?: Translator;
 }): string {
+  const t: Translator = typeof args.t === "function" ? args.t : (_key, _vars, fallback) => fallback ?? _key;
   const summarizeValue = (value: unknown): { label: string; detail?: string } => {
     if (Array.isArray(value)) {
       return {
-        label: `array · ${value.length} item${value.length === 1 ? "" : "s"}`,
+        label: t("common.arrayItems", { count: value.length }, `array · ${value.length} item(s)`),
         detail: value.length ? formatJson(value) : undefined
       };
     }
     if (value && typeof value === "object") {
       const keys = Object.keys(value as JsonRecord);
       return {
-        label: `object · ${keys.length} key${keys.length === 1 ? "" : "s"}`,
+        label: t("common.objectKeys", { count: keys.length }, `object · ${keys.length} key(s)`),
         detail: keys.length ? formatJson(value) : undefined
       };
     }
@@ -1070,63 +1130,96 @@ export function renderRunStatePanel(args: {
       return { label: value ? "true" : "false" };
     }
     if (value === null || value === undefined || value === "") {
-      return { label: "empty" };
+      return { label: t("common.empty", undefined, "empty") };
     }
-    return { label: String(value) };
+    return { label: displayUiToken(value, t) };
   };
-  const renderStructuredValueCards = (title: string, value: unknown): string[] => {
+  const stateFieldLabel = (path: string): string => {
+    const key = path.startsWith("state.") ? path.slice("state.".length) : path;
+    return t("state.field." + key, undefined, key);
+  };
+  const renderValueCard = (path: string, value: unknown): string => {
+    const summary = summarizeValue(value);
+    const label = stateFieldLabel(path);
+    return (
+      '<div class="event"><div class="event-top"><span>' +
+      escapeText(label) +
+      '</span><span><code>' +
+      escapeText(path) +
+      "</code></span></div><strong>" +
+      escapeText(summary.label) +
+      "</strong>" +
+      (summary.detail ? '<pre>' + escapeText(summary.detail) + "</pre>" : "") +
+      "</div>"
+    );
+  };
+  const renderStateGroup = (title: string, cards: string[]): string => {
+    if (!cards.length) {
+      return "";
+    }
+    return '<div class="state-group"><div class="state-group-title">' + escapeText(title) + '</div><div class="state-card-grid">' + cards.join("") + "</div></div>";
+  };
+  const renderStructuredStateGroups = (value: unknown): string[] => {
     const record = value && typeof value === "object" && !Array.isArray(value)
       ? value as JsonRecord
       : undefined;
     if (!record) {
-      const summary = summarizeValue(value);
-      return [
-        '<div class="event"><div class="event-top"><span>' + escapeText(title) + '</span><span>value</span></div><strong>' +
-        escapeText(summary.label) +
-        '</strong>' +
-        (summary.detail ? '<pre>' + escapeText(summary.detail) + "</pre>" : "") +
-        "</div>"
-      ];
+      return [renderValueCard("state", value)];
     }
     const keys = Object.keys(record);
     if (!keys.length) {
-      return [
-        '<div class="event"><div class="event-top"><span>' + escapeText(title) + '</span><span>empty</span></div><strong>no fields</strong></div>'
-      ];
+      return ['<div class="event"><div class="event-top"><span>' + escapeText(t("artifacts.state", undefined, "State")) + '</span><span>' + escapeText(t("common.empty", undefined, "empty")) + '</span></div><strong>' + escapeText(t("common.noFields", undefined, "no fields")) + '</strong></div>'];
     }
-    return keys.map((key) => {
-      const summary = summarizeValue(record[key]);
-      return (
-        '<div class="event"><div class="event-top"><span>' +
-        escapeText(`${title}.${key}`) +
-        "</span><span>" +
-        escapeText(summary.label) +
-        "</span></div><strong>" +
-        escapeText(key) +
-        "</strong>" +
-        (summary.detail ? '<pre>' + escapeText(summary.detail) + "</pre>" : "") +
-        "</div>"
-      );
-    });
+    const executionKeys = new Set(["status", "mode", "runMode", "transitionCount", "totalTransitions", "okCount", "failedCount", "noopCount", "lastExecutedRoleId", "finalRoleId", "currentRoleId", "nextRoleId"]);
+    const branchReviewKeys = new Set(["activeBranches", "completedBranches", "branches", "branchStatuses", "pendingReviewCount", "reviews", "review", "humanReviews"]);
+    const controlKeys = new Set(["stopRequest", "stopOutcome", "metrics", "artifacts", "errors", "error", "failure", "auditSummary"]);
+    const executionCards: string[] = [];
+    const branchReviewCards: string[] = [];
+    const controlCards: string[] = [];
+    const additionalCards: string[] = [];
+    for (const key of keys) {
+      const card = renderValueCard("state." + key, record[key]);
+      if (executionKeys.has(key)) {
+        executionCards.push(card);
+      } else if (branchReviewKeys.has(key)) {
+        branchReviewCards.push(card);
+      } else if (controlKeys.has(key)) {
+        controlCards.push(card);
+      } else {
+        additionalCards.push(card);
+      }
+    }
+    return [
+      renderStateGroup(t("state.executionState", undefined, "execution state"), executionCards),
+      renderStateGroup(t("state.branchReviewState", undefined, "branch and review state"), branchReviewCards),
+      renderStateGroup(t("state.controlState", undefined, "control and artifact state"), controlCards),
+      renderStateGroup(t("state.additionalState", undefined, "additional state"), additionalCards)
+    ].filter(Boolean);
   };
   if (args.state === null || args.state === undefined) {
-    return '<div class="hint">Runtime state unavailable.</div>';
+    return '<div class="hint">' + escapeText(t("state.runtimeStateUnavailable", undefined, "Runtime state unavailable.")) + '</div>';
   }
   const header = args.header ?? {};
   const graph = args.graph ?? {};
   const graphNodes = Array.isArray(graph.nodes) ? graph.nodes.length : 0;
   const graphEdges = Array.isArray(graph.edges) ? graph.edges.length : 0;
   return [
-    '<div class="structure-list">',
-    '<div class="event"><div class="event-top"><span>runtime</span><span>' + escapeText(header.status ?? "unknown") + "</span></div><strong>" +
-      escapeText(String((args.state as JsonRecord | undefined)?.status ?? header.status ?? "state available")) +
-      '</strong><div class="hint">active branches ' + escapeText(header.activeBranches ?? 0) +
-      " · pending reviews " + escapeText(header.pendingReviewCount ?? 0) + "</div></div>",
-    '<div class="event"><div class="event-top"><span>graph snapshot</span><span>' + escapeText(graphNodes) + " nodes</span></div><strong>" +
-      escapeText(`flows ${graphEdges}`) +
-      '</strong><div class="hint">last role ' + escapeText(header.lastExecutedRoleId ?? "n/a") +
-      " · final role " + escapeText(header.finalRoleId ?? "n/a") + "</div></div>",
-    ...renderStructuredValueCards("state", args.state),
+    '<div class="state-panel">',
+    '<div class="state-card-grid">',
+    '<div class="event"><div class="event-top"><span>' + escapeText(t("state.runtime", undefined, "runtime")) + '</span><span>' + escapeText(displayUiToken(header.status ?? t("common.unknown", undefined, "unknown"), t)) + "</span></div><strong>" +
+      escapeText(displayUiToken((args.state as JsonRecord | undefined)?.status ?? header.status ?? t("state.stateAvailable", undefined, "state available"), t)) +
+      '</strong><div class="hint">' + escapeText(t("state.activePending", {
+        activeBranches: String(header.activeBranches ?? 0),
+        pendingReviews: String(header.pendingReviewCount ?? 0)
+      }, "active branches " + String(header.activeBranches ?? 0) + " · pending reviews " + String(header.pendingReviewCount ?? 0))) + "</div></div>",
+    '<div class="event"><div class="event-top"><span>' + escapeText(t("state.graphSnapshot", undefined, "graph snapshot")) + '</span><span>' + escapeText(graphNodes) + " " + escapeText(t("common.nodes", undefined, "nodes")) + '</span></div><strong>' +
+      escapeText(t("state.flowsCount", { count: graphEdges }, `flows ${graphEdges}`)) +
+      '</strong><div class="hint">' + escapeText(t("state.lastFinalRole", {
+        lastRoleId: String(header.lastExecutedRoleId ?? t("common.notAvailable", undefined, "n/a")),
+        finalRoleId: String(header.finalRoleId ?? t("common.notAvailable", undefined, "n/a"))
+      }, "last role " + String(header.lastExecutedRoleId ?? "n/a") + " · final role " + String(header.finalRoleId ?? "n/a"))) + "</div></div>",
+    "</div>",
+    ...renderStructuredStateGroups(args.state),
     "</div>"
   ].join("");
 }
@@ -1143,14 +1236,14 @@ export function renderArtifactsPanel(args: {
   const summarizeValue = (value: unknown): { label: string; detail?: string } => {
     if (Array.isArray(value)) {
       return {
-        label: `array · ${value.length} item${value.length === 1 ? "" : "s"}`,
+        label: t("common.arrayItems", { count: value.length }, `array · ${value.length} item(s)`),
         detail: value.length ? formatJson(value) : undefined
       };
     }
     if (value && typeof value === "object") {
       const keys = Object.keys(value as JsonRecord);
       return {
-        label: `object · ${keys.length} key${keys.length === 1 ? "" : "s"}`,
+        label: t("common.objectKeys", { count: keys.length }, `object · ${keys.length} key(s)`),
         detail: keys.length ? formatJson(value) : undefined
       };
     }
@@ -1158,18 +1251,27 @@ export function renderArtifactsPanel(args: {
       return { label: value ? "true" : "false" };
     }
     if (value === null || value === undefined || value === "") {
-      return { label: "empty" };
+      return { label: t("common.empty", undefined, "empty") };
     }
-    return { label: String(value) };
+    return { label: displayUiToken(value, t) };
   };
   const renderStructuredValueCards = (title: string, value: unknown): string[] => {
+    const titleLabel = (name: string): string => {
+      if (name === "metrics") return t("artifacts.metrics", undefined, "Metrics");
+      if (name === "state") return t("artifacts.state", undefined, "State");
+      if (name === "stopRequest") return t("state.field.stopRequest", undefined, "stop request");
+      if (name === "stopOutcome") return t("state.field.stopOutcome", undefined, "stop outcome");
+      if (name === "summary") return t("artifacts.summary", undefined, "Summary");
+      return name;
+    };
+    const fieldLabel = (key: string): string => t("state.field." + key, undefined, key);
     const record = value && typeof value === "object" && !Array.isArray(value)
       ? value as JsonRecord
       : undefined;
     if (!record) {
       const summary = summarizeValue(value);
       return [
-        '<div class="event"><div class="event-top"><span>' + escapeText(title) + '</span><span>value</span></div><strong>' +
+        '<div class="event"><div class="event-top"><span>' + escapeText(titleLabel(title)) + '</span><span><code>' + escapeText(title) + '</code></span></div><strong>' +
         escapeText(summary.label) +
         '</strong>' +
         (summary.detail ? '<pre>' + escapeText(summary.detail) + "</pre>" : "") +
@@ -1179,18 +1281,18 @@ export function renderArtifactsPanel(args: {
     const keys = Object.keys(record);
     if (!keys.length) {
       return [
-        '<div class="event"><div class="event-top"><span>' + escapeText(title) + '</span><span>empty</span></div><strong>no fields</strong></div>'
+        '<div class="event"><div class="event-top"><span>' + escapeText(titleLabel(title)) + '</span><span>' + escapeText(t("common.empty", undefined, "empty")) + '</span></div><strong>' + escapeText(t("common.noFields", undefined, "no fields")) + '</strong></div>'
       ];
     }
     return keys.map((key) => {
       const summary = summarizeValue(record[key]);
       return (
         '<div class="event"><div class="event-top"><span>' +
+        escapeText(fieldLabel(key)) +
+        '</span><span><code>' +
         escapeText(`${title}.${key}`) +
-        "</span><span>" +
+        "</code></span></div><strong>" +
         escapeText(summary.label) +
-        "</span></div><strong>" +
-        escapeText(key) +
         "</strong>" +
         (summary.detail ? '<pre>' + escapeText(summary.detail) + "</pre>" : "") +
         "</div>"
@@ -1207,20 +1309,20 @@ export function renderArtifactsPanel(args: {
   const graphEdges = Array.isArray(graph.edges) ? graph.edges.length : 0;
   const sections = [
     '<div class="artifact-tabs"><span class="pill">' + escapeText(t("artifacts.summary", undefined, "Summary")) + '</span><span class="pill">' + escapeText(t("artifacts.metrics", undefined, "Metrics")) + '</span><span class="pill">' + escapeText(t("artifacts.state", undefined, "State")) + '</span><span class="pill">' + escapeText(t("artifacts.audit", undefined, "Audit")) + '</span><span class="pill">' + escapeText(t("artifacts.timeline", undefined, "Timeline")) + '</span><span class="pill">' + escapeText(t("artifacts.raw", undefined, "Raw")) + '</span></div>',
-    '<div class="artifact-section"><div class="event"><div class="event-top"><span>summary</span><span>' + escapeText(header.status ?? "unknown") +
+    '<div class="artifact-section"><div class="event"><div class="event-top"><span>' + escapeText(t("artifacts.summary", undefined, "Summary")) + '</span><span>' + escapeText(header.status ?? t("common.unknown", undefined, "unknown")) +
       "</span></div><strong>" + escapeText(args.detail.runId ?? "n/a") +
-      '</strong><div class="hint">' + escapeText((args.detail.runDir ?? "n/a") + " · updated " + (header.updatedAt ?? "n/a")) + "</div></div>" +
-      '<div class="event"><div class="event-top"><span>artifact map</span><span>' + escapeText(reviewList.length) +
-      " reviews</span></div><strong>" + escapeText(`graph ${graphNodes} nodes / ${graphEdges} edges`) +
-      '</strong><div class="hint">resume diagnostics ' + escapeText(args.resumeDiagnostics ? "loaded" : "lazy") + " · selected review " +
-      escapeText(args.reviewDetail?.reviewId ?? "none") + "</div></div></div>",
-    '<div class="artifact-section"><div class="event"><div class="event-top"><span>metrics</span><span>snapshot</span></div><strong>Run metrics</strong></div>' +
+      '</strong><div class="hint">' + escapeText((args.detail.runDir ?? "n/a") + " · " + t("run.updated", undefined, "updated") + " " + (header.updatedAt ?? "n/a")) + "</div></div>" +
+      '<div class="event"><div class="event-top"><span>' + escapeText(t("artifacts.artifactMap", undefined, "artifact map")) + '</span><span>' + escapeText(reviewList.length) +
+      " " + escapeText(t("common.reviews", undefined, "reviews")) + '</span></div><strong>' + escapeText("graph " + graphNodes + " " + t("common.nodes", undefined, "nodes") + " / " + graphEdges + " " + t("common.edges", undefined, "edges")) +
+      '</strong><div class="hint">' + escapeText(t("artifacts.resumeDiagnostics", undefined, "resume diagnostics")) + " " + escapeText(args.resumeDiagnostics ? t("common.loaded", undefined, "loaded") : t("common.lazy", undefined, "lazy")) + " · " + escapeText(t("artifacts.selectedReview", undefined, "selected review")) + " " +
+      escapeText(args.reviewDetail?.reviewId ?? t("common.none", undefined, "none")) + "</div></div></div>",
+    '<div class="artifact-section"><div class="event"><div class="event-top"><span>' + escapeText(t("artifacts.metrics", undefined, "Metrics")) + '</span><span>' + escapeText(t("common.snapshot", undefined, "snapshot")) + '</span></div><strong>' + escapeText(t("artifacts.runMetrics", undefined, "Run metrics")) + '</strong></div>' +
       renderStructuredValueCards("metrics", args.detail.metrics ?? null).join("") + "</div>",
-    '<div class="artifact-section"><div class="event"><div class="event-top"><span>state</span><span>snapshot</span></div><strong>Runtime state and stop controls</strong></div>' +
+    '<div class="artifact-section"><div class="event"><div class="event-top"><span>' + escapeText(t("artifacts.state", undefined, "State")) + '</span><span>' + escapeText(t("common.snapshot", undefined, "snapshot")) + '</span></div><strong>' + escapeText(t("artifacts.runtimeStateStopControls", undefined, "Runtime state and stop controls")) + '</strong></div>' +
       renderStructuredValueCards("state", args.detail.state ?? null).join("") +
       renderStructuredValueCards("stopRequest", args.detail.stopRequest ?? null).join("") +
       renderStructuredValueCards("stopOutcome", args.detail.stopOutcome ?? null).join("") + "</div>",
-    '<div class="artifact-section"><div class="event"><div class="event-top"><span>raw</span><span>fallback</span></div><strong>Resolved config and summary payloads</strong></div>' +
+    '<div class="artifact-section"><div class="event"><div class="event-top"><span>' + escapeText(t("artifacts.raw", undefined, "Raw")) + '</span><span>' + escapeText(t("common.fallback", undefined, "fallback")) + '</span></div><strong>' + escapeText(t("artifacts.resolvedConfigSummary", undefined, "Resolved config and summary payloads")) + '</strong></div>' +
       renderStructuredValueCards("summary", args.detail.summary ?? null).join("") +
       renderStructuredValueCards("resolvedConfig", args.detail.resolvedConfig ?? null).join("") + "</div>"
   ];
@@ -1231,14 +1333,16 @@ export function renderArtifactsPanel(args: {
   ].join("");
 }
 
-export function renderRunTopologySvg(graph: Record<string, unknown> | null | undefined): string {
+export function renderRunTopologySvg(graph: Record<string, unknown> | null | undefined, t?: Translator): string {
+  const tr: Translator = typeof t === "function" ? t : (_key, _vars, fallback) => fallback ?? _key;
+  const labelToken = (value: unknown): string => displayUiToken(value, tr);
   if (!graph) {
-    return '<div class="hint">Graph projection unavailable.</div>';
+    return '<div class="hint">' + escapeText(tr("graph.projectionUnavailable", undefined, "Graph projection unavailable.")) + '</div>';
   }
   const nodes = Array.isArray(graph.nodes) ? graph.nodes as JsonRecord[] : [];
   const edges = Array.isArray(graph.edges) ? graph.edges as JsonRecord[] : [];
   if (!nodes.length) {
-    return '<div class="hint">No graph nodes available.</div>';
+    return '<div class="hint">' + escapeText(tr("graph.noNodes", undefined, "No graph nodes available.")) + '</div>';
   }
 
   const adjacency = new Map<string, string[]>();
@@ -1369,10 +1473,13 @@ export function renderRunTopologySvg(graph: Record<string, unknown> | null | und
       '<circle cx="' + (position.x + 20) + '" cy="' + (position.y + 22) + '" r="7" fill="' + badge + '" />' +
       '<text x="' + (position.x + 34) + '" y="' + (position.y + 27) + '" fill="' + tone.text + '" font-size="15" font-family="IBM Plex Sans, sans-serif">' + escapeText(roleId) + '</text>' +
       '<text x="' + (position.x + 20) + '" y="' + (position.y + 54) + '" fill="#8fa1c3" font-size="12" font-family="IBM Plex Sans, sans-serif">' +
-      escapeText(String(node.nodeType ?? "role") + " · " + String(node.status ?? "idle")) +
+      escapeText(labelToken(node.nodeType ?? "role") + " · " + labelToken(node.status ?? "idle")) +
       '</text>' +
       '<text x="' + (position.x + 20) + '" y="' + (position.y + 76) + '" fill="#dce7f7" font-size="12" font-family="IBM Plex Sans, sans-serif">' +
-      escapeText("active " + String(node.activeBranchCount ?? 0) + " · wait " + String(node.waitingReviewCount ?? 0) + " · pending " + String(node.pendingReviewCount ?? 0)) +
+      escapeText(tr("state.activePending", {
+        activeBranches: String(node.activeBranchCount ?? 0),
+        pendingReviews: String(node.pendingReviewCount ?? 0)
+      }, "active branches " + String(node.activeBranchCount ?? 0) + " · pending reviews " + String(node.pendingReviewCount ?? 0))) +
       '</text>' +
       '<text x="' + (position.x + 20) + '" y="' + (position.y + 96) + '" fill="#8fa1c3" font-size="11" font-family="IBM Plex Mono, monospace">' +
       escapeText(String(node.lastSelectedEvent ?? node.lastErrorCode ?? node.joinMode ?? "steady")) +

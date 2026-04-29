@@ -1,5 +1,6 @@
 import {
   bindingTone,
+  displayUiToken,
   normalizeStudioTargetRoleId,
   renderArtifactsPanel,
   renderBindingExplainPanel,
@@ -172,6 +173,7 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
     const formatReviewStatusLabel = ${formatReviewStatusLabel.toString()};
     const statusTone = ${statusTone.toString()};
     const bindingTone = ${bindingTone.toString()};
+    const displayUiToken = ${displayUiToken.toString()};
     const normalizeStudioTargetRoleId = ${normalizeStudioTargetRoleId.toString()};
     const renderStudioGraphCanvas = ${renderStudioGraphCanvas.toString()};
     const renderArtifactsPanel = ${renderArtifactsPanel.toString()};
@@ -813,12 +815,12 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
         return;
       }
       const tabs = [
-        ["debug", t("nav.runDebug"), "failure, timeline, graph, review, resume"],
-        ["project", t("nav.project"), "workbench, overview, readiness"],
-        ["ops", t("nav.ops"), "failure and resume aggregates"],
-        ["config", t("nav.config"), "bindings, role packages, contracts"],
-        ["logs", t("nav.logs"), "engine and role log channels"],
-        ["artifacts", t("nav.artifacts"), "raw run snapshots"]
+        ["debug", t("nav.runDebug"), t("navHint.runDebug")],
+        ["project", t("nav.project"), t("navHint.project")],
+        ["ops", t("nav.ops"), t("navHint.ops")],
+        ["config", t("nav.config"), t("navHint.config")],
+        ["logs", t("nav.logs"), t("navHint.logs")],
+        ["artifacts", t("nav.artifacts"), t("navHint.artifacts")]
       ];
       consoleTabsEl.innerHTML = tabs.map(([id, label, hint]) =>
         '<button class="button subtle ' + (state.consoleTab === id ? "active" : "") +
@@ -851,16 +853,16 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
       }
       return [
         '<div class="structure-list">',
-        '<div class="event"><div class="event-top"><span>system</span><span>' + escapeText(structure.systemVersion || "n/a") + '</span></div><strong>' + escapeText(structure.systemId || "unknown") + '</strong><div class="hint">entry ' + escapeText(structure.entryRoleId || "n/a") + ' · roles ' + escapeText(structure.roleCount || 0) + ' · flows ' + escapeText(structure.flowCount || 0) + '</div></div>',
+        '<div class="event"><div class="event-top"><span>' + escapeText(t("common.system")) + '</span><span>' + escapeText(structure.systemVersion || "n/a") + '</span></div><strong>' + escapeText(structure.systemId || t("common.unknown")) + '</strong><div class="hint">' + escapeText(t("common.entry")) + ' ' + escapeText(structure.entryRoleId || "n/a") + ' · ' + escapeText(t("common.roles")) + ' ' + escapeText(structure.roleCount || 0) + ' · ' + escapeText(t("studio.flows")) + ' ' + escapeText(structure.flowCount || 0) + '</div></div>',
         ...(structure.roles || []).map((role) =>
           '<div class="event"><div class="event-top"><span><code>' + escapeText(role.roleId) + '</code></span><span>' + escapeText(role.bindingKind) + '</span></div><strong>'
-          + escapeText(role.reviewMode || role.joinMode || role.routingMode || "standard role")
+          + escapeText(role.reviewMode || role.joinMode || role.routingMode || t("project.standardRole"))
           + '</strong><div class="hint">'
-          + escapeText([role.routingMode ? "route " + role.routingMode : "", role.joinMode ? "join " + role.joinMode : "", role.reviewMode ? "review " + role.reviewMode : ""].filter(Boolean).join(" · ") || "no special graph metadata")
+          + escapeText([role.routingMode ? t("common.route") + " " + role.routingMode : "", role.joinMode ? t("common.join") + " " + role.joinMode : "", role.reviewMode ? t("common.review") + " " + role.reviewMode : ""].filter(Boolean).join(" · ") || t("project.noSpecialGraphMetadata"))
           + '</div></div>'
         ),
         ...(structure.flows || []).map((flow) =>
-          '<div class="event"><div class="event-top"><span><code>' + escapeText(flow.fromRoleId) + '</code> -> <code>' + escapeText(flow.toRoleId) + '</code></span><span>flow</span></div><strong>' + escapeText(flow.eventType) + '</strong></div>'
+          '<div class="event"><div class="event-top"><span><code>' + escapeText(flow.fromRoleId) + '</code> -> <code>' + escapeText(flow.toRoleId) + '</code></span><span>' + escapeText(t("common.flow")) + '</span></div><strong>' + escapeText(flow.eventType) + '</strong></div>'
         ),
         '</div>'
       ].join("");
@@ -1169,65 +1171,65 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
       const disabled = state.actionBusy ? " disabled" : "";
       if (form.kind === "start") {
         actionFormEl.innerHTML = [
-          '<div class="event"><div class="event-top"><span>start run</span><span>from workbench</span></div><strong>Prepare a new run request</strong><div class="hint">Use the validated Mermaid path plus minimal runtime overrides.</div></div>',
+          '<div class="event"><div class="event-top"><span>' + escapeText(t("form.startRun")) + '</span><span>' + escapeText(t("form.fromWorkbench")) + '</span></div><strong>' + escapeText(t("form.prepareNewRunRequest")) + '</strong><div class="hint">' + escapeText(t("form.startRunHint")) + '</div></div>',
           '<div class="form-grid">',
-          '<label class="field"><span>System path</span><input id="action-start-system-path" value="' + escapeText(form.fields.systemPath || "") + '"' + disabled + ' /></label>',
-          '<label class="field"><span>Dry run</span><select id="action-start-dry-run"' + disabled + '><option value="true"' + (form.fields.dryRun ? " selected" : "") + '>yes</option><option value="false"' + (!form.fields.dryRun ? " selected" : "") + '>no</option></select></label>',
-          '<label class="field full"><span>Run input</span><textarea id="action-start-input"' + disabled + '>' + escapeText(form.fields.input || "") + '</textarea></label>',
-          '<label class="field"><span>Runtime config path</span><input id="action-start-runtime-path" value="' + escapeText(form.fields.runtimePath || "") + '"' + disabled + ' /></label>',
-          '<label class="field"><span>User profile path</span><input id="action-start-user-profile-path" value="' + escapeText(form.fields.userProfilePath || "") + '"' + disabled + ' /></label>',
-          '<label class="field full"><span>Laws path</span><input id="action-start-laws-path" value="' + escapeText(form.fields.lawsPath || "") + '"' + disabled + ' /></label>',
+          '<label class="field"><span>' + escapeText(t("form.systemPath")) + '</span><input id="action-start-system-path" value="' + escapeText(form.fields.systemPath || "") + '"' + disabled + ' /></label>',
+          '<label class="field"><span>' + escapeText(t("form.dryRun")) + '</span><select id="action-start-dry-run"' + disabled + '><option value="true"' + (form.fields.dryRun ? " selected" : "") + '>' + escapeText(t("common.yes")) + '</option><option value="false"' + (!form.fields.dryRun ? " selected" : "") + '>' + escapeText(t("common.no")) + '</option></select></label>',
+          '<label class="field full"><span>' + escapeText(t("form.runInput")) + '</span><textarea id="action-start-input"' + disabled + '>' + escapeText(form.fields.input || "") + '</textarea></label>',
+          '<label class="field"><span>' + escapeText(t("form.runtimeConfigPath")) + '</span><input id="action-start-runtime-path" value="' + escapeText(form.fields.runtimePath || "") + '"' + disabled + ' /></label>',
+          '<label class="field"><span>' + escapeText(t("form.userProfilePath")) + '</span><input id="action-start-user-profile-path" value="' + escapeText(form.fields.userProfilePath || "") + '"' + disabled + ' /></label>',
+          '<label class="field full"><span>' + escapeText(t("form.lawsPath")) + '</span><input id="action-start-laws-path" value="' + escapeText(form.fields.lawsPath || "") + '"' + disabled + ' /></label>',
           '</div>',
-          '<div class="actions"><button id="action-form-cancel" class="button subtle"' + disabled + '>Cancel</button><button id="action-form-submit" class="button primary"' + disabled + '>Start run</button></div>'
+          '<div class="actions"><button id="action-form-cancel" class="button subtle"' + disabled + '>' + escapeText(t("action.cancel")) + '</button><button id="action-form-submit" class="button primary"' + disabled + '>' + escapeText(t("action.startRun")) + '</button></div>'
         ].join("");
       } else if (form.kind === "resume") {
         actionFormEl.innerHTML = [
-          '<div class="event"><div class="event-top"><span>resume run</span><span>' + escapeText(state.selectedRunId || "n/a") + '</span></div><strong>Prepare a resume request</strong><div class="hint">All overrides are optional except the action itself.</div></div>',
+          '<div class="event"><div class="event-top"><span>' + escapeText(t("form.resumeRun")) + '</span><span>' + escapeText(state.selectedRunId || "n/a") + '</span></div><strong>' + escapeText(t("form.prepareResumeRequest")) + '</strong><div class="hint">' + escapeText(t("form.resumeRunHint")) + '</div></div>',
           '<div class="form-grid">',
-          '<label class="field"><span>System override</span><input id="action-resume-system-path" value="' + escapeText(form.fields.systemPath || "") + '"' + disabled + ' /></label>',
-          '<label class="field"><span>Dry run</span><select id="action-resume-dry-run"' + disabled + '><option value="false"' + (!form.fields.dryRun ? " selected" : "") + '>no</option><option value="true"' + (form.fields.dryRun ? " selected" : "") + '>yes</option></select></label>',
-          '<label class="field full"><span>Input override</span><textarea id="action-resume-input"' + disabled + '>' + escapeText(form.fields.input || "") + '</textarea></label>',
-          '<label class="field"><span>Runtime config path</span><input id="action-resume-runtime-path" value="' + escapeText(form.fields.runtimePath || "") + '"' + disabled + ' /></label>',
-          '<label class="field"><span>User profile path</span><input id="action-resume-user-profile-path" value="' + escapeText(form.fields.userProfilePath || "") + '"' + disabled + ' /></label>',
-          '<label class="field full"><span>Laws path</span><input id="action-resume-laws-path" value="' + escapeText(form.fields.lawsPath || "") + '"' + disabled + ' /></label>',
+          '<label class="field"><span>' + escapeText(t("form.systemOverride")) + '</span><input id="action-resume-system-path" value="' + escapeText(form.fields.systemPath || "") + '"' + disabled + ' /></label>',
+          '<label class="field"><span>' + escapeText(t("form.dryRun")) + '</span><select id="action-resume-dry-run"' + disabled + '><option value="false"' + (!form.fields.dryRun ? " selected" : "") + '>' + escapeText(t("common.no")) + '</option><option value="true"' + (form.fields.dryRun ? " selected" : "") + '>' + escapeText(t("common.yes")) + '</option></select></label>',
+          '<label class="field full"><span>' + escapeText(t("form.inputOverride")) + '</span><textarea id="action-resume-input"' + disabled + '>' + escapeText(form.fields.input || "") + '</textarea></label>',
+          '<label class="field"><span>' + escapeText(t("form.runtimeConfigPath")) + '</span><input id="action-resume-runtime-path" value="' + escapeText(form.fields.runtimePath || "") + '"' + disabled + ' /></label>',
+          '<label class="field"><span>' + escapeText(t("form.userProfilePath")) + '</span><input id="action-resume-user-profile-path" value="' + escapeText(form.fields.userProfilePath || "") + '"' + disabled + ' /></label>',
+          '<label class="field full"><span>' + escapeText(t("form.lawsPath")) + '</span><input id="action-resume-laws-path" value="' + escapeText(form.fields.lawsPath || "") + '"' + disabled + ' /></label>',
           '</div>',
-          '<div class="actions"><button id="action-form-cancel" class="button subtle"' + disabled + '>Cancel</button><button id="action-form-submit" class="button primary"' + disabled + '>Resume run</button></div>'
+          '<div class="actions"><button id="action-form-cancel" class="button subtle"' + disabled + '>' + escapeText(t("action.cancel")) + '</button><button id="action-form-submit" class="button primary"' + disabled + '>' + escapeText(t("form.resumeRun")) + '</button></div>'
         ].join("");
       } else if (form.kind === "stop") {
         actionFormEl.innerHTML = [
-          '<div class="event"><div class="event-top"><span>stop request</span><span>' + escapeText(state.selectedRunId || "n/a") + '</span></div><strong>Record a structured stop request</strong><div class="hint">The runtime will reconcile the request asynchronously when applicable.</div></div>',
-          '<label class="field full"><span>Reason</span><textarea id="action-stop-reason"' + disabled + '>' + escapeText(form.fields.reason || "") + '</textarea></label>',
-          '<div class="actions"><button id="action-form-cancel" class="button subtle"' + disabled + '>Cancel</button><button id="action-form-submit" class="button warn"' + disabled + '>Record stop request</button></div>'
+          '<div class="event"><div class="event-top"><span>' + escapeText(t("form.stopRequest")) + '</span><span>' + escapeText(state.selectedRunId || "n/a") + '</span></div><strong>' + escapeText(t("form.recordStructuredStopRequest")) + '</strong><div class="hint">' + escapeText(t("form.stopRequestHint")) + '</div></div>',
+          '<label class="field full"><span>' + escapeText(t("form.reason")) + '</span><textarea id="action-stop-reason"' + disabled + '>' + escapeText(form.fields.reason || "") + '</textarea></label>',
+          '<div class="actions"><button id="action-form-cancel" class="button subtle"' + disabled + '>' + escapeText(t("action.cancel")) + '</button><button id="action-form-submit" class="button warn"' + disabled + '>' + escapeText(t("form.recordStopRequest")) + '</button></div>'
         ].join("");
       } else if (form.kind === "review") {
         actionFormEl.innerHTML = [
-          '<div class="event"><div class="event-top"><span>review decision</span><span>' + escapeText(form.fields.reviewId || state.selectedReviewId || "n/a") + '</span></div><strong>' + escapeText(form.fields.decision || "decision") + '</strong><div class="hint">Capture operator identity, rationale, and scope before writing a durable review action.</div></div>',
+          '<div class="event"><div class="event-top"><span>' + escapeText(t("form.reviewDecision")) + '</span><span>' + escapeText(form.fields.reviewId || state.selectedReviewId || "n/a") + '</span></div><strong>' + escapeText(form.fields.decision || t("form.decision")) + '</strong><div class="hint">' + escapeText(t("form.reviewDecisionHint")) + '</div></div>',
           '<div class="form-grid">',
-          '<label class="field"><span>Actor</span><input id="action-review-actor" value="' + escapeText(form.fields.actor || "") + '"' + disabled + ' /></label>',
-          '<label class="field"><span>Decision</span><input id="action-review-decision" value="' + escapeText(form.fields.decision || "") + '" disabled /></label>',
-          '<label class="field full"><span>Comment</span><textarea id="action-review-comment"' + disabled + '>' + escapeText(form.fields.comment || "") + '</textarea></label>',
+          '<label class="field"><span>' + escapeText(t("form.actor")) + '</span><input id="action-review-actor" value="' + escapeText(form.fields.actor || "") + '"' + disabled + ' /></label>',
+          '<label class="field"><span>' + escapeText(t("form.decision")) + '</span><input id="action-review-decision" value="' + escapeText(form.fields.decision || "") + '" disabled /></label>',
+          '<label class="field full"><span>' + escapeText(t("form.comment")) + '</span><textarea id="action-review-comment"' + disabled + '>' + escapeText(form.fields.comment || "") + '</textarea></label>',
           (form.fields.decision === "terminate"
-            ? '<label class="field"><span>Terminate scope</span><select id="action-review-scope"' + disabled + '><option value="branch"' + ((form.fields.scope || "branch") === "branch" ? " selected" : "") + '>branch</option><option value="run"' + (form.fields.scope === "run" ? " selected" : "") + '>run</option></select></label>'
+            ? '<label class="field"><span>' + escapeText(t("form.terminateScope")) + '</span><select id="action-review-scope"' + disabled + '><option value="branch"' + ((form.fields.scope || "branch") === "branch" ? " selected" : "") + '>branch</option><option value="run"' + (form.fields.scope === "run" ? " selected" : "") + '>run</option></select></label>'
             : ""),
           '</div>',
-          '<div class="actions"><button id="action-form-cancel" class="button subtle"' + disabled + '>Cancel</button><button id="action-form-submit" class="button primary"' + disabled + '>Record review decision</button></div>'
+          '<div class="actions"><button id="action-form-cancel" class="button subtle"' + disabled + '>' + escapeText(t("action.cancel")) + '</button><button id="action-form-submit" class="button primary"' + disabled + '>' + escapeText(t("form.recordReviewDecision")) + '</button></div>'
         ].join("");
       } else if (form.kind === "saveAs") {
         actionFormEl.innerHTML = [
-          '<div class="event"><div class="event-top"><span>save mermaid</span><span>save as</span></div><strong>Write a copy of the current workbench source</strong><div class="hint">Use a project-relative path so the new Mermaid file stays inside the workspace.</div></div>',
-          '<label class="field full"><span>Relative path</span><input id="action-save-as-path" value="' + escapeText(form.fields.saveAsPath || "") + '"' + disabled + ' /></label>',
-          '<div class="actions"><button id="action-form-cancel" class="button subtle"' + disabled + '>Cancel</button><button id="action-form-submit" class="button primary"' + disabled + '>Save copy</button></div>'
+          '<div class="event"><div class="event-top"><span>' + escapeText(t("form.saveMermaid")) + '</span><span>' + escapeText(t("form.saveAs")) + '</span></div><strong>' + escapeText(t("form.writeWorkbenchCopy")) + '</strong><div class="hint">' + escapeText(t("form.saveAsHint")) + '</div></div>',
+          '<label class="field full"><span>' + escapeText(t("form.relativePath")) + '</span><input id="action-save-as-path" value="' + escapeText(form.fields.saveAsPath || "") + '"' + disabled + ' /></label>',
+          '<div class="actions"><button id="action-form-cancel" class="button subtle"' + disabled + '>' + escapeText(t("action.cancel")) + '</button><button id="action-form-submit" class="button primary"' + disabled + '>' + escapeText(t("action.saveCopy")) + '</button></div>'
         ].join("");
       } else if (form.kind === "projectLoad") {
         actionFormEl.innerHTML = [
-          '<div class="event"><div class="event-top"><span>project load</span><span>workspace</span></div><strong>Rebind the visualizer to another project directory</strong><div class="hint">This swaps project metadata, workbench source, and run list to the selected workdir.</div></div>',
-          '<label class="field full"><span>Project workdir</span><input id="action-project-workdir" value="' + escapeText(form.fields.workdir || "") + '"' + disabled + ' /></label>',
-          '<div class="actions"><button id="action-form-cancel" class="button subtle"' + disabled + '>Cancel</button><button id="action-form-submit" class="button primary"' + disabled + '>Load project</button></div>'
+          '<div class="event"><div class="event-top"><span>' + escapeText(t("form.projectLoad")) + '</span><span>' + escapeText(t("form.workspace")) + '</span></div><strong>' + escapeText(t("form.rebindVisualizer")) + '</strong><div class="hint">' + escapeText(t("form.projectLoadHint")) + '</div></div>',
+          '<label class="field full"><span>' + escapeText(t("form.projectWorkdir")) + '</span><input id="action-project-workdir" value="' + escapeText(form.fields.workdir || "") + '"' + disabled + ' /></label>',
+          '<div class="actions"><button id="action-form-cancel" class="button subtle"' + disabled + '>' + escapeText(t("action.cancel")) + '</button><button id="action-form-submit" class="button primary"' + disabled + '>' + escapeText(t("action.loadProject")) + '</button></div>'
         ].join("");
       } else if (form.kind === "reindex") {
         actionFormEl.innerHTML = [
-          '<div class="event"><div class="event-top"><span>runs index</span><span>maintenance</span></div><strong>Rebuild the persisted run list</strong><div class="hint">Use this after manual filesystem changes or if run headers look stale.</div></div>',
-          '<div class="actions"><button id="action-form-cancel" class="button subtle"' + disabled + '>Cancel</button><button id="action-form-submit" class="button warn"' + disabled + '>Rebuild index</button></div>'
+          '<div class="event"><div class="event-top"><span>' + escapeText(t("form.runsIndex")) + '</span><span>' + escapeText(t("form.maintenance")) + '</span></div><strong>' + escapeText(t("form.rebuildRunList")) + '</strong><div class="hint">' + escapeText(t("form.reindexHint")) + '</div></div>',
+          '<div class="actions"><button id="action-form-cancel" class="button subtle"' + disabled + '>' + escapeText(t("action.cancel")) + '</button><button id="action-form-submit" class="button warn"' + disabled + '>' + escapeText(t("form.rebuildIndex")) + '</button></div>'
         ].join("");
       } else {
         actionFormEl.innerHTML = '<div class="hint">' + escapeText(t("form.unsupported")) + '</div>';
@@ -1252,12 +1254,12 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
 
     function renderProject() {
       if (!state.project) {
-        projectSummaryEl.textContent = "Project data unavailable.";
-        if (opsSummaryEl) opsSummaryEl.innerHTML = '<div class="hint">Ops summary unavailable.</div>';
-        if (projectReadinessEl) projectReadinessEl.innerHTML = '<div class="hint">Project readiness unavailable.</div>';
-        bindingExplainEl.innerHTML = '<div class="hint">Project binding data unavailable.</div>';
-        rolePackagesEl.innerHTML = '<div class="hint">Role package data unavailable.</div>';
-        contractExplainEl.innerHTML = '<div class="hint">Contract data unavailable.</div>';
+        projectSummaryEl.textContent = t("state.projectDataUnavailable");
+        if (opsSummaryEl) opsSummaryEl.innerHTML = '<div class="hint">' + escapeText(t("state.opsSummaryUnavailable")) + '</div>';
+        if (projectReadinessEl) projectReadinessEl.innerHTML = '<div class="hint">' + escapeText(t("state.projectReadinessUnavailable")) + '</div>';
+        bindingExplainEl.innerHTML = '<div class="hint">' + escapeText(t("state.projectBindingDataUnavailable")) + '</div>';
+        rolePackagesEl.innerHTML = '<div class="hint">' + escapeText(t("state.rolePackageDataUnavailable")) + '</div>';
+        contractExplainEl.innerHTML = '<div class="hint">' + escapeText(t("state.contractDataUnavailable")) + '</div>';
         return;
       }
       if (workdirEl) {
@@ -1270,11 +1272,13 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
         roles,
         warnings: state.project.config?.modelSelectionWarnings ?? [],
         workbenchSavedPath: state.workbenchSavedPath || "system.mmd",
-        validationOk: Boolean(state.workbench?.validation?.ok)
+        validationOk: Boolean(state.workbench?.validation?.ok),
+        t
       });
       if (opsSummaryEl) {
         opsSummaryEl.innerHTML = renderOpsSummaryPanel({
-          opsSummary: state.opsSummary
+          opsSummary: state.opsSummary,
+          t
         });
       }
       if (projectReadinessEl) {
@@ -1285,14 +1289,17 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
       }
       bindingExplainEl.innerHTML = renderBindingExplainPanel({
         bindings: state.bindings,
-        stale: false
+        stale: false,
+        t
       });
       rolePackagesEl.innerHTML = renderRolePackagePanel({
-        rolePackages: state.rolePackages
+        rolePackages: state.rolePackages,
+        t
       });
       contractExplainEl.innerHTML = renderContractPanel({
         contracts: state.contracts,
-        runtimeStatus: state.contractRuntimeStatus
+        runtimeStatus: state.contractRuntimeStatus,
+        t
       });
     }
 
@@ -1384,13 +1391,13 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
       ].filter(Boolean);
       if (!events.length) {
         timelineEl.innerHTML = activeFilters.length
-          ? '<div class="hint">No events match the active filters: ' + escapeText(activeFilters.join(" · ")) + ".</div>"
-          : '<div class="hint">No events captured yet.</div>';
+          ? '<div class="hint">' + escapeText(t("timeline.noEventsMatchFilters", { filters: activeFilters.join(" · ") })) + '</div>'
+          : '<div class="hint">' + escapeText(t("timeline.noEventsCaptured")) + '</div>';
         return;
       }
       timelineEl.innerHTML = [
         activeFilters.length
-          ? '<div class="hint">filtered by ' + escapeText(activeFilters.join(" · ")) + "</div>"
+          ? '<div class="hint">' + escapeText(t("timeline.filteredBy", { filters: activeFilters.join(" · ") })) + "</div>"
           : "",
         ...events
           .slice()
@@ -1406,7 +1413,7 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
             return \`
               <div class="event">
                 <div class="event-top">
-                  <span>#\${escapeText(entry.cursor)} \${escapeText(type)}</span>
+                  <span>#\${escapeText(entry.cursor)} \${escapeText(displayUiToken(type, t))}</span>
                   <span>\${escapeText(record.at || "")}</span>
                 </div>
                 <strong>\${role} \${event} \${status}</strong>
@@ -1419,31 +1426,37 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
 
     function renderGraph() {
       if (!state.graph) {
-        graphViewEl.innerHTML = '<div class="hint">No run selected.</div>';
-        stateEl.innerHTML = '<div class="hint">No run selected.</div>';
+        graphViewEl.innerHTML = '<div class="hint">' + escapeText(t("state.noRunSelected")) + '</div>';
+        stateEl.innerHTML = '<div class="hint">' + escapeText(t("state.noRunSelected")) + '</div>';
         return;
       }
       const graph = state.graph.graph;
       if (!graph) {
-        graphViewEl.innerHTML = '<div class="hint">Graph projection unavailable.</div>';
+        graphViewEl.innerHTML = '<div class="hint">' + escapeText(t("graph.projectionUnavailable")) + '</div>';
         stateEl.innerHTML = renderRunStatePanel({
           state: state.detail?.state ?? null,
           header: state.detail?.header ?? null,
-          graph: null
+          graph: null,
+          t
         });
         return;
       }
       const nodes = graph.nodes || [];
       const edges = graph.edges || [];
       graphViewEl.innerHTML = [
-        '<div class="event"><strong>' + escapeText(graph.systemId || "unknown") + '</strong><div class="hint">entry ' + escapeText(graph.entryRoleId || "n/a") + " · roles " + escapeText(graph.roleCount || 0) + " · flows " + escapeText(graph.flowCount || 0) + "</div></div>",
-        renderRunTopologySvg(graph),
-        '<div class="event"><div class="event-top"><span>runtime summary</span><span>' + escapeText(nodes.length) + " nodes · " + escapeText(edges.length) + '</span></div><strong>Topology layout with runtime state overlay</strong><div class="hint">Recent paths and error flows stay highlighted without hiding the rest of the graph.</div></div>'
+        '<div class="event"><strong>' + escapeText(graph.systemId || t("common.unknown")) + '</strong><div class="hint">' + escapeText(t("graph.entryRolesFlows", {
+          entryRoleId: graph.entryRoleId || t("common.notAvailable"),
+          roleCount: graph.roleCount || 0,
+          flowCount: graph.flowCount || 0
+        })) + "</div></div>",
+        renderRunTopologySvg(graph, t),
+        '<div class="event"><div class="event-top"><span>' + escapeText(t("graph.runtimeSummary")) + '</span><span>' + escapeText(nodes.length) + " " + escapeText(t("common.nodes")) + " · " + escapeText(edges.length) + '</span></div><strong>' + escapeText(t("graph.topologyOverlay")) + '</strong><div class="hint">' + escapeText(t("graph.overlayHint")) + '</div></div>'
       ].join("");
       stateEl.innerHTML = renderRunStatePanel({
         state: state.detail?.state ?? null,
         header: state.detail?.header ?? null,
-        graph
+        graph,
+        t
       });
     }
 
@@ -1508,29 +1521,30 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
 
     function renderReviews() {
       if (!state.reviews?.reviews?.length) {
-        reviewsEl.innerHTML = '<div class="hint">No reviews for this run.</div>';
+        reviewsEl.innerHTML = '<div class="hint">' + escapeText(t("review.noReviews")) + '</div>';
         reviewActionsEl.innerHTML = "";
-        reviewDetailEl.innerHTML = '<div class="hint">No review selected.</div>';
+        reviewDetailEl.innerHTML = '<div class="hint">' + escapeText(t("state.noReviewSelected")) + '</div>';
         renderActionState();
         return;
       }
       reviewsEl.innerHTML = renderReviewQueuePanel({
         reviews: state.reviews,
-        selectedReviewId: state.selectedReviewId
+        selectedReviewId: state.selectedReviewId,
+        t
       });
       for (const button of reviewsEl.querySelectorAll("[data-review-id]")) {
         button.disabled = Boolean(state.actionBusy);
         button.addEventListener("click", () => selectReview(state.selectedRunId, button.getAttribute("data-review-id")));
       }
       const detail = state.reviewDetail;
-      reviewDetailEl.innerHTML = renderReviewDetailPanel(detail);
+      reviewDetailEl.innerHTML = renderReviewDetailPanel(detail, t);
       const actionable = detail && (detail.currentStatus === "pending" || detail.currentStatus === "paused");
       reviewActionsEl.innerHTML = actionable
         ? [
-          '<button class="button primary" data-review-action="approve">Approve review</button>',
-          '<button class="button" data-review-action="rework">Request rework</button>',
-          '<button class="button warn" data-review-action="pause">Pause review</button>',
-          '<button class="button danger" data-review-action="terminate" data-review-scope="' + escapeText(detail.scope || "branch") + '">Terminate ' + escapeText(detail.scope || "branch") + '</button>'
+          '<button class="button primary" data-review-action="approve">' + escapeText(t("review.approve")) + '</button>',
+          '<button class="button" data-review-action="rework">' + escapeText(t("review.requestRework")) + '</button>',
+          '<button class="button warn" data-review-action="pause">' + escapeText(t("review.pause")) + '</button>',
+          '<button class="button danger" data-review-action="terminate" data-review-scope="' + escapeText(detail.scope || "branch") + '">' + escapeText(t("review.terminateScope", { scope: detail.scope || "branch" })) + '</button>'
           ].join("")
         : "";
       for (const button of reviewActionsEl.querySelectorAll("[data-review-action]")) {
@@ -1556,8 +1570,8 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
         return;
       }
       failureControlsEl.innerHTML = [
-        '<button class="button subtle" id="refresh-failure"' + (state.actionBusy ? " disabled" : "") + '>Refresh failure</button>',
-        state.failureLoaded && state.failureStale ? '<span class="hint">failure data stale</span>' : ""
+        '<button class="button subtle" id="refresh-failure"' + (state.actionBusy ? " disabled" : "") + '>' + escapeText(t("failure.refresh")) + '</button>',
+        state.failureLoaded && state.failureStale ? '<span class="hint">' + escapeText(t("failure.dataStale")) + '</span>' : ""
       ].filter(Boolean).join("");
       const refreshFailureButton = document.getElementById("refresh-failure");
       if (refreshFailureButton) {
@@ -1568,15 +1582,18 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
       failureSummaryEl.innerHTML = renderFailureSummaryPanel({
         failure: state.failure,
         loaded: state.failureLoaded,
-        stale: state.failureStale
+        stale: state.failureStale,
+        t
       });
       failureDetailEl.innerHTML = renderFailureDetailPanel({
         failure: state.failure,
-        loaded: state.failureLoaded
+        loaded: state.failureLoaded,
+        t
       });
       failureNextChecksEl.innerHTML = renderSuggestedNextChecksPanel({
         failure: state.failure,
-        loaded: state.failureLoaded
+        loaded: state.failureLoaded,
+        t
       });
       bindPanelJumpButtons();
     }
@@ -1585,17 +1602,17 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
       const controls = [];
       if (!state.selectedRunId) {
         resumeControlsEl.innerHTML = "";
-        resumeReadinessEl.innerHTML = '<div class="hint">No run selected.</div>';
-        resumeEl.innerHTML = '<div class="hint">No run selected.</div>';
+        resumeReadinessEl.innerHTML = '<div class="hint">' + escapeText(t("state.noRunSelected")) + '</div>';
+        resumeEl.innerHTML = '<div class="hint">' + escapeText(t("state.noRunSelected")) + '</div>';
         return;
       }
-      controls.push('<button class="button subtle" id="refresh-readiness"' + (state.actionBusy ? " disabled" : "") + '>Refresh readiness</button>');
-      controls.push('<button class="button" id="load-diagnostics">' + (state.resumeDiagnosticsLoaded ? "Refresh diagnostics" : "Load diagnostics") + '</button>');
+      controls.push('<button class="button subtle" id="refresh-readiness"' + (state.actionBusy ? " disabled" : "") + '>' + escapeText(t("resume.refreshReadiness")) + '</button>');
+      controls.push('<button class="button" id="load-diagnostics">' + escapeText(state.resumeDiagnosticsLoaded ? t("resume.refreshDiagnostics") : t("resume.loadDiagnostics")) + '</button>');
       if (state.resumeReadinessLoaded && state.resumeReadinessStale) {
-        controls.push('<span class="hint">readiness stale</span>');
+        controls.push('<span class="hint">' + escapeText(t("resume.readinessStale")) + '</span>');
       }
       if (state.resumeDiagnosticsLoaded && state.resumeDiagnosticsStale) {
-        controls.push('<span class="hint">diagnostics stale</span>');
+        controls.push('<span class="hint">' + escapeText(t("resume.diagnosticsStale")) + '</span>');
       }
       resumeControlsEl.innerHTML = controls.join("");
       const refreshReadinessButton = document.getElementById("refresh-readiness");
@@ -1615,14 +1632,15 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
         readiness: state.resumeReadiness,
         loaded: state.resumeReadinessLoaded,
         stale: state.resumeReadinessStale,
-        diagnostics: state.resumeDiagnosticsLoaded ? state.resumeDiagnostics : null
+        diagnostics: state.resumeDiagnosticsLoaded ? state.resumeDiagnostics : null,
+        t
       });
       if (!state.resumeDiagnosticsLoaded) {
-        resumeEl.innerHTML = '<div class="hint">Resume diagnostics are loaded on demand.</div>';
+        resumeEl.innerHTML = '<div class="hint">' + escapeText(t("resume.diagnosticsOnDemand")) + '</div>';
         return;
       }
       if (!state.resumeDiagnostics) {
-        resumeEl.innerHTML = '<div class="hint">Resume diagnostics unavailable.</div>';
+        resumeEl.innerHTML = '<div class="hint">' + escapeText(t("resume.diagnosticsUnavailable")) + '</div>';
         return;
       }
       const checks = state.resumeDiagnostics.checks || [];

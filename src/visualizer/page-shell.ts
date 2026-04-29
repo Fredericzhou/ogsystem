@@ -266,11 +266,34 @@ export function renderPageHtml(workdir: string, apiPrefix: string, i18n: PageI18
       min-width: 0;
     }
     .hero-toolbar {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) auto;
+      gap: 8px;
+      align-items: center;
+      justify-items: end;
+      min-width: min(620px, 100%);
+    }
+    .hero-actions {
+      display: flex;
+      gap: 7px;
+      align-items: center;
+      flex-wrap: wrap;
+      justify-content: flex-end;
+      min-width: 0;
+    }
+    .hero-actions-primary {
+      grid-column: 1 / -1;
+    }
+    .hero-actions-secondary {
+      opacity: 0.88;
+    }
+    .hero-utilities {
       display: flex;
       gap: 8px;
-      flex-wrap: wrap;
-      align-items: center;
+      align-items: end;
       justify-content: flex-end;
+      flex-wrap: wrap;
+      min-width: 0;
     }
     .actions {
       display: flex;
@@ -343,6 +366,7 @@ export function renderPageHtml(workdir: string, apiPrefix: string, i18n: PageI18
       display: grid;
       grid-template-columns: repeat(12, minmax(0, 1fr));
       gap: 12px;
+      align-items: start;
     }
     .card {
       border: 1px solid var(--border);
@@ -641,6 +665,33 @@ export function renderPageHtml(workdir: string, apiPrefix: string, i18n: PageI18
       gap: 8px;
       min-width: 0;
     }
+    .debug-graph-body {
+      grid-template-columns: minmax(340px, 1.15fr) minmax(320px, 0.85fr);
+      align-items: start;
+    }
+    .state-panel {
+      display: grid;
+      gap: 8px;
+      min-width: 0;
+    }
+    .state-group {
+      display: grid;
+      gap: 8px;
+      min-width: 0;
+    }
+    .state-group-title {
+      margin: 2px 0 0;
+      color: var(--muted);
+      font-size: 12px;
+      text-transform: uppercase;
+      letter-spacing: 0.02em;
+    }
+    .state-card-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+      gap: 8px;
+      min-width: 0;
+    }
     .form-shell {
       display: grid;
       gap: 8px;
@@ -756,7 +807,11 @@ export function renderPageHtml(workdir: string, apiPrefix: string, i18n: PageI18
       .span-4, .span-6, .span-8, .span-12 { grid-column: span 12; }
       .studio-bridge-layout { grid-template-columns: 1fr; }
       .hero { flex-direction: column; }
-      .hero-toolbar, .actions { justify-content: flex-start; }
+      .hero-toolbar {
+        width: 100%;
+        justify-items: stretch;
+      }
+      .hero-actions, .hero-utilities, .actions { justify-content: flex-start; }
       .sidebar-toggle {
         display: inline-flex;
       }
@@ -764,8 +819,7 @@ export function renderPageHtml(workdir: string, apiPrefix: string, i18n: PageI18
     @media (max-width: 960px) {
       .content { padding: 12px; }
       .hero-toolbar {
-        width: 100%;
-        justify-content: flex-start;
+        grid-template-columns: 1fr;
       }
       .toolbar-row,
       .row {
@@ -780,16 +834,33 @@ export function renderPageHtml(workdir: string, apiPrefix: string, i18n: PageI18
       .button {
         width: 100%;
       }
+      .hero-toolbar .button {
+        width: auto;
+      }
       .timeline-controls {
         grid-template-columns: repeat(2, minmax(0, 1fr));
       }
       .log-toolbar {
         grid-template-columns: repeat(2, minmax(0, 1fr));
       }
+      .debug-graph-body {
+        grid-template-columns: 1fr;
+      }
     }
     @media (max-width: 768px) {
       .content { padding: 10px; }
       .hero { padding: 10px; }
+      .hero-actions,
+      .hero-utilities {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        width: 100%;
+      }
+      .hero-toolbar .button,
+      .hero-utilities .field,
+      .hero-utilities .live {
+        width: 100%;
+      }
       .toolbar-row,
       .row {
         grid-template-columns: 1fr;
@@ -857,26 +928,28 @@ export function renderPageHtml(workdir: string, apiPrefix: string, i18n: PageI18
           <p id="selected-subtitle" class="truncate">${escapeHtml(t("hero.selectRunHint"))}</p>
         </div>
         <div class="hero-toolbar">
-          <div class="actions">
-            <button id="project-home" class="button subtle">${escapeHtml(t("action.project"))}</button>
-            <button id="project-load" class="button subtle">${escapeHtml(t("action.loadProject"))}</button>
-            <button id="project-export" class="button subtle">${escapeHtml(t("action.exportProject"))}</button>
-            <button id="reindex" class="button subtle">${escapeHtml(t("action.reindex"))}</button>
-          </div>
-          <div class="actions">
+          <div class="actions hero-actions hero-actions-primary">
             <button id="start-run" class="button primary">${escapeHtml(t("action.startRun"))}</button>
             <button id="resume-run" class="button">${escapeHtml(t("action.resumeSelected"))}</button>
             <button id="stop-run" class="button warn">${escapeHtml(t("action.requestStop"))}</button>
             <button id="refresh" class="button">${escapeHtml(t("action.refresh"))}</button>
           </div>
-          <label class="field locale-field">
-            <span>${escapeHtml(t("app.locale"))}</span>
-            <select id="locale-select" class="select">
-              <option value="en"${locale === "en" ? " selected" : ""}>English</option>
-              <option value="zh-CN"${locale === "zh-CN" ? " selected" : ""}>中文</option>
-            </select>
-          </label>
-          <div id="live" class="live">${escapeHtml(t("state.idle"))}</div>
+          <div class="actions hero-actions hero-actions-secondary">
+            <button id="project-home" class="button subtle">${escapeHtml(t("action.project"))}</button>
+            <button id="project-load" class="button subtle">${escapeHtml(t("action.loadProject"))}</button>
+            <button id="project-export" class="button subtle">${escapeHtml(t("action.exportProject"))}</button>
+            <button id="reindex" class="button subtle">${escapeHtml(t("action.reindex"))}</button>
+          </div>
+          <div class="hero-utilities">
+            <label class="field locale-field">
+              <span>${escapeHtml(t("app.locale"))}</span>
+              <select id="locale-select" class="select">
+                <option value="en"${locale === "en" ? " selected" : ""}>English</option>
+                <option value="zh-CN"${locale === "zh-CN" ? " selected" : ""}>中文</option>
+              </select>
+            </label>
+            <div id="live" class="live">${escapeHtml(t("state.idle"))}</div>
+          </div>
         </div>
       </section>
       <nav id="console-tabs" class="console-tabs" aria-label="Visualizer sections"></nav>
@@ -909,7 +982,7 @@ export function renderPageHtml(workdir: string, apiPrefix: string, i18n: PageI18
             </div>
           </div>
         </article>
-        <article class="card span-8">
+        <article class="card span-12">
           <header><h3>${escapeHtml(t("section.projectOverview"))}</h3></header>
           <div class="body">
             <div id="project-summary" class="structure-list">${escapeHtml(t("state.loadingProject"))}</div>
@@ -929,7 +1002,7 @@ export function renderPageHtml(workdir: string, apiPrefix: string, i18n: PageI18
             <div class="stat-grid" id="stats"></div>
           </div>
         </article>
-        <article class="card span-8">
+        <article class="card span-12">
           <header><h3>${escapeHtml(t("section.timeline"))}</h3></header>
           <div class="body">
             <div class="row timeline-controls">
@@ -956,9 +1029,9 @@ export function renderPageHtml(workdir: string, apiPrefix: string, i18n: PageI18
             <div id="timeline" class="timeline"></div>
           </div>
         </article>
-        <article class="card span-4">
+        <article class="card span-12">
           <header><h3>${escapeHtml(t("section.graphView"))}</h3></header>
-          <div class="body">
+          <div class="body debug-graph-body">
             <div id="graph-view" class="structure-list"><div class="hint">${escapeHtml(t("state.noRunSelected"))}</div></div>
             <div id="state" class="structure-list"><div class="hint">${escapeHtml(t("state.noRunSelected"))}</div></div>
           </div>
