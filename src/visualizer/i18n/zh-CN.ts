@@ -391,6 +391,8 @@ export const zhCN = {
   "workbench.rendered": "渲染",
   "workbench.structure": "结构",
   "workbench.bridge": "Studio Bridge",
+  "workbench.saveBlockedByDiagnostics": "Mermaid 校验诊断阻止保存。",
+  "workbench.saveCopyBlockedByDiagnostics": "Mermaid 校验诊断阻止保存副本。",
   "studio.graph.bundleLoading": "Studio 图谱包加载中...",
   "studio.graph.zoomOut": "缩小",
   "studio.graph.zoomIn": "放大",

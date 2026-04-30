@@ -387,6 +387,8 @@ export const en = {
   "workbench.rendered": "Rendered",
   "workbench.structure": "Structure",
   "workbench.bridge": "Studio Bridge",
+  "workbench.saveBlockedByDiagnostics": "Save blocked by Mermaid validation diagnostics.",
+  "workbench.saveCopyBlockedByDiagnostics": "Save copy blocked by Mermaid validation diagnostics.",
   "studio.graph.bundleLoading": "Studio graph bundle loading...",
   "studio.graph.zoomOut": "Zoom out",
   "studio.graph.zoomIn": "Zoom in",

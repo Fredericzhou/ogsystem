@@ -2063,7 +2063,7 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
           };
           renderWorkbench();
           renderProject();
-          setFlash("error", "Save blocked by Mermaid validation diagnostics.");
+          setFlash("error", t("workbench.saveBlockedByDiagnostics", undefined, "Save blocked by Mermaid validation diagnostics."));
           return;
         }
         state.workbenchDiskSource = state.workbenchSource;
@@ -2101,7 +2101,7 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
           };
           renderWorkbench();
           renderProject();
-          setFlash("error", "Save copy blocked by Mermaid validation diagnostics.");
+          setFlash("error", t("workbench.saveCopyBlockedByDiagnostics", undefined, "Save copy blocked by Mermaid validation diagnostics."));
           return;
         }
         state.workbenchDiskSource = state.workbenchSource;
