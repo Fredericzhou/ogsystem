@@ -309,7 +309,7 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
       consoleTab: "operate",
       legacyConsoleTab: "debug",
       workbench: null,
-      workbenchView: "render",
+      workbenchView: "bridge",
       workbenchSource: "",
       workbenchDiskSource: "",
       workbenchSavedPath: "system.mmd",
@@ -392,9 +392,11 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
     const selectedTitleEl = document.getElementById("selected-title");
     const selectedSubtitleEl = document.getElementById("selected-subtitle");
     const actionFormEl = document.getElementById("action-form");
+    const actionFormSectionEl = document.getElementById("action-form-section");
     const consoleTabsEl = document.getElementById("console-tabs");
     const workdirEl = document.getElementById("workdir");
     const projectSummaryEl = document.getElementById("project-summary");
+    const buildProjectSummaryEl = document.getElementById("build-project-summary");
     const opsSummaryEl = document.getElementById("ops-summary");
     const projectReadinessEl = document.getElementById("project-readiness");
     const releaseGateEl = document.getElementById("release-gate");
@@ -704,10 +706,12 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
       return {
         zoomOut: t("studio.graph.zoomOut", undefined, "Zoom out"),
         zoomIn: t("studio.graph.zoomIn", undefined, "Zoom in"),
+        resetView: t("studio.graph.resetView", undefined, "Actual size"),
         fitView: t("studio.graph.fitView", undefined, "Fit view"),
         autoLayout: t("studio.graph.autoLayout", undefined, "Auto layout"),
         addRole: t("studio.graph.addRole", undefined, "Role"),
         addEdge: t("studio.graph.addEdge", undefined, "Edge"),
+        editSelection: t("studio.graph.editSelection", undefined, "Edit selected"),
         deleteSelection: t("studio.graph.deleteSelection", undefined, "Delete"),
         undo: t("studio.graph.undo", undefined, "Undo"),
         redo: t("studio.graph.redo", undefined, "Redo"),
@@ -1089,12 +1093,13 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
           : state.consoleTab === "project"
             ? ["project"]
             : state.consoleTab === "build"
-              ? ["project", "config"]
+              ? ["build", "config"]
               : state.consoleTab === "validate-release"
                 ? ["validate-release", "config"]
                 : ["debug", "ops", "logs", "artifacts"]
       );
-      for (const id of ["project", "debug", "ops", "config", "logs", "artifacts", "validate-release"]) {
+      document.body.classList.toggle("show-run-sidebar", state.consoleTab === "operate" || state.consoleTab === "legacy");
+      for (const id of ["project", "build", "debug", "ops", "config", "logs", "artifacts", "validate-release"]) {
         const panel = document.getElementById("console-panel-" + id);
         if (panel) {
           panel.hidden = !visiblePanelIds.has(id);
@@ -1103,6 +1108,7 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
       for (const button of consoleTabsEl.querySelectorAll("[data-console-tab]")) {
         button.addEventListener("click", () => {
           state.consoleTab = button.getAttribute("data-console-tab") || "operate";
+          state.projectHome = state.consoleTab === "project";
           if (state.consoleTab === "build") {
             state.workbenchView = "bridge";
             void refreshStudioBridge().catch((error) => {
@@ -1265,18 +1271,6 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
             userProfilePath: "",
             lawsPath: ""
           });
-        });
-      }
-      const saveDraftButton = document.getElementById("studio-bridge-save-draft");
-      if (saveDraftButton) {
-        saveDraftButton.addEventListener("click", async () => {
-          await saveStudioAuthoringDraft();
-        });
-      }
-      const generateButton = document.getElementById("studio-bridge-generate");
-      if (generateButton) {
-        generateButton.addEventListener("click", async () => {
-          await generateMmdFromStudioBridge();
         });
       }
     }
@@ -1454,7 +1448,6 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
         : t("workbench.defaultMeta");
       const statusPills = [
         '<span class="pill' + (dirty ? " warn" : "") + '">' + escapeText(dirty ? t("workbench.unsavedChanges") : t("workbench.diskInSync")) + '</span>',
-        '<span class="pill">' + escapeText(relativeToWorkdir(state.workbenchSavedPath || "system.mmd")) + '</span>',
         state.workbenchHasDraft ? '<span class="pill warn">' + escapeText(t("workbench.draftCached")) + '</span>' : "",
         validation
           ? '<span class="pill' + (validation.ok ? "" : " warn") + '">' + escapeText(validation.ok ? t("workbench.validationOk") : t("workbench.diagnostics", { count: diagnostics.length })) + '</span>'
@@ -1463,14 +1456,11 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
       ].filter(Boolean);
       workbenchStatusEl.innerHTML = statusPills.join("");
       workbenchTabsEl.innerHTML = [
-        '<button class="button subtle ' + (state.workbenchView === "source" ? "active" : "") + '" data-workbench-view="source">' + escapeText(t("workbench.source")) + '</button>',
         '<button class="button subtle ' + (state.workbenchView === "bridge" ? "active" : "") + '" data-workbench-view="bridge">' + escapeText(t("workbench.bridge")) + '</button>',
-        '<button class="button subtle ' + (state.workbenchView === "render" ? "active" : "") + '" data-workbench-view="render">' + escapeText(t("workbench.rendered")) + '</button>',
-        '<button class="button subtle ' + (state.workbenchView === "structure" ? "active" : "") + '" data-workbench-view="structure">' + escapeText(t("workbench.structure")) + '</button>'
+        '<button class="button subtle ' + (state.workbenchView === "source" ? "active" : "") + '" data-workbench-view="source">' + escapeText(t("workbench.source")) + '</button>'
       ].join("");
       workbenchActionsEl.innerHTML = [
-        '<button class="button primary" id="workbench-save"' + (dirty ? "" : " disabled") + '>' + escapeText(t("action.save")) + '</button>',
-        '<button class="button subtle" id="workbench-save-as">' + escapeText(t("action.saveCopy")) + '</button>'
+        '<button class="button primary" id="workbench-save"' + (dirty ? "" : " disabled") + '>' + escapeText(t("action.save")) + '</button>'
       ].join("");
       if (state.workbenchView === "source" && preserveEditor && existingEditor) {
         if (existingEditor.value !== state.workbenchSource) {
@@ -1488,19 +1478,11 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
           '</div>',
           '<textarea id="workbench-editor" class="editor" spellcheck="false">' + escapeText(state.workbenchSource || "") + '</textarea>'
         ].join("");
-      } else if (state.workbenchView === "render") {
-        workbenchBodyEl.innerHTML = [
-          '<div class="preview">' + renderWorkbenchPreviewSvg(structure) + '</div>',
-          diagnostics.length
-            ? '<div class="structure-list">' + diagnostics.map((diagnostic) =>
-                '<div class="event"><div class="event-top"><span>' + escapeText(diagnostic.code) + '</span><span>' + escapeText(diagnostic.line ? "line " + diagnostic.line : diagnostic.stage) + '</span></div><strong>' + escapeText(diagnostic.message) + '</strong></div>'
-              ).join("") + '</div>'
-            : '<div class="hint">' + escapeText(t("workbench.renderClean")) + '</div>'
-        ].join("");
       } else if (state.workbenchView === "bridge") {
         renderStudioBridge({ preserveGraphRoot: Boolean(options?.preserveStudioGraphRoot) });
       } else {
-        workbenchBodyEl.innerHTML = renderWorkbenchStructure(structure);
+        state.workbenchView = "bridge";
+        renderStudioBridge({ preserveGraphRoot: Boolean(options?.preserveStudioGraphRoot) });
       }
       if (preservedStudioGraphRoot) {
         const currentStudioGraphRoot = document.getElementById("studio-graph-root");
@@ -1584,14 +1566,6 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
           await saveWorkbench();
         });
       }
-      const saveAsButton = document.getElementById("workbench-save-as");
-      if (saveAsButton) {
-        saveAsButton.addEventListener("click", async () => {
-          openActionForm("saveAs", {
-            saveAsPath: state.workbenchSavedPath || "drafts/system-copy.mmd"
-          });
-        });
-      }
       renderActionState();
     }
 
@@ -1644,6 +1618,9 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
         return;
       }
       const form = state.actionForm;
+      if (actionFormSectionEl) {
+        actionFormSectionEl.hidden = !form;
+      }
       if (!form) {
         actionFormEl.innerHTML = '<div class="hint">' + escapeText(t("form.emptyHint")) + '</div>';
         return;
@@ -1735,6 +1712,7 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
     function renderProject() {
       if (!state.project) {
         projectSummaryEl.textContent = t("state.projectDataUnavailable");
+        if (buildProjectSummaryEl) buildProjectSummaryEl.textContent = t("state.projectDataUnavailable");
         if (opsSummaryEl) opsSummaryEl.innerHTML = '<div class="hint">' + escapeText(t("state.opsSummaryUnavailable")) + '</div>';
         if (projectReadinessEl) projectReadinessEl.innerHTML = '<div class="hint">' + escapeText(t("state.projectReadinessUnavailable")) + '</div>';
         if (releaseGateEl) releaseGateEl.innerHTML = '<div class="hint">' + escapeText(t("release.dataUnavailable", undefined, "Release gate data unavailable.")) + '</div>';
@@ -1748,7 +1726,7 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
       }
       const summary = state.project.summary?.project ?? {};
       const roles = state.project.roles?.roles ?? [];
-      projectSummaryEl.innerHTML = renderProjectSummaryPanel({
+      const projectSummaryHtml = renderProjectSummaryPanel({
         summary,
         roles,
         warnings: state.project.config?.modelSelectionWarnings ?? [],
@@ -1756,6 +1734,10 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
         validationOk: Boolean(state.workbench?.validation?.ok),
         t
       });
+      projectSummaryEl.innerHTML = projectSummaryHtml;
+      if (buildProjectSummaryEl) {
+        buildProjectSummaryEl.innerHTML = projectSummaryHtml;
+      }
       if (opsSummaryEl) {
         opsSummaryEl.innerHTML = renderOpsSummaryPanel({
           opsSummary: state.opsSummary,

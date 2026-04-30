@@ -18,10 +18,12 @@ const PAGE_ELEMENT_IDS = [
   "flash",
   "selected-title",
   "selected-subtitle",
+  "action-form-section",
   "action-form",
   "console-tabs",
   "console-panel-debug",
   "console-panel-project",
+  "console-panel-build",
   "console-panel-ops",
   "console-panel-config",
   "console-panel-logs",
@@ -36,6 +38,7 @@ const PAGE_ELEMENT_IDS = [
   "workbench-tabs",
   "workbench-body",
   "project-summary",
+  "build-project-summary",
   "ops-summary",
   "project-readiness",
   "stats",
@@ -1491,7 +1494,7 @@ test("visualizer client renders zh-CN chrome while preserving runtime identifier
   });
 
   assert.match(harness.document.getElementById("console-tabs").textContent, /校验与发布/);
-  assert.match(harness.document.getElementById("action-form").textContent, /选择启动/);
+  assert.equal(harness.document.getElementById("action-form-section").hidden, true);
   assert.match(harness.document.getElementById("failure-summary").textContent, /TOOL_EXECUTION_TIMEOUT/);
   assert.match(harness.document.getElementById("failure-summary").textContent, /超时预算耗尽/);
   assert.match(harness.document.getElementById("resume-controls").textContent, /加载诊断/);
@@ -1640,15 +1643,19 @@ test("visualizer client switches lifecycle shell without unloading data and keep
   assert.ok(legacyTab);
   assert.equal(harness.document.getElementById("console-panel-debug").hidden, false);
   assert.equal(harness.document.getElementById("console-panel-ops").hidden, false);
+  assert.equal(harness.document.body.classList.classes.has("show-run-sidebar"), true);
 
   await operateTab.click();
   assert.equal(harness.document.getElementById("console-panel-debug").hidden, false);
   assert.equal(harness.document.getElementById("console-panel-ops").hidden, false);
+  assert.equal(harness.document.body.classList.classes.has("show-run-sidebar"), true);
   assert.match(harness.document.getElementById("ops-summary").textContent, /TOOL_EXECUTION_TIMEOUT/);
 
   await buildTab.click();
-  assert.equal(harness.document.getElementById("console-panel-project").hidden, false);
+  assert.equal(harness.document.getElementById("console-panel-build").hidden, false);
+  assert.equal(harness.document.getElementById("console-panel-project").hidden, true);
   assert.equal(harness.document.getElementById("console-panel-config").hidden, false);
+  assert.equal(harness.document.body.classList.classes.has("show-run-sidebar"), false);
   assert.match(harness.document.getElementById("contract-explain").textContent, /flow.answer.done/);
 
   await validateTab.click();
@@ -1659,6 +1666,8 @@ test("visualizer client switches lifecycle shell without unloading data and keep
   await projectTab.click();
   assert.equal(harness.document.getElementById("console-panel-config").hidden, true);
   assert.equal(harness.document.getElementById("console-panel-project").hidden, false);
+  assert.equal(harness.document.getElementById("console-panel-build").hidden, true);
+  assert.equal(harness.document.body.classList.classes.has("show-run-sidebar"), false);
   assert.match(harness.document.getElementById("project-readiness").textContent, /dry-run readiness/);
 
   await legacyTab.click();
@@ -1668,12 +1677,14 @@ test("visualizer client switches lifecycle shell without unloading data and keep
   await legacyLogs.click();
   assert.equal(harness.document.getElementById("console-panel-logs").hidden, false);
   assert.equal(harness.document.getElementById("console-panel-project").hidden, true);
+  assert.equal(harness.document.body.classList.classes.has("show-run-sidebar"), true);
 });
 
 test("visualizer client keeps build deep links on the project graph workspace", async () => {
   const harness = await createClientHarness({ search: "?lifecycle=build" });
 
-  assert.equal(harness.document.getElementById("console-panel-project").hidden, false);
+  assert.equal(harness.document.getElementById("console-panel-build").hidden, false);
+  assert.equal(harness.document.getElementById("console-panel-project").hidden, true);
   assert.equal(harness.document.getElementById("console-panel-config").hidden, false);
   assert.equal(harness.document.getElementById("console-panel-debug").hidden, true);
   assert.match(harness.window.location.search, /[?&]lifecycle=build/);
@@ -2024,6 +2035,7 @@ test("visualizer client opens Studio Bridge, saves an authoring draft, and dry-r
 
   assert.ok(harness.backend.fetchCalls.some((call) => call.path === "/api/v1/project/studio/bridge"));
   assert.match(harness.document.getElementById("workbench-tabs").textContent, /Studio Bridge/);
+  assert.doesNotMatch(harness.document.getElementById("workbench-tabs").textContent, /Rendered|Structure/);
   assert.match(harness.document.getElementById("workbench-body").textContent, /demo-analyst/);
   assert.match(harness.document.getElementById("workbench-body").textContent, /role inspector/);
   assert.match(harness.document.getElementById("workbench-body").textContent, /Graph workspace/);
@@ -2039,6 +2051,7 @@ test("visualizer client opens Studio Bridge, saves an authoring draft, and dry-r
   assert.ok(latestEditableMount().bindings);
   assert.ok(latestEditableMount().projectConfig);
   assert.ok(latestEditableMount().commandFormLabels);
+  assert.equal(latestEditableMount().defaultAutoLayout, true);
   await settle();
   const fetchCallsAfterOpen = harness.backend.fetchCalls.length;
   mountCalls.at(-1).options.onSelectFlow("demo-analyst:DONE:output");
@@ -2063,7 +2076,10 @@ test("visualizer client opens Studio Bridge, saves an authoring draft, and dry-r
     "studio-bridge-delete-role",
     "studio-bridge-fit",
     "studio-bridge-nudge-left",
-    "studio-bridge-nudge-right"
+    "studio-bridge-nudge-right",
+    "studio-bridge-save-draft",
+    "studio-bridge-generate",
+    "workbench-save-as"
   ]) {
     assert.equal(harness.document.getElementById(oldButtonId), null);
   }
@@ -2174,13 +2190,6 @@ test("visualizer client opens Studio Bridge, saves an authoring draft, and dry-r
     true
   );
 
-  const draftButton = harness.document.getElementById("studio-bridge-save-draft");
-  assert.ok(draftButton);
-  await draftButton.click();
-  await settle();
-  assert.ok(harness.backend.fetchCalls.some((call) => call.path === "/api/v1/project/studio/authoring"));
-  assert.equal(harness.backend.lastAuthoringSaveBody.authoring.version, 1);
-
   const dryRunButton = harness.document.getElementById("studio-bridge-dry-run");
   assert.ok(dryRunButton);
   await dryRunButton.click();
@@ -2195,19 +2204,8 @@ test("visualizer client opens Studio Bridge, saves an authoring draft, and dry-r
   assert.match(harness.document.getElementById("selected-title").textContent, /run-123/);
 });
 
-test("visualizer client saves copies, loads projects, and reindexes through inline forms", async () => {
+test("visualizer client loads projects and reindexes through inline forms", async () => {
   const harness = await createClientHarness();
-
-  const saveAsButton = harness.document.getElementById("workbench-save-as");
-  assert.ok(saveAsButton);
-  await saveAsButton.click();
-  await settle();
-  await harness.document.getElementById("action-save-as-path").input("drafts/alternate-system.mmd");
-  await harness.document.getElementById("action-form-submit").click();
-  await settle();
-
-  assert.ok(harness.backend.fetchCalls.some((call) => call.path === "/api/v1/project/system/save-as"));
-  assert.equal(harness.document.getElementById("flash").textContent.includes("drafts/alternate-system.mmd"), true);
 
   const projectLoadButton = harness.document.getElementById("project-load");
   assert.ok(projectLoadButton);

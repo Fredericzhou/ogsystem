@@ -141,6 +141,9 @@ export function renderPageHtml(workdir: string, apiPrefix: string, i18n: PageI18
       min-width: 0;
       overflow: hidden;
     }
+    body:not(.show-run-sidebar) .stack {
+      display: none;
+    }
     .search, .select {
       width: 100%;
       min-width: 0;
@@ -242,10 +245,10 @@ export function renderPageHtml(workdir: string, apiPrefix: string, i18n: PageI18
       background: rgba(248, 113, 113, 0.08);
     }
     .hero {
-      display: flex;
-      justify-content: space-between;
-      gap: 12px;
-      align-items: start;
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) auto;
+      gap: 10px;
+      align-items: center;
       padding: 12px 14px;
       border: 1px solid var(--border);
       border-radius: var(--radius);
@@ -267,22 +270,22 @@ export function renderPageHtml(workdir: string, apiPrefix: string, i18n: PageI18
     }
     .hero-toolbar {
       display: grid;
-      grid-template-columns: minmax(0, 1fr) auto;
-      gap: 8px;
+      grid-template-columns: auto auto auto;
+      gap: 6px;
       align-items: center;
       justify-items: end;
-      min-width: min(620px, 100%);
+      min-width: 0;
     }
     .hero-actions {
       display: flex;
-      gap: 7px;
+      gap: 5px;
       align-items: center;
-      flex-wrap: wrap;
+      flex-wrap: nowrap;
       justify-content: flex-end;
       min-width: 0;
     }
     .hero-actions-primary {
-      grid-column: 1 / -1;
+      grid-column: auto;
     }
     .hero-actions-secondary {
       opacity: 0.88;
@@ -310,6 +313,7 @@ export function renderPageHtml(workdir: string, apiPrefix: string, i18n: PageI18
       padding: 7px 10px;
       min-height: 34px;
       min-width: 0;
+      white-space: nowrap;
       cursor: pointer;
       transition: border-color 120ms ease, background 120ms ease, transform 120ms ease;
     }
@@ -362,11 +366,28 @@ export function renderPageHtml(workdir: string, apiPrefix: string, i18n: PageI18
     }
     .live.online { color: var(--ok); }
     .live.online::before { background: var(--ok); }
+    .global-status {
+      display: flex;
+      justify-content: space-between;
+      gap: 8px;
+      align-items: center;
+      flex-wrap: nowrap;
+      min-width: 0;
+      padding: 7px 9px;
+      border: 1px solid var(--border);
+      background: rgba(255, 255, 255, 0.035);
+    }
+    .global-status .pill {
+      max-width: min(54vw, 720px);
+    }
     .grid {
       display: grid;
       grid-template-columns: repeat(12, minmax(0, 1fr));
       gap: 12px;
       align-items: start;
+    }
+    [hidden] {
+      display: none !important;
     }
     .card {
       border: 1px solid var(--border);
@@ -463,7 +484,8 @@ export function renderPageHtml(workdir: string, apiPrefix: string, i18n: PageI18
       justify-content: space-between;
       gap: 8px;
       align-items: center;
-      flex-wrap: wrap;
+      flex-wrap: nowrap;
+      min-width: 0;
     }
     .toolbar-group {
       display: flex;
@@ -474,7 +496,7 @@ export function renderPageHtml(workdir: string, apiPrefix: string, i18n: PageI18
     }
     .segmented {
       display: inline-flex;
-      flex-wrap: wrap;
+      flex-wrap: nowrap;
       gap: 6px;
       padding: 4px;
       border-radius: 10px;
@@ -482,8 +504,9 @@ export function renderPageHtml(workdir: string, apiPrefix: string, i18n: PageI18
       background: rgba(255, 255, 255, 0.03);
     }
     .segmented .button {
-      padding: 6px 9px;
+      padding: 5px 8px;
       border-radius: 8px;
+      white-space: nowrap;
     }
     .segmented .button.active {
       background: rgba(56, 189, 248, 0.14);
@@ -553,10 +576,16 @@ export function renderPageHtml(workdir: string, apiPrefix: string, i18n: PageI18
     }
     .studio-bridge-layout {
       display: grid;
-      grid-template-columns: minmax(520px, 1fr) minmax(240px, 320px);
+      grid-template-columns: minmax(0, 1fr);
       gap: 12px;
       align-items: start;
       min-width: 0;
+    }
+    .studio-graph-column,
+    .studio-inspector,
+    .studio-bridge-index,
+    .studio-diagnostics {
+      grid-column: 1 / -1;
     }
     .studio-bridge-index {
       grid-column: 1 / -1;
@@ -612,7 +641,7 @@ export function renderPageHtml(workdir: string, apiPrefix: string, i18n: PageI18
       min-height: calc(100vh - 108px);
     }
     .studio-graph-root {
-      min-height: 390px;
+      min-height: clamp(480px, 62vh, 760px);
       min-width: 0;
     }
     .log-toolbar {
@@ -807,10 +836,16 @@ export function renderPageHtml(workdir: string, apiPrefix: string, i18n: PageI18
         padding-right: 2px;
       }
       .studio-diagnostics { order: 5; }
-      .hero { flex-direction: column; }
+      .hero { grid-template-columns: 1fr; }
       .hero-toolbar {
         width: 100%;
+        grid-template-columns: 1fr;
         justify-items: stretch;
+      }
+      .hero-actions,
+      .hero-utilities {
+        justify-content: flex-start;
+        flex-wrap: wrap;
       }
       .hero-actions, .hero-utilities, .actions { justify-content: flex-start; }
       .sidebar-toggle {
@@ -822,14 +857,12 @@ export function renderPageHtml(workdir: string, apiPrefix: string, i18n: PageI18
       .hero-toolbar {
         grid-template-columns: 1fr;
       }
-      .toolbar-row,
       .workbench-source-actions,
       .row {
         display: grid;
         grid-template-columns: repeat(2, minmax(0, 1fr));
         align-items: stretch;
       }
-      .toolbar-row > *,
       .workbench-source-actions > *,
       .row > * {
         min-width: 0;
@@ -867,6 +900,7 @@ export function renderPageHtml(workdir: string, apiPrefix: string, i18n: PageI18
       .toolbar-row,
       .workbench-source-actions,
       .row {
+        display: grid;
         grid-template-columns: 1fr;
       }
       .timeline-controls {
@@ -915,7 +949,6 @@ export function renderPageHtml(workdir: string, apiPrefix: string, i18n: PageI18
         <span>${escapeHtml(t("app.local"))}</span>
       </div>
       <div class="stack">
-        <div class="pill">${escapeHtml(t("app.workdir"))} <code id="workdir">${escapeHtml(workdir)}</code></div>
         <input id="search" class="search" placeholder="${escapeHtml(t("search.placeholder"))}" />
         <div id="run-list" class="run-list"></div>
       </div>
@@ -933,16 +966,14 @@ export function renderPageHtml(workdir: string, apiPrefix: string, i18n: PageI18
         </div>
         <div class="hero-toolbar">
           <div class="actions hero-actions hero-actions-primary">
-            <button id="start-run" class="button primary">${escapeHtml(t("action.startRun"))}</button>
-            <button id="resume-run" class="button">${escapeHtml(t("action.resumeSelected"))}</button>
-            <button id="stop-run" class="button warn">${escapeHtml(t("action.requestStop"))}</button>
-            <button id="refresh" class="button">${escapeHtml(t("action.refresh"))}</button>
+            <button id="start-run" class="button primary">${escapeHtml(t("action.run"))}</button>
+            <button id="resume-run" class="button">${escapeHtml(t("action.resume"))}</button>
+            <button id="stop-run" class="button warn">${escapeHtml(t("action.stop"))}</button>
           </div>
           <div class="actions hero-actions hero-actions-secondary">
             <button id="project-home" class="button subtle">${escapeHtml(t("action.project"))}</button>
-            <button id="project-load" class="button subtle">${escapeHtml(t("action.loadProject"))}</button>
-            <button id="project-export" class="button subtle">${escapeHtml(t("action.exportProject"))}</button>
-            <button id="reindex" class="button subtle">${escapeHtml(t("action.reindex"))}</button>
+            <button id="project-load" class="button subtle">${escapeHtml(t("action.load"))}</button>
+            <button id="project-export" class="button subtle">${escapeHtml(t("action.export"))}</button>
           </div>
           <div class="hero-utilities">
             <label class="field locale-field">
@@ -952,12 +983,19 @@ export function renderPageHtml(workdir: string, apiPrefix: string, i18n: PageI18
                 <option value="zh-CN"${locale === "zh-CN" ? " selected" : ""}>中文</option>
               </select>
             </label>
-            <div id="live" class="live">${escapeHtml(t("state.idle"))}</div>
           </div>
         </div>
       </section>
+      <div class="global-status">
+        <div class="pill">${escapeHtml(t("app.workdir"))} <code id="workdir">${escapeHtml(workdir)}</code></div>
+        <div class="actions">
+          <button id="refresh" class="button subtle">${escapeHtml(t("action.refresh"))}</button>
+          <button id="reindex" class="button subtle">${escapeHtml(t("action.reindex"))}</button>
+          <div id="live" class="live">${escapeHtml(t("state.idle"))}</div>
+        </div>
+      </div>
       <nav id="console-tabs" class="console-tabs" aria-label="Visualizer sections"></nav>
-      <section class="grid">
+      <section class="grid" id="action-form-section" hidden>
         <article class="card span-12">
           <header><h3>${escapeHtml(t("section.actionForm"))}</h3></header>
           <div class="body">
@@ -966,6 +1004,26 @@ export function renderPageHtml(workdir: string, apiPrefix: string, i18n: PageI18
         </article>
       </section>
       <section id="console-panel-project" class="console-panel grid" data-console-panel="project" hidden>
+        <article class="card span-12">
+          <header><h3>${escapeHtml(t("section.projectOverview"))}</h3></header>
+          <div class="body">
+            <div id="project-summary" class="structure-list">${escapeHtml(t("state.loadingProject"))}</div>
+          </div>
+        </article>
+        <article class="card span-12">
+          <header><h3>${escapeHtml(t("section.projectReadiness"))}</h3></header>
+          <div class="body">
+            <div id="project-readiness" class="structure-list">${escapeHtml(t("state.loadingProjectReadiness"))}</div>
+          </div>
+        </article>
+      </section>
+      <section id="console-panel-build" class="console-panel grid" data-console-panel="build" hidden>
+        <article class="card span-12">
+          <header><h3>${escapeHtml(t("section.projectOverview"))}</h3></header>
+          <div class="body">
+            <div id="build-project-summary" class="structure-list">${escapeHtml(t("state.loadingProject"))}</div>
+          </div>
+        </article>
         <article class="card span-12">
           <header>
             <div class="card-header">
@@ -984,18 +1042,6 @@ export function renderPageHtml(workdir: string, apiPrefix: string, i18n: PageI18
               </div>
               <div id="workbench-body"></div>
             </div>
-          </div>
-        </article>
-        <article class="card span-12">
-          <header><h3>${escapeHtml(t("section.projectOverview"))}</h3></header>
-          <div class="body">
-            <div id="project-summary" class="structure-list">${escapeHtml(t("state.loadingProject"))}</div>
-          </div>
-        </article>
-        <article class="card span-12">
-          <header><h3>${escapeHtml(t("section.projectReadiness"))}</h3></header>
-          <div class="body">
-            <div id="project-readiness" class="structure-list">${escapeHtml(t("state.loadingProjectReadiness"))}</div>
           </div>
         </article>
       </section>

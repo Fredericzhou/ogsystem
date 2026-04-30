@@ -73,7 +73,7 @@ async function dragStudioPort(page, sourceRoleId: string, targetRoleId: string):
   await page.mouse.up();
 }
 
-test("Studio Bridge renders and edits through the real X6 graph island", async ({ page }) => {
+test("Studio Bridge renders and edits through the real graph workspace", async ({ page }) => {
   const workdir = await mkdtemp(path.join(os.tmpdir(), "ogsystem-studio-x6-"));
   await seedProject(workdir);
   const started = await startVisualizationServer({ workdir, host: "127.0.0.1", port: 0 });
@@ -90,12 +90,16 @@ test("Studio Bridge renders and edits through the real X6 graph island", async (
         return original.call(this, root, options);
       };
     });
-    await page.locator("#project-home").click();
+    await page.getByRole("button", { name: "Build" }).click();
     await page.locator('[data-workbench-view="bridge"]').click();
 
     await expect(page.locator("#studio-graph-root")).toBeVisible();
     await expect(page.locator('#studio-graph-root [data-cell-id="demo-analyst"]').first()).toBeVisible();
     await expect(page.getByText(/\bX6\b/)).toHaveCount(0);
+    await expect(page.locator('#studio-graph-root .studio-graph-toolbar')).toBeVisible();
+    await expect(page.locator('#studio-graph-root [data-studio-graph-action="reset-view"]')).toBeVisible();
+    await expect(page.locator('#studio-graph-root [data-studio-graph-action="edit"]')).toBeVisible();
+    await expect(page.locator("#studio-bridge-generate")).toHaveCount(0);
     await page.locator("[data-studio-bridge-fullscreen]").click();
     await expect(page.locator("[data-studio-canvas-shell]")).toHaveClass(/is-fullscreen/);
     await expect(page.locator('#studio-graph-root [data-cell-id="demo-analyst"]').first()).toBeVisible();
@@ -107,11 +111,15 @@ test("Studio Bridge renders and edits through the real X6 graph island", async (
     const mountCallsAfterOpen = await page.evaluate(() => (window as any).__studioMountCalls);
     await expect(page.getByRole("button", { name: "Build" })).toBeVisible();
     await expect(page.getByRole("button", { name: "Validate & Release" })).toBeVisible();
-    await expect(page.getByRole("heading", { name: "Project Readiness" })).toBeVisible();
-    await expect(page.getByText("Action Form")).toBeVisible();
+    await expect(page.locator("#console-panel-build")).toBeVisible();
+    await expect(page.locator("#build-project-summary")).toContainText("system.mmd");
+    await expect(page.getByRole("heading", { name: "Project Readiness" })).toHaveCount(0);
+    await expect(page.locator("#action-form-section")).toBeHidden();
 
     const roleNode = page.locator('#studio-graph-root [data-cell-id="demo-analyst"]').first();
     await roleNode.click({ force: true });
+    await expect(page.locator('#studio-graph-root [data-studio-graph-action="edit"]')).toBeEnabled();
+    await expect(page.locator('#studio-graph-root [data-studio-graph-action="add-edge"]')).toBeEnabled();
     await expect.poll(async () => page.evaluate(() => (window as any).__studioMountCalls)).toBe(mountCallsAfterOpen);
     await expect.poll(async () => page.evaluate(() => document.getElementById("studio-graph-root") === (window as any).__studioGraphRoot)).toBe(true);
     await expect(page.locator(".studio-inspector")).toContainText("demo-analyst");
@@ -187,9 +195,8 @@ test("Studio Bridge renders and edits through the real X6 graph island", async (
 
     await page.locator('#studio-graph-root [data-studio-graph-action="fit"]').click();
     await expect(page.locator('#studio-graph-root [data-cell-id="demo-analyst"]').first()).toBeVisible();
-
-    await page.locator("#studio-bridge-generate").click();
-    await expect(page.locator("#flash")).toContainText("Generated deterministic Mermaid");
+    await page.locator('#studio-graph-root [data-studio-graph-action="reset-view"]').click();
+    await expect(page.locator('#studio-graph-root [data-cell-id="demo-analyst"]').first()).toBeVisible();
 
     await page.locator('[data-workbench-view="bridge"]').click();
     await page.locator("#studio-bridge-save").click();
@@ -197,6 +204,7 @@ test("Studio Bridge renders and edits through the real X6 graph island", async (
 
     await page.locator('[data-workbench-view="bridge"]').click();
     await page.locator("#studio-bridge-dry-run").click();
+    await expect(page.locator("#action-form-section")).toBeVisible();
     await page.locator("#action-start-input").fill("browser smoke");
     await page.locator("#action-form-submit").click();
     await expect(page.locator("#selected-title")).toContainText(/\d{8}-/);

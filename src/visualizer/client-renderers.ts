@@ -628,11 +628,9 @@ export function renderStudioBridgePanel(args: {
     '<div class="structure-list studio-bridge">',
     '<div class="toolbar-row" data-studio-bridge-region="toolbar">',
     '<div class="toolbar-group">',
-    '<button class="button primary" id="studio-bridge-dry-run"' + busy + '>' + escapeText(t("studio.dryRun", undefined, "Dry run")) + '</button>',
-    '<button class="button" id="studio-bridge-validate"' + busy + '>' + escapeText(t("action.validate", undefined, "Validate")) + '</button>',
     '<button class="button" id="studio-bridge-save"' + busy + '>' + escapeText(t("action.saveSystem", undefined, "Save system.mmd")) + '</button>',
-    '<button class="button subtle" id="studio-bridge-save-draft"' + busy + '>' + escapeText(t("studio.saveDraft", undefined, "Save draft")) + '</button>',
-    '<button class="button subtle" id="studio-bridge-generate"' + busy + '>' + escapeText(t("studio.generateMmd", undefined, "Generate MMD")) + '</button>',
+    '<button class="button" id="studio-bridge-validate"' + busy + '>' + escapeText(t("action.validate", undefined, "Validate")) + '</button>',
+    '<button class="button primary" id="studio-bridge-dry-run"' + busy + '>' + escapeText(t("studio.dryRun", undefined, "Dry run")) + '</button>',
     '</div>',
     '<div class="toolbar-group"><span class="pill' + (validation.ok ? "" : " warn") + '">' +
       escapeText(validation.ok ? t("workbench.validationOk", undefined, "validation ok") : t("workbench.diagnostics", { count: String(diagnostics.length) }, diagnostics.length + " diagnostics")) + '</span><span class="pill' +

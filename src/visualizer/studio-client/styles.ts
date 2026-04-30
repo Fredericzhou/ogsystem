@@ -24,34 +24,55 @@ export function injectStudioGraphStyles(): void {
       justify-content: space-between;
       align-items: center;
       gap: 8px;
-      padding: 8px;
+      padding: 7px;
       border-bottom: 1px solid rgba(148, 163, 184, 0.14);
-      background: rgba(8, 13, 26, 0.78);
+      background:
+        linear-gradient(180deg, rgba(15, 23, 42, 0.92), rgba(8, 13, 26, 0.76));
+      backdrop-filter: blur(14px);
+      min-width: 0;
+    }
+    .studio-graph-toolbar-main {
+      display: flex;
+      flex-wrap: nowrap;
+      align-items: center;
+      gap: 7px;
       min-width: 0;
     }
     .studio-graph-toolbar-group {
       display: flex;
-      flex-wrap: wrap;
+      flex-wrap: nowrap;
       align-items: center;
-      gap: 6px;
+      gap: 3px;
       min-width: 0;
+      padding: 3px;
+      border: 1px solid rgba(148, 163, 184, 0.14);
+      background: rgba(255, 255, 255, 0.035);
     }
     .studio-graph-toolbar-group[hidden],
     .studio-graph-toolbar button[hidden] {
       display: none;
     }
     .studio-graph-toolbar button {
-      border: 1px solid rgba(148, 163, 184, 0.22);
-      background: rgba(255, 255, 255, 0.04);
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 5px;
+      border: 1px solid transparent;
+      background: transparent;
       color: #e5eefb;
-      padding: 6px 8px;
-      min-width: 34px;
-      min-height: 32px;
+      padding: 5px 7px;
+      min-width: 30px;
+      min-height: 30px;
       cursor: pointer;
+      font-size: 12px;
+      line-height: 1;
+      white-space: nowrap;
+      transition: background 120ms ease, border-color 120ms ease, color 120ms ease;
     }
     .studio-graph-toolbar button:hover {
-      border-color: rgba(56, 189, 248, 0.44);
-      background: rgba(56, 189, 248, 0.12);
+      border-color: rgba(56, 189, 248, 0.32);
+      background: rgba(56, 189, 248, 0.13);
+      color: #bae6fd;
     }
     .studio-graph-toolbar button:disabled {
       cursor: not-allowed;
@@ -60,7 +81,28 @@ export function injectStudioGraphStyles(): void {
     .studio-graph-status {
       color: #8fa1c3;
       font-size: 12px;
+      flex: 0 1 auto;
       overflow-wrap: anywhere;
+    }
+    .studio-graph-toolbar-icon {
+      font-size: 14px;
+      font-weight: 700;
+      line-height: 1;
+    }
+    .studio-graph-toolbar-text {
+      font-size: 11px;
+    }
+    @media (max-width: 720px) {
+      .studio-graph-toolbar {
+        align-items: stretch;
+        flex-direction: column;
+      }
+      .studio-graph-toolbar-main {
+        overflow-x: auto;
+      }
+      .studio-graph-toolbar-text {
+        display: none;
+      }
     }
     .studio-graph-stage {
       min-height: 320px;

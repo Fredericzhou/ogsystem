@@ -23,10 +23,12 @@ import { canConnectStudioCells } from "./studio-graph-rules.js";
 type StudioGraphLabelKey =
   | "zoomOut"
   | "zoomIn"
+  | "resetView"
   | "fitView"
   | "autoLayout"
   | "addRole"
   | "addEdge"
+  | "editSelection"
   | "editRole"
   | "editEdge"
   | "deleteSelection"
@@ -124,18 +126,22 @@ export class StudioGraphIsland {
     this.root.classList.add("studio-graph-island");
     this.root.innerHTML = [
       '<div class="studio-graph-toolbar">',
-      '<div class="studio-graph-toolbar-group">',
-      this.toolbarButton("zoom-out", "zoomOut", "-"),
-      this.toolbarButton("zoom-in", "zoomIn", "+"),
-      this.toolbarButton("fit", "fitView"),
-      this.toolbarButton("layout", "autoLayout"),
+      '<div class="studio-graph-toolbar-main">',
+      '<div class="studio-graph-toolbar-group" aria-label="Viewport">',
+      this.toolbarButton("zoom-out", "zoomOut", "−", "–"),
+      this.toolbarButton("zoom-in", "zoomIn", "+", "+"),
+      this.toolbarButton("reset-view", "resetView", "1:1", "100%"),
+      this.toolbarButton("fit", "fitView", "◎", "Fit"),
+      this.toolbarButton("layout", "autoLayout", "⇄", "Layout"),
       '</div>',
-      '<div class="studio-graph-toolbar-group" data-studio-graph-edit-actions>',
-      this.toolbarButton("add-role", "addRole"),
-      this.toolbarButton("add-edge", "addEdge"),
-      this.toolbarButton("delete", "deleteSelection"),
-      this.toolbarButton("undo", "undo"),
-      this.toolbarButton("redo", "redo"),
+      '<div class="studio-graph-toolbar-group" data-studio-graph-edit-actions aria-label="Edit graph">',
+      this.toolbarButton("add-role", "addRole", "+R", "Role"),
+      this.toolbarButton("add-edge", "addEdge", "+E", "Edge"),
+      this.toolbarButton("edit", "editSelection", "✎", "Edit"),
+      this.toolbarButton("delete", "deleteSelection", "⌫", "Delete"),
+      this.toolbarButton("undo", "undo", "↶", "Undo"),
+      this.toolbarButton("redo", "redo", "↷", "Redo"),
+      '</div>',
       '</div>',
       '<span class="studio-graph-status" data-studio-graph-status>' + this.escapeHtml(this.label("ready")) + '</span>',
       '</div>',
@@ -279,10 +285,12 @@ export class StudioGraphIsland {
       if (action === "zoom-in") this.graph.zoom(0.12);
       if (action === "zoom-out") this.graph.zoom(-0.12);
       if (action === "fit") void this.fitAndSync();
+      if (action === "reset-view") void this.resetViewAndSync();
       if (this.isReadOnly()) return;
       if (action === "layout") void this.autoLayout();
       if (action === "undo") void this.semanticUndo();
       if (action === "redo") void this.semanticRedo();
+      if (action === "edit") this.openSelectedEditor();
       if (action === "delete") void this.deleteSelection();
       if (action === "add-role") this.openCommandForm("add-role");
       if (action === "add-edge") {
@@ -305,6 +313,7 @@ export class StudioGraphIsland {
       if (data?.studioNode?.kind === "role" && data.studioNode.roleId) {
         this.options.onSelectRole?.(data.studioNode.roleId);
         this.openEditRoleForm(data.studioNode.roleId);
+        this.updateToolbarState();
       }
     });
     this.graph.on("edge:click", ({ edge }) => {
@@ -312,12 +321,17 @@ export class StudioGraphIsland {
       if (data?.studioEdge) {
         this.options.onSelectFlow?.(studioEdgeFlowKey(data.studioEdge));
         this.openEditEdgeForm(data.studioEdge);
+        this.updateToolbarState();
       }
     });
     this.graph.on("blank:click", () => {
       this.graph.cleanSelection();
       this.options.onClearSelection?.();
       this.lastEditSelectionSignature = "";
+      this.updateToolbarState();
+    });
+    this.graph.on("selection:changed", () => {
+      this.updateToolbarState();
     });
     this.graph.on("node:moved", () => {
       if (this.isReadOnly()) return;
@@ -417,6 +431,24 @@ export class StudioGraphIsland {
       return;
     }
     this.lastHandledEditSelectionRequest = request;
+    const selected = this.graph.getSelectedCells()[0];
+    const data = selected?.getData() as {
+      studioNode?: { kind?: string; roleId?: string };
+      studioEdge?: { id?: string; source: string; target: string; eventType: string; runtimeOnlyErrorFlow?: boolean; participatesInJoin?: boolean; editable?: boolean };
+    } | undefined;
+    if (data?.studioNode?.kind === "role" && data.studioNode.roleId) {
+      this.openEditRoleForm(data.studioNode.roleId);
+      return;
+    }
+    if (data?.studioEdge) {
+      this.openEditEdgeForm(data.studioEdge);
+    }
+  }
+
+  private openSelectedEditor(): void {
+    if (this.isReadOnly()) {
+      return;
+    }
     const selected = this.graph.getSelectedCells()[0];
     const data = selected?.getData() as {
       studioNode?: { kind?: string; roleId?: string };
@@ -637,6 +669,15 @@ export class StudioGraphIsland {
     await this.syncCanvas();
   }
 
+  private async resetViewAndSync(): Promise<void> {
+    this.graph.zoomTo(1);
+    this.graph.centerContent();
+    if (this.isReadOnly()) {
+      return;
+    }
+    await this.syncCanvas();
+  }
+
   private async autoLayout(): Promise<void> {
     if (this.isReadOnly()) {
       return;
@@ -646,7 +687,7 @@ export class StudioGraphIsland {
   }
 
   private applyDefaultAutoLayout(): boolean {
-    if (!this.options.defaultAutoLayout || this.options.canvas?.viewport) {
+    if (!this.options.defaultAutoLayout) {
       return false;
     }
     const signature = this.defaultAutoLayoutSignature();
@@ -849,6 +890,13 @@ export class StudioGraphIsland {
 
   private updateToolbarState(): void {
     const readOnly = this.isReadOnly();
+    const selected = this.graph.getSelectedCells()[0];
+    const selectedData = selected?.getData() as {
+      studioNode?: { kind?: string; roleId?: string };
+      studioEdge?: { editable?: boolean };
+    } | undefined;
+    const selectedRole = selectedData?.studioNode?.kind === "role";
+    const selectedEditable = selectedRole || selectedData?.studioEdge?.editable === true;
     const editActions = this.toolbar.querySelector<HTMLElement>("[data-studio-graph-edit-actions]");
     if (editActions) {
       editActions.hidden = readOnly;
@@ -857,10 +905,16 @@ export class StudioGraphIsland {
     if (layout) {
       layout.hidden = readOnly;
     }
-    for (const action of ["layout", "add-role", "add-edge", "delete"]) {
+    for (const action of ["layout", "add-role", "add-edge", "edit", "delete"]) {
       const button = this.toolbar.querySelector<HTMLButtonElement>('[data-studio-graph-action="' + action + '"]');
       if (button) button.disabled = this.busy || readOnly;
     }
+    const addEdge = this.toolbar.querySelector<HTMLButtonElement>('[data-studio-graph-action="add-edge"]');
+    const edit = this.toolbar.querySelector<HTMLButtonElement>('[data-studio-graph-action="edit"]');
+    const deleteButton = this.toolbar.querySelector<HTMLButtonElement>('[data-studio-graph-action="delete"]');
+    if (addEdge) addEdge.disabled = this.busy || readOnly || !selectedRole;
+    if (edit) edit.disabled = this.busy || readOnly || !selectedEditable;
+    if (deleteButton) deleteButton.disabled = this.busy || readOnly || !selectedEditable;
     const undo = this.toolbar.querySelector<HTMLButtonElement>('[data-studio-graph-action="undo"]');
     const redo = this.toolbar.querySelector<HTMLButtonElement>('[data-studio-graph-action="redo"]');
     if (undo) undo.disabled = this.busy || readOnly || this.activeUndoStack().length === 0;
@@ -956,10 +1010,11 @@ export class StudioGraphIsland {
     }
   }
 
-  private toolbarButton(action: string, key: StudioGraphLabelKey, text?: string): string {
+  private toolbarButton(action: string, key: StudioGraphLabelKey, icon: string, shortLabel?: string): string {
     const label = this.label(key);
     return '<button type="button" data-studio-graph-action="' + this.escapeHtml(action) + '" title="' +
-      this.escapeHtml(label) + '" aria-label="' + this.escapeHtml(label) + '">' + this.escapeHtml(text ?? label) + '</button>';
+      this.escapeHtml(label) + '" aria-label="' + this.escapeHtml(label) + '"><span class="studio-graph-toolbar-icon" aria-hidden="true">' +
+      this.escapeHtml(icon) + '</span><span class="studio-graph-toolbar-text">' + this.escapeHtml(shortLabel ?? label) + '</span></button>';
   }
 
   private sameCanvas(left: StudioCanvasDocument, right: StudioCanvasDocument): boolean {
