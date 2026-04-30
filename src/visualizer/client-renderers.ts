@@ -340,6 +340,72 @@ export function renderProjectReadinessPanel(args: {
   ].join("");
 }
 
+export function renderReleaseGatePanel(args: {
+  validation: JsonRecord | null | undefined;
+  readiness: JsonRecord | null | undefined;
+  contracts: JsonRecord | null | undefined;
+  rolePackages: JsonRecord | null | undefined;
+  bindings: JsonRecord | null | undefined;
+  workbenchSavedPath: string;
+  workbenchDirty: boolean;
+  lastDryRunId?: string;
+  exportReady: boolean;
+  t?: Translator;
+}): string {
+  const t: Translator = typeof args.t === "function" ? args.t : (_key, _vars, fallback) => fallback ?? _key;
+  const validationOk = args.validation?.ok === true;
+  const diagnostics = Array.isArray(args.validation?.diagnostics) ? args.validation.diagnostics : [];
+  const blockers = Array.isArray(args.readiness?.blockers) ? args.readiness.blockers as JsonRecord[] : [];
+  const warnings = Array.isArray(args.readiness?.warnings) ? args.readiness.warnings as JsonRecord[] : [];
+  const contractCoverage = (args.readiness?.contractCoverage ?? {}) as JsonRecord;
+  const missingContracts = Number(contractCoverage.missingCount ?? contractCoverage.missingFlowCount ?? 0);
+  const bindingRoles = Array.isArray(args.bindings?.roles) ? args.bindings.roles as JsonRecord[] : [];
+  const unresolvedBindings = bindingRoles.filter((binding) =>
+    binding.resolved === false || (!binding.resolvedBinding && !binding.effectiveBinding)
+  );
+  const packageRoles = Array.isArray(args.rolePackages?.roles) ? args.rolePackages.roles as JsonRecord[] : [];
+  const unhealthyRoles = packageRoles.filter((role) => {
+    const files = (role.files ?? role.health ?? {}) as JsonRecord;
+    return Object.values(files).some((present) => present === false);
+  });
+  const canExport = args.exportReady && !args.workbenchDirty;
+  const warningNote = warnings.length
+    ? t("release.warningNote", { count: String(warnings.length) }, String(warnings.length) + " warning(s) will be included in release notes")
+    : t("release.noWarningNote", undefined, "No non-blocking warnings for release notes.");
+  return [
+    '<div class="structure-list">',
+    '<div class="event"><div class="event-top"><span>' + escapeText(t("release.gate", undefined, "release gate")) + '</span><span class="status ' + escapeText(canExport ? "done" : "failed") + '">' +
+      escapeText(canExport ? t("release.candidateReady", undefined, "release candidate ready") : t("release.candidateBlocked", undefined, "release candidate blocked")) +
+      '</span></div><strong>' + escapeText(t("release.artifactContract", undefined, "Validated export candidate uses the single-project-v1 artifact contract.")) +
+      '</strong><div class="hint">' + escapeText(t("release.sourceDigestHint", {
+        path: args.workbenchSavedPath || "system.mmd"
+      }, "source " + (args.workbenchSavedPath || "system.mmd") + " · digests are derived from generated and exported project content")) + '</div></div>',
+    '<div class="event"><div class="event-top"><span>' + escapeText(t("release.validationReport", undefined, "validation report")) + '</span><span>' +
+      escapeText(validationOk ? t("workbench.validationOk", undefined, "validation ok") : t("workbench.diagnostics", { count: String(diagnostics.length) }, String(diagnostics.length) + " diagnostics")) +
+      '</span></div><strong>' + escapeText(validationOk ? t("release.systemMmdValid", undefined, "system.mmd validates successfully") : t("release.systemMmdBlocked", undefined, "system.mmd has blocking validation diagnostics")) +
+      '</strong><div class="hint">' + escapeText(args.workbenchDirty ? t("release.unsavedChangesBlock", undefined, "Unsaved workbench changes must be saved before export.") : t("workbench.diskInSync", undefined, "disk in sync")) + '</div></div>',
+    '<div class="event"><div class="event-top"><span>' + escapeText(t("section.projectReadiness", undefined, "Project Readiness")) + '</span><span>' +
+      escapeText(blockers.length ? t("readiness.blocked", undefined, "blocked") : t("readiness.ready", undefined, "ready")) +
+      '</span></div><strong>' + escapeText(blockers.length ? t("release.blockersRemain", { count: String(blockers.length) }, String(blockers.length) + " blocker(s) remain") : t("release.noBlockers", undefined, "No blocking readiness issues.")) +
+      '</strong><div class="hint">' + escapeText(warningNote) + '</div></div>',
+    '<div class="event"><div class="event-top"><span>' + escapeText(t("readiness.contractCoverage", undefined, "contract coverage")) + '</span><span>' +
+      escapeText(missingContracts ? t("readiness.missing", { count: String(missingContracts) }, "missing " + String(missingContracts)) : t("common.complete", undefined, "complete")) +
+      '</span></div><strong>' + escapeText(t("release.contractReport", undefined, "Contract and schema coverage report")) +
+      '</strong><div class="hint">' + escapeText(t("release.bindingRolePackageSummary", {
+        unresolved: String(unresolvedBindings.length),
+        unhealthy: String(unhealthyRoles.length)
+      }, "unresolved bindings " + String(unresolvedBindings.length) + " · unhealthy role packages " + String(unhealthyRoles.length))) + '</div></div>',
+    '<div class="event"><div class="event-top"><span>' + escapeText(t("studio.dryRun", undefined, "Dry run")) + '</span><span>' +
+      escapeText(args.lastDryRunId ? t("common.captured", undefined, "captured") : t("common.missing", undefined, "missing")) +
+      '</span></div><strong>' + escapeText(args.lastDryRunId || t("release.noDryRunYet", undefined, "No dry-run has been launched from this Studio session yet.")) +
+      '</strong><div class="hint">' + escapeText(t("release.dryRunHint", undefined, "Debug mode remains inside Build and does not change runtime execution semantics.")) + '</div></div>',
+    '<div class="event"><div class="event-top"><span>' + escapeText(t("release.exportArtifact", undefined, "export artifact")) + '</span><span>single-project-v1</span></div><strong>' +
+      escapeText(t("release.exportBoundary", undefined, "Export excludes .ogs/runs, logs, timeline, checkpoints, and review artifacts.")) +
+      '</strong><div class="hint">' + escapeText(t("release.exportTraceability", undefined, "Traceability is anchored to source project metadata, system.mmd, role packages, bindings, and model/profile config.")) + '</div></div>',
+    "</div>"
+  ].join("");
+}
+
 export function renderStudioBridgeInspector(args: {
   bridge: JsonRecord | null | undefined;
   selectedRoleId: string;

@@ -8,6 +8,7 @@ import {
   buildRouteSearch,
   formatReviewStatusLabel,
   getStreamRefreshPlan,
+  normalizeLifecycleView,
   readRouteStateFromSearch
 } from "../dist/visualizer/client-app.js";
 
@@ -25,6 +26,9 @@ const PAGE_ELEMENT_IDS = [
   "console-panel-config",
   "console-panel-logs",
   "console-panel-artifacts",
+  "console-panel-validate-release",
+  "release-gate",
+  "release-export",
   "workdir",
   "workbench-meta",
   "workbench-status",
@@ -1380,6 +1384,7 @@ async function createClientHarness(options = {}) {
 
 test("visualizer client route helpers round-trip query state", () => {
   const search = buildRouteSearch({
+    lifecycle: "operate",
     projectHome: false,
     selectedRunId: "run-123",
     selectedReviewId: "review-1",
@@ -1389,16 +1394,20 @@ test("visualizer client route helpers round-trip query state", () => {
   });
   assert.equal(
     search,
-    "runId=run-123&reviewId=review-1&logRoleId=alpha&tail=25&since=2026-04-23T10%3A11"
+    "lifecycle=operate&runId=run-123&reviewId=review-1&logRoleId=alpha&tail=25&since=2026-04-23T10%3A11"
   );
   assert.deepEqual(readRouteStateFromSearch(`?${search}`), {
     view: "",
+    lifecycle: "operate",
     runId: "run-123",
     reviewId: "review-1",
     logRoleId: "alpha",
     tail: "25",
     since: "2026-04-23T10:11"
   });
+  assert.equal(normalizeLifecycleView("build", ""), "build");
+  assert.equal(normalizeLifecycleView("", "project"), "project");
+  assert.equal(normalizeLifecycleView("", ""), "operate");
 });
 
 test("visualizer client stream helpers dedupe timeline entries and cap history", () => {
@@ -1448,7 +1457,7 @@ test("visualizer client renders zh-CN chrome while preserving runtime identifier
     includeMissingAuditContract: true
   });
 
-  assert.match(harness.document.getElementById("console-tabs").textContent, /运行调试/);
+  assert.match(harness.document.getElementById("console-tabs").textContent, /校验与发布/);
   assert.match(harness.document.getElementById("action-form").textContent, /选择启动/);
   assert.match(harness.document.getElementById("failure-summary").textContent, /TOOL_EXECUTION_TIMEOUT/);
   assert.match(harness.document.getElementById("failure-summary").textContent, /超时预算耗尽/);
@@ -1582,33 +1591,60 @@ test("visualizer client renders config explain panels and failure next checks", 
   assert.ok(harness.document.getElementById("failure-check-resume"));
 });
 
-test("visualizer client switches top-level console tabs without unloading data", async () => {
+test("visualizer client switches lifecycle shell without unloading data and keeps legacy fallback", async () => {
   const harness = await createClientHarness();
   const tabs = harness.document.getElementById("console-tabs").querySelectorAll("[data-console-tab]");
-  const opsTab = tabs.find((button) => button.getAttribute("data-console-tab") === "ops");
-  const configTab = tabs.find((button) => button.getAttribute("data-console-tab") === "config");
+  const operateTab = tabs.find((button) => button.getAttribute("data-console-tab") === "operate");
+  const buildTab = tabs.find((button) => button.getAttribute("data-console-tab") === "build");
+  const validateTab = tabs.find((button) => button.getAttribute("data-console-tab") === "validate-release");
   const projectTab = tabs.find((button) => button.getAttribute("data-console-tab") === "project");
+  const legacyTab = tabs.find((button) => button.getAttribute("data-console-tab") === "legacy");
 
-  assert.ok(opsTab);
-  assert.ok(configTab);
+  assert.ok(operateTab);
+  assert.ok(buildTab);
+  assert.ok(validateTab);
   assert.ok(projectTab);
+  assert.ok(legacyTab);
   assert.equal(harness.document.getElementById("console-panel-debug").hidden, false);
-  assert.equal(harness.document.getElementById("console-panel-ops").hidden, true);
+  assert.equal(harness.document.getElementById("console-panel-ops").hidden, false);
 
-  await opsTab.click();
-  assert.equal(harness.document.getElementById("console-panel-debug").hidden, true);
+  await operateTab.click();
+  assert.equal(harness.document.getElementById("console-panel-debug").hidden, false);
   assert.equal(harness.document.getElementById("console-panel-ops").hidden, false);
   assert.match(harness.document.getElementById("ops-summary").textContent, /TOOL_EXECUTION_TIMEOUT/);
 
-  await configTab.click();
-  assert.equal(harness.document.getElementById("console-panel-ops").hidden, true);
+  await buildTab.click();
+  assert.equal(harness.document.getElementById("console-panel-project").hidden, false);
   assert.equal(harness.document.getElementById("console-panel-config").hidden, false);
   assert.match(harness.document.getElementById("contract-explain").textContent, /flow.answer.done/);
+
+  await validateTab.click();
+  assert.equal(harness.document.getElementById("console-panel-validate-release").hidden, false);
+  assert.equal(harness.document.getElementById("console-panel-config").hidden, false);
+  assert.match(harness.document.getElementById("release-gate").textContent, /release candidate/);
 
   await projectTab.click();
   assert.equal(harness.document.getElementById("console-panel-config").hidden, true);
   assert.equal(harness.document.getElementById("console-panel-project").hidden, false);
   assert.match(harness.document.getElementById("project-readiness").textContent, /dry-run readiness/);
+
+  await legacyTab.click();
+  const legacyButtons = harness.document.getElementById("console-tabs").querySelectorAll("[data-legacy-console-tab]");
+  const legacyLogs = legacyButtons.find((button) => button.getAttribute("data-legacy-console-tab") === "logs");
+  assert.ok(legacyLogs);
+  await legacyLogs.click();
+  assert.equal(harness.document.getElementById("console-panel-logs").hidden, false);
+  assert.equal(harness.document.getElementById("console-panel-project").hidden, true);
+});
+
+test("visualizer client keeps build deep links on the project graph workspace", async () => {
+  const harness = await createClientHarness({ search: "?lifecycle=build" });
+
+  assert.equal(harness.document.getElementById("console-panel-project").hidden, false);
+  assert.equal(harness.document.getElementById("console-panel-config").hidden, false);
+  assert.equal(harness.document.getElementById("console-panel-debug").hidden, true);
+  assert.match(harness.window.location.search, /[?&]lifecycle=build/);
+  assert.doesNotMatch(harness.window.location.search, /[?&]runId=/);
 });
 
 test("visualizer client loads logs on demand and keeps filter changes lazy until loaded", async () => {
@@ -1974,11 +2010,11 @@ test("visualizer client opens Studio Bridge, saves an authoring draft, and dry-r
   harness.window.OGSVisualizerClient.mountStudioX6Bridge = (root, options) => {
     mountCalls.push({ root, options });
   };
-  const debugTab = harness.document.getElementById("console-tabs")
+  const operateTab = harness.document.getElementById("console-tabs")
     .querySelectorAll("[data-console-tab]")
-    .find((button) => button.getAttribute("data-console-tab") === "debug");
-  assert.ok(debugTab);
-  await debugTab.click();
+    .find((button) => button.getAttribute("data-console-tab") === "operate");
+  assert.ok(operateTab);
+  await operateTab.click();
   await settle();
   const runButton = harness.document.getElementById("run-list")
     .querySelectorAll("[data-run-id]")

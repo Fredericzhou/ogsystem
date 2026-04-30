@@ -503,6 +503,18 @@ export function renderPageHtml(workdir: string, apiPrefix: string, i18n: PageI18
       border-color: rgba(56, 189, 248, 0.44);
       color: #b5ecff;
     }
+    .legacy-tabs {
+      flex: 1 1 100%;
+      display: flex;
+      flex-wrap: wrap;
+      gap: 6px;
+      padding-top: 8px;
+      border-top: 1px solid var(--border);
+    }
+    .legacy-tabs .button {
+      flex: 0 1 auto;
+      min-width: 96px;
+    }
     .console-panel[hidden] {
       display: none;
     }
@@ -1027,6 +1039,24 @@ export function renderPageHtml(workdir: string, apiPrefix: string, i18n: PageI18
           <header><h3>${escapeHtml(t("section.opsSummary"))}</h3></header>
           <div class="body">
             <div id="ops-summary" class="structure-list">${escapeHtml(t("state.loadingOpsSummary"))}</div>
+          </div>
+        </article>
+      </section>
+      <section id="console-panel-validate-release" class="console-panel grid" data-console-panel="validate-release" hidden>
+        <article class="card span-12">
+          <header>
+            <div class="card-header">
+              <div class="header-copy">
+                <h3>${escapeHtml(t("section.validateRelease"))}</h3>
+                <div class="hint">${escapeHtml(t("release.subtitle"))}</div>
+              </div>
+              <div class="actions">
+                <button id="release-export" class="button primary">${escapeHtml(t("action.exportProject"))}</button>
+              </div>
+            </div>
+          </header>
+          <div class="body">
+            <div id="release-gate" class="structure-list">${escapeHtml(t("release.loading"))}</div>
           </div>
         </article>
       </section>

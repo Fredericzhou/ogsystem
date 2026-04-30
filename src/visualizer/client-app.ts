@@ -10,6 +10,7 @@ import {
   renderLogsPanel,
   renderOpsSummaryPanel,
   renderProjectReadinessPanel,
+  renderReleaseGatePanel,
   renderProjectSummaryPanel,
   renderResumeReadinessPanel,
   renderReviewQueuePanel,
@@ -29,6 +30,7 @@ import { getDictionary, type Dictionary, type Locale } from "./i18n/index.js";
 
 type RouteState = {
   view: string;
+  lifecycle: string;
   runId: string;
   reviewId: string;
   logRoleId: string;
@@ -55,6 +57,7 @@ export function readRouteStateFromSearch(search: string): RouteState {
   const params = new URLSearchParams(search.startsWith("?") ? search.slice(1) : search);
   return {
     view: params.get("view") || "",
+    lifecycle: params.get("lifecycle") || "",
     runId: params.get("runId") || "",
     reviewId: params.get("reviewId") || "",
     logRoleId: params.get("logRoleId") || "",
@@ -63,7 +66,21 @@ export function readRouteStateFromSearch(search: string): RouteState {
   };
 }
 
+export function normalizeLifecycleView(lifecycle: string | undefined, legacyView: string | undefined): string {
+  switch (lifecycle) {
+    case "project":
+    case "build":
+    case "validate-release":
+    case "operate":
+    case "legacy":
+      return lifecycle;
+    default:
+      return legacyView === "project" ? "project" : "operate";
+  }
+}
+
 export function buildRouteSearch(args: {
+  lifecycle?: string;
   projectHome: boolean;
   selectedRunId: string;
   selectedReviewId: string;
@@ -72,6 +89,10 @@ export function buildRouteSearch(args: {
   logSince: string;
 }): string {
   const params = new URLSearchParams();
+  const lifecycle = args.lifecycle || "";
+  if (lifecycle && lifecycle !== "legacy") {
+    params.set("lifecycle", lifecycle);
+  }
   if (args.projectHome && !args.selectedRunId) {
     params.set("view", "project");
   }
@@ -173,6 +194,7 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
     const buildRouteSearch = ${buildRouteSearch.toString()};
     const appendStreamEntry = ${appendStreamEntry.toString()};
     const getStreamRefreshPlan = ${getStreamRefreshPlan.toString()};
+    const normalizeLifecycleView = ${normalizeLifecycleView.toString()};
     const formatReviewStatusLabel = ${formatReviewStatusLabel.toString()};
     const statusTone = ${statusTone.toString()};
     const bindingTone = ${bindingTone.toString()};
@@ -194,6 +216,7 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
     const renderLogsPanel = ${renderLogsPanel.toString()};
     const renderOpsSummaryPanel = ${renderOpsSummaryPanel.toString()};
     const renderProjectReadinessPanel = ${renderProjectReadinessPanel.toString()};
+    const renderReleaseGatePanel = ${renderReleaseGatePanel.toString()};
     const renderStudioBridgePanel = ${renderStudioBridgePanel.toString()};
     const renderRunStatePanel = ${renderRunStatePanel.toString()};
     const renderSuggestedNextChecksPanel = ${renderSuggestedNextChecksPanel.toString()};
@@ -273,7 +296,8 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
       project: null,
       opsSummary: null,
       projectReadiness: null,
-      consoleTab: "debug",
+      consoleTab: "operate",
+      legacyConsoleTab: "debug",
       workbench: null,
       workbenchView: "render",
       workbenchSource: "",
@@ -359,6 +383,7 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
     const projectSummaryEl = document.getElementById("project-summary");
     const opsSummaryEl = document.getElementById("ops-summary");
     const projectReadinessEl = document.getElementById("project-readiness");
+    const releaseGateEl = document.getElementById("release-gate");
     const workbenchMetaEl = document.getElementById("workbench-meta");
     const workbenchStatusEl = document.getElementById("workbench-status");
     const workbenchActionsEl = document.getElementById("workbench-actions");
@@ -404,6 +429,7 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
     const projectHomeButton = document.getElementById("project-home");
     const projectLoadButton = document.getElementById("project-load");
     const projectExportButton = document.getElementById("project-export");
+    const releaseExportButton = document.getElementById("release-export");
     const reindexButton = document.getElementById("reindex");
     const startRunButton = document.getElementById("start-run");
     const resumeRunButton = document.getElementById("resume-run");
@@ -441,6 +467,7 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
         [projectHomeButton, "action.project"],
         [projectLoadButton, "action.loadProject"],
         [projectExportButton, "action.exportProject"],
+        [releaseExportButton, "action.exportProject"],
         [reindexButton, "action.reindex"],
         [startRunButton, "action.startRun"],
         [resumeRunButton, "action.resumeSelected"],
@@ -588,6 +615,7 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
     function writeRouteToLocation() {
       const params = new URLSearchParams(buildRouteSearch({
         projectHome: state.projectHome,
+        lifecycle: state.consoleTab,
         selectedRunId: state.selectedRunId,
         selectedReviewId: state.selectedReviewId,
         selectedLogRoleId: state.selectedLogRoleId,
@@ -943,6 +971,7 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
       projectHomeButton.disabled = disabled;
       projectLoadButton.disabled = disabled;
       projectExportButton.disabled = disabled;
+      if (releaseExportButton) releaseExportButton.disabled = disabled;
       reindexButton.disabled = disabled;
       startRunButton.disabled = disabled;
       resumeRunButton.disabled = disabled || !state.selectedRunId;
@@ -997,7 +1026,14 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
       if (!consoleTabsEl) {
         return;
       }
-      const tabs = [
+      const lifecycleTabs = [
+        ["project", t("nav.lifecycle.project", undefined, "Project"), t("navHint.lifecycle.project", undefined, "Create, load, and inspect project context")],
+        ["build", t("nav.lifecycle.build", undefined, "Build"), t("navHint.lifecycle.build", undefined, "Graph-first authoring, configuration, and dry-run setup")],
+        ["validate-release", t("nav.lifecycle.validateRelease", undefined, "Validate & Release"), t("navHint.lifecycle.validateRelease", undefined, "Validation gate, readiness, reports, and export")],
+        ["operate", t("nav.lifecycle.operate", undefined, "Operate"), t("navHint.lifecycle.operate", undefined, "Run monitoring, diagnostics, logs, recovery, and audit")],
+        ["legacy", t("nav.lifecycle.legacy", undefined, "Legacy Tabs"), t("navHint.lifecycle.legacy", undefined, "Fallback access to the previous tab layout")]
+      ];
+      const legacyTabs = [
         ["debug", t("nav.runDebug"), t("navHint.runDebug")],
         ["project", t("nav.project"), t("navHint.project")],
         ["ops", t("nav.ops"), t("navHint.ops")],
@@ -1005,21 +1041,56 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
         ["logs", t("nav.logs"), t("navHint.logs")],
         ["artifacts", t("nav.artifacts"), t("navHint.artifacts")]
       ];
-      consoleTabsEl.innerHTML = tabs.map(([id, label, hint]) =>
+      const lifecycleHtml = lifecycleTabs.map(([id, label, hint]) =>
         '<button class="button subtle ' + (state.consoleTab === id ? "active" : "") +
         '" data-console-tab="' + escapeText(id) +
         '" title="' + escapeText(hint) +
         '">' + escapeText(label) + '</button>'
       ).join("");
-      for (const [id] of tabs) {
+      const legacyHtml = state.consoleTab === "legacy"
+        ? '<div class="legacy-tabs" data-legacy-tabs>' + legacyTabs.map(([id, label, hint]) =>
+            '<button class="button subtle ' + (state.legacyConsoleTab === id ? "active" : "") +
+            '" data-legacy-console-tab="' + escapeText(id) +
+            '" title="' + escapeText(hint) +
+            '">' + escapeText(label) + '</button>'
+          ).join("") + '</div>'
+        : "";
+      consoleTabsEl.innerHTML = lifecycleHtml + legacyHtml;
+      const visiblePanelIds = new Set(
+        state.consoleTab === "legacy"
+          ? [state.legacyConsoleTab || "debug"]
+          : state.consoleTab === "project"
+            ? ["project"]
+            : state.consoleTab === "build"
+              ? ["project", "config"]
+              : state.consoleTab === "validate-release"
+                ? ["validate-release", "config"]
+                : ["debug", "ops", "logs", "artifacts"]
+      );
+      for (const id of ["project", "debug", "ops", "config", "logs", "artifacts", "validate-release"]) {
         const panel = document.getElementById("console-panel-" + id);
         if (panel) {
-          panel.hidden = state.consoleTab !== id;
+          panel.hidden = !visiblePanelIds.has(id);
         }
       }
       for (const button of consoleTabsEl.querySelectorAll("[data-console-tab]")) {
         button.addEventListener("click", () => {
-          state.consoleTab = button.getAttribute("data-console-tab") || "debug";
+          state.consoleTab = button.getAttribute("data-console-tab") || "operate";
+          if (state.consoleTab === "build") {
+            state.workbenchView = "bridge";
+            void refreshStudioBridge().catch((error) => {
+              setFlash("error", "Studio Bridge refresh failed: " + (error.message || error));
+            });
+          }
+          renderConsoleTabs();
+          renderSelectedRun();
+          renderActionState();
+          writeRouteToLocation();
+        });
+      }
+      for (const button of consoleTabsEl.querySelectorAll("[data-legacy-console-tab]")) {
+        button.addEventListener("click", () => {
+          state.legacyConsoleTab = button.getAttribute("data-legacy-console-tab") || "debug";
           renderConsoleTabs();
           renderActionState();
         });
@@ -1600,6 +1671,7 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
         projectSummaryEl.textContent = t("state.projectDataUnavailable");
         if (opsSummaryEl) opsSummaryEl.innerHTML = '<div class="hint">' + escapeText(t("state.opsSummaryUnavailable")) + '</div>';
         if (projectReadinessEl) projectReadinessEl.innerHTML = '<div class="hint">' + escapeText(t("state.projectReadinessUnavailable")) + '</div>';
+        if (releaseGateEl) releaseGateEl.innerHTML = '<div class="hint">' + escapeText(t("release.dataUnavailable", undefined, "Release gate data unavailable.")) + '</div>';
         bindingExplainEl.innerHTML = '<div class="hint">' + escapeText(t("state.projectBindingDataUnavailable")) + '</div>';
         rolePackagesEl.innerHTML = '<div class="hint">' + escapeText(t("state.rolePackageDataUnavailable")) + '</div>';
         contractExplainEl.innerHTML = '<div class="hint">' + escapeText(t("state.contractDataUnavailable")) + '</div>';
@@ -1627,6 +1699,20 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
       if (projectReadinessEl) {
         projectReadinessEl.innerHTML = renderProjectReadinessPanel({
           readiness: state.projectReadiness,
+          t
+        });
+      }
+      if (releaseGateEl) {
+        releaseGateEl.innerHTML = renderReleaseGatePanel({
+          validation: state.workbench?.validation,
+          readiness: state.projectReadiness,
+          contracts: state.contracts,
+          rolePackages: state.rolePackages,
+          bindings: state.bindings,
+          workbenchSavedPath: state.workbenchSavedPath || "system.mmd",
+          workbenchDirty: state.workbenchSource !== state.workbenchDiskSource,
+          lastDryRunId: state.studioBridgeLastDryRunId,
+          exportReady: Boolean(state.workbench?.validation?.ok) && state.projectReadiness?.canDryRun !== false,
           t
         });
       }
@@ -2450,7 +2536,7 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
         setFlash("error", t("flash.dryRunBlocked", {
           message: readinessBlockers[0]?.message || t("flash.resolveReadinessBlockers")
         }));
-        state.consoleTab = "project";
+        state.consoleTab = "validate-release";
         renderConsoleTabs();
         return;
       }
@@ -2606,6 +2692,13 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
     }
 
     async function exportProject() {
+      if (state.workbench?.validation?.ok !== true || state.projectReadiness?.canDryRun === false) {
+        state.consoleTab = "validate-release";
+        renderConsoleTabs();
+        renderProject();
+        setFlash("error", t("release.exportBlocked", undefined, "Export blocked until validation and release readiness pass."));
+        return;
+      }
       await runAction("project:export", async () => {
         const payload = await requestAction(\`\${API_PREFIX}/project/export\`);
         const blob = new Blob([JSON.stringify(payload, null, 2) + "\\n"], { type: "application/json" });
@@ -2614,7 +2707,9 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
         anchor.download = "ogs-project-export-" + new Date().toISOString().slice(0, 19).replace(/[:T]/g, "-") + ".json";
         anchor.click();
         URL.revokeObjectURL(anchor.href);
-        setFlash("success", "Project export generated. It excludes .ogs/runs and runtime artifacts.");
+        setFlash("success", t("release.exportGenerated", {
+          mode: payload.mode || "single-project-v1"
+        }, "Release candidate export generated (" + (payload.mode || "single-project-v1") + "). It excludes runtime artifacts."));
       });
     }
 
@@ -2644,7 +2739,7 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
       const payload = await requestJson(\`\${API_PREFIX}/runs\`);
       state.runs = payload.runs || [];
       renderRuns();
-      if (!state.projectHome && !state.selectedRunId && state.runs.length) {
+      if (!state.projectHome && !state.selectedRunId && state.runs.length && (state.consoleTab === "operate" || state.consoleTab === "legacy")) {
         await selectRun(state.runs[0].runId);
       }
       if (!state.runs.length) {
@@ -2891,8 +2986,8 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
     async function selectRun(runId) {
       if (!runId) return;
       state.projectHome = false;
-      if (state.consoleTab === "project") {
-        state.consoleTab = "debug";
+      if (state.consoleTab === "project" || state.consoleTab === "build" || state.consoleTab === "validate-release") {
+        state.consoleTab = "operate";
         renderConsoleTabs();
       }
       state.selectedRunId = runId;
@@ -3146,6 +3241,11 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
     projectExportButton.addEventListener("click", async () => {
       await exportProject();
     });
+    if (releaseExportButton) {
+      releaseExportButton.addEventListener("click", async () => {
+        await exportProject();
+      });
+    }
 
     reindexButton.addEventListener("click", async () => {
       openActionForm("reindex", {});
@@ -3283,11 +3383,9 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
     renderConsoleTabs();
 
     const initialRoute = readRouteStateFromSearch(window.location.search);
-    state.projectHome = initialRoute.view === "project";
-    if (state.projectHome) {
-      state.consoleTab = "project";
-      renderConsoleTabs();
-    }
+    state.consoleTab = normalizeLifecycleView(initialRoute.lifecycle, initialRoute.view);
+    state.projectHome = state.consoleTab === "project" || initialRoute.view === "project";
+    renderConsoleTabs();
     state.selectedRunId = initialRoute.runId;
     state.selectedReviewId = initialRoute.reviewId;
     state.selectedLogRoleId = initialRoute.logRoleId;
