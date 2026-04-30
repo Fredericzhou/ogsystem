@@ -9,6 +9,8 @@ import {
   commandFromStudioCommandFormState,
   createDefaultStudioCommandFormState,
   readStudioCommandFormState,
+  renderStudioCommandFormDiagnostics,
+  renderStudioCommandFormFieldError,
   renderStudioCommandForm,
   type StudioCommandFormLabels,
   type StudioCommandFormState
@@ -104,8 +106,10 @@ export class StudioGraphIsland {
   private lastViewportSignature = "";
   private syncCanvasTimer: ReturnType<typeof setTimeout> | null = null;
   private commandForm: StudioCommandFormState | null = null;
-  private undoStack = sharedHistory.undoStack;
-  private redoStack = sharedHistory.redoStack;
+  private readonlyHistory: { undoStack: StudioGraphSnapshot[]; redoStack: StudioGraphSnapshot[] } = {
+    undoStack: [],
+    redoStack: []
+  };
 
   constructor(private root: HTMLElement, initialOptions: StudioGraphBridgeOptions = {}) {
     this.options = initialOptions;
@@ -149,6 +153,7 @@ export class StudioGraphIsland {
     this.graph = this.createGraph(canvasEl);
     this.bindToolbar();
     this.bindGraphEvents();
+    this.root.addEventListener("keydown", (event) => this.handleRootKeydown(event));
     this.updateToolbarState();
   }
 
@@ -368,37 +373,60 @@ export class StudioGraphIsland {
     if (!form) {
       return;
     }
-    form.addEventListener("input", () => this.refreshCommandFormFromDom(form));
-    form.addEventListener("change", () => this.refreshCommandFormFromDom(form));
+    form.addEventListener("input", (event) => this.refreshCommandFormFromDom(form, event));
+    form.addEventListener("change", (event) => this.refreshCommandFormFromDom(form, event));
     form.addEventListener("submit", (event) => {
       event.preventDefault();
       void this.submitCommandForm(form);
     });
   }
 
-  private refreshCommandFormFromDom(form: HTMLFormElement): void {
+  private refreshCommandFormFromDom(form: HTMLFormElement, event?: Event): void {
     if (!this.commandForm) {
       return;
     }
-    const activeName = (document.activeElement as HTMLElement | null)?.getAttribute("name") || "";
-    const activeSelectionStart = (document.activeElement as HTMLInputElement | null)?.selectionStart ?? null;
+    const target = event?.target as HTMLElement | null;
+    const targetName = target?.getAttribute("name") || "";
+    const requiresStructureRefresh =
+      event?.type === "change" && ["mode", "repositoryRoleId", "bindingKind", "sourceRoleId", "targetRoleId"].includes(targetName);
     this.commandForm = readStudioCommandFormState({
       form,
       previous: this.commandForm,
       context: this.validationContext()
     });
+    if (!requiresStructureRefresh) {
+      this.patchCommandFormValidation();
+      return;
+    }
     this.dialogEl.innerHTML = renderStudioCommandForm({
       state: this.commandForm,
       context: this.validationContext(),
       labels: this.options.commandFormLabels
     });
     this.bindCommandForm();
-    if (activeName) {
-      const active = this.dialogEl.querySelector<HTMLInputElement | HTMLSelectElement>('[name="' + this.cssEscape(activeName) + '"]');
+    if (targetName) {
+      const active = this.dialogEl.querySelector<HTMLInputElement | HTMLSelectElement>('[name="' + this.cssEscape(targetName) + '"]');
       active?.focus();
-      if (active instanceof HTMLInputElement && activeSelectionStart !== null) {
-        active.setSelectionRange(activeSelectionStart, activeSelectionStart);
+    }
+  }
+
+  private patchCommandFormValidation(): void {
+    if (!this.commandForm) {
+      return;
+    }
+    const diagnostics = this.dialogEl.querySelector<HTMLElement>("[data-studio-command-diagnostics]");
+    if (diagnostics) {
+      diagnostics.outerHTML = renderStudioCommandFormDiagnostics(this.commandForm);
+    }
+    for (const fieldPath of ["repositoryRoleId", "roleId", "modelRef", "profileId", "sourceRoleId", "targetRoleId", "eventType"]) {
+      const current = this.dialogEl.querySelector<HTMLElement>('[data-studio-command-error="' + this.cssEscape(fieldPath) + '"]');
+      if (current) {
+        current.outerHTML = renderStudioCommandFormFieldError(this.commandForm, fieldPath);
       }
+    }
+    const submit = this.dialogEl.querySelector<HTMLButtonElement>('button[type="submit"]');
+    if (submit) {
+      submit.disabled = !this.commandForm.validation.ok;
     }
   }
 
@@ -566,7 +594,7 @@ export class StudioGraphIsland {
     this.applying = true;
     try {
       await this.options.onApplyCanvas?.(nextCanvas);
-      this.redoStack.length = 0;
+      this.activeRedoStack().length = 0;
       this.updateToolbarState();
     } finally {
       this.applying = false;
@@ -602,7 +630,7 @@ export class StudioGraphIsland {
     }
     this.pushUndoSnapshot();
     await this.options.onApplyCommand?.(result);
-    this.redoStack.length = 0;
+    this.activeRedoStack().length = 0;
     this.updateToolbarState();
   }
 
@@ -637,14 +665,14 @@ export class StudioGraphIsland {
       this.updateToolbarState();
       return;
     }
-    const previous = this.undoStack.pop();
+    const previous = this.activeUndoStack().pop();
     if (!previous) {
       this.updateToolbarState();
       return;
     }
     const current = this.currentSnapshot();
     if (current) {
-      this.redoStack.push(current);
+      this.activeRedoStack().push(current);
     }
     await this.applySnapshot(previous);
     this.updateToolbarState();
@@ -655,14 +683,14 @@ export class StudioGraphIsland {
       this.updateToolbarState();
       return;
     }
-    const next = this.redoStack.pop();
+    const next = this.activeRedoStack().pop();
     if (!next) {
       this.updateToolbarState();
       return;
     }
     const current = this.currentSnapshot();
     if (current) {
-      this.undoStack.push(current);
+      this.activeUndoStack().push(current);
     }
     await this.applySnapshot(next);
     this.updateToolbarState();
@@ -686,9 +714,9 @@ export class StudioGraphIsland {
     if (this.isReadOnly()) return;
     const snapshot = this.currentSnapshot();
     if (!snapshot) return;
-    this.undoStack.push(snapshot);
-    if (this.undoStack.length > 40) {
-      this.undoStack.shift();
+    this.activeUndoStack().push(snapshot);
+    if (this.activeUndoStack().length > 40) {
+      this.activeUndoStack().shift();
     }
     this.updateToolbarState();
   }
@@ -721,8 +749,8 @@ export class StudioGraphIsland {
     }
     const undo = this.toolbar.querySelector<HTMLButtonElement>('[data-studio-graph-action="undo"]');
     const redo = this.toolbar.querySelector<HTMLButtonElement>('[data-studio-graph-action="redo"]');
-    if (undo) undo.disabled = this.busy || readOnly || this.undoStack.length === 0;
-    if (redo) redo.disabled = this.busy || readOnly || this.redoStack.length === 0;
+    if (undo) undo.disabled = this.busy || readOnly || this.activeUndoStack().length === 0;
+    if (redo) redo.disabled = this.busy || readOnly || this.activeRedoStack().length === 0;
   }
 
   private isReadOnly(): boolean {
@@ -730,14 +758,27 @@ export class StudioGraphIsland {
   }
 
   private resetHistoryWhenProjectChanges(options: StudioGraphBridgeOptions): void {
+    if (this.isReadOnly()) {
+      this.readonlyHistory.undoStack.length = 0;
+      this.readonlyHistory.redoStack.length = 0;
+      return;
+    }
     const project = options.authoring?.project;
     const nextKey = project ? `${project.workdir}\n${project.systemPath}` : "";
     if (!nextKey) return;
     if (sharedHistory.projectKey && sharedHistory.projectKey !== nextKey) {
-      this.undoStack.length = 0;
-      this.redoStack.length = 0;
+      sharedHistory.undoStack.length = 0;
+      sharedHistory.redoStack.length = 0;
     }
     sharedHistory.projectKey = nextKey;
+  }
+
+  private activeUndoStack(): StudioGraphSnapshot[] {
+    return this.isReadOnly() ? this.readonlyHistory.undoStack : sharedHistory.undoStack;
+  }
+
+  private activeRedoStack(): StudioGraphSnapshot[] {
+    return this.isReadOnly() ? this.readonlyHistory.redoStack : sharedHistory.redoStack;
   }
 
   private blockedMessage(code: string): string {
@@ -767,10 +808,43 @@ export class StudioGraphIsland {
     return this.label(key).replace(/\{([A-Za-z0-9_.-]+)\}/g, (placeholder, name) => vars[name] ?? placeholder);
   }
 
+  private handleRootKeydown(event: KeyboardEvent): void {
+    if (!this.commandForm || this.dialogEl.hidden) {
+      return;
+    }
+    if (event.key === "Escape") {
+      event.preventDefault();
+      this.closeCommandForm();
+      return;
+    }
+    if (event.key !== "Tab") {
+      return;
+    }
+    const focusable = Array.from(
+      this.dialogEl.querySelectorAll<HTMLElement>(
+        'button:not(:disabled), input:not(:disabled), select:not(:disabled), textarea:not(:disabled), [tabindex]:not([tabindex="-1"])'
+      )
+    ).filter((element) => element.offsetParent !== null || element === document.activeElement);
+    if (focusable.length === 0) {
+      return;
+    }
+    const first = focusable[0];
+    const last = focusable[focusable.length - 1];
+    if (event.shiftKey && document.activeElement === first) {
+      event.preventDefault();
+      last.focus();
+      return;
+    }
+    if (!event.shiftKey && document.activeElement === last) {
+      event.preventDefault();
+      first.focus();
+    }
+  }
+
   private toolbarButton(action: string, key: StudioGraphLabelKey, text?: string): string {
     const label = this.label(key);
     return '<button type="button" data-studio-graph-action="' + this.escapeHtml(action) + '" title="' +
-      this.escapeHtml(label) + '">' + this.escapeHtml(text ?? label) + '</button>';
+      this.escapeHtml(label) + '" aria-label="' + this.escapeHtml(label) + '">' + this.escapeHtml(text ?? label) + '</button>';
   }
 
   private sameCanvas(left: StudioCanvasDocument, right: StudioCanvasDocument): boolean {

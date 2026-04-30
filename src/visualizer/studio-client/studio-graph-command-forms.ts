@@ -134,21 +134,18 @@ export function commandFromStudioCommandFormState(state: StudioCommandFormState)
   };
 }
 
-function renderDiagnostics(state: StudioCommandFormState): string {
-  if (!state.validation.diagnostics.length) {
-    return "";
-  }
-  return '<div class="studio-command-form-diagnostics">' + state.validation.diagnostics.map((diagnostic) =>
+export function renderStudioCommandFormDiagnostics(state: StudioCommandFormState): string {
+  return '<div class="studio-command-form-diagnostics" data-studio-command-diagnostics aria-live="polite">' + state.validation.diagnostics.map((diagnostic) =>
     '<div class="studio-command-form-diagnostic ' + escapeHtml(diagnostic.severity) + '" data-studio-diagnostic-code="' +
     escapeHtml(diagnostic.code) + '">' + escapeHtml(diagnostic.message || diagnostic.code) + "</div>"
   ).join("") + "</div>";
 }
 
-function renderFieldError(state: StudioCommandFormState, fieldPath: string): string {
+export function renderStudioCommandFormFieldError(state: StudioCommandFormState, fieldPath: string): string {
   const diagnostic = state.validation.diagnostics.find((item) => item.fieldPath === fieldPath);
   return diagnostic
-    ? '<div class="studio-command-form-error">' + escapeHtml(diagnostic.message || diagnostic.code) + '</div>'
-    : "";
+    ? '<div class="studio-command-form-error" data-studio-command-error="' + escapeHtml(fieldPath) + '" aria-live="polite">' + escapeHtml(diagnostic.message || diagnostic.code) + '</div>'
+    : '<div class="studio-command-form-error" data-studio-command-error="' + escapeHtml(fieldPath) + '" aria-live="polite"></div>';
 }
 
 function renderRoleOptions(context: StudioCommandValidationContext, selected: string): string {
@@ -177,24 +174,24 @@ export function renderStudioCommandForm(args: {
         ).join("")
       : '<option value="">' + escapeHtml(label(labels, "noRepositoryRoles", "No repository roles")) + "</option>";
     return [
-      '<form class="studio-command-form" data-studio-command-form="add-role">',
-      '<div class="studio-command-form-header"><strong>' + escapeHtml(label(labels, "roleDialogTitle", "Add role")) + '</strong>',
-      '<button type="button" data-studio-command-close>' + escapeHtml(label(labels, "cancel", "Cancel")) + '</button></div>',
+      '<form class="studio-command-form" data-studio-command-form="add-role" role="dialog" aria-modal="true" aria-labelledby="studio-command-form-title">',
+      '<div class="studio-command-form-header"><strong id="studio-command-form-title">' + escapeHtml(label(labels, "roleDialogTitle", "Add role")) + '</strong>',
+      '<button type="button" data-studio-command-close aria-label="' + escapeHtml(label(labels, "cancel", "Cancel")) + '">' + escapeHtml(label(labels, "cancel", "Cancel")) + '</button></div>',
       '<div class="studio-command-form-row segmented">',
       '<label><input type="radio" name="mode" value="repository"' + (fields.mode === "repository" ? " checked" : "") + "> " + escapeHtml(label(labels, "repositoryRole", "Repository")) + "</label>",
       '<label><input type="radio" name="mode" value="custom"' + (fields.mode === "custom" ? " checked" : "") + "> " + escapeHtml(label(labels, "customRole", "Custom")) + "</label>",
       "</div>",
-      '<label class="studio-command-form-row"><span>' + escapeHtml(label(labels, "rolePackage", "Role package")) + '</span><select name="repositoryRoleId"' + (fields.mode === "custom" ? " disabled" : "") + ">" + packageOptions + "</select>" + renderFieldError(args.state, "repositoryRoleId") + "</label>",
-      '<label class="studio-command-form-row"><span>' + escapeHtml(label(labels, "roleId", "Role id")) + '</span><input name="roleId" value="' + escapeHtml(fields.roleId) + '">' + renderFieldError(args.state, "roleId") + "</label>",
+      '<label class="studio-command-form-row"><span>' + escapeHtml(label(labels, "rolePackage", "Role package")) + '</span><select name="repositoryRoleId"' + (fields.mode === "custom" ? " disabled" : "") + ">" + packageOptions + "</select>" + renderStudioCommandFormFieldError(args.state, "repositoryRoleId") + "</label>",
+      '<label class="studio-command-form-row"><span>' + escapeHtml(label(labels, "roleId", "Role id")) + '</span><input name="roleId" value="' + escapeHtml(fields.roleId) + '">' + renderStudioCommandFormFieldError(args.state, "roleId") + "</label>",
       '<label class="studio-command-form-row"><span>' + escapeHtml(label(labels, "title", "Title")) + '</span><input name="title" value="' + escapeHtml(fields.title || "") + '"></label>',
       '<label class="studio-command-form-row"><span>' + escapeHtml(label(labels, "bindingKind", "Binding")) + '</span><select name="bindingKind">',
       '<option value="noop"' + (fields.bindingKind === "noop" ? " selected" : "") + ">noop</option>",
       '<option value="model"' + (fields.bindingKind === "model" ? " selected" : "") + ">model</option>",
       '<option value="exec"' + (fields.bindingKind === "exec" ? " selected" : "") + ">exec</option>",
       "</select></label>",
-      '<label class="studio-command-form-row"><span>' + escapeHtml(label(labels, "modelRef", "Model ref")) + '</span><input name="modelRef" value="' + escapeHtml(fields.modelRef || "") + '"' + (fields.bindingKind === "model" ? "" : " disabled") + ">" + renderFieldError(args.state, "modelRef") + "</label>",
-      '<label class="studio-command-form-row"><span>' + escapeHtml(label(labels, "profileId", "Profile id")) + '</span><input name="profileId" value="' + escapeHtml(fields.profileId || "") + '"' + (fields.bindingKind === "exec" ? "" : " disabled") + ">" + renderFieldError(args.state, "profileId") + "</label>",
-      renderDiagnostics(args.state),
+      '<label class="studio-command-form-row"><span>' + escapeHtml(label(labels, "modelRef", "Model ref")) + '</span><input name="modelRef" value="' + escapeHtml(fields.modelRef || "") + '"' + (fields.bindingKind === "model" ? "" : " disabled") + ">" + renderStudioCommandFormFieldError(args.state, "modelRef") + "</label>",
+      '<label class="studio-command-form-row"><span>' + escapeHtml(label(labels, "profileId", "Profile id")) + '</span><input name="profileId" value="' + escapeHtml(fields.profileId || "") + '"' + (fields.bindingKind === "exec" ? "" : " disabled") + ">" + renderStudioCommandFormFieldError(args.state, "profileId") + "</label>",
+      renderStudioCommandFormDiagnostics(args.state),
       '<div class="studio-command-form-actions"><button type="submit"' + disabled + '>' + escapeHtml(label(labels, "create", "Create")) + "</button></div>",
       "</form>"
     ].join("");
@@ -206,15 +203,15 @@ export function renderStudioCommandForm(args: {
     (fields.targetRoleId === STUDIO_SYSTEM_END_ROLE_ID || fields.targetRoleId === "output" ? " selected" : "") + ">" +
     escapeHtml(label(labels, "outputTarget", "output/end")) + "</option>";
   return [
-    '<form class="studio-command-form" data-studio-command-form="add-edge">',
-    '<div class="studio-command-form-header"><strong>' + escapeHtml(label(labels, "edgeDialogTitle", "Add edge")) + '</strong>',
-    '<button type="button" data-studio-command-close>' + escapeHtml(label(labels, "cancel", "Cancel")) + '</button></div>',
-    '<label class="studio-command-form-row"><span>' + escapeHtml(label(labels, "sourceRole", "Source role")) + '</span><select name="sourceRoleId">' + renderRoleOptions(args.context, fields.sourceRoleId) + "</select>" + renderFieldError(args.state, "sourceRoleId") + "</label>",
-    '<label class="studio-command-form-row"><span>' + escapeHtml(label(labels, "targetRole", "Target role")) + '</span><select name="targetRoleId">' + targetOptions + "</select>" + renderFieldError(args.state, "targetRoleId") + "</label>",
-    '<label class="studio-command-form-row"><span>' + escapeHtml(label(labels, "eventType", "Event type")) + '</span><input name="eventType" value="' + escapeHtml(fields.eventType || "") + '">' + renderFieldError(args.state, "eventType") + "</label>",
+    '<form class="studio-command-form" data-studio-command-form="add-edge" role="dialog" aria-modal="true" aria-labelledby="studio-command-form-title">',
+    '<div class="studio-command-form-header"><strong id="studio-command-form-title">' + escapeHtml(label(labels, "edgeDialogTitle", "Add edge")) + '</strong>',
+    '<button type="button" data-studio-command-close aria-label="' + escapeHtml(label(labels, "cancel", "Cancel")) + '">' + escapeHtml(label(labels, "cancel", "Cancel")) + '</button></div>',
+    '<label class="studio-command-form-row"><span>' + escapeHtml(label(labels, "sourceRole", "Source role")) + '</span><select name="sourceRoleId">' + renderRoleOptions(args.context, fields.sourceRoleId) + "</select>" + renderStudioCommandFormFieldError(args.state, "sourceRoleId") + "</label>",
+    '<label class="studio-command-form-row"><span>' + escapeHtml(label(labels, "targetRole", "Target role")) + '</span><select name="targetRoleId">' + targetOptions + "</select>" + renderStudioCommandFormFieldError(args.state, "targetRoleId") + "</label>",
+    '<label class="studio-command-form-row"><span>' + escapeHtml(label(labels, "eventType", "Event type")) + '</span><input name="eventType" value="' + escapeHtml(fields.eventType || "") + '">' + renderStudioCommandFormFieldError(args.state, "eventType") + "</label>",
     '<label class="studio-command-form-check"><input type="checkbox" name="runtimeOnlyErrorFlow"' + (fields.runtimeOnlyErrorFlow ? " checked" : "") + "> " + escapeHtml(label(labels, "runtimeOnlyErrorFlow", "Runtime error flow")) + "</label>",
     '<label class="studio-command-form-check"><input type="checkbox" name="participatesInJoin"' + (fields.participatesInJoin ? " checked" : "") + "> " + escapeHtml(label(labels, "participatesInJoin", "Join source")) + "</label>",
-    renderDiagnostics(args.state),
+    renderStudioCommandFormDiagnostics(args.state),
     '<div class="studio-command-form-actions"><button type="submit"' + disabled + '>' + escapeHtml(label(labels, "create", "Create")) + "</button></div>",
     "</form>"
   ].join("");

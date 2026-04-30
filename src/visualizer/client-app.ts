@@ -1911,9 +1911,9 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
     function renderFailure() {
       if (!state.selectedRunId) {
         failureControlsEl.innerHTML = "";
-        failureSummaryEl.innerHTML = '<div class="hint">No run selected.</div>';
-        failureDetailEl.innerHTML = '<div class="hint">No run selected.</div>';
-        failureNextChecksEl.innerHTML = '<div class="hint">No run selected.</div>';
+        failureSummaryEl.innerHTML = '<div class="hint">' + escapeText(t("state.noRunSelected", undefined, "No run selected.")) + '</div>';
+        failureDetailEl.innerHTML = '<div class="hint">' + escapeText(t("state.noRunSelected", undefined, "No run selected.")) + '</div>';
+        failureNextChecksEl.innerHTML = '<div class="hint">' + escapeText(t("state.noRunSelected", undefined, "No run selected.")) + '</div>';
         return;
       }
       failureControlsEl.innerHTML = [
@@ -2075,7 +2075,7 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
       const graphPayload = state.graph;
       if (!detail || !header || state.projectHome) {
         selectedTitleEl.textContent = t("section.projectOverview");
-        selectedSubtitleEl.textContent = "Use query-state deep links or the run list to switch between project, run, and review details.";
+        selectedSubtitleEl.textContent = t("project.overviewSubtitle", undefined, "Use query-state deep links or the run list to switch between project, run, and review details.");
       } else {
         const simulation = graphPayload?.simulation?.isSimulation ? "simulation" : "runtime";
         selectedTitleEl.textContent = graphPayload?.simulation?.isSimulation ? \`\${detail.runId} [simulation]\` : detail.runId;
@@ -3294,8 +3294,12 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
         }
       })
       .catch((error) => {
-        runListEl.innerHTML = \`<div class="hint">Failed to load visualizer data: \${escapeText(error.message || error)}</div>\`;
-        projectSummaryEl.textContent = \`Failed to load project: \${error.message || error}\`;
+        runListEl.innerHTML = '<div class="hint">' + escapeText(t("state.visualizerLoadFailed", {
+          message: String(error.message || error)
+        }, "Failed to load visualizer data: " + String(error.message || error))) + '</div>';
+        projectSummaryEl.textContent = t("state.projectLoadFailed", {
+          message: String(error.message || error)
+        }, "Failed to load project: " + String(error.message || error));
         setLive("idle", "offline");
       });
 
