@@ -42,6 +42,7 @@ export type StudioCommandValidationContext = {
 
 export type StudioAddRoleDraft = {
   mode: "repository" | "custom";
+  originalRoleId?: string;
   repositoryRoleId?: string;
   roleId: string;
   title?: string;
@@ -51,6 +52,10 @@ export type StudioAddRoleDraft = {
 };
 
 export type StudioAddEdgeDraft = {
+  flowId?: string;
+  originalSourceRoleId?: string;
+  originalTargetRoleId?: string;
+  originalEventType?: string;
   sourceRoleId: string;
   targetRoleId: string;
   eventType?: string;
@@ -182,7 +187,7 @@ export function validateStudioAddRoleDraft(
       vars: { roleId },
       message: "Role id must start with a letter and use letters, digits, _ or -."
     }));
-  } else if (context.authoring?.roles?.[roleId]) {
+  } else if (context.authoring?.roles?.[roleId] && roleId !== asString(draft.originalRoleId)) {
     diagnostics.push(issue({
       severity: "error",
       fieldPath: "roleId",
@@ -308,11 +313,21 @@ export function validateStudioAddEdgeDraft(
     }));
   }
   if (authoring && sourceRoleId && targetRoleId && eventType) {
-    const duplicated = Object.values(authoring.flows ?? {}).some((flow) =>
+    const duplicated = Object.values(authoring.flows ?? {}).some((flow) => {
+      const sameOriginal =
+        (draft.flowId && flow.flowId === draft.flowId) ||
+        (flow.fromRoleId === asString(draft.originalSourceRoleId) &&
+          flow.toRoleId === normalizeStudioGraphStoredRoleId(asString(draft.originalTargetRoleId)) &&
+          flow.eventType === normalizeStudioEventType(draft.originalEventType));
+      if (sameOriginal) {
+        return false;
+      }
+      return (
       flow.fromRoleId === sourceRoleId &&
       flow.toRoleId === targetRoleId &&
       flow.eventType === eventType
-    );
+      );
+    });
     if (duplicated) {
       diagnostics.push(issue({
         severity: "error",

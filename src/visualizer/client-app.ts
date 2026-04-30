@@ -21,6 +21,11 @@ import {
   renderStudioBridgeInspector,
   renderStudioBridgePanel,
   renderStudioBridgeSelectionLabel,
+  roleIdOf,
+  flowKeyOf,
+  sortStudioBridgeRolesTopologically,
+  filterStudioBridgeItems,
+  sortStudioBridgeFlowsByTopology,
   renderSuggestedNextChecksPanel,
   renderRunTopologySvg,
   renderWorkbenchTopologySvg,
@@ -203,6 +208,11 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
     const renderStudioGraphCanvas = ${renderStudioGraphCanvas.toString()};
     const renderStudioBridgeSelectionLabel = ${renderStudioBridgeSelectionLabel.toString()};
     const renderStudioBridgeInspector = ${renderStudioBridgeInspector.toString()};
+    const roleIdOf = ${roleIdOf.toString()};
+    const flowKeyOf = ${flowKeyOf.toString()};
+    const sortStudioBridgeRolesTopologically = ${sortStudioBridgeRolesTopologically.toString()};
+    const filterStudioBridgeItems = ${filterStudioBridgeItems.toString()};
+    const sortStudioBridgeFlowsByTopology = ${sortStudioBridgeFlowsByTopology.toString()};
     const renderArtifactsPanel = ${renderArtifactsPanel.toString()};
     const renderBindingExplainPanel = ${renderBindingExplainPanel.toString()};
     const renderContractPanel = ${renderContractPanel.toString()};
@@ -313,6 +323,10 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
       studioBridgeStale: false,
       studioBridgeSelectedRoleId: "",
       studioBridgeSelectedFlowKey: "",
+      studioBridgeFilter: "",
+      studioBridgeListMode: "all",
+      studioBridgeFullscreen: false,
+      studioBridgeEditSelectionRequest: 0,
       studioBridgeLastDryRunId: "",
       runGraphSelectedRoleId: "",
       runGraphSelectedFlowKey: "",
@@ -699,7 +713,7 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
         redo: t("studio.graph.redo", undefined, "Redo"),
         ready: t("studio.graph.ready", undefined, "ready"),
         graphUnavailable: t("studio.graph.unavailable", undefined, "Graph unavailable"),
-        graphReady: t("studio.graph.readyStatus", undefined, "X6 graph ready"),
+        graphReady: t("studio.graph.readyStatus", undefined, "Graph workspace ready"),
         fixMermaidBeforeGraphEditing: t("studio.graph.fixMermaid", undefined, "Fix Mermaid diagnostics before graph editing."),
         noRolesAvailable: t("studio.graph.noRoles", undefined, "No roles available."),
         selectRoleBeforeAddingEdge: t("studio.graph.selectRoleBeforeEdge", undefined, "Select a role before adding an edge."),
@@ -719,6 +733,8 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
       return {
         roleDialogTitle: t("studio.form.roleDialogTitle", undefined, "Add role"),
         edgeDialogTitle: t("studio.form.edgeDialogTitle", undefined, "Add edge"),
+        editRoleDialogTitle: t("studio.form.editRoleDialogTitle", undefined, "Edit role"),
+        editEdgeDialogTitle: t("studio.form.editEdgeDialogTitle", undefined, "Edit flow"),
         repositoryRole: t("studio.form.repositoryRole", undefined, "Repository"),
         customRole: t("studio.form.customRole", undefined, "Custom"),
         rolePackage: t("studio.form.rolePackage", undefined, "Role package"),
@@ -734,6 +750,7 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
         participatesInJoin: t("studio.form.participatesInJoin", undefined, "Join source"),
         cancel: t("action.cancel", undefined, "Cancel"),
         create: t("studio.form.create", undefined, "Create"),
+        save: t("action.save", undefined, "Save"),
         noRepositoryRoles: t("studio.form.noRepositoryRoles", undefined, "No repository roles"),
         outputTarget: t("studio.form.outputTarget", undefined, "output/end")
       };
@@ -1132,6 +1149,9 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
         readiness: state.projectReadiness,
         selectedRoleId: state.studioBridgeSelectedRoleId,
         selectedFlowKey: state.studioBridgeSelectedFlowKey,
+        filter: state.studioBridgeFilter,
+        listMode: state.studioBridgeListMode,
+        fullscreen: state.studioBridgeFullscreen,
         actionBusy: state.actionBusy,
         t
       };
@@ -1162,7 +1182,7 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
         workbenchBodyEl.innerHTML = html;
         return;
       }
-      for (const region of ["toolbar", "navigator", "inspector", "flow-list", "diagnostics"]) {
+      for (const region of ["toolbar", "graph", "index", "navigator", "inspector", "flow-list", "diagnostics"]) {
         const current = findStudioBridgeElement('[data-studio-bridge-region="' + region + '"]');
         const next = template.content.querySelector('[data-studio-bridge-region="' + region + '"]');
         if (current && next) {
@@ -1177,6 +1197,7 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
         button.addEventListener("click", () => {
           state.studioBridgeSelectedRoleId = button.getAttribute("data-studio-role-id") || "";
           state.studioBridgeSelectedFlowKey = "";
+          state.studioBridgeEditSelectionRequest += 1;
           updateStudioBridgeSelection(true);
         });
       }
@@ -1184,7 +1205,30 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
         button.addEventListener("click", () => {
           state.studioBridgeSelectedFlowKey = button.getAttribute("data-studio-flow-key") || "";
           state.studioBridgeSelectedRoleId = "";
+          state.studioBridgeEditSelectionRequest += 1;
           updateStudioBridgeSelection(true);
+        });
+      }
+      const filterInput = findStudioBridgeElement("[data-studio-bridge-filter]");
+      if (filterInput) {
+        filterInput.addEventListener("input", (event) => {
+          state.studioBridgeFilter = event.target.value || "";
+          renderStudioBridge({ preserveGraphRoot: true });
+        });
+      }
+      const listModeSelect = findStudioBridgeElement("[data-studio-bridge-list-mode]");
+      if (listModeSelect) {
+        listModeSelect.addEventListener("change", (event) => {
+          const value = event.target.value || "all";
+          state.studioBridgeListMode = value === "roles" || value === "flows" ? value : "all";
+          renderStudioBridge({ preserveGraphRoot: true });
+        });
+      }
+      const fullscreenButton = findStudioBridgeElement("[data-studio-bridge-fullscreen]");
+      if (fullscreenButton) {
+        fullscreenButton.addEventListener("click", () => {
+          state.studioBridgeFullscreen = !state.studioBridgeFullscreen;
+          renderStudioBridge({ preserveGraphRoot: true });
         });
       }
       const validateButton = document.getElementById("studio-bridge-validate");
@@ -1273,6 +1317,18 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
       return null;
     }
 
+    if (typeof document.addEventListener === "function") {
+      document.addEventListener("keydown", (event) => {
+        if (event.key !== "Escape" || !state.studioBridgeFullscreen) {
+          return;
+        }
+        state.studioBridgeFullscreen = false;
+        if (state.workbenchView === "bridge") {
+          renderStudioBridge({ preserveGraphRoot: true });
+        }
+      });
+    }
+
     function mountStudioGraphIsland() {
       let root = document.getElementById("studio-graph-root");
       if (!root) {
@@ -1296,6 +1352,7 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
         validation: state.studioBridge?.validation || state.workbench?.validation || null,
         selectedRoleId: state.studioBridgeSelectedRoleId,
         selectedFlowKey: state.studioBridgeSelectedFlowKey,
+        editSelectionRequest: state.studioBridgeEditSelectionRequest,
         busy: Boolean(state.actionBusy),
         rolePackages: state.rolePackages,
         bindings: state.bindings,
@@ -1881,7 +1938,7 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
         '<div id="run-graph-root" class="studio-graph-root run-graph-root" data-selected-role-id="' + escapeText(state.runGraphSelectedRoleId) + '" data-selected-flow-key="' + escapeText(state.runGraphSelectedFlowKey) + '"></div>',
         '<div class="run-graph-summary-grid">',
         '<div class="event"><div class="event-top"><span>' + escapeText(t("graph.runtimeSummary")) + '</span><span>' + escapeText(nodes.length) + " " + escapeText(t("common.nodes")) + " · " + escapeText(edges.length) + '</span></div><strong>' + escapeText(t("graph.topologyOverlay")) + '</strong><div class="hint">' + escapeText(t("graph.overlayHint")) + '</div></div>',
-        '<div class="event"><div class="event-top"><span>' + escapeText(t("common.readOnly")) + '</span><span>X6</span></div><strong>' + escapeText(t("graph.readOnlyRuntimeGraph", undefined, "Studio graph in read-only runtime mode")) + '</strong><div class="hint">' + escapeText(t("graph.x6RuntimeHint", undefined, "Uses the same role and flow projection as Studio Bridge, including start and end boundaries.")) + '</div></div>',
+        '<div class="event"><div class="event-top"><span>' + escapeText(t("common.readOnly")) + '</span><span>' + escapeText(t("section.graphView", undefined, "Graph View")) + '</span></div><strong>' + escapeText(t("graph.readOnlyRuntimeGraph", undefined, "Read-only runtime graph")) + '</strong><div class="hint">' + escapeText(t("graph.x6RuntimeHint", undefined, "Uses the same role and flow projection as Studio Bridge, including start and end boundaries.")) + '</div></div>',
         "</div>"
       ].join("");
       mountRunGraphIsland(graph);

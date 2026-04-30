@@ -20,9 +20,30 @@ export type StudioAuthoringCommand =
       y?: number;
     }
   | { type: "duplicate-role"; roleId: string; x?: number; y?: number }
+  | {
+      type: "update-role";
+      originalRoleId: string;
+      roleId?: string;
+      title?: string;
+      bindingKind?: StudioAuthoringRole["bindingKind"];
+      modelRef?: string;
+      profileId?: string;
+    }
   | { type: "delete-role"; roleId: string }
   | {
       type: "add-edge";
+      sourceRoleId: string;
+      targetRoleId: string;
+      eventType?: string;
+      runtimeOnlyErrorFlow?: boolean;
+      participatesInJoin?: boolean;
+    }
+  | {
+      type: "update-edge";
+      flowId?: string;
+      originalSourceRoleId: string;
+      originalTargetRoleId: string;
+      originalEventType: string;
       sourceRoleId: string;
       targetRoleId: string;
       eventType?: string;
@@ -112,6 +133,71 @@ function roleCanvasNode(role: StudioAuthoringRole, x: number, y: number): Studio
   };
 }
 
+function normalizeBindingKind(value: unknown): StudioAuthoringRole["bindingKind"] {
+  return value === "model" || value === "exec" ? value : "noop";
+}
+
+function applyRoleBinding(
+  role: StudioAuthoringRole,
+  args: {
+    title?: string;
+    bindingKind?: StudioAuthoringRole["bindingKind"];
+    modelRef?: string;
+    profileId?: string;
+  }
+): StudioAuthoringRole {
+  const bindingKind = normalizeBindingKind(args.bindingKind);
+  const next: StudioAuthoringRole = {
+    ...role,
+    title: normalizeTitle(args.title, role.roleId),
+    bindingKind
+  };
+  delete next.modelRef;
+  delete next.profileId;
+  if (bindingKind === "model") {
+    const modelRef = String(args.modelRef ?? "").trim();
+    if (modelRef) next.modelRef = modelRef;
+  }
+  if (bindingKind === "exec") {
+    const profileId = String(args.profileId ?? "").trim();
+    if (profileId) next.profileId = profileId;
+  }
+  return next;
+}
+
+function matchesFlow(
+  flow: StudioAuthoringFlow,
+  args: { flowId?: string; sourceRoleId: string; targetRoleId: string; eventType: string },
+  flowId: string
+): boolean {
+  if (args.flowId && args.flowId === flowId) {
+    return true;
+  }
+  return flow.fromRoleId === args.sourceRoleId &&
+    flow.toRoleId === args.targetRoleId &&
+    flow.eventType === args.eventType;
+}
+
+function syncJoinSource(
+  authoring: StudioAuthoringDocument,
+  targetRoleId: string,
+  sourceRoleId: string,
+  participates: boolean
+): void {
+  const role = authoring.roles[targetRoleId];
+  if (!role) return;
+  const current = new Set(role.joinSources ?? []);
+  if (participates) {
+    current.add(sourceRoleId);
+  } else {
+    current.delete(sourceRoleId);
+  }
+  role.joinSources = Array.from(current);
+  if (role.joinSources.length === 0) {
+    delete role.joinSources;
+  }
+}
+
 export function applyStudioAuthoringCommand(args: {
   authoring: StudioAuthoringDocument;
   canvas: StudioCanvasDocument;
@@ -194,6 +280,61 @@ export function applyStudioAuthoringCommand(args: {
     return { authoring, canvas, selectedRoleId: canvas.nodes[0]?.roleId || "" };
   }
 
+  if (command.type === "update-role") {
+    const originalRoleId = normalizeRoleId(command.originalRoleId);
+    const role = authoring.roles[originalRoleId];
+    if (!originalRoleId || !role) {
+      return { authoring, canvas, blockedCode: "missing-role-id" };
+    }
+    const nextRoleId = normalizeRoleId(command.roleId || originalRoleId);
+    if (!isValidRoleId(nextRoleId)) {
+      return { authoring, canvas, blockedCode: "invalid-role-id" };
+    }
+    if (nextRoleId !== originalRoleId && authoring.roles[nextRoleId]) {
+      return { authoring, canvas, blockedCode: "duplicate-role-id" };
+    }
+    const updatedRole = applyRoleBinding({ ...role, roleId: nextRoleId }, command);
+    if (nextRoleId !== originalRoleId) {
+      delete authoring.roles[originalRoleId];
+      authoring.roles[nextRoleId] = updatedRole;
+      if (authoring.system.entryRoleId === originalRoleId) {
+        authoring.system.entryRoleId = nextRoleId;
+      }
+      if (authoring.layout.nodes[originalRoleId]) {
+        authoring.layout.nodes[nextRoleId] = authoring.layout.nodes[originalRoleId];
+        delete authoring.layout.nodes[originalRoleId];
+      }
+      for (const flow of Object.values(authoring.flows)) {
+        if (flow.fromRoleId === originalRoleId) flow.fromRoleId = nextRoleId;
+        if (flow.toRoleId === originalRoleId) flow.toRoleId = nextRoleId;
+      }
+      for (const candidate of Object.values(authoring.roles)) {
+        if (Array.isArray(candidate.joinSources)) {
+          candidate.joinSources = candidate.joinSources.map((source) => source === originalRoleId ? nextRoleId : source);
+        }
+        if (Array.isArray(candidate.routeOrder)) {
+          candidate.routeOrder = candidate.routeOrder.map((target) => target === originalRoleId ? nextRoleId : target);
+        }
+      }
+      canvas.nodes = canvas.nodes.map((node) => node.roleId === originalRoleId
+        ? { ...node, id: nextRoleId, roleId: nextRoleId, label: updatedRole.title || nextRoleId, bindingKind: updatedRole.bindingKind }
+        : node
+      );
+      canvas.edges = canvas.edges.map((edge) => ({
+        ...edge,
+        source: edge.source === originalRoleId ? nextRoleId : edge.source,
+        target: edge.target === originalRoleId ? nextRoleId : edge.target
+      }));
+    } else {
+      authoring.roles[originalRoleId] = updatedRole;
+      canvas.nodes = canvas.nodes.map((node) => node.roleId === originalRoleId
+        ? { ...node, label: updatedRole.title || originalRoleId, bindingKind: updatedRole.bindingKind }
+        : node
+      );
+    }
+    return { authoring, canvas, selectedRoleId: nextRoleId };
+  }
+
   if (command.type === "add-edge") {
     const sourceRoleId = normalizeRoleId(command.sourceRoleId);
     const targetRoleId = normalizeStudioGraphStoredRoleId(normalizeRoleId(command.targetRoleId));
@@ -242,7 +383,85 @@ export function applyStudioAuthoringCommand(args: {
       label: eventType,
       eventType,
       runtimeOnlyErrorFlow: Boolean(flow.runtimeOnlyErrorFlow),
-      participatesInJoin: false
+      participatesInJoin: Boolean(command.participatesInJoin)
+    });
+    if (command.participatesInJoin && targetRoleId !== STUDIO_SYSTEM_END_ROLE_ID) {
+      syncJoinSource(authoring, targetRoleId, sourceRoleId, true);
+    }
+    return { authoring, canvas, selectedFlowKey: canvasFlowKey(flow) };
+  }
+
+  if (command.type === "update-edge") {
+    const originalTargetRoleId = normalizeStudioGraphStoredRoleId(normalizeRoleId(command.originalTargetRoleId));
+    const originalEventType = normalizeEventType(command.originalEventType);
+    const sourceRoleId = normalizeRoleId(command.sourceRoleId);
+    const targetRoleId = normalizeStudioGraphStoredRoleId(normalizeRoleId(command.targetRoleId));
+    if (
+      !sourceRoleId ||
+      sourceRoleId === targetRoleId ||
+      !authoring.roles[sourceRoleId] ||
+      (targetRoleId !== STUDIO_SYSTEM_END_ROLE_ID && !authoring.roles[targetRoleId])
+    ) {
+      return { authoring, canvas, blockedCode: "invalid-edge-endpoints" };
+    }
+    const eventType = normalizeEventType(command.eventType || "DONE");
+    if (!EVENT_TYPE_PATTERN.test(eventType)) {
+      return { authoring, canvas, blockedCode: "invalid-event-type" };
+    }
+    const original = Object.entries(authoring.flows).find(([flowId, flow]) =>
+      matchesFlow(flow, {
+        flowId: command.flowId,
+        sourceRoleId: command.originalSourceRoleId,
+        targetRoleId: originalTargetRoleId,
+        eventType: originalEventType
+      }, flowId)
+    );
+    if (!original) {
+      return { authoring, canvas, blockedCode: "invalid-edge-endpoints" };
+    }
+    const [originalFlowId, originalFlow] = original;
+    const duplicate = Object.entries(authoring.flows).some(([flowId, flow]) =>
+      flowId !== originalFlowId &&
+      flow.fromRoleId === sourceRoleId &&
+      flow.toRoleId === targetRoleId &&
+      flow.eventType === eventType
+    );
+    if (duplicate) {
+      return { authoring, canvas, blockedCode: "duplicate-edge" };
+    }
+    const flow: StudioAuthoringFlow = {
+      ...originalFlow,
+      flowId: originalFlow.flowId || originalFlowId,
+      fromRoleId: sourceRoleId,
+      toRoleId: targetRoleId,
+      eventType,
+      runtimeOnlyErrorFlow: command.runtimeOnlyErrorFlow ?? eventType.startsWith("ERROR")
+    };
+    delete authoring.flows[originalFlowId];
+    authoring.flows[flow.flowId] = flow;
+    if (originalTargetRoleId !== STUDIO_SYSTEM_END_ROLE_ID) {
+      syncJoinSource(authoring, originalTargetRoleId, command.originalSourceRoleId, false);
+    }
+    if (targetRoleId !== STUDIO_SYSTEM_END_ROLE_ID) {
+      syncJoinSource(authoring, targetRoleId, sourceRoleId, Boolean(command.participatesInJoin));
+    }
+    canvas.edges = canvas.edges.map((edge) => {
+      const matches = (command.flowId && edge.id === command.flowId) ||
+        (edge.source === command.originalSourceRoleId &&
+          edge.target === originalTargetRoleId &&
+          edge.eventType === originalEventType);
+      return matches
+        ? {
+            ...edge,
+            id: flow.flowId,
+            source: sourceRoleId,
+            target: targetRoleId,
+            label: eventType,
+            eventType,
+            runtimeOnlyErrorFlow: Boolean(flow.runtimeOnlyErrorFlow),
+            participatesInJoin: Boolean(command.participatesInJoin)
+          }
+        : edge;
     });
     return { authoring, canvas, selectedFlowKey: canvasFlowKey(flow) };
   }

@@ -543,7 +543,18 @@ export function renderPageHtml(workdir: string, apiPrefix: string, i18n: PageI18
     }
     .studio-bridge-layout {
       display: grid;
-      grid-template-columns: minmax(170px, 220px) minmax(520px, 1fr) minmax(220px, 300px);
+      grid-template-columns: minmax(520px, 1fr) minmax(240px, 320px);
+      gap: 12px;
+      align-items: start;
+      min-width: 0;
+    }
+    .studio-bridge-index {
+      grid-column: 1 / -1;
+      min-width: 0;
+    }
+    .studio-index-grid {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(240px, 1fr));
       gap: 12px;
       align-items: start;
       min-width: 0;
@@ -556,9 +567,6 @@ export function renderPageHtml(workdir: string, apiPrefix: string, i18n: PageI18
     .studio-graph-column {
       display: grid;
       gap: 8px;
-    }
-    .studio-flow-list {
-      grid-column: 2;
     }
     .studio-diagnostics {
       grid-column: 1 / -1;
@@ -574,6 +582,24 @@ export function renderPageHtml(workdir: string, apiPrefix: string, i18n: PageI18
       align-items: center;
       gap: 8px;
       min-width: 0;
+    }
+    .studio-canvas-toolbar > div {
+      display: grid;
+      gap: 2px;
+      min-width: 0;
+    }
+    .studio-canvas-shell.is-fullscreen {
+      position: fixed;
+      inset: 12px;
+      z-index: 90;
+      background: var(--panel);
+      border: 1px solid var(--border);
+      padding: 12px;
+      box-shadow: 0 24px 80px rgba(0, 0, 0, 0.52);
+    }
+    .studio-canvas-shell.is-fullscreen .studio-graph-root,
+    .studio-canvas-shell.is-fullscreen .studio-graph-island {
+      min-height: calc(100vh - 108px);
     }
     .studio-graph-root {
       min-height: 390px;
@@ -761,10 +787,11 @@ export function renderPageHtml(workdir: string, apiPrefix: string, i18n: PageI18
       .studio-bridge-layout { grid-template-columns: 1fr; }
       .studio-graph-column { order: 1; }
       .studio-inspector { order: 2; }
+      .studio-bridge-index { order: 3; }
+      .studio-index-grid { grid-template-columns: 1fr; }
       .studio-navigator { order: 3; }
       .studio-flow-list {
         order: 4;
-        grid-column: auto;
         max-height: 520px;
         overflow: auto;
         padding-right: 2px;

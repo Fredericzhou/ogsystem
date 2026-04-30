@@ -12,11 +12,13 @@ import {
   type StudioValidationResult
 } from "./studio-graph-validation.js";
 
-export type StudioCommandFormKind = "add-role" | "add-edge";
+export type StudioCommandFormKind = "add-role" | "add-edge" | "edit-role" | "edit-edge";
 
 export type StudioCommandFormLabels = Partial<Record<
   | "roleDialogTitle"
   | "edgeDialogTitle"
+  | "editRoleDialogTitle"
+  | "editEdgeDialogTitle"
   | "repositoryRole"
   | "customRole"
   | "rolePackage"
@@ -32,6 +34,7 @@ export type StudioCommandFormLabels = Partial<Record<
   | "participatesInJoin"
   | "cancel"
   | "create"
+  | "save"
   | "noRepositoryRoles"
   | "outputTarget",
   string
@@ -45,6 +48,16 @@ export type StudioCommandFormState =
     }
   | {
       kind: "add-edge";
+      fields: StudioAddEdgeDraft;
+      validation: StudioValidationResult;
+    }
+  | {
+      kind: "edit-role";
+      fields: StudioAddRoleDraft;
+      validation: StudioValidationResult;
+    }
+  | {
+      kind: "edit-edge";
       fields: StudioAddEdgeDraft;
       validation: StudioValidationResult;
     };
@@ -75,7 +88,31 @@ export function createDefaultStudioCommandFormState(args: {
   context: StudioCommandValidationContext;
   sourceRoleId?: string;
   targetRoleId?: string;
+  roleId?: string;
+  flowId?: string;
+  eventType?: string;
+  runtimeOnlyErrorFlow?: boolean;
+  participatesInJoin?: boolean;
 }): StudioCommandFormState {
+  if (args.kind === "edit-role") {
+    const roleId = args.roleId || firstRoleId(args.context);
+    const role = args.context.authoring?.roles?.[roleId];
+    const fields: StudioAddRoleDraft = {
+      mode: "custom",
+      originalRoleId: roleId,
+      roleId,
+      title: role?.title || roleId,
+      bindingKind: role?.bindingKind || "noop",
+      modelRef: role?.modelRef,
+      profileId: role?.profileId
+    };
+    return {
+      kind: "edit-role",
+      fields,
+      validation: validateStudioAddRoleDraft(fields, args.context)
+    };
+  }
+
   if (args.kind === "add-role") {
     const rolePackage = extractStudioRolePackages(args.context.rolePackages)[0];
     const fields: StudioAddRoleDraft = {
@@ -93,14 +130,18 @@ export function createDefaultStudioCommandFormState(args: {
   }
 
   const fields: StudioAddEdgeDraft = {
+    flowId: args.flowId,
+    originalSourceRoleId: args.kind === "edit-edge" ? args.sourceRoleId : undefined,
+    originalTargetRoleId: args.kind === "edit-edge" ? args.targetRoleId : undefined,
+    originalEventType: args.kind === "edit-edge" ? args.eventType : undefined,
     sourceRoleId: args.sourceRoleId || firstRoleId(args.context),
     targetRoleId: args.targetRoleId || STUDIO_SYSTEM_END_ROLE_ID,
-    eventType: "DONE",
-    runtimeOnlyErrorFlow: false,
-    participatesInJoin: false
+    eventType: args.eventType || "DONE",
+    runtimeOnlyErrorFlow: Boolean(args.runtimeOnlyErrorFlow),
+    participatesInJoin: Boolean(args.participatesInJoin)
   };
   return {
-    kind: "add-edge",
+    kind: args.kind === "edit-edge" ? "edit-edge" : "add-edge",
     fields,
     validation: validateStudioAddEdgeDraft(fields, args.context)
   };
@@ -110,11 +151,22 @@ export function commandFromStudioCommandFormState(state: StudioCommandFormState)
   if (!state.validation.ok) {
     return null;
   }
-  if (state.kind === "add-role") {
+  if (state.kind === "add-role" || state.kind === "edit-role") {
     const bindingKind: StudioAuthoringRole["bindingKind"] =
       state.fields.bindingKind === "model" || state.fields.bindingKind === "exec"
         ? state.fields.bindingKind
         : "noop";
+    if (state.kind === "edit-role") {
+      return {
+        type: "update-role",
+        originalRoleId: state.fields.originalRoleId || state.fields.roleId.trim(),
+        roleId: state.fields.roleId.trim(),
+        title: (state.fields.title || state.fields.roleId).trim(),
+        bindingKind,
+        modelRef: bindingKind === "model" ? state.fields.modelRef?.trim() : undefined,
+        profileId: bindingKind === "exec" ? state.fields.profileId?.trim() : undefined
+      };
+    }
     return {
       type: "add-role",
       roleId: state.fields.roleId.trim(),
@@ -122,6 +174,20 @@ export function commandFromStudioCommandFormState(state: StudioCommandFormState)
       bindingKind,
       modelRef: bindingKind === "model" ? state.fields.modelRef?.trim() : undefined,
       profileId: bindingKind === "exec" ? state.fields.profileId?.trim() : undefined
+    };
+  }
+  if (state.kind === "edit-edge") {
+    return {
+      type: "update-edge",
+      flowId: state.fields.flowId,
+      originalSourceRoleId: state.fields.originalSourceRoleId || state.fields.sourceRoleId.trim(),
+      originalTargetRoleId: state.fields.originalTargetRoleId || state.fields.targetRoleId.trim(),
+      originalEventType: state.fields.originalEventType || normalizeStudioEventType(state.fields.eventType || "DONE"),
+      sourceRoleId: state.fields.sourceRoleId.trim(),
+      targetRoleId: state.fields.targetRoleId.trim(),
+      eventType: normalizeStudioEventType(state.fields.eventType || "DONE"),
+      runtimeOnlyErrorFlow: Boolean(state.fields.runtimeOnlyErrorFlow),
+      participatesInJoin: Boolean(state.fields.participatesInJoin)
     };
   }
   return {
@@ -163,9 +229,10 @@ export function renderStudioCommandForm(args: {
 }): string {
   const labels = args.labels;
   const disabled = args.state.validation.ok ? "" : " disabled";
-  if (args.state.kind === "add-role") {
+  if (args.state.kind === "add-role" || args.state.kind === "edit-role") {
     const rolePackages = extractStudioRolePackages(args.context.rolePackages);
     const fields = args.state.fields;
+    const isEdit = args.state.kind === "edit-role";
     const packageOptions = rolePackages.length
       ? rolePackages.map((rolePackage) =>
           '<option value="' + escapeHtml(rolePackage.roleId) + '"' +
@@ -174,14 +241,15 @@ export function renderStudioCommandForm(args: {
         ).join("")
       : '<option value="">' + escapeHtml(label(labels, "noRepositoryRoles", "No repository roles")) + "</option>";
     return [
-      '<form class="studio-command-form" data-studio-command-form="add-role" role="dialog" aria-modal="true" aria-labelledby="studio-command-form-title">',
-      '<div class="studio-command-form-header"><strong id="studio-command-form-title">' + escapeHtml(label(labels, "roleDialogTitle", "Add role")) + '</strong>',
+      '<form class="studio-command-form" data-studio-command-form="' + (isEdit ? "edit-role" : "add-role") + '" role="dialog" aria-modal="true" aria-labelledby="studio-command-form-title">',
+      '<div class="studio-command-form-header"><strong id="studio-command-form-title">' + escapeHtml(isEdit ? label(labels, "editRoleDialogTitle", "Edit role") : label(labels, "roleDialogTitle", "Add role")) + '</strong>',
       '<button type="button" data-studio-command-close aria-label="' + escapeHtml(label(labels, "cancel", "Cancel")) + '">' + escapeHtml(label(labels, "cancel", "Cancel")) + '</button></div>',
-      '<div class="studio-command-form-row segmented">',
-      '<label><input type="radio" name="mode" value="repository"' + (fields.mode === "repository" ? " checked" : "") + "> " + escapeHtml(label(labels, "repositoryRole", "Repository")) + "</label>",
-      '<label><input type="radio" name="mode" value="custom"' + (fields.mode === "custom" ? " checked" : "") + "> " + escapeHtml(label(labels, "customRole", "Custom")) + "</label>",
-      "</div>",
-      '<label class="studio-command-form-row"><span>' + escapeHtml(label(labels, "rolePackage", "Role package")) + '</span><select name="repositoryRoleId"' + (fields.mode === "custom" ? " disabled" : "") + ">" + packageOptions + "</select>" + renderStudioCommandFormFieldError(args.state, "repositoryRoleId") + "</label>",
+      isEdit ? "" : '<div class="studio-command-form-row segmented">',
+      isEdit ? "" : '<label><input type="radio" name="mode" value="repository"' + (fields.mode === "repository" ? " checked" : "") + "> " + escapeHtml(label(labels, "repositoryRole", "Repository")) + "</label>",
+      isEdit ? "" : '<label><input type="radio" name="mode" value="custom"' + (fields.mode === "custom" ? " checked" : "") + "> " + escapeHtml(label(labels, "customRole", "Custom")) + "</label>",
+      isEdit ? "" : "</div>",
+      isEdit ? '<input type="hidden" name="mode" value="custom"><input type="hidden" name="originalRoleId" value="' + escapeHtml(fields.originalRoleId || fields.roleId) + '">' : "",
+      isEdit ? "" : '<label class="studio-command-form-row"><span>' + escapeHtml(label(labels, "rolePackage", "Role package")) + '</span><select name="repositoryRoleId"' + (fields.mode === "custom" ? " disabled" : "") + ">" + packageOptions + "</select>" + renderStudioCommandFormFieldError(args.state, "repositoryRoleId") + "</label>",
       '<label class="studio-command-form-row"><span>' + escapeHtml(label(labels, "roleId", "Role id")) + '</span><input name="roleId" value="' + escapeHtml(fields.roleId) + '">' + renderStudioCommandFormFieldError(args.state, "roleId") + "</label>",
       '<label class="studio-command-form-row"><span>' + escapeHtml(label(labels, "title", "Title")) + '</span><input name="title" value="' + escapeHtml(fields.title || "") + '"></label>',
       '<label class="studio-command-form-row"><span>' + escapeHtml(label(labels, "bindingKind", "Binding")) + '</span><select name="bindingKind">',
@@ -192,27 +260,29 @@ export function renderStudioCommandForm(args: {
       '<label class="studio-command-form-row"><span>' + escapeHtml(label(labels, "modelRef", "Model ref")) + '</span><input name="modelRef" value="' + escapeHtml(fields.modelRef || "") + '"' + (fields.bindingKind === "model" ? "" : " disabled") + ">" + renderStudioCommandFormFieldError(args.state, "modelRef") + "</label>",
       '<label class="studio-command-form-row"><span>' + escapeHtml(label(labels, "profileId", "Profile id")) + '</span><input name="profileId" value="' + escapeHtml(fields.profileId || "") + '"' + (fields.bindingKind === "exec" ? "" : " disabled") + ">" + renderStudioCommandFormFieldError(args.state, "profileId") + "</label>",
       renderStudioCommandFormDiagnostics(args.state),
-      '<div class="studio-command-form-actions"><button type="submit"' + disabled + '>' + escapeHtml(label(labels, "create", "Create")) + "</button></div>",
+      '<div class="studio-command-form-actions"><button type="submit"' + disabled + '>' + escapeHtml(isEdit ? label(labels, "save", "Save") : label(labels, "create", "Create")) + "</button></div>",
       "</form>"
     ].join("");
   }
 
   const fields = args.state.fields;
+  const isEditEdge = args.state.kind === "edit-edge";
   const targetOptions = renderRoleOptions(args.context, fields.targetRoleId) +
     '<option value="' + STUDIO_SYSTEM_END_ROLE_ID + '"' +
     (fields.targetRoleId === STUDIO_SYSTEM_END_ROLE_ID || fields.targetRoleId === "output" ? " selected" : "") + ">" +
     escapeHtml(label(labels, "outputTarget", "output/end")) + "</option>";
   return [
-    '<form class="studio-command-form" data-studio-command-form="add-edge" role="dialog" aria-modal="true" aria-labelledby="studio-command-form-title">',
-    '<div class="studio-command-form-header"><strong id="studio-command-form-title">' + escapeHtml(label(labels, "edgeDialogTitle", "Add edge")) + '</strong>',
+    '<form class="studio-command-form" data-studio-command-form="' + (isEditEdge ? "edit-edge" : "add-edge") + '" role="dialog" aria-modal="true" aria-labelledby="studio-command-form-title">',
+    '<div class="studio-command-form-header"><strong id="studio-command-form-title">' + escapeHtml(isEditEdge ? label(labels, "editEdgeDialogTitle", "Edit flow") : label(labels, "edgeDialogTitle", "Add edge")) + '</strong>',
     '<button type="button" data-studio-command-close aria-label="' + escapeHtml(label(labels, "cancel", "Cancel")) + '">' + escapeHtml(label(labels, "cancel", "Cancel")) + '</button></div>',
+    isEditEdge ? '<input type="hidden" name="flowId" value="' + escapeHtml(fields.flowId || "") + '"><input type="hidden" name="originalSourceRoleId" value="' + escapeHtml(fields.originalSourceRoleId || fields.sourceRoleId) + '"><input type="hidden" name="originalTargetRoleId" value="' + escapeHtml(fields.originalTargetRoleId || fields.targetRoleId) + '"><input type="hidden" name="originalEventType" value="' + escapeHtml(fields.originalEventType || fields.eventType || "") + '">' : "",
     '<label class="studio-command-form-row"><span>' + escapeHtml(label(labels, "sourceRole", "Source role")) + '</span><select name="sourceRoleId">' + renderRoleOptions(args.context, fields.sourceRoleId) + "</select>" + renderStudioCommandFormFieldError(args.state, "sourceRoleId") + "</label>",
     '<label class="studio-command-form-row"><span>' + escapeHtml(label(labels, "targetRole", "Target role")) + '</span><select name="targetRoleId">' + targetOptions + "</select>" + renderStudioCommandFormFieldError(args.state, "targetRoleId") + "</label>",
     '<label class="studio-command-form-row"><span>' + escapeHtml(label(labels, "eventType", "Event type")) + '</span><input name="eventType" value="' + escapeHtml(fields.eventType || "") + '">' + renderStudioCommandFormFieldError(args.state, "eventType") + "</label>",
     '<label class="studio-command-form-check"><input type="checkbox" name="runtimeOnlyErrorFlow"' + (fields.runtimeOnlyErrorFlow ? " checked" : "") + "> " + escapeHtml(label(labels, "runtimeOnlyErrorFlow", "Runtime error flow")) + "</label>",
     '<label class="studio-command-form-check"><input type="checkbox" name="participatesInJoin"' + (fields.participatesInJoin ? " checked" : "") + "> " + escapeHtml(label(labels, "participatesInJoin", "Join source")) + "</label>",
     renderStudioCommandFormDiagnostics(args.state),
-    '<div class="studio-command-form-actions"><button type="submit"' + disabled + '>' + escapeHtml(label(labels, "create", "Create")) + "</button></div>",
+    '<div class="studio-command-form-actions"><button type="submit"' + disabled + '>' + escapeHtml(isEditEdge ? label(labels, "save", "Save") : label(labels, "create", "Create")) + "</button></div>",
     "</form>"
   ].join("");
 }
@@ -223,13 +293,14 @@ export function readStudioCommandFormState(args: {
   context: StudioCommandValidationContext;
 }): StudioCommandFormState {
   const data = new FormData(args.form);
-  if (args.previous.kind === "add-role") {
+  if (args.previous.kind === "add-role" || args.previous.kind === "edit-role") {
     const mode = data.get("mode") === "repository" ? "repository" : "custom";
     const repositoryRoleId = String(data.get("repositoryRoleId") ?? "").trim();
     const rolePackage = extractStudioRolePackages(args.context.rolePackages).find((entry) => entry.roleId === repositoryRoleId);
     const bindingKindValue = String(data.get("bindingKind") ?? "noop");
     const fields: StudioAddRoleDraft = {
       mode,
+      originalRoleId: String(data.get("originalRoleId") ?? args.previous.fields.originalRoleId ?? "").trim(),
       repositoryRoleId,
       roleId: String(data.get("roleId") ?? "").trim() || (mode === "repository" ? rolePackage?.roleId ?? "" : ""),
       title: String(data.get("title") ?? "").trim() || (mode === "repository" ? rolePackage?.name ?? "" : ""),
@@ -238,13 +309,17 @@ export function readStudioCommandFormState(args: {
       profileId: String(data.get("profileId") ?? "").trim()
     };
     return {
-      kind: "add-role",
+      kind: args.previous.kind,
       fields,
       validation: validateStudioAddRoleDraft(fields, args.context)
     };
   }
 
   const fields: StudioAddEdgeDraft = {
+    flowId: String(data.get("flowId") ?? args.previous.fields.flowId ?? "").trim() || undefined,
+    originalSourceRoleId: String(data.get("originalSourceRoleId") ?? args.previous.fields.originalSourceRoleId ?? "").trim() || undefined,
+    originalTargetRoleId: String(data.get("originalTargetRoleId") ?? args.previous.fields.originalTargetRoleId ?? "").trim() || undefined,
+    originalEventType: String(data.get("originalEventType") ?? args.previous.fields.originalEventType ?? "").trim() || undefined,
     sourceRoleId: String(data.get("sourceRoleId") ?? "").trim(),
     targetRoleId: String(data.get("targetRoleId") ?? "").trim(),
     eventType: String(data.get("eventType") ?? "").trim(),
@@ -252,7 +327,7 @@ export function readStudioCommandFormState(args: {
     participatesInJoin: data.get("participatesInJoin") === "on"
   };
   return {
-    kind: "add-edge",
+    kind: args.previous.kind,
     fields,
     validation: validateStudioAddEdgeDraft(fields, args.context)
   };

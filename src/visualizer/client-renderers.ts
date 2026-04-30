@@ -109,6 +109,7 @@ export function normalizeStudioTargetRoleId(roleId: unknown): string {
 export function renderStudioGraphCanvas(args: {
   selectedRoleId: string;
   selectedFlowKey: string;
+  fullscreen?: boolean;
   t?: Translator;
 }): string {
   const t: Translator = typeof args.t === "function" ? args.t : (_key, _vars, fallback) => fallback ?? _key;
@@ -118,11 +119,105 @@ export function renderStudioGraphCanvas(args: {
     t
   });
   return [
-    '<div class="studio-canvas-shell">',
-    '<div class="studio-canvas-toolbar"><span class="hint">' + escapeText(t("studio.realGraph", undefined, "Studio Graph")) + '</span><span class="hint" data-studio-graph-selection-label>' + escapeText(selection) + '</span></div>',
+    '<div class="studio-canvas-shell' + (args.fullscreen ? " is-fullscreen" : "") + '" data-studio-canvas-shell="1">',
+    '<div class="studio-canvas-toolbar"><div><span class="hint">' + escapeText(t("studio.graphWorkspace", undefined, "Graph workspace")) + '</span><span class="hint" data-studio-graph-selection-label>' + escapeText(selection) + '</span></div><button class="button subtle" type="button" data-studio-bridge-fullscreen="1" aria-pressed="' +
+      (args.fullscreen ? "true" : "false") + '">' + escapeText(args.fullscreen ? t("action.exitFullscreen", undefined, "Exit fullscreen") : t("action.fullscreen", undefined, "Fullscreen")) + '</button></div>',
     '<div id="studio-graph-root" class="studio-graph-root" data-selected-role-id="' + escapeText(args.selectedRoleId) + '" data-selected-flow-key="' + escapeText(args.selectedFlowKey) + '"></div>',
     "</div>"
   ].join("");
+}
+
+export function roleIdOf(role: JsonRecord): string {
+  return String(role.roleId ?? "");
+}
+
+export function flowKeyOf(flow: JsonRecord): string {
+  return String(flow.flowKey ?? (String(flow.fromRoleId ?? "") + ":" + String(flow.eventType ?? "") + ":" + normalizeStudioTargetRoleId(flow.toRoleId)));
+}
+
+export function sortStudioBridgeRolesTopologically(roles: JsonRecord[], flows: JsonRecord[]): JsonRecord[] {
+  const roleById = new Map<string, JsonRecord>();
+  const indexById = new Map<string, number>();
+  roles.forEach((role, index) => {
+    const roleId = roleIdOf(role);
+    if (!roleId) return;
+    roleById.set(roleId, role);
+    indexById.set(roleId, index);
+  });
+  const indegree = new Map<string, number>();
+  const outgoing = new Map<string, string[]>();
+  for (const roleId of roleById.keys()) {
+    indegree.set(roleId, 0);
+    outgoing.set(roleId, []);
+  }
+  for (const flow of flows) {
+    const source = String(flow.fromRoleId ?? "");
+    const target = normalizeStudioTargetRoleId(flow.toRoleId);
+    if (!roleById.has(source) || !roleById.has(target) || source === target) continue;
+    outgoing.get(source)?.push(target);
+    indegree.set(target, (indegree.get(target) ?? 0) + 1);
+  }
+  const queue = Array.from(roleById.keys())
+    .filter((roleId) => (indegree.get(roleId) ?? 0) === 0)
+    .sort((left, right) => (indexById.get(left) ?? 0) - (indexById.get(right) ?? 0) || left.localeCompare(right));
+  const ordered: JsonRecord[] = [];
+  const visited = new Set<string>();
+  while (queue.length) {
+    const roleId = queue.shift() || "";
+    if (!roleId || visited.has(roleId)) continue;
+    visited.add(roleId);
+    const role = roleById.get(roleId);
+    if (role) ordered.push(role);
+    const targets = (outgoing.get(roleId) ?? []).slice()
+      .sort((left, right) => (indexById.get(left) ?? 0) - (indexById.get(right) ?? 0) || left.localeCompare(right));
+    for (const target of targets) {
+      indegree.set(target, (indegree.get(target) ?? 0) - 1);
+      if ((indegree.get(target) ?? 0) === 0) {
+        queue.push(target);
+      }
+    }
+  }
+  for (const role of roles) {
+    const roleId = roleIdOf(role);
+    if (roleId && !visited.has(roleId)) {
+      ordered.push(role);
+      visited.add(roleId);
+    }
+  }
+  return ordered;
+}
+
+export function filterStudioBridgeItems(args: {
+  roles: JsonRecord[];
+  flows: JsonRecord[];
+  filter: string;
+  mode: string;
+}): { roles: JsonRecord[]; flows: JsonRecord[] } {
+  const filter = args.filter.trim().toLowerCase();
+  const match = (value: unknown) => !filter || String(value ?? "").toLowerCase().includes(filter);
+  const roleMatches = (role: JsonRecord) =>
+    match(role.roleId) || match(role.title) || match(role.bindingKind) || match((Array.isArray(role.badges) ? role.badges.join(" ") : ""));
+  const flowMatches = (flow: JsonRecord) =>
+    match(flow.flowKey) || match(flow.fromRoleId) || match(flow.toRoleId) || match(flow.eventType);
+  return {
+    roles: args.mode === "flows" ? [] : args.roles.filter(roleMatches),
+    flows: args.mode === "roles" ? [] : args.flows.filter(flowMatches)
+  };
+}
+
+export function sortStudioBridgeFlowsByTopology(flows: JsonRecord[], orderedRoles: JsonRecord[]): JsonRecord[] {
+  const rank = new Map<string, number>();
+  orderedRoles.forEach((role, index) => rank.set(roleIdOf(role), index));
+  return flows.slice().sort((left, right) => {
+    const leftSourceRank = rank.get(String(left.fromRoleId ?? "")) ?? Number.MAX_SAFE_INTEGER;
+    const rightSourceRank = rank.get(String(right.fromRoleId ?? "")) ?? Number.MAX_SAFE_INTEGER;
+    const leftTargetRank = rank.get(normalizeStudioTargetRoleId(left.toRoleId)) ?? Number.MAX_SAFE_INTEGER;
+    const rightTargetRank = rank.get(normalizeStudioTargetRoleId(right.toRoleId)) ?? Number.MAX_SAFE_INTEGER;
+    return leftSourceRank - rightSourceRank ||
+      leftTargetRank - rightTargetRank ||
+      String(left.eventType ?? "").localeCompare(String(right.eventType ?? "")) ||
+      flowKeyOf(left).localeCompare(flowKeyOf(right));
+  });
 }
 
 export function renderStudioBridgeSelectionLabel(args: {
@@ -458,6 +553,9 @@ export function renderStudioBridgePanel(args: {
   readiness: JsonRecord | null | undefined;
   selectedRoleId: string;
   selectedFlowKey: string;
+  filter?: string;
+  listMode?: string;
+  fullscreen?: boolean;
   actionBusy: string;
   t?: Translator;
 }): string {
@@ -467,6 +565,15 @@ export function renderStudioBridgePanel(args: {
   const extracted = (bridge.extracted ?? {}) as JsonRecord;
   const roles = Array.isArray(extracted.roles) ? extracted.roles as JsonRecord[] : [];
   const flows = Array.isArray(extracted.flows) ? extracted.flows as JsonRecord[] : [];
+  const orderedRoles = sortStudioBridgeRolesTopologically(roles, flows);
+  const orderedFlows = sortStudioBridgeFlowsByTopology(flows, orderedRoles);
+  const listMode = args.listMode === "roles" || args.listMode === "flows" ? args.listMode : "all";
+  const filtered = filterStudioBridgeItems({
+    roles: orderedRoles,
+    flows: orderedFlows,
+    filter: args.filter || "",
+    mode: listMode
+  });
   const selectedRole = roles.find((role) => role.roleId === args.selectedRoleId) ?? roles[0];
   const selectedFlow = flows.find((flow) => flow.flowKey === args.selectedFlowKey) ?? flows[0];
   const diagnostics = Array.isArray(validation.diagnostics) ? validation.diagnostics as JsonRecord[] : [];
@@ -479,10 +586,11 @@ export function renderStudioBridgePanel(args: {
   const graphCanvas = renderStudioGraphCanvas({
     selectedRoleId: args.selectedRoleId,
     selectedFlowKey: args.selectedFlowKey,
+    fullscreen: args.fullscreen,
     t
   });
-  const roleButtons = roles.length
-    ? roles.map((role) => {
+  const roleButtons = filtered.roles.length
+    ? filtered.roles.map((role) => {
         const roleId = String(role.roleId ?? "");
         const active = selectedRole && selectedRole.roleId === roleId ? " active" : "";
         const badges = Array.isArray(role.badges) ? role.badges.join(" ") : "";
@@ -494,9 +602,9 @@ export function renderStudioBridgePanel(args: {
           escapeText(t("studio.events", { count: String((role.allowedEvents as unknown[] | undefined)?.length ?? 0) }, "events " + String((role.allowedEvents as unknown[] | undefined)?.length ?? 0))) + "</span></div></button>"
         );
       })
-    : ['<div class="hint">' + escapeText(t("studio.noRolesExtracted", undefined, "No roles extracted from the current Mermaid source.")) + '</div>'];
-  const flowButtons = flows.length
-    ? flows.map((flow) => {
+    : ['<div class="hint">' + escapeText((args.filter || listMode !== "all") ? t("studio.noFilteredItems", undefined, "No matching graph items.") : t("studio.noRolesExtracted", undefined, "No roles extracted from the current Mermaid source.")) + '</div>'];
+  const flowButtons = filtered.flows.length
+    ? filtered.flows.map((flow) => {
         const key = String(flow.flowKey ?? "");
         const active = selectedFlow && selectedFlow.flowKey === key ? " active" : "";
         return (
@@ -507,7 +615,7 @@ export function renderStudioBridgePanel(args: {
           '</span><span>' + escapeText(flow.participatesInJoin ? t("studio.joinSource", undefined, "join source") : t("studio.standard", undefined, "standard")) + "</span></div></button>"
         );
       })
-    : ['<div class="hint">' + escapeText(t("studio.noFlowsExtracted", undefined, "No flows extracted from the current Mermaid source.")) + '</div>'];
+    : ['<div class="hint">' + escapeText((args.filter || listMode !== "all") ? t("studio.noFilteredItems", undefined, "No matching graph items.") : t("studio.noFlowsExtracted", undefined, "No flows extracted from the current Mermaid source.")) + '</div>'];
   const diagnosticCards = diagnostics.length
     ? diagnostics.slice(0, 5).map((diagnostic) =>
         '<div class="event"><div class="event-top"><span>' + escapeText(String(diagnostic.code ?? "DIAGNOSTIC")) +
@@ -531,17 +639,22 @@ export function renderStudioBridgePanel(args: {
       (blockers.length ? " warn" : "") + '">' + escapeText(blockers.length ? t("studio.readinessBlockers", { count: String(blockers.length) }, blockers.length + " readiness blockers") : t("studio.readinessReady", undefined, "readiness ready")) + "</span></div>",
     "</div>",
     '<div class="studio-bridge-layout">',
-    '<div class="studio-navigator structure-list" data-studio-bridge-region="navigator"><div class="event"><div class="event-top"><span>' + escapeText(t("studio.roles", undefined, "roles")) + '</span><span>' + escapeText(String(roles.length)) +
-      '</span></div><strong>' + escapeText(t("studio.structuredRoleDraft", undefined, "Structured role draft")) + '</strong><div class="hint">' + escapeText(t("studio.bridgeReadsWorkbench", undefined, "Bridge reads the current workbench source.")) + '</div></div>' + roleButtons.join("") + "</div>",
-    '<div class="studio-graph-column">' + graphCanvas + "</div>",
+    '<div class="studio-graph-column" data-studio-bridge-region="graph">' + graphCanvas + "</div>",
     '<div class="studio-inspector structure-list" data-studio-bridge-region="inspector">' + renderStudioBridgeInspector({
       bridge,
       selectedRoleId: args.selectedRoleId,
       selectedFlowKey: args.selectedFlowKey,
       t
     }) + "</div>",
-    '<div class="structure-list studio-flow-list" data-studio-bridge-region="flow-list"><div class="event"><div class="event-top"><span>' + escapeText(t("studio.flows", undefined, "flows")) + '</span><span>' + escapeText(String(flows.length)) +
-      '</span></div><strong>' + escapeText(t("studio.structuredFlowDraft", undefined, "Structured flow draft")) + '</strong><div class="hint">' + escapeText(t("studio.eventsVisible", undefined, "Event types and join participation stay visible.")) + '</div></div>' + flowButtons.join("") + "</div>",
+    '<div class="studio-bridge-index structure-list" data-studio-bridge-region="index"><div class="event studio-bridge-index-controls"><div class="event-top"><span>' +
+      escapeText(t("studio.graphIndex", undefined, "graph index")) + '</span><span>' + escapeText(t("studio.topologyOrder", undefined, "topology order")) + '</span></div><div class="toolbar-row compact"><input data-studio-bridge-filter="1" value="' +
+      escapeText(args.filter || "") + '" placeholder="' + escapeText(t("studio.filterGraphItems", undefined, "Filter roles or flows")) + '"><select data-studio-bridge-list-mode="1"><option value="all"' +
+      (listMode === "all" ? " selected" : "") + ">" + escapeText(t("common.all", undefined, "all")) + '</option><option value="roles"' +
+      (listMode === "roles" ? " selected" : "") + ">" + escapeText(t("studio.roles", undefined, "roles")) + '</option><option value="flows"' +
+      (listMode === "flows" ? " selected" : "") + ">" + escapeText(t("studio.flows", undefined, "flows")) + '</option></select></div><div class="hint">' +
+      escapeText(t("studio.topologyOrderHint", undefined, "Cycles are listed after the acyclic path so the authoring order stays stable.")) + '</div></div><div class="studio-index-grid"><div class="studio-navigator structure-list" data-studio-bridge-region="navigator"><div class="event"><div class="event-top"><span>' + escapeText(t("studio.roles", undefined, "roles")) + '</span><span>' + escapeText(String(filtered.roles.length)) +
+      " / " + escapeText(String(roles.length)) + '</span></div><strong>' + escapeText(t("studio.structuredRoleDraft", undefined, "Structured role draft")) + '</strong><div class="hint">' + escapeText(t("studio.bridgeReadsWorkbench", undefined, "Bridge reads the current workbench source.")) + '</div></div>' + roleButtons.join("") + '</div><div class="structure-list studio-flow-list" data-studio-bridge-region="flow-list"><div class="event"><div class="event-top"><span>' + escapeText(t("studio.flows", undefined, "flows")) + '</span><span>' + escapeText(String(filtered.flows.length)) +
+      " / " + escapeText(String(flows.length)) + '</span></div><strong>' + escapeText(t("studio.structuredFlowDraft", undefined, "Structured flow draft")) + '</strong><div class="hint">' + escapeText(t("studio.eventsVisible", undefined, "Event types and join participation stay visible.")) + '</div></div>' + flowButtons.join("") + "</div></div></div>",
     '<div class="studio-diagnostics structure-list" data-studio-bridge-region="diagnostics">' + diagnosticCards.join("") + "</div>",
     "</div>",
     "</div>"

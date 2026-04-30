@@ -85,6 +85,12 @@ test("Studio Bridge renders and edits through the real X6 graph island", async (
 
     await expect(page.locator("#studio-graph-root")).toBeVisible();
     await expect(page.locator('#studio-graph-root [data-cell-id="demo-analyst"]').first()).toBeVisible();
+    await expect(page.getByText(/\bX6\b/)).toHaveCount(0);
+    await page.locator("[data-studio-bridge-fullscreen]").click();
+    await expect(page.locator("[data-studio-canvas-shell]")).toHaveClass(/is-fullscreen/);
+    await expect(page.locator('#studio-graph-root [data-cell-id="demo-analyst"]').first()).toBeVisible();
+    await page.keyboard.press("Escape");
+    await expect(page.locator("[data-studio-canvas-shell]")).not.toHaveClass(/is-fullscreen/);
     await page.evaluate(() => {
       (window as any).__studioGraphRoot = document.getElementById("studio-graph-root");
     });
@@ -99,6 +105,12 @@ test("Studio Bridge renders and edits through the real X6 graph island", async (
     await expect.poll(async () => page.evaluate(() => (window as any).__studioMountCalls)).toBe(mountCallsAfterOpen);
     await expect.poll(async () => page.evaluate(() => document.getElementById("studio-graph-root") === (window as any).__studioGraphRoot)).toBe(true);
     await expect(page.locator(".studio-inspector")).toContainText("demo-analyst");
+    const editRoleForm = page.locator('#studio-graph-root form[data-studio-command-form="edit-role"]');
+    await expect(editRoleForm).toBeVisible();
+    await expect(editRoleForm.locator('input[name="roleId"]')).toHaveValue("demo-analyst");
+    await editRoleForm.locator('input[name="title"]').fill("Demo Analyst");
+    await editRoleForm.locator('button[type="submit"]').click();
+    await expect(page.locator("#flash")).toContainText("Studio graph draft updated");
 
     await expect(page.locator("#studio-bridge-validate")).toBeVisible();
     await expect(page.locator(".toolbar-group").filter({ hasText: "validation ok" }).first()).toBeVisible();
@@ -121,6 +133,21 @@ test("Studio Bridge renders and edits through the real X6 graph island", async (
     await addEdgeForm.locator('button[type="submit"]').click();
     await expect.poll(async () => page.evaluate(() => document.getElementById("studio-graph-root") === (window as any).__studioGraphRoot)).toBe(true);
     await expect(page.locator('[data-studio-flow-key="new-role:DONE:demo-analyst"]')).toBeVisible();
+    await page.locator('[data-studio-flow-key="new-role:DONE:demo-analyst"]').click();
+    const editEdgeForm = page.locator('#studio-graph-root form[data-studio-command-form="edit-edge"]');
+    await expect(editEdgeForm).toBeVisible();
+    await expect(editEdgeForm.locator('input[name="eventType"]')).toHaveValue("DONE");
+    await editEdgeForm.locator('input[name="eventType"]').fill("HANDOFF");
+    await editEdgeForm.locator('button[type="submit"]').click();
+    await expect(page.locator('[data-studio-flow-key="new-role:HANDOFF:demo-analyst"]')).toBeVisible();
+    await page.locator("[data-studio-bridge-filter]").fill("HANDOFF");
+    await expect(page.locator('[data-studio-flow-key="new-role:HANDOFF:demo-analyst"]')).toBeVisible();
+    await expect(page.locator('[data-studio-flow-key="demo-analyst:DONE:output"]')).toHaveCount(0);
+    await page.locator("[data-studio-bridge-filter]").fill("");
+
+    await page.locator('#studio-graph-root [data-studio-graph-action="undo"]').click();
+    await expect(page.locator('[data-studio-flow-key="new-role:HANDOFF:demo-analyst"]')).toHaveCount(0);
+    await expect(page.locator('[data-studio-flow-key="new-role:DONE:demo-analyst"]')).toBeVisible();
 
     await page.locator('#studio-graph-root [data-studio-graph-action="undo"]').click();
     await expect(page.locator('[data-studio-flow-key="new-role:DONE:demo-analyst"]')).toHaveCount(0);
@@ -128,6 +155,11 @@ test("Studio Bridge renders and edits through the real X6 graph island", async (
     await page.locator('#studio-graph-root [data-studio-graph-action="redo"]').click();
     await expect(page.locator('[data-studio-flow-key="new-role:DONE:demo-analyst"]')).toBeVisible();
 
+    await page.locator('#studio-graph-root [data-studio-graph-action="redo"]').click();
+    await expect(page.locator('[data-studio-flow-key="new-role:HANDOFF:demo-analyst"]')).toBeVisible();
+
+    await page.locator('#studio-graph-root [data-studio-graph-action="undo"]').click();
+    await expect(page.locator('[data-studio-flow-key="new-role:DONE:demo-analyst"]')).toBeVisible();
     await page.locator('#studio-graph-root [data-studio-graph-action="undo"]').click();
     await expect(page.locator('[data-studio-flow-key="new-role:DONE:demo-analyst"]')).toHaveCount(0);
     await page.locator('#studio-graph-root [data-studio-graph-action="undo"]').click();

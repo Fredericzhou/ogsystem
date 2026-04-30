@@ -126,6 +126,15 @@ function matchesSelector(element, selector) {
   if (selector === "[data-studio-flow-key]") {
     return Object.hasOwn(element.attributes, "data-studio-flow-key");
   }
+  if (selector === "[data-studio-bridge-filter]") {
+    return Object.hasOwn(element.attributes, "data-studio-bridge-filter");
+  }
+  if (selector === "[data-studio-bridge-list-mode]") {
+    return Object.hasOwn(element.attributes, "data-studio-bridge-list-mode");
+  }
+  if (selector === "[data-studio-bridge-fullscreen]") {
+    return Object.hasOwn(element.attributes, "data-studio-bridge-fullscreen");
+  }
   if (selector === "[data-workbench-view]") {
     return Object.hasOwn(element.attributes, "data-workbench-view");
   }
@@ -1980,7 +1989,12 @@ test("visualizer client opens Studio Bridge, saves an authoring draft, and dry-r
   assert.match(harness.document.getElementById("workbench-tabs").textContent, /Studio Bridge/);
   assert.match(harness.document.getElementById("workbench-body").textContent, /demo-analyst/);
   assert.match(harness.document.getElementById("workbench-body").textContent, /role inspector/);
-  assert.match(harness.document.getElementById("workbench-body").textContent, /Studio Graph/);
+  assert.match(harness.document.getElementById("workbench-body").textContent, /Graph workspace/);
+  assert.match(harness.document.getElementById("workbench-body").textContent, /graph index/);
+  assert.doesNotMatch(harness.document.getElementById("workbench-body").textContent, /\bX6\b/);
+  assert.ok(harness.document.getElementById("workbench-body").querySelectorAll("[data-studio-bridge-filter]").length);
+  assert.ok(harness.document.getElementById("workbench-body").querySelectorAll("[data-studio-bridge-list-mode]").length);
+  assert.ok(harness.document.getElementById("workbench-body").querySelectorAll("[data-studio-bridge-fullscreen]").length);
   assert.ok(harness.document.getElementById("studio-graph-root"));
   assert.equal(mountCalls.length > 0, true);
   assert.ok(latestEditableMount().rolePackages);
@@ -1995,6 +2009,16 @@ test("visualizer client opens Studio Bridge, saves an authoring draft, and dry-r
   mountCalls.at(-1).options.onClearSelection();
   await settle();
   assert.equal(harness.backend.fetchCalls.length, fetchCallsAfterOpen);
+  const fullscreenButton = harness.document.getElementById("workbench-body").querySelectorAll("[data-studio-bridge-fullscreen]")[0];
+  assert.ok(fullscreenButton);
+  await fullscreenButton.click();
+  await settle();
+  assert.match(harness.document.getElementById("workbench-body").innerHTML, /studio-canvas-shell is-fullscreen/);
+  const filterInput = harness.document.getElementById("workbench-body").querySelectorAll("[data-studio-bridge-filter]")[0];
+  assert.ok(filterInput);
+  await filterInput.input("missing-role");
+  await settle();
+  assert.match(harness.document.getElementById("workbench-body").textContent, /No matching graph items/);
   for (const oldButtonId of [
     "studio-bridge-add-role",
     "studio-bridge-add-edge",
@@ -2027,8 +2051,14 @@ test("visualizer client opens Studio Bridge, saves an authoring draft, and dry-r
   assert.equal(readonlyMount.options.readOnly, true);
   assert.equal(readonlyMount.options.onApplyCanvas, undefined);
   assert.equal(readonlyMount.options.onApplyCommand, undefined);
+  assert.doesNotMatch(harness.document.getElementById("graph-view").textContent, /\bX6\b/);
   await harness.document.getElementById("project-home").click();
   await settle();
+  const resetFilterInput = harness.document.getElementById("workbench-body").querySelectorAll("[data-studio-bridge-filter]")[0];
+  if (resetFilterInput) {
+    await resetFilterInput.input("");
+    await settle();
+  }
   await openBridgeButton.click();
   await settle();
 

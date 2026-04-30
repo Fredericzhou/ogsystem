@@ -27,6 +27,8 @@ type StudioGraphLabelKey =
   | "autoLayout"
   | "addRole"
   | "addEdge"
+  | "editRole"
+  | "editEdge"
   | "deleteSelection"
   | "undo"
   | "redo"
@@ -54,6 +56,7 @@ export type StudioGraphBridgeOptions = {
   validation?: { ok?: unknown; diagnostics?: unknown } | null;
   selectedRoleId?: string;
   selectedFlowKey?: string;
+  editSelectionRequest?: number;
   busy?: boolean;
   readOnly?: boolean;
   rolePackages?: unknown;
@@ -104,6 +107,8 @@ export class StudioGraphIsland {
   private busy = false;
   private hasRenderedProjection = false;
   private lastViewportSignature = "";
+  private lastEditSelectionSignature = "";
+  private lastHandledEditSelectionRequest = 0;
   private syncCanvasTimer: ReturnType<typeof setTimeout> | null = null;
   private commandForm: StudioCommandFormState | null = null;
   private readonlyHistory: { undoStack: StudioGraphSnapshot[]; redoStack: StudioGraphSnapshot[] } = {
@@ -187,6 +192,7 @@ export class StudioGraphIsland {
       renderStudioGraphProjection(this.graph, projection);
       this.restoreViewport(options.canvas?.viewport, !this.hasRenderedProjection);
       this.selectFromOptions();
+      this.openRequestedSelectionEditor();
       this.hasRenderedProjection = true;
     } finally {
       this.applying = false;
@@ -292,17 +298,20 @@ export class StudioGraphIsland {
       const data = node.getData() as { studioNode?: { kind?: string; roleId?: string } } | undefined;
       if (data?.studioNode?.kind === "role" && data.studioNode.roleId) {
         this.options.onSelectRole?.(data.studioNode.roleId);
+        this.openEditRoleForm(data.studioNode.roleId);
       }
     });
     this.graph.on("edge:click", ({ edge }) => {
-      const data = edge.getData() as { studioEdge?: { source: string; target: string; eventType: string } } | undefined;
+      const data = edge.getData() as { studioEdge?: { id?: string; source: string; target: string; eventType: string; runtimeOnlyErrorFlow?: boolean; participatesInJoin?: boolean; editable?: boolean } } | undefined;
       if (data?.studioEdge) {
         this.options.onSelectFlow?.(studioEdgeFlowKey(data.studioEdge));
+        this.openEditEdgeForm(data.studioEdge);
       }
     });
     this.graph.on("blank:click", () => {
       this.graph.cleanSelection();
       this.options.onClearSelection?.();
+      this.lastEditSelectionSignature = "";
     });
     this.graph.on("node:moved", () => {
       if (this.isReadOnly()) return;
@@ -329,8 +338,16 @@ export class StudioGraphIsland {
   }
 
   private openCommandForm(
-    kind: "add-role" | "add-edge",
-    defaults: { sourceRoleId?: string; targetRoleId?: string } = {}
+    kind: "add-role" | "add-edge" | "edit-role" | "edit-edge",
+    defaults: {
+      roleId?: string;
+      flowId?: string;
+      sourceRoleId?: string;
+      targetRoleId?: string;
+      eventType?: string;
+      runtimeOnlyErrorFlow?: boolean;
+      participatesInJoin?: boolean;
+    } = {}
   ): void {
     if (this.isReadOnly()) {
       return;
@@ -338,10 +355,74 @@ export class StudioGraphIsland {
     this.commandForm = createDefaultStudioCommandFormState({
       kind,
       context: this.validationContext(),
+      roleId: defaults.roleId,
+      flowId: defaults.flowId,
       sourceRoleId: defaults.sourceRoleId,
-      targetRoleId: defaults.targetRoleId
+      targetRoleId: defaults.targetRoleId,
+      eventType: defaults.eventType,
+      runtimeOnlyErrorFlow: defaults.runtimeOnlyErrorFlow,
+      participatesInJoin: defaults.participatesInJoin
     });
     this.renderCommandForm();
+  }
+
+  private openEditRoleForm(roleId: string): void {
+    if (this.isReadOnly() || !this.options.authoring?.roles?.[roleId]) {
+      return;
+    }
+    const signature = `role:${roleId}`;
+    if (this.lastEditSelectionSignature === signature && this.commandForm?.kind === "edit-role") {
+      return;
+    }
+    this.lastEditSelectionSignature = signature;
+    this.openCommandForm("edit-role", { roleId });
+  }
+
+  private openEditEdgeForm(edge: {
+    id?: string;
+    source: string;
+    target: string;
+    eventType: string;
+    runtimeOnlyErrorFlow?: boolean;
+    participatesInJoin?: boolean;
+    editable?: boolean;
+  }): void {
+    if (this.isReadOnly() || edge.editable === false) {
+      return;
+    }
+    const signature = `edge:${edge.id || studioEdgeFlowKey(edge)}`;
+    if (this.lastEditSelectionSignature === signature && this.commandForm?.kind === "edit-edge") {
+      return;
+    }
+    this.lastEditSelectionSignature = signature;
+    this.openCommandForm("edit-edge", {
+      flowId: edge.id,
+      sourceRoleId: edge.source,
+      targetRoleId: edge.target,
+      eventType: edge.eventType,
+      runtimeOnlyErrorFlow: edge.runtimeOnlyErrorFlow,
+      participatesInJoin: edge.participatesInJoin
+    });
+  }
+
+  private openRequestedSelectionEditor(): void {
+    const request = Number(this.options.editSelectionRequest || 0);
+    if (!request || request === this.lastHandledEditSelectionRequest || this.isReadOnly()) {
+      return;
+    }
+    this.lastHandledEditSelectionRequest = request;
+    const selected = this.graph.getSelectedCells()[0];
+    const data = selected?.getData() as {
+      studioNode?: { kind?: string; roleId?: string };
+      studioEdge?: { id?: string; source: string; target: string; eventType: string; runtimeOnlyErrorFlow?: boolean; participatesInJoin?: boolean; editable?: boolean };
+    } | undefined;
+    if (data?.studioNode?.kind === "role" && data.studioNode.roleId) {
+      this.openEditRoleForm(data.studioNode.roleId);
+      return;
+    }
+    if (data?.studioEdge) {
+      this.openEditEdgeForm(data.studioEdge);
+    }
   }
 
   private closeCommandForm(): void {

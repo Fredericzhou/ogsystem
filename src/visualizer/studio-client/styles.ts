@@ -16,6 +16,9 @@ export function injectStudioGraphStyles(): void {
       min-width: 0;
       overflow: hidden;
     }
+    .studio-canvas-shell.is-fullscreen .studio-graph-island {
+      height: calc(100vh - 108px);
+    }
     .studio-graph-toolbar {
       display: flex;
       justify-content: space-between;
