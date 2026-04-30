@@ -41,6 +41,7 @@ export type StudioGraphBridgeOptions = {
   selectedRoleId?: string;
   selectedFlowKey?: string;
   busy?: boolean;
+  readOnly?: boolean;
   onSelectRole?: (roleId: string) => void;
   onSelectFlow?: (flowKey: string) => void;
   onClearSelection?: () => void;
@@ -82,6 +83,9 @@ export class StudioGraphIsland {
   private options: StudioGraphBridgeOptions = {};
   private applying = false;
   private busy = false;
+  private hasRenderedProjection = false;
+  private lastViewportSignature = "";
+  private syncCanvasTimer: ReturnType<typeof setTimeout> | null = null;
   private undoStack = sharedHistory.undoStack;
   private redoStack = sharedHistory.redoStack;
 
@@ -137,7 +141,13 @@ export class StudioGraphIsland {
     });
     const roleCount = projection.nodes.filter((node) => node.kind === "role").length;
     if (roleCount === 0) {
-      this.graph.clearCells();
+      this.applying = true;
+      try {
+        this.graph.clearCells();
+      } finally {
+        this.applying = false;
+      }
+      this.hasRenderedProjection = false;
       this.setEmptyState(true, projection.validation.diagnostics.length > 0
         ? this.label("fixMermaidBeforeGraphEditing")
         : this.label("noRolesAvailable"));
@@ -146,16 +156,24 @@ export class StudioGraphIsland {
       return;
     }
     this.setEmptyState(false);
-    renderStudioGraphProjection(this.graph, projection);
-    this.selectFromOptions();
+    this.applying = true;
+    try {
+      renderStudioGraphProjection(this.graph, projection);
+      this.restoreViewport(options.canvas?.viewport, !this.hasRenderedProjection);
+      this.selectFromOptions();
+      this.hasRenderedProjection = true;
+    } finally {
+      this.applying = false;
+    }
     this.setStatus(this.label("graphReady"));
     this.setBusy(Boolean(options.busy));
-    setTimeout(() => {
-      this.graph.zoomToFit({ padding: 28, maxScale: 1 });
-    }, 0);
   }
 
   dispose(): void {
+    if (this.syncCanvasTimer) {
+      clearTimeout(this.syncCanvasTimer);
+      this.syncCanvasTimer = null;
+    }
     this.graph.dispose();
     this.root.innerHTML = "";
     this.root.classList.remove("studio-graph-island");
@@ -193,7 +211,7 @@ export class StudioGraphIsland {
             labels: [{ attrs: { label: { text: "DONE" } } }]
           });
         },
-        validateConnection: ({ sourceCell, targetCell }) => canConnectStudioCells(sourceCell, targetCell)
+        validateConnection: ({ sourceCell, targetCell }) => !this.isReadOnly() && canConnectStudioCells(sourceCell, targetCell)
       }
     });
     graph.use(new History({ enabled: false }));
@@ -223,6 +241,7 @@ export class StudioGraphIsland {
       if (action === "zoom-in") this.graph.zoom(0.12);
       if (action === "zoom-out") this.graph.zoom(-0.12);
       if (action === "fit") void this.fitAndSync();
+      if (this.isReadOnly()) return;
       if (action === "layout") void this.autoLayout();
       if (action === "undo") void this.semanticUndo();
       if (action === "redo") void this.semanticRedo();
@@ -257,10 +276,15 @@ export class StudioGraphIsland {
       this.options.onClearSelection?.();
     });
     this.graph.on("node:moved", () => {
-      void this.syncCanvas();
+      if (this.isReadOnly()) return;
+      this.scheduleSyncCanvas();
     });
     this.graph.on("edge:connected", ({ edge, isNew }) => {
       if (!isNew) return;
+      if (this.isReadOnly()) {
+        edge.remove();
+        return;
+      }
       const source = edge.getSourceCellId();
       const target = edge.getTargetCellId();
       edge.remove();
@@ -277,9 +301,19 @@ export class StudioGraphIsland {
   }
 
   private selectFromOptions(): void {
-    this.graph.cleanSelection();
     const roleId = this.options.selectedRoleId || "";
     const flowKey = this.options.selectedFlowKey || "";
+    const current = this.graph.getSelectedCells()[0];
+    const currentData = current?.getData() as {
+      studioNode?: { kind?: string; roleId?: string };
+      studioEdge?: { source: string; target: string; eventType: string };
+    } | undefined;
+    const currentRoleId = currentData?.studioNode?.kind === "role" ? currentData.studioNode.roleId || "" : "";
+    const currentFlowKey = currentData?.studioEdge ? studioEdgeFlowKey(currentData.studioEdge) : "";
+    if (currentRoleId === roleId && currentFlowKey === flowKey) {
+      return;
+    }
+    this.graph.cleanSelection();
     if (roleId) {
       const node = this.graph.getCellById(roleId);
       if (node) this.graph.select(node);
@@ -294,6 +328,32 @@ export class StudioGraphIsland {
     }
   }
 
+  private restoreViewport(
+    viewport: StudioCanvasDocument["viewport"] | undefined,
+    firstRender: boolean
+  ): void {
+    const signature = viewport
+      ? `${viewport.x}:${viewport.y}:${viewport.zoom}`
+      : "";
+    if (
+      viewport &&
+      Number.isFinite(viewport.x) &&
+      Number.isFinite(viewport.y) &&
+      Number.isFinite(viewport.zoom) &&
+      signature !== this.lastViewportSignature
+    ) {
+      this.graph.zoomTo(viewport.zoom);
+      this.graph.translate(viewport.x, viewport.y);
+      this.lastViewportSignature = signature;
+      return;
+    }
+    if (firstRender && !viewport) {
+      setTimeout(() => {
+        this.graph.zoomToFit({ padding: 28, maxScale: 1 });
+      }, 0);
+    }
+  }
+
   private selectedRoleId(): string {
     const selected = this.graph.getSelectedCells()[0];
     const data = selected?.getData() as { studioNode?: { kind?: string; roleId?: string } } | undefined;
@@ -301,6 +361,9 @@ export class StudioGraphIsland {
   }
 
   private async deleteSelection(): Promise<void> {
+    if (this.isReadOnly()) {
+      return;
+    }
     const selected = this.graph.getSelectedCells()[0];
     if (!selected) return;
     const nodeData = selected.getData() as { studioNode?: { kind?: string; roleId?: string } } | undefined;
@@ -329,10 +392,16 @@ export class StudioGraphIsland {
 
   private async fitAndSync(): Promise<void> {
     this.graph.zoomToFit({ padding: 28, maxScale: 1 });
+    if (this.isReadOnly()) {
+      return;
+    }
     await this.syncCanvas();
   }
 
   private async autoLayout(): Promise<void> {
+    if (this.isReadOnly()) {
+      return;
+    }
     const graph = new dagre.graphlib.Graph();
     graph.setGraph({ rankdir: "LR", nodesep: 70, ranksep: 100 });
     graph.setDefaultEdgeLabel(() => ({}));
@@ -362,7 +431,7 @@ export class StudioGraphIsland {
   }
 
   private async syncCanvas(): Promise<void> {
-    if (this.applying || !this.options.canvas) {
+    if (this.applying || this.isReadOnly() || !this.options.canvas) {
       return;
     }
     const nextCanvas = graphToCanvasDocument(this.graph, this.options.canvas);
@@ -380,8 +449,21 @@ export class StudioGraphIsland {
     }
   }
 
+  private scheduleSyncCanvas(): void {
+    if (this.applying || this.isReadOnly()) {
+      return;
+    }
+    if (this.syncCanvasTimer) {
+      clearTimeout(this.syncCanvasTimer);
+    }
+    this.syncCanvasTimer = setTimeout(() => {
+      this.syncCanvasTimer = null;
+      void this.syncCanvas();
+    }, 250);
+  }
+
   private async applyCommand(command: StudioAuthoringCommand): Promise<void> {
-    if (!this.options.authoring || !this.options.canvas) {
+    if (this.isReadOnly() || !this.options.authoring || !this.options.canvas) {
       this.toast("error", this.label("editBlocked"));
       return;
     }
@@ -427,6 +509,10 @@ export class StudioGraphIsland {
   }
 
   private async semanticUndo(): Promise<void> {
+    if (this.isReadOnly()) {
+      this.updateToolbarState();
+      return;
+    }
     const previous = this.undoStack.pop();
     if (!previous) {
       this.updateToolbarState();
@@ -441,6 +527,10 @@ export class StudioGraphIsland {
   }
 
   private async semanticRedo(): Promise<void> {
+    if (this.isReadOnly()) {
+      this.updateToolbarState();
+      return;
+    }
     const next = this.redoStack.pop();
     if (!next) {
       this.updateToolbarState();
@@ -469,6 +559,7 @@ export class StudioGraphIsland {
   }
 
   private pushUndoSnapshot(): void {
+    if (this.isReadOnly()) return;
     const snapshot = this.currentSnapshot();
     if (!snapshot) return;
     this.undoStack.push(snapshot);
@@ -479,7 +570,7 @@ export class StudioGraphIsland {
   }
 
   private currentSnapshot(): StudioGraphSnapshot | null {
-    if (!this.options.authoring || !this.options.canvas) {
+    if (this.isReadOnly() || !this.options.authoring || !this.options.canvas) {
       return null;
     }
     return {
@@ -491,10 +582,19 @@ export class StudioGraphIsland {
   }
 
   private updateToolbarState(): void {
+    const readOnly = this.isReadOnly();
+    for (const action of ["layout", "add-role", "add-edge", "delete"]) {
+      const button = this.toolbar.querySelector<HTMLButtonElement>('[data-studio-graph-action="' + action + '"]');
+      if (button) button.disabled = this.busy || readOnly;
+    }
     const undo = this.toolbar.querySelector<HTMLButtonElement>('[data-studio-graph-action="undo"]');
     const redo = this.toolbar.querySelector<HTMLButtonElement>('[data-studio-graph-action="redo"]');
-    if (undo) undo.disabled = this.busy || this.undoStack.length === 0;
-    if (redo) redo.disabled = this.busy || this.redoStack.length === 0;
+    if (undo) undo.disabled = this.busy || readOnly || this.undoStack.length === 0;
+    if (redo) redo.disabled = this.busy || readOnly || this.redoStack.length === 0;
+  }
+
+  private isReadOnly(): boolean {
+    return this.options.readOnly === true;
   }
 
   private resetHistoryWhenProjectChanges(options: StudioGraphBridgeOptions): void {

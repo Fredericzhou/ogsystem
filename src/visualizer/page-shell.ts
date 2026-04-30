@@ -598,8 +598,17 @@ export function renderPageHtml(workdir: string, apiPrefix: string, i18n: PageI18
       min-width: 0;
     }
     .debug-graph-body {
-      grid-template-columns: minmax(340px, 1.15fr) minmax(320px, 0.85fr);
+      grid-template-columns: 1fr;
       align-items: start;
+    }
+    .run-graph-root {
+      min-height: 520px;
+    }
+    .run-graph-summary-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+      gap: 8px;
+      min-width: 0;
     }
     .state-panel {
       display: grid;

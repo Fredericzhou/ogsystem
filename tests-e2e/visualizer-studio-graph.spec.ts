@@ -70,16 +70,32 @@ test("Studio Bridge renders and edits through the real X6 graph island", async (
   test.info().annotations.push({ type: "server", description: started.url });
   try {
     await page.goto(started.url);
+    await page.waitForFunction(() => Boolean((window as any).OGSVisualizerClient?.mountStudioX6Bridge));
+    await page.evaluate(() => {
+      const client = (window as any).OGSVisualizerClient;
+      const original = client.mountStudioX6Bridge;
+      (window as any).__studioMountCalls = 0;
+      client.mountStudioX6Bridge = function patchedMountStudioX6Bridge(root: HTMLElement, options: unknown) {
+        (window as any).__studioMountCalls += 1;
+        return original.call(this, root, options);
+      };
+    });
     await page.locator("#project-home").click();
     await page.locator("#workbench-open-bridge").click();
 
     await expect(page.locator("#studio-graph-root")).toBeVisible();
     await expect(page.locator('#studio-graph-root [data-cell-id="demo-analyst"]').first()).toBeVisible();
+    await page.evaluate(() => {
+      (window as any).__studioGraphRoot = document.getElementById("studio-graph-root");
+    });
+    const mountCallsAfterOpen = await page.evaluate(() => (window as any).__studioMountCalls);
     await expect(page.getByText("Project Readiness")).toBeVisible();
     await expect(page.getByText("Action Form")).toBeVisible();
 
     const roleNode = page.locator('#studio-graph-root [data-cell-id="demo-analyst"]').first();
     await roleNode.click({ force: true });
+    await expect.poll(async () => page.evaluate(() => (window as any).__studioMountCalls)).toBe(mountCallsAfterOpen);
+    await expect.poll(async () => page.evaluate(() => document.getElementById("studio-graph-root") === (window as any).__studioGraphRoot)).toBe(true);
     await expect(page.locator(".studio-inspector")).toContainText("demo-analyst");
 
     const box = await roleNode.boundingBox();
@@ -95,9 +111,11 @@ test("Studio Bridge renders and edits through the real X6 graph island", async (
 
     await page.locator('#studio-graph-root [data-studio-graph-action="add-role"]').click();
     await expect(page.locator("#flash")).toContainText("Studio graph draft updated");
+    await expect.poll(async () => page.evaluate(() => document.getElementById("studio-graph-root") === (window as any).__studioGraphRoot)).toBe(true);
     await expect(page.locator('#studio-graph-root [data-cell-id="new-role"]').first()).toBeVisible();
     await dragStudioPort(page, "new-role", "demo-analyst");
     await expect(page.locator("#flash")).toContainText("Studio graph draft updated");
+    await expect.poll(async () => page.evaluate(() => document.getElementById("studio-graph-root") === (window as any).__studioGraphRoot)).toBe(true);
     await expect(page.locator('[data-studio-flow-key="new-role:DONE:demo-analyst"]')).toBeVisible();
 
     await page.locator('#studio-graph-root [data-studio-graph-action="undo"]').click();

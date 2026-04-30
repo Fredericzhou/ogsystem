@@ -17,7 +17,9 @@ import {
   renderRolePackagePanel,
   renderRunStatePanel,
   renderStudioGraphCanvas,
+  renderStudioBridgeInspector,
   renderStudioBridgePanel,
+  renderStudioBridgeSelectionLabel,
   renderSuggestedNextChecksPanel,
   renderRunTopologySvg,
   renderWorkbenchTopologySvg,
@@ -177,6 +179,8 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
     const displayUiToken = ${displayUiToken.toString()};
     const normalizeStudioTargetRoleId = ${normalizeStudioTargetRoleId.toString()};
     const renderStudioGraphCanvas = ${renderStudioGraphCanvas.toString()};
+    const renderStudioBridgeSelectionLabel = ${renderStudioBridgeSelectionLabel.toString()};
+    const renderStudioBridgeInspector = ${renderStudioBridgeInspector.toString()};
     const renderArtifactsPanel = ${renderArtifactsPanel.toString()};
     const renderBindingExplainPanel = ${renderBindingExplainPanel.toString()};
     const renderContractPanel = ${renderContractPanel.toString()};
@@ -286,6 +290,8 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
       studioBridgeSelectedRoleId: "",
       studioBridgeSelectedFlowKey: "",
       studioBridgeLastDryRunId: "",
+      runGraphSelectedRoleId: "",
+      runGraphSelectedFlowKey: "",
       sidebarOpen: false,
       runs: [],
       filter: "",
@@ -458,9 +464,19 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
     }
 
     function formatTime(value) {
-      if (!value) return "n/a";
+      if (!value) return t("common.notAvailable", undefined, "n/a");
       const date = new Date(value);
-      return Number.isNaN(date.getTime()) ? String(value) : date.toLocaleString();
+      if (Number.isNaN(date.getTime())) {
+        return String(value);
+      }
+      try {
+        return new Intl.DateTimeFormat(state.locale || INITIAL_LOCALE || "en", {
+          dateStyle: "medium",
+          timeStyle: "medium"
+        }).format(date);
+      } catch {
+        return date.toLocaleString(state.locale || INITIAL_LOCALE || undefined);
+      }
     }
 
     function formatJson(value) {
@@ -642,6 +658,138 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
       };
     }
 
+    function buildStudioGraphLabels() {
+      return {
+        zoomOut: t("studio.graph.zoomOut", undefined, "Zoom out"),
+        zoomIn: t("studio.graph.zoomIn", undefined, "Zoom in"),
+        fitView: t("studio.graph.fitView", undefined, "Fit view"),
+        autoLayout: t("studio.graph.autoLayout", undefined, "Auto layout"),
+        addRole: t("studio.graph.addRole", undefined, "Role"),
+        addEdge: t("studio.graph.addEdge", undefined, "Edge"),
+        deleteSelection: t("studio.graph.deleteSelection", undefined, "Delete"),
+        undo: t("studio.graph.undo", undefined, "Undo"),
+        redo: t("studio.graph.redo", undefined, "Redo"),
+        ready: t("studio.graph.ready", undefined, "ready"),
+        graphUnavailable: t("studio.graph.unavailable", undefined, "Graph unavailable"),
+        graphReady: t("studio.graph.readyStatus", undefined, "X6 graph ready"),
+        fixMermaidBeforeGraphEditing: t("studio.graph.fixMermaid", undefined, "Fix Mermaid diagnostics before graph editing."),
+        noRolesAvailable: t("studio.graph.noRoles", undefined, "No roles available."),
+        selectRoleBeforeAddingEdge: t("studio.graph.selectRoleBeforeEdge", undefined, "Select a role before adding an edge."),
+        invalidConnection: t("studio.graph.invalidConnection", undefined, "Invalid Studio connection."),
+        entryRoleDeletionBlocked: t("studio.graph.entryRoleDeletionBlocked", undefined, "Entry role deletion is blocked."),
+        invalidEdgeEndpoints: t("studio.graph.invalidEdgeEndpoints", undefined, "Invalid Studio edge endpoints."),
+        deleteRoleConfirm: t("studio.graph.deleteRoleConfirm", undefined, "Delete role {roleId}?"),
+        editBlocked: t("studio.graph.editBlocked", undefined, "Studio Bridge cannot edit until Mermaid parses successfully.")
+      };
+    }
+
+    function normalizeRunGraphBindingKind(value) {
+      const normalized = String(value || "").toLowerCase();
+      if (normalized === "model") return "model";
+      if (normalized === "exec" || normalized === "execution" || normalized === "profile") return "exec";
+      return "noop";
+    }
+
+    function runGraphFlowKey(edge) {
+      const source = String(edge?.sourceRoleId || edge?.source || "");
+      const event = String(edge?.event || edge?.eventType || "DONE");
+      const target = normalizeStudioTargetRoleId(edge?.targetRoleId || edge?.target || "__system_end__");
+      return source + ":" + event + ":" + target;
+    }
+
+    function buildRunStudioBridgeFromGraph(graph) {
+      const nodes = Array.isArray(graph?.nodes) ? graph.nodes : [];
+      const edges = Array.isArray(graph?.edges) ? graph.edges : [];
+      const columns = Math.max(1, Math.ceil(Math.sqrt(Math.max(nodes.length, 1))));
+      const authoringRoles = {};
+      const layoutNodes = {};
+      const canvasNodes = nodes.map((node, index) => {
+        const roleId = String(node?.roleId || "");
+        const bindingKind = normalizeRunGraphBindingKind(node?.bindingKind);
+        const x = 140 + (index % columns) * 260;
+        const y = 120 + Math.floor(index / columns) * 150;
+        const badges = [
+          node?.status ? displayUiToken(node.status, t) : "",
+          node?.nodeType && node.nodeType !== "role" ? displayUiToken(node.nodeType, t) : "",
+          node?.lastErrorCode ? String(node.lastErrorCode) : ""
+        ].filter(Boolean);
+        authoringRoles[roleId] = {
+          roleId,
+          title: String(node?.title || node?.label || roleId),
+          bindingKind,
+          modelRef: node?.modelRef,
+          profileId: node?.profileId,
+          routingMode: node?.routingMode,
+          joinMode: node?.joinMode,
+          joinMin: node?.joinMin,
+          joinSources: Array.isArray(node?.joinSources) ? node.joinSources : undefined,
+          loopMax: node?.loopMax,
+          review: node?.review,
+          contextMap: Array.isArray(node?.contextFields) && node.contextFields.length
+            ? Object.fromEntries(node.contextFields.map((key) => [String(key), String(key)]))
+            : undefined
+        };
+        layoutNodes[roleId] = { x, y, width: 190, height: 90 };
+        return {
+          id: roleId,
+          roleId,
+          x,
+          y,
+          width: 190,
+          height: 90,
+          label: String(node?.title || node?.label || roleId),
+          badges,
+          bindingKind
+        };
+      }).filter((node) => node.roleId);
+      const authoringFlows = {};
+      const canvasEdges = edges.map((edge, index) => {
+        const source = String(edge?.sourceRoleId || edge?.source || "");
+        const target = String(edge?.targetRoleId || edge?.target || "__system_end__");
+        const eventType = String(edge?.event || edge?.eventType || "DONE");
+        const flowId = String(edge?.flowId || "run-flow-" + index);
+        authoringFlows[flowId] = {
+          flowId,
+          fromRoleId: source,
+          toRoleId: target,
+          eventType,
+          runtimeOnlyErrorFlow: Boolean(edge?.isErrorFlow || edge?.runtimeOnlyErrorFlow)
+        };
+        return {
+          id: flowId,
+          source,
+          target,
+          label: eventType,
+          eventType,
+          runtimeOnlyErrorFlow: Boolean(edge?.isErrorFlow || edge?.runtimeOnlyErrorFlow),
+          participatesInJoin: Boolean(edge?.participatesInJoin || edge?.recentlyActivated)
+        };
+      }).filter((edge) => edge.source && edge.target);
+      return {
+        authoring: {
+          version: 1,
+          project: {
+            workdir: getCurrentWorkdir(),
+            systemPath: state.detail?.header?.systemPath || state.workbenchSavedPath || "system.mmd"
+          },
+          system: {
+            systemId: String(graph?.systemId || state.selectedRunId || "run"),
+            systemVersion: String(graph?.systemVersion || "v1"),
+            entryRoleId: String(graph?.entryRoleId || canvasNodes[0]?.roleId || ""),
+            lawGlobalRef: ""
+          },
+          roles: authoringRoles,
+          flows: authoringFlows,
+          layout: { nodes: layoutNodes }
+        },
+        canvas: {
+          version: 1,
+          nodes: canvasNodes,
+          edges: canvasEdges
+        }
+      };
+    }
+
     function cloneJson(value) {
       return JSON.parse(JSON.stringify(value ?? null));
     }
@@ -735,7 +883,10 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
       renderLogs();
       renderActionState();
       if (state.workbench) {
-        renderWorkbench({ preserveEditor: true });
+        renderWorkbench({
+          preserveEditor: true,
+          preserveStudioGraphRoot: state.workbenchView === "bridge"
+        });
       }
     }
 
@@ -872,31 +1023,69 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
       ].join("");
     }
 
-    function renderStudioBridge() {
+    function studioBridgeRenderArgs() {
       const bridge = state.studioBridge || {
         validation: state.workbench?.validation || null,
         extracted: state.workbench?.validation?.structure || null
       };
-      workbenchBodyEl.innerHTML = renderStudioBridgePanel({
+      return {
         bridge,
         readiness: state.projectReadiness,
         selectedRoleId: state.studioBridgeSelectedRoleId,
         selectedFlowKey: state.studioBridgeSelectedFlowKey,
         actionBusy: state.actionBusy,
         t
-      });
+      };
+    }
+
+    function renderStudioBridge(options) {
+      const args = studioBridgeRenderArgs();
+      const html = renderStudioBridgePanel(args);
+      const preservedRoot = options?.preserveGraphRoot ? document.getElementById("studio-graph-root") : null;
+      if (options?.preserveGraphRoot && document.getElementById("studio-graph-root")) {
+        patchStudioBridgePanel(html);
+      } else {
+        workbenchBodyEl.innerHTML = html;
+      }
+      const currentRoot = document.getElementById("studio-graph-root");
+      if (preservedRoot && currentRoot && currentRoot !== preservedRoot && typeof currentRoot.replaceWith === "function") {
+        currentRoot.replaceWith(preservedRoot);
+      }
+      updateStudioBridgeSelectionChrome();
+      bindStudioBridgeControls();
+      mountStudioGraphIsland();
+    }
+
+    function patchStudioBridgePanel(html) {
+      const template = document.createElement("template");
+      template.innerHTML = html;
+      if (!template.content || typeof template.content.querySelector !== "function") {
+        workbenchBodyEl.innerHTML = html;
+        return;
+      }
+      for (const region of ["toolbar", "navigator", "inspector", "flow-list", "diagnostics"]) {
+        const current = findStudioBridgeElement('[data-studio-bridge-region="' + region + '"]');
+        const next = template.content.querySelector('[data-studio-bridge-region="' + region + '"]');
+        if (current && next) {
+          current.replaceWith(next);
+        }
+      }
+      updateStudioBridgeSelectionChrome();
+    }
+
+    function bindStudioBridgeControls() {
       for (const button of workbenchBodyEl.querySelectorAll("[data-studio-role-id]")) {
         button.addEventListener("click", () => {
           state.studioBridgeSelectedRoleId = button.getAttribute("data-studio-role-id") || "";
           state.studioBridgeSelectedFlowKey = "";
-          renderStudioBridge();
+          updateStudioBridgeSelection(true);
         });
       }
       for (const button of workbenchBodyEl.querySelectorAll("[data-studio-flow-key]")) {
         button.addEventListener("click", () => {
           state.studioBridgeSelectedFlowKey = button.getAttribute("data-studio-flow-key") || "";
           state.studioBridgeSelectedRoleId = "";
-          renderStudioBridge();
+          updateStudioBridgeSelection(true);
         });
       }
       const validateButton = document.getElementById("studio-bridge-validate");
@@ -937,13 +1126,64 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
           await generateMmdFromStudioBridge();
         });
       }
-      mountStudioGraphIsland();
+    }
+
+    function updateStudioBridgeSelection(syncGraph) {
+      updateStudioBridgeSelectionChrome();
+      const inspector = findStudioBridgeElement('[data-studio-bridge-region="inspector"]');
+      if (inspector) {
+        inspector.innerHTML = renderStudioBridgeInspector({
+          bridge: studioBridgeRenderArgs().bridge,
+          selectedRoleId: state.studioBridgeSelectedRoleId,
+          selectedFlowKey: state.studioBridgeSelectedFlowKey,
+          t
+        });
+      }
+      if (syncGraph !== false) {
+        mountStudioGraphIsland();
+      }
+    }
+
+    function updateStudioBridgeSelectionChrome() {
+      const selectedRoleId = state.studioBridgeSelectedRoleId || "";
+      const selectedFlowKey = state.studioBridgeSelectedFlowKey || "";
+      const label = findStudioBridgeElement("[data-studio-graph-selection-label]");
+      if (label) {
+        label.textContent = renderStudioBridgeSelectionLabel({ selectedRoleId, selectedFlowKey, t });
+      }
+      const root = document.getElementById("studio-graph-root");
+      if (root) {
+        root.dataset.selectedRoleId = selectedRoleId;
+        root.dataset.selectedFlowKey = selectedFlowKey;
+      }
+      for (const button of workbenchBodyEl.querySelectorAll("[data-studio-role-id]")) {
+        button.classList.toggle("active", (button.getAttribute("data-studio-role-id") || "") === selectedRoleId);
+      }
+      for (const button of workbenchBodyEl.querySelectorAll("[data-studio-flow-key]")) {
+        button.classList.toggle("active", (button.getAttribute("data-studio-flow-key") || "") === selectedFlowKey);
+      }
+    }
+
+    function findStudioBridgeElement(selector) {
+      if (typeof workbenchBodyEl.querySelector === "function") {
+        return workbenchBodyEl.querySelector(selector);
+      }
+      if (typeof workbenchBodyEl.querySelectorAll === "function") {
+        return workbenchBodyEl.querySelectorAll(selector)[0] || null;
+      }
+      return null;
     }
 
     function mountStudioGraphIsland() {
-      const root = document.getElementById("studio-graph-root");
+      let root = document.getElementById("studio-graph-root");
       if (!root) {
         return;
+      }
+      if (state.studioGraphRootElement && state.studioGraphRootElement !== root && typeof root.replaceWith === "function") {
+        root.replaceWith(state.studioGraphRootElement);
+        root = state.studioGraphRootElement;
+      } else if (!state.studioGraphRootElement) {
+        state.studioGraphRootElement = root;
       }
       const visualizerClient = window.OGSVisualizerClient || {};
       const mount = visualizerClient.mountStudioX6Bridge;
@@ -958,48 +1198,66 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
         selectedRoleId: state.studioBridgeSelectedRoleId,
         selectedFlowKey: state.studioBridgeSelectedFlowKey,
         busy: Boolean(state.actionBusy),
-        labels: {
-          zoomOut: t("studio.graph.zoomOut", undefined, "Zoom out"),
-          zoomIn: t("studio.graph.zoomIn", undefined, "Zoom in"),
-          fitView: t("studio.graph.fitView", undefined, "Fit view"),
-          autoLayout: t("studio.graph.autoLayout", undefined, "Auto layout"),
-          addRole: t("studio.graph.addRole", undefined, "Role"),
-          addEdge: t("studio.graph.addEdge", undefined, "Edge"),
-          deleteSelection: t("studio.graph.deleteSelection", undefined, "Delete"),
-          undo: t("studio.graph.undo", undefined, "Undo"),
-          redo: t("studio.graph.redo", undefined, "Redo"),
-          ready: t("studio.graph.ready", undefined, "ready"),
-          graphUnavailable: t("studio.graph.unavailable", undefined, "Graph unavailable"),
-          graphReady: t("studio.graph.readyStatus", undefined, "X6 graph ready"),
-          fixMermaidBeforeGraphEditing: t("studio.graph.fixMermaid", undefined, "Fix Mermaid diagnostics before graph editing."),
-          noRolesAvailable: t("studio.graph.noRoles", undefined, "No roles available."),
-          selectRoleBeforeAddingEdge: t("studio.graph.selectRoleBeforeEdge", undefined, "Select a role before adding an edge."),
-          invalidConnection: t("studio.graph.invalidConnection", undefined, "Invalid Studio connection."),
-          entryRoleDeletionBlocked: t("studio.graph.entryRoleDeletionBlocked", undefined, "Entry role deletion is blocked."),
-          invalidEdgeEndpoints: t("studio.graph.invalidEdgeEndpoints", undefined, "Invalid Studio edge endpoints."),
-          deleteRoleConfirm: t("studio.graph.deleteRoleConfirm", undefined, "Delete role {roleId}?"),
-          editBlocked: t("studio.graph.editBlocked", undefined, "Studio Bridge cannot edit until Mermaid parses successfully.")
-        },
+        labels: buildStudioGraphLabels(),
         onSelectRole: (roleId) => {
           state.studioBridgeSelectedRoleId = roleId || "";
           state.studioBridgeSelectedFlowKey = "";
-          renderStudioBridge();
+          updateStudioBridgeSelection(false);
         },
         onSelectFlow: (flowKey) => {
           state.studioBridgeSelectedFlowKey = flowKey || "";
           state.studioBridgeSelectedRoleId = "";
-          renderStudioBridge();
+          updateStudioBridgeSelection(false);
         },
         onClearSelection: () => {
           state.studioBridgeSelectedRoleId = "";
           state.studioBridgeSelectedFlowKey = "";
-          renderStudioBridge();
+          updateStudioBridgeSelection(false);
         },
         onApplyCanvas: async (canvas) => {
           await applyStudioGraphCanvasPatch(canvas);
         },
         onApplyCommand: async (result) => {
           await applyStudioGraphAuthoringCommand(result);
+        },
+        onToast: (tone, message) => {
+          setFlash(tone === "error" ? "error" : "success", message);
+        }
+      });
+    }
+
+    function mountRunGraphIsland(graph) {
+      const root = document.getElementById("run-graph-root");
+      if (!root) {
+        return;
+      }
+      const visualizerClient = window.OGSVisualizerClient || {};
+      const mount = visualizerClient.mountStudioX6Bridge;
+      if (typeof mount !== "function") {
+        root.innerHTML = '<div class="studio-graph-empty">' + escapeText(t("studio.graph.bundleLoading", undefined, "Studio graph bundle loading...")) + '</div>';
+        return;
+      }
+      const bridge = buildRunStudioBridgeFromGraph(graph);
+      mount(root, {
+        authoring: bridge.authoring,
+        canvas: bridge.canvas,
+        validation: { ok: true, diagnostics: [] },
+        selectedRoleId: state.runGraphSelectedRoleId,
+        selectedFlowKey: state.runGraphSelectedFlowKey,
+        busy: Boolean(state.actionBusy),
+        readOnly: true,
+        labels: buildStudioGraphLabels(),
+        onSelectRole: (roleId) => {
+          state.runGraphSelectedRoleId = roleId || "";
+          state.runGraphSelectedFlowKey = "";
+        },
+        onSelectFlow: (flowKey) => {
+          state.runGraphSelectedFlowKey = flowKey || "";
+          state.runGraphSelectedRoleId = "";
+        },
+        onClearSelection: () => {
+          state.runGraphSelectedRoleId = "";
+          state.runGraphSelectedFlowKey = "";
         },
         onToast: (tone, message) => {
           setFlash(tone === "error" ? "error" : "success", message);
@@ -1014,6 +1272,9 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
       const dirty = state.workbenchSource !== state.workbenchDiskSource;
       const preserveEditor = Boolean(options?.preserveEditor);
       const existingEditor = document.getElementById("workbench-editor");
+      const preservedStudioGraphRoot = options?.preserveStudioGraphRoot
+        ? document.getElementById("studio-graph-root")
+        : null;
       state.workbenchHasDraft = Boolean(loadDraftSource());
       workbenchMetaEl.textContent = state.selectedRunId && state.detail?.systemSource
         ? t("workbench.immutableRunMeta")
@@ -1058,9 +1319,23 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
             : '<div class="hint">' + escapeText(t("workbench.renderClean")) + '</div>'
         ].join("");
       } else if (state.workbenchView === "bridge") {
-        renderStudioBridge();
+        renderStudioBridge({ preserveGraphRoot: Boolean(options?.preserveStudioGraphRoot) });
       } else {
         workbenchBodyEl.innerHTML = renderWorkbenchStructure(structure);
+      }
+      if (preservedStudioGraphRoot) {
+        const currentStudioGraphRoot = document.getElementById("studio-graph-root");
+        if (
+          currentStudioGraphRoot &&
+          currentStudioGraphRoot !== preservedStudioGraphRoot &&
+          typeof currentStudioGraphRoot.replaceWith === "function"
+        ) {
+          currentStudioGraphRoot.replaceWith(preservedStudioGraphRoot);
+          updateStudioBridgeSelectionChrome();
+          if (state.workbenchView === "bridge") {
+            mountStudioGraphIsland();
+          }
+        }
       }
       const editor = document.getElementById("workbench-editor");
       if (editor && (!preserveEditor || editor !== existingEditor)) {
@@ -1450,7 +1725,7 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
               <div class="event">
                 <div class="event-top">
                   <span>#\${escapeText(entry.cursor)} \${escapeText(displayUiToken(type, t))}</span>
-                  <span>\${escapeText(record.at || "")}</span>
+                  <span>\${escapeText(formatTime(record.at))}</span>
                 </div>
                 <strong>\${role} \${event} \${status}</strong>
                 <div class="hint">\${branch} \${review}</div>
@@ -1485,9 +1760,13 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
           roleCount: graph.roleCount || 0,
           flowCount: graph.flowCount || 0
         })) + "</div></div>",
-        renderRunTopologySvg(graph, t),
-        '<div class="event"><div class="event-top"><span>' + escapeText(t("graph.runtimeSummary")) + '</span><span>' + escapeText(nodes.length) + " " + escapeText(t("common.nodes")) + " · " + escapeText(edges.length) + '</span></div><strong>' + escapeText(t("graph.topologyOverlay")) + '</strong><div class="hint">' + escapeText(t("graph.overlayHint")) + '</div></div>'
+        '<div id="run-graph-root" class="studio-graph-root run-graph-root" data-selected-role-id="' + escapeText(state.runGraphSelectedRoleId) + '" data-selected-flow-key="' + escapeText(state.runGraphSelectedFlowKey) + '"></div>',
+        '<div class="run-graph-summary-grid">',
+        '<div class="event"><div class="event-top"><span>' + escapeText(t("graph.runtimeSummary")) + '</span><span>' + escapeText(nodes.length) + " " + escapeText(t("common.nodes")) + " · " + escapeText(edges.length) + '</span></div><strong>' + escapeText(t("graph.topologyOverlay")) + '</strong><div class="hint">' + escapeText(t("graph.overlayHint")) + '</div></div>',
+        '<div class="event"><div class="event-top"><span>' + escapeText(t("common.readOnly")) + '</span><span>X6</span></div><strong>' + escapeText(t("graph.readOnlyRuntimeGraph", undefined, "Studio graph in read-only runtime mode")) + '</strong><div class="hint">' + escapeText(t("graph.x6RuntimeHint", undefined, "Uses the same role and flow projection as Studio Bridge, including start and end boundaries.")) + '</div></div>',
+        "</div>"
       ].join("");
+      mountRunGraphIsland(graph);
       stateEl.innerHTML = renderRunStatePanel({
         state: state.detail?.state ?? null,
         header: state.detail?.header ?? null,
@@ -1573,7 +1852,7 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
         button.addEventListener("click", () => selectReview(state.selectedRunId, button.getAttribute("data-review-id")));
       }
       const detail = state.reviewDetail;
-      reviewDetailEl.innerHTML = renderReviewDetailPanel(detail, t);
+      reviewDetailEl.innerHTML = renderReviewDetailPanel(detail, t, formatTime);
       const actionable = detail && (detail.currentStatus === "pending" || detail.currentStatus === "paused");
       reviewActionsEl.innerHTML = actionable
         ? [
@@ -1741,7 +2020,8 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
         selectedRoleId: state.selectedLogRoleId,
         engine: state.engineLogs,
         role: state.roleLogs,
-        t
+        t,
+        formatTime
       });
     }
 
@@ -1752,7 +2032,8 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
         reviews: state.reviews,
         reviewDetail: state.reviewDetail,
         resumeDiagnostics: state.resumeDiagnosticsLoaded ? state.resumeDiagnostics : null,
-        t
+        t,
+        formatTime
       });
     }
 
@@ -1770,7 +2051,7 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
           ? \`\${detail.runDir} · \${simulation} · review \${state.selectedReviewId}\`
           : \`\${detail.runDir} · \${simulation}\`;
       }
-      renderWorkbench();
+      renderWorkbench({ preserveStudioGraphRoot: true });
       renderActionForm();
       renderStats(header, graphPayload);
       renderFailure();
@@ -1873,7 +2154,7 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
         ...(state.workbench || {}),
         validation: payload.validation || state.workbench?.validation
       };
-      renderWorkbench();
+      renderWorkbench({ preserveStudioGraphRoot: true });
       renderProject();
     }
 

@@ -1,5 +1,6 @@
 type JsonRecord = Record<string, unknown>;
 type Translator = (key: string, vars?: Record<string, unknown>, fallback?: string) => string;
+type DateFormatter = (value: unknown) => string;
 
 function escapeText(value: unknown): string {
   return String(value ?? "")
@@ -90,17 +91,31 @@ export function renderStudioGraphCanvas(args: {
   t?: Translator;
 }): string {
   const t: Translator = typeof args.t === "function" ? args.t : (_key, _vars, fallback) => fallback ?? _key;
+  const selection = renderStudioBridgeSelectionLabel({
+    selectedRoleId: args.selectedRoleId,
+    selectedFlowKey: args.selectedFlowKey,
+    t
+  });
+  return [
+    '<div class="studio-canvas-shell">',
+    '<div class="studio-canvas-toolbar"><span class="hint">' + escapeText(t("studio.realGraph", undefined, "Studio Graph")) + '</span><span class="hint" data-studio-graph-selection-label>' + escapeText(selection) + '</span></div>',
+    '<div id="studio-graph-root" class="studio-graph-root" data-selected-role-id="' + escapeText(args.selectedRoleId) + '" data-selected-flow-key="' + escapeText(args.selectedFlowKey) + '"></div>',
+    "</div>"
+  ].join("");
+}
+
+export function renderStudioBridgeSelectionLabel(args: {
+  selectedRoleId: string;
+  selectedFlowKey: string;
+  t?: Translator;
+}): string {
+  const t: Translator = typeof args.t === "function" ? args.t : (_key, _vars, fallback) => fallback ?? _key;
   const selection = args.selectedRoleId
     ? t("studio.roleInspector", undefined, "role inspector") + " " + args.selectedRoleId
     : args.selectedFlowKey
       ? t("studio.flowInspector", undefined, "flow inspector") + " " + args.selectedFlowKey
       : t("studio.selectRole", undefined, "Select a role to inspect metadata.");
-  return [
-    '<div class="studio-canvas-shell">',
-    '<div class="studio-canvas-toolbar"><span class="hint">' + escapeText(t("studio.realGraph", undefined, "Studio Graph")) + '</span><span class="hint">' + escapeText(selection) + '</span></div>',
-    '<div id="studio-graph-root" class="studio-graph-root" data-selected-role-id="' + escapeText(args.selectedRoleId) + '" data-selected-flow-key="' + escapeText(args.selectedFlowKey) + '"></div>',
-    "</div>"
-  ].join("");
+  return selection;
 }
 
 export function renderProjectSummaryPanel(args: {
@@ -223,13 +238,13 @@ export function renderOpsSummaryPanel(args: {
   const failureCards = recentFailures.length
     ? recentFailures.slice(0, 5).map((failure) =>
         '<div class="event"><div class="event-top"><span><code>' +
-        escapeText(String(failure.roleId ?? "unknown")) +
+        escapeText(String(failure.roleId ?? t("common.unknown", undefined, "unknown"))) +
         '</code></span><span>' +
-        escapeText(String(failure.errorCategory ?? "runtime")) +
+        escapeText(displayUiToken(failure.errorCategory ?? t("state.runtime", undefined, "runtime"), t)) +
         '</span></div><strong>' +
         escapeText(String(failure.errorCode ?? "ROLE_EXECUTION_FAILED")) +
         '</strong><div class="hint">' +
-        escapeText(String(failure.runId ?? "unknown") + " · " + String(failure.message ?? "No message")) +
+        escapeText(String(failure.runId ?? t("common.unknown", undefined, "unknown")) + " · " + String(failure.message ?? t("ops.noFailureMessage", undefined, "No message"))) +
         "</div></div>"
       )
     : ['<div class="event"><div class="event-top"><span>' + escapeText(t("ops.recentFailureList", undefined, "recent failure list")) + '</span><span>0</span></div><strong>' + escapeText(t("ops.noFailureEntries", undefined, "No failure entries in the sampled runs")) + '</strong></div>'];
@@ -304,6 +319,53 @@ export function renderProjectReadinessPanel(args: {
   ].join("");
 }
 
+export function renderStudioBridgeInspector(args: {
+  bridge: JsonRecord | null | undefined;
+  selectedRoleId: string;
+  selectedFlowKey: string;
+  t?: Translator;
+}): string {
+  const t: Translator = typeof args.t === "function" ? args.t : (_key, _vars, fallback) => fallback ?? _key;
+  const bridge = args.bridge ?? {};
+  const extracted = (bridge.extracted ?? {}) as JsonRecord;
+  const roles = Array.isArray(extracted.roles) ? extracted.roles as JsonRecord[] : [];
+  const flows = Array.isArray(extracted.flows) ? extracted.flows as JsonRecord[] : [];
+  const selectedRole = roles.find((role) => role.roleId === args.selectedRoleId) ?? roles[0];
+  const selectedFlow = flows.find((flow) => flow.flowKey === args.selectedFlowKey) ?? flows[0];
+  const roleInspector = selectedRole
+    ? [
+        '<div class="event"><div class="event-top"><span>' + escapeText(t("studio.roleInspector", undefined, "role inspector")) + '</span><span>' + escapeText(String(selectedRole.bindingKind ?? "noop")) + '</span></div><strong><code>' + escapeText(String(selectedRole.roleId ?? "")) + '</code></strong>',
+        '<div class="hint">' + escapeText(t("studio.modelExecRoute", {
+          modelRef: String(selectedRole.modelRef ?? "n/a"),
+          profileId: String(selectedRole.profileId ?? "n/a"),
+          routingMode: String(selectedRole.routingMode ?? t("studio.standard", undefined, "standard"))
+        }, "model " + String(selectedRole.modelRef ?? "n/a") + " · exec " + String(selectedRole.profileId ?? "n/a") + " · route " + String(selectedRole.routingMode ?? "standard"))) + "</div></div>",
+        '<div class="event"><div class="event-top"><span>' + escapeText(t("common.metadata", undefined, "metadata")) + '</span><span>' + escapeText(t("common.readOnly", undefined, "read only")) + '</span></div><strong>' +
+          escapeText([
+            selectedRole.joinMode ? t("common.join", undefined, "join") + " " + selectedRole.joinMode : "",
+            selectedRole.loopMax ? t("common.loop", undefined, "loop") + " " + selectedRole.loopMax : "",
+            selectedRole.review ? t("studio.reviewRequired", undefined, "review required") : "",
+            selectedRole.contextMap ? t("studio.contextMap", undefined, "context map") : ""
+          ].filter(Boolean).join(" · ") || t("project.noSpecialGraphMetadata", undefined, "no special metadata")) +
+          '</strong><div class="hint">' + escapeText(t("studio.incomingOutgoing", {
+            incoming: String(selectedRole.incomingFlowCount ?? 0),
+            outgoing: String(selectedRole.outgoingFlowCount ?? 0)
+          }, "incoming " + String(selectedRole.incomingFlowCount ?? 0) + " · outgoing " + String(selectedRole.outgoingFlowCount ?? 0))) + "</div></div>"
+      ].join("")
+    : '<div class="hint">' + escapeText(t("studio.selectRole", undefined, "Select a role to inspect metadata.")) + '</div>';
+  const flowInspector = selectedFlow
+    ? '<div class="event"><div class="event-top"><span>' + escapeText(t("studio.flowInspector", undefined, "flow inspector")) + '</span><span>' + escapeText(String(selectedFlow.eventType ?? "")) +
+      '</span></div><strong><code>' + escapeText(String(selectedFlow.fromRoleId ?? "")) + '</code> -> <code>' +
+      escapeText(String(selectedFlow.toRoleId ?? "")) + '</code></strong><div class="hint">' +
+      escapeText(selectedFlow.runtimeOnlyErrorFlow ? t("studio.runtimeOnlyErrorPath", undefined, "runtime-only error path") : t("studio.authoringDesignPath", undefined, "authoring design path")) +
+      " · " + escapeText(selectedFlow.participatesInJoin ? t("studio.participatesInJoin", undefined, "participates in join.sources") : t("studio.notJoinSource", undefined, "not a join source")) + "</div></div>"
+    : '<div class="hint">' + escapeText(t("studio.selectFlow", undefined, "Select a flow to inspect event metadata.")) + '</div>';
+  return '<div class="event"><div class="event-top"><span>' + escapeText(t("common.system", undefined, "system")) + '</span><span>' + escapeText(String(extracted.systemVersion ?? "n/a")) +
+      '</span></div><strong>' + escapeText(String(extracted.systemId ?? "unknown")) + '</strong><div class="hint">' + escapeText(t("common.entry", undefined, "entry")) + " " +
+      escapeText(String(extracted.entryRoleId ?? "n/a")) + " · " + escapeText(t("common.law", undefined, "law")) + " " + escapeText(String(extracted.lawGlobal ?? "n/a")) + "</div></div>" +
+      roleInspector + flowInspector;
+}
+
 export function renderStudioBridgePanel(args: {
   bridge: JsonRecord | null | undefined;
   readiness: JsonRecord | null | undefined;
@@ -359,34 +421,6 @@ export function renderStudioBridgePanel(args: {
         );
       })
     : ['<div class="hint">' + escapeText(t("studio.noFlowsExtracted", undefined, "No flows extracted from the current Mermaid source.")) + '</div>'];
-  const roleInspector = selectedRole
-    ? [
-        '<div class="event"><div class="event-top"><span>' + escapeText(t("studio.roleInspector", undefined, "role inspector")) + '</span><span>' + escapeText(String(selectedRole.bindingKind ?? "noop")) + '</span></div><strong><code>' + escapeText(String(selectedRole.roleId ?? "")) + '</code></strong>',
-        '<div class="hint">' + escapeText(t("studio.modelExecRoute", {
-          modelRef: String(selectedRole.modelRef ?? "n/a"),
-          profileId: String(selectedRole.profileId ?? "n/a"),
-          routingMode: String(selectedRole.routingMode ?? t("studio.standard", undefined, "standard"))
-        }, "model " + String(selectedRole.modelRef ?? "n/a") + " · exec " + String(selectedRole.profileId ?? "n/a") + " · route " + String(selectedRole.routingMode ?? "standard"))) + "</div></div>",
-        '<div class="event"><div class="event-top"><span>' + escapeText(t("common.metadata", undefined, "metadata")) + '</span><span>' + escapeText(t("common.readOnly", undefined, "read only")) + '</span></div><strong>' +
-          escapeText([
-            selectedRole.joinMode ? t("common.join", undefined, "join") + " " + selectedRole.joinMode : "",
-            selectedRole.loopMax ? t("common.loop", undefined, "loop") + " " + selectedRole.loopMax : "",
-            selectedRole.review ? t("studio.reviewRequired", undefined, "review required") : "",
-            selectedRole.contextMap ? t("studio.contextMap", undefined, "context map") : ""
-          ].filter(Boolean).join(" · ") || t("project.noSpecialGraphMetadata", undefined, "no special metadata")) +
-          '</strong><div class="hint">' + escapeText(t("studio.incomingOutgoing", {
-            incoming: String(selectedRole.incomingFlowCount ?? 0),
-            outgoing: String(selectedRole.outgoingFlowCount ?? 0)
-          }, "incoming " + String(selectedRole.incomingFlowCount ?? 0) + " · outgoing " + String(selectedRole.outgoingFlowCount ?? 0))) + "</div></div>"
-      ].join("")
-    : '<div class="hint">' + escapeText(t("studio.selectRole", undefined, "Select a role to inspect metadata.")) + '</div>';
-  const flowInspector = selectedFlow
-    ? '<div class="event"><div class="event-top"><span>' + escapeText(t("studio.flowInspector", undefined, "flow inspector")) + '</span><span>' + escapeText(String(selectedFlow.eventType ?? "")) +
-      '</span></div><strong><code>' + escapeText(String(selectedFlow.fromRoleId ?? "")) + '</code> -> <code>' +
-      escapeText(String(selectedFlow.toRoleId ?? "")) + '</code></strong><div class="hint">' +
-      escapeText(selectedFlow.runtimeOnlyErrorFlow ? t("studio.runtimeOnlyErrorPath", undefined, "runtime-only error path") : t("studio.authoringDesignPath", undefined, "authoring design path")) +
-      " · " + escapeText(selectedFlow.participatesInJoin ? t("studio.participatesInJoin", undefined, "participates in join.sources") : t("studio.notJoinSource", undefined, "not a join source")) + "</div></div>"
-    : '<div class="hint">' + escapeText(t("studio.selectFlow", undefined, "Select a flow to inspect event metadata.")) + '</div>';
   const diagnosticCards = diagnostics.length
     ? diagnostics.slice(0, 5).map((diagnostic) =>
         '<div class="event"><div class="event-top"><span>' + escapeText(String(diagnostic.code ?? "DIAGNOSTIC")) +
@@ -397,7 +431,7 @@ export function renderStudioBridgePanel(args: {
     : ['<div class="event"><div class="event-top"><span>' + escapeText(t("common.diagnostics", undefined, "diagnostics")) + '</span><span>' + escapeText(t("common.ok", undefined, "ok")) + '</span></div><strong>' + escapeText(t("studio.noParseCompileDiagnostics", undefined, "No parse or compile diagnostics.")) + '</strong></div>'];
   return [
     '<div class="structure-list studio-bridge">',
-    '<div class="toolbar-row">',
+    '<div class="toolbar-row" data-studio-bridge-region="toolbar">',
     '<div class="toolbar-group">',
     '<button class="button primary" id="studio-bridge-dry-run"' + busy + '>' + escapeText(t("studio.dryRun", undefined, "Dry run")) + '</button>',
     '<button class="button" id="studio-bridge-validate"' + busy + '>' + escapeText(t("action.validate", undefined, "Validate")) + '</button>',
@@ -410,16 +444,18 @@ export function renderStudioBridgePanel(args: {
       (blockers.length ? " warn" : "") + '">' + escapeText(blockers.length ? t("studio.readinessBlockers", { count: String(blockers.length) }, blockers.length + " readiness blockers") : t("studio.readinessReady", undefined, "readiness ready")) + "</span></div>",
     "</div>",
     '<div class="studio-bridge-layout">',
-    '<div class="studio-navigator structure-list"><div class="event"><div class="event-top"><span>' + escapeText(t("studio.roles", undefined, "roles")) + '</span><span>' + escapeText(String(roles.length)) +
+    '<div class="studio-navigator structure-list" data-studio-bridge-region="navigator"><div class="event"><div class="event-top"><span>' + escapeText(t("studio.roles", undefined, "roles")) + '</span><span>' + escapeText(String(roles.length)) +
       '</span></div><strong>' + escapeText(t("studio.structuredRoleDraft", undefined, "Structured role draft")) + '</strong><div class="hint">' + escapeText(t("studio.bridgeReadsWorkbench", undefined, "Bridge reads the current workbench source.")) + '</div></div>' + roleButtons.join("") + "</div>",
     '<div class="studio-graph-column">' + graphCanvas + "</div>",
-    '<div class="studio-inspector structure-list"><div class="event"><div class="event-top"><span>' + escapeText(t("common.system", undefined, "system")) + '</span><span>' + escapeText(String(extracted.systemVersion ?? "n/a")) +
-      '</span></div><strong>' + escapeText(String(extracted.systemId ?? "unknown")) + '</strong><div class="hint">' + escapeText(t("common.entry", undefined, "entry")) + " " +
-      escapeText(String(extracted.entryRoleId ?? "n/a")) + " · " + escapeText(t("common.law", undefined, "law")) + " " + escapeText(String(extracted.lawGlobal ?? "n/a")) + "</div></div>" +
-      roleInspector + flowInspector + "</div>",
-    '<div class="structure-list studio-flow-list"><div class="event"><div class="event-top"><span>' + escapeText(t("studio.flows", undefined, "flows")) + '</span><span>' + escapeText(String(flows.length)) +
+    '<div class="studio-inspector structure-list" data-studio-bridge-region="inspector">' + renderStudioBridgeInspector({
+      bridge,
+      selectedRoleId: args.selectedRoleId,
+      selectedFlowKey: args.selectedFlowKey,
+      t
+    }) + "</div>",
+    '<div class="structure-list studio-flow-list" data-studio-bridge-region="flow-list"><div class="event"><div class="event-top"><span>' + escapeText(t("studio.flows", undefined, "flows")) + '</span><span>' + escapeText(String(flows.length)) +
       '</span></div><strong>' + escapeText(t("studio.structuredFlowDraft", undefined, "Structured flow draft")) + '</strong><div class="hint">' + escapeText(t("studio.eventsVisible", undefined, "Event types and join participation stay visible.")) + '</div></div>' + flowButtons.join("") + "</div>",
-    '<div class="studio-diagnostics structure-list">' + diagnosticCards.join("") + "</div>",
+    '<div class="studio-diagnostics structure-list" data-studio-bridge-region="diagnostics">' + diagnosticCards.join("") + "</div>",
     "</div>",
     "</div>"
   ].join("");
@@ -715,9 +751,9 @@ export function renderContractPanel(args: {
       '</span></div><strong>' + escapeText(t("config.strictHandoffCoverage", undefined, "Strict handoff coverage across flows and role inputs")) + '</strong></div>',
     ...flows.map((flow) =>
       '<div class="event"><div class="event-top"><span>' +
-      escapeText(String(flow.flowKey ?? flow.edgeKey ?? "flow")) +
+      escapeText(String(flow.flowKey ?? flow.edgeKey ?? t("common.flow", undefined, "flow"))) +
       "</span><span>" +
-      escapeText(String(flow.kind ?? "flow")) +
+      escapeText(displayUiToken(flow.kind ?? "flow", t)) +
       "</span></div><strong>" +
       escapeText(String(flow.contractId ?? t("config.missingContract", undefined, "missing contract"))) +
       '</strong><div class="hint">' +
@@ -729,7 +765,7 @@ export function renderContractPanel(args: {
     ),
     ...uncoveredEdges.map((edge) =>
       '<div class="event"><div class="event-top"><span>' + escapeText(t("config.missingContract", undefined, "missing contract")) + '</span><span>' + escapeText(t("config.coverageGap", undefined, "coverage gap")) + '</span></div><strong>' +
-      escapeText(String(edge.flowKey ?? edge.edgeKey ?? "uncovered edge")) +
+      escapeText(String(edge.flowKey ?? edge.edgeKey ?? t("config.uncoveredEdge", undefined, "uncovered edge"))) +
       '</strong><div class="hint">' +
       escapeText(String(edge.fromRoleId ?? "n/a") + " -> " + String(edge.toRoleId ?? "n/a")) +
       "</div></div>"
@@ -738,8 +774,9 @@ export function renderContractPanel(args: {
   ].join("");
 }
 
-export function renderReviewDetailPanel(detail: Record<string, unknown> | null | undefined, t?: Translator): string {
+export function renderReviewDetailPanel(detail: Record<string, unknown> | null | undefined, t?: Translator, formatTime?: DateFormatter): string {
   const tr: Translator = typeof t === "function" ? t : (_key, _vars, fallback) => fallback ?? _key;
+  const fmt: DateFormatter = typeof formatTime === "function" ? formatTime : (value) => String(value ?? tr("common.notAvailable", undefined, "n/a"));
   if (!detail) {
     return '<div class="hint">' + escapeText(tr("state.noReviewSelected", undefined, "No review selected.")) + '</div>';
   }
@@ -751,7 +788,7 @@ export function renderReviewDetailPanel(detail: Record<string, unknown> | null |
           '<div class="event"><div class="event-top"><span>' +
           escapeText(record.decision ?? "history") +
           "</span><span>" +
-          escapeText(record.decidedAt ?? record.committedAt ?? "n/a") +
+          escapeText(fmt(record.decidedAt ?? record.committedAt)) +
           "</span></div><strong>" +
       escapeText(record.actor ?? tr("common.unknown", undefined, "unknown")) +
       '</strong><div class="hint">' +
@@ -781,9 +818,9 @@ export function renderReviewDetailPanel(detail: Record<string, unknown> | null |
       escapeText((detail.actor ?? "n/a") + " · " + (detail.comment ?? tr("review.noComment", undefined, "no comment"))) +
       "</div></div>",
     '<div class="event"><div class="event-top"><span>' + escapeText(tr("review.timing", undefined, "timing")) + '</span><span>' + escapeText(tr("review.round", { round: String(detail.round ?? "n/a") }, "round " + String(detail.round ?? "n/a"))) + '</span></div><strong>' +
-      escapeText(tr("review.requestedAt", { at: String(detail.requestedAt ?? "n/a") }, "requested " + String(detail.requestedAt ?? "n/a"))) +
+      escapeText(tr("review.requestedAt", { at: fmt(detail.requestedAt) }, "requested " + fmt(detail.requestedAt))) +
       '</strong><div class="hint">' +
-      escapeText(tr("review.decidedApplied", { decidedAt: String(detail.decidedAt ?? "n/a"), appliedAt: String(detail.appliedAt ?? "n/a") }, "decided " + String(detail.decidedAt ?? "n/a") + " · applied " + String(detail.appliedAt ?? "n/a"))) +
+      escapeText(tr("review.decidedApplied", { decidedAt: fmt(detail.decidedAt), appliedAt: fmt(detail.appliedAt) }, "decided " + fmt(detail.decidedAt) + " · applied " + fmt(detail.appliedAt))) +
       "</div></div>",
     '<div class="event"><div class="event-top"><span>' + escapeText(tr("review.selectedEvent", undefined, "selected event")) + '</span><span>' + escapeText(detail.scope ?? "n/a") + '</span></div><strong>' +
       escapeText(detail.selectedEvent ?? "n/a") +
@@ -970,8 +1007,10 @@ export function renderLogsPanel(args: {
   engine: unknown[];
   role: unknown[];
   t?: Translator;
+  formatTime?: DateFormatter;
 }): string {
   const t: Translator = typeof args.t === "function" ? args.t : (_key, _vars, fallback) => fallback ?? _key;
+  const formatTime: DateFormatter = typeof args.formatTime === "function" ? args.formatTime : (value) => String(value ?? t("common.notAvailable", undefined, "n/a"));
   if (!args.loaded) {
     return '<div class="hint">' + escapeText(t("logs.onDemandHint", undefined, "Logs load on demand. The default view combines engine and role traces without a role filter.")) + '</div>';
   }
@@ -992,7 +1031,7 @@ export function renderLogsPanel(args: {
     }
     return [
       '<div class="event"><div class="event-top"><span>' + escapeText(label) + '</span><span>' + escapeText(records.length) + '</span></div><strong>' +
-        escapeText(label === t("logs.roleLog", undefined, "role log") ? (args.selectedRoleId || "latest role") : t("logs.engineStream", undefined, "engine stream")) +
+        escapeText(label === t("logs.roleLog", undefined, "role log") ? (args.selectedRoleId || t("logs.latestRole", undefined, "latest role")) : t("logs.engineStream", undefined, "engine stream")) +
         '</strong><div class="hint">' + escapeText(args.stale ? t("logs.stale", undefined, "stale since last stream event") : t("logs.fresh", undefined, "fresh")) + "</div></div>",
       ...records.map((item) => {
         const record = (item ?? {}) as JsonRecord;
@@ -1005,7 +1044,7 @@ export function renderLogsPanel(args: {
           '<div class="event"><div class="event-top"><span>' +
           escapeText(record.level ?? label) +
           "</span><span>" +
-          escapeText(record.at ?? record.timestamp ?? "n/a") +
+          escapeText(formatTime(record.at ?? record.timestamp)) +
           "</span></div><strong>" +
           escapeText(summary) +
           "</strong></div>"
@@ -1020,7 +1059,7 @@ export function renderLogsPanel(args: {
     }
     return [
       '<div class="event"><div class="event-top"><span>' + escapeText(t("logs.combinedStream", undefined, "combined log stream")) + '</span><span>' + escapeText(String(combined.length)) +
-        '</span></div><strong>' + escapeText(args.selectedRoleId ? "engine + " + args.selectedRoleId : t("logs.engineAllRoles", undefined, "engine + all loaded roles")) +
+        '</span></div><strong>' + escapeText(args.selectedRoleId ? t("logs.enginePlusRole", { roleId: args.selectedRoleId }, "engine + " + args.selectedRoleId) : t("logs.engineAllRoles", undefined, "engine + all loaded roles")) +
         '</strong><div class="hint">' + escapeText(args.stale ? t("logs.stale", undefined, "stale since last stream event") : t("logs.fresh", undefined, "fresh")) + "</div></div>",
       ...combined.map((item) => {
         const record = item.record;
@@ -1033,7 +1072,7 @@ export function renderLogsPanel(args: {
           '<div class="event"><div class="event-top"><span>' +
           escapeText(item.source) +
           "</span><span>" +
-          escapeText(timestampOf(record) || "n/a") +
+          escapeText(formatTime(timestampOf(record))) +
           "</span></div><strong>" +
           escapeText(summary) +
           '</strong><div class="hint">' +
@@ -1181,8 +1220,10 @@ export function renderArtifactsPanel(args: {
   reviewDetail: Record<string, unknown> | null | undefined;
   resumeDiagnostics: Record<string, unknown> | null | undefined;
   t?: Translator;
+  formatTime?: DateFormatter;
 }): string {
   const t: Translator = typeof args.t === "function" ? args.t : (_key, _vars, fallback) => fallback ?? _key;
+  const formatTime: DateFormatter = typeof args.formatTime === "function" ? args.formatTime : (value) => String(value ?? t("common.notAvailable", undefined, "n/a"));
   const summarizeValue = (value: unknown): { label: string; detail?: string } => {
     if (Array.isArray(value)) {
       return {
@@ -1212,6 +1253,7 @@ export function renderArtifactsPanel(args: {
       if (name === "stopRequest") return t("state.field.stopRequest", undefined, "stop request");
       if (name === "stopOutcome") return t("state.field.stopOutcome", undefined, "stop outcome");
       if (name === "summary") return t("artifacts.summary", undefined, "Summary");
+      if (name === "resolvedConfig") return t("artifacts.resolvedConfig", undefined, "Resolved config");
       return name;
     };
     const fieldLabel = (key: string): string => t("state.field." + key, undefined, key);
@@ -1261,9 +1303,12 @@ export function renderArtifactsPanel(args: {
     '<div class="artifact-tabs"><span class="pill">' + escapeText(t("artifacts.summary", undefined, "Summary")) + '</span><span class="pill">' + escapeText(t("artifacts.metrics", undefined, "Metrics")) + '</span><span class="pill">' + escapeText(t("artifacts.state", undefined, "State")) + '</span><span class="pill">' + escapeText(t("artifacts.audit", undefined, "Audit")) + '</span><span class="pill">' + escapeText(t("artifacts.timeline", undefined, "Timeline")) + '</span><span class="pill">' + escapeText(t("artifacts.raw", undefined, "Raw")) + '</span></div>',
     '<div class="artifact-section"><div class="event"><div class="event-top"><span>' + escapeText(t("artifacts.summary", undefined, "Summary")) + '</span><span>' + escapeText(header.status ?? t("common.unknown", undefined, "unknown")) +
       "</span></div><strong>" + escapeText(args.detail.runId ?? "n/a") +
-      '</strong><div class="hint">' + escapeText((args.detail.runDir ?? "n/a") + " · " + t("run.updated", undefined, "updated") + " " + (header.updatedAt ?? "n/a")) + "</div></div>" +
+      '</strong><div class="hint">' + escapeText((args.detail.runDir ?? "n/a") + " · " + t("run.updatedAt", { at: formatTime(header.updatedAt) }, "updated " + formatTime(header.updatedAt))) + "</div></div>" +
       '<div class="event"><div class="event-top"><span>' + escapeText(t("artifacts.artifactMap", undefined, "artifact map")) + '</span><span>' + escapeText(reviewList.length) +
-      " " + escapeText(t("common.reviews", undefined, "reviews")) + '</span></div><strong>' + escapeText("graph " + graphNodes + " " + t("common.nodes", undefined, "nodes") + " / " + graphEdges + " " + t("common.edges", undefined, "edges")) +
+      " " + escapeText(t("common.reviews", undefined, "reviews")) + '</span></div><strong>' + escapeText(t("artifacts.graphCounts", {
+        nodes: String(graphNodes),
+        edges: String(graphEdges)
+      }, "graph " + graphNodes + " " + t("common.nodes", undefined, "nodes") + " / " + graphEdges + " " + t("common.edges", undefined, "edges"))) +
       '</strong><div class="hint">' + escapeText(t("artifacts.resumeDiagnostics", undefined, "resume diagnostics")) + " " + escapeText(args.resumeDiagnostics ? t("common.loaded", undefined, "loaded") : t("common.lazy", undefined, "lazy")) + " · " + escapeText(t("artifacts.selectedReview", undefined, "selected review")) + " " +
       escapeText(args.reviewDetail?.reviewId ?? t("common.none", undefined, "none")) + "</div></div></div>",
     '<div class="artifact-section"><div class="event"><div class="event-top"><span>' + escapeText(t("artifacts.metrics", undefined, "Metrics")) + '</span><span>' + escapeText(t("common.snapshot", undefined, "snapshot")) + '</span></div><strong>' + escapeText(t("artifacts.runMetrics", undefined, "Run metrics")) + '</strong></div>' +

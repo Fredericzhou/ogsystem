@@ -96,6 +96,14 @@ function parseAttributes(source) {
 }
 
 function matchesSelector(element, selector) {
+  const attributeSelector = selector.match(/^\[([a-zA-Z0-9:-]+)(?:="([^"]*)")?\]$/);
+  if (attributeSelector) {
+    const [, name, value] = attributeSelector;
+    if (!Object.hasOwn(element.attributes, name)) {
+      return false;
+    }
+    return value === undefined || element.attributes[name] === value;
+  }
   if (selector === "[data-run-id]") {
     return Object.hasOwn(element.attributes, "data-run-id");
   }
@@ -132,6 +140,18 @@ class FakeElement {
     this._innerHTML = "";
     this.textContent = "";
     this.className = "";
+    this.classList = {
+      toggle: (name, enabled) => {
+        const classes = new Set(String(this.attributes.class ?? "").split(/\s+/).filter(Boolean));
+        if (enabled) {
+          classes.add(name);
+        } else {
+          classes.delete(name);
+        }
+        this.attributes.class = Array.from(classes).join(" ");
+      }
+    };
+    this.dataset = {};
     this.disabled = false;
     this.value = attributes.value ?? "";
   }
@@ -1473,7 +1493,7 @@ test("visualizer client keeps diagnostics lazy and renders decision phase detail
     harness.backend.fetchCalls.some((call) => call.path.startsWith("/api/v1/runs/run-123/logs")),
     false
   );
-  assert.ok(harness.document.getElementById("graph-view").innerHTML.includes('aria-label="Run topology graph"'));
+  assert.ok(harness.document.getElementById("graph-view").innerHTML.includes('id="run-graph-root"'));
   assert.match(harness.document.getElementById("failure-summary").textContent, /TOOL_EXECUTION_TIMEOUT/);
   assert.match(harness.document.getElementById("resume-readiness").textContent, /resume blocked/);
   assert.match(harness.document.getElementById("review-detail").textContent, /Decision durability snapshot/);
@@ -1876,6 +1896,8 @@ test("visualizer client opens Studio Bridge, saves an authoring draft, and dry-r
   harness.window.OGSVisualizerClient.mountStudioX6Bridge = (root, options) => {
     mountCalls.push({ root, options });
   };
+  const latestEditableMount = () =>
+    mountCalls.findLast((call) => typeof call.options.onApplyCanvas === "function")?.options;
 
   const openBridgeButton = harness.document.getElementById("workbench-open-bridge");
   assert.ok(openBridgeButton);
@@ -1889,6 +1911,14 @@ test("visualizer client opens Studio Bridge, saves an authoring draft, and dry-r
   assert.match(harness.document.getElementById("workbench-body").textContent, /Studio Graph/);
   assert.ok(harness.document.getElementById("studio-graph-root"));
   assert.equal(mountCalls.length > 0, true);
+  await settle();
+  const fetchCallsAfterOpen = harness.backend.fetchCalls.length;
+  mountCalls.at(-1).options.onSelectFlow("demo-analyst:DONE:output");
+  await settle();
+  assert.equal(harness.backend.fetchCalls.length, fetchCallsAfterOpen);
+  mountCalls.at(-1).options.onClearSelection();
+  await settle();
+  assert.equal(harness.backend.fetchCalls.length, fetchCallsAfterOpen);
   for (const oldButtonId of [
     "studio-bridge-add-role",
     "studio-bridge-add-edge",
@@ -1900,7 +1930,8 @@ test("visualizer client opens Studio Bridge, saves an authoring draft, and dry-r
     assert.equal(harness.document.getElementById(oldButtonId), null);
   }
 
-  let latestMount = mountCalls.at(-1).options;
+  let latestMount = latestEditableMount();
+  assert.ok(latestMount);
   await latestMount.onApplyCanvas({
     ...latestMount.canvas,
     nodes: latestMount.canvas.nodes.map((node) =>
@@ -1912,7 +1943,8 @@ test("visualizer client opens Studio Bridge, saves an authoring draft, and dry-r
   assert.equal(harness.backend.lastAuthoringApplyCanvasBody.canvas.nodes[0].x, 160);
   assert.match(harness.document.getElementById("flash").textContent, /Studio canvas layout updated/);
 
-  latestMount = mountCalls.at(-1).options;
+  latestMount = latestEditableMount();
+  assert.ok(latestMount);
   const addRoleAuthoring = cloneJson(latestMount.authoring);
   const addRoleCanvas = cloneJson(latestMount.canvas);
   addRoleAuthoring.roles["new-role"] = { roleId: "new-role", title: "New role", bindingKind: "noop" };
@@ -1940,7 +1972,8 @@ test("visualizer client opens Studio Bridge, saves an authoring draft, and dry-r
     true
   );
 
-  latestMount = mountCalls.at(-1).options;
+  latestMount = latestEditableMount();
+  assert.ok(latestMount);
   const addEdgeAuthoring = cloneJson(latestMount.authoring);
   const addEdgeCanvas = cloneJson(latestMount.canvas);
   addEdgeAuthoring.flows["2:new-role:DONE:output"] = {
