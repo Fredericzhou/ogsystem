@@ -17,10 +17,31 @@ function formatJson(value: unknown): string {
 
 export function displayUiToken(value: unknown, t: Translator): string {
   const text = String(value ?? "");
-  if (!text || text === "n/a" || text === "undefined") {
+  if (!text || text === "n/a" || text === "undefined" || text === "null") {
     return t("common.notAvailable", undefined, "n/a");
   }
   const normalized = text.toLowerCase();
+  if (normalized === "unknown") return t("common.unknown", undefined, "unknown");
+  if (normalized === "none") return t("common.none", undefined, "none");
+  if (normalized === "ok") return t("common.ok", undefined, "ok");
+  if (normalized === "missing") return t("common.missing", undefined, "missing");
+  if (normalized === "complete" || normalized === "completed") return t("common.complete", undefined, "complete");
+  if (normalized === "fresh") return t("common.fresh", undefined, "fresh");
+  if (normalized === "stale") return t("common.stale", undefined, "stale");
+  if (normalized === "empty") return t("common.empty", undefined, "empty");
+  if (normalized === "covered") return t("config.covered", undefined, "covered");
+  if (normalized === "pending") return t("status.pending", undefined, "pending");
+  if (normalized === "paused") return t("status.paused", undefined, "paused");
+  if (normalized === "running") return t("status.running", undefined, "running");
+  if (normalized === "stopped") return t("status.stopped", undefined, "stopped");
+  if (normalized === "done") return t("status.done", undefined, "done");
+  if (normalized === "failed") return t("status.failed", undefined, "failed");
+  if (normalized === "waiting_review") return t("status.waitingReview", undefined, "waiting review");
+  if (normalized === "applied") return t("status.applied", undefined, "applied");
+  if (normalized === "warning" || normalized === "warn") return t("readiness.warning", undefined, "warning");
+  if (normalized === "error") return t("state.field.error", undefined, "error");
+  if (normalized === "runtime") return t("state.runtime", undefined, "runtime");
+  if (normalized === "idle") return t("state.idle", undefined, "idle");
   if (normalized === "model") return t("token.model", undefined, "model");
   if (normalized === "profile") return t("token.profile", undefined, "profile");
   if (normalized === "role") return t("token.role", undefined, "role");
@@ -269,7 +290,7 @@ export function renderProjectReadinessPanel(args: {
     '<div class="event"><div class="event-top"><span>' +
     escapeText(String(issue.code ?? "READINESS_ISSUE")) +
     '</span><span>' +
-    escapeText(String(issue.severity ?? "warning")) +
+    escapeText(displayUiToken(issue.severity ?? "warning", t)) +
     '</span></div><strong>' +
     escapeText(String(issue.message ?? "No readiness message.")) +
     '</strong><div class="hint">' +
@@ -547,7 +568,7 @@ export function renderFailureDetailPanel(args: {
       '</span></div><strong>' +
       escapeText(detail.correctionRequest ? t("failure.correctionRequestPresent", undefined, "correction request present") : t("failure.inputContextAvailable", undefined, "input context available")) +
       '</strong><div class="hint">' +
-      escapeText(t("failure.schema", { schemaPath: String(schemaPath) }, "schema " + schemaPath)) +
+      escapeText(t("failure.schema", { schemaPath: displayUiToken(schemaPath, t) }, "schema " + schemaPath)) +
       '</div>' +
       (detail.inputContext ? '<pre>' + escapeText(formatJson(detail.inputContext)) + "</pre>" : "") +
       "</div>",
@@ -568,8 +589,8 @@ export function renderFailureDetailPanel(args: {
       escapeText(String(contract.contractId ?? t("failure.contractUnavailable", undefined, "contract unavailable"))) +
       '</strong><div class="hint">' +
       escapeText(t("failure.flowSchema", {
-        flowKey: String(contract.flowKey ?? t("common.notAvailable", undefined, "n/a")),
-        schemaPath: String(contract.schemaPath ?? schemaPath)
+        flowKey: displayUiToken(contract.flowKey ?? t("common.notAvailable", undefined, "n/a"), t),
+        schemaPath: displayUiToken(contract.schemaPath ?? schemaPath, t)
       }, "flow " + String(contract.flowKey ?? "n/a") + " · schema " + String(contract.schemaPath ?? schemaPath))) +
       "</div></div>",
     '<div class="event"><div class="event-top"><span>' + escapeText(t("failure.roleSchema", undefined, "role schema")) + '</span><span>' +
@@ -729,13 +750,13 @@ export function renderContractPanel(args: {
   }
   const runtimeCard = runtimeStatus
     ? '<div class="event"><div class="event-top"><span>' + escapeText(t("config.runContractStatus", undefined, "run contract status")) + '</span><span>' +
-      escapeText(String(runtimeStatus.status ?? t("common.unknown", undefined, "unknown"))) +
+      escapeText(displayUiToken(runtimeStatus.status ?? t("common.unknown", undefined, "unknown"), t)) +
       '</span></div><strong>' +
       escapeText(String(runtimeStatus.reason ?? t("config.runtimeContractSignalUnavailable", undefined, "Runtime contract signal unavailable."))) +
       '</strong><div class="hint">' +
       escapeText(t("config.runRuntimeSignals", {
-        runId: String(runtimeStatus.runId ?? "n/a"),
-        runStatus: String(runtimeStatus.runStatus ?? t("common.unknown", undefined, "unknown")),
+        runId: displayUiToken(runtimeStatus.runId ?? "n/a", t),
+        runStatus: displayUiToken(runtimeStatus.runStatus ?? t("common.unknown", undefined, "unknown"), t),
         signalCount: String(runtimeStatus.signalCount ?? 0)
       }, "run " + String(runtimeStatus.runId ?? "n/a") + " · runtime " + String(runtimeStatus.runStatus ?? "unknown") + " · signals " + String(runtimeStatus.signalCount ?? 0))) +
       "</div>" +
@@ -758,8 +779,8 @@ export function renderContractPanel(args: {
       escapeText(String(flow.contractId ?? t("config.missingContract", undefined, "missing contract"))) +
       '</strong><div class="hint">' +
       escapeText(t("config.schemaStatus", {
-        schemaPath: String(flow.schemaPath ?? "n/a"),
-        status: String(flow.lastStatus ?? flow.coverage ?? t("common.unknown", undefined, "unknown"))
+        schemaPath: displayUiToken(flow.schemaPath ?? "n/a", t),
+        status: displayUiToken(flow.lastStatus ?? flow.coverage ?? t("common.unknown", undefined, "unknown"), t)
       }, "schema " + String(flow.schemaPath ?? "n/a") + " · status " + String(flow.lastStatus ?? flow.coverage ?? "unknown"))) +
       "</div></div>"
     ),
@@ -1127,15 +1148,24 @@ export function renderRunStatePanel(args: {
     const key = path.startsWith("state.") ? path.slice("state.".length) : path;
     return t("state.field." + key, undefined, key);
   };
+  const statePathLabel = (path: string): string => {
+    if (path === "state") {
+      return t("artifacts.state", undefined, "State");
+    }
+    return t("artifacts.state", undefined, "State") + " / " + stateFieldLabel(path);
+  };
   const renderValueCard = (path: string, value: unknown): string => {
     const summary = summarizeValue(value);
     const label = stateFieldLabel(path);
+    const pathLabel = statePathLabel(path);
     return (
       '<div class="event"><div class="event-top"><span>' +
       escapeText(label) +
-      '</span><span><code>' +
+      '</span><span data-field-path="' +
       escapeText(path) +
-      "</code></span></div><strong>" +
+      '">' +
+      escapeText(pathLabel) +
+      "</span></div><strong>" +
       escapeText(summary.label) +
       "</strong>" +
       (summary.detail ? '<pre>' + escapeText(summary.detail) + "</pre>" : "") +
@@ -1257,13 +1287,14 @@ export function renderArtifactsPanel(args: {
       return name;
     };
     const fieldLabel = (key: string): string => t("state.field." + key, undefined, key);
+    const fieldPathLabel = (titleName: string, key: string): string => titleLabel(titleName) + " / " + fieldLabel(key);
     const record = value && typeof value === "object" && !Array.isArray(value)
       ? value as JsonRecord
       : undefined;
     if (!record) {
       const summary = summarizeValue(value);
       return [
-        '<div class="event"><div class="event-top"><span>' + escapeText(titleLabel(title)) + '</span><span><code>' + escapeText(title) + '</code></span></div><strong>' +
+        '<div class="event"><div class="event-top"><span>' + escapeText(titleLabel(title)) + '</span><span data-field-path="' + escapeText(title) + '">' + escapeText(titleLabel(title)) + '</span></div><strong>' +
         escapeText(summary.label) +
         '</strong>' +
         (summary.detail ? '<pre>' + escapeText(summary.detail) + "</pre>" : "") +
@@ -1281,9 +1312,11 @@ export function renderArtifactsPanel(args: {
       return (
         '<div class="event"><div class="event-top"><span>' +
         escapeText(fieldLabel(key)) +
-        '</span><span><code>' +
+        '</span><span data-field-path="' +
         escapeText(`${title}.${key}`) +
-        "</code></span></div><strong>" +
+        '">' +
+        escapeText(fieldPathLabel(title, key)) +
+        "</span></div><strong>" +
         escapeText(summary.label) +
         "</strong>" +
         (summary.detail ? '<pre>' + escapeText(summary.detail) + "</pre>" : "") +

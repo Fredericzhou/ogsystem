@@ -582,7 +582,7 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
 
     function setLive(mode, label) {
       liveEl.className = "live" + (mode === "online" ? " online" : "");
-      liveEl.textContent = label;
+      liveEl.textContent = displayUiToken(label, t);
     }
 
     function writeRouteToLocation() {
@@ -1685,7 +1685,7 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
           <button class="run-card \${run.runId === state.selectedRunId ? "active" : ""}" data-run-id="\${escapeText(run.runId)}">
             <div class="run-title">
               <span class="truncate" title="\${escapeText(run.runId)}">\${escapeText(run.runId)}</span>
-              <span class="status \${statusClass(run.status)}" title="\${escapeText(run.status)}">\${escapeText(run.status)}</span>
+              <span class="status \${statusClass(run.status)}" data-status="\${escapeText(run.status)}">\${escapeText(displayUiToken(run.status, t))}</span>
             </div>
             <div class="meta">
               <span>\${escapeText(t("run.transitions"))} \${escapeText(run.transitionCount)}</span>
@@ -1706,8 +1706,8 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
         return;
       }
       const cards = [
-        [t("stats.status"), header.status],
-        [t("stats.mode"), graphPayload?.simulation?.mode || header.runMode || "runtime"],
+        [t("stats.status"), displayUiToken(header.status, t)],
+        [t("stats.mode"), displayUiToken(graphPayload?.simulation?.mode || header.runMode || "runtime", t)],
         [t("stats.transitions"), header.transitionCount],
         [t("stats.activeBranches"), header.activeBranches],
         [t("stats.pendingReviews"), header.pendingReviewCount],
@@ -1752,7 +1752,7 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
             const branch = record.branchId ? \`<code>\${escapeText(record.branchId)}</code>\` : "";
             const review = record.reviewId ? \`<code>\${escapeText(record.reviewId)}</code>\` : "";
             const event = record.event ? \`<code>\${escapeText(record.event)}</code>\` : "";
-            const status = record.status ? \`<span class="status \${statusClass(record.status)}">\${escapeText(record.status)}</span>\` : "";
+            const status = record.status ? \`<span class="status \${statusClass(record.status)}">\${escapeText(displayUiToken(record.status, t))}</span>\` : "";
             return \`
               <div class="event">
                 <div class="event-top">
@@ -1997,9 +1997,9 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
           '<div class="event">' +
             '<div class="event-top">' +
               "<span>" + escapeText(check.label) + "</span>" +
-              '<span class="status ' + statusClass(check.ok ? "done" : check.severity === "warning" ? "waiting_review" : "failed") + '">' + escapeText(check.severity) + "</span>" +
+              '<span class="status ' + statusClass(check.ok ? "done" : check.severity === "warning" ? "waiting_review" : "failed") + '">' + escapeText(displayUiToken(check.severity, t)) + "</span>" +
             "</div>" +
-            "<strong>" + escapeText(check.ok ? "ok" : "attention") + "</strong>" +
+            "<strong>" + escapeText(check.ok ? t("common.ok") : t("common.attention")) + "</strong>" +
             '<div class="hint">' + escapeText(check.message || "") + "</div>" +
           "</div>"
         ),
@@ -2447,7 +2447,9 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
       }
       const readinessBlockers = state.projectReadiness?.blockers || [];
       if (args.dryRun && state.projectReadiness && state.projectReadiness.canDryRun === false) {
-        setFlash("error", "Dry-run blocked by Project Readiness: " + (readinessBlockers[0]?.message || "resolve readiness blockers first."));
+        setFlash("error", t("flash.dryRunBlocked", {
+          message: readinessBlockers[0]?.message || t("flash.resolveReadinessBlockers")
+        }));
         state.consoleTab = "project";
         renderConsoleTabs();
         return;
@@ -2462,7 +2464,10 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
           lawsPath: args.lawsPath || undefined
         });
         closeActionForm();
-        setFlash("success", "Start completed for " + payload.runId + " (" + payload.status + ").");
+        setFlash("success", t("flash.startCompleted", {
+          runId: payload.runId,
+          status: displayUiToken(payload.status, t)
+        }));
         if (args.dryRun && payload.runId) {
           state.studioBridgeLastDryRunId = payload.runId;
         }
@@ -2491,7 +2496,10 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
           }
         );
         closeActionForm();
-        setFlash("success", "Resume finished for " + payload.runId + " (" + payload.status + ").");
+        setFlash("success", t("flash.resumeFinished", {
+          runId: payload.runId,
+          status: displayUiToken(payload.status, t)
+        }));
         await loadProject();
         await loadRuns();
         await loadSelectedRunBoot(payload.runId, { keepStream: false });
@@ -2640,7 +2648,7 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
         await selectRun(state.runs[0].runId);
       }
       if (!state.runs.length) {
-        setLive("idle", "no runs");
+        setLive("idle", t("live.noRuns"));
       }
     }
 
@@ -2926,7 +2934,7 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
       renderConsoleTabs();
       renderRuns();
       writeRouteToLocation();
-      setLive("idle", "project");
+      setLive("idle", t("live.project"));
     }
 
     async function selectReview(runId, reviewId) {
@@ -2976,8 +2984,11 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
         closeActionForm();
         setFlash(
           "success",
-          'Review action recorded for ' + state.selectedReviewId + ': ' + (payload.semanticStatus || args.decision) + '. '
-            + (payload.detail?.note || "")
+          t("flash.reviewActionRecorded", {
+            reviewId: state.selectedReviewId,
+            status: displayUiToken(payload.semanticStatus || args.decision, t),
+            note: payload.detail?.note || ""
+          })
         );
         await refreshRunDetailAndGraph(state.selectedRunId);
         await refreshReviews(state.selectedRunId);
@@ -3000,11 +3011,13 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
         const detail = payload.detail || {};
         setFlash(
           "success",
-          "Stop request recorded for " + state.selectedRunId
-            + ". request=" + (detail.requestRecorded ? "yes" : "no")
-            + " outcome=" + (detail.stopOutcomeApplied ? "applied" : "pending")
-            + " status=" + (detail.runStatus || "unknown")
-            + " converged=" + (detail.converged ? "yes" : "no")
+          t("flash.stopRequestRecorded", {
+            runId: state.selectedRunId,
+            request: detail.requestRecorded ? t("common.yes") : t("common.no"),
+            outcome: detail.stopOutcomeApplied ? t("status.applied") : t("status.pending"),
+            status: displayUiToken(detail.runStatus || "unknown", t),
+            converged: detail.converged ? t("common.yes") : t("common.no")
+          })
         );
         await refreshRunDetailAndGraph(state.selectedRunId);
         await loadFailure(state.selectedRunId, { force: true, internal: true });
@@ -3084,7 +3097,7 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
       stopStream();
       const stream = new EventSource(\`\${API_PREFIX}/runs/\${encodeURIComponent(runId)}/stream?cursor=\${cursor}\`);
       state.stream = stream;
-      stream.onopen = () => setLive("online", "live");
+      stream.onopen = () => setLive("online", t("live.live"));
       stream.onmessage = (message) => {
         try {
           const payload = JSON.parse(message.data);
@@ -3105,7 +3118,7 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
         }
       };
       stream.onerror = () => {
-        setLive("idle", "stream reconnecting");
+        setLive("idle", t("live.streamReconnecting"));
       };
     }
 
@@ -3300,7 +3313,7 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
         projectSummaryEl.textContent = t("state.projectLoadFailed", {
           message: String(error.message || error)
         }, "Failed to load project: " + String(error.message || error));
-        setLive("idle", "offline");
+        setLive("idle", t("live.offline"));
       });
 
     state.listTimer = setInterval(() => {

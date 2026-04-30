@@ -964,13 +964,13 @@ export function renderPageHtml(workdir: string, apiPrefix: string, i18n: PageI18
               <input id="timeline-type" class="select" placeholder="${escapeHtml(t("timeline.eventType"))}" />
               <select id="timeline-status" class="select">
                 <option value="">${escapeHtml(t("timeline.allStatuses"))}</option>
-                <option value="pending">pending</option>
-                <option value="paused">paused</option>
-                <option value="running">running</option>
-                <option value="stopped">stopped</option>
-                <option value="done">done</option>
-                <option value="failed">failed</option>
-                <option value="waiting_review">waiting_review</option>
+                <option value="pending">${escapeHtml(t("status.pending"))}</option>
+                <option value="paused">${escapeHtml(t("status.paused"))}</option>
+                <option value="running">${escapeHtml(t("status.running"))}</option>
+                <option value="stopped">${escapeHtml(t("status.stopped"))}</option>
+                <option value="done">${escapeHtml(t("status.done"))}</option>
+                <option value="failed">${escapeHtml(t("status.failed"))}</option>
+                <option value="waiting_review">${escapeHtml(t("status.waitingReview"))}</option>
               </select>
               <input id="timeline-branch" class="select" placeholder="${escapeHtml(t("timeline.branchId"))}" />
               <input id="timeline-review" class="select" placeholder="${escapeHtml(t("timeline.reviewId"))}" />

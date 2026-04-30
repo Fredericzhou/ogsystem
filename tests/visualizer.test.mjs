@@ -748,6 +748,8 @@ test("visualizer server serves run list, details, and live stream", async (t) =>
     assert.match(zhRootHtml, /<html lang="zh-CN">/);
     assert.match(zhRootHtml, /项目概览/);
     assert.match(zhRootHtml, /运行调试/);
+    assert.match(zhRootHtml, /<option value="pending">待处理<\/option>/);
+    assert.match(zhRootHtml, /<option value="waiting_review">等待评审<\/option>/);
 
     const acceptLanguageRoot = await fetch(url, {
       headers: { "accept-language": "fr-CA, zh;q=0.9, en;q=0.4" }

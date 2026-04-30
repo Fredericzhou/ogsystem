@@ -402,10 +402,13 @@ function buildRunFixture({
         transitionCount: 1,
         totalTransitions: 3,
         noopCount: 1,
+        loopIterations: { [roleId]: 2 },
         pendingReviewCount: 1,
         stopOutcome: null
       },
       metrics: {
+        runId,
+        systemId: "viz.review.demo",
         summary: {
           totalTransitions: 3,
           noopCount: 1
@@ -894,15 +897,25 @@ function createBackend(options = {}) {
       }
       if (pathname === "/api/v1/project/contracts") {
         return createResponse({
-          flows: [
-            {
-              flowKey: "demo-analyst->qa:DONE",
-              contractId: "flow.answer.done",
-              kind: "flow",
-              schemaPath: ".ogs/contracts/flow.answer.done.schema.json",
-              lastStatus: "covered"
-            }
-          ],
+          flows: options.includeMissingAuditContract
+            ? [
+                {
+                  flowKey: "audit model",
+                  contractId: null,
+                  kind: "audit",
+                  schemaPath: null,
+                  lastStatus: "missing"
+                }
+              ]
+            : [
+                {
+                  flowKey: "demo-analyst->qa:DONE",
+                  contractId: "flow.answer.done",
+                  kind: "flow",
+                  schemaPath: ".ogs/contracts/flow.answer.done.schema.json",
+                  lastStatus: "covered"
+                }
+              ],
           uncoveredEdges: [
             {
               flowKey: "qa->output:APPROVE",
@@ -1431,7 +1444,8 @@ test("visualizer client formats review decision phase labels", () => {
 
 test("visualizer client renders zh-CN chrome while preserving runtime identifiers", async () => {
   const harness = await createClientHarness({
-    i18n: { locale: "zh-CN" }
+    i18n: { locale: "zh-CN" },
+    includeMissingAuditContract: true
   });
 
   assert.match(harness.document.getElementById("console-tabs").textContent, /运行调试/);
@@ -1439,10 +1453,32 @@ test("visualizer client renders zh-CN chrome while preserving runtime identifier
   assert.match(harness.document.getElementById("failure-summary").textContent, /TOOL_EXECUTION_TIMEOUT/);
   assert.match(harness.document.getElementById("failure-summary").textContent, /超时预算耗尽/);
   assert.match(harness.document.getElementById("resume-controls").textContent, /加载诊断/);
+  assert.match(harness.document.getElementById("run-list").textContent, /已停止/);
+  assert.match(harness.document.getElementById("stats").textContent, /已停止/);
+  assert.match(harness.document.getElementById("timeline").textContent, /待处理/);
+  assert.match(harness.document.getElementById("project-readiness").textContent, /警告/);
   assert.match(harness.document.getElementById("state").textContent, /执行状态/);
   assert.match(harness.document.getElementById("state").textContent, /总转换次数/);
   assert.match(harness.document.getElementById("state").textContent, /空操作次数/);
   assert.match(harness.document.getElementById("detail").textContent, /指标/);
+  assert.match(harness.document.getElementById("detail").textContent, /运行 id/);
+  assert.match(harness.document.getElementById("detail").textContent, /系统 id/);
+  assert.match(harness.document.getElementById("detail").textContent, /循环迭代/);
+  assert.doesNotMatch(harness.document.getElementById("detail").textContent, /metrics\.runId|metrics\.systemId|state\.loopIterations/);
+
+  assert.match(harness.document.getElementById("contract-explain").textContent, /审计/);
+  assert.match(harness.document.getElementById("contract-explain").textContent, /schema 不适用 · 状态 缺失/);
+  assert.doesNotMatch(harness.document.getElementById("contract-explain").textContent, /schema n\/a|状态 missing/);
+
+  const loadDiagnosticsButton =
+    harness.document.getElementById("load-diagnostics") ??
+    harness.document.getElementById("resume-controls").children.find((child) => child.id === "load-diagnostics");
+  assert.ok(loadDiagnosticsButton);
+  await loadDiagnosticsButton.click();
+  await settle();
+  assert.match(harness.document.getElementById("resume-diagnostics").textContent, /警告/);
+  assert.match(harness.document.getElementById("resume-diagnostics").textContent, /需关注/);
+  assert.doesNotMatch(harness.document.getElementById("resume-diagnostics").textContent, /\bwarning\b|\battention\b/);
 });
 
 test("visualizer client language switch stores locale and refreshes with lang query", async () => {
