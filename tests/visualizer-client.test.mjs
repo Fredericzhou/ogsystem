@@ -5,6 +5,7 @@ import vm from "node:vm";
 import {
   appendStreamEntry,
   buildClientAppScript,
+  buildReleaseReadinessDecision,
   buildRouteSearch,
   formatReviewStatusLabel,
   getStreamRefreshPlan,
@@ -37,7 +38,10 @@ const PAGE_ELEMENT_IDS = [
   "workbench-actions",
   "workbench-tabs",
   "workbench-body",
+  "operate-tabs",
   "project-summary",
+  "project-wizard",
+  "project-wizard-load",
   "ops-summary",
   "project-readiness",
   "stats",
@@ -900,6 +904,14 @@ function createBackend(options = {}) {
           tools: [{ toolRef: "tool.review", runner: "local_shell" }]
         });
       }
+      if (pathname === "/api/v1/project/studio/templates") {
+        return createResponse({
+          templates: [
+            { id: "review", title: "Review", description: "Human review template" },
+            { id: "consultation", title: "Consultation", description: "Specialist consultation template" }
+          ]
+        });
+      }
       if (pathname === "/api/v1/project/profiles" && method === "POST") {
         this.lastProfilesUpsertBody = JSON.parse(request.body ?? "{}");
         return createResponse({
@@ -1445,6 +1457,43 @@ test("visualizer client route helpers round-trip query state", () => {
   assert.equal(normalizeLifecycleView("", ""), "operate");
 });
 
+test("visualizer client release readiness decision gates every visible blocker category", () => {
+  const ready = buildReleaseReadinessDecision({
+    validation: { ok: true },
+    readiness: { blockers: [], contractCoverage: { missingFlowCount: 0 } },
+    bindings: { roles: [{ roleId: "demo", effectiveBinding: "model:gpt" }] },
+    rolePackages: { rolePackages: [{ roleId: "demo", files: { roleJson: true, promptTemplate: true } }] },
+    contracts: { flows: [{ flowKey: "demo:DONE:output", contractId: "flow.done", schemaPath: "schema.json", lastStatus: "covered" }] },
+    workbenchDirty: false
+  });
+  assert.equal(ready.canExport, true);
+
+  const blocked = buildReleaseReadinessDecision({
+    validation: { ok: false },
+    readiness: {
+      blockers: [{ code: "READINESS_BLOCKER", message: "readiness blocked" }],
+      contractCoverage: { missingFlowCount: 1 }
+    },
+    bindings: { roles: [{ roleId: "demo", resolved: false }] },
+    rolePackages: { rolePackages: [{ roleId: "demo", files: { roleJson: true, source: false } }] },
+    contracts: { flows: [{ flowKey: "audit", contractId: null, schemaPath: null, lastStatus: "missing" }], uncoveredEdges: [{ flowKey: "demo:DONE:output" }] },
+    workbenchDirty: true
+  });
+  assert.equal(blocked.canExport, false);
+  assert.deepEqual(
+    blocked.blockers.map((blocker) => blocker.code),
+    [
+      "RELEASE_DIRTY_WORKBENCH",
+      "RELEASE_VALIDATION_FAILED",
+      "READINESS_BLOCKER",
+      "RELEASE_CONTRACT_COVERAGE_MISSING",
+      "RELEASE_ARTIFACT_CONTRACT_INCOMPLETE",
+      "RELEASE_BINDINGS_UNRESOLVED",
+      "RELEASE_ROLE_PACKAGES_UNHEALTHY"
+    ]
+  );
+});
+
 test("visualizer client stream helpers dedupe timeline entries and cap history", () => {
   const first = appendStreamEntry([{ cursor: 1 }, { cursor: 2 }], { cursor: 2 }, 2);
   assert.deepEqual(first, [{ cursor: 1 }, { cursor: 2 }]);
@@ -1494,6 +1543,12 @@ test("visualizer client renders zh-CN chrome while preserving runtime identifier
 
   assert.match(harness.document.getElementById("console-tabs").textContent, /校验与发布/);
   assert.equal(harness.document.getElementById("action-form-section").hidden, true);
+  const recoveryTab = harness.document.getElementById("operate-tabs")
+    .querySelectorAll("[data-operate-tab]")
+    .find((button) => button.getAttribute("data-operate-tab") === "recovery");
+  assert.ok(recoveryTab);
+  await recoveryTab.click();
+  await settle();
   assert.match(harness.document.getElementById("failure-summary").textContent, /TOOL_EXECUTION_TIMEOUT/);
   assert.match(harness.document.getElementById("failure-summary").textContent, /超时预算耗尽/);
   assert.match(harness.document.getElementById("resume-controls").textContent, /加载诊断/);
@@ -1573,7 +1628,19 @@ test("visualizer client keeps diagnostics lazy and renders decision phase detail
     harness.backend.fetchCalls.some((call) => call.path.startsWith("/api/v1/runs/run-123/logs")),
     false
   );
+  const graphTab = harness.document.getElementById("operate-tabs")
+    .querySelectorAll("[data-operate-tab]")
+    .find((button) => button.getAttribute("data-operate-tab") === "graph");
+  assert.ok(graphTab);
+  await graphTab.click();
+  await settle();
   assert.ok(harness.document.getElementById("graph-view").innerHTML.includes('id="run-graph-root"'));
+  const recoveryTab = harness.document.getElementById("operate-tabs")
+    .querySelectorAll("[data-operate-tab]")
+    .find((button) => button.getAttribute("data-operate-tab") === "recovery");
+  assert.ok(recoveryTab);
+  await recoveryTab.click();
+  await settle();
   assert.match(harness.document.getElementById("failure-summary").textContent, /TOOL_EXECUTION_TIMEOUT/);
   assert.match(harness.document.getElementById("resume-readiness").textContent, /resume blocked/);
   assert.match(harness.document.getElementById("review-detail").textContent, /Decision durability snapshot/);
@@ -1615,18 +1682,35 @@ test("visualizer client renders config explain panels and failure next checks", 
     harness.backend.fetchCalls.some((call) => call.path === "/api/v1/project/role-packages"),
     true
   );
-  assert.match(harness.document.getElementById("binding-explain").textContent, /opencode\/gpt-5-nano/);
+  const legacyTab = harness.document.getElementById("console-tabs")
+    .querySelectorAll("[data-console-tab]")
+    .find((button) => button.getAttribute("data-console-tab") === "legacy");
+  assert.equal(legacyTab, undefined);
+  const legacyHarness = await createClientHarness({ search: "?lifecycle=legacy" });
+  const configTab = legacyHarness.document.getElementById("console-tabs")
+    .querySelectorAll("[data-legacy-console-tab]")
+    .find((button) => button.getAttribute("data-legacy-console-tab") === "config");
+  assert.ok(configTab);
+  await configTab.click();
+  await settle();
+  assert.match(legacyHarness.document.getElementById("binding-explain").textContent, /opencode\/gpt-5-nano/);
   assert.match(harness.document.getElementById("ops-summary").textContent, /TOOL_EXECUTION_TIMEOUT/);
   assert.match(harness.document.getElementById("ops-summary").textContent, /active rework branches/);
   assert.match(harness.document.getElementById("project-readiness").textContent, /dry-run readiness/);
   assert.match(harness.document.getElementById("project-readiness").textContent, /READINESS_STRICT_HANDOFF_CONTRACT_MISSING/);
-  assert.match(harness.document.getElementById("role-packages").textContent, /output\.schema\.json/);
-  assert.match(harness.document.getElementById("contract-explain").textContent, /flow.answer.done/);
+  assert.match(legacyHarness.document.getElementById("role-packages").textContent, /output\.schema\.json/);
+  assert.match(legacyHarness.document.getElementById("contract-explain").textContent, /flow.answer.done/);
+  const recoveryTab = harness.document.getElementById("operate-tabs")
+    .querySelectorAll("[data-operate-tab]")
+    .find((button) => button.getAttribute("data-operate-tab") === "recovery");
+  assert.ok(recoveryTab);
+  await recoveryTab.click();
+  await settle();
   assert.ok(harness.document.getElementById("failure-check-binding"));
   assert.ok(harness.document.getElementById("failure-check-resume"));
 });
 
-test("visualizer client switches lifecycle shell without unloading data and keeps legacy fallback", async () => {
+test("visualizer client switches lifecycle shell without unloading data and hides legacy fallback by default", async () => {
   const harness = await createClientHarness();
   const tabs = harness.document.getElementById("console-tabs").querySelectorAll("[data-console-tab]");
   const operateTab = tabs.find((button) => button.getAttribute("data-console-tab") === "operate");
@@ -1635,21 +1719,27 @@ test("visualizer client switches lifecycle shell without unloading data and keep
   const projectTab = tabs.find((button) => button.getAttribute("data-console-tab") === "project");
   const legacyTab = tabs.find((button) => button.getAttribute("data-console-tab") === "legacy");
 
+  assert.equal(tabs.length, 4);
   assert.ok(operateTab);
   assert.ok(buildTab);
   assert.ok(validateTab);
   assert.ok(projectTab);
-  assert.ok(legacyTab);
+  assert.equal(legacyTab, undefined);
   assert.equal(harness.document.getElementById("console-panel-debug").hidden, false);
   assert.equal(harness.document.getElementById("console-panel-ops").hidden, false);
+  assert.equal(harness.document.body.classList.classes.has("show-operate-workspace"), true);
+  assert.equal(harness.document.body.classList.classes.has("operate-tab-overview"), true);
+  assert.match(harness.document.getElementById("operate-tabs").textContent, /Overview/);
   assert.equal(harness.document.body.classList.classes.has("show-run-sidebar"), true);
   assert.equal(harness.document.getElementById("sidebar-toggle").hidden, false);
 
   await operateTab.click();
   assert.equal(harness.document.getElementById("console-panel-debug").hidden, false);
   assert.equal(harness.document.getElementById("console-panel-ops").hidden, false);
-  assert.equal(harness.document.getElementById("console-panel-logs").hidden, true);
-  assert.equal(harness.document.getElementById("console-panel-artifacts").hidden, true);
+  assert.equal(harness.document.getElementById("console-panel-logs").hidden, false);
+  assert.equal(harness.document.getElementById("console-panel-artifacts").hidden, false);
+  assert.equal(harness.document.body.classList.classes.has("operate-tab-logs"), false);
+  assert.equal(harness.document.body.classList.classes.has("operate-tab-artifacts"), false);
   assert.equal(harness.document.body.classList.classes.has("show-run-sidebar"), true);
   assert.equal(harness.document.getElementById("sidebar-toggle").hidden, false);
   assert.match(harness.document.getElementById("ops-summary").textContent, /TOOL_EXECUTION_TIMEOUT/);
@@ -1657,15 +1747,16 @@ test("visualizer client switches lifecycle shell without unloading data and keep
   await buildTab.click();
   assert.equal(harness.document.getElementById("console-panel-build").hidden, false);
   assert.equal(harness.document.getElementById("console-panel-project").hidden, true);
-  assert.equal(harness.document.getElementById("console-panel-config").hidden, false);
+  assert.equal(harness.document.getElementById("console-panel-config").hidden, true);
   assert.equal(harness.document.body.classList.classes.has("show-run-sidebar"), false);
+  assert.equal(harness.document.body.classList.classes.has("show-operate-workspace"), false);
   assert.equal(harness.document.body.classList.classes.has("drawer-open"), false);
   assert.equal(harness.document.getElementById("sidebar-toggle").hidden, true);
-  assert.match(harness.document.getElementById("contract-explain").textContent, /flow.answer.done/);
+  assert.doesNotMatch(harness.document.getElementById("console-panel-build").textContent, /Config Explain/);
 
   await validateTab.click();
   assert.equal(harness.document.getElementById("console-panel-validate-release").hidden, false);
-  assert.equal(harness.document.getElementById("console-panel-config").hidden, false);
+  assert.equal(harness.document.getElementById("console-panel-config").hidden, true);
   assert.match(harness.document.getElementById("release-gate").textContent, /release candidate/);
   assert.match(harness.document.getElementById("release-gate").textContent, /Release gate/);
   assert.match(harness.document.getElementById("release-gate").textContent, /Quality signals/);
@@ -1678,8 +1769,20 @@ test("visualizer client switches lifecycle shell without unloading data and keep
   assert.equal(harness.document.body.classList.classes.has("show-run-sidebar"), false);
   assert.equal(harness.document.getElementById("sidebar-toggle").hidden, true);
   assert.match(harness.document.getElementById("project-readiness").textContent, /dry-run readiness/);
+  assert.match(harness.document.getElementById("project-wizard").textContent, /Review/);
+  assert.match(harness.document.getElementById("project-wizard").textContent, /role packages/);
+  assert.match(harness.document.getElementById("project-wizard").textContent, /model \/ profile/);
 
-  await legacyTab.click();
+});
+
+test("visualizer client keeps legacy fallback available through explicit deep links", async () => {
+  const harness = await createClientHarness({ search: "?lifecycle=legacy" });
+  const tabs = harness.document.getElementById("console-tabs").querySelectorAll("[data-console-tab]");
+  const legacyTab = tabs.find((button) => button.getAttribute("data-console-tab") === "legacy");
+  assert.ok(legacyTab);
+  assert.equal(legacyTab.getAttribute("data-console-tab"), "legacy");
+  assert.match(harness.window.location.search, /[?&]lifecycle=legacy/);
+
   const legacyButtons = harness.document.getElementById("console-tabs").querySelectorAll("[data-legacy-console-tab]");
   const legacyLogs = legacyButtons.find((button) => button.getAttribute("data-legacy-console-tab") === "logs");
   assert.ok(legacyLogs);
@@ -1695,7 +1798,7 @@ test("visualizer client keeps build deep links on the project graph workspace", 
 
   assert.equal(harness.document.getElementById("console-panel-build").hidden, false);
   assert.equal(harness.document.getElementById("console-panel-project").hidden, true);
-  assert.equal(harness.document.getElementById("console-panel-config").hidden, false);
+  assert.equal(harness.document.getElementById("console-panel-config").hidden, true);
   assert.equal(harness.document.getElementById("console-panel-debug").hidden, true);
   assert.match(harness.window.location.search, /[?&]lifecycle=build/);
   assert.doesNotMatch(harness.window.location.search, /[?&]runId=/);
@@ -2004,7 +2107,7 @@ test("visualizer client edits the Mermaid workbench, saves, and starts a run", a
     harness.backend.fetchCalls.some((call) => call.path === "/api/v1/project/system/validate")
   );
 
-  const saveButton = harness.document.getElementById("workbench-save");
+  const saveButton = harness.document.getElementById("build-save");
   assert.ok(saveButton);
   await saveButton.click();
   await settle();
@@ -2013,9 +2116,9 @@ test("visualizer client edits the Mermaid workbench, saves, and starts a run", a
     harness.backend.fetchCalls.some((call) => call.path === "/api/v1/project/system/save")
   );
 
-  const startRunButton = harness.document.getElementById("start-run");
-  assert.ok(startRunButton);
-  await startRunButton.click();
+  const dryRunButton = harness.document.getElementById("build-dry-run");
+  assert.ok(dryRunButton);
+  await dryRunButton.click();
   await settle();
   await harness.document.getElementById("action-start-input").input("ship a smoke test");
   await harness.document.getElementById("action-form-submit").click();
@@ -2054,9 +2157,13 @@ test("visualizer client opens Studio Bridge, saves an authoring draft, and dry-r
   assert.ok(harness.document.getElementById("workbench-body").querySelectorAll("[data-studio-bridge-filter]").length);
   assert.ok(harness.document.getElementById("workbench-body").querySelectorAll("[data-studio-bridge-list-mode]").length);
   assert.equal(harness.document.getElementById("workbench-body").querySelectorAll("[data-studio-bridge-fullscreen]").length, 0);
-  assert.ok(harness.document.getElementById("studio-bridge-validate"));
-  assert.ok(harness.document.getElementById("workbench-save"));
-  assert.ok(harness.document.getElementById("studio-bridge-dry-run"));
+  assert.ok(harness.document.getElementById("build-validate"));
+  assert.ok(harness.document.getElementById("build-generate-mermaid"));
+  assert.ok(harness.document.getElementById("build-save"));
+  assert.ok(harness.document.getElementById("build-dry-run"));
+  assert.match(harness.document.getElementById("workbench-tabs").textContent, /Edit/);
+  assert.match(harness.document.getElementById("workbench-tabs").textContent, /Dry Run/);
+  assert.match(harness.document.getElementById("workbench-tabs").textContent, /Debug/);
   assert.ok(harness.document.getElementById("studio-graph-root"));
   assert.equal(mountCalls.length > 0, true);
   assert.ok(latestEditableMount().rolePackages);
@@ -2091,7 +2198,10 @@ test("visualizer client opens Studio Bridge, saves an authoring draft, and dry-r
     "studio-bridge-save-draft",
     "studio-bridge-generate",
     "studio-bridge-save",
-    "workbench-save-as"
+    "workbench-save-as",
+    "studio-bridge-validate",
+    "studio-bridge-dry-run",
+    "workbench-save"
   ]) {
     assert.equal(harness.document.getElementById(oldButtonId), null);
   }
@@ -2125,6 +2235,12 @@ test("visualizer client opens Studio Bridge, saves an authoring draft, and dry-r
     await resetFilterInput.input("");
     await settle();
   }
+  const buildTabAfterRunGraph = harness.document.getElementById("console-tabs")
+    .querySelectorAll("[data-console-tab]")
+    .find((button) => button.getAttribute("data-console-tab") === "build");
+  assert.ok(buildTabAfterRunGraph);
+  await buildTabAfterRunGraph.click();
+  await settle();
   await bridgeTab.click();
   await settle();
 
@@ -2202,7 +2318,7 @@ test("visualizer client opens Studio Bridge, saves an authoring draft, and dry-r
     true
   );
 
-  const dryRunButton = harness.document.getElementById("studio-bridge-dry-run");
+  const dryRunButton = harness.document.getElementById("build-dry-run");
   assert.ok(dryRunButton);
   await dryRunButton.click();
   await settle();
@@ -2214,6 +2330,9 @@ test("visualizer client opens Studio Bridge, saves an authoring draft, and dry-r
   assert.equal(harness.backend.lastStartBody.dryRun, true);
   assert.equal(harness.backend.lastStartBody.systemPath, "system.mmd");
   assert.match(harness.document.getElementById("selected-title").textContent, /run-123/);
+  assert.equal(harness.document.getElementById("console-panel-build").hidden, false);
+  assert.match(harness.document.getElementById("workbench-body").textContent, /run-123/);
+  assert.match(harness.document.getElementById("workbench-body").textContent, /Open in Operate/);
 });
 
 test("visualizer client loads projects and reindexes through inline forms", async () => {

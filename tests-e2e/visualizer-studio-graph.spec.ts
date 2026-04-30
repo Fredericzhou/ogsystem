@@ -121,9 +121,10 @@ test("Studio Bridge renders and edits through the real graph workspace", async (
     await expect(page.locator("#studio-bridge-generate")).toHaveCount(0);
     await expect(page.locator("[data-studio-bridge-fullscreen]")).toHaveCount(0);
     await expect(page.locator("#studio-bridge-save")).toHaveCount(0);
-    await expect(page.locator("#studio-bridge-validate")).toBeVisible();
-    await expect(page.locator("#workbench-save")).toBeVisible();
-    await expect(page.locator("#studio-bridge-dry-run")).toBeVisible();
+    await expect(page.locator("#build-validate")).toBeVisible();
+    await expect(page.locator("#build-generate-mermaid")).toBeVisible();
+    await expect(page.locator("#build-save")).toBeVisible();
+    await expect(page.locator("#build-dry-run")).toBeVisible();
     await page.locator('#studio-graph-root [data-studio-graph-action="fullscreen"]').click();
     await expect(page.locator("[data-studio-canvas-shell]")).toHaveClass(/is-fullscreen/);
     await expect(page.locator('#studio-graph-root [data-cell-id="demo-analyst"]').first()).toBeVisible();
@@ -161,7 +162,7 @@ test("Studio Bridge renders and edits through the real graph workspace", async (
     await editRoleForm.locator('button[type="submit"]').click();
     await expect(page.locator("#flash")).toContainText("Studio graph draft updated");
 
-    await expect(page.locator("#studio-bridge-validate")).toBeVisible();
+    await expect(page.locator("#build-validate")).toBeVisible();
     await expect(page.locator(".toolbar-group").filter({ hasText: "validation ok" }).first()).toBeVisible();
 
     const addRoleButton = page.locator('#studio-graph-root [data-studio-graph-action="add-role"]');
@@ -230,25 +231,33 @@ test("Studio Bridge renders and edits through the real graph workspace", async (
     await expect(page.locator('#studio-graph-root [data-cell-id="demo-analyst"]').first()).toBeVisible();
 
     await page.locator('[data-workbench-view="bridge"]').click();
-    await page.locator("#workbench-save").click();
+    await page.locator("#build-save").click();
     await expect(page.locator("#flash")).toContainText("Mermaid source saved");
 
     await page.locator('[data-workbench-view="bridge"]').click();
-    await page.locator("#studio-bridge-dry-run").click();
+    await page.locator("#build-dry-run").click();
     await expect(page.locator("#action-form-section")).toBeVisible();
     await page.locator("#action-start-input").fill("browser smoke");
     await page.locator("#action-form-submit").click();
     await expect(page.locator("#selected-title")).toContainText(/\d{8}-/);
+    await expect(page.locator("#console-panel-build")).toBeVisible();
+    await expect(page.locator("#workbench-body")).toContainText("Open in Operate");
+    await page.getByRole("button", { name: "Open in Operate" }).click();
     await expect(page.locator("body")).toHaveClass(/show-run-sidebar/);
     await expect(page.locator("#sidebar")).toBeVisible();
     await expect(page.locator("#sidebar-toggle")).toBeHidden();
+    await expect(page.locator("#operate-tabs")).toContainText("Overview");
     await expect(page.locator("#console-panel-ops")).toBeVisible();
     await expect(page.locator("#console-panel-debug")).toBeVisible();
     await expect(page.locator("#console-panel-logs")).toBeHidden();
     await expect(page.locator("#console-panel-artifacts")).toBeHidden();
+    await page.getByRole("button", { name: "Graph" }).click();
     await expect(page.locator("#run-graph-root")).toBeVisible();
     await expect(page.locator('#run-graph-root [data-studio-graph-action="add-role"]')).toBeHidden();
     await expect(page.locator('#run-graph-root [data-studio-graph-action="undo"]')).toBeHidden();
+    await page.getByRole("button", { name: "Logs" }).click();
+    await expect(page.locator("#console-panel-logs")).toBeVisible();
+    await expect(page.locator("#load-logs")).toBeVisible();
   } finally {
     await page.close();
     await new Promise<void>((resolve) => started.server.close(() => resolve()));

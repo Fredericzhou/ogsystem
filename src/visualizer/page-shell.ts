@@ -423,6 +423,49 @@ export function renderPageHtml(workdir: string, apiPrefix: string, i18n: PageI18
     .span-6 { grid-column: span 6; }
     .span-8 { grid-column: span 8; }
     .span-12 { grid-column: span 12; }
+    .operate-workspace {
+      display: grid;
+      gap: 12px;
+      min-width: 0;
+    }
+    .operate-tabs {
+      justify-content: flex-start;
+      width: fit-content;
+      max-width: 100%;
+    }
+    .operate-main {
+      display: grid;
+      grid-template-columns: minmax(0, 1.35fr) minmax(320px, 0.65fr);
+      gap: 12px;
+      align-items: start;
+      min-width: 0;
+    }
+    .operate-primary,
+    .operate-detail-stack,
+    .operate-tab-panel {
+      display: grid;
+      gap: 12px;
+      min-width: 0;
+    }
+    .operate-tab-panel[hidden] {
+      display: none !important;
+    }
+    body.show-operate-workspace:not(.operate-tab-overview) .operate-overview,
+    body.show-operate-workspace:not(.operate-tab-graph) .operate-graph,
+    body.show-operate-workspace:not(.operate-tab-recovery) .operate-recovery,
+    body.show-operate-workspace:not(.operate-tab-logs) .operate-logs,
+    body.show-operate-workspace:not(.operate-tab-reviews) .operate-reviews,
+    body.show-operate-workspace:not(.operate-tab-artifacts) .operate-artifacts {
+      display: none !important;
+    }
+    body.show-operate-workspace:not(.operate-tab-logs) #console-panel-logs,
+    body.show-operate-workspace:not(.operate-tab-artifacts) #console-panel-artifacts {
+      display: none !important;
+    }
+    body.show-operate-workspace.operate-tab-logs #console-panel-logs,
+    body.show-operate-workspace.operate-tab-artifacts #console-panel-artifacts {
+      display: grid !important;
+    }
     .card-header {
       display: flex;
       justify-content: space-between;
@@ -852,6 +895,12 @@ export function renderPageHtml(workdir: string, apiPrefix: string, i18n: PageI18
       }
       .run-list { max-height: 280px; }
       .span-4, .span-6, .span-8, .span-12 { grid-column: span 12; }
+      .operate-main {
+        grid-template-columns: 1fr;
+      }
+      .operate-tabs {
+        width: 100%;
+      }
       .studio-bridge-layout { grid-template-columns: 1fr; }
       .studio-graph-column { order: 1; }
       .studio-inspector { order: 2; }
@@ -1034,6 +1083,22 @@ export function renderPageHtml(workdir: string, apiPrefix: string, i18n: PageI18
       </section>
       <section id="console-panel-project" class="console-panel grid" data-console-panel="project" hidden>
         <article class="card span-12">
+          <header>
+            <div class="card-header">
+              <div class="header-copy">
+                <h3>${escapeHtml(t("section.projectWizard"))}</h3>
+                <div class="hint">${escapeHtml(t("projectWizard.subtitle"))}</div>
+              </div>
+              <div class="actions">
+                <button id="project-wizard-load" class="button primary">${escapeHtml(t("action.loadProject"))}</button>
+              </div>
+            </div>
+          </header>
+          <div class="body">
+            <div id="project-wizard" class="project-overview-grid grid">${escapeHtml(t("state.loadingProject"))}</div>
+          </div>
+        </article>
+        <article class="card span-12">
           <header><h3>${escapeHtml(t("section.projectOverview"))}</h3></header>
           <div class="body">
             <div id="project-summary" class="structure-list">${escapeHtml(t("state.loadingProject"))}</div>
@@ -1068,14 +1133,15 @@ export function renderPageHtml(workdir: string, apiPrefix: string, i18n: PageI18
           </div>
         </article>
       </section>
-      <section id="console-panel-debug" class="console-panel grid" data-console-panel="debug">
-        <article class="card span-12">
+      <section id="console-panel-debug" class="console-panel grid operate-workspace" data-console-panel="debug">
+        <div id="operate-tabs" class="segmented operate-tabs span-12"></div>
+        <article class="card span-12 operate-panel operate-overview">
           <header><h3>${escapeHtml(t("section.runSnapshot"))}</h3></header>
           <div class="body">
             <div class="stat-grid" id="stats"></div>
           </div>
         </article>
-        <article class="card span-12">
+        <article class="card span-12 operate-panel operate-overview">
           <header><h3>${escapeHtml(t("section.timeline"))}</h3></header>
           <div class="body">
             <div class="row timeline-controls">
@@ -1102,14 +1168,14 @@ export function renderPageHtml(workdir: string, apiPrefix: string, i18n: PageI18
             <div id="timeline" class="timeline"></div>
           </div>
         </article>
-        <article class="card span-12">
+        <article class="card span-12 operate-panel operate-graph">
           <header><h3>${escapeHtml(t("section.graphView"))}</h3></header>
           <div class="body debug-graph-body">
             <div id="graph-view" class="structure-list"><div class="hint">${escapeHtml(t("state.noRunSelected"))}</div></div>
             <div id="state" class="structure-list"><div class="hint">${escapeHtml(t("state.noRunSelected"))}</div></div>
           </div>
         </article>
-        <article class="card span-12">
+        <article class="card span-12 operate-panel operate-recovery">
           <header>
             <div class="row">
               <h3>${escapeHtml(t("section.failureTriage"))}</h3>
@@ -1122,7 +1188,7 @@ export function renderPageHtml(workdir: string, apiPrefix: string, i18n: PageI18
             <div id="failure-next-checks" class="structure-list"><div class="hint">${escapeHtml(t("state.noRunSelected"))}</div></div>
           </div>
         </article>
-        <article class="card span-6">
+        <article class="card span-6 operate-panel operate-reviews">
           <header><h3>${escapeHtml(t("section.reviewQueue"))}</h3></header>
           <div class="body">
             <div id="reviews" class="timeline"><div class="hint">${escapeHtml(t("state.noRunSelected"))}</div></div>
@@ -1130,7 +1196,7 @@ export function renderPageHtml(workdir: string, apiPrefix: string, i18n: PageI18
             <div id="review-detail" class="structure-list">${escapeHtml(t("state.noReviewSelected"))}</div>
           </div>
         </article>
-        <article class="card span-6">
+        <article class="card span-6 operate-panel operate-recovery">
           <header>
             <div class="row">
               <h3>${escapeHtml(t("section.resumeReadiness"))}</h3>
@@ -1144,7 +1210,7 @@ export function renderPageHtml(workdir: string, apiPrefix: string, i18n: PageI18
         </article>
       </section>
       <section id="console-panel-ops" class="console-panel grid" data-console-panel="ops" hidden>
-        <article class="card span-12">
+        <article class="card span-12 operate-panel operate-overview">
           <header><h3>${escapeHtml(t("section.opsSummary"))}</h3></header>
           <div class="body">
             <div id="ops-summary" class="structure-list">${escapeHtml(t("state.loadingOpsSummary"))}</div>
@@ -1180,7 +1246,7 @@ export function renderPageHtml(workdir: string, apiPrefix: string, i18n: PageI18
         </article>
       </section>
       <section id="console-panel-logs" class="console-panel grid" data-console-panel="logs" hidden>
-        <article class="card span-12">
+        <article class="card span-12 operate-panel operate-logs">
           <header>
             <div class="toolbar-row">
               <div class="toolbar-group">
@@ -1209,7 +1275,7 @@ export function renderPageHtml(workdir: string, apiPrefix: string, i18n: PageI18
         </article>
       </section>
       <section id="console-panel-artifacts" class="console-panel grid" data-console-panel="artifacts" hidden>
-        <article class="card span-12">
+        <article class="card span-12 operate-panel operate-artifacts">
           <header><h3>${escapeHtml(t("section.artifacts"))}</h3></header>
           <div class="body">
             <div id="detail" class="structure-list"><div class="hint">${escapeHtml(t("state.noRunSelected"))}</div></div>

@@ -741,8 +741,9 @@ test("visualizer server serves run list, details, and live stream", async (t) =>
     assert.match(rootHtml, /Config Explain/);
     assert.match(rootHtml, /Logs/);
     assert.match(rootHtml, /debug-graph-body/);
+    assert.match(rootHtml, /operate-tabs/);
     assert.match(rootHtml, /<script src="\/assets\/studio-graph\.js"><\/script>/);
-    assert.match(rootHtml, /<article class="card span-12">\s*<header><h3>Timeline<\/h3><\/header>/);
+    assert.match(rootHtml, /<article class="card span-12 operate-panel operate-overview">\s*<header><h3>Timeline<\/h3><\/header>/);
 
     const studioGraphAsset = await fetch(`${url}/assets/studio-graph.js`);
     assert.equal(studioGraphAsset.status, 200);

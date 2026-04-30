@@ -43,6 +43,11 @@ type RouteState = {
   since: string;
 };
 
+type ReleaseReadinessDecision = {
+  canExport: boolean;
+  blockers: Array<{ code: string; message: string }>;
+};
+
 type StreamRefreshPlan = {
   detailGraph: boolean;
   reviews: boolean;
@@ -95,7 +100,7 @@ export function buildRouteSearch(args: {
 }): string {
   const params = new URLSearchParams();
   const lifecycle = args.lifecycle || "";
-  if (lifecycle && lifecycle !== "legacy") {
+  if (lifecycle) {
     params.set("lifecycle", lifecycle);
   }
   if (args.projectHome && !args.selectedRunId) {
@@ -117,6 +122,90 @@ export function buildRouteSearch(args: {
     params.set("since", args.logSince);
   }
   return params.toString();
+}
+
+function listFromRecord(value: unknown, keys: string[]): Record<string, unknown>[] {
+  if (!value || typeof value !== "object") {
+    return [];
+  }
+  for (const key of keys) {
+    const candidate = (value as Record<string, unknown>)[key];
+    if (Array.isArray(candidate)) {
+      return candidate.filter((item): item is Record<string, unknown> => Boolean(item && typeof item === "object"));
+    }
+  }
+  return [];
+}
+
+export function buildReleaseReadinessDecision(args: {
+  validation: Record<string, unknown> | null | undefined;
+  readiness: Record<string, unknown> | null | undefined;
+  bindings: Record<string, unknown> | null | undefined;
+  rolePackages: Record<string, unknown> | null | undefined;
+  contracts: Record<string, unknown> | null | undefined;
+  workbenchDirty: boolean;
+}): ReleaseReadinessDecision {
+  const blockers: ReleaseReadinessDecision["blockers"] = [];
+  if (args.workbenchDirty) {
+    blockers.push({ code: "RELEASE_DIRTY_WORKBENCH", message: "Unsaved Build changes must be saved before export." });
+  }
+  if (args.validation?.ok !== true) {
+    blockers.push({ code: "RELEASE_VALIDATION_FAILED", message: "Mermaid validation must pass before export." });
+  }
+  const readinessBlockers = listFromRecord(args.readiness, ["blockers"]);
+  for (const blocker of readinessBlockers) {
+    blockers.push({
+      code: String(blocker.code ?? "RELEASE_READINESS_BLOCKER"),
+      message: String(blocker.message ?? "Release readiness blocker remains.")
+    });
+  }
+  const coverage = (args.readiness?.contractCoverage ?? {}) as Record<string, unknown>;
+  const missingContracts = Number(coverage.missingCount ?? coverage.missingFlowCount ?? 0);
+  if (Number.isFinite(missingContracts) && missingContracts > 0) {
+    blockers.push({
+      code: "RELEASE_CONTRACT_COVERAGE_MISSING",
+      message: String(missingContracts) + " required contract(s) are missing."
+    });
+  }
+  const contractFlows = listFromRecord(args.contracts, ["flows", "contracts", "entries"]);
+  const uncoveredEdges = listFromRecord(args.contracts, ["uncoveredEdges"]);
+  const missingContractFlows = contractFlows.filter((contract) =>
+    contract.lastStatus === "missing" || contract.contractId === null || contract.schemaPath === null
+  );
+  if (uncoveredEdges.length || missingContractFlows.length) {
+    blockers.push({
+      code: "RELEASE_ARTIFACT_CONTRACT_INCOMPLETE",
+      message: "Artifact contract coverage is incomplete."
+    });
+  }
+  const bindings = listFromRecord(args.bindings, ["roles", "bindings", "entries"]);
+  const unresolvedBindings = bindings.filter((binding) =>
+    binding.resolved === false || (!binding.resolvedBinding && !binding.effectiveBinding)
+  );
+  if (unresolvedBindings.length) {
+    blockers.push({
+      code: "RELEASE_BINDINGS_UNRESOLVED",
+      message: String(unresolvedBindings.length) + " role binding(s) are unresolved."
+    });
+  }
+  const rolePackages = listFromRecord(args.rolePackages, ["roles", "rolePackages", "entries"]);
+  const unhealthyRolePackages = rolePackages.filter((role) => {
+    if (role.status && role.status !== "ok") {
+      return true;
+    }
+    const files = (role.files ?? role.health ?? {}) as Record<string, unknown>;
+    return Object.values(files).some((present) => present === false);
+  });
+  if (unhealthyRolePackages.length) {
+    blockers.push({
+      code: "RELEASE_ROLE_PACKAGES_UNHEALTHY",
+      message: String(unhealthyRolePackages.length) + " role package(s) are unhealthy."
+    });
+  }
+  return {
+    canExport: blockers.length === 0,
+    blockers
+  };
 }
 
 export function appendStreamEntry<T extends { cursor: number }>(
@@ -197,6 +286,8 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
     window.OGSVisualizerClient = window.OGSVisualizerClient || {};
     const readRouteStateFromSearch = ${readRouteStateFromSearch.toString()};
     const buildRouteSearch = ${buildRouteSearch.toString()};
+    const listFromRecord = ${listFromRecord.toString()};
+    const buildReleaseReadinessDecision = ${buildReleaseReadinessDecision.toString()};
     const appendStreamEntry = ${appendStreamEntry.toString()};
     const getStreamRefreshPlan = ${getStreamRefreshPlan.toString()};
     const normalizeLifecycleView = ${normalizeLifecycleView.toString()};
@@ -309,6 +400,7 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
       consoleTab: "operate",
       legacyConsoleTab: "debug",
       workbench: null,
+      buildMode: "edit",
       workbenchView: "bridge",
       workbenchSource: "",
       workbenchDiskSource: "",
@@ -328,8 +420,10 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
       studioBridgeFullscreen: false,
       studioBridgeEditSelectionRequest: 0,
       studioBridgeLastDryRunId: "",
+      studioTemplates: [],
       runGraphSelectedRoleId: "",
       runGraphSelectedFlowKey: "",
+      operateTab: "overview",
       sidebarOpen: false,
       runs: [],
       filter: "",
@@ -396,6 +490,7 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
     const consoleTabsEl = document.getElementById("console-tabs");
     const workdirEl = document.getElementById("workdir");
     const projectSummaryEl = document.getElementById("project-summary");
+    const projectWizardEl = document.getElementById("project-wizard");
     const opsSummaryEl = document.getElementById("ops-summary");
     const projectReadinessEl = document.getElementById("project-readiness");
     const releaseGateEl = document.getElementById("release-gate");
@@ -404,6 +499,7 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
     const workbenchActionsEl = document.getElementById("workbench-actions");
     const workbenchTabsEl = document.getElementById("workbench-tabs");
     const workbenchBodyEl = document.getElementById("workbench-body");
+    const operateTabsEl = document.getElementById("operate-tabs");
     const statsEl = document.getElementById("stats");
     const failureControlsEl = document.getElementById("failure-controls");
     const failureSummaryEl = document.getElementById("failure-summary");
@@ -442,6 +538,7 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
     const sidebarOverlayEl = document.getElementById("sidebar-overlay");
     const sidebarToggleButton = document.getElementById("sidebar-toggle");
     const projectHomeButton = document.getElementById("project-home");
+    const projectWizardLoadButton = document.getElementById("project-wizard-load");
     const projectLoadButton = document.getElementById("project-load");
     const projectExportButton = document.getElementById("project-export");
     const releaseExportButton = document.getElementById("release-export");
@@ -489,7 +586,8 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
         [stopRunButton, "action.requestStop"],
         [refreshButton, "action.refresh"],
         [timelineApplyButton, "action.applyFilters"],
-        [timelineClearButton, "action.clearFilters"]
+        [timelineClearButton, "action.clearFilters"],
+        [projectWizardLoadButton, "action.loadProject"]
       ];
       for (const [element, key] of textTargets) {
         if (element) {
@@ -1037,6 +1135,11 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
       for (const button of workbenchTabsEl.querySelectorAll("button")) {
         button.disabled = disabled;
       }
+      if (operateTabsEl) {
+        for (const button of operateTabsEl.querySelectorAll("button")) {
+          button.disabled = disabled;
+        }
+      }
       if (consoleTabsEl) {
         for (const button of consoleTabsEl.querySelectorAll("[data-console-tab]")) {
           button.disabled = disabled;
@@ -1048,12 +1151,77 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
       for (const button of reviewActionsEl.querySelectorAll("[data-review-action]")) {
         button.disabled = disabled;
       }
+      renderHeroActions();
     }
 
     function setSidebarOpen(nextValue) {
       const canOpen = state.consoleTab === "operate" || state.consoleTab === "legacy";
       state.sidebarOpen = Boolean(nextValue && canOpen);
       document.body.classList.toggle("drawer-open", state.sidebarOpen);
+    }
+
+    function renderOperateTabs() {
+      const showOperateWorkspace = state.consoleTab === "operate";
+      document.body.classList.toggle("show-operate-workspace", showOperateWorkspace);
+      for (const tab of ["overview", "graph", "recovery", "logs", "reviews", "artifacts"]) {
+        document.body.classList.toggle("operate-tab-" + tab, showOperateWorkspace && state.operateTab === tab);
+      }
+      if (!operateTabsEl) {
+        return;
+      }
+      if (!showOperateWorkspace) {
+        operateTabsEl.innerHTML = "";
+        return;
+      }
+      const tabs = [
+        ["overview", t("operate.tab.overview", undefined, "Overview"), t("operate.tabHint.overview", undefined, "Run status, summary, and timeline")],
+        ["graph", t("operate.tab.graph", undefined, "Graph"), t("operate.tabHint.graph", undefined, "Readonly runtime graph and state")],
+        ["recovery", t("operate.tab.recovery", undefined, "Recovery"), t("operate.tabHint.recovery", undefined, "Failure triage and resume readiness")],
+        ["logs", t("operate.tab.logs", undefined, "Logs"), t("operate.tabHint.logs", undefined, "Load engine and role logs on demand")],
+        ["reviews", t("operate.tab.reviews", undefined, "Reviews"), t("operate.tabHint.reviews", undefined, "Human review queue and decisions")],
+        ["artifacts", t("operate.tab.artifacts", undefined, "Artifacts"), t("operate.tabHint.artifacts", undefined, "Run snapshots and exported evidence")]
+      ];
+      operateTabsEl.innerHTML = tabs.map(([id, label, hint]) =>
+        '<button class="button subtle ' + (state.operateTab === id ? "active" : "") +
+        '" data-operate-tab="' + escapeText(id) +
+        '" title="' + escapeText(hint) +
+        '">' + escapeText(label) + '</button>'
+      ).join("");
+      for (const button of operateTabsEl.querySelectorAll("[data-operate-tab]")) {
+        button.disabled = Boolean(state.actionBusy);
+        button.addEventListener("click", () => {
+          state.operateTab = button.getAttribute("data-operate-tab") || "overview";
+          renderOperateTabs();
+          renderActionState();
+        });
+      }
+    }
+
+    function renderHeroActions() {
+      const isBuild = state.consoleTab === "build";
+      const isOperate = state.consoleTab === "operate" || state.consoleTab === "legacy";
+      const isProject = state.consoleTab === "project";
+      if (startRunButton) {
+        startRunButton.hidden = !isBuild;
+        startRunButton.textContent = t("studio.dryRun", undefined, "Dry run");
+      }
+      if (resumeRunButton) {
+        resumeRunButton.hidden = !isOperate;
+        resumeRunButton.disabled = !state.selectedRunId;
+      }
+      if (stopRunButton) {
+        stopRunButton.hidden = !isOperate;
+        stopRunButton.disabled = !state.selectedRunId;
+      }
+      if (projectHomeButton) {
+        projectHomeButton.hidden = isProject;
+      }
+      if (projectLoadButton) {
+        projectLoadButton.hidden = !isProject;
+      }
+      if (projectExportButton) {
+        projectExportButton.hidden = state.consoleTab !== "validate-release";
+      }
     }
 
     function renderConsoleTabs() {
@@ -1064,9 +1232,11 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
         ["project", t("nav.lifecycle.project", undefined, "Project"), t("navHint.lifecycle.project", undefined, "Create, load, and inspect project context")],
         ["build", t("nav.lifecycle.build", undefined, "Build"), t("navHint.lifecycle.build", undefined, "Graph-first authoring, configuration, and dry-run setup")],
         ["validate-release", t("nav.lifecycle.validateRelease", undefined, "Validate & Release"), t("navHint.lifecycle.validateRelease", undefined, "Validation gate, readiness, reports, and export")],
-        ["operate", t("nav.lifecycle.operate", undefined, "Operate"), t("navHint.lifecycle.operate", undefined, "Run monitoring, diagnostics, logs, recovery, and audit")],
-        ["legacy", t("nav.lifecycle.legacy", undefined, "Legacy Tabs"), t("navHint.lifecycle.legacy", undefined, "Fallback access to the previous tab layout")]
+        ["operate", t("nav.lifecycle.operate", undefined, "Operate"), t("navHint.lifecycle.operate", undefined, "Run monitoring, diagnostics, logs, recovery, and audit")]
       ];
+      if (state.consoleTab === "legacy") {
+        lifecycleTabs.push(["legacy", t("nav.lifecycle.legacy", undefined, "Legacy fallback"), t("navHint.lifecycle.legacy", undefined, "Developer fallback access to the previous tab layout")]);
+      }
       const legacyTabs = [
         ["debug", t("nav.runDebug"), t("navHint.runDebug")],
         ["project", t("nav.project"), t("navHint.project")],
@@ -1096,10 +1266,10 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
           : state.consoleTab === "project"
             ? ["project"]
             : state.consoleTab === "build"
-              ? ["build", "config"]
+              ? ["build"]
               : state.consoleTab === "validate-release"
-                ? ["validate-release", "config"]
-                : ["ops", "debug"]
+                ? ["validate-release"]
+                : ["ops", "debug", "logs", "artifacts"]
       );
       const showRunSidebar = state.consoleTab === "operate" || state.consoleTab === "legacy";
       document.body.classList.toggle("show-run-sidebar", showRunSidebar);
@@ -1115,6 +1285,8 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
           panel.hidden = !visiblePanelIds.has(id);
         }
       }
+      renderOperateTabs();
+      renderHeroActions();
       for (const button of consoleTabsEl.querySelectorAll("[data-console-tab]")) {
         button.addEventListener("click", () => {
           state.consoleTab = button.getAttribute("data-console-tab") || "operate";
@@ -1437,14 +1609,37 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
       ].filter(Boolean);
       workbenchStatusEl.innerHTML = statusPills.join("");
       workbenchTabsEl.innerHTML = [
+        '<button class="button subtle ' + (state.buildMode === "edit" ? "active" : "") + '" data-build-mode="edit">' + escapeText(t("build.mode.edit", undefined, "Edit")) + '</button>',
+        '<button class="button subtle ' + (state.buildMode === "dry-run" ? "active" : "") + '" data-build-mode="dry-run">' + escapeText(t("build.mode.dryRun", undefined, "Dry Run")) + '</button>',
+        '<button class="button subtle ' + (state.buildMode === "debug" ? "active" : "") + '" data-build-mode="debug">' + escapeText(t("build.mode.debug", undefined, "Debug")) + '</button>',
         '<button class="button subtle ' + (state.workbenchView === "bridge" ? "active" : "") + '" data-workbench-view="bridge">' + escapeText(t("workbench.bridge")) + '</button>',
         '<button class="button subtle ' + (state.workbenchView === "source" ? "active" : "") + '" data-workbench-view="source">' + escapeText(t("workbench.source")) + '</button>'
       ].join("");
       workbenchActionsEl.innerHTML = [
-        '<button class="button" id="studio-bridge-validate">' + escapeText(t("action.validate", undefined, "Validate")) + '</button>',
-        '<button class="button primary" id="workbench-save"' + (dirty ? "" : " disabled") + '>' + escapeText(t("action.save")) + '</button>',
-        '<button class="button primary" id="studio-bridge-dry-run">' + escapeText(t("studio.dryRun", undefined, "Dry run")) + '</button>'
+        '<button class="button" id="build-validate">' + escapeText(t("action.validate", undefined, "Validate")) + '</button>',
+        '<button class="button" id="build-generate-mermaid">' + escapeText(t("studio.generateMmd", undefined, "Generate MMD")) + '</button>',
+        '<button class="button primary" id="build-save"' + (dirty ? "" : " disabled") + '>' + escapeText(t("action.save", undefined, "Save")) + '</button>',
+        '<button class="button primary" id="build-dry-run">' + escapeText(t("studio.dryRun", undefined, "Dry run")) + '</button>'
       ].join("");
+      if (state.buildMode === "dry-run") {
+        workbenchBodyEl.innerHTML = [
+          '<div class="structure-list">',
+          '<div class="event"><div class="event-top"><span>' + escapeText(t("build.mode.dryRun", undefined, "Dry Run")) + '</span><span>' + escapeText(dirty ? t("workbench.unsavedChanges", undefined, "unsaved changes") : t("workbench.diskInSync", undefined, "disk in sync")) + '</span></div><strong>' + escapeText(t("build.dryRunPrepTitle", undefined, "Validate, generate Mermaid, save, then start a dry run.")) + '</strong><div class="hint">' + escapeText(t("build.dryRunPrepHint", {
+            path: state.workbenchSavedPath || "system.mmd"
+          }, "Dry run uses " + (state.workbenchSavedPath || "system.mmd") + " after the generated source is saved.")) + '</div></div>',
+          state.studioBridgeLastDryRunId
+            ? '<div class="event"><div class="event-top"><span>' + escapeText(t("build.lastDryRun", undefined, "Last dry run")) + '</span><span>' + escapeText(t("common.captured", undefined, "captured")) + '</span></div><strong>' + escapeText(state.studioBridgeLastDryRunId) + '</strong><div class="hint">' + escapeText(t("build.openDebugHint", undefined, "Open Debug mode here or jump to Operate for runtime controls.")) + '</div></div>'
+            : '<div class="hint">' + escapeText(t("build.noDryRunYet", undefined, "No dry run has been launched from Build yet.")) + '</div>',
+          '</div>'
+        ].join("");
+      } else if (state.buildMode === "debug") {
+        workbenchBodyEl.innerHTML = [
+          '<div class="structure-list">',
+          '<div class="event"><div class="event-top"><span>' + escapeText(t("build.mode.debug", undefined, "Debug")) + '</span><span>' + escapeText(state.studioBridgeLastDryRunId || t("common.missing", undefined, "missing")) + '</span></div><strong>' + escapeText(state.studioBridgeLastDryRunId ? t("build.debugDryRunTitle", undefined, "Dry-run result captured in Build.") : t("build.noDryRunYet", undefined, "No dry run has been launched from Build yet.")) + '</strong><div class="hint">' + escapeText(t("build.debugDryRunHint", undefined, "Use Operate for resume, stop, logs, and recovery controls.")) + '</div></div>',
+          state.studioBridgeLastDryRunId ? '<button class="button subtle" id="build-open-operate">' + escapeText(t("build.openOperate", undefined, "Open in Operate")) + '</button>' : "",
+          '</div>'
+        ].join("");
+      } else
       if (state.workbenchView === "source" && preserveEditor && existingEditor) {
         if (existingEditor.value !== state.workbenchSource) {
           existingEditor.value = state.workbenchSource || "";
@@ -1494,12 +1689,19 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
       for (const button of workbenchTabsEl.querySelectorAll("[data-workbench-view]")) {
         button.addEventListener("click", () => {
           state.workbenchView = button.getAttribute("data-workbench-view") || "render";
+          state.buildMode = "edit";
           renderWorkbench();
           if (state.workbenchView === "bridge" && (!state.studioBridgeLoaded || state.studioBridgeStale)) {
             void refreshStudioBridge().catch((error) => {
               setFlash("error", "Studio Bridge refresh failed: " + (error.message || error));
             });
           }
+        });
+      }
+      for (const button of workbenchTabsEl.querySelectorAll("[data-build-mode]")) {
+        button.addEventListener("click", () => {
+          state.buildMode = button.getAttribute("data-build-mode") || "edit";
+          renderWorkbench();
         });
       }
       const newDraftButton = document.getElementById("workbench-new-draft");
@@ -1543,30 +1745,39 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
           scheduleWorkbenchValidation();
         });
       }
-      const saveButton = document.getElementById("workbench-save");
+      const saveButton = document.getElementById("build-save");
       if (saveButton) {
         saveButton.addEventListener("click", async () => {
           await saveWorkbench();
         });
       }
-      const validateButton = document.getElementById("studio-bridge-validate");
+      const validateButton = document.getElementById("build-validate");
       if (validateButton) {
         validateButton.addEventListener("click", async () => {
           await runWorkbenchValidation(true);
           await refreshStudioBridge();
         });
       }
-      const dryRunButton = document.getElementById("studio-bridge-dry-run");
+      const generateButton = document.getElementById("build-generate-mermaid");
+      if (generateButton) {
+        generateButton.addEventListener("click", async () => {
+          await generateMmdFromStudioBridge();
+        });
+      }
+      const dryRunButton = document.getElementById("build-dry-run");
       if (dryRunButton) {
-        dryRunButton.addEventListener("click", () => {
-          openActionForm("start", {
-            systemPath: state.workbenchSavedPath || "system.mmd",
-            input: "",
-            dryRun: true,
-            runtimePath: "",
-            userProfilePath: "",
-            lawsPath: ""
-          });
+        dryRunButton.addEventListener("click", async () => {
+          await prepareDryRunFromBuild();
+        });
+      }
+      const openOperateButton = document.getElementById("build-open-operate");
+      if (openOperateButton) {
+        openOperateButton.addEventListener("click", async () => {
+          state.consoleTab = "operate";
+          renderConsoleTabs();
+          if (state.studioBridgeLastDryRunId) {
+            await selectRun(state.studioBridgeLastDryRunId);
+          }
         });
       }
       renderActionState();
@@ -1749,6 +1960,15 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
           t
         });
       }
+      renderProjectWizard();
+      const releaseDecision = buildReleaseReadinessDecision({
+        validation: state.workbench?.validation,
+        readiness: state.projectReadiness,
+        contracts: state.contracts,
+        rolePackages: state.rolePackages,
+        bindings: state.bindings,
+        workbenchDirty: state.workbenchSource !== state.workbenchDiskSource
+      });
       if (releaseGateEl) {
         releaseGateEl.innerHTML = renderReleaseGatePanel({
           validation: state.workbench?.validation,
@@ -1759,7 +1979,7 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
           workbenchSavedPath: state.workbenchSavedPath || "system.mmd",
           workbenchDirty: state.workbenchSource !== state.workbenchDiskSource,
           lastDryRunId: state.studioBridgeLastDryRunId,
-          exportReady: Boolean(state.workbench?.validation?.ok) && state.projectReadiness?.canDryRun !== false,
+          exportReady: releaseDecision.canExport,
           t
         });
       }
@@ -1831,6 +2051,34 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
         button.disabled = Boolean(state.actionBusy);
         button.addEventListener("click", () => selectRun(button.getAttribute("data-run-id")));
       }
+    }
+
+    function renderProjectWizard() {
+      if (!projectWizardEl) {
+        return;
+      }
+      const templates = Array.isArray(state.studioTemplates) ? state.studioTemplates : [];
+      const roles = state.project?.roles?.roles || [];
+      const modelCount = state.project?.config?.modelCatalog?.models?.length || 0;
+      const profiles = state.project?.config?.profiles || [];
+      const entryRoleId = state.workbench?.validation?.structure?.entryRoleId
+        || state.project?.summary?.project?.entryRoleId
+        || roles[0]?.roleId
+        || "n/a";
+      projectWizardEl.innerHTML = [
+        '<div class="event"><div class="event-top"><span>' + escapeText(t("projectWizard.templates", undefined, "templates")) + '</span><span>' + escapeText(String(templates.length)) + '</span></div><strong>' +
+          escapeText(templates.map((template) => template.title || template.id).join(", ") || t("common.none", undefined, "none")) +
+          '</strong><div class="hint">' + escapeText(t("projectWizard.templatesHint", undefined, "Use a Studio template in Build to start graph authoring visually.")) + '</div></div>',
+        '<div class="event"><div class="event-top"><span>' + escapeText(t("projectWizard.rolePackages", undefined, "role packages")) + '</span><span>' + escapeText(String(roles.length)) + '</span></div><strong>' +
+          escapeText(roles.map((role) => role.roleId).filter(Boolean).slice(0, 4).join(", ") || t("common.none", undefined, "none")) +
+          '</strong><div class="hint">' + escapeText(t("projectWizard.rolePackagesHint", undefined, "Role packages are resolved from the current project workspace.")) + '</div></div>',
+        '<div class="event"><div class="event-top"><span>' + escapeText(t("projectWizard.modelProfile", undefined, "model / profile")) + '</span><span>' + escapeText(String(modelCount) + " / " + String(profiles.length)) + '</span></div><strong>' +
+          escapeText(t("projectWizard.modelProfileTitle", undefined, "Select model references and execution profiles in the visual role editor.")) +
+          '</strong><div class="hint">' + escapeText(t("projectWizard.modelProfileHint", undefined, "Profiles are created as drafts first and persisted only through explicit save actions.")) + '</div></div>',
+        '<div class="event"><div class="event-top"><span>' + escapeText(t("projectWizard.entryRole", undefined, "entry role")) + '</span><span>' + escapeText(entryRoleId) + '</span></div><strong>' +
+          escapeText(t("projectWizard.entryRoleTitle", undefined, "Lifecycle starts from a visible entry role.")) +
+          '</strong><div class="hint">' + escapeText(t("projectWizard.loadHint", undefined, "Create/import/load project is explicit; no background workspace writes happen from this panel.")) + '</div></div>'
+      ].join("");
     }
 
     function renderStats(header, graphPayload) {
@@ -2227,6 +2475,7 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
       renderLogs();
       renderDetail();
       renderActionState();
+      renderOperateTabs();
     }
 
     function stopStream() {
@@ -2273,7 +2522,7 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
     }
 
     async function refreshProjectDiagnostics() {
-      const [summary, config, roles, opsSummary, readiness, bindings, contracts, rolePackages] = await Promise.all([
+      const [summary, config, roles, opsSummary, readiness, bindings, contracts, rolePackages, templates] = await Promise.all([
         requestJson(\`\${API_PREFIX}/project\`),
         requestJson(\`\${API_PREFIX}/project/config\`),
         requestJson(\`\${API_PREFIX}/project/roles\`),
@@ -2281,7 +2530,8 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
         requestJson(\`\${API_PREFIX}/project/readiness\`),
         requestJson(\`\${API_PREFIX}/project/bindings\`),
         requestJson(\`\${API_PREFIX}/project/contracts\`),
-        requestJson(\`\${API_PREFIX}/project/role-packages\`)
+        requestJson(\`\${API_PREFIX}/project/role-packages\`),
+        requestJson(\`\${API_PREFIX}/project/studio/templates\`).catch(() => ({ templates: [] }))
       ]);
       state.project = Object.assign({}, state.project || {}, { summary, config, roles });
       state.opsSummary = opsSummary;
@@ -2289,6 +2539,7 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
       state.bindings = bindings;
       state.contracts = contracts;
       state.rolePackages = rolePackages;
+      state.studioTemplates = templates.templates || state.studioTemplates || [];
       renderProject();
     }
 
@@ -2434,20 +2685,23 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
       });
     }
 
-    async function generateMmdFromStudioBridge() {
+    async function generateMmdFromStudioBridge(options) {
       if (!state.studioBridge?.authoring) {
         await refreshStudioBridge();
       }
       if (!state.studioBridge?.authoring) {
         setFlash("error", "Studio Bridge cannot generate Mermaid until the source parses successfully.");
-        return;
+        return false;
       }
       await runAction("studio:generate-mmd", async () => {
         const payload = await requestAction(\`\${API_PREFIX}/project/studio/authoring/generate-mmd\`, {
           authoring: state.studioBridge.authoring
         });
         state.workbenchSource = payload.systemSource || state.workbenchSource;
-        state.workbenchView = "source";
+        if (!options?.stayInMode) {
+          state.workbenchView = "source";
+          state.buildMode = "edit";
+        }
         state.workbench = {
           ...(state.workbench || {}),
           validation: payload.validation || state.workbench?.validation
@@ -2457,6 +2711,7 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
         renderWorkbench();
         setFlash("success", "Generated deterministic Mermaid into the Workbench source view.");
       });
+      return true;
     }
 
     async function runWorkbenchValidation(force) {
@@ -2588,6 +2843,34 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
       });
     }
 
+    async function prepareDryRunFromBuild() {
+      state.buildMode = "dry-run";
+      renderWorkbench();
+      await runWorkbenchValidation(true);
+      if (state.workbench?.validation?.ok !== true) {
+        setFlash("error", t("workbench.saveBlockedByDiagnostics", undefined, "Save blocked by Mermaid validation diagnostics."));
+        return;
+      }
+      if (state.studioBridge?.authoring || state.workbenchView === "bridge") {
+        const generated = await generateMmdFromStudioBridge({ stayInMode: true });
+        if (!generated) {
+          return;
+        }
+      }
+      if (state.workbenchSource !== state.workbenchDiskSource) {
+        await saveWorkbench();
+      }
+      openActionForm("start", {
+        systemPath: state.workbenchSavedPath || "system.mmd",
+        input: "",
+        dryRun: true,
+        runtimePath: "",
+        userProfilePath: "",
+        lawsPath: ""
+      });
+      renderWorkbench();
+    }
+
     async function startRunFromWorkbench(args) {
       if (!args.input) {
         setFlash("error", "Run input is required.");
@@ -2618,11 +2901,22 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
         }));
         if (args.dryRun && payload.runId) {
           state.studioBridgeLastDryRunId = payload.runId;
+          state.buildMode = "debug";
         }
         await loadProject();
         await loadRuns();
         if (payload.runId) {
-          await selectRun(payload.runId);
+          if (args.dryRun && state.consoleTab === "build") {
+            state.selectedRunId = payload.runId;
+            await loadSelectedRunBoot(payload.runId, { keepStream: false });
+            state.consoleTab = "build";
+            state.projectHome = false;
+            renderConsoleTabs();
+            renderWorkbench({ preserveStudioGraphRoot: true });
+            writeRouteToLocation();
+          } else {
+            await selectRun(payload.runId);
+          }
         }
       });
     }
@@ -2754,11 +3048,21 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
     }
 
     async function exportProject() {
-      if (state.workbench?.validation?.ok !== true || state.projectReadiness?.canDryRun === false) {
+      const releaseDecision = buildReleaseReadinessDecision({
+        validation: state.workbench?.validation,
+        readiness: state.projectReadiness,
+        contracts: state.contracts,
+        rolePackages: state.rolePackages,
+        bindings: state.bindings,
+        workbenchDirty: state.workbenchSource !== state.workbenchDiskSource
+      });
+      if (!releaseDecision.canExport) {
         state.consoleTab = "validate-release";
         renderConsoleTabs();
         renderProject();
-        setFlash("error", t("release.exportBlocked", undefined, "Export blocked until validation and release readiness pass."));
+        setFlash("error", t("release.exportBlocked", {
+          message: releaseDecision.blockers[0]?.message || t("release.resolveBlockers", undefined, "Resolve release blockers.")
+        }, "Export blocked: " + (releaseDecision.blockers[0]?.message || "Resolve release blockers.")));
         return;
       }
       await runAction("project:export", async () => {
@@ -2776,7 +3080,7 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
     }
 
     async function loadProject() {
-      const [summary, system, config, roles, opsSummary, readiness, bindings, contracts, rolePackages] = await Promise.all([
+      const [summary, system, config, roles, opsSummary, readiness, bindings, contracts, rolePackages, templates] = await Promise.all([
         requestJson(\`\${API_PREFIX}/project\`),
         requestJson(\`\${API_PREFIX}/project/system\`),
         requestJson(\`\${API_PREFIX}/project/config\`),
@@ -2785,7 +3089,8 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
         requestJson(\`\${API_PREFIX}/project/readiness\`),
         requestJson(\`\${API_PREFIX}/project/bindings\`),
         requestJson(\`\${API_PREFIX}/project/contracts\`),
-        requestJson(\`\${API_PREFIX}/project/role-packages\`)
+        requestJson(\`\${API_PREFIX}/project/role-packages\`),
+        requestJson(\`\${API_PREFIX}/project/studio/templates\`).catch(() => ({ templates: [] }))
       ]);
       state.project = { summary, system, config, roles };
       state.opsSummary = opsSummary;
@@ -2793,6 +3098,7 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
       state.bindings = bindings;
       state.contracts = contracts;
       state.rolePackages = rolePackages;
+      state.studioTemplates = templates.templates || [];
       await loadWorkbench();
       renderProject();
     }
@@ -3299,6 +3605,13 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
         workdir: getCurrentWorkdir()
       });
     });
+    if (projectWizardLoadButton) {
+      projectWizardLoadButton.addEventListener("click", async () => {
+        openActionForm("projectLoad", {
+          workdir: getCurrentWorkdir()
+        });
+      });
+    }
 
     projectExportButton.addEventListener("click", async () => {
       await exportProject();
@@ -3323,14 +3636,9 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
     });
 
     startRunButton.addEventListener("click", async () => {
-      openActionForm("start", {
-        systemPath: state.workbenchSavedPath || "system.mmd",
-        input: "",
-        dryRun: true,
-        runtimePath: "",
-        userProfilePath: "",
-        lawsPath: ""
-      });
+      if (state.consoleTab === "build") {
+        await prepareDryRunFromBuild();
+      }
     });
 
     resumeRunButton.addEventListener("click", async () => {
