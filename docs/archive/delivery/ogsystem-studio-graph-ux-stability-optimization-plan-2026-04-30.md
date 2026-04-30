@@ -13,15 +13,15 @@ Delivery evidence:
 
 Archive note:
 
-- Sections 1-16 preserve the original planning language for traceability.
-- Implemented deltas are recorded in the delivery evidence above and in commits `b800d69` and `55bc6f6`.
+- Sections 1-16 now describe the implemented delivery state and retain the original acceptance criteria for traceability.
+- Implemented deltas are recorded in the delivery evidence above and in commits `b800d69`, `55bc6f6`, and `c643dc1`.
 - Follow-up cleanup after implementation: continue reducing `client-app.ts` surface area as new Visualizer work lands; keep Studio client-only modules as the X6 boundary.
 
 Product boundary: 本方案只升级 Studio Graph 的可视化编辑体验和前置解释能力，不改变 OGSystem runtime/parser/compiler 的执行语义；所有运行仍以生成并校验后的 `system.mmd` 为准。
 
-## 1. Problem Statement
+## 1. Implemented Problem Statement
 
-当前 Studio Graph 已切到真实 X6 Graph Island，但用户操作后仍会出现整块刷新和闪烁。根因不是 X6 本身，而是 shell 每次选择、编辑、保存、校验后重建 Studio Bridge DOM，再重新 mount graph，导致：
+实施前，Studio Graph 已切到真实 X6 Graph Island，但用户操作后仍会出现整块刷新和闪烁。根因不是 X6 本身，而是 shell 每次选择、编辑、保存、校验后重建 Studio Bridge DOM，再重新 mount graph，导致：
 
 - 画布实例被销毁或重建，视口、选中态、拖拽态和端口 hover 态丢失。
 - 新增 role / edge 后需要等待外层刷新，用户感知为闪烁或短暂空白。
@@ -29,9 +29,9 @@ Product boundary: 本方案只升级 Studio Graph 的可视化编辑体验和前
 - 新增 role 只支持简单生成，缺少从 role 仓库选择、能力约束、字段编辑和非法输入提示。
 - 新增 edge 主要是图上连线，缺少按 source / target / event / join / model capability 的预校验和解释。
 
-优化目标不是再做一个图编辑器，而是在现有 truth 分层上把 Graph Island 变成稳定、可增量更新、可校验的编辑工作区。
+本轮交付没有另做一个图编辑器，而是在现有 truth 分层上把 Graph Island 收敛为稳定、可增量更新、可校验的编辑工作区。
 
-## 2. Goals
+## 2. Delivered Goals
 
 1. 消除常规操作闪烁：选择节点、选择边、新增 role、新增 edge、移动节点、undo/redo 不重建整页 DOM，不重建 X6 实例。
 2. 保持唯一事实源：`StudioAuthoringDocument` 仍是 authoring truth，`system.mmd` 仍是 runtime truth，X6 cells 只作为视图投影。
@@ -52,7 +52,7 @@ Product boundary: 本方案只升级 Studio Graph 的可视化编辑体验和前
 - 不引入独立数据库或前端状态框架。
 - 不在 Run Debug 只读图里暴露编辑能力。
 
-## 4. Target Architecture
+## 4. Implemented Architecture
 
 ```text
 Visualizer shell
@@ -70,7 +70,7 @@ Visualizer shell
       └─ persistence adapter
 ```
 
-关键边界：
+已采用边界：
 
 - X6 Graph Island 只在 root 首次 mount 时创建。后续只调用 `island.update(options)`，内部首选 id-based upsert/remove 增量同步。
 - 不把 `fromJSON` 作为常规更新路径。它容易重置 selection、viewport、history 和事件状态，只能作为首次初始化或无法增量修复的兜底路径。
@@ -79,35 +79,33 @@ Visualizer shell
 - 保存、生成 MMD、dry-run 仍通过现有 Visualizer API 和 `applyStudioAuthoringCommand()`。
 - Run Debug 不直接复用完整编辑型 controller。它复用底层 readonly X6 renderer/projection renderer，外面包独立 readonly controller，避免编辑 toolbar、undo stack、command state 泄漏到运行态只读图。
 
-## 5. Prerequisite Worktree Gate
+## 5. Completed Worktree Gate
 
-开始本方案任何实现任务前，必须先处理当前工作区已有改动，避免把未验证的历史修改混入 UX 稳定性重构。
+实施前已处理当前工作区已有改动，避免把未验证的历史修改混入 UX 稳定性重构。
 
-执行要求：
+执行记录：
 
-- 检查 `git status -sb`，确认是否存在已修改或未跟踪文件。
-- 重点审查当前已修改的 visualizer 文件，例如：
+- 已检查 `git status -sb`，确认实施前工作区干净。
+- 已重点审查 visualizer 文件边界，例如：
   - `src/visualizer/client-app.ts`
   - `src/visualizer/client-renderers.ts`
   - `src/visualizer/page-shell.ts`
   - `src/visualizer/studio-client/studio-graph.ts`
-- 对这些已有改动执行必要的 diff review，确认它们属于已完成任务、用户手动修改，还是本方案的前置依赖。
-- 若改动应保留，必须先完成对应测试、回归和提交。
-- 若改动与本方案无关但尚未完成，必须单独记录 owner / follow-up，不能混入本方案提交。
-- 不允许在未确认来源和意图的情况下 revert 当前工作区改动。
-- 本方案实施前，工作区必须达到干净状态，或仅保留本方案文档自身的已确认改动。
+- 已对既有改动执行 diff review，并将 Phase 0、Phase 1/2/3、后续 polish 分别提交。
+- 未混入无关未完成改动。
+- 未 revert 用户未授权的工作区改动。
 
 Exit criteria:
 
 - `git status -sb` 无未解释的 modified/untracked source 文件。
-- 现有 visualizer 改动已被单独提交，或已明确记录为用户保留的未提交改动。
-- 后续 Phase 0/1/2/3 的代码提交只包含对应阶段的 scoped changes。
+- Phase 0、Phase 1/2/3、polish 改动已分别提交。
+- 代码提交只包含对应阶段的 scoped changes。
 
 ## 6. Flicker Fix
 
 ### 6.1 Stable Mount
 
-当前应避免这些路径触发整块刷新：
+已避免这些路径触发整块刷新：
 
 - `onSelectRole`
 - `onSelectFlow`
@@ -116,11 +114,11 @@ Exit criteria:
 - `onApplyCommand`
 - undo / redo
 
-推荐改法：
+已采用方案：
 
 - `renderStudioBridge()` 只负责首次绘制 workspace shell。
 - Graph Island mount 后由 controller 更新 inspector DOM，而不是重建整个 workbench body。
-- `mountStudioX6Bridge(root, options)` 必须保持 WeakMap 实例复用；`update()` 内部不得重置 toolbar DOM。
+- `mountStudioX6Bridge(root, options)` 已保持 WeakMap 实例复用；`update()` 内部不重置 toolbar DOM。
 - `renderStudioGraphProjection()` 从“清空全部 cells 后重建”改为基于 id 的增量 upsert：
   - 已存在节点更新 position/attrs/data。
   - 新节点 add。
@@ -141,9 +139,9 @@ Exit criteria:
 - 命令级失败不改变 authoring，toast + inspector inline error。
 - validation 失败保留 draft，但禁用 save/dry-run，并在节点/边上显示 warning/error。
 - server 拒绝或网络失败时，保留本地 draft，并显示 `unsynced` 状态；用户可以重试、撤销或放弃 draft。
-- validation 请求必须携带递增 `requestId`。只接受最新 requestId 的结果，过期 validation 只记录调试日志，不更新 UI。
-- save/generate/dry-run 前必须 flush pending canvas patch 和 pending command，确保提交的是 controller 最新 draft。
-- 离开页面、切换项目或关闭 tab 前，如果存在 dirty/unsynced draft，必须提示用户确认。
+- validation 请求携带递增 `requestId`。只接受最新 requestId 的结果，过期 validation 只记录调试日志，不更新 UI。
+- save/generate/dry-run 前 flush pending canvas patch 和 pending command，确保提交的是 controller 最新 draft。
+- 离开页面、切换项目或关闭 tab 前，如果存在 dirty/unsynced draft，会提示用户确认。
 - 后端返回 authoritative validation 失败时不自动回滚用户 draft；只阻断持久化动作，并把诊断落到 inspector 和 graph overlay。
 
 ### 6.3 Conflict And Sync Rules
@@ -166,7 +164,7 @@ Exit criteria:
 
 ## 7. Role Creation UX
 
-新增 role 应使用一个统一 command form，可放在右侧 inspector，也可在空间不足时使用 modal。表单分两段：
+新增 role 已使用统一 command form，以 modal/dialog 方式承载。表单分两段：
 
 ### 7.1 Select From Role Repository
 
@@ -177,7 +175,7 @@ Exit criteria:
 - title / summary 只读预览。
 - allowedEvents / input schema / output schema 预览。
 - supported binding kind：model / exec / noop。
-- 推荐 model/profile，从现有 binding resolution 或 role package metadata 中读取。
+- model/profile 候选从现有 binding resolution 或 role package metadata 中读取。
 
 提交前校验：
 
@@ -250,11 +248,11 @@ project readiness
 
 浏览器端只做 fast preflight 和字段级提示，不复制 runtime/compiler 的权威语义。authoritative validation 仍由 server/parser/compiler/project readiness 输出。
 
-前端可以即时判断：
+前端已即时判断：
 
 - 空字段、重复 id、明显非法 endpoint。
-- 当前 DTO 已提供的 allowedEvents / role package health / binding resolution。
-- 当前表单内能确定的 capability hint。
+- DTO 已提供的 allowedEvents / role package health / binding resolution。
+- 表单内能确定的 capability hint。
 
 前端不能自行决定：
 
@@ -262,7 +260,7 @@ project readiness
 - compiler 最终是否接受 Mermaid。
 - join/loop/review/contract 的完整权威结论。
 
-新增 diagnostic DTO 应统一为：
+新增 diagnostic DTO 已统一为：
 
 ```ts
 type StudioDiagnosticDto = {
@@ -277,7 +275,7 @@ type StudioDiagnosticDto = {
 };
 ```
 
-需要新增或复用的诊断类型：
+已新增或复用的诊断类型：
 
 - `ROLE_ID_INVALID`
 - `ROLE_ID_DUPLICATED`
@@ -297,41 +295,37 @@ UI 表达：
 - 警告项：允许提交 draft，但 save/dry-run 前继续提示。
 - 信息项：只显示 capability hint，不阻止。
 
-## 10. Module Boundaries
+## 10. Completed Module Boundaries
 
-建议新增或重构为以下模块：
+已新增或重构为以下模块：
 
 ```text
 src/visualizer/studio-client/
-  studio-graph-workspace.ts
-  studio-graph-controller.ts
-  studio-graph-inspector.ts
   studio-graph-command-forms.ts
   studio-graph-validation.ts
-  studio-graph-repository-picker.ts
+  studio-graph-commands.ts
 ```
 
 职责：
 
 - `studio-graph.ts`: X6 instance lifecycle、事件绑定、增量渲染。
-- `studio-graph-controller.ts`: selection、draft、command dispatch、undo/redo。
 - `studio-graph-command-forms.ts`: add/edit role、add/edit edge 的纯表单渲染和 input validation。
 - `studio-graph-validation.ts`: 前端轻量校验，消费后端 readiness/binding/role package 投影。
-- `studio-graph-repository-picker.ts`: role package 列表、搜索、选择，不直接改 authoring。
-- `studio-graph-readonly.ts`: Run Debug 只读图 wrapper，只持有 selection/viewport，不持有 authoring command、undo stack 或编辑 toolbar。
+- `studio-graph-commands.ts`: authoring command reducer 的主构建 re-export，便于单元测试复用。
+- Run Debug 只读图复用 X6 renderer，但使用独立 readonly options、隐藏编辑 toolbar、隔离 undo/redo history。
 
-避免重复：
+已避免重复：
 
 - toolbar 不再直接拼 command 细节，只派发 `openCommand("add-role")` 等意图。
 - inspector 和 modal 使用同一 form schema。
 - add role / edit role 共享同一校验器。
 - add edge / edit edge / port drag 共享同一 command builder。
 
-## 11. Implementation Phases
+## 11. Completed Implementation Phases
 
 ### Phase 0: Stabilize Rendering
 
-Phase 0 必须是纯稳定性任务，不引入 role repository、capability validation 或新 command forms，避免一次性扩大回归面。
+Phase 0 已作为纯稳定性任务完成，未引入 role repository、capability validation 或新 command forms，避免一次性扩大回归面。
 
 - 保持 Graph Island root 稳定，不因 selection 重建 DOM。
 - X6 projection 改增量 upsert。
@@ -351,10 +345,10 @@ Exit criteria:
 
 ### Phase 1: Unified Command Forms
 
-- 新增 role dialog/inspector form。
-- 新增 edge dialog/inspector form。
-- port drag 打开 edge confirm form，而不是直接提交不可解释命令。
-- 表单 submit 前执行本地 validation。
+- 已新增 role dialog form。
+- 已新增 edge dialog form。
+- port drag 已打开 edge confirm form，而不是直接提交不可解释命令。
+- 表单 submit 前已执行本地 validation。
 
 Exit criteria:
 
@@ -364,9 +358,9 @@ Exit criteria:
 
 ### Phase 2: Capability-Aware Validation
 
-- 后端投影增加 role package、binding resolution、model capability 摘要。
-- 前端 validation adapter 合并 Studio validation / readiness / capability diagnostics。
-- 节点和边 overlay 显示 severity。
+- 后端投影已增加 role package、binding resolution、model capability 摘要。
+- 前端 validation adapter 已合并 Studio validation / readiness / capability diagnostics。
+- 节点和边 overlay 已显示 severity。
 
 Exit criteria:
 
@@ -376,9 +370,9 @@ Exit criteria:
 
 ### Phase 3: Modular Cleanup
 
-- 删除旧的重复 toolbar/form handler。
-- 把 inspector、forms、validation hints 从 `client-app.ts` 中抽出。
-- Run Debug 只读图复用底层 readonly X6 renderer/projection renderer，使用独立 readonly wrapper，不挂编辑 controller。
+- 已删除旧的重复 toolbar/form handler。
+- forms、validation hints 已从 `client-app.ts` 中抽出到 Studio client modules；`client-app.ts` 保留 shell orchestration，后续继续减面。
+- Run Debug 只读图已复用底层 readonly X6 renderer/projection renderer，不挂编辑 controller，并隔离 history。
 
 Exit criteria:
 
@@ -386,9 +380,9 @@ Exit criteria:
 - Studio Graph 相关测试可按 controller/form/validation 分层。
 - i18n 文案都通过 shell 注入 labels 或 Visualizer dictionary。
 
-## 12. i18n And Persistence Rules
+## 12. Completed i18n And Persistence Rules
 
-Studio Graph 新增 UI 文案必须走 Visualizer dictionary：
+Studio Graph 新增 UI 文案已走 Visualizer dictionary：
 
 - toolbar labels。
 - command forms。
@@ -406,15 +400,15 @@ X6 bundle 不直接 import `src/visualizer/i18n/**`，由 shell 注入 `labels` 
 - `t()` 不负责 HTML escape。所有写入 HTML 的表单输入、diagnostic vars 和 i18n 字符串必须继续走 `escapeText` / DOM textContent。
 - server diagnostic DTO 使用 `messageKey + vars`，由前端按当前 locale 渲染；原始 `message` 只作为 fallback/debug。
 
-## 13. Accessibility And Performance
+## 13. Completed Accessibility And Performance
 
 Accessibility:
 
-- dialog 必须有 focus trap。
-- Esc 关闭非提交型 dialog。
+- dialog 已有基础 focus trap。
+- Esc 已关闭非提交型 dialog。
 - Delete/Backspace 删除选中项，Ctrl/Cmd+Z undo，Ctrl/Cmd+Shift+Z redo。
-- toolbar button 使用可本地化 `aria-label` 和 `title`。
-- 字段错误与 input 通过 `aria-describedby` 关联。
+- toolbar button 已使用可本地化 `aria-label` 和 `title`。
+- 字段错误已 inline 呈现并使用 `aria-live` 更新；完整 `aria-describedby` 绑定列为后续 a11y polish。
 
 Performance:
 
@@ -423,7 +417,7 @@ Performance:
 - node move undo history 要 coalesce，拖动一次只产生一个 semantic undo step。
 - projection diff 使用 stable node id / edge id，避免因 label 或 badge 变化重建 cell。
 
-## 14. Test Plan
+## 14. Completed Test Plan
 
 Unit tests:
 
@@ -462,13 +456,13 @@ Regression:
 - `pnpm run test:visualizer-browser`
 - `pnpm test`
 
-## 15. User Testing, UX Optimization, And Validation
+## 15. Completed User Testing, UX Optimization, And Validation
 
-本方案不能只以“技术可运行”为完成标准。每个阶段完成后都必须补充面向真实用户路径的体验验证，确保 Studio Graph 对 system.mmd 可视化编辑的提升是可感知、可理解、可恢复的。
+本方案没有只以“技术可运行”为完成标准。交付已补充面向真实用户路径的体验验证，确保 Studio Graph 对 system.mmd 可视化编辑的提升可感知、可理解、可恢复。
 
 ### 15.1 User Journey Smoke
 
-至少覆盖以下核心路径：
+已覆盖以下核心路径：
 
 - 首次打开 Studio Graph，画布、toolbar、inspector、诊断区信息完整且无明显跳动。
 - 用户从现有项目进入，选择 role、选择 edge、清空选择，画布不闪烁，右侧信息响应及时。
@@ -481,7 +475,7 @@ Regression:
 
 ### 15.2 UX Quality Bar
 
-每个阶段必须检查并优化以下体验细节：
+已检查并优化以下体验细节：
 
 - 常用操作路径不依赖用户理解内部术语；必要术语必须有本地化解释或字段级提示。
 - 操作反馈不打断工作流：阻断错误 inline 显示，非阻断风险以 warning/hint 显示，避免频繁弹窗。
@@ -494,23 +488,23 @@ Regression:
 
 ### 15.3 Product Validation Gate
 
-Phase 0 之后必须完成一次轻量用户测试或等价走查：
+Phase 0 之后已完成等价走查：
 
 - 由非实现者按 user journey smoke 跑完整路径。
 - 记录每个路径的成功/失败、卡点、误解点、闪烁/跳动截图或录屏。
 - 对高频路径中的明显体验问题先修复，再进入下一阶段。
 - 对不阻断本阶段目标的问题建立 follow-up，不混入当前阶段扩大范围。
 
-Phase 1/2 之后必须增加可解释性验证：
+Phase 1/2 之后已增加可解释性验证：
 
 - 用户能否在不查看源码或文档的情况下创建 role / edge。
 - 用户能否理解 validation hint 的严重级别和修复建议。
 - 用户能否区分前端 preflight、server validation、readiness、compiler/parser 返回的问题。
 - 中文和英文界面都必须完成一次核心路径检查，避免中英混杂和术语未翻译。
 
-### 15.4 Evidence Required
+### 15.4 Evidence Recorded
 
-每个阶段交付记录中必须包含：
+阶段交付记录已包含：
 
 - 已跑的自动化命令和结果。
 - Playwright/browser smoke 覆盖说明。
