@@ -16,6 +16,7 @@ export type StudioAuthoringCommand =
       bindingKind?: StudioAuthoringRole["bindingKind"];
       modelRef?: string;
       profileId?: string;
+      profileDraft?: StudioExecutionProfileDraft;
       x?: number;
       y?: number;
     }
@@ -28,6 +29,7 @@ export type StudioAuthoringCommand =
       bindingKind?: StudioAuthoringRole["bindingKind"];
       modelRef?: string;
       profileId?: string;
+      profileDraft?: StudioExecutionProfileDraft;
     }
   | { type: "delete-role"; roleId: string }
   | {
@@ -57,6 +59,7 @@ export type StudioAuthoringCommandResult = {
   canvas: StudioCanvasDocument;
   selectedRoleId?: string;
   selectedFlowKey?: string;
+  profileDrafts?: StudioExecutionProfileDraft[];
   blockedCode?:
     | "entry-role-delete"
     | "missing-role-id"
@@ -65,6 +68,13 @@ export type StudioAuthoringCommandResult = {
     | "invalid-edge-endpoints"
     | "duplicate-edge"
     | "invalid-event-type";
+};
+
+export type StudioExecutionProfileDraft = {
+  profileId: string;
+  toolRef: string;
+  timeoutMs?: number;
+  maxOutputBytes?: number;
 };
 
 function cloneJson<T>(value: T): T {
@@ -247,7 +257,12 @@ export function applyStudioAuthoringCommand(args: {
       authoring.roles[roleId] = role;
       authoring.layout.nodes[roleId] = { x, y, width: 180, height: 84 };
       canvas.nodes.push(roleCanvasNode(role, x, y));
-      return { authoring, canvas, selectedRoleId: roleId };
+      return {
+        authoring,
+        canvas,
+        selectedRoleId: roleId,
+        profileDrafts: command.profileDraft ? [command.profileDraft] : undefined
+      };
     }
 
     const source = authoring.roles[command.roleId];
@@ -332,7 +347,12 @@ export function applyStudioAuthoringCommand(args: {
         : node
       );
     }
-    return { authoring, canvas, selectedRoleId: nextRoleId };
+    return {
+      authoring,
+      canvas,
+      selectedRoleId: nextRoleId,
+      profileDrafts: command.profileDraft ? [command.profileDraft] : undefined
+    };
   }
 
   if (command.type === "add-edge") {

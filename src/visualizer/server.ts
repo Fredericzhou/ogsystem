@@ -50,6 +50,7 @@ import {
   invalidateProjectProjectionCache,
   listProjectRolesVisualization,
   saveProjectSystemSource,
+  upsertProjectProfilesVisualization,
   validateProjectSystemSource
 } from "./project-projection.js";
 import { inspectRunGraphVisualization } from "./run-graph-projection.js";
@@ -537,6 +538,18 @@ async function handleApiProjectWorkbench(workdir: string, response: ServerRespon
 
 async function handleApiProjectConfig(workdir: string, response: ServerResponse): Promise<void> {
   jsonResponse(response, 200, await inspectProjectConfigVisualization(workdir));
+}
+
+async function handleApiProjectProfilesUpsert(
+  workdir: string,
+  request: IncomingMessage,
+  response: ServerResponse
+): Promise<void> {
+  const body = await readJsonRequest(request);
+  jsonResponse(response, 200, await upsertProjectProfilesVisualization({
+    workdir,
+    profiles: Array.isArray(body.profiles) ? body.profiles : []
+  }));
 }
 
 async function handleApiProjectRoles(workdir: string, response: ServerResponse): Promise<void> {
@@ -1368,6 +1381,10 @@ async function handleVisualizationRequest(
   }
   if (segments.length === 4 && segments[2] === "project" && segments[3] === "config" && method === "GET") {
     await handleApiProjectConfig(state.workdir, response);
+    return;
+  }
+  if (segments.length === 4 && segments[2] === "project" && segments[3] === "profiles" && method === "POST") {
+    await handleApiProjectProfilesUpsert(state.workdir, request, response);
     return;
   }
   if (segments.length === 4 && segments[2] === "project" && segments[3] === "roles" && method === "GET") {

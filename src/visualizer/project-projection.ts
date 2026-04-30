@@ -12,7 +12,8 @@ import { RuntimeError } from "../runtime/runtime-errors.js";
 import { parseSystemFromMermaidSource } from "../runtime/parse-mermaid.js";
 import { loadPersistedRunsIndex, resolveOgsPaths } from "../runtime/project-lifecycle.js";
 import { pathExists } from "../runtime/run-artifacts.js";
-import { loadLaws, loadRolePackages, loadRuntimeConfig, loadUserProfile } from "../runtime/runtime-loader.js";
+import { loadLaws, loadProfiles, loadRolePackages, loadRuntimeConfig, loadTools, loadUserProfile } from "../runtime/runtime-loader.js";
+import { validateProfilesConfig } from "../runtime/config.js";
 import { resolveEffectiveLaw } from "../runtime/runtime-setup.js";
 import { SYSTEM_END_ROLE_ID } from "../runtime/types.js";
 import type { CompilerDiagnostic } from "../runtime/compiler.js";
@@ -30,6 +31,8 @@ type ProjectContext = {
   modelCatalog: unknown;
   laws: unknown;
   userProfile: unknown;
+  profiles: unknown;
+  tools: unknown;
   compilerSnapshot: ReturnType<typeof compileExecutionSnapshot>["snapshot"];
   resolvedModelWarnings: string[];
   resolvedModelsByRoleId: Map<string, ResolvedModelRuntimeConfig>;
@@ -75,6 +78,8 @@ async function computeProjectProjectionCacheToken(workdir: string): Promise<stri
     getMtimeToken(ogsPaths.modelCatalogPath),
     getMtimeToken(ogsPaths.lawsPath),
     getMtimeToken(ogsPaths.userProfilePath),
+    getMtimeToken(resolve(workdir, "profiles.json")),
+    getMtimeToken(resolve(workdir, "tools.json")),
     getMtimeToken(ogsPaths.projectPath)
   ]);
   return tokens.join("|");
@@ -98,6 +103,8 @@ async function assembleProjectContextFromSource(args: {
   });
   const laws = await loadLaws(undefined, args.workdir);
   const userProfile = await loadUserProfile(undefined, args.workdir);
+  const profiles = await loadProfiles(undefined, args.workdir);
+  const tools = await loadTools(undefined, args.workdir);
   const effectiveLaw = resolveEffectiveLaw(system, laws);
   const roleRepoRoot = resolveProjectRoleRepoRoot(args.workdir, runtimeConfig.roleRepo);
   const roleRootDir = resolveProjectRoleRootDir(args.workdir, runtimeConfig.roleRepo);
@@ -138,6 +145,8 @@ async function assembleProjectContextFromSource(args: {
     modelCatalog,
     laws,
     userProfile,
+    profiles,
+    tools,
     compilerSnapshot: compilerResult.snapshot,
     resolvedModelWarnings: resolvedModelSelection.warnings,
     resolvedModelsByRoleId: resolvedModelSelection.resolvedByRoleId,
@@ -377,6 +386,8 @@ export async function exportProjectBundle(workdir: string): Promise<Record<strin
       modelCatalog: await readOptionalJson(ogsPaths.modelCatalogPath),
       laws: await readOptionalJson(ogsPaths.lawsPath),
       userProfile: await readOptionalJson(ogsPaths.userProfilePath),
+      profiles: await readOptionalJson(resolve(workdir, "profiles.json")),
+      tools: await readOptionalJson(resolve(workdir, "tools.json")),
       project: await readOptionalJson(ogsPaths.projectPath)
     }
   };
@@ -421,6 +432,8 @@ export async function loadProjectBundle(args: {
     [ogsPaths.modelCatalogPath, project.modelCatalog ?? null, true],
     [ogsPaths.lawsPath, project.laws ?? null, true],
     [ogsPaths.userProfilePath, project.userProfile ?? null, true],
+    [resolve(args.workdir, "profiles.json"), project.profiles ?? null, true],
+    [resolve(args.workdir, "tools.json"), project.tools ?? null, true],
     [ogsPaths.projectPath, project.project ?? null, true]
   ];
   const loadedFiles: string[] = [];
@@ -529,10 +542,33 @@ export async function inspectProjectConfigVisualization(workdir: string): Promis
     modelCatalog: context.modelCatalog ?? null,
     laws: context.laws ?? null,
     userProfile: context.userProfile ?? null,
+    profiles: context.profiles ?? [],
+    tools: context.tools ?? [],
     project: context.projectMeta ?? null,
     roleRepoRoot: context.roleRepoRoot,
     compilerDigest: context.compilerSnapshot.digest,
     modelSelectionWarnings: context.resolvedModelWarnings
+  };
+}
+
+export async function upsertProjectProfilesVisualization(args: {
+  workdir: string;
+  profiles: unknown;
+}): Promise<Record<string, unknown>> {
+  const profilesPath = resolve(args.workdir, "profiles.json");
+  const incoming = validateProfilesConfig(args.profiles, profilesPath);
+  const existing = await loadProfiles(undefined, args.workdir);
+  const byProfileId = new Map(existing.map((profile) => [profile.profileId, profile]));
+  for (const profile of incoming) {
+    byProfileId.set(profile.profileId, profile);
+  }
+  const profiles = Array.from(byProfileId.values()).sort((left, right) => left.profileId.localeCompare(right.profileId));
+  await writeJsonFileAtomic(profilesPath, profiles);
+  invalidateProjectProjectionCache(args.workdir);
+  return {
+    workdir: args.workdir,
+    profilesPath,
+    profiles
   };
 }
 

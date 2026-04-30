@@ -741,8 +741,14 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
         roleId: t("studio.form.roleId", undefined, "Role id"),
         title: t("studio.form.title", undefined, "Title"),
         bindingKind: t("studio.form.bindingKind", undefined, "Binding"),
-        modelRef: t("studio.form.modelRef", undefined, "Model ref"),
-        profileId: t("studio.form.profileId", undefined, "Profile id"),
+        modelRef: t("studio.form.modelRef", undefined, "Model"),
+        profileId: t("studio.form.profileId", undefined, "Execution profile"),
+        existingProfile: t("studio.form.existingProfile", undefined, "Existing profile"),
+        createProfile: t("studio.form.createProfile", undefined, "Create profile"),
+        newProfileId: t("studio.form.newProfileId", undefined, "Generated profile id"),
+        newProfileToolRef: t("studio.form.newProfileToolRef", undefined, "Tool"),
+        newProfileTimeoutMs: t("studio.form.newProfileTimeoutMs", undefined, "Timeout ms"),
+        newProfileMaxOutputBytes: t("studio.form.newProfileMaxOutputBytes", undefined, "Max output bytes"),
         sourceRole: t("studio.form.sourceRole", undefined, "Source role"),
         targetRole: t("studio.form.targetRole", undefined, "Target role"),
         eventType: t("studio.form.eventType", undefined, "Event type"),
@@ -752,6 +758,10 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
         create: t("studio.form.create", undefined, "Create"),
         save: t("action.save", undefined, "Save"),
         noRepositoryRoles: t("studio.form.noRepositoryRoles", undefined, "No repository roles"),
+        noModels: t("studio.form.noModels", undefined, "No models available"),
+        noProfiles: t("studio.form.noProfiles", undefined, "No profiles available"),
+        noTools: t("studio.form.noTools", undefined, "No tools available"),
+        rolePackageSource: t("studio.form.rolePackageSource", undefined, "From this project's role repository."),
         outputTarget: t("studio.form.outputTarget", undefined, "output/end")
       };
     }
@@ -1358,6 +1368,7 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
         rolePackages: state.rolePackages,
         bindings: state.bindings,
         readiness: state.projectReadiness,
+        projectConfig: state.project?.config,
         labels: buildStudioGraphLabels(),
         commandFormLabels: buildStudioGraphCommandFormLabels(),
         onSelectRole: (roleId) => {
@@ -2354,6 +2365,7 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
         return;
       }
       await runAction("studio:apply-canvas", async () => {
+        await persistStudioProfileDrafts(result.profileDrafts);
         await applyStudioGraphPayload({
           authoring: result.authoring,
           canvas: result.canvas,
@@ -2361,6 +2373,20 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
           selectedFlowKey: result.selectedFlowKey,
           successMessage: t("studio.graph.draftUpdated", undefined, "Studio graph draft updated.")
         });
+      });
+    }
+
+    async function persistStudioProfileDrafts(profileDrafts) {
+      if (!Array.isArray(profileDrafts) || !profileDrafts.length) {
+        return;
+      }
+      const payload = await requestAction(API_PREFIX + "/project/profiles", {
+        profiles: profileDrafts
+      });
+      state.project = Object.assign({}, state.project || {}, {
+        config: Object.assign({}, state.project?.config || {}, {
+          profiles: payload.profiles || profileDrafts
+        })
       });
     }
 

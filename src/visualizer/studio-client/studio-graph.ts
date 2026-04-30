@@ -63,6 +63,7 @@ export type StudioGraphBridgeOptions = {
   rolePackages?: unknown;
   bindings?: unknown;
   readiness?: unknown;
+  projectConfig?: unknown;
   onSelectRole?: (roleId: string) => void;
   onSelectFlow?: (flowKey: string) => void;
   onClearSelection?: () => void;
@@ -474,7 +475,7 @@ export class StudioGraphIsland {
     const target = event?.target as HTMLElement | null;
     const targetName = target?.getAttribute("name") || "";
     const requiresStructureRefresh =
-      event?.type === "change" && ["mode", "repositoryRoleId", "bindingKind", "sourceRoleId", "targetRoleId"].includes(targetName);
+      event?.type === "change" && ["mode", "repositoryRoleId", "bindingKind", "profileMode", "sourceRoleId", "targetRoleId"].includes(targetName);
     this.commandForm = readStudioCommandFormState({
       form,
       previous: this.commandForm,
@@ -504,7 +505,7 @@ export class StudioGraphIsland {
     if (diagnostics) {
       diagnostics.outerHTML = renderStudioCommandFormDiagnostics(this.commandForm);
     }
-    for (const fieldPath of ["repositoryRoleId", "roleId", "modelRef", "profileId", "sourceRoleId", "targetRoleId", "eventType"]) {
+    for (const fieldPath of ["repositoryRoleId", "roleId", "modelRef", "profileId", "newProfileId", "newProfileToolRef", "newProfileTimeoutMs", "newProfileMaxOutputBytes", "sourceRoleId", "targetRoleId", "eventType"]) {
       const current = this.dialogEl.querySelector<HTMLElement>('[data-studio-command-error="' + this.cssEscape(fieldPath) + '"]');
       if (current) {
         current.outerHTML = renderStudioCommandFormFieldError(this.commandForm, fieldPath);
@@ -909,7 +910,8 @@ export class StudioGraphIsland {
       authoring: this.options.authoring,
       rolePackages: this.options.rolePackages,
       bindings: this.options.bindings,
-      readiness: this.options.readiness
+      readiness: this.options.readiness,
+      projectConfig: this.options.projectConfig
     };
   }
 

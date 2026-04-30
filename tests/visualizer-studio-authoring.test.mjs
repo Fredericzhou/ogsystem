@@ -14,6 +14,11 @@ import {
   listStudioAuthoringTemplates
 } from "../dist/visualizer/studio-templates.js";
 import { applyStudioAuthoringCommand } from "../dist/visualizer/studio-graph-commands.js";
+import {
+  commandFromStudioCommandFormState,
+  createDefaultStudioCommandFormState,
+  renderStudioCommandForm
+} from "../dist/visualizer/studio-graph-command-forms.js";
 
 const source = [
   "flowchart TD",
@@ -338,4 +343,82 @@ test("Studio authoring commands create validated roles and edges from command fo
     }
   });
   assert.equal(duplicateEdge.blockedCode, "duplicate-edge");
+});
+
+test("Studio command forms expose visual role package, model, and profile choices", () => {
+  const authoring = importMermaidToAuthoring({
+    workdir: "/tmp/project",
+    systemPath: "/tmp/project/system.mmd",
+    systemSource: source
+  });
+  const context = {
+    authoring,
+    rolePackages: {
+      rolePackages: [{ roleId: "writer", name: "Writer", status: "ok", files: { "role.json": true } }]
+    },
+    projectConfig: {
+      modelCatalog: {
+        models: [{ ref: "opencode/gpt-5.4", name: "GPT 5.4", provider: "opencode", model: "gpt-5.4" }]
+      },
+      profiles: [{ profileId: "profile.review", toolRef: "tool.review" }],
+      tools: [{ toolRef: "tool.review", runner: "local_shell" }]
+    }
+  };
+
+  const repositoryState = createDefaultStudioCommandFormState({ kind: "add-role", context });
+  const repositoryHtml = renderStudioCommandForm({ state: repositoryState, context });
+  assert.match(repositoryHtml, /Role package/);
+  assert.match(repositoryHtml, /From this project&#39;s role repository/);
+
+  const customState = {
+    ...repositoryState,
+    fields: { ...repositoryState.fields, mode: "custom", roleId: "custom_role", title: "Custom", bindingKind: "model", modelRef: "opencode/gpt-5.4" },
+    validation: { ok: true, diagnostics: [] }
+  };
+  const customHtml = renderStudioCommandForm({ state: customState, context });
+  assert.doesNotMatch(customHtml, /Role package/);
+  assert.match(customHtml, /<select name="modelRef">/);
+  assert.match(customHtml, /opencode\/gpt-5\.4/);
+  assert.doesNotMatch(customHtml, /name="profileId"/);
+  const modelCommand = commandFromStudioCommandFormState(customState);
+  assert.equal(modelCommand.modelRef, "opencode/gpt-5.4");
+
+  const existingProfileState = {
+    ...repositoryState,
+    fields: { ...repositoryState.fields, mode: "custom", roleId: "exec_role", title: "Exec", bindingKind: "exec", profileMode: "existing", profileId: "profile.review" },
+    validation: { ok: true, diagnostics: [] }
+  };
+  const existingProfileHtml = renderStudioCommandForm({ state: existingProfileState, context });
+  assert.match(existingProfileHtml, /name="profileMode" value="existing" checked/);
+  assert.match(existingProfileHtml, /profile\.review/);
+  assert.equal(commandFromStudioCommandFormState(existingProfileState).profileId, "profile.review");
+
+  const createProfileState = {
+    ...repositoryState,
+    fields: {
+      ...repositoryState.fields,
+      mode: "custom",
+      roleId: "exec_role",
+      title: "Exec",
+      bindingKind: "exec",
+      profileMode: "create",
+      profileId: "profile.exec_role",
+      newProfileId: "profile.exec_role",
+      newProfileToolRef: "tool.review",
+      newProfileTimeoutMs: "30000",
+      newProfileMaxOutputBytes: "4096"
+    },
+    validation: { ok: true, diagnostics: [] }
+  };
+  const createProfileHtml = renderStudioCommandForm({ state: createProfileState, context });
+  assert.match(createProfileHtml, /Generated profile id/);
+  assert.match(createProfileHtml, /readonly/);
+  const createProfileCommand = commandFromStudioCommandFormState(createProfileState);
+  assert.equal(createProfileCommand.profileId, "profile.exec_role");
+  assert.deepEqual(createProfileCommand.profileDraft, {
+    profileId: "profile.exec_role",
+    toolRef: "tool.review",
+    timeoutMs: 30000,
+    maxOutputBytes: 4096
+  });
 });

@@ -1,5 +1,5 @@
 import { STUDIO_SYSTEM_END_ROLE_ID, type StudioAuthoringRole } from "../studio-contracts.js";
-import type { StudioAuthoringCommand } from "./studio-graph-commands.js";
+import type { StudioAuthoringCommand, StudioExecutionProfileDraft } from "./studio-graph-commands.js";
 import {
   extractStudioRolePackages,
   normalizeStudioEventType,
@@ -22,11 +22,18 @@ export type StudioCommandFormLabels = Partial<Record<
   | "repositoryRole"
   | "customRole"
   | "rolePackage"
+  | "rolePackageSource"
   | "roleId"
   | "title"
   | "bindingKind"
   | "modelRef"
   | "profileId"
+  | "existingProfile"
+  | "createProfile"
+  | "newProfileId"
+  | "newProfileToolRef"
+  | "newProfileTimeoutMs"
+  | "newProfileMaxOutputBytes"
   | "sourceRole"
   | "targetRole"
   | "eventType"
@@ -36,6 +43,9 @@ export type StudioCommandFormLabels = Partial<Record<
   | "create"
   | "save"
   | "noRepositoryRoles"
+  | "noModels"
+  | "noProfiles"
+  | "noTools"
   | "outputTarget",
   string
 >>;
@@ -75,12 +85,31 @@ function escapeHtml(value: unknown): string {
     .replace(/'/g, "&#39;");
 }
 
+function asRecord(value: unknown): Record<string, unknown> | undefined {
+  return typeof value === "object" && value !== null && !Array.isArray(value)
+    ? value as Record<string, unknown>
+    : undefined;
+}
+
+function asArray(value: unknown): unknown[] {
+  return Array.isArray(value) ? value : [];
+}
+
+function asString(value: unknown): string {
+  return typeof value === "string" ? value.trim() : "";
+}
+
 function firstRoleId(context: StudioCommandValidationContext): string {
   return Object.keys(context.authoring?.roles ?? {}).sort()[0] ?? "";
 }
 
 function defaultRoleIdFromPackage(rolePackage: StudioRolePackageSummary | undefined): string {
   return rolePackage?.roleId ? rolePackage.roleId : "new-role";
+}
+
+function profileIdFromRoleId(roleId: string): string {
+  const normalized = roleId.trim().replace(/[^A-Za-z0-9_-]+/g, "-").replace(/^-+|-+$/g, "");
+  return `profile.${normalized || "role"}`;
 }
 
 export function createDefaultStudioCommandFormState(args: {
@@ -104,7 +133,8 @@ export function createDefaultStudioCommandFormState(args: {
       title: role?.title || roleId,
       bindingKind: role?.bindingKind || "noop",
       modelRef: role?.modelRef,
-      profileId: role?.profileId
+      profileId: role?.profileId,
+      profileMode: "existing"
     };
     return {
       kind: "edit-role",
@@ -120,7 +150,9 @@ export function createDefaultStudioCommandFormState(args: {
       repositoryRoleId: rolePackage?.roleId,
       roleId: defaultRoleIdFromPackage(rolePackage),
       title: rolePackage?.name || rolePackage?.roleId || "",
-      bindingKind: "noop"
+      bindingKind: "noop",
+      profileMode: "existing",
+      newProfileId: profileIdFromRoleId(defaultRoleIdFromPackage(rolePackage))
     };
     return {
       kind: "add-role",
@@ -164,7 +196,8 @@ export function commandFromStudioCommandFormState(state: StudioCommandFormState)
         title: (state.fields.title || state.fields.roleId).trim(),
         bindingKind,
         modelRef: bindingKind === "model" ? state.fields.modelRef?.trim() : undefined,
-        profileId: bindingKind === "exec" ? state.fields.profileId?.trim() : undefined
+        profileId: bindingKind === "exec" ? state.fields.profileId?.trim() : undefined,
+        profileDraft: bindingKind === "exec" ? profileDraftFromFields(state.fields) : undefined
       };
     }
     return {
@@ -173,7 +206,8 @@ export function commandFromStudioCommandFormState(state: StudioCommandFormState)
       title: (state.fields.title || state.fields.roleId).trim(),
       bindingKind,
       modelRef: bindingKind === "model" ? state.fields.modelRef?.trim() : undefined,
-      profileId: bindingKind === "exec" ? state.fields.profileId?.trim() : undefined
+      profileId: bindingKind === "exec" ? state.fields.profileId?.trim() : undefined,
+      profileDraft: bindingKind === "exec" ? profileDraftFromFields(state.fields) : undefined
     };
   }
   if (state.kind === "edit-edge") {
@@ -222,6 +256,165 @@ function renderRoleOptions(context: StudioCommandValidationContext, selected: st
   ).join("");
 }
 
+type StudioModelOption = {
+  ref: string;
+  label: string;
+};
+
+type StudioProfileOption = {
+  profileId: string;
+  label: string;
+};
+
+type StudioToolOption = {
+  toolRef: string;
+  label: string;
+};
+
+function extractStudioModelOptions(context: StudioCommandValidationContext): StudioModelOption[] {
+  const config = asRecord(context.projectConfig);
+  const catalog = asRecord(config?.modelCatalog ?? context.projectConfig);
+  return asArray(catalog?.models)
+    .map((entry) => asRecord(entry))
+    .filter((entry): entry is Record<string, unknown> => Boolean(entry))
+    .map((entry) => {
+      const ref = asString(entry.ref);
+      const name = asString(entry.name);
+      const provider = asString(entry.provider);
+      const model = asString(entry.model);
+      const labelParts = [name || ref, provider && model ? `${provider}/${model}` : ""].filter(Boolean);
+      return {
+        ref,
+        label: labelParts.length ? labelParts.join(" - ") : ref
+      };
+    })
+    .filter((entry) => Boolean(entry.ref))
+    .sort((left, right) => left.label.localeCompare(right.label));
+}
+
+function extractStudioProfileOptions(context: StudioCommandValidationContext): StudioProfileOption[] {
+  const config = asRecord(context.projectConfig);
+  const profiles = asArray(config?.profiles ?? context.projectConfig);
+  return profiles
+    .map((entry) => asRecord(entry))
+    .filter((entry): entry is Record<string, unknown> => Boolean(entry))
+    .map((entry) => {
+      const profileId = asString(entry.profileId);
+      const toolRef = asString(entry.toolRef);
+      return {
+        profileId,
+        label: toolRef ? `${profileId} - ${toolRef}` : profileId
+      };
+    })
+    .filter((entry) => Boolean(entry.profileId))
+    .sort((left, right) => left.label.localeCompare(right.label));
+}
+
+function extractStudioToolOptions(context: StudioCommandValidationContext): StudioToolOption[] {
+  const config = asRecord(context.projectConfig);
+  const toolsRecord = asRecord(config?.tools);
+  const tools = asArray(toolsRecord?.tools ?? config?.tools);
+  return tools
+    .map((entry) => asRecord(entry))
+    .filter((entry): entry is Record<string, unknown> => Boolean(entry))
+    .map((entry) => {
+      const toolRef = asString(entry.toolRef);
+      const runner = asString(entry.runner);
+      return {
+        toolRef,
+        label: runner ? `${toolRef} - ${runner}` : toolRef
+      };
+    })
+    .filter((entry) => Boolean(entry.toolRef))
+    .sort((left, right) => left.label.localeCompare(right.label));
+}
+
+function profileDraftFromFields(fields: StudioAddRoleDraft): StudioExecutionProfileDraft | undefined {
+  if (fields.profileMode !== "create") {
+    return undefined;
+  }
+  const profileId = (fields.newProfileId || fields.profileId || "").trim();
+  const toolRef = (fields.newProfileToolRef || "").trim();
+  if (!profileId || !toolRef) {
+    return undefined;
+  }
+  const timeoutMs = Number(fields.newProfileTimeoutMs);
+  const maxOutputBytes = Number(fields.newProfileMaxOutputBytes);
+  return {
+    profileId,
+    toolRef,
+    ...(Number.isInteger(timeoutMs) && timeoutMs > 0 ? { timeoutMs } : {}),
+    ...(Number.isInteger(maxOutputBytes) && maxOutputBytes > 0 ? { maxOutputBytes } : {})
+  };
+}
+
+function renderModelBindingField(args: {
+  state: StudioCommandFormState;
+  fields: StudioAddRoleDraft;
+  context: StudioCommandValidationContext;
+  labels?: StudioCommandFormLabels;
+}): string {
+  const options = extractStudioModelOptions(args.context);
+  const selected = args.fields.modelRef || options[0]?.ref || "";
+  if (!options.length) {
+    return '<label class="studio-command-form-row"><span>' + escapeHtml(label(args.labels, "modelRef", "Model")) + '</span><input name="modelRef" value="' + escapeHtml(args.fields.modelRef || "") + '">' +
+      '<div class="studio-command-form-hint">' + escapeHtml(label(args.labels, "noModels", "No model catalog entries available.")) + '</div>' +
+      renderStudioCommandFormFieldError(args.state, "modelRef") + "</label>";
+  }
+  const hasSelected = options.some((option) => option.ref === selected);
+  const optionHtml = (hasSelected ? [] : [{ ref: selected, label: `${selected} - current` }])
+    .concat(options)
+    .filter((option) => Boolean(option.ref))
+    .map((option) =>
+      '<option value="' + escapeHtml(option.ref) + '"' + (option.ref === selected ? " selected" : "") + ">" +
+      escapeHtml(option.label) + "</option>"
+    )
+    .join("");
+  return '<label class="studio-command-form-row"><span>' + escapeHtml(label(args.labels, "modelRef", "Model")) + '</span><select name="modelRef">' +
+    optionHtml + "</select>" + renderStudioCommandFormFieldError(args.state, "modelRef") + "</label>";
+}
+
+function renderProfileBindingField(args: {
+  state: StudioCommandFormState;
+  fields: StudioAddRoleDraft;
+  context: StudioCommandValidationContext;
+  labels?: StudioCommandFormLabels;
+}): string {
+  const options = extractStudioProfileOptions(args.context);
+  const tools = extractStudioToolOptions(args.context);
+  const profileMode = args.fields.profileMode === "create" || !options.length ? "create" : "existing";
+  const generatedProfileId = args.fields.newProfileId || profileIdFromRoleId(args.fields.roleId);
+  if (profileMode === "create") {
+    const toolRef = args.fields.newProfileToolRef || tools[0]?.toolRef || "";
+    const toolOptions = tools.length
+      ? tools.map((option) =>
+          '<option value="' + escapeHtml(option.toolRef) + '"' + (option.toolRef === toolRef ? " selected" : "") + ">" +
+          escapeHtml(option.label) + "</option>"
+        ).join("")
+      : '<option value="">' + escapeHtml(label(args.labels, "noTools", "No tools available")) + "</option>";
+    return [
+      options.length ? '<div class="studio-command-form-row segmented"><label><input type="radio" name="profileMode" value="existing"> ' + escapeHtml(label(args.labels, "existingProfile", "Existing profile")) + '</label><label><input type="radio" name="profileMode" value="create" checked> ' + escapeHtml(label(args.labels, "createProfile", "Create profile")) + "</label></div>" : '<input type="hidden" name="profileMode" value="create">',
+      '<label class="studio-command-form-row"><span>' + escapeHtml(label(args.labels, "newProfileId", "Generated profile id")) + '</span><input name="newProfileId" value="' + escapeHtml(generatedProfileId) + '" readonly><input type="hidden" name="profileId" value="' + escapeHtml(generatedProfileId) + '">' + renderStudioCommandFormFieldError(args.state, "newProfileId") + "</label>",
+      '<label class="studio-command-form-row"><span>' + escapeHtml(label(args.labels, "newProfileToolRef", "Tool")) + '</span><select name="newProfileToolRef">' + toolOptions + "</select>" + renderStudioCommandFormFieldError(args.state, "newProfileToolRef") + "</label>",
+      '<label class="studio-command-form-row"><span>' + escapeHtml(label(args.labels, "newProfileTimeoutMs", "Timeout ms")) + '</span><input name="newProfileTimeoutMs" inputmode="numeric" value="' + escapeHtml(args.fields.newProfileTimeoutMs || "") + '">' + renderStudioCommandFormFieldError(args.state, "newProfileTimeoutMs") + "</label>",
+      '<label class="studio-command-form-row"><span>' + escapeHtml(label(args.labels, "newProfileMaxOutputBytes", "Max output bytes")) + '</span><input name="newProfileMaxOutputBytes" inputmode="numeric" value="' + escapeHtml(args.fields.newProfileMaxOutputBytes || "") + '">' + renderStudioCommandFormFieldError(args.state, "newProfileMaxOutputBytes") + "</label>"
+    ].join("");
+  }
+  const selected = args.fields.profileId || options[0]?.profileId || "";
+  const hasSelected = options.some((option) => option.profileId === selected);
+  const optionHtml = (hasSelected ? [] : [{ profileId: selected, label: `${selected} - current` }])
+    .concat(options)
+    .filter((option) => Boolean(option.profileId))
+    .map((option) =>
+      '<option value="' + escapeHtml(option.profileId) + '"' + (option.profileId === selected ? " selected" : "") + ">" +
+      escapeHtml(option.label) + "</option>"
+    )
+    .join("");
+  return '<div class="studio-command-form-row segmented"><label><input type="radio" name="profileMode" value="existing" checked> ' + escapeHtml(label(args.labels, "existingProfile", "Existing profile")) + '</label><label><input type="radio" name="profileMode" value="create"> ' + escapeHtml(label(args.labels, "createProfile", "Create profile")) + '</label></div>' +
+    '<label class="studio-command-form-row"><span>' + escapeHtml(label(args.labels, "profileId", "Execution profile")) + '</span><select name="profileId">' +
+    optionHtml + "</select>" + renderStudioCommandFormFieldError(args.state, "profileId") + "</label>";
+}
+
 export function renderStudioCommandForm(args: {
   state: StudioCommandFormState;
   context: StudioCommandValidationContext;
@@ -249,7 +442,7 @@ export function renderStudioCommandForm(args: {
       isEdit ? "" : '<label><input type="radio" name="mode" value="custom"' + (fields.mode === "custom" ? " checked" : "") + "> " + escapeHtml(label(labels, "customRole", "Custom")) + "</label>",
       isEdit ? "" : "</div>",
       isEdit ? '<input type="hidden" name="mode" value="custom"><input type="hidden" name="originalRoleId" value="' + escapeHtml(fields.originalRoleId || fields.roleId) + '">' : "",
-      isEdit ? "" : '<label class="studio-command-form-row"><span>' + escapeHtml(label(labels, "rolePackage", "Role package")) + '</span><select name="repositoryRoleId"' + (fields.mode === "custom" ? " disabled" : "") + ">" + packageOptions + "</select>" + renderStudioCommandFormFieldError(args.state, "repositoryRoleId") + "</label>",
+      !isEdit && fields.mode === "repository" ? '<label class="studio-command-form-row"><span>' + escapeHtml(label(labels, "rolePackage", "Role package")) + '</span><select name="repositoryRoleId">' + packageOptions + "</select><div class=\"studio-command-form-hint\">" + escapeHtml(label(labels, "rolePackageSource", "From this project's role repository.")) + "</div>" + renderStudioCommandFormFieldError(args.state, "repositoryRoleId") + "</label>" : "",
       '<label class="studio-command-form-row"><span>' + escapeHtml(label(labels, "roleId", "Role id")) + '</span><input name="roleId" value="' + escapeHtml(fields.roleId) + '">' + renderStudioCommandFormFieldError(args.state, "roleId") + "</label>",
       '<label class="studio-command-form-row"><span>' + escapeHtml(label(labels, "title", "Title")) + '</span><input name="title" value="' + escapeHtml(fields.title || "") + '"></label>',
       '<label class="studio-command-form-row"><span>' + escapeHtml(label(labels, "bindingKind", "Binding")) + '</span><select name="bindingKind">',
@@ -257,8 +450,8 @@ export function renderStudioCommandForm(args: {
       '<option value="model"' + (fields.bindingKind === "model" ? " selected" : "") + ">model</option>",
       '<option value="exec"' + (fields.bindingKind === "exec" ? " selected" : "") + ">exec</option>",
       "</select></label>",
-      '<label class="studio-command-form-row"><span>' + escapeHtml(label(labels, "modelRef", "Model ref")) + '</span><input name="modelRef" value="' + escapeHtml(fields.modelRef || "") + '"' + (fields.bindingKind === "model" ? "" : " disabled") + ">" + renderStudioCommandFormFieldError(args.state, "modelRef") + "</label>",
-      '<label class="studio-command-form-row"><span>' + escapeHtml(label(labels, "profileId", "Profile id")) + '</span><input name="profileId" value="' + escapeHtml(fields.profileId || "") + '"' + (fields.bindingKind === "exec" ? "" : " disabled") + ">" + renderStudioCommandFormFieldError(args.state, "profileId") + "</label>",
+      fields.bindingKind === "model" ? renderModelBindingField({ state: args.state, fields, context: args.context, labels }) : "",
+      fields.bindingKind === "exec" ? renderProfileBindingField({ state: args.state, fields, context: args.context, labels }) : "",
       renderStudioCommandFormDiagnostics(args.state),
       '<div class="studio-command-form-actions"><button type="submit"' + disabled + '>' + escapeHtml(isEdit ? label(labels, "save", "Save") : label(labels, "create", "Create")) + "</button></div>",
       "</form>"
@@ -298,15 +491,31 @@ export function readStudioCommandFormState(args: {
     const repositoryRoleId = String(data.get("repositoryRoleId") ?? "").trim();
     const rolePackage = extractStudioRolePackages(args.context.rolePackages).find((entry) => entry.roleId === repositoryRoleId);
     const bindingKindValue = String(data.get("bindingKind") ?? "noop");
+    const bindingKind = bindingKindValue === "model" || bindingKindValue === "exec" ? bindingKindValue : "noop";
+    const modelOptions = extractStudioModelOptions(args.context);
+    const profileOptions = extractStudioProfileOptions(args.context);
+    const toolOptions = extractStudioToolOptions(args.context);
+    const roleId = String(data.get("roleId") ?? "").trim() || (mode === "repository" ? rolePackage?.roleId ?? "" : "");
+    const profileMode = data.get("profileMode") === "create" || (bindingKind === "exec" && !profileOptions.length) ? "create" : "existing";
+    const newProfileId = profileIdFromRoleId(roleId);
     const fields: StudioAddRoleDraft = {
       mode,
       originalRoleId: String(data.get("originalRoleId") ?? args.previous.fields.originalRoleId ?? "").trim(),
       repositoryRoleId,
-      roleId: String(data.get("roleId") ?? "").trim() || (mode === "repository" ? rolePackage?.roleId ?? "" : ""),
+      roleId,
       title: String(data.get("title") ?? "").trim() || (mode === "repository" ? rolePackage?.name ?? "" : ""),
-      bindingKind: bindingKindValue === "model" || bindingKindValue === "exec" ? bindingKindValue : "noop",
-      modelRef: String(data.get("modelRef") ?? "").trim(),
-      profileId: String(data.get("profileId") ?? "").trim()
+      bindingKind,
+      modelRef: bindingKind === "model" ? String(data.get("modelRef") ?? "").trim() || modelOptions[0]?.ref : "",
+      profileId: bindingKind === "exec"
+        ? profileMode === "create"
+          ? newProfileId
+          : String(data.get("profileId") ?? "").trim() || profileOptions[0]?.profileId
+        : "",
+      profileMode,
+      newProfileId,
+      newProfileToolRef: profileMode === "create" ? String(data.get("newProfileToolRef") ?? "").trim() || toolOptions[0]?.toolRef : "",
+      newProfileTimeoutMs: String(data.get("newProfileTimeoutMs") ?? "").trim(),
+      newProfileMaxOutputBytes: String(data.get("newProfileMaxOutputBytes") ?? "").trim()
     };
     return {
       kind: args.previous.kind,

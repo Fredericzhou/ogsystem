@@ -24,6 +24,16 @@ async function seedProject(workdir: string): Promise<void> {
     "utf8"
   );
   await writeFile(
+    path.resolve(workdir, "profiles.json"),
+    JSON.stringify([{ profileId: "profile.review", toolRef: "tool.review" }], null, 2),
+    "utf8"
+  );
+  await writeFile(
+    path.resolve(workdir, "tools.json"),
+    JSON.stringify({ tools: [{ toolRef: "tool.review", runner: "local_shell", command: "echo", argsTemplate: [], stdinMode: "none" }] }, null, 2),
+    "utf8"
+  );
+  await writeFile(
     path.resolve(workdir, "system.mmd"),
     [
       "flowchart TD",

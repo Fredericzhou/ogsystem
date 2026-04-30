@@ -47,6 +47,16 @@ async function seedProjectFixture(workdir) {
     "utf8"
   );
   await writeFile(
+    path.resolve(workdir, "profiles.json"),
+    JSON.stringify([{ profileId: "profile.review", toolRef: "tool.review" }], null, 2),
+    "utf8"
+  );
+  await writeFile(
+    path.resolve(workdir, "tools.json"),
+    JSON.stringify({ tools: [{ toolRef: "tool.review", runner: "local_shell", command: "echo", argsTemplate: [], stdinMode: "none" }] }, null, 2),
+    "utf8"
+  );
+  await writeFile(
     path.resolve(workdir, "system.mmd"),
     [
       "flowchart TD",
@@ -807,6 +817,8 @@ test("visualizer data projects project and graph information", async () => {
   const projectConfig = await inspectProjectConfigVisualization(workdir);
   assert.ok(projectConfig.modelCatalog);
   assert.ok(projectConfig.runtime);
+  assert.equal(projectConfig.profiles[0].profileId, "profile.review");
+  assert.equal(projectConfig.tools[0].toolRef, "tool.review");
 
   const graph = await inspectRunGraphVisualization({ workdir, runId });
   assert.equal(graph.simulation.isSimulation, true);

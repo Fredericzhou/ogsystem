@@ -38,6 +38,7 @@ export type StudioCommandValidationContext = {
   rolePackages?: unknown;
   bindings?: unknown;
   readiness?: unknown;
+  projectConfig?: unknown;
 };
 
 export type StudioAddRoleDraft = {
@@ -49,6 +50,11 @@ export type StudioAddRoleDraft = {
   bindingKind: StudioAuthoringRole["bindingKind"];
   modelRef?: string;
   profileId?: string;
+  profileMode?: "existing" | "create";
+  newProfileId?: string;
+  newProfileToolRef?: string;
+  newProfileTimeoutMs?: string;
+  newProfileMaxOutputBytes?: string;
 };
 
 export type StudioAddEdgeDraft = {
@@ -251,6 +257,45 @@ export function validateStudioAddRoleDraft(
       messageKey: "studio.validation.profileIdRequired",
       message: "Execution binding requires a profile id."
     }));
+  }
+  if (draft.bindingKind === "exec" && draft.profileMode === "create") {
+    const profileId = asString(draft.newProfileId || draft.profileId);
+    if (!profileId) {
+      diagnostics.push(issue({
+        severity: "error",
+        fieldPath: "newProfileId",
+        roleId,
+        code: "ROLE_BINDING_UNRESOLVED",
+        messageKey: "studio.validation.profileIdRequired",
+        message: "New execution profile requires a generated profile id."
+      }));
+    }
+    if (!asString(draft.newProfileToolRef)) {
+      diagnostics.push(issue({
+        severity: "error",
+        fieldPath: "newProfileToolRef",
+        roleId,
+        code: "ROLE_BINDING_UNRESOLVED",
+        messageKey: "studio.validation.profileToolRequired",
+        message: "New execution profile requires a tool reference."
+      }));
+    }
+    for (const [fieldPath, rawValue] of [
+      ["newProfileTimeoutMs", draft.newProfileTimeoutMs],
+      ["newProfileMaxOutputBytes", draft.newProfileMaxOutputBytes]
+    ] as const) {
+      const value = asString(rawValue);
+      if (value && (!/^[0-9]+$/.test(value) || Number(value) <= 0)) {
+        diagnostics.push(issue({
+          severity: "error",
+          fieldPath,
+          roleId,
+          code: "ROLE_BINDING_UNRESOLVED",
+          messageKey: "studio.validation.profileNumberInvalid",
+          message: "Profile numeric limits must be positive integers."
+        }));
+      }
+    }
   }
 
   return {

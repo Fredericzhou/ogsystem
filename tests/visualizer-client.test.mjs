@@ -886,7 +886,25 @@ function createBackend(options = {}) {
         });
       }
       if (pathname === "/api/v1/project/config") {
-        return createResponse({ modelSelectionWarnings: [] });
+        return createResponse({
+          modelSelectionWarnings: [],
+          modelCatalog: {
+            models: [
+              { ref: "opencode/gpt-5.4", name: "GPT 5.4", provider: "opencode", model: "gpt-5.4" },
+              { ref: "opencode/gpt-5-nano", name: "GPT 5 Nano", provider: "opencode", model: "gpt-5-nano" }
+            ]
+          },
+          profiles: [{ profileId: "profile.review", toolRef: "tool.review" }],
+          tools: [{ toolRef: "tool.review", runner: "local_shell" }]
+        });
+      }
+      if (pathname === "/api/v1/project/profiles" && method === "POST") {
+        this.lastProfilesUpsertBody = JSON.parse(request.body ?? "{}");
+        return createResponse({
+          workdir: "/tmp/demo",
+          profilesPath: "/tmp/demo/profiles.json",
+          profiles: this.lastProfilesUpsertBody.profiles
+        });
       }
       if (pathname === "/api/v1/project/bindings") {
         return createResponse({
@@ -2019,6 +2037,7 @@ test("visualizer client opens Studio Bridge, saves an authoring draft, and dry-r
   assert.ok(latestEditableMount().rolePackages);
   assert.ok(latestEditableMount().readiness);
   assert.ok(latestEditableMount().bindings);
+  assert.ok(latestEditableMount().projectConfig);
   assert.ok(latestEditableMount().commandFormLabels);
   await settle();
   const fetchCallsAfterOpen = harness.backend.fetchCalls.length;
@@ -2114,9 +2133,11 @@ test("visualizer client opens Studio Bridge, saves an authoring draft, and dry-r
   await latestMount.onApplyCommand({
     authoring: addRoleAuthoring,
     canvas: addRoleCanvas,
-    selectedRoleId: "new-role"
+    selectedRoleId: "new-role",
+    profileDrafts: [{ profileId: "profile.new-role", toolRef: "tool.review", timeoutMs: 30000 }]
   });
   await settle();
+  assert.equal(harness.backend.lastProfilesUpsertBody.profiles[0].profileId, "profile.new-role");
   assert.equal(harness.backend.lastAuthoringApplyCanvasBody.authoring.roles["new-role"].bindingKind, "noop");
   assert.equal(
     harness.backend.lastAuthoringApplyCanvasBody.canvas.nodes.some((node) => node.roleId === "new-role"),

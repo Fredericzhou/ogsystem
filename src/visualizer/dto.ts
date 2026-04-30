@@ -79,6 +79,8 @@ export type ProjectTransferView = {
     modelCatalog: unknown | null;
     laws: unknown | null;
     userProfile: unknown | null;
+    profiles: unknown | null;
+    tools: unknown | null;
     project: unknown | null;
   };
 };
@@ -799,6 +801,8 @@ export function mapProjectTransferView(value: unknown): ProjectTransferView {
       modelCatalog: project.modelCatalog ?? null,
       laws: project.laws ?? null,
       userProfile: project.userProfile ?? null,
+      profiles: project.profiles ?? null,
+      tools: project.tools ?? null,
       project: project.project ?? null
     }
   };

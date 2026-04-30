@@ -43,6 +43,16 @@ async function seedProjectFixture(workdir) {
     "utf8"
   );
   await writeFile(
+    path.resolve(workdir, "profiles.json"),
+    JSON.stringify([{ profileId: "profile.review", toolRef: "tool.review" }], null, 2),
+    "utf8"
+  );
+  await writeFile(
+    path.resolve(workdir, "tools.json"),
+    JSON.stringify({ tools: [{ toolRef: "tool.review", runner: "local_shell", command: "echo", argsTemplate: [], stdinMode: "none" }] }, null, 2),
+    "utf8"
+  );
+  await writeFile(
     path.resolve(workdir, "system.mmd"),
     [
       "flowchart TD",
@@ -785,6 +795,21 @@ test("visualizer server serves run list, details, and live stream", async (t) =>
     const projectConfig = await projectConfigResponse.json();
     assert.ok(projectConfig.runtime);
     assert.ok(projectConfig.modelCatalog);
+    assert.equal(projectConfig.profiles[0].profileId, "profile.review");
+    assert.equal(projectConfig.tools[0].toolRef, "tool.review");
+
+    const profileUpsertResponse = await fetch(`${url}/api/v1/project/profiles`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        profiles: [{ profileId: "profile.generated", toolRef: "tool.review", timeoutMs: 30000 }]
+      })
+    });
+    assert.equal(profileUpsertResponse.status, 200);
+    const profileUpsert = await profileUpsertResponse.json();
+    assert.ok(profileUpsert.profiles.some((profile) => profile.profileId === "profile.generated"));
+    const profilesFile = JSON.parse(await readFile(path.resolve(workdir, "profiles.json"), "utf8"));
+    assert.ok(profilesFile.some((profile) => profile.profileId === "profile.generated"));
 
     const projectRolesResponse = await fetch(`${url}/api/v1/project/roles`);
     assert.equal(projectRolesResponse.status, 200);
