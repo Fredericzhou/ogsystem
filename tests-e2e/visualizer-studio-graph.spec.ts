@@ -81,7 +81,7 @@ test("Studio Bridge renders and edits through the real X6 graph island", async (
       };
     });
     await page.locator("#project-home").click();
-    await page.locator("#workbench-open-bridge").click();
+    await page.locator('[data-workbench-view="bridge"]').click();
 
     await expect(page.locator("#studio-graph-root")).toBeVisible();
     await expect(page.locator('#studio-graph-root [data-cell-id="demo-analyst"]').first()).toBeVisible();
@@ -181,11 +181,11 @@ test("Studio Bridge renders and edits through the real X6 graph island", async (
     await page.locator("#studio-bridge-generate").click();
     await expect(page.locator("#flash")).toContainText("Generated deterministic Mermaid");
 
-    await page.locator("#workbench-open-bridge").click();
+    await page.locator('[data-workbench-view="bridge"]').click();
     await page.locator("#studio-bridge-save").click();
     await expect(page.locator("#flash")).toContainText("Mermaid source saved");
 
-    await page.locator("#workbench-open-bridge").click();
+    await page.locator('[data-workbench-view="bridge"]').click();
     await page.locator("#studio-bridge-dry-run").click();
     await page.locator("#action-start-input").fill("browser smoke");
     await page.locator("#action-form-submit").click();

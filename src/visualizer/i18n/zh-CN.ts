@@ -439,6 +439,7 @@ export const zhCN = {
   "workbench.rendered": "渲染",
   "workbench.structure": "结构",
   "workbench.bridge": "Studio Bridge",
+  "workbench.sourceActionsHint": "草稿操作只影响当前工作台源码，保存后才会写入磁盘。",
   "workbench.saveBlockedByDiagnostics": "Mermaid 校验诊断阻止保存。",
   "workbench.saveCopyBlockedByDiagnostics": "Mermaid 校验诊断阻止保存副本。",
   "studio.graph.bundleLoading": "Studio 图谱包加载中...",

@@ -448,6 +448,16 @@ export function renderPageHtml(workdir: string, apiPrefix: string, i18n: PageI18
       display: grid;
       gap: 8px;
     }
+    .workbench-source-actions {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 8px;
+      flex-wrap: wrap;
+      padding: 8px;
+      border: 1px solid var(--border);
+      background: rgba(255, 255, 255, 0.025);
+    }
     .toolbar-row {
       display: flex;
       justify-content: space-between;
@@ -813,12 +823,14 @@ export function renderPageHtml(workdir: string, apiPrefix: string, i18n: PageI18
         grid-template-columns: 1fr;
       }
       .toolbar-row,
+      .workbench-source-actions,
       .row {
         display: grid;
         grid-template-columns: repeat(2, minmax(0, 1fr));
         align-items: stretch;
       }
       .toolbar-row > *,
+      .workbench-source-actions > *,
       .row > * {
         min-width: 0;
       }
@@ -853,6 +865,7 @@ export function renderPageHtml(workdir: string, apiPrefix: string, i18n: PageI18
         width: 100%;
       }
       .toolbar-row,
+      .workbench-source-actions,
       .row {
         grid-template-columns: 1fr;
       }

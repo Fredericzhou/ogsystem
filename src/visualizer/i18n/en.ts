@@ -435,6 +435,7 @@ export const en = {
   "workbench.rendered": "Rendered",
   "workbench.structure": "Structure",
   "workbench.bridge": "Studio Bridge",
+  "workbench.sourceActionsHint": "Draft actions only affect the current workbench source until you save.",
   "workbench.saveBlockedByDiagnostics": "Save blocked by Mermaid validation diagnostics.",
   "workbench.saveCopyBlockedByDiagnostics": "Save copy blocked by Mermaid validation diagnostics.",
   "studio.graph.bundleLoading": "Studio graph bundle loading...",

@@ -138,6 +138,12 @@ function matchesSelector(element, selector) {
   if (selector === "[data-workbench-view]") {
     return Object.hasOwn(element.attributes, "data-workbench-view");
   }
+  if (selector === "[data-workbench-view=\"source\"]") {
+    return element.attributes["data-workbench-view"] === "source";
+  }
+  if (selector === "[data-workbench-view=\"bridge\"]") {
+    return element.attributes["data-workbench-view"] === "bridge";
+  }
   return false;
 }
 
@@ -1865,6 +1871,12 @@ test("visualizer client appends SSE timeline entries and refreshes only targeted
 test("visualizer client keeps the workbench editor visible with source intact during validation", async () => {
   const harness = await createClientHarness();
 
+  const sourceTab = harness.document.getElementById("workbench-tabs")
+    .querySelectorAll("[data-workbench-view=\"source\"]")[0];
+  assert.ok(sourceTab);
+  await sourceTab.click();
+  await settle();
+
   const newDraftButton = harness.document.getElementById("workbench-new-draft");
   assert.ok(newDraftButton);
   await newDraftButton.click();
@@ -1921,6 +1933,12 @@ test("visualizer client applies timeline filters through the events API", async 
 
 test("visualizer client edits the Mermaid workbench, saves, and starts a run", async () => {
   const harness = await createClientHarness({ readinessCanDryRun: true });
+
+  const sourceTab = harness.document.getElementById("workbench-tabs")
+    .querySelectorAll("[data-workbench-view=\"source\"]")[0];
+  assert.ok(sourceTab);
+  await sourceTab.click();
+  await settle();
 
   const newDraftButton = harness.document.getElementById("workbench-new-draft");
   assert.ok(newDraftButton);
@@ -1980,9 +1998,10 @@ test("visualizer client opens Studio Bridge, saves an authoring draft, and dry-r
   const latestEditableMount = () =>
     mountCalls.findLast((call) => typeof call.options.onApplyCanvas === "function")?.options;
 
-  const openBridgeButton = harness.document.getElementById("workbench-open-bridge");
-  assert.ok(openBridgeButton);
-  await openBridgeButton.click();
+  const bridgeTab = harness.document.getElementById("workbench-tabs")
+    .querySelectorAll("[data-workbench-view=\"bridge\"]")[0];
+  assert.ok(bridgeTab);
+  await bridgeTab.click();
   await settle();
 
   assert.ok(harness.backend.fetchCalls.some((call) => call.path === "/api/v1/project/studio/bridge"));
@@ -2059,7 +2078,7 @@ test("visualizer client opens Studio Bridge, saves an authoring draft, and dry-r
     await resetFilterInput.input("");
     await settle();
   }
-  await openBridgeButton.click();
+  await bridgeTab.click();
   await settle();
 
   let latestMount = latestEditableMount();

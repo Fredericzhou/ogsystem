@@ -1451,24 +1451,30 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
       workbenchStatusEl.innerHTML = statusPills.join("");
       workbenchTabsEl.innerHTML = [
         '<button class="button subtle ' + (state.workbenchView === "source" ? "active" : "") + '" data-workbench-view="source">' + escapeText(t("workbench.source")) + '</button>',
+        '<button class="button subtle ' + (state.workbenchView === "bridge" ? "active" : "") + '" data-workbench-view="bridge">' + escapeText(t("workbench.bridge")) + '</button>',
         '<button class="button subtle ' + (state.workbenchView === "render" ? "active" : "") + '" data-workbench-view="render">' + escapeText(t("workbench.rendered")) + '</button>',
-        '<button class="button subtle ' + (state.workbenchView === "structure" ? "active" : "") + '" data-workbench-view="structure">' + escapeText(t("workbench.structure")) + '</button>',
-        '<button class="button subtle ' + (state.workbenchView === "bridge" ? "active" : "") + '" data-workbench-view="bridge">' + escapeText(t("workbench.bridge")) + '</button>'
+        '<button class="button subtle ' + (state.workbenchView === "structure" ? "active" : "") + '" data-workbench-view="structure">' + escapeText(t("workbench.structure")) + '</button>'
       ].join("");
       workbenchActionsEl.innerHTML = [
-        '<button class="button primary" id="workbench-open-bridge">' + escapeText(t("studio.openBridge")) + '</button>',
-        '<button class="button subtle" id="workbench-new-draft">' + escapeText(t("action.newDraft")) + '</button>',
-        '<button class="button subtle" id="workbench-recover-draft"' + (state.workbenchHasDraft ? "" : " disabled") + '>' + escapeText(t("action.recoverDraft")) + '</button>',
-        '<button class="button subtle" id="workbench-revert"' + (dirty ? "" : " disabled") + '>' + escapeText(t("action.revertToDisk")) + '</button>',
         '<button class="button primary" id="workbench-save"' + (dirty ? "" : " disabled") + '>' + escapeText(t("action.save")) + '</button>',
-        '<button class="button" id="workbench-save-as">' + escapeText(t("action.saveAs")) + '</button>'
+        '<button class="button subtle" id="workbench-save-as">' + escapeText(t("action.saveCopy")) + '</button>'
       ].join("");
       if (state.workbenchView === "source" && preserveEditor && existingEditor) {
         if (existingEditor.value !== state.workbenchSource) {
           existingEditor.value = state.workbenchSource || "";
         }
       } else if (state.workbenchView === "source") {
-        workbenchBodyEl.innerHTML = '<textarea id="workbench-editor" class="editor" spellcheck="false">' + escapeText(state.workbenchSource || "") + '</textarea>';
+        workbenchBodyEl.innerHTML = [
+          '<div class="workbench-source-actions">',
+          '<div class="hint">' + escapeText(t("workbench.sourceActionsHint", undefined, "Draft actions only affect the current workbench source until you save.")) + '</div>',
+          '<div class="toolbar-group">',
+          '<button class="button subtle" id="workbench-new-draft">' + escapeText(t("action.newDraft")) + '</button>',
+          state.workbenchHasDraft ? '<button class="button subtle" id="workbench-recover-draft">' + escapeText(t("action.recoverDraft")) + '</button>' : "",
+          dirty ? '<button class="button subtle" id="workbench-revert">' + escapeText(t("action.revertToDisk")) + '</button>' : "",
+          '</div>',
+          '</div>',
+          '<textarea id="workbench-editor" class="editor" spellcheck="false">' + escapeText(state.workbenchSource || "") + '</textarea>'
+        ].join("");
       } else if (state.workbenchView === "render") {
         workbenchBodyEl.innerHTML = [
           '<div class="preview">' + renderWorkbenchPreviewSvg(structure) + '</div>',
@@ -1516,16 +1522,6 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
               setFlash("error", "Studio Bridge refresh failed: " + (error.message || error));
             });
           }
-        });
-      }
-      const openBridgeButton = document.getElementById("workbench-open-bridge");
-      if (openBridgeButton) {
-        openBridgeButton.addEventListener("click", () => {
-          state.workbenchView = "bridge";
-          renderWorkbench();
-          void refreshStudioBridge().catch((error) => {
-            setFlash("error", "Studio Bridge refresh failed: " + (error.message || error));
-          });
         });
       }
       const newDraftButton = document.getElementById("workbench-new-draft");
