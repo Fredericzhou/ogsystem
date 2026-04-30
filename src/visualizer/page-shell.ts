@@ -63,7 +63,7 @@ export function renderPageHtml(workdir: string, apiPrefix: string, i18n: PageI18
     }
     .app {
       display: grid;
-      grid-template-columns: 288px minmax(0, 1fr);
+      grid-template-columns: minmax(0, 1fr);
       min-height: 100vh;
     }
     .sidebar-overlay {
@@ -80,6 +80,7 @@ export function renderPageHtml(workdir: string, apiPrefix: string, i18n: PageI18
       pointer-events: auto;
     }
     .sidebar {
+      display: none;
       padding: 14px;
       border-right: 1px solid var(--border);
       background: rgba(8, 13, 26, 0.78);
@@ -88,6 +89,12 @@ export function renderPageHtml(workdir: string, apiPrefix: string, i18n: PageI18
       overflow-x: hidden;
       overflow-y: auto;
       z-index: 30;
+    }
+    body.show-run-sidebar .app {
+      grid-template-columns: 288px minmax(0, 1fr);
+    }
+    body.show-run-sidebar .sidebar {
+      display: block;
     }
     .brand {
       display: flex;
@@ -806,8 +813,10 @@ export function renderPageHtml(workdir: string, apiPrefix: string, i18n: PageI18
       display: none;
     }
     @media (max-width: 1180px) {
+      body.show-run-sidebar .app,
       .app { grid-template-columns: 1fr; }
       .sidebar {
+        display: block;
         position: fixed;
         left: 0;
         top: 0;
@@ -817,6 +826,9 @@ export function renderPageHtml(workdir: string, apiPrefix: string, i18n: PageI18
         border-bottom: 0;
         transform: translateX(-102%);
         transition: transform 180ms ease;
+      }
+      body:not(.show-run-sidebar) .sidebar {
+        display: none;
       }
       body.drawer-open .sidebar {
         transform: translateX(0);

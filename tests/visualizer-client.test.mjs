@@ -1644,11 +1644,13 @@ test("visualizer client switches lifecycle shell without unloading data and keep
   assert.equal(harness.document.getElementById("console-panel-debug").hidden, false);
   assert.equal(harness.document.getElementById("console-panel-ops").hidden, false);
   assert.equal(harness.document.body.classList.classes.has("show-run-sidebar"), true);
+  assert.equal(harness.document.getElementById("sidebar-toggle").hidden, false);
 
   await operateTab.click();
   assert.equal(harness.document.getElementById("console-panel-debug").hidden, false);
   assert.equal(harness.document.getElementById("console-panel-ops").hidden, false);
   assert.equal(harness.document.body.classList.classes.has("show-run-sidebar"), true);
+  assert.equal(harness.document.getElementById("sidebar-toggle").hidden, false);
   assert.match(harness.document.getElementById("ops-summary").textContent, /TOOL_EXECUTION_TIMEOUT/);
 
   await buildTab.click();
@@ -1656,6 +1658,8 @@ test("visualizer client switches lifecycle shell without unloading data and keep
   assert.equal(harness.document.getElementById("console-panel-project").hidden, true);
   assert.equal(harness.document.getElementById("console-panel-config").hidden, false);
   assert.equal(harness.document.body.classList.classes.has("show-run-sidebar"), false);
+  assert.equal(harness.document.body.classList.classes.has("drawer-open"), false);
+  assert.equal(harness.document.getElementById("sidebar-toggle").hidden, true);
   assert.match(harness.document.getElementById("contract-explain").textContent, /flow.answer.done/);
 
   await validateTab.click();
@@ -1668,6 +1672,7 @@ test("visualizer client switches lifecycle shell without unloading data and keep
   assert.equal(harness.document.getElementById("console-panel-project").hidden, false);
   assert.equal(harness.document.getElementById("console-panel-build").hidden, true);
   assert.equal(harness.document.body.classList.classes.has("show-run-sidebar"), false);
+  assert.equal(harness.document.getElementById("sidebar-toggle").hidden, true);
   assert.match(harness.document.getElementById("project-readiness").textContent, /dry-run readiness/);
 
   await legacyTab.click();
@@ -1678,6 +1683,7 @@ test("visualizer client switches lifecycle shell without unloading data and keep
   assert.equal(harness.document.getElementById("console-panel-logs").hidden, false);
   assert.equal(harness.document.getElementById("console-panel-project").hidden, true);
   assert.equal(harness.document.body.classList.classes.has("show-run-sidebar"), true);
+  assert.equal(harness.document.getElementById("sidebar-toggle").hidden, false);
 });
 
 test("visualizer client keeps build deep links on the project graph workspace", async () => {

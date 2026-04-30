@@ -1049,8 +1049,9 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
     }
 
     function setSidebarOpen(nextValue) {
-      state.sidebarOpen = nextValue;
-      document.body.classList.toggle("drawer-open", nextValue);
+      const canOpen = state.consoleTab === "operate" || state.consoleTab === "legacy";
+      state.sidebarOpen = Boolean(nextValue && canOpen);
+      document.body.classList.toggle("drawer-open", state.sidebarOpen);
     }
 
     function renderConsoleTabs() {
@@ -1098,7 +1099,14 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
                 ? ["validate-release", "config"]
                 : ["debug", "ops", "logs", "artifacts"]
       );
-      document.body.classList.toggle("show-run-sidebar", state.consoleTab === "operate" || state.consoleTab === "legacy");
+      const showRunSidebar = state.consoleTab === "operate" || state.consoleTab === "legacy";
+      document.body.classList.toggle("show-run-sidebar", showRunSidebar);
+      if (!showRunSidebar) {
+        setSidebarOpen(false);
+      }
+      if (sidebarToggleButton) {
+        sidebarToggleButton.hidden = !showRunSidebar;
+      }
       for (const id of ["project", "build", "debug", "ops", "config", "logs", "artifacts", "validate-release"]) {
         const panel = document.getElementById("console-panel-" + id);
         if (panel) {

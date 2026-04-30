@@ -93,6 +93,24 @@ test("Studio Bridge renders and edits through the real graph workspace", async (
     await page.getByRole("button", { name: "Build" }).click();
     await page.locator('[data-workbench-view="bridge"]').click();
 
+    await expect(page.locator("body")).not.toHaveClass(/show-run-sidebar/);
+    await expect(page.locator("#sidebar")).toBeHidden();
+    await expect(page.locator("#sidebar-toggle")).toBeHidden();
+    await expect.poll(async () => page.evaluate(() => {
+      const app = document.querySelector(".app");
+      const sidebar = document.getElementById("sidebar");
+      const content = document.querySelector("main.content");
+      if (!app || !sidebar || !content) return null;
+      return {
+        appColumnCount: getComputedStyle(app).gridTemplateColumns.split(" ").filter(Boolean).length,
+        sidebarDisplay: getComputedStyle(sidebar).display,
+        contentLeft: Math.round(content.getBoundingClientRect().left)
+      };
+    })).toEqual({
+      appColumnCount: 1,
+      sidebarDisplay: "none",
+      contentLeft: 0
+    });
     await expect(page.locator("#studio-graph-root")).toBeVisible();
     await expect(page.locator('#studio-graph-root [data-cell-id="demo-analyst"]').first()).toBeVisible();
     await expect(page.getByText(/\bX6\b/)).toHaveCount(0);
@@ -208,6 +226,9 @@ test("Studio Bridge renders and edits through the real graph workspace", async (
     await page.locator("#action-start-input").fill("browser smoke");
     await page.locator("#action-form-submit").click();
     await expect(page.locator("#selected-title")).toContainText(/\d{8}-/);
+    await expect(page.locator("body")).toHaveClass(/show-run-sidebar/);
+    await expect(page.locator("#sidebar")).toBeVisible();
+    await expect(page.locator("#sidebar-toggle")).toBeHidden();
     await expect(page.locator("#run-graph-root")).toBeVisible();
     await expect(page.locator('#run-graph-root [data-studio-graph-action="add-role"]')).toBeHidden();
     await expect(page.locator('#run-graph-root [data-studio-graph-action="undo"]')).toBeHidden();
