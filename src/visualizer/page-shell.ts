@@ -531,7 +531,7 @@ export function renderPageHtml(workdir: string, apiPrefix: string, i18n: PageI18
     }
     .studio-bridge-layout {
       display: grid;
-      grid-template-columns: minmax(180px, 240px) minmax(0, 1fr) minmax(220px, 300px);
+      grid-template-columns: minmax(170px, 220px) minmax(520px, 1fr) minmax(220px, 300px);
       gap: 12px;
       align-items: start;
       min-width: 0;
@@ -544,6 +544,9 @@ export function renderPageHtml(workdir: string, apiPrefix: string, i18n: PageI18
     .studio-graph-column {
       display: grid;
       gap: 8px;
+    }
+    .studio-flow-list {
+      grid-column: 2;
     }
     .studio-diagnostics {
       grid-column: 1 / -1;
@@ -560,84 +563,9 @@ export function renderPageHtml(workdir: string, apiPrefix: string, i18n: PageI18
       gap: 8px;
       min-width: 0;
     }
-    .studio-canvas {
-      display: grid;
-      gap: 10px 14px;
-      min-height: 260px;
-      min-width: 0;
-      overflow: auto;
-      padding: 12px;
-      border-radius: 10px;
-      border: 1px solid var(--border);
-      background: rgba(4, 8, 16, 0.54);
-      align-items: center;
-    }
     .studio-graph-root {
       min-height: 390px;
       min-width: 0;
-    }
-    .studio-node,
-    .studio-edge {
-      min-width: 0;
-      border: 1px solid var(--border);
-      background: rgba(255, 255, 255, 0.04);
-      color: var(--text);
-      border-radius: 8px;
-      text-align: left;
-    }
-    .studio-node {
-      min-height: 84px;
-      padding: 10px;
-      display: grid;
-      gap: 6px;
-    }
-    .studio-node.active,
-    .studio-edge.active {
-      border-color: rgba(56, 189, 248, 0.5);
-      background: rgba(56, 189, 248, 0.12);
-    }
-    .studio-node.boundary {
-      border-style: dashed;
-      color: var(--muted);
-    }
-    .studio-node-title,
-    .studio-node-meta {
-      min-width: 0;
-      overflow: hidden;
-      text-overflow: ellipsis;
-      white-space: nowrap;
-    }
-    .studio-badges {
-      display: flex;
-      gap: 5px;
-      flex-wrap: wrap;
-    }
-    .studio-badges span {
-      padding: 2px 6px;
-      border-radius: 999px;
-      border: 1px solid rgba(148, 163, 184, 0.22);
-      color: var(--muted);
-      font-size: 11px;
-    }
-    .studio-edge {
-      display: grid;
-      grid-template-columns: minmax(0, 1fr) auto auto;
-      gap: 8px;
-      align-items: center;
-      padding: 7px 9px;
-      position: relative;
-    }
-    .studio-edge::before {
-      content: "";
-      height: 2px;
-      background: rgba(148, 163, 184, 0.45);
-      position: absolute;
-      left: 10px;
-      right: 10px;
-      top: -6px;
-    }
-    .studio-edge.error::before {
-      background: rgba(248, 113, 113, 0.68);
     }
     .log-toolbar {
       display: grid;
@@ -810,6 +738,17 @@ export function renderPageHtml(workdir: string, apiPrefix: string, i18n: PageI18
       .run-list { max-height: 280px; }
       .span-4, .span-6, .span-8, .span-12 { grid-column: span 12; }
       .studio-bridge-layout { grid-template-columns: 1fr; }
+      .studio-graph-column { order: 1; }
+      .studio-inspector { order: 2; }
+      .studio-navigator { order: 3; }
+      .studio-flow-list {
+        order: 4;
+        grid-column: auto;
+        max-height: 520px;
+        overflow: auto;
+        padding-right: 2px;
+      }
+      .studio-diagnostics { order: 5; }
       .hero { flex-direction: column; }
       .hero-toolbar {
         width: 100%;

@@ -87,7 +87,6 @@ export function normalizeStudioTargetRoleId(roleId: unknown): string {
 export function renderStudioGraphCanvas(args: {
   selectedRoleId: string;
   selectedFlowKey: string;
-  busy: string;
   t?: Translator;
 }): string {
   const t: Translator = typeof args.t === "function" ? args.t : (_key, _vars, fallback) => fallback ?? _key;
@@ -99,7 +98,7 @@ export function renderStudioGraphCanvas(args: {
   return [
     '<div class="studio-canvas-shell">',
     '<div class="studio-canvas-toolbar"><span class="hint">' + escapeText(t("studio.realGraph", undefined, "Studio Graph")) + '</span><span class="hint">' + escapeText(selection) + '</span></div>',
-    '<div id="studio-graph-root" class="studio-graph-root" data-selected-role-id="' + escapeText(args.selectedRoleId) + '" data-selected-flow-key="' + escapeText(args.selectedFlowKey) + '"' + args.busy + "></div>",
+    '<div id="studio-graph-root" class="studio-graph-root" data-selected-role-id="' + escapeText(args.selectedRoleId) + '" data-selected-flow-key="' + escapeText(args.selectedFlowKey) + '"></div>',
     "</div>"
   ].join("");
 }
@@ -331,7 +330,6 @@ export function renderStudioBridgePanel(args: {
   const graphCanvas = renderStudioGraphCanvas({
     selectedRoleId: args.selectedRoleId,
     selectedFlowKey: args.selectedFlowKey,
-    busy,
     t
   });
   const roleButtons = roles.length
@@ -414,12 +412,13 @@ export function renderStudioBridgePanel(args: {
     '<div class="studio-bridge-layout">',
     '<div class="studio-navigator structure-list"><div class="event"><div class="event-top"><span>' + escapeText(t("studio.roles", undefined, "roles")) + '</span><span>' + escapeText(String(roles.length)) +
       '</span></div><strong>' + escapeText(t("studio.structuredRoleDraft", undefined, "Structured role draft")) + '</strong><div class="hint">' + escapeText(t("studio.bridgeReadsWorkbench", undefined, "Bridge reads the current workbench source.")) + '</div></div>' + roleButtons.join("") + "</div>",
-    '<div class="studio-graph-column">' + graphCanvas + '<div class="structure-list studio-flow-list"><div class="event"><div class="event-top"><span>' + escapeText(t("studio.flows", undefined, "flows")) + '</span><span>' + escapeText(String(flows.length)) +
-      '</span></div><strong>' + escapeText(t("studio.structuredFlowDraft", undefined, "Structured flow draft")) + '</strong><div class="hint">' + escapeText(t("studio.eventsVisible", undefined, "Event types and join participation stay visible.")) + '</div></div>' + flowButtons.join("") + "</div></div>",
+    '<div class="studio-graph-column">' + graphCanvas + "</div>",
     '<div class="studio-inspector structure-list"><div class="event"><div class="event-top"><span>' + escapeText(t("common.system", undefined, "system")) + '</span><span>' + escapeText(String(extracted.systemVersion ?? "n/a")) +
       '</span></div><strong>' + escapeText(String(extracted.systemId ?? "unknown")) + '</strong><div class="hint">' + escapeText(t("common.entry", undefined, "entry")) + " " +
       escapeText(String(extracted.entryRoleId ?? "n/a")) + " · " + escapeText(t("common.law", undefined, "law")) + " " + escapeText(String(extracted.lawGlobal ?? "n/a")) + "</div></div>" +
       roleInspector + flowInspector + "</div>",
+    '<div class="structure-list studio-flow-list"><div class="event"><div class="event-top"><span>' + escapeText(t("studio.flows", undefined, "flows")) + '</span><span>' + escapeText(String(flows.length)) +
+      '</span></div><strong>' + escapeText(t("studio.structuredFlowDraft", undefined, "Structured flow draft")) + '</strong><div class="hint">' + escapeText(t("studio.eventsVisible", undefined, "Event types and join participation stay visible.")) + '</div></div>' + flowButtons.join("") + "</div>",
     '<div class="studio-diagnostics structure-list">' + diagnosticCards.join("") + "</div>",
     "</div>",
     "</div>"

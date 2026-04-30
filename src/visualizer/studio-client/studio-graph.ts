@@ -34,7 +34,9 @@ export type StudioGraphBridgeOptions = {
 export class StudioGraphIsland {
   private graph: Graph;
   private toolbar: HTMLDivElement;
+  private stageEl: HTMLDivElement;
   private canvasEl: HTMLDivElement;
+  private emptyEl: HTMLDivElement;
   private options: StudioGraphBridgeOptions = {};
   private applying = false;
 
@@ -57,15 +59,22 @@ export class StudioGraphIsland {
       '</div>',
       '<span class="studio-graph-status" data-studio-graph-status>ready</span>',
       '</div>',
-      '<div class="studio-graph-canvas" data-studio-graph-canvas></div>'
+      '<div class="studio-graph-stage">',
+      '<div class="studio-graph-empty" data-studio-graph-empty hidden></div>',
+      '<div class="studio-graph-canvas" data-studio-graph-canvas></div>',
+      '</div>'
     ].join("");
     const toolbar = this.root.querySelector<HTMLDivElement>(".studio-graph-toolbar");
+    const stageEl = this.root.querySelector<HTMLDivElement>(".studio-graph-stage");
     const canvasEl = this.root.querySelector<HTMLDivElement>("[data-studio-graph-canvas]");
-    if (!toolbar || !canvasEl) {
+    const emptyEl = this.root.querySelector<HTMLDivElement>("[data-studio-graph-empty]");
+    if (!toolbar || !stageEl || !canvasEl || !emptyEl) {
       throw new Error("Studio graph island failed to initialize.");
     }
     this.toolbar = toolbar;
+    this.stageEl = stageEl;
     this.canvasEl = canvasEl;
+    this.emptyEl = emptyEl;
     this.graph = this.createGraph(canvasEl);
     this.bindToolbar();
     this.bindGraphEvents();
@@ -78,15 +87,24 @@ export class StudioGraphIsland {
       canvas: options.canvas,
       validation: options.validation
     });
+    const roleCount = projection.nodes.filter((node) => node.kind === "role").length;
+    if (roleCount === 0) {
+      this.graph.clearCells();
+      this.setEmptyState(true, projection.validation.diagnostics.length > 0
+        ? "Fix Mermaid diagnostics before graph editing."
+        : "No roles available.");
+      this.setStatus("Graph unavailable");
+      this.setBusy(true);
+      return;
+    }
+    this.setEmptyState(false);
     renderStudioGraphProjection(this.graph, projection);
     this.selectFromOptions();
-    this.setStatus(projection.nodes.length > 2 ? "X6 graph ready" : "No roles available");
+    this.setStatus("X6 graph ready");
     this.setBusy(Boolean(options.busy));
-    if (projection.nodes.length > 2) {
-      setTimeout(() => {
-        this.graph.zoomToFit({ padding: 28, maxScale: 1 });
-      }, 0);
-    }
+    setTimeout(() => {
+      this.graph.zoomToFit({ padding: 28, maxScale: 1 });
+    }, 0);
   }
 
   dispose(): void {
@@ -324,6 +342,14 @@ export class StudioGraphIsland {
     this.toolbar.querySelectorAll<HTMLButtonElement>("button").forEach((button) => {
       button.disabled = busy;
     });
+  }
+
+  private setEmptyState(empty: boolean, message = ""): void {
+    this.stageEl.classList.toggle("is-empty", empty);
+    this.emptyEl.hidden = !empty;
+    if (empty) {
+      this.emptyEl.textContent = message;
+    }
   }
 
   private toast(tone: "error" | "success" | "info", message: string): void {

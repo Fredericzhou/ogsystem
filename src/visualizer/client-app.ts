@@ -1825,6 +1825,12 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
     }
 
     async function refreshStudioBridge() {
+      if (!state.workbenchSource && state.workbenchDiskSource) {
+        state.workbenchSource = state.workbenchDiskSource;
+      }
+      if (!state.workbenchSource && state.workbench?.systemSource) {
+        state.workbenchSource = state.workbench.systemSource;
+      }
       const payload = await requestAction(\`\${API_PREFIX}/project/studio/bridge\`, {
         systemSource: state.workbenchSource,
         systemPath: state.workbenchSavedPath || "system.mmd"
@@ -1847,153 +1853,6 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
       };
       renderWorkbench();
       renderProject();
-    }
-
-    function nextStudioEditPayload(kind) {
-      const bridge = state.studioBridge;
-      const authoring = cloneJson(bridge?.authoring || {});
-      const canvas = cloneJson(state.studioCanvas || buildStudioCanvasFromBridge(bridge));
-      authoring.roles = authoring.roles || {};
-      authoring.flows = authoring.flows || {};
-      authoring.layout = authoring.layout || { nodes: {} };
-      authoring.layout.nodes = authoring.layout.nodes || {};
-      canvas.nodes = canvas.nodes || [];
-      canvas.edges = canvas.edges || [];
-      const selectedRoleId = state.studioBridgeSelectedRoleId || canvas.nodes?.[0]?.roleId || "";
-      if (kind === "fit") {
-        return {
-          authoring,
-          canvas: {
-          ...canvas,
-          nodes: (canvas.nodes || []).map((node, index) => ({
-            ...node,
-            x: 120 + (index * 260),
-            y: 120
-          })),
-          viewport: { x: 0, y: 0, zoom: 1 }
-          }
-        };
-      }
-      if (kind === "add-role") {
-        let index = 1;
-        let roleId = "new-role";
-        while (authoring.roles[roleId]) {
-          index += 1;
-          roleId = "new-role-" + index;
-        }
-        const x = 120 + (canvas.nodes.length * 260);
-        authoring.roles[roleId] = {
-          roleId,
-          title: "New role",
-          bindingKind: "noop"
-        };
-        authoring.layout.nodes[roleId] = { x, y: 120, width: 180, height: 84 };
-        canvas.nodes.push({
-          id: roleId,
-          roleId,
-          x,
-          y: 120,
-          width: 180,
-          height: 84,
-          label: "New role",
-          badges: [],
-          bindingKind: "noop"
-        });
-        state.studioBridgeSelectedRoleId = roleId;
-        state.studioBridgeSelectedFlowKey = "";
-        return { authoring, canvas };
-      }
-      if (kind === "delete-role") {
-        if (!selectedRoleId || selectedRoleId === authoring.system?.entryRoleId) {
-          return { authoring, canvas };
-        }
-        delete authoring.roles[selectedRoleId];
-        delete authoring.layout.nodes[selectedRoleId];
-        authoring.flows = Object.fromEntries(
-          Object.entries(authoring.flows).filter(([, flow]) =>
-            flow.fromRoleId !== selectedRoleId && flow.toRoleId !== selectedRoleId
-          )
-        );
-        canvas.nodes = canvas.nodes.filter((node) => node.roleId !== selectedRoleId);
-        canvas.edges = canvas.edges.filter((edge) => edge.source !== selectedRoleId && edge.target !== selectedRoleId);
-        state.studioBridgeSelectedRoleId = canvas.nodes[0]?.roleId || "";
-        state.studioBridgeSelectedFlowKey = "";
-        return { authoring, canvas };
-      }
-      if (kind === "add-edge") {
-        const sourceRoleId = selectedRoleId || canvas.nodes[0]?.roleId || "";
-        if (!sourceRoleId) {
-          return { authoring, canvas };
-        }
-        let eventType = "DONE";
-        let suffix = 2;
-        while (canvas.edges.some((edge) => edge.source === sourceRoleId && edge.target === "__system_end__" && edge.eventType === eventType)) {
-          eventType = "DONE_" + suffix;
-          suffix += 1;
-        }
-        canvas.edges.push({
-          source: sourceRoleId,
-          target: "__system_end__",
-          label: eventType,
-          eventType,
-          runtimeOnlyErrorFlow: false,
-          participatesInJoin: false
-        });
-        state.studioBridgeSelectedFlowKey = sourceRoleId + ":" + eventType + ":output";
-        return { authoring, canvas };
-      }
-      if (!selectedRoleId) {
-        return { authoring, canvas };
-      }
-      const delta = kind === "left" ? -40 : 40;
-      return {
-        authoring,
-        canvas: {
-          ...canvas,
-          nodes: (canvas.nodes || []).map((node) =>
-            node.roleId === selectedRoleId
-              ? { ...node, x: Math.max(0, Number(node.x || 0) + delta) }
-              : node
-          )
-        }
-      };
-    }
-
-    async function applyStudioCanvasEdit(kind) {
-      if (!state.studioBridge?.authoring) {
-        await refreshStudioBridge();
-      }
-      if (!state.studioBridge?.authoring) {
-        setFlash("error", "Studio Bridge cannot edit the graph until Mermaid parses successfully.");
-        return;
-      }
-      await runAction("studio:apply-canvas", async () => {
-        const { authoring, canvas } = nextStudioEditPayload(kind);
-        const payload = await requestAction(\`\${API_PREFIX}/project/studio/authoring/apply-canvas\`, {
-          authoring,
-          canvas
-        });
-        state.workbenchSource = payload.systemSource || state.workbenchSource;
-        persistDraftSource(state.workbenchSource !== state.workbenchDiskSource ? state.workbenchSource : "");
-        const bridgePayload = await requestAction(\`\${API_PREFIX}/project/studio/bridge\`, {
-          systemSource: state.workbenchSource,
-          systemPath: state.workbenchSavedPath || "system.mmd"
-        });
-        state.studioBridge = {
-          ...bridgePayload,
-          authoring: payload.authoring,
-          validation: payload.validation || bridgePayload.validation
-        };
-        state.studioCanvas = payload.canvas || canvas;
-        state.workbench = {
-          ...(state.workbench || {}),
-          validation: payload.validation || state.workbench?.validation
-        };
-        state.studioBridgeStale = false;
-        renderWorkbench();
-        renderProject();
-        setFlash("success", "Studio canvas draft updated.");
-      });
     }
 
     async function applyStudioGraphCanvasPatch(canvas) {

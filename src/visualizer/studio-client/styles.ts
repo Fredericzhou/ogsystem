@@ -55,6 +55,11 @@ export function injectStudioGraphStyles(): void {
       font-size: 12px;
       overflow-wrap: anywhere;
     }
+    .studio-graph-stage {
+      min-height: 320px;
+      min-width: 0;
+      position: relative;
+    }
     .studio-graph-canvas {
       min-height: 320px;
       min-width: 0;
@@ -63,9 +68,17 @@ export function injectStudioGraphStyles(): void {
     .studio-graph-empty {
       display: grid;
       place-items: center;
-      min-height: 320px;
+      position: absolute;
+      inset: 0;
+      z-index: 2;
+      padding: 24px;
+      text-align: center;
       color: #8fa1c3;
       font-size: 13px;
+      background: rgba(4, 8, 16, 0.76);
+    }
+    .studio-graph-stage.is-empty .studio-graph-canvas {
+      opacity: 0.34;
     }
   `;
   document.head.appendChild(style);
