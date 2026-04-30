@@ -15,6 +15,7 @@ Scope: 为 OGSystem Visualizer / Studio Bridge / Run Console / Ops / Config / Lo
 - inline app 继续作为控制面，renderer 只通过参数接收 `t`，不依赖闭包里的 i18n import。
 - `t()` 只返回纯文本；写入 HTML 的位置继续使用现有 `escapeText()` / `escapeHtml()`。
 - 只翻译 panel chrome、导航、按钮、空状态、筛选、统计标签等 UI 文案；runtime 返回的 message、errorCode、roleId、runId、eventType、schema path、raw JSON 等机器事实保持原样。
+- Studio X6 独立 bundle 不 import `src/visualizer/i18n/**`；shell 在 `mountStudioX6Bridge(root, options)` 时用现有 `t()` 注入 `labels`。X6 toolbar/status/empty/toast/confirm 文案均走该 labels 边界，命令层只返回 `blockedCode` 等机器码。
 - 已补充 `tests/visualizer-i18n.test.mjs`、client locale/switch 测试和 server 首屏 locale 测试。
 
 验证：
@@ -23,6 +24,8 @@ Scope: 为 OGSystem Visualizer / Studio Bridge / Run Console / Ops / Config / Lo
 - `pnpm run test:visualizer`
 - `pnpm test`
 - Browser smoke: `pnpm exec playwright screenshot --wait-for-timeout=1500 'http://127.0.0.1:<port>/?lang=zh-CN' /tmp/ogsystem-visualizer-i18n-zh-after.png`
+- X6 bundle boundary: `pnpm run test:studio-import-guardrails`
+- X6 graph interaction/i18n smoke: `pnpm run test:visualizer-browser`
 
 ## 1. Goal
 

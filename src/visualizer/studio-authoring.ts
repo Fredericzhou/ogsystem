@@ -6,7 +6,6 @@ import { readJsonFile, writeJsonFileAtomic } from "../runtime/json-file.js";
 import { parseSystemFromMermaidSource } from "../runtime/parse-mermaid.js";
 import { SYSTEM_END_ROLE_ID } from "../runtime/types.js";
 import type { Flow, SystemDefinition } from "../runtime/types.js";
-import { validateProjectSystemSource } from "./project-projection.js";
 export type {
   StudioAuthoringDocument,
   StudioAuthoringFlow,
@@ -32,11 +31,23 @@ type StudioBridgeFlow = StudioAuthoringFlow & {
   participatesInJoin: boolean;
 };
 
+export type StudioSystemValidation = {
+  ok?: unknown;
+  diagnostics?: unknown;
+  [key: string]: unknown;
+};
+
+type ValidateStudioSystemSource = (args: {
+  workdir: string;
+  systemPath: string;
+  systemSource: string;
+}) => Promise<StudioSystemValidation>;
+
 export type StudioBridgeDraft = {
   workdir: string;
   systemPath: string;
   systemSource: string;
-  validation: Awaited<ReturnType<typeof validateProjectSystemSource>>;
+  validation: StudioSystemValidation;
   authoring: StudioAuthoringDocument | null;
   extracted: {
     systemId: string;
@@ -284,10 +295,11 @@ export async function inspectStudioBridgeDraft(args: {
   workdir: string;
   systemPath?: string;
   systemSource?: string;
+  validateSystemSource: ValidateStudioSystemSource;
 }): Promise<StudioBridgeDraft> {
   const systemPath = args.systemPath ?? resolve(args.workdir, "system.mmd");
   const systemSource = args.systemSource ?? (await readFile(systemPath, "utf8"));
-  const validation = await validateProjectSystemSource({
+  const validation = await args.validateSystemSource({
     workdir: args.workdir,
     systemPath,
     systemSource
@@ -433,18 +445,19 @@ export async function loadStudioAuthoringDraft(workdir: string): Promise<{
 export async function saveStudioAuthoringDraft(args: {
   workdir: string;
   authoring: unknown;
+  validateSystemSource?: ValidateStudioSystemSource;
 }): Promise<{
   workdir: string;
   draftPath: string;
   authoring: unknown;
   generatedMermaid?: string;
-  validation?: Awaited<ReturnType<typeof validateProjectSystemSource>>;
+  validation?: StudioSystemValidation;
 }> {
   const draftPath = authoringDraftPath(args.workdir);
   await mkdir(dirname(draftPath), { recursive: true });
   await writeJsonFileAtomic(draftPath, args.authoring);
   let generatedMermaid: string | undefined;
-  let validation: Awaited<ReturnType<typeof validateProjectSystemSource>> | undefined;
+  let validation: StudioSystemValidation | undefined;
   if (
     typeof args.authoring === "object" &&
     args.authoring !== null &&
@@ -452,11 +465,13 @@ export async function saveStudioAuthoringDraft(args: {
     (args.authoring as { version?: unknown }).version === 1
   ) {
     generatedMermaid = serializeAuthoringToMermaid(args.authoring as StudioAuthoringDocument);
-    validation = await validateProjectSystemSource({
-      workdir: args.workdir,
-      systemPath: resolve(args.workdir, "system.mmd"),
-      systemSource: generatedMermaid
-    });
+    if (args.validateSystemSource) {
+      validation = await args.validateSystemSource({
+        workdir: args.workdir,
+        systemPath: resolve(args.workdir, "system.mmd"),
+        systemSource: generatedMermaid
+      });
+    }
   }
   return {
     workdir: args.workdir,

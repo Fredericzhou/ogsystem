@@ -187,12 +187,12 @@ X6 interaction
 - Select role node -> right inspector role view.
 - Select edge -> right inspector flow view.
 - Drag node -> dirty layout state.
-- Connect role output port to role/input port -> create flow command.
+- Connect role output port to role input port -> create flow command.
 - Delete selected role -> confirm, block entry role deletion.
 - Delete selected edge -> remove flow command.
 - Fit view -> `graph.zoomToFit({ padding })`.
 - Auto layout -> update canvas layout only.
-- Undo/redo -> X6 history + resync draft.
+- Undo/redo -> semantic authoring/canvas snapshot history; every undo/redo re-enters the `apply-canvas` path and resyncs the draft. X6 local history alone is not an acceptance path.
 - Blank click -> clear selection.
 - Validation diagnostics -> node/edge warning/error styling.
 
@@ -419,8 +419,9 @@ Browser smoke tests:
 - at least one role node is visible.
 - select node and inspector updates.
 - drag node and validation remains ok.
-- connect role edge and generated Mermaid validates.
-- delete edge and generated Mermaid validates.
+- connect role edge through real X6 port drag and verify the flow draft.
+- undo/redo the port-created flow and verify authoring/canvas draft resync.
+- generated Mermaid validates after the graph returns to a clean draft.
 - fit view does not blank canvas.
 - Run Console and Project Readiness still render.
 
@@ -505,7 +506,7 @@ Do not claim “real X6 editing complete” until browser smoke confirms non-bla
 
 ## 18. Delivery Record
 
-Implemented on 2026-04-30.
+Implemented on 2026-04-30. UX hardening and regression closure were added after commit `66b964a`.
 
 - `@antv/x6` dependency: `@antv/x6@^2.19.2`, isolated under `src/visualizer/studio-client/**`.
 - X6 plugins: `@antv/x6-plugin-history`, `@antv/x6-plugin-keyboard`, `@antv/x6-plugin-selection`; layout uses `dagre`.
@@ -514,8 +515,12 @@ Implemented on 2026-04-30.
 - Bundle output path: `dist/visualizer/studio-client/studio-graph.js`.
 - Static asset allowlist: `GET /assets/studio-graph.js` only; unknown `/assets/*` returns `404`.
 - Studio Bridge mount point: `#studio-graph-root`.
+- X6 bundle i18n boundary: shell passes localized `labels` from the existing `t()` dictionaries; the bundle does not import visualizer i18n or hard-code operator-facing status/toast/confirm copy.
+- Runtime/CLI boundary: `studio-authoring.ts` no longer value-imports `project-projection.ts`; server handlers inject `validateProjectSystemSource` when validation is needed.
+- UX hardening: hidden empty-state overlay no longer intercepts graph pointer events; nodes render above edge hit paths so ports remain draggable.
+- Undo/redo implementation: semantic snapshot history survives shell remounts and replays through `onApplyCommand` / `apply-canvas`, not X6-only local history.
 - Old center graph edit controls removed: `studio-bridge-add-role`, `studio-bridge-add-edge`, `studio-bridge-delete-role`, `studio-bridge-fit`, `studio-bridge-nudge-left`, `studio-bridge-nudge-right`.
 - Import guardrail result: `pnpm run test:studio-import-guardrails` passed.
-- Browser smoke result: `pnpm run test:visualizer-browser` passed.
+- Browser smoke result: `pnpm run test:visualizer-browser` passed, including real X6 port drag connection plus undo/redo draft resync.
 - Visualizer regression result: `pnpm run test:visualizer` passed.
-- Full regression result: `pnpm test` passed.
+- Full regression result: `pnpm test` passed in the final verification for this delivery record.

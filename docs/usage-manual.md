@@ -1086,6 +1086,10 @@ ogs visualizer --workdir .
 
 The visualizer is a lightweight read-mostly observability server. It renders project summary, run detail, graph view, review inbox/detail, resume diagnostics, event timeline, logs, and live updates. It prefers `summary.json`, `timeline.jsonl`, `runs-index.json`, and other projections first, with fallback to `state.json` / `events.ndjson` where needed.
 
+Studio Bridge is available from the Project view. Its graph editor is the real isolated `@antv/x6` Studio Graph Island: drag role nodes for layout, drag from a role output port to another role input port to create a flow, and use undo/redo to replay authoring/canvas snapshots back through the draft apply path. X6 cells are never the project truth; generated Mermaid and saved source still come from the Studio authoring document.
+
+Language can be selected with `?lang=en` or `?lang=zh-CN`; the client stores the chosen locale and reloads with the same query state. Runtime identifiers such as `roleId`, `runId`, `eventType`, error codes, schema paths, and raw JSON remain untranslated.
+
 Operational notes:
 
 - live timeline updates append incrementally from `timeline.jsonl`; they no longer trigger a full run/review/log/diagnostics reload on every event

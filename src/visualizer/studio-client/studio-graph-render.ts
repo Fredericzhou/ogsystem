@@ -30,6 +30,7 @@ export function renderStudioGraphProjection(graph: Graph, projection: StudioGrap
         y: node.y,
         width: node.width,
         height: node.height,
+        zIndex: 2,
         shape: "rect",
         data: { studioNode: node },
         attrs: {
@@ -57,11 +58,11 @@ export function renderStudioGraphProjection(graph: Graph, projection: StudioGrap
           groups: {
             in: {
               position: "left",
-              attrs: { circle: { r: 4, magnet: true, stroke: "#38bdf8", fill: "#050914" } }
+              attrs: { circle: { r: 4, magnet: true, stroke: "#38bdf8", fill: "#050914", "data-studio-port": "in" } }
             },
             out: {
               position: "right",
-              attrs: { circle: { r: 4, magnet: true, stroke: "#38bdf8", fill: "#050914" } }
+              attrs: { circle: { r: 4, magnet: true, stroke: "#38bdf8", fill: "#050914", "data-studio-port": "out" } }
             }
           },
           items: node.kind === "role"
@@ -78,6 +79,7 @@ export function renderStudioGraphProjection(graph: Graph, projection: StudioGrap
         id: edge.id,
         source: { cell: edge.source, port: edge.source === "input" ? undefined : "out" },
         target: { cell: edge.target, port: edge.target === "output" ? undefined : "in" },
+        zIndex: 1,
         data: { studioEdge: edge },
         labels: [{
           attrs: {

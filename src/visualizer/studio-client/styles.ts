@@ -77,6 +77,9 @@ export function injectStudioGraphStyles(): void {
       font-size: 13px;
       background: rgba(4, 8, 16, 0.76);
     }
+    .studio-graph-empty[hidden] {
+      display: none;
+    }
     .studio-graph-stage.is-empty .studio-graph-canvas {
       opacity: 0.34;
     }

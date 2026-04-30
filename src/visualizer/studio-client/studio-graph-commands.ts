@@ -18,7 +18,7 @@ export type StudioAuthoringCommandResult = {
   canvas: StudioCanvasDocument;
   selectedRoleId?: string;
   selectedFlowKey?: string;
-  blockedReason?: string;
+  blockedCode?: "entry-role-delete" | "invalid-edge-endpoints";
 };
 
 function cloneJson<T>(value: T): T {
@@ -97,7 +97,7 @@ export function applyStudioAuthoringCommand(args: {
   if (args.command.type === "delete-role") {
     const roleId = args.command.roleId;
     if (!roleId || roleId === authoring.system.entryRoleId) {
-      return { authoring, canvas, blockedReason: "Entry role deletion is blocked." };
+      return { authoring, canvas, blockedCode: "entry-role-delete" };
     }
     delete authoring.roles[roleId];
     delete authoring.layout.nodes[roleId];
@@ -115,7 +115,7 @@ export function applyStudioAuthoringCommand(args: {
     const sourceRoleId = args.command.sourceRoleId;
     const targetRoleId = args.command.targetRoleId === "output" ? STUDIO_SYSTEM_END_ROLE_ID : args.command.targetRoleId;
     if (!authoring.roles[sourceRoleId] || (targetRoleId !== STUDIO_SYSTEM_END_ROLE_ID && !authoring.roles[targetRoleId])) {
-      return { authoring, canvas, blockedReason: "Invalid Studio edge endpoints." };
+      return { authoring, canvas, blockedCode: "invalid-edge-endpoints" };
     }
     let eventType = args.command.eventType || "DONE";
     if (!args.command.eventType) {

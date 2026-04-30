@@ -40,6 +40,29 @@ async function seedProject(workdir: string): Promise<void> {
   );
 }
 
+async function dragStudioPort(page, sourceRoleId: string, targetRoleId: string): Promise<void> {
+  const sourcePort = page.locator(
+    `#studio-graph-root [data-cell-id="${sourceRoleId}"] [data-studio-port="out"]`
+  ).first();
+  const targetPort = page.locator(
+    `#studio-graph-root [data-cell-id="${targetRoleId}"] [data-studio-port="in"]`
+  ).first();
+  await expect(sourcePort).toBeVisible();
+  await expect(targetPort).toBeVisible();
+  await sourcePort.scrollIntoViewIfNeeded();
+  await targetPort.scrollIntoViewIfNeeded();
+  await page.waitForTimeout(100);
+  const sourceBox = await sourcePort.boundingBox();
+  const targetBox = await targetPort.boundingBox();
+  expect(sourceBox).toBeTruthy();
+  expect(targetBox).toBeTruthy();
+  if (!sourceBox || !targetBox) return;
+  await page.mouse.move(sourceBox.x + sourceBox.width / 2, sourceBox.y + sourceBox.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(targetBox.x + targetBox.width / 2, targetBox.y + targetBox.height / 2, { steps: 8 });
+  await page.mouse.up();
+}
+
 test("Studio Bridge renders and edits through the real X6 graph island", async ({ page }) => {
   const workdir = await mkdtemp(path.join(os.tmpdir(), "ogsystem-studio-x6-"));
   await seedProject(workdir);
@@ -73,17 +96,22 @@ test("Studio Bridge renders and edits through the real X6 graph island", async (
     await page.locator('#studio-graph-root [data-studio-graph-action="add-role"]').click();
     await expect(page.locator("#flash")).toContainText("Studio graph draft updated");
     await expect(page.locator('#studio-graph-root [data-cell-id="new-role"]').first()).toBeVisible();
-    await page.locator('#studio-graph-root [data-cell-id="new-role"]').first().click({ force: true });
-    page.once("dialog", (dialog) => dialog.accept());
-    await page.locator('#studio-graph-root [data-studio-graph-action="delete"]').click();
+    await dragStudioPort(page, "new-role", "demo-analyst");
     await expect(page.locator("#flash")).toContainText("Studio graph draft updated");
-    await roleNode.click({ force: true });
+    await expect(page.locator('[data-studio-flow-key="new-role:DONE:demo-analyst"]')).toBeVisible();
 
-    await page.locator('#studio-graph-root [data-studio-graph-action="add-edge"]').click();
+    await page.locator('#studio-graph-root [data-studio-graph-action="undo"]').click();
     await expect(page.locator("#flash")).toContainText("Studio graph draft updated");
+    await expect(page.locator('[data-studio-flow-key="new-role:DONE:demo-analyst"]')).toHaveCount(0);
 
-    await page.locator('#studio-graph-root [data-studio-graph-action="delete"]').click();
+    await page.locator('#studio-graph-root [data-studio-graph-action="redo"]').click();
     await expect(page.locator("#flash")).toContainText("Studio graph draft updated");
+    await expect(page.locator('[data-studio-flow-key="new-role:DONE:demo-analyst"]')).toBeVisible();
+
+    await page.locator('#studio-graph-root [data-studio-graph-action="undo"]').click();
+    await expect(page.locator('[data-studio-flow-key="new-role:DONE:demo-analyst"]')).toHaveCount(0);
+    await page.locator('#studio-graph-root [data-studio-graph-action="undo"]').click();
+    await expect(page.locator('#studio-graph-root [data-cell-id="new-role"]')).toHaveCount(0);
 
     await page.locator('#studio-graph-root [data-studio-graph-action="fit"]').click();
     await expect(page.locator('#studio-graph-root [data-cell-id="demo-analyst"]').first()).toBeVisible();

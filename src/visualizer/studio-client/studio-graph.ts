@@ -10,6 +10,30 @@ import { applyStudioAuthoringCommand, type StudioAuthoringCommand } from "./stud
 import { renderStudioGraphProjection } from "./studio-graph-render.js";
 import { canConnectStudioCells } from "./studio-graph-rules.js";
 
+type StudioGraphLabelKey =
+  | "zoomOut"
+  | "zoomIn"
+  | "fitView"
+  | "autoLayout"
+  | "addRole"
+  | "addEdge"
+  | "deleteSelection"
+  | "undo"
+  | "redo"
+  | "ready"
+  | "graphUnavailable"
+  | "graphReady"
+  | "fixMermaidBeforeGraphEditing"
+  | "noRolesAvailable"
+  | "selectRoleBeforeAddingEdge"
+  | "invalidConnection"
+  | "entryRoleDeletionBlocked"
+  | "invalidEdgeEndpoints"
+  | "deleteRoleConfirm"
+  | "editBlocked";
+
+export type StudioGraphLabels = Partial<Record<StudioGraphLabelKey, string>>;
+
 export type StudioGraphBridgeOptions = {
   authoring?: StudioAuthoringDocument | null;
   canvas?: StudioCanvasDocument | null;
@@ -26,9 +50,27 @@ export type StudioGraphBridgeOptions = {
     canvas: StudioCanvasDocument;
     selectedRoleId?: string;
     selectedFlowKey?: string;
-    blockedReason?: string;
+    blockedCode?: string;
   }) => void | Promise<void>;
   onToast?: (tone: "error" | "success" | "info", message: string) => void;
+  labels?: StudioGraphLabels;
+};
+
+type StudioGraphSnapshot = {
+  authoring: StudioAuthoringDocument;
+  canvas: StudioCanvasDocument;
+  selectedRoleId?: string;
+  selectedFlowKey?: string;
+};
+
+const sharedHistory: {
+  projectKey: string;
+  undoStack: StudioGraphSnapshot[];
+  redoStack: StudioGraphSnapshot[];
+} = {
+  projectKey: "",
+  undoStack: [],
+  redoStack: []
 };
 
 export class StudioGraphIsland {
@@ -39,25 +81,29 @@ export class StudioGraphIsland {
   private emptyEl: HTMLDivElement;
   private options: StudioGraphBridgeOptions = {};
   private applying = false;
+  private busy = false;
+  private undoStack = sharedHistory.undoStack;
+  private redoStack = sharedHistory.redoStack;
 
-  constructor(private root: HTMLElement) {
+  constructor(private root: HTMLElement, initialOptions: StudioGraphBridgeOptions = {}) {
+    this.options = initialOptions;
     this.root.classList.add("studio-graph-island");
     this.root.innerHTML = [
       '<div class="studio-graph-toolbar">',
       '<div class="studio-graph-toolbar-group">',
-      '<button type="button" data-studio-graph-action="zoom-out" title="Zoom out">-</button>',
-      '<button type="button" data-studio-graph-action="zoom-in" title="Zoom in">+</button>',
-      '<button type="button" data-studio-graph-action="fit" title="Fit view">Fit</button>',
-      '<button type="button" data-studio-graph-action="layout" title="Auto layout">Layout</button>',
+      this.toolbarButton("zoom-out", "zoomOut", "-"),
+      this.toolbarButton("zoom-in", "zoomIn", "+"),
+      this.toolbarButton("fit", "fitView"),
+      this.toolbarButton("layout", "autoLayout"),
       '</div>',
       '<div class="studio-graph-toolbar-group">',
-      '<button type="button" data-studio-graph-action="add-role" title="Add role">Role</button>',
-      '<button type="button" data-studio-graph-action="add-edge" title="Add edge to output">Edge</button>',
-      '<button type="button" data-studio-graph-action="delete" title="Delete selection">Delete</button>',
-      '<button type="button" data-studio-graph-action="undo" title="Undo">Undo</button>',
-      '<button type="button" data-studio-graph-action="redo" title="Redo">Redo</button>',
+      this.toolbarButton("add-role", "addRole"),
+      this.toolbarButton("add-edge", "addEdge"),
+      this.toolbarButton("delete", "deleteSelection"),
+      this.toolbarButton("undo", "undo"),
+      this.toolbarButton("redo", "redo"),
       '</div>',
-      '<span class="studio-graph-status" data-studio-graph-status>ready</span>',
+      '<span class="studio-graph-status" data-studio-graph-status>' + this.escapeHtml(this.label("ready")) + '</span>',
       '</div>',
       '<div class="studio-graph-stage">',
       '<div class="studio-graph-empty" data-studio-graph-empty hidden></div>',
@@ -78,9 +124,11 @@ export class StudioGraphIsland {
     this.graph = this.createGraph(canvasEl);
     this.bindToolbar();
     this.bindGraphEvents();
+    this.updateToolbarState();
   }
 
   update(options: StudioGraphBridgeOptions): void {
+    this.resetHistoryWhenProjectChanges(options);
     this.options = options;
     const projection = canvasToStudioGraphProjection({
       authoring: options.authoring,
@@ -91,16 +139,16 @@ export class StudioGraphIsland {
     if (roleCount === 0) {
       this.graph.clearCells();
       this.setEmptyState(true, projection.validation.diagnostics.length > 0
-        ? "Fix Mermaid diagnostics before graph editing."
-        : "No roles available.");
-      this.setStatus("Graph unavailable");
+        ? this.label("fixMermaidBeforeGraphEditing")
+        : this.label("noRolesAvailable"));
+      this.setStatus(this.label("graphUnavailable"));
       this.setBusy(true);
       return;
     }
     this.setEmptyState(false);
     renderStudioGraphProjection(this.graph, projection);
     this.selectFromOptions();
-    this.setStatus("X6 graph ready");
+    this.setStatus(this.label("graphReady"));
     this.setBusy(Boolean(options.busy));
     setTimeout(() => {
       this.graph.zoomToFit({ padding: 28, maxScale: 1 });
@@ -118,7 +166,10 @@ export class StudioGraphIsland {
       container,
       grid: true,
       autoResize: true,
-      panning: true,
+      panning: {
+        enabled: true,
+        modifiers: ["space"]
+      },
       mousewheel: {
         enabled: true,
         modifiers: ["ctrl", "meta"],
@@ -145,15 +196,21 @@ export class StudioGraphIsland {
         validateConnection: ({ sourceCell, targetCell }) => canConnectStudioCells(sourceCell, targetCell)
       }
     });
-    graph.use(new History({ enabled: true }));
+    graph.use(new History({ enabled: false }));
     graph.use(new Keyboard({ enabled: true }));
     graph.use(new Selection({ enabled: true, multiple: false, rubberband: true }));
     graph.bindKey(["backspace", "delete"], () => {
       void this.deleteSelection();
       return false;
     });
-    graph.bindKey(["meta+z", "ctrl+z"], () => graph.undo());
-    graph.bindKey(["meta+shift+z", "ctrl+shift+z"], () => graph.redo());
+    graph.bindKey(["meta+z", "ctrl+z"], () => {
+      void this.semanticUndo();
+      return false;
+    });
+    graph.bindKey(["meta+shift+z", "ctrl+shift+z"], () => {
+      void this.semanticRedo();
+      return false;
+    });
     return graph;
   }
 
@@ -167,8 +224,8 @@ export class StudioGraphIsland {
       if (action === "zoom-out") this.graph.zoom(-0.12);
       if (action === "fit") void this.fitAndSync();
       if (action === "layout") void this.autoLayout();
-      if (action === "undo") this.graph.undo();
-      if (action === "redo") this.graph.redo();
+      if (action === "undo") void this.semanticUndo();
+      if (action === "redo") void this.semanticRedo();
       if (action === "delete") void this.deleteSelection();
       if (action === "add-role") void this.applyCommand({ type: "add-role" });
       if (action === "add-edge") {
@@ -176,7 +233,7 @@ export class StudioGraphIsland {
         if (selectedRoleId) {
           void this.applyCommand({ type: "add-edge", sourceRoleId: selectedRoleId, targetRoleId: "__system_end__" });
         } else {
-          this.toast("error", "Select a role before adding an edge.");
+          this.toast("error", this.label("selectRoleBeforeAddingEdge"));
         }
       }
     });
@@ -208,7 +265,7 @@ export class StudioGraphIsland {
       const target = edge.getTargetCellId();
       edge.remove();
       if (!source || !target) {
-        this.toast("error", "Invalid Studio connection.");
+        this.toast("error", this.label("invalidConnection"));
         return;
       }
       void this.applyCommand({
@@ -249,10 +306,10 @@ export class StudioGraphIsland {
     const nodeData = selected.getData() as { studioNode?: { kind?: string; roleId?: string } } | undefined;
     if (nodeData?.studioNode?.kind === "role" && nodeData.studioNode.roleId) {
       if (nodeData.studioNode.roleId === this.options.authoring?.system.entryRoleId) {
-        this.toast("error", "Entry role deletion is blocked.");
+        this.toast("error", this.label("entryRoleDeletionBlocked"));
         return;
       }
-      if (window.confirm && !window.confirm(`Delete role ${nodeData.studioNode.roleId}?`)) {
+      if (window.confirm && !window.confirm(this.formatLabel("deleteRoleConfirm", { roleId: nodeData.studioNode.roleId }))) {
         return;
       }
       await this.applyCommand({ type: "delete-role", roleId: nodeData.studioNode.roleId });
@@ -308,9 +365,16 @@ export class StudioGraphIsland {
     if (this.applying || !this.options.canvas) {
       return;
     }
+    const nextCanvas = graphToCanvasDocument(this.graph, this.options.canvas);
+    if (this.sameCanvas(nextCanvas, this.options.canvas)) {
+      return;
+    }
+    this.pushUndoSnapshot();
     this.applying = true;
     try {
-      await this.options.onApplyCanvas?.(graphToCanvasDocument(this.graph, this.options.canvas));
+      await this.options.onApplyCanvas?.(nextCanvas);
+      this.redoStack.length = 0;
+      this.updateToolbarState();
     } finally {
       this.applying = false;
     }
@@ -318,7 +382,7 @@ export class StudioGraphIsland {
 
   private async applyCommand(command: StudioAuthoringCommand): Promise<void> {
     if (!this.options.authoring || !this.options.canvas) {
-      this.toast("error", "Studio Bridge cannot edit until Mermaid parses successfully.");
+      this.toast("error", this.label("editBlocked"));
       return;
     }
     const result = applyStudioAuthoringCommand({
@@ -326,11 +390,14 @@ export class StudioGraphIsland {
       canvas: graphToCanvasDocument(this.graph, this.options.canvas),
       command
     });
-    if (result.blockedReason) {
-      this.toast("error", result.blockedReason);
+    if (result.blockedCode) {
+      this.toast("error", this.blockedMessage(result.blockedCode));
       return;
     }
+    this.pushUndoSnapshot();
     await this.options.onApplyCommand?.(result);
+    this.redoStack.length = 0;
+    this.updateToolbarState();
   }
 
   private setStatus(text: string): void {
@@ -342,6 +409,8 @@ export class StudioGraphIsland {
     this.toolbar.querySelectorAll<HTMLButtonElement>("button").forEach((button) => {
       button.disabled = busy;
     });
+    this.busy = busy;
+    this.updateToolbarState();
   }
 
   private setEmptyState(empty: boolean, message = ""): void {
@@ -355,5 +424,124 @@ export class StudioGraphIsland {
   private toast(tone: "error" | "success" | "info", message: string): void {
     this.options.onToast?.(tone, message);
     this.setStatus(message);
+  }
+
+  private async semanticUndo(): Promise<void> {
+    const previous = this.undoStack.pop();
+    if (!previous) {
+      this.updateToolbarState();
+      return;
+    }
+    const current = this.currentSnapshot();
+    if (current) {
+      this.redoStack.push(current);
+    }
+    await this.applySnapshot(previous);
+    this.updateToolbarState();
+  }
+
+  private async semanticRedo(): Promise<void> {
+    const next = this.redoStack.pop();
+    if (!next) {
+      this.updateToolbarState();
+      return;
+    }
+    const current = this.currentSnapshot();
+    if (current) {
+      this.undoStack.push(current);
+    }
+    await this.applySnapshot(next);
+    this.updateToolbarState();
+  }
+
+  private async applySnapshot(snapshot: StudioGraphSnapshot): Promise<void> {
+    this.applying = true;
+    try {
+      await this.options.onApplyCommand?.({
+        authoring: snapshot.authoring,
+        canvas: snapshot.canvas,
+        selectedRoleId: snapshot.selectedRoleId,
+        selectedFlowKey: snapshot.selectedFlowKey
+      });
+    } finally {
+      this.applying = false;
+    }
+  }
+
+  private pushUndoSnapshot(): void {
+    const snapshot = this.currentSnapshot();
+    if (!snapshot) return;
+    this.undoStack.push(snapshot);
+    if (this.undoStack.length > 40) {
+      this.undoStack.shift();
+    }
+    this.updateToolbarState();
+  }
+
+  private currentSnapshot(): StudioGraphSnapshot | null {
+    if (!this.options.authoring || !this.options.canvas) {
+      return null;
+    }
+    return {
+      authoring: this.cloneJson(this.options.authoring),
+      canvas: this.cloneJson(this.options.canvas),
+      selectedRoleId: this.options.selectedRoleId,
+      selectedFlowKey: this.options.selectedFlowKey
+    };
+  }
+
+  private updateToolbarState(): void {
+    const undo = this.toolbar.querySelector<HTMLButtonElement>('[data-studio-graph-action="undo"]');
+    const redo = this.toolbar.querySelector<HTMLButtonElement>('[data-studio-graph-action="redo"]');
+    if (undo) undo.disabled = this.busy || this.undoStack.length === 0;
+    if (redo) redo.disabled = this.busy || this.redoStack.length === 0;
+  }
+
+  private resetHistoryWhenProjectChanges(options: StudioGraphBridgeOptions): void {
+    const project = options.authoring?.project;
+    const nextKey = project ? `${project.workdir}\n${project.systemPath}` : "";
+    if (!nextKey) return;
+    if (sharedHistory.projectKey && sharedHistory.projectKey !== nextKey) {
+      this.undoStack.length = 0;
+      this.redoStack.length = 0;
+    }
+    sharedHistory.projectKey = nextKey;
+  }
+
+  private blockedMessage(code: string): string {
+    if (code === "entry-role-delete") return this.label("entryRoleDeletionBlocked");
+    if (code === "invalid-edge-endpoints") return this.label("invalidEdgeEndpoints");
+    return this.label("invalidConnection");
+  }
+
+  private label(key: StudioGraphLabelKey): string {
+    return this.options.labels?.[key] ?? key;
+  }
+
+  private formatLabel(key: StudioGraphLabelKey, vars: Record<string, string>): string {
+    return this.label(key).replace(/\{([A-Za-z0-9_.-]+)\}/g, (placeholder, name) => vars[name] ?? placeholder);
+  }
+
+  private toolbarButton(action: string, key: StudioGraphLabelKey, text?: string): string {
+    const label = this.label(key);
+    return '<button type="button" data-studio-graph-action="' + this.escapeHtml(action) + '" title="' +
+      this.escapeHtml(label) + '">' + this.escapeHtml(text ?? label) + '</button>';
+  }
+
+  private sameCanvas(left: StudioCanvasDocument, right: StudioCanvasDocument): boolean {
+    return JSON.stringify(left) === JSON.stringify(right);
+  }
+
+  private cloneJson<T>(value: T): T {
+    return JSON.parse(JSON.stringify(value));
+  }
+
+  private escapeHtml(value: unknown): string {
+    return String(value ?? "")
+      .replace(/&/g, "&amp;")
+      .replace(/</g, "&lt;")
+      .replace(/>/g, "&gt;")
+      .replace(/"/g, "&quot;")
+      .replace(/'/g, "&#39;");
   }
 }

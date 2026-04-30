@@ -639,7 +639,12 @@ async function handleApiStudioBridgeInspect(
   const body = request.method?.toUpperCase() === "POST" ? await readJsonRequest(request) : {};
   const systemSource = asString(body.systemSource);
   const systemPath = asString(body.systemPath);
-  jsonResponse(response, 200, await inspectStudioBridgeDraft({ workdir, systemPath, systemSource }));
+  jsonResponse(response, 200, await inspectStudioBridgeDraft({
+    workdir,
+    systemPath,
+    systemSource,
+    validateSystemSource: validateProjectSystemSource
+  }));
 }
 
 async function handleApiStudioAuthoringGet(workdir: string, response: ServerResponse): Promise<void> {
@@ -656,7 +661,11 @@ async function handleApiStudioAuthoringSave(
   if (!authoring || typeof authoring !== "object" || Array.isArray(authoring)) {
     throw new HttpError(400, "AUTHORING_DOCUMENT_REQUIRED", "authoring is required.");
   }
-  jsonResponse(response, 200, await saveStudioAuthoringDraft({ workdir, authoring }));
+  jsonResponse(response, 200, await saveStudioAuthoringDraft({
+    workdir,
+    authoring,
+    validateSystemSource: validateProjectSystemSource
+  }));
 }
 
 async function handleApiStudioAuthoringImportMmd(

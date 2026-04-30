@@ -16,7 +16,7 @@ export function mountStudioX6Bridge(root: HTMLElement, options: StudioGraphBridg
     existing.update(options);
     return;
   }
-  const island = new StudioGraphIsland(root);
+  const island = new StudioGraphIsland(root, options);
   mounted.set(root, island);
   island.update(options);
 }

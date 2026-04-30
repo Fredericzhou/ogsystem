@@ -948,7 +948,7 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
       const visualizerClient = window.OGSVisualizerClient || {};
       const mount = visualizerClient.mountStudioX6Bridge;
       if (typeof mount !== "function") {
-        root.innerHTML = '<div class="studio-graph-empty">Studio graph bundle loading...</div>';
+        root.innerHTML = '<div class="studio-graph-empty">' + escapeText(t("studio.graph.bundleLoading", undefined, "Studio graph bundle loading...")) + '</div>';
         return;
       }
       mount(root, {
@@ -958,6 +958,28 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
         selectedRoleId: state.studioBridgeSelectedRoleId,
         selectedFlowKey: state.studioBridgeSelectedFlowKey,
         busy: Boolean(state.actionBusy),
+        labels: {
+          zoomOut: t("studio.graph.zoomOut", undefined, "Zoom out"),
+          zoomIn: t("studio.graph.zoomIn", undefined, "Zoom in"),
+          fitView: t("studio.graph.fitView", undefined, "Fit view"),
+          autoLayout: t("studio.graph.autoLayout", undefined, "Auto layout"),
+          addRole: t("studio.graph.addRole", undefined, "Role"),
+          addEdge: t("studio.graph.addEdge", undefined, "Edge"),
+          deleteSelection: t("studio.graph.deleteSelection", undefined, "Delete"),
+          undo: t("studio.graph.undo", undefined, "Undo"),
+          redo: t("studio.graph.redo", undefined, "Redo"),
+          ready: t("studio.graph.ready", undefined, "ready"),
+          graphUnavailable: t("studio.graph.unavailable", undefined, "Graph unavailable"),
+          graphReady: t("studio.graph.readyStatus", undefined, "X6 graph ready"),
+          fixMermaidBeforeGraphEditing: t("studio.graph.fixMermaid", undefined, "Fix Mermaid diagnostics before graph editing."),
+          noRolesAvailable: t("studio.graph.noRoles", undefined, "No roles available."),
+          selectRoleBeforeAddingEdge: t("studio.graph.selectRoleBeforeEdge", undefined, "Select a role before adding an edge."),
+          invalidConnection: t("studio.graph.invalidConnection", undefined, "Invalid Studio connection."),
+          entryRoleDeletionBlocked: t("studio.graph.entryRoleDeletionBlocked", undefined, "Entry role deletion is blocked."),
+          invalidEdgeEndpoints: t("studio.graph.invalidEdgeEndpoints", undefined, "Invalid Studio edge endpoints."),
+          deleteRoleConfirm: t("studio.graph.deleteRoleConfirm", undefined, "Delete role {roleId}?"),
+          editBlocked: t("studio.graph.editBlocked", undefined, "Studio Bridge cannot edit until Mermaid parses successfully.")
+        },
         onSelectRole: (roleId) => {
           state.studioBridgeSelectedRoleId = roleId || "";
           state.studioBridgeSelectedFlowKey = "";
@@ -1860,21 +1882,21 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
         await refreshStudioBridge();
       }
       if (!state.studioBridge?.authoring) {
-        setFlash("error", "Studio Bridge cannot edit the graph until Mermaid parses successfully.");
+        setFlash("error", t("studio.graph.editBlocked", undefined, "Studio Bridge cannot edit until Mermaid parses successfully."));
         return;
       }
       await runAction("studio:apply-canvas", async () => {
         await applyStudioGraphPayload({
           authoring: state.studioBridge.authoring,
           canvas,
-          successMessage: "Studio canvas layout updated."
+          successMessage: t("studio.graph.canvasUpdated", undefined, "Studio canvas layout updated.")
         });
       });
     }
 
     async function applyStudioGraphAuthoringCommand(result) {
       if (!result?.authoring || !result?.canvas) {
-        setFlash("error", result?.blockedReason || "Studio graph command did not produce a valid draft.");
+        setFlash("error", studioGraphBlockedMessage(result?.blockedCode) || t("studio.graph.commandInvalidDraft", undefined, "Studio graph command did not produce a valid draft."));
         return;
       }
       await runAction("studio:apply-canvas", async () => {
@@ -1883,9 +1905,15 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
           canvas: result.canvas,
           selectedRoleId: result.selectedRoleId,
           selectedFlowKey: result.selectedFlowKey,
-          successMessage: "Studio graph draft updated."
+          successMessage: t("studio.graph.draftUpdated", undefined, "Studio graph draft updated.")
         });
       });
+    }
+
+    function studioGraphBlockedMessage(code) {
+      if (code === "entry-role-delete") return t("studio.graph.entryRoleDeletionBlocked", undefined, "Entry role deletion is blocked.");
+      if (code === "invalid-edge-endpoints") return t("studio.graph.invalidEdgeEndpoints", undefined, "Invalid Studio edge endpoints.");
+      return "";
     }
 
     async function applyStudioGraphPayload(args) {
