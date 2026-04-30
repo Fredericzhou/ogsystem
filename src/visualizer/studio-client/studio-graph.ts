@@ -57,6 +57,7 @@ export type StudioGraphBridgeOptions = {
   selectedRoleId?: string;
   selectedFlowKey?: string;
   editSelectionRequest?: number;
+  defaultAutoLayout?: boolean;
   busy?: boolean;
   readOnly?: boolean;
   rolePackages?: unknown;
@@ -107,6 +108,7 @@ export class StudioGraphIsland {
   private busy = false;
   private hasRenderedProjection = false;
   private lastViewportSignature = "";
+  private lastDefaultAutoLayoutSignature = "";
   private lastEditSelectionSignature = "";
   private lastHandledEditSelectionRequest = 0;
   private syncCanvasTimer: ReturnType<typeof setTimeout> | null = null;
@@ -190,7 +192,10 @@ export class StudioGraphIsland {
     this.applying = true;
     try {
       renderStudioGraphProjection(this.graph, projection);
-      this.restoreViewport(options.canvas?.viewport, !this.hasRenderedProjection);
+      const autoLayoutApplied = this.applyDefaultAutoLayout();
+      if (!autoLayoutApplied) {
+        this.restoreViewport(options.canvas?.viewport, !this.hasRenderedProjection);
+      }
       this.selectFromOptions();
       this.openRequestedSelectionEditor();
       this.hasRenderedProjection = true;
@@ -635,6 +640,34 @@ export class StudioGraphIsland {
     if (this.isReadOnly()) {
       return;
     }
+    this.applyAutoLayout();
+    await this.syncCanvas();
+  }
+
+  private applyDefaultAutoLayout(): boolean {
+    if (!this.options.defaultAutoLayout || this.options.canvas?.viewport) {
+      return false;
+    }
+    const signature = this.defaultAutoLayoutSignature();
+    if (!signature || (!this.isReadOnly() && this.hasRenderedProjection) || this.lastDefaultAutoLayoutSignature === signature) {
+      return false;
+    }
+    this.applyAutoLayout();
+    this.lastDefaultAutoLayoutSignature = signature;
+    return true;
+  }
+
+  private defaultAutoLayoutSignature(): string {
+    const nodes = this.graph.getNodes()
+      .map((node) => node.id)
+      .sort();
+    const edges = this.graph.getEdges()
+      .map((edge) => `${edge.getSourceCellId() || ""}->${edge.getTargetCellId() || ""}`)
+      .sort();
+    return nodes.length ? `${nodes.join(",")}|${edges.join(",")}` : "";
+  }
+
+  private applyAutoLayout(): void {
     const graph = new dagre.graphlib.Graph();
     graph.setGraph({ rankdir: "LR", nodesep: 70, ranksep: 100 });
     graph.setDefaultEdgeLabel(() => ({}));
@@ -660,7 +693,6 @@ export class StudioGraphIsland {
       }
     });
     this.graph.zoomToFit({ padding: 28, maxScale: 1 });
-    await this.syncCanvas();
   }
 
   private async syncCanvas(): Promise<void> {

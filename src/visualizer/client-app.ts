@@ -1353,6 +1353,7 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
         selectedRoleId: state.studioBridgeSelectedRoleId,
         selectedFlowKey: state.studioBridgeSelectedFlowKey,
         editSelectionRequest: state.studioBridgeEditSelectionRequest,
+        defaultAutoLayout: true,
         busy: Boolean(state.actionBusy),
         rolePackages: state.rolePackages,
         bindings: state.bindings,
@@ -1406,6 +1407,7 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
         selectedFlowKey: state.runGraphSelectedFlowKey,
         busy: Boolean(state.actionBusy),
         readOnly: true,
+        defaultAutoLayout: true,
         labels: buildStudioGraphLabels(),
         onSelectRole: (roleId) => {
           state.runGraphSelectedRoleId = roleId || "";
