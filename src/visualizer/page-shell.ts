@@ -681,6 +681,23 @@ export function renderPageHtml(workdir: string, apiPrefix: string, i18n: PageI18
       gap: 8px;
       min-width: 0;
     }
+    .release-checklist {
+      display: grid;
+      gap: 12px;
+      min-width: 0;
+    }
+    .release-group {
+      display: grid;
+      gap: 8px;
+      min-width: 0;
+    }
+    .release-group h4 {
+      margin: 0;
+      color: #dbeafe;
+      font-size: 12px;
+      letter-spacing: 0.02em;
+      text-transform: uppercase;
+    }
     .debug-graph-body {
       grid-template-columns: 1fr;
       align-items: start;
@@ -1030,12 +1047,6 @@ export function renderPageHtml(workdir: string, apiPrefix: string, i18n: PageI18
         </article>
       </section>
       <section id="console-panel-build" class="console-panel grid" data-console-panel="build" hidden>
-        <article class="card span-12">
-          <header><h3>${escapeHtml(t("section.projectOverview"))}</h3></header>
-          <div class="body">
-            <div id="build-project-summary" class="structure-list">${escapeHtml(t("state.loadingProject"))}</div>
-          </div>
-        </article>
         <article class="card span-12">
           <header>
             <div class="card-header">

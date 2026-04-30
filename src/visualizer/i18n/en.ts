@@ -446,6 +446,7 @@ export const en = {
   "studio.graph.zoomOut": "Zoom out",
   "studio.graph.zoomIn": "Zoom in",
   "studio.graph.resetView": "Actual size",
+  "studio.graph.fullscreen": "Fullscreen",
   "studio.graph.fitView": "Fit view",
   "studio.graph.autoLayout": "Auto layout",
   "studio.graph.addRole": "Role",

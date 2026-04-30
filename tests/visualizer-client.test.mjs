@@ -38,7 +38,6 @@ const PAGE_ELEMENT_IDS = [
   "workbench-tabs",
   "workbench-body",
   "project-summary",
-  "build-project-summary",
   "ops-summary",
   "project-readiness",
   "stats",
@@ -1649,6 +1648,8 @@ test("visualizer client switches lifecycle shell without unloading data and keep
   await operateTab.click();
   assert.equal(harness.document.getElementById("console-panel-debug").hidden, false);
   assert.equal(harness.document.getElementById("console-panel-ops").hidden, false);
+  assert.equal(harness.document.getElementById("console-panel-logs").hidden, true);
+  assert.equal(harness.document.getElementById("console-panel-artifacts").hidden, true);
   assert.equal(harness.document.body.classList.classes.has("show-run-sidebar"), true);
   assert.equal(harness.document.getElementById("sidebar-toggle").hidden, false);
   assert.match(harness.document.getElementById("ops-summary").textContent, /TOOL_EXECUTION_TIMEOUT/);
@@ -1666,6 +1667,9 @@ test("visualizer client switches lifecycle shell without unloading data and keep
   assert.equal(harness.document.getElementById("console-panel-validate-release").hidden, false);
   assert.equal(harness.document.getElementById("console-panel-config").hidden, false);
   assert.match(harness.document.getElementById("release-gate").textContent, /release candidate/);
+  assert.match(harness.document.getElementById("release-gate").textContent, /Release gate/);
+  assert.match(harness.document.getElementById("release-gate").textContent, /Quality signals/);
+  assert.match(harness.document.getElementById("release-gate").textContent, /Evidence and export scope/);
 
   await projectTab.click();
   assert.equal(harness.document.getElementById("console-panel-config").hidden, true);
@@ -2049,7 +2053,10 @@ test("visualizer client opens Studio Bridge, saves an authoring draft, and dry-r
   assert.doesNotMatch(harness.document.getElementById("workbench-body").textContent, /\bX6\b/);
   assert.ok(harness.document.getElementById("workbench-body").querySelectorAll("[data-studio-bridge-filter]").length);
   assert.ok(harness.document.getElementById("workbench-body").querySelectorAll("[data-studio-bridge-list-mode]").length);
-  assert.ok(harness.document.getElementById("workbench-body").querySelectorAll("[data-studio-bridge-fullscreen]").length);
+  assert.equal(harness.document.getElementById("workbench-body").querySelectorAll("[data-studio-bridge-fullscreen]").length, 0);
+  assert.ok(harness.document.getElementById("studio-bridge-validate"));
+  assert.ok(harness.document.getElementById("workbench-save"));
+  assert.ok(harness.document.getElementById("studio-bridge-dry-run"));
   assert.ok(harness.document.getElementById("studio-graph-root"));
   assert.equal(mountCalls.length > 0, true);
   assert.ok(latestEditableMount().rolePackages);
@@ -2066,9 +2073,7 @@ test("visualizer client opens Studio Bridge, saves an authoring draft, and dry-r
   mountCalls.at(-1).options.onClearSelection();
   await settle();
   assert.equal(harness.backend.fetchCalls.length, fetchCallsAfterOpen);
-  const fullscreenButton = harness.document.getElementById("workbench-body").querySelectorAll("[data-studio-bridge-fullscreen]")[0];
-  assert.ok(fullscreenButton);
-  await fullscreenButton.click();
+  latestEditableMount().onToggleFullscreen();
   await settle();
   assert.match(harness.document.getElementById("workbench-body").innerHTML, /studio-canvas-shell is-fullscreen/);
   const filterInput = harness.document.getElementById("workbench-body").querySelectorAll("[data-studio-bridge-filter]")[0];
@@ -2085,6 +2090,7 @@ test("visualizer client opens Studio Bridge, saves an authoring draft, and dry-r
     "studio-bridge-nudge-right",
     "studio-bridge-save-draft",
     "studio-bridge-generate",
+    "studio-bridge-save",
     "workbench-save-as"
   ]) {
     assert.equal(harness.document.getElementById(oldButtonId), null);

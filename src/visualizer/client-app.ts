@@ -396,7 +396,6 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
     const consoleTabsEl = document.getElementById("console-tabs");
     const workdirEl = document.getElementById("workdir");
     const projectSummaryEl = document.getElementById("project-summary");
-    const buildProjectSummaryEl = document.getElementById("build-project-summary");
     const opsSummaryEl = document.getElementById("ops-summary");
     const projectReadinessEl = document.getElementById("project-readiness");
     const releaseGateEl = document.getElementById("release-gate");
@@ -707,6 +706,9 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
         zoomOut: t("studio.graph.zoomOut", undefined, "Zoom out"),
         zoomIn: t("studio.graph.zoomIn", undefined, "Zoom in"),
         resetView: t("studio.graph.resetView", undefined, "Actual size"),
+        fullscreen: state.studioBridgeFullscreen
+          ? t("action.exitFullscreen", undefined, "Exit fullscreen")
+          : t("action.fullscreen", undefined, "Fullscreen"),
         fitView: t("studio.graph.fitView", undefined, "Fit view"),
         autoLayout: t("studio.graph.autoLayout", undefined, "Auto layout"),
         addRole: t("studio.graph.addRole", undefined, "Role"),
@@ -1097,7 +1099,7 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
               ? ["build", "config"]
               : state.consoleTab === "validate-release"
                 ? ["validate-release", "config"]
-                : ["debug", "ops", "logs", "artifacts"]
+                : ["ops", "debug"]
       );
       const showRunSidebar = state.consoleTab === "operate" || state.consoleTab === "legacy";
       document.body.classList.toggle("show-run-sidebar", showRunSidebar);
@@ -1248,39 +1250,6 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
           renderStudioBridge({ preserveGraphRoot: true });
         });
       }
-      const fullscreenButton = findStudioBridgeElement("[data-studio-bridge-fullscreen]");
-      if (fullscreenButton) {
-        fullscreenButton.addEventListener("click", () => {
-          state.studioBridgeFullscreen = !state.studioBridgeFullscreen;
-          renderStudioBridge({ preserveGraphRoot: true });
-        });
-      }
-      const validateButton = document.getElementById("studio-bridge-validate");
-      if (validateButton) {
-        validateButton.addEventListener("click", async () => {
-          await runWorkbenchValidation(true);
-          await refreshStudioBridge();
-        });
-      }
-      const saveButton = document.getElementById("studio-bridge-save");
-      if (saveButton) {
-        saveButton.addEventListener("click", async () => {
-          await saveWorkbench();
-        });
-      }
-      const dryRunButton = document.getElementById("studio-bridge-dry-run");
-      if (dryRunButton) {
-        dryRunButton.addEventListener("click", () => {
-          openActionForm("start", {
-            systemPath: state.workbenchSavedPath || "system.mmd",
-            input: "",
-            dryRun: true,
-            runtimePath: "",
-            userProfilePath: "",
-            lawsPath: ""
-          });
-        });
-      }
     }
 
     function updateStudioBridgeSelection(syncGraph) {
@@ -1394,6 +1363,10 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
         onApplyCommand: async (result) => {
           await applyStudioGraphAuthoringCommand(result);
         },
+        onToggleFullscreen: () => {
+          state.studioBridgeFullscreen = !state.studioBridgeFullscreen;
+          renderStudioBridge({ preserveGraphRoot: true });
+        },
         onToast: (tone, message) => {
           setFlash(tone === "error" ? "error" : "success", message);
         }
@@ -1468,7 +1441,9 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
         '<button class="button subtle ' + (state.workbenchView === "source" ? "active" : "") + '" data-workbench-view="source">' + escapeText(t("workbench.source")) + '</button>'
       ].join("");
       workbenchActionsEl.innerHTML = [
-        '<button class="button primary" id="workbench-save"' + (dirty ? "" : " disabled") + '>' + escapeText(t("action.save")) + '</button>'
+        '<button class="button" id="studio-bridge-validate">' + escapeText(t("action.validate", undefined, "Validate")) + '</button>',
+        '<button class="button primary" id="workbench-save"' + (dirty ? "" : " disabled") + '>' + escapeText(t("action.save")) + '</button>',
+        '<button class="button primary" id="studio-bridge-dry-run">' + escapeText(t("studio.dryRun", undefined, "Dry run")) + '</button>'
       ].join("");
       if (state.workbenchView === "source" && preserveEditor && existingEditor) {
         if (existingEditor.value !== state.workbenchSource) {
@@ -1572,6 +1547,26 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
       if (saveButton) {
         saveButton.addEventListener("click", async () => {
           await saveWorkbench();
+        });
+      }
+      const validateButton = document.getElementById("studio-bridge-validate");
+      if (validateButton) {
+        validateButton.addEventListener("click", async () => {
+          await runWorkbenchValidation(true);
+          await refreshStudioBridge();
+        });
+      }
+      const dryRunButton = document.getElementById("studio-bridge-dry-run");
+      if (dryRunButton) {
+        dryRunButton.addEventListener("click", () => {
+          openActionForm("start", {
+            systemPath: state.workbenchSavedPath || "system.mmd",
+            input: "",
+            dryRun: true,
+            runtimePath: "",
+            userProfilePath: "",
+            lawsPath: ""
+          });
         });
       }
       renderActionState();
@@ -1720,7 +1715,6 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
     function renderProject() {
       if (!state.project) {
         projectSummaryEl.textContent = t("state.projectDataUnavailable");
-        if (buildProjectSummaryEl) buildProjectSummaryEl.textContent = t("state.projectDataUnavailable");
         if (opsSummaryEl) opsSummaryEl.innerHTML = '<div class="hint">' + escapeText(t("state.opsSummaryUnavailable")) + '</div>';
         if (projectReadinessEl) projectReadinessEl.innerHTML = '<div class="hint">' + escapeText(t("state.projectReadinessUnavailable")) + '</div>';
         if (releaseGateEl) releaseGateEl.innerHTML = '<div class="hint">' + escapeText(t("release.dataUnavailable", undefined, "Release gate data unavailable.")) + '</div>';
@@ -1743,9 +1737,6 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
         t
       });
       projectSummaryEl.innerHTML = projectSummaryHtml;
-      if (buildProjectSummaryEl) {
-        buildProjectSummaryEl.innerHTML = projectSummaryHtml;
-      }
       if (opsSummaryEl) {
         opsSummaryEl.innerHTML = renderOpsSummaryPanel({
           opsSummary: state.opsSummary,

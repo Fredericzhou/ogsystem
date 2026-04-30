@@ -450,6 +450,7 @@ export const zhCN = {
   "studio.graph.zoomOut": "缩小",
   "studio.graph.zoomIn": "放大",
   "studio.graph.resetView": "实际大小",
+  "studio.graph.fullscreen": "全屏",
   "studio.graph.fitView": "适配视图",
   "studio.graph.autoLayout": "自动布局",
   "studio.graph.addRole": "角色",

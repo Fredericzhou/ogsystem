@@ -120,8 +120,7 @@ export function renderStudioGraphCanvas(args: {
   });
   return [
     '<div class="studio-canvas-shell' + (args.fullscreen ? " is-fullscreen" : "") + '" data-studio-canvas-shell="1">',
-    '<div class="studio-canvas-toolbar"><div><span class="hint">' + escapeText(t("studio.graphWorkspace", undefined, "Graph workspace")) + '</span><span class="hint" data-studio-graph-selection-label>' + escapeText(selection) + '</span></div><button class="button subtle" type="button" data-studio-bridge-fullscreen="1" aria-pressed="' +
-      (args.fullscreen ? "true" : "false") + '">' + escapeText(args.fullscreen ? t("action.exitFullscreen", undefined, "Exit fullscreen") : t("action.fullscreen", undefined, "Fullscreen")) + '</button></div>',
+    '<div class="studio-canvas-toolbar"><div><span class="hint">' + escapeText(t("studio.graphWorkspace", undefined, "Graph workspace")) + '</span><span class="hint" data-studio-graph-selection-label>' + escapeText(selection) + '</span></div></div>',
     '<div id="studio-graph-root" class="studio-graph-root" data-selected-role-id="' + escapeText(args.selectedRoleId) + '" data-selected-flow-key="' + escapeText(args.selectedFlowKey) + '"></div>',
     "</div>"
   ].join("");
@@ -468,13 +467,16 @@ export function renderReleaseGatePanel(args: {
     ? t("release.warningNote", { count: String(warnings.length) }, String(warnings.length) + " warning(s) will be included in release notes")
     : t("release.noWarningNote", undefined, "No non-blocking warnings for release notes.");
   return [
-    '<div class="structure-list">',
+    '<div class="release-checklist">',
+    '<section class="release-group"><h4>' + escapeText(t("release.group.gate", undefined, "Release gate")) + '</h4><div class="structure-list">',
     '<div class="event"><div class="event-top"><span>' + escapeText(t("release.gate", undefined, "release gate")) + '</span><span class="status ' + escapeText(canExport ? "done" : "failed") + '">' +
       escapeText(canExport ? t("release.candidateReady", undefined, "release candidate ready") : t("release.candidateBlocked", undefined, "release candidate blocked")) +
       '</span></div><strong>' + escapeText(t("release.artifactContract", undefined, "Validated export candidate uses the single-project-v1 artifact contract.")) +
       '</strong><div class="hint">' + escapeText(t("release.sourceDigestHint", {
         path: args.workbenchSavedPath || "system.mmd"
       }, "source " + (args.workbenchSavedPath || "system.mmd") + " · digests are derived from generated and exported project content")) + '</div></div>',
+    '</div></section>',
+    '<section class="release-group"><h4>' + escapeText(t("release.group.quality", undefined, "Quality signals")) + '</h4><div class="structure-list">',
     '<div class="event"><div class="event-top"><span>' + escapeText(t("release.validationReport", undefined, "validation report")) + '</span><span>' +
       escapeText(validationOk ? t("workbench.validationOk", undefined, "validation ok") : t("workbench.diagnostics", { count: String(diagnostics.length) }, String(diagnostics.length) + " diagnostics")) +
       '</span></div><strong>' + escapeText(validationOk ? t("release.systemMmdValid", undefined, "system.mmd validates successfully") : t("release.systemMmdBlocked", undefined, "system.mmd has blocking validation diagnostics")) +
@@ -490,6 +492,8 @@ export function renderReleaseGatePanel(args: {
         unresolved: String(unresolvedBindings.length),
         unhealthy: String(unhealthyRoles.length)
       }, "unresolved bindings " + String(unresolvedBindings.length) + " · unhealthy role packages " + String(unhealthyRoles.length))) + '</div></div>',
+    '</div></section>',
+    '<section class="release-group"><h4>' + escapeText(t("release.group.evidence", undefined, "Evidence and export scope")) + '</h4><div class="structure-list">',
     '<div class="event"><div class="event-top"><span>' + escapeText(t("studio.dryRun", undefined, "Dry run")) + '</span><span>' +
       escapeText(args.lastDryRunId ? t("common.captured", undefined, "captured") : t("common.missing", undefined, "missing")) +
       '</span></div><strong>' + escapeText(args.lastDryRunId || t("release.noDryRunYet", undefined, "No dry-run has been launched from this Studio session yet.")) +
@@ -497,6 +501,7 @@ export function renderReleaseGatePanel(args: {
     '<div class="event"><div class="event-top"><span>' + escapeText(t("release.exportArtifact", undefined, "export artifact")) + '</span><span>single-project-v1</span></div><strong>' +
       escapeText(t("release.exportBoundary", undefined, "Export excludes .ogs/runs, logs, timeline, checkpoints, and review artifacts.")) +
       '</strong><div class="hint">' + escapeText(t("release.exportTraceability", undefined, "Traceability is anchored to source project metadata, system.mmd, role packages, bindings, and model/profile config.")) + '</div></div>',
+    '</div></section>',
     "</div>"
   ].join("");
 }
@@ -627,11 +632,6 @@ export function renderStudioBridgePanel(args: {
   return [
     '<div class="structure-list studio-bridge">',
     '<div class="toolbar-row" data-studio-bridge-region="toolbar">',
-    '<div class="toolbar-group">',
-    '<button class="button" id="studio-bridge-save"' + busy + '>' + escapeText(t("action.saveSystem", undefined, "Save system.mmd")) + '</button>',
-    '<button class="button" id="studio-bridge-validate"' + busy + '>' + escapeText(t("action.validate", undefined, "Validate")) + '</button>',
-    '<button class="button primary" id="studio-bridge-dry-run"' + busy + '>' + escapeText(t("studio.dryRun", undefined, "Dry run")) + '</button>',
-    '</div>',
     '<div class="toolbar-group"><span class="pill' + (validation.ok ? "" : " warn") + '">' +
       escapeText(validation.ok ? t("workbench.validationOk", undefined, "validation ok") : t("workbench.diagnostics", { count: String(diagnostics.length) }, diagnostics.length + " diagnostics")) + '</span><span class="pill' +
       (blockers.length ? " warn" : "") + '">' + escapeText(blockers.length ? t("studio.readinessBlockers", { count: String(blockers.length) }, blockers.length + " readiness blockers") : t("studio.readinessReady", undefined, "readiness ready")) + "</span></div>",

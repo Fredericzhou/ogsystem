@@ -24,6 +24,7 @@ type StudioGraphLabelKey =
   | "zoomOut"
   | "zoomIn"
   | "resetView"
+  | "fullscreen"
   | "fitView"
   | "autoLayout"
   | "addRole"
@@ -77,6 +78,7 @@ export type StudioGraphBridgeOptions = {
     selectedFlowKey?: string;
     blockedCode?: string;
   }) => void | Promise<void>;
+  onToggleFullscreen?: () => void;
   onToast?: (tone: "error" | "success" | "info", message: string) => void;
   labels?: StudioGraphLabels;
   commandFormLabels?: StudioCommandFormLabels;
@@ -131,6 +133,7 @@ export class StudioGraphIsland {
       this.toolbarButton("zoom-out", "zoomOut", "−", "–"),
       this.toolbarButton("zoom-in", "zoomIn", "+", "+"),
       this.toolbarButton("reset-view", "resetView", "1:1", "100%"),
+      this.toolbarButton("fullscreen", "fullscreen", "⛶", "Full"),
       this.toolbarButton("fit", "fitView", "◎", "Fit"),
       this.toolbarButton("layout", "autoLayout", "⇄", "Layout"),
       '</div>',
@@ -286,6 +289,7 @@ export class StudioGraphIsland {
       if (action === "zoom-out") this.graph.zoom(-0.12);
       if (action === "fit") void this.fitAndSync();
       if (action === "reset-view") void this.resetViewAndSync();
+      if (action === "fullscreen") this.options.onToggleFullscreen?.();
       if (this.isReadOnly()) return;
       if (action === "layout") void this.autoLayout();
       if (action === "undo") void this.semanticUndo();

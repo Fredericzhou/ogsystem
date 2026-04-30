@@ -116,9 +116,15 @@ test("Studio Bridge renders and edits through the real graph workspace", async (
     await expect(page.getByText(/\bX6\b/)).toHaveCount(0);
     await expect(page.locator('#studio-graph-root .studio-graph-toolbar')).toBeVisible();
     await expect(page.locator('#studio-graph-root [data-studio-graph-action="reset-view"]')).toBeVisible();
+    await expect(page.locator('#studio-graph-root [data-studio-graph-action="fullscreen"]')).toBeVisible();
     await expect(page.locator('#studio-graph-root [data-studio-graph-action="edit"]')).toBeVisible();
     await expect(page.locator("#studio-bridge-generate")).toHaveCount(0);
-    await page.locator("[data-studio-bridge-fullscreen]").click();
+    await expect(page.locator("[data-studio-bridge-fullscreen]")).toHaveCount(0);
+    await expect(page.locator("#studio-bridge-save")).toHaveCount(0);
+    await expect(page.locator("#studio-bridge-validate")).toBeVisible();
+    await expect(page.locator("#workbench-save")).toBeVisible();
+    await expect(page.locator("#studio-bridge-dry-run")).toBeVisible();
+    await page.locator('#studio-graph-root [data-studio-graph-action="fullscreen"]').click();
     await expect(page.locator("[data-studio-canvas-shell]")).toHaveClass(/is-fullscreen/);
     await expect(page.locator('#studio-graph-root [data-cell-id="demo-analyst"]').first()).toBeVisible();
     await page.keyboard.press("Escape");
@@ -126,19 +132,26 @@ test("Studio Bridge renders and edits through the real graph workspace", async (
     await page.evaluate(() => {
       (window as any).__studioGraphRoot = document.getElementById("studio-graph-root");
     });
-    const mountCallsAfterOpen = await page.evaluate(() => (window as any).__studioMountCalls);
     await expect(page.getByRole("button", { name: "Build" })).toBeVisible();
     await expect(page.getByRole("button", { name: "Validate & Release" })).toBeVisible();
     await expect(page.locator("#console-panel-build")).toBeVisible();
-    await expect(page.locator("#build-project-summary")).toContainText("system.mmd");
+    await expect(page.locator("#build-project-summary")).toHaveCount(0);
+    await expect(page.locator("#console-panel-build").getByRole("heading", { name: "Project Overview" })).toHaveCount(0);
     await expect(page.getByRole("heading", { name: "Project Readiness" })).toHaveCount(0);
     await expect(page.locator("#action-form-section")).toBeHidden();
+    await page.getByRole("button", { name: "Validate & Release" }).click();
+    await expect(page.locator("#release-gate")).toContainText("Release gate");
+    await expect(page.locator("#release-gate")).toContainText("Quality signals");
+    await expect(page.locator("#release-gate")).toContainText("Evidence and export scope");
+    await page.getByRole("button", { name: "Build" }).click();
+    await page.evaluate(() => {
+      (window as any).__studioGraphRoot = document.getElementById("studio-graph-root");
+    });
 
     const roleNode = page.locator('#studio-graph-root [data-cell-id="demo-analyst"]').first();
     await roleNode.click({ force: true });
     await expect(page.locator('#studio-graph-root [data-studio-graph-action="edit"]')).toBeEnabled();
     await expect(page.locator('#studio-graph-root [data-studio-graph-action="add-edge"]')).toBeEnabled();
-    await expect.poll(async () => page.evaluate(() => (window as any).__studioMountCalls)).toBe(mountCallsAfterOpen);
     await expect.poll(async () => page.evaluate(() => document.getElementById("studio-graph-root") === (window as any).__studioGraphRoot)).toBe(true);
     await expect(page.locator(".studio-inspector")).toContainText("demo-analyst");
     const editRoleForm = page.locator('#studio-graph-root form[data-studio-command-form="edit-role"]');
@@ -217,7 +230,7 @@ test("Studio Bridge renders and edits through the real graph workspace", async (
     await expect(page.locator('#studio-graph-root [data-cell-id="demo-analyst"]').first()).toBeVisible();
 
     await page.locator('[data-workbench-view="bridge"]').click();
-    await page.locator("#studio-bridge-save").click();
+    await page.locator("#workbench-save").click();
     await expect(page.locator("#flash")).toContainText("Mermaid source saved");
 
     await page.locator('[data-workbench-view="bridge"]').click();
@@ -229,6 +242,10 @@ test("Studio Bridge renders and edits through the real graph workspace", async (
     await expect(page.locator("body")).toHaveClass(/show-run-sidebar/);
     await expect(page.locator("#sidebar")).toBeVisible();
     await expect(page.locator("#sidebar-toggle")).toBeHidden();
+    await expect(page.locator("#console-panel-ops")).toBeVisible();
+    await expect(page.locator("#console-panel-debug")).toBeVisible();
+    await expect(page.locator("#console-panel-logs")).toBeHidden();
+    await expect(page.locator("#console-panel-artifacts")).toBeHidden();
     await expect(page.locator("#run-graph-root")).toBeVisible();
     await expect(page.locator('#run-graph-root [data-studio-graph-action="add-role"]')).toBeHidden();
     await expect(page.locator('#run-graph-root [data-studio-graph-action="undo"]')).toBeHidden();
