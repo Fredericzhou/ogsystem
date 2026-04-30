@@ -1,8 +1,15 @@
 # OGSystem Studio Graph UX Stability Optimization Plan
 
 Date: 2026-04-30
-Status: proposed
+Status: implemented
 Scope: Studio Graph / X6 Graph Island 的交互稳定性、编辑体验、role 仓库选择、模型能力校验和页面模块化优化。
+
+Delivery evidence:
+
+- Phase 0 committed as `b800d69 Stabilize studio graph rendering`.
+- Phase 1/2/3 implemented in the follow-up delivery: unified role/edge command forms, role repository candidates, capability-aware readiness diagnostics, and readonly Run Debug graph isolation.
+- Regression completed: `pnpm run build`, `pnpm run test:visualizer`, `pnpm run test:visualizer-browser`, `pnpm test`.
+- Browser smoke covered repository/custom role creation, port-drag edge confirmation, undo/redo stability, nonblank X6 canvas, and readonly run graph editing controls hidden.
 
 Product boundary: 本方案只升级 Studio Graph 的可视化编辑体验和前置解释能力，不改变 OGSystem runtime/parser/compiler 的执行语义；所有运行仍以生成并校验后的 `system.mmd` 为准。
 

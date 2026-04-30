@@ -5,6 +5,14 @@ import { Selection } from "@antv/x6-plugin-selection";
 import dagre from "dagre";
 
 import type { StudioAuthoringDocument, StudioCanvasDocument } from "../studio-contracts.js";
+import {
+  commandFromStudioCommandFormState,
+  createDefaultStudioCommandFormState,
+  readStudioCommandFormState,
+  renderStudioCommandForm,
+  type StudioCommandFormLabels,
+  type StudioCommandFormState
+} from "./studio-graph-command-forms.js";
 import { canvasToStudioGraphProjection, graphToCanvasDocument, studioEdgeFlowKey } from "./studio-graph-adapter.js";
 import { applyStudioAuthoringCommand, type StudioAuthoringCommand } from "./studio-graph-commands.js";
 import { renderStudioGraphProjection } from "./studio-graph-render.js";
@@ -29,6 +37,10 @@ type StudioGraphLabelKey =
   | "invalidConnection"
   | "entryRoleDeletionBlocked"
   | "invalidEdgeEndpoints"
+  | "duplicateRoleId"
+  | "invalidRoleId"
+  | "duplicateEdge"
+  | "invalidEventType"
   | "deleteRoleConfirm"
   | "editBlocked";
 
@@ -42,6 +54,9 @@ export type StudioGraphBridgeOptions = {
   selectedFlowKey?: string;
   busy?: boolean;
   readOnly?: boolean;
+  rolePackages?: unknown;
+  bindings?: unknown;
+  readiness?: unknown;
   onSelectRole?: (roleId: string) => void;
   onSelectFlow?: (flowKey: string) => void;
   onClearSelection?: () => void;
@@ -55,6 +70,7 @@ export type StudioGraphBridgeOptions = {
   }) => void | Promise<void>;
   onToast?: (tone: "error" | "success" | "info", message: string) => void;
   labels?: StudioGraphLabels;
+  commandFormLabels?: StudioCommandFormLabels;
 };
 
 type StudioGraphSnapshot = {
@@ -80,12 +96,14 @@ export class StudioGraphIsland {
   private stageEl: HTMLDivElement;
   private canvasEl: HTMLDivElement;
   private emptyEl: HTMLDivElement;
+  private dialogEl: HTMLDivElement;
   private options: StudioGraphBridgeOptions = {};
   private applying = false;
   private busy = false;
   private hasRenderedProjection = false;
   private lastViewportSignature = "";
   private syncCanvasTimer: ReturnType<typeof setTimeout> | null = null;
+  private commandForm: StudioCommandFormState | null = null;
   private undoStack = sharedHistory.undoStack;
   private redoStack = sharedHistory.redoStack;
 
@@ -100,7 +118,7 @@ export class StudioGraphIsland {
       this.toolbarButton("fit", "fitView"),
       this.toolbarButton("layout", "autoLayout"),
       '</div>',
-      '<div class="studio-graph-toolbar-group">',
+      '<div class="studio-graph-toolbar-group" data-studio-graph-edit-actions>',
       this.toolbarButton("add-role", "addRole"),
       this.toolbarButton("add-edge", "addEdge"),
       this.toolbarButton("delete", "deleteSelection"),
@@ -112,19 +130,22 @@ export class StudioGraphIsland {
       '<div class="studio-graph-stage">',
       '<div class="studio-graph-empty" data-studio-graph-empty hidden></div>',
       '<div class="studio-graph-canvas" data-studio-graph-canvas></div>',
+      '<div class="studio-command-dialog" data-studio-command-dialog hidden></div>',
       '</div>'
     ].join("");
     const toolbar = this.root.querySelector<HTMLDivElement>(".studio-graph-toolbar");
     const stageEl = this.root.querySelector<HTMLDivElement>(".studio-graph-stage");
     const canvasEl = this.root.querySelector<HTMLDivElement>("[data-studio-graph-canvas]");
     const emptyEl = this.root.querySelector<HTMLDivElement>("[data-studio-graph-empty]");
-    if (!toolbar || !stageEl || !canvasEl || !emptyEl) {
+    const dialogEl = this.root.querySelector<HTMLDivElement>("[data-studio-command-dialog]");
+    if (!toolbar || !stageEl || !canvasEl || !emptyEl || !dialogEl) {
       throw new Error("Studio graph island failed to initialize.");
     }
     this.toolbar = toolbar;
     this.stageEl = stageEl;
     this.canvasEl = canvasEl;
     this.emptyEl = emptyEl;
+    this.dialogEl = dialogEl;
     this.graph = this.createGraph(canvasEl);
     this.bindToolbar();
     this.bindGraphEvents();
@@ -246,11 +267,14 @@ export class StudioGraphIsland {
       if (action === "undo") void this.semanticUndo();
       if (action === "redo") void this.semanticRedo();
       if (action === "delete") void this.deleteSelection();
-      if (action === "add-role") void this.applyCommand({ type: "add-role" });
+      if (action === "add-role") this.openCommandForm("add-role");
       if (action === "add-edge") {
         const selectedRoleId = this.selectedRoleId();
         if (selectedRoleId) {
-          void this.applyCommand({ type: "add-edge", sourceRoleId: selectedRoleId, targetRoleId: "__system_end__" });
+          this.openCommandForm("add-edge", {
+            sourceRoleId: selectedRoleId,
+            targetRoleId: "__system_end__"
+          });
         } else {
           this.toast("error", this.label("selectRoleBeforeAddingEdge"));
         }
@@ -292,12 +316,112 @@ export class StudioGraphIsland {
         this.toast("error", this.label("invalidConnection"));
         return;
       }
-      void this.applyCommand({
-        type: "add-edge",
+      this.openCommandForm("add-edge", {
         sourceRoleId: source,
         targetRoleId: target
       });
     });
+  }
+
+  private openCommandForm(
+    kind: "add-role" | "add-edge",
+    defaults: { sourceRoleId?: string; targetRoleId?: string } = {}
+  ): void {
+    if (this.isReadOnly()) {
+      return;
+    }
+    this.commandForm = createDefaultStudioCommandFormState({
+      kind,
+      context: this.validationContext(),
+      sourceRoleId: defaults.sourceRoleId,
+      targetRoleId: defaults.targetRoleId
+    });
+    this.renderCommandForm();
+  }
+
+  private closeCommandForm(): void {
+    this.commandForm = null;
+    this.dialogEl.hidden = true;
+    this.dialogEl.innerHTML = "";
+  }
+
+  private renderCommandForm(): void {
+    if (!this.commandForm) {
+      this.closeCommandForm();
+      return;
+    }
+    this.dialogEl.hidden = false;
+    this.dialogEl.innerHTML = renderStudioCommandForm({
+      state: this.commandForm,
+      context: this.validationContext(),
+      labels: this.options.commandFormLabels
+    });
+    this.bindCommandForm();
+    const firstInput = this.dialogEl.querySelector<HTMLInputElement | HTMLSelectElement>("input:not([type=radio]):not([type=checkbox]), select");
+    firstInput?.focus();
+  }
+
+  private bindCommandForm(): void {
+    const form = this.dialogEl.querySelector<HTMLFormElement>("form");
+    const close = this.dialogEl.querySelector<HTMLButtonElement>("[data-studio-command-close]");
+    close?.addEventListener("click", () => this.closeCommandForm());
+    if (!form) {
+      return;
+    }
+    form.addEventListener("input", () => this.refreshCommandFormFromDom(form));
+    form.addEventListener("change", () => this.refreshCommandFormFromDom(form));
+    form.addEventListener("submit", (event) => {
+      event.preventDefault();
+      void this.submitCommandForm(form);
+    });
+  }
+
+  private refreshCommandFormFromDom(form: HTMLFormElement): void {
+    if (!this.commandForm) {
+      return;
+    }
+    const activeName = (document.activeElement as HTMLElement | null)?.getAttribute("name") || "";
+    const activeSelectionStart = (document.activeElement as HTMLInputElement | null)?.selectionStart ?? null;
+    this.commandForm = readStudioCommandFormState({
+      form,
+      previous: this.commandForm,
+      context: this.validationContext()
+    });
+    this.dialogEl.innerHTML = renderStudioCommandForm({
+      state: this.commandForm,
+      context: this.validationContext(),
+      labels: this.options.commandFormLabels
+    });
+    this.bindCommandForm();
+    if (activeName) {
+      const active = this.dialogEl.querySelector<HTMLInputElement | HTMLSelectElement>('[name="' + this.cssEscape(activeName) + '"]');
+      active?.focus();
+      if (active instanceof HTMLInputElement && activeSelectionStart !== null) {
+        active.setSelectionRange(activeSelectionStart, activeSelectionStart);
+      }
+    }
+  }
+
+  private async submitCommandForm(form: HTMLFormElement): Promise<void> {
+    if (!this.commandForm) {
+      return;
+    }
+    this.commandForm = readStudioCommandFormState({
+      form,
+      previous: this.commandForm,
+      context: this.validationContext()
+    });
+    if (!this.commandForm.validation.ok) {
+      this.renderCommandForm();
+      return;
+    }
+    const command = commandFromStudioCommandFormState(this.commandForm);
+    if (!command) {
+      this.renderCommandForm();
+      return;
+    }
+    this.closeCommandForm();
+    await this.applyCommand(command);
   }
 
   private selectFromOptions(): void {
@@ -583,6 +707,14 @@ export class StudioGraphIsland {
 
   private updateToolbarState(): void {
     const readOnly = this.isReadOnly();
+    const editActions = this.toolbar.querySelector<HTMLElement>("[data-studio-graph-edit-actions]");
+    if (editActions) {
+      editActions.hidden = readOnly;
+    }
+    const layout = this.toolbar.querySelector<HTMLButtonElement>('[data-studio-graph-action="layout"]');
+    if (layout) {
+      layout.hidden = readOnly;
+    }
     for (const action of ["layout", "add-role", "add-edge", "delete"]) {
       const button = this.toolbar.querySelector<HTMLButtonElement>('[data-studio-graph-action="' + action + '"]');
       if (button) button.disabled = this.busy || readOnly;
@@ -611,7 +743,20 @@ export class StudioGraphIsland {
   private blockedMessage(code: string): string {
     if (code === "entry-role-delete") return this.label("entryRoleDeletionBlocked");
     if (code === "invalid-edge-endpoints") return this.label("invalidEdgeEndpoints");
+    if (code === "duplicate-role-id") return this.label("duplicateRoleId");
+    if (code === "invalid-role-id") return this.label("invalidRoleId");
+    if (code === "duplicate-edge") return this.label("duplicateEdge");
+    if (code === "invalid-event-type") return this.label("invalidEventType");
     return this.label("invalidConnection");
+  }
+
+  private validationContext() {
+    return {
+      authoring: this.options.authoring,
+      rolePackages: this.options.rolePackages,
+      bindings: this.options.bindings,
+      readiness: this.options.readiness
+    };
   }
 
   private label(key: StudioGraphLabelKey): string {
@@ -643,5 +788,12 @@ export class StudioGraphIsland {
       .replace(/>/g, "&gt;")
       .replace(/"/g, "&quot;")
       .replace(/'/g, "&#39;");
+  }
+
+  private cssEscape(value: string): string {
+    if (typeof CSS !== "undefined" && typeof CSS.escape === "function") {
+      return CSS.escape(value);
+    }
+    return value.replace(/["\\]/g, "\\$&");
   }
 }

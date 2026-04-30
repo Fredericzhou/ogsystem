@@ -13,6 +13,7 @@ import {
   createStudioAuthoringFromTemplate,
   listStudioAuthoringTemplates
 } from "../dist/visualizer/studio-templates.js";
+import { applyStudioAuthoringCommand } from "../dist/visualizer/studio-graph-commands.js";
 
 const source = [
   "flowchart TD",
@@ -264,4 +265,77 @@ test("Studio assisted authoring templates and Mermaid drafts produce valid autho
     systemSource: source
   });
   assert.equal(nl2mmdDraft.system.systemId, "test.studio.authoring");
+});
+
+test("Studio authoring commands create validated roles and edges from command forms", () => {
+  const authoring = importMermaidToAuthoring({
+    workdir: "/tmp/project",
+    systemPath: "/tmp/project/system.mmd",
+    systemSource: source
+  });
+  const canvas = authoringToCanvasDocument(authoring);
+
+  const addedRole = applyStudioAuthoringCommand({
+    authoring,
+    canvas,
+    command: {
+      type: "add-role",
+      roleId: "qa_gate",
+      title: "QA Gate",
+      bindingKind: "model",
+      modelRef: "opencode/gpt-5.4",
+      x: 440,
+      y: 180
+    }
+  });
+
+  assert.equal(addedRole.blockedCode, undefined);
+  assert.equal(addedRole.authoring.roles.qa_gate.title, "QA Gate");
+  assert.equal(addedRole.authoring.roles.qa_gate.bindingKind, "model");
+  assert.equal(addedRole.authoring.roles.qa_gate.modelRef, "opencode/gpt-5.4");
+  assert.equal(addedRole.canvas.nodes.some((node) => node.roleId === "qa_gate" && node.label === "QA Gate"), true);
+
+  const duplicateRole = applyStudioAuthoringCommand({
+    authoring: addedRole.authoring,
+    canvas: addedRole.canvas,
+    command: { type: "add-role", roleId: "qa_gate", bindingKind: "noop" }
+  });
+  assert.equal(duplicateRole.blockedCode, "duplicate-role-id");
+
+  const invalidRole = applyStudioAuthoringCommand({
+    authoring: addedRole.authoring,
+    canvas: addedRole.canvas,
+    command: { type: "add-role", roleId: "output", bindingKind: "noop" }
+  });
+  assert.equal(invalidRole.blockedCode, "invalid-role-id");
+
+  const addedEdge = applyStudioAuthoringCommand({
+    authoring: addedRole.authoring,
+    canvas: addedRole.canvas,
+    command: {
+      type: "add-edge",
+      sourceRoleId: "qa_gate",
+      targetRoleId: "output",
+      eventType: "ERROR_TIMEOUT",
+      runtimeOnlyErrorFlow: true
+    }
+  });
+
+  assert.equal(addedEdge.blockedCode, undefined);
+  const edge = Object.values(addedEdge.authoring.flows).find((flow) => flow.fromRoleId === "qa_gate");
+  assert.equal(edge.toRoleId, "__system_end__");
+  assert.equal(edge.eventType, "ERROR_TIMEOUT");
+  assert.equal(edge.runtimeOnlyErrorFlow, true);
+
+  const duplicateEdge = applyStudioAuthoringCommand({
+    authoring: addedEdge.authoring,
+    canvas: addedEdge.canvas,
+    command: {
+      type: "add-edge",
+      sourceRoleId: "qa_gate",
+      targetRoleId: "output",
+      eventType: "ERROR_TIMEOUT"
+    }
+  });
+  assert.equal(duplicateEdge.blockedCode, "duplicate-edge");
 });

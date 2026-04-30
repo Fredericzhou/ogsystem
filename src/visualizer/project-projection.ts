@@ -1,5 +1,5 @@
 import { basename, dirname, relative, resolve, sep } from "node:path";
-import { mkdir, readFile, writeFile } from "node:fs/promises";
+import { mkdir, readdir, readFile, writeFile } from "node:fs/promises";
 
 import { compileExecutionSnapshot } from "../runtime/compiler.js";
 import { resolveProjectRoleRepoRoot, resolveProjectRoleRootDir } from "../runtime/bundled-repos.js";
@@ -34,6 +34,7 @@ type ProjectContext = {
   resolvedModelWarnings: string[];
   resolvedModelsByRoleId: Map<string, ResolvedModelRuntimeConfig>;
   roleRepoRoot: string;
+  roleRootDir: string;
   rolePackagesByRoleId: Map<string, LoadedRolePackage>;
   contractPlan: Awaited<ReturnType<typeof loadFlowContractPlan>> | undefined;
   projectMeta: unknown;
@@ -99,6 +100,7 @@ async function assembleProjectContextFromSource(args: {
   const userProfile = await loadUserProfile(undefined, args.workdir);
   const effectiveLaw = resolveEffectiveLaw(system, laws);
   const roleRepoRoot = resolveProjectRoleRepoRoot(args.workdir, runtimeConfig.roleRepo);
+  const roleRootDir = resolveProjectRoleRootDir(args.workdir, runtimeConfig.roleRepo);
   const contractPlan = system.graph?.handoffContracts
     ? await loadFlowContractPlan({
         system,
@@ -140,6 +142,7 @@ async function assembleProjectContextFromSource(args: {
     resolvedModelWarnings: resolvedModelSelection.warnings,
     resolvedModelsByRoleId: resolvedModelSelection.resolvedByRoleId,
     roleRepoRoot,
+    roleRootDir,
     rolePackagesByRoleId,
     contractPlan,
     projectMeta
@@ -614,17 +617,57 @@ export async function inspectProjectBindingVisualization(workdir: string): Promi
 
 export async function inspectProjectRolePackagesVisualization(workdir: string): Promise<Record<string, unknown>> {
   const context = await assembleProjectContext(workdir);
+  const repositoryRoleIds = new Set(context.system.roleIds);
+  const roleRepoEntries = await readdir(context.roleRootDir, { withFileTypes: true }).catch(() => []);
+  for (const entry of roleRepoEntries) {
+    if (entry.isDirectory()) {
+      repositoryRoleIds.add(entry.name);
+    }
+  }
   const rolePackages = await Promise.all(
-    context.system.roleIds
-      .slice()
+    [...repositoryRoleIds]
       .sort((left, right) => left.localeCompare(right))
       .map(async (roleId) => {
         const rolePackage = context.rolePackagesByRoleId.get(roleId);
         if (!rolePackage) {
+          const inSystem = context.system.roleIds.includes(roleId);
+          if (!inSystem) {
+            const resolvedPath = resolve(context.roleRootDir, roleId);
+            const manifestPath = resolve(resolvedPath, "role.json");
+            const manifest = await readJsonFile(manifestPath).catch(() => undefined);
+            const manifestRecord = asRecord(manifest);
+            const promptTemplate = asString(manifestRecord?.promptTemplate);
+            const outputSchema = asString(manifestRecord?.outputSchema);
+            return {
+              roleId,
+              inSystem: false,
+              roleVersion: asString(manifestRecord?.roleVersion),
+              name: asString(manifestRecord?.name) ?? roleId,
+              description: asString(manifestRecord?.description),
+              preferredModelTags: Array.isArray(manifestRecord?.preferredModelTags)
+            ? manifestRecord.preferredModelTags.filter((item): item is string => typeof item === "string")
+            : [],
+              status: manifestRecord?.roleId === roleId && promptTemplate && outputSchema ? "ok" : "invalid",
+              resolvedPath,
+              manifestPath,
+              promptTemplatePath: promptTemplate ? resolve(resolvedPath, promptTemplate) : undefined,
+              outputSchemaPath: outputSchema ? resolve(resolvedPath, outputSchema) : undefined,
+              allowedEvents: [],
+              files: {
+                roleJson: await pathExists(manifestPath),
+                promptTemplate: promptTemplate ? await pathExists(resolve(resolvedPath, promptTemplate)) : false,
+                outputSchema: outputSchema ? await pathExists(resolve(resolvedPath, outputSchema)) : false,
+                agent: await pathExists(resolve(resolvedPath, "agent.md")),
+                source: await pathExists(resolve(resolvedPath, "source.json"))
+              }
+            };
+          }
           return {
             roleId,
-            resolvedPath: resolve(context.roleRepoRoot, roleId),
-            manifestPath: resolve(context.roleRepoRoot, roleId, "role.json"),
+            inSystem,
+            status: "missing",
+            resolvedPath: resolve(context.roleRootDir, roleId),
+            manifestPath: resolve(context.roleRootDir, roleId, "role.json"),
             allowedEvents: listRoleAllowedEvents(context.system, roleId),
             files: {
               roleJson: false,
@@ -642,8 +685,12 @@ export async function inspectProjectRolePackagesVisualization(workdir: string): 
         const sourcePath = resolve(rolePackage.resolvedPath, "source.json");
         return {
           roleId,
+          inSystem: context.system.roleIds.includes(roleId),
           roleVersion: rolePackage.manifest.roleVersion,
           name: rolePackage.manifest.name,
+          description: rolePackage.manifest.description,
+          preferredModelTags: rolePackage.manifest.preferredModelTags ?? [],
+          status: "ok",
           resolvedPath: rolePackage.resolvedPath,
           manifestPath,
           promptTemplatePath,

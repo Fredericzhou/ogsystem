@@ -27,6 +27,8 @@ import type {
   Flow,
   FlowContractDefinition,
   FlowContractFile,
+  ModelCatalog,
+  ModelCatalogEntry,
   SystemDefinition
 } from "../runtime/types.js";
 
@@ -69,6 +71,17 @@ type ContractCoverageItem = {
   status: "covered" | "missing";
 };
 
+type ModelCapabilityCheck = {
+  roleId: string;
+  bindingKind: "model";
+  modelRef: string;
+  status: "ok" | "warning" | "blocker";
+  capabilities?: ModelCatalogEntry["capabilities"];
+  missingCapabilities: string[];
+  warningCapabilities: string[];
+  catalogPresent: boolean;
+};
+
 export type ProjectReadinessProjection = {
   workdir: string;
   systemId: string | null;
@@ -94,6 +107,7 @@ export type ProjectReadinessProjection = {
     roleRepoRoot: string | null;
     roles: RoleRepoHealthItem[];
   };
+  modelCapabilityChecks: ModelCapabilityCheck[];
 };
 
 function asRecord(value: unknown): Record<string, unknown> | undefined {
@@ -318,6 +332,92 @@ async function buildContractCoverage(args: {
   };
 }
 
+function buildModelCapabilityChecks(args: {
+  system: SystemDefinition;
+  modelCatalog: ModelCatalog | undefined;
+  resolvedModelsByRoleId: Map<string, { modelRef: string }>;
+  blockers: ReadinessIssue[];
+  warnings: ReadinessIssue[];
+}): ModelCapabilityCheck[] {
+  const catalogByRef = new Map((args.modelCatalog?.models ?? []).map((entry) => [entry.ref, entry]));
+  const checks: ModelCapabilityCheck[] = [];
+  for (const roleId of [...args.system.roleIds].sort((left, right) => left.localeCompare(right))) {
+    if (args.system.executionBinding[roleId]) {
+      continue;
+    }
+    const resolved = args.resolvedModelsByRoleId.get(roleId);
+    if (!resolved?.modelRef) {
+      continue;
+    }
+    const catalogEntry = catalogByRef.get(resolved.modelRef);
+    if (!catalogEntry) {
+      const check: ModelCapabilityCheck = {
+        roleId,
+        bindingKind: "model",
+        modelRef: resolved.modelRef,
+        status: "warning",
+        missingCapabilities: [],
+        warningCapabilities: [],
+        catalogPresent: false
+      };
+      checks.push(check);
+      args.warnings.push(
+        createIssue({
+          code: "READINESS_MODEL_CATALOG_MISSING_REF",
+          message: `Role "${roleId}" selects "${resolved.modelRef}" which is not present in .ogs/model-catalog.json`,
+          severity: "warning",
+          roleId,
+          detail: check
+        })
+      );
+      continue;
+    }
+    const missingCapabilities = [
+      catalogEntry.capabilities.textInput ? "" : "textInput",
+      catalogEntry.capabilities.textOutput ? "" : "textOutput"
+    ].filter(Boolean);
+    const warningCapabilities = catalogEntry.capabilities.toolcall ? [] : ["toolcall"];
+    const status = missingCapabilities.length > 0
+      ? "blocker"
+      : warningCapabilities.length > 0
+        ? "warning"
+        : "ok";
+    const check: ModelCapabilityCheck = {
+      roleId,
+      bindingKind: "model",
+      modelRef: resolved.modelRef,
+      status,
+      capabilities: catalogEntry.capabilities,
+      missingCapabilities,
+      warningCapabilities,
+      catalogPresent: true
+    };
+    checks.push(check);
+    if (missingCapabilities.length > 0) {
+      args.blockers.push(
+        createIssue({
+          code: "READINESS_MODEL_CAPABILITY_MISMATCH",
+          message: `Role "${roleId}" model "${resolved.modelRef}" is missing required capabilities: ${missingCapabilities.join(", ")}`,
+          severity: "blocker",
+          roleId,
+          detail: check
+        })
+      );
+    } else if (warningCapabilities.length > 0) {
+      args.warnings.push(
+        createIssue({
+          code: "READINESS_MODEL_CAPABILITY_WARNING",
+          message: `Role "${roleId}" model "${resolved.modelRef}" does not advertise capabilities: ${warningCapabilities.join(", ")}`,
+          severity: "warning",
+          roleId,
+          detail: check
+        })
+      );
+    }
+  }
+  return checks;
+}
+
 async function inspectRoleHealth(args: {
   roleId: string;
   roleRootDir: string;
@@ -412,7 +512,8 @@ export async function inspectProjectReadiness(
       roleRepoHealth: {
         roleRepoRoot: null,
         roles: []
-      }
+      },
+      modelCapabilityChecks: []
     };
   }
 
@@ -487,6 +588,14 @@ export async function inspectProjectReadiness(
     }
   }
 
+  const modelCapabilityChecks = buildModelCapabilityChecks({
+    system,
+    modelCatalog,
+    resolvedModelsByRoleId: resolvedModelSelection.resolvedByRoleId,
+    blockers,
+    warnings
+  });
+
   const contractCoverage = await buildContractCoverage({
     system,
     blockers,
@@ -504,6 +613,7 @@ export async function inspectProjectReadiness(
     roleRepoHealth: {
       roleRepoRoot,
       roles: roleHealth
-    }
+    },
+    modelCapabilityChecks
   };
 }

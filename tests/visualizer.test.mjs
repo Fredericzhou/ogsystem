@@ -814,8 +814,11 @@ test("visualizer server serves run list, details, and live stream", async (t) =>
     const projectRolePackagesResponse = await fetch(`${url}/api/v1/project/role-packages`);
     assert.equal(projectRolePackagesResponse.status, 200);
     const projectRolePackages = await projectRolePackagesResponse.json();
-    assert.equal(projectRolePackages.rolePackages.length, 1);
-    assert.equal(projectRolePackages.rolePackages[0].files.roleJson, true);
+    assert.equal(projectRolePackages.rolePackages.length > 1, true);
+    const activeRolePackage = projectRolePackages.rolePackages.find((entry) => entry.roleId === "demo-analyst");
+    assert.equal(activeRolePackage.files.roleJson, true);
+    assert.equal(activeRolePackage.inSystem, true);
+    assert.ok(projectRolePackages.rolePackages.some((entry) => entry.roleId !== "demo-analyst" && entry.inSystem === false));
 
     const projectContractsResponse = await fetch(`${url}/api/v1/project/contracts`);
     assert.equal(projectContractsResponse.status, 200);

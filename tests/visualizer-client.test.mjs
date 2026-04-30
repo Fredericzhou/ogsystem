@@ -1911,6 +1911,10 @@ test("visualizer client opens Studio Bridge, saves an authoring draft, and dry-r
   assert.match(harness.document.getElementById("workbench-body").textContent, /Studio Graph/);
   assert.ok(harness.document.getElementById("studio-graph-root"));
   assert.equal(mountCalls.length > 0, true);
+  assert.ok(latestEditableMount().rolePackages);
+  assert.ok(latestEditableMount().readiness);
+  assert.ok(latestEditableMount().bindings);
+  assert.ok(latestEditableMount().commandFormLabels);
   await settle();
   const fetchCallsAfterOpen = harness.backend.fetchCalls.length;
   mountCalls.at(-1).options.onSelectFlow("demo-analyst:DONE:output");
@@ -1929,6 +1933,32 @@ test("visualizer client opens Studio Bridge, saves an authoring draft, and dry-r
   ]) {
     assert.equal(harness.document.getElementById(oldButtonId), null);
   }
+
+  mountCalls.length = 0;
+  harness.window.OGSVisualizerClient.mountStudioX6Bridge = (root, options) => {
+    mountCalls.push({ root, options });
+  };
+  const debugTab = harness.document.getElementById("console-tabs")
+    .querySelectorAll("[data-console-tab]")
+    .find((button) => button.getAttribute("data-console-tab") === "debug");
+  assert.ok(debugTab);
+  await debugTab.click();
+  await settle();
+  const runButton = harness.document.getElementById("run-list")
+    .querySelectorAll("[data-run-id]")
+    .find((button) => button.getAttribute("data-run-id") === "run-123");
+  assert.ok(runButton);
+  await runButton.click();
+  await settle();
+  const readonlyMount = mountCalls.find((call) => call.root.id === "run-graph-root");
+  assert.ok(readonlyMount);
+  assert.equal(readonlyMount.options.readOnly, true);
+  assert.equal(readonlyMount.options.onApplyCanvas, undefined);
+  assert.equal(readonlyMount.options.onApplyCommand, undefined);
+  await harness.document.getElementById("project-home").click();
+  await settle();
+  await openBridgeButton.click();
+  await settle();
 
   let latestMount = latestEditableMount();
   assert.ok(latestMount);

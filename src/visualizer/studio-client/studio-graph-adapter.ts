@@ -7,6 +7,7 @@ import {
   studioFlowKey,
   type StudioAuthoringDocument,
   type StudioCanvasDocument,
+  type StudioDiagnosticDto,
   type StudioGraphProjection,
   type StudioGraphProjectionEdge,
   type StudioGraphProjectionNode
@@ -17,7 +18,7 @@ type ValidationLike = {
   diagnostics?: unknown;
 };
 
-type DiagnosticRecord = {
+type DiagnosticRecord = Partial<StudioDiagnosticDto> & {
   code?: string;
   message?: string;
   severity?: string;

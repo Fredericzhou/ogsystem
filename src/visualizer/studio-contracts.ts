@@ -80,6 +80,19 @@ export type StudioCanvasDocument = {
   viewport?: { x: number; y: number; zoom: number };
 };
 
+export type StudioDiagnosticDto = {
+  source: "client-preflight" | "server-validation" | "parser" | "compiler" | "readiness" | "capability";
+  severity: "info" | "warning" | "error";
+  fieldPath?: string;
+  roleId?: string;
+  flowKey?: string;
+  code: string;
+  messageKey: string;
+  message?: string;
+  vars?: Record<string, unknown>;
+  selector?: string;
+};
+
 export type StudioGraphProjectionNode = {
   id: string;
   roleId: string;
@@ -119,14 +132,7 @@ export type StudioGraphProjection = {
   };
   validation: {
     ok: boolean;
-    diagnostics: Array<{
-      code?: string;
-      message?: string;
-      severity?: string;
-      roleId?: string;
-      selector?: string;
-      flowKey?: string;
-    }>;
+    diagnostics: StudioDiagnosticDto[];
   };
 };
 

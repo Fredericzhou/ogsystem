@@ -110,10 +110,20 @@ test("Studio Bridge renders and edits through the real X6 graph island", async (
     await expect(page.locator(".toolbar-group").filter({ hasText: "validation ok" }).first()).toBeVisible();
 
     await page.locator('#studio-graph-root [data-studio-graph-action="add-role"]').click();
+    const addRoleForm = page.locator('#studio-graph-root form[data-studio-command-form="add-role"]');
+    await expect(addRoleForm).toBeVisible();
+    await addRoleForm.locator('input[name="mode"][value="custom"]').check();
+    await addRoleForm.locator('input[name="roleId"]').fill("new-role");
+    await addRoleForm.locator('input[name="title"]').fill("New role");
+    await addRoleForm.locator('button[type="submit"]').click();
     await expect(page.locator("#flash")).toContainText("Studio graph draft updated");
     await expect.poll(async () => page.evaluate(() => document.getElementById("studio-graph-root") === (window as any).__studioGraphRoot)).toBe(true);
     await expect(page.locator('#studio-graph-root [data-cell-id="new-role"]').first()).toBeVisible();
     await dragStudioPort(page, "new-role", "demo-analyst");
+    const addEdgeForm = page.locator('#studio-graph-root form[data-studio-command-form="add-edge"]');
+    await expect(addEdgeForm).toBeVisible();
+    await addEdgeForm.locator('input[name="eventType"]').fill("DONE");
+    await addEdgeForm.locator('button[type="submit"]').click();
     await expect(page.locator("#flash")).toContainText("Studio graph draft updated");
     await expect.poll(async () => page.evaluate(() => document.getElementById("studio-graph-root") === (window as any).__studioGraphRoot)).toBe(true);
     await expect(page.locator('[data-studio-flow-key="new-role:DONE:demo-analyst"]')).toBeVisible();
@@ -146,6 +156,9 @@ test("Studio Bridge renders and edits through the real X6 graph island", async (
     await page.locator("#action-start-input").fill("browser smoke");
     await page.locator("#action-form-submit").click();
     await expect(page.locator("#selected-title")).toContainText(/\d{8}-/);
+    await expect(page.locator("#run-graph-root")).toBeVisible();
+    await expect(page.locator('#run-graph-root [data-studio-graph-action="add-role"]')).toBeHidden();
+    await expect(page.locator('#run-graph-root [data-studio-graph-action="undo"]')).toBeHidden();
   } finally {
     await page.close();
     await new Promise<void>((resolve) => started.server.close(() => resolve()));

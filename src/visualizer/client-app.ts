@@ -678,8 +678,36 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
         invalidConnection: t("studio.graph.invalidConnection", undefined, "Invalid Studio connection."),
         entryRoleDeletionBlocked: t("studio.graph.entryRoleDeletionBlocked", undefined, "Entry role deletion is blocked."),
         invalidEdgeEndpoints: t("studio.graph.invalidEdgeEndpoints", undefined, "Invalid Studio edge endpoints."),
+        duplicateRoleId: t("studio.graph.duplicateRoleId", undefined, "Role id already exists."),
+        invalidRoleId: t("studio.graph.invalidRoleId", undefined, "Role id must start with a letter and use letters, digits, _ or -."),
+        duplicateEdge: t("studio.graph.duplicateEdge", undefined, "This edge already exists."),
+        invalidEventType: t("studio.graph.invalidEventType", undefined, "Event type must be uppercase."),
         deleteRoleConfirm: t("studio.graph.deleteRoleConfirm", undefined, "Delete role {roleId}?"),
         editBlocked: t("studio.graph.editBlocked", undefined, "Studio Bridge cannot edit until Mermaid parses successfully.")
+      };
+    }
+
+    function buildStudioGraphCommandFormLabels() {
+      return {
+        roleDialogTitle: t("studio.form.roleDialogTitle", undefined, "Add role"),
+        edgeDialogTitle: t("studio.form.edgeDialogTitle", undefined, "Add edge"),
+        repositoryRole: t("studio.form.repositoryRole", undefined, "Repository"),
+        customRole: t("studio.form.customRole", undefined, "Custom"),
+        rolePackage: t("studio.form.rolePackage", undefined, "Role package"),
+        roleId: t("studio.form.roleId", undefined, "Role id"),
+        title: t("studio.form.title", undefined, "Title"),
+        bindingKind: t("studio.form.bindingKind", undefined, "Binding"),
+        modelRef: t("studio.form.modelRef", undefined, "Model ref"),
+        profileId: t("studio.form.profileId", undefined, "Profile id"),
+        sourceRole: t("studio.form.sourceRole", undefined, "Source role"),
+        targetRole: t("studio.form.targetRole", undefined, "Target role"),
+        eventType: t("studio.form.eventType", undefined, "Event type"),
+        runtimeOnlyErrorFlow: t("studio.form.runtimeOnlyErrorFlow", undefined, "Runtime error flow"),
+        participatesInJoin: t("studio.form.participatesInJoin", undefined, "Join source"),
+        cancel: t("action.cancel", undefined, "Cancel"),
+        create: t("studio.form.create", undefined, "Create"),
+        noRepositoryRoles: t("studio.form.noRepositoryRoles", undefined, "No repository roles"),
+        outputTarget: t("studio.form.outputTarget", undefined, "output/end")
       };
     }
 
@@ -1198,7 +1226,11 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
         selectedRoleId: state.studioBridgeSelectedRoleId,
         selectedFlowKey: state.studioBridgeSelectedFlowKey,
         busy: Boolean(state.actionBusy),
+        rolePackages: state.rolePackages,
+        bindings: state.bindings,
+        readiness: state.projectReadiness,
         labels: buildStudioGraphLabels(),
+        commandFormLabels: buildStudioGraphCommandFormLabels(),
         onSelectRole: (roleId) => {
           state.studioBridgeSelectedRoleId = roleId || "";
           state.studioBridgeSelectedFlowKey = "";
@@ -2194,6 +2226,10 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
     function studioGraphBlockedMessage(code) {
       if (code === "entry-role-delete") return t("studio.graph.entryRoleDeletionBlocked", undefined, "Entry role deletion is blocked.");
       if (code === "invalid-edge-endpoints") return t("studio.graph.invalidEdgeEndpoints", undefined, "Invalid Studio edge endpoints.");
+      if (code === "duplicate-role-id") return t("studio.graph.duplicateRoleId", undefined, "Role id already exists.");
+      if (code === "invalid-role-id") return t("studio.graph.invalidRoleId", undefined, "Role id must start with a letter and use letters, digits, _ or -.");
+      if (code === "duplicate-edge") return t("studio.graph.duplicateEdge", undefined, "This edge already exists.");
+      if (code === "invalid-event-type") return t("studio.graph.invalidEventType", undefined, "Event type must be uppercase.");
       return "";
     }
 

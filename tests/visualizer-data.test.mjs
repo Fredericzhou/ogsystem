@@ -904,9 +904,10 @@ test("visualizer data projects binding, role package, and contract explainabilit
   assert.equal(bindings.bindings[0].source.startsWith("system.mmd"), true);
 
   const rolePackages = await inspectProjectRolePackagesVisualization(workdir);
-  assert.equal(rolePackages.rolePackages.length, 2);
+  assert.equal(rolePackages.rolePackages.length >= 2, true);
   assert.equal(rolePackages.rolePackages[0].files.roleJson, true);
   assert.equal(rolePackages.rolePackages[0].files.outputSchema, true);
+  assert.ok(rolePackages.rolePackages.some((entry) => entry.roleId === "demo-intake" && entry.inSystem === false));
 
   const contracts = await inspectProjectContractVisualization(workdir);
   assert.equal(contracts.coverage.coveredFlowCount, 1);

@@ -76,6 +76,23 @@ async function writeSystem(workdir, lines) {
   await writeFile(path.join(workdir, "system.mmd"), `${lines.join("\n")}\n`, "utf8");
 }
 
+async function writeModelCatalog(workdir, models) {
+  await writeFile(
+    path.join(workdir, ".ogs", "model-catalog.json"),
+    JSON.stringify(
+      {
+        catalogVersion: "1",
+        generatedAt: "2026-04-30T00:00:00.000Z",
+        source: { command: "test" },
+        models
+      },
+      null,
+      2
+    ),
+    "utf8"
+  );
+}
+
 test("project readiness reports missing execution bindings", async () => {
   await withTempProject(async (workdir) => {
     await writeRolePackage(workdir, "planner");
@@ -172,5 +189,49 @@ test("project readiness reports strict handoff missing contract coverage", async
         (issue) => issue.code === "READINESS_STRICT_HANDOFF_CONTRACT_MISSING"
       )
     );
+  });
+});
+
+test("project readiness blocks model capability mismatches and warns on missing toolcall", async () => {
+  await withTempProject(async (workdir) => {
+    await writeRolePackage(workdir, "planner");
+    await writeRolePackage(workdir, "writer");
+    await writeModelCatalog(workdir, [
+      {
+        ref: "opencode/textless",
+        provider: "opencode",
+        model: "textless",
+        status: "active",
+        capabilities: { textInput: true, textOutput: false, toolcall: true },
+        variants: []
+      },
+      {
+        ref: "opencode/no-tools",
+        provider: "opencode",
+        model: "no-tools",
+        status: "active",
+        capabilities: { textInput: true, textOutput: true, toolcall: false },
+        variants: []
+      }
+    ]);
+    await writeSystem(workdir, [
+      "flowchart TD",
+      "%% system.id=readiness.model.capability",
+      "%% system.version=1.0.0",
+      "%% law.global=law.minimal.base",
+      "%% entry.role=planner",
+      "%% model.bind.planner=opencode/textless",
+      "%% model.bind.writer=opencode/no-tools",
+      "input -->|ENTER| planner[Role:planner]",
+      "planner[Role:planner] -->|DONE| writer[Role:writer]",
+      "writer[Role:writer] -->|DONE| output"
+    ]);
+
+    const readiness = await inspectProjectReadiness(workdir);
+
+    assert.equal(readiness.canDryRun, false);
+    assert.equal(readiness.modelCapabilityChecks.length, 2);
+    assert.ok(readiness.blockers.some((issue) => issue.code === "READINESS_MODEL_CAPABILITY_MISMATCH" && issue.roleId === "planner"));
+    assert.ok(readiness.warnings.some((issue) => issue.code === "READINESS_MODEL_CAPABILITY_WARNING" && issue.roleId === "writer"));
   });
 });
