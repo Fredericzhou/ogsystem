@@ -631,11 +631,6 @@ export function renderStudioBridgePanel(args: {
     : ['<div class="event"><div class="event-top"><span>' + escapeText(t("common.diagnostics", undefined, "diagnostics")) + '</span><span>' + escapeText(t("common.ok", undefined, "ok")) + '</span></div><strong>' + escapeText(t("studio.noParseCompileDiagnostics", undefined, "No parse or compile diagnostics.")) + '</strong></div>'];
   return [
     '<div class="structure-list studio-bridge">',
-    '<div class="toolbar-row" data-studio-bridge-region="toolbar">',
-    '<div class="toolbar-group"><span class="pill' + (validation.ok ? "" : " warn") + '">' +
-      escapeText(validation.ok ? t("workbench.validationOk", undefined, "validation ok") : t("workbench.diagnostics", { count: String(diagnostics.length) }, diagnostics.length + " diagnostics")) + '</span><span class="pill' +
-      (blockers.length ? " warn" : "") + '">' + escapeText(blockers.length ? t("studio.readinessBlockers", { count: String(blockers.length) }, blockers.length + " readiness blockers") : t("studio.readinessReady", undefined, "readiness ready")) + "</span></div>",
-    "</div>",
     '<div class="studio-bridge-layout">',
     '<div class="studio-graph-column" data-studio-bridge-region="graph">' + graphCanvas + "</div>",
     '<div class="studio-inspector structure-list" data-studio-bridge-region="inspector">' + renderStudioBridgeInspector({

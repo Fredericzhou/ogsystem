@@ -544,6 +544,21 @@ export function renderPageHtml(workdir: string, apiPrefix: string, i18n: PageI18
       align-items: center;
       min-width: 0;
     }
+    .build-control-bar {
+      display: flex;
+      gap: 8px;
+      align-items: center;
+      justify-content: flex-end;
+      flex-wrap: wrap;
+      min-width: 0;
+    }
+    .build-control-bar #workbench-status {
+      max-width: min(460px, 42vw);
+    }
+    .workbench-view-tabs {
+      justify-content: flex-start;
+      margin-bottom: 2px;
+    }
     .segmented {
       display: inline-flex;
       flex-wrap: nowrap;
@@ -976,6 +991,7 @@ export function renderPageHtml(workdir: string, apiPrefix: string, i18n: PageI18
         width: 100%;
       }
       .toolbar-row,
+      .build-control-bar,
       .workbench-source-actions,
       .row {
         display: grid;
@@ -1119,15 +1135,16 @@ export function renderPageHtml(workdir: string, apiPrefix: string, i18n: PageI18
                 <h3 id="workbench-title">${escapeHtml(t("section.mermaidWorkbench"))}</h3>
                 <div id="workbench-meta" class="hint">${escapeHtml(t("workbench.defaultMeta"))}</div>
               </div>
-              <div id="workbench-actions" class="actions"></div>
+              <div class="build-control-bar">
+                <div id="workbench-tabs" class="segmented"></div>
+                <div id="workbench-status" class="toolbar-group"></div>
+                <div id="workbench-actions" class="actions"></div>
+              </div>
             </div>
           </header>
           <div class="body">
             <div class="editor-shell">
-              <div class="toolbar-row">
-                <div id="workbench-status" class="toolbar-group"></div>
-                <div id="workbench-tabs" class="segmented"></div>
-              </div>
+              <div id="workbench-view-tabs" class="segmented workbench-view-tabs"></div>
               <div id="workbench-body"></div>
             </div>
           </div>

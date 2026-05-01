@@ -463,6 +463,7 @@ export const zhCN = {
   "workbench.validationPending": "等待校验",
   "workbench.validating": "校验中...",
   "workbench.diagnostics": "{count} 条诊断",
+  "workbench.graph": "图编排",
   "workbench.source": "源码",
   "workbench.rendered": "渲染",
   "workbench.structure": "结构",

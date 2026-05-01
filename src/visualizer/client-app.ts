@@ -498,6 +498,7 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
     const workbenchStatusEl = document.getElementById("workbench-status");
     const workbenchActionsEl = document.getElementById("workbench-actions");
     const workbenchTabsEl = document.getElementById("workbench-tabs");
+    const workbenchViewTabsEl = document.getElementById("workbench-view-tabs");
     const workbenchBodyEl = document.getElementById("workbench-body");
     const operateTabsEl = document.getElementById("operate-tabs");
     const statsEl = document.getElementById("stats");
@@ -1135,6 +1136,11 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
       for (const button of workbenchTabsEl.querySelectorAll("button")) {
         button.disabled = disabled;
       }
+      if (workbenchViewTabsEl) {
+        for (const button of workbenchViewTabsEl.querySelectorAll("button")) {
+          button.disabled = disabled;
+        }
+      }
       if (operateTabsEl) {
         for (const button of operateTabsEl.querySelectorAll("button")) {
           button.disabled = disabled;
@@ -1611,10 +1617,16 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
       workbenchTabsEl.innerHTML = [
         '<button class="button subtle ' + (state.buildMode === "edit" ? "active" : "") + '" data-build-mode="edit">' + escapeText(t("build.mode.edit", undefined, "Edit")) + '</button>',
         '<button class="button subtle ' + (state.buildMode === "dry-run" ? "active" : "") + '" data-build-mode="dry-run">' + escapeText(t("build.mode.dryRun", undefined, "Dry Run")) + '</button>',
-        '<button class="button subtle ' + (state.buildMode === "debug" ? "active" : "") + '" data-build-mode="debug">' + escapeText(t("build.mode.debug", undefined, "Debug")) + '</button>',
-        '<button class="button subtle ' + (state.workbenchView === "bridge" ? "active" : "") + '" data-workbench-view="bridge">' + escapeText(t("workbench.bridge")) + '</button>',
-        '<button class="button subtle ' + (state.workbenchView === "source" ? "active" : "") + '" data-workbench-view="source">' + escapeText(t("workbench.source")) + '</button>'
+        '<button class="button subtle ' + (state.buildMode === "debug" ? "active" : "") + '" data-build-mode="debug">' + escapeText(t("build.mode.debug", undefined, "Debug")) + '</button>'
       ].join("");
+      if (workbenchViewTabsEl) {
+        workbenchViewTabsEl.innerHTML = state.buildMode === "edit"
+          ? [
+              '<button class="button subtle ' + (state.workbenchView === "bridge" ? "active" : "") + '" data-workbench-view="bridge">' + escapeText(t("workbench.graph", undefined, "Graph")) + '</button>',
+              '<button class="button subtle ' + (state.workbenchView === "source" ? "active" : "") + '" data-workbench-view="source">' + escapeText(t("workbench.source")) + '</button>'
+            ].join("")
+          : "";
+      }
       workbenchActionsEl.innerHTML = [
         '<button class="button" id="build-validate">' + escapeText(t("action.validate", undefined, "Validate")) + '</button>',
         '<button class="button" id="build-generate-mermaid">' + escapeText(t("studio.generateMmd", undefined, "Generate MMD")) + '</button>',
@@ -1686,17 +1698,19 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
           scheduleWorkbenchValidation();
         });
       }
-      for (const button of workbenchTabsEl.querySelectorAll("[data-workbench-view]")) {
-        button.addEventListener("click", () => {
-          state.workbenchView = button.getAttribute("data-workbench-view") || "render";
-          state.buildMode = "edit";
-          renderWorkbench();
-          if (state.workbenchView === "bridge" && (!state.studioBridgeLoaded || state.studioBridgeStale)) {
-            void refreshStudioBridge().catch((error) => {
-              setFlash("error", "Studio Bridge refresh failed: " + (error.message || error));
-            });
-          }
-        });
+      if (workbenchViewTabsEl) {
+        for (const button of workbenchViewTabsEl.querySelectorAll("[data-workbench-view]")) {
+          button.addEventListener("click", () => {
+            state.workbenchView = button.getAttribute("data-workbench-view") || "bridge";
+            state.buildMode = "edit";
+            renderWorkbench();
+            if (state.workbenchView === "bridge" && (!state.studioBridgeLoaded || state.studioBridgeStale)) {
+              void refreshStudioBridge().catch((error) => {
+                setFlash("error", "Studio Bridge refresh failed: " + (error.message || error));
+              });
+            }
+          });
+        }
       }
       for (const button of workbenchTabsEl.querySelectorAll("[data-build-mode]")) {
         button.addEventListener("click", () => {

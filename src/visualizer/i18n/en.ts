@@ -459,6 +459,7 @@ export const en = {
   "workbench.validationPending": "validation pending",
   "workbench.validating": "validating...",
   "workbench.diagnostics": "{count} diagnostics",
+  "workbench.graph": "Graph",
   "workbench.source": "Source",
   "workbench.rendered": "Rendered",
   "workbench.structure": "Structure",

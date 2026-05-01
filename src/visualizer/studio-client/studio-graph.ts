@@ -335,6 +335,9 @@ export class StudioGraphIsland {
       this.updateToolbarState();
     });
     this.graph.on("selection:changed", () => {
+      if (!this.applying) {
+        this.openSelectedEditor();
+      }
       this.updateToolbarState();
     });
     this.graph.on("node:moved", () => {

@@ -37,6 +37,7 @@ const PAGE_ELEMENT_IDS = [
   "workbench-status",
   "workbench-actions",
   "workbench-tabs",
+  "workbench-view-tabs",
   "workbench-body",
   "operate-tabs",
   "project-summary",
@@ -2013,7 +2014,7 @@ test("visualizer client appends SSE timeline entries and refreshes only targeted
 test("visualizer client keeps the workbench editor visible with source intact during validation", async () => {
   const harness = await createClientHarness();
 
-  const sourceTab = harness.document.getElementById("workbench-tabs")
+  const sourceTab = harness.document.getElementById("workbench-view-tabs")
     .querySelectorAll("[data-workbench-view=\"source\"]")[0];
   assert.ok(sourceTab);
   await sourceTab.click();
@@ -2076,7 +2077,7 @@ test("visualizer client applies timeline filters through the events API", async 
 test("visualizer client edits the Mermaid workbench, saves, and starts a run", async () => {
   const harness = await createClientHarness({ readinessCanDryRun: true });
 
-  const sourceTab = harness.document.getElementById("workbench-tabs")
+  const sourceTab = harness.document.getElementById("workbench-view-tabs")
     .querySelectorAll("[data-workbench-view=\"source\"]")[0];
   assert.ok(sourceTab);
   await sourceTab.click();
@@ -2140,15 +2141,16 @@ test("visualizer client opens Studio Bridge, saves an authoring draft, and dry-r
   const latestEditableMount = () =>
     mountCalls.findLast((call) => typeof call.options.onApplyCanvas === "function")?.options;
 
-  const bridgeTab = harness.document.getElementById("workbench-tabs")
+  const bridgeTab = harness.document.getElementById("workbench-view-tabs")
     .querySelectorAll("[data-workbench-view=\"bridge\"]")[0];
   assert.ok(bridgeTab);
   await bridgeTab.click();
   await settle();
 
   assert.ok(harness.backend.fetchCalls.some((call) => call.path === "/api/v1/project/studio/bridge"));
-  assert.match(harness.document.getElementById("workbench-tabs").textContent, /Studio Bridge/);
-  assert.doesNotMatch(harness.document.getElementById("workbench-tabs").textContent, /Rendered|Structure/);
+  assert.match(harness.document.getElementById("workbench-view-tabs").textContent, /Graph/);
+  assert.match(harness.document.getElementById("workbench-view-tabs").textContent, /Source/);
+  assert.doesNotMatch(harness.document.getElementById("workbench-tabs").textContent, /Graph|Source|Rendered|Structure/);
   assert.match(harness.document.getElementById("workbench-body").textContent, /demo-analyst/);
   assert.match(harness.document.getElementById("workbench-body").textContent, /role inspector/);
   assert.match(harness.document.getElementById("workbench-body").textContent, /Graph workspace/);
