@@ -397,7 +397,11 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
       workspace: null,
       hasProject: true,
       projectCreateError: null,
+      projectWizardDraft: null,
       roleCatalog: null,
+      roleCatalogFilter: "",
+      roleCatalogExpanded: false,
+      pendingRoleImportRetry: null,
       project: null,
       projectCreateRequestId: "",
       opsSummary: null,
@@ -1068,9 +1072,55 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
       state.timelineErrorCode = timelineErrorEl?.value.trim() || "";
     }
 
-    function setFlash(kind, message) {
-      state.flash = message ? { kind, message } : null;
+    function setFlash(kind, message, options) {
+      state.flash = message ? { kind, message, action: options?.action || "" } : null;
       renderFlash();
+    }
+
+    function getProjectWizardDefaults(workspace) {
+      const workdir = workspace?.workdir || "";
+      return {
+        workdir,
+        projectName: workdir ? String(workdir).split(/[\\/]/).filter(Boolean).pop() || "my-ogs-project" : "my-ogs-project",
+        projectId: "project.starter",
+        templateId: "empty",
+        defaultModelRef: "",
+        profileStrategy: "visual-editor",
+        defaultProfileId: "profile.default",
+        defaultToolRef: "",
+        conflictStrategy: workspace?.state === "non-project-conflict" ? "reject" : "init-current",
+        selectedRoleIds: []
+      };
+    }
+
+    function ensureProjectWizardDraft(workspace) {
+      if (!state.projectWizardDraft) {
+        state.projectWizardDraft = getProjectWizardDefaults(workspace || state.workspace || {});
+      }
+      return state.projectWizardDraft;
+    }
+
+    function updateProjectWizardDraftFromForm(form) {
+      if (!form) {
+        return ensureProjectWizardDraft(state.workspace || {});
+      }
+      const formData = new FormData(form);
+      const draft = ensureProjectWizardDraft(state.workspace || {});
+      Object.assign(draft, {
+        workdir: String(formData.get("workdir") || ""),
+        projectName: String(formData.get("projectName") || ""),
+        projectId: String(formData.get("projectId") || ""),
+        templateId: String(formData.get("templateId") || draft.templateId || "empty"),
+        defaultModelRef: String(formData.get("defaultModelRef") || ""),
+        profileStrategy: String(formData.get("profileStrategy") || draft.profileStrategy || "visual-editor"),
+        defaultProfileId: String(formData.get("defaultProfileId") || ""),
+        defaultToolRef: String(formData.get("defaultToolRef") || ""),
+        conflictStrategy: String(formData.get("conflictStrategy") || draft.conflictStrategy || "reject"),
+        selectedRoleIds: typeof formData.getAll === "function"
+          ? formData.getAll("roleIds").map((value) => String(value || "")).filter(Boolean)
+          : []
+      });
+      return draft;
     }
 
     function renderFlash() {
@@ -1080,7 +1130,16 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
         return;
       }
       flashEl.className = "flash " + (state.flash.kind || "info");
-      flashEl.textContent = state.flash.message;
+      flashEl.innerHTML = escapeText(state.flash.message);
+      if (state.flash.action === "retry-role-import" && state.pendingRoleImportRetry?.roleIds?.length) {
+        flashEl.innerHTML += ' <button id="flash-retry-role-import" class="button subtle" type="button">' + escapeText(t("projectWizard.retryRoleImport", undefined, "Retry role import")) + '</button>';
+        const retryButton = document.getElementById("flash-retry-role-import");
+        if (retryButton) {
+          retryButton.addEventListener("click", () => {
+            void retryPendingRoleImport();
+          });
+        }
+      }
     }
 
     function setActionBusy(actionId) {
@@ -1330,9 +1389,13 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
         button.addEventListener("click", () => {
           state.consoleTab = button.getAttribute("data-console-tab") || "operate";
           state.projectHome = state.consoleTab === "project";
-          if (state.consoleTab === "build") {
+          if (state.consoleTab === "build" && state.hasProject) {
             state.workbenchView = "bridge";
+            const refreshWorkdir = state.workspace?.workdir || "";
             void refreshStudioBridge().catch((error) => {
+              if (refreshWorkdir !== (state.workspace?.workdir || "")) {
+                return;
+              }
               setFlash("error", "Studio Bridge refresh failed: " + (error.message || error));
             });
           }
@@ -1749,7 +1812,11 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
             state.buildMode = "edit";
             renderWorkbench();
             if (state.workbenchView === "bridge" && (!state.studioBridgeLoaded || state.studioBridgeStale)) {
+              const refreshWorkdir = state.workspace?.workdir || "";
               void refreshStudioBridge().catch((error) => {
+                if (!state.hasProject || refreshWorkdir !== (state.workspace?.workdir || "")) {
+                  return;
+                }
                 setFlash("error", "Studio Bridge refresh failed: " + (error.message || error));
               });
             }
@@ -2132,16 +2199,25 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
       }
       if (!state.hasProject) {
         const workspace = state.workspace || {};
+        const draft = ensureProjectWizardDraft(workspace);
         const conflict = workspace.state === "non-project-conflict";
         const catalogRoles = Array.isArray(state.roleCatalog?.roles) ? state.roleCatalog.roles : [];
-        const visibleCatalogRoles = catalogRoles.slice(0, 48);
-        const overflowCount = Math.max(0, catalogRoles.length - visibleCatalogRoles.length);
+        const roleFilter = state.roleCatalogFilter.trim().toLowerCase();
+        const filteredCatalogRoles = catalogRoles.filter((role) => {
+          if (!roleFilter) return true;
+          return [role.roleId, role.name, role.summary, role.description]
+            .filter(Boolean)
+            .some((item) => String(item).toLowerCase().includes(roleFilter));
+        });
+        const visibleCatalogRoles = state.roleCatalogExpanded ? filteredCatalogRoles : filteredCatalogRoles.slice(0, 12);
+        const overflowCount = Math.max(0, filteredCatalogRoles.length - visibleCatalogRoles.length);
         const roleOptions = catalogRoles.length
           ? visibleCatalogRoles.map((role) => {
               const roleId = role.roleId || "";
               const imported = role.alreadyImported ? " · " + t("common.loaded", undefined, "loaded") : "";
-              return '<label class="event"><input type="checkbox" name="roleIds" value="' + escapeText(roleId) + '"><span><strong>' + escapeText(role.name || roleId) + '</strong><span class="hint">' + escapeText(roleId + imported) + '</span></span></label>';
-            }).join("") + (overflowCount ? '<div class="hint">' + escapeText(t("projectWizard.roleCatalogOverflow", { count: String(overflowCount) }, String(overflowCount) + " more roles are available from installed packages; refine import after project creation.")) + '</div>' : "")
+              const checked = draft.selectedRoleIds.includes(roleId) ? " checked" : "";
+              return '<label class="event"><input type="checkbox" name="roleIds" value="' + escapeText(roleId) + '"' + checked + '><span><strong>' + escapeText(role.name || roleId) + '</strong><span class="hint">' + escapeText(roleId + imported) + '</span></span></label>';
+            }).join("") + (overflowCount ? '<button class="button subtle" type="button" id="project-role-show-more">' + escapeText(t("projectWizard.roleCatalogShowMore", { count: String(overflowCount) }, "Show " + String(overflowCount) + " more")) + '</button>' : "")
           : '<div class="hint">' + escapeText(t("projectWizard.roleCatalogEmpty", undefined, "Installed role catalog is unavailable.")) + '</div>';
         const error = state.projectCreateError
           ? '<div class="event"><div class="event-top"><span>' + escapeText(t("common.attention", undefined, "attention")) + '</span><span>' + escapeText(state.projectCreateError.code || "error") + '</span></div><strong>' + escapeText(state.projectCreateError.message || t("projectWizard.createFailed", undefined, "Project creation failed.")) + '</strong></div>'
@@ -2152,12 +2228,18 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
             '</strong><div class="hint">' + escapeText(conflict ? t("projectWizard.directoryConflictHint", undefined, "Initialize the current directory only if the existing files belong with this project, or load another project.") : t("projectWizard.emptyDirectoryHint", undefined, "No files are written until you confirm project creation.")) + '</div></div>',
           error,
           '<form id="project-create-form" class="structure-list">',
-          '<label><span>' + escapeText(t("projectWizard.projectName", undefined, "Project name")) + '</span><input name="projectName" value="' + escapeText(workspace.workdir ? String(workspace.workdir).split(/[\\\\/]/).filter(Boolean).pop() || "my-ogs-project" : "my-ogs-project") + '"></label>',
-          '<label><span>' + escapeText(t("projectWizard.projectId", undefined, "Project id")) + '</span><input name="projectId" value="project.starter"></label>',
-          '<label><span>' + escapeText(t("projectWizard.template", undefined, "Template")) + '</span><select name="templateId"><option value="empty">' + escapeText(t("projectWizard.template.empty", undefined, "Blank draft")) + '</option><option value="minimal">' + escapeText(t("projectWizard.template.minimal", undefined, "Minimal runnable")) + '</option><option value="software-dev">software-dev</option><option value="consultation">consultation</option></select></label>',
+          '<label><span>' + escapeText(t("projectWizard.workdir", undefined, "Target directory")) + '</span><input name="workdir" value="' + escapeText(draft.workdir) + '"><span class="hint">' + escapeText(t("projectWizard.workdirHint", undefined, "Use the current visualizer directory or enter another existing directory.")) + '</span></label>',
+          '<label><span>' + escapeText(t("projectWizard.projectName", undefined, "Project name")) + '</span><input name="projectName" value="' + escapeText(draft.projectName) + '"></label>',
+          '<label><span>' + escapeText(t("projectWizard.projectId", undefined, "Project id")) + '</span><input name="projectId" value="' + escapeText(draft.projectId) + '"></label>',
+          '<label><span>' + escapeText(t("projectWizard.template", undefined, "Template")) + '</span><select name="templateId"><option value="empty"' + (draft.templateId === "empty" ? " selected" : "") + '>' + escapeText(t("projectWizard.template.empty", undefined, "Blank draft")) + '</option><option value="minimal"' + (draft.templateId === "minimal" ? " selected" : "") + '>' + escapeText(t("projectWizard.template.minimal", undefined, "Minimal runnable")) + '</option><option value="software-dev"' + (draft.templateId === "software-dev" ? " selected" : "") + '>software-dev</option><option value="consultation"' + (draft.templateId === "consultation" ? " selected" : "") + '>consultation</option></select></label>',
+          '<label><span>' + escapeText(t("projectWizard.defaultModel", undefined, "Default model")) + '</span><input name="defaultModelRef" value="' + escapeText(draft.defaultModelRef) + '"><span class="hint">' + escapeText(t("projectWizard.defaultModelHint", undefined, "Optional provider/model reference for generated model-selection defaults.")) + '</span></label>',
+          '<label><span>' + escapeText(t("projectWizard.profileStrategy", undefined, "Profile strategy")) + '</span><select name="profileStrategy"><option value="visual-editor"' + (draft.profileStrategy === "visual-editor" ? " selected" : "") + '>' + escapeText(t("projectWizard.profileStrategy.visualEditor", undefined, "Configure in visual role editor")) + '</option><option value="create-profile"' + (draft.profileStrategy === "create-profile" ? " selected" : "") + '>' + escapeText(t("projectWizard.profileStrategy.createProfile", undefined, "Create reusable execution profile")) + '</option></select></label>',
+          '<label><span>' + escapeText(t("projectWizard.defaultProfileId", undefined, "Default profile id")) + '</span><input name="defaultProfileId" value="' + escapeText(draft.defaultProfileId) + '"></label>',
+          '<label><span>' + escapeText(t("projectWizard.defaultToolRef", undefined, "Default tool")) + '</span><input name="defaultToolRef" value="' + escapeText(draft.defaultToolRef) + '"></label>',
           '<div class="event"><div class="event-top"><span>' + escapeText(t("projectWizard.roleCatalog", undefined, "Installed roles")) + '</span><span>' + escapeText(String(catalogRoles.length)) + '</span></div><strong>' + escapeText(t("projectWizard.roleCatalogTitle", undefined, "Import role packages after project creation")) + '</strong><div class="hint">' + escapeText(t("projectWizard.roleCatalogCreateHint", undefined, "Selected roles are imported through the controlled role import API after the project is created.")) + '</div></div>',
+          '<label><span>' + escapeText(t("projectWizard.roleCatalogSearch", undefined, "Search roles")) + '</span><input id="project-role-catalog-filter" value="' + escapeText(state.roleCatalogFilter) + '"><span class="hint">' + escapeText(t("projectWizard.roleCatalogSummary", { visible: String(visibleCatalogRoles.length), total: String(filteredCatalogRoles.length) }, "Showing " + String(visibleCatalogRoles.length) + " of " + String(filteredCatalogRoles.length))) + '</span></label>',
           '<div class="structure-list">' + roleOptions + '</div>',
-          conflict ? '<label><span>' + escapeText(t("projectWizard.conflictStrategy", undefined, "Conflict strategy")) + '</span><select name="conflictStrategy"><option value="reject">' + escapeText(t("projectWizard.chooseAnotherDirectory", undefined, "Choose another directory")) + '</option><option value="init-current">' + escapeText(t("projectWizard.initCurrentDirectory", undefined, "Initialize current directory")) + '</option></select></label>' : '<input type="hidden" name="conflictStrategy" value="init-current">',
+          conflict ? '<label><span>' + escapeText(t("projectWizard.conflictStrategy", undefined, "Conflict strategy")) + '</span><select name="conflictStrategy"><option value="reject"' + (draft.conflictStrategy !== "init-current" ? " selected" : "") + '>' + escapeText(t("projectWizard.chooseAnotherDirectory", undefined, "Choose another directory")) + '</option><option value="init-current"' + (draft.conflictStrategy === "init-current" ? " selected" : "") + '>' + escapeText(t("projectWizard.initCurrentDirectory", undefined, "Initialize current directory")) + '</option></select></label>' : '<input type="hidden" name="conflictStrategy" value="init-current">',
           '<div class="toolbar-group"><button class="button primary" type="submit">' + escapeText(t("projectWizard.createProject", undefined, "Create project")) + '</button><button class="button subtle" type="button" id="project-wizard-load">' + escapeText(t("action.loadProject", undefined, "Load project")) + '</button></div>',
           '</form>'
         ].join("");
@@ -2167,10 +2249,31 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
             event.preventDefault();
             void createProjectFromWizard(new FormData(form));
           });
+          for (const input of projectWizardEl.querySelectorAll("input, select")) {
+            input.addEventListener("input", () => updateProjectWizardDraftFromForm(form));
+            input.addEventListener("change", () => updateProjectWizardDraftFromForm(form));
+          }
         }
         const load = document.getElementById("project-wizard-load");
         if (load) {
           load.addEventListener("click", () => openActionForm("projectLoad", { workdir: workspace.workdir || "" }));
+        }
+        const roleFilterInput = document.getElementById("project-role-catalog-filter");
+        if (roleFilterInput) {
+          roleFilterInput.addEventListener("input", (event) => {
+            updateProjectWizardDraftFromForm(form);
+            state.roleCatalogFilter = event.target.value || "";
+            state.roleCatalogExpanded = false;
+            renderProjectWizard();
+          });
+        }
+        const showMoreButton = document.getElementById("project-role-show-more");
+        if (showMoreButton) {
+          showMoreButton.addEventListener("click", () => {
+            updateProjectWizardDraftFromForm(form);
+            state.roleCatalogExpanded = true;
+            renderProjectWizard();
+          });
         }
         return;
       }
@@ -2670,6 +2773,9 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
     }
 
     async function refreshStudioBridge() {
+      if (!state.hasProject) {
+        return;
+      }
       if (!state.workbenchSource && state.workbenchDiskSource) {
         state.workbenchSource = state.workbenchDiskSource;
       }
@@ -3284,16 +3390,85 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
       }
     }
 
+    async function importProjectRoles(roleIds, options) {
+      const selectedRoleIds = Array.from(new Set((roleIds || []).map((value) => String(value || "").trim()).filter(Boolean)));
+      if (!selectedRoleIds.length) {
+        return null;
+      }
+      let payload;
+      try {
+        payload = await requestAction(API_PREFIX + "/project/roles/import", {
+          source: "installed",
+          roleIds: selectedRoleIds
+        });
+      } catch (error) {
+        throw Object.assign(error instanceof Error ? error : new Error(String(error)), { roleImportFailed: true });
+      }
+      state.pendingRoleImportRetry = null;
+      if (payload.roleCatalog) {
+        state.roleCatalog = payload.roleCatalog;
+      } else {
+        await loadRoleCatalog();
+      }
+      try {
+        await refreshProjectDiagnostics();
+      } catch (error) {
+        if (!options?.silent) {
+          setFlash("warning", t("projectWizard.postImportRefreshWarning", undefined, "Roles were imported, but project diagnostics need a refresh."));
+        }
+      }
+      if (!options?.silent) {
+        const imported = (payload.importedRoleIds || []).length;
+        const skipped = (payload.skippedRoleIds || []).length;
+        setFlash("success", t("projectWizard.roleImportSuccess", { imported: String(imported), skipped: String(skipped) }, "Role import completed."));
+      }
+      return payload;
+    }
+
+    async function retryPendingRoleImport() {
+      const retry = state.pendingRoleImportRetry;
+      if (!retry?.roleIds?.length) {
+        return;
+      }
+      await runAction("project:retry-role-import", async () => {
+        try {
+          await importProjectRoles(retry.roleIds);
+        } catch (error) {
+          setFlash("warning", t("projectWizard.roleImportRetryWarning", undefined, "Role import still needs attention. Check the installed role catalog and retry."), { action: "retry-role-import" });
+        }
+      });
+    }
+
     async function createProjectFromWizard(formData) {
-      const selectedRoleIds = typeof formData.getAll === "function"
+      const draft = updateProjectWizardDraftFromForm(document.getElementById("project-create-form"));
+      const selectedRoleIds = draft.selectedRoleIds || (typeof formData.getAll === "function"
         ? formData.getAll("roleIds").map((value) => String(value || "")).filter(Boolean)
-        : [];
+        : []);
+      const defaultModelRef = String(draft.defaultModelRef || "").trim();
+      const profileStrategy = String(draft.profileStrategy || "visual-editor");
+      const defaultProfileId = String(draft.defaultProfileId || "").trim();
+      const defaultToolRef = String(draft.defaultToolRef || "").trim();
+      const modelProfileStrategy = {
+        mode: profileStrategy,
+        ...(defaultModelRef ? { modelDefaults: { model: defaultModelRef } } : {}),
+        ...(profileStrategy === "create-profile" && defaultProfileId && defaultToolRef
+          ? { profiles: [{ profileId: defaultProfileId, toolRef: defaultToolRef }] }
+          : {})
+      };
       const body = {
         requestId: state.projectCreateRequestId || ("project-create-" + Date.now().toString(36) + "-" + Math.random().toString(36).slice(2)),
-        projectName: String(formData.get("projectName") || ""),
-        projectId: String(formData.get("projectId") || ""),
-        templateId: String(formData.get("templateId") || "empty"),
-        conflictStrategy: String(formData.get("conflictStrategy") || "reject")
+        workdir: String(draft.workdir || "").trim(),
+        projectName: String(draft.projectName || ""),
+        projectId: String(draft.projectId || ""),
+        templateId: String(draft.templateId || "empty"),
+        conflictStrategy: String(draft.conflictStrategy || "reject"),
+        authoringDefaults: {
+          newRole: {
+            bindingKind: defaultModelRef ? "model" : "noop",
+            ...(defaultModelRef ? { modelRef: defaultModelRef } : {})
+          }
+        },
+        modelProfileStrategy
       };
       state.projectCreateRequestId = body.requestId;
       state.projectCreateError = null;
@@ -3318,13 +3493,16 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
                         ? t("projectWizard.errorInvalidTemplate", undefined, "Choose an available project template.")
                         : code === "INVALID_PROJECT_WORKDIR"
                           ? t("projectWizard.errorInvalidWorkdir", undefined, "Choose an existing directory that can hold this project.")
-                          : error.message || t("projectWizard.createFailed", undefined, "Project creation failed.")
+                          : code === "INVALID_PROJECT_MODEL_DEFAULT"
+                            ? t("projectWizard.errorInvalidModelDefault", undefined, "Use a default model reference in provider/model format.")
+                            : error.message || t("projectWizard.createFailed", undefined, "Project creation failed.")
           };
           renderProject();
           throw error;
         }
         state.projectCreateRequestId = "";
         state.projectCreateError = null;
+        state.projectWizardDraft = null;
         state.consoleTab = "build";
         state.workbenchView = "bridge";
         state.hasProject = true;
@@ -3335,13 +3513,14 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
         let postCreateWarning = "";
         if (selectedRoleIds.length) {
           try {
-            await requestAction(API_PREFIX + "/project/roles/import", {
-              source: "installed",
-              roleIds: selectedRoleIds
-            });
-            await refreshProjectDiagnostics();
+            await importProjectRoles(selectedRoleIds, { silent: true });
           } catch (error) {
-            postCreateWarning = t("projectWizard.roleImportWarning", undefined, "Project was created, but selected roles could not be imported. Use Project to retry role import.");
+            if (error?.roleImportFailed) {
+              state.pendingRoleImportRetry = { roleIds: selectedRoleIds };
+              postCreateWarning = t("projectWizard.roleImportWarning", undefined, "Project was created, but selected roles could not be imported. Use Project to retry role import.");
+            } else {
+              postCreateWarning = t("projectWizard.postImportRefreshWarning", undefined, "Roles were imported, but project diagnostics need a refresh.");
+            }
           }
         }
         try {
@@ -3353,7 +3532,7 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
           postCreateWarning = postCreateWarning || t("projectWizard.studioBridgeRefreshWarning", undefined, "Project was created, but the graph workspace needs a refresh. Use Build refresh if the graph is not visible.");
         }
         if (postCreateWarning) {
-          setFlash("error", postCreateWarning);
+          setFlash("warning", postCreateWarning, state.pendingRoleImportRetry ? { action: "retry-role-import" } : undefined);
         } else {
           setFlash("success", t("projectWizard.createSuccess", undefined, "Project created. Continue in Build."));
         }

@@ -99,11 +99,20 @@ type VisualizationServerOptions = {
   workdir: string;
   host: string;
   port: number;
+  projectCreateRequestCacheTtlMs?: number;
+  projectCreateRequestCacheMaxSize?: number;
 };
 
 type VisualizationServerState = {
   workdir: string;
-  projectCreateRequests: Map<string, Record<string, unknown>>;
+  projectCreateRequests: Map<string, ProjectCreateRequestCacheEntry>;
+  projectCreateRequestCacheTtlMs: number;
+  projectCreateRequestCacheMaxSize: number;
+};
+
+type ProjectCreateRequestCacheEntry = {
+  cachedAtMs: number;
+  payload: Record<string, unknown>;
 };
 
 type NdjsonEntry = {
@@ -148,6 +157,8 @@ class HttpError extends Error {
 }
 
 const API_PREFIX = "/api/v1";
+const DEFAULT_PROJECT_CREATE_REQUEST_CACHE_TTL_MS = 15 * 60 * 1000;
+const DEFAULT_PROJECT_CREATE_REQUEST_CACHE_MAX_SIZE = 128;
 const VISUALIZER_MODULE_DIR = dirname(fileURLToPath(import.meta.url));
 const STUDIO_GRAPH_ASSET_PATH = VISUALIZER_MODULE_DIR.endsWith(`${sep}src${sep}visualizer`)
   ? resolve(VISUALIZER_MODULE_DIR, "..", "..", "dist", "visualizer", "studio-client", "studio-graph.js")
@@ -203,6 +214,81 @@ function asRecord(value: unknown): Record<string, unknown> | undefined {
   return typeof value === "object" && value !== null && !Array.isArray(value)
     ? (value as Record<string, unknown>)
     : undefined;
+}
+
+function normalizePositiveInteger(value: unknown, fallback: number): number {
+  return typeof value === "number" && Number.isInteger(value) && value > 0 ? value : fallback;
+}
+
+function pruneProjectCreateRequestCache(
+  state: VisualizationServerState,
+  nowMs = Date.now()
+): void {
+  for (const [requestId, entry] of state.projectCreateRequests.entries()) {
+    if (nowMs - entry.cachedAtMs > state.projectCreateRequestCacheTtlMs) {
+      state.projectCreateRequests.delete(requestId);
+    }
+  }
+  while (state.projectCreateRequests.size > state.projectCreateRequestCacheMaxSize) {
+    const oldestRequestId = state.projectCreateRequests.keys().next().value;
+    if (!oldestRequestId) {
+      break;
+    }
+    state.projectCreateRequests.delete(oldestRequestId);
+  }
+}
+
+function readCachedProjectCreateResponse(
+  state: VisualizationServerState,
+  requestId: string,
+  nowMs = Date.now()
+): Record<string, unknown> | undefined {
+  pruneProjectCreateRequestCache(state, nowMs);
+  const cached = state.projectCreateRequests.get(requestId);
+  if (!cached) {
+    return undefined;
+  }
+  return cached.payload;
+}
+
+function cacheProjectCreateResponse(
+  state: VisualizationServerState,
+  requestId: string,
+  payload: Record<string, unknown>,
+  nowMs = Date.now()
+): void {
+  pruneProjectCreateRequestCache(state, nowMs);
+  state.projectCreateRequests.delete(requestId);
+  state.projectCreateRequests.set(requestId, {
+    cachedAtMs: nowMs,
+    payload
+  });
+  pruneProjectCreateRequestCache(state, nowMs);
+}
+
+function readProjectCreatePayload(body: Record<string, unknown>): {
+  workdir?: string;
+  projectId?: unknown;
+  projectName?: unknown;
+  templateId?: unknown;
+  conflictStrategy?: unknown;
+  authoringDefaults?: unknown;
+  modelProfileStrategy?: unknown;
+} {
+  const wizard = asRecord(body.wizard);
+  return {
+    workdir:
+      asString(body.workdir) ??
+      asString(body.targetWorkdir) ??
+      asString(wizard?.workdir) ??
+      asString(wizard?.targetWorkdir),
+    projectId: body.projectId ?? wizard?.projectId,
+    projectName: body.projectName ?? wizard?.projectName,
+    templateId: body.templateId ?? wizard?.templateId,
+    conflictStrategy: body.conflictStrategy ?? wizard?.conflictStrategy,
+    authoringDefaults: body.authoringDefaults ?? wizard?.authoringDefaults,
+    modelProfileStrategy: body.modelProfileStrategy ?? wizard?.modelProfileStrategy
+  };
 }
 
 function isSimulationRun(resolvedConfig: unknown): boolean {
@@ -824,12 +910,13 @@ async function handleApiProjectCreate(
   response: ServerResponse
 ): Promise<void> {
   const body = await readJsonRequest(request);
+  const createPayload = readProjectCreatePayload(body);
   const requestId = asString(body.requestId)?.trim();
   if (requestId && !/^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/.test(requestId)) {
     throw new HttpError(400, "INVALID_PROJECT_CREATE_REQUEST_ID", "requestId must start with a letter or number and use only letters, numbers, dots, underscores, colons, or hyphens.");
   }
   if (requestId) {
-    const cached = state.projectCreateRequests.get(requestId);
+    const cached = readCachedProjectCreateResponse(state, requestId);
     if (cached) {
       const cachedWorkdir = asString(cached.workdir);
       if (cachedWorkdir) {
@@ -848,11 +935,13 @@ async function handleApiProjectCreate(
   try {
     const created = await createProjectVisualization({
       currentWorkdir: state.workdir,
-      workdir: asString(body.workdir),
-      projectId: body.projectId,
-      projectName: body.projectName,
-      templateId: body.templateId,
-      conflictStrategy: body.conflictStrategy
+      workdir: createPayload.workdir,
+      projectId: createPayload.projectId,
+      projectName: createPayload.projectName,
+      templateId: createPayload.templateId,
+      conflictStrategy: createPayload.conflictStrategy,
+      authoringDefaults: createPayload.authoringDefaults,
+      modelProfileStrategy: createPayload.modelProfileStrategy
     });
     const createdWorkdir = asString(asRecord(created)?.workdir) ?? state.workdir;
     const previousWorkdir = state.workdir;
@@ -873,7 +962,7 @@ async function handleApiProjectCreate(
       ]
     };
     if (requestId) {
-      state.projectCreateRequests.set(requestId, payload);
+      cacheProjectCreateResponse(state, requestId, payload);
     }
     jsonResponse(response, 200, payload);
   } catch (error) {
@@ -890,6 +979,9 @@ async function handleApiProjectCreate(
     }
     if (code === "INVALID_PROJECT_WORKDIR") {
       throw new HttpError(400, "INVALID_PROJECT_WORKDIR", "Project workdir must be an existing directory.", details);
+    }
+    if (code === "INVALID_PROJECT_MODEL_DEFAULT") {
+      throw new HttpError(400, "INVALID_PROJECT_MODEL_DEFAULT", "Default model must use provider/model format.", details);
     }
     if (code === "PROJECT_ALREADY_EXISTS") {
       throw new HttpError(409, "PROJECT_ALREADY_EXISTS", "Target directory is already an OGSystem project. Load it instead of creating a new project.", details);
@@ -1794,7 +1886,15 @@ export async function startVisualizationServer(args: VisualizationServerOptions)
 }> {
   const state: VisualizationServerState = {
     workdir: resolve(args.workdir),
-    projectCreateRequests: new Map()
+    projectCreateRequests: new Map(),
+    projectCreateRequestCacheTtlMs: normalizePositiveInteger(
+      args.projectCreateRequestCacheTtlMs,
+      DEFAULT_PROJECT_CREATE_REQUEST_CACHE_TTL_MS
+    ),
+    projectCreateRequestCacheMaxSize: normalizePositiveInteger(
+      args.projectCreateRequestCacheMaxSize,
+      DEFAULT_PROJECT_CREATE_REQUEST_CACHE_MAX_SIZE
+    )
   };
   const server = createServer((request, response) => {
     void handleVisualizationRequest(request, response, state, args).catch((error) => {

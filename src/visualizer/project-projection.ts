@@ -8,7 +8,7 @@ import { isRuntimeOnlyErrorEvent } from "../runtime/error-flow-utils.js";
 import { buildFlowContractKeyForFlow, loadFlowContractPlan } from "../runtime/flow-contract.js";
 import { readJsonFile, writeJsonFileAtomic } from "../runtime/json-file.js";
 import { loadModelCatalog } from "../runtime/model-catalog.js";
-import { loadModelSelection, resolveModelSelectionForSystem } from "../runtime/model-selection.js";
+import { isDirectModelRef, loadModelSelection, resolveModelSelectionForSystem } from "../runtime/model-selection.js";
 import { RuntimeError } from "../runtime/runtime-errors.js";
 import { parseSystemFromMermaidSource } from "../runtime/parse-mermaid.js";
 import {
@@ -63,6 +63,25 @@ type ProjectProjectionCacheEntry = {
   value: Promise<ProjectContext>;
 };
 
+type ProjectCreatePreferences = {
+  authoringDefaults?: unknown;
+  modelProfileStrategy?: unknown;
+};
+
+type ProjectCreateModelDefaults = {
+  model?: string;
+  variant?: string;
+  timeoutMs?: number;
+  maxOutputBytes?: number;
+};
+
+type ProjectCreateProfileDraft = {
+  profileId: string;
+  toolRef: string;
+  timeoutMs?: number;
+  maxOutputBytes?: number;
+};
+
 const projectProjectionCache = new Map<string, ProjectProjectionCacheEntry>();
 
 function asRecord(value: unknown): JsonRecord | undefined {
@@ -73,6 +92,178 @@ function asRecord(value: unknown): JsonRecord | undefined {
 
 function asString(value: unknown): string | undefined {
   return typeof value === "string" ? value : undefined;
+}
+
+function asPositiveInteger(value: unknown): number | undefined {
+  return typeof value === "number" && Number.isInteger(value) && value > 0 ? value : undefined;
+}
+
+function sanitizeJsonValue(value: unknown, depth = 0): unknown {
+  if (value === null) {
+    return null;
+  }
+  if (typeof value === "string" || typeof value === "boolean") {
+    return value;
+  }
+  if (typeof value === "number") {
+    return Number.isFinite(value) ? value : undefined;
+  }
+  if (depth >= 8) {
+    return undefined;
+  }
+  if (Array.isArray(value)) {
+    const entries = value
+      .map((entry) => sanitizeJsonValue(entry, depth + 1))
+      .filter((entry) => entry !== undefined);
+    return entries;
+  }
+  const record = asRecord(value);
+  if (!record) {
+    return undefined;
+  }
+  const entries = Object.entries(record)
+    .map(([key, entry]) => [key, sanitizeJsonValue(entry, depth + 1)] as const)
+    .filter(([, entry]) => entry !== undefined);
+  return Object.fromEntries(entries);
+}
+
+function sanitizeProjectCreatePreferences(args: {
+  authoringDefaults?: unknown;
+  modelProfileStrategy?: unknown;
+}): ProjectCreatePreferences | undefined {
+  const authoringDefaults = sanitizeJsonValue(args.authoringDefaults);
+  const modelProfileStrategy = sanitizeJsonValue(args.modelProfileStrategy);
+  if (authoringDefaults === undefined && modelProfileStrategy === undefined) {
+    return undefined;
+  }
+  return {
+    authoringDefaults,
+    modelProfileStrategy
+  };
+}
+
+function normalizeModelDefaults(value: unknown): ProjectCreateModelDefaults | undefined {
+  const record = asRecord(value);
+  const defaults = asRecord(record?.modelDefaults ?? record?.defaults ?? record);
+  if (!defaults) {
+    return undefined;
+  }
+  const model = asString(defaults.model ?? defaults.modelRef);
+  const variant = asString(defaults.variant);
+  const timeoutMs = asPositiveInteger(defaults.timeoutMs);
+  const maxOutputBytes = asPositiveInteger(defaults.maxOutputBytes);
+  if (model && !isDirectModelRef(model)) {
+    throw new Error("INVALID_PROJECT_MODEL_DEFAULT");
+  }
+  if (!model && !variant && !timeoutMs && !maxOutputBytes) {
+    return undefined;
+  }
+  return {
+    ...(model ? { model } : {}),
+    ...(variant ? { variant } : {}),
+    ...(timeoutMs ? { timeoutMs } : {}),
+    ...(maxOutputBytes ? { maxOutputBytes } : {})
+  };
+}
+
+function normalizeProfileDrafts(value: unknown): ProjectCreateProfileDraft[] {
+  const record = asRecord(value);
+  const profile = asRecord(record?.profile);
+  const entries = Array.isArray(record?.profiles)
+    ? record.profiles
+    : profile
+      ? [profile]
+      : [];
+  return entries
+    .map((entry) => asRecord(entry))
+    .filter((entry): entry is JsonRecord => Boolean(entry))
+    .map((entry) => ({
+      profileId: asString(entry.profileId)?.trim() ?? "",
+      toolRef: asString(entry.toolRef)?.trim() ?? "",
+      timeoutMs: asPositiveInteger(entry.timeoutMs),
+      maxOutputBytes: asPositiveInteger(entry.maxOutputBytes)
+    }))
+    .filter((entry) => entry.profileId && entry.toolRef);
+}
+
+async function applyProjectCreateModelDefaults(args: {
+  workdir: string;
+  systemId: string;
+  modelSelectionPath: string;
+  strategy?: unknown;
+}): Promise<ProjectCreateModelDefaults | undefined> {
+  const modelDefaults = normalizeModelDefaults(args.strategy);
+  if (!modelDefaults) {
+    return undefined;
+  }
+  const existing = asRecord(await readJsonFile(args.modelSelectionPath).catch(() => undefined)) ?? {};
+  const systems = asRecord(existing.systems) ?? {};
+  const systemEntry = asRecord(systems[args.systemId]) ?? {};
+  await writeJsonFileAtomic(args.modelSelectionPath, {
+    ...existing,
+    configVersion: "1",
+    defaults: {
+      ...(asRecord(existing.defaults) ?? {}),
+      ...modelDefaults
+    },
+    systems: {
+      ...systems,
+      [args.systemId]: {
+        ...systemEntry,
+        defaults: {
+          ...(asRecord(systemEntry.defaults) ?? {}),
+          ...modelDefaults
+        }
+      }
+    }
+  });
+  return modelDefaults;
+}
+
+async function applyProjectCreateProfiles(args: {
+  workdir: string;
+  strategy?: unknown;
+}): Promise<ProjectCreateProfileDraft[]> {
+  const incoming = normalizeProfileDrafts(args.strategy);
+  if (!incoming.length) {
+    return [];
+  }
+  const profilesPath = resolve(args.workdir, "profiles.json");
+  const existing = await loadProfiles(undefined, args.workdir).catch(() => []);
+  const byProfileId = new Map(existing.map((profile) => [profile.profileId, profile]));
+  for (const profile of incoming) {
+    byProfileId.set(profile.profileId, profile);
+  }
+  const profiles = Array.from(byProfileId.values()).sort((left, right) => left.profileId.localeCompare(right.profileId));
+  await writeJsonFileAtomic(profilesPath, validateProfilesConfig(profiles, profilesPath));
+  return incoming;
+}
+
+async function persistProjectCreatePreferences(args: {
+  workdir: string;
+  authoring: Record<string, unknown>;
+  preferences?: ProjectCreatePreferences;
+}): Promise<Record<string, unknown>> {
+  if (!args.preferences) {
+    return args.authoring;
+  }
+  const ogsPaths = resolveOgsPaths(args.workdir);
+  const projectMeta = asRecord((await readJsonFile(ogsPaths.projectPath).catch(() => undefined)) ?? {});
+  const existingVisualizer = asRecord(projectMeta?.visualizer) ?? {};
+  await writeJsonFileAtomic(ogsPaths.projectPath, {
+    ...(projectMeta ?? {}),
+    visualizer: {
+      ...existingVisualizer,
+      projectCreate: args.preferences
+    }
+  });
+  return {
+    ...args.authoring,
+    visualizer: {
+      ...(asRecord(args.authoring.visualizer) ?? {}),
+      projectCreate: args.preferences
+    }
+  };
 }
 
 async function hasProjectFiles(workdir: string): Promise<boolean> {
@@ -658,12 +849,19 @@ export async function createProjectVisualization(args: {
   projectName?: unknown;
   templateId?: unknown;
   conflictStrategy?: unknown;
+  authoringDefaults?: unknown;
+  modelProfileStrategy?: unknown;
 }): Promise<Record<string, unknown>> {
-  const targetWorkdir = resolve(asString(args.workdir) ?? args.currentWorkdir);
+  const requestedWorkdir = asString(args.workdir)?.trim();
+  const targetWorkdir = resolve(requestedWorkdir || args.currentWorkdir);
   const templateId = normalizeProjectTemplateId(args.templateId);
   const projectId = assertProjectId(args.projectId);
   const projectName = assertProjectName(args.projectName) ?? projectId ?? basename(targetWorkdir);
   const conflictStrategy = asString(args.conflictStrategy) ?? "reject";
+  const preferences = sanitizeProjectCreatePreferences({
+    authoringDefaults: args.authoringDefaults,
+    modelProfileStrategy: args.modelProfileStrategy
+  });
   const workspace = await inspectProjectWorkspace(targetWorkdir);
   if (workspace.isDirectory !== true) {
     const error = new Error("INVALID_PROJECT_WORKDIR") as Error & { code?: string; details?: unknown };
@@ -701,11 +899,13 @@ export async function createProjectVisualization(args: {
       systemPath: "system.mmd",
       systemSource
     });
-    const draft = await saveStudioAuthoringDraft({
+    const authoringWithPreferences = await persistProjectCreatePreferences({
       workdir: targetWorkdir,
-      authoring,
-      validateSystemSource: validateProjectSystemSource
+      authoring: authoring as Record<string, unknown>,
+      preferences
     });
+    let persistedModelDefaults: ProjectCreateModelDefaults | undefined;
+    let persistedProfiles: ProjectCreateProfileDraft[] = [];
     const warnings: string[] = [];
     let modelSyncResult: {
       catalogPath: string;
@@ -717,6 +917,12 @@ export async function createProjectVisualization(args: {
       modelSyncResult = await syncProjectModels({
         workdir: targetWorkdir,
         systemPath: "system.mmd"
+      });
+      persistedModelDefaults = await applyProjectCreateModelDefaults({
+        workdir: targetWorkdir,
+        systemId: authoring.system.systemId,
+        modelSelectionPath: modelSyncResult.selectionPath,
+        strategy: args.modelProfileStrategy
       });
     } catch (error) {
       const paths = resolveOgsPaths(targetWorkdir);
@@ -734,7 +940,22 @@ export async function createProjectVisualization(args: {
         generatedSelection: true,
         selectedModel: "opencode/gpt-5.4"
       };
+      persistedModelDefaults = await applyProjectCreateModelDefaults({
+        workdir: targetWorkdir,
+        systemId: authoring.system.systemId,
+        modelSelectionPath: modelSyncResult.selectionPath,
+        strategy: args.modelProfileStrategy
+      });
     }
+    persistedProfiles = await applyProjectCreateProfiles({
+      workdir: targetWorkdir,
+      strategy: args.modelProfileStrategy
+    });
+    const draft = await saveStudioAuthoringDraft({
+      workdir: targetWorkdir,
+      authoring: authoringWithPreferences,
+      validateSystemSource: validateProjectSystemSource
+    });
     const syncResult = await syncProjectDependencies({
       workdir: targetWorkdir,
       systemPath: "system.mmd"
@@ -756,6 +977,9 @@ export async function createProjectVisualization(args: {
       warnings,
       draftPath: draft.draftPath,
       draftState: templateId === "empty" ? "draft-unbound-unpublishable" : "draft",
+      ...(persistedModelDefaults ? { modelDefaults: persistedModelDefaults } : {}),
+      ...(persistedProfiles.length ? { profiles: persistedProfiles } : {}),
+      ...(preferences ? { createPreferences: preferences } : {}),
       validation: await validateProjectSystemSource({
         workdir: targetWorkdir,
         systemPath: resolve(targetWorkdir, "system.mmd"),

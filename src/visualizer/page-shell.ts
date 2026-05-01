@@ -251,6 +251,10 @@ export function renderPageHtml(workdir: string, apiPrefix: string, i18n: PageI18
       border-color: rgba(248, 113, 113, 0.25);
       background: rgba(248, 113, 113, 0.08);
     }
+    .flash.warning {
+      border-color: rgba(251, 191, 36, 0.25);
+      background: rgba(251, 191, 36, 0.08);
+    }
     .hero {
       display: grid;
       grid-template-columns: minmax(0, 1fr) auto;

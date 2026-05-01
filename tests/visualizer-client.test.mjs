@@ -112,6 +112,9 @@ function parseAttributes(source) {
 }
 
 function matchesSelector(element, selector) {
+  if (/^[a-zA-Z][a-zA-Z0-9-]*$/.test(selector)) {
+    return element.tagName.toLowerCase() === selector.toLowerCase();
+  }
   const attributeSelector = selector.match(/^\[([a-zA-Z0-9:-]+)(?:="([^"]*)")?\]$/);
   if (attributeSelector) {
     const [, name, value] = attributeSelector;
@@ -206,11 +209,13 @@ class FakeElement {
 
   async change(value) {
     this.value = value;
+    this.attributes.value = value;
     await this.dispatch("change");
   }
 
   async input(value) {
     this.value = value;
+    this.attributes.value = value;
     await this.dispatch("input");
   }
 
@@ -230,7 +235,8 @@ class FakeElement {
   }
 
   querySelectorAll(selector) {
-    return this.children.filter((child) => matchesSelector(child, selector));
+    const selectors = String(selector).split(",").map((entry) => entry.trim()).filter(Boolean);
+    return this.children.filter((child) => selectors.some((entry) => matchesSelector(child, entry)));
   }
 }
 
@@ -1675,17 +1681,46 @@ test("visualizer client creates a project from the empty workspace wizard", asyn
     .find((child) => child.attributes.name === "projectName");
   const template = [...harness.document.dynamicElements]
     .find((child) => child.attributes.name === "templateId");
+  const workdir = [...harness.document.dynamicElements]
+    .find((child) => child.attributes.name === "workdir");
   assert.ok(projectId);
   assert.ok(projectName);
   assert.ok(template);
-  projectId.value = "project.empty.visual";
-  projectName.value = "Empty visual";
-  template.value = "minimal";
-  assert.match(harness.document.getElementById("project-wizard").textContent, /Installed roles|Demo Analyst/i);
-  const demoRole = [...harness.document.dynamicElements]
-    .find((child) => child.attributes.name === "roleIds" && child.attributes.value === "demo-analyst");
-  assert.ok(demoRole);
-  demoRole.attributes.checked = "";
+  assert.ok(workdir);
+  const roleFilter = [...harness.document.dynamicElements]
+    .find((child) => child.attributes.id === "project-role-catalog-filter");
+  assert.ok(roleFilter);
+  await projectId.input("project.empty.visual");
+  await projectName.input("Empty visual");
+  await template.change("minimal");
+  await workdir.input("/tmp/empty-project");
+  await roleFilter.input("QA");
+  await settle();
+  assert.match(harness.document.getElementById("project-wizard").textContent, /Showing 1 of 1|显示 1 \/ 1/i);
+  const refreshedProjectId = [...harness.document.dynamicElements]
+    .find((child) => child.attributes.name === "projectId");
+  const refreshedProjectName = [...harness.document.dynamicElements]
+    .find((child) => child.attributes.name === "projectName");
+  const refreshedTemplate = [...harness.document.dynamicElements]
+    .find((child) => child.attributes.name === "templateId");
+  const refreshedWorkdir = [...harness.document.dynamicElements]
+    .find((child) => child.attributes.name === "workdir");
+  assert.equal(refreshedProjectId.value, "project.empty.visual");
+  assert.equal(refreshedProjectName.value, "Empty visual");
+  assert.equal(refreshedWorkdir.value, "/tmp/empty-project");
+  const qaRole = [...harness.document.dynamicElements]
+    .find((child) => child.attributes.name === "roleIds" && child.attributes.value === "qa-reviewer");
+  assert.ok(qaRole);
+  qaRole.attributes.checked = "";
+  const showMore = [...harness.document.dynamicElements]
+    .find((child) => child.attributes.id === "project-role-show-more");
+  if (showMore) {
+    await showMore.click();
+    await settle();
+    const afterShowMoreProjectId = [...harness.document.dynamicElements]
+      .find((child) => child.attributes.name === "projectId");
+    assert.equal(afterShowMoreProjectId.value, "project.empty.visual");
+  }
 
   await harness.document.getElementById("project-create-form").dispatch("submit");
   await waitForCondition(() => harness.backend.fetchCalls.some((call) => call.path === "/api/v1/project/roles/import"));
@@ -1693,21 +1728,24 @@ test("visualizer client creates a project from the empty workspace wizard", asyn
   assert.match(harness.backend.lastProjectCreateBody.requestId, /^project-create-/);
   assert.deepEqual(
     {
+      workdir: harness.backend.lastProjectCreateBody.workdir,
       projectName: harness.backend.lastProjectCreateBody.projectName,
       projectId: harness.backend.lastProjectCreateBody.projectId,
       templateId: harness.backend.lastProjectCreateBody.templateId,
       conflictStrategy: harness.backend.lastProjectCreateBody.conflictStrategy
     },
     {
+      workdir: "/tmp/empty-project",
       projectName: "Empty visual",
       projectId: "project.empty.visual",
       templateId: "minimal",
       conflictStrategy: "init-current"
     }
   );
+  assert.equal(harness.backend.lastProjectCreateBody.modelProfileStrategy.mode, "visual-editor");
   assert.deepEqual(harness.backend.lastRoleImportBody, {
     source: "installed",
-    roleIds: ["demo-analyst"]
+    roleIds: ["qa-reviewer"]
   });
   assert.ok(harness.backend.fetchCalls.some((call) => call.path === "/api/v1/project"));
   assert.equal(harness.backend.fetchCalls.some((call) => call.path === "/api/v1/project/create"), true);
@@ -1749,10 +1787,13 @@ test("visualizer client keeps created project usable when role import fails", as
 
   await harness.document.getElementById("project-create-form").dispatch("submit");
   await waitForCondition(() => harness.document.getElementById("console-panel-build").hidden === false);
+  await waitForCondition(() => /warning/.test(harness.document.getElementById("flash").className));
 
   assert.equal(harness.document.getElementById("console-panel-build").hidden, false);
   assert.equal(harness.backend.fetchCalls.some((call) => call.path === "/api/v1/project/roles/import"), true);
   assert.equal(harness.backend.fetchCalls.some((call) => call.path === "/api/v1/project/studio/bridge"), true);
+  assert.match(harness.document.getElementById("flash").className, /warning/);
+  assert.match(harness.document.getElementById("flash").innerHTML, /flash-retry-role-import/);
 });
 
 test("visualizer client shows stable project create conflict errors", async () => {
