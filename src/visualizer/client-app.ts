@@ -2132,13 +2132,14 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
         const workspace = state.workspace || {};
         const conflict = workspace.state === "non-project-conflict";
         const catalogRoles = Array.isArray(state.roleCatalog?.roles) ? state.roleCatalog.roles : [];
+        const visibleCatalogRoles = catalogRoles.slice(0, 48);
+        const overflowCount = Math.max(0, catalogRoles.length - visibleCatalogRoles.length);
         const roleOptions = catalogRoles.length
-          ? catalogRoles.slice(0, 12).map((role) => {
+          ? visibleCatalogRoles.map((role) => {
               const roleId = role.roleId || "";
-              const checked = roleId === "demo-analyst" ? " checked" : "";
               const imported = role.alreadyImported ? " · " + t("common.loaded", undefined, "loaded") : "";
-              return '<label class="event"><input type="checkbox" name="roleIds" value="' + escapeText(roleId) + '"' + checked + '><span><strong>' + escapeText(role.name || roleId) + '</strong><span class="hint">' + escapeText(roleId + imported) + '</span></span></label>';
-            }).join("")
+              return '<label class="event"><input type="checkbox" name="roleIds" value="' + escapeText(roleId) + '"><span><strong>' + escapeText(role.name || roleId) + '</strong><span class="hint">' + escapeText(roleId + imported) + '</span></span></label>';
+            }).join("") + (overflowCount ? '<div class="hint">' + escapeText(t("projectWizard.roleCatalogOverflow", { count: String(overflowCount) }, String(overflowCount) + " more roles are available from installed packages; refine import after project creation.")) + '</div>' : "")
           : '<div class="hint">' + escapeText(t("projectWizard.roleCatalogEmpty", undefined, "Installed role catalog is unavailable.")) + '</div>';
         const error = state.projectCreateError
           ? '<div class="event"><div class="event-top"><span>' + escapeText(t("common.attention", undefined, "attention")) + '</span><span>' + escapeText(state.projectCreateError.code || "error") + '</span></div><strong>' + escapeText(state.projectCreateError.message || t("projectWizard.createFailed", undefined, "Project creation failed.")) + '</strong></div>'
@@ -3305,29 +3306,55 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
               ? t("projectWizard.errorAlreadyExists", undefined, "This directory is already an OGSystem project. Load it instead.")
               : code === "PROJECT_DIR_CONFLICT"
                 ? t("projectWizard.errorDirectoryConflict", undefined, "This directory has existing files. Choose current-directory initialization, another directory, or load an existing project.")
-                : code === "INVALID_PROJECT_ID"
-                  ? t("projectWizard.errorInvalidProjectId", undefined, "Use a project id with letters, numbers, dots, underscores, or hyphens.")
-                  : error.message || t("projectWizard.createFailed", undefined, "Project creation failed.")
+                : code === "PROJECT_FILE_CONFLICT"
+                  ? t("projectWizard.errorFileConflict", undefined, "This directory contains OGSystem-controlled files. Choose another directory or load the existing project.")
+                  : code === "INVALID_PROJECT_ID"
+                    ? t("projectWizard.errorInvalidProjectId", undefined, "Use a project id with letters, numbers, dots, underscores, or hyphens.")
+                    : code === "INVALID_PROJECT_NAME"
+                      ? t("projectWizard.errorInvalidProjectName", undefined, "Use a project name that starts with a letter or number.")
+                      : code === "INVALID_PROJECT_TEMPLATE"
+                        ? t("projectWizard.errorInvalidTemplate", undefined, "Choose an available project template.")
+                        : code === "INVALID_PROJECT_WORKDIR"
+                          ? t("projectWizard.errorInvalidWorkdir", undefined, "Choose an existing directory that can hold this project.")
+                          : error.message || t("projectWizard.createFailed", undefined, "Project creation failed.")
           };
           renderProject();
           throw error;
-        }
-        if (selectedRoleIds.length) {
-          await requestAction(API_PREFIX + "/project/roles/import", {
-            source: "installed",
-            roleIds: selectedRoleIds
-          });
         }
         state.projectCreateRequestId = "";
         state.projectCreateError = null;
         state.consoleTab = "build";
         state.workbenchView = "bridge";
+        state.hasProject = true;
         await loadProject();
         await loadRuns();
         renderConsoleTabs();
         renderWorkbench();
-        await refreshStudioBridge();
-        setFlash("success", t("projectWizard.createSuccess", undefined, "Project created. Continue in Build."));
+        let postCreateWarning = "";
+        if (selectedRoleIds.length) {
+          try {
+            await requestAction(API_PREFIX + "/project/roles/import", {
+              source: "installed",
+              roleIds: selectedRoleIds
+            });
+            await refreshProjectDiagnostics();
+          } catch (error) {
+            postCreateWarning = t("projectWizard.roleImportWarning", undefined, "Project was created, but selected roles could not be imported. Use Project to retry role import.");
+          }
+        }
+        try {
+          await refreshStudioBridge();
+        } catch (error) {
+          state.studioBridgeStale = true;
+          await loadWorkbench();
+          renderWorkbench();
+          postCreateWarning = postCreateWarning || t("projectWizard.studioBridgeRefreshWarning", undefined, "Project was created, but the graph workspace needs a refresh. Use Build refresh if the graph is not visible.");
+        }
+        if (postCreateWarning) {
+          setFlash("error", postCreateWarning);
+        } else {
+          setFlash("success", t("projectWizard.createSuccess", undefined, "Project created. Continue in Build."));
+        }
       });
     }
 

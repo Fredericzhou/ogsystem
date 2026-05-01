@@ -1682,9 +1682,13 @@ test("visualizer client creates a project from the empty workspace wizard", asyn
   projectName.value = "Empty visual";
   template.value = "minimal";
   assert.match(harness.document.getElementById("project-wizard").textContent, /Installed roles|Demo Analyst/i);
+  const demoRole = [...harness.document.dynamicElements]
+    .find((child) => child.attributes.name === "roleIds" && child.attributes.value === "demo-analyst");
+  assert.ok(demoRole);
+  demoRole.attributes.checked = "";
 
   await harness.document.getElementById("project-create-form").dispatch("submit");
-  await waitForCondition(() => harness.backend.fetchCalls.some((call) => call.path === "/api/v1/project"));
+  await waitForCondition(() => harness.backend.fetchCalls.some((call) => call.path === "/api/v1/project/roles/import"));
 
   assert.match(harness.backend.lastProjectCreateBody.requestId, /^project-create-/);
   assert.deepEqual(
@@ -1711,6 +1715,44 @@ test("visualizer client creates a project from the empty workspace wizard", asyn
   assert.equal(harness.backend.fetchCalls.some((call) => call.path === "/api/v1/project/roles/import"), true);
   assert.equal(harness.backend.fetchCalls.some((call) => call.path === "/api/v1/project/system/save"), false);
   assert.equal(harness.backend.fetchCalls.some((call) => call.path === "/api/v1/runs/start"), false);
+});
+
+test("visualizer client keeps created project usable when role import fails", async () => {
+  const workspace = {
+    workdir: "/tmp/empty-project",
+    exists: true,
+    isDirectory: true,
+    hasProject: false,
+    state: "empty",
+    entryCount: 0
+  };
+  const backend = createBackend({ workspace, readinessCanDryRun: true });
+  const originalHandle = backend.handle.bind(backend);
+  backend.handle = async (url, request = {}) => {
+    const parsed = new URL(url, "http://visualizer.test");
+    if (parsed.pathname === "/api/v1/project/roles/import") {
+      backend.fetchCalls.push({ method: request.method ?? "GET", path: parsed.pathname, body: request.body ?? null });
+      return createResponse({
+        error: {
+          code: "ROLE_IMPORT_FAILED",
+          message: "Role import failed."
+        }
+      }, 500, "Internal Server Error");
+    }
+    return originalHandle(url, request);
+  };
+  const harness = await createClientHarness({ backend });
+  const demoRole = [...harness.document.dynamicElements]
+    .find((child) => child.attributes.name === "roleIds" && child.attributes.value === "demo-analyst");
+  assert.ok(demoRole);
+  demoRole.attributes.checked = "";
+
+  await harness.document.getElementById("project-create-form").dispatch("submit");
+  await waitForCondition(() => harness.document.getElementById("console-panel-build").hidden === false);
+
+  assert.equal(harness.document.getElementById("console-panel-build").hidden, false);
+  assert.equal(harness.backend.fetchCalls.some((call) => call.path === "/api/v1/project/roles/import"), true);
+  assert.equal(harness.backend.fetchCalls.some((call) => call.path === "/api/v1/project/studio/bridge"), true);
 });
 
 test("visualizer client shows stable project create conflict errors", async () => {

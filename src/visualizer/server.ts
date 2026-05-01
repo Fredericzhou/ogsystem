@@ -831,6 +831,13 @@ async function handleApiProjectCreate(
   if (requestId) {
     const cached = state.projectCreateRequests.get(requestId);
     if (cached) {
+      const cachedWorkdir = asString(cached.workdir);
+      if (cachedWorkdir) {
+        const previousWorkdir = state.workdir;
+        state.workdir = cachedWorkdir;
+        invalidateAllProjectCaches(previousWorkdir);
+        invalidateAllProjectCaches(cachedWorkdir);
+      }
       jsonResponse(response, 200, {
         ...cached,
         idempotentReplay: true

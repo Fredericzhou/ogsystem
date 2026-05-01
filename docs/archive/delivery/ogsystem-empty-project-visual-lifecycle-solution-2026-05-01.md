@@ -617,11 +617,11 @@ alreadyImported
 - 空白模板也必须生成最小可解析 `system.mmd` 草稿，不能让空文件进入 parser/readiness 路径。
 - Project Wizard 可以查询安装包内 Studio 模板和角色资源。
 - 导入安装包角色时必须通过受控后端 API，复用 project lifecycle / sync 能力。
-- 用户可以通过对话调整 `system.mmd` 的框架结构。
+- 本轮可通过现有 Studio authoring / Workbench / Graph 能力调整 `system.mmd`；独立“框架结构对话 / framework panel”仍是后续任务。
 - 用户可以通过图和 Inspector 细化角色、流转、模型、Profile、review、route、join、loop。
 - 生成的 `system.mmd` 可被现有 parser/compiler/runtime 消费。
 - Dry Run 在现有 run artifact 基础上生成 snapshot manifest，Operate 使用 run artifact + manifest 展示历史运行。
-- Release 先定义 manifest contract，再导出独立运行包。
+- Release 本轮先定义并导出最小 `releaseManifest` contract；完整独立运行包目录结构仍是后续任务。
 - 默认体验不暴露底层图技术名。
 - 所有写入动作都有明确按钮、状态和结果反馈。
 - 不新增 runtime/parser/compiler 语义变更。
