@@ -21,6 +21,8 @@ import { renderStudioGraphProjection } from "./studio-graph-render.js";
 import { canConnectStudioCells } from "./studio-graph-rules.js";
 
 type StudioGraphLabelKey =
+  | "viewportGroup"
+  | "editGroup"
   | "zoomOut"
   | "zoomIn"
   | "resetView"
@@ -129,21 +131,21 @@ export class StudioGraphIsland {
     this.root.innerHTML = [
       '<div class="studio-graph-toolbar">',
       '<div class="studio-graph-toolbar-main">',
-      '<div class="studio-graph-toolbar-group" aria-label="Viewport">',
-      this.toolbarButton("zoom-out", "zoomOut", "−", "–"),
+      '<div class="studio-graph-toolbar-group" aria-label="' + this.escapeHtml(this.label("viewportGroup")) + '">',
+      this.toolbarButton("zoom-out", "zoomOut", "−", "−"),
       this.toolbarButton("zoom-in", "zoomIn", "+", "+"),
       this.toolbarButton("reset-view", "resetView", "1:1", "100%"),
-      this.toolbarButton("fullscreen", "fullscreen", "⛶", "Full"),
-      this.toolbarButton("fit", "fitView", "◎", "Fit"),
-      this.toolbarButton("layout", "autoLayout", "⇄", "Layout"),
+      this.toolbarButton("fullscreen", "fullscreen", "⛶"),
+      this.toolbarButton("fit", "fitView", "◎"),
+      this.toolbarButton("layout", "autoLayout", "⇄"),
       '</div>',
-      '<div class="studio-graph-toolbar-group" data-studio-graph-edit-actions aria-label="Edit graph">',
-      this.toolbarButton("add-role", "addRole", "+R", "Role"),
-      this.toolbarButton("add-edge", "addEdge", "+E", "Edge"),
-      this.toolbarButton("edit", "editSelection", "✎", "Edit"),
-      this.toolbarButton("delete", "deleteSelection", "⌫", "Delete"),
-      this.toolbarButton("undo", "undo", "↶", "Undo"),
-      this.toolbarButton("redo", "redo", "↷", "Redo"),
+      '<div class="studio-graph-toolbar-group" data-studio-graph-edit-actions aria-label="' + this.escapeHtml(this.label("editGroup")) + '">',
+      this.toolbarButton("add-role", "addRole", "+R"),
+      this.toolbarButton("add-edge", "addEdge", "+E"),
+      this.toolbarButton("edit", "editSelection", "✎"),
+      this.toolbarButton("delete", "deleteSelection", "⌫"),
+      this.toolbarButton("undo", "undo", "↶"),
+      this.toolbarButton("redo", "redo", "↷"),
       '</div>',
       '</div>',
       '<span class="studio-graph-status" data-studio-graph-status>' + this.escapeHtml(this.label("ready")) + '</span>',

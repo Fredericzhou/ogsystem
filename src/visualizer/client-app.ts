@@ -818,6 +818,8 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
 
     function buildStudioGraphLabels() {
       return {
+        viewportGroup: t("studio.graph.viewportGroup", undefined, "Viewport"),
+        editGroup: t("studio.graph.editGroup", undefined, "Edit graph"),
         zoomOut: t("studio.graph.zoomOut", undefined, "Zoom out"),
         zoomIn: t("studio.graph.zoomIn", undefined, "Zoom in"),
         resetView: t("studio.graph.resetView", undefined, "Actual size"),

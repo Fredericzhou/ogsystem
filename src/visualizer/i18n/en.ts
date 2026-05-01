@@ -524,6 +524,8 @@ export const en = {
   "build.debugDryRunHint": "Use Operate for resume, stop, logs, and recovery controls.",
   "build.openOperate": "Open in Operate",
   "studio.graph.bundleLoading": "Studio graph bundle loading...",
+  "studio.graph.viewportGroup": "Viewport",
+  "studio.graph.editGroup": "Edit graph",
   "studio.graph.zoomOut": "Zoom out",
   "studio.graph.zoomIn": "Zoom in",
   "studio.graph.resetView": "Actual size",

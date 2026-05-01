@@ -528,6 +528,8 @@ export const zhCN = {
   "build.debugDryRunHint": "恢复、停止、日志和恢复控制请在运行中处理。",
   "build.openOperate": "在运行中打开",
   "studio.graph.bundleLoading": "Studio 图谱包加载中...",
+  "studio.graph.viewportGroup": "视图操作",
+  "studio.graph.editGroup": "图谱编辑",
   "studio.graph.zoomOut": "缩小",
   "studio.graph.zoomIn": "放大",
   "studio.graph.resetView": "实际大小",

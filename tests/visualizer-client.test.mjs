@@ -1826,6 +1826,10 @@ test("visualizer client renders zh-CN chrome while preserving runtime identifier
     i18n: { locale: "zh-CN" },
     includeMissingAuditContract: true
   });
+  const mountCalls = [];
+  harness.window.OGSVisualizerClient.mountStudioX6Bridge = (root, options) => {
+    mountCalls.push({ root, options });
+  };
 
   assert.match(harness.document.getElementById("console-tabs").textContent, /校验与发布/);
   assert.equal(harness.document.getElementById("action-form-section").hidden, true);
@@ -1864,6 +1868,17 @@ test("visualizer client renders zh-CN chrome while preserving runtime identifier
   assert.match(harness.document.getElementById("resume-diagnostics").textContent, /警告/);
   assert.match(harness.document.getElementById("resume-diagnostics").textContent, /需关注/);
   assert.doesNotMatch(harness.document.getElementById("resume-diagnostics").textContent, /\bwarning\b|\battention\b/);
+
+  const bridgeTab = harness.document.getElementById("workbench-view-tabs")
+    .querySelectorAll("[data-workbench-view=\"bridge\"]")[0];
+  assert.ok(bridgeTab);
+  await bridgeTab.click();
+  await settle();
+  const latestMount = mountCalls.at(-1)?.options;
+  assert.ok(latestMount);
+  assert.equal(latestMount.labels.viewportGroup, "视图操作");
+  assert.equal(latestMount.labels.editGroup, "图谱编辑");
+  assert.equal(latestMount.labels.fullscreen, "全屏");
 });
 
 test("visualizer client language switch stores locale and refreshes with lang query", async () => {
@@ -2462,6 +2477,9 @@ test("visualizer client opens Studio Bridge, saves an authoring draft, and dry-r
   assert.ok(latestEditableMount().projectConfig);
   assert.ok(latestEditableMount().commandFormLabels);
   assert.equal(latestEditableMount().defaultAutoLayout, true);
+  assert.equal(latestEditableMount().labels.viewportGroup, "Viewport");
+  assert.equal(latestEditableMount().labels.editGroup, "Edit graph");
+  assert.equal(latestEditableMount().labels.fullscreen, "Fullscreen");
   await settle();
   const fetchCallsAfterOpen = harness.backend.fetchCalls.length;
   mountCalls.at(-1).options.onSelectFlow("demo-analyst:DONE:output");
@@ -2473,6 +2491,7 @@ test("visualizer client opens Studio Bridge, saves an authoring draft, and dry-r
   latestEditableMount().onToggleFullscreen();
   await settle();
   assert.match(harness.document.getElementById("workbench-body").innerHTML, /studio-canvas-shell is-fullscreen/);
+  assert.equal(latestEditableMount().labels.fullscreen, "Exit fullscreen");
   const filterInput = harness.document.getElementById("workbench-body").querySelectorAll("[data-studio-bridge-filter]")[0];
   assert.ok(filterInput);
   await filterInput.input("missing-role");
