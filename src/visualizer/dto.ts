@@ -71,6 +71,7 @@ export type WorkbenchSaveView = {
 
 export type ProjectTransferView = {
   mode: "single-project-v1";
+  releaseManifest?: unknown;
   project: {
     systemPath: string;
     systemSource: string;
@@ -793,6 +794,7 @@ export function mapProjectTransferView(value: unknown): ProjectTransferView {
   const project = asRecord(record.project) ?? {};
   return {
     mode: record.mode === "single-project-v1" ? "single-project-v1" : "single-project-v1",
+    releaseManifest: record.releaseManifest,
     project: {
       systemPath: asString(project.systemPath) ?? "system.mmd",
       systemSource: asString(project.systemSource) ?? "",

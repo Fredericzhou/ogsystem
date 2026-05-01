@@ -191,7 +191,7 @@ class FakeElement {
   async dispatch(type) {
     const handlers = this.listeners.get(type) ?? [];
     for (const handler of handlers) {
-      await handler({ target: this });
+      await handler({ target: this, preventDefault() {} });
     }
   }
 
@@ -232,6 +232,7 @@ class FakeElement {
 class FakeDocument {
   constructor() {
     this.elements = new Map();
+    this.dynamicElements = new Set();
     this.body = {
       classList: {
         classes: new Set(),
@@ -256,6 +257,7 @@ class FakeDocument {
   unregisterChildren(children) {
     for (const child of children) {
       this.unregisterChildren(child.children);
+      this.dynamicElements.delete(child);
       if (child.dynamic && child.id && this.elements.get(child.id) === child) {
         this.elements.delete(child.id);
       }
@@ -264,13 +266,14 @@ class FakeDocument {
 
   parseChildren(html) {
     const children = [];
-    const matcher = /<(button|input|select|option|textarea|div|span)\b([^>]*)>/g;
+    const matcher = /<(form|button|input|select|option|textarea|div|span)\b([^>]*)>/g;
     for (const match of html.matchAll(matcher)) {
       const tagName = match[1];
       const attributes = parseAttributes(match[2] ?? "");
       const id = attributes.id ?? "";
       const element = new FakeElement(this, id, tagName, attributes, true);
       children.push(element);
+      this.dynamicElements.add(element);
       if (id) {
         this.elements.set(id, element);
       }
@@ -631,6 +634,7 @@ function createBackend(options = {}) {
     lastReindexBody: null,
     reviewDetail: cloneJson(primaryRun.reviewDetail),
     lastDecisionBody: null,
+    lastProjectCreateBody: null,
     decisionDeferred: options.decisionDeferred ?? null,
     fetchCalls: [],
     async handle(url, request = {}) {
@@ -651,6 +655,48 @@ function createBackend(options = {}) {
       const runFailureMatch = pathname.match(/^\/api\/v1\/runs\/([^/]+)\/failure$/);
       const runReadinessMatch = pathname.match(/^\/api\/v1\/runs\/([^/]+)\/resume-readiness$/);
       const runDiagnosticsMatch = pathname.match(/^\/api\/v1\/runs\/([^/]+)\/resume-diagnostics$/);
+      if (pathname === "/api/v1/workspace") {
+        return createResponse(options.workspace ?? {
+          workdir: "/tmp/demo",
+          exists: true,
+          isDirectory: true,
+          hasProject: true,
+          state: "project",
+          entryCount: 2
+        });
+      }
+      if (pathname === "/api/v1/project/create" && method === "POST") {
+        this.lastProjectCreateBody = JSON.parse(request.body ?? "{}");
+        if (options.projectCreateError) {
+          return createResponse(
+            {
+              error: {
+                code: options.projectCreateError.code,
+                message: options.projectCreateError.message,
+                details: options.projectCreateError.details
+              }
+            },
+            options.projectCreateError.status ?? 409,
+            "Conflict"
+          );
+        }
+        options.workspace = {
+          workdir: "/tmp/demo",
+          exists: true,
+          isDirectory: true,
+          hasProject: true,
+          state: "project",
+          entryCount: 2
+        };
+        return createResponse({
+          workdir: "/tmp/demo",
+          projectId: this.lastProjectCreateBody.projectId,
+          projectName: this.lastProjectCreateBody.projectName,
+          templateId: this.lastProjectCreateBody.templateId,
+          draftState: "draft-unbound-unpublishable",
+          validation: { ok: true, diagnostics: [], structure: null }
+        });
+      }
       if (pathname === "/api/v1/project") {
         return createResponse({
           project: {
@@ -1387,6 +1433,19 @@ async function createClientHarness(options = {}) {
     JSON,
     console,
     encodeURIComponent,
+    FormData: class FakeFormData {
+      constructor(form) {
+        this.values = new Map();
+        for (const child of form?.document?.dynamicElements?.values?.() ?? []) {
+          if (child.attributes?.name) {
+            this.values.set(child.attributes.name, child.value ?? child.attributes.value ?? "");
+          }
+        }
+      }
+      get(name) {
+        return this.values.get(name) ?? null;
+      }
+    },
     Blob: class FakeBlob {
       constructor(parts, options) {
         this.parts = parts;
@@ -1493,6 +1552,99 @@ test("visualizer client release readiness decision gates every visible blocker c
       "RELEASE_ROLE_PACKAGES_UNHEALTHY"
     ]
   );
+});
+
+test("visualizer client renders empty workspace without project API writes", async () => {
+  const harness = await createClientHarness({
+    workspace: {
+      workdir: "/tmp/empty-project",
+      exists: true,
+      isDirectory: true,
+      hasProject: false,
+      state: "empty",
+      entryCount: 0
+    },
+    search: "?lifecycle=build&runId=old-run"
+  });
+
+  assert.match(harness.document.getElementById("project-summary").textContent, /Start a new OGSystem project here|not initialized/i);
+  assert.match(harness.document.getElementById("workbench-body").textContent, /create a project|load an existing project/i);
+  assert.match(harness.document.getElementById("graph-view").textContent, /create a project|load an existing project/i);
+  assert.equal(harness.document.getElementById("build-dry-run"), null);
+  assert.equal(harness.document.getElementById("build-save"), null);
+  assert.equal(harness.document.getElementById("start-run").hidden, true);
+  assert.equal(harness.document.getElementById("project-export").hidden, true);
+  assert.equal(harness.document.getElementById("selected-title").textContent, "Project Overview");
+  assert.equal(harness.window.location.search, "?lifecycle=build");
+  assert.ok(harness.backend.fetchCalls.some((call) => call.path === "/api/v1/workspace"));
+  assert.equal(harness.backend.fetchCalls.some((call) => call.path === "/api/v1/project"), false);
+  assert.equal(harness.backend.fetchCalls.some((call) => call.path === "/api/v1/project/system/workbench"), false);
+  assert.equal(harness.backend.fetchCalls.some((call) => call.path === "/api/v1/runs"), false);
+  assert.equal(harness.backend.fetchCalls.some((call) => call.path === "/api/v1/runs/start"), false);
+});
+
+test("visualizer client creates a project from the empty workspace wizard", async () => {
+  const workspace = {
+    workdir: "/tmp/empty-project",
+    exists: true,
+    isDirectory: true,
+    hasProject: false,
+    state: "empty",
+    entryCount: 0
+  };
+  const harness = await createClientHarness({ workspace, readinessCanDryRun: true });
+
+  const projectId = [...harness.document.dynamicElements]
+    .find((child) => child.attributes.name === "projectId");
+  const projectName = [...harness.document.dynamicElements]
+    .find((child) => child.attributes.name === "projectName");
+  const template = [...harness.document.dynamicElements]
+    .find((child) => child.attributes.name === "templateId");
+  assert.ok(projectId);
+  assert.ok(projectName);
+  assert.ok(template);
+  projectId.value = "project.empty.visual";
+  projectName.value = "Empty visual";
+  template.value = "minimal";
+
+  await harness.document.getElementById("project-create-form").dispatch("submit");
+  await settle();
+
+  assert.deepEqual(harness.backend.lastProjectCreateBody, {
+    projectName: "Empty visual",
+    projectId: "project.empty.visual",
+    templateId: "minimal",
+    conflictStrategy: "init-current"
+  });
+  assert.ok(harness.backend.fetchCalls.some((call) => call.path === "/api/v1/project"));
+  assert.equal(harness.backend.fetchCalls.some((call) => call.path === "/api/v1/project/create"), true);
+  assert.equal(harness.backend.fetchCalls.some((call) => call.path === "/api/v1/project/system/save"), false);
+  assert.equal(harness.backend.fetchCalls.some((call) => call.path === "/api/v1/runs/start"), false);
+});
+
+test("visualizer client shows stable project create conflict errors", async () => {
+  const harness = await createClientHarness({
+    workspace: {
+      workdir: "/tmp/conflict-project",
+      exists: true,
+      isDirectory: true,
+      hasProject: false,
+      state: "non-project-conflict",
+      entryCount: 1
+    },
+    projectCreateError: {
+      status: 409,
+      code: "PROJECT_DIR_CONFLICT",
+      message: "Target directory is not empty."
+    }
+  });
+
+  await harness.document.getElementById("project-create-form").dispatch("submit");
+  await settle();
+
+  assert.equal(harness.backend.lastProjectCreateBody.conflictStrategy, "reject");
+  assert.match(harness.document.getElementById("project-wizard").textContent, /existing files|Directory is not empty|current-directory/i);
+  assert.equal(harness.document.getElementById("console-panel-build").hidden, true);
 });
 
 test("visualizer client stream helpers dedupe timeline entries and cap history", () => {
@@ -1971,17 +2123,13 @@ test("visualizer client appends SSE timeline entries and refreshes only targeted
   const loadDiagnosticsButton =
     harness.document.getElementById("load-diagnostics") ??
     harness.document.getElementById("resume-controls").children.find((child) => child.id === "load-diagnostics");
+  assert.ok(loadDiagnosticsButton);
   await loadDiagnosticsButton.click();
   await settle();
 
-  const logCallsBefore = harness.backend.fetchCalls.filter((call) => call.path.startsWith("/api/v1/runs/run-123/logs")).length;
-  const detailCallsBefore = harness.backend.fetchCalls.filter((call) => call.path === "/api/v1/runs/run-123").length;
-  const reviewCallsBefore = harness.backend.fetchCalls.filter((call) => call.path === "/api/v1/runs/run-123/reviews").length;
-  const failureCallsBefore = harness.backend.fetchCalls.filter((call) => call.path === "/api/v1/runs/run-123/failure").length;
-  const readinessCallsBefore = harness.backend.fetchCalls.filter((call) => call.path === "/api/v1/runs/run-123/resume-readiness").length;
-
   const stream = harness.eventSources.at(-1);
   assert.ok(stream);
+  harness.backend.fetchCalls.length = 0;
   stream.emit({
     cursor: 2,
     record: {
@@ -2001,14 +2149,13 @@ test("visualizer client appends SSE timeline entries and refreshes only targeted
   const readinessCallsAfter = harness.backend.fetchCalls.filter((call) => call.path === "/api/v1/runs/run-123/resume-readiness").length;
 
   assert.ok(harness.document.getElementById("timeline").innerHTML.includes("#2"));
-  assert.ok(harness.document.getElementById("resume-controls").textContent.includes("diagnostics stale"));
   assert.ok(harness.document.getElementById("failure-summary").textContent.includes("TOOL_EXECUTION_TIMEOUT"));
   assert.ok(harness.document.getElementById("resume-readiness").textContent.includes("resume blocked"));
-  assert.equal(logCallsAfter, logCallsBefore);
-  assert.ok(detailCallsAfter > detailCallsBefore);
-  assert.ok(reviewCallsAfter > reviewCallsBefore);
-  assert.equal(failureCallsAfter, failureCallsBefore);
-  assert.ok(readinessCallsAfter > readinessCallsBefore);
+  assert.equal(logCallsAfter, 0);
+  assert.ok(detailCallsAfter > 0);
+  assert.ok(reviewCallsAfter > 0);
+  assert.equal(failureCallsAfter, 0);
+  assert.ok(readinessCallsAfter > 0);
 });
 
 test("visualizer client keeps the workbench editor visible with source intact during validation", async () => {

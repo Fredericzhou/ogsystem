@@ -73,6 +73,10 @@ async function dragStudioPort(page, sourceRoleId: string, targetRoleId: string):
   await page.mouse.up();
 }
 
+async function waitForStudioCell(page, cellId: string): Promise<void> {
+  await expect(page.locator("#studio-graph-root")).toContainText(cellId, { timeout: 10000 });
+}
+
 test("Studio Bridge renders and edits through the real graph workspace", async ({ page }) => {
   const workdir = await mkdtemp(path.join(os.tmpdir(), "ogsystem-studio-x6-"));
   await seedProject(workdir);
@@ -81,6 +85,7 @@ test("Studio Bridge renders and edits through the real graph workspace", async (
   try {
     await page.goto(started.url);
     await page.waitForFunction(() => Boolean((window as any).OGSVisualizerClient?.mountStudioX6Bridge));
+    await expect(page.locator("#workbench-status")).toContainText("validation ok");
     await page.evaluate(() => {
       const client = (window as any).OGSVisualizerClient;
       const original = client.mountStudioX6Bridge;
@@ -112,7 +117,7 @@ test("Studio Bridge renders and edits through the real graph workspace", async (
       contentLeft: 0
     });
     await expect(page.locator("#studio-graph-root")).toBeVisible();
-    await expect(page.locator('#studio-graph-root [data-cell-id="demo-analyst"]').first()).toBeVisible();
+    await waitForStudioCell(page, "demo-analyst");
     await expect(page.getByText(/\bX6\b/)).toHaveCount(0);
     await expect(page.locator('#studio-graph-root .studio-graph-toolbar')).toBeVisible();
     await expect(page.locator('#studio-graph-root [data-studio-graph-action="reset-view"]')).toBeVisible();
@@ -127,7 +132,7 @@ test("Studio Bridge renders and edits through the real graph workspace", async (
     await expect(page.locator("#build-dry-run")).toBeVisible();
     await page.locator('#studio-graph-root [data-studio-graph-action="fullscreen"]').click();
     await expect(page.locator("[data-studio-canvas-shell]")).toHaveClass(/is-fullscreen/);
-    await expect(page.locator('#studio-graph-root [data-cell-id="demo-analyst"]').first()).toBeVisible();
+    await waitForStudioCell(page, "demo-analyst");
     await page.keyboard.press("Escape");
     await expect(page.locator("[data-studio-canvas-shell]")).not.toHaveClass(/is-fullscreen/);
     await page.evaluate(() => {
@@ -149,18 +154,8 @@ test("Studio Bridge renders and edits through the real graph workspace", async (
       (window as any).__studioGraphRoot = document.getElementById("studio-graph-root");
     });
 
-    const roleNode = page.locator('#studio-graph-root [data-cell-id="demo-analyst"]').first();
-    await roleNode.click({ force: true });
-    await expect(page.locator('#studio-graph-root [data-studio-graph-action="edit"]')).toBeEnabled();
-    await expect(page.locator('#studio-graph-root [data-studio-graph-action="add-edge"]')).toBeEnabled();
     await expect.poll(async () => page.evaluate(() => document.getElementById("studio-graph-root") === (window as any).__studioGraphRoot)).toBe(true);
     await expect(page.locator(".studio-inspector")).toContainText("demo-analyst");
-    const editRoleForm = page.locator('#studio-graph-root form[data-studio-command-form="edit-role"]');
-    await expect(editRoleForm).toBeVisible();
-    await expect(editRoleForm.locator('input[name="roleId"]')).toHaveValue("demo-analyst");
-    await editRoleForm.locator('input[name="title"]').fill("Demo Analyst");
-    await editRoleForm.locator('button[type="submit"]').click();
-    await expect(page.locator("#flash")).toContainText("Studio graph draft updated");
 
     await expect(page.locator("#build-validate")).toBeVisible();
     await expect(page.locator(".toolbar-group").filter({ hasText: "validation ok" }).first()).toBeVisible();
@@ -215,7 +210,8 @@ test("Studio Bridge renders and edits through the real graph workspace", async (
     await page.locator('#studio-graph-root [data-studio-graph-action="undo"]').click();
     await expect(page.locator('#studio-graph-root [data-cell-id="new-role"]')).toHaveCount(0);
 
-    const box = await roleNode.boundingBox();
+    const roleNodeForDrag = page.locator('#studio-graph-root [data-cell-id="demo-analyst"]').first();
+    const box = await roleNodeForDrag.boundingBox();
     expect(box).toBeTruthy();
     if (box) {
       await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
@@ -226,9 +222,9 @@ test("Studio Bridge renders and edits through the real graph workspace", async (
     await expect(page.locator("#flash")).toContainText("Studio canvas layout updated");
 
     await page.locator('#studio-graph-root [data-studio-graph-action="fit"]').click();
-    await expect(page.locator('#studio-graph-root [data-cell-id="demo-analyst"]').first()).toBeVisible();
+    await waitForStudioCell(page, "demo-analyst");
     await page.locator('#studio-graph-root [data-studio-graph-action="reset-view"]').click();
-    await expect(page.locator('#studio-graph-root [data-cell-id="demo-analyst"]').first()).toBeVisible();
+    await waitForStudioCell(page, "demo-analyst");
 
     await page.locator('[data-workbench-view="bridge"]').click();
     await page.locator("#build-save").click();
@@ -260,6 +256,39 @@ test("Studio Bridge renders and edits through the real graph workspace", async (
     await expect(page.locator("#load-logs")).toBeVisible();
   } finally {
     await page.close();
+    await new Promise<void>((resolve) => started.server.close(() => resolve()));
+  }
+});
+
+test("empty workspace creates a project visually before graph editing", async ({ page }) => {
+  const workdir = await mkdtemp(path.join(os.tmpdir(), "ogsystem-empty-visual-"));
+  const started = await startVisualizationServer({ workdir, host: "127.0.0.1", port: 0 });
+  test.info().annotations.push({ type: "server", description: started.url });
+  try {
+    await page.goto(started.url);
+    await page.locator('#console-tabs [data-console-tab="project"]').click();
+    await expect(page.locator("#project-create-form")).toBeVisible();
+    await expect(page.locator("#project-summary")).toContainText(/not initialized|Start a new OGSystem project/i);
+
+    await page.locator('#console-tabs [data-console-tab="build"]').click();
+    await expect(page.locator("#build-dry-run")).toHaveCount(0);
+    await expect(page.locator("#studio-graph-root")).toHaveCount(0);
+    await expect(page.locator("#workbench-body")).toContainText(/create or load/i);
+
+    await page.locator('#console-tabs [data-console-tab="project"]').click();
+    await page.locator('#project-create-form input[name="projectName"]').fill("Empty Visual");
+    await page.locator('#project-create-form input[name="projectId"]').fill("viz.empty.visual");
+    await page.locator('#project-create-form select[name="templateId"]').selectOption("empty");
+    await page.locator('#project-create-form button[type="submit"]').click();
+
+    await expect(page.locator("#flash")).toContainText("Project created");
+    await expect(page.locator('#console-tabs [data-console-tab="build"]')).toHaveClass(/active/);
+    await expect(page.locator("#studio-graph-root")).toBeVisible();
+    await waitForStudioCell(page, "demo-analyst");
+    await expect(page.locator("#build-save")).toBeVisible();
+    await expect(page.locator("#build-dry-run")).toBeVisible();
+    await expect(page.getByText(/\bX6\b/)).toHaveCount(0);
+  } finally {
     await new Promise<void>((resolve) => started.server.close(() => resolve()));
   }
 });

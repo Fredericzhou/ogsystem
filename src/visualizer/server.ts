@@ -7,13 +7,13 @@
  * - Read-mostly; mutations are limited to lifecycle/control-plane entrypoints.
  */
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
-import { readdir, readFile, stat } from "node:fs/promises";
+import { readdir, readFile, stat, writeFile } from "node:fs/promises";
+import { createHash } from "node:crypto";
 import { dirname, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { runSystemWithAdapter } from "../runtime/adapter.js";
 import {
-  ensureProjectSkeleton,
   inspectHumanReview,
   inspectRun,
   listHumanReviews,
@@ -39,6 +39,7 @@ import {
 import { inspectProjectOpsSummaryVisualization } from "./ops-summary-projection.js";
 import { inspectProjectReadiness } from "./project-readiness.js";
 import {
+  createProjectVisualization,
   exportProjectBundle,
   inspectProjectBindingVisualization,
   inspectProjectConfigVisualization,
@@ -46,8 +47,11 @@ import {
   inspectProjectRolePackagesVisualization,
   inspectProjectSystemVisualization,
   inspectProjectSystemWorkbench,
+  inspectProjectWorkspace,
   inspectProjectVisualization,
   invalidateProjectProjectionCache,
+  importInstalledRolesVisualization,
+  listInstalledRoleCatalog,
   listProjectRolesVisualization,
   saveProjectSystemSource,
   upsertProjectProfilesVisualization,
@@ -762,6 +766,111 @@ async function handleApiStudioTemplates(response: ServerResponse): Promise<void>
   });
 }
 
+async function handleApiWorkspace(state: VisualizationServerState, response: ServerResponse): Promise<void> {
+  jsonResponse(response, 200, await inspectProjectWorkspace(state.workdir));
+}
+
+async function assertInitializedProject(workdir: string): Promise<void> {
+  const workspace = await inspectProjectWorkspace(workdir);
+  if (workspace.hasProject !== true) {
+    throw new HttpError(
+      409,
+      "PROJECT_NOT_INITIALIZED",
+      "Create or load an OGSystem project before using this project endpoint.",
+      workspace
+    );
+  }
+}
+
+async function handleApiProjectCreate(
+  state: VisualizationServerState,
+  request: IncomingMessage,
+  response: ServerResponse
+): Promise<void> {
+  const body = await readJsonRequest(request);
+  try {
+    const created = await createProjectVisualization({
+      currentWorkdir: state.workdir,
+      workdir: asString(body.workdir),
+      projectId: body.projectId,
+      projectName: body.projectName,
+      templateId: body.templateId,
+      conflictStrategy: body.conflictStrategy
+    });
+    const createdWorkdir = asString(asRecord(created)?.workdir) ?? state.workdir;
+    const previousWorkdir = state.workdir;
+    state.workdir = createdWorkdir;
+    invalidateAllProjectCaches(previousWorkdir);
+    invalidateAllProjectCaches(createdWorkdir);
+    jsonResponse(response, 200, {
+      ...created,
+      followUpActions: [
+        {
+          action: "project-created",
+          label: `Project created at ${createdWorkdir}.`
+        },
+        {
+          action: "open-build",
+          label: "Open Build to continue visual authoring."
+        }
+      ]
+    });
+  } catch (error) {
+    const code = asString((error as { code?: unknown })?.code) || (error instanceof Error ? error.message : "");
+    const details = (error as { details?: unknown })?.details;
+    if (code === "INVALID_PROJECT_ID") {
+      throw new HttpError(400, "INVALID_PROJECT_ID", "Project id must start with a letter or number and use only letters, numbers, dots, underscores, or hyphens.", details);
+    }
+    if (code === "INVALID_PROJECT_NAME") {
+      throw new HttpError(400, "INVALID_PROJECT_NAME", "Project name must start with a letter or number.", details);
+    }
+    if (code === "INVALID_PROJECT_TEMPLATE") {
+      throw new HttpError(400, "INVALID_PROJECT_TEMPLATE", "Project template is unavailable.", details);
+    }
+    if (code === "INVALID_PROJECT_WORKDIR") {
+      throw new HttpError(400, "INVALID_PROJECT_WORKDIR", "Project workdir must be an existing directory.", details);
+    }
+    if (code === "PROJECT_ALREADY_EXISTS") {
+      throw new HttpError(409, "PROJECT_ALREADY_EXISTS", "Target directory is already an OGSystem project. Load it instead of creating a new project.", details);
+    }
+    if (code === "PROJECT_DIR_CONFLICT") {
+      throw new HttpError(409, "PROJECT_DIR_CONFLICT", "Target directory is not empty and is not an OGSystem project. Choose current-directory initialization, another directory, or load an existing project.", details);
+    }
+    if (code === "PROJECT_FILE_CONFLICT") {
+      throw new HttpError(409, "PROJECT_FILE_CONFLICT", "Target directory already contains files that would conflict with OGSystem project initialization.", details);
+    }
+    throw new HttpError(500, "PROJECT_CREATE_FAILED", error instanceof Error ? error.message : String(error), details);
+  }
+}
+
+async function handleApiRoleCatalog(workdir: string, response: ServerResponse): Promise<void> {
+  jsonResponse(response, 200, await listInstalledRoleCatalog(workdir));
+}
+
+async function handleApiRoleImport(
+  workdir: string,
+  request: IncomingMessage,
+  response: ServerResponse
+): Promise<void> {
+  await assertInitializedProject(workdir);
+  const body = await readJsonRequest(request);
+  if (body.source !== undefined && body.source !== "installed") {
+    throw new HttpError(400, "ROLE_IMPORT_SOURCE_UNSUPPORTED", "Only installed role catalog imports are supported.");
+  }
+  try {
+    jsonResponse(response, 200, await importInstalledRolesVisualization({
+      workdir,
+      roleIds: body.roleIds
+    }));
+  } catch (error) {
+    const code = error instanceof Error ? error.message : String(error);
+    if (code === "ROLE_IMPORT_SELECTION_REQUIRED") {
+      throw new HttpError(400, "ROLE_IMPORT_SELECTION_REQUIRED", "Select at least one role to import.");
+    }
+    throw error;
+  }
+}
+
 async function handleApiProjectLoad(
   state: VisualizationServerState,
   request: IncomingMessage,
@@ -774,12 +883,12 @@ async function handleApiProjectLoad(
   }
   const targetWorkdir = resolve(requestedWorkdir);
   const systemStat = await stat(resolve(targetWorkdir, "system.mmd")).catch(() => undefined);
-  const ogsStat = await stat(resolve(targetWorkdir, ".ogs")).catch(() => undefined);
-  if (!systemStat?.isFile() || !ogsStat?.isDirectory()) {
+  const projectStat = await stat(resolve(targetWorkdir, ".ogs", "project.json")).catch(() => undefined);
+  if (!systemStat?.isFile() || !projectStat?.isFile()) {
     throw new HttpError(
       400,
       "PROJECT_INVALID_WORKDIR",
-      "Expected a project directory containing system.mmd and .ogs/."
+      "Expected a project directory containing system.mmd and .ogs/project.json."
     );
   }
   const workbench = await inspectProjectSystemWorkbench({ workdir: targetWorkdir });
@@ -1012,6 +1121,31 @@ async function detectNewRunId(workdir: string, beforeIds: Set<string>): Promise<
   throw new HttpError(500, "RUN_ID_DISCOVERY_FAILED", "Run completed but no runId could be determined.");
 }
 
+async function writeRunSnapshotManifest(args: {
+  workdir: string;
+  runId: string;
+  systemPath: string;
+}): Promise<void> {
+  const runDir = resolveRunDir(args.workdir, args.runId);
+  const systemSource = await readFile(resolve(runDir, "system.mmd"), "utf8");
+  const manifest = {
+    manifestVersion: 1,
+    snapshotId: args.runId,
+    runId: args.runId,
+    createdAt: new Date().toISOString(),
+    source: {
+      systemPath: args.systemPath,
+      runArtifactSystemPath: "system.mmd",
+      sourceHash: createHash("sha256").update(systemSource).digest("hex")
+    },
+    artifactSemantics: {
+      historicalTruth: "run-artifact-system.mmd",
+      manifestRole: "summary-and-consistency-check"
+    }
+  };
+  await writeFile(resolve(runDir, "snapshot-manifest.json"), `${JSON.stringify(manifest, null, 2)}\n`, "utf8");
+}
+
 async function handleApiRunStart(
   workdir: string,
   request: IncomingMessage,
@@ -1023,12 +1157,20 @@ async function handleApiRunStart(
   if (!systemPath || !prompt) {
     throw new HttpError(400, "RUN_START_INPUT_REQUIRED", "systemPath and input are required.");
   }
+  const workspace = await inspectProjectWorkspace(workdir);
+  if (workspace.hasProject !== true) {
+    throw new HttpError(
+      409,
+      "PROJECT_NOT_INITIALIZED",
+      "Create or load an OGSystem project before starting a run.",
+      workspace
+    );
+  }
   const beforeIds = new Set(
     (await loadIndexedRuns(workdir).catch(() => []))
       .map((run) => asString(asRecord(run)?.runId))
       .filter((runId): runId is string => Boolean(runId))
   );
-  await ensureProjectSkeleton({ workdir });
   const result = await runSystemWithAdapter({
     systemPath: resolveRuntimePathWithinProject(workdir, systemPath, "systemPath"),
     prompt,
@@ -1042,6 +1184,7 @@ async function handleApiRunStart(
   });
   await rebuildRunsIndex(workdir);
   const runId = await detectNewRunId(workdir, beforeIds);
+  await writeRunSnapshotManifest({ workdir, runId, systemPath });
   jsonResponse(
     response,
     200,
@@ -1282,6 +1425,31 @@ async function handleVisualizationRequest(
     throw new HttpError(404, "NOT_FOUND", "Not found");
   }
 
+  if (segments.length === 3 && segments[2] === "workspace" && method === "GET") {
+    await handleApiWorkspace(state, response);
+    return;
+  }
+  if (segments.length === 4 && segments[2] === "project" && segments[3] === "create" && method === "POST") {
+    await handleApiProjectCreate(state, request, response);
+    return;
+  }
+  const isProjectEndpoint = segments[2] === "project";
+  const isProjectLoadEndpoint =
+    segments.length === 4 && segments[2] === "project" && segments[3] === "load" && method === "POST";
+  const isProjectStudioTemplatesEndpoint =
+    segments.length === 5 &&
+    segments[2] === "project" &&
+    segments[3] === "studio" &&
+    segments[4] === "templates" &&
+    method === "GET";
+  const isProjectRoleCatalogEndpoint =
+    segments.length === 4 &&
+    segments[2] === "project" &&
+    segments[3] === "role-catalog" &&
+    method === "GET";
+  if (isProjectEndpoint && !isProjectLoadEndpoint && !isProjectStudioTemplatesEndpoint && !isProjectRoleCatalogEndpoint) {
+    await assertInitializedProject(state.workdir);
+  }
   if (segments.length === 3 && segments[2] === "project" && method === "GET") {
     await handleApiProjectSummary(state.workdir, response);
     return;
@@ -1389,6 +1557,14 @@ async function handleVisualizationRequest(
   }
   if (segments.length === 4 && segments[2] === "project" && segments[3] === "roles" && method === "GET") {
     await handleApiProjectRoles(state.workdir, response);
+    return;
+  }
+  if (segments.length === 4 && segments[2] === "project" && segments[3] === "role-catalog" && method === "GET") {
+    await handleApiRoleCatalog(state.workdir, response);
+    return;
+  }
+  if (segments.length === 5 && segments[2] === "project" && segments[3] === "roles" && segments[4] === "import" && method === "POST") {
+    await handleApiRoleImport(state.workdir, request, response);
     return;
   }
   if (segments.length === 4 && segments[2] === "project" && segments[3] === "ops-summary" && method === "GET") {

@@ -70,7 +70,7 @@ export type ProjectDependencySyncResult = {
   importedModelIds: string[];
 };
 
-type ProjectTemplateId = "empty" | "minimal" | "software-dev" | "consultation";
+export type ProjectTemplateId = "empty" | "minimal" | "software-dev" | "consultation";
 
 type ProjectTemplateSpec = {
   systemMmd: string;
@@ -95,19 +95,13 @@ const PROJECT_TEMPLATES: Record<ProjectTemplateId, ProjectTemplateSpec> = {
   empty: {
     systemMmd: [
       "flowchart TD",
-      "%% Starter scaffold only. Replace this stub with a runnable Mermaid system.",
-      "%% Then run: ogs project sync --system system.mmd",
-      "%% And refresh local models with: ogs project sync-models",
-      "%% Or copy system.example.mmd as your starting point.",
-      "%%",
-      "%% Suggested metadata:",
       "%% system.id=project.starter",
       "%% system.version=1.0.0",
       "%% law.global=law.project.base",
       "%% entry.role=demo-analyst",
-      "%%",
-      "%% input -->|ENTER| analyst[Role:demo-analyst]",
-      "%% analyst[Role:demo-analyst] -->|ANALYSIS_DONE| output",
+      "",
+      "input -->|ENTER| analyst[Role:demo-analyst]",
+      "analyst[Role:demo-analyst] -->|ANALYSIS_DONE| output",
       ""
     ].join("\n"),
     lawsJson: stringifyJson({
@@ -387,6 +381,15 @@ function createDefaultOgsReadme(): string {
     "- `providers/opencode.json` is a local wiring reference. Copy the recommended provider entry into the real OpenCode config and replace placeholder secrets locally.",
     "- `project.json`, `model-catalog.json`, and `runs-index.json` are mostly generated artifacts. Manual edits may be overwritten by lifecycle commands."
   ].join("\n");
+}
+
+export function isProjectTemplateId(value: string | undefined): value is ProjectTemplateId {
+  return (
+    value === "empty" ||
+    value === "minimal" ||
+    value === "software-dev" ||
+    value === "consultation"
+  );
 }
 
 function getProjectTemplate(templateId: ProjectTemplateId): ProjectTemplateSpec {
@@ -878,6 +881,13 @@ async function importRolePackageIntoProject(args: {
   return importedRole;
 }
 
+export async function importInstalledRolePackageIntoProject(args: {
+  workdir: string;
+  roleId: string;
+}): Promise<boolean> {
+  return importRolePackageIntoProject(args);
+}
+
 export function resolveOgsPaths(workdir: string): {
   ogsDir: string;
   runsDir: string;
@@ -940,6 +950,7 @@ function createDefaultModelSelection(args: {
 
 export async function ensureProjectSkeleton(args: {
   workdir: string;
+  projectId?: string;
   projectName?: string;
 }): Promise<void> {
   const paths = resolveOgsPaths(args.workdir);
@@ -951,8 +962,10 @@ export async function ensureProjectSkeleton(args: {
     `${stringifyJson({
       version: 1,
       projectId:
+        args.projectId ??
         args.projectName ??
         (basename(args.workdir) || `project-${randomUUID().slice(0, 8)}`),
+      projectName: args.projectName,
       createdAt: new Date().toISOString()
     })}\n`
   );

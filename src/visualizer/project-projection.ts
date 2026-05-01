@@ -1,8 +1,9 @@
 import { basename, dirname, relative, resolve, sep } from "node:path";
-import { mkdir, readdir, readFile, writeFile } from "node:fs/promises";
+import { createHash } from "node:crypto";
+import { mkdir, readdir, readFile, rm, stat, writeFile } from "node:fs/promises";
 
 import { compileExecutionSnapshot } from "../runtime/compiler.js";
-import { resolveProjectRoleRepoRoot, resolveProjectRoleRootDir } from "../runtime/bundled-repos.js";
+import { resolveProjectRoleRepoRoot, resolveProjectRoleRootDir, resolveTemplateRoleRootDir } from "../runtime/bundled-repos.js";
 import { isRuntimeOnlyErrorEvent } from "../runtime/error-flow-utils.js";
 import { buildFlowContractKeyForFlow, loadFlowContractPlan } from "../runtime/flow-contract.js";
 import { readJsonFile, writeJsonFileAtomic } from "../runtime/json-file.js";
@@ -10,13 +11,27 @@ import { loadModelCatalog } from "../runtime/model-catalog.js";
 import { loadModelSelection, resolveModelSelectionForSystem } from "../runtime/model-selection.js";
 import { RuntimeError } from "../runtime/runtime-errors.js";
 import { parseSystemFromMermaidSource } from "../runtime/parse-mermaid.js";
-import { loadPersistedRunsIndex, resolveOgsPaths } from "../runtime/project-lifecycle.js";
+import {
+  ensureProjectSkeleton,
+  importInstalledRolePackageIntoProject,
+  isProjectTemplateId,
+  rebuildRunsIndex,
+  resolveOgsPaths,
+  scaffoldProjectTemplate,
+  syncProjectDependencies,
+  syncProjectModels,
+  loadPersistedRunsIndex,
+  type ProjectTemplateId
+} from "../runtime/project-lifecycle.js";
+import { validateRolePackageManifest } from "../runtime/role-repo.js";
 import { pathExists } from "../runtime/run-artifacts.js";
 import { loadLaws, loadProfiles, loadRolePackages, loadRuntimeConfig, loadTools, loadUserProfile } from "../runtime/runtime-loader.js";
 import { validateProfilesConfig } from "../runtime/config.js";
 import { resolveEffectiveLaw } from "../runtime/runtime-setup.js";
 import { SYSTEM_END_ROLE_ID } from "../runtime/types.js";
+import { importMermaidToAuthoring, saveStudioAuthoringDraft } from "./studio-authoring.js";
 import type { CompilerDiagnostic } from "../runtime/compiler.js";
+import type { ModelCatalog, ModelSelectionConfig } from "../runtime/types.js";
 import type { ResolvedModelRuntimeConfig } from "../runtime/model-selection.js";
 import type { LoadedRolePackage, SystemDefinition } from "../runtime/types.js";
 
@@ -58,6 +73,149 @@ function asRecord(value: unknown): JsonRecord | undefined {
 
 function asString(value: unknown): string | undefined {
   return typeof value === "string" ? value : undefined;
+}
+
+async function hasProjectFiles(workdir: string): Promise<boolean> {
+  const systemStat = await stat(resolve(workdir, "system.mmd")).catch(() => undefined);
+  const projectStat = await stat(resolve(workdir, ".ogs", "project.json")).catch(() => undefined);
+  return Boolean(systemStat?.isFile() && projectStat?.isFile());
+}
+
+async function directoryEntries(workdir: string): Promise<string[]> {
+  return (await readdir(workdir).catch(() => [])).filter((entry) => entry !== ".DS_Store");
+}
+
+export async function inspectProjectWorkspace(workdir: string): Promise<Record<string, unknown>> {
+  const workdirStat = await stat(workdir).catch(() => undefined);
+  const exists = Boolean(workdirStat);
+  const isDirectory = Boolean(workdirStat?.isDirectory());
+  const hasProject = isDirectory ? await hasProjectFiles(workdir) : false;
+  const entries = isDirectory ? await directoryEntries(workdir) : [];
+  return {
+    workdir,
+    exists,
+    isDirectory,
+    hasProject,
+    state: hasProject ? "project" : entries.length ? "non-project-conflict" : "empty",
+    entryCount: entries.length
+  };
+}
+
+function normalizeProjectTemplateId(value: unknown): ProjectTemplateId {
+  const templateId = asString(value) ?? "empty";
+  if (!isProjectTemplateId(templateId)) {
+    throw new Error("INVALID_PROJECT_TEMPLATE");
+  }
+  return templateId;
+}
+
+function assertProjectId(value: unknown): string | undefined {
+  const projectId = asString(value)?.trim();
+  if (!projectId) {
+    return undefined;
+  }
+  if (!/^[A-Za-z0-9][A-Za-z0-9._-]{1,127}$/.test(projectId)) {
+    throw new Error("INVALID_PROJECT_ID");
+  }
+  return projectId;
+}
+
+function assertProjectName(value: unknown): string | undefined {
+  const projectName = asString(value)?.trim();
+  if (!projectName) {
+    return undefined;
+  }
+  if (!/^[A-Za-z0-9][A-Za-z0-9._ -]{0,127}$/.test(projectName)) {
+    throw new Error("INVALID_PROJECT_NAME");
+  }
+  return projectName;
+}
+
+async function assertNoProjectFileConflicts(workdir: string): Promise<void> {
+  const controlledFiles = [
+    ".ogs",
+    "og-roles",
+    "system.mmd",
+    "system.example.mmd",
+    "profiles.json",
+    "tools.json",
+    ".ogs/project.json",
+    ".ogs/runtime.json",
+    ".ogs/model-catalog.json",
+    ".ogs/model-selection.json",
+    ".ogs/laws.json",
+    ".ogs/user-profile.json",
+    ".ogs/runs-index.json",
+    ".ogs/providers/opencode.json",
+    ".ogs/README.md",
+    ".ogs/studio/system.authoring.json"
+  ];
+  const conflicts = [];
+  for (const file of controlledFiles) {
+    if (await pathExists(resolve(workdir, file))) {
+      conflicts.push(file);
+    }
+  }
+  if (conflicts.length) {
+    const error = new Error("PROJECT_FILE_CONFLICT") as Error & { code?: string; details?: unknown };
+    error.code = "PROJECT_FILE_CONFLICT";
+    error.details = { workdir, conflicts };
+    throw error;
+  }
+}
+
+async function removeCreatedProjectFiles(workdir: string): Promise<void> {
+  await rm(resolve(workdir, "system.mmd"), { force: true }).catch(() => undefined);
+  await rm(resolve(workdir, "system.example.mmd"), { force: true }).catch(() => undefined);
+  await rm(resolve(workdir, "profiles.json"), { force: true }).catch(() => undefined);
+  await rm(resolve(workdir, "tools.json"), { force: true }).catch(() => undefined);
+  await rm(resolve(workdir, ".ogs"), { recursive: true, force: true }).catch(() => undefined);
+  await rm(resolve(workdir, "og-roles"), { recursive: true, force: true }).catch(() => undefined);
+}
+
+function createFallbackModelCatalog(): ModelCatalog {
+  return {
+    catalogVersion: "1",
+    generatedAt: new Date().toISOString(),
+    source: {
+      command: "visualizer project create fallback"
+    },
+    models: [
+      {
+        ref: "opencode/gpt-5.4",
+        provider: "opencode",
+        model: "gpt-5.4",
+        name: "GPT-5.4",
+        status: "active",
+        capabilities: {
+          textInput: true,
+          textOutput: true,
+          toolcall: true
+        },
+        variants: ["medium"]
+      }
+    ]
+  };
+}
+
+function createFallbackModelSelection(systemId: string): ModelSelectionConfig {
+  return {
+    configVersion: "1",
+    defaults: {
+      model: "opencode/gpt-5.4",
+      variant: "medium",
+      timeoutMs: 120000,
+      maxOutputBytes: 65536
+    },
+    systems: {
+      [systemId]: {
+        defaults: {
+          model: "opencode/gpt-5.4",
+          variant: "medium"
+        }
+      }
+    }
+  };
 }
 
 async function getMtimeToken(path: string): Promise<string> {
@@ -376,11 +534,37 @@ async function readOptionalJson(path: string): Promise<unknown | null> {
 
 export async function exportProjectBundle(workdir: string): Promise<Record<string, unknown>> {
   const ogsPaths = resolveOgsPaths(workdir);
+  const systemSource = await readFile(resolve(workdir, "system.mmd"), "utf8");
+  const projectMeta = await readOptionalJson(ogsPaths.projectPath);
+  const projectRecord = asRecord(projectMeta);
+  const systemHash = createHash("sha256").update(systemSource).digest("hex");
+  const generatedAt = new Date().toISOString();
   return {
     mode: "single-project-v1",
+    releaseManifest: {
+      manifestVersion: 1,
+      packageMode: "single-project-v1",
+      generatedAt,
+      projectId: asString(projectRecord?.projectId),
+      systemPath: "system.mmd",
+      systemHash,
+      artifactScope: [
+        "system.mmd",
+        ".ogs/runtime.json",
+        ".ogs/model-selection.json",
+        ".ogs/model-catalog.json",
+        ".ogs/laws.json",
+        ".ogs/user-profile.json",
+        "profiles.json",
+        "tools.json",
+        ".ogs/project.json"
+      ],
+      requiredEnv: [],
+      excludes: [".ogs/runs", "logs", "timeline", "checkpoints", "reviews"]
+    },
     project: {
       systemPath: "system.mmd",
-      systemSource: await readFile(resolve(workdir, "system.mmd"), "utf8"),
+      systemSource,
       runtime: await readOptionalJson(ogsPaths.runtimePath),
       modelSelection: await readOptionalJson(ogsPaths.modelSelectionPath),
       modelCatalog: await readOptionalJson(ogsPaths.modelCatalogPath),
@@ -388,7 +572,7 @@ export async function exportProjectBundle(workdir: string): Promise<Record<strin
       userProfile: await readOptionalJson(ogsPaths.userProfilePath),
       profiles: await readOptionalJson(resolve(workdir, "profiles.json")),
       tools: await readOptionalJson(resolve(workdir, "tools.json")),
-      project: await readOptionalJson(ogsPaths.projectPath)
+      project: projectMeta
     }
   };
 }
@@ -464,6 +648,224 @@ export async function loadProjectBundle(args: {
         label: "Project projections were invalidated after load."
       }
     ]
+  };
+}
+
+export async function createProjectVisualization(args: {
+  currentWorkdir: string;
+  workdir?: string;
+  projectId?: unknown;
+  projectName?: unknown;
+  templateId?: unknown;
+  conflictStrategy?: unknown;
+}): Promise<Record<string, unknown>> {
+  const targetWorkdir = resolve(asString(args.workdir) ?? args.currentWorkdir);
+  const templateId = normalizeProjectTemplateId(args.templateId);
+  const projectId = assertProjectId(args.projectId);
+  const projectName = assertProjectName(args.projectName) ?? projectId ?? basename(targetWorkdir);
+  const conflictStrategy = asString(args.conflictStrategy) ?? "reject";
+  const workspace = await inspectProjectWorkspace(targetWorkdir);
+  if (workspace.isDirectory !== true) {
+    const error = new Error("INVALID_PROJECT_WORKDIR") as Error & { code?: string; details?: unknown };
+    error.code = "INVALID_PROJECT_WORKDIR";
+    error.details = workspace;
+    throw error;
+  }
+  if (workspace.hasProject === true) {
+    const error = new Error("PROJECT_ALREADY_EXISTS") as Error & { code?: string; details?: unknown };
+    error.code = "PROJECT_ALREADY_EXISTS";
+    error.details = workspace;
+    throw error;
+  }
+  if (workspace.state === "non-project-conflict" && conflictStrategy !== "init-current") {
+    const error = new Error("PROJECT_DIR_CONFLICT") as Error & { code?: string; details?: unknown };
+    error.code = "PROJECT_DIR_CONFLICT";
+    error.details = workspace;
+    throw error;
+  }
+  await assertNoProjectFileConflicts(targetWorkdir);
+
+  try {
+    await ensureProjectSkeleton({
+      workdir: targetWorkdir,
+      projectId: projectId ?? projectName,
+      projectName
+    });
+    const template = await scaffoldProjectTemplate({
+      workdir: targetWorkdir,
+      templateId
+    });
+    const systemSource = await readFile(resolve(targetWorkdir, "system.mmd"), "utf8");
+    const authoring = importMermaidToAuthoring({
+      workdir: targetWorkdir,
+      systemPath: "system.mmd",
+      systemSource
+    });
+    const draft = await saveStudioAuthoringDraft({
+      workdir: targetWorkdir,
+      authoring,
+      validateSystemSource: validateProjectSystemSource
+    });
+    const warnings: string[] = [];
+    let modelSyncResult: {
+      catalogPath: string;
+      selectionPath: string;
+      generatedSelection: boolean;
+      selectedModel?: string;
+    };
+    try {
+      modelSyncResult = await syncProjectModels({
+        workdir: targetWorkdir,
+        systemPath: "system.mmd"
+      });
+    } catch (error) {
+      const paths = resolveOgsPaths(targetWorkdir);
+      warnings.push(
+        "Model catalog discovery is unavailable. A fallback model selection was written; refresh models before release."
+      );
+      await writeJsonFileAtomic(paths.modelCatalogPath, createFallbackModelCatalog());
+      await writeJsonFileAtomic(
+        paths.modelSelectionPath,
+        createFallbackModelSelection(authoring.system.systemId)
+      );
+      modelSyncResult = {
+        catalogPath: paths.modelCatalogPath,
+        selectionPath: paths.modelSelectionPath,
+        generatedSelection: true,
+        selectedModel: "opencode/gpt-5.4"
+      };
+    }
+    const syncResult = await syncProjectDependencies({
+      workdir: targetWorkdir,
+      systemPath: "system.mmd"
+    });
+    const index = await rebuildRunsIndex(targetWorkdir);
+    invalidateProjectProjectionCache(targetWorkdir);
+    return {
+      workdir: targetWorkdir,
+      projectId: projectId ?? projectName,
+      projectName,
+      templateId,
+      mode: "single-project-v1",
+      runCount: index.runs.length,
+      modelCatalogPath: modelSyncResult.catalogPath,
+      modelSelectionPath: modelSyncResult.selectionPath,
+      selectedModel: modelSyncResult.selectedModel,
+      importedRoleIds: syncResult.importedRoleIds,
+      importedModelIds: syncResult.importedModelIds,
+      warnings,
+      draftPath: draft.draftPath,
+      draftState: templateId === "empty" ? "draft-unbound-unpublishable" : "draft",
+      validation: await validateProjectSystemSource({
+        workdir: targetWorkdir,
+        systemPath: resolve(targetWorkdir, "system.mmd"),
+        systemSource
+      })
+    };
+  } catch (error) {
+    await removeCreatedProjectFiles(targetWorkdir);
+    throw error;
+  }
+}
+
+async function readRoleCatalogEntry(args: {
+  roleRootDir: string;
+  roleId: string;
+  source: string;
+  projectRoleRootDir?: string;
+}): Promise<Record<string, unknown>> {
+  const roleDir = resolve(args.roleRootDir, args.roleId);
+  const roleJsonPath = resolve(roleDir, "role.json");
+  const raw = await readJsonFile(roleJsonPath).catch(() => undefined);
+  let manifest: ReturnType<typeof validateRolePackageManifest> | undefined;
+  let health = "ok";
+  let errorMessage: string | undefined;
+  try {
+    manifest = validateRolePackageManifest(raw, roleJsonPath);
+  } catch (error) {
+    health = "invalid";
+    errorMessage = error instanceof Error ? error.message : String(error);
+  }
+  const promptPath = manifest?.promptTemplate ? resolve(roleDir, manifest.promptTemplate) : undefined;
+  const schemaPath = manifest?.outputSchema ? resolve(roleDir, manifest.outputSchema) : undefined;
+  const digest = createHash("sha256");
+  for (const filePath of [
+    roleJsonPath,
+    promptPath,
+    schemaPath,
+    resolve(roleDir, "source.json")
+  ].filter((value): value is string => Boolean(value))) {
+    digest.update(filePath.slice(roleDir.length + 1));
+    digest.update("\0");
+    digest.update(await readFile(filePath).catch(() => ""));
+    digest.update("\0");
+  }
+  const projectRoleDir = args.projectRoleRootDir ? resolve(args.projectRoleRootDir, args.roleId) : undefined;
+  return {
+    roleId: manifest?.roleId ?? args.roleId,
+    name: manifest?.name ?? args.roleId,
+    summary: manifest?.description ?? errorMessage,
+    roleVersion: manifest?.roleVersion,
+    tags: manifest?.tags ?? manifest?.preferredModelTags ?? [],
+    source: args.source,
+    digest: digest.digest("hex"),
+    health,
+    hasRoleJson: await pathExists(roleJsonPath),
+    hasPrompt: promptPath ? await pathExists(promptPath) : false,
+    hasOutputSchema: schemaPath ? await pathExists(schemaPath) : false,
+    alreadyImported: projectRoleDir ? await pathExists(projectRoleDir) : undefined
+  };
+}
+
+export async function listInstalledRoleCatalog(workdir: string): Promise<Record<string, unknown>> {
+  const installedRoleRootDir = resolveTemplateRoleRootDir();
+  const runtimeConfig = await loadRuntimeConfig(undefined, workdir).catch(() => undefined);
+  const projectRoleRootDir = runtimeConfig
+    ? resolveProjectRoleRootDir(workdir, runtimeConfig.roleRepo)
+    : resolve(workdir, "og-roles", "roles");
+  const entries = await readdir(installedRoleRootDir, { withFileTypes: true }).catch(() => []);
+  const roles = await Promise.all(
+    entries
+      .filter((entry) => entry.isDirectory())
+      .map((entry) => readRoleCatalogEntry({
+        roleRootDir: installedRoleRootDir,
+        roleId: entry.name,
+        source: "installed",
+        projectRoleRootDir
+      }))
+  );
+  return {
+    source: "installed",
+    roles: roles.sort((left, right) => String(left.roleId).localeCompare(String(right.roleId)))
+  };
+}
+
+export async function importInstalledRolesVisualization(args: {
+  workdir: string;
+  roleIds: unknown;
+}): Promise<Record<string, unknown>> {
+  const roleIds = Array.isArray(args.roleIds)
+    ? args.roleIds.map((roleId) => asString(roleId)?.trim()).filter((roleId): roleId is string => Boolean(roleId))
+    : [];
+  if (!roleIds.length) {
+    throw new Error("ROLE_IMPORT_SELECTION_REQUIRED");
+  }
+  const importedRoleIds: string[] = [];
+  const skippedRoleIds: string[] = [];
+  for (const roleId of Array.from(new Set(roleIds)).sort((left, right) => left.localeCompare(right))) {
+    const imported = await importInstalledRolePackageIntoProject({ workdir: args.workdir, roleId });
+    if (imported) {
+      importedRoleIds.push(roleId);
+    } else {
+      skippedRoleIds.push(roleId);
+    }
+  }
+  invalidateProjectProjectionCache(args.workdir);
+  return {
+    workdir: args.workdir,
+    importedRoleIds,
+    skippedRoleIds,
+    roleCatalog: await listInstalledRoleCatalog(args.workdir)
   };
 }
 

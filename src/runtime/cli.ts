@@ -17,6 +17,7 @@ import {
   OGS_RUNS_DIR,
   createProjectFromTemplate,
   ensureProjectSkeleton,
+  isProjectTemplateId,
   inspectHumanReview,
   scaffoldProjectTemplate,
   syncProjectDependencies,
@@ -404,17 +405,6 @@ function createCliInputError(errorCode: string, message: string): RuntimeError {
     retryable: false,
     stage: "cli"
   });
-}
-
-function isProjectTemplateId(
-  value: string | undefined
-): value is "empty" | "minimal" | "software-dev" | "consultation" {
-  return (
-    value === "empty" ||
-    value === "minimal" ||
-    value === "software-dev" ||
-    value === "consultation"
-  );
 }
 
 function shellEscape(value: string): string {

@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import os from "node:os";
 import path from "node:path";
 import http from "node:http";
-import { mkdtemp, mkdir, readFile, symlink, writeFile } from "node:fs/promises";
+import { mkdtemp, mkdir, readFile, stat, symlink, writeFile } from "node:fs/promises";
 
 import { resolveProjectRoleRootDir } from "../dist/runtime/bundled-repos.js";
 import { compileExecutionSnapshot } from "../dist/runtime/compiler.js";
@@ -968,10 +968,10 @@ test("visualizer server maps config explain API setup failures to error envelope
   try {
     for (const endpoint of ["bindings", "contracts", "role-packages"]) {
       const response = await fetch(`${url}/api/v1/project/${endpoint}`);
-      assert.equal(response.status, 500);
+      assert.equal(response.status, 409);
       const body = await response.json();
-      assert.equal(body.error.code, "VISUALIZER_INTERNAL_ERROR");
-      assert.match(body.error.message, /system\.mmd/);
+      assert.equal(body.error.code, "PROJECT_NOT_INITIALIZED");
+      assert.match(body.error.message, /Create or load an OGSystem project/);
     }
   } finally {
     await new Promise((resolve) => server.close(resolve));
@@ -1384,8 +1384,213 @@ test("visualizer server exposes Mermaid workbench APIs and project export", asyn
     assert.equal(exportResponse.status, 200);
     const exported = await exportResponse.json();
     assert.equal(exported.mode, "single-project-v1");
+    assert.equal(exported.releaseManifest.manifestVersion, 1);
+    assert.equal(exported.releaseManifest.systemPath, "system.mmd");
+    assert.match(exported.releaseManifest.systemHash, /^[a-f0-9]{64}$/);
+    assert.ok(exported.releaseManifest.excludes.includes(".ogs/runs"));
     assert.match(exported.project.systemSource, /viz\.project\.demo/);
     assert.equal(Object.hasOwn(exported.project, "runs"), false);
+  } finally {
+    await new Promise((resolve) => server.close(resolve));
+  }
+});
+
+test("visualizer server supports empty workspace project creation without implicit writes", async (t) => {
+  const workdir = await mkdtemp(path.join(os.tmpdir(), "ogsystem-visualizer-empty-"));
+  let started;
+  try {
+    started = await startVisualizationServer({
+      workdir,
+      host: "127.0.0.1",
+      port: 0
+    });
+  } catch (error) {
+    const errorCode =
+      typeof error === "object" && error !== null && "code" in error ? error.code : undefined;
+    if (errorCode === "EPERM" || errorCode === "EACCES") {
+      t.skip(`visualizer listen unavailable in sandbox: ${errorCode}`);
+      return;
+    }
+    throw error;
+  }
+  const { server, url } = started;
+
+  try {
+    const workspaceResponse = await fetch(`${url}/api/v1/workspace`);
+    assert.equal(workspaceResponse.status, 200);
+    const workspace = await workspaceResponse.json();
+    assert.equal(workspace.hasProject, false);
+    assert.equal(workspace.state, "empty");
+
+    const runsResponse = await fetch(`${url}/api/v1/runs`);
+    assert.equal(runsResponse.status, 200);
+    assert.deepEqual((await runsResponse.json()).runs, []);
+
+    const startResponse = await fetch(`${url}/api/v1/runs/start`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ systemPath: "system.mmd", input: "must not write", dryRun: true })
+    });
+    assert.equal(startResponse.status, 409);
+    assert.equal((await startResponse.json()).error.code, "PROJECT_NOT_INITIALIZED");
+    await assert.rejects(() => stat(path.resolve(workdir, ".ogs")), /ENOENT/);
+    await assert.rejects(() => stat(path.resolve(workdir, "system.mmd")), /ENOENT/);
+
+    const catalogResponse = await fetch(`${url}/api/v1/project/role-catalog`);
+    assert.equal(catalogResponse.status, 200);
+    const catalog = await catalogResponse.json();
+    assert.equal(catalog.source, "installed");
+    assert.ok(catalog.roles.some((role) => role.roleId === "demo-analyst"));
+    await assert.rejects(() => stat(path.resolve(workdir, ".ogs")), /ENOENT/);
+    await assert.rejects(() => stat(path.resolve(workdir, "og-roles")), /ENOENT/);
+
+    const roleImportResponse = await fetch(`${url}/api/v1/project/roles/import`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ source: "installed", roleIds: ["demo-analyst"] })
+    });
+    assert.equal(roleImportResponse.status, 409);
+    assert.equal((await roleImportResponse.json()).error.code, "PROJECT_NOT_INITIALIZED");
+    await assert.rejects(() => stat(path.resolve(workdir, "og-roles")), /ENOENT/);
+
+    const createResponse = await fetch(`${url}/api/v1/project/create`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        projectId: "viz.empty.created",
+        projectName: "Empty Created",
+        templateId: "empty",
+        conflictStrategy: "init-current"
+      })
+    });
+    const createBody = await createResponse.json();
+    assert.equal(createResponse.status, 200, JSON.stringify(createBody));
+    const created = createBody;
+    assert.equal(created.projectId, "viz.empty.created");
+    assert.equal(created.draftState, "draft-unbound-unpublishable");
+    await stat(path.resolve(workdir, ".ogs", "project.json"));
+    await stat(path.resolve(workdir, ".ogs", "studio", "system.authoring.json"));
+    await stat(path.resolve(workdir, "og-roles", "roles", "demo-analyst", "role.json"));
+    const projectJson = JSON.parse(await readFile(path.resolve(workdir, ".ogs", "project.json"), "utf8"));
+    assert.equal(projectJson.projectId, "viz.empty.created");
+    assert.equal(projectJson.projectName, "Empty Created");
+    const systemSource = await readFile(path.resolve(workdir, "system.mmd"), "utf8");
+    const parsed = parseSystemFromMermaidSource(systemSource);
+    assert.equal(parsed.entryRoleId, "demo-analyst");
+
+    const workspaceAfterResponse = await fetch(`${url}/api/v1/workspace`);
+    assert.equal(workspaceAfterResponse.status, 200);
+    const workspaceAfter = await workspaceAfterResponse.json();
+    assert.equal(workspaceAfter.hasProject, true);
+    assert.equal(workspaceAfter.state, "project");
+
+    const duplicateCreateResponse = await fetch(`${url}/api/v1/project/create`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ projectId: "viz.empty.created", templateId: "empty" })
+    });
+    assert.equal(duplicateCreateResponse.status, 409);
+    assert.equal((await duplicateCreateResponse.json()).error.code, "PROJECT_ALREADY_EXISTS");
+
+    const roleImportAfterCreate = await fetch(`${url}/api/v1/project/roles/import`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ source: "installed", roleIds: ["demo-analyst"] })
+    });
+    assert.equal(roleImportAfterCreate.status, 200);
+    const roleImportAfterCreateBody = await roleImportAfterCreate.json();
+    assert.deepEqual(roleImportAfterCreateBody.importedRoleIds, []);
+    assert.deepEqual(roleImportAfterCreateBody.skippedRoleIds, ["demo-analyst"]);
+  } finally {
+    await new Promise((resolve) => server.close(resolve));
+  }
+});
+
+test("visualizer server reports non-project directory conflicts during project creation", async (t) => {
+  const workdir = await mkdtemp(path.join(os.tmpdir(), "ogsystem-visualizer-conflict-"));
+  await writeFile(path.resolve(workdir, "README.md"), "existing content\n", "utf8");
+  let started;
+  try {
+    started = await startVisualizationServer({
+      workdir,
+      host: "127.0.0.1",
+      port: 0
+    });
+  } catch (error) {
+    const errorCode =
+      typeof error === "object" && error !== null && "code" in error ? error.code : undefined;
+    if (errorCode === "EPERM" || errorCode === "EACCES") {
+      t.skip(`visualizer listen unavailable in sandbox: ${errorCode}`);
+      return;
+    }
+    throw error;
+  }
+  const { server, url } = started;
+
+  try {
+    const createRejected = await fetch(`${url}/api/v1/project/create`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ projectId: "viz.conflict", templateId: "empty" })
+    });
+    assert.equal(createRejected.status, 409);
+    assert.equal((await createRejected.json()).error.code, "PROJECT_DIR_CONFLICT");
+
+    await writeFile(path.resolve(workdir, "system.mmd"), "flowchart TD\n", "utf8");
+    const fileConflict = await fetch(`${url}/api/v1/project/create`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        projectId: "viz.conflict",
+        templateId: "empty",
+        conflictStrategy: "init-current"
+      })
+    });
+    assert.equal(fileConflict.status, 409);
+    const fileConflictPayload = await fileConflict.json();
+    assert.equal(fileConflictPayload.error.code, "PROJECT_FILE_CONFLICT");
+    assert.ok(fileConflictPayload.error.details.conflicts.includes("system.mmd"));
+
+    const pseudoProject = await mkdtemp(path.join(os.tmpdir(), "ogsystem-visualizer-pseudo-"));
+    await mkdir(path.resolve(pseudoProject, ".ogs"), { recursive: true });
+    await writeFile(path.resolve(pseudoProject, "system.mmd"), "flowchart TD\n", "utf8");
+    const loadPseudoProject = await fetch(`${url}/api/v1/project/load`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ workdir: pseudoProject })
+    });
+    assert.equal(loadPseudoProject.status, 400);
+    assert.equal((await loadPseudoProject.json()).error.code, "PROJECT_INVALID_WORKDIR");
+
+    const userDirs = await mkdtemp(path.join(os.tmpdir(), "ogsystem-visualizer-user-dirs-"));
+    await mkdir(path.resolve(userDirs, ".ogs", "notes"), { recursive: true });
+    await mkdir(path.resolve(userDirs, "og-roles", "custom"), { recursive: true });
+    await writeFile(path.resolve(userDirs, ".ogs", "notes", "keep.txt"), "keep\n", "utf8");
+    await writeFile(path.resolve(userDirs, "og-roles", "custom", "keep.txt"), "keep\n", "utf8");
+    const loadUserDirs = await fetch(`${url}/api/v1/project/load`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ workdir: userDirs })
+    });
+    assert.equal(loadUserDirs.status, 400);
+    assert.equal((await loadUserDirs.json()).error.code, "PROJECT_INVALID_WORKDIR");
+    const userDirCreate = await fetch(`${url}/api/v1/project/create`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        workdir: userDirs,
+        projectId: "viz.user.dirs",
+        templateId: "empty",
+        conflictStrategy: "init-current"
+      })
+    });
+    assert.equal(userDirCreate.status, 409);
+    const userDirCreateBody = await userDirCreate.json();
+    assert.equal(userDirCreateBody.error.code, "PROJECT_FILE_CONFLICT");
+    assert.ok(userDirCreateBody.error.details.conflicts.includes(".ogs"));
+    assert.ok(userDirCreateBody.error.details.conflicts.includes("og-roles"));
+    assert.equal(await readFile(path.resolve(userDirs, ".ogs", "notes", "keep.txt"), "utf8"), "keep\n");
+    assert.equal(await readFile(path.resolve(userDirs, "og-roles", "custom", "keep.txt"), "utf8"), "keep\n");
   } finally {
     await new Promise((resolve) => server.close(resolve));
   }
@@ -1426,6 +1631,13 @@ test("visualizer server starts and resumes runs through lifecycle APIs", async (
     const startedRun = await startResponse.json();
     assert.equal(startedRun.status, "stopped");
     assert.ok(startedRun.runId);
+    const snapshotManifest = JSON.parse(
+      await readFile(path.resolve(workdir, ".ogs", "runs", startedRun.runId, "snapshot-manifest.json"), "utf8")
+    );
+    assert.equal(snapshotManifest.manifestVersion, 1);
+    assert.equal(snapshotManifest.snapshotId, startedRun.runId);
+    assert.equal(snapshotManifest.source.runArtifactSystemPath, "system.mmd");
+    assert.match(snapshotManifest.source.sourceHash, /^[a-f0-9]{64}$/);
 
     const reviewsResponse = await fetch(`${url}/api/v1/runs/${startedRun.runId}/reviews`);
     assert.equal(reviewsResponse.status, 200);

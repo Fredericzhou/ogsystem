@@ -394,6 +394,10 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
     const resolvedLocale = resolveClientLocale();
     const state = {
       locale: resolvedLocale,
+      workspace: null,
+      hasProject: true,
+      projectCreateError: null,
+      roleCatalog: null,
       project: null,
       opsSummary: null,
       projectReadiness: null,
@@ -672,6 +676,17 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
       return fallback;
     }
 
+    function createApiError(payload, fallback) {
+      const message = readApiError(payload, fallback);
+      const error = new Error(message);
+      if (payload && payload.error) {
+        error.code = payload.error.code || "";
+        error.details = payload.error.details;
+        error.payload = payload;
+      }
+      return error;
+    }
+
     function statusClass(status) {
       return [
         "running",
@@ -705,7 +720,7 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
         ? await response.json().catch(() => null)
         : await response.text().catch(() => "");
       if (!response.ok) {
-        throw new Error(readApiError(payload, \`\${response.status} \${response.statusText}\`));
+        throw createApiError(payload, \`\${response.status} \${response.statusText}\`);
       }
       return payload;
     }
@@ -1097,15 +1112,30 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
       return isRunActiveStatus(state.detail?.header?.status || "");
     }
 
+    function workspaceEmptyStateHtml(kind) {
+      const title = kind === "validate"
+        ? t("workspace.validateUnavailableTitle", undefined, "Create or load a project before validating a release.")
+        : kind === "operate"
+          ? t("workspace.operateUnavailableTitle", undefined, "No project or runs are available yet.")
+          : kind === "build"
+            ? t("workspace.buildUnavailableTitle", undefined, "Create or load a project before building.")
+            : t("workspace.projectUnavailableTitle", undefined, "This directory is not initialized as an OGSystem project.");
+      const hint = t("workspace.createOrLoadHint", undefined, "Use Project to create a project in this directory or load an existing project.");
+      return '<div class="event"><div class="event-top"><span>' + escapeText(t("common.empty", undefined, "empty")) +
+        '</span><span>' + escapeText(t("nav.lifecycle.project", undefined, "Project")) + '</span></div><strong>' +
+        escapeText(title) + '</strong><div class="hint">' + escapeText(hint) + '</div></div>';
+    }
+
     function renderActionState() {
       const disabled = Boolean(state.actionBusy);
+      const noProject = !state.hasProject;
       const stopDisabled = disabled || !canRequestStop();
       projectHomeButton.disabled = disabled;
       projectLoadButton.disabled = disabled;
-      projectExportButton.disabled = disabled;
-      if (releaseExportButton) releaseExportButton.disabled = disabled;
-      reindexButton.disabled = disabled;
-      startRunButton.disabled = disabled;
+      projectExportButton.disabled = disabled || noProject;
+      if (releaseExportButton) releaseExportButton.disabled = disabled || noProject;
+      reindexButton.disabled = disabled || noProject;
+      startRunButton.disabled = disabled || noProject;
       resumeRunButton.disabled = disabled || !state.selectedRunId;
       stopRunButton.disabled = stopDisabled;
       refreshButton.disabled = disabled;
@@ -1208,7 +1238,7 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
       const isOperate = state.consoleTab === "operate" || state.consoleTab === "legacy";
       const isProject = state.consoleTab === "project";
       if (startRunButton) {
-        startRunButton.hidden = !isBuild;
+        startRunButton.hidden = !isBuild || !state.hasProject;
         startRunButton.textContent = t("studio.dryRun", undefined, "Dry run");
       }
       if (resumeRunButton) {
@@ -1226,7 +1256,7 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
         projectLoadButton.hidden = !isProject;
       }
       if (projectExportButton) {
-        projectExportButton.hidden = state.consoleTab !== "validate-release";
+        projectExportButton.hidden = state.consoleTab !== "validate-release" || !state.hasProject;
       }
     }
 
@@ -1592,6 +1622,17 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
     }
 
     function renderWorkbench(options) {
+      if (!state.hasProject) {
+        workbenchMetaEl.textContent = t("workspace.buildUnavailableTitle", undefined, "Create or load a project before building.");
+        workbenchStatusEl.innerHTML = '<span class="pill warn">' + escapeText(t("workspace.notInitialized", undefined, "not initialized")) + '</span>';
+        workbenchTabsEl.innerHTML = "";
+        if (workbenchViewTabsEl) {
+          workbenchViewTabsEl.innerHTML = "";
+        }
+        workbenchActionsEl.innerHTML = "";
+        workbenchBodyEl.innerHTML = '<div class="structure-list">' + workspaceEmptyStateHtml("build") + '</div>';
+        return;
+      }
       const validation = state.workbench?.validation || null;
       const diagnostics = validation?.diagnostics || [];
       const structure = validation?.structure || null;
@@ -1938,6 +1979,21 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
     }
 
     function renderProject() {
+      if (!state.hasProject) {
+        const workspace = state.workspace || {};
+        if (workdirEl && workspace.workdir) {
+          workdirEl.textContent = workspace.workdir;
+        }
+        projectSummaryEl.innerHTML = workspaceEmptyStateHtml("project");
+        if (opsSummaryEl) opsSummaryEl.innerHTML = workspaceEmptyStateHtml("operate");
+        if (projectReadinessEl) projectReadinessEl.innerHTML = '<div class="hint">' + escapeText(t("workspace.readinessUnavailable", undefined, "Project readiness loads after a project is created or loaded.")) + '</div>';
+        if (releaseGateEl) releaseGateEl.innerHTML = workspaceEmptyStateHtml("validate");
+        bindingExplainEl.innerHTML = '<div class="hint">' + escapeText(t("workspace.projectDataUnavailable", undefined, "Project configuration is unavailable until a project is created or loaded.")) + '</div>';
+        rolePackagesEl.innerHTML = '<div class="hint">' + escapeText(t("workspace.roleCatalogHint", undefined, "Installed role catalog can be imported after project creation.")) + '</div>';
+        contractExplainEl.innerHTML = '<div class="hint">' + escapeText(t("workspace.projectDataUnavailable", undefined, "Project configuration is unavailable until a project is created or loaded.")) + '</div>';
+        renderProjectWizard();
+        return;
+      }
       if (!state.project) {
         projectSummaryEl.textContent = t("state.projectDataUnavailable");
         if (opsSummaryEl) opsSummaryEl.innerHTML = '<div class="hint">' + escapeText(t("state.opsSummaryUnavailable")) + '</div>';
@@ -2071,6 +2127,38 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
       if (!projectWizardEl) {
         return;
       }
+      if (!state.hasProject) {
+        const workspace = state.workspace || {};
+        const conflict = workspace.state === "non-project-conflict";
+        const error = state.projectCreateError
+          ? '<div class="event"><div class="event-top"><span>' + escapeText(t("common.attention", undefined, "attention")) + '</span><span>' + escapeText(state.projectCreateError.code || "error") + '</span></div><strong>' + escapeText(state.projectCreateError.message || t("projectWizard.createFailed", undefined, "Project creation failed.")) + '</strong></div>'
+          : "";
+        projectWizardEl.innerHTML = [
+          '<div class="event"><div class="event-top"><span>' + escapeText(t("section.projectWizard", undefined, "Project Wizard")) + '</span><span>' + escapeText(conflict ? t("common.attention", undefined, "attention") : t("common.empty", undefined, "empty")) + '</span></div><strong>' +
+            escapeText(conflict ? t("projectWizard.directoryConflictTitle", undefined, "Directory is not empty.") : t("projectWizard.emptyDirectoryTitle", undefined, "Start a new OGSystem project here.")) +
+            '</strong><div class="hint">' + escapeText(conflict ? t("projectWizard.directoryConflictHint", undefined, "Initialize the current directory only if the existing files belong with this project, or load another project.") : t("projectWizard.emptyDirectoryHint", undefined, "No files are written until you confirm project creation.")) + '</div></div>',
+          error,
+          '<form id="project-create-form" class="structure-list">',
+          '<label><span>' + escapeText(t("projectWizard.projectName", undefined, "Project name")) + '</span><input name="projectName" value="' + escapeText(workspace.workdir ? String(workspace.workdir).split(/[\\\\/]/).filter(Boolean).pop() || "my-ogs-project" : "my-ogs-project") + '"></label>',
+          '<label><span>' + escapeText(t("projectWizard.projectId", undefined, "Project id")) + '</span><input name="projectId" value="project.starter"></label>',
+          '<label><span>' + escapeText(t("projectWizard.template", undefined, "Template")) + '</span><select name="templateId"><option value="empty">' + escapeText(t("projectWizard.template.empty", undefined, "Blank draft")) + '</option><option value="minimal">' + escapeText(t("projectWizard.template.minimal", undefined, "Minimal runnable")) + '</option><option value="software-dev">software-dev</option><option value="consultation">consultation</option></select></label>',
+          conflict ? '<label><span>' + escapeText(t("projectWizard.conflictStrategy", undefined, "Conflict strategy")) + '</span><select name="conflictStrategy"><option value="reject">' + escapeText(t("projectWizard.chooseAnotherDirectory", undefined, "Choose another directory")) + '</option><option value="init-current">' + escapeText(t("projectWizard.initCurrentDirectory", undefined, "Initialize current directory")) + '</option></select></label>' : '<input type="hidden" name="conflictStrategy" value="init-current">',
+          '<div class="toolbar-group"><button class="button primary" type="submit">' + escapeText(t("projectWizard.createProject", undefined, "Create project")) + '</button><button class="button subtle" type="button" id="project-wizard-load">' + escapeText(t("action.loadProject", undefined, "Load project")) + '</button></div>',
+          '</form>'
+        ].join("");
+        const form = document.getElementById("project-create-form");
+        if (form) {
+          form.addEventListener("submit", (event) => {
+            event.preventDefault();
+            void createProjectFromWizard(new FormData(form));
+          });
+        }
+        const load = document.getElementById("project-wizard-load");
+        if (load) {
+          load.addEventListener("click", () => openActionForm("projectLoad", { workdir: workspace.workdir || "" }));
+        }
+        return;
+      }
       const templates = Array.isArray(state.studioTemplates) ? state.studioTemplates : [];
       const roles = state.project?.roles?.roles || [];
       const modelCount = state.project?.config?.modelCatalog?.models?.length || 0;
@@ -2163,6 +2251,11 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
     }
 
     function renderGraph() {
+      if (!state.hasProject) {
+        graphViewEl.innerHTML = workspaceEmptyStateHtml("operate");
+        stateEl.innerHTML = '<div class="hint">' + escapeText(t("workspace.createOrLoadHint", undefined, "Use Project to create a project in this directory or load an existing project.")) + '</div>';
+        return;
+      }
       if (!state.graph) {
         graphViewEl.innerHTML = '<div class="hint">' + escapeText(t("state.noRunSelected")) + '</div>';
         stateEl.innerHTML = '<div class="hint">' + escapeText(t("state.noRunSelected")) + '</div>';
@@ -2536,6 +2629,10 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
     }
 
     async function refreshProjectDiagnostics() {
+      if (!state.hasProject) {
+        renderProject();
+        return;
+      }
       const [summary, config, roles, opsSummary, readiness, bindings, contracts, rolePackages, templates] = await Promise.all([
         requestJson(\`\${API_PREFIX}/project\`),
         requestJson(\`\${API_PREFIX}/project/config\`),
@@ -2700,6 +2797,10 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
     }
 
     async function generateMmdFromStudioBridge(options) {
+      if (!state.hasProject) {
+        setFlash("error", t("workspace.createOrLoadHint", undefined, "Use Project to create a project in this directory or load an existing project."));
+        return false;
+      }
       if (!state.studioBridge?.authoring) {
         await refreshStudioBridge();
       }
@@ -2729,6 +2830,9 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
     }
 
     async function runWorkbenchValidation(force) {
+      if (!state.hasProject) {
+        return;
+      }
       const requestId = ++state.workbenchValidationRequestId;
       state.workbenchValidating = true;
       renderWorkbench({ preserveEditor: true });
@@ -2766,6 +2870,10 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
     }
 
     async function loadWorkbench() {
+      if (!state.hasProject) {
+        renderWorkbench();
+        return;
+      }
       const payload = await requestJson(\`\${API_PREFIX}/project/system/workbench\`);
       state.workbench = payload;
       if (workdirEl && payload.workdir) {
@@ -2783,6 +2891,10 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
     }
 
     async function saveWorkbench() {
+      if (!state.hasProject) {
+        setFlash("error", t("workspace.createOrLoadHint", undefined, "Use Project to create a project in this directory or load an existing project."));
+        return;
+      }
       await runAction("workbench:save", async () => {
         const payload = await requestAction(
           \`\${API_PREFIX}/project/system/save\`,
@@ -2858,6 +2970,10 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
     }
 
     async function prepareDryRunFromBuild() {
+      if (!state.hasProject) {
+        setFlash("error", t("workspace.createOrLoadHint", undefined, "Use Project to create a project in this directory or load an existing project."));
+        return;
+      }
       state.buildMode = "dry-run";
       renderWorkbench();
       await runWorkbenchValidation(true);
@@ -3052,6 +3168,10 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
     }
 
     async function reindexRuns() {
+      if (!state.hasProject) {
+        setFlash("error", t("workspace.createOrLoadHint", undefined, "Use Project to create a project in this directory or load an existing project."));
+        return;
+      }
       await runAction("reindex", async () => {
         const payload = await requestAction(\`\${API_PREFIX}/runs/reindex\`);
         state.runs = payload.runs || [];
@@ -3062,6 +3182,10 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
     }
 
     async function exportProject() {
+      if (!state.hasProject) {
+        setFlash("error", t("workspace.createOrLoadHint", undefined, "Use Project to create a project in this directory or load an existing project."));
+        return;
+      }
       const releaseDecision = buildReleaseReadinessDecision({
         validation: state.workbench?.validation,
         readiness: state.projectReadiness,
@@ -3094,6 +3218,25 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
     }
 
     async function loadProject() {
+      state.workspace = await requestJson(API_PREFIX + "/workspace");
+      state.hasProject = state.workspace?.hasProject === true;
+      if (!state.hasProject) {
+        state.project = null;
+        state.opsSummary = null;
+        state.projectReadiness = null;
+        state.bindings = null;
+        state.contracts = null;
+        state.rolePackages = null;
+        state.workbench = null;
+        state.workbenchSource = "";
+        state.workbenchDiskSource = "";
+        state.studioTemplates = [];
+        renderProject();
+        renderWorkbench();
+        renderGraph();
+        renderActionState();
+        return;
+      }
       const [summary, system, config, roles, opsSummary, readiness, bindings, contracts, rolePackages, templates] = await Promise.all([
         requestJson(\`\${API_PREFIX}/project\`),
         requestJson(\`\${API_PREFIX}/project/system\`),
@@ -3115,6 +3258,44 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
       state.studioTemplates = templates.templates || [];
       await loadWorkbench();
       renderProject();
+    }
+
+    async function createProjectFromWizard(formData) {
+      const body = {
+        projectName: String(formData.get("projectName") || ""),
+        projectId: String(formData.get("projectId") || ""),
+        templateId: String(formData.get("templateId") || "empty"),
+        conflictStrategy: String(formData.get("conflictStrategy") || "reject")
+      };
+      state.projectCreateError = null;
+      await runAction("project:create", async () => {
+        try {
+          await requestAction(API_PREFIX + "/project/create", body);
+        } catch (error) {
+          const code = error?.code || error?.errorCode || "";
+          state.projectCreateError = {
+            code,
+            message: code === "PROJECT_ALREADY_EXISTS"
+              ? t("projectWizard.errorAlreadyExists", undefined, "This directory is already an OGSystem project. Load it instead.")
+              : code === "PROJECT_DIR_CONFLICT"
+                ? t("projectWizard.errorDirectoryConflict", undefined, "This directory has existing files. Choose current-directory initialization, another directory, or load an existing project.")
+                : code === "INVALID_PROJECT_ID"
+                  ? t("projectWizard.errorInvalidProjectId", undefined, "Use a project id with letters, numbers, dots, underscores, or hyphens.")
+                  : error.message || t("projectWizard.createFailed", undefined, "Project creation failed.")
+          };
+          renderProject();
+          throw error;
+        }
+        state.projectCreateError = null;
+        state.consoleTab = "build";
+        state.workbenchView = "bridge";
+        await loadProject();
+        await loadRuns();
+        renderConsoleTabs();
+        renderWorkbench();
+        await refreshStudioBridge();
+        setFlash("success", t("projectWizard.createSuccess", undefined, "Project created. Continue in Build."));
+      });
     }
 
     async function loadRuns() {
@@ -3780,12 +3961,24 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
     logSinceEl.value = state.logSince;
     syncTimelineFilterInputs();
 
-    Promise.all([loadProject(), loadRuns()])
+    loadProject()
       .then(async () => {
-        if (state.selectedRunId) {
-          await loadSelectedRunBoot(state.selectedRunId, { keepStream: false });
+        if (state.hasProject) {
+          await loadRuns();
+          if (state.selectedRunId) {
+            await loadSelectedRunBoot(state.selectedRunId, { keepStream: false });
+          } else {
+            renderSelectedRun();
+          }
         } else {
+          state.selectedRunId = "";
+          state.selectedReviewId = "";
+          state.selectedLogRoleId = "";
+          state.runs = [];
+          renderRuns();
           renderSelectedRun();
+          renderLogs();
+          writeRouteToLocation();
         }
       })
       .catch((error) => {
