@@ -103,6 +103,11 @@ function parseAttributes(source) {
   for (const match of source.matchAll(matcher)) {
     attributes[match[1]] = match[3] ?? match[4] ?? "";
   }
+  for (const booleanName of ["checked", "disabled", "selected"]) {
+    if (new RegExp(`(^|\\s)${booleanName}(\\s|$)`).test(source)) {
+      attributes[booleanName] = "";
+    }
+  }
   return attributes;
 }
 
@@ -447,7 +452,20 @@ function buildRunFixture({
       stopRequest: null,
       stopOutcome: null,
       summary: null,
-      systemSource: "flowchart TD"
+      systemSource: "flowchart TD",
+      snapshotManifest: {
+        manifestVersion: 1,
+        snapshotId: runId,
+        status: "ok",
+        source: {
+          systemPath: "system.mmd",
+          runArtifactSystemPath: "system.mmd",
+          sourceHash: "a".repeat(64)
+        },
+        artifactSemantics: {
+          historicalTruth: "run-artifact-system.mmd"
+        }
+      }
     },
     graph: {
       simulation: { mode: "runtime" },
@@ -635,6 +653,7 @@ function createBackend(options = {}) {
     reviewDetail: cloneJson(primaryRun.reviewDetail),
     lastDecisionBody: null,
     lastProjectCreateBody: null,
+    lastRoleImportBody: null,
     decisionDeferred: options.decisionDeferred ?? null,
     fetchCalls: [],
     async handle(url, request = {}) {
@@ -695,6 +714,36 @@ function createBackend(options = {}) {
           templateId: this.lastProjectCreateBody.templateId,
           draftState: "draft-unbound-unpublishable",
           validation: { ok: true, diagnostics: [], structure: null }
+        });
+      }
+      if (pathname === "/api/v1/project/role-catalog") {
+        return createResponse(options.roleCatalog ?? {
+          source: "installed",
+          roles: [
+            {
+              roleId: "demo-analyst",
+              name: "Demo Analyst",
+              source: "installed",
+              health: { status: "ok", issues: [] },
+              alreadyImported: false
+            },
+            {
+              roleId: "qa-reviewer",
+              name: "QA Reviewer",
+              source: "installed",
+              health: { status: "ok", issues: [] },
+              alreadyImported: false
+            }
+          ]
+        });
+      }
+      if (pathname === "/api/v1/project/roles/import" && method === "POST") {
+        this.lastRoleImportBody = JSON.parse(request.body ?? "{}");
+        return createResponse({
+          workdir: "/tmp/demo",
+          importedRoleIds: this.lastRoleImportBody.roleIds || [],
+          skippedRoleIds: [],
+          roleCatalog: { source: "installed", roles: [] }
         });
       }
       if (pathname === "/api/v1/project") {
@@ -1354,6 +1403,15 @@ async function settle() {
   }
 }
 
+async function waitForCondition(predicate, attempts = 20) {
+  for (let index = 0; index < attempts; index += 1) {
+    if (predicate()) {
+      return;
+    }
+    await settle();
+  }
+}
+
 async function createClientHarness(options = {}) {
   const document = new FakeDocument();
   const backend = options.backend ?? createBackend(options);
@@ -1438,12 +1496,29 @@ async function createClientHarness(options = {}) {
         this.values = new Map();
         for (const child of form?.document?.dynamicElements?.values?.() ?? []) {
           if (child.attributes?.name) {
-            this.values.set(child.attributes.name, child.value ?? child.attributes.value ?? "");
+            const checked = child.attributes.checked !== undefined;
+            if (child.attributes.type === "checkbox" && !checked && child.value !== true) {
+              continue;
+            }
+            const value = child.value ?? child.attributes.value ?? "";
+            const existing = this.values.get(child.attributes.name);
+            if (existing === undefined) {
+              this.values.set(child.attributes.name, value);
+            } else if (Array.isArray(existing)) {
+              existing.push(value);
+            } else {
+              this.values.set(child.attributes.name, [existing, value]);
+            }
           }
         }
       }
       get(name) {
-        return this.values.get(name) ?? null;
+        const value = this.values.get(name);
+        return Array.isArray(value) ? value[0] : value ?? null;
+      }
+      getAll(name) {
+        const value = this.values.get(name);
+        return Array.isArray(value) ? value : value === undefined ? [] : [value];
       }
     },
     Blob: class FakeBlob {
@@ -1606,18 +1681,34 @@ test("visualizer client creates a project from the empty workspace wizard", asyn
   projectId.value = "project.empty.visual";
   projectName.value = "Empty visual";
   template.value = "minimal";
+  assert.match(harness.document.getElementById("project-wizard").textContent, /Installed roles|Demo Analyst/i);
 
   await harness.document.getElementById("project-create-form").dispatch("submit");
-  await settle();
+  await waitForCondition(() => harness.backend.fetchCalls.some((call) => call.path === "/api/v1/project"));
 
-  assert.deepEqual(harness.backend.lastProjectCreateBody, {
-    projectName: "Empty visual",
-    projectId: "project.empty.visual",
-    templateId: "minimal",
-    conflictStrategy: "init-current"
+  assert.match(harness.backend.lastProjectCreateBody.requestId, /^project-create-/);
+  assert.deepEqual(
+    {
+      projectName: harness.backend.lastProjectCreateBody.projectName,
+      projectId: harness.backend.lastProjectCreateBody.projectId,
+      templateId: harness.backend.lastProjectCreateBody.templateId,
+      conflictStrategy: harness.backend.lastProjectCreateBody.conflictStrategy
+    },
+    {
+      projectName: "Empty visual",
+      projectId: "project.empty.visual",
+      templateId: "minimal",
+      conflictStrategy: "init-current"
+    }
+  );
+  assert.deepEqual(harness.backend.lastRoleImportBody, {
+    source: "installed",
+    roleIds: ["demo-analyst"]
   });
   assert.ok(harness.backend.fetchCalls.some((call) => call.path === "/api/v1/project"));
   assert.equal(harness.backend.fetchCalls.some((call) => call.path === "/api/v1/project/create"), true);
+  assert.equal(harness.backend.fetchCalls.some((call) => call.path === "/api/v1/project/role-catalog"), true);
+  assert.equal(harness.backend.fetchCalls.some((call) => call.path === "/api/v1/project/roles/import"), true);
   assert.equal(harness.backend.fetchCalls.some((call) => call.path === "/api/v1/project/system/save"), false);
   assert.equal(harness.backend.fetchCalls.some((call) => call.path === "/api/v1/runs/start"), false);
 });
@@ -1788,6 +1879,14 @@ test("visualizer client keeps diagnostics lazy and renders decision phase detail
   await graphTab.click();
   await settle();
   assert.ok(harness.document.getElementById("graph-view").innerHTML.includes('id="run-graph-root"'));
+  const artifactsTab = harness.document.getElementById("operate-tabs")
+    .querySelectorAll("[data-operate-tab]")
+    .find((button) => button.getAttribute("data-operate-tab") === "artifacts");
+  assert.ok(artifactsTab);
+  await artifactsTab.click();
+  await settle();
+  assert.match(harness.document.getElementById("detail").textContent, /snapshot manifest|Run snapshot manifest/i);
+  assert.match(harness.document.getElementById("detail").textContent, /historical truth/i);
   const recoveryTab = harness.document.getElementById("operate-tabs")
     .querySelectorAll("[data-operate-tab]")
     .find((button) => button.getAttribute("data-operate-tab") === "recovery");

@@ -148,6 +148,7 @@ export type RunDetailView = {
   stopOutcome: unknown | null;
   summary: unknown | null;
   systemSource: string | null;
+  snapshotManifest: unknown | null;
 };
 
 export type ReviewListItem = {
@@ -356,6 +357,7 @@ export function mapRunDetailView(args: {
   stopOutcome?: unknown;
   summary?: unknown;
   systemSource: string | null;
+  snapshotManifest?: unknown;
 }): RunDetailView {
   return {
     runId: args.runId,
@@ -367,7 +369,8 @@ export function mapRunDetailView(args: {
     stopRequest: args.stopRequest ?? null,
     stopOutcome: args.stopOutcome ?? null,
     summary: args.summary ?? null,
-    systemSource: args.systemSource
+    systemSource: args.systemSource,
+    snapshotManifest: args.snapshotManifest ?? null
   };
 }
 

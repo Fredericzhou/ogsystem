@@ -1500,6 +1500,21 @@ export function renderArtifactsPanel(args: {
     return '<div class="hint">' + escapeText(t("state.noRunSelected", undefined, "No run selected.")) + '</div>';
   }
   const header = (args.detail.header ?? {}) as JsonRecord;
+  const snapshotManifest = args.detail.snapshotManifest && typeof args.detail.snapshotManifest === "object" && !Array.isArray(args.detail.snapshotManifest)
+    ? args.detail.snapshotManifest as JsonRecord
+    : null;
+  const snapshotSource = snapshotManifest?.source && typeof snapshotManifest.source === "object" && !Array.isArray(snapshotManifest.source)
+    ? snapshotManifest.source as JsonRecord
+    : null;
+  const snapshotStatus = String(snapshotManifest?.status ?? "missing");
+  const snapshotTitle = snapshotStatus === "ok"
+    ? t("artifacts.snapshotOkTitle", undefined, "Run snapshot manifest is consistent")
+    : snapshotStatus === "hash_mismatch"
+      ? t("artifacts.snapshotHashMismatchTitle", undefined, "Snapshot hash differs from run artifact")
+      : t("artifacts.snapshotMissingTitle", undefined, "Snapshot manifest unavailable");
+  const snapshotHint = snapshotStatus === "ok"
+    ? t("artifacts.snapshotOkHint", undefined, "Operate uses run artifact system.mmd as the historical source and the manifest as summary metadata.")
+    : String(snapshotManifest?.warning ?? t("artifacts.snapshotMissingHint", undefined, "Run artifact system.mmd remains the historical source for this run."));
   const reviewList = Array.isArray(args.reviews?.reviews) ? args.reviews.reviews as unknown[] : [];
   const graph = (args.graph?.graph ?? args.graph ?? {}) as JsonRecord;
   const graphNodes = Array.isArray(graph.nodes) ? graph.nodes.length : 0;
@@ -1516,6 +1531,11 @@ export function renderArtifactsPanel(args: {
       }, "graph " + graphNodes + " " + t("common.nodes", undefined, "nodes") + " / " + graphEdges + " " + t("common.edges", undefined, "edges"))) +
       '</strong><div class="hint">' + escapeText(t("artifacts.resumeDiagnostics", undefined, "resume diagnostics")) + " " + escapeText(args.resumeDiagnostics ? t("common.loaded", undefined, "loaded") : t("common.lazy", undefined, "lazy")) + " · " + escapeText(t("artifacts.selectedReview", undefined, "selected review")) + " " +
       escapeText(args.reviewDetail?.reviewId ?? t("common.none", undefined, "none")) + "</div></div></div>",
+    '<div class="artifact-section"><div class="event"><div class="event-top"><span>' + escapeText(t("artifacts.snapshotManifest", undefined, "snapshot manifest")) + '</span><span>' + escapeText(displayUiToken(snapshotStatus, t)) + '</span></div><strong>' +
+      escapeText(snapshotTitle) + '</strong><div class="hint">' + escapeText(snapshotHint) + '</div></div>' +
+      '<div class="event"><div class="event-top"><span>snapshotId</span><span>' + escapeText(snapshotManifest?.snapshotId ?? args.detail.runId ?? "n/a") + '</span></div><strong>' +
+      escapeText(String(snapshotSource?.sourceHash ?? t("common.notAvailable", undefined, "n/a"))) +
+      '</strong><div class="hint">' + escapeText("system.mmd · " + t("artifacts.historicalTruth", undefined, "run artifact is historical truth")) + "</div></div></div>",
     '<div class="artifact-section"><div class="event"><div class="event-top"><span>' + escapeText(t("artifacts.metrics", undefined, "Metrics")) + '</span><span>' + escapeText(t("common.snapshot", undefined, "snapshot")) + '</span></div><strong>' + escapeText(t("artifacts.runMetrics", undefined, "Run metrics")) + '</strong></div>' +
       renderStructuredValueCards("metrics", args.detail.metrics ?? null).join("") + "</div>",
     '<div class="artifact-section"><div class="event"><div class="event-top"><span>' + escapeText(t("artifacts.state", undefined, "State")) + '</span><span>' + escapeText(t("common.snapshot", undefined, "snapshot")) + '</span></div><strong>' + escapeText(t("artifacts.runtimeStateStopControls", undefined, "Runtime state and stop controls")) + '</strong></div>' +

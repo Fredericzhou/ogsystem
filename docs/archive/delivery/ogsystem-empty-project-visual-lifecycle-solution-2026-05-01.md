@@ -515,7 +515,8 @@ alreadyImported
 
 - 空目录 Project Wizard、受控创建 API、空状态禁用、冲突错误态、安装包角色 catalog/import、最小可解析空白模板、authoring draft、创建后进入 Build 图工作区已实现并通过回归。
 - Dry Run snapshot 与 Release Package 先落最小 manifest contract：`snapshot-manifest.json` 写入 runDir，release export 返回 `releaseManifest`，继续以 run artifact 中的 `system.mmd` 作为历史事实来源，不改变 runtime/parser/compiler 语义。
-- 框架结构和 Inspector 使用现有 Studio authoring command、Mermaid validation、Graph workspace 能力闭环；更细的 manifest preview、hash 不一致 UI 降级、安装包角色导入浏览器专项 smoke 可在后续体验增强中继续加深，不作为本轮清零阻塞。
+- Project Wizard 已补充安装包角色 catalog 可视化选择，创建成功后通过受控导入 API 导入所选角色；`POST /api/v1/project/create` 已支持内存级 `requestId` 幂等重放；Operate Artifacts 已展示 snapshot manifest 基础摘要和 hash 校验状态。
+- 框架结构和 Inspector 使用现有 Studio authoring command、Mermaid validation、Graph workspace 能力闭环；独立的 Build framework panel / 对话式结构化表单、完整独立运行包目录结构仍是后续产品增强，不作为本轮已完成项表述。
 
 ### Phase 1: 文档和产品边界
 
@@ -526,7 +527,7 @@ alreadyImported
 - [x] 明确 snapshot manifest 与现有 run artifact 的关系。
 - [x] 定义独立运行包 manifest schema、hash、requiredEnv、artifact scope。
 - [x] 定义安装包角色 catalog API 和导入 API，确保与 `ogs project sync` 同源。
-- [x] 定义 `POST /api/v1/project/create` 的冲突响应码和用户可读错误态。
+- [x] 定义 `POST /api/v1/project/create` 的冲突响应码、`requestId` 幂等重放和用户可读错误态。
 - [x] 同步 en/zh-CN 文案。
 - [x] 增加 browser smoke，覆盖方案中新增生命周期入口的空状态。
 
@@ -550,18 +551,18 @@ alreadyImported
 - [x] 创建成功后自动刷新并绑定当前 visualizer workdir。
 - [x] 同步 en/zh-CN 文案。
 - [x] 增加 browser smoke，覆盖空目录启动、Build 空状态、禁用写入动作、空白模板创建和创建失败提示；目录冲突策略由 API/client 单元测试覆盖。
-- [x] 增加 API 单元测试，覆盖安装包角色查询、导入拒绝、已存在角色跳过提示。
+- [x] 增加 client/API 单元测试，覆盖安装包角色查询、Wizard 选择导入、导入拒绝、已存在角色跳过提示。
 
 ### Phase 3: Build 框架结构对话
 
-- [x] 系统 ID、版本、入口角色、law、handoff 编辑。
-- [x] review、route、join、loop 开关和默认策略。
+- [ ] 独立 Build framework panel 支持系统 ID、版本、入口角色、law、handoff 结构化编辑。
+- [ ] 独立 Build framework panel 支持 review、route、join、loop 开关和默认策略。
 - [x] 从结构化 draft 生成 `system.mmd`。
 - [x] 源码改动重新导入 authoring draft。
 - [x] 所有表单或对话输出都经过 authoring validation。
 - [x] 生成后的 `system.mmd` 经过 Mermaid validation。
-- [x] 同步 en/zh-CN 文案。
-- [x] 增加 browser smoke，覆盖框架结构编辑、校验失败、生成成功。
+- [ ] 同步独立 framework panel 的 en/zh-CN 文案。
+- [ ] 增加 browser smoke，覆盖独立 framework panel 编辑、校验失败、生成成功。
 
 ### Phase 4: 图编排和 Inspector 完整可视化
 
@@ -579,8 +580,8 @@ alreadyImported
 
 - [x] Dry Run 前在 runDir 中写入 snapshot manifest。
 - [x] 继续复用 run artifact 中的 `system.mmd` 作为历史运行事实来源。
-- [x] 运行记录绑定 snapshotId、sourceHash、systemVersion。
-- [x] Build Debug 显示本次试运行对应 snapshot。
+- [x] 运行详情绑定 snapshotId、sourceHash，并保留 run artifact 事实源。
+- [ ] Build Debug 显示本次试运行对应 snapshot。
 - [x] Operate 校验 manifest sourceHash 与 run artifact 一致。
 - [x] 同步 en/zh-CN 文案。
 - [x] 增加 API 单元测试，覆盖 Dry Run 后 snapshot manifest 写入和 run artifact 事实源关系。
@@ -589,19 +590,19 @@ alreadyImported
 
 - [x] 先定义 release manifest contract。
 - [x] Validate & Release 生成 release manifest。
-- [x] 导出独立运行包。
-- [x] readiness report 和 artifact hash 写入 manifest。
+- [ ] 导出完整独立运行包目录结构。
+- [ ] readiness report 和 artifact 逐项 hash 写入 manifest。
 - [x] 包内不包含密钥，只声明 requiredEnv。
 - [x] 同步 en/zh-CN 文案。
 - [x] 增加 client/API 单元测试，覆盖 release 阻断项、release manifest contract 和导出成功。
 
 ### Phase 7: Operate Snapshot View
 
-- [x] 运行列表显示版本和 snapshot 摘要。
+- [ ] 运行列表显示版本和 snapshot 摘要。
 - [x] 运行详情优先读取 run artifact 中的 `system.mmd`。
 - [x] snapshot manifest 作为摘要和校验补充。
 - [x] 只读图展示当时结构。
-- [x] snapshot 缺失时降级展示日志和审计。
+- [x] snapshot 缺失时在 Artifacts 中降级提示，并继续使用 run artifact 历史源。
 - [x] 同步 en/zh-CN 文案。
 - [x] 增加浏览器和 API 回归，覆盖试运行后的只读图入口、运行详情和 snapshot manifest 基础展示；snapshot 缺失/hash 不一致降级保留为后续 Operate 深化项。
 

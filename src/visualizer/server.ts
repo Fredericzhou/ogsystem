@@ -103,6 +103,7 @@ type VisualizationServerOptions = {
 
 type VisualizationServerState = {
   workdir: string;
+  projectCreateRequests: Map<string, Record<string, unknown>>;
 };
 
 type NdjsonEntry = {
@@ -123,6 +124,7 @@ type InspectRunRecord = {
 
 type LoadedRunDetail = InspectRunRecord & {
   systemSource: string | null;
+  snapshotManifest: Record<string, unknown> | null;
 };
 
 type RunsListCacheEntry = {
@@ -369,6 +371,38 @@ async function readSystemSource(runDir: string): Promise<string | null> {
   }
 }
 
+async function readSnapshotManifest(runDir: string, systemSource: string | null): Promise<Record<string, unknown> | null> {
+  let manifest: Record<string, unknown>;
+  try {
+    const parsed = JSON.parse(await readFile(resolve(runDir, "snapshot-manifest.json"), "utf8"));
+    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+      return {
+        manifestVersion: 0,
+        status: "invalid",
+        warning: "snapshot-manifest.json is not an object."
+      };
+    }
+    manifest = parsed as Record<string, unknown>;
+  } catch {
+    return {
+      manifestVersion: 0,
+      status: "missing",
+      warning: "snapshot-manifest.json is missing; run artifact system.mmd remains the historical source."
+    };
+  }
+  const source = asRecord(manifest.source);
+  const expectedHash = asString(source?.sourceHash);
+  const actualHash = systemSource === null ? undefined : createHash("sha256").update(systemSource).digest("hex");
+  return {
+    ...manifest,
+    status: expectedHash && actualHash && expectedHash !== actualHash ? "hash_mismatch" : "ok",
+    actualSourceHash: actualHash,
+    warning: expectedHash && actualHash && expectedHash !== actualHash
+      ? "snapshot sourceHash differs from run artifact system.mmd; run artifact system.mmd is used as historical truth."
+      : undefined
+  };
+}
+
 async function hasTimelineProjection(runDir: string): Promise<boolean> {
   try {
     const timelineStat = await stat(resolve(runDir, "timeline.jsonl"));
@@ -382,9 +416,11 @@ async function loadRunDetail(workdir: string, runId: string): Promise<LoadedRunD
   const detail = (await inspectRun(workdir, runId)) as InspectRunRecord;
   const runDir = resolveRunDir(workdir, runId);
   const systemSource = await readSystemSource(runDir);
+  const snapshotManifest = await readSnapshotManifest(runDir, systemSource);
   return {
     ...detail,
-    systemSource
+    systemSource,
+    snapshotManifest
   };
 }
 
@@ -788,6 +824,20 @@ async function handleApiProjectCreate(
   response: ServerResponse
 ): Promise<void> {
   const body = await readJsonRequest(request);
+  const requestId = asString(body.requestId)?.trim();
+  if (requestId && !/^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/.test(requestId)) {
+    throw new HttpError(400, "INVALID_PROJECT_CREATE_REQUEST_ID", "requestId must start with a letter or number and use only letters, numbers, dots, underscores, colons, or hyphens.");
+  }
+  if (requestId) {
+    const cached = state.projectCreateRequests.get(requestId);
+    if (cached) {
+      jsonResponse(response, 200, {
+        ...cached,
+        idempotentReplay: true
+      });
+      return;
+    }
+  }
   try {
     const created = await createProjectVisualization({
       currentWorkdir: state.workdir,
@@ -802,7 +852,7 @@ async function handleApiProjectCreate(
     state.workdir = createdWorkdir;
     invalidateAllProjectCaches(previousWorkdir);
     invalidateAllProjectCaches(createdWorkdir);
-    jsonResponse(response, 200, {
+    const payload = {
       ...created,
       followUpActions: [
         {
@@ -814,7 +864,11 @@ async function handleApiProjectCreate(
           label: "Open Build to continue visual authoring."
         }
       ]
-    });
+    };
+    if (requestId) {
+      state.projectCreateRequests.set(requestId, payload);
+    }
+    jsonResponse(response, 200, payload);
   } catch (error) {
     const code = asString((error as { code?: unknown })?.code) || (error instanceof Error ? error.message : "");
     const details = (error as { details?: unknown })?.details;
@@ -957,7 +1011,8 @@ async function handleApiRunDetail(workdir: string, runId: string, response: Serv
       stopRequest: detail.stopRequest,
       stopOutcome: detail.stopOutcome,
       summary: detail.summary,
-      systemSource: detail.systemSource
+      systemSource: detail.systemSource,
+      snapshotManifest: detail.snapshotManifest
     })
   );
 }
@@ -1731,7 +1786,8 @@ export async function startVisualizationServer(args: VisualizationServerOptions)
   port: number;
 }> {
   const state: VisualizationServerState = {
-    workdir: resolve(args.workdir)
+    workdir: resolve(args.workdir),
+    projectCreateRequests: new Map()
   };
   const server = createServer((request, response) => {
     void handleVisualizationRequest(request, response, state, args).catch((error) => {

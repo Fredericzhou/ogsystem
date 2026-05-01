@@ -399,6 +399,7 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
       projectCreateError: null,
       roleCatalog: null,
       project: null,
+      projectCreateRequestId: "",
       opsSummary: null,
       projectReadiness: null,
       consoleTab: "operate",
@@ -2130,6 +2131,15 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
       if (!state.hasProject) {
         const workspace = state.workspace || {};
         const conflict = workspace.state === "non-project-conflict";
+        const catalogRoles = Array.isArray(state.roleCatalog?.roles) ? state.roleCatalog.roles : [];
+        const roleOptions = catalogRoles.length
+          ? catalogRoles.slice(0, 12).map((role) => {
+              const roleId = role.roleId || "";
+              const checked = roleId === "demo-analyst" ? " checked" : "";
+              const imported = role.alreadyImported ? " · " + t("common.loaded", undefined, "loaded") : "";
+              return '<label class="event"><input type="checkbox" name="roleIds" value="' + escapeText(roleId) + '"' + checked + '><span><strong>' + escapeText(role.name || roleId) + '</strong><span class="hint">' + escapeText(roleId + imported) + '</span></span></label>';
+            }).join("")
+          : '<div class="hint">' + escapeText(t("projectWizard.roleCatalogEmpty", undefined, "Installed role catalog is unavailable.")) + '</div>';
         const error = state.projectCreateError
           ? '<div class="event"><div class="event-top"><span>' + escapeText(t("common.attention", undefined, "attention")) + '</span><span>' + escapeText(state.projectCreateError.code || "error") + '</span></div><strong>' + escapeText(state.projectCreateError.message || t("projectWizard.createFailed", undefined, "Project creation failed.")) + '</strong></div>'
           : "";
@@ -2142,6 +2152,8 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
           '<label><span>' + escapeText(t("projectWizard.projectName", undefined, "Project name")) + '</span><input name="projectName" value="' + escapeText(workspace.workdir ? String(workspace.workdir).split(/[\\\\/]/).filter(Boolean).pop() || "my-ogs-project" : "my-ogs-project") + '"></label>',
           '<label><span>' + escapeText(t("projectWizard.projectId", undefined, "Project id")) + '</span><input name="projectId" value="project.starter"></label>',
           '<label><span>' + escapeText(t("projectWizard.template", undefined, "Template")) + '</span><select name="templateId"><option value="empty">' + escapeText(t("projectWizard.template.empty", undefined, "Blank draft")) + '</option><option value="minimal">' + escapeText(t("projectWizard.template.minimal", undefined, "Minimal runnable")) + '</option><option value="software-dev">software-dev</option><option value="consultation">consultation</option></select></label>',
+          '<div class="event"><div class="event-top"><span>' + escapeText(t("projectWizard.roleCatalog", undefined, "Installed roles")) + '</span><span>' + escapeText(String(catalogRoles.length)) + '</span></div><strong>' + escapeText(t("projectWizard.roleCatalogTitle", undefined, "Import role packages after project creation")) + '</strong><div class="hint">' + escapeText(t("projectWizard.roleCatalogCreateHint", undefined, "Selected roles are imported through the controlled role import API after the project is created.")) + '</div></div>',
+          '<div class="structure-list">' + roleOptions + '</div>',
           conflict ? '<label><span>' + escapeText(t("projectWizard.conflictStrategy", undefined, "Conflict strategy")) + '</span><select name="conflictStrategy"><option value="reject">' + escapeText(t("projectWizard.chooseAnotherDirectory", undefined, "Choose another directory")) + '</option><option value="init-current">' + escapeText(t("projectWizard.initCurrentDirectory", undefined, "Initialize current directory")) + '</option></select></label>' : '<input type="hidden" name="conflictStrategy" value="init-current">',
           '<div class="toolbar-group"><button class="button primary" type="submit">' + escapeText(t("projectWizard.createProject", undefined, "Create project")) + '</button><button class="button subtle" type="button" id="project-wizard-load">' + escapeText(t("action.loadProject", undefined, "Load project")) + '</button></div>',
           '</form>'
@@ -3221,6 +3233,7 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
       state.workspace = await requestJson(API_PREFIX + "/workspace");
       state.hasProject = state.workspace?.hasProject === true;
       if (!state.hasProject) {
+        await loadRoleCatalog();
         state.project = null;
         state.opsSummary = null;
         state.projectReadiness = null;
@@ -3260,13 +3273,26 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
       renderProject();
     }
 
+    async function loadRoleCatalog() {
+      try {
+        state.roleCatalog = await requestJson(API_PREFIX + "/project/role-catalog");
+      } catch {
+        state.roleCatalog = { source: "installed", roles: [] };
+      }
+    }
+
     async function createProjectFromWizard(formData) {
+      const selectedRoleIds = typeof formData.getAll === "function"
+        ? formData.getAll("roleIds").map((value) => String(value || "")).filter(Boolean)
+        : [];
       const body = {
+        requestId: state.projectCreateRequestId || ("project-create-" + Date.now().toString(36) + "-" + Math.random().toString(36).slice(2)),
         projectName: String(formData.get("projectName") || ""),
         projectId: String(formData.get("projectId") || ""),
         templateId: String(formData.get("templateId") || "empty"),
         conflictStrategy: String(formData.get("conflictStrategy") || "reject")
       };
+      state.projectCreateRequestId = body.requestId;
       state.projectCreateError = null;
       await runAction("project:create", async () => {
         try {
@@ -3286,6 +3312,13 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
           renderProject();
           throw error;
         }
+        if (selectedRoleIds.length) {
+          await requestAction(API_PREFIX + "/project/roles/import", {
+            source: "installed",
+            roleIds: selectedRoleIds
+          });
+        }
+        state.projectCreateRequestId = "";
         state.projectCreateError = null;
         state.consoleTab = "build";
         state.workbenchView = "bridge";

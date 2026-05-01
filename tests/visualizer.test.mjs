@@ -1457,6 +1457,7 @@ test("visualizer server supports empty workspace project creation without implic
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({
+        requestId: "create-empty-once",
         projectId: "viz.empty.created",
         projectName: "Empty Created",
         templateId: "empty",
@@ -1477,6 +1478,22 @@ test("visualizer server supports empty workspace project creation without implic
     const systemSource = await readFile(path.resolve(workdir, "system.mmd"), "utf8");
     const parsed = parseSystemFromMermaidSource(systemSource);
     assert.equal(parsed.entryRoleId, "demo-analyst");
+
+    const createReplayResponse = await fetch(`${url}/api/v1/project/create`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        requestId: "create-empty-once",
+        projectId: "viz.empty.created",
+        projectName: "Empty Created",
+        templateId: "empty",
+        conflictStrategy: "init-current"
+      })
+    });
+    assert.equal(createReplayResponse.status, 200);
+    const createReplay = await createReplayResponse.json();
+    assert.equal(createReplay.idempotentReplay, true);
+    assert.equal(createReplay.projectId, "viz.empty.created");
 
     const workspaceAfterResponse = await fetch(`${url}/api/v1/workspace`);
     assert.equal(workspaceAfterResponse.status, 200);
@@ -1638,6 +1655,13 @@ test("visualizer server starts and resumes runs through lifecycle APIs", async (
     assert.equal(snapshotManifest.snapshotId, startedRun.runId);
     assert.equal(snapshotManifest.source.runArtifactSystemPath, "system.mmd");
     assert.match(snapshotManifest.source.sourceHash, /^[a-f0-9]{64}$/);
+
+    const runDetailResponse = await fetch(`${url}/api/v1/runs/${startedRun.runId}`);
+    assert.equal(runDetailResponse.status, 200);
+    const runDetail = await runDetailResponse.json();
+    assert.equal(runDetail.snapshotManifest.status, "ok");
+    assert.equal(runDetail.snapshotManifest.snapshotId, startedRun.runId);
+    assert.equal(runDetail.snapshotManifest.source.sourceHash, snapshotManifest.source.sourceHash);
 
     const reviewsResponse = await fetch(`${url}/api/v1/runs/${startedRun.runId}/reviews`);
     assert.equal(reviewsResponse.status, 200);
