@@ -1106,6 +1106,22 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
       }
       const formData = new FormData(form);
       const draft = ensureProjectWizardDraft(state.workspace || {});
+      const selectedRoleIds = new Set(draft.selectedRoleIds || []);
+      if (typeof formData.getAll === "function") {
+        const visibleRoleIds = [];
+        for (const input of projectWizardEl?.querySelectorAll('input[name="roleIds"]') || []) {
+          visibleRoleIds.push(String(input.value || input.getAttribute("value") || "").trim());
+        }
+        for (const roleId of visibleRoleIds) {
+          selectedRoleIds.delete(roleId);
+        }
+        for (const value of formData.getAll("roleIds")) {
+          const roleId = String(value || "").trim();
+          if (roleId) {
+            selectedRoleIds.add(roleId);
+          }
+        }
+      }
       Object.assign(draft, {
         workdir: String(formData.get("workdir") || ""),
         projectName: String(formData.get("projectName") || ""),
@@ -1116,11 +1132,27 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
         defaultProfileId: String(formData.get("defaultProfileId") || ""),
         defaultToolRef: String(formData.get("defaultToolRef") || ""),
         conflictStrategy: String(formData.get("conflictStrategy") || draft.conflictStrategy || "reject"),
-        selectedRoleIds: typeof formData.getAll === "function"
-          ? formData.getAll("roleIds").map((value) => String(value || "")).filter(Boolean)
-          : []
+        selectedRoleIds: Array.from(selectedRoleIds)
       });
       return draft;
+    }
+
+    function projectCreateErrorFromResponse(error) {
+      const code = error?.code || error?.errorCode || "";
+      const messageByCode = {
+        PROJECT_ALREADY_EXISTS: t("projectWizard.errorAlreadyExists", undefined, "This directory is already an OGSystem project. Load it instead."),
+        PROJECT_DIR_CONFLICT: t("projectWizard.errorDirectoryConflict", undefined, "This directory has existing files. Choose current-directory initialization, another directory, or load an existing project."),
+        PROJECT_FILE_CONFLICT: t("projectWizard.errorFileConflict", undefined, "This directory contains OGSystem-controlled files. Choose another directory or load the existing project."),
+        INVALID_PROJECT_ID: t("projectWizard.errorInvalidProjectId", undefined, "Use a project id with letters, numbers, dots, underscores, or hyphens."),
+        INVALID_PROJECT_NAME: t("projectWizard.errorInvalidProjectName", undefined, "Use a project name that starts with a letter or number."),
+        INVALID_PROJECT_TEMPLATE: t("projectWizard.errorInvalidTemplate", undefined, "Choose an available project template."),
+        INVALID_PROJECT_WORKDIR: t("projectWizard.errorInvalidWorkdir", undefined, "Choose an existing directory that can hold this project."),
+        INVALID_PROJECT_MODEL_DEFAULT: t("projectWizard.errorInvalidModelDefault", undefined, "Use a default model reference in provider/model format.")
+      };
+      return {
+        code,
+        message: messageByCode[code] || error?.message || t("projectWizard.createFailed", undefined, "Project creation failed.")
+      };
     }
 
     function renderFlash() {
@@ -1396,7 +1428,7 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
               if (refreshWorkdir !== (state.workspace?.workdir || "")) {
                 return;
               }
-              setFlash("error", "Studio Bridge refresh failed: " + (error.message || error));
+              setFlash("error", t("flash.studioBridgeRefreshFailed", { message: error.message || error }, "Studio Bridge refresh failed: {message}"));
             });
           }
           renderConsoleTabs();
@@ -1817,7 +1849,7 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
                 if (!state.hasProject || refreshWorkdir !== (state.workspace?.workdir || "")) {
                   return;
                 }
-                setFlash("error", "Studio Bridge refresh failed: " + (error.message || error));
+                setFlash("error", t("flash.studioBridgeRefreshFailed", { message: error.message || error }, "Studio Bridge refresh failed: {message}"));
               });
             }
           });
@@ -2228,7 +2260,7 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
             '</strong><div class="hint">' + escapeText(conflict ? t("projectWizard.directoryConflictHint", undefined, "Initialize the current directory only if the existing files belong with this project, or load another project.") : t("projectWizard.emptyDirectoryHint", undefined, "No files are written until you confirm project creation.")) + '</div></div>',
           error,
           '<form id="project-create-form" class="structure-list">',
-          '<label><span>' + escapeText(t("projectWizard.workdir", undefined, "Target directory")) + '</span><input name="workdir" value="' + escapeText(draft.workdir) + '"><span class="hint">' + escapeText(t("projectWizard.workdirHint", undefined, "Use the current visualizer directory or enter another existing directory.")) + '</span></label>',
+          '<label><span>' + escapeText(t("projectWizard.workdir", undefined, "Target directory")) + '</span><input name="workdir" value="' + escapeText(draft.workdir) + '"><span class="hint">' + escapeText(conflict ? t("projectWizard.workdirConflictHint", undefined, "This is the current visualizer directory and it already has files. Keep reject selected to choose another path or load an existing project.") : t("projectWizard.workdirHint", undefined, "Use the current visualizer directory or enter another existing directory.")) + '</span></label>',
           '<label><span>' + escapeText(t("projectWizard.projectName", undefined, "Project name")) + '</span><input name="projectName" value="' + escapeText(draft.projectName) + '"></label>',
           '<label><span>' + escapeText(t("projectWizard.projectId", undefined, "Project id")) + '</span><input name="projectId" value="' + escapeText(draft.projectId) + '"></label>',
           '<label><span>' + escapeText(t("projectWizard.template", undefined, "Template")) + '</span><select name="templateId"><option value="empty"' + (draft.templateId === "empty" ? " selected" : "") + '>' + escapeText(t("projectWizard.template.empty", undefined, "Blank draft")) + '</option><option value="minimal"' + (draft.templateId === "minimal" ? " selected" : "") + '>' + escapeText(t("projectWizard.template.minimal", undefined, "Minimal runnable")) + '</option><option value="software-dev"' + (draft.templateId === "software-dev" ? " selected" : "") + '>software-dev</option><option value="consultation"' + (draft.templateId === "consultation" ? " selected" : "") + '>consultation</option></select></label>',
@@ -2239,7 +2271,7 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
           '<div class="event"><div class="event-top"><span>' + escapeText(t("projectWizard.roleCatalog", undefined, "Installed roles")) + '</span><span>' + escapeText(String(catalogRoles.length)) + '</span></div><strong>' + escapeText(t("projectWizard.roleCatalogTitle", undefined, "Import role packages after project creation")) + '</strong><div class="hint">' + escapeText(t("projectWizard.roleCatalogCreateHint", undefined, "Selected roles are imported through the controlled role import API after the project is created.")) + '</div></div>',
           '<label><span>' + escapeText(t("projectWizard.roleCatalogSearch", undefined, "Search roles")) + '</span><input id="project-role-catalog-filter" value="' + escapeText(state.roleCatalogFilter) + '"><span class="hint">' + escapeText(t("projectWizard.roleCatalogSummary", { visible: String(visibleCatalogRoles.length), total: String(filteredCatalogRoles.length) }, "Showing " + String(visibleCatalogRoles.length) + " of " + String(filteredCatalogRoles.length))) + '</span></label>',
           '<div class="structure-list">' + roleOptions + '</div>',
-          conflict ? '<label><span>' + escapeText(t("projectWizard.conflictStrategy", undefined, "Conflict strategy")) + '</span><select name="conflictStrategy"><option value="reject"' + (draft.conflictStrategy !== "init-current" ? " selected" : "") + '>' + escapeText(t("projectWizard.chooseAnotherDirectory", undefined, "Choose another directory")) + '</option><option value="init-current"' + (draft.conflictStrategy === "init-current" ? " selected" : "") + '>' + escapeText(t("projectWizard.initCurrentDirectory", undefined, "Initialize current directory")) + '</option></select></label>' : '<input type="hidden" name="conflictStrategy" value="init-current">',
+          conflict ? '<label><span>' + escapeText(t("projectWizard.conflictStrategy", undefined, "Conflict strategy")) + '</span><select name="conflictStrategy"><option value="reject"' + (draft.conflictStrategy !== "init-current" ? " selected" : "") + '>' + escapeText(t("projectWizard.chooseAnotherDirectory", undefined, "Choose another directory")) + '</option><option value="init-current"' + (draft.conflictStrategy === "init-current" ? " selected" : "") + '>' + escapeText(t("projectWizard.initCurrentDirectory", undefined, "Initialize current directory")) + '</option></select><span class="hint">' + escapeText(t("projectWizard.conflictStrategyHint", undefined, "Reject keeps the existing files untouched; initialize current directory only when this path is intentionally the project root.")) + '</span></label>' : '<input type="hidden" name="conflictStrategy" value="init-current">',
           '<div class="toolbar-group"><button class="button primary" type="submit">' + escapeText(t("projectWizard.createProject", undefined, "Create project")) + '</button><button class="button subtle" type="button" id="project-wizard-load">' + escapeText(t("action.loadProject", undefined, "Load project")) + '</button></div>',
           '</form>'
         ].join("");
@@ -2906,14 +2938,14 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
         await refreshStudioBridge();
       }
       if (!state.studioBridge?.authoring) {
-        setFlash("error", "Studio Bridge cannot save a draft until Mermaid parses successfully.");
+        setFlash("error", t("studio.graph.saveDraftBlocked", undefined, "Studio Bridge cannot save a draft until Mermaid parses successfully."));
         return;
       }
       await runAction("studio:draft-save", async () => {
         const payload = await requestAction(\`\${API_PREFIX}/project/studio/authoring\`, {
           authoring: state.studioBridge.authoring
         });
-        setFlash("success", "Studio draft saved to " + relativeToWorkdir(payload.draftPath || ".ogs/studio/system.authoring.json") + ".");
+        setFlash("success", t("studio.graph.draftSaved", { path: relativeToWorkdir(payload.draftPath || ".ogs/studio/system.authoring.json") }, "Studio draft saved to {path}."));
       });
     }
 
@@ -2926,7 +2958,7 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
         await refreshStudioBridge();
       }
       if (!state.studioBridge?.authoring) {
-        setFlash("error", "Studio Bridge cannot generate Mermaid until the source parses successfully.");
+        setFlash("error", t("studio.graph.generateMmdBlocked", undefined, "Studio Bridge cannot generate Mermaid until the source parses successfully."));
         return false;
       }
       await runAction("studio:generate-mmd", async () => {
@@ -2945,7 +2977,7 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
         state.studioBridgeStale = true;
         persistDraftSource(state.workbenchSource !== state.workbenchDiskSource ? state.workbenchSource : "");
         renderWorkbench();
-        setFlash("success", "Generated deterministic Mermaid into the Workbench source view.");
+        setFlash("success", t("studio.graph.generatedWorkbenchSource", undefined, "Generated deterministic Mermaid into the Workbench source view."));
       });
       return true;
     }
@@ -2984,7 +3016,7 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
       state.workbenchValidationTimer = setTimeout(() => {
         void runWorkbenchValidation(false).catch((error) => {
           state.workbenchValidating = false;
-          setFlash("error", "Workbench validation failed: " + (error.message || error));
+          setFlash("error", t("workbench.validationFailed", { message: error.message || error }, "Workbench validation failed: {message}"));
           renderWorkbench({ preserveEditor: true });
         });
       }, 250);
@@ -3045,15 +3077,17 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
         await refreshProjectDiagnostics();
         setFlash(
           "success",
-          "Mermaid source saved to " + state.workbenchSavedPath + ". "
-            + (payload.followUpActions?.map((item) => item.label).join(" ") || "Consider project sync, sync-models, or a new run for verification.")
+          t("workbench.sourceSaved", {
+            path: state.workbenchSavedPath,
+            followUp: payload.followUpActions?.map((item) => item.label).join(" ") || t("workbench.sourceSavedFollowUpFallback", undefined, "Consider project sync, sync-models, or a new run for verification.")
+          }, "Mermaid source saved to {path}. {followUp}")
         );
       });
     }
 
     async function saveWorkbenchAs(saveAsPath) {
       if (!saveAsPath) {
-        setFlash("error", "A relative save path is required.");
+        setFlash("error", t("workbench.relativeSavePathRequired", undefined, "A relative save path is required."));
         return;
       }
       await runAction("workbench:save-as", async () => {
@@ -3084,8 +3118,10 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
         await refreshProjectDiagnostics();
         setFlash(
           "success",
-          "Mermaid source saved to " + state.workbenchSavedPath + ". "
-            + (payload.followUpActions?.map((item) => item.label).join(" ") || "Consider project sync, sync-models, or a new run for verification.")
+          t("workbench.sourceSaved", {
+            path: state.workbenchSavedPath,
+            followUp: payload.followUpActions?.map((item) => item.label).join(" ") || t("workbench.sourceSavedFollowUpFallback", undefined, "Consider project sync, sync-models, or a new run for verification.")
+          }, "Mermaid source saved to {path}. {followUp}")
         );
       });
     }
@@ -3124,7 +3160,7 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
 
     async function startRunFromWorkbench(args) {
       if (!args.input) {
-        setFlash("error", "Run input is required.");
+        setFlash("error", t("run.inputRequired", undefined, "Run input is required."));
         return;
       }
       const readinessBlockers = state.projectReadiness?.blockers || [];
@@ -3274,13 +3310,13 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
 
     async function rebindProject(target) {
       if (!target) {
-        setFlash("error", "Project workdir is required.");
+        setFlash("error", t("projectWizard.workdirRequired", undefined, "Project workdir is required."));
         return;
       }
       await runAction("project:load", async () => {
         const payload = await requestAction(\`\${API_PREFIX}/project/load\`, { workdir: target });
         closeActionForm();
-        setFlash("success", "Project rebound to " + payload.workdir + ".");
+        setFlash("success", t("projectWizard.projectRebound", { workdir: payload.workdir }, "Project rebound to {workdir}."));
         setSidebarOpen(false);
         await loadProject();
         await loadRuns();
@@ -3298,7 +3334,7 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
         state.runs = payload.runs || [];
         closeActionForm();
         renderRuns();
-        setFlash("success", "Runs index rebuilt.");
+        setFlash("success", t("runs.indexRebuilt", undefined, "Runs index rebuilt."));
       });
     }
 
@@ -3476,26 +3512,10 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
         try {
           await requestAction(API_PREFIX + "/project/create", body);
         } catch (error) {
-          const code = error?.code || error?.errorCode || "";
+          const { code, message } = projectCreateErrorFromResponse(error);
           state.projectCreateError = {
             code,
-            message: code === "PROJECT_ALREADY_EXISTS"
-              ? t("projectWizard.errorAlreadyExists", undefined, "This directory is already an OGSystem project. Load it instead.")
-              : code === "PROJECT_DIR_CONFLICT"
-                ? t("projectWizard.errorDirectoryConflict", undefined, "This directory has existing files. Choose current-directory initialization, another directory, or load an existing project.")
-                : code === "PROJECT_FILE_CONFLICT"
-                  ? t("projectWizard.errorFileConflict", undefined, "This directory contains OGSystem-controlled files. Choose another directory or load the existing project.")
-                  : code === "INVALID_PROJECT_ID"
-                    ? t("projectWizard.errorInvalidProjectId", undefined, "Use a project id with letters, numbers, dots, underscores, or hyphens.")
-                    : code === "INVALID_PROJECT_NAME"
-                      ? t("projectWizard.errorInvalidProjectName", undefined, "Use a project name that starts with a letter or number.")
-                      : code === "INVALID_PROJECT_TEMPLATE"
-                        ? t("projectWizard.errorInvalidTemplate", undefined, "Choose an available project template.")
-                        : code === "INVALID_PROJECT_WORKDIR"
-                          ? t("projectWizard.errorInvalidWorkdir", undefined, "Choose an existing directory that can hold this project.")
-                          : code === "INVALID_PROJECT_MODEL_DEFAULT"
-                            ? t("projectWizard.errorInvalidModelDefault", undefined, "Use a default model reference in provider/model format.")
-                            : error.message || t("projectWizard.createFailed", undefined, "Project creation failed.")
+            message
           };
           renderProject();
           throw error;
@@ -3506,20 +3526,24 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
         state.consoleTab = "build";
         state.workbenchView = "bridge";
         state.hasProject = true;
-        await loadProject();
-        await loadRuns();
-        renderConsoleTabs();
-        renderWorkbench();
         let postCreateWarning = "";
+        try {
+          await loadProject();
+          await loadRuns();
+          renderConsoleTabs();
+          renderWorkbench();
+        } catch (error) {
+          postCreateWarning = t("projectWizard.studioBridgeRefreshWarning", undefined, "Project was created, but the graph workspace needs a refresh. Use Build refresh if the graph is not visible.");
+        }
         if (selectedRoleIds.length) {
           try {
             await importProjectRoles(selectedRoleIds, { silent: true });
           } catch (error) {
             if (error?.roleImportFailed) {
               state.pendingRoleImportRetry = { roleIds: selectedRoleIds };
-              postCreateWarning = t("projectWizard.roleImportWarning", undefined, "Project was created, but selected roles could not be imported. Use Project to retry role import.");
+              postCreateWarning = postCreateWarning || t("projectWizard.roleImportWarning", undefined, "Project was created, but selected roles could not be imported. Use Project to retry role import.");
             } else {
-              postCreateWarning = t("projectWizard.postImportRefreshWarning", undefined, "Roles were imported, but project diagnostics need a refresh.");
+              postCreateWarning = postCreateWarning || t("projectWizard.postImportRefreshWarning", undefined, "Roles were imported, but project diagnostics need a refresh.");
             }
           }
         }
@@ -3527,15 +3551,19 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
           await refreshStudioBridge();
         } catch (error) {
           state.studioBridgeStale = true;
-          await loadWorkbench();
+          try {
+            await loadWorkbench();
+          } catch {
+            // keep the created project usable even if the bridge refresh is temporarily unavailable
+          }
           renderWorkbench();
           postCreateWarning = postCreateWarning || t("projectWizard.studioBridgeRefreshWarning", undefined, "Project was created, but the graph workspace needs a refresh. Use Build refresh if the graph is not visible.");
         }
-        if (postCreateWarning) {
-          setFlash("warning", postCreateWarning, state.pendingRoleImportRetry ? { action: "retry-role-import" } : undefined);
-        } else {
-          setFlash("success", t("projectWizard.createSuccess", undefined, "Project created. Continue in Build."));
-        }
+        setFlash(
+          postCreateWarning ? "warning" : "success",
+          postCreateWarning || t("projectWizard.createSuccess", undefined, "Project created. Continue in Build."),
+          state.pendingRoleImportRetry ? { action: "retry-role-import" } : undefined
+        );
       });
     }
 
@@ -3676,7 +3704,7 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
         state.failure = null;
         state.failureLoaded = true;
         if (!options?.suppressFlash) {
-          setFlash("error", "Failed to load failure triage: " + (error.message || error));
+          setFlash("error", t("failure.loadFailed", { message: error.message || error }, "Failed to load failure triage: {message}"));
         }
       }
       renderFailure();
@@ -3700,7 +3728,7 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
         state.resumeReadiness = null;
         state.resumeReadinessLoaded = true;
         if (!options?.suppressFlash) {
-          setFlash("error", "Failed to load resume readiness: " + (error.message || error));
+          setFlash("error", t("resume.readinessLoadFailed", { message: error.message || error }, "Failed to load resume readiness: {message}"));
         }
       }
       renderResumeDiagnostics();
@@ -3725,7 +3753,7 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
         renderResumeDiagnostics();
         renderDetail();
       } catch (error) {
-        setFlash("error", "Failed to load resume diagnostics: " + (error.message || error));
+        setFlash("error", t("resume.diagnosticsLoadFailed", { message: error.message || error }, "Failed to load resume diagnostics: {message}"));
       }
     }
 
@@ -3978,7 +4006,7 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
           await refreshSelectedReviewDetail(state.selectedRunId, { allowMissing: true });
         }
       } catch (error) {
-        setFlash("error", "Stream refresh failed: " + (error.message || error));
+        setFlash("error", t("stream.refreshFailed", { message: error.message || error }, "Stream refresh failed: {message}"));
       } finally {
         state.streamRefreshInFlight = false;
       }
@@ -4104,7 +4132,7 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
         } else {
           renderSelectedRun();
         }
-        setFlash("success", "Visualizer refreshed.");
+        setFlash("success", t("visualizer.refreshed", undefined, "Visualizer refreshed."));
       });
     });
 

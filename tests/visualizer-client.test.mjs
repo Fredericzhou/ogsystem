@@ -1673,7 +1673,33 @@ test("visualizer client creates a project from the empty workspace wizard", asyn
     state: "empty",
     entryCount: 0
   };
-  const harness = await createClientHarness({ workspace, readinessCanDryRun: true });
+  const roleCatalog = {
+    source: "installed",
+    roles: [
+      {
+        roleId: "demo-analyst",
+        name: "Demo Analyst",
+        source: "installed",
+        health: { status: "ok", issues: [] },
+        alreadyImported: false
+      },
+      {
+        roleId: "qa-reviewer",
+        name: "QA Reviewer",
+        source: "installed",
+        health: { status: "ok", issues: [] },
+        alreadyImported: false
+      },
+      ...Array.from({ length: 14 }, (_, index) => ({
+        roleId: `catalog-role-${index + 1}`,
+        name: `Catalog Role ${index + 1}`,
+        source: "installed",
+        health: { status: "ok", issues: [] },
+        alreadyImported: false
+      }))
+    ]
+  };
+  const harness = await createClientHarness({ workspace, readinessCanDryRun: true, roleCatalog });
 
   const projectId = [...harness.document.dynamicElements]
     .find((child) => child.attributes.name === "projectId");
@@ -1712,6 +1738,26 @@ test("visualizer client creates a project from the empty workspace wizard", asyn
     .find((child) => child.attributes.name === "roleIds" && child.attributes.value === "qa-reviewer");
   assert.ok(qaRole);
   qaRole.attributes.checked = "";
+  await roleFilter.input("");
+  await settle();
+  const demoRole = [...harness.document.dynamicElements]
+    .find((child) => child.attributes.name === "roleIds" && child.attributes.value === "demo-analyst");
+  assert.ok(demoRole);
+  demoRole.attributes.checked = "";
+  const catalogRole = [...harness.document.dynamicElements]
+    .find((child) => child.attributes.name === "roleIds" && child.attributes.value === "catalog-role-10");
+  assert.ok(catalogRole);
+  catalogRole.attributes.checked = "";
+  const refilteredRoleFilter = [...harness.document.dynamicElements]
+    .find((child) => child.attributes.id === "project-role-catalog-filter");
+  assert.ok(refilteredRoleFilter);
+  await refilteredRoleFilter.input("QA");
+  await settle();
+  assert.equal(
+    [...harness.document.dynamicElements]
+      .some((child) => child.attributes.name === "roleIds" && child.attributes.value === "demo-analyst"),
+    false
+  );
   const showMore = [...harness.document.dynamicElements]
     .find((child) => child.attributes.id === "project-role-show-more");
   if (showMore) {
@@ -1745,7 +1791,7 @@ test("visualizer client creates a project from the empty workspace wizard", asyn
   assert.equal(harness.backend.lastProjectCreateBody.modelProfileStrategy.mode, "visual-editor");
   assert.deepEqual(harness.backend.lastRoleImportBody, {
     source: "installed",
-    roleIds: ["qa-reviewer"]
+    roleIds: ["qa-reviewer", "demo-analyst", "catalog-role-10"]
   });
   assert.ok(harness.backend.fetchCalls.some((call) => call.path === "/api/v1/project"));
   assert.equal(harness.backend.fetchCalls.some((call) => call.path === "/api/v1/project/create"), true);
@@ -1818,6 +1864,7 @@ test("visualizer client shows stable project create conflict errors", async () =
 
   assert.equal(harness.backend.lastProjectCreateBody.conflictStrategy, "reject");
   assert.match(harness.document.getElementById("project-wizard").textContent, /existing files|Directory is not empty|current-directory/i);
+  assert.match(harness.document.getElementById("project-wizard").textContent, /existing files untouched|project root|another path/i);
   assert.equal(harness.document.getElementById("console-panel-build").hidden, true);
 });
 

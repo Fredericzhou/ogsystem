@@ -853,7 +853,7 @@ export async function createProjectVisualization(args: {
   modelProfileStrategy?: unknown;
 }): Promise<Record<string, unknown>> {
   const requestedWorkdir = asString(args.workdir)?.trim();
-  const targetWorkdir = resolve(requestedWorkdir || args.currentWorkdir);
+  const targetWorkdir = resolve(args.currentWorkdir, requestedWorkdir || ".");
   const templateId = normalizeProjectTemplateId(args.templateId);
   const projectId = assertProjectId(args.projectId);
   const projectName = assertProjectName(args.projectName) ?? projectId ?? basename(targetWorkdir);

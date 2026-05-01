@@ -1673,6 +1673,49 @@ test("visualizer server treats blank project create workdir as current workdir",
   }
 });
 
+test("visualizer server resolves relative project create workdir against the active workdir", async (t) => {
+  const workdir = await mkdtemp(path.join(os.tmpdir(), "ogsystem-visualizer-relative-workdir-"));
+  const targetWorkdir = path.resolve(workdir, "nested", "project");
+  await mkdir(targetWorkdir, { recursive: true });
+  let started;
+  try {
+    started = await startVisualizationServer({
+      workdir,
+      host: "127.0.0.1",
+      port: 0
+    });
+  } catch (error) {
+    const errorCode =
+      typeof error === "object" && error !== null && "code" in error ? error.code : undefined;
+    if (errorCode === "EPERM" || errorCode === "EACCES") {
+      t.skip(`visualizer listen unavailable in sandbox: ${errorCode}`);
+      return;
+    }
+    throw error;
+  }
+  const { server, url } = started;
+
+  try {
+    const createResponse = await fetch(`${url}/api/v1/project/create`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        requestId: "relative-workdir",
+        workdir: "nested/project",
+        projectId: "viz.relative.workdir",
+        projectName: "Relative Workdir",
+        templateId: "empty"
+      })
+    });
+    assert.equal(createResponse.status, 200);
+    const created = await createResponse.json();
+    assert.equal(created.workdir, targetWorkdir);
+    assert.equal(await readFile(path.resolve(targetWorkdir, ".ogs", "project.json"), "utf8").then(() => true), true);
+  } finally {
+    await new Promise((resolve) => server.close(resolve));
+  }
+});
+
 test("visualizer server rejects invalid default model references with a stable code", async (t) => {
   const workdir = await mkdtemp(path.join(os.tmpdir(), "ogsystem-visualizer-invalid-model-"));
   let started;
@@ -1711,6 +1754,69 @@ test("visualizer server rejects invalid default model references with a stable c
     });
     assert.equal(createResponse.status, 400);
     assert.equal((await createResponse.json()).error.code, "INVALID_PROJECT_MODEL_DEFAULT");
+  } finally {
+    await new Promise((resolve) => server.close(resolve));
+  }
+});
+
+test("visualizer server reports stable project create error codes for invalid inputs", async (t) => {
+  const workdir = await mkdtemp(path.join(os.tmpdir(), "ogsystem-visualizer-create-errors-"));
+  let started;
+  try {
+    started = await startVisualizationServer({
+      workdir,
+      host: "127.0.0.1",
+      port: 0
+    });
+  } catch (error) {
+    const errorCode =
+      typeof error === "object" && error !== null && "code" in error ? error.code : undefined;
+    if (errorCode === "EPERM" || errorCode === "EACCES") {
+      t.skip(`visualizer listen unavailable in sandbox: ${errorCode}`);
+      return;
+    }
+    throw error;
+  }
+  const { server, url } = started;
+
+  try {
+    const cases = [
+      {
+        body: { requestId: "bad request id", projectId: "viz.create.errors", templateId: "empty" },
+        status: 400,
+        code: "INVALID_PROJECT_CREATE_REQUEST_ID"
+      },
+      {
+        body: { requestId: "missing-workdir", workdir: path.resolve(workdir, "missing"), projectId: "viz.create.errors", templateId: "empty" },
+        status: 400,
+        code: "INVALID_PROJECT_WORKDIR"
+      },
+      {
+        body: { requestId: "bad-id", projectId: "bad id", templateId: "empty" },
+        status: 400,
+        code: "INVALID_PROJECT_ID"
+      },
+      {
+        body: { requestId: "bad-name", projectId: "viz.create.errors", projectName: "!", templateId: "empty" },
+        status: 400,
+        code: "INVALID_PROJECT_NAME"
+      },
+      {
+        body: { requestId: "bad-template", projectId: "viz.create.errors", templateId: "missing-template" },
+        status: 400,
+        code: "INVALID_PROJECT_TEMPLATE"
+      }
+    ];
+
+    for (const testCase of cases) {
+      const response = await fetch(`${url}/api/v1/project/create`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify(testCase.body)
+      });
+      assert.equal(response.status, testCase.status);
+      assert.equal((await response.json()).error.code, testCase.code);
+    }
   } finally {
     await new Promise((resolve) => server.close(resolve));
   }
