@@ -2866,7 +2866,7 @@ test("visualizer client opens Studio Bridge, saves an authoring draft, and dry-r
   assert.ok(harness.document.getElementById("workbench-body").querySelectorAll("[data-studio-bridge-list-mode]").length);
   assert.equal(harness.document.getElementById("workbench-body").querySelectorAll("[data-studio-bridge-fullscreen]").length, 0);
   assert.ok(harness.document.getElementById("build-validate"));
-  assert.ok(harness.document.getElementById("build-generate-mermaid"));
+  assert.equal(harness.document.getElementById("build-generate-mermaid"), null);
   assert.ok(harness.document.getElementById("build-save"));
   assert.ok(harness.document.getElementById("build-dry-run"));
   assert.match(harness.document.getElementById("workbench-tabs").textContent, /Edit/);
@@ -3091,7 +3091,8 @@ test("visualizer client sends chat-to-MMD context and applies a validated author
   await waitForCondition(() => /Chat draft applied/.test(harness.document.getElementById("flash").textContent));
 
   assert.match(harness.document.getElementById("flash").textContent, /Chat draft applied/);
-  assert.match(harness.document.getElementById("workbench-body").textContent, /qa-reviewer/);
+  assert.ok(latestEditableMount().authoring.roles["qa-reviewer"]);
+  assert.ok(latestEditableMount().canvas.nodes.some((node) => node.roleId === "qa-reviewer"));
   const sourceTab = harness.document.getElementById("workbench-view-tabs")
     .querySelectorAll("[data-workbench-view=\"source\"]")[0];
   assert.ok(sourceTab);

@@ -5,6 +5,10 @@ import path from "node:path";
 
 import { startVisualizationServer } from "../dist/visualizer/server.js";
 
+function cloneJson<T>(value: T): T {
+  return JSON.parse(JSON.stringify(value));
+}
+
 async function seedProject(workdir: string): Promise<void> {
   const repoRoot = process.cwd();
   await mkdir(path.resolve(workdir, ".ogs"), { recursive: true });
@@ -128,11 +132,12 @@ test("Studio Bridge renders and edits through the real graph workspace", async (
     await expect(page.locator('#studio-graph-root [data-studio-graph-action="reset-view"]')).toBeVisible();
     await expect(page.locator('#studio-graph-root [data-studio-graph-action="fullscreen"]')).toBeVisible();
     await expect(page.locator('#studio-graph-root [data-studio-graph-action="edit"]')).toBeVisible();
+    await expect(page.locator('#studio-graph-root [data-studio-graph-action="chat-generate"]')).toBeVisible();
     await expect(page.locator("#studio-bridge-generate")).toHaveCount(0);
     await expect(page.locator("[data-studio-bridge-fullscreen]")).toHaveCount(0);
     await expect(page.locator("#studio-bridge-save")).toHaveCount(0);
     await expect(page.locator("#build-validate")).toBeVisible();
-    await expect(page.locator("#build-generate-mermaid")).toBeVisible();
+    await expect(page.locator("#build-generate-mermaid")).toHaveCount(0);
     await expect(page.locator("#build-save")).toBeVisible();
     await expect(page.locator("#build-dry-run")).toBeVisible();
     await page.locator('#studio-graph-root [data-studio-graph-action="fullscreen"]').click();
@@ -214,6 +219,117 @@ test("Studio Bridge renders and edits through the real graph workspace", async (
     await expect(page.locator('[data-studio-flow-key="new-role:DONE:demo-analyst"]')).toHaveCount(0);
     await page.locator('#studio-graph-root [data-studio-graph-action="undo"]').click();
     await expect(page.locator('#studio-graph-root [data-cell-id="new-role"]')).toHaveCount(0);
+
+    await page.route("**/api/v1/project/studio/chat", async (route) => {
+      const request = route.request();
+      if (request.method() !== "POST") {
+        await route.fallback();
+        return;
+      }
+      const body = request.postDataJSON();
+      const nextAuthoring = cloneJson(body.authoring);
+      nextAuthoring.roles = {
+        ...(nextAuthoring.roles || {}),
+        "qa-reviewer": {
+          roleId: "qa-reviewer",
+          title: "QA Reviewer",
+          bindingKind: "profile",
+          profileRef: "profile.review"
+        }
+      };
+      nextAuthoring.flows = {
+        ...(nextAuthoring.flows || {}),
+        "2:demo-analyst:REVIEW:qa-reviewer": {
+          flowId: "2:demo-analyst:REVIEW:qa-reviewer",
+          fromRoleId: "demo-analyst",
+          toRoleId: "qa-reviewer",
+          eventType: "REVIEW"
+        }
+      };
+      nextAuthoring.layout = {
+        ...(nextAuthoring.layout || {}),
+        nodes: {
+          ...(nextAuthoring.layout?.nodes || {}),
+          "qa-reviewer": { x: 380, y: 120, width: 180, height: 84 }
+        }
+      };
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({
+          mode: "draft",
+          sessionId: "studio-chat-browser",
+          summary: "Generated review draft.",
+          questions: [],
+          assumptions: [],
+          warnings: [],
+          previewMermaid: [
+            "flowchart TD",
+            "%% system.id=viz.studio.graph",
+            "%% system.version=1.0.0",
+            "%% law.global=law.minimal.base",
+            "%% entry.role=demo-analyst",
+            "%% model.bind.demo-analyst=opencode/gpt-5.4",
+            "input -->|ENTER| analyst[Role:demo-analyst]",
+            "analyst[Role:demo-analyst] -->|REVIEW| reviewer[Role:qa-reviewer]",
+            "reviewer[Role:qa-reviewer] -->|DONE| output",
+            ""
+          ].join("\n"),
+          validation: { project: { ok: true, diagnostics: [] } },
+          authoringPatch: {
+            type: "replace-authoring",
+            source: "nl2mmd",
+            authoring: nextAuthoring,
+            canvas: {
+              version: 1,
+              nodes: [
+                { id: "demo-analyst", roleId: "demo-analyst", x: 120, y: 120, width: 180, height: 84 },
+                { id: "qa-reviewer", roleId: "qa-reviewer", x: 380, y: 120, width: 180, height: 84 }
+              ],
+              edges: [
+                {
+                  id: "2:demo-analyst:REVIEW:qa-reviewer",
+                  source: "demo-analyst",
+                  target: "qa-reviewer",
+                  label: "REVIEW",
+                  eventType: "REVIEW",
+                  runtimeOnlyErrorFlow: false,
+                  participatesInJoin: false
+                }
+              ]
+            }
+          },
+          actions: [{ id: "apply-authoring-patch", enabled: true }],
+          context: {
+            selectedRoleId: body.selectedRoleId,
+            selectedFlowKey: body.selectedFlowKey,
+            referencedRoles: ["qa-reviewer"],
+            unresolvedItems: []
+          }
+        })
+      });
+    });
+
+    await page.locator('#studio-graph-root [data-studio-graph-action="chat-generate"]').click();
+    await expect(page.locator(".studio-chat-panel.is-open")).toBeVisible();
+    await page.locator("#studio-chat-input").fill("Add a QA reviewer after the analyst.");
+    await page.locator("#studio-chat-send").click();
+    await expect(page.locator(".studio-chat-preview")).toContainText("qa-reviewer");
+    await expect(page.locator("#studio-chat-apply")).toBeEnabled();
+    await page.locator("#studio-chat-apply").click();
+    await expect(page.locator('#studio-graph-root [data-cell-id="qa-reviewer"]')).toBeVisible();
+    await expect.poll(async () => page.evaluate(() => {
+      const root = document.getElementById("studio-graph-root");
+      return Array.from(root?.querySelectorAll("[data-cell-id]") || []).map((element) =>
+        element.getAttribute("data-cell-id")
+      );
+    })).toContain("2:demo-analyst:REVIEW:qa-reviewer");
+    await page.locator('#studio-graph-root [data-studio-graph-action="undo"]').click();
+    await expect(page.locator('#studio-graph-root [data-cell-id="qa-reviewer"]')).toHaveCount(0);
+    await page.locator('#studio-graph-root [data-studio-graph-action="redo"]').click();
+    await expect(page.locator('#studio-graph-root [data-cell-id="qa-reviewer"]')).toBeVisible();
+    await page.locator('#studio-graph-root [data-studio-graph-action="undo"]').click();
+    await expect(page.locator('#studio-graph-root [data-cell-id="qa-reviewer"]')).toHaveCount(0);
 
     const roleNodeForDrag = page.locator('#studio-graph-root [data-cell-id="demo-analyst"]').first();
     const box = await roleNodeForDrag.boundingBox();

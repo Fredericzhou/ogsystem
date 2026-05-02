@@ -570,7 +570,6 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
     const sidebarOverlayEl = document.getElementById("sidebar-overlay");
     const sidebarToggleButton = document.getElementById("sidebar-toggle");
     const projectHomeButton = document.getElementById("project-home");
-    const projectLoadButton = document.getElementById("project-load");
     const projectExportButton = document.getElementById("project-export");
     const releaseExportButton = document.getElementById("release-export");
     const reindexButton = document.getElementById("reindex");
@@ -608,7 +607,6 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
       const textTargets = [
         [sidebarToggleButton, "hero.runs"],
         [projectHomeButton, "action.project"],
-        [projectLoadButton, "action.loadProject"],
         [projectExportButton, "action.exportProject"],
         [releaseExportButton, "action.exportProject"],
         [reindexButton, "action.reindex"],
@@ -1274,7 +1272,6 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
       const noProject = !state.hasProject;
       const stopDisabled = disabled || !canRequestStop();
       projectHomeButton.disabled = disabled;
-      if (projectLoadButton) projectLoadButton.disabled = disabled;
       projectExportButton.disabled = disabled || noProject;
       if (releaseExportButton) releaseExportButton.disabled = disabled || noProject;
       reindexButton.disabled = disabled || noProject;
@@ -1394,10 +1391,6 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
       }
       if (projectHomeButton) {
         projectHomeButton.hidden = isProject;
-      }
-      if (projectLoadButton) {
-        projectLoadButton.hidden = !isProject;
-        projectLoadButton.textContent = t("projectMenu.open", undefined, "Open Project");
       }
       if (projectExportButton) {
         projectExportButton.hidden = state.consoleTab !== "validate-release" || !state.hasProject;
@@ -2035,7 +2028,6 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
       }
       workbenchActionsEl.innerHTML = [
         '<button class="button" id="build-validate">' + escapeText(t("action.validate", undefined, "Validate")) + '</button>',
-        '<button class="button" id="build-generate-mermaid">' + escapeText(t("studio.generateMmd", undefined, "Generate MMD")) + '</button>',
         '<button class="button primary" id="build-save"' + (dirty ? "" : " disabled") + '>' + escapeText(t("action.save", undefined, "Save")) + '</button>',
         '<button class="button primary" id="build-dry-run">' + escapeText(t("studio.dryRun", undefined, "Dry run")) + '</button>'
       ].join("");
@@ -2180,12 +2172,6 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
         validateButton.addEventListener("click", async () => {
           await runWorkbenchValidation(true);
           await refreshStudioBridge();
-        });
-      }
-      const generateButton = document.getElementById("build-generate-mermaid");
-      if (generateButton) {
-        generateButton.addEventListener("click", async () => {
-          await generateMmdFromStudioBridge();
         });
       }
       const dryRunButton = document.getElementById("build-dry-run");
@@ -3458,8 +3444,9 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
         };
         state.studioBridgeLoaded = true;
         state.studioBridgeStale = false;
+        state.studioChatDialogOpen = false;
         persistDraftSource(state.workbenchSource !== state.workbenchDiskSource ? state.workbenchSource : "");
-        renderWorkbench({ preserveStudioGraphRoot: false });
+        renderWorkbench({ preserveStudioGraphRoot: true });
         renderProject();
         setFlash("success", t("studio.chat.applied", undefined, "Chat draft applied to Studio Bridge."));
       });
@@ -4689,15 +4676,6 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
         setSidebarOpen(false);
       });
     }
-
-      if (projectLoadButton) {
-        projectLoadButton.addEventListener("click", async () => {
-          state.projectMenuTab = "open";
-          selectProjectHome();
-          writeRouteToLocation();
-        });
-      }
-
     projectExportButton.addEventListener("click", async () => {
       await exportProject();
     });
