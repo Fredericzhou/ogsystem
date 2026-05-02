@@ -85,7 +85,11 @@ test("Studio Bridge renders and edits through the real graph workspace", async (
   try {
     await page.goto(started.url);
     await page.waitForFunction(() => Boolean((window as any).OGSVisualizerClient?.mountStudioX6Bridge));
-    await expect(page.locator("#workbench-status")).toContainText("validation ok");
+    await expect(page.locator("#console-panel-project")).toBeVisible();
+    await expect(page.locator("#selected-title")).toContainText("Project Overview");
+    await expect(page.locator("body")).not.toHaveClass(/show-run-sidebar/);
+    await expect(page.locator("#sidebar")).toBeHidden();
+    await expect(page.locator("#sidebar-toggle")).toBeHidden();
     await page.evaluate(() => {
       const client = (window as any).OGSVisualizerClient;
       const original = client.mountStudioX6Bridge;
@@ -96,6 +100,7 @@ test("Studio Bridge renders and edits through the real graph workspace", async (
       };
     });
     await page.getByRole("button", { name: "Build" }).click();
+    await expect(page.locator("#workbench-status")).toContainText("validation ok");
     await page.locator('[data-workbench-view="bridge"]').click();
 
     await expect(page.locator("body")).not.toHaveClass(/show-run-sidebar/);
@@ -266,7 +271,15 @@ test("empty workspace creates a project visually before graph editing", async ({
   test.info().annotations.push({ type: "server", description: started.url });
   try {
     await page.goto(started.url);
-    await page.locator('#console-tabs [data-console-tab="project"]').click();
+    await expect(page.locator("#console-panel-project")).toBeVisible();
+    await expect(page.locator("#selected-title")).toContainText("Project Overview");
+    await expect(page.locator("#project-wizard-load")).toHaveCount(0);
+    await expect(page.locator("#project-create-form")).toBeVisible();
+    await expect(page.locator('#project-create-form input[name="workdir"]')).toHaveAttribute("readonly", "readonly");
+    await expect(page.locator("#project-role-page-size")).toBeVisible();
+    await page.locator('[data-project-menu-tab="open"]').click();
+    await expect(page.locator("#project-open-form")).toBeVisible();
+    await page.locator('[data-project-menu-tab="new"]').click();
     await expect(page.locator("#project-create-form")).toBeVisible();
     await expect(page.locator("#project-summary")).toContainText(/not initialized|Start a new OGSystem project/i);
 

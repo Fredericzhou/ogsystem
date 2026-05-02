@@ -42,7 +42,6 @@ const PAGE_ELEMENT_IDS = [
   "operate-tabs",
   "project-summary",
   "project-wizard",
-  "project-wizard-load",
   "ops-summary",
   "project-readiness",
   "stats",
@@ -103,7 +102,7 @@ function parseAttributes(source) {
   for (const match of source.matchAll(matcher)) {
     attributes[match[1]] = match[3] ?? match[4] ?? "";
   }
-  for (const booleanName of ["checked", "disabled", "selected"]) {
+  for (const booleanName of ["checked", "disabled", "selected", "readonly"]) {
     if (new RegExp(`(^|\\s)${booleanName}(\\s|$)`).test(source)) {
       attributes[booleanName] = "";
     }
@@ -134,6 +133,12 @@ function matchesSelector(element, selector) {
   }
   if (selector === "[data-console-tab]") {
     return Object.hasOwn(element.attributes, "data-console-tab");
+  }
+  if (selector === "[data-project-menu-tab]") {
+    return Object.hasOwn(element.attributes, "data-project-menu-tab");
+  }
+  if (selector === "[data-project-open-recent]") {
+    return Object.hasOwn(element.attributes, "data-project-open-recent");
   }
   if (selector === "[data-studio-role-id]") {
     return Object.hasOwn(element.attributes, "data-studio-role-id");
@@ -1642,7 +1647,7 @@ async function createClientHarness(options = {}) {
   const windowObject = {
     location: {
       pathname: "/",
-      search: options.search ?? "",
+      search: options.search ?? "?runId=run-123",
       href: "/"
     },
     history: {
@@ -1804,7 +1809,7 @@ test("visualizer client route helpers round-trip query state", () => {
   });
   assert.equal(normalizeLifecycleView("build", ""), "build");
   assert.equal(normalizeLifecycleView("", "project"), "project");
-  assert.equal(normalizeLifecycleView("", ""), "operate");
+  assert.equal(normalizeLifecycleView("", ""), "project");
 });
 
 test("visualizer client release readiness decision gates every visible blocker category", () => {
@@ -1908,7 +1913,7 @@ test("visualizer client creates a project from the empty workspace wizard", asyn
       }))
     ]
   };
-  const harness = await createClientHarness({ workspace, readinessCanDryRun: true, roleCatalog });
+  const harness = await createClientHarness({ workspace, readinessCanDryRun: true, roleCatalog, search: "" });
 
   const projectId = [...harness.document.dynamicElements]
     .find((child) => child.attributes.name === "projectId");
@@ -1928,7 +1933,7 @@ test("visualizer client creates a project from the empty workspace wizard", asyn
   await projectId.input("project.empty.visual");
   await projectName.input("Empty visual");
   await template.change("minimal");
-  await workdir.input("/tmp/empty-project");
+  assert.equal(Object.hasOwn(workdir.attributes, "readonly"), true);
   await roleFilter.input("QA");
   await settle();
   assert.match(harness.document.getElementById("project-wizard").textContent, /Showing 1 of 1|显示 1 \/ 1/i);
@@ -1953,8 +1958,14 @@ test("visualizer client creates a project from the empty workspace wizard", asyn
     .find((child) => child.attributes.name === "roleIds" && child.attributes.value === "demo-analyst");
   assert.ok(demoRole);
   demoRole.attributes.checked = "";
+  const nextPage = [...harness.document.dynamicElements]
+    .find((child) => child.attributes.id === "project-role-next");
+  assert.ok(nextPage);
+  await nextPage.click();
+  await settle();
+  assert.match(harness.document.getElementById("project-wizard").textContent, /Page 2 of 2|第 2 \/ 2 页/i);
   const catalogRole = [...harness.document.dynamicElements]
-    .find((child) => child.attributes.name === "roleIds" && child.attributes.value === "catalog-role-10");
+    .find((child) => child.attributes.name === "roleIds" && child.attributes.value === "catalog-role-12");
   assert.ok(catalogRole);
   catalogRole.attributes.checked = "";
   const refilteredRoleFilter = [...harness.document.dynamicElements]
@@ -1962,20 +1973,15 @@ test("visualizer client creates a project from the empty workspace wizard", asyn
   assert.ok(refilteredRoleFilter);
   await refilteredRoleFilter.input("QA");
   await settle();
+  assert.match(harness.document.getElementById("project-wizard").textContent, /Selected roles|已选角色/i);
+  assert.match(harness.document.getElementById("project-wizard").textContent, /Demo Analyst/);
   assert.equal(
     [...harness.document.dynamicElements]
       .some((child) => child.attributes.name === "roleIds" && child.attributes.value === "demo-analyst"),
     false
   );
-  const showMore = [...harness.document.dynamicElements]
-    .find((child) => child.attributes.id === "project-role-show-more");
-  if (showMore) {
-    await showMore.click();
-    await settle();
-    const afterShowMoreProjectId = [...harness.document.dynamicElements]
-      .find((child) => child.attributes.name === "projectId");
-    assert.equal(afterShowMoreProjectId.value, "project.empty.visual");
-  }
+  assert.equal(harness.document.getElementById("project-role-show-more"), null);
+  assert.equal(harness.document.getElementById("project-wizard-load"), null);
 
   await harness.document.getElementById("project-create-form").dispatch("submit");
   await waitForCondition(() => harness.backend.fetchCalls.some((call) => call.path === "/api/v1/project/roles/import"));
@@ -2000,7 +2006,7 @@ test("visualizer client creates a project from the empty workspace wizard", asyn
   assert.equal(harness.backend.lastProjectCreateBody.modelProfileStrategy.mode, "visual-editor");
   assert.deepEqual(harness.backend.lastRoleImportBody, {
     source: "installed",
-    roleIds: ["qa-reviewer", "demo-analyst", "catalog-role-10"]
+    roleIds: ["qa-reviewer", "demo-analyst", "catalog-role-12"]
   });
   assert.ok(harness.backend.fetchCalls.some((call) => call.path === "/api/v1/project"));
   assert.equal(harness.backend.fetchCalls.some((call) => call.path === "/api/v1/project/create"), true);
@@ -2034,7 +2040,7 @@ test("visualizer client keeps created project usable when role import fails", as
     }
     return originalHandle(url, request);
   };
-  const harness = await createClientHarness({ backend });
+  const harness = await createClientHarness({ backend, search: "" });
   const demoRole = [...harness.document.dynamicElements]
     .find((child) => child.attributes.name === "roleIds" && child.attributes.value === "demo-analyst");
   assert.ok(demoRole);
@@ -2053,6 +2059,7 @@ test("visualizer client keeps created project usable when role import fails", as
 
 test("visualizer client shows stable project create conflict errors", async () => {
   const harness = await createClientHarness({
+    search: "",
     workspace: {
       workdir: "/tmp/conflict-project",
       exists: true,
@@ -2317,7 +2324,7 @@ test("visualizer client renders config explain panels and failure next checks", 
 });
 
 test("visualizer client switches lifecycle shell without unloading data and hides legacy fallback by default", async () => {
-  const harness = await createClientHarness();
+  const harness = await createClientHarness({ search: "" });
   const tabs = harness.document.getElementById("console-tabs").querySelectorAll("[data-console-tab]");
   const operateTab = tabs.find((button) => button.getAttribute("data-console-tab") === "operate");
   const buildTab = tabs.find((button) => button.getAttribute("data-console-tab") === "build");
@@ -2331,19 +2338,22 @@ test("visualizer client switches lifecycle shell without unloading data and hide
   assert.ok(validateTab);
   assert.ok(projectTab);
   assert.equal(legacyTab, undefined);
-  assert.equal(harness.document.getElementById("console-panel-debug").hidden, false);
-  assert.equal(harness.document.getElementById("console-panel-ops").hidden, false);
-  assert.equal(harness.document.body.classList.classes.has("show-operate-workspace"), true);
-  assert.equal(harness.document.body.classList.classes.has("operate-tab-overview"), true);
-  assert.match(harness.document.getElementById("operate-tabs").textContent, /Overview/);
-  assert.equal(harness.document.body.classList.classes.has("show-run-sidebar"), true);
-  assert.equal(harness.document.getElementById("sidebar-toggle").hidden, false);
+  assert.equal(harness.document.getElementById("console-panel-project").hidden, false);
+  assert.equal(harness.document.getElementById("console-panel-debug").hidden, true);
+  assert.equal(harness.document.getElementById("console-panel-ops").hidden, true);
+  assert.equal(harness.document.body.classList.classes.has("show-operate-workspace"), false);
+  assert.equal(harness.document.body.classList.classes.has("show-run-sidebar"), false);
+  assert.equal(harness.document.getElementById("sidebar-toggle").hidden, true);
+  assert.match(harness.document.getElementById("project-wizard").textContent, /Overview/);
 
   await operateTab.click();
   assert.equal(harness.document.getElementById("console-panel-debug").hidden, false);
   assert.equal(harness.document.getElementById("console-panel-ops").hidden, false);
   assert.equal(harness.document.getElementById("console-panel-logs").hidden, false);
   assert.equal(harness.document.getElementById("console-panel-artifacts").hidden, false);
+  assert.equal(harness.document.body.classList.classes.has("show-operate-workspace"), true);
+  assert.equal(harness.document.body.classList.classes.has("operate-tab-overview"), true);
+  assert.match(harness.document.getElementById("operate-tabs").textContent, /Overview/);
   assert.equal(harness.document.body.classList.classes.has("operate-tab-logs"), false);
   assert.equal(harness.document.body.classList.classes.has("operate-tab-artifacts"), false);
   assert.equal(harness.document.body.classList.classes.has("show-run-sidebar"), true);
@@ -3020,16 +3030,19 @@ test("visualizer client blocks chat-to-MMD apply when preview validation fails",
   assert.doesNotMatch(harness.document.getElementById("flash").textContent, /Chat draft applied/);
 });
 
-test("visualizer client loads projects and reindexes through inline forms", async () => {
+test("visualizer client opens projects through Project menu and reindexes through inline forms", async () => {
   const harness = await createClientHarness();
 
   const projectLoadButton = harness.document.getElementById("project-load");
   assert.ok(projectLoadButton);
   await projectLoadButton.click();
   await settle();
-  await harness.document.getElementById("action-project-workdir").input("/tmp/other-project");
-  await harness.document.getElementById("action-form-submit").click();
-  await settle();
+  assert.match(harness.document.getElementById("project-wizard").textContent, /Open Project/);
+  assert.equal(harness.document.getElementById("action-project-workdir"), null);
+  await harness.document.getElementById("project-open-workdir").input("/tmp/other-project");
+  await harness.document.getElementById("project-open-form").dispatch("submit");
+  await waitForCondition(() => /Project loaded/.test(harness.document.getElementById("flash").textContent));
+  await waitForCondition(() => /templates|role packages/i.test(harness.document.getElementById("project-wizard").textContent));
 
   assert.deepEqual(harness.backend.lastProjectLoadBody, { workdir: "/tmp/other-project" });
 

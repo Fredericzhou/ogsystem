@@ -643,6 +643,13 @@ export function renderPageHtml(workdir: string, apiPrefix: string, i18n: PageI18
       grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
       align-items: stretch;
     }
+    .project-menu {
+      grid-column: 1 / -1;
+      justify-content: flex-start;
+      width: max-content;
+      max-width: 100%;
+      overflow-x: auto;
+    }
     .studio-bridge-layout {
       display: grid;
       grid-template-columns: minmax(0, 1fr);
@@ -1108,9 +1115,6 @@ export function renderPageHtml(workdir: string, apiPrefix: string, i18n: PageI18
               <div class="header-copy">
                 <h3>${escapeHtml(t("section.projectWizard"))}</h3>
                 <div class="hint">${escapeHtml(t("projectWizard.subtitle"))}</div>
-              </div>
-              <div class="actions">
-                <button id="project-wizard-load" class="button primary">${escapeHtml(t("action.loadProject"))}</button>
               </div>
             </div>
           </header>

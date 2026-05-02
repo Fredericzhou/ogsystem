@@ -85,7 +85,7 @@ export function normalizeLifecycleView(lifecycle: string | undefined, legacyView
     case "legacy":
       return lifecycle;
     default:
-      return legacyView === "project" ? "project" : "operate";
+      return "project";
   }
 }
 
@@ -400,13 +400,16 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
       projectWizardDraft: null,
       roleCatalog: null,
       roleCatalogFilter: "",
-      roleCatalogExpanded: false,
+      roleCatalogPage: 0,
+      roleCatalogPageSize: 12,
       pendingRoleImportRetry: null,
+      projectMenuTab: "overview",
+      projectOpenDraft: "",
       project: null,
       projectCreateRequestId: "",
       opsSummary: null,
       projectReadiness: null,
-      consoleTab: "operate",
+      consoleTab: "project",
       legacyConsoleTab: "debug",
       workbench: null,
       buildMode: "edit",
@@ -554,7 +557,6 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
     const sidebarOverlayEl = document.getElementById("sidebar-overlay");
     const sidebarToggleButton = document.getElementById("sidebar-toggle");
     const projectHomeButton = document.getElementById("project-home");
-    const projectWizardLoadButton = document.getElementById("project-wizard-load");
     const projectLoadButton = document.getElementById("project-load");
     const projectExportButton = document.getElementById("project-export");
     const releaseExportButton = document.getElementById("release-export");
@@ -602,8 +604,7 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
         [stopRunButton, "action.requestStop"],
         [refreshButton, "action.refresh"],
         [timelineApplyButton, "action.applyFilters"],
-        [timelineClearButton, "action.clearFilters"],
-        [projectWizardLoadButton, "action.loadProject"]
+        [timelineClearButton, "action.clearFilters"]
       ];
       for (const [element, key] of textTargets) {
         if (element) {
@@ -641,6 +642,30 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
 
     function getCurrentWorkdir() {
       return state.project?.summary?.workdir || workdirEl?.textContent || "";
+    }
+
+    const RECENT_PROJECTS_KEY = "ogs.visualizer.recentProjects";
+
+    function readRecentProjects() {
+      try {
+        const parsed = JSON.parse(window.localStorage.getItem(RECENT_PROJECTS_KEY) || "[]");
+        return Array.isArray(parsed) ? parsed.filter(Boolean).map((item) => String(item)).slice(0, 6) : [];
+      } catch {
+        return [];
+      }
+    }
+
+    function rememberRecentProject(workdir) {
+      const target = String(workdir || "").trim();
+      if (!target) {
+        return;
+      }
+      try {
+        const recent = readRecentProjects().filter((item) => item !== target);
+        window.localStorage.setItem(RECENT_PROJECTS_KEY, JSON.stringify([target].concat(recent).slice(0, 6)));
+      } catch {
+        // best effort only
+      }
     }
 
     function relativeToWorkdir(path) {
@@ -1129,7 +1154,7 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
         }
       }
       Object.assign(draft, {
-        workdir: String(formData.get("workdir") || ""),
+        workdir: draft.workdir || state.workspace?.workdir || getCurrentWorkdir(),
         projectName: String(formData.get("projectName") || ""),
         projectId: String(formData.get("projectId") || ""),
         templateId: String(formData.get("templateId") || draft.templateId || "empty"),
@@ -1357,6 +1382,7 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
       }
       if (projectLoadButton) {
         projectLoadButton.hidden = !isProject;
+        projectLoadButton.textContent = t("projectMenu.open", undefined, "Open Project");
       }
       if (projectExportButton) {
         projectExportButton.hidden = state.consoleTab !== "validate-release" || !state.hasProject;
@@ -2244,12 +2270,6 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
           '<label class="field full"><span>' + escapeText(t("form.relativePath")) + '</span><input id="action-save-as-path" value="' + escapeText(form.fields.saveAsPath || "") + '"' + disabled + ' /></label>',
           '<div class="actions"><button id="action-form-cancel" class="button subtle"' + disabled + '>' + escapeText(t("action.cancel")) + '</button><button id="action-form-submit" class="button primary"' + disabled + '>' + escapeText(t("action.saveCopy")) + '</button></div>'
         ].join("");
-      } else if (form.kind === "projectLoad") {
-        actionFormEl.innerHTML = [
-          '<div class="event"><div class="event-top"><span>' + escapeText(t("form.projectLoad")) + '</span><span>' + escapeText(t("form.workspace")) + '</span></div><strong>' + escapeText(t("form.rebindVisualizer")) + '</strong><div class="hint">' + escapeText(t("form.projectLoadHint")) + '</div></div>',
-          '<label class="field full"><span>' + escapeText(t("form.projectWorkdir")) + '</span><input id="action-project-workdir" value="' + escapeText(form.fields.workdir || "") + '"' + disabled + ' /></label>',
-          '<div class="actions"><button id="action-form-cancel" class="button subtle"' + disabled + '>' + escapeText(t("action.cancel")) + '</button><button id="action-form-submit" class="button primary"' + disabled + '>' + escapeText(t("action.loadProject")) + '</button></div>'
-        ].join("");
       } else if (form.kind === "reindex") {
         actionFormEl.innerHTML = [
           '<div class="event"><div class="event-top"><span>' + escapeText(t("form.runsIndex")) + '</span><span>' + escapeText(t("form.maintenance")) + '</span></div><strong>' + escapeText(t("form.rebuildRunList")) + '</strong><div class="hint">' + escapeText(t("form.reindexHint")) + '</div></div>',
@@ -2425,38 +2445,85 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
       if (!projectWizardEl) {
         return;
       }
+      const workspace = state.workspace || {};
+      const defaultProjectTab = state.hasProject ? "overview" : "new";
+      const activeTab = ["overview", "new", "open", "recent", "settings"].includes(state.projectMenuTab)
+        ? state.projectMenuTab
+        : defaultProjectTab;
+      if (!state.hasProject && activeTab === "overview") {
+        state.projectMenuTab = "new";
+      }
+      const projectTab = !state.hasProject && activeTab === "overview" ? "new" : activeTab;
+      const menuItems = [
+        ["overview", t("projectMenu.overview", undefined, "Overview")],
+        ["new", t("projectMenu.new", undefined, "New Project")],
+        ["open", t("projectMenu.open", undefined, "Open Project")],
+        ["recent", t("projectMenu.recent", undefined, "Recent")],
+        ["settings", t("projectMenu.settings", undefined, "Settings")]
+      ];
+      const menuHtml = '<div class="project-menu segmented">' + menuItems.map(([id, label]) =>
+        '<button class="button subtle ' + (projectTab === id ? "active" : "") + '" type="button" data-project-menu-tab="' + escapeText(id) + '">' + escapeText(label) + '</button>'
+      ).join("") + '</div>';
+      const openDraft = state.projectOpenDraft || workspace.workdir || getCurrentWorkdir();
+      const recentProjects = readRecentProjects();
+      const openPanelHtml = [
+        '<form id="project-open-form" class="structure-list">',
+        '<div class="event"><div class="event-top"><span>' + escapeText(t("projectMenu.open", undefined, "Open Project")) + '</span><span>' + escapeText(t("form.workspace", undefined, "workspace")) + '</span></div><strong>' + escapeText(t("projectOpen.title", undefined, "Load an existing OGSystem project")) + '</strong><div class="hint">' + escapeText(t("projectOpen.hint", undefined, "Choose a project directory. The server validates the path before rebinding the visualizer.")) + '</div></div>',
+        '<label><span>' + escapeText(t("projectOpen.currentDirectory", undefined, "Current directory")) + '</span><code>' + escapeText(workspace.workdir || getCurrentWorkdir() || "n/a") + '</code></label>',
+        recentProjects.length
+          ? '<div class="structure-list">' + recentProjects.map((item) => '<button class="button subtle" type="button" data-project-open-recent="' + escapeText(item) + '">' + escapeText(relativeToWorkdir(item)) + '</button>').join("") + '</div>'
+          : '<div class="hint">' + escapeText(t("projectOpen.noRecent", undefined, "No recent projects yet.")) + '</div>',
+        '<label><span>' + escapeText(t("projectOpen.path", undefined, "Project directory")) + '</span><input id="project-open-workdir" name="workdir" value="' + escapeText(openDraft) + '"><span class="hint">' + escapeText(t("projectOpen.pathHint", undefined, "Use an absolute path or a server-visible project directory.")) + '</span></label>',
+        '<div class="toolbar-group"><button class="button primary" id="project-open-submit" type="submit">' + escapeText(t("projectOpen.load", undefined, "Open Project")) + '</button></div>',
+        '</form>'
+      ].join("");
+      const recentPanelHtml = [
+        '<div class="event"><div class="event-top"><span>' + escapeText(t("projectMenu.recent", undefined, "Recent")) + '</span><span>' + escapeText(String(recentProjects.length)) + '</span></div><strong>' + escapeText(t("projectOpen.recentTitle", undefined, "Recently opened projects")) + '</strong><div class="hint">' + escapeText(t("projectOpen.recentHint", undefined, "Recent projects are stored locally in this browser.")) + '</div></div>',
+        recentProjects.length
+          ? '<div class="structure-list">' + recentProjects.map((item) => '<button class="button subtle" type="button" data-project-open-recent="' + escapeText(item) + '">' + escapeText(item) + '</button>').join("") + '</div>'
+          : '<div class="hint">' + escapeText(t("projectOpen.noRecent", undefined, "No recent projects yet.")) + '</div>'
+      ].join("");
       if (!state.hasProject) {
-        const workspace = state.workspace || {};
         const draft = ensureProjectWizardDraft(workspace);
         const conflict = workspace.state === "non-project-conflict";
         const catalogRoles = Array.isArray(state.roleCatalog?.roles) ? state.roleCatalog.roles : [];
         const roleFilter = state.roleCatalogFilter.trim().toLowerCase();
         const filteredCatalogRoles = catalogRoles.filter((role) => {
           if (!roleFilter) return true;
-          return [role.roleId, role.name, role.summary, role.description]
+          return [role.roleId, role.name, role.summary, role.description, role.source, role.health?.status]
             .filter(Boolean)
             .some((item) => String(item).toLowerCase().includes(roleFilter));
         });
-        const visibleCatalogRoles = state.roleCatalogExpanded ? filteredCatalogRoles : filteredCatalogRoles.slice(0, 12);
-        const overflowCount = Math.max(0, filteredCatalogRoles.length - visibleCatalogRoles.length);
+        const pageSize = state.roleCatalogPageSize === 24 ? 24 : 12;
+        const pageCount = Math.max(1, Math.ceil(filteredCatalogRoles.length / pageSize));
+        state.roleCatalogPage = Math.min(Math.max(0, state.roleCatalogPage || 0), pageCount - 1);
+        const pageStart = state.roleCatalogPage * pageSize;
+        const visibleCatalogRoles = filteredCatalogRoles.slice(pageStart, pageStart + pageSize);
+        const selectedRoles = (draft.selectedRoleIds || [])
+          .map((roleId) => catalogRoles.find((role) => role.roleId === roleId) || { roleId })
+          .filter((role) => role.roleId);
         const roleOptions = catalogRoles.length
           ? visibleCatalogRoles.map((role) => {
               const roleId = role.roleId || "";
               const imported = role.alreadyImported ? " · " + t("common.loaded", undefined, "loaded") : "";
+              const health = role.health?.status ? " · " + displayUiToken(role.health.status, t) : "";
               const checked = draft.selectedRoleIds.includes(roleId) ? " checked" : "";
-              return '<label class="event"><input type="checkbox" name="roleIds" value="' + escapeText(roleId) + '"' + checked + '><span><strong>' + escapeText(role.name || roleId) + '</strong><span class="hint">' + escapeText(roleId + imported) + '</span></span></label>';
-            }).join("") + (overflowCount ? '<button class="button subtle" type="button" id="project-role-show-more">' + escapeText(t("projectWizard.roleCatalogShowMore", { count: String(overflowCount) }, "Show " + String(overflowCount) + " more")) + '</button>' : "")
+              return '<label class="event"><input type="checkbox" name="roleIds" value="' + escapeText(roleId) + '"' + checked + '><span><strong>' + escapeText(role.name || roleId) + '</strong><span class="hint">' + escapeText(roleId + imported + health) + '</span></span></label>';
+            }).join("")
           : '<div class="hint">' + escapeText(t("projectWizard.roleCatalogEmpty", undefined, "Installed role catalog is unavailable.")) + '</div>';
+        const selectedSummary = selectedRoles.length
+          ? selectedRoles.map((role) => role.name || role.roleId).join(", ")
+          : t("projectWizard.roleCatalogSelectedEmpty", undefined, "No roles selected.");
         const error = state.projectCreateError
           ? '<div class="event"><div class="event-top"><span>' + escapeText(t("common.attention", undefined, "attention")) + '</span><span>' + escapeText(state.projectCreateError.code || "error") + '</span></div><strong>' + escapeText(state.projectCreateError.message || t("projectWizard.createFailed", undefined, "Project creation failed.")) + '</strong></div>'
           : "";
-        projectWizardEl.innerHTML = [
+        const createPanelHtml = [
           '<div class="event"><div class="event-top"><span>' + escapeText(t("section.projectWizard", undefined, "Project Wizard")) + '</span><span>' + escapeText(conflict ? t("common.attention", undefined, "attention") : t("common.empty", undefined, "empty")) + '</span></div><strong>' +
             escapeText(conflict ? t("projectWizard.directoryConflictTitle", undefined, "Directory is not empty.") : t("projectWizard.emptyDirectoryTitle", undefined, "Start a new OGSystem project here.")) +
             '</strong><div class="hint">' + escapeText(conflict ? t("projectWizard.directoryConflictHint", undefined, "Initialize the current directory only if the existing files belong with this project, or load another project.") : t("projectWizard.emptyDirectoryHint", undefined, "No files are written until you confirm project creation.")) + '</div></div>',
           error,
           '<form id="project-create-form" class="structure-list">',
-          '<label><span>' + escapeText(t("projectWizard.workdir", undefined, "Target directory")) + '</span><input name="workdir" value="' + escapeText(draft.workdir) + '"><span class="hint">' + escapeText(conflict ? t("projectWizard.workdirConflictHint", undefined, "This is the current visualizer directory and it already has files. Keep reject selected to choose another path or load an existing project.") : t("projectWizard.workdirHint", undefined, "Use the current visualizer directory or enter another existing directory.")) + '</span></label>',
+          '<label><span>' + escapeText(t("projectWizard.workdir", undefined, "Target directory")) + '</span><input name="workdir" value="' + escapeText(draft.workdir) + '" readonly="readonly"><span class="hint">' + escapeText(conflict ? t("projectWizard.workdirConflictHint", undefined, "This is the current visualizer directory and it already has files. Use Open Project to change directories.") : t("projectWizard.workdirHint", undefined, "This is the current visualizer directory. Use Open Project to change directories.")) + '</span></label>',
           '<label><span>' + escapeText(t("projectWizard.projectName", undefined, "Project name")) + '</span><input name="projectName" value="' + escapeText(draft.projectName) + '"></label>',
           '<label><span>' + escapeText(t("projectWizard.projectId", undefined, "Project id")) + '</span><input name="projectId" value="' + escapeText(draft.projectId) + '"></label>',
           '<label><span>' + escapeText(t("projectWizard.template", undefined, "Template")) + '</span><select name="templateId"><option value="empty"' + (draft.templateId === "empty" ? " selected" : "") + '>' + escapeText(t("projectWizard.template.empty", undefined, "Blank draft")) + '</option><option value="minimal"' + (draft.templateId === "minimal" ? " selected" : "") + '>' + escapeText(t("projectWizard.template.minimal", undefined, "Minimal runnable")) + '</option><option value="software-dev"' + (draft.templateId === "software-dev" ? " selected" : "") + '>software-dev</option><option value="consultation"' + (draft.templateId === "consultation" ? " selected" : "") + '>consultation</option></select></label>',
@@ -2466,11 +2533,14 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
           '<label><span>' + escapeText(t("projectWizard.defaultToolRef", undefined, "Default tool")) + '</span><input name="defaultToolRef" value="' + escapeText(draft.defaultToolRef) + '"></label>',
           '<div class="event"><div class="event-top"><span>' + escapeText(t("projectWizard.roleCatalog", undefined, "Installed roles")) + '</span><span>' + escapeText(String(catalogRoles.length)) + '</span></div><strong>' + escapeText(t("projectWizard.roleCatalogTitle", undefined, "Import role packages after project creation")) + '</strong><div class="hint">' + escapeText(t("projectWizard.roleCatalogCreateHint", undefined, "Selected roles are imported through the controlled role import API after the project is created.")) + '</div></div>',
           '<label><span>' + escapeText(t("projectWizard.roleCatalogSearch", undefined, "Search roles")) + '</span><input id="project-role-catalog-filter" value="' + escapeText(state.roleCatalogFilter) + '"><span class="hint">' + escapeText(t("projectWizard.roleCatalogSummary", { visible: String(visibleCatalogRoles.length), total: String(filteredCatalogRoles.length) }, "Showing " + String(visibleCatalogRoles.length) + " of " + String(filteredCatalogRoles.length))) + '</span></label>',
+          '<div class="toolbar-row compact"><div class="toolbar-group"><label><span>' + escapeText(t("projectWizard.roleCatalogPageSize", undefined, "Page size")) + '</span><select id="project-role-page-size"><option value="12"' + (pageSize === 12 ? " selected" : "") + '>12</option><option value="24"' + (pageSize === 24 ? " selected" : "") + '>24</option></select></label></div><div class="toolbar-group"><button class="button subtle" type="button" id="project-role-prev"' + (state.roleCatalogPage <= 0 ? " disabled" : "") + '>' + escapeText(t("common.previous", undefined, "Previous")) + '</button><span class="hint">' + escapeText(t("projectWizard.roleCatalogPage", { page: String(state.roleCatalogPage + 1), pages: String(pageCount) }, "Page " + String(state.roleCatalogPage + 1) + " of " + String(pageCount))) + '</span><button class="button subtle" type="button" id="project-role-next"' + (state.roleCatalogPage >= pageCount - 1 ? " disabled" : "") + '>' + escapeText(t("common.next", undefined, "Next")) + '</button></div></div>',
+          '<div class="event"><div class="event-top"><span>' + escapeText(t("projectWizard.roleCatalogSelected", undefined, "Selected roles")) + '</span><span>' + escapeText(String(selectedRoles.length)) + '</span></div><strong>' + escapeText(selectedSummary) + '</strong></div>',
           '<div class="structure-list">' + roleOptions + '</div>',
-          conflict ? '<label><span>' + escapeText(t("projectWizard.conflictStrategy", undefined, "Conflict strategy")) + '</span><select name="conflictStrategy"><option value="reject"' + (draft.conflictStrategy !== "init-current" ? " selected" : "") + '>' + escapeText(t("projectWizard.chooseAnotherDirectory", undefined, "Choose another directory")) + '</option><option value="init-current"' + (draft.conflictStrategy === "init-current" ? " selected" : "") + '>' + escapeText(t("projectWizard.initCurrentDirectory", undefined, "Initialize current directory")) + '</option></select><span class="hint">' + escapeText(t("projectWizard.conflictStrategyHint", undefined, "Reject keeps the existing files untouched; initialize current directory only when this path is intentionally the project root.")) + '</span></label>' : '<input type="hidden" name="conflictStrategy" value="init-current">',
-          '<div class="toolbar-group"><button class="button primary" type="submit">' + escapeText(t("projectWizard.createProject", undefined, "Create project")) + '</button><button class="button subtle" type="button" id="project-wizard-load">' + escapeText(t("action.loadProject", undefined, "Load project")) + '</button></div>',
+          conflict ? '<label><span>' + escapeText(t("projectWizard.conflictStrategy", undefined, "Conflict strategy")) + '</span><select name="conflictStrategy"><option value="reject"' + (draft.conflictStrategy !== "init-current" ? " selected" : "") + '>' + escapeText(t("projectWizard.chooseAnotherDirectory", undefined, "Open Project instead")) + '</option><option value="init-current"' + (draft.conflictStrategy === "init-current" ? " selected" : "") + '>' + escapeText(t("projectWizard.initCurrentDirectory", undefined, "Initialize current directory")) + '</option></select><span class="hint">' + escapeText(t("projectWizard.conflictStrategyHint", undefined, "Reject keeps the existing files untouched; initialize current directory only when this path is intentionally the project root.")) + '</span></label>' : '<input type="hidden" name="conflictStrategy" value="init-current">',
+          '<div class="toolbar-group"><button class="button primary" type="submit">' + escapeText(t("projectWizard.createProject", undefined, "Create project")) + '</button></div>',
           '</form>'
         ].join("");
+        projectWizardEl.innerHTML = menuHtml + (projectTab === "open" ? openPanelHtml : projectTab === "recent" ? recentPanelHtml : createPanelHtml);
         const form = document.getElementById("project-create-form");
         if (form) {
           form.addEventListener("submit", (event) => {
@@ -2482,27 +2552,41 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
             input.addEventListener("change", () => updateProjectWizardDraftFromForm(form));
           }
         }
-        const load = document.getElementById("project-wizard-load");
-        if (load) {
-          load.addEventListener("click", () => openActionForm("projectLoad", { workdir: workspace.workdir || "" }));
-        }
         const roleFilterInput = document.getElementById("project-role-catalog-filter");
         if (roleFilterInput) {
           roleFilterInput.addEventListener("input", (event) => {
             updateProjectWizardDraftFromForm(form);
             state.roleCatalogFilter = event.target.value || "";
-            state.roleCatalogExpanded = false;
+            state.roleCatalogPage = 0;
             renderProjectWizard();
           });
         }
-        const showMoreButton = document.getElementById("project-role-show-more");
-        if (showMoreButton) {
-          showMoreButton.addEventListener("click", () => {
+        const pageSizeSelect = document.getElementById("project-role-page-size");
+        if (pageSizeSelect) {
+          pageSizeSelect.addEventListener("change", (event) => {
             updateProjectWizardDraftFromForm(form);
-            state.roleCatalogExpanded = true;
+            state.roleCatalogPageSize = event.target.value === "24" ? 24 : 12;
+            state.roleCatalogPage = 0;
             renderProjectWizard();
           });
         }
+        const previousButton = document.getElementById("project-role-prev");
+        if (previousButton) {
+          previousButton.addEventListener("click", () => {
+            updateProjectWizardDraftFromForm(form);
+            state.roleCatalogPage = Math.max(0, state.roleCatalogPage - 1);
+            renderProjectWizard();
+          });
+        }
+        const nextButton = document.getElementById("project-role-next");
+        if (nextButton) {
+          nextButton.addEventListener("click", () => {
+            updateProjectWizardDraftFromForm(form);
+            state.roleCatalogPage += 1;
+            renderProjectWizard();
+          });
+        }
+        bindProjectMenuControls();
         return;
       }
       const templates = Array.isArray(state.studioTemplates) ? state.studioTemplates : [];
@@ -2513,7 +2597,7 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
         || state.project?.summary?.project?.entryRoleId
         || roles[0]?.roleId
         || "n/a";
-      projectWizardEl.innerHTML = [
+      const overviewHtml = [
         '<div class="event"><div class="event-top"><span>' + escapeText(t("projectWizard.templates", undefined, "templates")) + '</span><span>' + escapeText(String(templates.length)) + '</span></div><strong>' +
           escapeText(templates.map((template) => template.title || template.id).join(", ") || t("common.none", undefined, "none")) +
           '</strong><div class="hint">' + escapeText(t("projectWizard.templatesHint", undefined, "Use a Studio template in Build to start graph authoring visually.")) + '</div></div>',
@@ -2527,6 +2611,46 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
           escapeText(t("projectWizard.entryRoleTitle", undefined, "Lifecycle starts from a visible entry role.")) +
           '</strong><div class="hint">' + escapeText(t("projectWizard.loadHint", undefined, "Create/import/load project is explicit; no background workspace writes happen from this panel.")) + '</div></div>'
       ].join("");
+      const newProjectUnavailableHtml = '<div class="event"><div class="event-top"><span>' + escapeText(t("projectMenu.new", undefined, "New Project")) + '</span><span>' + escapeText(t("common.loaded", undefined, "loaded")) + '</span></div><strong>' + escapeText(t("projectWizard.currentProjectLoaded", undefined, "A project is already loaded.")) + '</strong><div class="hint">' + escapeText(t("projectWizard.currentProjectLoadedHint", undefined, "Use Open Project to switch directories before creating another project.")) + '</div></div>';
+      const settingsHtml = '<div class="event"><div class="event-top"><span>' + escapeText(t("projectMenu.settings", undefined, "Settings")) + '</span><span>' + escapeText(t("common.loaded", undefined, "loaded")) + '</span></div><strong>' + escapeText(t("projectWizard.settingsTitle", undefined, "Project settings are edited in Build inspectors.")) + '</strong><div class="hint">' + escapeText(t("projectWizard.settingsHint", undefined, "Model references, profiles, role package bindings, and graph structure stay in the visual Build workflow.")) + '</div></div>';
+      projectWizardEl.innerHTML = menuHtml + (
+        projectTab === "open" ? openPanelHtml :
+        projectTab === "recent" ? recentPanelHtml :
+        projectTab === "new" ? newProjectUnavailableHtml :
+        projectTab === "settings" ? settingsHtml :
+        overviewHtml
+      );
+      bindProjectMenuControls();
+    }
+
+    function bindProjectMenuControls() {
+      for (const button of projectWizardEl.querySelectorAll("[data-project-menu-tab]")) {
+        button.addEventListener("click", () => {
+          state.projectMenuTab = button.getAttribute("data-project-menu-tab") || "overview";
+          renderProjectWizard();
+        });
+      }
+      const openInput = document.getElementById("project-open-workdir");
+      if (openInput) {
+        openInput.addEventListener("input", (event) => {
+          state.projectOpenDraft = event.target.value || "";
+        });
+      }
+      const openForm = document.getElementById("project-open-form");
+      if (openForm) {
+        openForm.addEventListener("submit", (event) => {
+          event.preventDefault();
+          const target = document.getElementById("project-open-workdir")?.value || state.projectOpenDraft || "";
+          void rebindProject(String(target).trim());
+        });
+      }
+      for (const button of projectWizardEl.querySelectorAll("[data-project-open-recent]")) {
+        button.addEventListener("click", () => {
+          const target = button.getAttribute("data-project-open-recent") || "";
+          state.projectOpenDraft = target;
+          void rebindProject(target);
+        });
+      }
     }
 
     function renderStats(header, graphPayload) {
@@ -3571,14 +3695,6 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
         await saveWorkbenchAs(payload.saveAsPath);
         return;
       }
-      if (form.kind === "projectLoad") {
-        const payload = {
-          workdir: readActionFieldValue("action-project-workdir")
-        };
-        state.actionForm.fields = Object.assign({}, form.fields, payload);
-        await rebindProject(payload.workdir);
-        return;
-      }
       if (form.kind === "reindex") {
         await reindexRuns();
       }
@@ -3586,13 +3702,16 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
 
     async function rebindProject(target) {
       if (!target) {
-        setFlash("error", t("projectWizard.workdirRequired", undefined, "Project workdir is required."));
+        setFlash("error", t("projectOpen.workdirRequired", undefined, "Choose a project directory before loading."));
         return;
       }
       await runAction("project:load", async () => {
         const payload = await requestAction(\`\${API_PREFIX}/project/load\`, { workdir: target });
+        rememberRecentProject(payload.workdir || target);
+        state.projectOpenDraft = payload.workdir || target;
+        state.projectMenuTab = "overview";
         closeActionForm();
-        setFlash("success", t("projectWizard.projectRebound", { workdir: payload.workdir }, "Project rebound to {workdir}."));
+        setFlash("success", t("projectOpen.projectLoaded", { workdir: payload.workdir }, "Project loaded from {workdir}."));
         setSidebarOpen(false);
         await loadProject();
         await loadRuns();
@@ -4133,6 +4252,7 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
       state.logsStale = false;
       closeActionForm();
       syncTimelineFilterInputs();
+      renderProject();
       renderSelectedRun();
       renderConsoleTabs();
       renderRuns();
@@ -4341,17 +4461,9 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
     }
 
     projectLoadButton.addEventListener("click", async () => {
-      openActionForm("projectLoad", {
-        workdir: getCurrentWorkdir()
-      });
+      state.projectMenuTab = "open";
+      selectProjectHome();
     });
-    if (projectWizardLoadButton) {
-      projectWizardLoadButton.addEventListener("click", async () => {
-        openActionForm("projectLoad", {
-          workdir: getCurrentWorkdir()
-        });
-      });
-    }
 
     projectExportButton.addEventListener("click", async () => {
       await exportProject();
@@ -4494,6 +4606,9 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
 
     const initialRoute = readRouteStateFromSearch(window.location.search);
     state.consoleTab = normalizeLifecycleView(initialRoute.lifecycle, initialRoute.view);
+    if (!initialRoute.lifecycle && (initialRoute.runId || initialRoute.reviewId || initialRoute.logRoleId || initialRoute.tail || initialRoute.since)) {
+      state.consoleTab = "operate";
+    }
     state.projectHome = state.consoleTab === "project" || initialRoute.view === "project";
     renderConsoleTabs();
     state.selectedRunId = initialRoute.runId;
