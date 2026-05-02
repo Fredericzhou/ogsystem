@@ -7,9 +7,11 @@
  * - Read-mostly; mutations are limited to lifecycle/control-plane entrypoints.
  */
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
+import { constants } from "node:fs";
+import { access } from "node:fs/promises";
 import { readdir, readFile, stat, writeFile } from "node:fs/promises";
 import { createHash } from "node:crypto";
-import { dirname, resolve, sep } from "node:path";
+import { basename, dirname, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { runSystemWithAdapter } from "../runtime/adapter.js";
@@ -179,6 +181,26 @@ const STATIC_ASSET_ROUTES = new Map<string, { filePath: string; contentType: str
   ]
 ]);
 const runsListCache = new Map<string, RunsListCacheEntry>();
+const PROJECT_OPEN_RECENT_LIMIT = 8;
+const PROJECT_OPEN_CHILD_LIMIT = 200;
+const PROJECT_CONTROLLED_PATHS = [
+  ".ogs",
+  "og-roles",
+  "system.mmd",
+  "system.example.mmd",
+  "profiles.json",
+  "tools.json",
+  ".ogs/project.json",
+  ".ogs/runtime.json",
+  ".ogs/model-catalog.json",
+  ".ogs/model-selection.json",
+  ".ogs/laws.json",
+  ".ogs/user-profile.json",
+  ".ogs/runs-index.json",
+  ".ogs/providers/opencode.json",
+  ".ogs/README.md",
+  ".ogs/studio/system.authoring.json"
+];
 
 function jsonResponse(
   response: ServerResponse,
@@ -438,6 +460,152 @@ function resolveRuntimePathWithinProject(workdir: string, inputPath: string, lab
     });
   }
   return resolvedPath;
+}
+
+function resolveProjectOpenWorkdir(activeWorkdir: string, inputWorkdir: string | undefined): string {
+  const requestedWorkdir = inputWorkdir?.trim();
+  return resolve(activeWorkdir, requestedWorkdir || ".");
+}
+
+async function canReadDirectory(path: string): Promise<boolean> {
+  try {
+    await access(path, constants.R_OK);
+    const pathStat = await stat(path);
+    return pathStat.isDirectory();
+  } catch {
+    return false;
+  }
+}
+
+async function inspectProjectOpenTarget(workdir: string): Promise<{
+  workdir: string;
+  exists: boolean;
+  readable: boolean;
+  isProject: boolean;
+  isEmpty: boolean;
+  hasConflict: boolean;
+  message: string;
+  conflicts: string[];
+}> {
+  const targetStat = await stat(workdir).catch(() => undefined);
+  const exists = Boolean(targetStat);
+  const readable = exists ? await canReadDirectory(workdir) : false;
+  const isDirectory = targetStat?.isDirectory() === true;
+  const isProject =
+    isDirectory &&
+    (await stat(resolve(workdir, "system.mmd")).catch(() => undefined))?.isFile() === true &&
+    (await stat(resolve(workdir, ".ogs", "project.json")).catch(() => undefined))?.isFile() === true;
+  const entries = readable ? await readdir(workdir, { withFileTypes: true }).catch(() => []) : [];
+  const visibleEntries = entries.filter((entry) => entry.name !== ".DS_Store");
+  const isEmpty = isDirectory && visibleEntries.length === 0;
+  const conflicts = [];
+  if (isDirectory && !isProject && !isEmpty) {
+    for (const relativePath of PROJECT_CONTROLLED_PATHS) {
+      if (await stat(resolve(workdir, relativePath)).catch(() => undefined)) {
+        conflicts.push(relativePath);
+      }
+    }
+  }
+  const hasConflict = isDirectory && !isProject && !isEmpty;
+  let message: string;
+  if (!exists) {
+    message = "Path does not exist.";
+  } else if (!isDirectory) {
+    message = "Path is not a directory.";
+  } else if (!readable) {
+    message = "Directory is not readable.";
+  } else if (isProject) {
+    message = "OGSystem project is ready to open.";
+  } else if (isEmpty) {
+    message = "Directory is empty and can be initialized as a project.";
+  } else {
+    message = conflicts.length
+      ? "Directory contains OGSystem-controlled paths but is not a complete project."
+      : "Directory is not empty and is not an OGSystem project.";
+  }
+  return {
+    workdir,
+    exists,
+    readable,
+    isProject,
+    isEmpty,
+    hasConflict,
+    message,
+    conflicts
+  };
+}
+
+async function handleApiProjectBrowse(
+  state: VisualizationServerState,
+  url: URL,
+  response: ServerResponse
+): Promise<void> {
+  const workdir = resolveProjectOpenWorkdir(state.workdir, url.searchParams.get("workdir") ?? undefined);
+  const target = await inspectProjectOpenTarget(workdir);
+  if (!target.exists || !target.readable) {
+    jsonResponse(response, 200, {
+      ...target,
+      parent: dirname(workdir),
+      children: {
+        directories: [],
+        files: []
+      },
+      recent: []
+    });
+    return;
+  }
+  const entries = await readdir(workdir, { withFileTypes: true });
+  const childRecords = entries
+    .filter((entry) => entry.name !== ".DS_Store")
+    .map((entry) => ({
+      name: entry.name,
+      path: resolve(workdir, entry.name),
+      kind: entry.isDirectory() ? "directory" : entry.isFile() ? "file" : "other"
+    }))
+    .sort((left, right) => left.name.localeCompare(right.name));
+  const directories = childRecords
+    .filter((entry) => entry.kind === "directory")
+    .slice(0, PROJECT_OPEN_CHILD_LIMIT)
+    .map((entry) => ({ name: entry.name, path: entry.path }));
+  const files = childRecords
+    .filter((entry) => entry.kind === "file")
+    .slice(0, PROJECT_OPEN_CHILD_LIMIT)
+    .map((entry) => ({ name: entry.name, path: entry.path }));
+  const recent = (
+    await Promise.all(
+      directories.map(async (entry) => ({
+        ...entry,
+        ...(await inspectProjectOpenTarget(entry.path))
+      }))
+    )
+  )
+    .filter((entry) => entry.isProject)
+    .slice(0, PROJECT_OPEN_RECENT_LIMIT)
+    .map((entry) => ({ name: entry.name, workdir: entry.path }));
+  jsonResponse(response, 200, {
+    ...target,
+    parent: dirname(workdir),
+    children: {
+      directories,
+      files
+    },
+    recent
+  });
+}
+
+async function handleApiProjectValidateOpen(
+  state: VisualizationServerState,
+  request: IncomingMessage,
+  response: ServerResponse
+): Promise<void> {
+  const body = await readJsonRequest(request);
+  const workdir = resolveProjectOpenWorkdir(state.workdir, asString(body.workdir));
+  const target = await inspectProjectOpenTarget(workdir);
+  jsonResponse(response, 200, {
+    ...target,
+    parent: dirname(workdir),
+    name: basename(workdir)
+  });
 }
 
 function summarizeAdapterResult(result: unknown): Record<string, unknown> {
@@ -1616,9 +1784,21 @@ async function handleVisualizationRequest(
     await handleApiProjectCreate(state, request, response);
     return;
   }
+  if (segments.length === 4 && segments[2] === "project" && segments[3] === "browse" && method === "GET") {
+    await handleApiProjectBrowse(state, url, response);
+    return;
+  }
+  if (segments.length === 4 && segments[2] === "project" && segments[3] === "validate-open" && method === "POST") {
+    await handleApiProjectValidateOpen(state, request, response);
+    return;
+  }
   const isProjectEndpoint = segments[2] === "project";
   const isProjectLoadEndpoint =
     segments.length === 4 && segments[2] === "project" && segments[3] === "load" && method === "POST";
+  const isProjectBrowseEndpoint =
+    segments.length === 4 && segments[2] === "project" && segments[3] === "browse" && method === "GET";
+  const isProjectValidateOpenEndpoint =
+    segments.length === 4 && segments[2] === "project" && segments[3] === "validate-open" && method === "POST";
   const isProjectStudioTemplatesEndpoint =
     segments.length === 5 &&
     segments[2] === "project" &&
@@ -1630,7 +1810,14 @@ async function handleVisualizationRequest(
     segments[2] === "project" &&
     segments[3] === "role-catalog" &&
     method === "GET";
-  if (isProjectEndpoint && !isProjectLoadEndpoint && !isProjectStudioTemplatesEndpoint && !isProjectRoleCatalogEndpoint) {
+  if (
+    isProjectEndpoint &&
+    !isProjectLoadEndpoint &&
+    !isProjectBrowseEndpoint &&
+    !isProjectValidateOpenEndpoint &&
+    !isProjectStudioTemplatesEndpoint &&
+    !isProjectRoleCatalogEndpoint
+  ) {
     await assertInitializedProject(state.workdir);
   }
   if (segments.length === 3 && segments[2] === "project" && method === "GET") {

@@ -36,6 +36,7 @@ import { getDictionary, type Dictionary, type Locale } from "./i18n/index.js";
 type RouteState = {
   view: string;
   lifecycle: string;
+  projectTab: string;
   runId: string;
   reviewId: string;
   logRoleId: string;
@@ -68,6 +69,7 @@ export function readRouteStateFromSearch(search: string): RouteState {
   return {
     view: params.get("view") || "",
     lifecycle: params.get("lifecycle") || "",
+    projectTab: params.get("projectTab") || "",
     runId: params.get("runId") || "",
     reviewId: params.get("reviewId") || "",
     logRoleId: params.get("logRoleId") || "",
@@ -91,6 +93,7 @@ export function normalizeLifecycleView(lifecycle: string | undefined, legacyView
 
 export function buildRouteSearch(args: {
   lifecycle?: string;
+  projectTab?: string;
   projectHome: boolean;
   selectedRunId: string;
   selectedReviewId: string;
@@ -105,6 +108,9 @@ export function buildRouteSearch(args: {
   }
   if (args.projectHome && !args.selectedRunId) {
     params.set("view", "project");
+  }
+  if (lifecycle === "project" && args.projectTab && args.projectTab !== "overview") {
+    params.set("projectTab", args.projectTab);
   }
   if (args.selectedRunId) {
     params.set("runId", args.selectedRunId);
@@ -405,6 +411,10 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
       pendingRoleImportRetry: null,
       projectMenuTab: "overview",
       projectOpenDraft: "",
+      projectOpenBrowse: null,
+      projectOpenValidation: null,
+      projectOpenLoading: false,
+      projectOpenError: "",
       project: null,
       projectCreateRequestId: "",
       opsSummary: null,
@@ -438,6 +448,9 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
       studioChatLastRequest: "",
       studioChatResult: null,
       studioChatCollapsed: false,
+      studioChatDialogOpen: false,
+      studioGraphHistoryEventId: 0,
+      studioGraphHistoryEvent: null,
       studioTemplates: [],
       runGraphSelectedRoleId: "",
       runGraphSelectedFlowKey: "",
@@ -781,6 +794,7 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
       const params = new URLSearchParams(buildRouteSearch({
         projectHome: state.projectHome,
         lifecycle: state.consoleTab,
+        projectTab: state.projectMenuTab,
         selectedRunId: state.selectedRunId,
         selectedReviewId: state.selectedReviewId,
         selectedLogRoleId: state.selectedLogRoleId,
@@ -863,6 +877,7 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
           : t("action.fullscreen", undefined, "Fullscreen"),
         fitView: t("studio.graph.fitView", undefined, "Fit view"),
         autoLayout: t("studio.graph.autoLayout", undefined, "Auto layout"),
+        generate: t("studio.graph.generate", undefined, "Chat / Generate"),
         addRole: t("studio.graph.addRole", undefined, "Role"),
         addEdge: t("studio.graph.addEdge", undefined, "Edge"),
         editSelection: t("studio.graph.editSelection", undefined, "Edit selected"),
@@ -1259,7 +1274,7 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
       const noProject = !state.hasProject;
       const stopDisabled = disabled || !canRequestStop();
       projectHomeButton.disabled = disabled;
-      projectLoadButton.disabled = disabled;
+      if (projectLoadButton) projectLoadButton.disabled = disabled;
       projectExportButton.disabled = disabled || noProject;
       if (releaseExportButton) releaseExportButton.disabled = disabled || noProject;
       reindexButton.disabled = disabled || noProject;
@@ -1727,7 +1742,7 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
           ? '<div class="hint">' + escapeText(validationOk ? t("studio.chat.validationOk", undefined, "Preview validation passed.") : t("studio.chat.validationPending", undefined, "Preview validation is pending.")) + '</div>'
           : "";
       return [
-        '<div class="studio-chat-panel structure-list" data-studio-bridge-region="chat">',
+        '<div class="studio-chat-panel structure-list' + (state.studioChatDialogOpen ? ' is-open' : '') + '" data-studio-bridge-region="chat"' + (state.studioChatDialogOpen ? ' role="dialog" aria-modal="false"' : ' hidden') + '>',
         '<div class="event"><div class="event-top"><span>' + escapeText(t("studio.chat.title", undefined, "Chat to MMD")) + '</span><span>' + escapeText(studioChatModeLabel(resultMode)) + '</span></div><strong>' +
           escapeText(t("studio.chat.subtitle", undefined, "Generate or adjust the Studio draft with natural language.")) +
           '</strong><div class="hint">' + escapeText(t("studio.chat.context", { context: selectedContext }, "Context: {context}")) + '</div></div>',
@@ -1741,6 +1756,7 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
               '<div class="toolbar-row compact"><div class="toolbar-group">',
               '<button class="button primary" type="button" id="studio-chat-send"' + disabled + '>' + escapeText(t("studio.chat.send", undefined, "Send")) + '</button>',
               '<button class="button subtle" type="button" id="studio-chat-regenerate"' + (state.actionBusy || !state.studioChatLastRequest ? " disabled" : "") + '>' + escapeText(t("studio.chat.regenerate", undefined, "Regenerate")) + '</button>',
+              '<button class="button subtle" type="button" id="studio-chat-close">' + escapeText(t("action.cancel", undefined, "Cancel")) + '</button>',
               '<button class="button subtle" type="button" id="studio-chat-toggle">' + escapeText(t("studio.chat.collapse", undefined, "Hide chat")) + '</button>',
               '</div></div>',
               '</div>',
@@ -1773,6 +1789,21 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
       renderStudioBridge({ preserveGraphRoot: true });
     }
 
+    function openStudioChatDialog() {
+      state.studioChatDialogOpen = true;
+      state.studioChatCollapsed = false;
+      patchStudioChatPanel();
+      const input = document.getElementById("studio-chat-input");
+      if (input && typeof input.focus === "function") {
+        input.focus();
+      }
+    }
+
+    function closeStudioChatDialog() {
+      state.studioChatDialogOpen = false;
+      patchStudioChatPanel();
+    }
+
     function bindStudioChatControls() {
       const toggleButton = document.getElementById("studio-chat-toggle");
       if (toggleButton) {
@@ -1791,6 +1822,12 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
       if (sendButton) {
         sendButton.addEventListener("click", async () => {
           await submitStudioChatMessage(state.studioChatDraftMessage || "");
+        });
+      }
+      const closeButton = document.getElementById("studio-chat-close");
+      if (closeButton) {
+        closeButton.addEventListener("click", () => {
+          closeStudioChatDialog();
         });
       }
       const regenerateButton = document.getElementById("studio-chat-regenerate");
@@ -1869,6 +1906,7 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
         projectConfig: state.project?.config,
         labels: buildStudioGraphLabels(),
         commandFormLabels: buildStudioGraphCommandFormLabels(),
+        historyEvent: state.studioGraphHistoryEvent,
         onSelectRole: (roleId) => {
           state.studioBridgeSelectedRoleId = roleId || "";
           state.studioBridgeSelectedFlowKey = "";
@@ -1889,6 +1927,9 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
         },
         onApplyCommand: async (result) => {
           await applyStudioGraphAuthoringCommand(result);
+        },
+        onChatGenerate: () => {
+          openStudioChatDialog();
         },
         onToggleFullscreen: () => {
           state.studioBridgeFullscreen = !state.studioBridgeFullscreen;
@@ -1966,12 +2007,16 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
       workbenchMetaEl.textContent = state.selectedRunId && state.detail?.systemSource
         ? t("workbench.immutableRunMeta")
         : t("workbench.defaultMeta");
+      const entryRoleId = structure?.entryRoleId || state.project?.summary?.project?.entryRoleId || "";
+      const lastDryRunId = state.studioBridgeLastDryRunId || "";
       const statusPills = [
         '<span class="pill' + (dirty ? " warn" : "") + '">' + escapeText(dirty ? t("workbench.unsavedChanges") : t("workbench.diskInSync")) + '</span>',
-        state.workbenchHasDraft ? '<span class="pill warn">' + escapeText(t("workbench.draftCached")) + '</span>' : "",
+        '<span class="pill">' + escapeText(t("workbench.entryRole", undefined, "entry")) + ' <code>' + escapeText(entryRoleId || "n/a") + '</code></span>',
+        lastDryRunId ? '<span class="pill">' + escapeText(t("build.lastDryRun", undefined, "Last dry run")) + ' <code>' + escapeText(lastDryRunId) + '</code></span>' : "",
         validation
           ? '<span class="pill' + (validation.ok ? "" : " warn") + '">' + escapeText(validation.ok ? t("workbench.validationOk") : t("workbench.diagnostics", { count: diagnostics.length })) + '</span>'
           : '<span class="pill">' + escapeText(t("workbench.validationPending")) + '</span>',
+        state.workbenchHasDraft ? '<span class="pill warn">' + escapeText(t("workbench.draftCached")) + '</span>' : "",
         state.workbenchValidating ? '<span class="pill warn">' + escapeText(t("workbench.validating")) + '</span>' : ""
       ].filter(Boolean);
       workbenchStatusEl.innerHTML = statusPills.join("");
@@ -2206,6 +2251,13 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
       return typeof element.value === "string" ? element.value.trim() : "";
     }
 
+    function focusActionField(fieldId) {
+      const element = document.getElementById(fieldId);
+      if (element && typeof element.focus === "function") {
+        element.focus();
+      }
+    }
+
     function renderActionForm() {
       if (!actionFormEl) {
         return;
@@ -2220,12 +2272,13 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
       }
       const disabled = state.actionBusy ? " disabled" : "";
       if (form.kind === "start") {
+        const inputError = form.errors?.input || "";
         actionFormEl.innerHTML = [
           '<div class="event"><div class="event-top"><span>' + escapeText(t("form.startRun")) + '</span><span>' + escapeText(t("form.fromWorkbench")) + '</span></div><strong>' + escapeText(t("form.prepareNewRunRequest")) + '</strong><div class="hint">' + escapeText(t("form.startRunHint")) + '</div></div>',
           '<div class="form-grid">',
           '<label class="field"><span>' + escapeText(t("form.systemPath")) + '</span><input id="action-start-system-path" value="' + escapeText(form.fields.systemPath || "") + '"' + disabled + ' /></label>',
           '<label class="field"><span>' + escapeText(t("form.dryRun")) + '</span><select id="action-start-dry-run"' + disabled + '><option value="true"' + (form.fields.dryRun ? " selected" : "") + '>' + escapeText(t("common.yes")) + '</option><option value="false"' + (!form.fields.dryRun ? " selected" : "") + '>' + escapeText(t("common.no")) + '</option></select></label>',
-          '<label class="field full"><span>' + escapeText(t("form.runInput")) + '</span><textarea id="action-start-input"' + disabled + '>' + escapeText(form.fields.input || "") + '</textarea></label>',
+          '<label class="field full"><span>' + escapeText(t("form.runInput")) + '</span><textarea id="action-run-prompt"' + disabled + (inputError ? ' aria-invalid="true" aria-describedby="action-run-prompt-error"' : "") + '>' + escapeText(form.fields.input || "") + '</textarea><div id="action-run-prompt-error" class="field-error" aria-live="polite">' + escapeText(inputError) + '</div></label>',
           '<label class="field"><span>' + escapeText(t("form.runtimeConfigPath")) + '</span><input id="action-start-runtime-path" value="' + escapeText(form.fields.runtimePath || "") + '"' + disabled + ' /></label>',
           '<label class="field"><span>' + escapeText(t("form.userProfilePath")) + '</span><input id="action-start-user-profile-path" value="' + escapeText(form.fields.userProfilePath || "") + '"' + disabled + ' /></label>',
           '<label class="field full"><span>' + escapeText(t("form.lawsPath")) + '</span><input id="action-start-laws-path" value="' + escapeText(form.fields.lawsPath || "") + '"' + disabled + ' /></label>',
@@ -2320,6 +2373,7 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
         bindingExplainEl.innerHTML = '<div class="hint">' + escapeText(t("state.projectBindingDataUnavailable")) + '</div>';
         rolePackagesEl.innerHTML = '<div class="hint">' + escapeText(t("state.rolePackageDataUnavailable")) + '</div>';
         contractExplainEl.innerHTML = '<div class="hint">' + escapeText(t("state.contractDataUnavailable")) + '</div>';
+        renderProjectWizard();
         return;
       }
       if (workdirEl) {
@@ -2465,15 +2519,56 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
         '<button class="button subtle ' + (projectTab === id ? "active" : "") + '" type="button" data-project-menu-tab="' + escapeText(id) + '">' + escapeText(label) + '</button>'
       ).join("") + '</div>';
       const openDraft = state.projectOpenDraft || workspace.workdir || getCurrentWorkdir();
+      if (!state.projectOpenDraft) {
+        state.projectOpenDraft = openDraft;
+      }
       const recentProjects = readRecentProjects();
+      const browse = state.projectOpenBrowse;
+      const validation = state.projectOpenValidation;
+      const browseDirectories = Array.isArray(browse?.children?.directories) ? browse.children.directories : [];
+      const browseProjects = Array.isArray(browse?.recent) ? browse.recent : [];
+      const browseFiles = Array.isArray(browse?.children?.files) ? browse.children.files : [];
+      const validationClass = validation
+        ? validation.isProject ? "" : validation.hasConflict || validation.exists === false || validation.readable === false ? " warn" : ""
+        : "";
+      const validationHtml = validation
+        ? '<div id="project-open-validation" class="event' + validationClass + '"><div class="event-top"><span>' + escapeText(t("projectOpen.validation", undefined, "Validation")) + '</span><span>' + escapeText(validation.isProject ? t("projectOpen.ready", undefined, "ready") : validation.isEmpty ? t("common.empty", undefined, "empty") : t("common.attention", undefined, "attention")) + '</span></div><strong>' + escapeText(validation.message || "") + '</strong>' +
+          (Array.isArray(validation.conflicts) && validation.conflicts.length ? '<div class="hint">' + escapeText(t("projectOpen.conflicts", { items: validation.conflicts.join(", ") }, "Conflicts: " + validation.conflicts.join(", "))) + '</div>' : "") +
+          '</div>'
+        : '<div id="project-open-validation" class="hint">' + escapeText(t("projectOpen.validationPending", undefined, "Choose or validate a directory before opening.")) + '</div>';
+      const browseSummaryHtml = browse
+        ? '<div class="event"><div class="event-top"><span>' + escapeText(t("projectOpen.browser", undefined, "Directory browser")) + '</span><span>' + escapeText(relativeToWorkdir(browse.workdir || openDraft)) + '</span></div><strong>' + escapeText(t("projectOpen.browserTitle", undefined, "Browse server-visible directories")) + '</strong><div class="hint">' + escapeText(browse.message || t("projectOpen.browserHint", undefined, "Select a child directory, parent, or known project before opening.")) + '</div></div>'
+        : '<div class="event"><div class="event-top"><span>' + escapeText(t("projectOpen.browser", undefined, "Directory browser")) + '</span><span>' + escapeText(state.projectOpenLoading ? t("common.loading", undefined, "loading") : t("common.ready", undefined, "ready")) + '</span></div><strong>' + escapeText(t("projectOpen.browserTitle", undefined, "Browse server-visible directories")) + '</strong><div class="hint">' + escapeText(t("projectOpen.browserHint", undefined, "Select a child directory, parent, or known project before opening.")) + '</div></div>';
+      const browseErrorHtml = state.projectOpenError
+        ? '<div class="event warn"><strong>' + escapeText(state.projectOpenError) + '</strong></div>'
+        : "";
+      const parentButtonHtml = browse?.parent
+        ? '<button class="button subtle" type="button" data-project-open-browse="' + escapeText(browse.parent) + '">..</button>'
+        : "";
+      const directoryHtml = browseDirectories.length
+        ? '<div class="project-open-browser-grid">' + parentButtonHtml + browseDirectories.map((item) => '<button class="button subtle" type="button" data-project-open-browse="' + escapeText(item.path) + '">' + escapeText(item.name) + '</button>').join("") + '</div>'
+        : '<div class="project-open-browser-grid">' + parentButtonHtml + '<span class="hint">' + escapeText(t("projectOpen.noDirectories", undefined, "No child directories.")) + '</span></div>';
+      const projectSuggestionsHtml = browseProjects.length
+        ? '<div class="structure-list">' + browseProjects.map((item) => '<button class="button subtle" type="button" data-project-open-project="' + escapeText(item.workdir) + '">' + escapeText(item.name || relativeToWorkdir(item.workdir)) + '</button>').join("") + '</div>'
+        : '<div class="hint">' + escapeText(t("projectOpen.noProjectsNearby", undefined, "No OGSystem projects found in this directory.")) + '</div>';
+      const filesHtml = browseFiles.length
+        ? '<div class="hint">' + escapeText(t("projectOpen.filesPreview", { items: browseFiles.slice(0, 6).map((item) => item.name).join(", ") }, "Files: " + browseFiles.slice(0, 6).map((item) => item.name).join(", "))) + '</div>'
+        : "";
       const openPanelHtml = [
         '<form id="project-open-form" class="structure-list">',
         '<div class="event"><div class="event-top"><span>' + escapeText(t("projectMenu.open", undefined, "Open Project")) + '</span><span>' + escapeText(t("form.workspace", undefined, "workspace")) + '</span></div><strong>' + escapeText(t("projectOpen.title", undefined, "Load an existing OGSystem project")) + '</strong><div class="hint">' + escapeText(t("projectOpen.hint", undefined, "Choose a project directory. The server validates the path before rebinding the visualizer.")) + '</div></div>',
         '<label><span>' + escapeText(t("projectOpen.currentDirectory", undefined, "Current directory")) + '</span><code>' + escapeText(workspace.workdir || getCurrentWorkdir() || "n/a") + '</code></label>',
+        browseSummaryHtml,
+        browseErrorHtml,
+        '<div class="toolbar-group"><button class="button subtle" id="project-open-browse-refresh" type="button"' + (state.projectOpenLoading ? " disabled" : "") + '>' + escapeText(t("projectOpen.refreshBrowse", undefined, "Refresh")) + '</button><button class="button subtle" id="project-open-validate" type="button"' + (state.projectOpenLoading ? " disabled" : "") + '>' + escapeText(t("projectOpen.validate", undefined, "Validate")) + '</button></div>',
+        directoryHtml,
+        projectSuggestionsHtml,
+        filesHtml,
         recentProjects.length
           ? '<div class="structure-list">' + recentProjects.map((item) => '<button class="button subtle" type="button" data-project-open-recent="' + escapeText(item) + '">' + escapeText(relativeToWorkdir(item)) + '</button>').join("") + '</div>'
           : '<div class="hint">' + escapeText(t("projectOpen.noRecent", undefined, "No recent projects yet.")) + '</div>',
         '<label><span>' + escapeText(t("projectOpen.path", undefined, "Project directory")) + '</span><input id="project-open-workdir" name="workdir" value="' + escapeText(openDraft) + '"><span class="hint">' + escapeText(t("projectOpen.pathHint", undefined, "Use an absolute path or a server-visible project directory.")) + '</span></label>',
+        validationHtml,
         '<div class="toolbar-group"><button class="button primary" id="project-open-submit" type="submit">' + escapeText(t("projectOpen.load", undefined, "Open Project")) + '</button></div>',
         '</form>'
       ].join("");
@@ -2628,12 +2723,26 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
         button.addEventListener("click", () => {
           state.projectMenuTab = button.getAttribute("data-project-menu-tab") || "overview";
           renderProjectWizard();
+          writeRouteToLocation();
         });
       }
       const openInput = document.getElementById("project-open-workdir");
       if (openInput) {
         openInput.addEventListener("input", (event) => {
           state.projectOpenDraft = event.target.value || "";
+          state.projectOpenValidation = null;
+        });
+      }
+      const refreshBrowseButton = document.getElementById("project-open-browse-refresh");
+      if (refreshBrowseButton) {
+        refreshBrowseButton.addEventListener("click", () => {
+          void browseProjectOpen(getProjectOpenTarget());
+        });
+      }
+      const validateButton = document.getElementById("project-open-validate");
+      if (validateButton) {
+        validateButton.addEventListener("click", () => {
+          void validateProjectOpen(getProjectOpenTarget(), { render: true });
         });
       }
       const openForm = document.getElementById("project-open-form");
@@ -2641,15 +2750,32 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
         openForm.addEventListener("submit", (event) => {
           event.preventDefault();
           const target = document.getElementById("project-open-workdir")?.value || state.projectOpenDraft || "";
-          void rebindProject(String(target).trim());
+          void openValidatedProject(String(target).trim());
+        });
+      }
+      for (const button of projectWizardEl.querySelectorAll("[data-project-open-browse]")) {
+        button.addEventListener("click", () => {
+          const target = button.getAttribute("data-project-open-browse") || "";
+          state.projectOpenDraft = target;
+          void browseProjectOpen(target);
+        });
+      }
+      for (const button of projectWizardEl.querySelectorAll("[data-project-open-project]")) {
+        button.addEventListener("click", () => {
+          const target = button.getAttribute("data-project-open-project") || "";
+          state.projectOpenDraft = target;
+          void validateProjectOpen(target, { render: true });
         });
       }
       for (const button of projectWizardEl.querySelectorAll("[data-project-open-recent]")) {
         button.addEventListener("click", () => {
           const target = button.getAttribute("data-project-open-recent") || "";
           state.projectOpenDraft = target;
-          void rebindProject(target);
+          void validateProjectOpen(target, { render: true });
         });
+      }
+      if (state.projectMenuTab === "open" && !state.projectOpenBrowse && !state.projectOpenLoading) {
+        void browseProjectOpen(getProjectOpenTarget(), { renderStart: false });
       }
     }
 
@@ -3312,6 +3438,12 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
         return;
       }
       await runAction("studio:chat-apply", async () => {
+        state.studioGraphHistoryEvent = {
+          id: ++state.studioGraphHistoryEventId,
+          kind: "push-before-replace",
+          label: "Apply Chat to MMD"
+        };
+        renderStudioBridge({ preserveGraphRoot: true });
         state.studioBridge = {
           ...(state.studioBridge || {}),
           authoring: patch.authoring,
@@ -3560,6 +3692,14 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
 
     async function startRunFromWorkbench(args) {
       if (!args.input) {
+        if (state.actionForm?.kind === "start") {
+          state.actionForm.errors = {
+            ...(state.actionForm.errors || {}),
+            input: t("run.inputRequired", undefined, "Run input is required.")
+          };
+          renderActionForm();
+          focusActionField("action-run-prompt");
+        }
         setFlash("error", t("run.inputRequired", undefined, "Run input is required."));
         return;
       }
@@ -3641,15 +3781,28 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
         return;
       }
       if (form.kind === "start") {
+        const promptElement = document.getElementById("action-run-prompt");
+        const promptValue = typeof promptElement?.value === "string" ? promptElement.value.trim() : "";
         const payload = {
           systemPath: readActionFieldValue("action-start-system-path") || state.workbenchSavedPath || "system.mmd",
-          input: readActionFieldValue("action-start-input"),
+          input: promptValue,
           dryRun: readActionFieldValue("action-start-dry-run") !== "false",
           runtimePath: readActionFieldValue("action-start-runtime-path"),
           userProfilePath: readActionFieldValue("action-start-user-profile-path"),
           lawsPath: readActionFieldValue("action-start-laws-path")
         };
         state.actionForm.fields = Object.assign({}, form.fields, payload);
+        if (!payload.input) {
+          state.actionForm.errors = {
+            ...(state.actionForm.errors || {}),
+            input: t("run.inputRequired", undefined, "Run input is required.")
+          };
+          renderActionForm();
+          focusActionField("action-run-prompt");
+          setFlash("error", t("run.inputRequired", undefined, "Run input is required."));
+          return;
+        }
+        state.actionForm.errors = {};
         await startRunFromWorkbench(payload);
         return;
       }
@@ -3719,6 +3872,76 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
       });
     }
 
+    function getProjectOpenTarget() {
+      return String(document.getElementById("project-open-workdir")?.value || state.projectOpenDraft || "").trim();
+    }
+
+    async function browseProjectOpen(target, options) {
+      const workdir = String(target || "").trim() || getCurrentWorkdir() || ".";
+      state.projectOpenDraft = workdir;
+      state.projectOpenLoading = true;
+      state.projectOpenError = "";
+      if (options?.renderStart !== false) {
+        renderProjectWizard();
+      }
+      try {
+        const params = new URLSearchParams({ workdir });
+        const payload = await requestJson(\`\${API_PREFIX}/project/browse?\${params.toString()}\`);
+        state.projectOpenBrowse = payload;
+        state.projectOpenValidation = payload;
+        state.projectOpenDraft = payload?.workdir || workdir;
+      } catch (error) {
+        state.projectOpenError = error instanceof Error ? error.message : String(error);
+      } finally {
+        state.projectOpenLoading = false;
+        renderProjectWizard();
+      }
+    }
+
+    async function validateProjectOpen(target, options) {
+      const workdir = String(target || "").trim();
+      if (!workdir) {
+        state.projectOpenValidation = null;
+        setFlash("error", t("projectOpen.workdirRequired", undefined, "Choose a project directory before loading."));
+        if (options?.render) {
+          renderProjectWizard();
+        }
+        return null;
+      }
+      state.projectOpenDraft = workdir;
+      state.projectOpenLoading = true;
+      state.projectOpenError = "";
+      if (options?.render) {
+        renderProjectWizard();
+      }
+      try {
+        const payload = await requestAction(\`\${API_PREFIX}/project/validate-open\`, { workdir });
+        state.projectOpenValidation = payload;
+        state.projectOpenDraft = payload?.workdir || workdir;
+        return payload;
+      } catch (error) {
+        state.projectOpenError = error instanceof Error ? error.message : String(error);
+        return null;
+      } finally {
+        state.projectOpenLoading = false;
+        if (options?.render) {
+          renderProjectWizard();
+        }
+      }
+    }
+
+    async function openValidatedProject(target) {
+      const validation = await validateProjectOpen(target, { render: true });
+      if (!validation) {
+        return;
+      }
+      if (!validation.isProject) {
+        setFlash("error", validation.message || t("projectOpen.notOpenable", undefined, "Select a valid OGSystem project directory before opening."));
+        return;
+      }
+      await rebindProject(validation.workdir || target);
+    }
+
     async function reindexRuns() {
       if (!state.hasProject) {
         setFlash("error", t("workspace.createOrLoadHint", undefined, "Use Project to create a project in this directory or load an existing project."));
@@ -3772,6 +3995,13 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
     async function loadProject() {
       state.workspace = await requestJson(API_PREFIX + "/workspace");
       state.hasProject = state.workspace?.hasProject === true;
+      if (state.projectOpenDraft && state.projectOpenDraft !== state.workspace?.workdir) {
+        state.projectOpenBrowse = null;
+        state.projectOpenValidation = null;
+      }
+      state.projectOpenDraft = state.workspace?.workdir || state.projectOpenDraft || "";
+      state.projectOpenError = "";
+      state.projectOpenLoading = false;
       if (!state.hasProject) {
         await loadRoleCatalog();
         state.project = null;
@@ -4460,10 +4690,13 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
       });
     }
 
-    projectLoadButton.addEventListener("click", async () => {
-      state.projectMenuTab = "open";
-      selectProjectHome();
-    });
+      if (projectLoadButton) {
+        projectLoadButton.addEventListener("click", async () => {
+          state.projectMenuTab = "open";
+          selectProjectHome();
+          writeRouteToLocation();
+        });
+      }
 
     projectExportButton.addEventListener("click", async () => {
       await exportProject();
@@ -4610,6 +4843,9 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
       state.consoleTab = "operate";
     }
     state.projectHome = state.consoleTab === "project" || initialRoute.view === "project";
+    if (["overview", "new", "open", "recent", "settings"].includes(initialRoute.projectTab)) {
+      state.projectMenuTab = initialRoute.projectTab;
+    }
     renderConsoleTabs();
     state.selectedRunId = initialRoute.runId;
     state.selectedReviewId = initialRoute.reviewId;

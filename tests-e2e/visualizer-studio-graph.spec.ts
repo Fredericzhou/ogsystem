@@ -238,7 +238,7 @@ test("Studio Bridge renders and edits through the real graph workspace", async (
     await page.locator('[data-workbench-view="bridge"]').click();
     await page.locator("#build-dry-run").click();
     await expect(page.locator("#action-form-section")).toBeVisible();
-    await page.locator("#action-start-input").fill("browser smoke");
+    await page.locator("#action-run-prompt").fill("browser smoke");
     await page.locator("#action-form-submit").click();
     await expect(page.locator("#selected-title")).toContainText(/\d{8}-/);
     await expect(page.locator("#console-panel-build")).toBeVisible();

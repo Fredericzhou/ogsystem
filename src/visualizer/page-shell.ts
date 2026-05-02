@@ -481,6 +481,12 @@ export function renderPageHtml(workdir: string, apiPrefix: string, i18n: PageI18
       gap: 6px;
       min-width: 0;
     }
+    .build-header {
+      align-items: flex-start;
+    }
+    .build-header .header-copy {
+      flex: 1 1 220px;
+    }
     .stat-grid {
       display: grid;
       grid-template-columns: repeat(auto-fit, minmax(128px, 1fr));
@@ -549,15 +555,31 @@ export function renderPageHtml(workdir: string, apiPrefix: string, i18n: PageI18
       min-width: 0;
     }
     .build-control-bar {
-      display: flex;
+      display: grid;
       gap: 8px;
-      align-items: center;
+      align-items: end;
       justify-content: flex-end;
-      flex-wrap: wrap;
       min-width: 0;
+      flex: 1 1 520px;
     }
     .build-control-bar #workbench-status {
-      max-width: min(460px, 42vw);
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(126px, 1fr));
+      gap: 6px;
+      width: 100%;
+      max-width: min(720px, 58vw);
+      justify-self: end;
+    }
+    .build-control-bar #workbench-actions,
+    .build-control-bar #workbench-tabs {
+      justify-self: end;
+    }
+    .project-open-browser-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(132px, 1fr));
+      gap: 8px;
+      align-items: center;
+      min-width: 0;
     }
     .workbench-view-tabs {
       justify-content: flex-start;
@@ -832,12 +854,44 @@ export function renderPageHtml(workdir: string, apiPrefix: string, i18n: PageI18
       color: var(--text);
       outline: none;
     }
+    .field [aria-invalid="true"] {
+      border-color: rgba(248, 113, 113, 0.78);
+      box-shadow: 0 0 0 2px rgba(248, 113, 113, 0.14);
+    }
+    .field-error {
+      min-height: 14px;
+      color: #fca5a5;
+      font-size: 12px;
+    }
     .field textarea {
       min-height: 120px;
       resize: vertical;
     }
     .field.full {
       grid-column: 1 / -1;
+    }
+    .studio-chat-panel[hidden] {
+      display: none;
+    }
+    .studio-chat-panel.is-open {
+      position: fixed;
+      right: 24px;
+      bottom: 24px;
+      z-index: 80;
+      width: min(860px, calc(100vw - 48px));
+      max-height: min(760px, calc(100vh - 48px));
+      overflow: auto;
+      border: 1px solid rgba(148, 163, 184, 0.28);
+      background: rgba(7, 12, 24, 0.96);
+      box-shadow: 0 22px 70px rgba(0, 0, 0, 0.42);
+      padding: 12px;
+    }
+    @media (max-width: 720px) {
+      .studio-chat-panel.is-open {
+        inset: 12px;
+        width: auto;
+        max-height: none;
+      }
     }
     .timeline {
       display: grid;
@@ -1008,6 +1062,13 @@ export function renderPageHtml(workdir: string, apiPrefix: string, i18n: PageI18
         display: grid;
         grid-template-columns: 1fr;
       }
+      .build-control-bar #workbench-status {
+        max-width: 100%;
+      }
+      .build-control-bar #workbench-actions,
+      .build-control-bar #workbench-tabs {
+        justify-self: stretch;
+      }
       .timeline-controls {
         grid-template-columns: 1fr;
       }
@@ -1077,7 +1138,6 @@ export function renderPageHtml(workdir: string, apiPrefix: string, i18n: PageI18
           </div>
           <div class="actions hero-actions hero-actions-secondary">
             <button id="project-home" class="button subtle">${escapeHtml(t("action.project"))}</button>
-            <button id="project-load" class="button subtle">${escapeHtml(t("action.load"))}</button>
             <button id="project-export" class="button subtle">${escapeHtml(t("action.export"))}</button>
           </div>
           <div class="hero-utilities">
@@ -1138,7 +1198,7 @@ export function renderPageHtml(workdir: string, apiPrefix: string, i18n: PageI18
       <section id="console-panel-build" class="console-panel grid" data-console-panel="build" hidden>
         <article class="card span-12">
           <header>
-            <div class="card-header">
+            <div class="card-header build-header">
               <div class="header-copy">
                 <h3 id="workbench-title">${escapeHtml(t("section.mermaidWorkbench"))}</h3>
                 <div id="workbench-meta" class="hint">${escapeHtml(t("workbench.defaultMeta"))}</div>

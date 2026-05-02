@@ -29,6 +29,7 @@ type StudioGraphLabelKey =
   | "fullscreen"
   | "fitView"
   | "autoLayout"
+  | "generate"
   | "addRole"
   | "addEdge"
   | "editSelection"
@@ -80,6 +81,8 @@ export type StudioGraphBridgeOptions = {
     selectedFlowKey?: string;
     blockedCode?: string;
   }) => void | Promise<void>;
+  onChatGenerate?: () => void | Promise<void>;
+  historyEvent?: { id?: number; kind?: "push-before-replace"; label?: string } | null;
   onToggleFullscreen?: () => void;
   onToast?: (tone: "error" | "success" | "info", message: string) => void;
   labels?: StudioGraphLabels;
@@ -118,6 +121,7 @@ export class StudioGraphIsland {
   private lastDefaultAutoLayoutSignature = "";
   private lastEditSelectionSignature = "";
   private lastHandledEditSelectionRequest = 0;
+  private lastHandledHistoryEventId = 0;
   private syncCanvasTimer: ReturnType<typeof setTimeout> | null = null;
   private commandForm: StudioCommandFormState | null = null;
   private readonlyHistory: { undoStack: StudioGraphSnapshot[]; redoStack: StudioGraphSnapshot[] } = {
@@ -138,6 +142,9 @@ export class StudioGraphIsland {
       this.toolbarButton("fullscreen", "fullscreen", "⛶"),
       this.toolbarButton("fit", "fitView", "◎"),
       this.toolbarButton("layout", "autoLayout", "⇄"),
+      '</div>',
+      '<div class="studio-graph-toolbar-group" data-studio-graph-generate-actions aria-label="' + this.escapeHtml(this.label("generate")) + '">',
+      this.toolbarButton("chat-generate", "generate", "✦"),
       '</div>',
       '<div class="studio-graph-toolbar-group" data-studio-graph-edit-actions aria-label="' + this.escapeHtml(this.label("editGroup")) + '">',
       this.toolbarButton("add-role", "addRole", "+R"),
@@ -179,6 +186,7 @@ export class StudioGraphIsland {
   update(options: StudioGraphBridgeOptions): void {
     this.resetHistoryWhenProjectChanges(options);
     this.options = options;
+    this.handleHistoryEvent(options.historyEvent);
     const projection = canvasToStudioGraphProjection({
       authoring: options.authoring,
       canvas: options.canvas,
@@ -292,6 +300,7 @@ export class StudioGraphIsland {
       if (action === "fit") void this.fitAndSync();
       if (action === "reset-view") void this.resetViewAndSync();
       if (action === "fullscreen") this.options.onToggleFullscreen?.();
+      if (action === "chat-generate") void this.options.onChatGenerate?.();
       if (this.isReadOnly()) return;
       if (action === "layout") void this.autoLayout();
       if (action === "undo") void this.semanticUndo();
@@ -914,6 +923,11 @@ export class StudioGraphIsland {
     if (layout) {
       layout.hidden = readOnly;
     }
+    const generate = this.toolbar.querySelector<HTMLButtonElement>('[data-studio-graph-action="chat-generate"]');
+    if (generate) {
+      generate.hidden = readOnly;
+      generate.disabled = this.busy || readOnly;
+    }
     for (const action of ["layout", "add-role", "add-edge", "edit", "delete"]) {
       const button = this.toolbar.querySelector<HTMLButtonElement>('[data-studio-graph-action="' + action + '"]');
       if (button) button.disabled = this.busy || readOnly;
@@ -932,6 +946,20 @@ export class StudioGraphIsland {
 
   private isReadOnly(): boolean {
     return this.options.readOnly === true;
+  }
+
+  private handleHistoryEvent(event: StudioGraphBridgeOptions["historyEvent"]): void {
+    if (!event || event.kind !== "push-before-replace") {
+      return;
+    }
+    const eventId = Number(event.id || 0);
+    if (!eventId || eventId === this.lastHandledHistoryEventId) {
+      return;
+    }
+    this.lastHandledHistoryEventId = eventId;
+    this.pushUndoSnapshot();
+    this.activeRedoStack().length = 0;
+    this.updateToolbarState();
   }
 
   private resetHistoryWhenProjectChanges(options: StudioGraphBridgeOptions): void {

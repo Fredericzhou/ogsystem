@@ -1531,6 +1531,150 @@ test("visualizer server supports empty workspace project creation without implic
   }
 });
 
+test("visualizer server supports project open browse and validation", async (t) => {
+  const workdir = await mkdtemp(path.join(os.tmpdir(), "ogsystem-visualizer-open-root-"));
+  const projectWorkdir = path.resolve(workdir, "project-a");
+  const emptyWorkdir = path.resolve(workdir, "empty-target");
+  const conflictWorkdir = path.resolve(workdir, "conflict-target");
+  const pseudoWorkdir = path.resolve(workdir, "pseudo-project");
+  await mkdir(projectWorkdir, { recursive: true });
+  await seedProjectFixture(projectWorkdir);
+  await mkdir(emptyWorkdir, { recursive: true });
+  await mkdir(conflictWorkdir, { recursive: true });
+  await writeFile(path.resolve(conflictWorkdir, "README.md"), "notes\n", "utf8");
+  await mkdir(pseudoWorkdir, { recursive: true });
+  await writeFile(path.resolve(pseudoWorkdir, "system.mmd"), "flowchart TD\n", "utf8");
+  await writeFile(path.resolve(workdir, "root-note.txt"), "root\n", "utf8");
+
+  let started;
+  try {
+    started = await startVisualizationServer({
+      workdir,
+      host: "127.0.0.1",
+      port: 0
+    });
+  } catch (error) {
+    const errorCode =
+      typeof error === "object" && error !== null && "code" in error ? error.code : undefined;
+    if (errorCode === "EPERM" || errorCode === "EACCES") {
+      t.skip(`visualizer listen unavailable in sandbox: ${errorCode}`);
+      return;
+    }
+    throw error;
+  }
+  const { server, url } = started;
+
+  try {
+    const browseResponse = await fetch(
+      `${url}/api/v1/project/browse?workdir=${encodeURIComponent(workdir)}`
+    );
+    assert.equal(browseResponse.status, 200);
+    const browse = await browseResponse.json();
+    assert.equal(browse.workdir, workdir);
+    assert.equal(browse.parent, path.dirname(workdir));
+    assert.deepEqual(
+      browse.children.directories.map((entry) => entry.name),
+      ["conflict-target", "empty-target", "project-a", "pseudo-project"]
+    );
+    assert.deepEqual(browse.children.files, [
+      {
+        name: "root-note.txt",
+        path: path.resolve(workdir, "root-note.txt")
+      }
+    ]);
+    assert.deepEqual(browse.recent, [
+      {
+        name: "project-a",
+        workdir: projectWorkdir
+      }
+    ]);
+
+    const projectResponse = await fetch(`${url}/api/v1/project/validate-open`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ workdir: projectWorkdir })
+    });
+    assert.equal(projectResponse.status, 200);
+    assert.deepEqual(
+      await projectResponse.json(),
+      {
+        workdir: projectWorkdir,
+        exists: true,
+        readable: true,
+        isProject: true,
+        isEmpty: false,
+        hasConflict: false,
+        message: "OGSystem project is ready to open.",
+        conflicts: [],
+        parent: workdir,
+        name: "project-a"
+      }
+    );
+
+    const emptyResponse = await fetch(`${url}/api/v1/project/validate-open`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ workdir: emptyWorkdir })
+    });
+    assert.equal(emptyResponse.status, 200);
+    const empty = await emptyResponse.json();
+    assert.equal(empty.exists, true);
+    assert.equal(empty.readable, true);
+    assert.equal(empty.isProject, false);
+    assert.equal(empty.isEmpty, true);
+    assert.equal(empty.hasConflict, false);
+    assert.equal(empty.message, "Directory is empty and can be initialized as a project.");
+
+    const conflictResponse = await fetch(`${url}/api/v1/project/validate-open`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ workdir: conflictWorkdir })
+    });
+    assert.equal(conflictResponse.status, 200);
+    const conflict = await conflictResponse.json();
+    assert.equal(conflict.exists, true);
+    assert.equal(conflict.readable, true);
+    assert.equal(conflict.isProject, false);
+    assert.equal(conflict.isEmpty, false);
+    assert.equal(conflict.hasConflict, true);
+    assert.deepEqual(conflict.conflicts, []);
+    assert.equal(conflict.message, "Directory is not empty and is not an OGSystem project.");
+
+    const pseudoResponse = await fetch(`${url}/api/v1/project/validate-open`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ workdir: pseudoWorkdir })
+    });
+    assert.equal(pseudoResponse.status, 200);
+    const pseudo = await pseudoResponse.json();
+    assert.equal(pseudo.isProject, false);
+    assert.equal(pseudo.hasConflict, true);
+    assert.ok(pseudo.conflicts.includes("system.mmd"));
+    assert.equal(
+      pseudo.message,
+      "Directory contains OGSystem-controlled paths but is not a complete project."
+    );
+
+    const missingWorkdir = path.resolve(workdir, "missing");
+    const missingResponse = await fetch(`${url}/api/v1/project/validate-open`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ workdir: missingWorkdir })
+    });
+    assert.equal(missingResponse.status, 200);
+    const missing = await missingResponse.json();
+    assert.equal(missing.workdir, missingWorkdir);
+    assert.equal(missing.exists, false);
+    assert.equal(missing.readable, false);
+    assert.equal(missing.isProject, false);
+    assert.equal(missing.isEmpty, false);
+    assert.equal(missing.hasConflict, false);
+    assert.equal(missing.message, "Path does not exist.");
+  } finally {
+    await new Promise((resolve) => server.close(resolve));
+  }
+});
+
 test("visualizer server creates into target workdir aliases and persists safe create preferences", async (t) => {
   const workdir = await mkdtemp(path.join(os.tmpdir(), "ogsystem-visualizer-target-root-"));
   const targetWorkdir = path.resolve(workdir, "nested-project");
