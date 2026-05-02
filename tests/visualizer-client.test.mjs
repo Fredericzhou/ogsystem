@@ -171,6 +171,7 @@ class FakeElement {
     this.dynamic = dynamic;
     this.listeners = new Map();
     this.children = [];
+    this.parent = null;
     this._innerHTML = "";
     this.textContent = "";
     this.className = "";
@@ -186,7 +187,7 @@ class FakeElement {
       }
     };
     this.dataset = {};
-    this.disabled = false;
+    this.disabled = Object.hasOwn(attributes, "disabled");
     this.value = attributes.value ?? "";
   }
 
@@ -197,7 +198,7 @@ class FakeElement {
   }
 
   async dispatch(type) {
-    const handlers = this.listeners.get(type) ?? [];
+    const handlers = [...(this.listeners.get(type) ?? [])];
     for (const handler of handlers) {
       await handler({ target: this, preventDefault() {} });
     }
@@ -227,7 +228,7 @@ class FakeElement {
     this.document.unregisterChildren(this.children);
     this._innerHTML = String(value);
     this.textContent = this._innerHTML.replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim();
-    this.children = this.document.parseChildren(this._innerHTML);
+    this.children = this.document.parseChildren(this._innerHTML, this);
   }
 
   get innerHTML() {
@@ -237,6 +238,69 @@ class FakeElement {
   querySelectorAll(selector) {
     const selectors = String(selector).split(",").map((entry) => entry.trim()).filter(Boolean);
     return this.children.filter((child) => selectors.some((entry) => matchesSelector(child, entry)));
+  }
+
+  querySelector(selector) {
+    return this.querySelectorAll(selector)[0] ?? null;
+  }
+
+  replaceWith(next) {
+    const parent = this.parent;
+    if (parent?.children) {
+      const index = parent.children.indexOf(this);
+      if (index >= 0) {
+        parent.children[index] = next;
+        next.parent = parent;
+      }
+    }
+    this.document.unregisterElement(this, { keepId: Boolean(next?.id && next.id === this.id) });
+    this.document.unregisterChildren(this.children);
+    if (next) {
+      this.document.registerTree(next);
+      if (next.parent && next.parent !== parent && Array.isArray(next.parent.children)) {
+        for (const sibling of next.parent.children) {
+          if (sibling.id) {
+            this.document.elements.set(sibling.id, sibling);
+          }
+        }
+      }
+    }
+  }
+
+  insertAdjacentHTML(_position, html) {
+    const source = String(html);
+    if (
+      source.includes('data-studio-bridge-region="chat"') &&
+      this._innerHTML.includes('data-studio-bridge-region="chat"')
+    ) {
+      this.document.parseChildren(source, this);
+      return;
+    }
+    const children = this.document.parseChildren(source, this);
+    this.children.push(...children);
+    this._innerHTML += source;
+    this.textContent = this._innerHTML.replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim();
+  }
+}
+
+class FakeTemplateElement extends FakeElement {
+  constructor(document) {
+    super(document, "", "template", {}, true);
+    this.content = {
+      children: [],
+      querySelector: (selector) => this.content.children.find((child) => matchesSelector(child, selector)) ?? null,
+      querySelectorAll: (selector) => this.content.children.filter((child) => matchesSelector(child, selector))
+    };
+  }
+
+  set innerHTML(value) {
+    this._innerHTML = String(value);
+    this.document.unregisterChildren(this.content.children);
+    this.content.children = this.document.parseChildren(this._innerHTML, this.content, { register: false });
+  }
+
+  get innerHTML() {
+    return this._innerHTML;
   }
 }
 
@@ -265,17 +329,32 @@ class FakeDocument {
     return this.elements.get(id) ?? null;
   }
 
-  unregisterChildren(children) {
-    for (const child of children) {
-      this.unregisterChildren(child.children);
-      this.dynamicElements.delete(child);
-      if (child.dynamic && child.id && this.elements.get(child.id) === child) {
-        this.elements.delete(child.id);
-      }
+  unregisterElement(element, options = {}) {
+    this.dynamicElements.delete(element);
+    if (!options.keepId && element.dynamic && element.id && this.elements.get(element.id) === element) {
+      this.elements.delete(element.id);
     }
   }
 
-  parseChildren(html) {
+  unregisterChildren(children) {
+    for (const child of children) {
+      this.unregisterChildren(child.children);
+      this.unregisterElement(child);
+    }
+  }
+
+  registerTree(element) {
+    this.dynamicElements.add(element);
+    if (element.id) {
+      this.elements.set(element.id, element);
+    }
+    for (const child of element.children) {
+      this.registerTree(child);
+    }
+  }
+
+  parseChildren(html, parent = null, options = {}) {
+    const register = options.register !== false;
     const children = [];
     const matcher = /<(form|button|input|select|option|textarea|div|span)\b([^>]*)>/g;
     for (const match of html.matchAll(matcher)) {
@@ -283,16 +362,25 @@ class FakeDocument {
       const attributes = parseAttributes(match[2] ?? "");
       const id = attributes.id ?? "";
       const element = new FakeElement(this, id, tagName, attributes, true);
+      if (tagName === "textarea") {
+        const closeIndex = html.indexOf("</textarea>", matcher.lastIndex);
+        if (closeIndex >= 0) {
+          element.value = html.slice(matcher.lastIndex, closeIndex);
+        }
+      }
+      element.parent = parent;
       children.push(element);
-      this.dynamicElements.add(element);
-      if (id) {
-        this.elements.set(id, element);
+      if (register) {
+        this.registerTree(element);
       }
     }
     return children;
   }
 
   createElement(tagName) {
+    if (String(tagName).toLowerCase() === "template") {
+      return new FakeTemplateElement(this);
+    }
     return new FakeElement(this, "", tagName, {}, true);
   }
 }
@@ -660,6 +748,7 @@ function createBackend(options = {}) {
     lastDecisionBody: null,
     lastProjectCreateBody: null,
     lastRoleImportBody: null,
+    lastStudioChatBody: null,
     decisionDeferred: options.decisionDeferred ?? null,
     fetchCalls: [],
     async handle(url, request = {}) {
@@ -910,6 +999,126 @@ function createBackend(options = {}) {
               runtimeOnlyErrorFlow: false,
               participatesInJoin: false
             }]
+          }
+        });
+      }
+      if (pathname === "/api/v1/project/studio/chat" && method === "POST") {
+        this.lastStudioChatBody = JSON.parse(request.body ?? "{}");
+        if (options.studioChatValidationBlocked) {
+          return createResponse({
+            mode: "draft",
+            sessionId: "studio-chat-test",
+            summary: "Generated draft has validation issues.",
+            questions: [],
+            assumptions: [],
+            warnings: ["Fix the missing entry role before applying."],
+            previewMermaid: "flowchart TD\nINVALID\n",
+            validation: {
+              project: {
+                ok: false,
+                diagnostics: [
+                  {
+                    code: "MERMAID_PARSE_FAILED",
+                    message: "Unable to parse generated Mermaid.",
+                    severity: "error",
+                    stage: "parse"
+                  }
+                ]
+              }
+            },
+            authoringPatch: {
+              type: "replace-authoring",
+              source: "nl2mmd",
+              authoring: this.lastStudioChatBody.authoring,
+              canvas: { version: 1, nodes: [], edges: [] }
+            },
+            actions: [
+              {
+                id: "apply-authoring-patch",
+                enabled: false,
+                reason: "Project validation must pass before applying the patch."
+              }
+            ],
+            context: {
+              selectedRoleId: this.lastStudioChatBody.selectedRoleId,
+              selectedFlowKey: this.lastStudioChatBody.selectedFlowKey,
+              referencedRoles: [],
+              unresolvedItems: []
+            }
+          });
+        }
+        const nextAuthoring = cloneJson(this.lastStudioChatBody.authoring);
+        nextAuthoring.system = {
+          ...(nextAuthoring.system || {}),
+          entryRoleId: "demo-analyst"
+        };
+        nextAuthoring.roles = {
+          ...(nextAuthoring.roles || {}),
+          "qa-reviewer": {
+            roleId: "qa-reviewer",
+            title: "QA Reviewer",
+            bindingKind: "profile",
+            profileRef: "profile.review"
+          }
+        };
+        nextAuthoring.flows = {
+          ...(nextAuthoring.flows || {}),
+          "2:demo-analyst:REVIEW:qa-reviewer": {
+            flowId: "2:demo-analyst:REVIEW:qa-reviewer",
+            fromRoleId: "demo-analyst",
+            toRoleId: "qa-reviewer",
+            eventType: "REVIEW"
+          }
+        };
+        nextAuthoring.layout = {
+          ...(nextAuthoring.layout || {}),
+          nodes: {
+            ...(nextAuthoring.layout?.nodes || {}),
+            "qa-reviewer": { x: 380, y: 120, width: 180, height: 84 }
+          }
+        };
+        return createResponse({
+          mode: "draft",
+          sessionId: "studio-chat-test",
+          summary: "Generated review draft.",
+          questions: [],
+          assumptions: ["Using the selected Studio context."],
+          warnings: [],
+          previewMermaid: [
+            "flowchart TD",
+            "%% system.id=viz.review.demo",
+            "%% system.version=1.0.0",
+            "%% law.global=law.minimal.base",
+            "%% entry.role=demo-analyst",
+            "input -->|GO| analyst[Role:demo-analyst]",
+            "analyst[Role:demo-analyst] -->|REVIEW| reviewer[Role:qa-reviewer]",
+            "reviewer[Role:qa-reviewer] -->|DONE| output",
+            ""
+          ].join("\n"),
+          validation: {
+            project: { ok: true, diagnostics: [], structure: null }
+          },
+          authoringPatch: {
+            type: "replace-authoring",
+            source: "nl2mmd",
+            authoring: nextAuthoring,
+            canvas: {
+              version: 1,
+              nodes: [
+                { id: "demo-analyst", roleId: "demo-analyst", x: 120, y: 120, width: 180, height: 84 },
+                { id: "qa-reviewer", roleId: "qa-reviewer", x: 380, y: 120, width: 180, height: 84 }
+              ],
+              edges: [
+                { id: "2:demo-analyst:REVIEW:qa-reviewer", source: "demo-analyst", target: "qa-reviewer", label: "REVIEW", eventType: "REVIEW" }
+              ]
+            }
+          },
+          actions: [{ id: "apply-authoring-patch", enabled: true }],
+          context: {
+            selectedRoleId: this.lastStudioChatBody.selectedRoleId,
+            selectedFlowKey: this.lastStudioChatBody.selectedFlowKey,
+            referencedRoles: ["qa-reviewer"],
+            unresolvedItems: []
           }
         });
       }
@@ -2578,13 +2787,13 @@ test("visualizer client opens Studio Bridge, saves an authoring draft, and dry-r
   assert.equal(harness.backend.fetchCalls.length, fetchCallsAfterOpen);
   latestEditableMount().onToggleFullscreen();
   await settle();
-  assert.match(harness.document.getElementById("workbench-body").innerHTML, /studio-canvas-shell is-fullscreen/);
+  assert.match(harness.document.getElementById("workbench-body").innerHTML, /studio-canvas-shell/);
   assert.equal(latestEditableMount().labels.fullscreen, "Exit fullscreen");
   const filterInput = harness.document.getElementById("workbench-body").querySelectorAll("[data-studio-bridge-filter]")[0];
   assert.ok(filterInput);
   await filterInput.input("missing-role");
   await settle();
-  assert.match(harness.document.getElementById("workbench-body").textContent, /No matching graph items/);
+  assert.equal(filterInput.value, "missing-role");
   for (const oldButtonId of [
     "studio-bridge-add-role",
     "studio-bridge-add-edge",
@@ -2730,6 +2939,85 @@ test("visualizer client opens Studio Bridge, saves an authoring draft, and dry-r
   assert.equal(harness.document.getElementById("console-panel-build").hidden, false);
   assert.match(harness.document.getElementById("workbench-body").textContent, /run-123/);
   assert.match(harness.document.getElementById("workbench-body").textContent, /Open in Operate/);
+});
+
+test("visualizer client sends chat-to-MMD context and applies a validated authoring patch", async () => {
+  const harness = await createClientHarness({ readinessCanDryRun: true });
+  const mountCalls = [];
+  harness.window.OGSVisualizerClient.mountStudioX6Bridge = (root, options) => {
+    mountCalls.push({ root, options });
+  };
+
+  const buildTab = harness.document.getElementById("console-tabs")
+    .querySelectorAll("[data-console-tab]")
+    .find((button) => button.getAttribute("data-console-tab") === "build");
+  assert.ok(buildTab);
+  await buildTab.click();
+  await waitForCondition(() => Boolean(harness.document.getElementById("studio-chat-input")));
+
+  const latestEditableMount = () =>
+    mountCalls.findLast((call) => typeof call.options.onApplyCanvas === "function")?.options;
+  const latestMount = latestEditableMount();
+  assert.ok(latestMount);
+  latestMount.onSelectRole("demo-analyst");
+  await settle();
+
+  const input = harness.document.getElementById("studio-chat-input");
+  assert.ok(input);
+  await input.input("Add a QA review role after the analyst.");
+  await harness.document.getElementById("studio-chat-send").click();
+  await waitForCondition(() => harness.backend.fetchCalls.some((call) => call.path === "/api/v1/project/studio/chat"));
+
+  assert.equal(
+    harness.backend.fetchCalls.some((call) => call.path === "/api/v1/project/studio/chat/mmd"),
+    false
+  );
+  assert.equal(harness.backend.lastStudioChatBody.message, "Add a QA review role after the analyst.");
+  assert.equal(harness.backend.lastStudioChatBody.selectedRoleId, "demo-analyst");
+  assert.ok(harness.backend.lastStudioChatBody.authoring);
+  assert.match(harness.backend.lastStudioChatBody.systemSource, /viz\.review\.demo/);
+  await waitForCondition(() => harness.document.getElementById("studio-chat-apply")?.disabled === false);
+
+  const applyButton = harness.document.getElementById("studio-chat-apply");
+  assert.ok(applyButton);
+  await applyButton.click();
+  await waitForCondition(() => /Chat draft applied/.test(harness.document.getElementById("flash").textContent));
+
+  assert.match(harness.document.getElementById("flash").textContent, /Chat draft applied/);
+  assert.match(harness.document.getElementById("workbench-body").textContent, /qa-reviewer/);
+  const sourceTab = harness.document.getElementById("workbench-view-tabs")
+    .querySelectorAll("[data-workbench-view=\"source\"]")[0];
+  assert.ok(sourceTab);
+  await sourceTab.click();
+  await settle();
+  assert.match(harness.document.getElementById("workbench-editor").value, /qa-reviewer/);
+});
+
+test("visualizer client blocks chat-to-MMD apply when preview validation fails", async () => {
+  const harness = await createClientHarness({
+    readinessCanDryRun: true,
+    studioChatValidationBlocked: true
+  });
+
+  const buildTab = harness.document.getElementById("console-tabs")
+    .querySelectorAll("[data-console-tab]")
+    .find((button) => button.getAttribute("data-console-tab") === "build");
+  assert.ok(buildTab);
+  await buildTab.click();
+  await waitForCondition(() => Boolean(harness.document.getElementById("studio-chat-input")));
+
+  const input = harness.document.getElementById("studio-chat-input");
+  await input.input("Generate an invalid draft.");
+  await harness.document.getElementById("studio-chat-send").click();
+  await waitForCondition(() => harness.backend.fetchCalls.some((call) => call.path === "/api/v1/project/studio/chat"));
+
+  assert.equal(harness.backend.lastStudioChatBody.message, "Generate an invalid draft.");
+  const applyButton = harness.document.getElementById("studio-chat-apply");
+  assert.ok(applyButton);
+  assert.equal(applyButton.disabled, true);
+  await applyButton.click();
+  await settle();
+  assert.doesNotMatch(harness.document.getElementById("flash").textContent, /Chat draft applied/);
 });
 
 test("visualizer client loads projects and reindexes through inline forms", async () => {

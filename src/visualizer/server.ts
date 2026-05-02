@@ -69,6 +69,11 @@ import {
   type StudioAuthoringDocument,
   type StudioCanvasDocument
 } from "./studio-authoring.js";
+import {
+  parseStudioChatToMmdRequest,
+  runStudioChatToMmdTurn,
+  type StudioChatToMmdSessionMap
+} from "./studio-chat-to-mmd.js";
 import { listStudioAuthoringTemplates } from "./studio-templates.js";
 import {
   mapControlActionView,
@@ -108,6 +113,7 @@ type VisualizationServerState = {
   projectCreateRequests: Map<string, ProjectCreateRequestCacheEntry>;
   projectCreateRequestCacheTtlMs: number;
   projectCreateRequestCacheMaxSize: number;
+  studioChatToMmdSessions: StudioChatToMmdSessionMap;
 };
 
 type ProjectCreateRequestCacheEntry = {
@@ -880,6 +886,29 @@ async function handleApiStudioAuthoringApplyCanvas(
     systemSource,
     validation
   });
+}
+
+async function handleApiStudioChatToMmd(
+  state: VisualizationServerState,
+  request: IncomingMessage,
+  response: ServerResponse
+): Promise<void> {
+  const body = await readJsonRequest(request);
+  let chatRequest;
+  try {
+    chatRequest = parseStudioChatToMmdRequest(body);
+  } catch (error) {
+    if (error instanceof Error && error.message === "CHAT_MESSAGE_REQUIRED") {
+      throw new HttpError(400, "CHAT_MESSAGE_REQUIRED", "message is required.");
+    }
+    throw error;
+  }
+  jsonResponse(response, 200, await runStudioChatToMmdTurn({
+    workdir: state.workdir,
+    request: chatRequest,
+    sessions: state.studioChatToMmdSessions,
+    validateSystemSource: validateProjectSystemSource
+  }));
 }
 
 async function handleApiStudioTemplates(response: ServerResponse): Promise<void> {
@@ -1695,6 +1724,16 @@ async function handleVisualizationRequest(
     segments.length === 5 &&
     segments[2] === "project" &&
     segments[3] === "studio" &&
+    segments[4] === "chat" &&
+    method === "POST"
+  ) {
+    await handleApiStudioChatToMmd(state, request, response);
+    return;
+  }
+  if (
+    segments.length === 5 &&
+    segments[2] === "project" &&
+    segments[3] === "studio" &&
     segments[4] === "templates" &&
     method === "GET"
   ) {
@@ -1894,7 +1933,8 @@ export async function startVisualizationServer(args: VisualizationServerOptions)
     projectCreateRequestCacheMaxSize: normalizePositiveInteger(
       args.projectCreateRequestCacheMaxSize,
       DEFAULT_PROJECT_CREATE_REQUEST_CACHE_MAX_SIZE
-    )
+    ),
+    studioChatToMmdSessions: new Map()
   };
   const server = createServer((request, response) => {
     void handleVisualizationRequest(request, response, state, args).catch((error) => {

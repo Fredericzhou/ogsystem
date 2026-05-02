@@ -1308,6 +1308,14 @@ test("visualizer server exposes Mermaid workbench APIs and project export", asyn
     const templates = await templatesResponse.json();
     assert.deepEqual(templates.templates.map((template) => template.id).sort(), ["consultation", "debate", "review"]);
 
+    const emptyChatResponse = await fetch(`${url}/api/v1/project/studio/chat`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ message: "" })
+    });
+    assert.equal(emptyChatResponse.status, 400);
+    assert.equal((await emptyChatResponse.json()).error.code, "CHAT_MESSAGE_REQUIRED");
+
     const draftSaveResponse = await fetch(`${url}/api/v1/project/studio/authoring`, {
       method: "POST",
       headers: { "content-type": "application/json" },

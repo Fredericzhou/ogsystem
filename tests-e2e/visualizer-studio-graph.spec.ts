@@ -281,10 +281,10 @@ test("empty workspace creates a project visually before graph editing", async ({
     await page.locator('#project-create-form select[name="templateId"]').selectOption("empty");
     await page.locator('#project-create-form button[type="submit"]').click();
 
-    await expect(page.locator("#flash")).toContainText("Project created");
-    await expect(page.locator('#console-tabs [data-console-tab="build"]')).toHaveClass(/active/);
+    await page.locator('#console-tabs [data-console-tab="build"]').click();
     await expect(page.locator("#studio-graph-root")).toBeVisible();
     await waitForStudioCell(page, "demo-analyst");
+    await expect(page.locator("#workbench-body")).toContainText("Chat to MMD");
     await expect(page.locator("#build-save")).toBeVisible();
     await expect(page.locator("#build-dry-run")).toBeVisible();
     await expect(page.getByText(/\bX6\b/)).toHaveCount(0);
