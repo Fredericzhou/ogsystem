@@ -177,25 +177,30 @@ test("Studio Bridge renders and edits through the real graph workspace", async (
     await expect(addRoleForm).toBeVisible();
     await addRoleForm.locator('input[name="mode"][value="custom"]').check();
     await addRoleForm.locator('input[name="roleId"]').fill("new-role");
-    await addRoleForm.locator('input[name="title"]').fill("New role");
+    await addRoleForm.locator('input[name="title"]').fill("需求分析");
     await addRoleForm.locator('button[type="submit"]').click();
     await expect.poll(async () => page.evaluate(() => document.getElementById("studio-graph-root") === (window as any).__studioGraphRoot)).toBe(true);
     await expect(page.locator('#studio-graph-root [data-cell-id="new-role"]').first()).toBeVisible();
+    await expect(page.locator("#studio-graph-root")).toContainText("需求分析");
     await dragStudioPort(page, "new-role", "demo-analyst");
     const addEdgeForm = page.locator('#studio-graph-root form[data-studio-command-form="add-edge"]');
     await expect(addEdgeForm).toBeVisible();
+    await addEdgeForm.locator('input[name="label"]').fill("需求已完成");
     await addEdgeForm.locator('input[name="eventType"]').fill("DONE");
     await addEdgeForm.locator('button[type="submit"]').click();
     await expect.poll(async () => page.evaluate(() => document.getElementById("studio-graph-root") === (window as any).__studioGraphRoot)).toBe(true);
     await expect(page.locator('[data-studio-flow-key="new-role:DONE:demo-analyst"]')).toBeVisible();
+    await expect(page.locator("#studio-graph-root")).toContainText("需求已完成");
     await page.locator('[data-studio-flow-key="new-role:DONE:demo-analyst"]').click();
     const editEdgeForm = page.locator('#studio-graph-root form[data-studio-command-form="edit-edge"]');
     await expect(editEdgeForm).toBeVisible();
+    await expect(editEdgeForm.locator('input[name="label"]')).toHaveValue("需求已完成");
     await expect(editEdgeForm.locator('input[name="eventType"]')).toHaveValue("DONE");
     await editEdgeForm.locator('input[name="eventType"]').fill("HANDOFF");
     await editEdgeForm.locator('button[type="submit"]').click();
     await expect(page.locator('[data-studio-flow-key="new-role:HANDOFF:demo-analyst"]')).toBeVisible();
-    await page.locator("[data-studio-bridge-filter]").fill("HANDOFF");
+    await expect(page.locator("#studio-graph-root")).toContainText("需求已完成");
+    await page.locator("[data-studio-bridge-filter]").fill("需求已完成");
     await expect(page.locator('[data-studio-flow-key="new-role:HANDOFF:demo-analyst"]')).toBeVisible();
     await expect(page.locator('[data-studio-flow-key="demo-analyst:DONE:output"]')).toHaveCount(0);
     await page.locator("[data-studio-bridge-filter]").fill("");
@@ -243,7 +248,8 @@ test("Studio Bridge renders and edits through the real graph workspace", async (
           flowId: "2:demo-analyst:REVIEW:qa-reviewer",
           fromRoleId: "demo-analyst",
           toRoleId: "qa-reviewer",
-          eventType: "REVIEW"
+          eventType: "REVIEW",
+          label: "进入复核"
         }
       };
       nextAuthoring.layout = {
@@ -291,7 +297,7 @@ test("Studio Bridge renders and edits through the real graph workspace", async (
                   id: "2:demo-analyst:REVIEW:qa-reviewer",
                   source: "demo-analyst",
                   target: "qa-reviewer",
-                  label: "REVIEW",
+                  label: "进入复核",
                   eventType: "REVIEW",
                   runtimeOnlyErrorFlow: false,
                   participatesInJoin: false
@@ -318,6 +324,7 @@ test("Studio Bridge renders and edits through the real graph workspace", async (
     await expect(page.locator("#studio-chat-apply")).toBeEnabled();
     await page.locator("#studio-chat-apply").click();
     await expect(page.locator('#studio-graph-root [data-cell-id="qa-reviewer"]')).toBeVisible();
+    await expect(page.locator("#studio-graph-root")).toContainText("进入复核");
     await expect.poll(async () => page.evaluate(() => {
       const root = document.getElementById("studio-graph-root");
       return Array.from(root?.querySelectorAll("[data-cell-id]") || []).map((element) =>

@@ -36,6 +36,7 @@ export type StudioCommandFormLabels = Partial<Record<
   | "newProfileMaxOutputBytes"
   | "sourceRole"
   | "targetRole"
+  | "flowLabel"
   | "eventType"
   | "runtimeOnlyErrorFlow"
   | "participatesInJoin"
@@ -120,6 +121,7 @@ export function createDefaultStudioCommandFormState(args: {
   roleId?: string;
   flowId?: string;
   eventType?: string;
+  label?: string;
   runtimeOnlyErrorFlow?: boolean;
   participatesInJoin?: boolean;
 }): StudioCommandFormState {
@@ -169,6 +171,7 @@ export function createDefaultStudioCommandFormState(args: {
     sourceRoleId: args.sourceRoleId || firstRoleId(args.context),
     targetRoleId: args.targetRoleId || STUDIO_SYSTEM_END_ROLE_ID,
     eventType: args.eventType || "DONE",
+    label: args.label || "",
     runtimeOnlyErrorFlow: Boolean(args.runtimeOnlyErrorFlow),
     participatesInJoin: Boolean(args.participatesInJoin)
   };
@@ -220,6 +223,7 @@ export function commandFromStudioCommandFormState(state: StudioCommandFormState)
       sourceRoleId: state.fields.sourceRoleId.trim(),
       targetRoleId: state.fields.targetRoleId.trim(),
       eventType: normalizeStudioEventType(state.fields.eventType || "DONE"),
+      label: state.fields.label?.trim(),
       runtimeOnlyErrorFlow: Boolean(state.fields.runtimeOnlyErrorFlow),
       participatesInJoin: Boolean(state.fields.participatesInJoin)
     };
@@ -229,6 +233,7 @@ export function commandFromStudioCommandFormState(state: StudioCommandFormState)
     sourceRoleId: state.fields.sourceRoleId.trim(),
     targetRoleId: state.fields.targetRoleId.trim(),
     eventType: normalizeStudioEventType(state.fields.eventType || "DONE"),
+    label: state.fields.label?.trim(),
     runtimeOnlyErrorFlow: Boolean(state.fields.runtimeOnlyErrorFlow),
     participatesInJoin: Boolean(state.fields.participatesInJoin)
   };
@@ -471,6 +476,7 @@ export function renderStudioCommandForm(args: {
     isEditEdge ? '<input type="hidden" name="flowId" value="' + escapeHtml(fields.flowId || "") + '"><input type="hidden" name="originalSourceRoleId" value="' + escapeHtml(fields.originalSourceRoleId || fields.sourceRoleId) + '"><input type="hidden" name="originalTargetRoleId" value="' + escapeHtml(fields.originalTargetRoleId || fields.targetRoleId) + '"><input type="hidden" name="originalEventType" value="' + escapeHtml(fields.originalEventType || fields.eventType || "") + '">' : "",
     '<label class="studio-command-form-row"><span>' + escapeHtml(label(labels, "sourceRole", "Source role")) + '</span><select name="sourceRoleId">' + renderRoleOptions(args.context, fields.sourceRoleId) + "</select>" + renderStudioCommandFormFieldError(args.state, "sourceRoleId") + "</label>",
     '<label class="studio-command-form-row"><span>' + escapeHtml(label(labels, "targetRole", "Target role")) + '</span><select name="targetRoleId">' + targetOptions + "</select>" + renderStudioCommandFormFieldError(args.state, "targetRoleId") + "</label>",
+    '<label class="studio-command-form-row"><span>' + escapeHtml(label(labels, "flowLabel", "Display name")) + '</span><input name="label" value="' + escapeHtml(fields.label || "") + '"></label>',
     '<label class="studio-command-form-row"><span>' + escapeHtml(label(labels, "eventType", "Event type")) + '</span><input name="eventType" value="' + escapeHtml(fields.eventType || "") + '">' + renderStudioCommandFormFieldError(args.state, "eventType") + "</label>",
     '<label class="studio-command-form-check"><input type="checkbox" name="runtimeOnlyErrorFlow"' + (fields.runtimeOnlyErrorFlow ? " checked" : "") + "> " + escapeHtml(label(labels, "runtimeOnlyErrorFlow", "Runtime error flow")) + "</label>",
     '<label class="studio-command-form-check"><input type="checkbox" name="participatesInJoin"' + (fields.participatesInJoin ? " checked" : "") + "> " + escapeHtml(label(labels, "participatesInJoin", "Join source")) + "</label>",
@@ -532,6 +538,7 @@ export function readStudioCommandFormState(args: {
     sourceRoleId: String(data.get("sourceRoleId") ?? "").trim(),
     targetRoleId: String(data.get("targetRoleId") ?? "").trim(),
     eventType: String(data.get("eventType") ?? "").trim(),
+    label: String(data.get("label") ?? "").trim(),
     runtimeOnlyErrorFlow: data.get("runtimeOnlyErrorFlow") === "on",
     participatesInJoin: data.get("participatesInJoin") === "on"
   };

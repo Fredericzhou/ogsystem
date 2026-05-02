@@ -12,6 +12,11 @@ import {
   normalizeLifecycleView,
   readRouteStateFromSearch
 } from "../dist/visualizer/client-app.js";
+import {
+  filterStudioBridgeItems,
+  renderStudioBridgeInspector,
+  renderStudioBridgePanel
+} from "../dist/visualizer/client-renderers.js";
 
 const PAGE_ELEMENT_IDS = [
   "run-list",
@@ -108,6 +113,86 @@ function parseAttributes(source) {
   }
   return attributes;
 }
+
+function testTranslator(_key, vars, fallback) {
+  let text = fallback ?? _key;
+  for (const [key, value] of Object.entries(vars || {})) {
+    text = text.replaceAll(`{${key}}`, String(value));
+  }
+  return text;
+}
+
+test("Studio Bridge renderers display and filter flow labels separately from event types", () => {
+  const bridge = {
+    validation: { ok: true, diagnostics: [] },
+    extracted: {
+      systemId: "demo.system",
+      systemVersion: "1.0.0",
+      entryRoleId: "requirements_analyst",
+      lawGlobal: "law.minimal",
+      roles: [
+        {
+          roleId: "requirements_analyst",
+          title: "需求分析",
+          bindingKind: "model",
+          incomingFlowCount: 0,
+          outgoingFlowCount: 1,
+          allowedEvents: ["REQUIREMENTS_READY"],
+          badges: ["entry"]
+        },
+        {
+          roleId: "reviewer",
+          bindingKind: "noop",
+          incomingFlowCount: 1,
+          outgoingFlowCount: 0,
+          allowedEvents: [],
+          badges: []
+        }
+      ],
+      flows: [{
+        flowId: "1:requirements_analyst:REQUIREMENTS_READY:reviewer",
+        flowKey: "requirements_analyst:REQUIREMENTS_READY:reviewer",
+        fromRoleId: "requirements_analyst",
+        toRoleId: "reviewer",
+        eventType: "REQUIREMENTS_READY",
+        label: "需求已完成",
+        runtimeOnlyErrorFlow: false,
+        participatesInJoin: false
+      }]
+    }
+  };
+
+  const filtered = filterStudioBridgeItems({
+    roles: bridge.extracted.roles,
+    flows: bridge.extracted.flows,
+    filter: "需求已完成",
+    mode: "flows"
+  });
+  assert.equal(filtered.flows.length, 1);
+  assert.equal(filtered.flows[0].eventType, "REQUIREMENTS_READY");
+
+  const inspectorHtml = renderStudioBridgeInspector({
+    bridge,
+    selectedRoleId: "",
+    selectedFlowKey: "requirements_analyst:REQUIREMENTS_READY:reviewer",
+    t: testTranslator
+  });
+  assert.match(inspectorHtml, /需求已完成/);
+  assert.match(inspectorHtml, /REQUIREMENTS_READY/);
+
+  const panelHtml = renderStudioBridgePanel({
+    bridge,
+    readiness: {},
+    selectedRoleId: "",
+    selectedFlowKey: "requirements_analyst:REQUIREMENTS_READY:reviewer",
+    filter: "需求已完成",
+    listMode: "flows",
+    actionBusy: "",
+    t: testTranslator
+  });
+  assert.match(panelHtml, /需求已完成/);
+  assert.match(panelHtml, /REQUIREMENTS_READY/);
+});
 
 function matchesSelector(element, selector) {
   if (/^[a-zA-Z][a-zA-Z0-9-]*$/.test(selector)) {
@@ -1130,7 +1215,8 @@ function createBackend(options = {}) {
             flowId: "2:demo-analyst:REVIEW:qa-reviewer",
             fromRoleId: "demo-analyst",
             toRoleId: "qa-reviewer",
-            eventType: "REVIEW"
+            eventType: "REVIEW",
+            label: "进入复核"
           }
         };
         nextAuthoring.layout = {
@@ -1172,7 +1258,7 @@ function createBackend(options = {}) {
                 { id: "qa-reviewer", roleId: "qa-reviewer", x: 380, y: 120, width: 180, height: 84 }
               ],
               edges: [
-                { id: "2:demo-analyst:REVIEW:qa-reviewer", source: "demo-analyst", target: "qa-reviewer", label: "REVIEW", eventType: "REVIEW" }
+                { id: "2:demo-analyst:REVIEW:qa-reviewer", source: "demo-analyst", target: "qa-reviewer", label: "进入复核", eventType: "REVIEW" }
               ]
             }
           },
@@ -3092,7 +3178,9 @@ test("visualizer client sends chat-to-MMD context and applies a validated author
 
   assert.match(harness.document.getElementById("flash").textContent, /Chat draft applied/);
   assert.ok(latestEditableMount().authoring.roles["qa-reviewer"]);
+  assert.equal(latestEditableMount().authoring.flows["2:demo-analyst:REVIEW:qa-reviewer"].label, "进入复核");
   assert.ok(latestEditableMount().canvas.nodes.some((node) => node.roleId === "qa-reviewer"));
+  assert.ok(latestEditableMount().canvas.edges.some((edge) => edge.eventType === "REVIEW" && edge.label === "进入复核"));
   const sourceTab = harness.document.getElementById("workbench-view-tabs")
     .querySelectorAll("[data-workbench-view=\"source\"]")[0];
   assert.ok(sourceTab);

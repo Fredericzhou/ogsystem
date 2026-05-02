@@ -37,6 +37,7 @@ export type StudioAuthoringCommand =
       sourceRoleId: string;
       targetRoleId: string;
       eventType?: string;
+      label?: string;
       runtimeOnlyErrorFlow?: boolean;
       participatesInJoin?: boolean;
     }
@@ -49,6 +50,7 @@ export type StudioAuthoringCommand =
       sourceRoleId: string;
       targetRoleId: string;
       eventType?: string;
+      label?: string;
       runtimeOnlyErrorFlow?: boolean;
       participatesInJoin?: boolean;
     }
@@ -110,6 +112,11 @@ function normalizeTitle(value: unknown, fallback: string): string {
 
 function normalizeEventType(value: unknown): string {
   return String(value ?? "").trim().toUpperCase();
+}
+
+function normalizeFlowLabel(value: unknown, eventType: string): string | undefined {
+  const label = String(value ?? "").trim();
+  return label && label !== eventType ? label.slice(0, 120) : undefined;
 }
 
 function nextFlowId(authoring: StudioAuthoringDocument, flow: Omit<StudioAuthoringFlow, "flowId">): string {
@@ -387,12 +394,16 @@ export function applyStudioAuthoringCommand(args: {
     )) {
       return { authoring, canvas, blockedCode: "duplicate-edge" };
     }
-    const flowBody = {
+    const flowBody: Omit<StudioAuthoringFlow, "flowId"> = {
       fromRoleId: sourceRoleId,
       toRoleId: targetRoleId,
       eventType,
+      label: normalizeFlowLabel(command.label, eventType),
       runtimeOnlyErrorFlow: command.runtimeOnlyErrorFlow ?? eventType.startsWith("ERROR")
     };
+    if (!flowBody.label) {
+      delete flowBody.label;
+    }
     const flowId = nextFlowId(authoring, flowBody);
     const flow = { flowId, ...flowBody };
     authoring.flows[flowId] = flow;
@@ -400,7 +411,7 @@ export function applyStudioAuthoringCommand(args: {
       id: flowId,
       source: sourceRoleId,
       target: targetRoleId,
-      label: eventType,
+      label: flow.label ?? eventType,
       eventType,
       runtimeOnlyErrorFlow: Boolean(flow.runtimeOnlyErrorFlow),
       participatesInJoin: Boolean(command.participatesInJoin)
@@ -455,8 +466,14 @@ export function applyStudioAuthoringCommand(args: {
       fromRoleId: sourceRoleId,
       toRoleId: targetRoleId,
       eventType,
+      label: Object.hasOwn(command, "label")
+        ? normalizeFlowLabel(command.label, eventType)
+        : normalizeFlowLabel(originalFlow.label, eventType),
       runtimeOnlyErrorFlow: command.runtimeOnlyErrorFlow ?? eventType.startsWith("ERROR")
     };
+    if (!flow.label) {
+      delete flow.label;
+    }
     delete authoring.flows[originalFlowId];
     authoring.flows[flow.flowId] = flow;
     if (originalTargetRoleId !== STUDIO_SYSTEM_END_ROLE_ID) {
@@ -476,7 +493,7 @@ export function applyStudioAuthoringCommand(args: {
             id: flow.flowId,
             source: sourceRoleId,
             target: targetRoleId,
-            label: eventType,
+            label: flow.label ?? eventType,
             eventType,
             runtimeOnlyErrorFlow: Boolean(flow.runtimeOnlyErrorFlow),
             participatesInJoin: Boolean(command.participatesInJoin)

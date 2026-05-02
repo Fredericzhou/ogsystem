@@ -52,6 +52,7 @@ export type StudioAuthoringFlow = {
   fromRoleId: string;
   toRoleId: string;
   eventType: string;
+  label?: string;
   runtimeOnlyErrorFlow?: boolean;
 };
 

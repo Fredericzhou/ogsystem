@@ -134,6 +134,11 @@ export function flowKeyOf(flow: JsonRecord): string {
   return String(flow.flowKey ?? (String(flow.fromRoleId ?? "") + ":" + String(flow.eventType ?? "") + ":" + normalizeStudioTargetRoleId(flow.toRoleId)));
 }
 
+export function flowDisplayLabel(flow: JsonRecord): string {
+  const label = String(flow.label ?? "").trim();
+  return label || String(flow.eventType ?? "");
+}
+
 export function sortStudioBridgeRolesTopologically(roles: JsonRecord[], flows: JsonRecord[]): JsonRecord[] {
   const roleById = new Map<string, JsonRecord>();
   const indexById = new Map<string, number>();
@@ -197,7 +202,7 @@ export function filterStudioBridgeItems(args: {
   const roleMatches = (role: JsonRecord) =>
     match(role.roleId) || match(role.title) || match(role.bindingKind) || match((Array.isArray(role.badges) ? role.badges.join(" ") : ""));
   const flowMatches = (flow: JsonRecord) =>
-    match(flow.flowKey) || match(flow.fromRoleId) || match(flow.toRoleId) || match(flow.eventType);
+    match(flow.flowKey) || match(flow.fromRoleId) || match(flow.toRoleId) || match(flow.eventType) || match(flow.label);
   return {
     roles: args.mode === "flows" ? [] : args.roles.filter(roleMatches),
     flows: args.mode === "roles" ? [] : args.flows.filter(flowMatches)
@@ -544,7 +549,11 @@ export function renderStudioBridgeInspector(args: {
     ? '<div class="event"><div class="event-top"><span>' + escapeText(t("studio.flowInspector", undefined, "flow inspector")) + '</span><span>' + escapeText(String(selectedFlow.eventType ?? "")) +
       '</span></div><strong><code>' + escapeText(String(selectedFlow.fromRoleId ?? "")) + '</code> -> <code>' +
       escapeText(String(selectedFlow.toRoleId ?? "")) + '</code></strong><div class="hint">' +
-      escapeText(selectedFlow.runtimeOnlyErrorFlow ? t("studio.runtimeOnlyErrorPath", undefined, "runtime-only error path") : t("studio.authoringDesignPath", undefined, "authoring design path")) +
+      escapeText(t("studio.flowDisplayIdentity", {
+        label: flowDisplayLabel(selectedFlow),
+        eventType: String(selectedFlow.eventType ?? "")
+      }, "display " + flowDisplayLabel(selectedFlow) + " · event " + String(selectedFlow.eventType ?? ""))) +
+      " · " + escapeText(selectedFlow.runtimeOnlyErrorFlow ? t("studio.runtimeOnlyErrorPath", undefined, "runtime-only error path") : t("studio.authoringDesignPath", undefined, "authoring design path")) +
       " · " + escapeText(selectedFlow.participatesInJoin ? t("studio.participatesInJoin", undefined, "participates in join.sources") : t("studio.notJoinSource", undefined, "not a join source")) + "</div></div>"
     : '<div class="hint">' + escapeText(t("studio.selectFlow", undefined, "Select a flow to inspect event metadata.")) + '</div>';
   return '<div class="event"><div class="event-top"><span>' + escapeText(t("common.system", undefined, "system")) + '</span><span>' + escapeText(String(extracted.systemVersion ?? "n/a")) +
@@ -612,11 +621,12 @@ export function renderStudioBridgePanel(args: {
     ? filtered.flows.map((flow) => {
         const key = String(flow.flowKey ?? "");
         const active = selectedFlow && selectedFlow.flowKey === key ? " active" : "";
+        const displayLabel = flowDisplayLabel(flow);
         return (
           '<button class="run-card' + active + '" data-studio-flow-key="' + escapeText(key) + '"' + busy + ">" +
           '<div class="run-title"><span><code>' + escapeText(String(flow.fromRoleId ?? "")) + '</code> -> <code>' +
           escapeText(String(flow.toRoleId ?? "")) + '</code></span><span>' + escapeText(String(flow.eventType ?? "")) +
-          '</span></div><div class="meta"><span>' + escapeText(flow.runtimeOnlyErrorFlow ? t("studio.runtimeErrorFlow", undefined, "runtime error flow") : t("studio.designFlow", undefined, "design flow")) +
+          '</span></div><strong>' + escapeText(displayLabel) + '</strong><div class="meta"><span>' + escapeText(flow.runtimeOnlyErrorFlow ? t("studio.runtimeErrorFlow", undefined, "runtime error flow") : t("studio.designFlow", undefined, "design flow")) +
           '</span><span>' + escapeText(flow.participatesInJoin ? t("studio.joinSource", undefined, "join source") : t("studio.standard", undefined, "standard")) + "</span></div></button>"
         );
       })

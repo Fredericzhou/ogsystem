@@ -270,21 +270,21 @@ Rules:
 These items should be completed before landing flow labels and deeper visual editing:
 
 - [x] Confirm role display foundation: `StudioAuthoringRole.title` exists and graph nodes display `title || roleId`.
-- [ ] Define `label?: string` in `StudioAuthoringFlow`.
-- [ ] Preserve `label` through canvas projection, command application, authoring draft save/load, and graph refresh.
-- [ ] Add or update authoring validation for stable IDs plus optional display names.
-- [ ] Keep display metadata persisted in `.ogs/studio/system.authoring.json` / authoring document for phase 1.
-- [ ] Defer `role.title.*` / `flow.label.*` serialization into `system.mmd` until parser allow-list is implemented.
-- [ ] Update Studio Graph renderer to display `edge.label || edge.eventType`.
-- [ ] Update edge forms and Inspector to show both:
+- [x] Define `label?: string` in `StudioAuthoringFlow`.
+- [x] Preserve `label` through canvas projection, command application, authoring draft save/load, and graph refresh.
+- [x] Add or update authoring validation for stable IDs plus optional display names.
+- [x] Keep display metadata persisted in `.ogs/studio/system.authoring.json` / authoring document for phase 1.
+- [x] Defer `role.title.*` / `flow.label.*` serialization into `system.mmd` until parser allow-list is implemented.
+- [x] Update Studio Graph renderer to display `edge.label || edge.eventType`.
+- [x] Update edge forms and Inspector to show both:
   - display name
   - runtime identity
-- [ ] Update Chat to MMD patch handling to split Chinese business names from stable IDs.
-- [ ] Add tests for Chinese display names with unchanged runtime IDs.
-- [ ] Add tests proving `StudioAuthoringDocument -> canvas -> authoring` preserves `flow.label`, while `authoring -> Mermaid -> import` intentionally drops display labels in phase 1.
-- [ ] Add regression tests that editing `eventType` does not drop `label`, and editing `label` does not change duplicate detection or `flowKey`.
-- [ ] Add browser smoke showing Chinese node/edge labels while generated Mermaid still parses.
-- [ ] Extract panel/workspace modules opportunistically as touched; do not block this feature on a large upfront refactor.
+- [x] Update Chat to MMD patch handling to split Chinese business names from stable IDs.
+- [x] Add tests for Chinese display names with unchanged runtime IDs.
+- [x] Add tests proving `StudioAuthoringDocument -> canvas -> authoring` preserves `flow.label`, while `authoring -> Mermaid -> import` intentionally drops display labels in phase 1.
+- [x] Add regression tests that editing `eventType` does not drop `label`, and editing `label` does not change duplicate detection or `flowKey`.
+- [x] Add browser smoke showing Chinese node/edge labels while generated Mermaid still parses.
+- [x] Extract panel/workspace modules opportunistically as touched; do not block this feature on a large upfront refactor.
 
 ## Recommended Execution Order
 
@@ -299,19 +299,26 @@ These items should be completed before landing flow labels and deeper visual edi
 ## Acceptance Criteria
 
 - [x] The authoring model supports a role display name through `title`.
-- [ ] Users can name a role `需求分析` in the visual graph and keep that name through save/load.
-- [ ] The underlying role keeps a stable ID such as `requirements_analyst`.
-- [ ] Users can name a flow `需求已完成` through `label`.
-- [ ] The underlying event keeps a stable event type such as `REQUIREMENTS_READY`.
-- [ ] `flow.label` survives canvas projection, save/load, and graph refresh.
-- [ ] Editing `eventType` does not drop `label`, and editing `label` does not change duplicate detection or `flowKey`.
-- [ ] Generated Mermaid parses successfully without runtime/parser semantic changes and continues to use stable `roleId/eventType`.
-- [ ] Inspector shows both display name and runtime identity.
-- [ ] Inspector, lists, and search/filter all include `label` in display and lookup paths.
-- [ ] Chat to MMD can generate Chinese business names while emitting stable IDs and event codes in structured patches.
-- [ ] Duplicate detection, join/source logic, route/order logic, and contracts remain keyed only by `fromRoleId + eventType + toRoleId`, allowing repeated Chinese labels.
-- [ ] Existing runtime, parser, compiler, run artifact, resume, readiness, and release tests keep passing.
-- [ ] Browser smoke confirms Chinese labels are visible in the graph.
+- [x] Users can name a role `需求分析` in the visual graph and keep that name through save/load.
+- [x] The underlying role keeps a stable ID such as `requirements_analyst`.
+- [x] Users can name a flow `需求已完成` through `label`.
+- [x] The underlying event keeps a stable event type such as `REQUIREMENTS_READY`.
+- [x] `flow.label` survives canvas projection, save/load, and graph refresh.
+- [x] Editing `eventType` does not drop `label`, and editing `label` does not change duplicate detection or `flowKey`.
+- [x] Generated Mermaid parses successfully without runtime/parser semantic changes and continues to use stable `roleId/eventType`.
+- [x] Inspector shows both display name and runtime identity.
+- [x] Inspector, lists, and search/filter all include `label` in display and lookup paths.
+- [x] Chat to MMD can generate Chinese business names while emitting stable IDs and event codes in structured patches.
+- [x] Duplicate detection, join/source logic, route/order logic, and contracts remain keyed only by `fromRoleId + eventType + toRoleId`, allowing repeated Chinese labels.
+- [x] Existing runtime, parser, compiler, run artifact, resume, readiness, and release tests keep passing.
+- [x] Browser smoke confirms Chinese labels are visible in the graph.
+
+Implementation status:
+
+- Landed in phase 1 as authoring display metadata only.
+- `serializeAuthoringToMermaid()` still emits stable `roleId` / `eventType` only.
+- Re-importing from Mermaid intentionally drops display metadata until phase 2 metadata allow-listing exists.
+- Chat-to-MMD structured authoring patches can carry `role.title` and `flow.label`; Mermaid preview remains runtime-stable.
 
 ## Non-Goals
 

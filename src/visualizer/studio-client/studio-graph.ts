@@ -383,6 +383,7 @@ export class StudioGraphIsland {
       sourceRoleId?: string;
       targetRoleId?: string;
       eventType?: string;
+      label?: string;
       runtimeOnlyErrorFlow?: boolean;
       participatesInJoin?: boolean;
     } = {}
@@ -398,6 +399,7 @@ export class StudioGraphIsland {
       sourceRoleId: defaults.sourceRoleId,
       targetRoleId: defaults.targetRoleId,
       eventType: defaults.eventType,
+      label: defaults.label,
       runtimeOnlyErrorFlow: defaults.runtimeOnlyErrorFlow,
       participatesInJoin: defaults.participatesInJoin
     });
@@ -421,6 +423,7 @@ export class StudioGraphIsland {
     source: string;
     target: string;
     eventType: string;
+    label?: string;
     runtimeOnlyErrorFlow?: boolean;
     participatesInJoin?: boolean;
     editable?: boolean;
@@ -438,6 +441,7 @@ export class StudioGraphIsland {
       sourceRoleId: edge.source,
       targetRoleId: edge.target,
       eventType: edge.eventType,
+      label: edge.label,
       runtimeOnlyErrorFlow: edge.runtimeOnlyErrorFlow,
       participatesInJoin: edge.participatesInJoin
     });

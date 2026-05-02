@@ -23,6 +23,7 @@ import {
   renderStudioBridgeSelectionLabel,
   roleIdOf,
   flowKeyOf,
+  flowDisplayLabel,
   sortStudioBridgeRolesTopologically,
   filterStudioBridgeItems,
   sortStudioBridgeFlowsByTopology,
@@ -307,6 +308,7 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
     const renderStudioBridgeInspector = ${renderStudioBridgeInspector.toString()};
     const roleIdOf = ${roleIdOf.toString()};
     const flowKeyOf = ${flowKeyOf.toString()};
+    const flowDisplayLabel = ${flowDisplayLabel.toString()};
     const sortStudioBridgeRolesTopologically = ${sortStudioBridgeRolesTopologically.toString()};
     const filterStudioBridgeItems = ${filterStudioBridgeItems.toString()};
     const sortStudioBridgeFlowsByTopology = ${sortStudioBridgeFlowsByTopology.toString()};
@@ -854,12 +856,39 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
           id: flow.flowId,
           source: flow.fromRoleId,
           target: flow.toRoleId,
-          label: flow.eventType,
+          label: flow.label || flow.eventType,
           eventType: flow.eventType,
           runtimeOnlyErrorFlow: Boolean(flow.runtimeOnlyErrorFlow),
           participatesInJoin: Boolean(flow.participatesInJoin)
         })),
         viewport: authoring?.layout?.viewport
+      };
+    }
+
+    function studioAuthoringFlowDisplayKey(flow) {
+      const target = String(flow?.toRoleId || "") === "output" ? "__system_end__" : String(flow?.toRoleId || "");
+      return String(flow?.fromRoleId || "") + ":" + String(flow?.eventType || "") + ":" + target;
+    }
+
+    function withStudioAuthoringDisplayMetadata(bridge, authoring) {
+      if (!bridge?.extracted || !authoring) {
+        return bridge;
+      }
+      const roleTitleById = new Map(Object.values(authoring.roles || {}).map((role) => [String(role.roleId || ""), role.title]));
+      const flowLabelByKey = new Map(Object.values(authoring.flows || {}).map((flow) => [studioAuthoringFlowDisplayKey(flow), flow.label]));
+      return {
+        ...bridge,
+        extracted: {
+          ...bridge.extracted,
+          roles: (bridge.extracted.roles || []).map((role) => {
+            const title = roleTitleById.get(String(role.roleId || ""));
+            return title ? { ...role, title } : role;
+          }),
+          flows: (bridge.extracted.flows || []).map((flow) => {
+            const label = flowLabelByKey.get(studioAuthoringFlowDisplayKey(flow));
+            return label ? { ...flow, label } : flow;
+          })
+        }
       };
     }
 
@@ -923,6 +952,7 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
         sourceRole: t("studio.form.sourceRole", undefined, "Source role"),
         targetRole: t("studio.form.targetRole", undefined, "Target role"),
         eventType: t("studio.form.eventType", undefined, "Event type"),
+        flowLabel: t("studio.form.flowLabel", undefined, "Display name"),
         runtimeOnlyErrorFlow: t("studio.form.runtimeOnlyErrorFlow", undefined, "Runtime error flow"),
         participatesInJoin: t("studio.form.participatesInJoin", undefined, "Join source"),
         cancel: t("action.cancel", undefined, "Cancel"),
@@ -1001,19 +1031,21 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
         const source = String(edge?.sourceRoleId || edge?.source || "");
         const target = String(edge?.targetRoleId || edge?.target || "__system_end__");
         const eventType = String(edge?.event || edge?.eventType || "DONE");
+        const label = String(edge?.label || eventType);
         const flowId = String(edge?.flowId || "run-flow-" + index);
         authoringFlows[flowId] = {
           flowId,
           fromRoleId: source,
           toRoleId: target,
           eventType,
+          ...(label && label !== eventType ? { label } : {}),
           runtimeOnlyErrorFlow: Boolean(edge?.isErrorFlow || edge?.runtimeOnlyErrorFlow)
         };
         return {
           id: flowId,
           source,
           target,
-          label: eventType,
+          label,
           eventType,
           runtimeOnlyErrorFlow: Boolean(edge?.isErrorFlow || edge?.runtimeOnlyErrorFlow),
           participatesInJoin: Boolean(edge?.participatesInJoin || edge?.recentlyActivated)
@@ -1508,7 +1540,7 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
           + '</div></div>'
         ),
         ...(structure.flows || []).map((flow) =>
-          '<div class="event"><div class="event-top"><span><code>' + escapeText(flow.fromRoleId) + '</code> -> <code>' + escapeText(flow.toRoleId) + '</code></span><span>' + escapeText(t("common.flow")) + '</span></div><strong>' + escapeText(flow.eventType) + '</strong></div>'
+          '<div class="event"><div class="event-top"><span><code>' + escapeText(flow.fromRoleId) + '</code> -> <code>' + escapeText(flow.toRoleId) + '</code></span><span>' + escapeText(flow.eventType) + '</span></div><strong>' + escapeText(flow.label || flow.eventType) + '</strong></div>'
         ),
         '</div>'
       ].join("");
@@ -3339,11 +3371,11 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
         systemSource: state.workbenchSource,
         systemPath: state.workbenchSavedPath || "system.mmd"
       });
-      state.studioBridge = {
+      state.studioBridge = withStudioAuthoringDisplayMetadata({
         ...bridgePayload,
         authoring: payload.authoring,
         validation: payload.validation || bridgePayload.validation
-      };
+      }, payload.authoring);
       state.studioCanvas = payload.canvas || args.canvas;
       if (args.selectedRoleId !== undefined) {
         state.studioBridgeSelectedRoleId = args.selectedRoleId || "";
@@ -3430,12 +3462,12 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
           label: "Apply Chat to MMD"
         };
         renderStudioBridge({ preserveGraphRoot: true });
-        state.studioBridge = {
+        state.studioBridge = withStudioAuthoringDisplayMetadata({
           ...(state.studioBridge || {}),
           authoring: patch.authoring,
           canvas: patch.canvas || state.studioCanvas,
           validation: state.studioChatResult?.validation?.project || state.studioBridge?.validation
-        };
+        }, patch.authoring);
         state.studioCanvas = patch.canvas || buildStudioCanvasFromBridge(state.studioBridge);
         state.workbenchSource = state.studioChatResult?.previewMermaid || state.workbenchSource;
         state.workbench = {

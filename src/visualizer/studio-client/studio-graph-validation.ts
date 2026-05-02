@@ -65,6 +65,7 @@ export type StudioAddEdgeDraft = {
   sourceRoleId: string;
   targetRoleId: string;
   eventType?: string;
+  label?: string;
   runtimeOnlyErrorFlow?: boolean;
   participatesInJoin?: boolean;
 };

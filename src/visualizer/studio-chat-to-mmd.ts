@@ -192,6 +192,42 @@ function buildDraftMermaid(request: StudioChatToMmdRequest): string | undefined 
   return request.systemSource?.trim() ? request.systemSource : undefined;
 }
 
+function flowDisplayKey(flow: { fromRoleId: string; eventType: string; toRoleId: string }): string {
+  return `${flow.fromRoleId}:${flow.eventType}:${flow.toRoleId}`;
+}
+
+function preserveAuthoringDisplayNames(args: {
+  imported: StudioAuthoringDocument;
+  previous?: StudioAuthoringDocument;
+}): StudioAuthoringDocument {
+  if (!args.previous) {
+    return args.imported;
+  }
+  const previousRoleTitleById = new Map(
+    Object.values(args.previous.roles ?? {})
+      .filter((role) => typeof role.title === "string" && role.title.trim())
+      .map((role) => [role.roleId, role.title])
+  );
+  const previousFlowLabelByKey = new Map(
+    Object.values(args.previous.flows ?? {})
+      .filter((flow) => typeof flow.label === "string" && flow.label.trim())
+      .map((flow) => [flowDisplayKey(flow), flow.label])
+  );
+  for (const role of Object.values(args.imported.roles ?? {})) {
+    const title = previousRoleTitleById.get(role.roleId);
+    if (title) {
+      role.title = title;
+    }
+  }
+  for (const flow of Object.values(args.imported.flows ?? {})) {
+    const label = previousFlowLabelByKey.get(flowDisplayKey(flow));
+    if (label) {
+      flow.label = label;
+    }
+  }
+  return args.imported;
+}
+
 function buildActions(args: {
   mode: StudioChatToMmdResponse["mode"];
   previewMermaid: string;
@@ -305,10 +341,13 @@ export async function runStudioChatToMmdTurn(args: {
       systemSource: previewMermaid
     });
     try {
-      const authoring = importMermaidToAuthoring({
-        workdir: args.workdir,
-        systemPath,
-        systemSource: previewMermaid
+      const authoring = preserveAuthoringDisplayNames({
+        imported: importMermaidToAuthoring({
+          workdir: args.workdir,
+          systemPath,
+          systemSource: previewMermaid
+        }),
+        previous: args.request.authoring
       });
       authoringPatch = {
         type: "replace-authoring",

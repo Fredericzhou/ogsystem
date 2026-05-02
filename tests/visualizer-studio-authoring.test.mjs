@@ -211,6 +211,46 @@ test("Studio canvas apply stabilizes missing and duplicate edge ids", () => {
   assert.equal(serializeAuthoringToMermaid(applied), serializeAuthoringToMermaid(applied));
 });
 
+test("Studio flow labels round-trip through authoring and canvas without changing runtime ids", () => {
+  const authoring = importMermaidToAuthoring({
+    workdir: "/tmp/project",
+    systemPath: "/tmp/project/system.mmd",
+    systemSource: source
+  });
+  authoring.roles.dispatch.title = "需求分发";
+  authoring.flows["1:dispatch:WORK:worker"].label = "需求已完成";
+
+  const canvas = authoringToCanvasDocument(authoring);
+  const labeledEdge = canvas.edges.find((edge) => edge.eventType === "WORK");
+  assert.equal(labeledEdge.label, "需求已完成");
+
+  const applied = applyCanvasDocumentToAuthoring({
+    authoring,
+    canvas: {
+      ...canvas,
+      edges: canvas.edges.map((edge) =>
+        edge.eventType === "WORK"
+          ? { ...edge, eventType: "WORK_READY" }
+          : edge
+      )
+    }
+  });
+  const editedFlow = Object.values(applied.flows).find((flow) => flow.eventType === "WORK_READY");
+  assert.equal(editedFlow.label, "需求已完成");
+  assert.equal(editedFlow.fromRoleId, "dispatch");
+  assert.equal(editedFlow.toRoleId, "worker");
+
+  const generated = serializeAuthoringToMermaid(applied);
+  assert.match(generated, /\|WORK_READY\|/);
+  assert.doesNotMatch(generated, /需求已完成|需求分发|flow\.label|role\.title/);
+  const reimported = importMermaidToAuthoring({
+    workdir: "/tmp/project",
+    systemPath: "/tmp/project/system.mmd",
+    systemSource: generated
+  });
+  assert.equal(Object.values(reimported.flows).some((flow) => flow.label === "需求已完成"), false);
+});
+
 test("Studio canvas apply ignores edges that reference missing roles", () => {
   const authoring = importMermaidToAuthoring({
     workdir: "/tmp/project",
@@ -322,6 +362,7 @@ test("Studio authoring commands create validated roles and edges from command fo
       sourceRoleId: "qa_gate",
       targetRoleId: "output",
       eventType: "ERROR_TIMEOUT",
+      label: "超时处理",
       runtimeOnlyErrorFlow: true
     }
   });
@@ -330,16 +371,39 @@ test("Studio authoring commands create validated roles and edges from command fo
   const edge = Object.values(addedEdge.authoring.flows).find((flow) => flow.fromRoleId === "qa_gate");
   assert.equal(edge.toRoleId, "__system_end__");
   assert.equal(edge.eventType, "ERROR_TIMEOUT");
+  assert.equal(edge.label, "超时处理");
   assert.equal(edge.runtimeOnlyErrorFlow, true);
 
-  const duplicateEdge = applyStudioAuthoringCommand({
+  const updatedEdge = applyStudioAuthoringCommand({
     authoring: addedEdge.authoring,
     canvas: addedEdge.canvas,
+    command: {
+      type: "update-edge",
+      flowId: edge.flowId,
+      originalSourceRoleId: "qa_gate",
+      originalTargetRoleId: "output",
+      originalEventType: "ERROR_TIMEOUT",
+      sourceRoleId: "qa_gate",
+      targetRoleId: "output",
+      eventType: "ERROR_RETRY",
+      label: "超时处理",
+      runtimeOnlyErrorFlow: true
+    }
+  });
+  const retryEdge = Object.values(updatedEdge.authoring.flows).find((flow) => flow.fromRoleId === "qa_gate");
+  assert.equal(retryEdge.eventType, "ERROR_RETRY");
+  assert.equal(retryEdge.label, "超时处理");
+  assert.equal(updatedEdge.selectedFlowKey, "qa_gate:ERROR_RETRY:output");
+
+  const duplicateEdge = applyStudioAuthoringCommand({
+    authoring: updatedEdge.authoring,
+    canvas: updatedEdge.canvas,
     command: {
       type: "add-edge",
       sourceRoleId: "qa_gate",
       targetRoleId: "output",
-      eventType: "ERROR_TIMEOUT"
+      eventType: "ERROR_RETRY",
+      label: "另一个显示名"
     }
   });
   assert.equal(duplicateEdge.blockedCode, "duplicate-edge");
@@ -421,4 +485,31 @@ test("Studio command forms expose visual role package, model, and profile choice
     timeoutMs: 30000,
     maxOutputBytes: 4096
   });
+});
+
+test("Studio edge command forms keep display labels distinct from event types", () => {
+  const authoring = importMermaidToAuthoring({
+    workdir: "/tmp/project",
+    systemPath: "/tmp/project/system.mmd",
+    systemSource: source
+  });
+  const context = { authoring };
+  const state = createDefaultStudioCommandFormState({
+    kind: "edit-edge",
+    context,
+    flowId: "1:dispatch:WORK:worker",
+    sourceRoleId: "dispatch",
+    targetRoleId: "worker",
+    eventType: "WORK",
+    label: "需求已完成"
+  });
+
+  const html = renderStudioCommandForm({ state, context });
+  assert.match(html, /Display name/);
+  assert.match(html, /name="label" value="需求已完成"/);
+
+  const command = commandFromStudioCommandFormState(state);
+  assert.equal(command.type, "update-edge");
+  assert.equal(command.eventType, "WORK");
+  assert.equal(command.label, "需求已完成");
 });

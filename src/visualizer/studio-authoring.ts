@@ -63,6 +63,11 @@ function sortStrings(left: string, right: string): number {
   return left.localeCompare(right);
 }
 
+function normalizeOptionalDisplayLabel(value: unknown): string | undefined {
+  const label = typeof value === "string" ? value.trim() : "";
+  return label ? label.slice(0, 120) : undefined;
+}
+
 function flowId(flow: Flow, index: number): string {
   const toRoleId = flow.toRoleId === SYSTEM_END_ROLE_ID ? "output" : flow.toRoleId;
   return `${index + 1}:${flow.fromRoleId}:${flow.eventType}:${toRoleId}`;
@@ -238,7 +243,7 @@ export function authoringToCanvasDocument(authoring: StudioAuthoringDocument): S
       id: flow.flowId,
       source: flow.fromRoleId,
       target: flow.toRoleId,
-      label: flow.eventType,
+      label: flow.label ?? flow.eventType,
       eventType: flow.eventType,
       runtimeOnlyErrorFlow: Boolean(flow.runtimeOnlyErrorFlow),
       participatesInJoin: flow.participatesInJoin
@@ -273,11 +278,13 @@ export function applyCanvasDocumentToAuthoring(args: {
     }
     const flowId = normalizeCanvasEdgeId({ edge, index, usedFlowIds });
     const existing = typeof edge.id === "string" ? args.authoring.flows[edge.id] : undefined;
+    const displayLabel = normalizeOptionalDisplayLabel(edge.label);
     flows[flowId] = {
       flowId,
       fromRoleId: edge.source,
       toRoleId: edge.target,
       eventType: edge.eventType,
+      ...(displayLabel && displayLabel !== edge.eventType ? { label: displayLabel } : {}),
       runtimeOnlyErrorFlow: existing?.runtimeOnlyErrorFlow ?? isRuntimeOnlyErrorEvent(edge.eventType)
     };
   }
