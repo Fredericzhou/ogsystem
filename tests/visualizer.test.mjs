@@ -1347,7 +1347,10 @@ test("visualizer server exposes Mermaid workbench APIs and project export", asyn
     });
     assert.equal(draftSaveResponse.status, 200);
     const draftSave = await draftSaveResponse.json();
-    assert.match(draftSave.draftPath, /\.ogs\/studio\/system\.authoring\.json$/);
+    assert.ok(
+      /[\\/]\.ogs[\\/]studio[\\/]system\.authoring\.json$/.test(draftSave.draftPath),
+      `unexpected draftPath: ${draftSave.draftPath}`
+    );
     assert.equal(await readFile(path.resolve(workdir, "system.mmd"), "utf8"), originalSystemSource);
 
     const generateResponse = await fetch(`${url}/api/v1/project/studio/authoring/generate-mmd`, {
@@ -1408,7 +1411,10 @@ test("visualizer server exposes Mermaid workbench APIs and project export", asyn
     assert.equal(saveAsResponse.status, 200);
     const saveAs = await saveAsResponse.json();
     assert.equal(saveAs.validation.ok, true);
-    assert.match(saveAs.savedPath, /drafts\/system-copy\.mmd$/);
+    assert.ok(
+      /[\\/]drafts[\\/]system-copy\.mmd$/.test(saveAs.savedPath),
+      `unexpected savedPath: ${saveAs.savedPath}`
+    );
 
     const exportResponse = await fetch(`${url}/api/v1/project/export`, { method: "POST" });
     assert.equal(exportResponse.status, 200);
@@ -2110,6 +2116,10 @@ test("visualizer server surfaces project create cleanup failures", async (t) => 
   const workdir = await mkdtemp(path.join(os.tmpdir(), "ogsystem-visualizer-cleanup-failure-"));
   const targetWorkdir = path.resolve(workdir, "cleanup-target");
   await mkdir(targetWorkdir, { recursive: true });
+  const previousInjectedCleanupFailures = process.env.OGSYSTEM_TEST_PROJECT_CREATE_CLEANUP_FAIL_PATHS;
+  const previousForcedCreateFailure = process.env.OGSYSTEM_TEST_PROJECT_CREATE_FORCE_FAIL;
+  process.env.OGSYSTEM_TEST_PROJECT_CREATE_CLEANUP_FAIL_PATHS = `${path.sep}system.mmd`;
+  process.env.OGSYSTEM_TEST_PROJECT_CREATE_FORCE_FAIL = "1";
 
   let started;
   try {
@@ -2130,26 +2140,12 @@ test("visualizer server surfaces project create cleanup failures", async (t) => 
   const { server, url } = started;
 
   try {
-    let locked = false;
-    const lockTargetWorkdir = (async () => {
-      for (let attempt = 0; attempt < 400; attempt += 1) {
-        const modelSelectionPath = path.resolve(targetWorkdir, ".ogs", "model-selection.json");
-        const readyForModelDefaults = await stat(modelSelectionPath).then(() => true).catch(() => false);
-        if (readyForModelDefaults) {
-          await chmod(targetWorkdir, 0o555);
-          locked = true;
-          return;
-        }
-        await new Promise((resolve) => setTimeout(resolve, 10));
-      }
-    })();
-
     const response = await fetch(`${url}/api/v1/project/create`, {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({
         requestId: "cleanup-failure",
-        targetWorkdir,
+        workdir: targetWorkdir,
         projectId: "viz.cleanup.failure",
         templateId: "empty",
         modelProfileStrategy: {
@@ -2159,11 +2155,6 @@ test("visualizer server surfaces project create cleanup failures", async (t) => 
         }
       })
     });
-    await lockTargetWorkdir;
-    if (!locked) {
-      t.skip("cleanup failure could not be induced in this filesystem environment");
-      return;
-    }
     assert.equal(response.status, 500);
     const payload = await response.json();
     assert.equal(payload.error.code, "PROJECT_CREATE_FAILED");
@@ -2174,7 +2165,16 @@ test("visualizer server surfaces project create cleanup failures", async (t) => 
       true
     );
   } finally {
-    await chmod(targetWorkdir, 0o755).catch(() => undefined);
+    if (previousForcedCreateFailure === undefined) {
+      delete process.env.OGSYSTEM_TEST_PROJECT_CREATE_FORCE_FAIL;
+    } else {
+      process.env.OGSYSTEM_TEST_PROJECT_CREATE_FORCE_FAIL = previousForcedCreateFailure;
+    }
+    if (previousInjectedCleanupFailures === undefined) {
+      delete process.env.OGSYSTEM_TEST_PROJECT_CREATE_CLEANUP_FAIL_PATHS;
+    } else {
+      process.env.OGSYSTEM_TEST_PROJECT_CREATE_CLEANUP_FAIL_PATHS = previousInjectedCleanupFailures;
+    }
     await new Promise((resolve) => server.close(resolve));
   }
 });

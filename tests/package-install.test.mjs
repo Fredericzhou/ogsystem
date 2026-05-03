@@ -15,6 +15,7 @@ const installPackageJson = JSON.parse(
 
 function runCommand(command, args, options = {}) {
   return new Promise((resolve, reject) => {
+    const useShell = process.platform === "win32" && /\.(cmd|bat)$/i.test(command);
     const child = spawn(command, args, {
       cwd: options.cwd ?? repoRoot,
       env: {
@@ -22,7 +23,8 @@ function runCommand(command, args, options = {}) {
         OGSYSTEM_OPENCODE_MODELS_STDOUT_FILE: opencodeModelsFixturePath,
         ...(options.env ?? {})
       },
-      stdio: ["ignore", "pipe", "pipe"]
+      stdio: ["ignore", "pipe", "pipe"],
+      shell: useShell
     });
     let stdout = "";
     let stderr = "";

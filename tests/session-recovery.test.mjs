@@ -426,12 +426,12 @@ test("branch workspace isolation stores session directory under branch private w
   assert.equal(seenWorkdirs.length, 1);
   assert.match(
     seenWorkdirs[0],
-    /roles\/debate-minimalist\/private\/branches\/debate-minimalist@1#1$/
+    /roles[\\/]debate-minimalist[\\/]private[\\/]branches[\\/]debate-minimalist@1#1$/
   );
   await access(seenWorkdirs[0]);
   const sessions = JSON.parse(await readFile(path.resolve(runContext.runDir, "sessions.json"), "utf8"));
   assert.match(
     sessions[0].directory,
-    /roles\/debate-minimalist\/private\/branches\/debate-minimalist@1#1$/
+    /roles[\\/]debate-minimalist[\\/]private[\\/]branches[\\/]debate-minimalist@1#1$/
   );
 });

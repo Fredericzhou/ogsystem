@@ -356,6 +356,10 @@ async function assertNoProjectFileConflicts(workdir: string): Promise<void> {
 }
 
 async function removeCreatedProjectFiles(workdir: string): Promise<void> {
+  const injectedFailurePatterns = (process.env.OGSYSTEM_TEST_PROJECT_CREATE_CLEANUP_FAIL_PATHS ?? "")
+    .split(";")
+    .map((value) => value.trim())
+    .filter(Boolean);
   const failures: Array<{ path: string; message: string }> = [];
   for (const [targetPath, options] of [
     [resolve(workdir, "system.mmd"), { force: true }],
@@ -366,6 +370,9 @@ async function removeCreatedProjectFiles(workdir: string): Promise<void> {
     [resolve(workdir, "og-roles"), { recursive: true, force: true }]
   ] as const) {
     try {
+      if (injectedFailurePatterns.some((pattern) => targetPath.includes(pattern))) {
+        throw new Error(`Injected cleanup failure for ${targetPath}`);
+      }
       await rm(targetPath, options);
     } catch (error) {
       failures.push({
@@ -870,6 +877,7 @@ export async function createProjectVisualization(args: {
   authoringDefaults?: unknown;
   modelProfileStrategy?: unknown;
 }): Promise<Record<string, unknown>> {
+  const forceCreateFailure = process.env.OGSYSTEM_TEST_PROJECT_CREATE_FORCE_FAIL === "1";
   const requestedWorkdir = asString(args.workdir)?.trim();
   const targetWorkdir = resolve(args.currentWorkdir, requestedWorkdir || ".");
   const templateId = normalizeProjectTemplateId(args.templateId);
@@ -974,6 +982,15 @@ export async function createProjectVisualization(args: {
       authoring: authoringWithPreferences,
       validateSystemSource: validateProjectSystemSource
     });
+    if (forceCreateFailure) {
+      const forcedError = new Error("PROJECT_CREATE_FORCED_FAILURE") as Error & {
+        code?: string;
+        details?: unknown;
+      };
+      forcedError.code = "PROJECT_CREATE_FAILED";
+      forcedError.details = { forcedBy: "OGSYSTEM_TEST_PROJECT_CREATE_FORCE_FAIL" };
+      throw forcedError;
+    }
     const syncResult = await syncProjectDependencies({
       workdir: targetWorkdir,
       systemPath: "system.mmd"
