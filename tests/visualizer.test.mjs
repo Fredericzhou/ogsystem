@@ -2395,6 +2395,127 @@ test("visualizer server bounds project create request replay cache by max size",
   }
 });
 
+test("visualizer server coalesces concurrent project create requests by requestId", async (t) => {
+  const workdir = await mkdtemp(path.join(os.tmpdir(), "ogsystem-visualizer-create-coalesce-"));
+  let started;
+  try {
+    started = await startVisualizationServer({
+      workdir,
+      host: "127.0.0.1",
+      port: 0
+    });
+  } catch (error) {
+    const errorCode =
+      typeof error === "object" && error !== null && "code" in error ? error.code : undefined;
+    if (errorCode === "EPERM" || errorCode === "EACCES") {
+      t.skip(`visualizer listen unavailable in sandbox: ${errorCode}`);
+      return;
+    }
+    throw error;
+  }
+  const { server, url } = started;
+
+  try {
+    const body = {
+      requestId: "coalesced-request",
+      projectId: "viz.concurrent.project",
+      templateId: "empty",
+      conflictStrategy: "init-current"
+    };
+    const [first, second] = await Promise.all([
+      fetch(`${url}/api/v1/project/create`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify(body)
+      }),
+      fetch(`${url}/api/v1/project/create`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify(body)
+      })
+    ]);
+    assert.equal(first.status, 200);
+    assert.equal(second.status, 200);
+    const firstPayload = await first.json();
+    const secondPayload = await second.json();
+    assert.equal(firstPayload.projectId, "viz.concurrent.project");
+    assert.equal(secondPayload.projectId, "viz.concurrent.project");
+    assert.equal(
+      [firstPayload.idempotentReplay, secondPayload.idempotentReplay].filter((value) => value === true).length,
+      1
+    );
+    await stat(path.resolve(workdir, ".ogs", "project.json"));
+  } finally {
+    await new Promise((resolve) => server.close(resolve));
+  }
+});
+
+test("visualizer server clears pending project create entries after a failed create", async (t) => {
+  const workdir = await mkdtemp(path.join(os.tmpdir(), "ogsystem-visualizer-create-failed-coalesce-"));
+  const targetWorkdir = path.resolve(workdir, "failed-coalesce-target");
+  await mkdir(targetWorkdir, { recursive: true });
+  let started;
+  try {
+    started = await startVisualizationServer({
+      workdir,
+      host: "127.0.0.1",
+      port: 0,
+      testHooks: {
+        projectCreate: {
+          forceCreateFailure: true
+        }
+      }
+    });
+  } catch (error) {
+    const errorCode =
+      typeof error === "object" && error !== null && "code" in error ? error.code : undefined;
+    if (errorCode === "EPERM" || errorCode === "EACCES") {
+      t.skip(`visualizer listen unavailable in sandbox: ${errorCode}`);
+      return;
+    }
+    throw error;
+  }
+  const { server, url } = started;
+
+  try {
+    const body = {
+      requestId: "failed-coalesced-request",
+      workdir: targetWorkdir,
+      projectId: "viz.concurrent.failed",
+      templateId: "empty",
+      conflictStrategy: "init-current"
+    };
+    const [first, second] = await Promise.all([
+      fetch(`${url}/api/v1/project/create`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify(body)
+      }),
+      fetch(`${url}/api/v1/project/create`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify(body)
+      })
+    ]);
+    assert.equal(first.status, 500);
+    assert.equal(second.status, 500);
+    const firstPayload = await first.json();
+    const secondPayload = await second.json();
+    assert.ok(["PROJECT_CREATE_FAILED", "VISUALIZER_INTERNAL_ERROR"].includes(firstPayload.error.code));
+    assert.equal(secondPayload.error.code, firstPayload.error.code);
+
+    const retry = await fetch(`${url}/api/v1/project/create`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(body)
+    });
+    assert.equal(retry.status, 500);
+    assert.equal((await retry.json()).error.code, firstPayload.error.code);
+  } finally {
+    await new Promise((resolve) => server.close(resolve));
+  }
+});
+
 test("visualizer server starts and resumes runs through lifecycle APIs", async (t) => {
   const workdir = await mkdtemp(path.join(os.tmpdir(), "ogsystem-visualizer-run-lifecycle-"));
   await seedRunnableReviewProjectFixture(workdir);

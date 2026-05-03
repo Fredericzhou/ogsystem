@@ -94,7 +94,7 @@ Sources: `docs/long-term-stability-roadmap.md`, `docs/archive/delivery/optimizat
 
 ### P2. Visualizer 风险待验证
 
-- [ ] 验证 `requestId` 幂等缓存是否存在同 ID 并发双执行窗口；若成立，再补原子占位或 in-flight 协调。
+- [x] 验证 `requestId` 幂等缓存是否存在同 ID 并发双执行窗口；若成立，再补原子占位或 in-flight 协调。
 - [ ] 验证 SSE 连接在快速切换 run、页面中断和网络抖动场景下是否会出现悬挂连接累积。
 - [ ] 审查 `normalizeCanvasEdgeId()` 的冲突重试路径，确认是否存在极端输入下的无界循环或性能退化。
 - [ ] 评估 Mermaid Live URL 在大图场景下的长度上限和回退策略，避免修复编码后仍遇到浏览器长度限制。

@@ -128,7 +128,8 @@ type VisualizationServerState = {
 
 type ProjectCreateRequestCacheEntry = {
   cachedAtMs: number;
-  payload: Record<string, unknown>;
+  payload?: Record<string, unknown>;
+  promise?: Promise<Record<string, unknown>>;
 };
 
 type NdjsonEntry = {
@@ -380,6 +381,16 @@ function readCachedProjectCreateResponse(
   return cached.payload;
 }
 
+function readPendingProjectCreateResponse(
+  state: VisualizationServerState,
+  requestId: string,
+  nowMs = Date.now()
+): Promise<Record<string, unknown>> | undefined {
+  pruneProjectCreateRequestCache(state, nowMs);
+  const cached = state.projectCreateRequests.get(requestId);
+  return cached?.promise;
+}
+
 function cacheProjectCreateResponse(
   state: VisualizationServerState,
   requestId: string,
@@ -393,6 +404,31 @@ function cacheProjectCreateResponse(
     payload
   });
   pruneProjectCreateRequestCache(state, nowMs);
+}
+
+function cachePendingProjectCreateResponse(
+  state: VisualizationServerState,
+  requestId: string,
+  promise: Promise<Record<string, unknown>>,
+  nowMs = Date.now()
+): void {
+  pruneProjectCreateRequestCache(state, nowMs);
+  state.projectCreateRequests.delete(requestId);
+  state.projectCreateRequests.set(requestId, {
+    cachedAtMs: nowMs,
+    promise
+  });
+  pruneProjectCreateRequestCache(state, nowMs);
+}
+
+function clearPendingProjectCreateResponse(
+  state: VisualizationServerState,
+  requestId: string
+): void {
+  const cached = state.projectCreateRequests.get(requestId);
+  if (cached?.promise) {
+    state.projectCreateRequests.delete(requestId);
+  }
 }
 
 function readProjectCreatePayload(body: Record<string, unknown>): {
@@ -1263,40 +1299,70 @@ async function handleApiProjectCreate(
     }
   }
   try {
-    const created = await createProjectVisualization({
-      currentWorkdir: state.workdir,
-      workdir: createPayload.workdir,
-      projectId: createPayload.projectId,
-      projectName: createPayload.projectName,
-      templateId: createPayload.templateId,
-      conflictStrategy: createPayload.conflictStrategy,
-      authoringDefaults: createPayload.authoringDefaults,
-      modelProfileStrategy: createPayload.modelProfileStrategy,
-      testHooks: state.testHooks?.projectCreate
-    });
-    const createdWorkdir = asString(asRecord(created)?.workdir) ?? state.workdir;
-    const previousWorkdir = state.workdir;
-    state.workdir = createdWorkdir;
-    invalidateAllProjectCaches(previousWorkdir);
-    invalidateAllProjectCaches(createdWorkdir);
-    const payload = {
-      ...created,
-      followUpActions: [
-        {
-          action: "project-created",
-          label: `Project created at ${createdWorkdir}.`
-        },
-        {
-          action: "open-build",
-          label: "Open Build to continue visual authoring."
+    if (requestId) {
+      const pending = readPendingProjectCreateResponse(state, requestId);
+      if (pending) {
+        const replayed = await pending;
+        const replayWorkdir = asString(replayed.workdir);
+        if (replayWorkdir) {
+          const previousWorkdir = state.workdir;
+          state.workdir = replayWorkdir;
+          invalidateAllProjectCaches(previousWorkdir);
+          invalidateAllProjectCaches(replayWorkdir);
         }
-      ]
+        jsonResponse(response, 200, {
+          ...replayed,
+          idempotentReplay: true
+        });
+        return;
+      }
+    }
+    const createOnce = async () => {
+      const created = await createProjectVisualization({
+        currentWorkdir: state.workdir,
+        workdir: createPayload.workdir,
+        projectId: createPayload.projectId,
+        projectName: createPayload.projectName,
+        templateId: createPayload.templateId,
+        conflictStrategy: createPayload.conflictStrategy,
+        authoringDefaults: createPayload.authoringDefaults,
+        modelProfileStrategy: createPayload.modelProfileStrategy,
+        testHooks: state.testHooks?.projectCreate
+      });
+      const createdWorkdir = asString(asRecord(created)?.workdir) ?? state.workdir;
+      const previousWorkdir = state.workdir;
+      state.workdir = createdWorkdir;
+      invalidateAllProjectCaches(previousWorkdir);
+      invalidateAllProjectCaches(createdWorkdir);
+      return {
+        ...created,
+        followUpActions: [
+          {
+            action: "project-created",
+            label: `Project created at ${createdWorkdir}.`
+          },
+          {
+            action: "open-build",
+            label: "Open Build to continue visual authoring."
+          }
+        ]
+      };
     };
+    const payload = requestId
+      ? await (() => {
+          const promise = createOnce();
+          cachePendingProjectCreateResponse(state, requestId, promise);
+          return promise;
+        })()
+      : await createOnce();
     if (requestId) {
       cacheProjectCreateResponse(state, requestId, payload);
     }
     jsonResponse(response, 200, payload);
   } catch (error) {
+    if (requestId) {
+      clearPendingProjectCreateResponse(state, requestId);
+    }
     const code = asString((error as { code?: unknown })?.code) || (error instanceof Error ? error.message : "");
     const details = (error as { details?: unknown })?.details;
     if (code === "INVALID_PROJECT_ID") {
