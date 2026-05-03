@@ -39,6 +39,24 @@ import {
   type RouteState
 } from "./client-route-state.js";
 import {
+  renderOperateTabsHtml,
+  renderRunStatsHtml,
+  renderTimelineHtml,
+  renderWorkbenchStructureHtml,
+  renderWorkspaceEmptyStateHtml
+} from "./client-lifecycle-panels.js";
+import {
+  createInitialStreamRefreshPlan,
+  createInitialVisualizerState
+} from "./client-lifecycle-state.js";
+import { projectCreateErrorFromResponse as mapProjectCreateErrorFromResponse } from "./client-project-workspace.js";
+import {
+  asStudioChatList,
+  renderStudioChatPanelHtml,
+  studioChatCanApply,
+  studioChatModeLabel
+} from "./client-studio-chat-panel.js";
+import {
   buildReleaseReadinessDecision,
   listFromRecord,
   type ReleaseReadinessDecision
@@ -88,6 +106,18 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
     const buildRouteSearch = ${buildRouteSearch.toString()};
     const listFromRecord = ${listFromRecord.toString()};
     const buildReleaseReadinessDecision = ${buildReleaseReadinessDecision.toString()};
+    const createInitialStreamRefreshPlan = ${createInitialStreamRefreshPlan.toString()};
+    const createInitialVisualizerState = ${createInitialVisualizerState.toString()};
+    const renderWorkspaceEmptyStateHtml = ${renderWorkspaceEmptyStateHtml.toString()};
+    const renderOperateTabsHtml = ${renderOperateTabsHtml.toString()};
+    const renderWorkbenchStructureHtml = ${renderWorkbenchStructureHtml.toString()};
+    const renderRunStatsHtml = ${renderRunStatsHtml.toString()};
+    const renderTimelineHtml = ${renderTimelineHtml.toString()};
+    const mapProjectCreateErrorFromResponse = ${mapProjectCreateErrorFromResponse.toString()};
+    const asStudioChatList = ${asStudioChatList.toString()};
+    const studioChatCanApply = ${studioChatCanApply.toString()};
+    const studioChatModeLabel = ${studioChatModeLabel.toString()};
+    const renderStudioChatPanelHtml = ${renderStudioChatPanelHtml.toString()};
     const appendStreamEntry = ${appendStreamEntry.toString()};
     const getStreamRefreshPlan = ${getStreamRefreshPlan.toString()};
     const normalizeLifecycleView = ${normalizeLifecycleView.toString()};
@@ -193,118 +223,7 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
       });
     }
     const resolvedLocale = resolveClientLocale();
-    const state = {
-      locale: resolvedLocale,
-      workspace: null,
-      hasProject: true,
-      projectCreateError: null,
-      projectWizardDraft: null,
-      roleCatalog: null,
-      roleCatalogFilter: "",
-      roleCatalogPage: 0,
-      roleCatalogPageSize: 12,
-      pendingRoleImportRetry: null,
-      projectMenuTab: "overview",
-      projectOpenDraft: "",
-      projectOpenBrowse: null,
-      projectOpenValidation: null,
-      projectOpenLoading: false,
-      projectOpenError: "",
-      project: null,
-      projectCreateRequestId: "",
-      opsSummary: null,
-      projectReadiness: null,
-      consoleTab: "project",
-      legacyConsoleTab: "debug",
-      workbench: null,
-      buildMode: "edit",
-      workbenchView: "bridge",
-      workbenchSource: "",
-      workbenchDiskSource: "",
-      workbenchSavedPath: "system.mmd",
-      workbenchHasDraft: false,
-      workbenchValidationTimer: null,
-      workbenchValidationRequestId: 0,
-      workbenchValidating: false,
-      studioBridge: null,
-      studioCanvas: null,
-      studioBridgeLoaded: false,
-      studioBridgeStale: false,
-      studioBridgeSelectedRoleId: "",
-      studioBridgeSelectedFlowKey: "",
-      studioBridgeFilter: "",
-      studioBridgeListMode: "all",
-      studioBridgeFullscreen: false,
-      studioBridgeEditSelectionRequest: 0,
-      studioBridgeLastDryRunId: "",
-      studioChatSessionId: "",
-      studioChatMessages: [],
-      studioChatDraftMessage: "",
-      studioChatLastRequest: "",
-      studioChatResult: null,
-      studioChatCollapsed: false,
-      studioChatDialogOpen: false,
-      studioGraphHistoryEventId: 0,
-      studioGraphHistoryEvent: null,
-      studioTemplates: [],
-      runGraphSelectedRoleId: "",
-      runGraphSelectedFlowKey: "",
-      operateTab: "overview",
-      sidebarOpen: false,
-      runs: [],
-      filter: "",
-      projectHome: false,
-      selectedRunId: "",
-      selectedReviewId: "",
-      selectedLogRoleId: "",
-      logTail: "",
-      logPageSize: "100",
-      logSince: "",
-      timelineRoleId: "",
-      timelineBranchId: "",
-      timelineType: "",
-      timelineReviewId: "",
-      timelineStatus: "",
-      timelineErrorCode: "",
-      eventCursor: 0,
-      events: [],
-      detail: null,
-      graph: null,
-      failure: null,
-      failureLoaded: false,
-      failureStale: false,
-      reviews: null,
-      reviewDetail: null,
-      bindings: null,
-      contracts: null,
-      contractRuntimeStatus: null,
-      rolePackages: null,
-      resumeReadiness: null,
-      resumeReadinessLoaded: false,
-      resumeReadinessStale: false,
-      resumeDiagnostics: null,
-      resumeDiagnosticsLoaded: false,
-      resumeDiagnosticsStale: false,
-      engineLogs: [],
-      roleLogs: [],
-      logsLoaded: false,
-      logsStale: false,
-      stream: null,
-      listTimer: null,
-      flash: null,
-      actionBusy: "",
-      actionForm: null,
-      streamRefreshPlan: {
-        detailGraph: false,
-        reviews: false,
-        reviewDetail: false,
-        failure: false,
-        resumeReadiness: false,
-        markDiagnosticsStale: false
-      },
-      streamRefreshTimer: null,
-      streamRefreshInFlight: false
-    };
+    const state = createInitialVisualizerState(resolvedLocale);
 
     const runListEl = document.getElementById("run-list");
     const searchEl = document.getElementById("search");
@@ -1007,21 +926,7 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
     }
 
     function projectCreateErrorFromResponse(error) {
-      const code = error?.code || error?.errorCode || "";
-      const messageByCode = {
-        PROJECT_ALREADY_EXISTS: t("projectWizard.errorAlreadyExists", undefined, "This directory is already an OGSystem project. Load it instead."),
-        PROJECT_DIR_CONFLICT: t("projectWizard.errorDirectoryConflict", undefined, "This directory has existing files. Choose current-directory initialization, another directory, or load an existing project."),
-        PROJECT_FILE_CONFLICT: t("projectWizard.errorFileConflict", undefined, "This directory contains OGSystem-controlled files. Choose another directory or load the existing project."),
-        INVALID_PROJECT_ID: t("projectWizard.errorInvalidProjectId", undefined, "Use a project id with letters, numbers, dots, underscores, or hyphens."),
-        INVALID_PROJECT_NAME: t("projectWizard.errorInvalidProjectName", undefined, "Use a project name that starts with a letter or number."),
-        INVALID_PROJECT_TEMPLATE: t("projectWizard.errorInvalidTemplate", undefined, "Choose an available project template."),
-        INVALID_PROJECT_WORKDIR: t("projectWizard.errorInvalidWorkdir", undefined, "Choose an existing directory that can hold this project."),
-        INVALID_PROJECT_MODEL_DEFAULT: t("projectWizard.errorInvalidModelDefault", undefined, "Use a default model reference in provider/model format.")
-      };
-      return {
-        code,
-        message: messageByCode[code] || error?.message || t("projectWizard.createFailed", undefined, "Project creation failed.")
-      };
+      return mapProjectCreateErrorFromResponse(error, t);
     }
 
     function renderFlash() {
@@ -1079,17 +984,7 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
     }
 
     function workspaceEmptyStateHtml(kind) {
-      const title = kind === "validate"
-        ? t("workspace.validateUnavailableTitle", undefined, "Create or load a project before validating a release.")
-        : kind === "operate"
-          ? t("workspace.operateUnavailableTitle", undefined, "No project or runs are available yet.")
-          : kind === "build"
-            ? t("workspace.buildUnavailableTitle", undefined, "Create or load a project before building.")
-            : t("workspace.projectUnavailableTitle", undefined, "This directory is not initialized as an OGSystem project.");
-      const hint = t("workspace.createOrLoadHint", undefined, "Use Project to create a project in this directory or load an existing project.");
-      return '<div class="event"><div class="event-top"><span>' + escapeText(t("common.empty", undefined, "empty")) +
-        '</span><span>' + escapeText(t("nav.lifecycle.project", undefined, "Project")) + '</span></div><strong>' +
-        escapeText(title) + '</strong><div class="hint">' + escapeText(hint) + '</div></div>';
+      return renderWorkspaceEmptyStateHtml({ kind, t, escapeText });
     }
 
     function renderActionState() {
@@ -1174,20 +1069,7 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
         operateTabsEl.innerHTML = "";
         return;
       }
-      const tabs = [
-        ["overview", t("operate.tab.overview", undefined, "Overview"), t("operate.tabHint.overview", undefined, "Run status, summary, and timeline")],
-        ["graph", t("operate.tab.graph", undefined, "Graph"), t("operate.tabHint.graph", undefined, "Readonly runtime graph and state")],
-        ["recovery", t("operate.tab.recovery", undefined, "Recovery"), t("operate.tabHint.recovery", undefined, "Failure triage and resume readiness")],
-        ["logs", t("operate.tab.logs", undefined, "Logs"), t("operate.tabHint.logs", undefined, "Load engine and role logs on demand")],
-        ["reviews", t("operate.tab.reviews", undefined, "Reviews"), t("operate.tabHint.reviews", undefined, "Human review queue and decisions")],
-        ["artifacts", t("operate.tab.artifacts", undefined, "Artifacts"), t("operate.tabHint.artifacts", undefined, "Run snapshots and exported evidence")]
-      ];
-      operateTabsEl.innerHTML = tabs.map(([id, label, hint]) =>
-        '<button class="button subtle ' + (state.operateTab === id ? "active" : "") +
-        '" data-operate-tab="' + escapeText(id) +
-        '" title="' + escapeText(hint) +
-        '">' + escapeText(label) + '</button>'
-      ).join("");
+      operateTabsEl.innerHTML = renderOperateTabsHtml({ operateTab: state.operateTab, t, escapeText });
       for (const button of operateTabsEl.querySelectorAll("[data-operate-tab]")) {
         button.disabled = Boolean(state.actionBusy);
         button.addEventListener("click", () => {
@@ -1319,24 +1201,7 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
     }
 
     function renderWorkbenchStructure(structure) {
-      if (!structure) {
-        return '<div class="hint">' + escapeText(t("workbench.structurePending")) + '</div>';
-      }
-      return [
-        '<div class="structure-list">',
-        '<div class="event"><div class="event-top"><span>' + escapeText(t("common.system")) + '</span><span>' + escapeText(structure.systemVersion || "n/a") + '</span></div><strong>' + escapeText(structure.systemId || t("common.unknown")) + '</strong><div class="hint">' + escapeText(t("common.entry")) + ' ' + escapeText(structure.entryRoleId || "n/a") + ' · ' + escapeText(t("common.roles")) + ' ' + escapeText(structure.roleCount || 0) + ' · ' + escapeText(t("studio.flows")) + ' ' + escapeText(structure.flowCount || 0) + '</div></div>',
-        ...(structure.roles || []).map((role) =>
-          '<div class="event"><div class="event-top"><span><code>' + escapeText(role.roleId) + '</code></span><span>' + escapeText(role.bindingKind) + '</span></div><strong>'
-          + escapeText(role.reviewMode || role.joinMode || role.routingMode || t("project.standardRole"))
-          + '</strong><div class="hint">'
-          + escapeText([role.routingMode ? t("common.route") + " " + role.routingMode : "", role.joinMode ? t("common.join") + " " + role.joinMode : "", role.reviewMode ? t("common.review") + " " + role.reviewMode : ""].filter(Boolean).join(" · ") || t("project.noSpecialGraphMetadata"))
-          + '</div></div>'
-        ),
-        ...(structure.flows || []).map((flow) =>
-          '<div class="event"><div class="event-top"><span><code>' + escapeText(flow.fromRoleId) + '</code> -> <code>' + escapeText(flow.toRoleId) + '</code></span><span>' + escapeText(flow.eventType) + '</span></div><strong>' + escapeText(flow.label || flow.eventType) + '</strong></div>'
-        ),
-        '</div>'
-      ].join("");
+      return renderWorkbenchStructureHtml({ structure, t, escapeText });
     }
 
     function studioBridgeRenderArgs() {
@@ -1490,113 +1355,8 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
       return null;
     }
 
-    function asStudioChatList(value) {
-      return Array.isArray(value) ? value.filter(Boolean) : [];
-    }
-
-    function studioChatModeLabel(mode) {
-      if (mode === "ask") return t("studio.chat.mode.ask", undefined, "needs input");
-      if (mode === "final") return t("studio.chat.mode.final", undefined, "ready");
-      if (mode === "draft") return t("studio.chat.mode.draft", undefined, "draft");
-      return t("studio.chat.mode.idle", undefined, "idle");
-    }
-
-    function studioChatCanApply(result) {
-      if (!result?.authoringPatch?.authoring) {
-        return false;
-      }
-      const action = asStudioChatList(result.actions).find((item) => item && item.id === "apply-authoring-patch");
-      if (action && action.enabled === false) {
-        return false;
-      }
-      const projectValidation = result.validation?.project;
-      return !projectValidation || projectValidation.ok === true;
-    }
-
     function renderStudioChatPanel() {
-      const result = state.studioChatResult;
-      const disabled = state.actionBusy ? " disabled" : "";
-      const messages = asStudioChatList(state.studioChatMessages);
-      const previewMermaid = String(result?.previewMermaid || "");
-      const questions = asStudioChatList(result?.questions);
-      const assumptions = asStudioChatList(result?.assumptions);
-      const warnings = asStudioChatList(result?.warnings);
-      const projectDiagnostics = asStudioChatList(result?.validation?.project?.diagnostics);
-      const nlDiagnostics = asStudioChatList(result?.validation?.nl2mmd?.diagnostics);
-      const diagnostics = projectDiagnostics.length ? projectDiagnostics : nlDiagnostics;
-      const selectedContext = state.studioBridgeSelectedRoleId
-        ? t("studio.chat.contextRole", { roleId: state.studioBridgeSelectedRoleId }, "role {roleId}")
-        : state.studioBridgeSelectedFlowKey
-          ? t("studio.chat.contextFlow", { flowKey: state.studioBridgeSelectedFlowKey }, "flow {flowKey}")
-          : t("studio.chat.contextGraph", undefined, "whole graph");
-      const resultMode = result?.mode || "idle";
-      const validationOk = result?.validation?.project?.ok === true;
-      const hasResult = Boolean(result);
-      const applyDisabled = !studioChatCanApply(result) || Boolean(state.actionBusy);
-      const applyReason = result?.actions?.find((item) => item?.id === "apply-authoring-patch")?.reason || "";
-      const messageHtml = messages.length
-        ? messages.slice(-8).map((message) =>
-            '<div class="event"><div class="event-top"><span>' + escapeText(message.role === "assistant" ? t("studio.chat.assistant", undefined, "assistant") : t("studio.chat.you", undefined, "you")) +
-            '</span><span>' + escapeText(message.mode ? studioChatModeLabel(message.mode) : "") + '</span></div><strong>' +
-            escapeText(message.text || "") + '</strong></div>'
-          ).join("")
-        : '<div class="hint">' + escapeText(t("studio.chat.emptyHistory", undefined, "Describe the system you want to generate or the selected graph item you want to adjust.")) + '</div>';
-      const questionHtml = questions.length
-        ? '<div class="event"><div class="event-top"><span>' + escapeText(t("studio.chat.questions", undefined, "questions")) + '</span><span>' + escapeText(String(questions.length)) + '</span></div><strong>' +
-          escapeText(questions.join(" · ")) + '</strong></div>'
-        : "";
-      const assumptionHtml = assumptions.length
-        ? '<div class="hint">' + escapeText(t("studio.chat.assumptions", undefined, "Assumptions")) + ": " + escapeText(assumptions.join(" · ")) + '</div>'
-        : "";
-      const warningHtml = warnings.length
-        ? '<div class="hint">' + escapeText(t("studio.chat.warnings", undefined, "Warnings")) + ": " + escapeText(warnings.join(" · ")) + '</div>'
-        : "";
-      const diagnosticHtml = diagnostics.length
-        ? diagnostics.slice(0, 4).map((diagnostic) =>
-            '<div class="event"><div class="event-top"><span>' + escapeText(String(diagnostic.code || diagnostic.severity || "diagnostic")) + '</span><span>' +
-            escapeText(String(diagnostic.stage || "validate")) + '</span></div><strong>' + escapeText(String(diagnostic.message || diagnostic.code || "")) + '</strong></div>'
-          ).join("")
-        : hasResult
-          ? '<div class="hint">' + escapeText(validationOk ? t("studio.chat.validationOk", undefined, "Preview validation passed.") : t("studio.chat.validationPending", undefined, "Preview validation is pending.")) + '</div>'
-          : "";
-      return [
-        '<div class="studio-chat-panel structure-list' + (state.studioChatDialogOpen ? ' is-open' : '') + '" data-studio-bridge-region="chat"' + (state.studioChatDialogOpen ? ' role="dialog" aria-modal="false"' : ' hidden') + '>',
-        '<div class="event"><div class="event-top"><span>' + escapeText(t("studio.chat.title", undefined, "Chat to MMD")) + '</span><span>' + escapeText(studioChatModeLabel(resultMode)) + '</span></div><strong>' +
-          escapeText(t("studio.chat.subtitle", undefined, "Generate or adjust the Studio draft with natural language.")) +
-          '</strong><div class="hint">' + escapeText(t("studio.chat.context", { context: selectedContext }, "Context: {context}")) + '</div></div>',
-        state.studioChatCollapsed
-          ? '<button class="button subtle" type="button" id="studio-chat-toggle">' + escapeText(t("studio.chat.expand", undefined, "Show chat")) + '</button>'
-          : [
-              '<div class="studio-chat-grid">',
-              '<div class="structure-list">',
-              messageHtml,
-              '<label class="field full"><span>' + escapeText(t("studio.chat.prompt", undefined, "Prompt")) + '</span><textarea id="studio-chat-input" rows="4"' + disabled + ' placeholder="' + escapeText(t("studio.chat.placeholder", undefined, "Ask to generate a flow, refine the selected role, or fix diagnostics.")) + '">' + escapeText(state.studioChatDraftMessage || "") + '</textarea></label>',
-              '<div class="toolbar-row compact"><div class="toolbar-group">',
-              '<button class="button primary" type="button" id="studio-chat-send"' + disabled + '>' + escapeText(t("studio.chat.send", undefined, "Send")) + '</button>',
-              '<button class="button subtle" type="button" id="studio-chat-regenerate"' + (state.actionBusy || !state.studioChatLastRequest ? " disabled" : "") + '>' + escapeText(t("studio.chat.regenerate", undefined, "Regenerate")) + '</button>',
-              '<button class="button subtle" type="button" id="studio-chat-close">' + escapeText(t("action.cancel", undefined, "Cancel")) + '</button>',
-              '<button class="button subtle" type="button" id="studio-chat-toggle">' + escapeText(t("studio.chat.collapse", undefined, "Hide chat")) + '</button>',
-              '</div></div>',
-              '</div>',
-              '<div class="structure-list">',
-              '<div class="event"><div class="event-top"><span>' + escapeText(t("studio.chat.preview", undefined, "preview")) + '</span><span>' + escapeText(validationOk ? t("workbench.validationOk", undefined, "validation ok") : studioChatModeLabel(resultMode)) + '</span></div><strong>' +
-                escapeText(result?.summary || t("studio.chat.noPreview", undefined, "No generated preview yet.")) + '</strong></div>',
-              questionHtml,
-              assumptionHtml,
-              warningHtml,
-              diagnosticHtml,
-              previewMermaid ? '<pre class="studio-chat-preview">' + escapeText(previewMermaid) + '</pre>' : "",
-              applyReason ? '<div class="hint">' + escapeText(applyReason) + '</div>' : "",
-              '<div class="toolbar-row compact"><div class="toolbar-group">',
-              '<button class="button primary" type="button" id="studio-chat-apply"' + (applyDisabled ? " disabled" : "") + '>' + escapeText(t("studio.chat.apply", undefined, "Apply")) + '</button>',
-              '<button class="button subtle" type="button" id="studio-chat-refine"' + (state.actionBusy || !hasResult ? " disabled" : "") + '>' + escapeText(t("studio.chat.refine", undefined, "Refine")) + '</button>',
-              '<button class="button subtle" type="button" id="studio-chat-save-draft"' + (state.actionBusy || !state.studioBridge?.authoring ? " disabled" : "") + '>' + escapeText(t("studio.saveDraft", undefined, "Save draft")) + '</button>',
-              '</div></div>',
-              '</div>',
-              '</div>'
-            ].join(""),
-        '</div>'
-      ].join("");
+      return renderStudioChatPanelHtml({ state, t, escapeText });
     }
 
     function patchStudioChatPanel() {
@@ -2591,70 +2351,26 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
     }
 
     function renderStats(header, graphPayload) {
-      if (!header) {
-        statsEl.innerHTML = "";
-        return;
-      }
-      const cards = [
-        [t("stats.status"), displayUiToken(header.status, t)],
-        [t("stats.mode"), displayUiToken(graphPayload?.simulation?.mode || header.runMode || "runtime", t)],
-        [t("stats.transitions"), header.transitionCount],
-        [t("stats.activeBranches"), header.activeBranches],
-        [t("stats.pendingReviews"), header.pendingReviewCount],
-        [t("stats.recentAudits"), header.recentAudits]
-      ];
-      statsEl.innerHTML = cards
-        .map(([label, value]) => \`
-          <div class="stat">
-            <strong>\${escapeText(value)}</strong>
-            <span>\${escapeText(label)}</span>
-          </div>
-        \`)
-        .join("");
+      statsEl.innerHTML = renderRunStatsHtml({ header, graphPayload, t, escapeText, displayUiToken });
     }
 
     function renderTimeline(events) {
-      const activeFilters = [
-        state.timelineRoleId ? "role=" + state.timelineRoleId : "",
-        state.timelineType ? "type=" + state.timelineType : "",
-        state.timelineStatus ? "status=" + state.timelineStatus : "",
-        state.timelineBranchId ? "branch=" + state.timelineBranchId : "",
-        state.timelineReviewId ? "review=" + state.timelineReviewId : "",
-        state.timelineErrorCode ? "error=" + state.timelineErrorCode : ""
-      ].filter(Boolean);
-      if (!events.length) {
-        timelineEl.innerHTML = activeFilters.length
-          ? '<div class="hint">' + escapeText(t("timeline.noEventsMatchFilters", { filters: activeFilters.join(" · ") })) + '</div>'
-          : '<div class="hint">' + escapeText(t("timeline.noEventsCaptured")) + '</div>';
-        return;
-      }
-      timelineEl.innerHTML = [
-        activeFilters.length
-          ? '<div class="hint">' + escapeText(t("timeline.filteredBy", { filters: activeFilters.join(" · ") })) + "</div>"
-          : "",
-        ...events
-          .slice()
-          .reverse()
-          .map((entry) => {
-            const record = entry.record || {};
-            const type = record.type || "event";
-            const role = record.roleId ? \`<code>\${escapeText(record.roleId)}</code>\` : "";
-            const branch = record.branchId ? \`<code>\${escapeText(record.branchId)}</code>\` : "";
-            const review = record.reviewId ? \`<code>\${escapeText(record.reviewId)}</code>\` : "";
-            const event = record.event ? \`<code>\${escapeText(record.event)}</code>\` : "";
-            const status = record.status ? \`<span class="status \${statusClass(record.status)}">\${escapeText(displayUiToken(record.status, t))}</span>\` : "";
-            return \`
-              <div class="event">
-                <div class="event-top">
-                  <span>#\${escapeText(entry.cursor)} \${escapeText(displayUiToken(type, t))}</span>
-                  <span>\${escapeText(formatTime(record.at))}</span>
-                </div>
-                <strong>\${role} \${event} \${status}</strong>
-                <div class="hint">\${branch} \${review}</div>
-              </div>
-            \`;
-          })
-      ].join("");
+      timelineEl.innerHTML = renderTimelineHtml({
+        events,
+        filters: {
+          roleId: state.timelineRoleId,
+          type: state.timelineType,
+          status: state.timelineStatus,
+          branchId: state.timelineBranchId,
+          reviewId: state.timelineReviewId,
+          errorCode: state.timelineErrorCode
+        },
+        t,
+        escapeText,
+        statusClass,
+        displayUiToken,
+        formatTime
+      });
     }
 
     function renderGraph() {
