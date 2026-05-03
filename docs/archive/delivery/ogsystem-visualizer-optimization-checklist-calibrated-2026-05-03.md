@@ -102,20 +102,20 @@ Status: calibrated
 #### 18. Run card 可补充结构化无障碍语义
 
 - 文件：`client-app.ts`
-- 现状：Run card 作为 `<button>` 已可读，但缺少更明确的 `aria-label` 或 `aria-describedby`。
-- 建议：补充结构化状态摘要，提升屏幕阅读器体验。
+- 现状：Run card 已补充结构化 `aria-label`，包含 run id、状态、transition 数和更新时间摘要。
+- 状态：已修复。
 
 #### 19. SVG 图内节点细粒度可访问性不足
 
 - 文件：`client-renderers.ts`
-- 现状：整体 SVG 仅有 `role="img"` 和总 `aria-label`，节点和边缺少 `<title>` / `<desc>`。
-- 建议：为节点和边补充细粒度文本说明。
+- 现状：整体 SVG、节点和边均已补充 `<title>` / `<desc>`，节点说明覆盖 role/status/active/pending/detail，边说明覆盖 source/target/event/state。
+- 状态：已修复。
 
 #### 20. Tone 系统对色盲支持不足
 
 - 文件：`client-renderers.ts`
-- 现状：多数位置仍有文本辅助，但拓扑图和纯视觉状态指示器对色弱用户仍不够友好。
-- 建议：加入图标、纹理或其他非颜色状态提示。
+- 现状：拓扑边已补充非颜色提示：错误流和最近激活流使用不同 dash pattern，并在边标签中追加 `!` / `*` 文本提示。
+- 状态：已修复。
 
 ### P3 — 低风险或后移处理
 

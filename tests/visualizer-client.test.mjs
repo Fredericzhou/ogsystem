@@ -2290,6 +2290,7 @@ test("visualizer client keeps console and run list interactions idempotent acros
     .querySelectorAll("[data-run-id]")
     .find((button) => button.getAttribute("data-run-id") === "run-123");
   assert.ok(runButton);
+  assert.match(runButton.getAttribute("aria-label"), /Run run-123 status \w+ transitions \d+ updated/);
   const fetchCountBefore = harness.backend.fetchCalls.length;
   await runButton.click();
   await settle();

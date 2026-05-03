@@ -1605,8 +1605,8 @@ export function renderRunTopologySvg(graph: Record<string, unknown> | null | und
   }
   const pendingIndegree = new Map(indegree);
   const visited = new Set<string>();
-  while (queue.length > 0) {
-    const roleId = queue.shift() ?? "";
+  for (let queueIndex = 0; queueIndex < queue.length; queueIndex += 1) {
+    const roleId = queue[queueIndex] ?? "";
     if (!roleId || visited.has(roleId)) {
       continue;
     }
@@ -1678,12 +1678,23 @@ export function renderRunTopologySvg(graph: Record<string, unknown> | null | und
     const y2 = target.y + (nodeHeight / 2);
     const midX = (x1 + x2) / 2;
     const stroke = edge.isErrorFlow ? "rgba(248,113,113,0.64)" : edge.recentlyActivated ? "rgba(56,189,248,0.72)" : "rgba(148,163,184,0.34)";
+    const sourceRoleId = String(edge.sourceRoleId ?? "");
+    const targetRoleId = String(edge.targetRoleId ?? "");
+    const event = String(edge.event ?? "");
+    const edgeState = edge.isErrorFlow
+      ? tr("graph.edgeErrorFlow", undefined, "error flow")
+      : edge.recentlyActivated
+        ? tr("graph.edgeRecentlyActivated", undefined, "recently activated flow")
+        : tr("graph.edgeStandardFlow", undefined, "standard flow");
+    const edgeDescription = sourceRoleId + " to " + targetRoleId + " on " + (event || tr("common.unknown", undefined, "unknown")) + ": " + edgeState;
     return (
       '<g>' +
+      '<title>' + escapeText(edgeDescription) + '</title>' +
+      '<desc>' + escapeText(edgeDescription) + '</desc>' +
       '<path d="M ' + x1 + " " + y1 + " C " + midX + " " + y1 + ", " + midX + " " + y2 + ", " + x2 + " " + y2 +
-      '" fill="none" stroke="' + stroke + '" stroke-width="3" marker-end="url(#run-arrow)" />' +
+      '" fill="none" stroke="' + stroke + '" stroke-width="3" stroke-dasharray="' + (edge.isErrorFlow ? "8 5" : edge.recentlyActivated ? "2 6" : "none") + '" marker-end="url(#run-arrow)" />' +
       '<text x="' + midX + '" y="' + (Math.min(y1, y2) + Math.abs(y2 - y1) / 2 - 8) + '" text-anchor="middle" fill="#8fa1c3" font-size="11" font-family="IBM Plex Mono, monospace">' +
-      escapeText(edge.event ?? "") +
+      escapeText((event || "") + (edge.isErrorFlow ? " !" : edge.recentlyActivated ? " *" : "")) +
       "</text></g>"
     );
   }).join("");
@@ -1697,22 +1708,29 @@ export function renderRunTopologySvg(graph: Record<string, unknown> | null | und
     const tone = statusTone(String(node.status ?? ""));
     const binding = bindingTone(String(node.bindingKind ?? ""));
     const badge = binding === "model" ? "#38bdf8" : binding === "profile" ? "#34d399" : "#94a3b8";
+    const nodeStatus = labelToken(node.status ?? "idle");
+    const nodeType = labelToken(node.nodeType ?? "role");
+    const activePending = tr("state.activePending", {
+      activeBranches: String(node.activeBranchCount ?? 0),
+      pendingReviews: String(node.pendingReviewCount ?? 0)
+    }, "active branches " + String(node.activeBranchCount ?? 0) + " · pending reviews " + String(node.pendingReviewCount ?? 0));
+    const nodeDetail = String(node.lastSelectedEvent ?? node.lastErrorCode ?? node.joinMode ?? "steady");
+    const nodeDescription = roleId + ": " + nodeType + ", " + nodeStatus + ", " + activePending + ", " + nodeDetail;
     return (
       '<g>' +
+      '<title>' + escapeText(nodeDescription) + '</title>' +
+      '<desc>' + escapeText(nodeDescription) + '</desc>' +
       '<rect x="' + position.x + '" y="' + position.y + '" width="' + nodeWidth + '" height="' + nodeHeight + '" rx="22" ry="22" fill="' + tone.fill + '" stroke="' + tone.stroke + '" stroke-width="2" />' +
       '<circle cx="' + (position.x + 20) + '" cy="' + (position.y + 22) + '" r="7" fill="' + badge + '" />' +
       '<text x="' + (position.x + 34) + '" y="' + (position.y + 27) + '" fill="' + tone.text + '" font-size="15" font-family="IBM Plex Sans, sans-serif">' + escapeText(roleId) + '</text>' +
       '<text x="' + (position.x + 20) + '" y="' + (position.y + 54) + '" fill="#8fa1c3" font-size="12" font-family="IBM Plex Sans, sans-serif">' +
-      escapeText(labelToken(node.nodeType ?? "role") + " · " + labelToken(node.status ?? "idle")) +
+      escapeText(nodeType + " · " + nodeStatus) +
       '</text>' +
       '<text x="' + (position.x + 20) + '" y="' + (position.y + 76) + '" fill="#dce7f7" font-size="12" font-family="IBM Plex Sans, sans-serif">' +
-      escapeText(tr("state.activePending", {
-        activeBranches: String(node.activeBranchCount ?? 0),
-        pendingReviews: String(node.pendingReviewCount ?? 0)
-      }, "active branches " + String(node.activeBranchCount ?? 0) + " · pending reviews " + String(node.pendingReviewCount ?? 0))) +
+      escapeText(activePending) +
       '</text>' +
       '<text x="' + (position.x + 20) + '" y="' + (position.y + 96) + '" fill="#8fa1c3" font-size="11" font-family="IBM Plex Mono, monospace">' +
-      escapeText(String(node.lastSelectedEvent ?? node.lastErrorCode ?? node.joinMode ?? "steady")) +
+      escapeText(nodeDetail) +
       "</text></g>"
     );
   }).join("");
@@ -1720,6 +1738,11 @@ export function renderRunTopologySvg(graph: Record<string, unknown> | null | und
   return (
     '<div class="preview">' +
     '<svg viewBox="0 0 ' + width + " " + height + '" role="img" aria-label="Run topology graph">' +
+    '<title>' + escapeText(tr("graph.runTopologyTitle", undefined, "Run topology graph")) + '</title>' +
+    '<desc>' + escapeText(tr("graph.runTopologyDescription", {
+      nodes: String(nodes.length),
+      edges: String(edges.length)
+    }, "Run topology graph with " + String(nodes.length) + " nodes and " + String(edges.length) + " edges.")) + '</desc>' +
     '<defs><marker id="run-arrow" viewBox="0 0 10 10" refX="7" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z" fill="rgba(148,163,184,0.58)"></path></marker></defs>' +
     edgeSvg +
     nodeSvg +

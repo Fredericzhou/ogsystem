@@ -2141,18 +2141,32 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
         return;
       }
       setInnerHtmlIfChanged(runListEl, runs
-        .map((run) => \`
-          <button class="run-card \${run.runId === state.selectedRunId ? "active" : ""}" data-run-id="\${escapeText(run.runId)}">
+        .map((run) => {
+          const runStatus = displayUiToken(run.status, t);
+          const updatedAt = formatTime(run.updatedAt);
+          const ariaLabel = [
+            "Run",
+            run.runId,
+            "status",
+            runStatus,
+            t("run.transitions"),
+            String(run.transitionCount),
+            t("run.updated"),
+            updatedAt
+          ].join(" ");
+          return \`
+          <button class="run-card \${run.runId === state.selectedRunId ? "active" : ""}" data-run-id="\${escapeText(run.runId)}" aria-label="\${escapeText(ariaLabel)}">
             <div class="run-title">
               <span class="truncate" title="\${escapeText(run.runId)}">\${escapeText(run.runId)}</span>
-              <span class="status \${statusClass(run.status)}" data-status="\${escapeText(run.status)}">\${escapeText(displayUiToken(run.status, t))}</span>
+              <span class="status \${statusClass(run.status)}" data-status="\${escapeText(run.status)}">\${escapeText(runStatus)}</span>
             </div>
             <div class="meta">
               <span>\${escapeText(t("run.transitions"))} \${escapeText(run.transitionCount)}</span>
-              <span>\${escapeText(t("run.updated"))} \${escapeText(formatTime(run.updatedAt))}</span>
+              <span>\${escapeText(t("run.updated"))} \${escapeText(updatedAt)}</span>
             </div>
           </button>
-        \`)
+        \`;
+        })
         .join(""));
       for (const button of runListEl.querySelectorAll("[data-run-id]")) {
         button.disabled = Boolean(state.actionBusy);

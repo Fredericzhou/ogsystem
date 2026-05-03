@@ -54,6 +54,7 @@ import {
   bindStudioChatControls as bindStudioChatControlsModule
 } from "../dist/visualizer/client-studio-bridge-controls.js";
 import {
+  renderRunTopologySvg,
   sortStudioBridgeFlowsByTopology,
   sortStudioBridgeRolesTopologically
 } from "../dist/visualizer/client-renderers.js";
@@ -767,6 +768,57 @@ test("client Studio Bridge topology sorting keeps stable role and flow order", (
     "writer:DONE:qa",
     "qa:APPROVE:publisher"
   ]);
+});
+
+test("client run topology SVG exposes node and edge accessibility descriptions", () => {
+  const svg = renderRunTopologySvg({
+    entryRoleId: "planner",
+    nodes: [
+      {
+        roleId: "planner",
+        nodeType: "role",
+        status: "waiting_review",
+        bindingKind: "model",
+        activeBranchCount: 1,
+        pendingReviewCount: 2,
+        lastSelectedEvent: "PLAN"
+      },
+      {
+        roleId: "qa",
+        nodeType: "role",
+        status: "failed",
+        bindingKind: "profile",
+        activeBranchCount: 0,
+        pendingReviewCount: 0,
+        lastErrorCode: "E_QA"
+      }
+    ],
+    edges: [
+      {
+        sourceRoleId: "planner",
+        targetRoleId: "qa",
+        event: "DONE",
+        recentlyActivated: true
+      },
+      {
+        sourceRoleId: "qa",
+        targetRoleId: "planner",
+        event: "ERROR",
+        isErrorFlow: true
+      }
+    ]
+  }, t);
+
+  assert.match(svg, /<title>Run topology graph<\/title>/);
+  assert.match(svg, /<desc>Run topology graph with 2 nodes and 2 edges\.<\/desc>/);
+  assert.match(svg, /<title>planner: role, waiting review, active branches 1 · pending reviews 2, PLAN<\/title>/);
+  assert.match(svg, /<desc>qa: role, failed, active branches 0 · pending reviews 0, E_QA<\/desc>/);
+  assert.match(svg, /<title>planner to qa on DONE: recently activated flow<\/title>/);
+  assert.match(svg, /<desc>qa to planner on ERROR: error flow<\/desc>/);
+  assert.match(svg, /stroke-dasharray="2 6"/);
+  assert.match(svg, /stroke-dasharray="8 5"/);
+  assert.match(svg, />DONE \*<\/text>/);
+  assert.match(svg, />ERROR !<\/text>/);
 });
 
 test("client run selection helpers keep review fallback and live state deterministic", () => {
