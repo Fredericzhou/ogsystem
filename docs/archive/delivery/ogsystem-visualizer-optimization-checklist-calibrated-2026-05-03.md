@@ -52,7 +52,7 @@ Status: calibrated
 
 | # | 问题 | 文件 | 当前状态 |
 |---|------|------|----------|
-| 11 | 关键面板 `innerHTML` 全量替换导致焦点/滚动丢失 | `client-app.ts` | 已新增 `setInnerHtmlIfChanged()` 和 `bindOnce()`，首批热点已覆盖 `operateTabs` / `workbenchStatus` / `workbenchTabs` / `workbenchViewTabs` / `workbenchActions`；`runListEl` 与 `consoleTabsEl` 仍待处理，不能视为整项完成 |
+| 11 | 关键面板 `innerHTML` 全量替换导致焦点/滚动丢失 | `client-app.ts` | 已新增 `setInnerHtmlIfChanged()` 和 `bindOnce()`，覆盖 `operateTabs` / `workbenchStatus` / `workbenchTabs` / `workbenchViewTabs` / `workbenchActions` / `runListEl` / `consoleTabsEl`；重复绑定风险已收敛 |
 
 ---
 
@@ -63,34 +63,34 @@ Status: calibrated
 #### 12. 初始化加载失败无重试入口
 
 - 文件：`client-app.ts`
-- 现状：初始 `loadProject()` 失败后只有错误文本，缺少显式 Retry 入口。
-- 建议：在错误态旁提供 Retry 按钮，重新触发初始化加载。
+- 现状：初始 `loadProject()` 失败后已提供显式 Retry 入口，且支持重试后恢复页面。
+- 状态：已修复。
 
 #### 13. Workbench textarea 缺少 label / aria-label
 
 - 文件：`client-lifecycle-panels.ts`
-- 现状：`<textarea id="workbench-editor" ...>` 缺少关联 `label` 或 `aria-label`。
-- 建议：添加可翻译的 `aria-label` 或显式 `<label for="workbench-editor">`。
+- 现状：`<textarea id="workbench-editor" ...>` 已补充可翻译 `aria-label`。
+- 状态：已修复。
 
 #### 14. `runListEl` 和 `consoleTabsEl` 仍为高频 `innerHTML` 全量替换
 
 - 文件：`client-app.ts`
-- 现状：两处仍在搜索过滤、状态切换和流式刷新时整块重写 DOM，容易造成焦点丢失、滚动跳动和闪烁。
-- 建议：优先复用 `setInnerHtmlIfChanged()`；必要时再细化为局部 patch。若继续保留整块重绘路径，必须同步约束监听器绑定策略，继续使用 `bindOnce()` 或只在 markup 真正变化后重绑，避免重复监听。
+- 现状：两处已改为复用 `setInnerHtmlIfChanged()`，并配合 `bindOnce()` 控制重复监听。
+- 状态：已修复。
 
 #### 15. 成功类 Flash 消息应自动消失
 
 - 文件：`client-app.ts`
-- 现状：当前 flash 默认常驻，直到被后续操作覆盖。
-- 建议：仅对“不带 action 的纯提示型” `success` / `info` 做自动消失；带 action 的 flash 应保留，避免把可操作入口提前冲掉。`error` / `warning` 保持常驻。
+- 现状：纯提示型 `success` / `info` flash 已自动消失；带 action 的 flash 仍常驻。
+- 状态：已修复。
 
 ### P2 — 需要一定设计，值得排期
 
 #### 16. `fetchSelectedLogs` 未选 roleId 时对所有 role 并发请求
 
 - 文件：`client-run-data-loaders.ts`
-- 现状：未选中 role 时直接 `Promise.all(roleIds.map(...))`，大图会一次发出多路并发请求。
-- 建议：增加并发上限，或改为按需加载。
+- 现状：未选中 role 时已改为分批并发加载，避免一次性打满多路请求。
+- 状态：已修复。
 
 #### 17. SSE 每连接 1 秒轮询文件系统
 
@@ -129,9 +129,8 @@ Status: calibrated
 #### 22. SVG 拓扑排序 `queue.shift()` 为 O(n)
 
 - 文件：`client-renderers.ts`
-- 现状：Kahn 拓扑排序使用 `Array.shift()`，理论上为 O(n²)。
-- 定性：当前角色规模通常较小，实际收益有限。
-- 建议：后续改为 index 游标遍历。
+- 现状：Kahn 拓扑排序已改为 index 游标遍历，避免 `Array.shift()` 造成的 O(n²) 行为。
+- 状态：已修复。
 
 #### 23. `asString` 在 `project-readiness.ts` 中语义不同
 

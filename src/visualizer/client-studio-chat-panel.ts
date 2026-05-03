@@ -75,7 +75,7 @@ export function renderStudioChatPanelHtml(args: {
       ? '<div class="hint">' + escapeText(validationOk ? t("studio.chat.validationOk", undefined, "Preview validation passed.") : t("studio.chat.validationPending", undefined, "Preview validation is pending.")) + '</div>'
       : "";
   return [
-    '<div class="studio-chat-panel structure-list' + (state.studioChatDialogOpen ? ' is-open' : '') + '" data-studio-bridge-region="chat"' + (state.studioChatDialogOpen ? ' role="dialog" aria-modal="false"' : ' hidden') + '>',
+    '<div class="studio-chat-panel structure-list' + (state.studioChatDialogOpen ? ' is-open' : '') + '" data-studio-bridge-region="chat"' + (state.studioChatDialogOpen ? ' role="region"' : ' hidden') + '>',
     '<div class="event"><div class="event-top"><span>' + escapeText(t("studio.chat.title", undefined, "Chat to MMD")) + '</span><span>' + escapeText(studioChatModeLabel(resultMode, t)) + '</span></div><strong>' +
       escapeText(t("studio.chat.subtitle", undefined, "Generate or adjust the Studio draft with natural language.")) +
       '</strong><div class="hint">' + escapeText(t("studio.chat.context", { context: selectedContext }, "Context: {context}")) + '</div></div>',

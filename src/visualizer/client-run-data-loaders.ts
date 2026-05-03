@@ -6,6 +6,8 @@ type GraphPayloadLike = {
   } | null;
 };
 
+const MAX_PARALLEL_ROLE_LOG_REQUESTS = 4;
+
 export function buildLogsQuery(args: {
   apiPrefix: string;
   runId: string;
@@ -67,7 +69,15 @@ export async function fetchSelectedLogs(args: {
       .map((node) => node?.roleId || "")
       .filter(Boolean);
     roleLogsPromise = roleIds.length
-      ? Promise.all(roleIds.map((roleId) => loadLogRecords({ roleId }))).then((payloads) => payloads.flat())
+      ? (async () => {
+          const roleLogs: any[] = [];
+          for (let index = 0; index < roleIds.length; index += MAX_PARALLEL_ROLE_LOG_REQUESTS) {
+            const batch = roleIds.slice(index, index + MAX_PARALLEL_ROLE_LOG_REQUESTS);
+            const payloads = await Promise.all(batch.map((roleId) => loadLogRecords({ roleId })));
+            roleLogs.push(...payloads.flat());
+          }
+          return roleLogs;
+        })()
       : Promise.resolve([]);
   }
 

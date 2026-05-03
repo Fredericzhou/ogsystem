@@ -113,6 +113,7 @@ export function createInitialVisualizerState(resolvedLocale: string) {
     stream: null,
     listTimer: null,
     flash: null,
+    flashTimer: null,
     actionBusy: "",
     actionForm: null,
     streamRefreshPlan: createInitialStreamRefreshPlan(),

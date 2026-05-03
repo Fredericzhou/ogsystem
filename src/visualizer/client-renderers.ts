@@ -166,8 +166,8 @@ export function sortStudioBridgeRolesTopologically(roles: JsonRecord[], flows: J
     .sort((left, right) => (indexById.get(left) ?? 0) - (indexById.get(right) ?? 0) || left.localeCompare(right));
   const ordered: JsonRecord[] = [];
   const visited = new Set<string>();
-  while (queue.length) {
-    const roleId = queue.shift() || "";
+  for (let cursor = 0; cursor < queue.length; cursor += 1) {
+    const roleId = queue[cursor] || "";
     if (!roleId || visited.has(roleId)) continue;
     visited.add(roleId);
     const role = roleById.get(roleId);

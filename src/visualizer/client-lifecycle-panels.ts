@@ -174,7 +174,7 @@ export function renderWorkbenchModeBodyHtml(args: {
       dirty ? '<button class="button subtle" id="workbench-revert">' + escapeText(t("action.revertToDisk")) + '</button>' : "",
       '</div>',
       '</div>',
-      '<textarea id="workbench-editor" class="editor" spellcheck="false">' + escapeText(workbenchSource || "") + '</textarea>'
+      '<textarea id="workbench-editor" class="editor" spellcheck="false" aria-label="' + escapeText(t("workbench.editorAriaLabel", undefined, "Workbench source editor")) + '">' + escapeText(workbenchSource || "") + '</textarea>'
     ].join("");
   }
   return "";

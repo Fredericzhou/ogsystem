@@ -72,9 +72,9 @@ Sources: `docs/long-term-stability-roadmap.md`, `docs/archive/delivery/optimizat
 - [ ] 评估并优化 SSE 每秒轮询文件系统的实现，至少补连接数、IO 频率和关闭行为的观测指标。
 - [ ] 将 `src/visualizer/client-stream-state.ts` 的流式事件去重从线性扫描改为显式索引结构，降低高频事件追加成本。
 - [ ] 评估 `src/visualizer/project-projection.ts` 的角色目录摘要生成路径，区分“内容指纹”与“缓存 token”场景，避免不必要的全文件读取。
-- [ ] 复核 `src/visualizer/client-run-data-loaders.ts` 的日志并发抓取策略，为多 role 场景增加并发控制或分批加载。
+- [x] 复核 `src/visualizer/client-run-data-loaders.ts` 的日志并发抓取策略，为多 role 场景增加并发控制或分批加载。
 - [ ] 复核 `src/visualizer/ops-summary-projection.ts` 的 run 汇总读取路径，确认真实瓶颈后再决定是否并行化或加缓存。
-- [ ] 为 `src/visualizer/client-app.ts` 的高频 `innerHTML` 重绘热点建立优先级列表；首批热点已覆盖 `operateTabs` / `workbenchStatus` / `workbenchTabs` / `workbenchViewTabs` / `workbenchActions`，剩余优先处理 `runListEl` 与 `consoleTabsEl`。
+- [x] 为 `src/visualizer/client-app.ts` 的高频 `innerHTML` 重绘热点建立优先级列表；首批热点已覆盖 `operateTabs` / `workbenchStatus` / `workbenchTabs` / `workbenchViewTabs` / `workbenchActions` / `runListEl` / `consoleTabsEl`。
 - [ ] 为关键异步加载态补更稳定的 loading skeleton 或占位策略，至少覆盖项目首页、Build 工作台和运行明细主面板。
 
 ### P2. Visualizer 状态与可维护性治理
@@ -84,6 +84,7 @@ Sources: `docs/long-term-stability-roadmap.md`, `docs/archive/delivery/optimizat
 - [ ] 为 `listTimer`、`workbenchValidationTimer`、`streamRefreshTimer` 等定时器建立统一清理约束，避免后续继续分散增长。
 - [ ] 继续拆分 `src/visualizer/client-app.ts` 与 `src/visualizer/server.ts` 的超大文件，把稳定边界沉淀为独立模块。
 - [ ] 收敛 `asString`、`asRecord`、`escapeHtml` 等重复辅助函数，统一语义并减少多份拷贝漂移。
+- [x] 将 `src/visualizer/client-renderers.ts` 的 SVG 拓扑排序从 `queue.shift()` 改为 index 游标遍历，避免理论 O(n²) 热点。
 
 ### P2. Visualizer 无障碍与交互修复
 

@@ -884,8 +884,21 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
     }
 
     function setFlash(kind, message, options) {
+      if (state.flashTimer) {
+        clearTimeout(state.flashTimer);
+        state.flashTimer = null;
+      }
       state.flash = message ? { kind, message, action: options?.action || "" } : null;
       renderFlash();
+      if (message && !options?.action && (kind === "success" || kind === "info")) {
+        state.flashTimer = setTimeout(() => {
+          state.flashTimer = null;
+          if (state.flash && state.flash.kind === kind && state.flash.message === message && !state.flash.action) {
+            state.flash = null;
+            renderFlash();
+          }
+        }, 3000);
+      }
     }
 
     function getProjectWizardDefaults(workspace) {
@@ -1028,11 +1041,38 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
         flashEl.innerHTML += ' <button id="flash-retry-role-import" class="button subtle" type="button">' + escapeText(t("projectWizard.retryRoleImport", undefined, "Retry role import")) + '</button>';
         const retryButton = document.getElementById("flash-retry-role-import");
         if (retryButton) {
-          retryButton.addEventListener("click", () => {
+          bindOnce(retryButton, "click", "retry-role-import", () => {
             void retryPendingRoleImport();
           });
         }
       }
+    }
+
+    function setInnerHtmlIfChanged(element, html) {
+      if (!element) {
+        return false;
+      }
+      if (element.innerHTML === html) {
+        return false;
+      }
+      element.innerHTML = html;
+      return true;
+    }
+
+    function bindOnce(element, eventName, marker, handler) {
+      if (!element) {
+        return;
+      }
+      const markerName = "data-bound-" + marker;
+      if (typeof element.getAttribute === "function" && element.getAttribute(markerName) === "true") {
+        return;
+      }
+      if (typeof element.setAttribute === "function") {
+        element.setAttribute(markerName, "true");
+      } else {
+        element[markerName] = "true";
+      }
+      element.addEventListener(eventName, handler);
     }
 
     function setActionBusy(actionId) {
@@ -1153,13 +1193,13 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
         return;
       }
       if (!showOperateWorkspace) {
-        operateTabsEl.innerHTML = "";
+        setInnerHtmlIfChanged(operateTabsEl, "");
         return;
       }
-      operateTabsEl.innerHTML = renderOperateTabsHtml({ operateTab: state.operateTab, t, escapeText });
+      setInnerHtmlIfChanged(operateTabsEl, renderOperateTabsHtml({ operateTab: state.operateTab, t, escapeText }));
       for (const button of operateTabsEl.querySelectorAll("[data-operate-tab]")) {
         button.disabled = Boolean(state.actionBusy);
-        button.addEventListener("click", () => {
+        bindOnce(button, "click", "operate-tab", () => {
           state.operateTab = button.getAttribute("data-operate-tab") || "overview";
           renderOperateTabs();
           renderActionState();
@@ -1226,7 +1266,7 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
             '">' + escapeText(label) + '</button>'
           ).join("") + '</div>'
         : "";
-      consoleTabsEl.innerHTML = lifecycleHtml + legacyHtml;
+      setInnerHtmlIfChanged(consoleTabsEl, lifecycleHtml + legacyHtml);
       const visiblePanelIds = new Set(
         state.consoleTab === "legacy"
           ? [state.legacyConsoleTab || "debug"]
@@ -1255,7 +1295,7 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
       renderOperateTabs();
       renderHeroActions();
       for (const button of consoleTabsEl.querySelectorAll("[data-console-tab]")) {
-        button.addEventListener("click", () => {
+        bindOnce(button, "click", "console-tab", () => {
           state.consoleTab = button.getAttribute("data-console-tab") || "operate";
           state.projectHome = state.consoleTab === "project";
           if (state.consoleTab === "build" && state.hasProject) {
@@ -1275,7 +1315,7 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
         });
       }
       for (const button of consoleTabsEl.querySelectorAll("[data-legacy-console-tab]")) {
-        button.addEventListener("click", () => {
+        bindOnce(button, "click", "legacy-console-tab", () => {
           state.legacyConsoleTab = button.getAttribute("data-legacy-console-tab") || "debug";
           renderConsoleTabs();
           renderActionState();
@@ -1646,7 +1686,7 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
         : t("workbench.defaultMeta");
       const entryRoleId = structure?.entryRoleId || state.project?.summary?.project?.entryRoleId || "";
       const lastDryRunId = state.studioBridgeLastDryRunId || "";
-      workbenchStatusEl.innerHTML = renderWorkbenchStatusHtml({
+      setInnerHtmlIfChanged(workbenchStatusEl, renderWorkbenchStatusHtml({
         dirty,
         entryRoleId,
         lastDryRunId,
@@ -1656,21 +1696,21 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
         validating: state.workbenchValidating,
         t,
         escapeText
-      });
-      workbenchTabsEl.innerHTML = renderWorkbenchModeTabsHtml({
+      }));
+      setInnerHtmlIfChanged(workbenchTabsEl, renderWorkbenchModeTabsHtml({
         buildMode: state.buildMode,
         t,
         escapeText
-      });
+      }));
       if (workbenchViewTabsEl) {
-        workbenchViewTabsEl.innerHTML = renderWorkbenchViewTabsHtml({
+        setInnerHtmlIfChanged(workbenchViewTabsEl, renderWorkbenchViewTabsHtml({
           buildMode: state.buildMode,
           workbenchView: state.workbenchView,
           t,
           escapeText
-        });
+        }));
       }
-      workbenchActionsEl.innerHTML = renderWorkbenchActionsHtml({ dirty, t, escapeText });
+      setInnerHtmlIfChanged(workbenchActionsEl, renderWorkbenchActionsHtml({ dirty, t, escapeText }));
       if (state.buildMode === "dry-run" || state.buildMode === "debug") {
         workbenchBodyEl.innerHTML = renderWorkbenchModeBodyHtml({
           buildMode: state.buildMode,
@@ -1732,7 +1772,7 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
       }
       if (workbenchViewTabsEl) {
         for (const button of workbenchViewTabsEl.querySelectorAll("[data-workbench-view]")) {
-          button.addEventListener("click", () => {
+          bindOnce(button, "click", "workbench-view", () => {
             state.workbenchView = button.getAttribute("data-workbench-view") || "bridge";
             state.buildMode = "edit";
             renderWorkbench();
@@ -1749,14 +1789,14 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
         }
       }
       for (const button of workbenchTabsEl.querySelectorAll("[data-build-mode]")) {
-        button.addEventListener("click", () => {
+        bindOnce(button, "click", "build-mode", () => {
           state.buildMode = button.getAttribute("data-build-mode") || "edit";
           renderWorkbench();
         });
       }
       const newDraftButton = document.getElementById("workbench-new-draft");
       if (newDraftButton) {
-        newDraftButton.addEventListener("click", () => {
+        bindOnce(newDraftButton, "click", "new-draft", () => {
           state.workbenchSource = [
             "flowchart TD",
             "%% system.id=workspace.draft",
@@ -1775,7 +1815,7 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
       }
       const recoverDraftButton = document.getElementById("workbench-recover-draft");
       if (recoverDraftButton) {
-        recoverDraftButton.addEventListener("click", () => {
+        bindOnce(recoverDraftButton, "click", "recover-draft", () => {
           const draft = loadDraftSource();
           if (!draft) {
             return;
@@ -1788,7 +1828,7 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
       }
       const revertButton = document.getElementById("workbench-revert");
       if (revertButton) {
-        revertButton.addEventListener("click", () => {
+        bindOnce(revertButton, "click", "revert", () => {
           state.workbenchSource = state.workbenchDiskSource;
           persistDraftSource("");
           renderWorkbench();
@@ -1797,26 +1837,26 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
       }
       const saveButton = document.getElementById("build-save");
       if (saveButton) {
-        saveButton.addEventListener("click", async () => {
+        bindOnce(saveButton, "click", "save", async () => {
           await saveWorkbench();
         });
       }
       const validateButton = document.getElementById("build-validate");
       if (validateButton) {
-        validateButton.addEventListener("click", async () => {
+        bindOnce(validateButton, "click", "validate", async () => {
           await runWorkbenchValidation(true);
           await refreshStudioBridge();
         });
       }
       const dryRunButton = document.getElementById("build-dry-run");
       if (dryRunButton) {
-        dryRunButton.addEventListener("click", async () => {
+        bindOnce(dryRunButton, "click", "dry-run", async () => {
           await prepareDryRunFromBuild();
         });
       }
       const openOperateButton = document.getElementById("build-open-operate");
       if (openOperateButton) {
-        openOperateButton.addEventListener("click", async () => {
+        bindOnce(openOperateButton, "click", "open-operate", async () => {
           state.consoleTab = "operate";
           renderConsoleTabs();
           if (state.studioBridgeLastDryRunId) {
@@ -2092,10 +2132,10 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
           .some((item) => String(item).toLowerCase().includes(term));
       });
       if (!runs.length) {
-        runListEl.innerHTML = '<div class="hint">' + escapeText(t("run.noMatches")) + '</div>';
+        setInnerHtmlIfChanged(runListEl, '<div class="hint">' + escapeText(t("run.noMatches")) + '</div>');
         return;
       }
-      runListEl.innerHTML = runs
+      setInnerHtmlIfChanged(runListEl, runs
         .map((run) => \`
           <button class="run-card \${run.runId === state.selectedRunId ? "active" : ""}" data-run-id="\${escapeText(run.runId)}">
             <div class="run-title">
@@ -2108,10 +2148,10 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
             </div>
           </button>
         \`)
-        .join("");
+        .join(""));
       for (const button of runListEl.querySelectorAll("[data-run-id]")) {
         button.disabled = Boolean(state.actionBusy);
-        button.addEventListener("click", () => selectRun(button.getAttribute("data-run-id")));
+        bindOnce(button, "click", "run-card", () => selectRun(button.getAttribute("data-run-id")));
       }
     }
 
@@ -3687,6 +3727,27 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
       renderProject();
     }
 
+    async function loadWorkspaceView() {
+      await loadProject();
+      if (state.hasProject) {
+        await loadRuns();
+        if (state.selectedRunId) {
+          await loadSelectedRunBoot(state.selectedRunId, { keepStream: false });
+        } else {
+          renderSelectedRun();
+        }
+        return;
+      }
+      state.selectedRunId = "";
+      state.selectedReviewId = "";
+      state.selectedLogRoleId = "";
+      state.runs = [];
+      renderRuns();
+      renderSelectedRun();
+      renderLogs();
+      writeRouteToLocation();
+    }
+
     async function loadRoleCatalog() {
       try {
         state.roleCatalog = await requestJson(API_PREFIX + "/project/role-catalog");
@@ -4470,34 +4531,45 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
     logSinceEl.value = state.logSince;
     syncTimelineFilterInputs();
 
-    loadProject()
-      .then(async () => {
-        if (state.hasProject) {
-          await loadRuns();
-          if (state.selectedRunId) {
-            await loadSelectedRunBoot(state.selectedRunId, { keepStream: false });
-          } else {
-            renderSelectedRun();
+    function renderWorkspaceLoadFailure(error) {
+      const message = String(error.message || error);
+      setInnerHtmlIfChanged(
+        runListEl,
+        '<div class="structure-list"><div class="event"><div class="event-top"><span>' + escapeText(t("common.unknown", undefined, "unknown")) + '</span><span>' + escapeText(t("action.retry", undefined, "Retry")) + '</span></div><strong>' +
+          escapeText(t("state.visualizerLoadFailed", {
+            message
+          }, "Failed to load visualizer data: " + message)) +
+          '</strong><div class="hint">' +
+          escapeText(t("state.projectLoadFailed", {
+            message
+          }, "Failed to load project: " + message)) +
+          '</div><div class="toolbar-group"><button id="project-load-retry" class="button subtle" type="button">' +
+          escapeText(t("action.retry", undefined, "Retry")) +
+          '</button></div></div></div>'
+      );
+      const retryButton = document.getElementById("project-load-retry");
+      if (retryButton) {
+        bindOnce(retryButton, "click", "project-load-retry", async () => {
+          retryButton.disabled = true;
+          try {
+            await loadWorkspaceView();
+            setFlash("success", t("visualizer.refreshed", undefined, "Visualizer refreshed."));
+          } catch (retryError) {
+            renderWorkspaceLoadFailure(retryError);
+          } finally {
+            retryButton.disabled = false;
           }
-        } else {
-          state.selectedRunId = "";
-          state.selectedReviewId = "";
-          state.selectedLogRoleId = "";
-          state.runs = [];
-          renderRuns();
-          renderSelectedRun();
-          renderLogs();
-          writeRouteToLocation();
-        }
-      })
+        });
+      }
+      projectSummaryEl.textContent = t("state.projectLoadFailed", {
+        message
+      }, "Failed to load project: " + message);
+      setLive("idle", t("live.offline"));
+    }
+
+    loadWorkspaceView()
       .catch((error) => {
-        runListEl.innerHTML = '<div class="hint">' + escapeText(t("state.visualizerLoadFailed", {
-          message: String(error.message || error)
-        }, "Failed to load visualizer data: " + String(error.message || error))) + '</div>';
-        projectSummaryEl.textContent = t("state.projectLoadFailed", {
-          message: String(error.message || error)
-        }, "Failed to load project: " + String(error.message || error));
-        setLive("idle", t("live.offline"));
+        renderWorkspaceLoadFailure(error);
       });
 
     state.listTimer = setInterval(() => {

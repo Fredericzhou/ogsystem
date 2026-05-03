@@ -595,6 +595,7 @@ export const en = {
   "workbench.structure": "Structure",
   "workbench.bridge": "Studio Bridge",
   "workbench.sourceActionsHint": "Draft actions only affect the current workbench source until you save.",
+  "workbench.editorAriaLabel": "Workbench source editor",
   "workbench.saveBlockedByDiagnostics": "Save blocked by Mermaid validation diagnostics.",
   "workbench.saveCopyBlockedByDiagnostics": "Save copy blocked by Mermaid validation diagnostics.",
   "workbench.relativeSavePathRequired": "A relative save path is required.",

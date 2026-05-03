@@ -599,6 +599,7 @@ export const zhCN = {
   "workbench.structure": "结构",
   "workbench.bridge": "Studio Bridge",
   "workbench.sourceActionsHint": "草稿操作只影响当前工作台源码，保存后才会写入磁盘。",
+  "workbench.editorAriaLabel": "工作台源码编辑器",
   "workbench.saveBlockedByDiagnostics": "Mermaid 校验诊断阻止保存。",
   "workbench.saveCopyBlockedByDiagnostics": "Mermaid 校验诊断阻止保存副本。",
   "workbench.relativeSavePathRequired": "需要填写相对保存路径。",

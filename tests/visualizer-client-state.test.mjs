@@ -54,6 +54,10 @@ import {
   bindStudioChatControls as bindStudioChatControlsModule
 } from "../dist/visualizer/client-studio-bridge-controls.js";
 import {
+  sortStudioBridgeFlowsByTopology,
+  sortStudioBridgeRolesTopologically
+} from "../dist/visualizer/client-renderers.js";
+import {
   buildReleaseReadinessDecision,
   listFromRecord
 } from "../dist/visualizer/client-release-readiness.js";
@@ -680,6 +684,38 @@ test("client run data loaders keep fetch scope and deferred-load gating explicit
     roleLogs: [{ scope: "planner" }]
   });
 
+  const roleInFlight = new Set();
+  let maxConcurrent = 0;
+  const batchedRequests = [];
+  const batchedRequestJson = async (path) => {
+    batchedRequests.push(path);
+    if (path.includes("engine=true")) {
+      return { records: [{ scope: "engine" }] };
+    }
+    const roleId = new URL(path, "http://visualizer.test").searchParams.get("roleId");
+    roleInFlight.add(roleId);
+    maxConcurrent = Math.max(maxConcurrent, roleInFlight.size);
+    await Promise.resolve();
+    roleInFlight.delete(roleId);
+    return { records: [{ scope: roleId }] };
+  };
+  const batchedLogs = await fetchSelectedLogs({
+    requestJson: batchedRequestJson,
+    apiPrefix: "/api",
+    runId: "run-1",
+    graphPayload: {
+      graph: {
+        nodes: [{ roleId: "a" }, { roleId: "b" }, { roleId: "c" }, { roleId: "d" }, { roleId: "e" }]
+      }
+    }
+  });
+  assert.equal(maxConcurrent <= 4, true);
+  assert.deepEqual(batchedLogs.roleLogs.map((item) => item.scope), ["a", "b", "c", "d", "e"]);
+  assert.equal(
+    batchedRequests.filter((path) => path.includes("roleId=") || path.includes("engine=true")).length,
+    6
+  );
+
   assert.equal(shouldSkipDeferredPanelLoad({ runId: "", loaded: false }), true);
   assert.equal(shouldSkipDeferredPanelLoad({ runId: "run-1", actionBusy: true, internal: false }), true);
   assert.equal(shouldSkipDeferredPanelLoad({ runId: "run-1", loaded: true, stale: false, force: false }), true);
@@ -692,6 +728,32 @@ test("client run data loaders keep fetch scope and deferred-load gating explicit
   assert.deepEqual(failure, { records: [] });
   assert.deepEqual(readiness, { records: [] });
   assert.deepEqual(diagnostics, { records: [] });
+});
+
+test("client Studio Bridge topology sorting keeps stable role and flow order", () => {
+  const roles = [
+    { roleId: "qa" },
+    { roleId: "writer" },
+    { roleId: "input" },
+    { roleId: "publisher" },
+    { roleId: "cycle" }
+  ];
+  const flows = [
+    { flowKey: "writer:DONE:qa", fromRoleId: "writer", toRoleId: "qa", eventType: "DONE" },
+    { flowKey: "input:START:writer", fromRoleId: "input", toRoleId: "writer", eventType: "START" },
+    { flowKey: "qa:APPROVE:publisher", fromRoleId: "qa", toRoleId: "publisher", eventType: "APPROVE" },
+    { flowKey: "cycle:LOOP:cycle", fromRoleId: "cycle", toRoleId: "cycle", eventType: "LOOP" }
+  ];
+  const orderedRoles = sortStudioBridgeRolesTopologically(roles, flows);
+  assert.deepEqual(orderedRoles.map((role) => role.roleId), ["input", "cycle", "writer", "qa", "publisher"]);
+
+  const orderedFlows = sortStudioBridgeFlowsByTopology(flows, orderedRoles);
+  assert.deepEqual(orderedFlows.map((flow) => flow.flowKey), [
+    "input:START:writer",
+    "cycle:LOOP:cycle",
+    "writer:DONE:qa",
+    "qa:APPROVE:publisher"
+  ]);
 });
 
 test("client run selection helpers keep review fallback and live state deterministic", () => {
@@ -772,8 +834,26 @@ test("client Studio chat panel keeps apply gating and display context pure", () 
     escapeText
   });
   assert.match(html, /role requirements_analyst/);
+  assert.match(html, /role="region"/);
+  assert.doesNotMatch(html, /role="dialog"/);
+  assert.doesNotMatch(html, /aria-modal="false"/);
   assert.match(html, /生成流程/);
   assert.match(html, /flowchart TD/);
   assert.match(html, /id="studio-chat-apply"/);
   assert.doesNotMatch(html, /id="studio-chat-apply" disabled/);
+});
+
+test("workbench source editor is accessible by label", () => {
+  const html = renderWorkbenchModeBodyHtml({
+    buildMode: "edit",
+    workbenchView: "source",
+    dirty: false,
+    workbenchSavedPath: "system.mmd",
+    lastDryRunId: "",
+    hasDraft: false,
+    workbenchSource: "flowchart TD",
+    t,
+    escapeText
+  });
+  assert.match(html, /aria-label="Workbench source editor"/);
 });
