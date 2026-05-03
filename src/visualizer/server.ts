@@ -1246,6 +1246,17 @@ async function handleApiStudioChatToMmd(
     if (error instanceof Error && error.message === "CHAT_MESSAGE_REQUIRED") {
       throw new HttpError(400, "CHAT_MESSAGE_REQUIRED", "message is required.");
     }
+    if (
+      error instanceof Error &&
+      /must stay within the current workdir\.$/.test(error.message)
+    ) {
+      const label = error.message.replace(/ must stay within the current workdir\.$/, "");
+      throw new HttpError(
+        400,
+        "PROJECT_PATH_OUTSIDE_WORKDIR",
+        `${label} must stay within the current workdir.`
+      );
+    }
     throw error;
   }
   jsonResponse(response, 200, await runStudioChatToMmdTurn({
@@ -1927,6 +1938,9 @@ function normalizeError(error: unknown): HttpError {
     return error;
   }
   const message = error instanceof Error ? error.message : String(error);
+  if (/ must stay within the current workdir\.$/.test(message)) {
+    return new HttpError(400, "PROJECT_PATH_OUTSIDE_WORKDIR", message);
+  }
   if (/^Run not found:/i.test(message)) {
     return new HttpError(404, "RUN_NOT_FOUND", message);
   }

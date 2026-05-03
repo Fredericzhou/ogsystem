@@ -1481,6 +1481,17 @@ test("visualizer server exposes Mermaid workbench APIs and project export", asyn
     assert.equal(emptyChatResponse.status, 400);
     assert.equal((await emptyChatResponse.json()).error.code, "CHAT_MESSAGE_REQUIRED");
 
+    const outsideChatPathResponse = await fetch(`${url}/api/v1/project/studio/chat`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        message: "Use external profiles",
+        profilesPath: "../profiles.json"
+      })
+    });
+    assert.equal(outsideChatPathResponse.status, 400);
+    assert.equal((await outsideChatPathResponse.json()).error.code, "PROJECT_PATH_OUTSIDE_WORKDIR");
+
     const draftSaveResponse = await fetch(`${url}/api/v1/project/studio/authoring`, {
       method: "POST",
       headers: { "content-type": "application/json" },

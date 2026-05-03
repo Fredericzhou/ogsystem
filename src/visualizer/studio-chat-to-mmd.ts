@@ -114,6 +114,26 @@ function normalizeAuthoring(value: unknown): StudioAuthoringDocument | undefined
   return value as StudioAuthoringDocument;
 }
 
+function resolveOptionalPathWithinWorkdir(
+  workdir: string,
+  inputPath: string | undefined,
+  label: string
+): string | undefined {
+  if (!inputPath) {
+    return undefined;
+  }
+  const resolvedWorkdir = resolve(workdir);
+  const resolvedPath = resolve(workdir, inputPath);
+  if (
+    resolvedPath !== resolvedWorkdir &&
+    !resolvedPath.startsWith(`${resolvedWorkdir}/`) &&
+    !resolvedPath.startsWith(`${resolvedWorkdir}\\`)
+  ) {
+    throw new Error(`${label} must stay within the current workdir.`);
+  }
+  return resolvedPath;
+}
+
 export function parseStudioChatToMmdRequest(body: Record<string, unknown>): StudioChatToMmdRequest {
   const message = normalizeOptionalString(body.message);
   if (!message) {
@@ -301,9 +321,25 @@ export async function runStudioChatToMmdTurn(args: {
   sessions: StudioChatToMmdSessionMap;
   validateSystemSource: ValidateStudioSystemSource;
 }): Promise<StudioChatToMmdResponse> {
+  const runtimeConfigPath = resolveOptionalPathWithinWorkdir(
+    args.workdir,
+    args.request.runtimeConfigPath,
+    "runtimeConfigPath"
+  );
+  const lawsPath = resolveOptionalPathWithinWorkdir(args.workdir, args.request.lawsPath, "lawsPath");
+  const profilesPath = resolveOptionalPathWithinWorkdir(args.workdir, args.request.profilesPath, "profilesPath");
+  const userProfilePath = resolveOptionalPathWithinWorkdir(
+    args.workdir,
+    args.request.userProfilePath,
+    "userProfilePath"
+  );
   const { sessionId, session } = await getOrCreateSession({
     workdir: args.workdir,
-    request: args.request,
+    request: {
+      ...args.request,
+      runtimeConfigPath,
+      lawsPath
+    },
     sessions: args.sessions
   });
   const draftMermaid = buildDraftMermaid(args.request);
@@ -322,9 +358,9 @@ export async function runStudioChatToMmdTurn(args: {
       validationErrors,
       validationWarnings
     },
-    lawsPath: args.request.lawsPath,
-    profilesPath: args.request.profilesPath,
-    userProfilePath: args.request.userProfilePath
+    lawsPath,
+    profilesPath,
+    userProfilePath
   });
   session.updatedAtMs = Date.now();
 
