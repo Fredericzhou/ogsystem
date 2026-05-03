@@ -42,7 +42,12 @@ import {
   renderOperateTabsHtml,
   renderRunStatsHtml,
   renderTimelineHtml,
+  renderWorkbenchActionsHtml,
+  renderWorkbenchModeBodyHtml,
+  renderWorkbenchModeTabsHtml,
+  renderWorkbenchStatusHtml,
   renderWorkbenchStructureHtml,
+  renderWorkbenchViewTabsHtml,
   renderWorkspaceEmptyStateHtml
 } from "./client-lifecycle-panels.js";
 import {
@@ -111,6 +116,11 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
     const renderWorkspaceEmptyStateHtml = ${renderWorkspaceEmptyStateHtml.toString()};
     const renderOperateTabsHtml = ${renderOperateTabsHtml.toString()};
     const renderWorkbenchStructureHtml = ${renderWorkbenchStructureHtml.toString()};
+    const renderWorkbenchStatusHtml = ${renderWorkbenchStatusHtml.toString()};
+    const renderWorkbenchModeTabsHtml = ${renderWorkbenchModeTabsHtml.toString()};
+    const renderWorkbenchViewTabsHtml = ${renderWorkbenchViewTabsHtml.toString()};
+    const renderWorkbenchActionsHtml = ${renderWorkbenchActionsHtml.toString()};
+    const renderWorkbenchModeBodyHtml = ${renderWorkbenchModeBodyHtml.toString()};
     const renderRunStatsHtml = ${renderRunStatsHtml.toString()};
     const renderTimelineHtml = ${renderTimelineHtml.toString()};
     const mapProjectCreateErrorFromResponse = ${mapProjectCreateErrorFromResponse.toString()};
@@ -1587,70 +1597,60 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
         : t("workbench.defaultMeta");
       const entryRoleId = structure?.entryRoleId || state.project?.summary?.project?.entryRoleId || "";
       const lastDryRunId = state.studioBridgeLastDryRunId || "";
-      const statusPills = [
-        '<span class="pill' + (dirty ? " warn" : "") + '">' + escapeText(dirty ? t("workbench.unsavedChanges") : t("workbench.diskInSync")) + '</span>',
-        '<span class="pill">' + escapeText(t("workbench.entryRole", undefined, "entry")) + ' <code>' + escapeText(entryRoleId || "n/a") + '</code></span>',
-        lastDryRunId ? '<span class="pill">' + escapeText(t("build.lastDryRun", undefined, "Last dry run")) + ' <code>' + escapeText(lastDryRunId) + '</code></span>' : "",
-        validation
-          ? '<span class="pill' + (validation.ok ? "" : " warn") + '">' + escapeText(validation.ok ? t("workbench.validationOk") : t("workbench.diagnostics", { count: diagnostics.length })) + '</span>'
-          : '<span class="pill">' + escapeText(t("workbench.validationPending")) + '</span>',
-        state.workbenchHasDraft ? '<span class="pill warn">' + escapeText(t("workbench.draftCached")) + '</span>' : "",
-        state.workbenchValidating ? '<span class="pill warn">' + escapeText(t("workbench.validating")) + '</span>' : ""
-      ].filter(Boolean);
-      workbenchStatusEl.innerHTML = statusPills.join("");
-      workbenchTabsEl.innerHTML = [
-        '<button class="button subtle ' + (state.buildMode === "edit" ? "active" : "") + '" data-build-mode="edit">' + escapeText(t("build.mode.edit", undefined, "Edit")) + '</button>',
-        '<button class="button subtle ' + (state.buildMode === "dry-run" ? "active" : "") + '" data-build-mode="dry-run">' + escapeText(t("build.mode.dryRun", undefined, "Dry Run")) + '</button>',
-        '<button class="button subtle ' + (state.buildMode === "debug" ? "active" : "") + '" data-build-mode="debug">' + escapeText(t("build.mode.debug", undefined, "Debug")) + '</button>'
-      ].join("");
+      workbenchStatusEl.innerHTML = renderWorkbenchStatusHtml({
+        dirty,
+        entryRoleId,
+        lastDryRunId,
+        validation,
+        diagnostics,
+        hasDraft: state.workbenchHasDraft,
+        validating: state.workbenchValidating,
+        t,
+        escapeText
+      });
+      workbenchTabsEl.innerHTML = renderWorkbenchModeTabsHtml({
+        buildMode: state.buildMode,
+        t,
+        escapeText
+      });
       if (workbenchViewTabsEl) {
-        workbenchViewTabsEl.innerHTML = state.buildMode === "edit"
-          ? [
-              '<button class="button subtle ' + (state.workbenchView === "bridge" ? "active" : "") + '" data-workbench-view="bridge">' + escapeText(t("workbench.graph", undefined, "Graph")) + '</button>',
-              '<button class="button subtle ' + (state.workbenchView === "source" ? "active" : "") + '" data-workbench-view="source">' + escapeText(t("workbench.source")) + '</button>'
-            ].join("")
-          : "";
+        workbenchViewTabsEl.innerHTML = renderWorkbenchViewTabsHtml({
+          buildMode: state.buildMode,
+          workbenchView: state.workbenchView,
+          t,
+          escapeText
+        });
       }
-      workbenchActionsEl.innerHTML = [
-        '<button class="button" id="build-validate">' + escapeText(t("action.validate", undefined, "Validate")) + '</button>',
-        '<button class="button primary" id="build-save"' + (dirty ? "" : " disabled") + '>' + escapeText(t("action.save", undefined, "Save")) + '</button>',
-        '<button class="button primary" id="build-dry-run">' + escapeText(t("studio.dryRun", undefined, "Dry run")) + '</button>'
-      ].join("");
-      if (state.buildMode === "dry-run") {
-        workbenchBodyEl.innerHTML = [
-          '<div class="structure-list">',
-          '<div class="event"><div class="event-top"><span>' + escapeText(t("build.mode.dryRun", undefined, "Dry Run")) + '</span><span>' + escapeText(dirty ? t("workbench.unsavedChanges", undefined, "unsaved changes") : t("workbench.diskInSync", undefined, "disk in sync")) + '</span></div><strong>' + escapeText(t("build.dryRunPrepTitle", undefined, "Validate, generate Mermaid, save, then start a dry run.")) + '</strong><div class="hint">' + escapeText(t("build.dryRunPrepHint", {
-            path: state.workbenchSavedPath || "system.mmd"
-          }, "Dry run uses " + (state.workbenchSavedPath || "system.mmd") + " after the generated source is saved.")) + '</div></div>',
-          state.studioBridgeLastDryRunId
-            ? '<div class="event"><div class="event-top"><span>' + escapeText(t("build.lastDryRun", undefined, "Last dry run")) + '</span><span>' + escapeText(t("common.captured", undefined, "captured")) + '</span></div><strong>' + escapeText(state.studioBridgeLastDryRunId) + '</strong><div class="hint">' + escapeText(t("build.openDebugHint", undefined, "Open Debug mode here or jump to Operate for runtime controls.")) + '</div></div>'
-            : '<div class="hint">' + escapeText(t("build.noDryRunYet", undefined, "No dry run has been launched from Build yet.")) + '</div>',
-          '</div>'
-        ].join("");
-      } else if (state.buildMode === "debug") {
-        workbenchBodyEl.innerHTML = [
-          '<div class="structure-list">',
-          '<div class="event"><div class="event-top"><span>' + escapeText(t("build.mode.debug", undefined, "Debug")) + '</span><span>' + escapeText(state.studioBridgeLastDryRunId || t("common.missing", undefined, "missing")) + '</span></div><strong>' + escapeText(state.studioBridgeLastDryRunId ? t("build.debugDryRunTitle", undefined, "Dry-run result captured in Build.") : t("build.noDryRunYet", undefined, "No dry run has been launched from Build yet.")) + '</strong><div class="hint">' + escapeText(t("build.debugDryRunHint", undefined, "Use Operate for resume, stop, logs, and recovery controls.")) + '</div></div>',
-          state.studioBridgeLastDryRunId ? '<button class="button subtle" id="build-open-operate">' + escapeText(t("build.openOperate", undefined, "Open in Operate")) + '</button>' : "",
-          '</div>'
-        ].join("");
+      workbenchActionsEl.innerHTML = renderWorkbenchActionsHtml({ dirty, t, escapeText });
+      if (state.buildMode === "dry-run" || state.buildMode === "debug") {
+        workbenchBodyEl.innerHTML = renderWorkbenchModeBodyHtml({
+          buildMode: state.buildMode,
+          workbenchView: state.workbenchView,
+          dirty,
+          workbenchSavedPath: state.workbenchSavedPath,
+          lastDryRunId,
+          hasDraft: state.workbenchHasDraft,
+          workbenchSource: state.workbenchSource,
+          t,
+          escapeText
+        });
       } else
       if (state.workbenchView === "source" && preserveEditor && existingEditor) {
         if (existingEditor.value !== state.workbenchSource) {
           existingEditor.value = state.workbenchSource || "";
         }
       } else if (state.workbenchView === "source") {
-        workbenchBodyEl.innerHTML = [
-          '<div class="workbench-source-actions">',
-          '<div class="hint">' + escapeText(t("workbench.sourceActionsHint", undefined, "Draft actions only affect the current workbench source until you save.")) + '</div>',
-          '<div class="toolbar-group">',
-          '<button class="button subtle" id="workbench-new-draft">' + escapeText(t("action.newDraft")) + '</button>',
-          state.workbenchHasDraft ? '<button class="button subtle" id="workbench-recover-draft">' + escapeText(t("action.recoverDraft")) + '</button>' : "",
-          dirty ? '<button class="button subtle" id="workbench-revert">' + escapeText(t("action.revertToDisk")) + '</button>' : "",
-          '</div>',
-          '</div>',
-          '<textarea id="workbench-editor" class="editor" spellcheck="false">' + escapeText(state.workbenchSource || "") + '</textarea>'
-        ].join("");
+        workbenchBodyEl.innerHTML = renderWorkbenchModeBodyHtml({
+          buildMode: state.buildMode,
+          workbenchView: state.workbenchView,
+          dirty,
+          workbenchSavedPath: state.workbenchSavedPath,
+          lastDryRunId,
+          hasDraft: state.workbenchHasDraft,
+          workbenchSource: state.workbenchSource,
+          t,
+          escapeText
+        });
       } else if (state.workbenchView === "bridge") {
         renderStudioBridge({ preserveGraphRoot: Boolean(options?.preserveStudioGraphRoot) });
       } else {

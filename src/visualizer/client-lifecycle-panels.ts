@@ -67,6 +67,119 @@ export function renderWorkbenchStructureHtml(args: {
   ].join("");
 }
 
+export function renderWorkbenchStatusHtml(args: {
+  dirty: boolean;
+  entryRoleId: string;
+  lastDryRunId: string;
+  validation: Record<string, any> | null | undefined;
+  diagnostics: Array<unknown>;
+  hasDraft: boolean;
+  validating: boolean;
+  t: Translator;
+  escapeText: (value: unknown) => string;
+}): string {
+  const { dirty, entryRoleId, lastDryRunId, validation, diagnostics, hasDraft, validating, t, escapeText } = args;
+  return [
+    '<span class="pill' + (dirty ? " warn" : "") + '">' + escapeText(dirty ? t("workbench.unsavedChanges") : t("workbench.diskInSync")) + '</span>',
+    '<span class="pill">' + escapeText(t("workbench.entryRole", undefined, "entry")) + ' <code>' + escapeText(entryRoleId || "n/a") + '</code></span>',
+    lastDryRunId ? '<span class="pill">' + escapeText(t("build.lastDryRun", undefined, "Last dry run")) + ' <code>' + escapeText(lastDryRunId) + '</code></span>' : "",
+    validation
+      ? '<span class="pill' + (validation.ok ? "" : " warn") + '">' + escapeText(validation.ok ? t("workbench.validationOk") : t("workbench.diagnostics", { count: diagnostics.length })) + '</span>'
+      : '<span class="pill">' + escapeText(t("workbench.validationPending")) + '</span>',
+    hasDraft ? '<span class="pill warn">' + escapeText(t("workbench.draftCached")) + '</span>' : "",
+    validating ? '<span class="pill warn">' + escapeText(t("workbench.validating")) + '</span>' : ""
+  ].filter(Boolean).join("");
+}
+
+export function renderWorkbenchModeTabsHtml(args: {
+  buildMode: string;
+  t: Translator;
+  escapeText: (value: unknown) => string;
+}): string {
+  const { buildMode, t, escapeText } = args;
+  return [
+    '<button class="button subtle ' + (buildMode === "edit" ? "active" : "") + '" data-build-mode="edit">' + escapeText(t("build.mode.edit", undefined, "Edit")) + '</button>',
+    '<button class="button subtle ' + (buildMode === "dry-run" ? "active" : "") + '" data-build-mode="dry-run">' + escapeText(t("build.mode.dryRun", undefined, "Dry Run")) + '</button>',
+    '<button class="button subtle ' + (buildMode === "debug" ? "active" : "") + '" data-build-mode="debug">' + escapeText(t("build.mode.debug", undefined, "Debug")) + '</button>'
+  ].join("");
+}
+
+export function renderWorkbenchViewTabsHtml(args: {
+  buildMode: string;
+  workbenchView: string;
+  t: Translator;
+  escapeText: (value: unknown) => string;
+}): string {
+  const { buildMode, workbenchView, t, escapeText } = args;
+  return buildMode === "edit"
+    ? [
+        '<button class="button subtle ' + (workbenchView === "bridge" ? "active" : "") + '" data-workbench-view="bridge">' + escapeText(t("workbench.graph", undefined, "Graph")) + '</button>',
+        '<button class="button subtle ' + (workbenchView === "source" ? "active" : "") + '" data-workbench-view="source">' + escapeText(t("workbench.source")) + '</button>'
+      ].join("")
+    : "";
+}
+
+export function renderWorkbenchActionsHtml(args: {
+  dirty: boolean;
+  t: Translator;
+  escapeText: (value: unknown) => string;
+}): string {
+  const { dirty, t, escapeText } = args;
+  return [
+    '<button class="button" id="build-validate">' + escapeText(t("action.validate", undefined, "Validate")) + '</button>',
+    '<button class="button primary" id="build-save"' + (dirty ? "" : " disabled") + '>' + escapeText(t("action.save", undefined, "Save")) + '</button>',
+    '<button class="button primary" id="build-dry-run">' + escapeText(t("studio.dryRun", undefined, "Dry run")) + '</button>'
+  ].join("");
+}
+
+export function renderWorkbenchModeBodyHtml(args: {
+  buildMode: string;
+  workbenchView: string;
+  dirty: boolean;
+  workbenchSavedPath: string;
+  lastDryRunId: string;
+  hasDraft: boolean;
+  workbenchSource: string;
+  t: Translator;
+  escapeText: (value: unknown) => string;
+}): string {
+  const { buildMode, workbenchView, dirty, workbenchSavedPath, lastDryRunId, hasDraft, workbenchSource, t, escapeText } = args;
+  if (buildMode === "dry-run") {
+    return [
+      '<div class="structure-list">',
+      '<div class="event"><div class="event-top"><span>' + escapeText(t("build.mode.dryRun", undefined, "Dry Run")) + '</span><span>' + escapeText(dirty ? t("workbench.unsavedChanges", undefined, "unsaved changes") : t("workbench.diskInSync", undefined, "disk in sync")) + '</span></div><strong>' + escapeText(t("build.dryRunPrepTitle", undefined, "Validate, generate Mermaid, save, then start a dry run.")) + '</strong><div class="hint">' + escapeText(t("build.dryRunPrepHint", {
+        path: workbenchSavedPath || "system.mmd"
+      }, "Dry run uses " + (workbenchSavedPath || "system.mmd") + " after the generated source is saved.")) + '</div></div>',
+      lastDryRunId
+        ? '<div class="event"><div class="event-top"><span>' + escapeText(t("build.lastDryRun", undefined, "Last dry run")) + '</span><span>' + escapeText(t("common.captured", undefined, "captured")) + '</span></div><strong>' + escapeText(lastDryRunId) + '</strong><div class="hint">' + escapeText(t("build.openDebugHint", undefined, "Open Debug mode here or jump to Operate for runtime controls.")) + '</div></div>'
+        : '<div class="hint">' + escapeText(t("build.noDryRunYet", undefined, "No dry run has been launched from Build yet.")) + '</div>',
+      '</div>'
+    ].join("");
+  }
+  if (buildMode === "debug") {
+    return [
+      '<div class="structure-list">',
+      '<div class="event"><div class="event-top"><span>' + escapeText(t("build.mode.debug", undefined, "Debug")) + '</span><span>' + escapeText(lastDryRunId || t("common.missing", undefined, "missing")) + '</span></div><strong>' + escapeText(lastDryRunId ? t("build.debugDryRunTitle", undefined, "Dry-run result captured in Build.") : t("build.noDryRunYet", undefined, "No dry run has been launched from Build yet.")) + '</strong><div class="hint">' + escapeText(t("build.debugDryRunHint", undefined, "Use Operate for resume, stop, logs, and recovery controls.")) + '</div></div>',
+      lastDryRunId ? '<button class="button subtle" id="build-open-operate">' + escapeText(t("build.openOperate", undefined, "Open in Operate")) + '</button>' : "",
+      '</div>'
+    ].join("");
+  }
+  if (workbenchView === "source") {
+    return [
+      '<div class="workbench-source-actions">',
+      '<div class="hint">' + escapeText(t("workbench.sourceActionsHint", undefined, "Draft actions only affect the current workbench source until you save.")) + '</div>',
+      '<div class="toolbar-group">',
+      '<button class="button subtle" id="workbench-new-draft">' + escapeText(t("action.newDraft")) + '</button>',
+      hasDraft ? '<button class="button subtle" id="workbench-recover-draft">' + escapeText(t("action.recoverDraft")) + '</button>' : "",
+      dirty ? '<button class="button subtle" id="workbench-revert">' + escapeText(t("action.revertToDisk")) + '</button>' : "",
+      '</div>',
+      '</div>',
+      '<textarea id="workbench-editor" class="editor" spellcheck="false">' + escapeText(workbenchSource || "") + '</textarea>'
+    ].join("");
+  }
+  return "";
+}
+
 export function renderRunStatsHtml(args: {
   header: Record<string, any> | null | undefined;
   graphPayload: Record<string, any> | null | undefined;

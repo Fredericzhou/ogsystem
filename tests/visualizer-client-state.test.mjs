@@ -10,7 +10,12 @@ import {
   renderOperateTabsHtml,
   renderRunStatsHtml,
   renderTimelineHtml,
+  renderWorkbenchActionsHtml,
+  renderWorkbenchModeBodyHtml,
+  renderWorkbenchModeTabsHtml,
+  renderWorkbenchStatusHtml,
   renderWorkbenchStructureHtml,
+  renderWorkbenchViewTabsHtml,
   renderWorkspaceEmptyStateHtml
 } from "../dist/visualizer/client-lifecycle-panels.js";
 import {
@@ -286,6 +291,58 @@ test("client lifecycle panel renderers cover workbench structure, stats, and tim
   assert.match(timeline, /#7 run started/);
   assert.match(timeline, /<code>planner<\/code>/);
   assert.match(timeline, /time:2026-05-03T09:00:00Z/);
+});
+
+test("client lifecycle panel renderers cover Workbench controls and modes", () => {
+  const statusHtml = renderWorkbenchStatusHtml({
+    dirty: true,
+    entryRoleId: "planner",
+    lastDryRunId: "dry-1",
+    validation: { ok: false },
+    diagnostics: [{ code: "ERR" }],
+    hasDraft: true,
+    validating: true,
+    t,
+    escapeText
+  });
+  assert.match(statusHtml, /planner/);
+  assert.match(statusHtml, /dry-1/);
+  assert.match(statusHtml, /workbench\.diagnostics/);
+  assert.match(statusHtml, /workbench\.draftCached/);
+
+  assert.match(renderWorkbenchModeTabsHtml({ buildMode: "dry-run", t, escapeText }), /data-build-mode="dry-run"/);
+  assert.match(renderWorkbenchViewTabsHtml({ buildMode: "edit", workbenchView: "source", t, escapeText }), /data-workbench-view="source"/);
+  assert.equal(renderWorkbenchViewTabsHtml({ buildMode: "debug", workbenchView: "source", t, escapeText }), "");
+  assert.match(renderWorkbenchActionsHtml({ dirty: false, t, escapeText }), /id="build-save" disabled/);
+
+  const dryRunHtml = renderWorkbenchModeBodyHtml({
+    buildMode: "dry-run",
+    workbenchView: "bridge",
+    dirty: false,
+    workbenchSavedPath: "system.mmd",
+    lastDryRunId: "dry-1",
+    hasDraft: false,
+    workbenchSource: "",
+    t,
+    escapeText
+  });
+  assert.match(dryRunHtml, /dry-1/);
+  assert.match(dryRunHtml, /Dry run uses system\.mmd/);
+
+  const sourceHtml = renderWorkbenchModeBodyHtml({
+    buildMode: "edit",
+    workbenchView: "source",
+    dirty: true,
+    workbenchSavedPath: "system.mmd",
+    lastDryRunId: "",
+    hasDraft: true,
+    workbenchSource: "flowchart TD\ninput --> output",
+    t,
+    escapeText
+  });
+  assert.match(sourceHtml, /id="workbench-recover-draft"/);
+  assert.match(sourceHtml, /id="workbench-revert"/);
+  assert.match(sourceHtml, /flowchart TD/);
 });
 
 test("client project workspace maps stable create error codes", () => {

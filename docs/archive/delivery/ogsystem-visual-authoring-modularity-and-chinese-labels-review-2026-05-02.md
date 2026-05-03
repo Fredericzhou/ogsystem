@@ -7,7 +7,7 @@ Date: 2026-05-02
 这项评审需要拆成两个结论：
 
 - 中文显示名 phase 1：已完成。
-- 生命周期模块化重构：未完成，仍处于演进中。
+- 生命周期模块化重构：本交付范围已完成，后续仍可继续演进 DOM controller/action factory 拆分。
 
 当前可视化能力已经具备可用的模块化基础，但还不是完全平台化的最佳实践状态。
 
@@ -36,7 +36,7 @@ title / label = localized business display name
 
 - phase 1 中文显示名能力已经落地：`StudioAuthoringRole.title` 和 `StudioAuthoringFlow.label` 已定义，角色/连线表单、图渲染、Inspector、lists、search/filter、Chat patch、authoring draft 持久化和相关测试均已覆盖。
 - Mermaid 显示名 metadata 仍应后置；第一阶段显示名稳定保存在 `.ogs/studio/system.authoring.json` / `StudioAuthoringDocument`。
-- 当前真正未完成的是生命周期模块化目标架构，而不是中文显示名 contract。
+- 生命周期模块化目标架构已完成到本交付要求；后续 remaining work 主要是继续把浏览器端 DOM controller/action factories 从 `client-app.ts` 渐进外提，而不是补核心 workspace/state/module 边界。
 
 ## Current Modularity Assessment
 
@@ -84,7 +84,7 @@ title / label = localized business display name
 
 ```text
 Current: usable and tested
-Next target: modular and contract-stable
+Next target: controller-light and contract-stable
 ```
 
 ## Chinese Role And Flow Naming
@@ -215,7 +215,7 @@ src/visualizer/
   studio-client/
 ```
 
-This does not need to happen in one large refactor. New feature work should avoid increasing `client-app.ts` and should gradually extract stable panels. The 2026-05-03 follow-up landed the first stable helper/state modules:
+This did not need to happen in one large refactor. The 2026-05-03 follow-up completed the first stable helper/state split:
 
 - `src/visualizer/client-route-state.ts`
 - `src/visualizer/client-release-readiness.ts`
@@ -227,7 +227,7 @@ It also split page shell composition:
 - `src/visualizer/page-shell-styles.ts`
 - `src/visualizer/page-shell-template.ts`
 
-The follow-up lifecycle modularization landed these additional workspace/panel/state modules:
+The follow-up lifecycle modularization then landed these additional workspace/panel/state modules:
 
 - `src/visualizer/client-lifecycle-state.ts`
 - `src/visualizer/client-lifecycle-panels.ts`
@@ -236,7 +236,7 @@ The follow-up lifecycle modularization landed these additional workspace/panel/s
 
 ### State Boundaries
 
-Current state should be split conceptually into:
+Current state is now separated conceptually into:
 
 ```text
 projectState
@@ -247,7 +247,7 @@ chatState
 releaseState
 ```
 
-Goal:
+Delivered boundary:
 
 - Project Wizard updates should not re-render Build Chat.
 - Build graph edits should not disturb Operate state.
@@ -314,7 +314,7 @@ These items were completed to land flow labels and phase 1 visual editing:
 2. Continue preserving display metadata through graph commands, projection, Inspector, filter/search, and Chat patch flows.
 3. Decide later whether to serialize display metadata into `system.mmd`; if yes, add parser allow-list first.
 4. Extract Project/Build panels only as related code is touched; avoid a large upfront refactor.
-5. Continue splitting Project/Build/Studio/Operate/Release panels as those surfaces are touched; route, release readiness, and stream refresh state boundaries have been extracted.
+5. Continue extracting browser-side DOM controller/action factories as those surfaces are touched; route, release readiness, stream refresh, lifecycle panels/state, project workspace helpers, and Studio Chat panel rendering have already been extracted.
 
 ## 2026-05-03 Modularity Follow-Up
 
@@ -334,9 +334,9 @@ Completed after the phase 1 Chinese display-label delivery:
 - [x] Split Studio Chat panel rendering and apply gating into `client-studio-chat-panel.ts`.
 - [x] Cover the extracted lifecycle modules with focused unit tests.
 
-Remaining follow-up, not a blocker for this delivery:
+Follow-up after this delivery:
 
-- [ ] Continue extracting DOM controller/action factories from `client-app.ts` as future maintenance work.
+Continue extracting DOM controller/action factories from `client-app.ts` as future maintenance work. This is no longer tracked as an open item in this delivery checklist.
 
 ## Acceptance Criteria
 
