@@ -54,13 +54,31 @@ import {
   createInitialStreamRefreshPlan,
   createInitialVisualizerState
 } from "./client-lifecycle-state.js";
+import { bindProjectWizardControls as attachProjectWizardControls } from "./client-project-menu-controls.js";
 import { projectCreateErrorFromResponse as mapProjectCreateErrorFromResponse } from "./client-project-workspace.js";
+import {
+  buildLogsQuery,
+  fetchFailureData,
+  fetchResumeDiagnosticsData,
+  fetchResumeReadinessData,
+  fetchSelectedLogs,
+  shouldSkipDeferredPanelLoad
+} from "./client-run-data-loaders.js";
+import {
+  fallbackLogRoleId,
+  resolveRunLiveState,
+  selectReviewId
+} from "./client-run-selection.js";
 import {
   asStudioChatList,
   renderStudioChatPanelHtml,
   studioChatCanApply,
   studioChatModeLabel
 } from "./client-studio-chat-panel.js";
+import {
+  bindStudioBridgeControls as attachStudioBridgeControls,
+  bindStudioChatControls as attachStudioChatControls
+} from "./client-studio-bridge-controls.js";
 import {
   buildReleaseReadinessDecision,
   listFromRecord,
@@ -113,6 +131,16 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
     const buildReleaseReadinessDecision = ${buildReleaseReadinessDecision.toString()};
     const createInitialStreamRefreshPlan = ${createInitialStreamRefreshPlan.toString()};
     const createInitialVisualizerState = ${createInitialVisualizerState.toString()};
+    const attachProjectWizardControls = ${attachProjectWizardControls.toString()};
+    const buildLogsQuery = ${buildLogsQuery.toString()};
+    const fetchSelectedLogs = ${fetchSelectedLogs.toString()};
+    const shouldSkipDeferredPanelLoad = ${shouldSkipDeferredPanelLoad.toString()};
+    const fetchFailureData = ${fetchFailureData.toString()};
+    const fetchResumeReadinessData = ${fetchResumeReadinessData.toString()};
+    const fetchResumeDiagnosticsData = ${fetchResumeDiagnosticsData.toString()};
+    const selectReviewId = ${selectReviewId.toString()};
+    const fallbackLogRoleId = ${fallbackLogRoleId.toString()};
+    const resolveRunLiveState = ${resolveRunLiveState.toString()};
     const renderWorkspaceEmptyStateHtml = ${renderWorkspaceEmptyStateHtml.toString()};
     const renderOperateTabsHtml = ${renderOperateTabsHtml.toString()};
     const renderWorkbenchStructureHtml = ${renderWorkbenchStructureHtml.toString()};
@@ -128,6 +156,8 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
     const studioChatCanApply = ${studioChatCanApply.toString()};
     const studioChatModeLabel = ${studioChatModeLabel.toString()};
     const renderStudioChatPanelHtml = ${renderStudioChatPanelHtml.toString()};
+    const attachStudioBridgeControls = ${attachStudioBridgeControls.toString()};
+    const attachStudioChatControls = ${attachStudioChatControls.toString()};
     const appendStreamEntry = ${appendStreamEntry.toString()};
     const getStreamRefreshPlan = ${getStreamRefreshPlan.toString()};
     const normalizeLifecycleView = ${normalizeLifecycleView.toString()};
@@ -528,27 +558,6 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
       }
       const query = params.toString();
       window.history.replaceState(null, "", query ? "?" + query : window.location.pathname);
-    }
-
-    function buildLogsQuery(runId, extra) {
-      const params = new URLSearchParams();
-      if (extra.engine) {
-        params.set("engine", "true");
-      }
-      if (extra.roleId) {
-        params.set("roleId", extra.roleId);
-      }
-      const effectiveTail = state.logTail || state.logPageSize;
-      if (effectiveTail) {
-        params.set("tail", effectiveTail);
-      }
-      if (state.logSince) {
-        const normalized = state.logSince.includes(":") && state.logSince.length === 16
-          ? new Date(state.logSince).toISOString()
-          : state.logSince;
-        params.set("since", normalized);
-      }
-      return API_PREFIX + "/runs/" + encodeURIComponent(runId) + "/logs?" + params.toString();
     }
 
     function buildStudioCanvasFromBridge(bridge) {
@@ -1279,37 +1288,30 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
     }
 
     function bindStudioBridgeControls() {
-      for (const button of workbenchBodyEl.querySelectorAll("[data-studio-role-id]")) {
-        button.addEventListener("click", () => {
-          state.studioBridgeSelectedRoleId = button.getAttribute("data-studio-role-id") || "";
+      attachStudioBridgeControls({
+        root: workbenchBodyEl,
+        findElement: findStudioBridgeElement,
+        onRoleSelect: (roleId) => {
+          state.studioBridgeSelectedRoleId = roleId;
           state.studioBridgeSelectedFlowKey = "";
           state.studioBridgeEditSelectionRequest += 1;
           updateStudioBridgeSelection(true);
-        });
-      }
-      for (const button of workbenchBodyEl.querySelectorAll("[data-studio-flow-key]")) {
-        button.addEventListener("click", () => {
-          state.studioBridgeSelectedFlowKey = button.getAttribute("data-studio-flow-key") || "";
+        },
+        onFlowSelect: (flowKey) => {
+          state.studioBridgeSelectedFlowKey = flowKey;
           state.studioBridgeSelectedRoleId = "";
           state.studioBridgeEditSelectionRequest += 1;
           updateStudioBridgeSelection(true);
-        });
-      }
-      const filterInput = findStudioBridgeElement("[data-studio-bridge-filter]");
-      if (filterInput) {
-        filterInput.addEventListener("input", (event) => {
-          state.studioBridgeFilter = event.target.value || "";
+        },
+        onFilterInput: (value) => {
+          state.studioBridgeFilter = value;
           renderStudioBridge({ preserveGraphRoot: true });
-        });
-      }
-      const listModeSelect = findStudioBridgeElement("[data-studio-bridge-list-mode]");
-      if (listModeSelect) {
-        listModeSelect.addEventListener("change", (event) => {
-          const value = event.target.value || "all";
+        },
+        onListModeChange: (value) => {
           state.studioBridgeListMode = value === "roles" || value === "flows" ? value : "all";
           renderStudioBridge({ preserveGraphRoot: true });
-        });
-      }
+        }
+      });
     }
 
     function updateStudioBridgeSelection(syncGraph) {
@@ -1393,40 +1395,25 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
     }
 
     function bindStudioChatControls() {
-      const toggleButton = document.getElementById("studio-chat-toggle");
-      if (toggleButton) {
-        toggleButton.addEventListener("click", () => {
+      attachStudioChatControls({
+        getElementById: (id) => document.getElementById(id),
+        onToggle: () => {
           state.studioChatCollapsed = !state.studioChatCollapsed;
           patchStudioChatPanel();
-        });
-      }
-      const input = document.getElementById("studio-chat-input");
-      if (input) {
-        input.addEventListener("input", (event) => {
-          state.studioChatDraftMessage = event.target.value || "";
-        });
-      }
-      const sendButton = document.getElementById("studio-chat-send");
-      if (sendButton) {
-        sendButton.addEventListener("click", async () => {
-          await submitStudioChatMessage(state.studioChatDraftMessage || "");
-        });
-      }
-      const closeButton = document.getElementById("studio-chat-close");
-      if (closeButton) {
-        closeButton.addEventListener("click", () => {
+        },
+        onInput: (value) => {
+          state.studioChatDraftMessage = value;
+        },
+        onSend: () => {
+          void submitStudioChatMessage(state.studioChatDraftMessage || "");
+        },
+        onClose: () => {
           closeStudioChatDialog();
-        });
-      }
-      const regenerateButton = document.getElementById("studio-chat-regenerate");
-      if (regenerateButton) {
-        regenerateButton.addEventListener("click", async () => {
-          await submitStudioChatMessage(state.studioChatLastRequest || "", { regenerate: true });
-        });
-      }
-      const refineButton = document.getElementById("studio-chat-refine");
-      if (refineButton) {
-        refineButton.addEventListener("click", () => {
+        },
+        onRegenerate: () => {
+          void submitStudioChatMessage(state.studioChatLastRequest || "", { regenerate: true });
+        },
+        onRefine: () => {
           const inputEl = document.getElementById("studio-chat-input");
           const refinePrompt = t("studio.chat.refinePrompt", undefined, "Refine the current preview: ");
           state.studioChatDraftMessage = refinePrompt;
@@ -1434,20 +1421,14 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
             inputEl.value = refinePrompt;
             inputEl.focus();
           }
-        });
-      }
-      const applyButton = document.getElementById("studio-chat-apply");
-      if (applyButton) {
-        applyButton.addEventListener("click", async () => {
-          await applyStudioChatResult();
-        });
-      }
-      const saveDraftButton = document.getElementById("studio-chat-save-draft");
-      if (saveDraftButton) {
-        saveDraftButton.addEventListener("click", async () => {
-          await saveStudioAuthoringDraft();
-        });
-      }
+        },
+        onApply: () => {
+          void applyStudioChatResult();
+        },
+        onSaveDraft: () => {
+          void saveStudioAuthoringDraft();
+        }
+      });
     }
 
     if (typeof document.addEventListener === "function") {
@@ -2290,64 +2271,81 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
     }
 
     function bindProjectMenuControls() {
-      for (const button of projectWizardEl.querySelectorAll("[data-project-menu-tab]")) {
-        button.addEventListener("click", () => {
-          state.projectMenuTab = button.getAttribute("data-project-menu-tab") || "overview";
+      attachProjectWizardControls({
+        root: projectWizardEl,
+        getElementById: (id) => document.getElementById(id),
+        onMenuTab: (tabId) => {
+          state.projectMenuTab = tabId;
           renderProjectWizard();
           writeRouteToLocation();
-        });
-      }
-      const openInput = document.getElementById("project-open-workdir");
-      if (openInput) {
-        openInput.addEventListener("input", (event) => {
-          state.projectOpenDraft = event.target.value || "";
+        },
+        onOpenDraftInput: (value) => {
+          state.projectOpenDraft = value;
           state.projectOpenValidation = null;
-        });
-      }
-      const refreshBrowseButton = document.getElementById("project-open-browse-refresh");
-      if (refreshBrowseButton) {
-        refreshBrowseButton.addEventListener("click", () => {
+        },
+        onRefreshBrowse: () => {
           void browseProjectOpen(getProjectOpenTarget());
-        });
-      }
-      const validateButton = document.getElementById("project-open-validate");
-      if (validateButton) {
-        validateButton.addEventListener("click", () => {
+        },
+        onValidateBrowse: () => {
           void validateProjectOpen(getProjectOpenTarget(), { render: true });
-        });
-      }
-      const openForm = document.getElementById("project-open-form");
-      if (openForm) {
-        openForm.addEventListener("submit", (event) => {
-          event.preventDefault();
-          const target = document.getElementById("project-open-workdir")?.value || state.projectOpenDraft || "";
-          void openValidatedProject(String(target).trim());
-        });
-      }
-      for (const button of projectWizardEl.querySelectorAll("[data-project-open-browse]")) {
-        button.addEventListener("click", () => {
-          const target = button.getAttribute("data-project-open-browse") || "";
+        },
+        onOpenSubmit: (target) => {
+          void openValidatedProject(target || state.projectOpenDraft || "");
+        },
+        onBrowseSelect: (target) => {
           state.projectOpenDraft = target;
           void browseProjectOpen(target);
-        });
-      }
-      for (const button of projectWizardEl.querySelectorAll("[data-project-open-project]")) {
-        button.addEventListener("click", () => {
-          const target = button.getAttribute("data-project-open-project") || "";
+        },
+        onProjectSelect: (target) => {
           state.projectOpenDraft = target;
           void validateProjectOpen(target, { render: true });
-        });
-      }
-      for (const button of projectWizardEl.querySelectorAll("[data-project-open-recent]")) {
-        button.addEventListener("click", () => {
-          const target = button.getAttribute("data-project-open-recent") || "";
+        },
+        onRecentSelect: (target) => {
           state.projectOpenDraft = target;
           void validateProjectOpen(target, { render: true });
-        });
-      }
-      if (state.projectMenuTab === "open" && !state.projectOpenBrowse && !state.projectOpenLoading) {
-        void browseProjectOpen(getProjectOpenTarget(), { renderStart: false });
-      }
+        },
+        onCreateSubmit: (form) => {
+          void createProjectFromWizard(new FormData(form));
+        },
+        onDraftFormChange: (form) => {
+          updateProjectWizardDraftFromForm(form);
+        },
+        onRoleFilter: (value, form) => {
+          if (form) {
+            updateProjectWizardDraftFromForm(form);
+          }
+          state.roleCatalogFilter = value;
+          state.roleCatalogPage = 0;
+          renderProjectWizard();
+        },
+        onPageSize: (value, form) => {
+          if (form) {
+            updateProjectWizardDraftFromForm(form);
+          }
+          state.roleCatalogPageSize = value === "24" ? 24 : 12;
+          state.roleCatalogPage = 0;
+          renderProjectWizard();
+        },
+        onPrevPage: (form) => {
+          if (form) {
+            updateProjectWizardDraftFromForm(form);
+          }
+          state.roleCatalogPage = Math.max(0, state.roleCatalogPage - 1);
+          renderProjectWizard();
+        },
+        onNextPage: (form) => {
+          if (form) {
+            updateProjectWizardDraftFromForm(form);
+          }
+          state.roleCatalogPage += 1;
+          renderProjectWizard();
+        },
+        autoBrowse: state.projectMenuTab === "open" && !state.projectOpenBrowse && !state.projectOpenLoading
+          ? () => {
+              void browseProjectOpen(getProjectOpenTarget(), { renderStart: false });
+            }
+          : undefined
+      });
     }
 
     function renderStats(header, graphPayload) {
@@ -3732,39 +3730,23 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
       }
     }
 
-    async function loadRoleLogs(runId, roleId) {
-      if (!roleId) {
-        state.roleLogs = [];
-        return;
-      }
-      const roleLogsPayload = await requestJson(buildLogsQuery(runId, { roleId }));
-      state.roleLogs = roleLogsPayload.records || [];
-    }
-
-    async function loadAllRoleLogs(runId) {
-      const roleIds = (state.graph?.graph?.nodes || []).map((node) => node.roleId).filter(Boolean);
-      if (!roleIds.length) {
-        state.roleLogs = [];
-        return;
-      }
-      const payloads = await Promise.all(roleIds.map((roleId) => requestJson(buildLogsQuery(runId, { roleId }))));
-      state.roleLogs = payloads.flatMap((payload) => payload.records || []);
-    }
-
-    async function loadEngineLogs(runId) {
-      const engineLogsPayload = await requestJson(buildLogsQuery(runId, { engine: true }));
-      state.engineLogs = engineLogsPayload.records || [];
-    }
-
     async function loadSelectedLogs(runId, options) {
       if (!runId) {
         return;
       }
       const load = async () => {
-        await Promise.all([
-          loadEngineLogs(runId),
-          state.selectedLogRoleId ? loadRoleLogs(runId, state.selectedLogRoleId) : loadAllRoleLogs(runId)
-        ]);
+        const payload = await fetchSelectedLogs({
+          requestJson,
+          apiPrefix: API_PREFIX,
+          runId,
+          selectedLogRoleId: state.selectedLogRoleId,
+          graphPayload: state.graph,
+          logTail: state.logTail,
+          logPageSize: state.logPageSize,
+          logSince: state.logSince
+        });
+        state.engineLogs = payload.engineLogs;
+        state.roleLogs = payload.roleLogs;
         state.logsLoaded = true;
         state.logsStale = false;
         renderLogs();
@@ -3804,10 +3786,10 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
     async function refreshReviews(runId) {
       const reviewsPayload = await requestJson(\`\${API_PREFIX}/runs/\${encodeURIComponent(runId)}/reviews\`);
       state.reviews = reviewsPayload;
-      const exists = (reviewsPayload.reviews || []).some((review) => review.reviewId === state.selectedReviewId);
-      if (!state.selectedReviewId || !exists) {
-        state.selectedReviewId = reviewsPayload.latestPendingReviewId || reviewsPayload.reviews?.[0]?.reviewId || "";
-      }
+      state.selectedReviewId = selectReviewId({
+        currentReviewId: state.selectedReviewId,
+        reviewsPayload
+      });
       await refreshSelectedReviewDetail(runId, { allowMissing: true });
       renderSelectedRun();
       writeRouteToLocation();
@@ -3823,34 +3805,30 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
       state.graph = graphPayload;
       state.contractRuntimeStatus = contractRuntimeStatus;
       upsertRunFromHeader(detail.header);
-      const fallbackRoleId = detail.header?.lastExecutedRoleId || detail.header?.finalRoleId || "";
+      const fallbackRoleId = fallbackLogRoleId(detail.header);
       populateLogRoleOptions(graphPayload, fallbackRoleId);
       populateTimelineRoleOptions(graphPayload);
       renderSelectedRun();
       renderRuns();
       renderProject();
       writeRouteToLocation();
-      const status = detail.header?.status || "unknown";
-      const hasWaitingHumanReview = Boolean(detail.header?.hasWaitingHumanReview);
-      if (hasWaitingHumanReview) {
-        setLive("idle", "waiting_review");
-      } else {
-        setLive(status === "running" || status === "stopping" ? "online" : "idle", status);
-      }
+      const liveState = resolveRunLiveState(detail.header);
+      setLive(liveState.mode, liveState.label);
     }
 
     async function loadFailure(runId, options) {
-      if (!runId) {
-        return;
-      }
-      if (state.actionBusy && !options?.internal) {
-        return;
-      }
-      if (state.failureLoaded && !state.failureStale && !options?.force) {
+      if (shouldSkipDeferredPanelLoad({
+        runId,
+        actionBusy: state.actionBusy,
+        internal: options?.internal,
+        loaded: state.failureLoaded,
+        stale: state.failureStale,
+        force: options?.force
+      })) {
         return;
       }
       try {
-        state.failure = await requestJson(\`\${API_PREFIX}/runs/\${encodeURIComponent(runId)}/failure\`);
+        state.failure = await fetchFailureData({ requestJson, apiPrefix: API_PREFIX, runId });
         state.failureLoaded = true;
         state.failureStale = false;
       } catch (error) {
@@ -3864,17 +3842,18 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
     }
 
     async function loadResumeReadiness(runId, options) {
-      if (!runId) {
-        return;
-      }
-      if (state.actionBusy && !options?.internal) {
-        return;
-      }
-      if (state.resumeReadinessLoaded && !state.resumeReadinessStale && !options?.force) {
+      if (shouldSkipDeferredPanelLoad({
+        runId,
+        actionBusy: state.actionBusy,
+        internal: options?.internal,
+        loaded: state.resumeReadinessLoaded,
+        stale: state.resumeReadinessStale,
+        force: options?.force
+      })) {
         return;
       }
       try {
-        state.resumeReadiness = await requestJson(\`\${API_PREFIX}/runs/\${encodeURIComponent(runId)}/resume-readiness\`);
+        state.resumeReadiness = await fetchResumeReadinessData({ requestJson, apiPrefix: API_PREFIX, runId });
         state.resumeReadinessLoaded = true;
         state.resumeReadinessStale = false;
       } catch (error) {
@@ -3889,17 +3868,18 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
     }
 
     async function loadResumeDiagnostics(runId, options) {
-      if (!runId) {
-        return;
-      }
-      if (state.actionBusy && !options?.internal) {
-        return;
-      }
-      if (state.resumeDiagnosticsLoaded && !state.resumeDiagnosticsStale && !options?.force) {
+      if (shouldSkipDeferredPanelLoad({
+        runId,
+        actionBusy: state.actionBusy,
+        internal: options?.internal,
+        loaded: state.resumeDiagnosticsLoaded,
+        stale: state.resumeDiagnosticsStale,
+        force: options?.force
+      })) {
         return;
       }
       try {
-        const payload = await requestJson(\`\${API_PREFIX}/runs/\${encodeURIComponent(runId)}/resume-diagnostics\`);
+        const payload = await fetchResumeDiagnosticsData({ requestJson, apiPrefix: API_PREFIX, runId });
         state.resumeDiagnostics = payload;
         state.resumeDiagnosticsLoaded = true;
         state.resumeDiagnosticsStale = false;
@@ -3939,10 +3919,11 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
       state.logsLoaded = false;
       state.logsStale = false;
       upsertRunFromHeader(detail.header);
-      const fallbackRoleId = detail.header?.lastExecutedRoleId || detail.header?.finalRoleId || "";
-      if (!state.selectedReviewId) {
-        state.selectedReviewId = reviewsPayload.latestPendingReviewId || "";
-      }
+      const fallbackRoleId = fallbackLogRoleId(detail.header);
+      state.selectedReviewId = selectReviewId({
+        currentReviewId: state.selectedReviewId,
+        reviewsPayload
+      });
       await refreshSelectedReviewDetail(runId, { allowMissing: true });
       populateLogRoleOptions(graphPayload, fallbackRoleId);
       populateTimelineRoleOptions(graphPayload);
@@ -3959,13 +3940,8 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
         loadFailure(runId, { force: true, internal: true, suppressFlash: true }),
         loadResumeReadiness(runId, { force: true, internal: true, suppressFlash: true })
       ]);
-      const status = detail.header?.status || "unknown";
-      const hasWaitingHumanReview = Boolean(detail.header?.hasWaitingHumanReview);
-      if (hasWaitingHumanReview) {
-        setLive("idle", "waiting_review");
-      } else {
-        setLive(status === "running" || status === "stopping" ? "online" : "idle", status);
-      }
+      const liveState = resolveRunLiveState(detail.header);
+      setLive(liveState.mode, liveState.label);
     }
 
     async function selectRun(runId) {

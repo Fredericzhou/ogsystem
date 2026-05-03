@@ -22,12 +22,30 @@ import {
   createInitialStreamRefreshPlan,
   createInitialVisualizerState
 } from "../dist/visualizer/client-lifecycle-state.js";
+import { bindProjectWizardControls } from "../dist/visualizer/client-project-menu-controls.js";
 import { projectCreateErrorFromResponse } from "../dist/visualizer/client-project-workspace.js";
+import {
+  buildLogsQuery,
+  fetchFailureData,
+  fetchResumeDiagnosticsData,
+  fetchResumeReadinessData,
+  fetchSelectedLogs,
+  shouldSkipDeferredPanelLoad
+} from "../dist/visualizer/client-run-data-loaders.js";
+import {
+  fallbackLogRoleId,
+  resolveRunLiveState,
+  selectReviewId
+} from "../dist/visualizer/client-run-selection.js";
 import {
   renderStudioChatPanelHtml,
   studioChatCanApply,
   studioChatModeLabel
 } from "../dist/visualizer/client-studio-chat-panel.js";
+import {
+  bindStudioBridgeControls as bindStudioBridgeControlsModule,
+  bindStudioChatControls as bindStudioChatControlsModule
+} from "../dist/visualizer/client-studio-bridge-controls.js";
 import {
   buildReleaseReadinessDecision,
   listFromRecord
@@ -69,6 +87,50 @@ function statusClass(value) {
 
 function formatTime(value) {
   return value ? `time:${value}` : "n/a";
+}
+
+class FakeBoundElement {
+  constructor(attributes = {}, value = "", selectorMap = {}) {
+    this.attributes = { ...attributes };
+    this.value = value;
+    this.listeners = new Map();
+    this.selectorMap = selectorMap;
+  }
+
+  addEventListener(type, listener) {
+    const list = this.listeners.get(type) || [];
+    list.push(listener);
+    this.listeners.set(type, list);
+  }
+
+  getAttribute(name) {
+    return Object.prototype.hasOwnProperty.call(this.attributes, name) ? this.attributes[name] : null;
+  }
+
+  querySelectorAll(selector) {
+    return this.selectorMap[selector] || [];
+  }
+
+  dispatch(type, value = this.value) {
+    this.value = value;
+    const listeners = this.listeners.get(type) || [];
+    for (const listener of listeners) {
+      listener({
+        preventDefault() {},
+        target: { value }
+      });
+    }
+  }
+}
+
+class FakeQueryRoot {
+  constructor(selectorMap = {}) {
+    this.selectorMap = selectorMap;
+  }
+
+  querySelectorAll(selector) {
+    return this.selectorMap[selector] || [];
+  }
 }
 
 test("client route state helpers parse and serialize lifecycle query state", () => {
@@ -353,6 +415,280 @@ test("client project workspace maps stable create error codes", () => {
   assert.deepEqual(projectCreateErrorFromResponse({ errorCode: "UNKNOWN", message: "custom failure" }, t), {
     code: "UNKNOWN",
     message: "custom failure"
+  });
+});
+
+test("client project/studio controller binders delegate interactions without owning state", () => {
+  const projectMenuButton = new FakeBoundElement({ "data-project-menu-tab": "open" });
+  const browseButton = new FakeBoundElement({ "data-project-open-browse": "/tmp/project-a" });
+  const projectButton = new FakeBoundElement({ "data-project-open-project": "/tmp/project-b" });
+  const recentButton = new FakeBoundElement({ "data-project-open-recent": "/tmp/project-c" });
+  const openInput = new FakeBoundElement({}, "/tmp/current");
+  const refreshBrowseButton = new FakeBoundElement();
+  const validateBrowseButton = new FakeBoundElement();
+  const roleFilterInput = new FakeBoundElement({}, "qa");
+  const pageSizeSelect = new FakeBoundElement({}, "24");
+  const createForm = new FakeBoundElement({}, "", {
+    "input, select": [roleFilterInput, pageSizeSelect]
+  });
+  const openForm = new FakeBoundElement();
+  const prevButton = new FakeBoundElement();
+  const nextButton = new FakeBoundElement();
+  const root = new FakeQueryRoot({
+    "[data-project-menu-tab]": [projectMenuButton],
+    "[data-project-open-browse]": [browseButton],
+    "[data-project-open-project]": [projectButton],
+    "[data-project-open-recent]": [recentButton]
+  });
+  const byId = {
+    "project-open-workdir": openInput,
+    "project-open-browse-refresh": refreshBrowseButton,
+    "project-open-validate": validateBrowseButton,
+    "project-open-form": openForm,
+    "project-create-form": createForm,
+    "project-role-catalog-filter": roleFilterInput,
+    "project-role-page-size": pageSizeSelect,
+    "project-role-prev": prevButton,
+    "project-role-next": nextButton
+  };
+  const calls = [];
+  bindProjectWizardControls({
+    root,
+    getElementById: (id) => byId[id] || null,
+    onMenuTab: (value) => calls.push(["menu", value]),
+    onOpenDraftInput: (value) => calls.push(["draft", value]),
+    onRefreshBrowse: () => calls.push(["refresh"]),
+    onValidateBrowse: () => calls.push(["validate"]),
+    onOpenSubmit: (value) => calls.push(["open-submit", value]),
+    onBrowseSelect: (value) => calls.push(["browse", value]),
+    onProjectSelect: (value) => calls.push(["project", value]),
+    onRecentSelect: (value) => calls.push(["recent", value]),
+    onCreateSubmit: () => calls.push(["create-submit"]),
+    onDraftFormChange: () => calls.push(["draft-change"]),
+    onRoleFilter: (value) => calls.push(["role-filter", value]),
+    onPageSize: (value) => calls.push(["page-size", value]),
+    onPrevPage: () => calls.push(["prev"]),
+    onNextPage: () => calls.push(["next"]),
+    autoBrowse: () => calls.push(["auto-browse"])
+  });
+  projectMenuButton.dispatch("click");
+  openInput.dispatch("input", "/tmp/next");
+  refreshBrowseButton.dispatch("click");
+  validateBrowseButton.dispatch("click");
+  openForm.dispatch("submit");
+  browseButton.dispatch("click");
+  projectButton.dispatch("click");
+  recentButton.dispatch("click");
+  createForm.dispatch("submit");
+  roleFilterInput.dispatch("input", "review");
+  pageSizeSelect.dispatch("change", "24");
+  prevButton.dispatch("click");
+  nextButton.dispatch("click");
+  assert.deepEqual(calls, [
+    ["auto-browse"],
+    ["menu", "open"],
+    ["draft", "/tmp/next"],
+    ["refresh"],
+    ["validate"],
+    ["open-submit", "/tmp/next"],
+    ["browse", "/tmp/project-a"],
+    ["project", "/tmp/project-b"],
+    ["recent", "/tmp/project-c"],
+    ["create-submit"],
+    ["draft-change"],
+    ["role-filter", "review"],
+    ["draft-change"],
+    ["page-size", "24"],
+    ["prev"],
+    ["next"]
+  ]);
+
+  const roleButton = new FakeBoundElement({ "data-studio-role-id": "planner" });
+  const flowButton = new FakeBoundElement({ "data-studio-flow-key": "planner:DONE:output" });
+  const filterInput = new FakeBoundElement({}, "需求");
+  const listModeSelect = new FakeBoundElement({}, "flows");
+  const studioRoot = new FakeQueryRoot({
+    "[data-studio-role-id]": [roleButton],
+    "[data-studio-flow-key]": [flowButton]
+  });
+  const studioCalls = [];
+  bindStudioBridgeControlsModule({
+    root: studioRoot,
+    findElement: (selector) => selector === "[data-studio-bridge-filter]"
+      ? filterInput
+      : selector === "[data-studio-bridge-list-mode]"
+        ? listModeSelect
+        : null,
+    onRoleSelect: (value) => studioCalls.push(["role", value]),
+    onFlowSelect: (value) => studioCalls.push(["flow", value]),
+    onFilterInput: (value) => studioCalls.push(["filter", value]),
+    onListModeChange: (value) => studioCalls.push(["mode", value])
+  });
+  roleButton.dispatch("click");
+  flowButton.dispatch("click");
+  filterInput.dispatch("input", "需求");
+  listModeSelect.dispatch("change", "flows");
+  assert.deepEqual(studioCalls, [
+    ["role", "planner"],
+    ["flow", "planner:DONE:output"],
+    ["filter", "需求"],
+    ["mode", "flows"]
+  ]);
+
+  const chatById = {
+    "studio-chat-toggle": new FakeBoundElement(),
+    "studio-chat-input": new FakeBoundElement({}, "补充"),
+    "studio-chat-send": new FakeBoundElement(),
+    "studio-chat-close": new FakeBoundElement(),
+    "studio-chat-regenerate": new FakeBoundElement(),
+    "studio-chat-refine": new FakeBoundElement(),
+    "studio-chat-apply": new FakeBoundElement(),
+    "studio-chat-save-draft": new FakeBoundElement()
+  };
+  const chatCalls = [];
+  bindStudioChatControlsModule({
+    getElementById: (id) => chatById[id] || null,
+    onToggle: () => chatCalls.push("toggle"),
+    onInput: (value) => chatCalls.push(["input", value]),
+    onSend: () => chatCalls.push("send"),
+    onClose: () => chatCalls.push("close"),
+    onRegenerate: () => chatCalls.push("regenerate"),
+    onRefine: () => chatCalls.push("refine"),
+    onApply: () => chatCalls.push("apply"),
+    onSaveDraft: () => chatCalls.push("save-draft")
+  });
+  chatById["studio-chat-toggle"].dispatch("click");
+  chatById["studio-chat-input"].dispatch("input", "补充");
+  chatById["studio-chat-send"].dispatch("click");
+  chatById["studio-chat-close"].dispatch("click");
+  chatById["studio-chat-regenerate"].dispatch("click");
+  chatById["studio-chat-refine"].dispatch("click");
+  chatById["studio-chat-apply"].dispatch("click");
+  chatById["studio-chat-save-draft"].dispatch("click");
+  assert.deepEqual(chatCalls, [
+    "toggle",
+    ["input", "补充"],
+    "send",
+    "close",
+    "regenerate",
+    "refine",
+    "apply",
+    "save-draft"
+  ]);
+});
+
+test("client run data loaders keep fetch scope and deferred-load gating explicit", async () => {
+  assert.equal(
+    buildLogsQuery({
+      apiPrefix: "/api",
+      runId: "run 1",
+      engine: true,
+      logPageSize: "250",
+      logSince: "2026-05-03T01:00:00.000Z"
+    }),
+    "/api/runs/run%201/logs?engine=true&tail=250&since=2026-05-03T01%3A00%3A00.000Z"
+  );
+
+  const requests = [];
+  const requestJson = async (path) => {
+    requests.push(path);
+    if (path.includes("engine=true")) {
+      return { records: [{ scope: "engine" }] };
+    }
+    if (path.includes("roleId=planner")) {
+      return { records: [{ scope: "planner" }] };
+    }
+    if (path.includes("roleId=qa")) {
+      return { records: [{ scope: "qa" }] };
+    }
+    return { records: [] };
+  };
+
+  const allLogs = await fetchSelectedLogs({
+    requestJson,
+    apiPrefix: "/api",
+    runId: "run-1",
+    graphPayload: {
+      graph: {
+        nodes: [{ roleId: "planner" }, { roleId: "qa" }, { roleId: "" }]
+      }
+    },
+    logTail: "100"
+  });
+  assert.deepEqual(allLogs, {
+    engineLogs: [{ scope: "engine" }],
+    roleLogs: [{ scope: "planner" }, { scope: "qa" }]
+  });
+  assert.equal(requests.length, 3);
+
+  const selectedLogs = await fetchSelectedLogs({
+    requestJson,
+    apiPrefix: "/api",
+    runId: "run-1",
+    selectedLogRoleId: "planner",
+    graphPayload: {
+      graph: {
+        nodes: [{ roleId: "planner" }, { roleId: "qa" }]
+      }
+    },
+    logPageSize: "50"
+  });
+  assert.deepEqual(selectedLogs, {
+    engineLogs: [{ scope: "engine" }],
+    roleLogs: [{ scope: "planner" }]
+  });
+
+  assert.equal(shouldSkipDeferredPanelLoad({ runId: "", loaded: false }), true);
+  assert.equal(shouldSkipDeferredPanelLoad({ runId: "run-1", actionBusy: true, internal: false }), true);
+  assert.equal(shouldSkipDeferredPanelLoad({ runId: "run-1", loaded: true, stale: false, force: false }), true);
+  assert.equal(shouldSkipDeferredPanelLoad({ runId: "run-1", loaded: true, stale: true, force: false }), false);
+  assert.equal(shouldSkipDeferredPanelLoad({ runId: "run-1", actionBusy: true, internal: true }), false);
+
+  const failure = await fetchFailureData({ requestJson, apiPrefix: "/api", runId: "run-1" });
+  const readiness = await fetchResumeReadinessData({ requestJson, apiPrefix: "/api", runId: "run-1" });
+  const diagnostics = await fetchResumeDiagnosticsData({ requestJson, apiPrefix: "/api", runId: "run-1" });
+  assert.deepEqual(failure, { records: [] });
+  assert.deepEqual(readiness, { records: [] });
+  assert.deepEqual(diagnostics, { records: [] });
+});
+
+test("client run selection helpers keep review fallback and live state deterministic", () => {
+  assert.equal(
+    selectReviewId({
+      currentReviewId: "review-2",
+      reviewsPayload: {
+        latestPendingReviewId: "review-3",
+        reviews: [{ reviewId: "review-1" }, { reviewId: "review-2" }]
+      }
+    }),
+    "review-2"
+  );
+  assert.equal(
+    selectReviewId({
+      currentReviewId: "missing",
+      reviewsPayload: {
+        latestPendingReviewId: "review-3",
+        reviews: [{ reviewId: "review-1" }, { reviewId: "review-2" }]
+      }
+    }),
+    "review-3"
+  );
+  assert.equal(
+    selectReviewId({
+      currentReviewId: "",
+      reviewsPayload: {
+        reviews: [{ reviewId: "review-1" }, { reviewId: "review-2" }]
+      }
+    }),
+    "review-1"
+  );
+  assert.equal(fallbackLogRoleId({ lastExecutedRoleId: "qa", finalRoleId: "writer" }), "qa");
+  assert.equal(fallbackLogRoleId({ finalRoleId: "writer" }), "writer");
+  assert.deepEqual(resolveRunLiveState({ status: "running" }), { mode: "online", label: "running" });
+  assert.deepEqual(resolveRunLiveState({ status: "failed" }), { mode: "idle", label: "failed" });
+  assert.deepEqual(resolveRunLiveState({ status: "paused", hasWaitingHumanReview: true }), {
+    mode: "idle",
+    label: "waiting_review"
   });
 });
 
