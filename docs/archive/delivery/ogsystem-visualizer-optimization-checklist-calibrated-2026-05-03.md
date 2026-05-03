@@ -8,6 +8,29 @@ Status: calibrated
 
 ---
 
+## 0. 平台回归补记
+
+在补入 Windows 运行兼容后，额外做了 macOS 回归核查，重点确认现有 macOS/Linux 路径未被 Windows 分支污染。
+
+已验证：
+
+- `pnpm run test:visualizer` 通过，`94/94` pass。
+- `node --test tests/package-install.test.mjs tests/session-recovery.test.mjs tests/doctor.test.mjs tests/run-artifact-policy.test.mjs tests/cli.test.mjs tests/cli-lifecycle.test.mjs tests/rust-hello-pipeline.test.mjs` 通过，`26/26` pass。
+- Windows 兼容相关的 `.cmd` / `.bat` `shell: true` 逻辑仅存在于 Windows 条件分支，不影响 macOS/Linux 的 `spawn()` 路径。
+- `session-recovery`、`visualizer` 中的路径断言已改为兼容 `/` 与 `\\`，属于测试可移植性修复，不改变运行时语义。
+
+本轮额外发现并已修复一处真实跨平台风险：
+
+- `9d5aceb` 曾把 visualizer 项目创建测试故障注入挂到生产 `process.env` 路径，可能在 macOS/Linux 的 shell、CI 或长驻服务中被意外触发。
+- 当前已改为仅通过 `startVisualizationServer({ testHooks })` 传入测试专用 hook，不再读取 `OGSYSTEM_TEST_PROJECT_CREATE_*` 环境变量驱动生产项目创建流程。
+
+边界说明：
+
+- 当前回归在 macOS 环境完成。
+- Linux 未做本机实跑结论，但从改动边界和通过的跨平台路径测试看，未发现新增的 Linux 特定回归迹象。
+
+---
+
 ## 一、已完成与部分缓解
 
 ### 已完成修复（10 项）

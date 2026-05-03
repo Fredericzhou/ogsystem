@@ -108,6 +108,12 @@ type VisualizationServerOptions = {
   port: number;
   projectCreateRequestCacheTtlMs?: number;
   projectCreateRequestCacheMaxSize?: number;
+  testHooks?: {
+    projectCreate?: {
+      cleanupFailurePatterns?: string[];
+      forceCreateFailure?: boolean;
+    };
+  };
 };
 
 type VisualizationServerState = {
@@ -116,6 +122,7 @@ type VisualizationServerState = {
   projectCreateRequestCacheTtlMs: number;
   projectCreateRequestCacheMaxSize: number;
   studioChatToMmdSessions: StudioChatToMmdSessionMap;
+  testHooks?: VisualizationServerOptions["testHooks"];
 };
 
 type ProjectCreateRequestCacheEntry = {
@@ -1164,7 +1171,8 @@ async function handleApiProjectCreate(
       templateId: createPayload.templateId,
       conflictStrategy: createPayload.conflictStrategy,
       authoringDefaults: createPayload.authoringDefaults,
-      modelProfileStrategy: createPayload.modelProfileStrategy
+      modelProfileStrategy: createPayload.modelProfileStrategy,
+      testHooks: state.testHooks?.projectCreate
     });
     const createdWorkdir = asString(asRecord(created)?.workdir) ?? state.workdir;
     const previousWorkdir = state.workdir;
@@ -2147,7 +2155,8 @@ export async function startVisualizationServer(args: VisualizationServerOptions)
       args.projectCreateRequestCacheMaxSize,
       DEFAULT_PROJECT_CREATE_REQUEST_CACHE_MAX_SIZE
     ),
-    studioChatToMmdSessions: new Map()
+    studioChatToMmdSessions: new Map(),
+    testHooks: args.testHooks
   };
   const server = createServer((request, response) => {
     void handleVisualizationRequest(request, response, state, args).catch((error) => {

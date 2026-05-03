@@ -82,6 +82,11 @@ type ProjectCreateProfileDraft = {
   maxOutputBytes?: number;
 };
 
+type ProjectCreateTestHooks = {
+  cleanupFailurePatterns?: string[];
+  forceCreateFailure?: boolean;
+};
+
 const projectProjectionCache = new Map<string, ProjectProjectionCacheEntry>();
 
 function asRecord(value: unknown): JsonRecord | undefined {
@@ -355,11 +360,10 @@ async function assertNoProjectFileConflicts(workdir: string): Promise<void> {
   }
 }
 
-async function removeCreatedProjectFiles(workdir: string): Promise<void> {
-  const injectedFailurePatterns = (process.env.OGSYSTEM_TEST_PROJECT_CREATE_CLEANUP_FAIL_PATHS ?? "")
-    .split(";")
-    .map((value) => value.trim())
-    .filter(Boolean);
+async function removeCreatedProjectFiles(workdir: string, testHooks?: ProjectCreateTestHooks): Promise<void> {
+  const injectedFailurePatterns = Array.isArray(testHooks?.cleanupFailurePatterns)
+    ? testHooks.cleanupFailurePatterns.map((value) => String(value || "").trim()).filter(Boolean)
+    : [];
   const failures: Array<{ path: string; message: string }> = [];
   for (const [targetPath, options] of [
     [resolve(workdir, "system.mmd"), { force: true }],
@@ -876,8 +880,9 @@ export async function createProjectVisualization(args: {
   conflictStrategy?: unknown;
   authoringDefaults?: unknown;
   modelProfileStrategy?: unknown;
+  testHooks?: ProjectCreateTestHooks;
 }): Promise<Record<string, unknown>> {
-  const forceCreateFailure = process.env.OGSYSTEM_TEST_PROJECT_CREATE_FORCE_FAIL === "1";
+  const forceCreateFailure = args.testHooks?.forceCreateFailure === true;
   const requestedWorkdir = asString(args.workdir)?.trim();
   const targetWorkdir = resolve(args.currentWorkdir, requestedWorkdir || ".");
   const templateId = normalizeProjectTemplateId(args.templateId);
@@ -988,7 +993,7 @@ export async function createProjectVisualization(args: {
         details?: unknown;
       };
       forcedError.code = "PROJECT_CREATE_FAILED";
-      forcedError.details = { forcedBy: "OGSYSTEM_TEST_PROJECT_CREATE_FORCE_FAIL" };
+      forcedError.details = { forcedBy: "projectCreateTestHooks.forceCreateFailure" };
       throw forcedError;
     }
     const syncResult = await syncProjectDependencies({
@@ -1023,7 +1028,7 @@ export async function createProjectVisualization(args: {
     };
   } catch (error) {
     try {
-      await removeCreatedProjectFiles(targetWorkdir);
+      await removeCreatedProjectFiles(targetWorkdir, args.testHooks);
     } catch (cleanupError) {
       const originalMessage = error instanceof Error ? error.message : String(error);
       const cleanupMessage = cleanupError instanceof Error ? cleanupError.message : String(cleanupError);

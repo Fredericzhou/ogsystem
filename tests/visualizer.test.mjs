@@ -2116,17 +2116,19 @@ test("visualizer server surfaces project create cleanup failures", async (t) => 
   const workdir = await mkdtemp(path.join(os.tmpdir(), "ogsystem-visualizer-cleanup-failure-"));
   const targetWorkdir = path.resolve(workdir, "cleanup-target");
   await mkdir(targetWorkdir, { recursive: true });
-  const previousInjectedCleanupFailures = process.env.OGSYSTEM_TEST_PROJECT_CREATE_CLEANUP_FAIL_PATHS;
-  const previousForcedCreateFailure = process.env.OGSYSTEM_TEST_PROJECT_CREATE_FORCE_FAIL;
-  process.env.OGSYSTEM_TEST_PROJECT_CREATE_CLEANUP_FAIL_PATHS = `${path.sep}system.mmd`;
-  process.env.OGSYSTEM_TEST_PROJECT_CREATE_FORCE_FAIL = "1";
 
   let started;
   try {
     started = await startVisualizationServer({
       workdir,
       host: "127.0.0.1",
-      port: 0
+      port: 0,
+      testHooks: {
+        projectCreate: {
+          cleanupFailurePatterns: [`${path.sep}system.mmd`],
+          forceCreateFailure: true
+        }
+      }
     });
   } catch (error) {
     const errorCode =
@@ -2165,16 +2167,6 @@ test("visualizer server surfaces project create cleanup failures", async (t) => 
       true
     );
   } finally {
-    if (previousForcedCreateFailure === undefined) {
-      delete process.env.OGSYSTEM_TEST_PROJECT_CREATE_FORCE_FAIL;
-    } else {
-      process.env.OGSYSTEM_TEST_PROJECT_CREATE_FORCE_FAIL = previousForcedCreateFailure;
-    }
-    if (previousInjectedCleanupFailures === undefined) {
-      delete process.env.OGSYSTEM_TEST_PROJECT_CREATE_CLEANUP_FAIL_PATHS;
-    } else {
-      process.env.OGSYSTEM_TEST_PROJECT_CREATE_CLEANUP_FAIL_PATHS = previousInjectedCleanupFailures;
-    }
     await new Promise((resolve) => server.close(resolve));
   }
 });
