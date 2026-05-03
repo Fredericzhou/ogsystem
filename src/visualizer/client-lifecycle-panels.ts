@@ -1,5 +1,23 @@
 type Translator = (key: string, vars?: Record<string, unknown>, fallback?: string) => string;
 
+export function renderLoadingSkeletonHtml(args: {
+  label: string;
+  rows?: number;
+  t: Translator;
+  escapeText: (value: unknown) => string;
+}): string {
+  const { label, rows = 3, t, escapeText } = args;
+  const safeRows = Math.max(1, Math.min(Number.isFinite(rows) ? Math.floor(rows) : 3, 6));
+  return [
+    '<div class="loading-skeleton" role="status" aria-live="polite" aria-busy="true">',
+    '<span class="sr-only">' + escapeText(label || t("state.loading", undefined, "Loading")) + '</span>',
+    ...Array.from({ length: safeRows }, (_item, index) =>
+      '<div class="skeleton-line skeleton-line-' + String(index + 1) + '"></div>'
+    ),
+    '</div>'
+  ].join("");
+}
+
 export function renderWorkspaceEmptyStateHtml(args: {
   kind: string;
   t: Translator;

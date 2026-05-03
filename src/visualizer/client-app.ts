@@ -40,6 +40,7 @@ import {
 } from "./client-route-state.js";
 import {
   renderOperateTabsHtml,
+  renderLoadingSkeletonHtml,
   renderRunStatsHtml,
   renderTimelineHtml,
   renderWorkbenchActionsHtml,
@@ -150,6 +151,7 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
     const resolveRunLiveState = ${resolveRunLiveState.toString()};
     const renderWorkspaceEmptyStateHtml = ${renderWorkspaceEmptyStateHtml.toString()};
     const renderOperateTabsHtml = ${renderOperateTabsHtml.toString()};
+    const renderLoadingSkeletonHtml = ${renderLoadingSkeletonHtml.toString()};
     const renderWorkbenchStructureHtml = ${renderWorkbenchStructureHtml.toString()};
     const renderWorkbenchStatusHtml = ${renderWorkbenchStatusHtml.toString()};
     const renderWorkbenchModeTabsHtml = ${renderWorkbenchModeTabsHtml.toString()};
@@ -1080,6 +1082,10 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
       element.addEventListener(eventName, handler);
     }
 
+    function loadingSkeleton(label, rows) {
+      return renderLoadingSkeletonHtml({ label, rows, t, escapeText });
+    }
+
     function setActionBusy(actionId) {
       state.actionBusy = actionId;
       renderActionForm();
@@ -1665,6 +1671,17 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
     }
 
     function renderWorkbench(options) {
+      if (state.workbenchLoading) {
+        workbenchMetaEl.textContent = t("state.loadingWorkbench", undefined, "Loading Build workbench");
+        workbenchStatusEl.innerHTML = loadingSkeleton(t("state.loadingWorkbenchStatus", undefined, "Loading workbench status"), 1);
+        workbenchTabsEl.innerHTML = "";
+        if (workbenchViewTabsEl) {
+          workbenchViewTabsEl.innerHTML = "";
+        }
+        workbenchActionsEl.innerHTML = "";
+        workbenchBodyEl.innerHTML = loadingSkeleton(t("state.loadingWorkbench", undefined, "Loading Build workbench"), 5);
+        return;
+      }
       if (!state.hasProject) {
         workbenchMetaEl.textContent = t("workspace.buildUnavailableTitle", undefined, "Create or load a project before building.");
         workbenchStatusEl.innerHTML = '<span class="pill warn">' + escapeText(t("workspace.notInitialized", undefined, "not initialized")) + '</span>';
@@ -2015,6 +2032,18 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
     }
 
     function renderProject() {
+      if (state.projectLoading) {
+        const projectLabel = t("state.loadingProject", undefined, "Loading project data");
+        projectSummaryEl.innerHTML = loadingSkeleton(projectLabel, 4);
+        if (opsSummaryEl) opsSummaryEl.innerHTML = loadingSkeleton(t("state.loadingOpsSummary", undefined, "Loading operations summary"), 3);
+        if (projectReadinessEl) projectReadinessEl.innerHTML = loadingSkeleton(t("state.loadingProjectReadiness", undefined, "Loading project readiness"), 3);
+        if (releaseGateEl) releaseGateEl.innerHTML = loadingSkeleton(t("state.loadingReleaseGate", undefined, "Loading release gate"), 3);
+        bindingExplainEl.innerHTML = loadingSkeleton(t("state.loadingProjectBindings", undefined, "Loading project bindings"), 2);
+        rolePackagesEl.innerHTML = loadingSkeleton(t("state.loadingRolePackages", undefined, "Loading role packages"), 2);
+        contractExplainEl.innerHTML = loadingSkeleton(t("state.loadingContracts", undefined, "Loading contracts"), 2);
+        renderProjectWizard();
+        return;
+      }
       if (!state.hasProject) {
         const workspace = state.workspace || {};
         if (workdirEl && workspace.workdir) {
@@ -2526,6 +2555,10 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
     }
 
     function renderStats(header, graphPayload) {
+      if (state.runDetailLoading) {
+        statsEl.innerHTML = loadingSkeleton(t("state.loadingRunDetail", undefined, "Loading run detail"), 2);
+        return;
+      }
       statsEl.innerHTML = renderRunStatsHtml({ header, graphPayload, t, escapeText, displayUiToken });
     }
 
@@ -2549,6 +2582,11 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
     }
 
     function renderGraph() {
+      if (state.runDetailLoading) {
+        graphViewEl.innerHTML = loadingSkeleton(t("state.loadingRunGraph", undefined, "Loading run graph"), 4);
+        stateEl.innerHTML = loadingSkeleton(t("state.loadingRunState", undefined, "Loading run state"), 3);
+        return;
+      }
       if (!state.hasProject) {
         graphViewEl.innerHTML = workspaceEmptyStateHtml("operate");
         stateEl.innerHTML = '<div class="hint">' + escapeText(t("workspace.createOrLoadHint", undefined, "Use Project to create a project in this directory or load an existing project.")) + '</div>';
@@ -2844,6 +2882,10 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
     }
 
     function renderDetail() {
+      if (state.runDetailLoading) {
+        detailEl.innerHTML = loadingSkeleton(t("state.loadingRunArtifacts", undefined, "Loading run artifacts"), 4);
+        return;
+      }
       detailEl.innerHTML = renderArtifactsPanel({
         detail: state.detail,
         graph: state.graph,
@@ -3264,19 +3306,25 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
         renderWorkbench();
         return;
       }
-      const payload = await requestJson(\`\${API_PREFIX}/project/system/workbench\`);
-      state.workbench = payload;
-      if (workdirEl && payload.workdir) {
-        workdirEl.textContent = payload.workdir;
-      }
-      state.workbenchDiskSource = payload.systemSource || "";
-      state.workbenchSavedPath = relativeToWorkdir(payload.systemPath || "system.mmd") || "system.mmd";
-      const draft = loadDraftSource();
-      state.workbenchSource = draft || state.workbenchDiskSource;
-      state.workbenchHasDraft = Boolean(draft);
+      state.workbenchLoading = true;
       renderWorkbench();
-      if (draft) {
-        await runWorkbenchValidation(true);
+      try {
+        const payload = await requestJson(\`\${API_PREFIX}/project/system/workbench\`);
+        state.workbench = payload;
+        if (workdirEl && payload.workdir) {
+          workdirEl.textContent = payload.workdir;
+        }
+        state.workbenchDiskSource = payload.systemSource || "";
+        state.workbenchSavedPath = relativeToWorkdir(payload.systemPath || "system.mmd") || "system.mmd";
+        const draft = loadDraftSource();
+        state.workbenchSource = draft || state.workbenchDiskSource;
+        state.workbenchHasDraft = Boolean(draft);
+        if (draft) {
+          await runWorkbenchValidation(true);
+        }
+      } finally {
+        state.workbenchLoading = false;
+        renderWorkbench();
       }
     }
 
@@ -3698,54 +3746,63 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
     }
 
     async function loadProject() {
-      state.workspace = await requestJson(API_PREFIX + "/workspace");
-      state.hasProject = state.workspace?.hasProject === true;
-      if (state.projectOpenDraft && state.projectOpenDraft !== state.workspace?.workdir) {
-        state.projectOpenBrowse = null;
-        state.projectOpenValidation = null;
-      }
-      state.projectOpenDraft = state.workspace?.workdir || state.projectOpenDraft || "";
-      state.projectOpenError = "";
-      state.projectOpenLoading = false;
-      if (!state.hasProject) {
-        await loadRoleCatalog();
-        state.project = null;
-        state.opsSummary = null;
-        state.projectReadiness = null;
-        state.bindings = null;
-        state.contracts = null;
-        state.rolePackages = null;
-        state.workbench = null;
-        state.workbenchSource = "";
-        state.workbenchDiskSource = "";
-        state.studioTemplates = [];
-        renderProject();
-        renderWorkbench();
-        renderGraph();
-        renderActionState();
-        return;
-      }
-      const [summary, system, config, roles, opsSummary, readiness, bindings, contracts, rolePackages, templates] = await Promise.all([
-        requestJson(\`\${API_PREFIX}/project\`),
-        requestJson(\`\${API_PREFIX}/project/system\`),
-        requestJson(\`\${API_PREFIX}/project/config\`),
-        requestJson(\`\${API_PREFIX}/project/roles\`),
-        requestJson(\`\${API_PREFIX}/project/ops-summary\`),
-        requestJson(\`\${API_PREFIX}/project/readiness\`),
-        requestJson(\`\${API_PREFIX}/project/bindings\`),
-        requestJson(\`\${API_PREFIX}/project/contracts\`),
-        requestJson(\`\${API_PREFIX}/project/role-packages\`),
-        requestJson(\`\${API_PREFIX}/project/studio/templates\`).catch(() => ({ templates: [] }))
-      ]);
-      state.project = { summary, system, config, roles };
-      state.opsSummary = opsSummary;
-      state.projectReadiness = readiness;
-      state.bindings = bindings;
-      state.contracts = contracts;
-      state.rolePackages = rolePackages;
-      state.studioTemplates = templates.templates || [];
-      await loadWorkbench();
+      state.projectLoading = true;
       renderProject();
+      try {
+        state.workspace = await requestJson(API_PREFIX + "/workspace");
+        state.hasProject = state.workspace?.hasProject === true;
+        if (state.projectOpenDraft && state.projectOpenDraft !== state.workspace?.workdir) {
+          state.projectOpenBrowse = null;
+          state.projectOpenValidation = null;
+        }
+        state.projectOpenDraft = state.workspace?.workdir || state.projectOpenDraft || "";
+        state.projectOpenError = "";
+        state.projectOpenLoading = false;
+        if (!state.hasProject) {
+          await loadRoleCatalog();
+          state.project = null;
+          state.opsSummary = null;
+          state.projectReadiness = null;
+          state.bindings = null;
+          state.contracts = null;
+          state.rolePackages = null;
+          state.workbench = null;
+          state.workbenchSource = "";
+          state.workbenchDiskSource = "";
+          state.studioTemplates = [];
+          state.projectLoading = false;
+          state.workbenchLoading = false;
+          state.runDetailLoading = false;
+          renderProject();
+          renderWorkbench();
+          renderGraph();
+          renderActionState();
+          return;
+        }
+        const [summary, system, config, roles, opsSummary, readiness, bindings, contracts, rolePackages, templates] = await Promise.all([
+          requestJson(\`\${API_PREFIX}/project\`),
+          requestJson(\`\${API_PREFIX}/project/system\`),
+          requestJson(\`\${API_PREFIX}/project/config\`),
+          requestJson(\`\${API_PREFIX}/project/roles\`),
+          requestJson(\`\${API_PREFIX}/project/ops-summary\`),
+          requestJson(\`\${API_PREFIX}/project/readiness\`),
+          requestJson(\`\${API_PREFIX}/project/bindings\`),
+          requestJson(\`\${API_PREFIX}/project/contracts\`),
+          requestJson(\`\${API_PREFIX}/project/role-packages\`),
+          requestJson(\`\${API_PREFIX}/project/studio/templates\`).catch(() => ({ templates: [] }))
+        ]);
+        state.project = { summary, system, config, roles };
+        state.opsSummary = opsSummary;
+        state.projectReadiness = readiness;
+        state.bindings = bindings;
+        state.contracts = contracts;
+        state.rolePackages = rolePackages;
+        state.studioTemplates = templates.templates || [];
+      } finally {
+        state.projectLoading = false;
+        renderProject();
+      }
+      await loadWorkbench();
     }
 
     async function loadWorkspaceView() {
@@ -4091,58 +4148,66 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
     }
 
     async function loadSelectedRunBoot(runId, options) {
-      const [detail, eventsPayload, graphPayload, reviewsPayload, contractRuntimeStatus] = await Promise.all([
-        requestJson(\`\${API_PREFIX}/runs/\${encodeURIComponent(runId)}\`),
-        requestJson(buildTimelineQuery(runId, { cursor: 0, limit: 250 })),
-        requestJson(\`\${API_PREFIX}/runs/\${encodeURIComponent(runId)}/graph\`),
-        requestJson(\`\${API_PREFIX}/runs/\${encodeURIComponent(runId)}/reviews\`),
-        requestJson(\`\${API_PREFIX}/runs/\${encodeURIComponent(runId)}/contracts\`).catch(() => null)
-      ]);
-
-      state.detail = detail;
-      state.events = eventsPayload.events || [];
-      state.eventCursor = eventsPayload.nextCursor || 0;
-      state.eventCursorIndex = createStreamCursorIndex(state.events);
-      state.graph = graphPayload;
-      state.reviews = reviewsPayload;
-      state.contractRuntimeStatus = contractRuntimeStatus;
-      state.failure = null;
-      state.failureLoaded = false;
-      state.failureStale = false;
-      state.resumeReadiness = null;
-      state.resumeReadinessLoaded = false;
-      state.resumeReadinessStale = false;
-      state.resumeDiagnostics = null;
-      state.resumeDiagnosticsLoaded = false;
-      state.resumeDiagnosticsStale = false;
-      state.engineLogs = [];
-      state.roleLogs = [];
-      state.logsLoaded = false;
-      state.logsStale = false;
-      upsertRunFromHeader(detail.header);
-      const fallbackRoleId = fallbackLogRoleId(detail.header);
-      state.selectedReviewId = selectReviewId({
-        currentReviewId: state.selectedReviewId,
-        reviewsPayload
-      });
-      await refreshSelectedReviewDetail(runId, { allowMissing: true });
-      populateLogRoleOptions(graphPayload, fallbackRoleId);
-      populateTimelineRoleOptions(graphPayload);
+      state.runDetailLoading = true;
       renderSelectedRun();
-      renderRuns();
-      renderProject();
-      writeRouteToLocation();
+      try {
+        const [detail, eventsPayload, graphPayload, reviewsPayload, contractRuntimeStatus] = await Promise.all([
+          requestJson(\`\${API_PREFIX}/runs/\${encodeURIComponent(runId)}\`),
+          requestJson(buildTimelineQuery(runId, { cursor: 0, limit: 250 })),
+          requestJson(\`\${API_PREFIX}/runs/\${encodeURIComponent(runId)}/graph\`),
+          requestJson(\`\${API_PREFIX}/runs/\${encodeURIComponent(runId)}/reviews\`),
+          requestJson(\`\${API_PREFIX}/runs/\${encodeURIComponent(runId)}/contracts\`).catch(() => null)
+        ]);
 
-      if (!options || !options.keepStream) {
-        stopStream();
-        connectStream(runId, state.eventCursor);
+        state.detail = detail;
+        state.events = eventsPayload.events || [];
+        state.eventCursor = eventsPayload.nextCursor || 0;
+        state.eventCursorIndex = createStreamCursorIndex(state.events);
+        state.graph = graphPayload;
+        state.reviews = reviewsPayload;
+        state.contractRuntimeStatus = contractRuntimeStatus;
+        state.failure = null;
+        state.failureLoaded = false;
+        state.failureStale = false;
+        state.resumeReadiness = null;
+        state.resumeReadinessLoaded = false;
+        state.resumeReadinessStale = false;
+        state.resumeDiagnostics = null;
+        state.resumeDiagnosticsLoaded = false;
+        state.resumeDiagnosticsStale = false;
+        state.engineLogs = [];
+        state.roleLogs = [];
+        state.logsLoaded = false;
+        state.logsStale = false;
+        upsertRunFromHeader(detail.header);
+        const fallbackRoleId = fallbackLogRoleId(detail.header);
+        state.selectedReviewId = selectReviewId({
+          currentReviewId: state.selectedReviewId,
+          reviewsPayload
+        });
+        await refreshSelectedReviewDetail(runId, { allowMissing: true });
+        populateLogRoleOptions(graphPayload, fallbackRoleId);
+        populateTimelineRoleOptions(graphPayload);
+        state.runDetailLoading = false;
+        renderSelectedRun();
+        renderRuns();
+        renderProject();
+        writeRouteToLocation();
+
+        if (!options || !options.keepStream) {
+          stopStream();
+          connectStream(runId, state.eventCursor);
+        }
+        await Promise.allSettled([
+          loadFailure(runId, { force: true, internal: true, suppressFlash: true }),
+          loadResumeReadiness(runId, { force: true, internal: true, suppressFlash: true })
+        ]);
+        const liveState = resolveRunLiveState(detail.header);
+        setLive(liveState.mode, liveState.label);
+      } finally {
+        state.runDetailLoading = false;
+        renderSelectedRun();
       }
-      await Promise.allSettled([
-        loadFailure(runId, { force: true, internal: true, suppressFlash: true }),
-        loadResumeReadiness(runId, { force: true, internal: true, suppressFlash: true })
-      ]);
-      const liveState = resolveRunLiveState(detail.header);
-      setLive(liveState.mode, liveState.label);
     }
 
     async function selectRun(runId) {

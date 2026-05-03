@@ -8,6 +8,7 @@ import {
 } from "../dist/visualizer/client-route-state.js";
 import {
   renderOperateTabsHtml,
+  renderLoadingSkeletonHtml,
   renderRunStatsHtml,
   renderTimelineHtml,
   renderWorkbenchActionsHtml,
@@ -315,6 +316,12 @@ test("client lifecycle panel renderers expose workspace and operate tab HTML", (
   assert.match(tabs, /data-operate-tab="logs"/);
   assert.match(tabs, /class="button subtle active"/);
   assert.match(tabs, /Load engine and role logs on demand/);
+
+  const skeleton = renderLoadingSkeletonHtml({ label: "Loading project data", rows: 4, t, escapeText });
+  assert.match(skeleton, /role="status"/);
+  assert.match(skeleton, /aria-busy="true"/);
+  assert.match(skeleton, /Loading project data/);
+  assert.equal((skeleton.match(/class="skeleton-line /g) || []).length, 4);
 });
 
 test("client lifecycle panel renderers cover workbench structure, stats, and timeline", () => {

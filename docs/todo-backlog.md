@@ -75,7 +75,7 @@ Sources: `docs/long-term-stability-roadmap.md`, `docs/archive/delivery/optimizat
 - [x] 复核 `src/visualizer/client-run-data-loaders.ts` 的日志并发抓取策略，为多 role 场景增加并发控制或分批加载。
 - [x] 复核 `src/visualizer/ops-summary-projection.ts` 的 run 汇总读取路径，确认真实瓶颈后再决定是否并行化或加缓存。
 - [x] 为 `src/visualizer/client-app.ts` 的高频 `innerHTML` 重绘热点建立优先级列表；首批热点已覆盖 `operateTabs` / `workbenchStatus` / `workbenchTabs` / `workbenchViewTabs` / `workbenchActions` / `runListEl` / `consoleTabsEl`。
-- [ ] 为关键异步加载态补更稳定的 loading skeleton 或占位策略，至少覆盖项目首页、Build 工作台和运行明细主面板。
+- [x] 为关键异步加载态补更稳定的 loading skeleton 或占位策略，至少覆盖项目首页、Build 工作台和运行明细主面板。
 
 ### P2. Visualizer 状态与可维护性治理
 

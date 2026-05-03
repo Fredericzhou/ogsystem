@@ -555,6 +555,42 @@ export function renderPageShellStyles(): string {
       font-size: 12px;
       overflow-wrap: anywhere;
     }
+    .sr-only {
+      position: absolute;
+      width: 1px;
+      height: 1px;
+      padding: 0;
+      margin: -1px;
+      overflow: hidden;
+      clip: rect(0, 0, 0, 0);
+      white-space: nowrap;
+      border: 0;
+    }
+    .loading-skeleton {
+      display: grid;
+      gap: 8px;
+      padding: 10px;
+      border: 1px solid var(--border);
+      border-radius: 9px;
+      background: rgba(255, 255, 255, 0.025);
+    }
+    .skeleton-line {
+      height: 12px;
+      border-radius: 999px;
+      background: linear-gradient(90deg, rgba(148, 163, 184, 0.12), rgba(56, 189, 248, 0.28), rgba(148, 163, 184, 0.12));
+      background-size: 220% 100%;
+      animation: skeleton-shimmer 1.2s ease-in-out infinite;
+    }
+    .skeleton-line-1 { width: 72%; }
+    .skeleton-line-2 { width: 92%; }
+    .skeleton-line-3 { width: 64%; }
+    .skeleton-line-4 { width: 84%; }
+    .skeleton-line-5 { width: 52%; }
+    .skeleton-line-6 { width: 76%; }
+    @keyframes skeleton-shimmer {
+      0% { background-position: 120% 0; }
+      100% { background-position: -120% 0; }
+    }
     pre {
       margin: 0;
       padding: 10px;
