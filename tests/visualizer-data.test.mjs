@@ -303,6 +303,28 @@ async function createSimulationRun(workdir) {
   return { runId, runDir };
 }
 
+async function overwriteRunSystemSource(workdir, runId, systemSource) {
+  const runDir = path.resolve(workdir, ".ogs", "runs", runId);
+  await writeFile(path.resolve(runDir, "system.mmd"), systemSource, "utf8");
+}
+
+function buildLargeSystemSource(nodeCount = 700) {
+  const lines = [
+    "flowchart TD",
+    "%% system.id=viz.large.demo",
+    "%% system.version=1.0.0",
+    "%% law.global=law.minimal.base",
+    "%% entry.role=alpha",
+    "input -->|ENTER| alpha[Role:alpha]"
+  ];
+  for (let index = 0; index < nodeCount; index += 1) {
+    const roleId = `role-${index}`;
+    lines.push(`alpha[Role:alpha] -->|STEP_${index}| ${roleId}[Role:${roleId}]`);
+  }
+  lines.push("alpha[Role:alpha] -->|DONE| output", "");
+  return lines.join("\n");
+}
+
 async function createContractFailureRun(workdir) {
   const runId = "20260416-020304-contract";
   const runDir = path.resolve(workdir, ".ogs", "runs", runId);
@@ -846,6 +868,20 @@ test("visualizer data projects project and graph information", async () => {
   assert.equal(graph.graph.nodes[0].lastErrorCode, "E_VIS_TEST");
   assert.equal(graph.graph.nodes[0].lastFailure.errorCode, "E_VIS_TEST");
   assert.equal(graph.graph.edges[0].event, "DONE");
+});
+
+test("visualizer data omits Mermaid Live URL when encoded graph exceeds browser-safe length", async () => {
+  const workdir = await mkdtemp(path.join(os.tmpdir(), "ogsystem-visualizer-data-large-mermaid-"));
+  await seedProjectFixture(workdir);
+  const { runId } = await createSimulationRun(workdir);
+  await overwriteRunSystemSource(workdir, runId, buildLargeSystemSource());
+
+  const graph = await inspectRunGraphVisualization({ workdir, runId });
+  const graphFromData = await inspectRunGraphVisualizationFromData({ workdir, runId });
+
+  assert.equal(graph.systemSource.length > 12000, true);
+  assert.equal(graph.simulation.summary.mermaidLiveUrl, undefined);
+  assert.equal(graphFromData.simulation.summary.mermaidLiveUrl, undefined);
 });
 
 test("visualizer data normalizes reviews and resume diagnostics", async () => {

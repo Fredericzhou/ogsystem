@@ -34,6 +34,8 @@ function toBase64Url(value: string): string {
     .replace(/=+$/g, "");
 }
 
+const MAX_MERMAID_LIVE_URL_LENGTH = 16_384;
+
 function buildMermaidLiveUrl(systemSource: string | null): string | undefined {
   if (!systemSource) {
     return undefined;
@@ -42,7 +44,8 @@ function buildMermaidLiveUrl(systemSource: string | null): string | undefined {
     code: systemSource,
     mermaid: { theme: "default" }
   });
-  return `https://mermaid.live/edit#base64:${toBase64Url(payload)}`;
+  const url = `https://mermaid.live/edit#base64:${toBase64Url(payload)}`;
+  return url.length <= MAX_MERMAID_LIVE_URL_LENGTH ? url : undefined;
 }
 
 function extractGraphState(state: unknown): GraphState | undefined {
