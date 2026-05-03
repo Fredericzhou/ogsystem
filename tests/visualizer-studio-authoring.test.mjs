@@ -216,6 +216,37 @@ test("Studio canvas apply stabilizes missing and duplicate edge ids", () => {
   assert.equal(serializeAuthoringToMermaid(applied), serializeAuthoringToMermaid(applied));
 });
 
+test("Studio canvas apply keeps duplicate edge fallback ids finite and unique", () => {
+  const authoring = importMermaidToAuthoring({
+    workdir: "/tmp/project",
+    systemPath: "/tmp/project/system.mmd",
+    systemSource: source
+  });
+  const canvas = authoringToCanvasDocument(authoring);
+  const duplicateEdges = Array.from({ length: 12 }, (_item, index) => ({
+    id: "duplicate-edge",
+    source: index % 2 === 0 ? "dispatch" : "worker",
+    target: "review",
+    label: index % 2 === 0 ? "REVIEW" : "DONE",
+    eventType: index % 2 === 0 ? "REVIEW" : "DONE",
+    runtimeOnlyErrorFlow: false,
+    participatesInJoin: index % 2 !== 0
+  }));
+  const applied = applyCanvasDocumentToAuthoring({
+    authoring,
+    canvas: {
+      ...canvas,
+      edges: duplicateEdges
+    }
+  });
+
+  assert.equal(Object.keys(applied.flows).length, 12);
+  assert.equal(new Set(Object.keys(applied.flows)).size, 12);
+  assert.equal(applied.flows["duplicate-edge"].flowId, "duplicate-edge");
+  assert.equal(applied.flows["2:worker:DONE:review"].flowId, "2:worker:DONE:review");
+  assert.equal(applied.flows["12:worker:DONE:review"].flowId, "12:worker:DONE:review");
+});
+
 test("Studio flow labels round-trip through authoring and canvas without changing runtime ids", () => {
   const authoring = importMermaidToAuthoring({
     workdir: "/tmp/project",
