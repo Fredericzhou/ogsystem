@@ -7,6 +7,7 @@ import { mkdtemp, mkdir, symlink, writeFile } from "node:fs/promises";
 import {
   inspectRunContractStatusVisualization,
   inspectRunFailureVisualization,
+  inspectRunGraphVisualization as inspectRunGraphVisualizationFromData,
   inspectRunResumeDiagnostics,
   inspectRunResumeReadiness
 } from "../dist/visualizer/data.js";
@@ -20,6 +21,14 @@ import {
 } from "../dist/visualizer/project-projection.js";
 import { inspectRunGraphVisualization } from "../dist/visualizer/run-graph-projection.js";
 import { inspectHumanReview, listHumanReviews } from "../dist/runtime/project-lifecycle.js";
+
+function decodeMermaidLivePayload(url) {
+  const prefix = "https://mermaid.live/edit#base64:";
+  assert.match(url, /^https:\/\/mermaid\.live\/edit#base64:/);
+  const fragment = url.slice(prefix.length);
+  const padded = fragment.replace(/-/g, "+").replace(/_/g, "/").padEnd(Math.ceil(fragment.length / 4) * 4, "=");
+  return JSON.parse(Buffer.from(padded, "base64").toString("utf8"));
+}
 
 async function seedProjectFixture(workdir) {
   const repoRoot = process.cwd();
@@ -821,11 +830,17 @@ test("visualizer data projects project and graph information", async () => {
   assert.equal(projectConfig.tools[0].toolRef, "tool.review");
 
   const graph = await inspectRunGraphVisualization({ workdir, runId });
+  const graphFromData = await inspectRunGraphVisualizationFromData({ workdir, runId });
   assert.equal(graph.simulation.isSimulation, true);
   assert.equal(graph.simulation.summary.simulatedNodeCount, 1);
   assert.equal(graph.simulation.summary.simulatedExternalCallCount, 0);
   assert.ok(Array.isArray(graph.simulation.summary.expectedPathRoleIds));
-  assert.match(graph.simulation.summary.mermaidLiveUrl, /mermaid\.live/);
+  const graphPreview = decodeMermaidLivePayload(graph.simulation.summary.mermaidLiveUrl);
+  assert.equal(graphPreview.code, graph.systemSource);
+  assert.deepEqual(graphPreview.mermaid, { theme: "default" });
+  const dataPreview = decodeMermaidLivePayload(graphFromData.simulation.summary.mermaidLiveUrl);
+  assert.equal(dataPreview.code, graphFromData.systemSource);
+  assert.deepEqual(dataPreview.mermaid, { theme: "default" });
   assert.equal(graph.graph.nodes[0].roleId, "alpha");
   assert.equal(graph.graph.nodes[0].status, "active");
   assert.equal(graph.graph.nodes[0].lastErrorCode, "E_VIS_TEST");

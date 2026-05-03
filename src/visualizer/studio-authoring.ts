@@ -6,18 +6,18 @@ import { readJsonFile, writeJsonFileAtomic } from "../runtime/json-file.js";
 import { parseSystemFromMermaidSource } from "../runtime/parse-mermaid.js";
 import { SYSTEM_END_ROLE_ID } from "../runtime/types.js";
 import type { Flow, SystemDefinition } from "../runtime/types.js";
-export type {
-  StudioAuthoringDocument,
-  StudioAuthoringFlow,
-  StudioAuthoringRole,
-  StudioCanvasDocument
-} from "./studio-contracts.js";
 import type {
   StudioAuthoringDocument,
   StudioAuthoringFlow,
   StudioAuthoringRole,
   StudioCanvasDocument
 } from "./studio-contracts.js";
+export type {
+  StudioAuthoringDocument,
+  StudioAuthoringFlow,
+  StudioAuthoringRole,
+  StudioCanvasDocument
+};
 
 type StudioBridgeRole = StudioAuthoringRole & {
   incomingFlowCount: number;
@@ -57,6 +57,13 @@ export type StudioBridgeDraft = {
     roles: StudioBridgeRole[];
     flows: StudioBridgeFlow[];
   } | null;
+};
+
+type StudioBridgeValidationDiagnostic = {
+  source: "studio-bridge";
+  severity: "error";
+  message: string;
+  detail?: string;
 };
 
 function sortStrings(left: string, right: string): number {
@@ -193,6 +200,26 @@ function buildBridgeFlows(authoring: StudioAuthoringDocument): StudioBridgeFlow[
     }));
 }
 
+function withStudioBridgeImportFailure(
+  validation: StudioSystemValidation,
+  error: unknown
+): StudioSystemValidation {
+  const message = "Failed to extract Studio Bridge graph from the Mermaid source.";
+  const detail = error instanceof Error ? error.message : String(error);
+  const diagnostics = Array.isArray(validation.diagnostics) ? validation.diagnostics.slice() : [];
+  diagnostics.push({
+    source: "studio-bridge",
+    severity: "error",
+    message,
+    ...(detail ? { detail } : {})
+  } satisfies StudioBridgeValidationDiagnostic);
+  return {
+    ...validation,
+    ok: false,
+    diagnostics
+  };
+}
+
 function deterministicCanvasEdgeId(edge: StudioCanvasDocument["edges"][number], index: number): string {
   const target = edge.target === SYSTEM_END_ROLE_ID ? "output" : edge.target;
   return `${index + 1}:${edge.source}:${edge.eventType}:${target}`;
@@ -312,20 +339,22 @@ export async function inspectStudioBridgeDraft(args: {
     systemSource
   });
   let authoring: StudioAuthoringDocument | null = null;
+  let bridgeValidation = validation;
   try {
     authoring = importSystemToAuthoring({
       workdir: args.workdir,
       systemPath,
       system: parseSystemFromMermaidSource(systemSource)
     });
-  } catch {
+  } catch (error) {
     authoring = null;
+    bridgeValidation = withStudioBridgeImportFailure(validation, error);
   }
   return {
     workdir: args.workdir,
     systemPath,
     systemSource,
-    validation,
+    validation: bridgeValidation,
     authoring,
     extracted: authoring
       ? {
@@ -442,10 +471,20 @@ export async function loadStudioAuthoringDraft(workdir: string): Promise<{
   authoring: unknown | null;
 }> {
   const draftPath = authoringDraftPath(workdir);
+  let authoring: unknown | null = null;
+  try {
+    authoring = await readJsonFile(draftPath);
+  } catch (error) {
+    if (typeof error === "object" && error !== null && "code" in error && error.code === "ENOENT") {
+      authoring = null;
+    } else {
+      throw error;
+    }
+  }
   return {
     workdir,
     draftPath,
-    authoring: await readJsonFile(draftPath).catch(() => null)
+    authoring
   };
 }
 

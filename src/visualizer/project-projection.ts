@@ -356,12 +356,30 @@ async function assertNoProjectFileConflicts(workdir: string): Promise<void> {
 }
 
 async function removeCreatedProjectFiles(workdir: string): Promise<void> {
-  await rm(resolve(workdir, "system.mmd"), { force: true }).catch(() => undefined);
-  await rm(resolve(workdir, "system.example.mmd"), { force: true }).catch(() => undefined);
-  await rm(resolve(workdir, "profiles.json"), { force: true }).catch(() => undefined);
-  await rm(resolve(workdir, "tools.json"), { force: true }).catch(() => undefined);
-  await rm(resolve(workdir, ".ogs"), { recursive: true, force: true }).catch(() => undefined);
-  await rm(resolve(workdir, "og-roles"), { recursive: true, force: true }).catch(() => undefined);
+  const failures: Array<{ path: string; message: string }> = [];
+  for (const [targetPath, options] of [
+    [resolve(workdir, "system.mmd"), { force: true }],
+    [resolve(workdir, "system.example.mmd"), { force: true }],
+    [resolve(workdir, "profiles.json"), { force: true }],
+    [resolve(workdir, "tools.json"), { force: true }],
+    [resolve(workdir, ".ogs"), { recursive: true, force: true }],
+    [resolve(workdir, "og-roles"), { recursive: true, force: true }]
+  ] as const) {
+    try {
+      await rm(targetPath, options);
+    } catch (error) {
+      failures.push({
+        path: targetPath,
+        message: error instanceof Error ? error.message : String(error)
+      });
+    }
+  }
+  if (failures.length) {
+    const error = new Error("PROJECT_CREATE_CLEANUP_FAILED") as Error & { code?: string; details?: unknown };
+    error.code = "PROJECT_CREATE_CLEANUP_FAILED";
+    error.details = { workdir, failures };
+    throw error;
+  }
 }
 
 function createFallbackModelCatalog(): ModelCatalog {
@@ -987,7 +1005,25 @@ export async function createProjectVisualization(args: {
       })
     };
   } catch (error) {
-    await removeCreatedProjectFiles(targetWorkdir);
+    try {
+      await removeCreatedProjectFiles(targetWorkdir);
+    } catch (cleanupError) {
+      const originalMessage = error instanceof Error ? error.message : String(error);
+      const cleanupMessage = cleanupError instanceof Error ? cleanupError.message : String(cleanupError);
+      const wrapped = new Error(`${originalMessage}; cleanup failed: ${cleanupMessage}`) as Error & {
+        code?: string;
+        details?: unknown;
+      };
+      wrapped.code =
+        asString((error as { code?: unknown })?.code) ??
+        (error instanceof Error && error.message ? error.message : undefined) ??
+        "PROJECT_CREATE_FAILED";
+      wrapped.details = {
+        cause: (error as { details?: unknown })?.details,
+        cleanup: (cleanupError as { details?: unknown })?.details
+      };
+      throw wrapped;
+    }
     throw error;
   }
 }

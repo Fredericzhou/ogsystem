@@ -1,4 +1,5 @@
 export type JsonRecord = Record<string, unknown>;
+const SINGLE_PROJECT_V1_MODE = "single-project-v1";
 
 export type ErrorView = {
   error: {
@@ -796,7 +797,7 @@ export function mapProjectTransferView(value: unknown): ProjectTransferView {
   const record = asRecord(value) ?? {};
   const project = asRecord(record.project) ?? {};
   return {
-    mode: record.mode === "single-project-v1" ? "single-project-v1" : "single-project-v1",
+    mode: SINGLE_PROJECT_V1_MODE,
     releaseManifest: record.releaseManifest,
     project: {
       systemPath: asString(project.systemPath) ?? "system.mmd",
@@ -820,7 +821,7 @@ export function mapProjectLoadView(value: unknown): ProjectLoadView {
     .filter((item): item is string => Boolean(item)) ?? [];
   return {
     workdir: asString(record.workdir) ?? "",
-    mode: record.mode === "single-project-v1" ? "single-project-v1" : "single-project-v1",
+    mode: SINGLE_PROJECT_V1_MODE,
     loadedFiles,
     validation: mapWorkbenchValidationView(record.validation),
     followUpActions: mapFollowUpActions(record.followUpActions)

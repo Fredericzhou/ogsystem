@@ -15,7 +15,7 @@ export function createInitialVisualizerState(resolvedLocale: string) {
   return {
     locale: resolvedLocale,
     workspace: null,
-    hasProject: true,
+    hasProject: false,
     projectCreateError: null,
     projectWizardDraft: null,
     roleCatalog: null,

@@ -22,6 +22,10 @@ import {
   createInitialStreamRefreshPlan,
   createInitialVisualizerState
 } from "../dist/visualizer/client-lifecycle-state.js";
+import {
+  mapProjectLoadView,
+  mapProjectTransferView
+} from "../dist/visualizer/dto.js";
 import { bindProjectWizardControls } from "../dist/visualizer/client-project-menu-controls.js";
 import {
   projectCreateErrorFromResponse,
@@ -149,6 +153,8 @@ test("client route state helpers parse and serialize lifecycle query state", () 
   });
   assert.equal(normalizeLifecycleView("operate", ""), "operate");
   assert.equal(normalizeLifecycleView("unknown", "project"), "project");
+  assert.equal(normalizeLifecycleView("", "operate"), "operate");
+  assert.equal(normalizeLifecycleView("unknown", "legacy"), "legacy");
 
   assert.equal(
     buildRouteSearch({
@@ -267,12 +273,18 @@ test("client lifecycle state factory centralizes initial workspace state", () =>
   });
   const state = createInitialVisualizerState("zh-CN");
   assert.equal(state.locale, "zh-CN");
+  assert.equal(state.hasProject, false);
   assert.equal(state.consoleTab, "project");
   assert.equal(state.buildMode, "edit");
   assert.equal(state.workbenchView, "bridge");
   assert.equal(state.operateTab, "overview");
   assert.equal(state.workbenchSavedPath, "system.mmd");
   assert.deepEqual(state.streamRefreshPlan, createInitialStreamRefreshPlan());
+});
+
+test("visualizer dto project views normalize the supported artifact mode", () => {
+  assert.equal(mapProjectTransferView({ mode: "unexpected", project: {} }).mode, "single-project-v1");
+  assert.equal(mapProjectLoadView({ mode: "unexpected", loadedFiles: [] }).mode, "single-project-v1");
 });
 
 test("client lifecycle panel renderers expose workspace and operate tab HTML", () => {

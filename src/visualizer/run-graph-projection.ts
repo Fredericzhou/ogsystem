@@ -26,11 +26,23 @@ function asBoolean(value: unknown): boolean | undefined {
   return typeof value === "boolean" ? value : undefined;
 }
 
+function toBase64Url(value: string): string {
+  return Buffer.from(value, "utf8")
+    .toString("base64")
+    .replace(/\+/g, "-")
+    .replace(/\//g, "_")
+    .replace(/=+$/g, "");
+}
+
 function buildMermaidLiveUrl(systemSource: string | null): string | undefined {
   if (!systemSource) {
     return undefined;
   }
-  return `https://mermaid.live/edit#pako:${encodeURIComponent(systemSource)}`;
+  const payload = JSON.stringify({
+    code: systemSource,
+    mermaid: { theme: "default" }
+  });
+  return `https://mermaid.live/edit#base64:${toBase64Url(payload)}`;
 }
 
 function extractGraphState(state: unknown): GraphState | undefined {

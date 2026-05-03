@@ -167,6 +167,7 @@ class HttpError extends Error {
 const API_PREFIX = "/api/v1";
 const DEFAULT_PROJECT_CREATE_REQUEST_CACHE_TTL_MS = 15 * 60 * 1000;
 const DEFAULT_PROJECT_CREATE_REQUEST_CACHE_MAX_SIZE = 128;
+const MAX_JSON_REQUEST_BYTES = 1024 * 1024;
 const VISUALIZER_MODULE_DIR = dirname(fileURLToPath(import.meta.url));
 const STUDIO_GRAPH_ASSET_PATH = VISUALIZER_MODULE_DIR.endsWith(`${sep}src${sep}visualizer`)
   ? resolve(VISUALIZER_MODULE_DIR, "..", "..", "dist", "visualizer", "studio-client", "studio-graph.js")
@@ -895,8 +896,16 @@ async function handleApiProjectReadiness(workdir: string, response: ServerRespon
 
 async function readJsonRequest(request: IncomingMessage): Promise<Record<string, unknown>> {
   const chunks: Buffer[] = [];
+  let totalBytes = 0;
   for await (const chunk of request) {
-    chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
+    const buffer = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk);
+    totalBytes += buffer.byteLength;
+    if (totalBytes > MAX_JSON_REQUEST_BYTES) {
+      throw new HttpError(413, "JSON_BODY_TOO_LARGE", `Request body must be 1048576 bytes or smaller.`, {
+        limitBytes: MAX_JSON_REQUEST_BYTES
+      });
+    }
+    chunks.push(buffer);
   }
   if (chunks.length === 0) {
     return {};

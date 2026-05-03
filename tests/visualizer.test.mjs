@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import os from "node:os";
 import path from "node:path";
 import http from "node:http";
-import { mkdtemp, mkdir, readFile, stat, symlink, writeFile } from "node:fs/promises";
+import { chmod, mkdtemp, mkdir, readFile, stat, symlink, writeFile } from "node:fs/promises";
 
 import { resolveProjectRoleRootDir } from "../dist/runtime/bundled-repos.js";
 import { compileExecutionSnapshot } from "../dist/runtime/compiler.js";
@@ -1303,6 +1303,28 @@ test("visualizer server exposes Mermaid workbench APIs and project export", asyn
     assert.equal(bridge.extracted.roles.some((role) => role.roleId === "demo-analyst" && role.bindingKind === "model"), true);
     assert.equal(bridge.extracted.flows.some((flow) => flow.eventType === "DONE"), true);
 
+    const invalidBridgeResponse = await fetch(`${url}/api/v1/project/studio/bridge`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        systemSource: "flowchart TD\nINVALID",
+        systemPath: "system.mmd"
+      })
+    });
+    assert.equal(invalidBridgeResponse.status, 200);
+    const invalidBridge = await invalidBridgeResponse.json();
+    assert.equal(invalidBridge.authoring, null);
+    assert.equal(invalidBridge.extracted, null);
+    assert.equal(invalidBridge.validation.ok, false);
+    assert.equal(
+      invalidBridge.validation.diagnostics.some((diagnostic) =>
+        diagnostic &&
+        diagnostic.source === "studio-bridge" &&
+        /Failed to extract Studio Bridge graph/.test(String(diagnostic.message))
+      ),
+      true
+    );
+
     const templatesResponse = await fetch(`${url}/api/v1/project/studio/templates`);
     assert.equal(templatesResponse.status, 200);
     const templates = await templatesResponse.json();
@@ -1975,6 +1997,20 @@ test("visualizer server reports stable project create error codes for invalid in
       assert.equal(response.status, testCase.status);
       assert.equal((await response.json()).error.code, testCase.code);
     }
+
+    const oversizedResponse = await fetch(`${url}/api/v1/project/create`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        projectId: "viz.create.errors",
+        templateId: "empty",
+        padding: "x".repeat(1024 * 1024)
+      })
+    });
+    assert.equal(oversizedResponse.status, 413);
+    const oversized = await oversizedResponse.json();
+    assert.equal(oversized.error.code, "JSON_BODY_TOO_LARGE");
+    assert.equal(oversized.error.details.limitBytes, 1024 * 1024);
   } finally {
     await new Promise((resolve) => server.close(resolve));
   }
@@ -2066,6 +2102,79 @@ test("visualizer server reports non-project directory conflicts during project c
     assert.equal(await readFile(path.resolve(userDirs, ".ogs", "notes", "keep.txt"), "utf8"), "keep\n");
     assert.equal(await readFile(path.resolve(userDirs, "og-roles", "custom", "keep.txt"), "utf8"), "keep\n");
   } finally {
+    await new Promise((resolve) => server.close(resolve));
+  }
+});
+
+test("visualizer server surfaces project create cleanup failures", async (t) => {
+  const workdir = await mkdtemp(path.join(os.tmpdir(), "ogsystem-visualizer-cleanup-failure-"));
+  const targetWorkdir = path.resolve(workdir, "cleanup-target");
+  await mkdir(targetWorkdir, { recursive: true });
+
+  let started;
+  try {
+    started = await startVisualizationServer({
+      workdir,
+      host: "127.0.0.1",
+      port: 0
+    });
+  } catch (error) {
+    const errorCode =
+      typeof error === "object" && error !== null && "code" in error ? error.code : undefined;
+    if (errorCode === "EPERM" || errorCode === "EACCES") {
+      t.skip(`visualizer listen unavailable in sandbox: ${errorCode}`);
+      return;
+    }
+    throw error;
+  }
+  const { server, url } = started;
+
+  try {
+    let locked = false;
+    const lockTargetWorkdir = (async () => {
+      for (let attempt = 0; attempt < 400; attempt += 1) {
+        const modelSelectionPath = path.resolve(targetWorkdir, ".ogs", "model-selection.json");
+        const readyForModelDefaults = await stat(modelSelectionPath).then(() => true).catch(() => false);
+        if (readyForModelDefaults) {
+          await chmod(targetWorkdir, 0o555);
+          locked = true;
+          return;
+        }
+        await new Promise((resolve) => setTimeout(resolve, 10));
+      }
+    })();
+
+    const response = await fetch(`${url}/api/v1/project/create`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        requestId: "cleanup-failure",
+        targetWorkdir,
+        projectId: "viz.cleanup.failure",
+        templateId: "empty",
+        modelProfileStrategy: {
+          modelDefaults: {
+            model: "opencode/gpt-5.4"
+          }
+        }
+      })
+    });
+    await lockTargetWorkdir;
+    if (!locked) {
+      t.skip("cleanup failure could not be induced in this filesystem environment");
+      return;
+    }
+    assert.equal(response.status, 500);
+    const payload = await response.json();
+    assert.equal(payload.error.code, "PROJECT_CREATE_FAILED");
+    assert.ok(payload.error.details.cleanup);
+    assert.equal(Array.isArray(payload.error.details.cleanup.failures), true);
+    assert.equal(
+      payload.error.details.cleanup.failures.some((failure) => /system\.mmd$/.test(String(failure.path))),
+      true
+    );
+  } finally {
+    await chmod(targetWorkdir, 0o755).catch(() => undefined);
     await new Promise((resolve) => server.close(resolve));
   }
 });

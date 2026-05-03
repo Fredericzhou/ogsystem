@@ -1,10 +1,15 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import os from "node:os";
+import path from "node:path";
+import { mkdtemp, mkdir, writeFile } from "node:fs/promises";
 
 import {
   applyCanvasDocumentToAuthoring,
   authoringToCanvasDocument,
+  inspectStudioBridgeDraft,
   importMermaidToAuthoring,
+  loadStudioAuthoringDraft,
   serializeAuthoringToMermaid
 } from "../dist/visualizer/studio-authoring.js";
 import { parseSystemFromMermaidSource } from "../dist/runtime/parse-mermaid.js";
@@ -310,6 +315,52 @@ test("Studio assisted authoring templates and Mermaid drafts produce valid autho
     systemSource: source
   });
   assert.equal(nl2mmdDraft.system.systemId, "test.studio.authoring");
+});
+
+test("Studio authoring draft load only suppresses missing draft files", async () => {
+  const workdir = await mkdtemp(path.join(os.tmpdir(), "ogsystem-studio-draft-load-"));
+  const missing = await loadStudioAuthoringDraft(workdir);
+  assert.equal(missing.authoring, null);
+
+  const draftDir = path.resolve(workdir, ".ogs", "studio");
+  await mkdir(draftDir, { recursive: true });
+  await writeFile(path.resolve(draftDir, "system.authoring.json"), "{invalid", "utf8");
+  await assert.rejects(
+    () => loadStudioAuthoringDraft(workdir),
+    /Invalid JSON/
+  );
+});
+
+test("Studio bridge inspection exposes authoring parse failures through validation diagnostics", async () => {
+  const invalidSource = ["flowchart TD", "%% system.id=test.studio.authoring", "invalid"].join("\n");
+  const bridge = await inspectStudioBridgeDraft({
+    workdir: "/tmp/project",
+    systemPath: "/tmp/project/system.mmd",
+    systemSource: invalidSource,
+    validateSystemSource: async () => ({
+      ok: false,
+      diagnostics: [
+        {
+          source: "parser",
+          severity: "error",
+          message: "Mermaid parse failed."
+        }
+      ]
+    })
+  });
+
+  assert.equal(bridge.authoring, null);
+  assert.equal(bridge.extracted, null);
+  assert.equal(bridge.validation.ok, false);
+  assert.equal(Array.isArray(bridge.validation.diagnostics), true);
+  assert.equal(
+    bridge.validation.diagnostics.some((diagnostic) =>
+      diagnostic &&
+      diagnostic.source === "studio-bridge" &&
+      /Failed to extract Studio Bridge graph/.test(String(diagnostic.message))
+    ),
+    true
+  );
 });
 
 test("Studio authoring commands create validated roles and edges from command forms", () => {

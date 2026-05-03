@@ -1,8 +1,8 @@
 # OGSystem 统一待办清单（Backlog）
 
-Date: 2026-04-12  
+Date: 2026-05-03  
 Status: active  
-Sources: `docs/long-term-stability-roadmap.md`, `docs/archive/delivery/optimization-execution-checklist-2026-04-10.md`, `docs/archive/delivery/single-graph-runtime-execution-checklist.md`, `docs/archive/delivery/cross-platform-rust-validation-and-gap-analysis-2026-04-12.md`, `docs/archive/delivery/source-commenting-hardening-plan-2026-04-11.md`
+Sources: `docs/long-term-stability-roadmap.md`, `docs/archive/delivery/optimization-execution-checklist-2026-04-10.md`, `docs/archive/delivery/single-graph-runtime-execution-checklist.md`, `docs/archive/delivery/cross-platform-rust-validation-and-gap-analysis-2026-04-12.md`, `docs/archive/delivery/source-commenting-hardening-plan-2026-04-11.md`, `docs/archive/delivery/ogsystem-canvas-centered-product-architecture-roadmap-2026-05-03.md`
 
 ## 1. 目的与边界
 
@@ -54,6 +54,52 @@ Sources: `docs/long-term-stability-roadmap.md`, `docs/archive/delivery/optimizat
 - [ ] 完成全量 `src/nl2mmd/*` 文件的文件头导读、关键转换/校验链路注释与必要类型契约说明。
 - [ ] 增加轻量注释治理门禁，至少覆盖新增/改动源码的文件头存在性与“关键逻辑改动需同步更新注释”检查。
 
+### P1. Visualizer 确认缺陷修复
+
+- [x] 修复 Mermaid Live URL 编码逻辑，覆盖 `src/visualizer/data.ts` 与 `src/visualizer/run-graph-projection.ts` 的同类实现，改为 Mermaid Live 可识别的压缩/编码格式，并补充回归测试。
+- [x] 清理 `src/visualizer/dto.ts` 中恒真三元表达式，避免 bundle `mode` 分支静默失效。
+- [x] 删除 `src/visualizer/studio-authoring.ts` 中重复的类型导入，消除拷贝遗留噪音。
+- [x] 为 `src/visualizer/server.ts` 的 `readJsonRequest()` 增加请求体大小上限和明确错误响应，避免大 body 拖垮进程。
+- [x] 复核并调整 `src/visualizer/client-lifecycle-state.ts` 的 `hasProject` 初始语义，避免首屏先假定“已有项目”导致闪烁或错误面板切换。
+- [x] 删除 `src/visualizer/client-route-state.ts` 中未使用的 `legacyView` 参数，或恢复其兼容用途并补测试。
+- [x] 区分 `loadStudioAuthoringDraft()` 中“草稿不存在”和“草稿损坏/读取失败”两类情况，避免 `src/visualizer/studio-authoring.ts` 直接吞错返回 `null`。
+- [x] 让 Studio bridge/import 的 Mermaid 解析失败对用户可见，避免 `inspectStudioBridgeDraft()` 在 import 失败时静默丢失错误上下文。
+- [x] 补齐项目创建失败回滚时的清理错误处理，避免 `removeCreatedProjectFiles()` 静默忽略残留文件。
+
+### P1. Visualizer 短期稳态优化
+
+- [ ] 为 `runsListCache`、项目投影缓存和相关长生命周期缓存建立明确的上限/失效策略，避免进程常驻后占用不可控增长。
+- [ ] 评估并优化 SSE 每秒轮询文件系统的实现，至少补连接数、IO 频率和关闭行为的观测指标。
+- [ ] 将 `src/visualizer/client-stream-state.ts` 的流式事件去重从线性扫描改为显式索引结构，降低高频事件追加成本。
+- [ ] 评估 `src/visualizer/project-projection.ts` 的角色目录摘要生成路径，区分“内容指纹”与“缓存 token”场景，避免不必要的全文件读取。
+- [ ] 复核 `src/visualizer/client-run-data-loaders.ts` 的日志并发抓取策略，为多 role 场景增加并发控制或分批加载。
+- [ ] 复核 `src/visualizer/ops-summary-projection.ts` 的 run 汇总读取路径，确认真实瓶颈后再决定是否并行化或加缓存。
+- [ ] 为 `src/visualizer/client-app.ts` 的高频 `innerHTML` 重绘热点建立优先级列表，先替换最容易造成焦点丢失和闪烁的面板。
+- [ ] 为关键异步加载态补更稳定的 loading skeleton 或占位策略，至少覆盖项目首页、Build 工作台和运行明细主面板。
+
+### P2. Visualizer 状态与可维护性治理
+
+- [ ] 拆分 `createInitialVisualizerState()` 的巨型扁平状态对象，按 project/build/operate/review/logs/streaming 切片组织。
+- [ ] 继续审查 run 切换时的状态重置路径，重点验证 review、failure、resume、logs 是否仍存在短暂陈旧数据窗口。
+- [ ] 为 `listTimer`、`workbenchValidationTimer`、`streamRefreshTimer` 等定时器建立统一清理约束，避免后续继续分散增长。
+- [ ] 继续拆分 `src/visualizer/client-app.ts` 与 `src/visualizer/server.ts` 的超大文件，把稳定边界沉淀为独立模块。
+- [ ] 收敛 `asString`、`asRecord`、`escapeHtml` 等重复辅助函数，统一语义并减少多份拷贝漂移。
+
+### P2. Visualizer 无障碍与交互修复
+
+- [ ] 对 visualizer 主要交互面板做一次系统性无障碍审计，优先补足可聚焦区域、label 关联、语义角色和非颜色状态提示。
+- [ ] 复核 Studio 图命令表单与 chat 面板的 ARIA 语义，避免把非模态区域声明成 `dialog`。
+- [ ] 为工作台编辑、聊天输入和其他高频输入路径补明确的交互节流/防抖策略说明，避免后续回归到每击键重算。
+
+### P2. Visualizer 风险待验证
+
+- [ ] 验证 `requestId` 幂等缓存是否存在同 ID 并发双执行窗口；若成立，再补原子占位或 in-flight 协调。
+- [ ] 验证 SSE 连接在快速切换 run、页面中断和网络抖动场景下是否会出现悬挂连接累积。
+- [ ] 审查 `normalizeCanvasEdgeId()` 的冲突重试路径，确认是否存在极端输入下的无界循环或性能退化。
+- [ ] 评估 Mermaid Live URL 在大图场景下的长度上限和回退策略，避免修复编码后仍遇到浏览器长度限制。
+- [ ] 审查 visualizer API 的路径解析面，区分已有限制与仍需补强的 workdir 边界，避免泛化为“全部存在路径穿越”。
+- [ ] 针对 `runSystemWithAdapter()` 直接运行在 HTTP 进程内这一已知可用性风险，评估隔离方案与取舍，形成是否需要进程外执行或队列化的决策记录。
+
 ## 3. 稳定后再做（延后项）
 
 - [ ] 在 CI 增加 `pnpm pack` + 安装态 smoke test，覆盖 npm/pnpm 安装、`ogs help` 与模板项目启动。
@@ -75,3 +121,4 @@ Sources: `docs/long-term-stability-roadmap.md`, `docs/archive/delivery/optimizat
 
 - 已完成稳定性基线 checklist：`docs/archive/delivery/optimization-execution-checklist-2026-04-10.md`
 - 已完成单运行时迁移 checklist：`docs/archive/delivery/single-graph-runtime-execution-checklist.md`
+- Visualizer 产品架构路线与阶段性评审：`docs/archive/delivery/ogsystem-canvas-centered-product-architecture-roadmap-2026-05-03.md`
