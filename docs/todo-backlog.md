@@ -2,7 +2,7 @@
 
 Date: 2026-05-03  
 Status: active  
-Sources: `docs/long-term-stability-roadmap.md`, `docs/archive/delivery/optimization-execution-checklist-2026-04-10.md`, `docs/archive/delivery/single-graph-runtime-execution-checklist.md`, `docs/archive/delivery/cross-platform-rust-validation-and-gap-analysis-2026-04-12.md`, `docs/archive/delivery/source-commenting-hardening-plan-2026-04-11.md`, `docs/archive/delivery/ogsystem-canvas-centered-product-architecture-roadmap-2026-05-03.md`
+Sources: `docs/long-term-stability-roadmap.md`, `docs/archive/delivery/optimization-execution-checklist-2026-04-10.md`, `docs/archive/delivery/single-graph-runtime-execution-checklist.md`, `docs/archive/delivery/cross-platform-rust-validation-and-gap-analysis-2026-04-12.md`, `docs/archive/delivery/source-commenting-hardening-plan-2026-04-11.md`, `docs/archive/delivery/ogsystem-canvas-centered-product-architecture-roadmap-2026-05-03.md`, `docs/archive/delivery/ogsystem-visualizer-optimization-checklist-calibrated-2026-05-03.md`
 
 ## 1. 目的与边界
 
@@ -74,7 +74,7 @@ Sources: `docs/long-term-stability-roadmap.md`, `docs/archive/delivery/optimizat
 - [ ] 评估 `src/visualizer/project-projection.ts` 的角色目录摘要生成路径，区分“内容指纹”与“缓存 token”场景，避免不必要的全文件读取。
 - [ ] 复核 `src/visualizer/client-run-data-loaders.ts` 的日志并发抓取策略，为多 role 场景增加并发控制或分批加载。
 - [ ] 复核 `src/visualizer/ops-summary-projection.ts` 的 run 汇总读取路径，确认真实瓶颈后再决定是否并行化或加缓存。
-- [ ] 为 `src/visualizer/client-app.ts` 的高频 `innerHTML` 重绘热点建立优先级列表，先替换最容易造成焦点丢失和闪烁的面板。
+- [ ] 为 `src/visualizer/client-app.ts` 的高频 `innerHTML` 重绘热点建立优先级列表；首批热点已覆盖 `operateTabs` / `workbenchStatus` / `workbenchTabs` / `workbenchViewTabs` / `workbenchActions`，剩余优先处理 `runListEl` 与 `consoleTabsEl`。
 - [ ] 为关键异步加载态补更稳定的 loading skeleton 或占位策略，至少覆盖项目首页、Build 工作台和运行明细主面板。
 
 ### P2. Visualizer 状态与可维护性治理
@@ -88,7 +88,7 @@ Sources: `docs/long-term-stability-roadmap.md`, `docs/archive/delivery/optimizat
 ### P2. Visualizer 无障碍与交互修复
 
 - [ ] 对 visualizer 主要交互面板做一次系统性无障碍审计，优先补足可聚焦区域、label 关联、语义角色和非颜色状态提示。
-- [ ] 复核 Studio 图命令表单与 chat 面板的 ARIA 语义，避免把非模态区域声明成 `dialog`。
+- [ ] 复核 Studio 图命令表单与 chat 面板的 ARIA 语义，避免把非模态区域声明成 `dialog`；其中 chat 面板已改为 `region`，命令表单仍待确认其 modal 语义与焦点/键盘行为是否完备。
 - [ ] 为工作台编辑、聊天输入和其他高频输入路径补明确的交互节流/防抖策略说明，避免后续回归到每击键重算。
 
 ### P2. Visualizer 风险待验证
