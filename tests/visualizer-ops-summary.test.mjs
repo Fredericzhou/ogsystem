@@ -204,6 +204,8 @@ test("ops summary aggregates failures, review/rework pending, and resume blocker
   });
 
   assert.equal(summary.summary.recentFailureCount, 1);
+  assert.equal(summary.scope.strategy, "bounded-sequential-scan");
+  assert.deepEqual(summary.scope.runtimeEventSources, ["timeline.jsonl", "events.ndjson"]);
   assert.equal(summary.recentFailures[0].runId, runId);
   assert.equal(summary.failureGroups.byRole[0].key, "demo-analyst");
   assert.equal(summary.failureGroups.byErrorCode[0].key, "CONTRACT_OUTPUT_INVALID");

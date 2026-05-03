@@ -1567,7 +1567,10 @@ test("visualizer server supports empty workspace project creation without implic
     assert.equal(catalogResponse.status, 200);
     const catalog = await catalogResponse.json();
     assert.equal(catalog.source, "installed");
-    assert.ok(catalog.roles.some((role) => role.roleId === "demo-analyst"));
+    const demoCatalogRole = catalog.roles.find((role) => role.roleId === "demo-analyst");
+    assert.ok(demoCatalogRole);
+    assert.equal(typeof demoCatalogRole.catalogToken, "string");
+    assert.equal(demoCatalogRole.digest, demoCatalogRole.catalogToken);
     await assert.rejects(() => stat(path.resolve(workdir, ".ogs")), /ENOENT/);
     await assert.rejects(() => stat(path.resolve(workdir, "og-roles")), /ENOENT/);
 

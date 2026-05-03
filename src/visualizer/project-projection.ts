@@ -1107,19 +1107,23 @@ async function readRoleCatalogEntry(args: {
   }
   const promptPath = manifest?.promptTemplate ? resolve(roleDir, manifest.promptTemplate) : undefined;
   const schemaPath = manifest?.outputSchema ? resolve(roleDir, manifest.outputSchema) : undefined;
-  const digest = createHash("sha256");
+  const catalogToken = createHash("sha256");
   for (const filePath of [
     roleJsonPath,
     promptPath,
     schemaPath,
     resolve(roleDir, "source.json")
   ].filter((value): value is string => Boolean(value))) {
-    digest.update(filePath.slice(roleDir.length + 1));
-    digest.update("\0");
-    digest.update(await readFile(filePath).catch(() => ""));
-    digest.update("\0");
+    const fileStat = await stat(filePath).catch(() => undefined);
+    catalogToken.update(filePath.slice(roleDir.length + 1));
+    catalogToken.update("\0");
+    catalogToken.update(fileStat ? String(fileStat.mtimeMs) : "missing");
+    catalogToken.update("\0");
+    catalogToken.update(fileStat ? String(fileStat.size) : "0");
+    catalogToken.update("\0");
   }
   const projectRoleDir = args.projectRoleRootDir ? resolve(args.projectRoleRootDir, args.roleId) : undefined;
+  const token = catalogToken.digest("hex");
   return {
     roleId: manifest?.roleId ?? args.roleId,
     name: manifest?.name ?? args.roleId,
@@ -1127,7 +1131,8 @@ async function readRoleCatalogEntry(args: {
     roleVersion: manifest?.roleVersion,
     tags: manifest?.tags ?? manifest?.preferredModelTags ?? [],
     source: args.source,
-    digest: digest.digest("hex"),
+    catalogToken: token,
+    digest: token,
     health,
     hasRoleJson: await pathExists(roleJsonPath),
     hasPrompt: promptPath ? await pathExists(promptPath) : false,

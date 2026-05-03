@@ -375,7 +375,9 @@ export async function inspectProjectOpsSummaryVisualization(
       readinessLimit,
       indexedRunCount: indexedRuns.length,
       inspectedRunCount: inspectedRuns,
-      skippedRunCount: skippedRuns
+      skippedRunCount: skippedRuns,
+      strategy: "bounded-sequential-scan",
+      runtimeEventSources: ["timeline.jsonl", "events.ndjson"]
     },
     recentFailures: failures.slice(0, failureLimit),
     failureGroups: {

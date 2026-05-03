@@ -71,9 +71,9 @@ Sources: `docs/long-term-stability-roadmap.md`, `docs/archive/delivery/optimizat
 - [x] 为 `runsListCache`、项目投影缓存和相关长生命周期缓存建立明确的上限/失效策略，避免进程常驻后占用不可控增长。
 - [x] 评估并优化 SSE 每秒轮询文件系统的实现，至少补连接数、IO 频率和关闭行为的观测指标。
 - [x] 将 `src/visualizer/client-stream-state.ts` 的流式事件去重从线性扫描改为显式索引结构，降低高频事件追加成本。
-- [ ] 评估 `src/visualizer/project-projection.ts` 的角色目录摘要生成路径，区分“内容指纹”与“缓存 token”场景，避免不必要的全文件读取。
+- [x] 评估 `src/visualizer/project-projection.ts` 的角色目录摘要生成路径，区分“内容指纹”与“缓存 token”场景，避免不必要的全文件读取。
 - [x] 复核 `src/visualizer/client-run-data-loaders.ts` 的日志并发抓取策略，为多 role 场景增加并发控制或分批加载。
-- [ ] 复核 `src/visualizer/ops-summary-projection.ts` 的 run 汇总读取路径，确认真实瓶颈后再决定是否并行化或加缓存。
+- [x] 复核 `src/visualizer/ops-summary-projection.ts` 的 run 汇总读取路径，确认真实瓶颈后再决定是否并行化或加缓存。
 - [x] 为 `src/visualizer/client-app.ts` 的高频 `innerHTML` 重绘热点建立优先级列表；首批热点已覆盖 `operateTabs` / `workbenchStatus` / `workbenchTabs` / `workbenchViewTabs` / `workbenchActions` / `runListEl` / `consoleTabsEl`。
 - [ ] 为关键异步加载态补更稳定的 loading skeleton 或占位策略，至少覆盖项目首页、Build 工作台和运行明细主面板。
 
