@@ -1,4 +1,5 @@
 import type { StreamRefreshPlan } from "./client-stream-state.js";
+import { createStreamCursorIndex } from "./client-stream-state.js";
 
 export function createInitialStreamRefreshPlan(): StreamRefreshPlan {
   return {
@@ -89,6 +90,7 @@ export function createInitialVisualizerState(resolvedLocale: string) {
     timelineErrorCode: "",
     eventCursor: 0,
     events: [],
+    eventCursorIndex: createStreamCursorIndex([]),
     detail: null,
     graph: null,
     failure: null,

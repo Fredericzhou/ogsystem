@@ -88,7 +88,9 @@ import {
   type ReleaseReadinessDecision
 } from "./client-release-readiness.js";
 import {
+  appendIndexedStreamEntry,
   appendStreamEntry,
+  createStreamCursorIndex,
   formatReviewStatusLabel,
   getStreamRefreshPlan,
   type StreamRefreshPlan
@@ -102,7 +104,9 @@ export {
 } from "./client-route-state.js";
 export { buildReleaseReadinessDecision } from "./client-release-readiness.js";
 export {
+  appendIndexedStreamEntry,
   appendStreamEntry,
+  createStreamCursorIndex,
   formatReviewStatusLabel,
   getStreamRefreshPlan
 } from "./client-stream-state.js";
@@ -162,7 +166,8 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
     const renderStudioChatPanelHtml = ${renderStudioChatPanelHtml.toString()};
     const attachStudioBridgeControls = ${attachStudioBridgeControls.toString()};
     const attachStudioChatControls = ${attachStudioChatControls.toString()};
-    const appendStreamEntry = ${appendStreamEntry.toString()};
+    const appendIndexedStreamEntry = ${appendIndexedStreamEntry.toString()};
+    const createStreamCursorIndex = ${createStreamCursorIndex.toString()};
     const getStreamRefreshPlan = ${getStreamRefreshPlan.toString()};
     const normalizeLifecycleView = ${normalizeLifecycleView.toString()};
     const formatReviewStatusLabel = ${formatReviewStatusLabel.toString()};
@@ -2897,12 +2902,14 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
       if (!runId) {
         state.events = [];
         state.eventCursor = 0;
+        state.eventCursorIndex = createStreamCursorIndex(state.events);
         renderTimeline(state.events);
         return;
       }
       const eventsPayload = await requestJson(buildTimelineQuery(runId, { cursor: 0, limit: 250 }));
       state.events = eventsPayload.events || [];
       state.eventCursor = eventsPayload.nextCursor || 0;
+      state.eventCursorIndex = createStreamCursorIndex(state.events);
       renderTimeline(state.events);
       renderDetail();
     }
@@ -4081,6 +4088,7 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
       state.detail = detail;
       state.events = eventsPayload.events || [];
       state.eventCursor = eventsPayload.nextCursor || 0;
+      state.eventCursorIndex = createStreamCursorIndex(state.events);
       state.graph = graphPayload;
       state.reviews = reviewsPayload;
       state.contractRuntimeStatus = contractRuntimeStatus;
@@ -4159,6 +4167,7 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
       state.resumeDiagnosticsLoaded = false;
       state.resumeDiagnosticsStale = false;
       state.events = [];
+      state.eventCursorIndex = createStreamCursorIndex(state.events);
       state.engineLogs = [];
       state.roleLogs = [];
       state.logsLoaded = false;
@@ -4345,7 +4354,7 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
           }
           state.eventCursor = payload.cursor + 1;
           if (recordMatchesTimelineFilters(payload.record)) {
-            state.events = appendStreamEntry(state.events, payload, 250);
+            state.events = appendIndexedStreamEntry(state.events, state.eventCursorIndex, payload, 250);
             renderTimeline(state.events);
           }
           scheduleStreamRefresh(getStreamRefreshPlan(payload.record.type));

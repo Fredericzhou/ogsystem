@@ -3,8 +3,10 @@ import assert from "node:assert/strict";
 import vm from "node:vm";
 
 import {
+  appendIndexedStreamEntry,
   appendStreamEntry,
   buildClientAppScript,
+  createStreamCursorIndex,
   buildReleaseReadinessDecision,
   buildRouteSearch,
   formatReviewStatusLabel,
@@ -2336,6 +2338,14 @@ test("visualizer client stream helpers dedupe timeline entries and cap history",
 
   const second = appendStreamEntry([{ cursor: 1 }, { cursor: 2 }], { cursor: 3 }, 2);
   assert.deepEqual(second, [{ cursor: 2 }, { cursor: 3 }]);
+
+  const cursorIndex = createStreamCursorIndex([{ cursor: 1 }, { cursor: 2 }]);
+  const duplicate = appendIndexedStreamEntry([{ cursor: 1 }, { cursor: 2 }], cursorIndex, { cursor: 2 }, 2);
+  assert.deepEqual(duplicate, [{ cursor: 1 }, { cursor: 2 }]);
+
+  const appended = appendIndexedStreamEntry([{ cursor: 1 }, { cursor: 2 }], cursorIndex, { cursor: 3 }, 2);
+  assert.deepEqual(appended, [{ cursor: 2 }, { cursor: 3 }]);
+  assert.deepEqual([...cursorIndex].sort((a, b) => a - b), [2, 3]);
 });
 
 test("visualizer client stream refresh plan keeps review and runtime refreshes targeted", () => {
@@ -2869,6 +2879,30 @@ test("visualizer client appends SSE timeline entries and refreshes only targeted
   assert.ok(reviewCallsAfter > 0);
   assert.equal(failureCallsAfter, 0);
   assert.ok(readinessCallsAfter > 0);
+});
+
+test("visualizer client stream cursor index dedupes repeated SSE events", async () => {
+  const harness = await createClientHarness({
+    decisionPhase: "recorded"
+  });
+
+  const stream = harness.eventSources.at(-1);
+  assert.ok(stream);
+  const event = {
+    cursor: 2,
+    record: {
+      type: "runtime_error",
+      at: "2026-04-23T09:16:00.000Z",
+      roleId: "demo-analyst",
+      errorCode: "E_DUPLICATE"
+    }
+  };
+  stream.emit(event);
+  stream.emit(event);
+  await harness.flushTimers();
+
+  const timelineHtml = harness.document.getElementById("timeline").innerHTML;
+  assert.equal(timelineHtml.match(/#2/g)?.length ?? 0, 1);
 });
 
 test("visualizer client keeps the workbench editor visible with source intact during validation", async () => {

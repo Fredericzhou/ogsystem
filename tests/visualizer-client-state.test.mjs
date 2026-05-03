@@ -62,7 +62,9 @@ import {
   listFromRecord
 } from "../dist/visualizer/client-release-readiness.js";
 import {
+  appendIndexedStreamEntry,
   appendStreamEntry,
+  createStreamCursorIndex,
   formatReviewStatusLabel,
   getStreamRefreshPlan
 } from "../dist/visualizer/client-stream-state.js";
@@ -236,6 +238,17 @@ test("client stream state helpers keep refresh scope explicit", () => {
     { cursor: 2 },
     { cursor: 3 }
   ]);
+  const cursorIndex = createStreamCursorIndex([{ cursor: 1 }, { cursor: 2 }]);
+  assert.deepEqual(appendIndexedStreamEntry([{ cursor: 1 }, { cursor: 2 }], cursorIndex, { cursor: 2 }, 2), [
+    { cursor: 1 },
+    { cursor: 2 }
+  ]);
+  const indexed = appendIndexedStreamEntry([{ cursor: 1 }, { cursor: 2 }], cursorIndex, { cursor: 3 }, 2);
+  assert.deepEqual(indexed, [
+    { cursor: 2 },
+    { cursor: 3 }
+  ]);
+  assert.deepEqual([...cursorIndex].sort((a, b) => a - b), [2, 3]);
 
   assert.deepEqual(getStreamRefreshPlan("human_review_approved"), {
     detailGraph: true,

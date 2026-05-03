@@ -122,9 +122,8 @@ Status: calibrated
 #### 21. `appendStreamEntry` 去重使用线性扫描
 
 - 文件：`client-stream-state.ts`
-- 现状：最多对 250 条 entries 做线性扫描。
-- 定性：上限明确，属于中低风险热点，不应抢在更大的稳态问题前处理。
-- 建议：后续可改为 `Set` 或游标索引去重。
+- 现状：已新增显式 cursor 索引结构，SSE 追加路径使用 `Set` 去重，并在历史裁剪时同步清理索引。
+- 状态：已修复。
 
 #### 22. SVG 拓扑排序 `queue.shift()` 为 O(n)
 
