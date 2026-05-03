@@ -28,7 +28,7 @@
     "test": "pnpm build && node --test tests/*.mjs",
     "test:studio-import-guardrails": "node --test tests/visualizer-studio-import-guardrails.test.mjs",
     "test:visualizer-browser": "pnpm build && playwright test tests-e2e/visualizer-studio-graph.spec.ts",
-    "test:visualizer": "pnpm build && pnpm run test:studio-import-guardrails && node --test tests/visualizer-client.test.mjs tests/visualizer-data.test.mjs tests/visualizer-ops-summary.test.mjs tests/visualizer-project-readiness.test.mjs tests/visualizer-studio-authoring.test.mjs tests/visualizer.test.mjs",
+    "test:visualizer": "pnpm build && pnpm run test:studio-import-guardrails && node --test tests/visualizer-client-state.test.mjs tests/visualizer-client.test.mjs tests/visualizer-data.test.mjs tests/visualizer-ops-summary.test.mjs tests/visualizer-page-shell.test.mjs tests/visualizer-project-readiness.test.mjs tests/visualizer-studio-authoring.test.mjs tests/visualizer.test.mjs",
     "test:coverage": "pnpm build && node --test --experimental-test-coverage tests/*.mjs",
     "test:runtime-regression": "pnpm build && node --test tests/graph-runtime.integration.test.mjs tests/resume-session.test.mjs tests/session-recovery.test.mjs tests/runtime-fault-injection.test.mjs",
     "test:fault-injection": "pnpm build && node --test tests/opencode-executor.test.mjs tests/resume-session.test.mjs tests/runtime-fault-injection.test.mjs",

@@ -4,6 +4,11 @@ Date: 2026-05-02
 
 ## Conclusion
 
+这项评审需要拆成两个结论：
+
+- 中文显示名 phase 1：已完成。
+- 生命周期模块化重构：未完成，仍处于演进中。
+
 当前可视化能力已经具备可用的模块化基础，但还不是完全平台化的最佳实践状态。
 
 适合继续演进的方向是：
@@ -29,9 +34,9 @@ title / label = localized business display name
 
 当前实现状态需要区分清楚：
 
-- 角色显示名基础能力已经存在：`StudioAuthoringRole.title` 已定义，角色表单已支持 `title`，图节点已显示 `role.title || roleId`。
-- 真正缺口是连线显示名：`StudioAuthoringFlow` 尚未定义 `label?: string`，边渲染和边表单仍主要围绕 `eventType`。
-- Mermaid 显示名 metadata 应后置；第一阶段应先稳定保存在 `.ogs/studio/system.authoring.json` / `StudioAuthoringDocument`。
+- phase 1 中文显示名能力已经落地：`StudioAuthoringRole.title` 和 `StudioAuthoringFlow.label` 已定义，角色/连线表单、图渲染、Inspector、lists、search/filter、Chat patch、authoring draft 持久化和相关测试均已覆盖。
+- Mermaid 显示名 metadata 仍应后置；第一阶段显示名稳定保存在 `.ogs/studio/system.authoring.json` / `StudioAuthoringDocument`。
+- 当前真正未完成的是生命周期模块化目标架构，而不是中文显示名 contract。
 
 ## Current Modularity Assessment
 
@@ -58,11 +63,11 @@ title / label = localized business display name
 
 ### Gaps
 
-- `src/visualizer/client-app.ts` 约 4600 行，承担路由、状态、渲染、事件、API、表单和生命周期逻辑，已经偏“大控制器”。
-- `src/visualizer/page-shell.ts` 约 1300 行，HTML shell、CSS 和布局在同一文件中，长期维护会变重。
+- `src/visualizer/client-app.ts` 约 4900 行，承担路由、状态、渲染、事件、API、表单和生命周期逻辑，已经偏“大控制器”。
+- `src/visualizer/page-shell.ts` 已拆成 shell 组合入口、CSS renderer 和 body template；后续维护不再需要在单文件里同时修改 HTML shell、CSS 和布局。
 - Project / Build / Validate & Release / Operate 在产品体验上已分层，但代码尚未完全按生命周期工作区拆分。
+- Route state、release readiness decision、stream refresh state 已从 `client-app.ts` 外提为稳定 state helper 模块，并有直接单元测试覆盖。
 - Project Wizard、Open Project、Role Catalog、Build Chat、Workbench、Operate tabs 等仍大量使用 DOM 字符串拼接和局部事件绑定。
-- Authoring schema 已有角色 `title`，但 flow `label` 尚未正式固化；“运行标识 vs 显示名称”的 contract 需要补齐到连线层。
 - Chat to MMD、图表单、Inspector、Project Wizard 都可能创建或修改 authoring，后续需要统一 patch/validation 边界，避免多入口写入不一致。
 
 ## Long-Term Stability Assessment
@@ -73,7 +78,7 @@ title / label = localized business display name
 
 - 新功能继续叠加到 `client-app.ts` 会增加状态同步和重渲染副作用。
 - 表单、Chat、Graph、Project 创建加载能力继续增长后，回归成本会升高。
-- 如果不先补齐连线显示名 contract，中文命名可能被错误地塞进 `eventType`，进而影响内核语义。
+- 生命周期 workspace / panels / state 边界需要继续按触达范围递进拆分；当前已先落地 route/release/stream state 边界和 page shell 边界。
 
 判断：
 
@@ -95,7 +100,7 @@ Next target: modular and contract-stable
 }
 ```
 
-角色显示名是当前已有基础能力，后续重点是补测试和统一 Inspector/Chat 表达。
+角色/连线显示名均已覆盖基础测试，后续重点是保持多入口 patch/validation 一致。
 
 连线：
 
@@ -106,7 +111,7 @@ Next target: modular and contract-stable
 }
 ```
 
-连线显示名是当前主要缺口，应作为第一阶段落地重点。
+连线显示名 phase 1 已完成，后续重点不再是补 contract，而是保持运行标识与显示名称分离，并决定 phase 2 是否进入 Mermaid metadata。
 
 图上显示：
 
@@ -210,7 +215,17 @@ src/visualizer/
   studio-client/
 ```
 
-This does not need to happen in one large refactor. New feature work should avoid increasing `client-app.ts` and should gradually extract stable panels.
+This does not need to happen in one large refactor. New feature work should avoid increasing `client-app.ts` and should gradually extract stable panels. The 2026-05-03 follow-up landed the first stable state modules:
+
+- `src/visualizer/client-route-state.ts`
+- `src/visualizer/client-release-readiness.ts`
+- `src/visualizer/client-stream-state.ts`
+
+It also split page shell composition:
+
+- `src/visualizer/page-shell.ts`
+- `src/visualizer/page-shell-styles.ts`
+- `src/visualizer/page-shell-template.ts`
 
 ### State Boundaries
 
@@ -249,7 +264,7 @@ type StudioAuthoringFlow = {
   fromRoleId: string;
   toRoleId: string;
   eventType: string;
-  // Missing today; add in first phase.
+  // Phase 1 landed as optional display metadata.
   label?: string;
   // existing fields...
 };
@@ -260,14 +275,14 @@ Rules:
 - `roleId` is required and stable.
 - `eventType` is required and stable.
 - `title` and `label` are optional display fields.
-- `title` already exists for roles; `label` must be added for flows.
+- `title` and `label` are both landed in phase 1.
 - UI may allow Chinese `title` and `label`.
 - UI must validate or auto-generate ASCII-safe `roleId` and `eventType`.
 - Chat to MMD must emit structured patches, not raw Mermaid text, when creating display names.
 
-## Before Implementation
+## Phase 1 Completion Checklist
 
-These items should be completed before landing flow labels and deeper visual editing:
+These items were completed to land flow labels and phase 1 visual editing:
 
 - [x] Confirm role display foundation: `StudioAuthoringRole.title` exists and graph nodes display `title || roleId`.
 - [x] Define `label?: string` in `StudioAuthoringFlow`.
@@ -288,13 +303,24 @@ These items should be completed before landing flow labels and deeper visual edi
 
 ## Recommended Execution Order
 
-1. Add `StudioAuthoringFlow.label?: string`, validation, commands, and edge form support.
-2. Update graph projection/rendering so edges display `label || eventType`.
-3. Update Inspector to show display name and runtime identity for roles and flows; role side should reuse existing `title`.
-4. Add tests for Chinese role title and flow label, ensuring generated Mermaid still only uses stable `roleId/eventType` and parses.
-5. Update Chat to MMD structured patch contract to distinguish `roleId/title` and `eventType/label`.
-6. Decide later whether to serialize display metadata into `system.mmd`; if yes, add parser allow-list first.
-7. Extract Project/Build panels only as related code is touched; avoid a large upfront refactor.
+1. Keep `role.title` / `flow.label` as authoring display metadata only and avoid pushing localized names into runtime IDs.
+2. Continue preserving display metadata through graph commands, projection, Inspector, filter/search, and Chat patch flows.
+3. Decide later whether to serialize display metadata into `system.mmd`; if yes, add parser allow-list first.
+4. Extract Project/Build panels only as related code is touched; avoid a large upfront refactor.
+5. Continue splitting Project/Build/Studio/Operate/Release panels as those surfaces are touched; route, release readiness, and stream refresh state boundaries have been extracted.
+
+## 2026-05-03 Modularity Follow-Up
+
+Completed after the phase 1 Chinese display-label delivery:
+
+- [x] Split route lifecycle query state into `client-route-state.ts`.
+- [x] Split release export readiness gating into `client-release-readiness.ts`.
+- [x] Split stream refresh/review status helpers into `client-stream-state.ts`.
+- [x] Keep `client-app.ts` compatibility exports and browser script injection behavior stable.
+- [x] Split page shell CSS into `page-shell-styles.ts`.
+- [x] Split page shell body/layout markup into `page-shell-template.ts`.
+- [x] Add direct state helper tests and page shell mount-point/style tests.
+- [x] Include the new tests in `pnpm run test:visualizer`.
 
 ## Acceptance Criteria
 
@@ -312,6 +338,8 @@ These items should be completed before landing flow labels and deeper visual edi
 - [x] Duplicate detection, join/source logic, route/order logic, and contracts remain keyed only by `fromRoleId + eventType + toRoleId`, allowing repeated Chinese labels.
 - [x] Existing runtime, parser, compiler, run artifact, resume, readiness, and release tests keep passing.
 - [x] Browser smoke confirms Chinese labels are visible in the graph.
+- [x] Initial lifecycle state helpers are split into stable modules outside `client-app.ts`.
+- [x] `page-shell.ts` no longer combines shell HTML, CSS, and layout composition at current scale.
 
 Implementation status:
 
@@ -319,6 +347,7 @@ Implementation status:
 - `serializeAuthoringToMermaid()` still emits stable `roleId` / `eventType` only.
 - Re-importing from Mermaid intentionally drops display metadata until phase 2 metadata allow-listing exists.
 - Chat-to-MMD structured authoring patches can carry `role.title` and `flow.label`; Mermaid preview remains runtime-stable.
+- 完整生命周期 workspace/panel 目标架构仍是长期演进方向；本交付的剩余可执行任务已清零，当前状态应视为“usable, tested, and incrementally modularized”。
 
 ## Non-Goals
 
