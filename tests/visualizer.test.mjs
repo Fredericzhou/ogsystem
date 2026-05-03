@@ -1031,6 +1031,58 @@ test("visualizer server reports SSE active connections and closes them", async (
   }
 });
 
+test("visualizer server clears SSE metrics after multiple quick disconnects", async (t) => {
+  const workdir = await mkdtemp(path.join(os.tmpdir(), "ogsystem-visualizer-sse-disconnect-"));
+  await seedProjectFixture(workdir);
+  const { runId } = await createFixtureRun(workdir);
+  let started;
+  try {
+    started = await startVisualizationServer({
+      workdir,
+      host: "127.0.0.1",
+      port: 0
+    });
+  } catch (error) {
+    const errorCode =
+      typeof error === "object" && error !== null && "code" in error
+        ? error.code
+        : undefined;
+    if (errorCode === "EPERM" || errorCode === "EACCES") {
+      t.skip(`visualizer listen unavailable in sandbox: ${errorCode}`);
+      return;
+    }
+    throw error;
+  }
+  const { server, url } = started;
+
+  try {
+    const first = await openSseUntilFirstChunk(`${url}/api/v1/runs/${runId}/stream?cursor=0`);
+    const second = await openSseUntilFirstChunk(`${url}/api/v1/runs/${runId}/stream?cursor=1`);
+    const activeDiagnostics = await waitForVisualizerDiagnostics(
+      url,
+      (diagnostics) => diagnostics.sse.activeConnections === 2
+    );
+    assert.equal(activeDiagnostics.sse.activeByRunId[runId], 2);
+
+    first.request.destroy();
+    second.request.destroy();
+    await Promise.all([
+      new Promise((resolve) => first.response.once("close", resolve)),
+      new Promise((resolve) => second.response.once("close", resolve))
+    ]);
+
+    const closedDiagnostics = await waitForVisualizerDiagnostics(
+      url,
+      (diagnostics) => diagnostics.sse.activeConnections === 0
+    );
+    assert.equal(closedDiagnostics.sse.activeConnections, 0);
+    assert.equal(closedDiagnostics.sse.activeByRunId[runId], undefined);
+    assert.ok(closedDiagnostics.sse.closedTotal >= activeDiagnostics.sse.closedTotal + 2);
+  } finally {
+    await new Promise((resolve) => server.close(resolve));
+  }
+});
+
 test("visualizer server maps config explain API setup failures to error envelopes", async (t) => {
   const workdir = await mkdtemp(path.join(os.tmpdir(), "ogsystem-visualizer-config-error-"));
   let started;

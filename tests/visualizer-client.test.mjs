@@ -2717,10 +2717,17 @@ test("visualizer client refreshes failure panels when switching runs", async () 
   const runButtons = harness.document.getElementById("run-list").querySelectorAll("[data-run-id]");
   const secondRunButton = runButtons.find((button) => button.getAttribute("data-run-id") === "run-456");
   assert.ok(secondRunButton);
+  const initialStream = harness.eventSources.at(-1);
+  assert.ok(initialStream);
 
   await secondRunButton.click();
   await settle();
 
+  assert.equal(initialStream.closed, true);
+  const replacementStream = harness.eventSources.at(-1);
+  assert.ok(replacementStream);
+  assert.notEqual(replacementStream, initialStream);
+  assert.match(replacementStream.url, /run-456\/stream/);
   assert.match(harness.document.getElementById("selected-title").textContent, /run-456/);
   assert.match(harness.document.getElementById("failure-summary").textContent, /CONTRACT_VIOLATION/);
   assert.match(harness.document.getElementById("failure-detail").textContent, /citation-engineer/);
