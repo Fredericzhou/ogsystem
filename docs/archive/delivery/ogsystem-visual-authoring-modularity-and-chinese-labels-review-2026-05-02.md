@@ -63,10 +63,10 @@ title / label = localized business display name
 
 ### Gaps
 
-- `src/visualizer/client-app.ts` 约 4900 行，承担路由、状态、渲染、事件、API、表单和生命周期逻辑，已经偏“大控制器”。
-- `src/visualizer/page-shell.ts` 已拆成 shell 组合入口、CSS renderer 和 body template；后续维护不再需要在单文件里同时修改 HTML shell、CSS 和布局。
+- `src/visualizer/client-app.ts` 仍约 4700 行，承担统一状态、路由、渲染、事件、API、表单和生命周期编排，依然是主要“大控制器”。
+- `src/visualizer/page-shell.ts` 已拆成 shell 组合入口、CSS renderer 和 body template；这条历史缺口已关闭。
 - Project / Build / Validate & Release / Operate 在产品体验上已分层，但代码尚未完全按生命周期工作区拆分。
-- Route state、release readiness decision、stream refresh state 已从 `client-app.ts` 外提为稳定 state helper 模块，并有直接单元测试覆盖。
+- Route state、release readiness decision、stream refresh state 已从 `client-app.ts` 外提为稳定 state helper 模块，并有直接单元测试覆盖；但这还只是 helper/state 边界，不等于 workspace/panel/state 级拆分完成。
 - Project Wizard、Open Project、Role Catalog、Build Chat、Workbench、Operate tabs 等仍大量使用 DOM 字符串拼接和局部事件绑定。
 - Chat to MMD、图表单、Inspector、Project Wizard 都可能创建或修改 authoring，后续需要统一 patch/validation 边界，避免多入口写入不一致。
 
@@ -78,7 +78,7 @@ title / label = localized business display name
 
 - 新功能继续叠加到 `client-app.ts` 会增加状态同步和重渲染副作用。
 - 表单、Chat、Graph、Project 创建加载能力继续增长后，回归成本会升高。
-- 生命周期 workspace / panels / state 边界需要继续按触达范围递进拆分；当前已先落地 route/release/stream state 边界和 page shell 边界。
+- 生命周期 workspace / panels / state 边界需要继续按触达范围递进拆分；当前已关闭 page shell 边界，并先落地 route/release/stream helper 边界，但 `client-app.ts` 的生命周期模块化仍未达到目标架构。
 
 判断：
 
@@ -215,7 +215,7 @@ src/visualizer/
   studio-client/
 ```
 
-This does not need to happen in one large refactor. New feature work should avoid increasing `client-app.ts` and should gradually extract stable panels. The 2026-05-03 follow-up landed the first stable state modules:
+This does not need to happen in one large refactor. New feature work should avoid increasing `client-app.ts` and should gradually extract stable panels. The 2026-05-03 follow-up landed the first stable helper/state modules:
 
 - `src/visualizer/client-route-state.ts`
 - `src/visualizer/client-release-readiness.ts`
@@ -322,6 +322,10 @@ Completed after the phase 1 Chinese display-label delivery:
 - [x] Add direct state helper tests and page shell mount-point/style tests.
 - [x] Include the new tests in `pnpm run test:visualizer`.
 
+Remaining modularity task:
+
+- [ ] Split `client-app.ts` lifecycle workspaces into stable workspace/panel/state modules for Project, Build, Validate & Release, and Operate.
+
 ## Acceptance Criteria
 
 - [x] The authoring model supports a role display name through `title`.
@@ -340,6 +344,7 @@ Completed after the phase 1 Chinese display-label delivery:
 - [x] Browser smoke confirms Chinese labels are visible in the graph.
 - [x] Initial lifecycle state helpers are split into stable modules outside `client-app.ts`.
 - [x] `page-shell.ts` no longer combines shell HTML, CSS, and layout composition at current scale.
+- [ ] `client-app.ts` lifecycle workspace / panel / state logic is fully split into stable modules outside the large controller.
 
 Implementation status:
 
@@ -347,7 +352,7 @@ Implementation status:
 - `serializeAuthoringToMermaid()` still emits stable `roleId` / `eventType` only.
 - Re-importing from Mermaid intentionally drops display metadata until phase 2 metadata allow-listing exists.
 - Chat-to-MMD structured authoring patches can carry `role.title` and `flow.label`; Mermaid preview remains runtime-stable.
-- 完整生命周期 workspace/panel 目标架构仍是长期演进方向；本交付的剩余可执行任务已清零，当前状态应视为“usable, tested, and incrementally modularized”。
+- page shell 拆分已完成；完整生命周期 workspace/panel/state 目标架构仍未完成。当前状态应视为“usable, tested, and incrementally modularized”，但不能视为“lifecycle modularization delivered”。
 
 ## Non-Goals
 
