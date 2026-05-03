@@ -599,6 +599,14 @@ function resolveRuntimePathWithinProject(workdir: string, inputPath: string, lab
   return resolvedPath;
 }
 
+function resolveOptionalRuntimePathWithinProject(
+  workdir: string,
+  inputPath: string | undefined,
+  label: string
+): string | undefined {
+  return inputPath ? resolveRuntimePathWithinProject(workdir, inputPath, label) : undefined;
+}
+
 function resolveProjectOpenWorkdir(activeWorkdir: string, inputWorkdir: string | undefined): string {
   const requestedWorkdir = inputWorkdir?.trim();
   return resolve(activeWorkdir, requestedWorkdir || ".");
@@ -1726,9 +1734,9 @@ async function handleApiRunStart(
   const result = await runSystemWithAdapter({
     systemPath: resolveRuntimePathWithinProject(workdir, systemPath, "systemPath"),
     prompt,
-    runtimeConfigPath: asString(body.runtimePath),
-    userProfilePath: asString(body.userProfilePath),
-    lawsPath: asString(body.lawsPath),
+    runtimeConfigPath: resolveOptionalRuntimePathWithinProject(workdir, asString(body.runtimePath), "runtimePath"),
+    userProfilePath: resolveOptionalRuntimePathWithinProject(workdir, asString(body.userProfilePath), "userProfilePath"),
+    lawsPath: resolveOptionalRuntimePathWithinProject(workdir, asString(body.lawsPath), "lawsPath"),
     workdir,
     dryRun: body.dryRun === true,
     cleanupExecutionHistory: asNumber(body.cleanupExecutionHistory),
@@ -1774,9 +1782,9 @@ async function handleApiRunResume(
   const result = await runSystemWithAdapter({
     systemPath: resolveRuntimePathWithinProject(workdir, systemPath, "systemPath"),
     prompt,
-    runtimeConfigPath: asString(body.runtimePath),
-    userProfilePath: asString(body.userProfilePath),
-    lawsPath: asString(body.lawsPath),
+    runtimeConfigPath: resolveOptionalRuntimePathWithinProject(workdir, asString(body.runtimePath), "runtimePath"),
+    userProfilePath: resolveOptionalRuntimePathWithinProject(workdir, asString(body.userProfilePath), "userProfilePath"),
+    lawsPath: resolveOptionalRuntimePathWithinProject(workdir, asString(body.lawsPath), "lawsPath"),
     resumeRunDir: runDir,
     workdir,
     dryRun: body.dryRun === true,

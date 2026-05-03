@@ -2653,6 +2653,88 @@ test("visualizer server starts and resumes runs through lifecycle APIs", async (
   }
 });
 
+test("visualizer server rejects runtime override paths that escape the active workdir", async (t) => {
+  const workdir = await mkdtemp(path.join(os.tmpdir(), "ogsystem-visualizer-run-path-guard-"));
+  await seedRunnableReviewProjectFixture(workdir);
+  let started;
+  try {
+    started = await startVisualizationServer({
+      workdir,
+      host: "127.0.0.1",
+      port: 0
+    });
+  } catch (error) {
+    const errorCode =
+      typeof error === "object" && error !== null && "code" in error ? error.code : undefined;
+    if (errorCode === "EPERM" || errorCode === "EACCES") {
+      t.skip(`visualizer listen unavailable in sandbox: ${errorCode}`);
+      return;
+    }
+    throw error;
+  }
+  const { server, url } = started;
+
+  try {
+    const startResponse = await fetch(`${url}/api/v1/runs/start`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        systemPath: "system.mmd",
+        runtimePath: "../runtime.json",
+        input: "operator smoke",
+        dryRun: true
+      })
+    });
+    assert.equal(startResponse.status, 400);
+    assert.equal((await startResponse.json()).error.code, "PROJECT_PATH_OUTSIDE_WORKDIR");
+
+    const validStartResponse = await fetch(`${url}/api/v1/runs/start`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        systemPath: "system.mmd",
+        input: "operator smoke",
+        dryRun: true
+      })
+    });
+    assert.equal(validStartResponse.status, 200);
+    const startedRun = await validStartResponse.json();
+    assert.ok(startedRun.runId);
+
+    const reviewsResponse = await fetch(`${url}/api/v1/runs/${startedRun.runId}/reviews`);
+    assert.equal(reviewsResponse.status, 200);
+    const reviews = await reviewsResponse.json();
+    assert.ok(reviews.latestPendingReviewId);
+
+    const decisionResponse = await fetch(
+      `${url}/api/v1/runs/${startedRun.runId}/reviews/${encodeURIComponent(reviews.latestPendingReviewId)}/decide`,
+      {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          decision: "approve",
+          actor: "qa",
+          comment: "resume now"
+        })
+      }
+    );
+    assert.equal(decisionResponse.status, 200);
+
+    const resumeResponse = await fetch(`${url}/api/v1/runs/${startedRun.runId}/resume`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        runtimePath: "../runtime.json",
+        dryRun: true
+      })
+    });
+    assert.equal(resumeResponse.status, 400);
+    assert.equal((await resumeResponse.json()).error.code, "PROJECT_PATH_OUTSIDE_WORKDIR");
+  } finally {
+    await new Promise((resolve) => server.close(resolve));
+  }
+});
+
 test("visualizer server rebinds the active project to another workdir", async (t) => {
   const workdir = await mkdtemp(path.join(os.tmpdir(), "ogsystem-visualizer-project-a-"));
   const alternateWorkdir = await mkdtemp(path.join(os.tmpdir(), "ogsystem-visualizer-project-b-"));
