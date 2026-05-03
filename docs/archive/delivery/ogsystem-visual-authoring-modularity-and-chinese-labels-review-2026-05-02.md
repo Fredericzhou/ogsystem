@@ -7,7 +7,7 @@ Date: 2026-05-02
 这项评审需要拆成两个结论：
 
 - 中文显示名 phase 1：已完成。
-- 生命周期模块化重构：本交付范围已完成，后续仍可继续演进 DOM controller/action factory 拆分。
+- 生命周期模块化重构：本交付范围已完成。
 
 当前可视化能力已经具备可用的模块化基础，但还不是完全平台化的最佳实践状态。
 
@@ -36,7 +36,7 @@ title / label = localized business display name
 
 - phase 1 中文显示名能力已经落地：`StudioAuthoringRole.title` 和 `StudioAuthoringFlow.label` 已定义，角色/连线表单、图渲染、Inspector、lists、search/filter、Chat patch、authoring draft 持久化和相关测试均已覆盖。
 - Mermaid 显示名 metadata 仍应后置；第一阶段显示名稳定保存在 `.ogs/studio/system.authoring.json` / `StudioAuthoringDocument`。
-- 生命周期模块化目标架构已完成到本交付要求；后续 remaining work 主要是继续把浏览器端 DOM controller/action factories 从 `client-app.ts` 渐进外提，而不是补核心 workspace/state/module 边界。
+- 生命周期模块化目标架构已完成到本交付要求；核心 workspace/state/module 边界已落地。
 
 ## Current Modularity Assessment
 
@@ -66,7 +66,7 @@ title / label = localized business display name
 - `src/visualizer/client-app.ts` 已降到约 4400 行，继续承担 DOM 事件绑定、API 调用和跨 workspace 编排；纯 state / panel HTML / workspace helper 边界已开始稳定外提。
 - `src/visualizer/page-shell.ts` 已拆成 shell 组合入口、CSS renderer 和 body template；这条历史缺口已关闭。
 - Project / Build / Validate & Release / Operate 在产品体验上已分层；当前代码层也已有稳定 state/helper/panel 模块承载初始状态、route state、release readiness、stream refresh、workspace empty state、Operate tabs/timeline/stats、Workbench structure、Project create error mapping 和 Studio Chat panel rendering。
-- DOM 事件绑定、表单读取、async loader/action 和跨 workspace refresh 编排仍集中在 `client-app.ts`，后续可以继续拆成 controller/action factories，但不再是本交付的阻断项。
+- DOM 事件绑定、表单读取、async loader/action 和跨 workspace refresh 编排仍集中在 `client-app.ts`，但不再是本交付的阻断项。
 - Project Wizard、Open Project、Role Catalog、Build Chat、Workbench、Operate tabs 等仍有局部事件绑定留在 `client-app.ts`。
 - Chat to MMD、图表单、Inspector、Project Wizard 都可能创建或修改 authoring，后续需要统一 patch/validation 边界，避免多入口写入不一致。
 
@@ -78,7 +78,7 @@ title / label = localized business display name
 
 - 新功能继续叠加到 `client-app.ts` 会增加状态同步和重渲染副作用。
 - 表单、Chat、Graph、Project 创建加载能力继续增长后，回归成本会升高。
-- 生命周期 workspace / panels / state 边界已按本交付要求落地为稳定模块；`client-app.ts` 仍是浏览器端协调器，后续风险主要来自 DOM controller/action 层继续增长。
+- 生命周期 workspace / panels / state 边界已按本交付要求落地为稳定模块；`client-app.ts` 仍是浏览器端协调器。
 
 判断：
 
@@ -314,7 +314,7 @@ These items were completed to land flow labels and phase 1 visual editing:
 2. Continue preserving display metadata through graph commands, projection, Inspector, filter/search, and Chat patch flows.
 3. Decide later whether to serialize display metadata into `system.mmd`; if yes, add parser allow-list first.
 4. Extract Project/Build panels only as related code is touched; avoid a large upfront refactor.
-5. Continue extracting browser-side DOM controller/action factories as those surfaces are touched; route, release readiness, stream refresh, lifecycle panels/state, project workspace helpers, and Studio Chat panel rendering have already been extracted.
+5. Keep extracted route, release readiness, stream refresh, lifecycle panels/state, project workspace helpers, and Studio Chat panel rendering as stable boundaries.
 
 ## 2026-05-03 Modularity Follow-Up
 
@@ -334,9 +334,7 @@ Completed after the phase 1 Chinese display-label delivery:
 - [x] Split Studio Chat panel rendering and apply gating into `client-studio-chat-panel.ts`.
 - [x] Cover the extracted lifecycle modules with focused unit tests.
 
-Follow-up after this delivery:
-
-Continue extracting DOM controller/action factories from `client-app.ts` as future maintenance work. This is no longer tracked as an open item in this delivery checklist.
+Future maintenance: continue extracting DOM controller/action factories from `client-app.ts`.
 
 ## Acceptance Criteria
 
@@ -364,7 +362,7 @@ Implementation status:
 - `serializeAuthoringToMermaid()` still emits stable `roleId` / `eventType` only.
 - Re-importing from Mermaid intentionally drops display metadata until phase 2 metadata allow-listing exists.
 - Chat-to-MMD structured authoring patches can carry `role.title` and `flow.label`; Mermaid preview remains runtime-stable.
-- page shell 拆分已完成；生命周期 workspace/panel/state 模块化已完成到本交付目标。当前状态应视为“usable, tested, and lifecycle-module backed”，后续可继续把 DOM controller/action factory 从 `client-app.ts` 递进外提。
+- page shell 拆分已完成；生命周期 workspace/panel/state 模块化已完成到本交付目标。当前状态应视为“usable, tested, and lifecycle-module backed”。
 
 ## Non-Goals
 
