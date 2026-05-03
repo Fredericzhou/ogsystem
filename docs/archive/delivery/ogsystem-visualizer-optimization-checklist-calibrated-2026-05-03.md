@@ -95,9 +95,9 @@ Status: calibrated
 #### 17. SSE 每连接 1 秒轮询文件系统
 
 - 文件：`server.ts`
-- 现状：连接关闭时已 `clearInterval`，不是泄漏；但每连接 1 秒轮询一次，在多标签页场景会放大磁盘 IO。
-- 定性：架构热点，不是漏洞。
-- 建议：评估退避策略、共享观察或事件驱动方案。
+- 现状：连接关闭时已 `clearInterval`；现已补充 SSE active/open/close/tick/snapshot/write/error 指标，并通过 `/api/v1/diagnostics/visualizer` 暴露观测数据。
+- 定性：短期观测已补齐；共享观察、退避或事件驱动仍属于后续架构优化。
+- 状态：已修复短期稳态要求。
 
 #### 18. Run card 可补充结构化无障碍语义
 
@@ -161,7 +161,7 @@ Status: calibrated
 
 | 观察项 | 说明 | 处理建议 |
 |--------|------|----------|
-| `runsListCache` 模块级 Map 无容量上限 | 服务端常驻缓存，当前没有 TTL / max-size；属于真实短期稳态风险，不应降为纯 P3 清洁项 | 已并入活动 backlog 的 P1 短期稳态优化 |
+| `runsListCache` 模块级 Map 无容量上限 | 服务端常驻缓存，原先没有 TTL / max-size；属于真实短期稳态风险，不应降为纯 P3 清洁项 | 已为 run list 与项目投影缓存补 TTL / max-size / LRU，并通过 diagnostics 暴露 cache stats |
 | Workbench validation 250ms 延迟参数 | 当前已存在 debounce，更多是参数调优 | 不列为当前缺陷 |
 | Run 列表搜索防抖 | 技术上成立，但当前规模下体感收益有限 | 低优先级体验优化 |
 | 运行时在 HTTP 服务进程内执行 | 已知可用性风险，但属于架构决策题，不是单个 visualizer bug | 在活动 backlog 中按“风险待验证/隔离方案评估”单列 |
@@ -176,4 +176,4 @@ Status: calibrated
 - 本文只负责校准定性，不直接代表任务已关闭。
 - `chat panel` ARIA 语义已修正，但 Studio 图命令表单的 modal 语义、焦点管理和键盘行为仍需继续核对。
 - `innerHTML` 热点治理只完成首批面板，剩余 `runListEl` 与 `consoleTabsEl` 继续留在 P1。
-- `runsListCache` 无上限问题维持短期稳态优先级，不降到 P3。
+- `runsListCache` 无上限问题已按短期稳态优先级修复；更深的缓存抽象收敛仍保留为 P2 可维护性治理。

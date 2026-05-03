@@ -701,6 +701,37 @@ async function readFirstSseChunk(url) {
   });
 }
 
+async function openSseUntilFirstChunk(url) {
+  return new Promise((resolve, reject) => {
+    let settled = false;
+    const request = http.request(url, { method: "GET" }, (response) => {
+      response.once("data", () => {
+        if (!settled) {
+          settled = true;
+          resolve({ request, response });
+        }
+      });
+      response.once("error", reject);
+    });
+    request.once("error", reject);
+    request.end();
+  });
+}
+
+async function waitForVisualizerDiagnostics(url, predicate) {
+  let latest;
+  for (let attempt = 0; attempt < 20; attempt += 1) {
+    const response = await fetch(`${url}/api/v1/diagnostics/visualizer`);
+    assert.equal(response.status, 200);
+    latest = await response.json();
+    if (predicate(latest)) {
+      return latest;
+    }
+    await new Promise((resolve) => setTimeout(resolve, 10));
+  }
+  return latest;
+}
+
 test("visualizer server serves run list, details, and live stream", async (t) => {
   const workdir = await mkdtemp(path.join(os.tmpdir(), "ogsystem-visualizer-"));
   await seedProjectFixture(workdir);
@@ -935,6 +966,66 @@ test("visualizer server serves run list, details, and live stream", async (t) =>
     assert.equal(stream.contentType, "text/event-stream; charset=utf-8");
     assert.match(stream.chunk, /"type":"audit"/);
     assert.match(stream.chunk, /"status":"ok"/);
+
+    const diagnosticsResponse = await fetch(`${url}/api/v1/diagnostics/visualizer`);
+    assert.equal(diagnosticsResponse.status, 200);
+    const diagnostics = await diagnosticsResponse.json();
+    assert.equal(diagnostics.caches.runsList.maxSize, 64);
+    assert.equal(diagnostics.caches.runsList.ttlMs, 600000);
+    assert.equal(diagnostics.caches.projectProjection.maxSize, 16);
+    assert.equal(diagnostics.caches.projectProjection.ttlMs, 600000);
+    assert.ok(diagnostics.sse.openedTotal >= 1);
+    assert.ok(diagnostics.sse.writesTotal >= 1);
+  } finally {
+    await new Promise((resolve) => server.close(resolve));
+  }
+});
+
+test("visualizer server reports SSE active connections and closes them", async (t) => {
+  const workdir = await mkdtemp(path.join(os.tmpdir(), "ogsystem-visualizer-sse-metrics-"));
+  await seedProjectFixture(workdir);
+  const { runId } = await createFixtureRun(workdir);
+  let started;
+  try {
+    started = await startVisualizationServer({
+      workdir,
+      host: "127.0.0.1",
+      port: 0
+    });
+  } catch (error) {
+    const errorCode =
+      typeof error === "object" && error !== null && "code" in error
+        ? error.code
+        : undefined;
+    if (
+      errorCode === "EPERM" ||
+      errorCode === "EACCES"
+    ) {
+      t.skip(`visualizer listen unavailable in sandbox: ${errorCode}`);
+      return;
+    }
+    throw error;
+  }
+  const { server, url } = started;
+
+  try {
+    const sse = await openSseUntilFirstChunk(`${url}/api/v1/runs/${runId}/stream?cursor=1`);
+    const activeResponse = await fetch(`${url}/api/v1/diagnostics/visualizer`);
+    assert.equal(activeResponse.status, 200);
+    const activeDiagnostics = await activeResponse.json();
+    assert.equal(activeDiagnostics.sse.activeConnections, 1);
+    assert.equal(activeDiagnostics.sse.activeByRunId[runId], 1);
+
+    sse.request.destroy();
+    await new Promise((resolve) => sse.response.once("close", resolve));
+
+    const closedDiagnostics = await waitForVisualizerDiagnostics(
+      url,
+      (diagnostics) => diagnostics.sse.activeConnections === 0
+    );
+    assert.equal(closedDiagnostics.sse.activeConnections, 0);
+    assert.equal(closedDiagnostics.sse.activeByRunId[runId], undefined);
+    assert.ok(closedDiagnostics.sse.closedTotal >= activeDiagnostics.sse.closedTotal + 1);
   } finally {
     await new Promise((resolve) => server.close(resolve));
   }

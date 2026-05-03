@@ -61,6 +61,8 @@ type ProjectContext = {
 type ProjectProjectionCacheEntry = {
   token: string;
   value: Promise<ProjectContext>;
+  cachedAtMs: number;
+  lastAccessedAtMs: number;
 };
 
 type ProjectCreatePreferences = {
@@ -88,6 +90,8 @@ type ProjectCreateTestHooks = {
 };
 
 const projectProjectionCache = new Map<string, ProjectProjectionCacheEntry>();
+const PROJECT_PROJECTION_CACHE_TTL_MS = 10 * 60 * 1000;
+const PROJECT_PROJECTION_CACHE_MAX_SIZE = 16;
 
 function asRecord(value: unknown): JsonRecord | undefined {
   return typeof value === "object" && value !== null && !Array.isArray(value)
@@ -439,12 +443,8 @@ function createFallbackModelSelection(systemId: string): ModelSelectionConfig {
 }
 
 async function getMtimeToken(path: string): Promise<string> {
-  const file = await readJsonFile(path).catch(() => undefined);
-  if (file !== undefined) {
-    return `${path}:${JSON.stringify(file)}`;
-  }
-  const text = await readFile(path, "utf8").catch(() => undefined);
-  return `${path}:${text ?? "missing"}`;
+  const fileStat = await stat(path).catch(() => undefined);
+  return fileStat ? `${path}:${fileStat.mtimeMs}:${fileStat.size}` : `${path}:missing`;
 }
 
 async function computeProjectProjectionCacheToken(workdir: string): Promise<string> {
@@ -537,20 +537,48 @@ async function assembleProjectContextFromSource(args: {
 }
 
 async function assembleProjectContext(workdir: string): Promise<ProjectContext> {
+  pruneProjectProjectionCache();
   const token = await computeProjectProjectionCacheToken(workdir);
   const cached = projectProjectionCache.get(workdir);
   if (cached && cached.token === token) {
+    cached.lastAccessedAtMs = Date.now();
     return cached.value;
   }
+  const nowMs = Date.now();
   const value = assembleProjectContextFromSource({
     workdir,
     systemSource: await readFile(resolve(workdir, "system.mmd"), "utf8")
   });
   projectProjectionCache.set(workdir, {
     token,
-    value
+    value,
+    cachedAtMs: nowMs,
+    lastAccessedAtMs: nowMs
   });
+  pruneProjectProjectionCache();
   return value;
+}
+
+function pruneProjectProjectionCache(nowMs = Date.now()): void {
+  for (const [workdir, entry] of projectProjectionCache.entries()) {
+    if (nowMs - entry.cachedAtMs > PROJECT_PROJECTION_CACHE_TTL_MS) {
+      projectProjectionCache.delete(workdir);
+    }
+  }
+  while (projectProjectionCache.size > PROJECT_PROJECTION_CACHE_MAX_SIZE) {
+    let oldestWorkdir: string | undefined;
+    let oldestAccessedAtMs = Number.POSITIVE_INFINITY;
+    for (const [workdir, entry] of projectProjectionCache.entries()) {
+      if (entry.lastAccessedAtMs < oldestAccessedAtMs) {
+        oldestWorkdir = workdir;
+        oldestAccessedAtMs = entry.lastAccessedAtMs;
+      }
+    }
+    if (!oldestWorkdir) {
+      break;
+    }
+    projectProjectionCache.delete(oldestWorkdir);
+  }
 }
 
 function buildWorkbenchStructure(system: SystemDefinition): Record<string, unknown> {
@@ -623,6 +651,15 @@ function buildCompileDiagnostics(error: Error & { diagnostics?: CompilerDiagnost
 
 export function invalidateProjectProjectionCache(workdir: string): void {
   projectProjectionCache.delete(workdir);
+}
+
+export function getProjectProjectionCacheStats(): Record<string, unknown> {
+  pruneProjectProjectionCache();
+  return {
+    size: projectProjectionCache.size,
+    maxSize: PROJECT_PROJECTION_CACHE_MAX_SIZE,
+    ttlMs: PROJECT_PROJECTION_CACHE_TTL_MS
+  };
 }
 
 export async function inspectProjectSystemWorkbench(args: {
