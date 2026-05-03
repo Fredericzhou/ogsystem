@@ -1570,6 +1570,7 @@ test("visualizer server supports project open browse and validation", async (t) 
     );
     assert.equal(browseResponse.status, 200);
     const browse = await browseResponse.json();
+    assert.equal(browse.code, "PROJECT_OPEN_DIR_CONFLICT");
     assert.equal(browse.workdir, workdir);
     assert.equal(browse.parent, path.dirname(workdir));
     assert.deepEqual(
@@ -1598,6 +1599,7 @@ test("visualizer server supports project open browse and validation", async (t) 
     assert.deepEqual(
       await projectResponse.json(),
       {
+        code: "PROJECT_OPEN_READY",
         workdir: projectWorkdir,
         exists: true,
         readable: true,
@@ -1623,6 +1625,7 @@ test("visualizer server supports project open browse and validation", async (t) 
     assert.equal(empty.isProject, false);
     assert.equal(empty.isEmpty, true);
     assert.equal(empty.hasConflict, false);
+    assert.equal(empty.code, "PROJECT_OPEN_EMPTY");
     assert.equal(empty.message, "Directory is empty and can be initialized as a project.");
 
     const conflictResponse = await fetch(`${url}/api/v1/project/validate-open`, {
@@ -1637,6 +1640,7 @@ test("visualizer server supports project open browse and validation", async (t) 
     assert.equal(conflict.isProject, false);
     assert.equal(conflict.isEmpty, false);
     assert.equal(conflict.hasConflict, true);
+    assert.equal(conflict.code, "PROJECT_OPEN_DIR_CONFLICT");
     assert.deepEqual(conflict.conflicts, []);
     assert.equal(conflict.message, "Directory is not empty and is not an OGSystem project.");
 
@@ -1647,6 +1651,7 @@ test("visualizer server supports project open browse and validation", async (t) 
     });
     assert.equal(pseudoResponse.status, 200);
     const pseudo = await pseudoResponse.json();
+    assert.equal(pseudo.code, "PROJECT_OPEN_CONTROLLED_PATH_CONFLICT");
     assert.equal(pseudo.isProject, false);
     assert.equal(pseudo.hasConflict, true);
     assert.ok(pseudo.conflicts.includes("system.mmd"));
@@ -1669,6 +1674,7 @@ test("visualizer server supports project open browse and validation", async (t) 
     assert.equal(missing.isProject, false);
     assert.equal(missing.isEmpty, false);
     assert.equal(missing.hasConflict, false);
+    assert.equal(missing.code, "PROJECT_OPEN_NOT_FOUND");
     assert.equal(missing.message, "Path does not exist.");
   } finally {
     await new Promise((resolve) => server.close(resolve));

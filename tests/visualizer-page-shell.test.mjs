@@ -53,11 +53,20 @@ test("page shell keeps HTML, style, assets, and client script mounted", () => {
   for (const id of REQUIRED_ELEMENT_IDS) {
     assert.match(html, new RegExp(`id="${id}"`), `missing #${id}`);
   }
+
+  assert.match(html, /<div class="shell content">/);
+  assert.match(html, /<header class="top-nav">[\s\S]*id="console-tabs"/);
+  assert.match(html, /<main class="main-stage">[\s\S]*id="workbench-body"/);
+  assert.match(html, /<footer class="status-bar global-status">[\s\S]*id="workdir"[\s\S]*id="live"/);
+  assert.match(html, /<aside id="sidebar" class="sidebar">[\s\S]*id="run-list"/);
 });
 
 test("page shell styles are isolated behind a CSS renderer", () => {
   const css = renderPageShellStyles();
   assert.match(css, /\.app\s*\{/);
+  assert.match(css, /\.top-nav\s*\{/);
+  assert.match(css, /\.main-stage\s*\{/);
+  assert.match(css, /\.status-bar\s*\{/);
   assert.match(css, /\.sidebar\s*\{/);
   assert.match(css, /\.console-panel\[hidden\]\s*\{/);
   assert.match(css, /@media \(max-width: 960px\)/);

@@ -23,7 +23,10 @@ import {
   createInitialVisualizerState
 } from "../dist/visualizer/client-lifecycle-state.js";
 import { bindProjectWizardControls } from "../dist/visualizer/client-project-menu-controls.js";
-import { projectCreateErrorFromResponse } from "../dist/visualizer/client-project-workspace.js";
+import {
+  projectCreateErrorFromResponse,
+  projectOpenMessageFromResponse
+} from "../dist/visualizer/client-project-workspace.js";
 import {
   buildLogsQuery,
   fetchFailureData,
@@ -416,6 +419,33 @@ test("client project workspace maps stable create error codes", () => {
     code: "UNKNOWN",
     message: "custom failure"
   });
+});
+
+test("client project workspace maps stable project-open codes", () => {
+  assert.deepEqual(projectOpenMessageFromResponse({ code: "PROJECT_OPEN_READY" }, t), {
+    code: "PROJECT_OPEN_READY",
+    message: "OGSystem project is ready to open."
+  });
+  assert.deepEqual(
+    projectOpenMessageFromResponse(
+      {
+        code: "PROJECT_OPEN_DIR_CONFLICT",
+        message: "Directory is not empty and is not an OGSystem project."
+      },
+      t
+    ),
+    {
+      code: "PROJECT_OPEN_DIR_CONFLICT",
+      message: "Directory is not empty and is not an OGSystem project."
+    }
+  );
+  assert.deepEqual(
+    projectOpenMessageFromResponse({ errorCode: "UNKNOWN", message: "custom open failure" }, t),
+    {
+      code: "UNKNOWN",
+      message: "custom open failure"
+    }
+  );
 });
 
 test("client project/studio controller binders delegate interactions without owning state", () => {

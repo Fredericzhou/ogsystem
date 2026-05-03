@@ -183,6 +183,14 @@ const STATIC_ASSET_ROUTES = new Map<string, { filePath: string; contentType: str
 const runsListCache = new Map<string, RunsListCacheEntry>();
 const PROJECT_OPEN_RECENT_LIMIT = 8;
 const PROJECT_OPEN_CHILD_LIMIT = 200;
+type ProjectOpenTargetCode =
+  | "PROJECT_OPEN_NOT_FOUND"
+  | "PROJECT_OPEN_NOT_DIRECTORY"
+  | "PROJECT_OPEN_NOT_READABLE"
+  | "PROJECT_OPEN_READY"
+  | "PROJECT_OPEN_EMPTY"
+  | "PROJECT_OPEN_CONTROLLED_PATH_CONFLICT"
+  | "PROJECT_OPEN_DIR_CONFLICT";
 const PROJECT_CONTROLLED_PATHS = [
   ".ogs",
   "og-roles",
@@ -478,6 +486,7 @@ async function canReadDirectory(path: string): Promise<boolean> {
 }
 
 async function inspectProjectOpenTarget(workdir: string): Promise<{
+  code: ProjectOpenTargetCode;
   workdir: string;
   exists: boolean;
   readable: boolean;
@@ -507,23 +516,31 @@ async function inspectProjectOpenTarget(workdir: string): Promise<{
     }
   }
   const hasConflict = isDirectory && !isProject && !isEmpty;
+  let code: ProjectOpenTargetCode;
   let message: string;
   if (!exists) {
+    code = "PROJECT_OPEN_NOT_FOUND";
     message = "Path does not exist.";
   } else if (!isDirectory) {
+    code = "PROJECT_OPEN_NOT_DIRECTORY";
     message = "Path is not a directory.";
   } else if (!readable) {
+    code = "PROJECT_OPEN_NOT_READABLE";
     message = "Directory is not readable.";
   } else if (isProject) {
+    code = "PROJECT_OPEN_READY";
     message = "OGSystem project is ready to open.";
   } else if (isEmpty) {
+    code = "PROJECT_OPEN_EMPTY";
     message = "Directory is empty and can be initialized as a project.";
   } else {
+    code = conflicts.length ? "PROJECT_OPEN_CONTROLLED_PATH_CONFLICT" : "PROJECT_OPEN_DIR_CONFLICT";
     message = conflicts.length
       ? "Directory contains OGSystem-controlled paths but is not a complete project."
       : "Directory is not empty and is not an OGSystem project.";
   }
   return {
+    code,
     workdir,
     exists,
     readable,

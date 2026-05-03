@@ -201,9 +201,12 @@ export function renderPageShellStyles(): string {
     .content {
       padding: 14px;
       display: grid;
-      gap: 12px;
-      align-content: start;
+      gap: 0;
       min-width: 0;
+    }
+    .shell {
+      grid-template-rows: auto minmax(0, 1fr) auto;
+      min-height: 100vh;
     }
     .flash {
       padding: 9px 12px;
@@ -226,6 +229,71 @@ export function renderPageShellStyles(): string {
     .flash.warning {
       border-color: rgba(251, 191, 36, 0.25);
       background: rgba(251, 191, 36, 0.08);
+    }
+    .top-nav {
+      position: sticky;
+      top: 0;
+      z-index: 12;
+      display: grid;
+      gap: 10px;
+      padding: 14px 14px 10px;
+      border-bottom: 1px solid rgba(148, 163, 184, 0.12);
+      background: linear-gradient(180deg, rgba(7, 12, 24, 0.96), rgba(7, 12, 24, 0.88));
+      backdrop-filter: blur(20px);
+    }
+    .top-nav-row {
+      display: flex;
+      justify-content: space-between;
+      gap: 14px;
+      align-items: flex-start;
+      min-width: 0;
+    }
+    .top-nav-row-secondary {
+      align-items: center;
+    }
+    .top-nav-brand,
+    .top-nav-stage-heading,
+    .stage-heading {
+      display: grid;
+      gap: 4px;
+      min-width: 0;
+    }
+    .brand-lockup {
+      display: flex;
+      align-items: baseline;
+      gap: 12px;
+      min-width: 0;
+      flex-wrap: wrap;
+    }
+    .brand-lockup h1 {
+      margin: 0;
+      font-size: 18px;
+      letter-spacing: 0.02em;
+    }
+    .brand-lockup span {
+      color: var(--muted);
+      font-size: 12px;
+    }
+    .top-nav-actions {
+      display: grid;
+      grid-template-columns: auto auto auto;
+      gap: 6px;
+      align-items: center;
+      justify-items: end;
+      min-width: 0;
+    }
+    .main-stage {
+      min-width: 0;
+      padding: 10px 14px 14px;
+    }
+    .stage-stack {
+      display: grid;
+      gap: 12px;
+      align-content: start;
+      min-width: 0;
+    }
+    .status-bar {
+      margin: 0 14px 14px;
     }
     .hero {
       display: grid;
@@ -357,8 +425,10 @@ export function renderPageShellStyles(): string {
       flex-wrap: nowrap;
       min-width: 0;
       padding: 7px 9px;
+      border-radius: var(--radius);
       border: 1px solid var(--border);
       background: rgba(255, 255, 255, 0.035);
+      box-shadow: var(--shadow);
     }
     .global-status .pill {
       max-width: min(54vw, 720px);
@@ -577,18 +647,13 @@ export function renderPageShellStyles(): string {
       color: #b5ecff;
     }
     .console-tabs {
-      position: sticky;
-      top: 0;
-      z-index: 12;
       display: flex;
       flex-wrap: wrap;
       gap: 8px;
       padding: 8px;
       border: 1px solid var(--border);
       border-radius: var(--radius);
-      background: rgba(8, 13, 26, 0.86);
-      backdrop-filter: blur(14px);
-      box-shadow: var(--shadow);
+      background: rgba(255, 255, 255, 0.03);
     }
     .console-tabs .button {
       flex: 1 1 128px;
@@ -966,7 +1031,12 @@ export function renderPageShellStyles(): string {
         padding-right: 2px;
       }
       .studio-diagnostics { order: 5; }
-      .hero { grid-template-columns: 1fr; }
+      .top-nav-row,
+      .top-nav-stage-heading {
+        display: grid;
+        grid-template-columns: 1fr;
+      }
+      .top-nav-actions,
       .hero-toolbar {
         width: 100%;
         grid-template-columns: 1fr;
@@ -984,6 +1054,16 @@ export function renderPageShellStyles(): string {
     }
     @media (max-width: 960px) {
       .content { padding: 12px; }
+      .top-nav {
+        padding: 12px 12px 10px;
+      }
+      .main-stage {
+        padding: 10px 12px 12px;
+      }
+      .status-bar {
+        margin: 0 12px 12px;
+      }
+      .top-nav-actions,
       .hero-toolbar {
         grid-template-columns: 1fr;
       }
@@ -1015,7 +1095,15 @@ export function renderPageShellStyles(): string {
     }
     @media (max-width: 768px) {
       .content { padding: 10px; }
-      .hero { padding: 10px; }
+      .top-nav {
+        padding: 10px 10px 8px;
+      }
+      .main-stage {
+        padding: 8px 10px 10px;
+      }
+      .status-bar {
+        margin: 0 10px 10px;
+      }
       .hero-actions,
       .hero-utilities {
         display: grid;
@@ -1061,6 +1149,15 @@ export function renderPageShellStyles(): string {
     }
     @media (max-width: 480px) {
       .content { padding: 8px; }
+      .top-nav {
+        padding: 8px 8px 6px;
+      }
+      .main-stage {
+        padding: 8px;
+      }
+      .status-bar {
+        margin: 0 8px 8px;
+      }
       .sidebar {
         width: calc(100vw - 18px);
       }

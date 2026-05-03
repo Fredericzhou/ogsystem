@@ -198,6 +198,14 @@ function matchesSelector(element, selector) {
   if (/^[a-zA-Z][a-zA-Z0-9-]*$/.test(selector)) {
     return element.tagName.toLowerCase() === selector.toLowerCase();
   }
+  const classSelector = selector.match(/^\.([a-zA-Z0-9_-]+)$/);
+  if (classSelector) {
+    const className = classSelector[1];
+    return String(element.attributes.class ?? "")
+      .split(/\s+/)
+      .filter(Boolean)
+      .includes(className);
+  }
   const attributeSelector = selector.match(/^\[([a-zA-Z0-9:-]+)(?:="([^"]*)")?\]$/);
   if (attributeSelector) {
     const [, name, value] = attributeSelector;
@@ -458,7 +466,7 @@ class FakeDocument {
   parseChildren(html, parent = null, options = {}) {
     const register = options.register !== false;
     const children = [];
-    const matcher = /<(form|button|input|select|option|textarea|div|span)\b([^>]*)>/g;
+    const matcher = /<(form|button|input|select|option|textarea|div|span|aside)\b([^>]*)>/g;
     for (const match of html.matchAll(matcher)) {
       const tagName = match[1];
       const attributes = parseAttributes(match[2] ?? "");
@@ -917,17 +925,19 @@ function createBackend(options = {}) {
       }
       if (pathname === "/api/v1/project/browse" && method === "GET") {
         const workdir = parsed.searchParams.get("workdir") || "/tmp/demo";
+        const isProject = workdir.endsWith("other-project");
         return createResponse({
+          code: isProject ? "PROJECT_OPEN_READY" : "PROJECT_OPEN_DIR_CONFLICT",
           workdir,
           exists: true,
           readable: true,
-          isProject: workdir.endsWith("other-project"),
+          isProject,
           isEmpty: false,
-          hasConflict: !workdir.endsWith("other-project"),
-          message: workdir.endsWith("other-project")
+          hasConflict: !isProject,
+          message: isProject
             ? "OGSystem project is ready to open."
             : "Directory is not empty and is not an OGSystem project.",
-          conflicts: workdir.endsWith("other-project") ? [] : ["system.mmd"],
+          conflicts: isProject ? [] : ["system.mmd"],
           parent: "/tmp",
           children: {
             directories: [
@@ -945,6 +955,7 @@ function createBackend(options = {}) {
         const workdir = body.workdir || "/tmp/demo";
         const isProject = String(workdir).endsWith("other-project");
         return createResponse({
+          code: isProject ? "PROJECT_OPEN_READY" : "PROJECT_OPEN_DIR_CONFLICT",
           workdir,
           exists: true,
           readable: true,
@@ -1876,6 +1887,9 @@ async function createClientHarness(options = {}) {
           }
         }
       }
+      has(name) {
+        return this.values.has(name);
+      }
       get(name) {
         const value = this.values.get(name);
         return Array.isArray(value) ? value[0] : value ?? null;
@@ -2084,39 +2098,32 @@ test("visualizer client creates a project from the empty workspace wizard", asyn
   };
   const harness = await createClientHarness({ workspace, readinessCanDryRun: true, roleCatalog, search: "" });
 
+  const initialWorkdir = [...harness.document.dynamicElements]
+    .find((child) => child.attributes.name === "workdir");
+  assert.ok(initialWorkdir);
+  assert.equal(Object.hasOwn(initialWorkdir.attributes, "readonly"), true);
+  await harness.document.getElementById("project-wizard-next").click();
+  await settle();
   const projectId = [...harness.document.dynamicElements]
     .find((child) => child.attributes.name === "projectId");
   const projectName = [...harness.document.dynamicElements]
     .find((child) => child.attributes.name === "projectName");
   const template = [...harness.document.dynamicElements]
     .find((child) => child.attributes.name === "templateId");
-  const workdir = [...harness.document.dynamicElements]
-    .find((child) => child.attributes.name === "workdir");
   assert.ok(projectId);
   assert.ok(projectName);
   assert.ok(template);
-  assert.ok(workdir);
-  const roleFilter = [...harness.document.dynamicElements]
-    .find((child) => child.attributes.id === "project-role-catalog-filter");
-  assert.ok(roleFilter);
   await projectId.input("project.empty.visual");
   await projectName.input("Empty visual");
   await template.change("minimal");
-  assert.equal(Object.hasOwn(workdir.attributes, "readonly"), true);
+  await harness.document.getElementById("project-wizard-next").click();
+  await settle();
+  const roleFilter = [...harness.document.dynamicElements]
+    .find((child) => child.attributes.id === "project-role-catalog-filter");
+  assert.ok(roleFilter);
   await roleFilter.input("QA");
   await settle();
   assert.match(harness.document.getElementById("project-wizard").textContent, /Showing 1 of 1|显示 1 \/ 1/i);
-  const refreshedProjectId = [...harness.document.dynamicElements]
-    .find((child) => child.attributes.name === "projectId");
-  const refreshedProjectName = [...harness.document.dynamicElements]
-    .find((child) => child.attributes.name === "projectName");
-  const refreshedTemplate = [...harness.document.dynamicElements]
-    .find((child) => child.attributes.name === "templateId");
-  const refreshedWorkdir = [...harness.document.dynamicElements]
-    .find((child) => child.attributes.name === "workdir");
-  assert.equal(refreshedProjectId.value, "project.empty.visual");
-  assert.equal(refreshedProjectName.value, "Empty visual");
-  assert.equal(refreshedWorkdir.value, "/tmp/empty-project");
   const qaRole = [...harness.document.dynamicElements]
     .find((child) => child.attributes.name === "roleIds" && child.attributes.value === "qa-reviewer");
   assert.ok(qaRole);
@@ -2151,6 +2158,9 @@ test("visualizer client creates a project from the empty workspace wizard", asyn
   );
   assert.equal(harness.document.getElementById("project-role-show-more"), null);
   assert.equal(harness.document.getElementById("project-wizard-load"), null);
+  await harness.document.getElementById("project-wizard-next").click();
+  await settle();
+  assert.match(harness.document.getElementById("project-wizard").textContent, /Review|复核/i);
 
   await harness.document.getElementById("project-create-form").dispatch("submit");
   await waitForCondition(() => harness.backend.fetchCalls.some((call) => call.path === "/api/v1/project/roles/import"));
@@ -2210,10 +2220,16 @@ test("visualizer client keeps created project usable when role import fails", as
     return originalHandle(url, request);
   };
   const harness = await createClientHarness({ backend, search: "" });
+  await harness.document.getElementById("project-wizard-next").click();
+  await settle();
+  await harness.document.getElementById("project-wizard-next").click();
+  await settle();
   const demoRole = [...harness.document.dynamicElements]
     .find((child) => child.attributes.name === "roleIds" && child.attributes.value === "demo-analyst");
   assert.ok(demoRole);
   demoRole.attributes.checked = "";
+  await harness.document.getElementById("project-wizard-next").click();
+  await settle();
 
   await harness.document.getElementById("project-create-form").dispatch("submit");
   await waitForCondition(() => harness.document.getElementById("console-panel-build").hidden === false);
@@ -2514,6 +2530,7 @@ test("visualizer client switches lifecycle shell without unloading data and hide
   assert.equal(harness.document.body.classList.classes.has("show-run-sidebar"), false);
   assert.equal(harness.document.getElementById("sidebar-toggle").hidden, true);
   assert.match(harness.document.getElementById("project-wizard").textContent, /Overview/);
+  assert.ok(harness.document.getElementById("project-wizard").querySelectorAll(".project-home-layout").length >= 1);
 
   await operateTab.click();
   assert.equal(harness.document.getElementById("console-panel-debug").hidden, false);
@@ -2557,6 +2574,7 @@ test("visualizer client switches lifecycle shell without unloading data and hide
   assert.match(harness.document.getElementById("project-wizard").textContent, /Review/);
   assert.match(harness.document.getElementById("project-wizard").textContent, /role packages/);
   assert.match(harness.document.getElementById("project-wizard").textContent, /model \/ profile/);
+  assert.ok(harness.document.getElementById("project-wizard").querySelectorAll(".project-home-main").length >= 1);
 
 });
 
@@ -3227,6 +3245,7 @@ test("visualizer client opens projects through Project menu and reindexes throug
   await openTab.click();
   await settle();
   assert.match(harness.document.getElementById("project-wizard").textContent, /Open Project/);
+  assert.ok(harness.document.getElementById("project-wizard").querySelectorAll(".project-side-panel").length >= 1);
   await waitForCondition(() =>
     harness.backend.fetchCalls.some((call) => call.path.startsWith("/api/v1/project/browse?"))
   );
@@ -3252,12 +3271,39 @@ test("visualizer client opens projects through Project menu and reindexes throug
 
   const reindexButton = harness.document.getElementById("reindex");
   assert.ok(reindexButton);
+  await waitForCondition(() => harness.document.getElementById("reindex")?.disabled === false);
   await reindexButton.click();
-  await settle();
+  await waitForCondition(() => Boolean(harness.document.getElementById("action-form-submit")));
   await harness.document.getElementById("action-form-submit").click();
-  await settle();
+  await waitForCondition(() => harness.backend.fetchCalls.some((call) => call.path === "/api/v1/runs/reindex"));
 
   assert.ok(harness.backend.fetchCalls.some((call) => call.path === "/api/v1/runs/reindex"));
   assert.equal(harness.promptCalls.length, 0);
   assert.equal(harness.confirmCalls.length, 0);
+});
+
+test("visualizer client shows step-based new-project wizard before initialization", async () => {
+  const harness = await createClientHarness({
+    workspace: {
+      workdir: "/tmp/blank",
+      exists: true,
+      isDirectory: true,
+      hasProject: false,
+      state: "empty",
+      entryCount: 0
+    }
+  });
+
+  await waitForCondition(() => /Project Wizard|项目向导/.test(harness.document.getElementById("project-wizard").textContent));
+  assert.match(harness.document.getElementById("project-wizard").textContent, /Location|位置/i);
+  const nextButton = harness.document.getElementById("project-wizard-next");
+  assert.ok(nextButton);
+  await nextButton.click();
+  await settle();
+  assert.match(harness.document.getElementById("project-wizard").textContent, /Details|详情/i);
+  const backButton = harness.document.getElementById("project-wizard-back");
+  assert.ok(backButton);
+  await backButton.click();
+  await settle();
+  assert.match(harness.document.getElementById("project-wizard").textContent, /Location|位置/i);
 });

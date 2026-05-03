@@ -24,6 +24,8 @@ export function createInitialVisualizerState(resolvedLocale: string) {
     roleCatalogPageSize: 12,
     pendingRoleImportRetry: null,
     projectMenuTab: "overview",
+    projectPanelMode: "closed",
+    projectWizardStep: "location",
     projectOpenDraft: "",
     projectOpenBrowse: null,
     projectOpenValidation: null,
