@@ -14,7 +14,7 @@ Status: calibrated
 
 已验证：
 
-- `pnpm run test:visualizer` 通过，`94/94` pass。
+- `pnpm run test:visualizer` 于 2026-05-04 在 macOS 本地复跑通过，`115/115` pass。
 - `node --test tests/package-install.test.mjs tests/session-recovery.test.mjs tests/doctor.test.mjs tests/run-artifact-policy.test.mjs tests/cli.test.mjs tests/cli-lifecycle.test.mjs tests/rust-hello-pipeline.test.mjs` 通过，`26/26` pass。
 - Windows 兼容相关的 `.cmd` / `.bat` `shell: true` 逻辑仅存在于 Windows 条件分支，不影响 macOS/Linux 的 `spawn()` 路径。
 - `session-recovery`、`visualizer` 中的路径断言已改为兼容 `/` 与 `\\`，属于测试可移植性修复，不改变运行时语义。
@@ -72,7 +72,7 @@ Status: calibrated
 - 现状：`<textarea id="workbench-editor" ...>` 已补充可翻译 `aria-label`。
 - 状态：已修复。
 
-#### 14. `runListEl` 和 `consoleTabsEl` 仍为高频 `innerHTML` 全量替换
+#### 14. `runListEl` 和 `consoleTabsEl` 曾是高频 `innerHTML` 全量替换热点
 
 - 文件：`client-app.ts`
 - 现状：两处已改为复用 `setInnerHtmlIfChanged()`，并配合 `bindOnce()` 控制重复监听。
@@ -119,11 +119,11 @@ Status: calibrated
 
 ### P3 — 低风险或后移处理
 
-#### 21. `appendStreamEntry` 去重使用线性扫描
+#### 21. SSE 追加路径原先沿用 `appendStreamEntry` 线性去重
 
 - 文件：`client-stream-state.ts`
-- 现状：已新增显式 cursor 索引结构，SSE 追加路径使用 `Set` 去重，并在历史裁剪时同步清理索引。
-- 状态：已修复。
+- 现状：已新增 `appendIndexedStreamEntry()` 与显式 cursor 索引结构；SSE 追加热路径已切换为基于 `Set` 的去重，并在历史裁剪时同步清理索引。旧的 `appendStreamEntry()` 仍保留为通用 helper。
+- 状态：SSE 热路径已修复。
 
 #### 22. SVG 拓扑排序 `queue.shift()` 为 O(n)
 
@@ -175,7 +175,7 @@ Status: calibrated
 - 活动执行入口保持为 `docs/todo-backlog.md`。
 - 本文只负责校准定性，不直接代表任务已关闭。
 - `chat panel` ARIA 语义已修正；Studio 图命令表单现已补齐 `dialog` / `aria-modal` / `aria-labelledby`、Escape 关闭和关闭后焦点回收。
-- `innerHTML` 热点治理只完成首批面板，剩余 `runListEl` 与 `consoleTabsEl` 继续留在 P1。
+- `innerHTML` 热点治理已覆盖首批高频面板，包括 `runListEl` 与 `consoleTabsEl`；更广范围的差量更新与公共渲染边界收敛仍保留在后续可维护性批次处理。
 - `runsListCache` 无上限问题已按短期稳态优先级修复；更深的缓存抽象收敛仍保留为 P2 可维护性治理。
 - `listTimer`、`workbenchValidationTimer`、`streamRefreshTimer` 已建立统一清理约束：run 切换/返回 project home/dispose 均会清理对应 timer，stream refresh plan 现已绑定当前 run，避免旧 SSE 事件污染新 run；回归测试采用 `visualizer-client` harness 的短路径用例，控制等待时间。
 - run 切换状态重置路径已补齐：切换到新 run 时会立即清空 review / failure / resume / logs 等 run-scoped 面板状态，并为 run detail、review detail、failure、resume、logs 等异步加载增加“仅当前 run selection 可提交”的代际保护，避免旧请求晚到后覆盖新 run 视图。
