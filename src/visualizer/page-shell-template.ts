@@ -76,9 +76,9 @@ export function renderPageShellBody({ workdir, locale, t }: PageShellBodyOptions
       <main class="main-stage">
         <div id="flash" class="flash hidden"></div>
         <div class="stage-stack">
-          <section class="grid" id="action-form-section" hidden>
+          <section class="grid" id="action-form-section" hidden role="dialog" aria-modal="true" aria-labelledby="action-form-title">
             <article class="card span-12">
-              <header><h3>${escapeHtml(t("section.actionForm"))}</h3></header>
+              <header><h3 id="action-form-title">${escapeHtml(t("section.actionForm"))}</h3></header>
               <div class="body">
                 <div id="action-form" class="form-shell"><div class="hint">${escapeHtml(t("form.emptyHint"))}</div></div>
               </div>

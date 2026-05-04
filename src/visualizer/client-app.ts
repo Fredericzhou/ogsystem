@@ -283,6 +283,7 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
     const selectedSubtitleEl = document.getElementById("selected-subtitle");
     const actionFormEl = document.getElementById("action-form");
     const actionFormSectionEl = document.getElementById("action-form-section");
+    let actionFormReturnFocusEl = null;
     const consoleTabsEl = document.getElementById("console-tabs");
     const workdirEl = document.getElementById("workdir");
     const projectSummaryEl = document.getElementById("project-summary");
@@ -1552,6 +1553,10 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
 
     if (typeof document.addEventListener === "function") {
       document.addEventListener("keydown", (event) => {
+        if (event.key === "Escape" && state.actionForm && !state.actionBusy) {
+          closeActionForm();
+          return;
+        }
         if (event.key !== "Escape" || !state.studioBridgeFullscreen) {
           return;
         }
@@ -1915,9 +1920,19 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
     function closeActionForm() {
       state.actionForm = null;
       renderActionForm();
+      if (actionFormReturnFocusEl && typeof actionFormReturnFocusEl.focus === "function") {
+        actionFormReturnFocusEl.focus();
+      }
+      actionFormReturnFocusEl = null;
     }
 
-    function openActionForm(kind, fields) {
+    function openActionForm(kind, fields, options) {
+      actionFormReturnFocusEl =
+        options && options.returnFocusEl && typeof options.returnFocusEl.focus === "function"
+          ? options.returnFocusEl
+          : document.activeElement && typeof document.activeElement.focus === "function"
+            ? document.activeElement
+            : null;
       state.actionForm = {
         kind,
         fields: Object.assign({}, fields || {})
@@ -1950,7 +1965,13 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
       }
       if (!form) {
         actionFormEl.innerHTML = '<div class="hint">' + escapeText(t("form.emptyHint")) + '</div>';
+        if (actionFormSectionEl) {
+          actionFormSectionEl.setAttribute("aria-hidden", "true");
+        }
         return;
+      }
+      if (actionFormSectionEl) {
+        actionFormSectionEl.setAttribute("aria-hidden", "false");
       }
       const disabled = state.actionBusy ? " disabled" : "";
       if (form.kind === "start") {
@@ -2029,6 +2050,19 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
           }
         });
       }
+      const firstFocusableId =
+        form.kind === "start"
+          ? "action-start-system-path"
+          : form.kind === "resume"
+            ? "action-resume-system-path"
+            : form.kind === "stop"
+              ? "action-stop-reason"
+              : form.kind === "review"
+                ? "action-review-actor"
+                : form.kind === "saveAs"
+                  ? "action-save-as-path"
+                  : "action-form-cancel";
+      focusActionField(firstFocusableId);
     }
 
     function renderProject() {
@@ -2726,7 +2760,7 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
             scope: button.getAttribute("data-review-scope") || detail.scope || "branch",
             actor: detail.actor || "visualizer",
             comment: detail.comment || \`recorded via visualizer (\${button.getAttribute("data-review-action")})\`
-          })
+          }, { returnFocusEl: button })
         );
       }
       renderActionState();
@@ -3439,7 +3473,7 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
         runtimePath: "",
         userProfilePath: "",
         lawsPath: ""
-      });
+      }, { returnFocusEl: startRunButton });
       renderWorkbench();
     }
 
@@ -4470,7 +4504,7 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
     }
 
     reindexButton.addEventListener("click", async () => {
-      openActionForm("reindex", {});
+      openActionForm("reindex", {}, { returnFocusEl: reindexButton });
     });
 
     stopRunButton.addEventListener("click", async () => {
@@ -4479,7 +4513,7 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
       }
       openActionForm("stop", {
         reason: "requested via visualizer"
-      });
+      }, { returnFocusEl: stopRunButton });
     });
 
     startRunButton.addEventListener("click", async () => {
@@ -4499,7 +4533,7 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
         runtimePath: "",
         userProfilePath: "",
         lawsPath: ""
-      });
+      }, { returnFocusEl: resumeRunButton });
     });
 
     refreshButton.addEventListener("click", async () => {

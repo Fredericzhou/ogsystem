@@ -98,6 +98,14 @@ const PAGE_ELEMENT_IDS = [
   "locale-select"
 ];
 
+const PAGE_ELEMENT_ATTRIBUTES = {
+  "action-form-section": {
+    role: "dialog",
+    "aria-modal": "true",
+    "aria-labelledby": "action-form-title"
+  }
+};
+
 function cloneJson(value) {
   return JSON.parse(JSON.stringify(value));
 }
@@ -423,6 +431,7 @@ class FakeDocument {
   constructor() {
     this.elements = new Map();
     this.dynamicElements = new Set();
+    this.listeners = new Map();
     this.activeElement = null;
     this.body = {
       classList: {
@@ -437,12 +446,18 @@ class FakeDocument {
       }
     };
     for (const id of PAGE_ELEMENT_IDS) {
-      this.elements.set(id, new FakeElement(this, id));
+      this.elements.set(id, new FakeElement(this, id, "div", PAGE_ELEMENT_ATTRIBUTES[id] ?? {}));
     }
   }
 
   getElementById(id) {
     return this.elements.get(id) ?? null;
+  }
+
+  addEventListener(type, handler) {
+    const handlers = this.listeners.get(type) ?? [];
+    handlers.push(handler);
+    this.listeners.set(type, handlers);
   }
 
   unregisterElement(element, options = {}) {
@@ -2844,6 +2859,33 @@ test("visualizer client resumes and stops runs through inline forms", async () =
     reason: "operator stop"
   });
   assert.match(harness.document.getElementById("flash").textContent, /Stop request recorded/);
+});
+
+test("visualizer client action form exposes dialog semantics and restores focus on Escape", async () => {
+  const harness = await createClientHarness({ readinessCanDryRun: true });
+
+  const dryRunButton = harness.document.getElementById("build-dry-run");
+  assert.ok(dryRunButton);
+  dryRunButton.focus();
+  await dryRunButton.click();
+  await waitForCondition(() => Boolean(harness.document.getElementById("action-start-system-path")));
+
+  const actionSection = harness.document.getElementById("action-form-section");
+  assert.equal(actionSection.hidden, false);
+  assert.equal(actionSection.getAttribute("role"), "dialog");
+  assert.equal(actionSection.getAttribute("aria-modal"), "true");
+  assert.equal(actionSection.getAttribute("aria-labelledby"), "action-form-title");
+  assert.equal(actionSection.getAttribute("aria-hidden"), "false");
+  assert.equal(harness.document.activeElement?.id, "action-start-system-path");
+
+  for (const handler of harness.document.listeners.get("keydown") ?? []) {
+    await handler({ key: "Escape" });
+  }
+  await settle();
+
+  assert.equal(harness.document.getElementById("action-form-section").hidden, true);
+  assert.equal(harness.document.getElementById("action-form-section").getAttribute("aria-hidden"), "true");
+  assert.equal(harness.document.activeElement?.id, "start-run");
 });
 
 test("visualizer client appends SSE timeline entries and refreshes only targeted panels", async () => {

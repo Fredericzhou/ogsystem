@@ -174,6 +174,6 @@ Status: calibrated
 
 - 活动执行入口保持为 `docs/todo-backlog.md`。
 - 本文只负责校准定性，不直接代表任务已关闭。
-- `chat panel` ARIA 语义已修正，但 Studio 图命令表单的 modal 语义、焦点管理和键盘行为仍需继续核对。
+- `chat panel` ARIA 语义已修正；Studio 图命令表单现已补齐 `dialog` / `aria-modal` / `aria-labelledby`、Escape 关闭和关闭后焦点回收。
 - `innerHTML` 热点治理只完成首批面板，剩余 `runListEl` 与 `consoleTabsEl` 继续留在 P1。
 - `runsListCache` 无上限问题已按短期稳态优先级修复；更深的缓存抽象收敛仍保留为 P2 可维护性治理。
