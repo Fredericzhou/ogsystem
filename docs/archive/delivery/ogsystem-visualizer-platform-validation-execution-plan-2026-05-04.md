@@ -1,7 +1,7 @@
 # Visualizer 平台验证执行计划
 
 Date: 2026-05-04  
-Status: active execution plan  
+Status: completed  
 Source: `docs/todo-backlog.md`
 
 定位说明：本文不是前一个 Visualizer 优化清单的完成记录，而是从 `docs/todo-backlog.md` 派生出的阶段性执行入口，用于集中推进仍未完成、且与 Visualizer 平台验证最相关的事项。活动总入口仍以 `docs/todo-backlog.md` 为准；本文完成后再作为 delivery 记录归档。
@@ -40,11 +40,11 @@ Source: `docs/todo-backlog.md`
 
 ### P1-1. 安装态 smoke test
 
-- [ ] 在 CI 或可本地复用脚本中增加 `pnpm pack` + 安装态 smoke。
-- [ ] 覆盖 npm/pnpm 安装后 `ogs help` 可执行。
-- [ ] 覆盖模板项目启动与最小 visualizer 启动路径。
-- [ ] 避免复用源码树内 `dist` 假阳性，测试应从打包产物安装态启动。
-- [ ] 影响面控制：仅新增测试/CI 脚本或 package 校验，不改变运行时入口行为；如发现 package manifest 需调整，必须补 `ogs help`、模板启动和现有 package install 回归。
+- [x] 在 CI 或可本地复用脚本中增加 `pnpm pack` + 安装态 smoke。
+- [x] 覆盖 npm/pnpm 安装后 `ogs help` 可执行。
+- [x] 覆盖模板项目启动与最小 visualizer 启动路径。
+- [x] 避免复用源码树内 `dist` 假阳性，测试应从打包产物安装态启动。
+- [x] 影响面控制：仅新增测试/CI 脚本或 package 校验，不改变运行时入口行为；如发现 package manifest 需调整，必须补 `ogs help`、模板启动和现有 package install 回归。
 
 验收：
 
@@ -60,11 +60,11 @@ Source: `docs/todo-backlog.md`
 
 ### P1-2. Windows PowerShell/CMD 生命周期 smoke
 
-- [ ] 增加 Windows PowerShell smoke，覆盖 `project init`、`run start`、`run list`、`run status`。
-- [ ] 增加 Windows CMD smoke，覆盖同一最小生命周期路径。
-- [ ] 覆盖路径空格、反斜杠和 shell quoting 的基础场景。
-- [ ] 明确哪些命令属于 Windows 专属回归，避免 macOS/Linux 每轮等待。
-- [ ] 影响面控制：Windows 专属适配必须挂在平台分支或测试 harness 中，不改变 macOS/Linux 当前 `spawn()` 路径。
+- [x] 增加 Windows PowerShell smoke，覆盖 `project init`、`run start`、`run list`、`run status`。
+- [x] 增加 Windows CMD smoke，覆盖同一最小生命周期路径。
+- [x] 覆盖路径空格、反斜杠和 shell quoting 的基础场景。
+- [x] 明确哪些命令属于 Windows 专属回归，避免 macOS/Linux 每轮等待。
+- [x] 影响面控制：Windows 专属适配必须挂在平台分支或测试 harness 中，不改变 macOS/Linux 当前 `spawn()` 路径。
 
 验收：
 
@@ -80,10 +80,10 @@ Source: `docs/todo-backlog.md`
 
 ### P1-3. 安装与操作文档漂移检查
 
-- [ ] 建立 README 与 `docs/usage-manual.md` 命令片段对齐校验。
-- [ ] 覆盖安装、启动、project init、run start/list/status、visualizer 入口。
-- [ ] 为可变输出使用稳定锚点或 fenced block marker，避免脆弱全文比对。
-- [ ] 影响面控制：文档校验只约束文档中的稳定命令片段，不改变 CLI 行为，不把示例输出当成强契约。
+- [x] 建立 README 与 `docs/usage-manual.md` 命令片段对齐校验。
+- [x] 覆盖安装、启动、project init、run start/list/status、visualizer 入口。
+- [x] 为可变输出使用稳定锚点或 fenced block marker，避免脆弱全文比对。
+- [x] 影响面控制：文档校验只约束文档中的稳定命令片段，不改变 CLI 行为，不把示例输出当成强契约。
 
 验收：
 
@@ -99,10 +99,10 @@ Source: `docs/todo-backlog.md`
 
 ### P1-4. `run status/list` 统一字段
 
-- [ ] 为 `run status` 和 `run list` 增加统一字段：运行时长、停止原因、最后错误码、最后角色。
-- [ ] 保持 JSON 输出对工具消费稳定，文本输出可读但不作为唯一契约。
-- [ ] 评估 Visualizer 是否直接消费这些字段，必要时同步 DTO/API 映射。
-- [ ] 影响面控制：字段只能 additive；不得改变现有 status/list 字段含义、排序默认值或退出码；运行时状态来源必须只读，不得为了展示字段改写内核运行状态。
+- [x] 为 `run status` 和 `run list` 增加统一字段：运行时长、停止原因、最后错误码、最后角色。
+- [x] 保持 JSON 输出对工具消费稳定，文本输出可读但不作为唯一契约。
+- [x] 评估 Visualizer 是否直接消费这些字段，必要时同步 DTO/API 映射。
+- [x] 影响面控制：字段只能 additive；不得改变现有 status/list 字段含义、排序默认值或退出码；运行时状态来源必须只读，不得为了展示字段改写内核运行状态。
 
 验收：
 
@@ -118,11 +118,11 @@ Source: `docs/todo-backlog.md`
 
 ### P1-5. `run logs --tail/--follow/--since`
 
-- [ ] 为 `run logs` 增加 `--tail`。
-- [ ] 为 `run logs` 增加 `--since`。
-- [ ] 为 `run logs` 增加 `--follow`，并定义退出/超时策略。
-- [ ] 与 Visualizer 日志筛选能力对齐，避免 CLI 和 UI 行为分叉。
-- [ ] 影响面控制：无参数 `run logs` 行为保持不变；新增过滤只影响显式传参路径；`--follow` 不得持有内核锁或阻塞运行时写日志路径。
+- [x] 为 `run logs` 增加 `--tail`。
+- [x] 为 `run logs` 增加 `--since`。
+- [x] 为 `run logs` 增加 `--follow`，并定义退出/超时策略。
+- [x] 与 Visualizer 日志筛选能力对齐，避免 CLI 和 UI 行为分叉。
+- [x] 影响面控制：无参数 `run logs` 行为保持不变；新增过滤只影响显式传参路径；`--follow` 不得持有内核锁或阻塞运行时写日志路径。
 
 验收：
 
@@ -141,10 +141,10 @@ Source: `docs/todo-backlog.md`
 
 ### P2-1. run 级 `summary.json`
 
-- [ ] 增加 run 级机器可读 `summary.json`。
-- [ ] 覆盖状态、开始/结束时间、duration、最后角色、停止原因、最后错误码、产物索引摘要。
-- [ ] 明确与现有 markdown 审计摘要的关系：机器消费优先读 `summary.json`，markdown 保持人读。
-- [ ] 影响面控制：`summary.json` 作为新增派生产物，不替代现有 markdown/审计文件；生成失败不得掩盖或改变原始 run 结果，除非明确属于写入产物失败并已有稳定错误策略。
+- [x] 增加 run 级机器可读 `summary.json`。
+- [x] 覆盖状态、开始/结束时间、duration、最后角色、停止原因、最后错误码、产物索引摘要。
+- [x] 明确与现有 markdown 审计摘要的关系：机器消费优先读 `summary.json`，markdown 保持人读。
+- [x] 影响面控制：`summary.json` 作为新增派生产物，不替代现有 markdown/审计文件；生成失败不得掩盖或改变原始 run 结果，除非明确属于写入产物失败并已有稳定错误策略。
 
 验收：
 
@@ -160,10 +160,10 @@ Source: `docs/todo-backlog.md`
 
 ### P2-2. Provider 凭据健康检查
 
-- [ ] 增加 provider 凭据健康检查命令或 doctor 扩展。
-- [ ] 覆盖缺失凭据、权限不足、模型引用不可用的稳定错误码。
-- [ ] 为 Visualizer 显示层提供清晰的配置不可用提示，避免误判为平台故障。
-- [ ] 影响面控制：健康检查默认只读，不触发真实 run，不写入项目状态；在线检查必须可跳过，离线环境不得导致现有 doctor/CLI 基础检查失败。
+- [x] 增加 provider 凭据健康检查命令或 doctor 扩展。
+- [x] 覆盖缺失凭据、权限不足、模型引用不可用的稳定错误码。
+- [x] 为 Visualizer 显示层提供清晰的配置不可用提示，避免误判为平台故障。
+- [x] 影响面控制：健康检查默认只读，不触发真实 run，不写入项目状态；在线检查必须可跳过，离线环境不得导致现有 doctor/CLI 基础检查失败。
 
 验收：
 
@@ -179,10 +179,10 @@ Source: `docs/todo-backlog.md`
 
 ### P2-3. 运行目录敏感字段脱敏
 
-- [ ] 定义运行目录日志、审计输出和 Visualizer 展示的敏感字段规则。
-- [ ] 对常见 secret key、token、authorization header、provider credential 做脱敏。
-- [ ] 补充防回归测试，覆盖 CLI 输出、日志投影和 Visualizer 数据投影。
-- [ ] 影响面控制：脱敏优先发生在展示/输出投影层，不改写原始运行产物；如确需写入脱敏副本，必须保留审计可追溯性并明确原始文件权限边界。
+- [x] 定义运行目录日志、审计输出和 Visualizer 展示的敏感字段规则。
+- [x] 对常见 secret key、token、authorization header、provider credential 做脱敏。
+- [x] 补充防回归测试，覆盖 CLI 输出、日志投影和 Visualizer 数据投影。
+- [x] 影响面控制：脱敏优先发生在展示/输出投影层，不改写原始运行产物；如确需写入脱敏副本，必须保留审计可追溯性并明确原始文件权限边界。
 
 验收：
 
@@ -198,11 +198,11 @@ Source: `docs/todo-backlog.md`
 
 ### P2-4. Retention 分层与清理准则
 
-- [ ] 形成开发、预发、生产三档 retention 建议。
-- [ ] 明确自动清理和一次性 CLI 清理的启用准则。
-- [ ] 与 `executionDirCount` 阈值建议、清理审计字段保持一致。
-- [ ] 说明 Visualizer 长驻使用时的目录增长风险和推荐设置。
-- [ ] 影响面控制：本项先文档化和 dry-run 验证，不默认开启更激进清理；任何默认阈值变更都必须证明不会破坏 resume、审计和历史回看。
+- [x] 形成开发、预发、生产三档 retention 建议。
+- [x] 明确自动清理和一次性 CLI 清理的启用准则。
+- [x] 与 `executionDirCount` 阈值建议、清理审计字段保持一致。
+- [x] 说明 Visualizer 长驻使用时的目录增长风险和推荐设置。
+- [x] 影响面控制：本项先文档化和 dry-run 验证，不默认开启更激进清理；任何默认阈值变更都必须证明不会破坏 resume、审计和历史回看。
 
 验收：
 
@@ -252,3 +252,31 @@ Windows 相关项收口时额外运行：
 - `docs/todo-backlog.md` 对应条目状态同步更新。
 - 新增或变更的命令、字段、文档锚点均有测试保护。
 - 归档执行记录补充最终回归命令、通过数字、已知边界。
+
+## 8. 收口记录
+
+完成日期：2026-05-05
+
+落地提交：
+
+- `82a6213`：安装态 smoke 增加打包安装后的最小 Visualizer 启动与首页断言。
+- `fdc6217`：新增 Windows PowerShell/CMD 生命周期 smoke；非 Windows 明确 skip。
+- `76d6dc9`：新增 README / usage manual 稳定命令锚点漂移检查。
+- `9dd2c60`：`summary.json`、`run list`、`run status` 增加兼容运行时长、停止、最后错误、最后角色和产物索引摘要字段。
+- `ec41078`：doctor provider health 结构化结果、脱敏 helper 表驱动测试、Visualizer 日志 API 脱敏投影。
+- `662f2be`：retention 三档建议、provider health 说明和文档锚点检查。
+
+已运行回归：
+
+- `pnpm run build`：通过。
+- `node scripts/docs-command-drift-check.mjs`：通过。
+- `node --test tests/docs-command-drift.test.mjs tests/windows-lifecycle-smoke.test.mjs`：1 pass / 1 skip（非 Windows 环境跳过 Windows smoke）。
+- `node --test tests/run-summary-schema.test.mjs tests/cli-lifecycle.test.mjs`：12 pass。
+- `node --test tests/doctor.test.mjs tests/redaction.test.mjs tests/run-artifact-policy.test.mjs`：8 pass。
+- `node --test tests/visualizer.test.mjs tests/docs-command-drift.test.mjs tests/redaction.test.mjs`：30 pass。
+- `node --test tests/run-summary-schema.test.mjs tests/cli-lifecycle.test.mjs tests/doctor.test.mjs tests/run-artifact-policy.test.mjs`：18 pass。
+
+未在本机完整执行的门禁：
+
+- `pnpm run smoke:package-install:npm` 与 `pnpm run smoke:package-install:pnpm` 未在本轮最终阶段完整跑；脚本新增路径已做 `node --check`，安装态 smoke 仍建议在发布前门禁执行。
+- Windows PowerShell/CMD 真实 smoke 需要 Windows CI 或 Windows 本机；当前 macOS 环境只验证了 skip 语义。
