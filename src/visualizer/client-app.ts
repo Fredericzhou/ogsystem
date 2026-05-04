@@ -572,6 +572,34 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
       window.history.replaceState(null, "", query ? "?" + query : window.location.pathname);
     }
 
+    function isCurrentRunSelection(runId, requestId) {
+      return Boolean(runId) && state.selectedRunId === runId && state.runSelectionRequestId === requestId;
+    }
+
+    function resetSelectedRunPanels() {
+      state.detail = null;
+      state.graph = null;
+      state.contractRuntimeStatus = null;
+      state.failure = null;
+      state.failureLoaded = false;
+      state.failureStale = false;
+      state.reviews = null;
+      state.reviewDetail = null;
+      state.resumeReadiness = null;
+      state.resumeReadinessLoaded = false;
+      state.resumeReadinessStale = false;
+      state.resumeDiagnostics = null;
+      state.resumeDiagnosticsLoaded = false;
+      state.resumeDiagnosticsStale = false;
+      state.events = [];
+      state.eventCursor = 0;
+      state.eventCursorIndex = createStreamCursorIndex(state.events);
+      state.engineLogs = [];
+      state.roleLogs = [];
+      state.logsLoaded = false;
+      state.logsStale = false;
+    }
+
     function buildStudioCanvasFromBridge(bridge) {
       const authoring = bridge?.authoring || null;
       const extracted = bridge?.extracted || {};
@@ -4052,6 +4080,7 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
       if (!runId) {
         return;
       }
+      const requestId = state.runSelectionRequestId;
       const load = async () => {
         const payload = await fetchSelectedLogs({
           requestJson,
@@ -4063,6 +4092,9 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
           logPageSize: state.logPageSize,
           logSince: state.logSince
         });
+        if (!isCurrentRunSelection(runId, requestId)) {
+          return;
+        }
         state.engineLogs = payload.engineLogs;
         state.roleLogs = payload.roleLogs;
         state.logsLoaded = true;
@@ -4077,6 +4109,7 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
     }
 
     async function refreshSelectedReviewDetail(runId, options) {
+      const requestId = state.runSelectionRequestId;
       if (!state.selectedReviewId) {
         state.reviewDetail = null;
         renderReviews();
@@ -4085,10 +4118,17 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
         return;
       }
       try {
-        state.reviewDetail = await requestJson(
+        const reviewDetail = await requestJson(
           \`\${API_PREFIX}/runs/\${encodeURIComponent(runId)}/reviews/\${encodeURIComponent(state.selectedReviewId)}\`
         );
+        if (!isCurrentRunSelection(runId, requestId)) {
+          return;
+        }
+        state.reviewDetail = reviewDetail;
       } catch (error) {
+        if (!isCurrentRunSelection(runId, requestId)) {
+          return;
+        }
         if (options?.allowMissing) {
           state.reviewDetail = null;
           state.selectedReviewId = "";
@@ -4102,7 +4142,11 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
     }
 
     async function refreshReviews(runId) {
+      const requestId = state.runSelectionRequestId;
       const reviewsPayload = await requestJson(\`\${API_PREFIX}/runs/\${encodeURIComponent(runId)}/reviews\`);
+      if (!isCurrentRunSelection(runId, requestId)) {
+        return;
+      }
       state.reviews = reviewsPayload;
       state.selectedReviewId = selectReviewId({
         currentReviewId: state.selectedReviewId,
@@ -4114,11 +4158,15 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
     }
 
     async function refreshRunDetailAndGraph(runId) {
+      const requestId = state.runSelectionRequestId;
       const [detail, graphPayload, contractRuntimeStatus] = await Promise.all([
         requestJson(\`\${API_PREFIX}/runs/\${encodeURIComponent(runId)}\`),
         requestJson(\`\${API_PREFIX}/runs/\${encodeURIComponent(runId)}/graph\`),
         requestJson(\`\${API_PREFIX}/runs/\${encodeURIComponent(runId)}/contracts\`).catch(() => null)
       ]);
+      if (!isCurrentRunSelection(runId, requestId)) {
+        return;
+      }
       state.detail = detail;
       state.graph = graphPayload;
       state.contractRuntimeStatus = contractRuntimeStatus;
@@ -4145,11 +4193,19 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
       })) {
         return;
       }
+      const requestId = state.runSelectionRequestId;
       try {
-        state.failure = await fetchFailureData({ requestJson, apiPrefix: API_PREFIX, runId });
+        const failure = await fetchFailureData({ requestJson, apiPrefix: API_PREFIX, runId });
+        if (!isCurrentRunSelection(runId, requestId)) {
+          return;
+        }
+        state.failure = failure;
         state.failureLoaded = true;
         state.failureStale = false;
       } catch (error) {
+        if (!isCurrentRunSelection(runId, requestId)) {
+          return;
+        }
         state.failure = null;
         state.failureLoaded = true;
         if (!options?.suppressFlash) {
@@ -4170,11 +4226,19 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
       })) {
         return;
       }
+      const requestId = state.runSelectionRequestId;
       try {
-        state.resumeReadiness = await fetchResumeReadinessData({ requestJson, apiPrefix: API_PREFIX, runId });
+        const readiness = await fetchResumeReadinessData({ requestJson, apiPrefix: API_PREFIX, runId });
+        if (!isCurrentRunSelection(runId, requestId)) {
+          return;
+        }
+        state.resumeReadiness = readiness;
         state.resumeReadinessLoaded = true;
         state.resumeReadinessStale = false;
       } catch (error) {
+        if (!isCurrentRunSelection(runId, requestId)) {
+          return;
+        }
         state.resumeReadiness = null;
         state.resumeReadinessLoaded = true;
         if (!options?.suppressFlash) {
@@ -4196,19 +4260,27 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
       })) {
         return;
       }
+      const requestId = state.runSelectionRequestId;
       try {
         const payload = await fetchResumeDiagnosticsData({ requestJson, apiPrefix: API_PREFIX, runId });
+        if (!isCurrentRunSelection(runId, requestId)) {
+          return;
+        }
         state.resumeDiagnostics = payload;
         state.resumeDiagnosticsLoaded = true;
         state.resumeDiagnosticsStale = false;
         renderResumeDiagnostics();
         renderDetail();
       } catch (error) {
+        if (!isCurrentRunSelection(runId, requestId)) {
+          return;
+        }
         setFlash("error", t("resume.diagnosticsLoadFailed", { message: error.message || error }, "Failed to load resume diagnostics: {message}"));
       }
     }
 
     async function loadSelectedRunBoot(runId, options) {
+      const requestId = state.runSelectionRequestId;
       state.runDetailLoading = true;
       renderSelectedRun();
       try {
@@ -4219,6 +4291,9 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
           requestJson(\`\${API_PREFIX}/runs/\${encodeURIComponent(runId)}/reviews\`),
           requestJson(\`\${API_PREFIX}/runs/\${encodeURIComponent(runId)}/contracts\`).catch(() => null)
         ]);
+        if (!isCurrentRunSelection(runId, requestId)) {
+          return;
+        }
 
         state.detail = detail;
         state.events = eventsPayload.events || [];
@@ -4227,19 +4302,6 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
         state.graph = graphPayload;
         state.reviews = reviewsPayload;
         state.contractRuntimeStatus = contractRuntimeStatus;
-        state.failure = null;
-        state.failureLoaded = false;
-        state.failureStale = false;
-        state.resumeReadiness = null;
-        state.resumeReadinessLoaded = false;
-        state.resumeReadinessStale = false;
-        state.resumeDiagnostics = null;
-        state.resumeDiagnosticsLoaded = false;
-        state.resumeDiagnosticsStale = false;
-        state.engineLogs = [];
-        state.roleLogs = [];
-        state.logsLoaded = false;
-        state.logsStale = false;
         upsertRunFromHeader(detail.header);
         const fallbackRoleId = fallbackLogRoleId(detail.header);
         state.selectedReviewId = selectReviewId({
@@ -4266,8 +4328,10 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
         const liveState = resolveRunLiveState(detail.header);
         setLive(liveState.mode, liveState.label);
       } finally {
-        state.runDetailLoading = false;
-        renderSelectedRun();
+        if (isCurrentRunSelection(runId, requestId)) {
+          state.runDetailLoading = false;
+          renderSelectedRun();
+        }
       }
     }
 
@@ -4280,7 +4344,9 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
         renderConsoleTabs();
       }
       state.selectedRunId = runId;
+      state.runSelectionRequestId += 1;
       state.selectedReviewId = "";
+      resetSelectedRunPanels();
       resetStreamRefreshForRun(runId);
       closeActionForm();
       setSidebarOpen(false);
@@ -4294,27 +4360,9 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
       state.projectHome = true;
       state.consoleTab = "project";
       state.selectedRunId = "";
+      state.runSelectionRequestId += 1;
       state.selectedReviewId = "";
-      state.detail = null;
-      state.graph = null;
-      state.contractRuntimeStatus = null;
-      state.failure = null;
-      state.failureLoaded = false;
-      state.failureStale = false;
-      state.reviews = null;
-      state.reviewDetail = null;
-      state.resumeReadiness = null;
-      state.resumeReadinessLoaded = false;
-      state.resumeReadinessStale = false;
-      state.resumeDiagnostics = null;
-      state.resumeDiagnosticsLoaded = false;
-      state.resumeDiagnosticsStale = false;
-      state.events = [];
-      state.eventCursorIndex = createStreamCursorIndex(state.events);
-      state.engineLogs = [];
-      state.roleLogs = [];
-      state.logsLoaded = false;
-      state.logsStale = false;
+      resetSelectedRunPanels();
       closeActionForm();
       syncTimelineFilterInputs();
       renderProject();

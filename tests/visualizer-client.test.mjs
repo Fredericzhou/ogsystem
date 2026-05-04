@@ -1619,6 +1619,10 @@ function createBackend(options = {}) {
       if (runMatch) {
         const fixture = getRunFixture(runMatch[1]);
         if (fixture) {
+          const deferred = options.runDetailDeferredByRunId?.[runMatch[1]];
+          if (deferred) {
+            await deferred.promise;
+          }
           return createResponse(fixture.detail);
         }
       }
@@ -1675,6 +1679,10 @@ function createBackend(options = {}) {
       if (runFailureMatch) {
         const fixture = getRunFixture(runFailureMatch[1]);
         if (fixture) {
+          const deferred = options.runFailureDeferredByRunId?.[runFailureMatch[1]];
+          if (deferred) {
+            await deferred.promise;
+          }
           return createResponse(cloneJson(fixture.failure));
         }
       }
@@ -2767,6 +2775,27 @@ test("visualizer client refreshes failure panels when switching runs", async () 
   );
 });
 
+test("visualizer client clears stale run panels immediately when switching runs", async () => {
+  const runFailureDeferredByRunId = { "run-456": createDeferred() };
+  const delayedBackend = createBackend({ includeSecondRun: true, runFailureDeferredByRunId });
+  const delayedHarness = await createClientHarness({ backend: delayedBackend });
+  delayedHarness.document.getElementById("logs").innerHTML = '<div class="event"><strong>legacy log payload</strong></div>';
+  delayedHarness.document.getElementById("failure-summary").innerHTML = '<div class="event"><strong>TOOL_EXECUTION_TIMEOUT</strong></div>';
+
+  const runButtons = delayedHarness.document.getElementById("run-list").querySelectorAll("[data-run-id]");
+  const secondRunButton = runButtons.find((button) => button.getAttribute("data-run-id") === "run-456");
+  assert.ok(secondRunButton);
+  const pendingSwitch = secondRunButton.click();
+  await settle();
+
+  assert.doesNotMatch(delayedHarness.document.getElementById("failure-summary").textContent, /TOOL_EXECUTION_TIMEOUT/);
+  assert.doesNotMatch(delayedHarness.document.getElementById("logs").textContent, /legacy log payload/);
+
+  runFailureDeferredByRunId["run-456"].resolve();
+  await pendingSwitch;
+  await settle();
+});
+
 test("visualizer client ignores stale SSE refreshes after switching runs", async () => {
   const harness = await createClientHarness({
     backend: createBackend({ includeSecondRun: true })
@@ -2807,6 +2836,38 @@ test("visualizer client ignores stale SSE refreshes after switching runs", async
     harness.backend.fetchCalls.some((call) => call.path === "/api/v1/runs/run-456/resume-readiness"),
     false
   );
+});
+
+test("visualizer client ignores late run-detail responses from an older run selection", async () => {
+  const runDetailDeferredByRunId = { "run-123": createDeferred() };
+  const harness = await createClientHarness({
+    backend: createBackend({ includeSecondRun: true, runDetailDeferredByRunId }),
+    search: ""
+  });
+
+  const runButtons = harness.document.getElementById("run-list").querySelectorAll("[data-run-id]");
+  const firstRunButton = runButtons.find((button) => button.getAttribute("data-run-id") === "run-123");
+  const secondRunButton = runButtons.find((button) => button.getAttribute("data-run-id") === "run-456");
+  assert.ok(firstRunButton);
+  assert.ok(secondRunButton);
+
+  const firstSelection = firstRunButton.click();
+  await settle();
+  const secondSelection = secondRunButton.click();
+  await settle();
+  await waitForCondition(() => /run-456/.test(harness.document.getElementById("selected-title").textContent));
+  assert.match(harness.document.getElementById("selected-title").textContent, /run-456/);
+
+  runDetailDeferredByRunId["run-123"].resolve();
+  await firstSelection;
+  await settle();
+
+  assert.match(harness.document.getElementById("selected-title").textContent, /run-456/);
+
+  await secondSelection;
+  await waitForCondition(() => /run-456/.test(harness.document.getElementById("selected-title").textContent));
+  assert.match(harness.document.getElementById("failure-summary").textContent, /CONTRACT_VIOLATION/);
+  assert.doesNotMatch(harness.document.getElementById("failure-summary").textContent, /TOOL_EXECUTION_TIMEOUT/);
 });
 
 test("visualizer client review action captures audit input, disables controls while busy, and flashes success", async () => {

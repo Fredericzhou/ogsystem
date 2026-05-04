@@ -80,6 +80,7 @@ export function createInitialVisualizerState(resolvedLocale: string) {
     filter: "",
     projectHome: false,
     selectedRunId: "",
+    runSelectionRequestId: 0,
     selectedReviewId: "",
     selectedLogRoleId: "",
     logTail: "",
