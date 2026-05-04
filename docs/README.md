@@ -77,6 +77,11 @@
 - `docs/archive/delivery/ogsystem-studio-visual-authoring-solution-2026-04-28.md`（proposal for a Studio-first visual authoring shell that keeps `system.mmd` as generated runtime artifact without changing the kernel）
 - `docs/archive/delivery/ogsystem-debug-first-console-roadmap-2026-04-28.md`（proposal for prioritizing run debugging, config explainability, and review/resume operability before Studio authoring）
 - `docs/archive/delivery/ogsystem-debug-first-console-checklist-2026-04-28.md`（execution checklist for debug-first console phases 0-3 across visualizer projections, API, client panels, and tests）
+- `docs/archive/delivery/ogsystem-visual-lifecycle-followup-optimization-backlog-2026-05-01.md`（follow-up backlog for Visualizer lifecycle UX, browser smoke, i18n, wizard, graph workspace, and product engineering gates）
+- `docs/archive/delivery/ogsystem-canvas-centered-product-architecture-roadmap-2026-05-03.md`（proposal for canvas-centered Visualizer product architecture and staged Studio shell evolution）
+- `docs/archive/delivery/ogsystem-visualizer-optimization-checklist-calibrated-2026-05-03.md`（delivered calibrated Visualizer optimization checklist across caching, SSE, client hot paths, accessibility, and risk validation）
+- `docs/archive/delivery/ogsystem-visualizer-http-runtime-isolation-decision-2026-05-04.md`（decision record for keeping Visualizer run execution in-process until evidence requires process isolation or queueing）
+- `docs/archive/delivery/ogsystem-visualizer-platform-validation-execution-plan-2026-05-04.md`（delivered platform validation closure for package install smoke, Windows lifecycle smoke, docs drift, status/logs/summary/provider/redaction/retention validation）
 - `docs/archive/delivery/ogsystem-naming-style-review-2026-04-14.md`（archived naming audit; `flow/edge` conclusion superseded by 2026-04-15 alignment review）
 - `docs/archive/delivery/ogsystem-flow-edge-alignment-review-2026-04-15.md`（delivered flow/edge alignment audit and canonical decision）
 - `docs/archive/delivery/ogsystem-flow-edge-alignment-execution-plan-2026-04-15.md`（delivered flow/edge alignment rollout and closure record）

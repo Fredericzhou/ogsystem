@@ -78,6 +78,19 @@ Sources: `docs/long-term-stability-roadmap.md`, `docs/archive/delivery/optimizat
 - [x] 为 `src/visualizer/client-app.ts` 的高频 `innerHTML` 重绘热点建立优先级列表；首批热点已覆盖 `operateTabs` / `workbenchStatus` / `workbenchTabs` / `workbenchViewTabs` / `workbenchActions` / `runListEl` / `consoleTabsEl`。
 - [x] 为关键异步加载态补更稳定的 loading skeleton 或占位策略，至少覆盖项目首页、Build 工作台和运行明细主面板。
 
+### P1. Visualizer 产品可用性下一轮
+
+- [ ] 保持 `pnpm run test:visualizer-browser` 为发布前 gate，并在失败日志中区分浏览器环境启动失败和应用断言失败。
+- [ ] 补齐可控 flash/error 文案国际化，优先覆盖 Studio Bridge、Workbench validation、Project Wizard、run start/resume/stop、stream refresh。
+- [ ] 明确 Project Wizard 路径选择体验：同屏展示当前 workdir、目标 workdir、目录状态、已有项目加载、初始化当前目录、改用其他目录。
+- [ ] 精简 Project Wizard 首屏：默认只保留项目名称、项目 ID、模板、目标目录和角色导入；模型/Profile 策略进入高级配置或创建后 Build Inspector。
+- [ ] 增强角色 catalog：搜索、分类、健康状态过滤、已选摘要、导入失败可恢复重试，避免大角色库只依赖前 12 个。
+- [ ] 将 Build 主视角继续收敛为图工作区，Source/Diagnostics/Readiness 作为辅助面板，不与图编辑并列争夺主任务。
+- [ ] 将 Operate 主视角收敛为 selected run 健康、失败位置、下一步动作；logs/audit/resume diagnostics/snapshot manifest 作为下钻信息。
+- [ ] 为长驻 Visualizer 增加显式健康/磁盘增长提示，把 `executionDirCount`、retention tier 和最近清理建议显示在运维摘要中。
+- [ ] 增加 provider readiness 的 UI 入口，把 doctor `providerHealth[]` 映射成“未检查/可用/不可用/需要配置”的可操作状态。
+- [ ] 提供 run logs 的 UI 过滤组合持久化或最近使用记忆，降低重复排障时反复设置 tail/since/role 的成本。
+
 ### P2. Visualizer 状态与可维护性治理
 
 - [x] 拆分 `createInitialVisualizerState()` 的巨型扁平状态对象，按 project/build/operate/review/logs/streaming 切片组织。
