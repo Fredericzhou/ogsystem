@@ -61,6 +61,7 @@ import {
   bindStudioChatControls as bindStudioChatControlsModule
 } from "../dist/visualizer/client-studio-bridge-controls.js";
 import {
+  renderStudioGraphCanvas,
   renderRunTopologySvg,
   sortStudioBridgeFlowsByTopology,
   sortStudioBridgeRolesTopologically
@@ -457,6 +458,17 @@ test("client lifecycle panel renderers cover Workbench controls and modes", () =
   assert.match(sourceHtml, /id="workbench-recover-draft"/);
   assert.match(sourceHtml, /id="workbench-revert"/);
   assert.match(sourceHtml, /flowchart TD/);
+});
+
+test("client renderer graph canvas escapes selected ids before composing HTML", () => {
+  const html = renderStudioGraphCanvas({
+    selectedRoleId: 'planner"><script>alert(1)</script>',
+    selectedFlowKey: "flow<'unsafe'>",
+    t
+  });
+  assert.match(html, /planner&quot;&gt;&lt;script&gt;alert\(1\)&lt;\/script&gt;/);
+  assert.match(html, /flow&lt;&#39;unsafe&#39;&gt;/);
+  assert.doesNotMatch(html, /<script>alert\(1\)<\/script>/);
 });
 
 test("client project workspace maps stable create error codes", () => {

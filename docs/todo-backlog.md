@@ -85,7 +85,7 @@ Sources: `docs/long-term-stability-roadmap.md`, `docs/archive/delivery/optimizat
 - [ ] 继续拆分 `src/visualizer/client-app.ts` 与 `src/visualizer/server.ts` 的超大文件，把稳定边界沉淀为独立模块。
   当前进展：已抽出 `src/visualizer/request-body.ts`，先把 JSON body 限流/解析错误处理从 `server.ts` 独立出来。
 - [ ] 收敛 `asString`、`asRecord`、`escapeHtml` 等重复辅助函数，统一语义并减少多份拷贝漂移。
-  当前进展：已新增 `src/visualizer/json-guards.ts`，覆盖 `server/data/project-projection/project-readiness/run-graph/ops-summary` 的共享 guard；`escapeHtml` 和其余 visualizer/studio-client 重复 helper 仍待后续批次收敛。
+  当前进展：已新增 `src/visualizer/json-guards.ts`，覆盖 `server/data/project-projection/project-readiness/run-graph/ops-summary` 的共享 guard；`src/visualizer/html-escape.ts` 现已接管 `page-shell` / `page-shell-template` / `client-renderers` 的重复 HTML escaping。剩余待收敛项主要还在 `dto.ts`、`studio-chat-to-mmd.ts` 与 `studio-client` 局部 helper。
 - [x] 将 `src/visualizer/client-renderers.ts` 的 SVG 拓扑排序从 `queue.shift()` 改为 index 游标遍历，避免理论 O(n²) 热点。
 
 ### P2. Visualizer 无障碍与交互修复

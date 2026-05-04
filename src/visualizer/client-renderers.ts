@@ -1,15 +1,8 @@
+import { escapeHtml as escapeText } from "./html-escape.js";
+
 type JsonRecord = Record<string, unknown>;
 type Translator = (key: string, vars?: Record<string, unknown>, fallback?: string) => string;
 type DateFormatter = (value: unknown) => string;
-
-function escapeText(value: unknown): string {
-  return String(value ?? "")
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
-    .replace(/"/g, "&quot;")
-    .replace(/'/g, "&#39;");
-}
 
 function formatJson(value: unknown): string {
   return JSON.stringify(value ?? null, null, 2);
@@ -651,7 +644,7 @@ export function renderStudioBridgePanel(args: {
     }) + "</div>",
     '<div class="studio-bridge-index structure-list" data-studio-bridge-region="index"><div class="event studio-bridge-index-controls"><div class="event-top"><span>' +
       escapeText(t("studio.graphIndex", undefined, "graph index")) + '</span><span>' + escapeText(t("studio.topologyOrder", undefined, "topology order")) + '</span></div><div class="toolbar-row compact"><input data-studio-bridge-filter="1" value="' +
-      escapeText(args.filter || "") + '" placeholder="' + escapeText(t("studio.filterGraphItems", undefined, "Filter roles or flows")) + '"><select data-studio-bridge-list-mode="1"><option value="all"' +
+      escapeText(args.filter || "") + '" placeholder="' + escapeText(t("studio.filterGraphItems", undefined, "Filter roles or flows")) + '" aria-label="' + escapeText(t("studio.filterGraphItems", undefined, "Filter roles or flows")) + '"><select data-studio-bridge-list-mode="1" aria-label="' + escapeText(t("studio.graphIndex", undefined, "graph index")) + '"><option value="all"' +
       (listMode === "all" ? " selected" : "") + ">" + escapeText(t("common.all", undefined, "all")) + '</option><option value="roles"' +
       (listMode === "roles" ? " selected" : "") + ">" + escapeText(t("studio.roles", undefined, "roles")) + '</option><option value="flows"' +
       (listMode === "flows" ? " selected" : "") + ">" + escapeText(t("studio.flows", undefined, "flows")) + '</option></select></div><div class="hint">' +

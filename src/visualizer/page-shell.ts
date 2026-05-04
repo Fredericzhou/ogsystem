@@ -1,16 +1,8 @@
 import { buildClientAppScript } from "./client-app.js";
+import { escapeHtml } from "./html-escape.js";
 import { createTranslator, getDictionary, type Dictionary, type Locale } from "./i18n/index.js";
 import { renderPageShellStyles } from "./page-shell-styles.js";
 import { renderPageShellBody } from "./page-shell-template.js";
-
-function escapeHtml(value: string): string {
-  return value
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
-    .replace(/"/g, "&quot;")
-    .replace(/'/g, "&#39;");
-}
 
 export type PageI18nOptions = {
   locale?: Locale;

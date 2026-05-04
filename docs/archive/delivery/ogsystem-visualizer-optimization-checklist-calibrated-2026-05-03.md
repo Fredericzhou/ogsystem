@@ -152,8 +152,8 @@ Status: calibrated
 #### 26. `escapeText` / `escapeHtml` 多份拷贝
 
 - 文件：`client-renderers.ts`、`page-shell.ts`、`page-shell-template.ts`
-- 现状：逻辑相近但名称不同。
-- 建议：与辅助函数收敛一并处理。
+- 现状：已新增共享 `html-escape.ts`，三处已改为复用同一份 escaping 语义。
+- 结论：本项已收口；更远的 `studio-client` 局部 helper 仍留在后续辅助函数收敛批次内处理。
 
 ---
 

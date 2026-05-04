@@ -1,3 +1,4 @@
+import { escapeHtml } from "./html-escape.js";
 import type { Locale, MessageKey } from "./i18n/index.js";
 
 type PageShellTranslator = (key: MessageKey) => string;
@@ -7,15 +8,6 @@ export type PageShellBodyOptions = {
   locale: Locale;
   t: PageShellTranslator;
 };
-
-function escapeHtml(value: string): string {
-  return value
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
-    .replace(/"/g, "&quot;")
-    .replace(/'/g, "&#39;");
-}
 
 export function renderPageShellBody({ workdir, locale, t }: PageShellBodyOptions): string {
   return `<body>
@@ -27,7 +19,7 @@ export function renderPageShellBody({ workdir, locale, t }: PageShellBodyOptions
         <span>${escapeHtml(t("app.local"))}</span>
       </div>
       <div class="stack">
-        <input id="search" class="search" placeholder="${escapeHtml(t("search.placeholder"))}" />
+        <input id="search" class="search" placeholder="${escapeHtml(t("search.placeholder"))}" aria-label="${escapeHtml(t("search.placeholder"))}" />
         <div id="run-list" class="run-list"></div>
       </div>
     </aside>
@@ -64,7 +56,7 @@ export function renderPageShellBody({ workdir, locale, t }: PageShellBodyOptions
         </div>
         <div class="top-nav-row top-nav-row-secondary">
           <div class="top-nav-stage-heading">
-            <button id="sidebar-toggle" class="button subtle sidebar-toggle">${escapeHtml(t("hero.runs"))}</button>
+            <button id="sidebar-toggle" class="button subtle sidebar-toggle" aria-controls="sidebar" aria-expanded="false">${escapeHtml(t("hero.runs"))}</button>
             <div class="stage-heading">
               <h2 id="selected-title">${escapeHtml(t("hero.selectRun"))}</h2>
               <p id="selected-subtitle" class="truncate">${escapeHtml(t("hero.selectRunHint"))}</p>
@@ -149,7 +141,7 @@ export function renderPageShellBody({ workdir, locale, t }: PageShellBodyOptions
                   <select id="timeline-role" class="select">
                     <option value="">${escapeHtml(t("timeline.allRoles"))}</option>
                   </select>
-                  <input id="timeline-type" class="select" placeholder="${escapeHtml(t("timeline.eventType"))}" />
+                  <input id="timeline-type" class="select" placeholder="${escapeHtml(t("timeline.eventType"))}" aria-label="${escapeHtml(t("timeline.eventType"))}" />
                   <select id="timeline-status" class="select">
                     <option value="">${escapeHtml(t("timeline.allStatuses"))}</option>
                     <option value="pending">${escapeHtml(t("status.pending"))}</option>
@@ -160,9 +152,9 @@ export function renderPageShellBody({ workdir, locale, t }: PageShellBodyOptions
                     <option value="failed">${escapeHtml(t("status.failed"))}</option>
                     <option value="waiting_review">${escapeHtml(t("status.waitingReview"))}</option>
                   </select>
-                  <input id="timeline-branch" class="select" placeholder="${escapeHtml(t("timeline.branchId"))}" />
-                  <input id="timeline-review" class="select" placeholder="${escapeHtml(t("timeline.reviewId"))}" />
-                  <input id="timeline-error" class="select" placeholder="${escapeHtml(t("timeline.errorCode"))}" />
+                  <input id="timeline-branch" class="select" placeholder="${escapeHtml(t("timeline.branchId"))}" aria-label="${escapeHtml(t("timeline.branchId"))}" />
+                  <input id="timeline-review" class="select" placeholder="${escapeHtml(t("timeline.reviewId"))}" aria-label="${escapeHtml(t("timeline.reviewId"))}" />
+                  <input id="timeline-error" class="select" placeholder="${escapeHtml(t("timeline.errorCode"))}" aria-label="${escapeHtml(t("timeline.errorCode"))}" />
                   <button id="timeline-apply" class="button subtle">${escapeHtml(t("action.applyFilters"))}</button>
                   <button id="timeline-clear" class="button subtle">${escapeHtml(t("action.clearFilters"))}</button>
                 </div>
@@ -255,19 +247,19 @@ export function renderPageShellBody({ workdir, locale, t }: PageShellBodyOptions
                     <div id="logs-controls" class="actions"></div>
                   </div>
                   <div class="log-toolbar">
-                    <select id="log-role" class="select">
+                    <select id="log-role" class="select" aria-label="${escapeHtml(t("logs.roleLogs"))}">
                     <option value="">${escapeHtml(t("timeline.allRoles"))}</option>
                     </select>
-                    <select id="log-page-size" class="select">
+                    <select id="log-page-size" class="select" aria-label="Log page size">
                       <option value="100">100</option>
                       <option value="500">500</option>
                       <option value="1000">1000</option>
                     </select>
-                    <select id="logs-all" class="select">
+                    <select id="logs-all" class="select" aria-label="Log scope">
                       <option value="">${escapeHtml(t("logs.all"))}</option>
                     </select>
-                    <input id="log-tail" class="select" type="number" min="1" placeholder="${escapeHtml(t("logs.tail"))}" />
-                    <input id="log-since" class="select" type="datetime-local" />
+                    <input id="log-tail" class="select" type="number" min="1" placeholder="${escapeHtml(t("logs.tail"))}" aria-label="${escapeHtml(t("logs.tail"))}" />
+                    <input id="log-since" class="select" type="datetime-local" aria-label="Log since" />
                   </div>
                 </div>
               </header>
