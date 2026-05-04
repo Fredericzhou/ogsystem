@@ -12,7 +12,7 @@ export function createInitialStreamRefreshPlan(): StreamRefreshPlan {
   };
 }
 
-export function createInitialVisualizerState(resolvedLocale: string) {
+export function createProjectStateSlice(resolvedLocale: string) {
   return {
     locale: resolvedLocale,
     workspace: null,
@@ -36,8 +36,12 @@ export function createInitialVisualizerState(resolvedLocale: string) {
     projectCreateRequestId: "",
     opsSummary: null,
     projectReadiness: null,
-    consoleTab: "project",
-    legacyConsoleTab: "debug",
+    projectLoading: false
+  };
+}
+
+export function createBuildStateSlice() {
+  return {
     workbench: null,
     buildMode: "edit",
     workbenchView: "bridge",
@@ -69,23 +73,24 @@ export function createInitialVisualizerState(resolvedLocale: string) {
     studioGraphHistoryEventId: 0,
     studioGraphHistoryEvent: null,
     studioTemplates: [],
+    workbenchLoading: false
+  };
+}
+
+export function createOperateStateSlice() {
+  return {
+    consoleTab: "project",
+    legacyConsoleTab: "debug",
     runGraphSelectedRoleId: "",
     runGraphSelectedFlowKey: "",
     operateTab: "overview",
     sidebarOpen: false,
     runs: [],
-    projectLoading: false,
-    workbenchLoading: false,
     runDetailLoading: false,
     filter: "",
     projectHome: false,
     selectedRunId: "",
     runSelectionRequestId: 0,
-    selectedReviewId: "",
-    selectedLogRoleId: "",
-    logTail: "",
-    logPageSize: "100",
-    logSince: "",
     timelineRoleId: "",
     timelineBranchId: "",
     timelineType: "",
@@ -97,25 +102,45 @@ export function createInitialVisualizerState(resolvedLocale: string) {
     eventCursorIndex: createStreamCursorIndex([]),
     detail: null,
     graph: null,
+    bindings: null,
+    contracts: null,
+    contractRuntimeStatus: null,
+    rolePackages: null
+  };
+}
+
+export function createReviewStateSlice() {
+  return {
+    selectedReviewId: "",
     failure: null,
     failureLoaded: false,
     failureStale: false,
     reviews: null,
     reviewDetail: null,
-    bindings: null,
-    contracts: null,
-    contractRuntimeStatus: null,
-    rolePackages: null,
     resumeReadiness: null,
     resumeReadinessLoaded: false,
     resumeReadinessStale: false,
     resumeDiagnostics: null,
     resumeDiagnosticsLoaded: false,
-    resumeDiagnosticsStale: false,
+    resumeDiagnosticsStale: false
+  };
+}
+
+export function createLogsStateSlice() {
+  return {
+    selectedLogRoleId: "",
+    logTail: "",
+    logPageSize: "100",
+    logSince: "",
     engineLogs: [],
     roleLogs: [],
     logsLoaded: false,
-    logsStale: false,
+    logsStale: false
+  };
+}
+
+export function createStreamingStateSlice() {
+  return {
     stream: null,
     listTimer: null,
     flash: null,
@@ -126,5 +151,16 @@ export function createInitialVisualizerState(resolvedLocale: string) {
     streamRefreshRunId: "",
     streamRefreshTimer: null,
     streamRefreshInFlight: false
+  };
+}
+
+export function createInitialVisualizerState(resolvedLocale: string) {
+  return {
+    ...createProjectStateSlice(resolvedLocale),
+    ...createBuildStateSlice(),
+    ...createOperateStateSlice(),
+    ...createReviewStateSlice(),
+    ...createLogsStateSlice(),
+    ...createStreamingStateSlice()
   };
 }

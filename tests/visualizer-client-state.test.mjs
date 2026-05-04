@@ -21,7 +21,13 @@ import {
 } from "../dist/visualizer/client-lifecycle-panels.js";
 import {
   createInitialStreamRefreshPlan,
-  createInitialVisualizerState
+  createInitialVisualizerState,
+  createBuildStateSlice,
+  createLogsStateSlice,
+  createOperateStateSlice,
+  createProjectStateSlice,
+  createReviewStateSlice,
+  createStreamingStateSlice
 } from "../dist/visualizer/client-lifecycle-state.js";
 import {
   mapProjectLoadView,
@@ -299,6 +305,12 @@ test("client lifecycle state factory centralizes initial workspace state", () =>
   assert.equal(state.operateTab, "overview");
   assert.equal(state.workbenchSavedPath, "system.mmd");
   assert.deepEqual(state.streamRefreshPlan, createInitialStreamRefreshPlan());
+  assert.deepEqual(createProjectStateSlice("zh-CN").locale, "zh-CN");
+  assert.equal(createBuildStateSlice().buildMode, "edit");
+  assert.equal(createOperateStateSlice().selectedRunId, "");
+  assert.equal(createReviewStateSlice().selectedReviewId, "");
+  assert.equal(createLogsStateSlice().logPageSize, "100");
+  assert.equal(createStreamingStateSlice().streamRefreshRunId, "");
 });
 
 test("visualizer dto project views normalize the supported artifact mode", () => {

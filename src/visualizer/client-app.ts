@@ -53,6 +53,12 @@ import {
 } from "./client-lifecycle-panels.js";
 import {
   createInitialStreamRefreshPlan,
+  createProjectStateSlice,
+  createBuildStateSlice,
+  createOperateStateSlice,
+  createReviewStateSlice,
+  createLogsStateSlice,
+  createStreamingStateSlice,
   createInitialVisualizerState
 } from "./client-lifecycle-state.js";
 import { bindProjectWizardControls as attachProjectWizardControls } from "./client-project-menu-controls.js";
@@ -138,6 +144,12 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
     const listFromRecord = ${listFromRecord.toString()};
     const buildReleaseReadinessDecision = ${buildReleaseReadinessDecision.toString()};
     const createInitialStreamRefreshPlan = ${createInitialStreamRefreshPlan.toString()};
+    const createProjectStateSlice = ${createProjectStateSlice.toString()};
+    const createBuildStateSlice = ${createBuildStateSlice.toString()};
+    const createOperateStateSlice = ${createOperateStateSlice.toString()};
+    const createReviewStateSlice = ${createReviewStateSlice.toString()};
+    const createLogsStateSlice = ${createLogsStateSlice.toString()};
+    const createStreamingStateSlice = ${createStreamingStateSlice.toString()};
     const createInitialVisualizerState = ${createInitialVisualizerState.toString()};
     const attachProjectWizardControls = ${attachProjectWizardControls.toString()};
     const buildLogsQuery = ${buildLogsQuery.toString()};
