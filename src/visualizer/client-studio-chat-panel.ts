@@ -28,6 +28,7 @@ export function renderStudioChatPanelHtml(args: {
   t: Translator;
   escapeText: (value: unknown) => string;
 }): string {
+  // Chat input stays draft-only until an explicit send/regenerate/apply action fires.
   const { state, t, escapeText } = args;
   const result = state.studioChatResult;
   const disabled = state.actionBusy ? " disabled" : "";

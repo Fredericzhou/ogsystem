@@ -47,6 +47,15 @@ import {
   shouldSkipDeferredPanelLoad
 } from "../dist/visualizer/client-run-data-loaders.js";
 import {
+  LOG_FILTER_INPUT_MODE,
+  PROJECT_OPEN_INPUT_MODE,
+  RUN_LIST_SEARCH_MODE,
+  STUDIO_BRIDGE_FILTER_MODE,
+  STUDIO_CHAT_INPUT_MODE,
+  VISUALIZER_INPUT_BOUNDARIES,
+  WORKBENCH_VALIDATION_DEBOUNCE_MS
+} from "../dist/visualizer/client-input-policy.js";
+import {
   fallbackLogRoleId,
   resolveRunLiveState,
   selectReviewId
@@ -286,6 +295,27 @@ test("client stream state helpers keep refresh scope explicit", () => {
   assert.equal(formatReviewStatusLabel("pending_reconcile"), "pending reconcile");
   assert.equal(formatReviewStatusLabel("waiting_review"), "waiting review");
   assert.equal(formatReviewStatusLabel("custom_state"), "custom state");
+});
+
+test("client input policy keeps high-frequency boundaries explicit", () => {
+  assert.equal(WORKBENCH_VALIDATION_DEBOUNCE_MS, 250);
+  assert.equal(RUN_LIST_SEARCH_MODE, "immediate-local-filter");
+  assert.equal(STUDIO_BRIDGE_FILTER_MODE, "immediate-local-filter");
+  assert.equal(STUDIO_CHAT_INPUT_MODE, "draft-only");
+  assert.equal(PROJECT_OPEN_INPUT_MODE, "draft-only");
+  assert.equal(LOG_FILTER_INPUT_MODE, "commit-on-change");
+  assert.deepEqual(
+    VISUALIZER_INPUT_BOUNDARIES.map((item) => [item.control, item.mode, item.remoteTrigger]),
+    [
+      ["workbench-editor", "debounced-remote-validate:250ms", "input settles before /project/system/validate"],
+      ["studio-chat-input", "draft-only", "send/regenerate/apply actions only"],
+      ["project-open-workdir", "draft-only", "validate/browse/open actions only"],
+      ["search", "immediate-local-filter", "none"],
+      ["studio-bridge-filter", "immediate-local-filter", "none"],
+      ["project-role-catalog-filter", "immediate-local-filter-and-rerender", "none"],
+      ["log-role/log-tail/log-page-size/log-since", "commit-on-change", "change event reloads selected logs when already loaded"]
+    ]
+  );
 });
 
 test("client lifecycle state factory centralizes initial workspace state", () => {

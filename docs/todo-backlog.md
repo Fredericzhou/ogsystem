@@ -92,7 +92,8 @@ Sources: `docs/long-term-stability-roadmap.md`, `docs/archive/delivery/optimizat
 
 - [ ] 对 visualizer 主要交互面板做一次系统性无障碍审计，优先补足可聚焦区域、label 关联、语义角色和非颜色状态提示。
 - [x] 复核 Studio 图命令表单与 chat 面板的 ARIA 语义，避免把非模态区域声明成 `dialog`；其中 chat 面板已改为 `region`，命令表单现已补齐 modal 语义、Escape 关闭与焦点回收。
-- [ ] 为工作台编辑、聊天输入和其他高频输入路径补明确的交互节流/防抖策略说明，避免后续回归到每击键重算。
+- [x] 为工作台编辑、聊天输入和其他高频输入路径补明确的交互节流/防抖策略说明，避免后续回归到每击键重算。
+  当前进展：已新增 `src/visualizer/client-input-policy.ts` 作为显式边界清单；`workbench-editor` 保持 `250ms` debounce 后再触发校验，chat/project-open 输入保持 draft-only，run list / Studio Bridge / role catalog 过滤保持本地即时过滤，日志筛选维持 `change` 后 reload；对应短路径断言已补入 `tests/visualizer-client-state.test.mjs`，避免引入长等待回归。
 
 ### P2. Visualizer 风险待验证
 

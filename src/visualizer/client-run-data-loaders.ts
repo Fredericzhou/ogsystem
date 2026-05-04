@@ -47,6 +47,7 @@ export async function fetchSelectedLogs(args: {
   logPageSize?: string | null;
   logSince?: string | null;
 }): Promise<{ engineLogs: any[]; roleLogs: any[] }> {
+  // Callers are expected to treat log filter edits as commit-on-change, not per-keystroke reloads.
   const loadLogRecords = async (extra: { engine?: boolean; roleId?: string | null }): Promise<any[]> => {
     const payload = await args.requestJson(buildLogsQuery({
       apiPrefix: args.apiPrefix,

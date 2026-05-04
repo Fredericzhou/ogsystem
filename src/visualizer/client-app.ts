@@ -102,6 +102,7 @@ import {
   getStreamRefreshPlan,
   type StreamRefreshPlan
 } from "./client-stream-state.js";
+import { WORKBENCH_VALIDATION_DEBOUNCE_MS } from "./client-input-policy.js";
 import { getDictionary, type Dictionary, type Locale } from "./i18n/index.js";
 
 export {
@@ -158,6 +159,7 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
     const fetchFailureData = ${fetchFailureData.toString()};
     const fetchResumeReadinessData = ${fetchResumeReadinessData.toString()};
     const fetchResumeDiagnosticsData = ${fetchResumeDiagnosticsData.toString()};
+    const WORKBENCH_VALIDATION_DEBOUNCE_MS = ${JSON.stringify(WORKBENCH_VALIDATION_DEBOUNCE_MS)};
     const selectReviewId = ${selectReviewId.toString()};
     const fallbackLogRoleId = ${fallbackLogRoleId.toString()};
     const resolveRunLiveState = ${resolveRunLiveState.toString()};
@@ -1464,6 +1466,7 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
           updateStudioBridgeSelection(true);
         },
         onFilterInput: (value) => {
+          // Studio Bridge filtering stays local; remote refreshes remain explicit actions.
           state.studioBridgeFilter = value;
           renderStudioBridge({ preserveGraphRoot: true });
         },
@@ -1830,6 +1833,7 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
       const editor = document.getElementById("workbench-editor");
       if (editor && (!preserveEditor || editor !== existingEditor)) {
         editor.addEventListener("input", (event) => {
+          // Keep keystrokes local until validation debounce settles.
           state.workbenchSource = event.target.value || "";
           state.studioBridgeStale = true;
           persistDraftSource(state.workbenchSource !== state.workbenchDiskSource ? state.workbenchSource : "");
@@ -2560,6 +2564,7 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
           writeRouteToLocation();
         },
         onOpenDraftInput: (value) => {
+          // Path edits only update the local draft; validation/browse/open stay explicit.
           state.projectOpenDraft = value;
           state.projectOpenValidation = null;
         },
@@ -2594,6 +2599,7 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
           if (form) {
             updateProjectWizardDraftFromForm(form);
           }
+          // Role catalog search is a local filter against the already loaded catalog.
           state.roleCatalogFilter = value;
           state.roleCatalogPage = 0;
           renderProjectWizard();
@@ -3399,7 +3405,7 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
           setFlash("error", t("workbench.validationFailed", { message: error.message || error }, "Workbench validation failed: {message}"));
           renderWorkbench({ preserveEditor: true });
         });
-      }, 250);
+      }, WORKBENCH_VALIDATION_DEBOUNCE_MS);
     }
 
     async function loadWorkbench() {
@@ -4708,6 +4714,7 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
     });
 
     logTailEl.addEventListener("change", async (event) => {
+      // Log filters intentionally commit on change to avoid reloading logs on every keystroke.
       state.logTail = event.target.value || "";
       if (state.selectedRunId && state.logsLoaded) {
         await loadSelectedLogs(state.selectedRunId, { force: true });
@@ -4727,6 +4734,7 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
     });
 
     logSinceEl.addEventListener("change", async (event) => {
+      // Datetime-local edits stay local until commit/change.
       state.logSince = event.target.value || "";
       if (state.selectedRunId && state.logsLoaded) {
         await loadSelectedLogs(state.selectedRunId, { force: true });
@@ -4737,6 +4745,7 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
     });
 
     searchEl.addEventListener("input", (event) => {
+      // Run list search is an in-memory filter only; no debounce needed at current list size.
       state.filter = event.target.value || "";
       renderRuns();
     });
