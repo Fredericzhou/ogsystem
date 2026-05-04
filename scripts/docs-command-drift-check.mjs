@@ -25,6 +25,24 @@ const REQUIRED_COMMANDS = [
   "ogs visualizer --workdir ."
 ];
 
+const REQUIRED_TEXT = [
+  {
+    label: "retention tiers",
+    pattern: /Retention tiers:/,
+    files: ["docs/usage-manual.md"]
+  },
+  {
+    label: "provider health stable codes",
+    pattern: /DOCTOR_PROVIDER_ONLINE_SKIPPED/,
+    files: ["docs/usage-manual.md"]
+  },
+  {
+    label: "redaction authorization boundary",
+    pattern: /authorization headers/,
+    files: ["docs/usage-manual.md"]
+  }
+];
+
 function extractShellCommands(markdown) {
   const commands = new Set();
   const blockPattern = /```(?:bash|sh|shell)\n([\s\S]*?)```/g;
@@ -57,6 +75,11 @@ for (const doc of DOCS) {
   for (const required of REQUIRED_COMMANDS) {
     if (!commands.has(required)) {
       failures.push(`${doc.label}: missing shell command block line: ${required}`);
+    }
+  }
+  for (const required of REQUIRED_TEXT) {
+    if (required.files.includes(doc.label) && !required.pattern.test(markdown)) {
+      failures.push(`${doc.label}: missing text anchor: ${required.label}`);
     }
   }
 }

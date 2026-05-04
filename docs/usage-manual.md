@@ -759,8 +759,19 @@ Current rules:
 - unsupported config versions fail fast
 - `workspace.workspaceIsolation` defaults to `role`; set it to `branch` only when same-role sibling branches need isolated private workspaces
 - `redaction.enabled` defaults to `true`; it only affects operator-facing prompt/audit/result/event projections and does not rewrite resume truth files
+- redaction covers common secret text, authorization headers, and provider credential keys before data reaches CLI/Visualizer-oriented projections
 - when `retention.enabled=true`, runtime can trigger cleanup automatically only when `executionDirCount > executionDirThreshold`
 - CLI `--cleanup-executions` has higher priority than runtime retention config for that run
+
+Retention tiers:
+
+| Tier | Suggested setting | Use when |
+| --- | --- | --- |
+| Development | `retention.enabled=false`; use `ogs run start ... --cleanup-executions 20` only for local experiments | You need full per-execution history while debugging resume, audit, and role behavior. |
+| Staging | `retention.enabled=true`, `executionDirThreshold=500`, `keepLatest=100` | Long-lived visualizer sessions need bounded directory growth while keeping recent replay evidence. |
+| Production | `retention.enabled=true`, `executionDirThreshold=2000`, `keepLatest=250` plus external archive policy | Operators need predictable disk growth and must preserve audit exports before aggressive cleanup. |
+
+Automatic cleanup is appropriate when Visualizer or scheduled dry-runs are creating many execution directories and `metrics.json.executionDirCount` repeatedly exceeds the threshold. One-time CLI cleanup is better for local triage, fixture validation, or pre-release rehearsals because it makes the cleanup decision explicit in the command history. Do not lower thresholds until resume and audit evidence requirements are clear for that environment.
 
 Config schema guard (editor/CI):
 
@@ -1025,6 +1036,7 @@ Optional history cleanup:
 - runtime config can also enforce explicit threshold cleanup through `retention.enabled/executionDirThreshold/keepLatest`
 - cleanup never touches `state.json` or `sessions.json`
 - `metrics.json` now includes `rssBytes`, `stateWriteMs`, and `executionDirCount` for growth/I/O observability
+- for fixture or release validation, prefer a dry-run with `--cleanup-executions <n>` so cleanup behavior is exercised without provider calls
 
 ## 9.1 Artifact Retention Policy Classes
 
@@ -1150,6 +1162,8 @@ ogs doctor \
 
 - `--online-check` is opt-in and may consume tokens
 - probes model connectivity through OpenCode before long runs
+- doctor includes `providerHealth[]` entries with stable codes such as `DOCTOR_PROVIDER_ONLINE_SKIPPED`, `DOCTOR_PROVIDER_NO_MODEL_BINDINGS`, `DOCTOR_PROVIDER_CONNECTIVITY_OK`, and `DOCTOR_PROVIDER_CONNECTIVITY_FAILED`
+- minimum provider permission is one short text generation for the configured `provider/model`; no project state is written by the check
 
 `run:doctor` output separation:
 
