@@ -71,6 +71,7 @@ import {
 } from "../dist/visualizer/client-studio-bridge-controls.js";
 import {
   renderStudioGraphCanvas,
+  renderStudioBridgePanel,
   renderRunTopologySvg,
   sortStudioBridgeFlowsByTopology,
   sortStudioBridgeRolesTopologically
@@ -982,4 +983,37 @@ test("workbench source editor is accessible by label", () => {
     escapeText
   });
   assert.match(html, /aria-label="Workbench source editor"/);
+});
+
+test("operate tabs and Studio Bridge filters expose accessible state and names", () => {
+  const tabsHtml = renderOperateTabsHtml({
+    operateTab: "logs",
+    t,
+    escapeText
+  });
+  assert.match(tabsHtml, /data-operate-tab="logs"[^>]*aria-pressed="true"/);
+  assert.match(tabsHtml, /data-operate-tab="overview"[^>]*aria-pressed="false"/);
+
+  const bridgeHtml = renderStudioBridgePanel({
+    bridge: {
+      validation: { ok: true, diagnostics: [] },
+      extracted: {
+        systemId: "demo.system",
+        systemVersion: "1.0.0",
+        entryRoleId: "writer",
+        lawGlobal: "law.minimal",
+        roles: [{ roleId: "writer", bindingKind: "model", incomingFlowCount: 0, outgoingFlowCount: 0, allowedEvents: [], badges: [] }],
+        flows: []
+      }
+    },
+    readiness: {},
+    selectedRoleId: "",
+    selectedFlowKey: "",
+    filter: "",
+    listMode: "all",
+    actionBusy: "",
+    t
+  });
+  assert.match(bridgeHtml, /data-studio-bridge-filter="1"[^>]*aria-label="Filter roles or flows"/);
+  assert.match(bridgeHtml, /data-studio-bridge-list-mode="1"[^>]*aria-label="graph index"/);
 });

@@ -134,8 +134,8 @@ Status: calibrated
 #### 23. `asString` 在 `project-readiness.ts` 中语义不同
 
 - 文件：`project-readiness.ts`
-- 现状：该处 `asString` 会 `trim` 且拒绝空串，与其他同名函数语义不一致。
-- 建议：重命名为 `asNonEmptyString` 或统一抽取时显式区分语义。
+- 现状：该处已改为共享 `asNonEmptyString()`，显式保留“trim + 拒绝空串”的语义，不再与通用 `asString()` 混名。
+- 状态：已修复。
 
 #### 24. Mermaid Live URL 相关 helper 在两个文件中重复
 
@@ -146,8 +146,8 @@ Status: calibrated
 #### 25. `asString` / `asRecord` / `asNumber` 等辅助函数多处重复定义
 
 - 涉及文件：`server.ts`、`data.ts`、`dto.ts`、`project-projection.ts`、`project-readiness.ts`、`ops-summary-projection.ts`、`run-graph-projection.ts`、`studio-chat-to-mmd.ts`
-- 定性：代码质量债，当前功能正确，但维护成本高。
-- 建议：放在独立重构批次处理，避免和稳态修复混做大改动。
+- 现状：已新增共享 `json-guards.ts`，`server.ts`、`data.ts`、`project-projection.ts`、`project-readiness.ts`、`ops-summary-projection.ts`、`run-graph-projection.ts` 已切到统一 guard；剩余重复定义主要还在 `dto.ts`、`studio-chat-to-mmd.ts` 与 `studio-client` 局部 helper。
+- 结论：本项已部分收敛，剩余范围保留在后续辅助函数治理批次。
 
 #### 26. `escapeText` / `escapeHtml` 多份拷贝
 
@@ -175,9 +175,11 @@ Status: calibrated
 - 活动执行入口保持为 `docs/todo-backlog.md`。
 - 本文只负责校准定性，不直接代表任务已关闭。
 - `chat panel` ARIA 语义已修正；Studio 图命令表单现已补齐 `dialog` / `aria-modal` / `aria-labelledby`、Escape 关闭和关闭后焦点回收。
+- 主要交互面板已补首批系统性无障碍增强：搜索、timeline、日志筛选、Studio Bridge filter 等输入现有显式可访问名称；`sidebar-toggle` 已补 `aria-controls` / `aria-expanded`；lifecycle / operate / legacy 切换按钮已补 `aria-pressed`。更完整的 `tablist/tab/tabpanel` 语义和逐面板读屏走查仍保留在后续审计批次。
 - `innerHTML` 热点治理已覆盖首批高频面板，包括 `runListEl` 与 `consoleTabsEl`；更广范围的差量更新与公共渲染边界收敛仍保留在后续可维护性批次处理。
 - `runsListCache` 无上限问题已按短期稳态优先级修复；更深的缓存抽象收敛仍保留为 P2 可维护性治理。
 - `listTimer`、`workbenchValidationTimer`、`streamRefreshTimer` 已建立统一清理约束：run 切换/返回 project home/dispose 均会清理对应 timer，stream refresh plan 现已绑定当前 run，避免旧 SSE 事件污染新 run；回归测试采用 `visualizer-client` harness 的短路径用例，控制等待时间。
 - run 切换状态重置路径已补齐：切换到新 run 时会立即清空 review / failure / resume / logs 等 run-scoped 面板状态，并为 run detail、review detail、failure、resume、logs 等异步加载增加“仅当前 run selection 可提交”的代际保护，避免旧请求晚到后覆盖新 run 视图。
 - `createInitialVisualizerState()` 已按 `project` / `build` / `operate` / `review` / `logs` / `streaming` 切片拆分为纯初始化 helper，并继续保留单点拼装入口，先降低扁平状态对象的维护成本，再为后续进一步模块拆分留边界。
+- `server.ts` 已继续抽离稳定边界：`request-body.ts` 负责 JSON body 限流/解析，`server-runtime-state.ts` 负责 project-create request cache、runs list cache 和 SSE metrics；更大范围的路由/handler 模块化仍在后续批次。
 - 高频输入路径边界现已显式固化：`workbench-editor` 保持 `250ms` debounce 后才触发 `/project/system/validate`；`studio-chat-input` 与 `project-open-workdir` 仅更新本地 draft，分别在 send/regenerate/apply 与 validate/browse/open 时触发远端动作；run 列表搜索、Studio Bridge filter、角色目录过滤继续保持本地即时过滤；日志筛选项维持 `change` 后才 reload，避免每击键拉取日志。对应说明已落到 `client-app.ts` / `client-studio-chat-panel.ts` / `client-run-data-loaders.ts`，并由 `visualizer-client-state` 的短路径测试锁定。

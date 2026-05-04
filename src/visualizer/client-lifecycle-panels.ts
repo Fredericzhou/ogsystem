@@ -54,6 +54,7 @@ export function renderOperateTabsHtml(args: {
   return tabs.map(([id, label, hint]) =>
     '<button class="button subtle ' + (operateTab === id ? "active" : "") +
     '" data-operate-tab="' + escapeText(id) +
+    '" aria-pressed="' + escapeText(String(operateTab === id)) +
     '" title="' + escapeText(hint) +
     '">' + escapeText(label) + '</button>'
   ).join("");

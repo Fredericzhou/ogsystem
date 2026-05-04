@@ -103,6 +103,10 @@ const PAGE_ELEMENT_ATTRIBUTES = {
     role: "dialog",
     "aria-modal": "true",
     "aria-labelledby": "action-form-title"
+  },
+  "sidebar-toggle": {
+    "aria-controls": "sidebar",
+    "aria-expanded": "false"
   }
 };
 
@@ -2635,6 +2639,9 @@ test("visualizer client switches lifecycle shell without unloading data and hide
   assert.equal(harness.document.body.classList.classes.has("show-operate-workspace"), false);
   assert.equal(harness.document.body.classList.classes.has("show-run-sidebar"), false);
   assert.equal(harness.document.getElementById("sidebar-toggle").hidden, true);
+  assert.equal(projectTab.getAttribute("aria-pressed"), "true");
+  assert.equal(operateTab.getAttribute("aria-pressed"), "false");
+  assert.equal(harness.document.getElementById("sidebar-toggle").getAttribute("aria-expanded"), "false");
   assert.match(harness.document.getElementById("project-wizard").textContent, /Overview/);
   assert.ok(harness.document.getElementById("project-wizard").querySelectorAll(".project-home-layout").length >= 1);
 
@@ -2650,6 +2657,17 @@ test("visualizer client switches lifecycle shell without unloading data and hide
   assert.equal(harness.document.body.classList.classes.has("operate-tab-artifacts"), false);
   assert.equal(harness.document.body.classList.classes.has("show-run-sidebar"), true);
   assert.equal(harness.document.getElementById("sidebar-toggle").hidden, false);
+  const operateTabButtons = harness.document.getElementById("operate-tabs").querySelectorAll("[data-operate-tab]");
+  const overviewOperateTab = operateTabButtons.find((button) => button.getAttribute("data-operate-tab") === "overview");
+  const logsOperateTab = operateTabButtons.find((button) => button.getAttribute("data-operate-tab") === "logs");
+  const lifecycleButtonsAfterOperate = harness.document.getElementById("console-tabs").querySelectorAll("[data-console-tab]");
+  const projectTabAfterOperate = lifecycleButtonsAfterOperate.find((button) => button.getAttribute("data-console-tab") === "project");
+  const operateTabAfterOperate = lifecycleButtonsAfterOperate.find((button) => button.getAttribute("data-console-tab") === "operate");
+  assert.equal(operateTabAfterOperate?.getAttribute("aria-pressed"), "true");
+  assert.equal(projectTabAfterOperate?.getAttribute("aria-pressed"), "false");
+  assert.equal(overviewOperateTab?.getAttribute("aria-pressed"), "true");
+  assert.equal(logsOperateTab?.getAttribute("aria-pressed"), "false");
+  assert.equal(harness.document.getElementById("sidebar-toggle").getAttribute("aria-expanded"), "false");
   assert.match(harness.document.getElementById("ops-summary").textContent, /TOOL_EXECUTION_TIMEOUT/);
 
   await buildTab.click();
@@ -2682,6 +2700,24 @@ test("visualizer client switches lifecycle shell without unloading data and hide
   assert.match(harness.document.getElementById("project-wizard").textContent, /model \/ profile/);
   assert.ok(harness.document.getElementById("project-wizard").querySelectorAll(".project-home-main").length >= 1);
 
+});
+
+test("visualizer client sidebar toggle exposes expanded state", async () => {
+  const harness = await createClientHarness({ search: "?lifecycle=operate" });
+  let sidebarToggle = harness.document.getElementById("sidebar-toggle");
+  assert.equal(sidebarToggle.hidden, false);
+  assert.equal(sidebarToggle.getAttribute("aria-controls"), "sidebar");
+  assert.equal(sidebarToggle.getAttribute("aria-expanded"), "false");
+
+  await sidebarToggle.click();
+  sidebarToggle = harness.document.getElementById("sidebar-toggle");
+  assert.equal(harness.document.body.classList.classes.has("drawer-open"), true);
+  assert.equal(sidebarToggle.getAttribute("aria-expanded"), "true");
+
+  await sidebarToggle.click();
+  sidebarToggle = harness.document.getElementById("sidebar-toggle");
+  assert.equal(harness.document.body.classList.classes.has("drawer-open"), false);
+  assert.equal(sidebarToggle.getAttribute("aria-expanded"), "false");
 });
 
 test("visualizer client keeps legacy fallback available through explicit deep links", async () => {

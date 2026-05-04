@@ -59,6 +59,14 @@ test("page shell keeps HTML, style, assets, and client script mounted", () => {
   assert.match(html, /<main class="main-stage">[\s\S]*id="workbench-body"/);
   assert.match(html, /<footer class="status-bar global-status">[\s\S]*id="workdir"[\s\S]*id="live"/);
   assert.match(html, /<aside id="sidebar" class="sidebar">[\s\S]*id="run-list"/);
+  assert.match(html, /id="search"[^>]*aria-label="按 id、状态、角色筛选运行\.\.\."/);
+  assert.match(html, /id="sidebar-toggle"[^>]*aria-controls="sidebar"[^>]*aria-expanded="false"/);
+  assert.match(html, /id="timeline-type"[^>]*aria-label="事件类型"/);
+  assert.match(html, /id="timeline-branch"[^>]*aria-label="分支 id"/);
+  assert.match(html, /id="timeline-review"[^>]*aria-label="评审 id"/);
+  assert.match(html, /id="timeline-error"[^>]*aria-label="错误码"/);
+  assert.match(html, /id="log-tail"[^>]*aria-label="尾部"/);
+  assert.match(html, /id="log-since"[^>]*aria-label="Log since"/);
 });
 
 test("page shell styles are isolated behind a CSS renderer", () => {

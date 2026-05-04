@@ -409,6 +409,12 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
       if (timelineErrorEl) timelineErrorEl.placeholder = t("timeline.errorCode");
       if (logTailEl) logTailEl.placeholder = t("logs.tail");
       if (localeSelectEl) localeSelectEl.value = state.locale;
+      if (searchEl) searchEl.setAttribute("aria-label", t("search.placeholder"));
+      if (timelineTypeEl) timelineTypeEl.setAttribute("aria-label", t("timeline.eventType"));
+      if (timelineBranchEl) timelineBranchEl.setAttribute("aria-label", t("timeline.branchId"));
+      if (timelineReviewEl) timelineReviewEl.setAttribute("aria-label", t("timeline.reviewId"));
+      if (timelineErrorEl) timelineErrorEl.setAttribute("aria-label", t("timeline.errorCode"));
+      if (logTailEl) logTailEl.setAttribute("aria-label", t("logs.tail"));
     }
 
     function formatTime(value) {
@@ -1235,6 +1241,9 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
       const canOpen = state.consoleTab === "operate" || state.consoleTab === "legacy";
       state.sidebarOpen = Boolean(nextValue && canOpen);
       document.body.classList.toggle("drawer-open", state.sidebarOpen);
+      if (sidebarToggleButton) {
+        sidebarToggleButton.setAttribute("aria-expanded", state.sidebarOpen ? "true" : "false");
+      }
     }
 
     function renderOperateTabs() {
@@ -1309,6 +1318,7 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
       const lifecycleHtml = lifecycleTabs.map(([id, label, hint]) =>
         '<button class="button subtle ' + (state.consoleTab === id ? "active" : "") +
         '" data-console-tab="' + escapeText(id) +
+        '" aria-pressed="' + escapeText(String(state.consoleTab === id)) +
         '" title="' + escapeText(hint) +
         '">' + escapeText(label) + '</button>'
       ).join("");
@@ -1316,6 +1326,7 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
         ? '<div class="legacy-tabs" data-legacy-tabs>' + legacyTabs.map(([id, label, hint]) =>
             '<button class="button subtle ' + (state.legacyConsoleTab === id ? "active" : "") +
             '" data-legacy-console-tab="' + escapeText(id) +
+            '" aria-pressed="' + escapeText(String(state.legacyConsoleTab === id)) +
             '" title="' + escapeText(hint) +
             '">' + escapeText(label) + '</button>'
           ).join("") + '</div>'
@@ -1339,6 +1350,7 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
       }
       if (sidebarToggleButton) {
         sidebarToggleButton.hidden = !showRunSidebar;
+        sidebarToggleButton.setAttribute("aria-expanded", showRunSidebar && state.sidebarOpen ? "true" : "false");
       }
       for (const id of ["project", "build", "debug", "ops", "config", "logs", "artifacts", "validate-release"]) {
         const panel = document.getElementById("console-panel-" + id);

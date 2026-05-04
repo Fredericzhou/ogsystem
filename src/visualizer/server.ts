@@ -111,6 +111,27 @@ import {
   asRecord,
   asString
 } from "./json-guards.js";
+import {
+  cachePendingProjectCreateResponse,
+  cacheProjectCreateResponse,
+  clearPendingProjectCreateResponse,
+  clearRunsListCache,
+  createRunsListCacheEntry,
+  getRunsListCacheStats,
+  getVisualizerSseMetricsSnapshot,
+  readCachedProjectCreateResponse,
+  readFallbackRunsListCache,
+  readPendingProjectCreateResponse,
+  readRunsListCache,
+  recordSseConnectionClosed,
+  recordSseConnectionOpened,
+  recordSseSnapshotAttempt,
+  recordSseSnapshotError,
+  recordSseTick,
+  recordSseWrite,
+  type ProjectCreateRequestCacheEntry,
+  writeRunsListCache
+} from "./server-runtime-state.js";
 
 type VisualizationServerOptions = {
   workdir: string;
@@ -135,12 +156,6 @@ type VisualizationServerState = {
   testHooks?: VisualizationServerOptions["testHooks"];
 };
 
-type ProjectCreateRequestCacheEntry = {
-  cachedAtMs: number;
-  payload?: Record<string, unknown>;
-  promise?: Promise<Record<string, unknown>>;
-};
-
 type NdjsonEntry = {
   cursor: number;
   record: Record<string, unknown>;
@@ -162,25 +177,6 @@ type LoadedRunDetail = InspectRunRecord & {
   snapshotManifest: Record<string, unknown> | null;
 };
 
-type RunsListCacheEntry = {
-  generatedAt: string;
-  runs: unknown[];
-  indexMtimeMs?: number;
-  cachedAtMs: number;
-  lastAccessedAtMs: number;
-};
-
-type VisualizerSseMetrics = {
-  activeConnections: number;
-  openedTotal: number;
-  closedTotal: number;
-  ticksTotal: number;
-  snapshotsTotal: number;
-  snapshotErrorsTotal: number;
-  writesTotal: number;
-  activeByRunId: Map<string, number>;
-};
-
 class HttpError extends Error {
   statusCode: number;
   errorCode: string;
@@ -198,8 +194,6 @@ class HttpError extends Error {
 const API_PREFIX = "/api/v1";
 const DEFAULT_PROJECT_CREATE_REQUEST_CACHE_TTL_MS = 15 * 60 * 1000;
 const DEFAULT_PROJECT_CREATE_REQUEST_CACHE_MAX_SIZE = 128;
-const RUNS_LIST_CACHE_TTL_MS = 10 * 60 * 1000;
-const RUNS_LIST_CACHE_MAX_SIZE = 64;
 const MAX_JSON_REQUEST_BYTES = 1024 * 1024;
 const VISUALIZER_MODULE_DIR = dirname(fileURLToPath(import.meta.url));
 const STUDIO_GRAPH_ASSET_PATH = VISUALIZER_MODULE_DIR.endsWith(`${sep}src${sep}visualizer`)
@@ -214,17 +208,6 @@ const STATIC_ASSET_ROUTES = new Map<string, { filePath: string; contentType: str
     }
   ]
 ]);
-const runsListCache = new Map<string, RunsListCacheEntry>();
-const visualizerSseMetrics: VisualizerSseMetrics = {
-  activeConnections: 0,
-  openedTotal: 0,
-  closedTotal: 0,
-  ticksTotal: 0,
-  snapshotsTotal: 0,
-  snapshotErrorsTotal: 0,
-  writesTotal: 0,
-  activeByRunId: new Map()
-};
 const PROJECT_OPEN_RECENT_LIMIT = 8;
 const PROJECT_OPEN_CHILD_LIMIT = 200;
 type ProjectOpenTargetCode =
@@ -284,146 +267,6 @@ function textResponse(
 
 function normalizePositiveInteger(value: unknown, fallback: number): number {
   return typeof value === "number" && Number.isInteger(value) && value > 0 ? value : fallback;
-}
-
-function pruneProjectCreateRequestCache(
-  state: VisualizationServerState,
-  nowMs = Date.now()
-): void {
-  for (const [requestId, entry] of state.projectCreateRequests.entries()) {
-    if (nowMs - entry.cachedAtMs > state.projectCreateRequestCacheTtlMs) {
-      state.projectCreateRequests.delete(requestId);
-    }
-  }
-  while (state.projectCreateRequests.size > state.projectCreateRequestCacheMaxSize) {
-    const oldestRequestId = state.projectCreateRequests.keys().next().value;
-    if (!oldestRequestId) {
-      break;
-    }
-    state.projectCreateRequests.delete(oldestRequestId);
-  }
-}
-
-function pruneRunsListCache(nowMs = Date.now()): void {
-  for (const [workdir, entry] of runsListCache.entries()) {
-    if (nowMs - entry.cachedAtMs > RUNS_LIST_CACHE_TTL_MS) {
-      runsListCache.delete(workdir);
-    }
-  }
-  while (runsListCache.size > RUNS_LIST_CACHE_MAX_SIZE) {
-    let oldestWorkdir: string | undefined;
-    let oldestAccessedAtMs = Number.POSITIVE_INFINITY;
-    for (const [workdir, entry] of runsListCache.entries()) {
-      if (entry.lastAccessedAtMs < oldestAccessedAtMs) {
-        oldestWorkdir = workdir;
-        oldestAccessedAtMs = entry.lastAccessedAtMs;
-      }
-    }
-    if (!oldestWorkdir) {
-      break;
-    }
-    runsListCache.delete(oldestWorkdir);
-  }
-}
-
-function createRunsListCacheEntry(args: {
-  generatedAt: string;
-  runs: unknown[];
-  indexMtimeMs?: number;
-}): RunsListCacheEntry {
-  const nowMs = Date.now();
-  return {
-    generatedAt: args.generatedAt,
-    runs: args.runs,
-    indexMtimeMs: args.indexMtimeMs,
-    cachedAtMs: nowMs,
-    lastAccessedAtMs: nowMs
-  };
-}
-
-function getRunsListCacheStats(): Record<string, unknown> {
-  pruneRunsListCache();
-  return {
-    size: runsListCache.size,
-    maxSize: RUNS_LIST_CACHE_MAX_SIZE,
-    ttlMs: RUNS_LIST_CACHE_TTL_MS
-  };
-}
-
-function getVisualizerSseMetricsSnapshot(): Record<string, unknown> {
-  return {
-    activeConnections: visualizerSseMetrics.activeConnections,
-    openedTotal: visualizerSseMetrics.openedTotal,
-    closedTotal: visualizerSseMetrics.closedTotal,
-    ticksTotal: visualizerSseMetrics.ticksTotal,
-    snapshotsTotal: visualizerSseMetrics.snapshotsTotal,
-    snapshotErrorsTotal: visualizerSseMetrics.snapshotErrorsTotal,
-    writesTotal: visualizerSseMetrics.writesTotal,
-    activeByRunId: Object.fromEntries(visualizerSseMetrics.activeByRunId.entries())
-  };
-}
-
-function readCachedProjectCreateResponse(
-  state: VisualizationServerState,
-  requestId: string,
-  nowMs = Date.now()
-): Record<string, unknown> | undefined {
-  pruneProjectCreateRequestCache(state, nowMs);
-  const cached = state.projectCreateRequests.get(requestId);
-  if (!cached) {
-    return undefined;
-  }
-  return cached.payload;
-}
-
-function readPendingProjectCreateResponse(
-  state: VisualizationServerState,
-  requestId: string,
-  nowMs = Date.now()
-): Promise<Record<string, unknown>> | undefined {
-  pruneProjectCreateRequestCache(state, nowMs);
-  const cached = state.projectCreateRequests.get(requestId);
-  return cached?.promise;
-}
-
-function cacheProjectCreateResponse(
-  state: VisualizationServerState,
-  requestId: string,
-  payload: Record<string, unknown>,
-  nowMs = Date.now()
-): void {
-  pruneProjectCreateRequestCache(state, nowMs);
-  state.projectCreateRequests.delete(requestId);
-  state.projectCreateRequests.set(requestId, {
-    cachedAtMs: nowMs,
-    payload
-  });
-  pruneProjectCreateRequestCache(state, nowMs);
-}
-
-function cachePendingProjectCreateResponse(
-  state: VisualizationServerState,
-  requestId: string,
-  promise: Promise<Record<string, unknown>>,
-  nowMs = Date.now()
-): void {
-  pruneProjectCreateRequestCache(state, nowMs);
-  state.projectCreateRequests.delete(requestId);
-  state.projectCreateRequests.set(requestId, {
-    cachedAtMs: nowMs,
-    promise
-  });
-  pruneProjectCreateRequestCache(state, nowMs);
-}
-
-function clearPendingProjectCreateResponse(
-  state: VisualizationServerState,
-  requestId: string
-): void {
-  const cached = state.projectCreateRequests.get(requestId);
-  if (cached?.promise) {
-    state.projectCreateRequests.delete(requestId);
-  }
 }
 
 function readProjectCreatePayload(body: Record<string, unknown>): {
@@ -576,7 +419,7 @@ function buildRunHeader(detail: LoadedRunDetail): RunHeader {
 }
 
 function invalidateAllProjectCaches(workdir: string): void {
-  runsListCache.delete(workdir);
+  clearRunsListCache(workdir);
   invalidateProjectProjectionCache(workdir);
 }
 
@@ -939,15 +782,9 @@ async function loadRunEventsSnapshot(args: {
 }
 
 async function handleApiRunsList(workdir: string, response: ServerResponse): Promise<void> {
-  pruneRunsListCache();
   const indexStat = await stat(resolve(workdir, ".ogs", "runs-index.json")).catch(() => undefined);
-  const cached = runsListCache.get(workdir);
-  if (
-    cached &&
-    ((indexStat?.mtimeMs === undefined && cached.indexMtimeMs === undefined) ||
-      (indexStat?.mtimeMs !== undefined && cached.indexMtimeMs === indexStat.mtimeMs))
-  ) {
-    cached.lastAccessedAtMs = Date.now();
+  const cached = readRunsListCache(workdir, indexStat?.mtimeMs);
+  if (cached) {
     jsonResponse(response, 200, { generatedAt: cached.generatedAt, runs: cached.runs });
     return;
   }
@@ -958,14 +795,13 @@ async function handleApiRunsList(workdir: string, response: ServerResponse): Pro
       runs: persisted.runs,
       indexMtimeMs: indexStat?.mtimeMs
     });
-    runsListCache.set(workdir, entry);
-    pruneRunsListCache();
+    writeRunsListCache(workdir, entry);
     jsonResponse(response, 200, { generatedAt: persisted.generatedAt, runs: persisted.runs });
     return;
   }
-  if (cached) {
-    cached.lastAccessedAtMs = Date.now();
-    jsonResponse(response, 200, { generatedAt: cached.generatedAt, runs: cached.runs });
+  const fallbackCached = readFallbackRunsListCache(workdir);
+  if (fallbackCached) {
+    jsonResponse(response, 200, { generatedAt: fallbackCached.generatedAt, runs: fallbackCached.runs });
     return;
   }
   const runs = await loadIndexedRuns(workdir);
@@ -973,8 +809,7 @@ async function handleApiRunsList(workdir: string, response: ServerResponse): Pro
     generatedAt: new Date().toISOString(),
     runs
   });
-  runsListCache.set(workdir, fallbackEntry);
-  pruneRunsListCache();
+  writeRunsListCache(workdir, fallbackEntry);
   jsonResponse(response, 200, { generatedAt: fallbackEntry.generatedAt, runs });
 }
 
@@ -1634,12 +1469,11 @@ async function handleApiRunResumeReadiness(
 async function handleApiReindex(workdir: string, response: ServerResponse): Promise<void> {
   const index = await rebuildRunsIndex(workdir);
   const indexStat = await stat(resolve(workdir, ".ogs", "runs-index.json")).catch(() => undefined);
-  runsListCache.set(workdir, createRunsListCacheEntry({
+  writeRunsListCache(workdir, createRunsListCacheEntry({
     generatedAt: index.generatedAt,
     runs: index.runs,
     indexMtimeMs: indexStat?.mtimeMs
   }));
-  pruneRunsListCache();
   jsonResponse(response, 200, index);
 }
 
@@ -2254,9 +2088,7 @@ async function handleVisualizationRequest(
       connection: "keep-alive"
     });
     response.write("retry: 2000\n");
-    visualizerSseMetrics.activeConnections += 1;
-    visualizerSseMetrics.openedTotal += 1;
-    visualizerSseMetrics.activeByRunId.set(runId, (visualizerSseMetrics.activeByRunId.get(runId) ?? 0) + 1);
+    recordSseConnectionOpened(runId);
 
     let active = true;
     let cursor = startCursor;
@@ -2269,7 +2101,7 @@ async function handleVisualizationRequest(
       }
       inFlight = true;
       try {
-        visualizerSseMetrics.snapshotsTotal += 1;
+        recordSseSnapshotAttempt();
         const snapshot = await loadRunEventsSnapshot({
           workdir: state.workdir,
           runId,
@@ -2283,18 +2115,18 @@ async function handleVisualizationRequest(
           response.write(`id: ${cursor}\n`);
           response.write("event: event\n");
           response.write(`data: ${JSON.stringify(entry)}\n\n`);
-          visualizerSseMetrics.writesTotal += 1;
+          recordSseWrite();
           cursor = entry.cursor + 1;
         }
       } catch {
-        visualizerSseMetrics.snapshotErrorsTotal += 1;
+        recordSseSnapshotError();
       } finally {
         inFlight = false;
       }
     };
 
     const interval = setInterval(() => {
-      visualizerSseMetrics.ticksTotal += 1;
+      recordSseTick();
       void pushSnapshot();
     }, 1000);
     request.on("close", () => {
@@ -2304,14 +2136,7 @@ async function handleVisualizationRequest(
       closed = true;
       active = false;
       clearInterval(interval);
-      visualizerSseMetrics.activeConnections = Math.max(0, visualizerSseMetrics.activeConnections - 1);
-      visualizerSseMetrics.closedTotal += 1;
-      const activeForRun = (visualizerSseMetrics.activeByRunId.get(runId) ?? 1) - 1;
-      if (activeForRun > 0) {
-        visualizerSseMetrics.activeByRunId.set(runId, activeForRun);
-      } else {
-        visualizerSseMetrics.activeByRunId.delete(runId);
-      }
+      recordSseConnectionClosed(runId);
       response.end();
     });
     await pushSnapshot();
