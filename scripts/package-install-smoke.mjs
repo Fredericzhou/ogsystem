@@ -37,6 +37,59 @@ function runCommand(command, args, options = {}) {
   });
 }
 
+function waitForProcessOutput(child, pattern, timeoutMs = 10000) {
+  return new Promise((resolve, reject) => {
+    let stdout = "";
+    let stderr = "";
+    const timeout = setTimeout(() => {
+      cleanup();
+      reject(new Error(`Timed out waiting for ${pattern}; stdout=${stdout}; stderr=${stderr}`));
+    }, timeoutMs);
+    const cleanup = () => {
+      clearTimeout(timeout);
+      child.stdout.off("data", onStdout);
+      child.stderr.off("data", onStderr);
+      child.off("exit", onExit);
+      child.off("error", onError);
+    };
+    const scan = () => {
+      const match = `${stdout}\n${stderr}`.match(pattern);
+      if (match) {
+        cleanup();
+        resolve({ match, stdout, stderr });
+      }
+    };
+    const onStdout = (chunk) => {
+      stdout += chunk.toString();
+      scan();
+    };
+    const onStderr = (chunk) => {
+      stderr += chunk.toString();
+      scan();
+    };
+    const onExit = (code) => {
+      cleanup();
+      reject(new Error(`Process exited before ${pattern}; code=${code}; stdout=${stdout}; stderr=${stderr}`));
+    };
+    const onError = (error) => {
+      cleanup();
+      reject(error);
+    };
+    child.stdout.on("data", onStdout);
+    child.stderr.on("data", onStderr);
+    child.on("exit", onExit);
+    child.on("error", onError);
+  });
+}
+
+async function stopChild(child) {
+  if (child.exitCode !== null || child.signalCode !== null) {
+    return;
+  }
+  child.kill();
+  await new Promise((resolve) => child.once("exit", resolve));
+}
+
 function resolveNodeManagedCommand(command) {
   const nodeBinDir = dirname(process.execPath);
   const executable = process.platform === "win32" ? `${command}.cmd` : command;
@@ -173,6 +226,27 @@ async function main() {
 
   const startPayload = JSON.parse(startResult.stdout);
   assert.equal(startPayload.status, "done");
+
+  const visualizer = spawn("node", [ogsBinPath, "visualizer", "--workdir", projectDir, "--port", "0"], {
+    cwd: projectDir,
+    env: isolatedEnv,
+    stdio: ["ignore", "pipe", "pipe"]
+  });
+  try {
+    const startup = await waitForProcessOutput(
+      visualizer,
+      /OGSystem Visualizer listening on (http:\/\/[^\s]+)/,
+      15000
+    );
+    const url = startup.match[1];
+    const response = await fetch(url);
+    assert.equal(response.status, 200);
+    const html = await response.text();
+    assert.match(html, /OGSystem/);
+    assert.match(html, /visualizer/i);
+  } finally {
+    await stopChild(visualizer);
+  }
 
   console.log(`package install smoke passed via ${packageManager}`);
 }
