@@ -1,7 +1,5 @@
 {{agent}}
 
-Return one JSON object only.
-
 Allowed events:
 {{allowed_events}}
 
@@ -15,5 +13,8 @@ Input:
 {{input}}
 
 Output requirements:
-- event must be from allowed_events.
+- Return exactly one schema-compliant JSON object and no Markdown or extra text.
+- Follow output.schema.json; do not invent fields outside the schema.
+- event must be one of allowed_events.
 - content must describe how to extend system alignment safely.
+- Use the language, tone, and bilingual preference from user_preferences.

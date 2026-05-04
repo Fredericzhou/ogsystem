@@ -2,6 +2,16 @@
 
 这个示例展示如何用 OGSystem 把“法律 RAG 问答服务”的软件开发过程编排成一支可运行的多角色团队。
 
+它是当前推荐的“中文多 Agent 协作端到端”示例，覆盖：
+
+- 中文输入与中文交付
+- `model.bind` 模型执行绑定
+- `parallel_split` 并行拆解
+- `all_of` 汇合
+- `context.map` 把分支结果和人工审核反馈投影给汇合角色
+- `review.*` runtime-native human review
+- `rework` 反馈重新注入 `delivery-lead`
+
 目标不是直接替代你的 RAG 服务，而是先让团队在同一条执行链上完成：
 
 - 需求澄清
@@ -90,6 +100,7 @@ node dist/runtime/cli.js run start \
 - 如果你改回 `opencode/gpt-5-nano`，注意该模型在本机 OpenCode SDK structured-output 场景中可能长时间等待后返回 `terminated`
 - 长时间执行时，控制台会区分 `role:waiting kind=technical` 和 `run:waiting kind=business reason=human_review`
 - `delivery-lead` 角色开启了 runtime-native human review，第一轮运行大概率会停在待审核状态
+- `rework` 时，reviewer comment 会通过 `global.human_review.current.*?` 投影回 `delivery-lead`
 
 ## 审核与继续执行
 

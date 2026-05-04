@@ -94,8 +94,20 @@ Prefix keys allowed:
 - `%% model.bind.<roleId>=<modelId>`
 - `%% role.mode.<roleId>=parallel_split`
 - `%% join.mode.<roleId>=all_of`
+- `%% join.mode.<roleId>=quorum_of`
 - `%% join.sources.<roleId>=roleA,roleB,...`
+- `%% join.min.<roleId>=<positiveInteger>`
 - `%% loop.max.<roleId>=<positiveInteger>`
+- `%% route.order.<roleId>=roleA,roleB,...`
+- `%% handoff.mode=strict`
+- `%% handoff.contracts=<relative-json-path>`
+- `%% review.mode.<roleId>=required`
+- `%% review.timeout.<roleId>=<positiveIntegerSeconds>`
+- `%% review.timeout.action.<roleId>=pause|terminate`
+- `%% review.rework.target.<roleId>=<roleId>`
+- `%% review.rework.max.<roleId>=<nonNegativeInteger>`
+- `%% review.terminate.scope.<roleId>=branch|run`
+- `%% context.map.<roleId>.<fieldName>=<selector>`
 
 Do not generate any other metadata key.
 
@@ -107,7 +119,13 @@ Supported:
 - branching
 - `parallel_split`
 - `all_of` join
+- `quorum_of` join with `join.min`
 - bounded loop via `loop.max`
+- deterministic route order via `route.order`
+- projected role input via `context.map`
+- strict handoff contracts via `handoff.mode=strict` and `handoff.contracts`
+- runtime-native human review via `review.*`
+- runtime failure routing via role-only `ERROR` and `ERROR.<errorCode>` edges
 - `model.bind` as the preferred execution binding
 - `exec.bind` as compatibility mode only
 
@@ -118,6 +136,7 @@ Not supported:
 - arbitrary engine names
 - non-Mermaid orchestration syntax
 - hidden metadata invented by the model
+- executable role outputs using `ERROR*` events; ERROR* is runtime-only failure routing
 
 ## Runtime Truth
 
@@ -127,8 +146,59 @@ Prefer these rules unless the user explicitly asks for compatibility mode:
 - use local curated model ids from `og-models/models/*`
 - use existing role ids from `og-roles/roles/*`
 - keep role semantics in the role repo, not in Mermaid comments
+- use `review.*` metadata instead of modeling human review as a fake reviewer role when the user asks for human-in-loop approval
+- use JSON Schema role output packages for structured output instead of relying only on prompt text that says "return JSON"
 
 `exec.bind` may still be used only when the user is targeting legacy profiles/tools.
+
+### Context Map Selectors
+
+Allowed selector families:
+
+- `direct.content`
+- `direct.data.<field>`
+- `source(<roleId>).content`
+- `source(<roleId>).data.<field>`
+- `global.task`
+- `global.user_profile.<field>`
+- `global.human_review.current.<field>`
+- Optional selectors may end with `?`, for example `global.human_review.current.comment?`.
+
+Rules:
+
+- `source(<roleId>)` selectors are for join roles and must reference roles in `join.sources.<joinRoleId>`.
+- If `join.mode.<joinRoleId>=quorum_of` and `join.min` is below the number of sources, do not use `source(<roleId>)` selectors because some sources may be absent.
+- Use optional `global.human_review.current.*?` selectors for first-run/rework flows where no review exists yet.
+
+### Human Review Metadata
+
+Use this pattern for runtime-native review:
+
+```mermaid
+%% review.mode.<roleId>=required
+%% review.timeout.<roleId>=86400
+%% review.timeout.action.<roleId>=pause
+%% review.rework.target.<roleId>=<roleId>
+%% review.rework.max.<roleId>=2
+%% review.terminate.scope.<roleId>=branch
+%% context.map.<roleId>.review_comment=global.human_review.current.comment?
+%% context.map.<roleId>.review_round=global.human_review.current.round?
+```
+
+Do not add a synthetic `reviewer` role solely to represent the human decision when runtime-native `review.*` is intended.
+
+### ERROR* Routing
+
+Allowed ERROR* edges:
+
+- `roleNode[Role:roleId] -->|ERROR| handler[Role:error-handler-base]`
+- `roleNode[Role:roleId] -->|ERROR.<CODE>| handler[Role:error-handler-base]`
+
+Rules:
+
+- ERROR* edges can only originate from role nodes, never `input`.
+- Runtime tries `ERROR.<errorCode>` first, then falls back to `ERROR`.
+- Role output schemas should not include ERROR* events; executable roles must not emit `ERROR` or `ERROR.<CODE>` themselves.
 
 ## Role Mention Rules
 
@@ -155,6 +225,7 @@ Use when any of these is unclear:
 - final output role
 - event names
 - whether branching/parallel/join/loop is truly required
+- whether quorum, context projection, human review, ERROR* compensation, route ordering, or handoff contracts are needed
 - law id
 - whether to use `model.bind` or `exec.bind`
 - the exact existing role to use for an `@roleId` mention
@@ -254,9 +325,12 @@ Check all of these:
 - every referenced `model.bind` role exists
 - every referenced `exec.bind` role exists
 - every `role.mode` value is `parallel_split`
-- every `join.mode` value is `all_of`
+- every `join.mode` value is `all_of` or `quorum_of`
 - every `join.sources` source really has a Mermaid edge into the join role
+- every `quorum_of` join has a valid `join.min`
 - every `loop.max` is a positive integer
+- every `review.*` block has `review.mode.<roleId>=required`
+- every ERROR* edge originates from a role node and is not listed in role output schema events
 - referenced role packages exist locally
 - referenced model packages exist locally
 - outgoing Mermaid events match role output event enums when those enums exist

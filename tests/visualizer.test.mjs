@@ -1518,7 +1518,14 @@ test("visualizer server exposes Mermaid workbench APIs and project export", asyn
     const templatesResponse = await fetch(`${url}/api/v1/project/studio/templates`);
     assert.equal(templatesResponse.status, 200);
     const templates = await templatesResponse.json();
-    assert.deepEqual(templates.templates.map((template) => template.id).sort(), ["consultation", "debate", "review"]);
+    assert.deepEqual(templates.templates.map((template) => template.id).sort(), [
+      "compensation",
+      "consultation",
+      "debate",
+      "quorum",
+      "review",
+      "zh-dev-team"
+    ]);
 
     const emptyChatResponse = await fetch(`${url}/api/v1/project/studio/chat`, {
       method: "POST",

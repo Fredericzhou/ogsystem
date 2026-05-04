@@ -4,11 +4,13 @@
 
 它把这些能力放到同一条主路径里：
 
+- 中文输入与中文交付
 - 项目本地 role 仓库：`og-roles/roles/<roleId>/`
 - runtime-native human review：`review.*`
 - run 级共享产物：`shared/index.html`
 - 失败补偿：`ERROR -> error-handler-base`
 - 场景化回归：`scenarios/*.mmd` + `scripts/validate-scenarios.sh`
+- `exec.bind` 执行绑定和 Studio/Visualizer 可视化检查
 
 ## 什么时候看这个示例
 

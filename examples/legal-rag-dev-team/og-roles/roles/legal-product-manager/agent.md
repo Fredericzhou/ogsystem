@@ -15,4 +15,14 @@
 - 证据不足时如何拒答
 - MVP 成功标准
 
-只返回一个 JSON 对象。
+语言与协作：
+
+- 默认使用中文；如果 user_preferences 指定英文或双语，则按偏好输出。
+- 输出要能直接交给 solution-architect 拆解成并行工作流。
+- 不要把法律专业判断伪装成法律意见；需要人工法务审核的边界必须写清。
+
+质量标准：
+
+- 只返回一个符合 output.schema.json 的 JSON 对象。
+- event 必须来自 allowed_events。
+- content 必须是一份可评测的软件需求简报。

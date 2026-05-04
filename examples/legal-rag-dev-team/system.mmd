@@ -5,46 +5,42 @@ flowchart TD
 %% entry.role=legal-product-manager
 %% handoff.mode=strict
 %% handoff.contracts=contracts/handoff.contracts.json
-%% model.bind.legal-product-manager=gkgk/gpt-5.4
-%% model.bind.solution-architect=gkgk/gpt-5.4
-%% role.mode.solution-architect=parallel_split
-%% route.order.solution-architect=legal-knowledge-engineer,retrieval-engineer,answer-engineer,citation-engineer,evaluation-engineer
-%% model.bind.legal-knowledge-engineer=gkgk/gpt-5.4
-%% model.bind.retrieval-engineer=gkgk/gpt-5.4
 %% model.bind.answer-engineer=gkgk/gpt-5.4
 %% model.bind.citation-engineer=gkgk/gpt-5.4
+%% model.bind.delivery-lead=gkgk/gpt-5.4
 %% model.bind.evaluation-engineer=gkgk/gpt-5.4
+%% model.bind.legal-knowledge-engineer=gkgk/gpt-5.4
+%% model.bind.legal-product-manager=gkgk/gpt-5.4
+%% model.bind.retrieval-engineer=gkgk/gpt-5.4
+%% model.bind.solution-architect=gkgk/gpt-5.4
 %% join.mode.delivery-lead=all_of
 %% join.sources.delivery-lead=legal-knowledge-engineer,retrieval-engineer,answer-engineer,citation-engineer,evaluation-engineer
-%% context.map.delivery-lead.project_goal=global.task
-%% context.map.delivery-lead.knowledge_plan=source(legal-knowledge-engineer).content
-%% context.map.delivery-lead.retrieval_plan=source(retrieval-engineer).content
-%% context.map.delivery-lead.answer_plan=source(answer-engineer).content
-%% context.map.delivery-lead.citation_plan=source(citation-engineer).content
-%% context.map.delivery-lead.evaluation_plan=source(evaluation-engineer).content
-%% context.map.delivery-lead.review_comment=global.human_review.current.comment?
-%% context.map.delivery-lead.review_round=global.human_review.current.round?
-%% model.bind.delivery-lead=gkgk/gpt-5.4
 %% review.mode.delivery-lead=required
 %% review.timeout.delivery-lead=86400
 %% review.timeout.action.delivery-lead=pause
 %% review.rework.target.delivery-lead=delivery-lead
 %% review.rework.max.delivery-lead=2
 %% review.terminate.scope.delivery-lead=branch
-
-input -->|PROJECT_REQUEST| legal-product-manager[Role:legal-product-manager]
-legal-product-manager[Role:legal-product-manager] -->|REQUIREMENTS_READY| solution-architect[Role:solution-architect]
-
-solution-architect[Role:solution-architect] -->|START_KNOWLEDGE| legal-knowledge-engineer[Role:legal-knowledge-engineer]
-solution-architect[Role:solution-architect] -->|START_RETRIEVAL| retrieval-engineer[Role:retrieval-engineer]
-solution-architect[Role:solution-architect] -->|START_ANSWERING| answer-engineer[Role:answer-engineer]
-solution-architect[Role:solution-architect] -->|START_CITATION| citation-engineer[Role:citation-engineer]
-solution-architect[Role:solution-architect] -->|START_EVALUATION| evaluation-engineer[Role:evaluation-engineer]
-
-legal-knowledge-engineer[Role:legal-knowledge-engineer] -->|KNOWLEDGE_PLAN_READY| delivery-lead[Role:delivery-lead]
-retrieval-engineer[Role:retrieval-engineer] -->|RETRIEVAL_PLAN_READY| delivery-lead[Role:delivery-lead]
-answer-engineer[Role:answer-engineer] -->|ANSWER_PLAN_READY| delivery-lead[Role:delivery-lead]
-citation-engineer[Role:citation-engineer] -->|CITATION_PLAN_READY| delivery-lead[Role:delivery-lead]
-evaluation-engineer[Role:evaluation-engineer] -->|EVAL_PLAN_READY| delivery-lead[Role:delivery-lead]
-
-delivery-lead[Role:delivery-lead] -->|IMPLEMENTATION_READY| output
+%% context.map.delivery-lead.answer_plan=source(answer-engineer).content
+%% context.map.delivery-lead.citation_plan=source(citation-engineer).content
+%% context.map.delivery-lead.evaluation_plan=source(evaluation-engineer).content
+%% context.map.delivery-lead.knowledge_plan=source(legal-knowledge-engineer).content
+%% context.map.delivery-lead.project_goal=global.task
+%% context.map.delivery-lead.retrieval_plan=source(retrieval-engineer).content
+%% context.map.delivery-lead.review_comment=global.human_review.current.comment?
+%% context.map.delivery-lead.review_round=global.human_review.current.round?
+%% role.mode.solution-architect=parallel_split
+%% route.order.solution-architect=legal-knowledge-engineer,retrieval-engineer,answer-engineer,citation-engineer,evaluation-engineer
+input -->|PROJECT_REQUEST| r6[Role:legal-product-manager]
+r1[Role:answer-engineer] -->|ANSWER_PLAN_READY| r3[Role:delivery-lead]
+r2[Role:citation-engineer] -->|CITATION_PLAN_READY| r3[Role:delivery-lead]
+r3[Role:delivery-lead] -->|IMPLEMENTATION_READY| output
+r4[Role:evaluation-engineer] -->|EVAL_PLAN_READY| r3[Role:delivery-lead]
+r5[Role:legal-knowledge-engineer] -->|KNOWLEDGE_PLAN_READY| r3[Role:delivery-lead]
+r6[Role:legal-product-manager] -->|REQUIREMENTS_READY| r8[Role:solution-architect]
+r7[Role:retrieval-engineer] -->|RETRIEVAL_PLAN_READY| r3[Role:delivery-lead]
+r8[Role:solution-architect] -->|START_ANSWERING| r1[Role:answer-engineer]
+r8[Role:solution-architect] -->|START_CITATION| r2[Role:citation-engineer]
+r8[Role:solution-architect] -->|START_EVALUATION| r4[Role:evaluation-engineer]
+r8[Role:solution-architect] -->|START_KNOWLEDGE| r5[Role:legal-knowledge-engineer]
+r8[Role:solution-architect] -->|START_RETRIEVAL| r7[Role:retrieval-engineer]

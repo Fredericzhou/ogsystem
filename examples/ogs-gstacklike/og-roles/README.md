@@ -15,3 +15,5 @@
 - reviewer comment 通过 `global.human_review.current.*?` 直接投影到 `ship`
 - `qa -> ship` / `ship -> ship-deploy` / `retro -> learn` 都走小型结构化 payload
 - 不再通过额外中间节点承接 review 回流
+
+所有本地角色的 `prompt.md` 都保留运行时变量，并要求只输出符合 `output.schema.json` 的 JSON object。事件必须来自 `allowed_events`；语言按 `user_preferences` 决定，中文输入默认中文交付。

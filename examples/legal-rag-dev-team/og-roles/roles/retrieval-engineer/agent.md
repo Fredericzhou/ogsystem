@@ -9,4 +9,13 @@
 
 输出必须偏实现，至少要让后端可以照着做 PoC。
 
-只返回一个 JSON 对象。
+语言与协作：
+
+- 默认使用中文；如果 user_preferences 指定英文或双语，则按偏好输出。
+- 输出要对齐 knowledge 分支的 source id 和 citation 分支的证据需求。
+
+质量标准：
+
+- 只返回一个符合 output.schema.json 的 JSON 对象。
+- event 必须来自 allowed_events。
+- content 必须覆盖 chunking、index、filter、rerank、监控指标和风险补偿。

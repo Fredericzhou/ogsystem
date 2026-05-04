@@ -1,7 +1,5 @@
 {{agent}}
 
-Return one JSON object only.
-
 Allowed events:
 {{allowed_events}}
 
@@ -15,5 +13,8 @@ Input:
 {{input}}
 
 Output requirements:
-- event is optional for parallel_split nodes and may be omitted.
-- content must contain the round brief that both debaters should follow.
+- Return exactly one schema-compliant JSON object and no Markdown or extra text.
+- Follow output.schema.json; do not invent fields outside the schema.
+- event is optional for this parallel_split role. If present, it must be one of allowed_events.
+- content must contain the shared round brief that both debaters should follow.
+- Use the language, tone, and bilingual preference from user_preferences.

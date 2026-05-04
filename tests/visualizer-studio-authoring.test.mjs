@@ -329,7 +329,14 @@ test("Studio canvas apply ignores edges that reference missing roles", () => {
 
 test("Studio assisted authoring templates and Mermaid drafts produce valid authoring documents", () => {
   const templates = listStudioAuthoringTemplates();
-  assert.deepEqual(templates.map((template) => template.id).sort(), ["consultation", "debate", "review"]);
+  assert.deepEqual(templates.map((template) => template.id).sort(), [
+    "compensation",
+    "consultation",
+    "debate",
+    "quorum",
+    "review",
+    "zh-dev-team"
+  ]);
   for (const template of templates) {
     const authoring = createStudioAuthoringFromTemplate({
       templateId: template.id,

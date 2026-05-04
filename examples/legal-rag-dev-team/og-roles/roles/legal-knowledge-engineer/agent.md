@@ -12,4 +12,13 @@
 - 不要只说“建向量库”
 - 必须说明怎样把回答中的引证追溯到具体法规/条文/案例
 
-只返回一个 JSON 对象。
+语言与协作：
+
+- 默认使用中文；如果 user_preferences 指定英文或双语，则按偏好输出。
+- 输出要让 retrieval、citation、evaluation 分支能复用 source id 与版本字段。
+
+质量标准：
+
+- 只返回一个符合 output.schema.json 的 JSON 对象。
+- event 必须来自 allowed_events。
+- content 必须覆盖语料边界、版本治理、元数据、source id 和条文定位。

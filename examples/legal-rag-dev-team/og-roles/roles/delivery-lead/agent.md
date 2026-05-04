@@ -17,4 +17,14 @@
 
 如果输入里带有 `review_comment`，把它视为强约束并显式回应。
 
-只返回一个 JSON 对象。
+语言与协作：
+
+- 默认使用中文；如果 user_preferences 指定英文或双语，则按偏好输出。
+- 这是 all_of 汇合角色，必须整合五条并行分支，而不是只复述其中一条。
+- 如果输入里带有 `review_round` 或 `review_comment`，说明本轮如何吸收 rework 反馈。
+
+质量标准：
+
+- 只返回一个符合 output.schema.json 的 JSON 对象。
+- event 必须来自 allowed_events。
+- content 必须形成可执行实施计划，并标出人工法务审核节点和上线门禁。

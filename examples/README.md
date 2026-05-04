@@ -16,15 +16,16 @@ Use this small set first to cover most capabilities with minimum repetition:
 
 ## Coverage Matrix
 
-| Example | Binding Mode | Core Semantics | Operational Focus |
-|---|---|---|---|
-| `minimal-system.mmd` | model.bind | linear flow | quick smoke check |
-| `langgraph-debate-current/` | model.bind | `parallel_split + all_of + loop.max` | multi-round orchestration |
-| `medical-quorum-consultation/` | model.bind | `parallel_split + quorum_of + context.map + flow contract` | quorum decision, projected join context, and contract-backed validation |
-| `runtime-native-human-review/` | model.bind | `review.* + runtime-native human review` | stop-for-review, operator decision, resume |
-| `ogs-gstacklike/` | exec.bind | `review.* + ERROR* + shared artifacts + local role repo` | project-style delivery flow with native human review, compensation, and run-level artifact handoff |
-| `rust-hello-pipeline/` | exec.bind | sequential multi-role tool chain | side-effect workflow and artifact validation |
-| `legal-rag-dev-team/` | model.bind | `parallel_split + all_of + context.map + strict handoff + review.*` | software-team orchestration for a legal RAG service with citation requirements |
+| Example | Binding Mode | Core Semantics | Capability Coverage | Operational Focus |
+|---|---|---|---|---|
+| `minimal-system.mmd` | noop | linear flow | smallest runnable graph | quick smoke check without binding metadata |
+| `target-model-binding-system.mmd` | model.bind | linear model flow | minimum model execution binding | smallest model-bound baseline |
+| `langgraph-debate-current/` | model.bind | `parallel_split + all_of + loop.max` | Chinese output, multi-role debate, parallel split, join, bounded loop | multi-round orchestration |
+| `medical-quorum-consultation/` | model.bind | `parallel_split + quorum_of + join.min + context.map + flow contract` | quorum arbitration, projected join context, Chinese specialist consultation | quorum decision and contract-backed validation |
+| `runtime-native-human-review/` | model.bind | `review.* + runtime-native human review` | human-in-loop review, rework/approve/terminate metadata | stop-for-review, operator decision, resume |
+| `ogs-gstacklike/` | exec.bind | `review.* + ERROR* + context.map + shared artifacts + local role repo` | exec binding, human review, rework feedback injection, error compensation, Studio/Visualizer | project-style delivery flow with native review and run-level artifact handoff |
+| `rust-hello-pipeline/` | exec.bind | sequential multi-role tool chain | exec binding and side-effect validation | artifact-producing workflow |
+| `legal-rag-dev-team/` | model.bind | `parallel_split + all_of + context.map + strict handoff + review.*` | Chinese multi-agent team, model binding, parallel workstreams, join, human review, rework injection, citation-oriented structured handoff | end-to-end legal RAG delivery planning |
 
 ## Recommended Order
 
@@ -34,7 +35,7 @@ Use this small set first to cover most capabilities with minimum repetition:
 4. Run `runtime-native-human-review/` for native stop-review-resume semantics.
 5. Run `ogs-gstacklike/` for a full project-style example with local role repo, native review, shared artifacts, and compensation.
 6. Run `rust-hello-pipeline/` if you need external toolchain workflows.
-7. Run `legal-rag-dev-team/` if you want a project-planning pattern for a citation-heavy legal RAG service.
+7. Run `legal-rag-dev-team/` for the recommended Chinese multi-agent collaboration example.
 
 ## Fast Commands
 
@@ -58,4 +59,4 @@ bash examples/ogs-gstacklike/scripts/validate-scenarios.sh
 - `langgraph-expert-consultation/`: all-of expert consultation baseline.
 - `console-system.mmd`: smallest local-shell exec.bind baseline.
 - `error-flow-compensation/`: focused ERROR* routing baseline.
-- `legal-rag-dev-team/`: project-planning workflow for a legal RAG team with explicit citation engineering.
+- `legal-rag-dev-team/`: primary Chinese multi-agent collaboration example for a legal RAG team with explicit citation engineering, model binding, parallel decomposition, join, human review, and rework feedback injection.
