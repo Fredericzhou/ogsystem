@@ -61,6 +61,23 @@ Minimal runnable quick start:
 ogs project create demo-app --template minimal
 cd demo-app
 ogs run start --system system.mmd --input "smoke" --dry-run
+ogs run list
+ogs run status <run-id>
+ogs run logs <run-id> --engine --tail 50
+ogs visualizer --workdir .
+```
+
+Stable lifecycle command anchors:
+
+```bash
+npm install -g ogsystem
+pnpm add -g ogsystem
+ogs project create demo-app --template minimal
+ogs project init
+ogs run start --system system.mmd --input "smoke" --dry-run
+ogs run list
+ogs run status <run-id>
+ogs run logs <run-id> --engine --tail 50
 ogs visualizer --workdir .
 ```
 

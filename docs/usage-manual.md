@@ -1189,6 +1189,20 @@ ogs run stop <run-id>
 ogs visualizer --workdir .
 ```
 
+Stable command anchors mirrored with the README:
+
+```bash
+npm install -g ogsystem
+pnpm add -g ogsystem
+ogs project create demo-app --template minimal
+ogs project init
+ogs run start --system system.mmd --input "smoke" --dry-run
+ogs run list
+ogs run status <run-id>
+ogs run logs <run-id> --engine --tail 50
+ogs visualizer --workdir .
+```
+
 Preferred runtime command:
 
 ```bash
