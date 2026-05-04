@@ -9,6 +9,7 @@ Sources: `docs/long-term-stability-roadmap.md`, `docs/archive/delivery/optimizat
 - 本文档是当前唯一“待办汇总入口”，用于替代分散 checklist 的日常跟踪。
 - 稳定主线继续遵循“不加复杂度”原则：先容量治理、基准回归、运维手册化，再评估架构升级。
 - 带日期的计划/评估/checklist 作为交付记录保留在 `docs/archive/`，不直接作为当前执行清单。
+- Visualizer 平台验证相关的第一/第二优先级事项已派生阶段执行入口：`docs/archive/delivery/ogsystem-visualizer-platform-validation-execution-plan-2026-05-04.md`；该文件用于批次推进，最终状态仍需同步回本文。
 
 ## 2. 当前优先（可立即执行）
 
