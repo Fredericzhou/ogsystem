@@ -21,7 +21,26 @@ import {
   readJsonRequestBody,
   readRequestBodyText
 } from "../dist/visualizer/request-body.js";
+import { parseStudioChatToMmdRequest } from "../dist/visualizer/studio-chat-to-mmd.js";
 import { authoringToCanvasDocument } from "../dist/visualizer/studio-authoring.js";
+
+test("studio chat request parsing keeps trimmed identifiers and ignores non-record validation payloads", () => {
+  const parsed = parseStudioChatToMmdRequest({
+    message: "  refine the graph  ",
+    sessionId: "  session-1  ",
+    selectedRoleId: "  analyst  ",
+    selectedFlowKey: "  planner:DONE:review  ",
+    runtimePath: "  runtime.json  ",
+    validation: ["not-a-record"]
+  });
+
+  assert.equal(parsed.message, "refine the graph");
+  assert.equal(parsed.sessionId, "session-1");
+  assert.equal(parsed.selectedRoleId, "analyst");
+  assert.equal(parsed.selectedFlowKey, "planner:DONE:review");
+  assert.equal(parsed.runtimeConfigPath, "runtime.json");
+  assert.equal(parsed.validation, undefined);
+});
 
 async function seedProjectFixture(workdir) {
   const repoRoot = process.cwd();

@@ -6,6 +6,7 @@ import {
   type StudioAuthoringRole,
   type StudioDiagnosticDto
 } from "../studio-contracts.js";
+import { asRecord, asTrimmedString } from "../json-guards.js";
 
 export type StudioRolePackageSummary = {
   roleId?: string;
@@ -79,18 +80,12 @@ const ROLE_ID_PATTERN = /^[A-Za-z][A-Za-z0-9_-]*$/;
 const EVENT_TYPE_PATTERN = /^[A-Z][A-Z0-9_:-]*$/;
 const RESERVED_ROLE_IDS = new Set(["input", "output", STUDIO_SYSTEM_END_ROLE_ID]);
 
-function asRecord(value: unknown): Record<string, unknown> | undefined {
-  return typeof value === "object" && value !== null && !Array.isArray(value)
-    ? value as Record<string, unknown>
-    : undefined;
-}
-
 function asArray(value: unknown): unknown[] {
   return Array.isArray(value) ? value : [];
 }
 
-function asString(value: unknown): string {
-  return typeof value === "string" ? value.trim() : "";
+function asTrimmedStringOrEmpty(value: unknown): string {
+  return asTrimmedString(value) ?? "";
 }
 
 function issue(args: {
@@ -125,19 +120,19 @@ export function extractStudioRolePackages(value: unknown): StudioRolePackageSumm
     .map((entry) => {
       const manifest = asRecord(entry.manifest);
       return {
-        roleId: asString(entry.roleId ?? manifest?.roleId),
-        name: asString(entry.name ?? manifest?.name),
-        description: asString(entry.description ?? manifest?.description),
-        status: asString(entry.status),
-        allowedEvents: asArray(entry.allowedEvents).map(asString).filter(Boolean),
-        preferredModelTags: asArray(entry.preferredModelTags ?? manifest?.preferredModelTags).map(asString).filter(Boolean),
+        roleId: asTrimmedStringOrEmpty(entry.roleId ?? manifest?.roleId),
+        name: asTrimmedStringOrEmpty(entry.name ?? manifest?.name),
+        description: asTrimmedStringOrEmpty(entry.description ?? manifest?.description),
+        status: asTrimmedStringOrEmpty(entry.status),
+        allowedEvents: asArray(entry.allowedEvents).map(asTrimmedStringOrEmpty).filter(Boolean),
+        preferredModelTags: asArray(entry.preferredModelTags ?? manifest?.preferredModelTags).map(asTrimmedStringOrEmpty).filter(Boolean),
         files: asRecord(entry.files),
         manifest: manifest
           ? {
-              roleId: asString(manifest.roleId),
-              name: asString(manifest.name),
-              description: asString(manifest.description),
-              preferredModelTags: asArray(manifest.preferredModelTags).map(asString).filter(Boolean)
+              roleId: asTrimmedStringOrEmpty(manifest.roleId),
+              name: asTrimmedStringOrEmpty(manifest.name),
+              description: asTrimmedStringOrEmpty(manifest.description),
+              preferredModelTags: asArray(manifest.preferredModelTags).map(asTrimmedStringOrEmpty).filter(Boolean)
             }
           : undefined
       };
@@ -151,13 +146,13 @@ export function extractStudioBindings(value: unknown): StudioBindingSummary[] {
     .map((entry) => asRecord(entry))
     .filter((entry): entry is Record<string, unknown> => Boolean(entry))
     .map((entry) => ({
-      roleId: asString(entry.roleId),
-      bindingKind: asString(entry.bindingKind ?? entry.kind),
-      kind: asString(entry.kind),
-      modelRef: asString(entry.modelRef ?? entry.resolvedModel),
-      profileId: asString(entry.profileId ?? entry.resolvedProfile),
-      resolvedModel: asString(entry.resolvedModel),
-      resolvedProfile: asString(entry.resolvedProfile)
+      roleId: asTrimmedStringOrEmpty(entry.roleId),
+      bindingKind: asTrimmedStringOrEmpty(entry.bindingKind ?? entry.kind),
+      kind: asTrimmedStringOrEmpty(entry.kind),
+      modelRef: asTrimmedStringOrEmpty(entry.modelRef ?? entry.resolvedModel),
+      profileId: asTrimmedStringOrEmpty(entry.profileId ?? entry.resolvedProfile),
+      resolvedModel: asTrimmedStringOrEmpty(entry.resolvedModel),
+      resolvedProfile: asTrimmedStringOrEmpty(entry.resolvedProfile)
     }))
     .filter((entry) => Boolean(entry.roleId));
 }
@@ -167,7 +162,7 @@ export function isValidStudioRoleId(roleId: string): boolean {
 }
 
 export function normalizeStudioEventType(value: unknown): string {
-  return asString(value).toUpperCase();
+  return asTrimmedStringOrEmpty(value).toUpperCase();
 }
 
 export function validateStudioAddRoleDraft(
@@ -175,7 +170,7 @@ export function validateStudioAddRoleDraft(
   context: StudioCommandValidationContext
 ): StudioValidationResult {
   const diagnostics: StudioDiagnosticDto[] = [];
-  const roleId = asString(draft.roleId);
+  const roleId = asTrimmedStringOrEmpty(draft.roleId);
   if (!roleId) {
     diagnostics.push(issue({
       severity: "error",
@@ -194,7 +189,7 @@ export function validateStudioAddRoleDraft(
       vars: { roleId },
       message: "Role id must start with a letter and use letters, digits, _ or -."
     }));
-  } else if (context.authoring?.roles?.[roleId] && roleId !== asString(draft.originalRoleId)) {
+  } else if (context.authoring?.roles?.[roleId] && roleId !== asTrimmedStringOrEmpty(draft.originalRoleId)) {
     diagnostics.push(issue({
       severity: "error",
       fieldPath: "roleId",
@@ -239,7 +234,7 @@ export function validateStudioAddRoleDraft(
     }
   }
 
-  if (draft.bindingKind === "model" && !asString(draft.modelRef)) {
+  if (draft.bindingKind === "model" && !asTrimmedStringOrEmpty(draft.modelRef)) {
     diagnostics.push(issue({
       severity: "error",
       fieldPath: "modelRef",
@@ -249,7 +244,7 @@ export function validateStudioAddRoleDraft(
       message: "Model binding requires a model reference."
     }));
   }
-  if (draft.bindingKind === "exec" && !asString(draft.profileId)) {
+  if (draft.bindingKind === "exec" && !asTrimmedStringOrEmpty(draft.profileId)) {
     diagnostics.push(issue({
       severity: "error",
       fieldPath: "profileId",
@@ -260,7 +255,7 @@ export function validateStudioAddRoleDraft(
     }));
   }
   if (draft.bindingKind === "exec" && draft.profileMode === "create") {
-    const profileId = asString(draft.newProfileId || draft.profileId);
+    const profileId = asTrimmedStringOrEmpty(draft.newProfileId || draft.profileId);
     if (!profileId) {
       diagnostics.push(issue({
         severity: "error",
@@ -271,7 +266,7 @@ export function validateStudioAddRoleDraft(
         message: "New execution profile requires a generated profile id."
       }));
     }
-    if (!asString(draft.newProfileToolRef)) {
+    if (!asTrimmedStringOrEmpty(draft.newProfileToolRef)) {
       diagnostics.push(issue({
         severity: "error",
         fieldPath: "newProfileToolRef",
@@ -285,7 +280,7 @@ export function validateStudioAddRoleDraft(
       ["newProfileTimeoutMs", draft.newProfileTimeoutMs],
       ["newProfileMaxOutputBytes", draft.newProfileMaxOutputBytes]
     ] as const) {
-      const value = asString(rawValue);
+      const value = asTrimmedStringOrEmpty(rawValue);
       if (value && (!/^[0-9]+$/.test(value) || Number(value) <= 0)) {
         diagnostics.push(issue({
           severity: "error",
@@ -311,8 +306,8 @@ export function validateStudioAddEdgeDraft(
 ): StudioValidationResult {
   const diagnostics: StudioDiagnosticDto[] = [];
   const authoring = context.authoring;
-  const sourceRoleId = asString(draft.sourceRoleId);
-  const targetRoleId = normalizeStudioGraphStoredRoleId(asString(draft.targetRoleId));
+  const sourceRoleId = asTrimmedStringOrEmpty(draft.sourceRoleId);
+  const targetRoleId = normalizeStudioGraphStoredRoleId(asTrimmedStringOrEmpty(draft.targetRoleId));
   const targetDisplay = normalizeStudioGraphTargetRoleId(targetRoleId);
   const eventType = normalizeStudioEventType(draft.eventType || "DONE");
   const flowKey = sourceRoleId && targetRoleId && eventType
@@ -362,8 +357,8 @@ export function validateStudioAddEdgeDraft(
     const duplicated = Object.values(authoring.flows ?? {}).some((flow) => {
       const sameOriginal =
         (draft.flowId && flow.flowId === draft.flowId) ||
-        (flow.fromRoleId === asString(draft.originalSourceRoleId) &&
-          flow.toRoleId === normalizeStudioGraphStoredRoleId(asString(draft.originalTargetRoleId)) &&
+        (flow.fromRoleId === asTrimmedStringOrEmpty(draft.originalSourceRoleId) &&
+          flow.toRoleId === normalizeStudioGraphStoredRoleId(asTrimmedStringOrEmpty(draft.originalTargetRoleId)) &&
           flow.eventType === normalizeStudioEventType(draft.originalEventType));
       if (sameOriginal) {
         return false;

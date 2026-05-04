@@ -44,17 +44,22 @@ export function renderOperateTabsHtml(args: {
 }): string {
   const { operateTab, t, escapeText } = args;
   const tabs = [
-    ["overview", t("operate.tab.overview", undefined, "Overview"), t("operate.tabHint.overview", undefined, "Run status, summary, and timeline")],
-    ["graph", t("operate.tab.graph", undefined, "Graph"), t("operate.tabHint.graph", undefined, "Readonly runtime graph and state")],
-    ["recovery", t("operate.tab.recovery", undefined, "Recovery"), t("operate.tabHint.recovery", undefined, "Failure triage and resume readiness")],
-    ["logs", t("operate.tab.logs", undefined, "Logs"), t("operate.tabHint.logs", undefined, "Load engine and role logs on demand")],
-    ["reviews", t("operate.tab.reviews", undefined, "Reviews"), t("operate.tabHint.reviews", undefined, "Human review queue and decisions")],
-    ["artifacts", t("operate.tab.artifacts", undefined, "Artifacts"), t("operate.tabHint.artifacts", undefined, "Run snapshots and exported evidence")]
+    ["overview", "operate-tabpanel-overview", t("operate.tab.overview", undefined, "Overview"), t("operate.tabHint.overview", undefined, "Run status, summary, and timeline")],
+    ["graph", "operate-tabpanel-graph", t("operate.tab.graph", undefined, "Graph"), t("operate.tabHint.graph", undefined, "Readonly runtime graph and state")],
+    ["recovery", "operate-tabpanel-recovery", t("operate.tab.recovery", undefined, "Recovery"), t("operate.tabHint.recovery", undefined, "Failure triage and resume readiness")],
+    ["logs", "console-panel-logs", t("operate.tab.logs", undefined, "Logs"), t("operate.tabHint.logs", undefined, "Load engine and role logs on demand")],
+    ["reviews", "operate-tabpanel-reviews", t("operate.tab.reviews", undefined, "Reviews"), t("operate.tabHint.reviews", undefined, "Human review queue and decisions")],
+    ["artifacts", "console-panel-artifacts", t("operate.tab.artifacts", undefined, "Artifacts"), t("operate.tabHint.artifacts", undefined, "Run snapshots and exported evidence")]
   ];
-  return tabs.map(([id, label, hint]) =>
+  return tabs.map(([id, panelId, label, hint]) =>
     '<button class="button subtle ' + (operateTab === id ? "active" : "") +
+    '" id="operate-tab-' + escapeText(id) +
     '" data-operate-tab="' + escapeText(id) +
+    '" role="tab"' +
+    '" aria-controls="' + escapeText(panelId) +
+    '" aria-selected="' + escapeText(String(operateTab === id)) +
     '" aria-pressed="' + escapeText(String(operateTab === id)) +
+    '" tabindex="' + escapeText(operateTab === id ? "0" : "-1") +
     '" title="' + escapeText(hint) +
     '">' + escapeText(label) + '</button>'
   ).join("");

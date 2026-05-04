@@ -1,4 +1,6 @@
 import { STUDIO_SYSTEM_END_ROLE_ID, type StudioAuthoringRole } from "../studio-contracts.js";
+import { escapeHtml } from "../html-escape.js";
+import { asRecord, asTrimmedString } from "../json-guards.js";
 import type { StudioAuthoringCommand, StudioExecutionProfileDraft } from "./studio-graph-commands.js";
 import {
   extractStudioRolePackages,
@@ -77,27 +79,12 @@ function label(labels: StudioCommandFormLabels | undefined, key: keyof StudioCom
   return labels?.[key] ?? fallback;
 }
 
-function escapeHtml(value: unknown): string {
-  return String(value ?? "")
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
-    .replace(/"/g, "&quot;")
-    .replace(/'/g, "&#39;");
-}
-
-function asRecord(value: unknown): Record<string, unknown> | undefined {
-  return typeof value === "object" && value !== null && !Array.isArray(value)
-    ? value as Record<string, unknown>
-    : undefined;
-}
-
 function asArray(value: unknown): unknown[] {
   return Array.isArray(value) ? value : [];
 }
 
-function asString(value: unknown): string {
-  return typeof value === "string" ? value.trim() : "";
+function asTrimmedStringOrEmpty(value: unknown): string {
+  return asTrimmedString(value) ?? "";
 }
 
 function firstRoleId(context: StudioCommandValidationContext): string {
@@ -283,10 +270,10 @@ function extractStudioModelOptions(context: StudioCommandValidationContext): Stu
     .map((entry) => asRecord(entry))
     .filter((entry): entry is Record<string, unknown> => Boolean(entry))
     .map((entry) => {
-      const ref = asString(entry.ref);
-      const name = asString(entry.name);
-      const provider = asString(entry.provider);
-      const model = asString(entry.model);
+      const ref = asTrimmedStringOrEmpty(entry.ref);
+      const name = asTrimmedStringOrEmpty(entry.name);
+      const provider = asTrimmedStringOrEmpty(entry.provider);
+      const model = asTrimmedStringOrEmpty(entry.model);
       const labelParts = [name || ref, provider && model ? `${provider}/${model}` : ""].filter(Boolean);
       return {
         ref,
@@ -304,8 +291,8 @@ function extractStudioProfileOptions(context: StudioCommandValidationContext): S
     .map((entry) => asRecord(entry))
     .filter((entry): entry is Record<string, unknown> => Boolean(entry))
     .map((entry) => {
-      const profileId = asString(entry.profileId);
-      const toolRef = asString(entry.toolRef);
+      const profileId = asTrimmedStringOrEmpty(entry.profileId);
+      const toolRef = asTrimmedStringOrEmpty(entry.toolRef);
       return {
         profileId,
         label: toolRef ? `${profileId} - ${toolRef}` : profileId
@@ -323,8 +310,8 @@ function extractStudioToolOptions(context: StudioCommandValidationContext): Stud
     .map((entry) => asRecord(entry))
     .filter((entry): entry is Record<string, unknown> => Boolean(entry))
     .map((entry) => {
-      const toolRef = asString(entry.toolRef);
-      const runner = asString(entry.runner);
+      const toolRef = asTrimmedStringOrEmpty(entry.toolRef);
+      const runner = asTrimmedStringOrEmpty(entry.runner);
       return {
         toolRef,
         label: runner ? `${toolRef} - ${runner}` : toolRef

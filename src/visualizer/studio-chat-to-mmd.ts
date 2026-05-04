@@ -22,6 +22,12 @@ import {
   type StudioCanvasDocument,
   type StudioSystemValidation
 } from "./studio-authoring.js";
+import {
+  asNonEmptyString,
+  asRecord,
+  asString,
+  type JsonRecord
+} from "./json-guards.js";
 
 export type StudioChatToMmdSession = {
   workdir: string;
@@ -90,28 +96,20 @@ type ValidateStudioSystemSource = (args: {
 const DEFAULT_STUDIO_CHAT_SESSION_TTL_MS = 30 * 60 * 1000;
 const DEFAULT_STUDIO_CHAT_SESSION_MAX_SIZE = 64;
 
-function hasObjectShape(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
-}
-
-function asString(value: unknown): string | undefined {
-  return typeof value === "string" ? value : undefined;
-}
-
 function asStringArray(value: unknown): string[] {
   return Array.isArray(value) ? value.filter((item): item is string => typeof item === "string") : [];
 }
 
 function normalizeOptionalString(value: unknown): string | undefined {
-  const text = asString(value)?.trim();
-  return text ? text : undefined;
+  return asNonEmptyString(value);
 }
 
 function normalizeAuthoring(value: unknown): StudioAuthoringDocument | undefined {
-  if (!hasObjectShape(value) || value.version !== 1) {
+  const record = asRecord(value);
+  if (!record || record.version !== 1) {
     return undefined;
   }
-  return value as StudioAuthoringDocument;
+  return record as StudioAuthoringDocument;
 }
 
 function resolveOptionalPathWithinWorkdir(
@@ -147,7 +145,7 @@ export function parseStudioChatToMmdRequest(body: Record<string, unknown>): Stud
     selectedFlowKey: normalizeOptionalString(body.selectedFlowKey),
     authoring: normalizeAuthoring(body.authoring),
     systemSource: asString(body.systemSource),
-    validation: hasObjectShape(body.validation) ? body.validation : undefined,
+    validation: asRecord(body.validation),
     runtimeConfigPath: normalizeOptionalString(body.runtimeConfigPath ?? body.runtimePath),
     runtimePath: normalizeOptionalString(body.runtimePath),
     lawsPath: normalizeOptionalString(body.lawsPath),
@@ -188,7 +186,8 @@ function createLocalSessionId(): string {
 function diagnosticsToMessages(validation: Record<string, unknown> | undefined, severity: string): string[] {
   const diagnostics = Array.isArray(validation?.diagnostics) ? validation.diagnostics : [];
   return diagnostics
-    .filter((item): item is Record<string, unknown> => hasObjectShape(item))
+    .map((item) => asRecord(item))
+    .filter((item): item is JsonRecord => Boolean(item))
     .filter((item) => item.severity === severity)
     .map((item) => asString(item.message) ?? asString(item.code) ?? "")
     .filter(Boolean);

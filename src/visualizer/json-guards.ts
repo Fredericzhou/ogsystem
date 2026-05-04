@@ -10,8 +10,12 @@ export function asString(value: unknown): string | undefined {
   return typeof value === "string" ? value : undefined;
 }
 
+export function asTrimmedString(value: unknown): string | undefined {
+  return asString(value)?.trim();
+}
+
 export function asNonEmptyString(value: unknown): string | undefined {
-  const text = asString(value)?.trim();
+  const text = asTrimmedString(value);
   return text ? text : undefined;
 }
 

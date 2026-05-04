@@ -595,3 +595,54 @@ test("Studio edge command forms keep display labels distinct from event types", 
   assert.equal(command.eventType, "WORK");
   assert.equal(command.label, "需求已完成");
 });
+
+test("Studio command form helpers keep trim and HTML escape semantics after consolidation", () => {
+  const authoring = importMermaidToAuthoring({
+    workdir: "/tmp/project",
+    systemPath: "/tmp/project/system.mmd",
+    systemSource: source
+  });
+  const context = {
+    authoring,
+    rolePackages: {
+      rolePackages: [
+        {
+          roleId: " writer ",
+          name: " Writer <unsafe> ",
+          status: " ok ",
+          files: { "role.json": true }
+        }
+      ]
+    },
+    projectConfig: {
+      modelCatalog: {
+        models: [{ ref: " model.fast ", name: " GPT <5> ", provider: " openai ", model: " gpt-5 " }]
+      }
+    }
+  };
+
+  const state = createDefaultStudioCommandFormState({ kind: "add-role", context });
+  assert.equal(state.fields.repositoryRoleId, "writer");
+  assert.equal(state.fields.roleId, "writer");
+  assert.equal(state.fields.title, "Writer <unsafe>");
+
+  const html = renderStudioCommandForm({
+    state: {
+      ...state,
+      fields: {
+        ...state.fields,
+        bindingKind: "model",
+        modelRef: "model.fast"
+      },
+      validation: {
+        ok: false,
+        diagnostics: [{ severity: "error", code: 'bad"><tag', message: 'bad"><tag' }]
+      }
+    },
+    context
+  });
+  assert.match(html, /Writer &lt;unsafe&gt;/);
+  assert.match(html, /GPT &lt;5&gt; - openai\/gpt-5/);
+  assert.match(html, /bad&quot;&gt;&lt;tag/);
+  assert.doesNotMatch(html, /bad"><tag/);
+});

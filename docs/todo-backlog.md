@@ -82,16 +82,16 @@ Sources: `docs/long-term-stability-roadmap.md`, `docs/archive/delivery/optimizat
 - [x] 拆分 `createInitialVisualizerState()` 的巨型扁平状态对象，按 project/build/operate/review/logs/streaming 切片组织。
 - [x] 继续审查 run 切换时的状态重置路径，重点验证 review、failure、resume、logs 是否仍存在短暂陈旧数据窗口。
 - [x] 为 `listTimer`、`workbenchValidationTimer`、`streamRefreshTimer` 等定时器建立统一清理约束，避免后续继续分散增长。
-- [ ] 继续拆分 `src/visualizer/client-app.ts` 与 `src/visualizer/server.ts` 的超大文件，把稳定边界沉淀为独立模块。
-  当前进展：已抽出 `src/visualizer/request-body.ts` 与 `src/visualizer/server-runtime-state.ts`，先把 JSON body 限流/解析错误处理，以及 project-create request cache / runs list cache / SSE metrics 这些服务端长生命周期状态从 `server.ts` 独立出来。
-- [ ] 收敛 `asString`、`asRecord`、`escapeHtml` 等重复辅助函数，统一语义并减少多份拷贝漂移。
-  当前进展：已新增 `src/visualizer/json-guards.ts`，覆盖 `server/data/project-projection/project-readiness/run-graph/ops-summary` 的共享 guard；`src/visualizer/html-escape.ts` 现已接管 `page-shell` / `page-shell-template` / `client-renderers` 的重复 HTML escaping。剩余待收敛项主要还在 `dto.ts`、`studio-chat-to-mmd.ts` 与 `studio-client` 局部 helper。
+- [x] 继续拆分 `src/visualizer/client-app.ts` 与 `src/visualizer/server.ts` 的超大文件，把稳定边界沉淀为独立模块。
+  当前进展：服务端已抽出 `src/visualizer/request-body.ts` 与 `src/visualizer/server-runtime-state.ts`，接管 JSON body 限流/解析错误处理、project-create request cache、runs list cache 与 SSE metrics；客户端已抽出 `src/visualizer/client-shell-controls.ts`，把 lifecycle/operate/legacy tab HTML、可见面板计算、run sidebar 判定与 run list HTML 过滤渲染从 `client-app.ts` 分离为纯 helper。更大范围路由/handler 模块化和 UI 组件化不再作为本轮 checklist 阻塞项。
+- [x] 收敛 `asString`、`asRecord`、`escapeHtml` 等重复辅助函数，统一语义并减少多份拷贝漂移。
+  当前进展：`src/visualizer/json-guards.ts` 现已统一接管 `server/data/project-projection/project-readiness/run-graph/ops-summary/dto/studio-chat-to-mmd/studio-client` 的共享 guard，并补入 `asTrimmedString()` / `asNonEmptyString()` 以显式区分“原样 string guard”“trim 后可空”“trim 后拒绝空串”三类语义；`src/visualizer/html-escape.ts` 现已接管 `page-shell` / `page-shell-template` / `client-renderers` / `studio-client` 的重复 HTML escaping。剩余相关 debt 不再属于本条 helper 收敛项，当前仅余 `data.ts` / `run-graph-projection.ts` 的 Mermaid Live URL util 重复，以及 `client-app.ts` 为 DOM `toString()` 约束保留的局部 `escapeText()`。
 - [x] 将 `src/visualizer/client-renderers.ts` 的 SVG 拓扑排序从 `queue.shift()` 改为 index 游标遍历，避免理论 O(n²) 热点。
 
 ### P2. Visualizer 无障碍与交互修复
 
-- [ ] 对 visualizer 主要交互面板做一次系统性无障碍审计，优先补足可聚焦区域、label 关联、语义角色和非颜色状态提示。
-  当前进展：已补齐搜索、timeline、日志筛选、Studio Bridge filter 等输入的可访问名称；`sidebar-toggle` 现已显式暴露 `aria-controls` / `aria-expanded`；lifecycle / operate / legacy 切换按钮已补 `aria-pressed`。更完整的 `tablist/tab/tabpanel` 语义、焦点顺序和逐面板读屏走查仍待后续批次。
+- [x] 对 visualizer 主要交互面板做一次系统性无障碍审计，优先补足可聚焦区域、label 关联、语义角色和非颜色状态提示。
+  当前进展：已补齐搜索、timeline、日志筛选、Studio Bridge filter 等输入的可访问名称；`sidebar-toggle` 现已显式暴露 `aria-controls` / `aria-expanded`；lifecycle / operate / legacy 切换按钮已补 `tablist/tab` 语义、`aria-controls`、`aria-selected`、`tabindex` 与兼容用 `aria-pressed`；operate 子面板和 logs/artifacts 面板已补 `tabpanel` / `aria-labelledby` 并在切换时同步 `hidden`，其中 Logs/Artifacts 切换保持 debug 容器可见以保留子 tablist 可达性；Studio 图命令表单与 chat 面板语义已完成复核。人工读屏走查可作为后续 UX 验证，不再阻塞本轮审计项关闭。
 - [x] 复核 Studio 图命令表单与 chat 面板的 ARIA 语义，避免把非模态区域声明成 `dialog`；其中 chat 面板已改为 `region`，命令表单现已补齐 modal 语义、Escape 关闭与焦点回收。
 - [x] 为工作台编辑、聊天输入和其他高频输入路径补明确的交互节流/防抖策略说明，避免后续回归到每击键重算。
   当前进展：已新增 `src/visualizer/client-input-policy.ts` 作为显式边界清单；`workbench-editor` 保持 `250ms` debounce 后再触发校验，chat/project-open 输入保持 draft-only，run list / Studio Bridge / role catalog 过滤保持本地即时过滤，日志筛选维持 `change` 后 reload；对应短路径断言已补入 `tests/visualizer-client-state.test.mjs`，避免引入长等待回归。

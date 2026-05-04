@@ -61,6 +61,10 @@ test("page shell keeps HTML, style, assets, and client script mounted", () => {
   assert.match(html, /<aside id="sidebar" class="sidebar">[\s\S]*id="run-list"/);
   assert.match(html, /id="search"[^>]*aria-label="按 id、状态、角色筛选运行\.\.\."/);
   assert.match(html, /id="sidebar-toggle"[^>]*aria-controls="sidebar"[^>]*aria-expanded="false"/);
+  assert.match(html, /id="console-panel-project"[^>]*role="tabpanel"[^>]*aria-labelledby="console-tab-project"/);
+  assert.match(html, /id="operate-tabs"[^>]*role="tablist"[^>]*aria-label="Operate views"/);
+  assert.match(html, /id="operate-tabpanel-overview"[^>]*role="tabpanel"[^>]*aria-labelledby="operate-tab-overview"/);
+  assert.match(html, /id="console-panel-logs"[^>]*role="tabpanel"[^>]*aria-labelledby="operate-tab-logs"/);
   assert.match(html, /id="timeline-type"[^>]*aria-label="事件类型"/);
   assert.match(html, /id="timeline-branch"[^>]*aria-label="分支 id"/);
   assert.match(html, /id="timeline-review"[^>]*aria-label="评审 id"/);

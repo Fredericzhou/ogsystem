@@ -76,7 +76,7 @@ export function renderPageShellBody({ workdir, locale, t }: PageShellBodyOptions
               </div>
             </article>
           </section>
-          <section id="console-panel-project" class="console-panel grid" data-console-panel="project" hidden>
+          <section id="console-panel-project" class="console-panel grid" data-console-panel="project" role="tabpanel" aria-labelledby="console-tab-project" hidden>
             <article class="card span-12">
               <header>
                 <div class="card-header">
@@ -103,7 +103,7 @@ export function renderPageShellBody({ workdir, locale, t }: PageShellBodyOptions
               </div>
             </article>
           </section>
-          <section id="console-panel-build" class="console-panel grid" data-console-panel="build" hidden>
+          <section id="console-panel-build" class="console-panel grid" data-console-panel="build" role="tabpanel" aria-labelledby="console-tab-build" hidden>
             <article class="card span-12">
               <header>
                 <div class="card-header build-header">
@@ -126,83 +126,91 @@ export function renderPageShellBody({ workdir, locale, t }: PageShellBodyOptions
               </div>
             </article>
           </section>
-          <section id="console-panel-debug" class="console-panel grid operate-workspace" data-console-panel="debug">
-            <div id="operate-tabs" class="segmented operate-tabs span-12"></div>
-            <article class="card span-12 operate-panel operate-overview">
-              <header><h3>${escapeHtml(t("section.runSnapshot"))}</h3></header>
-              <div class="body">
-                <div class="stat-grid" id="stats"></div>
-              </div>
-            </article>
-            <article class="card span-12 operate-panel operate-overview">
-              <header><h3>${escapeHtml(t("section.timeline"))}</h3></header>
-              <div class="body">
-                <div class="row timeline-controls">
-                  <select id="timeline-role" class="select">
-                    <option value="">${escapeHtml(t("timeline.allRoles"))}</option>
-                  </select>
-                  <input id="timeline-type" class="select" placeholder="${escapeHtml(t("timeline.eventType"))}" aria-label="${escapeHtml(t("timeline.eventType"))}" />
-                  <select id="timeline-status" class="select">
-                    <option value="">${escapeHtml(t("timeline.allStatuses"))}</option>
-                    <option value="pending">${escapeHtml(t("status.pending"))}</option>
-                    <option value="paused">${escapeHtml(t("status.paused"))}</option>
-                    <option value="running">${escapeHtml(t("status.running"))}</option>
-                    <option value="stopped">${escapeHtml(t("status.stopped"))}</option>
-                    <option value="done">${escapeHtml(t("status.done"))}</option>
-                    <option value="failed">${escapeHtml(t("status.failed"))}</option>
-                    <option value="waiting_review">${escapeHtml(t("status.waitingReview"))}</option>
-                  </select>
-                  <input id="timeline-branch" class="select" placeholder="${escapeHtml(t("timeline.branchId"))}" aria-label="${escapeHtml(t("timeline.branchId"))}" />
-                  <input id="timeline-review" class="select" placeholder="${escapeHtml(t("timeline.reviewId"))}" aria-label="${escapeHtml(t("timeline.reviewId"))}" />
-                  <input id="timeline-error" class="select" placeholder="${escapeHtml(t("timeline.errorCode"))}" aria-label="${escapeHtml(t("timeline.errorCode"))}" />
-                  <button id="timeline-apply" class="button subtle">${escapeHtml(t("action.applyFilters"))}</button>
-                  <button id="timeline-clear" class="button subtle">${escapeHtml(t("action.clearFilters"))}</button>
+          <section id="console-panel-debug" class="console-panel grid operate-workspace" data-console-panel="debug" role="presentation" hidden>
+            <div id="operate-tabs" class="segmented operate-tabs span-12" role="tablist" aria-label="Operate views"></div>
+            <section id="operate-tabpanel-overview" class="grid span-12" role="tabpanel" aria-labelledby="operate-tab-overview">
+              <article class="card span-12 operate-panel operate-overview">
+                <header><h3>${escapeHtml(t("section.runSnapshot"))}</h3></header>
+                <div class="body">
+                  <div class="stat-grid" id="stats"></div>
                 </div>
-                <div id="timeline" class="timeline"></div>
-              </div>
-            </article>
-            <article class="card span-12 operate-panel operate-graph">
-              <header><h3>${escapeHtml(t("section.graphView"))}</h3></header>
-              <div class="body debug-graph-body">
-                <div id="graph-view" class="structure-list"><div class="hint">${escapeHtml(t("state.noRunSelected"))}</div></div>
-                <div id="state" class="structure-list"><div class="hint">${escapeHtml(t("state.noRunSelected"))}</div></div>
-              </div>
-            </article>
-            <article class="card span-12 operate-panel operate-recovery">
-              <header>
-                <div class="row">
-                  <h3>${escapeHtml(t("section.failureTriage"))}</h3>
-                  <div id="failure-controls" class="actions"></div>
+              </article>
+              <article class="card span-12 operate-panel operate-overview">
+                <header><h3>${escapeHtml(t("section.timeline"))}</h3></header>
+                <div class="body">
+                  <div class="row timeline-controls">
+                    <select id="timeline-role" class="select">
+                      <option value="">${escapeHtml(t("timeline.allRoles"))}</option>
+                    </select>
+                    <input id="timeline-type" class="select" placeholder="${escapeHtml(t("timeline.eventType"))}" aria-label="${escapeHtml(t("timeline.eventType"))}" />
+                    <select id="timeline-status" class="select">
+                      <option value="">${escapeHtml(t("timeline.allStatuses"))}</option>
+                      <option value="pending">${escapeHtml(t("status.pending"))}</option>
+                      <option value="paused">${escapeHtml(t("status.paused"))}</option>
+                      <option value="running">${escapeHtml(t("status.running"))}</option>
+                      <option value="stopped">${escapeHtml(t("status.stopped"))}</option>
+                      <option value="done">${escapeHtml(t("status.done"))}</option>
+                      <option value="failed">${escapeHtml(t("status.failed"))}</option>
+                      <option value="waiting_review">${escapeHtml(t("status.waitingReview"))}</option>
+                    </select>
+                    <input id="timeline-branch" class="select" placeholder="${escapeHtml(t("timeline.branchId"))}" aria-label="${escapeHtml(t("timeline.branchId"))}" />
+                    <input id="timeline-review" class="select" placeholder="${escapeHtml(t("timeline.reviewId"))}" aria-label="${escapeHtml(t("timeline.reviewId"))}" />
+                    <input id="timeline-error" class="select" placeholder="${escapeHtml(t("timeline.errorCode"))}" aria-label="${escapeHtml(t("timeline.errorCode"))}" />
+                    <button id="timeline-apply" class="button subtle">${escapeHtml(t("action.applyFilters"))}</button>
+                    <button id="timeline-clear" class="button subtle">${escapeHtml(t("action.clearFilters"))}</button>
+                  </div>
+                  <div id="timeline" class="timeline"></div>
                 </div>
-              </header>
-              <div class="body">
-                <div id="failure-summary" class="structure-list"><div class="hint">${escapeHtml(t("state.noRunSelected"))}</div></div>
-                <div id="failure-detail" class="structure-list"><div class="hint">${escapeHtml(t("state.noRunSelected"))}</div></div>
-                <div id="failure-next-checks" class="structure-list"><div class="hint">${escapeHtml(t("state.noRunSelected"))}</div></div>
-              </div>
-            </article>
-            <article class="card span-6 operate-panel operate-reviews">
-              <header><h3>${escapeHtml(t("section.reviewQueue"))}</h3></header>
-              <div class="body">
-                <div id="reviews" class="timeline"><div class="hint">${escapeHtml(t("state.noRunSelected"))}</div></div>
-                <div id="review-actions" class="actions"></div>
-                <div id="review-detail" class="structure-list">${escapeHtml(t("state.noReviewSelected"))}</div>
-              </div>
-            </article>
-            <article class="card span-6 operate-panel operate-recovery">
-              <header>
-                <div class="row">
-                  <h3>${escapeHtml(t("section.resumeReadiness"))}</h3>
-                  <div id="resume-controls" class="actions"></div>
+              </article>
+            </section>
+            <section id="operate-tabpanel-graph" class="grid span-12" role="tabpanel" aria-labelledby="operate-tab-graph" hidden>
+              <article class="card span-12 operate-panel operate-graph">
+                <header><h3>${escapeHtml(t("section.graphView"))}</h3></header>
+                <div class="body debug-graph-body">
+                  <div id="graph-view" class="structure-list"><div class="hint">${escapeHtml(t("state.noRunSelected"))}</div></div>
+                  <div id="state" class="structure-list"><div class="hint">${escapeHtml(t("state.noRunSelected"))}</div></div>
                 </div>
-              </header>
-              <div class="body">
-                <div id="resume-readiness" class="structure-list"><div class="hint">${escapeHtml(t("state.noRunSelected"))}</div></div>
-                <div id="resume-diagnostics" class="timeline"><div class="hint">${escapeHtml(t("state.noRunSelected"))}</div></div>
-              </div>
-            </article>
+              </article>
+            </section>
+            <section id="operate-tabpanel-recovery" class="grid span-12" role="tabpanel" aria-labelledby="operate-tab-recovery" hidden>
+              <article class="card span-12 operate-panel operate-recovery">
+                <header>
+                  <div class="row">
+                    <h3>${escapeHtml(t("section.failureTriage"))}</h3>
+                    <div id="failure-controls" class="actions"></div>
+                  </div>
+                </header>
+                <div class="body">
+                  <div id="failure-summary" class="structure-list"><div class="hint">${escapeHtml(t("state.noRunSelected"))}</div></div>
+                  <div id="failure-detail" class="structure-list"><div class="hint">${escapeHtml(t("state.noRunSelected"))}</div></div>
+                  <div id="failure-next-checks" class="structure-list"><div class="hint">${escapeHtml(t("state.noRunSelected"))}</div></div>
+                </div>
+              </article>
+              <article class="card span-6 operate-panel operate-recovery">
+                <header>
+                  <div class="row">
+                    <h3>${escapeHtml(t("section.resumeReadiness"))}</h3>
+                    <div id="resume-controls" class="actions"></div>
+                  </div>
+                </header>
+                <div class="body">
+                  <div id="resume-readiness" class="structure-list"><div class="hint">${escapeHtml(t("state.noRunSelected"))}</div></div>
+                  <div id="resume-diagnostics" class="timeline"><div class="hint">${escapeHtml(t("state.noRunSelected"))}</div></div>
+                </div>
+              </article>
+            </section>
+            <section id="operate-tabpanel-reviews" class="grid span-12" role="tabpanel" aria-labelledby="operate-tab-reviews" hidden>
+              <article class="card span-6 operate-panel operate-reviews">
+                <header><h3>${escapeHtml(t("section.reviewQueue"))}</h3></header>
+                <div class="body">
+                  <div id="reviews" class="timeline"><div class="hint">${escapeHtml(t("state.noRunSelected"))}</div></div>
+                  <div id="review-actions" class="actions"></div>
+                  <div id="review-detail" class="structure-list">${escapeHtml(t("state.noReviewSelected"))}</div>
+                </div>
+              </article>
+            </section>
           </section>
-          <section id="console-panel-ops" class="console-panel grid" data-console-panel="ops" hidden>
+          <section id="console-panel-ops" class="console-panel grid" data-console-panel="ops" role="region" aria-labelledby="console-tab-operate" hidden>
             <article class="card span-12 operate-panel operate-overview">
               <header><h3>${escapeHtml(t("section.opsSummary"))}</h3></header>
               <div class="body">
@@ -210,7 +218,7 @@ export function renderPageShellBody({ workdir, locale, t }: PageShellBodyOptions
               </div>
             </article>
           </section>
-          <section id="console-panel-validate-release" class="console-panel grid" data-console-panel="validate-release" hidden>
+          <section id="console-panel-validate-release" class="console-panel grid" data-console-panel="validate-release" role="tabpanel" aria-labelledby="console-tab-validate-release" hidden>
             <article class="card span-12">
               <header>
                 <div class="card-header">
@@ -228,7 +236,7 @@ export function renderPageShellBody({ workdir, locale, t }: PageShellBodyOptions
               </div>
             </article>
           </section>
-          <section id="console-panel-config" class="console-panel grid" data-console-panel="config" hidden>
+          <section id="console-panel-config" class="console-panel grid" data-console-panel="config" role="tabpanel" aria-labelledby="legacy-console-tab-config" hidden>
             <article class="card span-12">
               <header><h3>${escapeHtml(t("section.configExplain"))}</h3></header>
               <div class="body">
@@ -238,7 +246,7 @@ export function renderPageShellBody({ workdir, locale, t }: PageShellBodyOptions
               </div>
             </article>
           </section>
-          <section id="console-panel-logs" class="console-panel grid" data-console-panel="logs" hidden>
+          <section id="console-panel-logs" class="console-panel grid" data-console-panel="logs" role="tabpanel" aria-labelledby="operate-tab-logs" hidden>
             <article class="card span-12 operate-panel operate-logs">
               <header>
                 <div class="toolbar-row">
@@ -269,7 +277,7 @@ export function renderPageShellBody({ workdir, locale, t }: PageShellBodyOptions
               </div>
             </article>
           </section>
-          <section id="console-panel-artifacts" class="console-panel grid" data-console-panel="artifacts" hidden>
+          <section id="console-panel-artifacts" class="console-panel grid" data-console-panel="artifacts" role="tabpanel" aria-labelledby="operate-tab-artifacts" hidden>
             <article class="card span-12 operate-panel operate-artifacts">
               <header><h3>${escapeHtml(t("section.artifacts"))}</h3></header>
               <div class="body">

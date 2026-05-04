@@ -52,6 +52,12 @@ import {
   renderWorkspaceEmptyStateHtml
 } from "./client-lifecycle-panels.js";
 import {
+  getVisibleConsolePanelIds,
+  renderConsoleTabsHtml,
+  renderRunListHtml,
+  shouldShowRunSidebar
+} from "./client-shell-controls.js";
+import {
   createInitialStreamRefreshPlan,
   createProjectStateSlice,
   createBuildStateSlice,
@@ -112,6 +118,12 @@ export {
 } from "./client-route-state.js";
 export { buildReleaseReadinessDecision } from "./client-release-readiness.js";
 export {
+  getVisibleConsolePanelIds,
+  renderConsoleTabsHtml,
+  renderRunListHtml,
+  shouldShowRunSidebar
+} from "./client-shell-controls.js";
+export {
   appendIndexedStreamEntry,
   appendStreamEntry,
   createStreamCursorIndex,
@@ -165,6 +177,10 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
     const resolveRunLiveState = ${resolveRunLiveState.toString()};
     const renderWorkspaceEmptyStateHtml = ${renderWorkspaceEmptyStateHtml.toString()};
     const renderOperateTabsHtml = ${renderOperateTabsHtml.toString()};
+    const renderConsoleTabsHtml = ${renderConsoleTabsHtml.toString()};
+    const getVisibleConsolePanelIds = ${getVisibleConsolePanelIds.toString()};
+    const shouldShowRunSidebar = ${shouldShowRunSidebar.toString()};
+    const renderRunListHtml = ${renderRunListHtml.toString()};
     const renderLoadingSkeletonHtml = ${renderLoadingSkeletonHtml.toString()};
     const renderWorkbenchStructureHtml = ${renderWorkbenchStructureHtml.toString()};
     const renderWorkbenchStatusHtml = ${renderWorkbenchStatusHtml.toString()};
@@ -358,6 +374,120 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
     const stopRunButton = document.getElementById("stop-run");
     const refreshButton = document.getElementById("refresh");
     const localeSelectEl = document.getElementById("locale-select");
+    const OPERATE_DEBUG_PANEL_IDS = ["overview", "graph", "recovery", "reviews"];
+
+    function joinIdRefs(...ids) {
+      return ids.filter(Boolean).join(" ").trim();
+    }
+
+    function getOperatePanelId(operateTab) {
+      switch (operateTab) {
+        case "graph":
+          return "operate-tabpanel-graph";
+        case "recovery":
+          return "operate-tabpanel-recovery";
+        case "reviews":
+          return "operate-tabpanel-reviews";
+        case "logs":
+          return "console-panel-logs";
+        case "artifacts":
+          return "console-panel-artifacts";
+        default:
+          return "operate-tabpanel-overview";
+      }
+    }
+
+    function getLegacyPanelId(legacyConsoleTab) {
+      switch (legacyConsoleTab) {
+        case "project":
+          return "console-panel-project";
+        case "ops":
+          return "console-panel-ops";
+        case "config":
+          return "console-panel-config";
+        case "logs":
+          return "console-panel-logs";
+        case "artifacts":
+          return "console-panel-artifacts";
+        default:
+          return "console-panel-debug";
+      }
+    }
+
+    function setPanelState(panelId, visible, role, labelledBy) {
+      const panel = document.getElementById(panelId);
+      if (!panel) {
+        return;
+      }
+      panel.hidden = !visible;
+      panel.setAttribute("role", role);
+      if (labelledBy) {
+        panel.setAttribute("aria-labelledby", labelledBy);
+      } else {
+        panel.removeAttribute("aria-labelledby");
+      }
+    }
+
+    function renderConsolePanels(visiblePanelIds) {
+      const legacyConsoleTab = state.legacyConsoleTab || "debug";
+      const legacyLabelIds = joinIdRefs("console-tab-legacy", "legacy-console-tab-" + legacyConsoleTab);
+      const operateLabelIds = joinIdRefs("console-tab-operate", "operate-tab-" + state.operateTab);
+      setPanelState(
+        "console-panel-project",
+        visiblePanelIds.has("project"),
+        "tabpanel",
+        state.consoleTab === "legacy" && legacyConsoleTab === "project"
+          ? legacyLabelIds
+          : "console-tab-project"
+      );
+      setPanelState("console-panel-build", visiblePanelIds.has("build"), "tabpanel", "console-tab-build");
+      setPanelState(
+        "console-panel-debug",
+        visiblePanelIds.has("debug"),
+        state.consoleTab === "legacy" && legacyConsoleTab === "debug" ? "tabpanel" : "presentation",
+        state.consoleTab === "legacy" && legacyConsoleTab === "debug" ? legacyLabelIds : ""
+      );
+      setPanelState(
+        "console-panel-ops",
+        visiblePanelIds.has("ops"),
+        state.consoleTab === "legacy" && legacyConsoleTab === "ops" ? "tabpanel" : "region",
+        state.consoleTab === "legacy" && legacyConsoleTab === "ops" ? legacyLabelIds : operateLabelIds
+      );
+      setPanelState(
+        "console-panel-config",
+        visiblePanelIds.has("config"),
+        "tabpanel",
+        state.consoleTab === "legacy" && legacyConsoleTab === "config" ? legacyLabelIds : "legacy-console-tab-config"
+      );
+      setPanelState(
+        "console-panel-logs",
+        visiblePanelIds.has("logs"),
+        "tabpanel",
+        state.consoleTab === "legacy" && legacyConsoleTab === "logs" ? legacyLabelIds : operateLabelIds
+      );
+      setPanelState(
+        "console-panel-artifacts",
+        visiblePanelIds.has("artifacts"),
+        "tabpanel",
+        state.consoleTab === "legacy" && legacyConsoleTab === "artifacts" ? legacyLabelIds : operateLabelIds
+      );
+      setPanelState("console-panel-validate-release", visiblePanelIds.has("validate-release"), "tabpanel", "console-tab-validate-release");
+
+      const showLegacyDebug = state.consoleTab === "legacy" && legacyConsoleTab === "debug";
+      for (const tab of OPERATE_DEBUG_PANEL_IDS) {
+        const panelId = "operate-tabpanel-" + tab;
+        const panelRole = state.consoleTab === "operate" ? "tabpanel" : "group";
+        const panelLabels = state.consoleTab === "operate"
+          ? joinIdRefs("console-tab-operate", "operate-tab-" + tab)
+          : showLegacyDebug
+            ? legacyLabelIds
+            : "";
+        const panelVisible = state.consoleTab === "operate"
+          ? state.operateTab === tab
+          : showLegacyDebug;
+        setPanelState(panelId, panelVisible, panelRole, panelLabels);
+      }
+    }
 
     function escapeText(value) {
       return String(value ?? "")
@@ -1255,6 +1385,8 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
       if (!operateTabsEl) {
         return;
       }
+      operateTabsEl.setAttribute("role", "tablist");
+      operateTabsEl.setAttribute("aria-label", t("operate.tablist", undefined, "Operate views"));
       if (!showOperateWorkspace) {
         setInnerHtmlIfChanged(operateTabsEl, "");
         return;
@@ -1264,7 +1396,7 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
         button.disabled = Boolean(state.actionBusy);
         bindOnce(button, "click", "operate-tab", () => {
           state.operateTab = button.getAttribute("data-operate-tab") || "overview";
-          renderOperateTabs();
+          renderConsoleTabs();
           renderActionState();
         });
       }
@@ -1298,52 +1430,20 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
       if (!consoleTabsEl) {
         return;
       }
-      const lifecycleTabs = [
-        ["project", t("nav.lifecycle.project", undefined, "Project"), t("navHint.lifecycle.project", undefined, "Create, load, and inspect project context")],
-        ["build", t("nav.lifecycle.build", undefined, "Build"), t("navHint.lifecycle.build", undefined, "Graph-first authoring, configuration, and dry-run setup")],
-        ["validate-release", t("nav.lifecycle.validateRelease", undefined, "Validate & Release"), t("navHint.lifecycle.validateRelease", undefined, "Validation gate, readiness, reports, and export")],
-        ["operate", t("nav.lifecycle.operate", undefined, "Operate"), t("navHint.lifecycle.operate", undefined, "Run monitoring, diagnostics, logs, recovery, and audit")]
-      ];
-      if (state.consoleTab === "legacy") {
-        lifecycleTabs.push(["legacy", t("nav.lifecycle.legacy", undefined, "Legacy fallback"), t("navHint.lifecycle.legacy", undefined, "Developer fallback access to the previous tab layout")]);
-      }
-      const legacyTabs = [
-        ["debug", t("nav.runDebug"), t("navHint.runDebug")],
-        ["project", t("nav.project"), t("navHint.project")],
-        ["ops", t("nav.ops"), t("navHint.ops")],
-        ["config", t("nav.config"), t("navHint.config")],
-        ["logs", t("nav.logs"), t("navHint.logs")],
-        ["artifacts", t("nav.artifacts"), t("navHint.artifacts")]
-      ];
-      const lifecycleHtml = lifecycleTabs.map(([id, label, hint]) =>
-        '<button class="button subtle ' + (state.consoleTab === id ? "active" : "") +
-        '" data-console-tab="' + escapeText(id) +
-        '" aria-pressed="' + escapeText(String(state.consoleTab === id)) +
-        '" title="' + escapeText(hint) +
-        '">' + escapeText(label) + '</button>'
-      ).join("");
-      const legacyHtml = state.consoleTab === "legacy"
-        ? '<div class="legacy-tabs" data-legacy-tabs>' + legacyTabs.map(([id, label, hint]) =>
-            '<button class="button subtle ' + (state.legacyConsoleTab === id ? "active" : "") +
-            '" data-legacy-console-tab="' + escapeText(id) +
-            '" aria-pressed="' + escapeText(String(state.legacyConsoleTab === id)) +
-            '" title="' + escapeText(hint) +
-            '">' + escapeText(label) + '</button>'
-          ).join("") + '</div>'
-        : "";
-      setInnerHtmlIfChanged(consoleTabsEl, lifecycleHtml + legacyHtml);
-      const visiblePanelIds = new Set(
-        state.consoleTab === "legacy"
-          ? [state.legacyConsoleTab || "debug"]
-          : state.consoleTab === "project"
-            ? ["project"]
-            : state.consoleTab === "build"
-              ? ["build"]
-              : state.consoleTab === "validate-release"
-                ? ["validate-release"]
-                : ["ops", "debug", "logs", "artifacts"]
-      );
-      const showRunSidebar = state.consoleTab === "operate" || state.consoleTab === "legacy";
+      setInnerHtmlIfChanged(consoleTabsEl, renderConsoleTabsHtml({
+        consoleTab: state.consoleTab,
+        legacyConsoleTab: state.legacyConsoleTab,
+        operateTab: state.operateTab,
+        t,
+        escapeText
+      }));
+      const visiblePanelIds = new Set(getVisibleConsolePanelIds({
+        consoleTab: state.consoleTab,
+        legacyConsoleTab: state.legacyConsoleTab,
+        operateTab: state.operateTab
+      }));
+      renderConsolePanels(visiblePanelIds);
+      const showRunSidebar = shouldShowRunSidebar(state.consoleTab);
       document.body.classList.toggle("show-run-sidebar", showRunSidebar);
       if (!showRunSidebar) {
         setSidebarOpen(false);
@@ -1351,12 +1451,6 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
       if (sidebarToggleButton) {
         sidebarToggleButton.hidden = !showRunSidebar;
         sidebarToggleButton.setAttribute("aria-expanded", showRunSidebar && state.sidebarOpen ? "true" : "false");
-      }
-      for (const id of ["project", "build", "debug", "ops", "config", "logs", "artifacts", "validate-release"]) {
-        const panel = document.getElementById("console-panel-" + id);
-        if (panel) {
-          panel.hidden = !visiblePanelIds.has(id);
-        }
       }
       renderOperateTabs();
       renderHeroActions();
@@ -2248,45 +2342,16 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
     }
 
     function renderRuns() {
-      const term = state.filter.trim().toLowerCase();
-      const runs = state.runs.filter((run) => {
-        if (!term) return true;
-        return [run.runId, run.status, run.finalRoleId, run.lastExecutedRoleId]
-          .filter(Boolean)
-          .some((item) => String(item).toLowerCase().includes(term));
-      });
-      if (!runs.length) {
-        setInnerHtmlIfChanged(runListEl, '<div class="hint">' + escapeText(t("run.noMatches")) + '</div>');
-        return;
-      }
-      setInnerHtmlIfChanged(runListEl, runs
-        .map((run) => {
-          const runStatus = displayUiToken(run.status, t);
-          const updatedAt = formatTime(run.updatedAt);
-          const ariaLabel = [
-            "Run",
-            run.runId,
-            "status",
-            runStatus,
-            t("run.transitions"),
-            String(run.transitionCount),
-            t("run.updated"),
-            updatedAt
-          ].join(" ");
-          return \`
-          <button class="run-card \${run.runId === state.selectedRunId ? "active" : ""}" data-run-id="\${escapeText(run.runId)}" aria-label="\${escapeText(ariaLabel)}">
-            <div class="run-title">
-              <span class="truncate" title="\${escapeText(run.runId)}">\${escapeText(run.runId)}</span>
-              <span class="status \${statusClass(run.status)}" data-status="\${escapeText(run.status)}">\${escapeText(runStatus)}</span>
-            </div>
-            <div class="meta">
-              <span>\${escapeText(t("run.transitions"))} \${escapeText(run.transitionCount)}</span>
-              <span>\${escapeText(t("run.updated"))} \${escapeText(updatedAt)}</span>
-            </div>
-          </button>
-        \`;
-        })
-        .join(""));
+      setInnerHtmlIfChanged(runListEl, renderRunListHtml({
+        runs: state.runs,
+        filter: state.filter,
+        selectedRunId: state.selectedRunId,
+        t,
+        escapeText,
+        formatTime,
+        displayUiToken,
+        statusClass
+      }));
       for (const button of runListEl.querySelectorAll("[data-run-id]")) {
         button.disabled = Boolean(state.actionBusy);
         bindOnce(button, "click", "run-card", () => selectRun(button.getAttribute("data-run-id")));

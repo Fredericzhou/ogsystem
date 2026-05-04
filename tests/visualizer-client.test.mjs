@@ -47,6 +47,10 @@ const PAGE_ELEMENT_IDS = [
   "workbench-view-tabs",
   "workbench-body",
   "operate-tabs",
+  "operate-tabpanel-overview",
+  "operate-tabpanel-graph",
+  "operate-tabpanel-recovery",
+  "operate-tabpanel-reviews",
   "project-summary",
   "project-wizard",
   "ops-summary",
@@ -349,6 +353,10 @@ class FakeElement {
 
   setAttribute(name, value) {
     this.attributes[name] = String(value);
+  }
+
+  removeAttribute(name) {
+    delete this.attributes[name];
   }
 
   set innerHTML(value) {
@@ -2541,6 +2549,9 @@ test("visualizer client keeps diagnostics lazy and renders decision phase detail
   assert.ok(artifactsTab);
   await artifactsTab.click();
   await settle();
+  assert.equal(harness.document.getElementById("console-panel-debug").hidden, false);
+  assert.equal(harness.document.getElementById("console-panel-artifacts").hidden, false);
+  assert.equal(harness.document.getElementById("operate-tabpanel-overview").hidden, true);
   assert.match(harness.document.getElementById("detail").textContent, /snapshot manifest|Run snapshot manifest/i);
   assert.match(harness.document.getElementById("detail").textContent, /historical truth/i);
   const recoveryTab = harness.document.getElementById("operate-tabs")
@@ -2549,6 +2560,9 @@ test("visualizer client keeps diagnostics lazy and renders decision phase detail
   assert.ok(recoveryTab);
   await recoveryTab.click();
   await settle();
+  assert.equal(harness.document.getElementById("console-panel-debug").hidden, false);
+  assert.equal(harness.document.getElementById("console-panel-artifacts").hidden, true);
+  assert.equal(harness.document.getElementById("operate-tabpanel-recovery").hidden, false);
   assert.match(harness.document.getElementById("failure-summary").textContent, /TOOL_EXECUTION_TIMEOUT/);
   assert.match(harness.document.getElementById("resume-readiness").textContent, /resume blocked/);
   assert.match(harness.document.getElementById("review-detail").textContent, /Decision durability snapshot/);
@@ -2648,8 +2662,10 @@ test("visualizer client switches lifecycle shell without unloading data and hide
   await operateTab.click();
   assert.equal(harness.document.getElementById("console-panel-debug").hidden, false);
   assert.equal(harness.document.getElementById("console-panel-ops").hidden, false);
-  assert.equal(harness.document.getElementById("console-panel-logs").hidden, false);
-  assert.equal(harness.document.getElementById("console-panel-artifacts").hidden, false);
+  assert.equal(harness.document.getElementById("console-panel-logs").hidden, true);
+  assert.equal(harness.document.getElementById("console-panel-artifacts").hidden, true);
+  assert.equal(harness.document.getElementById("operate-tabpanel-overview").hidden, false);
+  assert.equal(harness.document.getElementById("operate-tabpanel-graph").hidden, true);
   assert.equal(harness.document.body.classList.classes.has("show-operate-workspace"), true);
   assert.equal(harness.document.body.classList.classes.has("operate-tab-overview"), true);
   assert.match(harness.document.getElementById("operate-tabs").textContent, /Overview/);
@@ -2664,11 +2680,27 @@ test("visualizer client switches lifecycle shell without unloading data and hide
   const projectTabAfterOperate = lifecycleButtonsAfterOperate.find((button) => button.getAttribute("data-console-tab") === "project");
   const operateTabAfterOperate = lifecycleButtonsAfterOperate.find((button) => button.getAttribute("data-console-tab") === "operate");
   assert.equal(operateTabAfterOperate?.getAttribute("aria-pressed"), "true");
+  assert.equal(operateTabAfterOperate?.getAttribute("role"), "tab");
+  assert.equal(operateTabAfterOperate?.getAttribute("aria-selected"), "true");
+  assert.equal(operateTabAfterOperate?.getAttribute("aria-controls"), "operate-tabpanel-overview");
   assert.equal(projectTabAfterOperate?.getAttribute("aria-pressed"), "false");
   assert.equal(overviewOperateTab?.getAttribute("aria-pressed"), "true");
+  assert.equal(overviewOperateTab?.getAttribute("role"), "tab");
+  assert.equal(overviewOperateTab?.getAttribute("aria-selected"), "true");
+  assert.equal(overviewOperateTab?.getAttribute("aria-controls"), "operate-tabpanel-overview");
   assert.equal(logsOperateTab?.getAttribute("aria-pressed"), "false");
+  assert.equal(harness.document.getElementById("operate-tabpanel-overview").getAttribute("role"), "tabpanel");
+  assert.match(harness.document.getElementById("operate-tabpanel-overview").getAttribute("aria-labelledby"), /operate-tab-overview/);
   assert.equal(harness.document.getElementById("sidebar-toggle").getAttribute("aria-expanded"), "false");
   assert.match(harness.document.getElementById("ops-summary").textContent, /TOOL_EXECUTION_TIMEOUT/);
+
+  await logsOperateTab.click();
+  assert.equal(harness.document.getElementById("console-panel-debug").hidden, false);
+  assert.equal(harness.document.getElementById("console-panel-logs").hidden, false);
+  assert.equal(harness.document.getElementById("console-panel-ops").hidden, true);
+  assert.equal(harness.document.getElementById("operate-tabpanel-overview").hidden, true);
+  assert.equal(harness.document.getElementById("console-panel-logs").getAttribute("role"), "tabpanel");
+  assert.match(harness.document.getElementById("console-panel-logs").getAttribute("aria-labelledby"), /operate-tab-logs/);
 
   await buildTab.click();
   assert.equal(harness.document.getElementById("console-panel-build").hidden, false);

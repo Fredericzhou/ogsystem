@@ -1,4 +1,11 @@
-export type JsonRecord = Record<string, unknown>;
+import {
+  asBoolean,
+  asNumber,
+  asRecord,
+  asString,
+  type JsonRecord
+} from "./json-guards.js";
+
 const SINGLE_PROJECT_V1_MODE = "single-project-v1";
 
 export type ErrorView = {
@@ -327,24 +334,6 @@ export type ResumeReadinessView = {
 
 function asArray(value: unknown): unknown[] | undefined {
   return Array.isArray(value) ? value : undefined;
-}
-
-function asRecord(value: unknown): JsonRecord | undefined {
-  return typeof value === "object" && value !== null && !Array.isArray(value)
-    ? (value as JsonRecord)
-    : undefined;
-}
-
-function asString(value: unknown): string | undefined {
-  return typeof value === "string" ? value : undefined;
-}
-
-function asNumber(value: unknown): number | undefined {
-  return typeof value === "number" && Number.isFinite(value) ? value : undefined;
-}
-
-function asBoolean(value: unknown): boolean | undefined {
-  return typeof value === "boolean" ? value : undefined;
 }
 
 export function mapRunDetailView(args: {

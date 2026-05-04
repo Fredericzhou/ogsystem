@@ -30,8 +30,10 @@ import {
   createStreamingStateSlice
 } from "../dist/visualizer/client-lifecycle-state.js";
 import {
+  mapFailureProjectionView,
   mapProjectLoadView,
-  mapProjectTransferView
+  mapProjectTransferView,
+  mapResumeDiagnosticsView
 } from "../dist/visualizer/dto.js";
 import { bindProjectWizardControls } from "../dist/visualizer/client-project-menu-controls.js";
 import {
@@ -46,6 +48,12 @@ import {
   fetchSelectedLogs,
   shouldSkipDeferredPanelLoad
 } from "../dist/visualizer/client-run-data-loaders.js";
+import {
+  getVisibleConsolePanelIds,
+  renderConsoleTabsHtml,
+  renderRunListHtml,
+  shouldShowRunSidebar
+} from "../dist/visualizer/client-shell-controls.js";
 import {
   LOG_FILTER_INPUT_MODE,
   PROJECT_OPEN_INPUT_MODE,
@@ -319,6 +327,42 @@ test("client input policy keeps high-frequency boundaries explicit", () => {
   );
 });
 
+test("client shell control renderers keep lifecycle visibility and run-list filtering pure", () => {
+  const consoleHtml = renderConsoleTabsHtml({
+    consoleTab: "legacy",
+    legacyConsoleTab: "logs",
+    operateTab: "overview",
+    t,
+    escapeText
+  });
+  assert.match(consoleHtml, /data-console-tab="legacy"[^>]*aria-pressed="true"/);
+  assert.match(consoleHtml, /data-console-tab="legacy"[^>]*role="tab"[^>]*aria-controls="console-panel-logs"/);
+  assert.match(consoleHtml, /data-legacy-console-tab="logs"[^>]*aria-pressed="true"/);
+  assert.match(consoleHtml, /data-legacy-console-tab="logs"[^>]*role="tab"[^>]*aria-selected="true"/);
+  assert.deepEqual(getVisibleConsolePanelIds({ consoleTab: "legacy", legacyConsoleTab: "logs", operateTab: "overview" }), ["logs"]);
+  assert.deepEqual(getVisibleConsolePanelIds({ consoleTab: "operate", legacyConsoleTab: "", operateTab: "overview" }), ["debug", "ops"]);
+  assert.deepEqual(getVisibleConsolePanelIds({ consoleTab: "operate", legacyConsoleTab: "", operateTab: "logs" }), ["debug", "logs"]);
+  assert.equal(shouldShowRunSidebar("legacy"), true);
+  assert.equal(shouldShowRunSidebar("build"), false);
+
+  const runListHtml = renderRunListHtml({
+    runs: [
+      { runId: "run-1", status: "waiting_review", finalRoleId: "writer", lastExecutedRoleId: "writer", transitionCount: 3, updatedAt: "2026-05-04T08:09:10.000Z" },
+      { runId: "run-2", status: "done", finalRoleId: "qa", lastExecutedRoleId: "qa", transitionCount: 5, updatedAt: "2026-05-04T08:10:10.000Z" }
+    ],
+    filter: "writer",
+    selectedRunId: "run-1",
+    t,
+    escapeText,
+    formatTime,
+    displayUiToken,
+    statusClass
+  });
+  assert.match(runListHtml, /data-run-id="run-1"/);
+  assert.doesNotMatch(runListHtml, /data-run-id="run-2"/);
+  assert.match(runListHtml, /aria-label="Run run-1 status waiting review run\.transitions 3 run\.updated /);
+});
+
 test("client lifecycle state factory centralizes initial workspace state", () => {
   assert.deepEqual(createInitialStreamRefreshPlan(), {
     detailGraph: false,
@@ -348,6 +392,49 @@ test("client lifecycle state factory centralizes initial workspace state", () =>
 test("visualizer dto project views normalize the supported artifact mode", () => {
   assert.equal(mapProjectTransferView({ mode: "unexpected", project: {} }).mode, "single-project-v1");
   assert.equal(mapProjectLoadView({ mode: "unexpected", loadedFiles: [] }).mode, "single-project-v1");
+});
+
+test("visualizer dto guards preserve finite numbers and booleans after helper consolidation", () => {
+  const diagnostics = mapResumeDiagnosticsView({
+    runId: "run-1",
+    runDir: "/tmp/run-1",
+    status: "ready",
+    checks: [
+      { id: "ok", label: "healthy", ok: true, severity: "info", message: "all good" },
+      { id: "fallback", label: "fallback", ok: false, severity: "unexpected" }
+    ],
+    recommendations: [
+      { action: "resume", label: "Resume now" },
+      { action: "", label: "ignored" }
+    ]
+  });
+  assert.deepEqual(diagnostics.checks, [
+    { id: "ok", label: "healthy", ok: true, severity: "info", message: "all good", detail: undefined },
+    { id: "fallback", label: "fallback", ok: false, severity: "error", message: undefined, detail: undefined }
+  ]);
+  assert.deepEqual(diagnostics.recommendations, [
+    { action: "resume", label: "Resume now", detail: undefined }
+  ]);
+
+  const failure = mapFailureProjectionView({
+    runId: "run-1",
+    runDir: "/tmp/run-1",
+    status: "failed",
+    summary: {
+      errorCode: "FAILED",
+      message: "boom",
+      retryable: false,
+      durationMs: Number.POSITIVE_INFINITY
+    },
+    detail: {
+      allowedEvents: ["DONE", 42, ""],
+      upstreamRoleIds: ["planner", null, "review"]
+    }
+  });
+  assert.equal(failure.summary.durationMs, undefined);
+  assert.equal(failure.summary.retryable, false);
+  assert.deepEqual(failure.detail.allowedEvents, ["DONE"]);
+  assert.deepEqual(failure.detail.upstreamRoleIds, ["planner", "review"]);
 });
 
 test("client lifecycle panel renderers expose workspace and operate tab HTML", () => {

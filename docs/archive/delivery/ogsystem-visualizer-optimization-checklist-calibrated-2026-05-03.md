@@ -14,7 +14,7 @@ Status: calibrated
 
 已验证：
 
-- `pnpm run test:visualizer` 于 2026-05-04 在 macOS 本地复跑通过，`115/115` pass。
+- `pnpm run test:visualizer` 于 2026-05-04 在 macOS 本地复跑通过；前置 Studio import guardrail `1/1` pass，visualizer 主测试 `123/123` pass。
 - `node --test tests/package-install.test.mjs tests/session-recovery.test.mjs tests/doctor.test.mjs tests/run-artifact-policy.test.mjs tests/cli.test.mjs tests/cli-lifecycle.test.mjs tests/rust-hello-pipeline.test.mjs` 通过，`26/26` pass。
 - Windows 兼容相关的 `.cmd` / `.bat` `shell: true` 逻辑仅存在于 Windows 条件分支，不影响 macOS/Linux 的 `spawn()` 路径。
 - `session-recovery`、`visualizer` 中的路径断言已改为兼容 `/` 与 `\\`，属于测试可移植性修复，不改变运行时语义。
@@ -146,14 +146,14 @@ Status: calibrated
 #### 25. `asString` / `asRecord` / `asNumber` 等辅助函数多处重复定义
 
 - 涉及文件：`server.ts`、`data.ts`、`dto.ts`、`project-projection.ts`、`project-readiness.ts`、`ops-summary-projection.ts`、`run-graph-projection.ts`、`studio-chat-to-mmd.ts`
-- 现状：已新增共享 `json-guards.ts`，`server.ts`、`data.ts`、`project-projection.ts`、`project-readiness.ts`、`ops-summary-projection.ts`、`run-graph-projection.ts` 已切到统一 guard；剩余重复定义主要还在 `dto.ts`、`studio-chat-to-mmd.ts` 与 `studio-client` 局部 helper。
-- 结论：本项已部分收敛，剩余范围保留在后续辅助函数治理批次。
+- 现状：已新增共享 `json-guards.ts`，并补入 `asTrimmedString()` / `asNonEmptyString()` 以显式区分 trim 语义；`server.ts`、`data.ts`、`project-projection.ts`、`project-readiness.ts`、`ops-summary-projection.ts`、`run-graph-projection.ts`、`dto.ts`、`studio-chat-to-mmd.ts` 以及 `studio-client` 的命令表单/校验模块均已切到统一 guard。
+- 结论：本项已收口；剩余相关重复已不属于 JSON guard 范畴。
 
 #### 26. `escapeText` / `escapeHtml` 多份拷贝
 
 - 文件：`client-renderers.ts`、`page-shell.ts`、`page-shell-template.ts`
-- 现状：已新增共享 `html-escape.ts`，三处已改为复用同一份 escaping 语义。
-- 结论：本项已收口；更远的 `studio-client` 局部 helper 仍留在后续辅助函数收敛批次内处理。
+- 现状：已新增共享 `html-escape.ts`，并已接管 `page-shell`、`page-shell-template`、`client-renderers` 以及 `studio-client/studio-graph-command-forms.ts` 的重复 escaping 语义。
+- 结论：本项已收口；当前仅剩 `client-app.ts` 为 DOM `toString()` 约束保留的局部 `escapeText()`，不再视为本条重复 helper debt。
 
 ---
 
@@ -175,11 +175,11 @@ Status: calibrated
 - 活动执行入口保持为 `docs/todo-backlog.md`。
 - 本文只负责校准定性，不直接代表任务已关闭。
 - `chat panel` ARIA 语义已修正；Studio 图命令表单现已补齐 `dialog` / `aria-modal` / `aria-labelledby`、Escape 关闭和关闭后焦点回收。
-- 主要交互面板已补首批系统性无障碍增强：搜索、timeline、日志筛选、Studio Bridge filter 等输入现有显式可访问名称；`sidebar-toggle` 已补 `aria-controls` / `aria-expanded`；lifecycle / operate / legacy 切换按钮已补 `aria-pressed`。更完整的 `tablist/tab/tabpanel` 语义和逐面板读屏走查仍保留在后续审计批次。
+- 主要交互面板已完成本轮系统性无障碍增强：搜索、timeline、日志筛选、Studio Bridge filter 等输入现有显式可访问名称；`sidebar-toggle` 已补 `aria-controls` / `aria-expanded`；lifecycle / operate / legacy 切换按钮已补 `tablist/tab`、`aria-controls`、`aria-selected`、`tabindex` 与兼容用 `aria-pressed`；operate 子面板、logs 与 artifacts 面板已补 `tabpanel` / `aria-labelledby` 并随 tab 切换同步 `hidden`，Logs/Artifacts 切换时保留 debug 容器可见以维持子 tablist 可达。
 - `innerHTML` 热点治理已覆盖首批高频面板，包括 `runListEl` 与 `consoleTabsEl`；更广范围的差量更新与公共渲染边界收敛仍保留在后续可维护性批次处理。
 - `runsListCache` 无上限问题已按短期稳态优先级修复；更深的缓存抽象收敛仍保留为 P2 可维护性治理。
 - `listTimer`、`workbenchValidationTimer`、`streamRefreshTimer` 已建立统一清理约束：run 切换/返回 project home/dispose 均会清理对应 timer，stream refresh plan 现已绑定当前 run，避免旧 SSE 事件污染新 run；回归测试采用 `visualizer-client` harness 的短路径用例，控制等待时间。
 - run 切换状态重置路径已补齐：切换到新 run 时会立即清空 review / failure / resume / logs 等 run-scoped 面板状态，并为 run detail、review detail、failure、resume、logs 等异步加载增加“仅当前 run selection 可提交”的代际保护，避免旧请求晚到后覆盖新 run 视图。
 - `createInitialVisualizerState()` 已按 `project` / `build` / `operate` / `review` / `logs` / `streaming` 切片拆分为纯初始化 helper，并继续保留单点拼装入口，先降低扁平状态对象的维护成本，再为后续进一步模块拆分留边界。
-- `server.ts` 已继续抽离稳定边界：`request-body.ts` 负责 JSON body 限流/解析，`server-runtime-state.ts` 负责 project-create request cache、runs list cache 和 SSE metrics；更大范围的路由/handler 模块化仍在后续批次。
+- `server.ts` 与 `client-app.ts` 已继续抽离稳定边界：`request-body.ts` 负责 JSON body 限流/解析，`server-runtime-state.ts` 负责 project-create request cache、runs list cache 和 SSE metrics；`client-shell-controls.ts` 负责 lifecycle/operate/legacy tab HTML、可见面板计算、run sidebar 判定与 run list HTML 过滤渲染。更大范围的路由/handler 模块化和 UI 组件化不再作为本轮 checklist 阻塞项。
 - 高频输入路径边界现已显式固化：`workbench-editor` 保持 `250ms` debounce 后才触发 `/project/system/validate`；`studio-chat-input` 与 `project-open-workdir` 仅更新本地 draft，分别在 send/regenerate/apply 与 validate/browse/open 时触发远端动作；run 列表搜索、Studio Bridge filter、角色目录过滤继续保持本地即时过滤；日志筛选项维持 `change` 后才 reload，避免每击键拉取日志。对应说明已落到 `client-app.ts` / `client-studio-chat-panel.ts` / `client-run-data-loaders.ts`，并由 `visualizer-client-state` 的短路径测试锁定。
