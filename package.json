@@ -37,6 +37,7 @@
     "sync:agent-sources": "node tools/agent-source/sync-agent-sources.mjs",
     "smoke:package-install:npm": "node scripts/package-install-smoke.mjs npm",
     "smoke:package-install:pnpm": "node scripts/package-install-smoke.mjs pnpm",
+    "smoke:windows-lifecycle": "node scripts/windows-lifecycle-smoke.mjs",
     "bench:runtime-replay": "pnpm build && node tests/benchmarks/runtime-replay-benchmark.mjs",
     "test:examples": "pnpm exec tsx src/runtime/cli.ts run start --system examples/target-model-binding-system.mmd --input \"ci example\" --dry-run && pnpm exec tsx src/runtime/cli.ts run start --system examples/langgraph-debate-current/system.mmd --laws examples/langgraph-debate-current/laws.json --user-profile examples/langgraph-debate-current/user-profile.json --input \"ci graph example\" --dry-run && pnpm exec tsx src/runtime/cli.ts run start --system examples/medical-quorum-consultation/system.mmd --laws examples/medical-quorum-consultation/laws.json --user-profile examples/medical-quorum-consultation/user-profile.json --input \"ci medical quorum\" --dry-run && pnpm exec tsx src/runtime/cli.ts run start --system system.mmd --runtime runtime.json --laws laws.json --workdir examples/error-flow-compensation --input \"ci error flow\" && bash examples/ogs-gstacklike/scripts/validate-scenarios.sh",
     "test:doctor": "pnpm run run:doctor --system examples/target-model-binding-system.mmd --laws .ogs/laws.json",
