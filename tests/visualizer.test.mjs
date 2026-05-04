@@ -1639,6 +1639,47 @@ test("visualizer server exposes Mermaid workbench APIs and project export", asyn
   }
 });
 
+test("visualizer server maps Studio chat dependency failures to explicit API errors", async (t) => {
+  const workdir = await mkdtemp(path.join(os.tmpdir(), "ogsystem-visualizer-chat-unavailable-"));
+  await seedProjectFixture(workdir);
+  let started;
+  try {
+    started = await startVisualizationServer({
+      workdir,
+      host: "127.0.0.1",
+      port: 0,
+      testHooks: {
+        studioChat: {
+          forceDependencyFailureMessage: "Studio Chat to MMD cannot reach the configured OpenAI provider. Check OPENAI_API_KEY or the OpenCode provider apiKey configuration, then retry."
+        }
+      }
+    });
+  } catch (error) {
+    const errorCode =
+      typeof error === "object" && error !== null && "code" in error ? error.code : undefined;
+    if (errorCode === "EPERM" || errorCode === "EACCES") {
+      t.skip(`visualizer listen unavailable in sandbox: ${errorCode}`);
+      return;
+    }
+    throw error;
+  }
+  const { server, url } = started;
+
+  try {
+    const response = await fetch(`${url}/api/v1/project/studio/chat`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ message: "增加一个审核角色" })
+    });
+    assert.equal(response.status, 503);
+    const payload = await response.json();
+    assert.equal(payload.error.code, "STUDIO_CHAT_NL2MMD_UNAVAILABLE");
+    assert.match(payload.error.message, /OPENAI_API_KEY|OpenCode provider/);
+  } finally {
+    await new Promise((resolve) => server.close(resolve));
+  }
+});
+
 test("visualizer server supports empty workspace project creation without implicit writes", async (t) => {
   const workdir = await mkdtemp(path.join(os.tmpdir(), "ogsystem-visualizer-empty-"));
   let started;

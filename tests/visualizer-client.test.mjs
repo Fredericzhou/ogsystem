@@ -577,6 +577,20 @@ function createDeferred() {
   };
 }
 
+function createRejectableDeferred() {
+  let resolvePromise;
+  let rejectPromise;
+  const promise = new Promise((resolve, reject) => {
+    resolvePromise = resolve;
+    rejectPromise = reject;
+  });
+  return {
+    promise,
+    resolve: resolvePromise,
+    reject: rejectPromise
+  };
+}
+
 function buildRunFixture({
   runId,
   reviewId,
@@ -1206,6 +1220,17 @@ function createBackend(options = {}) {
       }
       if (pathname === "/api/v1/project/studio/chat" && method === "POST") {
         this.lastStudioChatBody = JSON.parse(request.body ?? "{}");
+        if (options.studioChatDeferred) {
+          return options.studioChatDeferred.promise;
+        }
+        if (options.studioChatError) {
+          return createResponse({
+            error: {
+              code: options.studioChatError.code ?? "STUDIO_CHAT_NL2MMD_UNAVAILABLE",
+              message: options.studioChatError.message ?? "Studio Chat to MMD cannot reach OpenCode or the model provider."
+            }
+          }, options.studioChatError.status ?? 503, "Service Unavailable");
+        }
         if (options.studioChatValidationBlocked) {
           return createResponse({
             mode: "draft",
@@ -1850,6 +1875,7 @@ async function createClientHarness(options = {}) {
   const timers = new Map();
   const intervals = new Map();
   let nextTimerId = 1;
+  const timerDelays = [];
   const windowObject = {
     location: {
       pathname: "/",
@@ -1886,19 +1912,42 @@ async function createClientHarness(options = {}) {
       return confirmResponses.length > 0 ? confirmResponses.shift() : true;
     }
   };
+  class FakeAbortController {
+    constructor() {
+      this.signal = {
+        aborted: false,
+        reason: undefined,
+        listeners: [],
+        addEventListener: (eventName, listener) => {
+          if (eventName === "abort") {
+            this.signal.listeners.push(listener);
+          }
+        }
+      };
+    }
+    abort(reason) {
+      this.signal.aborted = true;
+      this.signal.reason = reason;
+      for (const listener of this.signal.listeners) {
+        listener({ type: "abort" });
+      }
+    }
+  }
   const context = vm.createContext({
     window: windowObject,
     document,
     fetch: async (url, request) => backend.handle(url, request),
+    AbortController: FakeAbortController,
     EventSource: class extends FakeEventSource {
       constructor(url) {
         super(url);
         eventSources.push(this);
       }
     },
-    setTimeout(callback) {
+    setTimeout(callback, delay) {
       const id = nextTimerId++;
       timers.set(id, callback);
+      timerDelays.push(delay);
       return id;
     },
     clearTimeout(id) {
@@ -1979,6 +2028,7 @@ async function createClientHarness(options = {}) {
     document,
     eventSources,
     intervals,
+    timerDelays,
     window: windowObject,
     promptCalls,
     async flushTimers() {
@@ -3677,6 +3727,90 @@ test("visualizer client blocks chat-to-MMD apply when preview validation fails",
   await applyButton.click();
   await settle();
   assert.doesNotMatch(harness.document.getElementById("flash").textContent, /Chat draft applied/);
+});
+
+test("visualizer client surfaces chat-to-MMD dependency errors", async () => {
+  const harness = await createClientHarness({
+    readinessCanDryRun: true,
+    studioChatError: {
+      message: "Studio Chat to MMD cannot reach the configured OpenAI provider. Check OPENAI_API_KEY or the OpenCode provider apiKey configuration, then retry."
+    }
+  });
+
+  const buildTab = harness.document.getElementById("console-tabs")
+    .querySelectorAll("[data-console-tab]")
+    .find((button) => button.getAttribute("data-console-tab") === "build");
+  await buildTab.click();
+  await waitForCondition(() => Boolean(harness.document.getElementById("studio-chat-input")));
+
+  await harness.document.getElementById("studio-chat-input").input("增加一个审核角色");
+  await harness.document.getElementById("studio-chat-send").click();
+  await waitForCondition(() => /OPENAI_API_KEY|OpenCode provider/.test(harness.document.getElementById("flash").textContent));
+
+  assert.equal(harness.backend.lastStudioChatBody.message, "增加一个审核角色");
+  assert.match(harness.document.getElementById("flash").textContent, /OPENAI_API_KEY|OpenCode provider/);
+});
+
+test("visualizer client times out chat-to-MMD requests with an actionable message", async () => {
+  const deferred = createRejectableDeferred();
+  const harness = await createClientHarness({
+    readinessCanDryRun: true,
+    studioChatDeferred: deferred
+  });
+
+  const buildTab = harness.document.getElementById("console-tabs")
+    .querySelectorAll("[data-console-tab]")
+    .find((button) => button.getAttribute("data-console-tab") === "build");
+  await buildTab.click();
+  await waitForCondition(() => Boolean(harness.document.getElementById("studio-chat-input")));
+
+  await harness.document.getElementById("studio-chat-input").input("增加一个审核角色");
+  await harness.document.getElementById("studio-chat-send").click();
+  await waitForCondition(() => harness.timerDelays.includes(60000));
+  await harness.flushTimers();
+  await waitForCondition(() => /OpenCode provider|OPENAI_API_KEY|network/.test(harness.document.getElementById("flash").textContent));
+
+  assert.match(harness.document.getElementById("flash").textContent, /OpenCode provider|OPENAI_API_KEY|network/);
+});
+
+test("visualizer client can close a pending chat-to-MMD request", async () => {
+  const deferred = createDeferred();
+  const harness = await createClientHarness({
+    readinessCanDryRun: true,
+    studioChatDeferred: deferred
+  });
+
+  const buildTab = harness.document.getElementById("console-tabs")
+    .querySelectorAll("[data-console-tab]")
+    .find((button) => button.getAttribute("data-console-tab") === "build");
+  await buildTab.click();
+  await waitForCondition(() => Boolean(harness.document.getElementById("studio-chat-input")));
+
+  await harness.document.getElementById("studio-chat-input").input("增加一个审核角色");
+  await harness.document.getElementById("studio-chat-send").click();
+  await waitForCondition(() => /正在生成|Generating Studio draft/.test(harness.document.getElementById("workbench-body").textContent));
+  assert.equal(harness.document.getElementById("studio-chat-close").disabled, false);
+
+  await harness.document.getElementById("studio-chat-close").click();
+  await settle();
+  assert.doesNotMatch(harness.document.getElementById("workbench-body").textContent, /正在生成|Generating Studio draft/);
+  assert.doesNotMatch(harness.document.getElementById("flash").textContent, /cancelled/i);
+
+  deferred.resolve(createResponse({
+    mode: "draft",
+    sessionId: "late-chat",
+    summary: "Late response.",
+    questions: [],
+    assumptions: [],
+    warnings: [],
+    previewMermaid: "",
+    validation: { project: { ok: true, diagnostics: [] } },
+    authoringPatch: null,
+    actions: [],
+    context: { referencedRoles: [], unresolvedItems: [] }
+  }));
+  await settle();
+  assert.doesNotMatch(harness.document.getElementById("workbench-body").textContent, /Late response/);
 });
 
 test("visualizer client opens projects through Project menu and reindexes through inline forms", async () => {

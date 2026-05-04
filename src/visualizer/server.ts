@@ -75,6 +75,7 @@ import {
 } from "./studio-authoring.js";
 import {
   parseStudioChatToMmdRequest,
+  StudioChatToMmdDependencyError,
   runStudioChatToMmdTurn,
   type StudioChatToMmdSessionMap
 } from "./studio-chat-to-mmd.js";
@@ -144,6 +145,9 @@ type VisualizationServerOptions = {
     projectCreate?: {
       cleanupFailurePatterns?: string[];
       forceCreateFailure?: boolean;
+    };
+    studioChat?: {
+      forceDependencyFailureMessage?: string;
     };
   };
 };
@@ -1067,6 +1071,11 @@ async function handleApiStudioChatToMmd(
     }
     throw error;
   }
+  if (state.testHooks?.studioChat?.forceDependencyFailureMessage) {
+    throw new StudioChatToMmdDependencyError(
+      state.testHooks.studioChat.forceDependencyFailureMessage
+    );
+  }
   jsonResponse(response, 200, await runStudioChatToMmdTurn({
     workdir: state.workdir,
     request: chatRequest,
@@ -1759,6 +1768,14 @@ function normalizeError(error: unknown): HttpError {
   }
   if (/^Choose either --engine or --role/i.test(message) || /^Invalid --since/i.test(message)) {
     return new HttpError(400, "INVALID_LOG_QUERY", message);
+  }
+  if (error instanceof StudioChatToMmdDependencyError) {
+    return new HttpError(
+      503,
+      "STUDIO_CHAT_NL2MMD_UNAVAILABLE",
+      message,
+      error.details
+    );
   }
   if (error instanceof Error && "envelope" in error) {
     const envelope = asRecord((error as { envelope?: unknown }).envelope);

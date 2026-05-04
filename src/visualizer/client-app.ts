@@ -672,12 +672,91 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
         : "unknown";
     }
 
+    function createClientTimeoutError(path, timeoutMs) {
+      const error = new Error(t("api.requestTimeout", {
+        seconds: String(Math.ceil(timeoutMs / 1000))
+      }, "Request timed out after {seconds}s. Check the server connection and retry."));
+      error.code = "CLIENT_REQUEST_TIMEOUT";
+      error.path = path;
+      return error;
+    }
+
+    function isAbortError(error) {
+      return error && (
+        error.name === "AbortError" ||
+        error.code === "CLIENT_REQUEST_ABORTED"
+      );
+    }
+
     async function requestJson(path, options) {
-      const response = await fetch(path, {
-        headers: { accept: "application/json" },
-        cache: "no-store",
-        ...(options || {})
-      });
+      const requestOptions = options || {};
+      const timeoutMs = Number(requestOptions.timeoutMs || 0);
+      let timeoutId = null;
+      let timedOut = false;
+      let controller = null;
+      let signal = requestOptions.signal;
+      if (timeoutMs > 0) {
+        controller = new AbortController();
+        signal = controller.signal;
+        if (requestOptions.signal) {
+          if (requestOptions.signal.aborted) {
+            controller.abort(requestOptions.signal.reason);
+          } else {
+            requestOptions.signal.addEventListener("abort", () => {
+              controller.abort(requestOptions.signal.reason);
+            }, { once: true });
+          }
+        }
+      }
+      let response;
+      try {
+        const { timeoutMs: _timeoutMs, signal: _optionSignal, ...fetchOptions } = requestOptions;
+        const fetchPromise = fetch(path, {
+          headers: { accept: "application/json" },
+          signal,
+          ...fetchOptions,
+          headers: {
+            accept: "application/json",
+            ...(fetchOptions.headers || {})
+          },
+          cache: fetchOptions.cache || "no-store"
+        });
+        response = timeoutMs > 0
+          ? await Promise.race([
+              fetchPromise,
+              new Promise((_, reject) => {
+                timeoutId = setTimeout(() => {
+                  timedOut = true;
+                  if (controller) {
+                    controller.abort(createClientTimeoutError(path, timeoutMs));
+                  }
+                  reject(createClientTimeoutError(path, timeoutMs));
+                }, timeoutMs);
+              })
+            ])
+          : await fetchPromise;
+      } catch (error) {
+        if (timedOut) {
+          throw createClientTimeoutError(path, timeoutMs);
+        }
+        throw error;
+      } finally {
+        if (timeoutId !== null) {
+          clearTimeout(timeoutId);
+        }
+      }
+      if (signal?.aborted) {
+        if (timedOut) {
+          throw createClientTimeoutError(path, timeoutMs);
+        }
+        const reason = signal.reason;
+        if (reason instanceof Error) {
+          throw reason;
+        }
+        const error = new Error(t("studio.chat.cancelled", undefined, "Studio chat request cancelled."));
+        error.code = "CLIENT_REQUEST_ABORTED";
+        throw error;
+      }
       const contentType = response.headers.get("content-type") || "";
       const payload = contentType.includes("application/json")
         ? await response.json().catch(() => null)
@@ -688,12 +767,14 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
       return payload;
     }
 
-    async function requestAction(path, body) {
+    async function requestAction(path, body, options) {
       return requestJson(path, {
+        ...(options || {}),
         method: "POST",
         headers: {
           accept: "application/json",
-          "content-type": "application/json"
+          "content-type": "application/json",
+          ...(options?.headers || {})
         },
         body: JSON.stringify(body || {})
       });
@@ -1717,6 +1798,12 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
     }
 
     function closeStudioChatDialog() {
+      if (state.studioChatAbortController) {
+        const error = new Error(t("studio.chat.cancelled", undefined, "Studio chat request cancelled."));
+        error.code = "CLIENT_REQUEST_ABORTED";
+        state.studioChatAbortController.abort(error);
+        state.studioChatAbortController = null;
+      }
       state.studioChatDialogOpen = false;
       patchStudioChatPanel();
     }
@@ -3421,6 +3508,12 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
         await refreshStudioBridge();
       }
       await runAction("studio:chat-mmd", async () => {
+        const requestId = ++state.studioChatRequestId;
+        if (state.studioChatAbortController) {
+          state.studioChatAbortController.abort();
+        }
+        const chatAbortController = new AbortController();
+        state.studioChatAbortController = chatAbortController;
         const requestMessage = options?.regenerate
           ? prompt + "\\\\n\\\\n" + t("studio.chat.regenerateInstruction", undefined, "Regenerate a fresh alternative for this request.")
           : prompt;
@@ -3438,7 +3531,14 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
           authoring: state.studioBridge?.authoring,
           systemSource: state.workbenchSource,
           validation: state.workbench?.validation
+        }, {
+          signal: chatAbortController.signal,
+          timeoutMs: state.studioChatTimeoutMs || 60000
         });
+        if (state.studioChatRequestId !== requestId) {
+          return;
+        }
+        state.studioChatAbortController = null;
         state.studioChatSessionId = payload.sessionId || state.studioChatSessionId;
         state.studioChatResult = payload;
         state.studioChatMessages.push({
@@ -3447,6 +3547,15 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
           text: payload.summary || questionsFallback(payload.questions) || t("studio.chat.responseReady", undefined, "A Studio draft response is ready.")
         });
         patchStudioChatPanel();
+      }).catch((error) => {
+        if (isAbortError(error)) {
+          return;
+        }
+        throw error;
+      }).finally(() => {
+        if (state.studioChatAbortController?.signal?.aborted) {
+          state.studioChatAbortController = null;
+        }
       });
     }
 

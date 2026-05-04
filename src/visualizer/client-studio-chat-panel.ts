@@ -32,6 +32,7 @@ export function renderStudioChatPanelHtml(args: {
   const { state, t, escapeText } = args;
   const result = state.studioChatResult;
   const disabled = state.actionBusy ? " disabled" : "";
+  const chatBusy = state.actionBusy === "studio:chat-mmd";
   const messages = asStudioChatList(state.studioChatMessages);
   const previewMermaid = String(result?.previewMermaid || "");
   const questions = asStudioChatList(result?.questions);
@@ -57,6 +58,9 @@ export function renderStudioChatPanelHtml(args: {
         escapeText(message.text || "") + '</strong></div>'
       ).join("")
     : '<div class="hint">' + escapeText(t("studio.chat.emptyHistory", undefined, "Describe the system you want to generate or the selected graph item you want to adjust.")) + '</div>';
+  const busyHtml = chatBusy
+    ? '<div class="hint" role="status" aria-live="polite">' + escapeText(t("studio.chat.generating", undefined, "Generating Studio draft. You can close this panel while the request finishes.")) + '</div>'
+    : "";
   const questionHtml = questions.length
     ? '<div class="event"><div class="event-top"><span>' + escapeText(t("studio.chat.questions", undefined, "questions")) + '</span><span>' + escapeText(String(questions.length)) + '</span></div><strong>' +
       escapeText(questions.join(" · ")) + '</strong></div>'
@@ -86,6 +90,7 @@ export function renderStudioChatPanelHtml(args: {
           '<div class="studio-chat-grid">',
           '<div class="structure-list">',
           messageHtml,
+          busyHtml,
           '<label class="field full"><span>' + escapeText(t("studio.chat.prompt", undefined, "Prompt")) + '</span><textarea id="studio-chat-input" rows="4"' + disabled + ' placeholder="' + escapeText(t("studio.chat.placeholder", undefined, "Ask to generate a flow, refine the selected role, or fix diagnostics.")) + '">' + escapeText(state.studioChatDraftMessage || "") + '</textarea></label>',
           '<div class="toolbar-row compact"><div class="toolbar-group">',
           '<button class="button primary" type="button" id="studio-chat-send"' + disabled + '>' + escapeText(t("studio.chat.send", undefined, "Send")) + '</button>',

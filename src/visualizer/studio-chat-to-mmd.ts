@@ -10,6 +10,7 @@ import { resolve } from "node:path";
 
 import {
   createNl2MmdConversation,
+  runNl2MmdPreflight,
   runNl2MmdTurn,
   type Nl2MmdConversation,
   type Nl2MmdTurnResult
@@ -33,6 +34,7 @@ export type StudioChatToMmdSession = {
   workdir: string;
   conversation: Nl2MmdConversation;
   updatedAtMs: number;
+  preflightOk?: boolean;
 };
 
 export type StudioChatToMmdSessionMap = Map<string, StudioChatToMmdSession>;
@@ -95,6 +97,13 @@ type ValidateStudioSystemSource = (args: {
 
 const DEFAULT_STUDIO_CHAT_SESSION_TTL_MS = 30 * 60 * 1000;
 const DEFAULT_STUDIO_CHAT_SESSION_MAX_SIZE = 64;
+
+export class StudioChatToMmdDependencyError extends Error {
+  constructor(message: string, public readonly details?: Record<string, unknown>) {
+    super(message);
+    this.name = "StudioChatToMmdDependencyError";
+  }
+}
 
 function asStringArray(value: unknown): string[] {
   return Array.isArray(value) ? value.filter((item): item is string => typeof item === "string") : [];
@@ -181,6 +190,26 @@ export function pruneStudioChatToMmdSessions(args: {
 
 function createLocalSessionId(): string {
   return `studio-chat-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
+}
+
+function summarizeNl2MmdDependencyError(error: unknown): string {
+  const message = error instanceof Error && error.message.trim() ? error.message.trim() : String(error);
+  if (/OPENAI_API_KEY|api key|unauthorized|authentication|invalid_api_key|401/i.test(message)) {
+    return "Studio Chat to MMD cannot reach the configured OpenAI provider. Check OPENAI_API_KEY or the OpenCode provider apiKey configuration, then retry.";
+  }
+  if (/timeout|ECONNREFUSED|ENOTFOUND|EAI_AGAIN|network|fetch failed|socket hang up|ECONNRESET/i.test(message)) {
+    return "Studio Chat to MMD cannot reach OpenCode or the model provider. Check opencode serve, provider network access, and model binding, then retry.";
+  }
+  if (/ProviderModelNotFound|does not expose model|provider\/model|model/i.test(message)) {
+    return `Studio Chat to MMD model binding is not usable: ${message}`;
+  }
+  return `Studio Chat to MMD preflight failed: ${message}`;
+}
+
+function toNl2MmdDependencyError(error: unknown): StudioChatToMmdDependencyError {
+  return new StudioChatToMmdDependencyError(summarizeNl2MmdDependencyError(error), {
+    cause: error instanceof Error ? error.message : String(error)
+  });
 }
 
 function diagnosticsToMessages(validation: Record<string, unknown> | undefined, severity: string): string[] {
@@ -341,6 +370,17 @@ export async function runStudioChatToMmdTurn(args: {
     },
     sessions: args.sessions
   });
+  if (!session.preflightOk) {
+    try {
+      await runNl2MmdPreflight({ conversation: session.conversation });
+      session.preflightOk = true;
+      session.updatedAtMs = Date.now();
+    } catch (error) {
+      session.conversation.close();
+      args.sessions.delete(sessionId);
+      throw toNl2MmdDependencyError(error);
+    }
+  }
   const draftMermaid = buildDraftMermaid(args.request);
   const validationErrors = [
     ...diagnosticsToMessages(args.request.validation, "error")
@@ -349,18 +389,23 @@ export async function runStudioChatToMmdTurn(args: {
     ...diagnosticsToMessages(args.request.validation, "warning")
   ];
 
-  const turn = await runNl2MmdTurn({
-    conversation: session.conversation,
-    input: {
-      message: buildContextualMessage(args.request),
-      draftMermaid,
-      validationErrors,
-      validationWarnings
-    },
-    lawsPath,
-    profilesPath,
-    userProfilePath
-  });
+  let turn: Nl2MmdTurnResult;
+  try {
+    turn = await runNl2MmdTurn({
+      conversation: session.conversation,
+      input: {
+        message: buildContextualMessage(args.request),
+        draftMermaid,
+        validationErrors,
+        validationWarnings
+      },
+      lawsPath,
+      profilesPath,
+      userProfilePath
+    });
+  } catch (error) {
+    throw toNl2MmdDependencyError(error);
+  }
   session.updatedAtMs = Date.now();
 
   const previewMermaid = turn.mermaid;

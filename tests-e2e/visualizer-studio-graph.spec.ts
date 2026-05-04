@@ -340,6 +340,25 @@ test("Studio Bridge renders and edits through the real graph workspace", async (
     await page.locator('#studio-graph-root [data-studio-graph-action="undo"]').click();
     await expect(page.locator('#studio-graph-root [data-cell-id="qa-reviewer"]')).toHaveCount(0);
 
+    await page.unroute("**/api/v1/project/studio/chat");
+    await page.route("**/api/v1/project/studio/chat", async (route) => {
+      const request = route.request();
+      if (request.method() !== "POST") {
+        await route.fallback();
+        return;
+      }
+      await new Promise(() => undefined);
+    });
+    await page.locator('#studio-graph-root [data-studio-graph-action="chat-generate"]').click();
+    await expect(page.locator(".studio-chat-panel.is-open")).toBeVisible();
+    await page.locator("#studio-chat-input").fill("增加一个审核角色");
+    await page.locator("#studio-chat-send").click();
+    await expect(page.locator(".studio-chat-panel.is-open")).toContainText(/Generating Studio draft|正在生成/);
+    await expect(page.locator("#studio-chat-close")).toBeEnabled();
+    await page.locator("#studio-chat-close").click();
+    await expect(page.locator(".studio-chat-panel.is-open")).toHaveCount(0);
+    await page.unroute("**/api/v1/project/studio/chat");
+
     const roleNodeForDrag = page.locator('#studio-graph-root [data-cell-id="demo-analyst"]').first();
     const box = await roleNodeForDrag.boundingBox();
     expect(box).toBeTruthy();
