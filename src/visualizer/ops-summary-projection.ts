@@ -8,6 +8,12 @@ import {
   resolveRunDir
 } from "../runtime/project-lifecycle.js";
 import { inspectRunResumeReadiness } from "./data.js";
+import {
+  asBoolean,
+  asNumber,
+  asRecord,
+  asString
+} from "./json-guards.js";
 
 type JsonRecord = Record<string, unknown>;
 
@@ -26,24 +32,6 @@ type GroupCount = {
   key: string;
   count: number;
 };
-
-function asRecord(value: unknown): JsonRecord | undefined {
-  return typeof value === "object" && value !== null && !Array.isArray(value)
-    ? (value as JsonRecord)
-    : undefined;
-}
-
-function asString(value: unknown): string | undefined {
-  return typeof value === "string" ? value : undefined;
-}
-
-function asNumber(value: unknown): number | undefined {
-  return typeof value === "number" && Number.isFinite(value) ? value : undefined;
-}
-
-function asBoolean(value: unknown): boolean | undefined {
-  return typeof value === "boolean" ? value : undefined;
-}
 
 function extractGraphState(state: unknown): JsonRecord | undefined {
   const record = asRecord(state);

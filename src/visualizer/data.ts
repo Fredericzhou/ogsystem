@@ -22,6 +22,12 @@ import { pathExists } from "../runtime/run-artifacts.js";
 import { resolveEffectiveLaw } from "../runtime/runtime-setup.js";
 import { isRuntimeOnlyErrorEvent } from "../runtime/error-flow-utils.js";
 import { resolveProjectRoleRepoRoot, resolveProjectRoleRootDir } from "../runtime/bundled-repos.js";
+import {
+  asBoolean,
+  asNumber,
+  asRecord,
+  asString
+} from "./json-guards.js";
 import type {
   BranchRecord,
   GraphState,
@@ -32,24 +38,6 @@ import type {
 } from "../runtime/types.js";
 
 type JsonRecord = Record<string, unknown>;
-
-function asRecord(value: unknown): JsonRecord | undefined {
-  return typeof value === "object" && value !== null && !Array.isArray(value)
-    ? (value as JsonRecord)
-    : undefined;
-}
-
-function asString(value: unknown): string | undefined {
-  return typeof value === "string" ? value : undefined;
-}
-
-function asNumber(value: unknown): number | undefined {
-  return typeof value === "number" && Number.isFinite(value) ? value : undefined;
-}
-
-function asBoolean(value: unknown): boolean | undefined {
-  return typeof value === "boolean" ? value : undefined;
-}
 
 function parseIsoTimestamp(value: string | undefined): number | undefined {
   if (!value) {

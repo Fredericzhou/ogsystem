@@ -30,6 +30,11 @@ import { validateProfilesConfig } from "../runtime/config.js";
 import { resolveEffectiveLaw } from "../runtime/runtime-setup.js";
 import { SYSTEM_END_ROLE_ID } from "../runtime/types.js";
 import { importMermaidToAuthoring, saveStudioAuthoringDraft } from "./studio-authoring.js";
+import {
+  asPositiveInteger,
+  asRecord,
+  asString
+} from "./json-guards.js";
 import type { CompilerDiagnostic } from "../runtime/compiler.js";
 import type { ModelCatalog, ModelSelectionConfig } from "../runtime/types.js";
 import type { ResolvedModelRuntimeConfig } from "../runtime/model-selection.js";
@@ -92,20 +97,6 @@ type ProjectCreateTestHooks = {
 const projectProjectionCache = new Map<string, ProjectProjectionCacheEntry>();
 const PROJECT_PROJECTION_CACHE_TTL_MS = 10 * 60 * 1000;
 const PROJECT_PROJECTION_CACHE_MAX_SIZE = 16;
-
-function asRecord(value: unknown): JsonRecord | undefined {
-  return typeof value === "object" && value !== null && !Array.isArray(value)
-    ? (value as JsonRecord)
-    : undefined;
-}
-
-function asString(value: unknown): string | undefined {
-  return typeof value === "string" ? value : undefined;
-}
-
-function asPositiveInteger(value: unknown): number | undefined {
-  return typeof value === "number" && Number.isInteger(value) && value > 0 ? value : undefined;
-}
 
 function sanitizeJsonValue(value: unknown, depth = 0): unknown {
   if (value === null) {

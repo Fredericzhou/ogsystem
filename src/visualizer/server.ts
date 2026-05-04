@@ -102,6 +102,15 @@ import {
   resolveLocaleFromQuery,
   type Locale
 } from "./i18n/index.js";
+import {
+  JsonBodyError,
+  readJsonRequestBody
+} from "./request-body.js";
+import {
+  asNumber,
+  asRecord,
+  asString
+} from "./json-guards.js";
 
 type VisualizationServerOptions = {
   workdir: string;
@@ -271,20 +280,6 @@ function textResponse(
     "content-length": Buffer.byteLength(value)
   });
   response.end(value);
-}
-
-function asString(value: unknown): string | undefined {
-  return typeof value === "string" ? value : undefined;
-}
-
-function asNumber(value: unknown): number | undefined {
-  return typeof value === "number" && Number.isFinite(value) ? value : undefined;
-}
-
-function asRecord(value: unknown): Record<string, unknown> | undefined {
-  return typeof value === "object" && value !== null && !Array.isArray(value)
-    ? (value as Record<string, unknown>)
-    : undefined;
 }
 
 function normalizePositiveInteger(value: unknown, fallback: number): number {
@@ -1046,37 +1041,14 @@ async function handleApiProjectReadiness(workdir: string, response: ServerRespon
 }
 
 async function readJsonRequest(request: IncomingMessage): Promise<Record<string, unknown>> {
-  const chunks: Buffer[] = [];
-  let totalBytes = 0;
-  for await (const chunk of request) {
-    const buffer = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk);
-    totalBytes += buffer.byteLength;
-    if (totalBytes > MAX_JSON_REQUEST_BYTES) {
-      throw new HttpError(413, "JSON_BODY_TOO_LARGE", `Request body must be 1048576 bytes or smaller.`, {
-        limitBytes: MAX_JSON_REQUEST_BYTES
-      });
-    }
-    chunks.push(buffer);
-  }
-  if (chunks.length === 0) {
-    return {};
-  }
-  const raw = Buffer.concat(chunks).toString("utf8").trim();
-  if (!raw) {
-    return {};
-  }
-  let parsed: unknown;
   try {
-    parsed = JSON.parse(raw);
+    return await readJsonRequestBody(request);
   } catch (error) {
-    throw new HttpError(400, "INVALID_JSON_BODY", "Request body must be valid JSON.", {
-      cause: error instanceof Error ? error.message : String(error)
-    });
+    if (error instanceof JsonBodyError) {
+      throw new HttpError(error.statusCode, error.errorCode, error.message, error.details);
+    }
+    throw error;
   }
-  if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) {
-    throw new HttpError(400, "INVALID_JSON_BODY", "Expected a JSON object request body.");
-  }
-  return parsed as Record<string, unknown>;
 }
 
 async function handleApiProjectValidate(

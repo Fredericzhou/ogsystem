@@ -4,27 +4,15 @@ import { resolve } from "node:path";
 import { inspectRun, resolveRunDir } from "../runtime/project-lifecycle.js";
 import { parseSystemFromMermaidSource } from "../runtime/parse-mermaid.js";
 import { isRuntimeOnlyErrorEvent } from "../runtime/error-flow-utils.js";
+import {
+  asBoolean,
+  asNumber,
+  asRecord,
+  asString
+} from "./json-guards.js";
 import type { BranchRecord, GraphState, SystemDefinition } from "../runtime/types.js";
 
 type JsonRecord = Record<string, unknown>;
-
-function asRecord(value: unknown): JsonRecord | undefined {
-  return typeof value === "object" && value !== null && !Array.isArray(value)
-    ? (value as JsonRecord)
-    : undefined;
-}
-
-function asString(value: unknown): string | undefined {
-  return typeof value === "string" ? value : undefined;
-}
-
-function asNumber(value: unknown): number | undefined {
-  return typeof value === "number" && Number.isFinite(value) ? value : undefined;
-}
-
-function asBoolean(value: unknown): boolean | undefined {
-  return typeof value === "boolean" ? value : undefined;
-}
 
 function toBase64Url(value: string): string {
   return Buffer.from(value, "utf8")

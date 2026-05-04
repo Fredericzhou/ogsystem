@@ -15,6 +15,12 @@ import { buildRunPlanFingerprint } from "../dist/runtime/plan-fingerprint.js";
 import { loadLaws, loadRolePackages, loadRuntimeConfig } from "../dist/runtime/runtime-loader.js";
 import { resolveEffectiveLaw } from "../dist/runtime/runtime-setup.js";
 import { startVisualizationServer } from "../dist/visualizer/server.js";
+import {
+  JsonBodyError,
+  parseJsonObjectBody,
+  readJsonRequestBody,
+  readRequestBodyText
+} from "../dist/visualizer/request-body.js";
 import { authoringToCanvasDocument } from "../dist/visualizer/studio-authoring.js";
 
 async function seedProjectFixture(workdir) {
@@ -2787,4 +2793,19 @@ test("visualizer server rebinds the active project to another workdir", async (t
   } finally {
     await new Promise((resolve) => server.close(resolve));
   }
+});
+
+test("visualizer request body helpers keep JSON parsing limits and errors explicit", async () => {
+  await assert.rejects(
+    () => readRequestBodyText([Buffer.from("x".repeat(1024 * 1024 + 1))], 1024 * 1024),
+    (error) => error instanceof JsonBodyError && error.errorCode === "JSON_BODY_TOO_LARGE"
+  );
+  assert.deepEqual(parseJsonObjectBody(""), {});
+  assert.throws(() => parseJsonObjectBody("["), (error) => error instanceof JsonBodyError && error.errorCode === "INVALID_JSON_BODY");
+
+  const body = await readJsonRequestBody([
+    Buffer.from("{"),
+    Buffer.from('"hello":"world"}')
+  ]);
+  assert.deepEqual(body, { hello: "world" });
 });

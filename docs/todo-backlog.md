@@ -83,7 +83,9 @@ Sources: `docs/long-term-stability-roadmap.md`, `docs/archive/delivery/optimizat
 - [x] 继续审查 run 切换时的状态重置路径，重点验证 review、failure、resume、logs 是否仍存在短暂陈旧数据窗口。
 - [x] 为 `listTimer`、`workbenchValidationTimer`、`streamRefreshTimer` 等定时器建立统一清理约束，避免后续继续分散增长。
 - [ ] 继续拆分 `src/visualizer/client-app.ts` 与 `src/visualizer/server.ts` 的超大文件，把稳定边界沉淀为独立模块。
+  当前进展：已抽出 `src/visualizer/request-body.ts`，先把 JSON body 限流/解析错误处理从 `server.ts` 独立出来。
 - [ ] 收敛 `asString`、`asRecord`、`escapeHtml` 等重复辅助函数，统一语义并减少多份拷贝漂移。
+  当前进展：已新增 `src/visualizer/json-guards.ts`，覆盖 `server/data/project-projection/project-readiness/run-graph/ops-summary` 的共享 guard；`escapeHtml` 和其余 visualizer/studio-client 重复 helper 仍待后续批次收敛。
 - [x] 将 `src/visualizer/client-renderers.ts` 的 SVG 拓扑排序从 `queue.shift()` 改为 index 游标遍历，避免理论 O(n²) 热点。
 
 ### P2. Visualizer 无障碍与交互修复

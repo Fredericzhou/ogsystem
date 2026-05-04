@@ -23,6 +23,10 @@ import { pathExists } from "../runtime/run-artifacts.js";
 import { resolveEffectiveLaw } from "../runtime/runtime-setup.js";
 import { SYSTEM_END_ROLE_ID } from "../runtime/types.js";
 import { isRuntimeOnlyErrorEvent } from "../runtime/error-flow-utils.js";
+import {
+  asNonEmptyString,
+  asRecord
+} from "./json-guards.js";
 import type {
   Flow,
   FlowContractDefinition,
@@ -110,16 +114,6 @@ export type ProjectReadinessProjection = {
   modelCapabilityChecks: ModelCapabilityCheck[];
 };
 
-function asRecord(value: unknown): Record<string, unknown> | undefined {
-  return typeof value === "object" && value !== null && !Array.isArray(value)
-    ? (value as Record<string, unknown>)
-    : undefined;
-}
-
-function asString(value: unknown): string | undefined {
-  return typeof value === "string" && value.trim() ? value : undefined;
-}
-
 function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
 }
@@ -190,9 +184,9 @@ function parseRawContractFile(value: unknown): FlowContractFile | undefined {
   for (const entry of record.contracts) {
     const contract = asRecord(entry);
     const match = asRecord(contract?.match);
-    const id = asString(contract?.id);
+    const id = asNonEmptyString(contract?.id);
     const kind = contract?.kind;
-    const schema = asString(contract?.schema);
+    const schema = asNonEmptyString(contract?.schema);
     if (!contract || !id || (kind !== "flow" && kind !== "role_input") || !match || !schema) {
       continue;
     }
@@ -436,8 +430,8 @@ async function inspectRoleHealth(args: {
   if (files.roleJson) {
     try {
       const manifest = asRecord(await readJsonFile(manifestPath));
-      const promptTemplate = asString(manifest?.promptTemplate);
-      const outputSchema = asString(manifest?.outputSchema);
+      const promptTemplate = asNonEmptyString(manifest?.promptTemplate);
+      const outputSchema = asNonEmptyString(manifest?.outputSchema);
       files.promptTemplate = promptTemplate
         ? await pathExists(resolve(resolvedPath, promptTemplate))
         : false;
