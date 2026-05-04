@@ -2164,6 +2164,7 @@ test("visualizer client creates a project from the empty workspace wizard", asyn
     .find((child) => child.attributes.name === "workdir");
   assert.ok(initialWorkdir);
   assert.equal(Object.hasOwn(initialWorkdir.attributes, "readonly"), true);
+  assert.match(harness.document.getElementById("project-wizard").textContent, /Path summary|路径摘要/i);
   await harness.document.getElementById("project-wizard-next").click();
   await settle();
   const projectId = [...harness.document.dynamicElements]
@@ -2180,12 +2181,18 @@ test("visualizer client creates a project from the empty workspace wizard", asyn
   await template.change("minimal");
   await harness.document.getElementById("project-wizard-next").click();
   await settle();
+  assert.match(harness.document.getElementById("project-wizard").textContent, /Health|健康状态/i);
   const roleFilter = [...harness.document.dynamicElements]
     .find((child) => child.attributes.id === "project-role-catalog-filter");
   assert.ok(roleFilter);
   await roleFilter.input("QA");
   await settle();
   assert.match(harness.document.getElementById("project-wizard").textContent, /Showing 1 of 1|显示 1 \/ 1/i);
+  const healthFilter = [...harness.document.dynamicElements]
+    .find((child) => child.attributes.id === "project-role-health-filter");
+  assert.ok(healthFilter);
+  await healthFilter.change("ok");
+  await settle();
   const qaRole = [...harness.document.dynamicElements]
     .find((child) => child.attributes.name === "roleIds" && child.attributes.value === "qa-reviewer");
   assert.ok(qaRole);
@@ -2201,7 +2208,7 @@ test("visualizer client creates a project from the empty workspace wizard", asyn
   assert.ok(nextPage);
   await nextPage.click();
   await settle();
-  assert.match(harness.document.getElementById("project-wizard").textContent, /Page 2 of 2|第 2 \/ 2 页/i);
+  assert.match(harness.document.getElementById("project-wizard").textContent, /Page 1 of 1|第 1 \/ 1 页/i);
   const catalogRole = [...harness.document.dynamicElements]
     .find((child) => child.attributes.name === "roleIds" && child.attributes.value === "catalog-role-12");
   assert.ok(catalogRole);
@@ -2212,6 +2219,7 @@ test("visualizer client creates a project from the empty workspace wizard", asyn
   await refilteredRoleFilter.input("QA");
   await settle();
   assert.match(harness.document.getElementById("project-wizard").textContent, /Selected roles|已选角色/i);
+  assert.match(harness.document.getElementById("project-wizard").textContent, /healthy|健康/i);
   assert.match(harness.document.getElementById("project-wizard").textContent, /Demo Analyst/);
   assert.equal(
     [...harness.document.dynamicElements]

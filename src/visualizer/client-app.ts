@@ -1103,6 +1103,64 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
       };
     }
 
+    function getWorkspaceStateLabel(workspace) {
+      if (!workspace) {
+        return t("projectWizard.workspaceUnknown", undefined, "unknown");
+      }
+      if (workspace.hasProject) {
+        return t("projectWizard.workspaceHasProject", undefined, "project exists");
+      }
+      if (workspace.state === "non-project-conflict") {
+        return t("projectWizard.workspaceConflict", undefined, "existing files");
+      }
+      if (workspace.state === "empty") {
+        return t("projectWizard.workspaceEmpty", undefined, "empty");
+      }
+      return t("projectWizard.workspaceNoProject", undefined, "no project");
+    }
+
+    function getRoleHealthKey(role) {
+      const health = String(role?.health?.status || role?.healthStatus || "").trim().toLowerCase();
+      if (!health || health === "unknown" || health === "n/a") {
+        return "unknown";
+      }
+      if (health === "ok" || health === "healthy" || health === "ready") {
+        return "ok";
+      }
+      if (health === "warning" || health === "warn" || health === "attention") {
+        return "warning";
+      }
+      if (health === "error" || health === "failed" || health === "unhealthy") {
+        return "error";
+      }
+      return health;
+    }
+
+    function getRoleHealthLabel(role, includeFallback = true) {
+      const key = getRoleHealthKey(role);
+      if (key === "ok") return t("projectWizard.roleHealthOk", undefined, "healthy");
+      if (key === "warning") return t("projectWizard.roleHealthWarning", undefined, "warning");
+      if (key === "error") return t("projectWizard.roleHealthError", undefined, "unhealthy");
+      return includeFallback ? t("projectWizard.roleHealthUnknown", undefined, "unknown") : "";
+    }
+
+    function filterRoleCatalogRoles(catalogRoles) {
+      const term = state.roleCatalogFilter.trim().toLowerCase();
+      const healthFilter = state.roleCatalogHealthFilter || "all";
+      return catalogRoles.filter((role) => {
+        const healthKey = getRoleHealthKey(role);
+        if (healthFilter !== "all" && healthKey !== healthFilter) {
+          return false;
+        }
+        if (!term) {
+          return true;
+        }
+        return [role.roleId, role.name, role.summary, role.description, role.source, getRoleHealthLabel(role, false)]
+          .filter(Boolean)
+          .some((item) => String(item).toLowerCase().includes(term));
+      });
+    }
+
     function ensureProjectWizardDraft(workspace) {
       if (!state.projectWizardDraft) {
         state.projectWizardDraft = getProjectWizardDefaults(workspace || state.workspace || {});
@@ -2388,6 +2446,7 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
       const validationClass = validation
         ? validation.isProject ? "" : validation.hasConflict || validation.exists === false || validation.readable === false ? " warn" : ""
         : "";
+      const workspaceState = getWorkspaceStateLabel(workspace);
       const validationHtml = validation
         ? '<div id="project-open-validation" class="event' + validationClass + '"><div class="event-top"><span>' + escapeText(t("projectOpen.validation", undefined, "Validation")) + '</span><span>' + escapeText(validation.isProject ? t("projectOpen.ready", undefined, "ready") : validation.isEmpty ? t("common.empty", undefined, "empty") : t("common.attention", undefined, "attention")) + '</span></div><strong>' + escapeText(validationMessage) + '</strong>' +
           (Array.isArray(validation.conflicts) && validation.conflicts.length ? '<div class="hint">' + escapeText(t("projectOpen.conflicts", { items: validation.conflicts.join(", ") }, "Conflicts: " + validation.conflicts.join(", "))) + '</div>' : "") +
@@ -2414,12 +2473,16 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
       const openPanelHtml = [
         '<form id="project-open-form" class="structure-list">',
         '<div class="event"><div class="event-top"><span>' + escapeText(t("projectMenu.open", undefined, "Open Project")) + '</span><span>' + escapeText(t("form.workspace", undefined, "workspace")) + '</span></div><strong>' + escapeText(t("projectOpen.title", undefined, "Load an existing OGSystem project")) + '</strong><div class="hint">' + escapeText(t("projectOpen.hint", undefined, "Choose a project directory. The server validates the path before rebinding the visualizer.")) + '</div></div>',
-        '<label><span>' + escapeText(t("projectOpen.currentDirectory", undefined, "Current directory")) + '</span><code>' + escapeText(workspace.workdir || getCurrentWorkdir() || "n/a") + '</code></label>',
+        '<div class="event"><div class="event-top"><span>' + escapeText(t("projectOpen.currentDirectory", undefined, "Current directory")) + '</span><span>' + escapeText(workspaceState) + '</span></div><strong><code>' + escapeText(workspace.workdir || getCurrentWorkdir() || "n/a") + '</code></strong><div class="hint">' + escapeText(t("projectOpen.currentDirectoryHint", undefined, "The current visualizer workdir is shown here so you can decide whether to load it, initialize it, or switch paths.")) + '</div></div>',
         browseSummaryHtml,
         browseErrorHtml,
         '<div class="toolbar-group"><button class="button subtle" id="project-open-browse-refresh" type="button"' + (state.projectOpenLoading ? " disabled" : "") + '>' + escapeText(t("projectOpen.refreshBrowse", undefined, "Refresh")) + '</button><button class="button subtle" id="project-open-validate" type="button"' + (state.projectOpenLoading ? " disabled" : "") + '>' + escapeText(t("projectOpen.validate", undefined, "Validate")) + '</button></div>',
         directoryHtml,
         projectSuggestionsHtml,
+        '<div class="toolbar-group">' +
+          '<button class="button primary" type="submit">' + escapeText(t("projectOpen.loadCurrent", undefined, "Load current project")) + '</button>' +
+          '<button class="button subtle" type="button" data-project-open-browse="' + escapeText(workspace.workdir || getCurrentWorkdir() || "") + '">' + escapeText(t("projectOpen.useOtherDirectory", undefined, "Use other directory")) + '</button>' +
+        '</div>',
         filesHtml,
         recentProjects.length
           ? '<div class="structure-list">' + recentProjects.map((item) => '<button class="button subtle" type="button" data-project-open-recent="' + escapeText(item) + '">' + escapeText(relativeToWorkdir(item)) + '</button>').join("") + '</div>'
@@ -2440,33 +2503,43 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
         const draft = ensureProjectWizardDraft(workspace);
         const conflict = workspace.state === "non-project-conflict";
         const catalogRoles = Array.isArray(state.roleCatalog?.roles) ? state.roleCatalog.roles : [];
-        const roleFilter = state.roleCatalogFilter.trim().toLowerCase();
-        const filteredCatalogRoles = catalogRoles.filter((role) => {
-          if (!roleFilter) return true;
-          return [role.roleId, role.name, role.summary, role.description, role.source, role.health?.status]
-            .filter(Boolean)
-            .some((item) => String(item).toLowerCase().includes(roleFilter));
-        });
-        const pageSize = state.roleCatalogPageSize === 24 ? 24 : 12;
+        const filteredCatalogRoles = filterRoleCatalogRoles(catalogRoles);
+        const pageSize = [12, 24, 48].includes(state.roleCatalogPageSize) ? state.roleCatalogPageSize : 24;
         const pageCount = Math.max(1, Math.ceil(filteredCatalogRoles.length / pageSize));
         state.roleCatalogPage = Math.min(Math.max(0, state.roleCatalogPage || 0), pageCount - 1);
         const pageStart = state.roleCatalogPage * pageSize;
         const visibleCatalogRoles = filteredCatalogRoles.slice(pageStart, pageStart + pageSize);
+        const selectedRoleIds = Array.isArray(draft.selectedRoleIds) ? draft.selectedRoleIds : [];
         const selectedRoles = (draft.selectedRoleIds || [])
           .map((roleId) => catalogRoles.find((role) => role.roleId === roleId) || { roleId })
           .filter((role) => role.roleId);
+        const healthCounts = catalogRoles.reduce((counts, role) => {
+          const key = getRoleHealthKey(role);
+          counts[key] = (counts[key] || 0) + 1;
+          return counts;
+        }, { all: catalogRoles.length, ok: 0, warning: 0, error: 0, unknown: 0 });
+        const healthFilters = [
+          ["all", t("common.all", undefined, "all"), healthCounts.all],
+          ["ok", t("projectWizard.roleHealthOk", undefined, "healthy"), healthCounts.ok],
+          ["warning", t("projectWizard.roleHealthWarning", undefined, "warning"), healthCounts.warning],
+          ["error", t("projectWizard.roleHealthError", undefined, "unhealthy"), healthCounts.error],
+          ["unknown", t("projectWizard.roleHealthUnknown", undefined, "unknown"), healthCounts.unknown]
+        ];
         const roleOptions = catalogRoles.length
           ? visibleCatalogRoles.map((role) => {
               const roleId = role.roleId || "";
               const imported = role.alreadyImported ? " · " + t("common.loaded", undefined, "loaded") : "";
-              const health = role.health?.status ? " · " + displayUiToken(role.health.status, t) : "";
-              const checked = draft.selectedRoleIds.includes(roleId) ? " checked" : "";
-              return '<label class="event"><input type="checkbox" name="roleIds" value="' + escapeText(roleId) + '"' + checked + '><span><strong>' + escapeText(role.name || roleId) + '</strong><span class="hint">' + escapeText(roleId + imported + health) + '</span></span></label>';
+              const health = " · " + getRoleHealthLabel(role);
+              const checked = selectedRoleIds.includes(roleId) ? " checked" : "";
+              return '<label class="event role-catalog-item"><input type="checkbox" name="roleIds" value="' + escapeText(roleId) + '"' + checked + '><span><strong>' + escapeText(role.name || roleId) + '</strong><span class="hint">' + escapeText(roleId + imported + health) + '</span></span></label>';
             }).join("")
           : '<div class="hint">' + escapeText(t("projectWizard.roleCatalogEmpty", undefined, "Installed role catalog is unavailable.")) + '</div>';
         const selectedSummary = selectedRoles.length
           ? selectedRoles.map((role) => role.name || role.roleId).join(", ")
           : t("projectWizard.roleCatalogSelectedEmpty", undefined, "No roles selected.");
+        const selectedSummaryText = selectedRoles.length
+          ? selectedRoles.map((role) => (role.name || role.roleId) + " (" + getRoleHealthLabel(role) + ")").join(", ")
+          : selectedSummary;
         const error = state.projectCreateError
           ? '<div class="event"><div class="event-top"><span>' + escapeText(t("common.attention", undefined, "attention")) + '</span><span>' + escapeText(state.projectCreateError.code || "error") + '</span></div><strong>' + escapeText(state.projectCreateError.message || t("projectWizard.createFailed", undefined, "Project creation failed.")) + '</strong></div>'
           : "";
@@ -2475,6 +2548,7 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
           '<div class="event"><div class="event-top"><span>' + escapeText(t("section.projectWizard", undefined, "Project Wizard")) + '</span><span>' + escapeText(conflict ? t("common.attention", undefined, "attention") : t("common.empty", undefined, "empty")) + '</span></div><strong>' +
             escapeText(conflict ? t("projectWizard.directoryConflictTitle", undefined, "Directory is not empty.") : t("projectWizard.emptyDirectoryTitle", undefined, "Start a new OGSystem project here.")) +
             '</strong><div class="hint">' + escapeText(conflict ? t("projectWizard.directoryConflictHint", undefined, "Initialize the current directory only if the existing files belong with this project, or load another project.") : t("projectWizard.emptyDirectoryHint", undefined, "No files are written until you confirm project creation.")) + '</div></div>',
+          '<div class="event"><div class="event-top"><span>' + escapeText(t("projectWizard.pathSummary", undefined, "Path summary")) + '</span><span>' + escapeText(t("projectWizard.pathSummaryMode", { mode: conflict ? t("projectWizard.pathSummaryConflict", undefined, "conflict") : t("projectWizard.pathSummaryClean", undefined, "ready") }, conflict ? "conflict" : "ready")) + '</span></div><strong>' + escapeText(t("projectWizard.pathSummaryTitle", undefined, "Current and target workdir stay visible while you choose whether to create or load.")) + '</strong><div class="hint">' + escapeText(t("projectWizard.pathSummaryHint", undefined, "Use Open Project for another path. Load current project reuses the active directory; initialize current directory keeps the current path and writes new project files only when you confirm.")) + '</div></div>',
           error,
           '<form id="project-create-form" class="structure-list">',
           '<div class="event"><div class="event-top"><span>' + escapeText(t("projectWizard.stepLabel", undefined, "Step")) + '</span><span>' + escapeText(
@@ -2500,18 +2574,20 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
           '<label><span>' + escapeText(t("projectWizard.projectName", undefined, "Project name")) + '</span><input name="projectName" value="' + escapeText(draft.projectName) + '"></label>',
           '<label><span>' + escapeText(t("projectWizard.projectId", undefined, "Project id")) + '</span><input name="projectId" value="' + escapeText(draft.projectId) + '"></label>',
           '<label><span>' + escapeText(t("projectWizard.template", undefined, "Template")) + '</span><select name="templateId"><option value="empty"' + (draft.templateId === "empty" ? " selected" : "") + '>' + escapeText(t("projectWizard.template.empty", undefined, "Blank draft")) + '</option><option value="minimal"' + (draft.templateId === "minimal" ? " selected" : "") + '>' + escapeText(t("projectWizard.template.minimal", undefined, "Minimal runnable")) + '</option><option value="software-dev"' + (draft.templateId === "software-dev" ? " selected" : "") + '>software-dev</option><option value="consultation"' + (draft.templateId === "consultation" ? " selected" : "") + '>consultation</option></select></label>',
+          '<div class="event"><div class="event-top"><span>' + escapeText(t("projectWizard.modelProfileSummary", undefined, "Model / profile strategy")) + '</span><span>' + escapeText(t("projectWizard.advanced", undefined, "advanced")) + '</span></div><strong>' +
+            escapeText(t("projectWizard.modelProfileSummaryTitle", undefined, "Keep model and profile defaults out of the main path unless you need them now.")) + '</strong><div class="hint">' + escapeText(t("projectWizard.modelProfileSummaryHint", undefined, "Default model and profile settings stay available here, but Build inspector remains the preferred place to refine them after creation.")) + '</div></div>',
           '<label><span>' + escapeText(t("projectWizard.defaultModel", undefined, "Default model")) + '</span><input name="defaultModelRef" value="' + escapeText(draft.defaultModelRef) + '"><span class="hint">' + escapeText(t("projectWizard.defaultModelHint", undefined, "Optional provider/model reference for generated model-selection defaults.")) + '</span></label>',
           '<label><span>' + escapeText(t("projectWizard.profileStrategy", undefined, "Profile strategy")) + '</span><select name="profileStrategy"><option value="visual-editor"' + (draft.profileStrategy === "visual-editor" ? " selected" : "") + '>' + escapeText(t("projectWizard.profileStrategy.visualEditor", undefined, "Configure in visual role editor")) + '</option><option value="create-profile"' + (draft.profileStrategy === "create-profile" ? " selected" : "") + '>' + escapeText(t("projectWizard.profileStrategy.createProfile", undefined, "Create reusable execution profile")) + '</option></select></label>',
           '<label><span>' + escapeText(t("projectWizard.defaultProfileId", undefined, "Default profile id")) + '</span><input name="defaultProfileId" value="' + escapeText(draft.defaultProfileId) + '"></label>',
-          '<label><span>' + escapeText(t("projectWizard.defaultToolRef", undefined, "Default tool")) + '</span><input name="defaultToolRef" value="' + escapeText(draft.defaultToolRef) + '"></label>',
-          '<div class="event"><div class="event-top"><span>' + escapeText(t("projectWizard.structureMode", undefined, "Structure mode")) + '</span><span>' + escapeText(draft.templateId === "empty" ? t("projectWizard.structureMode.blank", undefined, "Blank") : t("projectWizard.structureMode.template", undefined, "Template")) + '</span></div><strong>' +
-            escapeText(t("projectWizard.structureModeHint", undefined, "You can continue with a blank graph or refine it later with Chat / Generate in Build.")) + '</strong></div>'
+          '<label><span>' + escapeText(t("projectWizard.defaultToolRef", undefined, "Default tool")) + '</span><input name="defaultToolRef" value="' + escapeText(draft.defaultToolRef) + '"></label>'
           ].join("") : "",
           wizardStep === "structure" ? [
           '<div class="event"><div class="event-top"><span>' + escapeText(t("projectWizard.roleCatalog", undefined, "Installed roles")) + '</span><span>' + escapeText(String(catalogRoles.length)) + '</span></div><strong>' + escapeText(t("projectWizard.roleCatalogTitle", undefined, "Import role packages after project creation")) + '</strong><div class="hint">' + escapeText(t("projectWizard.roleCatalogCreateHint", undefined, "Selected roles are imported through the controlled role import API after the project is created.")) + '</div></div>',
           '<label><span>' + escapeText(t("projectWizard.roleCatalogSearch", undefined, "Search roles")) + '</span><input id="project-role-catalog-filter" value="' + escapeText(state.roleCatalogFilter) + '"><span class="hint">' + escapeText(t("projectWizard.roleCatalogSummary", { visible: String(visibleCatalogRoles.length), total: String(filteredCatalogRoles.length) }, "Showing " + String(visibleCatalogRoles.length) + " of " + String(filteredCatalogRoles.length))) + '</span></label>',
-          '<div class="toolbar-row compact"><div class="toolbar-group"><label><span>' + escapeText(t("projectWizard.roleCatalogPageSize", undefined, "Page size")) + '</span><select id="project-role-page-size"><option value="12"' + (pageSize === 12 ? " selected" : "") + '>12</option><option value="24"' + (pageSize === 24 ? " selected" : "") + '>24</option></select></label></div><div class="toolbar-group"><button class="button subtle" type="button" id="project-role-prev"' + (state.roleCatalogPage <= 0 ? " disabled" : "") + '>' + escapeText(t("common.previous", undefined, "Previous")) + '</button><span class="hint">' + escapeText(t("projectWizard.roleCatalogPage", { page: String(state.roleCatalogPage + 1), pages: String(pageCount) }, "Page " + String(state.roleCatalogPage + 1) + " of " + String(pageCount))) + '</span><button class="button subtle" type="button" id="project-role-next"' + (state.roleCatalogPage >= pageCount - 1 ? " disabled" : "") + '>' + escapeText(t("common.next", undefined, "Next")) + '</button></div></div>',
-          '<div class="event"><div class="event-top"><span>' + escapeText(t("projectWizard.roleCatalogSelected", undefined, "Selected roles")) + '</span><span>' + escapeText(String(selectedRoles.length)) + '</span></div><strong>' + escapeText(selectedSummary) + '</strong></div>',
+          '<div class="toolbar-row compact"><div class="toolbar-group"><label><span>' + escapeText(t("projectWizard.roleCatalogHealth", undefined, "Health")) + '</span><select id="project-role-health-filter">' +
+            healthFilters.map(([value, label, count]) => '<option value="' + escapeText(value) + '"' + (state.roleCatalogHealthFilter === value ? " selected" : "") + '>' + escapeText(label + " (" + String(count) + ")") + '</option>').join("") +
+          '</select></label></div><div class="toolbar-group"><label><span>' + escapeText(t("projectWizard.roleCatalogPageSize", undefined, "Page size")) + '</span><select id="project-role-page-size"><option value="12"' + (pageSize === 12 ? " selected" : "") + '>12</option><option value="24"' + (pageSize === 24 ? " selected" : "") + '>24</option><option value="48"' + (pageSize === 48 ? " selected" : "") + '>48</option></select></label></div><div class="toolbar-group"><span class="hint">' + escapeText(t("projectWizard.roleCatalogPagerSummary", { visible: String(visibleCatalogRoles.length), total: String(filteredCatalogRoles.length) }, String(visibleCatalogRoles.length) + " visible of " + String(filteredCatalogRoles.length))) + '</span><button class="button subtle" type="button" id="project-role-prev"' + (state.roleCatalogPage <= 0 ? " disabled" : "") + '>' + escapeText(t("common.previous", undefined, "Previous")) + '</button><span class="hint">' + escapeText(t("projectWizard.roleCatalogPage", { page: String(state.roleCatalogPage + 1), pages: String(pageCount) }, "Page " + String(state.roleCatalogPage + 1) + " of " + String(pageCount))) + '</span><button class="button subtle" type="button" id="project-role-next"' + (state.roleCatalogPage >= pageCount - 1 ? " disabled" : "") + '>' + escapeText(t("common.next", undefined, "Next")) + '</button></div></div>',
+          '<div class="event"><div class="event-top"><span>' + escapeText(t("projectWizard.roleCatalogSelected", undefined, "Selected roles")) + '</span><span>' + escapeText(String(selectedRoles.length)) + '</span></div><strong>' + escapeText(selectedSummaryText) + '</strong><div class="hint">' + escapeText(t("projectWizard.roleCatalogSelectedHint", undefined, "Selections remain visible even when the catalog filter changes.")) + '</div></div>',
           '<div class="structure-list">' + roleOptions + '</div>',
           '<div class="event"><div class="event-top"><span>' + escapeText(t("projectWizard.nl2mmdOption", undefined, "nl2mmd")) + '</span><span>' + escapeText(t("common.ready", undefined, "ready")) + '</span></div><strong>' + escapeText(t("projectWizard.nl2mmdOptionHint", undefined, "You can create a blank project now and generate the base framework later in Build with Chat / Generate.")) + '</strong></div>'
           ].join("") : "",
@@ -2585,11 +2661,20 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
             renderProjectWizard();
           });
         }
+        const healthFilterSelect = document.getElementById("project-role-health-filter");
+        if (healthFilterSelect) {
+          healthFilterSelect.addEventListener("change", (event) => {
+            updateProjectWizardDraftFromForm(form);
+            state.roleCatalogHealthFilter = event.target.value || "all";
+            state.roleCatalogPage = 0;
+            renderProjectWizard();
+          });
+        }
         const pageSizeSelect = document.getElementById("project-role-page-size");
         if (pageSizeSelect) {
           pageSizeSelect.addEventListener("change", (event) => {
             updateProjectWizardDraftFromForm(form);
-            state.roleCatalogPageSize = event.target.value === "24" ? 24 : 12;
+            state.roleCatalogPageSize = event.target.value === "12" || event.target.value === "24" || event.target.value === "48" ? Number(event.target.value) : 24;
             state.roleCatalogPage = 0;
             renderProjectWizard();
           });
@@ -2681,11 +2766,19 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
           state.roleCatalogPage = 0;
           renderProjectWizard();
         },
+        onHealthFilter: (value, form) => {
+          if (form) {
+            updateProjectWizardDraftFromForm(form);
+          }
+          state.roleCatalogHealthFilter = value || "all";
+          state.roleCatalogPage = 0;
+          renderProjectWizard();
+        },
         onPageSize: (value, form) => {
           if (form) {
             updateProjectWizardDraftFromForm(form);
           }
-          state.roleCatalogPageSize = value === "24" ? 24 : 12;
+          state.roleCatalogPageSize = value === "12" || value === "24" || value === "48" ? Number(value) : 24;
           state.roleCatalogPage = 0;
           renderProjectWizard();
         },

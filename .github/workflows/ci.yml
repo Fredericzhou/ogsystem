@@ -39,6 +39,8 @@ jobs:
         run: pnpm run build
       - name: Test
         run: pnpm test
+      - name: Visualizer browser smoke
+        run: pnpm run test:visualizer-browser
       - name: Dry-run regressions
         run: pnpm run test:examples
       - name: Doctor preflight

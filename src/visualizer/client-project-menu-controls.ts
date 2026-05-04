@@ -28,6 +28,7 @@ export function bindProjectWizardControls(args: {
   onCreateSubmit: (form: ElementLike) => void;
   onDraftFormChange: (form: ElementLike) => void;
   onRoleFilter: (value: string, form: ElementLike | null | undefined) => void;
+  onHealthFilter: (value: string, form: ElementLike | null | undefined) => void;
   onPageSize: (value: string, form: ElementLike | null | undefined) => void;
   onPrevPage: (form: ElementLike | null | undefined) => void;
   onNextPage: (form: ElementLike | null | undefined) => void;
@@ -99,6 +100,9 @@ export function bindProjectWizardControls(args: {
 
   args.getElementById("project-role-catalog-filter")?.addEventListener?.("input", (event) => {
     args.onRoleFilter(String(event.target?.value ?? ""), createForm);
+  });
+  args.getElementById("project-role-health-filter")?.addEventListener?.("change", (event) => {
+    args.onHealthFilter(String(event.target?.value ?? "all"), createForm);
   });
   args.getElementById("project-role-page-size")?.addEventListener?.("change", (event) => {
     args.onPageSize(String(event.target?.value ?? ""), createForm);

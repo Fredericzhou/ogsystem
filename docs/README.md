@@ -82,6 +82,7 @@
 - `docs/archive/delivery/ogsystem-visualizer-optimization-checklist-calibrated-2026-05-03.md`（delivered calibrated Visualizer optimization checklist across caching, SSE, client hot paths, accessibility, and risk validation）
 - `docs/archive/delivery/ogsystem-visualizer-http-runtime-isolation-decision-2026-05-04.md`（decision record for keeping Visualizer run execution in-process until evidence requires process isolation or queueing）
 - `docs/archive/delivery/ogsystem-visualizer-platform-validation-execution-plan-2026-05-04.md`（delivered platform validation closure for package install smoke, Windows lifecycle smoke, docs drift, status/logs/summary/provider/redaction/retention validation）
+- `docs/archive/delivery/ogsystem-visualizer-product-usability-gate-followup-2026-05-05.md`（follow-up record for browser smoke gating, controlled flash/error i18n, project wizard path selection, and role catalog usability）
 - `docs/archive/delivery/ogsystem-naming-style-review-2026-04-14.md`（archived naming audit; `flow/edge` conclusion superseded by 2026-04-15 alignment review）
 - `docs/archive/delivery/ogsystem-flow-edge-alignment-review-2026-04-15.md`（delivered flow/edge alignment audit and canonical decision）
 - `docs/archive/delivery/ogsystem-flow-edge-alignment-execution-plan-2026-04-15.md`（delivered flow/edge alignment rollout and closure record）

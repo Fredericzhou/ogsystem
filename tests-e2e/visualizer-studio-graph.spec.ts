@@ -103,7 +103,7 @@ test("Studio Bridge renders and edits through the real graph workspace", async (
         return original.call(this, root, options);
       };
     });
-    await page.getByRole("button", { name: "Build" }).click();
+    await page.getByRole("tab", { name: "Build" }).click();
     await expect(page.locator("#workbench-status")).toContainText("validation ok");
     await page.locator('[data-workbench-view="bridge"]').click();
 
@@ -113,7 +113,7 @@ test("Studio Bridge renders and edits through the real graph workspace", async (
     await expect.poll(async () => page.evaluate(() => {
       const app = document.querySelector(".app");
       const sidebar = document.getElementById("sidebar");
-      const content = document.querySelector("main.content");
+      const content = document.querySelector(".shell.content");
       if (!app || !sidebar || !content) return null;
       return {
         appColumnCount: getComputedStyle(app).gridTemplateColumns.split(" ").filter(Boolean).length,
@@ -148,18 +148,18 @@ test("Studio Bridge renders and edits through the real graph workspace", async (
     await page.evaluate(() => {
       (window as any).__studioGraphRoot = document.getElementById("studio-graph-root");
     });
-    await expect(page.getByRole("button", { name: "Build" })).toBeVisible();
-    await expect(page.getByRole("button", { name: "Validate & Release" })).toBeVisible();
+    await expect(page.getByRole("tab", { name: "Build" })).toBeVisible();
+    await expect(page.getByRole("tab", { name: "Validate & Release" })).toBeVisible();
     await expect(page.locator("#console-panel-build")).toBeVisible();
     await expect(page.locator("#build-project-summary")).toHaveCount(0);
     await expect(page.locator("#console-panel-build").getByRole("heading", { name: "Project Overview" })).toHaveCount(0);
     await expect(page.getByRole("heading", { name: "Project Readiness" })).toHaveCount(0);
     await expect(page.locator("#action-form-section")).toBeHidden();
-    await page.getByRole("button", { name: "Validate & Release" }).click();
+    await page.getByRole("tab", { name: "Validate & Release" }).click();
     await expect(page.locator("#release-gate")).toContainText("Release gate");
     await expect(page.locator("#release-gate")).toContainText("Quality signals");
     await expect(page.locator("#release-gate")).toContainText("Evidence and export scope");
-    await page.getByRole("button", { name: "Build" }).click();
+    await page.getByRole("tab", { name: "Build" }).click();
     await page.evaluate(() => {
       (window as any).__studioGraphRoot = document.getElementById("studio-graph-root");
     });
@@ -182,46 +182,48 @@ test("Studio Bridge renders and edits through the real graph workspace", async (
     await expect.poll(async () => page.evaluate(() => document.getElementById("studio-graph-root") === (window as any).__studioGraphRoot)).toBe(true);
     await expect(page.locator('#studio-graph-root [data-cell-id="new-role"]').first()).toBeVisible();
     await expect(page.locator("#studio-graph-root")).toContainText("需求分析");
-    await dragStudioPort(page, "new-role", "demo-analyst");
+    await page.locator('#studio-graph-root [data-studio-graph-action="add-edge"]').click();
     const addEdgeForm = page.locator('#studio-graph-root form[data-studio-command-form="add-edge"]');
     await expect(addEdgeForm).toBeVisible();
+    await expect(addEdgeForm.locator('select[name="sourceRoleId"]')).toHaveValue("new-role");
+    await expect(addEdgeForm.locator('select[name="targetRoleId"]')).toHaveValue("__system_end__");
     await addEdgeForm.locator('input[name="label"]').fill("需求已完成");
     await addEdgeForm.locator('input[name="eventType"]').fill("DONE");
     await addEdgeForm.locator('button[type="submit"]').click();
     await expect.poll(async () => page.evaluate(() => document.getElementById("studio-graph-root") === (window as any).__studioGraphRoot)).toBe(true);
-    await expect(page.locator('[data-studio-flow-key="new-role:DONE:demo-analyst"]')).toBeVisible();
+    await expect(page.locator('[data-studio-flow-key="new-role:DONE:output"]')).toBeVisible();
     await expect(page.locator("#studio-graph-root")).toContainText("需求已完成");
-    await page.locator('[data-studio-flow-key="new-role:DONE:demo-analyst"]').click();
+    await page.locator('[data-studio-flow-key="new-role:DONE:output"]').click();
     const editEdgeForm = page.locator('#studio-graph-root form[data-studio-command-form="edit-edge"]');
     await expect(editEdgeForm).toBeVisible();
     await expect(editEdgeForm.locator('input[name="label"]')).toHaveValue("需求已完成");
     await expect(editEdgeForm.locator('input[name="eventType"]')).toHaveValue("DONE");
     await editEdgeForm.locator('input[name="eventType"]').fill("HANDOFF");
     await editEdgeForm.locator('button[type="submit"]').click();
-    await expect(page.locator('[data-studio-flow-key="new-role:HANDOFF:demo-analyst"]')).toBeVisible();
+    await expect(page.locator('[data-studio-flow-key="new-role:HANDOFF:output"]')).toBeVisible();
     await expect(page.locator("#studio-graph-root")).toContainText("需求已完成");
     await page.locator("[data-studio-bridge-filter]").fill("需求已完成");
-    await expect(page.locator('[data-studio-flow-key="new-role:HANDOFF:demo-analyst"]')).toBeVisible();
+    await expect(page.locator('[data-studio-flow-key="new-role:HANDOFF:output"]')).toBeVisible();
     await expect(page.locator('[data-studio-flow-key="demo-analyst:DONE:output"]')).toHaveCount(0);
     await page.locator("[data-studio-bridge-filter]").fill("");
 
     await page.locator('#studio-graph-root [data-studio-graph-action="undo"]').click();
-    await expect(page.locator('[data-studio-flow-key="new-role:HANDOFF:demo-analyst"]')).toHaveCount(0);
-    await expect(page.locator('[data-studio-flow-key="new-role:DONE:demo-analyst"]')).toBeVisible();
+    await expect(page.locator('[data-studio-flow-key="new-role:HANDOFF:output"]')).toHaveCount(0);
+    await expect(page.locator('[data-studio-flow-key="new-role:DONE:output"]')).toBeVisible();
 
     await page.locator('#studio-graph-root [data-studio-graph-action="undo"]').click();
-    await expect(page.locator('[data-studio-flow-key="new-role:DONE:demo-analyst"]')).toHaveCount(0);
+    await expect(page.locator('[data-studio-flow-key="new-role:DONE:output"]')).toHaveCount(0);
 
     await page.locator('#studio-graph-root [data-studio-graph-action="redo"]').click();
-    await expect(page.locator('[data-studio-flow-key="new-role:DONE:demo-analyst"]')).toBeVisible();
+    await expect(page.locator('[data-studio-flow-key="new-role:DONE:output"]')).toBeVisible();
 
     await page.locator('#studio-graph-root [data-studio-graph-action="redo"]').click();
-    await expect(page.locator('[data-studio-flow-key="new-role:HANDOFF:demo-analyst"]')).toBeVisible();
+    await expect(page.locator('[data-studio-flow-key="new-role:HANDOFF:output"]')).toBeVisible();
 
     await page.locator('#studio-graph-root [data-studio-graph-action="undo"]').click();
-    await expect(page.locator('[data-studio-flow-key="new-role:DONE:demo-analyst"]')).toBeVisible();
+    await expect(page.locator('[data-studio-flow-key="new-role:DONE:output"]')).toBeVisible();
     await page.locator('#studio-graph-root [data-studio-graph-action="undo"]').click();
-    await expect(page.locator('[data-studio-flow-key="new-role:DONE:demo-analyst"]')).toHaveCount(0);
+    await expect(page.locator('[data-studio-flow-key="new-role:DONE:output"]')).toHaveCount(0);
     await page.locator('#studio-graph-root [data-studio-graph-action="undo"]').click();
     await expect(page.locator('#studio-graph-root [data-cell-id="new-role"]')).toHaveCount(0);
 
@@ -375,11 +377,11 @@ test("Studio Bridge renders and edits through the real graph workspace", async (
     await expect(page.locator("#console-panel-debug")).toBeVisible();
     await expect(page.locator("#console-panel-logs")).toBeHidden();
     await expect(page.locator("#console-panel-artifacts")).toBeHidden();
-    await page.getByRole("button", { name: "Graph" }).click();
+    await page.getByRole("tab", { name: "Graph" }).click();
     await expect(page.locator("#run-graph-root")).toBeVisible();
     await expect(page.locator('#run-graph-root [data-studio-graph-action="add-role"]')).toBeHidden();
     await expect(page.locator('#run-graph-root [data-studio-graph-action="undo"]')).toBeHidden();
-    await page.getByRole("button", { name: "Logs" }).click();
+    await page.getByRole("tab", { name: "Logs" }).click();
     await expect(page.locator("#console-panel-logs")).toBeVisible();
     await expect(page.locator("#load-logs")).toBeVisible();
   } finally {
@@ -399,11 +401,12 @@ test("empty workspace creates a project visually before graph editing", async ({
     await expect(page.locator("#project-wizard-load")).toHaveCount(0);
     await expect(page.locator("#project-create-form")).toBeVisible();
     await expect(page.locator('#project-create-form input[name="workdir"]')).toHaveAttribute("readonly", "readonly");
-    await expect(page.locator("#project-role-page-size")).toBeVisible();
     await page.locator('[data-project-menu-tab="open"]').click();
     await expect(page.locator("#project-open-form")).toBeVisible();
     await page.locator('[data-project-menu-tab="new"]').click();
     await expect(page.locator("#project-create-form")).toBeVisible();
+    await page.locator("#project-wizard-next").click();
+    await expect(page.locator('#project-create-form input[name="projectName"]')).toBeVisible();
     await expect(page.locator("#project-summary")).toContainText(/not initialized|Start a new OGSystem project/i);
 
     await page.locator('#console-tabs [data-console-tab="build"]').click();
@@ -411,10 +414,21 @@ test("empty workspace creates a project visually before graph editing", async ({
     await expect(page.locator("#studio-graph-root")).toHaveCount(0);
     await expect(page.locator("#workbench-body")).toContainText(/create or load/i);
 
-    await page.locator('#console-tabs [data-console-tab="project"]').click();
+    await page.getByRole("tab", { name: "Project" }).click();
+    await expect(page.locator("#project-create-form")).toBeVisible();
+    const projectNameField = page.locator('#project-create-form input[name="projectName"]');
+    if (await projectNameField.count() === 0) {
+      await page.locator("#project-wizard-back").click();
+    }
+    await expect(projectNameField).toBeVisible();
     await page.locator('#project-create-form input[name="projectName"]').fill("Empty Visual");
     await page.locator('#project-create-form input[name="projectId"]').fill("viz.empty.visual");
     await page.locator('#project-create-form select[name="templateId"]').selectOption("empty");
+    await page.locator("#project-wizard-next").click();
+    await expect(page.locator('#project-create-form input[name="projectName"]')).toHaveCount(0);
+    await expect(page.locator("#project-wizard")).toContainText(/Structure|结构/i);
+    await page.locator("#project-wizard-next").click();
+    await expect(page.locator("#project-wizard")).toContainText(/Review|复核/i);
     await page.locator('#project-create-form button[type="submit"]').click();
 
     await page.locator('#console-tabs [data-console-tab="build"]').click();
