@@ -24,6 +24,7 @@ import { loadModelCatalog } from "./model-catalog.js";
 import { loadModelSelection, resolveModelSelectionForSystem } from "./model-selection.js";
 import { executeOpencodeModelRole, startOpencodeRunClient } from "./opencode-executor.js";
 import { loadSystemFromMermaid } from "./parse-mermaid.js";
+import { redactText } from "./redaction.js";
 import { loadRolePackage } from "./role-repo.js";
 import { listRunArtifactPolicy } from "./run-artifact-policy.js";
 import {
@@ -40,6 +41,18 @@ type CheckResult = {
   path?: string;
 };
 
+export type ProviderHealthCheck = {
+  roleId?: string;
+  modelRef?: string;
+  status: "ok" | "failed" | "skipped";
+  code:
+    | "DOCTOR_PROVIDER_ONLINE_SKIPPED"
+    | "DOCTOR_PROVIDER_NO_MODEL_BINDINGS"
+    | "DOCTOR_PROVIDER_CONNECTIVITY_OK"
+    | "DOCTOR_PROVIDER_CONNECTIVITY_FAILED";
+  message: string;
+};
+
 export type DoctorReport = {
   status: "ok" | "failed";
   required: string[];
@@ -48,6 +61,7 @@ export type DoctorReport = {
   errors: string[];
   warnings: string[];
   notes: string[];
+  providerHealth: ProviderHealthCheck[];
   run?: {
     runDir: string;
     status?: string;
@@ -320,6 +334,11 @@ async function runOnlineModelConnectivityCheck(args: {
   });
   const resolvedModels = Array.from(resolvedSelection.resolvedByRoleId.entries());
   if (resolvedModels.length === 0) {
+    args.report.providerHealth.push({
+      status: "skipped",
+      code: "DOCTOR_PROVIDER_NO_MODEL_BINDINGS",
+      message: "online check skipped: system does not bind any model"
+    });
     addWarning(args.report, "online check skipped: system does not bind any model");
     return;
   }
@@ -364,11 +383,26 @@ async function runOnlineModelConnectivityCheck(args: {
           maxOutputBytes: selectionConfig.maxOutputBytes ?? 4096,
           runClient
         });
+        args.report.providerHealth.push({
+          roleId,
+          modelRef: selectionConfig.modelRef,
+          status: "ok",
+          code: "DOCTOR_PROVIDER_CONNECTIVITY_OK",
+          message: "online connectivity ok"
+        });
         addNote(args.report, `online connectivity ok: ${roleId} -> ${selectionConfig.modelRef}`);
       } catch (error) {
+        const message = redactText(error instanceof Error ? error.message : String(error));
+        args.report.providerHealth.push({
+          roleId,
+          modelRef: selectionConfig.modelRef,
+          status: "failed",
+          code: "DOCTOR_PROVIDER_CONNECTIVITY_FAILED",
+          message
+        });
         addError(
           args.report,
-          `online connectivity failed: ${roleId} -> ${selectionConfig.modelRef} (${String(error)})`
+          `online connectivity failed: ${roleId} -> ${selectionConfig.modelRef} (${message})`
         );
       }
     }
@@ -407,7 +441,8 @@ export async function runDoctor(args: {
     checks: ["opencode", "codex"].map((command) => checkCommand(command)),
     errors: [],
     warnings: [],
-    notes: []
+    notes: [],
+    providerHealth: []
   };
 
   report.missingRequired = report.checks
@@ -477,6 +512,17 @@ export async function runDoctor(args: {
         addWarning(report, warning);
       }
       addNote(report, `resolved model bindings: ${resolvedSelection.resolvedByRoleId.size}`);
+      if (!args.onlineCheck) {
+        for (const [roleId, selectionConfig] of resolvedSelection.resolvedByRoleId.entries()) {
+          report.providerHealth.push({
+            roleId,
+            modelRef: selectionConfig.modelRef,
+            status: "skipped",
+            code: "DOCTOR_PROVIDER_ONLINE_SKIPPED",
+            message: "online provider credential check skipped; pass --online-check to probe connectivity"
+          });
+        }
+      }
     } catch (error) {
       addError(report, `system invalid: ${String(error)}`);
     }

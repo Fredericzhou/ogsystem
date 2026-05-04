@@ -26,6 +26,14 @@ test("doctor validates system/runtime/law inputs", async () => {
   assert.equal(report.status, "ok");
   assert.equal(report.errors.length, 0);
   assert.ok(report.notes.some((item) => item.includes("system: demo.target.model.binding")));
+  assert.ok(
+    report.providerHealth.some(
+      (item) =>
+        item.status === "skipped" &&
+        item.code === "DOCTOR_PROVIDER_ONLINE_SKIPPED" &&
+        item.modelRef
+    )
+  );
 });
 
 test("doctor reports missing resume prerequisites in run dir inspection", async () => {

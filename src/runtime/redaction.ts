@@ -8,10 +8,16 @@ const DEFAULT_SECRET_PATTERNS: RegExp[] = [
   /\b(ghp_[A-Za-z0-9]{12,})\b/g
 ];
 const KEY_VALUE_SECRET_PATTERN =
-  /\b(password|passwd|token|secret|api[_-]?key)\s*[:=]\s*([^\s,"'}]+)/gi;
+  /\b(password|passwd|token|secret|api[_-]?key|authorization|credential)\s*[:=]\s*([^\s,"'}]+)/gi;
+const SENSITIVE_KEY_PATTERN =
+  /^(authorization|proxy-authorization|password|passwd|token|accessToken|refreshToken|secret|apiKey|api[_-]?key|credential|credentials|providerCredential|providerCredentials)$/i;
 
 function maskSecretLikeText(value: string): string {
   let redacted = value.replace(
+    /\b(authorization|proxy-authorization)\s*[:=]\s*([A-Za-z]+\s+[^\s,"'}]+|[^\s,"'}]+)/gi,
+    (_match, key: string) => `${key}=[REDACTED]`
+  );
+  redacted = redacted.replace(
     KEY_VALUE_SECRET_PATTERN,
     (_match, key: string) => `${key}=[REDACTED]`
   );
@@ -64,7 +70,7 @@ export function redactUnknown(value: unknown, config?: RuntimeRedactionConfig): 
     return Object.fromEntries(
       Object.entries(value as Record<string, unknown>).map(([key, entry]) => [
         key,
-        redactUnknown(entry, config)
+        SENSITIVE_KEY_PATTERN.test(key) ? "[REDACTED]" : redactUnknown(entry, config)
       ])
     );
   }

@@ -284,9 +284,17 @@ async function createFixtureRun(workdir) {
         status: "done",
         transitionCount: 5,
         durationMs: 42,
+        wallClockDurationMs: 42,
+        executionDurationMs: 12,
         lastRoleId: "alpha",
         finalRoleId: "alpha",
         executionDirCount: 1,
+        artifactIndexSummary: {
+          roleCount: 1,
+          executionDirCount: 1,
+          resumeConsumedPaths: ["state.json", "sessions.json"],
+          operatorProjectionPaths: ["summary.json", "timeline.jsonl", "logs/engine.ndjson"]
+        },
         okCount: 1,
         failedCount: 0,
         noopCount: 0,
@@ -383,12 +391,22 @@ async function createFixtureRun(workdir) {
   );
   await writeFile(
     path.resolve(runDir, "logs", "engine.ndjson"),
-    JSON.stringify({ type: "engine", at: "2026-04-16T01:02:04.000Z", message: "ok" }) + "\n",
+    JSON.stringify({
+      type: "engine",
+      at: "2026-04-16T01:02:04.000Z",
+      message: "ok Authorization: Bearer sk-visualizersecret123456"
+    }) + "\n",
     "utf8"
   );
   await writeFile(
     path.resolve(runDir, "logs", "roles", "alpha.ndjson"),
-    JSON.stringify({ type: "audit", at: "2026-04-16T01:02:04.000Z", roleId: "alpha", status: "ok" }) +
+    JSON.stringify({
+      type: "audit",
+      at: "2026-04-16T01:02:04.000Z",
+      roleId: "alpha",
+      status: "ok",
+      providerCredentials: { apiKey: "sk-rolelogsecret123456" }
+    }) +
       "\n",
     "utf8"
   );
@@ -973,11 +991,15 @@ test("visualizer server serves run list, details, and live stream", async (t) =>
     assert.equal(engineLogsResponse.status, 200);
     const engineLogs = await engineLogsResponse.json();
     assert.equal(engineLogs.records.length, 1);
+    assert.doesNotMatch(JSON.stringify(engineLogs), /sk-visualizersecret123456/);
+    assert.match(JSON.stringify(engineLogs), /\[REDACTED\]/);
 
     const roleLogsResponse = await fetch(`${url}/api/v1/runs/${runId}/logs?roleId=alpha`);
     assert.equal(roleLogsResponse.status, 200);
     const roleLogs = await roleLogsResponse.json();
     assert.equal(roleLogs.records.length, 1);
+    assert.doesNotMatch(JSON.stringify(roleLogs), /sk-rolelogsecret123456/);
+    assert.match(JSON.stringify(roleLogs), /\[REDACTED\]/);
 
     const filteredRoleLogsResponse = await fetch(
       `${url}/api/v1/runs/${runId}/logs?roleId=alpha&tail=1&since=2026-04-16T01:02:04.000Z`

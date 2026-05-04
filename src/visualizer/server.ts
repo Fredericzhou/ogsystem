@@ -28,6 +28,7 @@ import {
   resolveRunDir,
   writeHumanReviewDecision
 } from "../runtime/project-lifecycle.js";
+import { redactUnknown } from "../runtime/redaction.js";
 import {
   loadTimelineTailSnapshot,
   projectTimelineRecord
@@ -1392,7 +1393,7 @@ async function handleApiRunLogs(
     since,
     tail: Number.isFinite(tail) ? tail : undefined
   });
-  jsonResponse(response, 200, { records });
+  jsonResponse(response, 200, { records: redactUnknown(records) });
 }
 
 async function handleApiRunGraph(workdir: string, runId: string, response: ServerResponse): Promise<void> {
