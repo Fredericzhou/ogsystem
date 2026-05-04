@@ -310,6 +310,13 @@ test("lifecycle cli run start/list/status/logs/resume/stop works end-to-end", { 
   assert.equal(listPayload.runs.length, 1);
   const runId = listPayload.runs[0].runId;
   assert.match(runId, /^\d{8}-\d{6}-[a-f0-9]{8}$/);
+  assert.equal(typeof listPayload.runs[0].durationMs, "number");
+  assert.equal(typeof listPayload.runs[0].wallClockDurationMs, "number");
+  assert.equal(typeof listPayload.runs[0].executionDurationMs, "number");
+  assert.equal(typeof listPayload.runs[0].lastRoleId, "string");
+  assert.equal(typeof listPayload.runs[0].finalRoleId, "string");
+  assert.equal(listPayload.runs[0].lastErrorCode, undefined);
+  assert.equal(listPayload.runs[0].stopReason, undefined);
   const runDir = path.resolve(tempRoot, ".ogs", "runs", runId);
   const summaryPath = path.resolve(runDir, "summary.json");
   const timelinePath = path.resolve(runDir, "timeline.jsonl");
@@ -318,6 +325,15 @@ test("lifecycle cli run start/list/status/logs/resume/stop works end-to-end", { 
   assert.equal(summary.status, "done");
   assert.equal(typeof summary.transitionCount, "number");
   assert.equal(typeof summary.executionDirCount, "number");
+  assert.equal(typeof summary.durationMs, "number");
+  assert.equal(typeof summary.wallClockDurationMs, "number");
+  assert.equal(typeof summary.executionDurationMs, "number");
+  assert.equal(summary.lastRoleId, listPayload.runs[0].lastRoleId);
+  assert.equal(summary.finalRoleId, listPayload.runs[0].finalRoleId);
+  assert.equal(summary.lastErrorCode, undefined);
+  assert.equal(summary.stopReason, undefined);
+  assert.equal(summary.artifactIndexSummary.roleCount > 0, true);
+  assert.ok(summary.artifactIndexSummary.resumeConsumedPaths.includes("state.json"));
   assert.equal(typeof summary.okCount, "number");
   assert.equal(typeof summary.failedCount, "number");
   assert.equal(typeof summary.noopCount, "number");
@@ -332,6 +348,14 @@ test("lifecycle cli run start/list/status/logs/resume/stop works end-to-end", { 
   const statusPayload = JSON.parse(status.stdout);
   assert.equal(statusPayload.status, "done");
   assert.equal(statusPayload.summary.status, "done");
+  assert.equal(typeof statusPayload.durationMs, "number");
+  assert.equal(typeof statusPayload.wallClockDurationMs, "number");
+  assert.equal(typeof statusPayload.executionDurationMs, "number");
+  assert.equal(statusPayload.lastRoleId, listPayload.runs[0].lastRoleId);
+  assert.equal(statusPayload.finalRoleId, listPayload.runs[0].finalRoleId);
+  assert.equal(statusPayload.lastErrorCode, null);
+  assert.equal(statusPayload.stopReason, null);
+  assert.equal(statusPayload.stopOutcomeStatus, null);
 
   const logs = await runCli(["run", "logs", runId, "--engine", "--json", "--workdir", tempRoot]);
   assert.strictEqual(logs.code, 0);
@@ -376,6 +400,18 @@ test("lifecycle cli run start/list/status/logs/resume/stop works end-to-end", { 
   assert.strictEqual(sinceLogs.code, 0);
   const sinceLogsPayload = JSON.parse(sinceLogs.stdout);
   assert.equal(Array.isArray(sinceLogsPayload), true);
+  const invalidSinceLogs = await runCli([
+    "run",
+    "logs",
+    runId,
+    "--engine",
+    "--since",
+    "not-a-date",
+    "--workdir",
+    tempRoot
+  ]);
+  assert.strictEqual(invalidSinceLogs.code, 1);
+  assert.match(invalidSinceLogs.stderr, /Invalid --since timestamp: not-a-date/);
   const followLogs = await runCli([
     "run",
     "logs",

@@ -48,7 +48,8 @@ function createArgs(state, now) {
     state,
     plan: {
       systemId: "summary.test",
-      systemVersion: "1.0.0"
+      systemVersion: "1.0.0",
+      roleIds: ["writer", "reviewer"]
     },
     runContext: {
       runId: "run-summary-test",
@@ -68,8 +69,38 @@ test("run summary keeps wall clock and execution duration separate for runs with
   assert.equal(projection.wallClockDurationMs, 600000);
   assert.equal(projection.executionDurationMs, 2000);
   assert.equal(projection.humanReviewWaitDurationMs, 0);
+  assert.equal(projection.lastRoleId, "reviewer");
+  assert.equal(projection.lastErrorCode, undefined);
+  assert.equal(projection.stopReason, undefined);
+  assert.equal(projection.artifactIndexSummary.roleCount, 2);
+  assert.equal(projection.artifactIndexSummary.executionDirCount, 2);
+  assert.ok(projection.artifactIndexSummary.resumeConsumedPaths.includes("state.json"));
+  assert.ok(projection.artifactIndexSummary.operatorProjectionPaths.includes("summary.json"));
   assert.equal(projection.reviewRoundCount, 0);
   assert.equal(projection.latestPendingReviewId, undefined);
+});
+
+test("run summary records terminal error and stop fields for stopped projections", () => {
+  const projection = buildRunSummaryProjection(
+    createArgs(
+      createBaseState({
+        status: "stopped",
+        error: "operator stop",
+        errorEnvelope: {
+          errorCode: "RUN_STOP_REQUESTED",
+          errorCategory: "state",
+          message: "operator stop",
+          retryable: false,
+          stage: "execute"
+        }
+      }),
+      "2026-04-22T10:10:00.000Z"
+    )
+  );
+
+  assert.equal(projection.stopReason, "operator stop");
+  assert.equal(projection.stopOutcome, "stopped");
+  assert.equal(projection.lastErrorCode, "RUN_STOP_REQUESTED");
 });
 
 test("run summary records single-round review approval metrics", () => {

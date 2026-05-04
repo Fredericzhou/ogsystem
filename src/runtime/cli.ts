@@ -1214,6 +1214,20 @@ async function runRunCommand(argv: string[]): Promise<void> {
               : typeof detail.hasWaitingHumanReview === "boolean"
                 ? detail.hasWaitingHumanReview
               : undefined,
+          durationMs: summary?.durationMs ?? null,
+          wallClockDurationMs: summary?.wallClockDurationMs ?? null,
+          executionDurationMs: summary?.executionDurationMs ?? null,
+          stopReason:
+            typeof detail.stopReason === "string"
+              ? detail.stopReason
+              : summary?.stopReason ?? null,
+          stopOutcomeStatus:
+            typeof detail.stopOutcomeStatus === "string"
+              ? detail.stopOutcomeStatus
+              : summary?.stopOutcome ?? null,
+          lastErrorCode: summary?.lastErrorCode ?? null,
+          lastRoleId: summary?.lastRoleId ?? null,
+          finalRoleId: summary?.finalRoleId ?? null,
           stopRequest: detail.stopRequest ?? null,
           stopOutcome: detail.stopOutcome ?? null,
           summary: detail.summary ?? null

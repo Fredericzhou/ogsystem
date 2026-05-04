@@ -23,8 +23,16 @@ export type RunSummaryProjection = {
   humanReviewWaitDurationMs: number;
   lastRoleId?: string;
   lastErrorCode?: string;
+  stopReason?: string;
+  stopOutcome?: "stopped" | "failed";
   finalRoleId?: string;
   executionDirCount: number;
+  artifactIndexSummary: {
+    roleCount: number;
+    executionDirCount: number;
+    resumeConsumedPaths: string[];
+    operatorProjectionPaths: string[];
+  };
   okCount: number;
   failedCount: number;
   noopCount: number;
@@ -194,8 +202,34 @@ export function buildRunSummaryProjection(args: {
     humanReviewWaitDurationMs: reviewFields.humanReviewWaitDurationMs,
     lastRoleId: args.state.lastExecutedRoleId || undefined,
     lastErrorCode: args.state.errorEnvelope?.errorCode,
+    stopReason:
+      args.state.status === "stopped" || args.state.status === "failed"
+        ? args.state.error || undefined
+        : undefined,
+    stopOutcome:
+      args.state.status === "stopped" || args.state.status === "failed"
+        ? args.state.status
+        : undefined,
     finalRoleId: args.state.finalRoleId || undefined,
     executionDirCount: args.runContext.executionDirCount,
+    artifactIndexSummary: {
+      roleCount: args.plan.roleIds.length,
+      executionDirCount: args.runContext.executionDirCount,
+      resumeConsumedPaths: [
+        "state.json",
+        "sessions.json",
+        "plan-fingerprint.json",
+        "checkpoints/",
+        "control/reviews/"
+      ],
+      operatorProjectionPaths: [
+        "summary.json",
+        "timeline.jsonl",
+        "events.ndjson",
+        "logs/engine.ndjson",
+        "logs/roles/"
+      ]
+    },
     okCount: summary.okCount,
     failedCount: summary.failedCount,
     noopCount: summary.noopCount,

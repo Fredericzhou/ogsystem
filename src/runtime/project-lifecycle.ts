@@ -49,6 +49,14 @@ export type IndexedRun = {
   runId: string;
   status: string;
   transitionCount: number;
+  durationMs?: number;
+  wallClockDurationMs?: number;
+  executionDurationMs?: number;
+  stopReason?: string;
+  stopOutcome?: string;
+  stopOutcomeStatus?: string;
+  lastErrorCode?: string;
+  lastRoleId?: string;
   finalRoleId?: string;
   pendingReviewCount?: number;
   hasWaitingHumanReview?: boolean;
@@ -794,6 +802,35 @@ function derivePendingReviewFields(args: {
   };
 }
 
+function deriveStopFields(args: {
+  summary?: RunSummaryProjection;
+  stopRequest?: unknown;
+  stopOutcome?: unknown;
+}): {
+  stopReason?: string;
+  stopOutcome?: string;
+} {
+  const stopOutcomeRecord =
+    typeof args.stopOutcome === "object" &&
+    args.stopOutcome !== null &&
+    !Array.isArray(args.stopOutcome)
+      ? (args.stopOutcome as Record<string, unknown>)
+      : undefined;
+  const stopRequestRecord =
+    typeof args.stopRequest === "object" &&
+    args.stopRequest !== null &&
+    !Array.isArray(args.stopRequest)
+      ? (args.stopRequest as Record<string, unknown>)
+      : undefined;
+  return {
+    stopReason:
+      asString(stopOutcomeRecord?.reason) ??
+      asString(stopRequestRecord?.reason) ??
+      args.summary?.stopReason,
+    stopOutcome: asString(stopOutcomeRecord?.status) ?? args.summary?.stopOutcome
+  };
+}
+
 async function ensureFile(path: string, value: string): Promise<void> {
   try {
     await stat(path);
@@ -1089,14 +1126,21 @@ export async function loadIndexedRuns(workdir: string): Promise<IndexedRun[]> {
       continue;
     }
     const runDir = resolve(runsDir, entry.name);
-    const [summaryRaw, stateRaw] = await Promise.all([
+    const [summaryRaw, stateRaw, stopRequestRaw, stopOutcomeRaw] = await Promise.all([
       tryReadJson(resolve(runDir, "summary.json")),
-      tryReadJson(resolve(runDir, "state.json"))
+      tryReadJson(resolve(runDir, "state.json")),
+      tryReadJson(resolve(runDir, "control", "stop-request.json")),
+      tryReadJson(resolve(runDir, "control", "stop-outcome.json"))
     ]);
     const summary = asSummaryProjection(summaryRaw);
     const reviewFields = derivePendingReviewFields({
       summary,
       state: stateRaw
+    });
+    const stopFields = deriveStopFields({
+      summary,
+      stopRequest: stopRequestRaw,
+      stopOutcome: stopOutcomeRaw
     });
     // Compatibility read: tolerate both flattened status fields and nested graphState snapshots
     // so index rebuilding can survive schema transitions across runtime versions.
@@ -1123,6 +1167,14 @@ export async function loadIndexedRuns(workdir: string): Promise<IndexedRun[]> {
         indexedState?.transitionCount ??
         indexedState?.graphState?.transitionCount ??
         0,
+      durationMs: summary?.durationMs,
+      wallClockDurationMs: summary?.wallClockDurationMs,
+      executionDurationMs: summary?.executionDurationMs,
+      stopReason: stopFields.stopReason,
+      stopOutcome: stopFields.stopOutcome,
+      stopOutcomeStatus: stopFields.stopOutcome,
+      lastErrorCode: summary?.lastErrorCode,
+      lastRoleId: summary?.lastRoleId,
       finalRoleId:
         summary?.finalRoleId ?? indexedState?.finalRoleId ?? indexedState?.graphState?.finalRoleId,
       pendingReviewCount: reviewFields.pendingReviewCount,
@@ -1179,6 +1231,28 @@ export async function loadPersistedRunsIndex(workdir: string): Promise<RunsIndex
         runId,
         status,
         transitionCount,
+        durationMs:
+          typeof item.durationMs === "number" && Number.isFinite(item.durationMs)
+            ? item.durationMs
+            : undefined,
+        wallClockDurationMs:
+          typeof item.wallClockDurationMs === "number" && Number.isFinite(item.wallClockDurationMs)
+            ? item.wallClockDurationMs
+            : undefined,
+        executionDurationMs:
+          typeof item.executionDurationMs === "number" && Number.isFinite(item.executionDurationMs)
+            ? item.executionDurationMs
+            : undefined,
+        stopReason: typeof item.stopReason === "string" ? item.stopReason : undefined,
+        stopOutcome: typeof item.stopOutcome === "string" ? item.stopOutcome : undefined,
+        stopOutcomeStatus:
+          typeof item.stopOutcomeStatus === "string"
+            ? item.stopOutcomeStatus
+            : typeof item.stopOutcome === "string"
+              ? item.stopOutcome
+              : undefined,
+        lastErrorCode: typeof item.lastErrorCode === "string" ? item.lastErrorCode : undefined,
+        lastRoleId: typeof item.lastRoleId === "string" ? item.lastRoleId : undefined,
         finalRoleId: typeof item.finalRoleId === "string" ? item.finalRoleId : undefined,
         pendingReviewCount:
           typeof item.pendingReviewCount === "number" && Number.isFinite(item.pendingReviewCount)
@@ -1229,6 +1303,11 @@ export async function inspectRun(workdir: string, runId: string): Promise<Record
     summary: summaryProjection,
     state
   });
+  const stopFields = deriveStopFields({
+    summary: summaryProjection,
+    stopRequest,
+    stopOutcome
+  });
   return {
     runId,
     runDir,
@@ -1237,6 +1316,8 @@ export async function inspectRun(workdir: string, runId: string): Promise<Record
     resolvedConfig,
     stopRequest,
     stopOutcome,
+    stopReason: stopFields.stopReason,
+    stopOutcomeStatus: stopFields.stopOutcome,
     summary: summaryProjection,
     pendingReviewCount: reviewFields.pendingReviewCount,
     hasWaitingHumanReview: reviewFields.hasWaitingHumanReview,
@@ -1509,6 +1590,9 @@ export async function loadRunLogs(args: {
   }
   if (args.roleId && args.engine) {
     throw new Error("Choose either --engine or --role");
+  }
+  if (args.since && normalizeIsoTimestamp(args.since) === undefined) {
+    throw new Error(`Invalid --since timestamp: ${args.since}`);
   }
 
   const sourcePath = args.roleId
