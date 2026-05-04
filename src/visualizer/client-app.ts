@@ -2964,6 +2964,33 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
         state.stream.close();
         state.stream = null;
       }
+      clearTimeout(state.streamRefreshTimer);
+      state.streamRefreshTimer = null;
+      state.streamRefreshPlan = createInitialStreamRefreshPlan();
+      state.streamRefreshRunId = "";
+    }
+
+    function disposeVisualizerClient() {
+      stopStream();
+      resetWorkbenchValidationTimer();
+      clearTimeout(state.flashTimer);
+      state.flashTimer = null;
+      if (state.listTimer) {
+        clearInterval(state.listTimer);
+        state.listTimer = null;
+      }
+    }
+
+    function resetWorkbenchValidationTimer() {
+      clearTimeout(state.workbenchValidationTimer);
+      state.workbenchValidationTimer = null;
+    }
+
+    function resetStreamRefreshForRun(runId) {
+      clearTimeout(state.streamRefreshTimer);
+      state.streamRefreshTimer = null;
+      state.streamRefreshPlan = createInitialStreamRefreshPlan();
+      state.streamRefreshRunId = runId;
     }
 
     function populateLogRoleOptions(graphPayload, fallbackRoleId) {
@@ -3325,7 +3352,7 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
     }
 
     function scheduleWorkbenchValidation() {
-      clearTimeout(state.workbenchValidationTimer);
+      resetWorkbenchValidationTimer();
       state.workbenchValidationTimer = setTimeout(() => {
         void runWorkbenchValidation(false).catch((error) => {
           state.workbenchValidating = false;
@@ -4246,6 +4273,7 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
 
     async function selectRun(runId) {
       if (!runId) return;
+      stopStream();
       state.projectHome = false;
       if (state.consoleTab === "project" || state.consoleTab === "build" || state.consoleTab === "validate-release") {
         state.consoleTab = "operate";
@@ -4253,6 +4281,7 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
       }
       state.selectedRunId = runId;
       state.selectedReviewId = "";
+      resetStreamRefreshForRun(runId);
       closeActionForm();
       setSidebarOpen(false);
       renderRuns();
@@ -4261,6 +4290,7 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
 
     function selectProjectHome() {
       stopStream();
+      resetWorkbenchValidationTimer();
       state.projectHome = true;
       state.consoleTab = "project";
       state.selectedRunId = "";
@@ -4395,18 +4425,19 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
     }
 
     async function flushStreamRefresh() {
-      if (state.streamRefreshInFlight || !state.selectedRunId) {
+      if (state.streamRefreshInFlight) {
+        scheduleStreamRefresh();
         return;
       }
+      if (!state.selectedRunId || state.streamRefreshRunId !== state.selectedRunId) {
+        state.streamRefreshPlan = createInitialStreamRefreshPlan();
+        state.streamRefreshRunId = state.selectedRunId || "";
+        return;
+      }
+      state.streamRefreshTimer = null;
+      const runId = state.selectedRunId;
       const plan = state.streamRefreshPlan;
-      state.streamRefreshPlan = {
-        detailGraph: false,
-        reviews: false,
-        reviewDetail: false,
-        failure: false,
-        resumeReadiness: false,
-        markDiagnosticsStale: false
-      };
+      state.streamRefreshPlan = createInitialStreamRefreshPlan();
       if (plan.failure) {
         state.failureStale = state.failureLoaded || state.failureStale;
       }
@@ -4427,24 +4458,47 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
       state.streamRefreshInFlight = true;
       try {
         await Promise.all([
-          plan.detailGraph ? refreshRunDetailAndGraph(state.selectedRunId) : Promise.resolve(),
-          plan.failure ? loadFailure(state.selectedRunId, { force: true, internal: true, suppressFlash: true }) : Promise.resolve(),
-          plan.resumeReadiness ? loadResumeReadiness(state.selectedRunId, { force: true, internal: true, suppressFlash: true }) : Promise.resolve()
+          plan.detailGraph ? refreshRunDetailAndGraph(runId) : Promise.resolve(),
+          plan.failure ? loadFailure(runId, { force: true, internal: true, suppressFlash: true }) : Promise.resolve(),
+          plan.resumeReadiness ? loadResumeReadiness(runId, { force: true, internal: true, suppressFlash: true }) : Promise.resolve()
         ]);
         if (plan.reviews) {
-          await refreshReviews(state.selectedRunId);
+          await refreshReviews(runId);
         } else if (plan.reviewDetail) {
-          await refreshSelectedReviewDetail(state.selectedRunId, { allowMissing: true });
+          await refreshSelectedReviewDetail(runId, { allowMissing: true });
         }
       } catch (error) {
         setFlash("error", t("stream.refreshFailed", { message: error.message || error }, "Stream refresh failed: {message}"));
       } finally {
         state.streamRefreshInFlight = false;
+        if (state.streamRefreshRunId === runId && state.selectedRunId === runId) {
+          const pendingPlan = state.streamRefreshPlan;
+          if (
+            pendingPlan.detailGraph ||
+            pendingPlan.reviews ||
+            pendingPlan.reviewDetail ||
+            pendingPlan.failure ||
+            pendingPlan.resumeReadiness ||
+            pendingPlan.markDiagnosticsStale
+          ) {
+            scheduleStreamRefresh();
+          }
+        }
       }
     }
 
     function scheduleStreamRefresh(plan) {
-      mergeStreamRefreshPlan(plan);
+      if (plan) {
+        mergeStreamRefreshPlan(plan);
+      }
+      if (!state.selectedRunId) {
+        state.streamRefreshPlan = createInitialStreamRefreshPlan();
+        state.streamRefreshRunId = "";
+        clearTimeout(state.streamRefreshTimer);
+        state.streamRefreshTimer = null;
+        return;
+      }
+      state.streamRefreshRunId = state.selectedRunId;
       clearTimeout(state.streamRefreshTimer);
       state.streamRefreshTimer = setTimeout(() => {
         void flushStreamRefresh();
@@ -4453,10 +4507,14 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
 
     function connectStream(runId, cursor) {
       stopStream();
+      resetStreamRefreshForRun(runId);
       const stream = new EventSource(\`\${API_PREFIX}/runs/\${encodeURIComponent(runId)}/stream?cursor=\${cursor}\`);
       state.stream = stream;
       stream.onopen = () => setLive("online", t("live.live"));
       stream.onmessage = (message) => {
+        if (state.selectedRunId !== runId) {
+          return;
+        }
         try {
           const payload = JSON.parse(message.data);
           if (!payload || !payload.record || typeof payload.cursor !== "number") {
@@ -4652,6 +4710,7 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
     logPageSizeEl.value = state.logPageSize;
     logSinceEl.value = state.logSince;
     syncTimelineFilterInputs();
+    window.OGSVisualizerClient.dispose = disposeVisualizerClient;
 
     function renderWorkspaceLoadFailure(error) {
       const message = String(error.message || error);

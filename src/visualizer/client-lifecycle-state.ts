@@ -122,6 +122,7 @@ export function createInitialVisualizerState(resolvedLocale: string) {
     actionBusy: "",
     actionForm: null,
     streamRefreshPlan: createInitialStreamRefreshPlan(),
+    streamRefreshRunId: "",
     streamRefreshTimer: null,
     streamRefreshInFlight: false
   };

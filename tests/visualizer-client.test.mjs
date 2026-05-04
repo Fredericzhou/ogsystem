@@ -1958,6 +1958,7 @@ async function createClientHarness(options = {}) {
     confirmCalls,
     document,
     eventSources,
+    intervals,
     window: windowObject,
     promptCalls,
     async flushTimers() {
@@ -1969,6 +1970,16 @@ async function createClientHarness(options = {}) {
         }
         await settle();
       }
+    },
+    async tickIntervals() {
+      const callbacks = [...intervals.values()];
+      for (const callback of callbacks) {
+        await callback();
+      }
+      await settle();
+    },
+    dispose() {
+      windowObject.OGSVisualizerClient?.dispose?.();
     }
   };
 }
@@ -2756,6 +2767,48 @@ test("visualizer client refreshes failure panels when switching runs", async () 
   );
 });
 
+test("visualizer client ignores stale SSE refreshes after switching runs", async () => {
+  const harness = await createClientHarness({
+    backend: createBackend({ includeSecondRun: true })
+  });
+
+  const initialStream = harness.eventSources.at(-1);
+  assert.ok(initialStream);
+
+  const runButtons = harness.document.getElementById("run-list").querySelectorAll("[data-run-id]");
+  const secondRunButton = runButtons.find((button) => button.getAttribute("data-run-id") === "run-456");
+  assert.ok(secondRunButton);
+  await secondRunButton.click();
+  await settle();
+
+  harness.backend.fetchCalls.length = 0;
+  initialStream.emit({
+    cursor: 3,
+    record: {
+      type: "runtime_error",
+      at: "2026-04-23T09:16:30.000Z",
+      roleId: "demo-analyst",
+      errorCode: "E_STALE"
+    }
+  });
+  await harness.flushTimers();
+
+  assert.equal(initialStream.closed, true);
+  assert.equal(harness.document.getElementById("timeline").innerHTML.includes("#3"), false);
+  assert.equal(
+    harness.backend.fetchCalls.some((call) => call.path === "/api/v1/runs/run-456"),
+    false
+  );
+  assert.equal(
+    harness.backend.fetchCalls.some((call) => call.path === "/api/v1/runs/run-456/failure"),
+    false
+  );
+  assert.equal(
+    harness.backend.fetchCalls.some((call) => call.path === "/api/v1/runs/run-456/resume-readiness"),
+    false
+  );
+});
+
 test("visualizer client review action captures audit input, disables controls while busy, and flashes success", async () => {
   const decisionDeferred = createDeferred();
   const harness = await createClientHarness({
@@ -2931,6 +2984,78 @@ test("visualizer client appends SSE timeline entries and refreshes only targeted
   assert.ok(readinessCallsAfter > 0);
 });
 
+test("visualizer client requeues stream refresh plans that arrive during an in-flight refresh", async () => {
+  const refreshDeferred = createDeferred();
+  const harness = await createClientHarness({ decisionPhase: "recorded" });
+  const originalHandle = harness.backend.handle.bind(harness.backend);
+  let blockedDetailCalls = 0;
+  harness.backend.handle = async (url, request = {}) => {
+    const parsed = new URL(url, "http://visualizer.test");
+    if (
+      parsed.pathname === "/api/v1/runs/run-123" &&
+      (request.method ?? "GET") === "GET" &&
+      blockedDetailCalls === 0
+    ) {
+      blockedDetailCalls += 1;
+      harness.backend.fetchCalls.push({ method: request.method ?? "GET", path: `${parsed.pathname}${parsed.search}`, body: request.body ?? null });
+      await refreshDeferred.promise;
+      return createResponse(buildRunFixture({
+        runId: "run-123",
+        reviewId: "review-1",
+        runStatus: "stopped",
+        decisionPhase: "recorded"
+      }).detail);
+    }
+    return originalHandle(url, request);
+  };
+  const stream = harness.eventSources.at(-1);
+  assert.ok(stream);
+
+  harness.backend.fetchCalls.length = 0;
+  stream.emit({
+    cursor: 2,
+    record: {
+      type: "runtime_error",
+      at: "2026-04-23T09:16:00.000Z",
+      roleId: "demo-analyst",
+      errorCode: "E_FIRST"
+    }
+  });
+  await harness.flushTimers();
+  await waitForCondition(() =>
+    harness.backend.fetchCalls.filter((call) => call.path === "/api/v1/runs/run-123").length >= 1
+  );
+
+  stream.emit({
+    cursor: 3,
+    record: {
+      type: "human_review_requested",
+      at: "2026-04-23T09:16:01.000Z",
+      reviewId: "review-1",
+      roleId: "demo-analyst",
+      status: "pending"
+    }
+  });
+  await settle();
+
+  const detailCallsDuringFlight = harness.backend.fetchCalls.filter((call) => call.path === "/api/v1/runs/run-123").length;
+  assert.equal(detailCallsDuringFlight, 1);
+
+  refreshDeferred.resolve();
+  await waitForCondition(() =>
+    harness.backend.fetchCalls.filter((call) => call.path === "/api/v1/runs/run-123").length >= 2
+  );
+  await harness.flushTimers();
+
+  assert.ok(harness.document.getElementById("timeline").innerHTML.includes("#3"));
+  assert.ok(
+    harness.backend.fetchCalls.filter((call) => call.path === "/api/v1/runs/run-123/reviews").length >= 1
+  );
+  assert.ok(
+    harness.backend.fetchCalls.filter((call) => call.path === "/api/v1/runs/run-123/resume-readiness").length >= 2
+  );
+});
+
 test("visualizer client stream cursor index dedupes repeated SSE events", async () => {
   const harness = await createClientHarness({
     decisionPhase: "recorded"
@@ -2989,6 +3114,42 @@ test("visualizer client keeps the workbench editor visible with source intact du
   const editorAfter = harness.document.getElementById("workbench-editor");
   assert.ok(editorAfter);
   assert.equal(editorAfter.value, editor.value);
+});
+
+test("visualizer client debounces workbench validation to the latest input", async () => {
+  const harness = await createClientHarness();
+
+  const sourceTab = harness.document.getElementById("workbench-view-tabs")
+    .querySelectorAll("[data-workbench-view=\"source\"]")[0];
+  assert.ok(sourceTab);
+  await sourceTab.click();
+  await settle();
+
+  const editor = harness.document.getElementById("workbench-editor");
+  assert.ok(editor);
+  const validateCallsBefore = harness.backend.fetchCalls.filter((call) => call.path === "/api/v1/project/system/validate").length;
+
+  await editor.input("flowchart TD\nfirst");
+  await editor.input("flowchart TD\nsecond");
+  await editor.input("flowchart TD\nthird");
+  await harness.flushTimers();
+
+  const validateCallsAfter = harness.backend.fetchCalls.filter((call) => call.path === "/api/v1/project/system/validate").length;
+  assert.equal(validateCallsAfter - validateCallsBefore, 1);
+});
+
+test("visualizer client dispose clears polling intervals and pending timers", async () => {
+  const harness = await createClientHarness();
+  const fetchCountBeforeTick = harness.backend.fetchCalls.filter((call) => call.path === "/api/v1/runs").length;
+
+  harness.dispose();
+  assert.equal(harness.intervals.size, 0);
+
+  await harness.tickIntervals();
+  await harness.flushTimers();
+
+  const fetchCountAfterTick = harness.backend.fetchCalls.filter((call) => call.path === "/api/v1/runs").length;
+  assert.equal(fetchCountAfterTick, fetchCountBeforeTick);
 });
 
 test("visualizer client applies timeline filters through the events API", async () => {

@@ -81,7 +81,7 @@ Sources: `docs/long-term-stability-roadmap.md`, `docs/archive/delivery/optimizat
 
 - [ ] 拆分 `createInitialVisualizerState()` 的巨型扁平状态对象，按 project/build/operate/review/logs/streaming 切片组织。
 - [ ] 继续审查 run 切换时的状态重置路径，重点验证 review、failure、resume、logs 是否仍存在短暂陈旧数据窗口。
-- [ ] 为 `listTimer`、`workbenchValidationTimer`、`streamRefreshTimer` 等定时器建立统一清理约束，避免后续继续分散增长。
+- [x] 为 `listTimer`、`workbenchValidationTimer`、`streamRefreshTimer` 等定时器建立统一清理约束，避免后续继续分散增长。
 - [ ] 继续拆分 `src/visualizer/client-app.ts` 与 `src/visualizer/server.ts` 的超大文件，把稳定边界沉淀为独立模块。
 - [ ] 收敛 `asString`、`asRecord`、`escapeHtml` 等重复辅助函数，统一语义并减少多份拷贝漂移。
 - [x] 将 `src/visualizer/client-renderers.ts` 的 SVG 拓扑排序从 `queue.shift()` 改为 index 游标遍历，避免理论 O(n²) 热点。

@@ -177,3 +177,4 @@ Status: calibrated
 - `chat panel` ARIA 语义已修正；Studio 图命令表单现已补齐 `dialog` / `aria-modal` / `aria-labelledby`、Escape 关闭和关闭后焦点回收。
 - `innerHTML` 热点治理只完成首批面板，剩余 `runListEl` 与 `consoleTabsEl` 继续留在 P1。
 - `runsListCache` 无上限问题已按短期稳态优先级修复；更深的缓存抽象收敛仍保留为 P2 可维护性治理。
+- `listTimer`、`workbenchValidationTimer`、`streamRefreshTimer` 已建立统一清理约束：run 切换/返回 project home/dispose 均会清理对应 timer，stream refresh plan 现已绑定当前 run，避免旧 SSE 事件污染新 run；回归测试采用 `visualizer-client` harness 的短路径用例，控制等待时间。
