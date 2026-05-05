@@ -15,3 +15,5 @@ Desktop.ini
 .ogs/providers/
 ogsystem-history/
 .claude/
+test-results/
+playwright-report/

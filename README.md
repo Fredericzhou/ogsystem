@@ -98,7 +98,7 @@ Develop from source (macOS/Linux/Windows):
 
 ```bash
 corepack enable
-corepack prepare pnpm@10.14.0 --activate
+corepack prepare pnpm@10.33.2 --activate
 pnpm install --frozen-lockfile
 ```
 
@@ -125,7 +125,7 @@ Coverage note:
 Package manager policy:
 
 - Published package installs support `npm` and `pnpm`.
-- Source repository development still expects `pnpm` and keeps the lockfile/CI workflow pinned to `pnpm@10.14.0`.
+- Source repository development still expects `pnpm` and keeps the lockfile/CI workflow pinned to `pnpm@10.33.2`.
 - Repository docs use installed `ogs*` commands first, then note `pnpm run ...` equivalents where relevant.
 
 For day-to-day use, start with `docs/usage-manual.md`. It keeps the command matrix and example systems in one place and avoids repeating the same examples here.

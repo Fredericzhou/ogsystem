@@ -25,9 +25,9 @@
     "build:studio-client": "esbuild src/visualizer/studio-client/main.ts --bundle --format=iife --global-name=OGSStudioGraphBundle --outfile=dist/visualizer/studio-client/studio-graph.js",
     "build": "pnpm run typecheck:studio-client && pnpm run build:studio-client && tsc -p tsconfig.json",
     "prepack": "pnpm run build",
-    "test": "pnpm build && node --test tests/*.mjs",
+    "test": "pnpm build && node scripts/run-node-tests.mjs",
     "test:studio-import-guardrails": "node --test tests/visualizer-studio-import-guardrails.test.mjs",
-    "test:visualizer-browser": "pnpm build && playwright test tests-e2e/visualizer-studio-graph.spec.ts",
+    "test:visualizer-browser": "node scripts/visualizer-browser-smoke.mjs",
     "test:visualizer": "pnpm build && pnpm run test:studio-import-guardrails && node --test tests/visualizer-client-state.test.mjs tests/visualizer-client.test.mjs tests/visualizer-data.test.mjs tests/visualizer-ops-summary.test.mjs tests/visualizer-page-shell.test.mjs tests/visualizer-project-readiness.test.mjs tests/visualizer-studio-authoring.test.mjs tests/visualizer.test.mjs",
     "test:coverage": "pnpm build && node --test --experimental-test-coverage tests/*.mjs",
     "test:docs-command-drift": "node scripts/docs-command-drift-check.mjs",
@@ -65,7 +65,6 @@
     "@opencode-ai/sdk": "^1.4.1",
     "ajv": "^8.18.0",
     "dagre": "^0.8.5",
-    "ogsystem": "link:",
     "zod": "^3.25.76"
   }
 }

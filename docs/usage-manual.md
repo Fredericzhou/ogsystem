@@ -103,7 +103,7 @@ pnpm add -g "$PWD"
 
 ```bash
 corepack enable
-corepack prepare pnpm@10.14.0 --activate
+corepack prepare pnpm@10.33.2 --activate
 pnpm install --frozen-lockfile
 ```
 

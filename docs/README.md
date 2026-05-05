@@ -1,149 +1,59 @@
-# OGSystem 文档索引与归档规则
+# OGSystem Documentation Index
 
-本文件是 `docs/` 目录的权威索引和归档规则。
+This file is the active entry point for `docs/`. Code, tests, and CLI behavior remain the source of truth. Dated plans, reviews, checklists, and closure notes are historical delivery records unless their conclusions have been copied back into active docs.
 
-归档目录说明见：`docs/archive/README.md`。
+Archive rules are documented in [docs/archive/README.md](archive/README.md).
 
-命令入口基线：活跃文档优先展示已安装的 `ogs*` CLI；当文档讨论源码仓开发时，再展示 `pnpm run ...` 等等效命令。
+## Active Docs
 
-## 1. 文档优先级
+- [Product introduction](product-introduction.md): capability overview for readers.
+- [Usage manual](usage-manual.md): install, CLI, run directory, operations, and Visualizer usage.
+- [Orchestration semantics](ogsystem-orchestration-semantics-v1.md): runtime semantic contract.
+- [Compiler semantics](compiler-semantics-v1.md): static compiler entrypoint and diagnostics contract.
+- [NL2MMD structure templates](nl2mmd-structure-templates.md): natural-language to Mermaid structure constraints.
+- [Decisions](DECISIONS.md): current architecture decisions and boundaries.
+- [Long-term stability roadmap](long-term-stability-roadmap.md): durable direction.
+- [Unified backlog](todo-backlog.md): current active backlog.
+- [Ebook draft](ogsystem-ebook.md): long-form explanatory material.
 
-当多个文档描述不一致时，按以下顺序判定：
+## Design References
 
-1. `src/runtime/` 代码与测试：实现真相。
-2. `docs/ogsystem-orchestration-semantics-v1.md`：运行时语义契约真相。
-3. `docs/DECISIONS.md`：架构决策与边界真相。
-4. `docs/usage-manual.md`：操作、目录、运行契约与入口手册。
-5. `docs/product-introduction.md`：能力总览与对外说明。
-6. 带日期的计划/评估/基准/checklist：历史记录。
+These documents are useful background, but they are not the only authority for current behavior:
 
-## 2. 活跃文档
+- [Context map projection guide](context-map-projection-guide.md)
+- [Data projection spec](ogsystem-data-projection-spec.md)
+- [Semantics manual](ogsystem-semantics-manual.md)
+- [Wait timeout semantics proposal](ogsystem-wait-timeout-semantics-v2.md)
 
-活跃文档：
+## Recent Delivery Records
 
-- `docs/product-introduction.md`
-- `docs/usage-manual.md`
-- `docs/ogsystem-orchestration-semantics-v1.md`
-- `docs/compiler-semantics-v1.md`
-- `docs/nl2mmd-structure-templates.md`
-- `docs/DECISIONS.md`
-- `docs/long-term-stability-roadmap.md`
-- `docs/todo-backlog.md`
-- `docs/ogsystem-ebook.md`
+Use these recent archive records to understand implementation context:
 
-活跃“计划类”文档只保留两类：
+- [Cross-platform Visualizer validation closure 2026-05-05](archive/delivery/ogsystem-cross-platform-visualizer-validation-closure-2026-05-05.md)
+- [Visualizer product usability gate follow-up 2026-05-05](archive/delivery/ogsystem-visualizer-product-usability-gate-followup-2026-05-05.md)
+- [Visualizer platform validation execution plan 2026-05-04](archive/delivery/ogsystem-visualizer-platform-validation-execution-plan-2026-05-04.md)
+- [Visualizer HTTP runtime isolation decision 2026-05-04](archive/delivery/ogsystem-visualizer-http-runtime-isolation-decision-2026-05-04.md)
+- [Visualizer optimization checklist closure 2026-05-03](archive/delivery/ogsystem-visualizer-optimization-checklist-calibrated-2026-05-03.md)
+- [Canvas-centered Visualizer architecture roadmap 2026-05-03](archive/delivery/ogsystem-canvas-centered-product-architecture-roadmap-2026-05-03.md)
 
-- `roadmap`（长期方向）：`docs/long-term-stability-roadmap.md`
-- `backlog`（当前待办）：`docs/todo-backlog.md`
+The full archive lives under `docs/archive/delivery/` and `docs/archive/history/`. Do not maintain a duplicated full file list here; use `rg` or browse by date when historical context is needed.
 
-## 2.1 设计记录（非当前真相）
+## Maintenance Rules
 
-以下文档保留在 `docs/` 根目录作为设计背景参考：
+1. Update active docs first when current behavior changes.
+2. Put phase plans, delivery reviews, benchmarks, and one-off checklists in `docs/archive/delivery/`.
+3. Put early explorations, superseded proposals, and compatibility discussions in `docs/archive/history/`.
+4. When adding a dated archive record, update the "Recent Delivery Records" section.
+5. When changing CLI, install, package management, run directories, or security boundaries, update `README.md` and the [usage manual](usage-manual.md).
+6. When changing orchestration semantics, recovery semantics, or run artifact contracts, update the semantic docs and [decisions](DECISIONS.md).
+7. Do not delete superseded historical records. Add `Superseded by:` at the top of the old file or note the replacement here.
 
-- `docs/context-map-projection-guide.md`：`context.map` selector 与祖先可达性说明。
-- `docs/ogsystem-data-projection-spec.md`：`quorum_of` 数据投影记录。
-- `docs/ogsystem-semantics-manual.md`：对齐型语义手册。
-- `docs/ogsystem-wait-timeout-semantics-v2.md`：未实现的 join 超时提案。
-
-## 3. 交付记录（已归档）
-
-以下文档是交付记录或阶段快照：
-
-- `docs/archive/delivery/single-graph-runtime-execution-checklist.md`
-- `docs/archive/delivery/runtime-risk-assessment-2026-04-10.md`
-- `docs/archive/delivery/runtime-remediation-plan-2026-04-11.md`
-- `docs/archive/delivery/runtime-resilience-validation-plan-2026-04-11.md`
-- `docs/archive/delivery/runtime-replay-benchmark-2026-04-11.md`
-- `docs/archive/delivery/runtime-state-dehydration-plan-2026-04-11.md`
-- `docs/archive/delivery/runtime-test-coverage-audit-2026-04-11.md`
-- `docs/archive/delivery/source-commenting-hardening-plan-2026-04-11.md`（proposed stage plan）
-- `docs/archive/delivery/vnext-execution-plan-2026-04-11.md`（proposed stage plan）
-- `docs/archive/delivery/project-cli-lifecycle-plan-2026-04-12.md`（delivered lifecycle/productization plan）
-- `docs/archive/delivery/cross-platform-rust-validation-and-gap-analysis-2026-04-12.md`（delivered cross-platform verification + gap analysis）
-- `docs/archive/delivery/data-projection-quorum-implementation-checklist-2026-04-12.md`（delivered implementation checklist with risk controls）
-- `docs/archive/delivery/error-flow-v1-execution-plan-2026-04-13.md`（delivered error-flow execution record）
-- `docs/archive/delivery/error-flow-v1-hardening-followup-2026-04-13.md`（delivered follow-up hardening and test-maintainability closure）
-- `docs/archive/delivery/flow-contract-refactor-plan-2026-04-14.md`（proposed flow-contract-first semantics and refactor plan）
-- `docs/archive/delivery/typed-compiler-execution-plan-2026-04-16.md`（proposed unified static compiler entry checklist）
-- `docs/archive/delivery/ogsystem-visualization-platform-solution-2026-04-16.md`（proposal for a runtime visualization and observability platform）
-- `docs/archive/delivery/runtime-refactor-execution-checklist-2026-04-18.md`（delivered runtime refactor checklist; phases 0-11 completed）
-- `docs/archive/delivery/installable-cli-release-notes-2026-04-20.md`（delivered installable CLI packaging, scaffolding, and operator-doc release notes）
-- `docs/archive/delivery/agency-agents-role-repo-integration-plan-2026-04-20.md`（recommended integration plan for importing `agency-agents` as an OGSystem-compatible derived role repository）
-- `docs/archive/delivery/runtime-input-contract-vnext-plan-2026-04-21.md`（proposed latest-version plan for schema-linked projected input and controlled shared data）
-- `docs/archive/delivery/runtime-governance-hardening-plan-2026-04-21.md`（proposed 30-day plan for runtime governance, reliability gates, and minimal execution-policy hardening）
-- `docs/archive/delivery/opencode-provider-reference-and-error-surfacing-2026-04-21.md`（delivered provider reference scaffolding and provider-error surfacing correction for OpenCode model.bind runs）
-- `docs/archive/delivery/opencode-model-selection-redesign-plan-2026-04-21.md`（delivered and archived cutover record for `.ogs/model-selection.json`, direct `provider/model`, and NL2MMD/runtime cleanup）
-- `docs/archive/delivery/cli-followup-checklist-2026-04-22.md`（delivered follow-up record for modern CLI resume guidance, unknown-command handling, hidden-legacy flag removal, and latest-only active-doc wording）
-- `docs/archive/delivery/ogsystem-studio-visual-authoring-solution-2026-04-28.md`（proposal for a Studio-first visual authoring shell that keeps `system.mmd` as generated runtime artifact without changing the kernel）
-- `docs/archive/delivery/ogsystem-debug-first-console-roadmap-2026-04-28.md`（proposal for prioritizing run debugging, config explainability, and review/resume operability before Studio authoring）
-- `docs/archive/delivery/ogsystem-debug-first-console-checklist-2026-04-28.md`（execution checklist for debug-first console phases 0-3 across visualizer projections, API, client panels, and tests）
-- `docs/archive/delivery/ogsystem-visual-lifecycle-followup-optimization-backlog-2026-05-01.md`（follow-up backlog for Visualizer lifecycle UX, browser smoke, i18n, wizard, graph workspace, and product engineering gates）
-- `docs/archive/delivery/ogsystem-canvas-centered-product-architecture-roadmap-2026-05-03.md`（proposal for canvas-centered Visualizer product architecture and staged Studio shell evolution）
-- `docs/archive/delivery/ogsystem-visualizer-optimization-checklist-calibrated-2026-05-03.md`（delivered calibrated Visualizer optimization checklist across caching, SSE, client hot paths, accessibility, and risk validation）
-- `docs/archive/delivery/ogsystem-visualizer-http-runtime-isolation-decision-2026-05-04.md`（decision record for keeping Visualizer run execution in-process until evidence requires process isolation or queueing）
-- `docs/archive/delivery/ogsystem-visualizer-platform-validation-execution-plan-2026-05-04.md`（delivered platform validation closure for package install smoke, Windows lifecycle smoke, docs drift, status/logs/summary/provider/redaction/retention validation）
-- `docs/archive/delivery/ogsystem-visualizer-product-usability-gate-followup-2026-05-05.md`（follow-up record for browser smoke gating, controlled flash/error i18n, project wizard path selection, and role catalog usability）
-- `docs/archive/delivery/ogsystem-naming-style-review-2026-04-14.md`（archived naming audit; `flow/edge` conclusion superseded by 2026-04-15 alignment review）
-- `docs/archive/delivery/ogsystem-flow-edge-alignment-review-2026-04-15.md`（delivered flow/edge alignment audit and canonical decision）
-- `docs/archive/delivery/ogsystem-flow-edge-alignment-execution-plan-2026-04-15.md`（delivered flow/edge alignment rollout and closure record）
-- `docs/archive/delivery/optimization-execution-checklist-2026-04-10.md`
-
-## 4. 历史参考（已归档）
-
-以下文档保留为历史参考：
-
-- `docs/archive/history/implementation-checklist-role-model-opencode-langgraph.md`
-- `docs/archive/history/ogsystem-role-repo-minimal-plan.md`
-- `docs/archive/history/opencode-single-serve-multi-session-plan.md`
-- `docs/archive/history/semantic-kernel-v1.md`
-- `docs/archive/history/xlgraph-subset-compatibility.md`
-- `docs/archive/history/role-model-user-profile-minimal-spec.md`
-- `docs/archive/history/langgraph-engine-example-systems.md`
-- `docs/archive/history/ogsystem-vnext-dev-plan.md`
-- `docs/archive/history/mermaid-dsl-v0.1.md`
-- `docs/archive/history/ogsystem-design-philosophy.md`
-- `docs/archive/history/role-md-open-source-projects.md`
-
-## 5. 归档规则
-
-1. 优先原地更新权威文档。
-2. 计划、评估、基准、阶段复盘等一次性材料使用带日期的新文件。
-3. 带日期文档默认归入交付记录，不作为 source of truth。
-4. 文档失效时，先更新本索引，再移动到 `docs/archive/`。
-5. 被替代的旧文档应标注 `Superseded by:`，并更新本索引。
-6. 影响编排语义、恢复契约、运行目录契约的改动，同步更新：
-   - `docs/ogsystem-orchestration-semantics-v1.md`
-   - `docs/usage-manual.md`
-   - 本索引 `docs/README.md`
-7. 包管理策略或命令入口变更时，同步更新 `README.md` 和 `docs/usage-manual.md`。
-8. 覆盖率相关说明变更时，同步更新 `README.md` 和 `docs/usage-manual.md`。
-
-## 6. 计划文档放置规则（防混淆）
-
-1. `docs/` 根目录不放阶段性计划、评估、基准、checklist。
-2. 阶段性材料放 `docs/archive/delivery/`。
-3. 历史方案放 `docs/archive/history/`。
-4. 同主题双份文档时，保留归档版本并移除根目录副本。
-
-## 7. 新文档准入规则
-
-新文档创建前，先判断它属于哪一类：
-
-- 如果是在解释“现在系统是什么”，应优先更新活跃文档。
-- 如果是在记录“本次任务如何做、做到了什么”，应创建带日期的交付记录。
-- 如果只是中间思路、临时分析或未收敛方案，不应直接放进主索引；建议留在分支、Issue、PR 描述或临时笔记中。
-
-## 8. 推荐阅读路径
-
-第一次进入项目，建议按以下顺序阅读：
+## Suggested Reading Order
 
 1. `README.md`
-2. `docs/product-introduction.md`
-3. `docs/usage-manual.md`
-4. `docs/ogsystem-orchestration-semantics-v1.md`
-5. `docs/compiler-semantics-v1.md`
-6. `docs/nl2mmd-structure-templates.md`
-7. `docs/DECISIONS.md`
-8. `docs/ogsystem-ebook.md`
-
-需要评估历史修复与验证过程时，再回看“交付记录”分组。
+2. [Product introduction](product-introduction.md)
+3. [Usage manual](usage-manual.md)
+4. [Orchestration semantics](ogsystem-orchestration-semantics-v1.md)
+5. [Compiler semantics](compiler-semantics-v1.md)
+6. [NL2MMD structure templates](nl2mmd-structure-templates.md)
+7. [Decisions](DECISIONS.md)

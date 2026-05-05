@@ -18,7 +18,8 @@ function runCommand(command, args, options = {}) {
         ...(options.env ?? {})
       },
       stdio: ["ignore", "pipe", "pipe"],
-      windowsHide: true
+      windowsHide: true,
+      windowsVerbatimArguments: options.windowsVerbatimArguments ?? false
     });
     let stdout = "";
     let stderr = "";
@@ -39,6 +40,12 @@ function quotePowerShell(value) {
 
 function quoteCmd(value) {
   return `"${value.replace(/"/g, '""')}"`;
+}
+
+async function runCmdCommand(commandLine) {
+  return runCommand("cmd.exe", ["/d", "/s", "/c", commandLine], {
+    windowsVerbatimArguments: true
+  });
 }
 
 function parseJsonOutput(output) {
@@ -83,39 +90,25 @@ async function runCmdSmoke() {
   const parentArg = quoteCmd(projectParent);
   const workdir = quoteCmd(projectDir);
 
-  const create = await runCommand("cmd.exe", [
-    "/d",
-    "/s",
-    "/c",
-    `${node} ${cli} project create "cmd app" --template minimal --workdir ${parentArg}`
-  ]);
+  const create = await runCmdCommand(
+    `call ${node} ${cli} project create "cmd app" --template minimal --workdir ${parentArg}`
+  );
   assert.equal(create.code, 0, create.stderr);
 
-  const start = await runCommand("cmd.exe", [
-    "/d",
-    "/s",
-    "/c",
-    `${node} ${cli} run start --system system.mmd --input "windows cmd smoke" --dry-run --workdir ${workdir}`
-  ]);
+  const start = await runCmdCommand(
+    `call ${node} ${cli} run start --system system.mmd --input "windows cmd smoke" --dry-run --workdir ${workdir}`
+  );
   assert.equal(start.code, 0, start.stderr);
   assert.equal(parseJsonOutput(start.stdout).status, "done");
 
-  const list = await runCommand("cmd.exe", [
-    "/d",
-    "/s",
-    "/c",
-    `${node} ${cli} run list --workdir ${workdir}`
-  ]);
+  const list = await runCmdCommand(`call ${node} ${cli} run list --workdir ${workdir}`);
   assert.equal(list.code, 0, list.stderr);
   const listPayload = parseJsonOutput(list.stdout);
   assert.equal(listPayload.runs.length, 1);
 
-  const status = await runCommand("cmd.exe", [
-    "/d",
-    "/s",
-    "/c",
-    `${node} ${cli} run status ${listPayload.runs[0].runId} --workdir ${workdir}`
-  ]);
+  const status = await runCmdCommand(
+    `call ${node} ${cli} run status ${listPayload.runs[0].runId} --workdir ${workdir}`
+  );
   assert.equal(status.code, 0, status.stderr);
   assert.equal(parseJsonOutput(status.stdout).status, "done");
 }

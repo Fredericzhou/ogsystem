@@ -1,20 +1,23 @@
 # OGSystem Archive Index
 
-本目录用于保存非活跃文档，避免活跃文档与历史记录混杂。
+`docs/archive/` stores inactive documentation so historical plans, phase reviews, and completed checklists do not mix with active source-of-truth docs.
 
-## 1. 目录语义
+## Directories
 
-- `docs/archive/delivery/`：已完成交付记录、阶段计划、基准与复盘材料。
-- `docs/archive/history/`：历史方案、兼容讨论、早期探索文档。
+- `delivery/`: completed delivery records, phase plans, validation closures, reviews, benchmarks, and checklists.
+- `history/`: early proposals, compatibility discussions, and historical exploration material.
 
-## 2. 使用规则
+## Rules
 
-1. 归档文档默认不作为当前语义或行为的权威来源。
-2. 归档文档若有可复用结论，必须回写到活跃文档（`docs/usage-manual.md`、`docs/DECISIONS.md`、`docs/ogsystem-orchestration-semantics-v1.md`）。
-3. 新建归档文档时，需同步更新 `docs/README.md` 对应分组。
-4. 阶段性计划、评估、基准、checklist 应带日期后缀并放在 `delivery/`，避免与 `docs/` 根目录活跃文档混淆。
+1. Archive docs are not authoritative for current behavior or semantics by default.
+2. Conclusions that still matter must be copied back to active docs such as `docs/usage-manual.md`, `docs/DECISIONS.md`, or semantic docs.
+3. New archive files should use dated names and should be referenced from `docs/README.md` when they are recent or important.
+4. Phase plans, reviews, benchmarks, and checklists belong in `delivery/`.
+5. Early explorations, superseded proposals, and compatibility discussions belong in `history/`.
+6. If an archive record is superseded, add `Superseded by:` at the top of the old file. Do not delete the historical body.
 
-补充说明：
+## Current Conventions
 
-- 归档文档中若出现 `.ogsystem/`、`pnpm-only`、旧 CLI 入口等表述，应视为历史上下文，不代表当前行为。
-- 当前活跃路径以 `.ogs/` 和已安装的 `ogs*` CLI 为准。
+- Current run directories use `.ogs/`.
+- Current CLI entrypoints are the installed `ogs` command and repository `pnpm run ...` scripts.
+- Old paths, old CLI forms, machine-local absolute paths, and one-off debugging commands inside archive docs are historical context only.

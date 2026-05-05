@@ -180,9 +180,7 @@ async function main() {
 
   const installedPackageDir = path.resolve(installDir, "node_modules", "ogsystem");
   const ogsBinPath = path.resolve(installedPackageDir, "bin", "ogs.mjs");
-  const ogsDoctorBinPath = path.resolve(installedPackageDir, "bin", "ogs-doctor.mjs");
   await stat(ogsBinPath);
-  await stat(ogsDoctorBinPath);
 
   const helpResult = await runCommand("node", [ogsBinPath, "help"], {
     cwd: installDir,
@@ -191,7 +189,7 @@ async function main() {
   assert.equal(helpResult.code, 0, helpResult.stderr);
   assert.match(helpResult.stdout, /ogs project <init\|create\|sync\|sync-models>/);
 
-  const doctorHelpResult = await runCommand("node", [ogsDoctorBinPath, "--help"], {
+  const doctorHelpResult = await runCommand("node", [ogsBinPath, "doctor", "--help"], {
     cwd: installDir,
     env: isolatedEnv
   });

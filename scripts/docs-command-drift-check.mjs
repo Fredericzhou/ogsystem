@@ -45,11 +45,11 @@ const REQUIRED_TEXT = [
 
 function extractShellCommands(markdown) {
   const commands = new Set();
-  const blockPattern = /```(?:bash|sh|shell)\n([\s\S]*?)```/g;
+  const blockPattern = /```(?:bash|sh|shell)\r?\n([\s\S]*?)```/g;
   for (const match of markdown.matchAll(blockPattern)) {
     const logicalLines = [];
     let continuation = "";
-    for (const rawLine of match[1].split("\n")) {
+    for (const rawLine of match[1].split(/\r?\n/)) {
       const line = rawLine.trim();
       if (!line || line.startsWith("#")) {
         continue;
