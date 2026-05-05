@@ -31,14 +31,12 @@ import {
 } from "../dist/visualizer/client-lifecycle-state.js";
 import {
   mapFailureProjectionView,
-  mapProjectLoadView,
   mapProjectTransferView,
   mapResumeDiagnosticsView
 } from "../dist/visualizer/dto.js";
 import { bindProjectWizardControls } from "../dist/visualizer/client-project-menu-controls.js";
 import {
-  projectCreateErrorFromResponse,
-  projectOpenMessageFromResponse
+  projectCreateErrorFromResponse
 } from "../dist/visualizer/client-project-workspace.js";
 import {
   buildLogsQuery,
@@ -56,7 +54,7 @@ import {
 } from "../dist/visualizer/client-shell-controls.js";
 import {
   LOG_FILTER_INPUT_MODE,
-  PROJECT_OPEN_INPUT_MODE,
+  PROJECT_INIT_FORM_MODE,
   RUN_LIST_SEARCH_MODE,
   STUDIO_BRIDGE_FILTER_MODE,
   STUDIO_CHAT_INPUT_MODE,
@@ -177,7 +175,6 @@ test("client route state helpers parse and serialize lifecycle query state", () 
   assert.deepEqual(readRouteStateFromSearch(""), {
     view: "",
     lifecycle: "",
-    projectTab: "",
     runId: "",
     reviewId: "",
     logRoleId: "",
@@ -192,7 +189,6 @@ test("client route state helpers parse and serialize lifecycle query state", () 
   assert.equal(
     buildRouteSearch({
       lifecycle: "project",
-      projectTab: "recent",
       projectHome: true,
       selectedRunId: "",
       selectedReviewId: "",
@@ -200,14 +196,13 @@ test("client route state helpers parse and serialize lifecycle query state", () 
       logTail: "",
       logSince: ""
     }),
-    "lifecycle=project&view=project&projectTab=recent"
+    "lifecycle=project&view=project"
   );
   assert.deepEqual(
     readRouteStateFromSearch("?lifecycle=operate&runId=run-1&reviewId=review-2&logRoleId=qa&tail=50&since=2026-05-03T09%3A00"),
     {
       view: "",
       lifecycle: "operate",
-      projectTab: "",
       runId: "run-1",
       reviewId: "review-2",
       logRoleId: "qa",
@@ -311,17 +306,16 @@ test("client input policy keeps high-frequency boundaries explicit", () => {
   assert.equal(RUN_LIST_SEARCH_MODE, "immediate-local-filter");
   assert.equal(STUDIO_BRIDGE_FILTER_MODE, "immediate-local-filter");
   assert.equal(STUDIO_CHAT_INPUT_MODE, "draft-only");
-  assert.equal(PROJECT_OPEN_INPUT_MODE, "draft-only");
+  assert.equal(PROJECT_INIT_FORM_MODE, "draft-only");
   assert.equal(LOG_FILTER_INPUT_MODE, "commit-on-change");
   assert.deepEqual(
     VISUALIZER_INPUT_BOUNDARIES.map((item) => [item.control, item.mode, item.remoteTrigger]),
     [
       ["workbench-editor", "debounced-remote-validate:250ms", "input settles before /project/system/validate"],
       ["studio-chat-input", "draft-only", "send/regenerate/apply actions only"],
-      ["project-open-workdir", "draft-only", "validate/browse/open actions only"],
+      ["project-create-form", "draft-only", "submit action only"],
       ["search", "immediate-local-filter", "none"],
       ["studio-bridge-filter", "immediate-local-filter", "none"],
-      ["project-role-catalog-filter", "immediate-local-filter-and-rerender", "none"],
       ["log-role/log-tail/log-page-size/log-since", "commit-on-change", "change event reloads selected logs when already loaded"]
     ]
   );
@@ -391,7 +385,6 @@ test("client lifecycle state factory centralizes initial workspace state", () =>
 
 test("visualizer dto project views normalize the supported artifact mode", () => {
   assert.equal(mapProjectTransferView({ mode: "unexpected", project: {} }).mode, "single-project-v1");
-  assert.equal(mapProjectLoadView({ mode: "unexpected", loadedFiles: [] }).mode, "single-project-v1");
 });
 
 test("visualizer dto guards preserve finite numbers and booleans after helper consolidation", () => {
@@ -439,8 +432,8 @@ test("visualizer dto guards preserve finite numbers and booleans after helper co
 
 test("client lifecycle panel renderers expose workspace and operate tab HTML", () => {
   const empty = renderWorkspaceEmptyStateHtml({ kind: "build", t, escapeText });
-  assert.match(empty, /Create or load a project before building/);
-  assert.match(empty, /Use Project to create a project/);
+  assert.match(empty, /Initialize the current directory before building/);
+  assert.match(empty, /Use Project to initialize the current directory/);
   assert.doesNotMatch(empty, /<script/);
 
   const tabs = renderOperateTabsHtml({ operateTab: "logs", t, escapeText });
@@ -590,9 +583,9 @@ test("client renderer graph canvas escapes selected ids before composing HTML", 
 });
 
 test("client project workspace maps stable create error codes", () => {
-  assert.deepEqual(projectCreateErrorFromResponse({ code: "INVALID_PROJECT_ID" }, t), {
-    code: "INVALID_PROJECT_ID",
-    message: "Use a project id with letters, numbers, dots, underscores, or hyphens."
+  assert.deepEqual(projectCreateErrorFromResponse({ code: "INVALID_PROJECT_NAME" }, t), {
+    code: "INVALID_PROJECT_NAME",
+    message: "Use a project name that starts with a letter or number."
   });
   assert.deepEqual(projectCreateErrorFromResponse({ errorCode: "UNKNOWN", message: "custom failure" }, t), {
     code: "UNKNOWN",
@@ -600,116 +593,36 @@ test("client project workspace maps stable create error codes", () => {
   });
 });
 
-test("client project workspace maps stable project-open codes", () => {
-  assert.deepEqual(projectOpenMessageFromResponse({ code: "PROJECT_OPEN_READY" }, t), {
-    code: "PROJECT_OPEN_READY",
-    message: "OGSystem project is ready to open."
-  });
-  assert.deepEqual(
-    projectOpenMessageFromResponse(
-      {
-        code: "PROJECT_OPEN_DIR_CONFLICT",
-        message: "Directory is not empty and is not an OGSystem project."
-      },
-      t
-    ),
-    {
-      code: "PROJECT_OPEN_DIR_CONFLICT",
-      message: "Directory is not empty and is not an OGSystem project."
-    }
-  );
-  assert.deepEqual(
-    projectOpenMessageFromResponse({ errorCode: "UNKNOWN", message: "custom open failure" }, t),
-    {
-      code: "UNKNOWN",
-      message: "custom open failure"
-    }
-  );
-});
-
 test("client project/studio controller binders delegate interactions without owning state", () => {
-  const projectMenuButton = new FakeBoundElement({ "data-project-menu-tab": "open" });
-  const browseButton = new FakeBoundElement({ "data-project-open-browse": "/tmp/project-a" });
-  const projectButton = new FakeBoundElement({ "data-project-open-project": "/tmp/project-b" });
-  const recentButton = new FakeBoundElement({ "data-project-open-recent": "/tmp/project-c" });
-  const openInput = new FakeBoundElement({}, "/tmp/current");
-  const refreshBrowseButton = new FakeBoundElement();
-  const validateBrowseButton = new FakeBoundElement();
-  const roleFilterInput = new FakeBoundElement({}, "qa");
-  const pageSizeSelect = new FakeBoundElement({}, "24");
+  const actionButton = new FakeBoundElement({ "data-project-action": "build" });
+  const projectNameInput = new FakeBoundElement({}, "Demo");
+  const templateSelect = new FakeBoundElement({}, "empty");
   const createForm = new FakeBoundElement({}, "", {
-    "input, select": [roleFilterInput, pageSizeSelect]
+    "input, select": [projectNameInput, templateSelect]
   });
-  const openForm = new FakeBoundElement();
-  const prevButton = new FakeBoundElement();
-  const nextButton = new FakeBoundElement();
   const root = new FakeQueryRoot({
-    "[data-project-menu-tab]": [projectMenuButton],
-    "[data-project-open-browse]": [browseButton],
-    "[data-project-open-project]": [projectButton],
-    "[data-project-open-recent]": [recentButton]
+    "[data-project-action]": [actionButton]
   });
   const byId = {
-    "project-open-workdir": openInput,
-    "project-open-browse-refresh": refreshBrowseButton,
-    "project-open-validate": validateBrowseButton,
-    "project-open-form": openForm,
-    "project-create-form": createForm,
-    "project-role-catalog-filter": roleFilterInput,
-    "project-role-page-size": pageSizeSelect,
-    "project-role-prev": prevButton,
-    "project-role-next": nextButton
+    "project-create-form": createForm
   };
   const calls = [];
   bindProjectWizardControls({
     root,
     getElementById: (id) => byId[id] || null,
-    onMenuTab: (value) => calls.push(["menu", value]),
-    onOpenDraftInput: (value) => calls.push(["draft", value]),
-    onRefreshBrowse: () => calls.push(["refresh"]),
-    onValidateBrowse: () => calls.push(["validate"]),
-    onOpenSubmit: (value) => calls.push(["open-submit", value]),
-    onBrowseSelect: (value) => calls.push(["browse", value]),
-    onProjectSelect: (value) => calls.push(["project", value]),
-    onRecentSelect: (value) => calls.push(["recent", value]),
     onCreateSubmit: () => calls.push(["create-submit"]),
     onDraftFormChange: () => calls.push(["draft-change"]),
-    onRoleFilter: (value) => calls.push(["role-filter", value]),
-    onPageSize: (value) => calls.push(["page-size", value]),
-    onPrevPage: () => calls.push(["prev"]),
-    onNextPage: () => calls.push(["next"]),
-    autoBrowse: () => calls.push(["auto-browse"])
+    onAction: (value) => calls.push(["action", value])
   });
-  projectMenuButton.dispatch("click");
-  openInput.dispatch("input", "/tmp/next");
-  refreshBrowseButton.dispatch("click");
-  validateBrowseButton.dispatch("click");
-  openForm.dispatch("submit");
-  browseButton.dispatch("click");
-  projectButton.dispatch("click");
-  recentButton.dispatch("click");
   createForm.dispatch("submit");
-  roleFilterInput.dispatch("input", "review");
-  pageSizeSelect.dispatch("change", "24");
-  prevButton.dispatch("click");
-  nextButton.dispatch("click");
+  projectNameInput.dispatch("input", "Review");
+  templateSelect.dispatch("change", "minimal");
+  actionButton.dispatch("click");
   assert.deepEqual(calls, [
-    ["auto-browse"],
-    ["menu", "open"],
-    ["draft", "/tmp/next"],
-    ["refresh"],
-    ["validate"],
-    ["open-submit", "/tmp/next"],
-    ["browse", "/tmp/project-a"],
-    ["project", "/tmp/project-b"],
-    ["recent", "/tmp/project-c"],
     ["create-submit"],
     ["draft-change"],
-    ["role-filter", "review"],
     ["draft-change"],
-    ["page-size", "24"],
-    ["prev"],
-    ["next"]
+    ["action", "build"]
   ]);
 
   const roleButton = new FakeBoundElement({ "data-studio-role-id": "planner" });

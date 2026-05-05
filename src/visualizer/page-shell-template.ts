@@ -31,19 +31,20 @@ export function renderPageShellBody({ workdir, locale, t }: PageShellBodyOptions
               <h1>${escapeHtml(t("app.title"))}</h1>
               <span>${escapeHtml(t("app.local"))}</span>
             </div>
-            <p class="hint">${escapeHtml(t("hero.subtitle"))}</p>
+            <div class="top-nav-meta">
+              <button id="sidebar-toggle" class="button subtle sidebar-toggle" aria-controls="sidebar" aria-expanded="false">${escapeHtml(t("hero.runs"))}</button>
+              <div class="pill">${escapeHtml(t("app.workdir"))} <code id="workdir">${escapeHtml(workdir)}</code></div>
+            </div>
           </div>
+          <nav id="console-tabs" class="console-tabs" aria-label="Visualizer sections"></nav>
           <div class="top-nav-actions">
             <div class="actions hero-actions hero-actions-primary">
               <button id="start-run" class="button primary">${escapeHtml(t("action.run"))}</button>
               <button id="resume-run" class="button">${escapeHtml(t("action.resume"))}</button>
               <button id="stop-run" class="button warn">${escapeHtml(t("action.stop"))}</button>
             </div>
-            <div class="actions hero-actions hero-actions-secondary">
-              <button id="project-home" class="button subtle">${escapeHtml(t("action.project"))}</button>
-              <button id="project-export" class="button subtle">${escapeHtml(t("action.export"))}</button>
-            </div>
             <div class="hero-utilities">
+              <button id="refresh" class="button subtle">${escapeHtml(t("action.refresh"))}</button>
               <label class="field locale-field">
                 <span>${escapeHtml(t("app.locale"))}</span>
                 <select id="locale-select" class="select">
@@ -54,16 +55,6 @@ export function renderPageShellBody({ workdir, locale, t }: PageShellBodyOptions
             </div>
           </div>
         </div>
-        <div class="top-nav-row top-nav-row-secondary">
-          <div class="top-nav-stage-heading">
-            <button id="sidebar-toggle" class="button subtle sidebar-toggle" aria-controls="sidebar" aria-expanded="false">${escapeHtml(t("hero.runs"))}</button>
-            <div class="stage-heading">
-              <h2 id="selected-title">${escapeHtml(t("hero.selectRun"))}</h2>
-              <p id="selected-subtitle" class="truncate">${escapeHtml(t("hero.selectRunHint"))}</p>
-            </div>
-          </div>
-        </div>
-        <nav id="console-tabs" class="console-tabs" aria-label="Visualizer sections"></nav>
       </header>
       <main class="main-stage">
         <div id="flash" class="flash hidden"></div>
@@ -78,28 +69,9 @@ export function renderPageShellBody({ workdir, locale, t }: PageShellBodyOptions
           </section>
           <section id="console-panel-project" class="console-panel grid" data-console-panel="project" role="tabpanel" aria-labelledby="console-tab-project" hidden>
             <article class="card span-12">
-              <header>
-                <div class="card-header">
-                  <div class="header-copy">
-                    <h3>${escapeHtml(t("section.projectWizard"))}</h3>
-                    <div class="hint">${escapeHtml(t("projectWizard.subtitle"))}</div>
-                  </div>
-                </div>
-              </header>
-              <div class="body">
-                <div id="project-wizard" class="project-overview-grid grid">${escapeHtml(t("state.loadingProject"))}</div>
-              </div>
-            </article>
-            <article class="card span-12">
               <header><h3>${escapeHtml(t("section.projectOverview"))}</h3></header>
               <div class="body">
-                <div id="project-summary" class="structure-list">${escapeHtml(t("state.loadingProject"))}</div>
-              </div>
-            </article>
-            <article class="card span-12">
-              <header><h3>${escapeHtml(t("section.projectReadiness"))}</h3></header>
-              <div class="body">
-                <div id="project-readiness" class="structure-list">${escapeHtml(t("state.loadingProjectReadiness"))}</div>
+                <div id="project-wizard">${escapeHtml(t("state.loadingProject"))}</div>
               </div>
             </article>
           </section>
@@ -288,9 +260,8 @@ export function renderPageShellBody({ workdir, locale, t }: PageShellBodyOptions
         </div>
       </main>
       <footer class="status-bar global-status">
-        <div class="pill">${escapeHtml(t("app.workdir"))} <code id="workdir">${escapeHtml(workdir)}</code></div>
+        <div class="pill">${escapeHtml(t("state.idle"))}</div>
         <div class="actions">
-          <button id="refresh" class="button subtle">${escapeHtml(t("action.refresh"))}</button>
           <button id="reindex" class="button subtle">${escapeHtml(t("action.reindex"))}</button>
           <div id="live" class="live">${escapeHtml(t("state.idle"))}</div>
         </div>

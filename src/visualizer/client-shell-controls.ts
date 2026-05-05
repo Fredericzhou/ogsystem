@@ -43,7 +43,7 @@ export function renderConsoleTabsHtml(args: {
 }): string {
   const { consoleTab, legacyConsoleTab, operateTab, t, escapeText } = args;
   const lifecycleTabs = [
-    ["project", "console-panel-project", t("nav.lifecycle.project", undefined, "Project"), t("navHint.lifecycle.project", undefined, "Create, load, and inspect project context")],
+    ["project", "console-panel-project", t("nav.lifecycle.project", undefined, "Project"), t("navHint.lifecycle.project", undefined, "Inspect the current directory, initialize it, and review project health")],
     ["build", "console-panel-build", t("nav.lifecycle.build", undefined, "Build"), t("navHint.lifecycle.build", undefined, "Graph-first authoring, configuration, and dry-run setup")],
     ["validate-release", "console-panel-validate-release", t("nav.lifecycle.validateRelease", undefined, "Validate & Release"), t("navHint.lifecycle.validateRelease", undefined, "Validation gate, readiness, reports, and export")],
     ["operate", getOperatePanelId(operateTab), t("nav.lifecycle.operate", undefined, "Operate"), t("navHint.lifecycle.operate", undefined, "Run monitoring, diagnostics, logs, recovery, and audit")]

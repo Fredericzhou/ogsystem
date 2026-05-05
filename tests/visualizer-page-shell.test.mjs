@@ -8,8 +8,6 @@ const REQUIRED_ELEMENT_IDS = [
   "run-list",
   "search",
   "flash",
-  "selected-title",
-  "selected-subtitle",
   "action-form-section",
   "action-form",
   "console-tabs",
@@ -21,9 +19,7 @@ const REQUIRED_ELEMENT_IDS = [
   "release-gate",
   "workbench-body",
   "operate-tabs",
-  "project-summary",
   "project-wizard",
-  "project-readiness",
   "stats",
   "timeline",
   "graph-view",
@@ -57,7 +53,8 @@ test("page shell keeps HTML, style, assets, and client script mounted", () => {
   assert.match(html, /<div class="shell content">/);
   assert.match(html, /<header class="top-nav">[\s\S]*id="console-tabs"/);
   assert.match(html, /<main class="main-stage">[\s\S]*id="workbench-body"/);
-  assert.match(html, /<footer class="status-bar global-status">[\s\S]*id="workdir"[\s\S]*id="live"/);
+  assert.match(html, /<header class="top-nav">[\s\S]*id="workdir"/);
+  assert.match(html, /<footer class="status-bar global-status">[\s\S]*id="live"/);
   assert.match(html, /<aside id="sidebar" class="sidebar">[\s\S]*id="run-list"/);
   assert.match(html, /id="search"[^>]*aria-label="按 id、状态、角色筛选运行\.\.\."/);
   assert.match(html, /id="sidebar-toggle"[^>]*aria-controls="sidebar"[^>]*aria-expanded="false"/);

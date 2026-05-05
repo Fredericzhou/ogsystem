@@ -1,7 +1,6 @@
 export type RouteState = {
   view: string;
   lifecycle: string;
-  projectTab: string;
   runId: string;
   reviewId: string;
   logRoleId: string;
@@ -14,7 +13,6 @@ export function readRouteStateFromSearch(search: string): RouteState {
   return {
     view: params.get("view") || "",
     lifecycle: params.get("lifecycle") || "",
-    projectTab: params.get("projectTab") || "",
     runId: params.get("runId") || "",
     reviewId: params.get("reviewId") || "",
     logRoleId: params.get("logRoleId") || "",
@@ -46,7 +44,6 @@ export function normalizeLifecycleView(lifecycle: string | undefined, legacyView
 
 export function buildRouteSearch(args: {
   lifecycle?: string;
-  projectTab?: string;
   projectHome: boolean;
   selectedRunId: string;
   selectedReviewId: string;
@@ -61,9 +58,6 @@ export function buildRouteSearch(args: {
   }
   if (args.projectHome && !args.selectedRunId) {
     params.set("view", "project");
-  }
-  if (lifecycle === "project" && args.projectTab && args.projectTab !== "overview") {
-    params.set("projectTab", args.projectTab);
   }
   if (args.selectedRunId) {
     params.set("runId", args.selectedRunId);

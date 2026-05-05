@@ -235,28 +235,29 @@ export function renderPageShellStyles(): string {
       top: 0;
       z-index: 12;
       display: grid;
-      gap: 10px;
-      padding: 14px 14px 10px;
+      gap: 8px;
+      padding: 12px 14px;
       border-bottom: 1px solid rgba(148, 163, 184, 0.12);
       background: linear-gradient(180deg, rgba(7, 12, 24, 0.96), rgba(7, 12, 24, 0.88));
       backdrop-filter: blur(20px);
     }
     .top-nav-row {
-      display: flex;
-      justify-content: space-between;
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) minmax(280px, 1.2fr) auto;
       gap: 14px;
-      align-items: flex-start;
+      align-items: center;
       min-width: 0;
     }
-    .top-nav-row-secondary {
-      align-items: center;
-    }
-    .top-nav-brand,
-    .top-nav-stage-heading,
-    .stage-heading {
+    .top-nav-brand {
       display: grid;
       gap: 4px;
       min-width: 0;
+    }
+    .top-nav-meta {
+      display: flex;
+      gap: 8px;
+      align-items: center;
+      flex-wrap: wrap;
     }
     .brand-lockup {
       display: flex;
@@ -276,7 +277,7 @@ export function renderPageShellStyles(): string {
     }
     .top-nav-actions {
       display: grid;
-      grid-template-columns: auto auto auto;
+      grid-template-columns: auto auto;
       gap: 6px;
       align-items: center;
       justify-items: end;
@@ -338,13 +339,10 @@ export function renderPageShellStyles(): string {
     .hero-actions-primary {
       grid-column: auto;
     }
-    .hero-actions-secondary {
-      opacity: 0.88;
-    }
     .hero-utilities {
       display: flex;
       gap: 8px;
-      align-items: end;
+      align-items: center;
       justify-content: flex-end;
       flex-wrap: wrap;
       min-width: 0;
@@ -652,13 +650,6 @@ export function renderPageShellStyles(): string {
     .build-control-bar #workbench-tabs {
       justify-self: end;
     }
-    .project-open-browser-grid {
-      display: grid;
-      grid-template-columns: repeat(auto-fit, minmax(132px, 1fr));
-      gap: 8px;
-      align-items: center;
-      min-width: 0;
-    }
     .workbench-view-tabs {
       justify-content: flex-start;
       margin-bottom: 2px;
@@ -738,12 +729,27 @@ export function renderPageShellStyles(): string {
       grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
       align-items: stretch;
     }
-    .project-menu {
-      grid-column: 1 / -1;
-      justify-content: flex-start;
-      width: max-content;
-      max-width: 100%;
-      overflow-x: auto;
+    .project-home-layout {
+      display: grid;
+      grid-template-columns: minmax(0, 2fr) minmax(280px, 1fr);
+      gap: 12px;
+      align-items: start;
+      min-width: 0;
+    }
+    .project-home-main,
+    .project-side-panel {
+      display: grid;
+      gap: 12px;
+      min-width: 0;
+    }
+    .project-home-grid {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 12px;
+      min-width: 0;
+    }
+    .project-home-card .body {
+      min-width: 0;
     }
     .studio-bridge-layout {
       display: grid;
@@ -1067,8 +1073,7 @@ export function renderPageShellStyles(): string {
         padding-right: 2px;
       }
       .studio-diagnostics { order: 5; }
-      .top-nav-row,
-      .top-nav-stage-heading {
+      .top-nav-row {
         display: grid;
         grid-template-columns: 1fr;
       }
@@ -1086,6 +1091,10 @@ export function renderPageShellStyles(): string {
       .hero-actions, .hero-utilities, .actions { justify-content: flex-start; }
       .sidebar-toggle {
         display: inline-flex;
+      }
+      .project-home-layout,
+      .project-home-grid {
+        grid-template-columns: 1fr;
       }
     }
     @media (max-width: 960px) {

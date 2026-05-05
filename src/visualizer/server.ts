@@ -7,11 +7,9 @@
  * - Read-mostly; mutations are limited to lifecycle/control-plane entrypoints.
  */
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
-import { constants } from "node:fs";
-import { access } from "node:fs/promises";
 import { readdir, readFile, stat, writeFile } from "node:fs/promises";
 import { createHash } from "node:crypto";
-import { basename, dirname, resolve, sep } from "node:path";
+import { dirname, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { runSystemWithAdapter } from "../runtime/adapter.js";
@@ -84,7 +82,6 @@ import {
   mapControlActionView,
   mapErrorView,
   mapFailureProjectionView,
-  mapProjectLoadView,
   mapProjectTransferView,
   mapResumeReadinessView,
   mapResumeDiagnosticsView,
@@ -213,35 +210,6 @@ const STATIC_ASSET_ROUTES = new Map<string, { filePath: string; contentType: str
     }
   ]
 ]);
-const PROJECT_OPEN_RECENT_LIMIT = 8;
-const PROJECT_OPEN_CHILD_LIMIT = 200;
-type ProjectOpenTargetCode =
-  | "PROJECT_OPEN_NOT_FOUND"
-  | "PROJECT_OPEN_NOT_DIRECTORY"
-  | "PROJECT_OPEN_NOT_READABLE"
-  | "PROJECT_OPEN_READY"
-  | "PROJECT_OPEN_EMPTY"
-  | "PROJECT_OPEN_CONTROLLED_PATH_CONFLICT"
-  | "PROJECT_OPEN_DIR_CONFLICT";
-const PROJECT_CONTROLLED_PATHS = [
-  ".ogs",
-  "og-roles",
-  "system.mmd",
-  "system.example.mmd",
-  "profiles.json",
-  "tools.json",
-  ".ogs/project.json",
-  ".ogs/runtime.json",
-  ".ogs/model-catalog.json",
-  ".ogs/model-selection.json",
-  ".ogs/laws.json",
-  ".ogs/user-profile.json",
-  ".ogs/runs-index.json",
-  ".ogs/providers/opencode.json",
-  ".ogs/README.md",
-  ".ogs/studio/system.authoring.json"
-];
-
 function jsonResponse(
   response: ServerResponse,
   statusCode: number,
@@ -275,27 +243,15 @@ function normalizePositiveInteger(value: unknown, fallback: number): number {
 }
 
 function readProjectCreatePayload(body: Record<string, unknown>): {
-  workdir?: string;
-  projectId?: unknown;
   projectName?: unknown;
   templateId?: unknown;
   conflictStrategy?: unknown;
-  authoringDefaults?: unknown;
-  modelProfileStrategy?: unknown;
 } {
   const wizard = asRecord(body.wizard);
   return {
-    workdir:
-      asString(body.workdir) ??
-      asString(body.targetWorkdir) ??
-      asString(wizard?.workdir) ??
-      asString(wizard?.targetWorkdir),
-    projectId: body.projectId ?? wizard?.projectId,
     projectName: body.projectName ?? wizard?.projectName,
     templateId: body.templateId ?? wizard?.templateId,
-    conflictStrategy: body.conflictStrategy ?? wizard?.conflictStrategy,
-    authoringDefaults: body.authoringDefaults ?? wizard?.authoringDefaults,
-    modelProfileStrategy: body.modelProfileStrategy ?? wizard?.modelProfileStrategy
+    conflictStrategy: body.conflictStrategy ?? wizard?.conflictStrategy
   };
 }
 
@@ -448,161 +404,6 @@ function resolveOptionalRuntimePathWithinProject(
   label: string
 ): string | undefined {
   return inputPath ? resolveRuntimePathWithinProject(workdir, inputPath, label) : undefined;
-}
-
-function resolveProjectOpenWorkdir(activeWorkdir: string, inputWorkdir: string | undefined): string {
-  const requestedWorkdir = inputWorkdir?.trim();
-  return resolve(activeWorkdir, requestedWorkdir || ".");
-}
-
-async function canReadDirectory(path: string): Promise<boolean> {
-  try {
-    await access(path, constants.R_OK);
-    const pathStat = await stat(path);
-    return pathStat.isDirectory();
-  } catch {
-    return false;
-  }
-}
-
-async function inspectProjectOpenTarget(workdir: string): Promise<{
-  code: ProjectOpenTargetCode;
-  workdir: string;
-  exists: boolean;
-  readable: boolean;
-  isProject: boolean;
-  isEmpty: boolean;
-  hasConflict: boolean;
-  message: string;
-  conflicts: string[];
-}> {
-  const targetStat = await stat(workdir).catch(() => undefined);
-  const exists = Boolean(targetStat);
-  const readable = exists ? await canReadDirectory(workdir) : false;
-  const isDirectory = targetStat?.isDirectory() === true;
-  const isProject =
-    isDirectory &&
-    (await stat(resolve(workdir, "system.mmd")).catch(() => undefined))?.isFile() === true &&
-    (await stat(resolve(workdir, ".ogs", "project.json")).catch(() => undefined))?.isFile() === true;
-  const entries = readable ? await readdir(workdir, { withFileTypes: true }).catch(() => []) : [];
-  const visibleEntries = entries.filter((entry) => entry.name !== ".DS_Store");
-  const isEmpty = isDirectory && visibleEntries.length === 0;
-  const conflicts = [];
-  if (isDirectory && !isProject && !isEmpty) {
-    for (const relativePath of PROJECT_CONTROLLED_PATHS) {
-      if (await stat(resolve(workdir, relativePath)).catch(() => undefined)) {
-        conflicts.push(relativePath);
-      }
-    }
-  }
-  const hasConflict = isDirectory && !isProject && !isEmpty;
-  let code: ProjectOpenTargetCode;
-  let message: string;
-  if (!exists) {
-    code = "PROJECT_OPEN_NOT_FOUND";
-    message = "Path does not exist.";
-  } else if (!isDirectory) {
-    code = "PROJECT_OPEN_NOT_DIRECTORY";
-    message = "Path is not a directory.";
-  } else if (!readable) {
-    code = "PROJECT_OPEN_NOT_READABLE";
-    message = "Directory is not readable.";
-  } else if (isProject) {
-    code = "PROJECT_OPEN_READY";
-    message = "OGSystem project is ready to open.";
-  } else if (isEmpty) {
-    code = "PROJECT_OPEN_EMPTY";
-    message = "Directory is empty and can be initialized as a project.";
-  } else {
-    code = conflicts.length ? "PROJECT_OPEN_CONTROLLED_PATH_CONFLICT" : "PROJECT_OPEN_DIR_CONFLICT";
-    message = conflicts.length
-      ? "Directory contains OGSystem-controlled paths but is not a complete project."
-      : "Directory is not empty and is not an OGSystem project.";
-  }
-  return {
-    code,
-    workdir,
-    exists,
-    readable,
-    isProject,
-    isEmpty,
-    hasConflict,
-    message,
-    conflicts
-  };
-}
-
-async function handleApiProjectBrowse(
-  state: VisualizationServerState,
-  url: URL,
-  response: ServerResponse
-): Promise<void> {
-  const workdir = resolveProjectOpenWorkdir(state.workdir, url.searchParams.get("workdir") ?? undefined);
-  const target = await inspectProjectOpenTarget(workdir);
-  if (!target.exists || !target.readable) {
-    jsonResponse(response, 200, {
-      ...target,
-      parent: dirname(workdir),
-      children: {
-        directories: [],
-        files: []
-      },
-      recent: []
-    });
-    return;
-  }
-  const entries = await readdir(workdir, { withFileTypes: true });
-  const childRecords = entries
-    .filter((entry) => entry.name !== ".DS_Store")
-    .map((entry) => ({
-      name: entry.name,
-      path: resolve(workdir, entry.name),
-      kind: entry.isDirectory() ? "directory" : entry.isFile() ? "file" : "other"
-    }))
-    .sort((left, right) => left.name.localeCompare(right.name));
-  const directories = childRecords
-    .filter((entry) => entry.kind === "directory")
-    .slice(0, PROJECT_OPEN_CHILD_LIMIT)
-    .map((entry) => ({ name: entry.name, path: entry.path }));
-  const files = childRecords
-    .filter((entry) => entry.kind === "file")
-    .slice(0, PROJECT_OPEN_CHILD_LIMIT)
-    .map((entry) => ({ name: entry.name, path: entry.path }));
-  const recent = (
-    await Promise.all(
-      directories.map(async (entry) => ({
-        ...entry,
-        ...(await inspectProjectOpenTarget(entry.path))
-      }))
-    )
-  )
-    .filter((entry) => entry.isProject)
-    .slice(0, PROJECT_OPEN_RECENT_LIMIT)
-    .map((entry) => ({ name: entry.name, workdir: entry.path }));
-  jsonResponse(response, 200, {
-    ...target,
-    parent: dirname(workdir),
-    children: {
-      directories,
-      files
-    },
-    recent
-  });
-}
-
-async function handleApiProjectValidateOpen(
-  state: VisualizationServerState,
-  request: IncomingMessage,
-  response: ServerResponse
-): Promise<void> {
-  const body = await readJsonRequest(request);
-  const workdir = resolveProjectOpenWorkdir(state.workdir, asString(body.workdir));
-  const target = await inspectProjectOpenTarget(workdir);
-  jsonResponse(response, 200, {
-    ...target,
-    parent: dirname(workdir),
-    name: basename(workdir)
-  });
 }
 
 function summarizeAdapterResult(result: unknown): Record<string, unknown> {
@@ -1100,7 +901,7 @@ async function assertInitializedProject(workdir: string): Promise<void> {
     throw new HttpError(
       409,
       "PROJECT_NOT_INITIALIZED",
-      "Create or load an OGSystem project before using this project endpoint.",
+      "Initialize the current directory as an OGSystem project before using this project endpoint.",
       workspace
     );
   }
@@ -1113,6 +914,13 @@ async function handleApiProjectCreate(
 ): Promise<void> {
   const body = await readJsonRequest(request);
   const createPayload = readProjectCreatePayload(body);
+  if (body.workdir !== undefined || body.targetWorkdir !== undefined) {
+    throw new HttpError(
+      400,
+      "INVALID_PROJECT_WORKDIR",
+      "Project creation only supports the current visualizer directory."
+    );
+  }
   const requestId = asString(body.requestId)?.trim();
   if (requestId && !/^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/.test(requestId)) {
     throw new HttpError(400, "INVALID_PROJECT_CREATE_REQUEST_ID", "requestId must start with a letter or number and use only letters, numbers, dots, underscores, colons, or hyphens.");
@@ -1156,13 +964,9 @@ async function handleApiProjectCreate(
     const createOnce = async () => {
       const created = await createProjectVisualization({
         currentWorkdir: state.workdir,
-        workdir: createPayload.workdir,
-        projectId: createPayload.projectId,
         projectName: createPayload.projectName,
         templateId: createPayload.templateId,
         conflictStrategy: createPayload.conflictStrategy,
-        authoringDefaults: createPayload.authoringDefaults,
-        modelProfileStrategy: createPayload.modelProfileStrategy,
         testHooks: state.testHooks?.projectCreate
       });
       const createdWorkdir = asString(asRecord(created)?.workdir) ?? state.workdir;
@@ -1201,9 +1005,6 @@ async function handleApiProjectCreate(
     }
     const code = asString((error as { code?: unknown })?.code) || (error instanceof Error ? error.message : "");
     const details = (error as { details?: unknown })?.details;
-    if (code === "INVALID_PROJECT_ID") {
-      throw new HttpError(400, "INVALID_PROJECT_ID", "Project id must start with a letter or number and use only letters, numbers, dots, underscores, or hyphens.", details);
-    }
     if (code === "INVALID_PROJECT_NAME") {
       throw new HttpError(400, "INVALID_PROJECT_NAME", "Project name must start with a letter or number.", details);
     }
@@ -1211,19 +1012,16 @@ async function handleApiProjectCreate(
       throw new HttpError(400, "INVALID_PROJECT_TEMPLATE", "Project template is unavailable.", details);
     }
     if (code === "INVALID_PROJECT_WORKDIR") {
-      throw new HttpError(400, "INVALID_PROJECT_WORKDIR", "Project workdir must be an existing directory.", details);
-    }
-    if (code === "INVALID_PROJECT_MODEL_DEFAULT") {
-      throw new HttpError(400, "INVALID_PROJECT_MODEL_DEFAULT", "Default model must use provider/model format.", details);
+      throw new HttpError(400, "INVALID_PROJECT_WORKDIR", "Project creation only supports the current visualizer directory.", details);
     }
     if (code === "PROJECT_ALREADY_EXISTS") {
-      throw new HttpError(409, "PROJECT_ALREADY_EXISTS", "Target directory is already an OGSystem project. Load it instead of creating a new project.", details);
+      throw new HttpError(409, "PROJECT_ALREADY_EXISTS", "Current directory is already an OGSystem project.", details);
     }
     if (code === "PROJECT_DIR_CONFLICT") {
-      throw new HttpError(409, "PROJECT_DIR_CONFLICT", "Target directory is not empty and is not an OGSystem project. Choose current-directory initialization, another directory, or load an existing project.", details);
+      throw new HttpError(409, "PROJECT_DIR_CONFLICT", "Current directory is not empty. Confirm current-directory initialization to continue.", details);
     }
     if (code === "PROJECT_FILE_CONFLICT") {
-      throw new HttpError(409, "PROJECT_FILE_CONFLICT", "Target directory already contains files that would conflict with OGSystem project initialization.", details);
+      throw new HttpError(409, "PROJECT_FILE_CONFLICT", "Current directory contains OGSystem-controlled paths and cannot be initialized.", details);
     }
     throw new HttpError(500, "PROJECT_CREATE_FAILED", error instanceof Error ? error.message : String(error), details);
   }
@@ -1255,64 +1053,6 @@ async function handleApiRoleImport(
     }
     throw error;
   }
-}
-
-async function handleApiProjectLoad(
-  state: VisualizationServerState,
-  request: IncomingMessage,
-  response: ServerResponse
-): Promise<void> {
-  const body = await readJsonRequest(request);
-  const requestedWorkdir = asString(body.workdir);
-  if (!requestedWorkdir) {
-    throw new HttpError(400, "PROJECT_WORKDIR_REQUIRED", "workdir is required.");
-  }
-  const targetWorkdir = resolve(requestedWorkdir);
-  const systemStat = await stat(resolve(targetWorkdir, "system.mmd")).catch(() => undefined);
-  const projectStat = await stat(resolve(targetWorkdir, ".ogs", "project.json")).catch(() => undefined);
-  if (!systemStat?.isFile() || !projectStat?.isFile()) {
-    throw new HttpError(
-      400,
-      "PROJECT_INVALID_WORKDIR",
-      "Expected a project directory containing system.mmd and .ogs/project.json."
-    );
-  }
-  const workbench = await inspectProjectSystemWorkbench({ workdir: targetWorkdir });
-  const workbenchRecord = asRecord(workbench) ?? {};
-  const validation = asRecord(workbenchRecord.validation);
-  if (validation?.ok !== true) {
-    throw new HttpError(
-      409,
-      "PROJECT_REBIND_VALIDATION_FAILED",
-      "Target project failed Mermaid validation and cannot be rebound.",
-      validation
-    );
-  }
-  const previousWorkdir = state.workdir;
-  invalidateAllProjectCaches(previousWorkdir);
-  invalidateAllProjectCaches(targetWorkdir);
-  state.workdir = targetWorkdir;
-  await rebuildRunsIndex(targetWorkdir).catch(() => undefined);
-  jsonResponse(
-    response,
-    200,
-    mapProjectLoadView({
-      workdir: targetWorkdir,
-      mode: "single-project-v1",
-      loadedFiles: ["system.mmd", ".ogs/"],
-      validation,
-      followUpActions: [
-        {
-          action: "project-rebound",
-          label: `Visualizer workdir rebound from ${previousWorkdir} to ${targetWorkdir}.`
-        },
-        {
-          action: "reload-runs",
-          label: "Refresh project and run projections for the new workdir."
-        }
-      ]
-    })
-  );
 }
 
 async function handleApiProjectExport(workdir: string, response: ServerResponse): Promise<void> {
@@ -1835,21 +1575,7 @@ async function handleVisualizationRequest(
     await handleApiProjectCreate(state, request, response);
     return;
   }
-  if (segments.length === 4 && segments[2] === "project" && segments[3] === "browse" && method === "GET") {
-    await handleApiProjectBrowse(state, url, response);
-    return;
-  }
-  if (segments.length === 4 && segments[2] === "project" && segments[3] === "validate-open" && method === "POST") {
-    await handleApiProjectValidateOpen(state, request, response);
-    return;
-  }
   const isProjectEndpoint = segments[2] === "project";
-  const isProjectLoadEndpoint =
-    segments.length === 4 && segments[2] === "project" && segments[3] === "load" && method === "POST";
-  const isProjectBrowseEndpoint =
-    segments.length === 4 && segments[2] === "project" && segments[3] === "browse" && method === "GET";
-  const isProjectValidateOpenEndpoint =
-    segments.length === 4 && segments[2] === "project" && segments[3] === "validate-open" && method === "POST";
   const isProjectStudioTemplatesEndpoint =
     segments.length === 5 &&
     segments[2] === "project" &&
@@ -1863,9 +1589,6 @@ async function handleVisualizationRequest(
     method === "GET";
   if (
     isProjectEndpoint &&
-    !isProjectLoadEndpoint &&
-    !isProjectBrowseEndpoint &&
-    !isProjectValidateOpenEndpoint &&
     !isProjectStudioTemplatesEndpoint &&
     !isProjectRoleCatalogEndpoint
   ) {
@@ -2016,10 +1739,6 @@ async function handleVisualizationRequest(
   }
   if (segments.length === 4 && segments[2] === "project" && segments[3] === "readiness" && method === "GET") {
     await handleApiProjectReadiness(state.workdir, response);
-    return;
-  }
-  if (segments.length === 4 && segments[2] === "project" && segments[3] === "load" && method === "POST") {
-    await handleApiProjectLoad(state, request, response);
     return;
   }
   if (segments.length === 4 && segments[2] === "project" && segments[3] === "export" && method === "POST") {

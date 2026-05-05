@@ -69,8 +69,7 @@ import {
 } from "./client-lifecycle-state.js";
 import { bindProjectWizardControls as attachProjectWizardControls } from "./client-project-menu-controls.js";
 import {
-  projectCreateErrorFromResponse as mapProjectCreateErrorFromResponse,
-  projectOpenMessageFromResponse as mapProjectOpenMessageFromResponse
+  projectCreateErrorFromResponse as mapProjectCreateErrorFromResponse
 } from "./client-project-workspace.js";
 import {
   buildLogsQuery,
@@ -191,7 +190,6 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
     const renderRunStatsHtml = ${renderRunStatsHtml.toString()};
     const renderTimelineHtml = ${renderTimelineHtml.toString()};
     const mapProjectCreateErrorFromResponse = ${mapProjectCreateErrorFromResponse.toString()};
-    const mapProjectOpenMessageFromResponse = ${mapProjectOpenMessageFromResponse.toString()};
     const asStudioChatList = ${asStudioChatList.toString()};
     const studioChatCanApply = ${studioChatCanApply.toString()};
     const studioChatModeLabel = ${studioChatModeLabel.toString()};
@@ -309,17 +307,13 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
     const runListEl = document.getElementById("run-list");
     const searchEl = document.getElementById("search");
     const flashEl = document.getElementById("flash");
-    const selectedTitleEl = document.getElementById("selected-title");
-    const selectedSubtitleEl = document.getElementById("selected-subtitle");
     const actionFormEl = document.getElementById("action-form");
     const actionFormSectionEl = document.getElementById("action-form-section");
     let actionFormReturnFocusEl = null;
     const consoleTabsEl = document.getElementById("console-tabs");
     const workdirEl = document.getElementById("workdir");
-    const projectSummaryEl = document.getElementById("project-summary");
     const projectWizardEl = document.getElementById("project-wizard");
     const opsSummaryEl = document.getElementById("ops-summary");
-    const projectReadinessEl = document.getElementById("project-readiness");
     const releaseGateEl = document.getElementById("release-gate");
     const workbenchMetaEl = document.getElementById("workbench-meta");
     const workbenchStatusEl = document.getElementById("workbench-status");
@@ -365,8 +359,6 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
     const sidebarEl = document.getElementById("sidebar");
     const sidebarOverlayEl = document.getElementById("sidebar-overlay");
     const sidebarToggleButton = document.getElementById("sidebar-toggle");
-    const projectHomeButton = document.getElementById("project-home");
-    const projectExportButton = document.getElementById("project-export");
     const releaseExportButton = document.getElementById("release-export");
     const reindexButton = document.getElementById("reindex");
     const startRunButton = document.getElementById("start-run");
@@ -516,8 +508,6 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
     function applyStaticLocalizedContent() {
       const textTargets = [
         [sidebarToggleButton, "hero.runs"],
-        [projectHomeButton, "action.project"],
-        [projectExportButton, "action.exportProject"],
         [releaseExportButton, "action.exportProject"],
         [reindexButton, "action.reindex"],
         [startRunButton, "action.startRun"],
@@ -569,30 +559,6 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
 
     function getCurrentWorkdir() {
       return state.project?.summary?.workdir || workdirEl?.textContent || "";
-    }
-
-    const RECENT_PROJECTS_KEY = "ogs.visualizer.recentProjects";
-
-    function readRecentProjects() {
-      try {
-        const parsed = JSON.parse(window.localStorage.getItem(RECENT_PROJECTS_KEY) || "[]");
-        return Array.isArray(parsed) ? parsed.filter(Boolean).map((item) => String(item)).slice(0, 6) : [];
-      } catch {
-        return [];
-      }
-    }
-
-    function rememberRecentProject(workdir) {
-      const target = String(workdir || "").trim();
-      if (!target) {
-        return;
-      }
-      try {
-        const recent = readRecentProjects().filter((item) => item !== target);
-        window.localStorage.setItem(RECENT_PROJECTS_KEY, JSON.stringify([target].concat(recent).slice(0, 6)));
-      } catch {
-        // best effort only
-      }
     }
 
     function relativeToWorkdir(path) {
@@ -789,7 +755,6 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
       const params = new URLSearchParams(buildRouteSearch({
         projectHome: state.projectHome,
         lifecycle: state.consoleTab,
-        projectTab: state.projectMenuTab,
         selectedRunId: state.selectedRunId,
         selectedReviewId: state.selectedReviewId,
         selectedLogRoleId: state.selectedLogRoleId,
@@ -1171,16 +1136,9 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
     function getProjectWizardDefaults(workspace) {
       const workdir = workspace?.workdir || "";
       return {
-        workdir,
         projectName: workdir ? String(workdir).split(/[\\/]/).filter(Boolean).pop() || "my-ogs-project" : "my-ogs-project",
-        projectId: "project.starter",
         templateId: "empty",
-        defaultModelRef: "",
-        profileStrategy: "visual-editor",
-        defaultProfileId: "profile.default",
-        defaultToolRef: "",
-        conflictStrategy: workspace?.state === "non-project-conflict" ? "reject" : "init-current",
-        selectedRoleIds: []
+        conflictStrategy: workspace?.state === "non-project-ready" ? "reject" : "init-current"
       };
     }
 
@@ -1192,54 +1150,15 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
         return t("projectWizard.workspaceHasProject", undefined, "project exists");
       }
       if (workspace.state === "non-project-conflict") {
-        return t("projectWizard.workspaceConflict", undefined, "existing files");
+        return t("projectWizard.workspaceControlledConflict", undefined, "controlled path conflict");
+      }
+      if (workspace.state === "non-project-ready") {
+        return t("projectWizard.workspaceReady", undefined, "needs confirmation");
       }
       if (workspace.state === "empty") {
         return t("projectWizard.workspaceEmpty", undefined, "empty");
       }
       return t("projectWizard.workspaceNoProject", undefined, "no project");
-    }
-
-    function getRoleHealthKey(role) {
-      const health = String(role?.health?.status || role?.healthStatus || "").trim().toLowerCase();
-      if (!health || health === "unknown" || health === "n/a") {
-        return "unknown";
-      }
-      if (health === "ok" || health === "healthy" || health === "ready") {
-        return "ok";
-      }
-      if (health === "warning" || health === "warn" || health === "attention") {
-        return "warning";
-      }
-      if (health === "error" || health === "failed" || health === "unhealthy") {
-        return "error";
-      }
-      return health;
-    }
-
-    function getRoleHealthLabel(role, includeFallback = true) {
-      const key = getRoleHealthKey(role);
-      if (key === "ok") return t("projectWizard.roleHealthOk", undefined, "healthy");
-      if (key === "warning") return t("projectWizard.roleHealthWarning", undefined, "warning");
-      if (key === "error") return t("projectWizard.roleHealthError", undefined, "unhealthy");
-      return includeFallback ? t("projectWizard.roleHealthUnknown", undefined, "unknown") : "";
-    }
-
-    function filterRoleCatalogRoles(catalogRoles) {
-      const term = state.roleCatalogFilter.trim().toLowerCase();
-      const healthFilter = state.roleCatalogHealthFilter || "all";
-      return catalogRoles.filter((role) => {
-        const healthKey = getRoleHealthKey(role);
-        if (healthFilter !== "all" && healthKey !== healthFilter) {
-          return false;
-        }
-        if (!term) {
-          return true;
-        }
-        return [role.roleId, role.name, role.summary, role.description, role.source, getRoleHealthLabel(role, false)]
-          .filter(Boolean)
-          .some((item) => String(item).toLowerCase().includes(term));
-      });
     }
 
     function ensureProjectWizardDraft(workspace) {
@@ -1257,101 +1176,16 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
       const draft = ensureProjectWizardDraft(state.workspace || {});
       const formHas = (name) => typeof formData.has === "function" && formData.has(name);
       const readFormValue = (name, fallback) => formHas(name) ? String(formData.get(name) || "") : fallback;
-      const selectedRoleIds = new Set(draft.selectedRoleIds || []);
-      if (typeof formData.getAll === "function") {
-        const visibleRoleIds = [];
-        for (const input of projectWizardEl?.querySelectorAll('input[name="roleIds"]') || []) {
-          visibleRoleIds.push(String(input.value || input.getAttribute("value") || "").trim());
-        }
-        for (const roleId of visibleRoleIds) {
-          selectedRoleIds.delete(roleId);
-        }
-        for (const value of formData.getAll("roleIds")) {
-          const roleId = String(value || "").trim();
-          if (roleId) {
-            selectedRoleIds.add(roleId);
-          }
-        }
-      }
       Object.assign(draft, {
-        workdir: draft.workdir || state.workspace?.workdir || getCurrentWorkdir(),
         projectName: readFormValue("projectName", String(draft.projectName || "")),
-        projectId: readFormValue("projectId", String(draft.projectId || "")),
         templateId: readFormValue("templateId", String(draft.templateId || "empty")),
-        defaultModelRef: readFormValue("defaultModelRef", String(draft.defaultModelRef || "")),
-        profileStrategy: readFormValue("profileStrategy", String(draft.profileStrategy || "visual-editor")),
-        defaultProfileId: readFormValue("defaultProfileId", String(draft.defaultProfileId || "")),
-        defaultToolRef: readFormValue("defaultToolRef", String(draft.defaultToolRef || "")),
-        conflictStrategy: readFormValue("conflictStrategy", String(draft.conflictStrategy || "reject")),
-        selectedRoleIds: Array.from(selectedRoleIds)
+        conflictStrategy: readFormValue("conflictStrategy", String(draft.conflictStrategy || "reject"))
       });
       return draft;
     }
 
-    function projectPanelModeFromTab(tabId) {
-      switch (tabId) {
-        case "new":
-          return "new";
-        case "open":
-          return "open";
-        case "recent":
-          return "recent";
-        case "settings":
-          return "settings";
-        default:
-          return "closed";
-      }
-    }
-
-    function setProjectPanelMode(mode) {
-      state.projectPanelMode = mode || "closed";
-      state.projectMenuTab = mode === "closed" ? "overview" : mode;
-    }
-
-    function renderProjectMenuHtml(projectTab) {
-      const menuItems = [
-        ["overview", t("projectMenu.overview", undefined, "Overview")],
-        ["new", t("projectMenu.new", undefined, "New Project")],
-        ["open", t("projectMenu.open", undefined, "Open Project")],
-        ["recent", t("projectMenu.recent", undefined, "Recent")],
-        ["settings", t("projectMenu.settings", undefined, "Settings")]
-      ];
-      return '<div class="project-menu segmented">' + menuItems.map(([id, label]) =>
-        '<button class="button subtle ' + (projectTab === id ? "active" : "") + '" type="button" data-project-menu-tab="' + escapeText(id) + '">' + escapeText(label) + '</button>'
-      ).join("") + '</div>';
-    }
-
-    function renderProjectOverviewContent() {
-      const templates = Array.isArray(state.studioTemplates) ? state.studioTemplates : [];
-      const roles = state.project?.roles?.roles || [];
-      const modelCount = state.project?.config?.modelCatalog?.models?.length || 0;
-      const profiles = state.project?.config?.profiles || [];
-      const entryRoleId = state.workbench?.validation?.structure?.entryRoleId
-        || state.project?.summary?.project?.entryRoleId
-        || roles[0]?.roleId
-        || "n/a";
-      return [
-        '<div class="event"><div class="event-top"><span>' + escapeText(t("projectWizard.templates", undefined, "templates")) + '</span><span>' + escapeText(String(templates.length)) + '</span></div><strong>' +
-          escapeText(templates.map((template) => template.title || template.id).join(", ") || t("common.none", undefined, "none")) +
-          '</strong><div class="hint">' + escapeText(t("projectWizard.templatesHint", undefined, "Use a Studio template in Build to start graph authoring visually.")) + '</div></div>',
-        '<div class="event"><div class="event-top"><span>' + escapeText(t("projectWizard.rolePackages", undefined, "role packages")) + '</span><span>' + escapeText(String(roles.length)) + '</span></div><strong>' +
-          escapeText(roles.map((role) => role.roleId).filter(Boolean).slice(0, 4).join(", ") || t("common.none", undefined, "none")) +
-          '</strong><div class="hint">' + escapeText(t("projectWizard.rolePackagesHint", undefined, "Role packages are resolved from the current project workspace.")) + '</div></div>',
-        '<div class="event"><div class="event-top"><span>' + escapeText(t("projectWizard.modelProfile", undefined, "model / profile")) + '</span><span>' + escapeText(String(modelCount) + " / " + String(profiles.length)) + '</span></div><strong>' +
-          escapeText(t("projectWizard.modelProfileTitle", undefined, "Select model references and execution profiles in the visual role editor.")) +
-          '</strong><div class="hint">' + escapeText(t("projectWizard.modelProfileHint", undefined, "Profiles are created as drafts first and persisted only through explicit save actions.")) + '</div></div>',
-        '<div class="event"><div class="event-top"><span>' + escapeText(t("projectWizard.entryRole", undefined, "entry role")) + '</span><span>' + escapeText(entryRoleId) + '</span></div><strong>' +
-          escapeText(t("projectWizard.entryRoleTitle", undefined, "Lifecycle starts from a visible entry role.")) +
-          '</strong><div class="hint">' + escapeText(t("projectWizard.loadHint", undefined, "Create/import/load project is explicit; no background workspace writes happen from this panel.")) + '</div></div>'
-      ].join("");
-    }
-
     function projectCreateErrorFromResponse(error) {
       return mapProjectCreateErrorFromResponse(error, t);
-    }
-
-    function projectOpenMessageFromResponse(result) {
-      return mapProjectOpenMessageFromResponse(result, t);
     }
 
     function renderFlash() {
@@ -1362,15 +1196,6 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
       }
       flashEl.className = "flash " + (state.flash.kind || "info");
       flashEl.innerHTML = escapeText(state.flash.message);
-      if (state.flash.action === "retry-role-import" && state.pendingRoleImportRetry?.roleIds?.length) {
-        flashEl.innerHTML += ' <button id="flash-retry-role-import" class="button subtle" type="button">' + escapeText(t("projectWizard.retryRoleImport", undefined, "Retry role import")) + '</button>';
-        const retryButton = document.getElementById("flash-retry-role-import");
-        if (retryButton) {
-          bindOnce(retryButton, "click", "retry-role-import", () => {
-            void retryPendingRoleImport();
-          });
-        }
-      }
     }
 
     function setInnerHtmlIfChanged(element, html) {
@@ -1447,8 +1272,6 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
       const disabled = Boolean(state.actionBusy);
       const noProject = !state.hasProject;
       const stopDisabled = disabled || !canRequestStop();
-      projectHomeButton.disabled = disabled;
-      projectExportButton.disabled = disabled || noProject;
       if (releaseExportButton) releaseExportButton.disabled = disabled || noProject;
       reindexButton.disabled = disabled || noProject;
       startRunButton.disabled = disabled || noProject;
@@ -1544,7 +1367,6 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
     function renderHeroActions() {
       const isBuild = state.consoleTab === "build";
       const isOperate = state.consoleTab === "operate" || state.consoleTab === "legacy";
-      const isProject = state.consoleTab === "project";
       if (startRunButton) {
         startRunButton.hidden = !isBuild || !state.hasProject;
         startRunButton.textContent = t("studio.dryRun", undefined, "Dry run");
@@ -1556,12 +1378,6 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
       if (stopRunButton) {
         stopRunButton.hidden = !isOperate;
         stopRunButton.disabled = !state.selectedRunId;
-      }
-      if (projectHomeButton) {
-        projectHomeButton.hidden = isProject;
-      }
-      if (projectExportButton) {
-        projectExportButton.hidden = state.consoleTab !== "validate-release" || !state.hasProject;
       }
     }
 
@@ -1982,7 +1798,7 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
         return;
       }
       if (!state.hasProject) {
-        workbenchMetaEl.textContent = t("workspace.buildUnavailableTitle", undefined, "Create or load a project before building.");
+        workbenchMetaEl.textContent = t("workspace.buildUnavailableTitle", undefined, "Initialize the current directory before building.");
         workbenchStatusEl.innerHTML = '<span class="pill warn">' + escapeText(t("workspace.notInitialized", undefined, "not initialized")) + '</span>';
         workbenchTabsEl.innerHTML = "";
         if (workbenchViewTabsEl) {
@@ -2362,10 +2178,7 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
 
     function renderProject() {
       if (state.projectLoading) {
-        const projectLabel = t("state.loadingProject", undefined, "Loading project data");
-        projectSummaryEl.innerHTML = loadingSkeleton(projectLabel, 4);
         if (opsSummaryEl) opsSummaryEl.innerHTML = loadingSkeleton(t("state.loadingOpsSummary", undefined, "Loading operations summary"), 3);
-        if (projectReadinessEl) projectReadinessEl.innerHTML = loadingSkeleton(t("state.loadingProjectReadiness", undefined, "Loading project readiness"), 3);
         if (releaseGateEl) releaseGateEl.innerHTML = loadingSkeleton(t("state.loadingReleaseGate", undefined, "Loading release gate"), 3);
         bindingExplainEl.innerHTML = loadingSkeleton(t("state.loadingProjectBindings", undefined, "Loading project bindings"), 2);
         rolePackagesEl.innerHTML = loadingSkeleton(t("state.loadingRolePackages", undefined, "Loading role packages"), 2);
@@ -2378,20 +2191,16 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
         if (workdirEl && workspace.workdir) {
           workdirEl.textContent = workspace.workdir;
         }
-        projectSummaryEl.innerHTML = workspaceEmptyStateHtml("project");
         if (opsSummaryEl) opsSummaryEl.innerHTML = workspaceEmptyStateHtml("operate");
-        if (projectReadinessEl) projectReadinessEl.innerHTML = '<div class="hint">' + escapeText(t("workspace.readinessUnavailable", undefined, "Project readiness loads after a project is created or loaded.")) + '</div>';
         if (releaseGateEl) releaseGateEl.innerHTML = workspaceEmptyStateHtml("validate");
-        bindingExplainEl.innerHTML = '<div class="hint">' + escapeText(t("workspace.projectDataUnavailable", undefined, "Project configuration is unavailable until a project is created or loaded.")) + '</div>';
-        rolePackagesEl.innerHTML = '<div class="hint">' + escapeText(t("workspace.roleCatalogHint", undefined, "Installed role catalog can be imported after project creation.")) + '</div>';
-        contractExplainEl.innerHTML = '<div class="hint">' + escapeText(t("workspace.projectDataUnavailable", undefined, "Project configuration is unavailable until a project is created or loaded.")) + '</div>';
+        bindingExplainEl.innerHTML = '<div class="hint">' + escapeText(t("workspace.projectDataUnavailable", undefined, "Project configuration is unavailable until a project is initialized.")) + '</div>';
+        rolePackagesEl.innerHTML = '<div class="hint">' + escapeText(t("workspace.roleCatalogHint", undefined, "Installed role packages can be imported after project creation.")) + '</div>';
+        contractExplainEl.innerHTML = '<div class="hint">' + escapeText(t("workspace.projectDataUnavailable", undefined, "Project configuration is unavailable until a project is initialized.")) + '</div>';
         renderProjectWizard();
         return;
       }
       if (!state.project) {
-        projectSummaryEl.textContent = t("state.projectDataUnavailable");
         if (opsSummaryEl) opsSummaryEl.innerHTML = '<div class="hint">' + escapeText(t("state.opsSummaryUnavailable")) + '</div>';
-        if (projectReadinessEl) projectReadinessEl.innerHTML = '<div class="hint">' + escapeText(t("state.projectReadinessUnavailable")) + '</div>';
         if (releaseGateEl) releaseGateEl.innerHTML = '<div class="hint">' + escapeText(t("release.dataUnavailable", undefined, "Release gate data unavailable.")) + '</div>';
         bindingExplainEl.innerHTML = '<div class="hint">' + escapeText(t("state.projectBindingDataUnavailable")) + '</div>';
         rolePackagesEl.innerHTML = '<div class="hint">' + escapeText(t("state.rolePackageDataUnavailable")) + '</div>';
@@ -2402,26 +2211,9 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
       if (workdirEl) {
         workdirEl.textContent = state.project.summary?.workdir || workdirEl.textContent;
       }
-      const summary = state.project.summary?.project ?? {};
-      const roles = state.project.roles?.roles ?? [];
-      const projectSummaryHtml = renderProjectSummaryPanel({
-        summary,
-        roles,
-        warnings: state.project.config?.modelSelectionWarnings ?? [],
-        workbenchSavedPath: state.workbenchSavedPath || "system.mmd",
-        validationOk: Boolean(state.workbench?.validation?.ok),
-        t
-      });
-      projectSummaryEl.innerHTML = projectSummaryHtml;
       if (opsSummaryEl) {
         opsSummaryEl.innerHTML = renderOpsSummaryPanel({
           opsSummary: state.opsSummary,
-          t
-        });
-      }
-      if (projectReadinessEl) {
-        projectReadinessEl.innerHTML = renderProjectReadinessPanel({
-          readiness: state.projectReadiness,
           t
         });
       }
@@ -2508,386 +2300,138 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
         return;
       }
       const workspace = state.workspace || {};
-      const defaultProjectTab = state.hasProject ? "overview" : "new";
-      const activeTab = ["overview", "new", "open", "recent", "settings"].includes(state.projectMenuTab)
-        ? state.projectMenuTab
-        : defaultProjectTab;
-      if (!state.hasProject && activeTab === "overview") {
-        state.projectMenuTab = "new";
-      }
-      const projectTab = !state.hasProject && activeTab === "overview" ? "new" : activeTab;
-      state.projectPanelMode = projectPanelModeFromTab(projectTab);
-      const menuHtml = renderProjectMenuHtml(projectTab);
-      const openDraft = state.projectOpenDraft || workspace.workdir || getCurrentWorkdir();
-      if (!state.projectOpenDraft) {
-        state.projectOpenDraft = openDraft;
-      }
-      const recentProjects = readRecentProjects();
-      const browse = state.projectOpenBrowse;
-      const validation = state.projectOpenValidation;
-      const validationMessage = validation ? projectOpenMessageFromResponse(validation).message : "";
-      const browseMessage = browse ? projectOpenMessageFromResponse(browse).message : "";
-      const browseDirectories = Array.isArray(browse?.children?.directories) ? browse.children.directories : [];
-      const browseProjects = Array.isArray(browse?.recent) ? browse.recent : [];
-      const browseFiles = Array.isArray(browse?.children?.files) ? browse.children.files : [];
-      const validationClass = validation
-        ? validation.isProject ? "" : validation.hasConflict || validation.exists === false || validation.readable === false ? " warn" : ""
-        : "";
+      const draft = ensureProjectWizardDraft(workspace);
       const workspaceState = getWorkspaceStateLabel(workspace);
-      const validationHtml = validation
-        ? '<div id="project-open-validation" class="event' + validationClass + '"><div class="event-top"><span>' + escapeText(t("projectOpen.validation", undefined, "Validation")) + '</span><span>' + escapeText(validation.isProject ? t("projectOpen.ready", undefined, "ready") : validation.isEmpty ? t("common.empty", undefined, "empty") : t("common.attention", undefined, "attention")) + '</span></div><strong>' + escapeText(validationMessage) + '</strong>' +
-          (Array.isArray(validation.conflicts) && validation.conflicts.length ? '<div class="hint">' + escapeText(t("projectOpen.conflicts", { items: validation.conflicts.join(", ") }, "Conflicts: " + validation.conflicts.join(", "))) + '</div>' : "") +
-          '</div>'
-        : '<div id="project-open-validation" class="hint">' + escapeText(t("projectOpen.validationPending", undefined, "Choose or validate a directory before opening.")) + '</div>';
-      const browseSummaryHtml = browse
-        ? '<div class="event"><div class="event-top"><span>' + escapeText(t("projectOpen.browser", undefined, "Directory browser")) + '</span><span>' + escapeText(relativeToWorkdir(browse.workdir || openDraft)) + '</span></div><strong>' + escapeText(t("projectOpen.browserTitle", undefined, "Browse server-visible directories")) + '</strong><div class="hint">' + escapeText(browseMessage || t("projectOpen.browserHint", undefined, "Select a child directory, parent, or known project before opening.")) + '</div></div>'
-        : '<div class="event"><div class="event-top"><span>' + escapeText(t("projectOpen.browser", undefined, "Directory browser")) + '</span><span>' + escapeText(state.projectOpenLoading ? t("common.loading", undefined, "loading") : t("common.ready", undefined, "ready")) + '</span></div><strong>' + escapeText(t("projectOpen.browserTitle", undefined, "Browse server-visible directories")) + '</strong><div class="hint">' + escapeText(t("projectOpen.browserHint", undefined, "Select a child directory, parent, or known project before opening.")) + '</div></div>';
-      const browseErrorHtml = state.projectOpenError
-        ? '<div class="event warn"><strong>' + escapeText(state.projectOpenError) + '</strong></div>'
+      const conflictList = Array.isArray(workspace.controlledPathConflicts) ? workspace.controlledPathConflicts : [];
+      const canInitialize = workspace.canInitialize === true;
+      const hasProject = workspace.hasProject === true;
+      const recentRuns = Array.isArray(state.runs) ? state.runs.slice(0, 3) : [];
+      const summary = state.project?.summary?.project || {};
+      const projectName = summary.projectName || state.project?.summary?.name || draft.projectName || "n/a";
+      const templateOptions = [
+        ["empty", t("projectWizard.template.empty", undefined, "Blank draft")],
+        ["minimal", t("projectWizard.template.minimal", undefined, "Minimal runnable")],
+        ["software-dev", "software-dev"],
+        ["consultation", "consultation"]
+      ];
+      const errorHtml = state.projectCreateError
+        ? '<div class="event warn"><div class="event-top"><span>' + escapeText(t("common.attention", undefined, "attention")) + '</span><span>' + escapeText(state.projectCreateError.code || "error") + '</span></div><strong>' + escapeText(state.projectCreateError.message || t("projectWizard.createFailed", undefined, "Project creation failed.")) + '</strong></div>'
         : "";
-      const parentButtonHtml = browse?.parent
-        ? '<button class="button subtle" type="button" data-project-open-browse="' + escapeText(browse.parent) + '">..</button>'
-        : "";
-      const directoryHtml = browseDirectories.length
-        ? '<div class="project-open-browser-grid">' + parentButtonHtml + browseDirectories.map((item) => '<button class="button subtle" type="button" data-project-open-browse="' + escapeText(item.path) + '">' + escapeText(item.name) + '</button>').join("") + '</div>'
-        : '<div class="project-open-browser-grid">' + parentButtonHtml + '<span class="hint">' + escapeText(t("projectOpen.noDirectories", undefined, "No child directories.")) + '</span></div>';
-      const projectSuggestionsHtml = browseProjects.length
-        ? '<div class="structure-list">' + browseProjects.map((item) => '<button class="button subtle" type="button" data-project-open-project="' + escapeText(item.workdir) + '">' + escapeText(item.name || relativeToWorkdir(item.workdir)) + '</button>').join("") + '</div>'
-        : '<div class="hint">' + escapeText(t("projectOpen.noProjectsNearby", undefined, "No OGSystem projects found in this directory.")) + '</div>';
-      const filesHtml = browseFiles.length
-        ? '<div class="hint">' + escapeText(t("projectOpen.filesPreview", { items: browseFiles.slice(0, 6).map((item) => item.name).join(", ") }, "Files: " + browseFiles.slice(0, 6).map((item) => item.name).join(", "))) + '</div>'
-        : "";
-      const openPanelHtml = [
-        '<form id="project-open-form" class="structure-list">',
-        '<div class="event"><div class="event-top"><span>' + escapeText(t("projectMenu.open", undefined, "Open Project")) + '</span><span>' + escapeText(t("form.workspace", undefined, "workspace")) + '</span></div><strong>' + escapeText(t("projectOpen.title", undefined, "Load an existing OGSystem project")) + '</strong><div class="hint">' + escapeText(t("projectOpen.hint", undefined, "Choose a project directory. The server validates the path before rebinding the visualizer.")) + '</div></div>',
-        '<div class="event"><div class="event-top"><span>' + escapeText(t("projectOpen.currentDirectory", undefined, "Current directory")) + '</span><span>' + escapeText(workspaceState) + '</span></div><strong><code>' + escapeText(workspace.workdir || getCurrentWorkdir() || "n/a") + '</code></strong><div class="hint">' + escapeText(t("projectOpen.currentDirectoryHint", undefined, "The current visualizer workdir is shown here so you can decide whether to load it, initialize it, or switch paths.")) + '</div></div>',
-        browseSummaryHtml,
-        browseErrorHtml,
-        '<div class="toolbar-group"><button class="button subtle" id="project-open-browse-refresh" type="button"' + (state.projectOpenLoading ? " disabled" : "") + '>' + escapeText(t("projectOpen.refreshBrowse", undefined, "Refresh")) + '</button><button class="button subtle" id="project-open-validate" type="button"' + (state.projectOpenLoading ? " disabled" : "") + '>' + escapeText(t("projectOpen.validate", undefined, "Validate")) + '</button></div>',
-        directoryHtml,
-        projectSuggestionsHtml,
-        '<div class="toolbar-group">' +
-          '<button class="button primary" type="submit">' + escapeText(t("projectOpen.loadCurrent", undefined, "Load current project")) + '</button>' +
-          '<button class="button subtle" type="button" data-project-open-browse="' + escapeText(workspace.workdir || getCurrentWorkdir() || "") + '">' + escapeText(t("projectOpen.useOtherDirectory", undefined, "Use other directory")) + '</button>' +
-        '</div>',
-        filesHtml,
-        recentProjects.length
-          ? '<div class="structure-list">' + recentProjects.map((item) => '<button class="button subtle" type="button" data-project-open-recent="' + escapeText(item) + '">' + escapeText(relativeToWorkdir(item)) + '</button>').join("") + '</div>'
-          : '<div class="hint">' + escapeText(t("projectOpen.noRecent", undefined, "No recent projects yet.")) + '</div>',
-        '<label><span>' + escapeText(t("projectOpen.path", undefined, "Project directory")) + '</span><input id="project-open-workdir" name="workdir" value="' + escapeText(openDraft) + '"><span class="hint">' + escapeText(t("projectOpen.pathHint", undefined, "Use an absolute path or a server-visible project directory.")) + '</span></label>',
-        validationHtml,
-        '<div class="toolbar-group"><button class="button primary" id="project-open-submit" type="submit">' + escapeText(t("projectOpen.load", undefined, "Open Project")) + '</button></div>',
-        '</form>'
-      ].join("");
-      const recentPanelHtml = [
-        '<div class="event"><div class="event-top"><span>' + escapeText(t("projectMenu.recent", undefined, "Recent")) + '</span><span>' + escapeText(String(recentProjects.length)) + '</span></div><strong>' + escapeText(t("projectOpen.recentTitle", undefined, "Recently opened projects")) + '</strong><div class="hint">' + escapeText(t("projectOpen.recentHint", undefined, "Recent projects are stored locally in this browser.")) + '</div></div>',
-        recentProjects.length
-          ? '<div class="structure-list">' + recentProjects.map((item) => '<button class="button subtle" type="button" data-project-open-recent="' + escapeText(item) + '">' + escapeText(item) + '</button>').join("") + '</div>'
-          : '<div class="hint">' + escapeText(t("projectOpen.noRecent", undefined, "No recent projects yet.")) + '</div>'
-      ].join("");
-      const overviewHtml = renderProjectOverviewContent();
-      if (!state.hasProject) {
-        const draft = ensureProjectWizardDraft(workspace);
-        const conflict = workspace.state === "non-project-conflict";
-        const catalogRoles = Array.isArray(state.roleCatalog?.roles) ? state.roleCatalog.roles : [];
-        const filteredCatalogRoles = filterRoleCatalogRoles(catalogRoles);
-        const pageSize = [12, 24, 48].includes(state.roleCatalogPageSize) ? state.roleCatalogPageSize : 24;
-        const pageCount = Math.max(1, Math.ceil(filteredCatalogRoles.length / pageSize));
-        state.roleCatalogPage = Math.min(Math.max(0, state.roleCatalogPage || 0), pageCount - 1);
-        const pageStart = state.roleCatalogPage * pageSize;
-        const visibleCatalogRoles = filteredCatalogRoles.slice(pageStart, pageStart + pageSize);
-        const selectedRoleIds = Array.isArray(draft.selectedRoleIds) ? draft.selectedRoleIds : [];
-        const selectedRoles = (draft.selectedRoleIds || [])
-          .map((roleId) => catalogRoles.find((role) => role.roleId === roleId) || { roleId })
-          .filter((role) => role.roleId);
-        const healthCounts = catalogRoles.reduce((counts, role) => {
-          const key = getRoleHealthKey(role);
-          counts[key] = (counts[key] || 0) + 1;
-          return counts;
-        }, { all: catalogRoles.length, ok: 0, warning: 0, error: 0, unknown: 0 });
-        const healthFilters = [
-          ["all", t("common.all", undefined, "all"), healthCounts.all],
-          ["ok", t("projectWizard.roleHealthOk", undefined, "healthy"), healthCounts.ok],
-          ["warning", t("projectWizard.roleHealthWarning", undefined, "warning"), healthCounts.warning],
-          ["error", t("projectWizard.roleHealthError", undefined, "unhealthy"), healthCounts.error],
-          ["unknown", t("projectWizard.roleHealthUnknown", undefined, "unknown"), healthCounts.unknown]
-        ];
-        const roleOptions = catalogRoles.length
-          ? visibleCatalogRoles.map((role) => {
-              const roleId = role.roleId || "";
-              const imported = role.alreadyImported ? " · " + t("common.loaded", undefined, "loaded") : "";
-              const health = " · " + getRoleHealthLabel(role);
-              const checked = selectedRoleIds.includes(roleId) ? " checked" : "";
-              return '<label class="event role-catalog-item"><input type="checkbox" name="roleIds" value="' + escapeText(roleId) + '"' + checked + '><span><strong>' + escapeText(role.name || roleId) + '</strong><span class="hint">' + escapeText(roleId + imported + health) + '</span></span></label>';
-            }).join("")
-          : '<div class="hint">' + escapeText(t("projectWizard.roleCatalogEmpty", undefined, "Installed role catalog is unavailable.")) + '</div>';
-        const selectedSummary = selectedRoles.length
-          ? selectedRoles.map((role) => role.name || role.roleId).join(", ")
-          : t("projectWizard.roleCatalogSelectedEmpty", undefined, "No roles selected.");
-        const selectedSummaryText = selectedRoles.length
-          ? selectedRoles.map((role) => (role.name || role.roleId) + " (" + getRoleHealthLabel(role) + ")").join(", ")
-          : selectedSummary;
-        const error = state.projectCreateError
-          ? '<div class="event"><div class="event-top"><span>' + escapeText(t("common.attention", undefined, "attention")) + '</span><span>' + escapeText(state.projectCreateError.code || "error") + '</span></div><strong>' + escapeText(state.projectCreateError.message || t("projectWizard.createFailed", undefined, "Project creation failed.")) + '</strong></div>'
-          : "";
-        const wizardStep = state.projectWizardStep || "location";
-        const createPanelHtml = [
-          '<div class="event"><div class="event-top"><span>' + escapeText(t("section.projectWizard", undefined, "Project Wizard")) + '</span><span>' + escapeText(conflict ? t("common.attention", undefined, "attention") : t("common.empty", undefined, "empty")) + '</span></div><strong>' +
-            escapeText(conflict ? t("projectWizard.directoryConflictTitle", undefined, "Directory is not empty.") : t("projectWizard.emptyDirectoryTitle", undefined, "Start a new OGSystem project here.")) +
-            '</strong><div class="hint">' + escapeText(conflict ? t("projectWizard.directoryConflictHint", undefined, "Initialize the current directory only if the existing files belong with this project, or load another project.") : t("projectWizard.emptyDirectoryHint", undefined, "No files are written until you confirm project creation.")) + '</div></div>',
-          '<div class="event"><div class="event-top"><span>' + escapeText(t("projectWizard.pathSummary", undefined, "Path summary")) + '</span><span>' + escapeText(t("projectWizard.pathSummaryMode", { mode: conflict ? t("projectWizard.pathSummaryConflict", undefined, "conflict") : t("projectWizard.pathSummaryClean", undefined, "ready") }, conflict ? "conflict" : "ready")) + '</span></div><strong>' + escapeText(t("projectWizard.pathSummaryTitle", undefined, "Current and target workdir stay visible while you choose whether to create or load.")) + '</strong><div class="hint">' + escapeText(t("projectWizard.pathSummaryHint", undefined, "Use Open Project for another path. Load current project reuses the active directory; initialize current directory keeps the current path and writes new project files only when you confirm.")) + '</div></div>',
-          error,
-          '<form id="project-create-form" class="structure-list">',
-          '<div class="event"><div class="event-top"><span>' + escapeText(t("projectWizard.stepLabel", undefined, "Step")) + '</span><span>' + escapeText(
-            wizardStep === "location" ? t("projectWizard.step.location", undefined, "Location") :
-              wizardStep === "details" ? t("projectWizard.step.details", undefined, "Details") :
-                wizardStep === "structure" ? t("projectWizard.step.structure", undefined, "Structure") :
-                  t("projectWizard.step.review", undefined, "Review")
-          ) + '</span></div><strong>' + escapeText(t("projectWizard.flowTitle", undefined, "Create a project, then continue in Build.")) + '</strong><div class="hint">' +
-            escapeText(
-              wizardStep === "location"
-                ? t("projectWizard.stepHint.location", undefined, "Confirm the target directory and initialization mode.")
-                : wizardStep === "details"
-                  ? t("projectWizard.stepHint.details", undefined, "Enter the project name, id, template, and defaults.")
-                  : wizardStep === "structure"
-                    ? t("projectWizard.stepHint.structure", undefined, "Optionally preselect installed roles or continue with a blank graph.")
-                    : t("projectWizard.stepHint.review", undefined, "Review the configuration before project files are written.")
-            ) + '</div></div>',
-          wizardStep === "location" ? [
-          '<label><span>' + escapeText(t("projectWizard.workdir", undefined, "Target directory")) + '</span><input name="workdir" value="' + escapeText(draft.workdir) + '" readonly="readonly"><span class="hint">' + escapeText(conflict ? t("projectWizard.workdirConflictHint", undefined, "This is the current visualizer directory and it already has files. Use Open Project to change directories.") : t("projectWizard.workdirHint", undefined, "This is the current visualizer directory. Use Open Project to change directories.")) + '</span></label>',
-          conflict ? '<label><span>' + escapeText(t("projectWizard.conflictStrategy", undefined, "Conflict strategy")) + '</span><select name="conflictStrategy"><option value="reject"' + (draft.conflictStrategy !== "init-current" ? " selected" : "") + '>' + escapeText(t("projectWizard.chooseAnotherDirectory", undefined, "Open Project instead")) + '</option><option value="init-current"' + (draft.conflictStrategy === "init-current" ? " selected" : "") + '>' + escapeText(t("projectWizard.initCurrentDirectory", undefined, "Initialize current directory")) + '</option></select><span class="hint">' + escapeText(t("projectWizard.conflictStrategyHint", undefined, "Reject keeps the existing files untouched; initialize current directory only when this path is intentionally the project root.")) + '</span></label>' : '<input type="hidden" name="conflictStrategy" value="init-current">'
-          ].join("") : "",
-          wizardStep === "details" ? [
-          '<label><span>' + escapeText(t("projectWizard.projectName", undefined, "Project name")) + '</span><input name="projectName" value="' + escapeText(draft.projectName) + '"></label>',
-          '<label><span>' + escapeText(t("projectWizard.projectId", undefined, "Project id")) + '</span><input name="projectId" value="' + escapeText(draft.projectId) + '"></label>',
-          '<label><span>' + escapeText(t("projectWizard.template", undefined, "Template")) + '</span><select name="templateId"><option value="empty"' + (draft.templateId === "empty" ? " selected" : "") + '>' + escapeText(t("projectWizard.template.empty", undefined, "Blank draft")) + '</option><option value="minimal"' + (draft.templateId === "minimal" ? " selected" : "") + '>' + escapeText(t("projectWizard.template.minimal", undefined, "Minimal runnable")) + '</option><option value="software-dev"' + (draft.templateId === "software-dev" ? " selected" : "") + '>software-dev</option><option value="consultation"' + (draft.templateId === "consultation" ? " selected" : "") + '>consultation</option></select></label>',
-          '<div class="event"><div class="event-top"><span>' + escapeText(t("projectWizard.modelProfileSummary", undefined, "Model / profile strategy")) + '</span><span>' + escapeText(t("projectWizard.advanced", undefined, "advanced")) + '</span></div><strong>' +
-            escapeText(t("projectWizard.modelProfileSummaryTitle", undefined, "Keep model and profile defaults out of the main path unless you need them now.")) + '</strong><div class="hint">' + escapeText(t("projectWizard.modelProfileSummaryHint", undefined, "Default model and profile settings stay available here, but Build inspector remains the preferred place to refine them after creation.")) + '</div></div>',
-          '<label><span>' + escapeText(t("projectWizard.defaultModel", undefined, "Default model")) + '</span><input name="defaultModelRef" value="' + escapeText(draft.defaultModelRef) + '"><span class="hint">' + escapeText(t("projectWizard.defaultModelHint", undefined, "Optional provider/model reference for generated model-selection defaults.")) + '</span></label>',
-          '<label><span>' + escapeText(t("projectWizard.profileStrategy", undefined, "Profile strategy")) + '</span><select name="profileStrategy"><option value="visual-editor"' + (draft.profileStrategy === "visual-editor" ? " selected" : "") + '>' + escapeText(t("projectWizard.profileStrategy.visualEditor", undefined, "Configure in visual role editor")) + '</option><option value="create-profile"' + (draft.profileStrategy === "create-profile" ? " selected" : "") + '>' + escapeText(t("projectWizard.profileStrategy.createProfile", undefined, "Create reusable execution profile")) + '</option></select></label>',
-          '<label><span>' + escapeText(t("projectWizard.defaultProfileId", undefined, "Default profile id")) + '</span><input name="defaultProfileId" value="' + escapeText(draft.defaultProfileId) + '"></label>',
-          '<label><span>' + escapeText(t("projectWizard.defaultToolRef", undefined, "Default tool")) + '</span><input name="defaultToolRef" value="' + escapeText(draft.defaultToolRef) + '"></label>'
-          ].join("") : "",
-          wizardStep === "structure" ? [
-          '<div class="event"><div class="event-top"><span>' + escapeText(t("projectWizard.roleCatalog", undefined, "Installed roles")) + '</span><span>' + escapeText(String(catalogRoles.length)) + '</span></div><strong>' + escapeText(t("projectWizard.roleCatalogTitle", undefined, "Import role packages after project creation")) + '</strong><div class="hint">' + escapeText(t("projectWizard.roleCatalogCreateHint", undefined, "Selected roles are imported through the controlled role import API after the project is created.")) + '</div></div>',
-          '<label><span>' + escapeText(t("projectWizard.roleCatalogSearch", undefined, "Search roles")) + '</span><input id="project-role-catalog-filter" value="' + escapeText(state.roleCatalogFilter) + '"><span class="hint">' + escapeText(t("projectWizard.roleCatalogSummary", { visible: String(visibleCatalogRoles.length), total: String(filteredCatalogRoles.length) }, "Showing " + String(visibleCatalogRoles.length) + " of " + String(filteredCatalogRoles.length))) + '</span></label>',
-          '<div class="toolbar-row compact"><div class="toolbar-group"><label><span>' + escapeText(t("projectWizard.roleCatalogHealth", undefined, "Health")) + '</span><select id="project-role-health-filter">' +
-            healthFilters.map(([value, label, count]) => '<option value="' + escapeText(value) + '"' + (state.roleCatalogHealthFilter === value ? " selected" : "") + '>' + escapeText(label + " (" + String(count) + ")") + '</option>').join("") +
-          '</select></label></div><div class="toolbar-group"><label><span>' + escapeText(t("projectWizard.roleCatalogPageSize", undefined, "Page size")) + '</span><select id="project-role-page-size"><option value="12"' + (pageSize === 12 ? " selected" : "") + '>12</option><option value="24"' + (pageSize === 24 ? " selected" : "") + '>24</option><option value="48"' + (pageSize === 48 ? " selected" : "") + '>48</option></select></label></div><div class="toolbar-group"><span class="hint">' + escapeText(t("projectWizard.roleCatalogPagerSummary", { visible: String(visibleCatalogRoles.length), total: String(filteredCatalogRoles.length) }, String(visibleCatalogRoles.length) + " visible of " + String(filteredCatalogRoles.length))) + '</span><button class="button subtle" type="button" id="project-role-prev"' + (state.roleCatalogPage <= 0 ? " disabled" : "") + '>' + escapeText(t("common.previous", undefined, "Previous")) + '</button><span class="hint">' + escapeText(t("projectWizard.roleCatalogPage", { page: String(state.roleCatalogPage + 1), pages: String(pageCount) }, "Page " + String(state.roleCatalogPage + 1) + " of " + String(pageCount))) + '</span><button class="button subtle" type="button" id="project-role-next"' + (state.roleCatalogPage >= pageCount - 1 ? " disabled" : "") + '>' + escapeText(t("common.next", undefined, "Next")) + '</button></div></div>',
-          '<div class="event"><div class="event-top"><span>' + escapeText(t("projectWizard.roleCatalogSelected", undefined, "Selected roles")) + '</span><span>' + escapeText(String(selectedRoles.length)) + '</span></div><strong>' + escapeText(selectedSummaryText) + '</strong><div class="hint">' + escapeText(t("projectWizard.roleCatalogSelectedHint", undefined, "Selections remain visible even when the catalog filter changes.")) + '</div></div>',
-          '<div class="structure-list">' + roleOptions + '</div>',
-          '<div class="event"><div class="event-top"><span>' + escapeText(t("projectWizard.nl2mmdOption", undefined, "nl2mmd")) + '</span><span>' + escapeText(t("common.ready", undefined, "ready")) + '</span></div><strong>' + escapeText(t("projectWizard.nl2mmdOptionHint", undefined, "You can create a blank project now and generate the base framework later in Build with Chat / Generate.")) + '</strong></div>'
-          ].join("") : "",
-          wizardStep === "review" ? [
-          '<div class="event"><div class="event-top"><span>' + escapeText(t("projectWizard.reviewTitle", undefined, "Review")) + '</span><span>' + escapeText(draft.templateId || "empty") + '</span></div><strong>' + escapeText(draft.projectName || "my-ogs-project") + '</strong><div class="hint">' + escapeText([
-            t("projectWizard.workdir", undefined, "Target directory") + ": " + (draft.workdir || ""),
-            t("projectWizard.projectId", undefined, "Project id") + ": " + (draft.projectId || ""),
-            t("projectWizard.roleCatalogSelected", undefined, "Selected roles") + ": " + String(selectedRoles.length)
-          ].join(" · ")) + '</div></div>'
-          ].join("") : "",
-          '<div class="toolbar-row compact"><div class="toolbar-group">' +
-            (wizardStep !== "location" ? '<button class="button subtle" type="button" id="project-wizard-back">' + escapeText(t("common.previous", undefined, "Previous")) + '</button>' : "") +
-            (wizardStep !== "review" ? '<button class="button subtle" type="button" id="project-wizard-next">' + escapeText(t("common.next", undefined, "Next")) + '</button>' : "") +
-            (wizardStep === "review" ? '<button class="button primary" type="submit">' + escapeText(t("projectWizard.createProject", undefined, "Create project")) + '</button>' : "") +
-          '</div></div>',
-          '</form>'
-        ].join("");
-        const mainHtml = [
-          '<div class="project-home-layout">',
-          '<div class="project-home-main structure-list">',
-          '<div class="event"><div class="event-top"><span>' + escapeText(t("projectMenu.overview", undefined, "Overview")) + '</span><span>' + escapeText(t("workspace.notInitialized", undefined, "not initialized")) + '</span></div><strong>' + escapeText(t("workspace.projectUnavailableTitle", undefined, "This directory is not initialized as an OGSystem project.")) + '</strong><div class="hint">' + escapeText(t("workspace.createOrLoadHint", undefined, "Use Project to create a project in this directory or load an existing project.")) + '</div></div>',
-          '<div class="event"><div class="event-top"><span>' + escapeText(t("projectWizard.step.location", undefined, "Location")) + '</span><span>' + escapeText(relativeToWorkdir(workspace.workdir || getCurrentWorkdir() || "")) + '</span></div><strong>' + escapeText(conflict ? t("projectWizard.directoryConflictTitle", undefined, "Directory is not empty.") : t("projectWizard.emptyDirectoryTitle", undefined, "Start a new OGSystem project here.")) + '</strong><div class="hint">' + escapeText(conflict ? t("projectWizard.directoryConflictHint", undefined, "Initialize the current directory only if the existing files belong with this project, or load another project.") : t("projectWizard.emptyDirectoryHint", undefined, "No files are written until you confirm project creation.")) + '</div></div>',
-          '</div>',
-          '<aside class="project-side-panel structure-list">' + createPanelHtml + '</aside>',
-          '</div>'
-        ].join("");
-        projectWizardEl.innerHTML = menuHtml + (projectTab === "open"
-          ? '<div class="project-home-layout"><div class="project-home-main structure-list">' + overviewHtml + '</div><aside class="project-side-panel structure-list">' + openPanelHtml + '</aside></div>'
-          : projectTab === "recent"
-            ? '<div class="project-home-layout"><div class="project-home-main structure-list">' + overviewHtml + '</div><aside class="project-side-panel structure-list">' + recentPanelHtml + '</aside></div>'
-            : mainHtml);
-        const form = document.getElementById("project-create-form");
-        if (form) {
-          form.addEventListener("submit", (event) => {
-            event.preventDefault();
-            void createProjectFromWizard(new FormData(form));
-          });
-          for (const input of projectWizardEl.querySelectorAll("input, select")) {
-            input.addEventListener("input", () => updateProjectWizardDraftFromForm(form));
-            input.addEventListener("change", () => updateProjectWizardDraftFromForm(form));
-          }
-        }
-        const wizardBackButton = document.getElementById("project-wizard-back");
-        if (wizardBackButton) {
-          wizardBackButton.addEventListener("click", () => {
-            state.projectWizardStep =
-              wizardStep === "details" ? "location" :
-                wizardStep === "structure" ? "details" :
-                  wizardStep === "review" ? "structure" :
-                    "location";
-            renderProjectWizard();
-          });
-        }
-        const wizardNextButton = document.getElementById("project-wizard-next");
-        if (wizardNextButton) {
-          wizardNextButton.addEventListener("click", () => {
-            updateProjectWizardDraftFromForm(form);
-            state.projectWizardStep =
-              wizardStep === "location" ? "details" :
-                wizardStep === "details" ? "structure" :
-                  "review";
-            renderProjectWizard();
-          });
-        }
-        const roleFilterInput = document.getElementById("project-role-catalog-filter");
-        if (roleFilterInput) {
-          roleFilterInput.addEventListener("input", (event) => {
-            updateProjectWizardDraftFromForm(form);
-            state.roleCatalogFilter = event.target.value || "";
-            state.roleCatalogPage = 0;
-            renderProjectWizard();
-          });
-        }
-        const healthFilterSelect = document.getElementById("project-role-health-filter");
-        if (healthFilterSelect) {
-          healthFilterSelect.addEventListener("change", (event) => {
-            updateProjectWizardDraftFromForm(form);
-            state.roleCatalogHealthFilter = event.target.value || "all";
-            state.roleCatalogPage = 0;
-            renderProjectWizard();
-          });
-        }
-        const pageSizeSelect = document.getElementById("project-role-page-size");
-        if (pageSizeSelect) {
-          pageSizeSelect.addEventListener("change", (event) => {
-            updateProjectWizardDraftFromForm(form);
-            state.roleCatalogPageSize = event.target.value === "12" || event.target.value === "24" || event.target.value === "48" ? Number(event.target.value) : 24;
-            state.roleCatalogPage = 0;
-            renderProjectWizard();
-          });
-        }
-        const previousButton = document.getElementById("project-role-prev");
-        if (previousButton) {
-          previousButton.addEventListener("click", () => {
-            updateProjectWizardDraftFromForm(form);
-            state.roleCatalogPage = Math.max(0, state.roleCatalogPage - 1);
-            renderProjectWizard();
-          });
-        }
-        const nextButton = document.getElementById("project-role-next");
-        if (nextButton) {
-          nextButton.addEventListener("click", () => {
-            updateProjectWizardDraftFromForm(form);
-            state.roleCatalogPage += 1;
-            renderProjectWizard();
-          });
-        }
-        bindProjectMenuControls();
-        return;
-      }
-      const newProjectUnavailableHtml = '<div class="event"><div class="event-top"><span>' + escapeText(t("projectMenu.new", undefined, "New Project")) + '</span><span>' + escapeText(t("common.loaded", undefined, "loaded")) + '</span></div><strong>' + escapeText(t("projectWizard.currentProjectLoaded", undefined, "A project is already loaded.")) + '</strong><div class="hint">' + escapeText(t("projectWizard.currentProjectLoadedHint", undefined, "Use Open Project to switch directories before creating another project.")) + '</div></div>';
-      const settingsHtml = '<div class="event"><div class="event-top"><span>' + escapeText(t("projectMenu.settings", undefined, "Settings")) + '</span><span>' + escapeText(t("common.loaded", undefined, "loaded")) + '</span></div><strong>' + escapeText(t("projectWizard.settingsTitle", undefined, "Project settings are edited in Build inspectors.")) + '</strong><div class="hint">' + escapeText(t("projectWizard.settingsHint", undefined, "Model references, profiles, role package bindings, and graph structure stay in the visual Build workflow.")) + '</div></div>';
-      const sidePanelHtml =
-        projectTab === "open" ? openPanelHtml :
-          projectTab === "recent" ? recentPanelHtml :
-            projectTab === "new" ? newProjectUnavailableHtml :
-              projectTab === "settings" ? settingsHtml :
-                "";
-      projectWizardEl.innerHTML = menuHtml + '<div class="project-home-layout"><div class="project-home-main structure-list">' + overviewHtml + '</div>' +
-        (sidePanelHtml ? '<aside class="project-side-panel structure-list">' + sidePanelHtml + '</aside>' : "") +
-        '</div>';
-      bindProjectMenuControls();
-    }
 
-    function bindProjectMenuControls() {
+      let mainHtml = "";
+      let sideHtml = "";
+      if (hasProject) {
+        const readinessBlockers = Array.isArray(state.projectReadiness?.blockers) ? state.projectReadiness.blockers : [];
+        const validationOk = state.workbench?.validation?.ok === true;
+        mainHtml = [
+          '<article class="card project-home-card">',
+          '<header><h3>' + escapeText(t("section.projectOverview", undefined, "Project Overview")) + '</h3></header>',
+          '<div class="body structure-list">',
+          '<div class="event"><div class="event-top"><span>' + escapeText(t("project.currentDirectory", undefined, "Current directory")) + '</span><span>' + escapeText(workspaceState) + '</span></div><strong><code>' + escapeText(workspace.workdir || getCurrentWorkdir() || "n/a") + '</code></strong><div class="hint">' + escapeText(t("project.currentDirectoryHint", undefined, "Visualizer now operates only on the current directory shown here.")) + '</div></div>',
+          '<div class="event"><div class="event-top"><span>' + escapeText(t("project.currentProject", undefined, "Current project")) + '</span><span>' + escapeText(validationOk ? t("project.validated", undefined, "validated") : t("project.needsAttention", undefined, "needs attention")) + '</span></div><strong>' + escapeText(projectName) + '</strong><div class="hint">' + escapeText(t("project.readyProjectHint", undefined, "Use Build for structure and bindings, Validate & Release for gates, and Operate for runtime inspection.")) + '</div></div>',
+          '</div>',
+          '</article>',
+          '<div class="project-home-grid">',
+          '<article class="card project-home-card"><header><h3>' + escapeText(t("section.projectSummary", undefined, "Project Summary")) + '</h3></header><div class="body"><div class="structure-list">' + renderProjectSummaryPanel({ summary: state.project?.summary?.project || {}, roles: state.project?.roles?.roles || [], warnings: state.project?.config?.modelSelectionWarnings || [], workbenchSavedPath: state.workbenchSavedPath || "system.mmd", validationOk, t }) + '</div></div></article>',
+          '<article class="card project-home-card"><header><h3>' + escapeText(t("section.projectReadiness", undefined, "Project Readiness")) + '</h3></header><div class="body"><div class="structure-list">' + renderProjectReadinessPanel({ readiness: state.projectReadiness, t }) + '</div></div></article>',
+          '<article class="card project-home-card"><header><h3>' + escapeText(t("section.opsSummary", undefined, "Operations Summary")) + '</h3></header><div class="body"><div class="structure-list">' + renderOpsSummaryPanel({ opsSummary: state.opsSummary, t }) + '</div></div></article>',
+          '<article class="card project-home-card"><header><h3>' + escapeText(t("project.recentRuns", undefined, "Recent runs")) + '</h3></header><div class="body structure-list">' +
+            (recentRuns.length
+              ? recentRuns.map((run) => '<div class="event"><div class="event-top"><span><code>' + escapeText(run.runId || "n/a") + '</code></span><span>' + escapeText(displayUiToken(run.status || "unknown", t)) + '</span></div><strong>' + escapeText(run.lastExecutedRoleId || run.finalRoleId || t("common.notAvailable", undefined, "n/a")) + '</strong></div>').join("")
+              : '<div class="hint">' + escapeText(t("project.noRunsYet", undefined, "No runs recorded yet.")) + '</div>') +
+          '</div></article>',
+          '</div>'
+        ].join("");
+        sideHtml = [
+          '<article class="card project-home-card"><header><h3>' + escapeText(t("project.quickActions", undefined, "Quick actions")) + '</h3></header><div class="body structure-list">',
+          '<button class="button primary" type="button" data-project-action="build">' + escapeText(t("project.enterBuild", undefined, "Enter Build")) + '</button>',
+          '<button class="button subtle" type="button" data-project-action="validate-release">' + escapeText(t("project.enterValidateRelease", undefined, "Validate & Release")) + '</button>',
+          '<button class="button subtle" type="button" data-project-action="operate">' + escapeText(t("project.enterOperate", undefined, "Operate")) + '</button>',
+          (readinessBlockers.length
+            ? '<div class="event warn"><div class="event-top"><span>' + escapeText(t("common.attention", undefined, "attention")) + '</span><span>' + escapeText(String(readinessBlockers.length)) + '</span></div><strong>' + escapeText(readinessBlockers[0]?.message || t("release.resolveBlockers", undefined, "Resolve release blockers.")) + '</strong></div>'
+            : '<div class="event"><div class="event-top"><span>' + escapeText(t("common.ready", undefined, "ready")) + '</span><span>' + escapeText(t("release.title", undefined, "release")) + '</span></div><strong>' + escapeText(t("project.readyForNextStep", undefined, "Project summary is ready for the next workflow step.")) + '</strong></div>') +
+          '</div></article>'
+        ].join("");
+      } else {
+        const stateTitle = workspace.state === "non-project-conflict"
+          ? t("projectWizard.controlledConflictTitle", undefined, "OGSystem-controlled paths already exist.")
+          : workspace.state === "non-project-ready"
+            ? t("projectWizard.nonEmptyDirectoryTitle", undefined, "Directory has files and needs confirmation.")
+            : t("projectWizard.emptyDirectoryTitle", undefined, "Start a new OGSystem project here.");
+        const stateHint = workspace.state === "non-project-conflict"
+          ? t("projectWizard.controlledConflictHint", undefined, "This directory already contains OGSystem-controlled paths, so initialization is blocked.")
+          : workspace.state === "non-project-ready"
+            ? t("projectWizard.nonEmptyDirectoryHint", undefined, "This directory has ordinary files. Confirm current-directory initialization only if this should become the project root.")
+            : t("projectWizard.emptyDirectoryHint", undefined, "No files are written until you confirm project creation.");
+        mainHtml = [
+          '<article class="card project-home-card">',
+          '<header><h3>' + escapeText(t("project.currentDirectory", undefined, "Current directory")) + '</h3></header>',
+          '<div class="body structure-list">',
+          '<div class="event"><div class="event-top"><span>' + escapeText(t("app.workdir", undefined, "Workdir")) + '</span><span>' + escapeText(workspaceState) + '</span></div><strong><code>' + escapeText(workspace.workdir || getCurrentWorkdir() || "n/a") + '</code></strong><div class="hint">' + escapeText(t("project.currentDirectoryOnlyHint", undefined, "Visualizer only initializes and inspects the current directory. Directory switching is no longer available in the UI.")) + '</div></div>',
+          '<div class="event' + (canInitialize ? '' : ' warn') + '"><div class="event-top"><span>' + escapeText(t("section.projectWizard", undefined, "Project Setup")) + '</span><span>' + escapeText(canInitialize ? t("common.ready", undefined, "ready") : t("common.attention", undefined, "attention")) + '</span></div><strong>' + escapeText(stateTitle) + '</strong><div class="hint">' + escapeText(stateHint) + '</div></div>',
+          (conflictList.length ? '<div class="event warn"><div class="event-top"><span>' + escapeText(t("project.conflicts", undefined, "Conflicts")) + '</span><span>' + escapeText(String(conflictList.length)) + '</span></div><strong>' + escapeText(conflictList.join(", ")) + '</strong></div>' : ''),
+          '</div>',
+          '</article>'
+        ].join("");
+        if (canInitialize) {
+          sideHtml = [
+            '<article class="card project-home-card">',
+            '<header><h3>' + escapeText(t("projectWizard.initializeCurrentDirectory", undefined, "Initialize current directory")) + '</h3></header>',
+            '<div class="body structure-list">',
+            errorHtml,
+            '<form id="project-create-form" class="structure-list">',
+            '<label><span>' + escapeText(t("projectWizard.projectName", undefined, "Project name")) + '</span><input name="projectName" value="' + escapeText(draft.projectName || "") + '"></label>',
+            '<label><span>' + escapeText(t("projectWizard.template", undefined, "Template")) + '</span><select name="templateId">' +
+              templateOptions.map(([value, label]) => '<option value="' + escapeText(value) + '"' + (draft.templateId === value ? " selected" : "") + '>' + escapeText(label) + '</option>').join("") +
+            '</select></label>',
+            workspace.state === "non-project-ready"
+              ? '<label><span>' + escapeText(t("projectWizard.conflictStrategy", undefined, "Conflict strategy")) + '</span><select name="conflictStrategy"><option value="reject"' + (draft.conflictStrategy !== "init-current" ? " selected" : "") + '>' + escapeText(t("projectWizard.reviewBeforeInit", undefined, "Do not initialize yet")) + '</option><option value="init-current"' + (draft.conflictStrategy === "init-current" ? " selected" : "") + '>' + escapeText(t("projectWizard.initCurrentDirectory", undefined, "Initialize current directory")) + '</option></select><span class="hint">' + escapeText(t("projectWizard.conflictStrategyHint", undefined, "Reject keeps the existing files untouched; initialize current directory only when this path is intentionally the project root.")) + '</span></label>'
+              : '<input type="hidden" name="conflictStrategy" value="init-current">',
+            '<div class="toolbar-group"><button class="button primary" type="submit">' + escapeText(t("projectWizard.createProject", undefined, "Create project")) + '</button></div>',
+            '</form>',
+            '</div>',
+            '</article>'
+          ].join("");
+        } else {
+          sideHtml = [
+            '<article class="card project-home-card"><header><h3>' + escapeText(t("projectWizard.initializeCurrentDirectory", undefined, "Initialize current directory")) + '</h3></header><div class="body structure-list">',
+            errorHtml,
+            '<div class="event warn"><div class="event-top"><span>' + escapeText(t("common.blocked", undefined, "blocked")) + '</span><span>' + escapeText(t("common.attention", undefined, "attention")) + '</span></div><strong>' + escapeText(t("projectWizard.initBlockedTitle", undefined, "Initialization is blocked for this directory.")) + '</strong><div class="hint">' + escapeText(t("projectWizard.initBlockedHint", undefined, "Remove or reconcile the OGSystem-controlled paths before initializing this directory.")) + '</div></div>',
+            '</div></article>'
+          ].join("");
+        }
+      }
+
+      projectWizardEl.innerHTML = '<div class="project-home-layout"><div class="project-home-main">' + mainHtml + '</div><aside class="project-side-panel">' + sideHtml + '</aside></div>';
       attachProjectWizardControls({
         root: projectWizardEl,
         getElementById: (id) => document.getElementById(id),
-        onMenuTab: (tabId) => {
-          state.projectMenuTab = tabId;
-          state.projectPanelMode = projectPanelModeFromTab(tabId);
-          if (tabId === "new" && !state.projectWizardStep) {
-            state.projectWizardStep = "location";
-          }
-          renderProjectWizard();
-          writeRouteToLocation();
-        },
-        onOpenDraftInput: (value) => {
-          // Path edits only update the local draft; validation/browse/open stay explicit.
-          state.projectOpenDraft = value;
-          state.projectOpenValidation = null;
-        },
-        onRefreshBrowse: () => {
-          void browseProjectOpen(getProjectOpenTarget());
-        },
-        onValidateBrowse: () => {
-          void validateProjectOpen(getProjectOpenTarget(), { render: true });
-        },
-        onOpenSubmit: (target) => {
-          void openValidatedProject(target || state.projectOpenDraft || "");
-        },
-        onBrowseSelect: (target) => {
-          state.projectOpenDraft = target;
-          void browseProjectOpen(target);
-        },
-        onProjectSelect: (target) => {
-          state.projectOpenDraft = target;
-          void validateProjectOpen(target, { render: true });
-        },
-        onRecentSelect: (target) => {
-          state.projectOpenDraft = target;
-          void validateProjectOpen(target, { render: true });
-        },
         onCreateSubmit: (form) => {
           void createProjectFromWizard(new FormData(form));
         },
         onDraftFormChange: (form) => {
           updateProjectWizardDraftFromForm(form);
         },
-        onRoleFilter: (value, form) => {
-          if (form) {
-            updateProjectWizardDraftFromForm(form);
-          }
-          // Role catalog search is a local filter against the already loaded catalog.
-          state.roleCatalogFilter = value;
-          state.roleCatalogPage = 0;
-          renderProjectWizard();
-        },
-        onHealthFilter: (value, form) => {
-          if (form) {
-            updateProjectWizardDraftFromForm(form);
-          }
-          state.roleCatalogHealthFilter = value || "all";
-          state.roleCatalogPage = 0;
-          renderProjectWizard();
-        },
-        onPageSize: (value, form) => {
-          if (form) {
-            updateProjectWizardDraftFromForm(form);
-          }
-          state.roleCatalogPageSize = value === "12" || value === "24" || value === "48" ? Number(value) : 24;
-          state.roleCatalogPage = 0;
-          renderProjectWizard();
-        },
-        onPrevPage: (form) => {
-          if (form) {
-            updateProjectWizardDraftFromForm(form);
-          }
-          state.roleCatalogPage = Math.max(0, state.roleCatalogPage - 1);
-          renderProjectWizard();
-        },
-        onNextPage: (form) => {
-          if (form) {
-            updateProjectWizardDraftFromForm(form);
-          }
-          state.roleCatalogPage += 1;
-          renderProjectWizard();
-        },
-        autoBrowse: state.projectMenuTab === "open" && !state.projectOpenBrowse && !state.projectOpenLoading
-          ? () => {
-              void browseProjectOpen(getProjectOpenTarget(), { renderStart: false });
+        onAction: (action) => {
+          if (action === "build" || action === "validate-release" || action === "operate") {
+            state.consoleTab = action;
+            state.projectHome = false;
+            if (action === "build" && state.hasProject) {
+              state.workbenchView = "bridge";
+              const refreshWorkdir = state.workspace?.workdir || "";
+              void refreshStudioBridge().catch((error) => {
+                if (refreshWorkdir !== (state.workspace?.workdir || "")) {
+                  return;
+                }
+                setFlash("error", t("flash.studioBridgeRefreshFailed", { message: error.message || error }, "Studio Bridge refresh failed: {message}"));
+              });
             }
-          : undefined
+            renderConsoleTabs();
+            renderSelectedRun();
+            renderActionState();
+            writeRouteToLocation();
+          }
+        }
       });
     }
 
@@ -3238,16 +2782,6 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
       const detail = state.detail;
       const header = detail?.header || null;
       const graphPayload = state.graph;
-      if (!detail || !header || state.projectHome) {
-        selectedTitleEl.textContent = t("section.projectOverview");
-        selectedSubtitleEl.textContent = t("project.overviewSubtitle", undefined, "Use query-state deep links or the run list to switch between project, run, and review details.");
-      } else {
-        const simulation = graphPayload?.simulation?.isSimulation ? "simulation" : "runtime";
-        selectedTitleEl.textContent = graphPayload?.simulation?.isSimulation ? \`\${detail.runId} [simulation]\` : detail.runId;
-        selectedSubtitleEl.textContent = state.selectedReviewId
-          ? \`\${detail.runDir} · \${simulation} · review \${state.selectedReviewId}\`
-          : \`\${detail.runDir} · \${simulation}\`;
-      }
       renderWorkbench({ preserveStudioGraphRoot: true });
       renderActionForm();
       renderStats(header, graphPayload);
@@ -3992,95 +3526,6 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
       }
     }
 
-    async function rebindProject(target) {
-      if (!target) {
-        setFlash("error", t("projectOpen.workdirRequired", undefined, "Choose a project directory before loading."));
-        return;
-      }
-      await runAction("project:load", async () => {
-        const payload = await requestAction(\`\${API_PREFIX}/project/load\`, { workdir: target });
-        rememberRecentProject(payload.workdir || target);
-        state.projectOpenDraft = payload.workdir || target;
-        state.projectMenuTab = "overview";
-        closeActionForm();
-        setFlash("success", t("projectOpen.projectLoaded", { workdir: payload.workdir }, "Project loaded from {workdir}."));
-        setSidebarOpen(false);
-        await loadProject();
-        await loadRuns();
-        selectProjectHome();
-      });
-    }
-
-    function getProjectOpenTarget() {
-      return String(document.getElementById("project-open-workdir")?.value || state.projectOpenDraft || "").trim();
-    }
-
-    async function browseProjectOpen(target, options) {
-      const workdir = String(target || "").trim() || getCurrentWorkdir() || ".";
-      state.projectOpenDraft = workdir;
-      state.projectOpenLoading = true;
-      state.projectOpenError = "";
-      if (options?.renderStart !== false) {
-        renderProjectWizard();
-      }
-      try {
-        const params = new URLSearchParams({ workdir });
-        const payload = await requestJson(\`\${API_PREFIX}/project/browse?\${params.toString()}\`);
-        state.projectOpenBrowse = payload;
-        state.projectOpenValidation = payload;
-        state.projectOpenDraft = payload?.workdir || workdir;
-      } catch (error) {
-        state.projectOpenError = error instanceof Error ? error.message : String(error);
-      } finally {
-        state.projectOpenLoading = false;
-        renderProjectWizard();
-      }
-    }
-
-    async function validateProjectOpen(target, options) {
-      const workdir = String(target || "").trim();
-      if (!workdir) {
-        state.projectOpenValidation = null;
-        setFlash("error", t("projectOpen.workdirRequired", undefined, "Choose a project directory before loading."));
-        if (options?.render) {
-          renderProjectWizard();
-        }
-        return null;
-      }
-      state.projectOpenDraft = workdir;
-      state.projectOpenLoading = true;
-      state.projectOpenError = "";
-      if (options?.render) {
-        renderProjectWizard();
-      }
-      try {
-        const payload = await requestAction(\`\${API_PREFIX}/project/validate-open\`, { workdir });
-        state.projectOpenValidation = payload;
-        state.projectOpenDraft = payload?.workdir || workdir;
-        return payload;
-      } catch (error) {
-        state.projectOpenError = error instanceof Error ? error.message : String(error);
-        return null;
-      } finally {
-        state.projectOpenLoading = false;
-        if (options?.render) {
-          renderProjectWizard();
-        }
-      }
-    }
-
-    async function openValidatedProject(target) {
-      const validation = await validateProjectOpen(target, { render: true });
-      if (!validation) {
-        return;
-      }
-      if (!validation.isProject) {
-        setFlash("error", projectOpenMessageFromResponse(validation).message || t("projectOpen.notOpenable", undefined, "Select a valid OGSystem project directory before opening."));
-        return;
-      }
-      await rebindProject(validation.workdir || target);
-    }
-
     async function reindexRuns() {
       if (!state.hasProject) {
         setFlash("error", t("workspace.createOrLoadHint", undefined, "Use Project to create a project in this directory or load an existing project."));
@@ -4137,15 +3582,7 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
       try {
         state.workspace = await requestJson(API_PREFIX + "/workspace");
         state.hasProject = state.workspace?.hasProject === true;
-        if (state.projectOpenDraft && state.projectOpenDraft !== state.workspace?.workdir) {
-          state.projectOpenBrowse = null;
-          state.projectOpenValidation = null;
-        }
-        state.projectOpenDraft = state.workspace?.workdir || state.projectOpenDraft || "";
-        state.projectOpenError = "";
-        state.projectOpenLoading = false;
         if (!state.hasProject) {
-          await loadRoleCatalog();
           state.project = null;
           state.opsSummary = null;
           state.projectReadiness = null;
@@ -4212,93 +3649,13 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
       writeRouteToLocation();
     }
 
-    async function loadRoleCatalog() {
-      try {
-        state.roleCatalog = await requestJson(API_PREFIX + "/project/role-catalog");
-      } catch {
-        state.roleCatalog = { source: "installed", roles: [] };
-      }
-    }
-
-    async function importProjectRoles(roleIds, options) {
-      const selectedRoleIds = Array.from(new Set((roleIds || []).map((value) => String(value || "").trim()).filter(Boolean)));
-      if (!selectedRoleIds.length) {
-        return null;
-      }
-      let payload;
-      try {
-        payload = await requestAction(API_PREFIX + "/project/roles/import", {
-          source: "installed",
-          roleIds: selectedRoleIds
-        });
-      } catch (error) {
-        throw Object.assign(error instanceof Error ? error : new Error(String(error)), { roleImportFailed: true });
-      }
-      state.pendingRoleImportRetry = null;
-      if (payload.roleCatalog) {
-        state.roleCatalog = payload.roleCatalog;
-      } else {
-        await loadRoleCatalog();
-      }
-      try {
-        await refreshProjectDiagnostics();
-      } catch (error) {
-        if (!options?.silent) {
-          setFlash("warning", t("projectWizard.postImportRefreshWarning", undefined, "Roles were imported, but project diagnostics need a refresh."));
-        }
-      }
-      if (!options?.silent) {
-        const imported = (payload.importedRoleIds || []).length;
-        const skipped = (payload.skippedRoleIds || []).length;
-        setFlash("success", t("projectWizard.roleImportSuccess", { imported: String(imported), skipped: String(skipped) }, "Role import completed."));
-      }
-      return payload;
-    }
-
-    async function retryPendingRoleImport() {
-      const retry = state.pendingRoleImportRetry;
-      if (!retry?.roleIds?.length) {
-        return;
-      }
-      await runAction("project:retry-role-import", async () => {
-        try {
-          await importProjectRoles(retry.roleIds);
-        } catch (error) {
-          setFlash("warning", t("projectWizard.roleImportRetryWarning", undefined, "Role import still needs attention. Check the installed role catalog and retry."), { action: "retry-role-import" });
-        }
-      });
-    }
-
-    async function createProjectFromWizard(formData) {
+    async function createProjectFromWizard(_formData) {
       const draft = updateProjectWizardDraftFromForm(document.getElementById("project-create-form"));
-      const selectedRoleIds = draft.selectedRoleIds || (typeof formData.getAll === "function"
-        ? formData.getAll("roleIds").map((value) => String(value || "")).filter(Boolean)
-        : []);
-      const defaultModelRef = String(draft.defaultModelRef || "").trim();
-      const profileStrategy = String(draft.profileStrategy || "visual-editor");
-      const defaultProfileId = String(draft.defaultProfileId || "").trim();
-      const defaultToolRef = String(draft.defaultToolRef || "").trim();
-      const modelProfileStrategy = {
-        mode: profileStrategy,
-        ...(defaultModelRef ? { modelDefaults: { model: defaultModelRef } } : {}),
-        ...(profileStrategy === "create-profile" && defaultProfileId && defaultToolRef
-          ? { profiles: [{ profileId: defaultProfileId, toolRef: defaultToolRef }] }
-          : {})
-      };
       const body = {
         requestId: state.projectCreateRequestId || ("project-create-" + Date.now().toString(36) + "-" + Math.random().toString(36).slice(2)),
-        workdir: String(draft.workdir || "").trim(),
         projectName: String(draft.projectName || ""),
-        projectId: String(draft.projectId || ""),
         templateId: String(draft.templateId || "empty"),
-        conflictStrategy: String(draft.conflictStrategy || "reject"),
-        authoringDefaults: {
-          newRole: {
-            bindingKind: defaultModelRef ? "model" : "noop",
-            ...(defaultModelRef ? { modelRef: defaultModelRef } : {})
-          }
-        },
-        modelProfileStrategy
+        conflictStrategy: String(draft.conflictStrategy || "reject")
       };
       state.projectCreateRequestId = body.requestId;
       state.projectCreateError = null;
@@ -4319,27 +3676,15 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
         state.projectWizardDraft = null;
         state.consoleTab = "build";
         state.workbenchView = "bridge";
+        state.projectHome = false;
         state.hasProject = true;
-        let postCreateWarning = "";
         try {
           await loadProject();
           await loadRuns();
           renderConsoleTabs();
           renderWorkbench();
         } catch (error) {
-          postCreateWarning = t("projectWizard.studioBridgeRefreshWarning", undefined, "Project was created, but the graph workspace needs a refresh. Use Build refresh if the graph is not visible.");
-        }
-        if (selectedRoleIds.length) {
-          try {
-            await importProjectRoles(selectedRoleIds, { silent: true });
-          } catch (error) {
-            if (error?.roleImportFailed) {
-              state.pendingRoleImportRetry = { roleIds: selectedRoleIds };
-              postCreateWarning = postCreateWarning || t("projectWizard.roleImportWarning", undefined, "Project was created, but selected roles could not be imported. Use Project to retry role import.");
-            } else {
-              postCreateWarning = postCreateWarning || t("projectWizard.postImportRefreshWarning", undefined, "Roles were imported, but project diagnostics need a refresh.");
-            }
-          }
+          setFlash("warning", t("projectWizard.studioBridgeRefreshWarning", undefined, "Project was created, but the graph workspace needs a refresh. Use Build refresh if the graph is not visible."));
         }
         try {
           await refreshStudioBridge();
@@ -4351,13 +3696,11 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
             // keep the created project usable even if the bridge refresh is temporarily unavailable
           }
           renderWorkbench();
-          postCreateWarning = postCreateWarning || t("projectWizard.studioBridgeRefreshWarning", undefined, "Project was created, but the graph workspace needs a refresh. Use Build refresh if the graph is not visible.");
+          setFlash("warning", t("projectWizard.studioBridgeRefreshWarning", undefined, "Project was created, but the graph workspace needs a refresh. Use Build refresh if the graph is not visible."));
         }
-        setFlash(
-          postCreateWarning ? "warning" : "success",
-          postCreateWarning || t("projectWizard.createSuccess", undefined, "Project created. Continue in Build."),
-          state.pendingRoleImportRetry ? { action: "retry-role-import" } : undefined
-        );
+        if (!state.flash || state.flash.kind !== "warning") {
+          setFlash("success", t("projectWizard.createSuccess", undefined, "Project created. Continue in Build."));
+        }
       });
     }
 
@@ -4883,10 +4226,6 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
       };
     }
 
-    projectHomeButton.addEventListener("click", () => {
-      selectProjectHome();
-    });
-
     if (sidebarToggleButton) {
       sidebarToggleButton.addEventListener("click", () => {
         setSidebarOpen(!state.sidebarOpen);
@@ -4897,9 +4236,6 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
         setSidebarOpen(false);
       });
     }
-    projectExportButton.addEventListener("click", async () => {
-      await exportProject();
-    });
     if (releaseExportButton) {
       releaseExportButton.addEventListener("click", async () => {
         await exportProject();
@@ -5045,9 +4381,6 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
       state.consoleTab = "operate";
     }
     state.projectHome = state.consoleTab === "project" || initialRoute.view === "project";
-    if (["overview", "new", "open", "recent", "settings"].includes(initialRoute.projectTab)) {
-      state.projectMenuTab = initialRoute.projectTab;
-    }
     renderConsoleTabs();
     state.selectedRunId = initialRoute.runId;
     state.selectedReviewId = initialRoute.reviewId;
@@ -5090,9 +4423,11 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
           }
         });
       }
-      projectSummaryEl.textContent = t("state.projectLoadFailed", {
-        message
-      }, "Failed to load project: " + message);
+      if (projectWizardEl) {
+        projectWizardEl.textContent = t("state.projectLoadFailed", {
+          message
+        }, "Failed to load project: " + message);
+      }
       setLive("idle", t("live.offline"));
     }
 

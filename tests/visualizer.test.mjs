@@ -1161,7 +1161,7 @@ test("visualizer server maps config explain API setup failures to error envelope
       assert.equal(response.status, 409);
       const body = await response.json();
       assert.equal(body.error.code, "PROJECT_NOT_INITIALIZED");
-      assert.match(body.error.message, /Create or load an OGSystem project/);
+      assert.match(body.error.message, /Initialize the current directory as an OGSystem project/);
     }
   } finally {
     await new Promise((resolve) => server.close(resolve));
@@ -1746,7 +1746,6 @@ test("visualizer server supports empty workspace project creation without implic
       headers: { "content-type": "application/json" },
       body: JSON.stringify({
         requestId: "create-empty-once",
-        projectId: "viz.empty.created",
         projectName: "Empty Created",
         templateId: "empty",
         conflictStrategy: "init-current"
@@ -1755,13 +1754,13 @@ test("visualizer server supports empty workspace project creation without implic
     const createBody = await createResponse.json();
     assert.equal(createResponse.status, 200, JSON.stringify(createBody));
     const created = createBody;
-    assert.equal(created.projectId, "viz.empty.created");
+    assert.equal(created.projectId, "empty-created");
     assert.equal(created.draftState, "draft-unbound-unpublishable");
     await stat(path.resolve(workdir, ".ogs", "project.json"));
     await stat(path.resolve(workdir, ".ogs", "studio", "system.authoring.json"));
     await stat(path.resolve(workdir, "og-roles", "roles", "demo-analyst", "role.json"));
     const projectJson = JSON.parse(await readFile(path.resolve(workdir, ".ogs", "project.json"), "utf8"));
-    assert.equal(projectJson.projectId, "viz.empty.created");
+    assert.equal(projectJson.projectId, "empty-created");
     assert.equal(projectJson.projectName, "Empty Created");
     const systemSource = await readFile(path.resolve(workdir, "system.mmd"), "utf8");
     const parsed = parseSystemFromMermaidSource(systemSource);
@@ -1772,7 +1771,6 @@ test("visualizer server supports empty workspace project creation without implic
       headers: { "content-type": "application/json" },
       body: JSON.stringify({
         requestId: "create-empty-once",
-        projectId: "viz.empty.created",
         projectName: "Empty Created",
         templateId: "empty",
         conflictStrategy: "init-current"
@@ -1781,7 +1779,7 @@ test("visualizer server supports empty workspace project creation without implic
     assert.equal(createReplayResponse.status, 200);
     const createReplay = await createReplayResponse.json();
     assert.equal(createReplay.idempotentReplay, true);
-    assert.equal(createReplay.projectId, "viz.empty.created");
+    assert.equal(createReplay.projectId, "empty-created");
 
     const workspaceAfterResponse = await fetch(`${url}/api/v1/workspace`);
     assert.equal(workspaceAfterResponse.status, 200);
@@ -1792,7 +1790,7 @@ test("visualizer server supports empty workspace project creation without implic
     const duplicateCreateResponse = await fetch(`${url}/api/v1/project/create`, {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ projectId: "viz.empty.created", templateId: "empty" })
+      body: JSON.stringify({ projectName: "Empty Created", templateId: "empty" })
     });
     assert.equal(duplicateCreateResponse.status, 409);
     assert.equal((await duplicateCreateResponse.json()).error.code, "PROJECT_ALREADY_EXISTS");
@@ -1811,21 +1809,8 @@ test("visualizer server supports empty workspace project creation without implic
   }
 });
 
-test("visualizer server supports project open browse and validation", async (t) => {
-  const workdir = await mkdtemp(path.join(os.tmpdir(), "ogsystem-visualizer-open-root-"));
-  const projectWorkdir = path.resolve(workdir, "project-a");
-  const emptyWorkdir = path.resolve(workdir, "empty-target");
-  const conflictWorkdir = path.resolve(workdir, "conflict-target");
-  const pseudoWorkdir = path.resolve(workdir, "pseudo-project");
-  await mkdir(projectWorkdir, { recursive: true });
-  await seedProjectFixture(projectWorkdir);
-  await mkdir(emptyWorkdir, { recursive: true });
-  await mkdir(conflictWorkdir, { recursive: true });
-  await writeFile(path.resolve(conflictWorkdir, "README.md"), "notes\n", "utf8");
-  await mkdir(pseudoWorkdir, { recursive: true });
-  await writeFile(path.resolve(pseudoWorkdir, "system.mmd"), "flowchart TD\n", "utf8");
-  await writeFile(path.resolve(workdir, "root-note.txt"), "root\n", "utf8");
-
+test("visualizer server rejects explicit workdir parameters for project creation", async (t) => {
+  const workdir = await mkdtemp(path.join(os.tmpdir(), "ogsystem-visualizer-workdir-reject-"));
   let started;
   try {
     started = await startVisualizationServer({
@@ -1845,126 +1830,26 @@ test("visualizer server supports project open browse and validation", async (t) 
   const { server, url } = started;
 
   try {
-    const browseResponse = await fetch(
-      `${url}/api/v1/project/browse?workdir=${encodeURIComponent(workdir)}`
-    );
-    assert.equal(browseResponse.status, 200);
-    const browse = await browseResponse.json();
-    assert.equal(browse.code, "PROJECT_OPEN_DIR_CONFLICT");
-    assert.equal(browse.workdir, workdir);
-    assert.equal(browse.parent, path.dirname(workdir));
-    assert.deepEqual(
-      browse.children.directories.map((entry) => entry.name),
-      ["conflict-target", "empty-target", "project-a", "pseudo-project"]
-    );
-    assert.deepEqual(browse.children.files, [
-      {
-        name: "root-note.txt",
-        path: path.resolve(workdir, "root-note.txt")
-      }
-    ]);
-    assert.deepEqual(browse.recent, [
-      {
-        name: "project-a",
-        workdir: projectWorkdir
-      }
-    ]);
-
-    const projectResponse = await fetch(`${url}/api/v1/project/validate-open`, {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({ workdir: projectWorkdir })
-    });
-    assert.equal(projectResponse.status, 200);
-    assert.deepEqual(
-      await projectResponse.json(),
-      {
-        code: "PROJECT_OPEN_READY",
-        workdir: projectWorkdir,
-        exists: true,
-        readable: true,
-        isProject: true,
-        isEmpty: false,
-        hasConflict: false,
-        message: "OGSystem project is ready to open.",
-        conflicts: [],
-        parent: workdir,
-        name: "project-a"
-      }
-    );
-
-    const emptyResponse = await fetch(`${url}/api/v1/project/validate-open`, {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({ workdir: emptyWorkdir })
-    });
-    assert.equal(emptyResponse.status, 200);
-    const empty = await emptyResponse.json();
-    assert.equal(empty.exists, true);
-    assert.equal(empty.readable, true);
-    assert.equal(empty.isProject, false);
-    assert.equal(empty.isEmpty, true);
-    assert.equal(empty.hasConflict, false);
-    assert.equal(empty.code, "PROJECT_OPEN_EMPTY");
-    assert.equal(empty.message, "Directory is empty and can be initialized as a project.");
-
-    const conflictResponse = await fetch(`${url}/api/v1/project/validate-open`, {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({ workdir: conflictWorkdir })
-    });
-    assert.equal(conflictResponse.status, 200);
-    const conflict = await conflictResponse.json();
-    assert.equal(conflict.exists, true);
-    assert.equal(conflict.readable, true);
-    assert.equal(conflict.isProject, false);
-    assert.equal(conflict.isEmpty, false);
-    assert.equal(conflict.hasConflict, true);
-    assert.equal(conflict.code, "PROJECT_OPEN_DIR_CONFLICT");
-    assert.deepEqual(conflict.conflicts, []);
-    assert.equal(conflict.message, "Directory is not empty and is not an OGSystem project.");
-
-    const pseudoResponse = await fetch(`${url}/api/v1/project/validate-open`, {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({ workdir: pseudoWorkdir })
-    });
-    assert.equal(pseudoResponse.status, 200);
-    const pseudo = await pseudoResponse.json();
-    assert.equal(pseudo.code, "PROJECT_OPEN_CONTROLLED_PATH_CONFLICT");
-    assert.equal(pseudo.isProject, false);
-    assert.equal(pseudo.hasConflict, true);
-    assert.ok(pseudo.conflicts.includes("system.mmd"));
-    assert.equal(
-      pseudo.message,
-      "Directory contains OGSystem-controlled paths but is not a complete project."
-    );
-
-    const missingWorkdir = path.resolve(workdir, "missing");
-    const missingResponse = await fetch(`${url}/api/v1/project/validate-open`, {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({ workdir: missingWorkdir })
-    });
-    assert.equal(missingResponse.status, 200);
-    const missing = await missingResponse.json();
-    assert.equal(missing.workdir, missingWorkdir);
-    assert.equal(missing.exists, false);
-    assert.equal(missing.readable, false);
-    assert.equal(missing.isProject, false);
-    assert.equal(missing.isEmpty, false);
-    assert.equal(missing.hasConflict, false);
-    assert.equal(missing.code, "PROJECT_OPEN_NOT_FOUND");
-    assert.equal(missing.message, "Path does not exist.");
+    for (const body of [
+      { workdir: "/tmp/other", projectName: "Bad Workdir", templateId: "empty" },
+      { targetWorkdir: "/tmp/other", projectName: "Bad Target", templateId: "empty" }
+    ]) {
+      const response = await fetch(`${url}/api/v1/project/create`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify(body)
+      });
+      assert.equal(response.status, 400);
+      assert.equal((await response.json()).error.code, "INVALID_PROJECT_WORKDIR");
+    }
   } finally {
     await new Promise((resolve) => server.close(resolve));
   }
 });
 
-test("visualizer server creates into target workdir aliases and persists safe create preferences", async (t) => {
-  const workdir = await mkdtemp(path.join(os.tmpdir(), "ogsystem-visualizer-target-root-"));
-  const targetWorkdir = path.resolve(workdir, "nested-project");
-  await mkdir(targetWorkdir, { recursive: true });
+test("visualizer server requires confirmation for ordinary non-empty current directories and allows confirmed initialization", async (t) => {
+  const workdir = await mkdtemp(path.join(os.tmpdir(), "ogsystem-visualizer-non-project-ready-"));
+  await writeFile(path.resolve(workdir, "README.md"), "existing content\n", "utf8");
   let started;
   try {
     started = await startVisualizationServer({
@@ -1984,214 +1869,86 @@ test("visualizer server creates into target workdir aliases and persists safe cr
   const { server, url } = started;
 
   try {
-    const createBody = {
-      requestId: "create-target-workdir",
-      targetWorkdir,
-      projectId: "viz.target.created",
-      projectName: "Target Created",
-      templateId: "minimal",
-      authoringDefaults: {
-        newRole: {
-          bindingKind: "model",
-          modelRef: "opencode/gpt-5.4"
-        },
-        viewport: {
-          zoom: 0.9
-        }
-      },
-      modelProfileStrategy: {
-        modelDefaults: {
-          model: "opencode/gpt-5.4"
-        },
-        profiles: [
-          {
-            profileId: "profile.review",
-            toolRef: "tool.review"
-          }
-        ]
-      }
-    };
-    const createResponse = await fetch(`${url}/api/v1/project/create`, {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify(createBody)
-    });
-    assert.equal(createResponse.status, 200);
-    const created = await createResponse.json();
-    assert.equal(created.workdir, targetWorkdir);
-    assert.deepEqual(created.createPreferences, {
-      authoringDefaults: createBody.authoringDefaults,
-      modelProfileStrategy: createBody.modelProfileStrategy
-    });
-    assert.equal(created.modelDefaults.model, "opencode/gpt-5.4");
-    assert.deepEqual(created.profiles, [
-      {
-        profileId: "profile.review",
-        toolRef: "tool.review"
-      }
-    ]);
-
-    const projectJson = JSON.parse(
-      await readFile(path.resolve(targetWorkdir, ".ogs", "project.json"), "utf8")
-    );
-    assert.deepEqual(projectJson.visualizer.projectCreate, created.createPreferences);
-
-    const authoringJson = JSON.parse(
-      await readFile(path.resolve(targetWorkdir, ".ogs", "studio", "system.authoring.json"), "utf8")
-    );
-    assert.deepEqual(authoringJson.visualizer.projectCreate, created.createPreferences);
-
-    const modelSelectionJson = JSON.parse(
-      await readFile(path.resolve(targetWorkdir, ".ogs", "model-selection.json"), "utf8")
-    );
-    assert.equal(modelSelectionJson.defaults.model, "opencode/gpt-5.4");
-
-    const profilesJson = JSON.parse(
-      await readFile(path.resolve(targetWorkdir, "profiles.json"), "utf8")
-    );
-    assert.ok(profilesJson.some((profile) => profile.profileId === "profile.review"));
-
     const workspaceResponse = await fetch(`${url}/api/v1/workspace`);
     assert.equal(workspaceResponse.status, 200);
     const workspace = await workspaceResponse.json();
-    assert.equal(workspace.workdir, targetWorkdir);
-    assert.equal(workspace.hasProject, true);
+    assert.equal(workspace.state, "non-project-ready");
+    assert.equal(workspace.canInitialize, true);
 
-    const replayResponse = await fetch(`${url}/api/v1/project/create`, {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify(createBody)
-    });
-    assert.equal(replayResponse.status, 200);
-    const replay = await replayResponse.json();
-    assert.equal(replay.idempotentReplay, true);
-    assert.equal(replay.workdir, targetWorkdir);
-  } finally {
-    await new Promise((resolve) => server.close(resolve));
-  }
-});
-
-test("visualizer server treats blank project create workdir as current workdir", async (t) => {
-  const workdir = await mkdtemp(path.join(os.tmpdir(), "ogsystem-visualizer-blank-workdir-"));
-  let started;
-  try {
-    started = await startVisualizationServer({
-      workdir,
-      host: "127.0.0.1",
-      port: 0
-    });
-  } catch (error) {
-    const errorCode =
-      typeof error === "object" && error !== null && "code" in error ? error.code : undefined;
-    if (errorCode === "EPERM" || errorCode === "EACCES") {
-      t.skip(`visualizer listen unavailable in sandbox: ${errorCode}`);
-      return;
-    }
-    throw error;
-  }
-  const { server, url } = started;
-
-  try {
-    const createResponse = await fetch(`${url}/api/v1/project/create`, {
+    const rejected = await fetch(`${url}/api/v1/project/create`, {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({
-        requestId: "blank-workdir",
-        workdir: "",
-        projectId: "viz.blank.workdir",
-        projectName: "Blank Workdir",
+        requestId: "reject-non-empty",
+        projectName: "Confirmed Init",
         templateId: "empty"
       })
     });
-    assert.equal(createResponse.status, 200);
-    const created = await createResponse.json();
-    assert.equal(created.workdir, workdir);
-  } finally {
-    await new Promise((resolve) => server.close(resolve));
-  }
-});
+    assert.equal(rejected.status, 409);
+    assert.equal((await rejected.json()).error.code, "PROJECT_DIR_CONFLICT");
 
-test("visualizer server resolves relative project create workdir against the active workdir", async (t) => {
-  const workdir = await mkdtemp(path.join(os.tmpdir(), "ogsystem-visualizer-relative-workdir-"));
-  const targetWorkdir = path.resolve(workdir, "nested", "project");
-  await mkdir(targetWorkdir, { recursive: true });
-  let started;
-  try {
-    started = await startVisualizationServer({
-      workdir,
-      host: "127.0.0.1",
-      port: 0
-    });
-  } catch (error) {
-    const errorCode =
-      typeof error === "object" && error !== null && "code" in error ? error.code : undefined;
-    if (errorCode === "EPERM" || errorCode === "EACCES") {
-      t.skip(`visualizer listen unavailable in sandbox: ${errorCode}`);
-      return;
-    }
-    throw error;
-  }
-  const { server, url } = started;
-
-  try {
-    const createResponse = await fetch(`${url}/api/v1/project/create`, {
+    const confirmed = await fetch(`${url}/api/v1/project/create`, {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({
-        requestId: "relative-workdir",
-        workdir: "nested/project",
-        projectId: "viz.relative.workdir",
-        projectName: "Relative Workdir",
-        templateId: "empty"
-      })
-    });
-    assert.equal(createResponse.status, 200);
-    const created = await createResponse.json();
-    assert.equal(created.workdir, targetWorkdir);
-    assert.equal(await readFile(path.resolve(targetWorkdir, ".ogs", "project.json"), "utf8").then(() => true), true);
-  } finally {
-    await new Promise((resolve) => server.close(resolve));
-  }
-});
-
-test("visualizer server rejects invalid default model references with a stable code", async (t) => {
-  const workdir = await mkdtemp(path.join(os.tmpdir(), "ogsystem-visualizer-invalid-model-"));
-  let started;
-  try {
-    started = await startVisualizationServer({
-      workdir,
-      host: "127.0.0.1",
-      port: 0
-    });
-  } catch (error) {
-    const errorCode =
-      typeof error === "object" && error !== null && "code" in error ? error.code : undefined;
-    if (errorCode === "EPERM" || errorCode === "EACCES") {
-      t.skip(`visualizer listen unavailable in sandbox: ${errorCode}`);
-      return;
-    }
-    throw error;
-  }
-  const { server, url } = started;
-
-  try {
-    const createResponse = await fetch(`${url}/api/v1/project/create`, {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({
-        requestId: "invalid-model-default",
-        projectId: "viz.invalid.model",
-        projectName: "Invalid Model",
+        requestId: "confirm-non-empty",
+        projectName: "Confirmed Init",
         templateId: "empty",
-        modelProfileStrategy: {
-          modelDefaults: {
-            model: "missing-provider"
-          }
-        }
+        conflictStrategy: "init-current"
       })
     });
-    assert.equal(createResponse.status, 400);
-    assert.equal((await createResponse.json()).error.code, "INVALID_PROJECT_MODEL_DEFAULT");
+    assert.equal(confirmed.status, 200);
+    const created = await confirmed.json();
+    assert.equal(created.projectId, "confirmed-init");
+    await stat(path.resolve(workdir, ".ogs", "project.json"));
+  } finally {
+    await new Promise((resolve) => server.close(resolve));
+  }
+});
+
+test("visualizer server blocks initialization when OGSystem-controlled paths already exist", async (t) => {
+  const workdir = await mkdtemp(path.join(os.tmpdir(), "ogsystem-visualizer-controlled-conflict-"));
+  await writeFile(path.resolve(workdir, "system.mmd"), "flowchart TD\n", "utf8");
+  let started;
+  try {
+    started = await startVisualizationServer({
+      workdir,
+      host: "127.0.0.1",
+      port: 0
+    });
+  } catch (error) {
+    const errorCode =
+      typeof error === "object" && error !== null && "code" in error ? error.code : undefined;
+    if (errorCode === "EPERM" || errorCode === "EACCES") {
+      t.skip(`visualizer listen unavailable in sandbox: ${errorCode}`);
+      return;
+    }
+    throw error;
+  }
+  const { server, url } = started;
+
+  try {
+    const workspaceResponse = await fetch(`${url}/api/v1/workspace`);
+    assert.equal(workspaceResponse.status, 200);
+    const workspace = await workspaceResponse.json();
+    assert.equal(workspace.state, "non-project-conflict");
+    assert.equal(workspace.canInitialize, false);
+    assert.ok(workspace.controlledPathConflicts.includes("system.mmd"));
+
+    const response = await fetch(`${url}/api/v1/project/create`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        requestId: "controlled-conflict",
+        projectName: "Blocked Init",
+        templateId: "empty",
+        conflictStrategy: "init-current"
+      })
+    });
+    assert.equal(response.status, 409);
+    const payload = await response.json();
+    assert.equal(payload.error.code, "PROJECT_FILE_CONFLICT");
+    assert.ok(payload.error.details.conflicts.includes("system.mmd"));
   } finally {
     await new Promise((resolve) => server.close(resolve));
   }
@@ -2220,29 +1977,29 @@ test("visualizer server reports stable project create error codes for invalid in
   try {
     const cases = [
       {
-        body: { requestId: "bad request id", projectId: "viz.create.errors", templateId: "empty" },
+        body: { requestId: "bad request id", templateId: "empty" },
         status: 400,
         code: "INVALID_PROJECT_CREATE_REQUEST_ID"
       },
       {
-        body: { requestId: "missing-workdir", workdir: path.resolve(workdir, "missing"), projectId: "viz.create.errors", templateId: "empty" },
-        status: 400,
-        code: "INVALID_PROJECT_WORKDIR"
-      },
-      {
-        body: { requestId: "bad-id", projectId: "bad id", templateId: "empty" },
-        status: 400,
-        code: "INVALID_PROJECT_ID"
-      },
-      {
-        body: { requestId: "bad-name", projectId: "viz.create.errors", projectName: "!", templateId: "empty" },
+        body: { requestId: "bad-name", projectName: "!", templateId: "empty" },
         status: 400,
         code: "INVALID_PROJECT_NAME"
       },
       {
-        body: { requestId: "bad-template", projectId: "viz.create.errors", templateId: "missing-template" },
+        body: { requestId: "bad-template", templateId: "missing-template" },
         status: 400,
         code: "INVALID_PROJECT_TEMPLATE"
+      },
+      {
+        body: { requestId: "bad-workdir", workdir: path.resolve(workdir, "missing"), templateId: "empty" },
+        status: 400,
+        code: "INVALID_PROJECT_WORKDIR"
+      },
+      {
+        body: { requestId: "bad-target-workdir", targetWorkdir: path.resolve(workdir, "missing"), templateId: "empty" },
+        status: 400,
+        code: "INVALID_PROJECT_WORKDIR"
       }
     ];
 
@@ -2260,7 +2017,6 @@ test("visualizer server reports stable project create error codes for invalid in
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({
-        projectId: "viz.create.errors",
         templateId: "empty",
         padding: "x".repeat(1024 * 1024)
       })
@@ -2274,101 +2030,8 @@ test("visualizer server reports stable project create error codes for invalid in
   }
 });
 
-test("visualizer server reports non-project directory conflicts during project creation", async (t) => {
-  const workdir = await mkdtemp(path.join(os.tmpdir(), "ogsystem-visualizer-conflict-"));
-  await writeFile(path.resolve(workdir, "README.md"), "existing content\n", "utf8");
-  let started;
-  try {
-    started = await startVisualizationServer({
-      workdir,
-      host: "127.0.0.1",
-      port: 0
-    });
-  } catch (error) {
-    const errorCode =
-      typeof error === "object" && error !== null && "code" in error ? error.code : undefined;
-    if (errorCode === "EPERM" || errorCode === "EACCES") {
-      t.skip(`visualizer listen unavailable in sandbox: ${errorCode}`);
-      return;
-    }
-    throw error;
-  }
-  const { server, url } = started;
-
-  try {
-    const createRejected = await fetch(`${url}/api/v1/project/create`, {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({ projectId: "viz.conflict", templateId: "empty" })
-    });
-    assert.equal(createRejected.status, 409);
-    assert.equal((await createRejected.json()).error.code, "PROJECT_DIR_CONFLICT");
-
-    await writeFile(path.resolve(workdir, "system.mmd"), "flowchart TD\n", "utf8");
-    const fileConflict = await fetch(`${url}/api/v1/project/create`, {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({
-        projectId: "viz.conflict",
-        templateId: "empty",
-        conflictStrategy: "init-current"
-      })
-    });
-    assert.equal(fileConflict.status, 409);
-    const fileConflictPayload = await fileConflict.json();
-    assert.equal(fileConflictPayload.error.code, "PROJECT_FILE_CONFLICT");
-    assert.ok(fileConflictPayload.error.details.conflicts.includes("system.mmd"));
-
-    const pseudoProject = await mkdtemp(path.join(os.tmpdir(), "ogsystem-visualizer-pseudo-"));
-    await mkdir(path.resolve(pseudoProject, ".ogs"), { recursive: true });
-    await writeFile(path.resolve(pseudoProject, "system.mmd"), "flowchart TD\n", "utf8");
-    const loadPseudoProject = await fetch(`${url}/api/v1/project/load`, {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({ workdir: pseudoProject })
-    });
-    assert.equal(loadPseudoProject.status, 400);
-    assert.equal((await loadPseudoProject.json()).error.code, "PROJECT_INVALID_WORKDIR");
-
-    const userDirs = await mkdtemp(path.join(os.tmpdir(), "ogsystem-visualizer-user-dirs-"));
-    await mkdir(path.resolve(userDirs, ".ogs", "notes"), { recursive: true });
-    await mkdir(path.resolve(userDirs, "og-roles", "custom"), { recursive: true });
-    await writeFile(path.resolve(userDirs, ".ogs", "notes", "keep.txt"), "keep\n", "utf8");
-    await writeFile(path.resolve(userDirs, "og-roles", "custom", "keep.txt"), "keep\n", "utf8");
-    const loadUserDirs = await fetch(`${url}/api/v1/project/load`, {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({ workdir: userDirs })
-    });
-    assert.equal(loadUserDirs.status, 400);
-    assert.equal((await loadUserDirs.json()).error.code, "PROJECT_INVALID_WORKDIR");
-    const userDirCreate = await fetch(`${url}/api/v1/project/create`, {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({
-        workdir: userDirs,
-        projectId: "viz.user.dirs",
-        templateId: "empty",
-        conflictStrategy: "init-current"
-      })
-    });
-    assert.equal(userDirCreate.status, 409);
-    const userDirCreateBody = await userDirCreate.json();
-    assert.equal(userDirCreateBody.error.code, "PROJECT_FILE_CONFLICT");
-    assert.ok(userDirCreateBody.error.details.conflicts.includes(".ogs"));
-    assert.ok(userDirCreateBody.error.details.conflicts.includes("og-roles"));
-    assert.equal(await readFile(path.resolve(userDirs, ".ogs", "notes", "keep.txt"), "utf8"), "keep\n");
-    assert.equal(await readFile(path.resolve(userDirs, "og-roles", "custom", "keep.txt"), "utf8"), "keep\n");
-  } finally {
-    await new Promise((resolve) => server.close(resolve));
-  }
-});
-
 test("visualizer server surfaces project create cleanup failures", async (t) => {
   const workdir = await mkdtemp(path.join(os.tmpdir(), "ogsystem-visualizer-cleanup-failure-"));
-  const targetWorkdir = path.resolve(workdir, "cleanup-target");
-  await mkdir(targetWorkdir, { recursive: true });
-
   let started;
   try {
     started = await startVisualizationServer({
@@ -2399,14 +2062,8 @@ test("visualizer server surfaces project create cleanup failures", async (t) => 
       headers: { "content-type": "application/json" },
       body: JSON.stringify({
         requestId: "cleanup-failure",
-        workdir: targetWorkdir,
-        projectId: "viz.cleanup.failure",
-        templateId: "empty",
-        modelProfileStrategy: {
-          modelDefaults: {
-            model: "opencode/gpt-5.4"
-          }
-        }
+        projectName: "Cleanup Failure",
+        templateId: "empty"
       })
     });
     assert.equal(response.status, 500);
@@ -2425,8 +2082,6 @@ test("visualizer server surfaces project create cleanup failures", async (t) => 
 
 test("visualizer server expires project create request replay entries after TTL", async (t) => {
   const workdir = await mkdtemp(path.join(os.tmpdir(), "ogsystem-visualizer-create-ttl-"));
-  const targetWorkdir = path.resolve(workdir, "ttl-project");
-  await mkdir(targetWorkdir, { recursive: true });
   let started;
   try {
     started = await startVisualizationServer({
@@ -2450,8 +2105,7 @@ test("visualizer server expires project create request replay entries after TTL"
   try {
     const body = {
       requestId: "ttl-request",
-      targetWorkdir,
-      projectId: "viz.ttl.project",
+      projectName: "TTL Project",
       templateId: "empty"
     };
     const createResponse = await fetch(`${url}/api/v1/project/create`, {
@@ -2470,84 +2124,6 @@ test("visualizer server expires project create request replay entries after TTL"
     });
     assert.equal(replayResponse.status, 409);
     assert.equal((await replayResponse.json()).error.code, "PROJECT_ALREADY_EXISTS");
-  } finally {
-    await new Promise((resolve) => server.close(resolve));
-  }
-});
-
-test("visualizer server bounds project create request replay cache by max size", async (t) => {
-  const workdir = await mkdtemp(path.join(os.tmpdir(), "ogsystem-visualizer-create-cache-"));
-  const targets = [
-    path.resolve(workdir, "cache-project-a"),
-    path.resolve(workdir, "cache-project-b"),
-    path.resolve(workdir, "cache-project-c")
-  ];
-  await Promise.all(targets.map((target) => mkdir(target, { recursive: true })));
-  let started;
-  try {
-    started = await startVisualizationServer({
-      workdir,
-      host: "127.0.0.1",
-      port: 0,
-      projectCreateRequestCacheTtlMs: 60_000,
-      projectCreateRequestCacheMaxSize: 2
-    });
-  } catch (error) {
-    const errorCode =
-      typeof error === "object" && error !== null && "code" in error ? error.code : undefined;
-    if (errorCode === "EPERM" || errorCode === "EACCES") {
-      t.skip(`visualizer listen unavailable in sandbox: ${errorCode}`);
-      return;
-    }
-    throw error;
-  }
-  const { server, url } = started;
-
-  try {
-    const bodies = [
-      {
-        requestId: "cache-request-a",
-        targetWorkdir: targets[0],
-        projectId: "viz.cache.project.a",
-        templateId: "empty"
-      },
-      {
-        requestId: "cache-request-b",
-        targetWorkdir: targets[1],
-        projectId: "viz.cache.project.b",
-        templateId: "empty"
-      },
-      {
-        requestId: "cache-request-c",
-        targetWorkdir: targets[2],
-        projectId: "viz.cache.project.c",
-        templateId: "empty"
-      }
-    ];
-    for (const body of bodies) {
-      const response = await fetch(`${url}/api/v1/project/create`, {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify(body)
-      });
-      assert.equal(response.status, 200);
-    }
-
-    const evictedReplayResponse = await fetch(`${url}/api/v1/project/create`, {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify(bodies[0])
-    });
-    assert.equal(evictedReplayResponse.status, 409);
-    assert.equal((await evictedReplayResponse.json()).error.code, "PROJECT_ALREADY_EXISTS");
-
-    const retainedReplayResponse = await fetch(`${url}/api/v1/project/create`, {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify(bodies[2])
-    });
-    assert.equal(retainedReplayResponse.status, 200);
-    assert.equal((await retainedReplayResponse.json()).idempotentReplay, true);
   } finally {
     await new Promise((resolve) => server.close(resolve));
   }
@@ -2576,7 +2152,7 @@ test("visualizer server coalesces concurrent project create requests by requestI
   try {
     const body = {
       requestId: "coalesced-request",
-      projectId: "viz.concurrent.project",
+      projectName: "Concurrent Project",
       templateId: "empty",
       conflictStrategy: "init-current"
     };
@@ -2596,8 +2172,8 @@ test("visualizer server coalesces concurrent project create requests by requestI
     assert.equal(second.status, 200);
     const firstPayload = await first.json();
     const secondPayload = await second.json();
-    assert.equal(firstPayload.projectId, "viz.concurrent.project");
-    assert.equal(secondPayload.projectId, "viz.concurrent.project");
+    assert.equal(firstPayload.projectId, "concurrent-project");
+    assert.equal(secondPayload.projectId, "concurrent-project");
     assert.equal(
       [firstPayload.idempotentReplay, secondPayload.idempotentReplay].filter((value) => value === true).length,
       1
@@ -2610,8 +2186,6 @@ test("visualizer server coalesces concurrent project create requests by requestI
 
 test("visualizer server clears pending project create entries after a failed create", async (t) => {
   const workdir = await mkdtemp(path.join(os.tmpdir(), "ogsystem-visualizer-create-failed-coalesce-"));
-  const targetWorkdir = path.resolve(workdir, "failed-coalesce-target");
-  await mkdir(targetWorkdir, { recursive: true });
   let started;
   try {
     started = await startVisualizationServer({
@@ -2638,8 +2212,7 @@ test("visualizer server clears pending project create entries after a failed cre
   try {
     const body = {
       requestId: "failed-coalesced-request",
-      workdir: targetWorkdir,
-      projectId: "viz.concurrent.failed",
+      projectName: "Concurrent Failed",
       templateId: "empty",
       conflictStrategy: "init-current"
     };
@@ -2836,49 +2409,6 @@ test("visualizer server rejects runtime override paths that escape the active wo
     });
     assert.equal(resumeResponse.status, 400);
     assert.equal((await resumeResponse.json()).error.code, "PROJECT_PATH_OUTSIDE_WORKDIR");
-  } finally {
-    await new Promise((resolve) => server.close(resolve));
-  }
-});
-
-test("visualizer server rebinds the active project to another workdir", async (t) => {
-  const workdir = await mkdtemp(path.join(os.tmpdir(), "ogsystem-visualizer-project-a-"));
-  const alternateWorkdir = await mkdtemp(path.join(os.tmpdir(), "ogsystem-visualizer-project-b-"));
-  await seedProjectFixture(workdir);
-  await seedAlternateProjectFixture(alternateWorkdir);
-  let started;
-  try {
-    started = await startVisualizationServer({
-      workdir,
-      host: "127.0.0.1",
-      port: 0
-    });
-  } catch (error) {
-    const errorCode =
-      typeof error === "object" && error !== null && "code" in error ? error.code : undefined;
-    if (errorCode === "EPERM" || errorCode === "EACCES") {
-      t.skip(`visualizer listen unavailable in sandbox: ${errorCode}`);
-      return;
-    }
-    throw error;
-  }
-  const { server, url } = started;
-
-  try {
-    const loadResponse = await fetch(`${url}/api/v1/project/load`, {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({ workdir: alternateWorkdir })
-    });
-    assert.equal(loadResponse.status, 200);
-    const loaded = await loadResponse.json();
-    assert.equal(loaded.workdir, alternateWorkdir);
-
-    const projectResponse = await fetch(`${url}/api/v1/project`);
-    assert.equal(projectResponse.status, 200);
-    const project = await projectResponse.json();
-    assert.equal(project.project.systemId, "viz.project.loaded");
-    assert.equal(project.project.projectId, "viz.project.loaded");
   } finally {
     await new Promise((resolve) => server.close(resolve));
   }

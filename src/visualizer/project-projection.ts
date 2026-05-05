@@ -97,6 +97,24 @@ type ProjectCreateTestHooks = {
 const projectProjectionCache = new Map<string, ProjectProjectionCacheEntry>();
 const PROJECT_PROJECTION_CACHE_TTL_MS = 10 * 60 * 1000;
 const PROJECT_PROJECTION_CACHE_MAX_SIZE = 16;
+const PROJECT_CONTROLLED_PATHS = [
+  ".ogs",
+  "og-roles",
+  "system.mmd",
+  "system.example.mmd",
+  "profiles.json",
+  "tools.json",
+  ".ogs/project.json",
+  ".ogs/runtime.json",
+  ".ogs/model-catalog.json",
+  ".ogs/model-selection.json",
+  ".ogs/laws.json",
+  ".ogs/user-profile.json",
+  ".ogs/runs-index.json",
+  ".ogs/providers/opencode.json",
+  ".ogs/README.md",
+  ".ogs/studio/system.authoring.json"
+];
 
 function sanitizeJsonValue(value: unknown, depth = 0): unknown {
   if (value === null) {
@@ -276,19 +294,40 @@ async function directoryEntries(workdir: string): Promise<string[]> {
   return (await readdir(workdir).catch(() => [])).filter((entry) => entry !== ".DS_Store");
 }
 
+async function listControlledProjectConflicts(workdir: string): Promise<string[]> {
+  const conflicts: string[] = [];
+  for (const relativePath of PROJECT_CONTROLLED_PATHS) {
+    if (await pathExists(resolve(workdir, relativePath))) {
+      conflicts.push(relativePath);
+    }
+  }
+  return conflicts;
+}
+
 export async function inspectProjectWorkspace(workdir: string): Promise<Record<string, unknown>> {
   const workdirStat = await stat(workdir).catch(() => undefined);
   const exists = Boolean(workdirStat);
   const isDirectory = Boolean(workdirStat?.isDirectory());
   const hasProject = isDirectory ? await hasProjectFiles(workdir) : false;
   const entries = isDirectory ? await directoryEntries(workdir) : [];
+  const controlledPathConflicts =
+    isDirectory && !hasProject && entries.length ? await listControlledProjectConflicts(workdir) : [];
+  const state = hasProject
+    ? "project"
+    : entries.length === 0
+      ? "empty"
+      : controlledPathConflicts.length
+        ? "non-project-conflict"
+        : "non-project-ready";
   return {
     workdir,
     exists,
     isDirectory,
     hasProject,
-    state: hasProject ? "project" : entries.length ? "non-project-conflict" : "empty",
-    entryCount: entries.length
+    state,
+    entryCount: entries.length,
+    controlledPathConflicts,
+    canInitialize: state === "empty" || state === "non-project-ready"
   };
 }
 
@@ -298,17 +337,6 @@ function normalizeProjectTemplateId(value: unknown): ProjectTemplateId {
     throw new Error("INVALID_PROJECT_TEMPLATE");
   }
   return templateId;
-}
-
-function assertProjectId(value: unknown): string | undefined {
-  const projectId = asString(value)?.trim();
-  if (!projectId) {
-    return undefined;
-  }
-  if (!/^[A-Za-z0-9][A-Za-z0-9._-]{1,127}$/.test(projectId)) {
-    throw new Error("INVALID_PROJECT_ID");
-  }
-  return projectId;
 }
 
 function assertProjectName(value: unknown): string | undefined {
@@ -323,36 +351,24 @@ function assertProjectName(value: unknown): string | undefined {
 }
 
 async function assertNoProjectFileConflicts(workdir: string): Promise<void> {
-  const controlledFiles = [
-    ".ogs",
-    "og-roles",
-    "system.mmd",
-    "system.example.mmd",
-    "profiles.json",
-    "tools.json",
-    ".ogs/project.json",
-    ".ogs/runtime.json",
-    ".ogs/model-catalog.json",
-    ".ogs/model-selection.json",
-    ".ogs/laws.json",
-    ".ogs/user-profile.json",
-    ".ogs/runs-index.json",
-    ".ogs/providers/opencode.json",
-    ".ogs/README.md",
-    ".ogs/studio/system.authoring.json"
-  ];
-  const conflicts = [];
-  for (const file of controlledFiles) {
-    if (await pathExists(resolve(workdir, file))) {
-      conflicts.push(file);
-    }
-  }
+  const conflicts = await listControlledProjectConflicts(workdir);
   if (conflicts.length) {
     const error = new Error("PROJECT_FILE_CONFLICT") as Error & { code?: string; details?: unknown };
     error.code = "PROJECT_FILE_CONFLICT";
     error.details = { workdir, conflicts };
     throw error;
   }
+}
+
+function deriveProjectId(input: string): string {
+  const normalized = String(input || "")
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9._-]+/g, "-")
+    .replace(/^[^a-z0-9]+/, "")
+    .replace(/-+/g, "-")
+    .replace(/[._-]+$/, "");
+  return normalized || "project";
 }
 
 async function removeCreatedProjectFiles(workdir: string, testHooks?: ProjectCreateTestHooks): Promise<void> {
@@ -901,26 +917,17 @@ export async function loadProjectBundle(args: {
 
 export async function createProjectVisualization(args: {
   currentWorkdir: string;
-  workdir?: string;
-  projectId?: unknown;
   projectName?: unknown;
   templateId?: unknown;
   conflictStrategy?: unknown;
-  authoringDefaults?: unknown;
-  modelProfileStrategy?: unknown;
   testHooks?: ProjectCreateTestHooks;
 }): Promise<Record<string, unknown>> {
   const forceCreateFailure = args.testHooks?.forceCreateFailure === true;
-  const requestedWorkdir = asString(args.workdir)?.trim();
-  const targetWorkdir = resolve(args.currentWorkdir, requestedWorkdir || ".");
+  const targetWorkdir = resolve(args.currentWorkdir);
   const templateId = normalizeProjectTemplateId(args.templateId);
-  const projectId = assertProjectId(args.projectId);
-  const projectName = assertProjectName(args.projectName) ?? projectId ?? basename(targetWorkdir);
+  const projectName = assertProjectName(args.projectName) ?? basename(targetWorkdir);
+  const projectId = deriveProjectId(projectName);
   const conflictStrategy = asString(args.conflictStrategy) ?? "reject";
-  const preferences = sanitizeProjectCreatePreferences({
-    authoringDefaults: args.authoringDefaults,
-    modelProfileStrategy: args.modelProfileStrategy
-  });
   const workspace = await inspectProjectWorkspace(targetWorkdir);
   if (workspace.isDirectory !== true) {
     const error = new Error("INVALID_PROJECT_WORKDIR") as Error & { code?: string; details?: unknown };
@@ -934,21 +941,23 @@ export async function createProjectVisualization(args: {
     error.details = workspace;
     throw error;
   }
-  if (workspace.state === "non-project-conflict" && conflictStrategy !== "init-current") {
+  if (workspace.state === "non-project-ready" && conflictStrategy !== "init-current") {
     const error = new Error("PROJECT_DIR_CONFLICT") as Error & { code?: string; details?: unknown };
     error.code = "PROJECT_DIR_CONFLICT";
     error.details = workspace;
     throw error;
   }
-  await assertNoProjectFileConflicts(targetWorkdir);
+  if (workspace.state === "non-project-conflict") {
+    await assertNoProjectFileConflicts(targetWorkdir);
+  }
 
   try {
     await ensureProjectSkeleton({
       workdir: targetWorkdir,
-      projectId: projectId ?? projectName,
+      projectId,
       projectName
     });
-    const template = await scaffoldProjectTemplate({
+    await scaffoldProjectTemplate({
       workdir: targetWorkdir,
       templateId
     });
@@ -958,13 +967,7 @@ export async function createProjectVisualization(args: {
       systemPath: "system.mmd",
       systemSource
     });
-    const authoringWithPreferences = await persistProjectCreatePreferences({
-      workdir: targetWorkdir,
-      authoring: authoring as Record<string, unknown>,
-      preferences
-    });
-    let persistedModelDefaults: ProjectCreateModelDefaults | undefined;
-    let persistedProfiles: ProjectCreateProfileDraft[] = [];
+    const authoringRecord = authoring as Record<string, unknown>;
     const warnings: string[] = [];
     let modelSyncResult: {
       catalogPath: string;
@@ -976,12 +979,6 @@ export async function createProjectVisualization(args: {
       modelSyncResult = await syncProjectModels({
         workdir: targetWorkdir,
         systemPath: "system.mmd"
-      });
-      persistedModelDefaults = await applyProjectCreateModelDefaults({
-        workdir: targetWorkdir,
-        systemId: authoring.system.systemId,
-        modelSelectionPath: modelSyncResult.selectionPath,
-        strategy: args.modelProfileStrategy
       });
     } catch (error) {
       const paths = resolveOgsPaths(targetWorkdir);
@@ -999,20 +996,10 @@ export async function createProjectVisualization(args: {
         generatedSelection: true,
         selectedModel: "opencode/gpt-5.4"
       };
-      persistedModelDefaults = await applyProjectCreateModelDefaults({
-        workdir: targetWorkdir,
-        systemId: authoring.system.systemId,
-        modelSelectionPath: modelSyncResult.selectionPath,
-        strategy: args.modelProfileStrategy
-      });
     }
-    persistedProfiles = await applyProjectCreateProfiles({
-      workdir: targetWorkdir,
-      strategy: args.modelProfileStrategy
-    });
     const draft = await saveStudioAuthoringDraft({
       workdir: targetWorkdir,
-      authoring: authoringWithPreferences,
+      authoring: authoringRecord,
       validateSystemSource: validateProjectSystemSource
     });
     if (forceCreateFailure) {
@@ -1032,7 +1019,7 @@ export async function createProjectVisualization(args: {
     invalidateProjectProjectionCache(targetWorkdir);
     return {
       workdir: targetWorkdir,
-      projectId: projectId ?? projectName,
+      projectId,
       projectName,
       templateId,
       mode: "single-project-v1",
@@ -1045,9 +1032,6 @@ export async function createProjectVisualization(args: {
       warnings,
       draftPath: draft.draftPath,
       draftState: templateId === "empty" ? "draft-unbound-unpublishable" : "draft",
-      ...(persistedModelDefaults ? { modelDefaults: persistedModelDefaults } : {}),
-      ...(persistedProfiles.length ? { profiles: persistedProfiles } : {}),
-      ...(preferences ? { createPreferences: preferences } : {}),
       validation: await validateProjectSystemSource({
         workdir: targetWorkdir,
         systemPath: resolve(targetWorkdir, "system.mmd"),
