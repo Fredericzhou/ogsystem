@@ -215,6 +215,14 @@ const HINT_RULES: HintRule[] = [
     }
   },
   {
+    pattern: /会诊|共识|投票|多数|至少|最少|法定人数|quorum|majority|threshold|vote|consensus/i,
+    hint: {
+      kind: "join_mode",
+      label: "quorum_of",
+      detail: 'Detected quorum intent. Use `join.mode.<roleId>=quorum_of`, `join.sources.<roleId>=...`, and `join.min.<roleId>=N`.'
+    }
+  },
+  {
     pattern: /循环|重试|反复|再次|回到|rebuttal|retry|loop/i,
     hint: {
       kind: "loop_hint",
@@ -236,6 +244,30 @@ const HINT_RULES: HintRule[] = [
       kind: "terminal_hint",
       label: "output",
       detail: "Detected terminal intent. Ensure one explicit path ends with `--> output`."
+    }
+  },
+  {
+    pattern: /人工审核|人工评审|人工审批|审核|评审|审批|批准|签核|返工|human[ -]?in[ -]?loop|human review|approval|approve|rework|sign[ -]?off/i,
+    hint: {
+      kind: "review_policy",
+      label: "review.*",
+      detail: "Detected human review intent. Prefer runtime-native `review.*` metadata on the reviewed role, not a synthetic reviewer role."
+    }
+  },
+  {
+    pattern: /错误补偿|失败补偿|异常处理|失败处理|错误处理|故障恢复|补偿|fallback|compensation|failure|error handler|ERROR(?:\.[A-Z0-9_]+)?/i,
+    hint: {
+      kind: "error_policy",
+      label: "ERROR*",
+      detail: "Detected runtime failure routing intent. Add role-origin `ERROR` or `ERROR.<errorCode>` edges to a handler role; role outputs must not emit ERROR*."
+    }
+  },
+  {
+    pattern: /上下文|反馈|评审意见|审核意见|返工意见|输入映射|投影|context\.map|human_review|source\(|previous output/i,
+    hint: {
+      kind: "context_projection",
+      label: "context.map",
+      detail: "Detected context projection intent. Use `context.map.<roleId>.<field>=...` with direct/global/source selectors and optional `?` for review feedback."
     }
   },
   {

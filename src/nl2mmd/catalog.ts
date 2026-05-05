@@ -147,7 +147,13 @@ export function getSupportedNl2MmdDictionary(): Nl2MmdSupportedDictionary {
       "join.sources.",
       "context.map.",
       "loop.max.",
-      "route.order."
+      "route.order.",
+      "review.mode.",
+      "review.timeout.",
+      "review.timeout.action.",
+      "review.rework.target.",
+      "review.rework.max.",
+      "review.terminate.scope."
     ],
     roleModes: ["parallel_split"],
     joinModes: ["all_of", "quorum_of"],

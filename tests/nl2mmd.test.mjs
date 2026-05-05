@@ -29,6 +29,12 @@ test("nl2mmd context discovers supported dictionary, roles, and models", async (
   assert.ok(context.supportedDictionary.exactMetadataKeys.includes("handoff.mode"));
   assert.ok(context.supportedDictionary.exactMetadataKeys.includes("handoff.contracts"));
   assert.ok(context.supportedDictionary.metadataPrefixes.includes("route.order."));
+  assert.ok(context.supportedDictionary.metadataPrefixes.includes("review.mode."));
+  assert.ok(context.supportedDictionary.metadataPrefixes.includes("review.timeout."));
+  assert.ok(context.supportedDictionary.metadataPrefixes.includes("review.timeout.action."));
+  assert.ok(context.supportedDictionary.metadataPrefixes.includes("review.rework.target."));
+  assert.ok(context.supportedDictionary.metadataPrefixes.includes("review.rework.max."));
+  assert.ok(context.supportedDictionary.metadataPrefixes.includes("review.terminate.scope."));
 });
 
 test("nl2mmd resolves @role mentions against local role repo", async () => {
@@ -102,7 +108,7 @@ test("nl2mmd prompt includes current dictionary and local catalog hints", async 
 
   assert.match(
     prompt,
-    /Metadata prefixes allowed: talent\.bind\., exec\.bind\., model\.bind\., role\.mode\., join\.mode\., join\.min\., join\.sources\., context\.map\., loop\.max\., route\.order\./
+    /Metadata prefixes allowed: talent\.bind\., exec\.bind\., model\.bind\., role\.mode\., join\.mode\., join\.min\., join\.sources\., context\.map\., loop\.max\., route\.order\., review\.mode\., review\.timeout\., review\.timeout\.action\., review\.rework\.target\., review\.rework\.max\., review\.terminate\.scope\./
   );
   assert.match(
     prompt,
@@ -112,7 +118,14 @@ test("nl2mmd prompt includes current dictionary and local catalog hints", async 
     prompt,
     /Flow-contract metadata are also supported: handoff\.mode, handoff\.contracts, and route\.order\.<fromRoleId>/
   );
-  assert.ok(prompt.length < 3000, `expected compact prompt, got length ${prompt.length}`);
+  assert.match(prompt, /Runtime-native human review uses review\.\* metadata/);
+  assert.match(prompt, /do not add a synthetic reviewer role solely to represent the human decision/);
+  assert.match(prompt, /context\.map\.<roleId>\.review_comment=global\.human_review\.current\.comment\?/);
+  assert.match(prompt, /Runtime failure compensation uses role-origin ERROR or ERROR\.<errorCode> edges/);
+  assert.match(prompt, /quorum_of joins must include join\.min\.<roleId>/);
+  assert.match(prompt, /Use role JSON Schema output packages for structured role output/);
+  assert.match(prompt, /Chinese requests should receive concise Chinese operator-facing text/);
+  assert.ok(prompt.length < 5000, `expected compact prompt, got length ${prompt.length}`);
   assert.ok(!prompt.includes("Role catalog:"));
   assert.ok(!prompt.includes("Model catalog:"));
 });
@@ -144,12 +157,16 @@ test("nl2mmd turn prompt stays compact and keeps ranked hints", async () => {
 });
 
 test("nl2mmd semantic mapping detects common routing and loop intents", () => {
-  const hints = detectSemanticHints("请并行分发给多个专家，最后汇总，如果有争议则再次循环重试");
+  const hints = detectSemanticHints("请并行分发给多个专家，至少两名形成共识后汇总，如果有争议则再次循环重试，并增加人工审核和错误补偿，把审核意见注入返工");
   const labels = hints.map((item) => item.label);
 
   assert.ok(labels.includes("parallel_split"));
   assert.ok(labels.includes("all_of"));
+  assert.ok(labels.includes("quorum_of"));
   assert.ok(labels.includes("loop.max"));
+  assert.ok(labels.includes("review.*"));
+  assert.ok(labels.includes("ERROR*"));
+  assert.ok(labels.includes("context.map"));
 });
 
 test("nl2mmd search helpers suggest likely roles and models from free text", async () => {

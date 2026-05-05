@@ -37,7 +37,10 @@ export type Nl2MmdSemanticHint = {
     | "loop_hint"
     | "binding_policy"
     | "entry_hint"
-    | "terminal_hint";
+    | "terminal_hint"
+    | "review_policy"
+    | "error_policy"
+    | "context_projection";
   label: string;
   detail: string;
 };
