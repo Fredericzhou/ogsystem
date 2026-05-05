@@ -22,10 +22,13 @@ This follow-up records the small, user-visible Visualizer usability pass describ
 
 ## Verification
 
-- Build and visualizer test coverage should be rerun after this pass:
+- Verified on 2026-05-05:
   - `pnpm run build`
   - `pnpm run test:visualizer`
   - `pnpm run test:visualizer-browser`
+  - `pnpm run test:docs-command-drift`
+
+- Browser smoke stayed scoped to the existing Studio graph paths. One follow-up fix was required in the Playwright spec after the current-directory Project shell removed the old `#selected-title` and multi-step wizard flow; this was an app assertion drift, not a browser startup failure.
 
 ## Notes
 

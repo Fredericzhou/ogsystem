@@ -90,7 +90,7 @@ test("Studio Bridge renders and edits through the real graph workspace", async (
     await page.goto(started.url);
     await page.waitForFunction(() => Boolean((window as any).OGSVisualizerClient?.mountStudioX6Bridge));
     await expect(page.locator("#console-panel-project")).toBeVisible();
-    await expect(page.locator("#selected-title")).toContainText("Project Overview");
+    await expect(page.locator("#console-panel-project > article > header").getByRole("heading", { name: "Project Overview" })).toBeVisible();
     await expect(page.locator("body")).not.toHaveClass(/show-run-sidebar/);
     await expect(page.locator("#sidebar")).toBeHidden();
     await expect(page.locator("#sidebar-toggle")).toBeHidden();
@@ -384,7 +384,8 @@ test("Studio Bridge renders and edits through the real graph workspace", async (
     await expect(page.locator("#action-form-section")).toBeVisible();
     await page.locator("#action-run-prompt").fill("browser smoke");
     await page.locator("#action-form-submit").click();
-    await expect(page.locator("#selected-title")).toContainText(/\d{8}-/);
+    await expect(page.locator("#detail")).toContainText(/\d{8}-/);
+    await expect(page.locator("#workbench-status")).toContainText(/\d{8}-/);
     await expect(page.locator("#console-panel-build")).toBeVisible();
     await expect(page.locator("#workbench-body")).toContainText("Open in Operate");
     await page.getByRole("button", { name: "Open in Operate" }).click();
@@ -416,38 +417,22 @@ test("empty workspace creates a project visually before graph editing", async ({
   try {
     await page.goto(started.url);
     await expect(page.locator("#console-panel-project")).toBeVisible();
-    await expect(page.locator("#selected-title")).toContainText("Project Overview");
-    await expect(page.locator("#project-wizard-load")).toHaveCount(0);
+    await expect(page.locator("#console-panel-project > article > header").getByRole("heading", { name: "Project Overview" })).toBeVisible();
+    await expect(page.locator("#project-open-form")).toHaveCount(0);
     await expect(page.locator("#project-create-form")).toBeVisible();
-    await expect(page.locator('#project-create-form input[name="workdir"]')).toHaveAttribute("readonly", "readonly");
-    await page.locator('[data-project-menu-tab="open"]').click();
-    await expect(page.locator("#project-open-form")).toBeVisible();
-    await page.locator('[data-project-menu-tab="new"]').click();
-    await expect(page.locator("#project-create-form")).toBeVisible();
-    await page.locator("#project-wizard-next").click();
-    await expect(page.locator('#project-create-form input[name="projectName"]')).toBeVisible();
-    await expect(page.locator("#project-summary")).toContainText(/not initialized|Start a new OGSystem project/i);
+    await expect(page.locator('#project-create-form input[name="workdir"]')).toHaveCount(0);
+    await expect(page.locator("#project-wizard")).toContainText(/Current directory|workdir/i);
+    await expect(page.locator("#project-wizard")).toContainText(/Initialize current directory|Start a new OGSystem project here/i);
 
     await page.locator('#console-tabs [data-console-tab="build"]').click();
     await expect(page.locator("#build-dry-run")).toHaveCount(0);
     await expect(page.locator("#studio-graph-root")).toHaveCount(0);
-    await expect(page.locator("#workbench-body")).toContainText(/create or load/i);
+    await expect(page.locator("#workbench-body")).toContainText(/create or load|initialize the current directory|not initialized/i);
 
     await page.getByRole("tab", { name: "Project" }).click();
     await expect(page.locator("#project-create-form")).toBeVisible();
-    const projectNameField = page.locator('#project-create-form input[name="projectName"]');
-    if (await projectNameField.count() === 0) {
-      await page.locator("#project-wizard-back").click();
-    }
-    await expect(projectNameField).toBeVisible();
     await page.locator('#project-create-form input[name="projectName"]').fill("Empty Visual");
-    await page.locator('#project-create-form input[name="projectId"]').fill("viz.empty.visual");
     await page.locator('#project-create-form select[name="templateId"]').selectOption("empty");
-    await page.locator("#project-wizard-next").click();
-    await expect(page.locator('#project-create-form input[name="projectName"]')).toHaveCount(0);
-    await expect(page.locator("#project-wizard")).toContainText(/Structure|结构/i);
-    await page.locator("#project-wizard-next").click();
-    await expect(page.locator("#project-wizard")).toContainText(/Review|复核/i);
     await page.locator('#project-create-form button[type="submit"]').click();
 
     await page.locator('#console-tabs [data-console-tab="build"]').click();
