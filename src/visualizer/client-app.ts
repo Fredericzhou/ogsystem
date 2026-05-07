@@ -1146,6 +1146,9 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
       if (!workspace) {
         return t("projectWizard.workspaceUnknown", undefined, "unknown");
       }
+      if (workspace.state === "project-invalid") {
+        return t("projectWizard.workspaceInvalidProject", undefined, "invalid project");
+      }
       if (workspace.hasProject) {
         return t("projectWizard.workspaceHasProject", undefined, "project exists");
       }
@@ -1229,11 +1232,108 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
       return renderLoadingSkeletonHtml({ label, rows, t, escapeText });
     }
 
+    function sleep(ms) {
+      return new Promise((resolve) => setTimeout(resolve, ms));
+    }
+
+    function setProjectCreateStage(stage) {
+      state.projectCreateStage = stage || "";
+      renderProject();
+      if (state.consoleTab === "build" || state.workbenchView === "bridge") {
+        renderWorkbench({
+          preserveEditor: true,
+          preserveStudioGraphRoot: state.workbenchView === "bridge"
+        });
+      }
+    }
+
+    function hasStudioBridgeGraphContent(bridge) {
+      const roles = Array.isArray(bridge?.extracted?.roles) ? bridge.extracted.roles : [];
+      const authoringRoles = bridge?.authoring?.roles && typeof bridge.authoring.roles === "object"
+        ? Object.keys(bridge.authoring.roles)
+        : [];
+      return roles.length > 0 || authoringRoles.length > 0;
+    }
+
+    function projectCreateStageMessage(stage) {
+      if (stage === "request") {
+        return t("projectWizard.createStage.request", undefined, "Writing project files and template content.");
+      }
+      if (stage === "project") {
+        return t("projectWizard.createStage.project", undefined, "Loading project summary and workspace data.");
+      }
+      if (stage === "workbench") {
+        return t("projectWizard.createStage.workbench", undefined, "Preparing Mermaid workbench and source state.");
+      }
+      if (stage === "bridge") {
+        return t("projectWizard.createStage.bridge", undefined, "Loading the graph workspace and checking that graph authoring is visible.");
+      }
+      return t("projectWizard.createInProgress", undefined, "Creating project...");
+    }
+
+    function projectCreateStageBadge(stage) {
+      if (stage === "request") return "1 / 4";
+      if (stage === "project") return "2 / 4";
+      if (stage === "workbench") return "3 / 4";
+      if (stage === "bridge") return "4 / 4";
+      return "…";
+    }
+
+    function projectCreateStageDetail(stage) {
+      const templateId = String(state.projectWizardDraft?.templateId || "empty");
+      if (stage === "request") {
+        return templateId === "minimal"
+          ? t("projectWizard.createStageDetail.requestMinimal", undefined, "Scaffolding the minimal runnable template and writing system.mmd.")
+          : t("projectWizard.createStageDetail.requestDefault", undefined, "Scaffolding project files for the selected template.")
+      }
+      if (stage === "project") {
+        return t("projectWizard.createStageDetail.project", undefined, "Reading project metadata, controlled paths, and workspace readiness.");
+      }
+      if (stage === "workbench") {
+        return t("projectWizard.createStageDetail.workbench", undefined, "Preparing Mermaid source, draft state, and Build editor context.");
+      }
+      if (stage === "bridge") {
+        return t("projectWizard.createStageDetail.bridge", undefined, "Mounting graph authoring and verifying roles and flows are visible.");
+      }
+      return "";
+    }
+
+    function projectCreateStageStatus(step, currentStage) {
+      const order = ["request", "project", "workbench", "bridge"];
+      const stepIndex = order.indexOf(step);
+      const currentIndex = order.indexOf(currentStage);
+      if (stepIndex === -1 || currentIndex === -1) {
+        return "pending";
+      }
+      if (stepIndex < currentIndex) {
+        return "done";
+      }
+      if (stepIndex === currentIndex) {
+        return "active";
+      }
+      return "pending";
+    }
+
+    function renderProjectCreateStageTimeline(currentStage) {
+      const steps = ["request", "project", "workbench", "bridge"];
+      return '<div class="project-create-stage-list">' + steps.map((step) => {
+        const status = projectCreateStageStatus(step, currentStage);
+        const badge = status === "done" ? "done" : projectCreateStageBadge(step);
+        return '<div class="project-create-stage-item ' + escapeText(status) + '">' +
+          '<div class="event-top"><span class="' + (status === "active" ? "severity-info" : "") + '">' + escapeText(projectCreateStageMessage(step)) + '</span><span class="' + (status === "done" ? "severity-info" : status === "active" ? "severity-warning" : "") + '">' + escapeText(badge) + '</span></div>' +
+          '<div class="hint ' + (status === "active" ? "severity-info" : "") + '">' + escapeText(projectCreateStageDetail(step)) + '</div>' +
+        '</div>';
+      }).join("") + '</div>';
+    }
+
     function setActionBusy(actionId) {
       state.actionBusy = actionId;
       renderActionForm();
       renderLogs();
       renderActionState();
+      if (actionId === "project:create" || !actionId) {
+        renderProject();
+      }
       if (state.workbench) {
         renderWorkbench({
           preserveEditor: true,
@@ -1265,6 +1365,28 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
     }
 
     function workspaceEmptyStateHtml(kind) {
+      const workspace = state.workspace || {};
+      if (workspace.state === "project-invalid") {
+        const diagnostics = Array.isArray(workspace.projectValidation?.diagnostics)
+          ? workspace.projectValidation.diagnostics
+          : [];
+        const title = t("workspace.invalidProjectTitle", undefined, "This directory contains an invalid OGSystem project.");
+        const hint = kind === "build"
+          ? t("workspace.invalidProjectBuildHint", undefined, "Fix the project diagnostics before editing in Build.")
+          : kind === "validate"
+            ? t("workspace.invalidProjectValidateHint", undefined, "Fix the project diagnostics before running validation or release gates.")
+            : t("workspace.invalidProjectOperateHint", undefined, "Fix the project diagnostics before using runtime views.");
+        return [
+          '<div class="event blocker"><div class="event-top"><span class="severity-critical">' + escapeText(t("common.attention", undefined, "attention")) + '</span><span class="severity-critical">' + escapeText(t("workspace.invalidProjectStatus", undefined, "invalid project")) + '</span></div><strong class="severity-critical">' + escapeText(title) + '</strong><div class="hint severity-warning">' + escapeText(hint) + '</div></div>',
+          diagnostics.length
+            ? diagnostics.slice(0, 5).map((diagnostic) => {
+                const message = typeof diagnostic?.message === "string" ? diagnostic.message : t("common.unknown", undefined, "unknown");
+                const code = typeof diagnostic?.code === "string" ? diagnostic.code : "error";
+                return '<div class="event blocker"><div class="event-top"><span class="severity-critical">' + escapeText(code) + '</span><span class="severity-warning">' + escapeText(t("workspace.repairRequired", undefined, "repair required")) + '</span></div><strong class="severity-critical">' + escapeText(message) + '</strong></div>';
+              }).join("")
+            : ""
+        ].join("");
+      }
       return renderWorkspaceEmptyStateHtml({ kind, t, escapeText });
     }
 
@@ -1798,8 +1920,13 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
         return;
       }
       if (!state.hasProject) {
-        workbenchMetaEl.textContent = t("workspace.buildUnavailableTitle", undefined, "Initialize the current directory before building.");
-        workbenchStatusEl.innerHTML = '<span class="pill warn">' + escapeText(t("workspace.notInitialized", undefined, "not initialized")) + '</span>';
+        const invalidProject = state.workspace?.state === "project-invalid";
+        workbenchMetaEl.textContent = invalidProject
+          ? t("workspace.invalidProjectBuildHint", undefined, "Fix the project diagnostics before editing in Build.")
+          : t("workspace.buildUnavailableTitle", undefined, "Initialize the current directory before building.");
+        workbenchStatusEl.innerHTML = '<span class="pill warn">' + escapeText(invalidProject
+          ? t("workspace.invalidProjectStatus", undefined, "invalid project")
+          : t("workspace.notInitialized", undefined, "not initialized")) + '</span>';
         workbenchTabsEl.innerHTML = "";
         if (workbenchViewTabsEl) {
           workbenchViewTabsEl.innerHTML = "";
@@ -1878,10 +2005,18 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
           escapeText
         });
       } else if (state.workbenchView === "bridge") {
-        renderStudioBridge({ preserveGraphRoot: Boolean(options?.preserveStudioGraphRoot) });
+        if (state.studioBridgeLoading && !state.studioBridgeLoaded && !state.studioBridge) {
+          workbenchBodyEl.innerHTML = loadingSkeleton(t("state.loadingStudioBridge", undefined, "Loading graph workspace..."), 4);
+        } else {
+          renderStudioBridge({ preserveGraphRoot: Boolean(options?.preserveStudioGraphRoot) });
+        }
       } else {
         state.workbenchView = "bridge";
-        renderStudioBridge({ preserveGraphRoot: Boolean(options?.preserveStudioGraphRoot) });
+        if (state.studioBridgeLoading && !state.studioBridgeLoaded && !state.studioBridge) {
+          workbenchBodyEl.innerHTML = loadingSkeleton(t("state.loadingStudioBridge", undefined, "Loading graph workspace..."), 4);
+        } else {
+          renderStudioBridge({ preserveGraphRoot: Boolean(options?.preserveStudioGraphRoot) });
+        }
       }
       if (preservedStudioGraphRoot) {
         const currentStudioGraphRoot = document.getElementById("studio-graph-root");
@@ -2304,7 +2439,8 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
       const workspaceState = getWorkspaceStateLabel(workspace);
       const conflictList = Array.isArray(workspace.controlledPathConflicts) ? workspace.controlledPathConflicts : [];
       const canInitialize = workspace.canInitialize === true;
-      const hasProject = workspace.hasProject === true;
+      const hasProject = workspace.state === "project";
+      const invalidProject = workspace.state === "project-invalid";
       const recentRuns = Array.isArray(state.runs) ? state.runs.slice(0, 3) : [];
       const summary = state.project?.summary?.project || {};
       const projectName = summary.projectName || state.project?.summary?.name || draft.projectName || "n/a";
@@ -2316,6 +2452,9 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
       ];
       const errorHtml = state.projectCreateError
         ? '<div class="event warn"><div class="event-top"><span>' + escapeText(t("common.attention", undefined, "attention")) + '</span><span>' + escapeText(state.projectCreateError.code || "error") + '</span></div><strong>' + escapeText(state.projectCreateError.message || t("projectWizard.createFailed", undefined, "Project creation failed.")) + '</strong></div>'
+        : "";
+      const createProgressHtml = state.projectCreateStage
+        ? '<div class="event notice"><div class="event-top"><span class="severity-info">' + escapeText(t("projectWizard.createInProgress", undefined, "Creating project...")) + '</span><span class="severity-info">' + escapeText(projectCreateStageBadge(state.projectCreateStage)) + '</span></div><strong class="severity-info">' + escapeText(projectCreateStageMessage(state.projectCreateStage)) + '</strong><div class="hint severity-info">' + escapeText(projectCreateStageDetail(state.projectCreateStage)) + '</div><div class="hint severity-info">' + escapeText(t("projectWizard.createStageHint", undefined, "The minimal template may take a bit longer while the workspace is initialized.")) + '</div>' + renderProjectCreateStageTimeline(state.projectCreateStage) + loadingSkeleton(t("projectWizard.createInProgress", undefined, "Creating project..."), 3) + '</div>'
         : "";
 
       let mainHtml = "";
@@ -2352,6 +2491,26 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
             : '<div class="event"><div class="event-top"><span>' + escapeText(t("common.ready", undefined, "ready")) + '</span><span>' + escapeText(t("release.title", undefined, "release")) + '</span></div><strong>' + escapeText(t("project.readyForNextStep", undefined, "Project summary is ready for the next workflow step.")) + '</strong></div>') +
           '</div></article>'
         ].join("");
+      } else if (invalidProject) {
+        const diagnostics = Array.isArray(workspace.projectValidation?.diagnostics) ? workspace.projectValidation.diagnostics : [];
+        mainHtml = [
+          '<article class="card project-home-card">',
+          '<header><h3>' + escapeText(t("project.currentDirectory", undefined, "Current directory")) + '</h3></header>',
+          '<div class="body structure-list">',
+          '<div class="event warn"><div class="event-top"><span>' + escapeText(t("app.workdir", undefined, "Workdir")) + '</span><span>' + escapeText(workspaceState) + '</span></div><strong><code>' + escapeText(workspace.workdir || getCurrentWorkdir() || "n/a") + '</code></strong><div class="hint">' + escapeText(t("project.currentDirectoryOnlyHint", undefined, "Visualizer only initializes and inspects the current directory. Directory switching is no longer available in the UI.")) + '</div></div>',
+          '<div class="event blocker"><div class="event-top"><span class="severity-critical">' + escapeText(t("common.attention", undefined, "attention")) + '</span><span class="severity-critical">' + escapeText(t("workspace.invalidProjectStatus", undefined, "invalid project")) + '</span></div><strong class="severity-critical">' + escapeText(t("projectWizard.invalidProjectTitle", undefined, "Current directory contains an invalid OGSystem project.")) + '</strong><div class="hint severity-warning">' + escapeText(t("projectWizard.invalidProjectHint", undefined, "Fix the existing project structure or Mermaid diagnostics before the visualizer enables editing.")) + '</div></div>',
+          (diagnostics.length
+            ? diagnostics.slice(0, 5).map((diagnostic) => '<div class="event blocker"><div class="event-top"><span class="severity-critical">' + escapeText(String(diagnostic?.code || "error")) + '</span><span class="severity-warning">' + escapeText(String(diagnostic?.stage || t("workspace.repairRequired", undefined, "repair required"))) + '</span></div><strong class="severity-critical">' + escapeText(String(diagnostic?.message || t("common.unknown", undefined, "unknown"))) + '</strong></div>').join("")
+            : ""),
+          '</div>',
+          '</article>'
+        ].join("");
+        sideHtml = [
+          '<article class="card project-home-card"><header><h3>' + escapeText(t("projectWizard.initializeCurrentDirectory", undefined, "Initialize current directory")) + '</h3></header><div class="body structure-list">',
+          errorHtml,
+          '<div class="event blocker"><div class="event-top"><span class="severity-critical">' + escapeText(t("common.blocked", undefined, "blocked")) + '</span><span class="severity-critical">' + escapeText(t("common.attention", undefined, "attention")) + '</span></div><strong class="severity-critical">' + escapeText(t("projectWizard.invalidProjectBlockedTitle", undefined, "Editing is disabled until this project is repaired.")) + '</strong><div class="hint severity-warning">' + escapeText(t("projectWizard.invalidProjectBlockedHint", undefined, "The directory already looks like an OGSystem project, but it does not pass validation. Repair the files instead of reinitializing or editing here.")) + '</div></div>',
+          '</div></article>'
+        ].join("");
       } else {
         const stateTitle = workspace.state === "non-project-conflict"
           ? t("projectWizard.controlledConflictTitle", undefined, "OGSystem-controlled paths already exist.")
@@ -2368,8 +2527,8 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
           '<header><h3>' + escapeText(t("project.currentDirectory", undefined, "Current directory")) + '</h3></header>',
           '<div class="body structure-list">',
           '<div class="event"><div class="event-top"><span>' + escapeText(t("app.workdir", undefined, "Workdir")) + '</span><span>' + escapeText(workspaceState) + '</span></div><strong><code>' + escapeText(workspace.workdir || getCurrentWorkdir() || "n/a") + '</code></strong><div class="hint">' + escapeText(t("project.currentDirectoryOnlyHint", undefined, "Visualizer only initializes and inspects the current directory. Directory switching is no longer available in the UI.")) + '</div></div>',
-          '<div class="event' + (canInitialize ? '' : ' warn') + '"><div class="event-top"><span>' + escapeText(t("section.projectWizard", undefined, "Project Setup")) + '</span><span>' + escapeText(canInitialize ? t("common.ready", undefined, "ready") : t("common.attention", undefined, "attention")) + '</span></div><strong>' + escapeText(stateTitle) + '</strong><div class="hint">' + escapeText(stateHint) + '</div></div>',
-          (conflictList.length ? '<div class="event warn"><div class="event-top"><span>' + escapeText(t("project.conflicts", undefined, "Conflicts")) + '</span><span>' + escapeText(String(conflictList.length)) + '</span></div><strong>' + escapeText(conflictList.join(", ")) + '</strong></div>' : ''),
+          '<div class="event' + (canInitialize ? ' notice' : ' warning') + '"><div class="event-top"><span class="' + escapeText(canInitialize ? "severity-info" : "severity-warning") + '">' + escapeText(t("section.projectWizard", undefined, "Project Setup")) + '</span><span class="' + escapeText(canInitialize ? "severity-info" : "severity-warning") + '">' + escapeText(canInitialize ? t("common.ready", undefined, "ready") : t("common.attention", undefined, "attention")) + '</span></div><strong class="' + escapeText(canInitialize ? "severity-info" : "severity-warning") + '">' + escapeText(stateTitle) + '</strong><div class="hint ' + escapeText(canInitialize ? "severity-info" : "severity-warning") + '">' + escapeText(stateHint) + '</div></div>',
+          (conflictList.length ? '<div class="event warning"><div class="event-top"><span class="severity-warning">' + escapeText(t("project.conflicts", undefined, "Conflicts")) + '</span><span class="severity-warning">' + escapeText(String(conflictList.length)) + '</span></div><strong class="severity-warning">' + escapeText(conflictList.join(", ")) + '</strong></div>' : ''),
           '</div>',
           '</article>'
         ].join("");
@@ -2378,6 +2537,7 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
             '<article class="card project-home-card">',
             '<header><h3>' + escapeText(t("projectWizard.initializeCurrentDirectory", undefined, "Initialize current directory")) + '</h3></header>',
             '<div class="body structure-list">',
+            createProgressHtml,
             errorHtml,
             '<form id="project-create-form" class="structure-list">',
             '<label><span>' + escapeText(t("projectWizard.projectName", undefined, "Project name")) + '</span><input name="projectName" value="' + escapeText(draft.projectName || "") + '"></label>',
@@ -2395,8 +2555,9 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
         } else {
           sideHtml = [
             '<article class="card project-home-card"><header><h3>' + escapeText(t("projectWizard.initializeCurrentDirectory", undefined, "Initialize current directory")) + '</h3></header><div class="body structure-list">',
+            createProgressHtml,
             errorHtml,
-            '<div class="event warn"><div class="event-top"><span>' + escapeText(t("common.blocked", undefined, "blocked")) + '</span><span>' + escapeText(t("common.attention", undefined, "attention")) + '</span></div><strong>' + escapeText(t("projectWizard.initBlockedTitle", undefined, "Initialization is blocked for this directory.")) + '</strong><div class="hint">' + escapeText(t("projectWizard.initBlockedHint", undefined, "Remove or reconcile the OGSystem-controlled paths before initializing this directory.")) + '</div></div>',
+            '<div class="event blocker"><div class="event-top"><span class="severity-critical">' + escapeText(t("common.blocked", undefined, "blocked")) + '</span><span class="severity-critical">' + escapeText(t("common.attention", undefined, "attention")) + '</span></div><strong class="severity-critical">' + escapeText(t("projectWizard.initBlockedTitle", undefined, "Initialization is blocked for this directory.")) + '</strong><div class="hint severity-warning">' + escapeText(t("projectWizard.initBlockedHint", undefined, "Remove or reconcile the OGSystem-controlled paths before initializing this directory.")) + '</div></div>',
             '</div></article>'
           ].join("");
         }
@@ -2894,9 +3055,12 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
       renderProject();
     }
 
-    async function refreshStudioBridge() {
+    async function refreshStudioBridge(options) {
       if (!state.hasProject) {
         return;
+      }
+      if ((!state.workbenchSource && !state.workbenchDiskSource) || !state.workbench?.systemSource) {
+        await loadWorkbench({ skipBridgeWarmup: true });
       }
       if (!state.workbenchSource && state.workbenchDiskSource) {
         state.workbenchSource = state.workbenchDiskSource;
@@ -2904,28 +3068,75 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
       if (!state.workbenchSource && state.workbench?.systemSource) {
         state.workbenchSource = state.workbench.systemSource;
       }
-      const payload = await requestAction(\`\${API_PREFIX}/project/studio/bridge\`, {
-        systemSource: state.workbenchSource,
-        systemPath: state.workbenchSavedPath || "system.mmd"
-      });
-      state.studioBridge = payload;
-      state.studioCanvas = buildStudioCanvasFromBridge(payload);
-      state.studioBridgeLoaded = true;
-      state.studioBridgeStale = false;
-      const roles = payload.extracted?.roles || [];
-      const flows = payload.extracted?.flows || [];
-      if (!state.studioBridgeSelectedRoleId && roles[0]?.roleId) {
-        state.studioBridgeSelectedRoleId = roles[0].roleId;
+      state.studioBridgeLoading = true;
+      if (state.workbenchView === "bridge") {
+        renderWorkbench({ preserveStudioGraphRoot: Boolean(options?.preserveGraphRoot) });
       }
-      if (!state.studioBridgeSelectedFlowKey && flows[0]?.flowKey) {
-        state.studioBridgeSelectedFlowKey = flows[0].flowKey;
+      try {
+        const payload = await requestAction(\`\${API_PREFIX}/project/studio/bridge\`, {
+          systemSource: state.workbenchSource,
+          systemPath: state.workbenchSavedPath || "system.mmd"
+        });
+        state.studioBridge = payload;
+        state.studioCanvas = buildStudioCanvasFromBridge(payload);
+        state.studioBridgeLoaded = true;
+        state.studioBridgeStale = false;
+        const roles = payload.extracted?.roles || [];
+        const flows = payload.extracted?.flows || [];
+        if (!state.studioBridgeSelectedRoleId && roles[0]?.roleId) {
+          state.studioBridgeSelectedRoleId = roles[0].roleId;
+        }
+        if (!state.studioBridgeSelectedFlowKey && flows[0]?.flowKey) {
+          state.studioBridgeSelectedFlowKey = flows[0].flowKey;
+        }
+        state.workbench = {
+          ...(state.workbench || {}),
+          validation: payload.validation || state.workbench?.validation
+        };
+        renderWorkbench({ preserveStudioGraphRoot: Boolean(options?.preserveGraphRoot) });
+        renderProject();
+        return payload;
+      } finally {
+        state.studioBridgeLoading = false;
+        if (state.workbenchView === "bridge") {
+          renderWorkbench({ preserveStudioGraphRoot: true });
+        }
       }
-      state.workbench = {
-        ...(state.workbench || {}),
-        validation: payload.validation || state.workbench?.validation
-      };
-      renderWorkbench({ preserveStudioGraphRoot: true });
-      renderProject();
+    }
+
+    async function ensureStudioBridgeReady(options) {
+      const workdir = options?.workdir || state.workspace?.workdir || "";
+      const requireGraph = options?.requireGraph === true;
+      const attempts = Math.max(1, Number(options?.attempts) || 1);
+      const requestId = (state.studioBridgeWarmupRequestId || 0) + 1;
+      state.studioBridgeWarmupRequestId = requestId;
+      let lastError = null;
+      for (let attempt = 0; attempt < attempts; attempt += 1) {
+        if (!state.hasProject || workdir !== (state.workspace?.workdir || "")) {
+          return false;
+        }
+        if ((!state.workbenchSource && !state.workbenchDiskSource) || !state.workbench?.systemSource) {
+          await loadWorkbench();
+        }
+        try {
+          const payload = await refreshStudioBridge({ preserveGraphRoot: attempt > 0 });
+          if (!requireGraph || hasStudioBridgeGraphContent(payload)) {
+            return true;
+          }
+        } catch (error) {
+          lastError = error;
+        }
+        if (attempt < attempts - 1) {
+          await sleep(180 * (attempt + 1));
+          if (requestId !== state.studioBridgeWarmupRequestId) {
+            return false;
+          }
+        }
+      }
+      if (lastError) {
+        throw lastError;
+      }
+      return hasStudioBridgeGraphContent(state.studioBridge);
     }
 
     async function applyStudioGraphCanvasPatch(canvas) {
@@ -3221,7 +3432,7 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
       }, WORKBENCH_VALIDATION_DEBOUNCE_MS);
     }
 
-    async function loadWorkbench() {
+    async function loadWorkbench(options) {
       if (!state.hasProject) {
         renderWorkbench();
         return;
@@ -3245,6 +3456,21 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
       } finally {
         state.workbenchLoading = false;
         renderWorkbench();
+      }
+      if (!options?.skipBridgeWarmup && state.workbenchView === "bridge" && (!state.studioBridgeLoaded || state.studioBridgeStale || !hasStudioBridgeGraphContent(state.studioBridge))) {
+        const refreshWorkdir = state.workspace?.workdir || "";
+        void ensureStudioBridgeReady({
+          workdir: refreshWorkdir,
+          requireGraph: true,
+          attempts: 3
+        }).catch((error) => {
+          if (!state.hasProject || refreshWorkdir !== (state.workspace?.workdir || "")) {
+            return;
+          }
+          state.studioBridgeStale = true;
+          renderWorkbench();
+          setFlash("warning", t("projectWizard.studioBridgeRefreshWarning", undefined, "Project was created, but the graph workspace needs a refresh. Use Build refresh if the graph is not visible."));
+        });
       }
     }
 
@@ -3581,7 +3807,7 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
       renderProject();
       try {
         state.workspace = await requestJson(API_PREFIX + "/workspace");
-        state.hasProject = state.workspace?.hasProject === true;
+        state.hasProject = state.workspace?.state === "project";
         if (!state.hasProject) {
           state.project = null;
           state.opsSummary = null;
@@ -3659,6 +3885,7 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
       };
       state.projectCreateRequestId = body.requestId;
       state.projectCreateError = null;
+      setProjectCreateStage("request");
       await runAction("project:create", async () => {
         try {
           await requestAction(API_PREFIX + "/project/create", body);
@@ -3668,6 +3895,7 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
             code,
             message
           };
+          setProjectCreateStage("");
           renderProject();
           throw error;
         }
@@ -3679,18 +3907,27 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
         state.projectHome = false;
         state.hasProject = true;
         try {
+          setProjectCreateStage("project");
           await loadProject();
+          setProjectCreateStage("workbench");
           await loadRuns();
           renderConsoleTabs();
           renderWorkbench();
         } catch (error) {
+          setProjectCreateStage("");
           setFlash("warning", t("projectWizard.studioBridgeRefreshWarning", undefined, "Project was created, but the graph workspace needs a refresh. Use Build refresh if the graph is not visible."));
         }
         try {
-          await refreshStudioBridge();
+          setProjectCreateStage("bridge");
+          await ensureStudioBridgeReady({
+            workdir: state.workspace?.workdir || "",
+            requireGraph: true,
+            attempts: 5
+          });
         } catch (error) {
           state.studioBridgeStale = true;
           try {
+            setProjectCreateStage("workbench");
             await loadWorkbench();
           } catch {
             // keep the created project usable even if the bridge refresh is temporarily unavailable
@@ -3698,6 +3935,7 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
           renderWorkbench();
           setFlash("warning", t("projectWizard.studioBridgeRefreshWarning", undefined, "Project was created, but the graph workspace needs a refresh. Use Build refresh if the graph is not visible."));
         }
+        setProjectCreateStage("");
         if (!state.flash || state.flash.kind !== "warning") {
           setFlash("success", t("projectWizard.createSuccess", undefined, "Project created. Continue in Build."));
         }

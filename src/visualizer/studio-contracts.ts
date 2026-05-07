@@ -19,6 +19,7 @@ export type StudioAuthoringDocument = {
     systemId: string;
     systemVersion: string;
     entryRoleId: string;
+    entryEventType?: string;
     lawGlobalRef: string;
     handoffMode?: string;
     handoffContracts?: string;

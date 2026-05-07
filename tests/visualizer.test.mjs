@@ -1493,6 +1493,19 @@ test("visualizer server exposes Mermaid workbench APIs and project export", asyn
     assert.equal(bridge.extracted.roles.some((role) => role.roleId === "demo-analyst" && role.bindingKind === "model"), true);
     assert.equal(bridge.extracted.flows.some((flow) => flow.eventType === "DONE"), true);
 
+    const fallbackBridgeResponse = await fetch(`${url}/api/v1/project/studio/bridge`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        systemPath: "system.mmd"
+      })
+    });
+    assert.equal(fallbackBridgeResponse.status, 200);
+    const fallbackBridge = await fallbackBridgeResponse.json();
+    assert.equal(fallbackBridge.validation.ok, true);
+    assert.equal(fallbackBridge.extracted.systemId, "viz.project.demo");
+    assert.equal(fallbackBridge.extracted.roles.some((role) => role.roleId === "demo-analyst"), true);
+
     const invalidBridgeResponse = await fetch(`${url}/api/v1/project/studio/bridge`, {
       method: "POST",
       headers: { "content-type": "application/json" },
@@ -1949,6 +1962,57 @@ test("visualizer server blocks initialization when OGSystem-controlled paths alr
     const payload = await response.json();
     assert.equal(payload.error.code, "PROJECT_FILE_CONFLICT");
     assert.ok(payload.error.details.conflicts.includes("system.mmd"));
+  } finally {
+    await new Promise((resolve) => server.close(resolve));
+  }
+});
+
+test("visualizer server marks invalid project directories and exposes diagnostics", async (t) => {
+  const workdir = await mkdtemp(path.join(os.tmpdir(), "ogsystem-visualizer-invalid-project-"));
+  await seedProjectFixture(workdir);
+  await writeFile(
+    path.resolve(workdir, "system.mmd"),
+    [
+      "flowchart TD",
+      "%% system.id=invalid.project.demo",
+      "%% system.version=1.0.0",
+      "%% law.global=law.minimal.base",
+      "%% entry.role=missing-role",
+      "input -->|ENTER| analyst[Role:demo-analyst]",
+      "analyst[Role:demo-analyst] -->|DONE| output",
+      ""
+    ].join("\n"),
+    "utf8"
+  );
+  let started;
+  try {
+    started = await startVisualizationServer({
+      workdir,
+      host: "127.0.0.1",
+      port: 0
+    });
+  } catch (error) {
+    const errorCode =
+      typeof error === "object" && error !== null && "code" in error ? error.code : undefined;
+    if (errorCode === "EPERM" || errorCode === "EACCES") {
+      t.skip(`visualizer listen unavailable in sandbox: ${errorCode}`);
+      return;
+    }
+    throw error;
+  }
+  const { server, url } = started;
+
+  try {
+    const workspaceResponse = await fetch(`${url}/api/v1/workspace`);
+    assert.equal(workspaceResponse.status, 200);
+    const workspace = await workspaceResponse.json();
+    assert.equal(workspace.hasProject, true);
+    assert.equal(workspace.isProjectValid, false);
+    assert.equal(workspace.state, "project-invalid");
+    assert.equal(workspace.canInitialize, false);
+    assert.equal(workspace.projectValidation?.ok, false);
+    assert.ok(Array.isArray(workspace.projectValidation?.diagnostics));
+    assert.ok(workspace.projectValidation.diagnostics.length > 0);
   } finally {
     await new Promise((resolve) => server.close(resolve));
   }

@@ -63,6 +63,7 @@ test("Studio authoring import extracts normalized roles, flows, and metadata", (
   assert.equal(authoring.version, 1);
   assert.equal(authoring.system.systemId, "test.studio.authoring");
   assert.equal(authoring.system.entryRoleId, "dispatch");
+  assert.equal(authoring.system.entryEventType, "START");
   assert.equal(authoring.roles.dispatch.bindingKind, "model");
   assert.equal(authoring.roles.review.bindingKind, "exec");
   assert.equal(authoring.roles.dispatch.routingMode, "parallel_split");
@@ -84,6 +85,7 @@ test("Studio authoring serializer is deterministic and preserves parse semantics
   assert.match(first, /%% model\.bind\.dispatch=model\.fast/);
   assert.match(first, /%% exec\.bind\.review=profile\.review/);
   assert.match(first, /%% join\.sources\.review=worker,dispatch/);
+  assert.match(first, /input -->\|START\| r1\[Role:dispatch\]/);
 
   const original = parseSystemFromMermaidSource(source);
   const roundTripped = parseSystemFromMermaidSource(first);
@@ -93,6 +95,29 @@ test("Studio authoring serializer is deterministic and preserves parse semantics
   assert.deepEqual(roundTripped.executionBinding, original.executionBinding);
   assert.deepEqual(roundTripped.graph?.joinSourcesByRoleId, original.graph?.joinSourcesByRoleId);
   assert.equal(roundTripped.flows.length, original.flows.length);
+});
+
+test("Studio authoring preserves entry boundary event types across Mermaid round-trips", () => {
+  const minimalSource = [
+    "flowchart TD",
+    "%% system.id=template.minimal",
+    "%% system.version=1.0.0",
+    "%% law.global=law.minimal.base",
+    "%% entry.role=demo-analyst",
+    "input -->|ENTER| analyst[Role:demo-analyst]",
+    "analyst[Role:demo-analyst] -->|ANALYSIS_DONE| output",
+    ""
+  ].join("\n");
+  const authoring = importMermaidToAuthoring({
+    workdir: "/tmp/project",
+    systemPath: "/tmp/project/system.mmd",
+    systemSource: minimalSource
+  });
+  const generated = serializeAuthoringToMermaid(authoring);
+
+  assert.equal(authoring.system.entryEventType, "ENTER");
+  assert.match(generated, /input -->\|ENTER\| r1\[Role:demo-analyst\]/);
+  assert.equal(parseSystemFromMermaidSource(generated).entryRoleId, "demo-analyst");
 });
 
 test("Studio canvas adapter keeps layout state out of generated Mermaid", () => {

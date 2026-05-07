@@ -1,5 +1,5 @@
 import { mkdir, readFile } from "node:fs/promises";
-import { dirname, resolve } from "node:path";
+import { dirname, isAbsolute, resolve } from "node:path";
 
 import { isRuntimeOnlyErrorEvent } from "../runtime/error-flow-utils.js";
 import { readJsonFile, writeJsonFileAtomic } from "../runtime/json-file.js";
@@ -95,10 +95,27 @@ function getBindingKind(system: SystemDefinition, roleId: string): StudioAuthori
   return "noop";
 }
 
+function detectEntryEventType(systemSource: string, entryRoleId: string): string | undefined {
+  const lines = String(systemSource || "").split(/\r?\n/);
+  for (const line of lines) {
+    const match = line.match(/^\s*input\s*-->\|([^|]+)\|\s*.+\[Role:([^\]]+)\]\s*$/);
+    if (!match) {
+      continue;
+    }
+    const eventType = match[1]?.trim();
+    const targetRoleId = match[2]?.trim();
+    if (eventType && targetRoleId === entryRoleId) {
+      return eventType;
+    }
+  }
+  return undefined;
+}
+
 export function importSystemToAuthoring(args: {
   workdir: string;
   systemPath: string;
   system: SystemDefinition;
+  systemSource?: string;
 }): StudioAuthoringDocument {
   const roles: Record<string, StudioAuthoringRole> = {};
   const layoutNodes: StudioAuthoringDocument["layout"]["nodes"] = {};
@@ -146,6 +163,7 @@ export function importSystemToAuthoring(args: {
       systemId: args.system.systemId,
       systemVersion: args.system.systemVersion,
       entryRoleId: args.system.entryRoleId,
+      entryEventType: detectEntryEventType(args.systemSource ?? "", args.system.entryRoleId),
       lawGlobalRef: args.system.lawBinding.globalLawRef,
       handoffMode: args.system.graph?.handoffMode,
       handoffContracts: args.system.graph?.handoffContracts
@@ -331,7 +349,9 @@ export async function inspectStudioBridgeDraft(args: {
   systemSource?: string;
   validateSystemSource: ValidateStudioSystemSource;
 }): Promise<StudioBridgeDraft> {
-  const systemPath = args.systemPath ?? resolve(args.workdir, "system.mmd");
+  const systemPath = args.systemPath
+    ? (isAbsolute(args.systemPath) ? args.systemPath : resolve(args.workdir, args.systemPath))
+    : resolve(args.workdir, "system.mmd");
   const systemSource = args.systemSource ?? (await readFile(systemPath, "utf8"));
   const validation = await args.validateSystemSource({
     workdir: args.workdir,
@@ -429,6 +449,11 @@ export function serializeAuthoringToMermaid(authoring: StudioAuthoringDocument):
   roleIds.forEach((roleId, index) => {
     nodeIdByRoleId.set(roleId, `r${index + 1}`);
   });
+  const entryRoleId = authoring.system.entryRoleId;
+  const entryNode = entryRoleId ? (nodeIdByRoleId.get(entryRoleId) ?? entryRoleId) : "";
+  const entryFlowLine = entryRoleId && authoring.roles[entryRoleId]
+    ? `input -->|${authoring.system.entryEventType || "START"}| ${entryNode}[Role:${escapeMermaidRoleId(entryRoleId)}]`
+    : null;
   const flowLines = Object.values(authoring.flows)
     .sort((left, right) =>
       left.fromRoleId.localeCompare(right.fromRoleId) ||
@@ -446,7 +471,7 @@ export function serializeAuthoringToMermaid(authoring: StudioAuthoringDocument):
       return `${from} -->|${flow.eventType}| ${toNode}[Role:${escapeMermaidRoleId(flow.toRoleId)}]`;
     });
 
-  return [...metadata, ...flowLines, ""].join("\n");
+  return [...metadata, ...(entryFlowLine ? [entryFlowLine] : []), ...flowLines, ""].join("\n");
 }
 
 export function importMermaidToAuthoring(args: {
@@ -457,7 +482,8 @@ export function importMermaidToAuthoring(args: {
   return importSystemToAuthoring({
     workdir: args.workdir,
     systemPath: args.systemPath,
-    system: parseSystemFromMermaidSource(args.systemSource)
+    system: parseSystemFromMermaidSource(args.systemSource),
+    systemSource: args.systemSource
   });
 }
 

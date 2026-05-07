@@ -312,8 +312,26 @@ export async function inspectProjectWorkspace(workdir: string): Promise<Record<s
   const entries = isDirectory ? await directoryEntries(workdir) : [];
   const controlledPathConflicts =
     isDirectory && !hasProject && entries.length ? await listControlledProjectConflicts(workdir) : [];
+  const projectValidation = hasProject
+    ? await (async () => {
+        try {
+          return await validateProjectSystemSource({
+            workdir,
+            systemPath: resolve(workdir, "system.mmd"),
+            systemSource: await readFile(resolve(workdir, "system.mmd"), "utf8")
+          });
+        } catch (error) {
+          return {
+            ok: false,
+            diagnostics: buildParseDiagnostics(error),
+            structure: null
+          };
+        }
+      })()
+    : null;
+  const isProjectValid = projectValidation?.ok === true;
   const state = hasProject
-    ? "project"
+    ? (isProjectValid ? "project" : "project-invalid")
     : entries.length === 0
       ? "empty"
       : controlledPathConflicts.length
@@ -324,9 +342,11 @@ export async function inspectProjectWorkspace(workdir: string): Promise<Record<s
     exists,
     isDirectory,
     hasProject,
+    isProjectValid,
     state,
     entryCount: entries.length,
     controlledPathConflicts,
+    projectValidation,
     canInitialize: state === "empty" || state === "non-project-ready"
   };
 }
