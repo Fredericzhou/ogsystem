@@ -553,7 +553,7 @@ test("client lifecycle panel renderers cover Workbench controls and modes", () =
     escapeText
   });
   assert.match(dryRunHtml, /dry-1/);
-  assert.match(dryRunHtml, /Dry run uses system\.mmd/);
+  assert.match(dryRunHtml, /saved source path system\.mmd/);
 
   const sourceHtml = renderWorkbenchModeBodyHtml({
     buildMode: "edit",

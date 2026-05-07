@@ -18,8 +18,8 @@ import {
   renderRolePackagePanel,
   renderRunStatePanel,
   renderStudioGraphCanvas,
-  renderStudioBridgeInspector,
   renderStudioBridgePanel,
+  renderStudioRolePackageEditor,
   renderStudioBridgeSelectionLabel,
   roleIdOf,
   flowKeyOf,
@@ -207,7 +207,7 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
     const normalizeStudioTargetRoleId = ${normalizeStudioTargetRoleId.toString()};
     const renderStudioGraphCanvas = ${renderStudioGraphCanvas.toString()};
     const renderStudioBridgeSelectionLabel = ${renderStudioBridgeSelectionLabel.toString()};
-    const renderStudioBridgeInspector = ${renderStudioBridgeInspector.toString()};
+    const renderStudioRolePackageEditor = ${renderStudioRolePackageEditor.toString()};
     const roleIdOf = ${roleIdOf.toString()};
     const flowKeyOf = ${flowKeyOf.toString()};
     const flowDisplayLabel = ${flowDisplayLabel.toString()};
@@ -799,8 +799,8 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
     function buildStudioCanvasFromBridge(bridge) {
       const authoring = bridge?.authoring || null;
       const extracted = bridge?.extracted || {};
-      const roles = extracted.roles || [];
-      const flows = extracted.flows || [];
+      const roles = Array.isArray(extracted.roles) ? extracted.roles : [];
+      const flows = Array.isArray(extracted.flows) ? extracted.flows : [];
       const layoutNodes = authoring?.layout?.nodes || {};
       return {
         version: 1,
@@ -1581,6 +1581,9 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
         filter: state.studioBridgeFilter,
         listMode: state.studioBridgeListMode,
         fullscreen: state.studioBridgeFullscreen,
+        rolePackageEditor: state.studioRolePackageEditor,
+        selectionDocked: state.studioSelectionDialogDocked !== false,
+        selectionCollapsed: state.studioSelectionDialogCollapsed === true,
         actionBusy: state.actionBusy,
         t
       };
@@ -1599,7 +1602,7 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
       if (preservedRoot && currentRoot && currentRoot !== preservedRoot && typeof currentRoot.replaceWith === "function") {
         currentRoot.replaceWith(preservedRoot);
       }
-      updateStudioBridgeSelectionChrome();
+      updateStudioBridgeSelection(false);
       syncStudioBridgeFullscreenChrome();
       bindStudioBridgeControls();
       mountStudioGraphIsland();
@@ -1622,14 +1625,14 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
         workbenchBodyEl.innerHTML = html;
         return;
       }
-      for (const region of ["toolbar", "graph", "index", "navigator", "inspector", "flow-list", "diagnostics"]) {
+      for (const region of ["toolbar", "graph", "index", "navigator", "flow-list", "diagnostics"]) {
         const current = findStudioBridgeElement('[data-studio-bridge-region="' + region + '"]');
         const next = template.content.querySelector('[data-studio-bridge-region="' + region + '"]');
         if (current && next) {
           current.replaceWith(next);
         }
       }
-      updateStudioBridgeSelectionChrome();
+      updateStudioBridgeSelection(false);
     }
 
     function bindStudioBridgeControls() {
@@ -1639,12 +1642,15 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
         onRoleSelect: (roleId) => {
           state.studioBridgeSelectedRoleId = roleId;
           state.studioBridgeSelectedFlowKey = "";
+          state.studioSelectionDialogOpen = true;
           state.studioBridgeEditSelectionRequest += 1;
           updateStudioBridgeSelection(true);
+          void loadStudioRolePackageEditor(roleId);
         },
         onFlowSelect: (flowKey) => {
           state.studioBridgeSelectedFlowKey = flowKey;
           state.studioBridgeSelectedRoleId = "";
+          state.studioSelectionDialogOpen = true;
           state.studioBridgeEditSelectionRequest += 1;
           updateStudioBridgeSelection(true);
         },
@@ -1658,22 +1664,367 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
           renderStudioBridge({ preserveGraphRoot: true });
         }
       });
+      bindStudioSelectionDialogControls();
+      bindStudioRolePackageEditorControls();
     }
 
     function updateStudioBridgeSelection(syncGraph) {
       updateStudioBridgeSelectionChrome();
-      const inspector = findStudioBridgeElement('[data-studio-bridge-region="inspector"]');
-      if (inspector) {
-        inspector.innerHTML = renderStudioBridgeInspector({
-          bridge: studioBridgeRenderArgs().bridge,
-          selectedRoleId: state.studioBridgeSelectedRoleId,
-          selectedFlowKey: state.studioBridgeSelectedFlowKey,
-          t
-        });
-      }
+      renderStudioSelectionDialog();
       if (syncGraph !== false) {
         mountStudioGraphIsland();
       }
+    }
+
+    function selectedStudioRoleId() {
+      const bridge = state.studioBridge || {};
+      const roles = Array.isArray(bridge.extracted?.roles) ? bridge.extracted.roles : [];
+      return state.studioBridgeSelectedRoleId || roles[0]?.roleId || "";
+    }
+
+    function rolePackageEditorFileElements() {
+      return Array.from(workbenchBodyEl.querySelectorAll("[data-role-package-file]") || []);
+    }
+
+    function readRolePackageEditorDraftFiles() {
+      const files = {};
+      for (const element of rolePackageEditorFileElements()) {
+        const fileName = element.getAttribute("data-role-package-file") || "";
+        if (fileName) {
+          files[fileName] = typeof element.value === "string" ? element.value : "";
+        }
+      }
+      return files;
+    }
+
+    function rolePackageEditorRoleIdForSelectionDialog() {
+      const selectedRoleIdValue = state.studioBridgeSelectedRoleId || "";
+      const editor = state.studioRolePackageEditor || {};
+      if (editor.dirty && editor.roleId) {
+        return String(editor.roleId || selectedRoleIdValue);
+      }
+      return selectedRoleIdValue;
+    }
+
+    function hasDirtyStudioRolePackageEditor() {
+      return state.studioRolePackageEditor?.dirty === true;
+    }
+
+    function clearStudioSelectionDialogState() {
+      state.studioSelectionDialogOpen = false;
+      state.studioSelectionDialogCollapsed = false;
+      state.studioSelectionCommandFormOpen = false;
+      state.studioSelectionCommandKind = "";
+      state.studioSelectionDismissCommandFormRequest += 1;
+    }
+
+    function closeStudioSelectionDialog(options) {
+      if (!options?.force && hasDirtyStudioRolePackageEditor()) {
+        const dirtyRoleId = String(state.studioRolePackageEditor?.roleId || state.studioBridgeSelectedRoleId || "");
+        setFlash("info", t("studio.rolePackageDirtySwitchBlocked", { roleId: dirtyRoleId }, "Role package changes for {roleId} are unsaved. Save or revert before closing details."));
+        return false;
+      }
+      clearStudioSelectionDialogState();
+      if (options?.clearSelection !== false) {
+        state.studioBridgeSelectedRoleId = "";
+        state.studioBridgeSelectedFlowKey = "";
+      }
+      updateStudioBridgeSelection(options?.syncGraph !== false);
+      return true;
+    }
+
+    function renderStudioSelectionDialog() {
+      const overlay = findStudioBridgeElement("[data-studio-selection-overlay]");
+      const dialog = findStudioBridgeElement("[data-studio-selection-dialog]");
+      const kindLabel = findStudioBridgeElement("[data-studio-selection-kind-label]");
+      const title = findStudioBridgeElement("[data-studio-selection-title]");
+      const rolePackage = findStudioBridgeElement("[data-studio-selection-role-package]");
+      if (!overlay || !dialog || !kindLabel || !title || !rolePackage) {
+        return;
+      }
+      const selectedRoleIdValue = state.studioBridgeSelectedRoleId || "";
+      const selectedFlowKeyValue = state.studioBridgeSelectedFlowKey || "";
+      const selectionKind = selectedRoleIdValue
+        ? "role"
+        : selectedFlowKeyValue
+          ? "flow"
+          : "";
+      const shouldOpen = state.studioSelectionDialogOpen && Boolean(selectionKind || state.studioSelectionCommandFormOpen);
+      overlay.hidden = !shouldOpen;
+      overlay.classList.toggle("is-open", shouldOpen);
+      overlay.classList.toggle("is-docked", state.studioSelectionDialogDocked !== false);
+      overlay.classList.toggle("is-collapsed", state.studioSelectionDialogCollapsed === true);
+      if (!shouldOpen) {
+        rolePackage.innerHTML = "";
+        return;
+      }
+
+      if (selectionKind === "role") {
+        kindLabel.textContent = t("studio.roleInspector", undefined, "role inspector");
+        title.textContent = selectedRoleIdValue;
+      } else if (selectionKind === "flow") {
+        kindLabel.textContent = t("studio.flowInspector", undefined, "flow inspector");
+        title.textContent = selectedFlowKeyValue;
+      } else if (state.studioSelectionCommandFormOpen) {
+        kindLabel.textContent = t("studio.graphWorkspace", undefined, "Graph workspace");
+        title.textContent = state.studioSelectionCommandKind || t("common.edit", undefined, "edit");
+      } else {
+        kindLabel.textContent = t("studio.graphWorkspace", undefined, "Graph workspace");
+        title.textContent = t("studio.selectRole", undefined, "Select a role to inspect metadata.");
+      }
+      dialog.setAttribute("aria-label", title.textContent || kindLabel.textContent || t("studio.graphWorkspace", undefined, "Graph workspace"));
+      const pinButton = overlay.querySelector?.("[data-studio-selection-pin]");
+      if (pinButton) {
+        pinButton.textContent = state.studioSelectionDialogDocked !== false ? "undock" : "dock";
+      }
+      const collapseButton = overlay.querySelector?.("[data-studio-selection-collapse]");
+      if (collapseButton) {
+        collapseButton.textContent = state.studioSelectionDialogCollapsed ? ">" : "<";
+      }
+
+      if (selectionKind === "role") {
+        const editorRoleId = rolePackageEditorRoleIdForSelectionDialog();
+        const dirtyRoleId = String(state.studioRolePackageEditor?.roleId || "");
+        const showDirtyRoleWarning = hasDirtyStudioRolePackageEditor() && dirtyRoleId && dirtyRoleId !== selectedRoleIdValue;
+        rolePackage.innerHTML = [
+          showDirtyRoleWarning
+            ? '<div class="event"><div class="event-top"><span>' + escapeText(t("common.attention", undefined, "attention")) + '</span><span>' + escapeText(t("common.changed", undefined, "changed")) + '</span></div><strong>' +
+              escapeText(t("studio.rolePackageDirtySwitchBlocked", { roleId: dirtyRoleId }, "Role package changes for {roleId} are unsaved. Save or revert before switching role packages.")) +
+              '</strong></div>'
+            : "",
+          renderStudioRolePackageEditor({
+            roleId: editorRoleId || selectedRoleIdValue,
+            editor: state.studioRolePackageEditor,
+            t
+          })
+        ].join("");
+      } else if (selectionKind === "flow") {
+        const bridge = state.studioBridge || {};
+        const extracted = bridge.extracted || {};
+        const flows = Array.isArray(extracted.flows) ? extracted.flows : [];
+        const selectedFlow = flows.find((flow) => String(flow.flowKey || "") === selectedFlowKeyValue) || null;
+        if (selectedFlow) {
+          rolePackage.innerHTML = '<div class="event"><div class="event-top"><span>' +
+            escapeText(t("studio.flowInspector", undefined, "flow inspector")) + '</span><span>' +
+            escapeText(String(selectedFlow.eventType || "")) + '</span></div><strong><code>' +
+            escapeText(String(selectedFlow.fromRoleId || "")) + '</code> -> <code>' +
+            escapeText(String(selectedFlow.toRoleId || "")) + '</code></strong><div class="hint">' +
+            escapeText(t("studio.flowDisplayIdentity", {
+              label: flowDisplayLabel(selectedFlow),
+              eventType: String(selectedFlow.eventType || "")
+            }, "display " + flowDisplayLabel(selectedFlow) + " · event " + String(selectedFlow.eventType || ""))) +
+            '</div></div>';
+        } else {
+          rolePackage.innerHTML = '<div class="hint">' + escapeText(t("studio.selectFlow", undefined, "Select a flow to inspect event metadata.")) + "</div>";
+        }
+      } else {
+        rolePackage.innerHTML = "";
+      }
+      bindStudioRolePackageEditorControls();
+    }
+
+    function bindStudioSelectionDialogControls() {
+      for (const button of Array.from(workbenchBodyEl.querySelectorAll("[data-studio-selection-close]") || [])) {
+        bindOnce(button, "click", "studio-selection-close", () => {
+          closeStudioSelectionDialog({ clearSelection: true, syncGraph: true });
+        });
+      }
+      for (const button of Array.from(workbenchBodyEl.querySelectorAll("[data-studio-selection-pin]") || [])) {
+        bindOnce(button, "click", "studio-selection-pin", () => {
+          state.studioSelectionDialogDocked = !state.studioSelectionDialogDocked;
+          renderStudioSelectionDialog();
+        });
+      }
+      for (const button of Array.from(workbenchBodyEl.querySelectorAll("[data-studio-selection-collapse]") || [])) {
+        bindOnce(button, "click", "studio-selection-collapse", () => {
+          state.studioSelectionDialogCollapsed = !state.studioSelectionDialogCollapsed;
+          renderStudioSelectionDialog();
+        });
+      }
+    }
+
+    async function refreshRolePackageDependentProjectState() {
+      const [readiness, rolePackages] = await Promise.all([
+        requestJson(API_PREFIX + "/project/readiness").catch(() => state.projectReadiness),
+        requestJson(API_PREFIX + "/project/role-packages").catch(() => state.rolePackages)
+      ]);
+      state.projectReadiness = readiness;
+      state.rolePackages = rolePackages;
+      renderProject();
+    }
+
+    async function loadStudioRolePackageEditor(roleId, options) {
+      const selectedRoleIdValue = roleId || selectedStudioRoleId();
+      if (!selectedRoleIdValue) {
+        return;
+      }
+      if (state.studioRolePackageEditor?.dirty && !options?.force) {
+        if (selectedRoleIdValue !== state.studioRolePackageEditor?.roleId) {
+          setFlash("info", t("studio.rolePackageDirtySwitchBlocked", {
+            roleId: String(state.studioRolePackageEditor?.roleId || "")
+          }, "Role package changes for {roleId} are unsaved. Save or revert before switching role packages."));
+        }
+        renderStudioSelectionDialog();
+        return;
+      }
+      state.studioRolePackageEditor = {
+        ...(state.studioRolePackageEditor || {}),
+        roleId: selectedRoleIdValue,
+        loading: true,
+        saving: false,
+        error: "",
+        dirty: false,
+        loaded: state.studioRolePackageEditor?.roleId === selectedRoleIdValue && state.studioRolePackageEditor?.loaded === true,
+        data: state.studioRolePackageEditor?.roleId === selectedRoleIdValue ? state.studioRolePackageEditor?.data : null,
+        draftFiles: state.studioRolePackageEditor?.roleId === selectedRoleIdValue ? state.studioRolePackageEditor?.draftFiles || {} : {}
+      };
+      renderStudioSelectionDialog();
+      try {
+        const payload = await requestJson(API_PREFIX + "/project/role-packages/" + encodeURIComponent(selectedRoleIdValue));
+        if (state.studioRolePackageEditor?.roleId !== selectedRoleIdValue) {
+          return;
+        }
+        const files = payload.files || {};
+        const draftFiles = {};
+        for (const fileName of ["role.json", "agent.md", "prompt.md", "output.schema.json"]) {
+          draftFiles[fileName] = files[fileName]?.content || "";
+        }
+        state.studioRolePackageEditor = {
+          roleId: selectedRoleIdValue,
+          loading: false,
+          saving: false,
+          loaded: true,
+          dirty: false,
+          error: "",
+          data: payload,
+          draftFiles
+        };
+      } catch (error) {
+        if (state.studioRolePackageEditor?.roleId !== selectedRoleIdValue) {
+          return;
+        }
+        state.studioRolePackageEditor = {
+          ...(state.studioRolePackageEditor || {}),
+          roleId: selectedRoleIdValue,
+          loading: false,
+          saving: false,
+          loaded: false,
+          dirty: false,
+          error: error instanceof Error ? error.message : String(error)
+        };
+      }
+      renderStudioSelectionDialog();
+    }
+
+    function ensureStudioRolePackageEditor(roleId) {
+      const roleIdValue = roleId || "";
+      if (!roleIdValue) {
+        return;
+      }
+      const editor = state.studioRolePackageEditor || {};
+      if (editor.dirty || editor.loading || editor.saving) {
+        return;
+      }
+      if (editor.roleId === roleIdValue && editor.loaded && !editor.error) {
+        return;
+      }
+      void loadStudioRolePackageEditor(roleIdValue);
+    }
+
+    async function saveStudioRolePackageEditor(roleId) {
+      const selectedRoleIdValue = roleId || state.studioRolePackageEditor?.roleId || selectedStudioRoleId();
+      if (!selectedRoleIdValue) {
+        return;
+      }
+      const draftFiles = readRolePackageEditorDraftFiles();
+      state.studioRolePackageEditor = {
+        ...(state.studioRolePackageEditor || {}),
+        roleId: selectedRoleIdValue,
+        saving: true,
+        error: "",
+        draftFiles
+      };
+      renderStudioSelectionDialog();
+      try {
+        const payload = await requestAction(API_PREFIX + "/project/role-packages/" + encodeURIComponent(selectedRoleIdValue), {
+          files: draftFiles
+        });
+        const files = payload.files || {};
+        const nextDraftFiles = {};
+        for (const fileName of ["role.json", "agent.md", "prompt.md", "output.schema.json"]) {
+          nextDraftFiles[fileName] = files[fileName]?.content || "";
+        }
+        state.studioRolePackageEditor = {
+          roleId: selectedRoleIdValue,
+          loading: false,
+          saving: false,
+          loaded: true,
+          dirty: false,
+          error: "",
+          data: payload,
+          draftFiles: nextDraftFiles
+        };
+        await refreshRolePackageDependentProjectState();
+        await refreshStudioBridge({ preserveGraphRoot: true });
+        setFlash("success", t("studio.rolePackageSaved", { roleId: selectedRoleIdValue }, "Role package saved: {roleId}."));
+      } catch (error) {
+        state.studioRolePackageEditor = {
+          ...(state.studioRolePackageEditor || {}),
+          roleId: selectedRoleIdValue,
+          saving: false,
+          dirty: true,
+          error: error instanceof Error ? error.message : String(error),
+          draftFiles
+        };
+      }
+      renderStudioSelectionDialog();
+    }
+
+    function bindStudioRolePackageEditorControls() {
+      for (const button of Array.from(workbenchBodyEl.querySelectorAll("[data-role-package-load]") || [])) {
+        bindOnce(button, "click", "role-package-load", () => {
+          void loadStudioRolePackageEditor(button.getAttribute("data-role-package-load") || selectedStudioRoleId(), { force: true });
+        });
+      }
+      for (const button of Array.from(workbenchBodyEl.querySelectorAll("[data-role-package-save]") || [])) {
+        bindOnce(button, "click", "role-package-save", () => {
+          void saveStudioRolePackageEditor(button.getAttribute("data-role-package-save") || selectedStudioRoleId());
+        });
+      }
+      for (const button of Array.from(workbenchBodyEl.querySelectorAll("[data-role-package-revert]") || [])) {
+        bindOnce(button, "click", "role-package-revert", () => {
+          void loadStudioRolePackageEditor(button.getAttribute("data-role-package-revert") || selectedStudioRoleId(), { force: true });
+        });
+      }
+      for (const element of rolePackageEditorFileElements()) {
+        bindOnce(element, "input", "role-package-file", () => {
+          state.studioRolePackageEditor = {
+            ...(state.studioRolePackageEditor || {}),
+            roleId: state.studioRolePackageEditor?.roleId || selectedStudioRoleId(),
+            dirty: true,
+            error: "",
+            draftFiles: readRolePackageEditorDraftFiles()
+          };
+          for (const button of Array.from(workbenchBodyEl.querySelectorAll("[data-role-package-save], [data-role-package-revert]") || [])) {
+            if (typeof button.removeAttribute === "function") {
+              button.removeAttribute("disabled");
+            }
+            button.disabled = false;
+          }
+          renderStudioSelectionDialog();
+        });
+      }
+    }
+
+    function resolveStudioGraphCanvas() {
+      const fallbackCanvas = buildStudioCanvasFromBridge(state.studioBridge);
+      const currentCanvas = state.studioCanvas;
+      const currentNodes = Array.isArray(currentCanvas?.nodes) ? currentCanvas.nodes : [];
+      const fallbackNodes = Array.isArray(fallbackCanvas?.nodes) ? fallbackCanvas.nodes : [];
+      if (currentNodes.length > 0 || fallbackNodes.length === 0) {
+        return currentCanvas || fallbackCanvas;
+      }
+      return fallbackCanvas;
     }
 
     function updateStudioBridgeSelectionChrome() {
@@ -1783,10 +2134,25 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
       });
     }
 
+    function canClearStudioGraphSelection() {
+      if (hasDirtyStudioRolePackageEditor()) {
+        const dirtyRoleId = String(state.studioRolePackageEditor?.roleId || state.studioBridgeSelectedRoleId || "");
+        setFlash("info", t("studio.rolePackageDirtySwitchBlocked", { roleId: dirtyRoleId }, "Role package changes for {roleId} are unsaved. Save or revert before clearing selection."));
+        return false;
+      }
+      clearStudioSelectionDialogState();
+      return true;
+    }
+
     if (typeof document.addEventListener === "function") {
       document.addEventListener("keydown", (event) => {
         if (event.key === "Escape" && state.actionForm && !state.actionBusy) {
           closeActionForm();
+          return;
+        }
+        if (event.key === "Escape" && state.studioSelectionDialogOpen) {
+          closeStudioSelectionDialog({ clearSelection: true, syncGraph: true });
+          event.preventDefault();
           return;
         }
         if (event.key !== "Escape" || !state.studioBridgeFullscreen) {
@@ -1818,7 +2184,7 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
       }
       mount(root, {
         authoring: state.studioBridge?.authoring || null,
-        canvas: state.studioCanvas || buildStudioCanvasFromBridge(state.studioBridge),
+        canvas: resolveStudioGraphCanvas(),
         validation: state.studioBridge?.validation || state.workbench?.validation || null,
         selectedRoleId: state.studioBridgeSelectedRoleId,
         selectedFlowKey: state.studioBridgeSelectedFlowKey,
@@ -1831,21 +2197,38 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
         projectConfig: state.project?.config,
         labels: buildStudioGraphLabels(),
         commandFormLabels: buildStudioGraphCommandFormLabels(),
+        commandFormHost: findStudioBridgeElement("[data-studio-selection-command-host]"),
+        dismissCommandFormRequest: state.studioSelectionDismissCommandFormRequest,
         historyEvent: state.studioGraphHistoryEvent,
         onSelectRole: (roleId) => {
           state.studioBridgeSelectedRoleId = roleId || "";
           state.studioBridgeSelectedFlowKey = "";
+          state.studioSelectionDialogOpen = true;
           updateStudioBridgeSelection(false);
+          void loadStudioRolePackageEditor(roleId);
         },
         onSelectFlow: (flowKey) => {
           state.studioBridgeSelectedFlowKey = flowKey || "";
           state.studioBridgeSelectedRoleId = "";
+          state.studioSelectionDialogOpen = true;
           updateStudioBridgeSelection(false);
         },
+        onBeforeClearSelection: () => canClearStudioGraphSelection(),
         onClearSelection: () => {
           state.studioBridgeSelectedRoleId = "";
           state.studioBridgeSelectedFlowKey = "";
+          state.studioSelectionDialogOpen = false;
           updateStudioBridgeSelection(false);
+        },
+        onCommandFormStateChange: (formState) => {
+          state.studioSelectionCommandFormOpen = Boolean(formState?.open);
+          state.studioSelectionCommandKind = String(formState?.kind || "");
+          if (formState?.open) {
+            state.studioSelectionDialogOpen = true;
+          } else if (!state.studioBridgeSelectedRoleId && !state.studioBridgeSelectedFlowKey) {
+            state.studioSelectionDialogOpen = false;
+          }
+          renderStudioSelectionDialog();
         },
         onApplyCanvas: async (canvas) => {
           await applyStudioGraphCanvasPatch(canvas);
@@ -3081,8 +3464,8 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
         state.studioCanvas = buildStudioCanvasFromBridge(payload);
         state.studioBridgeLoaded = true;
         state.studioBridgeStale = false;
-        const roles = payload.extracted?.roles || [];
-        const flows = payload.extracted?.flows || [];
+        const roles = Array.isArray(payload.extracted?.roles) ? payload.extracted.roles : [];
+        const flows = Array.isArray(payload.extracted?.flows) ? payload.extracted.flows : [];
         if (!state.studioBridgeSelectedRoleId && roles[0]?.roleId) {
           state.studioBridgeSelectedRoleId = roles[0].roleId;
         }
@@ -3095,6 +3478,7 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
         };
         renderWorkbench({ preserveStudioGraphRoot: Boolean(options?.preserveGraphRoot) });
         renderProject();
+        ensureStudioRolePackageEditor(state.studioBridgeSelectedRoleId);
         return payload;
       } finally {
         state.studioBridgeLoading = false;

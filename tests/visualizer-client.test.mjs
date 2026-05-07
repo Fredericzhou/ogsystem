@@ -366,7 +366,19 @@ class FakeElement {
 
   querySelectorAll(selector) {
     const selectors = String(selector).split(",").map((entry) => entry.trim()).filter(Boolean);
-    return this.children.filter((child) => selectors.some((entry) => matchesSelector(child, entry)));
+    const matches = [];
+    const visit = (element) => {
+      if (selectors.some((entry) => matchesSelector(element, entry))) {
+        matches.push(element);
+      }
+      for (const child of element.children || []) {
+        visit(child);
+      }
+    };
+    for (const child of this.children) {
+      visit(child);
+    }
+    return matches;
   }
 
   querySelector(selector) {
@@ -899,6 +911,7 @@ function createBackend(options = {}) {
     lastDecisionBody: null,
     lastProjectCreateBody: null,
     lastRoleImportBody: null,
+    lastRolePackageSaveBody: null,
     lastStudioChatBody: null,
     workspaceFailOnce: Boolean(options.workspaceFailOnce),
     decisionDeferred: options.decisionDeferred ?? null,
@@ -1448,6 +1461,56 @@ function createBackend(options = {}) {
               toRoleId: "output"
             }
           ]
+        });
+      }
+      const rolePackageDetailMatch = pathname.match(/^\/api\/v1\/project\/role-packages\/([^/]+)$/);
+      if (rolePackageDetailMatch) {
+        const roleId = decodeURIComponent(rolePackageDetailMatch[1]);
+        if (method === "POST") {
+          this.lastRolePackageSaveBody = JSON.parse(request.body ?? "{}");
+        }
+        const files = method === "POST" ? this.lastRolePackageSaveBody.files : null;
+        return createResponse({
+          roleId,
+          status: "ok",
+          resolvedPath: `/tmp/demo/og-roles/roles/${roleId}`,
+          files: {
+            "role.json": {
+              exists: true,
+              path: `/tmp/demo/og-roles/roles/${roleId}/role.json`,
+              content: files?.["role.json"] || JSON.stringify({
+                roleId,
+                roleVersion: "1.0.0",
+                name: "Demo Analyst",
+                description: "fixture",
+                promptTemplate: "prompt.md",
+                outputSchema: "output.schema.json"
+              }, null, 2)
+            },
+            "agent.md": {
+              exists: true,
+              path: `/tmp/demo/og-roles/roles/${roleId}/agent.md`,
+              content: files?.["agent.md"] || "# Demo Analyst\n"
+            },
+            "prompt.md": {
+              exists: true,
+              path: `/tmp/demo/og-roles/roles/${roleId}/prompt.md`,
+              content: files?.["prompt.md"] || "{{agent}}\n\n{{task}}\n"
+            },
+            "output.schema.json": {
+              exists: true,
+              path: `/tmp/demo/og-roles/roles/${roleId}/output.schema.json`,
+              content: files?.["output.schema.json"] || JSON.stringify({
+                type: "object",
+                required: ["event", "content"],
+                properties: {
+                  event: { type: "string", enum: ["DONE", "REWORK"] },
+                  content: { type: "string" }
+                }
+              }, null, 2)
+            }
+          },
+          validation: { ok: true, diagnostics: [] }
         });
       }
       if (pathname === "/api/v1/project/role-packages") {
@@ -3474,6 +3537,30 @@ test("visualizer client opens Studio Bridge, saves an authoring draft, and dry-r
   assert.equal(latestEditableMount().labels.viewportGroup, "Viewport");
   assert.equal(latestEditableMount().labels.editGroup, "Edit graph");
   assert.equal(latestEditableMount().labels.fullscreen, "Fullscreen");
+  latestEditableMount().onSelectRole("demo-analyst");
+  await settle();
+  assert.match(harness.document.getElementById("workbench-body").textContent, /role package/);
+
+  const rolePackageLoad = harness.document.getElementById("workbench-body").querySelectorAll("[data-role-package-load]")[0];
+  assert.ok(rolePackageLoad);
+  if (!/agent\.md/.test(harness.document.getElementById("workbench-body").textContent)) {
+    await rolePackageLoad.click();
+  }
+  await waitForCondition(() => harness.backend.fetchCalls.some((call) => call.path === "/api/v1/project/role-packages/demo-analyst"));
+  await waitForCondition(() => /agent\.md/.test(harness.document.getElementById("workbench-body").textContent));
+  const agentEditor = harness.document.getElementById("workbench-body")
+    .querySelectorAll("[data-role-package-file]")
+    .findLast((element) => element.getAttribute("data-role-package-file") === "agent.md");
+  assert.ok(agentEditor);
+  await agentEditor.input("# Demo Analyst\n\nUpdated visually.\n");
+  const rolePackageSave = harness.document.getElementById("workbench-body").querySelectorAll("[data-role-package-save]").at(-1);
+  assert.ok(rolePackageSave);
+  await rolePackageSave.click();
+  await waitForCondition(() => Boolean(harness.backend.lastRolePackageSaveBody));
+  assert.match(harness.backend.lastRolePackageSaveBody.files["agent.md"], /Updated visually/);
+  await waitForCondition(() => /Role package saved/.test(harness.document.getElementById("flash").textContent));
+  assert.match(harness.document.getElementById("flash").textContent, /Role package saved/);
+
   await settle();
   const fetchCallsAfterOpen = harness.backend.fetchCalls.length;
   mountCalls.at(-1).options.onSelectFlow("demo-analyst:DONE:output");

@@ -833,19 +833,14 @@ export function renderPageShellStyles(): string {
     }
     .studio-bridge-layout {
       display: grid;
-      grid-template-columns: minmax(0, 1fr);
-      gap: 12px;
+      grid-template-columns: minmax(0, 1.6fr) minmax(320px, 1fr);
+      gap: 10px;
       align-items: start;
       min-width: 0;
     }
-    .studio-graph-column,
-    .studio-inspector,
-    .studio-bridge-index,
-    .studio-diagnostics {
-      grid-column: 1 / -1;
-    }
+    .studio-graph-column { grid-column: 1 / -1; }
     .studio-bridge-index {
-      grid-column: 1 / -1;
+      grid-column: 1 / 2;
       min-width: 0;
     }
     .studio-index-grid {
@@ -856,7 +851,6 @@ export function renderPageShellStyles(): string {
       min-width: 0;
     }
     .studio-navigator,
-    .studio-inspector,
     .studio-graph-column {
       min-width: 0;
     }
@@ -865,12 +859,13 @@ export function renderPageShellStyles(): string {
       gap: 8px;
     }
     .studio-diagnostics {
-      grid-column: 1 / -1;
+      grid-column: 2 / 3;
     }
     .studio-canvas-shell {
       display: grid;
-      gap: 8px;
+      gap: 6px;
       min-width: 0;
+      position: relative;
     }
     .studio-canvas-toolbar {
       display: flex;
@@ -898,8 +893,121 @@ export function renderPageShellStyles(): string {
       min-height: calc(100vh - 108px);
     }
     .studio-graph-root {
-      min-height: clamp(480px, 62vh, 760px);
+      min-height: clamp(560px, 72vh, 920px);
       min-width: 0;
+    }
+    .studio-selection-overlay[hidden] {
+      display: none;
+    }
+    .studio-selection-overlay {
+      position: absolute;
+      inset: 0;
+      z-index: 32;
+      display: grid;
+      justify-items: end;
+      align-items: stretch;
+      pointer-events: none;
+    }
+    .studio-selection-overlay.is-open {
+      pointer-events: auto;
+    }
+    .studio-selection-overlay.is-docked {
+      pointer-events: none;
+    }
+    .studio-selection-overlay.is-docked .studio-selection-dialog {
+      pointer-events: auto;
+    }
+    .studio-selection-backdrop {
+      position: absolute;
+      inset: 0;
+      border: 0;
+      margin: 0;
+      padding: 0;
+      background: rgba(2, 6, 23, 0.24);
+      cursor: pointer;
+    }
+    .studio-selection-overlay.is-docked .studio-selection-backdrop {
+      display: none;
+    }
+    .studio-selection-dialog {
+      position: relative;
+      width: min(480px, 34vw);
+      max-width: calc(100% - 20px);
+      height: 100%;
+      max-height: 100%;
+      border-left: 1px solid var(--border);
+      background: linear-gradient(180deg, rgba(5, 10, 23, 0.98), rgba(10, 18, 36, 0.96));
+      box-shadow: -24px 0 64px rgba(0, 0, 0, 0.42);
+      display: grid;
+      grid-template-rows: auto minmax(0, 1fr);
+      pointer-events: auto;
+    }
+    .studio-selection-overlay.is-collapsed .studio-selection-dialog {
+      width: 56px;
+      max-width: 56px;
+      height: auto;
+      max-height: 200px;
+      border-left: 1px solid rgba(148, 163, 184, 0.28);
+    }
+    .studio-selection-header {
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      gap: 8px;
+      padding: 12px;
+      border-bottom: 1px solid rgba(148, 163, 184, 0.2);
+    }
+    .studio-selection-body {
+      padding: 12px;
+      min-height: 0;
+      overflow-y: auto;
+      overflow-x: hidden;
+      display: grid;
+      align-content: start;
+      gap: 10px;
+    }
+    .studio-selection-title-wrap {
+      min-width: 0;
+    }
+    .studio-selection-actions {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+    .studio-selection-role-package:empty {
+      display: none;
+    }
+    .studio-selection-role-package .form-grid {
+      max-height: min(58vh, calc(100vh - 280px));
+      overflow-y: auto;
+      overflow-x: hidden;
+      padding-right: 2px;
+    }
+    .studio-selection-command-host {
+      min-height: 0;
+    }
+    .studio-selection-command-host .studio-command-dialog {
+      box-shadow: none;
+      border-color: rgba(148, 163, 184, 0.2);
+    }
+    .studio-selection-overlay.is-collapsed .studio-selection-title-wrap,
+    .studio-selection-overlay.is-collapsed .studio-selection-body,
+    .studio-selection-overlay.is-collapsed [data-studio-selection-pin],
+    .studio-selection-overlay.is-collapsed [data-studio-selection-close] {
+      display: none;
+    }
+    .studio-selection-overlay.is-collapsed .studio-selection-header {
+      padding: 8px 6px;
+      border-bottom: 0;
+    }
+    .studio-selection-overlay.is-collapsed .studio-selection-actions {
+      width: 100%;
+      justify-content: center;
+    }
+    .studio-selection-overlay.is-collapsed [data-studio-selection-collapse] {
+      width: 42px;
+      min-width: 42px;
+      padding: 6px 0;
     }
     .log-toolbar {
       display: grid;
@@ -1205,8 +1313,7 @@ export function renderPageShellStyles(): string {
       }
       .studio-bridge-layout { grid-template-columns: 1fr; }
       .studio-graph-column { order: 1; }
-      .studio-inspector { order: 2; }
-      .studio-bridge-index { order: 3; }
+      .studio-bridge-index { order: 2; }
       .studio-index-grid { grid-template-columns: 1fr; }
       .studio-navigator { order: 3; }
       .studio-flow-list {
@@ -1216,6 +1323,19 @@ export function renderPageShellStyles(): string {
         padding-right: 2px;
       }
       .studio-diagnostics { order: 5; }
+      .studio-selection-overlay {
+        align-items: end;
+        justify-items: stretch;
+      }
+      .studio-selection-dialog {
+        width: 100%;
+        max-width: 100%;
+        max-height: 80vh;
+        height: auto;
+        border-left: 0;
+        border-top: 1px solid var(--border);
+        box-shadow: 0 -22px 52px rgba(0, 0, 0, 0.48);
+      }
       .top-nav-row {
         align-items: flex-start;
       }
@@ -1296,6 +1416,9 @@ export function renderPageShellStyles(): string {
       }
       .debug-graph-body {
         grid-template-columns: 1fr;
+      }
+      .studio-graph-root {
+        min-height: clamp(430px, 68vh, 760px);
       }
     }
     @media (max-width: 768px) {

@@ -133,11 +133,8 @@ export function injectStudioGraphStyles(): void {
       opacity: 0.34;
     }
     .studio-command-dialog {
-      position: absolute;
-      inset: 12px 12px auto auto;
-      z-index: 6;
-      width: min(420px, calc(100% - 24px));
-      max-height: calc(100% - 24px);
+      width: 100%;
+      max-width: 100%;
       overflow: auto;
       border: 1px solid rgba(148, 163, 184, 0.28);
       background: rgba(8, 13, 26, 0.96);

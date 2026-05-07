@@ -87,6 +87,15 @@ export type StudioGraphBridgeOptions = {
   onToast?: (tone: "error" | "success" | "info", message: string) => void;
   labels?: StudioGraphLabels;
   commandFormLabels?: StudioCommandFormLabels;
+  commandFormHost?: HTMLElement | null;
+  dismissCommandFormRequest?: number;
+  onBeforeClearSelection?: () => boolean;
+  onCommandFormStateChange?: (state: {
+    open: boolean;
+    kind?: "add-role" | "add-edge" | "edit-role" | "edit-edge";
+    roleId?: string;
+    flowKey?: string;
+  }) => void;
 };
 
 type StudioGraphSnapshot = {
@@ -112,7 +121,8 @@ export class StudioGraphIsland {
   private stageEl: HTMLDivElement;
   private canvasEl: HTMLDivElement;
   private emptyEl: HTMLDivElement;
-  private dialogEl: HTMLDivElement;
+  private dialogEl: HTMLElement;
+  private fallbackDialogEl: HTMLDivElement;
   private options: StudioGraphBridgeOptions = {};
   private applying = false;
   private busy = false;
@@ -121,6 +131,7 @@ export class StudioGraphIsland {
   private lastDefaultAutoLayoutSignature = "";
   private lastEditSelectionSignature = "";
   private lastHandledEditSelectionRequest = 0;
+  private lastHandledDismissCommandFormRequest = 0;
   private lastHandledHistoryEventId = 0;
   private syncCanvasTimer: ReturnType<typeof setTimeout> | null = null;
   private commandForm: StudioCommandFormState | null = null;
@@ -160,22 +171,24 @@ export class StudioGraphIsland {
       '<div class="studio-graph-stage">',
       '<div class="studio-graph-empty" data-studio-graph-empty hidden></div>',
       '<div class="studio-graph-canvas" data-studio-graph-canvas></div>',
-      '<div class="studio-command-dialog" data-studio-command-dialog hidden></div>',
       '</div>'
     ].join("");
     const toolbar = this.root.querySelector<HTMLDivElement>(".studio-graph-toolbar");
     const stageEl = this.root.querySelector<HTMLDivElement>(".studio-graph-stage");
     const canvasEl = this.root.querySelector<HTMLDivElement>("[data-studio-graph-canvas]");
     const emptyEl = this.root.querySelector<HTMLDivElement>("[data-studio-graph-empty]");
-    const dialogEl = this.root.querySelector<HTMLDivElement>("[data-studio-command-dialog]");
-    if (!toolbar || !stageEl || !canvasEl || !emptyEl || !dialogEl) {
+    if (!toolbar || !stageEl || !canvasEl || !emptyEl) {
       throw new Error("Studio graph island failed to initialize.");
     }
     this.toolbar = toolbar;
     this.stageEl = stageEl;
     this.canvasEl = canvasEl;
     this.emptyEl = emptyEl;
-    this.dialogEl = dialogEl;
+    this.fallbackDialogEl = document.createElement("div");
+    this.fallbackDialogEl.hidden = true;
+    this.fallbackDialogEl.className = "studio-command-dialog";
+    this.stageEl.appendChild(this.fallbackDialogEl);
+    this.dialogEl = this.fallbackDialogEl;
     this.graph = this.createGraph(canvasEl);
     this.bindToolbar();
     this.bindGraphEvents();
@@ -186,7 +199,9 @@ export class StudioGraphIsland {
   update(options: StudioGraphBridgeOptions): void {
     this.resetHistoryWhenProjectChanges(options);
     this.options = options;
+    this.attachCommandFormHost();
     this.handleHistoryEvent(options.historyEvent);
+    this.handleDismissCommandFormRequest(options.dismissCommandFormRequest);
     const projection = canvasToStudioGraphProjection({
       authoring: options.authoring,
       canvas: options.canvas,
@@ -204,6 +219,7 @@ export class StudioGraphIsland {
       this.setEmptyState(true, projection.validation.diagnostics.length > 0
         ? this.label("fixMermaidBeforeGraphEditing")
         : this.label("noRolesAvailable"));
+      this.closeCommandForm();
       this.setStatus(this.label("graphUnavailable"));
       this.setBusy(true);
       return;
@@ -340,6 +356,9 @@ export class StudioGraphIsland {
       }
     });
     this.graph.on("blank:click", () => {
+      if (this.options.onBeforeClearSelection?.() === false) {
+        return;
+      }
       this.graph.cleanSelection();
       this.options.onClearSelection?.();
       this.lastEditSelectionSignature = "";
@@ -486,9 +505,13 @@ export class StudioGraphIsland {
   }
 
   private closeCommandForm(): void {
+    if (!this.commandForm && this.dialogEl.hidden) {
+      return;
+    }
     this.commandForm = null;
     this.dialogEl.hidden = true;
     this.dialogEl.innerHTML = "";
+    this.notifyCommandFormState();
   }
 
   private renderCommandForm(): void {
@@ -502,6 +525,7 @@ export class StudioGraphIsland {
       context: this.validationContext(),
       labels: this.options.commandFormLabels
     });
+    this.notifyCommandFormState();
     this.bindCommandForm();
     const firstInput = this.dialogEl.querySelector<HTMLInputElement | HTMLSelectElement>("input:not([type=radio]):not([type=checkbox]), select");
     firstInput?.focus();
@@ -1080,5 +1104,61 @@ export class StudioGraphIsland {
       return CSS.escape(value);
     }
     return value.replace(/["\\]/g, "\\$&");
+  }
+
+  private attachCommandFormHost(): void {
+    const host = this.options.commandFormHost instanceof HTMLElement
+      ? this.options.commandFormHost
+      : this.fallbackDialogEl;
+    if (this.dialogEl === host) {
+      return;
+    }
+    this.dialogEl.hidden = true;
+    this.dialogEl.innerHTML = "";
+    this.dialogEl = host;
+    this.dialogEl.classList.add("studio-command-dialog");
+    if (!this.commandForm) {
+      this.dialogEl.hidden = true;
+      return;
+    }
+    this.renderCommandForm();
+  }
+
+  private handleDismissCommandFormRequest(request: number | undefined): void {
+    const value = Number(request || 0);
+    if (!value || value === this.lastHandledDismissCommandFormRequest) {
+      return;
+    }
+    this.lastHandledDismissCommandFormRequest = value;
+    this.closeCommandForm();
+  }
+
+  private notifyCommandFormState(): void {
+    if (!this.options.onCommandFormStateChange) {
+      return;
+    }
+    if (!this.commandForm) {
+      this.options.onCommandFormStateChange({ open: false });
+      return;
+    }
+    const state: {
+      open: boolean;
+      kind?: "add-role" | "add-edge" | "edit-role" | "edit-edge";
+      roleId?: string;
+      flowKey?: string;
+    } = {
+      open: true,
+      kind: this.commandForm.kind
+    };
+    if (this.commandForm.kind === "add-role" || this.commandForm.kind === "edit-role") {
+      state.roleId = this.commandForm.fields.roleId || "";
+    } else {
+      state.flowKey = studioEdgeFlowKey({
+        source: this.commandForm.fields.sourceRoleId || "",
+        target: this.commandForm.fields.targetRoleId || "",
+        eventType: this.commandForm.fields.eventType || ""
+      });
+    }
+    this.options.onCommandFormStateChange(state);
   }
 }
