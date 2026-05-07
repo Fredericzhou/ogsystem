@@ -45,6 +45,7 @@ import {
   inspectProjectBindingVisualization,
   inspectProjectConfigVisualization,
   inspectProjectContractVisualization,
+  inspectProjectRolePackageFilesVisualization,
   inspectProjectRolePackagesVisualization,
   inspectProjectSystemVisualization,
   inspectProjectSystemWorkbench,
@@ -55,6 +56,7 @@ import {
   importInstalledRolesVisualization,
   listInstalledRoleCatalog,
   listProjectRolesVisualization,
+  saveProjectRolePackageFilesVisualization,
   saveProjectSystemSource,
   upsertProjectProfilesVisualization,
   validateProjectSystemSource
@@ -675,6 +677,24 @@ async function handleApiProjectContracts(workdir: string, response: ServerRespon
 
 async function handleApiProjectRolePackages(workdir: string, response: ServerResponse): Promise<void> {
   jsonResponse(response, 200, await inspectProjectRolePackagesVisualization(workdir));
+}
+
+async function handleApiProjectRolePackageDetail(
+  workdir: string,
+  roleId: string,
+  request: IncomingMessage,
+  response: ServerResponse
+): Promise<void> {
+  if (request.method?.toUpperCase() === "POST") {
+    const body = await readJsonRequest(request);
+    jsonResponse(response, 200, await saveProjectRolePackageFilesVisualization({
+      workdir,
+      roleId,
+      files: body.files ?? body
+    }));
+    return;
+  }
+  jsonResponse(response, 200, await inspectProjectRolePackageFilesVisualization({ workdir, roleId }));
 }
 
 async function handleApiProjectReadiness(workdir: string, response: ServerResponse): Promise<void> {
@@ -1517,6 +1537,18 @@ function normalizeError(error: unknown): HttpError {
       error.details
     );
   }
+  if (
+    /^INVALID_ROLE_PACKAGE_ID$/.test(message) ||
+    /^Invalid role\.json:/.test(message) ||
+    /^Invalid output\.schema\.json:/.test(message) ||
+    /^role\.json roleId mismatch:/.test(message) ||
+    /^role\.json must keep /.test(message) ||
+    /^Missing .+ content\.$/.test(message) ||
+    /^ROLE_PACKAGE_REPO_OUTSIDE_WORKDIR$/.test(message) ||
+    /^Invalid role config /.test(message)
+  ) {
+    return new HttpError(400, "ROLE_PACKAGE_INVALID", message);
+  }
   if (error instanceof Error && "envelope" in error) {
     const envelope = asRecord((error as { envelope?: unknown }).envelope);
     return new HttpError(
@@ -1735,6 +1767,15 @@ async function handleVisualizationRequest(
   }
   if (segments.length === 4 && segments[2] === "project" && segments[3] === "role-packages" && method === "GET") {
     await handleApiProjectRolePackages(state.workdir, response);
+    return;
+  }
+  if (
+    segments.length === 5 &&
+    segments[2] === "project" &&
+    segments[3] === "role-packages" &&
+    (method === "GET" || method === "POST")
+  ) {
+    await handleApiProjectRolePackageDetail(state.workdir, decodeURIComponent(segments[4] || ""), request, response);
     return;
   }
   if (segments.length === 4 && segments[2] === "project" && segments[3] === "readiness" && method === "GET") {

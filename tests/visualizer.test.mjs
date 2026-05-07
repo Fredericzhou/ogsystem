@@ -1779,6 +1779,46 @@ test("visualizer server supports empty workspace project creation without implic
     const parsed = parseSystemFromMermaidSource(systemSource);
     assert.equal(parsed.entryRoleId, "demo-analyst");
 
+    const rolePackageResponse = await fetch(`${url}/api/v1/project/role-packages/demo-analyst`);
+    assert.equal(rolePackageResponse.status, 200);
+    const rolePackage = await rolePackageResponse.json();
+    assert.equal(rolePackage.roleId, "demo-analyst");
+    assert.equal(rolePackage.files["role.json"].exists, true);
+    assert.match(rolePackage.files["agent.md"].content, /technical analyst/i);
+
+    const editedAgent = `${rolePackage.files["agent.md"].content}\n\nVisual editor smoke note.\n`;
+    const saveRolePackageResponse = await fetch(`${url}/api/v1/project/role-packages/demo-analyst`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        files: {
+          "role.json": rolePackage.files["role.json"].content,
+          "agent.md": editedAgent,
+          "prompt.md": rolePackage.files["prompt.md"].content,
+          "output.schema.json": rolePackage.files["output.schema.json"].content
+        }
+      })
+    });
+    assert.equal(saveRolePackageResponse.status, 200);
+    const savedRolePackage = await saveRolePackageResponse.json();
+    assert.equal(savedRolePackage.validation.ok, true);
+    assert.match(await readFile(path.resolve(workdir, "og-roles", "roles", "demo-analyst", "agent.md"), "utf8"), /Visual editor smoke note/);
+
+    const invalidRolePackageResponse = await fetch(`${url}/api/v1/project/role-packages/demo-analyst`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        files: {
+          "role.json": rolePackage.files["role.json"].content,
+          "agent.md": editedAgent,
+          "prompt.md": rolePackage.files["prompt.md"].content,
+          "output.schema.json": "{invalid"
+        }
+      })
+    });
+    assert.equal(invalidRolePackageResponse.status, 400);
+    assert.equal((await invalidRolePackageResponse.json()).error.code, "ROLE_PACKAGE_INVALID");
+
     const createReplayResponse = await fetch(`${url}/api/v1/project/create`, {
       method: "POST",
       headers: { "content-type": "application/json" },

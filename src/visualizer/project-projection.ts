@@ -115,6 +115,8 @@ const PROJECT_CONTROLLED_PATHS = [
   ".ogs/README.md",
   ".ogs/studio/system.authoring.json"
 ];
+const ROLE_PACKAGE_FILE_NAMES = ["role.json", "agent.md", "prompt.md", "output.schema.json"] as const;
+type RolePackageFileName = typeof ROLE_PACKAGE_FILE_NAMES[number];
 
 function sanitizeJsonValue(value: unknown, depth = 0): unknown {
   if (value === null) {
@@ -674,6 +676,100 @@ function buildCompileDiagnostics(error: Error & { diagnostics?: CompilerDiagnost
     fieldName: diagnostic.fieldName,
     selector: diagnostic.selector
   }));
+}
+
+function assertEditableRoleId(roleId: string): string {
+  const normalized = roleId.trim();
+  if (!/^[A-Za-z][A-Za-z0-9_-]{0,127}$/.test(normalized)) {
+    throw new Error("INVALID_ROLE_PACKAGE_ID");
+  }
+  return normalized;
+}
+
+function rolePackageFilePath(roleDir: string, fileName: RolePackageFileName): string {
+  return resolve(roleDir, fileName);
+}
+
+async function readRolePackageEditorFile(roleDir: string, fileName: RolePackageFileName): Promise<Record<string, unknown>> {
+  const filePath = rolePackageFilePath(roleDir, fileName);
+  const exists = await pathExists(filePath);
+  return {
+    fileName,
+    path: filePath,
+    exists,
+    content: exists ? await readFile(filePath, "utf8") : ""
+  };
+}
+
+function rolePackageEditorFilesFromPayload(value: unknown): Partial<Record<RolePackageFileName, string>> {
+  const record = asRecord(value);
+  const files = asRecord(record?.files) ?? record;
+  const result: Partial<Record<RolePackageFileName, string>> = {};
+  for (const fileName of ROLE_PACKAGE_FILE_NAMES) {
+    const entry = files?.[fileName];
+    if (typeof entry === "string") {
+      result[fileName] = entry;
+      continue;
+    }
+    const nested = asRecord(entry);
+    if (typeof nested?.content === "string") {
+      result[fileName] = nested.content;
+    }
+  }
+  return result;
+}
+
+function validateRolePackageEditorContents(args: {
+  roleId: string;
+  roleDir: string;
+  files: Partial<Record<RolePackageFileName, string>>;
+}): {
+  manifest: ReturnType<typeof validateRolePackageManifest>;
+  outputSchema: unknown;
+} {
+  const roleJsonContent = args.files["role.json"] ?? "";
+  const outputSchemaContent = args.files["output.schema.json"] ?? "";
+  let roleJson: unknown;
+  let outputSchema: unknown;
+  try {
+    roleJson = JSON.parse(roleJsonContent);
+  } catch (error) {
+    throw new Error(`Invalid role.json: ${error instanceof Error ? error.message : String(error)}`);
+  }
+  try {
+    outputSchema = JSON.parse(outputSchemaContent);
+  } catch (error) {
+    throw new Error(`Invalid output.schema.json: ${error instanceof Error ? error.message : String(error)}`);
+  }
+  const manifest = validateRolePackageManifest(roleJson, rolePackageFilePath(args.roleDir, "role.json"));
+  if (manifest.roleId !== args.roleId) {
+    throw new Error(`role.json roleId mismatch: expected "${args.roleId}"`);
+  }
+  if (manifest.promptTemplate !== "prompt.md" || manifest.outputSchema !== "output.schema.json") {
+    throw new Error("role.json must keep promptTemplate=\"prompt.md\" and outputSchema=\"output.schema.json\" for visual editing.");
+  }
+  return { manifest, outputSchema };
+}
+
+async function loadRolePackageEditorContext(workdir: string): Promise<{
+  roleRepoRoot: string;
+  roleRootDir: string;
+  systemRoleIds: string[];
+}> {
+  const runtimeConfig = await loadRuntimeConfig(undefined, workdir);
+  const systemSource = await readFile(resolve(workdir, "system.mmd"), "utf8");
+  const system = parseSystemFromMermaidSource(systemSource);
+  const roleRepoRoot = resolveProjectRoleRepoRoot(workdir, runtimeConfig.roleRepo);
+  const roleRootDir = resolveProjectRoleRootDir(workdir, runtimeConfig.roleRepo);
+  const resolvedWorkdir = resolve(workdir);
+  if (roleRootDir !== resolvedWorkdir && !roleRootDir.startsWith(`${resolvedWorkdir}${sep}`)) {
+    throw new Error("ROLE_PACKAGE_REPO_OUTSIDE_WORKDIR");
+  }
+  return {
+    roleRepoRoot,
+    roleRootDir,
+    systemRoleIds: system.roleIds
+  };
 }
 
 export function invalidateProjectProjectionCache(workdir: string): void {
@@ -1469,6 +1565,90 @@ export async function inspectProjectRolePackagesVisualization(workdir: string): 
     roleRepoRoot: context.roleRepoRoot,
     rolePackages
   };
+}
+
+export async function inspectProjectRolePackageFilesVisualization(args: {
+  workdir: string;
+  roleId: string;
+}): Promise<Record<string, unknown>> {
+  const roleId = assertEditableRoleId(args.roleId);
+  const context = await loadRolePackageEditorContext(args.workdir);
+  const roleDir = resolve(context.roleRootDir, roleId);
+  const files = await Promise.all(ROLE_PACKAGE_FILE_NAMES.map((fileName) => readRolePackageEditorFile(roleDir, fileName)));
+  const fileMap = Object.fromEntries(files.map((file) => [file.fileName, file]));
+  const roleJsonFile = fileMap["role.json"] as Record<string, unknown> | undefined;
+  const outputSchemaFile = fileMap["output.schema.json"] as Record<string, unknown> | undefined;
+  let status = "missing";
+  let validation: Record<string, unknown> = { ok: false, diagnostics: [] };
+  if (files.some((file) => file.exists === true)) {
+    try {
+      const payload = Object.fromEntries(files.map((file) => [file.fileName, String(file.content ?? "")]));
+      const { manifest, outputSchema } = validateRolePackageEditorContents({
+        roleId,
+        roleDir,
+        files: payload as Record<RolePackageFileName, string>
+      });
+      status = "ok";
+      validation = {
+        ok: true,
+        manifest,
+        outputSchema,
+        diagnostics: []
+      };
+    } catch (error) {
+      status = "invalid";
+      validation = {
+        ok: false,
+        diagnostics: [{
+          code: "ROLE_PACKAGE_INVALID",
+          message: error instanceof Error ? error.message : String(error)
+        }]
+      };
+    }
+  }
+  return {
+    workdir: args.workdir,
+    roleId,
+    inSystem: context.systemRoleIds.includes(roleId),
+    roleRepoRoot: context.roleRepoRoot,
+    resolvedPath: roleDir,
+    status,
+    files: fileMap,
+    paths: {
+      manifestPath: roleJsonFile?.path,
+      agentPath: fileMap["agent.md"]?.path,
+      promptTemplatePath: fileMap["prompt.md"]?.path,
+      outputSchemaPath: outputSchemaFile?.path
+    },
+    validation
+  };
+}
+
+export async function saveProjectRolePackageFilesVisualization(args: {
+  workdir: string;
+  roleId: string;
+  files: unknown;
+}): Promise<Record<string, unknown>> {
+  const roleId = assertEditableRoleId(args.roleId);
+  const context = await loadRolePackageEditorContext(args.workdir);
+  const roleDir = resolve(context.roleRootDir, roleId);
+  const incomingFiles = rolePackageEditorFilesFromPayload(args.files);
+  for (const fileName of ROLE_PACKAGE_FILE_NAMES) {
+    if (typeof incomingFiles[fileName] !== "string") {
+      throw new Error(`Missing ${fileName} content.`);
+    }
+  }
+  validateRolePackageEditorContents({
+    roleId,
+    roleDir,
+    files: incomingFiles
+  });
+  await mkdir(roleDir, { recursive: true });
+  for (const fileName of ROLE_PACKAGE_FILE_NAMES) {
+    await writeFile(rolePackageFilePath(roleDir, fileName), `${incomingFiles[fileName] ?? ""}`.replace(/\s*$/, "\n"), "utf8");
+  }
+  invalidateProjectProjectionCache(args.workdir);
+  return inspectProjectRolePackageFilesVisualization({ workdir: args.workdir, roleId });
 }
 
 export async function inspectProjectContractVisualization(workdir: string): Promise<Record<string, unknown>> {
