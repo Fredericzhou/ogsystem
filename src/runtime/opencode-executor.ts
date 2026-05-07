@@ -11,6 +11,7 @@ import { spawn } from "node:child_process";
 
 import { createOpencodeClient } from "@opencode-ai/sdk/v2";
 
+import { listJsonSchemaIssues } from "./json-schema.js";
 import { ToolExecutionError } from "./tool-runner.js";
 import type { LoadedModelPackage } from "./types.js";
 
@@ -78,7 +79,7 @@ type SessionApi = {
       modelID: string;
     };
     variant?: string;
-    format: {
+    format?: {
       type: "json_schema";
       schema: Record<string, unknown>;
     };
@@ -161,6 +162,8 @@ const RETRY_BASE_DELAY_MS = 1000;
 const STRUCTURED_OUTPUT_OBJECT_ERROR = "OpenCode structured output must be a JSON object";
 const STRUCTURED_OUTPUT_CORRECTION_INSTRUCTION =
   "Return exactly one JSON object that matches the provided JSON schema. Do not include markdown fences or extra commentary.";
+const SCHEMALESS_JSON_OUTPUT_INSTRUCTION =
+  "Return exactly one JSON object that matches the JSON schema below. Do not include markdown fences or extra commentary.";
 
 function splitModelRef(model: string): { providerID: string; modelID: string } {
   const separator = model.indexOf("/");
@@ -340,6 +343,14 @@ function isTransientOpenCodeError(error: unknown): boolean {
   return TRANSIENT_OPENCODE_ERROR_PATTERNS.some((pattern) => pattern.test(message));
 }
 
+function isStructuredOutputToolChoiceUnsupported(message: string): boolean {
+  return (
+    /does not support this tool[_ ]choice/i.test(message) ||
+    /tool[_ ]choice[^.\n]*not supported/i.test(message) ||
+    /unsupported tool[_ ]choice/i.test(message)
+  );
+}
+
 function buildExecutionArgs(args: {
   runClient: OpencodeRunClient;
   workdir: string;
@@ -474,6 +485,56 @@ function extractStructuredOutputFromParts(parts: Array<Record<string, unknown>> 
   return jsonLike ?? unique.join("\n");
 }
 
+function extractJsonObjectCandidate(raw: string): string | undefined {
+  const fenced = raw.match(/```(?:json)?\s*([\s\S]*?)```/i);
+  if (fenced?.[1]?.trim()) {
+    return fenced[1].trim();
+  }
+
+  const start = raw.indexOf("{");
+  if (start < 0) {
+    return undefined;
+  }
+
+  let depth = 0;
+  let inString = false;
+  let escaping = false;
+  for (let index = start; index < raw.length; index += 1) {
+    const character = raw[index];
+    if (inString) {
+      if (escaping) {
+        escaping = false;
+        continue;
+      }
+      if (character === "\\") {
+        escaping = true;
+        continue;
+      }
+      if (character === '"') {
+        inString = false;
+      }
+      continue;
+    }
+
+    if (character === '"') {
+      inString = true;
+      continue;
+    }
+    if (character === "{") {
+      depth += 1;
+      continue;
+    }
+    if (character === "}") {
+      depth -= 1;
+      if (depth === 0) {
+        return raw.slice(start, index + 1).trim();
+      }
+    }
+  }
+
+  return undefined;
+}
+
 function normalizeStructuredOutput(args: {
   structured: unknown;
   parts?: Array<Record<string, unknown>>;
@@ -493,6 +554,83 @@ function normalizeStructuredOutput(args: {
     return fallback;
   }
   throw new Error(STRUCTURED_OUTPUT_OBJECT_ERROR);
+}
+
+function normalizeSchemalessJsonOutput(args: {
+  schema: Record<string, unknown>;
+  structured: unknown;
+  parts?: Array<Record<string, unknown>>;
+}): string {
+  const rawOutput = normalizeStructuredOutput({
+    structured: args.structured,
+    parts: args.parts
+  });
+  const trimmed = rawOutput.trim();
+  if (!trimmed) {
+    throw new Error("OpenCode schemaless JSON output is empty");
+  }
+
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(trimmed);
+  } catch (error) {
+    const candidate = extractJsonObjectCandidate(trimmed);
+    if (candidate && candidate !== trimmed) {
+      try {
+        parsed = JSON.parse(candidate);
+      } catch {
+        const message = error instanceof Error ? error.message : String(error);
+        throw new Error(`OpenCode schemaless JSON output must be valid JSON: ${message}`);
+      }
+    } else {
+      const message = error instanceof Error ? error.message : String(error);
+      throw new Error(`OpenCode schemaless JSON output must be valid JSON: ${message}`);
+    }
+  }
+
+  if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) {
+    throw new Error("OpenCode schemaless JSON output must be a JSON object");
+  }
+
+  const issues = listJsonSchemaIssues({
+    schema: args.schema,
+    data: parsed
+  });
+  if (issues.length > 0) {
+    const detail = issues.map((issue) => `${issue.path}: ${issue.message}`).join("; ");
+    throw new Error(`OpenCode schemaless JSON output does not match schema: ${detail}`);
+  }
+
+  return JSON.stringify(parsed, null, 2);
+}
+
+function shouldRetrySchemalessJsonCorrection(error: unknown): boolean {
+  const message = getErrorMessage(error);
+  return (
+    /structured output must be a JSON object/i.test(message) ||
+    /schemaless JSON output is empty/i.test(message) ||
+    /schemaless JSON output must be valid JSON/i.test(message) ||
+    /schemaless JSON output must be a JSON object/i.test(message) ||
+    /schemaless JSON output does not match schema/i.test(message)
+  );
+}
+
+function buildSchemalessJsonPrompt(args: {
+  prompt: string;
+  schema: Record<string, unknown>;
+  corrective?: boolean;
+}): string {
+  return [
+    args.prompt,
+    "",
+    SCHEMALESS_JSON_OUTPUT_INSTRUCTION,
+    "JSON schema:",
+    JSON.stringify(args.schema, null, 2),
+    args.corrective ? "" : undefined,
+    args.corrective ? STRUCTURED_OUTPUT_CORRECTION_INSTRUCTION : undefined
+  ]
+    .filter((line): line is string => typeof line === "string")
+    .join("\n");
 }
 
 function enforceOutputLimit(stdout: string, stderr: string, maxOutputBytes: number): void {
@@ -779,6 +917,7 @@ export async function executeOpencodeModelRole(
     throw new Error(`Role "${args.roleId}" is missing a concrete model reference`);
   }
   const { providerID, modelID } = splitModelRef(resolvedModelRef);
+  const schema = args.schema as Record<string, unknown>;
   const variant = args.variant ?? resolveVariant(args.modelPackage?.manifest.args);
   // Start a local OpenCode server only when the caller has not already supplied one.
   const ownRunClient = args.runClient
@@ -853,51 +992,188 @@ export async function executeOpencodeModelRole(
               await ensureNotCancelled();
             }
 
-            await ensureNotCancelled();
-            const response = await runClient.client.session.prompt({
-              sessionID: sessionId,
-              directory: args.workdir,
-              model: {
-                providerID,
-                modelID
-              },
-              variant,
-              format: {
-                type: "json_schema",
-                schema: args.schema as Record<string, unknown>
-              },
-              parts: [
-                {
-                  type: "text",
-                  text: args.prompt
-                }
-              ]
-            });
-            await ensureNotCancelled();
+            const executePromptWithMode = async (mode: "structured" | "schemaless"): Promise<{
+              stdout: string;
+              stderr: string;
+              messageId?: string;
+            }> => {
+              const promptText = mode === "structured"
+                ? args.prompt
+                : buildSchemalessJsonPrompt({
+                    prompt: args.prompt,
+                    schema
+                  });
+              const correctionPromptText = mode === "structured"
+                ? `${args.prompt}\n\n${STRUCTURED_OUTPUT_CORRECTION_INSTRUCTION}`
+                : buildSchemalessJsonPrompt({
+                    prompt: args.prompt,
+                    schema,
+                    corrective: true
+                  });
+              const promptWithOptionalCorrection = async (text: string): Promise<{
+                info?: {
+                  structured?: unknown;
+                  error?: {
+                    name?: string;
+                    data?: {
+                      message?: string;
+                    };
+                  };
+                };
+                parts: Array<Record<string, unknown>> | undefined;
+                messageId?: string;
+                stderr: string;
+              }> => {
+                const response = await runClient.client.session.prompt({
+                  sessionID: sessionId,
+                  directory: args.workdir,
+                  model: {
+                    providerID,
+                    modelID
+                  },
+                  variant,
+                  ...(mode === "structured"
+                    ? {
+                        format: {
+                          type: "json_schema" as const,
+                          schema
+                        }
+                      }
+                    : {}),
+                  parts: [
+                    {
+                      type: "text",
+                      text
+                    }
+                  ]
+                });
+                await ensureNotCancelled();
 
-            const promptErrorMessage = extractSdkErrorMessage(response, {
-              providerID,
-              modelID
-            });
-            if (promptErrorMessage) {
-              throw new Error(promptErrorMessage);
-            }
-            const info = response.data?.info;
-            messageId = response.data?.id;
-            stderr = summarizeParts(response.data?.parts);
-            if (info?.error && !isStructuredOutputMissingError(info.error)) {
-              const message = augmentKnownOpencodeError(
-                info.error.data?.message || info.error.name || "OpenCode execution failed",
-                {
+                const promptErrorMessage = extractSdkErrorMessage(response, {
                   providerID,
                   modelID
+                });
+                if (promptErrorMessage) {
+                  throw new Error(promptErrorMessage);
                 }
-              );
-              throw new OpencodeExecutionError(message, {
+                const info = response.data?.info;
+                const localMessageId = response.data?.id;
+                const localStderr = summarizeParts(response.data?.parts);
+                if (info?.error && !isStructuredOutputMissingError(info.error)) {
+                  const message = augmentKnownOpencodeError(
+                    info.error.data?.message || info.error.name || "OpenCode execution failed",
+                    {
+                      providerID,
+                      modelID
+                    }
+                  );
+                  throw new OpencodeExecutionError(message, {
+                    stderr: localStderr,
+                    sessionId,
+                    messageId: localMessageId,
+                    serverPid: runClient.pid,
+                    args: buildExecutionArgs({
+                      runClient,
+                      workdir: args.workdir,
+                      sessionId,
+                      messageId: localMessageId,
+                      providerID,
+                      modelID,
+                      variant
+                    })
+                  });
+                }
+                return {
+                  info,
+                  parts: response.data?.parts,
+                  messageId: localMessageId,
+                  stderr: localStderr
+                };
+              };
+
+              const firstResponse = await promptWithOptionalCorrection(promptText);
+              try {
+                const stdout = mode === "structured"
+                  ? normalizeStructuredOutput({
+                      structured: firstResponse.info?.structured,
+                      parts: firstResponse.parts
+                    })
+                  : normalizeSchemalessJsonOutput({
+                      schema,
+                      structured: firstResponse.info?.structured,
+                      parts: firstResponse.parts
+                    });
+                return {
+                  stdout,
+                  stderr: firstResponse.stderr,
+                  messageId: firstResponse.messageId
+                };
+              } catch (error) {
+                if (mode === "structured") {
+                  const promptDiagnostics = [firstResponse.stderr, runClient.getOutput()].filter(Boolean).join("\n");
+                  const promptFailureMessage = deriveExecutionMessage({
+                    message: getErrorMessage(error),
+                    diagnostics: promptDiagnostics,
+                    modelRef: {
+                      providerID,
+                      modelID
+                    }
+                  });
+                  if (!isGenericStructuredOutputObjectError(promptFailureMessage)) {
+                    throw new OpencodeExecutionError(promptFailureMessage, {
+                      stderr: firstResponse.stderr,
+                      sessionId,
+                      messageId: firstResponse.messageId,
+                      serverPid: runClient.pid,
+                      args: buildExecutionArgs({
+                        runClient,
+                        workdir: args.workdir,
+                        sessionId,
+                        messageId: firstResponse.messageId,
+                        providerID,
+                        modelID,
+                        variant
+                      })
+                    });
+                  }
+                }
+                if (
+                  (mode === "structured" && !isGenericStructuredOutputObjectError(getErrorMessage(error))) ||
+                  (mode === "schemaless" && !shouldRetrySchemalessJsonCorrection(error))
+                ) {
+                  throw error;
+                }
+
+                const correctionResponse = await promptWithOptionalCorrection(correctionPromptText);
+                const stdout = mode === "structured"
+                  ? normalizeStructuredOutput({
+                      structured: correctionResponse.info?.structured,
+                      parts: correctionResponse.parts
+                    })
+                  : normalizeSchemalessJsonOutput({
+                      schema,
+                      structured: correctionResponse.info?.structured,
+                      parts: correctionResponse.parts
+                    });
+                return {
+                  stdout,
+                  stderr: [firstResponse.stderr, correctionResponse.stderr].filter(Boolean).join("\n"),
+                  messageId: correctionResponse.messageId
+                };
+              }
+            };
+
+            await ensureNotCancelled();
+            try {
+              const structuredPromptResult = await executePromptWithMode("structured");
+              stderr = structuredPromptResult.stderr;
+              messageId = structuredPromptResult.messageId;
+              enforceOutputLimit(structuredPromptResult.stdout, stderr, args.maxOutputBytes);
+
+              return {
+                exitCode: 0,
+                stdout: structuredPromptResult.stdout,
                 stderr,
-                sessionId,
-                messageId,
-                serverPid: runClient.pid,
                 args: buildExecutionArgs({
                   runClient,
                   workdir: args.workdir,
@@ -906,131 +1182,38 @@ export async function executeOpencodeModelRole(
                   providerID,
                   modelID,
                   variant
-                })
-              });
-            }
-
-            let stdout: string;
-            try {
-              stdout = normalizeStructuredOutput({
-                structured: info?.structured,
-                parts: response.data?.parts
-              });
-            } catch (error) {
-              if (!isGenericStructuredOutputObjectError(getErrorMessage(error))) {
-                throw error;
-              }
-
-              const promptDiagnostics = [stderr, runClient.getOutput()].filter(Boolean).join("\n");
-              const promptFailureMessage = deriveExecutionMessage({
-                message: getErrorMessage(error),
-                diagnostics: promptDiagnostics,
-                modelRef: {
-                  providerID,
-                  modelID
-                }
-              });
-              if (!isGenericStructuredOutputObjectError(promptFailureMessage)) {
-                throw new OpencodeExecutionError(promptFailureMessage, {
-                  stderr,
-                  sessionId,
-                  messageId,
-                  serverPid: runClient.pid,
-                  args: buildExecutionArgs({
-                    runClient,
-                    workdir: args.workdir,
-                    sessionId,
-                    messageId,
-                    providerID,
-                    modelID,
-                    variant
-                  })
-                });
-              }
-
-              const correctionResponse = await runClient.client.session.prompt({
-                sessionID: sessionId,
-                directory: args.workdir,
-                model: {
-                  providerID,
-                  modelID
-                },
-                variant,
-                format: {
-                  type: "json_schema",
-                  schema: args.schema as Record<string, unknown>
-                },
-                parts: [
-                  {
-                    type: "text",
-                    text: `${args.prompt}\n\n${STRUCTURED_OUTPUT_CORRECTION_INSTRUCTION}`
-                  }
-                ]
-              });
-              await ensureNotCancelled();
-
-              const correctionErrorMessage = extractSdkErrorMessage(correctionResponse, {
-                providerID,
-                modelID
-              });
-              if (correctionErrorMessage) {
-                throw new Error(correctionErrorMessage);
-              }
-              const correctionInfo = correctionResponse.data?.info;
-              messageId = correctionResponse.data?.id;
-              const correctionStderr = summarizeParts(correctionResponse.data?.parts);
-              stderr = [stderr, correctionStderr].filter(Boolean).join("\n");
-              if (correctionInfo?.error && !isStructuredOutputMissingError(correctionInfo.error)) {
-                const message = augmentKnownOpencodeError(
-                  correctionInfo.error.data?.message ||
-                    correctionInfo.error.name ||
-                    "OpenCode execution failed",
-                  {
-                    providerID,
-                    modelID
-                  }
-                );
-                throw new OpencodeExecutionError(message, {
-                  stderr,
-                  sessionId,
-                  messageId,
-                  serverPid: runClient.pid,
-                  args: buildExecutionArgs({
-                    runClient,
-                    workdir: args.workdir,
-                    sessionId,
-                    messageId,
-                    providerID,
-                    modelID,
-                    variant
-                  })
-                });
-              }
-
-              stdout = normalizeStructuredOutput({
-                structured: correctionInfo?.structured,
-                parts: correctionResponse.data?.parts
-              });
-            }
-            enforceOutputLimit(stdout, stderr, args.maxOutputBytes);
-
-            return {
-              exitCode: 0,
-              stdout,
-              stderr,
-              args: buildExecutionArgs({
-                runClient,
-                workdir: args.workdir,
+                }),
                 sessionId,
                 messageId,
-                providerID,
-                modelID,
-                variant
-              }),
-              sessionId,
-              messageId,
-              serverPid: runClient.pid
-            };
+                serverPid: runClient.pid
+              };
+            } catch (error) {
+              if (!isStructuredOutputToolChoiceUnsupported(getErrorMessage(error))) {
+                throw error;
+              }
+              const schemalessPromptResult = await executePromptWithMode("schemaless");
+              stderr = schemalessPromptResult.stderr;
+              messageId = schemalessPromptResult.messageId;
+              enforceOutputLimit(schemalessPromptResult.stdout, stderr, args.maxOutputBytes);
+
+              return {
+                exitCode: 0,
+                stdout: schemalessPromptResult.stdout,
+                stderr,
+                args: buildExecutionArgs({
+                  runClient,
+                  workdir: args.workdir,
+                  sessionId,
+                  messageId,
+                  providerID,
+                  modelID,
+                  variant
+                }),
+                sessionId,
+                messageId,
+                serverPid: runClient.pid
+              };
+            }
           } catch (error) {
             if (isTimeoutError(error)) {
               throw error;

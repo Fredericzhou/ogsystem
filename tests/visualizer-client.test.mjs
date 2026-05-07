@@ -2319,6 +2319,88 @@ test("visualizer client retries graph workspace warmup until graph content becom
   assert.match(harness.document.getElementById("workbench-body").textContent, /demo-analyst/);
 });
 
+test("visualizer client builds Studio canvas from authoring when bridge extracted graph is unavailable", async () => {
+  const harness = await createClientHarness({
+    readinessCanDryRun: true,
+    studioBridgeResponses: [
+      createResponse({
+        workdir: "/tmp/demo",
+        systemPath: "/tmp/demo/system.mmd",
+        systemSource: "flowchart TD\n%% entry.role=demo-analyst\ninput -->|GO| analyst[Role:demo-analyst]\nanalyst[Role:demo-analyst] -->|DONE| output\n",
+        validation: {
+          ok: true,
+          diagnostics: [],
+          structure: {
+            systemId: "viz.review.demo",
+            systemVersion: "1.0.0",
+            entryRoleId: "demo-analyst",
+            roleCount: 1,
+            flowCount: 1,
+            roles: [{ roleId: "demo-analyst", bindingKind: "model" }],
+            flows: [{ fromRoleId: "demo-analyst", toRoleId: "output", eventType: "DONE" }]
+          }
+        },
+        authoring: {
+          version: 1,
+          project: { workdir: "/tmp/demo", systemPath: "/tmp/demo/system.mmd" },
+          system: {
+            systemId: "viz.review.demo",
+            systemVersion: "1.0.0",
+            entryRoleId: "demo-analyst",
+            entryEventType: "GO",
+            lawGlobalRef: "law.minimal.base"
+          },
+          roles: {
+            "demo-analyst": {
+              roleId: "demo-analyst",
+              title: "Demo Analyst",
+              bindingKind: "model",
+              modelRef: "opencode/gpt-5.4"
+            }
+          },
+          flows: {
+            "1:demo-analyst:DONE:output": {
+              flowId: "1:demo-analyst:DONE:output",
+              fromRoleId: "demo-analyst",
+              toRoleId: "__system_end__",
+              eventType: "DONE"
+            }
+          },
+          layout: {
+            nodes: {
+              "demo-analyst": { x: 120, y: 120 }
+            }
+          }
+        },
+        extracted: {
+          systemId: "viz.review.demo",
+          systemVersion: "1.0.0",
+          entryRoleId: "demo-analyst",
+          lawGlobal: "law.minimal.base",
+          roles: [],
+          flows: []
+        }
+      })
+    ]
+  });
+  const mountCalls = [];
+  harness.window.OGSVisualizerClient.mountStudioX6Bridge = (root, options) => {
+    mountCalls.push({ root, options });
+  };
+
+  const bridgeTab = harness.document.getElementById("workbench-view-tabs")
+    .querySelectorAll("[data-workbench-view=\"bridge\"]")[0];
+  assert.ok(bridgeTab);
+  await bridgeTab.click();
+  await waitForCondition(() => mountCalls.length > 0);
+
+  const latestMount = mountCalls.at(-1)?.options;
+  assert.ok(latestMount);
+  assert.ok(latestMount.authoring);
+  assert.ok(latestMount.canvas.nodes.some((node) => node.roleId === "demo-analyst"));
+  assert.ok(latestMount.canvas.edges.some((edge) => edge.source === "demo-analyst" && edge.eventType === "DONE"));
+});
+
 test("visualizer client retries workspace load after initial failure and auto-dismisses success flash", async () => {
   const harness = await createClientHarness({
     workspaceFailOnce: true

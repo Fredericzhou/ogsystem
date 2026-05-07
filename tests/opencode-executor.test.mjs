@@ -1035,6 +1035,145 @@ test("executeOpencodeModelRole retries once with corrective prompt when structur
   });
 });
 
+test("executeOpencodeModelRole falls back to schemaless JSON when provider rejects json_schema tool_choice", async () => {
+  const promptCalls = [];
+
+  const result = await executeOpencodeModelRole({
+    roleId: "role-tool-choice-fallback",
+    prompt: "return json",
+    schema: {
+      type: "object",
+      required: ["event", "content"],
+      properties: {
+        event: { type: "string" },
+        content: { type: "string" }
+      },
+      additionalProperties: false
+    },
+    modelRef: "deepseek/deepseek-reasoner",
+    workdir: "/tmp/run/roles/role-tool-choice-fallback",
+    timeoutMs: 5000,
+    maxOutputBytes: 4096,
+    runClient: makeRunClient({
+      client: {
+        session: {
+          async create() {
+            return { data: { id: "ses_tool_choice" } };
+          },
+          async prompt(args) {
+            promptCalls.push(args);
+            if (promptCalls.length === 1) {
+              return {
+                error: {
+                  name: "UnknownError",
+                  data: {
+                    message: "Error from provider (DeepSeek): deepseek-reasoner does not support this tool_choice"
+                  }
+                }
+              };
+            }
+            return {
+              data: {
+                id: "msg_tool_choice_fallback",
+                info: {},
+                parts: [
+                  {
+                    type: "text",
+                    text: '{"event":"NEXT","content":"fallback"}'
+                  }
+                ]
+              }
+            };
+          },
+          async abort() {
+            return true;
+          }
+        }
+      }
+    })
+  });
+
+  assert.equal(promptCalls.length, 2);
+  assert.equal(promptCalls[0].format?.type, "json_schema");
+  assert.equal(promptCalls[1].format, undefined);
+  assert.match(promptCalls[1].parts[0].text, /JSON schema:/);
+  assert.deepStrictEqual(JSON.parse(result.stdout), {
+    event: "NEXT",
+    content: "fallback"
+  });
+});
+
+test("executeOpencodeModelRole uses schemaless corrective retry after tool_choice incompatibility", async () => {
+  const promptInputs = [];
+
+  const result = await executeOpencodeModelRole({
+    roleId: "role-tool-choice-corrective-fallback",
+    prompt: "return json",
+    schema: {
+      type: "object",
+      required: ["event", "content"],
+      properties: {
+        event: { type: "string" },
+        content: { type: "string" }
+      },
+      additionalProperties: false
+    },
+    modelRef: "deepseek/deepseek-reasoner",
+    workdir: "/tmp/run/roles/role-tool-choice-corrective-fallback",
+    timeoutMs: 5000,
+    maxOutputBytes: 4096,
+    runClient: makeRunClient({
+      client: {
+        session: {
+          async create() {
+            return { data: { id: "ses_tool_choice_corrective" } };
+          },
+          async prompt(args) {
+            promptInputs.push(args.parts[0]?.text ?? "");
+            if (promptInputs.length === 1) {
+              return {
+                error: {
+                  name: "UnknownError",
+                  data: {
+                    message: "Error from provider (DeepSeek): deepseek-reasoner does not support this tool_choice"
+                  }
+                }
+              };
+            }
+            if (promptInputs.length === 2) {
+              return {
+                data: {
+                  id: "msg_tool_choice_text_1",
+                  info: {},
+                  parts: [{ type: "text", text: "not valid json yet" }]
+                }
+              };
+            }
+            return {
+              data: {
+                id: "msg_tool_choice_text_2",
+                info: {},
+                parts: [{ type: "text", text: '{"event":"NEXT","content":"corrected"}' }]
+              }
+            };
+          },
+          async abort() {
+            return true;
+          }
+        }
+      }
+    })
+  });
+
+  assert.equal(promptInputs.length, 3);
+  assert.match(promptInputs[1], /JSON schema:/);
+  assert.match(promptInputs[2], /Return exactly one JSON object/);
+  assert.deepStrictEqual(JSON.parse(result.stdout), {
+    event: "NEXT",
+    content: "corrected"
+  });
+});
+
 test("executeOpencodeModelRole surfaces provider diagnostics instead of generic structured-output errors", async () => {
   let promptCalls = 0;
 

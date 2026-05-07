@@ -1489,6 +1489,8 @@ test("visualizer server exposes Mermaid workbench APIs and project export", asyn
     assert.equal(bridgeResponse.status, 200);
     const bridge = await bridgeResponse.json();
     assert.equal(bridge.validation.ok, true);
+    assert.equal(bridge.canvas.nodes.some((node) => node.roleId === "demo-analyst"), true);
+    assert.equal(bridge.canvas.edges.some((edge) => edge.source === "demo-analyst" && edge.target === "__system_end__"), true);
     assert.equal(bridge.extracted.systemId, "viz.project.demo");
     assert.equal(bridge.extracted.roles.some((role) => role.roleId === "demo-analyst" && role.bindingKind === "model"), true);
     assert.equal(bridge.extracted.flows.some((flow) => flow.eventType === "DONE"), true);
@@ -1503,6 +1505,7 @@ test("visualizer server exposes Mermaid workbench APIs and project export", asyn
     assert.equal(fallbackBridgeResponse.status, 200);
     const fallbackBridge = await fallbackBridgeResponse.json();
     assert.equal(fallbackBridge.validation.ok, true);
+    assert.equal(fallbackBridge.canvas.nodes.some((node) => node.roleId === "demo-analyst"), true);
     assert.equal(fallbackBridge.extracted.systemId, "viz.project.demo");
     assert.equal(fallbackBridge.extracted.roles.some((role) => role.roleId === "demo-analyst"), true);
 
@@ -1517,6 +1520,7 @@ test("visualizer server exposes Mermaid workbench APIs and project export", asyn
     assert.equal(invalidBridgeResponse.status, 200);
     const invalidBridge = await invalidBridgeResponse.json();
     assert.equal(invalidBridge.authoring, null);
+    assert.equal(invalidBridge.canvas, null);
     assert.equal(invalidBridge.extracted, null);
     assert.equal(invalidBridge.validation.ok, false);
     assert.equal(

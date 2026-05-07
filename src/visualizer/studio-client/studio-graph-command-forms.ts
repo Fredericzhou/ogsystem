@@ -91,8 +91,25 @@ function firstRoleId(context: StudioCommandValidationContext): string {
   return Object.keys(context.authoring?.roles ?? {}).sort()[0] ?? "";
 }
 
-function defaultRoleIdFromPackage(rolePackage: StudioRolePackageSummary | undefined): string {
-  return rolePackage?.roleId ? rolePackage.roleId : "new-role";
+function nextRoleId(context: StudioCommandValidationContext, base = "new-role"): string {
+  const roles = context.authoring?.roles ?? {};
+  let candidate = base;
+  let suffix = 2;
+  while (roles[candidate]) {
+    candidate = `${base}-${suffix}`;
+    suffix += 1;
+  }
+  return candidate;
+}
+
+function defaultRepositoryRolePackage(context: StudioCommandValidationContext): StudioRolePackageSummary | undefined {
+  const existingRoleIds = new Set(Object.keys(context.authoring?.roles ?? {}));
+  return extractStudioRolePackages(context.rolePackages)
+    .find((rolePackage) =>
+      Boolean(rolePackage.roleId) &&
+      !existingRoleIds.has(rolePackage.roleId as string) &&
+      (!rolePackage.status || rolePackage.status === "ok")
+    );
 }
 
 function profileIdFromRoleId(roleId: string): string {
@@ -133,15 +150,16 @@ export function createDefaultStudioCommandFormState(args: {
   }
 
   if (args.kind === "add-role") {
-    const rolePackage = extractStudioRolePackages(args.context.rolePackages)[0];
+    const rolePackage = defaultRepositoryRolePackage(args.context);
+    const roleId = rolePackage?.roleId || nextRoleId(args.context);
     const fields: StudioAddRoleDraft = {
       mode: rolePackage ? "repository" : "custom",
       repositoryRoleId: rolePackage?.roleId,
-      roleId: defaultRoleIdFromPackage(rolePackage),
+      roleId,
       title: rolePackage?.name || rolePackage?.roleId || "",
       bindingKind: "noop",
       profileMode: "existing",
-      newProfileId: profileIdFromRoleId(defaultRoleIdFromPackage(rolePackage))
+      newProfileId: profileIdFromRoleId(roleId)
     };
     return {
       kind: "add-role",
@@ -481,8 +499,9 @@ export function readStudioCommandFormState(args: {
   const data = new FormData(args.form);
   if (args.previous.kind === "add-role" || args.previous.kind === "edit-role") {
     const mode = data.get("mode") === "repository" ? "repository" : "custom";
-    const repositoryRoleId = String(data.get("repositoryRoleId") ?? "").trim();
-    const rolePackage = extractStudioRolePackages(args.context.rolePackages).find((entry) => entry.roleId === repositoryRoleId);
+    const rolePackages = extractStudioRolePackages(args.context.rolePackages);
+    const repositoryRoleId = String(data.get("repositoryRoleId") ?? "").trim() || rolePackages[0]?.roleId || "";
+    const rolePackage = rolePackages.find((entry) => entry.roleId === repositoryRoleId);
     const bindingKindValue = String(data.get("bindingKind") ?? "noop");
     const bindingKind = bindingKindValue === "model" || bindingKindValue === "exec" ? bindingKindValue : "noop";
     const modelOptions = extractStudioModelOptions(args.context);

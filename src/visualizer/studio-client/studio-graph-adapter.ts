@@ -70,6 +70,7 @@ export function canvasToStudioGraphProjection(args: {
   const maxX = roleNodes.length ? Math.max(...roleNodes.map((node) => node.x + node.width)) : 360;
   const baseY = roleNodes.length ? Math.min(...roleNodes.map((node) => node.y)) : 120;
   const entryRoleId = args.authoring?.system.entryRoleId || roleNodes[0]?.roleId || "";
+  const roleIds = new Set(roleNodes.map((node) => node.roleId));
   const nodes: StudioGraphProjectionNode[] = [
     {
       id: "input",
@@ -101,7 +102,7 @@ export function canvasToStudioGraphProjection(args: {
   ];
 
   const edges: StudioGraphProjectionEdge[] = [];
-  if (entryRoleId) {
+  if (entryRoleId && roleIds.has(entryRoleId)) {
     edges.push({
       id: "__boundary__:input:entry",
       source: "input",

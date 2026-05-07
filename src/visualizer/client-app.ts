@@ -797,10 +797,21 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
     }
 
     function buildStudioCanvasFromBridge(bridge) {
+      const existingCanvas = bridge?.canvas;
+      if (
+        existingCanvas &&
+        typeof existingCanvas === "object" &&
+        Array.isArray(existingCanvas.nodes) &&
+        Array.isArray(existingCanvas.edges)
+      ) {
+        return cloneJson(existingCanvas);
+      }
       const authoring = bridge?.authoring || null;
       const extracted = bridge?.extracted || {};
-      const roles = Array.isArray(extracted.roles) ? extracted.roles : [];
-      const flows = Array.isArray(extracted.flows) ? extracted.flows : [];
+      const extractedRoles = Array.isArray(extracted.roles) ? extracted.roles : [];
+      const extractedFlows = Array.isArray(extracted.flows) ? extracted.flows : [];
+      const roles = extractedRoles.length ? extractedRoles : Object.values(authoring?.roles || {});
+      const flows = extractedFlows.length ? extractedFlows : Object.values(authoring?.flows || {});
       const layoutNodes = authoring?.layout?.nodes || {};
       return {
         version: 1,
@@ -1734,12 +1745,13 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
     }
 
     function renderStudioSelectionDialog() {
+      const shell = findStudioBridgeElement("[data-studio-canvas-shell]");
       const overlay = findStudioBridgeElement("[data-studio-selection-overlay]");
       const dialog = findStudioBridgeElement("[data-studio-selection-dialog]");
       const kindLabel = findStudioBridgeElement("[data-studio-selection-kind-label]");
       const title = findStudioBridgeElement("[data-studio-selection-title]");
       const rolePackage = findStudioBridgeElement("[data-studio-selection-role-package]");
-      if (!overlay || !dialog || !kindLabel || !title || !rolePackage) {
+      if (!shell || !overlay || !dialog || !kindLabel || !title || !rolePackage) {
         return;
       }
       const selectedRoleIdValue = state.studioBridgeSelectedRoleId || "";
@@ -1750,10 +1762,14 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
           ? "flow"
           : "";
       const shouldOpen = state.studioSelectionDialogOpen && Boolean(selectionKind || state.studioSelectionCommandFormOpen);
+      const docked = state.studioSelectionDialogDocked !== false;
+      const collapsed = state.studioSelectionDialogCollapsed === true;
       overlay.hidden = !shouldOpen;
       overlay.classList.toggle("is-open", shouldOpen);
-      overlay.classList.toggle("is-docked", state.studioSelectionDialogDocked !== false);
-      overlay.classList.toggle("is-collapsed", state.studioSelectionDialogCollapsed === true);
+      overlay.classList.toggle("is-docked", docked);
+      overlay.classList.toggle("is-collapsed", collapsed);
+      shell.classList.toggle("has-docked-selection", shouldOpen && docked);
+      shell.classList.toggle("has-collapsed-selection", shouldOpen && docked && collapsed);
       if (!shouldOpen) {
         rolePackage.innerHTML = "";
         return;
@@ -1775,11 +1791,11 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
       dialog.setAttribute("aria-label", title.textContent || kindLabel.textContent || t("studio.graphWorkspace", undefined, "Graph workspace"));
       const pinButton = overlay.querySelector?.("[data-studio-selection-pin]");
       if (pinButton) {
-        pinButton.textContent = state.studioSelectionDialogDocked !== false ? "undock" : "dock";
+        pinButton.textContent = docked ? "undock" : "dock";
       }
       const collapseButton = overlay.querySelector?.("[data-studio-selection-collapse]");
       if (collapseButton) {
-        collapseButton.textContent = state.studioSelectionDialogCollapsed ? ">" : "<";
+        collapseButton.textContent = collapsed ? ">" : "<";
       }
 
       if (selectionKind === "role") {

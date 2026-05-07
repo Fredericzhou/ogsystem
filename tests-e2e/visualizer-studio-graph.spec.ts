@@ -165,7 +165,7 @@ test("Studio Bridge renders and edits through the real graph workspace", async (
     });
 
     await expect.poll(async () => page.evaluate(() => document.getElementById("studio-graph-root") === (window as any).__studioGraphRoot)).toBe(true);
-    await expect(page.locator(".studio-inspector")).toContainText("demo-analyst");
+    await expect(page.locator("[data-studio-selection-dialog]")).toContainText("demo-analyst");
 
     await expect(page.locator("#build-validate")).toBeVisible();
     await expect(page.locator(".toolbar-group").filter({ hasText: "validation ok" }).first()).toBeVisible();
@@ -173,7 +173,7 @@ test("Studio Bridge renders and edits through the real graph workspace", async (
     const addRoleButton = page.locator('#studio-graph-root [data-studio-graph-action="add-role"]');
     await expect(addRoleButton).toBeEnabled();
     await addRoleButton.click();
-    const addRoleForm = page.locator('#studio-graph-root form[data-studio-command-form="add-role"]');
+    const addRoleForm = page.locator('form[data-studio-command-form="add-role"]');
     await expect(addRoleForm).toBeVisible();
     await addRoleForm.locator('input[name="mode"][value="custom"]').check();
     await addRoleForm.locator('input[name="roleId"]').fill("new-role");
@@ -183,7 +183,7 @@ test("Studio Bridge renders and edits through the real graph workspace", async (
     await expect(page.locator('#studio-graph-root [data-cell-id="new-role"]').first()).toBeVisible();
     await expect(page.locator("#studio-graph-root")).toContainText("需求分析");
     await page.locator('#studio-graph-root [data-studio-graph-action="add-edge"]').click();
-    const addEdgeForm = page.locator('#studio-graph-root form[data-studio-command-form="add-edge"]');
+    const addEdgeForm = page.locator('form[data-studio-command-form="add-edge"]');
     await expect(addEdgeForm).toBeVisible();
     await expect(addEdgeForm.locator('select[name="sourceRoleId"]')).toHaveValue("new-role");
     await expect(addEdgeForm.locator('select[name="targetRoleId"]')).toHaveValue("__system_end__");
@@ -194,7 +194,7 @@ test("Studio Bridge renders and edits through the real graph workspace", async (
     await expect(page.locator('[data-studio-flow-key="new-role:DONE:output"]')).toBeVisible();
     await expect(page.locator("#studio-graph-root")).toContainText("需求已完成");
     await page.locator('[data-studio-flow-key="new-role:DONE:output"]').click();
-    const editEdgeForm = page.locator('#studio-graph-root form[data-studio-command-form="edit-edge"]');
+    const editEdgeForm = page.locator('form[data-studio-command-form="edit-edge"]');
     await expect(editEdgeForm).toBeVisible();
     await expect(editEdgeForm.locator('input[name="label"]')).toHaveValue("需求已完成");
     await expect(editEdgeForm.locator('input[name="eventType"]')).toHaveValue("DONE");

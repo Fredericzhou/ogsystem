@@ -211,6 +211,75 @@ test("nl2mmd service validates draft mermaid output and preserves an existing se
   assert.ok(result.txtGraph?.includes("CONNECTIONS"));
 });
 
+test("nl2mmd service falls back to schemaless prompts when provider rejects tool_choice", async () => {
+  const { context, timeoutMs, maxOutputBytes } = await loadFixtures();
+  const { runClient, createCalls, promptCalls } = makeRunClient([
+    {
+      error: {
+        name: "UnknownError",
+        data: {
+          message: "Error from provider (DeepSeek): deepseek-reasoner does not support this tool_choice"
+        }
+      }
+    },
+    structuredResponse({ status: "ok" }, "msg_preflight_fallback"),
+    {
+      error: {
+        name: "UnknownError",
+        data: {
+          message: "Error from provider (DeepSeek): deepseek-reasoner does not support this tool_choice"
+        }
+      }
+    },
+    structuredResponse(
+      {
+        mode: "ask",
+        summary: "Need one decision before drafting.",
+        questions: ["Should the graph stay single-step?"],
+        assumptions: ["Existing role package remains reusable."],
+        referencedRoles: ["debate-judge"],
+        unresolvedItems: [],
+        mermaid: ""
+      },
+      "msg_turn_fallback"
+    )
+  ]);
+
+  const conversation = {
+    context,
+    modelRef: "deepseek/deepseek-reasoner",
+    timeoutMs,
+    maxOutputBytes,
+    workdir: repoRoot,
+    sessionId: undefined,
+    close() {},
+    runClient
+  };
+
+  await runNl2MmdPreflight({ conversation });
+  const result = await runNl2MmdTurn({
+    conversation,
+    input: {
+      message: "先确认是否需要单角色流程",
+      validationErrors: [],
+      validationWarnings: []
+    }
+  });
+
+  assert.equal(createCalls.length, 1);
+  assert.equal(conversation.sessionId, "ses_1");
+  assert.equal(promptCalls.length, 4);
+  assert.equal(promptCalls[0].format?.type, "json_schema");
+  assert.equal(promptCalls[1].format, undefined);
+  assert.equal(promptCalls[2].sessionID, "ses_1");
+  assert.equal(promptCalls[2].format?.type, "json_schema");
+  assert.equal(promptCalls[3].sessionID, "ses_1");
+  assert.equal(promptCalls[3].format, undefined);
+  assert.equal(result.mode, "ask");
+  assert.equal(result.sessionId, "ses_1");
+  assert.equal(result.messageId, "msg_turn_fallback");
+});
+
 test("nl2mmd service rejects invalid response fields from the model", async () => {
   const { context, modelRef, timeoutMs, maxOutputBytes } = await loadFixtures();
   const { runClient } = makeRunClient([

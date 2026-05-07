@@ -867,12 +867,22 @@ export function renderPageShellStyles(): string {
       min-width: 0;
       position: relative;
     }
+    .studio-canvas-shell.has-docked-selection {
+      grid-template-columns: minmax(0, 1fr) minmax(280px, min(480px, 34vw));
+      align-items: stretch;
+    }
+    .studio-canvas-shell.has-docked-selection.has-collapsed-selection {
+      grid-template-columns: minmax(0, 1fr) 56px;
+    }
     .studio-canvas-toolbar {
       display: flex;
       justify-content: space-between;
       align-items: center;
       gap: 8px;
       min-width: 0;
+    }
+    .studio-canvas-shell.has-docked-selection .studio-canvas-toolbar {
+      grid-column: 1 / -1;
     }
     .studio-canvas-toolbar > div {
       display: grid;
@@ -896,6 +906,9 @@ export function renderPageShellStyles(): string {
       min-height: clamp(560px, 72vh, 920px);
       min-width: 0;
     }
+    .studio-canvas-shell.has-docked-selection .studio-graph-root {
+      grid-column: 1 / 2;
+    }
     .studio-selection-overlay[hidden] {
       display: none;
     }
@@ -914,8 +927,25 @@ export function renderPageShellStyles(): string {
     .studio-selection-overlay.is-docked {
       pointer-events: none;
     }
+    .studio-canvas-shell.has-docked-selection .studio-selection-overlay.is-docked {
+      position: relative;
+      inset: auto;
+      grid-column: 2 / 3;
+      justify-items: stretch;
+      align-items: stretch;
+      min-width: 0;
+      height: 100%;
+      z-index: 1;
+    }
     .studio-selection-overlay.is-docked .studio-selection-dialog {
       pointer-events: auto;
+    }
+    .studio-canvas-shell.has-docked-selection .studio-selection-overlay.is-docked .studio-selection-dialog {
+      width: 100%;
+      max-width: 100%;
+      height: 100%;
+      max-height: 100%;
+      box-shadow: -18px 0 40px rgba(0, 0, 0, 0.32);
     }
     .studio-selection-backdrop {
       position: absolute;
@@ -1315,6 +1345,14 @@ export function renderPageShellStyles(): string {
       .studio-graph-column { order: 1; }
       .studio-bridge-index { order: 2; }
       .studio-index-grid { grid-template-columns: 1fr; }
+      .studio-canvas-shell.has-docked-selection {
+        grid-template-columns: 1fr;
+      }
+      .studio-canvas-shell.has-docked-selection .studio-canvas-toolbar,
+      .studio-canvas-shell.has-docked-selection .studio-graph-root,
+      .studio-canvas-shell.has-docked-selection .studio-selection-overlay.is-docked {
+        grid-column: 1 / -1;
+      }
       .studio-navigator { order: 3; }
       .studio-flow-list {
         order: 4;
@@ -1326,6 +1364,11 @@ export function renderPageShellStyles(): string {
       .studio-selection-overlay {
         align-items: end;
         justify-items: stretch;
+      }
+      .studio-canvas-shell.has-docked-selection .studio-selection-overlay.is-docked {
+        position: absolute;
+        inset: 0;
+        height: auto;
       }
       .studio-selection-dialog {
         width: 100%;

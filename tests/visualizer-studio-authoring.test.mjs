@@ -601,6 +601,29 @@ test("Studio command forms expose visual role package, model, and profile choice
   });
 });
 
+test("Studio add-role defaults to a valid custom draft when repository roles all conflict with authoring", () => {
+  const authoring = importMermaidToAuthoring({
+    workdir: "/tmp/project",
+    systemPath: "/tmp/project/system.mmd",
+    systemSource: source
+  });
+  const context = {
+    authoring,
+    rolePackages: {
+      rolePackages: [
+        { roleId: "dispatch", name: "Dispatch", status: "ok", files: { "role.json": true } },
+        { roleId: "review", name: "Review", status: "ok", files: { "role.json": true } }
+      ]
+    }
+  };
+
+  const state = createDefaultStudioCommandFormState({ kind: "add-role", context });
+  assert.equal(state.fields.mode, "custom");
+  assert.equal(state.fields.roleId, "new-role");
+  assert.equal(state.validation.ok, true);
+  assert.equal(state.validation.diagnostics.some((diagnostic) => diagnostic.code === "ROLE_ID_DUPLICATED"), false);
+});
+
 test("Studio edge command forms keep display labels distinct from event types", () => {
   const authoring = importMermaidToAuthoring({
     workdir: "/tmp/project",

@@ -49,6 +49,7 @@ export type StudioBridgeDraft = {
   systemSource: string;
   validation: StudioSystemValidation;
   authoring: StudioAuthoringDocument | null;
+  canvas: StudioCanvasDocument | null;
   extracted: {
     systemId: string;
     systemVersion: string;
@@ -376,6 +377,7 @@ export async function inspectStudioBridgeDraft(args: {
     systemSource,
     validation: bridgeValidation,
     authoring,
+    canvas: authoring ? authoringToCanvasDocument(authoring) : null,
     extracted: authoring
       ? {
           systemId: authoring.system.systemId,

@@ -207,8 +207,7 @@ export class StudioGraphIsland {
       canvas: options.canvas,
       validation: options.validation
     });
-    const roleCount = projection.nodes.filter((node) => node.kind === "role").length;
-    if (roleCount === 0) {
+    if (!options.authoring) {
       this.applying = true;
       try {
         this.graph.clearCells();
