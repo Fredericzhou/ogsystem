@@ -52,8 +52,10 @@ test("page shell keeps HTML, style, assets, and client script mounted", () => {
 
   assert.match(html, /<div class="shell content">/);
   assert.match(html, /<header class="top-nav">[\s\S]*id="console-tabs"/);
+  assert.match(html, /class="top-nav-center"[\s\S]*id="console-tabs"[\s\S]*class="hero-utilities"/);
   assert.match(html, /<main class="main-stage">[\s\S]*id="workbench-body"/);
   assert.match(html, /<header class="top-nav">[\s\S]*id="workdir"/);
+  assert.match(html, /class="build-control-bar"[\s\S]*class="build-control-primary"[\s\S]*id="workbench-tabs"[\s\S]*id="workbench-actions"[\s\S]*class="build-control-status"[\s\S]*id="workbench-status"/);
   assert.match(html, /<footer class="status-bar global-status">[\s\S]*id="live"/);
   assert.match(html, /<aside id="sidebar" class="sidebar">[\s\S]*id="run-list"/);
   assert.match(html, /id="search"[^>]*aria-label="按 id、状态、角色筛选运行\.\.\."/);
@@ -74,6 +76,7 @@ test("page shell styles are isolated behind a CSS renderer", () => {
   const css = renderPageShellStyles();
   assert.match(css, /\.app\s*\{/);
   assert.match(css, /\.top-nav\s*\{/);
+  assert.match(css, /\.top-nav-center\s*\{/);
   assert.match(css, /\.main-stage\s*\{/);
   assert.match(css, /\.status-bar\s*\{/);
   assert.match(css, /\.sidebar\s*\{/);

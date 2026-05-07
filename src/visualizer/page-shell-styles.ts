@@ -87,9 +87,9 @@ export function renderPageShellStyles(): string {
     .pill {
       display: flex;
       align-items: center;
-      gap: 6px;
-      width: 100%;
-      padding: 5px 8px;
+      gap: 5px;
+      width: auto;
+      padding: 4px 8px;
       border-radius: 999px;
       border: 1px solid var(--border);
       color: var(--muted);
@@ -102,6 +102,16 @@ export function renderPageShellStyles(): string {
     .pill code {
       display: block;
       flex: 1 1 auto;
+      min-width: 0;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+    .pill-compact {
+      gap: 4px;
+      padding: 3px 7px;
+    }
+    .pill-label {
       min-width: 0;
       overflow: hidden;
       text-overflow: ellipsis;
@@ -201,7 +211,7 @@ export function renderPageShellStyles(): string {
     .content {
       padding: 14px;
       display: grid;
-      gap: 0;
+      gap: 12px;
       min-width: 0;
     }
     .shell {
@@ -235,57 +245,78 @@ export function renderPageShellStyles(): string {
       top: 0;
       z-index: 12;
       display: grid;
-      gap: 8px;
-      padding: 12px 14px;
-      border-bottom: 1px solid rgba(148, 163, 184, 0.12);
-      background: linear-gradient(180deg, rgba(7, 12, 24, 0.96), rgba(7, 12, 24, 0.88));
+      gap: 6px;
+      padding: 10px 12px;
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      background:
+        linear-gradient(180deg, rgba(56, 189, 248, 0.08), rgba(56, 189, 248, 0) 28%),
+        linear-gradient(180deg, rgba(7, 12, 24, 0.96), rgba(7, 12, 24, 0.9));
       backdrop-filter: blur(20px);
+      box-shadow: var(--shadow);
     }
     .top-nav-row {
-      display: grid;
-      grid-template-columns: minmax(0, 1fr) minmax(280px, 1.2fr) auto;
-      gap: 14px;
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px 12px;
       align-items: center;
       min-width: 0;
     }
     .top-nav-brand {
-      display: grid;
-      gap: 4px;
+      display: flex;
+      align-items: center;
+      gap: 6px 10px;
+      flex: 0 1 auto;
+      flex-wrap: wrap;
       min-width: 0;
     }
     .top-nav-meta {
       display: flex;
-      gap: 8px;
+      gap: 6px;
       align-items: center;
       flex-wrap: wrap;
     }
+    .top-nav-center {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) auto;
+      gap: 8px;
+      align-items: center;
+      flex: 1 1 460px;
+      min-width: min(100%, 360px);
+    }
+    .top-nav-meta .pill {
+      max-width: min(30vw, 280px);
+      padding: 3px 7px;
+    }
     .brand-lockup {
       display: flex;
-      align-items: baseline;
-      gap: 12px;
+      align-items: center;
+      gap: 8px;
       min-width: 0;
       flex-wrap: wrap;
     }
     .brand-lockup h1 {
       margin: 0;
-      font-size: 18px;
+      font-size: 16px;
       letter-spacing: 0.02em;
     }
     .brand-lockup span {
       color: var(--muted);
-      font-size: 12px;
+      font-size: 11px;
     }
     .top-nav-actions {
-      display: grid;
-      grid-template-columns: auto auto;
-      gap: 6px;
+      display: flex;
+      flex: 0 0 auto;
+      flex-wrap: wrap;
+      gap: 6px 8px;
       align-items: center;
-      justify-items: end;
+      justify-content: flex-end;
+      margin-left: auto;
       min-width: 0;
     }
     .main-stage {
       min-width: 0;
-      padding: 10px 14px 14px;
+      padding: 0;
     }
     .stage-stack {
       display: grid;
@@ -294,7 +325,7 @@ export function renderPageShellStyles(): string {
       min-width: 0;
     }
     .status-bar {
-      margin: 0 14px 14px;
+      margin: 0;
     }
     .hero {
       display: grid;
@@ -330,7 +361,7 @@ export function renderPageShellStyles(): string {
     }
     .hero-actions {
       display: flex;
-      gap: 5px;
+      gap: 4px;
       align-items: center;
       flex-wrap: nowrap;
       justify-content: flex-end;
@@ -341,15 +372,32 @@ export function renderPageShellStyles(): string {
     }
     .hero-utilities {
       display: flex;
-      gap: 8px;
+      gap: 6px;
       align-items: center;
       justify-content: flex-end;
       flex-wrap: wrap;
       min-width: 0;
     }
+    .top-nav-center .hero-utilities {
+      justify-self: end;
+    }
+    .top-nav-center .locale-field {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+    }
+    .top-nav-center .locale-field span {
+      white-space: nowrap;
+      font-size: 11px;
+    }
+    .top-nav-center .locale-field .select {
+      min-width: 92px;
+      width: auto;
+      padding: 6px 10px;
+    }
     .actions {
       display: flex;
-      gap: 7px;
+      gap: 6px;
       align-items: center;
       flex-wrap: wrap;
       justify-content: flex-end;
@@ -359,8 +407,8 @@ export function renderPageShellStyles(): string {
       background: rgba(255, 255, 255, 0.05);
       color: var(--text);
       border-radius: 9px;
-      padding: 7px 10px;
-      min-height: 34px;
+      padding: 6px 9px;
+      min-height: 32px;
       min-width: 0;
       white-space: nowrap;
       cursor: pointer;
@@ -448,7 +496,7 @@ export function renderPageShellStyles(): string {
       overflow: hidden;
     }
     .card header {
-      padding: 10px 12px 0;
+      padding: 8px 10px 0;
     }
     .card h3 {
       margin: 0;
@@ -458,7 +506,7 @@ export function renderPageShellStyles(): string {
       color: #c9d6ec;
     }
     .card .body {
-      padding: 10px 12px 12px;
+      padding: 9px 10px 10px;
       display: grid;
       gap: 8px;
       min-width: 0;
@@ -513,19 +561,19 @@ export function renderPageShellStyles(): string {
     .card-header {
       display: flex;
       justify-content: space-between;
-      gap: 12px;
+      gap: 10px;
       align-items: center;
     }
     .header-copy {
       display: grid;
-      gap: 6px;
+      gap: 4px;
       min-width: 0;
     }
     .build-header {
       align-items: flex-start;
     }
     .build-header .header-copy {
-      flex: 1 1 220px;
+      flex: 1 1 240px;
     }
     .stat-grid {
       display: grid;
@@ -625,30 +673,55 @@ export function renderPageShellStyles(): string {
     }
     .toolbar-group {
       display: flex;
-      gap: 7px;
+      gap: 6px;
       flex-wrap: wrap;
       align-items: center;
       min-width: 0;
     }
     .build-control-bar {
       display: grid;
-      gap: 8px;
-      align-items: end;
-      justify-content: flex-end;
+      gap: 6px;
+      align-items: start;
+      justify-items: stretch;
       min-width: 0;
       flex: 1 1 520px;
     }
+    .build-control-primary {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      align-items: center;
+      justify-content: space-between;
+      min-width: 0;
+    }
+    .build-control-status {
+      min-width: 0;
+    }
     .build-control-bar #workbench-status {
-      display: grid;
-      grid-template-columns: repeat(auto-fit, minmax(126px, 1fr));
+      display: flex;
+      flex-wrap: wrap;
       gap: 6px;
       width: 100%;
-      max-width: min(720px, 58vw);
-      justify-self: end;
+      justify-content: flex-end;
+      min-width: 0;
     }
-    .build-control-bar #workbench-actions,
-    .build-control-bar #workbench-tabs {
-      justify-self: end;
+    .build-control-bar #workbench-status .pill {
+      flex: 0 1 auto;
+      max-width: min(100%, 210px);
+    }
+    .build-control-bar #workbench-status .workbench-status-last-run {
+      max-width: min(100%, 260px);
+    }
+    .build-control-bar #workbench-status code {
+      flex: 0 1 auto;
+      max-width: 16ch;
+    }
+    .build-control-bar #workbench-tabs,
+    .build-control-bar #workbench-actions {
+      min-width: 0;
+    }
+    .build-control-primary #workbench-actions {
+      margin-left: auto;
     }
     .workbench-view-tabs {
       justify-content: flex-start;
@@ -657,16 +730,20 @@ export function renderPageShellStyles(): string {
     .segmented {
       display: inline-flex;
       flex-wrap: nowrap;
-      gap: 6px;
-      padding: 4px;
+      gap: 4px;
+      padding: 3px;
       border-radius: 10px;
       border: 1px solid var(--border);
       background: rgba(255, 255, 255, 0.03);
+      min-width: 0;
+      max-width: 100%;
     }
     .segmented .button {
       padding: 5px 8px;
       border-radius: 8px;
       white-space: nowrap;
+      width: auto;
+      min-height: 30px;
     }
     .segmented .button.active {
       background: rgba(56, 189, 248, 0.14);
@@ -676,15 +753,18 @@ export function renderPageShellStyles(): string {
     .console-tabs {
       display: flex;
       flex-wrap: wrap;
-      gap: 8px;
-      padding: 8px;
+      gap: 6px;
+      min-width: 0;
+      width: 100%;
+      padding: 4px;
       border: 1px solid var(--border);
-      border-radius: var(--radius);
-      background: rgba(255, 255, 255, 0.03);
+      border-radius: 10px;
+      background: rgba(255, 255, 255, 0.025);
     }
     .console-tabs .button {
-      flex: 1 1 128px;
+      flex: 1 1 112px;
       justify-content: center;
+      width: auto;
     }
     .console-tabs .button.active {
       background: rgba(56, 189, 248, 0.16);
@@ -988,6 +1068,20 @@ export function renderPageShellStyles(): string {
       gap: 5px;
       min-width: 0;
     }
+    .event.warn,
+    .event.warning {
+      border-color: rgba(251, 191, 36, 0.24);
+      background: rgba(251, 191, 36, 0.08);
+    }
+    .event.blocker,
+    .event.critical {
+      border-color: rgba(248, 113, 113, 0.28);
+      background: rgba(248, 113, 113, 0.1);
+    }
+    .event.notice {
+      border-color: rgba(56, 189, 248, 0.24);
+      background: rgba(56, 189, 248, 0.08);
+    }
     .event-top {
       display: flex;
       justify-content: space-between;
@@ -1006,12 +1100,61 @@ export function renderPageShellStyles(): string {
     .event strong {
       font-size: 14px;
     }
+    .event strong.severity-critical {
+      color: #fecaca;
+    }
+    .event strong.severity-warning {
+      color: #fde68a;
+    }
+    .event strong.severity-info {
+      color: #bae6fd;
+    }
     .event code {
       color: #9be7ff;
     }
     .hint {
       color: var(--muted);
       font-size: 12px;
+    }
+    .event-top .severity-critical,
+    .hint.severity-critical {
+      color: #fca5a5;
+      font-weight: 600;
+    }
+    .event-top .severity-warning,
+    .hint.severity-warning {
+      color: #fcd34d;
+      font-weight: 600;
+    }
+    .event-top .severity-info,
+    .hint.severity-info {
+      color: #7dd3fc;
+      font-weight: 600;
+    }
+    .project-create-stage-list {
+      display: grid;
+      gap: 8px;
+      margin-top: 10px;
+    }
+    .project-create-stage-item {
+      padding: 8px 10px;
+      border-radius: 10px;
+      border: 1px solid rgba(148, 163, 184, 0.14);
+      background: rgba(255, 255, 255, 0.03);
+    }
+    .project-create-stage-item.active {
+      border-color: rgba(56, 189, 248, 0.3);
+      background: rgba(56, 189, 248, 0.1);
+    }
+    .project-create-stage-item.done {
+      border-color: rgba(52, 211, 153, 0.2);
+      background: rgba(52, 211, 153, 0.08);
+    }
+    .project-create-stage-item.pending {
+      opacity: 0.8;
+    }
+    .project-create-stage-item .event-top {
+      margin-bottom: 4px;
     }
     .timeline-controls {
       display: grid;
@@ -1074,10 +1217,17 @@ export function renderPageShellStyles(): string {
       }
       .studio-diagnostics { order: 5; }
       .top-nav-row {
-        display: grid;
-        grid-template-columns: 1fr;
+        align-items: flex-start;
       }
-      .top-nav-actions,
+      .top-nav-brand {
+        flex: 1 1 auto;
+      }
+      .top-nav-center {
+        flex: 1 1 100%;
+      }
+      .top-nav-actions {
+        margin-left: auto;
+      }
       .hero-toolbar {
         width: 100%;
         grid-template-columns: 1fr;
@@ -1100,15 +1250,8 @@ export function renderPageShellStyles(): string {
     @media (max-width: 960px) {
       .content { padding: 12px; }
       .top-nav {
-        padding: 12px 12px 10px;
+        padding: 10px 12px;
       }
-      .main-stage {
-        padding: 10px 12px 12px;
-      }
-      .status-bar {
-        margin: 0 12px 12px;
-      }
-      .top-nav-actions,
       .hero-toolbar {
         grid-template-columns: 1fr;
       }
@@ -1125,8 +1268,25 @@ export function renderPageShellStyles(): string {
       .button {
         width: 100%;
       }
+      .top-nav .button,
+      .console-tabs .button,
+      .segmented .button,
+      .build-control-bar .actions .button,
       .hero-toolbar .button {
         width: auto;
+      }
+      .hero-toolbar .button {
+        width: auto;
+      }
+      .top-nav-actions {
+        justify-content: flex-start;
+        margin-left: 0;
+      }
+      .build-header {
+        align-items: flex-start;
+      }
+      .build-control-primary {
+        justify-content: space-between;
       }
       .timeline-controls {
         grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -1141,13 +1301,7 @@ export function renderPageShellStyles(): string {
     @media (max-width: 768px) {
       .content { padding: 10px; }
       .top-nav {
-        padding: 10px 10px 8px;
-      }
-      .main-stage {
-        padding: 8px 10px 10px;
-      }
-      .status-bar {
-        margin: 0 10px 10px;
+        padding: 9px 10px;
       }
       .hero-actions,
       .hero-utilities {
@@ -1160,19 +1314,39 @@ export function renderPageShellStyles(): string {
       .hero-utilities .live {
         width: 100%;
       }
+      .top-nav-row,
       .toolbar-row,
-      .build-control-bar,
       .workbench-source-actions,
       .row {
         display: grid;
         grid-template-columns: 1fr;
       }
-      .build-control-bar #workbench-status {
+      .top-nav-brand,
+      .top-nav-center,
+      .top-nav-actions,
+      .build-header,
+      .build-control-primary,
+      .build-control-bar {
+        display: grid;
+        grid-template-columns: 1fr;
+      }
+      .top-nav-center .hero-utilities {
+        justify-self: stretch;
+      }
+      .top-nav-actions,
+      .build-control-bar #workbench-status,
+      .build-control-bar #workbench-actions {
+        justify-content: flex-start;
+      }
+      .console-tabs {
+        min-width: 0;
+      }
+      .top-nav-meta .pill,
+      .build-control-bar #workbench-status .pill {
         max-width: 100%;
       }
-      .build-control-bar #workbench-actions,
-      .build-control-bar #workbench-tabs {
-        justify-self: stretch;
+      .build-control-primary #workbench-actions {
+        margin-left: 0;
       }
       .timeline-controls {
         grid-template-columns: 1fr;
@@ -1195,13 +1369,7 @@ export function renderPageShellStyles(): string {
     @media (max-width: 480px) {
       .content { padding: 8px; }
       .top-nav {
-        padding: 8px 8px 6px;
-      }
-      .main-stage {
         padding: 8px;
-      }
-      .status-bar {
-        margin: 0 8px 8px;
       }
       .sidebar {
         width: calc(100vw - 18px);
@@ -1209,6 +1377,13 @@ export function renderPageShellStyles(): string {
       .button {
         min-width: 0;
         padding: 8px 10px;
+      }
+      .top-nav-actions,
+      .hero-actions,
+      .hero-utilities,
+      .build-control-bar #workbench-actions {
+        display: grid;
+        grid-template-columns: 1fr;
       }
       .run-card,
       .event,

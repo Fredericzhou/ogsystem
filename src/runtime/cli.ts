@@ -47,36 +47,38 @@ import { runNl2MmdCli, usage as nl2mmdUsage } from "../nl2mmd/cli.js";
 const require = createRequire(import.meta.url);
 const { version: CLI_VERSION } = require("../../package.json") as { version: string };
 
-type HelpTopic = "doctor" | "lint" | "nl2mmd" | "project" | "run" | "visualizer";
+type HelpTopic = "doctor" | "lint" | "nl2mmd" | "project" | "run" | "vis" | "visualizer";
 type ProjectSubcommand = "init" | "create" | "sync" | "sync-models";
 type RunSubcommand = "start" | "resume" | "stop" | "list" | "status" | "inspect" | "logs" | "review";
+
+function isVisualizerTopic(value: string | undefined): value is "vis" | "visualizer" {
+  return value === "vis" || value === "visualizer";
+}
 
 function usageRoot(): string {
   return [
     "Usage:",
-    "  ogs doctor [options]",
-    "  ogs lint --system <file.mmd>",
-    "  ogs nl2mmd [options]",
-    "  ogs project <init|create|sync|sync-models>",
-    "  ogs run <start|resume|stop|list|status|inspect|logs|review>",
-    "  ogs visualizer [--workdir <path>] [--host <host>] [--port <n|0>]",
+    "  ogs <command> [options]",
+    "  ogs help <command> [subcommand]",
     "  ogs --version",
     "",
-    "Help:",
-    "  ogs help [doctor|lint|nl2mmd|project|run|visualizer]",
+    "Commands:",
+    "  doctor   Check environment, providers, and required tools",
+    "  lint     Statically validate a Mermaid system file",
+    "  nl2mmd   Generate Mermaid from natural language",
+    "  project  Init, create, or sync project files",
+    "  run      Start, inspect, review, or control runs",
+    "  vis      Start the read-mostly visualizer",
+    "",
+    "Drill down:",
     "  ogs help run logs",
-    "  ogs help project init",
-    "  ogs doctor --help",
-    "  ogs lint --help",
-    "  ogs nl2mmd --help",
-    "  ogs visualizer --help",
-    "  ogs run start --help",
     "  ogs project create --help",
+    "  ogs run start --help",
+    "  ogs vis --help",
+    "  ogs vis --workdir .",
     "",
     "Defaults:",
-    "  project commands use the current directory unless --workdir is provided",
-    "  run commands use the current directory unless --workdir is provided",
-    "  project create writes a new project folder under the current directory",
+    "  commands use the current directory unless --workdir overrides it",
   ].join("\n");
 }
 
@@ -356,11 +358,11 @@ function usageRun(subcommand?: RunSubcommand): string {
 function usageVisualizer(): string {
   return [
     "Usage:",
-    "  ogs visualizer [--workdir <path>] [--host <host>] [--port <n|0>]",
+    "  ogs vis [--workdir <path>] [--host <host>] [--port <n|0>]",
     "",
-    "Visualizer server:",
-    "  Starts the lightweight read-mostly OGSystem run visualizer.",
-    "  Read paths stay projection-first; control writes are limited to lifecycle-backed review/stop/reindex entrypoints.",
+    "What it does:",
+    "  Starts the lightweight read-mostly OGSystem visualizer.",
+    "  Reads stay projection-first; writes are limited to lifecycle-backed review, stop, and reindex actions.",
     "  The process stays alive until you stop it.",
     "",
     "Defaults:",
@@ -369,8 +371,8 @@ function usageVisualizer(): string {
     "  port: 3337",
     "",
     "Examples:",
-    "  ogs visualizer --workdir .",
-    "  ogs visualizer --workdir . --port 3338",
+    "  ogs vis --workdir .",
+    "  ogs vis --workdir . --port 3338",
     "  ogs run start --system system.mmd --input \"demo\" --visualize"
   ].join("\n");
 }
@@ -391,7 +393,7 @@ function usage(topic?: HelpTopic, subcommand?: ProjectSubcommand | RunSubcommand
   if (topic === "run") {
     return usageRun(subcommand as RunSubcommand | undefined);
   }
-  if (topic === "visualizer") {
+  if (topic === "vis" || topic === "visualizer") {
     return usageVisualizer();
   }
   return usageRoot();
@@ -1432,7 +1434,7 @@ async function runRunCommand(argv: string[]): Promise<void> {
 }
 
 function shouldKeepProcessAlive(argv: string[]): boolean {
-  if (argv[0] === "visualizer") {
+  if (isVisualizerTopic(argv[0])) {
     return true;
   }
   return argv[0] === "run" && argv[1] === "logs" && argv.includes("--follow");
@@ -1472,7 +1474,7 @@ async function main(): Promise<void> {
       topic === "nl2mmd" ||
       topic === "project" ||
       topic === "run" ||
-      topic === "visualizer"
+      isVisualizerTopic(topic)
     ) {
       console.log(usage(topic, subcommand as ProjectSubcommand | RunSubcommand | undefined));
       return;
@@ -1498,7 +1500,7 @@ async function main(): Promise<void> {
       await runProjectCommand(rest);
       return;
     }
-    if (command === "visualizer") {
+    if (isVisualizerTopic(command)) {
       await runVisualizerCommand(rest);
       return;
     }

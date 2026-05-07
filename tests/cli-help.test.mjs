@@ -28,14 +28,16 @@ function runNodeCli(cliPath, args, cwd = process.cwd()) {
 test("ogs help command surfaces layered guidance", async () => {
   const rootHelp = await runNodeCli(runtimeCliPath, ["help"]);
   assert.strictEqual(rootHelp.code, 0);
-  assert.match(rootHelp.stdout, /ogs help \[doctor\|lint\|nl2mmd\|project\|run\|visualizer\]/);
-  assert.match(rootHelp.stdout, /ogs doctor \[options\]/);
-  assert.match(rootHelp.stdout, /ogs lint --system <file\.mmd>/);
-  assert.match(rootHelp.stdout, /ogs nl2mmd \[options\]/);
+  assert.match(rootHelp.stdout, /ogs <command> \[options\]/);
+  assert.match(rootHelp.stdout, /ogs help <command> \[subcommand\]/);
+  assert.match(rootHelp.stdout, /doctor\s+Check environment, providers, and required tools/);
+  assert.match(rootHelp.stdout, /project\s+Init, create, or sync project files/);
+  assert.match(rootHelp.stdout, /run\s+Start, inspect, review, or control runs/);
+  assert.match(rootHelp.stdout, /vis\s+Start the read-mostly visualizer/);
   assert.match(rootHelp.stdout, /ogs help run logs/);
   assert.match(rootHelp.stdout, /ogs project create --help/);
-  assert.match(rootHelp.stdout, /project commands use the current directory/);
-  assert.match(rootHelp.stdout, /ogs visualizer \[--workdir <path>\] \[--host <host>\] \[--port <n\|0>\]/);
+  assert.match(rootHelp.stdout, /ogs vis --help/);
+  assert.match(rootHelp.stdout, /commands use the current directory unless --workdir overrides it/);
 
   const doctorHelp = await runNodeCli(runtimeCliPath, ["doctor", "--help"]);
   assert.strictEqual(doctorHelp.code, 0);
@@ -87,10 +89,14 @@ test("ogs help command surfaces layered guidance", async () => {
   assert.doesNotMatch(runResumeHelp.stdout, /--tools/);
   assert.doesNotMatch(runResumeHelp.stdout, /--log-run/);
 
-  const visualizerHelp = await runNodeCli(runtimeCliPath, ["visualizer", "--help"]);
+  const visualizerHelp = await runNodeCli(runtimeCliPath, ["vis", "--help"]);
   assert.strictEqual(visualizerHelp.code, 0);
-  assert.match(visualizerHelp.stdout, /ogs visualizer \[--workdir <path>\] \[--host <host>\] \[--port <n\|0>\]/);
-  assert.match(visualizerHelp.stdout, /read-mostly OGSystem run visualizer/);
+  assert.match(visualizerHelp.stdout, /ogs vis \[--workdir <path>\] \[--host <host>\] \[--port <n\|0>\]/);
+  assert.match(visualizerHelp.stdout, /read-mostly OGSystem visualizer/);
+
+  const visualizerAliasHelp = await runNodeCli(runtimeCliPath, ["visualizer", "--help"]);
+  assert.strictEqual(visualizerAliasHelp.code, 0);
+  assert.match(visualizerAliasHelp.stdout, /ogs vis \[--workdir <path>\] \[--host <host>\] \[--port <n\|0>\]/);
 
   const version = await runNodeCli(runtimeCliPath, ["--version"]);
   assert.strictEqual(version.code, 0);

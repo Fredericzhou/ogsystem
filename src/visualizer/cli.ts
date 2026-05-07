@@ -8,7 +8,7 @@ import { startVisualizationServer } from "./server.js";
 function usage(): string {
   return [
     "Usage:",
-    "  ogs visualizer [--workdir <path>] [--host <host>] [--port <n|0>]",
+    "  ogs vis [--workdir <path>] [--host <host>] [--port <n|0>]",
     "",
     "Source repository equivalent:",
     "  pnpm run run:visualizer -- [--workdir <path>] [--host <host>] [--port <n|0>]",

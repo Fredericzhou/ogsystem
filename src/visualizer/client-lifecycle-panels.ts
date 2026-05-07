@@ -103,15 +103,45 @@ export function renderWorkbenchStatusHtml(args: {
   escapeText: (value: unknown) => string;
 }): string {
   const { dirty, entryRoleId, lastDryRunId, validation, diagnostics, hasDraft, validating, t, escapeText } = args;
+  const renderPill = (label: string, options?: { code?: string; warn?: boolean; className?: string; title?: string }): string => {
+    const className = ["pill", "pill-compact", options?.warn ? "warn" : "", options?.className || ""]
+      .filter(Boolean)
+      .join(" ");
+    const title = options?.title ? ' title="' + escapeText(options.title) + '"' : "";
+    return '<span class="' + className + '"' + title + '><span class="pill-label">' + escapeText(label) + '</span>' +
+      (options?.code ? '<code>' + escapeText(options.code) + '</code>' : "") +
+      '</span>';
+  };
+  const validationLabel = validation
+    ? (validation.ok ? t("workbench.validationOk") : t("workbench.diagnostics", { count: diagnostics.length }))
+    : t("workbench.validationPending");
   return [
-    '<span class="pill' + (dirty ? " warn" : "") + '">' + escapeText(dirty ? t("workbench.unsavedChanges") : t("workbench.diskInSync")) + '</span>',
-    '<span class="pill">' + escapeText(t("workbench.entryRole", undefined, "entry")) + ' <code>' + escapeText(entryRoleId || "n/a") + '</code></span>',
-    lastDryRunId ? '<span class="pill">' + escapeText(t("build.lastDryRun", undefined, "Last dry run")) + ' <code>' + escapeText(lastDryRunId) + '</code></span>' : "",
-    validation
-      ? '<span class="pill' + (validation.ok ? "" : " warn") + '">' + escapeText(validation.ok ? t("workbench.validationOk") : t("workbench.diagnostics", { count: diagnostics.length })) + '</span>'
-      : '<span class="pill">' + escapeText(t("workbench.validationPending")) + '</span>',
-    hasDraft ? '<span class="pill warn">' + escapeText(t("workbench.draftCached")) + '</span>' : "",
-    validating ? '<span class="pill warn">' + escapeText(t("workbench.validating")) + '</span>' : ""
+    renderPill(dirty ? t("workbench.unsavedChanges") : t("workbench.diskInSync"), {
+      warn: dirty,
+      className: "workbench-status-sync"
+    }),
+    renderPill(t("workbench.entryRole", undefined, "entry"), {
+      code: entryRoleId || "n/a",
+      className: "workbench-status-entry",
+      title: t("workbench.entryRole", undefined, "entry") + " " + (entryRoleId || "n/a")
+    }),
+    renderPill(validationLabel, {
+      warn: Boolean(validation && !validation.ok),
+      className: "workbench-status-validation"
+    }),
+    hasDraft ? renderPill(t("workbench.draftCached"), {
+      warn: true,
+      className: "workbench-status-draft"
+    }) : "",
+    validating ? renderPill(t("workbench.validating"), {
+      warn: true,
+      className: "workbench-status-validating"
+    }) : "",
+    lastDryRunId ? renderPill(t("build.lastDryRun", undefined, "Last dry run"), {
+      code: lastDryRunId,
+      className: "workbench-status-last-run",
+      title: t("build.lastDryRun", undefined, "Last dry run") + " " + lastDryRunId
+    }) : ""
   ].filter(Boolean).join("");
 }
 
@@ -171,11 +201,11 @@ export function renderWorkbenchModeBodyHtml(args: {
   if (buildMode === "dry-run") {
     return [
       '<div class="structure-list">',
-      '<div class="event"><div class="event-top"><span>' + escapeText(t("build.mode.dryRun", undefined, "Dry Run")) + '</span><span>' + escapeText(dirty ? t("workbench.unsavedChanges", undefined, "unsaved changes") : t("workbench.diskInSync", undefined, "disk in sync")) + '</span></div><strong>' + escapeText(t("build.dryRunPrepTitle", undefined, "Validate, generate Mermaid, save, then start a dry run.")) + '</strong><div class="hint">' + escapeText(t("build.dryRunPrepHint", {
+      '<div class="event"><div class="event-top"><span>' + escapeText(t("build.mode.dryRun", undefined, "Dry Run")) + '</span><span>' + escapeText(dirty ? t("workbench.unsavedChanges", undefined, "unsaved changes") : t("workbench.diskInSync", undefined, "disk in sync")) + '</span></div><strong>' + escapeText(t("build.dryRunPrepTitle", undefined, "Dry Run prepares validation, Mermaid generation, save, then opens the start form.")) + '</strong><div class="hint">' + escapeText(t("build.dryRunPrepHint", {
         path: workbenchSavedPath || "system.mmd"
-      }, "Dry run uses " + (workbenchSavedPath || "system.mmd") + " after the generated source is saved.")) + '</div></div>',
+      }, "Use the Dry Run button above to launch. This panel shows the saved source path " + (workbenchSavedPath || "system.mmd") + " and the latest captured result.")) + '</div></div>',
       lastDryRunId
-        ? '<div class="event"><div class="event-top"><span>' + escapeText(t("build.lastDryRun", undefined, "Last dry run")) + '</span><span>' + escapeText(t("common.captured", undefined, "captured")) + '</span></div><strong>' + escapeText(lastDryRunId) + '</strong><div class="hint">' + escapeText(t("build.openDebugHint", undefined, "Open Debug mode here or jump to Operate for runtime controls.")) + '</div></div>'
+        ? '<div class="event"><div class="event-top"><span>' + escapeText(t("build.lastDryRun", undefined, "Last dry run")) + '</span><span>' + escapeText(t("common.captured", undefined, "captured")) + '</span></div><strong>' + escapeText(lastDryRunId) + '</strong><div class="hint">' + escapeText(t("build.openDebugHint", undefined, "Review the captured result here, switch to Debug, or jump to Operate for runtime controls.")) + '</div></div>'
         : '<div class="hint">' + escapeText(t("build.noDryRunYet", undefined, "No dry run has been launched from Build yet.")) + '</div>',
       '</div>'
     ].join("");

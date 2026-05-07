@@ -64,7 +64,7 @@ ogs run start --system system.mmd --input "smoke" --dry-run
 ogs run list
 ogs run status <run-id>
 ogs run logs <run-id> --engine --tail 50
-ogs visualizer --workdir .
+ogs vis --workdir .
 ```
 
 Stable lifecycle command anchors:
@@ -78,7 +78,7 @@ ogs run start --system system.mmd --input "smoke" --dry-run
 ogs run list
 ogs run status <run-id>
 ogs run logs <run-id> --engine --tail 50
-ogs visualizer --workdir .
+ogs vis --workdir .
 ```
 
 Generated projects always include `.ogs/`, `system.mmd`, and a local `og-roles/` repo. Model defaults now live under `.ogs/model-selection.json`, and `.ogs/model-catalog.json` records the latest local `opencode models --verbose` snapshot used for scaffolding and diagnostics. The scaffold also writes `.ogs/README.md` with operator notes and JSON examples; keep the runtime JSON files comment-free and use that README for local guidance.
@@ -186,7 +186,7 @@ For day-to-day use, start with `docs/usage-manual.md`. It keeps the command matr
 - `ogs project create <name> [--template <...>]` scaffolds the same structure in a new project directory.
 - `ogs project sync --system <file.mmd>` imports only the roles referenced by that system into the project-local role repo.
 - `ogs project sync-models` refreshes `.ogs/model-catalog.json` and seeds `.ogs/model-selection.json` when missing.
-- `ogs visualizer --workdir .` starts the read-mostly run visualizer. It keeps project/run/review/resume projections read-first, uses incremental timeline streaming instead of full run reloads on every event, loads resume diagnostics on demand, keeps project cold-start on persisted projections instead of forcing a runs-directory scan, and routes review decide / stop / reindex through existing lifecycle entrypoints with confirmation + audit input prompts. Review views now expose lifecycle `currentStatus` separately from durable decision `decisionPhase` (`recorded`, `pending_reconcile`, `applied`). `ogs run start --visualize` attaches a temporary visualizer that auto-closes when the run ends.
+- `ogs vis --workdir .` starts the read-mostly run visualizer. It keeps project/run/review/resume projections read-first, uses incremental timeline streaming instead of full run reloads on every event, loads resume diagnostics on demand, keeps project cold-start on persisted projections instead of forcing a runs-directory scan, and routes review decide / stop / reindex through existing lifecycle entrypoints with confirmation + audit input prompts. Review views now expose lifecycle `currentStatus` separately from durable decision `decisionPhase` (`recorded`, `pending_reconcile`, `applied`). `ogs run start --visualize` attaches a temporary visualizer that auto-closes when the run ends.
 - `examples/target-model-binding-system.mmd` shows `model.bind.*` usage.
 - `examples/langgraph-debate-current/` shows a minimal debate with loop + parallel + join.
 - `examples/langgraph-expert-consultation/` shows a minimal expert consultation with parallel + join.

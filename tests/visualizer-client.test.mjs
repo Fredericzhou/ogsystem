@@ -944,6 +944,12 @@ function createBackend(options = {}) {
       }
       if (pathname === "/api/v1/project/create" && method === "POST") {
         this.lastProjectCreateBody = JSON.parse(request.body ?? "{}");
+        if (options.projectCreateDeferred) {
+          const deferredResponse = await options.projectCreateDeferred.promise;
+          if (deferredResponse) {
+            return deferredResponse;
+          }
+        }
         if (options.projectCreateError) {
           return createResponse(
             {
@@ -1096,6 +1102,9 @@ function createBackend(options = {}) {
       if (pathname === "/api/v1/project/studio/bridge" && method === "POST") {
         const body = JSON.parse(request.body ?? "{}");
         this.lastStudioBridgeBody = body;
+        if (Array.isArray(options.studioBridgeResponses) && options.studioBridgeResponses.length) {
+          return options.studioBridgeResponses.shift();
+        }
         return createResponse({
           workdir: "/tmp/demo",
           systemPath: "/tmp/demo/system.mmd",
@@ -2153,12 +2162,98 @@ test("visualizer client creates a project from the empty workspace wizard", asyn
   assert.equal("projectId" in harness.backend.lastProjectCreateBody, false);
   assert.ok(harness.backend.fetchCalls.some((call) => call.path === "/api/v1/project"));
   assert.equal(harness.backend.fetchCalls.some((call) => call.path === "/api/v1/project/create"), true);
+  assert.equal(harness.backend.fetchCalls.some((call) => call.path === "/api/v1/project/studio/bridge"), true);
   assert.equal(harness.backend.fetchCalls.some((call) => call.path === "/api/v1/project/role-catalog"), false);
   assert.equal(harness.backend.fetchCalls.some((call) => call.path === "/api/v1/project/roles/import"), false);
   assert.equal(harness.backend.fetchCalls.some((call) => call.path === "/api/v1/project/system/save"), false);
   assert.equal(harness.backend.fetchCalls.some((call) => call.path === "/api/v1/runs/start"), false);
   assert.equal(harness.document.getElementById("console-panel-project").hidden, true);
   assert.match(harness.document.getElementById("flash").textContent, /Project created\. Continue in Build\./);
+});
+
+test("visualizer client shows staged progress while project creation is still running", async () => {
+  const deferred = createDeferred();
+  const harness = await createClientHarness({
+    search: "",
+    workspace: {
+      workdir: "/tmp/empty-project",
+      exists: true,
+      isDirectory: true,
+      hasProject: false,
+      state: "empty",
+      entryCount: 0,
+      canInitialize: true,
+      controlledPathConflicts: []
+    },
+    projectCreateDeferred: deferred
+  });
+
+  await harness.document.getElementById("project-create-form").dispatch("submit");
+  await waitForCondition(() => harness.backend.fetchCalls.some((call) => call.path === "/api/v1/project/create"));
+  await waitForCondition(() => /Creating project|正在创建项目/.test(harness.document.getElementById("project-wizard").textContent));
+  assert.match(harness.document.getElementById("project-wizard").textContent, /1 \/ 4/);
+  assert.match(harness.document.getElementById("project-wizard").textContent, /Scaffolding project files|writing system\.mmd|生成项目文件骨架|写入 system\.mmd/i);
+
+  deferred.resolve(createResponse({
+    workdir: "/tmp/demo",
+    projectId: "empty-visual",
+    projectName: "my-ogs-project",
+    templateId: "empty",
+    validation: { ok: true, diagnostics: [], structure: null }
+  }));
+  await waitForCondition(() => /Project created\. Continue in Build\.|项目已创建，请继续构建。/.test(harness.document.getElementById("flash").textContent));
+});
+
+test("visualizer client retries graph workspace warmup until graph content becomes available", async () => {
+  const harness = await createClientHarness({
+    search: "",
+    workspace: {
+      workdir: "/tmp/empty-project",
+      exists: true,
+      isDirectory: true,
+      hasProject: false,
+      state: "empty",
+      entryCount: 0,
+      canInitialize: true,
+      controlledPathConflicts: []
+    },
+    studioBridgeResponses: [
+      createResponse({
+        workdir: "/tmp/demo",
+        systemPath: "/tmp/demo/system.mmd",
+        systemSource: "flowchart TD\n",
+        validation: { ok: true, diagnostics: [], structure: { roleCount: 1, flowCount: 1 } },
+        authoring: { version: 1, project: { workdir: "/tmp/demo", systemPath: "/tmp/demo/system.mmd" }, system: { systemId: "viz.review.demo", systemVersion: "1.0.0", entryRoleId: "demo-analyst", lawGlobalRef: "law.minimal.base" }, roles: {}, flows: {}, layout: { nodes: {} } },
+        extracted: { systemId: "viz.review.demo", systemVersion: "1.0.0", entryRoleId: "demo-analyst", lawGlobal: "law.minimal.base", roles: [], flows: [] }
+      }),
+      createResponse({
+        workdir: "/tmp/demo",
+        systemPath: "/tmp/demo/system.mmd",
+        systemSource: "flowchart TD\n",
+        validation: { ok: true, diagnostics: [], structure: { roleCount: 1, flowCount: 1 } },
+        authoring: {
+          version: 1,
+          project: { workdir: "/tmp/demo", systemPath: "/tmp/demo/system.mmd" },
+          system: { systemId: "viz.review.demo", systemVersion: "1.0.0", entryRoleId: "demo-analyst", lawGlobalRef: "law.minimal.base" },
+          roles: { "demo-analyst": { roleId: "demo-analyst", bindingKind: "model" } },
+          flows: { "1:demo-analyst:DONE:output": { flowId: "1:demo-analyst:DONE:output", fromRoleId: "demo-analyst", toRoleId: "__system_end__", eventType: "DONE" } },
+          layout: { nodes: { "demo-analyst": { x: 120, y: 120 } } }
+        },
+        extracted: {
+          systemId: "viz.review.demo",
+          systemVersion: "1.0.0",
+          entryRoleId: "demo-analyst",
+          lawGlobal: "law.minimal.base",
+          roles: [{ roleId: "demo-analyst", bindingKind: "model", incomingFlowCount: 0, outgoingFlowCount: 1, allowedEvents: ["DONE"], badges: ["entry", "M"] }],
+          flows: [{ flowId: "1:demo-analyst:DONE:output", flowKey: "demo-analyst:DONE:output", fromRoleId: "demo-analyst", toRoleId: "__system_end__", eventType: "DONE", runtimeOnlyErrorFlow: false, participatesInJoin: false }]
+        }
+      })
+    ]
+  });
+
+  await harness.document.getElementById("project-create-form").dispatch("submit");
+  await waitForCondition(() => harness.backend.fetchCalls.filter((call) => call.path === "/api/v1/project/studio/bridge").length >= 2);
+  assert.match(harness.document.getElementById("workbench-body").textContent, /demo-analyst/);
 });
 
 test("visualizer client retries workspace load after initial failure and auto-dismisses success flash", async () => {
@@ -2239,6 +2334,42 @@ test("visualizer client shows stable project create conflict errors", async () =
   assert.match(harness.document.getElementById("project-wizard").textContent, /existing files|current directory|needs confirmation/i);
   assert.match(harness.document.getElementById("project-wizard").textContent, /existing files untouched|project root|current-directory initialization/i);
   assert.equal(harness.document.getElementById("console-panel-build").hidden, true);
+});
+
+test("visualizer client surfaces invalid project diagnostics and disables editing", async () => {
+  const harness = await createClientHarness({
+    search: "",
+    workspace: {
+      workdir: "/tmp/invalid-project",
+      exists: true,
+      isDirectory: true,
+      hasProject: true,
+      isProjectValid: false,
+      state: "project-invalid",
+      entryCount: 2,
+      canInitialize: false,
+      controlledPathConflicts: [],
+      projectValidation: {
+        ok: false,
+        diagnostics: [
+          {
+            code: "PROJECT_SYSTEM_PARSE_FAILED",
+            message: "entry.role is missing or invalid",
+            severity: "error",
+            stage: "parse"
+          }
+        ]
+      }
+    }
+  });
+
+  await settle();
+
+  assert.match(harness.document.getElementById("project-wizard").textContent, /invalid project|无效项目/i);
+  assert.match(harness.document.getElementById("project-wizard").textContent, /entry\.role is missing or invalid/i);
+  assert.match(harness.document.getElementById("workbench-body").textContent, /fix the project diagnostics|请先修复项目诊断问题/i);
+  assert.equal(harness.document.getElementById("start-run").disabled, true);
+  assert.equal(harness.document.getElementById("reindex").disabled, true);
 });
 
 test("visualizer client stream helpers dedupe timeline entries and cap history", () => {
@@ -3235,6 +3366,64 @@ test("visualizer client blocks start run submit when run input is empty", async 
   await dryRunButton.click();
   await waitForCondition(() => Boolean(harness.document.getElementById("action-run-prompt")));
   assert.equal(harness.document.getElementById("action-run-prompt").value, "");
+});
+
+test("visualizer client keeps a single build dry-run entry and uses Dry Run mode as an informational panel", async () => {
+  const harness = await createClientHarness({ readinessCanDryRun: true });
+
+  assert.ok(harness.document.getElementById("build-dry-run"));
+  assert.match(harness.document.getElementById("workbench-actions").innerHTML, /id="build-dry-run"/);
+  assert.doesNotMatch(harness.document.getElementById("workbench-body").innerHTML, /id="build-dry-run"/);
+
+  const dryRunModeButton = harness.document.getElementById("workbench-tabs")
+    .querySelectorAll("[data-build-mode=\"dry-run\"]")[0];
+  assert.ok(dryRunModeButton);
+  const startCallsBefore = harness.backend.fetchCalls.filter((call) => call.path === "/api/v1/runs/start").length;
+
+  await dryRunModeButton.click();
+  await settle();
+
+  assert.equal(harness.document.getElementById("action-form-section").hidden, true);
+  assert.equal(harness.backend.fetchCalls.filter((call) => call.path === "/api/v1/runs/start").length, startCallsBefore);
+  assert.match(
+    harness.document.getElementById("workbench-body").textContent,
+    /Dry Run button above|使用上方“试运行”按钮/
+  );
+  assert.match(
+    harness.document.getElementById("workbench-body").textContent,
+    /No dry run has been launched from Build yet|尚未从构建发起试运行/
+  );
+});
+
+test("visualizer client does not relaunch a run when switching back to the Dry Run mode tab", async () => {
+  const harness = await createClientHarness({ readinessCanDryRun: true });
+
+  const dryRunButton = harness.document.getElementById("build-dry-run");
+  assert.ok(dryRunButton);
+  await dryRunButton.click();
+  await waitForCondition(() => Boolean(harness.document.getElementById("action-run-prompt")));
+  await harness.document.getElementById("action-run-prompt").input("panel semantics");
+  await harness.document.getElementById("action-form-submit").click();
+  await settle();
+
+  const startCallsAfterLaunch = harness.backend.fetchCalls.filter((call) => call.path === "/api/v1/runs/start").length;
+  assert.equal(startCallsAfterLaunch, 1);
+
+  const modeButtons = harness.document.getElementById("workbench-tabs");
+  const editModeButton = modeButtons.querySelectorAll("[data-build-mode=\"edit\"]")[0];
+  const dryRunModeButton = modeButtons.querySelectorAll("[data-build-mode=\"dry-run\"]")[0];
+  assert.ok(editModeButton);
+  assert.ok(dryRunModeButton);
+
+  await editModeButton.click();
+  await settle();
+  await dryRunModeButton.click();
+  await settle();
+
+  assert.equal(harness.document.getElementById("action-form-section").hidden, true);
+  assert.equal(harness.backend.fetchCalls.filter((call) => call.path === "/api/v1/runs/start").length, startCallsAfterLaunch);
+  assert.match(harness.document.getElementById("workbench-status").textContent, /run-123/);
+  assert.match(harness.document.getElementById("workbench-body").textContent, /run-123/);
 });
 
 test("visualizer client opens Studio Bridge, saves an authoring draft, and dry-runs into run detail", async () => {

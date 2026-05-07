@@ -36,13 +36,8 @@ export function renderPageShellBody({ workdir, locale, t }: PageShellBodyOptions
               <div class="pill">${escapeHtml(t("app.workdir"))} <code id="workdir">${escapeHtml(workdir)}</code></div>
             </div>
           </div>
-          <nav id="console-tabs" class="console-tabs" aria-label="Visualizer sections"></nav>
-          <div class="top-nav-actions">
-            <div class="actions hero-actions hero-actions-primary">
-              <button id="start-run" class="button primary">${escapeHtml(t("action.run"))}</button>
-              <button id="resume-run" class="button">${escapeHtml(t("action.resume"))}</button>
-              <button id="stop-run" class="button warn">${escapeHtml(t("action.stop"))}</button>
-            </div>
+          <div class="top-nav-center">
+            <nav id="console-tabs" class="console-tabs" aria-label="Visualizer sections"></nav>
             <div class="hero-utilities">
               <button id="refresh" class="button subtle">${escapeHtml(t("action.refresh"))}</button>
               <label class="field locale-field">
@@ -52,6 +47,13 @@ export function renderPageShellBody({ workdir, locale, t }: PageShellBodyOptions
                   <option value="zh-CN"${locale === "zh-CN" ? " selected" : ""}>中文</option>
                 </select>
               </label>
+            </div>
+          </div>
+          <div class="top-nav-actions">
+            <div class="actions hero-actions hero-actions-primary">
+              <button id="start-run" class="button primary">${escapeHtml(t("action.run"))}</button>
+              <button id="resume-run" class="button">${escapeHtml(t("action.resume"))}</button>
+              <button id="stop-run" class="button warn">${escapeHtml(t("action.stop"))}</button>
             </div>
           </div>
         </div>
@@ -84,9 +86,13 @@ export function renderPageShellBody({ workdir, locale, t }: PageShellBodyOptions
                     <div id="workbench-meta" class="hint">${escapeHtml(t("workbench.defaultMeta"))}</div>
                   </div>
                   <div class="build-control-bar">
-                    <div id="workbench-tabs" class="segmented"></div>
-                    <div id="workbench-status" class="toolbar-group"></div>
-                    <div id="workbench-actions" class="actions"></div>
+                    <div class="build-control-primary">
+                      <div id="workbench-tabs" class="segmented"></div>
+                      <div id="workbench-actions" class="actions"></div>
+                    </div>
+                    <div class="build-control-status">
+                      <div id="workbench-status" class="toolbar-group"></div>
+                    </div>
                   </div>
                 </div>
               </header>
