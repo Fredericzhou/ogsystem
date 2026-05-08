@@ -11,6 +11,7 @@ export type StudioAuthoringCommand =
   | {
       type: "add-role";
       sourceRoleId?: string;
+      repositoryRoleId?: string;
       roleId?: string;
       title?: string;
       bindingKind?: StudioAuthoringRole["bindingKind"];
@@ -61,6 +62,7 @@ export type StudioAuthoringCommandResult = {
   canvas: StudioCanvasDocument;
   selectedRoleId?: string;
   selectedFlowKey?: string;
+  repositoryRoleId?: string;
   profileDrafts?: StudioExecutionProfileDraft[];
   blockedCode?:
     | "entry-role-delete"
@@ -268,6 +270,7 @@ export function applyStudioAuthoringCommand(args: {
         authoring,
         canvas,
         selectedRoleId: roleId,
+        repositoryRoleId: command.repositoryRoleId,
         profileDrafts: command.profileDraft ? [command.profileDraft] : undefined
       };
     }

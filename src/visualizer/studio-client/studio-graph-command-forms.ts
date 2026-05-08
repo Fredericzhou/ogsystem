@@ -210,6 +210,7 @@ export function commandFromStudioCommandFormState(state: StudioCommandFormState)
     }
     return {
       type: "add-role",
+      repositoryRoleId: state.fields.mode === "repository" ? state.fields.repositoryRoleId?.trim() : undefined,
       roleId: state.fields.roleId.trim(),
       title: (state.fields.title || state.fields.roleId).trim(),
       bindingKind,
@@ -440,7 +441,9 @@ export function renderStudioCommandForm(args: {
       ? rolePackages.map((rolePackage) =>
           '<option value="' + escapeHtml(rolePackage.roleId) + '"' +
           (rolePackage.roleId === fields.repositoryRoleId ? " selected" : "") + ">" +
-          escapeHtml(rolePackage.name || rolePackage.roleId) + "</option>"
+          escapeHtml(rolePackage.name || rolePackage.roleId) +
+          (rolePackage.alreadyImported ? " · imported" : "") +
+          "</option>"
         ).join("")
       : '<option value="">' + escapeHtml(label(labels, "noRepositoryRoles", "No repository roles")) + "</option>";
     return [
@@ -452,8 +455,8 @@ export function renderStudioCommandForm(args: {
       isEdit ? "" : '<label><input type="radio" name="mode" value="custom"' + (fields.mode === "custom" ? " checked" : "") + "> " + escapeHtml(label(labels, "customRole", "Custom")) + "</label>",
       isEdit ? "" : "</div>",
       isEdit ? '<input type="hidden" name="mode" value="custom"><input type="hidden" name="originalRoleId" value="' + escapeHtml(fields.originalRoleId || fields.roleId) + '">' : "",
-      !isEdit && fields.mode === "repository" ? '<label class="studio-command-form-row"><span>' + escapeHtml(label(labels, "rolePackage", "Role package")) + '</span><select name="repositoryRoleId">' + packageOptions + "</select><div class=\"studio-command-form-hint\">" + escapeHtml(label(labels, "rolePackageSource", "From this project's role repository.")) + "</div>" + renderStudioCommandFormFieldError(args.state, "repositoryRoleId") + "</label>" : "",
-      '<label class="studio-command-form-row"><span>' + escapeHtml(label(labels, "roleId", "Role id")) + '</span><input name="roleId" value="' + escapeHtml(fields.roleId) + '">' + renderStudioCommandFormFieldError(args.state, "roleId") + "</label>",
+      !isEdit && fields.mode === "repository" ? '<label class="studio-command-form-row"><span>' + escapeHtml(label(labels, "rolePackage", "Role package")) + '</span><select name="repositoryRoleId">' + packageOptions + "</select><div class=\"studio-command-form-hint\">" + escapeHtml(label(labels, "rolePackageSource", "Import from the installed role catalog.")) + "</div>" + renderStudioCommandFormFieldError(args.state, "repositoryRoleId") + "</label>" : "",
+      '<label class="studio-command-form-row"><span>' + escapeHtml(label(labels, "roleId", "Role id")) + '</span><input name="roleId" value="' + escapeHtml(fields.roleId) + '"' + (!isEdit && fields.mode === "repository" ? " readonly" : "") + '>' + renderStudioCommandFormFieldError(args.state, "roleId") + "</label>",
       '<label class="studio-command-form-row"><span>' + escapeHtml(label(labels, "title", "Title")) + '</span><input name="title" value="' + escapeHtml(fields.title || "") + '"></label>',
       '<label class="studio-command-form-row"><span>' + escapeHtml(label(labels, "bindingKind", "Binding")) + '</span><select name="bindingKind">',
       '<option value="noop"' + (fields.bindingKind === "noop" ? " selected" : "") + ">noop</option>",
@@ -507,7 +510,9 @@ export function readStudioCommandFormState(args: {
     const modelOptions = extractStudioModelOptions(args.context);
     const profileOptions = extractStudioProfileOptions(args.context);
     const toolOptions = extractStudioToolOptions(args.context);
-    const roleId = String(data.get("roleId") ?? "").trim() || (mode === "repository" ? rolePackage?.roleId ?? "" : "");
+    const roleId = mode === "repository"
+      ? rolePackage?.roleId ?? ""
+      : String(data.get("roleId") ?? "").trim();
     const profileMode = data.get("profileMode") === "create" || (bindingKind === "exec" && !profileOptions.length) ? "create" : "existing";
     const newProfileId = profileIdFromRoleId(roleId);
     const fields: StudioAddRoleDraft = {

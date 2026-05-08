@@ -232,7 +232,7 @@ test("client release readiness state reports each export blocker category", () =
       contractCoverage: { missingCount: 2 }
     },
     bindings: { roles: [{ roleId: "writer", resolved: false }] },
-    rolePackages: { roles: [{ roleId: "writer", health: { promptTemplate: false } }] },
+    rolePackages: { roles: [{ roleId: "writer", files: { promptTemplate: false } }] },
     contracts: {
       flows: [{ contractId: null, schemaPath: null, lastStatus: "missing" }],
       uncoveredEdges: [{ flowKey: "writer:DONE:output" }]

@@ -546,7 +546,7 @@ test("Studio command forms expose visual role package, model, and profile choice
   const repositoryState = createDefaultStudioCommandFormState({ kind: "add-role", context });
   const repositoryHtml = renderStudioCommandForm({ state: repositoryState, context });
   assert.match(repositoryHtml, /Role package/);
-  assert.match(repositoryHtml, /From this project&#39;s role repository/);
+  assert.match(repositoryHtml, /Import from the installed role catalog/);
 
   const customState = {
     ...repositoryState,

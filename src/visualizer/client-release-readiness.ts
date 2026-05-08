@@ -1,3 +1,5 @@
+import { studioRolePackageHasRequiredFileCoverage, type StudioRolePackageSummary } from "./studio-client/studio-graph-validation.js";
+
 export type ReleaseReadinessDecision = {
   canExport: boolean;
   blockers: Array<{ code: string; message: string }>;
@@ -72,8 +74,7 @@ export function buildReleaseReadinessDecision(args: {
     if (role.status && role.status !== "ok") {
       return true;
     }
-    const files = (role.files ?? role.health ?? {}) as Record<string, unknown>;
-    return Object.values(files).some((present) => present === false);
+    return !studioRolePackageHasRequiredFileCoverage(role as StudioRolePackageSummary);
   });
   if (unhealthyRolePackages.length) {
     blockers.push({

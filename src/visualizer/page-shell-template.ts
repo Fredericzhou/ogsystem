@@ -51,7 +51,6 @@ export function renderPageShellBody({ workdir, locale, t }: PageShellBodyOptions
           </div>
           <div class="top-nav-actions">
             <div class="actions hero-actions hero-actions-primary">
-              <button id="start-run" class="button primary">${escapeHtml(t("action.run"))}</button>
               <button id="resume-run" class="button">${escapeHtml(t("action.resume"))}</button>
               <button id="stop-run" class="button warn">${escapeHtml(t("action.stop"))}</button>
             </div>
@@ -85,21 +84,23 @@ export function renderPageShellBody({ workdir, locale, t }: PageShellBodyOptions
                     <h3 id="workbench-title">${escapeHtml(t("section.mermaidWorkbench"))}</h3>
                     <div id="workbench-meta" class="hint">${escapeHtml(t("workbench.defaultMeta"))}</div>
                   </div>
-                  <div class="build-control-bar">
-                    <div class="build-control-primary">
-                      <div id="workbench-tabs" class="segmented"></div>
-                      <div id="workbench-actions" class="actions"></div>
-                    </div>
-                    <div class="build-control-status">
-                      <div id="workbench-status" class="toolbar-group"></div>
+                  <div class="build-control-bar build-ide-control-bar">
+                    <div class="build-control-primary build-ide-primary">
+                      <div class="build-nav-stack">
+                        <div id="workbench-tabs" class="segmented build-mode-tabs"></div>
+                        <div id="workbench-view-tabs-slot" class="workbench-view-tabs-slot" data-workbench-view-tabs-slot="header"></div>
+                      </div>
+                      <div class="build-command-stack">
+                        <div id="workbench-actions" class="actions"></div>
+                        <div id="workbench-status" class="toolbar-group"></div>
+                      </div>
                     </div>
                   </div>
                 </div>
               </header>
               <div class="body">
-                <div class="editor-shell">
-                  <div id="workbench-view-tabs" class="segmented workbench-view-tabs"></div>
-                  <div id="workbench-body"></div>
+                <div class="editor-shell build-ide-shell">
+                  <div id="workbench-body" class="build-ide-body"></div>
                 </div>
               </div>
             </article>
@@ -266,8 +267,11 @@ export function renderPageShellBody({ workdir, locale, t }: PageShellBodyOptions
         </div>
       </main>
       <footer class="status-bar global-status">
-        <div class="pill">${escapeHtml(t("state.idle"))}</div>
-        <div class="actions">
+        <div class="global-status-primary">
+          <div id="global-status-context" class="pill">${escapeHtml(t("state.idle"))}</div>
+          <div id="global-status-diagnostics" class="global-status-diagnostics hint"></div>
+        </div>
+        <div class="actions global-status-actions">
           <button id="reindex" class="button subtle">${escapeHtml(t("action.reindex"))}</button>
           <div id="live" class="live">${escapeHtml(t("state.idle"))}</div>
         </div>

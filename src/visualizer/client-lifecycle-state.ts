@@ -50,6 +50,7 @@ export function createBuildStateSlice() {
     studioBridgeSelectedFlowKey: "",
     studioBridgeFilter: "",
     studioBridgeListMode: "all",
+    studioWorkbenchSideTab: "structure",
     studioBridgeFullscreen: false,
     studioBridgeEditSelectionRequest: 0,
     studioSelectionDialogOpen: false,
@@ -82,6 +83,7 @@ export function createBuildStateSlice() {
     studioGraphHistoryEventId: 0,
     studioGraphHistoryEvent: null,
     studioTemplates: [],
+    studioRoleCatalog: null,
     workbenchLoading: false
   };
 }

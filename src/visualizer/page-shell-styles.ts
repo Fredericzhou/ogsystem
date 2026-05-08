@@ -316,7 +316,7 @@ export function renderPageShellStyles(): string {
     }
     .main-stage {
       min-width: 0;
-      padding: 0;
+      padding: 0 0 56px;
     }
     .stage-stack {
       display: grid;
@@ -326,6 +326,9 @@ export function renderPageShellStyles(): string {
     }
     .status-bar {
       margin: 0;
+      position: sticky;
+      bottom: 0;
+      z-index: 14;
     }
     .hero {
       display: grid;
@@ -470,14 +473,35 @@ export function renderPageShellStyles(): string {
       align-items: center;
       flex-wrap: nowrap;
       min-width: 0;
-      padding: 7px 9px;
-      border-radius: var(--radius);
+      padding: 5px 9px;
+      border-radius: 10px;
       border: 1px solid var(--border);
-      background: rgba(255, 255, 255, 0.035);
-      box-shadow: var(--shadow);
+      background: rgba(7, 12, 24, 0.92);
+      backdrop-filter: blur(18px);
+      box-shadow: 0 -8px 24px rgba(0, 0, 0, 0.22);
+    }
+    .global-status-primary,
+    .global-status-actions {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      min-width: 0;
+    }
+    .global-status-primary {
+      flex: 1 1 auto;
     }
     .global-status .pill {
-      max-width: min(54vw, 720px);
+      max-width: min(36vw, 420px);
+    }
+    .global-status-diagnostics {
+      flex: 1 1 auto;
+      min-width: 0;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    .global-status-diagnostics.warn {
+      color: #fcd34d;
     }
     .grid {
       display: grid;
@@ -680,19 +704,36 @@ export function renderPageShellStyles(): string {
     }
     .build-control-bar {
       display: grid;
-      gap: 6px;
+      gap: 8px;
       align-items: start;
       justify-items: stretch;
       min-width: 0;
       flex: 1 1 520px;
     }
     .build-control-primary {
-      display: flex;
-      flex-wrap: wrap;
-      gap: 8px;
-      align-items: center;
-      justify-content: space-between;
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) auto;
+      gap: 10px 14px;
+      align-items: start;
       min-width: 0;
+    }
+    .build-ide-shell,
+    .build-ide-body,
+    .build-nav-stack,
+    .build-command-stack {
+      display: grid;
+      gap: 8px;
+      min-width: 0;
+    }
+    .build-nav-stack {
+      align-content: start;
+    }
+    .build-command-stack {
+      justify-items: end;
+      align-content: start;
+    }
+    .build-ide-body {
+      min-height: calc(100vh - 280px);
     }
     .build-control-status {
       min-width: 0;
@@ -701,7 +742,7 @@ export function renderPageShellStyles(): string {
       display: flex;
       flex-wrap: wrap;
       gap: 6px;
-      width: 100%;
+      width: auto;
       justify-content: flex-end;
       min-width: 0;
     }
@@ -717,15 +758,33 @@ export function renderPageShellStyles(): string {
       max-width: 16ch;
     }
     .build-control-bar #workbench-tabs,
-    .build-control-bar #workbench-actions {
+    .build-control-bar #workbench-actions,
+    .build-control-bar #workbench-view-tabs-slot {
       min-width: 0;
     }
     .build-control-primary #workbench-actions {
-      margin-left: auto;
+      justify-content: flex-end;
+    }
+    .build-mode-tabs {
+      justify-self: start;
+    }
+    .workbench-view-tabs-slot {
+      min-width: 0;
+      min-height: 0;
     }
     .workbench-view-tabs {
       justify-content: flex-start;
-      margin-bottom: 2px;
+      margin-bottom: 0;
+      padding-left: 6px;
+      border-style: dashed;
+      background: rgba(56, 189, 248, 0.05);
+    }
+    .build-submenu-tabs {
+      margin-left: 10px;
+    }
+    .workbench-view-tabs-slot:empty,
+    .build-submenu-tabs:empty {
+      display: none;
     }
     .segmented {
       display: inline-flex;
@@ -833,15 +892,15 @@ export function renderPageShellStyles(): string {
     }
     .studio-bridge-layout {
       display: grid;
-      grid-template-columns: minmax(0, 1.6fr) minmax(320px, 1fr);
+      grid-template-columns: minmax(0, 1fr);
       gap: 10px;
-      align-items: start;
+      align-items: stretch;
       min-width: 0;
     }
     .studio-graph-column { grid-column: 1 / -1; }
     .studio-bridge-index {
-      grid-column: 1 / 2;
       min-width: 0;
+      height: 100%;
     }
     .studio-index-grid {
       display: grid;
@@ -859,13 +918,14 @@ export function renderPageShellStyles(): string {
       gap: 8px;
     }
     .studio-diagnostics {
-      grid-column: 2 / 3;
+      min-width: 0;
     }
     .studio-canvas-shell {
       display: grid;
       gap: 6px;
       min-width: 0;
       position: relative;
+      min-height: calc(100vh - 292px);
     }
     .studio-canvas-shell.has-docked-selection {
       grid-template-columns: minmax(0, 1fr) minmax(280px, min(480px, 34vw));
@@ -878,7 +938,7 @@ export function renderPageShellStyles(): string {
       display: flex;
       justify-content: space-between;
       align-items: center;
-      gap: 8px;
+      gap: 10px;
       min-width: 0;
     }
     .studio-canvas-shell.has-docked-selection .studio-canvas-toolbar {
@@ -888,6 +948,18 @@ export function renderPageShellStyles(): string {
       display: grid;
       gap: 2px;
       min-width: 0;
+    }
+    .studio-canvas-toolbar-slot {
+      display: flex;
+      justify-content: flex-end;
+      align-items: center;
+      min-width: 0;
+      flex: 0 1 auto;
+    }
+    .studio-canvas-toolbar-slot .workbench-view-tabs {
+      margin-left: 0;
+      padding-left: 3px;
+      background: rgba(148, 163, 184, 0.08);
     }
     .studio-canvas-shell.is-fullscreen {
       position: fixed;
@@ -969,7 +1041,7 @@ export function renderPageShellStyles(): string {
       background: linear-gradient(180deg, rgba(5, 10, 23, 0.98), rgba(10, 18, 36, 0.96));
       box-shadow: -24px 0 64px rgba(0, 0, 0, 0.42);
       display: grid;
-      grid-template-rows: auto minmax(0, 1fr);
+      grid-template-rows: auto auto minmax(0, 1fr);
       pointer-events: auto;
     }
     .studio-selection-overlay.is-collapsed .studio-selection-dialog {
@@ -988,13 +1060,29 @@ export function renderPageShellStyles(): string {
       border-bottom: 1px solid rgba(148, 163, 184, 0.2);
     }
     .studio-selection-body {
-      padding: 12px;
+      padding: 10px 12px 12px;
+      min-height: 0;
+      overflow: hidden;
+      display: grid;
+      align-content: stretch;
+      gap: 10px;
+    }
+    .studio-selection-tabstrip {
+      margin: 0 12px;
+      width: fit-content;
+      max-width: calc(100% - 24px);
+    }
+    .studio-selection-panels {
+      min-height: 0;
+    }
+    .studio-selection-panel {
       min-height: 0;
       overflow-y: auto;
       overflow-x: hidden;
       display: grid;
       align-content: start;
       gap: 10px;
+      padding-right: 2px;
     }
     .studio-selection-title-wrap {
       min-width: 0;
@@ -1006,6 +1094,13 @@ export function renderPageShellStyles(): string {
     }
     .studio-selection-role-package:empty {
       display: none;
+    }
+    .studio-selection-structure-panel .studio-index-grid {
+      grid-template-columns: 1fr;
+    }
+    .studio-selection-structure-panel .studio-flow-list,
+    .studio-selection-structure-panel .studio-navigator {
+      max-height: none;
     }
     .studio-selection-role-package .form-grid {
       max-height: min(58vh, calc(100vh - 280px));
@@ -1409,6 +1504,13 @@ export function renderPageShellStyles(): string {
       .project-home-grid {
         grid-template-columns: 1fr;
       }
+      .global-status {
+        flex-wrap: wrap;
+      }
+      .global-status-primary,
+      .global-status-actions {
+        width: 100%;
+      }
     }
     @media (max-width: 960px) {
       .content { padding: 12px; }
@@ -1447,9 +1549,6 @@ export function renderPageShellStyles(): string {
       }
       .build-header {
         align-items: flex-start;
-      }
-      .build-control-primary {
-        justify-content: space-between;
       }
       .timeline-controls {
         grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -1504,15 +1603,15 @@ export function renderPageShellStyles(): string {
       .build-control-bar #workbench-actions {
         justify-content: flex-start;
       }
+      .build-command-stack {
+        justify-items: stretch;
+      }
       .console-tabs {
         min-width: 0;
       }
       .top-nav-meta .pill,
       .build-control-bar #workbench-status .pill {
         max-width: 100%;
-      }
-      .build-control-primary #workbench-actions {
-        margin-left: 0;
       }
       .timeline-controls {
         grid-template-columns: 1fr;
@@ -1530,6 +1629,13 @@ export function renderPageShellStyles(): string {
       pre,
       .timeline {
         max-height: 320px;
+      }
+      .global-status {
+        gap: 6px;
+      }
+      .global-status-primary,
+      .global-status-actions {
+        flex-wrap: wrap;
       }
     }
     @media (max-width: 480px) {

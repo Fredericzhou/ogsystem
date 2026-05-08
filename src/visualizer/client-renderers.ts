@@ -1,4 +1,5 @@
 import { escapeHtml as escapeText } from "./html-escape.js";
+import { studioRolePackageHasRequiredFileCoverage, type StudioRolePackageSummary } from "./studio-client/studio-graph-validation.js";
 
 type JsonRecord = Record<string, unknown>;
 type Translator = (key: string, vars?: Record<string, unknown>, fallback?: string) => string;
@@ -103,9 +104,11 @@ export function renderStudioGraphCanvas(args: {
   selectedRoleId: string;
   selectedFlowKey: string;
   fullscreen?: boolean;
+  sideTab?: string;
   selectionKindLabel?: string;
   selectionTitle?: string;
   selectionRolePackageHtml?: string;
+  selectionStructureHtml?: string;
   selectionDocked?: boolean;
   selectionCollapsed?: boolean;
   t?: Translator;
@@ -118,9 +121,9 @@ export function renderStudioGraphCanvas(args: {
   });
   return [
     '<div class="studio-canvas-shell' + (args.fullscreen ? " is-fullscreen" : "") + '" data-studio-canvas-shell="1">',
-    '<div class="studio-canvas-toolbar"><div><span class="hint">' + escapeText(t("studio.graphWorkspace", undefined, "Graph workspace")) + '</span><span class="hint" data-studio-graph-selection-label>' + escapeText(selection) + '</span></div></div>',
+    '<div class="studio-canvas-toolbar" data-studio-bridge-region="toolbar"><div><span class="hint">' + escapeText(t("studio.graphWorkspace", undefined, "Graph workspace")) + '</span><span class="hint" data-studio-graph-selection-label>' + escapeText(selection) + '</span></div><div class="studio-canvas-toolbar-slot" data-workbench-view-tabs-slot="bridge"></div></div>',
     '<div id="studio-graph-root" class="studio-graph-root" data-selected-role-id="' + escapeText(args.selectedRoleId) + '" data-selected-flow-key="' + escapeText(args.selectedFlowKey) + '"></div>',
-    '<div class="studio-selection-overlay' + (args.selectionDocked ? " is-docked" : "") + (args.selectionCollapsed ? " is-collapsed" : "") + '" data-studio-selection-overlay hidden><button type="button" class="studio-selection-backdrop" data-studio-selection-close="" aria-label="' + escapeText(t("action.close", undefined, "Close")) + '"></button><section class="studio-selection-dialog" data-studio-selection-dialog role="dialog" aria-modal="true" aria-label="' + escapeText(t("studio.roleInspector", undefined, "role inspector")) + '"><header class="studio-selection-header"><div class="studio-selection-title-wrap"><div class="hint" data-studio-selection-kind-label>' + escapeText(args.selectionKindLabel || "") + '</div><strong data-studio-selection-title>' + escapeText(args.selectionTitle || "") + '</strong></div><div class="studio-selection-actions"><button type="button" class="button subtle" data-studio-selection-pin="" title="' + escapeText(t("studio.graphWorkspace", undefined, "Graph workspace")) + '">dock</button><button type="button" class="button subtle" data-studio-selection-collapse="" title="' + escapeText(t("action.close", undefined, "Close")) + '">' + (args.selectionCollapsed ? ">" : "<") + '</button><button type="button" class="button subtle" data-studio-selection-close="">' + escapeText(t("action.close", undefined, "Close")) + '</button></div></header><div class="studio-selection-body"><div class="studio-selection-command-host" data-studio-selection-command-host></div><div class="studio-selection-role-package" data-studio-selection-role-package>' + (args.selectionRolePackageHtml || "") + '</div></div></section></div>',
+    '<div class="studio-selection-overlay' + (args.selectionDocked ? " is-docked" : "") + (args.selectionCollapsed ? " is-collapsed" : "") + '" data-studio-selection-overlay hidden><button type="button" class="studio-selection-backdrop" data-studio-selection-close="" aria-label="' + escapeText(t("action.close", undefined, "Close")) + '"></button><section class="studio-selection-dialog" data-studio-selection-dialog role="dialog" aria-modal="true" aria-label="' + escapeText(t("studio.roleInspector", undefined, "role inspector")) + '"><header class="studio-selection-header"><div class="studio-selection-title-wrap"><div class="hint" data-studio-selection-kind-label>' + escapeText(args.selectionKindLabel || "") + '</div><strong data-studio-selection-title>' + escapeText(args.selectionTitle || "") + '</strong></div><div class="studio-selection-actions"><button type="button" class="button subtle" data-studio-selection-pin="" title="' + escapeText(t("studio.graphWorkspace", undefined, "Graph workspace")) + '">dock</button><button type="button" class="button subtle" data-studio-selection-collapse="" title="' + escapeText(t("action.close", undefined, "Close")) + '">' + (args.selectionCollapsed ? ">" : "<") + '</button><button type="button" class="button subtle" data-studio-selection-close="">' + escapeText(t("action.close", undefined, "Close")) + '</button></div></header><div class="studio-selection-tabstrip segmented"><button type="button" class="button subtle' + ((args.sideTab || "structure") === "selection" ? " active" : "") + '" data-studio-side-tab="selection">' + escapeText(t("studio.roleInspector", undefined, "role inspector")) + '</button><button type="button" class="button subtle' + ((args.sideTab || "structure") === "structure" ? " active" : "") + '" data-studio-side-tab="structure">' + escapeText(t("studio.graphIndex", undefined, "graph index")) + '</button></div><div class="studio-selection-body"><section class="studio-selection-panel" data-studio-selection-panel="selection"><div class="studio-selection-command-host" data-studio-selection-command-host></div><div class="studio-selection-role-package" data-studio-selection-role-package>' + (args.selectionRolePackageHtml || "") + '</div></section><section class="studio-selection-panel studio-selection-structure-panel" data-studio-selection-panel="structure">' + (args.selectionStructureHtml || "") + '</section></div></section></div>',
     "</div>"
   ].join("");
 }
@@ -463,8 +466,7 @@ export function renderReleaseGatePanel(args: {
   );
   const packageRoles = Array.isArray(args.rolePackages?.roles) ? args.rolePackages.roles as JsonRecord[] : [];
   const unhealthyRoles = packageRoles.filter((role) => {
-    const files = (role.files ?? role.health ?? {}) as JsonRecord;
-    return Object.values(files).some((present) => present === false);
+    return !studioRolePackageHasRequiredFileCoverage(role as StudioRolePackageSummary);
   });
   const canExport = args.exportReady && !args.workbenchDirty;
   const warningNote = warnings.length
@@ -626,6 +628,7 @@ export function renderStudioBridgePanel(args: {
   selectedFlowKey: string;
   filter?: string;
   listMode?: string;
+  sideTab?: string;
   fullscreen?: boolean;
   rolePackageEditor?: JsonRecord | null | undefined;
   selectionDocked?: boolean;
@@ -635,7 +638,6 @@ export function renderStudioBridgePanel(args: {
 }): string {
   const t: Translator = typeof args.t === "function" ? args.t : (_key, _vars, fallback) => fallback ?? _key;
   const bridge = args.bridge ?? {};
-  const validation = (bridge.validation ?? {}) as JsonRecord;
   const extracted = (bridge.extracted ?? {}) as JsonRecord;
   const roles = Array.isArray(extracted.roles) ? extracted.roles as JsonRecord[] : [];
   const flows = Array.isArray(extracted.flows) ? extracted.flows as JsonRecord[] : [];
@@ -650,47 +652,10 @@ export function renderStudioBridgePanel(args: {
   });
   const selectedRole = roles.find((role) => role.roleId === args.selectedRoleId) ?? roles[0];
   const selectedFlow = flows.find((flow) => flow.flowKey === args.selectedFlowKey) ?? flows[0];
-  const diagnostics = Array.isArray(validation.diagnostics) ? validation.diagnostics as JsonRecord[] : [];
-  const readiness = args.readiness ?? {};
-  const blockers = Array.isArray(readiness.blockers) ? readiness.blockers as JsonRecord[] : [];
   const busy = args.actionBusy ? " disabled" : "";
   if (!bridge || Object.keys(bridge).length === 0) {
     return '<div class="hint">' + escapeText(t("studio.dataUnavailable", undefined, "Studio Bridge data unavailable.")) + '</div>';
   }
-  const graphCanvas = renderStudioGraphCanvas({
-    selectedRoleId: args.selectedRoleId,
-    selectedFlowKey: args.selectedFlowKey,
-    selectionKindLabel: selectedRole
-      ? t("studio.roleInspector", undefined, "role inspector")
-      : selectedFlow
-        ? t("studio.flowInspector", undefined, "flow inspector")
-        : "",
-    selectionTitle: selectedRole
-      ? String(selectedRole.roleId ?? "")
-      : selectedFlow
-        ? String(selectedFlow.flowKey ?? "")
-        : "",
-    selectionRolePackageHtml: selectedRole
-      ? renderStudioRolePackageEditor({
-          roleId: String(selectedRole.roleId ?? ""),
-          editor: args.rolePackageEditor,
-          t
-        })
-      : selectedFlow
-        ? '<div class="event"><div class="event-top"><span>' + escapeText(t("studio.flowInspector", undefined, "flow inspector")) + '</span><span>' +
-          escapeText(String(selectedFlow.eventType ?? "")) + '</span></div><strong><code>' + escapeText(String(selectedFlow.fromRoleId ?? "")) + '</code> -> <code>' +
-          escapeText(String(selectedFlow.toRoleId ?? "")) + '</code></strong><div class="hint">' +
-          escapeText(t("studio.flowDisplayIdentity", {
-            label: flowDisplayLabel(selectedFlow),
-            eventType: String(selectedFlow.eventType ?? "")
-          }, "display " + flowDisplayLabel(selectedFlow) + " · event " + String(selectedFlow.eventType ?? ""))) +
-          "</div></div>"
-        : "",
-    selectionDocked: args.selectionDocked !== false,
-    selectionCollapsed: args.selectionCollapsed === true,
-    fullscreen: args.fullscreen,
-    t
-  });
   const roleButtons = filtered.roles.length
     ? filtered.roles.map((role) => {
         const roleId = String(role.roleId ?? "");
@@ -719,19 +684,38 @@ export function renderStudioBridgePanel(args: {
         );
       })
     : ['<div class="hint">' + escapeText((args.filter || listMode !== "all") ? t("studio.noFilteredItems", undefined, "No matching graph items.") : t("studio.noFlowsExtracted", undefined, "No flows extracted from the current Mermaid source.")) + '</div>'];
-  const diagnosticCards = diagnostics.length
-    ? diagnostics.slice(0, 5).map((diagnostic) =>
-        '<div class="event"><div class="event-top"><span>' + escapeText(String(diagnostic.code ?? "DIAGNOSTIC")) +
-        '</span><span>' + escapeText(String(diagnostic.stage ?? "validate")) + '</span></div><strong>' +
-        escapeText(String(diagnostic.message ?? "")) + '</strong><div class="hint">' +
-        escapeText(String(diagnostic.roleId ?? diagnostic.selector ?? diagnostic.line ?? "")) + "</div></div>"
-      )
-    : ['<div class="event"><div class="event-top"><span>' + escapeText(t("common.diagnostics", undefined, "diagnostics")) + '</span><span>' + escapeText(t("common.ok", undefined, "ok")) + '</span></div><strong>' + escapeText(t("studio.noParseCompileDiagnostics", undefined, "No parse or compile diagnostics.")) + '</strong></div>'];
-  return [
-    '<div class="structure-list studio-bridge">',
-    '<div class="studio-bridge-layout">',
-    '<div class="studio-graph-column" data-studio-bridge-region="graph">' + graphCanvas + "</div>",
-    '<div class="studio-bridge-index structure-list" data-studio-bridge-region="index"><div class="event studio-bridge-index-controls"><div class="event-top"><span>' +
+  const graphCanvas = renderStudioGraphCanvas({
+    selectedRoleId: args.selectedRoleId,
+    selectedFlowKey: args.selectedFlowKey,
+    sideTab: args.sideTab,
+    selectionKindLabel: selectedRole
+      ? t("studio.roleInspector", undefined, "role inspector")
+      : selectedFlow
+        ? t("studio.flowInspector", undefined, "flow inspector")
+        : "",
+    selectionTitle: selectedRole
+      ? String(selectedRole.roleId ?? "")
+      : selectedFlow
+        ? String(selectedFlow.flowKey ?? "")
+        : "",
+    selectionRolePackageHtml: selectedRole
+      ? renderStudioRolePackageEditor({
+          roleId: String(selectedRole.roleId ?? ""),
+          editor: args.rolePackageEditor,
+          t
+        })
+      : selectedFlow
+        ? '<div class="event"><div class="event-top"><span>' + escapeText(t("studio.flowInspector", undefined, "flow inspector")) + '</span><span>' +
+          escapeText(String(selectedFlow.eventType ?? "")) + '</span></div><strong><code>' + escapeText(String(selectedFlow.fromRoleId ?? "")) + '</code> -> <code>' +
+          escapeText(String(selectedFlow.toRoleId ?? "")) + '</code></strong><div class="hint">' +
+          escapeText(t("studio.flowDisplayIdentity", {
+            label: flowDisplayLabel(selectedFlow),
+            eventType: String(selectedFlow.eventType ?? "")
+          }, "display " + flowDisplayLabel(selectedFlow) + " · event " + String(selectedFlow.eventType ?? ""))) +
+          "</div></div>"
+        : "",
+    selectionStructureHtml:
+      '<div class="studio-bridge-index structure-list" data-studio-bridge-region="index"><div class="event studio-bridge-index-controls"><div class="event-top"><span>' +
       escapeText(t("studio.graphIndex", undefined, "graph index")) + '</span><span>' + escapeText(t("studio.topologyOrder", undefined, "topology order")) + '</span></div><div class="toolbar-row compact"><input data-studio-bridge-filter="1" value="' +
       escapeText(args.filter || "") + '" placeholder="' + escapeText(t("studio.filterGraphItems", undefined, "Filter roles or flows")) + '" aria-label="' + escapeText(t("studio.filterGraphItems", undefined, "Filter roles or flows")) + '"><select data-studio-bridge-list-mode="1" aria-label="' + escapeText(t("studio.graphIndex", undefined, "graph index")) + '"><option value="all"' +
       (listMode === "all" ? " selected" : "") + ">" + escapeText(t("common.all", undefined, "all")) + '</option><option value="roles"' +
@@ -740,7 +724,15 @@ export function renderStudioBridgePanel(args: {
       escapeText(t("studio.topologyOrderHint", undefined, "Cycles are listed after the acyclic path so the authoring order stays stable.")) + '</div></div><div class="studio-index-grid"><div class="studio-navigator structure-list" data-studio-bridge-region="navigator"><div class="event"><div class="event-top"><span>' + escapeText(t("studio.roles", undefined, "roles")) + '</span><span>' + escapeText(String(filtered.roles.length)) +
       " / " + escapeText(String(roles.length)) + '</span></div><strong>' + escapeText(t("studio.structuredRoleDraft", undefined, "Structured role draft")) + '</strong><div class="hint">' + escapeText(t("studio.bridgeReadsWorkbench", undefined, "Bridge reads the current workbench source.")) + '</div></div>' + roleButtons.join("") + '</div><div class="structure-list studio-flow-list" data-studio-bridge-region="flow-list"><div class="event"><div class="event-top"><span>' + escapeText(t("studio.flows", undefined, "flows")) + '</span><span>' + escapeText(String(filtered.flows.length)) +
       " / " + escapeText(String(flows.length)) + '</span></div><strong>' + escapeText(t("studio.structuredFlowDraft", undefined, "Structured flow draft")) + '</strong><div class="hint">' + escapeText(t("studio.eventsVisible", undefined, "Event types and join participation stay visible.")) + '</div></div>' + flowButtons.join("") + "</div></div></div>",
-    '<div class="studio-diagnostics structure-list" data-studio-bridge-region="diagnostics">' + diagnosticCards.join("") + "</div>",
+    selectionDocked: args.selectionDocked !== false,
+    selectionCollapsed: args.selectionCollapsed === true,
+    fullscreen: args.fullscreen,
+    t
+  });
+  return [
+    '<div class="structure-list studio-bridge">',
+    '<div class="studio-bridge-layout">',
+    '<div class="studio-graph-column" data-studio-bridge-region="graph">' + graphCanvas + "</div>",
     "</div>",
     "</div>"
   ].join("");

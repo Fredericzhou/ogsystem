@@ -13,6 +13,13 @@ export type StudioRolePackageSummary = {
   name?: string;
   description?: string;
   status?: string;
+  source?: string;
+  summary?: string;
+  health?: string;
+  alreadyImported?: boolean;
+  hasRoleJson?: boolean;
+  hasPrompt?: boolean;
+  hasOutputSchema?: boolean;
   allowedEvents?: string[];
   preferredModelTags?: string[];
   files?: Record<string, unknown>;
@@ -88,6 +95,46 @@ function asTrimmedStringOrEmpty(value: unknown): string {
   return asTrimmedString(value) ?? "";
 }
 
+function isPresentFlag(value: unknown): boolean {
+  return value === true;
+}
+
+function normalizeStudioRolePackageFiles(entry: Record<string, unknown>, hasManifest: boolean): Record<string, unknown> | undefined {
+  const files = asRecord(entry.files) ?? asRecord(entry.health);
+  if (files) {
+    return files;
+  }
+  const normalized: Record<string, unknown> = {
+    roleJson: isPresentFlag(entry.hasRoleJson),
+    promptTemplate: isPresentFlag(entry.hasPrompt),
+    outputSchema: isPresentFlag(entry.hasOutputSchema)
+  };
+  if (hasManifest) {
+    normalized.agent = true;
+  }
+  return normalized;
+}
+
+function studioRolePackageStatus(entry: Record<string, unknown>): string {
+  const status = asTrimmedString(entry.status);
+  if (status) {
+    return status;
+  }
+  const health = asTrimmedString(entry.health);
+  if (health === "ok" || health === "invalid" || health === "missing") {
+    return health;
+  }
+  return "";
+}
+
+export function studioRolePackageHasRequiredFileCoverage(rolePackage: StudioRolePackageSummary | undefined | null): boolean {
+  const files = rolePackage?.files ?? asRecord((rolePackage as Record<string, unknown> | undefined)?.health);
+  if (!files) {
+    return true;
+  }
+  return !["roleJson", "promptTemplate", "outputSchema", "agent"].some((key) => files[key] === false);
+}
+
 function issue(args: {
   severity: StudioDiagnosticDto["severity"];
   fieldPath?: string;
@@ -123,10 +170,17 @@ export function extractStudioRolePackages(value: unknown): StudioRolePackageSumm
         roleId: asTrimmedStringOrEmpty(entry.roleId ?? manifest?.roleId),
         name: asTrimmedStringOrEmpty(entry.name ?? manifest?.name),
         description: asTrimmedStringOrEmpty(entry.description ?? manifest?.description),
-        status: asTrimmedStringOrEmpty(entry.status),
+        status: studioRolePackageStatus(entry),
+        source: asTrimmedStringOrEmpty(entry.source),
+        summary: asTrimmedStringOrEmpty(entry.summary),
+        health: asTrimmedStringOrEmpty(entry.health),
+        alreadyImported: entry.alreadyImported === true,
+        hasRoleJson: entry.hasRoleJson === true,
+        hasPrompt: entry.hasPrompt === true,
+        hasOutputSchema: entry.hasOutputSchema === true,
         allowedEvents: asArray(entry.allowedEvents).map(asTrimmedStringOrEmpty).filter(Boolean),
         preferredModelTags: asArray(entry.preferredModelTags ?? manifest?.preferredModelTags).map(asTrimmedStringOrEmpty).filter(Boolean),
-        files: asRecord(entry.files),
+        files: normalizeStudioRolePackageFiles(entry, Boolean(manifest)),
         manifest: manifest
           ? {
               roleId: asTrimmedStringOrEmpty(manifest.roleId),
@@ -221,7 +275,7 @@ export function validateStudioAddRoleDraft(
         vars: { roleId: rolePackage.roleId, status: rolePackage.status },
         message: `Role package "${rolePackage.roleId}" is not healthy.`
       }));
-    } else if (rolePackage.files && Object.values(rolePackage.files).some((value) => value === false)) {
+    } else if (!studioRolePackageHasRequiredFileCoverage(rolePackage)) {
       diagnostics.push(issue({
         severity: "warning",
         fieldPath: "repositoryRoleId",

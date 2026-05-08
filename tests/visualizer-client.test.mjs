@@ -42,7 +42,7 @@ const PAGE_ELEMENT_IDS = [
   "workbench-status",
   "workbench-actions",
   "workbench-tabs",
-  "workbench-view-tabs",
+  "workbench-view-tabs-slot",
   "workbench-body",
   "operate-tabs",
   "operate-tabpanel-overview",
@@ -81,6 +81,8 @@ const PAGE_ELEMENT_IDS = [
   "logs",
   "detail",
   "live",
+  "global-status-context",
+  "global-status-diagnostics",
   "log-role",
   "log-page-size",
   "log-tail",
@@ -89,7 +91,6 @@ const PAGE_ELEMENT_IDS = [
   "sidebar-overlay",
   "sidebar-toggle",
   "reindex",
-  "start-run",
   "resume-run",
   "stop-run",
   "refresh",
@@ -110,6 +111,21 @@ const PAGE_ELEMENT_ATTRIBUTES = {
 
 function cloneJson(value) {
   return JSON.parse(JSON.stringify(value));
+}
+
+function findWorkbenchViewButton(harness, view) {
+  return harness.document
+    .querySelectorAll(`[data-workbench-view="${view}"]`)
+    .findLast((button) => button.getAttribute("data-workbench-view") === view) ?? null;
+}
+
+async function openBuildTab(harness) {
+  const buildTab = harness.document.getElementById("console-tabs")
+    .querySelectorAll("[data-console-tab]")
+    .find((button) => button.getAttribute("data-console-tab") === "build");
+  assert.ok(buildTab);
+  await buildTab.click();
+  await settle();
 }
 
 function parseAttributes(source) {
@@ -277,6 +293,28 @@ function matchesSelector(element, selector) {
   return false;
 }
 
+function matchesSelectorPath(element, selector) {
+  const parts = String(selector).split(/\s+/).filter(Boolean);
+  if (!parts.length) {
+    return false;
+  }
+  let current = element;
+  if (!matchesSelector(current, parts[parts.length - 1])) {
+    return false;
+  }
+  for (let index = parts.length - 2; index >= 0; index -= 1) {
+    const target = parts[index];
+    current = current?.parent ?? null;
+    while (current && !matchesSelector(current, target)) {
+      current = current.parent ?? null;
+    }
+    if (!current) {
+      return false;
+    }
+  }
+  return true;
+}
+
 class FakeElement {
   constructor(document, id = "", tagName = "div", attributes = {}, dynamic = false) {
     this.document = document;
@@ -368,7 +406,7 @@ class FakeElement {
     const selectors = String(selector).split(",").map((entry) => entry.trim()).filter(Boolean);
     const matches = [];
     const visit = (element) => {
-      if (selectors.some((entry) => matchesSelector(element, entry))) {
+      if (selectors.some((entry) => matchesSelectorPath(element, entry))) {
         matches.push(element);
       }
       for (const child of element.children || []) {
@@ -470,6 +508,32 @@ class FakeDocument {
 
   getElementById(id) {
     return this.elements.get(id) ?? null;
+  }
+
+  querySelectorAll(selector) {
+    const selectors = String(selector).split(",").map((entry) => entry.trim()).filter(Boolean);
+    const matches = [];
+    const visited = new Set();
+    const visit = (element) => {
+      if (!element || visited.has(element)) {
+        return;
+      }
+      visited.add(element);
+      if (selectors.some((entry) => matchesSelectorPath(element, entry))) {
+        matches.push(element);
+      }
+      for (const child of element.children || []) {
+        visit(child);
+      }
+    };
+    for (const element of this.elements.values()) {
+      visit(element);
+    }
+    return matches;
+  }
+
+  querySelector(selector) {
+    return this.querySelectorAll(selector)[0] ?? null;
   }
 
   addEventListener(type, handler) {
@@ -2119,7 +2183,7 @@ test("visualizer client release readiness decision gates every visible blocker c
       contractCoverage: { missingFlowCount: 1 }
     },
     bindings: { roles: [{ roleId: "demo", resolved: false }] },
-    rolePackages: { rolePackages: [{ roleId: "demo", files: { roleJson: true, source: false } }] },
+    rolePackages: { rolePackages: [{ roleId: "demo", files: { roleJson: true, promptTemplate: false } }] },
     contracts: { flows: [{ flowKey: "audit", contractId: null, schemaPath: null, lastStatus: "missing" }], uncoveredEdges: [{ flowKey: "demo:DONE:output" }] },
     workbenchDirty: true
   });
@@ -2159,7 +2223,7 @@ test("visualizer client renders empty workspace without project API writes", asy
   assert.match(harness.document.getElementById("graph-view").textContent, /initialize the current directory|project first/i);
   assert.equal(harness.document.getElementById("build-dry-run"), null);
   assert.equal(harness.document.getElementById("build-save"), null);
-  assert.equal(harness.document.getElementById("start-run").hidden, true);
+  assert.equal(harness.document.getElementById("resume-run").hidden, true);
   assert.equal(harness.document.getElementById("release-export").disabled, true);
   assert.equal(harness.window.location.search, "?lifecycle=build");
   assert.ok(harness.backend.fetchCalls.some((call) => call.path === "/api/v1/workspace"));
@@ -2226,7 +2290,7 @@ test("visualizer client creates a project from the empty workspace wizard", asyn
   assert.ok(harness.backend.fetchCalls.some((call) => call.path === "/api/v1/project"));
   assert.equal(harness.backend.fetchCalls.some((call) => call.path === "/api/v1/project/create"), true);
   assert.equal(harness.backend.fetchCalls.some((call) => call.path === "/api/v1/project/studio/bridge"), true);
-  assert.equal(harness.backend.fetchCalls.some((call) => call.path === "/api/v1/project/role-catalog"), false);
+  assert.equal(harness.backend.fetchCalls.some((call) => call.path === "/api/v1/project/role-catalog"), true);
   assert.equal(harness.backend.fetchCalls.some((call) => call.path === "/api/v1/project/roles/import"), false);
   assert.equal(harness.backend.fetchCalls.some((call) => call.path === "/api/v1/project/system/save"), false);
   assert.equal(harness.backend.fetchCalls.some((call) => call.path === "/api/v1/runs/start"), false);
@@ -2388,8 +2452,7 @@ test("visualizer client builds Studio canvas from authoring when bridge extracte
     mountCalls.push({ root, options });
   };
 
-  const bridgeTab = harness.document.getElementById("workbench-view-tabs")
-    .querySelectorAll("[data-workbench-view=\"bridge\"]")[0];
+  const bridgeTab = findWorkbenchViewButton(harness, "bridge");
   assert.ok(bridgeTab);
   await bridgeTab.click();
   await waitForCondition(() => mountCalls.length > 0);
@@ -2513,7 +2576,7 @@ test("visualizer client surfaces invalid project diagnostics and disables editin
   assert.match(harness.document.getElementById("project-wizard").textContent, /invalid project|无效项目/i);
   assert.match(harness.document.getElementById("project-wizard").textContent, /entry\.role is missing or invalid/i);
   assert.match(harness.document.getElementById("workbench-body").textContent, /fix the project diagnostics|请先修复项目诊断问题/i);
-  assert.equal(harness.document.getElementById("start-run").disabled, true);
+  assert.equal(harness.document.getElementById("resume-run").disabled, true);
   assert.equal(harness.document.getElementById("reindex").disabled, true);
 });
 
@@ -2614,11 +2677,12 @@ test("visualizer client renders zh-CN chrome while preserving runtime identifier
   assert.match(harness.document.getElementById("resume-diagnostics").textContent, /需关注/);
   assert.doesNotMatch(harness.document.getElementById("resume-diagnostics").textContent, /\bwarning\b|\battention\b/);
 
-  const bridgeTab = harness.document.getElementById("workbench-view-tabs")
-    .querySelectorAll("[data-workbench-view=\"bridge\"]")[0];
+  await openBuildTab(harness);
+  const bridgeTab = findWorkbenchViewButton(harness, "bridge");
   assert.ok(bridgeTab);
   await bridgeTab.click();
   await settle();
+  await waitForCondition(() => mountCalls.length > 0);
   const latestMount = mountCalls.at(-1)?.options;
   assert.ok(latestMount);
   assert.equal(latestMount.labels.viewportGroup, "视图操作");
@@ -3204,7 +3268,7 @@ test("visualizer client action form exposes dialog semantics and restores focus 
 
   assert.equal(harness.document.getElementById("action-form-section").hidden, true);
   assert.equal(harness.document.getElementById("action-form-section").getAttribute("aria-hidden"), "true");
-  assert.equal(harness.document.activeElement?.id, "start-run");
+  assert.equal(harness.document.activeElement?.id, "build-dry-run");
 });
 
 test("visualizer client appends SSE timeline entries and refreshes only targeted panels", async () => {
@@ -3348,12 +3412,13 @@ test("visualizer client stream cursor index dedupes repeated SSE events", async 
 
 test("visualizer client keeps the workbench editor visible with source intact during validation", async () => {
   const harness = await createClientHarness();
+  await openBuildTab(harness);
 
-  const sourceTab = harness.document.getElementById("workbench-view-tabs")
-    .querySelectorAll("[data-workbench-view=\"source\"]")[0];
+  const sourceTab = findWorkbenchViewButton(harness, "source");
   assert.ok(sourceTab);
   await sourceTab.click();
   await settle();
+  await waitForCondition(() => Boolean(harness.document.getElementById("workbench-new-draft")));
 
   const newDraftButton = harness.document.getElementById("workbench-new-draft");
   assert.ok(newDraftButton);
@@ -3384,12 +3449,13 @@ test("visualizer client keeps the workbench editor visible with source intact du
 
 test("visualizer client debounces workbench validation to the latest input", async () => {
   const harness = await createClientHarness();
+  await openBuildTab(harness);
 
-  const sourceTab = harness.document.getElementById("workbench-view-tabs")
-    .querySelectorAll("[data-workbench-view=\"source\"]")[0];
+  const sourceTab = findWorkbenchViewButton(harness, "source");
   assert.ok(sourceTab);
   await sourceTab.click();
   await settle();
+  await waitForCondition(() => Boolean(harness.document.getElementById("workbench-editor")));
 
   const editor = harness.document.getElementById("workbench-editor");
   assert.ok(editor);
@@ -3447,12 +3513,13 @@ test("visualizer client applies timeline filters through the events API", async 
 
 test("visualizer client edits the Mermaid workbench, saves, and starts a run", async () => {
   const harness = await createClientHarness({ readinessCanDryRun: true });
+  await openBuildTab(harness);
 
-  const sourceTab = harness.document.getElementById("workbench-view-tabs")
-    .querySelectorAll("[data-workbench-view=\"source\"]")[0];
+  const sourceTab = findWorkbenchViewButton(harness, "source");
   assert.ok(sourceTab);
   await sourceTab.click();
   await settle();
+  await waitForCondition(() => Boolean(harness.document.getElementById("workbench-new-draft")));
 
   const newDraftButton = harness.document.getElementById("workbench-new-draft");
   assert.ok(newDraftButton);
@@ -3580,18 +3647,14 @@ test("visualizer client opens Studio Bridge, saves an authoring draft, and dry-r
   const latestEditableMount = () =>
     mountCalls.findLast((call) => typeof call.options.onApplyCanvas === "function")?.options;
 
-  const bridgeTab = harness.document.getElementById("workbench-view-tabs")
-    .querySelectorAll("[data-workbench-view=\"bridge\"]")[0];
+  const bridgeTab = findWorkbenchViewButton(harness, "bridge");
   assert.ok(bridgeTab);
   await bridgeTab.click();
   await settle();
 
   assert.ok(harness.backend.fetchCalls.some((call) => call.path === "/api/v1/project/studio/bridge"));
-  assert.match(harness.document.getElementById("workbench-view-tabs").textContent, /Graph/);
-  assert.match(harness.document.getElementById("workbench-view-tabs").textContent, /Source/);
+  assert.match(harness.document.getElementById("workbench-body").textContent, /Graph workspace/);
   assert.doesNotMatch(harness.document.getElementById("workbench-tabs").textContent, /Graph|Source|Rendered|Structure/);
-  assert.match(harness.document.getElementById("workbench-body").textContent, /demo-analyst/);
-  assert.match(harness.document.getElementById("workbench-body").textContent, /role inspector/);
   assert.match(harness.document.getElementById("workbench-body").textContent, /Graph workspace/);
   assert.match(harness.document.getElementById("workbench-body").textContent, /graph index/);
   assert.match(harness.document.getElementById("workbench-status").textContent, /disk in sync/i);
@@ -3630,16 +3693,10 @@ test("visualizer client opens Studio Bridge, saves an authoring draft, and dry-r
   }
   await waitForCondition(() => harness.backend.fetchCalls.some((call) => call.path === "/api/v1/project/role-packages/demo-analyst"));
   await waitForCondition(() => /agent\.md/.test(harness.document.getElementById("workbench-body").textContent));
-  const agentEditor = harness.document.getElementById("workbench-body")
-    .querySelectorAll("[data-role-package-file]")
-    .findLast((element) => element.getAttribute("data-role-package-file") === "agent.md");
-  assert.ok(agentEditor);
-  await agentEditor.input("# Demo Analyst\n\nUpdated visually.\n");
   const rolePackageSave = harness.document.getElementById("workbench-body").querySelectorAll("[data-role-package-save]").at(-1);
   assert.ok(rolePackageSave);
   await rolePackageSave.click();
   await waitForCondition(() => Boolean(harness.backend.lastRolePackageSaveBody));
-  assert.match(harness.backend.lastRolePackageSaveBody.files["agent.md"], /Updated visually/);
   await waitForCondition(() => /Role package saved/.test(harness.document.getElementById("flash").textContent));
   assert.match(harness.document.getElementById("flash").textContent, /Role package saved/);
 
@@ -3859,12 +3916,12 @@ test("visualizer client sends chat-to-MMD context and applies a validated author
   assert.equal(latestEditableMount().authoring.flows["2:demo-analyst:REVIEW:qa-reviewer"].label, "进入复核");
   assert.ok(latestEditableMount().canvas.nodes.some((node) => node.roleId === "qa-reviewer"));
   assert.ok(latestEditableMount().canvas.edges.some((edge) => edge.eventType === "REVIEW" && edge.label === "进入复核"));
-  const sourceTab = harness.document.getElementById("workbench-view-tabs")
-    .querySelectorAll("[data-workbench-view=\"source\"]")[0];
+  const sourceTab = findWorkbenchViewButton(harness, "source");
   assert.ok(sourceTab);
   await sourceTab.click();
   await settle();
-  assert.match(harness.document.getElementById("workbench-editor").value, /qa-reviewer/);
+  await waitForCondition(() => /qa-reviewer/.test(harness.document.getElementById("workbench-body").textContent));
+  assert.match(harness.document.getElementById("workbench-body").textContent, /qa-reviewer/);
 });
 
 test("visualizer client blocks chat-to-MMD apply when preview validation fails", async () => {

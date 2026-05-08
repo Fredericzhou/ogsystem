@@ -135,7 +135,7 @@ const PROJECT_TEMPLATES: Record<ProjectTemplateId, ProjectTemplateSpec> = {
       "analyst[Role:demo-analyst] -->|ANALYSIS_DONE| output",
       ""
     ].join("\n"),
-    syncDependencies: false
+    syncDependencies: true
   },
   minimal: {
     systemMmd: [
