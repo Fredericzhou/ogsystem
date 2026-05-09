@@ -78,7 +78,7 @@ async function dragStudioPort(page, sourceRoleId: string, targetRoleId: string):
 }
 
 async function waitForStudioCell(page, cellId: string): Promise<void> {
-  await expect(page.locator("#studio-graph-root")).toContainText(cellId, { timeout: 10000 });
+  await expect(page.locator(`#studio-graph-root [data-cell-id="${cellId}"]`).first()).toBeVisible({ timeout: 10000 });
 }
 
 test("Studio Bridge renders and edits through the real graph workspace", async ({ page }) => {
@@ -105,7 +105,16 @@ test("Studio Bridge renders and edits through the real graph workspace", async (
     });
     await page.getByRole("tab", { name: "Build" }).click();
     await expect(page.locator("#workbench-status")).toContainText("validation ok");
-    await page.locator('[data-workbench-view="bridge"]').click();
+    const globalStatusBar = page.locator("footer.status-bar.global-status");
+    const workbenchViewSlot = globalStatusBar.locator("#workbench-view-tabs-slot");
+    const bridgeViewButton = workbenchViewSlot.locator('[data-workbench-view="bridge"]');
+    const sourceViewButton = workbenchViewSlot.locator('[data-workbench-view="source"]');
+    await expect(globalStatusBar).toBeVisible();
+    await expect(workbenchViewSlot).toBeVisible();
+    await expect(bridgeViewButton).toBeVisible();
+    await expect(sourceViewButton).toBeVisible();
+    await expect(page.locator("#console-panel-build header #workbench-view-tabs-slot")).toHaveCount(0);
+    await bridgeViewButton.click();
 
     await expect(page.locator("body")).not.toHaveClass(/show-run-sidebar/);
     await expect(page.locator("#sidebar")).toBeHidden();
@@ -127,6 +136,24 @@ test("Studio Bridge renders and edits through the real graph workspace", async (
     });
     await expect(page.locator("#studio-graph-root")).toBeVisible();
     await waitForStudioCell(page, "demo-analyst");
+    await expect.poll(async () => page.evaluate(() => {
+      const root = document.getElementById("studio-graph-root");
+      const dialog = document.querySelector(".studio-selection-overlay.is-docked .studio-selection-dialog");
+      if (!root || !dialog) {
+        return null;
+      }
+      const rootBox = root.getBoundingClientRect();
+      const dialogBox = dialog.getBoundingClientRect();
+      return {
+        topDelta: Math.abs(Math.round(rootBox.top - dialogBox.top)),
+        bottomDelta: Math.abs(Math.round(rootBox.bottom - dialogBox.bottom)),
+        dialogLeftAfterRoot: dialogBox.left >= rootBox.right - 1
+      };
+    })).toEqual({
+      topDelta: 0,
+      bottomDelta: 0,
+      dialogLeftAfterRoot: true
+    });
     await expect(page.getByText(/\bX6\b/)).toHaveCount(0);
     await expect(page.locator('#studio-graph-root .studio-graph-toolbar')).toBeVisible();
     await expect(page.locator('#studio-graph-root [data-studio-graph-action="reset-view"]')).toBeVisible();
@@ -140,14 +167,16 @@ test("Studio Bridge renders and edits through the real graph workspace", async (
     await expect(page.locator("#build-generate-mermaid")).toHaveCount(0);
     await expect(page.locator("#build-save")).toBeVisible();
     await expect(page.locator("#build-dry-run")).toBeVisible();
+    await sourceViewButton.click();
+    await expect(page.locator("#workbench-editor")).toBeVisible();
+    await expect(page.locator("#workbench-editor")).toContainText("demo-analyst");
+    await bridgeViewButton.click();
+    await waitForStudioCell(page, "demo-analyst");
     await page.locator('#studio-graph-root [data-studio-graph-action="fullscreen"]').click();
     await expect(page.locator("[data-studio-canvas-shell]")).toHaveClass(/is-fullscreen/);
     await waitForStudioCell(page, "demo-analyst");
     await page.keyboard.press("Escape");
     await expect(page.locator("[data-studio-canvas-shell]")).not.toHaveClass(/is-fullscreen/);
-    await page.evaluate(() => {
-      (window as any).__studioGraphRoot = document.getElementById("studio-graph-root");
-    });
     await expect(page.getByRole("tab", { name: "Build" })).toBeVisible();
     await expect(page.getByRole("tab", { name: "Validate & Release" })).toBeVisible();
     await expect(page.locator("#console-panel-build")).toBeVisible();
@@ -160,11 +189,7 @@ test("Studio Bridge renders and edits through the real graph workspace", async (
     await expect(page.locator("#release-gate")).toContainText("Quality signals");
     await expect(page.locator("#release-gate")).toContainText("Evidence and export scope");
     await page.getByRole("tab", { name: "Build" }).click();
-    await page.evaluate(() => {
-      (window as any).__studioGraphRoot = document.getElementById("studio-graph-root");
-    });
-
-    await expect.poll(async () => page.evaluate(() => document.getElementById("studio-graph-root") === (window as any).__studioGraphRoot)).toBe(true);
+    await expect(page.locator("#studio-graph-root")).toBeVisible();
     await expect(page.locator("[data-studio-selection-dialog]")).toContainText("demo-analyst");
 
     await expect(page.locator("#build-validate")).toBeVisible();
@@ -179,7 +204,7 @@ test("Studio Bridge renders and edits through the real graph workspace", async (
     await addRoleForm.locator('input[name="roleId"]').fill("new-role");
     await addRoleForm.locator('input[name="title"]').fill("需求分析");
     await addRoleForm.locator('button[type="submit"]').click();
-    await expect.poll(async () => page.evaluate(() => document.getElementById("studio-graph-root") === (window as any).__studioGraphRoot)).toBe(true);
+    await expect(page.locator("#studio-graph-root")).toBeVisible();
     await expect(page.locator('#studio-graph-root [data-cell-id="new-role"]').first()).toBeVisible();
     await expect(page.locator("#studio-graph-root")).toContainText("需求分析");
     await page.locator('#studio-graph-root [data-studio-graph-action="add-edge"]').click();
@@ -190,9 +215,16 @@ test("Studio Bridge renders and edits through the real graph workspace", async (
     await addEdgeForm.locator('input[name="label"]').fill("需求已完成");
     await addEdgeForm.locator('input[name="eventType"]').fill("DONE");
     await addEdgeForm.locator('button[type="submit"]').click();
-    await expect.poll(async () => page.evaluate(() => document.getElementById("studio-graph-root") === (window as any).__studioGraphRoot)).toBe(true);
+    await page.locator('[data-studio-side-tab="structure"]').click();
     await expect(page.locator('[data-studio-flow-key="new-role:DONE:output"]')).toBeVisible();
+    await sourceViewButton.click();
+    await expect(page.locator("#workbench-editor")).toBeVisible();
+    await bridgeViewButton.click();
+    await expect.poll(async () => page.locator("#studio-graph-root").isVisible(), { timeout: 10000 }).toBe(true);
+    await waitForStudioCell(page, "new-role");
     await expect(page.locator("#studio-graph-root")).toContainText("需求已完成");
+    await page.locator('[data-studio-side-tab="structure"]').click();
+    await expect(page.locator('[data-studio-flow-key="new-role:DONE:output"]')).toBeVisible();
     await page.locator('[data-studio-flow-key="new-role:DONE:output"]').click();
     const editEdgeForm = page.locator('form[data-studio-command-form="edit-edge"]');
     await expect(editEdgeForm).toBeVisible();
@@ -200,6 +232,7 @@ test("Studio Bridge renders and edits through the real graph workspace", async (
     await expect(editEdgeForm.locator('input[name="eventType"]')).toHaveValue("DONE");
     await editEdgeForm.locator('input[name="eventType"]').fill("HANDOFF");
     await editEdgeForm.locator('button[type="submit"]').click();
+    await page.locator('[data-studio-side-tab="structure"]').click();
     await expect(page.locator('[data-studio-flow-key="new-role:HANDOFF:output"]')).toBeVisible();
     await expect(page.locator("#studio-graph-root")).toContainText("需求已完成");
     await page.locator("[data-studio-bridge-filter]").fill("需求已完成");
@@ -362,13 +395,26 @@ test("Studio Bridge renders and edits through the real graph workspace", async (
     const roleNodeForDrag = page.locator('#studio-graph-root [data-cell-id="demo-analyst"]').first();
     const box = await roleNodeForDrag.boundingBox();
     expect(box).toBeTruthy();
+    const dragStart = box ? { x: box.x, y: box.y } : null;
     if (box) {
       await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
       await page.mouse.down();
       await page.mouse.move(box.x + box.width / 2 + 45, box.y + box.height / 2 + 20);
       await page.mouse.up();
     }
-    await expect(page.locator("#flash")).toContainText("Studio canvas layout updated");
+    await expect.poll(async () => {
+      const nextBox = await roleNodeForDrag.boundingBox();
+      if (!dragStart || !nextBox) {
+        return null;
+      }
+      return {
+        movedX: Math.abs(Math.round(nextBox.x - dragStart.x)),
+        movedY: Math.abs(Math.round(nextBox.y - dragStart.y))
+      };
+    }).toEqual({
+      movedX: 45,
+      movedY: 20
+    });
 
     await page.locator('#studio-graph-root [data-studio-graph-action="fit"]').click();
     await waitForStudioCell(page, "demo-analyst");
@@ -401,9 +447,31 @@ test("Studio Bridge renders and edits through the real graph workspace", async (
     await expect(page.locator("#run-graph-root")).toBeVisible();
     await expect(page.locator('#run-graph-root [data-studio-graph-action="add-role"]')).toBeHidden();
     await expect(page.locator('#run-graph-root [data-studio-graph-action="undo"]')).toBeHidden();
+    await expect(page.locator("#run-graph-root")).toContainText("demo-analyst");
+    await expect(page.locator("#workbench-view-tabs-slot")).toBeHidden();
     await page.getByRole("tab", { name: "Logs" }).click();
     await expect(page.locator("#console-panel-logs")).toBeVisible();
     await expect(page.locator("#load-logs")).toBeVisible();
+    await page.getByRole("tab", { name: "Build" }).click();
+    await expect(page.locator("#console-panel-build")).toBeVisible();
+    await expect(page.locator("#studio-graph-root")).toBeVisible();
+    await expect(page.locator('[data-workbench-view="bridge"]')).toHaveAttribute("aria-pressed", "true");
+    await expect(page.locator('[data-build-mode="edit"]')).toHaveAttribute("aria-pressed", "true");
+    await expect(page.locator("#action-form-section")).toBeHidden();
+    await expect(page.locator("#workbench-body")).toContainText("Chat to MMD");
+    await waitForStudioCell(page, "demo-analyst");
+
+    const collapseButton = page.locator('[data-studio-selection-collapse]').first();
+    await expect(collapseButton).toBeVisible();
+    await collapseButton.click();
+    await expect(page.locator(".studio-selection-overlay")).toHaveClass(/is-collapsed/);
+    await expect(page.locator("[data-studio-canvas-shell]")).toHaveClass(/has-collapsed-selection/);
+    await expect(page.locator("#studio-graph-root")).toBeVisible();
+    await waitForStudioCell(page, "demo-analyst");
+    await collapseButton.click();
+    await expect(page.locator(".studio-selection-overlay")).not.toHaveClass(/is-collapsed/);
+    await expect(page.locator("[data-studio-canvas-shell]")).not.toHaveClass(/has-collapsed-selection/);
+    await waitForStudioCell(page, "demo-analyst");
   } finally {
     await page.close();
     await new Promise<void>((resolve) => started.server.close(() => resolve()));

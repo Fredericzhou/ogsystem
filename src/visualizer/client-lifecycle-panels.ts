@@ -152,9 +152,9 @@ export function renderWorkbenchModeTabsHtml(args: {
 }): string {
   const { buildMode, t, escapeText } = args;
   return [
-    '<button class="button subtle ' + (buildMode === "edit" ? "active" : "") + '" data-build-mode="edit">' + escapeText(t("build.mode.edit", undefined, "Edit")) + '</button>',
-    '<button class="button subtle ' + (buildMode === "dry-run" ? "active" : "") + '" data-build-mode="dry-run">' + escapeText(t("build.mode.dryRun", undefined, "Dry Run")) + '</button>',
-    '<button class="button subtle ' + (buildMode === "debug" ? "active" : "") + '" data-build-mode="debug">' + escapeText(t("build.mode.debug", undefined, "Debug")) + '</button>'
+    '<button type="button" class="button subtle ' + (buildMode === "edit" ? "active" : "") + '" data-build-mode="edit" aria-pressed="' + escapeText(String(buildMode === "edit")) + '">' + escapeText(t("build.mode.edit", undefined, "Edit")) + '</button>',
+    '<button type="button" class="button subtle ' + (buildMode === "dry-run" ? "active" : "") + '" data-build-mode="dry-run" aria-pressed="' + escapeText(String(buildMode === "dry-run")) + '">' + escapeText(t("build.mode.dryRun", undefined, "Dry Run")) + '</button>',
+    '<button type="button" class="button subtle ' + (buildMode === "debug" ? "active" : "") + '" data-build-mode="debug" aria-pressed="' + escapeText(String(buildMode === "debug")) + '">' + escapeText(t("build.mode.debug", undefined, "Debug")) + '</button>'
   ].join("");
 }
 
@@ -167,8 +167,8 @@ export function renderWorkbenchViewTabsHtml(args: {
   const { buildMode, workbenchView, t, escapeText } = args;
   return buildMode === "edit"
     ? [
-        '<button class="button subtle ' + (workbenchView === "bridge" ? "active" : "") + '" data-workbench-view="bridge">' + escapeText(t("workbench.graph", undefined, "Graph")) + '</button>',
-        '<button class="button subtle ' + (workbenchView === "source" ? "active" : "") + '" data-workbench-view="source">' + escapeText(t("workbench.source")) + '</button>'
+        '<button type="button" class="button subtle ' + (workbenchView === "bridge" ? "active" : "") + '" data-workbench-view="bridge" aria-pressed="' + escapeText(String(workbenchView === "bridge")) + '">' + escapeText(t("workbench.graph", undefined, "Graph")) + '</button>',
+        '<button type="button" class="button subtle ' + (workbenchView === "source" ? "active" : "") + '" data-workbench-view="source" aria-pressed="' + escapeText(String(workbenchView === "source")) + '">' + escapeText(t("workbench.source")) + '</button>'
       ].join("")
     : "";
 }

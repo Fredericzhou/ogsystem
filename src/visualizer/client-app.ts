@@ -1,7 +1,15 @@
 import {
+  asRecord,
+  asRecordArray,
   bindingTone,
+  compactJsonPreview,
+  compactText,
   displayUiToken,
+  formatJson,
   normalizeStudioTargetRoleId,
+  renderDisclosureCard,
+  renderPreDisclosure,
+  renderSummaryListSection,
   renderArtifactsPanel,
   renderBindingExplainPanel,
   renderContractPanel,
@@ -19,6 +27,7 @@ import {
   renderRunStatePanel,
   renderStudioGraphCanvas,
   renderStudioBridgePanel,
+  renderStudioExecutionConfigEditor,
   renderStudioRolePackageEditor,
   renderStudioBridgeSelectionLabel,
   roleIdOf,
@@ -203,11 +212,20 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
     const normalizeLifecycleView = ${normalizeLifecycleView.toString()};
     const formatReviewStatusLabel = ${formatReviewStatusLabel.toString()};
     const statusTone = ${statusTone.toString()};
+    const formatJson = ${formatJson.toString()};
+    const asRecord = ${asRecord.toString()};
+    const asRecordArray = ${asRecordArray.toString()};
+    const compactText = ${compactText.toString()};
+    const compactJsonPreview = ${compactJsonPreview.toString()};
+    const renderDisclosureCard = ${renderDisclosureCard.toString()};
+    const renderPreDisclosure = ${renderPreDisclosure.toString()};
+    const renderSummaryListSection = ${renderSummaryListSection.toString()};
     const bindingTone = ${bindingTone.toString()};
     const displayUiToken = ${displayUiToken.toString()};
     const normalizeStudioTargetRoleId = ${normalizeStudioTargetRoleId.toString()};
     const renderStudioGraphCanvas = ${renderStudioGraphCanvas.toString()};
     const renderStudioBridgeSelectionLabel = ${renderStudioBridgeSelectionLabel.toString()};
+    const renderStudioExecutionConfigEditor = ${renderStudioExecutionConfigEditor.toString()};
     const renderStudioRolePackageEditor = ${renderStudioRolePackageEditor.toString()};
     const roleIdOf = ${roleIdOf.toString()};
     const flowKeyOf = ${flowKeyOf.toString()};
@@ -555,10 +573,6 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
       }
     }
 
-    function formatJson(value) {
-      return JSON.stringify(value ?? null, null, 2);
-    }
-
     function getCurrentWorkdir() {
       return state.project?.summary?.workdir || workdirEl?.textContent || "";
     }
@@ -860,9 +874,10 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
       const roles = extractedRoles.length ? extractedRoles : Object.values(authoring?.roles || {});
       const flows = extractedFlows.length ? extractedFlows : Object.values(authoring?.flows || {});
       const layoutNodes = authoring?.layout?.nodes || {};
+      const roleEntries = roles.length ? roles : Object.values(authoring?.roles || {});
       return {
         version: 1,
-        nodes: roles.map((role, index) => {
+        nodes: roleEntries.map((role, index) => {
           const roleId = role.roleId || "";
           const layout = layoutNodes[roleId] || {};
           return {
@@ -968,8 +983,8 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
         bindingKind: t("studio.form.bindingKind", undefined, "Binding"),
         modelRef: t("studio.form.modelRef", undefined, "Model"),
         profileId: t("studio.form.profileId", undefined, "Execution profile"),
-        existingProfile: t("studio.form.existingProfile", undefined, "Existing profile"),
-        createProfile: t("studio.form.createProfile", undefined, "Create profile"),
+        existingProfile: t("studio.form.existingProfile", undefined, "Reuse existing execution config"),
+        createProfile: t("studio.form.createProfile", undefined, "Create project execution config"),
         newProfileId: t("studio.form.newProfileId", undefined, "Generated profile id"),
         newProfileToolRef: t("studio.form.newProfileToolRef", undefined, "Tool"),
         newProfileTimeoutMs: t("studio.form.newProfileTimeoutMs", undefined, "Timeout ms"),
@@ -1193,8 +1208,9 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
 
     function getProjectWizardDefaults(workspace) {
       const workdir = workspace?.workdir || "";
+      const inferredName = workdir ? String(workdir).split(/[\\/]/).filter(Boolean).pop() || "" : "";
       return {
-        projectName: workdir ? String(workdir).split(/[\\/]/).filter(Boolean).pop() || "my-ogs-project" : "my-ogs-project",
+        projectName: inferredName || "my-ogs-project",
         templateId: "empty",
         conflictStrategy: workspace?.state === "non-project-ready" ? "reject" : "init-current"
       };
@@ -1223,8 +1239,15 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
     }
 
     function ensureProjectWizardDraft(workspace) {
+      const defaults = getProjectWizardDefaults(workspace || state.workspace || {});
       if (!state.projectWizardDraft) {
-        state.projectWizardDraft = getProjectWizardDefaults(workspace || state.workspace || {});
+        state.projectWizardDraft = defaults;
+      } else if (
+        defaults.projectName &&
+        defaults.projectName !== "my-ogs-project" &&
+        (!state.projectWizardDraft.projectName || state.projectWizardDraft.projectName === "my-ogs-project")
+      ) {
+        state.projectWizardDraft.projectName = defaults.projectName;
       }
       return state.projectWizardDraft;
     }
@@ -1289,10 +1312,15 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
     }
 
     function resolveWorkbenchViewTabsSlot() {
-      if (state.workbenchView === "bridge") {
-        return findStudioBridgeElement('[data-workbench-view-tabs-slot="bridge"]') || workbenchViewTabsSlotEl;
-      }
       return workbenchViewTabsSlotEl;
+    }
+
+    function workbenchViewButtons() {
+      const slot = resolveWorkbenchViewTabsSlot();
+      if (!slot || typeof slot.querySelectorAll !== "function") {
+        return [];
+      }
+      return Array.from(slot.querySelectorAll("[data-workbench-view]"));
     }
 
     function renderWorkbenchViewTabs() {
@@ -1302,13 +1330,33 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
         t,
         escapeText
       });
-      const slots = queryAll("[data-workbench-view-tabs-slot]");
-      for (const slot of slots) {
-        if (slot !== resolveWorkbenchViewTabsSlot()) {
-          setInnerHtmlIfChanged(slot, "");
-        }
+      const primarySlot = resolveWorkbenchViewTabsSlot();
+      setInnerHtmlIfChanged(primarySlot, html);
+      bindWorkbenchViewButtons();
+    }
+
+    function bindWorkbenchViewButtons() {
+      for (const button of workbenchViewButtons()) {
+        bindOnce(button, "click", "workbench-view", () => {
+          state.workbenchView = button.getAttribute("data-workbench-view") || "bridge";
+          state.buildMode = "edit";
+          if (state.workbenchView === "bridge") {
+            clearTimeout(state.studioGraphMountRetryTimer);
+            state.studioGraphMountRetryTimer = null;
+            state.studioGraphMountRetryCount = 0;
+          }
+          renderWorkbench();
+          if (state.workbenchView === "bridge" && (!state.studioBridgeLoaded || state.studioBridgeStale)) {
+            const refreshWorkdir = state.workspace?.workdir || "";
+            void refreshStudioBridge().catch((error) => {
+              if (!state.hasProject || refreshWorkdir !== (state.workspace?.workdir || "")) {
+                return;
+              }
+              setFlash("error", t("flash.studioBridgeRefreshFailed", { message: error.message || error }, "Studio Bridge refresh failed: {message}"));
+            });
+          }
+        });
       }
-      setInnerHtmlIfChanged(resolveWorkbenchViewTabsSlot(), html);
     }
 
     function bindOnce(element, eventName, marker, handler) {
@@ -1351,7 +1399,8 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
       const authoringRoles = bridge?.authoring?.roles && typeof bridge.authoring.roles === "object"
         ? Object.keys(bridge.authoring.roles)
         : [];
-      return roles.length > 0 || authoringRoles.length > 0;
+      const canvasNodes = Array.isArray(bridge?.canvas?.nodes) ? bridge.canvas.nodes : [];
+      return roles.length > 0 || authoringRoles.length > 0 || canvasNodes.length > 0;
     }
 
     function projectCreateStageMessage(stage) {
@@ -1430,10 +1479,11 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
       renderActionForm();
       renderLogs();
       renderActionState();
+      const suppressWorkbenchRerender = actionId.startsWith("studio:");
       if (actionId === "project:create" || !actionId) {
         renderProject();
       }
-      if (state.workbench) {
+      if (state.workbench && !suppressWorkbenchRerender) {
         renderWorkbench({
           preserveEditor: true,
           preserveStudioGraphRoot: state.workbenchView === "bridge"
@@ -1525,7 +1575,7 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
       for (const button of workbenchTabsEl.querySelectorAll("button")) {
         button.disabled = disabled;
       }
-      for (const button of queryAll("[data-workbench-view-tabs-slot] .workbench-view-tabs button")) {
+      for (const button of workbenchViewButtons()) {
         button.disabled = disabled;
       }
       if (operateTabsEl) {
@@ -1623,12 +1673,22 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
       }
       renderOperateTabs();
       renderHeroActions();
+      clearTimeout(state.runGraphMountRetryTimer);
+      state.runGraphMountRetryTimer = null;
+      state.runGraphMountRetryCount = 0;
+      if (state.consoleTab === "operate" && state.operateTab === "graph" && state.graph?.graph) {
+        mountRunGraphIsland(state.graph.graph);
+      }
       for (const button of consoleTabsEl.querySelectorAll("[data-console-tab]")) {
         bindOnce(button, "click", "console-tab", () => {
           state.consoleTab = button.getAttribute("data-console-tab") || "operate";
           state.projectHome = state.consoleTab === "project";
           if (state.consoleTab === "build" && state.hasProject) {
             state.workbenchView = "bridge";
+            state.buildMode = "edit";
+            clearTimeout(state.studioGraphMountRetryTimer);
+            state.studioGraphMountRetryTimer = null;
+            state.studioGraphMountRetryCount = 0;
             const refreshWorkdir = state.workspace?.workdir || "";
             void refreshStudioBridge().catch((error) => {
               if (refreshWorkdir !== (state.workspace?.workdir || "")) {
@@ -1745,6 +1805,7 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
           state.studioBridgeEditSelectionRequest += 1;
           updateStudioBridgeSelection(true);
           void loadStudioRolePackageEditor(roleId);
+          void loadStudioExecutionConfigEditor(roleId);
         },
         onFlowSelect: (flowKey) => {
           state.studioBridgeSelectedFlowKey = flowKey;
@@ -1766,11 +1827,15 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
       });
       bindStudioSelectionDialogControls();
       bindStudioRolePackageEditorControls();
+      bindStudioExecutionConfigEditorControls();
     }
 
     function updateStudioBridgeSelection(syncGraph) {
       updateStudioBridgeSelectionChrome();
       renderStudioSelectionDialog();
+      bindStudioSelectionDialogControls();
+      bindStudioRolePackageEditorControls();
+      bindStudioExecutionConfigEditorControls();
       if (syncGraph !== false) {
         mountStudioGraphIsland();
       }
@@ -1804,6 +1869,44 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
       return selectedRoleIdValue;
     }
 
+    function executionConfigEditorFieldElements() {
+      return Array.from(workbenchBodyEl.querySelectorAll("[data-execution-config-field]") || []);
+    }
+
+    function readExecutionConfigEditorDraft() {
+      const current = state.studioExecutionConfigEditor?.data || {};
+      const draft = {
+        roleId: state.studioExecutionConfigEditor?.roleId || selectedStudioRoleId(),
+        profileId: current.profileId || "",
+        toolRef: current.toolRef || "",
+        command: current.command || "",
+        argsTemplate: current.argsTemplate || [],
+        stdinMode: current.stdinMode || "text",
+        timeoutMs: current.timeoutMs,
+        maxOutputBytes: current.maxOutputBytes
+      };
+      for (const element of executionConfigEditorFieldElements()) {
+        const field = element.getAttribute("data-execution-config-field") || "";
+        const value = typeof element.value === "string" ? element.value : "";
+        if (field === "command") draft.command = value;
+        if (field === "stdinMode") draft.stdinMode = value;
+        if (field === "timeoutMs") draft.timeoutMs = value;
+        if (field === "maxOutputBytes") draft.maxOutputBytes = value;
+        if (field === "argsTemplate") {
+          try {
+            draft.argsTemplate = JSON.parse(value || "[]");
+          } catch {
+            draft.argsTemplate = value;
+          }
+        }
+      }
+      return draft;
+    }
+
+    function hasDirtyStudioExecutionConfigEditor() {
+      return state.studioExecutionConfigEditor?.dirty === true;
+    }
+
     function hasDirtyStudioRolePackageEditor() {
       return state.studioRolePackageEditor?.dirty === true;
     }
@@ -1817,8 +1920,13 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
     }
 
     function closeStudioSelectionDialog(options) {
-      if (!options?.force && hasDirtyStudioRolePackageEditor()) {
-        const dirtyRoleId = String(state.studioRolePackageEditor?.roleId || state.studioBridgeSelectedRoleId || "");
+      if (!options?.force && (hasDirtyStudioRolePackageEditor() || hasDirtyStudioExecutionConfigEditor())) {
+        const dirtyRoleId = String(
+          state.studioRolePackageEditor?.roleId ||
+          state.studioExecutionConfigEditor?.roleId ||
+          state.studioBridgeSelectedRoleId ||
+          ""
+        );
         setFlash("info", t("studio.rolePackageDirtySwitchBlocked", { roleId: dirtyRoleId }, "Role package changes for {roleId} are unsaved. Save or revert before closing details."));
         return false;
       }
@@ -1881,6 +1989,10 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
         button.classList.toggle("active", active);
         button.setAttribute("aria-pressed", active ? "true" : "false");
         button.setAttribute("aria-selected", active ? "true" : "false");
+        button.disabled = Boolean(state.actionBusy);
+      }
+      for (const button of Array.from(dialog.querySelectorAll?.("[data-studio-selection-pin], [data-studio-selection-collapse], [data-studio-selection-close]") || [])) {
+        button.disabled = Boolean(state.actionBusy);
       }
       if (!shouldOpen) {
         rolePackage.innerHTML = "";
@@ -1917,12 +2029,18 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
         const editorRoleId = rolePackageEditorRoleIdForSelectionDialog();
         const dirtyRoleId = String(state.studioRolePackageEditor?.roleId || "");
         const showDirtyRoleWarning = hasDirtyStudioRolePackageEditor() && dirtyRoleId && dirtyRoleId !== selectedRoleIdValue;
+        const executionConfigHtml = renderStudioExecutionConfigEditor({
+          roleId: selectedRoleIdValue,
+          editor: state.studioExecutionConfigEditor,
+          t
+        });
         rolePackage.innerHTML = [
           showDirtyRoleWarning
             ? '<div class="event"><div class="event-top"><span>' + escapeText(t("common.attention", undefined, "attention")) + '</span><span>' + escapeText(t("common.changed", undefined, "changed")) + '</span></div><strong>' +
               escapeText(t("studio.rolePackageDirtySwitchBlocked", { roleId: dirtyRoleId }, "Role package changes for {roleId} are unsaved. Save or revert before switching role packages.")) +
               '</strong></div>'
             : "",
+          executionConfigHtml,
           renderStudioRolePackageEditor({
             roleId: editorRoleId || selectedRoleIdValue,
             editor: state.studioRolePackageEditor,
@@ -1952,37 +2070,56 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
         rolePackage.innerHTML = "";
       }
       bindStudioRolePackageEditorControls();
+      bindStudioExecutionConfigEditorControls();
     }
 
     function bindStudioSelectionDialogControls() {
-      for (const button of Array.from(workbenchBodyEl.querySelectorAll("[data-studio-side-tab]") || [])) {
-        bindOnce(button, "click", "studio-selection-tab", () => {
-          const nextTab = button.getAttribute("data-studio-side-tab") || "structure";
+      const closestSelectionAction = (start, attributeName) => {
+        let current = start;
+        while (current) {
+          if (typeof current.getAttribute === "function" && current.getAttribute(attributeName) !== null) {
+            return current;
+          }
+          if (current === workbenchBodyEl) {
+            break;
+          }
+          current = current.parentElement || current.parentNode || current.parent || null;
+        }
+        return null;
+      };
+      bindOnce(workbenchBodyEl, "click", "studio-selection-dialog-delegate", (event) => {
+        const sideTabButton = closestSelectionAction(event.target, "data-studio-side-tab");
+        if (sideTabButton) {
+          const nextTab = sideTabButton.getAttribute("data-studio-side-tab") || "structure";
           if (nextTab === "selection" && !state.studioBridgeSelectedRoleId && !state.studioBridgeSelectedFlowKey && !state.studioSelectionCommandFormOpen) {
             return;
           }
           state.studioWorkbenchSideTab = nextTab === "selection" ? "selection" : "structure";
           state.studioSelectionDialogOpen = true;
           renderStudioSelectionDialog();
-        });
-      }
-      for (const button of Array.from(workbenchBodyEl.querySelectorAll("[data-studio-selection-close]") || [])) {
-        bindOnce(button, "click", "studio-selection-close", () => {
+          event.preventDefault();
+          return;
+        }
+        const closeButton = closestSelectionAction(event.target, "data-studio-selection-close");
+        if (closeButton) {
           closeStudioSelectionDialog({ clearSelection: true, syncGraph: true });
-        });
-      }
-      for (const button of Array.from(workbenchBodyEl.querySelectorAll("[data-studio-selection-pin]") || [])) {
-        bindOnce(button, "click", "studio-selection-pin", () => {
+          event.preventDefault();
+          return;
+        }
+        const pinButton = closestSelectionAction(event.target, "data-studio-selection-pin");
+        if (pinButton) {
           state.studioSelectionDialogDocked = !state.studioSelectionDialogDocked;
           renderStudioSelectionDialog();
-        });
-      }
-      for (const button of Array.from(workbenchBodyEl.querySelectorAll("[data-studio-selection-collapse]") || [])) {
-        bindOnce(button, "click", "studio-selection-collapse", () => {
+          event.preventDefault();
+          return;
+        }
+        const collapseButton = closestSelectionAction(event.target, "data-studio-selection-collapse");
+        if (collapseButton) {
           state.studioSelectionDialogCollapsed = !state.studioSelectionDialogCollapsed;
           renderStudioSelectionDialog();
-        });
-      }
+          event.preventDefault();
+        }
+      });
     }
 
     async function refreshRolePackageDependentProjectState() {
@@ -1995,6 +2132,225 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
       state.rolePackages = rolePackages;
       state.studioRoleCatalog = roleCatalog || state.studioRoleCatalog;
       renderProject();
+    }
+
+    async function loadStudioExecutionConfigEditor(roleId, options) {
+      const selectedRoleIdValue = roleId || selectedStudioRoleId();
+      if (!selectedRoleIdValue) {
+        return;
+      }
+      if (state.studioExecutionConfigEditor?.dirty && !options?.force) {
+        if (selectedRoleIdValue !== state.studioExecutionConfigEditor?.roleId) {
+          setFlash("info", t("studio.rolePackageDirtySwitchBlocked", {
+            roleId: String(state.studioExecutionConfigEditor?.roleId || "")
+          }, "Role package changes for {roleId} are unsaved. Save or revert before switching role packages."));
+        }
+        renderStudioSelectionDialog();
+        return;
+      }
+      const projectConfig = state.project?.config || {};
+      const profiles = Array.isArray(projectConfig.profiles) ? projectConfig.profiles : [];
+      const tools = Array.isArray(projectConfig.tools) ? projectConfig.tools : [];
+      const role = state.studioBridge?.authoring?.roles?.[selectedRoleIdValue] || null;
+      const profileId = String(role?.profileId || "");
+      const profile = profiles.find((entry) => String(entry?.profileId || "") === profileId) || null;
+      const tool = tools.find((entry) => String(entry?.toolRef || "") === String(profile?.toolRef || "")) || null;
+      state.studioExecutionConfigEditor = {
+        ...(state.studioExecutionConfigEditor || {}),
+        roleId: selectedRoleIdValue,
+        loading: true,
+        saving: false,
+        loaded: false,
+        dirty: false,
+        error: "",
+        data: null,
+        draft: null
+      };
+      renderStudioSelectionDialog();
+      if (!role || role.bindingKind !== "exec" || !profile || !tool) {
+        state.studioExecutionConfigEditor = {
+          roleId: selectedRoleIdValue,
+          loading: false,
+          saving: false,
+          loaded: false,
+          dirty: false,
+          error: t("studio.executionConfigMissing", undefined, "This role is not bound to a project execution config yet."),
+          data: null,
+          draft: null
+        };
+        renderStudioSelectionDialog();
+        return;
+      }
+      state.studioExecutionConfigEditor = {
+        roleId: selectedRoleIdValue,
+        loading: false,
+        saving: false,
+        loaded: true,
+        dirty: false,
+        error: "",
+        data: {
+          roleId: selectedRoleIdValue,
+          profileId: profile.profileId,
+          toolRef: profile.toolRef,
+          timeoutMs: profile.timeoutMs ?? "",
+          maxOutputBytes: profile.maxOutputBytes ?? "",
+          command: tool.command ?? "",
+          argsTemplate: Array.isArray(tool.argsTemplate) ? tool.argsTemplate : [],
+          stdinMode: tool.stdinMode ?? "text"
+        },
+        draft: null
+      };
+      renderStudioSelectionDialog();
+    }
+
+    function ensureStudioExecutionConfigEditor(roleId) {
+      const roleIdValue = roleId || "";
+      if (!roleIdValue) {
+        return;
+      }
+      const role = state.studioBridge?.authoring?.roles?.[roleIdValue] || null;
+      if (!role || role.bindingKind !== "exec") {
+        state.studioExecutionConfigEditor = {
+          ...(state.studioExecutionConfigEditor || {}),
+          roleId: roleIdValue,
+          loading: false,
+          saving: false,
+          loaded: false,
+          dirty: false,
+          error: "",
+          data: null,
+          draft: null
+        };
+        return;
+      }
+      const editor = state.studioExecutionConfigEditor || {};
+      if (editor.dirty || editor.loading || editor.saving) {
+        return;
+      }
+      if (editor.roleId === roleIdValue && editor.loaded && !editor.error) {
+        return;
+      }
+      void loadStudioExecutionConfigEditor(roleIdValue);
+    }
+
+    async function saveStudioExecutionConfigEditor(roleId) {
+      const selectedRoleIdValue = roleId || state.studioExecutionConfigEditor?.roleId || selectedStudioRoleId();
+      if (!selectedRoleIdValue) {
+        return;
+      }
+      const draft = readExecutionConfigEditorDraft();
+      const timeoutMs = String(draft.timeoutMs || "").trim();
+      const maxOutputBytes = String(draft.maxOutputBytes || "").trim();
+      let argsTemplate = draft.argsTemplate;
+      if (!Array.isArray(argsTemplate) || argsTemplate.some((item) => typeof item !== "string")) {
+        state.studioExecutionConfigEditor = {
+          ...(state.studioExecutionConfigEditor || {}),
+          roleId: selectedRoleIdValue,
+          saving: false,
+          dirty: true,
+          error: t("studio.executionConfigArgsInvalid", undefined, "Args template must be a JSON array of strings."),
+          draft
+        };
+        renderStudioSelectionDialog();
+        return;
+      }
+      state.studioExecutionConfigEditor = {
+        ...(state.studioExecutionConfigEditor || {}),
+        roleId: selectedRoleIdValue,
+        saving: true,
+        error: "",
+        draft
+      };
+      renderStudioSelectionDialog();
+      try {
+        const payload = await requestAction(API_PREFIX + "/project/execution-config", {
+          profiles: [{
+            profileId: draft.profileId,
+            toolRef: draft.toolRef,
+            ...(timeoutMs ? { timeoutMs: Number(timeoutMs) } : {}),
+            ...(maxOutputBytes ? { maxOutputBytes: Number(maxOutputBytes) } : {})
+          }],
+          tools: [{
+            toolRef: draft.toolRef,
+            runner: "local_shell",
+            command: String(draft.command || "").trim(),
+            argsTemplate,
+            stdinMode: draft.stdinMode === "none" ? "none" : "text"
+          }]
+        });
+        state.project = Object.assign({}, state.project || {}, {
+          config: Object.assign({}, state.project?.config || {}, {
+            profiles: payload.profiles || state.project?.config?.profiles || [],
+            tools: payload.tools || state.project?.config?.tools || []
+          })
+        });
+        state.studioExecutionConfigEditor = {
+          roleId: selectedRoleIdValue,
+          loading: false,
+          saving: false,
+          loaded: true,
+          dirty: false,
+          error: "",
+          data: {
+            roleId: selectedRoleIdValue,
+            profileId: draft.profileId,
+            toolRef: draft.toolRef,
+            timeoutMs: timeoutMs,
+            maxOutputBytes: maxOutputBytes,
+            command: String(draft.command || "").trim(),
+            argsTemplate,
+            stdinMode: draft.stdinMode === "none" ? "none" : "text"
+          },
+          draft: null
+        };
+        setFlash("success", t("studio.executionConfigSaved", { roleId: selectedRoleIdValue }, "Execution config saved: {roleId}."));
+      } catch (error) {
+        state.studioExecutionConfigEditor = {
+          ...(state.studioExecutionConfigEditor || {}),
+          roleId: selectedRoleIdValue,
+          saving: false,
+          dirty: true,
+          error: error instanceof Error ? error.message : String(error),
+          draft
+        };
+      }
+      renderStudioSelectionDialog();
+    }
+
+    function bindStudioExecutionConfigEditorControls() {
+      for (const button of Array.from(workbenchBodyEl.querySelectorAll("[data-execution-config-load]") || [])) {
+        bindOnce(button, "click", "execution-config-load", () => {
+          void loadStudioExecutionConfigEditor(button.getAttribute("data-execution-config-load") || selectedStudioRoleId(), { force: true });
+        });
+      }
+      for (const button of Array.from(workbenchBodyEl.querySelectorAll("[data-execution-config-save]") || [])) {
+        bindOnce(button, "click", "execution-config-save", () => {
+          void saveStudioExecutionConfigEditor(button.getAttribute("data-execution-config-save") || selectedStudioRoleId());
+        });
+      }
+      for (const button of Array.from(workbenchBodyEl.querySelectorAll("[data-execution-config-revert]") || [])) {
+        bindOnce(button, "click", "execution-config-revert", () => {
+          void loadStudioExecutionConfigEditor(button.getAttribute("data-execution-config-revert") || selectedStudioRoleId(), { force: true });
+        });
+      }
+      for (const element of executionConfigEditorFieldElements()) {
+        bindOnce(element, "input", "execution-config-field", () => {
+          state.studioExecutionConfigEditor = {
+            ...(state.studioExecutionConfigEditor || {}),
+            roleId: state.studioExecutionConfigEditor?.roleId || selectedStudioRoleId(),
+            dirty: true,
+            error: "",
+            draft: readExecutionConfigEditorDraft()
+          };
+          for (const button of Array.from(workbenchBodyEl.querySelectorAll("[data-execution-config-save], [data-execution-config-revert]") || [])) {
+            if (typeof button.removeAttribute === "function") {
+              button.removeAttribute("disabled");
+            }
+            button.disabled = false;
+          }
+          renderStudioSelectionDialog();
+        });
+      }
     }
 
     async function loadStudioRolePackageEditor(roleId, options) {
@@ -2279,8 +2635,13 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
     }
 
     function canClearStudioGraphSelection() {
-      if (hasDirtyStudioRolePackageEditor()) {
-        const dirtyRoleId = String(state.studioRolePackageEditor?.roleId || state.studioBridgeSelectedRoleId || "");
+      if (hasDirtyStudioRolePackageEditor() || hasDirtyStudioExecutionConfigEditor()) {
+        const dirtyRoleId = String(
+          state.studioRolePackageEditor?.roleId ||
+          state.studioExecutionConfigEditor?.roleId ||
+          state.studioBridgeSelectedRoleId ||
+          ""
+        );
         setFlash("info", t("studio.rolePackageDirtySwitchBlocked", { roleId: dirtyRoleId }, "Role package changes for {roleId} are unsaved. Save or revert before clearing selection."));
         return false;
       }
@@ -2298,17 +2659,21 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
           closeActionForm();
           return;
         }
+        if (event.key === "Escape" && state.studioBridgeFullscreen) {
+          state.studioBridgeFullscreen = false;
+          if (state.workbenchView === "bridge") {
+            renderStudioBridge({ preserveGraphRoot: true });
+          }
+          event.preventDefault();
+          return;
+        }
         if (event.key === "Escape" && state.studioSelectionDialogOpen) {
           closeStudioSelectionDialog({ clearSelection: true, syncGraph: true });
           event.preventDefault();
           return;
         }
-        if (event.key !== "Escape" || !state.studioBridgeFullscreen) {
+        if (event.key !== "Escape") {
           return;
-        }
-        state.studioBridgeFullscreen = false;
-        if (state.workbenchView === "bridge") {
-          renderStudioBridge({ preserveGraphRoot: true });
         }
       });
     }
@@ -2324,6 +2689,30 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
       } else if (!state.studioGraphRootElement) {
         state.studioGraphRootElement = root;
       }
+      const rect = typeof root.getBoundingClientRect === "function"
+        ? root.getBoundingClientRect()
+        : { width: root.clientWidth, height: root.clientHeight, top: 0, left: 0 };
+      const visiblePanel = document.getElementById("console-panel-build");
+      const panelVisible = Boolean(visiblePanel && visiblePanel.hidden === false);
+      const width = Number(rect?.width);
+      const height = Number(rect?.height);
+      const hasMeasuredSize = Number.isFinite(width) && Number.isFinite(height);
+      const rootReady = panelVisible && (!hasMeasuredSize || (width >= 24 && height >= 24));
+      if (!rootReady) {
+        clearTimeout(state.studioGraphMountRetryTimer);
+        if (state.studioGraphMountRetryCount < 6) {
+          state.studioGraphMountRetryCount += 1;
+          const retryDelayMs = state.studioGraphMountRetryCount <= 2 ? 0 : 50;
+          state.studioGraphMountRetryTimer = setTimeout(() => {
+            state.studioGraphMountRetryTimer = null;
+            mountStudioGraphIsland();
+          }, retryDelayMs);
+        }
+        return;
+      }
+      clearTimeout(state.studioGraphMountRetryTimer);
+      state.studioGraphMountRetryTimer = null;
+      state.studioGraphMountRetryCount = 0;
       const visualizerClient = window.OGSVisualizerClient || {};
       const mount = visualizerClient.mountStudioX6Bridge;
       if (typeof mount !== "function") {
@@ -2355,6 +2744,7 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
           state.studioWorkbenchSideTab = "selection";
           updateStudioBridgeSelection(false);
           void loadStudioRolePackageEditor(roleId);
+          void loadStudioExecutionConfigEditor(roleId);
         },
         onSelectFlow: (flowKey) => {
           state.studioBridgeSelectedFlowKey = flowKey || "";
@@ -2403,11 +2793,39 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
       });
     }
 
+    function scheduleRunGraphMountRetry(graph) {
+      clearTimeout(state.runGraphMountRetryTimer);
+      if (state.runGraphMountRetryCount < 6) {
+        state.runGraphMountRetryCount += 1;
+        const retryDelayMs = state.runGraphMountRetryCount <= 2 ? 0 : 50;
+        state.runGraphMountRetryTimer = setTimeout(() => {
+          state.runGraphMountRetryTimer = null;
+          mountRunGraphIsland(graph);
+        }, retryDelayMs);
+      }
+    }
+
     function mountRunGraphIsland(graph) {
       const root = document.getElementById("run-graph-root");
       if (!root) {
         return;
       }
+      const visiblePanel = document.getElementById("operate-tabpanel-graph");
+      const panelVisible = Boolean(visiblePanel && visiblePanel.hidden === false);
+      const rect = typeof root.getBoundingClientRect === "function"
+        ? root.getBoundingClientRect()
+        : { width: root.clientWidth, height: root.clientHeight, top: 0, left: 0 };
+      const width = Number(rect?.width);
+      const height = Number(rect?.height);
+      const hasMeasuredSize = Number.isFinite(width) && Number.isFinite(height);
+      const rootReady = panelVisible && (!hasMeasuredSize || (width >= 24 && height >= 24));
+      if (!rootReady) {
+        scheduleRunGraphMountRetry(graph);
+        return;
+      }
+      clearTimeout(state.runGraphMountRetryTimer);
+      state.runGraphMountRetryTimer = null;
+      state.runGraphMountRetryCount = 0;
       const visualizerClient = window.OGSVisualizerClient || {};
       const mount = visualizerClient.mountStudioX6Bridge;
       if (typeof mount !== "function") {
@@ -2473,7 +2891,9 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
       const dirty = state.workbenchSource !== state.workbenchDiskSource;
       const preserveEditor = Boolean(options?.preserveEditor);
       const existingEditor = document.getElementById("workbench-editor");
-      const preservedStudioGraphRoot = options?.preserveStudioGraphRoot
+      const preserveStudioGraphRoot = options?.preserveStudioGraphRoot === true
+        || (state.buildMode === "edit" && state.workbenchView === "bridge");
+      const preservedStudioGraphRoot = preserveStudioGraphRoot
         ? document.getElementById("studio-graph-root")
         : null;
       state.workbenchHasDraft = Boolean(loadDraftSource());
@@ -2533,14 +2953,14 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
         if (state.studioBridgeLoading && !state.studioBridgeLoaded && !state.studioBridge) {
           workbenchBodyEl.innerHTML = loadingSkeleton(t("state.loadingStudioBridge", undefined, "Loading graph workspace..."), 4);
         } else {
-          renderStudioBridge({ preserveGraphRoot: Boolean(options?.preserveStudioGraphRoot) });
+          renderStudioBridge({ preserveGraphRoot: preserveStudioGraphRoot });
         }
       } else {
         state.workbenchView = "bridge";
         if (state.studioBridgeLoading && !state.studioBridgeLoaded && !state.studioBridge) {
           workbenchBodyEl.innerHTML = loadingSkeleton(t("state.loadingStudioBridge", undefined, "Loading graph workspace..."), 4);
         } else {
-          renderStudioBridge({ preserveGraphRoot: Boolean(options?.preserveStudioGraphRoot) });
+          renderStudioBridge({ preserveGraphRoot: preserveStudioGraphRoot });
         }
       }
       if (preservedStudioGraphRoot) {
@@ -2568,22 +2988,7 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
           scheduleWorkbenchValidation();
         });
       }
-      for (const button of queryAll("[data-workbench-view-tabs-slot] [data-workbench-view]")) {
-        bindOnce(button, "click", "workbench-view", () => {
-          state.workbenchView = button.getAttribute("data-workbench-view") || "bridge";
-          state.buildMode = "edit";
-          renderWorkbench();
-          if (state.workbenchView === "bridge" && (!state.studioBridgeLoaded || state.studioBridgeStale)) {
-            const refreshWorkdir = state.workspace?.workdir || "";
-            void refreshStudioBridge().catch((error) => {
-              if (!state.hasProject || refreshWorkdir !== (state.workspace?.workdir || "")) {
-                return;
-              }
-              setFlash("error", t("flash.studioBridgeRefreshFailed", { message: error.message || error }, "Studio Bridge refresh failed: {message}"));
-            });
-          }
-        });
-      }
+      bindWorkbenchViewButtons();
       for (const button of workbenchTabsEl.querySelectorAll("[data-build-mode]")) {
         bindOnce(button, "click", "build-mode", () => {
           state.buildMode = button.getAttribute("data-build-mode") || "edit";
@@ -3102,6 +3507,9 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
             state.projectHome = false;
             if (action === "build" && state.hasProject) {
               state.workbenchView = "bridge";
+              clearTimeout(state.studioGraphMountRetryTimer);
+              state.studioGraphMountRetryTimer = null;
+              state.studioGraphMountRetryCount = 0;
               const refreshWorkdir = state.workspace?.workdir || "";
               void refreshStudioBridge().catch((error) => {
                 if (refreshWorkdir !== (state.workspace?.workdir || "")) {
@@ -3496,6 +3904,12 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
       resetWorkbenchValidationTimer();
       clearTimeout(state.flashTimer);
       state.flashTimer = null;
+      clearTimeout(state.studioGraphMountRetryTimer);
+      state.studioGraphMountRetryTimer = null;
+      state.studioGraphMountRetryCount = 0;
+      clearTimeout(state.runGraphMountRetryTimer);
+      state.runGraphMountRetryTimer = null;
+      state.runGraphMountRetryCount = 0;
       if (state.listTimer) {
         clearInterval(state.listTimer);
         state.listTimer = null;
@@ -3627,6 +4041,7 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
         renderProject();
         if (state.studioBridgeSelectedRoleId) {
           ensureStudioRolePackageEditor(state.studioBridgeSelectedRoleId);
+          ensureStudioExecutionConfigEditor(state.studioBridgeSelectedRoleId);
         }
         return payload;
       } finally {
@@ -3702,7 +4117,7 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
           });
           await refreshRolePackageDependentProjectState();
         }
-        await persistStudioProfileDrafts(result.profileDrafts);
+        await persistStudioExecutionConfigDrafts(result.profileDrafts, result.toolDrafts);
         await applyStudioGraphPayload({
           authoring: result.authoring,
           canvas: result.canvas,
@@ -3713,16 +4128,20 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
       });
     }
 
-    async function persistStudioProfileDrafts(profileDrafts) {
-      if (!Array.isArray(profileDrafts) || !profileDrafts.length) {
+    async function persistStudioExecutionConfigDrafts(profileDrafts, toolDrafts) {
+      const profiles = Array.isArray(profileDrafts) ? profileDrafts : [];
+      const tools = Array.isArray(toolDrafts) ? toolDrafts : [];
+      if (!profiles.length && !tools.length) {
         return;
       }
-      const payload = await requestAction(API_PREFIX + "/project/profiles", {
-        profiles: profileDrafts
+      const payload = await requestAction(API_PREFIX + "/project/execution-config", {
+        profiles,
+        tools
       });
       state.project = Object.assign({}, state.project || {}, {
         config: Object.assign({}, state.project?.config || {}, {
-          profiles: payload.profiles || profileDrafts
+          profiles: payload.profiles || profiles,
+          tools: payload.tools || tools
         })
       });
     }
@@ -3767,7 +4186,7 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
         validation: payload.validation || state.workbench?.validation
       };
       state.studioBridgeStale = false;
-      renderWorkbench();
+      renderWorkbench({ preserveStudioGraphRoot: true });
       renderProject();
       if (args.successMessage) {
         setFlash("success", args.successMessage);
@@ -4759,8 +5178,9 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
     async function selectRun(runId) {
       if (!runId) return;
       stopStream();
+      const fromProjectHome = state.projectHome === true || state.consoleTab === "project";
       state.projectHome = false;
-      if (state.consoleTab === "project" || state.consoleTab === "build" || state.consoleTab === "validate-release") {
+      if (fromProjectHome && (state.consoleTab === "project" || state.consoleTab === "build" || state.consoleTab === "validate-release")) {
         state.consoleTab = "operate";
         renderConsoleTabs();
       }

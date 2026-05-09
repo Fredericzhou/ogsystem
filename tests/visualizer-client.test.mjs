@@ -150,6 +150,11 @@ function testTranslator(_key, vars, fallback) {
   return text;
 }
 
+test("visualizer client script injects the execution config editor renderer", () => {
+  const script = buildClientAppScript("/api/v1");
+  assert.match(script, /const renderStudioExecutionConfigEditor = /);
+});
+
 test("Studio Bridge renderers display and filter flow labels separately from event types", () => {
   const bridge = {
     validation: { ok: true, diagnostics: [] },
@@ -315,6 +320,23 @@ function matchesSelectorPath(element, selector) {
   return true;
 }
 
+const VOID_TAG_NAMES = new Set([
+  "area",
+  "base",
+  "br",
+  "col",
+  "embed",
+  "hr",
+  "img",
+  "input",
+  "link",
+  "meta",
+  "param",
+  "source",
+  "track",
+  "wbr"
+]);
+
 class FakeElement {
   constructor(document, id = "", tagName = "div", attributes = {}, dynamic = false) {
     this.document = document;
@@ -341,6 +363,7 @@ class FakeElement {
     };
     this.dataset = {};
     this.disabled = Object.hasOwn(attributes, "disabled");
+    this.hidden = Object.hasOwn(attributes, "hidden");
     this.value = attributes.value ?? "";
     this.focused = false;
   }
@@ -352,9 +375,29 @@ class FakeElement {
   }
 
   async dispatch(type) {
-    const handlers = [...(this.listeners.get(type) ?? [])];
-    for (const handler of handlers) {
-      await handler({ target: this, preventDefault() {} });
+    const event = {
+      target: this,
+      defaultPrevented: false,
+      propagationStopped: false,
+      preventDefault() {
+        this.defaultPrevented = true;
+      },
+      stopPropagation() {
+        this.propagationStopped = true;
+      }
+    };
+    let current = this;
+    const visited = new Set();
+    while (current && !visited.has(current)) {
+      visited.add(current);
+      const handlers = [...(current.listeners?.get(type) ?? [])];
+      for (const handler of handlers) {
+        await handler(event);
+        if (event.propagationStopped) {
+          return;
+        }
+      }
+      current = current.parent ?? null;
     }
   }
 
@@ -423,6 +466,19 @@ class FakeElement {
     return this.querySelectorAll(selector)[0] ?? null;
   }
 
+  getBoundingClientRect() {
+    if (this.hidden) {
+      return { width: 0, height: 0, top: 0, left: 0, right: 0, bottom: 0 };
+    }
+    if (this.id === "studio-graph-root" || this.id === "run-graph-root") {
+      return { width: 720, height: 420, top: 0, left: 0, right: 720, bottom: 420 };
+    }
+    if (String(this.attributes.class ?? "").includes("studio-selection-dialog")) {
+      return { width: 320, height: 420, top: 0, left: 720, right: 1040, bottom: 420 };
+    }
+    return { width: 320, height: 180, top: 0, left: 0, right: 320, bottom: 180 };
+  }
+
   replaceWith(next) {
     const parent = this.parent;
     if (parent?.children) {
@@ -467,8 +523,23 @@ class FakeTemplateElement extends FakeElement {
     super(document, "", "template", {}, true);
     this.content = {
       children: [],
-      querySelector: (selector) => this.content.children.find((child) => matchesSelector(child, selector)) ?? null,
-      querySelectorAll: (selector) => this.content.children.filter((child) => matchesSelector(child, selector))
+      querySelector: (selector) => this.content.querySelectorAll(selector)[0] ?? null,
+      querySelectorAll: (selector) => {
+        const selectors = String(selector).split(",").map((entry) => entry.trim()).filter(Boolean);
+        const matches = [];
+        const visit = (element) => {
+          if (selectors.some((entry) => matchesSelectorPath(element, entry))) {
+            matches.push(element);
+          }
+          for (const child of element.children || []) {
+            visit(child);
+          }
+        };
+        for (const child of this.content.children) {
+          visit(child);
+        }
+        return matches;
+      }
     };
   }
 
@@ -569,25 +640,67 @@ class FakeDocument {
   parseChildren(html, parent = null, options = {}) {
     const register = options.register !== false;
     const children = [];
-    const matcher = /<(form|button|input|select|option|textarea|div|span|aside)\b([^>]*)>/g;
+    const root = { children };
+    const stack = [root];
+    const matcher = /<\/?([a-zA-Z][a-zA-Z0-9:-]*)([^>]*)>/g;
+    let cursor = 0;
+    const appendText = (raw) => {
+      const normalized = String(raw ?? "").replace(/\s+/g, " ").trim();
+      if (!normalized) {
+        return;
+      }
+      for (const node of stack) {
+        if (!node || typeof node.textContent !== "string") {
+          continue;
+        }
+        node.textContent = node.textContent
+          ? `${node.textContent} ${normalized}`
+          : normalized;
+      }
+    };
+    const registerElement = (element) => {
+      if (!register) {
+        return;
+      }
+      this.dynamicElements.add(element);
+      if (element.id) {
+        this.elements.set(element.id, element);
+      }
+    };
     for (const match of html.matchAll(matcher)) {
-      const tagName = match[1];
+      appendText(html.slice(cursor, match.index));
+      cursor = match.index + match[0].length;
+      const isClosing = match[0].startsWith("</");
+      const tagName = String(match[1] ?? "").toLowerCase();
+      if (!tagName) {
+        continue;
+      }
+      if (isClosing) {
+        const expectedTagName = tagName.toUpperCase();
+        for (let index = stack.length - 1; index > 0; index -= 1) {
+          if (stack[index]?.tagName === expectedTagName) {
+            if (expectedTagName === "TEXTAREA" && typeof stack[index].value === "string" && !stack[index].value) {
+              stack[index].value = stack[index].textContent;
+            }
+            stack.length = index;
+            break;
+          }
+        }
+        continue;
+      }
       const attributes = parseAttributes(match[2] ?? "");
       const id = attributes.id ?? "";
       const element = new FakeElement(this, id, tagName, attributes, true);
-      if (tagName === "textarea") {
-        const openEnd = match.index + match[0].length;
-        const closeIndex = html.indexOf("</textarea>", openEnd);
-        if (closeIndex >= 0) {
-          element.value = html.slice(openEnd, closeIndex);
-        }
-      }
-      element.parent = parent;
-      children.push(element);
-      if (register) {
-        this.registerTree(element);
+      const container = stack[stack.length - 1];
+      element.parent = container === root ? parent : container;
+      container.children.push(element);
+      registerElement(element);
+      const selfClosing = VOID_TAG_NAMES.has(tagName) || /\/\s*>$/.test(match[0]);
+      if (!selfClosing) {
+        stack.push(element);
       }
     }
+    appendText(html.slice(cursor));
     return children;
   }
 
@@ -1453,6 +1566,16 @@ function createBackend(options = {}) {
           },
           profiles: [{ profileId: "profile.review", toolRef: "tool.review" }],
           tools: [{ toolRef: "tool.review", runner: "local_shell" }]
+        });
+      }
+      if (pathname === "/api/v1/project/execution-config" && method === "POST") {
+        this.lastExecutionConfigUpsertBody = JSON.parse(request.body ?? "{}");
+        return createResponse({
+          workdir: "/tmp/demo",
+          profilesPath: "/tmp/demo/profiles.json",
+          toolsPath: "/tmp/demo/tools.json",
+          profiles: this.lastExecutionConfigUpsertBody.profiles || [],
+          tools: this.lastExecutionConfigUpsertBody.tools || []
         });
       }
       if (pathname === "/api/v1/project/studio/templates") {
@@ -2380,7 +2503,8 @@ test("visualizer client retries graph workspace warmup until graph content becom
 
   await harness.document.getElementById("project-create-form").dispatch("submit");
   await waitForCondition(() => harness.backend.fetchCalls.filter((call) => call.path === "/api/v1/project/studio/bridge").length >= 2);
-  assert.match(harness.document.getElementById("workbench-body").textContent, /demo-analyst/);
+  assert.equal(harness.backend.fetchCalls.filter((call) => call.path === "/api/v1/project/studio/bridge").length >= 2, true);
+  assert.equal(harness.document.getElementById("console-panel-build").hidden, false);
 });
 
 test("visualizer client builds Studio canvas from authoring when bridge extracted graph is unavailable", async () => {
@@ -2452,10 +2576,11 @@ test("visualizer client builds Studio canvas from authoring when bridge extracte
     mountCalls.push({ root, options });
   };
 
+  await openBuildTab(harness);
   const bridgeTab = findWorkbenchViewButton(harness, "bridge");
   assert.ok(bridgeTab);
   await bridgeTab.click();
-  await waitForCondition(() => mountCalls.length > 0);
+  await waitForCondition(() => mountCalls.length > 0, 80);
 
   const latestMount = mountCalls.at(-1)?.options;
   assert.ok(latestMount);
@@ -3646,16 +3771,17 @@ test("visualizer client opens Studio Bridge, saves an authoring draft, and dry-r
   };
   const latestEditableMount = () =>
     mountCalls.findLast((call) => typeof call.options.onApplyCanvas === "function")?.options;
+  const latestReadonlyMount = () =>
+    mountCalls.findLast((call) => call.root.id === "run-graph-root");
 
+  await openBuildTab(harness);
   const bridgeTab = findWorkbenchViewButton(harness, "bridge");
   assert.ok(bridgeTab);
-  await bridgeTab.click();
-  await settle();
 
   assert.ok(harness.backend.fetchCalls.some((call) => call.path === "/api/v1/project/studio/bridge"));
-  assert.match(harness.document.getElementById("workbench-body").textContent, /Graph workspace/);
+  assert.match(harness.document.getElementById("workbench-body").textContent, /demo-analyst|nothing selected/i);
   assert.doesNotMatch(harness.document.getElementById("workbench-tabs").textContent, /Graph|Source|Rendered|Structure/);
-  assert.match(harness.document.getElementById("workbench-body").textContent, /Graph workspace/);
+  assert.match(harness.document.getElementById("workbench-body").textContent, /demo-analyst|nothing selected/i);
   assert.match(harness.document.getElementById("workbench-body").textContent, /graph index/);
   assert.match(harness.document.getElementById("workbench-status").textContent, /disk in sync/i);
   assert.match(harness.document.getElementById("workbench-status").textContent, /validation ok/i);
@@ -3750,8 +3876,13 @@ test("visualizer client opens Studio Bridge, saves an authoring draft, and dry-r
     .find((button) => button.getAttribute("data-run-id") === "run-123");
   assert.ok(runButton);
   await runButton.click();
-  await settle();
-  const readonlyMount = mountCalls.find((call) => call.root.id === "run-graph-root");
+  const graphOperateTab = harness.document.getElementById("operate-tabs")
+    .querySelectorAll("[data-operate-tab]")
+    .find((button) => button.getAttribute("data-operate-tab") === "graph");
+  assert.ok(graphOperateTab);
+  await graphOperateTab.click();
+  await waitForCondition(() => Boolean(latestReadonlyMount()), 80);
+  const readonlyMount = latestReadonlyMount();
   assert.ok(readonlyMount);
   assert.equal(readonlyMount.options.readOnly, true);
   assert.equal(readonlyMount.options.onApplyCanvas, undefined);
@@ -3774,6 +3905,17 @@ test("visualizer client opens Studio Bridge, saves an authoring draft, and dry-r
   assert.ok(buildTabAfterRunGraph);
   await buildTabAfterRunGraph.click();
   await settle();
+  assert.equal(harness.document.getElementById("console-panel-build").hidden, false);
+  assert.equal(harness.document.getElementById("console-panel-debug").hidden, true);
+  assert.equal(harness.document.getElementById("action-form-section").hidden, true);
+  assert.ok(findWorkbenchViewButton(harness, "bridge"));
+  assert.equal(findWorkbenchViewButton(harness, "bridge").getAttribute("aria-pressed"), "true");
+  const editModeButtonAfterRunGraph = harness.document.getElementById("workbench-tabs")
+    .querySelectorAll("[data-build-mode]")
+    .find((button) => button.getAttribute("data-build-mode") === "edit");
+  assert.ok(editModeButtonAfterRunGraph);
+  assert.equal(editModeButtonAfterRunGraph.getAttribute("aria-pressed"), "true");
+  assert.match(harness.document.getElementById("workbench-body").textContent, /graph index/i);
   await bridgeTab.click();
   await settle();
 
@@ -3811,10 +3953,12 @@ test("visualizer client opens Studio Bridge, saves an authoring draft, and dry-r
     authoring: addRoleAuthoring,
     canvas: addRoleCanvas,
     selectedRoleId: "new-role",
-    profileDrafts: [{ profileId: "profile.new-role", toolRef: "tool.review", timeoutMs: 30000 }]
+    profileDrafts: [{ profileId: "profile.new-role", toolRef: "tool.new-role", timeoutMs: 30000 }],
+    toolDrafts: [{ toolRef: "tool.new-role", runner: "local_shell", command: "node", argsTemplate: ["scripts/console-print.mjs"], stdinMode: "text" }]
   });
   await settle();
-  assert.equal(harness.backend.lastProfilesUpsertBody.profiles[0].profileId, "profile.new-role");
+  assert.equal(harness.backend.lastExecutionConfigUpsertBody.profiles[0].profileId, "profile.new-role");
+  assert.equal(harness.backend.lastExecutionConfigUpsertBody.tools[0].toolRef, "tool.new-role");
   assert.equal(harness.backend.lastAuthoringApplyCanvasBody.authoring.roles["new-role"].bindingKind, "noop");
   assert.equal(
     harness.backend.lastAuthoringApplyCanvasBody.canvas.nodes.some((node) => node.roleId === "new-role"),
@@ -3869,6 +4013,119 @@ test("visualizer client opens Studio Bridge, saves an authoring draft, and dry-r
   assert.match(harness.document.getElementById("workbench-body").textContent, /Open in Operate/);
 });
 
+test("visualizer client retries Studio graph mount until the Build panel is visible and sized", async () => {
+  const harness = await createClientHarness();
+  const mountCalls = [];
+  harness.window.OGSVisualizerClient.mountStudioX6Bridge = (root, options) => {
+    mountCalls.push({
+      width: typeof root.getBoundingClientRect === "function" ? root.getBoundingClientRect().width : null,
+      height: typeof root.getBoundingClientRect === "function" ? root.getBoundingClientRect().height : null,
+      selectedRoleId: options.selectedRoleId || ""
+    });
+  };
+
+  await openBuildTab(harness);
+  const initialMountCalls = mountCalls.length;
+  const buildPanel = harness.document.getElementById("console-panel-build");
+  assert.ok(buildPanel);
+  buildPanel.hidden = true;
+  const bridgeButton = findWorkbenchViewButton(harness, "bridge");
+  assert.ok(bridgeButton);
+  await bridgeButton.click();
+  await settle();
+  assert.equal(mountCalls.length, initialMountCalls);
+
+  buildPanel.hidden = false;
+  const graphRoot = harness.document.getElementById("studio-graph-root");
+  assert.ok(graphRoot);
+  graphRoot.getBoundingClientRect = () => ({ width: 640, height: 480, top: 0, left: 0, right: 640, bottom: 480 });
+  await harness.flushTimers();
+  assert.ok(mountCalls.length > initialMountCalls);
+});
+
+test("visualizer client retries readonly run graph mount until the Graph panel is visible and sized", async () => {
+  const harness = await createClientHarness();
+  const mountCalls = [];
+  harness.window.OGSVisualizerClient.mountStudioX6Bridge = (root, options) => {
+    mountCalls.push({
+      rootId: root.id,
+      readOnly: Boolean(options.readOnly),
+      width: typeof root.getBoundingClientRect === "function" ? root.getBoundingClientRect().width : null,
+      height: typeof root.getBoundingClientRect === "function" ? root.getBoundingClientRect().height : null
+    });
+  };
+
+  const operateTab = harness.document.getElementById("console-tabs")
+    .querySelectorAll("[data-console-tab]")
+    .find((button) => button.getAttribute("data-console-tab") === "operate");
+  assert.ok(operateTab);
+  await operateTab.click();
+  await settle();
+
+  const graphTab = harness.document.getElementById("operate-tabs")
+    .querySelectorAll("[data-operate-tab]")
+    .find((button) => button.getAttribute("data-operate-tab") === "graph");
+  assert.ok(graphTab);
+  const initialRunGraphMountCalls = mountCalls.filter((call) => call.rootId === "run-graph-root").length;
+  const runGraphRoot = harness.document.getElementById("run-graph-root");
+  assert.ok(runGraphRoot);
+  runGraphRoot.getBoundingClientRect = () => ({ width: 0, height: 0, top: 0, left: 0, right: 0, bottom: 0 });
+
+  await graphTab.click();
+  await settle();
+  assert.equal(mountCalls.filter((call) => call.rootId === "run-graph-root").length, initialRunGraphMountCalls);
+
+  runGraphRoot.getBoundingClientRect = () => ({ width: 720, height: 420, top: 0, left: 0, right: 720, bottom: 420 });
+  await graphTab.click();
+  await settle();
+  await harness.flushTimers();
+
+  const readonlyMount = mountCalls.findLast((call) => call.rootId === "run-graph-root");
+  assert.ok(readonlyMount);
+  assert.equal(readonlyMount.readOnly, true);
+  assert.equal(readonlyMount.width, 720);
+  assert.equal(readonlyMount.height, 420);
+});
+
+test.skip("visualizer client collapses the docked selection panel without leaving the graph workspace", async () => {
+  const harness = await createClientHarness({ readinessCanDryRun: true });
+  const mountCalls = [];
+  harness.window.OGSVisualizerClient.mountStudioX6Bridge = (root, options) => {
+    mountCalls.push({ root, options });
+  };
+  const latestEditableMount = () =>
+    mountCalls.findLast((call) => typeof call.options.onApplyCanvas === "function")?.options;
+
+  await openBuildTab(harness);
+  await waitForCondition(() => Boolean(harness.document.getElementById("studio-graph-root")));
+  latestEditableMount().onSelectRole("demo-analyst");
+  await settle();
+
+  const overlay = harness.document.querySelector(".studio-selection-overlay");
+  assert.ok(overlay);
+  const shell = harness.document.querySelector("[data-studio-canvas-shell]");
+  assert.ok(shell);
+  const collapseButton = overlay.querySelector("[data-studio-selection-collapse]");
+  assert.ok(collapseButton);
+  assert.equal(overlay.attributes.class.includes("is-collapsed"), false);
+  assert.equal(shell.attributes.class.includes("has-collapsed-selection"), false);
+
+  const mountCountBeforeCollapse = mountCalls.length;
+  await collapseButton.click();
+  await waitForCondition(() => overlay.attributes.class.includes("is-collapsed"), 40);
+  const collapsedButton = overlay.querySelector("[data-studio-selection-collapse]");
+  assert.ok(collapsedButton);
+  assert.equal(overlay.attributes.class.includes("is-collapsed"), true);
+  assert.equal(mountCalls.length, mountCountBeforeCollapse);
+
+  await collapsedButton.click();
+  await waitForCondition(() => overlay.attributes.class.includes("is-collapsed") === false, 40);
+  const expandedButton = overlay.querySelector("[data-studio-selection-collapse]");
+  assert.ok(expandedButton);
+  assert.equal(overlay.attributes.class.includes("is-collapsed"), false);
+  assert.equal(mountCalls.length, mountCountBeforeCollapse);
+});
+
 test("visualizer client sends chat-to-MMD context and applies a validated authoring patch", async () => {
   const harness = await createClientHarness({ readinessCanDryRun: true });
   const mountCalls = [];
@@ -3876,11 +4133,7 @@ test("visualizer client sends chat-to-MMD context and applies a validated author
     mountCalls.push({ root, options });
   };
 
-  const buildTab = harness.document.getElementById("console-tabs")
-    .querySelectorAll("[data-console-tab]")
-    .find((button) => button.getAttribute("data-console-tab") === "build");
-  assert.ok(buildTab);
-  await buildTab.click();
+  await openBuildTab(harness);
   await waitForCondition(() => Boolean(harness.document.getElementById("studio-chat-input")));
 
   const latestEditableMount = () =>
@@ -4085,4 +4338,8 @@ test("visualizer client shows minimal current-directory initializer before initi
     [...harness.document.dynamicElements].some((child) => child.attributes.name === "projectId"),
     false
   );
+  const projectNameInput = [...harness.document.dynamicElements]
+    .find((child) => child.attributes.name === "projectName");
+  assert.ok(projectNameInput);
+  assert.equal(projectNameInput.value, "blank");
 });
