@@ -961,12 +961,15 @@ export function renderPageShellStyles(): string {
     .project-home-card .body {
       min-width: 0;
     }
+    .studio-bridge,
     .studio-bridge-layout {
       display: grid;
       grid-template-columns: minmax(0, 1fr);
       gap: 8px;
       align-items: stretch;
       min-width: 0;
+      min-height: 0;
+      height: 100%;
     }
     .studio-graph-column { grid-column: 1 / -1; }
     .studio-bridge-index {
@@ -987,6 +990,8 @@ export function renderPageShellStyles(): string {
     .studio-graph-column {
       display: grid;
       gap: 8px;
+      min-height: 0;
+      height: 100%;
     }
     .studio-diagnostics {
       min-width: 0;
@@ -1001,6 +1006,7 @@ export function renderPageShellStyles(): string {
       min-height: 100%;
       height: 100%;
       align-items: stretch;
+      overflow: hidden;
     }
     .studio-canvas-shell.has-docked-selection {
       grid-template-columns: minmax(0, 1fr) minmax(280px, min(440px, 32vw));
@@ -1103,6 +1109,7 @@ export function renderPageShellStyles(): string {
       justify-self: stretch;
       align-self: stretch;
       min-width: 0;
+      min-height: 0;
       height: 100%;
       z-index: 1;
     }
@@ -1136,12 +1143,14 @@ export function renderPageShellStyles(): string {
       max-width: calc(100% - 20px);
       height: 100%;
       max-height: 100%;
+      min-height: 0;
       border-left: 1px solid var(--border);
       background: linear-gradient(180deg, rgba(5, 10, 23, 0.98), rgba(10, 18, 36, 0.96));
       box-shadow: -24px 0 64px rgba(0, 0, 0, 0.42);
       display: grid;
       grid-template-rows: auto auto minmax(0, 1fr);
       pointer-events: auto;
+      overflow: hidden;
     }
     .studio-selection-overlay.is-collapsed .studio-selection-dialog {
       width: 56px;
@@ -1161,11 +1170,13 @@ export function renderPageShellStyles(): string {
     .studio-selection-body {
       padding: 8px 10px 10px;
       min-height: 0;
-      overflow: hidden;
-      display: grid;
-      grid-template-rows: minmax(0, 1fr);
-      align-content: stretch;
+      height: 100%;
+      overflow-y: auto;
+      overflow-x: hidden;
+      display: block;
       gap: 8px;
+      scrollbar-gutter: stable;
+      overscroll-behavior: contain;
     }
     .studio-selection-tabstrip {
       margin: 0 10px;
@@ -1177,14 +1188,11 @@ export function renderPageShellStyles(): string {
     }
     .studio-selection-panel {
       min-height: 0;
-      overflow-y: auto;
-      overflow-x: hidden;
+      overflow: visible;
       display: grid;
       align-content: start;
+      align-self: stretch;
       gap: 8px;
-      padding-right: 2px;
-      scrollbar-gutter: stable;
-      overscroll-behavior: contain;
     }
     .studio-selection-title-wrap strong {
       display: block;

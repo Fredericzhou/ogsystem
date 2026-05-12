@@ -400,7 +400,7 @@ test("Studio Bridge renders and edits through the real graph workspace", async (
     await expect(page.locator(".studio-chat-panel.is-open")).toBeVisible();
     await page.locator("#studio-chat-input").fill("增加一个审核角色");
     await page.locator("#studio-chat-send").click();
-    await expect(page.locator(".studio-chat-panel.is-open")).toContainText(/Generating Studio draft|正在生成/);
+    await expect(page.locator(".studio-chat-panel.is-open")).toContainText(/Generating authoring draft|正在生成/);
     await expect(page.locator("#studio-chat-close")).toBeEnabled();
     await page.locator("#studio-chat-close").click();
     await expect(page.locator(".studio-chat-panel.is-open")).toHaveCount(0);

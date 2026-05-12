@@ -85,7 +85,7 @@ test("Build workbench keeps view toggles in footer and aligns graph with docked 
 
     await page.getByRole("tab", { name: "Build" }).click();
     await expect(page.locator("#console-panel-build")).toBeVisible();
-    await expect(page.locator("#workbench-title")).toHaveText("编排工作台");
+    await expect(page.locator("#workbench-title")).toHaveText("Authoring");
     await expect(page.locator("#workbench-status")).toContainText("validation ok");
 
     const globalStatusBar = page.locator("footer.status-bar.global-status");
@@ -105,6 +105,38 @@ test("Build workbench keeps view toggles in footer and aligns graph with docked 
     await expect(page.locator("[data-studio-selection-dialog]")).toContainText("demo-analyst");
     await expect(page.locator('[data-studio-side-tab="debug"]')).toBeVisible();
     await expectDockedSelectionAligned(page);
+    const roleNode = page.locator('#studio-graph-root [data-cell-id="demo-analyst"]').first();
+    await expect(roleNode).toBeVisible();
+    const beforeClickBox = await roleNode.boundingBox();
+    expect(beforeClickBox).toBeTruthy();
+    await roleNode.click();
+    await expect.poll(async () => {
+      const afterClickBox = await roleNode.boundingBox();
+      if (!beforeClickBox || !afterClickBox) {
+        return false;
+      }
+      const deltaX = Math.abs(afterClickBox.x - beforeClickBox.x);
+      const deltaY = Math.abs(afterClickBox.y - beforeClickBox.y);
+      return deltaX <= 4 && deltaY <= 4;
+    }).toBe(true);
+    await expect.poll(async () => page.evaluate(() => {
+      const body = document.querySelector<HTMLElement>(".studio-selection-body");
+      const activePanel = Array.from(document.querySelectorAll<HTMLElement>(".studio-selection-panel"))
+        .find((panel) => !panel.hidden);
+      if (!body || !activePanel) {
+        return null;
+      }
+      body.scrollTop = 140;
+      return {
+        activePanel: activePanel.getAttribute("data-studio-selection-panel") || "",
+        scrollable: body.scrollHeight > body.clientHeight + 8,
+        scrolled: body.scrollTop > 0
+      };
+    })).toEqual({
+      activePanel: "selection",
+      scrollable: true,
+      scrolled: true
+    });
 
     const debugPanel = page.locator('[data-studio-selection-panel="debug"]');
     const structurePanel = page.locator('[data-studio-selection-panel="structure"]');
@@ -112,7 +144,7 @@ test("Build workbench keeps view toggles in footer and aligns graph with docked 
     await page.locator('[data-studio-side-tab="debug"]').click();
     await expect(debugPanel).toBeVisible();
     await expect(debugPanel.locator("#workbench-run-input")).toBeVisible();
-    await expect(debugPanel).toContainText(/Select an exec role|请选择一个 exec 角色/);
+    await expect(debugPanel).toContainText(/execution config|执行配置/);
     await expectDockedSelectionAligned(page);
     await page.locator('[data-studio-side-tab="structure"]').click();
     await expect(structurePanel).toBeVisible();
@@ -137,7 +169,6 @@ test("Build workbench keeps view toggles in footer and aligns graph with docked 
     const resultPanel = page.locator('[data-studio-selection-panel="result"]');
     await expect(resultPanel.locator("#studio-debug-open-operate")).toBeVisible();
     await expect(page.locator("#console-panel-build")).toBeVisible();
-    await page.locator('[data-build-mode="debug"]').click();
     await expect(page.locator('[data-build-mode="debug"]')).toHaveAttribute("aria-pressed", "true");
     await expect(resultPanel).toBeVisible();
     await expect(page.locator('[data-studio-side-tab="result"]')).toHaveAttribute("aria-pressed", "true");

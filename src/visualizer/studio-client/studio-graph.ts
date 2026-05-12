@@ -366,7 +366,7 @@ export class StudioGraphIsland {
       const data = node.getData() as { studioNode?: { kind?: string; roleId?: string } } | undefined;
       if (data?.studioNode?.kind === "role" && data.studioNode.roleId) {
         this.options.onSelectRole?.(data.studioNode.roleId);
-        this.syncSelectionPresentation(data.studioNode.roleId);
+        this.syncSelectionPresentation(data.studioNode.roleId, { preserveViewport: true });
         this.openEditRoleForm(data.studioNode.roleId);
         this.updateToolbarState();
       }
@@ -375,7 +375,7 @@ export class StudioGraphIsland {
       const data = edge.getData() as { studioEdge?: { id?: string; source: string; target: string; eventType: string; runtimeOnlyErrorFlow?: boolean; participatesInJoin?: boolean; editable?: boolean } } | undefined;
       if (data?.studioEdge) {
         this.options.onSelectFlow?.(studioEdgeFlowKey(data.studioEdge));
-        this.syncSelectionPresentation(data.studioEdge.id || "");
+        this.syncSelectionPresentation(data.studioEdge.id || "", { preserveViewport: true });
         this.openEditEdgeForm(data.studioEdge);
         this.updateToolbarState();
       }
@@ -391,7 +391,7 @@ export class StudioGraphIsland {
       this.updateToolbarState();
     });
     this.graph.on("selection:changed", () => {
-      this.syncSelectionPresentation();
+      this.syncSelectionPresentation("", { preserveViewport: true });
       if (!this.applying) {
         this.openSelectedEditor();
       }
@@ -1272,7 +1272,7 @@ export class StudioGraphIsland {
     }
   }
 
-  private syncSelectionPresentation(preferredCellId = ""): void {
+  private syncSelectionPresentation(preferredCellId = "", options: { preserveViewport?: boolean } = {}): void {
     const selectedId = preferredCellId || this.graph.getSelectedCells()[0]?.id || "";
     for (const cell of this.graph.getCells()) {
       const view = this.graph.findViewByCell(cell);
@@ -1293,11 +1293,11 @@ export class StudioGraphIsland {
     if (!selectedCell) {
       return;
     }
-    if (selectedCell.isNode()) {
-      this.graph.centerCell(selectedCell);
-    }
     const selectedView = this.graph.findViewByCell(selectedCell);
     const container = selectedView?.container as Element | undefined;
+    if (!options.preserveViewport && selectedCell.isNode() && this.shouldCenterSelectionInViewport(container)) {
+      this.graph.centerCell(selectedCell);
+    }
     if (!container) {
       return;
     }
@@ -1312,6 +1312,30 @@ export class StudioGraphIsland {
       }
       this.focusMotionTimer = null;
     }, 900);
+  }
+
+  private shouldCenterSelectionInViewport(container: Element | undefined): boolean {
+    if (!container || typeof (container as HTMLElement).getBoundingClientRect !== "function") {
+      return false;
+    }
+    const stageRect = this.stageEl.getBoundingClientRect();
+    const cellRect = (container as HTMLElement).getBoundingClientRect();
+    if (
+      stageRect.width <= 0 ||
+      stageRect.height <= 0 ||
+      cellRect.width <= 0 ||
+      cellRect.height <= 0
+    ) {
+      return false;
+    }
+    const margin = 24;
+    const withinHorizontalViewport =
+      cellRect.left >= stageRect.left + margin &&
+      cellRect.right <= stageRect.right - margin;
+    const withinVerticalViewport =
+      cellRect.top >= stageRect.top + margin &&
+      cellRect.bottom <= stageRect.bottom - margin;
+    return !(withinHorizontalViewport && withinVerticalViewport);
   }
 
   private detectReducedMotion(): boolean {
