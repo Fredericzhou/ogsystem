@@ -832,7 +832,7 @@ test("visualizer server serves run list, details, and live stream", async (t) =>
     const zhRootHtml = await zhRoot.text();
     assert.match(zhRootHtml, /<html lang="zh-CN">/);
     assert.match(zhRootHtml, /项目概览/);
-    assert.match(zhRootHtml, /运行调试/);
+    assert.match(zhRootHtml, /调试/);
     assert.match(zhRootHtml, /<option value="pending">待处理<\/option>/);
     assert.match(zhRootHtml, /<option value="waiting_review">等待评审<\/option>/);
 
@@ -885,6 +885,22 @@ test("visualizer server serves run list, details, and live stream", async (t) =>
     assert.ok(profileUpsert.profiles.some((profile) => profile.profileId === "profile.generated"));
     const profilesFile = JSON.parse(await readFile(path.resolve(workdir, "profiles.json"), "utf8"));
     assert.ok(profilesFile.some((profile) => profile.profileId === "profile.generated"));
+
+    const executionConfigUpsertResponse = await fetch(`${url}/api/v1/project/execution-config`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        profiles: [{ profileId: "profile.exec", toolRef: "tool.exec", timeoutMs: 45000, maxOutputBytes: 8192 }],
+        tools: [{ toolRef: "tool.exec", runner: "local_shell", command: "node", argsTemplate: ["scripts/console-print.mjs"], stdinMode: "text" }]
+      })
+    });
+    assert.equal(executionConfigUpsertResponse.status, 200);
+    const executionConfigUpsert = await executionConfigUpsertResponse.json();
+    assert.ok(executionConfigUpsert.profiles.some((profile) => profile.profileId === "profile.exec"));
+    assert.ok(executionConfigUpsert.tools.some((tool) => tool.toolRef === "tool.exec"));
+    const toolsFile = JSON.parse(await readFile(path.resolve(workdir, "tools.json"), "utf8"));
+    assert.ok(Array.isArray(toolsFile.tools));
+    assert.ok(toolsFile.tools.some((tool) => tool.toolRef === "tool.exec"));
 
     const projectRolesResponse = await fetch(`${url}/api/v1/project/roles`);
     assert.equal(projectRolesResponse.status, 200);

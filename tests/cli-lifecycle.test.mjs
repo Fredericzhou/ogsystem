@@ -98,7 +98,13 @@ test("lifecycle cli project init/create commands scaffold project control plane"
   await stat(path.resolve(tempRoot, ".ogs", "laws.json"));
   await stat(path.resolve(tempRoot, ".ogs", "user-profile.json"));
   await stat(path.resolve(tempRoot, ".ogs", "runs-index.json"));
+  await stat(path.resolve(tempRoot, "profiles.json"));
+  await stat(path.resolve(tempRoot, "tools.json"));
+  await stat(path.resolve(tempRoot, "scripts", "console-print.mjs"));
   const initReadme = await readFile(initReadmePath, "utf8");
+  const initProfiles = JSON.parse(await readFile(path.resolve(tempRoot, "profiles.json"), "utf8"));
+  const initTools = JSON.parse(await readFile(path.resolve(tempRoot, "tools.json"), "utf8"));
+  const initConsoleTool = await readFile(path.resolve(tempRoot, "scripts", "console-print.mjs"), "utf8");
   const initProviderConfig = JSON.parse(
     await readFile(path.resolve(tempRoot, ".ogs", "providers", "opencode.json"), "utf8")
   );
@@ -119,7 +125,14 @@ test("lifecycle cli project init/create commands scaffold project control plane"
   );
   assert.match(initReadme, /runtime\.json/);
   assert.match(initReadme, /model-selection\.json/);
+  assert.match(initReadme, /profiles\.json/);
+  assert.match(initReadme, /tools\.json/);
   assert.match(initReadme, /valid JSON with no comments/);
+  assert.equal(initProfiles[0]?.profileId, "profile.console.print");
+  assert.equal(initProfiles[0]?.toolRef, "tool.console.print");
+  assert.equal(initTools.tools[0]?.toolRef, "tool.console.print");
+  assert.match(initConsoleTool, /console-print/);
+  assert.match(initConsoleTool, /OGSYSTEM_ALLOWED_EVENTS/);
 
   const createResult = await runCli(["project", "create", "demo-app"], { cwd: tempRoot });
   assert.strictEqual(createResult.code, 0);
@@ -133,7 +146,12 @@ test("lifecycle cli project init/create commands scaffold project control plane"
   await stat(path.resolve(createdDir, ".ogs", "model-selection.json"));
   await stat(path.resolve(createdDir, ".ogs", "laws.json"));
   await stat(path.resolve(createdDir, ".ogs", "user-profile.json"));
+  await stat(path.resolve(createdDir, "profiles.json"));
+  await stat(path.resolve(createdDir, "tools.json"));
+  await stat(path.resolve(createdDir, "scripts", "console-print.mjs"));
   const createdReadme = await readFile(createdReadmePath, "utf8");
+  const createdProfiles = JSON.parse(await readFile(path.resolve(createdDir, "profiles.json"), "utf8"));
+  const createdTools = JSON.parse(await readFile(path.resolve(createdDir, "tools.json"), "utf8"));
   const createdProviderConfig = JSON.parse(
     await readFile(path.resolve(createdDir, ".ogs", "providers", "opencode.json"), "utf8")
   );
@@ -148,6 +166,8 @@ test("lifecycle cli project init/create commands scaffold project control plane"
   );
   assert.match(createdReadme, /model-catalog\.json/);
   assert.match(createdReadme, /workspaceIsolation/);
+  assert.equal(createdProfiles[0]?.profileId, "profile.console.print");
+  assert.equal(createdTools.tools[0]?.toolRef, "tool.console.print");
 
   await writeFile(
     path.resolve(createdDir, "system.mmd"),

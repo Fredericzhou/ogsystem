@@ -153,6 +153,7 @@ function testTranslator(_key, vars, fallback) {
 test("visualizer client script injects the execution config editor renderer", () => {
   const script = buildClientAppScript("/api/v1");
   assert.match(script, /const renderStudioExecutionConfigEditor = /);
+  assert.match(script, /const asRecordCollection = /);
 });
 
 test("Studio Bridge renderers display and filter flow labels separately from event types", () => {
@@ -2394,6 +2395,7 @@ test("visualizer client creates a project from the empty workspace wizard", asyn
   await harness.document.getElementById("project-create-form").dispatch("submit");
   await waitForCondition(() => harness.backend.fetchCalls.some((call) => call.path === "/api/v1/project/create"));
   await waitForCondition(() => harness.document.getElementById("console-panel-build").hidden === false);
+  await waitForCondition(() => harness.backend.fetchCalls.some((call) => call.path === "/api/v1/project/role-catalog"));
 
   assert.match(harness.backend.lastProjectCreateBody.requestId, /^project-create-/);
   assert.deepEqual(
@@ -2412,7 +2414,6 @@ test("visualizer client creates a project from the empty workspace wizard", asyn
   assert.equal("projectId" in harness.backend.lastProjectCreateBody, false);
   assert.ok(harness.backend.fetchCalls.some((call) => call.path === "/api/v1/project"));
   assert.equal(harness.backend.fetchCalls.some((call) => call.path === "/api/v1/project/create"), true);
-  assert.equal(harness.backend.fetchCalls.some((call) => call.path === "/api/v1/project/studio/bridge"), true);
   assert.equal(harness.backend.fetchCalls.some((call) => call.path === "/api/v1/project/role-catalog"), true);
   assert.equal(harness.backend.fetchCalls.some((call) => call.path === "/api/v1/project/roles/import"), false);
   assert.equal(harness.backend.fetchCalls.some((call) => call.path === "/api/v1/project/system/save"), false);
@@ -3352,7 +3353,10 @@ test("visualizer client resumes and stops runs through inline forms", async () =
   assert.deepEqual(harness.backend.lastResumeBody, {
     systemPath: "system.mmd",
     input: "resume with operator note",
-    dryRun: false
+    dryRun: false,
+    runtimePath: ".ogs/runtime.json",
+    userProfilePath: ".ogs/user-profile.json",
+    lawsPath: ".ogs/laws.json"
   });
   assert.equal(harness.promptCalls.length, 0);
   assert.equal(harness.confirmCalls.length, 0);
@@ -3369,31 +3373,34 @@ test("visualizer client resumes and stops runs through inline forms", async () =
   assert.match(harness.document.getElementById("flash").textContent, /Stop request recorded/);
 });
 
-test("visualizer client action form exposes dialog semantics and restores focus on Escape", async () => {
+test("visualizer client keeps dry-run launch inline in Build and avoids opening the action dialog", async () => {
   const harness = await createClientHarness({ readinessCanDryRun: true });
 
   const dryRunButton = harness.document.getElementById("build-dry-run");
   assert.ok(dryRunButton);
   dryRunButton.focus();
   await dryRunButton.click();
-  await waitForCondition(() => Boolean(harness.document.getElementById("action-start-system-path")));
+  await waitForCondition(() => Boolean(harness.document.getElementById("workbench-run-input")));
 
   const actionSection = harness.document.getElementById("action-form-section");
-  assert.equal(actionSection.hidden, false);
+  assert.equal(actionSection.hidden, true);
   assert.equal(actionSection.getAttribute("role"), "dialog");
   assert.equal(actionSection.getAttribute("aria-modal"), "true");
   assert.equal(actionSection.getAttribute("aria-labelledby"), "action-form-title");
-  assert.equal(actionSection.getAttribute("aria-hidden"), "false");
-  assert.equal(harness.document.activeElement?.id, "action-start-system-path");
+  assert.equal(actionSection.getAttribute("aria-hidden"), "true");
+  assert.equal(harness.document.activeElement?.id, "workbench-run-input");
+  assert.equal(harness.document.getElementById("workbench-run-runtime-path").value, ".ogs/runtime.json");
+  assert.equal(harness.document.getElementById("workbench-run-user-profile-path").value, ".ogs/user-profile.json");
+  assert.equal(harness.document.getElementById("workbench-run-laws-path").value, ".ogs/laws.json");
 
   for (const handler of harness.document.listeners.get("keydown") ?? []) {
-    await handler({ key: "Escape" });
+    await handler({ key: "Escape", preventDefault() {} });
   }
   await settle();
 
   assert.equal(harness.document.getElementById("action-form-section").hidden, true);
   assert.equal(harness.document.getElementById("action-form-section").getAttribute("aria-hidden"), "true");
-  assert.equal(harness.document.activeElement?.id, "build-dry-run");
+  assert.equal(harness.document.activeElement?.id, "workbench-run-input");
 });
 
 test("visualizer client appends SSE timeline entries and refreshes only targeted panels", async () => {
@@ -3683,14 +3690,17 @@ test("visualizer client edits the Mermaid workbench, saves, and starts a run", a
   const dryRunButton = harness.document.getElementById("build-dry-run");
   assert.ok(dryRunButton);
   await dryRunButton.click();
-  await waitForCondition(() => Boolean(harness.document.getElementById("action-run-prompt")));
-  await harness.document.getElementById("action-run-prompt").input("ship a smoke test");
-  await harness.document.getElementById("action-form-submit").click();
+  await waitForCondition(() => Boolean(harness.document.getElementById("workbench-run-input")));
+  await harness.document.getElementById("workbench-run-input").input("ship a smoke test");
+  await harness.document.getElementById("workbench-start-run").click();
   await settle();
 
   assert.ok(harness.backend.fetchCalls.some((call) => call.path === "/api/v1/runs/start"));
   assert.equal(harness.backend.lastStartBody.systemPath, "system.mmd");
   assert.equal(harness.backend.lastStartBody.input, "ship a smoke test");
+  assert.equal(harness.backend.lastStartBody.runtimePath, ".ogs/runtime.json");
+  assert.equal(harness.backend.lastStartBody.userProfilePath, ".ogs/user-profile.json");
+  assert.equal(harness.backend.lastStartBody.lawsPath, ".ogs/laws.json");
   assert.equal(harness.promptCalls.length, 0);
   assert.equal(harness.document.getElementById("flash").textContent, "Start completed for run-123 (done).");
 });
@@ -3701,46 +3711,60 @@ test("visualizer client blocks start run submit when run input is empty", async 
   const dryRunButton = harness.document.getElementById("build-dry-run");
   assert.ok(dryRunButton);
   await dryRunButton.click();
-  await waitForCondition(() => Boolean(harness.document.getElementById("action-run-prompt")));
-  assert.equal(harness.document.getElementById("action-run-prompt").value, "");
+  await waitForCondition(() => Boolean(harness.document.getElementById("workbench-run-input")));
+  assert.equal(harness.document.getElementById("workbench-run-input").value, "");
+  await harness.document.getElementById("workbench-start-run").click();
+  await settle();
+  assert.equal(harness.backend.lastStartBody, undefined);
+  assert.match(harness.document.getElementById("workbench-body").textContent, /Run input is required|运行输入为必填/);
 });
 
-test("visualizer client keeps a single build dry-run entry and uses Dry Run mode as an informational panel", async () => {
+test("visualizer client keeps dry run as an action button and opens the debug side panel", async () => {
   const harness = await createClientHarness({ readinessCanDryRun: true });
 
   assert.ok(harness.document.getElementById("build-dry-run"));
   assert.match(harness.document.getElementById("workbench-actions").innerHTML, /id="build-dry-run"/);
   assert.doesNotMatch(harness.document.getElementById("workbench-body").innerHTML, /id="build-dry-run"/);
+  assert.equal(
+    harness.document.getElementById("workbench-tabs").querySelectorAll("[data-build-mode=\"dry-run\"]").length,
+    0
+  );
 
-  const dryRunModeButton = harness.document.getElementById("workbench-tabs")
-    .querySelectorAll("[data-build-mode=\"dry-run\"]")[0];
-  assert.ok(dryRunModeButton);
   const startCallsBefore = harness.backend.fetchCalls.filter((call) => call.path === "/api/v1/runs/start").length;
 
-  await dryRunModeButton.click();
-  await settle();
+  await harness.document.getElementById("build-dry-run").click();
+  await waitForCondition(() => Boolean(harness.document.getElementById("workbench-run-input")));
 
   assert.equal(harness.document.getElementById("action-form-section").hidden, true);
   assert.equal(harness.backend.fetchCalls.filter((call) => call.path === "/api/v1/runs/start").length, startCallsBefore);
+  const inlineRunInput = harness.document.getElementById("workbench-run-input");
+  const inlineStartRunButton = harness.document.getElementById("workbench-start-run");
+  assert.ok(inlineRunInput);
+  assert.ok(inlineStartRunButton);
+  assert.match(inlineStartRunButton.textContent, /Start dry run|开始试运行/);
   assert.match(
-    harness.document.getElementById("workbench-body").textContent,
-    /Dry Run button above|使用上方“试运行”按钮/
+    harness.document.body.textContent,
+    /Launch a fresh dry run directly from Build|在编排工作台直接发起试运行/
   );
   assert.match(
-    harness.document.getElementById("workbench-body").textContent,
-    /No dry run has been launched from Build yet|尚未从构建发起试运行/
+    harness.document.body.textContent,
+    /Start a fresh dry run from Build to watch graph progression and key signals here|先点击“试运行”发起一次新记录/
   );
 });
 
-test("visualizer client does not relaunch a run when switching back to the Dry Run mode tab", async () => {
+test("visualizer client does not relaunch a run when switching between edit and debug modes", async () => {
   const harness = await createClientHarness({ readinessCanDryRun: true });
 
   const dryRunButton = harness.document.getElementById("build-dry-run");
   assert.ok(dryRunButton);
   await dryRunButton.click();
-  await waitForCondition(() => Boolean(harness.document.getElementById("action-run-prompt")));
-  await harness.document.getElementById("action-run-prompt").input("panel semantics");
-  await harness.document.getElementById("action-form-submit").click();
+  await waitForCondition(() => Boolean(harness.document.getElementById("workbench-run-input")));
+  const workbenchRunInput = harness.document.getElementById("workbench-run-input");
+  const workbenchStartRunButton = harness.document.getElementById("workbench-start-run");
+  assert.ok(workbenchRunInput);
+  assert.ok(workbenchStartRunButton);
+  await workbenchRunInput.input("panel semantics");
+  await workbenchStartRunButton.click();
   await settle();
 
   const startCallsAfterLaunch = harness.backend.fetchCalls.filter((call) => call.path === "/api/v1/runs/start").length;
@@ -3748,22 +3772,80 @@ test("visualizer client does not relaunch a run when switching back to the Dry R
 
   const modeButtons = harness.document.getElementById("workbench-tabs");
   const editModeButton = modeButtons.querySelectorAll("[data-build-mode=\"edit\"]")[0];
-  const dryRunModeButton = modeButtons.querySelectorAll("[data-build-mode=\"dry-run\"]")[0];
+  const debugModeButton = modeButtons.querySelectorAll("[data-build-mode=\"debug\"]")[0];
   assert.ok(editModeButton);
-  assert.ok(dryRunModeButton);
+  assert.ok(debugModeButton);
 
   await editModeButton.click();
   await settle();
-  await dryRunModeButton.click();
+  await debugModeButton.click();
   await settle();
 
   assert.equal(harness.document.getElementById("action-form-section").hidden, true);
   assert.equal(harness.backend.fetchCalls.filter((call) => call.path === "/api/v1/runs/start").length, startCallsAfterLaunch);
+  assert.equal(harness.document.getElementById("workbench-run-input").value, "panel semantics");
   assert.match(harness.document.getElementById("workbench-status").textContent, /run-123/);
   assert.match(harness.document.getElementById("workbench-body").textContent, /run-123/);
 });
 
-test("visualizer client opens Studio Bridge, saves an authoring draft, and dry-runs into run detail", async () => {
+test("visualizer client clears the previous runtime projection before a new Build dry run resolves", async () => {
+  const deferred = createDeferred();
+  const harness = await createClientHarness({
+    readinessCanDryRun: true,
+    includeSecondRun: true
+  });
+
+  const firstDryRunButton = harness.document.getElementById("build-dry-run");
+  assert.ok(firstDryRunButton);
+  await firstDryRunButton.click();
+  await waitForCondition(() => Boolean(harness.document.getElementById("workbench-run-input")));
+  await harness.document.getElementById("workbench-run-input").input("first dry run");
+  await harness.document.getElementById("workbench-start-run").click();
+  await settle();
+
+  assert.match(harness.document.getElementById("detail").textContent, /run-123/);
+
+  const originalHandle = harness.backend.handle.bind(harness.backend);
+  let intercepted = false;
+  harness.backend.handle = async (url, request = {}) => {
+    const parsed = new URL(url, "http://visualizer.test");
+    const method = request.method ?? "GET";
+    if (!intercepted && parsed.pathname === "/api/v1/runs/start" && method === "POST") {
+      intercepted = true;
+      harness.backend.fetchCalls.push({ method, path: `${parsed.pathname}${parsed.search}`, body: request.body ?? null });
+      harness.backend.lastStartBody = JSON.parse(request.body ?? "{}");
+      await deferred.promise;
+      return createResponse({
+        runId: harness.backend.secondRunId,
+        status: "done",
+        resultSummary: {
+          systemId: "viz.review.demo",
+          transitionCount: 1
+        },
+        followUpActions: [{ action: "open-run-detail", label: "Open run." }]
+      });
+    }
+    return originalHandle(url, request);
+  };
+
+  await harness.document.getElementById("build-dry-run").click();
+  await waitForCondition(() => Boolean(harness.document.getElementById("workbench-run-input")));
+  await harness.document.getElementById("workbench-run-input").input("second dry run");
+  const secondStartPromise = harness.document.getElementById("workbench-start-run").click();
+  await settle();
+
+  assert.doesNotMatch(harness.document.getElementById("detail").textContent, /run-123/);
+  assert.equal(harness.document.getElementById("flash").textContent.includes("Start completed"), false);
+
+  deferred.resolve();
+  await secondStartPromise;
+  await settle();
+
+  assert.match(harness.document.getElementById("detail").textContent, /run-456/);
+  assert.equal(harness.backend.lastStartBody.input, "second dry run");
+});
+
+test("visualizer client opens Studio Bridge, saves an authoring draft, and dry-runs into Build debug", async () => {
   const harness = await createClientHarness({ readinessCanDryRun: true });
   const mountCalls = [];
   harness.window.OGSVisualizerClient.mountStudioX6Bridge = (root, options) => {
@@ -3782,7 +3864,7 @@ test("visualizer client opens Studio Bridge, saves an authoring draft, and dry-r
   assert.match(harness.document.getElementById("workbench-body").textContent, /demo-analyst|nothing selected/i);
   assert.doesNotMatch(harness.document.getElementById("workbench-tabs").textContent, /Graph|Source|Rendered|Structure/);
   assert.match(harness.document.getElementById("workbench-body").textContent, /demo-analyst|nothing selected/i);
-  assert.match(harness.document.getElementById("workbench-body").textContent, /graph index/);
+  assert.match(harness.document.getElementById("workbench-body").textContent, /Browse|检索/);
   assert.match(harness.document.getElementById("workbench-status").textContent, /disk in sync/i);
   assert.match(harness.document.getElementById("workbench-status").textContent, /validation ok/i);
   assert.match(harness.document.getElementById("workbench-status").textContent, /demo-analyst/i);
@@ -3795,8 +3877,8 @@ test("visualizer client opens Studio Bridge, saves an authoring draft, and dry-r
   assert.ok(harness.document.getElementById("build-save"));
   assert.ok(harness.document.getElementById("build-dry-run"));
   assert.match(harness.document.getElementById("workbench-tabs").textContent, /Edit/);
-  assert.match(harness.document.getElementById("workbench-tabs").textContent, /Dry Run/);
   assert.match(harness.document.getElementById("workbench-tabs").textContent, /Debug/);
+  assert.doesNotMatch(harness.document.getElementById("workbench-tabs").textContent, /Dry Run/);
   assert.ok(harness.document.getElementById("studio-graph-root"));
   assert.equal(mountCalls.length > 0, true);
   assert.ok(latestEditableMount().rolePackages);
@@ -3915,7 +3997,7 @@ test("visualizer client opens Studio Bridge, saves an authoring draft, and dry-r
     .find((button) => button.getAttribute("data-build-mode") === "edit");
   assert.ok(editModeButtonAfterRunGraph);
   assert.equal(editModeButtonAfterRunGraph.getAttribute("aria-pressed"), "true");
-  assert.match(harness.document.getElementById("workbench-body").textContent, /graph index/i);
+  assert.match(harness.document.getElementById("workbench-body").textContent, /Browse|检索/i);
   await bridgeTab.click();
   await settle();
 
@@ -3936,7 +4018,7 @@ test("visualizer client opens Studio Bridge, saves an authoring draft, and dry-r
   assert.ok(latestMount);
   const addRoleAuthoring = cloneJson(latestMount.authoring);
   const addRoleCanvas = cloneJson(latestMount.canvas);
-  addRoleAuthoring.roles["new-role"] = { roleId: "new-role", title: "New role", bindingKind: "noop" };
+  addRoleAuthoring.roles["new-role"] = { roleId: "new-role", title: "New role", bindingKind: "exec", profileId: "profile.new-role" };
   addRoleAuthoring.layout.nodes["new-role"] = { x: 380, y: 120, width: 180, height: 84 };
   addRoleCanvas.nodes.push({
     id: "new-role",
@@ -3947,7 +4029,7 @@ test("visualizer client opens Studio Bridge, saves an authoring draft, and dry-r
     height: 84,
     label: "New role",
     badges: [],
-    bindingKind: "noop"
+    bindingKind: "exec"
   });
   await latestMount.onApplyCommand({
     authoring: addRoleAuthoring,
@@ -3959,11 +4041,17 @@ test("visualizer client opens Studio Bridge, saves an authoring draft, and dry-r
   await settle();
   assert.equal(harness.backend.lastExecutionConfigUpsertBody.profiles[0].profileId, "profile.new-role");
   assert.equal(harness.backend.lastExecutionConfigUpsertBody.tools[0].toolRef, "tool.new-role");
-  assert.equal(harness.backend.lastAuthoringApplyCanvasBody.authoring.roles["new-role"].bindingKind, "noop");
+  assert.equal(harness.backend.lastAuthoringApplyCanvasBody.authoring.roles["new-role"].bindingKind, "exec");
   assert.equal(
     harness.backend.lastAuthoringApplyCanvasBody.canvas.nodes.some((node) => node.roleId === "new-role"),
     true
   );
+
+  latestEditableMount().onSelectRole("new-role");
+  await settle();
+  const debugTabButton = harness.document.getElementById("workbench-body").querySelectorAll("[data-studio-side-tab=\"debug\"]")[0];
+  assert.ok(debugTabButton);
+  assert.equal(debugTabButton.getAttribute("data-studio-side-tab"), "debug");
 
   latestMount = latestEditableMount();
   assert.ok(latestMount);
@@ -3999,18 +4087,29 @@ test("visualizer client opens Studio Bridge, saves an authoring draft, and dry-r
   assert.ok(dryRunButton);
   await dryRunButton.click();
   await settle();
-  await harness.document.getElementById("action-run-prompt").input("bridge smoke");
-  await harness.document.getElementById("action-form-submit").click();
+  await harness.document.getElementById("workbench-run-input").input("bridge smoke");
+  await harness.document.getElementById("workbench-start-run").click();
   await settle();
 
   assert.ok(harness.backend.fetchCalls.some((call) => call.path === "/api/v1/runs/start"));
   assert.equal(harness.backend.lastStartBody.dryRun, true);
   assert.equal(harness.backend.lastStartBody.systemPath, "system.mmd");
+  assert.equal(harness.backend.lastStartBody.runtimePath, ".ogs/runtime.json");
+  assert.equal(harness.backend.lastStartBody.userProfilePath, ".ogs/user-profile.json");
+  assert.equal(harness.backend.lastStartBody.lawsPath, ".ogs/laws.json");
   assert.match(harness.document.getElementById("detail").textContent, /run-123/);
   assert.equal(harness.document.getElementById("console-panel-build").hidden, false);
   assert.match(harness.document.getElementById("workbench-status").textContent, /run-123/);
-  assert.match(harness.document.getElementById("workbench-body").textContent, /run-123/);
-  assert.match(harness.document.getElementById("workbench-body").textContent, /Open in Operate/);
+  const debugSideTabAfterRun = harness.document.getElementById("workbench-body").querySelectorAll("[data-studio-side-tab=\"debug\"]")[0];
+  assert.ok(debugSideTabAfterRun);
+  const debugModeButtonAfterRun = harness.document.getElementById("workbench-tabs")
+    .querySelectorAll("[data-build-mode=\"debug\"]")[0];
+  assert.ok(debugModeButtonAfterRun);
+  assert.equal(debugModeButtonAfterRun.getAttribute("aria-pressed"), "true");
+  assert.equal(
+    mountCalls.findLast((call) => call.root.id === "studio-graph-root")?.options.readOnly,
+    true
+  );
 });
 
 test("visualizer client retries Studio graph mount until the Build panel is visible and sized", async () => {

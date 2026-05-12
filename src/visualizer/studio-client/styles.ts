@@ -114,6 +114,86 @@ export function injectStudioGraphStyles(): void {
       min-width: 0;
       position: relative;
     }
+    .studio-graph-canvas .x6-node .x6-port-body {
+      transition: stroke 140ms ease, fill 140ms ease, opacity 140ms ease;
+    }
+    .studio-graph-canvas .x6-node .x6-port-body,
+    .studio-graph-canvas .x6-node [data-studio-port] {
+      vector-effect: non-scaling-stroke;
+    }
+    .studio-graph-canvas .x6-node.is-selection-active rect,
+    .studio-graph-canvas .x6-node.is-selection-active path:first-of-type {
+      filter: drop-shadow(0 0 0.35rem rgba(56, 189, 248, 0.32));
+    }
+    .studio-graph-canvas .x6-node.is-selection-focus-pulse rect,
+    .studio-graph-canvas .x6-node.is-selection-focus-pulse path:first-of-type {
+      animation: studio-node-focus-pulse 820ms ease-out 1;
+    }
+    .studio-graph-canvas .x6-node.is-runtime-active rect,
+    .studio-graph-canvas .x6-node.is-runtime-active path:first-of-type {
+      filter: drop-shadow(0 0 0.55rem rgba(56, 189, 248, 0.22));
+    }
+    .studio-graph-canvas .x6-node.is-runtime-waiting-review rect,
+    .studio-graph-canvas .x6-node.is-runtime-waiting-review path:first-of-type {
+      animation: studio-human-gate-pulse 2200ms ease-in-out infinite;
+    }
+    .studio-graph-canvas .x6-node.has-human-gate:not(.is-runtime-waiting-review) rect,
+    .studio-graph-canvas .x6-node.has-human-gate:not(.is-runtime-waiting-review) path:first-of-type {
+      stroke-dasharray: 8 4;
+    }
+    .studio-graph-canvas .x6-edge .connection {
+      transition: stroke 160ms ease, stroke-width 160ms ease, opacity 160ms ease, stroke-dasharray 160ms ease;
+    }
+    .studio-graph-canvas .x6-edge.is-selection-active .connection {
+      stroke-width: 2.6px !important;
+      filter: drop-shadow(0 0 0.3rem rgba(56, 189, 248, 0.25));
+    }
+    .studio-graph-canvas .x6-edge.is-runtime-active .connection {
+      stroke-width: 2.6px !important;
+      stroke-dasharray: 8 8;
+      animation: studio-edge-flow 900ms linear infinite;
+    }
+    .studio-graph-canvas .x6-edge.is-runtime-error .connection {
+      stroke-dasharray: 7 5;
+    }
+    .studio-graph-canvas .x6-edge.is-loop-back .connection {
+      stroke-dasharray: 5 6;
+    }
+    .studio-graph-island[data-reduced-motion="on"] .studio-graph-canvas .x6-node.is-selection-focus-pulse rect,
+    .studio-graph-island[data-reduced-motion="on"] .studio-graph-canvas .x6-node.is-selection-focus-pulse path:first-of-type,
+    .studio-graph-island[data-reduced-motion="on"] .studio-graph-canvas .x6-node.is-runtime-waiting-review rect,
+    .studio-graph-island[data-reduced-motion="on"] .studio-graph-canvas .x6-node.is-runtime-waiting-review path:first-of-type,
+    .studio-graph-island[data-reduced-motion="on"] .studio-graph-canvas .x6-edge.is-runtime-active .connection {
+      animation: none !important;
+    }
+    @keyframes studio-node-focus-pulse {
+      0% {
+        transform: scale(1);
+      }
+      28% {
+        transform: scale(1.025);
+      }
+      100% {
+        transform: scale(1);
+      }
+    }
+    @keyframes studio-edge-flow {
+      from {
+        stroke-dashoffset: 18;
+      }
+      to {
+        stroke-dashoffset: 0;
+      }
+    }
+    @keyframes studio-human-gate-pulse {
+      0%,
+      100% {
+        filter: drop-shadow(0 0 0 rgba(251, 191, 36, 0));
+      }
+      50% {
+        filter: drop-shadow(0 0 0.45rem rgba(251, 191, 36, 0.32));
+      }
+    }
     .studio-graph-empty {
       display: grid;
       place-items: center;

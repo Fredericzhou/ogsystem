@@ -44,6 +44,9 @@ const OGS_MODEL_SELECTION_FILE = ".ogs/model-selection.json";
 const OGS_PROVIDER_OPENCODE_FILE = ".ogs/providers/opencode.json";
 const OGS_LAWS_FILE = ".ogs/laws.json";
 const OGS_USER_PROFILE_FILE = ".ogs/user-profile.json";
+const DEFAULT_DEBUG_TOOL_SCRIPT_FILE = "scripts/console-print.mjs";
+const DEFAULT_DEBUG_PROFILE_ID = "profile.console.print";
+const DEFAULT_DEBUG_TOOL_REF = "tool.console.print";
 
 export type IndexedRun = {
   runId: string;
@@ -290,6 +293,73 @@ function createDefaultUserProfile(): Record<string, unknown> {
   };
 }
 
+function createDefaultProfilesConfig(): Array<Record<string, unknown>> {
+  return [
+    {
+      profileId: DEFAULT_DEBUG_PROFILE_ID,
+      toolRef: DEFAULT_DEBUG_TOOL_REF,
+      timeoutMs: 30000,
+      maxOutputBytes: 65536
+    }
+  ];
+}
+
+function createDefaultToolsConfig(): Record<string, unknown> {
+  return {
+    tools: [
+      {
+        toolRef: DEFAULT_DEBUG_TOOL_REF,
+        runner: "local_shell",
+        command: "node",
+        argsTemplate: [DEFAULT_DEBUG_TOOL_SCRIPT_FILE],
+        stdinMode: "text"
+      }
+    ]
+  };
+}
+
+function createDefaultConsolePrintToolScript(): string {
+  return [
+    '#!/usr/bin/env node',
+    'import { env, stderr, stdin, stdout } from "node:process";',
+    "",
+    "async function readPrompt() {",
+    "  const chunks = [];",
+    '  for await (const chunk of stdin) chunks.push(Buffer.from(chunk));',
+    '  return Buffer.concat(chunks).toString("utf8").trim();',
+    "}",
+    "",
+    "function allowedEvents() {",
+    '  return String(env.OGSYSTEM_ALLOWED_EVENTS || "")',
+    '    .split(",")',
+    "    .map((value) => value.trim())",
+    "    .filter(Boolean);",
+    "}",
+    "",
+    "function chooseEvent(events) {",
+    '  const explicit = (process.argv[2] || env.OGSYSTEM_DEBUG_EVENT || "").trim();',
+    "  if (explicit && (!events.length || events.includes(explicit))) return explicit;",
+    '  return events[0] || explicit || "DONE";',
+    "}",
+    "",
+    "const prompt = await readPrompt();",
+    "const events = allowedEvents();",
+    "const event = chooseEvent(events);",
+    'const roleId = env.OGSYSTEM_ROLE_ID || "unknown-role";',
+    `const profileId = env.OGSYSTEM_PROFILE_ID || "${DEFAULT_DEBUG_PROFILE_ID}";`,
+    `const toolRef = env.OGSYSTEM_TOOL_REF || "${DEFAULT_DEBUG_TOOL_REF}";`,
+    'const content = prompt || `[console-print] ${roleId}`;',
+    'stderr.write(`[console-print] role=${roleId} event=${event}\\n`);',
+    "if (prompt) stderr.write(`${prompt}\\n`);",
+    "stdout.write(JSON.stringify({",
+    "  event,",
+    "  content,",
+    "  data: { roleId, profileId, toolRef, allowedEvents: events }",
+    "}));",
+    ""
+  ].join("\n");
+}
+
 function createDefaultOgsReadme(): string {
   return [
     "# .ogs control plane",
@@ -306,6 +376,8 @@ function createDefaultOgsReadme(): string {
     "- `providers/opencode.json`: Reference template for wiring OpenCode provider config on the local machine.",
     "- `laws.json`: Project laws and transition constraints used by the runtime.",
     "- `user-profile.json`: Default user preference profile injected into runs.",
+    "- `profiles.json`: Exec profiles that bind `exec.bind.*` roles to local tools.",
+    "- `tools.json`: Local tool registry consumed by `profiles.json`.",
     "- `project.json`: Project identity and creation metadata. Usually generated once and then left alone.",
     "- `runs-index.json`: Generated run index. Rebuilt by lifecycle commands.",
     "",
@@ -994,6 +1066,7 @@ export async function ensureProjectSkeleton(args: {
   await mkdir(paths.ogsDir, { recursive: true });
   await mkdir(paths.runsDir, { recursive: true });
   await mkdir(resolve(paths.ogsDir, "providers"), { recursive: true });
+  await mkdir(resolve(args.workdir, "scripts"), { recursive: true });
   await ensureFile(
     paths.projectPath,
     `${stringifyJson({
@@ -1020,6 +1093,12 @@ export async function ensureProjectSkeleton(args: {
     })}\n`
   );
   await ensureFile(paths.readmePath, `${createDefaultOgsReadme()}\n`);
+  await ensureFile(resolve(args.workdir, "profiles.json"), `${stringifyJson(createDefaultProfilesConfig())}\n`);
+  await ensureFile(resolve(args.workdir, "tools.json"), `${stringifyJson(createDefaultToolsConfig())}\n`);
+  await ensureFile(
+    resolve(args.workdir, DEFAULT_DEBUG_TOOL_SCRIPT_FILE),
+    `${createDefaultConsolePrintToolScript()}\n`
+  );
 }
 
 export async function scaffoldProjectTemplate(args: {

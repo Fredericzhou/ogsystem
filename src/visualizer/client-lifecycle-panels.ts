@@ -153,7 +153,6 @@ export function renderWorkbenchModeTabsHtml(args: {
   const { buildMode, t, escapeText } = args;
   return [
     '<button type="button" class="button subtle ' + (buildMode === "edit" ? "active" : "") + '" data-build-mode="edit" aria-pressed="' + escapeText(String(buildMode === "edit")) + '">' + escapeText(t("build.mode.edit", undefined, "Edit")) + '</button>',
-    '<button type="button" class="button subtle ' + (buildMode === "dry-run" ? "active" : "") + '" data-build-mode="dry-run" aria-pressed="' + escapeText(String(buildMode === "dry-run")) + '">' + escapeText(t("build.mode.dryRun", undefined, "Dry Run")) + '</button>',
     '<button type="button" class="button subtle ' + (buildMode === "debug" ? "active" : "") + '" data-build-mode="debug" aria-pressed="' + escapeText(String(buildMode === "debug")) + '">' + escapeText(t("build.mode.debug", undefined, "Debug")) + '</button>'
   ].join("");
 }
@@ -194,41 +193,31 @@ export function renderWorkbenchModeBodyHtml(args: {
   lastDryRunId: string;
   hasDraft: boolean;
   workbenchSource: string;
+  workbenchRunDraft?: Record<string, any> | null | undefined;
+  workbenchRunDraftErrors?: Record<string, any> | null | undefined;
+  actionBusy?: boolean;
   t: Translator;
   escapeText: (value: unknown) => string;
 }): string {
-  const { buildMode, workbenchView, dirty, workbenchSavedPath, lastDryRunId, hasDraft, workbenchSource, t, escapeText } = args;
-  if (buildMode === "dry-run") {
-    return [
-      '<div class="structure-list">',
-      '<div class="event"><div class="event-top"><span>' + escapeText(t("build.mode.dryRun", undefined, "Dry Run")) + '</span><span>' + escapeText(dirty ? t("workbench.unsavedChanges", undefined, "unsaved changes") : t("workbench.diskInSync", undefined, "disk in sync")) + '</span></div><strong>' + escapeText(t("build.dryRunPrepTitle", undefined, "Dry Run prepares validation, Mermaid generation, save, then opens the start form.")) + '</strong><div class="hint">' + escapeText(t("build.dryRunPrepHint", {
-        path: workbenchSavedPath || "system.mmd"
-      }, "Use the Dry Run button above to launch. This panel shows the saved source path " + (workbenchSavedPath || "system.mmd") + " and the latest captured result.")) + '</div></div>',
-      lastDryRunId
-        ? '<div class="event"><div class="event-top"><span>' + escapeText(t("build.lastDryRun", undefined, "Last dry run")) + '</span><span>' + escapeText(t("common.captured", undefined, "captured")) + '</span></div><strong>' + escapeText(lastDryRunId) + '</strong><div class="hint">' + escapeText(t("build.openDebugHint", undefined, "Review the captured result here, switch to Debug, or jump to Operate for runtime controls.")) + '</div></div>'
-        : '<div class="hint">' + escapeText(t("build.noDryRunYet", undefined, "No dry run has been launched from Build yet.")) + '</div>',
-      '</div>'
-    ].join("");
-  }
-  if (buildMode === "debug") {
-    return [
-      '<div class="structure-list">',
-      '<div class="event"><div class="event-top"><span>' + escapeText(t("build.mode.debug", undefined, "Debug")) + '</span><span>' + escapeText(lastDryRunId || t("common.missing", undefined, "missing")) + '</span></div><strong>' + escapeText(lastDryRunId ? t("build.debugDryRunTitle", undefined, "Dry-run result captured in Build.") : t("build.noDryRunYet", undefined, "No dry run has been launched from Build yet.")) + '</strong><div class="hint">' + escapeText(t("build.debugDryRunHint", undefined, "Use Operate for resume, stop, logs, and recovery controls.")) + '</div></div>',
-      lastDryRunId ? '<button class="button subtle" id="build-open-operate">' + escapeText(t("build.openOperate", undefined, "Open in Operate")) + '</button>' : "",
-      '</div>'
-    ].join("");
-  }
+  const {
+    workbenchView,
+    dirty,
+    hasDraft,
+    workbenchSource,
+    t,
+    escapeText
+  } = args;
   if (workbenchView === "source") {
     return [
       '<div class="workbench-source-actions">',
-      '<div class="hint">' + escapeText(t("workbench.sourceActionsHint", undefined, "Draft actions only affect the current workbench source until you save.")) + '</div>',
+      '<div class="hint">' + escapeText(t("workbench.sourceActionsHint", undefined, "Draft actions only affect the current graph source until you save.")) + '</div>',
       '<div class="toolbar-group">',
       '<button class="button subtle" id="workbench-new-draft">' + escapeText(t("action.newDraft")) + '</button>',
       hasDraft ? '<button class="button subtle" id="workbench-recover-draft">' + escapeText(t("action.recoverDraft")) + '</button>' : "",
       dirty ? '<button class="button subtle" id="workbench-revert">' + escapeText(t("action.revertToDisk")) + '</button>' : "",
       '</div>',
       '</div>',
-      '<textarea id="workbench-editor" class="editor" spellcheck="false" aria-label="' + escapeText(t("workbench.editorAriaLabel", undefined, "Workbench source editor")) + '">' + escapeText(workbenchSource || "") + '</textarea>'
+      '<textarea id="workbench-editor" class="editor" spellcheck="false" aria-label="' + escapeText(t("workbench.editorAriaLabel", undefined, "Graph source editor")) + '">' + escapeText(workbenchSource || "") + '</textarea>'
     ].join("");
   }
   return "";

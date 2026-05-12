@@ -5,8 +5,139 @@ type JsonRecord = Record<string, unknown>;
 type Translator = (key: string, vars?: Record<string, unknown>, fallback?: string) => string;
 type DateFormatter = (value: unknown) => string;
 
-function formatJson(value: unknown): string {
+export function formatJson(value: unknown): string {
   return JSON.stringify(value ?? null, null, 2);
+}
+
+export function asRecord(value: unknown): JsonRecord | null {
+  return value && typeof value === "object" && !Array.isArray(value)
+    ? value as JsonRecord
+    : null;
+}
+
+export function asRecordArray(value: unknown): JsonRecord[] {
+  return Array.isArray(value)
+    ? value.filter((item) => item && typeof item === "object" && !Array.isArray(item)) as JsonRecord[]
+    : [];
+}
+
+export function asRecordCollection(value: unknown): JsonRecord[] {
+  if (Array.isArray(value)) {
+    return asRecordArray(value);
+  }
+  const record = asRecord(value);
+  if (!record) {
+    return [];
+  }
+  const objectValues = Object.values(record)
+    .filter((item) => item && typeof item === "object" && !Array.isArray(item)) as JsonRecord[];
+  return objectValues.length > 0 ? objectValues : [record];
+}
+
+export function compactText(value: unknown, maxLength = 180): string {
+  const normalized = String(value ?? "")
+    .replace(/\s+/g, " ")
+    .trim();
+  if (!normalized) {
+    return "";
+  }
+  return normalized.length > maxLength
+    ? normalized.slice(0, Math.max(0, maxLength - 1)) + "..."
+    : normalized;
+}
+
+export function compactJsonPreview(value: unknown, maxLength = 180): string {
+  if (value === null || value === undefined || value === "") {
+    return "";
+  }
+  const raw = typeof value === "string" ? value : formatJson(value);
+  return compactText(raw, maxLength);
+}
+
+export function renderDisclosureCard(args: {
+  title: string;
+  headline: string;
+  meta?: string;
+  hint?: string;
+  bodyHtml?: string;
+  open?: boolean;
+  tone?: "notice" | "warning" | "critical";
+}): string {
+  const toneClass = args.tone ? ` ${args.tone}` : "";
+  return [
+    `<details class="event disclosure${toneClass}"${args.open ? " open" : ""}>`,
+    '<summary class="disclosure-summary">',
+    '<span class="disclosure-summary-copy">',
+    `<span class="disclosure-kicker">${escapeText(args.title)}</span>`,
+    `<strong>${escapeText(args.headline)}</strong>`,
+    "</span>",
+    `<span class="disclosure-meta">${escapeText(args.meta ?? "")}</span>`,
+    "</summary>",
+    args.hint ? `<div class="hint disclosure-hint">${escapeText(args.hint)}</div>` : "",
+    args.bodyHtml ? `<div class="disclosure-body">${args.bodyHtml}</div>` : "",
+    "</details>"
+  ].join("");
+}
+
+export function renderPreDisclosure(args: {
+  title: string;
+  headline?: string;
+  meta?: string;
+  hint?: string;
+  value: unknown;
+  emptyTitle: string;
+  emptyMeta?: string;
+  emptyHint?: string;
+  open?: boolean;
+  tone?: "notice" | "warning" | "critical";
+}): string {
+  if (args.value === null || args.value === undefined || args.value === "") {
+    return [
+      '<div class="event">',
+      `<div class="event-top"><span>${escapeText(args.title)}</span><span>${escapeText(args.emptyMeta ?? "")}</span></div>`,
+      `<strong>${escapeText(args.emptyTitle)}</strong>`,
+      args.emptyHint ? `<div class="hint">${escapeText(args.emptyHint)}</div>` : "",
+      "</div>"
+    ].join("");
+  }
+  const raw = typeof args.value === "string" ? args.value : formatJson(args.value);
+  return renderDisclosureCard({
+    title: args.title,
+    headline: args.headline || compactText(raw, 220) || args.emptyTitle,
+    meta: args.meta,
+    hint: args.hint,
+    bodyHtml: `<pre>${escapeText(raw)}</pre>`,
+    open: args.open,
+    tone: args.tone
+  });
+}
+
+export function renderSummaryListSection(args: {
+  title: string;
+  items: string[];
+  emptyLabel: string;
+  summaryLabel?: string;
+  hint?: string;
+  open?: boolean;
+  tone?: "notice" | "warning" | "critical";
+}): string {
+  const count = args.items.length;
+  const toneClass = args.tone ? ` ${args.tone}` : "";
+  return [
+    `<details class="event disclosure summary-section${toneClass}"${args.open ? " open" : ""}>`,
+    '<summary class="disclosure-summary">',
+    '<span class="disclosure-summary-copy">',
+    `<span class="disclosure-kicker">${escapeText(args.title)}</span>`,
+    `<strong>${escapeText(args.summaryLabel ?? (count ? `${count}` : args.emptyLabel))}</strong>`,
+    "</span>",
+    `<span class="disclosure-meta">${escapeText(String(count))}</span>`,
+    "</summary>",
+    args.hint ? `<div class="hint disclosure-hint">${escapeText(args.hint)}</div>` : "",
+    count
+      ? `<div class="compact-list">${args.items.join("")}</div>`
+      : `<div class="hint">${escapeText(args.emptyLabel)}</div>`,
+    "</details>"
+  ].join("");
 }
 
 export function displayUiToken(value: unknown, t: Translator): string {
@@ -109,6 +240,8 @@ export function renderStudioGraphCanvas(args: {
   selectionTitle?: string;
   selectionRolePackageHtml?: string;
   selectionStructureHtml?: string;
+  selectionDebugHtml?: string;
+  selectionResultsHtml?: string;
   selectionDocked?: boolean;
   selectionCollapsed?: boolean;
   t?: Translator;
@@ -120,10 +253,10 @@ export function renderStudioGraphCanvas(args: {
     t
   });
   return [
-    '<div class="studio-canvas-shell' + (args.fullscreen ? " is-fullscreen" : "") + '" data-studio-canvas-shell="1">',
-    '<div class="studio-canvas-toolbar" data-studio-bridge-region="toolbar"><div><span class="hint">' + escapeText(t("studio.graphWorkspace", undefined, "Graph workspace")) + '</span><span class="hint" data-studio-graph-selection-label>' + escapeText(selection) + '</span></div><div class="studio-canvas-toolbar-slot" data-workbench-view-tabs-slot="bridge"></div></div>',
+    '<div class="studio-canvas-shell' + (args.fullscreen ? " is-fullscreen" : "") + (args.selectionDocked ? " has-docked-selection" : "") + (args.selectionDocked && args.selectionCollapsed ? " has-collapsed-selection" : "") + '" data-studio-canvas-shell="1">',
+    '<div class="studio-canvas-toolbar" data-studio-bridge-region="toolbar"><div><span class="hint" data-studio-graph-selection-label>' + escapeText(selection) + '</span></div></div>',
     '<div id="studio-graph-root" class="studio-graph-root" data-selected-role-id="' + escapeText(args.selectedRoleId) + '" data-selected-flow-key="' + escapeText(args.selectedFlowKey) + '"></div>',
-    '<div class="studio-selection-overlay' + (args.selectionDocked ? " is-docked" : "") + (args.selectionCollapsed ? " is-collapsed" : "") + '" data-studio-selection-overlay hidden><button type="button" class="studio-selection-backdrop" data-studio-selection-close="" aria-label="' + escapeText(t("action.close", undefined, "Close")) + '"></button><section class="studio-selection-dialog" data-studio-selection-dialog role="dialog" aria-modal="true" aria-label="' + escapeText(t("studio.roleInspector", undefined, "role inspector")) + '"><header class="studio-selection-header"><div class="studio-selection-title-wrap"><div class="hint" data-studio-selection-kind-label>' + escapeText(args.selectionKindLabel || "") + '</div><strong data-studio-selection-title>' + escapeText(args.selectionTitle || "") + '</strong></div><div class="studio-selection-actions"><button type="button" class="button subtle" data-studio-selection-pin="" title="' + escapeText(t("studio.graphWorkspace", undefined, "Graph workspace")) + '">dock</button><button type="button" class="button subtle" data-studio-selection-collapse="" title="' + escapeText(t("action.close", undefined, "Close")) + '">' + (args.selectionCollapsed ? ">" : "<") + '</button><button type="button" class="button subtle" data-studio-selection-close="">' + escapeText(t("action.close", undefined, "Close")) + '</button></div></header><div class="studio-selection-tabstrip segmented"><button type="button" class="button subtle' + ((args.sideTab || "structure") === "selection" ? " active" : "") + '" data-studio-side-tab="selection">' + escapeText(t("studio.roleInspector", undefined, "role inspector")) + '</button><button type="button" class="button subtle' + ((args.sideTab || "structure") === "structure" ? " active" : "") + '" data-studio-side-tab="structure">' + escapeText(t("studio.graphIndex", undefined, "graph index")) + '</button></div><div class="studio-selection-body"><section class="studio-selection-panel" data-studio-selection-panel="selection"><div class="studio-selection-command-host" data-studio-selection-command-host></div><div class="studio-selection-role-package" data-studio-selection-role-package>' + (args.selectionRolePackageHtml || "") + '</div></section><section class="studio-selection-panel studio-selection-structure-panel" data-studio-selection-panel="structure">' + (args.selectionStructureHtml || "") + '</section></div></section></div>',
+    '<div class="studio-selection-overlay' + (args.selectionDocked ? " is-docked" : "") + (args.selectionCollapsed ? " is-collapsed" : "") + '" data-studio-selection-overlay hidden><button type="button" class="studio-selection-backdrop" data-studio-selection-close="" aria-label="' + escapeText(t("action.close", undefined, "Close")) + '"></button><section class="studio-selection-dialog" data-studio-selection-dialog role="dialog" aria-modal="true" aria-label="' + escapeText(t("studio.sidePanel", undefined, "Right panel")) + '"><header class="studio-selection-header"><div class="studio-selection-title-wrap"><div class="hint" data-studio-selection-kind-label>' + escapeText(args.selectionKindLabel || "") + '</div><strong data-studio-selection-title>' + escapeText(args.selectionTitle || "") + '</strong></div><div class="studio-selection-actions"><button type="button" class="button subtle" data-studio-selection-pin="" title="' + escapeText(t("studio.graphWorkspace", undefined, "Graph workspace")) + '">dock</button><button type="button" class="button subtle" data-studio-selection-collapse="" title="' + escapeText(t("action.close", undefined, "Close")) + '">' + (args.selectionCollapsed ? ">" : "<") + '</button><button type="button" class="button subtle" data-studio-selection-close="">' + escapeText(t("action.close", undefined, "Close")) + '</button></div></header><div class="studio-selection-tabstrip segmented"><button type="button" class="button subtle' + ((args.sideTab || "structure") === "selection" ? " active" : "") + '" data-studio-side-tab="selection">' + escapeText(t("studio.authoringTab", undefined, "Authoring")) + '</button><button type="button" class="button subtle' + ((args.sideTab || "structure") === "structure" ? " active" : "") + '" data-studio-side-tab="structure">' + escapeText(t("studio.retrievalTab", undefined, "Browse")) + '</button><button type="button" class="button subtle' + ((args.sideTab || "structure") === "debug" ? " active" : "") + '" data-studio-side-tab="debug">' + escapeText(t("build.mode.debug", undefined, "Debug")) + '</button><button type="button" class="button subtle' + ((args.sideTab || "structure") === "result" ? " active" : "") + '" data-studio-side-tab="result">' + escapeText(t("studio.resultsTab", undefined, "Results")) + '</button></div><div class="studio-selection-body"><section class="studio-selection-panel" data-studio-selection-panel="selection"><div class="studio-selection-command-host" data-studio-selection-command-host></div><div class="studio-selection-role-package" data-studio-selection-role-package>' + (args.selectionRolePackageHtml || "") + '</div></section><section class="studio-selection-panel studio-selection-structure-panel" data-studio-selection-panel="structure">' + (args.selectionStructureHtml || "") + '</section><section class="studio-selection-panel studio-selection-debug-panel" data-studio-selection-panel="debug">' + (args.selectionDebugHtml || "") + '</section><section class="studio-selection-panel studio-selection-result-panel" data-studio-selection-panel="result">' + (args.selectionResultsHtml || "") + '</section></div></section></div>',
     "</div>"
   ].join("");
 }
@@ -233,9 +366,9 @@ export function renderStudioBridgeSelectionLabel(args: {
 }): string {
   const t: Translator = typeof args.t === "function" ? args.t : (_key, _vars, fallback) => fallback ?? _key;
   const selection = args.selectedRoleId
-    ? t("studio.roleInspector", undefined, "role inspector") + " " + args.selectedRoleId
+    ? t("studio.roleInspector", undefined, "Role details") + " " + args.selectedRoleId
     : args.selectedFlowKey
-      ? t("studio.flowInspector", undefined, "flow inspector") + " " + args.selectedFlowKey
+      ? t("studio.flowInspector", undefined, "Flow details") + " " + args.selectedFlowKey
       : t("studio.selectRole", undefined, "Select a role to inspect metadata.");
   return selection;
 }
@@ -621,6 +754,63 @@ export function renderStudioRolePackageEditor(args: {
   ].join("");
 }
 
+export function renderStudioExecutionConfigEditor(args: {
+  roleId: string;
+  editor?: JsonRecord | null | undefined;
+  t?: Translator;
+}): string {
+  const t: Translator = typeof args.t === "function" ? args.t : (_key, _vars, fallback) => fallback ?? _key;
+  const editor = args.editor ?? {};
+  const activeRoleId = String(editor.roleId ?? "");
+  const matchesRole = activeRoleId === args.roleId;
+  const data = matchesRole && typeof editor.data === "object" && editor.data !== null && !Array.isArray(editor.data)
+    ? editor.data as JsonRecord
+    : {};
+  const draft = matchesRole && typeof editor.draft === "object" && editor.draft !== null && !Array.isArray(editor.draft)
+    ? editor.draft as JsonRecord
+    : {};
+  const loading = matchesRole && editor.loading === true;
+  const saving = matchesRole && editor.saving === true;
+  const dirty = matchesRole && editor.dirty === true;
+  const loaded = matchesRole && editor.loaded === true;
+  const error = matchesRole ? String(editor.error ?? "") : "";
+  const disabled = loading || saving ? " disabled" : "";
+  const profileId = String(draft.profileId ?? data.profileId ?? "");
+  const toolRef = String(draft.toolRef ?? data.toolRef ?? "");
+  const command = String(draft.command ?? data.command ?? "");
+  const argsTemplate = Array.isArray(draft.argsTemplate)
+    ? draft.argsTemplate
+    : Array.isArray(data.argsTemplate)
+      ? data.argsTemplate
+      : [];
+  const stdinMode = String(draft.stdinMode ?? data.stdinMode ?? "text");
+  const timeoutMs = String(draft.timeoutMs ?? data.timeoutMs ?? "");
+  const maxOutputBytes = String(draft.maxOutputBytes ?? data.maxOutputBytes ?? "");
+  const loadButtonLabel = loaded
+    ? t("action.refresh", undefined, "Refresh")
+    : t("action.load", undefined, "Load");
+  return [
+    '<div class="event studio-execution-config-editor" data-execution-config-editor="' + escapeText(args.roleId) + '">',
+    '<div class="event-top"><span>' + escapeText(t("studio.executionConfig", undefined, "execution config")) + '</span><span>' + escapeText(dirty ? t("common.changed", undefined, "changed") : loaded ? t("common.loaded", undefined, "loaded") : t("common.lazy", undefined, "lazy")) + '</span></div>',
+    '<strong><code>' + escapeText(args.roleId) + '</code></strong>',
+    '<div class="hint">' + escapeText(t("studio.executionConfigHint", undefined, "Repository content is copied into this project. Business fields below are editable; ids stay system-managed.")) + '</div>',
+    error ? '<div class="hint severity-warning">' + escapeText(error) + '</div>' : '',
+    '<div class="actions compact"><button class="button subtle" data-execution-config-load="' + escapeText(args.roleId) + '"' + disabled + '>' + escapeText(loadButtonLabel) + '</button><button class="button primary" data-execution-config-save="' + escapeText(args.roleId) + '"' + (disabled || !loaded || !dirty ? " disabled" : "") + '>' + escapeText(t("action.save", undefined, "Save")) + '</button><button class="button subtle" data-execution-config-revert="' + escapeText(args.roleId) + '"' + (disabled || !loaded || !dirty ? " disabled" : "") + '>' + escapeText(t("action.revertToDisk", undefined, "Revert")) + '</button></div>',
+    loaded
+      ? '<div class="form-grid">' +
+          '<label class="field"><span>' + escapeText(t("studio.executionConfigProfileId", undefined, "Profile id")) + '</span><input data-execution-config-field="profileId" value="' + escapeText(profileId) + '" readonly><div class="hint">' + escapeText(t("studio.executionConfigSystemManaged", undefined, "Required · system-managed · not business editable")) + '</div></label>' +
+          '<label class="field"><span>' + escapeText(t("studio.executionConfigToolRef", undefined, "Tool ref")) + '</span><input data-execution-config-field="toolRef" value="' + escapeText(toolRef) + '" readonly><div class="hint">' + escapeText(t("studio.executionConfigSystemManaged", undefined, "Required · system-managed · not business editable")) + '</div></label>' +
+          '<label class="field full"><span>' + escapeText(t("studio.executionConfigCommand", undefined, "Command")) + '</span><input data-execution-config-field="command" value="' + escapeText(command) + '"' + disabled + '><div class="hint">' + escapeText(t("studio.executionConfigCommandHint", undefined, "Required. Entry command for the local tool runner.")) + '</div></label>' +
+          '<label class="field full"><span>' + escapeText(t("studio.executionConfigArgs", undefined, "Args template")) + '</span><textarea data-execution-config-field="argsTemplate"' + disabled + '>' + escapeText(JSON.stringify(argsTemplate, null, 2)) + '</textarea><div class="hint">' + escapeText(t("studio.executionConfigArgsHint", undefined, "Optional JSON array. Keep each item as a string argument.")) + '</div></label>' +
+          '<label class="field"><span>' + escapeText(t("studio.executionConfigStdinMode", undefined, "Stdin mode")) + '</span><select data-execution-config-field="stdinMode"' + disabled + '><option value="text"' + (stdinMode === "text" ? " selected" : "") + '>text</option><option value="none"' + (stdinMode === "none" ? " selected" : "") + '>none</option></select><div class="hint">' + escapeText(t("studio.executionConfigOptionalMutable", undefined, "Optional tuning · editable")) + '</div></label>' +
+          '<label class="field"><span>' + escapeText(t("studio.executionConfigTimeout", undefined, "Timeout ms")) + '</span><input data-execution-config-field="timeoutMs" inputmode="numeric" value="' + escapeText(timeoutMs) + '"' + disabled + '><div class="hint">' + escapeText(t("studio.executionConfigOptionalMutable", undefined, "Optional tuning · editable")) + '</div></label>' +
+          '<label class="field"><span>' + escapeText(t("studio.executionConfigMaxOutput", undefined, "Max output bytes")) + '</span><input data-execution-config-field="maxOutputBytes" inputmode="numeric" value="' + escapeText(maxOutputBytes) + '"' + disabled + '><div class="hint">' + escapeText(t("studio.executionConfigOptionalMutable", undefined, "Optional tuning · editable")) + '</div></label>' +
+        '</div>'
+      : '<div class="hint">' + escapeText(loading ? t("common.loading", undefined, "loading") : t("studio.executionConfigLoadHint", undefined, "Load this execution config to inspect and edit its project-local settings.")) + '</div>',
+    '</div>'
+  ].join("");
+}
+
 export function renderStudioBridgePanel(args: {
   bridge: JsonRecord | null | undefined;
   readiness: JsonRecord | null | undefined;
@@ -654,7 +844,7 @@ export function renderStudioBridgePanel(args: {
   const selectedFlow = flows.find((flow) => flow.flowKey === args.selectedFlowKey) ?? flows[0];
   const busy = args.actionBusy ? " disabled" : "";
   if (!bridge || Object.keys(bridge).length === 0) {
-    return '<div class="hint">' + escapeText(t("studio.dataUnavailable", undefined, "Studio Bridge data unavailable.")) + '</div>';
+    return '<div class="hint">' + escapeText(t("studio.dataUnavailable", undefined, "Graph workspace data unavailable.")) + '</div>';
   }
   const roleButtons = filtered.roles.length
     ? filtered.roles.map((role) => {
@@ -689,9 +879,9 @@ export function renderStudioBridgePanel(args: {
     selectedFlowKey: args.selectedFlowKey,
     sideTab: args.sideTab,
     selectionKindLabel: selectedRole
-      ? t("studio.roleInspector", undefined, "role inspector")
+      ? t("studio.roleInspector", undefined, "Role details")
       : selectedFlow
-        ? t("studio.flowInspector", undefined, "flow inspector")
+        ? t("studio.flowInspector", undefined, "Flow details")
         : "",
     selectionTitle: selectedRole
       ? String(selectedRole.roleId ?? "")
@@ -705,7 +895,7 @@ export function renderStudioBridgePanel(args: {
           t
         })
       : selectedFlow
-        ? '<div class="event"><div class="event-top"><span>' + escapeText(t("studio.flowInspector", undefined, "flow inspector")) + '</span><span>' +
+        ? '<div class="event"><div class="event-top"><span>' + escapeText(t("studio.flowInspector", undefined, "Flow details")) + '</span><span>' +
           escapeText(String(selectedFlow.eventType ?? "")) + '</span></div><strong><code>' + escapeText(String(selectedFlow.fromRoleId ?? "")) + '</code> -> <code>' +
           escapeText(String(selectedFlow.toRoleId ?? "")) + '</code></strong><div class="hint">' +
           escapeText(t("studio.flowDisplayIdentity", {
@@ -716,14 +906,14 @@ export function renderStudioBridgePanel(args: {
         : "",
     selectionStructureHtml:
       '<div class="studio-bridge-index structure-list" data-studio-bridge-region="index"><div class="event studio-bridge-index-controls"><div class="event-top"><span>' +
-      escapeText(t("studio.graphIndex", undefined, "graph index")) + '</span><span>' + escapeText(t("studio.topologyOrder", undefined, "topology order")) + '</span></div><div class="toolbar-row compact"><input data-studio-bridge-filter="1" value="' +
-      escapeText(args.filter || "") + '" placeholder="' + escapeText(t("studio.filterGraphItems", undefined, "Filter roles or flows")) + '" aria-label="' + escapeText(t("studio.filterGraphItems", undefined, "Filter roles or flows")) + '"><select data-studio-bridge-list-mode="1" aria-label="' + escapeText(t("studio.graphIndex", undefined, "graph index")) + '"><option value="all"' +
+      escapeText(t("studio.retrievalTab", undefined, "Browse")) + '</span><span>' + escapeText(t("studio.topologyOrder", undefined, "authoring order")) + '</span></div><div class="toolbar-row compact"><input data-studio-bridge-filter="1" value="' +
+      escapeText(args.filter || "") + '" placeholder="' + escapeText(t("studio.filterGraphItems", undefined, "Filter roles or flows")) + '" aria-label="' + escapeText(t("studio.filterGraphItems", undefined, "Filter roles or flows")) + '"><select data-studio-bridge-list-mode="1" aria-label="' + escapeText(t("studio.retrievalTab", undefined, "Browse")) + '"><option value="all"' +
       (listMode === "all" ? " selected" : "") + ">" + escapeText(t("common.all", undefined, "all")) + '</option><option value="roles"' +
       (listMode === "roles" ? " selected" : "") + ">" + escapeText(t("studio.roles", undefined, "roles")) + '</option><option value="flows"' +
       (listMode === "flows" ? " selected" : "") + ">" + escapeText(t("studio.flows", undefined, "flows")) + '</option></select></div><div class="hint">' +
       escapeText(t("studio.topologyOrderHint", undefined, "Cycles are listed after the acyclic path so the authoring order stays stable.")) + '</div></div><div class="studio-index-grid"><div class="studio-navigator structure-list" data-studio-bridge-region="navigator"><div class="event"><div class="event-top"><span>' + escapeText(t("studio.roles", undefined, "roles")) + '</span><span>' + escapeText(String(filtered.roles.length)) +
-      " / " + escapeText(String(roles.length)) + '</span></div><strong>' + escapeText(t("studio.structuredRoleDraft", undefined, "Structured role draft")) + '</strong><div class="hint">' + escapeText(t("studio.bridgeReadsWorkbench", undefined, "Bridge reads the current workbench source.")) + '</div></div>' + roleButtons.join("") + '</div><div class="structure-list studio-flow-list" data-studio-bridge-region="flow-list"><div class="event"><div class="event-top"><span>' + escapeText(t("studio.flows", undefined, "flows")) + '</span><span>' + escapeText(String(filtered.flows.length)) +
-      " / " + escapeText(String(flows.length)) + '</span></div><strong>' + escapeText(t("studio.structuredFlowDraft", undefined, "Structured flow draft")) + '</strong><div class="hint">' + escapeText(t("studio.eventsVisible", undefined, "Event types and join participation stay visible.")) + '</div></div>' + flowButtons.join("") + "</div></div></div>",
+      " / " + escapeText(String(roles.length)) + '</span></div><strong>' + escapeText(t("studio.structuredRoleDraft", undefined, "Role structure")) + '</strong><div class="hint">' + escapeText(t("studio.bridgeReadsWorkbench", undefined, "Derived from the current graph source.")) + '</div></div>' + roleButtons.join("") + '</div><div class="structure-list studio-flow-list" data-studio-bridge-region="flow-list"><div class="event"><div class="event-top"><span>' + escapeText(t("studio.flows", undefined, "flows")) + '</span><span>' + escapeText(String(filtered.flows.length)) +
+      " / " + escapeText(String(flows.length)) + '</span></div><strong>' + escapeText(t("studio.structuredFlowDraft", undefined, "Flow structure")) + '</strong><div class="hint">' + escapeText(t("studio.eventsVisible", undefined, "Event types and join participation stay visible.")) + '</div></div>' + flowButtons.join("") + "</div></div></div>",
     selectionDocked: args.selectionDocked !== false,
     selectionCollapsed: args.selectionCollapsed === true,
     fullscreen: args.fullscreen,
@@ -817,6 +1007,8 @@ export function renderFailureDetailPanel(args: {
   const contract = ((detail.contract ?? summary.contract) || {}) as JsonRecord;
   const schemaPath = detail.schemaPath ?? contract.schemaPath ?? "n/a";
   const rawOutput = detail.rawOutput ?? detail.rawModelOutput ?? summary.rawOutput ?? null;
+  const inputPreview = compactJsonPreview(detail.inputContext, 220);
+  const rawPreview = compactJsonPreview(rawOutput, 220);
   return [
     '<div class="structure-list">',
     '<div class="event"><div class="event-top"><span>' + escapeText(t("failure.projectedInput", undefined, "projected input")) + '</span><span>' +
@@ -825,9 +1017,7 @@ export function renderFailureDetailPanel(args: {
       escapeText(detail.correctionRequest ? t("failure.correctionRequestPresent", undefined, "correction request present") : t("failure.inputContextAvailable", undefined, "input context available")) +
       '</strong><div class="hint">' +
       escapeText(t("failure.schema", { schemaPath: displayUiToken(schemaPath, t) }, "schema " + schemaPath)) +
-      '</div>' +
-      (detail.inputContext ? '<pre>' + escapeText(formatJson(detail.inputContext)) + "</pre>" : "") +
-      "</div>",
+      "</div></div>",
     '<div class="event"><div class="event-top"><span>' + escapeText(t("failure.bindingResolution", undefined, "binding resolution")) + '</span><span>' +
       escapeText(displayUiToken(selectedBinding.bindingKind ?? selectedBinding.kind ?? "n/a", t)) +
       '</span></div><strong>' +
@@ -856,11 +1046,28 @@ export function renderFailureDetailPanel(args: {
       '</strong><div class="hint">' +
       escapeText(t("failure.upstream", { roles: upstreamRoleIds.length ? upstreamRoleIds.join(", ") : t("common.none", undefined, "none") }, "upstream " + (upstreamRoleIds.length ? upstreamRoleIds.join(", ") : "none"))) +
       "</div></div>",
-    rawOutput
-      ? '<div class="event"><div class="event-top"><span>' + escapeText(t("failure.rawOutput", undefined, "raw output")) + '</span><span>' + escapeText(t("common.captured", undefined, "captured")) + '</span></div><strong>' + escapeText(t("failure.providerRawSnapshot", undefined, "Provider / role raw output snapshot")) + '</strong><pre>' +
-        escapeText(typeof rawOutput === "string" ? rawOutput : formatJson(rawOutput)) +
-        "</pre></div>"
-      : '<div class="event"><div class="event-top"><span>' + escapeText(t("failure.rawOutput", undefined, "raw output")) + '</span><span>' + escapeText(t("common.missing", undefined, "missing")) + '</span></div><strong>' + escapeText(t("failure.noRawOutputSnapshot", undefined, "No raw output snapshot captured")) + '</strong></div>',
+    renderPreDisclosure({
+      title: t("failure.projectedInput", undefined, "projected input"),
+      headline: inputPreview || t("failure.inputContextAvailable", undefined, "input context available"),
+      meta: detail.inputContext ? t("common.snapshot", undefined, "snapshot") : t("common.missing", undefined, "missing"),
+      hint: t("failure.schema", { schemaPath: displayUiToken(schemaPath, t) }, "schema " + schemaPath),
+      value: detail.inputContext,
+      emptyTitle: t("failure.inputContextAvailable", undefined, "input context available"),
+      emptyMeta: t("common.missing", undefined, "missing"),
+      emptyHint: t("failure.schema", { schemaPath: displayUiToken(schemaPath, t) }, "schema " + schemaPath),
+      tone: "notice"
+    }),
+    renderPreDisclosure({
+      title: t("failure.rawOutput", undefined, "raw output"),
+      headline: rawPreview || t("failure.noRawOutputSnapshot", undefined, "No raw output snapshot captured"),
+      meta: rawOutput ? t("common.captured", undefined, "captured") : t("common.missing", undefined, "missing"),
+      hint: rawOutput ? t("failure.providerRawSnapshot", undefined, "Provider / role raw output snapshot") : t("failure.noRawOutputSnapshot", undefined, "No raw output snapshot captured"),
+      value: rawOutput,
+      emptyTitle: t("failure.noRawOutputSnapshot", undefined, "No raw output snapshot captured"),
+      emptyMeta: t("common.missing", undefined, "missing"),
+      emptyHint: t("failure.providerRawSnapshot", undefined, "Provider / role raw output snapshot"),
+      tone: "critical"
+    }),
     "</div>"
   ].join("");
 }
@@ -1058,22 +1265,6 @@ export function renderReviewDetailPanel(detail: Record<string, unknown> | null |
     return '<div class="hint">' + escapeText(tr("state.noReviewSelected", undefined, "No review selected.")) + '</div>';
   }
   const history = Array.isArray(detail.history) ? detail.history : [];
-  const historyCards = history.length > 0
-    ? history.map((entry) => {
-        const record = (entry ?? {}) as JsonRecord;
-        return (
-          '<div class="event"><div class="event-top"><span>' +
-          escapeText(record.decision ?? "history") +
-          "</span><span>" +
-          escapeText(fmt(record.decidedAt ?? record.committedAt)) +
-          "</span></div><strong>" +
-      escapeText(record.actor ?? tr("common.unknown", undefined, "unknown")) +
-      '</strong><div class="hint">' +
-      escapeText(record.comment ?? tr("review.noComment", undefined, "no comment")) +
-      "</div></div>"
-    );
-  })
-    : ['<div class="hint">' + escapeText(tr("review.noPriorDecisionHistory", undefined, "No prior decision history.")) + '</div>'];
   const nextActionSummary =
     detail.currentStatus === "pending"
       ? tr("review.awaitingDecision", undefined, "Awaiting approve, rework, pause, or terminate.")
@@ -1082,6 +1273,16 @@ export function renderReviewDetailPanel(detail: Record<string, unknown> | null |
         : detail.decisionPhase === "pending_reconcile"
           ? tr("review.pendingReconcile", undefined, "Decision has checkpoint state but still blocks clean resume.")
           : tr("review.noImmediateAction", undefined, "No immediate action available.");
+  const historyItems = history.map((entry) => {
+    const record = (entry ?? {}) as JsonRecord;
+    return '<div class="compact-list-item"><span class="compact-list-title">' +
+      escapeText(String(record.decision ?? "history")) +
+      '</span><span class="compact-list-meta">' +
+      escapeText(fmt(record.decidedAt ?? record.committedAt)) +
+      '</span><div class="hint">' +
+      escapeText(String(record.actor ?? tr("common.unknown", undefined, "unknown")) + " · " + String(record.comment ?? tr("review.noComment", undefined, "no comment"))) +
+      "</div></div>";
+  });
   return [
     '<div class="structure-list">',
     '<div class="event"><div class="event-top"><span>' + escapeText(tr("review.review", undefined, "review")) + '</span><span>' + escapeText(detail.currentStatus ?? "unknown") + "</span></div><strong>" +
@@ -1115,13 +1316,27 @@ export function renderReviewDetailPanel(detail: Record<string, unknown> | null |
         branchId: String(detail.branchId ?? "n/a")
       }, "selected event " + String(detail.selectedEvent ?? "n/a") + " · branch " + String(detail.branchId ?? "n/a"))) +
       "</div></div>",
-    '<div class="event"><div class="event-top"><span>' + escapeText(tr("review.history", undefined, "history")) + '</span><span>' + escapeText(history.length) + '</span></div><strong>' + escapeText(tr("review.decisionTrail", undefined, "Decision trail")) + '</strong></div>',
-    ...historyCards,
-    '<div class="event"><div class="event-top"><span>' + escapeText(tr("review.requestSnapshot", undefined, "request snapshot")) + '</span><span>' + escapeText(tr("common.captured", undefined, "captured")) + '</span></div><strong>' + escapeText(tr("review.requestContext", undefined, "Review request context")) + '</strong><pre>' +
-      escapeText(formatJson(detail.reviewRequestSnapshot ?? detail.requestSnapshot ?? detail.spec ?? null)) +
-      "</pre></div>",
-    '<div class="event"><div class="event-top"><span>' + escapeText(tr("review.decisionSnapshot", undefined, "decision snapshot")) + '</span><span>' + escapeText(tr("common.captured", undefined, "captured")) + '</span></div><strong>' + escapeText(tr("review.decisionDurabilitySnapshot", undefined, "Decision durability snapshot")) + '</strong><pre>' +
-      escapeText(formatJson(detail.decisionSnapshot ?? {
+    renderSummaryListSection({
+      title: tr("review.history", undefined, "history"),
+      items: historyItems,
+      emptyLabel: tr("review.noPriorDecisionHistory", undefined, "No prior decision history."),
+      summaryLabel: tr("review.decisionTrail", undefined, "Decision trail"),
+      hint: tr("review.round", { round: String(detail.round ?? "n/a") }, "round " + String(detail.round ?? "n/a")),
+      open: history.length > 0 && history.length <= 2
+    }),
+    renderPreDisclosure({
+      title: tr("review.requestSnapshot", undefined, "request snapshot"),
+      headline: compactJsonPreview(detail.reviewRequestSnapshot ?? detail.requestSnapshot ?? detail.spec ?? null, 220) || tr("review.requestContext", undefined, "Review request context"),
+      meta: tr("common.captured", undefined, "captured"),
+      hint: tr("review.requestContext", undefined, "Review request context"),
+      value: detail.reviewRequestSnapshot ?? detail.requestSnapshot ?? detail.spec ?? null,
+      emptyTitle: tr("review.requestContext", undefined, "Review request context"),
+      emptyMeta: tr("common.missing", undefined, "missing"),
+      emptyHint: tr("review.requestContext", undefined, "Review request context")
+    }),
+    renderPreDisclosure({
+      title: tr("review.decisionSnapshot", undefined, "decision snapshot"),
+      headline: compactJsonPreview(detail.decisionSnapshot ?? {
         decision: detail.decision ?? null,
         actor: detail.actor ?? null,
         comment: detail.comment ?? null,
@@ -1130,11 +1345,33 @@ export function renderReviewDetailPanel(detail: Record<string, unknown> | null |
         checkpointSequence: detail.checkpointSequence ?? null,
         appliedAt: detail.appliedAt ?? null,
         reconciledAt: detail.reconciledAt ?? null
-      })) +
-      "</pre></div>",
-    '<div class="event"><div class="event-top"><span>' + escapeText(tr("review.context", undefined, "context")) + '</span><span>' + escapeText(tr("common.snapshot", undefined, "snapshot")) + '</span></div><strong>' + escapeText(tr("review.humanReviewContext", undefined, "Human review context")) + '</strong><pre>' +
-      escapeText(formatJson(detail.humanReviewContext ?? null)) +
-      "</pre></div>",
+      }, 220) || tr("review.decisionDurabilitySnapshot", undefined, "Decision durability snapshot"),
+      meta: tr("common.captured", undefined, "captured"),
+      hint: tr("review.decisionDurabilitySnapshot", undefined, "Decision durability snapshot"),
+      value: detail.decisionSnapshot ?? {
+        decision: detail.decision ?? null,
+        actor: detail.actor ?? null,
+        comment: detail.comment ?? null,
+        decidedAt: detail.decidedAt ?? null,
+        committedAt: detail.committedAt ?? null,
+        checkpointSequence: detail.checkpointSequence ?? null,
+        appliedAt: detail.appliedAt ?? null,
+        reconciledAt: detail.reconciledAt ?? null
+      },
+      emptyTitle: tr("review.decisionDurabilitySnapshot", undefined, "Decision durability snapshot"),
+      emptyMeta: tr("common.missing", undefined, "missing"),
+      emptyHint: tr("review.decisionDurabilitySnapshot", undefined, "Decision durability snapshot")
+    }),
+    renderPreDisclosure({
+      title: tr("review.context", undefined, "context"),
+      headline: compactJsonPreview(detail.humanReviewContext ?? null, 220) || tr("review.humanReviewContext", undefined, "Human review context"),
+      meta: tr("common.snapshot", undefined, "snapshot"),
+      hint: tr("review.humanReviewContext", undefined, "Human review context"),
+      value: detail.humanReviewContext ?? null,
+      emptyTitle: tr("review.humanReviewContext", undefined, "Human review context"),
+      emptyMeta: tr("common.missing", undefined, "missing"),
+      emptyHint: tr("review.humanReviewContext", undefined, "Human review context")
+    }),
     "</div>"
   ].join("");
 }
@@ -1414,6 +1651,16 @@ export function renderRunStatePanel(args: {
     const summary = summarizeValue(value);
     const label = stateFieldLabel(path);
     const pathLabel = statePathLabel(path);
+    const detailThreshold = Array.isArray(value) || (value && typeof value === "object");
+    if (detailThreshold) {
+      return renderDisclosureCard({
+        title: label,
+        headline: summary.label,
+        meta: pathLabel,
+        bodyHtml: summary.detail ? `<pre>${escapeText(summary.detail)}</pre>` : "",
+        tone: /error|failure|audit/i.test(path) ? "warning" : undefined
+      });
+    }
     return (
       '<div class="event"><div class="event-top"><span>' +
       escapeText(label) +
@@ -1428,11 +1675,21 @@ export function renderRunStatePanel(args: {
       "</div>"
     );
   };
-  const renderStateGroup = (title: string, cards: string[]): string => {
+  const renderStateGroup = (title: string, cards: string[], options?: {
+    open?: boolean;
+    tone?: "notice" | "warning" | "critical";
+  }): string => {
     if (!cards.length) {
       return "";
     }
-    return '<div class="state-group"><div class="state-group-title">' + escapeText(title) + '</div><div class="state-card-grid">' + cards.join("") + "</div></div>";
+    return '<div class="state-group">' + renderDisclosureCard({
+      title,
+      headline: t("common.arrayItems", { count: cards.length }, `array · ${cards.length} item(s)`),
+      meta: title,
+      bodyHtml: '<div class="state-card-grid">' + cards.join("") + "</div>",
+      open: options?.open,
+      tone: options?.tone
+    }) + "</div>";
   };
   const renderStructuredStateGroups = (value: unknown): string[] => {
     const record = value && typeof value === "object" && !Array.isArray(value)
@@ -1465,9 +1722,16 @@ export function renderRunStatePanel(args: {
       }
     }
     return [
-      renderStateGroup(t("state.executionState", undefined, "execution state"), executionCards),
-      renderStateGroup(t("state.branchReviewState", undefined, "branch and review state"), branchReviewCards),
-      renderStateGroup(t("state.controlState", undefined, "control and artifact state"), controlCards),
+      renderStateGroup(t("state.executionState", undefined, "execution state"), executionCards, {
+        open: true,
+        tone: "notice"
+      }),
+      renderStateGroup(t("state.branchReviewState", undefined, "branch and review state"), branchReviewCards, {
+        tone: branchReviewCards.length ? "warning" : undefined
+      }),
+      renderStateGroup(t("state.controlState", undefined, "control and artifact state"), controlCards, {
+        tone: controlCards.length ? "critical" : undefined
+      }),
       renderStateGroup(t("state.additionalState", undefined, "additional state"), additionalCards)
     ].filter(Boolean);
   };
@@ -1478,9 +1742,31 @@ export function renderRunStatePanel(args: {
   const graph = args.graph ?? {};
   const graphNodes = Array.isArray(graph.nodes) ? graph.nodes.length : 0;
   const graphEdges = Array.isArray(graph.edges) ? graph.edges.length : 0;
+  const stateRecord = asRecord(args.state) ?? {};
+  const activeRoles = asRecordCollection(stateRecord.activeBranches)
+    .map((branch) => compactText(branch.roleId ?? branch.currentRoleId ?? branch.branchId ?? "", 72))
+    .filter(Boolean)
+    .slice(0, 6)
+    .map((label) => `<div class="compact-list-item"><span class="compact-list-title">${escapeText(label)}</span></div>`);
+  const pendingReviews = asRecordCollection(stateRecord.pendingReviewsById ?? stateRecord.humanReviewContextByBranchId)
+    .slice(0, 6)
+    .map((review) => `<div class="compact-list-item"><span class="compact-list-title">${escapeText(String(review.reviewId ?? review.branchId ?? review.roleId ?? "review"))}</span><span class="compact-list-meta">${escapeText(displayUiToken(review.currentStatus ?? review.status ?? "pending", t))}</span></div>`);
+  const auditSummaryRecord = asRecord(stateRecord.auditSummary);
+  const auditSummaryIssues = auditSummaryRecord
+    ? Object.entries(asRecord(auditSummaryRecord.failureCountsByErrorCode) ?? {})
+      .filter(([, count]) => Number(count) > 0)
+      .map(([errorCode, count]) => ({
+        errorCode,
+        summary: `count ${String(count)}`
+      }))
+    : [];
+  const errors = asRecordCollection(stateRecord.errors ?? stateRecord.failure ?? stateRecord.errorEnvelope ?? stateRecord.error)
+    .concat(auditSummaryIssues)
+    .slice(0, 6)
+    .map((entry) => `<div class="compact-list-item"><span class="compact-list-title">${escapeText(String(entry.errorCode ?? entry.code ?? entry.kind ?? "issue"))}</span><div class="hint">${escapeText(compactText(entry.message ?? entry.summary ?? entry.roleId ?? "", 120))}</div></div>`);
   return [
     '<div class="state-panel">',
-    '<div class="state-card-grid">',
+    '<div class="state-card-grid state-card-grid-primary">',
     '<div class="event"><div class="event-top"><span>' + escapeText(t("state.runtime", undefined, "runtime")) + '</span><span>' + escapeText(displayUiToken(header.status ?? t("common.unknown", undefined, "unknown"), t)) + "</span></div><strong>" +
       escapeText(displayUiToken((args.state as JsonRecord | undefined)?.status ?? header.status ?? t("state.stateAvailable", undefined, "state available"), t)) +
       '</strong><div class="hint">' + escapeText(t("state.activePending", {
@@ -1493,6 +1779,38 @@ export function renderRunStatePanel(args: {
         lastRoleId: String(header.lastExecutedRoleId ?? t("common.notAvailable", undefined, "n/a")),
         finalRoleId: String(header.finalRoleId ?? t("common.notAvailable", undefined, "n/a"))
       }, "last role " + String(header.lastExecutedRoleId ?? "n/a") + " · final role " + String(header.finalRoleId ?? "n/a"))) + "</div></div>",
+    "</div>",
+    '<div class="run-graph-summary-grid run-graph-summary-rail">',
+    renderSummaryListSection({
+      title: t("graph.summaryRail", undefined, "key signals"),
+      items: activeRoles,
+      emptyLabel: t("common.none", undefined, "none"),
+      summaryLabel: t("state.activePending", {
+        activeBranches: String(header.activeBranches ?? 0),
+        pendingReviews: String(header.pendingReviewCount ?? 0)
+      }, "active branches " + String(header.activeBranches ?? 0) + " · pending reviews " + String(header.pendingReviewCount ?? 0)),
+      hint: t("graph.focusOnKeySignals", undefined, "Key signals stay visible here; payloads and audit details are folded by default."),
+      open: true,
+      tone: "notice"
+    }),
+    renderSummaryListSection({
+      title: t("review.queueSummary", undefined, "queue summary"),
+      items: pendingReviews,
+      emptyLabel: t("review.noReviews", undefined, "No reviews for this run."),
+      summaryLabel: t("status.waitingReview", undefined, "waiting review"),
+      hint: t("review.awaitingDecision", undefined, "Awaiting approve, rework, pause, or terminate."),
+      open: pendingReviews.length > 0,
+      tone: "warning"
+    }),
+    renderSummaryListSection({
+      title: t("state.field.errors", undefined, "errors"),
+      items: errors,
+      emptyLabel: t("failure.noRecentCaptured", undefined, "No recent failure captured for this run."),
+      summaryLabel: t("failure.nextChecksSummary", undefined, "Move directly to the likely root-cause surfaces"),
+      hint: t("failure.nextChecksHint", undefined, "These actions jump to the panel that explains the failing input, binding, schema, contract, or resume blockers."),
+      open: errors.length > 0,
+      tone: "critical"
+    }),
     "</div>",
     ...renderStructuredStateGroups(args.state),
     "</div>"
@@ -1549,12 +1867,20 @@ export function renderArtifactsPanel(args: {
       : undefined;
     if (!record) {
       const summary = summarizeValue(value);
+      if (summary.detail) {
+        return [
+          renderDisclosureCard({
+            title: titleLabel(title),
+            headline: summary.label,
+            meta: titleLabel(title),
+            bodyHtml: `<pre>${escapeText(summary.detail)}</pre>`
+          })
+        ];
+      }
       return [
         '<div class="event"><div class="event-top"><span>' + escapeText(titleLabel(title)) + '</span><span data-field-path="' + escapeText(title) + '">' + escapeText(titleLabel(title)) + '</span></div><strong>' +
         escapeText(summary.label) +
-        '</strong>' +
-        (summary.detail ? '<pre>' + escapeText(summary.detail) + "</pre>" : "") +
-        "</div>"
+        '</strong></div>'
       ];
     }
     const keys = Object.keys(record);
@@ -1565,6 +1891,15 @@ export function renderArtifactsPanel(args: {
     }
     return keys.map((key) => {
       const summary = summarizeValue(record[key]);
+      if (summary.detail) {
+        return renderDisclosureCard({
+          title: fieldLabel(key),
+          headline: summary.label,
+          meta: fieldPathLabel(title, key),
+          bodyHtml: `<pre>${escapeText(summary.detail)}</pre>`,
+          tone: /audit|error|failure/i.test(key) ? "warning" : undefined
+        });
+      }
       return (
         '<div class="event"><div class="event-top"><span>' +
         escapeText(fieldLabel(key)) +
@@ -1603,11 +1938,30 @@ export function renderArtifactsPanel(args: {
   const graph = (args.graph?.graph ?? args.graph ?? {}) as JsonRecord;
   const graphNodes = Array.isArray(graph.nodes) ? graph.nodes.length : 0;
   const graphEdges = Array.isArray(graph.edges) ? graph.edges.length : 0;
+  const runIdLabel = String(args.detail.runId ?? "n/a");
+  const runDirLabel = String(args.detail.runDir ?? "n/a");
+  const artifactSummaryItems = [
+    '<div class="compact-list-item"><span class="compact-list-title">' + escapeText(runIdLabel) + '</span><span class="compact-list-meta">' + escapeText(String(header.status ?? t("common.unknown", undefined, "unknown"))) + "</span></div>",
+    '<div class="compact-list-item"><span class="compact-list-title">' + escapeText(t("artifacts.graphCounts", {
+      nodes: String(graphNodes),
+      edges: String(graphEdges)
+    }, "graph " + graphNodes + " " + t("common.nodes", undefined, "nodes") + " / " + graphEdges + " " + t("common.edges", undefined, "edges"))) + '</span></div>',
+    '<div class="compact-list-item"><span class="compact-list-title">' + escapeText(t("artifacts.selectedReview", undefined, "selected review")) + '</span><span class="compact-list-meta">' + escapeText(String(args.reviewDetail?.reviewId ?? t("common.none", undefined, "none"))) + "</span></div>"
+  ];
   const sections = [
     '<div class="artifact-tabs"><span class="pill">' + escapeText(t("artifacts.summary", undefined, "Summary")) + '</span><span class="pill">' + escapeText(t("artifacts.metrics", undefined, "Metrics")) + '</span><span class="pill">' + escapeText(t("artifacts.state", undefined, "State")) + '</span><span class="pill">' + escapeText(t("artifacts.audit", undefined, "Audit")) + '</span><span class="pill">' + escapeText(t("artifacts.timeline", undefined, "Timeline")) + '</span><span class="pill">' + escapeText(t("artifacts.raw", undefined, "Raw")) + '</span></div>',
+    renderSummaryListSection({
+      title: t("artifacts.summary", undefined, "Summary"),
+      items: artifactSummaryItems,
+      emptyLabel: t("state.noRunSelected", undefined, "No run selected."),
+      summaryLabel: runIdLabel,
+      hint: runDirLabel + " · " + t("run.updatedAt", { at: formatTime(header.updatedAt) }, "updated " + formatTime(header.updatedAt)),
+      open: true,
+      tone: "notice"
+    }),
     '<div class="artifact-section"><div class="event"><div class="event-top"><span>' + escapeText(t("artifacts.summary", undefined, "Summary")) + '</span><span>' + escapeText(header.status ?? t("common.unknown", undefined, "unknown")) +
-      "</span></div><strong>" + escapeText(args.detail.runId ?? "n/a") +
-      '</strong><div class="hint">' + escapeText((args.detail.runDir ?? "n/a") + " · " + t("run.updatedAt", { at: formatTime(header.updatedAt) }, "updated " + formatTime(header.updatedAt))) + "</div></div>" +
+      "</span></div><strong>" + escapeText(runIdLabel) +
+      '</strong><div class="hint">' + escapeText(runDirLabel + " · " + t("run.updatedAt", { at: formatTime(header.updatedAt) }, "updated " + formatTime(header.updatedAt))) + "</div></div>" +
       '<div class="event"><div class="event-top"><span>' + escapeText(t("artifacts.artifactMap", undefined, "artifact map")) + '</span><span>' + escapeText(reviewList.length) +
       " " + escapeText(t("common.reviews", undefined, "reviews")) + '</span></div><strong>' + escapeText(t("artifacts.graphCounts", {
         nodes: String(graphNodes),
@@ -1626,7 +1980,7 @@ export function renderArtifactsPanel(args: {
       renderStructuredValueCards("state", args.detail.state ?? null).join("") +
       renderStructuredValueCards("stopRequest", args.detail.stopRequest ?? null).join("") +
       renderStructuredValueCards("stopOutcome", args.detail.stopOutcome ?? null).join("") + "</div>",
-    '<div class="artifact-section"><div class="event"><div class="event-top"><span>' + escapeText(t("artifacts.raw", undefined, "Raw")) + '</span><span>' + escapeText(t("common.fallback", undefined, "fallback")) + '</span></div><strong>' + escapeText(t("artifacts.resolvedConfigSummary", undefined, "Resolved config and summary payloads")) + '</strong></div>' +
+    '<div class="artifact-section artifact-section-collapsed"><div class="event"><div class="event-top"><span>' + escapeText(t("artifacts.raw", undefined, "Raw")) + '</span><span>' + escapeText(t("common.fallback", undefined, "fallback")) + '</span></div><strong>' + escapeText(t("artifacts.resolvedConfigSummary", undefined, "Resolved config and summary payloads")) + '</strong><div class="hint">' + escapeText(t("graph.overlayHint", undefined, "Recent paths and error flows stay highlighted without hiding the rest of the graph.")) + '</div></div>' +
       renderStructuredValueCards("summary", args.detail.summary ?? null).join("") +
       renderStructuredValueCards("resolvedConfig", args.detail.resolvedConfig ?? null).join("") + "</div>"
   ];
@@ -1889,5 +2243,5 @@ export function renderWorkbenchTopologySvg(structure: Record<string, unknown> | 
       lastSelectedEvent: role.reviewMode || role.joinMode || role.routingMode || "structure"
     })),
     edges: previewFlows
-  }).replace("Run topology graph", "Mermaid workbench topology");
+  }).replace("Run topology graph", "Graph workspace topology");
 }

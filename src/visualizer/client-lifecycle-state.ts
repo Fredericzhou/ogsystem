@@ -40,6 +40,8 @@ export function createBuildStateSlice() {
     workbenchValidationTimer: null,
     workbenchValidationRequestId: 0,
     workbenchValidating: false,
+    workbenchRunDraft: null,
+    workbenchRunDraftErrors: {},
     studioBridge: null,
     studioCanvas: null,
     studioBridgeLoaded: false,
@@ -60,6 +62,11 @@ export function createBuildStateSlice() {
     studioSelectionCommandKind: "",
     studioSelectionDismissCommandFormRequest: 0,
     studioBridgeLastDryRunId: "",
+    studioGraphRootElement: null,
+    studioGraphMountRetryTimer: null,
+    studioGraphMountRetryCount: 0,
+    runGraphMountRetryTimer: null,
+    runGraphMountRetryCount: 0,
     studioRolePackageEditor: {
       roleId: "",
       loading: false,
@@ -69,6 +76,16 @@ export function createBuildStateSlice() {
       error: "",
       data: null,
       draftFiles: {}
+    },
+    studioExecutionConfigEditor: {
+      roleId: "",
+      loading: false,
+      saving: false,
+      loaded: false,
+      dirty: false,
+      error: "",
+      data: null,
+      draft: null
     },
     studioChatSessionId: "",
     studioChatMessages: [],

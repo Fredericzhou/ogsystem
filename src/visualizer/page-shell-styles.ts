@@ -13,6 +13,11 @@ export function renderPageShellStyles(): string {
       --warn: #fbbf24;
       --bad: #f87171;
       --shadow: 0 14px 44px rgba(0, 0, 0, 0.26);
+      --control-bg: rgba(255, 255, 255, 0.035);
+      --control-bg-strong: rgba(255, 255, 255, 0.055);
+      --control-border-strong: rgba(148, 163, 184, 0.24);
+      --tab-active-bg: linear-gradient(180deg, rgba(56, 189, 248, 0.18), rgba(56, 189, 248, 0.1));
+      --tab-active-border: rgba(56, 189, 248, 0.4);
       --radius: 12px;
       --radius-sm: 8px;
       font-family: "IBM Plex Sans", "Segoe UI", system-ui, sans-serif;
@@ -89,12 +94,12 @@ export function renderPageShellStyles(): string {
       align-items: center;
       gap: 5px;
       width: auto;
-      padding: 4px 8px;
+      padding: 3px 7px;
       border-radius: 999px;
       border: 1px solid var(--border);
       color: var(--muted);
       background: rgba(255, 255, 255, 0.03);
-      font-size: 12px;
+      font-size: 11px;
       min-width: 0;
       max-width: 100%;
       overflow: hidden;
@@ -124,7 +129,7 @@ export function renderPageShellStyles(): string {
     }
     .stack {
       display: grid;
-      gap: 8px;
+      gap: 6px;
       width: 100%;
       max-width: 100%;
       min-width: 0;
@@ -139,9 +144,16 @@ export function renderPageShellStyles(): string {
       padding: 8px 10px;
       border: 1px solid var(--border);
       border-radius: 9px;
-      background: rgba(255, 255, 255, 0.03);
+      background: var(--control-bg);
       color: var(--text);
       outline: none;
+      transition: border-color 120ms ease, background 120ms ease, box-shadow 120ms ease;
+    }
+    .search:hover, .select:hover,
+    .search:focus, .select:focus {
+      border-color: rgba(56, 189, 248, 0.26);
+      background: var(--control-bg-strong);
+      box-shadow: 0 0 0 1px rgba(56, 189, 248, 0.08);
     }
     .search::placeholder { color: #6d7c9b; }
     .truncate {
@@ -209,14 +221,16 @@ export function renderPageShellStyles(): string {
     .status.pending, .status.paused, .status.recorded, .status.pending_reconcile { color: var(--warn); border-color: rgba(251, 191, 36, 0.22); background: rgba(251, 191, 36, 0.08); }
     .status.applied { color: var(--ok); border-color: rgba(52, 211, 153, 0.22); background: rgba(52, 211, 153, 0.08); }
     .content {
-      padding: 14px;
+      padding: 12px;
       display: grid;
-      gap: 12px;
+      gap: 10px;
       min-width: 0;
     }
     .shell {
       grid-template-rows: auto minmax(0, 1fr) auto;
-      min-height: 100vh;
+      min-height: 100dvh;
+      height: 100dvh;
+      overflow: hidden;
     }
     .flash {
       padding: 9px 12px;
@@ -246,7 +260,7 @@ export function renderPageShellStyles(): string {
       z-index: 12;
       display: grid;
       gap: 6px;
-      padding: 10px 12px;
+      padding: 8px 10px;
       border: 1px solid var(--border);
       border-radius: var(--radius);
       background:
@@ -258,14 +272,14 @@ export function renderPageShellStyles(): string {
     .top-nav-row {
       display: flex;
       flex-wrap: wrap;
-      gap: 10px 12px;
+      gap: 8px 10px;
       align-items: center;
       min-width: 0;
     }
     .top-nav-brand {
       display: flex;
       align-items: center;
-      gap: 6px 10px;
+      gap: 5px 8px;
       flex: 0 1 auto;
       flex-wrap: wrap;
       min-width: 0;
@@ -280,7 +294,7 @@ export function renderPageShellStyles(): string {
       display: grid;
       grid-template-columns: minmax(0, 1fr) auto;
       gap: 8px;
-      align-items: center;
+      align-items: start;
       flex: 1 1 460px;
       min-width: min(100%, 360px);
     }
@@ -308,7 +322,7 @@ export function renderPageShellStyles(): string {
       display: flex;
       flex: 0 0 auto;
       flex-wrap: wrap;
-      gap: 6px 8px;
+      gap: 5px 6px;
       align-items: center;
       justify-content: flex-end;
       margin-left: auto;
@@ -316,12 +330,18 @@ export function renderPageShellStyles(): string {
     }
     .main-stage {
       min-width: 0;
-      padding: 0 0 56px;
+      min-height: 0;
+      overflow: hidden;
+      padding: 0;
     }
     .stage-stack {
       display: grid;
       gap: 12px;
       align-content: start;
+      min-height: 100%;
+      height: 100%;
+      overflow: auto;
+      padding: 0 0 8px;
       min-width: 0;
     }
     .status-bar {
@@ -383,11 +403,16 @@ export function renderPageShellStyles(): string {
     }
     .top-nav-center .hero-utilities {
       justify-self: end;
+      padding: 4px;
+      border: 1px solid rgba(148, 163, 184, 0.14);
+      border-radius: 11px;
+      background: rgba(255, 255, 255, 0.02);
     }
     .top-nav-center .locale-field {
       display: inline-flex;
       align-items: center;
       gap: 6px;
+      padding: 0 2px;
     }
     .top-nav-center .locale-field span {
       white-space: nowrap;
@@ -396,6 +421,7 @@ export function renderPageShellStyles(): string {
     .top-nav-center .locale-field .select {
       min-width: 92px;
       width: auto;
+      min-height: 30px;
       padding: 6px 10px;
     }
     .actions {
@@ -407,19 +433,22 @@ export function renderPageShellStyles(): string {
     }
     .button {
       border: 1px solid var(--border);
-      background: rgba(255, 255, 255, 0.05);
+      background: var(--control-bg);
       color: var(--text);
       border-radius: 9px;
-      padding: 6px 9px;
-      min-height: 32px;
+      padding: 5px 9px;
+      min-height: 30px;
       min-width: 0;
       white-space: nowrap;
       cursor: pointer;
-      transition: border-color 120ms ease, background 120ms ease, transform 120ms ease;
+      font-size: 12px;
+      line-height: 1.2;
+      transition: border-color 120ms ease, background 120ms ease, transform 120ms ease, box-shadow 120ms ease;
     }
     .button:hover {
       border-color: rgba(56, 189, 248, 0.4);
-      background: rgba(255, 255, 255, 0.08);
+      background: var(--control-bg-strong);
+      box-shadow: 0 6px 18px rgba(0, 0, 0, 0.12);
       transform: translateY(-1px);
     }
     .button.primary {
@@ -427,7 +456,7 @@ export function renderPageShellStyles(): string {
       border-color: rgba(56, 189, 248, 0.45);
     }
     .button.subtle {
-      background: rgba(148, 163, 184, 0.06);
+      background: rgba(148, 163, 184, 0.055);
       color: var(--muted);
     }
     .button.warn {
@@ -490,8 +519,20 @@ export function renderPageShellStyles(): string {
     .global-status-primary {
       flex: 1 1 auto;
     }
+    .global-status-actions {
+      flex: 0 1 auto;
+      flex-wrap: wrap;
+      justify-content: flex-end;
+    }
     .global-status .pill {
       max-width: min(36vw, 420px);
+    }
+    .workbench-view-tabs-compat {
+      display: none;
+    }
+    .global-status-workbench-slot .workbench-view-tabs {
+      padding-left: 0;
+      background: transparent;
     }
     .global-status-diagnostics {
       flex: 1 1 auto;
@@ -622,7 +663,7 @@ export function renderPageShellStyles(): string {
     }
     .stat span {
       color: var(--muted);
-      font-size: 12px;
+      font-size: 11px;
       overflow-wrap: anywhere;
     }
     .sr-only {
@@ -713,7 +754,7 @@ export function renderPageShellStyles(): string {
     .build-control-primary {
       display: grid;
       grid-template-columns: minmax(0, 1fr) auto;
-      gap: 10px 14px;
+      gap: 8px 10px;
       align-items: start;
       min-width: 0;
     }
@@ -722,7 +763,7 @@ export function renderPageShellStyles(): string {
     .build-nav-stack,
     .build-command-stack {
       display: grid;
-      gap: 8px;
+      gap: 6px;
       min-width: 0;
     }
     .build-nav-stack {
@@ -733,7 +774,9 @@ export function renderPageShellStyles(): string {
       align-content: start;
     }
     .build-ide-body {
-      min-height: calc(100vh - 280px);
+      height: 100%;
+      min-height: clamp(520px, calc(100dvh - 236px), 960px);
+      overflow: hidden;
     }
     .build-control-status {
       min-width: 0;
@@ -741,7 +784,7 @@ export function renderPageShellStyles(): string {
     .build-control-bar #workbench-status {
       display: flex;
       flex-wrap: wrap;
-      gap: 6px;
+      gap: 5px;
       width: auto;
       justify-content: flex-end;
       min-width: 0;
@@ -775,9 +818,9 @@ export function renderPageShellStyles(): string {
     .workbench-view-tabs {
       justify-content: flex-start;
       margin-bottom: 0;
-      padding-left: 6px;
-      border-style: dashed;
-      background: rgba(56, 189, 248, 0.05);
+      padding-left: 4px;
+      border-style: solid;
+      background: transparent;
     }
     .build-submenu-tabs {
       margin-left: 10px;
@@ -790,60 +833,88 @@ export function renderPageShellStyles(): string {
       display: inline-flex;
       flex-wrap: nowrap;
       gap: 4px;
-      padding: 3px;
-      border-radius: 10px;
-      border: 1px solid var(--border);
-      background: rgba(255, 255, 255, 0.03);
+      padding: 4px;
+      border-radius: 12px;
+      border: 1px solid rgba(148, 163, 184, 0.16);
+      background: rgba(255, 255, 255, 0.025);
+      box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.03);
       min-width: 0;
       max-width: 100%;
     }
     .segmented .button {
-      padding: 5px 8px;
-      border-radius: 8px;
+      padding: 5px 9px;
+      border-radius: 9px;
       white-space: nowrap;
       width: auto;
       min-height: 30px;
+      border-color: transparent;
+      background: transparent;
     }
     .segmented .button.active {
-      background: rgba(56, 189, 248, 0.14);
-      border-color: rgba(56, 189, 248, 0.36);
+      background: var(--tab-active-bg);
+      border-color: var(--tab-active-border);
       color: #b5ecff;
+      box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.04);
     }
     .console-tabs {
       display: flex;
       flex-wrap: wrap;
-      gap: 6px;
+      gap: 4px;
       min-width: 0;
       width: 100%;
       padding: 4px;
-      border: 1px solid var(--border);
-      border-radius: 10px;
-      background: rgba(255, 255, 255, 0.025);
+      border: 1px solid rgba(148, 163, 184, 0.14);
+      border-radius: 12px;
+      background: rgba(255, 255, 255, 0.02);
+      box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.03);
     }
     .console-tabs .button {
       flex: 1 1 112px;
       justify-content: center;
       width: auto;
+      border-color: transparent;
+      background: transparent;
     }
     .console-tabs .button.active {
-      background: rgba(56, 189, 248, 0.16);
-      border-color: rgba(56, 189, 248, 0.44);
+      background: var(--tab-active-bg);
+      border-color: var(--tab-active-border);
       color: #b5ecff;
     }
     .legacy-tabs {
       flex: 1 1 100%;
       display: flex;
       flex-wrap: wrap;
-      gap: 6px;
+      gap: 4px;
       padding-top: 8px;
       border-top: 1px solid var(--border);
     }
     .legacy-tabs .button {
       flex: 0 1 auto;
       min-width: 96px;
+      border-color: rgba(148, 163, 184, 0.1);
     }
     .console-panel[hidden] {
       display: none;
+    }
+    #console-panel-build,
+    #console-panel-build > .card,
+    #console-panel-build > .card > .body,
+    .build-ide-shell,
+    .build-ide-body {
+      min-height: 0;
+    }
+    #console-panel-build {
+      height: 100%;
+      align-content: stretch;
+    }
+    #console-panel-build > .card {
+      height: 100%;
+      display: grid;
+      grid-template-rows: auto minmax(0, 1fr);
+    }
+    #console-panel-build > .card > .body {
+      height: 100%;
+      overflow: hidden;
     }
     .editor {
       width: 100%;
@@ -893,7 +964,7 @@ export function renderPageShellStyles(): string {
     .studio-bridge-layout {
       display: grid;
       grid-template-columns: minmax(0, 1fr);
-      gap: 10px;
+      gap: 8px;
       align-items: stretch;
       min-width: 0;
     }
@@ -922,13 +993,18 @@ export function renderPageShellStyles(): string {
     }
     .studio-canvas-shell {
       display: grid;
+      grid-template-columns: minmax(0, 1fr);
+      grid-template-rows: auto minmax(0, 1fr);
       gap: 6px;
       min-width: 0;
       position: relative;
-      min-height: calc(100vh - 292px);
+      min-height: 100%;
+      height: 100%;
+      align-items: stretch;
     }
     .studio-canvas-shell.has-docked-selection {
-      grid-template-columns: minmax(0, 1fr) minmax(280px, min(480px, 34vw));
+      grid-template-columns: minmax(0, 1fr) minmax(280px, min(440px, 32vw));
+      grid-template-rows: auto minmax(0, 1fr);
       align-items: stretch;
     }
     .studio-canvas-shell.has-docked-selection.has-collapsed-selection {
@@ -938,11 +1014,18 @@ export function renderPageShellStyles(): string {
       display: flex;
       justify-content: space-between;
       align-items: center;
-      gap: 10px;
+      gap: 8px;
+      padding: 6px 8px;
+      border-bottom: 1px solid var(--border);
+      background: rgba(7, 12, 24, 0.9);
+      position: sticky;
+      top: 0;
+      z-index: 3;
       min-width: 0;
     }
     .studio-canvas-shell.has-docked-selection .studio-canvas-toolbar {
       grid-column: 1 / -1;
+      grid-row: 1;
     }
     .studio-canvas-toolbar > div {
       display: grid;
@@ -961,6 +1044,12 @@ export function renderPageShellStyles(): string {
       padding-left: 3px;
       background: rgba(148, 163, 184, 0.08);
     }
+    .build-footer {
+      display: flex;
+      justify-content: flex-end;
+      padding-top: 8px;
+      min-width: 0;
+    }
     .studio-canvas-shell.is-fullscreen {
       position: fixed;
       inset: 12px;
@@ -972,14 +1061,19 @@ export function renderPageShellStyles(): string {
     }
     .studio-canvas-shell.is-fullscreen .studio-graph-root,
     .studio-canvas-shell.is-fullscreen .studio-graph-island {
-      min-height: calc(100vh - 108px);
+      min-height: calc(100dvh - 108px);
     }
     .studio-graph-root {
-      min-height: clamp(560px, 72vh, 920px);
+      min-height: 0;
+      height: 100%;
       min-width: 0;
+      grid-column: 1 / 2;
+      grid-row: 2;
+      align-self: stretch;
     }
     .studio-canvas-shell.has-docked-selection .studio-graph-root {
       grid-column: 1 / 2;
+      grid-row: 2;
     }
     .studio-selection-overlay[hidden] {
       display: none;
@@ -1003,8 +1097,11 @@ export function renderPageShellStyles(): string {
       position: relative;
       inset: auto;
       grid-column: 2 / 3;
+      grid-row: 2;
       justify-items: stretch;
       align-items: stretch;
+      justify-self: stretch;
+      align-self: stretch;
       min-width: 0;
       height: 100%;
       z-index: 1;
@@ -1017,7 +1114,9 @@ export function renderPageShellStyles(): string {
       max-width: 100%;
       height: 100%;
       max-height: 100%;
+      min-height: 100%;
       box-shadow: -18px 0 40px rgba(0, 0, 0, 0.32);
+      align-self: stretch;
     }
     .studio-selection-backdrop {
       position: absolute;
@@ -1033,7 +1132,7 @@ export function renderPageShellStyles(): string {
     }
     .studio-selection-dialog {
       position: relative;
-      width: min(480px, 34vw);
+      width: min(440px, 32vw);
       max-width: calc(100% - 20px);
       height: 100%;
       max-height: 100%;
@@ -1055,22 +1154,23 @@ export function renderPageShellStyles(): string {
       display: flex;
       align-items: flex-start;
       justify-content: space-between;
-      gap: 8px;
-      padding: 12px;
+      gap: 6px;
+      padding: 10px 10px 8px;
       border-bottom: 1px solid rgba(148, 163, 184, 0.2);
     }
     .studio-selection-body {
-      padding: 10px 12px 12px;
+      padding: 8px 10px 10px;
       min-height: 0;
       overflow: hidden;
       display: grid;
+      grid-template-rows: minmax(0, 1fr);
       align-content: stretch;
-      gap: 10px;
+      gap: 8px;
     }
     .studio-selection-tabstrip {
-      margin: 0 12px;
+      margin: 0 10px;
       width: fit-content;
-      max-width: calc(100% - 24px);
+      max-width: calc(100% - 20px);
     }
     .studio-selection-panels {
       min-height: 0;
@@ -1081,8 +1181,18 @@ export function renderPageShellStyles(): string {
       overflow-x: hidden;
       display: grid;
       align-content: start;
-      gap: 10px;
+      gap: 8px;
       padding-right: 2px;
+      scrollbar-gutter: stable;
+      overscroll-behavior: contain;
+    }
+    .studio-selection-title-wrap strong {
+      display: block;
+      font-size: 13px;
+      line-height: 1.35;
+    }
+    .studio-selection-debug-panel {
+      grid-auto-rows: max-content;
     }
     .studio-selection-title-wrap {
       min-width: 0;
@@ -1090,7 +1200,21 @@ export function renderPageShellStyles(): string {
     .studio-selection-actions {
       display: flex;
       align-items: center;
-      gap: 6px;
+      gap: 4px;
+    }
+    .studio-selection-dialog .button {
+      min-height: 28px;
+      padding: 4px 8px;
+    }
+    .studio-selection-tabstrip .button {
+      min-height: 28px;
+      padding: 4px 8px;
+      font-size: 12px;
+    }
+    .studio-selection-panel .event,
+    .studio-selection-panel .run-card,
+    .studio-selection-panel .compact-list-item {
+      padding: 8px 9px;
     }
     .studio-selection-role-package:empty {
       display: none;
@@ -1103,10 +1227,16 @@ export function renderPageShellStyles(): string {
       max-height: none;
     }
     .studio-selection-role-package .form-grid {
-      max-height: min(58vh, calc(100vh - 280px));
-      overflow-y: auto;
-      overflow-x: hidden;
-      padding-right: 2px;
+      max-height: none;
+      overflow: visible;
+      padding-right: 0;
+    }
+    .studio-execution-config-editor textarea {
+      min-height: 96px;
+    }
+    .studio-execution-config-editor .field input[readonly] {
+      opacity: 0.9;
+      cursor: default;
     }
     .studio-selection-command-host {
       min-height: 0;
@@ -1154,6 +1284,9 @@ export function renderPageShellStyles(): string {
       display: grid;
       gap: 8px;
     }
+    .artifact-section-collapsed {
+      gap: 6px;
+    }
     .preview svg {
       display: block;
       width: 100%;
@@ -1182,8 +1315,29 @@ export function renderPageShellStyles(): string {
       text-transform: uppercase;
     }
     .debug-graph-body {
-      grid-template-columns: 1fr;
+      display: grid;
+      grid-template-columns: minmax(0, 1.4fr) minmax(320px, 0.72fr);
       align-items: start;
+      gap: 10px;
+      min-width: 0;
+    }
+    .operate-graph-main,
+    .operate-graph-sidebar,
+    .operate-graph-view,
+    .operate-graph-state {
+      min-width: 0;
+    }
+    .operate-graph-main,
+    .operate-graph-sidebar {
+      display: grid;
+      gap: 8px;
+      align-content: start;
+    }
+    .operate-graph-sidebar {
+      position: relative;
+    }
+    .operate-graph-state {
+      gap: 10px;
     }
     .run-graph-root {
       min-height: 520px;
@@ -1199,6 +1353,9 @@ export function renderPageShellStyles(): string {
       gap: 8px;
       min-width: 0;
     }
+    .state-card-grid-primary {
+      grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+    }
     .state-group {
       display: grid;
       gap: 8px;
@@ -1211,11 +1368,101 @@ export function renderPageShellStyles(): string {
       text-transform: uppercase;
       letter-spacing: 0.02em;
     }
+    .studio-debug-panel-stack {
+      gap: 8px;
+    }
+    .studio-debug-launch-panel {
+      margin-bottom: -2px;
+    }
+    .studio-debug-form-grid {
+      gap: 6px;
+    }
+    .studio-selection-debug-panel .field textarea {
+      min-height: 88px;
+    }
+    .studio-selection-debug-panel .event,
+    .studio-selection-debug-panel .compact-list-item {
+      padding: 8px 9px;
+    }
+    .studio-selection-result-panel .disclosure-body {
+      max-height: min(58vh, calc(100dvh - 320px));
+      overflow: auto;
+      padding-right: 4px;
+    }
     .state-card-grid {
       display: grid;
       grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
       gap: 8px;
       min-width: 0;
+    }
+    .run-graph-summary-rail {
+      grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+    }
+    .disclosure {
+      gap: 0;
+      padding: 0;
+      overflow: hidden;
+    }
+    .disclosure-summary {
+      list-style: none;
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      gap: 10px;
+      padding: 9px 10px;
+      cursor: pointer;
+    }
+    .disclosure-summary::-webkit-details-marker {
+      display: none;
+    }
+    .disclosure-summary-copy {
+      display: grid;
+      gap: 4px;
+      min-width: 0;
+      flex: 1 1 auto;
+    }
+    .disclosure-kicker {
+      color: var(--muted);
+      font-size: 11px;
+      text-transform: uppercase;
+      letter-spacing: 0.02em;
+    }
+    .disclosure-meta {
+      flex: 0 0 auto;
+      color: var(--muted);
+      font-size: 12px;
+      white-space: nowrap;
+    }
+    .disclosure-hint,
+    .disclosure-body {
+      padding: 0 10px 10px;
+    }
+    .disclosure-body {
+      display: grid;
+      gap: 8px;
+    }
+    .compact-list {
+      display: grid;
+      gap: 6px;
+      padding: 0 10px 10px;
+    }
+    .compact-list-item {
+      display: grid;
+      gap: 4px;
+      padding: 7px 8px;
+      border-radius: 8px;
+      background: rgba(255, 255, 255, 0.03);
+      border: 1px solid rgba(148, 163, 184, 0.14);
+      min-width: 0;
+    }
+    .compact-list-title {
+      font-size: 13px;
+      color: var(--text);
+      overflow-wrap: anywhere;
+    }
+    .compact-list-meta {
+      color: var(--muted);
+      font-size: 12px;
     }
     .form-shell {
       display: grid;
@@ -1625,6 +1872,10 @@ export function renderPageShellStyles(): string {
       .preview,
       .editor {
         min-height: 280px;
+      }
+      .disclosure-summary {
+        display: grid;
+        grid-template-columns: 1fr;
       }
       pre,
       .timeline {

@@ -58,6 +58,7 @@ import {
   listProjectRolesVisualization,
   saveProjectRolePackageFilesVisualization,
   saveProjectSystemSource,
+  upsertProjectExecutionConfigVisualization,
   upsertProjectProfilesVisualization,
   validateProjectSystemSource
 } from "./project-projection.js";
@@ -656,6 +657,19 @@ async function handleApiProjectProfilesUpsert(
   jsonResponse(response, 200, await upsertProjectProfilesVisualization({
     workdir,
     profiles: Array.isArray(body.profiles) ? body.profiles : []
+  }));
+}
+
+async function handleApiProjectExecutionConfigUpsert(
+  workdir: string,
+  request: IncomingMessage,
+  response: ServerResponse
+): Promise<void> {
+  const body = await readJsonRequest(request);
+  jsonResponse(response, 200, await upsertProjectExecutionConfigVisualization({
+    workdir,
+    profiles: Array.isArray(body.profiles) ? body.profiles : [],
+    tools: Array.isArray(body.tools) ? body.tools : []
   }));
 }
 
@@ -1739,6 +1753,10 @@ async function handleVisualizationRequest(
   }
   if (segments.length === 4 && segments[2] === "project" && segments[3] === "profiles" && method === "POST") {
     await handleApiProjectProfilesUpsert(state.workdir, request, response);
+    return;
+  }
+  if (segments.length === 4 && segments[2] === "project" && segments[3] === "execution-config" && method === "POST") {
+    await handleApiProjectExecutionConfigUpsert(state.workdir, request, response);
     return;
   }
   if (segments.length === 4 && segments[2] === "project" && segments[3] === "roles" && method === "GET") {

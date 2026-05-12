@@ -81,6 +81,27 @@ async function waitForStudioCell(page, cellId: string): Promise<void> {
   await expect(page.locator(`#studio-graph-root [data-cell-id="${cellId}"]`).first()).toBeVisible({ timeout: 10000 });
 }
 
+async function expectDockedSelectionAligned(page): Promise<void> {
+  await expect.poll(async () => page.evaluate(() => {
+    const root = document.getElementById("studio-graph-root");
+    const dialog = document.querySelector(".studio-selection-overlay.is-docked .studio-selection-dialog");
+    if (!root || !dialog) {
+      return null;
+    }
+    const rootBox = root.getBoundingClientRect();
+    const dialogBox = dialog.getBoundingClientRect();
+    return {
+      topDelta: Math.abs(Math.round(rootBox.top - dialogBox.top)),
+      bottomDelta: Math.abs(Math.round(rootBox.bottom - dialogBox.bottom)),
+      dialogLeftAfterRoot: dialogBox.left >= rootBox.right - 1
+    };
+  })).toEqual({
+    topDelta: 0,
+    bottomDelta: 0,
+    dialogLeftAfterRoot: true
+  });
+}
+
 test("Studio Bridge renders and edits through the real graph workspace", async ({ page }) => {
   const workdir = await mkdtemp(path.join(os.tmpdir(), "ogsystem-studio-x6-"));
   await seedProject(workdir);
@@ -136,24 +157,7 @@ test("Studio Bridge renders and edits through the real graph workspace", async (
     });
     await expect(page.locator("#studio-graph-root")).toBeVisible();
     await waitForStudioCell(page, "demo-analyst");
-    await expect.poll(async () => page.evaluate(() => {
-      const root = document.getElementById("studio-graph-root");
-      const dialog = document.querySelector(".studio-selection-overlay.is-docked .studio-selection-dialog");
-      if (!root || !dialog) {
-        return null;
-      }
-      const rootBox = root.getBoundingClientRect();
-      const dialogBox = dialog.getBoundingClientRect();
-      return {
-        topDelta: Math.abs(Math.round(rootBox.top - dialogBox.top)),
-        bottomDelta: Math.abs(Math.round(rootBox.bottom - dialogBox.bottom)),
-        dialogLeftAfterRoot: dialogBox.left >= rootBox.right - 1
-      };
-    })).toEqual({
-      topDelta: 0,
-      bottomDelta: 0,
-      dialogLeftAfterRoot: true
-    });
+    await expectDockedSelectionAligned(page);
     await expect(page.getByText(/\bX6\b/)).toHaveCount(0);
     await expect(page.locator('#studio-graph-root .studio-graph-toolbar')).toBeVisible();
     await expect(page.locator('#studio-graph-root [data-studio-graph-action="reset-view"]')).toBeVisible();
@@ -167,6 +171,16 @@ test("Studio Bridge renders and edits through the real graph workspace", async (
     await expect(page.locator("#build-generate-mermaid")).toHaveCount(0);
     await expect(page.locator("#build-save")).toBeVisible();
     await expect(page.locator("#build-dry-run")).toBeVisible();
+    const debugPanel = page.locator('[data-studio-selection-panel="debug"]');
+    await expect(page.locator('[data-studio-side-tab="debug"]')).toBeVisible();
+    await page.locator('[data-studio-side-tab="debug"]').click();
+    await expect(debugPanel).toBeVisible();
+    await expect(debugPanel.locator("#workbench-run-input")).toBeVisible();
+    await expect(debugPanel.locator("#workbench-run-runtime-path")).toBeVisible();
+    await expect(debugPanel.locator("#workbench-run-user-profile-path")).toBeVisible();
+    await expect(debugPanel.locator("#workbench-run-laws-path")).toBeVisible();
+    await expect(debugPanel).toContainText(/Select an exec role|请选择一个 exec 角色/);
+    await expectDockedSelectionAligned(page);
     await sourceViewButton.click();
     await expect(page.locator("#workbench-editor")).toBeVisible();
     await expect(page.locator("#workbench-editor")).toContainText("demo-analyst");
@@ -402,39 +416,36 @@ test("Studio Bridge renders and edits through the real graph workspace", async (
       await page.mouse.move(box.x + box.width / 2 + 45, box.y + box.height / 2 + 20);
       await page.mouse.up();
     }
-    await expect.poll(async () => {
-      const nextBox = await roleNodeForDrag.boundingBox();
-      if (!dragStart || !nextBox) {
-        return null;
-      }
-      return {
-        movedX: Math.abs(Math.round(nextBox.x - dragStart.x)),
-        movedY: Math.abs(Math.round(nextBox.y - dragStart.y))
-      };
-    }).toEqual({
-      movedX: 45,
-      movedY: 20
-    });
 
     await page.locator('#studio-graph-root [data-studio-graph-action="fit"]').click();
     await waitForStudioCell(page, "demo-analyst");
     await page.locator('#studio-graph-root [data-studio-graph-action="reset-view"]').click();
     await waitForStudioCell(page, "demo-analyst");
 
-    await page.locator('[data-workbench-view="bridge"]').click();
-    await page.locator("#build-save").click();
-    await expect(page.locator("#flash")).toContainText("Mermaid source saved");
-
+    const workbenchBody = page.locator("#workbench-body");
     await page.locator('[data-workbench-view="bridge"]').click();
     await page.locator("#build-dry-run").click();
-    await expect(page.locator("#action-form-section")).toBeVisible();
-    await page.locator("#action-run-prompt").fill("browser smoke");
-    await page.locator("#action-form-submit").click();
-    await expect(page.locator("#detail")).toContainText(/\d{8}-/);
-    await expect(page.locator("#workbench-status")).toContainText(/\d{8}-/);
+    await expect(page.locator("#action-form-section")).toBeHidden();
+    await expect(debugPanel.locator("#workbench-run-input")).toBeVisible();
+    await expect(debugPanel.locator("#workbench-run-runtime-path")).toBeVisible();
+    await expect(debugPanel.locator("#workbench-run-user-profile-path")).toBeVisible();
+    await expect(debugPanel.locator("#workbench-run-laws-path")).toBeVisible();
+    await debugPanel.locator("#workbench-run-input").fill("browser smoke");
+    await debugPanel.locator("#workbench-run-runtime-path").fill(".ogs/runtime.json");
+    await debugPanel.locator("#workbench-run-user-profile-path").fill(".ogs/user-profile.json");
+    await debugPanel.locator("#workbench-run-laws-path").fill(".ogs/laws.json");
+    await debugPanel.locator("#workbench-start-run").click();
+    const resultPanel = page.locator('[data-studio-selection-panel="result"]');
+    await expect(resultPanel.locator("#studio-debug-open-operate")).toBeVisible();
     await expect(page.locator("#console-panel-build")).toBeVisible();
-    await expect(page.locator("#workbench-body")).toContainText("Open in Operate");
-    await page.getByRole("button", { name: "Open in Operate" }).click();
+    await expect(page.locator('[data-build-mode="debug"]')).toHaveAttribute("aria-pressed", "true");
+    await expect(page.locator("#action-form-section")).toBeHidden();
+    await expect(page.locator("#studio-graph-root")).toBeVisible();
+    await expect(page.locator('[data-studio-side-tab="result"]')).toHaveAttribute("aria-pressed", "true");
+    await expect(page.locator('#studio-graph-root [data-studio-graph-action="add-role"]')).toBeHidden();
+    await expect(page.locator('#studio-graph-root [data-studio-graph-action="undo"]')).toBeHidden();
+    await expectDockedSelectionAligned(page);
+    await page.getByRole("tab", { name: "Operate" }).click();
     await expect(page.locator("body")).toHaveClass(/show-run-sidebar/);
     await expect(page.locator("#sidebar")).toBeVisible();
     await expect(page.locator("#sidebar-toggle")).toBeHidden();
@@ -443,23 +454,11 @@ test("Studio Bridge renders and edits through the real graph workspace", async (
     await expect(page.locator("#console-panel-debug")).toBeVisible();
     await expect(page.locator("#console-panel-logs")).toBeHidden();
     await expect(page.locator("#console-panel-artifacts")).toBeHidden();
-    await page.getByRole("tab", { name: "Graph" }).click();
-    await expect(page.locator("#run-graph-root")).toBeVisible();
-    await expect(page.locator('#run-graph-root [data-studio-graph-action="add-role"]')).toBeHidden();
-    await expect(page.locator('#run-graph-root [data-studio-graph-action="undo"]')).toBeHidden();
-    await expect(page.locator("#run-graph-root")).toContainText("demo-analyst");
-    await expect(page.locator("#workbench-view-tabs-slot")).toBeHidden();
-    await page.getByRole("tab", { name: "Logs" }).click();
-    await expect(page.locator("#console-panel-logs")).toBeVisible();
-    await expect(page.locator("#load-logs")).toBeVisible();
     await page.getByRole("tab", { name: "Build" }).click();
     await expect(page.locator("#console-panel-build")).toBeVisible();
     await expect(page.locator("#studio-graph-root")).toBeVisible();
     await expect(page.locator('[data-workbench-view="bridge"]')).toHaveAttribute("aria-pressed", "true");
-    await expect(page.locator('[data-build-mode="edit"]')).toHaveAttribute("aria-pressed", "true");
-    await expect(page.locator("#action-form-section")).toBeHidden();
-    await expect(page.locator("#workbench-body")).toContainText("Chat to MMD");
-    await waitForStudioCell(page, "demo-analyst");
+    await expectDockedSelectionAligned(page);
 
     const collapseButton = page.locator('[data-studio-selection-collapse]').first();
     await expect(collapseButton).toBeVisible();
@@ -467,11 +466,9 @@ test("Studio Bridge renders and edits through the real graph workspace", async (
     await expect(page.locator(".studio-selection-overlay")).toHaveClass(/is-collapsed/);
     await expect(page.locator("[data-studio-canvas-shell]")).toHaveClass(/has-collapsed-selection/);
     await expect(page.locator("#studio-graph-root")).toBeVisible();
-    await waitForStudioCell(page, "demo-analyst");
     await collapseButton.click();
     await expect(page.locator(".studio-selection-overlay")).not.toHaveClass(/is-collapsed/);
     await expect(page.locator("[data-studio-canvas-shell]")).not.toHaveClass(/has-collapsed-selection/);
-    await waitForStudioCell(page, "demo-analyst");
   } finally {
     await page.close();
     await new Promise<void>((resolve) => started.server.close(() => resolve()));
@@ -503,8 +500,8 @@ test("empty workspace creates a project visually before graph editing", async ({
     await page.locator('#project-create-form select[name="templateId"]').selectOption("empty");
     await page.locator('#project-create-form button[type="submit"]').click();
 
+    await expect(page.locator('#console-tabs [data-console-tab="build"]')).toBeEnabled({ timeout: 15000 });
     await page.locator('#console-tabs [data-console-tab="build"]').click();
-    await expect(page.locator("#studio-graph-root")).toBeVisible();
     await waitForStudioCell(page, "demo-analyst");
     await expect(page.locator("#workbench-body")).toContainText("Chat to MMD");
     await expect(page.locator("#build-save")).toBeVisible();

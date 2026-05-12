@@ -582,7 +582,7 @@ test("Studio command forms expose visual role package, model, and profile choice
       profileMode: "create",
       profileId: "profile.exec_role",
       newProfileId: "profile.exec_role",
-      newProfileToolRef: "tool.review",
+      newProfileToolRef: "tool.exec_role",
       newProfileTimeoutMs: "30000",
       newProfileMaxOutputBytes: "4096"
     },
@@ -590,14 +590,22 @@ test("Studio command forms expose visual role package, model, and profile choice
   };
   const createProfileHtml = renderStudioCommandForm({ state: createProfileState, context });
   assert.match(createProfileHtml, /Generated profile id/);
+  assert.match(createProfileHtml, /project-local console tool is created/i);
   assert.match(createProfileHtml, /readonly/);
   const createProfileCommand = commandFromStudioCommandFormState(createProfileState);
   assert.equal(createProfileCommand.profileId, "profile.exec_role");
   assert.deepEqual(createProfileCommand.profileDraft, {
     profileId: "profile.exec_role",
-    toolRef: "tool.review",
+    toolRef: "tool.exec_role",
     timeoutMs: 30000,
     maxOutputBytes: 4096
+  });
+  assert.deepEqual(createProfileCommand.toolDraft, {
+    toolRef: "tool.exec_role",
+    runner: "local_shell",
+    command: "node",
+    argsTemplate: ["scripts/console-print.mjs"],
+    stdinMode: "text"
   });
 });
 

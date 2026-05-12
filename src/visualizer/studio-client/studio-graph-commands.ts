@@ -18,6 +18,7 @@ export type StudioAuthoringCommand =
       modelRef?: string;
       profileId?: string;
       profileDraft?: StudioExecutionProfileDraft;
+      toolDraft?: StudioExecutionToolDraft;
       x?: number;
       y?: number;
     }
@@ -31,6 +32,7 @@ export type StudioAuthoringCommand =
       modelRef?: string;
       profileId?: string;
       profileDraft?: StudioExecutionProfileDraft;
+      toolDraft?: StudioExecutionToolDraft;
     }
   | { type: "delete-role"; roleId: string }
   | {
@@ -64,6 +66,7 @@ export type StudioAuthoringCommandResult = {
   selectedFlowKey?: string;
   repositoryRoleId?: string;
   profileDrafts?: StudioExecutionProfileDraft[];
+  toolDrafts?: StudioExecutionToolDraft[];
   blockedCode?:
     | "entry-role-delete"
     | "missing-role-id"
@@ -79,6 +82,14 @@ export type StudioExecutionProfileDraft = {
   toolRef: string;
   timeoutMs?: number;
   maxOutputBytes?: number;
+};
+
+export type StudioExecutionToolDraft = {
+  toolRef: string;
+  runner: "local_shell";
+  command: string;
+  argsTemplate: string[];
+  stdinMode: "none" | "text";
 };
 
 function cloneJson<T>(value: T): T {
@@ -271,7 +282,8 @@ export function applyStudioAuthoringCommand(args: {
         canvas,
         selectedRoleId: roleId,
         repositoryRoleId: command.repositoryRoleId,
-        profileDrafts: command.profileDraft ? [command.profileDraft] : undefined
+        profileDrafts: command.profileDraft ? [command.profileDraft] : undefined,
+        toolDrafts: command.toolDraft ? [command.toolDraft] : undefined
       };
     }
 
@@ -361,7 +373,8 @@ export function applyStudioAuthoringCommand(args: {
       authoring,
       canvas,
       selectedRoleId: nextRoleId,
-      profileDrafts: command.profileDraft ? [command.profileDraft] : undefined
+      profileDrafts: command.profileDraft ? [command.profileDraft] : undefined,
+      toolDrafts: command.toolDraft ? [command.toolDraft] : undefined
     };
   }
 

@@ -1,6 +1,7 @@
 import type { Edge, Graph, Node } from "@antv/x6";
 
 import type { StudioGraphProjection, StudioGraphProjectionEdge, StudioGraphProjectionNode } from "../studio-contracts.js";
+import { formatStudioRuntimeNodeBadges } from "./studio-graph-runtime.js";
 
 function nodeStroke(node: StudioGraphProjectionNode): string {
   if (node.severity === "error") return "#f87171";
@@ -17,7 +18,8 @@ function edgeStroke(edge: StudioGraphProjectionEdge): string {
 }
 
 function nodeLabel(node: StudioGraphProjectionNode): string {
-  const badges = node.badges.length ? `  [${node.badges.join(" ")}]` : "";
+  const normalizedBadges = formatStudioRuntimeNodeBadges(node);
+  const badges = normalizedBadges.length ? `  [${normalizedBadges.join(" ")}]` : "";
   return `${node.label}${badges}`;
 }
 

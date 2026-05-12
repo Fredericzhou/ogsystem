@@ -18,6 +18,10 @@ import {
 import { canvasToStudioGraphProjection, graphToCanvasDocument, studioEdgeFlowKey } from "./studio-graph-adapter.js";
 import { applyStudioAuthoringCommand, type StudioAuthoringCommand } from "./studio-graph-commands.js";
 import { renderStudioGraphProjection } from "./studio-graph-render.js";
+import {
+  deriveStudioRuntimeVisualState,
+  type StudioRuntimeVisualState
+} from "./studio-graph-runtime.js";
 import { canConnectStudioCells } from "./studio-graph-rules.js";
 
 type StudioGraphLabelKey =
@@ -135,6 +139,11 @@ export class StudioGraphIsland {
   private lastHandledHistoryEventId = 0;
   private syncCanvasTimer: ReturnType<typeof setTimeout> | null = null;
   private commandForm: StudioCommandFormState | null = null;
+  private runtimeVisualState: StudioRuntimeVisualState | null = null;
+  private focusMotionTimer: ReturnType<typeof setTimeout> | null = null;
+  private focusMotionCellId = "";
+  private reducedMotion = false;
+  private readonly delegatedCommandFormSubmitListener = (event: Event) => this.handleDelegatedCommandFormSubmit(event);
   private readonlyHistory: { undoStack: StudioGraphSnapshot[]; redoStack: StudioGraphSnapshot[] } = {
     undoStack: [],
     redoStack: []
@@ -193,6 +202,10 @@ export class StudioGraphIsland {
     this.bindToolbar();
     this.bindGraphEvents();
     this.root.addEventListener("keydown", (event) => this.handleRootKeydown(event));
+    // Command forms can be mounted in a sibling host outside `root`, so use a document-level
+    // submit fallback to prevent accidental native navigation during rapid host swaps.
+    document.addEventListener("submit", this.delegatedCommandFormSubmitListener, true);
+    this.reducedMotion = this.detectReducedMotion();
     this.updateToolbarState();
   }
 
@@ -227,11 +240,18 @@ export class StudioGraphIsland {
     this.applying = true;
     try {
       renderStudioGraphProjection(this.graph, projection);
+      this.runtimeVisualState = deriveStudioRuntimeVisualState({
+        authoring: options.authoring,
+        projection,
+        readOnly: options.readOnly === true
+      });
       const autoLayoutApplied = this.applyDefaultAutoLayout();
       if (!autoLayoutApplied) {
         this.restoreViewport(options.canvas?.viewport, !this.hasRenderedProjection);
       }
       this.selectFromOptions();
+      this.applyRuntimeOverlay();
+      this.syncSelectionPresentation();
       this.openRequestedSelectionEditor();
       this.hasRenderedProjection = true;
     } finally {
@@ -246,6 +266,11 @@ export class StudioGraphIsland {
       clearTimeout(this.syncCanvasTimer);
       this.syncCanvasTimer = null;
     }
+    if (this.focusMotionTimer) {
+      clearTimeout(this.focusMotionTimer);
+      this.focusMotionTimer = null;
+    }
+    document.removeEventListener("submit", this.delegatedCommandFormSubmitListener, true);
     this.graph.dispose();
     this.root.innerHTML = "";
     this.root.classList.remove("studio-graph-island");
@@ -257,8 +282,7 @@ export class StudioGraphIsland {
       grid: true,
       autoResize: true,
       panning: {
-        enabled: true,
-        modifiers: ["space"]
+        enabled: true
       },
       mousewheel: {
         enabled: true,
@@ -288,7 +312,7 @@ export class StudioGraphIsland {
     });
     graph.use(new History({ enabled: false }));
     graph.use(new Keyboard({ enabled: true }));
-    graph.use(new Selection({ enabled: true, multiple: false, rubberband: true }));
+    graph.use(new Selection({ enabled: true, multiple: false, rubberband: true, modifiers: ["shift"] }));
     graph.bindKey(["backspace", "delete"], () => {
       void this.deleteSelection();
       return false;
@@ -342,6 +366,7 @@ export class StudioGraphIsland {
       const data = node.getData() as { studioNode?: { kind?: string; roleId?: string } } | undefined;
       if (data?.studioNode?.kind === "role" && data.studioNode.roleId) {
         this.options.onSelectRole?.(data.studioNode.roleId);
+        this.syncSelectionPresentation(data.studioNode.roleId);
         this.openEditRoleForm(data.studioNode.roleId);
         this.updateToolbarState();
       }
@@ -350,6 +375,7 @@ export class StudioGraphIsland {
       const data = edge.getData() as { studioEdge?: { id?: string; source: string; target: string; eventType: string; runtimeOnlyErrorFlow?: boolean; participatesInJoin?: boolean; editable?: boolean } } | undefined;
       if (data?.studioEdge) {
         this.options.onSelectFlow?.(studioEdgeFlowKey(data.studioEdge));
+        this.syncSelectionPresentation(data.studioEdge.id || "");
         this.openEditEdgeForm(data.studioEdge);
         this.updateToolbarState();
       }
@@ -361,9 +387,11 @@ export class StudioGraphIsland {
       this.graph.cleanSelection();
       this.options.onClearSelection?.();
       this.lastEditSelectionSignature = "";
+      this.syncSelectionPresentation();
       this.updateToolbarState();
     });
     this.graph.on("selection:changed", () => {
+      this.syncSelectionPresentation();
       if (!this.applying) {
         this.openSelectedEditor();
       }
@@ -627,12 +655,14 @@ export class StudioGraphIsland {
     const currentRoleId = currentData?.studioNode?.kind === "role" ? currentData.studioNode.roleId || "" : "";
     const currentFlowKey = currentData?.studioEdge ? studioEdgeFlowKey(currentData.studioEdge) : "";
     if (currentRoleId === roleId && currentFlowKey === flowKey) {
+      this.syncSelectionPresentation(roleId || current?.id || flowKey || "");
       return;
     }
     this.graph.cleanSelection();
     if (roleId) {
       const node = this.graph.getCellById(roleId);
       if (node) this.graph.select(node);
+      this.syncSelectionPresentation(roleId);
       return;
     }
     if (flowKey) {
@@ -641,7 +671,10 @@ export class StudioGraphIsland {
         return data?.studioEdge ? studioEdgeFlowKey(data.studioEdge) === flowKey : false;
       });
       if (edge) this.graph.select(edge);
+      this.syncSelectionPresentation(edge?.id || "");
+      return;
     }
+    this.syncSelectionPresentation();
   }
 
   private restoreViewport(
@@ -829,7 +862,20 @@ export class StudioGraphIsland {
       return;
     }
     this.pushUndoSnapshot();
+    const nextSelectedRoleId = result.selectedRoleId || this.selectedRoleId();
+    const nextSelectedFlowKey = result.selectedFlowKey || this.options.selectedFlowKey || "";
+    // Keep local authoring/canvas in sync immediately so chained edits do not depend on the
+    // outer visualizer state round-tripping first.
+    this.options.authoring = result.authoring;
+    this.options.canvas = result.canvas;
     await this.options.onApplyCommand?.(result);
+    if (!this.isReadOnly() && result.authoring && result.canvas) {
+      this.options.selectedRoleId = nextSelectedRoleId;
+      this.options.selectedFlowKey = nextSelectedFlowKey;
+      this.applyRuntimeOverlay();
+      this.selectFromOptions();
+      this.syncSelectionPresentation(nextSelectedRoleId || nextSelectedFlowKey);
+    }
     this.activeRedoStack().length = 0;
     this.updateToolbarState();
   }
@@ -1074,6 +1120,23 @@ export class StudioGraphIsland {
     }
   }
 
+  private handleDelegatedCommandFormSubmit(event: Event): void {
+    if (event.defaultPrevented) {
+      return;
+    }
+    const target = event.target;
+    const form = target instanceof HTMLFormElement
+      ? target
+      : target instanceof HTMLElement
+        ? target.closest("form")
+        : null;
+    if (!form || !this.dialogEl.contains(form) || !form.matches("[data-studio-command-form]")) {
+      return;
+    }
+    event.preventDefault();
+    void this.submitCommandForm(form);
+  }
+
   private toolbarButton(action: string, key: StudioGraphLabelKey, icon: string, shortLabel?: string): string {
     const label = this.label(key);
     return '<button type="button" data-studio-graph-action="' + this.escapeHtml(action) + '" title="' +
@@ -1159,5 +1222,105 @@ export class StudioGraphIsland {
       });
     }
     this.options.onCommandFormStateChange(state);
+  }
+
+  private applyRuntimeOverlay(): void {
+    const runtime = this.runtimeVisualState;
+    this.root.dataset.runtimeSignals = runtime?.hasRuntimeSignals ? "on" : "off";
+    this.root.dataset.reducedMotion = this.reducedMotion ? "on" : "off";
+    const canvas = this.canvasEl.querySelector<HTMLElement>(".x6-graph-svg");
+    if (canvas) {
+      canvas.dataset.runtimeSignals = runtime?.hasRuntimeSignals ? "on" : "off";
+    }
+    for (const node of this.graph.getNodes()) {
+      const view = this.graph.findViewByCell(node);
+      const container = view?.container as Element | undefined;
+      if (!container) {
+        continue;
+      }
+      const nodeState = runtime?.nodeStates.get(node.id);
+      container.classList.toggle("is-runtime-active", Boolean(nodeState?.active));
+      container.classList.toggle("is-runtime-waiting-review", Boolean(nodeState?.waitingReview));
+      container.classList.toggle("has-human-gate", Boolean(nodeState?.humanGateConfigured));
+      container.classList.toggle("has-loop-count", Boolean((nodeState?.loopCount || 0) > 1));
+      if (nodeState?.status) {
+        container.setAttribute("data-runtime-status", nodeState.status);
+      } else {
+        container.removeAttribute("data-runtime-status");
+      }
+      if (nodeState?.errorCode) {
+        container.setAttribute("data-runtime-error-code", nodeState.errorCode);
+      } else {
+        container.removeAttribute("data-runtime-error-code");
+      }
+      if (nodeState?.loopCount && nodeState.loopCount > 1) {
+        container.setAttribute("data-loop-count", String(nodeState.loopCount));
+      } else {
+        container.removeAttribute("data-loop-count");
+      }
+    }
+    for (const edge of this.graph.getEdges()) {
+      const view = this.graph.findViewByCell(edge);
+      const container = view?.container as Element | undefined;
+      if (!container) {
+        continue;
+      }
+      const edgeState = runtime?.edgeStates.get(edge.id);
+      container.classList.toggle("is-runtime-active", Boolean(edgeState?.active));
+      container.classList.toggle("is-runtime-error", Boolean(edgeState?.error));
+      container.classList.toggle("is-loop-back", Boolean(edgeState?.loopBack));
+    }
+  }
+
+  private syncSelectionPresentation(preferredCellId = ""): void {
+    const selectedId = preferredCellId || this.graph.getSelectedCells()[0]?.id || "";
+    for (const cell of this.graph.getCells()) {
+      const view = this.graph.findViewByCell(cell);
+      const container = view?.container as Element | undefined;
+      if (!container) {
+        continue;
+      }
+      container.classList.toggle("is-selection-active", selectedId === cell.id);
+      if (selectedId !== cell.id) {
+        container.classList.remove("is-selection-focus-pulse");
+      }
+    }
+    if (!selectedId || this.reducedMotion || this.focusMotionCellId === selectedId) {
+      return;
+    }
+    this.focusMotionCellId = selectedId;
+    const selectedCell = this.graph.getCellById(selectedId);
+    if (!selectedCell) {
+      return;
+    }
+    if (selectedCell.isNode()) {
+      this.graph.centerCell(selectedCell);
+    }
+    const selectedView = this.graph.findViewByCell(selectedCell);
+    const container = selectedView?.container as Element | undefined;
+    if (!container) {
+      return;
+    }
+    container.classList.add("is-selection-focus-pulse");
+    if (this.focusMotionTimer) {
+      clearTimeout(this.focusMotionTimer);
+    }
+    this.focusMotionTimer = setTimeout(() => {
+      container.classList.remove("is-selection-focus-pulse");
+      if (this.focusMotionCellId === selectedId) {
+        this.focusMotionCellId = "";
+      }
+      this.focusMotionTimer = null;
+    }, 900);
+  }
+
+  private detectReducedMotion(): boolean {
+    try {
+      return Boolean(typeof window !== "undefined"
+        && typeof window.matchMedia === "function"
+        && window.matchMedia("(prefers-reduced-motion: reduce)").matches);
+    } catch {
+      return false;
+    }
   }
 }

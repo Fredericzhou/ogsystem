@@ -1,7 +1,11 @@
 import { STUDIO_SYSTEM_END_ROLE_ID, type StudioAuthoringRole } from "../studio-contracts.js";
 import { escapeHtml } from "../html-escape.js";
 import { asRecord, asTrimmedString } from "../json-guards.js";
-import type { StudioAuthoringCommand, StudioExecutionProfileDraft } from "./studio-graph-commands.js";
+import type {
+  StudioAuthoringCommand,
+  StudioExecutionProfileDraft,
+  StudioExecutionToolDraft
+} from "./studio-graph-commands.js";
 import {
   extractStudioRolePackages,
   normalizeStudioEventType,
@@ -117,6 +121,11 @@ function profileIdFromRoleId(roleId: string): string {
   return `profile.${normalized || "role"}`;
 }
 
+function toolRefFromRoleId(roleId: string): string {
+  const normalized = roleId.trim().replace(/[^A-Za-z0-9_-]+/g, "-").replace(/^-+|-+$/g, "");
+  return `tool.${normalized || "role"}`;
+}
+
 export function createDefaultStudioCommandFormState(args: {
   kind: StudioCommandFormKind;
   context: StudioCommandValidationContext;
@@ -205,7 +214,8 @@ export function commandFromStudioCommandFormState(state: StudioCommandFormState)
         bindingKind,
         modelRef: bindingKind === "model" ? state.fields.modelRef?.trim() : undefined,
         profileId: bindingKind === "exec" ? state.fields.profileId?.trim() : undefined,
-        profileDraft: bindingKind === "exec" ? profileDraftFromFields(state.fields) : undefined
+        profileDraft: bindingKind === "exec" ? profileDraftFromFields(state.fields) : undefined,
+        toolDraft: bindingKind === "exec" ? toolDraftFromFields(state.fields) : undefined
       };
     }
     return {
@@ -216,7 +226,8 @@ export function commandFromStudioCommandFormState(state: StudioCommandFormState)
       bindingKind,
       modelRef: bindingKind === "model" ? state.fields.modelRef?.trim() : undefined,
       profileId: bindingKind === "exec" ? state.fields.profileId?.trim() : undefined,
-      profileDraft: bindingKind === "exec" ? profileDraftFromFields(state.fields) : undefined
+      profileDraft: bindingKind === "exec" ? profileDraftFromFields(state.fields) : undefined,
+      toolDraft: bindingKind === "exec" ? toolDraftFromFields(state.fields) : undefined
     };
   }
   if (state.kind === "edit-edge") {
@@ -345,7 +356,7 @@ function profileDraftFromFields(fields: StudioAddRoleDraft): StudioExecutionProf
     return undefined;
   }
   const profileId = (fields.newProfileId || fields.profileId || "").trim();
-  const toolRef = (fields.newProfileToolRef || "").trim();
+  const toolRef = (fields.newProfileToolRef || toolRefFromRoleId(fields.roleId) || "").trim();
   if (!profileId || !toolRef) {
     return undefined;
   }
@@ -356,6 +367,23 @@ function profileDraftFromFields(fields: StudioAddRoleDraft): StudioExecutionProf
     toolRef,
     ...(Number.isInteger(timeoutMs) && timeoutMs > 0 ? { timeoutMs } : {}),
     ...(Number.isInteger(maxOutputBytes) && maxOutputBytes > 0 ? { maxOutputBytes } : {})
+  };
+}
+
+function toolDraftFromFields(fields: StudioAddRoleDraft): StudioExecutionToolDraft | undefined {
+  if (fields.profileMode !== "create") {
+    return undefined;
+  }
+  const toolRef = (fields.newProfileToolRef || toolRefFromRoleId(fields.roleId) || "").trim();
+  if (!toolRef) {
+    return undefined;
+  }
+  return {
+    toolRef,
+    runner: "local_shell",
+    command: "node",
+    argsTemplate: ["scripts/console-print.mjs"],
+    stdinMode: "text"
   };
 }
 
@@ -392,21 +420,14 @@ function renderProfileBindingField(args: {
   labels?: StudioCommandFormLabels;
 }): string {
   const options = extractStudioProfileOptions(args.context);
-  const tools = extractStudioToolOptions(args.context);
   const profileMode = args.fields.profileMode === "create" || !options.length ? "create" : "existing";
   const generatedProfileId = args.fields.newProfileId || profileIdFromRoleId(args.fields.roleId);
   if (profileMode === "create") {
-    const toolRef = args.fields.newProfileToolRef || tools[0]?.toolRef || "";
-    const toolOptions = tools.length
-      ? tools.map((option) =>
-          '<option value="' + escapeHtml(option.toolRef) + '"' + (option.toolRef === toolRef ? " selected" : "") + ">" +
-          escapeHtml(option.label) + "</option>"
-        ).join("")
-      : '<option value="">' + escapeHtml(label(args.labels, "noTools", "No tools available")) + "</option>";
+    const toolRef = args.fields.newProfileToolRef || toolRefFromRoleId(args.fields.roleId);
     return [
-      options.length ? '<div class="studio-command-form-row segmented"><label><input type="radio" name="profileMode" value="existing"> ' + escapeHtml(label(args.labels, "existingProfile", "Existing profile")) + '</label><label><input type="radio" name="profileMode" value="create" checked> ' + escapeHtml(label(args.labels, "createProfile", "Create profile")) + "</label></div>" : '<input type="hidden" name="profileMode" value="create">',
-      '<label class="studio-command-form-row"><span>' + escapeHtml(label(args.labels, "newProfileId", "Generated profile id")) + '</span><input name="newProfileId" value="' + escapeHtml(generatedProfileId) + '" readonly><input type="hidden" name="profileId" value="' + escapeHtml(generatedProfileId) + '">' + renderStudioCommandFormFieldError(args.state, "newProfileId") + "</label>",
-      '<label class="studio-command-form-row"><span>' + escapeHtml(label(args.labels, "newProfileToolRef", "Tool")) + '</span><select name="newProfileToolRef">' + toolOptions + "</select>" + renderStudioCommandFormFieldError(args.state, "newProfileToolRef") + "</label>",
+      options.length ? '<div class="studio-command-form-row segmented"><label><input type="radio" name="profileMode" value="existing"> ' + escapeHtml(label(args.labels, "existingProfile", "Reuse existing execution config")) + '</label><label><input type="radio" name="profileMode" value="create" checked> ' + escapeHtml(label(args.labels, "createProfile", "Create project execution config")) + "</label></div>" : '<input type="hidden" name="profileMode" value="create">',
+      '<label class="studio-command-form-row"><span>' + escapeHtml(label(args.labels, "newProfileId", "Generated profile id")) + '</span><input name="newProfileId" value="' + escapeHtml(generatedProfileId) + '" readonly><input type="hidden" name="profileId" value="' + escapeHtml(generatedProfileId) + '"><div class="studio-command-form-hint">System-managed. Used for stable runtime binding.</div>' + renderStudioCommandFormFieldError(args.state, "newProfileId") + "</label>",
+      '<label class="studio-command-form-row"><span>' + escapeHtml(label(args.labels, "newProfileToolRef", "Tool")) + '</span><input name="newProfileToolRef" value="' + escapeHtml(toolRef) + '" readonly><div class="studio-command-form-hint">System-managed. A project-local console tool is created and can be edited later.</div>' + renderStudioCommandFormFieldError(args.state, "newProfileToolRef") + "</label>",
       '<label class="studio-command-form-row"><span>' + escapeHtml(label(args.labels, "newProfileTimeoutMs", "Timeout ms")) + '</span><input name="newProfileTimeoutMs" inputmode="numeric" value="' + escapeHtml(args.fields.newProfileTimeoutMs || "") + '">' + renderStudioCommandFormFieldError(args.state, "newProfileTimeoutMs") + "</label>",
       '<label class="studio-command-form-row"><span>' + escapeHtml(label(args.labels, "newProfileMaxOutputBytes", "Max output bytes")) + '</span><input name="newProfileMaxOutputBytes" inputmode="numeric" value="' + escapeHtml(args.fields.newProfileMaxOutputBytes || "") + '">' + renderStudioCommandFormFieldError(args.state, "newProfileMaxOutputBytes") + "</label>"
     ].join("");
@@ -421,7 +442,7 @@ function renderProfileBindingField(args: {
       escapeHtml(option.label) + "</option>"
     )
     .join("");
-  return '<div class="studio-command-form-row segmented"><label><input type="radio" name="profileMode" value="existing" checked> ' + escapeHtml(label(args.labels, "existingProfile", "Existing profile")) + '</label><label><input type="radio" name="profileMode" value="create"> ' + escapeHtml(label(args.labels, "createProfile", "Create profile")) + '</label></div>' +
+  return '<div class="studio-command-form-row segmented"><label><input type="radio" name="profileMode" value="existing" checked> ' + escapeHtml(label(args.labels, "existingProfile", "Reuse existing execution config")) + '</label><label><input type="radio" name="profileMode" value="create"> ' + escapeHtml(label(args.labels, "createProfile", "Create project execution config")) + '</label></div>' +
     '<label class="studio-command-form-row"><span>' + escapeHtml(label(args.labels, "profileId", "Execution profile")) + '</span><select name="profileId">' +
     optionHtml + "</select>" + renderStudioCommandFormFieldError(args.state, "profileId") + "</label>";
 }
@@ -509,7 +530,6 @@ export function readStudioCommandFormState(args: {
     const bindingKind = bindingKindValue === "model" || bindingKindValue === "exec" ? bindingKindValue : "noop";
     const modelOptions = extractStudioModelOptions(args.context);
     const profileOptions = extractStudioProfileOptions(args.context);
-    const toolOptions = extractStudioToolOptions(args.context);
     const roleId = mode === "repository"
       ? rolePackage?.roleId ?? ""
       : String(data.get("roleId") ?? "").trim();
@@ -530,7 +550,7 @@ export function readStudioCommandFormState(args: {
         : "",
       profileMode,
       newProfileId,
-      newProfileToolRef: profileMode === "create" ? String(data.get("newProfileToolRef") ?? "").trim() || toolOptions[0]?.toolRef : "",
+      newProfileToolRef: profileMode === "create" ? String(data.get("newProfileToolRef") ?? "").trim() || toolRefFromRoleId(roleId) : "",
       newProfileTimeoutMs: String(data.get("newProfileTimeoutMs") ?? "").trim(),
       newProfileMaxOutputBytes: String(data.get("newProfileMaxOutputBytes") ?? "").trim()
     };

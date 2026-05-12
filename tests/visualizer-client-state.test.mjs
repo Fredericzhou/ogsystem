@@ -20,6 +20,12 @@ import {
   renderWorkspaceEmptyStateHtml
 } from "../dist/visualizer/client-lifecycle-panels.js";
 import {
+  renderArtifactsPanel,
+  renderFailureDetailPanel,
+  renderReviewDetailPanel,
+  renderRunStatePanel
+} from "../dist/visualizer/client-renderers.js";
+import {
   createInitialStreamRefreshPlan,
   createInitialVisualizerState,
   createBuildStateSlice,
@@ -210,6 +216,89 @@ test("client route state helpers parse and serialize lifecycle query state", () 
       since: "2026-05-03T09:00"
     }
   );
+});
+
+test("runtime renderers fold payload-heavy details by default", () => {
+  const stateHtml = renderRunStatePanel({
+    state: {
+      status: "running",
+      activeBranches: { "branch-1": { branchId: "branch-1", roleId: "demo-analyst" } },
+      pendingReviewsById: { "review-1": { reviewId: "review-1", currentStatus: "pending" } },
+      errors: [{ errorCode: "ROLE_EXECUTION_FAILED", message: "payload too large to scan inline" }],
+      auditSummary: {
+        payload: { nested: { value: "very long detail" } },
+        failureCountsByErrorCode: { TOOL_TIMEOUT: 2 }
+      }
+    },
+    header: {
+      status: "running",
+      activeBranches: 1,
+      pendingReviewCount: 1,
+      lastExecutedRoleId: "demo-analyst",
+      finalRoleId: "__system_end__"
+    },
+    graph: {
+      nodes: [{ roleId: "demo-analyst" }],
+      edges: []
+    },
+    t
+  });
+  assert.match(stateHtml, /<details class="event disclosure summary-section notice" open>/);
+  assert.match(stateHtml, /payloads and audit details are folded by default|payload 与审计细节默认折叠/);
+  assert.match(stateHtml, /<details class="event disclosure warning">/);
+  assert.match(stateHtml, /review-1/);
+  assert.match(stateHtml, /TOOL_TIMEOUT/);
+
+  const failureHtml = renderFailureDetailPanel({
+    loaded: true,
+    failure: {
+      summary: { errorCode: "ROLE_EXECUTION_FAILED" },
+      detail: {
+        inputContext: { draft: "x".repeat(240) },
+        rawOutput: { body: "y".repeat(260) },
+        contract: { contractId: "contract-1", flowKey: "a:b:c", schemaPath: "schemas/out.json" },
+        selectedBinding: { bindingKind: "model", resolvedBinding: "gpt-x" },
+        allowedEvents: ["DONE"]
+      }
+    },
+    t
+  });
+  assert.match(failureHtml, /<details class="event disclosure notice">/);
+  assert.match(failureHtml, /<details class="event disclosure critical">/);
+
+  const reviewHtml = renderReviewDetailPanel({
+    reviewId: "review-1",
+    roleId: "demo-analyst",
+    branchId: "branch-1",
+    currentStatus: "pending",
+    decisionPhase: "recorded",
+    reviewRequestSnapshot: { payload: "z".repeat(240) },
+    decisionSnapshot: { comment: "approved" },
+    humanReviewContext: { request: "more context" },
+    history: [{ decision: "approve", actor: "ops", decidedAt: "2026-05-09T10:00:00.000Z", comment: "ok" }]
+  }, t, formatTime);
+  assert.match(reviewHtml, /<details class="event disclosure summary-section" open>/);
+  assert.match(reviewHtml, /request snapshot/);
+
+  const artifactsHtml = renderArtifactsPanel({
+    detail: {
+      runId: "run-1",
+      runDir: ".ogs\\/runs\\/run-1",
+      header: { status: "done", updatedAt: "2026-05-09T10:00:00.000Z" },
+      summary: { payload: "a".repeat(220) },
+      resolvedConfig: { nested: { config: true } },
+      metrics: { tokens: 42 },
+      state: { status: "done" }
+    },
+    graph: { graph: { nodes: [{ roleId: "demo-analyst" }], edges: [] } },
+    reviews: { reviews: [] },
+    reviewDetail: null,
+    resumeDiagnostics: null,
+    t,
+    formatTime
+  });
+  assert.match(artifactsHtml, /<details class="event disclosure summary-section notice" open>/);
+  assert.match(artifactsHtml, /<details class="event disclosure">/);
 });
 
 test("client release readiness state reports each export blocker category", () => {
@@ -536,13 +625,15 @@ test("client lifecycle panel renderers cover Workbench controls and modes", () =
   assert.match(statusHtml, /workbench\.diagnostics/);
   assert.match(statusHtml, /workbench\.draftCached/);
 
-  assert.match(renderWorkbenchModeTabsHtml({ buildMode: "dry-run", t, escapeText }), /data-build-mode="dry-run"/);
+  const modeTabsHtml = renderWorkbenchModeTabsHtml({ buildMode: "dry-run", t, escapeText });
+  assert.match(modeTabsHtml, /data-build-mode="edit"/);
+  assert.match(modeTabsHtml, /data-build-mode="debug"/);
+  assert.doesNotMatch(modeTabsHtml, /data-build-mode="dry-run"/);
   assert.match(renderWorkbenchViewTabsHtml({ buildMode: "edit", workbenchView: "source", t, escapeText }), /data-workbench-view="source"/);
   assert.equal(renderWorkbenchViewTabsHtml({ buildMode: "debug", workbenchView: "source", t, escapeText }), "");
   assert.match(renderWorkbenchActionsHtml({ dirty: false, t, escapeText }), /id="build-save" disabled/);
-
-  const dryRunHtml = renderWorkbenchModeBodyHtml({
-    buildMode: "dry-run",
+  assert.equal(renderWorkbenchModeBodyHtml({
+    buildMode: "debug",
     workbenchView: "bridge",
     dirty: false,
     workbenchSavedPath: "system.mmd",
@@ -551,9 +642,7 @@ test("client lifecycle panel renderers cover Workbench controls and modes", () =
     workbenchSource: "",
     t,
     escapeText
-  });
-  assert.match(dryRunHtml, /dry-1/);
-  assert.match(dryRunHtml, /saved source path system\.mmd/);
+  }), "");
 
   const sourceHtml = renderWorkbenchModeBodyHtml({
     buildMode: "edit",
@@ -579,6 +668,8 @@ test("client renderer graph canvas escapes selected ids before composing HTML", 
   });
   assert.match(html, /planner&quot;&gt;&lt;script&gt;alert\(1\)&lt;\/script&gt;/);
   assert.match(html, /flow&lt;&#39;unsafe&#39;&gt;/);
+  assert.match(html, /data-studio-side-tab="debug"/);
+  assert.match(html, /data-studio-selection-panel="debug"/);
   assert.doesNotMatch(html, /<script>alert\(1\)<\/script>/);
 });
 
@@ -982,7 +1073,7 @@ test("workbench source editor is accessible by label", () => {
     t,
     escapeText
   });
-  assert.match(html, /aria-label="Workbench source editor"/);
+  assert.match(html, /aria-label="Graph source editor"/);
 });
 
 test("operate tabs and Studio Bridge filters expose accessible state and names", () => {
@@ -1015,5 +1106,5 @@ test("operate tabs and Studio Bridge filters expose accessible state and names",
     t
   });
   assert.match(bridgeHtml, /data-studio-bridge-filter="1"[^>]*aria-label="Filter roles or flows"/);
-  assert.match(bridgeHtml, /data-studio-bridge-list-mode="1"[^>]*aria-label="graph index"/);
+  assert.match(bridgeHtml, /data-studio-bridge-list-mode="1"[^>]*aria-label="Browse"/);
 });

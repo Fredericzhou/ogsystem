@@ -26,7 +26,7 @@ import {
 import { validateRolePackageManifest } from "../runtime/role-repo.js";
 import { pathExists } from "../runtime/run-artifacts.js";
 import { loadLaws, loadProfiles, loadRolePackages, loadRuntimeConfig, loadTools, loadUserProfile } from "../runtime/runtime-loader.js";
-import { validateProfilesConfig } from "../runtime/config.js";
+import { validateProfilesConfig, validateToolsConfig } from "../runtime/config.js";
 import { resolveEffectiveLaw } from "../runtime/runtime-setup.js";
 import { SYSTEM_END_ROLE_ID } from "../runtime/types.js";
 import { importMermaidToAuthoring, saveStudioAuthoringDraft } from "./studio-authoring.js";
@@ -1386,6 +1386,39 @@ export async function upsertProjectProfilesVisualization(args: {
     workdir: args.workdir,
     profilesPath,
     profiles
+  };
+}
+
+export async function upsertProjectExecutionConfigVisualization(args: {
+  workdir: string;
+  profiles: unknown;
+  tools: unknown;
+}): Promise<Record<string, unknown>> {
+  const profilesPath = resolve(args.workdir, "profiles.json");
+  const toolsPath = resolve(args.workdir, "tools.json");
+  const incomingProfiles = validateProfilesConfig(args.profiles, profilesPath);
+  const incomingTools = validateToolsConfig({ tools: args.tools }, toolsPath).tools;
+  const existingProfiles = await loadProfiles(undefined, args.workdir).catch(() => []);
+  const existingTools = await loadTools(undefined, args.workdir).catch(() => []);
+  const profilesById = new Map(existingProfiles.map((profile) => [profile.profileId, profile]));
+  const toolsByRef = new Map(existingTools.map((tool) => [tool.toolRef, tool]));
+  for (const profile of incomingProfiles) {
+    profilesById.set(profile.profileId, profile);
+  }
+  for (const tool of incomingTools) {
+    toolsByRef.set(tool.toolRef, tool);
+  }
+  const profiles = Array.from(profilesById.values()).sort((left, right) => left.profileId.localeCompare(right.profileId));
+  const tools = Array.from(toolsByRef.values()).sort((left, right) => left.toolRef.localeCompare(right.toolRef));
+  await writeJsonFileAtomic(profilesPath, validateProfilesConfig(profiles, profilesPath));
+  await writeJsonFileAtomic(toolsPath, validateToolsConfig({ tools }, toolsPath));
+  invalidateProjectProjectionCache(args.workdir);
+  return {
+    workdir: args.workdir,
+    profilesPath,
+    toolsPath,
+    profiles,
+    tools
   };
 }
 
