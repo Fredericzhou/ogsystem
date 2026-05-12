@@ -138,6 +138,102 @@ export type StudioGraphProjection = {
   };
 };
 
+export type GraphViewModelMode = "edit" | "run";
+
+export type GraphViewModelLayout = {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+};
+
+export type GraphViewModelNodeStructure = {
+  routingMode?: StudioAuthoringRole["routingMode"];
+  joinMode?: StudioAuthoringRole["joinMode"];
+  joinMin?: number;
+  joinSources?: string[];
+  loopMax?: number;
+  review?: StudioHumanReviewSpec;
+  contextFields?: string[];
+};
+
+export type GraphViewModelJoinWaiting = {
+  expectedCount: number;
+  readyCount: number;
+  missingCount: number;
+};
+
+export type GraphViewModelNodeRuntime = {
+  status: string;
+  activeBranchCount: number;
+  completedBranchCount: number;
+  waitingReviewCount: number;
+  pendingReviewCount: number;
+  loopIteration: number;
+  lastErrorCode?: string;
+  lastSelectedEvent?: string;
+  expectedSources: string[];
+  readySources: string[];
+  missingSources: string[];
+  joinWaitingSummary: GraphViewModelJoinWaiting | null;
+  lastFailure?: Record<string, unknown>;
+};
+
+export type GraphViewModelDiagnostic = {
+  severity: "warning" | "error";
+  code?: string;
+  message?: string;
+};
+
+export type GraphViewModelNode = {
+  id: string;
+  roleId: string;
+  kind: "role" | "boundary";
+  label: string;
+  bindingKind: StudioAuthoringRole["bindingKind"] | "boundary";
+  badges: string[];
+  structure: GraphViewModelNodeStructure;
+  layout: GraphViewModelLayout;
+  runtime?: GraphViewModelNodeRuntime;
+  diagnostic?: GraphViewModelDiagnostic;
+  editable: boolean;
+};
+
+export type GraphViewModelEdgeRuntime = {
+  recentlyActivated: boolean;
+};
+
+export type GraphViewModelEdge = {
+  id: string;
+  source: string;
+  target: string;
+  eventType: string;
+  label: string;
+  runtimeOnlyErrorFlow: boolean;
+  participatesInJoin: boolean;
+  runtime?: GraphViewModelEdgeRuntime;
+  diagnostic?: GraphViewModelDiagnostic;
+  editable: boolean;
+};
+
+export type GraphViewModel = {
+  version: 1;
+  mode: GraphViewModelMode;
+  nodes: GraphViewModelNode[];
+  edges: GraphViewModelEdge[];
+  viewport?: { x: number; y: number; zoom: number };
+  capabilities: {
+    editable: boolean;
+    canAddRole: boolean;
+    canAddEdge: boolean;
+    canDelete: boolean;
+  };
+  validation: {
+    ok: boolean;
+    diagnostics: StudioDiagnosticDto[];
+  };
+};
+
 export function normalizeStudioGraphTargetRoleId(roleId: unknown): string {
   const value = String(roleId ?? "");
   return value === STUDIO_SYSTEM_END_ROLE_ID ? "output" : value;

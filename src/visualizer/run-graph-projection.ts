@@ -58,7 +58,7 @@ function getRunSimulation(detail: JsonRecord): {
   };
 }
 
-function countBranches(
+export function countBranches(
   branchRecords: Record<string, BranchRecord>,
   roleId: string,
   status: BranchRecord["status"]
@@ -67,7 +67,7 @@ function countBranches(
     .length;
 }
 
-function findLastErrorCode(args: { state: GraphState; roleId: string }): string | undefined {
+export function findLastErrorCode(args: { state: GraphState; roleId: string }): string | undefined {
   for (let index = args.state.recentAudits.length - 1; index >= 0; index -= 1) {
     const audit = args.state.recentAudits[index];
     if (audit.roleId === args.roleId && audit.errorEnvelope?.errorCode) {
@@ -77,7 +77,7 @@ function findLastErrorCode(args: { state: GraphState; roleId: string }): string 
   return args.state.lastExecutedRoleId === args.roleId ? args.state.errorEnvelope?.errorCode : undefined;
 }
 
-function findLastSelectedEvent(args: { state: GraphState; roleId: string }): string | undefined {
+export function findLastSelectedEvent(args: { state: GraphState; roleId: string }): string | undefined {
   const selected = Object.entries(args.state.selectedEventByBranchId)
     .map(([branchId, event]) => ({
       branchId,
@@ -90,7 +90,7 @@ function findLastSelectedEvent(args: { state: GraphState; roleId: string }): str
   return selected?.event;
 }
 
-function findLatestFailureForRole(args: { state: GraphState; roleId: string }): Record<string, unknown> | undefined {
+export function findLatestFailureForRole(args: { state: GraphState; roleId: string }): Record<string, unknown> | undefined {
   for (let index = args.state.recentAudits.length - 1; index >= 0; index -= 1) {
     const audit = args.state.recentAudits[index];
     if (audit.roleId === args.roleId && (audit.status === "failed" || audit.errorEnvelope)) {
@@ -108,7 +108,7 @@ function findLatestFailureForRole(args: { state: GraphState; roleId: string }): 
   return undefined;
 }
 
-function buildGraphNodeStatus(args: {
+export function buildGraphNodeStatus(args: {
   state: GraphState;
   roleId: string;
   activeBranchCount: number;

@@ -19,14 +19,14 @@ export type {
   StudioCanvasDocument
 };
 
-type StudioBridgeRole = StudioAuthoringRole & {
+export type StudioBridgeRole = StudioAuthoringRole & {
   incomingFlowCount: number;
   outgoingFlowCount: number;
   allowedEvents: string[];
   badges: string[];
 };
 
-type StudioBridgeFlow = StudioAuthoringFlow & {
+export type StudioBridgeFlow = StudioAuthoringFlow & {
   flowKey: string;
   participatesInJoin: boolean;
 };
@@ -177,7 +177,7 @@ export function importSystemToAuthoring(args: {
   };
 }
 
-function buildBridgeRoles(authoring: StudioAuthoringDocument): StudioBridgeRole[] {
+export function buildBridgeRoles(authoring: StudioAuthoringDocument): StudioBridgeRole[] {
   const flows = Object.values(authoring.flows);
   return Object.values(authoring.roles)
     .sort((left, right) => left.roleId.localeCompare(right.roleId))
@@ -203,7 +203,7 @@ function buildBridgeRoles(authoring: StudioAuthoringDocument): StudioBridgeRole[
     });
 }
 
-function buildBridgeFlows(authoring: StudioAuthoringDocument): StudioBridgeFlow[] {
+export function buildBridgeFlows(authoring: StudioAuthoringDocument): StudioBridgeFlow[] {
   const joinSourcesByTarget = new Map<string, Set<string>>();
   for (const role of Object.values(authoring.roles)) {
     if (role.joinSources?.length) {
