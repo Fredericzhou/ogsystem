@@ -19,6 +19,7 @@ import {
   renderStudioBridgeInspector,
   renderStudioBridgePanel
 } from "../dist/visualizer/client-renderers.js";
+import { authoringToCanvasDocument } from "../dist/visualizer/studio-authoring.js";
 
 const PAGE_ELEMENT_IDS = [
   "run-list",
@@ -1518,24 +1519,12 @@ function createBackend(options = {}) {
       }
       if (pathname === "/api/v1/project/studio/authoring/apply-canvas" && method === "POST") {
         this.lastAuthoringApplyCanvasBody = JSON.parse(request.body ?? "{}");
-        const moved = this.lastAuthoringApplyCanvasBody.canvas?.nodes?.find((node) => node.roleId === "demo-analyst");
+        const authoring = this.lastAuthoringApplyCanvasBody.authoring;
         return createResponse({
           workdir: "/tmp/demo",
           systemPath: "/tmp/demo/system.mmd",
-          authoring: {
-            ...this.lastAuthoringApplyCanvasBody.authoring,
-            layout: {
-              nodes: {
-                "demo-analyst": {
-                  x: moved?.x ?? 120,
-                  y: moved?.y ?? 120,
-                  width: moved?.width ?? 180,
-                  height: moved?.height ?? 84
-                }
-              }
-            }
-          },
-          canvas: this.lastAuthoringApplyCanvasBody.canvas,
+          authoring,
+          canvas: authoringToCanvasDocument(authoring),
           systemSource: "flowchart TD\n%% system.id=viz.review.demo\n%% system.version=1.0.0\n%% law.global=law.minimal.base\n%% entry.role=demo-analyst\nr1[Role:demo-analyst] -->|DONE| output\n",
           validation: { ok: true, diagnostics: [], structure: null }
         });
@@ -3921,7 +3910,7 @@ test("visualizer client opens Studio Bridge and keeps authoring affordances on t
   });
   await settle();
   assert.ok(harness.backend.fetchCalls.some((call) => call.path === "/api/v1/project/studio/authoring/apply-canvas"));
-  assert.equal(harness.backend.lastAuthoringApplyCanvasBody.canvas.nodes[0].x, 160);
+  assert.equal(harness.backend.lastAuthoringApplyCanvasBody.authoring.layout.nodes["demo-analyst"].x, 160);
   assert.match(harness.document.getElementById("flash").textContent, /Studio canvas layout updated/);
 
   latestMount = latestEditableMount();
@@ -3953,7 +3942,7 @@ test("visualizer client opens Studio Bridge and keeps authoring affordances on t
   assert.equal(harness.backend.lastExecutionConfigUpsertBody.tools[0].toolRef, "tool.new-role");
   assert.equal(harness.backend.lastAuthoringApplyCanvasBody.authoring.roles["new-role"].bindingKind, "exec");
   assert.equal(
-    harness.backend.lastAuthoringApplyCanvasBody.canvas.nodes.some((node) => node.roleId === "new-role"),
+    Object.hasOwn(harness.backend.lastAuthoringApplyCanvasBody.authoring.layout.nodes, "new-role"),
     true
   );
 
@@ -3989,7 +3978,7 @@ test("visualizer client opens Studio Bridge and keeps authoring affordances on t
   });
   await settle();
   assert.equal(
-    harness.backend.lastAuthoringApplyCanvasBody.canvas.edges.some((edge) => edge.source === "new-role" && edge.target === "__system_end__"),
+    Object.values(harness.backend.lastAuthoringApplyCanvasBody.authoring.flows).some((edge) => edge.fromRoleId === "new-role" && edge.toRoleId === "__system_end__"),
     true
   );
 });

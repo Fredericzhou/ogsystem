@@ -64,15 +64,13 @@ import {
 } from "./project-projection.js";
 import { inspectRunGraphVisualization } from "./run-graph-projection.js";
 import {
-  applyCanvasDocumentToAuthoring,
   authoringToCanvasDocument,
   importMermaidToAuthoring,
   inspectStudioBridgeDraft,
   loadStudioAuthoringDraft,
   saveStudioAuthoringDraft,
   serializeAuthoringToMermaid,
-  type StudioAuthoringDocument,
-  type StudioCanvasDocument
+  type StudioAuthoringDocument
 } from "./studio-authoring.js";
 import {
   parseStudioChatToMmdRequest,
@@ -855,28 +853,23 @@ async function handleApiStudioAuthoringApplyCanvas(
 ): Promise<void> {
   const body = await readJsonRequest(request);
   const authoring = body.authoring;
-  const canvas = body.canvas;
   if (!authoring || typeof authoring !== "object" || Array.isArray(authoring)) {
     throw new HttpError(400, "AUTHORING_DOCUMENT_REQUIRED", "authoring is required.");
   }
-  if (!canvas || typeof canvas !== "object" || Array.isArray(canvas)) {
-    throw new HttpError(400, "CANVAS_DOCUMENT_REQUIRED", "canvas is required.");
-  }
-  const appliedAuthoring = applyCanvasDocumentToAuthoring({
-    authoring: authoring as StudioAuthoringDocument,
-    canvas: canvas as StudioCanvasDocument
+  const saved = await saveStudioAuthoringDraft({
+    workdir,
+    authoring,
+    validateSystemSource: validateProjectSystemSource
   });
-  const systemSource = serializeAuthoringToMermaid(appliedAuthoring);
-  const validation = await validateProjectSystemSource({
+  const appliedAuthoring = saved.authoring as StudioAuthoringDocument;
+  jsonResponse(response, 200, {
     workdir,
     systemPath: resolve(workdir, "system.mmd"),
-    systemSource
-  });
-  jsonResponse(response, 200, {
+    draftPath: saved.draftPath,
     authoring: appliedAuthoring,
     canvas: authoringToCanvasDocument(appliedAuthoring),
-    systemSource,
-    validation
+    systemSource: saved.generatedMermaid ?? serializeAuthoringToMermaid(appliedAuthoring),
+    validation: saved.validation
   });
 }
 

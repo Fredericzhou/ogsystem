@@ -6,14 +6,14 @@
 import { isRuntimeOnlyErrorEvent } from "../runtime/error-flow-utils.js";
 import { SYSTEM_END_ROLE_ID } from "../runtime/types.js";
 import type { GraphState, SystemDefinition } from "../runtime/types.js";
-import { buildBridgeFlows, buildBridgeRoles } from "./studio-authoring.js";
 import {
   buildGraphNodeStatus,
   countBranches,
   findLastErrorCode,
   findLastSelectedEvent,
   findLatestFailureForRole
-} from "./run-graph-projection.js";
+} from "./graph-runtime-signals.js";
+import { buildBridgeFlows, buildBridgeRoles } from "./studio-authoring-projection.js";
 import {
   normalizeStudioGraphTargetRoleId,
   STUDIO_SYSTEM_END_ROLE_ID,

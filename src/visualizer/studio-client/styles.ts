@@ -121,9 +121,14 @@ export function injectStudioGraphStyles(): void {
     .studio-graph-canvas .x6-node [data-studio-port] {
       vector-effect: non-scaling-stroke;
     }
+    .studio-graph-canvas .x6-node:hover rect,
+    .studio-graph-canvas .x6-node:hover path:first-of-type {
+      stroke: #7dd3fc;
+    }
     .studio-graph-canvas .x6-node.is-selection-active rect,
     .studio-graph-canvas .x6-node.is-selection-active path:first-of-type {
       filter: drop-shadow(0 0 0.35rem rgba(56, 189, 248, 0.32));
+      stroke: #38bdf8;
     }
     .studio-graph-canvas .x6-node.is-selection-focus-pulse rect,
     .studio-graph-canvas .x6-node.is-selection-focus-pulse path:first-of-type {
@@ -143,6 +148,9 @@ export function injectStudioGraphStyles(): void {
     }
     .studio-graph-canvas .x6-edge .connection {
       transition: stroke 160ms ease, stroke-width 160ms ease, opacity 160ms ease, stroke-dasharray 160ms ease;
+    }
+    .studio-graph-canvas .x6-edge:hover .connection {
+      stroke-width: 2.1px !important;
     }
     .studio-graph-canvas .x6-edge.is-selection-active .connection {
       stroke-width: 2.6px !important;
@@ -207,6 +215,25 @@ export function injectStudioGraphStyles(): void {
       background: rgba(4, 8, 16, 0.76);
     }
     .studio-graph-empty[hidden] {
+      display: none;
+    }
+    .studio-graph-diagnostic-card {
+      position: absolute;
+      z-index: 6;
+      max-width: 320px;
+      padding: 10px 12px;
+      border: 1px solid rgba(148, 163, 184, 0.28);
+      border-radius: 10px;
+      background: rgba(8, 13, 26, 0.96);
+      color: #dbeafe;
+      box-shadow: 0 18px 40px rgba(0, 0, 0, 0.36);
+      pointer-events: none;
+      display: grid;
+      gap: 6px;
+      font-size: 12px;
+      line-height: 1.45;
+    }
+    .studio-graph-diagnostic-card[hidden] {
       display: none;
     }
     .studio-graph-stage.is-empty .studio-graph-canvas {

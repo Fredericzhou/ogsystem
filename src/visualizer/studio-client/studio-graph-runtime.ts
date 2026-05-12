@@ -1,8 +1,8 @@
 import type {
+  GraphViewModel,
+  GraphViewModelEdge,
+  GraphViewModelNode,
   StudioAuthoringDocument,
-  StudioGraphProjection,
-  StudioGraphProjectionEdge,
-  StudioGraphProjectionNode
 } from "../studio-contracts.js";
 
 export type StudioRuntimeNodeState = {
@@ -106,7 +106,7 @@ function isLikelyErrorCode(value: string): boolean {
   return /^[A-Z][A-Z0-9_.:-]{2,}$/.test(value);
 }
 
-function runtimeBadges(node: Pick<StudioGraphProjectionNode, "badges">): {
+function runtimeBadges(node: Pick<GraphViewModelNode, "badges">): {
   status?: StudioRuntimeNodeState["status"];
   statusLabel?: string;
   errorCode?: string;
@@ -143,7 +143,7 @@ function runtimeBadges(node: Pick<StudioGraphProjectionNode, "badges">): {
   return { status, statusLabel, errorCode, loopCount, remaining };
 }
 
-export function formatStudioRuntimeNodeBadges(node: Pick<StudioGraphProjectionNode, "badges">): string[] {
+export function formatStudioRuntimeNodeBadges(node: Pick<GraphViewModelNode, "badges">): string[] {
   const parsed = runtimeBadges(node);
   const badges: string[] = [];
   if (parsed.statusLabel) {
@@ -164,17 +164,17 @@ export function formatStudioRuntimeNodeBadges(node: Pick<StudioGraphProjectionNo
 }
 
 export function deriveStudioRuntimeNodeState(args: {
-  node: StudioGraphProjectionNode;
+  node: GraphViewModelNode;
   authoring?: StudioAuthoringDocument | null;
 }): StudioRuntimeNodeState {
   const parsed = runtimeBadges(args.node);
-  const humanGateConfigured = Boolean(args.authoring?.roles?.[args.node.roleId]?.review);
-  const status = parsed.status;
+  const humanGateConfigured = Boolean(args.node.structure.review ?? args.authoring?.roles?.[args.node.roleId]?.review);
+  const status = matchRuntimeStatus(String(args.node.runtime?.status ?? parsed.status ?? ""));
   return {
     status,
-    statusLabel: parsed.statusLabel,
-    errorCode: parsed.errorCode,
-    loopCount: parsed.loopCount,
+    statusLabel: String(args.node.runtime?.status ?? parsed.statusLabel ?? ""),
+    errorCode: args.node.runtime?.lastErrorCode ?? parsed.errorCode,
+    loopCount: args.node.runtime?.loopIteration ?? parsed.loopCount,
     humanGateConfigured,
     waitingReview: status === "waiting_review",
     active: status === "active" || status === "running" || status === "waiting_review" || status === "paused" || status === "pending"
@@ -182,20 +182,19 @@ export function deriveStudioRuntimeNodeState(args: {
 }
 
 export function deriveStudioRuntimeEdgeState(args: {
-  edge: StudioGraphProjectionEdge;
+  edge: GraphViewModelEdge;
   readOnly?: boolean;
 }): StudioRuntimeEdgeState {
-  const edgeRecord = args.edge as Record<string, unknown>;
   return {
-    active: Boolean(args.readOnly && (edgeRecord.recentlyActivated === true || edgeRecord.runtimeActive === true)),
-    error: Boolean(args.edge.runtimeOnlyErrorFlow || args.edge.severity === "error"),
+    active: Boolean(args.readOnly && args.edge.runtime?.recentlyActivated === true),
+    error: Boolean(args.edge.runtimeOnlyErrorFlow || args.edge.diagnostic?.severity === "error"),
     loopBack: args.edge.source === args.edge.target
   };
 }
 
 export function deriveStudioRuntimeVisualState(args: {
   authoring?: StudioAuthoringDocument | null;
-  projection: StudioGraphProjection;
+  viewModel: GraphViewModel;
   readOnly?: boolean;
 }): StudioRuntimeVisualState {
   const nodeStates = new Map<string, StudioRuntimeNodeState>();
@@ -204,7 +203,7 @@ export function deriveStudioRuntimeVisualState(args: {
   let waitingReviewCount = 0;
   let activeEdgeCount = 0;
 
-  for (const node of args.projection.nodes) {
+  for (const node of args.viewModel.nodes) {
     const state = deriveStudioRuntimeNodeState({ node, authoring: args.authoring });
     nodeStates.set(node.id, state);
     if (state.active) {
@@ -215,7 +214,7 @@ export function deriveStudioRuntimeVisualState(args: {
     }
   }
 
-  for (const edge of args.projection.edges) {
+  for (const edge of args.viewModel.edges) {
     const state = deriveStudioRuntimeEdgeState({ edge, readOnly: args.readOnly });
     edgeStates.set(edge.id, state);
     if (state.active) {

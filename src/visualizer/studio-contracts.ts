@@ -57,6 +57,9 @@ export type StudioAuthoringFlow = {
   runtimeOnlyErrorFlow?: boolean;
 };
 
+/**
+ * @deprecated removed after Phase E
+ */
 export type StudioCanvasDocument = {
   version: 1;
   nodes: Array<{
@@ -93,49 +96,6 @@ export type StudioDiagnosticDto = {
   message?: string;
   vars?: Record<string, unknown>;
   selector?: string;
-};
-
-export type StudioGraphProjectionNode = {
-  id: string;
-  roleId: string;
-  kind: "role" | "boundary";
-  label: string;
-  x: number;
-  y: number;
-  width: number;
-  height: number;
-  badges: string[];
-  bindingKind: StudioAuthoringRole["bindingKind"] | "boundary";
-  editable: boolean;
-  severity?: "warning" | "error";
-};
-
-export type StudioGraphProjectionEdge = {
-  id: string;
-  source: string;
-  target: string;
-  label: string;
-  eventType: string;
-  runtimeOnlyErrorFlow: boolean;
-  participatesInJoin: boolean;
-  editable: boolean;
-  severity?: "warning" | "error";
-};
-
-export type StudioGraphProjection = {
-  version: 1;
-  nodes: StudioGraphProjectionNode[];
-  edges: StudioGraphProjectionEdge[];
-  capabilities: {
-    editable: boolean;
-    canAddRole: boolean;
-    canAddEdge: boolean;
-    canDelete: boolean;
-  };
-  validation: {
-    ok: boolean;
-    diagnostics: StudioDiagnosticDto[];
-  };
 };
 
 export type GraphViewModelMode = "edit" | "run";

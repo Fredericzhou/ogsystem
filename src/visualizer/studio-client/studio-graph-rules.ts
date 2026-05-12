@@ -1,14 +1,14 @@
 import type { Cell } from "@antv/x6";
 
-import type { StudioGraphProjectionNode } from "../studio-contracts.js";
+import type { GraphViewModelNode } from "../studio-contracts.js";
 
 export function isStudioRoleCell(cell: Cell | null | undefined): boolean {
-  const data = cell?.getData() as { studioNode?: StudioGraphProjectionNode } | undefined;
+  const data = cell?.getData() as { studioNode?: GraphViewModelNode } | undefined;
   return data?.studioNode?.kind === "role";
 }
 
 export function isStudioBoundaryCell(cell: Cell | null | undefined): boolean {
-  const data = cell?.getData() as { studioNode?: StudioGraphProjectionNode } | undefined;
+  const data = cell?.getData() as { studioNode?: GraphViewModelNode } | undefined;
   return data?.studioNode?.kind === "boundary";
 }
 

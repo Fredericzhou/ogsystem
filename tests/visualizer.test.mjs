@@ -1607,39 +1607,81 @@ test("visualizer server exposes Mermaid workbench APIs and project export", asyn
     assert.match(generated.systemSource, /%% system\.id=viz\.project\.demo/);
 
     const canvas = authoringToCanvasDocument(bridge.authoring);
+    const movedAuthoring = {
+      ...bridge.authoring,
+      layout: {
+        ...bridge.authoring.layout,
+        nodes: {
+          ...bridge.authoring.layout.nodes,
+          "demo-analyst": {
+            x: 500,
+            y: 600,
+            width: 210,
+            height: 100
+          }
+        }
+      }
+    };
     const applyCanvasResponse = await fetch(`${url}/api/v1/project/studio/authoring/apply-canvas`, {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({
-        authoring: bridge.authoring,
-        canvas: {
-          ...canvas,
-          nodes: canvas.nodes.map((node) =>
-            node.roleId === "demo-analyst"
-              ? { ...node, x: 500, y: 600, width: 210, height: 100 }
-              : node
-          ),
-          edges: [
-            ...canvas.edges.filter((edge) => edge.eventType !== "DONE"),
-            {
-              source: "demo-analyst",
-              target: "__system_end__",
-              label: "COMPLETE",
-              eventType: "COMPLETE",
-              runtimeOnlyErrorFlow: false,
-              participatesInJoin: false
-            }
-          ]
-        }
+        authoring: movedAuthoring
       })
     });
     assert.equal(applyCanvasResponse.status, 200);
     const appliedCanvas = await applyCanvasResponse.json();
     assert.equal(appliedCanvas.validation.ok, true);
-    assert.match(appliedCanvas.systemSource, /\|COMPLETE\| output/);
+    assert.match(appliedCanvas.systemSource, /\|DONE\| output/);
     assert.equal(appliedCanvas.authoring.layout.nodes["demo-analyst"].x, 500);
-    assert.equal(appliedCanvas.canvas.edges.some((edge) => edge.eventType === "COMPLETE"), true);
+    assert.equal(appliedCanvas.canvas.nodes.some((node) => node.roleId === "demo-analyst" && node.x === 500), true);
     assert.equal(await readFile(path.resolve(workdir, "system.mmd"), "utf8"), originalSystemSource);
+
+    const compatibilityPayloads = [
+      {
+        label: "authoring-only",
+        body: { authoring: movedAuthoring },
+        expectedEventType: "DONE"
+      },
+      {
+        label: "canvas-only-compatible",
+        body: { authoring: movedAuthoring, canvas },
+        expectedEventType: "DONE"
+      },
+      {
+        label: "authoring-and-canvas",
+        body: {
+          authoring: movedAuthoring,
+          canvas: {
+            ...canvas,
+            edges: [
+              ...canvas.edges.filter((edge) => edge.eventType !== "DONE"),
+              {
+                source: "demo-analyst",
+                target: "__system_end__",
+                label: "COMPLETE",
+                eventType: "COMPLETE",
+                runtimeOnlyErrorFlow: false,
+                participatesInJoin: false
+              }
+            ]
+          }
+        },
+        expectedEventType: "DONE"
+      }
+    ];
+    for (const fixture of compatibilityPayloads) {
+      const response = await fetch(`${url}/api/v1/project/studio/authoring/apply-canvas`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify(fixture.body)
+      });
+      assert.equal(response.status, 200, fixture.label);
+      const payload = await response.json();
+      assert.equal(payload.validation.ok, true, fixture.label);
+      assert.equal(payload.authoring.layout.nodes["demo-analyst"].x, 500, fixture.label);
+      assert.equal(payload.canvas.edges.some((edge) => edge.eventType === fixture.expectedEventType), true, fixture.label);
+    }
 
     const saveAsResponse = await fetch(`${url}/api/v1/project/system/save-as`, {
       method: "POST",

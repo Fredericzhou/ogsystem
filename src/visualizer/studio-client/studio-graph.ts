@@ -5,6 +5,7 @@ import { Selection } from "@antv/x6-plugin-selection";
 import dagre from "dagre";
 
 import type { StudioAuthoringDocument, StudioCanvasDocument } from "../studio-contracts.js";
+import { buildGraphViewModel } from "../graph-view-model.js";
 import {
   commandFromStudioCommandFormState,
   createDefaultStudioCommandFormState,
@@ -15,9 +16,9 @@ import {
   type StudioCommandFormLabels,
   type StudioCommandFormState
 } from "./studio-graph-command-forms.js";
-import { canvasToStudioGraphProjection, graphToCanvasDocument, studioEdgeFlowKey } from "./studio-graph-adapter.js";
+import { graphToCanvasDocument, studioEdgeFlowKey } from "./studio-graph-adapter.js";
 import { applyStudioAuthoringCommand, type StudioAuthoringCommand } from "./studio-graph-commands.js";
-import { renderStudioGraphProjection } from "./studio-graph-render.js";
+import { renderStudioGraphViewModel } from "./studio-graph-render.js";
 import {
   deriveStudioRuntimeVisualState,
   type StudioRuntimeVisualState
@@ -133,6 +134,7 @@ export class StudioGraphIsland {
   private emptyEl: HTMLDivElement;
   private dialogEl: HTMLElement;
   private fallbackDialogEl: HTMLDivElement;
+  private diagnosticCardEl: HTMLDivElement;
   private options: StudioGraphBridgeOptions = {};
   private applying = false;
   private busy = false;
@@ -205,6 +207,10 @@ export class StudioGraphIsland {
     this.fallbackDialogEl.className = "studio-command-dialog";
     this.stageEl.appendChild(this.fallbackDialogEl);
     this.dialogEl = this.fallbackDialogEl;
+    this.diagnosticCardEl = document.createElement("div");
+    this.diagnosticCardEl.hidden = true;
+    this.diagnosticCardEl.className = "studio-graph-diagnostic-card";
+    this.stageEl.appendChild(this.diagnosticCardEl);
     this.graph = this.createGraph(canvasEl);
     this.bindToolbar();
     this.bindGraphEvents();
@@ -222,10 +228,15 @@ export class StudioGraphIsland {
     this.attachCommandFormHost();
     this.handleHistoryEvent(options.historyEvent);
     this.handleDismissCommandFormRequest(options.dismissCommandFormRequest);
-    const projection = canvasToStudioGraphProjection({
+    const viewModel = buildGraphViewModel({
       authoring: options.authoring,
-      canvas: options.canvas,
       validation: options.validation
+        ? {
+            ok: options.validation.ok,
+            diagnostics: options.validation.diagnostics
+          }
+        : null,
+      mode: "edit"
     });
     if (!options.authoring) {
       this.applying = true;
@@ -235,7 +246,7 @@ export class StudioGraphIsland {
         this.applying = false;
       }
       this.hasRenderedProjection = false;
-      this.setEmptyState(true, projection.validation.diagnostics.length > 0
+      this.setEmptyState(true, viewModel.validation.diagnostics.length > 0
         ? this.label("fixMermaidBeforeGraphEditing")
         : this.label("noRolesAvailable"));
       this.closeCommandForm();
@@ -246,15 +257,15 @@ export class StudioGraphIsland {
     this.setEmptyState(false);
     this.applying = true;
     try {
-      renderStudioGraphProjection(this.graph, projection);
+      renderStudioGraphViewModel(this.graph, viewModel);
       this.runtimeVisualState = deriveStudioRuntimeVisualState({
         authoring: options.authoring,
-        projection,
+        viewModel,
         readOnly: options.readOnly === true
       });
       const autoLayoutApplied = this.applyDefaultAutoLayout();
       if (!autoLayoutApplied) {
-        this.restoreViewport(options.canvas?.viewport, !this.hasRenderedProjection);
+        this.restoreViewport(options.authoring?.layout?.viewport ?? options.canvas?.viewport, !this.hasRenderedProjection);
       }
       this.selectFromOptions();
       this.applyRuntimeOverlay();
@@ -332,6 +343,10 @@ export class StudioGraphIsland {
       void this.semanticRedo();
       return false;
     });
+    graph.bindKey(["f2"], () => {
+      this.openSelectedEditor();
+      return false;
+    });
     return graph;
   }
 
@@ -376,8 +391,13 @@ export class StudioGraphIsland {
       if (data?.studioNode?.kind === "role" && data.studioNode.roleId) {
         this.options.onSelectRole?.(data.studioNode.roleId);
         this.syncSelectionPresentation(data.studioNode.roleId, { preserveViewport: true });
-        this.openEditRoleForm(data.studioNode.roleId);
         this.updateToolbarState();
+      }
+    });
+    this.graph.on("node:dblclick", ({ node }) => {
+      const data = node.getData() as { studioNode?: { kind?: string; roleId?: string } } | undefined;
+      if (data?.studioNode?.kind === "role" && data.studioNode.roleId) {
+        this.openEditRoleForm(data.studioNode.roleId);
       }
     });
     this.graph.on("edge:click", ({ edge }) => {
@@ -385,8 +405,13 @@ export class StudioGraphIsland {
       if (data?.studioEdge) {
         this.options.onSelectFlow?.(studioEdgeFlowKey(data.studioEdge));
         this.syncSelectionPresentation(data.studioEdge.id || "", { preserveViewport: true });
-        this.openEditEdgeForm(data.studioEdge);
         this.updateToolbarState();
+      }
+    });
+    this.graph.on("edge:dblclick", ({ edge }) => {
+      const data = edge.getData() as { studioEdge?: { id?: string; source: string; target: string; eventType: string; runtimeOnlyErrorFlow?: boolean; participatesInJoin?: boolean; editable?: boolean } } | undefined;
+      if (data?.studioEdge) {
+        this.openEditEdgeForm(data.studioEdge);
       }
     });
     this.graph.on("blank:click", () => {
@@ -396,15 +421,22 @@ export class StudioGraphIsland {
       this.graph.cleanSelection();
       this.options.onClearSelection?.();
       this.lastEditSelectionSignature = "";
+      this.closeCommandForm();
+      this.hideDiagnosticCard();
       this.syncSelectionPresentation();
       this.updateToolbarState();
     });
     this.graph.on("selection:changed", () => {
       this.syncSelectionPresentation("", { preserveViewport: true });
-      if (!this.applying) {
-        this.openSelectedEditor();
-      }
+      this.hideDiagnosticCard();
       this.updateToolbarState();
+    });
+    this.graph.on("node:mouseenter", ({ node, e }) => {
+      const data = node.getData() as { studioNode?: Record<string, unknown> } | undefined;
+      this.showDiagnosticCard(data?.studioNode, e);
+    });
+    this.graph.on("node:mouseleave", () => {
+      this.hideDiagnosticCard();
     });
     this.graph.on("node:moved", () => {
       if (this.isReadOnly()) return;
@@ -548,6 +580,54 @@ export class StudioGraphIsland {
     this.dialogEl.hidden = true;
     this.dialogEl.innerHTML = "";
     this.notifyCommandFormState();
+  }
+
+  private showDiagnosticCard(node: Record<string, unknown> | undefined, event: Event | undefined): void {
+    if (!node || node.kind !== "role") {
+      this.hideDiagnosticCard();
+      return;
+    }
+    const diagnostic = typeof node.diagnostic === "object" && node.diagnostic !== null
+      ? node.diagnostic as Record<string, unknown>
+      : null;
+    const runtime = typeof node.runtime === "object" && node.runtime !== null
+      ? node.runtime as Record<string, unknown>
+      : null;
+    const items: string[] = [];
+    if (typeof diagnostic?.message === "string" && diagnostic.message.trim()) {
+      items.push(`<div><strong>${this.escapeHtml(String(diagnostic.severity ?? "warning"))}</strong> ${this.escapeHtml(diagnostic.message)}</div>`);
+    }
+    if (Array.isArray(runtime?.missingSources) && runtime.missingSources.length > 0) {
+      items.push(`<div>missing inputs: ${this.escapeHtml(runtime.missingSources.join(", "))}</div>`);
+    }
+    if (typeof runtime?.lastErrorCode === "string" && runtime.lastErrorCode) {
+      items.push(`<div>last error: ${this.escapeHtml(runtime.lastErrorCode)}</div>`);
+    }
+    if (typeof runtime?.status === "string" && runtime.status === "waiting_review") {
+      items.push(`<div>waiting review</div>`);
+    }
+    if (Number.isFinite(Number(runtime?.loopIteration)) && Number(runtime?.loopIteration) > 0) {
+      items.push(`<div>loop: ${this.escapeHtml(String(runtime?.loopIteration))}</div>`);
+    }
+    if (items.length === 0) {
+      this.hideDiagnosticCard();
+      return;
+    }
+    this.diagnosticCardEl.innerHTML = items.join("");
+    this.diagnosticCardEl.hidden = false;
+    const pointer = event instanceof MouseEvent
+      ? { x: event.clientX, y: event.clientY }
+      : null;
+    const stageRect = this.stageEl.getBoundingClientRect();
+    const left = pointer ? pointer.x - stageRect.left + 12 : 16;
+    const top = pointer ? pointer.y - stageRect.top + 12 : 16;
+    this.diagnosticCardEl.style.left = `${Math.max(12, left)}px`;
+    this.diagnosticCardEl.style.top = `${Math.max(12, top)}px`;
+  }
+
+  private hideDiagnosticCard(): void {
+    this.diagnosticCardEl.hidden = true;
+    this.diagnosticCardEl.innerHTML = "";
   }
 
   private renderCommandForm(): void {
@@ -825,10 +905,10 @@ export class StudioGraphIsland {
   }
 
   private async syncCanvas(): Promise<void> {
-    if (this.applying || this.isReadOnly() || !this.options.canvas) {
+    if (this.applying || this.isReadOnly() || !this.options.authoring || !this.options.canvas) {
       return;
     }
-    const nextCanvas = graphToCanvasDocument(this.graph, this.options.canvas);
+    const nextCanvas = graphToCanvasDocument(this.graph, this.options.authoring);
     if (this.sameCanvas(nextCanvas, this.options.canvas)) {
       return;
     }
@@ -863,7 +943,6 @@ export class StudioGraphIsland {
     }
     const result = applyStudioAuthoringCommand({
       authoring: this.options.authoring,
-      canvas: graphToCanvasDocument(this.graph, this.options.canvas),
       command
     });
     if (result.blockedCode) {

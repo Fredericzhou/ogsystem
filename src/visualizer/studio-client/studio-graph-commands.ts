@@ -1,3 +1,4 @@
+import { authoringToCanvasDocument } from "../studio-authoring-projection.js";
 import {
   STUDIO_SYSTEM_END_ROLE_ID,
   normalizeStudioGraphStoredRoleId,
@@ -230,11 +231,10 @@ function syncJoinSource(
 
 export function applyStudioAuthoringCommand(args: {
   authoring: StudioAuthoringDocument;
-  canvas: StudioCanvasDocument;
   command: StudioAuthoringCommand;
 }): StudioAuthoringCommandResult {
   const authoring = cloneJson(args.authoring);
-  const canvas = cloneJson(args.canvas);
+  const canvas = cloneJson(authoringToCanvasDocument(authoring));
   authoring.roles ||= {};
   authoring.flows ||= {};
   authoring.layout ||= { nodes: {} };

@@ -147,6 +147,41 @@ export type ClientI18nOptions = {
   messagesByLocale?: Partial<Record<Locale, Dictionary>>;
 };
 
+function applyCanvasLayoutPatchToAuthoring(authoring: Record<string, any>, canvas: Record<string, any>) {
+  if (!authoring || typeof authoring !== "object" || Array.isArray(authoring)) {
+    return authoring;
+  }
+  const roles = authoring.roles && typeof authoring.roles === "object" && !Array.isArray(authoring.roles)
+    ? authoring.roles
+    : {};
+  const layout = authoring.layout && typeof authoring.layout === "object" && !Array.isArray(authoring.layout)
+    ? authoring.layout
+    : {};
+  const nextNodes = layout.nodes && typeof layout.nodes === "object" && !Array.isArray(layout.nodes)
+    ? { ...layout.nodes }
+    : {};
+  const canvasNodes = Array.isArray(canvas?.nodes) ? canvas.nodes : [];
+  for (const node of canvasNodes) {
+    const roleId = typeof node?.roleId === "string" ? node.roleId : "";
+    if (!roleId || !roles[roleId]) {
+      continue;
+    }
+    nextNodes[roleId] = {
+      x: Number(node.x ?? 0),
+      y: Number(node.y ?? 0),
+      width: Number(node.width ?? 180),
+      height: Number(node.height ?? 84)
+    };
+  }
+  return {
+    ...authoring,
+    layout: {
+      ...layout,
+      nodes: nextNodes,
+      viewport: canvas?.viewport
+    }
+  };
+}
 
 export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions = {}): string {
   const locale = i18n.locale ?? "en";
@@ -190,6 +225,7 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
     const renderConsoleTabsHtml = ${renderConsoleTabsHtml.toString()};
     const getVisibleConsolePanelIds = ${getVisibleConsolePanelIds.toString()};
     const shouldShowRunSidebar = ${shouldShowRunSidebar.toString()};
+    const applyCanvasLayoutPatchToAuthoring = ${applyCanvasLayoutPatchToAuthoring.toString()};
     const renderRunListHtml = ${renderRunListHtml.toString()};
     const renderLoadingSkeletonHtml = ${renderLoadingSkeletonHtml.toString()};
     const renderWorkbenchStructureHtml = ${renderWorkbenchStructureHtml.toString()};
@@ -4619,7 +4655,7 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
       }
       await runAction("studio:apply-canvas", async () => {
         await applyStudioGraphPayload({
-          authoring: state.studioBridge.authoring,
+          authoring: applyCanvasLayoutPatchToAuthoring(state.studioBridge.authoring, canvas),
           canvas,
           successMessage: t("studio.graph.canvasUpdated", undefined, "Studio canvas layout updated.")
         });
@@ -4680,8 +4716,7 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
 
     async function applyStudioGraphPayload(args) {
       const payload = await requestAction(\`\${API_PREFIX}/project/studio/authoring/apply-canvas\`, {
-        authoring: args.authoring,
-        canvas: args.canvas
+        authoring: args.authoring
       });
       state.workbenchSource = payload.systemSource || state.workbenchSource;
       persistDraftSource(state.workbenchSource !== state.workbenchDiskSource ? state.workbenchSource : "");
