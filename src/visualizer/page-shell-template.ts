@@ -13,17 +13,13 @@ export function renderPageShellBody({ workdir, locale, t }: PageShellBodyOptions
   return `<body>
   <div id="sidebar-overlay" class="sidebar-overlay"></div>
   <div class="app">
-    <aside id="sidebar" class="sidebar">
-      <div class="brand">
-        <h1>${escapeHtml(t("app.title"))}</h1>
-        <span>${escapeHtml(t("app.local"))}</span>
-      </div>
-      <div class="stack">
-        <input id="search" class="search" placeholder="${escapeHtml(t("search.placeholder"))}" aria-label="${escapeHtml(t("search.placeholder"))}" />
-        <div id="run-list" class="run-list"></div>
-      </div>
-    </aside>
     <div class="shell content">
+      <aside id="sidebar" class="sidebar">
+        <div class="stack">
+          <input id="search" class="search" placeholder="${escapeHtml(t("search.placeholder"))}" aria-label="${escapeHtml(t("search.placeholder"))}" />
+          <div id="run-list" class="run-list"></div>
+        </div>
+      </aside>
       <header class="top-nav">
         <div class="top-nav-row top-nav-row-primary">
           <div class="top-nav-brand">
@@ -78,26 +74,13 @@ export function renderPageShellBody({ workdir, locale, t }: PageShellBodyOptions
           </section>
           <section id="console-panel-build" class="console-panel grid" data-console-panel="build" role="tabpanel" aria-labelledby="console-tab-build" hidden>
               <article class="card span-12">
-                <header>
-                    <div class="card-header build-header">
-                    <div class="header-copy">
-                      <h3 id="workbench-title">${escapeHtml(t("section.mermaidWorkbench"))}</h3>
-                      <div id="workbench-meta" class="hint">${escapeHtml(t("workbench.defaultMeta"))}</div>
-                    </div>
-                    <div class="build-control-bar build-ide-control-bar">
-                      <div class="build-control-primary build-ide-primary">
-                        <div class="build-nav-stack">
-                          <div id="workbench-tabs" class="segmented build-mode-tabs"></div>
-                        </div>
-                        <div class="build-command-stack">
-                          <div id="workbench-actions" class="actions"></div>
-                          <div id="workbench-status" class="toolbar-group"></div>
-                        </div>
-                    </div>
-                  </div>
-                </div>
-              </header>
                 <div class="body">
+                  <div class="workbench-state-cache" hidden aria-hidden="true">
+                    <h3 id="workbench-title">${escapeHtml(t("section.mermaidWorkbench"))}</h3>
+                    <div id="workbench-meta" class="hint">${escapeHtml(t("workbench.defaultMeta"))}</div>
+                    <div id="workbench-tabs" class="segmented build-mode-tabs"></div>
+                    <div id="workbench-actions" class="actions"></div>
+                  </div>
                   <div class="editor-shell build-ide-shell">
                     <div id="workbench-body" class="build-ide-body"></div>
                   </div>
@@ -271,11 +254,11 @@ export function renderPageShellBody({ workdir, locale, t }: PageShellBodyOptions
       </main>
       <footer class="status-bar global-status">
         <div class="global-status-primary">
-          <div id="global-status-context" class="pill">${escapeHtml(t("state.idle"))}</div>
+          <div id="global-status-context" class="global-status-context pill">${escapeHtml(t("state.idle"))}</div>
           <div id="global-status-diagnostics" class="global-status-diagnostics hint"></div>
+          <div id="workbench-status" class="toolbar-group global-status-workbench-status"></div>
         </div>
         <div class="actions global-status-actions">
-          <div id="workbench-view-tabs-slot" class="workbench-view-tabs-slot global-status-workbench-slot"></div>
           <button id="reindex" class="button subtle">${escapeHtml(t("action.reindex"))}</button>
           <div id="live" class="live">${escapeHtml(t("state.idle"))}</div>
         </div>

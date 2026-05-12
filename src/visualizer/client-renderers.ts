@@ -236,6 +236,9 @@ export function renderStudioGraphCanvas(args: {
   selectedFlowKey: string;
   fullscreen?: boolean;
   sideTab?: string;
+  rootMode?: "bridge" | "source";
+  rootClassName?: string;
+  rootContentHtml?: string;
   selectionKindLabel?: string;
   selectionTitle?: string;
   selectionRolePackageHtml?: string;
@@ -255,7 +258,7 @@ export function renderStudioGraphCanvas(args: {
   return [
     '<div class="studio-canvas-shell' + (args.fullscreen ? " is-fullscreen" : "") + (args.selectionDocked ? " has-docked-selection" : "") + (args.selectionDocked && args.selectionCollapsed ? " has-collapsed-selection" : "") + '" data-studio-canvas-shell="1">',
     '<div class="studio-canvas-toolbar" data-studio-bridge-region="toolbar"><div><span class="hint" data-studio-graph-selection-label>' + escapeText(selection) + '</span></div></div>',
-    '<div id="studio-graph-root" class="studio-graph-root" data-selected-role-id="' + escapeText(args.selectedRoleId) + '" data-selected-flow-key="' + escapeText(args.selectedFlowKey) + '"></div>',
+    '<div id="studio-graph-root" class="studio-graph-root' + (args.rootClassName ? " " + escapeText(args.rootClassName) : "") + '" data-workbench-root-mode="' + escapeText(args.rootMode || "bridge") + '" data-selected-role-id="' + escapeText(args.selectedRoleId) + '" data-selected-flow-key="' + escapeText(args.selectedFlowKey) + '">' + (args.rootContentHtml || "") + '</div>',
     '<div class="studio-selection-overlay' + (args.selectionDocked ? " is-docked" : "") + (args.selectionCollapsed ? " is-collapsed" : "") + '" data-studio-selection-overlay hidden><button type="button" class="studio-selection-backdrop" data-studio-selection-close="" aria-label="' + escapeText(t("action.close", undefined, "Close")) + '"></button><section class="studio-selection-dialog" data-studio-selection-dialog role="dialog" aria-modal="true" aria-label="' + escapeText(t("studio.sidePanel", undefined, "Right panel")) + '"><header class="studio-selection-header"><div class="studio-selection-title-wrap"><div class="hint" data-studio-selection-kind-label>' + escapeText(args.selectionKindLabel || "") + '</div><strong data-studio-selection-title>' + escapeText(args.selectionTitle || "") + '</strong></div><div class="studio-selection-actions"><button type="button" class="button subtle" data-studio-selection-pin="" title="' + escapeText(t("studio.graphWorkspace", undefined, "Graph workspace")) + '">dock</button><button type="button" class="button subtle" data-studio-selection-collapse="" title="' + escapeText(t("action.close", undefined, "Close")) + '">' + (args.selectionCollapsed ? ">" : "<") + '</button><button type="button" class="button subtle" data-studio-selection-close="">' + escapeText(t("action.close", undefined, "Close")) + '</button></div></header><div class="studio-selection-tabstrip segmented"><button type="button" class="button subtle' + ((args.sideTab || "structure") === "selection" ? " active" : "") + '" data-studio-side-tab="selection">' + escapeText(t("studio.authoringTab", undefined, "Authoring")) + '</button><button type="button" class="button subtle' + ((args.sideTab || "structure") === "structure" ? " active" : "") + '" data-studio-side-tab="structure">' + escapeText(t("studio.retrievalTab", undefined, "Browse")) + '</button><button type="button" class="button subtle' + ((args.sideTab || "structure") === "debug" ? " active" : "") + '" data-studio-side-tab="debug">' + escapeText(t("build.mode.debug", undefined, "Debug")) + '</button><button type="button" class="button subtle' + ((args.sideTab || "structure") === "result" ? " active" : "") + '" data-studio-side-tab="result">' + escapeText(t("studio.resultsTab", undefined, "Results")) + '</button></div><div class="studio-selection-body"><section class="studio-selection-panel" data-studio-selection-panel="selection"><div class="studio-selection-command-host" data-studio-selection-command-host></div><div class="studio-selection-role-package" data-studio-selection-role-package>' + (args.selectionRolePackageHtml || "") + '</div></section><section class="studio-selection-panel studio-selection-structure-panel" data-studio-selection-panel="structure">' + (args.selectionStructureHtml || "") + '</section><section class="studio-selection-panel studio-selection-debug-panel" data-studio-selection-panel="debug">' + (args.selectionDebugHtml || "") + '</section><section class="studio-selection-panel studio-selection-result-panel" data-studio-selection-panel="result">' + (args.selectionResultsHtml || "") + '</section></div></section></div>',
     "</div>"
   ].join("");
@@ -588,7 +591,7 @@ export function renderReleaseGatePanel(args: {
 }): string {
   const t: Translator = typeof args.t === "function" ? args.t : (_key, _vars, fallback) => fallback ?? _key;
   const validationOk = args.validation?.ok === true;
-  const diagnostics = Array.isArray(args.validation?.diagnostics) ? args.validation.diagnostics : [];
+  const diagnostics = Array.isArray(args.validation?.diagnostics) ? args.validation.diagnostics as JsonRecord[] : [];
   const blockers = Array.isArray(args.readiness?.blockers) ? args.readiness.blockers as JsonRecord[] : [];
   const warnings = Array.isArray(args.readiness?.warnings) ? args.readiness.warnings as JsonRecord[] : [];
   const contractCoverage = (args.readiness?.contractCoverage ?? {}) as JsonRecord;
@@ -601,21 +604,64 @@ export function renderReleaseGatePanel(args: {
   const unhealthyRoles = packageRoles.filter((role) => {
     return !studioRolePackageHasRequiredFileCoverage(role as StudioRolePackageSummary);
   });
+  const uncoveredEdges = Array.isArray(args.contracts?.uncoveredEdges) ? args.contracts?.uncoveredEdges as JsonRecord[] : [];
   const canExport = args.exportReady && !args.workbenchDirty;
   const warningNote = warnings.length
     ? t("release.warningNote", { count: String(warnings.length) }, String(warnings.length) + " warning(s) will be included in release notes")
     : t("release.noWarningNote", undefined, "No non-blocking warnings for release notes.");
+  const toCompactItem = (title: string, meta: string, hint?: string): string =>
+    '<div class="compact-list-item"><span class="compact-list-title">' + escapeText(title) + '</span><span class="compact-list-meta">' + escapeText(meta) + '</span>' + (hint ? '<div class="hint">' + escapeText(hint) + '</div>' : "") + '</div>';
+  const diagnosticItems = diagnostics.slice(0, 8).map((diagnostic) =>
+    toCompactItem(
+      String(diagnostic.code ?? "DIAGNOSTIC"),
+      String(diagnostic.stage ?? t("common.attention", undefined, "attention")),
+      compactText(diagnostic.message ?? "", 140)
+    )
+  );
+  const blockerItems = blockers.slice(0, 8).map((blocker) =>
+    toCompactItem(
+      compactText(blocker.message ?? blocker.code ?? t("common.unknown", undefined, "unknown"), 120),
+      String(blocker.severity ?? t("common.blocked", undefined, "blocked")),
+      compactText(blocker.detail ?? blocker.flowKey ?? blocker.roleId ?? "", 140)
+    )
+  );
+  const warningItems = warnings.slice(0, 8).map((warning) =>
+    toCompactItem(
+      compactText(warning.message ?? warning.code ?? t("readiness.warning", undefined, "warning"), 120),
+      String(warning.severity ?? t("readiness.warning", undefined, "warning")),
+      compactText(warning.detail ?? warning.flowKey ?? warning.roleId ?? "", 140)
+    )
+  );
+  const unresolvedBindingItems = unresolvedBindings.slice(0, 8).map((binding) =>
+    toCompactItem(
+      String(binding.roleId ?? t("common.notAvailable", undefined, "n/a")),
+      String(binding.bindingKind ?? t("common.unknown", undefined, "unknown")),
+      compactText(binding.message ?? binding.declaredBinding ?? binding.resolvedBinding ?? "", 140)
+    )
+  );
+  const unhealthyRoleItems = unhealthyRoles.slice(0, 8).map((role) =>
+    toCompactItem(
+      String(role.roleId ?? t("common.notAvailable", undefined, "n/a")),
+      t("readiness.unhealthy", { count: "1" }, "1 unhealthy"),
+      compactText(String(role.outputSchemaPath ?? role.schemaPath ?? t("config.outputSchemaUnavailable", undefined, "output schema unavailable")), 140)
+    )
+  );
+  const missingContractItems = uncoveredEdges.slice(0, 8).map((edge) =>
+    toCompactItem(
+      String(edge.flowKey ?? t("common.notAvailable", undefined, "n/a")),
+      t("readiness.missing", { count: "1" }, "missing 1"),
+      compactText(edge.contractId ?? edge.schemaPath ?? edge.message ?? "", 140)
+    )
+  );
   return [
     '<div class="release-checklist">',
-    '<section class="release-group"><h4>' + escapeText(t("release.group.gate", undefined, "Release gate")) + '</h4><div class="structure-list">',
+    '<section class="release-group"><h4>' + escapeText(t("release.group.gate", undefined, "Release gate")) + '</h4><div class="run-graph-summary-grid">',
     '<div class="event"><div class="event-top"><span>' + escapeText(t("release.gate", undefined, "release gate")) + '</span><span class="status ' + escapeText(canExport ? "done" : "failed") + '">' +
       escapeText(canExport ? t("release.candidateReady", undefined, "release candidate ready") : t("release.candidateBlocked", undefined, "release candidate blocked")) +
       '</span></div><strong>' + escapeText(t("release.artifactContract", undefined, "Validated export candidate uses the single-project-v1 artifact contract.")) +
       '</strong><div class="hint">' + escapeText(t("release.sourceDigestHint", {
         path: args.workbenchSavedPath || "system.mmd"
       }, "source " + (args.workbenchSavedPath || "system.mmd") + " · digests are derived from generated and exported project content")) + '</div></div>',
-    '</div></section>',
-    '<section class="release-group"><h4>' + escapeText(t("release.group.quality", undefined, "Quality signals")) + '</h4><div class="structure-list">',
     '<div class="event"><div class="event-top"><span>' + escapeText(t("release.validationReport", undefined, "validation report")) + '</span><span>' +
       escapeText(validationOk ? t("workbench.validationOk", undefined, "validation ok") : t("workbench.diagnostics", { count: String(diagnostics.length) }, String(diagnostics.length) + " diagnostics")) +
       '</span></div><strong>' + escapeText(validationOk ? t("release.systemMmdValid", undefined, "system.mmd validates successfully") : t("release.systemMmdBlocked", undefined, "system.mmd has blocking validation diagnostics")) +
@@ -627,10 +673,63 @@ export function renderReleaseGatePanel(args: {
     '<div class="event"><div class="event-top"><span>' + escapeText(t("readiness.contractCoverage", undefined, "contract coverage")) + '</span><span>' +
       escapeText(missingContracts ? t("readiness.missing", { count: String(missingContracts) }, "missing " + String(missingContracts)) : t("common.complete", undefined, "complete")) +
       '</span></div><strong>' + escapeText(t("release.contractReport", undefined, "Contract and schema coverage report")) +
-      '</strong><div class="hint">' + escapeText(t("release.bindingRolePackageSummary", {
-        unresolved: String(unresolvedBindings.length),
-        unhealthy: String(unhealthyRoles.length)
-      }, "unresolved bindings " + String(unresolvedBindings.length) + " · unhealthy role packages " + String(unhealthyRoles.length))) + '</div></div>',
+      '</strong><div class="hint">' + escapeText(t("release.bindingRolePackageSummary", { unresolved: String(unresolvedBindings.length), unhealthy: String(unhealthyRoles.length) }, "unresolved bindings " + String(unresolvedBindings.length) + " · unhealthy role packages " + String(unhealthyRoles.length))) + '</div></div>',
+    '</div></section>',
+    '<section class="release-group"><h4>' + escapeText(t("release.group.quality", undefined, "Quality signals")) + '</h4><div class="structure-list">',
+    renderSummaryListSection({
+      title: t("release.validationReport", undefined, "validation report"),
+      items: diagnosticItems,
+      emptyLabel: t("studio.noParseCompileDiagnostics", undefined, "No parse or compile diagnostics."),
+      summaryLabel: validationOk ? t("workbench.validationOk", undefined, "validation ok") : t("workbench.diagnostics", { count: String(diagnostics.length) }, String(diagnostics.length) + " diagnostics"),
+      hint: t("release.qualityDiagnosticsHint", undefined, "Review concrete parse, compile, and structure diagnostics before exporting."),
+      open: diagnostics.length > 0,
+      tone: diagnostics.length ? "warning" : "notice"
+    }),
+    renderSummaryListSection({
+      title: t("release.blockersTitle", undefined, "readiness blockers"),
+      items: blockerItems,
+      emptyLabel: t("release.noBlockers", undefined, "No blocking readiness issues."),
+      summaryLabel: blockers.length ? t("release.blockersRemain", { count: String(blockers.length) }, String(blockers.length) + " blocker(s) remain") : t("common.ready", undefined, "ready"),
+      hint: t("release.resolveBlockers", undefined, "Resolve release blockers."),
+      open: blockers.length > 0,
+      tone: blockers.length ? "critical" : "notice"
+    }),
+    renderSummaryListSection({
+      title: t("release.warningsTitle", undefined, "release warnings"),
+      items: warningItems,
+      emptyLabel: t("release.noWarningNote", undefined, "No non-blocking warnings for release notes."),
+      summaryLabel: warningNote,
+      hint: t("release.warningCarryHint", undefined, "Warnings remain visible here so release notes and follow-up work stay explicit."),
+      open: warnings.length > 0,
+      tone: warnings.length ? "warning" : undefined
+    }),
+    renderSummaryListSection({
+      title: t("release.unresolvedBindingsTitle", undefined, "unresolved bindings"),
+      items: unresolvedBindingItems,
+      emptyLabel: t("readiness.allBindingsResolved", undefined, "All role bindings resolve."),
+      summaryLabel: t("release.bindingRolePackageSummary", { unresolved: String(unresolvedBindings.length), unhealthy: String(unhealthyRoles.length) }, "unresolved bindings " + String(unresolvedBindings.length) + " · unhealthy role packages " + String(unhealthyRoles.length)),
+      hint: t("release.bindingResolutionHint", undefined, "Bindings should resolve cleanly before this candidate is exported."),
+      open: unresolvedBindingItems.length > 0,
+      tone: unresolvedBindingItems.length ? "warning" : undefined
+    }),
+    renderSummaryListSection({
+      title: t("release.unhealthyRolesTitle", undefined, "role package coverage"),
+      items: unhealthyRoleItems,
+      emptyLabel: t("readiness.allFilesPresent", undefined, "all required files present"),
+      summaryLabel: t("readiness.rolesInspected", { count: String(packageRoles.length) }, String(packageRoles.length) + " role package(s) inspected"),
+      hint: t("release.rolePackageCoverageHint", undefined, "Missing runtime files are surfaced here before release packaging."),
+      open: unhealthyRoleItems.length > 0,
+      tone: unhealthyRoleItems.length ? "warning" : undefined
+    }),
+    renderSummaryListSection({
+      title: t("release.missingContractsTitle", undefined, "missing contracts"),
+      items: missingContractItems,
+      emptyLabel: t("common.complete", undefined, "complete"),
+      summaryLabel: t("release.contractReport", undefined, "Contract and schema coverage report"),
+      hint: t("release.contractCoverageHint", undefined, "Every deployable handoff should have visible contract and schema coverage."),
+      open: missingContractItems.length > 0,
+      tone: missingContractItems.length ? "warning" : undefined
+    }),
     '</div></section>',
     '<section class="release-group"><h4>' + escapeText(t("release.group.evidence", undefined, "Evidence and export scope")) + '</h4><div class="structure-list">',
     '<div class="event"><div class="event-top"><span>' + escapeText(t("studio.dryRun", undefined, "Dry run")) + '</span><span>' +
@@ -640,6 +739,7 @@ export function renderReleaseGatePanel(args: {
     '<div class="event"><div class="event-top"><span>' + escapeText(t("release.exportArtifact", undefined, "export artifact")) + '</span><span>single-project-v1</span></div><strong>' +
       escapeText(t("release.exportBoundary", undefined, "Export excludes .ogs/runs, logs, timeline, checkpoints, and review artifacts.")) +
       '</strong><div class="hint">' + escapeText(t("release.exportTraceability", undefined, "Traceability is anchored to source project metadata, system.mmd, role packages, bindings, and model/profile config.")) + '</div></div>',
+    '<div class="event"><div class="event-top"><span>' + escapeText(t("release.gate", undefined, "release gate")) + '</span><span>' + escapeText(canExport ? t("common.ready", undefined, "ready") : t("common.blocked", undefined, "blocked")) + '</span></div><strong>' + escapeText(canExport ? t("release.exportReadyNow", undefined, "Export can proceed with the current saved source.") : t("release.exportBlockedNow", undefined, "Export is still blocked by unsaved source, diagnostics, or readiness issues.")) + '</strong><div class="hint">' + escapeText(t("release.exportDecisionHint", undefined, "This panel keeps the final export decision anchored to saved graph source and release evidence.")) + '</div></div>',
     '</div></section>',
     "</div>"
   ].join("");
@@ -816,6 +916,8 @@ export function renderStudioBridgePanel(args: {
   readiness: JsonRecord | null | undefined;
   selectedRoleId: string;
   selectedFlowKey: string;
+  workbenchView?: string;
+  graphRootContentHtml?: string;
   filter?: string;
   listMode?: string;
   sideTab?: string;
@@ -877,6 +979,9 @@ export function renderStudioBridgePanel(args: {
   const graphCanvas = renderStudioGraphCanvas({
     selectedRoleId: args.selectedRoleId,
     selectedFlowKey: args.selectedFlowKey,
+    rootMode: args.workbenchView === "source" ? "source" : "bridge",
+    rootClassName: args.workbenchView === "source" ? "studio-source-root" : "",
+    rootContentHtml: args.workbenchView === "source" ? (args.graphRootContentHtml || "") : "",
     sideTab: args.sideTab,
     selectionKindLabel: selectedRole
       ? t("studio.roleInspector", undefined, "Role details")
@@ -1735,6 +1840,124 @@ export function renderRunStatePanel(args: {
       renderStateGroup(t("state.additionalState", undefined, "additional state"), additionalCards)
     ].filter(Boolean);
   };
+  const renderRoleIoCell = (value: unknown, emptyLabel: string): string => {
+    if (value === null || value === undefined || value === "") {
+      return '<div class="hint">' + escapeText(emptyLabel) + '</div>';
+    }
+    const raw = typeof value === "string" ? value : formatJson(value);
+    const summary = compactText(raw, 140) || emptyLabel;
+    const detail = raw.length > 160 || raw.includes("\n");
+    return '<div class="run-role-cell-summary">' + escapeText(summary) + '</div>' + (
+      detail
+        ? '<details><summary>' + escapeText(t("common.details", undefined, "details")) + '</summary><pre>' + escapeText(raw) + "</pre></details>"
+        : ""
+    );
+  };
+  const collectRoleIoRows = (): Array<{
+    roleId: string;
+    status: string;
+    input?: unknown;
+    output?: unknown;
+    meta: string[];
+  }> => {
+    const rows = new Map<string, {
+      roleId: string;
+      status: string;
+      input?: unknown;
+      output?: unknown;
+      meta: string[];
+    }>();
+    const ensureRow = (roleId: string) => {
+      const normalizedRoleId = normalizeStudioTargetRoleId(roleId);
+      if (!normalizedRoleId || normalizedRoleId === "input" || normalizedRoleId === "output") {
+        return null;
+      }
+      let row = rows.get(normalizedRoleId);
+      if (!row) {
+        row = { roleId: normalizedRoleId, status: t("common.unknown", undefined, "unknown"), meta: [] };
+        rows.set(normalizedRoleId, row);
+      }
+      return row;
+    };
+    const ingestRoleRecord = (recordValue: unknown, fallbackRoleId?: string, sourceLabel?: string) => {
+      const record = asRecord(recordValue);
+      const row = ensureRow(String(record?.roleId ?? record?.currentRoleId ?? record?.lastExecutedRoleId ?? fallbackRoleId ?? ""));
+      if (!row) {
+        return;
+      }
+      const status = record?.status ?? record?.currentStatus ?? record?.branchStatus ?? record?.decisionPhase ?? record?.reviewStatus;
+      if (status) {
+        row.status = String(status);
+      }
+      const inputValue = record?.input ?? record?.inputContext ?? record?.request ?? record?.payload ?? record?.prompt ?? record?.userInput;
+      const outputValue = record?.output ?? record?.lastOutput ?? record?.rawOutput ?? record?.result ?? record?.response ?? record?.decisionSnapshot;
+      if (row.input === undefined && inputValue !== undefined) {
+        row.input = inputValue;
+      }
+      if (row.output === undefined && outputValue !== undefined) {
+        row.output = outputValue;
+      }
+      const metaParts = [
+        record?.branchId,
+        record?.reviewId,
+        record?.event,
+        record?.summary,
+        sourceLabel
+      ].filter(Boolean).map((item) => compactText(item, 40)).filter(Boolean);
+      for (const item of metaParts) {
+        if (!row.meta.includes(item)) {
+          row.meta.push(item);
+        }
+      }
+    };
+    const ingestRoleRecordMap = (collection: unknown, sourceLabel: string) => {
+      if (Array.isArray(collection)) {
+        for (const item of collection) {
+          ingestRoleRecord(item, undefined, sourceLabel);
+        }
+        return;
+      }
+      const record = asRecord(collection);
+      if (!record) {
+        return;
+      }
+      for (const [key, value] of Object.entries(record)) {
+        ingestRoleRecord(value, key, sourceLabel);
+      }
+    };
+    const graphRecord = asRecord(args.graph);
+    for (const node of asRecordArray(graphRecord?.nodes)) {
+      ensureRow(String(node.roleId ?? node.id ?? ""));
+    }
+    ingestRoleRecordMap(stateRecord.roleResults, t("state.field.roleResults", undefined, "role results"));
+    ingestRoleRecordMap(stateRecord.activeBranches, t("state.field.activeBranches", undefined, "active branches"));
+    ingestRoleRecordMap(stateRecord.completedBranches, t("state.field.completedBranches", undefined, "completed branches"));
+    ingestRoleRecordMap(stateRecord.branches, t("state.field.branches", undefined, "branches"));
+    ingestRoleRecordMap(stateRecord.pendingReviewsById, t("state.field.pendingReviewsById", undefined, "pending reviews by id"));
+    ingestRoleRecordMap(stateRecord.humanReviewContextByBranchId, t("state.field.humanReviewContextByBranchId", undefined, "human review context by branch"));
+    const lastOutputRecord = asRecord(stateRecord.lastOutput);
+    if (lastOutputRecord) {
+      for (const [roleId, value] of Object.entries(lastOutputRecord)) {
+        const row = ensureRow(roleId);
+        if (row && row.output === undefined) {
+          row.output = value;
+          if (!row.meta.includes(t("state.field.lastOutput", undefined, "last output"))) {
+            row.meta.push(t("state.field.lastOutput", undefined, "last output"));
+          }
+        }
+      }
+    } else if (stateRecord.lastOutput !== undefined) {
+      const row = ensureRow(String(header.lastExecutedRoleId ?? stateRecord.currentRoleId ?? ""));
+      if (row && row.output === undefined) {
+        row.output = stateRecord.lastOutput;
+      }
+    }
+    const lastRoleRow = ensureRow(String(header.lastExecutedRoleId ?? stateRecord.currentRoleId ?? ""));
+    if (lastRoleRow && lastRoleRow.meta.length === 0) {
+      lastRoleRow.meta.push(t("state.field.lastExecutedRoleId", undefined, "last executed role"));
+    }
+    return Array.from(rows.values()).sort((left, right) => left.roleId.localeCompare(right.roleId));
+  };
   if (args.state === null || args.state === undefined) {
     return '<div class="hint">' + escapeText(t("state.runtimeStateUnavailable", undefined, "Runtime state unavailable.")) + '</div>';
   }
@@ -1764,6 +1987,12 @@ export function renderRunStatePanel(args: {
     .concat(auditSummaryIssues)
     .slice(0, 6)
     .map((entry) => `<div class="compact-list-item"><span class="compact-list-title">${escapeText(String(entry.errorCode ?? entry.code ?? entry.kind ?? "issue"))}</span><div class="hint">${escapeText(compactText(entry.message ?? entry.summary ?? entry.roleId ?? "", 120))}</div></div>`);
+  const roleIoRows = collectRoleIoRows();
+  const roleIoMatrixHtml = roleIoRows.length
+    ? '<div class="run-role-matrix"><div class="run-role-matrix-head"><div class="run-role-cell">' + escapeText(t("state.roleColumn", undefined, "role")) + '</div><div class="run-role-cell">' + escapeText(t("state.statusColumn", undefined, "status")) + '</div><div class="run-role-cell">' + escapeText(t("state.inputColumn", undefined, "input")) + '</div><div class="run-role-cell">' + escapeText(t("state.outputColumn", undefined, "output")) + '</div></div>' +
+      roleIoRows.map((row) => '<div class="run-role-matrix-row"><div class="run-role-cell"><strong><code>' + escapeText(row.roleId) + '</code></strong>' + (row.meta.length ? '<div class="hint">' + escapeText(row.meta.join(" · ")) + '</div>' : "") + '</div><div class="run-role-cell"><span class="status ' + escapeText(String(row.status || "unknown").toLowerCase().replace(/\s+/g, "_")) + '">' + escapeText(displayUiToken(row.status || "unknown", t)) + '</span></div><div class="run-role-cell">' + renderRoleIoCell(row.input, t("state.noInputSnapshot", undefined, "No input snapshot")) + '</div><div class="run-role-cell">' + renderRoleIoCell(row.output, t("state.noOutputSnapshot", undefined, "No output snapshot")) + '</div></div>').join("") +
+      '</div>'
+    : '<div class="hint">' + escapeText(t("state.noRoleSnapshots", undefined, "No per-role input or output snapshots captured for this run.")) + '</div>';
   return [
     '<div class="state-panel">',
     '<div class="state-card-grid state-card-grid-primary">',
@@ -1812,6 +2041,15 @@ export function renderRunStatePanel(args: {
       tone: "critical"
     }),
     "</div>",
+    renderDisclosureCard({
+      title: t("state.roleIoMatrix", undefined, "role input / output"),
+      headline: t("state.roleIoSummary", { count: String(roleIoRows.length) }, String(roleIoRows.length) + " role snapshot(s)"),
+      meta: t("state.graphSnapshot", undefined, "graph snapshot"),
+      hint: t("state.roleIoHint", undefined, "Each row keeps the most useful captured input and output signal for a role, with details folded inside the cell."),
+      bodyHtml: roleIoMatrixHtml,
+      open: true,
+      tone: "notice"
+    }),
     ...renderStructuredStateGroups(args.state),
     "</div>"
   ].join("");

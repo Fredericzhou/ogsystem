@@ -32,6 +32,9 @@ importers:
       dagre:
         specifier: ^0.8.5
         version: 0.8.5
+      ogsystem:
+        specifier: 'link:'
+        version: 'link:'
       zod:
         specifier: ^3.25.76
         version: 3.25.76

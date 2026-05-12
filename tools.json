@@ -1,0 +1,13 @@
+{
+  "tools": [
+    {
+      "toolRef": "tool.console.print",
+      "runner": "local_shell",
+      "command": "node",
+      "argsTemplate": [
+        "scripts/console-print.mjs"
+      ],
+      "stdinMode": "text"
+    }
+  ]
+}

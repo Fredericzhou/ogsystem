@@ -20,7 +20,6 @@ import {
   renderOpsSummaryPanel,
   renderProjectReadinessPanel,
   renderReleaseGatePanel,
-  renderProjectSummaryPanel,
   renderResumeReadinessPanel,
   renderReviewQueuePanel,
   renderReviewDetailPanel,
@@ -56,6 +55,7 @@ import {
   renderWorkbenchActionsHtml,
   renderWorkbenchModeBodyHtml,
   renderWorkbenchModeTabsHtml,
+  renderWorkbenchSourceActionControlsHtml,
   renderWorkbenchStatusHtml,
   renderWorkbenchStructureHtml,
   renderWorkbenchViewTabsHtml,
@@ -197,6 +197,7 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
     const renderWorkbenchModeTabsHtml = ${renderWorkbenchModeTabsHtml.toString()};
     const renderWorkbenchViewTabsHtml = ${renderWorkbenchViewTabsHtml.toString()};
     const renderWorkbenchActionsHtml = ${renderWorkbenchActionsHtml.toString()};
+    const renderWorkbenchSourceActionControlsHtml = ${renderWorkbenchSourceActionControlsHtml.toString()};
     const renderWorkbenchModeBodyHtml = ${renderWorkbenchModeBodyHtml.toString()};
     const renderRunStatsHtml = ${renderRunStatsHtml.toString()};
     const renderTimelineHtml = ${renderTimelineHtml.toString()};
@@ -240,7 +241,6 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
     const renderContractPanel = ${renderContractPanel.toString()};
     const renderFailureDetailPanel = ${renderFailureDetailPanel.toString()};
     const renderFailureSummaryPanel = ${renderFailureSummaryPanel.toString()};
-    const renderProjectSummaryPanel = ${renderProjectSummaryPanel.toString()};
     const renderResumeReadinessPanel = ${renderResumeReadinessPanel.toString()};
     const renderReviewQueuePanel = ${renderReviewQueuePanel.toString()};
     const renderReviewDetailPanel = ${renderReviewDetailPanel.toString()};
@@ -341,7 +341,6 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
     const workbenchStatusEl = document.getElementById("workbench-status");
     const workbenchActionsEl = document.getElementById("workbench-actions");
     const workbenchTabsEl = document.getElementById("workbench-tabs");
-    const workbenchViewTabsSlotEl = document.getElementById("workbench-view-tabs-slot");
     const workbenchBodyEl = document.getElementById("workbench-body");
     const operateTabsEl = document.getElementById("operate-tabs");
     const statsEl = document.getElementById("stats");
@@ -816,30 +815,39 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
       liveEl.textContent = displayUiToken(label, t);
     }
 
+    function updateWorkbenchGraphStatus(text) {
+      state.studioGraphStatusText = String(text || "");
+      renderGlobalStatusBar();
+    }
+
     function renderGlobalStatusBar() {
+      if (workbenchStatusEl) {
+        workbenchStatusEl.hidden = state.consoleTab !== "build";
+      }
+      const contextTokens = [];
+      if (state.consoleTab === "build") {
+        contextTokens.push(t("section.mermaidWorkbench", undefined, "Authoring workspace"));
+        contextTokens.push(t("build.mode." + state.buildMode, undefined, state.buildMode || "edit"));
+      } else if (state.consoleTab === "operate") {
+        contextTokens.push(t("nav.lifecycle.operate", undefined, "Operate"));
+        contextTokens.push(state.selectedRunId || t("state.noRunSelected", undefined, "No run selected."));
+      } else if (state.consoleTab === "validate-release") {
+        contextTokens.push(t("section.validateRelease", undefined, "Validate & Release"));
+        contextTokens.push(state.workbenchSavedPath || "system.mmd");
+      } else {
+        contextTokens.push(t("nav.lifecycle.project", undefined, "Project"));
+        contextTokens.push((state.workspace?.workdir || getCurrentWorkdir() || "").split(/[\\/]/).filter(Boolean).pop() || t("state.idle", undefined, "idle"));
+      }
       if (globalStatusContextEl) {
-        const contextTokens = [];
         if (state.consoleTab === "build") {
-          contextTokens.push(t("section.mermaidWorkbench", undefined, "Authoring workspace"));
-          contextTokens.push(t("build.mode." + state.buildMode, undefined, state.buildMode || "edit"));
-          if (state.buildMode === "edit") {
-            contextTokens.push(
-              state.workbenchView === "source"
-                ? t("workbench.source", undefined, "Source")
-                : t("workbench.graph", undefined, "Graph")
-            );
-          }
-        } else if (state.consoleTab === "operate") {
-          contextTokens.push(t("nav.lifecycle.operate", undefined, "Operate"));
-          contextTokens.push(state.selectedRunId || t("state.noRunSelected", undefined, "No run selected."));
-        } else if (state.consoleTab === "validate-release") {
-          contextTokens.push(t("section.validateRelease", undefined, "Validate & Release"));
-          contextTokens.push(state.workbenchSavedPath || "system.mmd");
+          globalStatusContextEl.className = "global-status-context mode-toggle";
+          globalStatusContextEl.setAttribute("aria-label", contextTokens.join(" / "));
+          renderWorkbenchViewTabs();
         } else {
-          contextTokens.push(t("nav.lifecycle.project", undefined, "Project"));
-          contextTokens.push((state.workspace?.workdir || getCurrentWorkdir() || "").split(/[\\/]/).filter(Boolean).pop() || t("state.idle", undefined, "idle"));
+          globalStatusContextEl.className = "global-status-context pill";
+          globalStatusContextEl.removeAttribute("aria-label");
+          setInnerHtmlIfChanged(globalStatusContextEl, '<span class="global-status-context-copy">' + escapeText(contextTokens.filter(Boolean).join(" / ")) + "</span>");
         }
-        globalStatusContextEl.textContent = contextTokens.filter(Boolean).join(" / ");
       }
       if (globalStatusDiagnosticsEl) {
         const diagnostics = Array.isArray(state.workbench?.validation?.diagnostics) ? state.workbench.validation.diagnostics : [];
@@ -857,6 +865,14 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
         } else {
           globalStatusDiagnosticsEl.textContent = "";
           globalStatusDiagnosticsEl.className = "global-status-diagnostics hint";
+        }
+      }
+      if (workbenchStatusEl) {
+        workbenchStatusEl.dataset.graphStatus = state.studioGraphStatusText || "";
+        if (state.consoleTab === "build" && state.studioGraphStatusText) {
+          workbenchStatusEl.title = state.studioGraphStatusText;
+        } else {
+          workbenchStatusEl.removeAttribute("title");
         }
       }
     }
@@ -1116,6 +1132,8 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
         deleteSelection: t("studio.graph.deleteSelection", undefined, "Delete"),
         undo: t("studio.graph.undo", undefined, "Undo"),
         redo: t("studio.graph.redo", undefined, "Redo"),
+        validateWorkbench: t("action.validate", undefined, "Validate"),
+        saveWorkbench: t("action.save", undefined, "Save"),
         ready: t("studio.graph.ready", undefined, "ready"),
         graphUnavailable: t("studio.graph.unavailable", undefined, "Graph unavailable"),
         graphReady: t("studio.graph.readyStatus", undefined, "Graph workspace ready"),
@@ -1478,7 +1496,23 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
     }
 
     function resolveWorkbenchViewTabsSlot() {
-      return workbenchViewTabsSlotEl;
+      return state.consoleTab === "build" ? globalStatusContextEl : null;
+    }
+
+    function resetBuildEditingState() {
+      state.workbenchView = "bridge";
+      state.buildMode = "edit";
+      if (state.studioWorkbenchSideTab === "debug" || state.studioWorkbenchSideTab === "result") {
+        state.studioWorkbenchSideTab = state.studioBridgeSelectedRoleId || state.studioBridgeSelectedFlowKey
+          ? "selection"
+          : "structure";
+      }
+      if (state.studioSelectionDialogDocked !== false) {
+        state.studioSelectionDialogOpen = true;
+      }
+      clearTimeout(state.studioGraphMountRetryTimer);
+      state.studioGraphMountRetryTimer = null;
+      state.studioGraphMountRetryCount = 0;
     }
 
     function workbenchViewButtons() {
@@ -1499,6 +1533,17 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
       const primarySlot = resolveWorkbenchViewTabsSlot();
       setInnerHtmlIfChanged(primarySlot, html);
       bindWorkbenchViewButtons();
+    }
+
+    function isMountedStudioGraphRoot(root) {
+      return Boolean(root && root.getAttribute?.("data-workbench-root-mode") !== "source");
+    }
+
+    function focusWorkbenchRunInput() {
+      const input = document.getElementById("workbench-run-input");
+      if (input && typeof input.focus === "function") {
+        input.focus();
+      }
     }
 
     function bindWorkbenchViewButtons() {
@@ -1758,13 +1803,9 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
       if (sidebarToggleButton) {
         sidebarToggleButton.disabled = disabled;
       }
-      for (const button of workbenchActionsEl.querySelectorAll("button")) {
+      for (const button of Array.from(document.querySelectorAll("#build-validate, #build-save"))) {
         if (button.id === "build-save") {
           button.disabled = workbenchActionsDisabled || !isWorkbenchDirty();
-          continue;
-        }
-        if (button.id === "build-dry-run") {
-          button.disabled = workbenchActionsDisabled || noProject;
           continue;
         }
         button.disabled = workbenchActionsDisabled;
@@ -1881,11 +1922,7 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
           state.consoleTab = button.getAttribute("data-console-tab") || "operate";
           state.projectHome = state.consoleTab === "project";
           if (state.consoleTab === "build" && state.hasProject) {
-            state.workbenchView = "bridge";
-            state.buildMode = "edit";
-            clearTimeout(state.studioGraphMountRetryTimer);
-            state.studioGraphMountRetryTimer = null;
-            state.studioGraphMountRetryCount = 0;
+            resetBuildEditingState();
             const refreshWorkdir = state.workspace?.workdir || "";
             void refreshStudioBridge().catch((error) => {
               if (refreshWorkdir !== (state.workspace?.workdir || "")) {
@@ -1946,13 +1983,15 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
       return overlayRuntimeSignalsOnStudioBridge(baseBridge, baseCanvas, state.graph.graph);
     }
 
-    function studioBridgeRenderArgs() {
+    function studioBridgeRenderArgs(options) {
       const bridge = resolveStudioBridgeForDisplay();
       return {
         bridge,
         readiness: state.projectReadiness,
         selectedRoleId: state.studioBridgeSelectedRoleId,
         selectedFlowKey: state.studioBridgeSelectedFlowKey,
+        workbenchView: options?.workbenchView || state.workbenchView,
+        graphRootContentHtml: options?.graphRootContentHtml || "",
         filter: state.studioBridgeFilter,
         listMode: state.studioBridgeListMode,
         sideTab: state.studioWorkbenchSideTab,
@@ -1969,18 +2008,19 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
       if (state.studioSelectionDialogDocked !== false) {
         state.studioSelectionDialogOpen = true;
       }
-      const args = studioBridgeRenderArgs();
+      const args = studioBridgeRenderArgs(options);
       const html = renderStudioBridgePanel(args);
-      const preservedRoot = options?.preserveGraphRoot ? document.getElementById("studio-graph-root") : null;
-      if (options?.preserveGraphRoot && document.getElementById("studio-graph-root")) {
+      const currentRoot = document.getElementById("studio-graph-root");
+      const preservedRoot = options?.preserveGraphRoot && isMountedStudioGraphRoot(currentRoot) ? currentRoot : null;
+      if (options?.preserveGraphRoot && preservedRoot) {
         patchStudioBridgePanel(html);
       } else {
         workbenchBodyEl.innerHTML = html;
       }
       renderWorkbenchViewTabs();
-      const currentRoot = document.getElementById("studio-graph-root");
-      if (preservedRoot && currentRoot && currentRoot !== preservedRoot && typeof currentRoot.replaceWith === "function") {
-        currentRoot.replaceWith(preservedRoot);
+      const nextRoot = document.getElementById("studio-graph-root");
+      if (preservedRoot && nextRoot && nextRoot !== preservedRoot && typeof nextRoot.replaceWith === "function") {
+        nextRoot.replaceWith(preservedRoot);
       }
       updateStudioBridgeSelection(false);
       syncStudioBridgeFullscreenChrome();
@@ -2369,7 +2409,7 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
       }
       if (!shouldOpen) {
         rolePackage.innerHTML = "";
-        debugPanel.innerHTML = "";
+        debugPanel.innerHTML = renderStudioDebugTabContent();
         if (resultPanel) {
           resultPanel.innerHTML = "";
         }
@@ -2424,7 +2464,7 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
             t
           })
         ].join("");
-        debugPanel.innerHTML = "";
+        debugPanel.innerHTML = renderStudioDebugTabContent();
         if (resultPanel) {
           resultPanel.innerHTML = "";
         }
@@ -2447,7 +2487,7 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
         } else {
           rolePackage.innerHTML = '<div class="hint">' + escapeText(t("studio.selectFlow", undefined, "Select a flow to inspect event metadata.")) + "</div>";
         }
-        debugPanel.innerHTML = "";
+        debugPanel.innerHTML = renderStudioDebugTabContent();
         if (resultPanel) {
           resultPanel.innerHTML = "";
         }
@@ -2467,7 +2507,7 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
         }
       } else {
         rolePackage.innerHTML = "";
-        debugPanel.innerHTML = "";
+        debugPanel.innerHTML = renderStudioDebugTabContent();
         if (resultPanel) {
           resultPanel.innerHTML = "";
         }
@@ -2498,6 +2538,12 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
           if (nextTab === "selection" && !state.studioBridgeSelectedRoleId && !state.studioBridgeSelectedFlowKey && !state.studioSelectionCommandFormOpen) {
             return;
           }
+          if (nextTab === "debug") {
+            syncWorkbenchRunDraft({
+              systemPath: state.workbenchSavedPath || "system.mmd",
+              dryRun: true
+            }, { keepErrors: true });
+          }
           state.studioWorkbenchSideTab = nextTab === "selection"
             ? "selection"
             : nextTab === "debug"
@@ -2507,6 +2553,9 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
               : "structure";
           state.studioSelectionDialogOpen = true;
           renderStudioSelectionDialog();
+          if (nextTab === "debug") {
+            focusWorkbenchRunInput();
+          }
           event.preventDefault();
           return;
         }
@@ -3150,6 +3199,10 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
       if (!root) {
         return;
       }
+      if (!isMountedStudioGraphRoot(root)) {
+        state.studioGraphRootElement = null;
+        return;
+      }
       if (state.studioGraphRootElement && state.studioGraphRootElement !== root && typeof root.replaceWith === "function") {
         root.replaceWith(state.studioGraphRootElement);
         root = state.studioGraphRootElement;
@@ -3262,6 +3315,17 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
           renderStudioBridge({ preserveGraphRoot: true });
           syncStudioBridgeFullscreenChrome();
         },
+        onValidateWorkbench: async () => {
+          await runWorkbenchValidation(true);
+          await refreshStudioBridge();
+        },
+        onSaveWorkbench: async () => {
+          await saveWorkbench();
+        },
+        canSaveWorkbench: state.workbenchSource !== state.workbenchDiskSource,
+        onStatusChange: (message) => {
+          updateWorkbenchGraphStatus(message);
+        },
         onToast: (tone, message) => {
           setFlash(tone === "error" ? "error" : "success", message);
         }
@@ -3368,10 +3432,12 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
       const dirty = state.workbenchSource !== state.workbenchDiskSource;
       const preserveEditor = Boolean(options?.preserveEditor);
       const existingEditor = document.getElementById("workbench-editor");
-      const preserveStudioGraphRoot = options?.preserveStudioGraphRoot === true
-        || ((state.buildMode === "edit" || state.buildMode === "debug") && state.workbenchView === "bridge");
+      const currentWorkbenchRoot = document.getElementById("studio-graph-root");
+      const preserveStudioGraphRoot = (options?.preserveStudioGraphRoot === true
+        || ((state.buildMode === "edit" || state.buildMode === "debug") && state.workbenchView === "bridge"))
+        && isMountedStudioGraphRoot(currentWorkbenchRoot);
       const preservedStudioGraphRoot = preserveStudioGraphRoot
-        ? document.getElementById("studio-graph-root")
+        ? currentWorkbenchRoot
         : null;
       state.workbenchHasDraft = Boolean(loadDraftSource());
       workbenchMetaEl.textContent = state.selectedRunId && state.detail?.systemSource
@@ -3390,28 +3456,36 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
         t,
         escapeText
       }));
-      setInnerHtmlIfChanged(workbenchTabsEl, renderWorkbenchModeTabsHtml({
-        buildMode: state.buildMode,
-        t,
-        escapeText
-      }));
+      setInnerHtmlIfChanged(workbenchTabsEl, renderWorkbenchModeTabsHtml({ buildMode: state.buildMode, t, escapeText }));
       renderWorkbenchViewTabs();
-      setInnerHtmlIfChanged(workbenchActionsEl, renderWorkbenchActionsHtml({ dirty, t, escapeText }));
+      if (workbenchActionsEl) {
+        workbenchActionsEl.innerHTML = "";
+      }
       if (state.workbenchView === "source" && preserveEditor && existingEditor) {
         if (existingEditor.value !== state.workbenchSource) {
           existingEditor.value = state.workbenchSource || "";
         }
-      } else if (state.workbenchView === "source") {
-        workbenchBodyEl.innerHTML = renderWorkbenchModeBodyHtml({
-          buildMode: state.buildMode,
-          workbenchView: state.workbenchView,
+        const sourceActionsControlsEl = document.getElementById("workbench-source-actions-controls");
+        setInnerHtmlIfChanged(sourceActionsControlsEl, renderWorkbenchSourceActionControlsHtml({
           dirty,
-          workbenchSavedPath: state.workbenchSavedPath,
-          lastDryRunId,
           hasDraft: state.workbenchHasDraft,
-          workbenchSource: state.workbenchSource,
           t,
           escapeText
+        }));
+      } else if (state.workbenchView === "source") {
+        renderStudioBridge({
+          workbenchView: "source",
+          graphRootContentHtml: renderWorkbenchModeBodyHtml({
+            buildMode: state.buildMode,
+            workbenchView: state.workbenchView,
+            dirty,
+            workbenchSavedPath: state.workbenchSavedPath,
+            lastDryRunId,
+            hasDraft: state.workbenchHasDraft,
+            workbenchSource: state.workbenchSource,
+            t,
+            escapeText
+          })
         });
       } else if (state.workbenchView === "bridge" || state.buildMode === "debug") {
         if (state.studioBridgeLoading && !state.studioBridgeLoaded && !state.studioBridge) {
@@ -3453,15 +3527,6 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
         });
       }
       bindWorkbenchViewButtons();
-      for (const button of workbenchTabsEl.querySelectorAll("[data-build-mode]")) {
-        bindOnce(button, "click", "build-mode", () => {
-          state.buildMode = button.getAttribute("data-build-mode") || "edit";
-          if (state.buildMode !== "edit") {
-            state.workbenchView = "bridge";
-          }
-          renderWorkbench();
-        });
-      }
       const newDraftButton = document.getElementById("workbench-new-draft");
       if (newDraftButton) {
         bindOnce(newDraftButton, "click", "new-draft", () => {
@@ -3514,12 +3579,6 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
         bindOnce(validateButton, "click", "validate", async () => {
           await runWorkbenchValidation(true);
           await refreshStudioBridge();
-        });
-      }
-      const dryRunButton = document.getElementById("build-dry-run");
-      if (dryRunButton) {
-        bindOnce(dryRunButton, "click", "dry-run", async () => {
-          await prepareDryRunFromBuild();
         });
       }
       bindWorkbenchRunDraftControls();
@@ -3848,23 +3907,29 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
       if (hasProject) {
         const readinessBlockers = Array.isArray(state.projectReadiness?.blockers) ? state.projectReadiness.blockers : [];
         const validationOk = state.workbench?.validation?.ok === true;
+        const projectReadinessHtml = renderProjectReadinessPanel({ readiness: state.projectReadiness, t });
+        const recentRunsHtml = recentRuns.length
+          ? recentRuns.map((run) => '<div class="event"><div class="event-top"><span><code>' + escapeText(run.runId || "n/a") + '</code></span><span>' + escapeText(displayUiToken(run.status || "unknown", t)) + '</span></div><strong>' + escapeText(run.lastExecutedRoleId || run.finalRoleId || t("common.notAvailable", undefined, "n/a")) + '</strong><div class="hint">' + escapeText(run.startedAt ? formatTime(run.startedAt) : t("common.notAvailable", undefined, "n/a")) + '</div></div>').join("")
+          : '<div class="hint">' + escapeText(t("project.noRunsYet", undefined, "No runs recorded yet.")) + '</div>';
+        const infoItems = [
+          [t("project.currentProject", undefined, "Current project"), projectName],
+          [t("project.currentDirectory", undefined, "Current directory"), workspace.workdir || getCurrentWorkdir() || "n/a"],
+          [t("common.system", undefined, "system"), String(summary.systemId || summary.projectId || "n/a")],
+          [t("project.structure", undefined, "structure"), String(summary.roleCount ?? state.project?.roles?.roles?.length ?? 0) + " " + t("common.roles", undefined, "roles") + " · " + String(summary.flowCount ?? 0) + " " + t("common.flows", undefined, "flows")],
+          [t("project.systemPath", { path: state.workbenchSavedPath || "system.mmd" }, "system path " + (state.workbenchSavedPath || "system.mmd")), state.workbenchSavedPath || "system.mmd"]
+        ].map(([label, value]) => (
+          '<div class="project-home-info-item"><span class="project-home-info-label">' + escapeText(label) + '</span><strong class="project-home-info-value">' + escapeText(value) + "</strong></div>"
+        )).join("");
         mainHtml = [
           '<article class="card project-home-card">',
-          '<header><h3>' + escapeText(t("section.projectOverview", undefined, "Project Overview")) + '</h3></header>',
-          '<div class="body structure-list">',
-          '<div class="event"><div class="event-top"><span>' + escapeText(t("project.currentDirectory", undefined, "Current directory")) + '</span><span>' + escapeText(workspaceState) + '</span></div><strong><code>' + escapeText(workspace.workdir || getCurrentWorkdir() || "n/a") + '</code></strong><div class="hint">' + escapeText(t("project.currentDirectoryHint", undefined, "Visualizer now operates only on the current directory shown here.")) + '</div></div>',
-          '<div class="event"><div class="event-top"><span>' + escapeText(t("project.currentProject", undefined, "Current project")) + '</span><span>' + escapeText(validationOk ? t("project.validated", undefined, "validated") : t("project.needsAttention", undefined, "needs attention")) + '</span></div><strong>' + escapeText(projectName) + '</strong><div class="hint">' + escapeText(t("project.readyProjectHint", undefined, "Use Build for structure and bindings, Validate & Release for gates, and Operate for runtime inspection.")) + '</div></div>',
-          '</div>',
+          '<header><div class="card-header"><div class="header-copy"><h3>' + escapeText(t("section.projectOverview", undefined, "Project Overview")) + '</h3><div class="hint">' + escapeText(t("project.readyProjectHint", undefined, "Use Build for structure and bindings, Validate & Release for gates, and Operate for runtime inspection.")) + '</div></div></div></header>',
+          '<div class="body">',
+          '<div class="project-home-info-strip">' + infoItems + '</div>',
+          '<div class="project-home-side-note"><strong>' + escapeText(t("readiness.blockersWarningsSystem", { blockers: String(readinessBlockers.length), warnings: String(Array.isArray(state.projectReadiness?.warnings) ? state.projectReadiness.warnings.length : 0), systemId: String(state.project?.summary?.project?.systemId || state.project?.summary?.project?.projectId || "n/a") }, "blockers " + String(readinessBlockers.length) + " · warnings " + String(Array.isArray(state.projectReadiness?.warnings) ? state.projectReadiness.warnings.length : 0) + " · system " + String(state.project?.summary?.project?.systemId || state.project?.summary?.project?.projectId || "n/a"))) + '</strong><div class="hint">' + escapeText(validationOk ? t("project.readyForNextStep", undefined, "Project summary is ready for the next workflow step.") : t("release.resolveBlockers", undefined, "Resolve release blockers.")) + " · " + escapeText(workspaceState) + '</div></div>',
+          '<section class="project-home-section"><h4>' + escapeText(t("section.projectReadiness", undefined, "Project Readiness")) + '</h4><div class="structure-list">' + projectReadinessHtml + '</div></section>',
           '</article>',
           '<div class="project-home-grid">',
-          '<article class="card project-home-card"><header><h3>' + escapeText(t("section.projectSummary", undefined, "Project Summary")) + '</h3></header><div class="body"><div class="structure-list">' + renderProjectSummaryPanel({ summary: state.project?.summary?.project || {}, roles: state.project?.roles?.roles || [], warnings: state.project?.config?.modelSelectionWarnings || [], workbenchSavedPath: state.workbenchSavedPath || "system.mmd", validationOk, t }) + '</div></div></article>',
-          '<article class="card project-home-card"><header><h3>' + escapeText(t("section.projectReadiness", undefined, "Project Readiness")) + '</h3></header><div class="body"><div class="structure-list">' + renderProjectReadinessPanel({ readiness: state.projectReadiness, t }) + '</div></div></article>',
           '<article class="card project-home-card"><header><h3>' + escapeText(t("section.opsSummary", undefined, "Operations Summary")) + '</h3></header><div class="body"><div class="structure-list">' + renderOpsSummaryPanel({ opsSummary: state.opsSummary, t }) + '</div></div></article>',
-          '<article class="card project-home-card"><header><h3>' + escapeText(t("project.recentRuns", undefined, "Recent runs")) + '</h3></header><div class="body structure-list">' +
-            (recentRuns.length
-              ? recentRuns.map((run) => '<div class="event"><div class="event-top"><span><code>' + escapeText(run.runId || "n/a") + '</code></span><span>' + escapeText(displayUiToken(run.status || "unknown", t)) + '</span></div><strong>' + escapeText(run.lastExecutedRoleId || run.finalRoleId || t("common.notAvailable", undefined, "n/a")) + '</strong></div>').join("")
-              : '<div class="hint">' + escapeText(t("project.noRunsYet", undefined, "No runs recorded yet.")) + '</div>') +
-          '</div></article>',
           '</div>'
         ].join("");
         sideHtml = [
@@ -3872,9 +3937,11 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
           '<button class="button primary" type="button" data-project-action="build">' + escapeText(t("project.enterBuild", undefined, "Enter Build")) + '</button>',
           '<button class="button subtle" type="button" data-project-action="validate-release">' + escapeText(t("project.enterValidateRelease", undefined, "Validate & Release")) + '</button>',
           '<button class="button subtle" type="button" data-project-action="operate">' + escapeText(t("project.enterOperate", undefined, "Operate")) + '</button>',
+          '<div class="event"><div class="event-top"><span>' + escapeText(t("section.projectReadiness", undefined, "Project Readiness")) + '</span><span>' + escapeText(validationOk ? t("project.validated", undefined, "validated") : t("project.needsAttention", undefined, "needs attention")) + '</span></div><strong>' + escapeText(validationOk ? t("workbench.validationOk", undefined, "validation ok") : t("release.resolveBlockers", undefined, "Resolve release blockers.")) + '</strong><div class="hint">' + escapeText(state.workbenchSavedPath || "system.mmd") + '</div></div>',
           (readinessBlockers.length
             ? '<div class="event warn"><div class="event-top"><span>' + escapeText(t("common.attention", undefined, "attention")) + '</span><span>' + escapeText(String(readinessBlockers.length)) + '</span></div><strong>' + escapeText(readinessBlockers[0]?.message || t("release.resolveBlockers", undefined, "Resolve release blockers.")) + '</strong></div>'
             : '<div class="event"><div class="event-top"><span>' + escapeText(t("common.ready", undefined, "ready")) + '</span><span>' + escapeText(t("release.title", undefined, "release")) + '</span></div><strong>' + escapeText(t("project.readyForNextStep", undefined, "Project summary is ready for the next workflow step.")) + '</strong></div>') +
+          '<div class="structure-list project-home-recent-runs-inline"><div class="hint">' + escapeText(t("project.recentRuns", undefined, "Recent runs")) + '</div>' + recentRunsHtml + '</div>' +
           '</div></article>'
         ].join("");
       } else if (invalidProject) {
@@ -3964,10 +4031,7 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
             state.consoleTab = action;
             state.projectHome = false;
             if (action === "build" && state.hasProject) {
-              state.workbenchView = "bridge";
-              clearTimeout(state.studioGraphMountRetryTimer);
-              state.studioGraphMountRetryTimer = null;
-              state.studioGraphMountRetryCount = 0;
+              resetBuildEditingState();
               const refreshWorkdir = state.workspace?.workdir || "";
               void refreshStudioBridge().catch((error) => {
                 if (refreshWorkdir !== (state.workspace?.workdir || "")) {
@@ -4983,13 +5047,11 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
       });
     }
 
-    async function prepareDryRunFromBuild() {
+    async function prepareWorkbenchForDryRunSurface(options) {
       if (!state.hasProject) {
         setFlash("error", t("workspace.createOrLoadHint", undefined, "Use Project to create a project in this directory or load an existing project."));
-        return;
+        return false;
       }
-      state.buildMode = "edit";
-      state.workbenchView = "bridge";
       state.studioWorkbenchSideTab = "debug";
       state.studioSelectionDialogOpen = true;
       state.studioSelectionDialogDocked = true;
@@ -5004,13 +5066,13 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
       if (state.workbench?.validation?.ok !== true) {
         forceStudioWorkbenchSideTab("debug");
         setFlash("error", t("workbench.saveBlockedByDiagnostics", undefined, "Save blocked by Mermaid validation diagnostics."));
-        return;
+        return false;
       }
       if (state.studioBridge?.authoring || state.workbenchView === "bridge") {
         const generated = await generateMmdFromStudioBridge({ stayInMode: true });
         if (!generated) {
           forceStudioWorkbenchSideTab("debug");
-          return;
+          return false;
         }
         forceStudioWorkbenchSideTab("debug");
       }
@@ -5027,10 +5089,15 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
       state.studioSelectionDialogOpen = true;
       renderWorkbench({ preserveStudioGraphRoot: true });
       forceStudioWorkbenchSideTab("debug");
-      const input = document.getElementById("workbench-run-input");
-      if (input && typeof input.focus === "function") {
-        input.focus();
+      if (options?.focusInput) {
+        focusWorkbenchRunInput();
       }
+      return true;
+    }
+
+    async function prepareDryRunFromBuild() {
+      state.buildMode = "edit";
+      await prepareWorkbenchForDryRunSurface({ focusInput: true });
     }
 
     async function startRunFromWorkbench(args) {
@@ -5054,6 +5121,12 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
         state.consoleTab = "validate-release";
         renderConsoleTabs();
         return;
+      }
+      if (args.dryRun && state.consoleTab === "build") {
+        const ready = await prepareWorkbenchForDryRunSurface({ focusInput: false });
+        if (!ready) {
+          return;
+        }
       }
       await runAction("run:start", async () => {
         if (args.dryRun && state.consoleTab === "build") {
@@ -5379,7 +5452,7 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
         state.projectCreateError = null;
         state.projectWizardDraft = null;
         state.consoleTab = "build";
-        state.workbenchView = "bridge";
+        resetBuildEditingState();
         state.projectHome = false;
         state.hasProject = true;
         renderConsoleTabs();

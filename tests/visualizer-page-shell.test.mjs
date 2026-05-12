@@ -52,14 +52,15 @@ test("page shell keeps HTML, style, assets, and client script mounted", () => {
     assert.match(html, new RegExp(`id="${id}"`), `missing #${id}`);
   }
 
-  assert.match(html, /<div class="shell content">/);
+  assert.match(html, /<div class="shell content">[\s\S]*<aside id="sidebar" class="sidebar">/);
   assert.match(html, /<header class="top-nav">[\s\S]*id="console-tabs"/);
   assert.match(html, /class="top-nav-center"[\s\S]*id="console-tabs"[\s\S]*class="hero-utilities"/);
   assert.match(html, /<main class="main-stage">[\s\S]*id="workbench-body"/);
   assert.match(html, /<header class="top-nav">[\s\S]*id="workdir"/);
-  assert.match(html, /class="build-control-bar[\s\S]*id="workbench-tabs"[\s\S]*id="workbench-actions"[\s\S]*id="workbench-status"/);
-  assert.match(html, /<footer class="status-bar global-status">[\s\S]*id="global-status-context"[\s\S]*id="global-status-diagnostics"[\s\S]*id="workbench-view-tabs-slot"[\s\S]*id="live"/);
+  assert.match(html, /class="workbench-state-cache" hidden[\s\S]*id="workbench-title"[\s\S]*id="workbench-meta"[\s\S]*id="workbench-tabs"[\s\S]*id="workbench-actions"/);
+  assert.match(html, /<footer class="status-bar global-status">[\s\S]*id="global-status-context"[\s\S]*id="global-status-diagnostics"[\s\S]*id="workbench-status"[\s\S]*id="live"/);
   assert.match(html, /<aside id="sidebar" class="sidebar">[\s\S]*id="run-list"/);
+  assert.doesNotMatch(html, /class="brand"/);
   assert.match(html, /id="search"[^>]*aria-label="按 id、状态、角色筛选运行\.\.\."/);
   assert.match(html, /id="sidebar-toggle"[^>]*aria-controls="sidebar"[^>]*aria-expanded="false"/);
   assert.match(html, /id="console-panel-project"[^>]*role="tabpanel"[^>]*aria-labelledby="console-tab-project"/);
@@ -85,6 +86,7 @@ test("page shell styles are isolated behind a CSS renderer", () => {
   assert.match(css, /\.main-stage\s*\{/);
   assert.match(css, /\.status-bar\s*\{/);
   assert.match(css, /\.sidebar\s*\{/);
+  assert.match(css, /\.shell\.content > \.sidebar/);
   assert.match(css, /\.disclosure-summary\s*\{/);
   assert.match(css, /\.operate-graph-main,\s*\n\s*\.operate-graph-sidebar/);
   assert.match(css, /\.console-panel\[hidden\]\s*\{/);

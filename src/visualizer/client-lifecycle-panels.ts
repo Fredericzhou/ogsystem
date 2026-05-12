@@ -150,11 +150,8 @@ export function renderWorkbenchModeTabsHtml(args: {
   t: Translator;
   escapeText: (value: unknown) => string;
 }): string {
-  const { buildMode, t, escapeText } = args;
-  return [
-    '<button type="button" class="button subtle ' + (buildMode === "edit" ? "active" : "") + '" data-build-mode="edit" aria-pressed="' + escapeText(String(buildMode === "edit")) + '">' + escapeText(t("build.mode.edit", undefined, "Edit")) + '</button>',
-    '<button type="button" class="button subtle ' + (buildMode === "debug" ? "active" : "") + '" data-build-mode="debug" aria-pressed="' + escapeText(String(buildMode === "debug")) + '">' + escapeText(t("build.mode.debug", undefined, "Debug")) + '</button>'
-  ].join("");
+  void args;
+  return "";
 }
 
 export function renderWorkbenchViewTabsHtml(args: {
@@ -163,13 +160,11 @@ export function renderWorkbenchViewTabsHtml(args: {
   t: Translator;
   escapeText: (value: unknown) => string;
 }): string {
-  const { buildMode, workbenchView, t, escapeText } = args;
-  return buildMode === "edit"
-    ? [
-        '<button type="button" class="button subtle ' + (workbenchView === "bridge" ? "active" : "") + '" data-workbench-view="bridge" aria-pressed="' + escapeText(String(workbenchView === "bridge")) + '">' + escapeText(t("workbench.graph", undefined, "Graph")) + '</button>',
-        '<button type="button" class="button subtle ' + (workbenchView === "source" ? "active" : "") + '" data-workbench-view="source" aria-pressed="' + escapeText(String(workbenchView === "source")) + '">' + escapeText(t("workbench.source")) + '</button>'
-      ].join("")
-    : "";
+  const { workbenchView, t, escapeText } = args;
+  return [
+    '<button type="button" class="button subtle ' + (workbenchView === "bridge" ? "active" : "") + '" data-workbench-view="bridge" aria-pressed="' + escapeText(String(workbenchView === "bridge")) + '">' + escapeText(t("workbench.graph", undefined, "Graph")) + '</button>',
+    '<button type="button" class="button subtle ' + (workbenchView === "source" ? "active" : "") + '" data-workbench-view="source" aria-pressed="' + escapeText(String(workbenchView === "source")) + '">' + escapeText(t("workbench.source")) + '</button>'
+  ].join("");
 }
 
 export function renderWorkbenchActionsHtml(args: {
@@ -180,9 +175,23 @@ export function renderWorkbenchActionsHtml(args: {
   const { dirty, t, escapeText } = args;
   return [
     '<button class="button" id="build-validate">' + escapeText(t("action.validate", undefined, "Validate")) + '</button>',
-    '<button class="button primary" id="build-save"' + (dirty ? "" : " disabled") + '>' + escapeText(t("action.save", undefined, "Save")) + '</button>',
-    '<button class="button primary" id="build-dry-run">' + escapeText(t("studio.dryRun", undefined, "Dry run")) + '</button>'
+    '<button class="button primary" id="build-save"' + (dirty ? "" : " disabled") + '>' + escapeText(t("action.save", undefined, "Save")) + '</button>'
   ].join("");
+}
+
+export function renderWorkbenchSourceActionControlsHtml(args: {
+  dirty: boolean;
+  hasDraft: boolean;
+  t: Translator;
+  escapeText: (value: unknown) => string;
+}): string {
+  const { dirty, hasDraft, t, escapeText } = args;
+  return [
+    renderWorkbenchActionsHtml({ dirty, t, escapeText }),
+    '<button class="button subtle" id="workbench-new-draft">' + escapeText(t("action.newDraft")) + '</button>',
+    hasDraft ? '<button class="button subtle" id="workbench-recover-draft">' + escapeText(t("action.recoverDraft")) + '</button>' : "",
+    dirty ? '<button class="button subtle" id="workbench-revert">' + escapeText(t("action.revertToDisk")) + '</button>' : ""
+  ].filter(Boolean).join("");
 }
 
 export function renderWorkbenchModeBodyHtml(args: {
@@ -209,15 +218,15 @@ export function renderWorkbenchModeBodyHtml(args: {
   } = args;
   if (workbenchView === "source") {
     return [
+      '<div class="studio-source-panel">',
       '<div class="workbench-source-actions">',
       '<div class="hint">' + escapeText(t("workbench.sourceActionsHint", undefined, "Draft actions only affect the current graph source until you save.")) + '</div>',
-      '<div class="toolbar-group">',
-      '<button class="button subtle" id="workbench-new-draft">' + escapeText(t("action.newDraft")) + '</button>',
-      hasDraft ? '<button class="button subtle" id="workbench-recover-draft">' + escapeText(t("action.recoverDraft")) + '</button>' : "",
-      dirty ? '<button class="button subtle" id="workbench-revert">' + escapeText(t("action.revertToDisk")) + '</button>' : "",
+      '<div id="workbench-source-actions-controls" class="toolbar-group">',
+      renderWorkbenchSourceActionControlsHtml({ dirty, hasDraft, t, escapeText }),
       '</div>',
       '</div>',
-      '<textarea id="workbench-editor" class="editor" spellcheck="false" aria-label="' + escapeText(t("workbench.editorAriaLabel", undefined, "Graph source editor")) + '">' + escapeText(workbenchSource || "") + '</textarea>'
+      '<textarea id="workbench-editor" class="editor" spellcheck="false" aria-label="' + escapeText(t("workbench.editorAriaLabel", undefined, "Graph source editor")) + '">' + escapeText(workbenchSource || "") + '</textarea>',
+      '</div>'
     ].join("");
   }
   return "";

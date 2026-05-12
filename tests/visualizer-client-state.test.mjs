@@ -626,11 +626,9 @@ test("client lifecycle panel renderers cover Workbench controls and modes", () =
   assert.match(statusHtml, /workbench\.draftCached/);
 
   const modeTabsHtml = renderWorkbenchModeTabsHtml({ buildMode: "dry-run", t, escapeText });
-  assert.match(modeTabsHtml, /data-build-mode="edit"/);
-  assert.match(modeTabsHtml, /data-build-mode="debug"/);
-  assert.doesNotMatch(modeTabsHtml, /data-build-mode="dry-run"/);
+  assert.equal(modeTabsHtml, "");
   assert.match(renderWorkbenchViewTabsHtml({ buildMode: "edit", workbenchView: "source", t, escapeText }), /data-workbench-view="source"/);
-  assert.equal(renderWorkbenchViewTabsHtml({ buildMode: "debug", workbenchView: "source", t, escapeText }), "");
+  assert.match(renderWorkbenchViewTabsHtml({ buildMode: "debug", workbenchView: "source", t, escapeText }), /data-workbench-view="source"/);
   assert.match(renderWorkbenchActionsHtml({ dirty: false, t, escapeText }), /id="build-save" disabled/);
   assert.equal(renderWorkbenchModeBodyHtml({
     buildMode: "debug",
@@ -657,6 +655,7 @@ test("client lifecycle panel renderers cover Workbench controls and modes", () =
   });
   assert.match(sourceHtml, /id="workbench-recover-draft"/);
   assert.match(sourceHtml, /id="workbench-revert"/);
+  assert.match(sourceHtml, /id="workbench-source-actions-controls"/);
   assert.match(sourceHtml, /flowchart TD/);
 });
 

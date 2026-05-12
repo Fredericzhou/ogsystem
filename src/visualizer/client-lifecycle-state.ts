@@ -62,6 +62,7 @@ export function createBuildStateSlice() {
     studioSelectionCommandKind: "",
     studioSelectionDismissCommandFormRequest: 0,
     studioBridgeLastDryRunId: "",
+    studioGraphStatusText: "",
     studioGraphRootElement: null,
     studioGraphMountRetryTimer: null,
     studioGraphMountRetryCount: 0,

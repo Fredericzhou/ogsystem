@@ -127,14 +127,13 @@ test("Studio Bridge renders and edits through the real graph workspace", async (
     await page.getByRole("tab", { name: "Build" }).click();
     await expect(page.locator("#workbench-status")).toContainText("validation ok");
     const globalStatusBar = page.locator("footer.status-bar.global-status");
-    const workbenchViewSlot = globalStatusBar.locator("#workbench-view-tabs-slot");
+    const workbenchViewSlot = globalStatusBar.locator("#global-status-context");
     const bridgeViewButton = workbenchViewSlot.locator('[data-workbench-view="bridge"]');
     const sourceViewButton = workbenchViewSlot.locator('[data-workbench-view="source"]');
     await expect(globalStatusBar).toBeVisible();
     await expect(workbenchViewSlot).toBeVisible();
     await expect(bridgeViewButton).toBeVisible();
     await expect(sourceViewButton).toBeVisible();
-    await expect(page.locator("#console-panel-build header #workbench-view-tabs-slot")).toHaveCount(0);
     await bridgeViewButton.click();
 
     await expect(page.locator("body")).not.toHaveClass(/show-run-sidebar/);
@@ -164,13 +163,15 @@ test("Studio Bridge renders and edits through the real graph workspace", async (
     await expect(page.locator('#studio-graph-root [data-studio-graph-action="fullscreen"]')).toBeVisible();
     await expect(page.locator('#studio-graph-root [data-studio-graph-action="edit"]')).toBeVisible();
     await expect(page.locator('#studio-graph-root [data-studio-graph-action="chat-generate"]')).toBeVisible();
+    await expect(page.locator('#studio-graph-root [data-studio-graph-action="validate"]')).toBeVisible();
+    await expect(page.locator('#studio-graph-root [data-studio-graph-action="save"]')).toBeVisible();
     await expect(page.locator("#studio-bridge-generate")).toHaveCount(0);
     await expect(page.locator("[data-studio-bridge-fullscreen]")).toHaveCount(0);
     await expect(page.locator("#studio-bridge-save")).toHaveCount(0);
-    await expect(page.locator("#build-validate")).toBeVisible();
     await expect(page.locator("#build-generate-mermaid")).toHaveCount(0);
-    await expect(page.locator("#build-save")).toBeVisible();
-    await expect(page.locator("#build-dry-run")).toBeVisible();
+    await expect(page.locator("#build-validate")).toHaveCount(0);
+    await expect(page.locator("#build-save")).toHaveCount(0);
+    await expect(page.locator("#build-dry-run")).toHaveCount(0);
     const debugPanel = page.locator('[data-studio-selection-panel="debug"]');
     await expect(page.locator('[data-studio-side-tab="debug"]')).toBeVisible();
     await page.locator('[data-studio-side-tab="debug"]').click();
@@ -206,7 +207,7 @@ test("Studio Bridge renders and edits through the real graph workspace", async (
     await expect(page.locator("#studio-graph-root")).toBeVisible();
     await expect(page.locator("[data-studio-selection-dialog]")).toContainText("demo-analyst");
 
-    await expect(page.locator("#build-validate")).toBeVisible();
+    await expect(page.locator('#studio-graph-root [data-studio-graph-action="validate"]')).toBeVisible();
     await expect(page.locator(".toolbar-group").filter({ hasText: "validation ok" }).first()).toBeVisible();
 
     const addRoleButton = page.locator('#studio-graph-root [data-studio-graph-action="add-role"]');
@@ -424,8 +425,7 @@ test("Studio Bridge renders and edits through the real graph workspace", async (
 
     const workbenchBody = page.locator("#workbench-body");
     await page.locator('[data-workbench-view="bridge"]').click();
-    await page.locator("#build-dry-run").click();
-    await expect(page.locator("#action-form-section")).toBeHidden();
+    await page.locator('[data-studio-side-tab="debug"]').click();
     await expect(debugPanel.locator("#workbench-run-input")).toBeVisible();
     await expect(debugPanel.locator("#workbench-run-runtime-path")).toBeVisible();
     await expect(debugPanel.locator("#workbench-run-user-profile-path")).toBeVisible();
@@ -438,7 +438,6 @@ test("Studio Bridge renders and edits through the real graph workspace", async (
     const resultPanel = page.locator('[data-studio-selection-panel="result"]');
     await expect(resultPanel.locator("#studio-debug-open-operate")).toBeVisible();
     await expect(page.locator("#console-panel-build")).toBeVisible();
-    await expect(page.locator('[data-build-mode="debug"]')).toHaveAttribute("aria-pressed", "true");
     await expect(page.locator("#action-form-section")).toBeHidden();
     await expect(page.locator("#studio-graph-root")).toBeVisible();
     await expect(page.locator('[data-studio-side-tab="result"]')).toHaveAttribute("aria-pressed", "true");
@@ -458,6 +457,8 @@ test("Studio Bridge renders and edits through the real graph workspace", async (
     await expect(page.locator("#console-panel-build")).toBeVisible();
     await expect(page.locator("#studio-graph-root")).toBeVisible();
     await expect(page.locator('[data-workbench-view="bridge"]')).toHaveAttribute("aria-pressed", "true");
+    await expect(page.locator('#studio-graph-root [data-studio-graph-action="add-role"]')).toBeVisible();
+    await expect(page.locator('#studio-graph-root [data-studio-graph-action="undo"]')).toBeVisible();
     await expectDockedSelectionAligned(page);
 
     const collapseButton = page.locator('[data-studio-selection-collapse]').first();
@@ -504,8 +505,8 @@ test("empty workspace creates a project visually before graph editing", async ({
     await page.locator('#console-tabs [data-console-tab="build"]').click();
     await waitForStudioCell(page, "demo-analyst");
     await expect(page.locator("#workbench-body")).toContainText("Chat to MMD");
-    await expect(page.locator("#build-save")).toBeVisible();
-    await expect(page.locator("#build-dry-run")).toBeVisible();
+    await expect(page.locator('#studio-graph-root [data-studio-graph-action="save"]')).toBeVisible();
+    await expect(page.locator('#studio-graph-root [data-studio-graph-action="validate"]')).toBeVisible();
     await expect(page.getByText(/\bX6\b/)).toHaveCount(0);
   } finally {
     await new Promise<void>((resolve) => started.server.close(() => resolve()));

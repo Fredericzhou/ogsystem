@@ -42,6 +42,8 @@ type StudioGraphLabelKey =
   | "deleteSelection"
   | "undo"
   | "redo"
+  | "validateWorkbench"
+  | "saveWorkbench"
   | "ready"
   | "graphUnavailable"
   | "graphReady"
@@ -88,7 +90,11 @@ export type StudioGraphBridgeOptions = {
   onChatGenerate?: () => void | Promise<void>;
   historyEvent?: { id?: number; kind?: "push-before-replace"; label?: string } | null;
   onToggleFullscreen?: () => void;
+  onValidateWorkbench?: () => void | Promise<void>;
+  onSaveWorkbench?: () => void | Promise<void>;
+  canSaveWorkbench?: boolean;
   onToast?: (tone: "error" | "success" | "info", message: string) => void;
+  onStatusChange?: (message: string) => void;
   labels?: StudioGraphLabels;
   commandFormLabels?: StudioCommandFormLabels;
   commandFormHost?: HTMLElement | null;
@@ -173,9 +179,10 @@ export class StudioGraphIsland {
       this.toolbarButton("delete", "deleteSelection", "⌫"),
       this.toolbarButton("undo", "undo", "↶"),
       this.toolbarButton("redo", "redo", "↷"),
+      this.toolbarButton("validate", "validateWorkbench", "✓"),
+      this.toolbarButton("save", "saveWorkbench", "Sv"),
       '</div>',
       '</div>',
-      '<span class="studio-graph-status" data-studio-graph-status>' + this.escapeHtml(this.label("ready")) + '</span>',
       '</div>',
       '<div class="studio-graph-stage">',
       '<div class="studio-graph-empty" data-studio-graph-empty hidden></div>',
@@ -340,6 +347,8 @@ export class StudioGraphIsland {
       if (action === "reset-view") void this.resetViewAndSync();
       if (action === "fullscreen") this.options.onToggleFullscreen?.();
       if (action === "chat-generate") void this.options.onChatGenerate?.();
+      if (action === "validate") void this.options.onValidateWorkbench?.();
+      if (action === "save") void this.options.onSaveWorkbench?.();
       if (this.isReadOnly()) return;
       if (action === "layout") void this.autoLayout();
       if (action === "undo") void this.semanticUndo();
@@ -881,8 +890,7 @@ export class StudioGraphIsland {
   }
 
   private setStatus(text: string): void {
-    const status = this.root.querySelector<HTMLElement>("[data-studio-graph-status]");
-    if (status) status.textContent = text;
+    this.options.onStatusChange?.(text);
   }
 
   private setBusy(busy: boolean): void {
@@ -1001,7 +1009,7 @@ export class StudioGraphIsland {
       generate.hidden = readOnly;
       generate.disabled = this.busy || readOnly;
     }
-    for (const action of ["layout", "add-role", "add-edge", "edit", "delete"]) {
+    for (const action of ["layout", "add-role", "add-edge", "edit", "delete", "validate", "save"]) {
       const button = this.toolbar.querySelector<HTMLButtonElement>('[data-studio-graph-action="' + action + '"]');
       if (button) button.disabled = this.busy || readOnly;
     }
@@ -1013,8 +1021,10 @@ export class StudioGraphIsland {
     if (deleteButton) deleteButton.disabled = this.busy || readOnly || !selectedEditable;
     const undo = this.toolbar.querySelector<HTMLButtonElement>('[data-studio-graph-action="undo"]');
     const redo = this.toolbar.querySelector<HTMLButtonElement>('[data-studio-graph-action="redo"]');
+    const save = this.toolbar.querySelector<HTMLButtonElement>('[data-studio-graph-action="save"]');
     if (undo) undo.disabled = this.busy || readOnly || this.activeUndoStack().length === 0;
     if (redo) redo.disabled = this.busy || readOnly || this.activeRedoStack().length === 0;
+    if (save) save.disabled = this.busy || readOnly || this.options.canSaveWorkbench !== true;
   }
 
   private isReadOnly(): boolean {

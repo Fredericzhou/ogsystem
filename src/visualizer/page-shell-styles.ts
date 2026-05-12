@@ -39,8 +39,6 @@ export function renderPageShellStyles(): string {
       font: 500 14px/1.6 "IBM Plex Mono", "SFMono-Regular", ui-monospace, monospace;
     }
     .app {
-      display: grid;
-      grid-template-columns: minmax(0, 1fr);
       min-height: 100vh;
     }
     .sidebar-overlay {
@@ -67,27 +65,8 @@ export function renderPageShellStyles(): string {
       overflow-y: auto;
       z-index: 30;
     }
-    body.show-run-sidebar .app {
-      grid-template-columns: 288px minmax(0, 1fr);
-    }
     body.show-run-sidebar .sidebar {
       display: block;
-    }
-    .brand {
-      display: flex;
-      align-items: baseline;
-      justify-content: space-between;
-      gap: 12px;
-      margin-bottom: 12px;
-    }
-    .brand h1 {
-      margin: 0;
-      font-size: 17px;
-      letter-spacing: 0.02em;
-    }
-    .brand span {
-      color: var(--muted);
-      font-size: 12px;
     }
     .pill {
       display: flex;
@@ -165,7 +144,7 @@ export function renderPageShellStyles(): string {
     .run-list {
       display: grid;
       gap: 8px;
-      max-height: calc(100vh - 136px);
+      max-height: calc(100dvh - 70px);
       overflow: auto;
       padding-right: 4px;
       min-width: 0;
@@ -227,10 +206,25 @@ export function renderPageShellStyles(): string {
       min-width: 0;
     }
     .shell {
+      display: grid;
+      grid-template-columns: minmax(0, 0) minmax(0, 1fr);
       grid-template-rows: auto minmax(0, 1fr) auto;
       min-height: 100dvh;
       height: 100dvh;
       overflow: hidden;
+    }
+    .shell.content > .sidebar {
+      grid-column: 1;
+      grid-row: 1 / 4;
+    }
+    .shell.content > .top-nav,
+    .shell.content > .main-stage,
+    .shell.content > .status-bar {
+      grid-column: 2;
+      min-width: 0;
+    }
+    body.show-run-sidebar .shell.content {
+      grid-template-columns: 288px minmax(0, 1fr);
     }
     .flash {
       padding: 9px 12px;
@@ -341,7 +335,7 @@ export function renderPageShellStyles(): string {
       min-height: 100%;
       height: 100%;
       overflow: auto;
-      padding: 0 0 8px;
+      padding: 0;
       min-width: 0;
     }
     .status-bar {
@@ -518,6 +512,7 @@ export function renderPageShellStyles(): string {
     }
     .global-status-primary {
       flex: 1 1 auto;
+      flex-wrap: wrap;
     }
     .global-status-actions {
       flex: 0 1 auto;
@@ -527,12 +522,30 @@ export function renderPageShellStyles(): string {
     .global-status .pill {
       max-width: min(36vw, 420px);
     }
+    .global-status-context {
+      min-width: 0;
+    }
+    .global-status-context.mode-toggle {
+      display: flex;
+      align-items: center;
+      padding: 0;
+      border: 0;
+      background: transparent;
+      max-width: none;
+      overflow: visible;
+    }
+    .global-status-context-copy {
+      display: block;
+      min-width: 0;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+    .global-status-context .segmented {
+      max-width: 100%;
+    }
     .workbench-view-tabs-compat {
       display: none;
-    }
-    .global-status-workbench-slot .workbench-view-tabs {
-      padding-left: 0;
-      background: transparent;
     }
     .global-status-diagnostics {
       flex: 1 1 auto;
@@ -543,6 +556,16 @@ export function renderPageShellStyles(): string {
     }
     .global-status-diagnostics.warn {
       color: #fcd34d;
+    }
+    .global-status-workbench-status {
+      flex: 1 1 auto;
+      justify-content: flex-start;
+    }
+    .global-status-workbench-status[hidden] {
+      display: none;
+    }
+    .global-status-workbench-status .pill {
+      max-width: min(100%, 240px);
     }
     .grid {
       display: grid;
@@ -717,6 +740,8 @@ export function renderPageShellStyles(): string {
     .editor-shell {
       display: grid;
       gap: 8px;
+      min-height: 0;
+      height: 100%;
     }
     .workbench-source-actions {
       display: flex;
@@ -763,7 +788,7 @@ export function renderPageShellStyles(): string {
     .build-nav-stack,
     .build-command-stack {
       display: grid;
-      gap: 6px;
+      gap: 4px;
       min-width: 0;
     }
     .build-nav-stack {
@@ -775,7 +800,9 @@ export function renderPageShellStyles(): string {
     }
     .build-ide-body {
       height: 100%;
-      min-height: clamp(520px, calc(100dvh - 236px), 960px);
+      min-height: 0;
+      align-content: stretch;
+      grid-auto-rows: minmax(0, 1fr);
       overflow: hidden;
     }
     .build-control-status {
@@ -801,8 +828,7 @@ export function renderPageShellStyles(): string {
       max-width: 16ch;
     }
     .build-control-bar #workbench-tabs,
-    .build-control-bar #workbench-actions,
-    .build-control-bar #workbench-view-tabs-slot {
+    .build-control-bar #workbench-actions {
       min-width: 0;
     }
     .build-control-primary #workbench-actions {
@@ -811,21 +837,13 @@ export function renderPageShellStyles(): string {
     .build-mode-tabs {
       justify-self: start;
     }
-    .workbench-view-tabs-slot {
-      min-width: 0;
-      min-height: 0;
-    }
     .workbench-view-tabs {
       justify-content: flex-start;
       margin-bottom: 0;
-      padding-left: 4px;
-      border-style: solid;
-      background: transparent;
     }
     .build-submenu-tabs {
       margin-left: 10px;
     }
-    .workbench-view-tabs-slot:empty,
     .build-submenu-tabs:empty {
       display: none;
     }
@@ -904,17 +922,22 @@ export function renderPageShellStyles(): string {
       min-height: 0;
     }
     #console-panel-build {
+      min-height: 0;
       height: 100%;
       align-content: stretch;
     }
     #console-panel-build > .card {
+      min-height: 0;
       height: 100%;
       display: grid;
       grid-template-rows: auto minmax(0, 1fr);
     }
     #console-panel-build > .card > .body {
+      min-height: 0;
       height: 100%;
+      display: grid;
       overflow: hidden;
+      padding: 0;
     }
     .editor {
       width: 100%;
@@ -941,22 +964,109 @@ export function renderPageShellStyles(): string {
     }
     .project-home-layout {
       display: grid;
-      grid-template-columns: minmax(0, 2fr) minmax(280px, 1fr);
-      gap: 12px;
+      grid-template-columns: minmax(0, 1fr) minmax(220px, 0.56fr);
+      gap: 10px;
       align-items: start;
       min-width: 0;
     }
     .project-home-main,
     .project-side-panel {
       display: grid;
-      gap: 12px;
+      gap: 10px;
       min-width: 0;
     }
     .project-home-grid {
       display: grid;
       grid-template-columns: repeat(2, minmax(0, 1fr));
-      gap: 12px;
+      gap: 10px;
       min-width: 0;
+    }
+    .project-home-overview-grid {
+      display: grid;
+      grid-template-columns: minmax(260px, 0.92fr) minmax(0, 1.25fr);
+      gap: 10px;
+      min-width: 0;
+      align-items: start;
+    }
+    .project-home-overview-sections {
+      display: grid;
+      gap: 8px;
+      min-width: 0;
+    }
+    .project-home-info-strip {
+      display: grid;
+      grid-template-columns: repeat(5, minmax(0, 1fr));
+      gap: 8px;
+      min-width: 0;
+    }
+    .project-home-info-item {
+      display: grid;
+      gap: 3px;
+      min-width: 0;
+      padding: 9px 10px;
+      border-radius: 10px;
+      border: 1px solid var(--border);
+      background:
+        linear-gradient(180deg, rgba(56, 189, 248, 0.06), rgba(56, 189, 248, 0.02)),
+        rgba(255, 255, 255, 0.02);
+    }
+    .project-home-info-label {
+      color: var(--muted);
+      font-size: 11px;
+      letter-spacing: 0.02em;
+      text-transform: uppercase;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    .project-home-info-value {
+      min-width: 0;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+      font-size: 13px;
+      color: #f8fbff;
+    }
+    .project-home-section {
+      display: grid;
+      gap: 7px;
+      min-width: 0;
+      padding: 8px;
+      border-radius: 10px;
+      border: 1px solid var(--border);
+      background: rgba(255, 255, 255, 0.025);
+    }
+    .project-home-section h4 {
+      margin: 0;
+      color: #dbeafe;
+      font-size: 12px;
+      letter-spacing: 0.02em;
+      text-transform: uppercase;
+    }
+    .project-home-section .structure-list {
+      gap: 6px;
+    }
+    .project-home-side-note {
+      display: grid;
+      gap: 4px;
+      padding: 8px;
+      border-radius: 10px;
+      border: 1px solid rgba(56, 189, 248, 0.2);
+      background: rgba(56, 189, 248, 0.06);
+    }
+    .project-home-recent-runs-inline {
+      gap: 6px;
+      padding-top: 2px;
+      border-top: 1px solid rgba(148, 163, 184, 0.12);
+    }
+    .project-home-recent-runs-inline > .hint {
+      margin-top: 2px;
+    }
+    .project-home-card .event,
+    .project-home-section .event,
+    .project-home-side-note .event {
+      padding: 8px 9px;
+      gap: 4px;
     }
     .project-home-card .body {
       min-width: 0;
@@ -1076,6 +1186,26 @@ export function renderPageShellStyles(): string {
       grid-column: 1 / 2;
       grid-row: 2;
       align-self: stretch;
+    }
+    .studio-source-root {
+      display: grid;
+      min-height: 0;
+      height: 100%;
+    }
+    .studio-source-panel {
+      display: grid;
+      grid-template-rows: auto minmax(0, 1fr);
+      gap: 8px;
+      min-height: 0;
+      height: 100%;
+      padding: 10px;
+      border: 1px solid rgba(148, 163, 184, 0.18);
+      background: linear-gradient(180deg, rgba(8, 13, 26, 0.94), rgba(15, 23, 42, 0.88));
+    }
+    .studio-source-panel .editor {
+      min-height: 0;
+      height: 100%;
+      resize: none;
     }
     .studio-canvas-shell.has-docked-selection .studio-graph-root {
       grid-column: 1 / 2;
@@ -1307,12 +1437,12 @@ export function renderPageShellStyles(): string {
     }
     .release-checklist {
       display: grid;
-      gap: 12px;
+      gap: 8px;
       min-width: 0;
     }
     .release-group {
       display: grid;
-      gap: 8px;
+      gap: 6px;
       min-width: 0;
     }
     .release-group h4 {
@@ -1322,9 +1452,23 @@ export function renderPageShellStyles(): string {
       letter-spacing: 0.02em;
       text-transform: uppercase;
     }
+    .release-checklist .event,
+    .release-checklist .compact-list-item {
+      padding: 8px 9px;
+    }
+    .release-checklist .disclosure-summary {
+      padding: 8px 9px;
+    }
+    .release-checklist .disclosure-hint,
+    .release-checklist .disclosure-body,
+    .release-checklist .compact-list {
+      padding-left: 9px;
+      padding-right: 9px;
+      padding-bottom: 9px;
+    }
     .debug-graph-body {
       display: grid;
-      grid-template-columns: minmax(0, 1.4fr) minmax(320px, 0.72fr);
+      grid-template-columns: minmax(0, 1.3fr) minmax(360px, 0.82fr);
       align-items: start;
       gap: 10px;
       min-width: 0;
@@ -1355,6 +1499,69 @@ export function renderPageShellStyles(): string {
       grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
       gap: 8px;
       min-width: 0;
+    }
+    .run-role-matrix {
+      display: grid;
+      gap: 0;
+      min-width: 0;
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      overflow: hidden;
+      background: rgba(4, 8, 16, 0.42);
+    }
+    .run-role-matrix-head,
+    .run-role-matrix-row {
+      display: grid;
+      grid-template-columns: minmax(120px, 0.78fr) minmax(120px, 0.72fr) minmax(0, 1.15fr) minmax(0, 1.15fr);
+      min-width: 0;
+    }
+    .run-role-matrix-head {
+      background: rgba(255, 255, 255, 0.04);
+      color: #dbeafe;
+      font-size: 11px;
+      letter-spacing: 0.04em;
+      text-transform: uppercase;
+    }
+    .run-role-matrix-row + .run-role-matrix-row {
+      border-top: 1px solid var(--border);
+    }
+    .run-role-cell {
+      display: grid;
+      gap: 6px;
+      min-width: 0;
+      padding: 10px;
+      border-right: 1px solid rgba(148, 163, 184, 0.12);
+      align-content: start;
+    }
+    .run-role-matrix-head .run-role-cell {
+      padding-top: 8px;
+      padding-bottom: 8px;
+    }
+    .run-role-matrix-head .run-role-cell:last-child,
+    .run-role-matrix-row .run-role-cell:last-child {
+      border-right: 0;
+    }
+    .run-role-cell strong,
+    .run-role-cell code {
+      min-width: 0;
+      overflow-wrap: anywhere;
+    }
+    .run-role-cell-summary {
+      color: var(--text);
+      font-size: 12px;
+      line-height: 1.45;
+      overflow-wrap: anywhere;
+    }
+    .run-role-cell .hint {
+      font-size: 11px;
+    }
+    .run-role-cell details {
+      margin-top: 2px;
+    }
+    .run-role-cell summary {
+      cursor: pointer;
+      color: var(--muted);
+      font-size: 11px;
     }
     .state-panel {
       display: grid;
@@ -1663,8 +1870,8 @@ export function renderPageShellStyles(): string {
       display: none;
     }
     @media (max-width: 1180px) {
-      body.show-run-sidebar .app,
-      .app { grid-template-columns: 1fr; }
+      body.show-run-sidebar .shell.content,
+      .shell.content { grid-template-columns: 1fr; }
       .sidebar {
         display: block;
         position: fixed;
@@ -1756,8 +1963,16 @@ export function renderPageShellStyles(): string {
         display: inline-flex;
       }
       .project-home-layout,
-      .project-home-grid {
+      .project-home-grid,
+      .project-home-overview-grid {
         grid-template-columns: 1fr;
+      }
+      .project-home-info-strip {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+      }
+      .run-role-matrix-head,
+      .run-role-matrix-row {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
       }
       .global-status {
         flex-wrap: wrap;
@@ -1784,6 +1999,18 @@ export function renderPageShellStyles(): string {
       .workbench-source-actions > *,
       .row > * {
         min-width: 0;
+      }
+      .run-role-matrix-head {
+        display: none;
+      }
+      .run-role-matrix-row {
+        grid-template-columns: 1fr;
+      }
+      .run-role-cell {
+        border-right: 0;
+      }
+      .run-role-cell + .run-role-cell {
+        border-top: 1px solid rgba(148, 163, 184, 0.12);
       }
       .button {
         width: 100%;
@@ -1816,6 +2043,9 @@ export function renderPageShellStyles(): string {
       }
       .studio-graph-root {
         min-height: clamp(430px, 68vh, 760px);
+      }
+      .project-home-info-strip {
+        grid-template-columns: 1fr;
       }
     }
     @media (max-width: 768px) {
