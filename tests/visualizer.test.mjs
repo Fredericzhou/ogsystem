@@ -1000,8 +1000,10 @@ test("visualizer server serves run list, details, and live stream", async (t) =>
     const graph = await graphResponse.json();
     assert.match(graph.systemSource, /flowchart TD/);
     assert.equal(graph.simulation.isSimulation, true);
-    assert.equal(graph.graph.nodes[0].roleId, "alpha");
-    assert.equal(graph.graph.edges[0].event, "DONE");
+    assert.equal(graph.graph.mode, "run");
+    assert.equal(graph.authoring.system.entryRoleId, "alpha");
+    assert.equal(graph.graph.nodes.some((node) => node.roleId === "alpha" && node.kind === "role"), true);
+    assert.equal(graph.graph.edges.some((edge) => edge.eventType === "DONE"), true);
 
     const engineLogsResponse = await fetch(`${url}/api/v1/runs/${runId}/logs?engine=true`);
     assert.equal(engineLogsResponse.status, 200);

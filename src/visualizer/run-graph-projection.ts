@@ -3,21 +3,18 @@ import { resolve } from "node:path";
 
 import { inspectRun, resolveRunDir } from "../runtime/project-lifecycle.js";
 import { parseSystemFromMermaidSource } from "../runtime/parse-mermaid.js";
-import { isRuntimeOnlyErrorEvent } from "../runtime/error-flow-utils.js";
 import {
-  buildGraphNodeStatus,
-  countBranches,
-  findLastErrorCode,
-  findLastSelectedEvent,
-  findLatestFailureForRole
-} from "./graph-runtime-signals.js";
+  importSystemToAuthoring,
+  loadStudioAuthoringDraft,
+  type StudioAuthoringDocument
+} from "./studio-authoring.js";
+import { buildGraphViewModel } from "./graph-view-model.js";
 import {
   asBoolean,
-  asNumber,
   asRecord,
   asString
 } from "./json-guards.js";
-import type { GraphState, SystemDefinition } from "../runtime/types.js";
+import type { GraphState } from "../runtime/types.js";
 
 type JsonRecord = Record<string, unknown>;
 
@@ -65,109 +62,70 @@ function getRunSimulation(detail: JsonRecord): {
   };
 }
 
-function buildRunGraphView(args: {
-  system: SystemDefinition;
-  state: GraphState | undefined;
-}): Record<string, unknown> {
-  const state = args.state;
-  const branchRecords = state?.branchRecords ?? {};
-  const pendingReviewsById = state?.pendingReviewsById ?? {};
-  const nodes = args.system.roleIds.map((roleId) => {
-    const activeBranchCount = countBranches(branchRecords, roleId, "active");
-    const completedBranchCount = countBranches(branchRecords, roleId, "completed");
-    const waitingReviewCount = countBranches(branchRecords, roleId, "waiting_review");
-    const pendingReviewCount = Object.values(pendingReviewsById).filter(
-      (review) => review.roleId === roleId && (review.status === "pending" || review.status === "paused")
-    ).length;
-    const lastErrorCode = state ? findLastErrorCode({ state, roleId }) : undefined;
-    const lastFailure = state ? findLatestFailureForRole({ state, roleId }) : undefined;
-    const expectedSources = args.system.graph?.joinSourcesByRoleId[roleId] ?? [];
-    const readySources = state
-      ? Array.from(
-          new Set(
-            Object.values(branchRecords)
-              .filter((branch) => branch.roleId === roleId && typeof branch.activatedByRoleId === "string")
-              .map((branch) => branch.activatedByRoleId)
-              .filter((value): value is string => typeof value === "string")
-          )
-        ).sort((left, right) => left.localeCompare(right))
-      : [];
-    return {
-      roleId,
-      nodeType:
-        args.system.graph?.joinModeByRoleId[roleId] !== undefined
-          ? "join"
-          : args.system.graph?.routingModeByRoleId[roleId] !== undefined
-            ? "router"
-            : "role",
-      bindingKind: args.system.executionBinding[roleId]
-        ? "profile"
-        : args.system.modelBinding[roleId]
-          ? "model"
-          : "noop",
-      status: state
-        ? buildGraphNodeStatus({
-            state,
-            roleId,
-            activeBranchCount,
-            waitingReviewCount,
-            completedBranchCount,
-            lastErrorCode
-          })
-        : "idle",
-      activeBranchCount,
-      completedBranchCount,
-      waitingReviewCount,
-      pendingReviewCount,
-      loopIteration: state?.loopIterations[roleId] ?? 0,
-      lastSelectedEvent: state ? findLastSelectedEvent({ state, roleId }) : undefined,
-      lastErrorCode,
-      routingMode: args.system.graph?.routingModeByRoleId[roleId],
-      joinMode: args.system.graph?.joinModeByRoleId[roleId],
-      joinSources: expectedSources,
-      expectedSources,
-      readySources,
-      missingSources: expectedSources.filter((sourceRoleId) => !readySources.includes(sourceRoleId)),
-      joinWaitingSummary:
-        expectedSources.length > 0
-          ? {
-              expectedCount: expectedSources.length,
-              readyCount: readySources.length,
-              missingCount: expectedSources.filter((sourceRoleId) => !readySources.includes(sourceRoleId)).length
-            }
-          : null,
-      joinMin: args.system.graph?.joinMinByRoleId[roleId],
-      loopMax: args.system.graph?.loopMaxByRoleId[roleId],
-      contextFields: Object.keys(args.system.graph?.contextMapByRoleId[roleId] ?? {}),
-      review: args.system.graph?.reviewByRoleId?.[roleId],
-      lastFailure
-    };
-  });
+function isAuthoringDocument(value: unknown): value is StudioAuthoringDocument {
+  const record = asRecord(value);
+  return record?.version === 1
+    && typeof record.project === "object"
+    && record.project !== null
+    && typeof record.system === "object"
+    && record.system !== null
+    && typeof record.roles === "object"
+    && record.roles !== null
+    && typeof record.flows === "object"
+    && record.flows !== null
+    && typeof record.layout === "object"
+    && record.layout !== null;
+}
 
-  const edges = args.system.flows.map((flow) => ({
-    sourceRoleId: flow.fromRoleId,
-    targetRoleId: flow.toRoleId,
-    event: flow.eventType,
-    isErrorFlow: isRuntimeOnlyErrorEvent(flow.eventType),
-    recentlyActivated:
-      state === undefined
-        ? false
-        : Object.values(branchRecords).some(
-            (branch) =>
-              branch.roleId === flow.toRoleId &&
-              branch.activatedByRoleId === flow.fromRoleId &&
-              branch.activatedByEvent === flow.eventType
-          )
-  }));
+function flowSemanticKey(flow: {
+  fromRoleId: string;
+  toRoleId: string;
+  eventType: string;
+}): string {
+  return `${flow.fromRoleId}:${flow.eventType}:${flow.toRoleId}`;
+}
 
+function overlayAuthoringDraftLayout(args: {
+  base: StudioAuthoringDocument;
+  draft: StudioAuthoringDocument;
+}): StudioAuthoringDocument {
+  const draftFlowByKey = new Map(
+    Object.values(args.draft.flows).map((flow) => [flowSemanticKey(flow), flow])
+  );
   return {
-    systemId: args.system.systemId,
-    systemVersion: args.system.systemVersion,
-    entryRoleId: args.system.entryRoleId,
-    roleCount: args.system.roleIds.length,
-    flowCount: args.system.flows.length,
-    nodes,
-    edges
+    ...args.base,
+    roles: Object.fromEntries(
+      Object.entries(args.base.roles).map(([roleId, role]) => {
+        const draftRole = args.draft.roles[roleId];
+        return [
+          roleId,
+          draftRole?.title
+            ? { ...role, title: draftRole.title }
+            : role
+        ];
+      })
+    ),
+    flows: Object.fromEntries(
+      Object.entries(args.base.flows).map(([flowId, flow]) => {
+        const draftFlow = draftFlowByKey.get(flowSemanticKey(flow));
+        return [
+          flowId,
+          draftFlow?.label
+            ? { ...flow, label: draftFlow.label }
+            : flow
+        ];
+      })
+    ),
+    layout: {
+      ...args.base.layout,
+      nodes: {
+        ...args.base.layout.nodes,
+        ...Object.fromEntries(
+          Object.entries(args.draft.layout?.nodes || {}).filter(([roleId]) => Boolean(args.base.roles[roleId]))
+        )
+      },
+      viewport: args.draft.layout?.viewport ?? args.base.layout.viewport
+    }
   };
 }
 
@@ -192,17 +150,41 @@ export async function inspectRunGraphVisualization(args: {
   const systemSource = args.systemSource ?? (await readFile(resolve(runDir, "system.mmd"), "utf8").catch(() => null));
   const system = systemSource ? parseSystemFromMermaidSource(systemSource) : undefined;
   const simulation = getRunSimulation(asRecord(detail) ?? {});
-  const graph = system ? buildRunGraphView({ system, state: extractGraphState(detail.state) }) : null;
+  const draftPayload = await loadStudioAuthoringDraft(args.workdir).catch(() => null);
+  const draftAuthoring = isAuthoringDocument(draftPayload?.authoring) ? draftPayload.authoring : null;
+  const authoring = system
+    ? (() => {
+        const base = importSystemToAuthoring({
+          workdir: args.workdir,
+          systemPath: resolve(runDir, "system.mmd"),
+          system,
+          systemSource: systemSource ?? undefined
+        });
+        return draftAuthoring ? overlayAuthoringDraftLayout({ base, draft: draftAuthoring }) : base;
+      })()
+    : null;
+  const graph = system && authoring
+    ? buildGraphViewModel({
+        authoring,
+        system,
+        state: extractGraphState(detail.state),
+        mode: "run"
+      })
+    : null;
   const graphRecord = asRecord(graph);
   const nodes = Array.isArray(graphRecord?.nodes) ? graphRecord.nodes.map((node) => asRecord(node)).filter(Boolean) : [];
   const expectedPathRoleIds = nodes
-    .filter((node) => node && ["active", "waiting_review", "completed", "done", "failed"].includes(String(node.status ?? "")))
+    .filter((node) => {
+      const runtime = asRecord(node?.runtime);
+      return runtime && ["active", "waiting_review", "completed", "done", "failed"].includes(String(runtime.status ?? ""));
+    })
     .map((node) => asString(node?.roleId))
     .filter((roleId): roleId is string => Boolean(roleId));
 
   return {
     runId: args.runId,
     systemSource,
+    authoring,
     state: detail.state ?? null,
     summary: detail.summary ?? null,
     simulation: {

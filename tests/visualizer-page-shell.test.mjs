@@ -63,7 +63,13 @@ test("page shell keeps HTML, style, assets, and client script mounted", () => {
   assert.doesNotMatch(html, /class="brand"/);
   assert.match(html, /id="search"[^>]*aria-label="按 id、状态、角色筛选运行\.\.\."/);
   assert.match(html, /id="sidebar-toggle"[^>]*aria-controls="sidebar"[^>]*aria-expanded="false"/);
-  assert.match(html, /id="console-panel-project"[^>]*role="tabpanel"[^>]*aria-labelledby="console-tab-project"/);
+  assert.match(html, /id="hero-validate"/);
+  assert.match(html, /id="hero-save"/);
+  assert.match(html, /id="hero-reindex"/);
+  assert.match(html, /id="hero-release-export"/);
+  assert.match(html, /id="console-panel-project"[^>]*aria-labelledby="console-tab-design"/);
+  assert.match(html, /id="console-panel-build"[^>]*aria-labelledby="console-tab-design"/);
+  assert.match(html, /id="console-panel-validate-release"[^>]*aria-labelledby="console-tab-release"/);
   assert.match(html, /id="operate-tabs"[^>]*role="tablist"[^>]*aria-label="运行视图"/);
   assert.match(html, /id="operate-tabpanel-overview"[^>]*role="tabpanel"[^>]*aria-labelledby="operate-tab-overview"/);
   assert.match(html, /class="body debug-graph-body operate-graph-shell"/);

@@ -55,9 +55,7 @@ export function createBuildStateSlice() {
     studioWorkbenchSideTab: "structure",
     studioBridgeFullscreen: false,
     studioBridgeEditSelectionRequest: 0,
-    studioSelectionDialogOpen: false,
-    studioSelectionDialogDocked: true,
-    studioSelectionDialogCollapsed: false,
+    studioInspectorCollapsed: false,
     studioSelectionCommandFormOpen: false,
     studioSelectionCommandKind: "",
     studioSelectionDismissCommandFormRequest: 0,
@@ -108,8 +106,7 @@ export function createBuildStateSlice() {
 
 export function createOperateStateSlice() {
   return {
-    consoleTab: "project",
-    legacyConsoleTab: "debug",
+    consoleTab: "design",
     runGraphSelectedRoleId: "",
     runGraphSelectedFlowKey: "",
     operateTab: "overview",
@@ -183,7 +180,9 @@ export function createStreamingStateSlice() {
   };
 }
 
-export function createInitialVisualizerState(resolvedLocale: string) {
+export function createInitialVisualizerState(
+  resolvedLocale: string
+) {
   return {
     ...createProjectStateSlice(resolvedLocale),
     ...createBuildStateSlice(),

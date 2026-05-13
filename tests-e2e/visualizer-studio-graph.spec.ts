@@ -81,6 +81,22 @@ async function waitForStudioCell(page, cellId: string): Promise<void> {
   await expect(page.locator(`#studio-graph-root [data-cell-id="${cellId}"]`).first()).toBeVisible({ timeout: 10000 });
 }
 
+async function expectStudioCellPulse(page, cellId: string): Promise<void> {
+  await expect.poll(async () => page.evaluate((targetCellId) => {
+    const cell = document.querySelector(`[data-cell-id="${targetCellId}"]`);
+    return cell?.classList.contains("is-selection-focus-pulse") ?? false;
+  }, cellId), { timeout: 3000 }).toBe(true);
+}
+
+async function resolveLifecycleTabName(page, names: string[]): Promise<string> {
+  for (const name of names) {
+    if (await page.getByRole("tab", { name }).count()) {
+      return name;
+    }
+  }
+  throw new Error(`No lifecycle tab found for: ${names.join(", ")}`);
+}
+
 async function expectDockedSelectionAligned(page): Promise<void> {
   await expect.poll(async () => page.evaluate(() => {
     const root = document.getElementById("studio-graph-root");
@@ -103,6 +119,7 @@ async function expectDockedSelectionAligned(page): Promise<void> {
 }
 
 test("Studio Bridge renders and edits through the real graph workspace", async ({ page }) => {
+  const quickOpenShortcut = process.platform === "darwin" ? "Meta+P" : "Control+P";
   const workdir = await mkdtemp(path.join(os.tmpdir(), "ogsystem-studio-x6-"));
   await seedProject(workdir);
   const started = await startVisualizationServer({ workdir, host: "127.0.0.1", port: 0 });
@@ -110,6 +127,9 @@ test("Studio Bridge renders and edits through the real graph workspace", async (
   try {
     await page.goto(started.url);
     await page.waitForFunction(() => Boolean((window as any).OGSVisualizerClient?.mountStudioX6Bridge));
+    const designTabName = await resolveLifecycleTabName(page, ["Build", "Design"]);
+    const releaseTabName = await resolveLifecycleTabName(page, ["Validate & Release", "Release"]);
+    const runTabName = await resolveLifecycleTabName(page, ["Operate", "Run"]);
     await expect(page.locator("#console-panel-project")).toBeVisible();
     await expect(page.locator("#console-panel-project > article > header").getByRole("heading", { name: "Project Overview" })).toBeVisible();
     await expect(page.locator("body")).not.toHaveClass(/show-run-sidebar/);
@@ -124,7 +144,7 @@ test("Studio Bridge renders and edits through the real graph workspace", async (
         return original.call(this, root, options);
       };
     });
-    await page.getByRole("tab", { name: "Build" }).click();
+    await page.getByRole("tab", { name: designTabName }).click();
     await expect(page.locator("#workbench-status")).toContainText("validation ok");
     const globalStatusBar = page.locator("footer.status-bar.global-status");
     const workbenchViewSlot = globalStatusBar.locator("#global-status-context");
@@ -165,6 +185,7 @@ test("Studio Bridge renders and edits through the real graph workspace", async (
     await expect(page.locator('#studio-graph-root [data-studio-graph-action="chat-generate"]')).toBeVisible();
     await expect(page.locator('#studio-graph-root [data-studio-graph-action="validate"]')).toBeVisible();
     await expect(page.locator('#studio-graph-root [data-studio-graph-action="save"]')).toBeVisible();
+    await expect(page.locator('#studio-graph-root [data-studio-graph-minimap]')).toBeVisible();
     await expect(page.locator("#studio-bridge-generate")).toHaveCount(0);
     await expect(page.locator("[data-studio-bridge-fullscreen]")).toHaveCount(0);
     await expect(page.locator("#studio-bridge-save")).toHaveCount(0);
@@ -192,20 +213,31 @@ test("Studio Bridge renders and edits through the real graph workspace", async (
     await waitForStudioCell(page, "demo-analyst");
     await page.keyboard.press("Escape");
     await expect(page.locator("[data-studio-canvas-shell]")).not.toHaveClass(/is-fullscreen/);
-    await expect(page.getByRole("tab", { name: "Build" })).toBeVisible();
-    await expect(page.getByRole("tab", { name: "Validate & Release" })).toBeVisible();
+    await expect(page.getByRole("tab", { name: designTabName })).toBeVisible();
+    await expect(page.getByRole("tab", { name: releaseTabName })).toBeVisible();
     await expect(page.locator("#console-panel-build")).toBeVisible();
     await expect(page.locator("#build-project-summary")).toHaveCount(0);
     await expect(page.locator("#console-panel-build").getByRole("heading", { name: "Project Overview" })).toHaveCount(0);
     await expect(page.getByRole("heading", { name: "Project Readiness" })).toHaveCount(0);
     await expect(page.locator("#action-form-section")).toBeHidden();
-    await page.getByRole("tab", { name: "Validate & Release" }).click();
+    await page.getByRole("tab", { name: releaseTabName }).click();
     await expect(page.locator("#release-gate")).toContainText("Release gate");
     await expect(page.locator("#release-gate")).toContainText("Quality signals");
     await expect(page.locator("#release-gate")).toContainText("Evidence and export scope");
-    await page.getByRole("tab", { name: "Build" }).click();
+    await page.getByRole("tab", { name: designTabName }).click();
     await expect(page.locator("#studio-graph-root")).toBeVisible();
     await expect(page.locator("[data-studio-selection-dialog]")).toContainText("demo-analyst");
+    await page.locator('[data-studio-side-tab="structure"]').click();
+    await page.locator('[data-studio-role-id="demo-analyst"]').click();
+    await expect(page.locator('form[data-studio-command-form="edit-role"]')).toHaveCount(0);
+    await expectStudioCellPulse(page, "demo-analyst");
+    await page.locator("#studio-graph-root").click();
+    await page.keyboard.press(quickOpenShortcut);
+    await expect(page.locator('[data-studio-graph-quick-open]')).toBeVisible();
+    await page.locator('[data-studio-graph-quick-open-input]').fill("demo-analyst");
+    await page.keyboard.press("Enter");
+    await expect(page.locator('[data-studio-graph-quick-open]')).toBeHidden();
+    await expectStudioCellPulse(page, "demo-analyst");
 
     await expect(page.locator('#studio-graph-root [data-studio-graph-action="validate"]')).toBeVisible();
     await expect(page.locator(".toolbar-group").filter({ hasText: "validation ok" }).first()).toBeVisible();
@@ -444,7 +476,7 @@ test("Studio Bridge renders and edits through the real graph workspace", async (
     await expect(page.locator('#studio-graph-root [data-studio-graph-action="add-role"]')).toBeHidden();
     await expect(page.locator('#studio-graph-root [data-studio-graph-action="undo"]')).toBeHidden();
     await expectDockedSelectionAligned(page);
-    await page.getByRole("tab", { name: "Operate" }).click();
+    await page.getByRole("tab", { name: runTabName }).click();
     await expect(page.locator("body")).toHaveClass(/show-run-sidebar/);
     await expect(page.locator("#sidebar")).toBeVisible();
     await expect(page.locator("#sidebar-toggle")).toBeHidden();
@@ -453,7 +485,7 @@ test("Studio Bridge renders and edits through the real graph workspace", async (
     await expect(page.locator("#console-panel-debug")).toBeVisible();
     await expect(page.locator("#console-panel-logs")).toBeHidden();
     await expect(page.locator("#console-panel-artifacts")).toBeHidden();
-    await page.getByRole("tab", { name: "Build" }).click();
+    await page.getByRole("tab", { name: designTabName }).click();
     await expect(page.locator("#console-panel-build")).toBeVisible();
     await expect(page.locator("#studio-graph-root")).toBeVisible();
     await expect(page.locator('[data-workbench-view="bridge"]')).toHaveAttribute("aria-pressed", "true");
@@ -508,6 +540,116 @@ test("empty workspace creates a project visually before graph editing", async ({
     await expect(page.locator('#studio-graph-root [data-studio-graph-action="save"]')).toBeVisible();
     await expect(page.locator('#studio-graph-root [data-studio-graph-action="validate"]')).toBeVisible();
     await expect(page.getByText(/\bX6\b/)).toHaveCount(0);
+  } finally {
+    await new Promise<void>((resolve) => started.server.close(() => resolve()));
+  }
+});
+
+test("Studio graph island exposes minimap, focus pulse, and quick open when mounted directly", async ({ page }) => {
+  const workdir = await mkdtemp(path.join(os.tmpdir(), "ogsystem-studio-k-direct-"));
+  await seedProject(workdir);
+  const started = await startVisualizationServer({ workdir, host: "127.0.0.1", port: 0 });
+  const quickOpenShortcut = process.platform === "darwin" ? "Meta+P" : "Control+P";
+  test.info().annotations.push({ type: "server", description: started.url });
+  try {
+    await page.goto(started.url);
+    await page.waitForFunction(() => Boolean((window as any).OGSVisualizerClient?.mountStudioX6Bridge));
+    await page.evaluate(() => {
+      const root = document.createElement("div");
+      root.id = "studio-graph-direct-root";
+      root.style.width = "960px";
+      root.style.height = "560px";
+      root.style.margin = "24px";
+      document.body.appendChild(root);
+      const mount = (window as any).OGSVisualizerClient.mountStudioX6Bridge;
+      const authoring = {
+        project: {
+          workdir: "/tmp/direct",
+          systemPath: "system.mmd"
+        },
+        system: {
+          systemId: "viz.direct.k",
+          systemVersion: "1.0.0",
+          entryRoleId: "demo-analyst",
+          lawGlobal: "law.minimal.base"
+        },
+        roles: {
+          "demo-analyst": {
+            roleId: "demo-analyst",
+            title: "Demo Analyst",
+            bindingKind: "model",
+            modelRef: "opencode/gpt-5.4"
+          },
+          "qa-reviewer": {
+            roleId: "qa-reviewer",
+            title: "QA Reviewer",
+            bindingKind: "model",
+            modelRef: "opencode/gpt-5.4"
+          }
+        },
+        flows: {
+          "flow.demo-qa": {
+            flowId: "flow.demo-qa",
+            fromRoleId: "demo-analyst",
+            toRoleId: "qa-reviewer",
+            eventType: "DONE",
+            label: "handoff"
+          }
+        },
+        layout: {
+          nodes: {
+            "demo-analyst": { x: 120, y: 140, width: 190, height: 90 },
+            "qa-reviewer": { x: 420, y: 140, width: 190, height: 90 }
+          },
+          viewport: { x: 0, y: 0, zoom: 1 }
+        }
+      };
+      const canvas = {
+        nodes: [
+          { id: "demo-analyst", roleId: "demo-analyst", x: 120, y: 140, width: 190, height: 90, label: "Demo Analyst", bindingKind: "model", badges: [] },
+          { id: "qa-reviewer", roleId: "qa-reviewer", x: 420, y: 140, width: 190, height: 90, label: "QA Reviewer", bindingKind: "model", badges: [] }
+        ],
+        edges: [
+          { id: "flow.demo-qa", source: "demo-analyst", target: "qa-reviewer", eventType: "DONE", label: "handoff" }
+        ],
+        viewport: { x: 0, y: 0, zoom: 1 }
+      };
+      (window as any).__studioDirectOptions = { authoring, canvas };
+      mount(root, {
+        authoring,
+        canvas,
+        selectedRoleId: "demo-analyst",
+        validation: { ok: true, diagnostics: [] },
+        defaultAutoLayout: false
+      });
+    });
+    await expect(page.locator("#studio-graph-direct-root .studio-graph-toolbar")).toBeVisible();
+    await expect(page.locator("#studio-graph-direct-root [data-cell-id=\"demo-analyst\"]")).toBeVisible();
+    await expect(page.locator("#studio-graph-direct-root [data-studio-graph-minimap]")).toBeVisible();
+    await expect(page.locator("#studio-graph-direct-root [data-minimap-role-id=\"demo-analyst\"]")).toBeVisible();
+
+    await page.evaluate(() => {
+      const root = document.getElementById("studio-graph-direct-root");
+      const mount = (window as any).OGSVisualizerClient.mountStudioX6Bridge;
+      const { authoring, canvas } = (window as any).__studioDirectOptions;
+      mount(root, {
+        authoring,
+        canvas,
+        selectedRoleId: "qa-reviewer",
+        editSelectionRequest: 1,
+        validation: { ok: true, diagnostics: [] },
+        defaultAutoLayout: false
+      });
+    });
+    await expectStudioCellPulse(page, "qa-reviewer");
+
+    await page.locator("#studio-graph-direct-root").click();
+    await page.keyboard.press(quickOpenShortcut);
+    await expect(page.locator('#studio-graph-direct-root [data-studio-graph-quick-open]')).toBeVisible();
+    await page.locator('#studio-graph-direct-root [data-studio-graph-quick-open-input]').fill("demo-analyst");
+    await page.keyboard.press("Enter");
+    await expect(page.locator('#studio-graph-direct-root [data-studio-graph-quick-open]')).toBeHidden();
+    await expectStudioCellPulse(page, "demo-analyst");
   } finally {
     await new Promise<void>((resolve) => started.server.close(() => resolve()));
   }

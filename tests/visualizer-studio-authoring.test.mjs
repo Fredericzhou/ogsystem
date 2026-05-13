@@ -18,7 +18,10 @@ import {
   createStudioAuthoringFromTemplate,
   listStudioAuthoringTemplates
 } from "../dist/visualizer/studio-templates.js";
-import { applyStudioAuthoringCommand } from "../dist/visualizer/studio-graph-commands.js";
+import {
+  applyStudioAuthoringCommand,
+  deriveInverseCommand
+} from "../dist/visualizer/studio-graph-commands.js";
 import {
   commandFromStudioCommandFormState,
   createDefaultStudioCommandFormState,
@@ -521,6 +524,64 @@ test("Studio authoring commands create validated roles and edges from command fo
     }
   });
   assert.equal(duplicateEdge.blockedCode, "duplicate-edge");
+});
+
+test("Studio authoring commands derive batch inverses for semantic undo when the diff is representable", () => {
+  const authoring = importMermaidToAuthoring({
+    workdir: "/tmp/project",
+    systemPath: "/tmp/project/system.mmd",
+    systemSource: source
+  });
+  const command = {
+    type: "batch",
+    commands: [
+      {
+        type: "add-role",
+        roleId: "qa_gate",
+        title: "QA Gate",
+        bindingKind: "model",
+        modelRef: "opencode/gpt-5.4",
+        x: 440,
+        y: 180
+      },
+      {
+        type: "add-edge",
+        sourceRoleId: "review",
+        targetRoleId: "qa_gate",
+        eventType: "ESCALATE",
+        label: "Escalate"
+      }
+    ]
+  };
+
+  const inverse = deriveInverseCommand(authoring, command);
+  assert.ok(inverse);
+
+  const applied = applyStudioAuthoringCommand({
+    authoring,
+    command
+  });
+  assert.equal(applied.blockedCode, undefined);
+
+  const reverted = applyStudioAuthoringCommand({
+    authoring: applied.authoring,
+    command: inverse
+  });
+  assert.equal(reverted.blockedCode, undefined);
+  assert.equal(
+    serializeAuthoringToMermaid(reverted.authoring),
+    serializeAuthoringToMermaid(authoring)
+  );
+});
+
+test("Studio authoring command inverse derivation falls back when deleting non-round-trippable roles", () => {
+  const authoring = importMermaidToAuthoring({
+    workdir: "/tmp/project",
+    systemPath: "/tmp/project/system.mmd",
+    systemSource: source
+  });
+
+  assert.equal(deriveInverseCommand(authoring, { type: "delete-role", roleId: "review" }), null);
 });
 
 test("Studio command forms expose visual role package, model, and profile choices", () => {

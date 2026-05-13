@@ -21,24 +21,43 @@ export function readRouteStateFromSearch(search: string): RouteState {
   };
 }
 
-export function normalizeLifecycleView(lifecycle: string | undefined, legacyView: string | undefined): string {
+export function normalizeLifecycleView(
+  lifecycle: string | undefined,
+  legacyView: string | undefined
+): string {
   switch (lifecycle) {
+    case "design":
+      return "design";
+    case "run":
+    case "legacy":
+      return "run";
+    case "release":
+      return "release";
     case "project":
     case "build":
+      return "design";
     case "validate-release":
+      return "release";
     case "operate":
-    case "legacy":
-      return lifecycle;
+      return "run";
   }
   switch (legacyView) {
+    case "design":
+      return "design";
+    case "run":
+    case "legacy":
+      return "run";
+    case "release":
+      return "release";
     case "project":
     case "build":
+      return "design";
     case "validate-release":
+      return "release";
     case "operate":
-    case "legacy":
-      return legacyView;
+      return "run";
     default:
-      return "project";
+      return "design";
   }
 }
 
@@ -52,12 +71,24 @@ export function buildRouteSearch(args: {
   logSince: string;
 }): string {
   const params = new URLSearchParams();
-  const lifecycle = args.lifecycle || "";
+  let lifecycle = args.lifecycle || "";
+  switch (lifecycle) {
+    case "project":
+    case "build":
+      lifecycle = "design";
+      break;
+    case "validate-release":
+      lifecycle = "release";
+      break;
+    case "operate":
+    case "legacy":
+      lifecycle = "run";
+      break;
+    default:
+      break;
+  }
   if (lifecycle) {
     params.set("lifecycle", lifecycle);
-  }
-  if (args.projectHome && !args.selectedRunId) {
-    params.set("view", "project");
   }
   if (args.selectedRunId) {
     params.set("runId", args.selectedRunId);

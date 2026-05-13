@@ -84,7 +84,6 @@ import {
 import {
   renderStudioGraphCanvas,
   renderStudioBridgePanel,
-  renderRunTopologySvg,
   sortStudioBridgeFlowsByTopology,
   sortStudioBridgeRolesTopologically
 } from "../dist/visualizer/client-renderers.js";
@@ -187,14 +186,18 @@ test("client route state helpers parse and serialize lifecycle query state", () 
     tail: "",
     since: ""
   });
-  assert.equal(normalizeLifecycleView("operate", ""), "operate");
-  assert.equal(normalizeLifecycleView("unknown", "project"), "project");
-  assert.equal(normalizeLifecycleView("", "operate"), "operate");
-  assert.equal(normalizeLifecycleView("unknown", "legacy"), "legacy");
+  assert.equal(normalizeLifecycleView("operate", ""), "run");
+  assert.equal(normalizeLifecycleView("unknown", "project"), "design");
+  assert.equal(normalizeLifecycleView("", "operate"), "run");
+  assert.equal(normalizeLifecycleView("unknown", "legacy"), "run");
+  assert.equal(normalizeLifecycleView("design", ""), "design");
+  assert.equal(normalizeLifecycleView("build", ""), "design");
+  assert.equal(normalizeLifecycleView("validate-release", ""), "release");
+  assert.equal(normalizeLifecycleView("legacy", ""), "run");
 
   assert.equal(
     buildRouteSearch({
-      lifecycle: "project",
+      lifecycle: "design",
       projectHome: true,
       selectedRunId: "",
       selectedReviewId: "",
@@ -202,19 +205,64 @@ test("client route state helpers parse and serialize lifecycle query state", () 
       logTail: "",
       logSince: ""
     }),
-    "lifecycle=project&view=project"
+    "lifecycle=design"
+  );
+  assert.equal(
+    buildRouteSearch({
+      lifecycle: "run",
+      projectHome: false,
+      selectedRunId: "run-1",
+      selectedReviewId: "",
+      selectedLogRoleId: "",
+      logTail: "",
+      logSince: ""
+    }),
+    "lifecycle=run&runId=run-1"
   );
   assert.deepEqual(
-    readRouteStateFromSearch("?lifecycle=operate&runId=run-1&reviewId=review-2&logRoleId=qa&tail=50&since=2026-05-03T09%3A00"),
+    readRouteStateFromSearch("?lifecycle=run&runId=run-1&reviewId=review-2&logRoleId=qa&tail=50&since=2026-05-03T09%3A00"),
     {
       view: "",
-      lifecycle: "operate",
+      lifecycle: "run",
       runId: "run-1",
       reviewId: "review-2",
       logRoleId: "qa",
       tail: "50",
       since: "2026-05-03T09:00"
     }
+  );
+});
+
+test("client route state helpers normalize Design Run Release lifecycle aliases", () => {
+  assert.equal(normalizeLifecycleView("build", ""), "design");
+  assert.equal(normalizeLifecycleView("operate", ""), "run");
+  assert.equal(normalizeLifecycleView("validate-release", ""), "release");
+  assert.equal(normalizeLifecycleView("unknown", "project"), "design");
+  assert.equal(normalizeLifecycleView("legacy", ""), "run");
+
+  assert.equal(
+    buildRouteSearch({
+      lifecycle: "design",
+      projectHome: true,
+      selectedRunId: "",
+      selectedReviewId: "",
+      selectedLogRoleId: "",
+      logTail: "",
+      logSince: ""
+    }),
+    "lifecycle=design"
+  );
+  assert.equal(
+    buildRouteSearch({
+      lifecycle: "run",
+      projectHome: false,
+      selectedRunId: "run-1",
+      selectedReviewId: "review-2",
+      selectedLogRoleId: "qa",
+      logTail: "50",
+      logSince: "2026-05-03T09:00"
+    }),
+    "lifecycle=run&runId=run-1&reviewId=review-2&logRoleId=qa&tail=50&since=2026-05-03T09%3A00"
   );
 });
 
@@ -412,21 +460,26 @@ test("client input policy keeps high-frequency boundaries explicit", () => {
 
 test("client shell control renderers keep lifecycle visibility and run-list filtering pure", () => {
   const consoleHtml = renderConsoleTabsHtml({
-    consoleTab: "legacy",
-    legacyConsoleTab: "logs",
+    consoleTab: "run",
+    legacyConsoleTab: "",
     operateTab: "overview",
     t,
     escapeText
   });
-  assert.match(consoleHtml, /data-console-tab="legacy"[^>]*aria-pressed="true"/);
-  assert.match(consoleHtml, /data-console-tab="legacy"[^>]*role="tab"[^>]*aria-controls="console-panel-logs"/);
-  assert.match(consoleHtml, /data-legacy-console-tab="logs"[^>]*aria-pressed="true"/);
-  assert.match(consoleHtml, /data-legacy-console-tab="logs"[^>]*role="tab"[^>]*aria-selected="true"/);
-  assert.deepEqual(getVisibleConsolePanelIds({ consoleTab: "legacy", legacyConsoleTab: "logs", operateTab: "overview" }), ["logs"]);
-  assert.deepEqual(getVisibleConsolePanelIds({ consoleTab: "operate", legacyConsoleTab: "", operateTab: "overview" }), ["debug", "ops"]);
-  assert.deepEqual(getVisibleConsolePanelIds({ consoleTab: "operate", legacyConsoleTab: "", operateTab: "logs" }), ["debug", "logs"]);
-  assert.equal(shouldShowRunSidebar("legacy"), true);
-  assert.equal(shouldShowRunSidebar("build"), false);
+  assert.match(consoleHtml, /data-console-tab="design"/);
+  assert.match(consoleHtml, /data-console-tab="run"[^>]*aria-pressed="true"/);
+  assert.match(consoleHtml, /data-console-tab="run"[^>]*role="tab"[^>]*aria-controls="operate-tabpanel-overview"/);
+  assert.match(consoleHtml, /data-console-tab="release"/);
+  assert.doesNotMatch(consoleHtml, /data-console-tab="project"/);
+  assert.doesNotMatch(consoleHtml, /data-console-tab="build"/);
+  assert.doesNotMatch(consoleHtml, /data-console-tab="operate"/);
+  assert.doesNotMatch(consoleHtml, /data-console-tab="legacy"/);
+  assert.deepEqual(getVisibleConsolePanelIds({ consoleTab: "design", legacyConsoleTab: "", operateTab: "overview" }), ["project", "build"]);
+  assert.deepEqual(getVisibleConsolePanelIds({ consoleTab: "run", legacyConsoleTab: "", operateTab: "overview" }), ["debug", "ops"]);
+  assert.deepEqual(getVisibleConsolePanelIds({ consoleTab: "run", legacyConsoleTab: "", operateTab: "logs" }), ["debug", "logs"]);
+  assert.deepEqual(getVisibleConsolePanelIds({ consoleTab: "release", legacyConsoleTab: "", operateTab: "overview" }), ["validate-release"]);
+  assert.equal(shouldShowRunSidebar("run"), true);
+  assert.equal(shouldShowRunSidebar("design"), false);
 
   const runListHtml = renderRunListHtml({
     runs: [
@@ -446,6 +499,54 @@ test("client shell control renderers keep lifecycle visibility and run-list filt
   assert.match(runListHtml, /aria-label="Run run-1 status waiting review run\.transitions 3 run\.updated /);
 });
 
+test("client shell control renderers expose only the Design Run Release tabs", () => {
+  const consoleHtml = renderConsoleTabsHtml({
+    consoleTab: "run",
+    legacyConsoleTab: "",
+    operateTab: "logs",
+    designRunReleaseEnabled: true,
+    t,
+    escapeText
+  });
+  assert.match(consoleHtml, /data-console-tab="design"/);
+  assert.match(consoleHtml, /data-console-tab="run"[^>]*aria-pressed="true"/);
+  assert.match(consoleHtml, /data-console-tab="run"[^>]*aria-controls="console-panel-logs"/);
+  assert.match(consoleHtml, /data-console-tab="release"/);
+  assert.doesNotMatch(consoleHtml, /data-console-tab="project"/);
+  assert.doesNotMatch(consoleHtml, /data-console-tab="build"/);
+  assert.doesNotMatch(consoleHtml, /data-console-tab="operate"/);
+  assert.doesNotMatch(consoleHtml, /data-console-tab="validate-release"/);
+  assert.doesNotMatch(consoleHtml, /data-console-tab="legacy"/);
+  assert.deepEqual(
+    getVisibleConsolePanelIds({
+      consoleTab: "design",
+      legacyConsoleTab: "",
+      operateTab: "overview",
+      designRunReleaseEnabled: true
+    }),
+    ["project", "build"]
+  );
+  assert.deepEqual(
+    getVisibleConsolePanelIds({
+      consoleTab: "run",
+      legacyConsoleTab: "",
+      operateTab: "logs",
+      designRunReleaseEnabled: true
+    }),
+    ["debug", "logs"]
+  );
+  assert.deepEqual(
+    getVisibleConsolePanelIds({
+      consoleTab: "release",
+      legacyConsoleTab: "",
+      operateTab: "overview",
+      designRunReleaseEnabled: true
+    }),
+    ["validate-release"]
+  );
+  assert.equal(shouldShowRunSidebar("run"), true);
+});
+
 test("client lifecycle state factory centralizes initial workspace state", () => {
   assert.deepEqual(createInitialStreamRefreshPlan(), {
     detailGraph: false,
@@ -458,7 +559,7 @@ test("client lifecycle state factory centralizes initial workspace state", () =>
   const state = createInitialVisualizerState("zh-CN");
   assert.equal(state.locale, "zh-CN");
   assert.equal(state.hasProject, false);
-  assert.equal(state.consoleTab, "project");
+  assert.equal(state.consoleTab, "design");
   assert.equal(state.buildMode, "edit");
   assert.equal(state.workbenchView, "bridge");
   assert.equal(state.operateTab, "overview");
@@ -470,6 +571,16 @@ test("client lifecycle state factory centralizes initial workspace state", () =>
   assert.equal(createReviewStateSlice().selectedReviewId, "");
   assert.equal(createLogsStateSlice().logPageSize, "100");
   assert.equal(createStreamingStateSlice().streamRefreshRunId, "");
+});
+
+test("client lifecycle state factory keeps Design Run Release active across explicit state slices", () => {
+  const operateState = createOperateStateSlice();
+  assert.equal(operateState.consoleTab, "design");
+
+  const state = createInitialVisualizerState("en-US");
+  assert.equal(state.locale, "en-US");
+  assert.equal(state.consoleTab, "design");
+  assert.equal(state.operateTab, "overview");
 });
 
 test("visualizer dto project views normalize the supported artifact mode", () => {
@@ -920,57 +1031,6 @@ test("client Studio Bridge topology sorting keeps stable role and flow order", (
     "writer:DONE:qa",
     "qa:APPROVE:publisher"
   ]);
-});
-
-test("client run topology SVG exposes node and edge accessibility descriptions", () => {
-  const svg = renderRunTopologySvg({
-    entryRoleId: "planner",
-    nodes: [
-      {
-        roleId: "planner",
-        nodeType: "role",
-        status: "waiting_review",
-        bindingKind: "model",
-        activeBranchCount: 1,
-        pendingReviewCount: 2,
-        lastSelectedEvent: "PLAN"
-      },
-      {
-        roleId: "qa",
-        nodeType: "role",
-        status: "failed",
-        bindingKind: "profile",
-        activeBranchCount: 0,
-        pendingReviewCount: 0,
-        lastErrorCode: "E_QA"
-      }
-    ],
-    edges: [
-      {
-        sourceRoleId: "planner",
-        targetRoleId: "qa",
-        event: "DONE",
-        recentlyActivated: true
-      },
-      {
-        sourceRoleId: "qa",
-        targetRoleId: "planner",
-        event: "ERROR",
-        isErrorFlow: true
-      }
-    ]
-  }, t);
-
-  assert.match(svg, /<title>Run topology graph<\/title>/);
-  assert.match(svg, /<desc>Run topology graph with 2 nodes and 2 edges\.<\/desc>/);
-  assert.match(svg, /<title>planner: role, waiting review, active branches 1 · pending reviews 2, PLAN<\/title>/);
-  assert.match(svg, /<desc>qa: role, failed, active branches 0 · pending reviews 0, E_QA<\/desc>/);
-  assert.match(svg, /<title>planner to qa on DONE: recently activated flow<\/title>/);
-  assert.match(svg, /<desc>qa to planner on ERROR: error flow<\/desc>/);
-  assert.match(svg, /stroke-dasharray="2 6"/);
-  assert.match(svg, /stroke-dasharray="8 5"/);
-  assert.match(svg, />DONE \*<\/text>/);
-  assert.match(svg, />ERROR !<\/text>/);
 });
 
 test("client run selection helpers keep review fallback and live state deterministic", () => {

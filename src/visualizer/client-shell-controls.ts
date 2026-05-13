@@ -1,5 +1,4 @@
 type Translator = (key: string, vars?: Record<string, unknown>, fallback?: string) => string;
-
 function getOperatePanelId(operateTab: string): string {
   switch (operateTab) {
     case "graph":
@@ -17,47 +16,17 @@ function getOperatePanelId(operateTab: string): string {
   }
 }
 
-function getLegacyPanelId(legacyConsoleTab: string): string {
-  switch (legacyConsoleTab) {
-    case "project":
-      return "console-panel-project";
-    case "ops":
-      return "console-panel-ops";
-    case "config":
-      return "console-panel-config";
-    case "logs":
-      return "console-panel-logs";
-    case "artifacts":
-      return "console-panel-artifacts";
-    default:
-      return "console-panel-debug";
-  }
-}
-
 export function renderConsoleTabsHtml(args: {
   consoleTab: string;
-  legacyConsoleTab: string;
   operateTab: string;
   t: Translator;
   escapeText: (value: unknown) => string;
 }): string {
-  const { consoleTab, legacyConsoleTab, operateTab, t, escapeText } = args;
+  const { consoleTab, operateTab, t, escapeText } = args;
   const lifecycleTabs = [
-    ["project", "console-panel-project", t("nav.lifecycle.project", undefined, "Project"), t("navHint.lifecycle.project", undefined, "Inspect the current directory, initialize it, and review project health")],
-    ["build", "console-panel-build", t("nav.lifecycle.build", undefined, "Build"), t("navHint.lifecycle.build", undefined, "Graph-first authoring, configuration, and dry-run setup")],
-    ["validate-release", "console-panel-validate-release", t("nav.lifecycle.validateRelease", undefined, "Validate & Release"), t("navHint.lifecycle.validateRelease", undefined, "Validation gate, readiness, reports, and export")],
-    ["operate", getOperatePanelId(operateTab), t("nav.lifecycle.operate", undefined, "Operate"), t("navHint.lifecycle.operate", undefined, "Run monitoring, diagnostics, logs, recovery, and audit")]
-  ];
-  if (consoleTab === "legacy") {
-    lifecycleTabs.push(["legacy", getLegacyPanelId(legacyConsoleTab), t("nav.lifecycle.legacy", undefined, "Legacy fallback"), t("navHint.lifecycle.legacy", undefined, "Developer fallback access to the previous tab layout")]);
-  }
-  const legacyTabs = [
-    ["debug", "console-panel-debug", t("nav.runDebug"), t("navHint.runDebug")],
-    ["project", "console-panel-project", t("nav.project"), t("navHint.project")],
-    ["ops", "console-panel-ops", t("nav.ops"), t("navHint.ops")],
-    ["config", "console-panel-config", t("nav.config"), t("navHint.config")],
-    ["logs", "console-panel-logs", t("nav.logs"), t("navHint.logs")],
-    ["artifacts", "console-panel-artifacts", t("nav.artifacts"), t("navHint.artifacts")]
+    ["design", "console-panel-build", t("nav.lifecycle.design", undefined, "Design"), t("navHint.lifecycle.design", undefined, "Author the graph, configure runtime behavior, and prepare dry runs")],
+    ["run", getOperatePanelId(operateTab), t("nav.lifecycle.run", undefined, "Run"), t("navHint.lifecycle.run", undefined, "Monitor runtime state, inspect diagnostics, and follow logs")],
+    ["release", "console-panel-validate-release", t("nav.lifecycle.release", undefined, "Release"), t("navHint.lifecycle.release", undefined, "Review readiness, validation evidence, and export gates")]
   ];
   const lifecycleHtml = '<div class="lifecycle-tabs" data-lifecycle-tabs role="tablist" aria-label="' +
     escapeText(t("nav.lifecycle.tablist", undefined, "Lifecycle views")) +
@@ -73,41 +42,18 @@ export function renderConsoleTabsHtml(args: {
     '" title="' + escapeText(hint) +
     '">' + escapeText(label) + '</button>'
   ).join("") + "</div>";
-  const legacyHtml = consoleTab === "legacy"
-    ? '<div class="legacy-tabs" data-legacy-tabs role="tablist" aria-label="' +
-        escapeText(t("nav.legacy.tablist", undefined, "Legacy views")) +
-        '">' + legacyTabs.map(([id, panelId, label, hint]) =>
-        '<button class="button subtle ' + (legacyConsoleTab === id ? "active" : "") +
-        '" id="legacy-console-tab-' + escapeText(id) +
-        '" data-legacy-console-tab="' + escapeText(id) +
-        '" role="tab"' +
-        '" aria-controls="' + escapeText(panelId) +
-        '" aria-selected="' + escapeText(String(legacyConsoleTab === id)) +
-        '" aria-pressed="' + escapeText(String(legacyConsoleTab === id)) +
-        '" tabindex="' + escapeText(legacyConsoleTab === id ? "0" : "-1") +
-        '" title="' + escapeText(hint) +
-        '">' + escapeText(label) + '</button>'
-      ).join("") + '</div>'
-    : "";
-  return lifecycleHtml + legacyHtml;
+  return lifecycleHtml;
 }
 
 export function getVisibleConsolePanelIds(args: {
   consoleTab: string;
-  legacyConsoleTab: string;
   operateTab: string;
 }): string[] {
-  const { consoleTab, legacyConsoleTab, operateTab } = args;
-  if (consoleTab === "legacy") {
-    return [legacyConsoleTab || "debug"];
+  const { consoleTab, operateTab } = args;
+  if (consoleTab === "design") {
+    return ["project", "build"];
   }
-  if (consoleTab === "project") {
-    return ["project"];
-  }
-  if (consoleTab === "build") {
-    return ["build"];
-  }
-  if (consoleTab === "validate-release") {
+  if (consoleTab === "release") {
     return ["validate-release"];
   }
   switch (operateTab) {
@@ -123,7 +69,7 @@ export function getVisibleConsolePanelIds(args: {
 }
 
 export function shouldShowRunSidebar(consoleTab: string): boolean {
-  return consoleTab === "operate" || consoleTab === "legacy";
+  return consoleTab === "run";
 }
 
 export function renderRunListHtml(args: {

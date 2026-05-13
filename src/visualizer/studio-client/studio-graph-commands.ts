@@ -2,13 +2,14 @@ import { authoringToCanvasDocument } from "../studio-authoring-projection.js";
 import {
   STUDIO_SYSTEM_END_ROLE_ID,
   normalizeStudioGraphStoredRoleId,
+  normalizeStudioGraphTargetRoleId,
   type StudioAuthoringDocument,
   type StudioAuthoringFlow,
   type StudioAuthoringRole,
   type StudioCanvasDocument
 } from "../studio-contracts.js";
 
-export type StudioAuthoringCommand =
+type StudioAuthoringLeafCommand =
   | {
       type: "add-role";
       sourceRoleId?: string;
@@ -59,6 +60,10 @@ export type StudioAuthoringCommand =
       participatesInJoin?: boolean;
     }
   | { type: "delete-edge"; flowId?: string; sourceRoleId: string; targetRoleId: string; eventType: string };
+
+export type StudioAuthoringCommand =
+  | StudioAuthoringLeafCommand
+  | { type: "batch"; commands: StudioAuthoringCommand[] };
 
 export type StudioAuthoringCommandResult = {
   authoring: StudioAuthoringDocument;
@@ -150,6 +155,10 @@ function canvasFlowKey(flow: Pick<StudioAuthoringFlow, "fromRoleId" | "toRoleId"
   return `${flow.fromRoleId}:${flow.eventType}:${flow.toRoleId === STUDIO_SYSTEM_END_ROLE_ID ? "output" : flow.toRoleId}`;
 }
 
+function commandTargetRoleId(roleId: string): string {
+  return normalizeStudioGraphTargetRoleId(roleId);
+}
+
 function roleCanvasNode(role: StudioAuthoringRole, x: number, y: number): StudioCanvasDocument["nodes"][number] {
   return {
     id: role.roleId,
@@ -209,6 +218,22 @@ function matchesFlow(
     flow.eventType === args.eventType;
 }
 
+function findMatchingFlowEntry(
+  authoring: StudioAuthoringDocument,
+  args: { flowId?: string; sourceRoleId: string; targetRoleId: string; eventType: string }
+): [string, StudioAuthoringFlow] | null {
+  const targetRoleId = normalizeStudioGraphStoredRoleId(normalizeRoleId(args.targetRoleId));
+  const eventType = normalizeEventType(args.eventType);
+  return Object.entries(authoring.flows).find(([flowId, flow]) =>
+    matchesFlow(flow, {
+      flowId: args.flowId,
+      sourceRoleId: normalizeRoleId(args.sourceRoleId),
+      targetRoleId,
+      eventType
+    }, flowId)
+  ) ?? null;
+}
+
 function syncJoinSource(
   authoring: StudioAuthoringDocument,
   targetRoleId: string,
@@ -229,6 +254,65 @@ function syncJoinSource(
   }
 }
 
+function flowParticipatesInJoin(authoring: StudioAuthoringDocument, flow: StudioAuthoringFlow): boolean {
+  return flow.toRoleId !== STUDIO_SYSTEM_END_ROLE_ID &&
+    Boolean(authoring.roles[flow.toRoleId]?.joinSources?.includes(flow.fromRoleId));
+}
+
+function roleCanRoundTripViaAddCommand(role: StudioAuthoringRole): boolean {
+  return !role.routingMode &&
+    !role.routeOrder?.length &&
+    !role.joinMode &&
+    role.joinMin == null &&
+    !role.loopMax &&
+    !role.review &&
+    !(role.contextMap && Object.keys(role.contextMap).length);
+}
+
+function addRoleCommandFromRole(
+  role: StudioAuthoringRole,
+  layout?: StudioAuthoringDocument["layout"]["nodes"][string]
+): StudioAuthoringLeafCommand | null {
+  if (!roleCanRoundTripViaAddCommand(role)) {
+    return null;
+  }
+  return {
+    type: "add-role",
+    roleId: role.roleId,
+    title: role.title,
+    bindingKind: role.bindingKind,
+    modelRef: role.modelRef,
+    profileId: role.profileId,
+    x: layout?.x,
+    y: layout?.y
+  };
+}
+
+function addEdgeCommandFromFlow(
+  authoring: StudioAuthoringDocument,
+  flow: StudioAuthoringFlow
+): StudioAuthoringLeafCommand {
+  return {
+    type: "add-edge",
+    sourceRoleId: flow.fromRoleId,
+    targetRoleId: commandTargetRoleId(flow.toRoleId),
+    eventType: flow.eventType,
+    label: flow.label,
+    runtimeOnlyErrorFlow: flow.runtimeOnlyErrorFlow,
+    participatesInJoin: flowParticipatesInJoin(authoring, flow)
+  };
+}
+
+function hasInverseSideEffects(command: StudioAuthoringCommand): boolean {
+  if (command.type === "add-role") {
+    return Boolean(command.repositoryRoleId || command.profileDraft || command.toolDraft);
+  }
+  if (command.type === "update-role") {
+    return Boolean(command.profileDraft || command.toolDraft);
+  }
+  return false;
+}
+
 export function applyStudioAuthoringCommand(args: {
   authoring: StudioAuthoringDocument;
   command: StudioAuthoringCommand;
@@ -243,6 +327,44 @@ export function applyStudioAuthoringCommand(args: {
   canvas.edges ||= [];
 
   const command = args.command;
+  if (command.type === "batch") {
+    let nextAuthoring = authoring;
+    let nextCanvas = canvas;
+    let selectedRoleId: string | undefined;
+    let selectedFlowKey: string | undefined;
+    let repositoryRoleId: string | undefined;
+    const profileDrafts: StudioExecutionProfileDraft[] = [];
+    const toolDrafts: StudioExecutionToolDraft[] = [];
+    for (const nestedCommand of command.commands) {
+      const result = applyStudioAuthoringCommand({
+        authoring: nextAuthoring,
+        command: nestedCommand
+      });
+      if (result.blockedCode) {
+        return { authoring, canvas, blockedCode: result.blockedCode };
+      }
+      nextAuthoring = result.authoring;
+      nextCanvas = result.canvas;
+      selectedRoleId = result.selectedRoleId ?? selectedRoleId;
+      selectedFlowKey = result.selectedFlowKey ?? selectedFlowKey;
+      repositoryRoleId = result.repositoryRoleId ?? repositoryRoleId;
+      if (result.profileDrafts?.length) {
+        profileDrafts.push(...result.profileDrafts);
+      }
+      if (result.toolDrafts?.length) {
+        toolDrafts.push(...result.toolDrafts);
+      }
+    }
+    return {
+      authoring: nextAuthoring,
+      canvas: nextCanvas,
+      selectedRoleId,
+      selectedFlowKey,
+      repositoryRoleId,
+      profileDrafts: profileDrafts.length ? profileDrafts : undefined,
+      toolDrafts: toolDrafts.length ? toolDrafts : undefined
+    };
+  }
 
   if (command.type === "add-role" || command.type === "duplicate-role") {
     if (command.type === "add-role") {
@@ -305,6 +427,20 @@ export function applyStudioAuthoringCommand(args: {
     if (!roleId || roleId === authoring.system.entryRoleId) {
       return { authoring, canvas, blockedCode: "entry-role-delete" };
     }
+    for (const candidate of Object.values(authoring.roles)) {
+      if (Array.isArray(candidate.joinSources)) {
+        candidate.joinSources = candidate.joinSources.filter((source) => source !== roleId);
+        if (candidate.joinSources.length === 0) {
+          delete candidate.joinSources;
+        }
+      }
+      if (Array.isArray(candidate.routeOrder)) {
+        candidate.routeOrder = candidate.routeOrder.filter((target) => target !== roleId);
+        if (candidate.routeOrder.length === 0) {
+          delete candidate.routeOrder;
+        }
+      }
+    }
     delete authoring.roles[roleId];
     delete authoring.layout.nodes[roleId];
     authoring.flows = Object.fromEntries(
@@ -323,44 +459,44 @@ export function applyStudioAuthoringCommand(args: {
     if (!originalRoleId || !role) {
       return { authoring, canvas, blockedCode: "missing-role-id" };
     }
-    const nextRoleId = normalizeRoleId(command.roleId || originalRoleId);
-    if (!isValidRoleId(nextRoleId)) {
+    const nextRoleIdValue = normalizeRoleId(command.roleId || originalRoleId);
+    if (!isValidRoleId(nextRoleIdValue)) {
       return { authoring, canvas, blockedCode: "invalid-role-id" };
     }
-    if (nextRoleId !== originalRoleId && authoring.roles[nextRoleId]) {
+    if (nextRoleIdValue !== originalRoleId && authoring.roles[nextRoleIdValue]) {
       return { authoring, canvas, blockedCode: "duplicate-role-id" };
     }
-    const updatedRole = applyRoleBinding({ ...role, roleId: nextRoleId }, command);
-    if (nextRoleId !== originalRoleId) {
+    const updatedRole = applyRoleBinding({ ...role, roleId: nextRoleIdValue }, command);
+    if (nextRoleIdValue !== originalRoleId) {
       delete authoring.roles[originalRoleId];
-      authoring.roles[nextRoleId] = updatedRole;
+      authoring.roles[nextRoleIdValue] = updatedRole;
       if (authoring.system.entryRoleId === originalRoleId) {
-        authoring.system.entryRoleId = nextRoleId;
+        authoring.system.entryRoleId = nextRoleIdValue;
       }
       if (authoring.layout.nodes[originalRoleId]) {
-        authoring.layout.nodes[nextRoleId] = authoring.layout.nodes[originalRoleId];
+        authoring.layout.nodes[nextRoleIdValue] = authoring.layout.nodes[originalRoleId];
         delete authoring.layout.nodes[originalRoleId];
       }
       for (const flow of Object.values(authoring.flows)) {
-        if (flow.fromRoleId === originalRoleId) flow.fromRoleId = nextRoleId;
-        if (flow.toRoleId === originalRoleId) flow.toRoleId = nextRoleId;
+        if (flow.fromRoleId === originalRoleId) flow.fromRoleId = nextRoleIdValue;
+        if (flow.toRoleId === originalRoleId) flow.toRoleId = nextRoleIdValue;
       }
       for (const candidate of Object.values(authoring.roles)) {
         if (Array.isArray(candidate.joinSources)) {
-          candidate.joinSources = candidate.joinSources.map((source) => source === originalRoleId ? nextRoleId : source);
+          candidate.joinSources = candidate.joinSources.map((source) => source === originalRoleId ? nextRoleIdValue : source);
         }
         if (Array.isArray(candidate.routeOrder)) {
-          candidate.routeOrder = candidate.routeOrder.map((target) => target === originalRoleId ? nextRoleId : target);
+          candidate.routeOrder = candidate.routeOrder.map((target) => target === originalRoleId ? nextRoleIdValue : target);
         }
       }
       canvas.nodes = canvas.nodes.map((node) => node.roleId === originalRoleId
-        ? { ...node, id: nextRoleId, roleId: nextRoleId, label: updatedRole.title || nextRoleId, bindingKind: updatedRole.bindingKind }
+        ? { ...node, id: nextRoleIdValue, roleId: nextRoleIdValue, label: updatedRole.title || nextRoleIdValue, bindingKind: updatedRole.bindingKind }
         : node
       );
       canvas.edges = canvas.edges.map((edge) => ({
         ...edge,
-        source: edge.source === originalRoleId ? nextRoleId : edge.source,
-        target: edge.target === originalRoleId ? nextRoleId : edge.target
+        source: edge.source === originalRoleId ? nextRoleIdValue : edge.source,
+        target: edge.target === originalRoleId ? nextRoleIdValue : edge.target
       }));
     } else {
       authoring.roles[originalRoleId] = updatedRole;
@@ -372,7 +508,7 @@ export function applyStudioAuthoringCommand(args: {
     return {
       authoring,
       canvas,
-      selectedRoleId: nextRoleId,
+      selectedRoleId: nextRoleIdValue,
       profileDrafts: command.profileDraft ? [command.profileDraft] : undefined,
       toolDrafts: command.toolDraft ? [command.toolDraft] : undefined
     };
@@ -455,14 +591,12 @@ export function applyStudioAuthoringCommand(args: {
     if (!EVENT_TYPE_PATTERN.test(eventType)) {
       return { authoring, canvas, blockedCode: "invalid-event-type" };
     }
-    const original = Object.entries(authoring.flows).find(([flowId, flow]) =>
-      matchesFlow(flow, {
-        flowId: command.flowId,
-        sourceRoleId: command.originalSourceRoleId,
-        targetRoleId: originalTargetRoleId,
-        eventType: originalEventType
-      }, flowId)
-    );
+    const original = findMatchingFlowEntry(authoring, {
+      flowId: command.flowId,
+      sourceRoleId: command.originalSourceRoleId,
+      targetRoleId: originalTargetRoleId,
+      eventType: originalEventType
+    });
     if (!original) {
       return { authoring, canvas, blockedCode: "invalid-edge-endpoints" };
     }
@@ -499,11 +633,11 @@ export function applyStudioAuthoringCommand(args: {
       syncJoinSource(authoring, targetRoleId, sourceRoleId, Boolean(command.participatesInJoin));
     }
     canvas.edges = canvas.edges.map((edge) => {
-      const matches = (command.flowId && edge.id === command.flowId) ||
+      const isMatch = (command.flowId && edge.id === command.flowId) ||
         (edge.source === command.originalSourceRoleId &&
           edge.target === originalTargetRoleId &&
           edge.eventType === originalEventType);
-      return matches
+      return isMatch
         ? {
             ...edge,
             id: flow.flowId,
@@ -520,7 +654,21 @@ export function applyStudioAuthoringCommand(args: {
   }
 
   if (command.type === "delete-edge") {
-    const targetRoleId = command.targetRoleId === "output" ? STUDIO_SYSTEM_END_ROLE_ID : command.targetRoleId;
+    const targetRoleId = normalizeStudioGraphStoredRoleId(command.targetRoleId);
+    const removedFlows = Object.entries(authoring.flows).reduce<StudioAuthoringFlow[]>((list, [flowId, flow]) => {
+      if (command.flowId && flowId === command.flowId) {
+        list.push(flow);
+        return list;
+      }
+      if (
+        flow.fromRoleId === command.sourceRoleId &&
+        flow.toRoleId === targetRoleId &&
+        flow.eventType === command.eventType
+      ) {
+        list.push(flow);
+      }
+      return list;
+    }, []);
     authoring.flows = Object.fromEntries(
       Object.entries(authoring.flows).filter(([flowId, flow]) => {
         if (command.flowId && flowId === command.flowId) {
@@ -533,6 +681,11 @@ export function applyStudioAuthoringCommand(args: {
         );
       })
     );
+    for (const flow of removedFlows) {
+      if (flow.toRoleId !== STUDIO_SYSTEM_END_ROLE_ID) {
+        syncJoinSource(authoring, flow.toRoleId, flow.fromRoleId, false);
+      }
+    }
     canvas.edges = canvas.edges.filter((edge) => {
       if (command.flowId && edge.id === command.flowId) {
         return false;
@@ -547,4 +700,144 @@ export function applyStudioAuthoringCommand(args: {
   }
 
   return { authoring, canvas };
+}
+
+export function deriveInverseCommand(
+  authoring: StudioAuthoringDocument,
+  command: StudioAuthoringCommand
+): StudioAuthoringCommand | null {
+  if (command.type === "batch") {
+    let working = cloneJson(authoring);
+    const inverses: StudioAuthoringCommand[] = [];
+    for (const nestedCommand of command.commands) {
+      const inverse = deriveInverseCommand(working, nestedCommand);
+      if (!inverse) {
+        return null;
+      }
+      const result = applyStudioAuthoringCommand({
+        authoring: working,
+        command: nestedCommand
+      });
+      if (result.blockedCode) {
+        return null;
+      }
+      working = result.authoring;
+      inverses.unshift(inverse);
+    }
+    if (inverses.length === 0) {
+      return { type: "batch", commands: [] };
+    }
+    return inverses.length === 1 ? inverses[0] : { type: "batch", commands: inverses };
+  }
+
+  if (hasInverseSideEffects(command)) {
+    return null;
+  }
+
+  if (command.type === "add-role" || command.type === "duplicate-role") {
+    const result = applyStudioAuthoringCommand({ authoring, command });
+    if (result.blockedCode || !result.selectedRoleId) {
+      return null;
+    }
+    return { type: "delete-role", roleId: result.selectedRoleId };
+  }
+
+  if (command.type === "update-role") {
+    const originalRoleId = normalizeRoleId(command.originalRoleId);
+    const role = authoring.roles[originalRoleId];
+    if (!originalRoleId || !role) {
+      return null;
+    }
+    const updatedRoleId = normalizeRoleId(command.roleId || command.originalRoleId);
+    if (!updatedRoleId) {
+      return null;
+    }
+    return {
+      type: "update-role",
+      originalRoleId: updatedRoleId,
+      roleId: role.roleId,
+      title: role.title,
+      bindingKind: role.bindingKind,
+      modelRef: role.modelRef,
+      profileId: role.profileId
+    };
+  }
+
+  if (command.type === "delete-role") {
+    const roleId = normalizeRoleId(command.roleId);
+    const role = authoring.roles[roleId];
+    if (!role) {
+      return null;
+    }
+    const addRole = addRoleCommandFromRole(role, authoring.layout.nodes[roleId]);
+    if (!addRole) {
+      return null;
+    }
+    const flowCommands = Object.values(authoring.flows)
+      .filter((flow) => flow.fromRoleId === roleId || flow.toRoleId === roleId)
+      .sort((left, right) => left.flowId.localeCompare(right.flowId))
+      .map((flow) => addEdgeCommandFromFlow(authoring, flow));
+    const commands = [addRole, ...flowCommands];
+    return commands.length === 1 ? commands[0] : { type: "batch", commands };
+  }
+
+  if (command.type === "add-edge") {
+    const result = applyStudioAuthoringCommand({ authoring, command });
+    if (result.blockedCode) {
+      return null;
+    }
+    const addedFlowEntry = Object.entries(result.authoring.flows).find(([flowId]) => !authoring.flows[flowId]);
+    if (!addedFlowEntry) {
+      return null;
+    }
+    const [flowId, flow] = addedFlowEntry;
+    return {
+      type: "delete-edge",
+      flowId,
+      sourceRoleId: flow.fromRoleId,
+      targetRoleId: commandTargetRoleId(flow.toRoleId),
+      eventType: flow.eventType
+    };
+  }
+
+  if (command.type === "update-edge") {
+    const original = findMatchingFlowEntry(authoring, {
+      flowId: command.flowId,
+      sourceRoleId: command.originalSourceRoleId,
+      targetRoleId: command.originalTargetRoleId,
+      eventType: command.originalEventType
+    });
+    if (!original) {
+      return null;
+    }
+    const [flowId, flow] = original;
+    return {
+      type: "update-edge",
+      flowId: flow.flowId || flowId,
+      originalSourceRoleId: normalizeRoleId(command.sourceRoleId),
+      originalTargetRoleId: commandTargetRoleId(normalizeStudioGraphStoredRoleId(command.targetRoleId)),
+      originalEventType: normalizeEventType(command.eventType || "DONE"),
+      sourceRoleId: flow.fromRoleId,
+      targetRoleId: commandTargetRoleId(flow.toRoleId),
+      eventType: flow.eventType,
+      label: flow.label,
+      runtimeOnlyErrorFlow: flow.runtimeOnlyErrorFlow,
+      participatesInJoin: flowParticipatesInJoin(authoring, flow)
+    };
+  }
+
+  if (command.type === "delete-edge") {
+    const flowEntry = findMatchingFlowEntry(authoring, {
+      flowId: command.flowId,
+      sourceRoleId: command.sourceRoleId,
+      targetRoleId: command.targetRoleId,
+      eventType: command.eventType
+    });
+    if (!flowEntry) {
+      return null;
+    }
+    return addEdgeCommandFromFlow(authoring, flowEntry[1]);
+  }
+
+  return null;
 }

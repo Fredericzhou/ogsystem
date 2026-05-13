@@ -114,17 +114,40 @@ function cloneJson(value) {
 }
 
 function findWorkbenchViewButton(harness, view) {
-  return harness.document
+  const scope = harness.document.getElementById("global-status-context") ?? harness.document;
+  const matches = scope
     .querySelectorAll(`[data-workbench-view="${view}"]`)
-    .findLast((button) => button.getAttribute("data-workbench-view") === view) ?? null;
+    .filter((button) => button.getAttribute("data-workbench-view") === view);
+  return matches.findLast((button) => (button.listeners?.get("click")?.length ?? 0) > 0)
+    ?? matches.at(-1)
+    ?? null;
 }
 
-async function openBuildTab(harness) {
-  const buildTab = harness.document.getElementById("console-tabs")
+function findStudioSideTabButton(harness, tab) {
+  const matches = harness.document.getElementById("workbench-body")
+    .querySelectorAll(`[data-studio-side-tab="${tab}"]`)
+    .filter((button) => button.getAttribute("data-studio-side-tab") === tab);
+  return matches.findLast((button) => (button.listeners?.get("click")?.length ?? 0) > 0)
+    ?? matches.at(-1)
+    ?? null;
+}
+
+function findWorkbenchStartRunButton(harness) {
+  return harness.document.getElementById("workbench-body")
+    .querySelectorAll("button")
+    .find((button) => button.id === "workbench-start-run" || /Start dry run|开始试运行/.test(button.textContent || "")) ?? null;
+}
+
+async function openDesignTab(harness) {
+  const designTab = harness.document.getElementById("console-tabs")
     .querySelectorAll("[data-console-tab]")
-    .find((button) => button.getAttribute("data-console-tab") === "build");
-  assert.ok(buildTab);
-  await buildTab.click();
+    .find((button) => button.getAttribute("data-console-tab") === "design");
+  assert.ok(designTab);
+  if (designTab.getAttribute("aria-pressed") === "true") {
+    await settle();
+    return;
+  }
+  await designTab.click();
   await settle();
 }
 
@@ -1405,8 +1428,7 @@ function createBackend(options = {}) {
             authoringPatch: {
               type: "replace-authoring",
               source: "nl2mmd",
-              authoring: this.lastStudioChatBody.authoring,
-              canvas: { version: 1, nodes: [], edges: [] }
+              authoring: this.lastStudioChatBody.authoring
             },
             actions: [
               {
@@ -1433,8 +1455,8 @@ function createBackend(options = {}) {
           "qa-reviewer": {
             roleId: "qa-reviewer",
             title: "QA Reviewer",
-            bindingKind: "profile",
-            profileRef: "profile.review"
+            bindingKind: "exec",
+            profileId: "profile.review"
           }
         };
         nextAuthoring.flows = {
@@ -1476,19 +1498,27 @@ function createBackend(options = {}) {
             project: { ok: true, diagnostics: [], structure: null }
           },
           authoringPatch: {
-            type: "replace-authoring",
+            type: "commands",
             source: "nl2mmd",
             authoring: nextAuthoring,
-            canvas: {
-              version: 1,
-              nodes: [
-                { id: "demo-analyst", roleId: "demo-analyst", x: 120, y: 120, width: 180, height: 84 },
-                { id: "qa-reviewer", roleId: "qa-reviewer", x: 380, y: 120, width: 180, height: 84 }
-              ],
-              edges: [
-                { id: "2:demo-analyst:REVIEW:qa-reviewer", source: "demo-analyst", target: "qa-reviewer", label: "进入复核", eventType: "REVIEW" }
-              ]
-            }
+            commands: [
+              {
+                type: "add-role",
+                roleId: "qa-reviewer",
+                title: "QA Reviewer",
+                bindingKind: "exec",
+                profileId: "profile.review",
+                x: 380,
+                y: 120
+              },
+              {
+                type: "add-edge",
+                sourceRoleId: "demo-analyst",
+                targetRoleId: "qa-reviewer",
+                eventType: "REVIEW",
+                label: "进入复核"
+              }
+            ]
           },
           actions: [{ id: "apply-authoring-patch", enabled: true }],
           context: {
@@ -2230,7 +2260,7 @@ async function createClientHarness(options = {}) {
 
 test("visualizer client route helpers round-trip query state", () => {
   const search = buildRouteSearch({
-    lifecycle: "operate",
+    lifecycle: "run",
     projectHome: false,
     selectedRunId: "run-123",
     selectedReviewId: "review-1",
@@ -2240,23 +2270,23 @@ test("visualizer client route helpers round-trip query state", () => {
   });
   assert.equal(
     search,
-    "lifecycle=operate&runId=run-123&reviewId=review-1&logRoleId=alpha&tail=25&since=2026-04-23T10%3A11"
+    "lifecycle=run&runId=run-123&reviewId=review-1&logRoleId=alpha&tail=25&since=2026-04-23T10%3A11"
   );
   assert.deepEqual(readRouteStateFromSearch(`?${search}`), {
     view: "",
-    lifecycle: "operate",
+    lifecycle: "run",
     runId: "run-123",
     reviewId: "review-1",
     logRoleId: "alpha",
     tail: "25",
     since: "2026-04-23T10:11"
   });
-  assert.equal(normalizeLifecycleView("build", ""), "build");
-  assert.equal(normalizeLifecycleView("", "project"), "project");
-  assert.equal(normalizeLifecycleView("", ""), "project");
+  assert.equal(normalizeLifecycleView("build", ""), "design");
+  assert.equal(normalizeLifecycleView("", "project"), "design");
+  assert.equal(normalizeLifecycleView("", ""), "design");
   assert.equal(
     buildRouteSearch({
-      lifecycle: "project",
+      lifecycle: "design",
       projectHome: true,
       selectedRunId: "",
       selectedReviewId: "",
@@ -2264,11 +2294,11 @@ test("visualizer client route helpers round-trip query state", () => {
       logTail: "",
       logSince: ""
     }),
-    "lifecycle=project&view=project"
+    "lifecycle=design"
   );
-  assert.deepEqual(readRouteStateFromSearch("?lifecycle=project"), {
+  assert.deepEqual(readRouteStateFromSearch("?lifecycle=design"), {
     view: "",
-    lifecycle: "project",
+    lifecycle: "design",
     runId: "",
     reviewId: "",
     logRoleId: "",
@@ -2326,7 +2356,7 @@ test("visualizer client renders empty workspace without project API writes", asy
       canInitialize: true,
       controlledPathConflicts: []
     },
-    search: "?lifecycle=build&runId=old-run"
+    search: "?lifecycle=design&runId=old-run"
   });
 
   await waitForCondition(() => /Initialize current directory|Start a new OGSystem project here/i.test(harness.document.getElementById("project-wizard").textContent));
@@ -2337,7 +2367,7 @@ test("visualizer client renders empty workspace without project API writes", asy
   assert.equal(harness.document.getElementById("build-save"), null);
   assert.equal(harness.document.getElementById("resume-run").hidden, true);
   assert.equal(harness.document.getElementById("release-export").disabled, true);
-  assert.equal(harness.window.location.search, "?lifecycle=build");
+  assert.equal(harness.window.location.search, "?lifecycle=design");
   assert.ok(harness.backend.fetchCalls.some((call) => call.path === "/api/v1/workspace"));
   assert.equal(harness.backend.fetchCalls.some((call) => call.path === "/api/v1/project"), false);
   assert.equal(harness.backend.fetchCalls.some((call) => call.path === "/api/v1/project/system/workbench"), false);
@@ -2406,8 +2436,8 @@ test("visualizer client creates a project from the empty workspace wizard", asyn
   assert.equal(harness.backend.fetchCalls.some((call) => call.path === "/api/v1/project/roles/import"), false);
   assert.equal(harness.backend.fetchCalls.some((call) => call.path === "/api/v1/project/system/save"), false);
   assert.equal(harness.backend.fetchCalls.some((call) => call.path === "/api/v1/runs/start"), false);
-  assert.equal(harness.document.getElementById("console-panel-project").hidden, true);
-  assert.match(harness.document.getElementById("flash").textContent, /Project created\. Continue in Build\./);
+  assert.equal(harness.document.getElementById("console-panel-project").hidden, false);
+  assert.match(harness.document.getElementById("flash").textContent, /Project created\. Continue in Design\./);
 });
 
 test("visualizer client shows staged progress while project creation is still running", async () => {
@@ -2440,7 +2470,7 @@ test("visualizer client shows staged progress while project creation is still ru
     templateId: "empty",
     validation: { ok: true, diagnostics: [], structure: null }
   }));
-  await waitForCondition(() => /Project created\. Continue in Build\.|项目已创建，请继续构建。/.test(harness.document.getElementById("flash").textContent));
+  await waitForCondition(() => /Project created\. Continue in Design\.|项目已创建，请继续设计。/.test(harness.document.getElementById("flash").textContent));
 });
 
 test("visualizer client retries graph workspace warmup until graph content becomes available", async () => {
@@ -2565,7 +2595,7 @@ test("visualizer client builds Studio canvas from authoring when bridge extracte
     mountCalls.push({ root, options });
   };
 
-  await openBuildTab(harness);
+  await openDesignTab(harness);
   const bridgeTab = findWorkbenchViewButton(harness, "bridge");
   assert.ok(bridgeTab);
   await bridgeTab.click();
@@ -2597,13 +2627,13 @@ test("visualizer client retries workspace load after initial failure and auto-di
 test("visualizer client keeps console and run list interactions idempotent across rerenders", async () => {
   const harness = await createClientHarness();
 
-  const operateTab = harness.document.getElementById("console-tabs")
+  const runTab = harness.document.getElementById("console-tabs")
     .querySelectorAll("[data-console-tab]")
-    .find((button) => button.getAttribute("data-console-tab") === "operate");
-  assert.ok(operateTab);
-  await operateTab.click();
+    .find((button) => button.getAttribute("data-console-tab") === "run");
+  assert.ok(runTab);
+  await runTab.click();
   await settle();
-  await operateTab.click();
+  await runTab.click();
   await settle();
 
   const runButton = harness.document.getElementById("run-list")
@@ -2655,7 +2685,7 @@ test("visualizer client shows stable project create conflict errors", async () =
   assert.equal(harness.backend.lastProjectCreateBody.conflictStrategy, "reject");
   assert.match(harness.document.getElementById("project-wizard").textContent, /existing files|current directory|needs confirmation/i);
   assert.match(harness.document.getElementById("project-wizard").textContent, /existing files untouched|project root|current-directory initialization/i);
-  assert.equal(harness.document.getElementById("console-panel-build").hidden, true);
+  assert.match(harness.document.getElementById("workbench-body").textContent, /initialize the current directory|not initialized/i);
 });
 
 test("visualizer client surfaces invalid project diagnostics and disables editing", async () => {
@@ -2691,7 +2721,8 @@ test("visualizer client surfaces invalid project diagnostics and disables editin
   assert.match(harness.document.getElementById("project-wizard").textContent, /entry\.role is missing or invalid/i);
   assert.match(harness.document.getElementById("workbench-body").textContent, /fix the project diagnostics|请先修复项目诊断问题/i);
   assert.equal(harness.document.getElementById("resume-run").disabled, true);
-  assert.equal(harness.document.getElementById("reindex").disabled, true);
+  assert.equal(harness.document.getElementById("build-validate"), null);
+  assert.equal(harness.document.getElementById("build-save"), null);
 });
 
 test("visualizer client stream helpers dedupe timeline entries and cap history", () => {
@@ -2753,7 +2784,7 @@ test("visualizer client renders zh-CN chrome while preserving runtime identifier
     mountCalls.push({ root, options });
   };
 
-  assert.match(harness.document.getElementById("console-tabs").textContent, /校验与发布/);
+  assert.match(harness.document.getElementById("console-tabs").textContent, /Design Run Release/);
   assert.equal(harness.document.getElementById("action-form-section").hidden, true);
   const recoveryTab = harness.document.getElementById("operate-tabs")
     .querySelectorAll("[data-operate-tab]")
@@ -2791,7 +2822,7 @@ test("visualizer client renders zh-CN chrome while preserving runtime identifier
   assert.match(harness.document.getElementById("resume-diagnostics").textContent, /需关注/);
   assert.doesNotMatch(harness.document.getElementById("resume-diagnostics").textContent, /\bwarning\b|\battention\b/);
 
-  await openBuildTab(harness);
+  await openDesignTab(harness);
   const bridgeTab = findWorkbenchViewButton(harness, "bridge");
   assert.ok(bridgeTab);
   await bridgeTab.click();
@@ -2920,24 +2951,29 @@ test("visualizer client renders config explain panels and failure next checks", 
     harness.backend.fetchCalls.some((call) => call.path === "/api/v1/project/role-packages"),
     true
   );
+  const designTab = harness.document.getElementById("console-tabs")
+    .querySelectorAll("[data-console-tab]")
+    .find((button) => button.getAttribute("data-console-tab") === "design");
   const legacyTab = harness.document.getElementById("console-tabs")
     .querySelectorAll("[data-console-tab]")
     .find((button) => button.getAttribute("data-console-tab") === "legacy");
+  assert.ok(designTab);
   assert.equal(legacyTab, undefined);
-  const legacyHarness = await createClientHarness({ search: "?lifecycle=legacy" });
-  const configTab = legacyHarness.document.getElementById("console-tabs")
-    .querySelectorAll("[data-legacy-console-tab]")
-    .find((button) => button.getAttribute("data-legacy-console-tab") === "config");
-  assert.ok(configTab);
-  await configTab.click();
+  await designTab.click();
   await settle();
-  assert.match(legacyHarness.document.getElementById("binding-explain").textContent, /opencode\/gpt-5-nano/);
+  assert.match(harness.document.getElementById("binding-explain").textContent, /opencode\/gpt-5-nano/);
   assert.match(harness.document.getElementById("ops-summary").textContent, /TOOL_EXECUTION_TIMEOUT/);
   assert.match(harness.document.getElementById("ops-summary").textContent, /active rework branches/);
   assert.match(harness.document.getElementById("project-wizard").textContent, /dry-run readiness/);
   assert.match(harness.document.getElementById("project-wizard").textContent, /READINESS_STRICT_HANDOFF_CONTRACT_MISSING/);
-  assert.match(legacyHarness.document.getElementById("role-packages").textContent, /output\.schema\.json/);
-  assert.match(legacyHarness.document.getElementById("contract-explain").textContent, /flow.answer.done/);
+  assert.match(harness.document.getElementById("role-packages").textContent, /output\.schema\.json/);
+  assert.match(harness.document.getElementById("contract-explain").textContent, /flow.answer.done/);
+  const runTab = harness.document.getElementById("console-tabs")
+    .querySelectorAll("[data-console-tab]")
+    .find((button) => button.getAttribute("data-console-tab") === "run");
+  assert.ok(runTab);
+  await runTab.click();
+  await settle();
   const recoveryTab = harness.document.getElementById("operate-tabs")
     .querySelectorAll("[data-operate-tab]")
     .find((button) => button.getAttribute("data-operate-tab") === "recovery");
@@ -2948,20 +2984,18 @@ test("visualizer client renders config explain panels and failure next checks", 
   assert.ok(harness.document.getElementById("failure-check-resume"));
 });
 
-test("visualizer client switches lifecycle shell without unloading data and hides legacy fallback by default", async () => {
+test("visualizer client switches Design Run Release shells without unloading data", async () => {
   const harness = await createClientHarness({ search: "" });
   const tabs = harness.document.getElementById("console-tabs").querySelectorAll("[data-console-tab]");
-  const operateTab = tabs.find((button) => button.getAttribute("data-console-tab") === "operate");
-  const buildTab = tabs.find((button) => button.getAttribute("data-console-tab") === "build");
-  const validateTab = tabs.find((button) => button.getAttribute("data-console-tab") === "validate-release");
-  const projectTab = tabs.find((button) => button.getAttribute("data-console-tab") === "project");
+  const designTab = tabs.find((button) => button.getAttribute("data-console-tab") === "design");
+  const runTab = tabs.find((button) => button.getAttribute("data-console-tab") === "run");
+  const releaseTab = tabs.find((button) => button.getAttribute("data-console-tab") === "release");
   const legacyTab = tabs.find((button) => button.getAttribute("data-console-tab") === "legacy");
 
-  assert.equal(tabs.length, 4);
-  assert.ok(operateTab);
-  assert.ok(buildTab);
-  assert.ok(validateTab);
-  assert.ok(projectTab);
+  assert.equal(tabs.length, 3);
+  assert.ok(designTab);
+  assert.ok(runTab);
+  assert.ok(releaseTab);
   assert.equal(legacyTab, undefined);
   assert.equal(harness.document.getElementById("console-panel-project").hidden, false);
   assert.equal(harness.document.getElementById("console-panel-debug").hidden, true);
@@ -2969,13 +3003,13 @@ test("visualizer client switches lifecycle shell without unloading data and hide
   assert.equal(harness.document.body.classList.classes.has("show-operate-workspace"), false);
   assert.equal(harness.document.body.classList.classes.has("show-run-sidebar"), false);
   assert.equal(harness.document.getElementById("sidebar-toggle").hidden, true);
-  assert.equal(projectTab.getAttribute("aria-pressed"), "true");
-  assert.equal(operateTab.getAttribute("aria-pressed"), "false");
+  assert.equal(designTab.getAttribute("aria-pressed"), "true");
+  assert.equal(runTab.getAttribute("aria-pressed"), "false");
   assert.equal(harness.document.getElementById("sidebar-toggle").getAttribute("aria-expanded"), "false");
   assert.match(harness.document.getElementById("project-wizard").textContent, /Overview/);
   assert.ok(harness.document.getElementById("project-wizard").querySelectorAll(".project-home-layout").length >= 1);
 
-  await operateTab.click();
+  await runTab.click();
   assert.equal(harness.document.getElementById("console-panel-debug").hidden, false);
   assert.equal(harness.document.getElementById("console-panel-ops").hidden, false);
   assert.equal(harness.document.getElementById("console-panel-logs").hidden, true);
@@ -2993,13 +3027,13 @@ test("visualizer client switches lifecycle shell without unloading data and hide
   const overviewOperateTab = operateTabButtons.find((button) => button.getAttribute("data-operate-tab") === "overview");
   const logsOperateTab = operateTabButtons.find((button) => button.getAttribute("data-operate-tab") === "logs");
   const lifecycleButtonsAfterOperate = harness.document.getElementById("console-tabs").querySelectorAll("[data-console-tab]");
-  const projectTabAfterOperate = lifecycleButtonsAfterOperate.find((button) => button.getAttribute("data-console-tab") === "project");
-  const operateTabAfterOperate = lifecycleButtonsAfterOperate.find((button) => button.getAttribute("data-console-tab") === "operate");
-  assert.equal(operateTabAfterOperate?.getAttribute("aria-pressed"), "true");
-  assert.equal(operateTabAfterOperate?.getAttribute("role"), "tab");
-  assert.equal(operateTabAfterOperate?.getAttribute("aria-selected"), "true");
-  assert.equal(operateTabAfterOperate?.getAttribute("aria-controls"), "operate-tabpanel-overview");
-  assert.equal(projectTabAfterOperate?.getAttribute("aria-pressed"), "false");
+  const designTabAfterRun = lifecycleButtonsAfterOperate.find((button) => button.getAttribute("data-console-tab") === "design");
+  const runTabAfterRun = lifecycleButtonsAfterOperate.find((button) => button.getAttribute("data-console-tab") === "run");
+  assert.equal(runTabAfterRun?.getAttribute("aria-pressed"), "true");
+  assert.equal(runTabAfterRun?.getAttribute("role"), "tab");
+  assert.equal(runTabAfterRun?.getAttribute("aria-selected"), "true");
+  assert.equal(runTabAfterRun?.getAttribute("aria-controls"), "operate-tabpanel-overview");
+  assert.equal(designTabAfterRun?.getAttribute("aria-pressed"), "false");
   assert.equal(overviewOperateTab?.getAttribute("aria-pressed"), "true");
   assert.equal(overviewOperateTab?.getAttribute("role"), "tab");
   assert.equal(overviewOperateTab?.getAttribute("aria-selected"), "true");
@@ -3018,9 +3052,9 @@ test("visualizer client switches lifecycle shell without unloading data and hide
   assert.equal(harness.document.getElementById("console-panel-logs").getAttribute("role"), "tabpanel");
   assert.match(harness.document.getElementById("console-panel-logs").getAttribute("aria-labelledby"), /operate-tab-logs/);
 
-  await buildTab.click();
+  await designTab.click();
   assert.equal(harness.document.getElementById("console-panel-build").hidden, false);
-  assert.equal(harness.document.getElementById("console-panel-project").hidden, true);
+  assert.equal(harness.document.getElementById("console-panel-project").hidden, false);
   assert.equal(harness.document.getElementById("console-panel-config").hidden, true);
   assert.equal(harness.document.body.classList.classes.has("show-run-sidebar"), false);
   assert.equal(harness.document.body.classList.classes.has("show-operate-workspace"), false);
@@ -3028,7 +3062,7 @@ test("visualizer client switches lifecycle shell without unloading data and hide
   assert.equal(harness.document.getElementById("sidebar-toggle").hidden, true);
   assert.doesNotMatch(harness.document.getElementById("console-panel-build").textContent, /Config Explain/);
 
-  await validateTab.click();
+  await releaseTab.click();
   assert.equal(harness.document.getElementById("console-panel-validate-release").hidden, false);
   assert.equal(harness.document.getElementById("console-panel-config").hidden, true);
   assert.match(harness.document.getElementById("release-gate").textContent, /release candidate/);
@@ -3036,10 +3070,10 @@ test("visualizer client switches lifecycle shell without unloading data and hide
   assert.match(harness.document.getElementById("release-gate").textContent, /Quality signals/);
   assert.match(harness.document.getElementById("release-gate").textContent, /Evidence and export scope/);
 
-  await projectTab.click();
+  await designTab.click();
   assert.equal(harness.document.getElementById("console-panel-config").hidden, true);
   assert.equal(harness.document.getElementById("console-panel-project").hidden, false);
-  assert.equal(harness.document.getElementById("console-panel-build").hidden, true);
+  assert.equal(harness.document.getElementById("console-panel-build").hidden, false);
   assert.equal(harness.document.body.classList.classes.has("show-run-sidebar"), false);
   assert.equal(harness.document.getElementById("sidebar-toggle").hidden, true);
   assert.match(harness.document.getElementById("project-wizard").textContent, /dry-run readiness/);
@@ -3050,7 +3084,7 @@ test("visualizer client switches lifecycle shell without unloading data and hide
 });
 
 test("visualizer client sidebar toggle exposes expanded state", async () => {
-  const harness = await createClientHarness({ search: "?lifecycle=operate" });
+  const harness = await createClientHarness({ search: "?lifecycle=run" });
   let sidebarToggle = harness.document.getElementById("sidebar-toggle");
   assert.equal(sidebarToggle.hidden, false);
   assert.equal(sidebarToggle.getAttribute("aria-controls"), "sidebar");
@@ -3067,32 +3101,27 @@ test("visualizer client sidebar toggle exposes expanded state", async () => {
   assert.equal(sidebarToggle.getAttribute("aria-expanded"), "false");
 });
 
-test("visualizer client keeps legacy fallback available through explicit deep links", async () => {
+test("visualizer client normalizes legacy lifecycle deep links onto the Run shell", async () => {
   const harness = await createClientHarness({ search: "?lifecycle=legacy" });
   const tabs = harness.document.getElementById("console-tabs").querySelectorAll("[data-console-tab]");
+  const runTab = tabs.find((button) => button.getAttribute("data-console-tab") === "run");
   const legacyTab = tabs.find((button) => button.getAttribute("data-console-tab") === "legacy");
-  assert.ok(legacyTab);
-  assert.equal(legacyTab.getAttribute("data-console-tab"), "legacy");
-  assert.match(harness.window.location.search, /[?&]lifecycle=legacy/);
-
-  const legacyButtons = harness.document.getElementById("console-tabs").querySelectorAll("[data-legacy-console-tab]");
-  const legacyLogs = legacyButtons.find((button) => button.getAttribute("data-legacy-console-tab") === "logs");
-  assert.ok(legacyLogs);
-  await legacyLogs.click();
-  assert.equal(harness.document.getElementById("console-panel-logs").hidden, false);
-  assert.equal(harness.document.getElementById("console-panel-project").hidden, true);
+  assert.ok(runTab);
+  assert.equal(legacyTab, undefined);
+  assert.match(harness.window.location.search, /[?&]lifecycle=run/);
+  assert.equal(harness.document.getElementById("console-panel-debug").hidden, false);
   assert.equal(harness.document.body.classList.classes.has("show-run-sidebar"), true);
   assert.equal(harness.document.getElementById("sidebar-toggle").hidden, false);
 });
 
-test("visualizer client keeps build deep links on the project graph workspace", async () => {
+test("visualizer client normalizes build deep links onto the Design shell", async () => {
   const harness = await createClientHarness({ search: "?lifecycle=build" });
 
   assert.equal(harness.document.getElementById("console-panel-build").hidden, false);
-  assert.equal(harness.document.getElementById("console-panel-project").hidden, true);
+  assert.equal(harness.document.getElementById("console-panel-project").hidden, false);
   assert.equal(harness.document.getElementById("console-panel-config").hidden, true);
   assert.equal(harness.document.getElementById("console-panel-debug").hidden, true);
-  assert.match(harness.window.location.search, /[?&]lifecycle=build/);
+  assert.match(harness.window.location.search, /[?&]lifecycle=design/);
   assert.doesNotMatch(harness.window.location.search, /[?&]runId=/);
 });
 
@@ -3363,8 +3392,14 @@ test("visualizer client resumes and stops runs through inline forms", async () =
 
 test("visualizer client keeps dry-run launch inline in Build and avoids opening the action dialog", async () => {
   const harness = await createClientHarness({ readinessCanDryRun: true });
+  await openDesignTab(harness);
 
-  const dryRunButton = harness.document.getElementById("build-dry-run");
+  await waitForCondition(() => Boolean(findStudioSideTabButton(harness, "debug")));
+  const debugTabButton = findStudioSideTabButton(harness, "debug");
+  assert.ok(debugTabButton);
+  await debugTabButton.click();
+  await waitForCondition(() => Boolean(findWorkbenchStartRunButton(harness)));
+  const dryRunButton = findWorkbenchStartRunButton(harness);
   assert.ok(dryRunButton);
   dryRunButton.focus();
   await dryRunButton.click();
@@ -3532,7 +3567,7 @@ test("visualizer client stream cursor index dedupes repeated SSE events", async 
 
 test("visualizer client keeps the workbench editor visible with source intact during validation", async () => {
   const harness = await createClientHarness();
-  await openBuildTab(harness);
+  await openDesignTab(harness);
 
   const sourceTab = findWorkbenchViewButton(harness, "source");
   assert.ok(sourceTab);
@@ -3569,7 +3604,7 @@ test("visualizer client keeps the workbench editor visible with source intact du
 
 test("visualizer client debounces workbench validation to the latest input", async () => {
   const harness = await createClientHarness();
-  await openBuildTab(harness);
+  await openDesignTab(harness);
 
   const sourceTab = findWorkbenchViewButton(harness, "source");
   assert.ok(sourceTab);
@@ -3633,7 +3668,7 @@ test("visualizer client applies timeline filters through the events API", async 
 
 test("visualizer client edits the Mermaid workbench, saves, and starts a run", async () => {
   const harness = await createClientHarness({ readinessCanDryRun: true });
-  await openBuildTab(harness);
+  await openDesignTab(harness);
 
   const sourceTab = findWorkbenchViewButton(harness, "source");
   assert.ok(sourceTab);
@@ -3675,7 +3710,12 @@ test("visualizer client edits the Mermaid workbench, saves, and starts a run", a
     harness.backend.fetchCalls.some((call) => call.path === "/api/v1/project/system/save")
   );
 
-  const dryRunButton = harness.document.getElementById("build-dry-run");
+  await waitForCondition(() => Boolean(findStudioSideTabButton(harness, "debug")));
+  const debugTabButton = findStudioSideTabButton(harness, "debug");
+  assert.ok(debugTabButton);
+  await debugTabButton.click();
+  await waitForCondition(() => Boolean(findWorkbenchStartRunButton(harness)));
+  const dryRunButton = findWorkbenchStartRunButton(harness);
   assert.ok(dryRunButton);
   await dryRunButton.click();
   await waitForCondition(() => Boolean(harness.document.getElementById("workbench-run-input")));
@@ -3695,8 +3735,14 @@ test("visualizer client edits the Mermaid workbench, saves, and starts a run", a
 
 test("visualizer client blocks start run submit when run input is empty", async () => {
   const harness = await createClientHarness({ readinessCanDryRun: true });
+  await openDesignTab(harness);
 
-  const dryRunButton = harness.document.getElementById("build-dry-run");
+  await waitForCondition(() => Boolean(findStudioSideTabButton(harness, "debug")));
+  const debugTabButton = findStudioSideTabButton(harness, "debug");
+  assert.ok(debugTabButton);
+  await debugTabButton.click();
+  await waitForCondition(() => Boolean(findWorkbenchStartRunButton(harness)));
+  const dryRunButton = findWorkbenchStartRunButton(harness);
   assert.ok(dryRunButton);
   await dryRunButton.click();
   await waitForCondition(() => Boolean(harness.document.getElementById("workbench-run-input")));
@@ -3709,7 +3755,7 @@ test("visualizer client blocks start run submit when run input is empty", async 
 
 test("visualizer client removes the separate dry-run action button and keeps Build navigation in footer tabs", async () => {
   const harness = await createClientHarness({ readinessCanDryRun: true });
-  await openBuildTab(harness);
+  await openDesignTab(harness);
 
   assert.equal(harness.document.getElementById("build-dry-run"), null);
   assert.equal(harness.document.getElementById("workbench-actions").textContent.trim(), "");
@@ -3722,7 +3768,7 @@ test("visualizer client removes the separate dry-run action button and keeps Bui
 
 test("visualizer client keeps the right-side shell mounted when switching between graph and source views", async () => {
   const harness = await createClientHarness({ readinessCanDryRun: true });
-  await openBuildTab(harness);
+  await openDesignTab(harness);
 
   const sourceViewButton = findWorkbenchViewButton(harness, "source");
   const graphViewButton = findWorkbenchViewButton(harness, "bridge");
@@ -3761,7 +3807,7 @@ test("visualizer client opens Studio Bridge and keeps authoring affordances on t
   const latestReadonlyMount = () =>
     mountCalls.findLast((call) => call.root.id === "run-graph-root");
 
-  await openBuildTab(harness);
+  await openDesignTab(harness);
   const bridgeTab = findWorkbenchViewButton(harness, "bridge");
   assert.ok(bridgeTab);
 
@@ -3849,11 +3895,11 @@ test("visualizer client opens Studio Bridge and keeps authoring affordances on t
   harness.window.OGSVisualizerClient.mountStudioX6Bridge = (root, options) => {
     mountCalls.push({ root, options });
   };
-  const operateTab = harness.document.getElementById("console-tabs")
+  const runTab = harness.document.getElementById("console-tabs")
     .querySelectorAll("[data-console-tab]")
-    .find((button) => button.getAttribute("data-console-tab") === "operate");
-  assert.ok(operateTab);
-  await operateTab.click();
+    .find((button) => button.getAttribute("data-console-tab") === "run");
+  assert.ok(runTab);
+  await runTab.click();
   await settle();
   const runButton = harness.document.getElementById("run-list")
     .querySelectorAll("[data-run-id]")
@@ -3872,22 +3918,22 @@ test("visualizer client opens Studio Bridge and keeps authoring affordances on t
   assert.equal(readonlyMount.options.onApplyCanvas, undefined);
   assert.equal(readonlyMount.options.onApplyCommand, undefined);
   assert.doesNotMatch(harness.document.getElementById("graph-view").textContent, /\bX6\b/);
-  const projectTabButton = harness.document.getElementById("console-tabs")
+  const designTabButton = harness.document.getElementById("console-tabs")
     .querySelectorAll("[data-console-tab]")
-    .find((button) => button.getAttribute("data-console-tab") === "project");
-  assert.ok(projectTabButton);
-  await projectTabButton.click();
+    .find((button) => button.getAttribute("data-console-tab") === "design");
+  assert.ok(designTabButton);
+  await designTabButton.click();
   await settle();
   const resetFilterInput = harness.document.getElementById("workbench-body").querySelectorAll("[data-studio-bridge-filter]")[0];
   if (resetFilterInput) {
     await resetFilterInput.input("");
     await settle();
   }
-  const buildTabAfterRunGraph = harness.document.getElementById("console-tabs")
+  const designTabAfterRunGraph = harness.document.getElementById("console-tabs")
     .querySelectorAll("[data-console-tab]")
-    .find((button) => button.getAttribute("data-console-tab") === "build");
-  assert.ok(buildTabAfterRunGraph);
-  await buildTabAfterRunGraph.click();
+    .find((button) => button.getAttribute("data-console-tab") === "design");
+  assert.ok(designTabAfterRunGraph);
+  await designTabAfterRunGraph.click();
   await settle();
   assert.equal(harness.document.getElementById("console-panel-build").hidden, false);
   assert.equal(harness.document.getElementById("console-panel-debug").hidden, true);
@@ -3994,7 +4040,7 @@ test("visualizer client retries Studio graph mount until the Build panel is visi
     });
   };
 
-  await openBuildTab(harness);
+  await openDesignTab(harness);
   const initialMountCalls = mountCalls.length;
   const buildPanel = harness.document.getElementById("console-panel-build");
   assert.ok(buildPanel);
@@ -4025,11 +4071,11 @@ test("visualizer client retries readonly run graph mount until the Graph panel i
     });
   };
 
-  const operateTab = harness.document.getElementById("console-tabs")
+  const runTab = harness.document.getElementById("console-tabs")
     .querySelectorAll("[data-console-tab]")
-    .find((button) => button.getAttribute("data-console-tab") === "operate");
-  assert.ok(operateTab);
-  await operateTab.click();
+    .find((button) => button.getAttribute("data-console-tab") === "run");
+  assert.ok(runTab);
+  await runTab.click();
   await settle();
 
   const graphTab = harness.document.getElementById("operate-tabs")
@@ -4066,7 +4112,7 @@ test.skip("visualizer client collapses the docked selection panel without leavin
   const latestEditableMount = () =>
     mountCalls.findLast((call) => typeof call.options.onApplyCanvas === "function")?.options;
 
-  await openBuildTab(harness);
+  await openDesignTab(harness);
   await waitForCondition(() => Boolean(harness.document.getElementById("studio-graph-root")));
   latestEditableMount().onSelectRole("demo-analyst");
   await settle();
@@ -4103,7 +4149,7 @@ test("visualizer client sends chat-to-MMD context and applies a validated author
     mountCalls.push({ root, options });
   };
 
-  await openBuildTab(harness);
+  await openDesignTab(harness);
   await waitForCondition(() => Boolean(harness.document.getElementById("studio-chat-input")));
 
   const latestEditableMount = () =>
@@ -4153,11 +4199,11 @@ test("visualizer client blocks chat-to-MMD apply when preview validation fails",
     studioChatValidationBlocked: true
   });
 
-  const buildTab = harness.document.getElementById("console-tabs")
+  const designTab = harness.document.getElementById("console-tabs")
     .querySelectorAll("[data-console-tab]")
-    .find((button) => button.getAttribute("data-console-tab") === "build");
-  assert.ok(buildTab);
-  await buildTab.click();
+    .find((button) => button.getAttribute("data-console-tab") === "design");
+  assert.ok(designTab);
+  await designTab.click();
   await waitForCondition(() => Boolean(harness.document.getElementById("studio-chat-input")));
 
   const input = harness.document.getElementById("studio-chat-input");
@@ -4182,10 +4228,10 @@ test("visualizer client surfaces chat-to-MMD dependency errors", async () => {
     }
   });
 
-  const buildTab = harness.document.getElementById("console-tabs")
+  const designTab = harness.document.getElementById("console-tabs")
     .querySelectorAll("[data-console-tab]")
-    .find((button) => button.getAttribute("data-console-tab") === "build");
-  await buildTab.click();
+    .find((button) => button.getAttribute("data-console-tab") === "design");
+  await designTab.click();
   await waitForCondition(() => Boolean(harness.document.getElementById("studio-chat-input")));
 
   await harness.document.getElementById("studio-chat-input").input("增加一个审核角色");
@@ -4203,10 +4249,10 @@ test("visualizer client times out chat-to-MMD requests with an actionable messag
     studioChatDeferred: deferred
   });
 
-  const buildTab = harness.document.getElementById("console-tabs")
+  const designTab = harness.document.getElementById("console-tabs")
     .querySelectorAll("[data-console-tab]")
-    .find((button) => button.getAttribute("data-console-tab") === "build");
-  await buildTab.click();
+    .find((button) => button.getAttribute("data-console-tab") === "design");
+  await designTab.click();
   await waitForCondition(() => Boolean(harness.document.getElementById("studio-chat-input")));
 
   await harness.document.getElementById("studio-chat-input").input("增加一个审核角色");
@@ -4225,10 +4271,10 @@ test("visualizer client can close a pending chat-to-MMD request", async () => {
     studioChatDeferred: deferred
   });
 
-  const buildTab = harness.document.getElementById("console-tabs")
+  const designTab = harness.document.getElementById("console-tabs")
     .querySelectorAll("[data-console-tab]")
-    .find((button) => button.getAttribute("data-console-tab") === "build");
-  await buildTab.click();
+    .find((button) => button.getAttribute("data-console-tab") === "design");
+  await designTab.click();
   await waitForCondition(() => Boolean(harness.document.getElementById("studio-chat-input")));
 
   await harness.document.getElementById("studio-chat-input").input("增加一个审核角色");

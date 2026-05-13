@@ -236,6 +236,106 @@ export function injectStudioGraphStyles(): void {
     .studio-graph-diagnostic-card[hidden] {
       display: none;
     }
+    .studio-graph-minimap {
+      position: absolute;
+      right: 14px;
+      bottom: 14px;
+      width: 164px;
+      height: 108px;
+      border: 1px solid rgba(148, 163, 184, 0.28);
+      border-radius: 10px;
+      background: rgba(8, 13, 26, 0.9);
+      box-shadow: 0 16px 32px rgba(0, 0, 0, 0.24);
+      overflow: hidden;
+      z-index: 4;
+      pointer-events: none;
+    }
+    .studio-graph-minimap[hidden] {
+      display: none;
+    }
+    .studio-graph-minimap-content {
+      position: absolute;
+      inset: 8px;
+      overflow: hidden;
+    }
+    .studio-graph-minimap-node {
+      position: absolute;
+      min-width: 4px;
+      min-height: 6px;
+      border-radius: 3px;
+      background: rgba(148, 163, 184, 0.72);
+      border: 1px solid rgba(226, 232, 240, 0.36);
+    }
+    .studio-graph-minimap-node.is-selected {
+      background: rgba(56, 189, 248, 0.72);
+      border-color: rgba(186, 230, 253, 0.7);
+    }
+    .studio-graph-minimap-viewport {
+      position: absolute;
+      border: 1px solid rgba(56, 189, 248, 0.9);
+      background: rgba(56, 189, 248, 0.08);
+      border-radius: 6px;
+      box-shadow: inset 0 0 0 1px rgba(186, 230, 253, 0.22);
+    }
+    .studio-graph-quick-open {
+      position: absolute;
+      inset: 16px auto auto 16px;
+      z-index: 7;
+      width: min(420px, calc(100% - 32px));
+    }
+    .studio-graph-quick-open[hidden] {
+      display: none;
+    }
+    .studio-graph-quick-open-panel {
+      display: grid;
+      gap: 8px;
+      padding: 12px;
+      border: 1px solid rgba(148, 163, 184, 0.24);
+      border-radius: 12px;
+      background: rgba(8, 13, 26, 0.96);
+      box-shadow: 0 24px 48px rgba(0, 0, 0, 0.34);
+    }
+    .studio-graph-quick-open-label {
+      font-size: 12px;
+      color: #8fa1c3;
+    }
+    .studio-graph-quick-open-input {
+      width: 100%;
+      min-width: 0;
+      border: 1px solid rgba(148, 163, 184, 0.24);
+      background: rgba(4, 8, 16, 0.92);
+      color: #e5eefb;
+      padding: 9px 10px;
+      box-sizing: border-box;
+    }
+    .studio-graph-quick-open-results {
+      display: grid;
+      gap: 6px;
+      max-height: 240px;
+      overflow: auto;
+    }
+    .studio-graph-quick-open-item {
+      display: grid;
+      gap: 3px;
+      width: 100%;
+      text-align: left;
+      border: 1px solid rgba(148, 163, 184, 0.18);
+      background: rgba(255, 255, 255, 0.03);
+      color: #e5eefb;
+      padding: 9px 10px;
+      cursor: pointer;
+    }
+    .studio-graph-quick-open-item.is-active,
+    .studio-graph-quick-open-item:hover {
+      border-color: rgba(56, 189, 248, 0.4);
+      background: rgba(56, 189, 248, 0.12);
+      color: #bae6fd;
+    }
+    .studio-graph-quick-open-kind,
+    .studio-graph-quick-open-empty {
+      font-size: 11px;
+      color: #8fa1c3;
+    }
     .studio-graph-stage.is-empty .studio-graph-canvas {
       opacity: 0.34;
     }

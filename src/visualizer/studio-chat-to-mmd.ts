@@ -16,19 +16,40 @@ import {
   type Nl2MmdTurnResult
 } from "../nl2mmd/index.js";
 import {
-  authoringToCanvasDocument,
   importMermaidToAuthoring,
   serializeAuthoringToMermaid,
   type StudioAuthoringDocument,
-  type StudioCanvasDocument,
   type StudioSystemValidation
 } from "./studio-authoring.js";
+import {
+  STUDIO_SYSTEM_END_ROLE_ID,
+  normalizeStudioGraphTargetRoleId,
+  type StudioAuthoringFlow,
+  type StudioAuthoringRole
+} from "./studio-contracts.js";
+import {
+  applyStudioAuthoringCommand,
+  type StudioAuthoringCommand
+} from "./studio-graph-commands.js";
 import {
   asNonEmptyString,
   asRecord,
   asString,
   type JsonRecord
 } from "./json-guards.js";
+
+type StudioChatAuthoringPatch =
+  | {
+      type: "commands";
+      commands: StudioAuthoringCommand[];
+      authoring: StudioAuthoringDocument;
+      source: "nl2mmd";
+    }
+  | {
+      type: "replace-authoring";
+      authoring: StudioAuthoringDocument;
+      source: "nl2mmd";
+    };
 
 export type StudioChatToMmdSession = {
   workdir: string;
@@ -63,12 +84,7 @@ export type StudioChatToMmdResponse = {
   summary: string;
   questions: string[];
   assumptions: string[];
-  authoringPatch: {
-    type: "replace-authoring";
-    authoring: StudioAuthoringDocument;
-    canvas: StudioCanvasDocument;
-    source: "nl2mmd";
-  } | null;
+  authoringPatch: StudioChatAuthoringPatch | null;
   previewMermaid: string;
   warnings: string[];
   validation: {
@@ -276,6 +292,227 @@ function preserveAuthoringDisplayNames(args: {
   return args.imported;
 }
 
+function sameJson(left: unknown, right: unknown): boolean {
+  return JSON.stringify(left) === JSON.stringify(right);
+}
+
+function roleCommandShape(role: StudioAuthoringRole): Record<string, unknown> {
+  return {
+    roleId: role.roleId,
+    title: role.title,
+    bindingKind: role.bindingKind,
+    modelRef: role.modelRef,
+    profileId: role.profileId
+  };
+}
+
+function rolePassiveShape(role: StudioAuthoringRole): Record<string, unknown> {
+  return {
+    routingMode: role.routingMode,
+    routeOrder: role.routeOrder ?? [],
+    joinMode: role.joinMode,
+    joinMin: role.joinMin,
+    loopMax: role.loopMax,
+    review: role.review,
+    contextMap: role.contextMap ?? {}
+  };
+}
+
+function roleCanBeAddedByCommand(role: StudioAuthoringRole): boolean {
+  return !role.routingMode &&
+    !(role.routeOrder?.length) &&
+    !role.joinMode &&
+    role.joinMin == null &&
+    !role.loopMax &&
+    !role.review &&
+    !(role.contextMap && Object.keys(role.contextMap).length);
+}
+
+function flowSemanticKey(flow: Pick<StudioAuthoringFlow, "fromRoleId" | "eventType" | "toRoleId">): string {
+  return `${flow.fromRoleId}\u0000${flow.eventType}\u0000${flow.toRoleId}`;
+}
+
+function flowParticipatesInJoin(authoring: StudioAuthoringDocument, flow: StudioAuthoringFlow): boolean {
+  return flow.toRoleId !== STUDIO_SYSTEM_END_ROLE_ID &&
+    Boolean(authoring.roles[flow.toRoleId]?.joinSources?.includes(flow.fromRoleId));
+}
+
+function flowCommandShape(authoring: StudioAuthoringDocument, flow: StudioAuthoringFlow): Record<string, unknown> {
+  return {
+    fromRoleId: flow.fromRoleId,
+    toRoleId: flow.toRoleId,
+    eventType: flow.eventType,
+    label: flow.label,
+    runtimeOnlyErrorFlow: Boolean(flow.runtimeOnlyErrorFlow),
+    participatesInJoin: flowParticipatesInJoin(authoring, flow)
+  };
+}
+
+function commandTargetRoleId(roleId: string): string {
+  return normalizeStudioGraphTargetRoleId(roleId);
+}
+
+function roleExistsOrIsBoundary(roleIds: Set<string>, roleId: string): boolean {
+  return roleId === STUDIO_SYSTEM_END_ROLE_ID || roleIds.has(roleId);
+}
+
+function comparableAuthoringShape(authoring: StudioAuthoringDocument): Record<string, unknown> {
+  const roles = Object.keys(authoring.roles ?? {})
+    .sort()
+    .map((roleId) => {
+      const role = authoring.roles[roleId];
+      return {
+        roleId,
+        command: roleCommandShape(role),
+        passive: rolePassiveShape(role),
+        joinSources: (role.joinSources ?? []).slice().sort()
+      };
+    });
+  const flows = Object.values(authoring.flows ?? {})
+    .slice()
+    .sort((left, right) => flowSemanticKey(left).localeCompare(flowSemanticKey(right)))
+    .map((flow) => flowCommandShape(authoring, flow));
+  return {
+    version: authoring.version,
+    project: authoring.project,
+    system: authoring.system,
+    roles,
+    flows
+  };
+}
+
+function diffAuthoringToCommands(
+  previous: StudioAuthoringDocument,
+  next: StudioAuthoringDocument
+): StudioAuthoringCommand[] | null {
+  if (!sameJson(
+    { version: previous.version, project: previous.project, system: previous.system },
+    { version: next.version, project: next.project, system: next.system }
+  )) {
+    return null;
+  }
+
+  const commands: StudioAuthoringCommand[] = [];
+  const previousRoleIds = new Set(Object.keys(previous.roles ?? {}));
+  const nextRoleIds = new Set(Object.keys(next.roles ?? {}));
+
+  for (const roleId of [...nextRoleIds].filter((id) => previousRoleIds.has(id)).sort()) {
+    const previousRole = previous.roles[roleId];
+    const nextRole = next.roles[roleId];
+    if (!sameJson(rolePassiveShape(previousRole), rolePassiveShape(nextRole))) {
+      return null;
+    }
+    if (!sameJson(roleCommandShape(previousRole), roleCommandShape(nextRole))) {
+      commands.push({
+        type: "update-role",
+        originalRoleId: roleId,
+        roleId: nextRole.roleId,
+        title: nextRole.title,
+        bindingKind: nextRole.bindingKind,
+        modelRef: nextRole.modelRef,
+        profileId: nextRole.profileId
+      });
+    }
+  }
+
+  for (const roleId of [...previousRoleIds].filter((id) => !nextRoleIds.has(id)).sort()) {
+    commands.push({ type: "delete-role", roleId });
+  }
+
+  for (const roleId of [...nextRoleIds].filter((id) => !previousRoleIds.has(id)).sort()) {
+    const role = next.roles[roleId];
+    if (!roleCanBeAddedByCommand(role)) {
+      return null;
+    }
+    commands.push({
+      type: "add-role",
+      roleId,
+      title: role.title,
+      bindingKind: role.bindingKind,
+      modelRef: role.modelRef,
+      profileId: role.profileId,
+      x: next.layout.nodes?.[roleId]?.x,
+      y: next.layout.nodes?.[roleId]?.y
+    });
+  }
+
+  const previousFlows = new Map(
+    Object.values(previous.flows ?? {}).map((flow) => [flowSemanticKey(flow), flow] as const)
+  );
+  const nextFlows = new Map(
+    Object.values(next.flows ?? {}).map((flow) => [flowSemanticKey(flow), flow] as const)
+  );
+  if (previousFlows.size !== Object.keys(previous.flows ?? {}).length ||
+      nextFlows.size !== Object.keys(next.flows ?? {}).length) {
+    return null;
+  }
+
+  for (const [key, previousFlow] of previousFlows.entries()) {
+    if (!nextFlows.has(key)) {
+      const touchesDeletedRole =
+        !roleExistsOrIsBoundary(nextRoleIds, previousFlow.fromRoleId) ||
+        !roleExistsOrIsBoundary(nextRoleIds, previousFlow.toRoleId);
+      if (!touchesDeletedRole) {
+        commands.push({
+          type: "delete-edge",
+          flowId: previousFlow.flowId,
+          sourceRoleId: previousFlow.fromRoleId,
+          targetRoleId: commandTargetRoleId(previousFlow.toRoleId),
+          eventType: previousFlow.eventType
+        });
+      }
+      continue;
+    }
+    const nextFlow = nextFlows.get(key) as StudioAuthoringFlow;
+    if (!sameJson(flowCommandShape(previous, previousFlow), flowCommandShape(next, nextFlow))) {
+      commands.push({
+        type: "update-edge",
+        flowId: previousFlow.flowId,
+        originalSourceRoleId: previousFlow.fromRoleId,
+        originalTargetRoleId: commandTargetRoleId(previousFlow.toRoleId),
+        originalEventType: previousFlow.eventType,
+        sourceRoleId: nextFlow.fromRoleId,
+        targetRoleId: commandTargetRoleId(nextFlow.toRoleId),
+        eventType: nextFlow.eventType,
+        label: nextFlow.label,
+        runtimeOnlyErrorFlow: Boolean(nextFlow.runtimeOnlyErrorFlow),
+        participatesInJoin: flowParticipatesInJoin(next, nextFlow)
+      });
+    }
+  }
+
+  for (const [key, nextFlow] of nextFlows.entries()) {
+    if (!previousFlows.has(key)) {
+      commands.push({
+        type: "add-edge",
+        sourceRoleId: nextFlow.fromRoleId,
+        targetRoleId: commandTargetRoleId(nextFlow.toRoleId),
+        eventType: nextFlow.eventType,
+        label: nextFlow.label,
+        runtimeOnlyErrorFlow: Boolean(nextFlow.runtimeOnlyErrorFlow),
+        participatesInJoin: flowParticipatesInJoin(next, nextFlow)
+      });
+    }
+  }
+
+  if (commands.length > 20) {
+    return null;
+  }
+
+  const verification = applyStudioAuthoringCommand({
+    authoring: previous,
+    command: { type: "batch", commands }
+  });
+  if (verification.blockedCode) {
+    return null;
+  }
+  if (!sameJson(comparableAuthoringShape(verification.authoring), comparableAuthoringShape(next))) {
+    return null;
+  }
+
+  return commands;
+}
+
 function buildActions(args: {
   mode: StudioChatToMmdResponse["mode"];
   previewMermaid: string;
@@ -429,12 +666,21 @@ export async function runStudioChatToMmdTurn(args: {
         }),
         previous: args.request.authoring
       });
-      authoringPatch = {
-        type: "replace-authoring",
-        authoring,
-        canvas: authoringToCanvasDocument(authoring),
-        source: "nl2mmd"
-      };
+      const commands = args.request.authoring
+        ? diffAuthoringToCommands(args.request.authoring, authoring)
+        : null;
+      authoringPatch = commands
+        ? {
+            type: "commands",
+            commands,
+            authoring,
+            source: "nl2mmd"
+          }
+        : {
+            type: "replace-authoring",
+            authoring,
+            source: "nl2mmd"
+          };
     } catch (error) {
       warnings.push(error instanceof Error ? error.message : String(error));
     }

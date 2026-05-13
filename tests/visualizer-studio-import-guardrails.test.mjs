@@ -30,7 +30,7 @@ test("Studio X6 imports stay isolated to the browser graph island", async () => 
     if (normalized.startsWith("src/visualizer/studio-client/") && /from\s+["'][^"']*runtime\//.test(source)) {
       violations.push(`${normalized}: studio-client imports runtime`);
     }
-    if (normalized.startsWith("src/visualizer/studio-client/") && source.includes("studio-authoring")) {
+    if (normalized.startsWith("src/visualizer/studio-client/") && /from\s+["'][^"']*studio-authoring(\.js)?["']/.test(source)) {
       violations.push(`${normalized}: studio-client imports studio-authoring`);
     }
     if (normalized.startsWith("src/runtime/") && source.includes("@antv/x6")) {

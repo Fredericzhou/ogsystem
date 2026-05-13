@@ -863,11 +863,12 @@ test("visualizer data projects project and graph information", async () => {
   const dataPreview = decodeMermaidLivePayload(graphFromData.simulation.summary.mermaidLiveUrl);
   assert.equal(dataPreview.code, graphFromData.systemSource);
   assert.deepEqual(dataPreview.mermaid, { theme: "default" });
-  assert.equal(graph.graph.nodes[0].roleId, "alpha");
-  assert.equal(graph.graph.nodes[0].status, "active");
-  assert.equal(graph.graph.nodes[0].lastErrorCode, "E_VIS_TEST");
-  assert.equal(graph.graph.nodes[0].lastFailure.errorCode, "E_VIS_TEST");
-  assert.equal(graph.graph.edges[0].event, "DONE");
+  const alphaNode = graph.graph.nodes.find((node) => node.roleId === "alpha");
+  assert.ok(alphaNode);
+  assert.equal(alphaNode.runtime.status, "active");
+  assert.equal(alphaNode.runtime.lastErrorCode, "E_VIS_TEST");
+  assert.equal(alphaNode.runtime.lastFailure.errorCode, "E_VIS_TEST");
+  assert.equal(graph.graph.edges.some((edge) => edge.eventType === "DONE"), true);
 });
 
 test("visualizer data omits Mermaid Live URL when encoded graph exceeds browser-safe length", async () => {
@@ -1037,7 +1038,8 @@ test("visualizer data projects join waiting sources for graph view", async () =>
 
   const graph = await inspectRunGraphVisualization({ workdir, runId });
   const joinNode = graph.graph.nodes.find((node) => node.roleId === "test-operator");
-  assert.deepEqual(joinNode.expectedSources, ["test-branch-a", "test-branch-b"]);
-  assert.deepEqual(joinNode.readySources, ["test-branch-a"]);
-  assert.deepEqual(joinNode.missingSources, ["test-branch-b"]);
+  assert.ok(joinNode);
+  assert.deepEqual(joinNode.runtime.expectedSources, ["test-branch-a", "test-branch-b"]);
+  assert.deepEqual(joinNode.runtime.readySources, ["test-branch-a"]);
+  assert.deepEqual(joinNode.runtime.missingSources, ["test-branch-b"]);
 });

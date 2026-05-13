@@ -47,8 +47,12 @@ export function renderPageShellBody({ workdir, locale, t }: PageShellBodyOptions
           </div>
           <div class="top-nav-actions">
             <div class="actions hero-actions hero-actions-primary">
+              <button id="hero-validate" class="button primary">${escapeHtml(t("action.validate"))}</button>
+              <button id="hero-save" class="button subtle">${escapeHtml(t("action.save"))}</button>
               <button id="resume-run" class="button">${escapeHtml(t("action.resume"))}</button>
               <button id="stop-run" class="button warn">${escapeHtml(t("action.stop"))}</button>
+              <button id="hero-reindex" class="button subtle">${escapeHtml(t("action.reindex"))}</button>
+              <button id="hero-release-export" class="button primary">${escapeHtml(t("action.exportProject"))}</button>
             </div>
           </div>
         </div>
@@ -64,7 +68,7 @@ export function renderPageShellBody({ workdir, locale, t }: PageShellBodyOptions
               </div>
             </article>
           </section>
-          <section id="console-panel-project" class="console-panel grid" data-console-panel="project" role="tabpanel" aria-labelledby="console-tab-project" hidden>
+          <section id="console-panel-project" class="console-panel grid" data-console-panel="project" role="tabpanel" aria-labelledby="console-tab-design" hidden>
             <article class="card span-12">
               <header><h3>${escapeHtml(t("section.projectOverview"))}</h3></header>
               <div class="body">
@@ -72,7 +76,7 @@ export function renderPageShellBody({ workdir, locale, t }: PageShellBodyOptions
               </div>
             </article>
           </section>
-          <section id="console-panel-build" class="console-panel grid" data-console-panel="build" role="tabpanel" aria-labelledby="console-tab-build" hidden>
+          <section id="console-panel-build" class="console-panel grid" data-console-panel="build" role="tabpanel" aria-labelledby="console-tab-design" hidden>
               <article class="card span-12">
                 <div class="body">
                   <div class="workbench-state-cache" hidden aria-hidden="true">
@@ -183,7 +187,7 @@ export function renderPageShellBody({ workdir, locale, t }: PageShellBodyOptions
               </div>
             </article>
           </section>
-          <section id="console-panel-validate-release" class="console-panel grid" data-console-panel="validate-release" role="tabpanel" aria-labelledby="console-tab-validate-release" hidden>
+          <section id="console-panel-validate-release" class="console-panel grid" data-console-panel="validate-release" role="tabpanel" aria-labelledby="console-tab-release" hidden>
             <article class="card span-12">
               <header>
                 <div class="card-header">

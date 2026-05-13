@@ -245,8 +245,7 @@ export function renderStudioGraphCanvas(args: {
   selectionStructureHtml?: string;
   selectionDebugHtml?: string;
   selectionResultsHtml?: string;
-  selectionDocked?: boolean;
-  selectionCollapsed?: boolean;
+  inspectorCollapsed?: boolean;
   t?: Translator;
 }): string {
   const t: Translator = typeof args.t === "function" ? args.t : (_key, _vars, fallback) => fallback ?? _key;
@@ -256,11 +255,11 @@ export function renderStudioGraphCanvas(args: {
     t
   });
   return [
-    '<div class="studio-canvas-shell' + (args.fullscreen ? " is-fullscreen" : "") + (args.selectionDocked ? " has-docked-selection" : "") + (args.selectionDocked && args.selectionCollapsed ? " has-collapsed-selection" : "") + '" data-studio-canvas-shell="1">',
+    '<div class="studio-canvas-shell' + (args.fullscreen ? " is-fullscreen" : "") + (args.inspectorCollapsed ? " has-collapsed-selection" : "") + '" data-studio-canvas-shell="1">',
     '<div class="studio-canvas-toolbar" data-studio-bridge-region="toolbar"><div><span class="hint" data-studio-graph-selection-label>' + escapeText(selection) + '</span></div></div>',
     '<aside class="studio-outline-pane"><section class="studio-selection-panel studio-selection-structure-panel studio-outline-panel" data-studio-selection-panel="structure">' + (args.selectionStructureHtml || "") + '</section></aside>',
     '<div id="studio-graph-root" class="studio-graph-root' + (args.rootClassName ? " " + escapeText(args.rootClassName) : "") + '" data-workbench-root-mode="' + escapeText(args.rootMode || "bridge") + '" data-selected-role-id="' + escapeText(args.selectedRoleId) + '" data-selected-flow-key="' + escapeText(args.selectedFlowKey) + '">' + (args.rootContentHtml || "") + '</div>',
-    '<div class="studio-selection-overlay' + (args.selectionDocked ? " is-docked" : "") + (args.selectionCollapsed ? " is-collapsed" : "") + '" data-studio-selection-overlay><button type="button" class="studio-selection-backdrop" data-studio-selection-close="" aria-label="' + escapeText(t("action.close", undefined, "Close")) + '"></button><section class="studio-selection-dialog" data-studio-selection-dialog role="dialog" aria-modal="false" aria-label="' + escapeText(t("studio.sidePanel", undefined, "Right panel")) + '"><header class="studio-selection-header"><div class="studio-selection-title-wrap"><div class="hint" data-studio-selection-kind-label>' + escapeText(args.selectionKindLabel || "") + '</div><strong data-studio-selection-title>' + escapeText(args.selectionTitle || "") + '</strong></div><div class="studio-selection-actions"><button type="button" class="button subtle" data-studio-selection-pin="" title="' + escapeText(t("studio.graphWorkspace", undefined, "Graph workspace")) + '">dock</button><button type="button" class="button subtle" data-studio-selection-collapse="" title="' + escapeText(t("action.close", undefined, "Close")) + '">' + (args.selectionCollapsed ? ">" : "<") + '</button><button type="button" class="button subtle" data-studio-selection-close="">' + escapeText(t("action.close", undefined, "Close")) + '</button></div></header><div class="studio-selection-tabstrip segmented"><button type="button" class="button subtle' + ((args.sideTab || "selection") === "selection" ? " active" : "") + '" data-studio-side-tab="selection">' + escapeText(t("studio.authoringTab", undefined, "Authoring")) + '</button><button type="button" class="button subtle' + ((args.sideTab || "selection") === "debug" ? " active" : "") + '" data-studio-side-tab="debug">' + escapeText(t("build.mode.debug", undefined, "Debug")) + '</button><button type="button" class="button subtle' + ((args.sideTab || "selection") === "result" ? " active" : "") + '" data-studio-side-tab="result">' + escapeText(t("studio.resultsTab", undefined, "Results")) + '</button></div><div class="studio-selection-body"><section class="studio-selection-panel" data-studio-selection-panel="selection"><div class="studio-selection-command-host" data-studio-selection-command-host></div><div class="studio-selection-role-package" data-studio-selection-role-package>' + (args.selectionRolePackageHtml || "") + '</div></section><section class="studio-selection-panel studio-selection-debug-panel" data-studio-selection-panel="debug">' + (args.selectionDebugHtml || "") + '</section><section class="studio-selection-panel studio-selection-result-panel" data-studio-selection-panel="result">' + (args.selectionResultsHtml || "") + '</section></div></section></div>',
+    '<aside class="studio-selection-overlay' + (args.inspectorCollapsed ? " is-collapsed" : "") + '" data-studio-selection-overlay><section class="studio-selection-dialog" data-studio-selection-dialog role="complementary" aria-label="' + escapeText(t("studio.sidePanel", undefined, "Right panel")) + '"><header class="studio-selection-header"><div class="studio-selection-title-wrap"><div class="hint" data-studio-selection-kind-label>' + escapeText(args.selectionKindLabel || "") + '</div><strong data-studio-selection-title>' + escapeText(args.selectionTitle || "") + '</strong></div><div class="studio-selection-actions"><button type="button" class="button subtle" data-studio-selection-collapse="" title="' + escapeText(t("action.close", undefined, "Close")) + '">' + (args.inspectorCollapsed ? ">" : "<") + '</button></div></header><div class="studio-selection-tabstrip segmented"><button type="button" class="button subtle' + ((args.sideTab || "selection") === "selection" ? " active" : "") + '" data-studio-side-tab="selection">' + escapeText(t("studio.authoringTab", undefined, "Authoring")) + '</button><button type="button" class="button subtle' + ((args.sideTab || "selection") === "debug" ? " active" : "") + '" data-studio-side-tab="debug">' + escapeText(t("build.mode.debug", undefined, "Debug")) + '</button><button type="button" class="button subtle' + ((args.sideTab || "selection") === "result" ? " active" : "") + '" data-studio-side-tab="result">' + escapeText(t("studio.resultsTab", undefined, "Results")) + '</button></div><div class="studio-selection-body"><section class="studio-selection-panel" data-studio-selection-panel="selection"><div class="studio-selection-command-host" data-studio-selection-command-host></div><div class="studio-selection-role-package" data-studio-selection-role-package>' + (args.selectionRolePackageHtml || "") + '</div></section><section class="studio-selection-panel studio-selection-debug-panel" data-studio-selection-panel="debug">' + (args.selectionDebugHtml || "") + '</section><section class="studio-selection-panel studio-selection-result-panel" data-studio-selection-panel="result">' + (args.selectionResultsHtml || "") + '</section></div></section></aside>',
     "</div>"
   ].join("");
 }
@@ -922,10 +921,11 @@ export function renderStudioBridgePanel(args: {
   filter?: string;
   listMode?: string;
   sideTab?: string;
+  selectionDebugHtml?: string;
+  selectionResultsHtml?: string;
   fullscreen?: boolean;
   rolePackageEditor?: JsonRecord | null | undefined;
-  selectionDocked?: boolean;
-  selectionCollapsed?: boolean;
+  inspectorCollapsed?: boolean;
   actionBusy: string;
   t?: Translator;
 }): string {
@@ -1020,8 +1020,9 @@ export function renderStudioBridgePanel(args: {
       escapeText(t("studio.topologyOrderHint", undefined, "Cycles are listed after the acyclic path so the authoring order stays stable.")) + '</div></div><div class="studio-index-grid"><div class="studio-navigator structure-list" data-studio-bridge-region="navigator"><div class="event"><div class="event-top"><span>' + escapeText(t("studio.roles", undefined, "roles")) + '</span><span>' + escapeText(String(filtered.roles.length)) +
       " / " + escapeText(String(roles.length)) + '</span></div><strong>' + escapeText(t("studio.structuredRoleDraft", undefined, "Role structure")) + '</strong><div class="hint">' + escapeText(t("studio.bridgeReadsWorkbench", undefined, "Derived from the current graph source.")) + '</div></div>' + roleButtons.join("") + '</div><div class="structure-list studio-flow-list" data-studio-bridge-region="flow-list"><div class="event"><div class="event-top"><span>' + escapeText(t("studio.flows", undefined, "flows")) + '</span><span>' + escapeText(String(filtered.flows.length)) +
       " / " + escapeText(String(flows.length)) + '</span></div><strong>' + escapeText(t("studio.structuredFlowDraft", undefined, "Flow structure")) + '</strong><div class="hint">' + escapeText(t("studio.eventsVisible", undefined, "Event types and join participation stay visible.")) + '</div></div>' + flowButtons.join("") + "</div></div></div>",
-    selectionDocked: args.selectionDocked !== false,
-    selectionCollapsed: args.selectionCollapsed === true,
+    selectionDebugHtml: args.selectionDebugHtml || "",
+    selectionResultsHtml: args.selectionResultsHtml || "",
+    inspectorCollapsed: args.inspectorCollapsed === true,
     fullscreen: args.fullscreen,
     t
   });
@@ -2228,259 +2229,4 @@ export function renderArtifactsPanel(args: {
     ...sections,
     "</div>"
   ].join("");
-}
-
-export function renderRunTopologySvg(graph: Record<string, unknown> | null | undefined, t?: Translator): string {
-  const tr: Translator = typeof t === "function" ? t : (_key, _vars, fallback) => fallback ?? _key;
-  const labelToken = (value: unknown): string => displayUiToken(value, tr);
-  if (!graph) {
-    return '<div class="hint">' + escapeText(tr("graph.projectionUnavailable", undefined, "Graph projection unavailable.")) + '</div>';
-  }
-  const nodes = Array.isArray(graph.nodes) ? graph.nodes as JsonRecord[] : [];
-  const edges = Array.isArray(graph.edges) ? graph.edges as JsonRecord[] : [];
-  if (!nodes.length) {
-    return '<div class="hint">' + escapeText(tr("graph.noNodes", undefined, "No graph nodes available.")) + '</div>';
-  }
-
-  const adjacency = new Map<string, string[]>();
-  const indegree = new Map<string, number>();
-  for (const node of nodes) {
-    const roleId = String(node.roleId ?? "");
-    adjacency.set(roleId, []);
-    indegree.set(roleId, 0);
-  }
-  for (const edge of edges) {
-    const source = String(edge.sourceRoleId ?? "");
-    const target = String(edge.targetRoleId ?? "");
-    if (!adjacency.has(source) || !indegree.has(target)) {
-      continue;
-    }
-    adjacency.get(source)?.push(target);
-    indegree.set(target, (indegree.get(target) ?? 0) + 1);
-  }
-
-  const levels = new Map<string, number>();
-  const queue: string[] = [];
-  const entryRoleId = String(graph.entryRoleId ?? "");
-  if (entryRoleId && indegree.has(entryRoleId)) {
-    queue.push(entryRoleId);
-  }
-  for (const [roleId, degree] of indegree.entries()) {
-    if (degree === 0 && roleId !== entryRoleId) {
-      queue.push(roleId);
-    }
-  }
-  const pendingIndegree = new Map(indegree);
-  const visited = new Set<string>();
-  for (let queueIndex = 0; queueIndex < queue.length; queueIndex += 1) {
-    const roleId = queue[queueIndex] ?? "";
-    if (!roleId || visited.has(roleId)) {
-      continue;
-    }
-    visited.add(roleId);
-    const currentLevel = levels.get(roleId) ?? 0;
-    for (const target of adjacency.get(roleId) ?? []) {
-      levels.set(target, Math.max(levels.get(target) ?? 0, currentLevel + 1));
-      pendingIndegree.set(target, (pendingIndegree.get(target) ?? 1) - 1);
-      if ((pendingIndegree.get(target) ?? 0) <= 0) {
-        queue.push(target);
-      }
-    }
-  }
-  if (indegree.has("input")) {
-    levels.set("input", 0);
-  }
-  if (indegree.has("output")) {
-    levels.set("output", Math.max(1, ...levels.values(), 0) + 1);
-  }
-  if (indegree.has("__system_end__")) {
-    levels.set("__system_end__", Math.max(1, ...levels.values(), 0) + 1);
-  }
-  let fallbackLevel = Math.max(0, ...levels.values(), 0);
-  for (const node of nodes) {
-    const roleId = String(node.roleId ?? "");
-    if (!levels.has(roleId)) {
-      fallbackLevel += 1;
-      levels.set(roleId, fallbackLevel);
-    }
-  }
-
-  const columns = new Map<number, JsonRecord[]>();
-  for (const node of nodes) {
-    const level = levels.get(String(node.roleId ?? "")) ?? 0;
-    const bucket = columns.get(level) ?? [];
-    bucket.push(node);
-    columns.set(level, bucket);
-  }
-
-  const nodeWidth = 220;
-  const nodeHeight = 112;
-  const gapX = 140;
-  const gapY = 44;
-  const padding = 40;
-  const positions = new Map<string, { x: number; y: number }>();
-  const columnEntries = [...columns.entries()].sort((left, right) => left[0] - right[0]);
-  const maxRows = Math.max(...columnEntries.map(([, columnNodes]) => columnNodes.length), 1);
-  for (const [columnIndex, columnNodes] of columnEntries) {
-    columnNodes.forEach((node, rowIndex) => {
-      const roleId = String(node.roleId ?? "");
-      const x = padding + (columnIndex * (nodeWidth + gapX));
-      const topOffset = ((maxRows - columnNodes.length) * (nodeHeight + gapY)) / 2;
-      const y = padding + topOffset + (rowIndex * (nodeHeight + gapY));
-      positions.set(roleId, { x, y });
-    });
-  }
-
-  const width = padding * 2 + (Math.max(columnEntries.length, 1) * nodeWidth) + (Math.max(columnEntries.length - 1, 0) * gapX);
-  const height = padding * 2 + (maxRows * nodeHeight) + (Math.max(maxRows - 1, 0) * gapY);
-  const edgeSvg = edges.map((edge) => {
-    const source = positions.get(String(edge.sourceRoleId ?? ""));
-    const target = positions.get(String(edge.targetRoleId ?? ""));
-    if (!source || !target) {
-      return "";
-    }
-    const x1 = source.x + nodeWidth;
-    const y1 = source.y + (nodeHeight / 2);
-    const x2 = target.x;
-    const y2 = target.y + (nodeHeight / 2);
-    const midX = (x1 + x2) / 2;
-    const stroke = edge.isErrorFlow ? "rgba(248,113,113,0.64)" : edge.recentlyActivated ? "rgba(56,189,248,0.72)" : "rgba(148,163,184,0.34)";
-    const sourceRoleId = String(edge.sourceRoleId ?? "");
-    const targetRoleId = String(edge.targetRoleId ?? "");
-    const event = String(edge.event ?? "");
-    const edgeState = edge.isErrorFlow
-      ? tr("graph.edgeErrorFlow", undefined, "error flow")
-      : edge.recentlyActivated
-        ? tr("graph.edgeRecentlyActivated", undefined, "recently activated flow")
-        : tr("graph.edgeStandardFlow", undefined, "standard flow");
-    const edgeDescription = sourceRoleId + " to " + targetRoleId + " on " + (event || tr("common.unknown", undefined, "unknown")) + ": " + edgeState;
-    return (
-      '<g>' +
-      '<title>' + escapeText(edgeDescription) + '</title>' +
-      '<desc>' + escapeText(edgeDescription) + '</desc>' +
-      '<path d="M ' + x1 + " " + y1 + " C " + midX + " " + y1 + ", " + midX + " " + y2 + ", " + x2 + " " + y2 +
-      '" fill="none" stroke="' + stroke + '" stroke-width="3" stroke-dasharray="' + (edge.isErrorFlow ? "8 5" : edge.recentlyActivated ? "2 6" : "none") + '" marker-end="url(#run-arrow)" />' +
-      '<text x="' + midX + '" y="' + (Math.min(y1, y2) + Math.abs(y2 - y1) / 2 - 8) + '" text-anchor="middle" fill="#8fa1c3" font-size="11" font-family="IBM Plex Mono, monospace">' +
-      escapeText((event || "") + (edge.isErrorFlow ? " !" : edge.recentlyActivated ? " *" : "")) +
-      "</text></g>"
-    );
-  }).join("");
-
-  const nodeSvg = nodes.map((node) => {
-    const roleId = String(node.roleId ?? "");
-    const position = positions.get(roleId);
-    if (!position) {
-      return "";
-    }
-    const tone = statusTone(String(node.status ?? ""));
-    const binding = bindingTone(String(node.bindingKind ?? ""));
-    const badge = binding === "model" ? "#38bdf8" : binding === "profile" ? "#34d399" : "#94a3b8";
-    const nodeStatus = labelToken(node.status ?? "idle");
-    const nodeType = labelToken(node.nodeType ?? "role");
-    const activePending = tr("state.activePending", {
-      activeBranches: String(node.activeBranchCount ?? 0),
-      pendingReviews: String(node.pendingReviewCount ?? 0)
-    }, "active branches " + String(node.activeBranchCount ?? 0) + " · pending reviews " + String(node.pendingReviewCount ?? 0));
-    const nodeDetail = String(node.lastSelectedEvent ?? node.lastErrorCode ?? node.joinMode ?? "steady");
-    const nodeDescription = roleId + ": " + nodeType + ", " + nodeStatus + ", " + activePending + ", " + nodeDetail;
-    return (
-      '<g>' +
-      '<title>' + escapeText(nodeDescription) + '</title>' +
-      '<desc>' + escapeText(nodeDescription) + '</desc>' +
-      '<rect x="' + position.x + '" y="' + position.y + '" width="' + nodeWidth + '" height="' + nodeHeight + '" rx="22" ry="22" fill="' + tone.fill + '" stroke="' + tone.stroke + '" stroke-width="2" />' +
-      '<circle cx="' + (position.x + 20) + '" cy="' + (position.y + 22) + '" r="7" fill="' + badge + '" />' +
-      '<text x="' + (position.x + 34) + '" y="' + (position.y + 27) + '" fill="' + tone.text + '" font-size="15" font-family="IBM Plex Sans, sans-serif">' + escapeText(roleId) + '</text>' +
-      '<text x="' + (position.x + 20) + '" y="' + (position.y + 54) + '" fill="#8fa1c3" font-size="12" font-family="IBM Plex Sans, sans-serif">' +
-      escapeText(nodeType + " · " + nodeStatus) +
-      '</text>' +
-      '<text x="' + (position.x + 20) + '" y="' + (position.y + 76) + '" fill="#dce7f7" font-size="12" font-family="IBM Plex Sans, sans-serif">' +
-      escapeText(activePending) +
-      '</text>' +
-      '<text x="' + (position.x + 20) + '" y="' + (position.y + 96) + '" fill="#8fa1c3" font-size="11" font-family="IBM Plex Mono, monospace">' +
-      escapeText(nodeDetail) +
-      "</text></g>"
-    );
-  }).join("");
-
-  return (
-    '<div class="preview">' +
-    '<svg viewBox="0 0 ' + width + " " + height + '" role="img" aria-label="Run topology graph">' +
-    '<title>' + escapeText(tr("graph.runTopologyTitle", undefined, "Run topology graph")) + '</title>' +
-    '<desc>' + escapeText(tr("graph.runTopologyDescription", {
-      nodes: String(nodes.length),
-      edges: String(edges.length)
-    }, "Run topology graph with " + String(nodes.length) + " nodes and " + String(edges.length) + " edges.")) + '</desc>' +
-    '<defs><marker id="run-arrow" viewBox="0 0 10 10" refX="7" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z" fill="rgba(148,163,184,0.58)"></path></marker></defs>' +
-    edgeSvg +
-    nodeSvg +
-    "</svg></div>"
-  );
-}
-
-export function renderWorkbenchTopologySvg(structure: Record<string, unknown> | null | undefined): string {
-  if (!structure || !Array.isArray(structure.roles) || !structure.roles.length) {
-    return '<div class="hint">Rendered view is available after Mermaid validation succeeds.</div>';
-  }
-  const roles = structure.roles as JsonRecord[];
-  const flows = Array.isArray(structure.flows) ? structure.flows as JsonRecord[] : [];
-  const knownRoleIds = new Set(roles.map((role) => String(role.roleId ?? "")));
-  const terminalNodes: JsonRecord[] = [
-    {
-      roleId: "input",
-      bindingKind: "terminal",
-      nodeType: "boundary"
-    },
-    {
-      roleId: "output",
-      bindingKind: "terminal",
-      nodeType: "boundary"
-    }
-  ];
-  knownRoleIds.add("input");
-  knownRoleIds.add("output");
-  for (const flow of flows) {
-    for (const endpoint of [flow.fromRoleId, flow.toRoleId]) {
-      const roleId = String(endpoint ?? "");
-      if (!roleId || knownRoleIds.has(roleId)) {
-        continue;
-      }
-      knownRoleIds.add(roleId);
-      terminalNodes.push({
-        roleId,
-        bindingKind: "terminal",
-        nodeType: "terminal"
-      });
-    }
-  }
-  const previewFlows = flows.map((flow) => ({
-    sourceRoleId: flow.fromRoleId,
-    targetRoleId: flow.toRoleId,
-    event: flow.eventType,
-    isErrorFlow: false,
-    recentlyActivated: false
-  }));
-  const hasInputEdge = previewFlows.some((flow) => String(flow.sourceRoleId ?? "") === "input");
-  if (!hasInputEdge && structure.entryRoleId) {
-    previewFlows.unshift({
-      sourceRoleId: "input",
-      targetRoleId: structure.entryRoleId,
-      event: "START",
-      isErrorFlow: false,
-      recentlyActivated: false
-    });
-  }
-  return renderRunTopologySvg({
-    entryRoleId: structure.entryRoleId,
-    nodes: roles.concat(terminalNodes).map((role) => ({
-      roleId: role.roleId,
-      nodeType: role.nodeType ?? "role",
-      status: "idle",
-      bindingKind: role.bindingKind,
-      activeBranchCount: 0,
-      waitingReviewCount: 0,
-      pendingReviewCount: 0,
-      lastSelectedEvent: role.reviewMode || role.joinMode || role.routingMode || "structure"
-    })),
-    edges: previewFlows
-  }).replace("Run topology graph", "Graph workspace topology");
 }

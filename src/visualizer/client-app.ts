@@ -37,8 +37,6 @@ import {
   filterStudioBridgeItems,
   sortStudioBridgeFlowsByTopology,
   renderSuggestedNextChecksPanel,
-  renderRunTopologySvg,
-  renderWorkbenchTopologySvg,
   statusTone
 } from "./client-renderers.js";
 import {
@@ -288,8 +286,6 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
     const renderStudioBridgePanel = ${renderStudioBridgePanel.toString()};
     const renderRunStatePanel = ${renderRunStatePanel.toString()};
     const renderSuggestedNextChecksPanel = ${renderSuggestedNextChecksPanel.toString()};
-    const renderRunTopologySvg = ${renderRunTopologySvg.toString()};
-    const renderWorkbenchTopologySvg = ${renderWorkbenchTopologySvg.toString()};
     const studioRolePackageHasRequiredFileCoverage = ${studioRolePackageHasRequiredFileCoverage.toString()};
     function canonicalLocale(locale) {
       const normalized = String(locale || "").trim().replace(/_/g, "-").toLowerCase();
@@ -418,8 +414,12 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
     const sidebarEl = document.getElementById("sidebar");
     const sidebarOverlayEl = document.getElementById("sidebar-overlay");
     const sidebarToggleButton = document.getElementById("sidebar-toggle");
+    const heroValidateButton = document.getElementById("hero-validate");
+    const heroSaveButton = document.getElementById("hero-save");
     const releaseExportButton = document.getElementById("release-export");
+    const heroReleaseExportButton = document.getElementById("hero-release-export");
     const reindexButton = document.getElementById("reindex");
+    const heroReindexButton = document.getElementById("hero-reindex");
     const resumeRunButton = document.getElementById("resume-run");
     const stopRunButton = document.getElementById("stop-run");
     const refreshButton = document.getElementById("refresh");
@@ -447,23 +447,6 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
       }
     }
 
-    function getLegacyPanelId(legacyConsoleTab) {
-      switch (legacyConsoleTab) {
-        case "project":
-          return "console-panel-project";
-        case "ops":
-          return "console-panel-ops";
-        case "config":
-          return "console-panel-config";
-        case "logs":
-          return "console-panel-logs";
-        case "artifacts":
-          return "console-panel-artifacts";
-        default:
-          return "console-panel-debug";
-      }
-    }
-
     function setPanelState(panelId, visible, role, labelledBy) {
       const panel = document.getElementById(panelId);
       if (!panel) {
@@ -479,62 +462,23 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
     }
 
     function renderConsolePanels(visiblePanelIds) {
-      const legacyConsoleTab = state.legacyConsoleTab || "debug";
-      const legacyLabelIds = joinIdRefs("console-tab-legacy", "legacy-console-tab-" + legacyConsoleTab);
-      const operateLabelIds = joinIdRefs("console-tab-operate", "operate-tab-" + state.operateTab);
-      setPanelState(
-        "console-panel-project",
-        visiblePanelIds.has("project"),
-        "tabpanel",
-        state.consoleTab === "legacy" && legacyConsoleTab === "project"
-          ? legacyLabelIds
-          : "console-tab-project"
-      );
-      setPanelState("console-panel-build", visiblePanelIds.has("build"), "tabpanel", "console-tab-build");
-      setPanelState(
-        "console-panel-debug",
-        visiblePanelIds.has("debug"),
-        state.consoleTab === "legacy" && legacyConsoleTab === "debug" ? "tabpanel" : "presentation",
-        state.consoleTab === "legacy" && legacyConsoleTab === "debug" ? legacyLabelIds : ""
-      );
-      setPanelState(
-        "console-panel-ops",
-        visiblePanelIds.has("ops"),
-        state.consoleTab === "legacy" && legacyConsoleTab === "ops" ? "tabpanel" : "region",
-        state.consoleTab === "legacy" && legacyConsoleTab === "ops" ? legacyLabelIds : operateLabelIds
-      );
-      setPanelState(
-        "console-panel-config",
-        visiblePanelIds.has("config"),
-        "tabpanel",
-        state.consoleTab === "legacy" && legacyConsoleTab === "config" ? legacyLabelIds : "legacy-console-tab-config"
-      );
-      setPanelState(
-        "console-panel-logs",
-        visiblePanelIds.has("logs"),
-        "tabpanel",
-        state.consoleTab === "legacy" && legacyConsoleTab === "logs" ? legacyLabelIds : operateLabelIds
-      );
-      setPanelState(
-        "console-panel-artifacts",
-        visiblePanelIds.has("artifacts"),
-        "tabpanel",
-        state.consoleTab === "legacy" && legacyConsoleTab === "artifacts" ? legacyLabelIds : operateLabelIds
-      );
-      setPanelState("console-panel-validate-release", visiblePanelIds.has("validate-release"), "tabpanel", "console-tab-validate-release");
+      const operateLabelIds = joinIdRefs("console-tab-run", "operate-tab-" + state.operateTab);
+      setPanelState("console-panel-project", visiblePanelIds.has("project"), "tabpanel", "console-tab-design");
+      setPanelState("console-panel-build", visiblePanelIds.has("build"), "tabpanel", "console-tab-design");
+      setPanelState("console-panel-debug", visiblePanelIds.has("debug"), "presentation", "");
+      setPanelState("console-panel-ops", visiblePanelIds.has("ops"), "region", operateLabelIds);
+      setPanelState("console-panel-config", false, "tabpanel", "");
+      setPanelState("console-panel-logs", visiblePanelIds.has("logs"), "tabpanel", operateLabelIds);
+      setPanelState("console-panel-artifacts", visiblePanelIds.has("artifacts"), "tabpanel", operateLabelIds);
+      setPanelState("console-panel-validate-release", visiblePanelIds.has("validate-release"), "tabpanel", "console-tab-release");
 
-      const showLegacyDebug = state.consoleTab === "legacy" && legacyConsoleTab === "debug";
       for (const tab of OPERATE_DEBUG_PANEL_IDS) {
         const panelId = "operate-tabpanel-" + tab;
-        const panelRole = state.consoleTab === "operate" ? "tabpanel" : "group";
-        const panelLabels = state.consoleTab === "operate"
+        const panelRole = isRunConsoleTab() ? "tabpanel" : "group";
+        const panelLabels = isRunConsoleTab()
           ? joinIdRefs("console-tab-operate", "operate-tab-" + tab)
-          : showLegacyDebug
-            ? legacyLabelIds
-            : "";
-        const panelVisible = state.consoleTab === "operate"
-          ? state.operateTab === tab
-          : showLegacyDebug;
+          : "";
+        const panelVisible = isRunConsoleTab() && state.operateTab === tab;
         setPanelState(panelId, panelVisible, panelRole, panelLabels);
       }
     }
@@ -566,6 +510,10 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
     function applyStaticLocalizedContent() {
       const textTargets = [
         [sidebarToggleButton, "hero.runs"],
+        [heroValidateButton, "action.validate"],
+        [heroSaveButton, "action.save"],
+        [heroReleaseExportButton, "action.exportProject"],
+        [heroReindexButton, "action.reindex"],
         [releaseExportButton, "action.exportProject"],
         [reindexButton, "action.reindex"],
         [resumeRunButton, "action.resumeSelected"],
@@ -858,16 +806,16 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
 
     function renderGlobalStatusBar() {
       if (workbenchStatusEl) {
-        workbenchStatusEl.hidden = state.consoleTab !== "build";
+        workbenchStatusEl.hidden = !isDesignConsoleTab();
       }
       const contextTokens = [];
-      if (state.consoleTab === "build") {
+      if (isDesignConsoleTab()) {
         contextTokens.push(t("section.mermaidWorkbench", undefined, "Authoring workspace"));
         contextTokens.push(t("build.mode." + state.buildMode, undefined, state.buildMode || "edit"));
-      } else if (state.consoleTab === "operate") {
+      } else if (isRunConsoleTab()) {
         contextTokens.push(t("nav.lifecycle.operate", undefined, "Operate"));
         contextTokens.push(state.selectedRunId || t("state.noRunSelected", undefined, "No run selected."));
-      } else if (state.consoleTab === "validate-release") {
+      } else if (isReleaseConsoleTab()) {
         contextTokens.push(t("section.validateRelease", undefined, "Validate & Release"));
         contextTokens.push(state.workbenchSavedPath || "system.mmd");
       } else {
@@ -875,7 +823,7 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
         contextTokens.push((state.workspace?.workdir || getCurrentWorkdir() || "").split(/[\\/]/).filter(Boolean).pop() || t("state.idle", undefined, "idle"));
       }
       if (globalStatusContextEl) {
-        if (state.consoleTab === "build") {
+        if (isDesignConsoleTab()) {
           globalStatusContextEl.className = "global-status-context mode-toggle";
           globalStatusContextEl.setAttribute("aria-label", contextTokens.join(" / "));
           renderWorkbenchViewTabs();
@@ -888,14 +836,14 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
       if (globalStatusDiagnosticsEl) {
         const diagnostics = Array.isArray(state.workbench?.validation?.diagnostics) ? state.workbench.validation.diagnostics : [];
         const blockers = Array.isArray(state.projectReadiness?.blockers) ? state.projectReadiness.blockers : [];
-        if (state.consoleTab === "build" && diagnostics.length) {
+        if (isDesignConsoleTab() && diagnostics.length) {
           const first = diagnostics[0] || {};
           globalStatusDiagnosticsEl.textContent = String(first.code || "DIAGNOSTIC") + ": " + String(first.message || "");
           globalStatusDiagnosticsEl.className = "global-status-diagnostics hint warn";
-        } else if (state.consoleTab === "build") {
+        } else if (isDesignConsoleTab()) {
           globalStatusDiagnosticsEl.textContent = t("studio.noParseCompileDiagnostics", undefined, "No parse or compile diagnostics.");
           globalStatusDiagnosticsEl.className = "global-status-diagnostics hint";
-        } else if (state.consoleTab === "validate-release" && blockers.length) {
+        } else if (isReleaseConsoleTab() && blockers.length) {
           globalStatusDiagnosticsEl.textContent = String(blockers[0]?.message || t("release.resolveBlockers", undefined, "Resolve release blockers."));
           globalStatusDiagnosticsEl.className = "global-status-diagnostics hint warn";
         } else {
@@ -905,7 +853,7 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
       }
       if (workbenchStatusEl) {
         workbenchStatusEl.dataset.graphStatus = state.studioGraphStatusText || "";
-        if (state.consoleTab === "build" && state.studioGraphStatusText) {
+        if (isDesignConsoleTab() && state.studioGraphStatusText) {
           workbenchStatusEl.title = state.studioGraphStatusText;
         } else {
           workbenchStatusEl.removeAttribute("title");
@@ -1076,9 +1024,11 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
       }
       const runtimeNodes = Array.isArray(graph.nodes) ? graph.nodes : [];
       const runtimeEdges = Array.isArray(graph.edges) ? graph.edges : [];
-      const runtimeNodeByRoleId = new Map(runtimeNodes.map((node) => [String(node?.roleId || ""), node]));
+      const runtimeNodeByRoleId = new Map(runtimeNodes
+        .filter((node) => String(node?.kind || "role") === "role")
+        .map((node) => [String(node?.roleId || ""), node]));
       const runtimeEdgeByKey = new Map(runtimeEdges.map((edge) => [
-        studioBridgeFlowRuntimeKey(edge?.sourceRoleId || edge?.source, edge?.event || edge?.eventType, edge?.targetRoleId || edge?.target),
+        studioBridgeFlowRuntimeKey(edge?.source, edge?.eventType, edge?.target),
         edge
       ]));
       const enrichedRoles = Array.isArray(bridge.extracted?.roles)
@@ -1090,7 +1040,12 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
             }
             return {
               ...role,
-              badges: runtimeBadgesForRunNode(runtimeNode)
+              badges: runtimeBadgesForRunNode({
+                status: runtimeNode?.runtime?.status,
+                loopIteration: runtimeNode?.runtime?.loopIteration,
+                pendingReviewCount: runtimeNode?.runtime?.pendingReviewCount,
+                lastErrorCode: runtimeNode?.runtime?.lastErrorCode
+              })
             };
           })
         : bridge.extracted?.roles;
@@ -1103,8 +1058,8 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
             }
             return {
               ...flow,
-              runtimeOnlyErrorFlow: Boolean(flow?.runtimeOnlyErrorFlow || runtimeEdge?.isErrorFlow || runtimeEdge?.runtimeOnlyErrorFlow),
-              recentlyActivated: Boolean(runtimeEdge?.recentlyActivated)
+              runtimeOnlyErrorFlow: Boolean(flow?.runtimeOnlyErrorFlow || runtimeEdge?.runtimeOnlyErrorFlow),
+              recentlyActivated: Boolean(runtimeEdge?.runtime?.recentlyActivated)
             };
           })
         : bridge.extracted?.flows;
@@ -1116,7 +1071,12 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
             }
             return {
               ...node,
-              badges: runtimeBadgesForRunNode(runtimeNode)
+              badges: runtimeBadgesForRunNode({
+                status: runtimeNode?.runtime?.status,
+                loopIteration: runtimeNode?.runtime?.loopIteration,
+                pendingReviewCount: runtimeNode?.runtime?.pendingReviewCount,
+                lastErrorCode: runtimeNode?.runtime?.lastErrorCode
+              })
             };
           })
         : [];
@@ -1126,8 +1086,8 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
             const runtimeEdge = runtimeEdgeByKey.get(key);
             return {
               ...edge,
-              runtimeOnlyErrorFlow: Boolean(edge?.runtimeOnlyErrorFlow || runtimeEdge?.isErrorFlow || runtimeEdge?.runtimeOnlyErrorFlow),
-              recentlyActivated: Boolean(runtimeEdge?.recentlyActivated),
+              runtimeOnlyErrorFlow: Boolean(edge?.runtimeOnlyErrorFlow || runtimeEdge?.runtimeOnlyErrorFlow),
+              recentlyActivated: Boolean(runtimeEdge?.runtime?.recentlyActivated),
               participatesInJoin: Boolean(edge?.participatesInJoin)
             };
           })
@@ -1147,6 +1107,96 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
           edges: canvasEdges
         }
       };
+    }
+
+    function overlayRunGraphAuthoringLayout(authoring, overlayAuthoring) {
+      if (!authoring || !overlayAuthoring) {
+        return authoring;
+      }
+      const overlayNodes = overlayAuthoring?.layout?.nodes;
+      if (!overlayNodes || typeof overlayNodes !== "object") {
+        return authoring;
+      }
+      return {
+        ...authoring,
+        layout: {
+          ...(authoring.layout || {}),
+          nodes: {
+            ...(authoring.layout?.nodes || {}),
+            ...Object.fromEntries(
+              Object.entries(overlayNodes).filter(([roleId]) => Boolean(authoring.roles?.[roleId]))
+            )
+          },
+          viewport: overlayAuthoring?.layout?.viewport ?? authoring.layout?.viewport
+        }
+      };
+    }
+
+    function overlayRunGraphViewModelLayout(viewModel, overlayAuthoring) {
+      if (!viewModel || !overlayAuthoring?.layout?.nodes) {
+        return viewModel;
+      }
+      const nextNodes = Array.isArray(viewModel.nodes)
+        ? viewModel.nodes.map((node) => {
+            if (node?.kind !== "role") {
+              return node;
+            }
+            const layout = overlayAuthoring.layout.nodes[node.roleId];
+            return layout
+              ? {
+                  ...node,
+                  layout: {
+                    ...node.layout,
+                    x: Number.isFinite(layout.x) ? Number(layout.x) : node.layout?.x,
+                    y: Number.isFinite(layout.y) ? Number(layout.y) : node.layout?.y,
+                    width: Number.isFinite(layout.width) ? Number(layout.width) : node.layout?.width,
+                    height: Number.isFinite(layout.height) ? Number(layout.height) : node.layout?.height
+                  }
+                }
+              : node;
+          })
+        : [];
+      const roleNodes = nextNodes.filter((node) => node?.kind === "role");
+      const minX = roleNodes.length ? Math.min(...roleNodes.map((node) => Number(node.layout?.x || 0))) : 120;
+      const maxX = roleNodes.length
+        ? Math.max(...roleNodes.map((node) => Number(node.layout?.x || 0) + Number(node.layout?.width || 0)))
+        : 360;
+      const baseY = roleNodes.length ? Math.min(...roleNodes.map((node) => Number(node.layout?.y || 0))) : 120;
+      return {
+        ...viewModel,
+        nodes: nextNodes.map((node) => {
+          if (node?.kind === "boundary" && node?.id === "input") {
+            return {
+              ...node,
+              layout: { ...node.layout, x: minX - 260, y: baseY }
+            };
+          }
+          if (node?.kind === "boundary" && (node?.id === "output" || node?.roleId === "__system_end__")) {
+            return {
+              ...node,
+              layout: { ...node.layout, x: maxX + 90, y: baseY }
+            };
+          }
+          return node;
+        }),
+        viewport: overlayAuthoring.layout.viewport ?? viewModel.viewport
+      };
+    }
+
+    function resolveRunGraphPayloadForDisplay() {
+      const payload = state.graph ? cloneJson(state.graph) : null;
+      if (!payload?.graph || !payload?.authoring) {
+        return payload;
+      }
+      if (
+        state.selectedRunId
+        && state.selectedRunId === state.studioBridgeLastDryRunId
+        && state.studioBridge?.authoring
+      ) {
+        payload.authoring = overlayRunGraphAuthoringLayout(payload.authoring, state.studioBridge.authoring);
+        payload.graph = overlayRunGraphViewModelLayout(payload.graph, state.studioBridge.authoring);
+      }
+      return payload;
     }
 
     function buildStudioGraphLabels() {
@@ -1226,114 +1276,11 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
       };
     }
 
-    function normalizeRunGraphBindingKind(value) {
-      const normalized = String(value || "").toLowerCase();
-      if (normalized === "model") return "model";
-      if (normalized === "exec" || normalized === "execution" || normalized === "profile") return "exec";
-      return "noop";
-    }
-
     function runGraphFlowKey(edge) {
       const source = String(edge?.sourceRoleId || edge?.source || "");
       const event = String(edge?.event || edge?.eventType || "DONE");
       const target = normalizeStudioTargetRoleId(edge?.targetRoleId || edge?.target || "__system_end__");
       return source + ":" + event + ":" + target;
-    }
-
-    function buildRunStudioBridgeFromGraph(graph) {
-      const nodes = Array.isArray(graph?.nodes) ? graph.nodes : [];
-      const edges = Array.isArray(graph?.edges) ? graph.edges : [];
-      const columns = Math.max(1, Math.ceil(Math.sqrt(Math.max(nodes.length, 1))));
-      const authoringRoles = {};
-      const layoutNodes = {};
-      const canvasNodes = nodes.map((node, index) => {
-        const roleId = String(node?.roleId || "");
-        const bindingKind = normalizeRunGraphBindingKind(node?.bindingKind);
-        const x = 140 + (index % columns) * 260;
-        const y = 120 + Math.floor(index / columns) * 150;
-        const badges = [
-          node?.status ? displayUiToken(node.status, t) : "",
-          node?.nodeType && node.nodeType !== "role" ? displayUiToken(node.nodeType, t) : "",
-          node?.lastErrorCode ? String(node.lastErrorCode) : ""
-        ].filter(Boolean);
-        authoringRoles[roleId] = {
-          roleId,
-          title: String(node?.title || node?.label || roleId),
-          bindingKind,
-          modelRef: node?.modelRef,
-          profileId: node?.profileId,
-          routingMode: node?.routingMode,
-          joinMode: node?.joinMode,
-          joinMin: node?.joinMin,
-          joinSources: Array.isArray(node?.joinSources) ? node.joinSources : undefined,
-          loopMax: node?.loopMax,
-          review: node?.review,
-          contextMap: Array.isArray(node?.contextFields) && node.contextFields.length
-            ? Object.fromEntries(node.contextFields.map((key) => [String(key), String(key)]))
-            : undefined
-        };
-        layoutNodes[roleId] = { x, y, width: 190, height: 90 };
-        return {
-          id: roleId,
-          roleId,
-          x,
-          y,
-          width: 190,
-          height: 90,
-          label: String(node?.title || node?.label || roleId),
-          badges,
-          bindingKind
-        };
-      }).filter((node) => node.roleId);
-      const authoringFlows = {};
-      const canvasEdges = edges.map((edge, index) => {
-        const source = String(edge?.sourceRoleId || edge?.source || "");
-        const target = String(edge?.targetRoleId || edge?.target || "__system_end__");
-        const eventType = String(edge?.event || edge?.eventType || "DONE");
-        const label = String(edge?.label || eventType);
-        const flowId = String(edge?.flowId || "run-flow-" + index);
-        authoringFlows[flowId] = {
-          flowId,
-          fromRoleId: source,
-          toRoleId: target,
-          eventType,
-          ...(label && label !== eventType ? { label } : {}),
-          runtimeOnlyErrorFlow: Boolean(edge?.isErrorFlow || edge?.runtimeOnlyErrorFlow)
-        };
-        return {
-          id: flowId,
-          source,
-          target,
-          label,
-          eventType,
-          runtimeOnlyErrorFlow: Boolean(edge?.isErrorFlow || edge?.runtimeOnlyErrorFlow),
-          participatesInJoin: Boolean(edge?.participatesInJoin),
-          recentlyActivated: Boolean(edge?.recentlyActivated)
-        };
-      }).filter((edge) => edge.source && edge.target);
-      return {
-        authoring: {
-          version: 1,
-          project: {
-            workdir: getCurrentWorkdir(),
-            systemPath: state.detail?.header?.systemPath || state.workbenchSavedPath || "system.mmd"
-          },
-          system: {
-            systemId: String(graph?.systemId || state.selectedRunId || "run"),
-            systemVersion: String(graph?.systemVersion || "v1"),
-            entryRoleId: String(graph?.entryRoleId || canvasNodes[0]?.roleId || ""),
-            lawGlobalRef: ""
-          },
-          roles: authoringRoles,
-          flows: authoringFlows,
-          layout: { nodes: layoutNodes }
-        },
-        canvas: {
-          version: 1,
-          nodes: canvasNodes,
-          edges: canvasEdges
-        }
-      };
     }
 
     function cloneJson(value) {
@@ -1531,8 +1478,32 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
       return [];
     }
 
+    function designConsoleTab() {
+      return "design";
+    }
+
+    function runConsoleTab() {
+      return "run";
+    }
+
+    function releaseConsoleTab() {
+      return "release";
+    }
+
+    function isDesignConsoleTab() {
+      return state.consoleTab === "design";
+    }
+
+    function isRunConsoleTab() {
+      return state.consoleTab === "run";
+    }
+
+    function isReleaseConsoleTab() {
+      return state.consoleTab === "release";
+    }
+
     function resolveWorkbenchViewTabsSlot() {
-      return state.consoleTab === "build" ? globalStatusContextEl : null;
+      return isDesignConsoleTab() ? globalStatusContextEl : null;
     }
 
     function resetBuildEditingState() {
@@ -1542,9 +1513,6 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
         state.studioWorkbenchSideTab = state.studioBridgeSelectedRoleId || state.studioBridgeSelectedFlowKey
           ? "selection"
           : "structure";
-      }
-      if (state.studioSelectionDialogDocked !== false) {
-        state.studioSelectionDialogOpen = true;
       }
       clearTimeout(state.studioGraphMountRetryTimer);
       state.studioGraphMountRetryTimer = null;
@@ -1633,10 +1601,9 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
     function setProjectCreateStage(stage) {
       state.projectCreateStage = stage || "";
       renderProject();
-      if (state.consoleTab === "build" || state.workbenchView === "bridge") {
+      if (isDesignConsoleTab() || state.workbenchView === "bridge") {
         renderWorkbench({
-          preserveEditor: true,
-          preserveStudioGraphRoot: state.workbenchView === "bridge"
+          preserveEditor: true
         });
       }
     }
@@ -1752,8 +1719,7 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
       }
       if (state.workbench && !suppressWorkbenchRerender) {
         renderWorkbench({
-          preserveEditor: true,
-          preserveStudioGraphRoot: state.workbenchView === "bridge"
+          preserveEditor: true
         });
       }
       if (state.workbenchView === "bridge" && typeof patchStudioChatPanel === "function") {
@@ -1814,9 +1780,17 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
       const noProject = !state.hasProject;
       const stopDisabled = disabled || !canRequestStop();
       if (releaseExportButton) releaseExportButton.disabled = disabled || noProject;
+      if (heroReleaseExportButton) heroReleaseExportButton.disabled = disabled || noProject;
       reindexButton.disabled = disabled || noProject;
+      if (heroReindexButton) heroReindexButton.disabled = disabled || noProject;
       resumeRunButton.disabled = disabled || !state.selectedRunId;
       stopRunButton.disabled = stopDisabled;
+      if (heroValidateButton) {
+        heroValidateButton.disabled = workbenchActionsDisabled;
+      }
+      if (heroSaveButton) {
+        heroSaveButton.disabled = workbenchActionsDisabled || !isWorkbenchDirty();
+      }
       refreshButton.disabled = disabled;
       if (timelineApplyButton) {
         timelineApplyButton.disabled = disabled || !state.selectedRunId;
@@ -1873,7 +1847,7 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
     }
 
     function setSidebarOpen(nextValue) {
-      const canOpen = state.consoleTab === "operate" || state.consoleTab === "legacy";
+      const canOpen = isRunConsoleTab();
       state.sidebarOpen = Boolean(nextValue && canOpen);
       document.body.classList.toggle("drawer-open", state.sidebarOpen);
       if (sidebarToggleButton) {
@@ -1882,7 +1856,7 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
     }
 
     function renderOperateTabs() {
-      const showOperateWorkspace = state.consoleTab === "operate";
+      const showOperateWorkspace = isRunConsoleTab();
       document.body.classList.toggle("show-operate-workspace", showOperateWorkspace);
       for (const tab of ["overview", "graph", "recovery", "logs", "reviews", "artifacts"]) {
         document.body.classList.toggle("operate-tab-" + tab, showOperateWorkspace && state.operateTab === tab);
@@ -1908,14 +1882,36 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
     }
 
     function renderHeroActions() {
-      const isOperate = state.consoleTab === "operate" || state.consoleTab === "legacy";
+      const designActive = isDesignConsoleTab();
+      const runActive = isRunConsoleTab();
+      const releaseActive = isReleaseConsoleTab();
+      const stopVisible = runActive && canRequestStop();
+      const resumeVisible = runActive && !stopVisible;
+      if (heroValidateButton) {
+        heroValidateButton.hidden = !designActive;
+      }
+      if (heroSaveButton) {
+        heroSaveButton.hidden = !designActive;
+      }
       if (resumeRunButton) {
-        resumeRunButton.hidden = !isOperate;
+        resumeRunButton.hidden = !resumeVisible;
         resumeRunButton.disabled = !state.selectedRunId;
       }
       if (stopRunButton) {
-        stopRunButton.hidden = !isOperate;
+        stopRunButton.hidden = !stopVisible;
         stopRunButton.disabled = !state.selectedRunId;
+      }
+      if (heroReindexButton) {
+        heroReindexButton.hidden = !runActive;
+      }
+      if (heroReleaseExportButton) {
+        heroReleaseExportButton.hidden = !releaseActive;
+      }
+      if (reindexButton) {
+        reindexButton.hidden = runActive;
+      }
+      if (releaseExportButton) {
+        releaseExportButton.hidden = false;
       }
     }
 
@@ -1925,14 +1921,12 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
       }
       setInnerHtmlIfChanged(consoleTabsEl, renderConsoleTabsHtml({
         consoleTab: state.consoleTab,
-        legacyConsoleTab: state.legacyConsoleTab,
         operateTab: state.operateTab,
         t,
         escapeText
       }));
       const visiblePanelIds = new Set(getVisibleConsolePanelIds({
         consoleTab: state.consoleTab,
-        legacyConsoleTab: state.legacyConsoleTab,
         operateTab: state.operateTab
       }));
       renderConsolePanels(visiblePanelIds);
@@ -1950,14 +1944,13 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
       clearTimeout(state.runGraphMountRetryTimer);
       state.runGraphMountRetryTimer = null;
       state.runGraphMountRetryCount = 0;
-      if (state.consoleTab === "operate" && state.operateTab === "graph" && state.graph?.graph) {
-        mountRunGraphIsland(state.graph.graph);
+      if (isRunConsoleTab() && state.operateTab === "graph" && state.graph?.graph) {
+        mountRunGraphIsland(resolveRunGraphPayloadForDisplay());
       }
       for (const button of consoleTabsEl.querySelectorAll("[data-console-tab]")) {
         bindOnce(button, "click", "console-tab", () => {
-          state.consoleTab = button.getAttribute("data-console-tab") || "operate";
-          state.projectHome = state.consoleTab === "project";
-          if (state.consoleTab === "build" && state.hasProject) {
+          state.consoleTab = button.getAttribute("data-console-tab") || designConsoleTab();
+          if (isDesignConsoleTab() && state.hasProject) {
             resetBuildEditingState();
             const refreshWorkdir = state.workspace?.workdir || "";
             void refreshStudioBridge().catch((error) => {
@@ -1973,17 +1966,6 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
           writeRouteToLocation();
         });
       }
-      for (const button of consoleTabsEl.querySelectorAll("[data-legacy-console-tab]")) {
-        bindOnce(button, "click", "legacy-console-tab", () => {
-          state.legacyConsoleTab = button.getAttribute("data-legacy-console-tab") || "debug";
-          renderConsoleTabs();
-          renderActionState();
-        });
-      }
-    }
-
-    function renderWorkbenchPreviewSvg(structure) {
-      return renderWorkbenchTopologySvg(structure);
     }
 
     function renderWorkbenchStructure(structure) {
@@ -2031,33 +2013,21 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
         filter: state.studioBridgeFilter,
         listMode: state.studioBridgeListMode,
         sideTab: state.studioWorkbenchSideTab,
+        selectionDebugHtml: renderStudioDebugTabContent(),
+        selectionResultsHtml: renderStudioResultTabContent(),
         fullscreen: state.studioBridgeFullscreen,
         rolePackageEditor: state.studioRolePackageEditor,
-        selectionDocked: state.studioSelectionDialogDocked !== false,
-        selectionCollapsed: state.studioSelectionDialogCollapsed === true,
+        inspectorCollapsed: state.studioInspectorCollapsed === true,
         actionBusy: state.actionBusy,
         t
       };
     }
 
     function renderStudioBridge(options) {
-      if (state.studioSelectionDialogDocked !== false) {
-        state.studioSelectionDialogOpen = true;
-      }
       const args = studioBridgeRenderArgs(options);
       const html = renderStudioBridgePanel(args);
-      const currentRoot = document.getElementById("studio-graph-root");
-      const preservedRoot = options?.preserveGraphRoot && isMountedStudioGraphRoot(currentRoot) ? currentRoot : null;
-      if (options?.preserveGraphRoot && preservedRoot) {
-        patchStudioBridgePanel(html);
-      } else {
-        workbenchBodyEl.innerHTML = html;
-      }
+      workbenchBodyEl.innerHTML = html;
       renderWorkbenchViewTabs();
-      const nextRoot = document.getElementById("studio-graph-root");
-      if (preservedRoot && nextRoot && nextRoot !== preservedRoot && typeof nextRoot.replaceWith === "function") {
-        nextRoot.replaceWith(preservedRoot);
-      }
       updateStudioBridgeSelection(false);
       syncStudioBridgeFullscreenChrome();
       bindStudioBridgeControls();
@@ -2074,24 +2044,6 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
       bindStudioChatControls();
     }
 
-    function patchStudioBridgePanel(html) {
-      const template = document.createElement("template");
-      template.innerHTML = html;
-      if (!template.content || typeof template.content.querySelector !== "function") {
-        workbenchBodyEl.innerHTML = html;
-        return;
-      }
-      for (const region of ["toolbar", "graph", "index", "navigator", "flow-list", "diagnostics"]) {
-        const current = findStudioBridgeElement('[data-studio-bridge-region="' + region + '"]');
-        const next = template.content.querySelector('[data-studio-bridge-region="' + region + '"]');
-        if (current && next) {
-          current.replaceWith(next);
-        }
-      }
-      renderWorkbenchViewTabs();
-      updateStudioBridgeSelection(false);
-    }
-
     function bindStudioBridgeControls() {
       attachStudioBridgeControls({
         root: workbenchBodyEl,
@@ -2099,7 +2051,6 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
         onRoleSelect: (roleId) => {
           state.studioBridgeSelectedRoleId = roleId;
           state.studioBridgeSelectedFlowKey = "";
-          state.studioSelectionDialogOpen = true;
           state.studioWorkbenchSideTab = "selection";
           state.studioBridgeEditSelectionRequest += 1;
           updateStudioBridgeSelection(true);
@@ -2109,7 +2060,6 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
         onFlowSelect: (flowKey) => {
           state.studioBridgeSelectedFlowKey = flowKey;
           state.studioBridgeSelectedRoleId = "";
-          state.studioSelectionDialogOpen = true;
           state.studioWorkbenchSideTab = "selection";
           state.studioBridgeEditSelectionRequest += 1;
           updateStudioBridgeSelection(true);
@@ -2117,11 +2067,11 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
         onFilterInput: (value) => {
           // Studio Bridge filtering stays local; remote refreshes remain explicit actions.
           state.studioBridgeFilter = value;
-          renderStudioBridge({ preserveGraphRoot: true });
+          renderStudioBridge();
         },
         onListModeChange: (value) => {
           state.studioBridgeListMode = value === "roles" || value === "flows" ? value : "all";
-          renderStudioBridge({ preserveGraphRoot: true });
+          renderStudioBridge();
         }
       });
       bindStudioSelectionDialogControls();
@@ -2211,8 +2161,8 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
     }
 
     function clearStudioSelectionDialogState() {
-      state.studioSelectionDialogOpen = false;
-      state.studioSelectionDialogCollapsed = false;
+      state.studioInspectorCollapsed = false;
+      state.studioWorkbenchSideTab = "structure";
       state.studioSelectionCommandFormOpen = false;
       state.studioSelectionCommandKind = "";
       state.studioSelectionDismissCommandFormRequest += 1;
@@ -2236,14 +2186,9 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
       state.studioSelectionCommandFormOpen = false;
       state.studioSelectionCommandKind = "";
       state.studioSelectionDismissCommandFormRequest += 1;
-      if (state.studioSelectionDialogDocked !== false) {
-        state.studioWorkbenchSideTab = state.studioWorkbenchSideTab === "debug" || state.studioWorkbenchSideTab === "result"
-          ? state.studioWorkbenchSideTab
-          : "structure";
-        state.studioSelectionDialogOpen = true;
-      } else {
-        clearStudioSelectionDialogState();
-      }
+      state.studioWorkbenchSideTab = state.studioWorkbenchSideTab === "debug" || state.studioWorkbenchSideTab === "result"
+        ? state.studioWorkbenchSideTab
+        : "structure";
       updateStudioBridgeSelection(options?.syncGraph !== false);
       return true;
     }
@@ -2339,15 +2284,10 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
       if (!shell || !overlay || !dialog || !kindLabel || !title || !rolePackage || !selectionPanel || !structurePanel || !debugPanel) {
         return;
       }
-      const docked = state.studioSelectionDialogDocked !== false;
       state.studioWorkbenchSideTab = tab;
-      state.studioSelectionDialogOpen = true;
       overlay.hidden = false;
-      overlay.classList.toggle("is-open", true);
-      overlay.classList.toggle("is-docked", docked);
-      overlay.classList.toggle("is-collapsed", state.studioSelectionDialogCollapsed === true);
-      shell.classList.toggle("has-docked-selection", docked);
-      shell.classList.toggle("has-collapsed-selection", docked && state.studioSelectionDialogCollapsed === true);
+      overlay.classList.toggle("is-collapsed", state.studioInspectorCollapsed === true);
+      shell.classList.toggle("has-collapsed-selection", state.studioInspectorCollapsed === true);
       selectionPanel.hidden = true;
       structurePanel.hidden = true;
       debugPanel.hidden = tab === "result" && Boolean(resultPanel);
@@ -2408,7 +2348,6 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
           ? "flow"
           : "";
       const hasSelectionContent = Boolean(selectionKind || state.studioSelectionCommandFormOpen);
-      const docked = state.studioSelectionDialogDocked !== false;
       const activeTab = state.studioWorkbenchSideTab === "selection" && hasSelectionContent
         ? "selection"
         : state.studioWorkbenchSideTab === "debug"
@@ -2416,16 +2355,10 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
           : state.studioWorkbenchSideTab === "result"
             ? "result"
           : "structure";
-      const shouldOpen = docked
-        ? state.studioSelectionDialogOpen !== false
-        : state.studioSelectionDialogOpen && (hasSelectionContent || activeTab === "structure" || activeTab === "debug" || activeTab === "result");
-      const collapsed = state.studioSelectionDialogCollapsed === true;
-      overlay.hidden = !shouldOpen;
-      overlay.classList.toggle("is-open", shouldOpen);
-      overlay.classList.toggle("is-docked", docked);
+      const collapsed = state.studioInspectorCollapsed === true;
+      overlay.hidden = false;
       overlay.classList.toggle("is-collapsed", collapsed);
-      shell.classList.toggle("has-docked-selection", shouldOpen && docked);
-      shell.classList.toggle("has-collapsed-selection", shouldOpen && docked && collapsed);
+      shell.classList.toggle("has-collapsed-selection", collapsed);
       selectionPanel.hidden = activeTab !== "selection";
       structurePanel.hidden = activeTab !== "structure";
       debugPanel.hidden = activeTab !== "debug";
@@ -2440,16 +2373,8 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
         button.setAttribute("aria-selected", active ? "true" : "false");
         button.disabled = shouldLockWorkbenchNavigation();
       }
-      for (const button of Array.from(dialog.querySelectorAll?.("[data-studio-selection-pin], [data-studio-selection-collapse], [data-studio-selection-close]") || [])) {
+      for (const button of Array.from(dialog.querySelectorAll?.("[data-studio-selection-collapse]") || [])) {
         button.disabled = shouldLockWorkbenchNavigation();
-      }
-      if (!shouldOpen) {
-        rolePackage.innerHTML = "";
-        debugPanel.innerHTML = renderStudioDebugTabContent();
-        if (resultPanel) {
-          resultPanel.innerHTML = "";
-        }
-        return;
       }
 
       if (activeTab === "debug") {
@@ -2475,10 +2400,6 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
         title.textContent = t("studio.selectRole", undefined, "Select a role to inspect metadata.");
       }
       dialog.setAttribute("aria-label", title.textContent || kindLabel.textContent || t("studio.graphWorkspace", undefined, "Graph workspace"));
-      const pinButton = overlay.querySelector?.("[data-studio-selection-pin]");
-      if (pinButton) {
-        pinButton.textContent = docked ? "undock" : "dock";
-      }
       const collapseButton = overlay.querySelector?.("[data-studio-selection-collapse]");
       if (collapseButton) {
         collapseButton.textContent = collapsed ? ">" : "<";
@@ -2587,7 +2508,6 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
               : nextTab === "result"
                 ? "result"
               : "structure";
-          state.studioSelectionDialogOpen = true;
           renderStudioSelectionDialog();
           if (nextTab === "debug") {
             focusWorkbenchRunInput();
@@ -2595,22 +2515,9 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
           event.preventDefault();
           return;
         }
-        const closeButton = closestSelectionAction(event.target, "data-studio-selection-close");
-        if (closeButton) {
-          closeStudioSelectionDialog({ clearSelection: true, syncGraph: true });
-          event.preventDefault();
-          return;
-        }
-        const pinButton = closestSelectionAction(event.target, "data-studio-selection-pin");
-        if (pinButton) {
-          state.studioSelectionDialogDocked = !state.studioSelectionDialogDocked;
-          renderStudioSelectionDialog();
-          event.preventDefault();
-          return;
-        }
         const collapseButton = closestSelectionAction(event.target, "data-studio-selection-collapse");
         if (collapseButton) {
-          state.studioSelectionDialogCollapsed = !state.studioSelectionDialogCollapsed;
+          state.studioInspectorCollapsed = !state.studioInspectorCollapsed;
           renderStudioSelectionDialog();
           event.preventDefault();
         }
@@ -2960,7 +2867,7 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
           draftFiles: nextDraftFiles
         };
         await refreshRolePackageDependentProjectState();
-        await refreshStudioBridge({ preserveGraphRoot: true });
+        await refreshStudioBridge();
         setFlash("success", t("studio.rolePackageSaved", { roleId: selectedRoleIdValue }, "Role package saved: {roleId}."));
       } catch (error) {
         state.studioRolePackageEditor = {
@@ -3056,7 +2963,7 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
       const studioDebugOpenOperateButton = document.getElementById("studio-debug-open-operate");
       if (studioDebugOpenOperateButton) {
         bindOnce(studioDebugOpenOperateButton, "click", "studio-debug-open-operate", async () => {
-          state.consoleTab = "operate";
+          state.consoleTab = runConsoleTab();
           renderConsoleTabs();
           if (state.selectedRunId) {
             await selectRun(state.selectedRunId);
@@ -3123,7 +3030,7 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
       if (!current) {
         return;
       }
-      renderStudioBridge({ preserveGraphRoot: true });
+      renderStudioBridge();
     }
 
     function openStudioChatDialog() {
@@ -3201,7 +3108,6 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
       state.studioWorkbenchSideTab = state.studioWorkbenchSideTab === "debug" || state.studioWorkbenchSideTab === "result"
         ? state.studioWorkbenchSideTab
         : "structure";
-      state.studioSelectionDialogOpen = state.studioSelectionDialogDocked !== false;
       return true;
     }
 
@@ -3214,12 +3120,12 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
         if (event.key === "Escape" && state.studioBridgeFullscreen) {
           state.studioBridgeFullscreen = false;
           if (state.workbenchView === "bridge") {
-            renderStudioBridge({ preserveGraphRoot: true });
+            renderStudioBridge();
           }
           event.preventDefault();
           return;
         }
-        if (event.key === "Escape" && state.studioSelectionDialogOpen) {
+        if (event.key === "Escape" && (state.studioBridgeSelectedRoleId || state.studioBridgeSelectedFlowKey || state.studioSelectionCommandFormOpen)) {
           closeStudioSelectionDialog({ clearSelection: true, syncGraph: true });
           event.preventDefault();
           return;
@@ -3231,6 +3137,13 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
     }
 
     function mountStudioGraphIsland() {
+      const buildBridgeActive = isDesignConsoleTab() && state.workbenchView === "bridge";
+      if (!buildBridgeActive) {
+        clearTimeout(state.studioGraphMountRetryTimer);
+        state.studioGraphMountRetryTimer = null;
+        state.studioGraphMountRetryCount = 0;
+        return;
+      }
       let root = document.getElementById("studio-graph-root");
       if (!root) {
         return;
@@ -3264,7 +3177,11 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
             : 150;
         state.studioGraphMountRetryTimer = setTimeout(() => {
           state.studioGraphMountRetryTimer = null;
-          mountStudioGraphIsland();
+          if (isDesignConsoleTab() && state.workbenchView === "bridge") {
+            mountStudioGraphIsland();
+          } else {
+            state.studioGraphMountRetryCount = 0;
+          }
         }, retryDelayMs);
         return;
       }
@@ -3300,7 +3217,6 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
         onSelectRole: (roleId) => {
           state.studioBridgeSelectedRoleId = roleId || "";
           state.studioBridgeSelectedFlowKey = "";
-          state.studioSelectionDialogOpen = true;
           state.studioWorkbenchSideTab = nextStudioSideTabOnGraphSelection();
           updateStudioBridgeSelection(false);
           void loadStudioRolePackageEditor(roleId);
@@ -3309,7 +3225,6 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
         onSelectFlow: (flowKey) => {
           state.studioBridgeSelectedFlowKey = flowKey || "";
           state.studioBridgeSelectedRoleId = "";
-          state.studioSelectionDialogOpen = true;
           state.studioWorkbenchSideTab = nextStudioSideTabOnGraphSelection();
           updateStudioBridgeSelection(false);
         },
@@ -3320,20 +3235,17 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
           state.studioWorkbenchSideTab = state.studioWorkbenchSideTab === "debug" || state.studioWorkbenchSideTab === "result"
             ? state.studioWorkbenchSideTab
             : "structure";
-          state.studioSelectionDialogOpen = state.studioSelectionDialogDocked !== false;
           updateStudioBridgeSelection(false);
         },
         onCommandFormStateChange: (formState) => {
           state.studioSelectionCommandFormOpen = Boolean(formState?.open);
           state.studioSelectionCommandKind = String(formState?.kind || "");
           if (formState?.open) {
-            state.studioSelectionDialogOpen = true;
             state.studioWorkbenchSideTab = "selection";
           } else if (!state.studioBridgeSelectedRoleId && !state.studioBridgeSelectedFlowKey) {
             state.studioWorkbenchSideTab = state.studioWorkbenchSideTab === "debug" || state.studioWorkbenchSideTab === "result"
               ? state.studioWorkbenchSideTab
               : "structure";
-            state.studioSelectionDialogOpen = state.studioSelectionDialogDocked !== false;
           }
           renderStudioSelectionDialog();
         },
@@ -3348,7 +3260,7 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
         },
         onToggleFullscreen: () => {
           state.studioBridgeFullscreen = !state.studioBridgeFullscreen;
-          renderStudioBridge({ preserveGraphRoot: true });
+          renderStudioBridge();
           syncStudioBridgeFullscreenChrome();
         },
         onValidateWorkbench: async () => {
@@ -3378,11 +3290,22 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
           : 150;
       state.runGraphMountRetryTimer = setTimeout(() => {
         state.runGraphMountRetryTimer = null;
-        mountRunGraphIsland(graph);
+        if (isRunConsoleTab() && state.operateTab === "graph") {
+          mountRunGraphIsland(graph);
+        } else {
+          state.runGraphMountRetryCount = 0;
+        }
       }, retryDelayMs);
     }
 
-    function mountRunGraphIsland(graph) {
+    function mountRunGraphIsland(graphPayload) {
+      const runGraphActive = isRunConsoleTab() && state.operateTab === "graph";
+      if (!runGraphActive) {
+        clearTimeout(state.runGraphMountRetryTimer);
+        state.runGraphMountRetryTimer = null;
+        state.runGraphMountRetryCount = 0;
+        return;
+      }
       const root = document.getElementById("run-graph-root");
       if (!root) {
         return;
@@ -3397,7 +3320,7 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
       const hasMeasuredSize = Number.isFinite(width) && Number.isFinite(height);
       const rootReady = panelVisible && (!hasMeasuredSize || (width >= 24 && height >= 24));
       if (!rootReady) {
-        scheduleRunGraphMountRetry(graph);
+        scheduleRunGraphMountRetry(graphPayload);
         return;
       }
       clearTimeout(state.runGraphMountRetryTimer);
@@ -3409,11 +3332,12 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
         root.innerHTML = '<div class="studio-graph-empty">' + escapeText(t("studio.graph.bundleLoading", undefined, "Studio graph bundle loading...")) + '</div>';
         return;
       }
-      const bridge = buildRunStudioBridgeFromGraph(graph);
+      const authoring = graphPayload?.authoring || null;
+      const viewModel = graphPayload?.graph || null;
       mount(root, {
-        authoring: bridge.authoring,
-        canvas: bridge.canvas,
-        validation: { ok: true, diagnostics: [] },
+        authoring,
+        viewModel,
+        validation: viewModel?.validation || { ok: true, diagnostics: [] },
         selectedRoleId: state.runGraphSelectedRoleId,
         selectedFlowKey: state.runGraphSelectedFlowKey,
         busy: Boolean(state.actionBusy),
@@ -3448,8 +3372,8 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
         workbenchBodyEl.innerHTML = loadingSkeleton(t("state.loadingWorkbench", undefined, "Loading Build workbench"), 5);
         return;
       }
-      if (!state.hasProject) {
-        const invalidProject = state.workspace?.state === "project-invalid";
+      const invalidProject = state.workspace?.state === "project-invalid";
+      if (!state.hasProject || invalidProject) {
         workbenchMetaEl.textContent = invalidProject
           ? t("workspace.invalidProjectBuildHint", undefined, "Fix the project diagnostics before editing in Build.")
           : t("workspace.buildUnavailableTitle", undefined, "Initialize the current directory before building.");
@@ -3468,13 +3392,6 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
       const dirty = state.workbenchSource !== state.workbenchDiskSource;
       const preserveEditor = Boolean(options?.preserveEditor);
       const existingEditor = document.getElementById("workbench-editor");
-      const currentWorkbenchRoot = document.getElementById("studio-graph-root");
-      const preserveStudioGraphRoot = (options?.preserveStudioGraphRoot === true
-        || ((state.buildMode === "edit" || state.buildMode === "debug") && state.workbenchView === "bridge"))
-        && isMountedStudioGraphRoot(currentWorkbenchRoot);
-      const preservedStudioGraphRoot = preserveStudioGraphRoot
-        ? currentWorkbenchRoot
-        : null;
       state.workbenchHasDraft = Boolean(loadDraftSource());
       workbenchMetaEl.textContent = state.selectedRunId && state.detail?.systemSource
         ? t("workbench.immutableRunMeta")
@@ -3527,28 +3444,14 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
         if (state.studioBridgeLoading && !state.studioBridgeLoaded && !state.studioBridge) {
           workbenchBodyEl.innerHTML = loadingSkeleton(t("state.loadingStudioBridge", undefined, "Loading graph workspace..."), 4);
         } else {
-          renderStudioBridge({ preserveGraphRoot: preserveStudioGraphRoot });
+          renderStudioBridge();
         }
       } else {
         state.workbenchView = "bridge";
         if (state.studioBridgeLoading && !state.studioBridgeLoaded && !state.studioBridge) {
           workbenchBodyEl.innerHTML = loadingSkeleton(t("state.loadingStudioBridge", undefined, "Loading graph workspace..."), 4);
         } else {
-          renderStudioBridge({ preserveGraphRoot: preserveStudioGraphRoot });
-        }
-      }
-      if (preservedStudioGraphRoot) {
-        const currentStudioGraphRoot = document.getElementById("studio-graph-root");
-        if (
-          currentStudioGraphRoot &&
-          currentStudioGraphRoot !== preservedStudioGraphRoot &&
-          typeof currentStudioGraphRoot.replaceWith === "function"
-        ) {
-          currentStudioGraphRoot.replaceWith(preservedStudioGraphRoot);
-          updateStudioBridgeSelectionChrome();
-          if (state.workbenchView === "bridge") {
-            mountStudioGraphIsland();
-          }
+          renderStudioBridge();
         }
       }
       const editor = document.getElementById("workbench-editor");
@@ -3958,7 +3861,7 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
         )).join("");
         mainHtml = [
           '<article class="card project-home-card">',
-          '<header><div class="card-header"><div class="header-copy"><h3>' + escapeText(t("section.projectOverview", undefined, "Project Overview")) + '</h3><div class="hint">' + escapeText(t("project.readyProjectHint", undefined, "Use Build for structure and bindings, Validate & Release for gates, and Operate for runtime inspection.")) + '</div></div></div></header>',
+          '<header><div class="card-header"><div class="header-copy"><h3>' + escapeText(t("section.projectOverview", undefined, "Project Overview")) + '</h3><div class="hint">' + escapeText(t("project.readyProjectHint", undefined, "Use Design for structure and bindings, Release for gates and export, and Run for runtime inspection.")) + '</div></div></div></header>',
           '<div class="body">',
           '<div class="project-home-info-strip">' + infoItems + '</div>',
           '<div class="project-home-side-note"><strong>' + escapeText(t("readiness.blockersWarningsSystem", { blockers: String(readinessBlockers.length), warnings: String(Array.isArray(state.projectReadiness?.warnings) ? state.projectReadiness.warnings.length : 0), systemId: String(state.project?.summary?.project?.systemId || state.project?.summary?.project?.projectId || "n/a") }, "blockers " + String(readinessBlockers.length) + " · warnings " + String(Array.isArray(state.projectReadiness?.warnings) ? state.projectReadiness.warnings.length : 0) + " · system " + String(state.project?.summary?.project?.systemId || state.project?.summary?.project?.projectId || "n/a"))) + '</strong><div class="hint">' + escapeText(validationOk ? t("project.readyForNextStep", undefined, "Project summary is ready for the next workflow step.") : t("release.resolveBlockers", undefined, "Resolve release blockers.")) + " · " + escapeText(workspaceState) + '</div></div>',
@@ -3970,9 +3873,9 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
         ].join("");
         sideHtml = [
           '<article class="card project-home-card"><header><h3>' + escapeText(t("project.quickActions", undefined, "Quick actions")) + '</h3></header><div class="body structure-list">',
-          '<button class="button primary" type="button" data-project-action="build">' + escapeText(t("project.enterBuild", undefined, "Enter Build")) + '</button>',
-          '<button class="button subtle" type="button" data-project-action="validate-release">' + escapeText(t("project.enterValidateRelease", undefined, "Validate & Release")) + '</button>',
-          '<button class="button subtle" type="button" data-project-action="operate">' + escapeText(t("project.enterOperate", undefined, "Operate")) + '</button>',
+          '<button class="button primary" type="button" data-project-action="design">' + escapeText(t("nav.lifecycle.design", undefined, "Design")) + '</button>',
+          '<button class="button subtle" type="button" data-project-action="release">' + escapeText(t("nav.lifecycle.release", undefined, "Release")) + '</button>',
+          '<button class="button subtle" type="button" data-project-action="run">' + escapeText(t("nav.lifecycle.run", undefined, "Run")) + '</button>',
           '<div class="event"><div class="event-top"><span>' + escapeText(t("section.projectReadiness", undefined, "Project Readiness")) + '</span><span>' + escapeText(validationOk ? t("project.validated", undefined, "validated") : t("project.needsAttention", undefined, "needs attention")) + '</span></div><strong>' + escapeText(validationOk ? t("workbench.validationOk", undefined, "validation ok") : t("release.resolveBlockers", undefined, "Resolve release blockers.")) + '</strong><div class="hint">' + escapeText(state.workbenchSavedPath || "system.mmd") + '</div></div>',
           (readinessBlockers.length
             ? '<div class="event warn"><div class="event-top"><span>' + escapeText(t("common.attention", undefined, "attention")) + '</span><span>' + escapeText(String(readinessBlockers.length)) + '</span></div><strong>' + escapeText(readinessBlockers[0]?.message || t("release.resolveBlockers", undefined, "Resolve release blockers.")) + '</strong></div>'
@@ -4063,10 +3966,10 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
           updateProjectWizardDraftFromForm(form);
         },
         onAction: (action) => {
-          if (action === "build" || action === "validate-release" || action === "operate") {
+          if (action === "design" || action === "release" || action === "run") {
             state.consoleTab = action;
             state.projectHome = false;
-            if (action === "build" && state.hasProject) {
+            if (action === "design" && state.hasProject) {
               resetBuildEditingState();
               const refreshWorkdir = state.workspace?.workdir || "";
               void refreshStudioBridge().catch((error) => {
@@ -4128,7 +4031,9 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
         stateEl.innerHTML = '<div class="hint">' + escapeText(t("state.noRunSelected")) + '</div>';
         return;
       }
-      const graph = state.graph.graph;
+      const graphPayload = resolveRunGraphPayloadForDisplay();
+      const graph = graphPayload?.graph;
+      const authoring = graphPayload?.authoring || null;
       if (!graph) {
         graphViewEl.innerHTML = '<div class="hint">' + escapeText(t("graph.projectionUnavailable")) + '</div>';
         stateEl.innerHTML = renderRunStatePanel({
@@ -4139,13 +4044,15 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
         });
         return;
       }
-      const nodes = graph.nodes || [];
-      const edges = graph.edges || [];
+      const nodes = Array.isArray(graph.nodes) ? graph.nodes.filter((node) => node?.kind === "role") : [];
+      const edges = Array.isArray(graph.edges) ? graph.edges.filter((edge) => edge?.source !== "input") : [];
+      const systemId = authoring?.system?.systemId || state.detail?.header?.systemId || state.selectedRunId || t("common.unknown");
+      const entryRoleId = authoring?.system?.entryRoleId || t("common.notAvailable");
       graphViewEl.innerHTML = [
-        '<div class="event"><strong>' + escapeText(graph.systemId || t("common.unknown")) + '</strong><div class="hint">' + escapeText(t("graph.entryRolesFlows", {
-          entryRoleId: graph.entryRoleId || t("common.notAvailable"),
-          roleCount: graph.roleCount || 0,
-          flowCount: graph.flowCount || 0
+        '<div class="event"><strong>' + escapeText(systemId) + '</strong><div class="hint">' + escapeText(t("graph.entryRolesFlows", {
+          entryRoleId,
+          roleCount: nodes.length || 0,
+          flowCount: edges.length || 0
         })) + "</div></div>",
         '<div id="run-graph-root" class="studio-graph-root run-graph-root" data-selected-role-id="' + escapeText(state.runGraphSelectedRoleId) + '" data-selected-flow-key="' + escapeText(state.runGraphSelectedFlowKey) + '"></div>',
         '<div class="run-graph-summary-grid">',
@@ -4153,7 +4060,7 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
         '<div class="event"><div class="event-top"><span>' + escapeText(t("common.readOnly")) + '</span><span>' + escapeText(t("section.graphView", undefined, "Graph View")) + '</span></div><strong>' + escapeText(t("graph.readOnlyRuntimeGraph", undefined, "Read-only runtime graph")) + '</strong><div class="hint">' + escapeText(t("graph.x6RuntimeHint", undefined, "Uses the same role and flow projection as Studio Bridge, including start and end boundaries.")) + '</div></div>',
         "</div>"
       ].join("");
-      mountRunGraphIsland(graph);
+      mountRunGraphIsland(graphPayload);
       stateEl.innerHTML = renderRunStatePanel({
         state: state.detail?.state ?? null,
         header: state.detail?.header ?? null,
@@ -4432,7 +4339,7 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
       const detail = state.detail;
       const header = detail?.header || null;
       const graphPayload = state.graph;
-      renderWorkbench({ preserveStudioGraphRoot: true });
+      renderWorkbench();
       renderActionForm();
       renderStats(header, graphPayload);
       renderFailure();
@@ -4552,7 +4459,7 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
       renderProject();
     }
 
-    async function refreshStudioBridge(options) {
+    async function refreshStudioBridge() {
       if (!state.hasProject) {
         return;
       }
@@ -4567,7 +4474,7 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
       }
       state.studioBridgeLoading = true;
       if (state.workbenchView === "bridge") {
-        renderWorkbench({ preserveStudioGraphRoot: Boolean(options?.preserveGraphRoot) });
+        renderWorkbench();
       }
       try {
         const payload = await requestAction(\`\${API_PREFIX}/project/studio/bridge\`, {
@@ -4595,7 +4502,7 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
           ...(state.workbench || {}),
           validation: payload.validation || state.workbench?.validation
         };
-        renderWorkbench({ preserveStudioGraphRoot: Boolean(options?.preserveGraphRoot) });
+        renderWorkbench();
         renderProject();
         if (state.studioBridgeSelectedRoleId) {
           ensureStudioRolePackageEditor(state.studioBridgeSelectedRoleId);
@@ -4605,7 +4512,7 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
       } finally {
         state.studioBridgeLoading = false;
         if (state.workbenchView === "bridge") {
-          renderWorkbench({ preserveStudioGraphRoot: true });
+          renderWorkbench();
         }
       }
     }
@@ -4625,7 +4532,7 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
           await loadWorkbench();
         }
         try {
-          const payload = await refreshStudioBridge({ preserveGraphRoot: attempt > 0 });
+          const payload = await refreshStudioBridge();
           if (!requireGraph || hasStudioBridgeGraphContent(payload)) {
             return true;
           }
@@ -4662,7 +4569,7 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
       });
     }
 
-    async function applyStudioGraphAuthoringCommand(result) {
+    async function applyStudioGraphAuthoringCommand(result, options) {
       if (!result?.authoring || !result?.canvas) {
         setFlash("error", studioGraphBlockedMessage(result?.blockedCode) || t("studio.graph.commandInvalidDraft", undefined, "Studio graph command did not produce a valid draft."));
         return;
@@ -4681,8 +4588,9 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
           canvas: result.canvas,
           selectedRoleId: result.selectedRoleId,
           selectedFlowKey: result.selectedFlowKey,
-          successMessage: t("studio.graph.draftUpdated", undefined, "Studio graph draft updated.")
+          successMessage: options?.successMessage || t("studio.graph.draftUpdated", undefined, "Studio graph draft updated.")
         });
+        options?.afterApply?.();
       });
     }
 
@@ -4743,7 +4651,7 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
         validation: payload.validation || state.workbench?.validation
       };
       state.studioBridgeStale = false;
-      renderWorkbench({ preserveStudioGraphRoot: true });
+      renderWorkbench();
       renderProject();
       if (args.successMessage) {
         setFlash("success", args.successMessage);
@@ -4830,20 +4738,39 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
         setFlash("error", t("studio.chat.applyBlocked", undefined, "Resolve preview validation issues before applying this draft."));
         return;
       }
+      if (patch.type === "commands") {
+        if (!state.studioBridge?.authoring) {
+          await refreshStudioBridge();
+        }
+        if (!state.studioBridge?.authoring) {
+          setFlash("error", t("studio.chat.noPatch", undefined, "No structured Studio draft is available to apply."));
+          return;
+        }
+        await applyStudioGraphAuthoringCommand({
+          authoring: patch.authoring,
+          canvas: buildStudioCanvasFromBridge({ authoring: patch.authoring })
+        }, {
+          successMessage: t("studio.chat.applied", undefined, "Chat draft applied to Studio Bridge."),
+          afterApply: () => {
+            state.studioChatDialogOpen = false;
+          }
+        });
+        return;
+      }
       await runAction("studio:chat-apply", async () => {
         state.studioGraphHistoryEvent = {
           id: ++state.studioGraphHistoryEventId,
           kind: "push-before-replace",
           label: "Apply Chat to MMD"
         };
-        renderStudioBridge({ preserveGraphRoot: true });
+        renderStudioBridge();
         state.studioBridge = withStudioAuthoringDisplayMetadata({
           ...(state.studioBridge || {}),
           authoring: patch.authoring,
-          canvas: patch.canvas || state.studioCanvas,
+          canvas: state.studioCanvas,
           validation: state.studioChatResult?.validation?.project || state.studioBridge?.validation
         }, patch.authoring);
-        state.studioCanvas = patch.canvas || buildStudioCanvasFromBridge(state.studioBridge);
+        state.studioCanvas = buildStudioCanvasFromBridge(state.studioBridge);
         state.workbenchSource = state.studioChatResult?.previewMermaid || state.workbenchSource;
         state.workbench = {
           ...(state.workbench || {}),
@@ -4853,7 +4780,7 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
         state.studioBridgeStale = false;
         state.studioChatDialogOpen = false;
         persistDraftSource(state.workbenchSource !== state.workbenchDiskSource ? state.workbenchSource : "");
-        renderWorkbench({ preserveStudioGraphRoot: true });
+        renderWorkbench();
         renderProject();
         setFlash("success", t("studio.chat.applied", undefined, "Chat draft applied to Studio Bridge."));
       });
@@ -5088,8 +5015,6 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
         return false;
       }
       state.studioWorkbenchSideTab = "debug";
-      state.studioSelectionDialogOpen = true;
-      state.studioSelectionDialogDocked = true;
       syncWorkbenchRunDraft({
         systemPath: state.workbenchSavedPath || "system.mmd",
         dryRun: true
@@ -5121,8 +5046,7 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
       }, { keepErrors: true });
       state.actionForm = null;
       state.studioWorkbenchSideTab = "debug";
-      state.studioSelectionDialogOpen = true;
-      renderWorkbench({ preserveStudioGraphRoot: true });
+      renderWorkbench();
       forceStudioWorkbenchSideTab("debug");
       if (options?.focusInput) {
         focusWorkbenchRunInput();
@@ -5153,27 +5077,25 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
         setFlash("error", t("flash.dryRunBlocked", {
           message: readinessBlockers[0]?.message || t("flash.resolveReadinessBlockers")
         }));
-        state.consoleTab = "validate-release";
+        state.consoleTab = releaseConsoleTab();
         renderConsoleTabs();
         return;
       }
-      if (args.dryRun && state.consoleTab === "build") {
+      if (args.dryRun && isDesignConsoleTab()) {
         const ready = await prepareWorkbenchForDryRunSurface({ focusInput: false });
         if (!ready) {
           return;
         }
       }
       await runAction("run:start", async () => {
-        if (args.dryRun && state.consoleTab === "build") {
+        if (args.dryRun && isDesignConsoleTab()) {
           state.buildMode = "debug";
           state.workbenchView = "bridge";
           state.studioWorkbenchSideTab = "debug";
-          state.studioSelectionDialogOpen = true;
-          state.studioSelectionDialogDocked = true;
           resetBuildDebugRuntimeProjection();
           renderRuns();
           renderSelectedRun();
-          renderWorkbench({ preserveStudioGraphRoot: true });
+          renderWorkbench();
           forceStudioWorkbenchSideTab("debug");
           writeRouteToLocation();
         }
@@ -5195,8 +5117,7 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
           state.buildMode = "debug";
           state.workbenchView = "bridge";
           state.studioWorkbenchSideTab = "result";
-          state.studioSelectionDialogOpen = true;
-          renderWorkbench({ preserveStudioGraphRoot: true });
+          renderWorkbench();
           forceStudioWorkbenchSideTab("result");
           writeRouteToLocation();
         }
@@ -5205,12 +5126,12 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
             await loadProject();
             await loadRuns();
             if (payload.runId) {
-              if (args.dryRun && state.consoleTab === "build") {
+              if (args.dryRun && isDesignConsoleTab()) {
                 await selectRun(payload.runId);
                 state.studioWorkbenchSideTab = "result";
-                state.consoleTab = "build";
+                state.consoleTab = designConsoleTab();
                 renderConsoleTabs();
-                renderWorkbench({ preserveStudioGraphRoot: true });
+                renderWorkbench();
                 forceStudioWorkbenchSideTab("result");
                 writeRouteToLocation();
               } else {
@@ -5359,7 +5280,7 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
         workbenchDirty: state.workbenchSource !== state.workbenchDiskSource
       });
       if (!releaseDecision.canExport) {
-        state.consoleTab = "validate-release";
+        state.consoleTab = releaseConsoleTab();
         renderConsoleTabs();
         renderProject();
         setFlash("error", t("release.exportBlocked", {
@@ -5486,7 +5407,7 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
         state.projectCreateRequestId = "";
         state.projectCreateError = null;
         state.projectWizardDraft = null;
-        state.consoleTab = "build";
+        state.consoleTab = designConsoleTab();
         resetBuildEditingState();
         state.projectHome = false;
         state.hasProject = true;
@@ -5533,7 +5454,7 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
       const payload = await requestJson(\`\${API_PREFIX}/runs\`);
       state.runs = payload.runs || [];
       renderRuns();
-      if (!state.projectHome && !state.selectedRunId && state.runs.length && (state.consoleTab === "operate" || state.consoleTab === "legacy")) {
+      if (!state.projectHome && !state.selectedRunId && state.runs.length && isRunConsoleTab()) {
         await selectRun(state.runs[0].runId);
       }
       if (!state.runs.length) {
@@ -5803,10 +5724,9 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
     async function selectRun(runId) {
       if (!runId) return;
       stopStream();
-      const fromProjectHome = state.projectHome === true || state.consoleTab === "project";
       state.projectHome = false;
-      if (fromProjectHome && (state.consoleTab === "project" || state.consoleTab === "build" || state.consoleTab === "validate-release")) {
-        state.consoleTab = "operate";
+      if (!isRunConsoleTab()) {
+        state.consoleTab = runConsoleTab();
         renderConsoleTabs();
       }
       state.selectedRunId = runId;
@@ -5823,8 +5743,8 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
     function selectProjectHome() {
       stopStream();
       resetWorkbenchValidationTimer();
-      state.projectHome = true;
-      state.consoleTab = "project";
+      state.projectHome = false;
+      state.consoleTab = designConsoleTab();
       state.selectedRunId = "";
       state.runSelectionRequestId += 1;
       state.selectedReviewId = "";
@@ -6067,10 +5987,31 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
         await exportProject();
       });
     }
+    if (heroReleaseExportButton) {
+      heroReleaseExportButton.addEventListener("click", async () => {
+        await exportProject();
+      });
+    }
 
     reindexButton.addEventListener("click", async () => {
       openActionForm("reindex", {}, { returnFocusEl: reindexButton });
     });
+    if (heroReindexButton) {
+      heroReindexButton.addEventListener("click", async () => {
+        openActionForm("reindex", {}, { returnFocusEl: heroReindexButton });
+      });
+    }
+    if (heroValidateButton) {
+      heroValidateButton.addEventListener("click", async () => {
+        await runWorkbenchValidation(true);
+        await refreshStudioBridge();
+      });
+    }
+    if (heroSaveButton) {
+      heroSaveButton.addEventListener("click", async () => {
+        await saveWorkbench();
+      });
+    }
 
     stopRunButton.addEventListener("click", async () => {
       if (!state.selectedRunId) {
@@ -6197,17 +6138,21 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
     renderConsoleTabs();
 
     const initialRoute = readRouteStateFromSearch(window.location.search);
-    state.consoleTab = normalizeLifecycleView(initialRoute.lifecycle, initialRoute.view);
+    state.consoleTab = normalizeLifecycleView(
+      initialRoute.lifecycle,
+      initialRoute.view
+    );
     if (!initialRoute.lifecycle && (initialRoute.runId || initialRoute.reviewId || initialRoute.logRoleId || initialRoute.tail || initialRoute.since)) {
-      state.consoleTab = "operate";
+      state.consoleTab = runConsoleTab();
     }
-    state.projectHome = state.consoleTab === "project" || initialRoute.view === "project";
+    state.projectHome = false;
     renderConsoleTabs();
     state.selectedRunId = initialRoute.runId;
     state.selectedReviewId = initialRoute.reviewId;
     state.selectedLogRoleId = initialRoute.logRoleId;
     state.logTail = initialRoute.tail;
     state.logSince = initialRoute.since;
+    writeRouteToLocation();
     logTailEl.value = state.logTail;
     logPageSizeEl.value = state.logPageSize;
     logSinceEl.value = state.logSince;

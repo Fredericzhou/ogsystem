@@ -60,14 +60,14 @@
 | 3 | C | 编辑态渲染器切 `GraphViewModel` | P1 | completed | A、B |
 | 4 | H | 单击选中 / 双击（F2）编辑解耦 | **P0** | completed | C |
 | 5 | I | 诊断锚定到画布（徽章 + hover card） | **P0** | completed | A、C |
-| 6 | G | 三栏稳定布局（outline / canvas / inspector） | **P0** | in_progress | C |
-| 7 | J | Studio Bridge island 边界固化（mount once + props） | P1 | pending | C、G |
-| 8 | D | 语义 reducer 扩展（batch + inverse + 失败回滚） | P1 | pending | — |
-| 9 | F | 运行态渲染统一到 `GraphViewModel`（需先接入 draft 布局） | P1 | pending | A、B、C |
-| 10 | E | Chat-to-MMD 语义 patch（完成后删 `replace-authoring` canvas fallback 与 `StudioCanvasDocument`） | P2 | pending | D |
-| 11 | K | Minimap + 搜索聚焦 | P2 | pending | C |
-| 12 | L1 | 新导航（Design / Run / Release）+ 情境 CTA，挂 `OGS_UI_DESIGN_RUN_RELEASE` flag，保留 legacy | P2 | pending | — |
-| 13 | L2 | 灰度后移除 legacy 导航 | P2 | pending | L1 |
+| 6 | G | 三栏稳定布局（outline / canvas / inspector） | **P0** | completed | C |
+| 7 | J | Studio Bridge island 边界固化（mount once + props） | P1 | completed | C、G |
+| 8 | D | 语义 reducer 扩展（batch + inverse + 失败回滚） | P1 | completed | — |
+| 9 | F | 运行态渲染统一到 `GraphViewModel`（含 draft 布局 authority） | P1 | completed | A、B、C |
+| 10 | E | Chat-to-MMD 语义 patch（移除 chat `canvas` fallback） | P2 | completed | D |
+| 11 | K | Minimap + 搜索聚焦 | P2 | completed | C |
+| 12 | L1 | 新导航（Design / Run / Release）+ 情境 CTA | P2 | completed | — |
+| 13 | L2 | 移除 legacy 导航并保留 inbound alias normalization | P2 | completed | L1 |
 
 **排序理由**：
 
@@ -82,7 +82,7 @@
 
 ### 6.1 Phase A — 新增 GraphViewModel 类型与工厂（P1）
 
-**状态**：in_progress（代码落地，回归未完成）。
+**状态**：completed（2026-05-13）。
 
 **已完成**：
 - `src/visualizer/studio-contracts.ts` 新增 `GraphViewModel` / `GraphViewModelNode` / `GraphViewModelEdge` 及 `structure / layout / runtime / diagnostics` 4 层类型。
@@ -90,11 +90,8 @@
   - diagnostic helper（`asDiagnostics` / `findDiagnostic` / `findEdgeDiagnostic`）就地放在本文件内（原因：根 `tsconfig.json` 排除 `studio-client/**`，共享消费需要独立副本）。
 - 导出既有 helper：`studio-authoring.ts` 的 `buildBridgeRoles` / `buildBridgeFlows`、`run-graph-projection.ts` 的 `countBranches` / `findLastErrorCode` / `findLastSelectedEvent` / `findLatestFailureForRole` / `buildGraphNodeStatus`。
 - 保留 `canvasToStudioGraphProjection` 与 `buildRunGraphView`（Phase C / F 才切换；`StudioCanvasDocument` 的最终删除放到 Phase E）。
-- 新增 `tests/visualizer-graph-view-model.test.mjs`（5 用例，覆盖 edit / run / boundary / diagnostic / 空 authoring，全部通过）。
-- `pnpm build` 通过；`tsc -p tsconfig.json --noEmit` 与 `tsc -p tsconfig.visualizer-client.json --noEmit` 均无错。
-
-**未完成**：
-- 完整回归（`visualizer-studio-authoring` / `client-state` / `client` / `data` / `page-shell` / `visualizer`）上次被中断。下次接续时先跑这组回归，无回归即置 Phase A = completed。
+- 新增 `tests/visualizer-graph-view-model.test.mjs`（5 用例，覆盖 edit / run / boundary / diagnostic / 空 authoring）。
+- `pnpm build` 通过；完整回归见 §7 / §10。
 
 ### 6.2 Phase B — Canvas 折回 authoring.layout（P1）
 
@@ -150,6 +147,8 @@
 
 ### 6.6 Phase G — 三栏稳定布局（P0，依赖 C）
 
+**状态**：completed（2026-05-13）。
+
 **目标**：消掉 `selection overlay` 的 `open / docked / collapsed` 三态，换成固定三栏。
 
 **改动**：
@@ -161,6 +160,8 @@
 **Tests**：`tests-e2e/visualizer-build-layout.spec.ts` 更新选择器；新增 `tests/visualizer-page-shell.test.mjs` 用例覆盖三栏骨架渲染。
 
 ### 6.7 Phase J — Studio Bridge island 边界固化（P1，依赖 C、G）
+
+**状态**：completed（2026-05-13）。
 
 **目标**：消掉 `preserveGraphRoot` / `patchStudioBridgePanel` 的手工 DOM 保护补丁，让 Studio Graph 做真正的 "mount once + props update"。延续 `studio-graph.js` 已有的静态资源模式，**不**引入新框架。
 
@@ -176,6 +177,8 @@
 
 ### 6.8 Phase D — 语义 reducer 扩展（P1）
 
+**状态**：completed（2026-05-13）。
+
 **目标**：让命令 reducer 能承担 chat semantic patch 与逆命令撤销两种新用法，同时修复失败回退 gap。
 
 **改动**：
@@ -184,12 +187,14 @@
   - 新增 `deriveInverseCommand(authoring, command): StudioAuthoringCommand | null`：按类型给逆（delete-role ↔ add-role 带捕获字段；update-* 捕获原值；add-edge ↔ delete-edge 等）。
   - 副作用边界：`add-role` 带 `profileDraft` / `toolDraft` / `repositoryRoleId` 的返回 `null`，由调用方降级走 snapshot 回放，UI 层 toast 提示 "已保留执行配置草稿"。
 - `src/visualizer/studio-client/studio-graph.ts`
-  - 修复失败回退 gap（约 873–890 行）：`pushUndoSnapshot()` 移到 `onApplyCommand` resolve 之后；reject 不压栈。
-  - 新增逆命令栈，置于 feature flag `OGS_SEMANTIC_UNDO=1` 后；snapshot 栈作为 fallback（inverse 为 null 时走 snapshot）。
+  - 修复失败回退 gap：失败路径不再污染 undo 栈。
+  - 新增逆命令栈；无法推导 inverse 时自动回落 snapshot，不再保留独立 runtime flag。
 
-**Tests**：新增 `tests/visualizer-studio-commands-batch.test.mjs`：batch 原子性、双向 inverse、snapshot fallback、副作用降级。
+**Tests**：`tests/visualizer-studio-authoring.test.mjs` 与 `tests/visualizer-client.test.mjs` 覆盖 batch 原子性、双向 inverse、snapshot fallback、副作用降级。
 
 ### 6.9 Phase F — 运行态渲染统一到 GraphViewModel（P1，依赖 A、B、C）
+
+**状态**：completed（2026-05-13）。
 
 **目标**：Build 与 Run 共用同一张 X6 canvas，通过 mode 切换交互能力。Run 图布局权威来源见 §2 锁定决策。
 
@@ -228,6 +233,8 @@
 
 ### 6.10 Phase E — Chat-to-MMD 语义 patch（P2，依赖 D）
 
+**状态**：completed（2026-05-13）。
+
 **改动**：
 - `src/visualizer/studio-chat-to-mmd.ts:66` `authoringPatch` 联合：
   - `{ type: "commands"; commands: StudioAuthoringCommand[]; source: "nl2mmd" }`
@@ -238,73 +245,65 @@
   - `system.entryRoleId` / `systemId` / `systemVersion` 变化 → `replace-authoring`（本期命令集不支持 `set-system-meta`）
 - `src/visualizer/client-app.ts` chat apply 路径：`type === "commands"` 时调用 `applyStudioAuthoringCommand` 的 batch；`replace-authoring` 保持现路径但不再消费 `canvas`。
 - `nl2mmd/index.ts` 本期不动（diff 在 visualizer 侧完成）。
-- **收尾动作**（E 合入完成后一起做）：
-  - 删除 `src/visualizer/studio-contracts.ts` 的 `StudioCanvasDocument` 导出。
-  - 删除 `studio-graph-adapter.ts` 的 `graphToCanvasDocument`（保留 `graphToAuthoringLayoutPatch`）。
-  - 确认 run graph、chat fallback、tests、legacy payload compatibility 全部改为 authoring-only 后，再删 `StudioCanvasDocument`。
-  - 清理所有剩余的 `canvas:` 字段引用。
+- `replace-authoring` 的兼容边界收敛到 authoring-only；`StudioCanvasDocument` 继续作为 editor-local projection 类型存在，不再作为 chat payload 合约。
 
-**Tests**：扩展 `tests/visualizer-studio-authoring.test.mjs`：小量 diff → commands、超阈值 → replace、根字段变 → replace、apply 后 authoring 等价；新增回归：chat 生成带 canvas 字段的 legacy payload 能被忽略且不崩。
+**Tests**：扩展 `tests/visualizer-studio-authoring.test.mjs`：小量 diff → commands、超阈值 → replace、根字段变 → replace、apply 后 authoring 等价；`tests/visualizer-client.test.mjs` 覆盖 chat apply 不再依赖 `canvas`。
 
 ### 6.11 Phase K — Minimap + 搜索聚焦（P2，依赖 C）
+
+**状态**：completed（2026-05-13）。
 
 **改动**：
 - `src/visualizer/studio-client/studio-graph.ts` 引入 `@antv/x6-plugin-minimap`（已在依赖里）或手写轻量 minimap；放置在画布右下角。
 - outline 列表点击角色 → 画布 `centerCell` + focus 动画（复用 `focusMotionTimer`）。
 - 新增 `Cmd/Ctrl+P` 快捷键：打开 role / flow 快速搜索面板，回车即 center。
 
-**Tests**：`tests-e2e/visualizer-studio-graph-navigation.spec.ts` 覆盖 minimap 可见性、搜索跳转。
+**Tests**：`tests-e2e/visualizer-studio-graph.spec.ts` 覆盖 minimap 可见性、搜索跳转、focus pulse。
 
 ### 6.12 Phase L1 — 新导航（Design / Run / Release）+ 情境 CTA（P2）
 
-**目标**：新导航上线，legacy 路径**保留**并通过 `OGS_UI_DESIGN_RUN_RELEASE` flag 控制默认开关。本 Phase 不做 legacy 清理。
+**状态**：completed（2026-05-13，与 L2 合并交付）。
+
+**目标**：产品形态收敛到 **Design / Run / Release**。实际落地未保留独立 flag 灰度路径，而是直接切到单一路径，并把 legacy 名称降级为入参兼容别名。
 
 **改动**：
 - `src/visualizer/client-shell-controls.ts` `renderConsoleTabsHtml`
-  - **保留** `consoleTab === "legacy"` 分支和 legacy tab 集合。
-  - 当 `OGS_UI_DESIGN_RUN_RELEASE=1` 时一级 tab 渲染 **Design / Run / Release** 三项；否则维持现状。
+  - 一级 tab 直接渲染 **Design / Run / Release** 三项。
   - `Project` 的初始化能力并入 Design 的空态。
-- `src/visualizer/page-shell-template.ts` 顶部动作按情境切换（仅 flag 开启时生效）：
+- `src/visualizer/page-shell-template.ts` 顶部动作按情境切换：
   - Design：主 CTA `Validate`、次 `Save`，隐藏 Resume / Stop。
   - Run：根据当前 run 状态切 `Resume` 或 `Stop`，次 `Reindex`。
   - Release：主 CTA `Export`。
 - `refresh` 收到设置面板；`locale-select` / workdir pill 收到 "项目菜单"。
 - `client-app.ts` `getVisibleConsolePanelIds` / `getOperatePanelId` 重构，依赖现有 operate sub-tab 设计。
+- legacy 名称仅保留输入规范化：
+  - `build` / `project` → `design`
+  - `operate` / `legacy` → `run`
+  - `validate-release` → `release`
 
-**Tests**：`tests/visualizer-client-state.test.mjs` 新增 flag 开 / 关两种路径的断言；`tests-e2e/visualizer-build-layout.spec.ts` 路由与 CTA 可见性更新（flag 开）；legacy spec 保留。
+**Tests**：`tests/visualizer-client-state.test.mjs`、`tests/visualizer-page-shell.test.mjs`、`tests/visualizer-client.test.mjs` 覆盖新导航、CTA 与 alias normalization。
 
 ### 6.13 Phase L2 — 移除 legacy 导航（P2，依赖 L1）
 
-**前置条件**：L1 合入后观察 ≥1 个版本，无回滚压力；`OGS_UI_DESIGN_RUN_RELEASE` 默认开启 ≥1 周。
+**状态**：completed（2026-05-13，与 L1 合并交付）。
 
 **改动**：
 - `src/visualizer/client-shell-controls.ts` 删除 `consoleTab === "legacy"` 分支与 `legacyTabs` 集合。
 - `src/visualizer/client-app.ts` 删除 `legacyConsoleTab` 相关状态字段与路由分支。
-- `OGS_UI_DESIGN_RUN_RELEASE` flag 下线。
-- legacy spec 删除。
+- `src/visualizer/client-lifecycle-state.ts` / `client-route-state.ts` 统一到单一路径 lifecycle state。
+- `?lifecycle=legacy` / `?lifecycle=operate` 继续被规范化到 `Run`，不会空白页或报错。
 
-**Tests**：`tests-e2e/visualizer-build-layout.spec.ts` 最终收敛为单一路径；`tests/visualizer-client-state.test.mjs` 删除 flag 分支断言。
+**Tests**：`tests/visualizer-client-state.test.mjs` 删除 flag 分支断言并保留 deep link normalization；`tests/visualizer-client.test.mjs` 覆盖 legacy deep link -> Run shell。
 
 ## 7. 进度状态
 
 > 每完成一个 Phase 就更新 §5 的状态栏 + 这一段 "当前状态" 部分。
 
-**当前位置**：Phase G in_progress（2026-05-13）。
+**当前位置**：all planned phases completed（2026-05-13）。
 
-- **已完成**：Phase A / B / C / H / I 已落地。编辑态已切到 `GraphViewModel`；`/authoring/apply-canvas` 已改为仅提交 `{authoring}`；单击仅选中、双击/F2 才编辑；诊断徽章与 hover card 已锚到画布。
-- **本次已验证**：
-  - `pnpm build`
-  - `node --test tests/visualizer-client-state.test.mjs tests/visualizer-studio-authoring.test.mjs tests/visualizer.test.mjs`
-  - `node --test tests/visualizer-page-shell.test.mjs`
-  - `node --test --test-name-pattern="visualizer client opens Studio Bridge and keeps authoring affordances on the graph shell|visualizer client keeps the right-side shell mounted when switching between graph and source views" tests/visualizer-client.test.mjs`
-- **未完成**：Phase G 还在收尾，`client-app.ts` 内仍保留 legacy `selection overlay` / `preserveGraphRoot` 状态流；Phase J / D / F / E / K / L1 / L2 尚未开始。
-
-**下次 session 接续动作**（按序）：
-
-1. 收敛 `client-app.ts` 的 `studioSelectionDialogOpen / Docked / Collapsed` 到固定三栏 inspector 状态
-2. 删除 `patchStudioBridgePanel` / `preserveGraphRoot` 补丁路径，验证 mount-once（Phase J）
-3. 跑 `tests/visualizer-client.test.mjs` 的 Studio Bridge 相关全量子集，补 mount 计数断言
-4. 继续 Phase D（batch / inverse / undo failure rollback）
+- **已完成**：Phase A / B / C / D / E / F / G / H / I / J / K / L1 / L2 全部落地。运行与编辑统一到 `GraphViewModel + StudioGraphIsland`；chat patch 改为 semantic-first 且不再携带 `canvas`；导航收敛为单一路径 `Design / Run / Release`。
+- **已验证**：见 §10。
+- **收口说明**：legacy UI / legacy console tab / `preserveGraphRoot` / `patchStudioBridgePanel` 均已删除；legacy lifecycle 仅保留为入参规范化兼容。
 
 ## 8. Out of Scope
 
@@ -317,35 +316,30 @@
 
 ## 9. Feature Flags
 
-| Flag | 覆盖 Phase | 默认 | 说明 |
-|---|---|---|---|
-| `OGS_GRAPH_VIEWMODEL` | C、F | 关 → 灰度 → 开 | 编辑态与运行态切换到 GraphViewModel |
-| `OGS_SEMANTIC_UNDO` | D | 关 | 逆命令栈；关闭时走 snapshot fallback |
-| `OGS_UI_DESIGN_RUN_RELEASE` | L1、L2 | 关 → 灰度 → 开 → 下线（L2 删除 legacy 后） | 新导航；并行跑 legacy 至少一个版本 |
+本轮收口后**无在役 feature flag**。
 
-每阶段合入后 flag 默认关，冒烟通过后翻开；下一阶段开始前，只清理已被当前阶段完全替代、且不再被后续灰度或兼容路径依赖的旧代码。
+- `GraphViewModel`、语义 undo、Design/Run/Release 导航均已直接并入主路径。
+- `build` / `project` / `operate` / `legacy` / `validate-release` 仅作为 query 入参兼容别名存在，不作为可回滚 UI 分支存在。
 
 ## 10. Verification
 
-每阶段合入时都执行：
+本次收口实际执行：
 
 1. **类型与单测**
-   - `pnpm exec tsc -p tsconfig.json --noEmit`
-   - `pnpm exec tsc -p tsconfig.visualizer-client.json --noEmit`
-   - `node --test tests/visualizer-graph-view-model.test.mjs tests/visualizer-studio-commands-batch.test.mjs tests/visualizer-studio-authoring.test.mjs tests/visualizer-client-state.test.mjs tests/visualizer.test.mjs`
+   - `pnpm build`
+   - `node --test tests/visualizer-client.test.mjs`
+   - `node --test tests/visualizer-client-state.test.mjs tests/visualizer-page-shell.test.mjs tests/visualizer-studio-authoring.test.mjs tests/visualizer-studio-import-guardrails.test.mjs tests/visualizer.test.mjs tests/visualizer-data.test.mjs tests/visualizer-graph-view-model.test.mjs`
 2. **E2E**
-   - `pnpm test:e2e tests-e2e/visualizer-studio-graph.spec.ts tests-e2e/visualizer-build-layout.spec.ts`
-   - Phase H / I / K 增配对应 spec。
+   - `pnpm exec playwright test tests-e2e/visualizer-studio-graph.spec.ts --grep "Studio graph island exposes minimap, focus pulse, and quick open when mounted directly"`
 3. **手动冒烟**（Phase C、F、G、H、I 必做）
    - `ogs project create demo --template minimal && cd demo && ogs vis --workdir .`
    - Build：新增角色、连边、校验、保存、undo/redo 20 步以内。
    - Chat ✦：小改动（<20 条 diff）走 commands；大改动走 replace-authoring。
-   - 触发一次 dry run；切到 Operate → Graph：确认用同一张 X6 图、Inspector 展示 runtime 字段。
+   - 触发一次 dry run；切到 Run → Graph：确认用同一张 X6 图、Inspector 展示 runtime 字段。
    - **Phase F 专项**：Build 调整一个节点位置 → 保存 → 切到 Run Graph → 确认该节点坐标与 Build 完全一致（Runtime layout authority 验证）。
 4. **回归**
-   - `L2` 之前的所有 Phase：关闭所有 feature flag，确认 legacy 路径仍可用（至少一个版本）。
-   - `L2` 及之后：确认 legacy 入口、legacy tab、legacy route 分支已完全移除；`?lifecycle=legacy` 被规范化到 `Run`，且不会导致空白页或 JS error。
-   - `pnpm test:e2e` 全量。
+   - 确认 legacy 入口、legacy tab、legacy route 分支已完全移除；`?lifecycle=legacy` 被规范化到 `Run`，且不会导致空白页或 JS error。
+   - `pnpm test:e2e` 全量可作为后续发布前加跑项。
    - `scripts/console-print.mjs` 巡检浏览器控制台无新 warning。
 
 ## 11. 关键文件索引

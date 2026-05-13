@@ -4,7 +4,11 @@ import { Keyboard } from "@antv/x6-plugin-keyboard";
 import { Selection } from "@antv/x6-plugin-selection";
 import dagre from "dagre";
 
-import type { StudioAuthoringDocument, StudioCanvasDocument } from "../studio-contracts.js";
+import type {
+  GraphViewModel,
+  StudioAuthoringDocument,
+  StudioCanvasDocument
+} from "../studio-contracts.js";
 import { buildGraphViewModel } from "../graph-view-model.js";
 import {
   commandFromStudioCommandFormState,
@@ -17,7 +21,11 @@ import {
   type StudioCommandFormState
 } from "./studio-graph-command-forms.js";
 import { graphToCanvasDocument, studioEdgeFlowKey } from "./studio-graph-adapter.js";
-import { applyStudioAuthoringCommand, type StudioAuthoringCommand } from "./studio-graph-commands.js";
+import {
+  applyStudioAuthoringCommand,
+  deriveInverseCommand,
+  type StudioAuthoringCommand
+} from "./studio-graph-commands.js";
 import { renderStudioGraphViewModel } from "./studio-graph-render.js";
 import {
   deriveStudioRuntimeVisualState,
@@ -66,6 +74,7 @@ export type StudioGraphLabels = Partial<Record<StudioGraphLabelKey, string>>;
 export type StudioGraphBridgeOptions = {
   authoring?: StudioAuthoringDocument | null;
   canvas?: StudioCanvasDocument | null;
+  viewModel?: GraphViewModel | null;
   validation?: { ok?: unknown; diagnostics?: unknown } | null;
   selectedRoleId?: string;
   selectedFlowKey?: string;
@@ -116,10 +125,25 @@ type StudioGraphSnapshot = {
   selectedFlowKey?: string;
 };
 
+type StudioGraphHistoryEntry =
+  | {
+      kind: "snapshot";
+      snapshot: StudioGraphSnapshot;
+    }
+  | {
+      kind: "command";
+      forward: StudioAuthoringCommand;
+      inverse: StudioAuthoringCommand;
+      undoSelectedRoleId?: string;
+      undoSelectedFlowKey?: string;
+      redoSelectedRoleId?: string;
+      redoSelectedFlowKey?: string;
+    };
+
 const sharedHistory: {
   projectKey: string;
-  undoStack: StudioGraphSnapshot[];
-  redoStack: StudioGraphSnapshot[];
+  undoStack: StudioGraphHistoryEntry[];
+  redoStack: StudioGraphHistoryEntry[];
 } = {
   projectKey: "",
   undoStack: [],
@@ -132,10 +156,17 @@ export class StudioGraphIsland {
   private stageEl: HTMLDivElement;
   private canvasEl: HTMLDivElement;
   private emptyEl: HTMLDivElement;
+  private minimapEl: HTMLDivElement;
+  private minimapContentEl: HTMLDivElement;
+  private minimapViewportEl: HTMLDivElement;
+  private quickOpenEl: HTMLDivElement;
+  private quickOpenInputEl: HTMLInputElement;
+  private quickOpenResultsEl: HTMLDivElement;
   private dialogEl: HTMLElement;
   private fallbackDialogEl: HTMLDivElement;
   private diagnosticCardEl: HTMLDivElement;
   private options: StudioGraphBridgeOptions = {};
+  private currentViewModel: GraphViewModel | null = null;
   private applying = false;
   private busy = false;
   private hasRenderedProjection = false;
@@ -150,9 +181,10 @@ export class StudioGraphIsland {
   private runtimeVisualState: StudioRuntimeVisualState | null = null;
   private focusMotionTimer: ReturnType<typeof setTimeout> | null = null;
   private focusMotionCellId = "";
+  private quickOpenSelectedIndex = 0;
   private reducedMotion = false;
   private readonly delegatedCommandFormSubmitListener = (event: Event) => this.handleDelegatedCommandFormSubmit(event);
-  private readonlyHistory: { undoStack: StudioGraphSnapshot[]; redoStack: StudioGraphSnapshot[] } = {
+  private readonlyHistory: { undoStack: StudioGraphHistoryEntry[]; redoStack: StudioGraphHistoryEntry[] } = {
     undoStack: [],
     redoStack: []
   };
@@ -189,19 +221,42 @@ export class StudioGraphIsland {
       '<div class="studio-graph-stage">',
       '<div class="studio-graph-empty" data-studio-graph-empty hidden></div>',
       '<div class="studio-graph-canvas" data-studio-graph-canvas></div>',
+      '<div class="studio-graph-minimap" data-studio-graph-minimap aria-label="Graph minimap" hidden>',
+      '<div class="studio-graph-minimap-content" data-studio-graph-minimap-content></div>',
+      '<div class="studio-graph-minimap-viewport" data-studio-graph-minimap-viewport></div>',
+      "</div>",
+      '<div class="studio-graph-quick-open" data-studio-graph-quick-open hidden>',
+      '<div class="studio-graph-quick-open-panel">',
+      '<label class="studio-graph-quick-open-label" for="studio-graph-quick-open-input">Quick open</label>',
+      '<input id="studio-graph-quick-open-input" class="studio-graph-quick-open-input" data-studio-graph-quick-open-input autocomplete="off" spellcheck="false" placeholder="Jump to role or flow" />',
+      '<div class="studio-graph-quick-open-results" data-studio-graph-quick-open-results></div>',
+      "</div>",
+      "</div>",
       '</div>'
     ].join("");
     const toolbar = this.root.querySelector<HTMLDivElement>(".studio-graph-toolbar");
     const stageEl = this.root.querySelector<HTMLDivElement>(".studio-graph-stage");
     const canvasEl = this.root.querySelector<HTMLDivElement>("[data-studio-graph-canvas]");
     const emptyEl = this.root.querySelector<HTMLDivElement>("[data-studio-graph-empty]");
-    if (!toolbar || !stageEl || !canvasEl || !emptyEl) {
+    const minimapEl = this.root.querySelector<HTMLDivElement>("[data-studio-graph-minimap]");
+    const minimapContentEl = this.root.querySelector<HTMLDivElement>("[data-studio-graph-minimap-content]");
+    const minimapViewportEl = this.root.querySelector<HTMLDivElement>("[data-studio-graph-minimap-viewport]");
+    const quickOpenEl = this.root.querySelector<HTMLDivElement>("[data-studio-graph-quick-open]");
+    const quickOpenInputEl = this.root.querySelector<HTMLInputElement>("[data-studio-graph-quick-open-input]");
+    const quickOpenResultsEl = this.root.querySelector<HTMLDivElement>("[data-studio-graph-quick-open-results]");
+    if (!toolbar || !stageEl || !canvasEl || !emptyEl || !minimapEl || !minimapContentEl || !minimapViewportEl || !quickOpenEl || !quickOpenInputEl || !quickOpenResultsEl) {
       throw new Error("Studio graph island failed to initialize.");
     }
     this.toolbar = toolbar;
     this.stageEl = stageEl;
     this.canvasEl = canvasEl;
     this.emptyEl = emptyEl;
+    this.minimapEl = minimapEl;
+    this.minimapContentEl = minimapContentEl;
+    this.minimapViewportEl = minimapViewportEl;
+    this.quickOpenEl = quickOpenEl;
+    this.quickOpenInputEl = quickOpenInputEl;
+    this.quickOpenResultsEl = quickOpenResultsEl;
     this.fallbackDialogEl = document.createElement("div");
     this.fallbackDialogEl.hidden = true;
     this.fallbackDialogEl.className = "studio-command-dialog";
@@ -214,6 +269,7 @@ export class StudioGraphIsland {
     this.graph = this.createGraph(canvasEl);
     this.bindToolbar();
     this.bindGraphEvents();
+    this.bindQuickOpen();
     this.root.addEventListener("keydown", (event) => this.handleRootKeydown(event));
     // Command forms can be mounted in a sibling host outside `root`, so use a document-level
     // submit fallback to prevent accidental native navigation during rapid host swaps.
@@ -228,7 +284,7 @@ export class StudioGraphIsland {
     this.attachCommandFormHost();
     this.handleHistoryEvent(options.historyEvent);
     this.handleDismissCommandFormRequest(options.dismissCommandFormRequest);
-    const viewModel = buildGraphViewModel({
+    const viewModel = options.viewModel ?? buildGraphViewModel({
       authoring: options.authoring,
       validation: options.validation
         ? {
@@ -236,9 +292,10 @@ export class StudioGraphIsland {
             diagnostics: options.validation.diagnostics
           }
         : null,
-      mode: "edit"
+      mode: options.readOnly ? "run" : "edit"
     });
-    if (!options.authoring) {
+    this.currentViewModel = viewModel;
+    if (!options.authoring && !options.viewModel) {
       this.applying = true;
       try {
         this.graph.clearCells();
@@ -250,6 +307,8 @@ export class StudioGraphIsland {
         ? this.label("fixMermaidBeforeGraphEditing")
         : this.label("noRolesAvailable"));
       this.closeCommandForm();
+      this.closeQuickOpen();
+      this.renderMinimap();
       this.setStatus(this.label("graphUnavailable"));
       this.setBusy(true);
       return;
@@ -265,12 +324,16 @@ export class StudioGraphIsland {
       });
       const autoLayoutApplied = this.applyDefaultAutoLayout();
       if (!autoLayoutApplied) {
-        this.restoreViewport(options.authoring?.layout?.viewport ?? options.canvas?.viewport, !this.hasRenderedProjection);
+        this.restoreViewport(
+          viewModel.viewport ?? options.authoring?.layout?.viewport ?? options.canvas?.viewport,
+          !this.hasRenderedProjection
+        );
       }
       this.selectFromOptions();
       this.applyRuntimeOverlay();
       this.syncSelectionPresentation();
-      this.openRequestedSelectionEditor();
+      this.focusRequestedSelection();
+      this.renderMinimap();
       this.hasRenderedProjection = true;
     } finally {
       this.applying = false;
@@ -346,6 +409,16 @@ export class StudioGraphIsland {
     graph.bindKey(["f2"], () => {
       this.openSelectedEditor();
       return false;
+    });
+    graph.bindKey(["meta+p", "ctrl+p"], () => {
+      this.toggleQuickOpen();
+      return false;
+    });
+    graph.on("scale", () => {
+      this.renderMinimap();
+    });
+    graph.on("translate", () => {
+      this.renderMinimap();
     });
     return graph;
   }
@@ -441,6 +514,7 @@ export class StudioGraphIsland {
     this.graph.on("node:moved", () => {
       if (this.isReadOnly()) return;
       this.scheduleSyncCanvas();
+      this.renderMinimap();
     });
     this.graph.on("edge:connected", ({ edge, isNew }) => {
       if (!isNew) return;
@@ -534,24 +608,17 @@ export class StudioGraphIsland {
     });
   }
 
-  private openRequestedSelectionEditor(): void {
+  private focusRequestedSelection(): void {
     const request = Number(this.options.editSelectionRequest || 0);
     if (!request || request === this.lastHandledEditSelectionRequest || this.isReadOnly()) {
       return;
     }
     this.lastHandledEditSelectionRequest = request;
     const selected = this.graph.getSelectedCells()[0];
-    const data = selected?.getData() as {
-      studioNode?: { kind?: string; roleId?: string };
-      studioEdge?: { id?: string; source: string; target: string; eventType: string; runtimeOnlyErrorFlow?: boolean; participatesInJoin?: boolean; editable?: boolean };
-    } | undefined;
-    if (data?.studioNode?.kind === "role" && data.studioNode.roleId) {
-      this.openEditRoleForm(data.studioNode.roleId);
+    if (!selected) {
       return;
     }
-    if (data?.studioEdge) {
-      this.openEditEdgeForm(data.studioEdge);
-    }
+    this.focusCell(selected, { preserveViewport: false });
   }
 
   private openSelectedEditor(): void {
@@ -580,6 +647,164 @@ export class StudioGraphIsland {
     this.dialogEl.hidden = true;
     this.dialogEl.innerHTML = "";
     this.notifyCommandFormState();
+  }
+
+  private bindQuickOpen(): void {
+    this.quickOpenInputEl.addEventListener("input", () => {
+      this.quickOpenSelectedIndex = 0;
+      this.renderQuickOpenResults();
+    });
+    this.quickOpenInputEl.addEventListener("keydown", (event) => {
+      if (event.key === "Escape") {
+        event.preventDefault();
+        this.closeQuickOpen();
+        return;
+      }
+      if (event.key === "ArrowDown") {
+        event.preventDefault();
+        this.moveQuickOpenSelection(1);
+        return;
+      }
+      if (event.key === "ArrowUp") {
+        event.preventDefault();
+        this.moveQuickOpenSelection(-1);
+        return;
+      }
+      if (event.key === "Enter") {
+        event.preventDefault();
+        this.activateQuickOpenSelection();
+      }
+    });
+    this.quickOpenResultsEl.addEventListener("click", (event) => {
+      const target = event.target as HTMLElement | null;
+      const button = target?.closest<HTMLButtonElement>("[data-studio-graph-quick-open-item]");
+      if (!button) {
+        return;
+      }
+      this.activateQuickOpenItem({
+        kind: button.dataset.itemKind === "flow" ? "flow" : "role",
+        id: button.dataset.itemId || "",
+        label: button.dataset.itemLabel || ""
+      });
+    });
+  }
+
+  private toggleQuickOpen(): void {
+    if (this.quickOpenEl.hidden) {
+      this.quickOpenSelectedIndex = 0;
+      this.quickOpenEl.hidden = false;
+      this.quickOpenInputEl.value = "";
+      this.renderQuickOpenResults();
+      this.quickOpenInputEl.focus();
+      this.quickOpenInputEl.select();
+      return;
+    }
+    this.closeQuickOpen();
+  }
+
+  private closeQuickOpen(): void {
+    this.quickOpenEl.hidden = true;
+    this.quickOpenInputEl.value = "";
+    this.quickOpenResultsEl.innerHTML = "";
+  }
+
+  private moveQuickOpenSelection(delta: number): void {
+    const items = this.quickOpenItems();
+    if (!items.length) {
+      return;
+    }
+    this.quickOpenSelectedIndex = (this.quickOpenSelectedIndex + delta + items.length) % items.length;
+    this.renderQuickOpenResults();
+  }
+
+  private activateQuickOpenSelection(): void {
+    const items = this.quickOpenItems();
+    if (!items.length) {
+      return;
+    }
+    const item = items[Math.max(0, Math.min(this.quickOpenSelectedIndex, items.length - 1))];
+    this.activateQuickOpenItem(item);
+  }
+
+  private activateQuickOpenItem(item: { kind: "role" | "flow"; id: string; label: string }): void {
+    if (!item.id) {
+      return;
+    }
+    this.closeQuickOpen();
+    if (item.kind === "role") {
+      const node = this.graph.getCellById(item.id);
+      if (!node) {
+        return;
+      }
+      this.options.selectedRoleId = item.id;
+      this.options.selectedFlowKey = "";
+      this.graph.cleanSelection();
+      this.graph.select(node);
+      this.options.onSelectRole?.(item.id);
+      this.focusCell(node, { preserveViewport: false });
+      this.syncSelectionPresentation(item.id, { preserveViewport: true });
+      this.updateToolbarState();
+      return;
+    }
+    const edge = this.graph.getEdges().find((candidate) => {
+      const data = candidate.getData() as { studioEdge?: { source: string; target: string; eventType: string } } | undefined;
+      return data?.studioEdge ? studioEdgeFlowKey(data.studioEdge) === item.id : false;
+    });
+    if (!edge) {
+      return;
+    }
+    this.options.selectedRoleId = "";
+    this.options.selectedFlowKey = item.id;
+    this.graph.cleanSelection();
+    this.graph.select(edge);
+    this.options.onSelectFlow?.(item.id);
+    this.focusCell(edge, { preserveViewport: false });
+    this.syncSelectionPresentation(edge.id, { preserveViewport: true });
+    this.updateToolbarState();
+  }
+
+  private renderQuickOpenResults(): void {
+    const items = this.quickOpenItems();
+    if (!items.length) {
+      this.quickOpenResultsEl.innerHTML = '<div class="studio-graph-quick-open-empty">No matching roles or flows.</div>';
+      return;
+    }
+    this.quickOpenSelectedIndex = Math.max(0, Math.min(this.quickOpenSelectedIndex, items.length - 1));
+    this.quickOpenResultsEl.innerHTML = items.map((item, index) => {
+      const active = index === this.quickOpenSelectedIndex;
+      return '<button type="button" class="studio-graph-quick-open-item' + (active ? " is-active" : "") +
+        '" data-studio-graph-quick-open-item="1" data-item-kind="' + this.escapeHtml(item.kind) +
+        '" data-item-id="' + this.escapeHtml(item.id) +
+        '" data-item-label="' + this.escapeHtml(item.label) + '">' +
+        '<span class="studio-graph-quick-open-kind">' + this.escapeHtml(item.kind === "role" ? "Role" : "Flow") + '</span>' +
+        '<strong>' + this.escapeHtml(item.label) + "</strong>" +
+        "</button>";
+    }).join("");
+  }
+
+  private quickOpenItems(): Array<{ kind: "role" | "flow"; id: string; label: string }> {
+    const viewModel = this.currentViewModel;
+    if (!viewModel) {
+      return [];
+    }
+    const query = this.quickOpenInputEl.value.trim().toLowerCase();
+    const roleItems = viewModel.nodes
+      .filter((node) => node.kind === "role")
+      .map((node) => ({
+        kind: "role" as const,
+        id: node.roleId,
+        label: node.title ? `${node.roleId} · ${node.title}` : node.roleId
+      }));
+    const flowItems = viewModel.edges.map((edge) => ({
+      kind: "flow" as const,
+      id: studioEdgeFlowKey(edge),
+      label: `${edge.source} -> ${edge.target} · ${edge.eventType}`
+    }));
+    const items = roleItems.concat(flowItems);
+    if (!query) {
+      return items.slice(0, 24);
+    }
+    return items.filter((item) => item.label.toLowerCase().includes(query) || item.id.toLowerCase().includes(query)).slice(0, 24);
   }
 
   private showDiagnosticCard(node: Record<string, unknown> | undefined, event: Event | undefined): void {
@@ -908,14 +1133,20 @@ export class StudioGraphIsland {
     if (this.applying || this.isReadOnly() || !this.options.authoring || !this.options.canvas) {
       return;
     }
+    const previous = this.currentSnapshot();
     const nextCanvas = graphToCanvasDocument(this.graph, this.options.authoring);
     if (this.sameCanvas(nextCanvas, this.options.canvas)) {
       return;
     }
-    this.pushUndoSnapshot();
     this.applying = true;
     try {
       await this.options.onApplyCanvas?.(nextCanvas);
+      if (previous) {
+        this.pushHistoryEntry({
+          kind: "snapshot",
+          snapshot: previous
+        });
+      }
       this.activeRedoStack().length = 0;
       this.updateToolbarState();
     } finally {
@@ -941,6 +1172,8 @@ export class StudioGraphIsland {
       this.toast("error", this.label("editBlocked"));
       return;
     }
+    const previous = this.currentSnapshot();
+    const inverse = deriveInverseCommand(this.options.authoring, command);
     const result = applyStudioAuthoringCommand({
       authoring: this.options.authoring,
       command
@@ -949,20 +1182,29 @@ export class StudioGraphIsland {
       this.toast("error", this.blockedMessage(result.blockedCode));
       return;
     }
-    this.pushUndoSnapshot();
     const nextSelectedRoleId = result.selectedRoleId || this.selectedRoleId();
     const nextSelectedFlowKey = result.selectedFlowKey || this.options.selectedFlowKey || "";
-    // Keep local authoring/canvas in sync immediately so chained edits do not depend on the
-    // outer visualizer state round-tripping first.
-    this.options.authoring = result.authoring;
-    this.options.canvas = result.canvas;
-    await this.options.onApplyCommand?.(result);
-    if (!this.isReadOnly() && result.authoring && result.canvas) {
-      this.options.selectedRoleId = nextSelectedRoleId;
-      this.options.selectedFlowKey = nextSelectedFlowKey;
-      this.applyRuntimeOverlay();
-      this.selectFromOptions();
-      this.syncSelectionPresentation(nextSelectedRoleId || nextSelectedFlowKey);
+    await this.applyResolvedCommandResult(result, {
+      selectedRoleId: nextSelectedRoleId,
+      selectedFlowKey: nextSelectedFlowKey
+    });
+    if (previous) {
+      this.pushHistoryEntry(
+        inverse
+          ? {
+              kind: "command",
+              forward: command,
+              inverse,
+              undoSelectedRoleId: previous.selectedRoleId || "",
+              undoSelectedFlowKey: previous.selectedFlowKey || "",
+              redoSelectedRoleId: nextSelectedRoleId || "",
+              redoSelectedFlowKey: nextSelectedFlowKey || ""
+            }
+          : {
+              kind: "snapshot",
+              snapshot: previous
+            }
+      );
     }
     this.activeRedoStack().length = 0;
     this.updateToolbarState();
@@ -1003,11 +1245,37 @@ export class StudioGraphIsland {
       this.updateToolbarState();
       return;
     }
+    if (previous.kind === "command") {
+      if (!this.options.authoring) {
+        this.updateToolbarState();
+        return;
+      }
+      const result = applyStudioAuthoringCommand({
+        authoring: this.options.authoring,
+        command: previous.inverse
+      });
+      if (result.blockedCode) {
+        this.toast("error", this.blockedMessage(result.blockedCode));
+        this.activeUndoStack().push(previous);
+        this.updateToolbarState();
+        return;
+      }
+      await this.applyResolvedCommandResult(result, {
+        selectedRoleId: previous.undoSelectedRoleId || "",
+        selectedFlowKey: previous.undoSelectedFlowKey || ""
+      });
+      this.activeRedoStack().push(previous);
+      this.updateToolbarState();
+      return;
+    }
     const current = this.currentSnapshot();
     if (current) {
-      this.activeRedoStack().push(current);
+      this.activeRedoStack().push({
+        kind: "snapshot",
+        snapshot: current
+      });
     }
-    await this.applySnapshot(previous);
+    await this.applySnapshot(previous.snapshot);
     this.updateToolbarState();
   }
 
@@ -1021,11 +1289,37 @@ export class StudioGraphIsland {
       this.updateToolbarState();
       return;
     }
+    if (next.kind === "command") {
+      if (!this.options.authoring) {
+        this.updateToolbarState();
+        return;
+      }
+      const result = applyStudioAuthoringCommand({
+        authoring: this.options.authoring,
+        command: next.forward
+      });
+      if (result.blockedCode) {
+        this.toast("error", this.blockedMessage(result.blockedCode));
+        this.activeRedoStack().push(next);
+        this.updateToolbarState();
+        return;
+      }
+      await this.applyResolvedCommandResult(result, {
+        selectedRoleId: next.redoSelectedRoleId || "",
+        selectedFlowKey: next.redoSelectedFlowKey || ""
+      });
+      this.activeUndoStack().push(next);
+      this.updateToolbarState();
+      return;
+    }
     const current = this.currentSnapshot();
     if (current) {
-      this.activeUndoStack().push(current);
+      this.activeUndoStack().push({
+        kind: "snapshot",
+        snapshot: current
+      });
     }
-    await this.applySnapshot(next);
+    await this.applySnapshot(next.snapshot);
     this.updateToolbarState();
   }
 
@@ -1043,14 +1337,49 @@ export class StudioGraphIsland {
     }
   }
 
+  private async applyResolvedCommandResult(
+    result: {
+      authoring: StudioAuthoringDocument;
+      canvas: StudioCanvasDocument;
+      selectedRoleId?: string;
+      selectedFlowKey?: string;
+      blockedCode?: string;
+      repositoryRoleId?: string;
+      profileDrafts?: unknown;
+      toolDrafts?: unknown;
+    },
+    selection: {
+      selectedRoleId?: string;
+      selectedFlowKey?: string;
+    }
+  ): Promise<void> {
+    const appliedResult = {
+      ...result,
+      selectedRoleId: selection.selectedRoleId,
+      selectedFlowKey: selection.selectedFlowKey
+    };
+    // Keep local authoring/canvas in sync immediately so chained edits do not depend on the
+    // outer visualizer state round-tripping first.
+    this.options.authoring = result.authoring;
+    this.options.canvas = result.canvas;
+    await this.options.onApplyCommand?.(appliedResult);
+    if (!this.isReadOnly() && result.authoring && result.canvas) {
+      this.options.selectedRoleId = selection.selectedRoleId || "";
+      this.options.selectedFlowKey = selection.selectedFlowKey || "";
+      this.applyRuntimeOverlay();
+      this.selectFromOptions();
+      this.syncSelectionPresentation((selection.selectedRoleId || "") || (selection.selectedFlowKey || ""));
+    }
+  }
+
   private pushUndoSnapshot(): void {
     if (this.isReadOnly()) return;
     const snapshot = this.currentSnapshot();
     if (!snapshot) return;
-    this.activeUndoStack().push(snapshot);
-    if (this.activeUndoStack().length > 40) {
-      this.activeUndoStack().shift();
-    }
+    this.pushHistoryEntry({
+      kind: "snapshot",
+      snapshot
+    });
     this.updateToolbarState();
   }
 
@@ -1140,11 +1469,18 @@ export class StudioGraphIsland {
     sharedHistory.projectKey = nextKey;
   }
 
-  private activeUndoStack(): StudioGraphSnapshot[] {
+  private pushHistoryEntry(entry: StudioGraphHistoryEntry): void {
+    this.activeUndoStack().push(entry);
+    if (this.activeUndoStack().length > 40) {
+      this.activeUndoStack().shift();
+    }
+  }
+
+  private activeUndoStack(): StudioGraphHistoryEntry[] {
     return this.isReadOnly() ? this.readonlyHistory.undoStack : sharedHistory.undoStack;
   }
 
-  private activeRedoStack(): StudioGraphSnapshot[] {
+  private activeRedoStack(): StudioGraphHistoryEntry[] {
     return this.isReadOnly() ? this.readonlyHistory.redoStack : sharedHistory.redoStack;
   }
 
@@ -1177,6 +1513,16 @@ export class StudioGraphIsland {
   }
 
   private handleRootKeydown(event: KeyboardEvent): void {
+    if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "p") {
+      event.preventDefault();
+      this.toggleQuickOpen();
+      return;
+    }
+    if (!this.quickOpenEl.hidden && event.key === "Escape") {
+      event.preventDefault();
+      this.closeQuickOpen();
+      return;
+    }
     if (!this.commandForm || this.dialogEl.hidden) {
       return;
     }
@@ -1382,10 +1728,22 @@ export class StudioGraphIsland {
     if (!selectedCell) {
       return;
     }
-    const selectedView = this.graph.findViewByCell(selectedCell);
+    this.focusCell(selectedCell, { preserveViewport: options.preserveViewport === true });
+    this.renderMinimap();
+  }
+
+  private focusCell(
+    cell: ReturnType<Graph["getSelectedCells"]>[number],
+    options: { preserveViewport?: boolean } = {}
+  ): void {
+    if (!cell) {
+      return;
+    }
+    this.focusMotionCellId = cell.id;
+    const selectedView = this.graph.findViewByCell(cell);
     const container = selectedView?.container as Element | undefined;
-    if (!options.preserveViewport && selectedCell.isNode() && this.shouldCenterSelectionInViewport(container)) {
-      this.graph.centerCell(selectedCell);
+    if (!options.preserveViewport && this.shouldCenterSelectionInViewport(container)) {
+      this.graph.centerCell(cell);
     }
     if (!container) {
       return;
@@ -1396,11 +1754,63 @@ export class StudioGraphIsland {
     }
     this.focusMotionTimer = setTimeout(() => {
       container.classList.remove("is-selection-focus-pulse");
-      if (this.focusMotionCellId === selectedId) {
+      if (this.focusMotionCellId === cell.id) {
         this.focusMotionCellId = "";
       }
       this.focusMotionTimer = null;
     }, 900);
+  }
+
+  private renderMinimap(): void {
+    const roleNodes = this.graph.getNodes().filter((node) => {
+      const data = node.getData() as { studioNode?: { kind?: string } } | undefined;
+      return data?.studioNode?.kind === "role";
+    });
+    if (!roleNodes.length) {
+      this.minimapEl.hidden = true;
+      this.minimapContentEl.innerHTML = "";
+      return;
+    }
+    this.minimapEl.hidden = false;
+    const metrics = roleNodes.map((node) => {
+      const position = node.getPosition();
+      const size = node.getSize();
+      return {
+        id: node.id,
+        x: position.x,
+        y: position.y,
+        width: size.width,
+        height: size.height
+      };
+    });
+    const minX = Math.min(...metrics.map((item) => item.x));
+    const minY = Math.min(...metrics.map((item) => item.y));
+    const maxX = Math.max(...metrics.map((item) => item.x + item.width));
+    const maxY = Math.max(...metrics.map((item) => item.y + item.height));
+    const totalWidth = Math.max(maxX - minX, 1);
+    const totalHeight = Math.max(maxY - minY, 1);
+    this.minimapContentEl.innerHTML = metrics.map((item) => {
+      const left = ((item.x - minX) / totalWidth) * 100;
+      const top = ((item.y - minY) / totalHeight) * 100;
+      const width = Math.max((item.width / totalWidth) * 100, 5);
+      const height = Math.max((item.height / totalHeight) * 100, 8);
+      const selected = this.options.selectedRoleId === item.id;
+      return '<div class="studio-graph-minimap-node' + (selected ? " is-selected" : "") +
+        '" data-minimap-role-id="' + this.escapeHtml(item.id) +
+        '" style="left:' + left.toFixed(3) + "%;top:" + top.toFixed(3) + "%;width:" + width.toFixed(3) + "%;height:" + height.toFixed(3) + '%"></div>';
+    }).join("");
+    const translate = this.graph.translate();
+    const scale = this.graph.zoom();
+    const viewportWidth = Math.max(this.canvasEl.clientWidth, 1);
+    const viewportHeight = Math.max(this.canvasEl.clientHeight, 1);
+    const viewportLeft = Math.max(0, Math.min(((-translate.tx - minX) / totalWidth) * 100, 100));
+    const viewportTop = Math.max(0, Math.min(((-translate.ty - minY) / totalHeight) * 100, 100));
+    const viewportBoxWidth = Math.max(12, Math.min((viewportWidth / scale / totalWidth) * 100, 100));
+    const viewportBoxHeight = Math.max(12, Math.min((viewportHeight / scale / totalHeight) * 100, 100));
+    this.minimapViewportEl.style.left = `${viewportLeft}%`;
+    this.minimapViewportEl.style.top = `${viewportTop}%`;
+    this.minimapViewportEl.style.width = `${viewportBoxWidth}%`;
+    this.minimapViewportEl.style.height = `${viewportBoxHeight}%`;
   }
 
   private shouldCenterSelectionInViewport(container: Element | undefined): boolean {
