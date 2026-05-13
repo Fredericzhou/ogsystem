@@ -2784,7 +2784,7 @@ test("visualizer client renders zh-CN chrome while preserving runtime identifier
     mountCalls.push({ root, options });
   };
 
-  assert.match(harness.document.getElementById("console-tabs").textContent, /Design Run Release/);
+  assert.match(harness.document.getElementById("console-tabs").textContent, /项目 设计 运行 发布/);
   assert.equal(harness.document.getElementById("action-form-section").hidden, true);
   const recoveryTab = harness.document.getElementById("operate-tabs")
     .querySelectorAll("[data-operate-tab]")
@@ -3126,6 +3126,33 @@ test("visualizer client normalizes build deep links onto the Design shell", asyn
   assert.equal(harness.document.getElementById("console-panel-debug").hidden, true);
   assert.match(harness.window.location.search, /[?&]lifecycle=design/);
   assert.doesNotMatch(harness.window.location.search, /[?&]runId=/);
+});
+
+test("visualizer client renders four tabs and navigates to Design with bridge refresh", async () => {
+  const harness = await createClientHarness();
+  const getTabs = () => harness.document.getElementById("console-tabs").querySelectorAll("[data-console-tab]");
+  const getTab = (id) => getTabs().find((button) => button.getAttribute("data-console-tab") === id);
+
+  assert.equal(getTabs().length, 4);
+  assert.ok(getTab("project"));
+  assert.ok(getTab("design"));
+  assert.ok(getTab("run"));
+  assert.ok(getTab("release"));
+
+  await getTab("project").click();
+  assert.equal(harness.document.getElementById("console-panel-project").hidden, false);
+  assert.equal(harness.document.getElementById("console-panel-build").hidden, true);
+  assert.equal(getTab("project").getAttribute("aria-pressed"), "true");
+
+  const bridgeCallsBefore = harness.backend.fetchCalls.filter((call) => call.path.includes("/studio/bridge")).length;
+  await getTab("design").click();
+  assert.equal(harness.document.getElementById("console-panel-build").hidden, false);
+  assert.equal(harness.document.getElementById("console-panel-project").hidden, true);
+  assert.equal(getTab("design").getAttribute("aria-pressed"), "true");
+  assert.match(harness.window.location.search, /lifecycle=design/);
+  await waitForCondition(() =>
+    harness.backend.fetchCalls.filter((call) => call.path.includes("/studio/bridge")).length > bridgeCallsBefore
+  );
 });
 
 test("visualizer client loads logs on demand and keeps filter changes lazy until loaded", async () => {

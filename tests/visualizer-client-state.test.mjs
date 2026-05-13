@@ -241,6 +241,10 @@ test("client route state helpers normalize Design Run Release lifecycle aliases"
   assert.equal(normalizeLifecycleView("unknown", "project"), "project");
   assert.equal(normalizeLifecycleView("project", ""), "project");
   assert.equal(normalizeLifecycleView("legacy", ""), "run");
+  assert.equal(normalizeLifecycleView("", ""), "project");
+  assert.equal(normalizeLifecycleView("", "build"), "design");
+  assert.equal(normalizeLifecycleView("", "run"), "run");
+  assert.equal(normalizeLifecycleView("", "release"), "release");
 
   assert.equal(
     buildRouteSearch({
@@ -539,6 +543,45 @@ test("client shell control renderers expose only the Project Design Run Release 
     ["validate-release"]
   );
   assert.equal(shouldShowRunSidebar("run"), true);
+  assert.equal(shouldShowRunSidebar("project"), false);
+  assert.equal(shouldShowRunSidebar("design"), false);
+  assert.equal(shouldShowRunSidebar("release"), false);
+});
+
+test("client shell controls enforce four-tab structure with exclusive panel visibility", () => {
+  const allTabs = ["project", "design", "run", "release"];
+  for (const tab of allTabs) {
+    const html = renderConsoleTabsHtml({ consoleTab: tab, operateTab: "overview", t, escapeText });
+    assert.match(html, /data-console-tab="project"/, "project tab missing when active=" + tab);
+    assert.match(html, /data-console-tab="design"/, "design tab missing when active=" + tab);
+    assert.match(html, /data-console-tab="run"/, "run tab missing when active=" + tab);
+    assert.match(html, /data-console-tab="release"/, "release tab missing when active=" + tab);
+    assert.doesNotMatch(html, /data-console-tab="build"/, "legacy build tab present when active=" + tab);
+    assert.doesNotMatch(html, /data-console-tab="operate"/, "legacy operate tab present when active=" + tab);
+    assert.doesNotMatch(html, /data-console-tab="legacy"/, "legacy tab present when active=" + tab);
+    const activePattern = new RegExp('data-console-tab="' + tab + '"[^>]*aria-pressed="true"');
+    assert.match(html, activePattern, "active tab " + tab + " not pressed");
+  }
+  const projectPanels = getVisibleConsolePanelIds({ consoleTab: "project", operateTab: "overview" });
+  assert.ok(projectPanels.includes("project"), "project panel visible on project tab");
+  assert.ok(!projectPanels.includes("build"), "build panel hidden on project tab");
+  assert.ok(!projectPanels.includes("debug"), "debug panel hidden on project tab");
+
+  const designPanels = getVisibleConsolePanelIds({ consoleTab: "design", operateTab: "overview" });
+  assert.ok(designPanels.includes("build"), "build panel visible on design tab");
+  assert.ok(!designPanels.includes("project"), "project panel hidden on design tab");
+  assert.ok(!designPanels.includes("debug"), "debug panel hidden on design tab");
+
+  const runPanels = getVisibleConsolePanelIds({ consoleTab: "run", operateTab: "overview" });
+  assert.ok(runPanels.includes("debug"), "debug panel visible on run tab");
+  assert.ok(!runPanels.includes("project"), "project panel hidden on run tab");
+  assert.ok(!runPanels.includes("build"), "build panel hidden on run tab");
+
+  const releasePanels = getVisibleConsolePanelIds({ consoleTab: "release", operateTab: "overview" });
+  assert.ok(releasePanels.includes("validate-release"), "validate-release panel visible on release tab");
+  assert.ok(!releasePanels.includes("project"), "project panel hidden on release tab");
+  assert.ok(!releasePanels.includes("build"), "build panel hidden on release tab");
+  assert.ok(!releasePanels.includes("debug"), "debug panel hidden on release tab");
 });
 
 test("client lifecycle state factory centralizes initial workspace state", () => {
