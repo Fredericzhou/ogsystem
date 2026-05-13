@@ -4,6 +4,11 @@ import { Keyboard } from "@antv/x6-plugin-keyboard";
 import { Selection } from "@antv/x6-plugin-selection";
 import dagre from "dagre";
 
+import {
+  normalizeStudioGraphTargetRoleId,
+  STUDIO_SYSTEM_END_ROLE_ID,
+  studioFlowKey
+} from "../studio-contracts.js";
 import type {
   GraphViewModel,
   StudioAuthoringDocument,
@@ -152,6 +157,15 @@ const sharedHistory: {
   redoStack: []
 };
 
+const STUDIO_PENDING_EDGE_ID = "__studio_pending_edge__";
+
+type PendingStudioEdgePreview = {
+  sourceRoleId: string;
+  targetRoleId: string;
+  eventType: string;
+  label: string;
+};
+
 export class StudioGraphIsland {
   private graph: Graph;
   private toolbar: HTMLDivElement;
@@ -180,6 +194,7 @@ export class StudioGraphIsland {
   private lastHandledHistoryEventId = 0;
   private syncCanvasTimer: ReturnType<typeof setTimeout> | null = null;
   private commandForm: StudioCommandFormState | null = null;
+  private pendingEdgePreview: PendingStudioEdgePreview | null = null;
   private runtimeVisualState: StudioRuntimeVisualState | null = null;
   private focusMotionTimer: ReturnType<typeof setTimeout> | null = null;
   private focusMotionCellId = "";
@@ -326,6 +341,7 @@ export class StudioGraphIsland {
     this.applying = true;
     try {
       renderStudioGraphViewModel(this.graph, viewModel);
+      this.syncPendingEdgePreview();
       this.runtimeVisualState = deriveStudioRuntimeVisualState({
         authoring: options.authoring,
         viewModel,
@@ -387,10 +403,14 @@ export class StudioGraphIsland {
         highlight: true,
         createEdge() {
           return graph.createEdge({
+            id: STUDIO_PENDING_EDGE_ID,
+            zIndex: 0,
+            data: { studioPendingEdge: true },
             attrs: {
               line: {
                 stroke: "#38bdf8",
                 strokeWidth: 1.8,
+                strokeDasharray: "7 5",
                 targetMarker: { name: "block", width: 8, height: 6 }
               }
             },
@@ -648,13 +668,17 @@ export class StudioGraphIsland {
     }
   }
 
-  private closeCommandForm(): void {
+  private closeCommandForm(options: { preservePendingEdgePreview?: boolean } = {}): void {
     if (!this.commandForm && this.dialogEl.hidden) {
       return;
+    }
+    if (!options.preservePendingEdgePreview) {
+      this.pendingEdgePreview = null;
     }
     this.commandForm = null;
     this.dialogEl.hidden = true;
     this.dialogEl.innerHTML = "";
+    this.syncPendingEdgePreview();
     this.notifyCommandFormState();
   }
 
@@ -877,6 +901,7 @@ export class StudioGraphIsland {
     });
     this.notifyCommandFormState();
     this.bindCommandForm();
+    this.syncPendingEdgePreview();
     const firstInput = this.dialogEl.querySelector<HTMLInputElement | HTMLSelectElement>("input:not([type=radio]):not([type=checkbox]), select");
     firstInput?.focus();
   }
@@ -911,6 +936,7 @@ export class StudioGraphIsland {
     });
     if (!requiresStructureRefresh) {
       this.patchCommandFormValidation();
+      this.syncPendingEdgePreview();
       return;
     }
     this.dialogEl.innerHTML = renderStudioCommandForm({
@@ -919,6 +945,7 @@ export class StudioGraphIsland {
       labels: this.options.commandFormLabels
     });
     this.bindCommandForm();
+    this.syncPendingEdgePreview();
     if (targetName) {
       const active = this.dialogEl.querySelector<HTMLInputElement | HTMLSelectElement>('[name="' + this.cssEscape(targetName) + '"]');
       active?.focus();
@@ -963,7 +990,9 @@ export class StudioGraphIsland {
       this.renderCommandForm();
       return;
     }
-    this.closeCommandForm();
+    const preservePendingEdgePreview = command.type === "add-edge";
+    this.pendingEdgePreview = preservePendingEdgePreview ? this.commandFormPendingEdgePreview() : null;
+    this.closeCommandForm({ preservePendingEdgePreview });
     await this.applyCommand(command);
   }
 
@@ -1105,6 +1134,7 @@ export class StudioGraphIsland {
       .map((node) => node.id)
       .sort();
     const edges = this.graph.getEdges()
+      .filter((edge) => !this.isPendingEdgePreviewCell(edge))
       .map((edge) => `${edge.getSourceCellId() || ""}->${edge.getTargetCellId() || ""}`)
       .sort();
     return nodes.length ? `${nodes.join(",")}|${edges.join(",")}` : "";
@@ -1121,6 +1151,9 @@ export class StudioGraphIsland {
       graph.setNode(node.id, { width: size.width, height: size.height });
     }
     for (const edge of this.graph.getEdges()) {
+      if (this.isPendingEdgePreviewCell(edge)) {
+        continue;
+      }
       const source = edge.getSourceCellId();
       const target = edge.getTargetCellId();
       if (source && target && graph.hasNode(source) && graph.hasNode(target)) {
@@ -1178,6 +1211,10 @@ export class StudioGraphIsland {
 
   private async applyCommand(command: StudioAuthoringCommand): Promise<void> {
     if (this.isReadOnly() || !this.options.authoring || !this.options.canvas) {
+      if (command.type === "add-edge") {
+        this.pendingEdgePreview = null;
+        this.syncPendingEdgePreview();
+      }
       this.toast("error", this.label("editBlocked"));
       return;
     }
@@ -1188,6 +1225,10 @@ export class StudioGraphIsland {
       command
     });
     if (result.blockedCode) {
+      if (command.type === "add-edge") {
+        this.pendingEdgePreview = null;
+        this.syncPendingEdgePreview();
+      }
       this.toast("error", this.blockedMessage(result.blockedCode));
       return;
     }
@@ -1668,6 +1709,136 @@ export class StudioGraphIsland {
     this.options.onCommandFormStateChange(state);
   }
 
+  private commandFormPendingEdgePreview(): PendingStudioEdgePreview | null {
+    if (!this.commandForm || this.commandForm.kind !== "add-edge") {
+      return null;
+    }
+    const sourceRoleId = (this.commandForm.fields.sourceRoleId || "").trim();
+    const rawTargetRoleId = (this.commandForm.fields.targetRoleId || "").trim();
+    const targetRoleId = rawTargetRoleId === "output" ? STUDIO_SYSTEM_END_ROLE_ID : rawTargetRoleId;
+    const eventType = (this.commandForm.fields.eventType || "").trim() || "DONE";
+    const label = (this.commandForm.fields.label || "").trim() || eventType;
+    const targetCellId = normalizeStudioGraphTargetRoleId(targetRoleId);
+    const sourceCell = this.graph.getCellById(sourceRoleId);
+    const targetCell = this.graph.getCellById(targetCellId);
+    if (!sourceRoleId || !targetRoleId || !sourceCell || !targetCell) {
+      return null;
+    }
+    if (!canConnectStudioCells(sourceCell, targetCell)) {
+      return null;
+    }
+    return {
+      sourceRoleId,
+      targetRoleId,
+      eventType,
+      label
+    };
+  }
+
+  private syncPendingEdgePreview(): void {
+    const commandFormPreview = this.commandFormPendingEdgePreview();
+    let preview = commandFormPreview ?? this.pendingEdgePreview;
+    if (preview && this.committedEdgeExists(preview)) {
+      if (!commandFormPreview) {
+        this.pendingEdgePreview = null;
+      }
+      preview = null;
+    }
+    const existing = this.graph.getCellById(STUDIO_PENDING_EDGE_ID);
+    if (!preview) {
+      if (existing?.isEdge()) {
+        existing.remove();
+        this.applyRuntimeOverlay();
+      }
+      return;
+    }
+    const targetCellId = normalizeStudioGraphTargetRoleId(preview.targetRoleId);
+    const nextLabels = [{
+      attrs: {
+        label: {
+          text: preview.label,
+          fill: "#dbeafe",
+          fontSize: 11
+        },
+        body: {
+          fill: "rgba(8, 47, 73, 0.92)",
+          stroke: "#38bdf8",
+          strokeWidth: 1,
+          strokeDasharray: "6 4"
+        }
+      }
+    }];
+    const nextAttrs = {
+      line: {
+        stroke: "#38bdf8",
+        strokeWidth: 1.9,
+        strokeDasharray: "7 5",
+        targetMarker: {
+          name: "block",
+          width: 8,
+          height: 6
+        }
+      }
+    };
+    if (existing?.isEdge()) {
+      existing.setData({ studioPendingEdge: preview });
+      existing.setSource({ cell: preview.sourceRoleId, port: "out" });
+      existing.setTarget({
+        cell: targetCellId,
+        port: preview.targetRoleId === STUDIO_SYSTEM_END_ROLE_ID ? undefined : "in"
+      });
+      existing.setLabels(nextLabels);
+      existing.attr(nextAttrs);
+      existing.setRouter({ name: "manhattan" });
+      existing.setConnector({ name: "rounded" });
+      this.applyRuntimeOverlay();
+      return;
+    }
+    this.graph.addEdge({
+      id: STUDIO_PENDING_EDGE_ID,
+      source: { cell: preview.sourceRoleId, port: "out" },
+      target: {
+        cell: targetCellId,
+        port: preview.targetRoleId === STUDIO_SYSTEM_END_ROLE_ID ? undefined : "in"
+      },
+      zIndex: 0,
+      data: { studioPendingEdge: preview },
+      labels: nextLabels,
+      attrs: nextAttrs,
+      router: { name: "manhattan" },
+      connector: { name: "rounded" }
+    });
+    this.applyRuntimeOverlay();
+  }
+
+  private committedEdgeExists(preview: PendingStudioEdgePreview): boolean {
+    const previewFlowKey = studioFlowKey({
+      fromRoleId: preview.sourceRoleId,
+      eventType: preview.eventType,
+      toRoleId: preview.targetRoleId
+    });
+    return this.graph.getEdges().some((edge) => {
+      if (this.isPendingEdgePreviewCell(edge)) {
+        return false;
+      }
+      const data = edge.getData() as { studioEdge?: { source: string; target: string; eventType: string } } | undefined;
+      return data?.studioEdge
+        ? studioEdgeFlowKey(data.studioEdge) === previewFlowKey
+        : false;
+    });
+  }
+
+  private isPendingEdgePreviewCell(edge: ReturnType<Graph["getEdges"]>[number] | null | undefined): boolean {
+    if (!edge) {
+      return false;
+    }
+    if (edge.id === STUDIO_PENDING_EDGE_ID) {
+      return true;
+    }
+    const data = edge.getData() as { studioPendingEdge?: unknown } | undefined;
+    return Boolean(data?.studioPendingEdge);
+  }
+
   private applyRuntimeOverlay(): void {
     const runtime = this.runtimeVisualState;
     this.root.dataset.runtimeSignals = runtime?.hasRuntimeSignals ? "on" : "off";
@@ -1709,6 +1880,7 @@ export class StudioGraphIsland {
       if (!container) {
         continue;
       }
+      container.classList.toggle("is-pending-preview", this.isPendingEdgePreviewCell(edge));
       const edgeState = runtime?.edgeStates.get(edge.id);
       container.classList.toggle("is-runtime-active", Boolean(edgeState?.active));
       container.classList.toggle("is-runtime-error", Boolean(edgeState?.error));

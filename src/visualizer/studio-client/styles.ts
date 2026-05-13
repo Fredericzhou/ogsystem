@@ -165,6 +165,17 @@ export function injectStudioGraphStyles(): void {
       stroke-width: 2.6px !important;
       filter: drop-shadow(0 0 0.3rem rgba(56, 189, 248, 0.25));
     }
+    .studio-graph-canvas .x6-edge.is-pending-preview .connection {
+      stroke: #38bdf8 !important;
+      stroke-width: 2px !important;
+      stroke-dasharray: 7 5;
+      animation: studio-edge-flow 720ms linear infinite;
+      opacity: 0.95;
+    }
+    .studio-graph-canvas .x6-edge.is-pending-preview .x6-edge-label rect {
+      stroke: #38bdf8;
+      stroke-dasharray: 6 4;
+    }
     .studio-graph-canvas .x6-edge.is-runtime-active .connection {
       stroke-width: 2.6px !important;
       stroke-dasharray: 8 8;
@@ -184,6 +195,7 @@ export function injectStudioGraphStyles(): void {
     .studio-graph-island[data-reduced-motion="on"] .studio-graph-canvas .x6-node[data-runtime-status="failed"] path:first-of-type,
     .studio-graph-island[data-reduced-motion="on"] .studio-graph-canvas .x6-node.is-runtime-waiting-review rect,
     .studio-graph-island[data-reduced-motion="on"] .studio-graph-canvas .x6-node.is-runtime-waiting-review path:first-of-type,
+    .studio-graph-island[data-reduced-motion="on"] .studio-graph-canvas .x6-edge.is-pending-preview .connection,
     .studio-graph-island[data-reduced-motion="on"] .studio-graph-canvas .x6-edge.is-runtime-active .connection {
       animation: none !important;
     }
