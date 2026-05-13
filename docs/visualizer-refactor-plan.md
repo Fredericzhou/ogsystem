@@ -9,10 +9,10 @@
 本轮 Visualizer 收敛与 UX 重构已经完成，`src/visualizer/` 当前主路径已收敛到以下结果：
 
 - 编辑态与运行态统一到 `GraphViewModel + StudioGraphIsland`
-- Studio Bridge 改为稳定三栏布局：outline / canvas / inspector
+- Studio Bridge 收敛到稳定的 `outline / canvas / right inspector` 壳；右侧 inspector 仍支持折叠和调试/结果切换
 - `Build / Operate / Validate & Release` 收敛为 `Design / Run / Release`
 - chat-to-MMD 改为 semantic-first patch；`replace-authoring` 仅保留为 fallback
-- legacy UI、legacy console tabs、`preserveGraphRoot`、`patchStudioBridgePanel` 已从主路径删除
+- legacy console tabs、`preserveGraphRoot`、`patchStudioBridgePanel` 已从主路径删除；legacy lifecycle 仅保留 query 入参兼容别名
 
 ## 2. Locked Decisions
 
@@ -29,6 +29,7 @@
 - Run graph 已切到服务端 draft authority + 当前 dry-run overlay
 - 单击选中 / 双击或 `F2` 编辑已替代旧的“选中即编辑”
 - 诊断徽章、hover card、minimap、quick open、focus motion 已落地
+- 右侧 inspector 保留折叠与 tab 切换能力，不再使用旧的 remount-preservation 补丁路径
 - 导航与顶部 CTA 已按 `Design / Run / Release` 情境收敛
 
 ## 4. Verification

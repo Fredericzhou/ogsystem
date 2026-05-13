@@ -447,7 +447,7 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
       }
     }
 
-    function setPanelState(panelId, visible, role, labelledBy) {
+    function setPanelState(panelId, visible, role, labelledBy, ariaLabel) {
       const panel = document.getElementById(panelId);
       if (!panel) {
         return;
@@ -459,6 +459,11 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
       } else {
         panel.removeAttribute("aria-labelledby");
       }
+      if (ariaLabel) {
+        panel.setAttribute("aria-label", ariaLabel);
+      } else {
+        panel.removeAttribute("aria-label");
+      }
     }
 
     function renderConsolePanels(visiblePanelIds) {
@@ -467,7 +472,7 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
       setPanelState("console-panel-build", visiblePanelIds.has("build"), "tabpanel", "console-tab-design");
       setPanelState("console-panel-debug", visiblePanelIds.has("debug"), "presentation", "");
       setPanelState("console-panel-ops", visiblePanelIds.has("ops"), "region", operateLabelIds);
-      setPanelState("console-panel-config", false, "tabpanel", "");
+      setPanelState("console-panel-config", false, "region", "", t("section.configExplain"));
       setPanelState("console-panel-logs", visiblePanelIds.has("logs"), "tabpanel", operateLabelIds);
       setPanelState("console-panel-artifacts", visiblePanelIds.has("artifacts"), "tabpanel", operateLabelIds);
       setPanelState("console-panel-validate-release", visiblePanelIds.has("validate-release"), "tabpanel", "console-tab-release");

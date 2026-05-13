@@ -3056,6 +3056,8 @@ test("visualizer client switches Design Run Release shells without unloading dat
   assert.equal(harness.document.getElementById("console-panel-build").hidden, false);
   assert.equal(harness.document.getElementById("console-panel-project").hidden, false);
   assert.equal(harness.document.getElementById("console-panel-config").hidden, true);
+  assert.equal(harness.document.getElementById("console-panel-config").getAttribute("role"), "region");
+  assert.equal(harness.document.getElementById("console-panel-config").getAttribute("aria-label"), "Config Explain");
   assert.equal(harness.document.body.classList.classes.has("show-run-sidebar"), false);
   assert.equal(harness.document.body.classList.classes.has("show-operate-workspace"), false);
   assert.equal(harness.document.body.classList.classes.has("drawer-open"), false);
