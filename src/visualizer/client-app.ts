@@ -3240,7 +3240,7 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
         editSelectionRequest: state.studioBridgeEditSelectionRequest,
         defaultAutoLayout: true,
         busy: Boolean(state.actionBusy),
-        readOnly: state.buildMode === "debug",
+        readOnly: false,
         rolePackages: state.studioRoleCatalog || state.rolePackages,
         bindings: state.bindings,
         readiness: state.projectReadiness,
@@ -3311,7 +3311,10 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
           updateWorkbenchGraphStatus(message);
         },
         onToast: (tone, message) => {
-          setFlash(tone === "error" ? "error" : "success", message);
+          if (globalStatusDiagnosticsEl) {
+            globalStatusDiagnosticsEl.textContent = message;
+            globalStatusDiagnosticsEl.className = "global-status-diagnostics hint" + (tone === "error" ? " warn" : "");
+          }
         }
       });
     }
@@ -3393,7 +3396,10 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
           state.runGraphSelectedFlowKey = "";
         },
         onToast: (tone, message) => {
-          setFlash(tone === "error" ? "error" : "success", message);
+          if (globalStatusDiagnosticsEl) {
+            globalStatusDiagnosticsEl.textContent = message;
+            globalStatusDiagnosticsEl.className = "global-status-diagnostics hint" + (tone === "error" ? " warn" : "");
+          }
         }
       });
     }

@@ -226,6 +226,12 @@ export function renderPageShellStyles(): string {
       grid-template-columns: 288px minmax(0, 1fr);
     }
     .flash {
+      position: fixed;
+      top: 12px;
+      left: 50%;
+      transform: translateX(-50%);
+      z-index: 100;
+      max-width: min(560px, calc(100vw - 32px));
       padding: 9px 12px;
       border-radius: 10px;
       border: 1px solid var(--border);
@@ -329,8 +335,9 @@ export function renderPageShellStyles(): string {
     }
     .stage-stack {
       display: grid;
-      gap: 12px;
-      align-content: start;
+      gap: 0;
+      align-content: stretch;
+      grid-auto-rows: minmax(0, 1fr);
       min-height: 100%;
       height: 100%;
       overflow: auto;

@@ -1809,7 +1809,7 @@ export class StudioGraphIsland {
       const y1 = ((sourceNode.y + sourceNode.height / 2 - minY) / totalHeight) * 100;
       const x2 = ((targetNode.x - minX) / totalWidth) * 100;
       const y2 = ((targetNode.y + targetNode.height / 2 - minY) / totalHeight) * 100;
-      return '<line x1="' + x1.toFixed(2) + '%" y1="' + y1.toFixed(2) + '%" x2="' + x2.toFixed(2) + '%" y2="' + y2.toFixed(2) + '%" />';
+      return '<line x1="' + x1.toFixed(2) + '" y1="' + y1.toFixed(2) + '" x2="' + x2.toFixed(2) + '" y2="' + y2.toFixed(2) + '" />';
     }).filter(Boolean);
     const nodeHtml = metrics.map((item) => {
       const left = ((item.x - minX) / totalWidth) * 100;
