@@ -2282,8 +2282,8 @@ test("visualizer client route helpers round-trip query state", () => {
     since: "2026-04-23T10:11"
   });
   assert.equal(normalizeLifecycleView("build", ""), "design");
-  assert.equal(normalizeLifecycleView("", "project"), "design");
-  assert.equal(normalizeLifecycleView("", ""), "design");
+  assert.equal(normalizeLifecycleView("", "project"), "project");
+  assert.equal(normalizeLifecycleView("", ""), "project");
   assert.equal(
     buildRouteSearch({
       lifecycle: "design",
@@ -2436,7 +2436,7 @@ test("visualizer client creates a project from the empty workspace wizard", asyn
   assert.equal(harness.backend.fetchCalls.some((call) => call.path === "/api/v1/project/roles/import"), false);
   assert.equal(harness.backend.fetchCalls.some((call) => call.path === "/api/v1/project/system/save"), false);
   assert.equal(harness.backend.fetchCalls.some((call) => call.path === "/api/v1/runs/start"), false);
-  assert.equal(harness.document.getElementById("console-panel-project").hidden, false);
+  assert.equal(harness.document.getElementById("console-panel-build").hidden, false);
   assert.match(harness.document.getElementById("flash").textContent, /Project created\. Continue in Design\./);
 });
 
@@ -2987,12 +2987,14 @@ test("visualizer client renders config explain panels and failure next checks", 
 test("visualizer client switches Design Run Release shells without unloading data", async () => {
   const harness = await createClientHarness({ search: "" });
   const tabs = harness.document.getElementById("console-tabs").querySelectorAll("[data-console-tab]");
+  const projectTab = tabs.find((button) => button.getAttribute("data-console-tab") === "project");
   const designTab = tabs.find((button) => button.getAttribute("data-console-tab") === "design");
   const runTab = tabs.find((button) => button.getAttribute("data-console-tab") === "run");
   const releaseTab = tabs.find((button) => button.getAttribute("data-console-tab") === "release");
   const legacyTab = tabs.find((button) => button.getAttribute("data-console-tab") === "legacy");
 
-  assert.equal(tabs.length, 3);
+  assert.equal(tabs.length, 4);
+  assert.ok(projectTab);
   assert.ok(designTab);
   assert.ok(runTab);
   assert.ok(releaseTab);
@@ -3003,7 +3005,7 @@ test("visualizer client switches Design Run Release shells without unloading dat
   assert.equal(harness.document.body.classList.classes.has("show-operate-workspace"), false);
   assert.equal(harness.document.body.classList.classes.has("show-run-sidebar"), false);
   assert.equal(harness.document.getElementById("sidebar-toggle").hidden, true);
-  assert.equal(designTab.getAttribute("aria-pressed"), "true");
+  assert.equal(projectTab.getAttribute("aria-pressed"), "true");
   assert.equal(runTab.getAttribute("aria-pressed"), "false");
   assert.equal(harness.document.getElementById("sidebar-toggle").getAttribute("aria-expanded"), "false");
   assert.match(harness.document.getElementById("project-wizard").textContent, /Overview/);
@@ -3054,7 +3056,7 @@ test("visualizer client switches Design Run Release shells without unloading dat
 
   await designTab.click();
   assert.equal(harness.document.getElementById("console-panel-build").hidden, false);
-  assert.equal(harness.document.getElementById("console-panel-project").hidden, false);
+  assert.equal(harness.document.getElementById("console-panel-project").hidden, true);
   assert.equal(harness.document.getElementById("console-panel-config").hidden, true);
   assert.equal(harness.document.getElementById("console-panel-config").getAttribute("role"), "region");
   assert.equal(harness.document.getElementById("console-panel-config").getAttribute("aria-label"), "Config Explain");
@@ -3074,11 +3076,10 @@ test("visualizer client switches Design Run Release shells without unloading dat
 
   await designTab.click();
   assert.equal(harness.document.getElementById("console-panel-config").hidden, true);
-  assert.equal(harness.document.getElementById("console-panel-project").hidden, false);
+  assert.equal(harness.document.getElementById("console-panel-project").hidden, true);
   assert.equal(harness.document.getElementById("console-panel-build").hidden, false);
   assert.equal(harness.document.body.classList.classes.has("show-run-sidebar"), false);
   assert.equal(harness.document.getElementById("sidebar-toggle").hidden, true);
-  assert.match(harness.document.getElementById("project-wizard").textContent, /dry-run readiness/);
   assert.match(harness.document.getElementById("project-wizard").textContent, /Quick actions/);
   assert.match(harness.document.getElementById("project-wizard").textContent, /Recent runs/);
   assert.ok(harness.document.getElementById("project-wizard").querySelectorAll(".project-home-main").length >= 1);
@@ -3120,7 +3121,7 @@ test("visualizer client normalizes build deep links onto the Design shell", asyn
   const harness = await createClientHarness({ search: "?lifecycle=build" });
 
   assert.equal(harness.document.getElementById("console-panel-build").hidden, false);
-  assert.equal(harness.document.getElementById("console-panel-project").hidden, false);
+  assert.equal(harness.document.getElementById("console-panel-project").hidden, true);
   assert.equal(harness.document.getElementById("console-panel-config").hidden, true);
   assert.equal(harness.document.getElementById("console-panel-debug").hidden, true);
   assert.match(harness.window.location.search, /[?&]lifecycle=design/);

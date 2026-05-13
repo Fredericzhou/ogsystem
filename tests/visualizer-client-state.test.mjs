@@ -187,9 +187,10 @@ test("client route state helpers parse and serialize lifecycle query state", () 
     since: ""
   });
   assert.equal(normalizeLifecycleView("operate", ""), "run");
-  assert.equal(normalizeLifecycleView("unknown", "project"), "design");
+  assert.equal(normalizeLifecycleView("unknown", "project"), "project");
   assert.equal(normalizeLifecycleView("", "operate"), "run");
   assert.equal(normalizeLifecycleView("unknown", "legacy"), "run");
+  assert.equal(normalizeLifecycleView("project", ""), "project");
   assert.equal(normalizeLifecycleView("design", ""), "design");
   assert.equal(normalizeLifecycleView("build", ""), "design");
   assert.equal(normalizeLifecycleView("validate-release", ""), "release");
@@ -237,7 +238,8 @@ test("client route state helpers normalize Design Run Release lifecycle aliases"
   assert.equal(normalizeLifecycleView("build", ""), "design");
   assert.equal(normalizeLifecycleView("operate", ""), "run");
   assert.equal(normalizeLifecycleView("validate-release", ""), "release");
-  assert.equal(normalizeLifecycleView("unknown", "project"), "design");
+  assert.equal(normalizeLifecycleView("unknown", "project"), "project");
+  assert.equal(normalizeLifecycleView("project", ""), "project");
   assert.equal(normalizeLifecycleView("legacy", ""), "run");
 
   assert.equal(
@@ -465,15 +467,16 @@ test("client shell control renderers keep lifecycle visibility and run-list filt
     t,
     escapeText
   });
+  assert.match(consoleHtml, /data-console-tab="project"/);
   assert.match(consoleHtml, /data-console-tab="design"/);
   assert.match(consoleHtml, /data-console-tab="run"[^>]*aria-pressed="true"/);
   assert.match(consoleHtml, /data-console-tab="run"[^>]*role="tab"[^>]*aria-controls="operate-tabpanel-overview"/);
   assert.match(consoleHtml, /data-console-tab="release"/);
-  assert.doesNotMatch(consoleHtml, /data-console-tab="project"/);
   assert.doesNotMatch(consoleHtml, /data-console-tab="build"/);
   assert.doesNotMatch(consoleHtml, /data-console-tab="operate"/);
   assert.doesNotMatch(consoleHtml, /data-console-tab="legacy"/);
-  assert.deepEqual(getVisibleConsolePanelIds({ consoleTab: "design", operateTab: "overview" }), ["project", "build"]);
+  assert.deepEqual(getVisibleConsolePanelIds({ consoleTab: "project", operateTab: "overview" }), ["project"]);
+  assert.deepEqual(getVisibleConsolePanelIds({ consoleTab: "design", operateTab: "overview" }), ["build"]);
   assert.deepEqual(getVisibleConsolePanelIds({ consoleTab: "run", operateTab: "overview" }), ["debug", "ops"]);
   assert.deepEqual(getVisibleConsolePanelIds({ consoleTab: "run", operateTab: "logs" }), ["debug", "logs"]);
   assert.deepEqual(getVisibleConsolePanelIds({ consoleTab: "release", operateTab: "overview" }), ["validate-release"]);
@@ -498,18 +501,18 @@ test("client shell control renderers keep lifecycle visibility and run-list filt
   assert.match(runListHtml, /aria-label="Run run-1 status waiting review run\.transitions 3 run\.updated /);
 });
 
-test("client shell control renderers expose only the Design Run Release tabs", () => {
+test("client shell control renderers expose only the Project Design Run Release tabs", () => {
   const consoleHtml = renderConsoleTabsHtml({
     consoleTab: "run",
     operateTab: "logs",
     t,
     escapeText
   });
+  assert.match(consoleHtml, /data-console-tab="project"/);
   assert.match(consoleHtml, /data-console-tab="design"/);
   assert.match(consoleHtml, /data-console-tab="run"[^>]*aria-pressed="true"/);
   assert.match(consoleHtml, /data-console-tab="run"[^>]*aria-controls="console-panel-logs"/);
   assert.match(consoleHtml, /data-console-tab="release"/);
-  assert.doesNotMatch(consoleHtml, /data-console-tab="project"/);
   assert.doesNotMatch(consoleHtml, /data-console-tab="build"/);
   assert.doesNotMatch(consoleHtml, /data-console-tab="operate"/);
   assert.doesNotMatch(consoleHtml, /data-console-tab="validate-release"/);
@@ -519,7 +522,7 @@ test("client shell control renderers expose only the Design Run Release tabs", (
       consoleTab: "design",
       operateTab: "overview"
     }),
-    ["project", "build"]
+    ["build"]
   );
   assert.deepEqual(
     getVisibleConsolePanelIds({

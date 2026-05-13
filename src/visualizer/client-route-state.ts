@@ -26,38 +26,36 @@ export function normalizeLifecycleView(
   legacyView: string | undefined
 ): string {
   switch (lifecycle) {
+    case "project":
+      return "project";
     case "design":
+    case "build":
       return "design";
     case "run":
     case "legacy":
       return "run";
     case "release":
-      return "release";
-    case "project":
-    case "build":
-      return "design";
     case "validate-release":
       return "release";
     case "operate":
       return "run";
   }
   switch (legacyView) {
+    case "project":
+      return "project";
     case "design":
+    case "build":
       return "design";
     case "run":
     case "legacy":
       return "run";
     case "release":
-      return "release";
-    case "project":
-    case "build":
-      return "design";
     case "validate-release":
       return "release";
     case "operate":
       return "run";
     default:
-      return "design";
+      return "project";
   }
 }
 

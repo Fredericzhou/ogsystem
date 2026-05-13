@@ -24,6 +24,7 @@ export function renderConsoleTabsHtml(args: {
 }): string {
   const { consoleTab, operateTab, t, escapeText } = args;
   const lifecycleTabs = [
+    ["project", "console-panel-project", t("nav.lifecycle.project", undefined, "Project"), t("navHint.lifecycle.project", undefined, "Create, load, and inspect project context")],
     ["design", "console-panel-build", t("nav.lifecycle.design", undefined, "Design"), t("navHint.lifecycle.design", undefined, "Author the graph, configure runtime behavior, and prepare dry runs")],
     ["run", getOperatePanelId(operateTab), t("nav.lifecycle.run", undefined, "Run"), t("navHint.lifecycle.run", undefined, "Monitor runtime state, inspect diagnostics, and follow logs")],
     ["release", "console-panel-validate-release", t("nav.lifecycle.release", undefined, "Release"), t("navHint.lifecycle.release", undefined, "Review readiness, validation evidence, and export gates")]
@@ -50,8 +51,11 @@ export function getVisibleConsolePanelIds(args: {
   operateTab: string;
 }): string[] {
   const { consoleTab, operateTab } = args;
+  if (consoleTab === "project") {
+    return ["project"];
+  }
   if (consoleTab === "design") {
-    return ["project", "build"];
+    return ["build"];
   }
   if (consoleTab === "release") {
     return ["validate-release"];

@@ -469,7 +469,7 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
 
     function renderConsolePanels(visiblePanelIds) {
       const operateLabelIds = joinIdRefs("console-tab-run", "operate-tab-" + state.operateTab);
-      setPanelState("console-panel-project", visiblePanelIds.has("project"), "tabpanel", "console-tab-design");
+      setPanelState("console-panel-project", visiblePanelIds.has("project"), "tabpanel", "console-tab-project");
       setPanelState("console-panel-build", visiblePanelIds.has("build"), "tabpanel", "console-tab-design");
       setPanelState("console-panel-debug", visiblePanelIds.has("debug"), "presentation", "");
       setPanelState("console-panel-ops", visiblePanelIds.has("ops"), "region", operateLabelIds);
@@ -1485,6 +1485,10 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
 
     function designConsoleTab() {
       return "design";
+    }
+
+    function projectConsoleTab() {
+      return "project";
     }
 
     function runConsoleTab() {

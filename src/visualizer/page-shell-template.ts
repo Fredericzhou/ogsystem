@@ -68,7 +68,7 @@ export function renderPageShellBody({ workdir, locale, t }: PageShellBodyOptions
               </div>
             </article>
           </section>
-          <section id="console-panel-project" class="console-panel grid" data-console-panel="project" role="tabpanel" aria-labelledby="console-tab-design" hidden>
+          <section id="console-panel-project" class="console-panel grid" data-console-panel="project" role="tabpanel" aria-labelledby="console-tab-project" hidden>
             <article class="card span-12">
               <header><h3>${escapeHtml(t("section.projectOverview"))}</h3></header>
               <div class="body">

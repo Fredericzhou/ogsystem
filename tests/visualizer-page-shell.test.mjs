@@ -67,7 +67,7 @@ test("page shell keeps HTML, style, assets, and client script mounted", () => {
   assert.match(html, /id="hero-save"/);
   assert.match(html, /id="hero-reindex"/);
   assert.match(html, /id="hero-release-export"/);
-  assert.match(html, /id="console-panel-project"[^>]*aria-labelledby="console-tab-design"/);
+  assert.match(html, /id="console-panel-project"[^>]*aria-labelledby="console-tab-project"/);
   assert.match(html, /id="console-panel-build"[^>]*aria-labelledby="console-tab-design"/);
   assert.match(html, /id="console-panel-validate-release"[^>]*aria-labelledby="console-tab-release"/);
   assert.match(html, /id="operate-tabs"[^>]*role="tablist"[^>]*aria-label="运行视图"/);
