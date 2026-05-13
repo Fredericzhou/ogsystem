@@ -927,7 +927,7 @@ export function renderPageShellStyles(): string {
       min-height: 0;
       height: 100%;
       display: grid;
-      grid-template-rows: auto minmax(0, 1fr);
+      grid-template-rows: minmax(0, 1fr);
     }
     #console-panel-build > .card > .body {
       min-height: 0;
@@ -1090,6 +1090,12 @@ export function renderPageShellStyles(): string {
       align-items: start;
       min-width: 0;
     }
+    .studio-index-stack {
+      display: grid;
+      grid-template-columns: 1fr;
+      gap: 10px;
+      min-width: 0;
+    }
     .studio-navigator,
     .studio-graph-column {
       min-width: 0;
@@ -1105,7 +1111,7 @@ export function renderPageShellStyles(): string {
     }
     .studio-canvas-shell {
       display: grid;
-      grid-template-columns: minmax(240px, 300px) minmax(0, 1fr) minmax(320px, 420px);
+      grid-template-columns: minmax(0, 1fr) minmax(320px, 420px);
       grid-template-rows: auto minmax(0, 1fr);
       gap: 0;
       min-width: 0;
@@ -1116,17 +1122,17 @@ export function renderPageShellStyles(): string {
       overflow: hidden;
     }
     .studio-canvas-shell.has-docked-selection {
-      grid-template-columns: minmax(240px, 300px) minmax(0, 1fr) minmax(320px, 420px);
+      grid-template-columns: minmax(0, 1fr) minmax(320px, 420px);
     }
     .studio-canvas-shell.has-docked-selection.has-collapsed-selection {
-      grid-template-columns: minmax(240px, 300px) minmax(0, 1fr) 56px;
+      grid-template-columns: minmax(0, 1fr) 56px;
     }
     .studio-canvas-toolbar {
       display: flex;
       justify-content: space-between;
       align-items: center;
       gap: 8px;
-      padding: 8px 10px;
+      padding: 6px 8px;
       border-bottom: 1px solid var(--border);
       background: rgba(7, 12, 24, 0.9);
       position: sticky;
@@ -1141,19 +1147,19 @@ export function renderPageShellStyles(): string {
       gap: 2px;
       min-width: 0;
     }
-    .studio-outline-pane,
+    .studio-graph-selection-label {
+      font-size: 11px;
+      line-height: 1.2;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      max-width: min(100%, 42ch);
+    }
     .studio-graph-root,
     .studio-selection-overlay {
       min-width: 0;
       min-height: 0;
       height: 100%;
-    }
-    .studio-outline-pane {
-      grid-column: 1 / 2;
-      grid-row: 2;
-      padding: 8px 8px 8px 0;
-      border-right: 1px solid rgba(148, 163, 184, 0.12);
-      overflow: hidden;
     }
     .studio-outline-panel {
       display: grid;
@@ -1165,9 +1171,6 @@ export function renderPageShellStyles(): string {
       border-radius: 12px;
       background: linear-gradient(180deg, rgba(8, 13, 26, 0.94), rgba(12, 20, 38, 0.92));
       overflow: auto;
-    }
-    .studio-outline-panel[hidden] {
-      display: grid !important;
     }
     .studio-canvas-toolbar-slot {
       display: flex;
@@ -1198,12 +1201,11 @@ export function renderPageShellStyles(): string {
     }
     .studio-canvas-shell.is-fullscreen .studio-graph-root,
     .studio-canvas-shell.is-fullscreen .studio-graph-island,
-    .studio-canvas-shell.is-fullscreen .studio-outline-pane,
     .studio-canvas-shell.is-fullscreen .studio-selection-overlay {
       min-height: calc(100dvh - 108px);
     }
     .studio-graph-root {
-      grid-column: 2 / 3;
+      grid-column: 1 / 2;
       grid-row: 2;
       align-self: stretch;
       padding: 8px 10px;
@@ -1230,14 +1232,14 @@ export function renderPageShellStyles(): string {
       resize: none;
     }
     .studio-canvas-shell.has-docked-selection .studio-graph-root {
-      grid-column: 2 / 3;
+      grid-column: 1 / 2;
       grid-row: 2;
     }
     .studio-selection-overlay[hidden] {
       display: none;
     }
     .studio-selection-overlay {
-      grid-column: 3 / 4;
+      grid-column: 2 / 3;
       grid-row: 2;
       position: relative;
       z-index: 1;
@@ -1299,11 +1301,11 @@ export function renderPageShellStyles(): string {
       align-items: flex-start;
       justify-content: space-between;
       gap: 6px;
-      padding: 10px 10px 8px;
+      padding: 6px 8px 4px;
       border-bottom: 1px solid rgba(148, 163, 184, 0.2);
     }
     .studio-selection-body {
-      padding: 8px 10px 10px;
+      padding: 4px 8px 8px;
       min-height: 0;
       height: 100%;
       overflow-y: auto;
@@ -1314,9 +1316,9 @@ export function renderPageShellStyles(): string {
       overscroll-behavior: contain;
     }
     .studio-selection-tabstrip {
-      margin: 0 10px;
+      margin: 0 8px;
       width: fit-content;
-      max-width: calc(100% - 20px);
+      max-width: calc(100% - 16px);
     }
     .studio-selection-panels {
       min-height: 0;
@@ -1331,8 +1333,8 @@ export function renderPageShellStyles(): string {
     }
     .studio-selection-title-wrap strong {
       display: block;
-      font-size: 13px;
-      line-height: 1.35;
+      font-size: 12px;
+      line-height: 1.25;
     }
     .studio-selection-debug-panel {
       grid-auto-rows: max-content;
@@ -1346,18 +1348,41 @@ export function renderPageShellStyles(): string {
       gap: 4px;
     }
     .studio-selection-dialog .button {
-      min-height: 28px;
-      padding: 4px 8px;
+      min-height: 26px;
+      padding: 3px 7px;
     }
     .studio-selection-tabstrip .button {
-      min-height: 28px;
-      padding: 4px 8px;
-      font-size: 12px;
+      min-height: 26px;
+      padding: 3px 7px;
+      font-size: 11px;
+    }
+    .studio-bridge-index-controls {
+      display: grid;
+      gap: 6px;
+      padding-bottom: 2px;
+    }
+    .studio-index-section-heading {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 8px;
+      padding: 4px 2px 0;
+      border: 0;
+      background: transparent;
+    }
+    .studio-index-section-heading strong {
+      font-size: 11px;
+      letter-spacing: 0.02em;
+      text-transform: uppercase;
+      color: #c9d6ec;
+    }
+    .studio-index-section-heading .hint {
+      font-size: 11px;
     }
     .studio-selection-panel .event,
     .studio-selection-panel .run-card,
     .studio-selection-panel .compact-list-item {
-      padding: 8px 9px;
+      padding: 7px 8px;
     }
     .studio-selection-role-package:empty {
       display: none;
@@ -1365,19 +1390,19 @@ export function renderPageShellStyles(): string {
     .studio-selection-structure-panel .studio-index-grid {
       grid-template-columns: 1fr;
     }
-    .studio-outline-panel .studio-bridge-index {
+    .studio-outline-panel .studio-bridge-index,
+    .studio-selection-structure-panel .studio-bridge-index {
       height: 100%;
     }
-    .studio-outline-panel .studio-index-grid {
+    .studio-outline-panel .studio-index-grid,
+    .studio-selection-structure-panel .studio-index-grid {
       grid-template-columns: 1fr;
       align-content: start;
     }
     .studio-outline-panel .studio-navigator,
-    .studio-outline-panel .studio-flow-list {
-      max-height: none;
-    }
-    .studio-selection-structure-panel .studio-flow-list,
-    .studio-selection-structure-panel .studio-navigator {
+    .studio-outline-panel .studio-flow-list,
+    .studio-selection-structure-panel .studio-navigator,
+    .studio-selection-structure-panel .studio-flow-list {
       max-height: none;
     }
     .studio-selection-role-package .form-grid {
@@ -1387,6 +1412,20 @@ export function renderPageShellStyles(): string {
     }
     .studio-execution-config-editor textarea {
       min-height: 96px;
+    }
+    .studio-flow-config-editor .field.checkbox {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      min-height: 38px;
+    }
+    .studio-flow-config-editor .field.checkbox input {
+      width: auto;
+      margin: 0;
+    }
+    .studio-flow-config-diagnostics {
+      display: grid;
+      gap: 4px;
     }
     .studio-execution-config-editor .field input[readonly] {
       opacity: 0.9;
@@ -1619,6 +1658,9 @@ export function renderPageShellStyles(): string {
       max-height: min(58vh, calc(100dvh - 320px));
       overflow: auto;
       padding-right: 4px;
+    }
+    .studio-result-summary-grid {
+      grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
     }
     .state-card-grid {
       display: grid;
@@ -1915,31 +1957,22 @@ export function renderPageShellStyles(): string {
         width: 100%;
       }
       .studio-bridge-layout { grid-template-columns: 1fr; }
-      .studio-graph-column { order: 1; }
-      .studio-bridge-index { order: 2; }
       .studio-index-grid { grid-template-columns: 1fr; }
       .studio-canvas-shell.has-docked-selection {
         grid-template-columns: 1fr;
       }
       .studio-canvas-shell {
         grid-template-columns: 1fr;
-        grid-template-rows: auto minmax(240px, auto) minmax(360px, 1fr) minmax(260px, auto);
+        grid-template-rows: auto minmax(360px, 1fr) minmax(260px, auto);
       }
       .studio-canvas-shell.has-docked-selection .studio-canvas-toolbar,
-      .studio-outline-pane,
       .studio-canvas-shell.has-docked-selection .studio-graph-root,
       .studio-canvas-shell.has-docked-selection .studio-selection-overlay.is-docked {
         grid-column: 1 / -1;
       }
-      .studio-outline-pane {
-        grid-row: 2;
-        padding: 8px 0;
-        border-right: 0;
-        border-bottom: 1px solid rgba(148, 163, 184, 0.12);
-      }
       .studio-graph-root {
         grid-column: 1 / -1;
-        grid-row: 3;
+        grid-row: 2;
         padding: 8px 0;
       }
       .studio-navigator { order: 3; }
@@ -1952,7 +1985,7 @@ export function renderPageShellStyles(): string {
       .studio-diagnostics { order: 5; }
       .studio-selection-overlay {
         grid-column: 1 / -1;
-        grid-row: 4;
+        grid-row: 3;
         padding: 8px 0 0;
         border-left: 0;
         border-top: 1px solid rgba(148, 163, 184, 0.12);

@@ -9,8 +9,9 @@ export function injectStudioGraphStyles(): void {
   style.textContent = `
     .studio-graph-island {
       display: grid;
-      grid-template-rows: auto minmax(320px, 1fr);
+      grid-template-rows: auto minmax(0, 1fr);
       min-height: 390px;
+      height: 100%;
       border: 1px solid rgba(148, 163, 184, 0.18);
       background: rgba(4, 8, 16, 0.54);
       min-width: 0;
@@ -24,7 +25,7 @@ export function injectStudioGraphStyles(): void {
       justify-content: space-between;
       align-items: center;
       gap: 8px;
-      padding: 7px;
+      padding: 5px 6px;
       border-bottom: 1px solid rgba(148, 163, 184, 0.14);
       background:
         linear-gradient(180deg, rgba(15, 23, 42, 0.92), rgba(8, 13, 26, 0.76));
@@ -35,7 +36,7 @@ export function injectStudioGraphStyles(): void {
       display: flex;
       flex-wrap: nowrap;
       align-items: center;
-      gap: 7px;
+      gap: 5px;
       min-width: 0;
     }
     .studio-graph-toolbar-group {
@@ -44,7 +45,7 @@ export function injectStudioGraphStyles(): void {
       align-items: center;
       gap: 3px;
       min-width: 0;
-      padding: 3px;
+      padding: 2px;
       border: 1px solid rgba(148, 163, 184, 0.14);
       background: rgba(255, 255, 255, 0.035);
     }
@@ -60,11 +61,11 @@ export function injectStudioGraphStyles(): void {
       border: 1px solid transparent;
       background: transparent;
       color: #e5eefb;
-      padding: 5px 7px;
-      min-width: 30px;
-      min-height: 30px;
+      padding: 4px 6px;
+      min-width: 28px;
+      min-height: 28px;
       cursor: pointer;
-      font-size: 12px;
+      font-size: 11px;
       line-height: 1;
       white-space: nowrap;
       transition: background 120ms ease, border-color 120ms ease, color 120ms ease;
@@ -85,12 +86,12 @@ export function injectStudioGraphStyles(): void {
       overflow-wrap: anywhere;
     }
     .studio-graph-toolbar-icon {
-      font-size: 14px;
+      font-size: 13px;
       font-weight: 700;
       line-height: 1;
     }
     .studio-graph-toolbar-text {
-      font-size: 11px;
+      font-size: 10px;
     }
     @media (max-width: 720px) {
       .studio-graph-toolbar {
@@ -103,16 +104,30 @@ export function injectStudioGraphStyles(): void {
       .studio-graph-toolbar-text {
         display: none;
       }
+      .studio-graph-quick-debug {
+        inset: auto 12px 12px 12px;
+        width: auto;
+      }
     }
     .studio-graph-stage {
       min-height: 320px;
+      height: 100%;
       min-width: 0;
       position: relative;
+      overflow: hidden;
     }
     .studio-graph-canvas {
       min-height: 320px;
+      width: 100%;
+      height: 100%;
       min-width: 0;
       position: relative;
+    }
+    .studio-graph-canvas .x6-graph-svg,
+    .studio-graph-canvas svg {
+      width: 100% !important;
+      height: 100% !important;
+      inset: 0;
     }
     .studio-graph-canvas .x6-node .x6-port-body {
       transition: stroke 140ms ease, fill 140ms ease, opacity 140ms ease;
@@ -395,6 +410,50 @@ export function injectStudioGraphStyles(): void {
     .studio-graph-quick-open-empty {
       font-size: 11px;
       color: #8fa1c3;
+    }
+    .studio-graph-quick-debug {
+      position: absolute;
+      inset: 16px 16px auto auto;
+      z-index: 7;
+      width: min(380px, calc(100% - 32px));
+    }
+    .studio-graph-quick-debug[hidden] {
+      display: none;
+    }
+    .studio-graph-quick-debug-panel {
+      display: grid;
+      gap: 8px;
+      padding: 12px;
+      border: 1px solid rgba(148, 163, 184, 0.24);
+      border-radius: 12px;
+      background: rgba(8, 13, 26, 0.96);
+      box-shadow: 0 24px 48px rgba(0, 0, 0, 0.34);
+    }
+    .studio-graph-quick-debug-head {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 8px;
+    }
+    .studio-graph-quick-debug-label {
+      font-size: 12px;
+      color: #8fa1c3;
+    }
+    .studio-graph-quick-debug-input {
+      width: 100%;
+      min-width: 0;
+      min-height: 104px;
+      box-sizing: border-box;
+      resize: vertical;
+    }
+    .studio-graph-quick-debug-actions {
+      display: flex;
+      flex-wrap: wrap;
+      justify-content: flex-end;
+      gap: 8px;
+    }
+    .studio-graph-quick-debug-hint {
+      margin-top: -2px;
     }
     .studio-graph-stage.is-empty .studio-graph-canvas {
       opacity: 0.34;

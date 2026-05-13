@@ -36,7 +36,7 @@ import {
   deriveStudioRuntimeVisualState,
   type StudioRuntimeVisualState
 } from "./studio-graph-runtime.js";
-import { canConnectStudioCells } from "./studio-graph-rules.js";
+import { validateStudioConnectionCells } from "./studio-graph-rules.js";
 
 type StudioGraphLabelKey =
   | "viewportGroup"
@@ -48,6 +48,13 @@ type StudioGraphLabelKey =
   | "fitView"
   | "autoLayout"
   | "generate"
+  | "debugRun"
+  | "debugAdvanced"
+  | "debugRunNow"
+  | "debugQuickInput"
+  | "debugQuickHint"
+  | "debugQuickPlaceholder"
+  | "debugQuickOpen"
   | "addRole"
   | "addEdge"
   | "editSelection"
@@ -109,6 +116,8 @@ export type StudioGraphBridgeOptions = {
   onToggleFullscreen?: () => void;
   onValidateWorkbench?: () => void | Promise<void>;
   onSaveWorkbench?: () => void | Promise<void>;
+  onQuickDebugRun?: (input: string) => boolean | Promise<boolean>;
+  onFocusDebugInput?: () => boolean | Promise<boolean>;
   canSaveWorkbench?: boolean;
   onToast?: (tone: "error" | "success" | "info", message: string) => void;
   onStatusChange?: (message: string) => void;
@@ -178,6 +187,8 @@ export class StudioGraphIsland {
   private quickOpenEl: HTMLDivElement;
   private quickOpenInputEl: HTMLInputElement;
   private quickOpenResultsEl: HTMLDivElement;
+  private quickDebugEl: HTMLDivElement;
+  private quickDebugInputEl: HTMLTextAreaElement;
   private dialogEl: HTMLElement;
   private fallbackDialogEl: HTMLDivElement;
   private diagnosticCardEl: HTMLDivElement;
@@ -199,7 +210,9 @@ export class StudioGraphIsland {
   private focusMotionTimer: ReturnType<typeof setTimeout> | null = null;
   private focusMotionCellId = "";
   private quickOpenSelectedIndex = 0;
+  private quickDebugBusy = false;
   private reducedMotion = false;
+  private resizeObserver: ResizeObserver | null = null;
   private readonly delegatedCommandFormSubmitListener = (event: Event) => this.handleDelegatedCommandFormSubmit(event);
   private readonlyHistory: { undoStack: StudioGraphHistoryEntry[]; redoStack: StudioGraphHistoryEntry[] } = {
     undoStack: [],
@@ -222,6 +235,7 @@ export class StudioGraphIsland {
       '</div>',
       '<div class="studio-graph-toolbar-group" data-studio-graph-generate-actions aria-label="' + this.escapeHtml(this.label("generate")) + '">',
       this.toolbarButton("chat-generate", "generate", "✦"),
+      this.toolbarButton("debug-run", "debugRun", "▶", "Run"),
       '</div>',
       '<div class="studio-graph-toolbar-group" data-studio-graph-edit-actions aria-label="' + this.escapeHtml(this.label("editGroup")) + '">',
       this.toolbarButton("add-role", "addRole", "+R"),
@@ -249,6 +263,15 @@ export class StudioGraphIsland {
       '<div class="studio-graph-quick-open-results" data-studio-graph-quick-open-results></div>',
       "</div>",
       "</div>",
+      '<div class="studio-graph-quick-debug" data-studio-graph-quick-debug hidden>',
+      '<div class="studio-graph-quick-debug-panel">',
+      '<div class="studio-graph-quick-debug-head"><strong>' + this.escapeHtml(this.label("debugQuickOpen")) + '</strong><button type="button" class="button subtle" data-studio-graph-quick-debug-close="1">×</button></div>',
+      '<label class="studio-graph-quick-debug-label" for="studio-graph-quick-debug-input">' + this.escapeHtml(this.label("debugQuickInput")) + '</label>',
+      '<textarea id="studio-graph-quick-debug-input" class="studio-graph-quick-debug-input" data-studio-graph-quick-debug-input placeholder="' + this.escapeHtml(this.label("debugQuickPlaceholder")) + '"></textarea>',
+      '<div class="hint studio-graph-quick-debug-hint">' + this.escapeHtml(this.label("debugQuickHint")) + '</div>',
+      '<div class="studio-graph-quick-debug-actions"><button type="button" class="button primary" data-studio-graph-quick-debug-run="1">' + this.escapeHtml(this.label("debugRunNow")) + '</button><button type="button" class="button subtle" data-studio-graph-quick-debug-advanced="1">' + this.escapeHtml(this.label("debugAdvanced")) + '</button></div>',
+      '</div>',
+      '</div>',
       '</div>'
     ].join("");
     const toolbar = this.root.querySelector<HTMLDivElement>(".studio-graph-toolbar");
@@ -261,7 +284,9 @@ export class StudioGraphIsland {
     const quickOpenEl = this.root.querySelector<HTMLDivElement>("[data-studio-graph-quick-open]");
     const quickOpenInputEl = this.root.querySelector<HTMLInputElement>("[data-studio-graph-quick-open-input]");
     const quickOpenResultsEl = this.root.querySelector<HTMLDivElement>("[data-studio-graph-quick-open-results]");
-    if (!toolbar || !stageEl || !canvasEl || !emptyEl || !minimapEl || !minimapContentEl || !minimapViewportEl || !quickOpenEl || !quickOpenInputEl || !quickOpenResultsEl) {
+    const quickDebugEl = this.root.querySelector<HTMLDivElement>("[data-studio-graph-quick-debug]");
+    const quickDebugInputEl = this.root.querySelector<HTMLTextAreaElement>("[data-studio-graph-quick-debug-input]");
+    if (!toolbar || !stageEl || !canvasEl || !emptyEl || !minimapEl || !minimapContentEl || !minimapViewportEl || !quickOpenEl || !quickOpenInputEl || !quickOpenResultsEl || !quickDebugEl || !quickDebugInputEl) {
       throw new Error("Studio graph island failed to initialize.");
     }
     this.toolbar = toolbar;
@@ -274,6 +299,8 @@ export class StudioGraphIsland {
     this.quickOpenEl = quickOpenEl;
     this.quickOpenInputEl = quickOpenInputEl;
     this.quickOpenResultsEl = quickOpenResultsEl;
+    this.quickDebugEl = quickDebugEl;
+    this.quickDebugInputEl = quickDebugInputEl;
     this.fallbackDialogEl = document.createElement("div");
     this.fallbackDialogEl.hidden = true;
     this.fallbackDialogEl.className = "studio-command-dialog";
@@ -287,6 +314,8 @@ export class StudioGraphIsland {
     this.bindToolbar();
     this.bindGraphEvents();
     this.bindQuickOpen();
+    this.bindQuickDebug();
+    this.bindResizeObserver();
     this.root.addEventListener("keydown", (event) => this.handleRootKeydown(event));
     // Command forms can be mounted in a sibling host outside `root`, so use a document-level
     // submit fallback to prevent accidental native navigation during rapid host swaps.
@@ -332,6 +361,7 @@ export class StudioGraphIsland {
         : this.label("noRolesAvailable"));
       this.closeCommandForm();
       this.closeQuickOpen();
+      this.closeQuickDebug();
       this.renderMinimap();
       this.setStatus(this.label("graphUnavailable"));
       this.setBusy(true);
@@ -358,6 +388,7 @@ export class StudioGraphIsland {
       this.applyRuntimeOverlay();
       this.syncSelectionPresentation();
       this.focusRequestedSelection();
+      this.syncGraphViewportSize();
       this.renderMinimap();
       this.hasRenderedProjection = true;
     } finally {
@@ -376,7 +407,12 @@ export class StudioGraphIsland {
       clearTimeout(this.focusMotionTimer);
       this.focusMotionTimer = null;
     }
+    if (this.resizeObserver) {
+      this.resizeObserver.disconnect();
+      this.resizeObserver = null;
+    }
     document.removeEventListener("submit", this.delegatedCommandFormSubmitListener, true);
+    this.quickDebugBusy = false;
     this.graph.dispose();
     this.root.innerHTML = "";
     this.root.classList.remove("studio-graph-island");
@@ -417,7 +453,7 @@ export class StudioGraphIsland {
             labels: [{ attrs: { label: { text: "DONE" } } }]
           });
         },
-        validateConnection: ({ sourceCell, targetCell }) => !this.isReadOnly() && canConnectStudioCells(sourceCell, targetCell)
+        validateConnection: ({ sourceCell, targetCell }) => !this.isReadOnly() && validateStudioConnectionCells(sourceCell, targetCell).ok
       }
     });
     graph.use(new History({ enabled: false }));
@@ -452,6 +488,25 @@ export class StudioGraphIsland {
     return graph;
   }
 
+  private bindResizeObserver(): void {
+    if (typeof ResizeObserver !== "function") {
+      return;
+    }
+    this.resizeObserver = new ResizeObserver(() => {
+      this.syncGraphViewportSize();
+      this.renderMinimap();
+    });
+    this.resizeObserver.observe(this.root);
+    this.resizeObserver.observe(this.stageEl);
+    this.resizeObserver.observe(this.canvasEl);
+  }
+
+  private syncGraphViewportSize(): void {
+    const width = Math.max(this.canvasEl.clientWidth, 1);
+    const height = Math.max(this.canvasEl.clientHeight, 1);
+    this.graph.resize(width, height);
+  }
+
   private bindToolbar(): void {
     this.toolbar.addEventListener("click", (event) => {
       const target = event.target as HTMLElement | null;
@@ -464,6 +519,7 @@ export class StudioGraphIsland {
       if (action === "reset-view") void this.resetViewAndSync();
       if (action === "fullscreen") this.options.onToggleFullscreen?.();
       if (action === "chat-generate") void this.options.onChatGenerate?.();
+      if (action === "debug-run") this.toggleQuickDebug();
       if (action === "validate") void this.options.onValidateWorkbench?.();
       if (action === "save") void this.options.onSaveWorkbench?.();
       if (this.isReadOnly()) return;
@@ -529,6 +585,9 @@ export class StudioGraphIsland {
       this.updateToolbarState();
     });
     this.graph.on("selection:changed", () => {
+      if (this.commandForm?.kind === "add-edge") {
+        this.closeCommandForm();
+      }
       this.syncSelectionPresentation("", { preserveViewport: true });
       this.hideDiagnosticCard();
       this.updateToolbarState();
@@ -542,6 +601,9 @@ export class StudioGraphIsland {
     });
     this.graph.on("node:moved", () => {
       if (this.isReadOnly()) return;
+      if (this.commandForm?.kind === "add-edge") {
+        this.closeCommandForm();
+      }
       this.scheduleSyncCanvas();
       this.renderMinimap();
     });
@@ -555,6 +617,12 @@ export class StudioGraphIsland {
       const target = edge.getTargetCellId();
       edge.remove();
       if (!source || !target) {
+        this.toast("error", this.label("invalidConnection"));
+        return;
+      }
+      const sourceCell = this.graph.getCellById(source);
+      const targetCell = this.graph.getCellById(target);
+      if (!validateStudioConnectionCells(sourceCell, targetCell).ok) {
         this.toast("error", this.label("invalidConnection"));
         return;
       }
@@ -668,13 +736,11 @@ export class StudioGraphIsland {
     }
   }
 
-  private closeCommandForm(options: { preservePendingEdgePreview?: boolean } = {}): void {
+  private closeCommandForm(): void {
     if (!this.commandForm && this.dialogEl.hidden) {
       return;
     }
-    if (!options.preservePendingEdgePreview) {
-      this.pendingEdgePreview = null;
-    }
+    this.pendingEdgePreview = null;
     this.commandForm = null;
     this.dialogEl.hidden = true;
     this.dialogEl.innerHTML = "";
@@ -739,6 +805,85 @@ export class StudioGraphIsland {
     this.quickOpenEl.hidden = true;
     this.quickOpenInputEl.value = "";
     this.quickOpenResultsEl.innerHTML = "";
+  }
+
+  private bindQuickDebug(): void {
+    this.quickDebugEl.addEventListener("click", (event) => {
+      const target = event.target as HTMLElement | null;
+      if (target?.closest("[data-studio-graph-quick-debug-close]")) {
+        this.closeQuickDebug();
+        return;
+      }
+      if (target?.closest("[data-studio-graph-quick-debug-advanced]")) {
+        void this.openAdvancedDebugFromQuickDebug();
+        return;
+      }
+      if (target?.closest("[data-studio-graph-quick-debug-run]")) {
+        void this.submitQuickDebug();
+      }
+    });
+    this.quickDebugInputEl.addEventListener("keydown", (event) => {
+      if ((event.metaKey || event.ctrlKey) && event.key === "Enter") {
+        event.preventDefault();
+        void this.submitQuickDebug();
+        return;
+      }
+      if (event.key === "Escape") {
+        event.preventDefault();
+        this.closeQuickDebug();
+      }
+    });
+  }
+
+  private toggleQuickDebug(): void {
+    if (this.quickDebugEl.hidden) {
+      this.closeQuickOpen();
+      this.quickDebugEl.hidden = false;
+      this.quickDebugInputEl.focus();
+      return;
+    }
+    this.closeQuickDebug();
+  }
+
+  private closeQuickDebug(force = false): void {
+    if (this.quickDebugBusy && !force) {
+      return;
+    }
+    this.quickDebugEl.hidden = true;
+    this.quickDebugInputEl.value = "";
+  }
+
+  private async submitQuickDebug(): Promise<void> {
+    if (this.quickDebugBusy) {
+      return;
+    }
+    const input = this.quickDebugInputEl.value.trim();
+    if (!input) {
+      this.toast("error", this.label("debugQuickInput"));
+      this.quickDebugInputEl.focus();
+      return;
+    }
+    this.quickDebugBusy = true;
+    this.updateToolbarState();
+    try {
+      const launched = await this.options.onQuickDebugRun?.(input);
+      if (launched !== false) {
+        this.closeQuickDebug(true);
+      }
+    } finally {
+      this.quickDebugBusy = false;
+      this.updateToolbarState();
+    }
+  }
+
+  private async openAdvancedDebugFromQuickDebug(): Promise<void> {
+    if (this.quickDebugBusy) {
+      return;
+    }
+    const moved = await this.options.onFocusDebugInput?.();
+    if (moved !== false) {
+      this.closeQuickDebug(true);
+    }
   }
 
   private moveQuickOpenSelection(delta: number): void {
@@ -990,9 +1135,8 @@ export class StudioGraphIsland {
       this.renderCommandForm();
       return;
     }
-    const preservePendingEdgePreview = command.type === "add-edge";
-    this.pendingEdgePreview = preservePendingEdgePreview ? this.commandFormPendingEdgePreview() : null;
-    this.closeCommandForm({ preservePendingEdgePreview });
+    this.pendingEdgePreview = null;
+    this.closeCommandForm();
     await this.applyCommand(command);
   }
 
@@ -1463,9 +1607,14 @@ export class StudioGraphIsland {
       layout.hidden = readOnly;
     }
     const generate = this.toolbar.querySelector<HTMLButtonElement>('[data-studio-graph-action="chat-generate"]');
+    const debugRun = this.toolbar.querySelector<HTMLButtonElement>('[data-studio-graph-action="debug-run"]');
     if (generate) {
       generate.hidden = readOnly;
       generate.disabled = this.busy || readOnly;
+    }
+    if (debugRun) {
+      debugRun.hidden = readOnly;
+      debugRun.disabled = this.busy || readOnly || this.quickDebugBusy || typeof this.options.onQuickDebugRun !== "function";
     }
     for (const action of ["layout", "add-role", "add-edge", "edit", "delete", "validate", "save"]) {
       const button = this.toolbar.querySelector<HTMLButtonElement>('[data-studio-graph-action="' + action + '"]');
@@ -1571,6 +1720,11 @@ export class StudioGraphIsland {
     if (!this.quickOpenEl.hidden && event.key === "Escape") {
       event.preventDefault();
       this.closeQuickOpen();
+      return;
+    }
+    if (!this.quickDebugEl.hidden && event.key === "Escape") {
+      event.preventDefault();
+      this.closeQuickDebug();
       return;
     }
     if (!this.commandForm || this.dialogEl.hidden) {
@@ -1724,7 +1878,7 @@ export class StudioGraphIsland {
     if (!sourceRoleId || !targetRoleId || !sourceCell || !targetCell) {
       return null;
     }
-    if (!canConnectStudioCells(sourceCell, targetCell)) {
+    if (!validateStudioConnectionCells(sourceCell, targetCell).ok) {
       return null;
     }
     return {
@@ -1737,11 +1891,8 @@ export class StudioGraphIsland {
 
   private syncPendingEdgePreview(): void {
     const commandFormPreview = this.commandFormPendingEdgePreview();
-    let preview = commandFormPreview ?? this.pendingEdgePreview;
+    let preview = commandFormPreview;
     if (preview && this.committedEdgeExists(preview)) {
-      if (!commandFormPreview) {
-        this.pendingEdgePreview = null;
-      }
       preview = null;
     }
     const existing = this.graph.getCellById(STUDIO_PENDING_EDGE_ID);

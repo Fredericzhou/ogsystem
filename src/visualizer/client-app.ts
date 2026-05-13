@@ -28,6 +28,7 @@ import {
   renderStudioGraphCanvas,
   renderStudioBridgePanel,
   renderStudioExecutionConfigEditor,
+  renderStudioFlowConfigEditor,
   renderStudioRolePackageEditor,
   renderStudioBridgeSelectionLabel,
   roleIdOf,
@@ -117,6 +118,11 @@ import {
   type StreamRefreshPlan
 } from "./client-stream-state.js";
 import { studioRolePackageHasRequiredFileCoverage } from "./studio-client/studio-graph-validation.js";
+import {
+  normalizeStudioEventType,
+  validateStudioAddEdgeDraft
+} from "./studio-client/studio-graph-validation.js";
+import { applyStudioAuthoringCommand } from "./studio-client/studio-graph-commands.js";
 import { WORKBENCH_VALIDATION_DEBOUNCE_MS } from "./client-input-policy.js";
 import { getDictionary, type Dictionary, type Locale } from "./i18n/index.js";
 
@@ -1217,6 +1223,13 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
         fitView: t("studio.graph.fitView", undefined, "Fit view"),
         autoLayout: t("studio.graph.autoLayout", undefined, "Auto layout"),
         generate: t("studio.graph.generate", undefined, "Chat / Generate"),
+        debugRun: t("studio.graph.debugRun", undefined, "Quick debug"),
+        debugAdvanced: t("studio.graph.debugAdvanced", undefined, "Advanced debug"),
+        debugRunNow: t("studio.graph.debugRunNow", undefined, "Run now"),
+        debugQuickInput: t("studio.graph.debugQuickInput", undefined, "Run input"),
+        debugQuickHint: t("studio.graph.debugQuickHint", undefined, "Start a dry run without leaving the graph. Open advanced debug for path overrides."),
+        debugQuickPlaceholder: t("studio.graph.debugQuickPlaceholder", undefined, "Describe the request for this dry run"),
+        debugQuickOpen: t("studio.graph.debugQuickOpen", undefined, "Open quick debug"),
         addRole: t("studio.graph.addRole", undefined, "Role"),
         addEdge: t("studio.graph.addEdge", undefined, "Edge"),
         editSelection: t("studio.graph.editSelection", undefined, "Edit selected"),
@@ -2024,21 +2037,65 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
         selectionResultsHtml: renderStudioResultTabContent(),
         fullscreen: state.studioBridgeFullscreen,
         rolePackageEditor: state.studioRolePackageEditor,
+        flowConfigEditor: state.studioFlowConfigEditor,
         inspectorCollapsed: state.studioInspectorCollapsed === true,
         actionBusy: state.actionBusy,
         t
       };
     }
 
-    function renderStudioBridge(options) {
-      const args = studioBridgeRenderArgs(options);
-      const html = renderStudioBridgePanel(args);
-      workbenchBodyEl.innerHTML = html;
-      renderWorkbenchViewTabs();
+    function canPatchStudioBridgeShell(args) {
+      if ((args.workbenchView || state.workbenchView) === "source") {
+        return false;
+      }
+      const shell = findStudioBridgeElement("[data-studio-canvas-shell]");
+      const root = document.getElementById("studio-graph-root");
+      const structurePanel = findStudioBridgeElement('[data-studio-selection-panel="structure"]');
+      return Boolean(shell && root && structurePanel && root.getAttribute("data-workbench-root-mode") !== "source");
+    }
+
+    function hasMountedStudioBridgeShell() {
+      const shell = findStudioBridgeElement("[data-studio-canvas-shell]");
+      const root = document.getElementById("studio-graph-root");
+      return Boolean(shell && root && root.getAttribute("data-workbench-root-mode") !== "source");
+    }
+
+    function patchStudioBridgeShell(args) {
+      const shell = findStudioBridgeElement("[data-studio-canvas-shell]");
+      const root = document.getElementById("studio-graph-root");
+      const structurePanel = findStudioBridgeElement('[data-studio-selection-panel="structure"]');
+      if (!shell || !root || !structurePanel) {
+        return false;
+      }
+      shell.classList.toggle("has-collapsed-selection", state.studioInspectorCollapsed === true);
+      if (root.classList && typeof root.classList.add === "function") {
+        root.classList.add("studio-graph-root");
+      }
+      root.setAttribute("data-workbench-root-mode", "bridge");
+      const structureChanged = setInnerHtmlIfChanged(structurePanel, args.selectionStructureHtml || "");
       updateStudioBridgeSelection(false);
       syncStudioBridgeFullscreenChrome();
-      bindStudioBridgeControls();
+      if (structureChanged) {
+        bindStudioBridgeControls();
+      }
       mountStudioGraphIsland();
+      return true;
+    }
+
+    function renderStudioBridge(options) {
+      const args = studioBridgeRenderArgs(options);
+      if (!canPatchStudioBridgeShell(args)) {
+        const html = renderStudioBridgePanel(args);
+        workbenchBodyEl.innerHTML = html;
+        renderWorkbenchViewTabs();
+        updateStudioBridgeSelection(false);
+        syncStudioBridgeFullscreenChrome();
+        bindStudioBridgeControls();
+        mountStudioGraphIsland();
+      } else {
+        renderWorkbenchViewTabs();
+        patchStudioBridgeShell(args);
+      }
       const currentChat = findStudioBridgeElement('[data-studio-bridge-region="chat"]');
       const chatTemplate = document.createElement("template");
       chatTemplate.innerHTML = renderStudioChatPanel();
@@ -2070,6 +2127,7 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
           state.studioWorkbenchSideTab = "selection";
           state.studioBridgeEditSelectionRequest += 1;
           updateStudioBridgeSelection(true);
+          loadStudioFlowConfigEditor(flowKey);
         },
         onFilterInput: (value) => {
           // Studio Bridge filtering stays local; remote refreshes remain explicit actions.
@@ -2084,6 +2142,7 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
       bindStudioSelectionDialogControls();
       bindStudioRolePackageEditorControls();
       bindStudioExecutionConfigEditorControls();
+      bindStudioFlowConfigEditorControls();
     }
 
     function updateStudioBridgeSelection(syncGraph) {
@@ -2092,6 +2151,7 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
       bindStudioSelectionDialogControls();
       bindStudioRolePackageEditorControls();
       bindStudioExecutionConfigEditorControls();
+      bindStudioFlowConfigEditorControls();
       if (syncGraph !== false) {
         mountStudioGraphIsland();
       }
@@ -2099,6 +2159,10 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
 
     function selectedStudioRoleId() {
       return state.studioBridgeSelectedRoleId || "";
+    }
+
+    function selectedStudioFlowKey() {
+      return state.studioBridgeSelectedFlowKey || "";
     }
 
     function rolePackageEditorFileElements() {
@@ -2127,6 +2191,10 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
 
     function executionConfigEditorFieldElements() {
       return Array.from(workbenchBodyEl.querySelectorAll("[data-execution-config-field]") || []);
+    }
+
+    function flowConfigEditorFieldElements() {
+      return Array.from(workbenchBodyEl.querySelectorAll("[data-flow-config-field]") || []);
     }
 
     function readExecutionConfigEditorDraft() {
@@ -2167,6 +2235,58 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
       return state.studioRolePackageEditor?.dirty === true;
     }
 
+    function readStudioFlowConfigDraft() {
+      const current = state.studioFlowConfigEditor?.data || {};
+      const draft = {
+        flowKey: state.studioFlowConfigEditor?.flowKey || selectedStudioFlowKey(),
+        flowId: current.flowId || "",
+        sourceRoleId: current.sourceRoleId || "",
+        targetRoleId: current.targetRoleId || "",
+        eventType: current.eventType || "",
+        label: current.label || "",
+        runtimeOnlyErrorFlow: current.runtimeOnlyErrorFlow === true,
+        participatesInJoin: current.participatesInJoin === true
+      };
+      for (const element of flowConfigEditorFieldElements()) {
+        const field = element.getAttribute("data-flow-config-field") || "";
+        if (field === "runtimeOnlyErrorFlow" || field === "participatesInJoin") {
+          const checked = element.checked === true;
+          if (field === "runtimeOnlyErrorFlow") draft.runtimeOnlyErrorFlow = checked;
+          if (field === "participatesInJoin") draft.participatesInJoin = checked;
+          continue;
+        }
+        const value = typeof element.value === "string" ? element.value : "";
+        if (field === "sourceRoleId") draft.sourceRoleId = value;
+        if (field === "targetRoleId") draft.targetRoleId = value;
+        if (field === "eventType") draft.eventType = value;
+        if (field === "label") draft.label = value;
+      }
+      return draft;
+    }
+
+    function hasDirtyStudioFlowConfigEditor() {
+      return state.studioFlowConfigEditor?.dirty === true;
+    }
+
+    function studioFlowConfigEditorFlowKeyForSelectionDialog() {
+      const selectedFlowKeyValue = selectedStudioFlowKey();
+      const editor = state.studioFlowConfigEditor || {};
+      if (editor.dirty && editor.flowKey) {
+        return String(editor.flowKey || selectedFlowKeyValue);
+      }
+      return selectedFlowKeyValue;
+    }
+
+    function studioFlowValidationContext() {
+      return {
+        authoring: state.studioBridge?.authoring || null,
+        rolePackages: state.studioRoleCatalog || state.rolePackages,
+        bindings: state.bindings,
+        readiness: state.projectReadiness,
+        projectConfig: state.project?.config
+      };
+    }
+
     function clearStudioSelectionDialogState() {
       state.studioInspectorCollapsed = false;
       state.studioWorkbenchSideTab = "structure";
@@ -2176,7 +2296,12 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
     }
 
     function closeStudioSelectionDialog(options) {
-      if (!options?.force && (hasDirtyStudioRolePackageEditor() || hasDirtyStudioExecutionConfigEditor())) {
+      if (!options?.force && (hasDirtyStudioRolePackageEditor() || hasDirtyStudioExecutionConfigEditor() || hasDirtyStudioFlowConfigEditor())) {
+        if (hasDirtyStudioFlowConfigEditor()) {
+          const dirtyFlowKey = String(state.studioFlowConfigEditor?.flowKey || state.studioBridgeSelectedFlowKey || "");
+          setFlash("info", t("studio.flowConfigDirtySwitchBlocked", { flowKey: dirtyFlowKey }, "Flow changes for {flowKey} are unsaved. Save or revert before closing details."));
+          return false;
+        }
         const dirtyRoleId = String(
           state.studioRolePackageEditor?.roleId ||
           state.studioExecutionConfigEditor?.roleId ||
@@ -2228,21 +2353,30 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
             open: false
           })
         : roleConfigHtml;
+      const overridesHtml = renderDisclosureCard({
+        title: t("studio.debugOverrides", undefined, "path overrides"),
+        headline: t("studio.debugOverridesHeadline", undefined, "Optional launch overrides"),
+        meta: t("common.optional", undefined, "optional"),
+        hint: t("studio.debugOverridesHint", undefined, "Keep the launch compact by default. Expand only when this dry run needs non-default runtime files."),
+        bodyHtml: '<div class="form-grid studio-debug-form-grid">' +
+          '<label class="field"><span>' + escapeText(t("form.systemPath", undefined, "System path")) + '</span><input id="workbench-run-system-path" value="' + escapeText(draft.systemPath || state.workbenchSavedPath || "system.mmd") + '" readonly><div class="hint">' + escapeText(t("build.inlineRunConfigSystemHint", undefined, "Current saved Build artifact. Switch back to Edit to change Mermaid source.")) + '</div></label>' +
+          '<label class="field"><span>' + escapeText(t("form.dryRun", undefined, "Dry run")) + '</span><input id="workbench-run-mode" value="' + escapeText(t("common.yes", undefined, "Yes")) + '" readonly><div class="hint">' + escapeText(t("build.inlineDryRunReadonlyHint", undefined, "This entry keeps the launch in dry-run mode.")) + '</div></label>' +
+          '<label class="field"><span>' + escapeText(t("form.runtimeConfigPath", undefined, "Runtime config path")) + '</span><input id="workbench-run-runtime-path" value="' + escapeText(draft.runtimePath || "") + '"' + disabled + '><div class="hint">' + escapeText(t("build.inlineRuntimePathHint", undefined, "Optional override for this launch. Defaults to the project runtime config.")) + '</div></label>' +
+          '<label class="field"><span>' + escapeText(t("form.userProfilePath", undefined, "User profile path")) + '</span><input id="workbench-run-user-profile-path" value="' + escapeText(draft.userProfilePath || "") + '"' + disabled + '><div class="hint">' + escapeText(t("build.inlineUserProfileHint", undefined, "Optional override for this launch. Defaults to the project user profile.")) + '</div></label>' +
+          '<label class="field full"><span>' + escapeText(t("form.lawsPath", undefined, "Laws path")) + '</span><input id="workbench-run-laws-path" value="' + escapeText(draft.lawsPath || "") + '"' + disabled + '><div class="hint">' + escapeText(t("build.inlineLawsHint", undefined, "Optional override for this launch. Defaults to the project laws file.")) + '</div></label>' +
+        '</div>',
+        open: false
+      });
       return [
         '<div class="structure-list studio-debug-panel-stack">',
-        '<div class="event"><div class="event-top"><span>' + escapeText(t("build.mode.debug", undefined, "Debug")) + '</span><span>' + escapeText(state.selectedRunId || state.studioBridgeLastDryRunId || t("common.idle", undefined, "idle")) + '</span></div><strong>' + escapeText(t("studio.debugTabTitle", undefined, "Debug keeps dry-run input, path overrides, and runtime focus together.")) + '</strong><div class="hint">' + escapeText(t("studio.debugTabHint", undefined, "Dry Run is the action button; Debug is the right-side tab. Each new launch creates a fresh run record and clears the current runtime projection before loading new results.")) + '</div></div>',
-        '<div class="event studio-debug-launch-panel"><div class="event-top"><span>' + escapeText(t("studio.dryRun", undefined, "Dry run")) + '</span><span>' + escapeText(t("form.fromWorkbench", undefined, "from authoring workspace")) + '</span></div><strong>' + escapeText(t("studio.debugLaunchPanelTitle", undefined, "Launch a fresh dry run directly from Build.")) + '</strong><div class="hint">' + escapeText(t("studio.debugLaunchPanelHint", undefined, "Run input is required and path overrides are optional. Each Start Run creates a new run record and clears the current debug projection before new runtime data arrives.")) + '</div></div>',
+        '<div class="event studio-debug-launch-panel"><div class="event-top"><span>' + escapeText(t("build.mode.debug", undefined, "Debug")) + '</span><span>' + escapeText(state.selectedRunId || state.studioBridgeLastDryRunId || t("common.idle", undefined, "idle")) + '</span></div><strong>' + escapeText(t("studio.debugLaunchPanelTitle", undefined, "Launch a fresh dry run directly from Build.")) + '</strong><div class="hint">' + escapeText(t("studio.debugLaunchPanelHint", undefined, "Enter the run input here. Advanced path overrides stay folded below so the launch action remains visible at first glance.")) + '</div></div>',
         '<div class="form-grid studio-debug-form-grid">',
-        '<label class="field"><span>' + escapeText(t("form.systemPath", undefined, "System path")) + '</span><input id="workbench-run-system-path" value="' + escapeText(draft.systemPath || state.workbenchSavedPath || "system.mmd") + '" readonly><div class="hint">' + escapeText(t("build.inlineRunConfigSystemHint", undefined, "Current saved Build artifact. Switch back to Edit to change Mermaid source.")) + '</div></label>',
-        '<label class="field"><span>' + escapeText(t("form.dryRun", undefined, "Dry run")) + '</span><input id="workbench-run-mode" value="' + escapeText(t("common.yes", undefined, "Yes")) + '" readonly><div class="hint">' + escapeText(t("build.inlineDryRunReadonlyHint", undefined, "This entry keeps the launch in dry-run mode.")) + '</div></label>',
         '<label class="field full"><span>' + escapeText(t("form.runInput", undefined, "Run input")) + '</span><textarea id="workbench-run-input"' + disabled + (errors.input ? ' aria-invalid="true" aria-describedby="workbench-run-input-error"' : "") + '>' + escapeText(draft.input || "") + '</textarea><div class="hint">' + escapeText(t("build.inlineRunInputHint", undefined, "Required. Provide the exact user request or evaluation prompt for this run.")) + '</div><div id="workbench-run-input-error" class="field-error" aria-live="polite">' + escapeText(errors.input || "") + '</div></label>',
-        '<label class="field"><span>' + escapeText(t("form.runtimeConfigPath", undefined, "Runtime config path")) + '</span><input id="workbench-run-runtime-path" value="' + escapeText(draft.runtimePath || "") + '"' + disabled + '><div class="hint">' + escapeText(t("build.inlineRuntimePathHint", undefined, "Optional override for this launch. Defaults to the project runtime config.")) + '</div></label>',
-        '<label class="field"><span>' + escapeText(t("form.userProfilePath", undefined, "User profile path")) + '</span><input id="workbench-run-user-profile-path" value="' + escapeText(draft.userProfilePath || "") + '"' + disabled + '><div class="hint">' + escapeText(t("build.inlineUserProfileHint", undefined, "Optional override for this launch. Defaults to the project user profile.")) + '</div></label>',
-        '<label class="field full"><span>' + escapeText(t("form.lawsPath", undefined, "Laws path")) + '</span><input id="workbench-run-laws-path" value="' + escapeText(draft.lawsPath || "") + '"' + disabled + '><div class="hint">' + escapeText(t("build.inlineLawsHint", undefined, "Optional override for this launch. Defaults to the project laws file.")) + '</div></label>',
         '</div>',
         '<div class="actions compact"><button class="button primary" id="workbench-start-run"' + disabled + '>' + escapeText(t("action.startDryRun", undefined, "Start dry run")) + '</button>' +
           ((state.selectedRunId || state.studioBridgeLastDryRunId) ? '<button class="button subtle" id="studio-debug-open-operate"' + disabled + '>' + escapeText(t("build.openOperate", undefined, "Open Run")) + '</button>' : '') +
         '</div>',
+        overridesHtml,
         roleConfigSectionHtml,
         '</div>'
       ].join("");
@@ -2250,87 +2384,45 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
 
     function renderStudioResultTabContent() {
       const disabled = state.actionBusy ? " disabled" : "";
-      const runStateHtml = state.selectedRunId && state.graph?.graph
-        ? renderDisclosureCard({
-            title: t("studio.debugRuntimeSectionTitle", undefined, "graph runtime view"),
-            headline: t("studio.debugRuntimeSectionHeadline", undefined, "Key signals, review queue, and exceptions"),
-            meta: state.selectedRunId,
-            hint: t("studio.debugRuntimeSectionHint", undefined, "The left graph carries runtime progression. The right panel stays compact and folds longer payloads and extended state by default."),
-            bodyHtml: renderRunStatePanel({
-              state: state.detail?.state ?? null,
-              header: state.detail?.header ?? null,
-              graph: state.graph.graph,
-              t
-            }),
-            open: true,
-            tone: "notice"
-          })
+      const header = state.detail?.header || {};
+      const graph = state.graph?.graph || {};
+      const stateRecord = asRecord(state.detail?.state) || {};
+      const pendingReviews = asRecord(stateRecord.pendingReviewsById ?? stateRecord.humanReviewContextByBranchId) || {};
+      const errors = asRecord(stateRecord.errors ?? stateRecord.failure ?? stateRecord.errorEnvelope ?? stateRecord.error) || {};
+      const resultSummaryHtml = state.selectedRunId && state.graph?.graph
+        ? '<div class="state-card-grid studio-result-summary-grid">' +
+            '<div class="event"><div class="event-top"><span>' + escapeText(t("state.runtime", undefined, "runtime")) + '</span><span>' + escapeText(displayUiToken(header.status ?? t("common.unknown", undefined, "unknown"), t)) + '</span></div><strong>' + escapeText(displayUiToken(state.detail?.state?.status ?? header.status ?? t("common.idle", undefined, "idle"), t)) + '</strong><div class="hint">' + escapeText(t("studio.resultsSummaryActive", {
+              activeBranches: String(header.activeBranches ?? 0),
+              pendingReviews: String(header.pendingReviewCount ?? 0)
+            }, "active branches " + String(header.activeBranches ?? 0) + " · pending reviews " + String(header.pendingReviewCount ?? 0))) + '</div></div>' +
+            '<div class="event"><div class="event-top"><span>' + escapeText(t("state.graphSnapshot", undefined, "graph snapshot")) + '</span><span>' + escapeText(String(Array.isArray(graph.nodes) ? graph.nodes.length : 0)) + " " + escapeText(t("common.nodes", undefined, "nodes")) + '</span></div><strong>' + escapeText(t("state.flowsCount", { count: String(Array.isArray(graph.edges) ? graph.edges.length : 0) }, "flows " + String(Array.isArray(graph.edges) ? graph.edges.length : 0))) + '</strong><div class="hint">' + escapeText(t("studio.resultsSummaryRoles", {
+              lastRoleId: String(header.lastExecutedRoleId ?? t("common.notAvailable", undefined, "n/a")),
+              finalRoleId: String(header.finalRoleId ?? t("common.notAvailable", undefined, "n/a"))
+            }, "last role " + String(header.lastExecutedRoleId ?? "n/a") + " · final role " + String(header.finalRoleId ?? "n/a"))) + '</div></div>' +
+            '<div class="event"><div class="event-top"><span>' + escapeText(t("review.queueSummary", undefined, "queue summary")) + '</span><span>' + escapeText(String(Object.keys(pendingReviews).length)) + '</span></div><strong>' + escapeText(Object.keys(pendingReviews).length ? t("status.waitingReview", undefined, "waiting review") : t("common.none", undefined, "none")) + '</strong><div class="hint">' + escapeText(t("studio.resultsSummaryHint", undefined, "Keep this panel compact. Open Run for the full graph, payload, and role-level state.")) + '</div></div>' +
+            '<div class="event"><div class="event-top"><span>' + escapeText(t("state.field.errors", undefined, "errors")) + '</span><span>' + escapeText(String(Object.keys(errors).length)) + '</span></div><strong>' + escapeText(Object.keys(errors).length ? t("failure.nextChecksSummary", undefined, "Move directly to the likely root-cause surfaces") : t("failure.noRecentCaptured", undefined, "No recent failure captured for this run.")) + '</strong><div class="hint">' + escapeText(t("studio.resultsOpenRunHint", undefined, "Detailed runtime graph and extended diagnostics stay in the Run page to avoid crowding this panel.")) + '</div></div>' +
+          '</div>'
         : '<div class="event"><div class="event-top"><span>' + escapeText(t("studio.resultsTab", undefined, "Results")) + '</span><span>' + escapeText(state.studioBridgeLastDryRunId || t("common.idle", undefined, "idle")) + '</span></div><strong>' + escapeText(t("studio.debugRunHint", undefined, "Start a fresh dry run from Build to watch graph progression and key signals here.")) + '</strong><div class="hint">' + escapeText(t("build.openDebugHint", undefined, "Review the latest dry-run result here, or open Run for full controls.")) + '</div></div>';
       return [
         '<div class="structure-list studio-debug-panel-stack">',
-        '<div class="event"><div class="event-top"><span>' + escapeText(t("studio.resultsTab", undefined, "Results")) + '</span><span>' + escapeText(state.selectedRunId || state.studioBridgeLastDryRunId || t("common.idle", undefined, "idle")) + '</span></div><strong>' + escapeText(t("studio.resultsTabTitle", undefined, "Results keeps the latest dry-run projection in a dedicated, scrollable panel.")) + '</strong><div class="hint">' + escapeText(t("studio.resultsTabHint", undefined, "Open this tab to inspect run state, review queues, and longer payloads without stretching the graph workspace.")) + '</div></div>',
+        '<div class="event"><div class="event-top"><span>' + escapeText(t("studio.resultsTab", undefined, "Results")) + '</span><span>' + escapeText(state.selectedRunId || state.studioBridgeLastDryRunId || t("common.idle", undefined, "idle")) + '</span></div><strong>' + escapeText(t("studio.resultsTabTitle", undefined, "Results keeps the latest dry-run projection compact and scannable.")) + '</strong><div class="hint">' + escapeText(t("studio.resultsTabHint", undefined, "Use this tab for the latest summary. Open Run when you need the full graph view and detailed runtime artifacts.")) + '</div></div>',
         ((state.selectedRunId || state.studioBridgeLastDryRunId)
           ? '<div class="actions compact"><button class="button subtle" id="studio-debug-open-operate"' + disabled + '>' + escapeText(t("build.openOperate", undefined, "Open Run")) + '</button></div>'
           : ''),
-        runStateHtml,
+        resultSummaryHtml,
         '</div>'
       ].join("");
     }
 
     function forceStudioWorkbenchSideTab(tab) {
-      const shell = findStudioBridgeElement("[data-studio-canvas-shell]");
-      const overlay = findStudioBridgeElement("[data-studio-selection-overlay]");
-      const dialog = findStudioBridgeElement("[data-studio-selection-dialog]");
-      const kindLabel = findStudioBridgeElement("[data-studio-selection-kind-label]");
-      const title = findStudioBridgeElement("[data-studio-selection-title]");
-      const rolePackage = findStudioBridgeElement("[data-studio-selection-role-package]");
-      const selectionPanel = findStudioBridgeElement('[data-studio-selection-panel="selection"]');
-      const structurePanel = findStudioBridgeElement('[data-studio-selection-panel="structure"]');
-      const debugPanel = findStudioBridgeElement('[data-studio-selection-panel="debug"]');
-      const resultPanel = findStudioBridgeElement('[data-studio-selection-panel="result"]');
-      if (!shell || !overlay || !dialog || !kindLabel || !title || !rolePackage || !selectionPanel || !structurePanel || !debugPanel) {
-        return;
-      }
       state.studioWorkbenchSideTab = tab;
-      overlay.hidden = false;
-      overlay.classList.toggle("is-collapsed", state.studioInspectorCollapsed === true);
-      shell.classList.toggle("has-collapsed-selection", state.studioInspectorCollapsed === true);
-      selectionPanel.hidden = true;
-      structurePanel.hidden = true;
-      debugPanel.hidden = tab === "result" && Boolean(resultPanel);
-      if (resultPanel) {
-        resultPanel.hidden = tab !== "result";
+      if (tab === "debug") {
+        syncWorkbenchRunDraft({
+          systemPath: state.workbenchSavedPath || "system.mmd",
+          dryRun: true
+        }, { keepErrors: true });
       }
-      rolePackage.innerHTML = "";
-      if (tab === "result") {
-        kindLabel.textContent = t("studio.resultsTab", undefined, "Results");
-        title.textContent = state.selectedRunId || state.studioBridgeLastDryRunId || t("studio.graphWorkspace", undefined, "Graph workspace");
-        if (resultPanel) {
-          debugPanel.innerHTML = "";
-          resultPanel.innerHTML = renderStudioResultTabContent();
-        } else {
-          debugPanel.hidden = false;
-          debugPanel.innerHTML = renderStudioResultTabContent();
-        }
-      } else {
-        kindLabel.textContent = t("build.mode.debug", undefined, "Debug");
-        title.textContent = state.studioBridgeSelectedRoleId || state.selectedRunId || state.studioBridgeLastDryRunId || t("studio.graphWorkspace", undefined, "Graph workspace");
-        debugPanel.hidden = false;
-        debugPanel.innerHTML = renderStudioDebugTabContent();
-        if (resultPanel) {
-          resultPanel.innerHTML = "";
-        }
-      }
-      dialog.setAttribute("aria-label", title.textContent || kindLabel.textContent || t("studio.graphWorkspace", undefined, "Graph workspace"));
-      for (const button of Array.from(dialog.querySelectorAll?.("[data-studio-side-tab]") || [])) {
-        const currentTab = button.getAttribute("data-studio-side-tab") || "";
-        const active = currentTab === tab;
-        button.classList.toggle("active", active);
-        button.setAttribute("aria-pressed", active ? "true" : "false");
-        button.setAttribute("aria-selected", active ? "true" : "false");
-      }
-      bindStudioExecutionConfigEditorControls();
-      bindWorkbenchRunDraftControls();
+      renderStudioSelectionDialog();
     }
 
     function renderStudioSelectionDialog() {
@@ -2433,21 +2525,24 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
           resultPanel.innerHTML = "";
         }
       } else if (activeTab === "selection" && selectionKind === "flow") {
-        const bridge = resolveStudioBridgeForDisplay() || {};
-        const extracted = bridge.extracted || {};
-        const flows = Array.isArray(extracted.flows) ? extracted.flows : [];
-        const selectedFlow = flows.find((flow) => String(flow.flowKey || "") === selectedFlowKeyValue) || null;
+        const editorFlowKey = studioFlowConfigEditorFlowKeyForSelectionDialog();
+        const selectedFlow = resolveSelectedStudioFlowByKey(editorFlowKey);
+        const dirtyFlowKey = String(state.studioFlowConfigEditor?.flowKey || "");
+        const showDirtyFlowWarning = hasDirtyStudioFlowConfigEditor() && dirtyFlowKey && dirtyFlowKey !== selectedFlowKeyValue;
         if (selectedFlow) {
-          rolePackage.innerHTML = '<div class="event"><div class="event-top"><span>' +
-            escapeText(t("studio.flowInspector", undefined, "Flow details")) + '</span><span>' +
-            escapeText(String(selectedFlow.eventType || "")) + '</span></div><strong><code>' +
-            escapeText(String(selectedFlow.fromRoleId || "")) + '</code> -> <code>' +
-            escapeText(String(selectedFlow.toRoleId || "")) + '</code></strong><div class="hint">' +
-            escapeText(t("studio.flowDisplayIdentity", {
-              label: flowDisplayLabel(selectedFlow),
-              eventType: String(selectedFlow.eventType || "")
-            }, "display " + flowDisplayLabel(selectedFlow) + " · event " + String(selectedFlow.eventType || ""))) +
-            '</div></div>';
+          rolePackage.innerHTML = [
+            showDirtyFlowWarning
+              ? '<div class="event"><div class="event-top"><span>' + escapeText(t("common.attention", undefined, "attention")) + '</span><span>' + escapeText(t("common.changed", undefined, "changed")) + '</span></div><strong>' +
+                escapeText(t("studio.flowConfigDirtySwitchBlocked", { flowKey: dirtyFlowKey }, "Flow changes for {flowKey} are unsaved. Save or revert before switching flows.")) +
+                '</strong></div>'
+              : "",
+            renderStudioFlowConfigEditor({
+              flowKey: String(selectedFlow.flowKey || editorFlowKey),
+              editor: state.studioFlowConfigEditor,
+              authoring: state.studioBridge?.authoring || null,
+              t
+            })
+          ].join("");
         } else {
           rolePackage.innerHTML = '<div class="hint">' + escapeText(t("studio.selectFlow", undefined, "Select a flow to inspect event metadata.")) + "</div>";
         }
@@ -2478,6 +2573,7 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
       }
       bindStudioRolePackageEditorControls();
       bindStudioExecutionConfigEditorControls();
+      bindStudioFlowConfigEditorControls();
       bindWorkbenchRunDraftControls();
     }
 
@@ -2762,6 +2858,215 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
       }
     }
 
+    function resolveSelectedStudioFlowByKey(flowKey) {
+      const bridge = resolveStudioBridgeForDisplay() || {};
+      const extracted = bridge.extracted || {};
+      const flows = Array.isArray(extracted.flows) ? extracted.flows : [];
+      return flows.find((flow) => flowKeyOf(flow) === flowKey) || null;
+    }
+
+    function loadStudioFlowConfigEditor(flowKey, options) {
+      const selectedFlowKeyValue = flowKey || selectedStudioFlowKey();
+      if (!selectedFlowKeyValue) {
+        state.studioFlowConfigEditor = {
+          flowKey: "",
+          saving: false,
+          dirty: false,
+          error: "",
+          validation: null,
+          data: null,
+          draft: null
+        };
+        return;
+      }
+      if (state.studioFlowConfigEditor?.dirty && !options?.force) {
+        if (selectedFlowKeyValue !== state.studioFlowConfigEditor?.flowKey) {
+          setFlash("info", t("studio.flowConfigDirtySwitchBlocked", {
+            flowKey: String(state.studioFlowConfigEditor?.flowKey || "")
+          }, "Flow changes for {flowKey} are unsaved. Save or revert before switching flows."));
+        }
+        renderStudioSelectionDialog();
+        return;
+      }
+      const selectedFlow = resolveSelectedStudioFlowByKey(selectedFlowKeyValue);
+      if (!selectedFlow) {
+        state.studioFlowConfigEditor = {
+          flowKey: selectedFlowKeyValue,
+          saving: false,
+          dirty: false,
+          error: t("studio.flowConfigMissing", undefined, "This flow is no longer available in the current authoring draft."),
+          validation: null,
+          data: null,
+          draft: null
+        };
+        renderStudioSelectionDialog();
+        return;
+      }
+      const data = {
+        flowKey: selectedFlowKeyValue,
+        flowId: String(selectedFlow.flowId || ""),
+        sourceRoleId: String(selectedFlow.fromRoleId || ""),
+        targetRoleId: normalizeStudioTargetRoleId(selectedFlow.toRoleId),
+        eventType: String(selectedFlow.eventType || ""),
+        label: String(selectedFlow.label || ""),
+        runtimeOnlyErrorFlow: selectedFlow.runtimeOnlyErrorFlow === true,
+        participatesInJoin: selectedFlow.participatesInJoin === true
+      };
+      state.studioFlowConfigEditor = {
+        flowKey: selectedFlowKeyValue,
+        saving: false,
+        dirty: false,
+        error: "",
+        validation: null,
+        data,
+        draft: null
+      };
+      renderStudioSelectionDialog();
+    }
+
+    function ensureStudioFlowConfigEditor(flowKey) {
+      const flowKeyValue = flowKey || "";
+      if (!flowKeyValue) {
+        return;
+      }
+      const editor = state.studioFlowConfigEditor || {};
+      if (editor.dirty || editor.saving) {
+        return;
+      }
+      if (editor.flowKey === flowKeyValue && editor.data && !editor.error) {
+        return;
+      }
+      loadStudioFlowConfigEditor(flowKeyValue, { force: true });
+    }
+
+    async function saveStudioFlowConfigEditor(flowKey) {
+      const selectedFlowKeyValue = flowKey || state.studioFlowConfigEditor?.flowKey || selectedStudioFlowKey();
+      if (!selectedFlowKeyValue || !state.studioBridge?.authoring) {
+        return;
+      }
+      const current = state.studioFlowConfigEditor?.data || {};
+      const draft = readStudioFlowConfigDraft();
+      const validation = validateStudioAddEdgeDraft({
+        flowId: String(current.flowId || draft.flowId || ""),
+        originalSourceRoleId: String(current.sourceRoleId || ""),
+        originalTargetRoleId: String(current.targetRoleId || ""),
+        originalEventType: String(current.eventType || ""),
+        sourceRoleId: String(draft.sourceRoleId || ""),
+        targetRoleId: String(draft.targetRoleId || ""),
+        eventType: String(draft.eventType || ""),
+        label: String(draft.label || ""),
+        runtimeOnlyErrorFlow: draft.runtimeOnlyErrorFlow === true,
+        participatesInJoin: draft.participatesInJoin === true
+      }, studioFlowValidationContext());
+      state.studioFlowConfigEditor = {
+        ...(state.studioFlowConfigEditor || {}),
+        flowKey: selectedFlowKeyValue,
+        dirty: true,
+        error: "",
+        validation,
+        draft
+      };
+      if (!validation.ok) {
+        renderStudioSelectionDialog();
+        return;
+      }
+      state.studioFlowConfigEditor = {
+        ...(state.studioFlowConfigEditor || {}),
+        flowKey: selectedFlowKeyValue,
+        saving: true,
+        dirty: true,
+        error: "",
+        validation,
+        draft
+      };
+      renderStudioSelectionDialog();
+      const result = applyStudioAuthoringCommand({
+        authoring: state.studioBridge.authoring,
+        command: {
+          type: "update-edge",
+          flowId: String(current.flowId || draft.flowId || ""),
+          originalSourceRoleId: String(current.sourceRoleId || ""),
+          originalTargetRoleId: String(current.targetRoleId || ""),
+          originalEventType: String(current.eventType || ""),
+          sourceRoleId: String(draft.sourceRoleId || "").trim(),
+          targetRoleId: String(draft.targetRoleId || "").trim(),
+          eventType: normalizeStudioEventType(draft.eventType || "DONE"),
+          label: String(draft.label || "").trim() || undefined,
+          runtimeOnlyErrorFlow: draft.runtimeOnlyErrorFlow === true,
+          participatesInJoin: draft.participatesInJoin === true
+        }
+      });
+      await applyStudioGraphAuthoringCommand(result, {
+        successMessage: t("studio.flowConfigSaved", { flowKey: selectedFlowKeyValue }, "Flow config saved: {flowKey}."),
+        afterApply: () => {
+          loadStudioFlowConfigEditor(result.selectedFlowKey || selectedFlowKeyValue, { force: true });
+        }
+      });
+    }
+
+    function bindStudioFlowConfigEditorControls() {
+      for (const button of Array.from(workbenchBodyEl.querySelectorAll("[data-flow-config-save]") || [])) {
+        bindOnce(button, "click", "flow-config-save", () => {
+          void saveStudioFlowConfigEditor(button.getAttribute("data-flow-config-save") || selectedStudioFlowKey());
+        });
+      }
+      for (const button of Array.from(workbenchBodyEl.querySelectorAll("[data-flow-config-revert]") || [])) {
+        bindOnce(button, "click", "flow-config-revert", () => {
+          loadStudioFlowConfigEditor(button.getAttribute("data-flow-config-revert") || selectedStudioFlowKey(), { force: true });
+        });
+      }
+      for (const element of flowConfigEditorFieldElements()) {
+        bindOnce(element, "input", "flow-config-field", () => {
+          const draft = readStudioFlowConfigDraft();
+          state.studioFlowConfigEditor = {
+            ...(state.studioFlowConfigEditor || {}),
+            flowKey: state.studioFlowConfigEditor?.flowKey || selectedStudioFlowKey(),
+            dirty: true,
+            saving: false,
+            error: "",
+            validation: validateStudioAddEdgeDraft({
+              flowId: String(state.studioFlowConfigEditor?.data?.flowId || draft.flowId || ""),
+              originalSourceRoleId: String(state.studioFlowConfigEditor?.data?.sourceRoleId || ""),
+              originalTargetRoleId: String(state.studioFlowConfigEditor?.data?.targetRoleId || ""),
+              originalEventType: String(state.studioFlowConfigEditor?.data?.eventType || ""),
+              sourceRoleId: String(draft.sourceRoleId || ""),
+              targetRoleId: String(draft.targetRoleId || ""),
+              eventType: String(draft.eventType || ""),
+              label: String(draft.label || ""),
+              runtimeOnlyErrorFlow: draft.runtimeOnlyErrorFlow === true,
+              participatesInJoin: draft.participatesInJoin === true
+            }, studioFlowValidationContext()),
+            draft
+          };
+          renderStudioSelectionDialog();
+        });
+        bindOnce(element, "change", "flow-config-field-change", () => {
+          const draft = readStudioFlowConfigDraft();
+          state.studioFlowConfigEditor = {
+            ...(state.studioFlowConfigEditor || {}),
+            flowKey: state.studioFlowConfigEditor?.flowKey || selectedStudioFlowKey(),
+            dirty: true,
+            saving: false,
+            error: "",
+            validation: validateStudioAddEdgeDraft({
+              flowId: String(state.studioFlowConfigEditor?.data?.flowId || draft.flowId || ""),
+              originalSourceRoleId: String(state.studioFlowConfigEditor?.data?.sourceRoleId || ""),
+              originalTargetRoleId: String(state.studioFlowConfigEditor?.data?.targetRoleId || ""),
+              originalEventType: String(state.studioFlowConfigEditor?.data?.eventType || ""),
+              sourceRoleId: String(draft.sourceRoleId || ""),
+              targetRoleId: String(draft.targetRoleId || ""),
+              eventType: String(draft.eventType || ""),
+              label: String(draft.label || ""),
+              runtimeOnlyErrorFlow: draft.runtimeOnlyErrorFlow === true,
+              participatesInJoin: draft.participatesInJoin === true
+            }, studioFlowValidationContext()),
+            draft
+          };
+          renderStudioSelectionDialog();
+        });
+      }
+    }
+
     async function loadStudioRolePackageEditor(roleId, options) {
       const selectedRoleIdValue = roleId || selectedStudioRoleId();
       if (!selectedRoleIdValue) {
@@ -2985,12 +3290,6 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
       return resolveStudioBridgeForDisplay()?.canvas || buildStudioCanvasFromBridge(state.studioBridge);
     }
 
-    function nextStudioSideTabOnGraphSelection() {
-      return state.studioWorkbenchSideTab === "debug" || state.studioWorkbenchSideTab === "result"
-        ? state.studioWorkbenchSideTab
-        : "selection";
-    }
-
     function updateStudioBridgeSelectionChrome() {
       const selectedRoleId = state.studioBridgeSelectedRoleId || "";
       const selectedFlowKey = state.studioBridgeSelectedFlowKey || "";
@@ -3099,7 +3398,12 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
     }
 
     function canClearStudioGraphSelection() {
-      if (hasDirtyStudioRolePackageEditor() || hasDirtyStudioExecutionConfigEditor()) {
+      if (hasDirtyStudioRolePackageEditor() || hasDirtyStudioExecutionConfigEditor() || hasDirtyStudioFlowConfigEditor()) {
+        if (hasDirtyStudioFlowConfigEditor()) {
+          const dirtyFlowKey = String(state.studioFlowConfigEditor?.flowKey || state.studioBridgeSelectedFlowKey || "");
+          setFlash("info", t("studio.flowConfigDirtySwitchBlocked", { flowKey: dirtyFlowKey }, "Flow changes for {flowKey} are unsaved. Save or revert before clearing selection."));
+          return false;
+        }
         const dirtyRoleId = String(
           state.studioRolePackageEditor?.roleId ||
           state.studioExecutionConfigEditor?.roleId ||
@@ -3253,7 +3557,7 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
         onSelectRole: (roleId) => {
           state.studioBridgeSelectedRoleId = roleId || "";
           state.studioBridgeSelectedFlowKey = "";
-          state.studioWorkbenchSideTab = nextStudioSideTabOnGraphSelection();
+          state.studioWorkbenchSideTab = "selection";
           updateStudioBridgeSelection(false);
           void loadStudioRolePackageEditor(roleId);
           void loadStudioExecutionConfigEditor(roleId);
@@ -3261,8 +3565,9 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
         onSelectFlow: (flowKey) => {
           state.studioBridgeSelectedFlowKey = flowKey || "";
           state.studioBridgeSelectedRoleId = "";
-          state.studioWorkbenchSideTab = nextStudioSideTabOnGraphSelection();
+          state.studioWorkbenchSideTab = "selection";
           updateStudioBridgeSelection(false);
+          loadStudioFlowConfigEditor(flowKey);
         },
         onBeforeClearSelection: () => canClearStudioGraphSelection(),
         onClearSelection: () => {
@@ -3305,6 +3610,30 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
         },
         onSaveWorkbench: async () => {
           await saveWorkbench();
+        },
+        onQuickDebugRun: async (input) => {
+          const trimmedInput = String(input || "").trim();
+          if (!trimmedInput) {
+            setFlash("error", t("run.inputRequired", undefined, "Run input is required."));
+            return false;
+          }
+          const ready = await prepareWorkbenchForDryRunSurface();
+          if (!ready) {
+            return false;
+          }
+          const payload = syncWorkbenchRunDraft({
+            systemPath: state.workbenchSavedPath || "system.mmd",
+            dryRun: true,
+            input: trimmedInput
+          }, { keepErrors: true });
+          state.workbenchRunDraft = payload;
+          state.workbenchRunDraftErrors = {};
+          await startRunFromWorkbench(payload);
+          return true;
+        },
+        onFocusDebugInput: async () => {
+          const ready = await prepareWorkbenchForDryRunSurface({ focusInput: true });
+          return ready === true;
         },
         canSaveWorkbench: state.workbenchSource !== state.workbenchDiskSource,
         onStatusChange: (message) => {
@@ -4556,7 +4885,7 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
         state.workbenchSource = state.workbench.systemSource;
       }
       state.studioBridgeLoading = true;
-      if (state.workbenchView === "bridge") {
+      if (state.workbenchView === "bridge" && !hasMountedStudioBridgeShell()) {
         renderWorkbench();
       }
       try {
@@ -4590,6 +4919,9 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
         if (state.studioBridgeSelectedRoleId) {
           ensureStudioRolePackageEditor(state.studioBridgeSelectedRoleId);
           ensureStudioExecutionConfigEditor(state.studioBridgeSelectedRoleId);
+        }
+        if (state.studioBridgeSelectedFlowKey) {
+          ensureStudioFlowConfigEditor(state.studioBridgeSelectedFlowKey);
         }
         return payload;
       } finally {
@@ -4643,10 +4975,13 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
         setFlash("error", t("studio.graph.editBlocked", undefined, "Graph authoring stays disabled until Mermaid parses successfully."));
         return;
       }
+      const requestId = ++state.studioCanvasSyncRequestId;
       await runAction("studio:apply-canvas", async () => {
         await applyStudioGraphPayload({
           authoring: applyCanvasLayoutPatchToAuthoring(state.studioBridge.authoring, canvas),
           canvas,
+          requestId,
+          renderProject: false,
           successMessage: t("studio.graph.canvasUpdated", undefined, "Studio canvas layout updated.")
         });
       });
@@ -4709,12 +5044,18 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
       const payload = await requestAction(\`\${API_PREFIX}/project/studio/authoring/apply-canvas\`, {
         authoring: args.authoring
       });
+      if (args.requestId && args.requestId !== state.studioCanvasSyncRequestId) {
+        return;
+      }
       state.workbenchSource = payload.systemSource || state.workbenchSource;
       persistDraftSource(state.workbenchSource !== state.workbenchDiskSource ? state.workbenchSource : "");
       const bridgePayload = await requestAction(\`\${API_PREFIX}/project/studio/bridge\`, {
         systemSource: state.workbenchSource,
         systemPath: state.workbenchSavedPath || "system.mmd"
       });
+      if (args.requestId && args.requestId !== state.studioCanvasSyncRequestId) {
+        return;
+      }
       state.studioBridge = withStudioAuthoringDisplayMetadata({
         ...bridgePayload,
         authoring: payload.authoring,
@@ -4735,7 +5076,9 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
       };
       state.studioBridgeStale = false;
       renderWorkbench();
-      renderProject();
+      if (args.renderProject !== false) {
+        renderProject();
+      }
       if (args.successMessage) {
         setFlash("success", args.successMessage);
       }
@@ -4964,7 +5307,9 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
         return;
       }
       state.workbenchLoading = true;
-      renderWorkbench();
+      if (!hasMountedStudioBridgeShell()) {
+        renderWorkbench();
+      }
       try {
         const payload = await requestJson(\`\${API_PREFIX}/project/system/workbench\`);
         state.workbench = payload;

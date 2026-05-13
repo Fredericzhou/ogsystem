@@ -57,7 +57,7 @@ async function waitForStudioCell(page, cellId: string): Promise<void> {
 async function expectDockedSelectionAligned(page): Promise<void> {
   await expect.poll(async () => page.evaluate(() => {
     const root = document.getElementById("studio-graph-root");
-    const dialog = document.querySelector(".studio-selection-overlay.is-docked .studio-selection-dialog");
+    const dialog = document.querySelector("[data-studio-selection-dialog]");
     if (!root || !dialog) {
       return null;
     }
@@ -68,24 +68,60 @@ async function expectDockedSelectionAligned(page): Promise<void> {
       bottomDelta: Math.abs(Math.round(rootBox.bottom - dialogBox.bottom)),
       dialogRightOfRoot: dialogBox.left >= rootBox.right - 2
     };
-  })).toEqual({
-    topDelta: 0,
-    bottomDelta: 0,
+  })).toMatchObject({
     dialogRightOfRoot: true
+  });
+  await expect.poll(async () => page.evaluate(() => {
+    const root = document.getElementById("studio-graph-root");
+    const dialog = document.querySelector("[data-studio-selection-dialog]");
+    if (!root || !dialog) {
+      return null;
+    }
+    const rootBox = root.getBoundingClientRect();
+    const dialogBox = dialog.getBoundingClientRect();
+    return {
+      topDelta: Math.abs(Math.round(rootBox.top - dialogBox.top)),
+      bottomDelta: Math.abs(Math.round(rootBox.bottom - dialogBox.bottom))
+    };
+  })).toEqual({
+    topDelta: 8,
+    bottomDelta: 8
   });
 }
 
 async function expectBuildCanvasGapTight(page): Promise<void> {
   await expect.poll(async () => page.evaluate(() => {
     const body = document.querySelector("#console-panel-build > article > .body");
+    const card = document.querySelector("#console-panel-build > article");
     const shell = document.querySelector("#console-panel-build .studio-canvas-shell");
-    if (!body || !shell) {
+    if (!body || !card || !shell) {
       return null;
     }
     const bodyBox = body.getBoundingClientRect();
+    const cardBox = card.getBoundingClientRect();
     const shellBox = shell.getBoundingClientRect();
-    return Math.round(bodyBox.bottom - shellBox.bottom);
-  })).toBeLessThanOrEqual(12);
+    return {
+      shellGap: Math.round(bodyBox.bottom - shellBox.bottom),
+      cardGap: Math.round(cardBox.bottom - bodyBox.bottom)
+    };
+  }).then((gaps) => Boolean(gaps && gaps.shellGap <= 2 && gaps.cardGap <= 2))).toBe(true);
+}
+
+async function rememberBuildCanvasIdentity(page): Promise<void> {
+  await page.evaluate(() => {
+    (window as any).__buildShellRef = document.querySelector("[data-studio-canvas-shell]");
+    (window as any).__buildRootRef = document.getElementById("studio-graph-root");
+  });
+}
+
+async function expectBuildCanvasIdentityStable(page): Promise<void> {
+  await expect.poll(async () => page.evaluate(() => ({
+    sameShell: (window as any).__buildShellRef === document.querySelector("[data-studio-canvas-shell]"),
+    sameRoot: (window as any).__buildRootRef === document.getElementById("studio-graph-root")
+  }))).toEqual({
+    sameShell: true,
+    sameRoot: true
+  });
 }
 
 test("Build workbench keeps view toggles in footer and aligns graph with docked inspector", async ({ page }) => {
@@ -96,7 +132,7 @@ test("Build workbench keeps view toggles in footer and aligns graph with docked 
     await page.goto(started.url);
     await page.waitForFunction(() => Boolean((window as any).OGSVisualizerClient?.mountStudioX6Bridge));
 
-    await page.getByRole("tab", { name: "Build" }).click();
+    await page.locator("#console-tab-design").click();
     await expect(page.locator("#console-panel-build")).toBeVisible();
     await expect(page.locator("#workbench-title")).toHaveText("Authoring");
     await expect(page.locator("#workbench-status")).toContainText("validation ok");
@@ -114,8 +150,8 @@ test("Build workbench keeps view toggles in footer and aligns graph with docked 
     await bridgeViewButton.click();
     await expect(page.locator("#studio-graph-root")).toBeVisible();
     await waitForStudioCell(page, "demo-analyst");
+    await rememberBuildCanvasIdentity(page);
     await expectBuildCanvasGapTight(page);
-    await expect(page.locator("[data-studio-selection-dialog]")).toContainText("demo-analyst");
     await expect(page.locator('[data-studio-side-tab="debug"]')).toBeVisible();
     await expectDockedSelectionAligned(page);
     const roleNode = page.locator('#studio-graph-root [data-cell-id="demo-analyst"]').first();
@@ -132,6 +168,7 @@ test("Build workbench keeps view toggles in footer and aligns graph with docked 
       const deltaY = Math.abs(afterClickBox.y - beforeClickBox.y);
       return deltaX <= 4 && deltaY <= 4;
     }).toBe(true);
+    await expectBuildCanvasIdentityStable(page);
     await expect.poll(async () => page.evaluate(() => {
       const body = document.querySelector<HTMLElement>(".studio-selection-body");
       const activePanel = Array.from(document.querySelectorAll<HTMLElement>(".studio-selection-panel"))
@@ -152,15 +189,13 @@ test("Build workbench keeps view toggles in footer and aligns graph with docked 
     });
 
     const debugPanel = page.locator('[data-studio-selection-panel="debug"]');
-    const structurePanel = page.locator('[data-studio-selection-panel="structure"]');
     const workbenchBody = page.locator("#workbench-body");
     await page.locator('[data-studio-side-tab="debug"]').click();
     await expect(debugPanel).toBeVisible();
     await expect(debugPanel.locator("#workbench-run-input")).toBeVisible();
     await expect(debugPanel).toContainText(/execution config|执行配置/);
     await expectDockedSelectionAligned(page);
-    await page.locator('[data-studio-side-tab="structure"]').click();
-    await expect(structurePanel).toBeVisible();
+    await expectBuildCanvasIdentityStable(page);
 
     await sourceViewButton.click();
     await expect(page.locator("#workbench-editor")).toBeVisible();
@@ -168,6 +203,7 @@ test("Build workbench keeps view toggles in footer and aligns graph with docked 
 
     await bridgeViewButton.click();
     await waitForStudioCell(page, "demo-analyst");
+    await rememberBuildCanvasIdentity(page);
     await page.locator('#studio-graph-root [data-studio-graph-action="fullscreen"]').click();
     await expect(page.locator("[data-studio-canvas-shell]")).toHaveClass(/is-fullscreen/);
     await page.keyboard.press("Escape");
@@ -184,6 +220,7 @@ test("Build workbench keeps view toggles in footer and aligns graph with docked 
     await expect(resultPanel).toBeVisible();
     await expect(page.locator('[data-studio-side-tab="result"]')).toHaveAttribute("aria-pressed", "true");
     await expectDockedSelectionAligned(page);
+    await expectBuildCanvasIdentityStable(page);
   } finally {
     await page.close();
     await new Promise<void>((resolve) => started.server.close(() => resolve()));

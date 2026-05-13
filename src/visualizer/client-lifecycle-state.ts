@@ -64,6 +64,7 @@ export function createBuildStateSlice() {
     studioGraphRootElement: null,
     studioGraphMountRetryTimer: null,
     studioGraphMountRetryCount: 0,
+    studioCanvasSyncRequestId: 0,
     runGraphMountRetryTimer: null,
     runGraphMountRetryCount: 0,
     studioRolePackageEditor: {
@@ -83,6 +84,15 @@ export function createBuildStateSlice() {
       loaded: false,
       dirty: false,
       error: "",
+      data: null,
+      draft: null
+    },
+    studioFlowConfigEditor: {
+      flowKey: "",
+      saving: false,
+      dirty: false,
+      error: "",
+      validation: null,
       data: null,
       draft: null
     },

@@ -12,12 +12,40 @@ export function isStudioBoundaryCell(cell: Cell | null | undefined): boolean {
   return data?.studioNode?.kind === "boundary";
 }
 
-export function canConnectStudioCells(source: Cell | null | undefined, target: Cell | null | undefined): boolean {
-  if (!source || !target || source.id === target.id) {
-    return false;
+export function validateStudioConnectionCells(source: Cell | null | undefined, target: Cell | null | undefined): {
+  ok: boolean;
+  code:
+    | "missing-endpoint"
+    | "same-cell"
+    | "source-boundary"
+    | "source-invalid"
+    | "target-boundary"
+    | "target-invalid"
+    | "";
+} {
+  if (!source || !target) {
+    return { ok: false, code: "missing-endpoint" };
+  }
+  if (source.id === target.id) {
+    return { ok: false, code: "same-cell" };
+  }
+  if (isStudioBoundaryCell(source)) {
+    return { ok: false, code: "source-boundary" };
   }
   if (!isStudioRoleCell(source)) {
-    return false;
+    return { ok: false, code: "source-invalid" };
   }
-  return isStudioRoleCell(target) || target.id === "output";
+  if (isStudioBoundaryCell(target)) {
+    return target.id === "output"
+      ? { ok: true, code: "" }
+      : { ok: false, code: "target-boundary" };
+  }
+  if (!isStudioRoleCell(target)) {
+    return { ok: false, code: "target-invalid" };
+  }
+  return { ok: true, code: "" };
+}
+
+export function canConnectStudioCells(source: Cell | null | undefined, target: Cell | null | undefined): boolean {
+  return validateStudioConnectionCells(source, target).ok;
 }

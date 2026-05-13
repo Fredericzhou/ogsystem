@@ -251,6 +251,81 @@ test("Studio Bridge renderers display and filter flow labels separately from eve
   assert.match(panelHtml, /REQUIREMENTS_READY/);
 });
 
+test("Studio Bridge panel prioritizes selected flow configuration over fallback role content", () => {
+  const bridge = {
+    authoring: {
+      roles: {
+        "demo-analyst": { roleId: "demo-analyst" },
+        reviewer: { roleId: "reviewer" }
+      }
+    },
+    extracted: {
+      roles: [
+        {
+          roleId: "demo-analyst",
+          title: "Demo analyst",
+          bindingKind: "model",
+          incomingFlowCount: 0,
+          outgoingFlowCount: 1,
+          allowedEvents: ["DONE"],
+          badges: []
+        },
+        {
+          roleId: "reviewer",
+          title: "Reviewer",
+          bindingKind: "noop",
+          incomingFlowCount: 1,
+          outgoingFlowCount: 0,
+          allowedEvents: [],
+          badges: []
+        }
+      ],
+      flows: [{
+        flowId: "1:demo-analyst:DONE:output",
+        flowKey: "demo-analyst:DONE:output",
+        fromRoleId: "demo-analyst",
+        toRoleId: "output",
+        eventType: "DONE",
+        label: "Done",
+        runtimeOnlyErrorFlow: false,
+        participatesInJoin: false
+      }]
+    }
+  };
+  const panelHtml = renderStudioBridgePanel({
+    bridge,
+    readiness: null,
+    selectedRoleId: "",
+    selectedFlowKey: "demo-analyst:DONE:output",
+    workbenchView: "bridge",
+    graphRootContentHtml: "",
+    filter: "",
+    listMode: "all",
+    sideTab: "selection",
+    selectionDebugHtml: "",
+    selectionResultsHtml: "",
+    rolePackageEditor: null,
+    executionConfigEditor: null,
+    flowConfigEditor: {
+      flowKey: "demo-analyst:DONE:output",
+      data: {
+        sourceRoleId: "demo-analyst",
+        targetRoleId: "output",
+        eventType: "DONE",
+        label: "Done",
+        runtimeOnlyErrorFlow: false,
+        participatesInJoin: false
+      }
+    },
+    inspectorCollapsed: false,
+    actionBusy: "",
+    t: testTranslator
+  });
+  assert.match(panelHtml, /flow config/i);
+  assert.match(panelHtml, /data-flow-config-save/);
+  assert.doesNotMatch(panelHtml, /data-role-package-load/);
+});
+
 function matchesSelector(element, selector) {
   if (/^[a-zA-Z][a-zA-Z0-9-]*$/.test(selector)) {
     return element.tagName.toLowerCase() === selector.toLowerCase();
@@ -3771,16 +3846,13 @@ test("visualizer client blocks start run submit when run input is empty", async 
   const debugTabButton = findStudioSideTabButton(harness, "debug");
   assert.ok(debugTabButton);
   await debugTabButton.click();
-  await waitForCondition(() => Boolean(findWorkbenchStartRunButton(harness)));
-  const dryRunButton = findWorkbenchStartRunButton(harness);
-  assert.ok(dryRunButton);
-  await dryRunButton.click();
   await waitForCondition(() => Boolean(harness.document.getElementById("workbench-run-input")));
   assert.equal(harness.document.getElementById("workbench-run-input").value, "");
   await harness.document.getElementById("workbench-start-run").click();
   await settle();
   assert.equal(harness.backend.lastStartBody, undefined);
-  assert.match(harness.document.getElementById("workbench-body").textContent, /Run input is required|运行输入为必填/);
+  assert.match(harness.document.getElementById("flash").textContent, /Run input is required|运行输入为必填/);
+  assert.match(harness.document.getElementById("workbench-body").textContent, /Run input|运行输入/);
 });
 
 test("visualizer client removes the separate dry-run action button and keeps Build navigation in footer tabs", async () => {
@@ -3862,33 +3934,36 @@ test("visualizer client opens Studio Bridge and keeps authoring affordances on t
   assert.ok(latestEditableMount().commandFormLabels);
   assert.equal(typeof latestEditableMount().onValidateWorkbench, "function");
   assert.equal(typeof latestEditableMount().onSaveWorkbench, "function");
+  assert.equal(typeof latestEditableMount().onQuickDebugRun, "function");
+  assert.equal(typeof latestEditableMount().onFocusDebugInput, "function");
   assert.equal(latestEditableMount().defaultAutoLayout, true);
   assert.equal(latestEditableMount().labels.viewportGroup, "Viewport");
   assert.equal(latestEditableMount().labels.editGroup, "Edit graph");
   assert.equal(latestEditableMount().labels.fullscreen, "Fullscreen");
+  assert.equal(latestEditableMount().labels.debugRun, "Quick debug");
   latestEditableMount().onSelectRole("demo-analyst");
   await settle();
-  assert.match(harness.document.getElementById("workbench-body").textContent, /role package/);
-
-  const rolePackageLoad = harness.document.getElementById("workbench-body").querySelectorAll("[data-role-package-load]")[0];
-  assert.ok(rolePackageLoad);
-  if (!/agent\.md/.test(harness.document.getElementById("workbench-body").textContent)) {
-    await rolePackageLoad.click();
-  }
-  await waitForCondition(() => harness.backend.fetchCalls.some((call) => call.path === "/api/v1/project/role-packages/demo-analyst"));
-  await waitForCondition(() => /agent\.md/.test(harness.document.getElementById("workbench-body").textContent));
-  const rolePackageSave = harness.document.getElementById("workbench-body").querySelectorAll("[data-role-package-save]").at(-1);
-  assert.ok(rolePackageSave);
-  await rolePackageSave.click();
-  await waitForCondition(() => Boolean(harness.backend.lastRolePackageSaveBody));
-  await waitForCondition(() => /Role package saved/.test(harness.document.getElementById("flash").textContent));
-  assert.match(harness.document.getElementById("flash").textContent, /Role package saved/);
-
+  assert.equal(
+    harness.document.getElementById("studio-graph-root").dataset.selectedRoleId,
+    "demo-analyst"
+  );
+  const roleSelectionButton = harness.document.getElementById("workbench-body").querySelectorAll("[data-studio-role-id]")[0];
+  assert.ok(roleSelectionButton);
+  await roleSelectionButton.click();
+  await settle();
   await settle();
   const fetchCallsAfterOpen = harness.backend.fetchCalls.length;
-  mountCalls.at(-1).options.onSelectFlow("demo-analyst:DONE:output");
+  latestEditableMount().onSelectFlow("demo-analyst:DONE:output");
   await settle();
   assert.equal(harness.backend.fetchCalls.length, fetchCallsAfterOpen);
+  assert.equal(
+    harness.document.getElementById("studio-graph-root").dataset.selectedFlowKey,
+    "demo-analyst:DONE:output"
+  );
+  assert.equal(
+    harness.document.getElementById("studio-graph-root").dataset.selectedRoleId,
+    ""
+  );
   mountCalls.at(-1).options.onClearSelection();
   await settle();
   assert.equal(harness.backend.fetchCalls.length, fetchCallsAfterOpen);
@@ -4026,35 +4101,14 @@ test("visualizer client opens Studio Bridge and keeps authoring affordances on t
   assert.ok(debugTabButton);
   assert.equal(debugTabButton.getAttribute("data-studio-side-tab"), "debug");
 
-  latestMount = latestEditableMount();
-  assert.ok(latestMount);
-  const addEdgeAuthoring = cloneJson(latestMount.authoring);
-  const addEdgeCanvas = cloneJson(latestMount.canvas);
-  addEdgeAuthoring.flows["2:new-role:DONE:output"] = {
-    flowId: "2:new-role:DONE:output",
-    fromRoleId: "new-role",
-    toRoleId: "__system_end__",
-    eventType: "DONE"
-  };
-  addEdgeCanvas.edges.push({
-    id: "2:new-role:DONE:output",
-    source: "new-role",
-    target: "__system_end__",
-    label: "DONE",
-    eventType: "DONE",
-    runtimeOnlyErrorFlow: false,
-    participatesInJoin: false
-  });
-  await latestMount.onApplyCommand({
-    authoring: addEdgeAuthoring,
-    canvas: addEdgeCanvas,
-    selectedFlowKey: "new-role:DONE:output"
-  });
-  await settle();
-  assert.equal(
-    Object.values(harness.backend.lastAuthoringApplyCanvasBody.authoring.flows).some((edge) => edge.fromRoleId === "new-role" && edge.toRoleId === "__system_end__"),
-    true
-  );
+  await latestEditableMount().onQuickDebugRun("run from graph toolbar");
+  await waitForCondition(() => harness.backend.fetchCalls.some((call) => call.path === "/api/v1/runs/start"));
+  assert.equal(harness.backend.lastStartBody.input, "run from graph toolbar");
+  assert.match(harness.document.getElementById("workbench-body").textContent, /Results|结果/i);
+  assert.match(harness.document.getElementById("workbench-body").textContent, /Open Run|打开运行/i);
+  await latestEditableMount().onFocusDebugInput();
+  await waitForCondition(() => Boolean(harness.document.getElementById("workbench-run-input")));
+  assert.equal(harness.document.activeElement?.id, "workbench-run-input");
 });
 
 test("visualizer client retries Studio graph mount until the Build panel is visible and sized", async () => {

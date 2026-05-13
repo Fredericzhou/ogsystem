@@ -256,10 +256,9 @@ export function renderStudioGraphCanvas(args: {
   });
   return [
     '<div class="studio-canvas-shell' + (args.fullscreen ? " is-fullscreen" : "") + (args.inspectorCollapsed ? " has-collapsed-selection" : "") + '" data-studio-canvas-shell="1">',
-    '<div class="studio-canvas-toolbar" data-studio-bridge-region="toolbar"><div><span class="hint" data-studio-graph-selection-label>' + escapeText(selection) + '</span></div></div>',
-    '<aside class="studio-outline-pane"><section class="studio-selection-panel studio-selection-structure-panel studio-outline-panel" data-studio-selection-panel="structure">' + (args.selectionStructureHtml || "") + '</section></aside>',
+    '<div class="studio-canvas-toolbar" data-studio-bridge-region="toolbar"><div><span class="hint studio-graph-selection-label" data-studio-graph-selection-label>' + escapeText(selection) + '</span></div></div>',
     '<div id="studio-graph-root" class="studio-graph-root' + (args.rootClassName ? " " + escapeText(args.rootClassName) : "") + '" data-workbench-root-mode="' + escapeText(args.rootMode || "bridge") + '" data-selected-role-id="' + escapeText(args.selectedRoleId) + '" data-selected-flow-key="' + escapeText(args.selectedFlowKey) + '">' + (args.rootContentHtml || "") + '</div>',
-    '<aside class="studio-selection-overlay' + (args.inspectorCollapsed ? " is-collapsed" : "") + '" data-studio-selection-overlay><section class="studio-selection-dialog" data-studio-selection-dialog role="complementary" aria-label="' + escapeText(t("studio.sidePanel", undefined, "Right panel")) + '"><header class="studio-selection-header"><div class="studio-selection-title-wrap"><div class="hint" data-studio-selection-kind-label>' + escapeText(args.selectionKindLabel || "") + '</div><strong data-studio-selection-title>' + escapeText(args.selectionTitle || "") + '</strong></div><div class="studio-selection-actions"><button type="button" class="button subtle" data-studio-selection-collapse="" title="' + escapeText(t("action.close", undefined, "Close")) + '">' + (args.inspectorCollapsed ? ">" : "<") + '</button></div></header><div class="studio-selection-tabstrip segmented"><button type="button" class="button subtle' + ((args.sideTab || "selection") === "selection" ? " active" : "") + '" data-studio-side-tab="selection">' + escapeText(t("studio.authoringTab", undefined, "Authoring")) + '</button><button type="button" class="button subtle' + ((args.sideTab || "selection") === "debug" ? " active" : "") + '" data-studio-side-tab="debug">' + escapeText(t("build.mode.debug", undefined, "Debug")) + '</button><button type="button" class="button subtle' + ((args.sideTab || "selection") === "result" ? " active" : "") + '" data-studio-side-tab="result">' + escapeText(t("studio.resultsTab", undefined, "Results")) + '</button></div><div class="studio-selection-body"><section class="studio-selection-panel" data-studio-selection-panel="selection"><div class="studio-selection-command-host" data-studio-selection-command-host></div><div class="studio-selection-role-package" data-studio-selection-role-package>' + (args.selectionRolePackageHtml || "") + '</div></section><section class="studio-selection-panel studio-selection-debug-panel" data-studio-selection-panel="debug">' + (args.selectionDebugHtml || "") + '</section><section class="studio-selection-panel studio-selection-result-panel" data-studio-selection-panel="result">' + (args.selectionResultsHtml || "") + '</section></div></section></aside>',
+    '<aside class="studio-selection-overlay' + (args.inspectorCollapsed ? " is-collapsed" : "") + '" data-studio-selection-overlay><section class="studio-selection-dialog" data-studio-selection-dialog role="complementary" aria-label="' + escapeText(t("studio.sidePanel", undefined, "Right panel")) + '"><header class="studio-selection-header"><div class="studio-selection-title-wrap"><div class="hint" data-studio-selection-kind-label>' + escapeText(args.selectionKindLabel || "") + '</div><strong data-studio-selection-title>' + escapeText(args.selectionTitle || "") + '</strong></div><div class="studio-selection-actions"><button type="button" class="button subtle" data-studio-selection-collapse="" title="' + escapeText(t("action.close", undefined, "Close")) + '">' + (args.inspectorCollapsed ? ">" : "<") + '</button></div></header><div class="studio-selection-tabstrip segmented"><button type="button" class="button subtle' + ((args.sideTab || "structure") === "structure" ? " active" : "") + '" data-studio-side-tab="structure">' + escapeText(t("studio.retrievalTab", undefined, "Browse")) + '</button><button type="button" class="button subtle' + ((args.sideTab || "structure") === "selection" ? " active" : "") + '" data-studio-side-tab="selection">' + escapeText(t("studio.authoringTab", undefined, "Authoring")) + '</button><button type="button" class="button subtle' + ((args.sideTab || "structure") === "debug" ? " active" : "") + '" data-studio-side-tab="debug">' + escapeText(t("build.mode.debug", undefined, "Debug")) + '</button><button type="button" class="button subtle' + ((args.sideTab || "structure") === "result" ? " active" : "") + '" data-studio-side-tab="result">' + escapeText(t("studio.resultsTab", undefined, "Results")) + '</button></div><div class="studio-selection-body"><section class="studio-selection-panel studio-selection-structure-panel studio-outline-panel" data-studio-selection-panel="structure">' + (args.selectionStructureHtml || "") + '</section><section class="studio-selection-panel" data-studio-selection-panel="selection"><div class="studio-selection-command-host" data-studio-selection-command-host></div><div class="studio-selection-role-package" data-studio-selection-role-package>' + (args.selectionRolePackageHtml || "") + '</div></section><section class="studio-selection-panel studio-selection-debug-panel" data-studio-selection-panel="debug">' + (args.selectionDebugHtml || "") + '</section><section class="studio-selection-panel studio-selection-result-panel" data-studio-selection-panel="result">' + (args.selectionResultsHtml || "") + '</section></div></section></aside>',
     "</div>"
   ].join("");
 }
@@ -757,8 +756,10 @@ export function renderStudioBridgeInspector(args: {
   const extracted = (bridge.extracted ?? {}) as JsonRecord;
   const roles = Array.isArray(extracted.roles) ? extracted.roles as JsonRecord[] : [];
   const flows = Array.isArray(extracted.flows) ? extracted.flows as JsonRecord[] : [];
-  const selectedRole = roles.find((role) => role.roleId === args.selectedRoleId) ?? roles[0];
-  const selectedFlow = flows.find((flow) => flow.flowKey === args.selectedFlowKey) ?? flows[0];
+  const explicitSelectedRole = roles.find((role) => role.roleId === args.selectedRoleId) ?? null;
+  const explicitSelectedFlow = flows.find((flow) => flow.flowKey === args.selectedFlowKey) ?? null;
+  const selectedRole = explicitSelectedRole ?? (args.selectedFlowKey ? null : roles[0] ?? null);
+  const selectedFlow = explicitSelectedFlow ?? (args.selectedRoleId ? null : flows[0] ?? null);
   const roleInspector = selectedRole
     ? [
         '<div class="event"><div class="event-top"><span>' + escapeText(t("studio.roleInspector", undefined, "role inspector")) + '</span><span>' + escapeText(String(selectedRole.bindingKind ?? "noop")) + '</span></div><strong><code>' + escapeText(String(selectedRole.roleId ?? "")) + '</code></strong>',
@@ -911,6 +912,77 @@ export function renderStudioExecutionConfigEditor(args: {
   ].join("");
 }
 
+export function renderStudioFlowConfigEditor(args: {
+  flowKey: string;
+  editor?: JsonRecord | null | undefined;
+  authoring?: JsonRecord | null | undefined;
+  t?: Translator;
+}): string {
+  const t: Translator = typeof args.t === "function" ? args.t : (_key, _vars, fallback) => fallback ?? _key;
+  const editor = args.editor ?? {};
+  const activeFlowKey = String(editor.flowKey ?? "");
+  const matchesFlow = activeFlowKey === args.flowKey;
+  const data = matchesFlow && typeof editor.data === "object" && editor.data !== null && !Array.isArray(editor.data)
+    ? editor.data as JsonRecord
+    : {};
+  const draft = matchesFlow && typeof editor.draft === "object" && editor.draft !== null && !Array.isArray(editor.draft)
+    ? editor.draft as JsonRecord
+    : {};
+  const validation = matchesFlow && typeof editor.validation === "object" && editor.validation !== null && !Array.isArray(editor.validation)
+    ? editor.validation as JsonRecord
+    : {};
+  const diagnostics = Array.isArray(validation.diagnostics) ? validation.diagnostics as JsonRecord[] : [];
+  const dirty = matchesFlow && editor.dirty === true;
+  const saving = matchesFlow && editor.saving === true;
+  const error = matchesFlow ? String(editor.error ?? "") : "";
+  const authoring = typeof args.authoring === "object" && args.authoring !== null && !Array.isArray(args.authoring)
+    ? args.authoring as JsonRecord
+    : {};
+  const roles = Object.keys((authoring.roles ?? {}) as JsonRecord).sort((left, right) => left.localeCompare(right));
+  const sourceRoleId = String(draft.sourceRoleId ?? data.sourceRoleId ?? "");
+  const targetRoleId = String(draft.targetRoleId ?? data.targetRoleId ?? "");
+  const eventType = String(draft.eventType ?? data.eventType ?? "");
+  const label = String(draft.label ?? data.label ?? "");
+  const runtimeOnlyErrorFlow = draft.runtimeOnlyErrorFlow ?? data.runtimeOnlyErrorFlow;
+  const participatesInJoin = draft.participatesInJoin ?? data.participatesInJoin;
+  const disabled = saving ? " disabled" : "";
+  const sourceOptions = roles.map((roleId) =>
+    '<option value="' + escapeText(roleId) + '"' + (roleId === sourceRoleId ? " selected" : "") + ">" +
+    escapeText(roleId) + "</option>"
+  ).join("");
+  const targetOptions = [
+    ...roles.map((roleId) =>
+      '<option value="' + escapeText(roleId) + '"' + (roleId === targetRoleId ? " selected" : "") + ">" +
+      escapeText(roleId) + "</option>"
+    ),
+    '<option value="output"' + (targetRoleId === "output" ? " selected" : "") + ">" + escapeText(t("studio.form.outputTarget", undefined, "Output")) + "</option>"
+  ].join("");
+  const diagnosticsHtml = diagnostics.length
+    ? '<div class="studio-flow-config-diagnostics">' + diagnostics.map((diagnostic) =>
+      '<div class="hint' + (String(diagnostic.severity || "") === "error" ? " severity-warning" : "") + '">' +
+      escapeText(String(diagnostic.message ?? diagnostic.code ?? "")) + "</div>"
+    ).join("") + "</div>"
+    : "";
+  return [
+    '<div class="event studio-flow-config-editor" data-flow-config-editor="' + escapeText(args.flowKey) + '">',
+    '<div class="event-top"><span>' + escapeText(t("studio.flowConfig", undefined, "flow config")) + '</span><span>' + escapeText(dirty ? t("common.changed", undefined, "changed") : t("common.ready", undefined, "ready")) + '</span></div>',
+    '<strong><code>' + escapeText(String(data.sourceRoleId ?? "")) + '</code> -> <code>' + escapeText(String(data.targetRoleId ?? "")) + '</code></strong>',
+    '<div class="hint">' + escapeText(t("studio.flowConfigHint", undefined, "Edit source, target, event identity, and authoring-only flow behavior without changing runtime internals.")) + '</div>',
+    error ? '<div class="hint severity-warning">' + escapeText(error) + '</div>' : "",
+    diagnosticsHtml,
+    '<div class="actions compact"><button class="button primary" data-flow-config-save="' + escapeText(args.flowKey) + '"' + (saving ? " disabled" : "") + '>' + escapeText(t("action.save", undefined, "Save")) + '</button><button class="button subtle" data-flow-config-revert="' + escapeText(args.flowKey) + '"' + (saving || !dirty ? " disabled" : "") + '>' + escapeText(t("action.revert", undefined, "Revert")) + "</button></div>",
+    '<div class="form-grid">' +
+      '<label class="field"><span>' + escapeText(t("studio.form.sourceRole", undefined, "Source role")) + '</span><select data-flow-config-field="sourceRoleId"' + disabled + ">" + sourceOptions + '</select></label>' +
+      '<label class="field"><span>' + escapeText(t("studio.form.targetRole", undefined, "Target role")) + '</span><select data-flow-config-field="targetRoleId"' + disabled + ">" + targetOptions + '</select></label>' +
+      '<label class="field"><span>' + escapeText(t("studio.form.eventType", undefined, "Event type")) + '</span><input data-flow-config-field="eventType" value="' + escapeText(eventType) + '"' + disabled + '><div class="hint">' + escapeText(t("studio.flowEventHint", undefined, "Uppercase event token used by authoring and validation.")) + '</div></label>' +
+      '<label class="field"><span>' + escapeText(t("studio.form.flowLabel", undefined, "Display name")) + '</span><input data-flow-config-field="label" value="' + escapeText(label) + '"' + disabled + '><div class="hint">' + escapeText(t("studio.flowLabelHint", undefined, "Optional display label. Empty falls back to the event type.")) + '</div></label>' +
+      '<label class="field checkbox"><input type="checkbox" data-flow-config-field="runtimeOnlyErrorFlow"' + (runtimeOnlyErrorFlow ? " checked" : "") + disabled + '><span>' + escapeText(t("studio.form.runtimeOnlyErrorFlow", undefined, "Runtime error flow")) + '</span></label>' +
+      '<label class="field checkbox"><input type="checkbox" data-flow-config-field="participatesInJoin"' + (participatesInJoin ? " checked" : "") + disabled + '><span>' + escapeText(t("studio.form.participatesInJoin", undefined, "Join source")) + '</span></label>' +
+    "</div>",
+    "</div>"
+  ].join("");
+}
+
 export function renderStudioBridgePanel(args: {
   bridge: JsonRecord | null | undefined;
   readiness: JsonRecord | null | undefined;
@@ -925,6 +997,7 @@ export function renderStudioBridgePanel(args: {
   selectionResultsHtml?: string;
   fullscreen?: boolean;
   rolePackageEditor?: JsonRecord | null | undefined;
+  flowConfigEditor?: JsonRecord | null | undefined;
   inspectorCollapsed?: boolean;
   actionBusy: string;
   t?: Translator;
@@ -943,8 +1016,10 @@ export function renderStudioBridgePanel(args: {
     filter: args.filter || "",
     mode: listMode
   });
-  const selectedRole = roles.find((role) => role.roleId === args.selectedRoleId) ?? roles[0];
-  const selectedFlow = flows.find((flow) => flow.flowKey === args.selectedFlowKey) ?? flows[0];
+  const explicitSelectedRole = roles.find((role) => role.roleId === args.selectedRoleId) ?? null;
+  const explicitSelectedFlow = flows.find((flow) => flow.flowKey === args.selectedFlowKey) ?? null;
+  const selectedRole = explicitSelectedRole ?? (args.selectedFlowKey ? null : roles[0] ?? null);
+  const selectedFlow = explicitSelectedFlow ?? (args.selectedRoleId ? null : flows[0] ?? null);
   const busy = args.actionBusy ? " disabled" : "";
   if (!bridge || Object.keys(bridge).length === 0) {
     return '<div class="hint">' + escapeText(t("studio.dataUnavailable", undefined, "Graph workspace data unavailable.")) + '</div>';
@@ -984,42 +1059,37 @@ export function renderStudioBridgePanel(args: {
     rootClassName: args.workbenchView === "source" ? "studio-source-root" : "",
     rootContentHtml: args.workbenchView === "source" ? (args.graphRootContentHtml || "") : "",
     sideTab: args.sideTab || "selection",
-    selectionKindLabel: selectedRole
+    selectionKindLabel: explicitSelectedRole
       ? t("studio.roleInspector", undefined, "Role details")
-      : selectedFlow
+      : explicitSelectedFlow
         ? t("studio.flowInspector", undefined, "Flow details")
         : "",
-    selectionTitle: selectedRole
-      ? String(selectedRole.roleId ?? "")
-      : selectedFlow
-        ? String(selectedFlow.flowKey ?? "")
+    selectionTitle: explicitSelectedRole
+      ? String(explicitSelectedRole.roleId ?? "")
+      : explicitSelectedFlow
+        ? String(explicitSelectedFlow.flowKey ?? "")
         : "",
-    selectionRolePackageHtml: selectedRole
+    selectionRolePackageHtml: explicitSelectedRole
       ? renderStudioRolePackageEditor({
-          roleId: String(selectedRole.roleId ?? ""),
+          roleId: String(explicitSelectedRole.roleId ?? ""),
           editor: args.rolePackageEditor,
           t
         })
-      : selectedFlow
-        ? '<div class="event"><div class="event-top"><span>' + escapeText(t("studio.flowInspector", undefined, "Flow details")) + '</span><span>' +
-          escapeText(String(selectedFlow.eventType ?? "")) + '</span></div><strong><code>' + escapeText(String(selectedFlow.fromRoleId ?? "")) + '</code> -> <code>' +
-          escapeText(String(selectedFlow.toRoleId ?? "")) + '</code></strong><div class="hint">' +
-          escapeText(t("studio.flowDisplayIdentity", {
-            label: flowDisplayLabel(selectedFlow),
-            eventType: String(selectedFlow.eventType ?? "")
-          }, "display " + flowDisplayLabel(selectedFlow) + " · event " + String(selectedFlow.eventType ?? ""))) +
-          "</div></div>"
+        : explicitSelectedFlow
+        ? renderStudioFlowConfigEditor({
+          flowKey: String(explicitSelectedFlow.flowKey ?? ""),
+          editor: args.flowConfigEditor,
+          authoring: bridge.authoring as JsonRecord | undefined,
+          t
+        })
         : "",
     selectionStructureHtml:
-      '<div class="studio-bridge-index structure-list" data-studio-bridge-region="index"><div class="event studio-bridge-index-controls"><div class="event-top"><span>' +
-      escapeText(t("studio.retrievalTab", undefined, "Browse")) + '</span><span>' + escapeText(t("studio.topologyOrder", undefined, "authoring order")) + '</span></div><div class="toolbar-row compact"><input data-studio-bridge-filter="1" value="' +
+      '<div class="studio-bridge-index structure-list" data-studio-bridge-region="index"><div class="studio-bridge-index-controls"><div class="toolbar-row compact"><input data-studio-bridge-filter="1" value="' +
       escapeText(args.filter || "") + '" placeholder="' + escapeText(t("studio.filterGraphItems", undefined, "Filter roles or flows")) + '" aria-label="' + escapeText(t("studio.filterGraphItems", undefined, "Filter roles or flows")) + '"><select data-studio-bridge-list-mode="1" aria-label="' + escapeText(t("studio.retrievalTab", undefined, "Browse")) + '"><option value="all"' +
       (listMode === "all" ? " selected" : "") + ">" + escapeText(t("common.all", undefined, "all")) + '</option><option value="roles"' +
       (listMode === "roles" ? " selected" : "") + ">" + escapeText(t("studio.roles", undefined, "roles")) + '</option><option value="flows"' +
       (listMode === "flows" ? " selected" : "") + ">" + escapeText(t("studio.flows", undefined, "flows")) + '</option></select></div><div class="hint">' +
-      escapeText(t("studio.topologyOrderHint", undefined, "Cycles are listed after the acyclic path so the authoring order stays stable.")) + '</div></div><div class="studio-index-grid"><div class="studio-navigator structure-list" data-studio-bridge-region="navigator"><div class="event"><div class="event-top"><span>' + escapeText(t("studio.roles", undefined, "roles")) + '</span><span>' + escapeText(String(filtered.roles.length)) +
-      " / " + escapeText(String(roles.length)) + '</span></div><strong>' + escapeText(t("studio.structuredRoleDraft", undefined, "Role structure")) + '</strong><div class="hint">' + escapeText(t("studio.bridgeReadsWorkbench", undefined, "Derived from the current graph source.")) + '</div></div>' + roleButtons.join("") + '</div><div class="structure-list studio-flow-list" data-studio-bridge-region="flow-list"><div class="event"><div class="event-top"><span>' + escapeText(t("studio.flows", undefined, "flows")) + '</span><span>' + escapeText(String(filtered.flows.length)) +
-      " / " + escapeText(String(flows.length)) + '</span></div><strong>' + escapeText(t("studio.structuredFlowDraft", undefined, "Flow structure")) + '</strong><div class="hint">' + escapeText(t("studio.eventsVisible", undefined, "Event types and join participation stay visible.")) + '</div></div>' + flowButtons.join("") + "</div></div></div>",
+      escapeText(t("studio.topologyOrderHint", undefined, "Cycles are listed after the acyclic path so the authoring order stays stable.")) + '</div></div><div class="studio-index-stack"><div class="studio-navigator structure-list" data-studio-bridge-region="navigator"><div class="compact-list-item studio-index-section-heading"><strong>' + escapeText(t("studio.roles", undefined, "roles")) + '</strong><span class="hint">' + escapeText(String(filtered.roles.length) + " / " + String(roles.length)) + '</span></div>' + roleButtons.join("") + '</div><div class="structure-list studio-flow-list" data-studio-bridge-region="flow-list"><div class="compact-list-item studio-index-section-heading"><strong>' + escapeText(t("studio.flows", undefined, "flows")) + '</strong><span class="hint">' + escapeText(String(filtered.flows.length) + " / " + String(flows.length)) + '</span></div>' + flowButtons.join("") + "</div></div></div>",
     selectionDebugHtml: args.selectionDebugHtml || "",
     selectionResultsHtml: args.selectionResultsHtml || "",
     inspectorCollapsed: args.inspectorCollapsed === true,
@@ -1027,10 +1097,8 @@ export function renderStudioBridgePanel(args: {
     t
   });
   return [
-    '<div class="structure-list studio-bridge">',
-    '<div class="studio-bridge-layout">',
-    '<div class="studio-graph-column" data-studio-bridge-region="graph">' + graphCanvas + "</div>",
-    "</div>",
+    '<div class="studio-bridge-layout studio-graph-column" data-studio-bridge-region="graph">',
+    graphCanvas,
     "</div>"
   ].join("");
 }

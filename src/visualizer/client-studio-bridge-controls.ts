@@ -5,6 +5,7 @@ type ListenerEvent = {
 type ElementLike = {
   addEventListener?: (type: string, listener: (event: ListenerEvent) => void) => void;
   getAttribute?: (name: string) => string | null;
+  setAttribute?: (name: string, value: string) => void;
 };
 
 type LookupFn = (selector: string) => ElementLike | null | undefined;
@@ -20,6 +21,17 @@ export function bindStudioBridgeControls(args: {
   onFilterInput: (value: string) => void;
   onListModeChange: (value: string) => void;
 }): void {
+  const bindOnce = (element: ElementLike | null | undefined, eventName: string, marker: string, listener: (event: ListenerEvent) => void): void => {
+    if (!element?.addEventListener) {
+      return;
+    }
+    if (element.getAttribute?.("data-bound-" + marker) === "true") {
+      return;
+    }
+    element.setAttribute?.("data-bound-" + marker, "true");
+    element.addEventListener(eventName, listener);
+  };
+
   const listElements = (root: RootLike, selector: string): ElementLike[] => {
     if (!root?.querySelectorAll) {
       return [];
@@ -28,19 +40,19 @@ export function bindStudioBridgeControls(args: {
   };
 
   for (const button of listElements(args.root, "[data-studio-role-id]")) {
-    button.addEventListener?.("click", () => {
+    bindOnce(button, "click", "studio-role-select", () => {
       args.onRoleSelect(button.getAttribute?.("data-studio-role-id") || "");
     });
   }
   for (const button of listElements(args.root, "[data-studio-flow-key]")) {
-    button.addEventListener?.("click", () => {
+    bindOnce(button, "click", "studio-flow-select", () => {
       args.onFlowSelect(button.getAttribute?.("data-studio-flow-key") || "");
     });
   }
-  args.findElement("[data-studio-bridge-filter]")?.addEventListener?.("input", (event) => {
+  bindOnce(args.findElement("[data-studio-bridge-filter]"), "input", "studio-bridge-filter", (event) => {
     args.onFilterInput(String(event.target?.value ?? ""));
   });
-  args.findElement("[data-studio-bridge-list-mode]")?.addEventListener?.("change", (event) => {
+  bindOnce(args.findElement("[data-studio-bridge-list-mode]"), "change", "studio-bridge-list-mode", (event) => {
     args.onListModeChange(String(event.target?.value ?? "all"));
   });
 }

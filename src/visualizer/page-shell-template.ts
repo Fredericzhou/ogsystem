@@ -85,9 +85,7 @@ export function renderPageShellBody({ workdir, locale, t }: PageShellBodyOptions
                     <div id="workbench-tabs" class="segmented build-mode-tabs"></div>
                     <div id="workbench-actions" class="actions"></div>
                   </div>
-                  <div class="editor-shell build-ide-shell">
-                    <div id="workbench-body" class="build-ide-body"></div>
-                  </div>
+                  <div id="workbench-body" class="build-ide-shell build-ide-body"></div>
                 </div>
               </article>
             </section>
