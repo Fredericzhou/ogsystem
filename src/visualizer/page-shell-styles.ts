@@ -132,7 +132,6 @@ export function renderPageShellStyles(): string {
     .search:focus, .select:focus {
       border-color: rgba(56, 189, 248, 0.26);
       background: var(--control-bg-strong);
-      box-shadow: 0 0 0 1px rgba(56, 189, 248, 0.08);
     }
     .search::placeholder { color: #6d7c9b; }
     .truncate {
@@ -444,6 +443,10 @@ export function renderPageShellStyles(): string {
       background: var(--control-bg-strong);
       box-shadow: 0 6px 18px rgba(0, 0, 0, 0.12);
       transform: translateY(-1px);
+    }
+    .button:active {
+      transform: translateY(0);
+      box-shadow: none;
     }
     .button.primary {
       background: linear-gradient(180deg, rgba(56, 189, 248, 0.24), rgba(14, 165, 233, 0.12));
@@ -2177,6 +2180,21 @@ export function renderPageShellStyles(): string {
       .preview,
       .editor {
         border-radius: 9px;
+      }
+    }
+    .button:focus-visible,
+    .run-card:focus-visible,
+    .search:focus-visible,
+    .select:focus-visible,
+    .segmented .button:focus-visible,
+    .console-tabs .button:focus-visible {
+      outline: 2px solid rgba(56, 189, 248, 0.7);
+      outline-offset: 2px;
+    }
+    @media (prefers-reduced-motion: reduce) {
+      *, *::before, *::after {
+        animation-duration: 0.01ms !important;
+        transition-duration: 0.01ms !important;
       }
     }
 `;

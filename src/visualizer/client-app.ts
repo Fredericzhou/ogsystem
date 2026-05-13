@@ -418,7 +418,6 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
     const heroSaveButton = document.getElementById("hero-save");
     const releaseExportButton = document.getElementById("release-export");
     const heroReleaseExportButton = document.getElementById("hero-release-export");
-    const reindexButton = document.getElementById("reindex");
     const heroReindexButton = document.getElementById("hero-reindex");
     const resumeRunButton = document.getElementById("resume-run");
     const stopRunButton = document.getElementById("stop-run");
@@ -520,7 +519,6 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
         [heroReleaseExportButton, "action.exportProject"],
         [heroReindexButton, "action.reindex"],
         [releaseExportButton, "action.exportProject"],
-        [reindexButton, "action.reindex"],
         [resumeRunButton, "action.resumeSelected"],
         [stopRunButton, "action.requestStop"],
         [refreshButton, "action.refresh"],
@@ -1786,7 +1784,6 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
       const stopDisabled = disabled || !canRequestStop();
       if (releaseExportButton) releaseExportButton.disabled = disabled || noProject;
       if (heroReleaseExportButton) heroReleaseExportButton.disabled = disabled || noProject;
-      reindexButton.disabled = disabled || noProject;
       if (heroReindexButton) heroReindexButton.disabled = disabled || noProject;
       resumeRunButton.disabled = disabled || !state.selectedRunId;
       stopRunButton.disabled = stopDisabled;
@@ -1911,9 +1908,6 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
       }
       if (heroReleaseExportButton) {
         heroReleaseExportButton.hidden = !releaseActive;
-      }
-      if (reindexButton) {
-        reindexButton.hidden = runActive;
       }
       if (releaseExportButton) {
         releaseExportButton.hidden = false;
@@ -3135,6 +3129,27 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
           event.preventDefault();
           return;
         }
+        const tablistKeys = ["ArrowLeft", "ArrowRight", "Home", "End"];
+        if (tablistKeys.includes(event.key)) {
+          const target = event.target;
+          const tablist = target?.closest?.("[role=tablist]");
+          if (!tablist) { return; }
+          const tabs = Array.from(tablist.querySelectorAll("[role=tab]"));
+          if (tabs.length < 2) { return; }
+          const current = tabs.indexOf(target);
+          if (current < 0) { return; }
+          let next = current;
+          if (event.key === "ArrowRight") { next = (current + 1) % tabs.length; }
+          else if (event.key === "ArrowLeft") { next = (current - 1 + tabs.length) % tabs.length; }
+          else if (event.key === "Home") { next = 0; }
+          else if (event.key === "End") { next = tabs.length - 1; }
+          if (next !== current) {
+            tabs[next].focus();
+            tabs[next].click();
+            event.preventDefault();
+          }
+          return;
+        }
         if (event.key !== "Escape") {
           return;
         }
@@ -3598,16 +3613,23 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
       if (actionFormSectionEl) {
         actionFormSectionEl.hidden = !form;
       }
+      const shellEl = actionFormSectionEl?.closest?.(".shell");
+      const topNavEl = shellEl?.querySelector?.("header.top-nav");
+      const statusBarEl = shellEl?.querySelector?.("footer.status-bar");
       if (!form) {
         actionFormEl.innerHTML = '<div class="hint">' + escapeText(t("form.emptyHint")) + '</div>';
         if (actionFormSectionEl) {
           actionFormSectionEl.setAttribute("aria-hidden", "true");
         }
+        if (topNavEl) { topNavEl.removeAttribute("inert"); }
+        if (statusBarEl) { statusBarEl.removeAttribute("inert"); }
         return;
       }
       if (actionFormSectionEl) {
         actionFormSectionEl.setAttribute("aria-hidden", "false");
       }
+      if (topNavEl) { topNavEl.setAttribute("inert", ""); }
+      if (statusBarEl) { statusBarEl.setAttribute("inert", ""); }
       const disabled = state.actionBusy ? " disabled" : "";
       if (form.kind === "start") {
         const inputError = form.errors?.input || "";
@@ -5998,9 +6020,6 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
       });
     }
 
-    reindexButton.addEventListener("click", async () => {
-      openActionForm("reindex", {}, { returnFocusEl: reindexButton });
-    });
     if (heroReindexButton) {
       heroReindexButton.addEventListener("click", async () => {
         openActionForm("reindex", {}, { returnFocusEl: heroReindexButton });

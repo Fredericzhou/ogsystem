@@ -90,7 +90,7 @@ const PAGE_ELEMENT_IDS = [
   "sidebar",
   "sidebar-overlay",
   "sidebar-toggle",
-  "reindex",
+  "hero-reindex",
   "resume-run",
   "stop-run",
   "refresh",
@@ -4275,9 +4275,9 @@ test("visualizer client keeps project navigation local and reindexes through inl
   assert.equal(harness.backend.fetchCalls.some((call) => call.path.startsWith("/api/v1/project/browse")), false);
   assert.equal(harness.backend.fetchCalls.some((call) => call.path === "/api/v1/project/load"), false);
 
-  const reindexButton = harness.document.getElementById("reindex");
+  const reindexButton = harness.document.getElementById("hero-reindex");
   assert.ok(reindexButton);
-  await waitForCondition(() => harness.document.getElementById("reindex")?.disabled === false);
+  await waitForCondition(() => harness.document.getElementById("hero-reindex")?.disabled === false);
   await reindexButton.click();
   await waitForCondition(() => Boolean(harness.document.getElementById("action-form-submit")));
   await harness.document.getElementById("action-form-submit").click();

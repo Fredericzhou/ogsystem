@@ -58,7 +58,7 @@ export function renderPageShellBody({ workdir, locale, t }: PageShellBodyOptions
         </div>
       </header>
       <main class="main-stage">
-        <div id="flash" class="flash hidden"></div>
+        <div id="flash" class="flash hidden" role="status" aria-live="polite" aria-atomic="true"></div>
         <div class="stage-stack">
           <section class="grid" id="action-form-section" hidden role="dialog" aria-modal="true" aria-labelledby="action-form-title">
             <article class="card span-12">
@@ -263,7 +263,6 @@ export function renderPageShellBody({ workdir, locale, t }: PageShellBodyOptions
           <div id="workbench-status" class="toolbar-group global-status-workbench-status"></div>
         </div>
         <div class="actions global-status-actions">
-          <button id="reindex" class="button subtle">${escapeHtml(t("action.reindex"))}</button>
           <div id="live" class="live">${escapeHtml(t("state.idle"))}</div>
         </div>
       </footer>
