@@ -15,6 +15,9 @@ function nodeStroke(node: GraphViewModelNode): string {
   if (node.diagnostic?.severity === "error") return "#f87171";
   if (node.diagnostic?.severity === "warning") return "#fbbf24";
   if (node.kind === "boundary") return "#64748b";
+  if (node.structure?.review) return "#c084fc";
+  if (node.structure?.joinMode) return "#a78bfa";
+  if (node.structure?.loopMax && node.structure.loopMax > 1) return "#2dd4bf";
   return "#38bdf8";
 }
 
@@ -86,14 +89,22 @@ function studioNodeMetadata(node: GraphViewModelNode): Node.Metadata {
   };
 }
 
+function nodeFill(node: GraphViewModelNode): string {
+  if (node.kind === "boundary") return "rgba(15, 23, 42, 0.6)";
+  if (node.structure?.review) return "rgba(88, 28, 135, 0.18)";
+  if (node.structure?.joinMode) return "rgba(67, 56, 202, 0.14)";
+  if (node.structure?.loopMax && node.structure.loopMax > 1) return "rgba(13, 148, 136, 0.12)";
+  return "rgba(15, 23, 42, 0.96)";
+}
+
 function studioNodeAttrs(node: GraphViewModelNode): Node.Metadata["attrs"] {
   return {
     body: {
-      rx: 8,
-      ry: 8,
-      fill: node.kind === "boundary" ? "rgba(15, 23, 42, 0.72)" : "rgba(15, 23, 42, 0.96)",
+      rx: node.kind === "boundary" ? 20 : 8,
+      ry: node.kind === "boundary" ? 20 : 8,
+      fill: nodeFill(node),
       stroke: nodeStroke(node),
-      strokeWidth: node.kind === "boundary" ? 1 : 1.5,
+      strokeWidth: node.kind === "boundary" ? 1.2 : 1.5,
       strokeDasharray: node.kind === "boundary" ? "6 4" : ""
     },
     label: {

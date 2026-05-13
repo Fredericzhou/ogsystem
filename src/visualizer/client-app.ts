@@ -1239,7 +1239,9 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
         duplicateEdge: t("studio.graph.duplicateEdge", undefined, "This edge already exists."),
         invalidEventType: t("studio.graph.invalidEventType", undefined, "Event type must be uppercase."),
         deleteRoleConfirm: t("studio.graph.deleteRoleConfirm", undefined, "Delete role {roleId}?"),
-        editBlocked: t("studio.graph.editBlocked", undefined, "Graph authoring stays disabled until Mermaid parses successfully.")
+        editBlocked: t("studio.graph.editBlocked", undefined, "Graph authoring stays disabled until Mermaid parses successfully."),
+        boundaryEntry: t("studio.graph.boundaryEntry", undefined, "Entry"),
+        boundaryEnd: t("studio.graph.boundaryEnd", undefined, "End")
       };
     }
 

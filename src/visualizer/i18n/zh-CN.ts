@@ -743,6 +743,8 @@ export const zhCN = {
   "studio.graph.invalidEventType": "事件类型必须使用大写。",
   "studio.graph.deleteRoleConfirm": "删除角色 {roleId}？",
   "studio.graph.editBlocked": "Mermaid 成功解析后才能编辑图编排。",
+  "studio.graph.boundaryEntry": "入口",
+  "studio.graph.boundaryEnd": "终止",
   "studio.graph.saveDraftBlocked": "Mermaid 成功解析后才能保存图编排草稿。",
   "studio.graph.draftSaved": "编排草稿已保存到 {path}。",
   "studio.graph.generateMmdBlocked": "源码成功解析后才能从图编排生成 Mermaid。",

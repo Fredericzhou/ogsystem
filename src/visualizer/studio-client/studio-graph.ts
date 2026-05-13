@@ -67,7 +67,9 @@ type StudioGraphLabelKey =
   | "duplicateEdge"
   | "invalidEventType"
   | "deleteRoleConfirm"
-  | "editBlocked";
+  | "editBlocked"
+  | "boundaryEntry"
+  | "boundaryEnd";
 
 export type StudioGraphLabels = Partial<Record<StudioGraphLabelKey, string>>;
 
@@ -294,6 +296,13 @@ export class StudioGraphIsland {
         : null,
       mode: options.readOnly ? "run" : "edit"
     });
+    for (const node of viewModel.nodes) {
+      if (node.kind === "boundary" && node.id === "input") {
+        node.label = "▶ " + this.label("boundaryEntry");
+      } else if (node.kind === "boundary" && node.id === "output") {
+        node.label = "■ " + this.label("boundaryEnd");
+      }
+    }
     this.currentViewModel = viewModel;
     if (!options.authoring && !options.viewModel) {
       this.applying = true;
@@ -1762,7 +1771,8 @@ export class StudioGraphIsland {
   }
 
   private renderMinimap(): void {
-    const roleNodes = this.graph.getNodes().filter((node) => {
+    const allNodes = this.graph.getNodes();
+    const roleNodes = allNodes.filter((node) => {
       const data = node.getData() as { studioNode?: { kind?: string } } | undefined;
       return data?.studioNode?.kind === "role";
     });
@@ -1772,11 +1782,13 @@ export class StudioGraphIsland {
       return;
     }
     this.minimapEl.hidden = false;
-    const metrics = roleNodes.map((node) => {
+    const metrics = allNodes.map((node) => {
+      const data = node.getData() as { studioNode?: { kind?: string } } | undefined;
       const position = node.getPosition();
       const size = node.getSize();
       return {
         id: node.id,
+        kind: data?.studioNode?.kind || "role",
         x: position.x,
         y: position.y,
         width: size.width,
@@ -1789,16 +1801,31 @@ export class StudioGraphIsland {
     const maxY = Math.max(...metrics.map((item) => item.y + item.height));
     const totalWidth = Math.max(maxX - minX, 1);
     const totalHeight = Math.max(maxY - minY, 1);
-    this.minimapContentEl.innerHTML = metrics.map((item) => {
+    const edgeLines = this.graph.getEdges().map((edge) => {
+      const sourceNode = metrics.find((m) => m.id === edge.getSourceCellId());
+      const targetNode = metrics.find((m) => m.id === edge.getTargetCellId());
+      if (!sourceNode || !targetNode) return "";
+      const x1 = ((sourceNode.x + sourceNode.width - minX) / totalWidth) * 100;
+      const y1 = ((sourceNode.y + sourceNode.height / 2 - minY) / totalHeight) * 100;
+      const x2 = ((targetNode.x - minX) / totalWidth) * 100;
+      const y2 = ((targetNode.y + targetNode.height / 2 - minY) / totalHeight) * 100;
+      return '<line x1="' + x1.toFixed(2) + '%" y1="' + y1.toFixed(2) + '%" x2="' + x2.toFixed(2) + '%" y2="' + y2.toFixed(2) + '%" />';
+    }).filter(Boolean);
+    const nodeHtml = metrics.map((item) => {
       const left = ((item.x - minX) / totalWidth) * 100;
       const top = ((item.y - minY) / totalHeight) * 100;
       const width = Math.max((item.width / totalWidth) * 100, 5);
       const height = Math.max((item.height / totalHeight) * 100, 8);
       const selected = this.options.selectedRoleId === item.id;
-      return '<div class="studio-graph-minimap-node' + (selected ? " is-selected" : "") +
+      const kindClass = item.kind === "boundary" ? " is-boundary" : "";
+      return '<div class="studio-graph-minimap-node' + kindClass + (selected ? " is-selected" : "") +
         '" data-minimap-role-id="' + this.escapeHtml(item.id) +
         '" style="left:' + left.toFixed(3) + "%;top:" + top.toFixed(3) + "%;width:" + width.toFixed(3) + "%;height:" + height.toFixed(3) + '%"></div>';
     }).join("");
+    const svgHtml = edgeLines.length
+      ? '<svg class="studio-graph-minimap-edges" viewBox="0 0 100 100" preserveAspectRatio="none">' + edgeLines.join("") + '</svg>'
+      : "";
+    this.minimapContentEl.innerHTML = svgHtml + nodeHtml;
     const translate = this.graph.translate();
     const scale = this.graph.zoom();
     const viewportWidth = Math.max(this.canvasEl.clientWidth, 1);

@@ -739,6 +739,8 @@ export const en = {
   "studio.graph.invalidEventType": "Event type must be uppercase.",
   "studio.graph.deleteRoleConfirm": "Delete role {roleId}?",
   "studio.graph.editBlocked": "Graph authoring stays disabled until Mermaid parses successfully.",
+  "studio.graph.boundaryEntry": "Entry",
+  "studio.graph.boundaryEnd": "End",
   "studio.graph.saveDraftBlocked": "Graph authoring cannot save a draft until Mermaid parses successfully.",
   "studio.graph.draftSaved": "Authoring draft saved to {path}.",
   "studio.graph.generateMmdBlocked": "Graph authoring cannot generate Mermaid until the source parses successfully.",

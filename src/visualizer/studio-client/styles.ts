@@ -268,15 +268,16 @@ export function injectStudioGraphStyles(): void {
       position: absolute;
       right: 14px;
       bottom: 14px;
-      width: 164px;
-      height: 108px;
+      width: 180px;
+      height: 120px;
       border: 1px solid rgba(148, 163, 184, 0.28);
       border-radius: 10px;
-      background: rgba(8, 13, 26, 0.9);
+      background: rgba(8, 13, 26, 0.92);
       box-shadow: 0 16px 32px rgba(0, 0, 0, 0.24);
       overflow: hidden;
       z-index: 4;
-      pointer-events: none;
+      pointer-events: auto;
+      cursor: pointer;
     }
     .studio-graph-minimap[hidden] {
       display: none;
@@ -286,17 +287,35 @@ export function injectStudioGraphStyles(): void {
       inset: 8px;
       overflow: hidden;
     }
+    .studio-graph-minimap-edges {
+      position: absolute;
+      inset: 0;
+      width: 100%;
+      height: 100%;
+      pointer-events: none;
+    }
+    .studio-graph-minimap-edges line {
+      stroke: rgba(148, 163, 184, 0.35);
+      stroke-width: 0.6;
+    }
     .studio-graph-minimap-node {
       position: absolute;
       min-width: 4px;
       min-height: 6px;
       border-radius: 3px;
-      background: rgba(148, 163, 184, 0.72);
-      border: 1px solid rgba(226, 232, 240, 0.36);
+      background: rgba(56, 189, 248, 0.55);
+      border: 1px solid rgba(186, 230, 253, 0.4);
+    }
+    .studio-graph-minimap-node.is-boundary {
+      background: rgba(100, 116, 139, 0.45);
+      border-color: rgba(148, 163, 184, 0.4);
+      border-style: dashed;
+      border-radius: 2px;
     }
     .studio-graph-minimap-node.is-selected {
-      background: rgba(56, 189, 248, 0.72);
-      border-color: rgba(186, 230, 253, 0.7);
+      background: rgba(56, 189, 248, 0.85);
+      border-color: rgba(186, 230, 253, 0.8);
+      box-shadow: 0 0 4px rgba(56, 189, 248, 0.5);
     }
     .studio-graph-minimap-viewport {
       position: absolute;
@@ -304,6 +323,7 @@ export function injectStudioGraphStyles(): void {
       background: rgba(56, 189, 248, 0.08);
       border-radius: 6px;
       box-shadow: inset 0 0 0 1px rgba(186, 230, 253, 0.22);
+      pointer-events: none;
     }
     .studio-graph-quick-open {
       position: absolute;
