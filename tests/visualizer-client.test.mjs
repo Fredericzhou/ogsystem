@@ -3794,8 +3794,6 @@ test("visualizer client keeps the right-side shell mounted when switching betwee
   assert.equal(harness.backend.fetchCalls.filter((call) => call.path === "/api/v1/runs/start").length, 0);
 });
 
-test.skip("visualizer client clears the previous runtime projection before a new Build dry run resolves", async () => {});
-
 test("visualizer client opens Studio Bridge and keeps authoring affordances on the graph shell", async () => {
   const harness = await createClientHarness({ readinessCanDryRun: true });
   const mountCalls = [];
@@ -4101,45 +4099,6 @@ test("visualizer client retries readonly run graph mount until the Graph panel i
   assert.equal(readonlyMount.readOnly, true);
   assert.equal(readonlyMount.width, 720);
   assert.equal(readonlyMount.height, 420);
-});
-
-test.skip("visualizer client collapses the docked selection panel without leaving the graph workspace", async () => {
-  const harness = await createClientHarness({ readinessCanDryRun: true });
-  const mountCalls = [];
-  harness.window.OGSVisualizerClient.mountStudioX6Bridge = (root, options) => {
-    mountCalls.push({ root, options });
-  };
-  const latestEditableMount = () =>
-    mountCalls.findLast((call) => typeof call.options.onApplyCanvas === "function")?.options;
-
-  await openDesignTab(harness);
-  await waitForCondition(() => Boolean(harness.document.getElementById("studio-graph-root")));
-  latestEditableMount().onSelectRole("demo-analyst");
-  await settle();
-
-  const overlay = harness.document.querySelector(".studio-selection-overlay");
-  assert.ok(overlay);
-  const shell = harness.document.querySelector("[data-studio-canvas-shell]");
-  assert.ok(shell);
-  const collapseButton = overlay.querySelector("[data-studio-selection-collapse]");
-  assert.ok(collapseButton);
-  assert.equal(overlay.attributes.class.includes("is-collapsed"), false);
-  assert.equal(shell.attributes.class.includes("has-collapsed-selection"), false);
-
-  const mountCountBeforeCollapse = mountCalls.length;
-  await collapseButton.click();
-  await waitForCondition(() => overlay.attributes.class.includes("is-collapsed"), 40);
-  const collapsedButton = overlay.querySelector("[data-studio-selection-collapse]");
-  assert.ok(collapsedButton);
-  assert.equal(overlay.attributes.class.includes("is-collapsed"), true);
-  assert.equal(mountCalls.length, mountCountBeforeCollapse);
-
-  await collapsedButton.click();
-  await waitForCondition(() => overlay.attributes.class.includes("is-collapsed") === false, 40);
-  const expandedButton = overlay.querySelector("[data-studio-selection-collapse]");
-  assert.ok(expandedButton);
-  assert.equal(overlay.attributes.class.includes("is-collapsed"), false);
-  assert.equal(mountCalls.length, mountCountBeforeCollapse);
 });
 
 test("visualizer client sends chat-to-MMD context and applies a validated authoring patch", async () => {

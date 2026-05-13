@@ -898,19 +898,6 @@ export function renderPageShellStyles(): string {
       border-color: var(--tab-active-border);
       color: #b5ecff;
     }
-    .legacy-tabs {
-      flex: 1 1 100%;
-      display: flex;
-      flex-wrap: wrap;
-      gap: 4px;
-      padding-top: 8px;
-      border-top: 1px solid var(--border);
-    }
-    .legacy-tabs .button {
-      flex: 0 1 auto;
-      min-width: 96px;
-      border-color: rgba(148, 163, 184, 0.1);
-    }
     .console-panel[hidden] {
       display: none;
     }

@@ -461,7 +461,6 @@ test("client input policy keeps high-frequency boundaries explicit", () => {
 test("client shell control renderers keep lifecycle visibility and run-list filtering pure", () => {
   const consoleHtml = renderConsoleTabsHtml({
     consoleTab: "run",
-    legacyConsoleTab: "",
     operateTab: "overview",
     t,
     escapeText
@@ -474,10 +473,10 @@ test("client shell control renderers keep lifecycle visibility and run-list filt
   assert.doesNotMatch(consoleHtml, /data-console-tab="build"/);
   assert.doesNotMatch(consoleHtml, /data-console-tab="operate"/);
   assert.doesNotMatch(consoleHtml, /data-console-tab="legacy"/);
-  assert.deepEqual(getVisibleConsolePanelIds({ consoleTab: "design", legacyConsoleTab: "", operateTab: "overview" }), ["project", "build"]);
-  assert.deepEqual(getVisibleConsolePanelIds({ consoleTab: "run", legacyConsoleTab: "", operateTab: "overview" }), ["debug", "ops"]);
-  assert.deepEqual(getVisibleConsolePanelIds({ consoleTab: "run", legacyConsoleTab: "", operateTab: "logs" }), ["debug", "logs"]);
-  assert.deepEqual(getVisibleConsolePanelIds({ consoleTab: "release", legacyConsoleTab: "", operateTab: "overview" }), ["validate-release"]);
+  assert.deepEqual(getVisibleConsolePanelIds({ consoleTab: "design", operateTab: "overview" }), ["project", "build"]);
+  assert.deepEqual(getVisibleConsolePanelIds({ consoleTab: "run", operateTab: "overview" }), ["debug", "ops"]);
+  assert.deepEqual(getVisibleConsolePanelIds({ consoleTab: "run", operateTab: "logs" }), ["debug", "logs"]);
+  assert.deepEqual(getVisibleConsolePanelIds({ consoleTab: "release", operateTab: "overview" }), ["validate-release"]);
   assert.equal(shouldShowRunSidebar("run"), true);
   assert.equal(shouldShowRunSidebar("design"), false);
 
@@ -502,9 +501,7 @@ test("client shell control renderers keep lifecycle visibility and run-list filt
 test("client shell control renderers expose only the Design Run Release tabs", () => {
   const consoleHtml = renderConsoleTabsHtml({
     consoleTab: "run",
-    legacyConsoleTab: "",
     operateTab: "logs",
-    designRunReleaseEnabled: true,
     t,
     escapeText
   });
@@ -520,27 +517,21 @@ test("client shell control renderers expose only the Design Run Release tabs", (
   assert.deepEqual(
     getVisibleConsolePanelIds({
       consoleTab: "design",
-      legacyConsoleTab: "",
-      operateTab: "overview",
-      designRunReleaseEnabled: true
+      operateTab: "overview"
     }),
     ["project", "build"]
   );
   assert.deepEqual(
     getVisibleConsolePanelIds({
       consoleTab: "run",
-      legacyConsoleTab: "",
-      operateTab: "logs",
-      designRunReleaseEnabled: true
+      operateTab: "logs"
     }),
     ["debug", "logs"]
   );
   assert.deepEqual(
     getVisibleConsolePanelIds({
       consoleTab: "release",
-      legacyConsoleTab: "",
-      operateTab: "overview",
-      designRunReleaseEnabled: true
+      operateTab: "overview"
     }),
     ["validate-release"]
   );

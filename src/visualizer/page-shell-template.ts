@@ -205,7 +205,7 @@ export function renderPageShellBody({ workdir, locale, t }: PageShellBodyOptions
               </div>
             </article>
           </section>
-          <section id="console-panel-config" class="console-panel grid" data-console-panel="config" role="tabpanel" aria-labelledby="legacy-console-tab-config" hidden>
+          <section id="console-panel-config" class="console-panel grid" data-console-panel="config" role="region" aria-label="${escapeHtml(t("section.configExplain"))}" hidden>
             <article class="card span-12">
               <header><h3>${escapeHtml(t("section.configExplain"))}</h3></header>
               <div class="body">
