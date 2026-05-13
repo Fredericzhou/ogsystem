@@ -110,7 +110,7 @@ export function renderRunListHtml(args: {
         updatedAt
       ].join(" ");
       return `
-          <button class="run-card ${run.runId === selectedRunId ? "active" : ""}" data-run-id="${escapeText(run.runId)}" aria-label="${escapeText(ariaLabel)}">
+          <button class="run-card ${run.runId === selectedRunId ? "active" : ""}" data-run-id="${escapeText(run.runId)}" aria-label="${escapeText(ariaLabel)}"${run.runId === selectedRunId ? ' aria-current="true"' : ""}>
             <div class="run-title">
               <span class="truncate" title="${escapeText(run.runId)}">${escapeText(run.runId)}</span>
               <span class="status ${statusClass(run.status)}" data-status="${escapeText(run.status)}">${escapeText(runStatus)}</span>

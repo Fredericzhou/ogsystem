@@ -261,6 +261,25 @@ export function renderRunStatsHtml(args: {
     .join("");
 }
 
+export function renderTimelineEventHtml(args: {
+  entry: Record<string, any>;
+  escapeText: (value: unknown) => string;
+  statusClass: (value: string) => string;
+  displayUiToken: (value: unknown, t: Translator) => string;
+  formatTime: (value: unknown) => string;
+  t: Translator;
+}): string {
+  const { entry, escapeText, statusClass, displayUiToken, formatTime, t } = args;
+  const record = entry.record || {};
+  const type = record.type || "event";
+  const role = record.roleId ? `<code>${escapeText(record.roleId)}</code>` : "";
+  const branch = record.branchId ? `<code>${escapeText(record.branchId)}</code>` : "";
+  const review = record.reviewId ? `<code>${escapeText(record.reviewId)}</code>` : "";
+  const event = record.event ? `<code>${escapeText(record.event)}</code>` : "";
+  const status = record.status ? `<span class="status ${statusClass(record.status)}">${escapeText(displayUiToken(record.status, t))}</span>` : "";
+  return `<div class="event"><div class="event-top"><span>#${escapeText(entry.cursor)} ${escapeText(displayUiToken(type, t))}</span><span>${escapeText(formatTime(record.at))}</span></div><strong>${role} ${event} ${status}</strong><div class="hint">${branch} ${review}</div></div>`;
+}
+
 export function renderTimelineHtml(args: {
   events: Array<Record<string, any>>;
   filters: Record<string, string>;

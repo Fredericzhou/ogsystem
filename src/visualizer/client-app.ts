@@ -50,6 +50,7 @@ import {
   renderLoadingSkeletonHtml,
   renderRunStatsHtml,
   renderTimelineHtml,
+  renderTimelineEventHtml,
   renderWorkbenchActionsHtml,
   renderWorkbenchModeBodyHtml,
   renderWorkbenchModeTabsHtml,
@@ -235,6 +236,7 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
     const renderWorkbenchModeBodyHtml = ${renderWorkbenchModeBodyHtml.toString()};
     const renderRunStatsHtml = ${renderRunStatsHtml.toString()};
     const renderTimelineHtml = ${renderTimelineHtml.toString()};
+    const renderTimelineEventHtml = ${renderTimelineEventHtml.toString()};
     const mapProjectCreateErrorFromResponse = ${mapProjectCreateErrorFromResponse.toString()};
     const asStudioChatList = ${asStudioChatList.toString()};
     const studioChatCanApply = ${studioChatCanApply.toString()};
@@ -3150,6 +3152,14 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
           }
           return;
         }
+        if (event.key === "Enter" && (event.ctrlKey || event.metaKey) && state.actionForm && !state.actionBusy) {
+          const submitButton = document.getElementById("action-form-submit");
+          if (submitButton && !submitButton.disabled) {
+            submitButton.click();
+            event.preventDefault();
+          }
+          return;
+        }
         if (event.key !== "Escape") {
           return;
         }
@@ -3631,6 +3641,7 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
       if (topNavEl) { topNavEl.setAttribute("inert", ""); }
       if (statusBarEl) { statusBarEl.setAttribute("inert", ""); }
       const disabled = state.actionBusy ? " disabled" : "";
+      const busyAttr = state.actionBusy ? ' aria-busy="true"' : "";
       if (form.kind === "start") {
         const inputError = form.errors?.input || "";
         actionFormEl.innerHTML = [
@@ -3643,7 +3654,7 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
           '<label class="field"><span>' + escapeText(t("form.userProfilePath")) + '</span><input id="action-start-user-profile-path" value="' + escapeText(form.fields.userProfilePath || "") + '"' + disabled + ' /></label>',
           '<label class="field full"><span>' + escapeText(t("form.lawsPath")) + '</span><input id="action-start-laws-path" value="' + escapeText(form.fields.lawsPath || "") + '"' + disabled + ' /></label>',
           '</div>',
-          '<div class="actions"><button id="action-form-cancel" class="button subtle"' + disabled + '>' + escapeText(t("action.cancel")) + '</button><button id="action-form-submit" class="button primary"' + disabled + '>' + escapeText(t("action.startRun")) + '</button></div>'
+          '<div class="actions"><button id="action-form-cancel" class="button subtle"' + disabled + '>' + escapeText(t("action.cancel")) + '</button><button id="action-form-submit" class="button primary"' + disabled + busyAttr + '>' + escapeText(t("action.startRun")) + '</button></div>'
         ].join("");
       } else if (form.kind === "resume") {
         actionFormEl.innerHTML = [
@@ -3656,13 +3667,13 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
           '<label class="field"><span>' + escapeText(t("form.userProfilePath")) + '</span><input id="action-resume-user-profile-path" value="' + escapeText(form.fields.userProfilePath || "") + '"' + disabled + ' /></label>',
           '<label class="field full"><span>' + escapeText(t("form.lawsPath")) + '</span><input id="action-resume-laws-path" value="' + escapeText(form.fields.lawsPath || "") + '"' + disabled + ' /></label>',
           '</div>',
-          '<div class="actions"><button id="action-form-cancel" class="button subtle"' + disabled + '>' + escapeText(t("action.cancel")) + '</button><button id="action-form-submit" class="button primary"' + disabled + '>' + escapeText(t("form.resumeRun")) + '</button></div>'
+          '<div class="actions"><button id="action-form-cancel" class="button subtle"' + disabled + '>' + escapeText(t("action.cancel")) + '</button><button id="action-form-submit" class="button primary"' + disabled + busyAttr + '>' + escapeText(t("form.resumeRun")) + '</button></div>'
         ].join("");
       } else if (form.kind === "stop") {
         actionFormEl.innerHTML = [
           '<div class="event"><div class="event-top"><span>' + escapeText(t("form.stopRequest")) + '</span><span>' + escapeText(state.selectedRunId || "n/a") + '</span></div><strong>' + escapeText(t("form.recordStructuredStopRequest")) + '</strong><div class="hint">' + escapeText(t("form.stopRequestHint")) + '</div></div>',
           '<label class="field full"><span>' + escapeText(t("form.reason")) + '</span><textarea id="action-stop-reason"' + disabled + '>' + escapeText(form.fields.reason || "") + '</textarea></label>',
-          '<div class="actions"><button id="action-form-cancel" class="button subtle"' + disabled + '>' + escapeText(t("action.cancel")) + '</button><button id="action-form-submit" class="button warn"' + disabled + '>' + escapeText(t("form.recordStopRequest")) + '</button></div>'
+          '<div class="actions"><button id="action-form-cancel" class="button subtle"' + disabled + '>' + escapeText(t("action.cancel")) + '</button><button id="action-form-submit" class="button warn"' + disabled + busyAttr + '>' + escapeText(t("form.recordStopRequest")) + '</button></div>'
         ].join("");
       } else if (form.kind === "review") {
         actionFormEl.innerHTML = [
@@ -3675,18 +3686,18 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
             ? '<label class="field"><span>' + escapeText(t("form.terminateScope")) + '</span><select id="action-review-scope"' + disabled + '><option value="branch"' + ((form.fields.scope || "branch") === "branch" ? " selected" : "") + '>branch</option><option value="run"' + (form.fields.scope === "run" ? " selected" : "") + '>run</option></select></label>'
             : ""),
           '</div>',
-          '<div class="actions"><button id="action-form-cancel" class="button subtle"' + disabled + '>' + escapeText(t("action.cancel")) + '</button><button id="action-form-submit" class="button primary"' + disabled + '>' + escapeText(t("form.recordReviewDecision")) + '</button></div>'
+          '<div class="actions"><button id="action-form-cancel" class="button subtle"' + disabled + '>' + escapeText(t("action.cancel")) + '</button><button id="action-form-submit" class="button primary"' + disabled + busyAttr + '>' + escapeText(t("form.recordReviewDecision")) + '</button></div>'
         ].join("");
       } else if (form.kind === "saveAs") {
         actionFormEl.innerHTML = [
           '<div class="event"><div class="event-top"><span>' + escapeText(t("form.saveMermaid")) + '</span><span>' + escapeText(t("form.saveAs")) + '</span></div><strong>' + escapeText(t("form.writeWorkbenchCopy")) + '</strong><div class="hint">' + escapeText(t("form.saveAsHint")) + '</div></div>',
           '<label class="field full"><span>' + escapeText(t("form.relativePath")) + '</span><input id="action-save-as-path" value="' + escapeText(form.fields.saveAsPath || "") + '"' + disabled + ' /></label>',
-          '<div class="actions"><button id="action-form-cancel" class="button subtle"' + disabled + '>' + escapeText(t("action.cancel")) + '</button><button id="action-form-submit" class="button primary"' + disabled + '>' + escapeText(t("action.saveCopy")) + '</button></div>'
+          '<div class="actions"><button id="action-form-cancel" class="button subtle"' + disabled + '>' + escapeText(t("action.cancel")) + '</button><button id="action-form-submit" class="button primary"' + disabled + busyAttr + '>' + escapeText(t("action.saveCopy")) + '</button></div>'
         ].join("");
       } else if (form.kind === "reindex") {
         actionFormEl.innerHTML = [
           '<div class="event"><div class="event-top"><span>' + escapeText(t("form.runsIndex")) + '</span><span>' + escapeText(t("form.maintenance")) + '</span></div><strong>' + escapeText(t("form.rebuildRunList")) + '</strong><div class="hint">' + escapeText(t("form.reindexHint")) + '</div></div>',
-          '<div class="actions"><button id="action-form-cancel" class="button subtle"' + disabled + '>' + escapeText(t("action.cancel")) + '</button><button id="action-form-submit" class="button warn"' + disabled + '>' + escapeText(t("form.rebuildIndex")) + '</button></div>'
+          '<div class="actions"><button id="action-form-cancel" class="button subtle"' + disabled + '>' + escapeText(t("action.cancel")) + '</button><button id="action-form-submit" class="button warn"' + disabled + busyAttr + '>' + escapeText(t("form.rebuildIndex")) + '</button></div>'
         ].join("");
       } else {
         actionFormEl.innerHTML = '<div class="hint">' + escapeText(t("form.unsupported")) + '</div>';
@@ -4017,13 +4028,29 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
 
     function renderStats(header, graphPayload) {
       if (state.runDetailLoading) {
-        statsEl.innerHTML = loadingSkeleton(t("state.loadingRunDetail", undefined, "Loading run detail"), 2);
+        setInnerHtmlIfChanged(statsEl, loadingSkeleton(t("state.loadingRunDetail", undefined, "Loading run detail"), 2));
         return;
       }
-      statsEl.innerHTML = renderRunStatsHtml({ header, graphPayload, t, escapeText, displayUiToken });
+      setInnerHtmlIfChanged(statsEl, renderRunStatsHtml({ header, graphPayload, t, escapeText, displayUiToken }));
     }
 
-    function renderTimeline(events) {
+    function renderTimeline(events, options) {
+      if (options?.append && timelineEl.children.length > 0) {
+        const entry = events[events.length - 1];
+        if (entry) {
+          const html = renderTimelineEventHtml({ entry, escapeText, statusClass, displayUiToken, formatTime, t });
+          const filterHint = timelineEl.firstElementChild;
+          if (filterHint && filterHint.classList.contains("hint")) {
+            filterHint.insertAdjacentHTML("afterend", html);
+          } else {
+            timelineEl.insertAdjacentHTML("afterbegin", html);
+          }
+          while (timelineEl.children.length > 252) {
+            timelineEl.removeChild(timelineEl.lastElementChild);
+          }
+        }
+        return;
+      }
       timelineEl.innerHTML = renderTimelineHtml({
         events,
         filters: {
@@ -4075,25 +4102,40 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
       const edges = Array.isArray(graph.edges) ? graph.edges.filter((edge) => edge?.source !== "input") : [];
       const systemId = authoring?.system?.systemId || state.detail?.header?.systemId || state.selectedRunId || t("common.unknown");
       const entryRoleId = authoring?.system?.entryRoleId || t("common.notAvailable");
-      graphViewEl.innerHTML = [
-        '<div class="event"><strong>' + escapeText(systemId) + '</strong><div class="hint">' + escapeText(t("graph.entryRolesFlows", {
-          entryRoleId,
-          roleCount: nodes.length || 0,
-          flowCount: edges.length || 0
-        })) + "</div></div>",
-        '<div id="run-graph-root" class="studio-graph-root run-graph-root" data-selected-role-id="' + escapeText(state.runGraphSelectedRoleId) + '" data-selected-flow-key="' + escapeText(state.runGraphSelectedFlowKey) + '"></div>',
-        '<div class="run-graph-summary-grid">',
-        '<div class="event"><div class="event-top"><span>' + escapeText(t("graph.runtimeSummary")) + '</span><span>' + escapeText(nodes.length) + " " + escapeText(t("common.nodes")) + " · " + escapeText(edges.length) + '</span></div><strong>' + escapeText(t("graph.topologyOverlay")) + '</strong><div class="hint">' + escapeText(t("graph.overlayHint")) + '</div></div>',
-        '<div class="event"><div class="event-top"><span>' + escapeText(t("common.readOnly")) + '</span><span>' + escapeText(t("section.graphView", undefined, "Graph View")) + '</span></div><strong>' + escapeText(t("graph.readOnlyRuntimeGraph", undefined, "Read-only runtime graph")) + '</strong><div class="hint">' + escapeText(t("graph.x6RuntimeHint", undefined, "Uses the same role and flow projection as Studio Bridge, including start and end boundaries.")) + '</div></div>',
-        "</div>"
-      ].join("");
-      mountRunGraphIsland(graphPayload);
-      stateEl.innerHTML = renderRunStatePanel({
+      const existingRoot = document.getElementById("run-graph-root");
+      if (existingRoot) {
+        const summaryEl = graphViewEl.querySelector("[data-run-graph-summary]");
+        if (summaryEl) {
+          summaryEl.innerHTML = '<strong>' + escapeText(systemId) + '</strong><div class="hint">' + escapeText(t("graph.entryRolesFlows", {
+            entryRoleId,
+            roleCount: nodes.length || 0,
+            flowCount: edges.length || 0
+          })) + '</div>';
+        }
+        existingRoot.setAttribute("data-selected-role-id", state.runGraphSelectedRoleId || "");
+        existingRoot.setAttribute("data-selected-flow-key", state.runGraphSelectedFlowKey || "");
+        mountRunGraphIsland(graphPayload);
+      } else {
+        graphViewEl.innerHTML = [
+          '<div class="event" data-run-graph-summary><strong>' + escapeText(systemId) + '</strong><div class="hint">' + escapeText(t("graph.entryRolesFlows", {
+            entryRoleId,
+            roleCount: nodes.length || 0,
+            flowCount: edges.length || 0
+          })) + "</div></div>",
+          '<div id="run-graph-root" class="studio-graph-root run-graph-root" data-selected-role-id="' + escapeText(state.runGraphSelectedRoleId) + '" data-selected-flow-key="' + escapeText(state.runGraphSelectedFlowKey) + '"></div>',
+          '<div class="run-graph-summary-grid">',
+          '<div class="event"><div class="event-top"><span>' + escapeText(t("graph.runtimeSummary")) + '</span><span>' + escapeText(nodes.length) + " " + escapeText(t("common.nodes")) + " · " + escapeText(edges.length) + '</span></div><strong>' + escapeText(t("graph.topologyOverlay")) + '</strong><div class="hint">' + escapeText(t("graph.overlayHint")) + '</div></div>',
+          '<div class="event"><div class="event-top"><span>' + escapeText(t("common.readOnly")) + '</span><span>' + escapeText(t("section.graphView", undefined, "Graph View")) + '</span></div><strong>' + escapeText(t("graph.readOnlyRuntimeGraph", undefined, "Read-only runtime graph")) + '</strong><div class="hint">' + escapeText(t("graph.x6RuntimeHint", undefined, "Uses the same role and flow projection as Studio Bridge, including start and end boundaries.")) + '</div></div>',
+          "</div>"
+        ].join("");
+        mountRunGraphIsland(graphPayload);
+      }
+      setInnerHtmlIfChanged(stateEl, renderRunStatePanel({
         state: state.detail?.state ?? null,
         header: state.detail?.header ?? null,
         graph,
         t
-      });
+      }));
     }
 
     function describeReviewDecisionPhase(detail) {
@@ -4215,22 +4257,22 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
           await loadFailure(state.selectedRunId, { force: true });
         });
       }
-      failureSummaryEl.innerHTML = renderFailureSummaryPanel({
+      setInnerHtmlIfChanged(failureSummaryEl, renderFailureSummaryPanel({
         failure: state.failure,
         loaded: state.failureLoaded,
         stale: state.failureStale,
         t
-      });
-      failureDetailEl.innerHTML = renderFailureDetailPanel({
+      }));
+      setInnerHtmlIfChanged(failureDetailEl, renderFailureDetailPanel({
         failure: state.failure,
         loaded: state.failureLoaded,
         t
-      });
-      failureNextChecksEl.innerHTML = renderSuggestedNextChecksPanel({
+      }));
+      setInnerHtmlIfChanged(failureNextChecksEl, renderSuggestedNextChecksPanel({
         failure: state.failure,
         loaded: state.failureLoaded,
         t
-      });
+      }));
       bindPanelJumpButtons();
     }
 
@@ -4335,7 +4377,8 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
         + " pageSize=" + (state.logTail || state.logPageSize || "all")
         + " since=" + (state.logSince || "n/a")
         + (state.logsStale ? " · stale" : "");
-      logsEl.innerHTML = renderLogsPanel({
+      const logsScrollTop = logsEl.scrollTop;
+      const changed = setInnerHtmlIfChanged(logsEl, renderLogsPanel({
         loaded: state.logsLoaded,
         stale: state.logsStale,
         selectedRoleId: state.selectedLogRoleId,
@@ -4343,15 +4386,16 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
         role: state.roleLogs,
         t,
         formatTime
-      });
+      }));
+      if (changed && logsScrollTop > 0) { logsEl.scrollTop = logsScrollTop; }
     }
 
     function renderDetail() {
       if (state.runDetailLoading) {
-        detailEl.innerHTML = loadingSkeleton(t("state.loadingRunArtifacts", undefined, "Loading run artifacts"), 4);
+        setInnerHtmlIfChanged(detailEl, loadingSkeleton(t("state.loadingRunArtifacts", undefined, "Loading run artifacts"), 4));
         return;
       }
-      detailEl.innerHTML = renderArtifactsPanel({
+      setInnerHtmlIfChanged(detailEl, renderArtifactsPanel({
         detail: state.detail,
         graph: state.graph,
         reviews: state.reviews,
@@ -4359,7 +4403,7 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
         resumeDiagnostics: state.resumeDiagnosticsLoaded ? state.resumeDiagnostics : null,
         t,
         formatTime
-      });
+      }));
     }
 
     function renderSelectedRun() {
@@ -5556,7 +5600,13 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
 
     async function refreshReviews(runId) {
       const requestId = state.runSelectionRequestId;
-      const reviewsPayload = await requestJson(\`\${API_PREFIX}/runs/\${encodeURIComponent(runId)}/reviews\`);
+      let reviewsPayload;
+      try {
+        reviewsPayload = await requestJson(\`\${API_PREFIX}/runs/\${encodeURIComponent(runId)}/reviews\`);
+      } catch (error) {
+        setFlash("error", t("reviews.loadFailed", { message: error?.message || error }, "Failed to load reviews: {message}"));
+        return;
+      }
       if (!isCurrentRunSelection(runId, requestId)) {
         return;
       }
@@ -5566,7 +5616,8 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
         reviewsPayload
       });
       await refreshSelectedReviewDetail(runId, { allowMissing: true });
-      renderSelectedRun();
+      renderReviews();
+      renderDetail();
       writeRouteToLocation();
     }
 
@@ -5587,9 +5638,11 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
       const fallbackRoleId = fallbackLogRoleId(detail.header);
       populateLogRoleOptions(graphPayload, fallbackRoleId);
       populateTimelineRoleOptions(graphPayload);
-      renderSelectedRun();
+      renderGraph();
+      renderStats(detail.header, graphPayload);
+      renderActionState();
       renderRuns();
-      renderProject();
+      renderOperateTabs();
       writeRouteToLocation();
       const liveState = resolveRunLiveState(detail.header);
       setLive(liveState.mode, liveState.label);
@@ -5987,7 +6040,7 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
           state.eventCursor = payload.cursor + 1;
           if (recordMatchesTimelineFilters(payload.record)) {
             state.events = appendIndexedStreamEntry(state.events, state.eventCursorIndex, payload, 250);
-            renderTimeline(state.events);
+            renderTimeline(state.events, { append: true });
           }
           scheduleStreamRefresh(getStreamRefreshPlan(payload.record.type));
         } catch {

@@ -134,9 +134,18 @@ export function injectStudioGraphStyles(): void {
     .studio-graph-canvas .x6-node.is-selection-focus-pulse path:first-of-type {
       animation: studio-node-focus-pulse 820ms ease-out 1;
     }
+    .studio-graph-canvas .x6-node rect,
+    .studio-graph-canvas .x6-node path:first-of-type {
+      transition: filter 220ms ease, stroke 220ms ease, opacity 220ms ease;
+    }
     .studio-graph-canvas .x6-node.is-runtime-active rect,
     .studio-graph-canvas .x6-node.is-runtime-active path:first-of-type {
       filter: drop-shadow(0 0 0.55rem rgba(56, 189, 248, 0.22));
+      animation: studio-node-active-pulse 2400ms ease-in-out infinite;
+    }
+    .studio-graph-canvas .x6-node[data-runtime-status="failed"] rect,
+    .studio-graph-canvas .x6-node[data-runtime-status="failed"] path:first-of-type {
+      animation: studio-node-error-shake 400ms ease-out 1;
     }
     .studio-graph-canvas .x6-node.is-runtime-waiting-review rect,
     .studio-graph-canvas .x6-node.is-runtime-waiting-review path:first-of-type {
@@ -169,6 +178,10 @@ export function injectStudioGraphStyles(): void {
     }
     .studio-graph-island[data-reduced-motion="on"] .studio-graph-canvas .x6-node.is-selection-focus-pulse rect,
     .studio-graph-island[data-reduced-motion="on"] .studio-graph-canvas .x6-node.is-selection-focus-pulse path:first-of-type,
+    .studio-graph-island[data-reduced-motion="on"] .studio-graph-canvas .x6-node.is-runtime-active rect,
+    .studio-graph-island[data-reduced-motion="on"] .studio-graph-canvas .x6-node.is-runtime-active path:first-of-type,
+    .studio-graph-island[data-reduced-motion="on"] .studio-graph-canvas .x6-node[data-runtime-status="failed"] rect,
+    .studio-graph-island[data-reduced-motion="on"] .studio-graph-canvas .x6-node[data-runtime-status="failed"] path:first-of-type,
     .studio-graph-island[data-reduced-motion="on"] .studio-graph-canvas .x6-node.is-runtime-waiting-review rect,
     .studio-graph-island[data-reduced-motion="on"] .studio-graph-canvas .x6-node.is-runtime-waiting-review path:first-of-type,
     .studio-graph-island[data-reduced-motion="on"] .studio-graph-canvas .x6-edge.is-runtime-active .connection {
@@ -201,6 +214,21 @@ export function injectStudioGraphStyles(): void {
       50% {
         filter: drop-shadow(0 0 0.45rem rgba(251, 191, 36, 0.32));
       }
+    }
+    @keyframes studio-node-active-pulse {
+      0%, 100% {
+        filter: drop-shadow(0 0 0.35rem rgba(56, 189, 248, 0.15));
+      }
+      50% {
+        filter: drop-shadow(0 0 0.7rem rgba(56, 189, 248, 0.35));
+      }
+    }
+    @keyframes studio-node-error-shake {
+      0%, 100% { transform: translateX(0); }
+      20% { transform: translateX(-2px); }
+      40% { transform: translateX(2px); }
+      60% { transform: translateX(-1.5px); }
+      80% { transform: translateX(1px); }
     }
     .studio-graph-empty {
       display: grid;
