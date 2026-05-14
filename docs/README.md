@@ -20,6 +20,7 @@ Archive rules are documented in [docs/archive/README.md](archive/README.md).
 
 These documents are useful background, but they are not the only authority for current behavior:
 
+- [Design release validation template](design-release-validation-template.md)
 - [Context map projection guide](context-map-projection-guide.md)
 - [Data projection spec](ogsystem-data-projection-spec.md)
 - [Semantics manual](ogsystem-semantics-manual.md)
