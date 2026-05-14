@@ -2405,7 +2405,6 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
         : '<div class="event"><div class="event-top"><span>' + escapeText(t("studio.resultsTab", undefined, "Results")) + '</span><span>' + escapeText(state.studioBridgeLastDryRunId || t("common.idle", undefined, "idle")) + '</span></div><strong>' + escapeText(t("studio.debugRunHint", undefined, "Start a fresh dry run from Build to watch graph progression and key signals here.")) + '</strong><div class="hint">' + escapeText(t("build.openDebugHint", undefined, "Review the latest dry-run result here, or open Run for full controls.")) + '</div></div>';
       return [
         '<div class="structure-list studio-debug-panel-stack">',
-        '<div class="event"><div class="event-top"><span>' + escapeText(t("studio.resultsTab", undefined, "Results")) + '</span><span>' + escapeText(state.selectedRunId || state.studioBridgeLastDryRunId || t("common.idle", undefined, "idle")) + '</span></div><strong>' + escapeText(t("studio.resultsTabTitle", undefined, "Results keeps the latest dry-run projection compact and scannable.")) + '</strong><div class="hint">' + escapeText(t("studio.resultsTabHint", undefined, "Use this tab for the latest summary. Open Run when you need the full graph view and detailed runtime artifacts.")) + '</div></div>',
         ((state.selectedRunId || state.studioBridgeLastDryRunId)
           ? '<div class="actions compact"><button class="button subtle" id="studio-debug-open-operate"' + disabled + '>' + escapeText(t("build.openOperate", undefined, "Open Run")) + '</button></div>'
           : ''),
@@ -2454,10 +2453,12 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
           : state.studioWorkbenchSideTab === "result"
             ? "result"
           : "structure";
+      const structureHtml = studioBridgeRenderArgs().selectionStructureHtml || "";
       const collapsed = state.studioInspectorCollapsed === true;
       overlay.hidden = false;
       overlay.classList.toggle("is-collapsed", collapsed);
       shell.classList.toggle("has-collapsed-selection", collapsed);
+      const structureChanged = setInnerHtmlIfChanged(structurePanel, structureHtml);
       selectionPanel.hidden = activeTab !== "selection";
       structurePanel.hidden = activeTab !== "structure";
       debugPanel.hidden = activeTab !== "debug";
@@ -2575,6 +2576,9 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
       bindStudioExecutionConfigEditorControls();
       bindStudioFlowConfigEditorControls();
       bindWorkbenchRunDraftControls();
+      if (structureChanged) {
+        bindStudioBridgeControls();
+      }
     }
 
     function bindStudioSelectionDialogControls() {

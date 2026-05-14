@@ -3916,6 +3916,8 @@ test("visualizer client opens Studio Bridge and keeps authoring affordances on t
   assert.equal(harness.document.getElementById("workbench-tabs").textContent, "");
   assert.match(harness.document.getElementById("workbench-body").textContent, /demo-analyst|nothing selected/i);
   assert.match(harness.document.getElementById("workbench-body").textContent, /Browse|检索/);
+  assert.ok(harness.document.getElementById("workbench-body").querySelectorAll("[data-studio-role-id]").length > 0);
+  assert.ok(harness.document.getElementById("workbench-body").querySelectorAll("[data-studio-flow-key]").length > 0);
   assert.match(harness.document.getElementById("workbench-status").textContent, /disk in sync/i);
   assert.match(harness.document.getElementById("workbench-status").textContent, /validation ok/i);
   assert.match(harness.document.getElementById("workbench-status").textContent, /demo-analyst/i);
@@ -4105,7 +4107,8 @@ test("visualizer client opens Studio Bridge and keeps authoring affordances on t
   await waitForCondition(() => harness.backend.fetchCalls.some((call) => call.path === "/api/v1/runs/start"));
   assert.equal(harness.backend.lastStartBody.input, "run from graph toolbar");
   assert.match(harness.document.getElementById("workbench-body").textContent, /Results|结果/i);
-  assert.match(harness.document.getElementById("workbench-body").textContent, /Open Run|打开运行/i);
+  assert.match(harness.document.getElementById("workbench-body").textContent, /Open Run|Go to Run|打开运行|前往运行/i);
+  assert.doesNotMatch(harness.document.getElementById("workbench-body").textContent, /Results keeps the latest dry-run projection compact and scannable/i);
   await latestEditableMount().onFocusDebugInput();
   await waitForCondition(() => Boolean(harness.document.getElementById("workbench-run-input")));
   assert.equal(harness.document.activeElement?.id, "workbench-run-input");
