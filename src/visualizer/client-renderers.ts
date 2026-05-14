@@ -167,8 +167,9 @@ export function displayUiToken(value: unknown, t: Translator): string {
   if (normalized === "error") return t("state.field.error", undefined, "error");
   if (normalized === "runtime") return t("state.runtime", undefined, "runtime");
   if (normalized === "idle") return t("state.idle", undefined, "idle");
-  if (normalized === "model") return t("token.model", undefined, "model");
-  if (normalized === "profile") return t("token.profile", undefined, "profile");
+  if (normalized === "model") return t("studio.binding.agent", undefined, "Agent");
+  if (normalized === "exec" || normalized === "profile") return t("studio.binding.tool", undefined, "Tool");
+  if (normalized === "noop") return t("studio.binding.noop", undefined, "Noop");
   if (normalized === "role") return t("token.role", undefined, "role");
   if (normalized === "execution") return t("token.execution", undefined, "execution");
   if (normalized === "execute") return t("token.execute", undefined, "execution");
@@ -219,11 +220,16 @@ export function bindingTone(bindingKind: string | undefined): string {
   switch (bindingKind) {
     case "model":
       return "model";
+    case "exec":
     case "profile":
       return "profile";
     default:
       return "noop";
   }
+}
+
+export function displayBindingKind(bindingKind: string | undefined, t: Translator): string {
+  return displayUiToken(bindingKind || "noop", t);
 }
 
 export function normalizeStudioTargetRoleId(roleId: unknown): string {
@@ -635,7 +641,7 @@ export function renderReleaseGatePanel(args: {
   const unresolvedBindingItems = unresolvedBindings.slice(0, 8).map((binding) =>
     toCompactItem(
       String(binding.roleId ?? t("common.notAvailable", undefined, "n/a")),
-      String(binding.bindingKind ?? t("common.unknown", undefined, "unknown")),
+      displayBindingKind(String(binding.bindingKind ?? "noop"), t),
       compactText(binding.message ?? binding.declaredBinding ?? binding.resolvedBinding ?? "", 140)
     )
   );
@@ -763,7 +769,7 @@ export function renderStudioBridgeInspector(args: {
   const selectedFlow = explicitSelectedFlow ?? (args.selectedRoleId ? null : flows[0] ?? null);
   const roleInspector = selectedRole
     ? [
-        '<div class="event"><div class="event-top"><span>' + escapeText(t("studio.roleInspector", undefined, "role inspector")) + '</span><span>' + escapeText(String(selectedRole.bindingKind ?? "noop")) + '</span></div><strong><code>' + escapeText(String(selectedRole.roleId ?? "")) + '</code></strong>',
+        '<div class="event"><div class="event-top"><span>' + escapeText(t("studio.roleInspector", undefined, "role inspector")) + '</span><span>' + escapeText(displayBindingKind(String(selectedRole.bindingKind ?? "noop"), t)) + '</span></div><strong><code>' + escapeText(String(selectedRole.roleId ?? "")) + '</code></strong>',
         '<div class="hint">' + escapeText(t("studio.modelExecRoute", {
           modelRef: String(selectedRole.modelRef ?? "n/a"),
           profileId: String(selectedRole.profileId ?? "n/a"),
@@ -853,6 +859,82 @@ export function renderStudioRolePackageEditor(args: {
     '<div class="actions compact"><button class="button subtle" data-role-package-load="' + escapeText(args.roleId) + '"' + disabled + '>' + escapeText(loadButtonLabel) + '</button><button class="button primary" data-role-package-save="' + escapeText(args.roleId) + '"' + (disabled || !loaded || !dirty ? " disabled" : "") + '>' + escapeText(t("action.save", undefined, "Save")) + '</button><button class="button subtle" data-role-package-revert="' + escapeText(args.roleId) + '"' + (disabled || !loaded || !dirty ? " disabled" : "") + '>' + escapeText(t("action.revertToDisk", undefined, "Revert to disk")) + '</button></div>',
     '<div class="form-grid">' + fileEditors + '</div>',
     '</div>'
+  ].join("");
+}
+
+export function renderStudioRoleConfigEditor(args: {
+  roleId: string;
+  editor?: JsonRecord | null | undefined;
+  projectConfig?: JsonRecord | null | undefined;
+  t?: Translator;
+}): string {
+  const t: Translator = typeof args.t === "function" ? args.t : (_key, _vars, fallback) => fallback ?? _key;
+  const editor = args.editor ?? {};
+  const activeRoleId = String(editor.roleId ?? "");
+  const matchesRole = activeRoleId === args.roleId;
+  const data = matchesRole && typeof editor.data === "object" && editor.data !== null && !Array.isArray(editor.data)
+    ? editor.data as JsonRecord
+    : {};
+  const draft = matchesRole && typeof editor.draft === "object" && editor.draft !== null && !Array.isArray(editor.draft)
+    ? editor.draft as JsonRecord
+    : {};
+  const saving = matchesRole && editor.saving === true;
+  const dirty = matchesRole && editor.dirty === true;
+  const error = matchesRole ? String(editor.error ?? "") : "";
+  const disabled = saving ? " disabled" : "";
+  const roleId = String(data.roleId ?? args.roleId);
+  const title = String(draft.title ?? data.title ?? "");
+  const bindingKind = String(draft.bindingKind ?? data.bindingKind ?? "noop");
+  const modelRef = String(draft.modelRef ?? data.modelRef ?? "");
+  const profileId = String(draft.profileId ?? data.profileId ?? "");
+  const generatedProfileId = String(data.generatedProfileId ?? "");
+  const generatedToolRef = String(data.generatedToolRef ?? "");
+  const profiles = Array.isArray((args.projectConfig ?? {}).profiles)
+    ? ((args.projectConfig ?? {}).profiles as JsonRecord[])
+    : [];
+  const profileOptions = profiles
+    .filter((entry) => typeof entry === "object" && entry !== null && !Array.isArray(entry))
+    .map((entry) => ({
+      profileId: String(entry.profileId ?? ""),
+      toolRef: String(entry.toolRef ?? "")
+    }))
+    .filter((entry) => Boolean(entry.profileId));
+  const hasProfileOption = profileOptions.some((entry) => entry.profileId === profileId);
+  const effectiveProfileId = profileId || generatedProfileId || profileOptions[0]?.profileId || "";
+  const effectiveToolRef = profileOptions.find((entry) => entry.profileId === effectiveProfileId)?.toolRef
+    || (effectiveProfileId === generatedProfileId ? generatedToolRef : "");
+  const profileSelectOptions = (hasProfileOption ? profileOptions : [
+    ...(effectiveProfileId ? [{ profileId: effectiveProfileId, toolRef: effectiveToolRef }] : []),
+    ...profileOptions
+  ]).map((entry) =>
+    '<option value="' + escapeText(entry.profileId) + '"' + (entry.profileId === effectiveProfileId ? " selected" : "") + ">" +
+    escapeText(entry.toolRef ? `${entry.profileId} - ${entry.toolRef}` : entry.profileId) + "</option>"
+  ).join("");
+
+  return [
+    '<div class="event studio-role-config-editor" data-role-config-editor="' + escapeText(args.roleId) + '">',
+    '<div class="event-top"><span>' + escapeText(t("studio.roleConfig", undefined, "role config")) + '</span><span>' + escapeText(dirty ? t("common.changed", undefined, "changed") : t("common.ready", undefined, "ready")) + '</span></div>',
+    '<strong><code>' + escapeText(roleId) + '</code></strong>',
+    '<div class="hint">' + escapeText(t("studio.roleConfigHint", undefined, "Edit business-facing role settings here. Runtime files and tool command details stay in the folded sections below.")) + '</div>',
+    error ? '<div class="hint severity-warning">' + escapeText(error) + '</div>' : "",
+    '<div class="actions compact"><button class="button primary" data-role-config-save="' + escapeText(args.roleId) + '"' + disabled + '>' + escapeText(t("action.save", undefined, "Save")) + '</button><button class="button subtle" data-role-config-revert="' + escapeText(args.roleId) + '"' + (saving || !dirty ? " disabled" : "") + '>' + escapeText(t("action.revert", undefined, "Revert")) + "</button></div>",
+    '<div class="form-grid">' +
+      '<label class="field"><span>' + escapeText(t("studio.form.roleId", undefined, "Role id")) + '</span><input data-role-config-field="roleId" value="' + escapeText(roleId) + '" readonly><div class="hint">' + escapeText(t("studio.executionConfigSystemManaged", undefined, "Required · system-managed · not business editable")) + '</div></label>' +
+      '<label class="field"><span>' + escapeText(t("studio.form.title", undefined, "Title")) + '</span><input data-role-config-field="title" value="' + escapeText(title) + '"' + disabled + '><div class="hint">' + escapeText(t("studio.roleConfigTitleHint", undefined, "Optional display title shown in the graph card.")) + '</div></label>' +
+      '<label class="field"><span>' + escapeText(t("studio.form.bindingKind", undefined, "Binding")) + '</span><select data-role-config-field="bindingKind"' + disabled + '>' +
+        '<option value="model"' + (bindingKind === "model" ? " selected" : "") + '>' + escapeText(t("studio.binding.agent", undefined, "Agent")) + '</option>' +
+        '<option value="exec"' + (bindingKind === "exec" ? " selected" : "") + '>' + escapeText(t("studio.binding.tool", undefined, "Tool")) + '</option>' +
+        '<option value="noop"' + (bindingKind === "noop" ? " selected" : "") + '>' + escapeText(t("studio.binding.noop", undefined, "Noop")) + '</option>' +
+      '</select><div class="hint">' + escapeText(t("studio.roleConfigBindingHint", undefined, "Agent maps to model, Tool maps to project execution config, and Noop preserves pass-through wiring.")) + '</div></label>' +
+      (bindingKind === "model"
+        ? '<label class="field full"><span>' + escapeText(t("studio.form.modelRef", undefined, "Model")) + '</span><input data-role-config-field="modelRef" value="' + escapeText(modelRef) + '"' + disabled + '><div class="hint">' + escapeText(t("studio.roleConfigModelHint", undefined, "Model binding ref for Agent execution.")) + '</div></label>'
+        : "") +
+      (bindingKind === "exec"
+        ? '<label class="field full"><span>' + escapeText(t("studio.form.profileId", undefined, "Execution profile")) + '</span><select data-role-config-field="profileId"' + disabled + '>' + profileSelectOptions + '</select><div class="hint">' + escapeText(effectiveProfileId === generatedProfileId
+            ? t("studio.roleConfigGeneratedProfileHint", { profileId: effectiveProfileId, toolRef: effectiveToolRef || generatedToolRef }, "A new execution config {profileId} backed by {toolRef} will be created automatically if it does not already exist.")
+            : t("studio.roleConfigProfileHint", { toolRef: effectiveToolRef || t("common.notAvailable", undefined, "n/a") }, "Tool binding resolves through {toolRef}.")) + '</div></label>'
+        : "") +
+    '</div></div>'
   ].join("");
 }
 
@@ -1020,7 +1102,7 @@ export function renderStudioBridgeStructureHtml(args: {
         return (
           '<button class="run-card' + active + '" data-studio-role-id="' + escapeText(roleId) + '"' + busy + ">" +
           '<div class="run-title"><span><code>' + escapeText(roleId) + '</code></span><span class="status ' +
-          escapeText(bindingTone(String(role.bindingKind ?? "noop"))) + '">' + escapeText(String(role.bindingKind ?? "noop")) +
+          escapeText(bindingTone(String(role.bindingKind ?? "noop"))) + '">' + escapeText(displayBindingKind(String(role.bindingKind ?? "noop"), t)) +
           '</span></div><div class="meta"><span>' + escapeText(badges || t("studio.standard", undefined, "standard")) + '</span><span>' +
           escapeText(t("studio.events", { count: String((role.allowedEvents as unknown[] | undefined)?.length ?? 0) }, "events " + String((role.allowedEvents as unknown[] | undefined)?.length ?? 0))) + "</span></div></button>"
         );
@@ -1333,7 +1415,7 @@ export function renderBindingExplainPanel(args: {
       '<div class="event"><div class="event-top"><span><code>' +
       escapeText(role.roleId ?? "n/a") +
       '</code></span><span>' +
-      escapeText(role.bindingKind ?? "n/a") +
+      escapeText(displayBindingKind(typeof role.bindingKind === "string" ? role.bindingKind : undefined, t)) +
       "</span></div><strong>" +
       escapeText(
         String(role.declaredBinding ?? "undeclared")

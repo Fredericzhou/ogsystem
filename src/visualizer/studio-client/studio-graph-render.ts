@@ -34,7 +34,96 @@ function nodeLabel(node: GraphViewModelNode): string {
   return `${node.label}${badges}`;
 }
 
+type StudioEdgeVertex = { x: number; y: number };
+
+function edgeSortKey(edge: GraphViewModelEdge): string {
+  return [
+    edge.source,
+    edge.target,
+    edge.eventType,
+    edge.id
+  ].join(":");
+}
+
+function buildStudioEdgeVertices(viewModel: GraphViewModel): Map<string, StudioEdgeVertex[]> {
+  const nodeById = new Map(viewModel.nodes.map((node) => [node.id, node]));
+  const outgoing = new Map<string, GraphViewModelEdge[]>();
+  const incoming = new Map<string, GraphViewModelEdge[]>();
+  for (const edge of viewModel.edges) {
+    const sourceEdges = outgoing.get(edge.source) || [];
+    sourceEdges.push(edge);
+    outgoing.set(edge.source, sourceEdges);
+    const targetEdges = incoming.get(edge.target) || [];
+    targetEdges.push(edge);
+    incoming.set(edge.target, targetEdges);
+  }
+  for (const edges of outgoing.values()) {
+    edges.sort((left, right) => edgeSortKey(left).localeCompare(edgeSortKey(right)));
+  }
+  for (const edges of incoming.values()) {
+    edges.sort((left, right) => edgeSortKey(left).localeCompare(edgeSortKey(right)));
+  }
+
+  const verticesByEdgeId = new Map<string, StudioEdgeVertex[]>();
+  for (const edge of viewModel.edges) {
+    const sourceNode = nodeById.get(edge.source);
+    const targetNode = nodeById.get(edge.target);
+    if (!sourceNode || !targetNode) {
+      verticesByEdgeId.set(edge.id, []);
+      continue;
+    }
+    const sourceEdges = outgoing.get(edge.source) || [];
+    const targetEdges = incoming.get(edge.target) || [];
+    const outgoingIndex = Math.max(0, sourceEdges.findIndex((candidate) => candidate.id === edge.id));
+    const incomingIndex = Math.max(0, targetEdges.findIndex((candidate) => candidate.id === edge.id));
+    const sourceCenterX = sourceNode.layout.x + sourceNode.layout.width / 2;
+    const sourceCenterY = sourceNode.layout.y + sourceNode.layout.height / 2;
+    const targetCenterX = targetNode.layout.x + targetNode.layout.width / 2;
+    const targetCenterY = targetNode.layout.y + targetNode.layout.height / 2;
+    const sourceRightX = sourceNode.layout.x + sourceNode.layout.width;
+    const targetLeftX = targetNode.layout.x;
+    const sourceFanY = sourceCenterY + (outgoingIndex - (sourceEdges.length - 1) / 2) * 18;
+    const targetFanY = targetCenterY + (incomingIndex - (targetEdges.length - 1) / 2) * 18;
+    const sourceExitX = sourceRightX + 20 + outgoingIndex * 10;
+    const targetEntryX = targetLeftX - 20 - incomingIndex * 10;
+    const forward = targetCenterX >= sourceCenterX + 36;
+
+    if (edge.source === edge.target) {
+      const loopTopY = sourceNode.layout.y - 52 - outgoingIndex * 26;
+      const loopLeftX = sourceNode.layout.x - 24 - outgoingIndex * 12;
+      verticesByEdgeId.set(edge.id, [
+        { x: sourceExitX, y: sourceFanY },
+        { x: sourceExitX, y: loopTopY },
+        { x: loopLeftX, y: loopTopY },
+        { x: loopLeftX, y: targetFanY }
+      ]);
+      continue;
+    }
+
+    if (forward && targetEntryX - sourceExitX >= 96) {
+      const midX = sourceExitX + Math.max(44, Math.floor((targetEntryX - sourceExitX) / 2));
+      verticesByEdgeId.set(edge.id, [
+        { x: sourceExitX, y: sourceFanY },
+        { x: midX, y: sourceFanY },
+        { x: midX, y: targetFanY },
+        { x: targetEntryX, y: targetFanY }
+      ]);
+      continue;
+    }
+
+    const channelY = Math.min(sourceNode.layout.y, targetNode.layout.y) - 56 - Math.max(outgoingIndex, incomingIndex) * 28;
+    verticesByEdgeId.set(edge.id, [
+      { x: sourceExitX, y: sourceFanY },
+      { x: sourceExitX, y: channelY },
+      { x: targetEntryX, y: channelY },
+      { x: targetEntryX, y: targetFanY }
+    ]);
+  }
+  return verticesByEdgeId;
+}
+
 export function renderStudioGraphViewModel(graph: Graph, viewModel: GraphViewModel): void {
+  const verticesByEdgeId = buildStudioEdgeVertices(viewModel);
   graph.batchUpdate("studio-projection", () => {
     const nextNodeIds = new Set(viewModel.nodes.map((node) => node.id));
     const nextEdgeIds = new Set(viewModel.edges.map((edge) => edge.id));
@@ -60,9 +149,9 @@ export function renderStudioGraphViewModel(graph: Graph, viewModel: GraphViewMod
     for (const edge of viewModel.edges) {
       const existing = graph.getCellById(edge.id);
       if (existing?.isEdge()) {
-        updateStudioEdge(existing, edge);
+        updateStudioEdge(existing, edge, verticesByEdgeId.get(edge.id) || []);
       } else {
-        graph.addEdge(studioEdgeMetadata(edge));
+        graph.addEdge(studioEdgeMetadata(edge, verticesByEdgeId.get(edge.id) || []));
       }
     }
   });
@@ -178,7 +267,7 @@ function updateStudioNode(cell: Node, node: GraphViewModelNode): void {
   }
 }
 
-function studioEdgeMetadata(edge: GraphViewModelEdge): Edge.Metadata {
+function studioEdgeMetadata(edge: GraphViewModelEdge, vertices: StudioEdgeVertex[]): Edge.Metadata {
   return {
     id: edge.id,
     source: { cell: edge.source, port: edge.source === "input" ? undefined : "out" },
@@ -187,7 +276,7 @@ function studioEdgeMetadata(edge: GraphViewModelEdge): Edge.Metadata {
     data: { studioEdge: edge },
     labels: studioEdgeLabels(edge),
     attrs: studioEdgeAttrs(edge),
-    router: { name: "manhattan" },
+    vertices,
     connector: { name: "rounded" }
   };
 }
@@ -249,12 +338,12 @@ function studioEdgeAttrs(edge: GraphViewModelEdge): Edge.Metadata["attrs"] {
   };
 }
 
-function updateStudioEdge(cell: Edge, edge: GraphViewModelEdge): void {
+function updateStudioEdge(cell: Edge, edge: GraphViewModelEdge, vertices: StudioEdgeVertex[]): void {
   cell.setData({ studioEdge: edge });
   cell.setSource({ cell: edge.source, port: edge.source === "input" ? undefined : "out" });
   cell.setTarget({ cell: edge.target, port: edge.target === "output" ? undefined : "in" });
   cell.setLabels(studioEdgeLabels(edge));
   cell.attr(studioEdgeAttrs(edge));
-  cell.setRouter({ name: "manhattan" });
+  cell.setVertices(vertices);
   cell.setConnector({ name: "rounded" });
 }

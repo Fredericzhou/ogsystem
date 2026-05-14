@@ -721,6 +721,27 @@ async function createWaitingReviewFixtureRun(workdir, options = {}) {
   return { runId, runDir };
 }
 
+async function seedRoleIoExecutionArtifacts(runDir) {
+  const executionDir = path.resolve(runDir, "roles", "demo-analyst", "executions", "0001-exec-1");
+  await writeFile(
+    path.resolve(executionDir, "session.json"),
+    JSON.stringify({ sessionId: "session-demo-1" }, null, 2),
+    "utf8"
+  );
+  await writeFile(
+    path.resolve(executionDir, "audit.json"),
+    JSON.stringify({ roleId: "demo-analyst", durationMs: 5, toolRef: "tool.review", profileId: "profile.review" }, null, 2),
+    "utf8"
+  );
+  await writeFile(
+    path.resolve(executionDir, "result.json"),
+    JSON.stringify({ event: "DONE", content: "fixture result" }, null, 2),
+    "utf8"
+  );
+  await writeFile(path.resolve(executionDir, "inbox.md"), "# Inbox\n\nfixture input\n", "utf8");
+  await writeFile(path.resolve(executionDir, "outbox.md"), "# Outbox\n\nfixture result\n", "utf8");
+}
+
 async function readFirstSseChunk(url) {
   return new Promise((resolve, reject) => {
     let buffer = "";
@@ -1270,6 +1291,48 @@ test("visualizer server exposes pending human review fields on waiting-review ru
     assert.equal(Array.isArray(readiness.blockers), true);
     assert.equal(Array.isArray(readiness.driftSources), true);
     assert.equal(readiness.status, "dirty");
+  } finally {
+    await new Promise((resolve) => server.close(resolve));
+  }
+});
+
+test("visualizer server exposes role I/O snapshots for a selected role execution", async (t) => {
+  const workdir = await mkdtemp(path.join(os.tmpdir(), "ogsystem-visualizer-role-io-"));
+  await seedProjectFixture(workdir);
+  const { runId, runDir } = await createWaitingReviewFixtureRun(workdir);
+  await seedRoleIoExecutionArtifacts(runDir);
+  let started;
+  try {
+    started = await startVisualizationServer({
+      workdir,
+      host: "127.0.0.1",
+      port: 0
+    });
+  } catch (error) {
+    const errorCode =
+      typeof error === "object" && error !== null && "code" in error ? error.code : undefined;
+    if (errorCode === "EPERM" || errorCode === "EACCES") {
+      t.skip(`visualizer listen unavailable in sandbox: ${errorCode}`);
+      return;
+    }
+    throw error;
+  }
+  const { server, url } = started;
+
+  try {
+    const response = await fetch(
+      `${url}/api/v1/runs/${runId}/role-io?roleId=demo-analyst&branchId=demo-analyst%401%231&loopIteration=1`
+    );
+    assert.equal(response.status, 200);
+    const payload = await response.json();
+    assert.equal(payload.roleId, "demo-analyst");
+    assert.equal(payload.branchId, "demo-analyst@1#1");
+    assert.equal(payload.loopIteration, 1);
+    assert.equal(payload.executionId, "exec-1");
+    assert.equal(payload.audit.toolRef, "tool.review");
+    assert.equal(payload.session.sessionId, "session-demo-1");
+    assert.match(payload.inboxMarkdown, /fixture input/);
+    assert.match(payload.outboxMarkdown, /fixture result/);
   } finally {
     await new Promise((resolve) => server.close(resolve));
   }

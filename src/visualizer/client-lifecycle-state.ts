@@ -77,6 +77,14 @@ export function createBuildStateSlice() {
       data: null,
       draftFiles: {}
     },
+    studioRoleConfigEditor: {
+      roleId: "",
+      saving: false,
+      dirty: false,
+      error: "",
+      data: null,
+      draft: null
+    },
     studioExecutionConfigEditor: {
       roleId: "",
       loading: false,
@@ -95,6 +103,13 @@ export function createBuildStateSlice() {
       validation: null,
       data: null,
       draft: null
+    },
+    studioRoleIoModal: {
+      open: false,
+      loading: false,
+      error: "",
+      requestKey: "",
+      data: null
     },
     studioChatSessionId: "",
     studioChatMessages: [],

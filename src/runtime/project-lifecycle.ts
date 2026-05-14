@@ -22,7 +22,7 @@ import { validateRuntimeConfig } from "./config.js";
 import { readJsonFile, writeJsonFileAtomic } from "./json-file.js";
 import { chooseDefaultModelFromCatalog, refreshModelCatalog } from "./model-catalog.js";
 import { loadSystemFromMermaid, parseSystemFromMermaidSource } from "./parse-mermaid.js";
-import { requestRunStop } from "./run-artifacts.js";
+import { requestRunStop, ROLE_EXECUTION_OUTCOME_FILE } from "./run-artifacts.js";
 import { stringifyJson } from "./runtime-support.js";
 import type {
   HumanReviewDecision,
@@ -580,6 +580,14 @@ function parseJsonLines(content: string): Array<Record<string, unknown>> {
 async function tryReadJson(path: string): Promise<unknown | undefined> {
   try {
     return await readJsonFile(path);
+  } catch {
+    return undefined;
+  }
+}
+
+async function tryReadText(path: string): Promise<string | undefined> {
+  try {
+    return await readFile(path, "utf8");
   } catch {
     return undefined;
   }
@@ -1605,6 +1613,97 @@ export async function inspectRun(workdir: string, runId: string): Promise<Record
     pendingReviewCount: reviewFields.pendingReviewCount,
     hasWaitingHumanReview: reviewFields.hasWaitingHumanReview,
     latestPendingReviewId: reviewFields.latestPendingReviewId
+  };
+}
+
+export async function inspectRunRoleIo(args: {
+  workdir: string;
+  runId: string;
+  roleId: string;
+  branchId?: string;
+  loopIteration?: number;
+}): Promise<Record<string, unknown> | undefined> {
+  const runDir = resolveRunDir(args.workdir, args.runId);
+  const roleId = args.roleId.trim();
+  if (!roleId) {
+    return undefined;
+  }
+  const executionsDir = resolve(runDir, "roles", roleId, "executions");
+  let entries: Dirent[];
+  try {
+    entries = await readdir(executionsDir, { withFileTypes: true });
+  } catch {
+    return undefined;
+  }
+
+  const candidates = await Promise.all(
+    entries
+      .filter((entry) => entry.isDirectory())
+      .map(async (entry) => {
+        const executionDir = resolve(executionsDir, entry.name);
+        const outcome = asObjectRecord(
+          await tryReadJson(resolve(executionDir, ROLE_EXECUTION_OUTCOME_FILE))
+          ?? await tryReadJson(resolve(executionDir, "outcome.json"))
+        );
+        if (!outcome) {
+          return undefined;
+        }
+        if (asString(outcome.roleId) !== roleId) {
+          return undefined;
+        }
+        if (args.branchId && asString(outcome.branchId) !== args.branchId) {
+          return undefined;
+        }
+        if (args.loopIteration !== undefined && asNumber(outcome.loopIteration) !== args.loopIteration) {
+          return undefined;
+        }
+        return {
+          executionDir,
+          executionId: asString(outcome.executionId) ?? entry.name,
+          committedAt: asString(outcome.committedAt) ?? "",
+          outcome
+        };
+      })
+  );
+
+  const selected = candidates
+    .filter((candidate): candidate is NonNullable<typeof candidate> => candidate !== undefined)
+    .sort((left, right) => {
+      const leftCommittedAt = parseIsoTimestamp(left.committedAt) ?? 0;
+      const rightCommittedAt = parseIsoTimestamp(right.committedAt) ?? 0;
+      if (leftCommittedAt !== rightCommittedAt) {
+        return rightCommittedAt - leftCommittedAt;
+      }
+      return right.executionId.localeCompare(left.executionId);
+    })
+    .at(0);
+
+  if (!selected) {
+    return undefined;
+  }
+
+  const [audit, result, session, inboxMarkdown, outboxMarkdown] = await Promise.all([
+    tryReadJson(resolve(selected.executionDir, "audit.json")),
+    tryReadJson(resolve(selected.executionDir, "result.json")),
+    tryReadJson(resolve(selected.executionDir, "session.json")),
+    tryReadText(resolve(selected.executionDir, "inbox.md")),
+    tryReadText(resolve(selected.executionDir, "outbox.md"))
+  ]);
+
+  return {
+    runId: args.runId,
+    roleId,
+    branchId: asString(selected.outcome.branchId) ?? args.branchId ?? "",
+    loopIteration: asNumber(selected.outcome.loopIteration) ?? args.loopIteration ?? 0,
+    executionId: selected.executionId,
+    status: asString(selected.outcome.status) ?? "",
+    selectedEvent: asString(selected.outcome.selectedEvent) ?? "",
+    committedAt: selected.committedAt,
+    audit,
+    result,
+    session,
+    inboxMarkdown: inboxMarkdown ?? "",
+    outboxMarkdown: outboxMarkdown ?? ""
   };
 }
 

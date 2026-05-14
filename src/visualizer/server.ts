@@ -16,6 +16,7 @@ import { runSystemWithAdapter } from "../runtime/adapter.js";
 import {
   inspectHumanReview,
   inspectRun,
+  inspectRunRoleIo,
   listHumanReviews,
   loadPersistedRunsIndex,
   loadIndexedRuns,
@@ -1172,6 +1173,35 @@ async function handleApiRunLogs(
   jsonResponse(response, 200, { records: redactUnknown(records) });
 }
 
+async function handleApiRunRoleIo(
+  workdir: string,
+  runId: string,
+  url: URL,
+  response: ServerResponse
+): Promise<void> {
+  const roleId = url.searchParams.get("roleId") ?? "";
+  if (!roleId.trim()) {
+    throw new HttpError(400, "ROLE_ID_REQUIRED", "roleId is required.");
+  }
+  const branchId = url.searchParams.get("branchId") ?? undefined;
+  const loopIterationValue = url.searchParams.get("loopIteration");
+  const loopIteration = loopIterationValue === null ? undefined : Number(loopIterationValue);
+  if (loopIterationValue !== null && !Number.isFinite(loopIteration)) {
+    throw new HttpError(400, "INVALID_LOOP_ITERATION", "loopIteration must be a finite number.");
+  }
+  const detail = await inspectRunRoleIo({
+    workdir,
+    runId,
+    roleId,
+    branchId,
+    loopIteration
+  });
+  if (!detail) {
+    throw new HttpError(404, "ROLE_IO_NOT_FOUND", "Role I/O detail not found for the selected execution.");
+  }
+  jsonResponse(response, 200, redactUnknown(detail));
+}
+
 async function handleApiRunGraph(workdir: string, runId: string, response: ServerResponse): Promise<void> {
   const detail = await loadRunDetail(workdir, runId);
   jsonResponse(
@@ -1831,6 +1861,10 @@ async function handleVisualizationRequest(
   }
   if (segments.length === 5 && segments[4] === "logs" && method === "GET") {
     await handleApiRunLogs(state.workdir, runId, url, response);
+    return;
+  }
+  if (segments.length === 5 && segments[4] === "role-io" && method === "GET") {
+    await handleApiRunRoleIo(state.workdir, runId, url, response);
     return;
   }
   if (segments.length === 5 && segments[4] === "graph" && method === "GET") {

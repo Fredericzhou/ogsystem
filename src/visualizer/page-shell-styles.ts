@@ -1812,6 +1812,112 @@ export function renderPageShellStyles(): string {
       overflow: auto;
       padding-right: 4px;
     }
+    .studio-log-lanes {
+      min-width: 0;
+      overflow: hidden;
+      border: 1px solid rgba(148, 163, 184, 0.18);
+      border-radius: 12px;
+      background: rgba(7, 12, 24, 0.45);
+    }
+    .studio-log-lanes-scroll {
+      overflow: auto;
+      max-height: 460px;
+    }
+    .studio-log-lane-header,
+    .studio-log-lane-row {
+      display: grid;
+      gap: 8px;
+      align-items: stretch;
+      min-width: 0;
+      padding: 8px;
+    }
+    .studio-log-lane-header {
+      position: sticky;
+      top: 0;
+      z-index: 1;
+      background: rgba(5, 10, 23, 0.96);
+      border-bottom: 1px solid rgba(148, 163, 184, 0.14);
+    }
+    .studio-log-lanes-body {
+      max-height: none;
+      overflow: visible;
+      padding: 0;
+      gap: 0;
+    }
+    .studio-log-time-cell,
+    .studio-log-lane-heading {
+      min-width: 0;
+      display: grid;
+      align-content: start;
+    }
+    .studio-log-time-cell {
+      padding-top: 4px;
+    }
+    .studio-log-lane-cell {
+      min-width: 0;
+      min-height: 18px;
+    }
+    .studio-log-lane-cell.is-empty {
+      border-radius: 10px;
+      border: 1px dashed rgba(148, 163, 184, 0.1);
+      background: rgba(148, 163, 184, 0.03);
+    }
+    .studio-log-lane-card {
+      min-height: 100%;
+    }
+    .studio-role-io-modal-root {
+      position: fixed;
+      inset: 0;
+      z-index: 120;
+      display: grid;
+      place-items: center;
+      padding: 18px;
+    }
+    .studio-role-io-backdrop {
+      position: absolute;
+      inset: 0;
+      border: 0;
+      background: rgba(2, 6, 23, 0.72);
+      cursor: pointer;
+    }
+    .studio-role-io-dialog {
+      position: relative;
+      z-index: 1;
+      width: min(920px, calc(100vw - 36px));
+      max-height: min(86vh, 920px);
+      overflow: hidden;
+      display: grid;
+      grid-template-rows: auto minmax(0, 1fr);
+      border-radius: 16px;
+      border: 1px solid rgba(148, 163, 184, 0.22);
+      background: linear-gradient(180deg, rgba(5, 10, 23, 0.98), rgba(10, 18, 36, 0.98));
+      box-shadow: 0 30px 100px rgba(0, 0, 0, 0.5);
+    }
+    .studio-role-io-header {
+      display: flex;
+      justify-content: space-between;
+      gap: 12px;
+      align-items: flex-start;
+      padding: 14px 16px 10px;
+      border-bottom: 1px solid rgba(148, 163, 184, 0.16);
+    }
+    .studio-role-io-body {
+      display: grid;
+      gap: 12px;
+      overflow: auto;
+      padding: 14px 16px 16px;
+    }
+    .studio-role-io-body pre {
+      margin: 0;
+      white-space: pre-wrap;
+      word-break: break-word;
+      padding: 10px 12px;
+      border-radius: 10px;
+      background: rgba(2, 6, 23, 0.66);
+      border: 1px solid rgba(148, 163, 184, 0.14);
+      max-height: 240px;
+      overflow: auto;
+    }
     .event {
       border-radius: 9px;
       border: 1px solid var(--border);

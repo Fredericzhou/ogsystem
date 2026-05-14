@@ -5,6 +5,7 @@ import {
   bindingTone,
   compactJsonPreview,
   compactText,
+  displayBindingKind,
   displayUiToken,
   formatJson,
   normalizeStudioTargetRoleId,
@@ -27,6 +28,7 @@ import {
   renderRunStatePanel,
   renderStudioGraphCanvas,
   renderStudioBridgePanel,
+  renderStudioRoleConfigEditor,
   renderStudioExecutionConfigEditor,
   renderStudioFlowConfigEditor,
   renderStudioRolePackageEditor,
@@ -267,11 +269,13 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
     const renderPreDisclosure = ${renderPreDisclosure.toString()};
     const renderSummaryListSection = ${renderSummaryListSection.toString()};
     const bindingTone = ${bindingTone.toString()};
+    const displayBindingKind = ${displayBindingKind.toString()};
     const displayUiToken = ${displayUiToken.toString()};
     const normalizeStudioTargetRoleId = ${normalizeStudioTargetRoleId.toString()};
     const renderStudioGraphCanvas = ${renderStudioGraphCanvas.toString()};
     const renderStudioBridgeStructureHtml = ${renderStudioBridgeStructureHtml.toString()};
     const renderStudioBridgeSelectionLabel = ${renderStudioBridgeSelectionLabel.toString()};
+    const renderStudioRoleConfigEditor = ${renderStudioRoleConfigEditor.toString()};
     const renderStudioExecutionConfigEditor = ${renderStudioExecutionConfigEditor.toString()};
     const renderStudioRolePackageEditor = ${renderStudioRolePackageEditor.toString()};
     const roleIdOf = ${roleIdOf.toString()};
@@ -2184,6 +2188,7 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
           state.studioWorkbenchSideTab = "selection";
           state.studioBridgeEditSelectionRequest += 1;
           updateStudioBridgeSelection(true);
+          loadStudioRoleConfigEditor(roleId);
           void loadStudioRolePackageEditor(roleId);
           void loadStudioExecutionConfigEditor(roleId);
         },
@@ -2206,6 +2211,7 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
         }
       });
       bindStudioSelectionDialogControls();
+      bindStudioRoleConfigEditorControls();
       bindStudioRolePackageEditorControls();
       bindStudioExecutionConfigEditorControls();
       bindStudioFlowConfigEditorControls();
@@ -2215,6 +2221,7 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
       updateStudioBridgeSelectionChrome();
       renderStudioSelectionDialog();
       bindStudioSelectionDialogControls();
+      bindStudioRoleConfigEditorControls();
       bindStudioRolePackageEditorControls();
       bindStudioExecutionConfigEditorControls();
       bindStudioFlowConfigEditorControls();
@@ -2268,6 +2275,44 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
         return String(editor.roleId || selectedRoleIdValue);
       }
       return selectedRoleIdValue;
+    }
+
+    function roleConfigEditorFieldElements() {
+      return Array.from(workbenchBodyEl.querySelectorAll("[data-role-config-field]") || []);
+    }
+
+    function generatedExecutionProfileIdForRole(roleId) {
+      const normalized = String(roleId || "").trim().replace(/[^A-Za-z0-9_-]+/g, "-").replace(/^-+|-+$/g, "");
+      return "profile." + (normalized || "role");
+    }
+
+    function generatedExecutionToolRefForRole(roleId) {
+      const normalized = String(roleId || "").trim().replace(/[^A-Za-z0-9_-]+/g, "-").replace(/^-+|-+$/g, "");
+      return "tool." + (normalized || "role");
+    }
+
+    function readStudioRoleConfigDraft() {
+      const current = state.studioRoleConfigEditor?.data || {};
+      const draft = {
+        roleId: state.studioRoleConfigEditor?.roleId || selectedStudioRoleId(),
+        title: current.title || "",
+        bindingKind: current.bindingKind || "noop",
+        modelRef: current.modelRef || "",
+        profileId: current.profileId || current.generatedProfileId || ""
+      };
+      for (const element of roleConfigEditorFieldElements()) {
+        const field = element.getAttribute("data-role-config-field") || "";
+        const value = typeof element.value === "string" ? element.value : "";
+        if (field === "title") draft.title = value;
+        if (field === "bindingKind") draft.bindingKind = value;
+        if (field === "modelRef") draft.modelRef = value;
+        if (field === "profileId") draft.profileId = value;
+      }
+      return draft;
+    }
+
+    function hasDirtyStudioRoleConfigEditor() {
+      return state.studioRoleConfigEditor?.dirty === true;
     }
 
     function executionConfigEditorFieldElements() {
@@ -2377,7 +2422,12 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
     }
 
     function closeStudioSelectionDialog(options) {
-      if (!options?.force && (hasDirtyStudioRolePackageEditor() || hasDirtyStudioExecutionConfigEditor() || hasDirtyStudioFlowConfigEditor())) {
+      if (!options?.force && (hasDirtyStudioRoleConfigEditor() || hasDirtyStudioRolePackageEditor() || hasDirtyStudioExecutionConfigEditor() || hasDirtyStudioFlowConfigEditor())) {
+        if (hasDirtyStudioRoleConfigEditor()) {
+          const dirtyRoleId = String(state.studioRoleConfigEditor?.roleId || state.studioBridgeSelectedRoleId || "");
+          setFlash("info", t("studio.roleConfigDirtySwitchBlocked", { roleId: dirtyRoleId }, "Role config changes for {roleId} are unsaved. Save or revert before closing details."));
+          return false;
+        }
         if (hasDirtyStudioFlowConfigEditor()) {
           const dirtyFlowKey = String(state.studioFlowConfigEditor?.flowKey || state.studioBridgeSelectedFlowKey || "");
           setFlash("info", t("studio.flowConfigDirtySwitchBlocked", { flowKey: dirtyFlowKey }, "Flow changes for {flowKey} are unsaved. Save or revert before closing details."));
@@ -2478,11 +2528,131 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
         }));
     }
 
+    function closeStudioRoleIoModal() {
+      state.studioRoleIoModal = {
+        ...(state.studioRoleIoModal || {}),
+        open: false,
+        loading: false
+      };
+      renderStudioSelectionDialog();
+    }
+
+    async function openStudioRoleIoModal(args) {
+      const runId = state.selectedRunId || state.studioBridgeLastDryRunId || "";
+      const roleId = String(args?.roleId || "").trim();
+      if (!runId || !roleId) {
+        return;
+      }
+      const branchId = String(args?.branchId || "").trim();
+      const loopIteration = Number.isFinite(args?.loopIteration) ? Number(args.loopIteration) : undefined;
+      const requestKey = [runId, roleId, branchId, loopIteration ?? ""].join(":");
+      state.studioRoleIoModal = {
+        open: true,
+        loading: true,
+        error: "",
+        requestKey,
+        data: null
+      };
+      renderStudioSelectionDialog();
+      try {
+        const params = new URLSearchParams();
+        params.set("roleId", roleId);
+        if (branchId) {
+          params.set("branchId", branchId);
+        }
+        if (loopIteration !== undefined) {
+          params.set("loopIteration", String(loopIteration));
+        }
+        const payload = await requestJson(API_PREFIX + "/runs/" + encodeURIComponent(runId) + "/role-io?" + params.toString());
+        if (state.studioRoleIoModal?.requestKey !== requestKey) {
+          return;
+        }
+        state.studioRoleIoModal = {
+          open: true,
+          loading: false,
+          error: "",
+          requestKey,
+          data: payload
+        };
+      } catch (error) {
+        if (state.studioRoleIoModal?.requestKey !== requestKey) {
+          return;
+        }
+        state.studioRoleIoModal = {
+          open: true,
+          loading: false,
+          error: error instanceof Error ? error.message : String(error),
+          requestKey,
+          data: null
+        };
+      }
+      renderStudioSelectionDialog();
+    }
+
+    function renderStudioRoleIoModal() {
+      const modal = state.studioRoleIoModal || {};
+      if (modal.open !== true) {
+        return "";
+      }
+      const data = asRecord(modal.data);
+      const audit = asRecord(data?.audit);
+      const result = asRecord(data?.result);
+      const session = asRecord(data?.session);
+      const runtimeMeta = [
+        data?.branchId ? "branch " + String(data.branchId) : "",
+        Number.isFinite(data?.loopIteration) ? "loop " + String(data.loopIteration) : "",
+        data?.selectedEvent ? "event " + String(data.selectedEvent) : "",
+        audit?.durationMs ? "duration " + String(audit.durationMs) + "ms" : "",
+        audit?.toolRef ? "tool " + String(audit.toolRef) : "",
+        audit?.profileId ? "profile " + String(audit.profileId) : "",
+        session?.sessionId ? "session " + String(session.sessionId) : ""
+      ].filter(Boolean).join(" · ");
+      const inputMarkdown = String(data?.inboxMarkdown || "");
+      const outputMarkdown = String(data?.outboxMarkdown || "");
+      const outputJson = result && Object.keys(result).length ? formatJson(result) : "";
+      return [
+        '<div class="studio-role-io-modal-frame">',
+        '<button type="button" class="studio-role-io-backdrop" data-studio-role-io-close="backdrop" aria-label="' + escapeText(t("action.close", undefined, "Close")) + '"></button>',
+        '<section class="studio-role-io-dialog" role="dialog" aria-modal="true" aria-label="' + escapeText(t("studio.logsRoleIoTitle", undefined, "Role I/O")) + '">',
+        '<header class="studio-role-io-header"><div><div class="hint">' + escapeText(t("studio.logsRoleIoTitle", undefined, "Role I/O")) + '</div><strong><code>' + escapeText(String(data?.roleId || "")) + '</code></strong><div class="hint">' + escapeText(runtimeMeta || t("studio.logsNoExtraMeta", undefined, "No additional runtime metadata.")) + '</div></div><button type="button" class="button subtle" data-studio-role-io-close="button">' + escapeText(t("action.close", undefined, "Close")) + '</button></header>',
+        modal.loading
+          ? '<div class="studio-role-io-body"><div class="hint">' + escapeText(t("common.loading", undefined, "loading")) + '</div></div>'
+          : modal.error
+            ? '<div class="studio-role-io-body"><div class="hint severity-warning">' + escapeText(String(modal.error || "")) + '</div></div>'
+            : '<div class="studio-role-io-body">' +
+                '<div class="event"><div class="event-top"><span>' + escapeText(t("form.runInput", undefined, "Run input")) + '</span><span>' + escapeText(formatTime(data?.committedAt)) + '</span></div><strong>' + escapeText(t("studio.logsRoleIoInput", undefined, "Role input projection")) + '</strong><div class="hint">' + escapeText(t("studio.logsRoleIoInputHint", undefined, "Captured from the execution inbox for this role attempt.")) + '</div><pre>' + escapeText(inputMarkdown || t("common.notAvailable", undefined, "n/a")) + '</pre></div>' +
+                '<div class="event"><div class="event-top"><span>' + escapeText(t("studio.resultsTab", undefined, "Results")) + '</span><span>' + escapeText(String(data?.status || t("common.unknown", undefined, "unknown"))) + '</span></div><strong>' + escapeText(t("studio.logsRoleIoOutput", undefined, "Role output payload")) + '</strong><div class="hint">' + escapeText(t("studio.logsRoleIoOutputHint", undefined, "Markdown outbox is shown first, followed by the structured JSON payload when available.")) + '</div><pre>' + escapeText(outputMarkdown || t("common.notAvailable", undefined, "n/a")) + '</pre>' + (outputJson ? '<pre>' + escapeText(outputJson) + '</pre>' : '') + '</div>' +
+                '<div class="event"><div class="event-top"><span>' + escapeText(t("common.metadata", undefined, "metadata")) + '</span><span>' + escapeText(String(data?.executionId || "")) + '</span></div><strong>' + escapeText(t("studio.logsRoleIoMeta", undefined, "Execution metadata")) + '</strong><div class="hint">' + escapeText(runtimeMeta || t("studio.logsNoExtraMeta", undefined, "No additional runtime metadata.")) + '</div><pre>' + escapeText(formatJson({
+                  audit,
+                  session
+                })) + '</pre></div>' +
+              '</div>',
+        '</section></div>'
+      ].join("");
+    }
+
     function renderStudioLogsTabContent() {
       const disabled = state.actionBusy ? " disabled" : "";
       const header = state.detail?.header || {};
       const activeRunId = state.selectedRunId || state.studioBridgeLastDryRunId || "";
       const events = Array.isArray(state.events) ? state.events : [];
+      const bridge = resolveStudioBridgeForDisplay();
+      const extractedRoles = Array.isArray(bridge?.extracted?.roles) ? bridge.extracted.roles : [];
+      const runtimeLaneKey = "__runtime__";
+      const seenLaneIds = [];
+      for (const entry of events) {
+        const record = asRecord(entry?.record);
+        const roleId = String(record?.roleId || "");
+        const laneKey = roleId || runtimeLaneKey;
+        if (!seenLaneIds.includes(laneKey)) {
+          seenLaneIds.push(laneKey);
+        }
+      }
+      const roleLaneIds = extractedRoles
+        .map((role) => String(role?.roleId || ""))
+        .filter((roleId) => roleId && seenLaneIds.includes(roleId))
+        .concat(seenLaneIds.filter((laneId) => laneId === runtimeLaneKey || !extractedRoles.some((role) => String(role?.roleId || "") === laneId)));
+      const laneGridColumns = "minmax(84px, 96px) " + roleLaneIds.map(() => "minmax(196px, 1fr)").join(" ");
       const flowResolvedCount = events.reduce((count, entry) => {
         const record = asRecord(entry?.record);
         const roleId = String(record?.roleId || "");
@@ -2502,9 +2672,10 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
           '</div>'
         : '<div class="event"><div class="event-top"><span>' + escapeText(t("studio.logsTab", undefined, "Logs")) + '</span><span>' + escapeText(t("common.idle", undefined, "idle")) + '</span></div><strong>' + escapeText(t("studio.logsPendingTitle", undefined, "Structured runtime events will appear here after a dry run starts.")) + '</strong><div class="hint">' + escapeText(t("studio.logsPendingHint", undefined, "Use this tab to inspect role, branch, event, and inferred flow routing without leaving Design.")) + '</div></div>';
       const traceCardsHtml = events.length
-        ? events.slice().reverse().map((entry) => {
+        ? events.map((entry) => {
             const record = asRecord(entry?.record);
             const roleId = String(record?.roleId || "");
+            const laneKey = roleId || runtimeLaneKey;
             const eventType = String(record?.event || "");
             const targets = roleId && eventType ? studioTraceFlowTargetsByEvent(roleId, eventType) : [];
             const routeHint = targets.length
@@ -2520,20 +2691,28 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
               : [];
             const meta = [
               record?.branchId ? "branch " + String(record.branchId) : "",
+              Number.isFinite(record?.loopIteration) ? "loop " + String(record.loopIteration) : "",
               record?.reviewId ? "review " + String(record.reviewId) : "",
               Number.isFinite(record?.durationMs) ? "duration " + String(record.durationMs) + "ms" : "",
               record?.errorCode ? "error " + String(record.errorCode) : ""
             ].filter(Boolean).join(" · ");
             const roleActive = roleId && state.studioBridgeSelectedRoleId === roleId && !state.studioBridgeSelectedFlowKey;
             const roleButtonHtml = roleId
-              ? '<button type="button" class="button subtle' + (roleActive ? " active" : "") + '" data-studio-log-role-id="' + escapeText(roleId) + '"><code>' + escapeText(roleId) + '</code></button>'
+              ? '<button type="button" class="button subtle' + (roleActive ? " active" : "") + '" data-studio-log-role-id="' + escapeText(roleId) + '" data-studio-log-branch-id="' + escapeText(String(record?.branchId || "")) + '" data-studio-log-loop-iteration="' + escapeText(String(record?.loopIteration ?? "")) + '"><code>' + escapeText(roleId) + '</code></button>'
               : "";
             const flowButtonsHtml = routeHint.length
               ? '<div class="actions compact">' + routeHint.map((target) => '<button type="button" class="button subtle' + (state.studioBridgeSelectedFlowKey === target.flowKey ? " active" : "") + '" data-studio-log-flow-key="' + escapeText(target.flowKey) + '">' + escapeText(target.text) + '</button>').join("") + '</div>'
               : "";
-            return '<div class="event"><div class="event-top"><span>#' + escapeText(entry?.cursor ?? "") + " " + escapeText(displayUiToken(record?.type || "event", t)) + '</span><span>' + escapeText(formatTime(record?.at)) + '</span></div><strong>' + roleButtonHtml + (eventType ? ' <code>' + escapeText(eventType) + '</code> ' : "") + (record?.status ? '<span class="status ' + escapeText(statusClass(String(record.status))) + '">' + escapeText(displayUiToken(record.status, t)) + '</span>' : "") + '</strong>' + flowButtonsHtml + '<div class="hint">' + escapeText(meta || t("studio.logsNoExtraMeta", undefined, "No additional runtime metadata.")) + '</div></div>';
+            const laneCellsHtml = roleLaneIds.map((candidateLaneId) => candidateLaneId === laneKey
+              ? '<div class="studio-log-lane-cell"><div class="event studio-log-lane-card"><div class="event-top"><span>#' + escapeText(entry?.cursor ?? "") + " " + escapeText(displayUiToken(record?.type || "event", t)) + '</span><span>' + escapeText(record?.status ? displayUiToken(record.status, t) : "") + '</span></div><strong>' + roleButtonHtml + (eventType ? ' <code>' + escapeText(eventType) + '</code> ' : "") + (record?.status ? '<span class="status ' + escapeText(statusClass(String(record.status))) + '">' + escapeText(displayUiToken(record.status, t)) + '</span>' : "") + '</strong>' + flowButtonsHtml + '<div class="hint">' + escapeText(meta || t("studio.logsNoExtraMeta", undefined, "No additional runtime metadata.")) + '</div></div></div>'
+              : '<div class="studio-log-lane-cell is-empty"></div>'
+            ).join("");
+            return '<div class="studio-log-lane-row" style="grid-template-columns:' + escapeText(laneGridColumns) + '"><div class="studio-log-time-cell"><div class="hint">' + escapeText(formatTime(record?.at)) + '</div></div>' + laneCellsHtml + '</div>';
           }).join("")
         : '<div class="hint">' + escapeText(t("timeline.noEventsCaptured", undefined, "No events captured yet.")) + '</div>';
+      const traceHeaderHtml = roleLaneIds.length
+        ? '<div class="studio-log-lane-header" style="grid-template-columns:' + escapeText(laneGridColumns) + '"><div class="studio-log-time-cell"><strong>' + escapeText(t("common.time", undefined, "time")) + '</strong></div>' + roleLaneIds.map((laneId) => '<div class="studio-log-lane-heading"><strong>' + escapeText(laneId === runtimeLaneKey ? t("state.runtime", undefined, "runtime") : laneId) + '</strong></div>').join("") + '</div>'
+        : "";
       const rawLogsHtml = renderDisclosureCard({
         title: t("section.logs", undefined, "Logs"),
         headline: t("studio.logsRawHeadline", undefined, "Raw engine and role streams"),
@@ -2558,7 +2737,7 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
         '</div>',
         summaryCardsHtml,
         '<div class="event"><div class="event-top"><span>' + escapeText(t("studio.logsTraceTitle", undefined, "Structured trace")) + '</span><span>' + escapeText(activeRunId || t("common.idle", undefined, "idle")) + '</span></div><strong>' + escapeText(t("studio.logsTraceHeadline", undefined, "Role, branch, event, status, and inferred flow routing for the current dry run.")) + '</strong><div class="hint">' + escapeText(t("studio.logsTraceHint", undefined, "This view stays inside Design so you can compare graph structure and runtime progression without switching page shells.")) + '</div></div>',
-        '<div class="timeline">' + traceCardsHtml + '</div>',
+        '<div class="studio-log-lanes"><div class="studio-log-lanes-scroll">' + traceHeaderHtml + '<div class="timeline studio-log-lanes-body">' + traceCardsHtml + '</div></div></div>',
         rawLogsHtml,
         '</div>'
       ].join("");
@@ -2703,19 +2882,53 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
       }
 
       if (activeTab === "selection" && selectionKind === "role") {
+        ensureStudioRoleConfigEditor(selectedRoleIdValue);
+        ensureStudioExecutionConfigEditor(selectedRoleIdValue);
         const editorRoleId = rolePackageEditorRoleIdForSelectionDialog();
         const dirtyRoleId = String(state.studioRolePackageEditor?.roleId || "");
         const showDirtyRoleWarning = hasDirtyStudioRolePackageEditor() && dirtyRoleId && dirtyRoleId !== selectedRoleIdValue;
+        const dirtyConfigRoleId = String(state.studioRoleConfigEditor?.roleId || "");
+        const showDirtyConfigWarning = hasDirtyStudioRoleConfigEditor() && dirtyConfigRoleId && dirtyConfigRoleId !== selectedRoleIdValue;
         rolePackage.innerHTML = [
+          showDirtyConfigWarning
+            ? '<div class="event"><div class="event-top"><span>' + escapeText(t("common.attention", undefined, "attention")) + '</span><span>' + escapeText(t("common.changed", undefined, "changed")) + '</span></div><strong>' +
+              escapeText(t("studio.roleConfigDirtySwitchBlocked", { roleId: dirtyConfigRoleId }, "Role config changes for {roleId} are unsaved. Save or revert before switching roles.")) +
+              '</strong></div>'
+            : "",
           showDirtyRoleWarning
             ? '<div class="event"><div class="event-top"><span>' + escapeText(t("common.attention", undefined, "attention")) + '</span><span>' + escapeText(t("common.changed", undefined, "changed")) + '</span></div><strong>' +
               escapeText(t("studio.rolePackageDirtySwitchBlocked", { roleId: dirtyRoleId }, "Role package changes for {roleId} are unsaved. Save or revert before switching role packages.")) +
               '</strong></div>'
             : "",
-          renderStudioRolePackageEditor({
-            roleId: editorRoleId || selectedRoleIdValue,
-            editor: state.studioRolePackageEditor,
+          renderStudioRoleConfigEditor({
+            roleId: selectedRoleIdValue,
+            editor: state.studioRoleConfigEditor,
+            projectConfig: state.project?.config || null,
             t
+          }),
+          renderDisclosureCard({
+            title: t("studio.executionConfig", undefined, "execution config"),
+            headline: selectedRoleIdValue,
+            meta: displayBindingKind(state.studioBridge?.authoring?.roles?.[selectedRoleIdValue]?.bindingKind, t),
+            hint: t("studio.executionConfigHint", undefined, "Repository content is copied into this project. Business fields below are editable; ids stay system-managed."),
+            bodyHtml: renderStudioExecutionConfigEditor({
+              roleId: selectedRoleIdValue,
+              editor: state.studioExecutionConfigEditor,
+              t
+            }),
+            open: false
+          }),
+          renderDisclosureCard({
+            title: t("studio.rolePackage", undefined, "role package"),
+            headline: editorRoleId || selectedRoleIdValue,
+            meta: t("common.optional", undefined, "optional"),
+            hint: t("studio.rolePackageLoadHint", undefined, "Load this role package to inspect and edit its runtime files."),
+            bodyHtml: renderStudioRolePackageEditor({
+              roleId: editorRoleId || selectedRoleIdValue,
+              editor: state.studioRolePackageEditor,
+              t
+            }),
+            open: false
           })
         ].join("");
         debugPanel.innerHTML = renderStudioDebugTabContent();
@@ -2781,6 +2994,23 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
           resultPanel.innerHTML = "";
         }
       }
+      let roleIoModalRoot = workbenchBodyEl.querySelector("[data-studio-role-io-modal-root]");
+      if (!roleIoModalRoot && state.studioRoleIoModal?.open) {
+        roleIoModalRoot = document.createElement("div");
+        roleIoModalRoot.className = "studio-role-io-modal-root";
+        roleIoModalRoot.setAttribute("data-studio-role-io-modal-root", "1");
+        workbenchBodyEl.appendChild(roleIoModalRoot);
+      }
+      if (roleIoModalRoot) {
+        if (!String(roleIoModalRoot.className || "").includes("studio-role-io-modal-root")) {
+          roleIoModalRoot.className = [roleIoModalRoot.className, "studio-role-io-modal-root"].filter(Boolean).join(" ");
+        }
+        roleIoModalRoot.innerHTML = renderStudioRoleIoModal();
+        if (!state.studioRoleIoModal?.open && typeof roleIoModalRoot.remove === "function") {
+          roleIoModalRoot.remove();
+        }
+      }
+      bindStudioRoleConfigEditorControls();
       bindStudioRolePackageEditorControls();
       bindStudioExecutionConfigEditorControls();
       bindStudioFlowConfigEditorControls();
@@ -2835,8 +3065,14 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
         }
         const logRoleButton = closestSelectionAction(event.target, "data-studio-log-role-id");
         if (logRoleButton) {
+          const loopIterationValue = logRoleButton.getAttribute("data-studio-log-loop-iteration");
           focusStudioRuntimeSelection({
             roleId: logRoleButton.getAttribute("data-studio-log-role-id") || ""
+          });
+          void openStudioRoleIoModal({
+            roleId: logRoleButton.getAttribute("data-studio-log-role-id") || "",
+            branchId: logRoleButton.getAttribute("data-studio-log-branch-id") || "",
+            loopIteration: loopIterationValue === null || loopIterationValue === "" ? undefined : Number(loopIterationValue)
           });
           event.preventDefault();
           return;
@@ -2854,8 +3090,203 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
           state.studioInspectorCollapsed = !state.studioInspectorCollapsed;
           renderStudioSelectionDialog();
           event.preventDefault();
+          return;
+        }
+        const roleIoCloseButton = closestSelectionAction(event.target, "data-studio-role-io-close");
+        if (roleIoCloseButton) {
+          closeStudioRoleIoModal();
+          event.preventDefault();
         }
       });
+    }
+
+    function loadStudioRoleConfigEditor(roleId, options) {
+      const selectedRoleIdValue = roleId || selectedStudioRoleId();
+      if (!selectedRoleIdValue) {
+        state.studioRoleConfigEditor = {
+          roleId: "",
+          saving: false,
+          dirty: false,
+          error: "",
+          data: null,
+          draft: null
+        };
+        return;
+      }
+      if (state.studioRoleConfigEditor?.dirty && !options?.force) {
+        if (selectedRoleIdValue !== state.studioRoleConfigEditor?.roleId) {
+          setFlash("info", t("studio.roleConfigDirtySwitchBlocked", {
+            roleId: String(state.studioRoleConfigEditor?.roleId || "")
+          }, "Role config changes for {roleId} are unsaved. Save or revert before switching roles."));
+        }
+        renderStudioSelectionDialog();
+        return;
+      }
+      const role = state.studioBridge?.authoring?.roles?.[selectedRoleIdValue] || null;
+      if (!role) {
+        state.studioRoleConfigEditor = {
+          roleId: selectedRoleIdValue,
+          saving: false,
+          dirty: false,
+          error: t("studio.selectRole", undefined, "Select a role to inspect metadata."),
+          data: null,
+          draft: null
+        };
+        renderStudioSelectionDialog();
+        return;
+      }
+      state.studioRoleConfigEditor = {
+        roleId: selectedRoleIdValue,
+        saving: false,
+        dirty: false,
+        error: "",
+        data: {
+          roleId: selectedRoleIdValue,
+          title: String(role.title || ""),
+          bindingKind: String(role.bindingKind || "noop"),
+          modelRef: String(role.modelRef || ""),
+          profileId: String(role.profileId || ""),
+          generatedProfileId: generatedExecutionProfileIdForRole(selectedRoleIdValue),
+          generatedToolRef: generatedExecutionToolRefForRole(selectedRoleIdValue)
+        },
+        draft: null
+      };
+      renderStudioSelectionDialog();
+    }
+
+    function ensureStudioRoleConfigEditor(roleId) {
+      const roleIdValue = roleId || "";
+      if (!roleIdValue) {
+        return;
+      }
+      const editor = state.studioRoleConfigEditor || {};
+      if (editor.dirty || editor.saving) {
+        return;
+      }
+      if (editor.roleId === roleIdValue && editor.data && !editor.error) {
+        return;
+      }
+      loadStudioRoleConfigEditor(roleIdValue, { force: true });
+    }
+
+    async function saveStudioRoleConfigEditor(roleId) {
+      const selectedRoleIdValue = roleId || state.studioRoleConfigEditor?.roleId || selectedStudioRoleId();
+      if (!selectedRoleIdValue || !state.studioBridge?.authoring) {
+        return;
+      }
+      const current = state.studioRoleConfigEditor?.data || {};
+      const draft = readStudioRoleConfigDraft();
+      const bindingKind = draft.bindingKind === "model" || draft.bindingKind === "exec"
+        ? draft.bindingKind
+        : "noop";
+      if (bindingKind === "model" && !String(draft.modelRef || "").trim()) {
+        state.studioRoleConfigEditor = {
+          ...(state.studioRoleConfigEditor || {}),
+          roleId: selectedRoleIdValue,
+          saving: false,
+          dirty: true,
+          error: t("studio.roleConfigModelRequired", undefined, "Model ref is required when the role runs as an Agent."),
+          draft
+        };
+        renderStudioSelectionDialog();
+        return;
+      }
+      if (bindingKind === "exec" && !String(draft.profileId || "").trim()) {
+        state.studioRoleConfigEditor = {
+          ...(state.studioRoleConfigEditor || {}),
+          roleId: selectedRoleIdValue,
+          saving: false,
+          dirty: true,
+          error: t("studio.roleConfigProfileRequired", undefined, "Execution profile is required when the role runs as a Tool."),
+          draft
+        };
+        renderStudioSelectionDialog();
+        return;
+      }
+      const projectConfig = state.project?.config || {};
+      const profiles = Array.isArray(projectConfig.profiles) ? projectConfig.profiles : [];
+      const generatedProfileId = String(current.generatedProfileId || generatedExecutionProfileIdForRole(selectedRoleIdValue));
+      const generatedToolRef = String(current.generatedToolRef || generatedExecutionToolRefForRole(selectedRoleIdValue));
+      const needsGeneratedExecutionConfig = bindingKind === "exec"
+        && String(draft.profileId || "").trim() === generatedProfileId
+        && !profiles.some((entry) => String(entry?.profileId || "") === generatedProfileId);
+      state.studioRoleConfigEditor = {
+        ...(state.studioRoleConfigEditor || {}),
+        roleId: selectedRoleIdValue,
+        saving: true,
+        dirty: true,
+        error: "",
+        draft
+      };
+      renderStudioSelectionDialog();
+      const result = applyStudioAuthoringCommand({
+        authoring: state.studioBridge.authoring,
+        command: {
+          type: "update-role",
+          originalRoleId: selectedRoleIdValue,
+          roleId: selectedRoleIdValue,
+          title: String(draft.title || "").trim() || undefined,
+          bindingKind,
+          modelRef: bindingKind === "model" ? String(draft.modelRef || "").trim() : undefined,
+          profileId: bindingKind === "exec" ? String(draft.profileId || "").trim() : undefined,
+          profileDraft: needsGeneratedExecutionConfig ? {
+            profileId: generatedProfileId,
+            toolRef: generatedToolRef,
+            timeoutMs: 30000
+          } : undefined,
+          toolDraft: needsGeneratedExecutionConfig ? {
+            toolRef: generatedToolRef,
+            runner: "local_shell",
+            command: "node",
+            argsTemplate: ["scripts/console-print.mjs"],
+            stdinMode: "text"
+          } : undefined
+        }
+      });
+      await applyStudioGraphAuthoringCommand(result, {
+        successMessage: t("studio.roleConfigSaved", { roleId: selectedRoleIdValue }, "Role config saved: {roleId}."),
+        afterApply: () => {
+          loadStudioRoleConfigEditor(result.selectedRoleId || selectedRoleIdValue, { force: true });
+          ensureStudioExecutionConfigEditor(result.selectedRoleId || selectedRoleIdValue);
+        }
+      });
+    }
+
+    function bindStudioRoleConfigEditorControls() {
+      for (const button of Array.from(workbenchBodyEl.querySelectorAll("[data-role-config-save]") || [])) {
+        bindOnce(button, "click", "role-config-save", () => {
+          void saveStudioRoleConfigEditor(button.getAttribute("data-role-config-save") || selectedStudioRoleId());
+        });
+      }
+      for (const button of Array.from(workbenchBodyEl.querySelectorAll("[data-role-config-revert]") || [])) {
+        bindOnce(button, "click", "role-config-revert", () => {
+          loadStudioRoleConfigEditor(button.getAttribute("data-role-config-revert") || selectedStudioRoleId(), { force: true });
+        });
+      }
+      for (const element of roleConfigEditorFieldElements()) {
+        bindOnce(element, "input", "role-config-field", () => {
+          state.studioRoleConfigEditor = {
+            ...(state.studioRoleConfigEditor || {}),
+            roleId: state.studioRoleConfigEditor?.roleId || selectedStudioRoleId(),
+            dirty: true,
+            saving: false,
+            error: "",
+            draft: readStudioRoleConfigDraft()
+          };
+          renderStudioSelectionDialog();
+        });
+        bindOnce(element, "change", "role-config-field-change", () => {
+          state.studioRoleConfigEditor = {
+            ...(state.studioRoleConfigEditor || {}),
+            roleId: state.studioRoleConfigEditor?.roleId || selectedStudioRoleId(),
+            dirty: true,
+            saving: false,
+            error: "",
+            draft: readStudioRoleConfigDraft()
+          };
+          renderStudioSelectionDialog();
+        });
+      }
     }
 
     async function refreshRolePackageDependentProjectState() {
@@ -3680,7 +4111,12 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
     }
 
     function canClearStudioGraphSelection() {
-      if (hasDirtyStudioRolePackageEditor() || hasDirtyStudioExecutionConfigEditor() || hasDirtyStudioFlowConfigEditor()) {
+      if (hasDirtyStudioRoleConfigEditor() || hasDirtyStudioRolePackageEditor() || hasDirtyStudioExecutionConfigEditor() || hasDirtyStudioFlowConfigEditor()) {
+        if (hasDirtyStudioRoleConfigEditor()) {
+          const dirtyRoleId = String(state.studioRoleConfigEditor?.roleId || state.studioBridgeSelectedRoleId || "");
+          setFlash("info", t("studio.roleConfigDirtySwitchBlocked", { roleId: dirtyRoleId }, "Role config changes for {roleId} are unsaved. Save or revert before clearing selection."));
+          return false;
+        }
         if (hasDirtyStudioFlowConfigEditor()) {
           const dirtyFlowKey = String(state.studioFlowConfigEditor?.flowKey || state.studioBridgeSelectedFlowKey || "");
           setFlash("info", t("studio.flowConfigDirtySwitchBlocked", { flowKey: dirtyFlowKey }, "Flow changes for {flowKey} are unsaved. Save or revert before clearing selection."));
@@ -3841,6 +4277,7 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
           state.studioBridgeSelectedFlowKey = "";
           state.studioWorkbenchSideTab = "selection";
           updateStudioBridgeSelection(false);
+          loadStudioRoleConfigEditor(roleId);
           void loadStudioRolePackageEditor(roleId);
           void loadStudioExecutionConfigEditor(roleId);
         },
@@ -5211,6 +5648,7 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
         renderWorkbench();
         renderProject();
         if (state.studioBridgeSelectedRoleId) {
+          ensureStudioRoleConfigEditor(state.studioBridgeSelectedRoleId);
           ensureStudioRolePackageEditor(state.studioBridgeSelectedRoleId);
           ensureStudioExecutionConfigEditor(state.studioBridgeSelectedRoleId);
         }

@@ -6,8 +6,6 @@ type GraphPayloadLike = {
   } | null;
 };
 
-const MAX_PARALLEL_ROLE_LOG_REQUESTS = 4;
-
 export function buildLogsQuery(args: {
   apiPrefix: string;
   runId: string;
@@ -47,6 +45,7 @@ export async function fetchSelectedLogs(args: {
   logPageSize?: string | null;
   logSince?: string | null;
 }): Promise<{ engineLogs: any[]; roleLogs: any[] }> {
+  const maxParallelRoleLogRequests = 4;
   // Callers are expected to treat log filter edits as commit-on-change, not per-keystroke reloads.
   const loadLogRecords = async (extra: { engine?: boolean; roleId?: string | null }): Promise<any[]> => {
     const payload = await args.requestJson(buildLogsQuery({
@@ -72,8 +71,8 @@ export async function fetchSelectedLogs(args: {
     roleLogsPromise = roleIds.length
       ? (async () => {
           const roleLogs: any[] = [];
-          for (let index = 0; index < roleIds.length; index += MAX_PARALLEL_ROLE_LOG_REQUESTS) {
-            const batch = roleIds.slice(index, index + MAX_PARALLEL_ROLE_LOG_REQUESTS);
+          for (let index = 0; index < roleIds.length; index += maxParallelRoleLogRequests) {
+            const batch = roleIds.slice(index, index + maxParallelRoleLogRequests);
             const payloads = await Promise.all(batch.map((roleId) => loadLogRecords({ roleId })));
             roleLogs.push(...payloads.flat());
           }

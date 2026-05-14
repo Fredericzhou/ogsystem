@@ -16,6 +16,7 @@ import {
 } from "../dist/visualizer/client-app.js";
 import {
   filterStudioBridgeItems,
+  renderStudioRoleConfigEditor,
   renderStudioBridgeInspector,
   renderStudioBridgePanel
 } from "../dist/visualizer/client-renderers.js";
@@ -173,8 +174,9 @@ function testTranslator(_key, vars, fallback) {
   return text;
 }
 
-test("visualizer client script injects the execution config editor renderer", () => {
+test("visualizer client script injects the role and execution config editor renderers", () => {
   const script = buildClientAppScript("/api/v1");
+  assert.match(script, /const renderStudioRoleConfigEditor = /);
   assert.match(script, /const renderStudioExecutionConfigEditor = /);
   assert.match(script, /const asRecordCollection = /);
 });
@@ -1139,6 +1141,31 @@ function buildRunFixture({
         }
       }
     ],
+    roleIo: {
+      runId,
+      roleId,
+      branchId,
+      loopIteration: 1,
+      executionId: `exec-${runId}`,
+      status: "ok",
+      selectedEvent: "DONE",
+      committedAt: "2026-04-23T09:15:00.000Z",
+      audit: {
+        at: "2026-04-23T09:15:00.000Z",
+        durationMs,
+        toolRef: "tool.review",
+        profileId: "profile.review"
+      },
+      result: {
+        event: "DONE",
+        content: "structured role output"
+      },
+      session: {
+        sessionId: `session-${runId}`
+      },
+      inboxMarkdown: "# Inbox\n\nstructured role input",
+      outboxMarkdown: "# Outbox\n\nstructured role output"
+    },
     logMessage: `?run=${runId}`
   };
 }
@@ -1207,6 +1234,7 @@ function createBackend(options = {}) {
       const runResumeMatch = pathname.match(/^\/api\/v1\/runs\/([^/]+)\/resume$/);
       const runStopMatch = pathname.match(/^\/api\/v1\/runs\/([^/]+)\/stop$/);
       const runLogsMatch = pathname.match(/^\/api\/v1\/runs\/([^/]+)\/logs$/);
+      const runRoleIoMatch = pathname.match(/^\/api\/v1\/runs\/([^/]+)\/role-io$/);
       const runFailureMatch = pathname.match(/^\/api\/v1\/runs\/([^/]+)\/failure$/);
       const runReadinessMatch = pathname.match(/^\/api\/v1\/runs\/([^/]+)\/resume-readiness$/);
       const runDiagnosticsMatch = pathname.match(/^\/api\/v1\/runs\/([^/]+)\/resume-diagnostics$/);
@@ -2050,6 +2078,12 @@ function createBackend(options = {}) {
             message: parsed.search || fixture?.logMessage || "log"
           }]
         });
+      }
+      if (runRoleIoMatch) {
+        const fixture = getRunFixture(runRoleIoMatch[1]);
+        if (fixture) {
+          return createResponse(cloneJson(fixture.roleIo));
+        }
       }
       if (pathname === "/api/v1/runs/reindex" && method === "POST") {
         this.lastReindexBody = JSON.parse(request.body ?? "{}");
@@ -4153,6 +4187,48 @@ test("visualizer client opens Studio Bridge and keeps authoring affordances on t
   await latestEditableMount().onFocusDebugInput();
   await waitForCondition(() => Boolean(harness.document.getElementById("workbench-run-input")));
   assert.equal(harness.document.activeElement?.id, "workbench-run-input");
+});
+
+test("visualizer client shows role config labels and opens role I/O modal from structured logs", async () => {
+  const roleConfigHtml = renderStudioRoleConfigEditor({
+    roleId: "demo-analyst",
+    editor: {
+      roleId: "demo-analyst",
+      data: {
+        roleId: "demo-analyst",
+        title: "Demo analyst",
+        bindingKind: "exec",
+        profileId: "profile.review",
+        generatedProfileId: "profile.demo-analyst",
+        generatedToolRef: "tool.demo-analyst"
+      }
+    },
+    projectConfig: {
+      profiles: [{ profileId: "profile.review", toolRef: "tool.review" }]
+    },
+    t: testTranslator
+  });
+  assert.match(roleConfigHtml, /Agent/);
+  assert.match(roleConfigHtml, /Tool/);
+  assert.match(roleConfigHtml, /Noop/);
+
+  const harness = await createClientHarness();
+  await openDesignTab(harness);
+  const workbenchBody = harness.document.getElementById("workbench-body");
+  workbenchBody.innerHTML += '<button type="button" data-studio-log-role-id="demo-analyst" data-studio-log-branch-id="demo-analyst@1#1">demo-analyst</button>';
+  const roleLogButton = workbenchBody
+    .querySelectorAll("[data-studio-log-role-id]")
+    .find((button) => button.getAttribute("data-studio-log-role-id") === "demo-analyst");
+  assert.ok(roleLogButton);
+  await roleLogButton.click();
+  await waitForCondition(() =>
+    harness.backend.fetchCalls.some((call) => /\/api\/v1\/runs\/run-123\/role-io\?roleId=demo-analyst/.test(call.path))
+  );
+  assert.ok(
+    harness.backend.fetchCalls.some((call) =>
+      /\/api\/v1\/runs\/run-123\/role-io\?roleId=demo-analyst&branchId=demo-analyst%401%231/.test(call.path)
+    )
+  );
 });
 
 test("visualizer client retries Studio graph mount until the Build panel is visible and sized", async () => {
