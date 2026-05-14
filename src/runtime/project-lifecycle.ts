@@ -202,13 +202,20 @@ const PROJECT_TEMPLATES: Record<ProjectTemplateId, ProjectTemplateSpec> = {
       "%% exec.bind.advanced-worker-b=profile.console.print",
       "%% exec.bind.advanced-reviewer=profile.console.print",
       "%% role.mode.advanced-coordinator=parallel_split",
+      "%% loop.max.advanced-coordinator=2",
       "%% route.order.advanced-coordinator=advanced-worker-a,advanced-worker-b",
       "%% join.mode.advanced-reviewer=all_of",
       "%% join.sources.advanced-reviewer=advanced-worker-a,advanced-worker-b",
+      "%% context.map.advanced-coordinator.review_comment=global.human_review.current.comment?",
+      "%% context.map.advanced-coordinator.review_round=global.human_review.current.round?",
+      "%% context.map.advanced-coordinator.previous_output=global.human_review.current.previous_output.content?",
+      "%% context.map.advanced-reviewer.worker_a_output=source(advanced-worker-a).content",
+      "%% context.map.advanced-reviewer.worker_b_output=source(advanced-worker-b).content",
+      "%% context.map.advanced-reviewer.task=global.task",
       "%% review.mode.advanced-reviewer=required",
       "%% review.timeout.advanced-reviewer=86400",
       "%% review.timeout.action.advanced-reviewer=pause",
-      "%% review.rework.target.advanced-reviewer=advanced-reviewer",
+      "%% review.rework.target.advanced-reviewer=advanced-coordinator",
       "%% review.rework.max.advanced-reviewer=2",
       "%% review.terminate.scope.advanced-reviewer=branch",
       "",
@@ -218,6 +225,7 @@ const PROJECT_TEMPLATES: Record<ProjectTemplateId, ProjectTemplateSpec> = {
       "workera[Role:advanced-worker-a] -->|A_DONE| reviewer[Role:advanced-reviewer]",
       "workerb[Role:advanced-worker-b] -->|B_DONE| reviewer[Role:advanced-reviewer]",
       "reviewer[Role:advanced-reviewer] -->|REVIEW_READY| output",
+      "reviewer[Role:advanced-reviewer] -->|REWORK| coordinator[Role:advanced-coordinator]",
       ""
     ].join("\n"),
     lawsJson: stringifyJson({
@@ -1127,10 +1135,21 @@ function compareRoleIoExecutionCandidates(
   return left.executionId.localeCompare(right.executionId);
 }
 
+async function tryReadRoleIoJsonIfPresent(path: string): Promise<unknown | undefined> {
+  try {
+    return await readJsonFile(path);
+  } catch (error) {
+    if (isMissingPathError(error)) {
+      return undefined;
+    }
+    throw error;
+  }
+}
+
 async function loadRoleIoOutcome(executionDir: string): Promise<Record<string, unknown> | undefined> {
   const outcome =
-    await tryReadJsonIfPresent(resolve(executionDir, ROLE_EXECUTION_OUTCOME_FILE))
-    ?? await tryReadJsonIfPresent(resolve(executionDir, "outcome.json"));
+    await tryReadRoleIoJsonIfPresent(resolve(executionDir, ROLE_EXECUTION_OUTCOME_FILE))
+    ?? await tryReadRoleIoJsonIfPresent(resolve(executionDir, "outcome.json"));
   return asObjectRecord(outcome);
 }
 
@@ -1708,9 +1727,7 @@ export async function inspectRunRoleIo(args: {
       throw error;
     }
 
-    const executionEntries = entries
-      .filter((entry) => entry.isDirectory())
-      .sort((left, right) => right.name.localeCompare(left.name));
+    const executionEntries = entries.filter((entry) => entry.isDirectory());
 
     let selected: RoleIoExecutionCandidate | undefined;
     for (let index = 0; index < executionEntries.length; index += ROLE_IO_SCAN_BATCH_SIZE) {
@@ -1754,9 +1771,9 @@ export async function inspectRunRoleIo(args: {
     }
 
     const [audit, result, session, inboxMarkdown, outboxMarkdown] = await Promise.all([
-      tryReadJsonIfPresent(resolve(selected.executionDir, "audit.json")),
-      tryReadJsonIfPresent(resolve(selected.executionDir, "result.json")),
-      tryReadJsonIfPresent(resolve(selected.executionDir, "session.json")),
+      tryReadRoleIoJsonIfPresent(resolve(selected.executionDir, "audit.json")),
+      tryReadRoleIoJsonIfPresent(resolve(selected.executionDir, "result.json")),
+      tryReadRoleIoJsonIfPresent(resolve(selected.executionDir, "session.json")),
       tryReadTextIfPresent(resolve(selected.executionDir, "inbox.md")),
       tryReadTextIfPresent(resolve(selected.executionDir, "outbox.md"))
     ]);

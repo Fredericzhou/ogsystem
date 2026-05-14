@@ -4,7 +4,7 @@
   "properties": {
     "event": {
       "type": "string",
-      "enum": ["REVIEW_READY"]
+      "enum": ["REVIEW_READY", "REWORK"]
     },
     "content": {
       "type": "string"

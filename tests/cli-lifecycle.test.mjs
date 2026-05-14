@@ -244,8 +244,13 @@ test("lifecycle cli advanced-features template runs a local review rework loop",
   await stat(path.resolve(projectDir, "og-roles", "roles", "advanced-reviewer", "role.json"));
   const systemSource = await readFile(path.resolve(projectDir, "system.mmd"), "utf8");
   assert.match(systemSource, /%% role\.mode\.advanced-coordinator=parallel_split/);
+  assert.match(systemSource, /%% loop\.max\.advanced-coordinator=2/);
   assert.match(systemSource, /%% join\.mode\.advanced-reviewer=all_of/);
+  assert.match(systemSource, /%% context\.map\.advanced-reviewer\.worker_a_output=source\(advanced-worker-a\)\.content/);
+  assert.match(systemSource, /%% context\.map\.advanced-coordinator\.review_comment=global\.human_review\.current\.comment\?/);
   assert.match(systemSource, /%% review\.mode\.advanced-reviewer=required/);
+  assert.match(systemSource, /%% review\.rework\.target\.advanced-reviewer=advanced-coordinator/);
+  assert.match(systemSource, /reviewer\[Role:advanced-reviewer\] -->\|REWORK\| coordinator\[Role:advanced-coordinator\]/);
 
   const start = await runCli(
     ["run", "start", "--system", "system.mmd", "--input", "advanced template review loop"],

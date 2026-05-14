@@ -4167,16 +4167,18 @@ test("visualizer client opens Studio Bridge and keeps authoring affordances on t
   await latestEditableMount().onQuickDebugRun("run from graph toolbar");
   await waitForCondition(() => harness.backend.fetchCalls.some((call) => call.path === "/api/v1/runs/start"));
   assert.equal(harness.backend.lastStartBody.input, "run from graph toolbar");
-  assert.match(harness.document.getElementById("workbench-body").textContent, /Logs|日志/i);
-  assert.match(harness.document.getElementById("workbench-body").textContent, /Structured trace|结构化轨迹/i);
+  await settle();
+  await settle();
+  assert.match(harness.document.getElementById("workbench-body").textContent, /Debug|调试/i);
+  assert.ok(harness.document.getElementById("workbench-run-input"));
+  assert.equal(harness.document.getElementById("workbench-run-input").disabled, false);
   assert.match(harness.document.getElementById("workbench-body").textContent, /Open Run|Go to Run|打开运行|前往运行/i);
   assert.doesNotMatch(harness.document.getElementById("workbench-body").textContent, /Results keeps the latest dry-run projection compact and scannable/i);
-  const logsTabButton = findStudioSideTabButton(harness, "logs");
-  assert.ok(logsTabButton);
-  assert.equal(logsTabButton.getAttribute("data-studio-side-tab"), "logs");
   await latestEditableMount().onFocusDebugInput();
   await waitForCondition(() => Boolean(harness.document.getElementById("workbench-run-input")));
   assert.equal(harness.document.activeElement?.id, "workbench-run-input");
+  await harness.document.getElementById("workbench-run-input").input(" rerun");
+  assert.match(harness.document.getElementById("workbench-run-input").value, /rerun$/);
 });
 
 test("visualizer client shows role config labels and opens role I/O modal from structured logs", async () => {

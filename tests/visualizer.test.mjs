@@ -1338,6 +1338,47 @@ test("visualizer server exposes role I/O snapshots for a selected role execution
   }
 });
 
+test("visualizer server reports lookup failures when selected Role I/O artifacts are malformed", async (t) => {
+  const workdir = await mkdtemp(path.join(os.tmpdir(), "ogsystem-visualizer-role-io-invalid-"));
+  await seedProjectFixture(workdir);
+  const { runId, runDir } = await createWaitingReviewFixtureRun(workdir);
+  await seedRoleIoExecutionArtifacts(runDir);
+  await writeFile(
+    path.resolve(runDir, "roles", "demo-analyst", "executions", "0001-exec-1", "execution-outcome.json"),
+    "{invalid",
+    "utf8"
+  );
+  let started;
+  try {
+    started = await startVisualizationServer({
+      workdir,
+      host: "127.0.0.1",
+      port: 0
+    });
+  } catch (error) {
+    const errorCode =
+      typeof error === "object" && error !== null && "code" in error ? error.code : undefined;
+    if (errorCode === "EPERM" || errorCode === "EACCES") {
+      t.skip(`visualizer listen unavailable in sandbox: ${errorCode}`);
+      return;
+    }
+    throw error;
+  }
+  const { server, url } = started;
+
+  try {
+    const response = await fetch(
+      `${url}/api/v1/runs/${runId}/role-io?roleId=demo-analyst&branchId=demo-analyst%401%231&loopIteration=1`
+    );
+    assert.equal(response.status, 500);
+    const payload = await response.json();
+    assert.equal(payload.error.code, "ROLE_IO_LOOKUP_FAILED");
+    assert.match(payload.error.message, /Failed to inspect Role I\/O/i);
+  } finally {
+    await new Promise((resolve) => server.close(resolve));
+  }
+});
+
 test("visualizer server exposes applied review decision phases without changing lifecycle status", async (t) => {
   const workdir = await mkdtemp(path.join(os.tmpdir(), "ogsystem-visualizer-review-phase-"));
   await seedProjectFixture(workdir);

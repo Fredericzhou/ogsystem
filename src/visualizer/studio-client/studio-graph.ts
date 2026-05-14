@@ -47,6 +47,10 @@ type StudioGraphLabelKey =
   | "fullscreen"
   | "fitView"
   | "autoLayout"
+  | "layoutModeFlow"
+  | "layoutModeCompact"
+  | "layoutModeStacked"
+  | "layoutSwitched"
   | "generate"
   | "debugRun"
   | "debugAdvanced"
@@ -189,6 +193,8 @@ const STUDIO_GRAPH_EDGE_CONNECTOR = {
   }
 } as const;
 
+type StudioGraphLayoutMode = "flow" | "compact" | "stacked";
+
 type PendingStudioEdgePreview = {
   sourceRoleId: string;
   targetRoleId: string;
@@ -268,6 +274,7 @@ export class StudioGraphIsland {
   private pendingInitialFit = false;
   private pendingInitialFitSizeSignature = "";
   private pendingInitialFitTimer: ReturnType<typeof setTimeout> | null = null;
+  private layoutMode: StudioGraphLayoutMode = "flow";
   private readonly delegatedCommandFormSubmitListener = (event: Event) => this.handleDelegatedCommandFormSubmit(event);
   private readonlyHistory: { undoStack: StudioGraphHistoryEntry[]; redoStack: StudioGraphHistoryEntry[] } = {
     undoStack: [],
@@ -1409,7 +1416,11 @@ export class StudioGraphIsland {
     if (this.isReadOnly()) {
       return;
     }
+    this.layoutMode = this.nextLayoutMode(this.layoutMode);
     this.applyAutoLayout();
+    this.toast("info", this.formatLabel("layoutSwitched", {
+      layout: this.layoutModeLabel(this.layoutMode)
+    }));
     await this.syncCanvas();
   }
 
@@ -1438,19 +1449,61 @@ export class StudioGraphIsland {
   }
 
   private applyAutoLayout(): void {
+    if (this.layoutMode === "stacked") {
+      this.applyStackedAutoLayout();
+      return;
+    }
+    this.applyHorizontalAutoLayout(this.layoutMode === "compact"
+      ? {
+          paddingX: 56,
+          paddingY: 56,
+          nodesep: 28,
+          ranksep: 72,
+          columnGap: 84,
+          rowGap: 24
+        }
+      : {
+          paddingX: 72,
+          paddingY: 72,
+          nodesep: 42,
+          ranksep: 92,
+          columnGap: 108,
+          rowGap: 34
+        });
+  }
+
+  private nextLayoutMode(current: StudioGraphLayoutMode): StudioGraphLayoutMode {
+    const modes: StudioGraphLayoutMode[] = ["flow", "compact", "stacked"];
+    const index = modes.indexOf(current);
+    return modes[(index + 1) % modes.length] || "flow";
+  }
+
+  private layoutModeLabel(mode: StudioGraphLayoutMode): string {
+    if (mode === "compact") return this.label("layoutModeCompact");
+    if (mode === "stacked") return this.label("layoutModeStacked");
+    return this.label("layoutModeFlow");
+  }
+
+  private buildAutoLayoutGraph(config: {
+    rankdir: "LR" | "TB";
+    paddingX: number;
+    paddingY: number;
+    nodesep: number;
+    ranksep: number;
+  }): {
+    graph: dagre.graphlib.Graph;
+    adjacency: Map<string, { incoming: string[]; outgoing: string[] }>;
+    layoutNodes: Array<{ id: string; width: number; height: number; dagreX: number; dagreY: number }>;
+  } {
     const graph = new dagre.graphlib.Graph();
-    const paddingX = 72;
-    const paddingY = 72;
-    const columnGap = 108;
-    const rowGap = 34;
     graph.setGraph({
-      rankdir: "LR",
-      nodesep: 42,
-      ranksep: 92,
+      rankdir: config.rankdir,
+      nodesep: config.nodesep,
+      ranksep: config.ranksep,
       acyclicer: "greedy",
       ranker: "network-simplex",
-      marginx: paddingX,
-      marginy: paddingY
+      marginx: config.paddingX,
+      marginy: config.paddingY
     });
     graph.setDefaultEdgeLabel(() => ({}));
     const adjacency = new Map<string, { incoming: string[]; outgoing: string[] }>();
@@ -1498,6 +1551,35 @@ export class StudioGraphIsland {
       })
       .sort((left, right) => left.dagreX - right.dagreX || left.dagreY - right.dagreY || left.id.localeCompare(right.id));
     if (!layoutNodes.length) {
+      return {
+        graph,
+        adjacency,
+        layoutNodes: []
+      };
+    }
+    return {
+      graph,
+      adjacency,
+      layoutNodes
+    };
+  }
+
+  private applyHorizontalAutoLayout(config: {
+    paddingX: number;
+    paddingY: number;
+    nodesep: number;
+    ranksep: number;
+    columnGap: number;
+    rowGap: number;
+  }): void {
+    const { graph, adjacency, layoutNodes } = this.buildAutoLayoutGraph({
+      rankdir: "LR",
+      paddingX: config.paddingX,
+      paddingY: config.paddingY,
+      nodesep: config.nodesep,
+      ranksep: config.ranksep
+    });
+    if (!layoutNodes.length) {
       return;
     }
     const columns: Array<Array<typeof layoutNodes[number]>> = [];
@@ -1511,7 +1593,7 @@ export class StudioGraphIsland {
     }
     const placedCenters = new Map<string, number>();
     const columnPositions = new Map<string, { x: number; y: number }>();
-    let columnLeft = paddingX;
+    let columnLeft = config.paddingX;
     for (const column of columns) {
       const columnWidth = Math.max(...column.map((node) => node.width));
       const ordered = column
@@ -1536,7 +1618,7 @@ export class StudioGraphIsland {
       const placements = ordered.map((node) => {
         let top = node.idealCenter - node.height / 2;
         if (Number.isFinite(cursorTop)) {
-          top = Math.max(top, cursorTop + rowGap);
+          top = Math.max(top, cursorTop + config.rowGap);
         }
         cursorTop = top + node.height;
         return { ...node, top };
@@ -1545,7 +1627,7 @@ export class StudioGraphIsland {
         const nextPlacement = placements[index + 1];
         placements[index].top = Math.min(
           placements[index].top,
-          nextPlacement.top - rowGap - placements[index].height
+          nextPlacement.top - config.rowGap - placements[index].height
         );
       }
       for (const placement of placements) {
@@ -1554,24 +1636,64 @@ export class StudioGraphIsland {
         columnPositions.set(placement.id, { x, y });
         placedCenters.set(placement.id, y + placement.height / 2);
       }
-      columnLeft += columnWidth + columnGap;
+      columnLeft += columnWidth + config.columnGap;
     }
+    this.applyLayoutPositions(
+      graph.nodes().map((id) => ({
+        id,
+        position: columnPositions.get(id)
+      })).filter((entry): entry is { id: string; position: { x: number; y: number } } => Boolean(entry.position)),
+      config.paddingX,
+      config.paddingY
+    );
+  }
+
+  private applyStackedAutoLayout(): void {
+    const paddingX = 64;
+    const paddingY = 56;
+    const { layoutNodes } = this.buildAutoLayoutGraph({
+      rankdir: "TB",
+      paddingX,
+      paddingY,
+      nodesep: 54,
+      ranksep: 112
+    });
+    if (!layoutNodes.length) {
+      return;
+    }
+    this.applyLayoutPositions(
+      layoutNodes.map((node) => ({
+        id: node.id,
+        position: {
+          x: node.dagreX - node.width / 2,
+          y: node.dagreY - node.height / 2
+        }
+      })),
+      paddingX,
+      paddingY
+    );
+  }
+
+  private applyLayoutPositions(
+    positions: Array<{ id: string; position: { x: number; y: number } }>,
+    paddingX: number,
+    paddingY: number
+  ): void {
     let minLeft = Number.POSITIVE_INFINITY;
     let minTop = Number.POSITIVE_INFINITY;
-    for (const position of columnPositions.values()) {
-      minLeft = Math.min(minLeft, position.x);
-      minTop = Math.min(minTop, position.y);
+    for (const entry of positions) {
+      minLeft = Math.min(minLeft, entry.position.x);
+      minTop = Math.min(minTop, entry.position.y);
     }
     const offsetX = Number.isFinite(minLeft) ? paddingX - minLeft : 0;
     const offsetY = Number.isFinite(minTop) ? paddingY - minTop : 0;
     this.graph.batchUpdate("studio-auto-layout", () => {
-      graph.nodes().forEach((id) => {
-        const position = columnPositions.get(id);
-        const cell = this.graph.getCellById(id);
-        if (cell?.isNode() && position) {
-          cell.position(position.x + offsetX, position.y + offsetY);
+      for (const entry of positions) {
+        const cell = this.graph.getCellById(entry.id);
+        if (cell?.isNode()) {
+          cell.position(entry.position.x + offsetX, entry.position.y + offsetY);
         }
-      });
+      }
     });
     this.fitGraphToViewport();
   }
@@ -1947,6 +2069,9 @@ export class StudioGraphIsland {
     const layout = this.toolbar.querySelector<HTMLButtonElement>('[data-studio-graph-action="layout"]');
     if (layout) {
       layout.hidden = readOnly;
+      const layoutTitle = `${this.label("autoLayout")} · ${this.layoutModeLabel(this.layoutMode)}`;
+      layout.title = layoutTitle;
+      layout.setAttribute("aria-label", layoutTitle);
     }
     const generate = this.toolbar.querySelector<HTMLButtonElement>('[data-studio-graph-action="chat-generate"]');
     const debugRun = this.toolbar.querySelector<HTMLButtonElement>('[data-studio-graph-action="debug-run"]');
