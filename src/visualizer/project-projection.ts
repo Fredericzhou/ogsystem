@@ -1073,7 +1073,7 @@ export async function createProjectVisualization(args: {
       projectId,
       projectName
     });
-    await scaffoldProjectTemplate({
+    const templateSpec = await scaffoldProjectTemplate({
       workdir: targetWorkdir,
       templateId
     });
@@ -1094,7 +1094,8 @@ export async function createProjectVisualization(args: {
     try {
       modelSyncResult = await syncProjectModels({
         workdir: targetWorkdir,
-        systemPath: "system.mmd"
+        systemPath: "system.mmd",
+        strategy: templateSpec.modelSeedStrategy
       });
     } catch (error) {
       const paths = resolveOgsPaths(targetWorkdir);

@@ -134,7 +134,7 @@ test("packed CLI installs and scaffolds a runnable project with imported local d
 
   const helpResult = await runCommand("node", [ogsBinPath, "help"], { cwd: installDir });
   assert.equal(helpResult.code, 0, helpResult.stderr);
-  assert.match(helpResult.stdout, /ogs project <init\|create\|sync\|sync-models>/);
+  assert.match(helpResult.stdout, /project\s+Init, create, or sync project files/);
 
   const doctorHelpResult = await runCommand("node", [ogsBinPath, "doctor", "--help"], {
     cwd: installDir
@@ -151,7 +151,9 @@ test("packed CLI installs and scaffolds a runnable project with imported local d
   const createPayload = JSON.parse(createResult.stdout);
   const projectDir = createPayload.projectDir;
 
-  await stat(path.resolve(projectDir, "og-roles", "roles", "demo-analyst", "role.json"));
+  await stat(path.resolve(projectDir, "og-roles", "roles", "hello-ogsystem", "role.json"));
+  await stat(path.resolve(projectDir, "scripts", "hello-ogsystem.mjs"));
+  await assert.rejects(() => stat(path.resolve(projectDir, "og-roles", "roles", "demo-analyst")), /ENOENT/);
   await assert.rejects(() => stat(path.resolve(projectDir, "og-roles", "roles", "debate-judge")), /ENOENT/);
   const ogsReadmePath = path.resolve(projectDir, ".ogs", "README.md");
   await stat(path.resolve(projectDir, ".ogs", "model-catalog.json"));
@@ -163,12 +165,14 @@ test("packed CLI installs and scaffolds a runnable project with imported local d
 
   const startResult = await runCommand(
     "node",
-    [ogsBinPath, "run", "start", "--system", "system.mmd", "--input", "packaged smoke", "--dry-run"],
+    [ogsBinPath, "run", "start", "--system", "system.mmd", "--input", "packaged smoke"],
     { cwd: projectDir }
   );
   assert.equal(startResult.code, 0, startResult.stderr);
   const startPayload = JSON.parse(startResult.stdout);
   assert.equal(startPayload.status, "done");
+  assert.equal(startPayload.finalRoleId, "hello-ogsystem");
+  assert.equal(startPayload.finalOutput, "Hello OGSystem world");
 
   const runIds = await readdir(path.resolve(projectDir, ".ogs", "runs"));
   assert.ok(runIds.length > 0, "expected at least one generated run directory");

@@ -187,7 +187,7 @@ async function main() {
     env: isolatedEnv
   });
   assert.equal(helpResult.code, 0, helpResult.stderr);
-  assert.match(helpResult.stdout, /ogs project <init\|create\|sync\|sync-models>/);
+  assert.match(helpResult.stdout, /project\s+Init, create, or sync project files/);
 
   const doctorHelpResult = await runCommand("node", [ogsBinPath, "doctor", "--help"], {
     cwd: installDir,
@@ -205,7 +205,9 @@ async function main() {
 
   const createPayload = JSON.parse(createResult.stdout);
   const projectDir = createPayload.projectDir;
-  await stat(path.resolve(projectDir, "og-roles", "roles", "demo-analyst", "role.json"));
+  await stat(path.resolve(projectDir, "og-roles", "roles", "hello-ogsystem", "role.json"));
+  await stat(path.resolve(projectDir, "scripts", "hello-ogsystem.mjs"));
+  await assert.rejects(() => stat(path.resolve(projectDir, "og-roles", "roles", "demo-analyst")), /ENOENT/);
   await assert.rejects(() => stat(path.resolve(projectDir, "og-roles", "roles", "debate-judge")), /ENOENT/);
   const ogsReadmePath = path.resolve(projectDir, ".ogs", "README.md");
   await stat(path.resolve(projectDir, ".ogs", "model-catalog.json"));
@@ -217,13 +219,15 @@ async function main() {
 
   const startResult = await runCommand(
     "node",
-    [ogsBinPath, "run", "start", "--system", "system.mmd", "--input", "install smoke", "--dry-run"],
+    [ogsBinPath, "run", "start", "--system", "system.mmd", "--input", "install smoke"],
     { cwd: projectDir, env: isolatedEnv }
   );
   assert.equal(startResult.code, 0, startResult.stderr);
 
   const startPayload = JSON.parse(startResult.stdout);
   assert.equal(startPayload.status, "done");
+  assert.equal(startPayload.finalRoleId, "hello-ogsystem");
+  assert.equal(startPayload.finalOutput, "Hello OGSystem world");
 
   const visualizer = spawn("node", [ogsBinPath, "visualizer", "--workdir", projectDir, "--port", "0"], {
     cwd: projectDir,

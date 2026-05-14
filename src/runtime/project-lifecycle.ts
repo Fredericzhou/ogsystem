@@ -47,6 +47,11 @@ const OGS_USER_PROFILE_FILE = ".ogs/user-profile.json";
 const DEFAULT_DEBUG_TOOL_SCRIPT_FILE = "scripts/console-print.mjs";
 const DEFAULT_DEBUG_PROFILE_ID = "profile.console.print";
 const DEFAULT_DEBUG_TOOL_REF = "tool.console.print";
+const MINIMAL_HELLO_ROLE_ID = "hello-ogsystem";
+const MINIMAL_HELLO_EVENT = "HELLO_DONE";
+const MINIMAL_HELLO_PROFILE_ID = "profile.hello.ogsystem";
+const MINIMAL_HELLO_TOOL_REF = "tool.hello.ogsystem";
+const MINIMAL_HELLO_TOOL_SCRIPT_FILE = "scripts/hello-ogsystem.mjs";
 
 export type IndexedRun = {
   runId: string;
@@ -81,13 +86,21 @@ export type ProjectDependencySyncResult = {
   importedModelIds: string[];
 };
 
-export type ProjectTemplateId = "empty" | "minimal" | "software-dev" | "consultation";
+export type ProjectTemplateId =
+  | "empty"
+  | "minimal"
+  | "advanced-features"
+  | "software-dev"
+  | "consultation";
+
+type ProjectModelSeedStrategy = "refresh" | "empty";
 
 type ProjectTemplateSpec = {
   systemMmd: string;
   lawsJson: string;
   exampleSystemMmd?: string;
   syncDependencies: boolean;
+  modelSeedStrategy: ProjectModelSeedStrategy;
 };
 
 type IndexedRunStateSnapshot = {
@@ -138,33 +151,81 @@ const PROJECT_TEMPLATES: Record<ProjectTemplateId, ProjectTemplateSpec> = {
       "analyst[Role:demo-analyst] -->|ANALYSIS_DONE| output",
       ""
     ].join("\n"),
-    syncDependencies: true
+    syncDependencies: true,
+    modelSeedStrategy: "empty"
   },
   minimal: {
     systemMmd: [
       "flowchart TD",
       "%% system.id=template.minimal",
       "%% system.version=1.0.0",
-      "%% law.global=law.minimal.base",
-      "%% entry.role=demo-analyst",
+      "%% law.global=law.console.base",
+      `%% entry.role=${MINIMAL_HELLO_ROLE_ID}`,
+      `%% exec.bind.${MINIMAL_HELLO_ROLE_ID}=${MINIMAL_HELLO_PROFILE_ID}`,
       "",
-      "input -->|ENTER| analyst[Role:demo-analyst]",
-      "analyst[Role:demo-analyst] -->|ANALYSIS_DONE| output",
+      `input -->|START| hello[Role:${MINIMAL_HELLO_ROLE_ID}]`,
+      `hello[Role:${MINIMAL_HELLO_ROLE_ID}] -->|${MINIMAL_HELLO_EVENT}| output`,
       ""
     ].join("\n"),
     lawsJson: stringifyJson({
       laws: [
         {
-          lawId: "law.minimal.base",
+          lawId: "law.console.base",
           constraints: {
             forbiddenToolRefs: [],
             maxTransitions: 8,
-            allowNoopWithoutExecutionBinding: true
+            allowNoopWithoutExecutionBinding: false
           }
         }
       ]
     }),
-    syncDependencies: true
+    syncDependencies: true,
+    modelSeedStrategy: "empty"
+  },
+  "advanced-features": {
+    systemMmd: [
+      "flowchart TD",
+      "%% system.id=template.advanced.features",
+      "%% system.version=1.0.0",
+      "%% law.global=law.console.base",
+      "%% entry.role=advanced-coordinator",
+      "%% exec.bind.advanced-coordinator=profile.console.print",
+      "%% exec.bind.advanced-worker-a=profile.console.print",
+      "%% exec.bind.advanced-worker-b=profile.console.print",
+      "%% exec.bind.advanced-reviewer=profile.console.print",
+      "%% role.mode.advanced-coordinator=parallel_split",
+      "%% route.order.advanced-coordinator=advanced-worker-a,advanced-worker-b",
+      "%% join.mode.advanced-reviewer=all_of",
+      "%% join.sources.advanced-reviewer=advanced-worker-a,advanced-worker-b",
+      "%% review.mode.advanced-reviewer=required",
+      "%% review.timeout.advanced-reviewer=86400",
+      "%% review.timeout.action.advanced-reviewer=pause",
+      "%% review.rework.target.advanced-reviewer=advanced-reviewer",
+      "%% review.rework.max.advanced-reviewer=2",
+      "%% review.terminate.scope.advanced-reviewer=branch",
+      "",
+      "input -->|START| coordinator[Role:advanced-coordinator]",
+      "coordinator[Role:advanced-coordinator] -->|START_A| workera[Role:advanced-worker-a]",
+      "coordinator[Role:advanced-coordinator] -->|START_B| workerb[Role:advanced-worker-b]",
+      "workera[Role:advanced-worker-a] -->|A_DONE| reviewer[Role:advanced-reviewer]",
+      "workerb[Role:advanced-worker-b] -->|B_DONE| reviewer[Role:advanced-reviewer]",
+      "reviewer[Role:advanced-reviewer] -->|REVIEW_READY| output",
+      ""
+    ].join("\n"),
+    lawsJson: stringifyJson({
+      laws: [
+        {
+          lawId: "law.console.base",
+          constraints: {
+            forbiddenToolRefs: [],
+            maxTransitions: 16,
+            allowNoopWithoutExecutionBinding: false
+          }
+        }
+      ]
+    }),
+    syncDependencies: true,
+    modelSeedStrategy: "empty"
   },
   "software-dev": {
     systemMmd: [
@@ -197,7 +258,8 @@ const PROJECT_TEMPLATES: Record<ProjectTemplateId, ProjectTemplateSpec> = {
         }
       ]
     }),
-    syncDependencies: true
+    syncDependencies: true,
+    modelSeedStrategy: "refresh"
   },
   consultation: {
     systemMmd: [
@@ -225,7 +287,8 @@ const PROJECT_TEMPLATES: Record<ProjectTemplateId, ProjectTemplateSpec> = {
         }
       ]
     }),
-    syncDependencies: true
+    syncDependencies: true,
+    modelSeedStrategy: "refresh"
   }
 };
 
@@ -360,6 +423,21 @@ function createDefaultConsolePrintToolScript(): string {
   ].join("\n");
 }
 
+function createMinimalHelloToolScript(): string {
+  return [
+    '#!/usr/bin/env node',
+    'import { env, stdout } from "node:process";',
+    "",
+    "const allowedEvents = String(env.OGSYSTEM_ALLOWED_EVENTS || \"\")",
+    "  .split(\",\")",
+    "  .map((value) => value.trim())",
+    "  .filter(Boolean);",
+    `const event = allowedEvents[0] || "${MINIMAL_HELLO_EVENT}";`,
+    'stdout.write(JSON.stringify({ event, content: "Hello OGSystem world" }));',
+    ""
+  ].join("\n");
+}
+
 function createDefaultOgsReadme(): string {
   return [
     "# .ogs control plane",
@@ -467,6 +545,7 @@ export function isProjectTemplateId(value: string | undefined): value is Project
   return (
     value === "empty" ||
     value === "minimal" ||
+    value === "advanced-features" ||
     value === "software-dev" ||
     value === "consultation"
   );
@@ -972,6 +1051,83 @@ async function ensureProjectRepoMetadataFiles(workdir: string): Promise<void> {
   );
 }
 
+function asObjectRecord(value: unknown): Record<string, unknown> | undefined {
+  if (typeof value !== "object" || value === null || Array.isArray(value)) {
+    return undefined;
+  }
+  return value as Record<string, unknown>;
+}
+
+async function upsertProjectExecutionConfig(args: {
+  workdir: string;
+  profile: Record<string, unknown>;
+  tool: Record<string, unknown>;
+}): Promise<void> {
+  const profilesPath = resolve(args.workdir, "profiles.json");
+  const existingProfiles = await tryReadJson(profilesPath);
+  const profiles = Array.isArray(existingProfiles)
+    ? existingProfiles.filter((entry) => asObjectRecord(entry))
+    : [];
+  const nextProfiles = [
+    ...profiles.filter(
+      (entry) => asObjectRecord(entry)?.profileId !== args.profile.profileId
+    ),
+    args.profile
+  ].sort((left, right) =>
+    String(asObjectRecord(left)?.profileId ?? "").localeCompare(
+      String(asObjectRecord(right)?.profileId ?? "")
+    )
+  );
+  await writeJsonFileAtomic(profilesPath, nextProfiles);
+
+  const toolsPath = resolve(args.workdir, "tools.json");
+  const existingToolsValue = await tryReadJson(toolsPath);
+  const existingToolsRecord = asObjectRecord(existingToolsValue);
+  const existingTools = Array.isArray(existingToolsRecord?.tools)
+    ? existingToolsRecord.tools.filter((entry) => asObjectRecord(entry))
+    : [];
+  const nextTools = [
+    ...existingTools.filter(
+      (entry) => asObjectRecord(entry)?.toolRef !== args.tool.toolRef
+    ),
+    args.tool
+  ].sort((left, right) =>
+    String(asObjectRecord(left)?.toolRef ?? "").localeCompare(
+      String(asObjectRecord(right)?.toolRef ?? "")
+    )
+  );
+  await writeJsonFileAtomic(toolsPath, { tools: nextTools });
+}
+
+async function ensureTemplateRuntimeAssets(args: {
+  workdir: string;
+  templateId: ProjectTemplateId;
+}): Promise<void> {
+  if (args.templateId !== "minimal") {
+    return;
+  }
+  await upsertProjectExecutionConfig({
+    workdir: args.workdir,
+    profile: {
+      profileId: MINIMAL_HELLO_PROFILE_ID,
+      toolRef: MINIMAL_HELLO_TOOL_REF,
+      timeoutMs: 30000,
+      maxOutputBytes: 65536
+    },
+    tool: {
+      toolRef: MINIMAL_HELLO_TOOL_REF,
+      runner: "local_shell",
+      command: "node",
+      argsTemplate: [MINIMAL_HELLO_TOOL_SCRIPT_FILE],
+      stdinMode: "none"
+    }
+  });
+  await ensureFile(
+    resolve(args.workdir, MINIMAL_HELLO_TOOL_SCRIPT_FILE),
+    `${createMinimalHelloToolScript()}\n`
+  );
+}
+
 async function importRolePackageIntoProject(args: {
   workdir: string;
   roleId: string;
@@ -1113,6 +1269,10 @@ export async function scaffoldProjectTemplate(args: {
   }
   await ensureFile(paths.lawsPath, `${template.lawsJson}\n`);
   await ensureFile(paths.userProfilePath, `${stringifyJson(createDefaultUserProfile())}\n`);
+  await ensureTemplateRuntimeAssets({
+    workdir: args.workdir,
+    templateId: args.templateId
+  });
   return template;
 }
 
@@ -1143,6 +1303,7 @@ export async function syncProjectModels(args: {
   workdir: string;
   systemPath?: string;
   rewriteDefault?: boolean;
+  strategy?: ProjectModelSeedStrategy;
 }): Promise<{
   catalogPath: string;
   selectionPath: string;
@@ -1150,6 +1311,49 @@ export async function syncProjectModels(args: {
   selectedModel?: string;
 }> {
   const paths = resolveOgsPaths(args.workdir);
+  const strategy = args.strategy ?? "refresh";
+  if (strategy === "empty") {
+    const hasCatalog = await stat(paths.modelCatalogPath).then(() => true).catch(() => false);
+    const hasSelection = await stat(paths.modelSelectionPath).then(() => true).catch(() => false);
+
+    if (!hasCatalog || args.rewriteDefault) {
+      await writeJsonFileAtomic(paths.modelCatalogPath, {
+        catalogVersion: "1",
+        generatedAt: new Date().toISOString(),
+        source: {
+          command: "ogs project scaffold --model-strategy empty"
+        },
+        models: []
+      });
+    }
+    if (!hasSelection || args.rewriteDefault) {
+      await writeJsonFileAtomic(paths.modelSelectionPath, {
+        configVersion: "1"
+      });
+      return {
+        catalogPath: paths.modelCatalogPath,
+        selectionPath: paths.modelSelectionPath,
+        generatedSelection: true
+      };
+    }
+
+    const existingSelection = await readJsonFile(paths.modelSelectionPath);
+    const selectedModel =
+      typeof existingSelection === "object" &&
+      existingSelection !== null &&
+      !Array.isArray(existingSelection) &&
+      typeof (existingSelection as { defaults?: { model?: unknown } }).defaults?.model === "string"
+        ? (existingSelection as { defaults: { model: string } }).defaults.model
+        : undefined;
+
+    return {
+      catalogPath: paths.modelCatalogPath,
+      selectionPath: paths.modelSelectionPath,
+      generatedSelection: false,
+      selectedModel
+    };
+  }
+
   const catalog = await refreshModelCatalog({
     workdir: args.workdir
   });
@@ -1754,7 +1958,8 @@ export async function createProjectFromTemplate(args: {
   });
   await syncProjectModels({
     workdir: projectDir,
-    systemPath: "system.mmd"
+    systemPath: "system.mmd",
+    strategy: template.modelSeedStrategy
   });
   if (template.syncDependencies) {
     await syncProjectDependencies({

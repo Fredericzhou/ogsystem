@@ -4390,6 +4390,8 @@ test("visualizer client shows minimal current-directory initializer before initi
   await waitForCondition(() => /Initialize current directory|Project name/i.test(harness.document.getElementById("project-wizard").textContent));
   assert.match(harness.document.getElementById("project-wizard").textContent, /Current directory|workdir/i);
   assert.match(harness.document.getElementById("project-wizard").textContent, /Initialize current directory/i);
+  assert.match(harness.document.getElementById("project-wizard").textContent, /Hello World/i);
+  assert.match(harness.document.getElementById("project-wizard").textContent, /Advanced features/i);
   assert.equal(harness.document.getElementById("project-wizard-next"), null);
   assert.equal(harness.document.getElementById("project-wizard-back"), null);
   assert.equal(

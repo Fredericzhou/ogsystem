@@ -1,0 +1,15 @@
+{
+  "roleId": "advanced-coordinator",
+  "roleVersion": "1.0.0",
+  "name": "Advanced Coordinator",
+  "description": "Dispatches parallel branches for the advanced starter template.",
+  "talent": {
+    "coordination": "high",
+    "reasoningDepth": "medium",
+    "style": "structured"
+  },
+  "preferredModelTags": ["fast", "instruction-following"],
+  "promptTemplate": "prompt.md",
+  "outputSchema": "output.schema.json",
+  "tags": ["demo", "starter", "parallel"]
+}

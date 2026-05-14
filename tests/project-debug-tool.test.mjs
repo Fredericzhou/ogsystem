@@ -23,8 +23,8 @@ test("scaffolded console print tool executes as a standard exec.bind debugger", 
   await writeFile(
     systemPath,
     systemSource.replace(
-      "%% entry.role=demo-analyst",
-      "%% entry.role=demo-analyst\n%% exec.bind.demo-analyst=profile.console.print"
+      "%% exec.bind.hello-ogsystem=profile.hello.ogsystem",
+      "%% exec.bind.hello-ogsystem=profile.console.print"
     ),
     "utf8"
   );
@@ -41,9 +41,9 @@ test("scaffolded console print tool executes as a standard exec.bind debugger", 
   });
 
   assert.equal(result.status, "done");
-  assert.equal(result.finalRoleId, "demo-analyst");
+  assert.equal(result.finalRoleId, "hello-ogsystem");
   assert.equal(result.auditTrail[0]?.toolRef, "tool.console.print");
-  assert.equal(result.auditTrail[0]?.selectedEvent, "ANALYSIS_DONE");
+  assert.equal(result.auditTrail[0]?.selectedEvent, "HELLO_DONE");
   assert.match(result.finalOutput ?? "", /standard console print tool/);
 
   const toolsConfig = JSON.parse(await readFile(path.resolve(workdir, "tools.json"), "utf8"));

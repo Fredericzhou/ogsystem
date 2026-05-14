@@ -1,0 +1,17 @@
+{
+  "type": "object",
+  "required": ["content"],
+  "properties": {
+    "event": {
+      "type": "string",
+      "enum": ["START_A", "START_B"]
+    },
+    "content": {
+      "type": "string"
+    },
+    "data": {
+      "type": "object"
+    }
+  },
+  "additionalProperties": false
+}

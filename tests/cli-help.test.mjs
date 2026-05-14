@@ -57,7 +57,7 @@ test("ogs help command surfaces layered guidance", async () => {
   assert.strictEqual(projectInitHelp.code, 0);
   assert.match(
     projectInitHelp.stdout,
-    /ogs project init \[--template <empty\|minimal\|software-dev\|consultation>\] \[--workdir <path>\]/
+    /ogs project init \[--template <empty\|minimal\|advanced-features\|software-dev\|consultation>\] \[--workdir <path>\]/
   );
   assert.match(projectInitHelp.stdout, /Template to scaffold \(default: minimal\)/);
 

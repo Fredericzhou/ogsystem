@@ -86,7 +86,7 @@ function usageProject(subcommand?: ProjectSubcommand): string {
   if (subcommand === "init") {
     return [
       "Usage:",
-      "  ogs project init [--template <empty|minimal|software-dev|consultation>] [--workdir <path>]",
+      "  ogs project init [--template <empty|minimal|advanced-features|software-dev|consultation>] [--workdir <path>]",
       "",
       "Options:",
       "  --template <id>  Template to scaffold (default: minimal)",
@@ -95,7 +95,7 @@ function usageProject(subcommand?: ProjectSubcommand): string {
       "",
       "Examples:",
       "  ogs project init",
-      "  ogs project init --template software-dev",
+      "  ogs project init --template advanced-features",
       "  ogs project init --workdir ./demo-app"
     ].join("\n");
   }
@@ -103,7 +103,7 @@ function usageProject(subcommand?: ProjectSubcommand): string {
   if (subcommand === "create") {
     return [
       "Usage:",
-      "  ogs project create <name> [--template <empty|minimal|software-dev|consultation>] [--workdir <path>]",
+      "  ogs project create <name> [--template <empty|minimal|advanced-features|software-dev|consultation>] [--workdir <path>]",
       "",
       "Arguments:",
       "  <name>           New project directory name",
@@ -115,7 +115,7 @@ function usageProject(subcommand?: ProjectSubcommand): string {
       "",
       "Examples:",
       "  ogs project create demo-app",
-      "  ogs project create demo-app --template consultation",
+      "  ogs project create demo-app --template advanced-features",
       "  ogs project create demo-app --workdir ./sandbox"
     ].join("\n");
   }
@@ -778,7 +778,7 @@ async function runProjectCommand(argv: string[]): Promise<void> {
     if (!isProjectTemplateId(template)) {
       throw createCliInputError(
         "CLI_PROJECT_INIT_INVALID_TEMPLATE",
-        "--template must be one of: empty, minimal, software-dev, consultation"
+        "--template must be one of: empty, minimal, advanced-features, software-dev, consultation"
       );
     }
     await ensureProjectSkeleton({
@@ -790,7 +790,8 @@ async function runProjectCommand(argv: string[]): Promise<void> {
     });
     const modelSyncResult = await syncProjectModels({
       workdir,
-      systemPath: "system.mmd"
+      systemPath: "system.mmd",
+      strategy: templateSpec.modelSeedStrategy
     });
     const syncResult = templateSpec.syncDependencies
       ? await syncProjectDependencies({
@@ -843,7 +844,7 @@ async function runProjectCommand(argv: string[]): Promise<void> {
     if (!isProjectTemplateId(template)) {
       throw createCliInputError(
         "CLI_PROJECT_CREATE_INVALID_TEMPLATE",
-        "--template must be one of: empty, minimal, software-dev, consultation"
+        "--template must be one of: empty, minimal, advanced-features, software-dev, consultation"
       );
     }
     const parentDir = asString(values.workdir) ?? process.cwd();

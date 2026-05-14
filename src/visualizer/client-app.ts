@@ -1668,9 +1668,13 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
     function projectCreateStageDetail(stage) {
       const templateId = String(state.projectWizardDraft?.templateId || "empty");
       if (stage === "request") {
-        return templateId === "minimal"
-          ? t("projectWizard.createStageDetail.requestMinimal", undefined, "Scaffolding the minimal runnable template and writing system.mmd.")
-          : t("projectWizard.createStageDetail.requestDefault", undefined, "Scaffolding project files for the selected template.")
+        if (templateId === "minimal") {
+          return t("projectWizard.createStageDetail.requestMinimal", undefined, "Scaffolding the Hello World template, local tool, and system.mmd.");
+        }
+        if (templateId === "advanced-features") {
+          return t("projectWizard.createStageDetail.requestAdvancedFeatures", undefined, "Scaffolding the advanced-features template with parallel, join, and review/rework wiring.");
+        }
+        return t("projectWizard.createStageDetail.requestDefault", undefined, "Scaffolding project files for the selected template.");
       }
       if (stage === "project") {
         return t("projectWizard.createStageDetail.project", undefined, "Reading project metadata, controlled paths, and workspace readiness.");
@@ -4213,15 +4217,25 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
       const projectName = summary.projectName || state.project?.summary?.name || draft.projectName || "n/a";
       const templateOptions = [
         ["empty", t("projectWizard.template.empty", undefined, "Blank draft")],
-        ["minimal", t("projectWizard.template.minimal", undefined, "Minimal runnable")],
-        ["software-dev", "software-dev"],
-        ["consultation", "consultation"]
+        ["minimal", t("projectWizard.template.minimal", undefined, "Hello World")],
+        ["advanced-features", t("projectWizard.template.advancedFeatures", undefined, "Advanced features")],
+        ["software-dev", t("projectWizard.template.softwareDev", undefined, "Software dev")],
+        ["consultation", t("projectWizard.template.consultation", undefined, "Consultation")]
       ];
+      const selectedTemplateHint = draft.templateId === "minimal"
+        ? t("projectWizard.templateHint.minimal", undefined, "One role, one local script, zero model setup. Running it prints Hello OGSystem world.")
+        : draft.templateId === "advanced-features"
+          ? t("projectWizard.templateHint.advancedFeatures", undefined, "Parallel split, join, and review/rework loop using local exec tools so the flow is runnable out of the box.")
+          : draft.templateId === "software-dev"
+            ? t("projectWizard.templateHint.softwareDev", undefined, "A multi-role delivery flow with parallel branches and a final operator join.")
+            : draft.templateId === "consultation"
+              ? t("projectWizard.templateHint.consultation", undefined, "A consultation flow that routes a case through dispatch and final synthesis.")
+              : t("projectWizard.templateHint.empty", undefined, "Start from an unbound draft and import or author roles yourself.");
       const errorHtml = state.projectCreateError
         ? '<div class="event warn"><div class="event-top"><span>' + escapeText(t("common.attention", undefined, "attention")) + '</span><span>' + escapeText(state.projectCreateError.code || "error") + '</span></div><strong>' + escapeText(state.projectCreateError.message || t("projectWizard.createFailed", undefined, "Project creation failed.")) + '</strong></div>'
         : "";
       const createProgressHtml = state.projectCreateStage
-        ? '<div class="event notice"><div class="event-top"><span class="severity-info">' + escapeText(t("projectWizard.createInProgress", undefined, "Creating project...")) + '</span><span class="severity-info">' + escapeText(projectCreateStageBadge(state.projectCreateStage)) + '</span></div><strong class="severity-info">' + escapeText(projectCreateStageMessage(state.projectCreateStage)) + '</strong><div class="hint severity-info">' + escapeText(projectCreateStageDetail(state.projectCreateStage)) + '</div><div class="hint severity-info">' + escapeText(t("projectWizard.createStageHint", undefined, "The minimal template may take a bit longer while the workspace is initialized.")) + '</div>' + renderProjectCreateStageTimeline(state.projectCreateStage) + loadingSkeleton(t("projectWizard.createInProgress", undefined, "Creating project..."), 3) + '</div>'
+        ? '<div class="event notice"><div class="event-top"><span class="severity-info">' + escapeText(t("projectWizard.createInProgress", undefined, "Creating project...")) + '</span><span class="severity-info">' + escapeText(projectCreateStageBadge(state.projectCreateStage)) + '</span></div><strong class="severity-info">' + escapeText(projectCreateStageMessage(state.projectCreateStage)) + '</strong><div class="hint severity-info">' + escapeText(projectCreateStageDetail(state.projectCreateStage)) + '</div><div class="hint severity-info">' + escapeText(t("projectWizard.createStageHint", undefined, "Project initialization writes the control plane, template graph, and any required local helper scripts.")) + '</div>' + renderProjectCreateStageTimeline(state.projectCreateStage) + loadingSkeleton(t("projectWizard.createInProgress", undefined, "Creating project..."), 3) + '</div>'
         : "";
 
       let mainHtml = "";
@@ -4318,7 +4332,7 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
             '<label><span>' + escapeText(t("projectWizard.projectName", undefined, "Project name")) + '</span><input name="projectName" value="' + escapeText(draft.projectName || "") + '"></label>',
             '<label><span>' + escapeText(t("projectWizard.template", undefined, "Template")) + '</span><select name="templateId">' +
               templateOptions.map(([value, label]) => '<option value="' + escapeText(value) + '"' + (draft.templateId === value ? " selected" : "") + '>' + escapeText(label) + '</option>').join("") +
-            '</select></label>',
+            '</select><span class="hint">' + escapeText(selectedTemplateHint) + '</span></label>',
             workspace.state === "non-project-ready"
               ? '<label><span>' + escapeText(t("projectWizard.conflictStrategy", undefined, "Conflict strategy")) + '</span><select name="conflictStrategy"><option value="reject"' + (draft.conflictStrategy !== "init-current" ? " selected" : "") + '>' + escapeText(t("projectWizard.reviewBeforeInit", undefined, "Do not initialize yet")) + '</option><option value="init-current"' + (draft.conflictStrategy === "init-current" ? " selected" : "") + '>' + escapeText(t("projectWizard.initCurrentDirectory", undefined, "Initialize current directory")) + '</option></select><span class="hint">' + escapeText(t("projectWizard.conflictStrategyHint", undefined, "Reject keeps the existing files untouched; initialize current directory only when this path is intentionally the project root.")) + '</span></label>'
               : '<input type="hidden" name="conflictStrategy" value="init-current">',

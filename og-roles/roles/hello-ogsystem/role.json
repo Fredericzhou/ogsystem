@@ -1,0 +1,15 @@
+{
+  "roleId": "hello-ogsystem",
+  "roleVersion": "1.0.0",
+  "name": "Hello OGSystem",
+  "description": "The smallest runnable role for the Hello World starter template.",
+  "talent": {
+    "reasoningDepth": "low",
+    "style": "concise",
+    "riskPreference": "balanced"
+  },
+  "preferredModelTags": ["fast", "instruction-following"],
+  "promptTemplate": "prompt.md",
+  "outputSchema": "output.schema.json",
+  "tags": ["demo", "starter"]
+}

@@ -101,17 +101,20 @@ test("lifecycle cli project init/create commands scaffold project control plane"
   await stat(path.resolve(tempRoot, "profiles.json"));
   await stat(path.resolve(tempRoot, "tools.json"));
   await stat(path.resolve(tempRoot, "scripts", "console-print.mjs"));
+  await stat(path.resolve(tempRoot, "scripts", "hello-ogsystem.mjs"));
   const initReadme = await readFile(initReadmePath, "utf8");
   const initProfiles = JSON.parse(await readFile(path.resolve(tempRoot, "profiles.json"), "utf8"));
   const initTools = JSON.parse(await readFile(path.resolve(tempRoot, "tools.json"), "utf8"));
   const initConsoleTool = await readFile(path.resolve(tempRoot, "scripts", "console-print.mjs"), "utf8");
+  const initHelloTool = await readFile(path.resolve(tempRoot, "scripts", "hello-ogsystem.mjs"), "utf8");
   const initProviderConfig = JSON.parse(
     await readFile(path.resolve(tempRoot, ".ogs", "providers", "opencode.json"), "utf8")
   );
   await stat(path.resolve(tempRoot, "system.mmd"));
   await stat(path.resolve(tempRoot, "og-roles", "README.md"));
   await assert.rejects(() => stat(path.resolve(tempRoot, "og-roles", "roles", "_shared")), /ENOENT/);
-  await stat(path.resolve(tempRoot, "og-roles", "roles", "demo-analyst", "role.json"));
+  await stat(path.resolve(tempRoot, "og-roles", "roles", "hello-ogsystem", "role.json"));
+  await assert.rejects(() => stat(path.resolve(tempRoot, "og-roles", "roles", "demo-analyst")), /ENOENT/);
   await assert.rejects(() => stat(path.resolve(tempRoot, "og-roles", "roles", "debate-judge")), /ENOENT/);
   await assert.rejects(() => stat(path.resolve(tempRoot, "og-models")), /ENOENT/);
   assert.equal(initProviderConfig.configPath, "~/.config/opencode/opencode.json");
@@ -128,11 +131,13 @@ test("lifecycle cli project init/create commands scaffold project control plane"
   assert.match(initReadme, /profiles\.json/);
   assert.match(initReadme, /tools\.json/);
   assert.match(initReadme, /valid JSON with no comments/);
-  assert.equal(initProfiles[0]?.profileId, "profile.console.print");
-  assert.equal(initProfiles[0]?.toolRef, "tool.console.print");
-  assert.equal(initTools.tools[0]?.toolRef, "tool.console.print");
+  assert.ok(initProfiles.some((entry) => entry?.profileId === "profile.console.print"));
+  assert.ok(initProfiles.some((entry) => entry?.profileId === "profile.hello.ogsystem"));
+  assert.ok(initTools.tools.some((entry) => entry?.toolRef === "tool.console.print"));
+  assert.ok(initTools.tools.some((entry) => entry?.toolRef === "tool.hello.ogsystem"));
   assert.match(initConsoleTool, /console-print/);
   assert.match(initConsoleTool, /OGSYSTEM_ALLOWED_EVENTS/);
+  assert.match(initHelloTool, /Hello OGSystem world/);
 
   const createResult = await runCli(["project", "create", "demo-app"], { cwd: tempRoot });
   assert.strictEqual(createResult.code, 0);
@@ -149,6 +154,7 @@ test("lifecycle cli project init/create commands scaffold project control plane"
   await stat(path.resolve(createdDir, "profiles.json"));
   await stat(path.resolve(createdDir, "tools.json"));
   await stat(path.resolve(createdDir, "scripts", "console-print.mjs"));
+  await stat(path.resolve(createdDir, "scripts", "hello-ogsystem.mjs"));
   const createdReadme = await readFile(createdReadmePath, "utf8");
   const createdProfiles = JSON.parse(await readFile(path.resolve(createdDir, "profiles.json"), "utf8"));
   const createdTools = JSON.parse(await readFile(path.resolve(createdDir, "tools.json"), "utf8"));
@@ -157,7 +163,8 @@ test("lifecycle cli project init/create commands scaffold project control plane"
   );
   await stat(path.resolve(createdDir, "system.mmd"));
   await assert.rejects(() => stat(path.resolve(createdDir, "og-roles", "roles", "_shared")), /ENOENT/);
-  await stat(path.resolve(createdDir, "og-roles", "roles", "demo-analyst", "role.json"));
+  await stat(path.resolve(createdDir, "og-roles", "roles", "hello-ogsystem", "role.json"));
+  await assert.rejects(() => stat(path.resolve(createdDir, "og-roles", "roles", "demo-analyst")), /ENOENT/);
   await assert.rejects(() => stat(path.resolve(createdDir, "og-models")), /ENOENT/);
   assert.equal(createdProviderConfig.configPath, "~/.config/opencode/opencode.json");
   assert.equal(
@@ -166,8 +173,20 @@ test("lifecycle cli project init/create commands scaffold project control plane"
   );
   assert.match(createdReadme, /model-catalog\.json/);
   assert.match(createdReadme, /workspaceIsolation/);
-  assert.equal(createdProfiles[0]?.profileId, "profile.console.print");
-  assert.equal(createdTools.tools[0]?.toolRef, "tool.console.print");
+  assert.ok(createdProfiles.some((entry) => entry?.profileId === "profile.console.print"));
+  assert.ok(createdProfiles.some((entry) => entry?.profileId === "profile.hello.ogsystem"));
+  assert.ok(createdTools.tools.some((entry) => entry?.toolRef === "tool.console.print"));
+  assert.ok(createdTools.tools.some((entry) => entry?.toolRef === "tool.hello.ogsystem"));
+
+  const helloStart = await runCli(
+    ["run", "start", "--system", "system.mmd", "--input", "cli lifecycle hello world"],
+    { cwd: createdDir }
+  );
+  assert.strictEqual(helloStart.code, 0, helloStart.stderr);
+  const helloStartPayload = JSON.parse(helloStart.stdout);
+  assert.equal(helloStartPayload.status, "done");
+  assert.equal(helloStartPayload.finalRoleId, "hello-ogsystem");
+  assert.equal(helloStartPayload.finalOutput, "Hello OGSystem world");
 
   await writeFile(
     path.resolve(createdDir, "system.mmd"),
@@ -175,8 +194,10 @@ test("lifecycle cli project init/create commands scaffold project control plane"
       "flowchart TD",
       "%% system.id=template.linear",
       "%% system.version=1.0.0",
-      "%% law.global=law.minimal.base",
+      "%% law.global=law.console.base",
       "%% entry.role=debate-minimalist",
+      "%% exec.bind.debate-minimalist=profile.console.print",
+      "%% exec.bind.debate-judge=profile.console.print",
       "",
       "input -->|DEBATE_REQUEST| minimalist[Role:debate-minimalist]",
       "minimalist[Role:debate-minimalist] -->|MINIMALIST_DONE| judge[Role:debate-judge]",
@@ -204,6 +225,100 @@ test("lifecycle cli project init/create commands scaffold project control plane"
   assert.strictEqual(startResult.code, 0, startResult.stderr);
   const startPayload = JSON.parse(startResult.stdout);
   assert.equal(startPayload.status, "done");
+});
+
+test("lifecycle cli advanced-features template runs a local review rework loop", { concurrency: false }, async () => {
+  const tempRoot = await mkdtemp(path.join(os.tmpdir(), "ogsystem-cli-advanced-template-"));
+
+  const createResult = await runCli(
+    ["project", "create", "advanced-app", "--template", "advanced-features"],
+    { cwd: tempRoot }
+  );
+  assert.strictEqual(createResult.code, 0, createResult.stderr);
+  const createPayload = JSON.parse(createResult.stdout);
+  const projectDir = createPayload.projectDir;
+
+  await stat(path.resolve(projectDir, "og-roles", "roles", "advanced-coordinator", "role.json"));
+  await stat(path.resolve(projectDir, "og-roles", "roles", "advanced-worker-a", "role.json"));
+  await stat(path.resolve(projectDir, "og-roles", "roles", "advanced-worker-b", "role.json"));
+  await stat(path.resolve(projectDir, "og-roles", "roles", "advanced-reviewer", "role.json"));
+  const systemSource = await readFile(path.resolve(projectDir, "system.mmd"), "utf8");
+  assert.match(systemSource, /%% role\.mode\.advanced-coordinator=parallel_split/);
+  assert.match(systemSource, /%% join\.mode\.advanced-reviewer=all_of/);
+  assert.match(systemSource, /%% review\.mode\.advanced-reviewer=required/);
+
+  const start = await runCli(
+    ["run", "start", "--system", "system.mmd", "--input", "advanced template review loop"],
+    { cwd: projectDir }
+  );
+  assert.strictEqual(start.code, 0, start.stderr);
+  const startPayload = JSON.parse(start.stdout);
+  assert.equal(startPayload.status, "stopped");
+
+  const list = await runCli(["run", "list", "--workdir", projectDir]);
+  assert.strictEqual(list.code, 0);
+  const runId = JSON.parse(list.stdout).runs[0].runId;
+
+  const reviewList = await runCli(["run", "review", "list", runId, "--workdir", projectDir]);
+  assert.strictEqual(reviewList.code, 0, reviewList.stderr);
+  const reviewListPayload = JSON.parse(reviewList.stdout);
+  const firstReviewId = reviewListPayload.latestPendingReviewId;
+  assert.equal(typeof firstReviewId, "string");
+
+  const rework = await runCli([
+    "run",
+    "review",
+    "decide",
+    runId,
+    firstReviewId,
+    "--decision",
+    "rework",
+    "--comment",
+    "run one more loop",
+    "--workdir",
+    projectDir
+  ]);
+  assert.strictEqual(rework.code, 0, rework.stderr);
+
+  const resumeAfterRework = await runCli(["run", "resume", runId, "--workdir", projectDir]);
+  assert.strictEqual(resumeAfterRework.code, 0, resumeAfterRework.stderr);
+  const resumeAfterReworkPayload = JSON.parse(resumeAfterRework.stdout);
+  assert.equal(resumeAfterReworkPayload.status, "stopped");
+
+  const statusAfterRework = await runCli(["run", "status", runId, "--workdir", projectDir]);
+  assert.strictEqual(statusAfterRework.code, 0);
+  const statusAfterReworkPayload = JSON.parse(statusAfterRework.stdout);
+  assert.equal(statusAfterReworkPayload.status, "stopped");
+  assert.equal(statusAfterReworkPayload.pendingReviewCount, 1);
+  assert.equal(typeof statusAfterReworkPayload.latestPendingReviewId, "string");
+  assert.notEqual(statusAfterReworkPayload.latestPendingReviewId, firstReviewId);
+
+  const approve = await runCli([
+    "run",
+    "review",
+    "decide",
+    runId,
+    statusAfterReworkPayload.latestPendingReviewId,
+    "--decision",
+    "approve",
+    "--comment",
+    "looks good",
+    "--workdir",
+    projectDir
+  ]);
+  assert.strictEqual(approve.code, 0, approve.stderr);
+
+  const resumeAfterApprove = await runCli(["run", "resume", runId, "--workdir", projectDir]);
+  assert.strictEqual(resumeAfterApprove.code, 0, resumeAfterApprove.stderr);
+  const resumeAfterApprovePayload = JSON.parse(resumeAfterApprove.stdout);
+  assert.equal(resumeAfterApprovePayload.status, "done");
+
+  const finalStatus = await runCli(["run", "status", runId, "--workdir", projectDir]);
+  assert.strictEqual(finalStatus.code, 0);
+  const finalStatusPayload = JSON.parse(finalStatus.stdout);
+  assert.equal(finalStatusPayload.status, "done");
+  assert.equal(finalStatusPayload.pendingReviewCount, 0);
+  assert.equal(finalStatusPayload.hasWaitingHumanReview, false);
 });
 
 test("lifecycle cli run start resolves --system relative to --workdir", { concurrency: false }, async () => {
