@@ -265,6 +265,12 @@ test("Build workbench keeps view toggles in footer and aligns graph with docked 
     await expect(page.locator('[data-studio-side-tab="result"]')).toHaveAttribute("aria-pressed", "true");
     await expectDockedSelectionAligned(page);
     await expectBuildCanvasIdentityStable(page);
+    await page.reload();
+    await expect(page.locator("#console-tab-design")).toHaveAttribute("aria-pressed", "true");
+    await expect(page.locator("#console-tab-run")).toHaveAttribute("aria-pressed", "false");
+    await waitForStudioCell(page, "demo-analyst");
+    await expect(page.locator("[data-studio-bridge-filter]")).toBeVisible();
+    await expect(page.locator('[data-studio-side-tab="structure"]')).toHaveAttribute("aria-pressed", "true");
   } finally {
     await page.close();
     await new Promise<void>((resolve) => started.server.close(() => resolve()));

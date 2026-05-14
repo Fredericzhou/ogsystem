@@ -2681,6 +2681,9 @@ test("visualizer client builds Studio canvas from authoring when bridge extracte
   assert.ok(latestMount.authoring);
   assert.ok(latestMount.canvas.nodes.some((node) => node.roleId === "demo-analyst"));
   assert.ok(latestMount.canvas.edges.some((edge) => edge.source === "demo-analyst" && edge.eventType === "DONE"));
+  assert.ok(harness.document.getElementById("workbench-body").querySelectorAll("[data-studio-role-id]").length > 0);
+  assert.ok(harness.document.getElementById("workbench-body").querySelectorAll("[data-studio-flow-key]").length > 0);
+  assert.ok(harness.document.getElementById("workbench-body").querySelectorAll("[data-studio-bridge-filter]").length > 0);
 });
 
 test("visualizer client retries workspace load after initial failure and auto-dismisses success flash", async () => {
@@ -3201,6 +3204,22 @@ test("visualizer client normalizes build deep links onto the Design shell", asyn
   assert.equal(harness.document.getElementById("console-panel-debug").hidden, true);
   assert.match(harness.window.location.search, /[?&]lifecycle=design/);
   assert.doesNotMatch(harness.window.location.search, /[?&]runId=/);
+});
+
+test("visualizer client drops run-specific route state when restoring the Design shell", async () => {
+  const harness = await createClientHarness({
+    search: "?lifecycle=design&runId=run-123&reviewId=review-1&logRoleId=alpha&tail=25&since=2026-05-03T09%3A00"
+  });
+
+  assert.equal(harness.document.getElementById("console-panel-build").hidden, false);
+  assert.match(harness.window.location.search, /[?&]lifecycle=design/);
+  assert.doesNotMatch(harness.window.location.search, /[?&]runId=/);
+  assert.doesNotMatch(harness.window.location.search, /[?&]reviewId=/);
+  assert.doesNotMatch(harness.window.location.search, /[?&]logRoleId=/);
+  assert.doesNotMatch(harness.window.location.search, /[?&]tail=/);
+  assert.doesNotMatch(harness.window.location.search, /[?&]since=/);
+  assert.equal(harness.backend.fetchCalls.some((call) => call.path === "/api/v1/runs/run-123"), false);
+  assert.equal(harness.backend.fetchCalls.some((call) => call.path === "/api/v1/runs/run-123/graph"), false);
 });
 
 test("visualizer client renders four tabs and navigates to Design with bridge refresh", async () => {

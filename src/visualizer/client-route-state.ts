@@ -88,19 +88,20 @@ export function buildRouteSearch(args: {
   if (lifecycle) {
     params.set("lifecycle", lifecycle);
   }
-  if (args.selectedRunId) {
+  const includeRunSelection = lifecycle === "run";
+  if (includeRunSelection && args.selectedRunId) {
     params.set("runId", args.selectedRunId);
   }
-  if (args.selectedReviewId) {
+  if (includeRunSelection && args.selectedReviewId) {
     params.set("reviewId", args.selectedReviewId);
   }
-  if (args.selectedLogRoleId) {
+  if (includeRunSelection && args.selectedLogRoleId) {
     params.set("logRoleId", args.selectedLogRoleId);
   }
-  if (args.logTail) {
+  if (includeRunSelection && args.logTail) {
     params.set("tail", args.logTail);
   }
-  if (args.logSince) {
+  if (includeRunSelection && args.logSince) {
     params.set("since", args.logSince);
   }
   return params.toString();

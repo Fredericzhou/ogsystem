@@ -983,27 +983,16 @@ export function renderStudioFlowConfigEditor(args: {
   ].join("");
 }
 
-export function renderStudioBridgePanel(args: {
+export function renderStudioBridgeStructureHtml(args: {
   bridge: JsonRecord | null | undefined;
-  readiness: JsonRecord | null | undefined;
   selectedRoleId: string;
   selectedFlowKey: string;
-  workbenchView?: string;
-  graphRootContentHtml?: string;
   filter?: string;
   listMode?: string;
-  sideTab?: string;
-  selectionDebugHtml?: string;
-  selectionResultsHtml?: string;
-  fullscreen?: boolean;
-  rolePackageEditor?: JsonRecord | null | undefined;
-  flowConfigEditor?: JsonRecord | null | undefined;
-  inspectorCollapsed?: boolean;
   actionBusy: string;
   t?: Translator;
 }): string {
   const t: Translator = typeof args.t === "function" ? args.t : (_key, _vars, fallback) => fallback ?? _key;
-  const sideTab = args.sideTab || "structure";
   const bridge = args.bridge ?? {};
   const extracted = (bridge.extracted ?? {}) as JsonRecord;
   const roles = Array.isArray(extracted.roles) ? extracted.roles as JsonRecord[] : [];
@@ -1022,9 +1011,6 @@ export function renderStudioBridgePanel(args: {
   const selectedRole = explicitSelectedRole ?? (args.selectedFlowKey ? null : roles[0] ?? null);
   const selectedFlow = explicitSelectedFlow ?? (args.selectedRoleId ? null : flows[0] ?? null);
   const busy = args.actionBusy ? " disabled" : "";
-  if (!bridge || Object.keys(bridge).length === 0) {
-    return '<div class="hint">' + escapeText(t("studio.dataUnavailable", undefined, "Graph workspace data unavailable.")) + '</div>';
-  }
   const roleButtons = filtered.roles.length
     ? filtered.roles.map((role) => {
         const roleId = String(role.roleId ?? "");
@@ -1053,6 +1039,44 @@ export function renderStudioBridgePanel(args: {
         );
       })
     : ['<div class="hint">' + escapeText((args.filter || listMode !== "all") ? t("studio.noFilteredItems", undefined, "No matching graph items.") : t("studio.noFlowsExtracted", undefined, "No flows extracted from the current Mermaid source.")) + '</div>'];
+  return '<div class="studio-bridge-index structure-list" data-studio-bridge-region="index"><div class="studio-bridge-index-controls"><div class="toolbar-row compact"><input data-studio-bridge-filter="1" value="' +
+    escapeText(args.filter || "") + '" placeholder="' + escapeText(t("studio.filterGraphItems", undefined, "Filter roles or flows")) + '" aria-label="' + escapeText(t("studio.filterGraphItems", undefined, "Filter roles or flows")) + '"><select data-studio-bridge-list-mode="1" aria-label="' + escapeText(t("studio.retrievalTab", undefined, "Browse")) + '"><option value="all"' +
+    (listMode === "all" ? " selected" : "") + ">" + escapeText(t("common.all", undefined, "all")) + '</option><option value="roles"' +
+    (listMode === "roles" ? " selected" : "") + ">" + escapeText(t("studio.roles", undefined, "roles")) + '</option><option value="flows"' +
+    (listMode === "flows" ? " selected" : "") + ">" + escapeText(t("studio.flows", undefined, "flows")) + '</option></select></div><div class="hint">' +
+    escapeText(t("studio.topologyOrderHint", undefined, "Cycles are listed after the acyclic path so the authoring order stays stable.")) + '</div></div><div class="studio-index-stack"><div class="studio-navigator structure-list" data-studio-bridge-region="navigator"><div class="compact-list-item studio-index-section-heading"><strong>' + escapeText(t("studio.roles", undefined, "roles")) + '</strong><span class="hint">' + escapeText(String(filtered.roles.length) + " / " + String(roles.length)) + '</span></div>' + roleButtons.join("") + '</div><div class="structure-list studio-flow-list" data-studio-bridge-region="flow-list"><div class="compact-list-item studio-index-section-heading"><strong>' + escapeText(t("studio.flows", undefined, "flows")) + '</strong><span class="hint">' + escapeText(String(filtered.flows.length) + " / " + String(flows.length)) + '</span></div>' + flowButtons.join("") + "</div></div></div>";
+}
+
+export function renderStudioBridgePanel(args: {
+  bridge: JsonRecord | null | undefined;
+  readiness: JsonRecord | null | undefined;
+  selectedRoleId: string;
+  selectedFlowKey: string;
+  workbenchView?: string;
+  graphRootContentHtml?: string;
+  filter?: string;
+  listMode?: string;
+  sideTab?: string;
+  selectionDebugHtml?: string;
+  selectionResultsHtml?: string;
+  fullscreen?: boolean;
+  rolePackageEditor?: JsonRecord | null | undefined;
+  flowConfigEditor?: JsonRecord | null | undefined;
+  inspectorCollapsed?: boolean;
+  actionBusy: string;
+  t?: Translator;
+}): string {
+  const t: Translator = typeof args.t === "function" ? args.t : (_key, _vars, fallback) => fallback ?? _key;
+  const sideTab = args.sideTab || "structure";
+  const bridge = args.bridge ?? {};
+  const extracted = (bridge.extracted ?? {}) as JsonRecord;
+  const roles = Array.isArray(extracted.roles) ? extracted.roles as JsonRecord[] : [];
+  const flows = Array.isArray(extracted.flows) ? extracted.flows as JsonRecord[] : [];
+  const explicitSelectedRole = roles.find((role) => role.roleId === args.selectedRoleId) ?? null;
+  const explicitSelectedFlow = flows.find((flow) => flow.flowKey === args.selectedFlowKey) ?? null;
+  if (!bridge || Object.keys(bridge).length === 0) {
+    return '<div class="hint">' + escapeText(t("studio.dataUnavailable", undefined, "Graph workspace data unavailable.")) + '</div>';
+  }
   const graphCanvas = renderStudioGraphCanvas({
     selectedRoleId: args.selectedRoleId,
     selectedFlowKey: args.selectedFlowKey,
@@ -1085,12 +1109,15 @@ export function renderStudioBridgePanel(args: {
         })
         : "",
     selectionStructureHtml:
-      '<div class="studio-bridge-index structure-list" data-studio-bridge-region="index"><div class="studio-bridge-index-controls"><div class="toolbar-row compact"><input data-studio-bridge-filter="1" value="' +
-      escapeText(args.filter || "") + '" placeholder="' + escapeText(t("studio.filterGraphItems", undefined, "Filter roles or flows")) + '" aria-label="' + escapeText(t("studio.filterGraphItems", undefined, "Filter roles or flows")) + '"><select data-studio-bridge-list-mode="1" aria-label="' + escapeText(t("studio.retrievalTab", undefined, "Browse")) + '"><option value="all"' +
-      (listMode === "all" ? " selected" : "") + ">" + escapeText(t("common.all", undefined, "all")) + '</option><option value="roles"' +
-      (listMode === "roles" ? " selected" : "") + ">" + escapeText(t("studio.roles", undefined, "roles")) + '</option><option value="flows"' +
-      (listMode === "flows" ? " selected" : "") + ">" + escapeText(t("studio.flows", undefined, "flows")) + '</option></select></div><div class="hint">' +
-      escapeText(t("studio.topologyOrderHint", undefined, "Cycles are listed after the acyclic path so the authoring order stays stable.")) + '</div></div><div class="studio-index-stack"><div class="studio-navigator structure-list" data-studio-bridge-region="navigator"><div class="compact-list-item studio-index-section-heading"><strong>' + escapeText(t("studio.roles", undefined, "roles")) + '</strong><span class="hint">' + escapeText(String(filtered.roles.length) + " / " + String(roles.length)) + '</span></div>' + roleButtons.join("") + '</div><div class="structure-list studio-flow-list" data-studio-bridge-region="flow-list"><div class="compact-list-item studio-index-section-heading"><strong>' + escapeText(t("studio.flows", undefined, "flows")) + '</strong><span class="hint">' + escapeText(String(filtered.flows.length) + " / " + String(flows.length)) + '</span></div>' + flowButtons.join("") + "</div></div></div>",
+      renderStudioBridgeStructureHtml({
+        bridge,
+        selectedRoleId: args.selectedRoleId,
+        selectedFlowKey: args.selectedFlowKey,
+        filter: args.filter || "",
+        listMode: args.listMode,
+        actionBusy: args.actionBusy,
+        t
+      }),
     selectionDebugHtml: args.selectionDebugHtml || "",
     selectionResultsHtml: args.selectionResultsHtml || "",
     inspectorCollapsed: args.inspectorCollapsed === true,

@@ -168,7 +168,10 @@ const sharedHistory: {
 
 const STUDIO_PENDING_EDGE_ID = "__studio_pending_edge__";
 const STUDIO_GRAPH_FIT_PADDING = 28;
-const STUDIO_GRAPH_FIT_MAX_SCALE = 1.4;
+const STUDIO_GRAPH_FIT_MAX_SCALE = 1.8;
+const STUDIO_GRAPH_MIN_READABLE_ROLE_WIDTH = 90;
+const STUDIO_GRAPH_MIN_READABLE_ROLE_HEIGHT = 40;
+const STUDIO_GRAPH_READABILITY_ROLE_LIMIT = 4;
 
 type PendingStudioEdgePreview = {
   sourceRoleId: string;
@@ -389,6 +392,8 @@ export class StudioGraphIsland {
           viewModel.viewport ?? options.authoring?.layout?.viewport ?? options.canvas?.viewport,
           !this.hasRenderedProjection
         );
+      } else if (!this.hasRenderedProjection) {
+        this.schedulePendingInitialFit();
       }
       this.selectFromOptions();
       this.applyRuntimeOverlay();
@@ -1205,9 +1210,7 @@ export class StudioGraphIsland {
       return;
     }
     if (firstRender && !viewport) {
-      this.pendingInitialFit = true;
-      this.pendingInitialFitSizeSignature = "";
-      this.flushPendingInitialFit();
+      this.schedulePendingInitialFit();
     }
   }
 
@@ -1329,7 +1332,40 @@ export class StudioGraphIsland {
 
   private fitGraphToViewport(maxScale = STUDIO_GRAPH_FIT_MAX_SCALE): void {
     this.graph.zoomToFit({ padding: STUDIO_GRAPH_FIT_PADDING, maxScale });
+    this.ensureReadablePrimaryViewport();
     this.lastViewportSignature = "";
+  }
+
+  private schedulePendingInitialFit(): void {
+    this.pendingInitialFit = true;
+    this.pendingInitialFitSizeSignature = "";
+    this.flushPendingInitialFit();
+  }
+
+  private ensureReadablePrimaryViewport(): void {
+    const roleNodes = this.graph.getNodes().filter((node) => {
+      const data = node.getData() as { studioNode?: { kind?: string } } | undefined;
+      return data?.studioNode?.kind === "role";
+    });
+    if (!roleNodes.length || roleNodes.length > STUDIO_GRAPH_READABILITY_ROLE_LIMIT) {
+      return;
+    }
+    const currentScale = this.graph.zoom();
+    if (!Number.isFinite(currentScale) || currentScale <= 0) {
+      return;
+    }
+    const primaryRole = roleNodes[0];
+    const size = primaryRole.getSize();
+    const readableScale = Math.max(
+      STUDIO_GRAPH_MIN_READABLE_ROLE_WIDTH / Math.max(size.width, 1),
+      STUDIO_GRAPH_MIN_READABLE_ROLE_HEIGHT / Math.max(size.height, 1)
+    );
+    const desiredScale = Math.min(STUDIO_GRAPH_FIT_MAX_SCALE, readableScale);
+    if (!Number.isFinite(desiredScale) || desiredScale <= currentScale + 0.01) {
+      return;
+    }
+    this.graph.zoomTo(desiredScale);
+    this.graph.centerContent();
   }
 
   private clearPendingInitialFit(): void {

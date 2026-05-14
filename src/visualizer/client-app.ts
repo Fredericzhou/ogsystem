@@ -30,6 +30,7 @@ import {
   renderStudioExecutionConfigEditor,
   renderStudioFlowConfigEditor,
   renderStudioRolePackageEditor,
+  renderStudioBridgeStructureHtml,
   renderStudioBridgeSelectionLabel,
   roleIdOf,
   flowKeyOf,
@@ -269,6 +270,7 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
     const displayUiToken = ${displayUiToken.toString()};
     const normalizeStudioTargetRoleId = ${normalizeStudioTargetRoleId.toString()};
     const renderStudioGraphCanvas = ${renderStudioGraphCanvas.toString()};
+    const renderStudioBridgeStructureHtml = ${renderStudioBridgeStructureHtml.toString()};
     const renderStudioBridgeSelectionLabel = ${renderStudioBridgeSelectionLabel.toString()};
     const renderStudioExecutionConfigEditor = ${renderStudioExecutionConfigEditor.toString()};
     const renderStudioRolePackageEditor = ${renderStudioRolePackageEditor.toString()};
@@ -981,21 +983,76 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
       return String(flow?.fromRoleId || "") + ":" + String(flow?.eventType || "") + ":" + target;
     }
 
+    function buildStudioBridgeRolesFromAuthoring(authoring) {
+      const flows = Object.values(authoring?.flows || {});
+      return Object.values(authoring?.roles || {})
+        .sort((left, right) => String(left?.roleId || "").localeCompare(String(right?.roleId || "")))
+        .map((role) => {
+          const roleId = String(role?.roleId || "");
+          const incoming = flows.filter((flow) => String(flow?.toRoleId || "") === roleId);
+          const outgoing = flows.filter((flow) => String(flow?.fromRoleId || "") === roleId);
+          const badges = [
+            authoring?.system?.entryRoleId === roleId ? "entry" : "",
+            role?.bindingKind === "model" ? "M" : "",
+            role?.bindingKind === "exec" ? "E" : "",
+            role?.routingMode === "parallel_split" ? "P" : "",
+            role?.joinMode ? "J" : "",
+            role?.loopMax ? "L" : "",
+            role?.review ? "R" : ""
+          ].filter(Boolean);
+          return {
+            ...role,
+            incomingFlowCount: incoming.length,
+            outgoingFlowCount: outgoing.length,
+            allowedEvents: Array.from(new Set(outgoing.map((flow) => String(flow?.eventType || "")).filter(Boolean))).sort((left, right) => left.localeCompare(right)),
+            badges
+          };
+        });
+    }
+
+    function buildStudioBridgeFlowsFromAuthoring(authoring) {
+      const joinSourcesByTarget = new Map();
+      for (const role of Object.values(authoring?.roles || {})) {
+        const roleId = String(role?.roleId || "");
+        const joinSources = Array.isArray(role?.joinSources) ? role.joinSources.filter(Boolean) : [];
+        if (roleId && joinSources.length) {
+          joinSourcesByTarget.set(roleId, new Set(joinSources.map((sourceRoleId) => String(sourceRoleId || "")).filter(Boolean)));
+        }
+      }
+      return Object.values(authoring?.flows || {})
+        .sort((left, right) => String(left?.flowId || "").localeCompare(String(right?.flowId || "")))
+        .map((flow) => {
+          const targetRoleId = String(flow?.toRoleId || "");
+          const fromRoleId = String(flow?.fromRoleId || "");
+          return {
+            ...flow,
+            flowKey: fromRoleId + ":" + String(flow?.eventType || "") + ":" + (targetRoleId === "__system_end__" ? "output" : targetRoleId),
+            participatesInJoin: Boolean(joinSourcesByTarget.get(targetRoleId)?.has(fromRoleId))
+          };
+        });
+    }
+
     function withStudioAuthoringDisplayMetadata(bridge, authoring) {
       if (!bridge?.extracted || !authoring) {
         return bridge;
       }
       const roleTitleById = new Map(Object.values(authoring.roles || {}).map((role) => [String(role.roleId || ""), role.title]));
       const flowLabelByKey = new Map(Object.values(authoring.flows || {}).map((flow) => [studioAuthoringFlowDisplayKey(flow), flow.label]));
+      const extractedRoles = Array.isArray(bridge.extracted.roles) && bridge.extracted.roles.length
+        ? bridge.extracted.roles
+        : buildStudioBridgeRolesFromAuthoring(authoring);
+      const extractedFlows = Array.isArray(bridge.extracted.flows) && bridge.extracted.flows.length
+        ? bridge.extracted.flows
+        : buildStudioBridgeFlowsFromAuthoring(authoring);
       return {
         ...bridge,
         extracted: {
           ...bridge.extracted,
-          roles: (bridge.extracted.roles || []).map((role) => {
+          roles: extractedRoles.map((role) => {
             const title = roleTitleById.get(String(role.roleId || ""));
             return title ? { ...role, title } : role;
           }),
-          flows: (bridge.extracted.flows || []).map((flow) => {
+          flows: extractedFlows.map((flow) => {
             const label = flowLabelByKey.get(studioAuthoringFlowDisplayKey(flow));
             return label ? { ...flow, label } : flow;
           })
@@ -2457,7 +2514,15 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
           : state.studioWorkbenchSideTab === "result"
             ? "result"
           : "structure";
-      const structureHtml = studioBridgeRenderArgs().selectionStructureHtml || "";
+      const structureHtml = renderStudioBridgeStructureHtml({
+        bridge: resolveStudioBridgeForDisplay(),
+        selectedRoleId: state.studioBridgeSelectedRoleId,
+        selectedFlowKey: state.studioBridgeSelectedFlowKey,
+        filter: state.studioBridgeFilter,
+        listMode: state.studioBridgeListMode,
+        actionBusy: state.actionBusy,
+        t
+      }) || "";
       const collapsed = state.studioInspectorCollapsed === true;
       overlay.hidden = false;
       overlay.classList.toggle("is-collapsed", collapsed);
@@ -4911,12 +4976,13 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
           systemSource: state.workbenchSource,
           systemPath: state.workbenchSavedPath || "system.mmd"
         });
-        state.studioBridge = payload;
-        state.studioCanvas = buildStudioCanvasFromBridge(payload);
+        const normalizedBridge = withStudioAuthoringDisplayMetadata(payload, payload?.authoring);
+        state.studioBridge = normalizedBridge;
+        state.studioCanvas = buildStudioCanvasFromBridge(normalizedBridge);
         state.studioBridgeLoaded = true;
         state.studioBridgeStale = false;
-        const roles = Array.isArray(payload.extracted?.roles) ? payload.extracted.roles : [];
-        const flows = Array.isArray(payload.extracted?.flows) ? payload.extracted.flows : [];
+        const roles = Array.isArray(normalizedBridge?.extracted?.roles) ? normalizedBridge.extracted.roles : [];
+        const flows = Array.isArray(normalizedBridge?.extracted?.flows) ? normalizedBridge.extracted.flows : [];
         const hasSelectedRole = Boolean(state.studioBridgeSelectedRoleId && roles.some((role) => role.roleId === state.studioBridgeSelectedRoleId));
         const hasSelectedFlow = Boolean(state.studioBridgeSelectedFlowKey && flows.some((flow) => flow.flowKey === state.studioBridgeSelectedFlowKey));
         if (!hasSelectedRole) {
@@ -6598,11 +6664,12 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
     }
     state.projectHome = false;
     renderConsoleTabs();
-    state.selectedRunId = initialRoute.runId;
-    state.selectedReviewId = initialRoute.reviewId;
-    state.selectedLogRoleId = initialRoute.logRoleId;
-    state.logTail = initialRoute.tail;
-    state.logSince = initialRoute.since;
+    const restoreRunSelection = state.consoleTab === runConsoleTab();
+    state.selectedRunId = restoreRunSelection ? initialRoute.runId : "";
+    state.selectedReviewId = restoreRunSelection ? initialRoute.reviewId : "";
+    state.selectedLogRoleId = restoreRunSelection ? initialRoute.logRoleId : "";
+    state.logTail = restoreRunSelection ? initialRoute.tail : "";
+    state.logSince = restoreRunSelection ? initialRoute.since : "";
     writeRouteToLocation();
     logTailEl.value = state.logTail;
     logPageSizeEl.value = state.logPageSize;

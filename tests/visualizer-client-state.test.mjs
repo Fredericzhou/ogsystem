@@ -200,11 +200,11 @@ test("client route state helpers parse and serialize lifecycle query state", () 
     buildRouteSearch({
       lifecycle: "design",
       projectHome: true,
-      selectedRunId: "",
-      selectedReviewId: "",
-      selectedLogRoleId: "",
-      logTail: "",
-      logSince: ""
+      selectedRunId: "run-1",
+      selectedReviewId: "review-2",
+      selectedLogRoleId: "qa",
+      logTail: "50",
+      logSince: "2026-05-03T09:00"
     }),
     "lifecycle=design"
   );
@@ -250,11 +250,11 @@ test("client route state helpers normalize Design Run Release lifecycle aliases"
     buildRouteSearch({
       lifecycle: "design",
       projectHome: true,
-      selectedRunId: "",
-      selectedReviewId: "",
-      selectedLogRoleId: "",
-      logTail: "",
-      logSince: ""
+      selectedRunId: "run-1",
+      selectedReviewId: "review-2",
+      selectedLogRoleId: "qa",
+      logTail: "50",
+      logSince: "2026-05-03T09:00"
     }),
     "lifecycle=design"
   );

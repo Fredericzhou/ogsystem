@@ -487,6 +487,9 @@ test("empty workspace creates a project visually before graph editing", async ({
     await expect(page.locator("#workbench-body")).toContainText("Chat to MMD");
     await expect(page.locator('#studio-graph-root [data-studio-graph-action="save"]')).toBeVisible();
     await expect(page.locator('#studio-graph-root [data-studio-graph-action="validate"]')).toBeVisible();
+    await expect(page.locator('[data-studio-side-tab="structure"]')).toHaveAttribute("aria-pressed", "true");
+    await expect(page.locator("[data-studio-bridge-filter]")).toBeVisible();
+    await expect(page.locator("[data-studio-role-id]")).toHaveCount(1);
     await expect(page.getByText(/\bX6\b/)).toHaveCount(0);
   } finally {
     await new Promise<void>((resolve) => started.server.close(() => resolve()));
