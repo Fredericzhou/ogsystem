@@ -5506,6 +5506,7 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
     }
 
     async function startRunFromWorkbench(args) {
+      const preserveDesignShell = args.dryRun && isDesignConsoleTab();
       if (!args.input) {
         if (state.actionForm?.kind === "start") {
           state.actionForm.errors = {
@@ -5527,14 +5528,14 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
         renderConsoleTabs();
         return;
       }
-      if (args.dryRun && isDesignConsoleTab()) {
+      if (preserveDesignShell) {
         const ready = await prepareWorkbenchForDryRunSurface({ focusInput: false });
         if (!ready) {
           return;
         }
       }
       await runAction("run:start", async () => {
-        if (args.dryRun && isDesignConsoleTab()) {
+        if (preserveDesignShell) {
           state.buildMode = "debug";
           state.workbenchView = "bridge";
           state.studioWorkbenchSideTab = "debug";
@@ -5572,11 +5573,9 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
             await loadProject();
             await loadRuns();
             if (payload.runId) {
-              if (args.dryRun && isDesignConsoleTab()) {
-                await selectRun(payload.runId);
+              if (preserveDesignShell) {
+                await selectRun(payload.runId, { preserveConsoleTab: true });
                 state.studioWorkbenchSideTab = "result";
-                state.consoleTab = designConsoleTab();
-                renderConsoleTabs();
                 renderWorkbench();
                 forceStudioWorkbenchSideTab("result");
                 writeRouteToLocation();
@@ -6176,11 +6175,11 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
       }
     }
 
-    async function selectRun(runId) {
+    async function selectRun(runId, options) {
       if (!runId) return;
       stopStream();
       state.projectHome = false;
-      if (!isRunConsoleTab()) {
+      if (options?.preserveConsoleTab !== true && !isRunConsoleTab()) {
         state.consoleTab = runConsoleTab();
         renderConsoleTabs();
       }

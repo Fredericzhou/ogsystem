@@ -1003,6 +1003,7 @@ export function renderStudioBridgePanel(args: {
   t?: Translator;
 }): string {
   const t: Translator = typeof args.t === "function" ? args.t : (_key, _vars, fallback) => fallback ?? _key;
+  const sideTab = args.sideTab || "structure";
   const bridge = args.bridge ?? {};
   const extracted = (bridge.extracted ?? {}) as JsonRecord;
   const roles = Array.isArray(extracted.roles) ? extracted.roles as JsonRecord[] : [];
@@ -1058,7 +1059,7 @@ export function renderStudioBridgePanel(args: {
     rootMode: args.workbenchView === "source" ? "source" : "bridge",
     rootClassName: args.workbenchView === "source" ? "studio-source-root" : "",
     rootContentHtml: args.workbenchView === "source" ? (args.graphRootContentHtml || "") : "",
-    sideTab: args.sideTab || "selection",
+    sideTab,
     selectionKindLabel: explicitSelectedRole
       ? t("studio.roleInspector", undefined, "Role details")
       : explicitSelectedFlow

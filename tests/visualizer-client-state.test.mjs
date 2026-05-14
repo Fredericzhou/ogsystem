@@ -813,6 +813,7 @@ test("client renderer graph canvas escapes selected ids before composing HTML", 
     selectedFlowKey: "flow<'unsafe'>",
     t
   });
+  assert.match(html, /class="button subtle active" data-studio-side-tab="structure"/);
   assert.match(html, /planner&quot;&gt;&lt;script&gt;alert\(1\)&lt;\/script&gt;/);
   assert.match(html, /flow&lt;&#39;unsafe&#39;&gt;/);
   assert.match(html, /data-studio-side-tab="debug"/);
@@ -1203,4 +1204,5 @@ test("operate tabs and Studio Bridge filters expose accessible state and names",
   });
   assert.match(bridgeHtml, /data-studio-bridge-filter="1"[^>]*aria-label="Filter roles or flows"/);
   assert.match(bridgeHtml, /data-studio-bridge-list-mode="1"[^>]*aria-label="Browse"/);
+  assert.match(bridgeHtml, /class="button subtle active" data-studio-side-tab="structure"/);
 });

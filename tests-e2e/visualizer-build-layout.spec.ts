@@ -107,6 +107,46 @@ async function expectBuildCanvasGapTight(page): Promise<void> {
   }).then((gaps) => Boolean(gaps && gaps.shellGap <= 2 && gaps.cardGap <= 2))).toBe(true);
 }
 
+async function expectReadableGraphViewport(page): Promise<void> {
+  await expect.poll(async () => page.evaluate(() => {
+    const roleNode = document.querySelector<HTMLElement>('#studio-graph-root [data-cell-id="demo-analyst"]');
+    const minimapViewport = document.querySelector<HTMLElement>("[data-studio-graph-minimap-viewport]");
+    if (!roleNode || !minimapViewport) {
+      return null;
+    }
+    const roleBox = roleNode.getBoundingClientRect();
+    const viewportWidth = Number.parseFloat(minimapViewport.style.width || "0");
+    const viewportHeight = Number.parseFloat(minimapViewport.style.height || "0");
+    return {
+      roleWidth: Math.round(roleBox.width),
+      roleHeight: Math.round(roleBox.height),
+      viewportWidth: Math.round(viewportWidth),
+      viewportHeight: Math.round(viewportHeight)
+    };
+  })).toMatchObject({
+    roleWidth: expect.any(Number),
+    roleHeight: expect.any(Number),
+    viewportWidth: expect.any(Number),
+    viewportHeight: expect.any(Number)
+  });
+  await expect.poll(async () => page.evaluate(() => {
+    const roleNode = document.querySelector<HTMLElement>('#studio-graph-root [data-cell-id="demo-analyst"]');
+    const minimapViewport = document.querySelector<HTMLElement>("[data-studio-graph-minimap-viewport]");
+    if (!roleNode || !minimapViewport) {
+      return null;
+    }
+    const roleBox = roleNode.getBoundingClientRect();
+    return {
+      roleReadable: roleBox.width >= 90 && roleBox.height >= 40,
+      minimapViewportRendered: Number.parseFloat(minimapViewport.style.width || "0") > 0
+        && Number.parseFloat(minimapViewport.style.height || "0") > 0
+    };
+  })).toEqual({
+    roleReadable: true,
+    minimapViewportRendered: true
+  });
+}
+
 async function rememberBuildCanvasIdentity(page): Promise<void> {
   await page.evaluate(() => {
     (window as any).__buildShellRef = document.querySelector("[data-studio-canvas-shell]");
@@ -150,6 +190,8 @@ test("Build workbench keeps view toggles in footer and aligns graph with docked 
     await bridgeViewButton.click();
     await expect(page.locator("#studio-graph-root")).toBeVisible();
     await waitForStudioCell(page, "demo-analyst");
+    await expect(page.locator('[data-studio-side-tab="structure"]')).toHaveAttribute("aria-pressed", "true");
+    await expectReadableGraphViewport(page);
     await rememberBuildCanvasIdentity(page);
     await expectBuildCanvasGapTight(page);
     await expect(page.locator('[data-studio-side-tab="debug"]')).toBeVisible();
@@ -217,6 +259,8 @@ test("Build workbench keeps view toggles in footer and aligns graph with docked 
     const resultPanel = page.locator('[data-studio-selection-panel="result"]');
     await expect(resultPanel.locator("#studio-debug-open-operate")).toBeVisible();
     await expect(page.locator("#console-panel-build")).toBeVisible();
+    await expect(page.locator("#console-tab-design")).toHaveAttribute("aria-pressed", "true");
+    await expect(page.locator("#console-tab-run")).toHaveAttribute("aria-pressed", "false");
     await expect(resultPanel).toBeVisible();
     await expect(page.locator('[data-studio-side-tab="result"]')).toHaveAttribute("aria-pressed", "true");
     await expectDockedSelectionAligned(page);

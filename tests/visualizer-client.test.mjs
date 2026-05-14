@@ -3836,6 +3836,22 @@ test("visualizer client edits the Mermaid workbench, saves, and starts a run", a
   assert.equal(harness.backend.lastStartBody.lawsPath, ".ogs/laws.json");
   assert.equal(harness.promptCalls.length, 0);
   assert.equal(harness.document.getElementById("flash").textContent, "Start completed for run-123 (done).");
+  assert.equal(
+    harness.document.getElementById("console-tabs")
+      .querySelectorAll("[data-console-tab]")
+      .find((button) => button.getAttribute("data-console-tab") === "design")
+      ?.getAttribute("aria-pressed"),
+    "true"
+  );
+  assert.equal(
+    harness.document.getElementById("console-tabs")
+      .querySelectorAll("[data-console-tab]")
+      .find((button) => button.getAttribute("data-console-tab") === "run")
+      ?.getAttribute("aria-pressed"),
+    "false"
+  );
+  assert.ok(findStudioSideTabButton(harness, "result"));
+  assert.equal(harness.document.getElementById("console-panel-build").hidden, false);
 });
 
 test("visualizer client blocks start run submit when run input is empty", async () => {
@@ -3916,6 +3932,7 @@ test("visualizer client opens Studio Bridge and keeps authoring affordances on t
   assert.equal(harness.document.getElementById("workbench-tabs").textContent, "");
   assert.match(harness.document.getElementById("workbench-body").textContent, /demo-analyst|nothing selected/i);
   assert.match(harness.document.getElementById("workbench-body").textContent, /Browse|检索/);
+  assert.ok(findStudioSideTabButton(harness, "structure"));
   assert.ok(harness.document.getElementById("workbench-body").querySelectorAll("[data-studio-role-id]").length > 0);
   assert.ok(harness.document.getElementById("workbench-body").querySelectorAll("[data-studio-flow-key]").length > 0);
   assert.match(harness.document.getElementById("workbench-status").textContent, /disk in sync/i);

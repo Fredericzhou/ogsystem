@@ -167,6 +167,8 @@ const sharedHistory: {
 };
 
 const STUDIO_PENDING_EDGE_ID = "__studio_pending_edge__";
+const STUDIO_GRAPH_FIT_PADDING = 28;
+const STUDIO_GRAPH_FIT_MAX_SCALE = 1.4;
 
 type PendingStudioEdgePreview = {
   sourceRoleId: string;
@@ -213,6 +215,9 @@ export class StudioGraphIsland {
   private quickDebugBusy = false;
   private reducedMotion = false;
   private resizeObserver: ResizeObserver | null = null;
+  private pendingInitialFit = false;
+  private pendingInitialFitSizeSignature = "";
+  private pendingInitialFitTimer: ReturnType<typeof setTimeout> | null = null;
   private readonly delegatedCommandFormSubmitListener = (event: Event) => this.handleDelegatedCommandFormSubmit(event);
   private readonlyHistory: { undoStack: StudioGraphHistoryEntry[]; redoStack: StudioGraphHistoryEntry[] } = {
     undoStack: [],
@@ -377,6 +382,7 @@ export class StudioGraphIsland {
         viewModel,
         readOnly: options.readOnly === true
       });
+      this.syncGraphViewportSize();
       const autoLayoutApplied = this.applyDefaultAutoLayout();
       if (!autoLayoutApplied) {
         this.restoreViewport(
@@ -388,7 +394,7 @@ export class StudioGraphIsland {
       this.applyRuntimeOverlay();
       this.syncSelectionPresentation();
       this.focusRequestedSelection();
-      this.syncGraphViewportSize();
+      this.flushPendingInitialFit();
       this.renderMinimap();
       this.hasRenderedProjection = true;
     } finally {
@@ -406,6 +412,10 @@ export class StudioGraphIsland {
     if (this.focusMotionTimer) {
       clearTimeout(this.focusMotionTimer);
       this.focusMotionTimer = null;
+    }
+    if (this.pendingInitialFitTimer) {
+      clearTimeout(this.pendingInitialFitTimer);
+      this.pendingInitialFitTimer = null;
     }
     if (this.resizeObserver) {
       this.resizeObserver.disconnect();
@@ -494,6 +504,7 @@ export class StudioGraphIsland {
     }
     this.resizeObserver = new ResizeObserver(() => {
       this.syncGraphViewportSize();
+      this.flushPendingInitialFit();
       this.renderMinimap();
     });
     this.resizeObserver.observe(this.root);
@@ -1187,15 +1198,16 @@ export class StudioGraphIsland {
       Number.isFinite(viewport.zoom) &&
       signature !== this.lastViewportSignature
     ) {
+      this.clearPendingInitialFit();
       this.graph.zoomTo(viewport.zoom);
       this.graph.translate(viewport.x, viewport.y);
       this.lastViewportSignature = signature;
       return;
     }
     if (firstRender && !viewport) {
-      setTimeout(() => {
-        this.graph.zoomToFit({ padding: 28, maxScale: 1 });
-      }, 0);
+      this.pendingInitialFit = true;
+      this.pendingInitialFitSizeSignature = "";
+      this.flushPendingInitialFit();
     }
   }
 
@@ -1236,7 +1248,7 @@ export class StudioGraphIsland {
   }
 
   private async fitAndSync(): Promise<void> {
-    this.graph.zoomToFit({ padding: 28, maxScale: 1 });
+    this.fitGraphToViewport();
     if (this.isReadOnly()) {
       return;
     }
@@ -1312,7 +1324,48 @@ export class StudioGraphIsland {
         cell.position(layoutNode.x - layoutNode.width / 2 + 120, layoutNode.y - layoutNode.height / 2 + 120);
       }
     });
-    this.graph.zoomToFit({ padding: 28, maxScale: 1 });
+    this.fitGraphToViewport();
+  }
+
+  private fitGraphToViewport(maxScale = STUDIO_GRAPH_FIT_MAX_SCALE): void {
+    this.graph.zoomToFit({ padding: STUDIO_GRAPH_FIT_PADDING, maxScale });
+    this.lastViewportSignature = "";
+  }
+
+  private clearPendingInitialFit(): void {
+    this.pendingInitialFit = false;
+    this.pendingInitialFitSizeSignature = "";
+    if (this.pendingInitialFitTimer) {
+      clearTimeout(this.pendingInitialFitTimer);
+      this.pendingInitialFitTimer = null;
+    }
+  }
+
+  private flushPendingInitialFit(): void {
+    if (!this.pendingInitialFit || this.pendingInitialFitTimer) {
+      return;
+    }
+    this.pendingInitialFitTimer = setTimeout(() => {
+      this.pendingInitialFitTimer = null;
+      if (!this.pendingInitialFit) {
+        return;
+      }
+      const width = this.canvasEl.clientWidth;
+      const height = this.canvasEl.clientHeight;
+      if (!Number.isFinite(width) || !Number.isFinite(height) || width < 24 || height < 24) {
+        this.flushPendingInitialFit();
+        return;
+      }
+      const sizeSignature = `${Math.round(width)}x${Math.round(height)}`;
+      if (sizeSignature !== this.pendingInitialFitSizeSignature) {
+        this.pendingInitialFitSizeSignature = sizeSignature;
+        this.flushPendingInitialFit();
+        return;
+      }
+      this.pendingInitialFit = false;
+      this.fitGraphToViewport();
+      this.renderMinimap();
+    }, 32);
   }
 
   private async syncCanvas(): Promise<void> {
@@ -2153,10 +2206,10 @@ export class StudioGraphIsland {
     const scale = this.graph.zoom();
     const viewportWidth = Math.max(this.canvasEl.clientWidth, 1);
     const viewportHeight = Math.max(this.canvasEl.clientHeight, 1);
-    const viewportLeft = Math.max(0, Math.min(((-translate.tx - minX) / totalWidth) * 100, 100));
-    const viewportTop = Math.max(0, Math.min(((-translate.ty - minY) / totalHeight) * 100, 100));
-    const viewportBoxWidth = Math.max(12, Math.min((viewportWidth / scale / totalWidth) * 100, 100));
-    const viewportBoxHeight = Math.max(12, Math.min((viewportHeight / scale / totalHeight) * 100, 100));
+    const viewportBoxWidth = Math.max(10, Math.min((viewportWidth / scale / totalWidth) * 100, 100));
+    const viewportBoxHeight = Math.max(10, Math.min((viewportHeight / scale / totalHeight) * 100, 100));
+    const viewportLeft = Math.max(0, Math.min(((-translate.tx - minX) / totalWidth) * 100, 100 - viewportBoxWidth));
+    const viewportTop = Math.max(0, Math.min(((-translate.ty - minY) / totalHeight) * 100, 100 - viewportBoxHeight));
     this.minimapViewportEl.style.left = `${viewportLeft}%`;
     this.minimapViewportEl.style.top = `${viewportTop}%`;
     this.minimapViewportEl.style.width = `${viewportBoxWidth}%`;

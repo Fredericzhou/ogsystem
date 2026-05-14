@@ -222,6 +222,7 @@ test("Studio Bridge renders and edits through the real graph workspace", async (
     await page.getByRole("tab", { name: designTabName }).click();
     await expect(page.locator("#studio-graph-root")).toBeVisible();
     await expect(page.locator("[data-studio-selection-dialog]")).toContainText(/Browse|检索/);
+    await expect(page.locator('[data-studio-side-tab="structure"]')).toHaveAttribute("aria-pressed", "true");
     await expect(page.locator('#studio-graph-root [data-studio-graph-action="validate"]')).toBeVisible();
     await expect(page.locator(".toolbar-group").filter({ hasText: "validation ok" }).first()).toBeVisible();
 
@@ -418,6 +419,8 @@ test("Studio Bridge renders and edits through the real graph workspace", async (
     await expect(page.locator("#console-panel-build")).toBeVisible();
     await expect(page.locator("#action-form-section")).toBeHidden();
     await expect(page.locator("#studio-graph-root")).toBeVisible();
+    await expect(page.getByRole("tab", { name: designTabName })).toHaveAttribute("aria-selected", "true");
+    await expect(page.getByRole("tab", { name: runTabName })).toHaveAttribute("aria-selected", "false");
     await expect(page.locator('[data-studio-side-tab="result"]')).toHaveAttribute("aria-pressed", "true");
     await expectDockedSelectionAligned(page);
     await page.getByRole("tab", { name: runTabName }).click();
