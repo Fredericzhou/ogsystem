@@ -242,7 +242,12 @@ test("lifecycle cli advanced-features template runs a local review rework loop",
   await stat(path.resolve(projectDir, "og-roles", "roles", "advanced-worker-a", "role.json"));
   await stat(path.resolve(projectDir, "og-roles", "roles", "advanced-worker-b", "role.json"));
   await stat(path.resolve(projectDir, "og-roles", "roles", "advanced-reviewer", "role.json"));
+  const reviewerSchemaSource = await readFile(path.resolve(projectDir, "og-roles", "roles", "advanced-reviewer", "output.schema.json"), "utf8");
+  const reviewerAgentSource = await readFile(path.resolve(projectDir, "og-roles", "roles", "advanced-reviewer", "agent.md"), "utf8");
   const systemSource = await readFile(path.resolve(projectDir, "system.mmd"), "utf8");
+  assert.match(reviewerSchemaSource, /"enum": \["REVIEW_READY", "REWORK"\]/);
+  assert.match(reviewerAgentSource, /REVIEW_READY/);
+  assert.match(reviewerAgentSource, /REWORK/);
   assert.match(systemSource, /%% role\.mode\.advanced-coordinator=parallel_split/);
   assert.match(systemSource, /%% loop\.max\.advanced-coordinator=2/);
   assert.match(systemSource, /%% join\.mode\.advanced-reviewer=all_of/);
