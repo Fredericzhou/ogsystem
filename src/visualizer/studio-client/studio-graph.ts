@@ -177,13 +177,9 @@ const STUDIO_GRAPH_MIN_READABLE_ROLE_WIDTH = 90;
 const STUDIO_GRAPH_MIN_READABLE_ROLE_HEIGHT = 40;
 const STUDIO_GRAPH_READABILITY_ROLE_LIMIT = 4;
 const STUDIO_GRAPH_EDGE_ROUTER = {
-  name: "manhattan",
+  name: "orth",
   args: {
-    step: 16,
-    padding: 18,
-    startDirections: ["right"],
-    endDirections: ["left"],
-    excludeTerminals: ["source", "target"]
+    padding: 18
   }
 } as const;
 const STUDIO_GRAPH_EDGE_CONNECTOR = {

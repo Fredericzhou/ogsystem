@@ -257,11 +257,13 @@ test("Build workbench keeps view toggles in footer and aligns graph with docked 
     await debugPanel.locator("#workbench-run-input").fill("layout dry run");
     await debugPanel.locator("#workbench-start-run").click();
     const logsPanel = page.locator('[data-studio-selection-panel="logs"]');
-    await expect(logsPanel.locator("#studio-logs-open-operate")).toBeVisible();
+    await expect(debugPanel).toBeVisible();
+    await expect(page.locator('[data-studio-side-tab="debug"]')).toHaveAttribute("aria-pressed", "true");
+    await page.locator('[data-studio-side-tab="logs"]').click();
+    await expect(logsPanel).toBeVisible();
     await expect(page.locator("#console-panel-build")).toBeVisible();
     await expect(page.locator("#console-tab-design")).toHaveAttribute("aria-pressed", "true");
     await expect(page.locator("#console-tab-run")).toHaveAttribute("aria-pressed", "false");
-    await expect(logsPanel).toBeVisible();
     await expect(logsPanel).toContainText(/Structured trace|结构化轨迹/);
     await expect(page.locator('[data-studio-side-tab="logs"]')).toHaveAttribute("aria-pressed", "true");
     await expectDockedSelectionAligned(page);

@@ -2,7 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import os from "node:os";
 import path from "node:path";
-import { mkdtemp, mkdir, writeFile } from "node:fs/promises";
+import { mkdtemp, mkdir, readFile, writeFile } from "node:fs/promises";
 
 import {
   applyCanvasDocumentToAuthoring,
@@ -353,6 +353,21 @@ test("Studio canvas apply ignores edges that reference missing roles", () => {
   assert.equal(Object.hasOwn(applied.flows, "missing-source"), false);
   assert.equal(Object.hasOwn(applied.flows, "missing-target"), false);
   assert.equal(Object.values(applied.flows).length, canvas.edges.length);
+});
+
+test("Studio graph bundle clears stale edge vertices with the X6-compatible API", async () => {
+  const bundle = await readFile(new URL("../dist/visualizer/studio-client/studio-graph.js", import.meta.url), "utf8");
+  assert.match(bundle, /cell\.setVertices\(\[\]\)/);
+  assert.doesNotMatch(bundle, /cell\.removeVertices\(\)/);
+});
+
+test("Studio graph bundle keeps orth fallback for backward or tight-column flows", async () => {
+  const bundle = await readFile(new URL("../dist/visualizer/studio-client/studio-graph.js", import.meta.url), "utf8");
+  assert.match(bundle, /const isBackwardEdge = targetCenterX < sourceCenterX - 36/);
+  assert.match(bundle, /const isSameColumn = Math\.abs\(horizontalGap\) < 80/);
+  assert.match(bundle, /const isTightForwardHop = horizontalGap > 0 && horizontalGap < 120/);
+  assert.match(bundle, /name: "orth"/);
+  assert.match(bundle, /name: "manhattan"/);
 });
 
 test("Studio assisted authoring templates and Mermaid drafts produce valid authoring documents", () => {

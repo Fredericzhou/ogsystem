@@ -47,6 +47,22 @@ const STUDIO_EDGE_CONNECTOR: StudioEdgeRouting["connector"] = {
     radius: 10
   }
 };
+const STUDIO_EDGE_ORTH_ROUTER: StudioEdgeRouting["router"] = {
+  name: "orth",
+  args: {
+    padding: 18
+  }
+};
+const STUDIO_EDGE_FORWARD_ROUTER: StudioEdgeRouting["router"] = {
+  name: "manhattan",
+  args: {
+    step: 16,
+    padding: 18,
+    startDirections: ["right"],
+    endDirections: ["left"],
+    excludeTerminals: ["source", "target"]
+  }
+};
 
 function edgeSortKey(edge: GraphViewModelEdge): string {
   return [
@@ -79,7 +95,7 @@ function studioEdgeTerminal(cellId: string, direction: "source" | "target", offs
   };
 }
 
-function studioEdgeRouter(
+export function resolveStudioEdgeRouter(
   edge: GraphViewModelEdge,
   nodeById: ReadonlyMap<string, GraphViewModelNode>
 ): StudioEdgeRouting["router"] {
@@ -99,16 +115,25 @@ function studioEdgeRouter(
   const sourceCenterY = sourceNode ? sourceNode.layout.y + sourceNode.layout.height / 2 : 0;
   const targetCenterX = targetNode ? targetNode.layout.x + targetNode.layout.width / 2 : 0;
   const targetCenterY = targetNode ? targetNode.layout.y + targetNode.layout.height / 2 : 0;
+  const horizontalGap = targetCenterX - sourceCenterX;
+  const verticalGap = Math.abs(targetCenterY - sourceCenterY);
   const isBackwardEdge = targetCenterX < sourceCenterX - 36;
-  const isTallHop = Math.abs(targetCenterY - sourceCenterY) > 120;
+  const isSameColumn = Math.abs(horizontalGap) < 80;
+  const isTightForwardHop = horizontalGap > 0 && horizontalGap < 120;
+  const isTallHop = verticalGap > 120;
+  if (isBackwardEdge || isSameColumn || (isTightForwardHop && isTallHop)) {
+    return {
+      ...STUDIO_EDGE_ORTH_ROUTER,
+      args: {
+        padding: isBackwardEdge ? 28 : 18
+      }
+    };
+  }
   return {
-    name: "manhattan",
+    ...STUDIO_EDGE_FORWARD_ROUTER,
     args: {
-      step: 16,
-      padding: isBackwardEdge ? 36 : isTallHop ? 24 : 18,
-      startDirections: ["right"],
-      endDirections: ["left"],
-      excludeTerminals: ["source", "target"]
+      ...STUDIO_EDGE_FORWARD_ROUTER.args,
+      padding: isTallHop ? 24 : 18
     }
   };
 }
@@ -149,7 +174,7 @@ function buildStudioEdgeRouting(viewModel: GraphViewModel): Map<string, StudioEd
     routingByEdgeId.set(edge.id, {
       source: studioEdgeTerminal(edge.source, "source", sourceOffset),
       target: studioEdgeTerminal(edge.target, "target", targetOffset),
-      router: studioEdgeRouter(edge, nodeById),
+      router: resolveStudioEdgeRouter(edge, nodeById),
       connector: STUDIO_EDGE_CONNECTOR
     });
   }
@@ -310,7 +335,7 @@ function studioEdgeMetadata(edge: GraphViewModelEdge, routing?: StudioEdgeRoutin
     data: { studioEdge: edge },
     labels: studioEdgeLabels(edge),
     attrs: studioEdgeAttrs(edge),
-    router: routing?.router ?? studioEdgeRouter(edge, new Map()),
+    router: routing?.router ?? resolveStudioEdgeRouter(edge, new Map()),
     connector: routing?.connector ?? STUDIO_EDGE_CONNECTOR
   };
 }
@@ -378,16 +403,7 @@ function updateStudioEdge(cell: Edge, edge: GraphViewModelEdge, routing?: Studio
   cell.setTarget(routing?.target ?? studioEdgeTerminal(edge.target, "target"));
   cell.setLabels(studioEdgeLabels(edge));
   cell.attr(studioEdgeAttrs(edge));
-  cell.setRouter(routing?.router ?? {
-    name: "manhattan",
-    args: {
-      step: 16,
-      padding: 18,
-      startDirections: ["right"],
-      endDirections: ["left"],
-      excludeTerminals: ["source", "target"]
-    }
-  });
-  cell.removeVertices();
+  cell.setRouter(routing?.router ?? STUDIO_EDGE_ORTH_ROUTER);
+  cell.setVertices([]);
   cell.setConnector(routing?.connector ?? STUDIO_EDGE_CONNECTOR);
 }
