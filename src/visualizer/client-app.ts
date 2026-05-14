@@ -1583,6 +1583,10 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
       return state.consoleTab === "release";
     }
 
+    function isStudioRuntimeSideTab(tab) {
+      return tab === "debug" || tab === "logs" || tab === "result";
+    }
+
     function resolveWorkbenchViewTabsSlot() {
       return isDesignConsoleTab() ? globalStatusContextEl : null;
     }
@@ -1590,7 +1594,7 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
     function resetBuildEditingState() {
       state.workbenchView = "bridge";
       state.buildMode = "edit";
-      if (state.studioWorkbenchSideTab === "debug" || state.studioWorkbenchSideTab === "result") {
+      if (isStudioRuntimeSideTab(state.studioWorkbenchSideTab)) {
         state.studioWorkbenchSideTab = state.studioBridgeSelectedRoleId || state.studioBridgeSelectedFlowKey
           ? "selection"
           : "structure";
@@ -2095,6 +2099,7 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
         listMode: state.studioBridgeListMode,
         sideTab: state.studioWorkbenchSideTab,
         selectionDebugHtml: renderStudioDebugTabContent(),
+        selectionLogsHtml: renderStudioLogsTabContent(),
         selectionResultsHtml: renderStudioResultTabContent(),
         fullscreen: state.studioBridgeFullscreen,
         rolePackageEditor: state.studioRolePackageEditor,
@@ -2216,6 +2221,21 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
       if (syncGraph !== false) {
         mountStudioGraphIsland();
       }
+    }
+
+    function focusStudioRuntimeSelection(args) {
+      if (args?.flowKey) {
+        state.studioBridgeSelectedFlowKey = args.flowKey;
+        state.studioBridgeSelectedRoleId = "";
+      } else if (args?.roleId) {
+        state.studioBridgeSelectedRoleId = args.roleId;
+        state.studioBridgeSelectedFlowKey = "";
+      } else {
+        return;
+      }
+      state.studioWorkbenchSideTab = "logs";
+      state.studioBridgeEditSelectionRequest += 1;
+      updateStudioBridgeSelection(true);
     }
 
     function selectedStudioRoleId() {
@@ -2379,7 +2399,7 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
       state.studioSelectionCommandFormOpen = false;
       state.studioSelectionCommandKind = "";
       state.studioSelectionDismissCommandFormRequest += 1;
-      state.studioWorkbenchSideTab = state.studioWorkbenchSideTab === "debug" || state.studioWorkbenchSideTab === "result"
+      state.studioWorkbenchSideTab = isStudioRuntimeSideTab(state.studioWorkbenchSideTab)
         ? state.studioWorkbenchSideTab
         : "structure";
       updateStudioBridgeSelection(options?.syncGraph !== false);
@@ -2443,6 +2463,107 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
       ].join("");
     }
 
+    function studioTraceFlowTargetsByEvent(roleId, eventType) {
+      const bridge = resolveStudioBridgeForDisplay();
+      const extractedFlows = Array.isArray(bridge?.extracted?.flows) ? bridge.extracted.flows : [];
+      const authoringFlows = Object.values(bridge?.authoring?.flows || {});
+      const flows = extractedFlows.length ? extractedFlows : authoringFlows;
+      return flows
+        .filter((flow) => String(flow?.fromRoleId || "") === roleId && String(flow?.eventType || "") === eventType)
+        .map((flow) => ({
+          flowKey: flowKeyOf(flow),
+          targetRoleId: normalizeStudioTargetRoleId(flow?.toRoleId || flow?.targetRoleId || "__system_end__"),
+          label: flowDisplayLabel(flow),
+          runtimeOnlyErrorFlow: flow?.runtimeOnlyErrorFlow === true
+        }));
+    }
+
+    function renderStudioLogsTabContent() {
+      const disabled = state.actionBusy ? " disabled" : "";
+      const header = state.detail?.header || {};
+      const activeRunId = state.selectedRunId || state.studioBridgeLastDryRunId || "";
+      const events = Array.isArray(state.events) ? state.events : [];
+      const flowResolvedCount = events.reduce((count, entry) => {
+        const record = asRecord(entry?.record);
+        const roleId = String(record?.roleId || "");
+        const eventType = String(record?.event || "");
+        return count + (roleId && eventType && studioTraceFlowTargetsByEvent(roleId, eventType).length ? 1 : 0);
+      }, 0);
+      const errorEventCount = events.reduce((count, entry) => count + (String(entry?.record?.errorCode || "") ? 1 : 0), 0);
+      const latestRecord = asRecord(events.at(-1)?.record);
+      const summaryCardsHtml = activeRunId
+        ? '<div class="state-card-grid studio-result-summary-grid">' +
+            '<div class="event"><div class="event-top"><span>' + escapeText(t("section.timeline", undefined, "Timeline")) + '</span><span>' + escapeText(String(events.length)) + '</span></div><strong>' + escapeText(t("studio.logsEventCount", { count: String(events.length) }, "events " + String(events.length))) + '</strong><div class="hint">' + escapeText(t("studio.logsFlowResolutionHint", { count: String(flowResolvedCount) }, "resolved flow hops " + String(flowResolvedCount))) + '</div></div>' +
+            '<div class="event"><div class="event-top"><span>' + escapeText(t("state.runtime", undefined, "runtime")) + '</span><span>' + escapeText(displayUiToken(header.status ?? t("common.unknown", undefined, "unknown"), t)) + '</span></div><strong>' + escapeText(String(header.lastExecutedRoleId || latestRecord?.roleId || t("common.notAvailable", undefined, "n/a"))) + '</strong><div class="hint">' + escapeText(t("studio.logsLatestRuntimeHint", {
+              eventType: String(latestRecord?.event || t("common.notAvailable", undefined, "n/a")),
+              branchId: String(latestRecord?.branchId || t("common.notAvailable", undefined, "n/a"))
+            }, "event " + String(latestRecord?.event || "n/a") + " · branch " + String(latestRecord?.branchId || "n/a"))) + '</div></div>' +
+            '<div class="event"><div class="event-top"><span>' + escapeText(t("state.field.errors", undefined, "errors")) + '</span><span>' + escapeText(String(errorEventCount)) + '</span></div><strong>' + escapeText(errorEventCount ? t("failure.nextChecksSummary", undefined, "Move directly to the likely root-cause surfaces") : t("failure.noRecentCaptured", undefined, "No recent failure captured for this run.")) + '</strong><div class="hint">' + escapeText(t("studio.logsErrorHint", { count: String(errorEventCount) }, "events with error code " + String(errorEventCount))) + '</div></div>' +
+          '</div>'
+        : '<div class="event"><div class="event-top"><span>' + escapeText(t("studio.logsTab", undefined, "Logs")) + '</span><span>' + escapeText(t("common.idle", undefined, "idle")) + '</span></div><strong>' + escapeText(t("studio.logsPendingTitle", undefined, "Structured runtime events will appear here after a dry run starts.")) + '</strong><div class="hint">' + escapeText(t("studio.logsPendingHint", undefined, "Use this tab to inspect role, branch, event, and inferred flow routing without leaving Design.")) + '</div></div>';
+      const traceCardsHtml = events.length
+        ? events.slice().reverse().map((entry) => {
+            const record = asRecord(entry?.record);
+            const roleId = String(record?.roleId || "");
+            const eventType = String(record?.event || "");
+            const targets = roleId && eventType ? studioTraceFlowTargetsByEvent(roleId, eventType) : [];
+            const routeHint = targets.length
+              ? targets.map((target) => {
+                  const identity = roleId + " -" + eventType + "-> " + String(target.targetRoleId || "");
+                  return {
+                    flowKey: String(target.flowKey || ""),
+                    text: target.label && target.label !== eventType
+                      ? identity + " (" + target.label + ")"
+                      : identity
+                  };
+                })
+              : [];
+            const meta = [
+              record?.branchId ? "branch " + String(record.branchId) : "",
+              record?.reviewId ? "review " + String(record.reviewId) : "",
+              Number.isFinite(record?.durationMs) ? "duration " + String(record.durationMs) + "ms" : "",
+              record?.errorCode ? "error " + String(record.errorCode) : ""
+            ].filter(Boolean).join(" · ");
+            const roleActive = roleId && state.studioBridgeSelectedRoleId === roleId && !state.studioBridgeSelectedFlowKey;
+            const roleButtonHtml = roleId
+              ? '<button type="button" class="button subtle' + (roleActive ? " active" : "") + '" data-studio-log-role-id="' + escapeText(roleId) + '"><code>' + escapeText(roleId) + '</code></button>'
+              : "";
+            const flowButtonsHtml = routeHint.length
+              ? '<div class="actions compact">' + routeHint.map((target) => '<button type="button" class="button subtle' + (state.studioBridgeSelectedFlowKey === target.flowKey ? " active" : "") + '" data-studio-log-flow-key="' + escapeText(target.flowKey) + '">' + escapeText(target.text) + '</button>').join("") + '</div>'
+              : "";
+            return '<div class="event"><div class="event-top"><span>#' + escapeText(entry?.cursor ?? "") + " " + escapeText(displayUiToken(record?.type || "event", t)) + '</span><span>' + escapeText(formatTime(record?.at)) + '</span></div><strong>' + roleButtonHtml + (eventType ? ' <code>' + escapeText(eventType) + '</code> ' : "") + (record?.status ? '<span class="status ' + escapeText(statusClass(String(record.status))) + '">' + escapeText(displayUiToken(record.status, t)) + '</span>' : "") + '</strong>' + flowButtonsHtml + '<div class="hint">' + escapeText(meta || t("studio.logsNoExtraMeta", undefined, "No additional runtime metadata.")) + '</div></div>';
+          }).join("")
+        : '<div class="hint">' + escapeText(t("timeline.noEventsCaptured", undefined, "No events captured yet.")) + '</div>';
+      const rawLogsHtml = renderDisclosureCard({
+        title: t("section.logs", undefined, "Logs"),
+        headline: t("studio.logsRawHeadline", undefined, "Raw engine and role streams"),
+        meta: state.logsLoaded ? t("common.loaded", undefined, "loaded") : t("common.lazy", undefined, "lazy"),
+        hint: t("studio.logsRawHint", undefined, "Structured trace stays above. Expand this section only when you need the underlying engine or role log lines."),
+        bodyHtml: renderLogsPanel({
+          loaded: state.logsLoaded,
+          stale: state.logsStale,
+          selectedRoleId: state.selectedLogRoleId,
+          engine: state.engineLogs,
+          role: state.roleLogs,
+          t,
+          formatTime
+        }),
+        open: state.logsLoaded
+      });
+      return [
+        '<div class="structure-list studio-debug-panel-stack">',
+        '<div class="actions compact"><button class="button subtle" id="studio-logs-load-raw"' + (disabled || !state.selectedRunId ? " disabled" : "") + '>' + escapeText(state.logsLoaded ? t("logs.refresh", undefined, "Refresh logs") : t("logs.load", undefined, "Load logs")) + '</button>' +
+          '<button class="button subtle" id="studio-logs-load-more-raw"' + (disabled || !state.selectedRunId || !state.logsLoaded ? " disabled" : "") + '>' + escapeText(t("logs.loadMore", undefined, "Load more")) + '</button>' +
+          ((state.selectedRunId || state.studioBridgeLastDryRunId) ? '<button class="button subtle" id="studio-logs-open-operate"' + disabled + '>' + escapeText(t("build.openOperate", undefined, "Open Run")) + '</button>' : '') +
+        '</div>',
+        summaryCardsHtml,
+        '<div class="event"><div class="event-top"><span>' + escapeText(t("studio.logsTraceTitle", undefined, "Structured trace")) + '</span><span>' + escapeText(activeRunId || t("common.idle", undefined, "idle")) + '</span></div><strong>' + escapeText(t("studio.logsTraceHeadline", undefined, "Role, branch, event, status, and inferred flow routing for the current dry run.")) + '</strong><div class="hint">' + escapeText(t("studio.logsTraceHint", undefined, "This view stays inside Design so you can compare graph structure and runtime progression without switching page shells.")) + '</div></div>',
+        '<div class="timeline">' + traceCardsHtml + '</div>',
+        rawLogsHtml,
+        '</div>'
+      ].join("");
+    }
+
     function renderStudioResultTabContent() {
       const disabled = state.actionBusy ? " disabled" : "";
       const header = state.detail?.header || {};
@@ -2495,8 +2616,9 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
       const selectionPanel = findStudioBridgeElement('[data-studio-selection-panel="selection"]');
       const structurePanel = findStudioBridgeElement('[data-studio-selection-panel="structure"]');
       const debugPanel = findStudioBridgeElement('[data-studio-selection-panel="debug"]');
+      const logsPanel = findStudioBridgeElement('[data-studio-selection-panel="logs"]');
       const resultPanel = findStudioBridgeElement('[data-studio-selection-panel="result"]');
-      if (!shell || !overlay || !dialog || !kindLabel || !title || !rolePackage || !selectionPanel || !structurePanel || !debugPanel) {
+      if (!shell || !overlay || !dialog || !kindLabel || !title || !rolePackage || !selectionPanel || !structurePanel || !debugPanel || !logsPanel) {
         return;
       }
       const selectedRoleIdValue = state.studioBridgeSelectedRoleId || "";
@@ -2511,6 +2633,8 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
         ? "selection"
         : state.studioWorkbenchSideTab === "debug"
           ? "debug"
+          : state.studioWorkbenchSideTab === "logs"
+            ? "logs"
           : state.studioWorkbenchSideTab === "result"
             ? "result"
           : "structure";
@@ -2531,6 +2655,7 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
       selectionPanel.hidden = activeTab !== "selection";
       structurePanel.hidden = activeTab !== "structure";
       debugPanel.hidden = activeTab !== "debug";
+      logsPanel.hidden = activeTab !== "logs";
       if (resultPanel) {
         resultPanel.hidden = activeTab !== "result";
       }
@@ -2549,6 +2674,9 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
       if (activeTab === "debug") {
         kindLabel.textContent = t("build.mode.debug", undefined, "Debug");
         title.textContent = selectedRoleIdValue || state.selectedRunId || state.studioBridgeLastDryRunId || t("studio.graphWorkspace", undefined, "Graph workspace");
+      } else if (activeTab === "logs") {
+        kindLabel.textContent = t("studio.logsTab", undefined, "Logs");
+        title.textContent = state.selectedRunId || state.studioBridgeLastDryRunId || t("studio.graphWorkspace", undefined, "Graph workspace");
       } else if (activeTab === "result") {
         kindLabel.textContent = t("studio.resultsTab", undefined, "Results");
         title.textContent = state.selectedRunId || state.studioBridgeLastDryRunId || t("studio.graphWorkspace", undefined, "Graph workspace");
@@ -2591,6 +2719,7 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
           })
         ].join("");
         debugPanel.innerHTML = renderStudioDebugTabContent();
+        logsPanel.innerHTML = "";
         if (resultPanel) {
           resultPanel.innerHTML = "";
         }
@@ -2617,12 +2746,21 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
           rolePackage.innerHTML = '<div class="hint">' + escapeText(t("studio.selectFlow", undefined, "Select a flow to inspect event metadata.")) + "</div>";
         }
         debugPanel.innerHTML = renderStudioDebugTabContent();
+        logsPanel.innerHTML = "";
         if (resultPanel) {
           resultPanel.innerHTML = "";
         }
       } else if (activeTab === "debug") {
         rolePackage.innerHTML = "";
         debugPanel.innerHTML = renderStudioDebugTabContent();
+        logsPanel.innerHTML = "";
+        if (resultPanel) {
+          resultPanel.innerHTML = "";
+        }
+      } else if (activeTab === "logs") {
+        rolePackage.innerHTML = "";
+        debugPanel.innerHTML = "";
+        logsPanel.innerHTML = renderStudioLogsTabContent();
         if (resultPanel) {
           resultPanel.innerHTML = "";
         }
@@ -2630,6 +2768,7 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
         rolePackage.innerHTML = "";
         if (resultPanel) {
           debugPanel.innerHTML = "";
+          logsPanel.innerHTML = "";
           resultPanel.innerHTML = renderStudioResultTabContent();
         } else {
           debugPanel.innerHTML = renderStudioResultTabContent();
@@ -2637,6 +2776,7 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
       } else {
         rolePackage.innerHTML = "";
         debugPanel.innerHTML = renderStudioDebugTabContent();
+        logsPanel.innerHTML = "";
         if (resultPanel) {
           resultPanel.innerHTML = "";
         }
@@ -2681,6 +2821,8 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
             ? "selection"
             : nextTab === "debug"
               ? "debug"
+              : nextTab === "logs"
+                ? "logs"
               : nextTab === "result"
                 ? "result"
               : "structure";
@@ -2688,6 +2830,22 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
           if (nextTab === "debug") {
             focusWorkbenchRunInput();
           }
+          event.preventDefault();
+          return;
+        }
+        const logRoleButton = closestSelectionAction(event.target, "data-studio-log-role-id");
+        if (logRoleButton) {
+          focusStudioRuntimeSelection({
+            roleId: logRoleButton.getAttribute("data-studio-log-role-id") || ""
+          });
+          event.preventDefault();
+          return;
+        }
+        const logFlowButton = closestSelectionAction(event.target, "data-studio-log-flow-key");
+        if (logFlowButton) {
+          focusStudioRuntimeSelection({
+            flowKey: logFlowButton.getAttribute("data-studio-log-flow-key") || ""
+          });
           event.preventDefault();
           return;
         }
@@ -3357,10 +3515,61 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
           }
         });
       }
+      const studioLogsOpenOperateButton = document.getElementById("studio-logs-open-operate");
+      if (studioLogsOpenOperateButton) {
+        bindOnce(studioLogsOpenOperateButton, "click", "studio-logs-open-operate", async () => {
+          state.consoleTab = runConsoleTab();
+          renderConsoleTabs();
+          if (state.selectedRunId) {
+            await selectRun(state.selectedRunId);
+          } else if (state.studioBridgeLastDryRunId) {
+            await selectRun(state.studioBridgeLastDryRunId);
+          }
+        });
+      }
+      const studioLogsLoadRawButton = document.getElementById("studio-logs-load-raw");
+      if (studioLogsLoadRawButton) {
+        bindOnce(studioLogsLoadRawButton, "click", "studio-logs-load-raw", async () => {
+          if (!state.selectedRunId) {
+            return;
+          }
+          await loadSelectedLogs(state.selectedRunId, { force: true });
+          renderStudioSelectionDialog();
+        });
+      }
+      const studioLogsLoadMoreRawButton = document.getElementById("studio-logs-load-more-raw");
+      if (studioLogsLoadMoreRawButton) {
+        bindOnce(studioLogsLoadMoreRawButton, "click", "studio-logs-load-more-raw", async () => {
+          if (!state.selectedRunId || !state.logsLoaded) {
+            return;
+          }
+          const current = Number(state.logPageSize || state.logTail || "100");
+          state.logTail = "";
+          state.logPageSize = String(Number.isFinite(current) ? Math.min(current * 2, 5000) : 500);
+          await loadSelectedLogs(state.selectedRunId, { force: true });
+          renderStudioSelectionDialog();
+        });
+      }
     }
 
     function resolveStudioGraphCanvas() {
       return resolveStudioBridgeForDisplay()?.canvas || buildStudioCanvasFromBridge(state.studioBridge);
+    }
+
+    function shouldRefreshMountedStudioRuntime() {
+      return isDesignConsoleTab()
+        && state.workbenchView === "bridge"
+        && state.buildMode === "debug"
+        && Boolean(state.selectedRunId)
+        && state.selectedRunId === state.studioBridgeLastDryRunId;
+    }
+
+    function refreshMountedStudioRuntime() {
+      if (!shouldRefreshMountedStudioRuntime()) {
+        return;
+      }
+      renderStudioSelectionDialog();
+      mountStudioGraphIsland();
     }
 
     function updateStudioBridgeSelectionChrome() {
@@ -3489,7 +3698,7 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
       state.studioSelectionCommandFormOpen = false;
       state.studioSelectionCommandKind = "";
       state.studioSelectionDismissCommandFormRequest += 1;
-      state.studioWorkbenchSideTab = state.studioWorkbenchSideTab === "debug" || state.studioWorkbenchSideTab === "result"
+      state.studioWorkbenchSideTab = isStudioRuntimeSideTab(state.studioWorkbenchSideTab)
         ? state.studioWorkbenchSideTab
         : "structure";
       return true;
@@ -3646,7 +3855,7 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
         onClearSelection: () => {
           state.studioBridgeSelectedRoleId = "";
           state.studioBridgeSelectedFlowKey = "";
-          state.studioWorkbenchSideTab = state.studioWorkbenchSideTab === "debug" || state.studioWorkbenchSideTab === "result"
+          state.studioWorkbenchSideTab = isStudioRuntimeSideTab(state.studioWorkbenchSideTab)
             ? state.studioWorkbenchSideTab
             : "structure";
           updateStudioBridgeSelection(false);
@@ -3657,7 +3866,7 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
           if (formState?.open) {
             state.studioWorkbenchSideTab = "selection";
           } else if (!state.studioBridgeSelectedRoleId && !state.studioBridgeSelectedFlowKey) {
-            state.studioWorkbenchSideTab = state.studioWorkbenchSideTab === "debug" || state.studioWorkbenchSideTab === "result"
+            state.studioWorkbenchSideTab = isStudioRuntimeSideTab(state.studioWorkbenchSideTab)
               ? state.studioWorkbenchSideTab
               : "structure";
           }
@@ -4924,6 +5133,7 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
       state.eventCursorIndex = createStreamCursorIndex(state.events);
       renderTimeline(state.events);
       renderDetail();
+      refreshMountedStudioRuntime();
     }
 
     async function refreshProjectDiagnostics() {
@@ -5629,9 +5839,9 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
           state.studioBridgeLastDryRunId = payload.runId;
           state.buildMode = "debug";
           state.workbenchView = "bridge";
-          state.studioWorkbenchSideTab = "result";
+          state.studioWorkbenchSideTab = "logs";
           renderWorkbench();
-          forceStudioWorkbenchSideTab("result");
+          forceStudioWorkbenchSideTab("logs");
           writeRouteToLocation();
         }
         void (async () => {
@@ -5641,9 +5851,9 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
             if (payload.runId) {
               if (preserveDesignShell) {
                 await selectRun(payload.runId, { preserveConsoleTab: true });
-                state.studioWorkbenchSideTab = "result";
+                state.studioWorkbenchSideTab = "logs";
                 renderWorkbench();
-                forceStudioWorkbenchSideTab("result");
+                forceStudioWorkbenchSideTab("logs");
                 writeRouteToLocation();
               } else {
                 await selectRun(payload.runId);
@@ -5997,6 +6207,7 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
         state.logsLoaded = true;
         state.logsStale = false;
         renderLogs();
+        refreshMountedStudioRuntime();
       };
       if (options?.internal) {
         await load();
@@ -6084,6 +6295,7 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
       renderRuns();
       renderOperateTabs();
       writeRouteToLocation();
+      refreshMountedStudioRuntime();
       const liveState = resolveRunLiveState(detail.header);
       setLive(liveState.mode, liveState.label);
     }
@@ -6222,6 +6434,7 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
         renderRuns();
         renderProject();
         writeRouteToLocation();
+        refreshMountedStudioRuntime();
 
         if (!options || !options.keepStream) {
           stopStream();
@@ -6481,6 +6694,7 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
           if (recordMatchesTimelineFilters(payload.record)) {
             state.events = appendIndexedStreamEntry(state.events, state.eventCursorIndex, payload, 250);
             renderTimeline(state.events, { append: true });
+            refreshMountedStudioRuntime();
           }
           scheduleStreamRefresh(getStreamRefreshPlan(payload.record.type));
         } catch {

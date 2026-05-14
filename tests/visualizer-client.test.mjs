@@ -3952,6 +3952,7 @@ test("visualizer client opens Studio Bridge and keeps authoring affordances on t
   assert.match(harness.document.getElementById("workbench-body").textContent, /demo-analyst|nothing selected/i);
   assert.match(harness.document.getElementById("workbench-body").textContent, /Browse|检索/);
   assert.ok(findStudioSideTabButton(harness, "structure"));
+  assert.ok(findStudioSideTabButton(harness, "logs"));
   assert.ok(harness.document.getElementById("workbench-body").querySelectorAll("[data-studio-role-id]").length > 0);
   assert.ok(harness.document.getElementById("workbench-body").querySelectorAll("[data-studio-flow-key]").length > 0);
   assert.match(harness.document.getElementById("workbench-status").textContent, /disk in sync/i);
@@ -4142,9 +4143,13 @@ test("visualizer client opens Studio Bridge and keeps authoring affordances on t
   await latestEditableMount().onQuickDebugRun("run from graph toolbar");
   await waitForCondition(() => harness.backend.fetchCalls.some((call) => call.path === "/api/v1/runs/start"));
   assert.equal(harness.backend.lastStartBody.input, "run from graph toolbar");
-  assert.match(harness.document.getElementById("workbench-body").textContent, /Results|结果/i);
+  assert.match(harness.document.getElementById("workbench-body").textContent, /Logs|日志/i);
+  assert.match(harness.document.getElementById("workbench-body").textContent, /Structured trace|结构化轨迹/i);
   assert.match(harness.document.getElementById("workbench-body").textContent, /Open Run|Go to Run|打开运行|前往运行/i);
   assert.doesNotMatch(harness.document.getElementById("workbench-body").textContent, /Results keeps the latest dry-run projection compact and scannable/i);
+  const logsTabButton = findStudioSideTabButton(harness, "logs");
+  assert.ok(logsTabButton);
+  assert.equal(logsTabButton.getAttribute("data-studio-side-tab"), "logs");
   await latestEditableMount().onFocusDebugInput();
   await waitForCondition(() => Boolean(harness.document.getElementById("workbench-run-input")));
   assert.equal(harness.document.activeElement?.id, "workbench-run-input");

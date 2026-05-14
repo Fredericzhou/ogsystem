@@ -414,14 +414,15 @@ test("Studio Bridge renders and edits through the real graph workspace", async (
     await debugPanel.locator("#workbench-run-user-profile-path").fill(".ogs/user-profile.json");
     await debugPanel.locator("#workbench-run-laws-path").fill(".ogs/laws.json");
     await debugPanel.locator("#workbench-start-run").click();
-    const resultPanel = page.locator('[data-studio-selection-panel="result"]');
-    await expect(resultPanel.locator("#studio-debug-open-operate")).toBeVisible();
+    const logsPanel = page.locator('[data-studio-selection-panel="logs"]');
+    await expect(logsPanel.locator("#studio-logs-open-operate")).toBeVisible();
     await expect(page.locator("#console-panel-build")).toBeVisible();
     await expect(page.locator("#action-form-section")).toBeHidden();
     await expect(page.locator("#studio-graph-root")).toBeVisible();
     await expect(page.getByRole("tab", { name: designTabName })).toHaveAttribute("aria-selected", "true");
     await expect(page.getByRole("tab", { name: runTabName })).toHaveAttribute("aria-selected", "false");
-    await expect(page.locator('[data-studio-side-tab="result"]')).toHaveAttribute("aria-pressed", "true");
+    await expect(logsPanel).toContainText(/Structured trace|结构化轨迹/);
+    await expect(page.locator('[data-studio-side-tab="logs"]')).toHaveAttribute("aria-pressed", "true");
     await expectDockedSelectionAligned(page);
     await page.getByRole("tab", { name: runTabName }).click();
     await expect(page.locator("body")).toHaveClass(/show-run-sidebar/);

@@ -256,13 +256,14 @@ test("Build workbench keeps view toggles in footer and aligns graph with docked 
     await expect(debugPanel.locator("#workbench-start-run")).toBeVisible();
     await debugPanel.locator("#workbench-run-input").fill("layout dry run");
     await debugPanel.locator("#workbench-start-run").click();
-    const resultPanel = page.locator('[data-studio-selection-panel="result"]');
-    await expect(resultPanel.locator("#studio-debug-open-operate")).toBeVisible();
+    const logsPanel = page.locator('[data-studio-selection-panel="logs"]');
+    await expect(logsPanel.locator("#studio-logs-open-operate")).toBeVisible();
     await expect(page.locator("#console-panel-build")).toBeVisible();
     await expect(page.locator("#console-tab-design")).toHaveAttribute("aria-pressed", "true");
     await expect(page.locator("#console-tab-run")).toHaveAttribute("aria-pressed", "false");
-    await expect(resultPanel).toBeVisible();
-    await expect(page.locator('[data-studio-side-tab="result"]')).toHaveAttribute("aria-pressed", "true");
+    await expect(logsPanel).toBeVisible();
+    await expect(logsPanel).toContainText(/Structured trace|结构化轨迹/);
+    await expect(page.locator('[data-studio-side-tab="logs"]')).toHaveAttribute("aria-pressed", "true");
     await expectDockedSelectionAligned(page);
     await expectBuildCanvasIdentityStable(page);
     await page.reload();
