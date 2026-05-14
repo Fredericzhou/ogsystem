@@ -770,8 +770,9 @@ test("client lifecycle panel renderers cover Workbench controls and modes", () =
   });
   assert.match(statusHtml, /planner/);
   assert.match(statusHtml, /dry-1/);
-  assert.match(statusHtml, /workbench\.diagnostics/);
+  assert.match(statusHtml, /workbench\.validating/);
   assert.match(statusHtml, /workbench\.draftCached/);
+  assert.doesNotMatch(statusHtml, /workbench\.validationOk/);
 
   const modeTabsHtml = renderWorkbenchModeTabsHtml({ buildMode: "dry-run", t, escapeText });
   assert.equal(modeTabsHtml, "");
@@ -811,11 +812,14 @@ test("client renderer graph canvas escapes selected ids before composing HTML", 
   const html = renderStudioGraphCanvas({
     selectedRoleId: 'planner"><script>alert(1)</script>',
     selectedFlowKey: "flow<'unsafe'>",
+    inspectorWidth: 412,
     t
   });
   assert.match(html, /class="button subtle active" data-studio-side-tab="structure"/);
   assert.match(html, /planner&quot;&gt;&lt;script&gt;alert\(1\)&lt;\/script&gt;/);
   assert.match(html, /flow&lt;&#39;unsafe&#39;&gt;/);
+  assert.match(html, /--studio-inspector-width:412px/);
+  assert.match(html, /data-studio-inspector-resize="1"/);
   assert.match(html, /data-studio-side-tab="debug"/);
   assert.match(html, /data-studio-side-tab="logs"/);
   assert.match(html, /data-studio-selection-panel="debug"/);

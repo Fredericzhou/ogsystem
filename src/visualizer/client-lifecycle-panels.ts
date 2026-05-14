@@ -112,9 +112,19 @@ export function renderWorkbenchStatusHtml(args: {
       (options?.code ? '<code>' + escapeText(options.code) + '</code>' : "") +
       '</span>';
   };
-  const validationLabel = validation
-    ? (validation.ok ? t("workbench.validationOk") : t("workbench.diagnostics", { count: diagnostics.length }))
-    : t("workbench.validationPending");
+  const validationPill = validating
+    ? renderPill(t("workbench.validating"), {
+        warn: true,
+        className: "workbench-status-progress"
+      })
+    : validation
+      ? renderPill(validation.ok ? t("workbench.validationOk") : t("workbench.diagnostics", { count: diagnostics.length }), {
+          warn: Boolean(!validation.ok),
+          className: "workbench-status-validation"
+        })
+      : renderPill(t("workbench.validationPending"), {
+          className: "workbench-status-validation"
+        });
   return [
     renderPill(dirty ? t("workbench.unsavedChanges") : t("workbench.diskInSync"), {
       warn: dirty,
@@ -125,17 +135,10 @@ export function renderWorkbenchStatusHtml(args: {
       className: "workbench-status-entry",
       title: t("workbench.entryRole", undefined, "entry") + " " + (entryRoleId || "n/a")
     }),
-    renderPill(validationLabel, {
-      warn: Boolean(validation && !validation.ok),
-      className: "workbench-status-validation"
-    }),
+    validationPill,
     hasDraft ? renderPill(t("workbench.draftCached"), {
       warn: true,
       className: "workbench-status-draft"
-    }) : "",
-    validating ? renderPill(t("workbench.validating"), {
-      warn: true,
-      className: "workbench-status-validating"
     }) : "",
     lastDryRunId ? renderPill(t("build.lastDryRun", undefined, "Last dry run"), {
       code: lastDryRunId,

@@ -52,6 +52,7 @@ const MINIMAL_HELLO_EVENT = "HELLO_DONE";
 const MINIMAL_HELLO_PROFILE_ID = "profile.hello.ogsystem";
 const MINIMAL_HELLO_TOOL_REF = "tool.hello.ogsystem";
 const MINIMAL_HELLO_TOOL_SCRIPT_FILE = "scripts/hello-ogsystem.mjs";
+const ROLE_IO_SCAN_BATCH_SIZE = 16;
 
 export type IndexedRun = {
   runId: string;
@@ -85,6 +86,13 @@ export type ProjectDependencySyncResult = {
   importedRoleIds: string[];
   importedModelIds: string[];
 };
+
+export class RunRoleIoLookupError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "RunRoleIoLookupError";
+  }
+}
 
 export type ProjectTemplateId =
   | "empty"
@@ -593,6 +601,40 @@ async function tryReadText(path: string): Promise<string | undefined> {
   }
 }
 
+function isMissingPathError(error: unknown): boolean {
+  const code =
+    typeof error === "object" && error !== null && "code" in error
+      ? (error as { code?: unknown }).code
+      : undefined;
+  return code === "ENOENT" || code === "ENOTDIR";
+}
+
+function isInvalidJsonFileError(error: unknown): boolean {
+  return error instanceof Error && /^Invalid JSON in /.test(error.message);
+}
+
+async function tryReadJsonIfPresent(path: string): Promise<unknown | undefined> {
+  try {
+    return await readJsonFile(path);
+  } catch (error) {
+    if (isMissingPathError(error) || isInvalidJsonFileError(error)) {
+      return undefined;
+    }
+    throw error;
+  }
+}
+
+async function tryReadTextIfPresent(path: string): Promise<string | undefined> {
+  try {
+    return await readFile(path, "utf8");
+  } catch (error) {
+    if (isMissingPathError(error)) {
+      return undefined;
+    }
+    throw error;
+  }
+}
+
 function asString(value: unknown): string | undefined {
   return typeof value === "string" ? value : undefined;
 }
@@ -1064,6 +1106,32 @@ function asObjectRecord(value: unknown): Record<string, unknown> | undefined {
     return undefined;
   }
   return value as Record<string, unknown>;
+}
+
+type RoleIoExecutionCandidate = {
+  executionDir: string;
+  executionId: string;
+  committedAt: string;
+  outcome: Record<string, unknown>;
+};
+
+function compareRoleIoExecutionCandidates(
+  left: RoleIoExecutionCandidate,
+  right: RoleIoExecutionCandidate
+): number {
+  const leftCommittedAt = parseIsoTimestamp(left.committedAt) ?? 0;
+  const rightCommittedAt = parseIsoTimestamp(right.committedAt) ?? 0;
+  if (leftCommittedAt !== rightCommittedAt) {
+    return leftCommittedAt - rightCommittedAt;
+  }
+  return left.executionId.localeCompare(right.executionId);
+}
+
+async function loadRoleIoOutcome(executionDir: string): Promise<Record<string, unknown> | undefined> {
+  const outcome =
+    await tryReadJsonIfPresent(resolve(executionDir, ROLE_EXECUTION_OUTCOME_FILE))
+    ?? await tryReadJsonIfPresent(resolve(executionDir, "outcome.json"));
+  return asObjectRecord(outcome);
 }
 
 async function upsertProjectExecutionConfig(args: {
@@ -1628,83 +1696,95 @@ export async function inspectRunRoleIo(args: {
   if (!roleId) {
     return undefined;
   }
-  const executionsDir = resolve(runDir, "roles", roleId, "executions");
-  let entries: Dirent[];
   try {
-    entries = await readdir(executionsDir, { withFileTypes: true });
-  } catch {
-    return undefined;
-  }
-
-  const candidates = await Promise.all(
-    entries
-      .filter((entry) => entry.isDirectory())
-      .map(async (entry) => {
-        const executionDir = resolve(executionsDir, entry.name);
-        const outcome = asObjectRecord(
-          await tryReadJson(resolve(executionDir, ROLE_EXECUTION_OUTCOME_FILE))
-          ?? await tryReadJson(resolve(executionDir, "outcome.json"))
-        );
-        if (!outcome) {
-          return undefined;
-        }
-        if (asString(outcome.roleId) !== roleId) {
-          return undefined;
-        }
-        if (args.branchId && asString(outcome.branchId) !== args.branchId) {
-          return undefined;
-        }
-        if (args.loopIteration !== undefined && asNumber(outcome.loopIteration) !== args.loopIteration) {
-          return undefined;
-        }
-        return {
-          executionDir,
-          executionId: asString(outcome.executionId) ?? entry.name,
-          committedAt: asString(outcome.committedAt) ?? "",
-          outcome
-        };
-      })
-  );
-
-  const selected = candidates
-    .filter((candidate): candidate is NonNullable<typeof candidate> => candidate !== undefined)
-    .sort((left, right) => {
-      const leftCommittedAt = parseIsoTimestamp(left.committedAt) ?? 0;
-      const rightCommittedAt = parseIsoTimestamp(right.committedAt) ?? 0;
-      if (leftCommittedAt !== rightCommittedAt) {
-        return rightCommittedAt - leftCommittedAt;
+    const executionsDir = resolve(runDir, "roles", roleId, "executions");
+    let entries: Dirent[];
+    try {
+      entries = await readdir(executionsDir, { withFileTypes: true });
+    } catch (error) {
+      if (isMissingPathError(error)) {
+        return undefined;
       }
-      return right.executionId.localeCompare(left.executionId);
-    })
-    .at(0);
+      throw error;
+    }
 
-  if (!selected) {
-    return undefined;
+    const executionEntries = entries
+      .filter((entry) => entry.isDirectory())
+      .sort((left, right) => right.name.localeCompare(left.name));
+
+    let selected: RoleIoExecutionCandidate | undefined;
+    for (let index = 0; index < executionEntries.length; index += ROLE_IO_SCAN_BATCH_SIZE) {
+      const batch = executionEntries.slice(index, index + ROLE_IO_SCAN_BATCH_SIZE);
+      const candidates = await Promise.all(
+        batch.map(async (entry) => {
+          const executionDir = resolve(executionsDir, entry.name);
+          const outcome = await loadRoleIoOutcome(executionDir);
+          if (!outcome) {
+            return undefined;
+          }
+          if (asString(outcome.roleId) !== roleId) {
+            return undefined;
+          }
+          if (args.branchId && asString(outcome.branchId) !== args.branchId) {
+            return undefined;
+          }
+          if (args.loopIteration !== undefined && asNumber(outcome.loopIteration) !== args.loopIteration) {
+            return undefined;
+          }
+          return {
+            executionDir,
+            executionId: asString(outcome.executionId) ?? entry.name,
+            committedAt: asString(outcome.committedAt) ?? "",
+            outcome
+          } satisfies RoleIoExecutionCandidate;
+        })
+      );
+      for (const candidate of candidates) {
+        if (!candidate) {
+          continue;
+        }
+        if (!selected || compareRoleIoExecutionCandidates(candidate, selected) > 0) {
+          selected = candidate;
+        }
+      }
+    }
+
+    if (!selected) {
+      return undefined;
+    }
+
+    const [audit, result, session, inboxMarkdown, outboxMarkdown] = await Promise.all([
+      tryReadJsonIfPresent(resolve(selected.executionDir, "audit.json")),
+      tryReadJsonIfPresent(resolve(selected.executionDir, "result.json")),
+      tryReadJsonIfPresent(resolve(selected.executionDir, "session.json")),
+      tryReadTextIfPresent(resolve(selected.executionDir, "inbox.md")),
+      tryReadTextIfPresent(resolve(selected.executionDir, "outbox.md"))
+    ]);
+
+    return {
+      runId: args.runId,
+      roleId,
+      branchId: asString(selected.outcome.branchId) ?? args.branchId ?? "",
+      loopIteration: asNumber(selected.outcome.loopIteration) ?? args.loopIteration ?? 0,
+      executionId: selected.executionId,
+      status: asString(selected.outcome.status) ?? "",
+      selectedEvent: asString(selected.outcome.selectedEvent) ?? "",
+      committedAt: selected.committedAt,
+      audit,
+      result,
+      session,
+      inboxMarkdown: inboxMarkdown ?? "",
+      outboxMarkdown: outboxMarkdown ?? ""
+    };
+  } catch (error) {
+    if (error instanceof RunRoleIoLookupError) {
+      throw error;
+    }
+    const message = error instanceof Error ? error.message : String(error);
+    throw new RunRoleIoLookupError(
+      `Failed to inspect Role I/O for run ${args.runId}, role ${roleId}: ${message}`
+    );
   }
-
-  const [audit, result, session, inboxMarkdown, outboxMarkdown] = await Promise.all([
-    tryReadJson(resolve(selected.executionDir, "audit.json")),
-    tryReadJson(resolve(selected.executionDir, "result.json")),
-    tryReadJson(resolve(selected.executionDir, "session.json")),
-    tryReadText(resolve(selected.executionDir, "inbox.md")),
-    tryReadText(resolve(selected.executionDir, "outbox.md"))
-  ]);
-
-  return {
-    runId: args.runId,
-    roleId,
-    branchId: asString(selected.outcome.branchId) ?? args.branchId ?? "",
-    loopIteration: asNumber(selected.outcome.loopIteration) ?? args.loopIteration ?? 0,
-    executionId: selected.executionId,
-    status: asString(selected.outcome.status) ?? "",
-    selectedEvent: asString(selected.outcome.selectedEvent) ?? "",
-    committedAt: selected.committedAt,
-    audit,
-    result,
-    session,
-    inboxMarkdown: inboxMarkdown ?? "",
-    outboxMarkdown: outboxMarkdown ?? ""
-  };
 }
 
 function resolveReviewsDir(runDir: string): string {

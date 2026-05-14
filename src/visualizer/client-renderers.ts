@@ -54,6 +54,48 @@ export function compactJsonPreview(value: unknown, maxLength = 180): string {
   return compactText(raw, maxLength);
 }
 
+export function formatContextMapJson(value: unknown): string {
+  const record = asRecord(value);
+  return JSON.stringify(record ?? {}, null, 2);
+}
+
+export function projectRoleProjectionSummary(projectRoles: JsonRecord | null | undefined, roleId: string): JsonRecord | null {
+  const roles = Array.isArray(projectRoles?.roles) ? projectRoles.roles as JsonRecord[] : [];
+  const match = roles.find((role) => String(role.roleId ?? "") === roleId);
+  return asRecord(match?.projection);
+}
+
+export function renderProjectionSummaryCard(args: {
+  roleId: string;
+  projection: JsonRecord | null;
+  title: string;
+  emptyHint: string;
+  t: Translator;
+}): string {
+  const fields = Array.isArray(args.projection?.fields) ? args.projection?.fields as JsonRecord[] : [];
+  const items = fields.slice(0, 6).map((field) =>
+    '<div class="compact-list-item"><span class="compact-list-title">' +
+    escapeText(String(field.fieldName ?? "")) +
+    '</span><span class="compact-list-meta">' +
+    escapeText(String(field.selector ?? "")) +
+    '</span><div class="hint">' +
+    escapeText(
+      String(field.sourceRoleId ?? "")
+        ? args.t("studio.projectionSourceHint", { roleId: String(field.sourceRoleId ?? "") }, "source " + String(field.sourceRoleId ?? ""))
+        : String(field.selectorKind ?? "")
+    ) +
+    "</div></div>"
+  );
+  return [
+    '<div class="event studio-projection-card">',
+    '<div class="event-top"><span>' + escapeText(args.title) + '</span><span>' + escapeText(args.roleId || args.t("common.notAvailable", undefined, "n/a")) + '</span></div>',
+    '<strong>' + escapeText(fields.length ? args.t("studio.projectionFieldCount", { count: String(fields.length) }, String(fields.length) + " mapped fields") : args.t("common.none", undefined, "none")) + '</strong>',
+    '<div class="hint">' + escapeText(fields.length ? args.t("studio.projectionHint", undefined, "Projection stays role-owned. Edit the target role mapping when this flow needs a different payload shape.") : args.emptyHint) + '</div>',
+    (items.length ? '<div class="compact-list">' + items.join("") + '</div>' : ""),
+    '</div>'
+  ].join("");
+}
+
 export function renderDisclosureCard(args: {
   title: string;
   headline: string;
@@ -253,6 +295,7 @@ export function renderStudioGraphCanvas(args: {
   selectionLogsHtml?: string;
   selectionResultsHtml?: string;
   inspectorCollapsed?: boolean;
+  inspectorWidth?: number;
   t?: Translator;
 }): string {
   const t: Translator = typeof args.t === "function" ? args.t : (_key, _vars, fallback) => fallback ?? _key;
@@ -261,11 +304,14 @@ export function renderStudioGraphCanvas(args: {
     selectedFlowKey: args.selectedFlowKey,
     t
   });
+  const inspectorWidth = Number.isFinite(args.inspectorWidth) ? Math.max(280, Number(args.inspectorWidth)) : 380;
+  const shellStyle = ` style="--studio-inspector-width:${escapeText(String(inspectorWidth))}px"`;
   return [
-    '<div class="studio-canvas-shell' + (args.fullscreen ? " is-fullscreen" : "") + (args.inspectorCollapsed ? " has-collapsed-selection" : "") + '" data-studio-canvas-shell="1">',
+    '<div class="studio-canvas-shell' + (args.fullscreen ? " is-fullscreen" : "") + (args.inspectorCollapsed ? " has-collapsed-selection" : "") + '" data-studio-canvas-shell="1"' + shellStyle + '>',
     '<div class="studio-canvas-toolbar" data-studio-bridge-region="toolbar"><div><span class="hint studio-graph-selection-label" data-studio-graph-selection-label>' + escapeText(selection) + '</span></div></div>',
     '<div id="studio-graph-root" class="studio-graph-root' + (args.rootClassName ? " " + escapeText(args.rootClassName) : "") + '" data-workbench-root-mode="' + escapeText(args.rootMode || "bridge") + '" data-selected-role-id="' + escapeText(args.selectedRoleId) + '" data-selected-flow-key="' + escapeText(args.selectedFlowKey) + '">' + (args.rootContentHtml || "") + '</div>',
-    '<aside class="studio-selection-overlay' + (args.inspectorCollapsed ? " is-collapsed" : "") + '" data-studio-selection-overlay><section class="studio-selection-dialog" data-studio-selection-dialog role="complementary" aria-label="' + escapeText(t("studio.sidePanel", undefined, "Right panel")) + '"><header class="studio-selection-header"><div class="studio-selection-title-wrap"><div class="hint" data-studio-selection-kind-label>' + escapeText(args.selectionKindLabel || "") + '</div><strong data-studio-selection-title>' + escapeText(args.selectionTitle || "") + '</strong></div><div class="studio-selection-actions"><button type="button" class="button subtle" data-studio-selection-collapse="" title="' + escapeText(t("action.close", undefined, "Close")) + '">' + (args.inspectorCollapsed ? ">" : "<") + '</button></div></header><div class="studio-selection-tabstrip segmented"><button type="button" class="button subtle' + ((args.sideTab || "structure") === "structure" ? " active" : "") + '" data-studio-side-tab="structure">' + escapeText(t("studio.retrievalTab", undefined, "Browse")) + '</button><button type="button" class="button subtle' + ((args.sideTab || "structure") === "selection" ? " active" : "") + '" data-studio-side-tab="selection">' + escapeText(t("studio.authoringTab", undefined, "Authoring")) + '</button><button type="button" class="button subtle' + ((args.sideTab || "structure") === "debug" ? " active" : "") + '" data-studio-side-tab="debug">' + escapeText(t("build.mode.debug", undefined, "Debug")) + '</button><button type="button" class="button subtle' + ((args.sideTab || "structure") === "logs" ? " active" : "") + '" data-studio-side-tab="logs">' + escapeText(t("studio.logsTab", undefined, "Logs")) + '</button><button type="button" class="button subtle' + ((args.sideTab || "structure") === "result" ? " active" : "") + '" data-studio-side-tab="result">' + escapeText(t("studio.resultsTab", undefined, "Results")) + '</button></div><div class="studio-selection-body"><section class="studio-selection-panel studio-selection-structure-panel studio-outline-panel" data-studio-selection-panel="structure">' + (args.selectionStructureHtml || "") + '</section><section class="studio-selection-panel" data-studio-selection-panel="selection"><div class="studio-selection-command-host" data-studio-selection-command-host></div><div class="studio-selection-role-package" data-studio-selection-role-package>' + (args.selectionRolePackageHtml || "") + '</div></section><section class="studio-selection-panel studio-selection-debug-panel" data-studio-selection-panel="debug">' + (args.selectionDebugHtml || "") + '</section><section class="studio-selection-panel studio-selection-logs-panel" data-studio-selection-panel="logs">' + (args.selectionLogsHtml || "") + '</section><section class="studio-selection-panel studio-selection-result-panel" data-studio-selection-panel="result">' + (args.selectionResultsHtml || "") + '</section></div></section></aside>',
+    '<div class="studio-selection-resize-handle" data-studio-inspector-resize="1" aria-hidden="true"></div>',
+    '<aside class="studio-selection-overlay' + (args.inspectorCollapsed ? " is-collapsed" : "") + '" data-studio-selection-overlay><section class="studio-selection-dialog" data-studio-selection-dialog role="complementary" aria-label="' + escapeText(t("studio.sidePanel", undefined, "Right panel")) + '"><header class="studio-selection-header"><div class="studio-selection-title-wrap"><div class="hint" data-studio-selection-kind-label>' + escapeText(args.selectionKindLabel || "") + '</div><strong data-studio-selection-title>' + escapeText(args.selectionTitle || "") + '</strong></div><div class="studio-selection-actions"><button type="button" class="button subtle" data-studio-selection-collapse="" title="' + escapeText(t("action.close", undefined, "Close")) + '">' + (args.inspectorCollapsed ? ">" : "<") + '</button></div></header><div class="studio-selection-tabstrip segmented"><button type="button" class="button subtle' + ((args.sideTab || "structure") === "structure" ? " active" : "") + '" data-studio-side-tab="structure">' + escapeText(t("studio.retrievalTab", undefined, "Browse")) + '</button><button type="button" class="button subtle' + ((args.sideTab || "structure") === "selection" ? " active" : "") + '" data-studio-side-tab="selection">' + escapeText(t("studio.authoringTab", undefined, "Compose")) + '</button><button type="button" class="button subtle' + ((args.sideTab || "structure") === "debug" ? " active" : "") + '" data-studio-side-tab="debug">' + escapeText(t("build.mode.debug", undefined, "Debug")) + '</button><button type="button" class="button subtle' + ((args.sideTab || "structure") === "logs" ? " active" : "") + '" data-studio-side-tab="logs">' + escapeText(t("studio.logsTab", undefined, "Logs")) + '</button><button type="button" class="button subtle' + ((args.sideTab || "structure") === "result" ? " active" : "") + '" data-studio-side-tab="result">' + escapeText(t("studio.resultsTab", undefined, "Results")) + '</button></div><div class="studio-selection-body"><section class="studio-selection-panel studio-selection-structure-panel studio-outline-panel" data-studio-selection-panel="structure">' + (args.selectionStructureHtml || "") + '</section><section class="studio-selection-panel" data-studio-selection-panel="selection"><div class="studio-selection-command-host" data-studio-selection-command-host></div><div class="studio-selection-role-package" data-studio-selection-role-package>' + (args.selectionRolePackageHtml || "") + '</div></section><section class="studio-selection-panel studio-selection-debug-panel" data-studio-selection-panel="debug">' + (args.selectionDebugHtml || "") + '</section><section class="studio-selection-panel studio-selection-logs-panel" data-studio-selection-panel="logs">' + (args.selectionLogsHtml || "") + '</section><section class="studio-selection-panel studio-selection-result-panel" data-studio-selection-panel="result">' + (args.selectionResultsHtml || "") + '</section></div></section></aside>',
     "</div>"
   ].join("");
 }
@@ -887,6 +933,7 @@ export function renderStudioRoleConfigEditor(args: {
   const bindingKind = String(draft.bindingKind ?? data.bindingKind ?? "noop");
   const modelRef = String(draft.modelRef ?? data.modelRef ?? "");
   const profileId = String(draft.profileId ?? data.profileId ?? "");
+  const contextMapText = String(draft.contextMapText ?? formatContextMapJson(data.contextMap));
   const generatedProfileId = String(data.generatedProfileId ?? "");
   const generatedToolRef = String(data.generatedToolRef ?? "");
   const profiles = Array.isArray((args.projectConfig ?? {}).profiles)
@@ -934,6 +981,7 @@ export function renderStudioRoleConfigEditor(args: {
             ? t("studio.roleConfigGeneratedProfileHint", { profileId: effectiveProfileId, toolRef: effectiveToolRef || generatedToolRef }, "A new execution config {profileId} backed by {toolRef} will be created automatically if it does not already exist.")
             : t("studio.roleConfigProfileHint", { toolRef: effectiveToolRef || t("common.notAvailable", undefined, "n/a") }, "Tool binding resolves through {toolRef}.")) + '</div></label>'
         : "") +
+      '<label class="field full"><span>' + escapeText(t("studio.contextMap", undefined, "Context map")) + '</span><textarea data-role-config-field="contextMap">' + escapeText(contextMapText) + '</textarea><div class="hint">' + escapeText(t("studio.roleConfigContextMapHint", undefined, "Optional JSON object. Keys are target fields and values are selectors projected into this role input.")) + '</div></label>' +
     '</div></div>'
   ].join("");
 }
@@ -999,6 +1047,7 @@ export function renderStudioFlowConfigEditor(args: {
   flowKey: string;
   editor?: JsonRecord | null | undefined;
   authoring?: JsonRecord | null | undefined;
+  projectRoles?: JsonRecord | null | undefined;
   t?: Translator;
 }): string {
   const t: Translator = typeof args.t === "function" ? args.t : (_key, _vars, fallback) => fallback ?? _key;
@@ -1028,7 +1077,10 @@ export function renderStudioFlowConfigEditor(args: {
   const label = String(draft.label ?? data.label ?? "");
   const runtimeOnlyErrorFlow = draft.runtimeOnlyErrorFlow ?? data.runtimeOnlyErrorFlow;
   const participatesInJoin = draft.participatesInJoin ?? data.participatesInJoin;
+  const targetContextMapText = String(draft.targetContextMapText ?? formatContextMapJson(data.targetContextMap));
   const disabled = saving ? " disabled" : "";
+  const sourceProjection = projectRoleProjectionSummary(args.projectRoles, sourceRoleId);
+  const targetProjection = projectRoleProjectionSummary(args.projectRoles, targetRoleId);
   const sourceOptions = roles.map((roleId) =>
     '<option value="' + escapeText(roleId) + '"' + (roleId === sourceRoleId ? " selected" : "") + ">" +
     escapeText(roleId) + "</option>"
@@ -1046,11 +1098,29 @@ export function renderStudioFlowConfigEditor(args: {
       escapeText(String(diagnostic.message ?? diagnostic.code ?? "")) + "</div>"
     ).join("") + "</div>"
     : "";
+  const projectionCardsHtml = [
+    renderProjectionSummaryCard({
+      roleId: sourceRoleId,
+      projection: sourceProjection,
+      title: t("studio.flowSourceProjection", undefined, "Source projection"),
+      emptyHint: t("studio.flowSourceProjectionHint", undefined, "The source role has no explicit projection summary yet."),
+      t
+    }),
+    targetRoleId && targetRoleId !== "output"
+      ? renderProjectionSummaryCard({
+          roleId: targetRoleId,
+          projection: targetProjection,
+          title: t("studio.flowTargetProjection", undefined, "Target projection"),
+          emptyHint: t("studio.flowTargetProjectionHint", undefined, "The target role currently receives the default payload shape."),
+          t
+        })
+      : ""
+  ].filter(Boolean).join("");
   return [
     '<div class="event studio-flow-config-editor" data-flow-config-editor="' + escapeText(args.flowKey) + '">',
     '<div class="event-top"><span>' + escapeText(t("studio.flowConfig", undefined, "flow config")) + '</span><span>' + escapeText(dirty ? t("common.changed", undefined, "changed") : t("common.ready", undefined, "ready")) + '</span></div>',
     '<strong><code>' + escapeText(String(data.sourceRoleId ?? "")) + '</code> -> <code>' + escapeText(String(data.targetRoleId ?? "")) + '</code></strong>',
-    '<div class="hint">' + escapeText(t("studio.flowConfigHint", undefined, "Edit source, target, event identity, and authoring-only flow behavior without changing runtime internals.")) + '</div>',
+    '<div class="hint">' + escapeText(t("studio.flowConfigHint", undefined, "Edit flow identity and handoff behavior here. Projection still belongs to the target role, so its mapping can be tuned below without changing kernel semantics.")) + '</div>',
     error ? '<div class="hint severity-warning">' + escapeText(error) + '</div>' : "",
     diagnosticsHtml,
     '<div class="actions compact"><button class="button primary" data-flow-config-save="' + escapeText(args.flowKey) + '"' + (saving ? " disabled" : "") + '>' + escapeText(t("action.save", undefined, "Save")) + '</button><button class="button subtle" data-flow-config-revert="' + escapeText(args.flowKey) + '"' + (saving || !dirty ? " disabled" : "") + '>' + escapeText(t("action.revert", undefined, "Revert")) + "</button></div>",
@@ -1061,7 +1131,14 @@ export function renderStudioFlowConfigEditor(args: {
       '<label class="field"><span>' + escapeText(t("studio.form.flowLabel", undefined, "Display name")) + '</span><input data-flow-config-field="label" value="' + escapeText(label) + '"' + disabled + '><div class="hint">' + escapeText(t("studio.flowLabelHint", undefined, "Optional display label. Empty falls back to the event type.")) + '</div></label>' +
       '<label class="field checkbox"><input type="checkbox" data-flow-config-field="runtimeOnlyErrorFlow"' + (runtimeOnlyErrorFlow ? " checked" : "") + disabled + '><span>' + escapeText(t("studio.form.runtimeOnlyErrorFlow", undefined, "Runtime error flow")) + '</span></label>' +
       '<label class="field checkbox"><input type="checkbox" data-flow-config-field="participatesInJoin"' + (participatesInJoin ? " checked" : "") + disabled + '><span>' + escapeText(t("studio.form.participatesInJoin", undefined, "Join source")) + '</span></label>' +
+      (targetRoleId && targetRoleId !== "output"
+        ? '<label class="field full"><span>' + escapeText(t("studio.flowTargetProjectionEditor", undefined, "Target role projection")) + '</span><textarea data-flow-config-field="targetContextMap">' + escapeText(targetContextMapText) + '</textarea><div class="hint">' + escapeText(t("studio.flowTargetProjectionEditorHint", undefined, "Optional JSON object persisted onto the target role context map. Use this when the flow should reshape what the next role consumes.")) + '</div></label>'
+        : "") +
     "</div>",
+    projectionCardsHtml ? '<div class="studio-flow-projection-grid">' + projectionCardsHtml + '</div>' : "",
+    (targetRoleId && targetRoleId !== "output"
+      ? '<div class="actions compact"><button type="button" class="button subtle" data-studio-open-role-config="' + escapeText(targetRoleId) + '">' + escapeText(t("studio.openTargetRole", undefined, "Open target role")) + '</button><button type="button" class="button subtle" data-studio-open-role-config="' + escapeText(sourceRoleId) + '">' + escapeText(t("studio.openSourceRole", undefined, "Open source role")) + '</button></div>'
+      : ""),
     "</div>"
   ].join("");
 }
@@ -1133,6 +1210,7 @@ export function renderStudioBridgeStructureHtml(args: {
 export function renderStudioBridgePanel(args: {
   bridge: JsonRecord | null | undefined;
   readiness: JsonRecord | null | undefined;
+  projectRoles?: JsonRecord | null | undefined;
   selectedRoleId: string;
   selectedFlowKey: string;
   workbenchView?: string;
@@ -1147,6 +1225,7 @@ export function renderStudioBridgePanel(args: {
   rolePackageEditor?: JsonRecord | null | undefined;
   flowConfigEditor?: JsonRecord | null | undefined;
   inspectorCollapsed?: boolean;
+  inspectorWidth?: number;
   actionBusy: string;
   t?: Translator;
 }): string {
@@ -1189,6 +1268,7 @@ export function renderStudioBridgePanel(args: {
           flowKey: String(explicitSelectedFlow.flowKey ?? ""),
           editor: args.flowConfigEditor,
           authoring: bridge.authoring as JsonRecord | undefined,
+          projectRoles: args.projectRoles,
           t
         })
         : "",
@@ -1206,6 +1286,7 @@ export function renderStudioBridgePanel(args: {
     selectionLogsHtml: args.selectionLogsHtml || "",
     selectionResultsHtml: args.selectionResultsHtml || "",
     inspectorCollapsed: args.inspectorCollapsed === true,
+    inspectorWidth: args.inspectorWidth,
     fullscreen: args.fullscreen,
     t
   });

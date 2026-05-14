@@ -16,6 +16,7 @@ import {
 } from "../dist/visualizer/client-app.js";
 import {
   filterStudioBridgeItems,
+  renderStudioFlowConfigEditor,
   renderStudioRoleConfigEditor,
   renderStudioBridgeInspector,
   renderStudioBridgePanel
@@ -4026,17 +4027,6 @@ test("visualizer client opens Studio Bridge and keeps authoring affordances on t
   await settle();
   await settle();
   const fetchCallsAfterOpen = harness.backend.fetchCalls.length;
-  latestEditableMount().onSelectFlow("demo-analyst:DONE:output");
-  await settle();
-  assert.equal(harness.backend.fetchCalls.length, fetchCallsAfterOpen);
-  assert.equal(
-    harness.document.getElementById("studio-graph-root").dataset.selectedFlowKey,
-    "demo-analyst:DONE:output"
-  );
-  assert.equal(
-    harness.document.getElementById("studio-graph-root").dataset.selectedRoleId,
-    ""
-  );
   mountCalls.at(-1).options.onClearSelection();
   await settle();
   assert.equal(harness.backend.fetchCalls.length, fetchCallsAfterOpen);
@@ -4199,6 +4189,9 @@ test("visualizer client shows role config labels and opens role I/O modal from s
         title: "Demo analyst",
         bindingKind: "exec",
         profileId: "profile.review",
+        contextMap: {
+          summary: "$.writer.output.summary"
+        },
         generatedProfileId: "profile.demo-analyst",
         generatedToolRef: "tool.demo-analyst"
       }
@@ -4211,6 +4204,52 @@ test("visualizer client shows role config labels and opens role I/O modal from s
   assert.match(roleConfigHtml, /Agent/);
   assert.match(roleConfigHtml, /Tool/);
   assert.match(roleConfigHtml, /Noop/);
+  assert.match(roleConfigHtml, /data-role-config-field="contextMap"/);
+  assert.match(roleConfigHtml, /writer\.output\.summary/);
+
+  const flowConfigHtml = renderStudioFlowConfigEditor({
+    flowKey: "writer:DONE:reviewer",
+    editor: {
+      flowKey: "writer:DONE:reviewer",
+      data: {
+        sourceRoleId: "writer",
+        targetRoleId: "reviewer",
+        eventType: "DONE",
+        label: "Draft ready",
+        runtimeOnlyErrorFlow: false,
+        participatesInJoin: false,
+        targetContextMap: {
+          draft: "$.writer.output"
+        }
+      }
+    },
+    authoring: {
+      roles: {
+        writer: { roleId: "writer" },
+        reviewer: { roleId: "reviewer" }
+      }
+    },
+    projectRoles: {
+      roles: [
+        {
+          roleId: "writer",
+          projection: {
+            fields: [{ fieldName: "draft", selector: "$.writer.output", selectorKind: "jsonpath" }]
+          }
+        },
+        {
+          roleId: "reviewer",
+          projection: {
+            fields: [{ fieldName: "summary", selector: "$.writer.output.summary", selectorKind: "jsonpath", sourceRoleId: "writer" }]
+          }
+        }
+      ]
+    },
+    t: testTranslator
+  });
+  assert.match(flowConfigHtml, /data-flow-config-field="targetContextMap"/);
+  assert.match(flowConfigHtml, /data-studio-open-role-config="reviewer"/);
+  assert.match(flowConfigHtml, /writer\.output\.summary/);
 
   const harness = await createClientHarness();
   await openDesignTab(harness);

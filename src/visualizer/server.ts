@@ -22,6 +22,7 @@ import {
   loadIndexedRuns,
   loadRunLogs,
   rebuildRunsIndex,
+  RunRoleIoLookupError,
   requestStop,
   resolveOgsPaths,
   resolveRunDir,
@@ -1565,6 +1566,9 @@ function normalizeError(error: unknown): HttpError {
   }
   if (/^Choose either --engine or --role/i.test(message) || /^Invalid --since/i.test(message)) {
     return new HttpError(400, "INVALID_LOG_QUERY", message);
+  }
+  if (error instanceof RunRoleIoLookupError) {
+    return new HttpError(500, "ROLE_IO_LOOKUP_FAILED", message);
   }
   if (error instanceof StudioChatToMmdDependencyError) {
     return new HttpError(

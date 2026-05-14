@@ -172,6 +172,8 @@ export function injectStudioGraphStyles(): void {
     }
     .studio-graph-canvas .x6-edge .connection {
       transition: stroke 160ms ease, stroke-width 160ms ease, opacity 160ms ease, stroke-dasharray 160ms ease;
+      stroke-linecap: round;
+      stroke-linejoin: round;
     }
     .studio-graph-canvas .x6-edge:hover .connection {
       stroke-width: 2.1px !important;
@@ -184,7 +186,8 @@ export function injectStudioGraphStyles(): void {
       stroke: #38bdf8 !important;
       stroke-width: 2px !important;
       stroke-dasharray: 7 5;
-      animation: studio-edge-flow 720ms linear infinite;
+      filter: drop-shadow(0 0 0.22rem rgba(56, 189, 248, 0.2));
+      animation: studio-edge-flow 760ms linear infinite;
       opacity: 0.95;
     }
     .studio-graph-canvas .x6-edge.is-pending-preview .x6-edge-label rect {
@@ -192,9 +195,10 @@ export function injectStudioGraphStyles(): void {
       stroke-dasharray: 6 4;
     }
     .studio-graph-canvas .x6-edge.is-runtime-active .connection {
-      stroke-width: 2.6px !important;
-      stroke-dasharray: 8 8;
-      animation: studio-edge-flow 900ms linear infinite;
+      stroke-width: 2.5px !important;
+      stroke-dasharray: 10 10;
+      filter: drop-shadow(0 0 0.32rem rgba(56, 189, 248, 0.24));
+      animation: studio-edge-flow 680ms linear infinite;
     }
     .studio-graph-canvas .x6-edge.is-runtime-error .connection {
       stroke-dasharray: 7 5;
@@ -351,6 +355,51 @@ export function injectStudioGraphStyles(): void {
       border-radius: 6px;
       box-shadow: inset 0 0 0 1px rgba(186, 230, 253, 0.22);
       pointer-events: none;
+    }
+    .studio-graph-context-menu {
+      position: absolute;
+      z-index: 8;
+      display: grid;
+      gap: 4px;
+      min-width: 152px;
+      padding: 6px;
+      border: 1px solid rgba(148, 163, 184, 0.24);
+      border-radius: 12px;
+      background: rgba(8, 13, 26, 0.97);
+      box-shadow: 0 18px 36px rgba(0, 0, 0, 0.34);
+      backdrop-filter: blur(12px);
+    }
+    .studio-graph-context-menu[hidden] {
+      display: none;
+    }
+    .studio-graph-context-menu-item {
+      display: flex;
+      align-items: center;
+      justify-content: flex-start;
+      width: 100%;
+      border: 1px solid transparent;
+      border-radius: 8px;
+      background: transparent;
+      color: #e5eefb;
+      padding: 8px 10px;
+      font-size: 12px;
+      text-align: left;
+      cursor: pointer;
+      transition: background 120ms ease, border-color 120ms ease, color 120ms ease, opacity 120ms ease;
+    }
+    .studio-graph-context-menu-item:hover {
+      border-color: rgba(56, 189, 248, 0.34);
+      background: rgba(56, 189, 248, 0.12);
+      color: #bae6fd;
+    }
+    .studio-graph-context-menu-item.is-destructive:hover {
+      border-color: rgba(248, 113, 113, 0.36);
+      background: rgba(248, 113, 113, 0.12);
+      color: #fecaca;
+    }
+    .studio-graph-context-menu-item:disabled {
+      opacity: 0.42;
+      cursor: not-allowed;
     }
     .studio-graph-quick-open {
       position: absolute;

@@ -33,6 +33,7 @@ type StudioAuthoringLeafCommand =
       bindingKind?: StudioAuthoringRole["bindingKind"];
       modelRef?: string;
       profileId?: string;
+      contextMap?: Record<string, string>;
       profileDraft?: StudioExecutionProfileDraft;
       toolDraft?: StudioExecutionToolDraft;
     }
@@ -184,6 +185,7 @@ function applyRoleBinding(
     bindingKind?: StudioAuthoringRole["bindingKind"];
     modelRef?: string;
     profileId?: string;
+    contextMap?: Record<string, string>;
   }
 ): StudioAuthoringRole {
   const bindingKind = normalizeBindingKind(args.bindingKind);
@@ -201,6 +203,16 @@ function applyRoleBinding(
   if (bindingKind === "exec") {
     const profileId = String(args.profileId ?? "").trim();
     if (profileId) next.profileId = profileId;
+  }
+  if (args.contextMap && Object.keys(args.contextMap).length > 0) {
+    next.contextMap = Object.fromEntries(
+      Object.entries(args.contextMap)
+        .map(([fieldName, selector]) => [String(fieldName || "").trim(), String(selector || "").trim()])
+        .filter(([fieldName, selector]) => Boolean(fieldName) && Boolean(selector))
+        .sort(([left], [right]) => left.localeCompare(right))
+    );
+  } else {
+    delete next.contextMap;
   }
   return next;
 }
@@ -759,7 +771,8 @@ export function deriveInverseCommand(
       title: role.title,
       bindingKind: role.bindingKind,
       modelRef: role.modelRef,
-      profileId: role.profileId
+      profileId: role.profileId,
+      contextMap: role.contextMap ? { ...role.contextMap } : undefined
     };
   }
 

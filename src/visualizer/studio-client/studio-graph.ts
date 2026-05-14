@@ -172,12 +172,55 @@ const STUDIO_GRAPH_FIT_MAX_SCALE = 1.8;
 const STUDIO_GRAPH_MIN_READABLE_ROLE_WIDTH = 90;
 const STUDIO_GRAPH_MIN_READABLE_ROLE_HEIGHT = 40;
 const STUDIO_GRAPH_READABILITY_ROLE_LIMIT = 4;
+const STUDIO_GRAPH_EDGE_ROUTER = {
+  name: "manhattan",
+  args: {
+    step: 16,
+    padding: 18,
+    startDirections: ["right"],
+    endDirections: ["left"],
+    excludeTerminals: ["source", "target"]
+  }
+} as const;
+const STUDIO_GRAPH_EDGE_CONNECTOR = {
+  name: "rounded",
+  args: {
+    radius: 10
+  }
+} as const;
 
 type PendingStudioEdgePreview = {
   sourceRoleId: string;
   targetRoleId: string;
   eventType: string;
   label: string;
+};
+
+type StudioGraphEdgeRecord = {
+  id?: string;
+  source: string;
+  target: string;
+  eventType: string;
+  label?: string;
+  runtimeOnlyErrorFlow?: boolean;
+  participatesInJoin?: boolean;
+  editable?: boolean;
+};
+
+type StudioGraphContextMenuState =
+  | {
+      kind: "role";
+      roleId: string;
+    }
+  | {
+      kind: "flow";
+      edge: StudioGraphEdgeRecord;
+    };
+
+type PendingStudioRoleInsertion = {
+  edge: StudioGraphEdgeRecord;
+  x: number;
+  y: number;
 };
 
 export class StudioGraphIsland {
@@ -189,6 +232,7 @@ export class StudioGraphIsland {
   private minimapEl: HTMLDivElement;
   private minimapContentEl: HTMLDivElement;
   private minimapViewportEl: HTMLDivElement;
+  private contextMenuEl: HTMLDivElement;
   private quickOpenEl: HTMLDivElement;
   private quickOpenInputEl: HTMLInputElement;
   private quickOpenResultsEl: HTMLDivElement;
@@ -211,13 +255,16 @@ export class StudioGraphIsland {
   private syncCanvasTimer: ReturnType<typeof setTimeout> | null = null;
   private commandForm: StudioCommandFormState | null = null;
   private pendingEdgePreview: PendingStudioEdgePreview | null = null;
+  private pendingRoleInsertion: PendingStudioRoleInsertion | null = null;
   private runtimeVisualState: StudioRuntimeVisualState | null = null;
+  private contextMenuState: StudioGraphContextMenuState | null = null;
   private focusMotionTimer: ReturnType<typeof setTimeout> | null = null;
   private focusMotionCellId = "";
   private quickOpenSelectedIndex = 0;
   private quickDebugBusy = false;
   private reducedMotion = false;
   private resizeObserver: ResizeObserver | null = null;
+  private pendingEdgeCleanupTimer: ReturnType<typeof setTimeout> | null = null;
   private pendingInitialFit = false;
   private pendingInitialFitSizeSignature = "";
   private pendingInitialFitTimer: ReturnType<typeof setTimeout> | null = null;
@@ -260,6 +307,7 @@ export class StudioGraphIsland {
       '<div class="studio-graph-stage">',
       '<div class="studio-graph-empty" data-studio-graph-empty hidden></div>',
       '<div class="studio-graph-canvas" data-studio-graph-canvas></div>',
+      '<div class="studio-graph-context-menu" data-studio-graph-context-menu hidden></div>',
       '<div class="studio-graph-minimap" data-studio-graph-minimap aria-label="Graph minimap" hidden>',
       '<div class="studio-graph-minimap-content" data-studio-graph-minimap-content></div>',
       '<div class="studio-graph-minimap-viewport" data-studio-graph-minimap-viewport></div>',
@@ -286,6 +334,7 @@ export class StudioGraphIsland {
     const stageEl = this.root.querySelector<HTMLDivElement>(".studio-graph-stage");
     const canvasEl = this.root.querySelector<HTMLDivElement>("[data-studio-graph-canvas]");
     const emptyEl = this.root.querySelector<HTMLDivElement>("[data-studio-graph-empty]");
+    const contextMenuEl = this.root.querySelector<HTMLDivElement>("[data-studio-graph-context-menu]");
     const minimapEl = this.root.querySelector<HTMLDivElement>("[data-studio-graph-minimap]");
     const minimapContentEl = this.root.querySelector<HTMLDivElement>("[data-studio-graph-minimap-content]");
     const minimapViewportEl = this.root.querySelector<HTMLDivElement>("[data-studio-graph-minimap-viewport]");
@@ -294,13 +343,14 @@ export class StudioGraphIsland {
     const quickOpenResultsEl = this.root.querySelector<HTMLDivElement>("[data-studio-graph-quick-open-results]");
     const quickDebugEl = this.root.querySelector<HTMLDivElement>("[data-studio-graph-quick-debug]");
     const quickDebugInputEl = this.root.querySelector<HTMLTextAreaElement>("[data-studio-graph-quick-debug-input]");
-    if (!toolbar || !stageEl || !canvasEl || !emptyEl || !minimapEl || !minimapContentEl || !minimapViewportEl || !quickOpenEl || !quickOpenInputEl || !quickOpenResultsEl || !quickDebugEl || !quickDebugInputEl) {
+    if (!toolbar || !stageEl || !canvasEl || !emptyEl || !contextMenuEl || !minimapEl || !minimapContentEl || !minimapViewportEl || !quickOpenEl || !quickOpenInputEl || !quickOpenResultsEl || !quickDebugEl || !quickDebugInputEl) {
       throw new Error("Studio graph island failed to initialize.");
     }
     this.toolbar = toolbar;
     this.stageEl = stageEl;
     this.canvasEl = canvasEl;
     this.emptyEl = emptyEl;
+    this.contextMenuEl = contextMenuEl;
     this.minimapEl = minimapEl;
     this.minimapContentEl = minimapContentEl;
     this.minimapViewportEl = minimapViewportEl;
@@ -321,6 +371,7 @@ export class StudioGraphIsland {
     this.graph = this.createGraph(canvasEl);
     this.bindToolbar();
     this.bindGraphEvents();
+    this.bindContextMenu();
     this.bindQuickOpen();
     this.bindQuickDebug();
     this.bindResizeObserver();
@@ -335,6 +386,7 @@ export class StudioGraphIsland {
   update(options: StudioGraphBridgeOptions): void {
     this.resetHistoryWhenProjectChanges(options);
     this.options = options;
+    this.hideContextMenu();
     this.attachCommandFormHost();
     this.handleHistoryEvent(options.historyEvent);
     this.handleDismissCommandFormRequest(options.dismissCommandFormRequest);
@@ -414,6 +466,10 @@ export class StudioGraphIsland {
       clearTimeout(this.syncCanvasTimer);
       this.syncCanvasTimer = null;
     }
+    if (this.pendingEdgeCleanupTimer) {
+      clearTimeout(this.pendingEdgeCleanupTimer);
+      this.pendingEdgeCleanupTimer = null;
+    }
     if (this.focusMotionTimer) {
       clearTimeout(this.focusMotionTimer);
       this.focusMotionTimer = null;
@@ -452,6 +508,10 @@ export class StudioGraphIsland {
         allowLoop: false,
         snap: true,
         highlight: true,
+        anchor: { name: "midSide", args: { direction: "H" } },
+        connectionPoint: { name: "boundary" },
+        router: STUDIO_GRAPH_EDGE_ROUTER,
+        connector: STUDIO_GRAPH_EDGE_CONNECTOR,
         createEdge() {
           return graph.createEdge({
             id: STUDIO_PENDING_EDGE_ID,
@@ -559,13 +619,44 @@ export class StudioGraphIsland {
     });
   }
 
+  private bindContextMenu(): void {
+    this.contextMenuEl.addEventListener("click", (event) => {
+      const target = event.target as HTMLElement | null;
+      const button = target?.closest<HTMLButtonElement>("[data-studio-graph-context-action]");
+      if (!button || button.disabled) {
+        return;
+      }
+      const action = button.dataset.studioGraphContextAction || "";
+      void this.handleContextMenuAction(action);
+      this.hideContextMenu();
+    });
+    this.root.addEventListener("pointerdown", (event) => {
+      const target = event.target as HTMLElement | null;
+      if (target?.closest("[data-studio-graph-context-menu]")) {
+        return;
+      }
+      this.hideContextMenu();
+    });
+    this.root.addEventListener("pointerup", () => this.schedulePendingEdgeCleanup());
+    this.root.addEventListener("pointercancel", () => this.schedulePendingEdgeCleanup());
+    this.root.addEventListener("mouseleave", () => this.schedulePendingEdgeCleanup());
+    this.root.addEventListener("contextmenu", (event) => {
+      const target = event.target as HTMLElement | null;
+      if (target?.closest("[data-studio-graph-context-menu]")) {
+        event.preventDefault();
+        return;
+      }
+      if (!target?.closest(".x6-node, .x6-edge")) {
+        this.hideContextMenu();
+      }
+    });
+  }
+
   private bindGraphEvents(): void {
     this.graph.on("node:click", ({ node }) => {
       const data = node.getData() as { studioNode?: { kind?: string; roleId?: string } } | undefined;
       if (data?.studioNode?.kind === "role" && data.studioNode.roleId) {
-        this.options.onSelectRole?.(data.studioNode.roleId);
-        this.syncSelectionPresentation(data.studioNode.roleId, { preserveViewport: true });
-        this.updateToolbarState();
+        this.selectRoleById(data.studioNode.roleId, node);
       }
     });
     this.graph.on("node:dblclick", ({ node }) => {
@@ -574,19 +665,53 @@ export class StudioGraphIsland {
         this.openEditRoleForm(data.studioNode.roleId);
       }
     });
+    this.graph.on("node:contextmenu", ({ node, e }) => {
+      const data = node.getData() as { studioNode?: { kind?: string; roleId?: string } } | undefined;
+      if (this.isReadOnly() || data?.studioNode?.kind !== "role" || !data.studioNode.roleId) {
+        return;
+      }
+      e.preventDefault();
+      e.stopPropagation();
+      this.closeCommandForm();
+      this.selectRoleById(data.studioNode.roleId, node);
+      this.showContextMenu({
+        x: e.clientX,
+        y: e.clientY,
+        state: {
+          kind: "role",
+          roleId: data.studioNode.roleId
+        }
+      });
+    });
     this.graph.on("edge:click", ({ edge }) => {
-      const data = edge.getData() as { studioEdge?: { id?: string; source: string; target: string; eventType: string; runtimeOnlyErrorFlow?: boolean; participatesInJoin?: boolean; editable?: boolean } } | undefined;
+      const data = this.edgeRecordFromCell(edge);
       if (data?.studioEdge) {
-        this.options.onSelectFlow?.(studioEdgeFlowKey(data.studioEdge));
-        this.syncSelectionPresentation(data.studioEdge.id || "", { preserveViewport: true });
-        this.updateToolbarState();
+        this.selectEdge(data.studioEdge, edge);
       }
     });
     this.graph.on("edge:dblclick", ({ edge }) => {
-      const data = edge.getData() as { studioEdge?: { id?: string; source: string; target: string; eventType: string; runtimeOnlyErrorFlow?: boolean; participatesInJoin?: boolean; editable?: boolean } } | undefined;
+      const data = this.edgeRecordFromCell(edge);
       if (data?.studioEdge) {
         this.openEditEdgeForm(data.studioEdge);
       }
+    });
+    this.graph.on("edge:contextmenu", ({ edge, e }) => {
+      const data = this.edgeRecordFromCell(edge);
+      if (this.isReadOnly() || !data?.studioEdge) {
+        return;
+      }
+      e.preventDefault();
+      e.stopPropagation();
+      this.closeCommandForm();
+      this.selectEdge(data.studioEdge, edge);
+      this.showContextMenu({
+        x: e.clientX,
+        y: e.clientY,
+        state: {
+          kind: "flow",
+          edge: data.studioEdge
+        }
+      });
     });
     this.graph.on("blank:click", () => {
       if (this.options.onBeforeClearSelection?.() === false) {
@@ -600,10 +725,15 @@ export class StudioGraphIsland {
       this.syncSelectionPresentation();
       this.updateToolbarState();
     });
+    this.graph.on("blank:contextmenu", ({ e }) => {
+      e.preventDefault();
+      this.hideContextMenu();
+    });
     this.graph.on("selection:changed", () => {
       if (this.commandForm?.kind === "add-edge") {
         this.closeCommandForm();
       }
+      this.hideContextMenu();
       this.syncSelectionPresentation("", { preserveViewport: true });
       this.hideDiagnosticCard();
       this.updateToolbarState();
@@ -614,6 +744,12 @@ export class StudioGraphIsland {
     });
     this.graph.on("node:mouseleave", () => {
       this.hideDiagnosticCard();
+    });
+    this.graph.on("cell:mouseup", () => {
+      this.schedulePendingEdgeCleanup();
+    });
+    this.graph.on("blank:mouseup", () => {
+      this.schedulePendingEdgeCleanup();
     });
     this.graph.on("node:moved", () => {
       if (this.isReadOnly()) return;
@@ -665,6 +801,10 @@ export class StudioGraphIsland {
     if (this.isReadOnly()) {
       return;
     }
+    if (kind !== "add-role") {
+      this.pendingRoleInsertion = null;
+    }
+    this.hideContextMenu();
     this.commandForm = createDefaultStudioCommandFormState({
       kind,
       context: this.validationContext(),
@@ -757,6 +897,7 @@ export class StudioGraphIsland {
       return;
     }
     this.pendingEdgePreview = null;
+    this.pendingRoleInsertion = null;
     this.commandForm = null;
     this.dialogEl.hidden = true;
     this.dialogEl.innerHTML = "";
@@ -1054,6 +1195,7 @@ export class StudioGraphIsland {
       this.closeCommandForm();
       return;
     }
+    this.hideContextMenu();
     this.dialogEl.hidden = false;
     this.dialogEl.innerHTML = renderStudioCommandForm({
       state: this.commandForm,
@@ -1151,9 +1293,18 @@ export class StudioGraphIsland {
       this.renderCommandForm();
       return;
     }
+    const pendingRoleInsertion = this.pendingRoleInsertion && this.commandForm.kind === "add-role"
+      ? { ...this.pendingRoleInsertion }
+      : null;
+    const nextCommand = pendingRoleInsertion && command.type === "add-role"
+      ? this.commandForInsertedRole(command, pendingRoleInsertion)
+      : command;
+    const selectionOverride = pendingRoleInsertion && command.type === "add-role"
+      ? { selectedRoleId: command.roleId?.trim() || "", selectedFlowKey: "" }
+      : undefined;
     this.pendingEdgePreview = null;
     this.closeCommandForm();
-    await this.applyCommand(command);
+    await this.applyCommand(nextCommand, selectionOverride);
   }
 
   private selectFromOptions(): void {
@@ -1228,25 +1379,12 @@ export class StudioGraphIsland {
     if (!selected) return;
     const nodeData = selected.getData() as { studioNode?: { kind?: string; roleId?: string } } | undefined;
     if (nodeData?.studioNode?.kind === "role" && nodeData.studioNode.roleId) {
-      if (nodeData.studioNode.roleId === this.options.authoring?.system.entryRoleId) {
-        this.toast("error", this.label("entryRoleDeletionBlocked"));
-        return;
-      }
-      if (window.confirm && !window.confirm(this.formatLabel("deleteRoleConfirm", { roleId: nodeData.studioNode.roleId }))) {
-        return;
-      }
-      await this.applyCommand({ type: "delete-role", roleId: nodeData.studioNode.roleId });
+      await this.deleteRole(nodeData.studioNode.roleId);
       return;
     }
-    const edgeData = selected.getData() as { studioEdge?: { id?: string; source: string; target: string; eventType: string; editable?: boolean } } | undefined;
+    const edgeData = this.edgeRecordFromCell(selected);
     if (edgeData?.studioEdge?.editable) {
-      await this.applyCommand({
-        type: "delete-edge",
-        flowId: edgeData.studioEdge.id,
-        sourceRoleId: edgeData.studioEdge.source,
-        targetRoleId: edgeData.studioEdge.target,
-        eventType: edgeData.studioEdge.eventType
-      });
+      await this.deleteEdge(edgeData.studioEdge);
     }
   }
 
@@ -1301,13 +1439,27 @@ export class StudioGraphIsland {
 
   private applyAutoLayout(): void {
     const graph = new dagre.graphlib.Graph();
-    graph.setGraph({ rankdir: "LR", nodesep: 70, ranksep: 100 });
+    const paddingX = 72;
+    const paddingY = 72;
+    const columnGap = 108;
+    const rowGap = 34;
+    graph.setGraph({
+      rankdir: "LR",
+      nodesep: 42,
+      ranksep: 92,
+      acyclicer: "greedy",
+      ranker: "network-simplex",
+      marginx: paddingX,
+      marginy: paddingY
+    });
     graph.setDefaultEdgeLabel(() => ({}));
+    const adjacency = new Map<string, { incoming: string[]; outgoing: string[] }>();
     for (const node of this.graph.getNodes()) {
       const data = node.getData() as { studioNode?: { kind?: string } } | undefined;
       if (data?.studioNode?.kind !== "role") continue;
       const size = node.getSize();
       graph.setNode(node.id, { width: size.width, height: size.height });
+      adjacency.set(node.id, { incoming: [], outgoing: [] });
     }
     for (const edge of this.graph.getEdges()) {
       if (this.isPendingEdgePreviewCell(edge)) {
@@ -1317,15 +1469,109 @@ export class StudioGraphIsland {
       const target = edge.getTargetCellId();
       if (source && target && graph.hasNode(source) && graph.hasNode(target)) {
         graph.setEdge(source, target);
+        const sourceLinks = adjacency.get(source);
+        const targetLinks = adjacency.get(target);
+        if (sourceLinks) {
+          sourceLinks.outgoing.push(target);
+        }
+        if (targetLinks) {
+          targetLinks.incoming.push(source);
+        }
       }
     }
     dagre.layout(graph);
-    graph.nodes().forEach((id) => {
-      const layoutNode = graph.node(id);
-      const cell = this.graph.getCellById(id);
-      if (cell?.isNode()) {
-        cell.position(layoutNode.x - layoutNode.width / 2 + 120, layoutNode.y - layoutNode.height / 2 + 120);
+    const layoutNodes = graph.nodes()
+      .map((id) => {
+        const layoutNode = graph.node(id) as {
+          width: number;
+          height: number;
+          x: number;
+          y: number;
+        };
+        return {
+          id,
+          width: layoutNode.width,
+          height: layoutNode.height,
+          dagreX: layoutNode.x,
+          dagreY: layoutNode.y
+        };
+      })
+      .sort((left, right) => left.dagreX - right.dagreX || left.dagreY - right.dagreY || left.id.localeCompare(right.id));
+    if (!layoutNodes.length) {
+      return;
+    }
+    const columns: Array<Array<typeof layoutNodes[number]>> = [];
+    for (const node of layoutNodes) {
+      const column = columns[columns.length - 1];
+      if (!column || Math.abs(column[0].dagreX - node.dagreX) > 24) {
+        columns.push([node]);
+        continue;
       }
+      column.push(node);
+    }
+    const placedCenters = new Map<string, number>();
+    const columnPositions = new Map<string, { x: number; y: number }>();
+    let columnLeft = paddingX;
+    for (const column of columns) {
+      const columnWidth = Math.max(...column.map((node) => node.width));
+      const ordered = column
+        .map((node) => {
+          const links = adjacency.get(node.id);
+          const neighborCenters = (links?.incoming || [])
+            .map((neighborId) => placedCenters.get(neighborId))
+            .filter((value): value is number => Number.isFinite(value))
+            .concat((links?.outgoing || [])
+              .map((neighborId) => graph.node(neighborId)?.y as number | undefined)
+              .filter((value): value is number => Number.isFinite(value)));
+          const idealCenter = neighborCenters.length
+            ? neighborCenters.slice().sort((left, right) => left - right)[Math.floor(neighborCenters.length / 2)]
+            : node.dagreY;
+          return {
+            ...node,
+            idealCenter
+          };
+        })
+        .sort((left, right) => left.idealCenter - right.idealCenter || left.dagreY - right.dagreY || left.id.localeCompare(right.id));
+      let cursorTop = Number.NEGATIVE_INFINITY;
+      const placements = ordered.map((node) => {
+        let top = node.idealCenter - node.height / 2;
+        if (Number.isFinite(cursorTop)) {
+          top = Math.max(top, cursorTop + rowGap);
+        }
+        cursorTop = top + node.height;
+        return { ...node, top };
+      });
+      for (let index = placements.length - 2; index >= 0; index -= 1) {
+        const nextPlacement = placements[index + 1];
+        placements[index].top = Math.min(
+          placements[index].top,
+          nextPlacement.top - rowGap - placements[index].height
+        );
+      }
+      for (const placement of placements) {
+        const x = columnLeft + (columnWidth - placement.width) / 2;
+        const y = placement.top;
+        columnPositions.set(placement.id, { x, y });
+        placedCenters.set(placement.id, y + placement.height / 2);
+      }
+      columnLeft += columnWidth + columnGap;
+    }
+    let minLeft = Number.POSITIVE_INFINITY;
+    let minTop = Number.POSITIVE_INFINITY;
+    for (const position of columnPositions.values()) {
+      minLeft = Math.min(minLeft, position.x);
+      minTop = Math.min(minTop, position.y);
+    }
+    const offsetX = Number.isFinite(minLeft) ? paddingX - minLeft : 0;
+    const offsetY = Number.isFinite(minTop) ? paddingY - minTop : 0;
+    this.graph.batchUpdate("studio-auto-layout", () => {
+      graph.nodes().forEach((id) => {
+        const position = columnPositions.get(id);
+        const cell = this.graph.getCellById(id);
+        if (cell?.isNode() && position) {
+          cell.position(position.x + offsetX, position.y + offsetY);
+        }
+      });
     });
     this.fitGraphToViewport();
   }
@@ -1442,7 +1688,10 @@ export class StudioGraphIsland {
     }, 250);
   }
 
-  private async applyCommand(command: StudioAuthoringCommand): Promise<void> {
+  private async applyCommand(
+    command: StudioAuthoringCommand,
+    selectionOverride?: { selectedRoleId?: string; selectedFlowKey?: string }
+  ): Promise<void> {
     if (this.isReadOnly() || !this.options.authoring || !this.options.canvas) {
       if (command.type === "add-edge") {
         this.pendingEdgePreview = null;
@@ -1465,8 +1714,12 @@ export class StudioGraphIsland {
       this.toast("error", this.blockedMessage(result.blockedCode));
       return;
     }
-    const nextSelectedRoleId = result.selectedRoleId || this.selectedRoleId();
-    const nextSelectedFlowKey = result.selectedFlowKey || this.options.selectedFlowKey || "";
+    const nextSelectedRoleId = selectionOverride && Object.hasOwn(selectionOverride, "selectedRoleId")
+      ? selectionOverride.selectedRoleId || ""
+      : result.selectedRoleId || this.selectedRoleId();
+    const nextSelectedFlowKey = selectionOverride && Object.hasOwn(selectionOverride, "selectedFlowKey")
+      ? selectionOverride.selectedFlowKey || ""
+      : result.selectedFlowKey || this.options.selectedFlowKey || "";
     await this.applyResolvedCommandResult(result, {
       selectedRoleId: nextSelectedRoleId,
       selectedFlowKey: nextSelectedFlowKey
@@ -1801,6 +2054,11 @@ export class StudioGraphIsland {
   }
 
   private handleRootKeydown(event: KeyboardEvent): void {
+    if (!this.contextMenuEl.hidden && event.key === "Escape") {
+      event.preventDefault();
+      this.hideContextMenu();
+      return;
+    }
     if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "p") {
       event.preventDefault();
       this.toggleQuickOpen();
@@ -1984,12 +2242,11 @@ export class StudioGraphIsland {
     if (preview && this.committedEdgeExists(preview)) {
       preview = null;
     }
-    const existing = this.graph.getCellById(STUDIO_PENDING_EDGE_ID);
+    const pendingEdges = this.graph.getEdges().filter((edge) => this.isPendingEdgePreviewCell(edge));
+    const [existing, ...duplicates] = pendingEdges;
+    duplicates.forEach((edge) => edge.remove());
     if (!preview) {
-      if (existing?.isEdge()) {
-        existing.remove();
-        this.applyRuntimeOverlay();
-      }
+      this.removePendingEdgePreviewCells();
       return;
     }
     const targetCellId = normalizeStudioGraphTargetRoleId(preview.targetRoleId);
@@ -2022,33 +2279,75 @@ export class StudioGraphIsland {
     };
     if (existing?.isEdge()) {
       existing.setData({ studioPendingEdge: preview });
-      existing.setSource({ cell: preview.sourceRoleId, port: "out" });
+      existing.setSource({
+        cell: preview.sourceRoleId,
+        port: "out",
+        anchor: { name: "right" },
+        connectionPoint: { name: "anchor" }
+      });
       existing.setTarget({
         cell: targetCellId,
-        port: preview.targetRoleId === STUDIO_SYSTEM_END_ROLE_ID ? undefined : "in"
+        port: preview.targetRoleId === STUDIO_SYSTEM_END_ROLE_ID ? undefined : "in",
+        anchor: { name: "left" },
+        connectionPoint: { name: "anchor" }
       });
       existing.setLabels(nextLabels);
       existing.attr(nextAttrs);
-      existing.setRouter({ name: "manhattan" });
-      existing.setConnector({ name: "rounded" });
+      existing.setRouter(STUDIO_GRAPH_EDGE_ROUTER);
+      existing.setConnector(STUDIO_GRAPH_EDGE_CONNECTOR);
       this.applyRuntimeOverlay();
       return;
     }
     this.graph.addEdge({
       id: STUDIO_PENDING_EDGE_ID,
-      source: { cell: preview.sourceRoleId, port: "out" },
+      source: {
+        cell: preview.sourceRoleId,
+        port: "out",
+        anchor: { name: "right" },
+        connectionPoint: { name: "anchor" }
+      },
       target: {
         cell: targetCellId,
-        port: preview.targetRoleId === STUDIO_SYSTEM_END_ROLE_ID ? undefined : "in"
+        port: preview.targetRoleId === STUDIO_SYSTEM_END_ROLE_ID ? undefined : "in",
+        anchor: { name: "left" },
+        connectionPoint: { name: "anchor" }
       },
       zIndex: 0,
       data: { studioPendingEdge: preview },
       labels: nextLabels,
       attrs: nextAttrs,
-      router: { name: "manhattan" },
-      connector: { name: "rounded" }
+      router: STUDIO_GRAPH_EDGE_ROUTER,
+      connector: STUDIO_GRAPH_EDGE_CONNECTOR
     });
     this.applyRuntimeOverlay();
+  }
+
+  private removePendingEdgePreviewCells(): void {
+    let removed = false;
+    for (const edge of this.graph.getEdges()) {
+      if (!this.isPendingEdgePreviewCell(edge)) {
+        continue;
+      }
+      edge.remove();
+      removed = true;
+    }
+    if (removed) {
+      this.applyRuntimeOverlay();
+    }
+  }
+
+  private schedulePendingEdgeCleanup(): void {
+    if (this.pendingEdgeCleanupTimer) {
+      clearTimeout(this.pendingEdgeCleanupTimer);
+    }
+    this.pendingEdgeCleanupTimer = setTimeout(() => {
+      this.pendingEdgeCleanupTimer = null;
+      if (this.commandForm?.kind === "add-edge") {
+        this.syncPendingEdgePreview();
+        return;
+      }
+      this.removePendingEdgePreviewCells();
+    }, 0);
   }
 
   private committedEdgeExists(preview: PendingStudioEdgePreview): boolean {
@@ -2077,6 +2376,283 @@ export class StudioGraphIsland {
     }
     const data = edge.getData() as { studioPendingEdge?: unknown } | undefined;
     return Boolean(data?.studioPendingEdge);
+  }
+
+  private edgeRecordFromCell(cell: { getData(): unknown } | null | undefined): { studioEdge?: StudioGraphEdgeRecord } | undefined {
+    return cell
+      ? cell.getData() as { studioEdge?: StudioGraphEdgeRecord } | undefined
+      : undefined;
+  }
+
+  private selectRoleById(roleId: string, node?: ReturnType<Graph["getNodes"]>[number]): void {
+    const roleNode = node || this.graph.getCellById(roleId);
+    if (!roleNode) {
+      return;
+    }
+    this.options.selectedRoleId = roleId;
+    this.options.selectedFlowKey = "";
+    this.graph.cleanSelection();
+    this.graph.select(roleNode);
+    this.options.onSelectRole?.(roleId);
+    this.syncSelectionPresentation(roleId, { preserveViewport: true });
+    this.updateToolbarState();
+  }
+
+  private selectEdge(edgeData: StudioGraphEdgeRecord, edge?: ReturnType<Graph["getEdges"]>[number]): void {
+    const edgeCell = edge || this.graph.getEdges().find((candidate) => {
+      const data = this.edgeRecordFromCell(candidate);
+      return data?.studioEdge
+        ? studioEdgeFlowKey(data.studioEdge) === studioEdgeFlowKey(edgeData)
+        : false;
+    });
+    if (!edgeCell) {
+      return;
+    }
+    this.options.selectedRoleId = "";
+    this.options.selectedFlowKey = studioEdgeFlowKey(edgeData);
+    this.graph.cleanSelection();
+    this.graph.select(edgeCell);
+    this.options.onSelectFlow?.(studioEdgeFlowKey(edgeData));
+    this.syncSelectionPresentation(edgeCell.id, { preserveViewport: true });
+    this.updateToolbarState();
+  }
+
+  private showContextMenu(args: {
+    x: number;
+    y: number;
+    state: StudioGraphContextMenuState;
+  }): void {
+    if (this.isReadOnly()) {
+      return;
+    }
+    this.contextMenuState = args.state;
+    const canDeleteRole = args.state.kind === "role"
+      ? args.state.roleId !== this.options.authoring?.system.entryRoleId
+      : Boolean(args.state.edge.editable);
+    const items = args.state.kind === "role"
+      ? [
+          { action: "edit", label: "Edit", disabled: false },
+          { action: "delete", label: "Delete", disabled: !canDeleteRole, destructive: true }
+        ]
+      : [
+          { action: "edit", label: "Edit", disabled: args.state.edge.editable === false },
+          { action: "insert-role", label: "Insert role", disabled: args.state.edge.editable === false },
+          { action: "delete", label: "Delete", disabled: args.state.edge.editable === false, destructive: true }
+        ];
+    this.contextMenuEl.innerHTML = items.map((item) =>
+      '<button type="button" class="studio-graph-context-menu-item' +
+      (item.destructive ? " is-destructive" : "") +
+      '" data-studio-graph-context-action="' + this.escapeHtml(item.action) + '"' +
+      (item.disabled ? " disabled" : "") + ">" +
+      this.escapeHtml(item.label) +
+      "</button>"
+    ).join("");
+    this.contextMenuEl.hidden = false;
+    const stageRect = this.stageEl.getBoundingClientRect();
+    const menuWidth = this.contextMenuEl.offsetWidth;
+    const menuHeight = this.contextMenuEl.offsetHeight;
+    const left = Math.min(
+      Math.max(10, args.x - stageRect.left + 6),
+      Math.max(10, this.stageEl.clientWidth - menuWidth - 10)
+    );
+    const top = Math.min(
+      Math.max(10, args.y - stageRect.top + 6),
+      Math.max(10, this.stageEl.clientHeight - menuHeight - 10)
+    );
+    this.contextMenuEl.style.left = `${left}px`;
+    this.contextMenuEl.style.top = `${top}px`;
+  }
+
+  private hideContextMenu(): void {
+    this.contextMenuState = null;
+    this.contextMenuEl.hidden = true;
+    this.contextMenuEl.innerHTML = "";
+  }
+
+  private async handleContextMenuAction(action: string): Promise<void> {
+    const state = this.contextMenuState;
+    if (!state || this.isReadOnly()) {
+      return;
+    }
+    if (state.kind === "role") {
+      if (action === "edit") {
+        this.openEditRoleForm(state.roleId);
+        return;
+      }
+      if (action === "delete") {
+        await this.deleteRole(state.roleId);
+      }
+      return;
+    }
+    if (action === "edit") {
+      this.openEditEdgeForm(state.edge);
+      return;
+    }
+    if (action === "delete") {
+      await this.deleteEdge(state.edge);
+      return;
+    }
+    if (action === "insert-role") {
+      this.beginFlowRoleInsertion(state.edge);
+    }
+  }
+
+  private async deleteRole(roleId: string): Promise<void> {
+    if (roleId === this.options.authoring?.system.entryRoleId) {
+      this.toast("error", this.label("entryRoleDeletionBlocked"));
+      return;
+    }
+    if (window.confirm && !window.confirm(this.formatLabel("deleteRoleConfirm", { roleId }))) {
+      return;
+    }
+    const rewire = this.roleAutoRewireCandidate(roleId);
+    if (rewire) {
+      await this.applyCommand(rewire.command);
+      return;
+    }
+    await this.applyCommand({ type: "delete-role", roleId });
+  }
+
+  private async deleteEdge(edge: StudioGraphEdgeRecord): Promise<void> {
+    if (edge.editable === false) {
+      return;
+    }
+    await this.applyCommand({
+      type: "delete-edge",
+      flowId: edge.id,
+      sourceRoleId: edge.source,
+      targetRoleId: edge.target,
+      eventType: edge.eventType
+    });
+  }
+
+  private roleAutoRewireCandidate(roleId: string): { command: StudioAuthoringCommand } | null {
+    const committedEdges = this.graph.getEdges()
+      .filter((edge) => !this.isPendingEdgePreviewCell(edge))
+      .map((edge) => this.edgeRecordFromCell(edge)?.studioEdge)
+      .filter((edge): edge is StudioGraphEdgeRecord => Boolean(edge));
+    const incoming = committedEdges.filter((edge) => edge.target === roleId);
+    const outgoing = committedEdges.filter((edge) => edge.source === roleId);
+    if (incoming.length !== 1 || outgoing.length !== 1) {
+      return null;
+    }
+    const [incomingEdge] = incoming;
+    const [outgoingEdge] = outgoing;
+    if (incomingEdge.editable === false || outgoingEdge.editable === false) {
+      return null;
+    }
+    if (incomingEdge.source === outgoingEdge.target) {
+      return null;
+    }
+    if (incomingEdge.eventType !== outgoingEdge.eventType) {
+      return null;
+    }
+    if (Boolean(incomingEdge.runtimeOnlyErrorFlow) !== Boolean(outgoingEdge.runtimeOnlyErrorFlow)) {
+      return null;
+    }
+    const incomingLabel = (incomingEdge.label || "").trim();
+    const outgoingLabel = (outgoingEdge.label || "").trim();
+    if (incomingLabel && outgoingLabel && incomingLabel !== outgoingLabel) {
+      return null;
+    }
+    return {
+      command: {
+        type: "batch",
+        commands: [
+          {
+            type: "delete-edge",
+            flowId: incomingEdge.id,
+            sourceRoleId: incomingEdge.source,
+            targetRoleId: incomingEdge.target,
+            eventType: incomingEdge.eventType
+          },
+          {
+            type: "delete-edge",
+            flowId: outgoingEdge.id,
+            sourceRoleId: outgoingEdge.source,
+            targetRoleId: outgoingEdge.target,
+            eventType: outgoingEdge.eventType
+          },
+          { type: "delete-role", roleId },
+          {
+            type: "add-edge",
+            sourceRoleId: incomingEdge.source,
+            targetRoleId: outgoingEdge.target,
+            eventType: incomingEdge.eventType,
+            label: incomingLabel || outgoingLabel || incomingEdge.eventType,
+            runtimeOnlyErrorFlow: Boolean(incomingEdge.runtimeOnlyErrorFlow),
+            participatesInJoin: Boolean(outgoingEdge.participatesInJoin)
+          }
+        ]
+      }
+    };
+  }
+
+  private beginFlowRoleInsertion(edge: StudioGraphEdgeRecord): void {
+    if (edge.editable === false) {
+      return;
+    }
+    const position = this.flowInsertionPosition(edge);
+    this.openCommandForm("add-role");
+    this.pendingRoleInsertion = {
+      edge,
+      x: position.x,
+      y: position.y
+    };
+  }
+
+  private flowInsertionPosition(edge: StudioGraphEdgeRecord): { x: number; y: number } {
+    const sourceNode = this.graph.getCellById(edge.source);
+    const targetNode = this.graph.getCellById(normalizeStudioGraphTargetRoleId(edge.target));
+    const sourceBox = sourceNode?.isNode() ? sourceNode.getBBox() : null;
+    const targetBox = targetNode?.isNode() ? targetNode.getBBox() : null;
+    const sourceCenterX = sourceBox ? sourceBox.x + sourceBox.width / 2 : 210;
+    const sourceCenterY = sourceBox ? sourceBox.y + sourceBox.height / 2 : 162;
+    const targetCenterX = targetBox ? targetBox.x + targetBox.width / 2 : sourceCenterX + 220;
+    const targetCenterY = targetBox ? targetBox.y + targetBox.height / 2 : sourceCenterY;
+    return {
+      x: Math.round((sourceCenterX + targetCenterX) / 2 - 90),
+      y: Math.round((sourceCenterY + targetCenterY) / 2 - 42)
+    };
+  }
+
+  private commandForInsertedRole(
+    command: Extract<StudioAuthoringCommand, { type: "add-role" }>,
+    insertion: PendingStudioRoleInsertion
+  ): StudioAuthoringCommand {
+    return {
+      type: "batch",
+      commands: [
+        {
+          ...command,
+          x: insertion.x,
+          y: insertion.y
+        },
+        {
+          type: "delete-edge",
+          flowId: insertion.edge.id,
+          sourceRoleId: insertion.edge.source,
+          targetRoleId: insertion.edge.target,
+          eventType: insertion.edge.eventType
+        },
+        {
+          type: "add-edge",
+          sourceRoleId: insertion.edge.source,
+          targetRoleId: command.roleId?.trim() || "",
+          eventType: insertion.edge.eventType,
+          label: insertion.edge.label,
+          runtimeOnlyErrorFlow: Boolean(insertion.edge.runtimeOnlyErrorFlow),
+          participatesInJoin: false
+        },
+        {
+          type: "add-edge",
+          sourceRoleId: command.roleId?.trim() || "",
+          targetRoleId: insertion.edge.target,
+          eventType: "DONE",
+          participatesInJoin: Boolean(insertion.edge.participatesInJoin)
+        }
+      ]
+    };
   }
 
   private applyRuntimeOverlay(): void {

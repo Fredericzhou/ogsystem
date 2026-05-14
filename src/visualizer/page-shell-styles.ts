@@ -833,9 +833,25 @@ export function renderPageShellStyles(): string {
     .build-control-bar #workbench-status .workbench-status-last-run {
       max-width: min(100%, 260px);
     }
+    .build-control-bar #workbench-status .workbench-status-progress {
+      color: var(--warn);
+      border-color: rgba(251, 191, 36, 0.28);
+      background:
+        linear-gradient(90deg, rgba(251, 191, 36, 0.16), rgba(56, 189, 248, 0.1), rgba(251, 191, 36, 0.16));
+      background-size: 220% 100%;
+      animation: workbench-status-scan 1.1s linear infinite;
+    }
     .build-control-bar #workbench-status code {
       flex: 0 1 auto;
       max-width: 16ch;
+    }
+    @keyframes workbench-status-scan {
+      from {
+        background-position: 200% 0;
+      }
+      to {
+        background-position: 0 0;
+      }
     }
     .build-control-bar #workbench-tabs,
     .build-control-bar #workbench-actions {
@@ -1111,7 +1127,10 @@ export function renderPageShellStyles(): string {
     }
     .studio-canvas-shell {
       display: grid;
-      grid-template-columns: minmax(0, 1fr) minmax(320px, 420px);
+      grid-template-columns:
+        minmax(0, 1fr)
+        10px
+        minmax(300px, min(50%, var(--studio-inspector-width, 380px)));
       grid-template-rows: auto minmax(0, 1fr);
       gap: 0;
       min-width: 0;
@@ -1122,10 +1141,13 @@ export function renderPageShellStyles(): string {
       overflow: hidden;
     }
     .studio-canvas-shell.has-docked-selection {
-      grid-template-columns: minmax(0, 1fr) minmax(320px, 420px);
+      grid-template-columns:
+        minmax(0, 1fr)
+        10px
+        minmax(300px, min(50%, var(--studio-inspector-width, 380px)));
     }
     .studio-canvas-shell.has-docked-selection.has-collapsed-selection {
-      grid-template-columns: minmax(0, 1fr) 56px;
+      grid-template-columns: minmax(0, 1fr) 0 56px;
     }
     .studio-canvas-toolbar {
       display: flex;
@@ -1211,6 +1233,45 @@ export function renderPageShellStyles(): string {
       padding: 8px 10px;
       overflow: hidden;
     }
+    .studio-selection-resize-handle {
+      grid-column: 2 / 3;
+      grid-row: 2;
+      position: relative;
+      cursor: col-resize;
+      touch-action: none;
+      z-index: 2;
+    }
+    .studio-selection-resize-handle::before {
+      content: "";
+      position: absolute;
+      inset: 0;
+      background: linear-gradient(180deg, transparent, rgba(56, 189, 248, 0.12), transparent);
+      opacity: 0;
+      transition: opacity 140ms ease;
+    }
+    .studio-selection-resize-handle::after {
+      content: "";
+      position: absolute;
+      top: 10px;
+      bottom: 10px;
+      left: 50%;
+      width: 2px;
+      transform: translateX(-50%);
+      border-radius: 999px;
+      background: rgba(148, 163, 184, 0.2);
+      transition: background 140ms ease;
+    }
+    .studio-canvas-shell:not(.has-collapsed-selection) .studio-selection-resize-handle:hover::before,
+    .studio-canvas-shell.is-resizing-inspector .studio-selection-resize-handle::before {
+      opacity: 1;
+    }
+    .studio-canvas-shell:not(.has-collapsed-selection) .studio-selection-resize-handle:hover::after,
+    .studio-canvas-shell.is-resizing-inspector .studio-selection-resize-handle::after {
+      background: rgba(56, 189, 248, 0.55);
+    }
+    .studio-canvas-shell.has-collapsed-selection .studio-selection-resize-handle {
+      pointer-events: none;
+    }
     .studio-source-root {
       display: grid;
       min-height: 0;
@@ -1239,7 +1300,7 @@ export function renderPageShellStyles(): string {
       display: none;
     }
     .studio-selection-overlay {
-      grid-column: 2 / 3;
+      grid-column: 3 / 4;
       grid-row: 2;
       position: relative;
       z-index: 1;
@@ -1383,6 +1444,16 @@ export function renderPageShellStyles(): string {
     .studio-selection-panel .run-card,
     .studio-selection-panel .compact-list-item {
       padding: 7px 8px;
+    }
+    .studio-flow-projection-grid {
+      display: grid;
+      gap: 8px;
+      grid-template-columns: repeat(auto-fit, minmax(0, 1fr));
+    }
+    .studio-projection-card .compact-list {
+      display: grid;
+      gap: 6px;
+      margin-top: 8px;
     }
     .studio-selection-role-package:empty {
       display: none;
@@ -2070,6 +2141,9 @@ export function renderPageShellStyles(): string {
       .studio-canvas-shell {
         grid-template-columns: 1fr;
         grid-template-rows: auto minmax(360px, 1fr) minmax(260px, auto);
+      }
+      .studio-selection-resize-handle {
+        display: none;
       }
       .studio-canvas-shell.has-docked-selection .studio-canvas-toolbar,
       .studio-canvas-shell.has-docked-selection .studio-graph-root,
