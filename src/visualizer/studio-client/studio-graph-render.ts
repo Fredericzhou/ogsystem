@@ -270,6 +270,21 @@ function studioEdgeOffset(
   return studioEdgeAnchorOffset(index, count, span);
 }
 
+function studioEdgeEndpointOrder(args: {
+  edge: GraphViewModelEdge;
+  nodeById: ReadonlyMap<string, GraphViewModelNode>;
+  route: ReturnType<typeof resolveStudioEdgeRoute>;
+  terminal: "source" | "target";
+}): number {
+  const referenceNode = args.nodeById.get(args.terminal === "source" ? args.edge.target : args.edge.source);
+  if (!referenceNode) {
+    return 0;
+  }
+  const side = args.terminal === "source" ? args.route.sourceSide : args.route.targetSide;
+  const center = edgeCenter(referenceNode);
+  return side === "top" || side === "bottom" ? center.x : center.y;
+}
+
 function buildStudioEdgeRouting(viewModel: GraphViewModel): Map<string, StudioEdgeRouting> {
   const nodeById = new Map(viewModel.nodes.map((node) => [node.id, node]));
   const routeByEdgeId = new Map<string, ReturnType<typeof resolveStudioEdgeRoute>>();
@@ -293,10 +308,22 @@ function buildStudioEdgeRouting(viewModel: GraphViewModel): Map<string, StudioEd
     incoming.set(targetKey, targetEdges);
   }
   for (const edges of outgoing.values()) {
-    edges.sort((left, right) => edgeSortKey(left).localeCompare(edgeSortKey(right)));
+    edges.sort((left, right) => {
+      const leftRoute = routeByEdgeId.get(left.id) || resolveStudioEdgeRoute(left, nodeById);
+      const rightRoute = routeByEdgeId.get(right.id) || resolveStudioEdgeRoute(right, nodeById);
+      return studioEdgeEndpointOrder({ edge: left, nodeById, route: leftRoute, terminal: "source" }) -
+        studioEdgeEndpointOrder({ edge: right, nodeById, route: rightRoute, terminal: "source" }) ||
+        edgeSortKey(left).localeCompare(edgeSortKey(right));
+    });
   }
   for (const edges of incoming.values()) {
-    edges.sort((left, right) => edgeSortKey(left).localeCompare(edgeSortKey(right)));
+    edges.sort((left, right) => {
+      const leftRoute = routeByEdgeId.get(left.id) || resolveStudioEdgeRoute(left, nodeById);
+      const rightRoute = routeByEdgeId.get(right.id) || resolveStudioEdgeRoute(right, nodeById);
+      return studioEdgeEndpointOrder({ edge: left, nodeById, route: leftRoute, terminal: "target" }) -
+        studioEdgeEndpointOrder({ edge: right, nodeById, route: rightRoute, terminal: "target" }) ||
+        edgeSortKey(left).localeCompare(edgeSortKey(right));
+    });
   }
   const routingByEdgeId = new Map<string, StudioEdgeRouting>();
   for (const edge of viewModel.edges) {

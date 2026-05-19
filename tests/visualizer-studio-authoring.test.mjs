@@ -374,6 +374,7 @@ test("Studio graph bundle chooses role-relative ports and X6 routers for non-for
   assert.match(bundle, /endDirections: \["right"\]/);
   assert.match(bundle, /startDirections: \[route\.sourceSide\]/);
   assert.match(bundle, /endDirections: \[route\.targetSide\]/);
+  assert.match(bundle, /studioEdgeEndpointOrder/);
   assert.match(bundle, /const isTightForwardHop = horizontalGap > 0 && horizontalGap < 120/);
   assert.match(bundle, /name: "orth"/);
   assert.match(bundle, /name: "manhattan"/);
@@ -383,6 +384,9 @@ test("Studio graph bundle preserves stored edit layout and distributes boundarie
   const bundle = await readFile(new URL("../dist/visualizer/studio-client/studio-graph.js", import.meta.url), "utf8");
   assert.match(bundle, /hasCompleteStoredRoleLayout/);
   assert.match(bundle, /layoutPathExists/);
+  assert.match(bundle, /positionBoundaryExtremes/);
+  assert.match(bundle, /this\.positionBoundaryExtremes\(positions, "horizontal", config\.columnGap\)/);
+  assert.match(bundle, /this\.positionBoundaryExtremes\(positions, "vertical", 96\)/);
   assert.match(bundle, /studioNode\?\.kind !== "role" && .*studioNode\?\.kind !== "boundary"/);
   assert.match(bundle, /preserveBoundaryNodeLayout/);
   assert.match(bundle, /magnetConnectable:\s*false/);

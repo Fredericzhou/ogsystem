@@ -1646,6 +1646,82 @@ export class StudioGraphIsland {
     return false;
   }
 
+  private positionBoundaryExtremes(
+    positions: Array<{ id: string; position: { x: number; y: number } }>,
+    orientation: "horizontal" | "vertical",
+    gap: number
+  ): Array<{ id: string; position: { x: number; y: number } }> {
+    const next = positions.map((entry) => ({
+      id: entry.id,
+      position: { ...entry.position }
+    }));
+    const byId = new Map(next.map((entry) => [entry.id, entry]));
+    const roleEntries = next.filter((entry) => {
+      if (entry.id === "input" || entry.id === "output") {
+        return false;
+      }
+      const cell = this.graph.getCellById(entry.id);
+      const data = cell?.getData() as { studioNode?: { kind?: string } } | undefined;
+      return data?.studioNode?.kind === "role";
+    });
+    const input = byId.get("input");
+    const output = byId.get("output");
+    if (!roleEntries.length) {
+      if (input && output) {
+        if (orientation === "horizontal") {
+          output.position.x = input.position.x + gap * 2;
+          output.position.y = input.position.y;
+        } else {
+          output.position.x = input.position.x;
+          output.position.y = input.position.y + gap * 2;
+        }
+      }
+      return next;
+    }
+    let minLeft = Number.POSITIVE_INFINITY;
+    let maxRight = Number.NEGATIVE_INFINITY;
+    let minTop = Number.POSITIVE_INFINITY;
+    let maxBottom = Number.NEGATIVE_INFINITY;
+    for (const entry of roleEntries) {
+      const cell = this.graph.getCellById(entry.id);
+      const size = cell?.isNode() ? cell.getSize() : { width: 0, height: 0 };
+      minLeft = Math.min(minLeft, entry.position.x);
+      maxRight = Math.max(maxRight, entry.position.x + size.width);
+      minTop = Math.min(minTop, entry.position.y);
+      maxBottom = Math.max(maxBottom, entry.position.y + size.height);
+    }
+    const roleCenterX = (minLeft + maxRight) / 2;
+    const roleCenterY = (minTop + maxBottom) / 2;
+    if (orientation === "horizontal") {
+      if (input) {
+        const inputCell = this.graph.getCellById("input");
+        const inputSize = inputCell?.isNode() ? inputCell.getSize() : { width: 0, height: 0 };
+        input.position.x = minLeft - gap - inputSize.width;
+        input.position.y = roleCenterY - inputSize.height / 2;
+      }
+      if (output) {
+        const outputCell = this.graph.getCellById("output");
+        const outputSize = outputCell?.isNode() ? outputCell.getSize() : { width: 0, height: 0 };
+        output.position.x = maxRight + gap;
+        output.position.y = roleCenterY - outputSize.height / 2;
+      }
+      return next;
+    }
+    if (input) {
+      const inputCell = this.graph.getCellById("input");
+      const inputSize = inputCell?.isNode() ? inputCell.getSize() : { width: 0, height: 0 };
+      input.position.x = roleCenterX - inputSize.width / 2;
+      input.position.y = minTop - gap - inputSize.height;
+    }
+    if (output) {
+      const outputCell = this.graph.getCellById("output");
+      const outputSize = outputCell?.isNode() ? outputCell.getSize() : { width: 0, height: 0 };
+      output.position.x = roleCenterX - outputSize.width / 2;
+      output.position.y = maxBottom + gap;
+    }
+    return next;
+  }
+
   private applyHorizontalAutoLayout(config: {
     paddingX: number;
     paddingY: number;
@@ -1720,11 +1796,12 @@ export class StudioGraphIsland {
       }
       columnLeft += columnWidth + config.columnGap;
     }
+    const positions = graph.nodes().map((id) => ({
+      id,
+      position: columnPositions.get(id)
+    })).filter((entry): entry is { id: string; position: { x: number; y: number } } => Boolean(entry.position));
     this.applyLayoutPositions(
-      graph.nodes().map((id) => ({
-        id,
-        position: columnPositions.get(id)
-      })).filter((entry): entry is { id: string; position: { x: number; y: number } } => Boolean(entry.position)),
+      this.positionBoundaryExtremes(positions, "horizontal", config.columnGap),
       config.paddingX,
       config.paddingY
     );
@@ -1743,14 +1820,15 @@ export class StudioGraphIsland {
     if (!layoutNodes.length) {
       return;
     }
+    const positions = layoutNodes.map((node) => ({
+      id: node.id,
+      position: {
+        x: node.dagreX - node.width / 2,
+        y: node.dagreY - node.height / 2
+      }
+    }));
     this.applyLayoutPositions(
-      layoutNodes.map((node) => ({
-        id: node.id,
-        position: {
-          x: node.dagreX - node.width / 2,
-          y: node.dagreY - node.height / 2
-        }
-      })),
+      this.positionBoundaryExtremes(positions, "vertical", 96),
       paddingX,
       paddingY
     );
