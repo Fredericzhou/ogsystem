@@ -11,7 +11,6 @@ async function seedOpsProject(workdir) {
   await mkdir(path.resolve(workdir, ".ogs", "runs"), { recursive: true });
   await symlink(path.resolve(repoRoot, "og-roles"), path.resolve(workdir, "og-roles"), "dir");
   for (const file of [
-    "runtime.json",
     "model-selection.json",
     "model-catalog.json",
     "laws.json",
@@ -19,6 +18,25 @@ async function seedOpsProject(workdir) {
   ]) {
     await symlink(path.resolve(repoRoot, ".ogs", file), path.resolve(workdir, ".ogs", file));
   }
+  await writeFile(
+    path.resolve(workdir, ".ogs", "runtime.json"),
+    JSON.stringify(
+      {
+        configVersion: "2",
+        executor: "opencode",
+        roleRepo: "./og-roles",
+        runsDir: ".ogs/runs",
+        retention: {
+          enabled: true,
+          executionDirThreshold: 10,
+          keepLatest: 3
+        }
+      },
+      null,
+      2
+    ),
+    "utf8"
+  );
   const systemSource = [
     "flowchart TD",
     "%% system.id=viz.ops.demo",
@@ -151,6 +169,7 @@ async function seedOpsRun(workdir, systemSource) {
         systemVersion: "1.0.0",
         status: "failed",
         transitionCount: 4,
+        executionDirCount: 12,
         lastRoleId: "demo-analyst",
         pendingReviewCount: 1,
         hasWaitingHumanReview: true,
@@ -216,4 +235,9 @@ test("ops summary aggregates failures, review/rework pending, and resume blocker
   assert.equal(summary.resumeReadiness.inspectedRunCount, 1);
   assert.equal(summary.resumeReadiness.blockedRunCount, 1);
   assert.equal(Array.isArray(summary.resumeReadiness.blockingByCategory), true);
+  assert.equal(summary.longRunningHealth.executionDirCount.max, 12);
+  assert.equal(summary.longRunningHealth.retention.enabled, true);
+  assert.equal(summary.longRunningHealth.retention.executionDirThreshold, 10);
+  assert.equal(summary.longRunningHealth.cleanupRecommendation.action, "cleanup-recommended");
+  assert.equal(summary.summary.cleanupRecommendation, "cleanup-recommended");
 });

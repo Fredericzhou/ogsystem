@@ -1455,6 +1455,17 @@ test("adapter applies retention cleanup from runtime config when execution direc
 
   const metricsJson = JSON.parse(await readFile(path.resolve(runDir, "metrics.json"), "utf8"));
   assert.strictEqual(metricsJson.executionDirCount, 5);
+  const cleanupEvents = (await readFile(path.resolve(runDir, "events.ndjson"), "utf8"))
+    .trim()
+    .split("\n")
+    .map((line) => JSON.parse(line))
+    .filter((entry) => entry.type === "execution_history_cleanup");
+  assert.equal(cleanupEvents.length, 1);
+  assert.equal(cleanupEvents[0].status, "ok");
+  assert.equal(cleanupEvents[0].trigger, "retention");
+  assert.equal(cleanupEvents[0].triggerThreshold, 1);
+  assert.equal(cleanupEvents[0].executionDirCountBefore > cleanupEvents[0].executionDirCountAfter, true);
+  assert.equal(typeof cleanupEvents[0].durationMs, "number");
 });
 
 test("adapter skips auto retention cleanup when retention is disabled", async () => {

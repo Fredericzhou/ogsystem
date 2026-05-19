@@ -1696,12 +1696,26 @@ export async function loadPendingRuntimeCheckpoints(args: {
   );
 }
 
+export type ExecutionSnapshotCleanupResult = {
+  executionDirCountBefore: number;
+  executionDirCountAfter: number;
+  removedExecutionDirCount: number;
+};
+
 export async function cleanupHistoricalExecutionSnapshots(args: {
   context: RunContext;
   keepLatest: number;
-}): Promise<void> {
+}): Promise<ExecutionSnapshotCleanupResult> {
+  const executionDirCountBefore = args.context.executionDirCount;
+  let removedExecutionDirCount = 0;
+  const removalFailures: Array<{ path: string; message: string }> = [];
+
   if (!Number.isInteger(args.keepLatest) || args.keepLatest <= 0) {
-    return;
+    return {
+      executionDirCountBefore,
+      executionDirCountAfter: args.context.executionDirCount,
+      removedExecutionDirCount
+    };
   }
 
   for (const roleDirs of args.context.roleDirsById.values()) {
@@ -1712,11 +1726,53 @@ export async function cleanupHistoricalExecutionSnapshots(args: {
       .sort((left, right) => left.localeCompare(right));
 
     const removable = executionDirs.slice(0, Math.max(0, executionDirs.length - args.keepLatest));
-    await Promise.all(
-      removable.map((entry) => rm(resolve(roleDirs.executionsDir, entry), { recursive: true, force: true }))
+    const removals = await Promise.allSettled(
+      removable.map(async (entry) => {
+        const targetPath = resolve(roleDirs.executionsDir, entry);
+        await rm(targetPath, { recursive: true, force: true });
+        return targetPath;
+      })
     );
-    args.context.executionDirCount = Math.max(0, args.context.executionDirCount - removable.length);
+    let roleRemovedExecutionDirCount = 0;
+    for (const removal of removals) {
+      if (removal.status === "fulfilled") {
+        removedExecutionDirCount += 1;
+        roleRemovedExecutionDirCount += 1;
+        continue;
+      }
+      removalFailures.push({
+        path: resolve(roleDirs.executionsDir, removable[removals.indexOf(removal)] ?? ""),
+        message: removal.reason instanceof Error ? removal.reason.message : String(removal.reason)
+      });
+    }
+    args.context.executionDirCount = Math.max(
+      0,
+      args.context.executionDirCount - roleRemovedExecutionDirCount
+    );
   }
+
+  if (removalFailures.length > 0) {
+    const error = new Error(
+      `Failed to cleanup ${removalFailures.length} execution snapshot director${
+        removalFailures.length === 1 ? "y" : "ies"
+      }`
+    ) as Error & {
+      details?: Record<string, unknown>;
+    };
+    error.details = {
+      failures: removalFailures,
+      executionDirCountBefore,
+      executionDirCountAfter: args.context.executionDirCount,
+      removedExecutionDirCount
+    };
+    throw error;
+  }
+
+  return {
+    executionDirCountBefore,
+    executionDirCountAfter: args.context.executionDirCount,
+    removedExecutionDirCount
+  };
 }
 
 export function allocateRoleExecution(args: {

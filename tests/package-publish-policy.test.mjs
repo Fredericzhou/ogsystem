@@ -28,3 +28,29 @@ test("package publish whitelist only includes the starter built-in role set", as
   ]);
   assert.equal(files.includes("og-roles/roles/**"), false);
 });
+
+test("package dependencies are registry-installable and do not self-reference", async () => {
+  const packageJson = JSON.parse(await readFile(packageJsonPath, "utf8"));
+  const dependencySections = [
+    "dependencies",
+    "optionalDependencies",
+    "peerDependencies"
+  ];
+
+  for (const section of dependencySections) {
+    const dependencies = packageJson[section] ?? {};
+    assert.equal(
+      Object.hasOwn(dependencies, packageJson.name),
+      false,
+      `${section} must not depend on ${packageJson.name}`
+    );
+    for (const [name, specifier] of Object.entries(dependencies)) {
+      assert.equal(
+        typeof specifier === "string" &&
+          /^(?:link:|workspace:|file:)/.test(specifier),
+        false,
+        `${section}.${name} must use a registry-installable specifier`
+      );
+    }
+  }
+});

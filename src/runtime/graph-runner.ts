@@ -780,24 +780,80 @@ async function cleanupExecutionHistory(args: {
   state: GraphState;
   runContext: RunContext;
   keepLatest: number;
+  failOnError: boolean;
+  trigger: "manual" | "retention";
+  triggerThreshold?: number;
 }): Promise<void> {
+  const startedAt = new Date();
+  const executionDirCountBefore = args.runContext.executionDirCount;
   try {
-    await cleanupHistoricalExecutionSnapshots({
+    const result = await cleanupHistoricalExecutionSnapshots({
       context: args.runContext,
       keepLatest: args.keepLatest
     });
+    const endedAt = new Date();
+    await appendEvent(args.runContext, {
+      type: "execution_history_cleanup",
+      at: endedAt.toISOString(),
+      status: "ok",
+      trigger: args.trigger,
+      triggerThreshold: args.triggerThreshold,
+      keepLatest: args.keepLatest,
+      durationMs: endedAt.getTime() - startedAt.getTime(),
+      executionDirCountBefore: result.executionDirCountBefore,
+      executionDirCountAfter: result.executionDirCountAfter,
+      removedExecutionDirCount: result.removedExecutionDirCount
+    });
   } catch (error) {
-    throw createRuntimeError(
-      normalizeRuntimeError(error, {
-        errorCode: "RUNTIME_EXECUTION_HISTORY_CLEANUP_FAILED",
-        errorCategory: "io",
-        stage: "execute",
-        retryable: false,
-        runId: args.runContext.runId,
-        roleId: args.state.lastExecutedRoleId || undefined
-      })
-    );
+    const envelope = normalizeRuntimeError(error, {
+      errorCode: "RUNTIME_EXECUTION_HISTORY_CLEANUP_FAILED",
+      errorCategory: "io",
+      stage: "execute",
+      retryable: false,
+      runId: args.runContext.runId,
+      roleId: args.state.lastExecutedRoleId || undefined
+    });
+    const endedAt = new Date();
+    await appendEvent(args.runContext, {
+      type: "execution_history_cleanup",
+      at: endedAt.toISOString(),
+      status: "failed",
+      trigger: args.trigger,
+      triggerThreshold: args.triggerThreshold,
+      keepLatest: args.keepLatest,
+      durationMs: endedAt.getTime() - startedAt.getTime(),
+      executionDirCountBefore,
+      executionDirCountAfter: args.runContext.executionDirCount,
+      errorCode: envelope.errorCode,
+      message: envelope.message
+    });
+    await flushBufferedRunArtifacts(args.runContext);
+    if (args.failOnError) {
+      throw createRuntimeError(envelope);
+    }
+  } finally {
+    await flushBufferedRunArtifacts(args.runContext);
   }
+}
+
+async function persistAfterCleanup(args: {
+  state: GraphState;
+  plan: ExecutionPlan;
+  runContext: RunContext;
+  keepLatest: number;
+  failOnError: boolean;
+  trigger: "manual" | "retention";
+  triggerThreshold?: number;
+}): Promise<void> {
+  await cleanupExecutionHistory({
+    state: args.state,
+    runContext: args.runContext,
+    keepLatest: args.keepLatest,
+    failOnError: args.failOnError,
+    trigger: args.trigger,
+    triggerThreshold: args.triggerThreshold
+  });
+  await persistProjectedState({ state: args.state, plan: args.plan, runContext: args.runContext });
 }
 
 /**
@@ -1122,22 +1178,27 @@ export async function runSystemWithGraphRunner(args: RunnerInput): Promise<Adapt
   });
 
   if (args.cleanupExecutionHistory !== undefined) {
-    await cleanupExecutionHistory({
+    await persistAfterCleanup({
       state: finalState,
+      plan: args.plan,
       runContext: args.runContext,
-      keepLatest: args.cleanupExecutionHistory
+      keepLatest: args.cleanupExecutionHistory,
+      failOnError: true,
+      trigger: "manual"
     });
-    await persistProjectedState({ state: finalState, plan: args.plan, runContext: args.runContext });
   } else if (
     args.autoCleanupRetention &&
     args.runContext.executionDirCount > args.autoCleanupRetention.executionDirThreshold
   ) {
-    await cleanupExecutionHistory({
+    await persistAfterCleanup({
       state: finalState,
+      plan: args.plan,
       runContext: args.runContext,
-      keepLatest: args.autoCleanupRetention.keepLatest
+      keepLatest: args.autoCleanupRetention.keepLatest,
+      failOnError: false,
+      trigger: "retention",
+      triggerThreshold: args.autoCleanupRetention.executionDirThreshold
     });
-    await persistProjectedState({ state: finalState, plan: args.plan, runContext: args.runContext });
   }
 
   logger.runEnd({

@@ -65,6 +65,7 @@ ogs run list
 ogs run status <run-id>
 ogs run logs <run-id> --engine --tail 50
 ogs vis --workdir .
+ogs visualizer --workdir .
 ```
 
 Stable lifecycle command anchors:
@@ -79,6 +80,7 @@ ogs run list
 ogs run status <run-id>
 ogs run logs <run-id> --engine --tail 50
 ogs vis --workdir .
+ogs visualizer --workdir .
 ```
 
 Generated projects always include `.ogs/`, `system.mmd`, and a local `og-roles/` repo. Model defaults now live under `.ogs/model-selection.json`, and `.ogs/model-catalog.json` records the latest local `opencode models --verbose` snapshot used for scaffolding and diagnostics. The scaffold also writes `.ogs/README.md` with operator notes and JSON examples; keep the runtime JSON files comment-free and use that README for local guidance.

@@ -499,6 +499,10 @@ export function renderOpsSummaryPanel(args: {
   const failureGroups = (args.opsSummary?.failureGroups ?? {}) as JsonRecord;
   const reviewRework = (args.opsSummary?.reviewRework ?? {}) as JsonRecord;
   const resumeReadiness = (args.opsSummary?.resumeReadiness ?? {}) as JsonRecord;
+  const longRunningHealth = (args.opsSummary?.longRunningHealth ?? {}) as JsonRecord;
+  const executionDirHealth = (longRunningHealth.executionDirCount ?? {}) as JsonRecord;
+  const retentionHealth = (longRunningHealth.retention ?? {}) as JsonRecord;
+  const cleanupRecommendation = (longRunningHealth.cleanupRecommendation ?? {}) as JsonRecord;
   const recentFailures = Array.isArray(args.opsSummary?.recentFailures)
     ? args.opsSummary.recentFailures as JsonRecord[]
     : [];
@@ -543,6 +547,21 @@ export function renderOpsSummaryPanel(args: {
           ? driftSources.slice(0, 3).map((item) => String(item.key) + " x" + String(item.count)).join(" · ")
           : t("common.none", undefined, "none")
       }, "drift sources " + (driftSources.length ? driftSources.slice(0, 3).map((item) => String(item.key) + " x" + String(item.count)).join(" · ") : "none"))) +
+      "</div></div>",
+    '<div class="event"><div class="event-top"><span>' + escapeText(t("ops.longRunningHealth", undefined, "long-running health")) + '</span><span>' +
+      escapeText(displayUiToken(cleanupRecommendation.tier ?? "unknown", t)) +
+      '</span></div><strong>' +
+      escapeText(t("ops.executionDirMax", {
+        count: String(executionDirHealth.max ?? 0),
+        runId: String(executionDirHealth.maxRunId ?? "n/a")
+      }, "max executionDirCount " + String(executionDirHealth.max ?? 0) + " · run " + String(executionDirHealth.maxRunId ?? "n/a"))) +
+      '</strong><div class="hint">' +
+      escapeText(t("ops.retentionPolicy", {
+        enabled: String(retentionHealth.enabled ?? false),
+        threshold: String(retentionHealth.executionDirThreshold ?? "n/a"),
+        keepLatest: String(retentionHealth.keepLatest ?? "n/a"),
+        action: String(cleanupRecommendation.action ?? "inspect-runs")
+      }, "retention enabled " + String(retentionHealth.enabled ?? false) + " · threshold " + String(retentionHealth.executionDirThreshold ?? "n/a") + " · keepLatest " + String(retentionHealth.keepLatest ?? "n/a") + " · " + String(cleanupRecommendation.action ?? "inspect-runs"))) +
       "</div></div>"
   ];
   const failureCards = recentFailures.length

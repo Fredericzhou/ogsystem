@@ -71,6 +71,7 @@ function usageRoot(): string {
     "  vis      Start the read-mostly visualizer",
     "",
     "Drill down:",
+    "  ogs project <init|create|sync|sync-models>",
     "  ogs help run logs",
     "  ogs project create --help",
     "  ogs run start --help",

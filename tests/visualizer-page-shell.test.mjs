@@ -44,7 +44,9 @@ test("page shell keeps HTML, style, assets, and client script mounted", () => {
   assert.match(html, /<style>\n/);
   assert.match(html, /<body>/);
   assert.match(html, /<script src="\/assets\/studio-graph\.js"><\/script>/);
-  assert.match(html, /const API_PREFIX = "\/api\/v1";/);
+  assert.match(html, /window\.__OGS_VISUALIZER_BOOTSTRAP__ = /);
+  assert.match(html, /"apiPrefix":"\/api\/v1"/);
+  assert.match(html, /<script src="\/assets\/client-app\.js"><\/script>/);
   assert.match(html, /\/tmp\/&lt;demo&gt;&amp;project/);
   assert.match(html, /<option value="zh-CN" selected>中文<\/option>/);
 

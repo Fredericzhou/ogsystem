@@ -204,7 +204,17 @@ const VISUALIZER_MODULE_DIR = dirname(fileURLToPath(import.meta.url));
 const STUDIO_GRAPH_ASSET_PATH = VISUALIZER_MODULE_DIR.endsWith(`${sep}src${sep}visualizer`)
   ? resolve(VISUALIZER_MODULE_DIR, "..", "..", "dist", "visualizer", "studio-client", "studio-graph.js")
   : resolve(VISUALIZER_MODULE_DIR, "studio-client", "studio-graph.js");
+const VISUALIZER_CLIENT_ASSET_PATH = VISUALIZER_MODULE_DIR.endsWith(`${sep}src${sep}visualizer`)
+  ? resolve(VISUALIZER_MODULE_DIR, "..", "..", "dist", "visualizer", "assets", "client-app.js")
+  : resolve(VISUALIZER_MODULE_DIR, "assets", "client-app.js");
 const STATIC_ASSET_ROUTES = new Map<string, { filePath: string; contentType: string }>([
+  [
+    "/assets/client-app.js",
+    {
+      filePath: VISUALIZER_CLIENT_ASSET_PATH,
+      contentType: "application/javascript; charset=utf-8"
+    }
+  ],
   [
     "/assets/studio-graph.js",
     {
@@ -236,6 +246,20 @@ function textResponse(
   response.writeHead(statusCode, {
     "content-type": contentType,
     "cache-control": "no-store",
+    "content-length": Buffer.byteLength(value)
+  });
+  response.end(value);
+}
+
+function assetResponse(
+  response: ServerResponse,
+  value: string,
+  contentType: string
+): void {
+  response.writeHead(200, {
+    "content-type": contentType,
+    "cache-control": "no-cache",
+    "x-content-type-options": "nosniff",
     "content-length": Buffer.byteLength(value)
   });
   response.end(value);
@@ -1602,6 +1626,51 @@ function normalizeError(error: unknown): HttpError {
   return new HttpError(500, "VISUALIZER_INTERNAL_ERROR", message);
 }
 
+type ExactApiRouteContext = {
+  request: IncomingMessage;
+  response: ServerResponse;
+  state: VisualizationServerState;
+};
+
+type ExactApiRouteHandler = (context: ExactApiRouteContext) => Promise<void>;
+
+const EXACT_API_ROUTE_HANDLERS = new Map<string, ExactApiRouteHandler>([
+  ["GET project", async ({ state, response }) => handleApiProjectSummary(state.workdir, response)],
+  ["GET project/system", async ({ state, response }) => handleApiProjectSystem(state.workdir, response)],
+  ["GET project/system/workbench", async ({ state, response }) => handleApiProjectWorkbench(state.workdir, response)],
+  ["POST project/system/validate", async ({ state, request, response }) => handleApiProjectValidate(state.workdir, request, response)],
+  ["POST project/system/save", async ({ state, request, response }) => handleApiProjectSave(state.workdir, request, response, false)],
+  ["POST project/system/save-as", async ({ state, request, response }) => handleApiProjectSave(state.workdir, request, response, true)],
+  ["GET project/studio/bridge", async ({ state, request, response }) => handleApiStudioBridgeInspect(state.workdir, request, response)],
+  ["POST project/studio/bridge", async ({ state, request, response }) => handleApiStudioBridgeInspect(state.workdir, request, response)],
+  ["GET project/studio/authoring", async ({ state, response }) => handleApiStudioAuthoringGet(state.workdir, response)],
+  ["POST project/studio/authoring", async ({ state, request, response }) => handleApiStudioAuthoringSave(state.workdir, request, response)],
+  ["POST project/studio/authoring/import-mmd", async ({ state, request, response }) => handleApiStudioAuthoringImportMmd(state.workdir, request, response)],
+  ["POST project/studio/authoring/generate-mmd", async ({ state, request, response }) => handleApiStudioAuthoringGenerateMmd(state.workdir, request, response)],
+  ["POST project/studio/authoring/apply-canvas", async ({ state, request, response }) => handleApiStudioAuthoringApplyCanvas(state.workdir, request, response)],
+  ["POST project/studio/chat", async ({ state, request, response }) => handleApiStudioChatToMmd(state, request, response)],
+  ["GET project/studio/templates", async ({ response }) => handleApiStudioTemplates(response)],
+  ["GET project/config", async ({ state, response }) => handleApiProjectConfig(state.workdir, response)],
+  ["POST project/profiles", async ({ state, request, response }) => handleApiProjectProfilesUpsert(state.workdir, request, response)],
+  ["POST project/execution-config", async ({ state, request, response }) => handleApiProjectExecutionConfigUpsert(state.workdir, request, response)],
+  ["GET project/roles", async ({ state, response }) => handleApiProjectRoles(state.workdir, response)],
+  ["GET project/role-catalog", async ({ state, response }) => handleApiRoleCatalog(state.workdir, response)],
+  ["POST project/roles/import", async ({ state, request, response }) => handleApiRoleImport(state.workdir, request, response)],
+  ["GET project/ops-summary", async ({ state, response }) => handleApiProjectOpsSummary(state.workdir, response)],
+  ["GET project/bindings", async ({ state, response }) => handleApiProjectBindings(state.workdir, response)],
+  ["GET project/contracts", async ({ state, response }) => handleApiProjectContracts(state.workdir, response)],
+  ["GET project/role-packages", async ({ state, response }) => handleApiProjectRolePackages(state.workdir, response)],
+  ["GET project/readiness", async ({ state, response }) => handleApiProjectReadiness(state.workdir, response)],
+  ["POST project/export", async ({ state, response }) => handleApiProjectExport(state.workdir, response)],
+  ["GET runs", async ({ state, response }) => handleApiRunsList(state.workdir, response)],
+  ["POST runs/start", async ({ state, request, response }) => handleApiRunStart(state.workdir, request, response)],
+  ["POST runs/reindex", async ({ state, response }) => handleApiReindex(state.workdir, response)]
+]);
+
+function getExactApiRouteHandler(method: string, segments: string[]): ExactApiRouteHandler | undefined {
+  return EXACT_API_ROUTE_HANDLERS.get(`${method} ${segments.slice(2).join("/")}`);
+}
+
 async function handleVisualizationRequest(
   request: IncomingMessage,
   response: ServerResponse,
@@ -1628,7 +1697,7 @@ async function handleVisualizationRequest(
     if (!asset) {
       throw new HttpError(404, "NOT_FOUND", "Not found");
     }
-    textResponse(response, 200, await readFile(asset.filePath, "utf8"), asset.contentType);
+    assetResponse(response, await readFile(asset.filePath, "utf8"), asset.contentType);
     return;
   }
 
@@ -1666,6 +1735,11 @@ async function handleVisualizationRequest(
     !isProjectRoleCatalogEndpoint
   ) {
     await assertInitializedProject(state.workdir);
+  }
+  const exactApiRouteHandler = getExactApiRouteHandler(method, segments);
+  if (exactApiRouteHandler) {
+    await exactApiRouteHandler({ request, response, state });
+    return;
   }
   if (segments.length === 3 && segments[2] === "project" && method === "GET") {
     await handleApiProjectSummary(state.workdir, response);

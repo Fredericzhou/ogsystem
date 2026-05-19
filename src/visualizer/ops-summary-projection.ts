@@ -7,6 +7,7 @@ import {
   loadPersistedRunsIndex,
   resolveRunDir
 } from "../runtime/project-lifecycle.js";
+import { loadRuntimeConfig } from "../runtime/runtime-loader.js";
 import { inspectRunResumeReadiness } from "./data.js";
 import {
   asBoolean,
@@ -243,6 +244,28 @@ function countReworkBranches(state: JsonRecord | undefined): {
   };
 }
 
+function readExecutionDirCount(args: {
+  indexedRun: JsonRecord;
+  detail: JsonRecord;
+  summary: JsonRecord | undefined;
+}): number | undefined {
+  const summaryCount = asNumber(args.summary?.executionDirCount);
+  if (summaryCount !== undefined) {
+    return summaryCount;
+  }
+  const artifactSummary = asRecord(args.summary?.artifactIndexSummary);
+  const artifactCount = asNumber(artifactSummary?.executionDirCount);
+  if (artifactCount !== undefined) {
+    return artifactCount;
+  }
+  const metrics = asRecord(args.detail.metrics);
+  const metricsCount = asNumber(metrics?.executionDirCount);
+  if (metricsCount !== undefined) {
+    return metricsCount;
+  }
+  return asNumber(args.indexedRun.executionDirCount);
+}
+
 async function loadRecentRuns(workdir: string): Promise<JsonRecord[]> {
   const persisted = await loadPersistedRunsIndex(workdir);
   if (persisted) {
@@ -270,6 +293,15 @@ export async function inspectProjectOpsSummaryVisualization(
   let pendingReworks = 0;
   let inspectedRuns = 0;
   let skippedRuns = 0;
+  let sampledExecutionDirRunCount = 0;
+  let totalExecutionDirCount = 0;
+  let maxExecutionDirCount = 0;
+  let maxExecutionDirRunId = "";
+  const runtimeConfig = await loadRuntimeConfig(undefined, workdir).catch(() => undefined);
+  const retentionConfig = asRecord(runtimeConfig?.retention);
+  const retentionEnabled = asBoolean(retentionConfig?.enabled) ?? false;
+  const retentionExecutionDirThreshold = asNumber(retentionConfig?.executionDirThreshold);
+  const retentionKeepLatest = asNumber(retentionConfig?.keepLatest);
 
   for (const indexedRun of indexedRuns) {
     const runId = asString(indexedRun.runId);
@@ -282,6 +314,15 @@ export async function inspectProjectOpsSummaryVisualization(
       const runDir = asString(detail.runDir) ?? resolveRunDir(workdir, runId);
       const state = extractGraphState(detail.state);
       const summary = asRecord(detail.summary);
+      const executionDirCount = readExecutionDirCount({ indexedRun, detail: asRecord(detail) ?? {}, summary });
+      if (executionDirCount !== undefined) {
+        sampledExecutionDirRunCount += 1;
+        totalExecutionDirCount += executionDirCount;
+        if (executionDirCount > maxExecutionDirCount) {
+          maxExecutionDirCount = executionDirCount;
+          maxExecutionDirRunId = runId;
+        }
+      }
       const runFailures = dedupeFailures([
         ...extractFailures({ runId, runDir, state, summary }),
         ...(await extractFailuresFromRuntimeEvents(runId, runDir))
@@ -354,6 +395,33 @@ export async function inspectProjectOpsSummaryVisualization(
 
   failures.sort((left, right) => String(right.at ?? "").localeCompare(String(left.at ?? "")));
   const blockedRuns = resumeRuns.filter((run) => asBoolean(run.canResume) === false).length;
+  const cleanupRecommendation =
+    sampledExecutionDirRunCount === 0
+      ? {
+          tier: "unknown",
+          action: "inspect-runs",
+          message: "No execution directory counts were available in sampled runs."
+        }
+      : retentionExecutionDirThreshold !== undefined && maxExecutionDirCount > retentionExecutionDirThreshold
+        ? {
+            tier: "critical",
+            action: "cleanup-recommended",
+            message: `max executionDirCount ${maxExecutionDirCount} exceeds threshold ${retentionExecutionDirThreshold}.`
+          }
+        : retentionExecutionDirThreshold !== undefined &&
+            maxExecutionDirCount >= Math.floor(retentionExecutionDirThreshold * 0.8)
+          ? {
+              tier: "watch",
+              action: "watch-retention",
+              message: `max executionDirCount ${maxExecutionDirCount} is near threshold ${retentionExecutionDirThreshold}.`
+            }
+          : {
+              tier: "ok",
+              action: retentionEnabled ? "retention-configured" : "no-cleanup-needed",
+              message: retentionEnabled
+                ? "Retention is configured and sampled runs are below threshold."
+                : "Sampled runs are below the cleanup threshold."
+            };
   return {
     workdir,
     generatedAt: new Date().toISOString(),
@@ -388,11 +456,27 @@ export async function inspectProjectOpsSummaryVisualization(
       driftSources: toGroupCounts(resumeDriftSources),
       runs: resumeRuns
     },
+    longRunningHealth: {
+      executionDirCount: {
+        sampledRunCount: sampledExecutionDirRunCount,
+        total: totalExecutionDirCount,
+        max: maxExecutionDirCount,
+        maxRunId: maxExecutionDirRunId || undefined
+      },
+      retention: {
+        enabled: retentionEnabled,
+        executionDirThreshold: retentionExecutionDirThreshold,
+        keepLatest: retentionKeepLatest
+      },
+      cleanupRecommendation
+    },
     summary: {
       recentFailureCount: failures.length,
       pendingReviewCount: pendingReviews + pausedReviews,
       pendingReworkCount: pendingReworks,
-      resumeBlockedRunCount: blockedRuns
+      resumeBlockedRunCount: blockedRuns,
+      maxExecutionDirCount,
+      cleanupRecommendation: cleanupRecommendation.action
     }
   };
 }

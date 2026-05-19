@@ -838,7 +838,13 @@ test("visualizer server serves run list, details, and live stream", async (t) =>
     assert.match(rootHtml, /debug-graph-body/);
     assert.match(rootHtml, /operate-tabs/);
     assert.match(rootHtml, /<script src="\/assets\/studio-graph\.js"><\/script>/);
+    assert.match(rootHtml, /<script src="\/assets\/client-app\.js"><\/script>/);
     assert.match(rootHtml, /<article class="card span-12 operate-panel operate-overview">\s*<header><h3>Timeline<\/h3><\/header>/);
+
+    const clientAppAsset = await fetch(`${url}/assets/client-app.js`);
+    assert.equal(clientAppAsset.status, 200);
+    assert.match(clientAppAsset.headers.get("content-type") ?? "", /application\/javascript/);
+    assert.match(await clientAppAsset.text(), /OGS_VISUALIZER_BOOTSTRAP/);
 
     const studioGraphAsset = await fetch(`${url}/assets/studio-graph.js`);
     assert.equal(studioGraphAsset.status, 200);
@@ -853,7 +859,7 @@ test("visualizer server serves run list, details, and live stream", async (t) =>
     const zhRootHtml = await zhRoot.text();
     assert.match(zhRootHtml, /<html lang="zh-CN">/);
     assert.match(zhRootHtml, /项目概览/);
-    assert.match(zhRootHtml, /调试/);
+    assert.match(zhRootHtml, /运行视图/);
     assert.match(zhRootHtml, /<option value="pending">待处理<\/option>/);
     assert.match(zhRootHtml, /<option value="waiting_review">等待评审<\/option>/);
 
