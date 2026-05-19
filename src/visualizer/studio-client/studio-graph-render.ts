@@ -35,6 +35,8 @@ function nodeLabel(node: GraphViewModelNode): string {
 }
 
 type StudioEdgeTerminal = NonNullable<Edge.Metadata["source"]>;
+type StudioEdgeSide = "left" | "right" | "top" | "bottom";
+type StudioEdgeRouteKind = "self" | "backward" | "vertical" | "forward";
 type StudioEdgeRouting = {
   source: StudioEdgeTerminal;
   target: StudioEdgeTerminal;
@@ -51,6 +53,26 @@ const STUDIO_EDGE_ORTH_ROUTER: StudioEdgeRouting["router"] = {
   name: "orth",
   args: {
     padding: 18
+  }
+};
+const STUDIO_EDGE_BACKWARD_ROUTER: StudioEdgeRouting["router"] = {
+  name: "manhattan",
+  args: {
+    step: 18,
+    padding: 30,
+    startDirections: ["left"],
+    endDirections: ["right"],
+    excludeTerminals: ["source", "target"]
+  }
+};
+const STUDIO_EDGE_VERTICAL_ROUTER: StudioEdgeRouting["router"] = {
+  name: "manhattan",
+  args: {
+    step: 18,
+    padding: 26,
+    startDirections: ["bottom"],
+    endDirections: ["top"],
+    excludeTerminals: ["source", "target"]
   }
 };
 const STUDIO_EDGE_FORWARD_ROUTER: StudioEdgeRouting["router"] = {
@@ -73,25 +95,110 @@ function edgeSortKey(edge: GraphViewModelEdge): string {
   ].join(":");
 }
 
-function studioEdgeAnchorOffset(index: number, count: number, nodeHeight: number): number {
+function studioEdgeAnchorOffset(index: number, count: number, nodeSpan: number): number {
   if (count <= 1) {
     return 0;
   }
-  const availableHalfHeight = Math.max(16, nodeHeight / 2 - 18);
-  const spacing = Math.min(18, Math.max(10, (availableHalfHeight * 2) / Math.max(count - 1, 1)));
+  const availableHalfSpan = Math.max(16, nodeSpan / 2 - 18);
+  const spacing = Math.min(18, Math.max(10, (availableHalfSpan * 2) / Math.max(count - 1, 1)));
   return Math.round((index - (count - 1) / 2) * spacing);
 }
 
-function studioEdgeTerminal(cellId: string, direction: "source" | "target", offsetY = 0): StudioEdgeTerminal {
+function studioEdgeAnchorArgs(side: StudioEdgeSide, offset = 0): Record<string, number> {
+  if (!offset) {
+    return {};
+  }
+  return side === "top" || side === "bottom" ? { dx: offset } : { dy: offset };
+}
+
+function studioEdgePort(cellId: string, direction: "source" | "target", side: StudioEdgeSide): string | undefined {
   const isBoundary = cellId === "input" || cellId === "output";
+  if (isBoundary) {
+    return undefined;
+  }
+  if (direction === "source" && side === "right") {
+    return "out";
+  }
+  if (direction === "target" && side === "left") {
+    return "in";
+  }
+  return undefined;
+}
+
+function studioEdgeTerminal(
+  cellId: string,
+  direction: "source" | "target",
+  side: StudioEdgeSide,
+  offset = 0
+): StudioEdgeTerminal {
   return {
     cell: cellId,
-    port: isBoundary ? undefined : direction === "source" ? "out" : "in",
+    port: studioEdgePort(cellId, direction, side),
     anchor: {
-      name: direction === "source" ? "right" : "left",
-      args: offsetY ? { dy: offsetY } : {}
+      name: side,
+      args: studioEdgeAnchorArgs(side, offset)
     },
     connectionPoint: { name: "anchor" }
+  };
+}
+
+function edgeCenter(node: GraphViewModelNode | undefined): { x: number; y: number } {
+  return node
+    ? {
+        x: node.layout.x + node.layout.width / 2,
+        y: node.layout.y + node.layout.height / 2
+      }
+    : { x: 0, y: 0 };
+}
+
+function resolveStudioEdgeRoute(
+  edge: GraphViewModelEdge,
+  nodeById: ReadonlyMap<string, GraphViewModelNode>
+): {
+  kind: StudioEdgeRouteKind;
+  sourceSide: StudioEdgeSide;
+  targetSide: StudioEdgeSide;
+  verticalGap: number;
+} {
+  const sourceNode = nodeById.get(edge.source);
+  const targetNode = nodeById.get(edge.target);
+  if (edge.source === edge.target) {
+    return {
+      kind: "self",
+      sourceSide: "right",
+      targetSide: "top",
+      verticalGap: 0
+    };
+  }
+  const sourceCenter = edgeCenter(sourceNode);
+  const targetCenter = edgeCenter(targetNode);
+  const horizontalGap = targetCenter.x - sourceCenter.x;
+  const absoluteHorizontalGap = Math.abs(horizontalGap);
+  const verticalGap = Math.abs(targetCenter.y - sourceCenter.y);
+  const isVerticalRoute = absoluteHorizontalGap < 80 || verticalGap > absoluteHorizontalGap * 1.15;
+  if (isVerticalRoute) {
+    const targetBelowSource = targetCenter.y >= sourceCenter.y;
+    return {
+      kind: "vertical",
+      sourceSide: targetBelowSource ? "bottom" : "top",
+      targetSide: targetBelowSource ? "top" : "bottom",
+      verticalGap
+    };
+  }
+  const isBackwardEdge = horizontalGap < -36;
+  if (isBackwardEdge) {
+    return {
+      kind: "backward",
+      sourceSide: "left",
+      targetSide: "right",
+      verticalGap
+    };
+  }
+  return {
+    kind: "forward",
+    sourceSide: "right",
+    targetSide: "left",
+    verticalGap
   };
 }
 
@@ -101,7 +208,8 @@ export function resolveStudioEdgeRouter(
 ): StudioEdgeRouting["router"] {
   const sourceNode = nodeById.get(edge.source);
   const targetNode = nodeById.get(edge.target);
-  if (edge.source === edge.target) {
+  const route = resolveStudioEdgeRoute(edge, nodeById);
+  if (route.kind === "self") {
     return {
       name: "loop",
       args: {
@@ -111,21 +219,32 @@ export function resolveStudioEdgeRouter(
       }
     };
   }
+  if (route.kind === "backward") {
+    return STUDIO_EDGE_BACKWARD_ROUTER;
+  }
+  if (route.kind === "vertical") {
+    return {
+      ...STUDIO_EDGE_VERTICAL_ROUTER,
+      args: {
+        ...STUDIO_EDGE_VERTICAL_ROUTER.args,
+        startDirections: [route.sourceSide],
+        endDirections: [route.targetSide]
+      }
+    };
+  }
   const sourceCenterX = sourceNode ? sourceNode.layout.x + sourceNode.layout.width / 2 : 0;
   const sourceCenterY = sourceNode ? sourceNode.layout.y + sourceNode.layout.height / 2 : 0;
   const targetCenterX = targetNode ? targetNode.layout.x + targetNode.layout.width / 2 : 0;
   const targetCenterY = targetNode ? targetNode.layout.y + targetNode.layout.height / 2 : 0;
   const horizontalGap = targetCenterX - sourceCenterX;
   const verticalGap = Math.abs(targetCenterY - sourceCenterY);
-  const isBackwardEdge = targetCenterX < sourceCenterX - 36;
-  const isSameColumn = Math.abs(horizontalGap) < 80;
   const isTightForwardHop = horizontalGap > 0 && horizontalGap < 120;
   const isTallHop = verticalGap > 120;
-  if (isBackwardEdge || isSameColumn || (isTightForwardHop && isTallHop)) {
+  if (isTightForwardHop && isTallHop) {
     return {
       ...STUDIO_EDGE_ORTH_ROUTER,
       args: {
-        padding: isBackwardEdge ? 28 : 18
+        padding: 18
       }
     };
   }
@@ -138,17 +257,40 @@ export function resolveStudioEdgeRouter(
   };
 }
 
+function studioEdgeOffset(
+  index: number,
+  count: number,
+  node: GraphViewModelNode | undefined,
+  side: StudioEdgeSide
+): number {
+  if (!node) {
+    return 0;
+  }
+  const span = side === "top" || side === "bottom" ? node.layout.width : node.layout.height;
+  return studioEdgeAnchorOffset(index, count, span);
+}
+
 function buildStudioEdgeRouting(viewModel: GraphViewModel): Map<string, StudioEdgeRouting> {
   const nodeById = new Map(viewModel.nodes.map((node) => [node.id, node]));
+  const routeByEdgeId = new Map<string, ReturnType<typeof resolveStudioEdgeRoute>>();
+  for (const edge of viewModel.edges) {
+    routeByEdgeId.set(edge.id, resolveStudioEdgeRoute(edge, nodeById));
+  }
   const outgoing = new Map<string, GraphViewModelEdge[]>();
   const incoming = new Map<string, GraphViewModelEdge[]>();
   for (const edge of viewModel.edges) {
-    const sourceEdges = outgoing.get(edge.source) || [];
+    const route = routeByEdgeId.get(edge.id);
+    if (!route) {
+      continue;
+    }
+    const sourceKey = `${edge.source}:${route.sourceSide}`;
+    const sourceEdges = outgoing.get(sourceKey) || [];
     sourceEdges.push(edge);
-    outgoing.set(edge.source, sourceEdges);
-    const targetEdges = incoming.get(edge.target) || [];
+    outgoing.set(sourceKey, sourceEdges);
+    const targetKey = `${edge.target}:${route.targetSide}`;
+    const targetEdges = incoming.get(targetKey) || [];
     targetEdges.push(edge);
-    incoming.set(edge.target, targetEdges);
+    incoming.set(targetKey, targetEdges);
   }
   for (const edges of outgoing.values()) {
     edges.sort((left, right) => edgeSortKey(left).localeCompare(edgeSortKey(right)));
@@ -156,24 +298,20 @@ function buildStudioEdgeRouting(viewModel: GraphViewModel): Map<string, StudioEd
   for (const edges of incoming.values()) {
     edges.sort((left, right) => edgeSortKey(left).localeCompare(edgeSortKey(right)));
   }
-
   const routingByEdgeId = new Map<string, StudioEdgeRouting>();
   for (const edge of viewModel.edges) {
     const sourceNode = nodeById.get(edge.source);
     const targetNode = nodeById.get(edge.target);
-    const sourceEdges = outgoing.get(edge.source) || [];
-    const targetEdges = incoming.get(edge.target) || [];
+    const route = routeByEdgeId.get(edge.id) || resolveStudioEdgeRoute(edge, nodeById);
+    const sourceEdges = outgoing.get(`${edge.source}:${route.sourceSide}`) || [];
+    const targetEdges = incoming.get(`${edge.target}:${route.targetSide}`) || [];
     const outgoingIndex = Math.max(0, sourceEdges.findIndex((candidate) => candidate.id === edge.id));
     const incomingIndex = Math.max(0, targetEdges.findIndex((candidate) => candidate.id === edge.id));
-    const sourceOffset = sourceNode
-      ? studioEdgeAnchorOffset(outgoingIndex, sourceEdges.length, sourceNode.layout.height)
-      : 0;
-    const targetOffset = targetNode
-      ? studioEdgeAnchorOffset(incomingIndex, targetEdges.length, targetNode.layout.height)
-      : 0;
+    const sourceOffset = studioEdgeOffset(outgoingIndex, sourceEdges.length, sourceNode, route.sourceSide);
+    const targetOffset = studioEdgeOffset(incomingIndex, targetEdges.length, targetNode, route.targetSide);
     routingByEdgeId.set(edge.id, {
-      source: studioEdgeTerminal(edge.source, "source", sourceOffset),
-      target: studioEdgeTerminal(edge.target, "target", targetOffset),
+      source: studioEdgeTerminal(edge.source, "source", route.sourceSide, sourceOffset),
+      target: studioEdgeTerminal(edge.target, "target", route.targetSide, targetOffset),
       router: resolveStudioEdgeRouter(edge, nodeById),
       connector: STUDIO_EDGE_CONNECTOR
     });
@@ -329,8 +467,8 @@ function updateStudioNode(cell: Node, node: GraphViewModelNode): void {
 function studioEdgeMetadata(edge: GraphViewModelEdge, routing?: StudioEdgeRouting): Edge.Metadata {
   return {
     id: edge.id,
-    source: routing?.source ?? studioEdgeTerminal(edge.source, "source"),
-    target: routing?.target ?? studioEdgeTerminal(edge.target, "target"),
+    source: routing?.source ?? studioEdgeTerminal(edge.source, "source", "right"),
+    target: routing?.target ?? studioEdgeTerminal(edge.target, "target", "left"),
     zIndex: 1,
     data: { studioEdge: edge },
     labels: studioEdgeLabels(edge),
@@ -399,8 +537,8 @@ function studioEdgeAttrs(edge: GraphViewModelEdge): Edge.Metadata["attrs"] {
 
 function updateStudioEdge(cell: Edge, edge: GraphViewModelEdge, routing?: StudioEdgeRouting): void {
   cell.setData({ studioEdge: edge });
-  cell.setSource(routing?.source ?? studioEdgeTerminal(edge.source, "source"));
-  cell.setTarget(routing?.target ?? studioEdgeTerminal(edge.target, "target"));
+  cell.setSource(routing?.source ?? studioEdgeTerminal(edge.source, "source", "right"));
+  cell.setTarget(routing?.target ?? studioEdgeTerminal(edge.target, "target", "left"));
   cell.setLabels(studioEdgeLabels(edge));
   cell.attr(studioEdgeAttrs(edge));
   cell.setRouter(routing?.router ?? STUDIO_EDGE_ORTH_ROUTER);

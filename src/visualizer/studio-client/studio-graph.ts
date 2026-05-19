@@ -511,7 +511,6 @@ export class StudioGraphIsland {
         const data = cellView.cell.getData() as { studioNode?: { kind?: string } } | undefined;
         if (data?.studioNode?.kind === "boundary") {
           return {
-            nodeMovable: false,
             magnetConnectable: false
           };
         }
@@ -1552,6 +1551,7 @@ export class StudioGraphIsland {
     layoutNodes: Array<{ id: string; width: number; height: number; dagreX: number; dagreY: number }>;
   } {
     const graph = new dagre.graphlib.Graph();
+    const layoutAdjacency = new Map<string, Set<string>>();
     graph.setGraph({
       rankdir: config.rankdir,
       nodesep: config.nodesep,
@@ -1569,6 +1569,7 @@ export class StudioGraphIsland {
       const size = node.getSize();
       graph.setNode(node.id, { width: size.width, height: size.height });
       adjacency.set(node.id, { incoming: [], outgoing: [] });
+      layoutAdjacency.set(node.id, new Set());
     }
     for (const edge of this.graph.getEdges()) {
       if (this.isPendingEdgePreviewCell(edge)) {
@@ -1577,7 +1578,6 @@ export class StudioGraphIsland {
       const source = edge.getSourceCellId();
       const target = edge.getTargetCellId();
       if (source && target && graph.hasNode(source) && graph.hasNode(target)) {
-        graph.setEdge(source, target);
         const sourceLinks = adjacency.get(source);
         const targetLinks = adjacency.get(target);
         if (sourceLinks) {
@@ -1585,6 +1585,10 @@ export class StudioGraphIsland {
         }
         if (targetLinks) {
           targetLinks.incoming.push(source);
+        }
+        if (source !== target && !this.layoutPathExists(layoutAdjacency, target, source)) {
+          graph.setEdge(source, target);
+          layoutAdjacency.get(source)?.add(target);
         }
       }
     }
@@ -1618,6 +1622,28 @@ export class StudioGraphIsland {
       adjacency,
       layoutNodes
     };
+  }
+
+  private layoutPathExists(adjacency: Map<string, Set<string>>, source: string, target: string): boolean {
+    if (source === target) {
+      return true;
+    }
+    const visited = new Set<string>();
+    const stack = [source];
+    while (stack.length) {
+      const current = stack.pop();
+      if (!current || visited.has(current)) {
+        continue;
+      }
+      if (current === target) {
+        return true;
+      }
+      visited.add(current);
+      for (const next of adjacency.get(current) || []) {
+        stack.push(next);
+      }
+    }
+    return false;
   }
 
   private applyHorizontalAutoLayout(config: {
