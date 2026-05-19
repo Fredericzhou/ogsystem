@@ -392,7 +392,7 @@ export function filterStudioBridgeItems(args: {
   const roleMatches = (role: JsonRecord) =>
     match(role.roleId) || match(role.title) || match(role.bindingKind) || match((Array.isArray(role.badges) ? role.badges.join(" ") : ""));
   const flowMatches = (flow: JsonRecord) =>
-    match(flow.flowKey) || match(flow.fromRoleId) || match(flow.toRoleId) || match(flow.eventType) || match(flow.label);
+    match(flowKeyOf(flow)) || match(flow.fromRoleId) || match(flow.toRoleId) || match(flow.eventType) || match(flow.label);
   return {
     roles: args.mode === "flows" ? [] : args.roles.filter(roleMatches),
     flows: args.mode === "roles" ? [] : args.flows.filter(flowMatches)
@@ -829,7 +829,7 @@ export function renderStudioBridgeInspector(args: {
   const roles = Array.isArray(extracted.roles) ? extracted.roles as JsonRecord[] : [];
   const flows = Array.isArray(extracted.flows) ? extracted.flows as JsonRecord[] : [];
   const explicitSelectedRole = roles.find((role) => role.roleId === args.selectedRoleId) ?? null;
-  const explicitSelectedFlow = flows.find((flow) => flow.flowKey === args.selectedFlowKey) ?? null;
+  const explicitSelectedFlow = flows.find((flow) => flowKeyOf(flow) === args.selectedFlowKey) ?? null;
   const selectedRole = explicitSelectedRole ?? (args.selectedFlowKey ? null : roles[0] ?? null);
   const selectedFlow = explicitSelectedFlow ?? (args.selectedRoleId ? null : flows[0] ?? null);
   const roleInspector = selectedRole
@@ -1186,7 +1186,7 @@ export function renderStudioBridgeStructureHtml(args: {
     mode: listMode
   });
   const explicitSelectedRole = roles.find((role) => role.roleId === args.selectedRoleId) ?? null;
-  const explicitSelectedFlow = flows.find((flow) => flow.flowKey === args.selectedFlowKey) ?? null;
+  const explicitSelectedFlow = flows.find((flow) => flowKeyOf(flow) === args.selectedFlowKey) ?? null;
   const selectedRole = explicitSelectedRole ?? (args.selectedFlowKey ? null : roles[0] ?? null);
   const selectedFlow = explicitSelectedFlow ?? (args.selectedRoleId ? null : flows[0] ?? null);
   const busy = args.actionBusy ? " disabled" : "";
@@ -1206,8 +1206,8 @@ export function renderStudioBridgeStructureHtml(args: {
     : ['<div class="hint">' + escapeText((args.filter || listMode !== "all") ? t("studio.noFilteredItems", undefined, "No matching graph items.") : t("studio.noRolesExtracted", undefined, "No roles extracted from the current Mermaid source.")) + '</div>'];
   const flowButtons = filtered.flows.length
     ? filtered.flows.map((flow) => {
-        const key = String(flow.flowKey ?? "");
-        const active = selectedFlow && selectedFlow.flowKey === key ? " active" : "";
+        const key = flowKeyOf(flow);
+        const active = selectedFlow && flowKeyOf(selectedFlow) === key ? " active" : "";
         const displayLabel = flowDisplayLabel(flow);
         return (
           '<button class="run-card' + active + '" data-studio-flow-key="' + escapeText(key) + '"' + busy + ">" +
@@ -1255,7 +1255,7 @@ export function renderStudioBridgePanel(args: {
   const roles = Array.isArray(extracted.roles) ? extracted.roles as JsonRecord[] : [];
   const flows = Array.isArray(extracted.flows) ? extracted.flows as JsonRecord[] : [];
   const explicitSelectedRole = roles.find((role) => role.roleId === args.selectedRoleId) ?? null;
-  const explicitSelectedFlow = flows.find((flow) => flow.flowKey === args.selectedFlowKey) ?? null;
+  const explicitSelectedFlow = flows.find((flow) => flowKeyOf(flow) === args.selectedFlowKey) ?? null;
   if (!bridge || Object.keys(bridge).length === 0) {
     return '<div class="hint">' + escapeText(t("studio.dataUnavailable", undefined, "Graph workspace data unavailable.")) + '</div>';
   }
@@ -1274,7 +1274,7 @@ export function renderStudioBridgePanel(args: {
     selectionTitle: explicitSelectedRole
       ? String(explicitSelectedRole.roleId ?? "")
       : explicitSelectedFlow
-        ? String(explicitSelectedFlow.flowKey ?? "")
+        ? flowKeyOf(explicitSelectedFlow)
         : "",
     selectionRolePackageHtml: explicitSelectedRole
       ? renderStudioRolePackageEditor({
@@ -1284,7 +1284,7 @@ export function renderStudioBridgePanel(args: {
         })
         : explicitSelectedFlow
         ? renderStudioFlowConfigEditor({
-          flowKey: String(explicitSelectedFlow.flowKey ?? ""),
+          flowKey: flowKeyOf(explicitSelectedFlow),
           editor: args.flowConfigEditor,
           authoring: bridge.authoring as JsonRecord | undefined,
           projectRoles: args.projectRoles,

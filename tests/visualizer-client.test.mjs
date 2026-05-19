@@ -159,9 +159,12 @@ function parseAttributes(source) {
   for (const match of source.matchAll(matcher)) {
     attributes[match[1]] = match[3] ?? match[4] ?? "";
   }
-  for (const booleanName of ["checked", "disabled", "selected", "readonly"]) {
-    if (new RegExp(`(^|\\s)${booleanName}(\\s|$)`).test(source)) {
-      attributes[booleanName] = "";
+  const withoutValuedAttributes = source.replace(matcher, " ");
+  const valuelessMatcher = /(?:^|\s)([a-zA-Z0-9:-]+)(?=\s|$)/g;
+  for (const match of withoutValuedAttributes.matchAll(valuelessMatcher)) {
+    const name = match[1];
+    if (name && !Object.hasOwn(attributes, name)) {
+      attributes[name] = "";
     }
   }
   return attributes;
@@ -175,10 +178,11 @@ function testTranslator(_key, vars, fallback) {
   return text;
 }
 
-test("visualizer client script injects the role and execution config editor renderers", () => {
+test("visualizer client script injects Studio authoring editor renderers", () => {
   const script = buildClientAppScript("/api/v1");
   assert.match(script, /const renderStudioRoleConfigEditor = /);
   assert.match(script, /const renderStudioExecutionConfigEditor = /);
+  assert.match(script, /const renderStudioFlowConfigEditor = /);
   assert.match(script, /const asRecordCollection = /);
 });
 
@@ -327,6 +331,63 @@ test("Studio Bridge panel prioritizes selected flow configuration over fallback 
   assert.match(panelHtml, /flow config/i);
   assert.match(panelHtml, /data-flow-config-save/);
   assert.doesNotMatch(panelHtml, /data-role-package-load/);
+});
+
+test("Studio Bridge derives stable flow keys when extracted flows omit flowKey", () => {
+  const bridge = {
+    extracted: {
+      roles: [
+        { roleId: "demo-analyst", bindingKind: "model", allowedEvents: ["DONE"], badges: [] },
+        { roleId: "output", bindingKind: "noop", allowedEvents: [], badges: [] }
+      ],
+      flows: [{
+        flowId: "1:demo-analyst:DONE:output",
+        fromRoleId: "demo-analyst",
+        toRoleId: "__system_end__",
+        eventType: "DONE",
+        label: "Done",
+        runtimeOnlyErrorFlow: false,
+        participatesInJoin: false
+      }]
+    }
+  };
+  const filtered = filterStudioBridgeItems({
+    roles: bridge.extracted.roles,
+    flows: bridge.extracted.flows,
+    filter: "demo-analyst:DONE:output",
+    mode: "flows"
+  });
+  assert.equal(filtered.flows.length, 1);
+
+  const panelHtml = renderStudioBridgePanel({
+    bridge,
+    readiness: null,
+    selectedRoleId: "",
+    selectedFlowKey: "demo-analyst:DONE:output",
+    workbenchView: "bridge",
+    graphRootContentHtml: "",
+    filter: "",
+    listMode: "all",
+    sideTab: "selection",
+    selectionDebugHtml: "",
+    selectionResultsHtml: "",
+    rolePackageEditor: null,
+    flowConfigEditor: {
+      flowKey: "demo-analyst:DONE:output",
+      data: {
+        sourceRoleId: "demo-analyst",
+        targetRoleId: "output",
+        eventType: "DONE",
+        label: "Done"
+      }
+    },
+    inspectorCollapsed: false,
+    actionBusy: "",
+    t: testTranslator
+  });
+  assert.match(panelHtml, /data-studio-flow-key="demo-analyst:DONE:output"/);
+  assert.match(panelHtml, /run-card active" data-studio-flow-key="demo-analyst:DONE:output"/);
+  assert.match(panelHtml, /data-flow-config-save="demo-analyst:DONE:output"/);
 });
 
 function matchesSelector(element, selector) {
@@ -602,6 +663,16 @@ class FakeElement {
         }
       }
     }
+  }
+
+  appendChild(child) {
+    if (!child) {
+      return child;
+    }
+    child.parent = this;
+    this.children.push(child);
+    this.document.registerTree(child);
+    return child;
   }
 
   insertAdjacentHTML(_position, html) {
@@ -4026,6 +4097,19 @@ test("visualizer client opens Studio Bridge and keeps authoring affordances on t
   await roleSelectionButton.click();
   await settle();
   await settle();
+  latestEditableMount().onSelectFlow("demo-analyst:DONE:output");
+  await settle();
+  assert.equal(
+    harness.document.getElementById("studio-graph-root").dataset.selectedFlowKey,
+    "demo-analyst:DONE:output"
+  );
+  const flowConfigSaveButton = harness.document.getElementById("workbench-body").querySelectorAll("[data-flow-config-save]")[0];
+  assert.ok(flowConfigSaveButton);
+  assert.equal(flowConfigSaveButton.getAttribute("data-flow-config-save"), "demo-analyst:DONE:output");
+  assert.match(
+    harness.document.getElementById("workbench-body").querySelectorAll("[data-flow-config-editor]")[0].textContent,
+    /flow config|流转配置/i
+  );
   const fetchCallsAfterOpen = harness.backend.fetchCalls.length;
   mountCalls.at(-1).options.onClearSelection();
   await settle();

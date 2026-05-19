@@ -370,6 +370,12 @@ test("Studio graph bundle keeps orth fallback for backward or tight-column flows
   assert.match(bundle, /name: "manhattan"/);
 });
 
+test("Studio graph bundle preserves stored edit layout and distributes boundaries during auto layout", async () => {
+  const bundle = await readFile(new URL("../dist/visualizer/studio-client/studio-graph.js", import.meta.url), "utf8");
+  assert.match(bundle, /hasCompleteStoredRoleLayout/);
+  assert.match(bundle, /studioNode\?\.kind !== "role" && .*studioNode\?\.kind !== "boundary"/);
+});
+
 test("Studio assisted authoring templates and Mermaid drafts produce valid authoring documents", () => {
   const templates = listStudioAuthoringTemplates();
   assert.deepEqual(templates.map((template) => template.id).sort(), [

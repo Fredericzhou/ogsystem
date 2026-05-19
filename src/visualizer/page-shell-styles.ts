@@ -1503,11 +1503,21 @@ export function renderPageShellStyles(): string {
       cursor: default;
     }
     .studio-selection-command-host {
+      position: relative;
       min-height: 0;
     }
     .studio-selection-command-host .studio-command-dialog {
+      position: absolute;
+      top: 0;
+      left: 0;
+      right: 0;
+      z-index: 8;
+      max-height: min(58vh, 520px);
+      overflow: auto;
       box-shadow: none;
       border-color: rgba(148, 163, 184, 0.2);
+      border-radius: 12px;
+      background: linear-gradient(180deg, rgba(5, 10, 23, 0.98), rgba(10, 18, 36, 0.97));
     }
     .studio-selection-overlay.is-collapsed .studio-selection-title-wrap,
     .studio-selection-overlay.is-collapsed .studio-selection-body,
@@ -1812,6 +1822,34 @@ export function renderPageShellStyles(): string {
       display: grid;
       gap: 8px;
     }
+    #action-form-section {
+      position: fixed;
+      inset: 0;
+      z-index: 115;
+      display: grid;
+      place-items: center;
+      padding: 18px;
+      background: rgba(2, 6, 23, 0.38);
+      backdrop-filter: blur(8px);
+    }
+    #action-form-section[hidden] {
+      display: none;
+    }
+    #action-form-section .card {
+      width: min(640px, calc(100vw - 36px));
+      max-height: min(78vh, 760px);
+      overflow: hidden;
+      box-shadow: 0 24px 72px rgba(0, 0, 0, 0.42);
+    }
+    #action-form-section .card .body {
+      max-height: calc(min(78vh, 760px) - 58px);
+      overflow: auto;
+    }
+    #action-form-section textarea {
+      min-height: 92px;
+      max-height: 180px;
+      resize: vertical;
+    }
     .form-grid {
       display: grid;
       grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -1942,41 +1980,41 @@ export function renderPageShellStyles(): string {
       z-index: 120;
       display: grid;
       place-items: center;
-      padding: 18px;
+      padding: 16px;
     }
     .studio-role-io-backdrop {
       position: absolute;
       inset: 0;
       border: 0;
-      background: rgba(2, 6, 23, 0.72);
+      background: rgba(2, 6, 23, 0.48);
       cursor: pointer;
     }
     .studio-role-io-dialog {
       position: relative;
       z-index: 1;
-      width: min(920px, calc(100vw - 36px));
-      max-height: min(86vh, 920px);
+      width: min(760px, calc(100vw - 32px));
+      max-height: min(74vh, 760px);
       overflow: hidden;
       display: grid;
       grid-template-rows: auto minmax(0, 1fr);
-      border-radius: 16px;
+      border-radius: 14px;
       border: 1px solid rgba(148, 163, 184, 0.22);
       background: linear-gradient(180deg, rgba(5, 10, 23, 0.98), rgba(10, 18, 36, 0.98));
-      box-shadow: 0 30px 100px rgba(0, 0, 0, 0.5);
+      box-shadow: 0 24px 72px rgba(0, 0, 0, 0.44);
     }
     .studio-role-io-header {
       display: flex;
       justify-content: space-between;
       gap: 12px;
       align-items: flex-start;
-      padding: 14px 16px 10px;
+      padding: 10px 12px 8px;
       border-bottom: 1px solid rgba(148, 163, 184, 0.16);
     }
     .studio-role-io-body {
       display: grid;
       gap: 12px;
       overflow: auto;
-      padding: 14px 16px 16px;
+      padding: 10px 12px 12px;
     }
     .studio-role-io-body pre {
       margin: 0;
@@ -1986,7 +2024,7 @@ export function renderPageShellStyles(): string {
       border-radius: 10px;
       background: rgba(2, 6, 23, 0.66);
       border: 1px solid rgba(148, 163, 184, 0.14);
-      max-height: 240px;
+      max-height: 180px;
       overflow: auto;
     }
     .event {

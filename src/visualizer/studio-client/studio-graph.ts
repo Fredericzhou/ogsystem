@@ -1428,9 +1428,31 @@ export class StudioGraphIsland {
     if (!signature || (!this.isReadOnly() && this.hasRenderedProjection) || this.lastDefaultAutoLayoutSignature === signature) {
       return false;
     }
+    if (!this.isReadOnly() && !this.hasRenderedProjection && this.hasCompleteStoredRoleLayout()) {
+      this.lastDefaultAutoLayoutSignature = signature;
+      return false;
+    }
     this.applyAutoLayout();
     this.lastDefaultAutoLayoutSignature = signature;
     return true;
+  }
+
+  private hasCompleteStoredRoleLayout(): boolean {
+    const authoring = this.options.authoring;
+    const roles = authoring?.roles && typeof authoring.roles === "object"
+      ? Object.keys(authoring.roles)
+      : [];
+    if (!roles.length) {
+      return false;
+    }
+    const nodes = authoring?.layout?.nodes ?? {};
+    return roles.every((roleId) => {
+      const layout = nodes[roleId];
+      return Number.isFinite(layout?.x) &&
+        Number.isFinite(layout?.y) &&
+        Number.isFinite(layout?.width) &&
+        Number.isFinite(layout?.height);
+    });
   }
 
   private defaultAutoLayoutSignature(): string {
@@ -1505,7 +1527,7 @@ export class StudioGraphIsland {
     const adjacency = new Map<string, { incoming: string[]; outgoing: string[] }>();
     for (const node of this.graph.getNodes()) {
       const data = node.getData() as { studioNode?: { kind?: string } } | undefined;
-      if (data?.studioNode?.kind !== "role") continue;
+      if (data?.studioNode?.kind !== "role" && data?.studioNode?.kind !== "boundary") continue;
       const size = node.getSize();
       graph.setNode(node.id, { width: size.width, height: size.height });
       adjacency.set(node.id, { incoming: [], outgoing: [] });

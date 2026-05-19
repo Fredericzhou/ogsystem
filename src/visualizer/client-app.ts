@@ -285,6 +285,7 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
     const renderStudioRoleConfigEditor = ${renderStudioRoleConfigEditor.toString()};
     const renderStudioExecutionConfigEditor = ${renderStudioExecutionConfigEditor.toString()};
     const renderStudioRolePackageEditor = ${renderStudioRolePackageEditor.toString()};
+    const renderStudioFlowConfigEditor = ${renderStudioFlowConfigEditor.toString()};
     const roleIdOf = ${roleIdOf.toString()};
     const flowKeyOf = ${flowKeyOf.toString()};
     const flowDisplayLabel = ${flowDisplayLabel.toString()};
@@ -2396,8 +2397,8 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
       state.studioBridgeSelectedRoleId = "";
       state.studioWorkbenchSideTab = "selection";
       state.studioBridgeEditSelectionRequest += 1;
-      updateStudioBridgeSelection(options?.syncGraph !== false);
       loadStudioFlowConfigEditor(nextFlowKey);
+      updateStudioBridgeSelection(options?.syncGraph !== false);
       return true;
     }
 
@@ -3246,6 +3247,28 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
         const dirtyFlowKey = String(state.studioFlowConfigEditor?.flowKey || "");
         const showDirtyFlowWarning = hasDirtyStudioFlowConfigEditor() && dirtyFlowKey && dirtyFlowKey !== selectedFlowKeyValue;
         if (selectedFlow) {
+          const selectedTargetRoleId = normalizeStudioTargetRoleId(selectedFlow.toRoleId);
+          const flowConfigEditor = state.studioFlowConfigEditor?.flowKey === editorFlowKey
+            ? state.studioFlowConfigEditor
+            : {
+                flowKey: editorFlowKey,
+                saving: false,
+                dirty: false,
+                error: "",
+                validation: null,
+                data: {
+                  flowKey: editorFlowKey,
+                  flowId: String(selectedFlow.flowId || ""),
+                  sourceRoleId: String(selectedFlow.fromRoleId || ""),
+                  targetRoleId: selectedTargetRoleId,
+                  eventType: String(selectedFlow.eventType || ""),
+                  label: String(selectedFlow.label || ""),
+                  runtimeOnlyErrorFlow: selectedFlow.runtimeOnlyErrorFlow === true,
+                  participatesInJoin: selectedFlow.participatesInJoin === true,
+                  targetContextMap: state.studioBridge?.authoring?.roles?.[selectedTargetRoleId]?.contextMap || {}
+                },
+                draft: null
+              };
           rolePackage.innerHTML = [
             showDirtyFlowWarning
               ? '<div class="event"><div class="event-top"><span>' + escapeText(t("common.attention", undefined, "attention")) + '</span><span>' + escapeText(t("common.changed", undefined, "changed")) + '</span></div><strong>' +
@@ -3254,7 +3277,7 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
               : "",
             renderStudioFlowConfigEditor({
               flowKey: String(selectedFlow.flowKey || editorFlowKey),
-              editor: state.studioFlowConfigEditor,
+              editor: flowConfigEditor,
               authoring: state.studioBridge?.authoring || null,
               projectRoles: projectRolesForStudioDisplay(),
               t
@@ -5988,7 +6011,7 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
         const roles = Array.isArray(normalizedBridge?.extracted?.roles) ? normalizedBridge.extracted.roles : [];
         const flows = Array.isArray(normalizedBridge?.extracted?.flows) ? normalizedBridge.extracted.flows : [];
         const hasSelectedRole = Boolean(state.studioBridgeSelectedRoleId && roles.some((role) => role.roleId === state.studioBridgeSelectedRoleId));
-        const hasSelectedFlow = Boolean(state.studioBridgeSelectedFlowKey && flows.some((flow) => flow.flowKey === state.studioBridgeSelectedFlowKey));
+        const hasSelectedFlow = Boolean(state.studioBridgeSelectedFlowKey && flows.some((flow) => flowKeyOf(flow) === state.studioBridgeSelectedFlowKey));
         if (!hasSelectedRole) {
           state.studioBridgeSelectedRoleId = "";
         }
@@ -6065,14 +6088,33 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
         return;
       }
       const requestId = ++state.studioCanvasSyncRequestId;
+      const previousBridge = cloneJson(state.studioBridge);
+      const previousCanvas = cloneJson(state.studioCanvas);
+      const optimisticAuthoring = applyCanvasLayoutPatchToAuthoring(state.studioBridge.authoring, canvas);
+      state.studioBridge = withStudioAuthoringDisplayMetadata({
+        ...state.studioBridge,
+        authoring: optimisticAuthoring,
+        canvas
+      }, optimisticAuthoring);
+      state.studioCanvas = cloneJson(canvas);
+      renderStudioSelectionDialog();
       await runAction("studio:apply-canvas", async () => {
-        await applyStudioGraphPayload({
-          authoring: applyCanvasLayoutPatchToAuthoring(state.studioBridge.authoring, canvas),
-          canvas,
-          requestId,
-          renderProject: false,
-          successMessage: t("studio.graph.canvasUpdated", undefined, "Studio canvas layout updated.")
-        });
+        try {
+          await applyStudioGraphPayload({
+            authoring: optimisticAuthoring,
+            canvas,
+            requestId,
+            renderProject: false,
+            successMessage: t("studio.graph.canvasUpdated", undefined, "Studio canvas layout updated.")
+          });
+        } catch (error) {
+          if (requestId === state.studioCanvasSyncRequestId) {
+            state.studioBridge = previousBridge;
+            state.studioCanvas = previousCanvas;
+            renderStudioBridge();
+          }
+          throw error;
+        }
       });
     }
 

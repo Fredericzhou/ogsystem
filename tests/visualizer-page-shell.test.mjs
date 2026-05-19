@@ -97,6 +97,10 @@ test("page shell styles are isolated behind a CSS renderer", () => {
   assert.match(css, /\.shell\.content > \.sidebar/);
   assert.match(css, /\.disclosure-summary\s*\{/);
   assert.match(css, /\.operate-graph-main,\s*\n\s*\.operate-graph-sidebar/);
+  assert.match(css, /#action-form-section\s*\{[\s\S]*position:\s*fixed/);
+  assert.match(css, /#action-form-section\[hidden\]\s*\{[\s\S]*display:\s*none/);
+  assert.match(css, /\.studio-selection-command-host \.studio-command-dialog\s*\{[\s\S]*position:\s*absolute/);
+  assert.match(css, /\.studio-role-io-dialog\s*\{[\s\S]*width:\s*min\(760px/);
   assert.match(css, /\.console-panel\[hidden\]\s*\{/);
   assert.match(css, /@media \(max-width: 960px\)/);
 });
