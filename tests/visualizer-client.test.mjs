@@ -184,6 +184,10 @@ test("visualizer client script injects Studio authoring editor renderers", () =>
   assert.match(script, /const renderStudioExecutionConfigEditor = /);
   assert.match(script, /const renderStudioFlowConfigEditor = /);
   assert.match(script, /const asRecordCollection = /);
+  assert.match(script, /let studioCanvasSaveChain = Promise\.resolve\(\)/);
+  assert.match(script, /studioCanvasSaveChain = studioCanvasSaveChain\.catch\(\(\) => undefined\)\.then/);
+  assert.match(script, /renderWorkbench:\s*false/);
+  assert.match(script, /args\.renderWorkbench === false && hasMountedStudioBridgeShell\(\)/);
 });
 
 test("Studio Bridge renderers display and filter flow labels separately from event types", () => {
@@ -4198,6 +4202,10 @@ test("visualizer client opens Studio Bridge and keeps authoring affordances on t
   let latestMount = latestEditableMount();
   assert.ok(latestMount);
   assert.equal(latestMount.readOnly, false);
+  const shellBeforeCanvasApply = harness.document
+    .getElementById("workbench-body")
+    .querySelector("[data-studio-canvas-shell]");
+  const workbenchStatusBeforeCanvasApply = harness.document.getElementById("workbench-status").innerHTML;
   await latestMount.onApplyCanvas({
     ...latestMount.canvas,
     nodes: latestMount.canvas.nodes.map((node) =>
@@ -4207,7 +4215,12 @@ test("visualizer client opens Studio Bridge and keeps authoring affordances on t
   await settle();
   assert.ok(harness.backend.fetchCalls.some((call) => call.path === "/api/v1/project/studio/authoring/apply-canvas"));
   assert.equal(harness.backend.lastAuthoringApplyCanvasBody.authoring.layout.nodes["demo-analyst"].x, 160);
-  assert.match(harness.document.getElementById("flash").textContent, /Studio canvas layout updated/);
+  assert.equal(
+    harness.document.getElementById("workbench-body").querySelector("[data-studio-canvas-shell]"),
+    shellBeforeCanvasApply
+  );
+  assert.equal(harness.document.getElementById("workbench-status").innerHTML, workbenchStatusBeforeCanvasApply);
+  assert.equal(harness.document.getElementById("flash").textContent, "");
 
   latestMount = latestEditableMount();
   assert.ok(latestMount);

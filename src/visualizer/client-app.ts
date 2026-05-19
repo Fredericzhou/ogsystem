@@ -379,6 +379,7 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
     }
     const resolvedLocale = resolveClientLocale();
     const state = createInitialVisualizerState(resolvedLocale);
+    let studioCanvasSaveChain = Promise.resolve();
     function readStoredStudioInspectorWidth() {
       try {
         const raw = Number(window.localStorage.getItem(STUDIO_INSPECTOR_WIDTH_STORAGE_KEY));
@@ -6098,24 +6099,25 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
       }, optimisticAuthoring);
       state.studioCanvas = cloneJson(canvas);
       renderStudioSelectionDialog();
-      await runAction("studio:apply-canvas", async () => {
+      studioCanvasSaveChain = studioCanvasSaveChain.catch(() => undefined).then(async () => {
         try {
           await applyStudioGraphPayload({
             authoring: optimisticAuthoring,
             canvas,
             requestId,
-            renderProject: false,
-            successMessage: t("studio.graph.canvasUpdated", undefined, "Studio canvas layout updated.")
+            renderWorkbench: false,
+            renderProject: false
           });
         } catch (error) {
           if (requestId === state.studioCanvasSyncRequestId) {
             state.studioBridge = previousBridge;
             state.studioCanvas = previousCanvas;
             renderStudioBridge();
+            setFlash("error", error instanceof Error ? error.message : String(error));
           }
-          throw error;
         }
       });
+      await studioCanvasSaveChain;
     }
 
     async function applyStudioGraphAuthoringCommand(result, options) {
@@ -6253,7 +6255,12 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
         validation: payload.validation || state.workbench?.validation
       };
       state.studioBridgeStale = false;
-      renderWorkbench();
+      if (args.renderWorkbench === false && hasMountedStudioBridgeShell()) {
+        renderStudioSelectionDialog();
+        mountStudioGraphIsland();
+      } else {
+        renderWorkbench();
+      }
       if (args.renderProject !== false) {
         renderProject();
       }
