@@ -410,6 +410,7 @@ export class StudioGraphIsland {
         node.label = "■ " + this.label("boundaryEnd");
       }
     }
+    this.preserveBoundaryNodeLayout(viewModel);
     this.currentViewModel = viewModel;
     if (!options.authoring && !options.viewModel) {
       this.applying = true;
@@ -505,6 +506,16 @@ export class StudioGraphIsland {
         modifiers: ["ctrl", "meta"],
         minScale: 0.2,
         maxScale: 2.4
+      },
+      interacting: (cellView) => {
+        const data = cellView.cell.getData() as { studioNode?: { kind?: string } } | undefined;
+        if (data?.studioNode?.kind === "boundary") {
+          return {
+            nodeMovable: false,
+            magnetConnectable: false
+          };
+        }
+        return true;
       },
       connecting: {
         allowBlank: false,
@@ -1372,6 +1383,33 @@ export class StudioGraphIsland {
     const selected = this.graph.getSelectedCells()[0];
     const data = selected?.getData() as { studioNode?: { kind?: string; roleId?: string } } | undefined;
     return data?.studioNode?.kind === "role" ? data.studioNode.roleId || "" : this.options.selectedRoleId || "";
+  }
+
+  private preserveBoundaryNodeLayout(viewModel: GraphViewModel): void {
+    if (this.isReadOnly() || !this.hasRenderedProjection) {
+      return;
+    }
+    for (const node of viewModel.nodes) {
+      if (node.kind !== "boundary") {
+        continue;
+      }
+      const cell = this.graph.getCellById(node.id);
+      if (!cell?.isNode()) {
+        continue;
+      }
+      const position = cell.getPosition();
+      const size = cell.getSize();
+      if (!Number.isFinite(position.x) || !Number.isFinite(position.y)) {
+        continue;
+      }
+      node.layout = {
+        ...node.layout,
+        x: position.x,
+        y: position.y,
+        width: Number.isFinite(size.width) ? size.width : node.layout.width,
+        height: Number.isFinite(size.height) ? size.height : node.layout.height
+      };
+    }
   }
 
   private async deleteSelection(): Promise<void> {

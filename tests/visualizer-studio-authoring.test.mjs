@@ -374,6 +374,8 @@ test("Studio graph bundle preserves stored edit layout and distributes boundarie
   const bundle = await readFile(new URL("../dist/visualizer/studio-client/studio-graph.js", import.meta.url), "utf8");
   assert.match(bundle, /hasCompleteStoredRoleLayout/);
   assert.match(bundle, /studioNode\?\.kind !== "role" && .*studioNode\?\.kind !== "boundary"/);
+  assert.match(bundle, /preserveBoundaryNodeLayout/);
+  assert.match(bundle, /nodeMovable:\s*false/);
 });
 
 test("Studio assisted authoring templates and Mermaid drafts produce valid authoring documents", () => {
