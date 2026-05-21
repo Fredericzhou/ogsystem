@@ -13,6 +13,7 @@ Archive rules are documented in [docs/archive/README.md](archive/README.md).
 - [NL2MMD structure templates](nl2mmd-structure-templates.md): natural-language to Mermaid structure constraints.
 - [Decisions](DECISIONS.md): current architecture decisions and boundaries.
 - [Long-term stability roadmap](long-term-stability-roadmap.md): durable direction.
+- [PraisonAI comparison roadmap](praisonai-comparison-roadmap.md): what to borrow from a broader agent platform without weakening runtime guarantees.
 - [Unified backlog](todo-backlog.md): current active backlog.
 - [Ebook draft](ogsystem-ebook.md): long-form explanatory material.
 
