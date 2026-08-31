@@ -856,7 +856,10 @@ export async function startOpencodeRunClient(
   },
   transport: OpencodeSdkTransport = defaultTransport
 ): Promise<OpencodeRunClient> {
-  const server = await transport.startServer(args);
+  const server = await transport.startServer({
+    timeoutMs: args.timeoutMs,
+    env: args.env
+  });
   return {
     url: server.url,
     pid: server.pid,
@@ -893,6 +896,8 @@ export async function executeOpencodeModelRole(
     modelRef?: string;
     variant?: string;
     workdir: string;
+    /** Coding project used for OpenCode SDK session scope. */
+    directory?: string;
     timeoutMs: number;
     maxOutputBytes: number;
     runClient?: OpencodeRunClient;
@@ -925,7 +930,7 @@ export async function executeOpencodeModelRole(
     : await startOpencodeRunClient(
         {
           timeoutMs: Math.max(15000, Math.min(args.timeoutMs, 30000)),
-          directory: args.workdir
+          directory: args.directory ?? args.workdir
         },
         transport
       );
@@ -933,6 +938,7 @@ export async function executeOpencodeModelRole(
   if (!runClient) {
     throw new Error("OpenCode run client is unavailable");
   }
+  const directory = args.directory ?? args.workdir;
   let sessionId = args.sessionId ?? "";
   let messageId: string | undefined;
   let timeoutCleanupSessionId: string | undefined;
@@ -948,7 +954,7 @@ export async function executeOpencodeModelRole(
           try {
             await runClient.client.session.abort({
               sessionID: sessionId,
-              directory: args.workdir
+              directory
             });
           } catch {
             // Ignore timeout cleanup failures; the timeout error is the primary signal.
@@ -973,7 +979,7 @@ export async function executeOpencodeModelRole(
             if (!sessionId) {
               const created = await runClient.client.session.create({
                 title: `${args.roleId}-${Date.now()}`,
-                directory: args.workdir
+                directory
               });
               const createErrorMessage = extractSdkErrorMessage(created, {
                 providerID,
@@ -1026,7 +1032,7 @@ export async function executeOpencodeModelRole(
               }> => {
                 const response = await runClient.client.session.prompt({
                   sessionID: sessionId,
-                  directory: args.workdir,
+                  directory,
                   model: {
                     providerID,
                     modelID
@@ -1253,7 +1259,7 @@ export async function executeOpencodeModelRole(
               try {
                 await runClient.client.session.abort({
                   sessionID: sessionId,
-                  directory: args.workdir
+                  directory
                 });
               } catch {
                 // Retry should still proceed when best-effort abort fails.
@@ -1274,7 +1280,7 @@ export async function executeOpencodeModelRole(
         try {
           await runClient.client.session.abort({
             sessionID: sessionId,
-            directory: args.workdir
+            directory
           });
         } catch {
           // Ignore timeout cleanup failures; the timeout error is the primary signal.

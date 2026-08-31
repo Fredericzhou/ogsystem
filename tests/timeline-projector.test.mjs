@@ -53,6 +53,26 @@ test("timeline tail snapshot reads appended records incrementally", async () => 
   assert.equal(second.events[0].record.roleId, "alpha");
 });
 
+test("timeline tail cache bounds memory and preserves old cursor reads", async () => {
+  const workdir = await mkdtemp(path.join(os.tmpdir(), "ogsystem-timeline-bounded-"));
+  const timelinePath = path.resolve(workdir, "timeline.jsonl");
+  const records = Array.from({ length: 10_005 }, (_, cursor) => JSON.stringify({
+    version: 1,
+    cursor,
+    at: `2026-04-23T00:00:${String(cursor % 60).padStart(2, "0")}.000Z`,
+    type: "audit"
+  }));
+  await writeFile(timelinePath, `${records.join("\n")}\n`, "utf8");
+
+  const oldest = await loadTimelineTailSnapshot({ timelinePath, cursor: 0, limit: 1 });
+  assert.equal(oldest.events[0].cursor, 0);
+  assert.equal(oldest.nextCursor, 10_005);
+
+  const newest = await loadTimelineTailSnapshot({ timelinePath, cursor: 10_004, limit: 1 });
+  assert.equal(newest.events[0].cursor, 10_004);
+  assert.equal(newest.nextCursor, 10_005);
+});
+
 test("timeline tail snapshot ignores partial trailing lines until they complete", async () => {
   const workdir = await mkdtemp(path.join(os.tmpdir(), "ogsystem-timeline-partial-"));
   const timelinePath = path.resolve(workdir, "timeline.jsonl");

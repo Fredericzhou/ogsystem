@@ -143,7 +143,7 @@ const TEMPLATES: readonly Nl2MmdStructureTemplate[] = [
       slot("merge", "Declare the merge role that consumes quorum output.", ["join.mode.review=quorum_of"])
     ],
     optionalSlots: [
-      slot("projection", "Describe any `context.map` fields needed for the merge role.", ["context.map.review.summary=source(worker_a).content"], false)
+      slot("projection", "Describe any `context.map` fields needed for the merge role; source selectors require all quorum sources to be present at activation.", ["context.map.review.task=global.task"], false)
     ],
     skeleton: [
       "flowchart TD",
@@ -203,7 +203,7 @@ const TEMPLATES: readonly Nl2MmdStructureTemplate[] = [
       slot("recovery", "Declare compensating roles or fallback sink.", ["recovery --> output"])
     ],
     optionalSlots: [
-      slot("feature-flag", "Document feature-gated rollout conditions if present.", ["runtime.error_flows.v1=false"], false)
+      slot("feature-flag", "Document the project runtime config for feature-gated rollout conditions.", [".ogs/runtime.json: runtime.error_flows.v1=false"], false)
     ],
     skeleton: [
       "flowchart TD",
@@ -242,40 +242,41 @@ const TEMPLATES: readonly Nl2MmdStructureTemplate[] = [
   },
   {
     id: "human_gate",
-    title: "Human Gate",
-    summary: "A workflow with a manual review/approval checkpoint.",
+    title: "Runtime-Native Human Review",
+    summary: "A workflow with a runtime-native manual review checkpoint.",
     triggerPatterns: [/人工|审核|审批|确认|review|approve|gate|human/i],
     semanticHintLabels: ["entry_hint", "binding_policy"],
-    requiredMetadataKeys: ["system.id", "system.version", "law.global", "entry.role"],
+    requiredMetadataKeys: ["system.id", "system.version", "law.global", "entry.role", "review.mode.<reviewed-role>"],
     requiredSlots: [
-      slot("gate", "Declare the approval or review role.", ["reviewer[Role:reviewer]"]),
-      slot("decision", "Represent the approval decision as a typed event.", ["APPROVE", "REJECT"]),
-      slot("post-gate", "Describe the downstream branch after the gate.", ["reviewer -->|APPROVE| output"])
+      slot("reviewed-role", "Declare the role whose durable result requires review.", ["review.mode.writer=required"]),
+      slot("decision", "Describe control-plane decisions and the role's normal event routes.", ["approve / rework / pause / terminate"]),
+      slot("post-review", "Describe the downstream path resumed after an approved draft.", ["writer -->|DONE| output"])
     ],
     optionalSlots: [
-      slot("profile", "Document whether the gate uses a user profile or a human executor.", ["exec.bind.reviewer=ops-human"], false)
+      slot("review-policy", "Declare review timeout, rework, and termination policy; timeout is currently persisted policy, not an automatic timer.", ["review.timeout.action.writer=pause", "review.rework.max.writer=3"], false)
     ],
     skeleton: [
       "flowchart TD",
       "%% system.id=<system.id>",
       "%% system.version=1.0.0",
       "%% law.global=<law.ref>",
-      "%% entry.role=<entry-role>",
-      "input -->|<EVENT>| <gate>[Role:<gate-role>]",
-      "<gate>[Role:<gate-role>] -->|APPROVE| output",
-      "<gate>[Role:<gate-role>] -->|REJECT| output"
+      "%% entry.role=<reviewed-role>",
+      "%% model.bind.<reviewed-role>=<provider/model>",
+      "%% review.mode.<reviewed-role>=required",
+      "input -->|<EVENT>| <reviewed>[Role:<reviewed-role>]",
+      "<reviewed>[Role:<reviewed-role>] -->|<APPROVED-EVENT>| output"
     ]
   },
   {
     id: "mixed_binding",
     title: "Mixed Binding",
-    summary: "Template for systems that intentionally mix model.bind and exec.bind roles.",
+    summary: "Template for systems that intentionally use different bindings on different roles.",
     triggerPatterns: [/exec\.bind|model\.bind|binding|mixed/i],
     semanticHintLabels: ["binding_policy"],
     requiredMetadataKeys: ["system.id", "system.version", "law.global", "entry.role"],
     requiredSlots: [
       slot("model-binding", "Declare the model-bound role.", ["model.bind.reviewer=opencode/gpt-5-nano"]),
-      slot("exec-binding", "Declare the local-shell exec-bound role.", ["exec.bind.reviewer=review-profile"]),
+      slot("exec-binding", "Declare a different local-shell exec-bound role.", ["exec.bind.publisher=publish-profile"]),
       slot("binding-note", "Record which roles use each binding path.", ["review uses model.bind; ship uses exec.bind"])
     ],
     optionalSlots: [
@@ -287,10 +288,11 @@ const TEMPLATES: readonly Nl2MmdStructureTemplate[] = [
       "%% system.version=1.0.0",
       "%% law.global=<law.ref>",
       "%% entry.role=<entry-role>",
-      "%% model.bind.<role>=<provider/model>",
-      "%% exec.bind.<role>=<profile-id>",
-      "input -->|<EVENT>| <role>[Role:<role>]",
-      "<role>[Role:<role>] -->|DONE| output"
+      "%% model.bind.<model-role>=<provider/model>",
+      "%% exec.bind.<exec-role>=<profile-id>",
+      "input -->|<EVENT>| <model>[Role:<model-role>]",
+      "<model>[Role:<model-role>] -->|NEXT| <exec>[Role:<exec-role>]",
+      "<exec>[Role:<exec-role>] -->|DONE| output"
     ]
   }
 ] as const;

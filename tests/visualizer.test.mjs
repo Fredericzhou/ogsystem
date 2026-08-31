@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import os from "node:os";
 import path from "node:path";
 import http from "node:http";
-import { chmod, mkdtemp, mkdir, readFile, stat, symlink, writeFile } from "node:fs/promises";
+import { chmod, mkdtemp, mkdir, readFile, rm, stat, symlink, writeFile } from "node:fs/promises";
 
 import { resolveProjectRoleRootDir } from "../dist/runtime/bundled-repos.js";
 import { compileExecutionSnapshot } from "../dist/runtime/compiler.js";
@@ -1070,6 +1070,49 @@ test("visualizer server serves run list, details, and live stream", async (t) =>
     assert.ok(diagnostics.sse.writesTotal >= 1);
   } finally {
     await new Promise((resolve) => server.close(resolve));
+  }
+});
+
+test("visualizer server bounds legacy event reads and preserves cursors", async (t) => {
+  const workdir = await mkdtemp(path.join(os.tmpdir(), "ogsystem-visualizer-legacy-events-"));
+  await seedProjectFixture(workdir);
+  const { runId } = await createFixtureRun(workdir);
+  await rm(path.resolve(workdir, ".ogs", "runs", runId, "timeline.jsonl"));
+  const started = await startVisualizationServer({ workdir, host: "127.0.0.1", port: 0 });
+  try {
+    const response = await fetch(`${started.url}/api/v1/runs/${runId}/events?cursor=0&limit=1`);
+    assert.equal(response.status, 200);
+    const snapshot = await response.json();
+    assert.equal(snapshot.events.length, 1);
+    assert.equal(snapshot.events[0].cursor, 0);
+    assert.equal(snapshot.nextCursor, 3);
+  } finally {
+    await new Promise((resolve) => started.server.close(resolve));
+  }
+});
+
+test("visualizer server bounds structured log responses", async () => {
+  const workdir = await mkdtemp(path.join(os.tmpdir(), "ogsystem-visualizer-log-limit-"));
+  await seedProjectFixture(workdir);
+  const { runId } = await createFixtureRun(workdir);
+  await writeFile(
+    path.resolve(workdir, ".ogs", "runs", runId, "logs", "engine.ndjson"),
+    Array.from({ length: 240 }, (_, index) => JSON.stringify({
+      type: "engine",
+      at: `2026-04-16T01:02:${String(index % 60).padStart(2, "0")}.000Z`,
+      message: `log-${index}`
+    })).join("\n"),
+    "utf8"
+  );
+  const started = await startVisualizationServer({ workdir, host: "127.0.0.1", port: 0 });
+  try {
+    const response = await fetch(`${started.url}/api/v1/runs/${runId}/logs?engine=true`);
+    assert.equal(response.status, 200);
+    const payload = await response.json();
+    assert.equal(payload.records.length, 200);
+    assert.match(payload.records.at(-1).message, /log-239/);
+  } finally {
+    await new Promise((resolve) => started.server.close(resolve));
   }
 });
 
@@ -2527,6 +2570,7 @@ test("visualizer server clears pending project create entries after a failed cre
 
 test("visualizer server starts and resumes runs through lifecycle APIs", async (t) => {
   const workdir = await mkdtemp(path.join(os.tmpdir(), "ogsystem-visualizer-run-lifecycle-"));
+  const codingDir = await mkdtemp(path.join(os.tmpdir(), "ogsystem-visualizer-coding-target-"));
   await seedRunnableReviewProjectFixture(workdir);
   let started;
   try {
@@ -2553,6 +2597,7 @@ test("visualizer server starts and resumes runs through lifecycle APIs", async (
       body: JSON.stringify({
         systemPath: "system.mmd",
         input: "operator smoke",
+        targetDir: codingDir,
         dryRun: true
       })
     });
@@ -2560,6 +2605,10 @@ test("visualizer server starts and resumes runs through lifecycle APIs", async (
     const startedRun = await startResponse.json();
     assert.equal(startedRun.status, "stopped");
     assert.ok(startedRun.runId);
+    const resolvedConfig = JSON.parse(
+      await readFile(path.resolve(workdir, ".ogs", "runs", startedRun.runId, "resolved-config.json"), "utf8")
+    );
+    assert.equal(resolvedConfig.effective.targetDir, codingDir);
     const snapshotManifest = JSON.parse(
       await readFile(path.resolve(workdir, ".ogs", "runs", startedRun.runId, "snapshot-manifest.json"), "utf8")
     );

@@ -1,13 +1,13 @@
 import { hostname as getHostname } from "node:os";
+import { createReadStream } from "node:fs";
 import { readFile, readdir, stat } from "node:fs/promises";
+import { createInterface } from "node:readline";
 import { basename, resolve } from "node:path";
 
-import { compileExecutionSnapshot } from "../runtime/compiler.js";
-import { loadFlowContractPlan } from "../runtime/flow-contract.js";
 import { readJsonFile } from "../runtime/json-file.js";
 import { loadModelCatalog } from "../runtime/model-catalog.js";
 import { loadModelSelection, resolveModelSelectionForSystem } from "../runtime/model-selection.js";
-import { loadSystemFromMermaid, parseSystemFromMermaidSource } from "../runtime/parse-mermaid.js";
+import { parseSystemFromMermaidSource } from "../runtime/parse-mermaid.js";
 import { buildRunPlanFingerprint } from "../runtime/plan-fingerprint.js";
 import {
   inspectRun,
@@ -17,11 +17,9 @@ import {
   resolveRunDir
 } from "../runtime/project-lifecycle.js";
 import { listRunArtifactPolicy } from "../runtime/run-artifact-policy.js";
-import { loadLaws, loadRolePackages, loadRuntimeConfig, loadUserProfile } from "../runtime/runtime-loader.js";
-import { pathExists } from "../runtime/run-artifacts.js";
-import { resolveEffectiveLaw } from "../runtime/runtime-setup.js";
+import { pathExists } from "../runtime/run-store.js";
 import { isRuntimeOnlyErrorEvent } from "../runtime/error-flow-utils.js";
-import { resolveProjectRoleRepoRoot, resolveProjectRoleRootDir } from "../runtime/bundled-repos.js";
+import { assembleProjectContextFromSource, loadProjectContext } from "./project-context-service.js";
 export { inspectRunGraphVisualization } from "./run-graph-projection.js";
 import {
   asBoolean,
@@ -166,21 +164,37 @@ async function readRuntimeEventSignals(runDir: string): Promise<JsonRecord[]> {
     { path: resolve(runDir, "events.ndjson"), source: "events.ndjson" }
   ];
   const signals: JsonRecord[] = [];
+  const maxSignals = 2_000;
   for (const entry of paths) {
-    const content = await readFile(entry.path, "utf8").catch(() => "");
-    for (const line of content.split(/\r?\n/)) {
-      const trimmed = line.trim();
-      if (!trimmed) {
-        continue;
-      }
-      try {
-        const parsed = asRecord(JSON.parse(trimmed));
-        if (parsed) {
-          signals.push({ ...parsed, source: entry.source });
+    let reader: ReturnType<typeof createInterface>;
+    try {
+      reader = createInterface({
+        input: createReadStream(entry.path, { encoding: "utf8" }),
+        crlfDelay: Infinity
+      });
+    } catch {
+      continue;
+    }
+    try {
+      for await (const line of reader) {
+        const trimmed = line.trim();
+        if (!trimmed) {
+          continue;
         }
-      } catch {
-        continue;
+        try {
+          const parsed = asRecord(JSON.parse(trimmed));
+          if (parsed) {
+            signals.push({ ...parsed, source: entry.source });
+            if (signals.length > maxSignals) {
+              signals.shift();
+            }
+          }
+        } catch {
+          continue;
+        }
       }
+    } catch {
+      // Missing or concurrently rotated event files are not runtime failures.
     }
   }
   return signals;
@@ -260,81 +274,9 @@ export async function inspectRunContractStatusVisualization(
   };
 }
 
-async function assembleProjectContext(workdir: string): Promise<{
-  systemPath: string;
-  systemSource: string;
-  system: SystemDefinition;
-  runtimeConfig: unknown;
-  modelSelection: unknown;
-  modelCatalog: unknown;
-  laws: unknown;
-  userProfile: unknown;
-  compilerSnapshot: ReturnType<typeof compileExecutionSnapshot>["snapshot"];
-  resolvedModelWarnings: string[];
-  roleRepoRoot: string;
-  projectMeta: unknown;
-}> {
-  const ogsPaths = resolveOgsPaths(workdir);
-  const systemPath = resolve(workdir, "system.mmd");
-  const systemSource = await readFile(systemPath, "utf8");
-  const system = parseSystemFromMermaidSource(systemSource);
-  const runtimeConfig = await loadRuntimeConfig(undefined, workdir);
-  const modelSelection = await loadModelSelection(ogsPaths.modelSelectionPath);
-  const modelCatalog = await loadModelCatalog(ogsPaths.modelCatalogPath);
-  const resolvedModelSelection = resolveModelSelectionForSystem({
-    system,
-    selection: modelSelection,
-    catalog: modelCatalog
-  });
-  const laws = await loadLaws(undefined, workdir);
-  const userProfile = await loadUserProfile(undefined, workdir);
-  const effectiveLaw = resolveEffectiveLaw(system, laws);
-  const roleRepoRoot = resolveProjectRoleRepoRoot(workdir, runtimeConfig.roleRepo);
-  const contractPlan = system.graph?.handoffContracts
-    ? await loadFlowContractPlan({
-        system,
-        contractPath: system.graph.handoffContracts
-      })
-    : undefined;
-  const rolePackagesByRoleId = await loadRolePackages({
-    system,
-    roleRootDir: resolveProjectRoleRootDir(workdir, runtimeConfig.roleRepo)
-  });
-  const compilerResult = compileExecutionSnapshot({
-    system,
-    rolePackagesByRoleId,
-    contractPlan,
-    effectiveLaw,
-    resolvedModelsByRoleId: resolvedModelSelection.resolvedByRoleId
-  });
-  if (!compilerResult.ok) {
-    throw new Error(
-      `Compiler static semantics check failed for project visualization: ${compilerResult.diagnostics
-        .map((diagnostic) => diagnostic.code)
-        .join(", ")}`
-    );
-  }
-  const projectMeta = await readJsonFile(ogsPaths.projectPath).catch(() => undefined);
-
-  return {
-    systemPath,
-    systemSource,
-    system,
-    runtimeConfig,
-    modelSelection,
-    modelCatalog,
-    laws,
-    userProfile,
-    compilerSnapshot: compilerResult.snapshot,
-    resolvedModelWarnings: resolvedModelSelection.warnings,
-    roleRepoRoot,
-    projectMeta
-  };
-}
-
 export async function inspectProjectVisualization(workdir: string): Promise<Record<string, unknown>> {
   const ogsPaths = resolveOgsPaths(workdir);
-  const context = await assembleProjectContext(workdir);
+  const context = await loadProjectContext(workdir);
   const persistedIndex = await loadPersistedRunsIndex(workdir);
 
   return {
@@ -388,7 +330,7 @@ export async function inspectProjectVisualization(workdir: string): Promise<Reco
 }
 
 export async function inspectProjectSystemVisualization(workdir: string): Promise<Record<string, unknown>> {
-  const context = await assembleProjectContext(workdir);
+  const context = await loadProjectContext(workdir);
   return {
     workdir,
     systemSource: context.systemSource,
@@ -398,7 +340,7 @@ export async function inspectProjectSystemVisualization(workdir: string): Promis
 
 export async function inspectProjectConfigVisualization(workdir: string): Promise<Record<string, unknown>> {
   const ogsPaths = resolveOgsPaths(workdir);
-  const context = await assembleProjectContext(workdir);
+  const context = await loadProjectContext(workdir);
   return {
     workdir,
     paths: ogsPaths,
@@ -415,7 +357,7 @@ export async function inspectProjectConfigVisualization(workdir: string): Promis
 }
 
 export async function listProjectRolesVisualization(workdir: string): Promise<Record<string, unknown>> {
-  const context = await assembleProjectContext(workdir);
+  const context = await loadProjectContext(workdir);
   const roles = Object.entries(context.compilerSnapshot.roleSummaryByRoleId)
     .sort(([left], [right]) => left.localeCompare(right))
     .map(([roleId, roleSummary]) => ({
@@ -733,49 +675,20 @@ async function computeResumeDiagnosticsCacheToken(workdir: string, runId: string
 
 async function computeExpectedFingerprint(workdir: string, runDir: string): Promise<JsonRecord> {
   const systemPath = resolve(runDir, "system.mmd");
-  const system = await loadSystemFromMermaid(systemPath);
-  const runtimeConfig = await loadRuntimeConfig(undefined, workdir);
-  const modelSelection = await loadModelSelection(resolve(workdir, ".ogs", "model-selection.json"));
-  const modelCatalog = await loadModelCatalog(resolve(workdir, ".ogs", "model-catalog.json"));
-  const resolvedModelSelection = resolveModelSelectionForSystem({
-    system,
-    selection: modelSelection,
-    catalog: modelCatalog
+  const systemSource = await readFile(systemPath, "utf8");
+  const context = await assembleProjectContextFromSource({
+    workdir,
+    systemPath,
+    systemSource
   });
-  const laws = await loadLaws(undefined, workdir);
-  const effectiveLaw = resolveEffectiveLaw(system, laws);
-  const rolePackagesByRoleId = await loadRolePackages({
-    system,
-    roleRootDir: resolveProjectRoleRootDir(workdir, runtimeConfig.roleRepo)
-  });
-  const contractPlan = system.graph?.handoffContracts
-    ? await loadFlowContractPlan({
-        system,
-        contractPath: system.graph.handoffContracts
-      })
-    : undefined;
-  const compilerResult = compileExecutionSnapshot({
-    system,
-    rolePackagesByRoleId,
-    contractPlan,
-    effectiveLaw,
-    resolvedModelsByRoleId: resolvedModelSelection.resolvedByRoleId
-  });
-  if (!compilerResult.ok) {
-    throw new Error(
-      `Compiler static semantics check failed while computing resume diagnostics: ${compilerResult.diagnostics
-        .map((diagnostic) => diagnostic.code)
-        .join(", ")}`
-    );
-  }
 
   return buildRunPlanFingerprint({
-    system,
-    rolePackagesByRoleId,
-    resolvedModelsByRoleId: resolvedModelSelection.resolvedByRoleId,
-    effectiveLaw,
-    contractPlan,
-    compilerSnapshot: compilerResult.snapshot
+    system: context.system,
+    rolePackagesByRoleId: context.rolePackagesByRoleId,
+    resolvedModelsByRoleId: context.resolvedModelsByRoleId,
+    effectiveLaw: context.effectiveLaw,
+    contractPlan: context.contractPlan,
+    compilerSnapshot: context.compilerSnapshot
   }) as unknown as JsonRecord;
 }
 
@@ -1157,29 +1070,41 @@ function findLatestFailureAudit(state: GraphState | undefined) {
 }
 
 async function findLatestFailureEvent(runDir: string): Promise<JsonRecord | undefined> {
-  const candidates: JsonRecord[] = [];
+  let latest: JsonRecord | undefined;
   for (const fileName of ["events.ndjson", "timeline.jsonl"]) {
-    const text = await readFile(resolve(runDir, fileName), "utf8").catch(() => "");
-    for (const line of text.split(/\r?\n/)) {
-      if (!line.trim()) {
-        continue;
+    let reader: ReturnType<typeof createInterface>;
+    try {
+      reader = createInterface({
+        input: createReadStream(resolve(runDir, fileName), { encoding: "utf8" }),
+        crlfDelay: Infinity
+      });
+    } catch {
+      continue;
+    }
+    try {
+      for await (const line of reader) {
+        if (!line.trim()) {
+          continue;
+        }
+        let parsed: unknown;
+        try {
+          parsed = JSON.parse(line) as unknown;
+        } catch {
+          continue;
+        }
+        const record = asRecord(parsed);
+        if (
+          record &&
+          (record.status === "failed" || record.type === "runtime_error" || asRecord(record.errorEnvelope))
+        ) {
+          latest = record;
+        }
       }
-      let parsed: unknown;
-      try {
-        parsed = JSON.parse(line) as unknown;
-      } catch {
-        continue;
-      }
-      const record = asRecord(parsed);
-      if (
-        record &&
-        (record.status === "failed" || record.type === "runtime_error" || asRecord(record.errorEnvelope))
-      ) {
-        candidates.push(record);
-      }
+    } catch {
+      // Missing or concurrently rotated event files are not runtime failures.
     }
   }
-  return candidates.at(-1);
+  return latest;
 }
 
 function listAllowedEventsForRole(system: SystemDefinition, roleId: string): string[] {

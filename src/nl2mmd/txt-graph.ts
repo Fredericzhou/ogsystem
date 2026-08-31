@@ -109,7 +109,7 @@ function renderRoleBindingSummary(roleId: string, metadata: Map<string, string>)
     parts.push(`exec=${execId}`);
   }
   if (talent) {
-    parts.push(`talent=${talent}`);
+    parts.push(`talent_hint=${talent}`);
   }
   if (roleMode) {
     parts.push(`mode=${roleMode}`);

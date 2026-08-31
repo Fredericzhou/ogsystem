@@ -16,6 +16,7 @@ export function injectStudioGraphStyles(): void {
       background: rgba(4, 8, 16, 0.54);
       min-width: 0;
       overflow: hidden;
+      container-type: inline-size;
     }
     .studio-canvas-shell.is-fullscreen .studio-graph-island {
       height: calc(100vh - 108px);
@@ -38,6 +39,8 @@ export function injectStudioGraphStyles(): void {
       align-items: center;
       gap: 5px;
       min-width: 0;
+      overflow-x: auto;
+      scrollbar-width: thin;
     }
     .studio-graph-toolbar-group {
       display: flex;
@@ -68,6 +71,7 @@ export function injectStudioGraphStyles(): void {
       font-size: 11px;
       line-height: 1;
       white-space: nowrap;
+      flex: 0 0 auto;
       transition: background 120ms ease, border-color 120ms ease, color 120ms ease;
     }
     .studio-graph-toolbar button:hover {
@@ -107,6 +111,11 @@ export function injectStudioGraphStyles(): void {
       .studio-graph-quick-debug {
         inset: auto 12px 12px 12px;
         width: auto;
+      }
+    }
+    @container (max-width: 920px) {
+      .studio-graph-toolbar-text {
+        display: none;
       }
     }
     .studio-graph-stage {
@@ -595,6 +604,24 @@ export function injectStudioGraphStyles(): void {
     }
     .studio-command-form-diagnostic.info {
       color: #bae6fd;
+    }
+    @media (max-width: 540px) {
+      .studio-graph-island {
+        min-height: 340px;
+      }
+      .studio-graph-stage,
+      .studio-graph-canvas {
+        min-height: 270px;
+      }
+      .studio-graph-minimap {
+        right: 8px;
+        bottom: 8px;
+        width: 132px;
+        height: 88px;
+      }
+      .studio-graph-context-menu {
+        max-width: calc(100% - 16px);
+      }
     }
   `;
   document.head.appendChild(style);

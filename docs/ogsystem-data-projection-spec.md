@@ -1,12 +1,12 @@
 # OGSystem Data Projection Spec
 
-Date: 2026-04-12  
-Status: landed design record (implemented in runtime; semantics source of truth remains `docs/ogsystem-orchestration-semantics-v1.md`)  
-Scope: minimal extension design for projection and quorum joins
+Date: 2026-08-31
+Status: landed design record (implemented in runtime; semantics source of truth remains `docs/ogsystem-orchestration-semantics-v1.md`)
+Scope: delivered v1 contract for projection and quorum joins
 
 ## 1. Objective
 
-This spec defines the smallest next-step extension that improves data authorization and join flexibility without introducing a second DSL, hidden reducers, or a new runtime state model.
+This spec records the smallest delivered extension that improves data authorization and join flexibility without introducing a second DSL, hidden reducers, or a new runtime state model.
 
 Target outcomes:
 
@@ -62,33 +62,33 @@ Invalid selectors, illegal source references, missing required projection fields
 
 Projection sources are defined in terms of normalized runtime facts, not raw serialization structure. `state.json` is a persistence artifact, not a query language.
 
-## 4. Minimal vNext Surface
+## 4. Delivered v1 Surface
 
-This spec intentionally limits the first iteration to two additions:
+This delivery intentionally limits the surface to two additions:
 
 1. `quorum_of` join readiness
 2. field-level read-only context projection
 
-Everything else is deferred.
+Other extensions remain deferred.
 
 ## 5. Join Semantics
 
 ### 5.1 Supported join modes
 
-Current:
+Implemented:
 
 - `all_of`
 
-Planned minimal extension:
+Implemented extension:
 
 - `quorum_of`
 
 ### 5.2 Metadata
 
-```mermaid
+```text
 %% join.mode.review=quorum_of
 %% join.sources.review=worker_a,worker_b,worker_c
-%% join.min.review=2
+%% join.min.review=3
 ```
 
 Rules:
@@ -125,7 +125,7 @@ Rules:
 
 Projection metadata is attached to the target role:
 
-```mermaid
+```text
 %% context.map.review.summary=source(worker_a).content
 %% context.map.review.risks=source(worker_b).data.risks
 %% context.map.review.task=global.task
@@ -222,7 +222,7 @@ To keep projection testable and replay-safe:
 - source result not yet available when a projection is evaluated
 - projected payload exceeds future context size limit policy
 
-The first iteration should fail closed instead of auto-filling `null`.
+The runtime fails closed instead of auto-filling `null`.
 
 ## 9. Out of Scope
 
@@ -243,7 +243,7 @@ The following are intentionally excluded from the first iteration:
 
 ### 10.1 Ordinary node projection
 
-```mermaid
+```text
 %% context.map.reviewer.brief=direct.data.brief
 %% context.map.reviewer.risk=direct.data.risk
 %% context.map.reviewer.task=global.task
@@ -261,10 +261,10 @@ Projected `context`:
 
 ### 10.2 Quorum join projection
 
-```mermaid
+```text
 %% join.mode.review=quorum_of
 %% join.sources.review=worker_a,worker_b,worker_c
-%% join.min.review=2
+%% join.min.review=3
 %% context.map.review.summary_a=source(worker_a).content
 %% context.map.review.summary_b=source(worker_b).content
 %% context.map.review.task=global.task
@@ -273,11 +273,12 @@ Projected `context`:
 Notes:
 
 - only roles that have actually completed may be projected successfully
+- `source(...)` selectors are used here because the quorum threshold equals the full source count; with `join.min=2`, the current runtime rejects source selectors that may refer to an absent source
 - missing source fields fail closed unless the runtime later introduces an explicit optional-field design
 
 ## 11. Test Expectations
 
-The implementation of this spec should add contract tests for:
+Regression coverage for this contract includes:
 
 1. default behavior unchanged when no projection metadata is present
 2. `quorum_of` readiness with `join.min=1`, `join.min=2`, and `join.min=|sources|`

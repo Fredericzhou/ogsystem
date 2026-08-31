@@ -29,6 +29,7 @@ export function resolveExecutionBinding(args: {
   node: ExecutionPlanNode;
   runContext: RunContext;
   baseWorkdir: string;
+  commandBaseDir?: string;
   roleDirs?: RoleRunDirs;
   allowedEvents: string[];
   effectiveLaw: EffectiveLawConstraints;
@@ -77,6 +78,7 @@ export function resolveExecutionBinding(args: {
       env: {
         OGSYSTEM_RUN_DIR: args.runContext.runDir,
         OGSYSTEM_SHARED_DIR: args.runContext.sharedDir,
+        OGSYSTEM_TARGET_DIR: args.baseWorkdir,
         OGSYSTEM_ROLE_DIR: args.roleDirs?.roleDir ?? workdir,
         OGSYSTEM_PRIVATE_DIR: sessionDirectory ?? "",
         OGSYSTEM_ROLE_ID: args.roleId,
@@ -110,10 +112,11 @@ export function resolveExecutionBinding(args: {
       timeoutMs: profile.timeoutMs ?? defaults.timeoutMs,
       maxOutputBytes: profile.maxOutputBytes ?? defaults.maxOutputBytes,
       workdir: sessionDirectory ?? args.baseWorkdir,
-      commandBaseDir: args.baseWorkdir,
+      commandBaseDir: args.commandBaseDir ?? args.baseWorkdir,
       env: {
         OGSYSTEM_RUN_DIR: args.runContext.runDir,
         OGSYSTEM_SHARED_DIR: args.runContext.sharedDir,
+        OGSYSTEM_TARGET_DIR: args.baseWorkdir,
         OGSYSTEM_ROLE_DIR: args.roleDirs?.roleDir ?? args.baseWorkdir,
         OGSYSTEM_PRIVATE_DIR: sessionDirectory ?? "",
         OGSYSTEM_ROLE_ID: args.roleId,

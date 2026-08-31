@@ -10,7 +10,7 @@
 import { writeFile } from "node:fs/promises";
 
 import { executeOpencodeModelRole, startOpencodeRunClient } from "./opencode-executor.js";
-import { appendEvent, flushBufferedRunArtifacts } from "./run-artifacts.js";
+import { filesystemArtifactStore } from "./artifact-store.js";
 import { stringifyJson } from "./runtime-support.js";
 import { runCliTool } from "./tool-runner.js";
 import type { CliTool, ExecutionProfile, RunContext } from "./types.js";
@@ -49,6 +49,8 @@ export type ExecutorRequest = {
   schema: unknown;
   binding: ExecutorBinding;
   workdir: string;
+  /** Coding project passed to OpenCode SDK session APIs. */
+  directory: string;
   commandBaseDir?: string;
   env?: Record<string, string>;
   timeoutMs: number;
@@ -103,7 +105,7 @@ export interface Executor {
   /**
    * Aborts an ongoing session (for model-based execution).
    */
-  abortSession(args: { sessionId: string; workdir: string }): Promise<void>;
+  abortSession(args: { sessionId: string; directory: string }): Promise<void>;
   
   /**
    * Returns metadata about any running background services.
@@ -125,6 +127,7 @@ export interface Executor {
 export function createDefaultExecutor(args: {
   dryRun?: boolean;
   runContext: RunContext;
+  targetDir: string;
   needsModelExecutor: boolean;
 }): Executor {
   let runClient: Awaited<ReturnType<typeof startOpencodeRunClient>> | undefined;
@@ -141,7 +144,8 @@ export function createDefaultExecutor(args: {
         env: {
           OGSYSTEM_RUN_DIR: args.runContext.runDir,
           OGSYSTEM_SHARED_DIR: args.runContext.sharedDir
-        }
+        },
+        directory: args.targetDir
       });
 
       // Persist endpoint metadata so the run directory records which OpenCode server handled model roles.
@@ -160,14 +164,14 @@ export function createDefaultExecutor(args: {
         `${runClient.pid ?? ""}\n`,
         "utf8"
       );
-      await appendEvent(args.runContext, {
+      await filesystemArtifactStore.appendEvent(args.runContext, {
         type: "opencode_server_started",
         at: runClient.startedAt,
         url: runClient.url,
         pid: runClient.pid,
         lifecycle: "single-serve-multi-session"
       });
-      await flushBufferedRunArtifacts(args.runContext);
+      await filesystemArtifactStore.flush(args.runContext);
     },
 
     async execute(request) {
@@ -197,6 +201,7 @@ export function createDefaultExecutor(args: {
                 modelRef: request.binding.modelRef,
                 variant: request.binding.variant,
                 workdir: request.workdir,
+                directory: request.directory,
                 timeoutMs: request.timeoutMs,
                 maxOutputBytes: request.maxOutputBytes,
                 runClient,
@@ -241,7 +246,7 @@ export function createDefaultExecutor(args: {
       }
       await runClient.client.session.abort({
         sessionID: run.sessionId,
-        directory: run.workdir
+        directory: run.directory
       });
     },
 
@@ -274,14 +279,14 @@ export function createDefaultExecutor(args: {
         }),
         "utf8"
       );
-      await appendEvent(args.runContext, {
+      await filesystemArtifactStore.appendEvent(args.runContext, {
         type: "opencode_server_closed",
         at: closedAt,
         url: runClient.url,
         pid: runClient.pid,
         lifecycle: "single-serve-multi-session"
       });
-      await flushBufferedRunArtifacts(args.runContext);
+      await filesystemArtifactStore.flush(args.runContext);
       runClient = undefined;
     }
   };

@@ -1,7 +1,7 @@
 import { readFile } from "node:fs/promises";
 import { resolve } from "node:path";
 
-import { inspectRun, resolveRunDir } from "../runtime/project-lifecycle.js";
+import { inspectRun, resolveRunDir } from "./run-query-service.js";
 import { parseSystemFromMermaidSource } from "../runtime/parse-mermaid.js";
 import {
   importSystemToAuthoring,

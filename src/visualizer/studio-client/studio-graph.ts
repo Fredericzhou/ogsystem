@@ -12,7 +12,7 @@ import {
 import type {
   GraphViewModel,
   StudioAuthoringDocument,
-  StudioCanvasDocument
+  StudioGraphSnapshot as StudioCanvasSnapshot
 } from "../studio-contracts.js";
 import { buildGraphViewModel } from "../graph-view-model.js";
 import {
@@ -91,7 +91,7 @@ export type StudioGraphLabels = Partial<Record<StudioGraphLabelKey, string>>;
 
 export type StudioGraphBridgeOptions = {
   authoring?: StudioAuthoringDocument | null;
-  canvas?: StudioCanvasDocument | null;
+  canvas?: StudioCanvasSnapshot | null;
   viewModel?: GraphViewModel | null;
   validation?: { ok?: unknown; diagnostics?: unknown } | null;
   selectedRoleId?: string;
@@ -107,10 +107,10 @@ export type StudioGraphBridgeOptions = {
   onSelectRole?: (roleId: string) => void;
   onSelectFlow?: (flowKey: string) => void;
   onClearSelection?: () => void;
-  onApplyCanvas?: (canvas: StudioCanvasDocument) => void | Promise<void>;
+  onApplyCanvas?: (canvas: StudioCanvasSnapshot) => void | Promise<void>;
   onApplyCommand?: (result: {
     authoring: StudioAuthoringDocument;
-    canvas: StudioCanvasDocument;
+    canvas: StudioCanvasSnapshot;
     selectedRoleId?: string;
     selectedFlowKey?: string;
     blockedCode?: string;
@@ -140,7 +140,7 @@ export type StudioGraphBridgeOptions = {
 
 type StudioGraphSnapshot = {
   authoring: StudioAuthoringDocument;
-  canvas: StudioCanvasDocument;
+  canvas: StudioCanvasSnapshot;
   selectedRoleId?: string;
   selectedFlowKey?: string;
 };
@@ -1354,7 +1354,7 @@ export class StudioGraphIsland {
   }
 
   private restoreViewport(
-    viewport: StudioCanvasDocument["viewport"] | undefined,
+    viewport: StudioCanvasSnapshot["viewport"] | undefined,
     firstRender: boolean
   ): void {
     const signature = viewport
@@ -2158,7 +2158,7 @@ export class StudioGraphIsland {
   private async applyResolvedCommandResult(
     result: {
       authoring: StudioAuthoringDocument;
-      canvas: StudioCanvasDocument;
+      canvas: StudioCanvasSnapshot;
       selectedRoleId?: string;
       selectedFlowKey?: string;
       blockedCode?: string;
@@ -2415,7 +2415,7 @@ export class StudioGraphIsland {
       this.escapeHtml(icon) + '</span><span class="studio-graph-toolbar-text">' + this.escapeHtml(shortLabel ?? label) + '</span></button>';
   }
 
-  private sameCanvas(left: StudioCanvasDocument, right: StudioCanvasDocument): boolean {
+  private sameCanvas(left: StudioCanvasSnapshot, right: StudioCanvasSnapshot): boolean {
     return JSON.stringify(left) === JSON.stringify(right);
   }
 
@@ -2674,6 +2674,8 @@ export class StudioGraphIsland {
     if (!roleNode) {
       return;
     }
+    // Once the user interacts, a delayed first-fit must not move the graph underneath the selection.
+    this.clearPendingInitialFit();
     this.options.selectedRoleId = roleId;
     this.options.selectedFlowKey = "";
     this.graph.cleanSelection();
@@ -2693,6 +2695,7 @@ export class StudioGraphIsland {
     if (!edgeCell) {
       return;
     }
+    this.clearPendingInitialFit();
     this.options.selectedRoleId = "";
     this.options.selectedFlowKey = studioEdgeFlowKey(edgeData);
     this.graph.cleanSelection();

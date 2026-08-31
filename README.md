@@ -138,6 +138,9 @@ For day-to-day use, start with `docs/usage-manual.md`. It keeps the command matr
 - Executable roles always resolve to one JSON object: `{"event":"EVENT_NAME","content":"..."}`. For `model.bind`, the runtime sends `prompt + output.schema.json` to OpenCode SDK v2 and reads `info.structured`; if `info.structured` is absent or string-encoded, the runtime falls back to assistant text parts and applies JSON extraction. For `exec.bind`, the runtime parses tool stdout as one JSON object. `event` is required for roles with outgoing flows and must match one Mermaid edge label exactly.
 - When OpenCode/provider/model resolution fails, runtime now preserves the upstream provider error as the top-level failure instead of collapsing it into a generic structured-output message.
 - For `model.bind`, one run now starts one shared `opencode serve`, and each role/node keeps one isolated OpenCode session on that server for the duration of the run.
+- Directory ownership is explicit: OGSystem uses the control project root as `workdir`; `opencode serve` is started with its hostname/port arguments and no OGSystem directory binding, while OpenCode `session.create/prompt/abort` receive the resolved coding project as `directory`. OGSystem writes the run-local OpenCode metadata under `<control-project>/.ogs/runs/<run-id>/.opencode/`.
+- An OGSystem project may bind an external coding project through `.ogs/project.json.target.directory` or `--target-dir`. The default target is the OGSystem project root, so existing projects keep the same behavior; multiple OGSystem projects may bind the same coding project, but concurrent write runs require Git worktrees or another isolation policy.
+- For `exec.bind`, relative tool arguments are materialized from the control project while the role process uses its run-local workspace; this keeps generated control-plane tools available in independent-target mode.
 - Executable roles are resolved by `roleId` directly from the project-local role repo. For each Mermaid `Role:<roleId>`, the runtime loads `og-roles/roles/<roleId>/role.json`, renders `prompt.md`, validates the built-in runtime prompt-input shell, and validates `output.schema.json`.
 - The runtime now supports direct `model.bind.<roleId>=provider/model` plus `.ogs/model-selection.json` defaults with auto-discovered `.ogs/runtime.json`, `.ogs/user-profile.json`, and `.ogs/laws.json`.
 - `model.bind` retries transient OpenCode/provider failures on the same role session while keeping the same run-level shared server.
@@ -166,7 +169,7 @@ For day-to-day use, start with `docs/usage-manual.md`. It keeps the command matr
 
 - Target architecture uses direct `provider/model` refs plus `.ogs/model-selection.json` for project/system/role defaults.
 - The law catalog currently resolves only `law.global` and the constraints `forbiddenToolRefs`, `maxTransitions`, `allowNoopWithoutExecutionBinding`.
-- `talentBinding` is preserved as metadata-only sidecar in the parsed system definition. It is not part of runtime execution.
+- `talentBinding` is preserved as metadata-only sidecar in the parsed system definition. It is reserved for future capability-tag-based model/executor routing and is not part of current runtime execution.
 - Role packages live under `og-roles/roles/<roleId>/` and provide `role.json`, `agent.md`, `prompt.md`, `output.schema.json`, and optional `source.json`.
 - The runtime-owned prompt-input shell remains fixed across roles and exposes `allowed_events`, `user_preferences`, `task`, and `input`.
 - Upstream agent repositories live under `agent-sources/` only during development; runtime executes only canonical role packages under `og-roles/roles/`.

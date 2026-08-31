@@ -10,14 +10,25 @@ import type {
   StudioAuthoringDocument,
   StudioAuthoringFlow,
   StudioAuthoringRole,
-  StudioCanvasDocument
+  StudioGraphSnapshot
 } from "./studio-contracts.js";
+import {
+  authoringToCanvasDocument,
+  buildBridgeFlows,
+  buildBridgeRoles,
+  fallbackGridColumnCount
+} from "./studio-authoring-projection.js";
 export type {
   StudioAuthoringDocument,
   StudioAuthoringFlow,
-  StudioAuthoringRole,
-  StudioCanvasDocument
+  StudioAuthoringRole
 };
+export type { StudioCanvasDocument } from "./studio-contracts.js";
+export { authoringToCanvasDocument, buildBridgeFlows, buildBridgeRoles };
+
+function sortStrings(left: string, right: string): number {
+  return left.localeCompare(right);
+}
 
 export type StudioBridgeRole = StudioAuthoringRole & {
   incomingFlowCount: number;
@@ -49,7 +60,7 @@ export type StudioBridgeDraft = {
   systemSource: string;
   validation: StudioSystemValidation;
   authoring: StudioAuthoringDocument | null;
-  canvas: StudioCanvasDocument | null;
+  canvas: StudioGraphSnapshot | null;
   extracted: {
     systemId: string;
     systemVersion: string;
@@ -66,10 +77,6 @@ type StudioBridgeValidationDiagnostic = {
   message: string;
   detail?: string;
 };
-
-function sortStrings(left: string, right: string): number {
-  return left.localeCompare(right);
-}
 
 function normalizeOptionalDisplayLabel(value: unknown): string | undefined {
   const label = typeof value === "string" ? value.trim() : "";
@@ -137,8 +144,8 @@ export function importSystemToAuthoring(args: {
       contextMap: args.system.graph?.contextMapByRoleId[roleId]
     };
     layoutNodes[roleId] = {
-      x: 120 + (index % 4) * 260,
-      y: 120 + Math.floor(index / 4) * 160
+      x: 120 + (index % fallbackGridColumnCount(args.system.roleIds.length)) * 260,
+      y: 120 + Math.floor(index / fallbackGridColumnCount(args.system.roleIds.length)) * 160
     };
   });
 
@@ -177,48 +184,6 @@ export function importSystemToAuthoring(args: {
   };
 }
 
-export function buildBridgeRoles(authoring: StudioAuthoringDocument): StudioBridgeRole[] {
-  const flows = Object.values(authoring.flows);
-  return Object.values(authoring.roles)
-    .sort((left, right) => left.roleId.localeCompare(right.roleId))
-    .map((role) => {
-      const incoming = flows.filter((flow) => flow.toRoleId === role.roleId);
-      const outgoing = flows.filter((flow) => flow.fromRoleId === role.roleId);
-      const badges = [
-        authoring.system.entryRoleId === role.roleId ? "entry" : "",
-        role.bindingKind === "model" ? "M" : "",
-        role.bindingKind === "exec" ? "E" : "",
-        role.routingMode === "parallel_split" ? "P" : "",
-        role.joinMode ? "J" : "",
-        role.loopMax ? "L" : "",
-        role.review ? "R" : ""
-      ].filter(Boolean);
-      return {
-        ...role,
-        incomingFlowCount: incoming.length,
-        outgoingFlowCount: outgoing.length,
-        allowedEvents: Array.from(new Set(outgoing.map((flow) => flow.eventType))).sort(sortStrings),
-        badges
-      };
-    });
-}
-
-export function buildBridgeFlows(authoring: StudioAuthoringDocument): StudioBridgeFlow[] {
-  const joinSourcesByTarget = new Map<string, Set<string>>();
-  for (const role of Object.values(authoring.roles)) {
-    if (role.joinSources?.length) {
-      joinSourcesByTarget.set(role.roleId, new Set(role.joinSources));
-    }
-  }
-  return Object.values(authoring.flows)
-    .sort((left, right) => left.flowId.localeCompare(right.flowId))
-    .map((flow) => ({
-      ...flow,
-      flowKey: `${flow.fromRoleId}:${flow.eventType}:${flow.toRoleId === SYSTEM_END_ROLE_ID ? "output" : flow.toRoleId}`,
-      participatesInJoin: Boolean(joinSourcesByTarget.get(flow.toRoleId)?.has(flow.fromRoleId))
-    }));
-}
-
 function withStudioBridgeImportFailure(
   validation: StudioSystemValidation,
   error: unknown
@@ -239,13 +204,13 @@ function withStudioBridgeImportFailure(
   };
 }
 
-function deterministicCanvasEdgeId(edge: StudioCanvasDocument["edges"][number], index: number): string {
+function deterministicCanvasEdgeId(edge: StudioGraphSnapshot["edges"][number], index: number): string {
   const target = edge.target === SYSTEM_END_ROLE_ID ? "output" : edge.target;
   return `${index + 1}:${edge.source}:${edge.eventType}:${target}`;
 }
 
 function normalizeCanvasEdgeId(args: {
-  edge: StudioCanvasDocument["edges"][number];
+  edge: StudioGraphSnapshot["edges"][number];
   index: number;
   usedFlowIds: Set<string>;
 }): string {
@@ -263,44 +228,9 @@ function normalizeCanvasEdgeId(args: {
   return candidate;
 }
 
-export function authoringToCanvasDocument(authoring: StudioAuthoringDocument): StudioCanvasDocument {
-  const bridgeRoles = buildBridgeRoles(authoring);
-  const bridgeFlows = buildBridgeFlows(authoring);
-  return {
-    version: 1,
-    nodes: bridgeRoles.map((role, index) => {
-      const layout = authoring.layout.nodes[role.roleId] ?? {
-        x: 120 + (index % 4) * 260,
-        y: 120 + Math.floor(index / 4) * 160
-      };
-      return {
-        id: role.roleId,
-        roleId: role.roleId,
-        x: layout.x,
-        y: layout.y,
-        width: layout.width ?? 180,
-        height: layout.height ?? 84,
-        label: role.title ?? role.roleId,
-        badges: role.badges,
-        bindingKind: role.bindingKind
-      };
-    }),
-    edges: bridgeFlows.map((flow) => ({
-      id: flow.flowId,
-      source: flow.fromRoleId,
-      target: flow.toRoleId,
-      label: flow.label ?? flow.eventType,
-      eventType: flow.eventType,
-      runtimeOnlyErrorFlow: Boolean(flow.runtimeOnlyErrorFlow),
-      participatesInJoin: flow.participatesInJoin
-    })),
-    viewport: authoring.layout.viewport
-  };
-}
-
 export function applyCanvasDocumentToAuthoring(args: {
   authoring: StudioAuthoringDocument;
-  canvas: StudioCanvasDocument;
+  canvas: StudioGraphSnapshot;
 }): StudioAuthoringDocument {
   const nodes: StudioAuthoringDocument["layout"]["nodes"] = { ...args.authoring.layout.nodes };
   for (const node of args.canvas.nodes) {

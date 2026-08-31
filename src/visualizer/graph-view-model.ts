@@ -13,7 +13,7 @@ import {
   findLastSelectedEvent,
   findLatestFailureForRole
 } from "./graph-runtime-signals.js";
-import { buildBridgeFlows, buildBridgeRoles } from "./studio-authoring-projection.js";
+import { buildBridgeFlows, buildBridgeRoles, fallbackGridColumnCount } from "./studio-authoring-projection.js";
 import {
   normalizeStudioGraphTargetRoleId,
   STUDIO_SYSTEM_END_ROLE_ID,
@@ -70,10 +70,11 @@ const DEFAULT_NODE_HEIGHT = 84;
 const BOUNDARY_WIDTH = 170;
 const BOUNDARY_HEIGHT = 70;
 
-function fallbackLayout(index: number): { x: number; y: number; width: number; height: number } {
+function fallbackLayout(index: number, nodeCount: number): { x: number; y: number; width: number; height: number } {
+  const columns = fallbackGridColumnCount(nodeCount);
   return {
-    x: 120 + (index % 4) * 260,
-    y: 120 + Math.floor(index / 4) * 160,
+    x: 120 + (index % columns) * 260,
+    y: 120 + Math.floor(index / columns) * 160,
     width: DEFAULT_NODE_WIDTH,
     height: DEFAULT_NODE_HEIGHT
   };
@@ -220,7 +221,7 @@ export function buildGraphViewModel(args: BuildGraphViewModelArgs): GraphViewMod
 
   const roleNodes: GraphViewModelNode[] = bridgeRoles.map((role, index) => {
     const layoutSource = authoring.layout.nodes[role.roleId];
-    const fallback = fallbackLayout(index);
+    const fallback = fallbackLayout(index, bridgeRoles.length);
     const x = Number.isFinite(layoutSource?.x) ? Number(layoutSource!.x) : fallback.x;
     const y = Number.isFinite(layoutSource?.y) ? Number(layoutSource!.y) : fallback.y;
     const width = Number.isFinite(layoutSource?.width) ? Number(layoutSource!.width) : fallback.width;

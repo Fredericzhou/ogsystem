@@ -1,6 +1,6 @@
 # OGSystem 语义手册（实现对齐版）
 
-更新时间：2026-04-14  
+更新时间：2026-08-31
 适用范围：当前 `src/runtime/*` 的解析器与执行器实现（含 `ERROR*` 语义开关）
 文档级别：二级参考（非权威）。语义最终真相以 `src/runtime/*` 与 `docs/ogsystem-orchestration-semantics-v1.md` 为准。
 
@@ -59,12 +59,16 @@ writerNode[Role:writer] -->|DONE| output
 - 图语义键：`role.mode.<roleId>`、`join.mode.<roleId>`、`join.min.<roleId>`、`join.sources.<roleId>`
 - 上下文键：`context.map.<roleId>.<field>`
 - 循环键：`loop.max.<roleId>`
+- 合同与路由键：`handoff.mode`、`handoff.contracts`、`route.order.<fromRoleId>`
+- 人工审核键：`review.mode.<roleId>`、`review.timeout.<roleId>`、`review.timeout.action.<roleId>`、`review.rework.target.<roleId>`、`review.rework.max.<roleId>`、`review.terminate.scope.<roleId>`
 
 #### 注意事项
 
 - `engine` 如声明，当前仅接受 `langgraph`。
 - 同一角色不能同时声明 `model.bind` 和 `exec.bind`。
-- 绑定解析优先级：`model.bind` > `exec.bind` > `noop`（无绑定）。
+- 绑定解析不是覆盖优先级：有且仅有一种绑定时使用该绑定；同时声明 `model.bind` 与 `exec.bind` 会在解析期拒绝；无绑定时只有在 law 允许且出边不超过 1 时才进入 `noop`。
+- `talent.bind.<roleId>` 当前只作为兼容性元数据解析并纳入 fingerprint，不参与当前模型或执行器选择；它保留给未来基于能力标签的模型/执行器路由。
+- `runtime.error_flows.v1` 不是 Mermaid 元数据键，必须配置在项目的 `.ogs/runtime.json` 中；未知 Mermaid 元数据会被拒绝。
 
 ---
 
@@ -99,7 +103,7 @@ rejectNode[Role:reject_node] -->|DONE| output
 - 角色输出事件若与任何出边不匹配，会判定失败。
 - 当“只有一个可选事件”时，运行时会进行单值归一修复（不建议依赖）。
 
-### 3.2 并行分发（`role.mode: parallel_split`）
+### 3.2 语义分叉（`role.mode: parallel_split`）
 
 #### 图示
 
@@ -125,13 +129,27 @@ mergeNode[Role:merge] -->|DONE| output
 
 #### 含义
 
-- `parallel_split` 会一次性激活所有普通下游目标。
+- `parallel_split` 会在一次状态转移中激活所有普通下游目标，表达的是 Flow 语义分叉，不承诺这些分支由 scheduler 物理并发执行。
 - 并行模式的目标选择会排除运行时保留事件 `ERROR*`。
 
 #### 注意事项
 
 - 并行分发依赖运行时状态，不靠角色返回的单一 `event` 决定去向。
 - 分支并行时，模型会话记忆按 `sessionLineageId` 隔离；同角色目录默认不做分支级隔离。
+- 当前 graph scheduler 按活动角色队列顺序逐个处理分支；受控物理并发属于未来执行策略，不改变分支可达性或 join 就绪语义。
+
+### 3.3 合同门禁与路由顺序
+
+#### 含义
+
+- `handoff.mode=strict|transition` 启用 flow contract 校验，`handoff.contracts` 指向合同 bundle。
+- `strict` 遇到合同违规或缺失时硬失败；`transition` 可跳过受影响的 WARN/缺失合同 flow，但如果跳过会使下游 join 无法满足，仍会 fail-closed。
+- `route.order.<fromRoleId>=<toRoleIdA>,<toRoleIdB>,...` 只重排同一来源角色的 sibling fan-out 目标顺序，不新增或删除可达路径；目标列表必须与普通 Mermaid 出边完全一致。
+
+#### 注意事项
+
+- `handoff.contracts` 必须与 `handoff.mode` 一起声明；路径相对 `system.mmd` 所在目录解析。
+- 合同 schema 的 `$ref` 仅支持本地文件引用，不支持远程 URL。
 
 ---
 
@@ -208,6 +226,7 @@ judgeNode[Role:judge] -->|DONE| output
 
 - `quorum_of` 必须同时提供 `join.sources` 与 `join.min`。
 - `join.min` 取值范围必须在 `[1, sourceCount]`。
+- 当 `quorum_of` 的 `join.min` 小于 source 数量时，当前实现不允许在该 join 的 `context.map` 中使用 `source(...)`，因为 join 激活时部分 source 可能尚未到达；此时使用 `global.*`，或将阈值设为 source 总数。
 
 ---
 
@@ -239,12 +258,13 @@ writerNode[Role:writer] -->|DONE| output
 
 - `writer` 的 `context` 将重建为稳定字段序 JSON：
   `goal/profile/brief/outline`。
-- 支持 `global.task`、`global.user_profile(.path)`、`direct.*`、`direct.data.<path>`。
+- 支持 `global.task`、`global.user_profile(.path)`、`direct.content|event|data(.path)`。
 
 #### 注意事项
 
 - `direct.*` 仅在存在上游产物时可用；无上游会 fail-closed。
 - 路径不存在、字段缺失、selector 非法都会失败，不会静默置空。
+- `global.human_review.current(.comment|.round|.previous_output(.path))` 只用于审核返工上下文；selector 末尾的 `?` 可忽略首轮没有审核上下文的情况。
 
 ### 5.2 Join 节点投影
 
@@ -314,6 +334,7 @@ reviewNode[Role:review] -->|PASS| output
 
 - 图中存在环时，至少一个环内角色必须声明 `loop.max`，否则解析失败。
 - `loop.max.<role>` 必须是可达角色且为正整数。
+- 每个声明预算的目标角色独立计数；环上多个角色分别声明预算时，任一角色超限都会失败。
 
 ---
 
@@ -323,15 +344,32 @@ reviewNode[Role:review] -->|PASS| output
 
 #### 含义
 
-- 节点绑定优先顺序：`model.bind` -> `exec.bind` -> `noop`。
-- `noop` 仅在法律允许 `allowNoopWithoutExecutionBinding=true` 时可执行。
+- 每个角色必须解析出一种有效执行方式：显式 `model.bind`、显式 `exec.bind`、项目模型选择默认值，或满足法律约束的 `noop`。
+- 两种显式绑定同时存在会在解析期失败；没有显式绑定时不会自动回退到 `noop`，会先尝试模型选择默认值。
+- `noop` 仅在 law 设置 `allowNoopWithoutExecutionBinding=true` 且该角色最多有一条出边时可执行。
+- `talent.bind.<roleId>` 不改变上述决议，也不会在当前 runtime 选择模型或执行器；未来实现时仅作为能力标签路由输入。
 
 #### 注意事项
 
 - `noop` 节点若有多个可选出边会被拒绝（避免歧义路由）。
 - `model.bind` 与 `exec.bind` 同时声明属于冲突，解析期失败。
 
-### 7.2 角色输出合同
+### 7.2 Runtime-native Human Review
+
+#### 含义
+
+- 在被审核角色上声明 `review.mode.<roleId>=required`，角色执行完成后先持久化 draft result，再进入 `waiting_review`。
+- 审核不是独立的 Mermaid `human-gate` role。通过 `ogs run review list|inspect|decide` 操作控制面，再用 `ogs run resume` 继续主链。
+- 支持 `approve`、`rework`、`pause`、`terminate` 四种决策；`review.timeout.action` 仅支持 `pause|terminate`，`review.terminate.scope` 仅支持 `branch|run`。
+- `review.rework.target` 默认为当前角色，`review.rework.max` 限制返工次数；返工上下文通过 `global.human_review.current.*` 投影。
+
+#### 注意事项
+
+- 当前只支持 `review.mode.<roleId>=required`，其它 review mode 会在解析期拒绝。
+- `review.timeout` 单位为秒，必须为非负整数；它当前只会被解析并持久化到 review spec，运行时不会自动计时或将 review 标记为 expired；review 的附加配置必须同时声明 `review.mode`。
+- 首轮和返工共用同一图语义；需要兼容首轮缺少审核上下文时，给 selector 末尾加 `?`。
+
+### 7.3 角色输出合同
 
 #### 含义
 
@@ -408,9 +446,19 @@ fallbackNode[Role:fallback_handler] -->|DONE| output
 
 ```mermaid
 flowchart TD
-A[Role 执行结束] -->|durable write| B[execution-outcome.json]
-B -->|append checkpoint| C[checkpoints/*.json]
-C -->|apply update| D[state.json]
+%% system.id=demo.resume.wal
+%% system.version=1.0.0
+%% law.global=law.default
+%% entry.role=role
+%% model.bind.role=model.main
+%% model.bind.execution_outcome=model.main
+%% model.bind.checkpoint=model.main
+%% model.bind.state=model.main
+input -->|EXECUTION_COMPLETE| role[Role:role]
+role[Role:role] -->|DURABLE_WRITE| outcome[Role:execution_outcome]
+outcome[Role:execution_outcome] -->|APPEND_CHECKPOINT| checkpoint[Role:checkpoint]
+checkpoint[Role:checkpoint] -->|APPLY_UPDATE| state[Role:state]
+state[Role:state] -->|DONE| output
 ```
 
 #### 含义
@@ -502,7 +550,7 @@ I -->|满足且未激活| I3[激活一次 join 分支]
 | 主题 | 优先级/顺序 | 取舍说明 |
 | :--- | :--- | :--- |
 | 入口角色决定 | `input` 边界目标 与 `entry.role` 二选一且必须一致 | 入口冲突直接拒绝，避免恢复时入口漂移 |
-| 节点绑定 | `model.bind` > `exec.bind` > `noop` | 明确优先执行模型绑定，`exec.bind` 用于本地 shell / tool 路径 |
+| 节点绑定 | 冲突直接拒绝；单绑定使用对应执行器；无绑定按 law 判定 noop | `model.bind` 与 `exec.bind` 不是覆盖关系，避免隐藏配置错误 |
 | 上下文来源 | `context.map` > `join 默认命名空间` > `direct 上游内容` | 显式映射优先，防止隐式 context 漂移 |
 | 成功路由 | `routingMode handler`（如 `parallel_split`）> 默认事件匹配 | 扩展模式优先，默认模式兜底 |
 | 失败路由 | `ERROR.<code>` > `ERROR` > fail-stop | typed 优先保证补偿精确性 |
@@ -515,19 +563,28 @@ I -->|满足且未激活| I3[激活一次 join 分支]
 
 ```mermaid
 flowchart LR
+%% system.id=demo.combined.quorum
+%% system.version=1.0.0
+%% law.global=law.default
+%% entry.role=dispatch
 %% role.mode.dispatch=parallel_split
 %% join.mode.judge=quorum_of
 %% join.sources.judge=a,b,c
 %% join.min.judge=3
 %% context.map.judge.a_view=source(a).content
 %% context.map.judge.task=global.task
+%% model.bind.dispatch=model.main
+%% model.bind.a=model.main
+%% model.bind.b=model.main
+%% model.bind.c=model.main
+%% model.bind.judge=model.main
 dispatch[Role:dispatch] -->|TO_A| a[Role:a]
-dispatch -->|TO_B| b[Role:b]
-dispatch -->|TO_C| c[Role:c]
-a -->|DONE_A| judge[Role:judge]
-b -->|DONE_B| judge
-c -->|DONE_C| judge
-judge -->|DONE| output
+dispatch[Role:dispatch] -->|TO_B| b[Role:b]
+dispatch[Role:dispatch] -->|TO_C| c[Role:c]
+a[Role:a] -->|DONE_A| judge[Role:judge]
+b[Role:b] -->|DONE_B| judge[Role:judge]
+c[Role:c] -->|DONE_C| judge[Role:judge]
+judge[Role:judge] -->|DONE| output
 ```
 
 #### 含义
@@ -548,11 +605,18 @@ judge -->|DONE| output
 
 ```mermaid
 flowchart TD
+%% system.id=demo.combined.error-loop
+%% system.version=1.0.0
+%% law.global=law.default
+%% entry.role=worker
+%% model.bind.worker=model.main
+%% model.bind.recover=model.main
+%% model.bind.fallback=model.main
 %% loop.max.recover=1
 worker[Role:worker] -->|ERROR.IO| recover[Role:recover]
-worker -->|ERROR| fallback[Role:fallback]
-recover -->|RETRY| worker
-fallback -->|DONE| output
+worker[Role:worker] -->|ERROR| fallback[Role:fallback]
+recover[Role:recover] -->|RETRY| worker[Role:worker]
+fallback[Role:fallback] -->|DONE| output
 ```
 
 #### 含义

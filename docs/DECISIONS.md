@@ -41,11 +41,15 @@ OpenCode is the current default executor behind the `Executor` abstraction.
 - one run starts one shared `opencode serve`
 - sessions are keyed by `roleId:sessionLineageId`
 - sibling branches of the same role do not share a session, but they still share the same role directory/private workspace
+- `opencode serve` is started with its hostname/port arguments and no OGSystem directory binding; OpenCode SDK session `directory` is the resolved coding project
+- an optional external `targetDir` may be attached to the OGSystem project; when present, OpenCode SDK sessions and CLI project commands use that target while artifacts remain under the OGSystem root
+- Visualizer run APIs accept the same optional `targetDir`; when omitted they resolve the project attachment, preserving the CLI and UI default behavior
 
 Reason:
 
 - OpenCode is the implemented executor today
 - the abstraction keeps server lifecycle, execution, and session cleanup behind one boundary
+- keeping the target optional preserves the low-friction same-directory default while allowing multiple control planes to bind one coding project
 
 ## 4. Concurrency Semantics
 
@@ -58,7 +62,7 @@ Semantic fan-out is not the same thing as backend compute parallelism.
 - `all_of` join activation allocates a fresh join session lineage after all declared sources are ready
 - actual execution concurrency depends on the backend and executor behavior
 - controlled fan-out concurrency is an execution strategy, not a flow semantic
-- today, model-bound runs share one OpenCode server and use concurrent sessions when branches fan out
+- today, `parallel_split` guarantees branch activation and session-lineage isolation; the current graph scheduler drains active branches in queue order, so physical execution concurrency is not a runtime guarantee
 - sibling branches of the same role are isolated at the model-session layer, not by separate role-private directories
 
 ## 5. Persistence Contract
@@ -69,7 +73,7 @@ Resume consumes a narrow set of artifacts.
 - `state.json.graphState` is the runtime state snapshot
 - `sessions.json` is the executor session index for reload/reuse
 - runtime writes `resolved-config.json` on run start for replay/audit stability
-- OpenCode run-local metadata is `.opencode/server.pid` + `.opencode/endpoint.json`
+- OGSystem writes OpenCode run-local metadata to `.ogs/runs/<run-id>/.opencode/server.pid` + `.ogs/runs/<run-id>/.opencode/endpoint.json`; this run-local namespace is separate from the OpenCode session `directory`
 - operator-facing logs are split by channel: `logs/engine.ndjson` and `logs/roles/<roleId>.ndjson`
 - `events.ndjson` stays as append-only full event history
 - `summary.json` and `timeline.jsonl` are operator-facing projections; resume must not depend on them

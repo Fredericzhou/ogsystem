@@ -6,7 +6,7 @@
 import { createDefaultExecutor } from "./executor.js";
 import { runSystemWithGraphRunner } from "./graph-runner.js";
 import { createRuntimeError, normalizeRuntimeError } from "./runtime-errors.js";
-import { loadResumeGraphState, validateResumePlanFingerprint } from "./run-artifacts.js";
+import { filesystemRunStore } from "./run-store.js";
 import { prepareRuntimeSetup, type RuntimeAdapterSetup } from "./runtime-setup.js";
 import type { AdapterRunResult, GraphState } from "./types.js";
 
@@ -39,6 +39,7 @@ export async function runSystemWithAdapter(args: {
   resumeRunDir?: string;
   prompt: string;
   workdir: string;
+  targetDir?: string;
   dryRun?: boolean;
   cleanupExecutionHistory?: number;
   logRun?: boolean;
@@ -91,6 +92,7 @@ export async function runSystemWithAdapter(args: {
       const executor = createDefaultExecutor({
         dryRun: args.dryRun,
         runContext: setup.runContext,
+        targetDir: setup.targetDir,
         needsModelExecutor:
           Array.from(setup.plan.nodesByRoleId.values()).some((node) => node.binding.kind === "model")
       });
@@ -104,11 +106,11 @@ export async function runSystemWithAdapter(args: {
         let initialState: GraphState | undefined;
         if (args.resumeRunDir) {
           try {
-            await validateResumePlanFingerprint({
+            await filesystemRunStore.validatePlanFingerprint({
               runDir: setup.runContext.runDir,
               expectedFingerprint: setup.planFingerprint
             });
-            initialState = await loadResumeGraphState({ runDir: setup.runContext.runDir });
+            initialState = await filesystemRunStore.loadResumeState({ runDir: setup.runContext.runDir });
           } catch (error) {
             throw createRuntimeError(
               normalizeRuntimeError(error, {
@@ -131,7 +133,8 @@ export async function runSystemWithAdapter(args: {
           profilesById: setup.profilesById,
           toolsByRef: setup.toolsByRef,
           userProfile: setup.userProfile,
-          workdir: args.workdir,
+          workdir: setup.targetDir,
+          commandBaseDir: args.workdir,
           rolePackagesByRoleId: setup.rolePackagesByRoleId,
           runContext: setup.runContext,
           executor,

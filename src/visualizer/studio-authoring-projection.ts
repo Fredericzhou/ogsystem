@@ -2,7 +2,7 @@ import { SYSTEM_END_ROLE_ID } from "../runtime/types.js";
 import type {
   StudioAuthoringDocument,
   StudioAuthoringRole,
-  StudioCanvasDocument
+  StudioGraphSnapshot
 } from "./studio-contracts.js";
 
 export type StudioBridgeRole = StudioAuthoringRole & {
@@ -19,6 +19,10 @@ export type StudioBridgeFlow = StudioAuthoringDocument["flows"][string] & {
 
 function sortStrings(left: string, right: string): number {
   return left.localeCompare(right);
+}
+
+export function fallbackGridColumnCount(nodeCount: number): number {
+  return Math.max(1, Math.ceil(Math.sqrt(Math.max(1, nodeCount))));
 }
 
 export function buildBridgeRoles(authoring: StudioAuthoringDocument): StudioBridgeRole[] {
@@ -63,15 +67,16 @@ export function buildBridgeFlows(authoring: StudioAuthoringDocument): StudioBrid
     }));
 }
 
-export function authoringToCanvasDocument(authoring: StudioAuthoringDocument): StudioCanvasDocument {
+export function authoringToGraphSnapshot(authoring: StudioAuthoringDocument): StudioGraphSnapshot {
   const bridgeRoles = buildBridgeRoles(authoring);
   const bridgeFlows = buildBridgeFlows(authoring);
+  const columns = fallbackGridColumnCount(bridgeRoles.length);
   return {
     version: 1,
     nodes: bridgeRoles.map((role, index) => {
       const layout = authoring.layout.nodes[role.roleId] ?? {
-        x: 120 + (index % 4) * 260,
-        y: 120 + Math.floor(index / 4) * 160
+        x: 120 + (index % columns) * 260,
+        y: 120 + Math.floor(index / columns) * 160
       };
       return {
         id: role.roleId,
@@ -97,3 +102,6 @@ export function authoringToCanvasDocument(authoring: StudioAuthoringDocument): S
     viewport: authoring.layout.viewport
   };
 }
+
+/** Compatibility adapter for the existing bridge response and persisted client payloads. */
+export const authoringToCanvasDocument = authoringToGraphSnapshot;

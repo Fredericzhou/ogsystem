@@ -1,4 +1,6 @@
+import { createReadStream } from "node:fs";
 import { open, readFile, stat } from "node:fs/promises";
+import { createInterface } from "node:readline";
 
 import { writeTextFileAtomic } from "./json-file.js";
 
@@ -39,11 +41,14 @@ type TimelineCacheEntry = {
   mtimeMs: number;
   ctimeMs: number;
   size: number;
+  nextCursor: number;
   entries: TimelineSnapshotEntry[];
   remainder: string;
 };
 
 const timelineTailCache = new Map<string, TimelineCacheEntry>();
+const MAX_TIMELINE_CACHE_ENTRIES = 10_000;
+const MAX_TIMELINE_CACHE_FILES = 32;
 
 function asString(value: unknown): string | undefined {
   return typeof value === "string" ? value : undefined;
@@ -73,18 +78,7 @@ function parseJsonLines(content: string): Array<Record<string, unknown>> {
 
 function parseTimelineEntries(content: string): TimelineSnapshotEntry[] {
   return parseJsonLines(content)
-    .map((line) => {
-      const cursor = asNumber(line.cursor);
-      const at = asString(line.at);
-      const type = asString(line.type);
-      if (cursor === undefined || !at || !type) {
-        return undefined;
-      }
-      return {
-        cursor,
-        record: line as TimelineProjectionRecord
-      };
-    })
+    .map((line) => timelineEntryFromValue(line))
     .filter((entry): entry is TimelineSnapshotEntry => entry !== undefined);
 }
 
@@ -120,26 +114,8 @@ function parseAppendedTimelineChunk(content: string): {
     .map((line) => line.trim())
     .filter(Boolean)
     .flatMap((line) => {
-      try {
-        const parsed = JSON.parse(line);
-        if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) {
-          return [];
-        }
-        const cursor = asNumber((parsed as Record<string, unknown>).cursor);
-        const at = asString((parsed as Record<string, unknown>).at);
-        const type = asString((parsed as Record<string, unknown>).type);
-        if (cursor === undefined || !at || !type) {
-          return [];
-        }
-        return [
-          {
-            cursor,
-            record: parsed as TimelineProjectionRecord
-          } satisfies TimelineSnapshotEntry
-        ];
-      } catch {
-        return [];
-      }
+      const entry = parseTimelineEntry(line);
+      return entry ? [entry] : [];
     });
   return {
     entries,
@@ -149,7 +125,8 @@ function parseAppendedTimelineChunk(content: string): {
 
 function filterTimelineEntries(
   records: TimelineSnapshotEntry[],
-  args: TimelineSnapshotArgs
+  args: TimelineSnapshotArgs,
+  nextCursor = records.reduce((next, entry) => Math.max(next, entry.cursor + 1), 0)
 ): { events: TimelineSnapshotEntry[]; nextCursor: number } {
   const startCursor = Math.max(0, args.cursor ?? 0);
   const limit = args.limit ?? 500;
@@ -180,8 +157,88 @@ function filterTimelineEntries(
 
   return {
     events,
-    nextCursor: records.length
+    nextCursor
   };
+}
+
+function trimTimelineEntries(entries: TimelineSnapshotEntry[]): TimelineSnapshotEntry[] {
+  return entries.length > MAX_TIMELINE_CACHE_ENTRIES
+    ? entries.slice(-MAX_TIMELINE_CACHE_ENTRIES)
+    : entries;
+}
+
+function cacheTimelineEntry(timelinePath: string, entry: TimelineCacheEntry): void {
+  timelineTailCache.delete(timelinePath);
+  timelineTailCache.set(timelinePath, entry);
+  while (timelineTailCache.size > MAX_TIMELINE_CACHE_FILES) {
+    const oldestPath = timelineTailCache.keys().next().value as string | undefined;
+    if (!oldestPath) {
+      break;
+    }
+    timelineTailCache.delete(oldestPath);
+  }
+}
+
+function timelineEntryFromValue(value: unknown): TimelineSnapshotEntry | undefined {
+  if (typeof value !== "object" || value === null || Array.isArray(value)) {
+    return undefined;
+  }
+  const parsed = value as Record<string, unknown>;
+  const cursor = asNumber(parsed.cursor);
+  const at = asString(parsed.at);
+  const type = asString(parsed.type);
+  if (cursor === undefined || !at || !type) {
+    return undefined;
+  }
+  return {
+    cursor,
+    record: parsed as TimelineProjectionRecord
+  };
+}
+
+function parseTimelineEntry(line: string): TimelineSnapshotEntry | undefined {
+  try {
+    return timelineEntryFromValue(JSON.parse(line));
+  } catch {
+    return undefined;
+  }
+}
+
+function matchesTimelineFilters(record: TimelineProjectionRecord, args: TimelineSnapshotArgs): boolean {
+  return (!args.type || record.type === args.type)
+    && (!args.roleId || record.roleId === args.roleId)
+    && (!args.branchId || record.branchId === args.branchId)
+    && (!args.reviewId || record.reviewId === args.reviewId)
+    && (!args.status || record.status === args.status)
+    && (!args.errorCode || record.errorCode === args.errorCode);
+}
+
+async function readTimelineSnapshotFromStart(
+  args: TimelineSnapshotArgs
+): Promise<{ events: TimelineSnapshotEntry[]; nextCursor: number }> {
+  const events: TimelineSnapshotEntry[] = [];
+  const startCursor = Math.max(0, args.cursor ?? 0);
+  const limit = args.limit ?? 500;
+  let nextCursor = 0;
+  try {
+    const reader = createInterface({
+      input: createReadStream(args.timelinePath, { encoding: "utf8" }),
+      crlfDelay: Infinity
+    });
+    for await (const line of reader) {
+      const entry = parseTimelineEntry(line.trim());
+      if (!entry) {
+        continue;
+      }
+      nextCursor = Math.max(nextCursor, entry.cursor + 1);
+      if (entry.cursor >= startCursor && matchesTimelineFilters(entry.record, args) && events.length < limit) {
+        events.push(entry);
+      }
+    }
+  } catch {
+    return { events: [], nextCursor: 0 };
+  }
+  return { events, nextCursor };
 }
 
 function extractErrorCode(event: Record<string, unknown>): string | undefined {
@@ -284,7 +341,8 @@ async function buildTimelineCacheEntry(timelinePath: string): Promise<TimelineCa
     mtimeMs: fileStat.mtimeMs,
     ctimeMs: fileStat.ctimeMs,
     size: fileStat.size,
-    entries: parsed.entries,
+    entries: trimTimelineEntries(parsed.entries),
+    nextCursor: parsed.entries.reduce((next, entry) => Math.max(next, entry.cursor + 1), 0),
     remainder: parsed.remainder
   };
 }
@@ -294,7 +352,7 @@ async function loadTimelineCacheEntry(timelinePath: string): Promise<TimelineCac
   const cached = timelineTailCache.get(timelinePath);
   if (!cached) {
     const entry = await buildTimelineCacheEntry(timelinePath);
-    timelineTailCache.set(timelinePath, entry);
+    cacheTimelineEntry(timelinePath, entry);
     return entry;
   }
   if (
@@ -303,7 +361,7 @@ async function loadTimelineCacheEntry(timelinePath: string): Promise<TimelineCac
     (fileStat.ctimeMs !== cached.ctimeMs && fileStat.size <= cached.size)
   ) {
     const rebuilt = await buildTimelineCacheEntry(timelinePath);
-    timelineTailCache.set(timelinePath, rebuilt);
+    cacheTimelineEntry(timelinePath, rebuilt);
     return rebuilt;
   }
   if (
@@ -311,6 +369,7 @@ async function loadTimelineCacheEntry(timelinePath: string): Promise<TimelineCac
     fileStat.mtimeMs === cached.mtimeMs &&
     fileStat.ctimeMs === cached.ctimeMs
   ) {
+    cacheTimelineEntry(timelinePath, cached);
     return cached;
   }
 
@@ -320,10 +379,14 @@ async function loadTimelineCacheEntry(timelinePath: string): Promise<TimelineCac
     mtimeMs: fileStat.mtimeMs,
     ctimeMs: fileStat.ctimeMs,
     size: fileStat.size,
-    entries: cached.entries.concat(parsed.entries),
+    nextCursor: Math.max(
+      cached.nextCursor,
+      parsed.entries.reduce((next, entry) => Math.max(next, entry.cursor + 1), 0)
+    ),
+    entries: trimTimelineEntries(cached.entries.concat(parsed.entries)),
     remainder: parsed.remainder
   };
-  timelineTailCache.set(timelinePath, updated);
+  cacheTimelineEntry(timelinePath, updated);
   return updated;
 }
 
@@ -332,7 +395,15 @@ export async function loadTimelineTailSnapshot(
 ): Promise<{ events: TimelineSnapshotEntry[]; nextCursor: number }> {
   try {
     const cacheEntry = await loadTimelineCacheEntry(args.timelinePath);
-    return filterTimelineEntries(cacheEntry.entries, args);
+    const startCursor = Math.max(0, args.cursor ?? 0);
+    const firstCachedCursor = cacheEntry.entries[0]?.cursor;
+    if (
+      cacheEntry.nextCursor > startCursor &&
+      (firstCachedCursor === undefined || startCursor < firstCachedCursor)
+    ) {
+      return readTimelineSnapshotFromStart(args);
+    }
+    return filterTimelineEntries(cacheEntry.entries, args, cacheEntry.nextCursor);
   } catch {
     return {
       events: [],

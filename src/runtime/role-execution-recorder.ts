@@ -1,10 +1,5 @@
 import { appendAuditRecord } from "./audit-recorder.js";
-import {
-  persistRoleExecutionOutcome,
-  persistRolePrelude,
-  persistRoleResult,
-  persistRoleSession
-} from "./run-artifacts.js";
+import { filesystemArtifactStore } from "./artifact-store.js";
 import type {
   AuditRecord,
   BranchRecord,
@@ -80,15 +75,15 @@ export async function persistCommittedExecutionResult(args: {
   result: PersistedRoleExecutorResult;
 }): Promise<RoleExecutionOutcomeRecord> {
   const outcome = buildRoleExecutionOutcome(args);
-  await persistRoleExecutionOutcome({
+  await filesystemArtifactStore.persistExecutionOutcome({
     execution: args.execution,
     outcome
   });
   return outcome;
 }
 
-export async function recordRolePrelude(args: Parameters<typeof persistRolePrelude>[0]): Promise<void> {
-  await persistRolePrelude(args);
+export async function recordRolePrelude(args: Parameters<typeof filesystemArtifactStore.persistPrelude>[0]): Promise<void> {
+  await filesystemArtifactStore.persistPrelude(args);
 }
 
 export async function recordRoleResult(args: {
@@ -98,11 +93,11 @@ export async function recordRoleResult(args: {
   output?: RoleExecutionOutput;
   audit: AuditRecord;
 }): Promise<void> {
-  await persistRoleResult(args);
+  await filesystemArtifactStore.persistResult(args);
 }
 
-export async function recordRoleSession(args: Parameters<typeof persistRoleSession>[0]): Promise<void> {
-  await persistRoleSession(args);
+export async function recordRoleSession(args: Parameters<typeof filesystemArtifactStore.persistSession>[0]): Promise<void> {
+  await filesystemArtifactStore.persistSession(args);
 }
 
 export async function recordAudit(args: {

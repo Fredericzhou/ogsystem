@@ -27,14 +27,7 @@ import {
   mapRuntimeErrorToCompilerDiagnosticCode,
   type CompiledExecutionSnapshot
 } from "./compiler.js";
-import {
-  appendEvent,
-  allocateRoleExecution,
-  buildRoleSessionKey,
-  flushBufferedRunArtifacts,
-  getRoleSession,
-  resolvePrivateWorkspaceDir
-} from "./run-artifacts.js";
+import { filesystemArtifactStore } from "./artifact-store.js";
 import {
   renderRolePrompt,
   validateRoleInputSchema,
@@ -156,7 +149,7 @@ function startRoleWaitHeartbeat(args: {
         timeoutMs: args.timeoutMs,
         binding: args.binding
       });
-      await appendEvent(args.runContext, {
+      await filesystemArtifactStore.appendEvent(args.runContext, {
         type: "role_waiting",
         at: new Date().toISOString(),
         waitKind: "technical",
@@ -167,7 +160,7 @@ function startRoleWaitHeartbeat(args: {
         timeoutMs: args.timeoutMs,
         binding: args.binding
       });
-      await flushBufferedRunArtifacts(args.runContext);
+      await filesystemArtifactStore.flush(args.runContext);
     } catch {
       // Observability must never change role execution outcome.
     } finally {
@@ -358,6 +351,7 @@ export async function executeRoleNode(args: {
   executor: Executor;
   userProfile?: UserProfile;
   workdir: string;
+  commandBaseDir?: string;
   logger?: RunConsoleLogger;
 }): Promise<RoleExecutorResult> {
   const currentBranch =
@@ -367,12 +361,12 @@ export async function executeRoleNode(args: {
   }
   const loopIteration = currentBranch.loopIteration;
   const branchId = currentBranch.branchId;
-  const sessionKey = buildRoleSessionKey(args.roleId, currentBranch.sessionLineageId);
+  const sessionKey = filesystemArtifactStore.buildSessionKey(args.roleId, currentBranch.sessionLineageId);
   const started = Date.now();
   const nextTransitionCount = args.state.transitionCount + 1;
   const lawRef = args.plan.lawBinding.globalLawRef;
   const rolePackage = args.rolePackagesByRoleId.get(args.roleId);
-  const execution = allocateRoleExecution({
+  const execution = filesystemArtifactStore.allocateExecution({
     context: args.runContext,
     roleId: args.roleId,
     sessionKey,
@@ -476,14 +470,14 @@ export async function executeRoleNode(args: {
   const resolvedRoleDirs = roleDirs
     ? {
         ...roleDirs,
-        privateDir: resolvePrivateWorkspaceDir({
+        privateDir: filesystemArtifactStore.resolvePrivateWorkspace({
           roleDirs,
           workspaceIsolation: args.runContext.workspaceIsolation,
           branchId
         })
       }
     : undefined;
-  const existingSession = getRoleSession(args.runContext, sessionKey);
+  const existingSession = filesystemArtifactStore.getSession(args.runContext, sessionKey);
 
   let modelId: string | undefined;
   let profileId: string | undefined;
@@ -502,6 +496,7 @@ export async function executeRoleNode(args: {
       node: args.node,
       runContext: args.runContext,
       baseWorkdir: args.workdir,
+      commandBaseDir: args.commandBaseDir,
       roleDirs: resolvedRoleDirs,
       allowedEvents,
       effectiveLaw: args.effectiveLaw,
@@ -572,6 +567,7 @@ export async function executeRoleNode(args: {
       node: args.node,
       runContext: args.runContext,
       baseWorkdir: args.workdir,
+      commandBaseDir: args.commandBaseDir,
       roleDirs: resolvedRoleDirs,
       allowedEvents,
       effectiveLaw: args.effectiveLaw,
@@ -685,6 +681,7 @@ export async function executeRoleNode(args: {
         schema: rolePackage.outputSchema,
         binding: resolvedBinding.binding,
         workdir: resolvedBinding.workdir,
+        directory: args.workdir,
         commandBaseDir: resolvedBinding.commandBaseDir,
         env: resolvedBinding.env,
         timeoutMs: resolvedBinding.timeoutMs,

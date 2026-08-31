@@ -87,11 +87,12 @@ function usageProject(subcommand?: ProjectSubcommand): string {
   if (subcommand === "init") {
     return [
       "Usage:",
-      "  ogs project init [--template <empty|minimal|advanced-features|software-dev|consultation>] [--workdir <path>]",
+      "  ogs project init [--template <empty|minimal|advanced-features|software-dev|consultation>] [--workdir <path>] [--target-dir <path>]",
       "",
       "Options:",
       "  --template <id>  Template to scaffold (default: minimal)",
       "  --workdir <path> Project root to initialize (default: cwd)",
+      "  --target-dir <path> OpenCode coding project (default: workdir)",
       "  --help           Show help",
       "",
       "Examples:",
@@ -104,7 +105,7 @@ function usageProject(subcommand?: ProjectSubcommand): string {
   if (subcommand === "create") {
     return [
       "Usage:",
-      "  ogs project create <name> [--template <empty|minimal|advanced-features|software-dev|consultation>] [--workdir <path>]",
+      "  ogs project create <name> [--template <empty|minimal|advanced-features|software-dev|consultation>] [--workdir <path>] [--target-dir <path>]",
       "",
       "Arguments:",
       "  <name>           New project directory name",
@@ -112,6 +113,7 @@ function usageProject(subcommand?: ProjectSubcommand): string {
       "Options:",
       "  --template <id>  Template to scaffold (default: minimal)",
       "  --workdir <path> Parent directory for the new project (default: cwd)",
+      "  --target-dir <path> OpenCode coding project (default: new project)",
       "  --help           Show help",
       "",
       "Examples:",
@@ -189,6 +191,7 @@ function usageRun(subcommand?: RunSubcommand): string {
       "  --user-profile <file>  User profile JSON override",
       "  --laws <file>          Law catalog JSON override",
       "  --workdir <path>       Working directory (default: cwd)",
+      "  --target-dir <path>    OpenCode coding project (default: workdir)",
       "  --cleanup-executions <n>",
       "                         Keep only latest n per-role execution snapshots",
       "  --quiet-run            Disable stderr run progress logs",
@@ -221,6 +224,7 @@ function usageRun(subcommand?: RunSubcommand): string {
       "  --user-profile <file>  User profile JSON override",
       "  --laws <file>          Law catalog JSON override",
       "  --workdir <path>       Working directory (default: cwd)",
+      "  --target-dir <path>    OpenCode coding project (default: saved run target)",
       "  --cleanup-executions <n>",
       "                         Keep only latest n per-role execution snapshots",
       "  --quiet-run            Disable stderr run progress logs",
@@ -473,6 +477,9 @@ function appendModernResumeOptions(args: {
   if (typeof args.values.laws === "string") {
     args.tokens.push(`--laws ${shellEscape(args.values.laws)}`);
   }
+  if (typeof args.values["target-dir"] === "string") {
+    args.tokens.push(`--target-dir ${shellEscape(args.values["target-dir"])}`);
+  }
   if (typeof args.values["cleanup-executions"] === "string") {
     args.tokens.push(`--cleanup-executions ${shellEscape(args.values["cleanup-executions"])}`);
   }
@@ -697,6 +704,7 @@ async function runAdapterCommand(args: {
   resumeRunDir?: string;
   lawsPath?: string;
   workdir: string;
+  targetDir?: string;
   dryRun: boolean;
   cleanupExecutionHistory?: number;
   logRun: boolean;
@@ -738,6 +746,7 @@ async function runAdapterCommand(args: {
       lawsPath: args.lawsPath,
       prompt: args.prompt,
       workdir: args.workdir,
+      targetDir: args.targetDir,
       dryRun: args.dryRun,
       cleanupExecutionHistory: args.cleanupExecutionHistory,
       logRun: args.logRun
@@ -768,6 +777,7 @@ async function runProjectCommand(argv: string[]): Promise<void> {
     const { values } = parseLifecycleArgs(argv.slice(1), {
       template: { type: "string" },
       workdir: { type: "string" },
+      "target-dir": { type: "string" },
       help: { type: "boolean", short: "h" }
     });
     if (asBool(values.help)) {
@@ -783,7 +793,10 @@ async function runProjectCommand(argv: string[]): Promise<void> {
       );
     }
     await ensureProjectSkeleton({
-      workdir
+      workdir,
+      targetDir: asString(values["target-dir"])
+        ? resolve(workdir, asString(values["target-dir"]) as string)
+        : undefined
     });
     const templateSpec = await scaffoldProjectTemplate({
       workdir,
@@ -831,6 +844,7 @@ async function runProjectCommand(argv: string[]): Promise<void> {
     const { values, positionals } = parseLifecycleArgs(argv.slice(1), {
       template: { type: "string" },
       workdir: { type: "string" },
+      "target-dir": { type: "string" },
       help: { type: "boolean", short: "h" }
     });
     if (asBool(values.help)) {
@@ -852,7 +866,8 @@ async function runProjectCommand(argv: string[]): Promise<void> {
     const projectDir = await createProjectFromTemplate({
       parentDir,
       name: projectName,
-      templateId: template
+      templateId: template,
+      targetDir: asString(values["target-dir"])
     });
     console.log(
       JSON.stringify(
@@ -952,6 +967,7 @@ async function runStartCommand(argv: string[]): Promise<void> {
     laws: { type: "string" },
     input: { type: "string" },
     workdir: { type: "string" },
+    "target-dir": { type: "string" },
     "cleanup-executions": { type: "string" },
     "quiet-run": { type: "boolean" },
     visualize: { type: "boolean" },
@@ -990,6 +1006,7 @@ async function runStartCommand(argv: string[]): Promise<void> {
       userProfilePath: asString(values["user-profile"]),
       lawsPath: asString(values.laws),
       workdir,
+      targetDir: asString(values["target-dir"]),
       dryRun: asBool(values["dry-run"]),
       cleanupExecutionHistory: parseCleanupExecutionValue(asString(values["cleanup-executions"])),
       logRun: resolveLogRunOption(values),
@@ -1027,6 +1044,7 @@ async function runResumeCommand(argv: string[]): Promise<void> {
     laws: { type: "string" },
     input: { type: "string" },
     workdir: { type: "string" },
+    "target-dir": { type: "string" },
     "cleanup-executions": { type: "string" },
     "quiet-run": { type: "boolean" },
     visualize: { type: "boolean" },
@@ -1062,6 +1080,7 @@ async function runResumeCommand(argv: string[]): Promise<void> {
       resumeRunDir: resolve(runDir),
       lawsPath: asString(values.laws),
       workdir,
+      targetDir: asString(values["target-dir"]),
       dryRun: asBool(values["dry-run"]),
       cleanupExecutionHistory: parseCleanupExecutionValue(asString(values["cleanup-executions"])),
       logRun: resolveLogRunOption(values),

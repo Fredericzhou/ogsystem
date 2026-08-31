@@ -212,6 +212,7 @@ reviewer[Role:reviewer] -->|DONE| output
     status: "active"
   };
   state.branchRecords[reviewerBranch.branchId] = reviewerBranch;
+  let executionRequest;
 
   const result = await executeRoleNode({
     roleId: "reviewer",
@@ -236,7 +237,8 @@ reviewer[Role:reviewer] -->|DONE| output
       getServerMetadata() {
         return {};
       },
-      async execute() {
+      async execute(request) {
+        executionRequest = request;
         return {
           exitCode: 0,
           stdout: JSON.stringify({ event: "DONE", content: "ok" }),
@@ -255,6 +257,8 @@ reviewer[Role:reviewer] -->|DONE| output
   });
 
   assert.equal(result.status, "ok");
+  assert.equal(executionRequest.directory, fixture.tempRoot);
+  assert.notEqual(executionRequest.workdir, fixture.tempRoot);
   assert.equal(result.audit.compilerDigest, fixture.compilerSnapshot.digest);
   const inbox = parseJsonCodeBlock(
     await readFile(

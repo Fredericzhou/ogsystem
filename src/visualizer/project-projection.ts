@@ -2,15 +2,14 @@ import { basename, dirname, relative, resolve, sep } from "node:path";
 import { createHash } from "node:crypto";
 import { mkdir, readdir, readFile, rm, stat, writeFile } from "node:fs/promises";
 
-import { compileExecutionSnapshot } from "../runtime/compiler.js";
+import { loadRuntimeConfig } from "../runtime/runtime-loader.js";
+import { parseSystemFromMermaidSource } from "../runtime/parse-mermaid.js";
 import { resolveProjectRoleRepoRoot, resolveProjectRoleRootDir, resolveTemplateRoleRootDir } from "../runtime/bundled-repos.js";
 import { isRuntimeOnlyErrorEvent } from "../runtime/error-flow-utils.js";
-import { buildFlowContractKeyForFlow, loadFlowContractPlan } from "../runtime/flow-contract.js";
+import { buildFlowContractKeyForFlow } from "../runtime/flow-contract.js";
 import { readJsonFile, writeJsonFileAtomic } from "../runtime/json-file.js";
-import { loadModelCatalog } from "../runtime/model-catalog.js";
-import { isDirectModelRef, loadModelSelection, resolveModelSelectionForSystem } from "../runtime/model-selection.js";
+import { isDirectModelRef } from "../runtime/model-selection.js";
 import { RuntimeError } from "../runtime/runtime-errors.js";
-import { parseSystemFromMermaidSource } from "../runtime/parse-mermaid.js";
 import {
   ensureProjectSkeleton,
   importInstalledRolePackageIntoProject,
@@ -24,51 +23,29 @@ import {
   type ProjectTemplateId
 } from "../runtime/project-lifecycle.js";
 import { validateRolePackageManifest } from "../runtime/role-repo.js";
-import { pathExists } from "../runtime/run-artifacts.js";
-import { loadLaws, loadProfiles, loadRolePackages, loadRuntimeConfig, loadTools, loadUserProfile } from "../runtime/runtime-loader.js";
+import { pathExists } from "../runtime/run-store.js";
+import { loadProfiles, loadTools } from "../runtime/runtime-loader.js";
 import { validateProfilesConfig, validateToolsConfig } from "../runtime/config.js";
-import { resolveEffectiveLaw } from "../runtime/runtime-setup.js";
 import { SYSTEM_END_ROLE_ID } from "../runtime/types.js";
 import { importMermaidToAuthoring, saveStudioAuthoringDraft } from "./studio-authoring.js";
+import {
+  assembleProjectContextFromSource,
+  getProjectContextCacheStats,
+  invalidateProjectContextCache,
+  loadProjectContext,
+  type ProjectContext
+} from "./project-context-service.js";
 import {
   asPositiveInteger,
   asRecord,
   asString
 } from "./json-guards.js";
-import type { CompilerDiagnostic } from "../runtime/compiler.js";
 import type { ModelCatalog, ModelSelectionConfig } from "../runtime/types.js";
+import type { SystemDefinition } from "../runtime/types.js";
 import type { ResolvedModelRuntimeConfig } from "../runtime/model-selection.js";
-import type { LoadedRolePackage, SystemDefinition } from "../runtime/types.js";
+import type { CompilerDiagnostic } from "../runtime/compiler.js";
 
 type JsonRecord = Record<string, unknown>;
-
-type ProjectContext = {
-  systemPath: string;
-  systemSource: string;
-  system: SystemDefinition;
-  runtimeConfig: unknown;
-  modelSelection: unknown;
-  modelCatalog: unknown;
-  laws: unknown;
-  userProfile: unknown;
-  profiles: unknown;
-  tools: unknown;
-  compilerSnapshot: ReturnType<typeof compileExecutionSnapshot>["snapshot"];
-  resolvedModelWarnings: string[];
-  resolvedModelsByRoleId: Map<string, ResolvedModelRuntimeConfig>;
-  roleRepoRoot: string;
-  roleRootDir: string;
-  rolePackagesByRoleId: Map<string, LoadedRolePackage>;
-  contractPlan: Awaited<ReturnType<typeof loadFlowContractPlan>> | undefined;
-  projectMeta: unknown;
-};
-
-type ProjectProjectionCacheEntry = {
-  token: string;
-  value: Promise<ProjectContext>;
-  cachedAtMs: number;
-  lastAccessedAtMs: number;
-};
 
 type ProjectCreatePreferences = {
   authoringDefaults?: unknown;
@@ -94,9 +71,6 @@ type ProjectCreateTestHooks = {
   forceCreateFailure?: boolean;
 };
 
-const projectProjectionCache = new Map<string, ProjectProjectionCacheEntry>();
-const PROJECT_PROJECTION_CACHE_TTL_MS = 10 * 60 * 1000;
-const PROJECT_PROJECTION_CACHE_MAX_SIZE = 16;
 const PROJECT_CONTROLLED_PATHS = [
   ".ogs",
   "og-roles",
@@ -471,145 +445,6 @@ function createFallbackModelSelection(systemId: string): ModelSelectionConfig {
   };
 }
 
-async function getMtimeToken(path: string): Promise<string> {
-  const fileStat = await stat(path).catch(() => undefined);
-  return fileStat ? `${path}:${fileStat.mtimeMs}:${fileStat.size}` : `${path}:missing`;
-}
-
-async function computeProjectProjectionCacheToken(workdir: string): Promise<string> {
-  const ogsPaths = resolveOgsPaths(workdir);
-  const tokens = await Promise.all([
-    getMtimeToken(resolve(workdir, "system.mmd")),
-    getMtimeToken(ogsPaths.runtimePath),
-    getMtimeToken(ogsPaths.modelSelectionPath),
-    getMtimeToken(ogsPaths.modelCatalogPath),
-    getMtimeToken(ogsPaths.lawsPath),
-    getMtimeToken(ogsPaths.userProfilePath),
-    getMtimeToken(resolve(workdir, "profiles.json")),
-    getMtimeToken(resolve(workdir, "tools.json")),
-    getMtimeToken(ogsPaths.projectPath)
-  ]);
-  return tokens.join("|");
-}
-
-async function assembleProjectContextFromSource(args: {
-  workdir: string;
-  systemPath?: string;
-  systemSource: string;
-}): Promise<ProjectContext> {
-  const ogsPaths = resolveOgsPaths(args.workdir);
-  const systemPath = args.systemPath ?? resolve(args.workdir, "system.mmd");
-  const system = parseSystemFromMermaidSource(args.systemSource);
-  const runtimeConfig = await loadRuntimeConfig(undefined, args.workdir);
-  const modelSelection = await loadModelSelection(ogsPaths.modelSelectionPath);
-  const modelCatalog = await loadModelCatalog(ogsPaths.modelCatalogPath);
-  const resolvedModelSelection = resolveModelSelectionForSystem({
-    system,
-    selection: modelSelection,
-    catalog: modelCatalog
-  });
-  const laws = await loadLaws(undefined, args.workdir);
-  const userProfile = await loadUserProfile(undefined, args.workdir);
-  const profiles = await loadProfiles(undefined, args.workdir);
-  const tools = await loadTools(undefined, args.workdir);
-  const effectiveLaw = resolveEffectiveLaw(system, laws);
-  const roleRepoRoot = resolveProjectRoleRepoRoot(args.workdir, runtimeConfig.roleRepo);
-  const roleRootDir = resolveProjectRoleRootDir(args.workdir, runtimeConfig.roleRepo);
-  const contractPlan = system.graph?.handoffContracts
-    ? await loadFlowContractPlan({
-        system,
-        contractPath: system.graph.handoffContracts
-      })
-    : undefined;
-  const rolePackagesByRoleId = await loadRolePackages({
-    system,
-    roleRootDir: resolveProjectRoleRootDir(args.workdir, runtimeConfig.roleRepo)
-  });
-  const compilerResult = compileExecutionSnapshot({
-    system,
-    rolePackagesByRoleId,
-    contractPlan,
-    effectiveLaw,
-    resolvedModelsByRoleId: resolvedModelSelection.resolvedByRoleId
-  });
-  if (!compilerResult.ok) {
-    const error = new Error(
-      `Compiler static semantics check failed for project visualization: ${compilerResult.diagnostics
-        .map((diagnostic) => diagnostic.code)
-        .join(", ")}`
-    ) as Error & { diagnostics?: CompilerDiagnostic[] };
-    error.diagnostics = compilerResult.diagnostics;
-    throw error;
-  }
-  const projectMeta = await readJsonFile(ogsPaths.projectPath).catch(() => undefined);
-
-  return {
-    systemPath,
-    systemSource: args.systemSource,
-    system,
-    runtimeConfig,
-    modelSelection,
-    modelCatalog,
-    laws,
-    userProfile,
-    profiles,
-    tools,
-    compilerSnapshot: compilerResult.snapshot,
-    resolvedModelWarnings: resolvedModelSelection.warnings,
-    resolvedModelsByRoleId: resolvedModelSelection.resolvedByRoleId,
-    roleRepoRoot,
-    roleRootDir,
-    rolePackagesByRoleId,
-    contractPlan,
-    projectMeta
-  };
-}
-
-async function assembleProjectContext(workdir: string): Promise<ProjectContext> {
-  pruneProjectProjectionCache();
-  const token = await computeProjectProjectionCacheToken(workdir);
-  const cached = projectProjectionCache.get(workdir);
-  if (cached && cached.token === token) {
-    cached.lastAccessedAtMs = Date.now();
-    return cached.value;
-  }
-  const nowMs = Date.now();
-  const value = assembleProjectContextFromSource({
-    workdir,
-    systemSource: await readFile(resolve(workdir, "system.mmd"), "utf8")
-  });
-  projectProjectionCache.set(workdir, {
-    token,
-    value,
-    cachedAtMs: nowMs,
-    lastAccessedAtMs: nowMs
-  });
-  pruneProjectProjectionCache();
-  return value;
-}
-
-function pruneProjectProjectionCache(nowMs = Date.now()): void {
-  for (const [workdir, entry] of projectProjectionCache.entries()) {
-    if (nowMs - entry.cachedAtMs > PROJECT_PROJECTION_CACHE_TTL_MS) {
-      projectProjectionCache.delete(workdir);
-    }
-  }
-  while (projectProjectionCache.size > PROJECT_PROJECTION_CACHE_MAX_SIZE) {
-    let oldestWorkdir: string | undefined;
-    let oldestAccessedAtMs = Number.POSITIVE_INFINITY;
-    for (const [workdir, entry] of projectProjectionCache.entries()) {
-      if (entry.lastAccessedAtMs < oldestAccessedAtMs) {
-        oldestWorkdir = workdir;
-        oldestAccessedAtMs = entry.lastAccessedAtMs;
-      }
-    }
-    if (!oldestWorkdir) {
-      break;
-    }
-    projectProjectionCache.delete(oldestWorkdir);
-  }
-}
-
 function buildWorkbenchStructure(system: SystemDefinition): Record<string, unknown> {
   return {
     systemId: system.systemId,
@@ -773,16 +608,11 @@ async function loadRolePackageEditorContext(workdir: string): Promise<{
 }
 
 export function invalidateProjectProjectionCache(workdir: string): void {
-  projectProjectionCache.delete(workdir);
+  invalidateProjectContextCache(workdir);
 }
 
 export function getProjectProjectionCacheStats(): Record<string, unknown> {
-  pruneProjectProjectionCache();
-  return {
-    size: projectProjectionCache.size,
-    maxSize: PROJECT_PROJECTION_CACHE_MAX_SIZE,
-    ttlMs: PROJECT_PROJECTION_CACHE_TTL_MS
-  };
+  return getProjectContextCacheStats();
 }
 
 export async function inspectProjectSystemWorkbench(args: {
@@ -1287,7 +1117,7 @@ export async function importInstalledRolesVisualization(args: {
 
 export async function inspectProjectVisualization(workdir: string): Promise<Record<string, unknown>> {
   const ogsPaths = resolveOgsPaths(workdir);
-  const context = await assembleProjectContext(workdir);
+  const context = await loadProjectContext(workdir);
   const persistedIndex = await loadPersistedRunsIndex(workdir);
 
   return {
@@ -1341,7 +1171,7 @@ export async function inspectProjectVisualization(workdir: string): Promise<Reco
 }
 
 export async function inspectProjectSystemVisualization(workdir: string): Promise<Record<string, unknown>> {
-  const context = await assembleProjectContext(workdir);
+  const context = await loadProjectContext(workdir);
   return {
     workdir,
     systemSource: context.systemSource,
@@ -1351,7 +1181,7 @@ export async function inspectProjectSystemVisualization(workdir: string): Promis
 
 export async function inspectProjectConfigVisualization(workdir: string): Promise<Record<string, unknown>> {
   const ogsPaths = resolveOgsPaths(workdir);
-  const context = await assembleProjectContext(workdir);
+  const context = await loadProjectContext(workdir);
   return {
     workdir,
     paths: ogsPaths,
@@ -1424,7 +1254,7 @@ export async function upsertProjectExecutionConfigVisualization(args: {
 }
 
 export async function listProjectRolesVisualization(workdir: string): Promise<Record<string, unknown>> {
-  const context = await assembleProjectContext(workdir);
+  const context = await loadProjectContext(workdir);
   const roles = Object.entries(context.compilerSnapshot.roleSummaryByRoleId)
     .sort(([left], [right]) => left.localeCompare(right))
     .map(([roleId, roleSummary]) => ({
@@ -1471,7 +1301,7 @@ function getBindingSourceLabel(args: {
 }
 
 export async function inspectProjectBindingVisualization(workdir: string): Promise<Record<string, unknown>> {
-  const context = await assembleProjectContext(workdir);
+  const context = await loadProjectContext(workdir);
   const bindings = context.system.roleIds
     .slice()
     .sort((left, right) => left.localeCompare(right))
@@ -1503,7 +1333,7 @@ export async function inspectProjectBindingVisualization(workdir: string): Promi
 }
 
 export async function inspectProjectRolePackagesVisualization(workdir: string): Promise<Record<string, unknown>> {
-  const context = await assembleProjectContext(workdir);
+  const context = await loadProjectContext(workdir);
   const repositoryRoleIds = new Set(context.system.roleIds);
   const roleRepoEntries = await readdir(context.roleRootDir, { withFileTypes: true }).catch(() => []);
   for (const entry of roleRepoEntries) {
@@ -1686,7 +1516,7 @@ export async function saveProjectRolePackageFilesVisualization(args: {
 }
 
 export async function inspectProjectContractVisualization(workdir: string): Promise<Record<string, unknown>> {
-  const context = await assembleProjectContext(workdir);
+  const context = await loadProjectContext(workdir);
   const eligibleFlows = context.system.flows.filter(
     (flow) => flow.toRoleId !== SYSTEM_END_ROLE_ID && !isRuntimeOnlyErrorEvent(flow.eventType)
   );

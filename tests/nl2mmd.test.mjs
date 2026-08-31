@@ -118,6 +118,10 @@ test("nl2mmd prompt includes current dictionary and local catalog hints", async 
     prompt,
     /Flow-contract metadata are also supported: handoff\.mode, handoff\.contracts, and route\.order\.<fromRoleId>/
   );
+  assert.match(
+    prompt,
+    /talent\.bind\.<roleId> is compatibility metadata only; it does not select the current model or executor and is reserved for future capability-tag-based routing/
+  );
   assert.match(prompt, /Runtime-native human review uses review\.\* metadata/);
   assert.match(prompt, /do not add a synthetic reviewer role solely to represent the human decision/);
   assert.match(prompt, /context\.map\.<roleId>\.review_comment=global\.human_review\.current\.comment\?/);

@@ -76,13 +76,16 @@ function makeRunClient(overrides = {}) {
 
 test("startOpencodeRunClient starts one reusable shared server", async () => {
   let createClientArgs;
+  let startServerArgs;
 
   const runClient = await startOpencodeRunClient(
     {
-      timeoutMs: 5000
+      timeoutMs: 5000,
+      directory: "/tmp/project"
     },
     {
-      async startServer() {
+      async startServer(args) {
+        startServerArgs = args;
         return {
           url: "http://127.0.0.1:4096",
           pid: 321,
@@ -102,6 +105,11 @@ test("startOpencodeRunClient starts one reusable shared server", async () => {
   assert.strictEqual(runClient.url, "http://127.0.0.1:4096");
   assert.strictEqual(runClient.pid, 321);
   assert.strictEqual(createClientArgs.baseUrl, "http://127.0.0.1:4096");
+  assert.deepStrictEqual(startServerArgs, {
+    timeoutMs: 5000,
+    env: undefined
+  });
+  assert.strictEqual(createClientArgs.directory, "/tmp/project");
 });
 
 test("executeOpencodeModelRole uses shared server sessions and maps variant", async () => {
@@ -168,6 +176,7 @@ test("executeOpencodeModelRole uses shared server sessions and maps variant", as
     },
     modelPackage: makeModelPackage(),
     workdir: "/tmp/run/roles/debate-moderator",
+    directory: "/tmp/project",
     timeoutMs: 5000,
     maxOutputBytes: 4096,
     runClient
@@ -175,10 +184,10 @@ test("executeOpencodeModelRole uses shared server sessions and maps variant", as
 
   assert.deepStrictEqual(createArgs, {
     title: createArgs.title,
-    directory: "/tmp/run/roles/debate-moderator"
+    directory: "/tmp/project"
   });
   assert.strictEqual(promptArgs.sessionID, "ses_123");
-  assert.strictEqual(promptArgs.directory, "/tmp/run/roles/debate-moderator");
+  assert.strictEqual(promptArgs.directory, "/tmp/project");
   assert.strictEqual(promptArgs.variant, "low");
   assert.deepStrictEqual(promptArgs.model, {
     providerID: "openai",

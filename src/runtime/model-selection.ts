@@ -1,5 +1,5 @@
 import { readJsonFile } from "./json-file.js";
-import { pathExists } from "./run-artifacts.js";
+import { pathExists } from "./run-store.js";
 import { createRuntimeError } from "./runtime-errors.js";
 import type {
   ModelCatalog,

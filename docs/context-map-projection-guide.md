@@ -146,7 +146,13 @@ Join 节点默认使用按 `join.sources` 归一化后的 JSON 命名空间。
 
 ```mermaid
 flowchart TD
+%% system.id=demo.context.map
+%% system.version=1.0.0
+%% law.global=law.default
 %% entry.role=review
+%% model.bind.writer_a=model.main
+%% model.bind.writer_b=model.main
+%% model.bind.review=model.main
 %% join.mode.review=all_of
 %% join.sources.review=writer_a,writer_b
 %% context.map.review.a_content=source(writer_a).content
@@ -170,4 +176,3 @@ writer_b[Role:writer_b] -->|DONE| review[Role:review]
 - 全局变量看 `global.*`
 - 爷爷节点不能直接跳读
 - 需要更远祖先时，先把数据显式转发或把它变成 join source
-

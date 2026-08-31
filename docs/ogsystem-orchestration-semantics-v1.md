@@ -32,7 +32,7 @@
 | **`join.mode: quorum_of`** | **法定人数汇合**。等待 `join.sources` 中至少 `join.min.<roleId>` 个唯一上游在同一 `lineageId + loopIteration` 下完成；`join.sources.<roleId>` 本身也必须只声明唯一 source role，并与 Mermaid 中该节点的全部入边角色严格一致；达到阈值后 join 节点只激活一次，迟到 source 只记审计、不重触发。 | **1. 阈值判定**：运行时按唯一 source role 计数，而不是按到达次数计数。 <br> **2. 默认上下文**：未配置 `context.map` 时，仍按 `join.sources` 归一化注入 JSON 命名空间到 `input`。 |
 | **`context.map.<roleId>.*`** | **字段级上下文投影**。运行时用稳定字段顺序构造新的 JSON `input`。 | **1. 普通节点来源**：`direct.*`、`global.task`、`global.user_profile.*`。 <br> **2. Join 节点来源**：`source(<roleId>).*(仅限 join.sources)` 与 `global.*`。 <br> **3. Fail-closed**：缺字段、缺 source、非法 selector 均直接失败。 |
 | **默认事件路由（无 `role.mode`）** | **条件跳转**。由输出事件决定。 | **1. 选项锁定**：在 Prompt 注入 `allowed_events`。 <br> **2. 结构化约束**：在有出边且非并行模式下要求输出 `event`。 <br> **3. 命中规则**：运行时会激活所有 `eventType == 输出 event` 的出边；若 `PASS/REJECT` 指向同一目标，仍是单次二选一路由（由输出 event 决定命中哪一组边）。 <br> **4. `noop` 例外**：仅在 law 显式允许 `allowNoopWithoutExecutionBinding=true` 且该节点最多一个出边时，运行时可无模型执行直接走唯一出边。 |
-| **`role.mode: parallel_split`** | **并行分发**。同时激活所有下游。 | **1. 任务分片**：在 Prompt 中明确当前分支的子任务目标。 <br> **2. 会话隔离**：运行时按 `sessionLineageId` 控制分支会话隔离；注意默认并非分支级独立工作目录，同一 role 仍共享其 `privateDir`。 |
+| **`role.mode: parallel_split`** | **语义分叉**。在一次状态转移中激活所有普通下游；不承诺 scheduler 对分支进行物理并发执行。 | **1. 任务分片**：在 Prompt 中明确当前分支的子任务目标。 <br> **2. 会话隔离**：运行时按 `sessionLineageId` 控制分支会话隔离；注意默认并非分支级独立工作目录，同一 role 仍共享其 `privateDir`。 |
 | **`loop.max`** | **循环预算**。限制拓扑环路迭代。 | **1. 输入稳定性**：`task` 始终保持原始用户请求，轮次变化只通过新的 `input` 上下文体现。 <br> **2. 运行时守卫**：解析期要求每个拓扑环至少有一个角色声明 `loop.max.*`；执行期由 loop budget 拦截超限激活。 |
 
 ---
@@ -109,7 +109,8 @@
 *   **节点 token 是严格格式**：仅支持 `nodeId[Role:roleId]`；边界 token 仅支持 `input/output`，并拒绝 `start/end/done`。
 *   **边界边语义固定**：只允许 `input -->|EVENT| Role` 与 `Role -->|EVENT| output`。
 *   **入口语义需单值一致**：入口来自 `entry.role` 或唯一 `input` 边目标；两者冲突或存在多个 `input` 目标都会失败。
-*   **元数据键是白名单**：仅支持 `engine/system.id/system.version/law.global/entry.role` 及 `talent.bind/model.bind/exec.bind/role.mode/join.mode/join.sources/join.min/context.map/loop.max/handoff.mode/handoff.contracts/route.order.*` 前缀；重复 key 与未知 key 都会失败。
+*   **元数据键是白名单**：仅支持 `engine/system.id/system.version/law.global/entry.role`、`talent.bind/model.bind/exec.bind/role.mode/join.mode/join.sources/join.min/context.map/loop.max/handoff.mode/handoff.contracts/route.order.*` 以及 `review.mode/review.timeout/review.timeout.action/review.rework.target/review.rework.max/review.terminate.scope` 前缀；重复 key 与未知 key 都会失败。`runtime.error_flows.v1` 属于 `.ogs/runtime.json`，不是 Mermaid 元数据。
+*   **`talent.bind` 当前不参与执行绑定**：`talent.bind.<roleId>` 会被保留并纳入语义指纹，但当前 runtime 不据此选择模型或执行器；它是未来基于能力标签的模型/执行器路由预留。当前实际绑定仍由 `model.bind`、`exec.bind`、模型选择默认值和受 law 约束的 `noop` 决定。
 *   **`engine` 仅保留兼容入口**：可省略；若声明则只能是 `langgraph`。
 *   **保留角色名禁止复用**：`input/output/start/end/done` 不能作为 `roleId`。
 *   **终止条件必须显式可达**：至少要有一个无下游 role 边的终止角色，或一条 `Role -->|EVENT| output` 边。
@@ -122,10 +123,13 @@
 *   **运行根目录唯一化**：运行权威目录为 `.ogs/runs/<run-id>/`，不再使用旧 `ogsystem-history/` 路径。
 *   **run-id 规则**：`YYYYMMDD-HHMMSS-<shortHash>`，保证可排序和低碰撞。
 *   **配置快照**：每次 `run start` 写入 `resolved-config.json`，用于后续审计与复盘。
-*   **OpenCode 运行元数据**：落盘到 `.opencode/server.pid` 和 `.opencode/endpoint.json`，按 run 隔离。
+*   **OpenCode 运行元数据**：由 OGSystem 写入 `.ogs/runs/<run-id>/.opencode/server.pid` 和 `.ogs/runs/<run-id>/.opencode/endpoint.json`，按 run 隔离。`opencode serve` 只使用 hostname/port 参数启动，不绑定 OGSystem 目录；`session.create/prompt/abort` 的 `directory` 指向解析后的编程项目。
+*   **编程项目绑定**：默认 `targetDir=workdir`。OGSystem 项目也可以通过 `.ogs/project.json.target.directory` 或 `--target-dir` 绑定外部编程项目；此时 OpenCode 的 session 上下文和工具项目基准指向目标项目，系统定义、审计和运行产物仍留在 OGSystem 项目中。多个 OGSystem 项目可绑定同一目标，但并发写入必须使用 worktree、独立 clone 或互斥策略。
 *   **日志双通道**：引擎日志 `logs/engine.ndjson`，角色日志 `logs/roles/<roleId>.ndjson`，同时保留 `events.ndjson` 作为完整事件流。
 *   **停止状态机**：支持 `running -> stopping -> stopped`，并在 `control/stop-request.json`、`control/stop-outcome.json` 保留操作证据。
 *   **人工审核原生化**：`review.*` 让 role 执行后先进入 `waiting_review`，draft result 落在 pending review 控制面，approve / rework / pause / terminate 通过 `control/reviews/` 与 resume/reconcile 主链完成，而不是通过单独 human-gate role 节点。
+*   **审核超时边界**：`review.timeout.*` 会进入编译快照与 pending review spec，但当前 runtime 不运行自动计时器，也不会自动产生 `expired`；超时后的动作仍需显式写入 review decision。
+*   **语义分叉与物理并发分离**：`parallel_split` 只保证多个下游分支被激活及其 session lineage 隔离；当前 scheduler 按活动队列顺序处理，物理并发属于未来执行策略。
 
 ---
 

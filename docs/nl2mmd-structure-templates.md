@@ -13,7 +13,7 @@
 - 有“合同”“交接”“strict/transition”“route.order”语义，用 `contract_gated_handoff`。
 - 有“ERROR”“补偿”“恢复”语义，用 `error_compensation`。
 - 有“循环”“重试”“最多 N 次”语义，用 `bounded_loop`。
-- 有“人工审核”“确认”“审批”语义，用 `human_gate`。
+- 有“人工审核”“确认”“审批”语义，用 `human_gate`；该模板表示 runtime-native review，不生成独立 human-gate role。
 - 有 `model.bind` / `exec.bind` 混用语义，用 `mixed_binding`。
 - 如果没有明显结构信号，先退回 `linear_flow`。
 
@@ -106,7 +106,7 @@ flowchart TD
 %% join.mode.review=quorum_of
 %% join.sources.review=expert_a,expert_b,expert_c
 %% join.min.review=2
-%% context.map.review.summary=source(expert_a).content
+%% context.map.review.task=global.task
 %% model.bind.lead=opencode/gpt-5-nano
 %% model.bind.expert_a=opencode/gpt-5-nano
 %% model.bind.expert_b=opencode/gpt-5-nano
@@ -159,6 +159,8 @@ observer[Role:observer] -->|DONE| output
 
 适合“主路径失败后，走补偿或恢复分支”。
 
+`ERROR*` 是否启用由项目 `.ogs/runtime.json` 中的 `runtime.error_flows.v1` 控制；它不是 Mermaid metadata。未启用时，失败仍保持 fail-stop。
+
 必填槽位：
 
 - `normal-path`
@@ -173,7 +175,6 @@ flowchart TD
 %% system.version=1.0.0
 %% law.global=law.console.base
 %% entry.role=main
-%% runtime.error_flows.v1=true
 %% model.bind.main=opencode/gpt-5-nano
 %% model.bind.recovery=opencode/gpt-5-nano
 
@@ -209,15 +210,15 @@ review[Role:review] -->|RETRY| review[Role:review]
 review[Role:review] -->|DONE| output
 ```
 
-### 2.7 `human_gate`
+### 2.7 `human_gate`（runtime-native review）
 
-适合“人审 / 审批 / 确认”。
+适合“人审 / 审批 / 确认”。它在被审核 role 上声明 `review.mode.<roleId>=required`，不增加独立的人审节点；`review.timeout.*` 当前只保存审核策略，不会自动计时过期。`runtime.error_flows.v1` 应配置在 `.ogs/runtime.json`，不是 Mermaid metadata。
 
 必填槽位：
 
-- `gate`
+- `reviewed-role`
 - `decision`
-- `post-gate`
+- `post-review`
 
 示例：
 
@@ -226,18 +227,18 @@ flowchart TD
 %% system.id=demo.human.gate
 %% system.version=1.0.0
 %% law.global=law.console.base
-%% entry.role=triage
-%% exec.bind.approver=ops-human
+%% entry.role=writer
+%% model.bind.writer=opencode/gpt-5-nano
+%% review.mode.writer=required
+%% review.timeout.action.writer=pause
 
-input -->|START| triage[Role:triage]
-triage[Role:triage] -->|APPROVE| approver[Role:approver]
-triage[Role:triage] -->|REJECT| output
-approver[Role:approver] -->|DONE| output
+input -->|START| writer[Role:writer]
+writer[Role:writer] -->|DONE| output
 ```
 
 ### 2.8 `mixed_binding`
 
-适合同时存在 `model.bind` 和 `exec.bind` 的混合执行场景。
+适合不同 role 分别使用 `model.bind` 和 `exec.bind` 的混合执行场景；同一 role 同时声明两者会被解析器拒绝。
 
 必填槽位：
 
@@ -254,10 +255,11 @@ flowchart TD
 %% law.global=law.console.base
 %% entry.role=reviewer
 %% model.bind.reviewer=opencode/gpt-5-nano
-%% exec.bind.reviewer=ops-human
+%% exec.bind.publisher=publish-profile
 
 input -->|START| reviewer[Role:reviewer]
-reviewer[Role:reviewer] -->|DONE| output
+reviewer[Role:reviewer] -->|PUBLISH| publisher[Role:publisher]
+publisher[Role:publisher] -->|DONE| output
 ```
 
 ## 3. 使用建议

@@ -1,13 +1,13 @@
 import type { Edge, Graph, Node } from "@antv/x6";
 
-import { authoringToCanvasDocument } from "../studio-authoring-projection.js";
+import { authoringToGraphSnapshot } from "../studio-authoring-projection.js";
 import {
   normalizeStudioGraphStoredRoleId,
   studioFlowKey,
   type GraphViewModelEdge,
   type GraphViewModelNode,
   type StudioAuthoringDocument,
-  type StudioCanvasDocument
+  type StudioGraphSnapshot
 } from "../studio-contracts.js";
 
 export function graphToAuthoringLayoutPatch(
@@ -40,8 +40,8 @@ export function graphToAuthoringLayoutPatch(
   };
 }
 
-export function graphToCanvasDocument(graph: Graph, authoring: StudioAuthoringDocument): StudioCanvasDocument {
-  const canvas = authoringToCanvasDocument({
+export function graphToCanvasDocument(graph: Graph, authoring: StudioAuthoringDocument): StudioGraphSnapshot {
+  const canvas = authoringToGraphSnapshot({
     ...authoring,
     layout: graphToAuthoringLayoutPatch(graph, authoring)
   });

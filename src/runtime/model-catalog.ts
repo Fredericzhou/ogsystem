@@ -3,7 +3,7 @@ import { readFile } from "node:fs/promises";
 import { resolve } from "node:path";
 
 import { readJsonFile } from "./json-file.js";
-import { pathExists } from "./run-artifacts.js";
+import { pathExists } from "./run-store.js";
 import type { ModelCatalog, ModelCatalogEntry } from "./types.js";
 
 function fail(filePath: string, fieldPath: string, message: string): never {

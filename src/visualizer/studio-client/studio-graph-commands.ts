@@ -1,4 +1,4 @@
-import { authoringToCanvasDocument } from "../studio-authoring-projection.js";
+import { authoringToGraphSnapshot } from "../studio-authoring-projection.js";
 import {
   STUDIO_SYSTEM_END_ROLE_ID,
   normalizeStudioGraphStoredRoleId,
@@ -6,7 +6,7 @@ import {
   type StudioAuthoringDocument,
   type StudioAuthoringFlow,
   type StudioAuthoringRole,
-  type StudioCanvasDocument
+  type StudioGraphSnapshot
 } from "../studio-contracts.js";
 
 type StudioAuthoringLeafCommand =
@@ -68,7 +68,7 @@ export type StudioAuthoringCommand =
 
 export type StudioAuthoringCommandResult = {
   authoring: StudioAuthoringDocument;
-  canvas: StudioCanvasDocument;
+  canvas: StudioGraphSnapshot;
   selectedRoleId?: string;
   selectedFlowKey?: string;
   repositoryRoleId?: string;
@@ -160,7 +160,7 @@ function commandTargetRoleId(roleId: string): string {
   return normalizeStudioGraphTargetRoleId(roleId);
 }
 
-function roleCanvasNode(role: StudioAuthoringRole, x: number, y: number): StudioCanvasDocument["nodes"][number] {
+function roleCanvasNode(role: StudioAuthoringRole, x: number, y: number): StudioGraphSnapshot["nodes"][number] {
   return {
     id: role.roleId,
     roleId: role.roleId,
@@ -330,7 +330,7 @@ export function applyStudioAuthoringCommand(args: {
   command: StudioAuthoringCommand;
 }): StudioAuthoringCommandResult {
   const authoring = cloneJson(args.authoring);
-  const canvas = cloneJson(authoringToCanvasDocument(authoring));
+  const canvas = cloneJson(authoringToGraphSnapshot(authoring));
   authoring.roles ||= {};
   authoring.flows ||= {};
   authoring.layout ||= { nodes: {} };

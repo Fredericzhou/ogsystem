@@ -26,6 +26,7 @@ import { executeOpencodeModelRole, startOpencodeRunClient } from "./opencode-exe
 import { loadSystemFromMermaid } from "./parse-mermaid.js";
 import { redactText } from "./redaction.js";
 import { loadRolePackage } from "./role-repo.js";
+import { resolveProjectTargetDirectory } from "./project-target.js";
 import { listRunArtifactPolicy } from "./run-artifact-policy.js";
 import {
   RuntimeError,
@@ -320,6 +321,7 @@ async function inspectRunDir(report: DoctorReport, runDir: string): Promise<void
 async function runOnlineModelConnectivityCheck(args: {
   report: DoctorReport;
   workdir: string;
+  targetDir: string;
   system: SystemDefinition;
 }): Promise<void> {
   const ONLINE_CHECK_MIN_TIMEOUT_MS = 20000;
@@ -353,7 +355,7 @@ async function runOnlineModelConnectivityCheck(args: {
   // bounded while still validating each model binding independently.
   const runClient = await startOpencodeRunClient({
     timeoutMs: serverTimeoutMs,
-    directory: args.workdir
+    directory: args.targetDir
   });
 
   try {
@@ -379,6 +381,7 @@ async function runOnlineModelConnectivityCheck(args: {
           modelRef: selectionConfig.modelRef,
           variant: selectionConfig.variant,
           workdir: args.workdir,
+          directory: args.targetDir,
           timeoutMs: checkTimeoutMs,
           maxOutputBytes: selectionConfig.maxOutputBytes ?? 4096,
           runClient
@@ -535,6 +538,7 @@ export async function runDoctor(args: {
       await runOnlineModelConnectivityCheck({
         report,
         workdir,
+        targetDir: await resolveProjectTargetDirectory({ workdir }),
         system
       });
     }

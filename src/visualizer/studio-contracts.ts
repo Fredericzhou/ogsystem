@@ -57,10 +57,8 @@ export type StudioAuthoringFlow = {
   runtimeOnlyErrorFlow?: boolean;
 };
 
-/**
- * @deprecated removed after Phase E
- */
-export type StudioCanvasDocument = {
+/** Internal graph snapshot consumed by X6 and the authoring adapter. */
+export type StudioGraphSnapshot = {
   version: 1;
   nodes: Array<{
     id: string;
@@ -84,6 +82,9 @@ export type StudioCanvasDocument = {
   }>;
   viewport?: { x: number; y: number; zoom: number };
 };
+
+/** @deprecated Use StudioGraphSnapshot inside the Studio boundary. Kept for API compatibility. */
+export type StudioCanvasDocument = StudioGraphSnapshot;
 
 export type StudioDiagnosticDto = {
   source: "client-preflight" | "server-validation" | "parser" | "compiler" | "readiness" | "capability";

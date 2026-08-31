@@ -14,25 +14,24 @@ import { fileURLToPath } from "node:url";
 
 import { runSystemWithAdapter } from "../runtime/adapter.js";
 import {
-  inspectHumanReview,
-  inspectRun,
-  inspectRunRoleIo,
-  listHumanReviews,
-  loadPersistedRunsIndex,
-  loadIndexedRuns,
-  loadRunLogs,
   rebuildRunsIndex,
   RunRoleIoLookupError,
-  requestStop,
   resolveOgsPaths,
-  resolveRunDir,
-  writeHumanReviewDecision
 } from "../runtime/project-lifecycle.js";
 import { redactUnknown } from "../runtime/redaction.js";
 import {
-  loadTimelineTailSnapshot,
-  projectTimelineRecord
-} from "../runtime/timeline-projector.js";
+  inspectRun,
+  inspectRunRoleIo,
+  loadIndexedRuns,
+  loadPersistedRunsIndex,
+  loadRunDetail,
+  loadRunEventsSnapshot,
+  loadRunLogs,
+  resolveRunDir,
+  type LoadedRunDetail
+} from "./run-query-service.js";
+import { inspectHumanReview, listHumanReviews } from "./review-query-service.js";
+import { requestStop, writeHumanReviewDecision } from "./run-control-service.js";
 import {
   inspectRunContractStatusVisualization,
   inspectRunFailureVisualization,
@@ -159,27 +158,6 @@ type VisualizationServerState = {
   projectCreateRequestCacheMaxSize: number;
   studioChatToMmdSessions: StudioChatToMmdSessionMap;
   testHooks?: VisualizationServerOptions["testHooks"];
-};
-
-type NdjsonEntry = {
-  cursor: number;
-  record: Record<string, unknown>;
-};
-
-type InspectRunRecord = {
-  runId: string;
-  runDir: string;
-  state: unknown;
-  metrics: unknown;
-  resolvedConfig: unknown;
-  stopRequest: unknown;
-  stopOutcome: unknown;
-  summary?: unknown;
-};
-
-type LoadedRunDetail = InspectRunRecord & {
-  systemSource: string | null;
-  snapshotManifest: Record<string, unknown> | null;
 };
 
 class HttpError extends Error {
@@ -445,172 +423,6 @@ function summarizeAdapterResult(result: unknown): Record<string, unknown> {
     stageCount: Array.isArray(record.stages) ? record.stages.length : undefined,
     error: asString(record.error),
     errorCode: asString(errorEnvelope.errorCode)
-  };
-}
-
-async function readSystemSource(runDir: string): Promise<string | null> {
-  try {
-    return await readFile(resolve(runDir, "system.mmd"), "utf8");
-  } catch {
-    return null;
-  }
-}
-
-async function readSnapshotManifest(runDir: string, systemSource: string | null): Promise<Record<string, unknown> | null> {
-  let manifest: Record<string, unknown>;
-  try {
-    const parsed = JSON.parse(await readFile(resolve(runDir, "snapshot-manifest.json"), "utf8"));
-    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
-      return {
-        manifestVersion: 0,
-        status: "invalid",
-        warning: "snapshot-manifest.json is not an object."
-      };
-    }
-    manifest = parsed as Record<string, unknown>;
-  } catch {
-    return {
-      manifestVersion: 0,
-      status: "missing",
-      warning: "snapshot-manifest.json is missing; run artifact system.mmd remains the historical source."
-    };
-  }
-  const source = asRecord(manifest.source);
-  const expectedHash = asString(source?.sourceHash);
-  const actualHash = systemSource === null ? undefined : createHash("sha256").update(systemSource).digest("hex");
-  return {
-    ...manifest,
-    status: expectedHash && actualHash && expectedHash !== actualHash ? "hash_mismatch" : "ok",
-    actualSourceHash: actualHash,
-    warning: expectedHash && actualHash && expectedHash !== actualHash
-      ? "snapshot sourceHash differs from run artifact system.mmd; run artifact system.mmd is used as historical truth."
-      : undefined
-  };
-}
-
-async function hasTimelineProjection(runDir: string): Promise<boolean> {
-  try {
-    const timelineStat = await stat(resolve(runDir, "timeline.jsonl"));
-    return timelineStat.isFile();
-  } catch {
-    return false;
-  }
-}
-
-async function loadRunDetail(workdir: string, runId: string): Promise<LoadedRunDetail> {
-  const detail = (await inspectRun(workdir, runId)) as InspectRunRecord;
-  const runDir = resolveRunDir(workdir, runId);
-  const systemSource = await readSystemSource(runDir);
-  const snapshotManifest = await readSnapshotManifest(runDir, systemSource);
-  return {
-    ...detail,
-    systemSource,
-    snapshotManifest
-  };
-}
-
-async function readLegacyRunEvents(runDir: string): Promise<NdjsonEntry[]> {
-  const eventsPath = resolve(runDir, "events.ndjson");
-  let content: string;
-  try {
-    content = await readFile(eventsPath, "utf8");
-  } catch {
-    return [];
-  }
-
-  const records: NdjsonEntry[] = [];
-  for (const line of content.split(/\r?\n/)) {
-    const trimmed = line.trim();
-    if (!trimmed) {
-      continue;
-    }
-    try {
-      const parsed = JSON.parse(trimmed);
-      if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) {
-        continue;
-      }
-      const projected = projectTimelineRecord({
-        cursor: records.length,
-        event: parsed as Record<string, unknown>
-      });
-      if (!projected) {
-        continue;
-      }
-      records.push({
-        cursor: projected.cursor,
-        record: projected
-      });
-    } catch {
-      continue;
-    }
-  }
-  return records;
-}
-
-async function loadRunEventsSnapshot(args: {
-  workdir: string;
-  runId: string;
-  cursor?: number;
-  limit?: number;
-  roleId?: string;
-  branchId?: string;
-  type?: string;
-  reviewId?: string;
-  status?: string;
-  errorCode?: string;
-}): Promise<{ events: NdjsonEntry[]; nextCursor: number }> {
-  const runDir = resolveRunDir(args.workdir, args.runId);
-  if (await hasTimelineProjection(runDir)) {
-    const timelineSnapshot = await loadTimelineTailSnapshot({
-      timelinePath: resolve(runDir, "timeline.jsonl"),
-      cursor: args.cursor,
-      limit: args.limit,
-      roleId: args.roleId,
-      branchId: args.branchId,
-      type: args.type,
-      reviewId: args.reviewId,
-      status: args.status,
-      errorCode: args.errorCode
-    });
-    return {
-      events: timelineSnapshot.events,
-      nextCursor: timelineSnapshot.nextCursor
-    };
-  }
-  const allEvents = await readLegacyRunEvents(runDir);
-  const startCursor = Math.max(0, args.cursor ?? 0);
-  const limit = args.limit ?? 500;
-  const filtered = allEvents
-    .filter((entry) => entry.cursor >= startCursor)
-    .filter((entry) => {
-      const type = asString(entry.record.type);
-      const roleId = asString(entry.record.roleId);
-      const branchId = asString(entry.record.branchId);
-      if (args.type && type !== args.type) {
-        return false;
-      }
-      if (args.roleId && roleId !== args.roleId) {
-        return false;
-      }
-      if (args.branchId && branchId !== args.branchId) {
-        return false;
-      }
-      if (args.reviewId && asString(entry.record.reviewId) !== args.reviewId) {
-        return false;
-      }
-      if (args.status && asString(entry.record.status) !== args.status) {
-        return false;
-      }
-      if (args.errorCode && asString(entry.record.errorCode) !== args.errorCode) {
-        return false;
-      }
-      return true;
-    })
-    .slice(0, limit);
-
-  return {
-    events: filtered,
-    nextCursor: allEvents.length
   };
 }
 
@@ -1154,7 +966,7 @@ async function handleApiRunEvents(
   response: ServerResponse
 ): Promise<void> {
   const cursor = Number(url.searchParams.get("cursor") ?? "0");
-  const limit = Number(url.searchParams.get("limit") ?? "500");
+  const limit = Number(url.searchParams.get("limit") ?? "200");
   const roleId = url.searchParams.get("roleId") ?? undefined;
   const branchId = url.searchParams.get("branchId") ?? undefined;
   const type = url.searchParams.get("type") ?? undefined;
@@ -1165,7 +977,7 @@ async function handleApiRunEvents(
     workdir,
     runId,
     cursor: Number.isFinite(cursor) ? cursor : 0,
-    limit: Number.isFinite(limit) ? limit : 500,
+    limit: Number.isFinite(limit) ? limit : 200,
     roleId,
     branchId,
     type,
@@ -1193,7 +1005,8 @@ async function handleApiRunLogs(
     roleId,
     engine,
     since,
-    tail: Number.isFinite(tail) ? tail : undefined
+    tail: Number.isFinite(tail) ? tail : undefined,
+    maxRecords: 200
   });
   jsonResponse(response, 200, { records: redactUnknown(records) });
 }
@@ -1387,6 +1200,7 @@ async function handleApiRunStart(
     userProfilePath: resolveOptionalRuntimePathWithinProject(workdir, asString(body.userProfilePath), "userProfilePath"),
     lawsPath: resolveOptionalRuntimePathWithinProject(workdir, asString(body.lawsPath), "lawsPath"),
     workdir,
+    targetDir: asString(body.targetDir),
     dryRun: body.dryRun === true,
     cleanupExecutionHistory: asNumber(body.cleanupExecutionHistory),
     logRun: false
@@ -1436,6 +1250,7 @@ async function handleApiRunResume(
     lawsPath: resolveOptionalRuntimePathWithinProject(workdir, asString(body.lawsPath), "lawsPath"),
     resumeRunDir: runDir,
     workdir,
+    targetDir: asString(body.targetDir),
     dryRun: body.dryRun === true,
     cleanupExecutionHistory: asNumber(body.cleanupExecutionHistory),
     logRun: false
@@ -2003,11 +1818,12 @@ async function handleVisualizationRequest(
       inFlight = true;
       try {
         recordSseSnapshotAttempt();
+        // mtime is only a polling optimization. The timeline reader owns cursor correctness.
         const snapshot = await loadRunEventsSnapshot({
           workdir: state.workdir,
           runId,
           cursor,
-          limit: 500
+          limit: 200
         });
         for (const entry of snapshot.events) {
           if (!active) {

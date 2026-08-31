@@ -47,18 +47,12 @@ import {
   cleanupHistoricalExecutionSnapshots,
   flushBufferedRunArtifacts,
   loadAuditTrailFromEvents,
-  loadCommittedRoleExecutionOutcomes,
-  loadHumanReviewDecisions,
-  persistHumanReviewRequest,
-  loadPendingRuntimeCheckpoints,
-  markHumanReviewDecisionApplied,
-  markHumanReviewDecisionReconciled,
-  markRoleExecutionOutcomeReconciled,
   persistRunStopOutcome,
-  persistRuntimeCheckpoint,
   readRunStopRequest,
   writeAtomicFile
 } from "./run-artifacts.js";
+import { filesystemCheckpointStore } from "./checkpoint-store.js";
+import { filesystemReviewStore } from "./review-store.js";
 import {
   findOrphanedJoinGroup,
   planHumanReviewDecisionTransition,
@@ -107,6 +101,7 @@ type RunnerInput = {
   toolsByRef: Map<string, CliTool>;
   userProfile?: UserProfile;
   workdir: string;
+  commandBaseDir?: string;
   rolePackagesByRoleId: Map<string, LoadedRolePackage>;
   runContext: RunContext;
   executor: Executor;
@@ -457,7 +452,7 @@ async function replayPendingRuntimeCheckpoints(args: {
   state: GraphState;
   checkpoints: RuntimeCheckpointRecord[];
 }> {
-  const checkpoints = await loadPendingRuntimeCheckpoints({
+  const checkpoints = await filesystemCheckpointStore.loadPending({
     context: args.runContext,
     afterSequence: args.state.lastCheckpointSequence
   });
@@ -529,7 +524,7 @@ async function reconcileCommittedRoleExecutionOutcomes(args: {
   const pendingCheckpointByExecutionId = new Map(
     replay.checkpoints.map((checkpoint) => [checkpoint.executionId, checkpoint])
   );
-  const outcomes = await loadCommittedRoleExecutionOutcomes({
+  const outcomes = await filesystemCheckpointStore.loadCommittedOutcomes({
     context: args.runContext,
     unresolvedOnly: true
   });
@@ -544,7 +539,7 @@ async function reconcileCommittedRoleExecutionOutcomes(args: {
       if (!roleDirs) {
         throw new Error(`Role run directory missing for "${outcome.roleId}"`);
       }
-      await markRoleExecutionOutcomeReconciled({
+      await filesystemCheckpointStore.markOutcomeReconciled({
         executionDir: resolve(roleDirs.executionsDir, outcome.executionId),
         checkpointSequence: pendingCheckpoint.checkpointSequence
       });
@@ -561,12 +556,12 @@ async function reconcileCommittedRoleExecutionOutcomes(args: {
       indexes
     });
     for (const reviewRequest of transitionPlan.reviewRequests ?? []) {
-      await persistHumanReviewRequest({
+      await filesystemReviewStore.persistRequest({
         context: args.runContext,
         review: reviewRequest
       });
     }
-    const checkpoint = await persistRuntimeCheckpoint({
+    const checkpoint = await filesystemCheckpointStore.persist({
       context: args.runContext,
       roleId: outcome.roleId,
       branchId: outcome.branchId,
@@ -578,7 +573,7 @@ async function reconcileCommittedRoleExecutionOutcomes(args: {
     if (!roleDirs) {
       throw new Error(`Role run directory missing for "${outcome.roleId}"`);
     }
-    await markRoleExecutionOutcomeReconciled({
+    await filesystemCheckpointStore.markOutcomeReconciled({
       executionDir: resolve(roleDirs.executionsDir, outcome.executionId),
       checkpointSequence: checkpoint.checkpointSequence
     });
@@ -618,7 +613,7 @@ async function reconcileCommittedHumanReviewDecisions(args: {
 }> {
   let reconciledState = args.state;
   let indexes = buildRuntimeIndexes(reconciledState);
-  const decisions = await loadHumanReviewDecisions({
+  const decisions = await filesystemReviewStore.loadDecisions({
     context: args.runContext,
     unresolvedOnly: true
   });
@@ -642,14 +637,14 @@ async function reconcileCommittedHumanReviewDecisions(args: {
       (pendingReview !== undefined && pendingReview.status === "resolved");
 
     if (alreadyApplied) {
-      const appliedDecision = await markHumanReviewDecisionApplied({
+      const appliedDecision = await filesystemReviewStore.markApplied({
         context: args.runContext,
         reviewId: decision.reviewId,
         checkpointSequence: decision.checkpointSequence ?? reconciledState.lastCheckpointSequence,
         appliedAt: decision.appliedAt ?? new Date().toISOString(),
         reconciledAt: decision.reconciledAt ?? new Date().toISOString()
       });
-      await markHumanReviewDecisionReconciled({
+      await filesystemReviewStore.markReconciled({
         context: args.runContext,
         reviewId: appliedDecision.reviewId,
         reconciledAt: appliedDecision.reconciledAt
@@ -670,7 +665,7 @@ async function reconcileCommittedHumanReviewDecisions(args: {
       logger,
       indexes
     });
-    const checkpoint = await persistRuntimeCheckpoint({
+    const checkpoint = await filesystemCheckpointStore.persist({
       context: args.runContext,
       roleId: pendingReview.roleId,
       branchId: pendingReview.branchId,
@@ -681,14 +676,14 @@ async function reconcileCommittedHumanReviewDecisions(args: {
     for (const event of transitionPlan.events) {
       await appendEvent(args.runContext, event);
     }
-    await markHumanReviewDecisionApplied({
+    await filesystemReviewStore.markApplied({
       context: args.runContext,
       reviewId: decision.reviewId,
       checkpointSequence: checkpoint.checkpointSequence,
       appliedAt: new Date().toISOString(),
       reconciledAt: new Date().toISOString()
     });
-    await markHumanReviewDecisionReconciled({
+    await filesystemReviewStore.markReconciled({
       context: args.runContext,
       reviewId: decision.reviewId
     });
@@ -903,6 +898,7 @@ export async function runSystemWithGraphRunner(args: RunnerInput): Promise<Adapt
           executor: args.executor,
           userProfile: args.userProfile,
           workdir: args.workdir,
+          commandBaseDir: args.commandBaseDir,
           logger
         });
 
@@ -938,14 +934,14 @@ export async function runSystemWithGraphRunner(args: RunnerInput): Promise<Adapt
           indexes: runtimeIndexes
         });
         for (const reviewRequest of transitionPlan.reviewRequests ?? []) {
-          await persistHumanReviewRequest({
+          await filesystemReviewStore.persistRequest({
             context: args.runContext,
             review: reviewRequest
           });
         }
 
         maybeCrashAfterExecutionOutcome();
-        const checkpoint = await persistRuntimeCheckpoint({
+        const checkpoint = await filesystemCheckpointStore.persist({
           context: args.runContext,
           roleId,
           branchId: branch.branchId,
@@ -957,7 +953,7 @@ export async function runSystemWithGraphRunner(args: RunnerInput): Promise<Adapt
         if (!roleDirs) {
           throw new Error(`Role run directory missing for "${roleId}"`);
         }
-        await markRoleExecutionOutcomeReconciled({
+        await filesystemCheckpointStore.markOutcomeReconciled({
           executionDir: resolve(roleDirs.executionsDir, result.executionId),
           checkpointSequence: checkpoint.checkpointSequence
         });

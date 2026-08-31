@@ -198,6 +198,13 @@ test("Build workbench keeps view toggles in footer and aligns graph with docked 
     await expectDockedSelectionAligned(page);
     const roleNode = page.locator('#studio-graph-root [data-cell-id="demo-analyst"]').first();
     await expect(roleNode).toBeVisible();
+    await expect(page).toHaveScreenshot("build-workbench-desktop.png", {
+      animations: "disabled",
+      caret: "hide",
+      scale: "css",
+      maxDiffPixels: 200
+    });
+    await page.waitForTimeout(150);
     const beforeClickBox = await roleNode.boundingBox();
     expect(beforeClickBox).toBeTruthy();
     await roleNode.click();
@@ -274,6 +281,41 @@ test("Build workbench keeps view toggles in footer and aligns graph with docked 
     await waitForStudioCell(page, "demo-analyst");
     await expect(page.locator("[data-studio-bridge-filter]")).toBeVisible();
     await expect(page.locator('[data-studio-side-tab="structure"]')).toHaveAttribute("aria-pressed", "true");
+  } finally {
+    await page.close();
+    await new Promise<void>((resolve) => started.server.close(() => resolve()));
+  }
+});
+
+test("Build workbench remains usable on a narrow mobile viewport", async ({ page }) => {
+  const workdir = await mkdtemp(path.join(os.tmpdir(), "ogsystem-build-mobile-"));
+  await seedProject(workdir);
+  const started = await startVisualizationServer({ workdir, host: "127.0.0.1", port: 0 });
+  try {
+    await page.setViewportSize({ width: 390, height: 844 });
+    await page.goto(started.url);
+    await page.locator("#console-tab-design").click();
+    await page.locator('[data-workbench-view="bridge"]').click();
+    await waitForStudioCell(page, "demo-analyst");
+    await expect(page.locator("#studio-graph-root")).toBeVisible();
+    await expect(page.locator('[data-studio-graph-action="reset-view"]')).toBeVisible();
+    await expect(page.locator('[data-studio-side-tab="structure"]')).toHaveAttribute("aria-pressed", "true");
+
+    const viewport = await page.evaluate(() => ({
+      viewportWidth: document.documentElement.clientWidth,
+      contentWidth: document.documentElement.scrollWidth,
+      graphWidth: document.getElementById("studio-graph-root")?.getBoundingClientRect().width ?? 0,
+      graphHeight: document.getElementById("studio-graph-root")?.getBoundingClientRect().height ?? 0
+    }));
+    expect(viewport.contentWidth).toBeLessThanOrEqual(viewport.viewportWidth + 1);
+    expect(viewport.graphWidth).toBeGreaterThan(0);
+    expect(viewport.graphHeight).toBeGreaterThan(0);
+    await expect(page).toHaveScreenshot("build-workbench-mobile.png", {
+      animations: "disabled",
+      caret: "hide",
+      scale: "css",
+      maxDiffPixels: 200
+    });
   } finally {
     await page.close();
     await new Promise<void>((resolve) => started.server.close(() => resolve()));

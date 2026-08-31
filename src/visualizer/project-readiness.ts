@@ -19,7 +19,7 @@ import { loadModelSelection, resolveModelSelectionForSystem } from "../runtime/m
 import { parseSystemFromMermaidSource } from "../runtime/parse-mermaid.js";
 import { resolveOgsPaths } from "../runtime/project-lifecycle.js";
 import { loadLaws, loadRuntimeConfig } from "../runtime/runtime-loader.js";
-import { pathExists } from "../runtime/run-artifacts.js";
+import { pathExists } from "../runtime/run-store.js";
 import { resolveEffectiveLaw } from "../runtime/runtime-setup.js";
 import { SYSTEM_END_ROLE_ID } from "../runtime/types.js";
 import { isRuntimeOnlyErrorEvent } from "../runtime/error-flow-utils.js";

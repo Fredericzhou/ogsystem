@@ -15,6 +15,7 @@ Archive rules are documented in [docs/archive/README.md](archive/README.md).
 - [Long-term stability roadmap](long-term-stability-roadmap.md): durable direction.
 - [PraisonAI comparison roadmap](praisonai-comparison-roadmap.md): what to borrow from a broader agent platform without weakening runtime guarantees.
 - [Unified backlog](todo-backlog.md): current active backlog.
+- [Semantic gap implementation plan](semantic-gap-implementation-plan.md): current unimplemented semantics, priorities, and acceptance boundaries.
 - [Ebook draft](ogsystem-ebook.md): long-form explanatory material.
 
 ## Design References

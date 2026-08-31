@@ -8,7 +8,8 @@ import { loadModelCatalog } from "./model-catalog.js";
 import { loadModelSelection, resolveModelSelectionForSystem } from "./model-selection.js";
 import { loadSystemFromMermaid } from "./parse-mermaid.js";
 import { buildRunPlanFingerprint } from "./plan-fingerprint.js";
-import { initializeRunContext, persistRunPlanFingerprint } from "./run-artifacts.js";
+import { filesystemRunStore } from "./run-store.js";
+import { resolveProjectTargetDirectory } from "./project-target.js";
 import {
   loadLaws,
   loadProfiles,
@@ -137,6 +138,7 @@ export type RuntimeAdapterSetup = {
   runContext: RunContext;
   planFingerprint: RunPlanFingerprint;
   runtimeConfig: RuntimeConfig;
+  targetDir: string;
 };
 
 export async function prepareRuntimeSetup(args: {
@@ -149,8 +151,14 @@ export async function prepareRuntimeSetup(args: {
   resumeRunDir?: string;
   prompt: string;
   workdir: string;
+  targetDir?: string;
   dryRun?: boolean;
 }): Promise<RuntimeAdapterSetup> {
+  const targetDir = await resolveProjectTargetDirectory({
+    workdir: args.workdir,
+    targetDir: args.targetDir,
+    resumeRunDir: args.resumeRunDir
+  });
   const system = await loadSystemFromMermaid(args.systemPath);
   const runtimeConfig = await loadRuntimeConfig(args.runtimeConfigPath, args.workdir);
   const modelSelection = await loadModelSelection(resolve(args.workdir, ".ogs", "model-selection.json"));
@@ -236,13 +244,14 @@ export async function prepareRuntimeSetup(args: {
       advisoryWarnings: resolvedModelSelection.warnings,
       runsDir: resolve(args.workdir, runtimeConfig.runsDir),
       workdir: args.workdir,
+      targetDir,
       compiler: {
         digest: compilerResult.digest,
         diagnostics: compilerResult.diagnostics
       }
     }
   };
-  const runContext = await initializeRunContext({
+  const runContext = await filesystemRunStore.initialize({
     system,
     systemPath: args.systemPath,
     prompt: args.prompt,
@@ -252,7 +261,7 @@ export async function prepareRuntimeSetup(args: {
     resumeRunDir: args.resumeRunDir
   });
   if (!args.resumeRunDir) {
-    await persistRunPlanFingerprint({
+    await filesystemRunStore.persistPlanFingerprint({
       runDir: runContext.runDir,
       fingerprint: planFingerprint
     });
@@ -269,6 +278,7 @@ export async function prepareRuntimeSetup(args: {
     compilerSnapshot: compilerResult.snapshot,
     runContext,
     planFingerprint,
-    runtimeConfig
+    runtimeConfig,
+    targetDir
   };
 }

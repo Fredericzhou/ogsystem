@@ -329,6 +329,7 @@ ogs run resume <run-id> --dry-run
 - `ogs run status` 会暴露 `pendingReviewCount`、`hasWaitingHumanReview`、`latestPendingReviewId`
 - `ogs run review list` / `inspect` 会暴露顶层 `currentStatus`，同时把 `requestSnapshot` 和 `currentState` 分开命名
 - `summary.json` 会把 `wallClockDurationMs`、`executionDurationMs`、`humanReviewWaitDurationMs` 分开
+- `review.timeout` / `review.timeout.action` 会随 review spec 保存，但当前 runtime 不自动计时或过期；需要由外部操作显式提交 review decision
 - approve / rework / pause / terminate 通过 `ogs run review decide` 写入 control plane，而不是再插一个独立 human-gate role 节点
 - 每个 decision 通过 apply / reconcile 标记进入 checkpoint 主链，所以多轮 review 或 crash 恢复后仍能判断“请求已写入”与“决策已生效”的区别
 - rework branch 可以通过 `global.human_review.current.*` 读取 reviewer comment / round / previous output
@@ -370,7 +371,7 @@ This repository now has one active runtime path: the graph runtime.
 Use this rule:
 
 - default execution path: use `model.bind.<roleId>=<provider/model>`
-- graph semantics: add `role.mode/join.mode/context.map/loop.max` only when the system needs parallel split, `all_of/quorum_of` join, field-level projection, or bounded loop
+- graph semantics: add `role.mode/join.mode/context.map/loop.max/review.*` only when the system needs parallel split, `all_of/quorum_of` join, field-level projection, bounded loop, or runtime-native human review
 - `join.mode.<roleId>=all_of` requires `join.sources.<roleId>`; that source list must contain unique role ids and match the role's Mermaid incoming edges exactly
 - `join.mode.<roleId>=quorum_of` requires both `join.sources.<roleId>` and `join.min.<roleId>`; `join.sources` must contain unique role ids, must match the role's Mermaid incoming edges exactly, and readiness counts unique completed source roles under the same `lineageId + loopIteration`
 - `handoff.mode=strict|transition` enables flow-contract validation; `transition` skips warned or missing contracts on the affected flow while `strict` hard-fails, and will fail closed if the skip would orphan a downstream join; `handoff.contracts` points to the contract bundle, and `route.order.<fromRoleId>` only reorders sibling fan-out targets without changing reachability
@@ -378,15 +379,15 @@ Use this rule:
 - selector details and ancestor-access limits are documented in [context-map 投影说明](./context-map-projection-guide.md)
 - dynamic fan-out with uncertain `N` is not graph semantics; keep it inside one role (Heavy Node) or pre-expand before orchestration
 - controlled fan-out concurrency is an execution policy, not a flow semantic (it must not change graph reachability/join readiness)
-- `ERROR*` error-flow semantics are implemented behind a feature-gated rollout (`runtime.error_flows.v1`, default `false`); systems without matching `ERROR*` edges remain fail-stop
+- `ERROR*` error-flow semantics are implemented behind a feature-gated rollout (`runtime.error_flows.v1`, default `false`) configured in `.ogs/runtime.json`, not in Mermaid metadata; systems without matching `ERROR*` edges remain fail-stop
 
 ### NL2MMD Authoring
 
 `nl2mmd` is the repository's natural-language-to-Mermaid drafting entry for the current graph runtime. It is useful when you want a conversation-driven way to turn requirements into a runnable `system.mmd`, then validate the result against the local role repo plus the current model catalog/selection context.
 
-It also understands the current flow-contract surface, including `handoff.mode`, `handoff.contracts`, and `route.order.*`.
+It also understands the current flow-contract surface, including `handoff.mode`, `handoff.contracts`, `route.order.*`, and runtime-native `review.*` metadata.
 
-For structure-first authoring, see [NL2MMD structure templates](./nl2mmd-structure-templates.md). It lists the current semantic skeletons and example Mermaid graphs for `linear_flow`, `fanout_fanin`, `quorum_consultation`, `contract_gated_handoff`, `error_compensation`, `bounded_loop`, `human_gate`, and `mixed_binding`.
+For structure-first authoring, see [NL2MMD structure templates](./nl2mmd-structure-templates.md). It lists the current semantic skeletons and example Mermaid graphs for `linear_flow`, `fanout_fanin`, `quorum_consultation`, `contract_gated_handoff`, `error_compensation`, `bounded_loop`, runtime-native `human_gate`, and `mixed_binding`.
 
 Use it with `ogs nl2mmd --message "..."` for one-shot drafting, or omit `--message` for the interactive loop. In a source checkout, the equivalent command is `pnpm run run:nl2mmd -- --message "..."`. It targets the repository's supported Mermaid subset only; it is not a general Mermaid generator.
 
@@ -398,6 +399,19 @@ Use it with `ogs nl2mmd --message "..."` for one-shot drafting, or omit `--messa
 - Wrapper commands are for project lifecycle and default operational flow.
 
 For project management, `ogs` defaults to the current directory. Use `--workdir <path>` only when you need to operate on another project root. `ogs project init` scaffolds the current directory as a runnable project by default, and `ogs project create <name>` scaffolds the same runnable `minimal` template in a new project folder by default. Both commands materialize a project-local `og-roles/` repo, `.ogs/model-catalog.json`, `.ogs/model-selection.json`, and `.ogs/README.md`; runnable templates import only the roles they reference. The generated README carries editable examples so the runtime JSON files can stay strict and comment-free.
+
+An OGSystem project is the orchestration control plane. By default it also serves as the OpenCode coding project. For a separate coding project, bind `targetDir` during initialization or on a run:
+
+```bash
+ogs project init --workdir ./ogs-control --target-dir ../my-application
+ogs run start --workdir ./ogs-control --system system.mmd --input "implement the feature"
+```
+
+The binding is stored in `.ogs/project.json`; run snapshots retain the resolved target directory and resume rejects an accidental target switch. Multiple OGSystem projects may bind the same coding project, but concurrent write runs need Git worktrees, separate clones, or an explicit lock policy.
+
+The Visualizer uses the same binding automatically. Its run start/resume API also accepts an optional `targetDir` when an individual request needs to override the saved project attachment.
+
+For `exec.bind`, relative tool arguments such as `scripts/console-print.mjs` are resolved from the OGSystem control project. The role process still runs in its run-local role workspace, while OpenCode session APIs use the resolved coding project.
 
 Recommended test split:
 
@@ -598,7 +612,7 @@ Handled failure artifact contract (runtime-generated `roleResults` payload):
 
 Quorum/projection example with source selectors:
 
-```mermaid
+```text
 %% join.mode.review=quorum_of
 %% join.sources.review=worker_a,worker_b,worker_c
 %% join.min.review=3
@@ -621,7 +635,7 @@ Required:
 Optional:
 
 - `source.json`
-- `talent` and `preferredModelTags` in `role.json` (soft hints only)
+- `talent` and `preferredModelTags` in `role.json` are reserved hints for future capability-tag-based model/executor routing; they do not select the current executor
 
 Importer boundary:
 
@@ -685,7 +699,7 @@ Model rules:
 - prefer direct `provider/model` refs in `model.bind` and selection files
 - keep `system.mmd` stable by evolving `.ogs/model-selection.json` instead of editing role flow definitions for every model upgrade
 - for `executor: "opencode"`, `model.bind` roles run through OpenCode SDK v2 structured output:
-  - input = rendered role prompt + `output.schema.json` + model selection + role working directory
+  - input = rendered role prompt + `output.schema.json` + model selection; role-private file access uses the role working directory, while OpenCode SDK session APIs use the resolved coding project as `directory`
   - output = one JSON object from `assistant.info.structured`; if `structured` is missing or string-encoded, runtime falls back to assistant text parts and JSON extraction
   - provider/model failures are surfaced directly when diagnostics are available; the generic structured-output error is now only a last resort
   - `args.reasoningEffort` is treated as the OpenCode `variant`
@@ -786,7 +800,7 @@ When a run starts, `.ogs/runs/<run-id>/` should persist:
 - run-id format: `YYYYMMDD-HHMMSS-<shortHash>`
 
 - run-level files: `run.md`, `request.md`, `system.mmd`, `repro.sh`, `state.json`, `metrics.json`, `summary.json`, `events.ndjson`, `timeline.jsonl`, `plan-fingerprint.json`
-- run-level OpenCode metadata: `.opencode/server.pid`, `.opencode/endpoint.json` for `model.bind` runs
+- run-level OpenCode metadata: `.ogs/runs/<run-id>/.opencode/server.pid`, `.ogs/runs/<run-id>/.opencode/endpoint.json` for `model.bind` runs
 - run-level OpenCode session index: `sessions.json`
 - run-level checkpoint WAL: `checkpoints/<sequence>-<executionId>.json`
 - run-level shared workspace: `shared/`
@@ -894,7 +908,7 @@ Without `context.map`, the downstream prompt-input shell looks like:
 
 With:
 
-```mermaid
+```text
 %% context.map.reviewer.brief=direct.data.brief
 %% context.map.reviewer.risk_level=direct.data.risk_level
 %% context.map.reviewer.task=global.task
@@ -926,7 +940,7 @@ When a join node does not declare `context.map`, runtime injects all declared so
 
 With:
 
-```mermaid
+```text
 %% join.mode.review=all_of
 %% join.sources.review=worker_a,worker_b
 %% context.map.review.a_summary=source(worker_a).content
@@ -989,6 +1003,7 @@ Lineage contract:
 OpenCode lifecycle rule for `model.bind`:
 
 - one OGSystem run starts one shared `opencode serve`
+- `opencode serve` starts with its hostname/port arguments and no OGSystem directory binding; the SDK client and `session.create/prompt/abort` receive the resolved coding project as `directory`
 - each role/node session is keyed by `roleId:sessionLineageId`
 - repeated turns on the same branch lineage reuse the same OpenCode `session`
 - sibling branches of the same role do not share a session
@@ -999,7 +1014,7 @@ OpenCode lifecycle rule for `model.bind`:
 - run events include `opencode_server_started` and `opencode_server_closed`
 - transient provider/service failures are retried on the same role session
 - after node completion, session metadata can be retained for audit/resume while the shared server stays alive
-- parallel graph branches therefore run as concurrent sessions on the same server process
+- `parallel_split` creates separate branch sessions on the same server process, but the current scheduler drains active branches in queue order; physical execution concurrency is a future execution policy, not a Flow semantic
 
 Join context projection rule:
 

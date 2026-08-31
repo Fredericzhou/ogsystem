@@ -11,7 +11,7 @@ import {
 } from "./config.js";
 import { readJsonFile } from "./json-file.js";
 import { loadRolePackage } from "./role-repo.js";
-import { pathExists } from "./run-artifacts.js";
+import { pathExists } from "./run-store.js";
 import type {
   CliTool,
   ExecutionProfile,

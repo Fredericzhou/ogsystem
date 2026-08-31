@@ -9,7 +9,7 @@
  */
 import { resolve } from "node:path";
 
-import { appendBufferedText, appendEvent } from "./run-artifacts.js";
+import { filesystemArtifactStore } from "./artifact-store.js";
 import { redactInputContext, redactOptionalText, redactUnknown } from "./redaction.js";
 import { preview, previewStructuredStdout } from "./runtime-support.js";
 import type {
@@ -106,10 +106,10 @@ export async function appendAuditRecord(runContext: RunContext, audit: AuditReco
   };
   // Failure window: if appending the transition markdown fails after the event is written,
   // the runtime can still rely on the persistent event log.
-  await appendEvent(runContext, { type: "audit", ...redactedAudit });
+  await filesystemArtifactStore.appendEvent(runContext, { type: "audit", ...redactedAudit });
   // Invariant: transition stream entry is appended after the event so readers see at least
   // the audit log even if conditional transition logging fails.
-  await appendBufferedText({
+  await filesystemArtifactStore.appendText({
     context: runContext,
     key: "transitions",
     path: resolve(runContext.auditDir, "transitions.md"),

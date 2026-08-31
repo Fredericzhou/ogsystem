@@ -9,7 +9,9 @@
  */
 import { randomUUID } from "node:crypto";
 import type { Dirent } from "node:fs";
+import { createReadStream } from "node:fs";
 import { cp, mkdir, readFile, readdir, stat, writeFile } from "node:fs/promises";
+import { createInterface } from "node:readline";
 import { basename, dirname, resolve } from "node:path";
 
 import {
@@ -22,7 +24,9 @@ import { validateRuntimeConfig } from "./config.js";
 import { readJsonFile, writeJsonFileAtomic } from "./json-file.js";
 import { chooseDefaultModelFromCatalog, refreshModelCatalog } from "./model-catalog.js";
 import { loadSystemFromMermaid, parseSystemFromMermaidSource } from "./parse-mermaid.js";
-import { requestRunStop, ROLE_EXECUTION_OUTCOME_FILE } from "./run-artifacts.js";
+import { ROLE_EXECUTION_OUTCOME_FILE } from "./run-artifacts.js";
+import { filesystemRunStore } from "./run-store.js";
+import { projectTargetConfig } from "./project-target.js";
 import { stringifyJson } from "./runtime-support.js";
 import type {
   HumanReviewDecision,
@@ -473,6 +477,7 @@ function createDefaultOgsReadme(): string {
     "- `profiles.json`: Exec profiles that bind `exec.bind.*` roles to local tools.",
     "- `tools.json`: Local tool registry consumed by `profiles.json`.",
     "- `project.json`: Project identity and creation metadata. Usually generated once and then left alone.",
+    "- `project.json.target`: Optional external coding project bound to OpenCode; omit it to use this project directory.",
     "- `runs-index.json`: Generated run index. Rebuilt by lifecycle commands.",
     "",
     "## Example: runtime.json",
@@ -1312,24 +1317,44 @@ export async function ensureProjectSkeleton(args: {
   workdir: string;
   projectId?: string;
   projectName?: string;
+  targetDir?: string;
 }): Promise<void> {
   const paths = resolveOgsPaths(args.workdir);
   await mkdir(paths.ogsDir, { recursive: true });
   await mkdir(paths.runsDir, { recursive: true });
   await mkdir(resolve(paths.ogsDir, "providers"), { recursive: true });
   await mkdir(resolve(args.workdir, "scripts"), { recursive: true });
-  await ensureFile(
-    paths.projectPath,
-    `${stringifyJson({
-      version: 1,
-      projectId:
-        args.projectId ??
-        args.projectName ??
-        (basename(args.workdir) || `project-${randomUUID().slice(0, 8)}`),
-      projectName: args.projectName,
-      createdAt: new Date().toISOString()
-    })}\n`
-  );
+  if (args.targetDir) {
+    const targetStat = await stat(args.targetDir).catch(() => undefined);
+    if (!targetStat?.isDirectory()) {
+      throw new Error(`OpenCode target directory does not exist or is not a directory: ${resolve(args.targetDir)}`);
+    }
+  }
+  const defaultProjectRecord = {
+    version: 1,
+    projectId:
+      args.projectId ??
+      args.projectName ??
+      (basename(args.workdir) || `project-${randomUUID().slice(0, 8)}`),
+    projectName: args.projectName,
+    createdAt: new Date().toISOString()
+  } as Record<string, unknown>;
+  if (args.targetDir) {
+    const existingProject = await readJsonFile(paths.projectPath).catch(() => undefined);
+    const existingProjectRecord =
+      existingProject && typeof existingProject === "object" && !Array.isArray(existingProject)
+        ? (existingProject as Record<string, unknown>)
+        : defaultProjectRecord;
+    await writeJsonFileAtomic(paths.projectPath, {
+      ...existingProjectRecord,
+      target: projectTargetConfig({
+        workdir: args.workdir,
+        targetDir: args.targetDir
+      })
+    });
+  } else {
+    await ensureFile(paths.projectPath, `${stringifyJson(defaultProjectRecord)}\n`);
+  }
   await ensureFile(paths.runtimePath, `${stringifyJson(createDefaultRuntimeConfig())}\n`);
   await ensureFile(
     paths.providerPath,
@@ -2020,21 +2045,58 @@ function filterLogRecords(records: Array<Record<string, unknown>>, args: {
   return filtered;
 }
 
-async function readLogRecordsFromPath(sourcePath: string): Promise<Array<Record<string, unknown>>> {
-  const content = await readFile(sourcePath, "utf8");
-  return parseJsonLines(content);
+async function readLogRecordsFromPath(sourcePath: string, args?: {
+  roleId?: string;
+  since?: string;
+  maxRecords?: number;
+  include?: (record: Record<string, unknown>) => boolean;
+}): Promise<Array<Record<string, unknown>>> {
+  const records: Array<Record<string, unknown>> = [];
+  const maxRecords = args?.maxRecords;
+  const sinceTimestamp = args?.since ? normalizeIsoTimestamp(args.since) : undefined;
+  const lines = createInterface({
+    input: createReadStream(sourcePath, { encoding: "utf8" }),
+    crlfDelay: Infinity
+  });
+  for await (const line of lines) {
+    const trimmed = line.trim();
+    if (!trimmed) continue;
+    let parsed: unknown;
+    try {
+      parsed = JSON.parse(trimmed);
+    } catch {
+      continue;
+    }
+    if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) continue;
+    const record = parsed as Record<string, unknown>;
+    if (args?.roleId && record.roleId !== args.roleId) continue;
+    if (sinceTimestamp !== undefined) {
+      const at = typeof record.at === "string" ? normalizeIsoTimestamp(record.at) : undefined;
+      if (at === undefined || at < sinceTimestamp) continue;
+    }
+    if (args?.include && !args.include(record)) continue;
+    if (maxRecords === undefined) {
+      records.push(record);
+    } else {
+      records.push(record);
+      if (records.length > maxRecords) records.shift();
+    }
+  }
+  return records;
 }
 
 async function loadFallbackEventLogs(args: {
   runDir: string;
   roleId?: string;
+  maxRecords?: number;
 }): Promise<Array<Record<string, unknown>>> {
-  const content = await readFile(resolve(args.runDir, "events.ndjson"), "utf8");
-  const records = parseJsonLines(content);
-  if (args.roleId) {
-    return records.filter((item) => item.type === "audit" && item.roleId === args.roleId);
-  }
-  return records.filter((item) => item.type !== "audit");
+  const records = await readLogRecordsFromPath(resolve(args.runDir, "events.ndjson"), {
+    include: args.roleId
+      ? (record) => record.type === "audit" && record.roleId === args.roleId
+      : (record) => record.type !== "audit",
+    maxRecords: args.maxRecords
+  });
+  return records;
 }
 
 export async function requestStop(workdir: string, runId: string, reason?: string): Promise<Record<string, unknown>> {
@@ -2043,7 +2105,7 @@ export async function requestStop(workdir: string, runId: string, reason?: strin
   if (!runStat?.isDirectory()) {
     throw new Error(`Run not found: ${runId}`);
   }
-  const request = await requestRunStop({
+  const request = await filesystemRunStore.requestStop({
     runDir,
     reason
   });
@@ -2061,6 +2123,7 @@ export async function loadRunLogs(args: {
   engine?: boolean;
   tail?: number;
   since?: string;
+  maxRecords?: number;
 }): Promise<Array<Record<string, unknown>>> {
   const runDir = resolveRunDir(args.workdir, args.runId);
   const runStat = await stat(runDir).catch(() => undefined);
@@ -2077,14 +2140,22 @@ export async function loadRunLogs(args: {
   const sourcePath = args.roleId
     ? resolve(runDir, "logs", "roles", `${args.roleId}.ndjson`)
     : resolve(runDir, "logs", "engine.ndjson");
+  const maxRecords = args.maxRecords === undefined
+    ? undefined
+    : Math.min(1000, Math.max(1, Math.floor(args.maxRecords)));
   try {
-    return filterLogRecords(await readLogRecordsFromPath(sourcePath), args);
+    return filterLogRecords(await readLogRecordsFromPath(sourcePath, {
+      roleId: args.roleId,
+      since: args.since,
+      maxRecords
+    }), args);
   } catch {
     try {
       return filterLogRecords(
         await loadFallbackEventLogs({
           runDir,
-          roleId: args.roleId
+          roleId: args.roleId,
+          maxRecords
         }),
         args
       );
@@ -2141,12 +2212,14 @@ export async function createProjectFromTemplate(args: {
   parentDir: string;
   name: string;
   templateId: ProjectTemplateId;
+  targetDir?: string;
 }): Promise<string> {
   const projectDir = resolve(args.parentDir, args.name);
   await mkdir(projectDir, { recursive: true });
   await ensureProjectSkeleton({
     workdir: projectDir,
-    projectName: args.name
+    projectName: args.name,
+    targetDir: args.targetDir ? resolve(projectDir, args.targetDir) : undefined
   });
   const template = await scaffoldProjectTemplate({
     workdir: projectDir,

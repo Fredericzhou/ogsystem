@@ -131,6 +131,8 @@ import {
 import { applyStudioAuthoringCommand } from "./studio-client/studio-graph-commands.js";
 import { WORKBENCH_VALIDATION_DEBOUNCE_MS } from "./client-input-policy.js";
 import { getDictionary, type Dictionary, type Locale } from "./i18n/index.js";
+import { applyCanvasLayoutPatchToAuthoring } from "./client-studio-authoring.js";
+import { createClientApi } from "./client-api.js";
 
 export {
   buildRouteSearch,
@@ -157,42 +159,6 @@ export type ClientI18nOptions = {
   messages?: Dictionary;
   messagesByLocale?: Partial<Record<Locale, Dictionary>>;
 };
-
-function applyCanvasLayoutPatchToAuthoring(authoring: Record<string, any>, canvas: Record<string, any>) {
-  if (!authoring || typeof authoring !== "object" || Array.isArray(authoring)) {
-    return authoring;
-  }
-  const roles = authoring.roles && typeof authoring.roles === "object" && !Array.isArray(authoring.roles)
-    ? authoring.roles
-    : {};
-  const layout = authoring.layout && typeof authoring.layout === "object" && !Array.isArray(authoring.layout)
-    ? authoring.layout
-    : {};
-  const nextNodes = layout.nodes && typeof layout.nodes === "object" && !Array.isArray(layout.nodes)
-    ? { ...layout.nodes }
-    : {};
-  const canvasNodes = Array.isArray(canvas?.nodes) ? canvas.nodes : [];
-  for (const node of canvasNodes) {
-    const roleId = typeof node?.roleId === "string" ? node.roleId : "";
-    if (!roleId || !roles[roleId]) {
-      continue;
-    }
-    nextNodes[roleId] = {
-      x: Number(node.x ?? 0),
-      y: Number(node.y ?? 0),
-      width: Number(node.width ?? 180),
-      height: Number(node.height ?? 84)
-    };
-  }
-  return {
-    ...authoring,
-    layout: {
-      ...layout,
-      nodes: nextNodes,
-      viewport: canvas?.viewport
-    }
-  };
-}
 
 export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions = {}): string {
   const locale = i18n.locale ?? "en";
@@ -309,6 +275,7 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
     const renderRunStatePanel = ${renderRunStatePanel.toString()};
     const renderSuggestedNextChecksPanel = ${renderSuggestedNextChecksPanel.toString()};
     const studioRolePackageHasRequiredFileCoverage = ${studioRolePackageHasRequiredFileCoverage.toString()};
+    const createClientApi = ${createClientApi.toString()};
     function canonicalLocale(locale) {
       const normalized = String(locale || "").trim().replace(/_/g, "-").toLowerCase();
       if (!normalized || normalized === "*") {
@@ -688,24 +655,6 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
       state.workbenchHasDraft = Boolean(loadDraftSource());
     }
 
-    function readApiError(payload, fallback) {
-      if (payload && payload.error && payload.error.message) {
-        return payload.error.message;
-      }
-      return fallback;
-    }
-
-    function createApiError(payload, fallback) {
-      const message = readApiError(payload, fallback);
-      const error = new Error(message);
-      if (payload && payload.error) {
-        error.code = payload.error.code || "";
-        error.details = payload.error.details;
-        error.payload = payload;
-      }
-      return error;
-    }
-
     function statusClass(status) {
       return [
         "running",
@@ -728,113 +677,10 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
         : "unknown";
     }
 
-    function createClientTimeoutError(path, timeoutMs) {
-      const error = new Error(t("api.requestTimeout", {
-        seconds: String(Math.ceil(timeoutMs / 1000))
-      }, "Request timed out after {seconds}s. Check the server connection and retry."));
-      error.code = "CLIENT_REQUEST_TIMEOUT";
-      error.path = path;
-      return error;
-    }
-
-    function isAbortError(error) {
-      return error && (
-        error.name === "AbortError" ||
-        error.code === "CLIENT_REQUEST_ABORTED"
-      );
-    }
-
-    async function requestJson(path, options) {
-      const requestOptions = options || {};
-      const timeoutMs = Number(requestOptions.timeoutMs || 0);
-      let timeoutId = null;
-      let timedOut = false;
-      let controller = null;
-      let signal = requestOptions.signal;
-      if (timeoutMs > 0) {
-        controller = new AbortController();
-        signal = controller.signal;
-        if (requestOptions.signal) {
-          if (requestOptions.signal.aborted) {
-            controller.abort(requestOptions.signal.reason);
-          } else {
-            requestOptions.signal.addEventListener("abort", () => {
-              controller.abort(requestOptions.signal.reason);
-            }, { once: true });
-          }
-        }
-      }
-      let response;
-      try {
-        const { timeoutMs: _timeoutMs, signal: _optionSignal, ...fetchOptions } = requestOptions;
-        const fetchPromise = fetch(path, {
-          headers: { accept: "application/json" },
-          signal,
-          ...fetchOptions,
-          headers: {
-            accept: "application/json",
-            ...(fetchOptions.headers || {})
-          },
-          cache: fetchOptions.cache || "no-store"
-        });
-        response = timeoutMs > 0
-          ? await Promise.race([
-              fetchPromise,
-              new Promise((_, reject) => {
-                timeoutId = setTimeout(() => {
-                  timedOut = true;
-                  if (controller) {
-                    controller.abort(createClientTimeoutError(path, timeoutMs));
-                  }
-                  reject(createClientTimeoutError(path, timeoutMs));
-                }, timeoutMs);
-              })
-            ])
-          : await fetchPromise;
-      } catch (error) {
-        if (timedOut) {
-          throw createClientTimeoutError(path, timeoutMs);
-        }
-        throw error;
-      } finally {
-        if (timeoutId !== null) {
-          clearTimeout(timeoutId);
-        }
-      }
-      if (signal?.aborted) {
-        if (timedOut) {
-          throw createClientTimeoutError(path, timeoutMs);
-        }
-        const reason = signal.reason;
-        if (reason instanceof Error) {
-          throw reason;
-        }
-        const error = new Error(t("studio.chat.cancelled", undefined, "Studio chat request cancelled."));
-        error.code = "CLIENT_REQUEST_ABORTED";
-        throw error;
-      }
-      const contentType = response.headers.get("content-type") || "";
-      const payload = contentType.includes("application/json")
-        ? await response.json().catch(() => null)
-        : await response.text().catch(() => "");
-      if (!response.ok) {
-        throw createApiError(payload, \`\${response.status} \${response.statusText}\`);
-      }
-      return payload;
-    }
-
-    async function requestAction(path, body, options) {
-      return requestJson(path, {
-        ...(options || {}),
-        method: "POST",
-        headers: {
-          accept: "application/json",
-          "content-type": "application/json",
-          ...(options?.headers || {})
-        },
-        body: JSON.stringify(body || {})
-      });
-    }
+    const clientApi = createClientApi(t);
+    const requestJson = clientApi.requestJson;
+    const requestAction = clientApi.requestAction;
+    const isAbortError = clientApi.isAbortError;
 
     function setLive(mode, label) {
       liveEl.className = "live" + (mode === "online" ? " online" : "");
