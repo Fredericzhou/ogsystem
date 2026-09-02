@@ -2,7 +2,7 @@
 
 ## Read This First
 
-OGSystem 当前是一套单机、文件优先、可恢复的图编排运行时。它最重要的特点不是“功能很多”，而是把编排语义、执行状态、恢复契约和运行证据收敛到了一条可审计的主路径里。
+OGSystem 当前是一套单机、文件优先、可恢复的图编排运行时（开发测试版本 `0.2.0`）。它最重要的特点不是“功能很多”，而是把编排语义、执行状态、恢复契约和运行证据收敛到了一条可审计的主路径里。
 
 建议先建立这四个认知：
 
@@ -46,6 +46,9 @@ OGSystem 当前重点优化以下能力：
 - Crash 自愈补偿：角色结果先 durable，再 checkpoint；恢复时补偿缺失 checkpoint，而不是盲目重跑节点。
 - 编译期静态门禁：`compiler.ts` 在 setup 阶段统一拒绝未绑定且不允许 noop 的角色、以及可选出边歧义的 noop 角色；parser 继续保留 DSL 白名单和 surface-level fail-closed。
 - 运维可观察：`audit/`、`events.ndjson`、per-role execution snapshots 让每一步都有证据。
+- Semantic IR v1：责任席位、条件路由、事件 Payload、业务状态 reducer、Loop Scope、JoinScope 和 capability budget 均在编译期冻结。
+- 版本化恢复：`stateVersion`、CAS、幂等键和 checkpoint sequence 共同保证恢复不会重复应用已提交状态。
+- 图谱投影：责任席位、运行聚合、条件/通道标签、循环返回通道、Join 等待来源和运行 overlay 由统一 GraphViewModel 提供。
 
 ## Architecture Snapshot
 
@@ -78,16 +81,16 @@ OGSystem 当前重点优化以下能力：
 
 - Node.js `>= 20`
 
-安装已发布 CLI（npm）：
+安装当前开发测试版本（源码目录）：
 
 ```bash
-npm install -g ogsystem
+npm install -g .
 ```
 
-安装已发布 CLI（pnpm）：
+从其他目录使用 pnpm 全局安装时，请传入源码绝对路径：
 
 ```bash
-pnpm add -g ogsystem
+pnpm add -g /absolute/path/to/OGSystem
 ```
 
 卸载全局 CLI：
@@ -132,6 +135,8 @@ pnpm run test:coverage
 pnpm run smoke:package-install:npm
 pnpm run smoke:package-install:pnpm
 ```
+
+版本说明：`0.2.0` 是开发测试版本，直接采用 Semantic IR v1 和当前版本化运行时合同，不提供历史 DSL、API 或运行数据迁移。
 
 覆盖率判读约定：
 

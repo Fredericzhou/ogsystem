@@ -1,6 +1,7 @@
 # OGSystem
 
-OGSystem is a console runtime for a restricted Mermaid flowchart DSL.
+OGSystem is a console runtime for a restricted Mermaid flowchart DSL. Current development-test
+release: `0.2.0`.
 
 Implemented scope:
 
@@ -9,6 +10,9 @@ Implemented scope:
 - Runtime outputs: `SystemState / Stage`
 - Engine: one graph runtime for sequential, branching, parallel, join, and loop systems
 - Role resolution: auto-load from project-local `og-roles/roles/<roleId>/`
+- Semantic IR: explicit responsibility seats, conditions, event/state contracts, JoinScope, Loop Scope, and capability budgets
+- Reliability: versioned state snapshots, CAS/idempotent commits, checkpoint replay, and runtime audit adapter ports
+- Visualizer: responsibility-seat graph projections, semantic edge labels, loop channels, modes, Join overlays, and run-state overlays
 
 Non-goals:
 
@@ -36,16 +40,17 @@ CLI installation prerequisites:
 node >= 20
 ```
 
-Install the published CLI with npm:
+Install the current development-test CLI from the source checkout:
 
 ```bash
-npm install -g ogsystem
+npm install -g .
 ```
 
-Install the published CLI with pnpm:
+The package is not currently published to the public npm registry. From another directory, use an
+absolute path to this checkout:
 
 ```bash
-pnpm add -g ogsystem
+pnpm add -g /absolute/path/to/OGSystem
 ```
 
 Uninstall the globally installed CLI:
@@ -80,8 +85,8 @@ ogs visualizer --workdir .
 Stable lifecycle command anchors:
 
 ```bash
-npm install -g ogsystem
-pnpm add -g ogsystem
+npm install -g .
+pnpm add -g "$PWD"
 npm uninstall -g ogsystem
 pnpm remove -g ogsystem
 ogs project create demo-app --template minimal
@@ -95,6 +100,9 @@ ogs visualizer --workdir .
 ```
 
 Generated projects always include `.ogs/`, `system.mmd`, and a local `og-roles/` repo. Model defaults now live under `.ogs/model-selection.json`, and `.ogs/model-catalog.json` records the latest local `opencode models --verbose` snapshot used for scaffolding and diagnostics. The scaffold also writes `.ogs/README.md` with operator notes and JSON examples; keep the runtime JSON files comment-free and use that README for local guidance.
+
+Version `0.2.0` is a development-test release. It uses the current Semantic IR v1 and versioned
+runtime contracts directly; historical DSL, API, and run-data migration is not supported.
 
 Provider credentials and gateway URLs live in the user-level `~/.ogsystem/.env`. OpenCode provider definitions live in `~/.config/opencode/opencode.json` and refer to those environment variables; projects do not contain provider stubs or API keys.
 
