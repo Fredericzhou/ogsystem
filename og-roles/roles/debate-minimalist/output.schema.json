@@ -9,10 +9,23 @@
     "content": { "type": "string" },
     "data": {
       "type": "object",
+      "additionalProperties": true,
       "properties": {
-        "risks": { "type": "string" }
-      },
-      "additionalProperties": true
+        "positions": {
+          "type": "object",
+          "additionalProperties": true,
+          "properties": {
+            "minimalist": {
+              "type": "object",
+              "additionalProperties": true,
+              "properties": {
+                "argument": { "type": "string" },
+                "risks": { "type": "string" }
+              }
+            }
+          }
+        }
+      }
     }
   },
   "additionalProperties": false

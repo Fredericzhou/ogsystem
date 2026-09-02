@@ -17,6 +17,7 @@ Archive rules are documented in [docs/archive/README.md](archive/README.md).
 - [Unified backlog](todo-backlog.md): current active backlog.
 - [Semantic gap implementation plan](semantic-gap-implementation-plan.md): current unimplemented semantics, priorities, and acceptance boundaries.
 - [OGS workflow DSL upgrade plan](ogs-langgraph-dsl-upgrade-plan.md): backend-neutral DSL, semantic IR, contracts, reliability, standards alignment, and development-test roadmap.
+- [OGS visualizer refactor plan](ogs-visualizer-refactor-plan.md): ELK.js layered layout, semantic lanes, responsibility-seat rendering, runtime overlays, interaction views, and layout quality validation.
 - [Ebook draft](ogsystem-ebook.md): long-form explanatory material.
 
 ## Design References

@@ -1,6 +1,6 @@
 # OGS 工作流 DSL 升级计划
 
-状态：开发测试版路线图；阶段 1 已落地并验证，阶段 2–5 仍为后续路线（不承诺历史接口兼容）
+状态：开发测试版路线图；阶段 0–1 与阶段 2 核心语义已落地并验证，阶段 2 的分阶段等待及阶段 3–5 仍按需推进（不承诺历史接口兼容）
 
 本文定义 OGSystem（OGS）向更完整工作流 DSL 演进的方向、边界和实施顺序。它不是 LangGraph 的功能清单，也不把 OGS 定义为 LangGraph 的语法子集。
 
@@ -103,7 +103,7 @@ OGS 采用“规范优先、标准承载、显式边界”的策略：
 | 角色绑定 | model/profile/noop 绑定 | 增加模式和能力校验 |
 | 分支 | `BranchRecord`、`branchId`、`lineageId` | 明确 DSL 语义和过滤规则 |
 | 循环 | `loop.max.<roleId>` | 增加业务 Loop Scope |
-| fan-out / Join | `parallel_split`、`all_of`、`quorum_of` | 完善重复到达、失败、超时和合并规则 |
+| fan-out / Join | `parallel_split`、`all_of`、`quorum_of`、基础 timeout policy | 分阶段 `first_packet/gap` 等待及更复杂资源治理 |
 | flow contract | JSON Schema 的 flow/role input 合同 | 统一事件 Payload 和状态合同 |
 | 错误 | error envelope、错误流和恢复路径 | 声明式 retry/fallback/pause 策略 |
 | 人工审核 | interrupt/resume、review history | 统一任务合同和版本行为 |
@@ -258,7 +258,7 @@ replace、merge、append、increment、max、set-once
 
 Reducer 必须是纯的、确定的、可测试的。不要把内部运行状态（branch、锁、session、checkpoint 元数据）暴露为普通业务字段。
 
-示例：
+示例（仅用于说明业务方如何声明自有字段；`debate_round` 不是 OGS 内置字段）：
 
 ```yaml
 version: "2"
@@ -335,7 +335,7 @@ equals、not、all、any、in、greater_than、less_than、exists
 
 ## 10. Loop Scope
 
-`loop.max.<roleId>` 只限制某个角色的激活次数，不能表达完整业务回合。新增 Loop Scope：
+`loop.max.<roleId>` 只限制某个角色的激活次数，不能表达完整业务回合。新增 Loop Scope。`counter` 仅引用业务方在自身 State Schema 中声明的字段，OGS 不预置 `round`、`debate_round` 或其他领域字段：
 
 ```yaml
 loops:
@@ -410,6 +410,8 @@ joins:
 - quorum 已满足后其他来源的处理。
 
 Join `timeoutSeconds` 必须为正整数；`failurePolicy: wait` 只表示在超时前等待，不能表示无限等待。达到超时后必须执行 `onTimeout`，并记录 expected/ready/missing sources、超时时刻和最终动作。`onTimeout: quorum_continue` 只允许声明在 `quorum_of` Join 上；运行时若尚未达到 `min`，必须转为 `fail` 或按显式的 `failurePolicy` 处理，不能强行继续。
+
+上述是当前已实现的基础 Join 超时合同。`join.first_packet.*`、`join.gap.*` 等分阶段等待窗口仍属于 [RFC](./ogsystem-wait-timeout-semantics-v2.md)，不应在当前 DSL 或产品能力说明中标记为已实现。
 
 Join readiness 默认以结构化 `JoinScopeKey` 判定，而不是以目标节点当前分支数量判定：
 
@@ -792,7 +794,7 @@ overlay 的每个指标必须能回溯到运行状态或审计事件，并标注
 
 ## 22. 分阶段路线
 
-### 阶段 0：规范和基线
+### 阶段 0：规范和基线（已完成）
 
 - 冻结责任席位、branch、lineage、execution 的术语；
 - 记录当前 `SystemDefinition`、`ExecutionPlan` 和 `GraphState` 合同；
@@ -804,18 +806,19 @@ overlay 的每个指标必须能回溯到运行状态或审计事件，并标注
 - 为通用图模式建立 golden IR、golden checkpoint、golden audit 和失败诊断 fixture；
 - 阶段 0 的 IR schema、fixture 和 contract tests 通过后，才进入阶段 1。
 
-### 阶段 1：语义基础
+### 阶段 1：语义基础（已完成）
 
 - State Schema 和受限 Reducer；
 - Event/Payload Schema；
 - Condition AST、类型检查和歧义诊断；
 - 新 DSL 到 IR 的规范化编译。
 
-### 阶段 2：循环、路由和 Join
+### 阶段 2：循环、路由和 Join（核心已完成）
 
 - Loop Scope 和三层预算；
 - 条件路由时序、优先级和 fail-closed；
 - Join 重复到达、超时、失败和 lineage 隔离；
+- `join.first_packet/gap` 分阶段等待超时仍为 RFC，不属于本阶段已交付范围；
 - 运行态和审计投影。
 
 ### 阶段 3：可靠执行
@@ -847,7 +850,7 @@ overlay 的每个指标必须能回溯到运行状态或审计事件，并标注
 - 未声明事件、条件歧义、合同错误和 Join 错配均 fail-closed；
 - branch、lineage 和 loop iteration 不会跨作用域合并；
 - Join readiness 使用结构化 `JoinScopeKey`，显示 `joinId` 与内部 readiness key 不混淆；
-- Join `wait` 不会无限等待，超时后按 `onTimeout` 确定性收敛；
+- 基础 Join `wait` 不会无限等待，超时后按 `onTimeout` 确定性收敛；分阶段 `first_packet/gap` 等待仍不在当前实现内；
 - Loop counter 按 `runId + lineageId + loopId` 隔离，角色激活次数不污染业务回合数；
 - 三类预算在 IR 中有唯一归属，最终生效值已包含 Law/CapabilityPolicy 约束；
 - checkpoint 使用 stateVersion/CAS 或等价幂等事件保证，重复提交不会产生第二次状态副作用；
@@ -866,26 +869,24 @@ overlay 的每个指标必须能回溯到运行状态或审计事件，并标注
 
 ## 24. 成熟度判断
 
-当前 OGS 的图拓扑、基础事件流转、分支、Join、角色输入合同、人工审核和恢复机制已有可用基础；业务级状态 Schema、条件路由、Loop Scope、统一可靠性策略、同版本恢复边界和协议对接仍不完整。
+当前 OGS 的图拓扑、基础事件流转、分支、Join（含基础超时策略）、角色输入合同、状态 reducer、条件路由、Loop Scope、人工审核和同版本恢复机制已有实现与测试覆盖。剩余事项主要是分阶段 Join 等待、人工审核自动过期、外部 signal、可配置执行重试、受控并发、子图运行时和协议对接。
+
+2026-09-03 审查收口：debate 示例的业务字段与 reducer 已统一，嵌套示例的生成控制面文件已隔离；`join.first_packet/gap` 继续保持 RFC，不作为当前实现承诺。
 
 因此，OGS 当前应描述为：
 
 ```text
 方向：符合工作流 DSL 的主流设计原则
-核心：已有稳定运行时基础
-规范：正在形成，尚非行业标准
-生产级完整性：需要按本文路线补齐
+核心：多角色协作流程所需语义已具备稳定运行时基础
+规范：OGS 规范持续收敛，尚非行业标准
+生产级完整性：单机核心闭环可用，长流程与资源治理能力按需补齐
 ```
 
 推荐优先级为：
 
 ```text
-1. Semantic IR 和确定性构建快照
-2. State Schema + Reducer
-3. Condition AST + 路由冲突规则
-4. Loop Scope + Join 完整语义
-5. Event Payload 合同
-6. 幂等、重试、取消、超时和同版本恢复
-7. Engine Adapter 和第二后端验证
-8. 可视化阅读能力与标准协议投影
+1. 业务状态与 Event Payload 合同的具体化
+2. 循环耗尽结果、失败/取消/重试和幂等治理
+3. 按需实现 Human Review 自动过期、外部 signal 或分阶段 Join 等待
+4. 受控并发、Engine Adapter 扩展和标准协议投影
 ```

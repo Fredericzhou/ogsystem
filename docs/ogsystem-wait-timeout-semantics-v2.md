@@ -2,14 +2,14 @@
 
 更新时间：2026-04-14  
 状态：RFC / **未实现**（proposal-only）  
-适用范围：运行时编排层（Join 等待、Join timeout 失败路由、resume 一致性）  
+适用范围：运行时编排层（Join 分阶段等待、timeout 失败路由、resume 一致性）
 权威级别：低于 `src/runtime/*` 与 `docs/ogsystem-orchestration-semantics-v1.md`
 
 ---
 
 ## 0. 目的与范围冻结
 
-本 RFC 只解决一件事：**给 Join 增加可配置、可恢复、可失败路由的等待超时语义**。
+本 RFC 只解决一件事：**在已有基础 Join 总等待超时之上，增加可配置、可恢复、可失败路由的分阶段等待超时语义**。
 
 本版范围固定如下：
 
@@ -32,10 +32,10 @@
 以下是当前代码现状，不是目标语义：
 
 1. Mermaid 元数据白名单只接受既有 `join.mode/join.sources/join.min` 等前缀；`join.first_packet.*`、`join.gap.*`、`join.on_timeout.*` 当前会被拒绝。
-2. runtime 当前没有显式 `joinPending` 状态，也没有独立 timer/tick 机制。
-3. Join readiness 只根据 source 到达情况判断，不包含时间维度。
-4. scheduler 结束条件当前只看 `activeRoles.length === 0`；若未来引入等待窗口而不补 pending 语义，会提前 END。
-5. `ERROR*` 失败路由已经存在，但 Join timeout 目前没有对应的 runtime failure envelope 产出路径。
+2. 基础 Join 已使用 `joinScopes.status=waiting` 并支持总等待超时；分阶段等待尚未具备独立的 `joinPending` 状态、deadline 或 timer/tick 机制。
+3. 当前 Join readiness 只根据 source 到达情况判断；`first_packet` 与 `gap` 的时间维度尚未接入。
+4. scheduler 尚未针对分阶段等待维护独立 pending 生命周期；未来接入时必须避免在等待窗口内提前 END。
+5. `ERROR*` 失败路由已经存在，但分阶段 Join timeout 目前没有对应的 runtime failure envelope 产出路径；基础 Join timeout 使用现有通用超时错误路径。
 
 ---
 

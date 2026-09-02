@@ -1,0 +1,11 @@
+{
+  "configVersion": "2",
+  "executor": "opencode",
+  "roleRepo": "../../og-roles",
+  "runsDir": ".ogs/runs",
+  "workspace": {
+    "rolesDir": "roles",
+    "privateDirName": "private",
+    "workspaceIsolation": "role"
+  }
+}

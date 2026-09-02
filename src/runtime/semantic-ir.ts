@@ -1,5 +1,6 @@
 import { createHash } from "node:crypto";
 import type { SubgraphSpec } from "./subgraph.js";
+import { SYSTEM_END_ROLE_ID } from "./types.js";
 
 export type SemanticIRValueRef =
   | { kind: "literal"; value: string | number | boolean | null }
@@ -148,7 +149,8 @@ export function validateSemanticIR(ir: SemanticIR): SemanticIRDiagnostic[] {
     roleIds.add(seat.roleId);
   }
   for (const [index, transition] of ir.transitions.entries()) {
-    if (!roleIds.has(transition.fromRoleId) || !roleIds.has(transition.toRoleId)) {
+    if (!roleIds.has(transition.fromRoleId) ||
+      (!roleIds.has(transition.toRoleId) && transition.toRoleId !== SYSTEM_END_ROLE_ID)) {
       diagnostics.push({ code: "IR_UNKNOWN_REFERENCE", message: `Transition references an unknown role`, path: `transitions[${index}]` });
     }
     if (!Number.isInteger(transition.priority) || transition.priority < 0) {

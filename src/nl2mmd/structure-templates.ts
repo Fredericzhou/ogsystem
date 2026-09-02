@@ -69,7 +69,7 @@ const TEMPLATES: readonly Nl2MmdStructureTemplate[] = [
     semanticHintLabels: ["entry_hint", "terminal_hint"],
     requiredMetadataKeys: ["system.id", "system.version", "law.global", "entry.role"],
     requiredSlots: [
-      slot("entry", "Declare the entry role and the main linear path.", ["entry.role=debate-minimalist"]),
+      slot("entry", "Declare the entry role and the main linear path.", ["entry.role=role_a"]),
       slot("roles", "List the ordered roles in the single chain.", ["input -> role_a -> role_b -> output"]),
       slot("bindings", "Bind each active role to a direct model ref or exec-bound local tool.", ["model.bind.role_a=opencode/gpt-5-nano"])
     ],

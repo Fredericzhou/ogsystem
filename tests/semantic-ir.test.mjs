@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { mkdtemp, mkdir, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { join, resolve } from "node:path";
 import test from "node:test";
 
 import {
@@ -23,11 +23,15 @@ import {
   validateConditionAst,
   validateSemanticIR
 } from "../dist/runtime/adapter.js";
+import { loadSystemFromMermaid } from "../dist/runtime/parse-mermaid.js";
 import {
   applySemanticBusinessState,
   replayPendingRuntimeCheckpoints
 } from "../dist/runtime/graph-runner.js";
 import { createInitialGraphState } from "../dist/runtime/graph-runtime-state.js";
+import { createExecutionPlan } from "../dist/runtime/execution-plan.js";
+import { planTransition } from "../dist/runtime/transition-planner.js";
+import { createRunConsoleLogger } from "../dist/runtime/console-run-log.js";
 
 function validIr() {
   return {
@@ -224,6 +228,119 @@ test("Loop Scope increments only at its declared boundary", () => {
   const state = { loopCountersByScope: { "lineage::debate": 1 }, loopIterations: {} };
   assert.equal(getTargetLoopIteration({ targetRoleId: "a", currentLoopIteration: 1, state, plan, lineageId: "lineage" }), 1);
   assert.equal(getTargetLoopIteration({ targetRoleId: "b", currentLoopIteration: 1, state, plan, lineageId: "lineage" }), 2);
+});
+
+test("Loop Scope routes a boundary transition to onExhausted at max rounds", () => {
+  const system = {
+    systemId: "loop-exhaustion",
+    systemVersion: "1",
+    entryRoleId: "boundary",
+    roleIds: ["boundary", "summary"],
+    flows: [
+      { fromRoleId: "boundary", toRoleId: "boundary", eventType: "REBUTTAL" },
+      { fromRoleId: "boundary", toRoleId: "summary", eventType: "SUMMARY" },
+      { fromRoleId: "summary", toRoleId: "output", eventType: "DONE" }
+    ],
+    lawBinding: { globalLawRef: "law.test" },
+    talentBinding: {},
+    executionBinding: {},
+    modelBinding: {}
+  };
+  const plan = createExecutionPlan(system);
+  plan.semanticIR = {
+    stateSchema: { defaults: {} },
+    transitions: [],
+    capabilities: { maxRoleActivationsByRoleId: {} },
+    loops: [{
+      loopId: "debate",
+      members: ["boundary"],
+      boundaryRoleId: "boundary",
+      counterField: "round",
+      maxRounds: 1,
+      onExhausted: "summary"
+    }]
+  };
+  const state = createInitialGraphState({ plan, prompt: "loop exhaustion" });
+  const branch = state.branchRecords["boundary@1#1"];
+  state.loopCountersByScope["boundary@1#1::debate"] = 1;
+  const transition = planTransition({
+    runId: "run-loop-exhaustion",
+    state,
+    plan,
+    logger: createRunConsoleLogger(false),
+    errorFlowRoutingEnabled: false,
+    outcome: {
+      version: 1,
+      executionId: "exec-boundary-1",
+      roleId: "boundary",
+      branchId: branch.branchId,
+      loopIteration: 1,
+      sessionKey: "boundary:boundary@1#1",
+      branch,
+      committedAt: "2026-09-02T00:00:00.000Z",
+      status: "ok",
+      selectedEvent: "REBUTTAL",
+      storedResult: {
+        roleId: "boundary",
+        event: "REBUTTAL",
+        content: "continue",
+        data: {},
+        branchId: branch.branchId,
+        lineageId: branch.lineageId,
+        loopIteration: 1
+      },
+      audit: {
+        at: "2026-09-02T00:00:00.000Z",
+        roleId: "boundary",
+        branchId: branch.branchId,
+        loopIteration: 1,
+        exitCode: 0,
+        durationMs: 1,
+        selectedEvent: "REBUTTAL",
+        status: "ok"
+      }
+    }
+  });
+
+  assert.equal(transition.update.status, "running");
+  assert.equal(transition.update.branchRecords?.[branch.branchId]?.status, "completed");
+  const exhaustedBranch = Object.values(transition.update.branchRecords ?? {}).find(
+    (candidate) => candidate.roleId === "summary"
+  );
+  assert.equal(exhaustedBranch?.status, "active");
+  assert.deepEqual(transition.events, [{
+    type: "loop_exhausted",
+    at: transition.events[0].at,
+    loopId: "debate",
+    roleId: "boundary",
+    lineageId: branch.lineageId,
+    loopIteration: 1,
+    maxRounds: 1,
+    onExhausted: "summary"
+  }]);
+});
+
+test("debate example compiles its business state and event contracts", async () => {
+  const exampleRoot = resolve(process.cwd(), "examples", "langgraph-debate-current");
+  const specification = await loadOgsSpecification(exampleRoot);
+  const system = await loadSystemFromMermaid(join(exampleRoot, "system.mmd"));
+  const compiled = compileSemanticIR({ system, specification, maxTransitionsPerRun: 12 });
+
+  assert.equal(compiled.ir.system.systemId, "architecture.debate.current");
+  assert.deepEqual(compiled.ir.stateSchema.reducers, {
+    consensus_reached: "replace",
+    decision: "replace",
+    debate_round: "max",
+    objections: "append",
+    positions: "merge",
+    summary: "replace"
+  });
+  assert.equal(compiled.ir.joins[0].mode, "all_of");
+  assert.equal(compiled.ir.joins[0].timeoutSeconds, 3600);
+  assert.equal(compiled.ir.loops[0].onExhausted, "debate-summary");
+  assert.deepEqual(compiled.ir.events?.SEND_MINIMALIST?.payloadSchema?.required, ["debate_round"]);
+  assert.ok(compiled.ir.events?.DECISION_READY?.payloadSchema);
+  assert.ok(compiled.digest.length > 0);
 });
 
 test("event contracts validate declaration, payload shape, and writable fields", () => {

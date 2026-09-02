@@ -1,6 +1,6 @@
 # OGSystem 语义手册（实现对齐版）
 
-更新时间：2026-08-31
+更新时间：2026-09-02
 适用范围：当前 `src/runtime/*` 的解析器与执行器实现（含 `ERROR*` 语义开关）
 文档级别：二级参考（非权威）。语义最终真相以 `src/runtime/*` 与 `docs/ogsystem-orchestration-semantics-v1.md` 为准。
 
@@ -227,6 +227,14 @@ judgeNode[Role:judge] -->|DONE| output
 - `quorum_of` 必须同时提供 `join.sources` 与 `join.min`。
 - `join.min` 取值范围必须在 `[1, sourceCount]`。
 - 当 `quorum_of` 的 `join.min` 小于 source 数量时，当前实现不允许在该 join 的 `context.map` 中使用 `source(...)`，因为 join 激活时部分 source 可能尚未到达；此时使用 `global.*`，或将阈值设为 source 总数。
+
+### 4.3 Join 基础超时（已实现）
+
+- Join spec 必须使用正整数 `timeoutSeconds`；`failurePolicy: wait` 只表示在该期限内等待，不表示无限等待。
+- 到达期限后按 `onTimeout` 收敛：`fail` 进入失败链，`quorum_continue` 仅允许用于 `quorum_of`（未达到 `min` 时仍失败），`pause` 停止等待，`terminate` 终止运行。
+- 超时会记录 expected、ready、missing sources、Join scope、超时时刻和最终动作，并纳入 checkpoint/resume 对账。
+- 同一 Join scope 只处理一次；迟到 source 不会二次激活 Join。
+- `join.first_packet.*`、`join.gap.*` 等分阶段等待窗口尚未实现，详见 [Join 等待超时 RFC](./ogsystem-wait-timeout-semantics-v2.md)。
 
 ---
 

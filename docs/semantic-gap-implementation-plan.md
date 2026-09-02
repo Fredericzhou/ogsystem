@@ -1,14 +1,14 @@
 # OGSystem 语义缺口与实施计划
 
-更新时间：2026-08-31
-状态：active（P0 已完成，P1/P2 待实施）
+更新时间：2026-09-02
+状态：active（P0 与基础运行语义已完成；剩余 P1/P2 按需实施）
 适用范围：当前 runtime、CLI、Visualizer 与文档声明的语义边界
 
 ## 1. 结论
 
-当前核心语义已经落地：默认事件路由、`parallel_split` 分支激活、`all_of/quorum_of` join、`context.map`、`loop.max`、flow contract、`ERROR*` 异常路由、runtime-native human review、WAL/resume 和日志增量读取均已有实现与测试覆盖。
+当前核心语义已经落地：默认事件路由、`parallel_split` 分支激活、`all_of/quorum_of` join、基础 Join 超时策略（`timeoutSeconds`、`failurePolicy`、`onTimeout`）、`context.map`、`loop.max`、flow contract、`ERROR*` 异常路由、runtime-native human review、WAL/resume 和日志增量读取均已有实现与测试覆盖。
 
-剩余高价值缺口集中在长流程治理、外部异步协作和执行资源治理，不建议继续扩展 DSL 表达能力或 Studio 功能。
+剩余高价值缺口集中在分阶段 Join 等待、长流程治理、外部异步协作和执行资源治理，不建议继续扩展 DSL 表达能力或 Studio 功能。
 
 ## 2. 优先级定义
 
@@ -37,15 +37,15 @@
 
 验收：用户文档、语义文档和 README 均不再暗示 `talent.bind` 当前会选择执行器；解析、构建和现有测试保持不变。
 
-## 4. P1：下一轮 Runtime 实现
+## 4. P1：剩余 Runtime 实现
 
-### P1-1 Join 等待超时
+### P1-1 Join 分阶段等待超时
 
-价值：避免 source 永久不返回时无法区分“仍在等待”和“异常结束”，并支持超时补偿。
+价值：在已有 Join 总等待超时之外，区分首包等待和相邻 source 到达间隔，并支持超时补偿。
 
-当前状态：`docs/ogsystem-wait-timeout-semantics-v2.md` 明确为 RFC/未实现；当前没有 `joinPending`、deadline 或 Join timeout failure envelope。
+当前状态：基础 Join 超时已实现并由 Semantic IR 的 `timeoutSeconds`、`failurePolicy`、`onTimeout` 驱动，包含审计、恢复和 `terminated`/`stopped`/`failed` 收敛。`docs/ogsystem-wait-timeout-semantics-v2.md` 中的 `join.first_packet.*`、`join.gap.*` 和对应 timeout failure envelope 仍为 RFC/未实现。
 
-最小范围：实现 `join.first_packet.*`、`join.gap.*`、`join.on_timeout.*=FAIL`、`GRAPH_JOIN_FIRST_PACKET_TIMEOUT`、`GRAPH_JOIN_GAP_TIMEOUT`、WAL/resume 恢复、单次触发去重和审计。不得引入新的 YAML 配置面。
+最小范围（后续）：实现 `join.first_packet.*`、`join.gap.*`、`join.on_timeout.*=FAIL`、`GRAPH_JOIN_FIRST_PACKET_TIMEOUT`、`GRAPH_JOIN_GAP_TIMEOUT`、WAL/resume 恢复、单次触发去重和审计。不得引入新的 YAML 配置面，也不改变现有基础 Join 超时合同。
 
 验收：旧图行为不变；超时可进入 `ERROR.<code>`、`ERROR` 或 fail-stop；scheduler 不会在仍有 pending join 时提前结束；resume 不重复触发。
 
@@ -105,14 +105,17 @@
 ## 7. 交付顺序
 
 1. 完成 P0 文档与兼容性语义收口。
-2. 实现并验证 Human Review timeout 与 Join timeout。
+2. 按真实长等待需求评估并实现 Human Review timeout 与 Join 分阶段等待超时；基础 Join 超时无需重复建设。
 3. 实现外部 signal 的单机文件型恢复闭环。
 4. 根据 benchmark 决定执行重试、受控并发和观测字段的具体范围。
 5. 最后评估能力标签路由和外部 Worker 合同。
 
 ## 8. 本轮收口记录
 
+- 2026-09-03 示例收口：debate moderator 的示例事件字段统一为 `debate_round`，与示例状态 Schema/reducer 保持一致；该字段不属于 OGS 平台合同。嵌套示例新增 `.gitignore`，隔离生命周期生成的控制面文件与运行产物。
+- 2026-09-03 RFC 澄清：基础 `joinScopes.status=waiting` 与总等待超时属于已实现能力；本 RFC 仅描述尚未实现的 `first_packet/gap` 分阶段等待机制。
 - P0-1 已完成：活跃文档统一将 `parallel_split` 定义为语义分叉/分支激活，明确当前 scheduler 不承诺物理并发。
 - P0-2 已完成：`talent.bind` 统一定义为当前仅保留并参与 fingerprint 的兼容性元数据，未来用于基于能力标签的模型/执行器路由。
+- 基础 Join 超时已完成：`timeoutSeconds`、`failurePolicy`、`onTimeout` 已进入 IR 和运行时主路径；分阶段 `first_packet/gap` 等待继续保留为 RFC。
 - 本轮未改动 parser、execution plan 或 scheduler 行为；因此不改变现有运行时语义和 resume 兼容性。
 - 验证要求：文档漂移检查、类型/构建检查、现有测试与 `git diff --check` 必须通过；归档文档可保留当时的历史语境，不作为当前语义契约。

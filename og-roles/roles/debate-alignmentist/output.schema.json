@@ -9,13 +9,23 @@
     "content": { "type": "string" },
     "data": {
       "type": "object",
+      "additionalProperties": true,
       "properties": {
-        "alignmentAreas": {
-          "type": "array",
-          "items": { "type": "string" }
+        "positions": {
+          "type": "object",
+          "additionalProperties": true,
+          "properties": {
+            "alignmentist": {
+              "type": "object",
+              "additionalProperties": true,
+              "properties": {
+                "argument": { "type": "string" },
+                "alignment_areas": { "type": "array", "items": { "type": "string" } }
+              }
+            }
+          }
         }
-      },
-      "additionalProperties": true
+      }
     }
   },
   "additionalProperties": false

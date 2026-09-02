@@ -1,0 +1,122 @@
+version: "1"
+system:
+  systemId: architecture.debate.current
+  systemVersion: 1.0.0
+
+# Business state is deliberately small. Runtime bookkeeping (branches, joins,
+# checkpoints) remains outside this contract.
+state:
+  schema: contracts/debate-state.schema.json
+  defaults:
+    debate_round: 0
+    positions: {}
+    objections: []
+    consensus_reached: false
+    decision: ""
+    summary: ""
+  reducers:
+    debate_round: max
+    positions: merge
+    objections: append
+    consensus_reached: replace
+    decision: replace
+    summary: replace
+  writable_roles:
+    debate_round: [debate-moderator]
+    positions: [debate-minimalist, debate-alignmentist]
+    objections: [debate-judge]
+    consensus_reached: [debate-judge]
+    decision: [debate-judge]
+    summary: [debate-summary]
+
+roles:
+  debate-moderator:
+    modes:
+      default:
+        events: [SEND_MINIMALIST, SEND_ALIGNMENTIST]
+  debate-minimalist:
+    modes:
+      default:
+        events: [MINIMALIST_DONE]
+  debate-alignmentist:
+    modes:
+      default:
+        events: [ALIGNMENTIST_DONE]
+  debate-judge:
+    modes:
+      default:
+        events: [REBUTTAL_NEEDED, DECISION_READY]
+  debate-summary:
+    modes:
+      default:
+        events: [SUMMARY_READY]
+
+events:
+  SEND_MINIMALIST:
+    payload:
+      schema: contracts/send-round.schema.json
+
+  SEND_ALIGNMENTIST:
+    payload:
+      schema: contracts/send-round.schema.json
+  MINIMALIST_DONE:
+    payload:
+      schema: contracts/minimalist-done.schema.json
+  ALIGNMENTIST_DONE:
+    payload:
+      schema: contracts/alignmentist-done.schema.json
+  REBUTTAL_NEEDED:
+    payload:
+      schema: contracts/rebuttal-needed.schema.json
+  DECISION_READY:
+    payload:
+      schema: contracts/decision-ready.schema.json
+  SUMMARY_READY:
+    payload:
+      schema: contracts/summary-ready.schema.json
+
+# Route conditions are evaluated after the judge's state update is reduced.
+routes:
+  - from: debate-judge
+    event: REBUTTAL_NEEDED
+    to: debate-moderator
+    priority: 1
+    when:
+      op: equals
+      args:
+        - kind: path
+          root: state
+          path: [consensus_reached]
+        - kind: literal
+          value: false
+  - from: debate-judge
+    event: DECISION_READY
+    to: debate-summary
+    priority: 1
+    when:
+      op: equals
+      args:
+        - kind: path
+          root: state
+          path: [consensus_reached]
+        - kind: literal
+          value: true
+
+loops:
+  debate:
+    members: [debate-moderator, debate-minimalist, debate-alignmentist, debate-judge]
+    boundary: debate-moderator
+    counter: debate_round
+    max_rounds: 2
+    on_exhausted: debate-summary
+
+joins:
+  debate-judge:
+    mode: all_of
+    sources: [debate-minimalist, debate-alignmentist]
+    timeoutSeconds: 3600
+    failurePolicy: fail
+    onTimeout: fail
+
+capabilities:
+  max_transitions_per_run: 12

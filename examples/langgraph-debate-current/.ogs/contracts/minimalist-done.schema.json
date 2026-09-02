@@ -1,0 +1,25 @@
+{
+  "version": "1",
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["positions"],
+  "properties": {
+    "positions": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["minimalist"],
+      "properties": {
+        "minimalist": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["argument", "risks"],
+          "properties": {
+            "argument": { "type": "string" },
+            "risks": { "type": "string" }
+          }
+        }
+      }
+    }
+  }
+}

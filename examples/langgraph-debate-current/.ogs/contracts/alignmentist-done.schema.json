@@ -1,0 +1,25 @@
+{
+  "version": "1",
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["positions"],
+  "properties": {
+    "positions": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["alignmentist"],
+      "properties": {
+        "alignmentist": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["argument", "alignment_areas"],
+          "properties": {
+            "argument": { "type": "string" },
+            "alignment_areas": { "type": "array", "items": { "type": "string" } }
+          }
+        }
+      }
+    }
+  }
+}

@@ -13,7 +13,7 @@ OGSystem 是一个面向多角色协作流程的单机编排内核。它使用�
 
 ## 2. 它擅长什么
 
-- **图语义硬化**：`parallel_split`、`all_of/quorum_of` join、`context.map`、`loop.max`、`handoff.mode`、`handoff.contracts` 都在解析和执行两侧被明确约束。
+- **图语义硬化**：`parallel_split`、`all_of/quorum_of` join、基础 Join 超时策略（`timeoutSeconds`、`failurePolicy`、`onTimeout`）、`context.map`、`loop.max`、`handoff.mode`、`handoff.contracts` 都在解析和执行两侧被明确约束。
 - **流合同分层**：`flow contract` 负责边级业务约束，`role_input` 负责接收节点的投影输入校验，runtime 内建 prompt-input schema 继续作为技术层护栏。
 - **静态编译入口**：`src/runtime/compiler.ts` 汇总 system / role / contract / law 的静态摘要，生成稳定 diagnostics 与 compiler digest，并参与 resume 指纹。
 - **文件优先恢复**：运行状态落盘到 `.ogs/runs/<run-id>/`，以 `state.json`、`sessions.json`、`plan-fingerprint.json`、`checkpoints/` 和 `execution-outcome.json` 组成恢复权威集。
@@ -49,6 +49,7 @@ OGSystem 目前是一个很强的单机文件型内核，但仍有明确边界�
 - 指纹校验是严格模式。只要系统定义、角色内容、模型包或 law 变化，resume 就会拒绝继续。
 - 长期运行的主要压力来自状态与产物增长，不是当前语义正确性本身。
 - `ERROR*` 异常流语义已实现，默认由 `runtime.error_flows.v1=false` 灰度控制；未声明或未开启时保持 fail-stop 行为。
+- Join 基础超时策略已实现；`join.first_packet.*`、`join.gap.*` 等分阶段等待仍属于 RFC。`review.timeout` 当前只描述审核预算，不会自动产生过期决定。
 
 这意味着它适合：
 

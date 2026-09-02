@@ -9,10 +9,8 @@
     "content": { "type": "string" },
     "data": {
       "type": "object",
-      "properties": {
-        "round": { "type": "integer" }
-      },
-      "additionalProperties": true
+      "additionalProperties": true,
+      "properties": { "debate_round": { "type": "integer", "minimum": 1 } }
     }
   },
   "additionalProperties": false

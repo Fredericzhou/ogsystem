@@ -93,6 +93,13 @@ npm install -g .
 pnpm add -g /absolute/path/to/OGSystem
 ```
 
+公开发布后，注册表安装命令为：
+
+```bash
+npm install -g ogsystem
+pnpm add -g ogsystem
+```
+
 卸载全局 CLI：
 
 ```bash

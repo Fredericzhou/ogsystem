@@ -53,6 +53,13 @@ absolute path to this checkout:
 pnpm add -g /absolute/path/to/OGSystem
 ```
 
+After a public registry release, the published package can be installed with:
+
+```bash
+npm install -g ogsystem
+pnpm add -g ogsystem
+```
+
 Uninstall the globally installed CLI:
 
 ```bash
