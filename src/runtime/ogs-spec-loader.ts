@@ -43,7 +43,10 @@ async function loadStructuredFile(path: string): Promise<{ value: unknown; versi
 
 export async function loadOgsSpecification(workdir: string): Promise<OgsSpecificationSnapshot> {
   const root = resolve(workdir, ".ogs");
-  const candidates = ["semantics.yaml", "semantics.yml", "semantics.json", "models.yaml", "models.yml", "models.json", "laws.yaml", "laws.yml", "laws.json"];
+  // Law catalogs are runtime configuration validated by config.ts, not versioned semantic sources.
+  // Keeping them out of this snapshot lets a project use the official laws.json shape alongside
+  // semantics.yaml without imposing two incompatible version contracts on one file.
+  const candidates = ["semantics.yaml", "semantics.yml", "semantics.json", "models.yaml", "models.yml", "models.json"];
   const paths: string[] = [];
   for (const candidate of candidates) {
     const path = resolve(root, candidate);

@@ -413,6 +413,24 @@ test("multi-file OGS specification snapshot is version and digest stable", async
   assert.match(snapshot.digest, /^[a-f0-9]{64}$/);
 });
 
+test("semantic specification snapshot excludes the runtime law catalog", async () => {
+  const workdir = await mkdtemp(join(tmpdir(), "ogs-spec-laws-"));
+  await mkdir(join(workdir, ".ogs"), { recursive: true });
+  await writeFile(join(workdir, ".ogs", "semantics.yaml"), [
+    "version: '1'",
+    "system:",
+    "  systemId: demo",
+    "  systemVersion: '1'"
+  ].join("\n"));
+  await writeFile(join(workdir, ".ogs", "laws.json"), JSON.stringify({
+    laws: [{ lawId: "law.demo", constraints: { maxTransitions: 8 } }]
+  }));
+
+  const snapshot = await loadOgsSpecification(workdir);
+  assert.equal(Object.keys(snapshot.sources).length, 1);
+  assert.ok(Object.keys(snapshot.sources).every((path) => !path.endsWith("laws.json")));
+});
+
 test("multi-file OGS specification rejects inconsistent versions", async () => {
   const workdir = await mkdtemp(join(tmpdir(), "ogs-spec-mismatch-"));
   await mkdir(join(workdir, ".ogs"), { recursive: true });
