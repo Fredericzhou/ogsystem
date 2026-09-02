@@ -74,6 +74,10 @@ writerNode[Role:writer] -->|DONE| output
 
 ## 3. 路由语义
 
+反馈建模规则：反馈是已有责任席位之间的事件流，不是默认的独立节点。A 向 B 反馈时使用
+`A --|FEEDBACK|--> B`，由 A 产生事件/Payload、由 B 消费；不要创建 `a-feedback`、`b-feedback`
+等仅表示反馈动作的席位。只有反馈由独立主体承担独立职责、权限和审计责任时，才建立独立角色。
+
 ### 3.1 默认事件路由（无 `role.mode`）
 
 #### 图示
@@ -231,9 +235,10 @@ judgeNode[Role:judge] -->|DONE| output
 ### 4.3 Join 基础超时（已实现）
 
 - Join spec 必须使用正整数 `timeoutSeconds`；`failurePolicy: wait` 只表示在该期限内等待，不表示无限等待。
-- 到达期限后按 `onTimeout` 收敛：`fail` 进入失败链，`quorum_continue` 仅允许用于 `quorum_of`（未达到 `min` 时仍失败），`pause` 停止等待，`terminate` 终止运行。
+- 到达期限后按 `onTimeout` 收敛：`fail` 进入失败链，`quorum_continue` 仅允许用于 `quorum_of`（未达到 `min` 时仍失败），`pause` 将运行置为 `stopped` 并保留等待证据，`terminate` 将运行置为 `terminated`。
 - 超时会记录 expected、ready、missing sources、Join scope、超时时刻和最终动作，并纳入 checkpoint/resume 对账。
 - 同一 Join scope 只处理一次；迟到 source 不会二次激活 Join。
+- Join 的 readiness 作用域由 `runId`、Join 角色、`lineageId` 和 `loopIteration` 组成；UI 用的 `joinId` 只是显示标识，不能替代内部作用域键。
 - `join.first_packet.*`、`join.gap.*` 等分阶段等待窗口尚未实现，详见 [Join 等待超时 RFC](./ogsystem-wait-timeout-semantics-v2.md)。
 
 ---
@@ -314,6 +319,8 @@ mergeNode[Role:merge] -->|DONE| output
 ---
 
 ## 6. 循环语义（`loop.max`）
+
+本节描述 Mermaid 的 `loop.max.<roleId>` 角色激活预算。它与 Semantic IR 的 Loop Scope 业务回合计数不同：Loop Scope 使用 `loopId`，并按 `runId + lineageId + loopId` 隔离；其 `counterField` 必须由业务状态 Schema 声明，OGS 不预置 `round` 等领域字段。
 
 ### 6.1 有界循环
 

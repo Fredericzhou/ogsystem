@@ -108,7 +108,7 @@ OGS 采用“规范优先、标准承载、显式边界”的策略：
 | 错误 | error envelope、错误流和恢复路径 | 声明式 retry/fallback/pause 策略 |
 | 人工审核 | interrupt/resume、review history | 统一任务合同和版本行为 |
 | 持久化 | `state.json`、checkpoint、events | 当前版本快照、幂等和恢复边界 |
-| 运行后端 | LangGraph | 建立显式 Engine Adapter 边界 |
+| 运行后端 | `LangGraphEngineAdapter` 已提供首个适配器实现；OGS runtime 保留路由、合同、恢复和审计职责 | 完善 adapter contract tests，并验证其他后端的可替换性 |
 | 可视化 | GraphViewModel 和运行 overlay | 责任席位 IR、语义布局和图谱交互 |
 
 当前的 `role.mode.*` 是 OGS 图路由模式元数据，不等同于本文第 8 节的执行角色模式；两者必须使用不同的命名空间。
@@ -301,6 +301,11 @@ roles:
 
 运行时输入应显式携带 `roleId`、`mode` 和允许事件。模式选择必须来自已声明的路由/运行状态，不得由提示词自行改变。
 
+反馈是已有责任席位之间的事件流，不是默认的责任席位类型：例如 A 向 B 反馈时，应建模为
+`A --|FEEDBACK|--> B`，由 A 产生事件及其 Payload、由 B 按自身模式消费并继续执行。不得为了表示反馈
+新增 `a-feedback`、`b-feedback` 或其他仅承担“反馈动作”的节点；只有当反馈由独立主体负责，且该主体具有
+独立输入/输出合同、权限或审计责任时，才可以建立独立责任席位。
+
 ## 9. 条件路由
 
 事件是角色提出的候选事实，最终是否允许转移由运行时根据合同和条件决定：
@@ -355,7 +360,7 @@ max_role_activations    单席位异常保护
 max_transitions         全局资源保护
 ```
 
-Loop Scope 必须明确其作用域键。默认使用 `runId + lineageId`，并在需要时结合 `loopIteration`；不得跨 lineage 或跨独立 Join 回合合并计数。每次回合开始、递增、耗尽和拒绝都要写审计。
+Loop Scope 必须明确其作用域键。持久化计数的身份是 `runId + lineageId + loopId`；当前 GraphState 在单个 run 内以 `lineageId::loopId` 保存该计数，`loopIteration` 是该 scope 的回合投影。不得跨 lineage 或跨独立 Loop Scope 合并计数。每次回合开始、递增、耗尽和拒绝都要写审计。
 
 ## 11. 事件和 Payload 合同
 
@@ -427,11 +432,11 @@ JoinScopeKey = {
 
 `joinId` 是面向审计和 UI 的稳定显示标识（例如 `joinRoleId#lineageId#loopIteration`）；readiness key 是内部结构化键，二者不得混用。`joinId` 在一个 run 内必须唯一且不依赖节点数量。实现必须保证 `sourceRoleId` 是 readiness 集合中的独立维度，同一来源重复到达只保留第一次有效 arrival。Join 激活、等待、达标和过期必须可查询、可恢复、可审计。
 
-Loop counter 必须按 `runId + lineageId + loopId` 维护，不能继续只按 roleId 维护全局计数。`loopIteration` 是该 scope 内的业务回合序号；角色激活次数另行按 `runId + lineageId + roleId` 统计。现有按角色的计数结构在实施阶段应替换为上述结构化索引。
+Loop counter 必须按 `runId + lineageId + loopId` 维护，不能只按 roleId 维护全局计数。`loopIteration` 是该 scope 内的业务回合序号；角色激活次数另行按 `runId + lineageId + roleId` 统计。GraphState 中保留的 `loopIterations[roleId]` 只能作为兼容性的角色投影，不能作为 Loop Scope 或 Join readiness 的权威计数。
 
 ## 13. 错误、重试、取消和超时
 
-错误策略应独立于普通业务事件：
+错误策略应独立于普通业务事件。以下是未来声明式错误策略的形状示例，不是当前 Mermaid DSL 的可直接配置合同；当前已实现的错误路由仍使用 Mermaid `ERROR` / `ERROR.<errorCode>` 边，并受 `runtime.error_flows.v1` 控制：
 
 ```yaml
 errors:
@@ -748,8 +753,8 @@ A / responsibility seat
 
 - 在图谱上显示 `human task` 边界，不把人工审核伪装成普通模型角色；
 - 标记进入审核的原因、审核决定集合、超时动作和重做目标；
-- 显示 `pending`、`paused`、`completed`、`expired` 等审核状态；
-- 将 `interrupt`、`resume`、`REWORK` 和 `TERMINATE` 映射为可追踪的语义转换；
+- 显示规范状态 `pending`、`paused`、`resolved`、`expired`；其中 `expired` 仅能来自显式持久化决定，当前 runtime 不自动计时产生过期决定；
+- 将 `interrupt`、`resume` 以及规范决定值 `approve`、`rework`、`pause`、`terminate` 映射为可追踪的语义转换；外部大写或本地化文案必须在边界层转换；
 - 详情面板显示审核请求绑定的 run、branch、lineage、输入快照和审计事件。
 
 审核边界必须从 ReviewSpec/Review IR 推导。UI 不得为了填充视觉结构虚构审核节点、审核人或决定路径。
@@ -826,7 +831,7 @@ overlay 的每个指标必须能回溯到运行状态或审计事件，并标注
 - 声明式 retry、fallback、pause、cancel 和 timeout；
 - 稳定幂等键和副作用策略；
 - 人工审核合同和版本化 resume；
-- Engine Adapter 的 LangGraph 首个实现。
+- Engine Adapter 合同硬化与后端可替换性验证（LangGraph 首个适配器已落地）。
 
 ### 阶段 4：复用和开发体验
 

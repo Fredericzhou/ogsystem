@@ -1,6 +1,6 @@
 # OGSystem Unified Backlog
 
-Date: 2026-05-05
+Date: 2026-09-03
 Status: active
 
 This is the only active backlog entry point. Dated plans, reviews, and checklists stay in `docs/archive/` and are not daily execution lists.
@@ -10,6 +10,10 @@ This is the only active backlog entry point. Dated plans, reviews, and checklist
 - Visualizer platform validation P1/P2 is closed in `docs/archive/delivery/ogsystem-visualizer-platform-validation-execution-plan-2026-05-04.md`.
 - Browser smoke gating, Windows lifecycle smoke, docs drift checks, and CI Playwright Chromium setup are closed in `docs/archive/delivery/ogsystem-cross-platform-visualizer-validation-closure-2026-05-05.md`.
 - Visualizer product usability gate follow-up is closed in `docs/archive/delivery/ogsystem-visualizer-product-usability-gate-followup-2026-05-05.md`.
+- Visualizer UX convergence is closed; the short closure summary is archived at `docs/archive/delivery/visualizer-refactor-closure-summary-2026-05-13.md` and the detailed execution record at `docs/archive/delivery/visualizer-refactor-plan-2026-05-13.md`. Remaining ELK/semantic-layout work is tracked separately below.
+- Responsibility-seat semantics review is closed and consolidated into `docs/ogs-visualizer-refactor-plan.md`, `docs/ogsystem-orchestration-semantics-v1.md`, and `docs/ogsystem-semantics-manual.md`; the review record remains historical at `docs/archive/delivery/ogsystem-visualizer-responsibility-seat-review-2026-09-02.md`.
+- Semantic IR v1 foundations, state reducers, event/payload contracts, condition AST, Loop Scope, Join readiness/timeout, CAS/idempotency, runtime-native review, and ERROR* routing are closed for the current development-test baseline. Current boundaries and remaining gaps are maintained in `docs/semantic-gap-implementation-plan.md`.
+- Generic feedback modeling is closed: `FEEDBACK` is a transition event between existing responsibility seats, not an implicit `a-feedback`/`b-feedback` seat.
 
 ## Current P1
 
@@ -23,6 +27,9 @@ This is the only active backlog entry point. Dated plans, reviews, and checklist
 
 ## Current P1 Visualizer
 
+- [ ] Replace the current Dagre/custom post-layout path with an explicit semantic layout adapter (ELK.js evaluation or a documented Dagre adapter), preserving back edges and route channels.
+- [ ] Add layout quality diagnostics and fixtures for fan-out, Join, cycle, error flow, multi-terminal, label overlap, and stable lane assignment.
+- [ ] Add responsibility-seat graph reading modes: upstream/downstream focus, route probe, main/error/loop/Join filters, and stable URL graph state.
 - [ ] Continue focusing Build around the graph workspace, with Source, Diagnostics, and Readiness as supporting panels.
 - [ ] Continue focusing Operate around selected-run health, failure location, and next actions, with logs, audit, resume diagnostics, and snapshot manifest as drill-down information.
 - [ ] Add explicit long-running Visualizer health and disk-growth signals: `executionDirCount`, retention tier, and latest cleanup recommendation.

@@ -243,6 +243,8 @@ Join 流：Join 节点下方的汇聚通道
 CONTINUE  [primary p1 when:state.round < 3]
 ```
 
+`state.round` 仅是展示条件 AST 的中性占位字段；实际字段必须来自具体项目声明的 State Schema，OGS 不内置 `round` 或其他领域字段。
+
 禁止将原始 YAML 或任意代码字符串直接注入 DOM。长标签显示摘要，详情面板保留完整字段路径、操作符和优先级。
 
 ### 9.2 角色模式
@@ -254,6 +256,9 @@ Reviewer
 mode: normal / escalation
 binding: model-x
 ```
+
+反馈行为沿已有席位之间的 transition 表达，不生成 `a-feedback`、`b-feedback` 等节点。图谱应在
+`A -> B` 的边上显示 `FEEDBACK` 事件及其 Payload/条件摘要；只有独立主体承担反馈职责时才显示独立席位。
 
 ### 9.3 Loop
 
@@ -272,7 +277,7 @@ Join 节点显示 expected、ready、missing sources、等待原因、timeoutSec
 
 ### 9.5 人工审核
 
-人工审核是 runtime control plane 边界，不是普通角色执行节点。画布显示 pending、paused、resolved，以及 branch terminate 和 run terminate 的区别。
+人工审核是 runtime control plane 边界，不是普通角色执行节点。画布显示 `pending`、`paused`、`resolved`，以及 branch terminate 和 run terminate 的区别；`expired` 只表示已持久化的外部过期决定，当前 runtime 不会自动计时产生该状态。
 
 ## 10. 交互视图
 

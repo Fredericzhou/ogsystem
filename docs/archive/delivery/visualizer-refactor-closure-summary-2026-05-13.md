@@ -1,5 +1,9 @@
 # Visualizer 收敛与 UX 重构结项摘要
 
+> Archived closure summary. The detailed historical execution record is [visualizer-refactor-plan-2026-05-13.md](visualizer-refactor-plan-2026-05-13.md); unfinished semantic-layout/ELK work remains in [ogs-visualizer-refactor-plan.md](../../ogs-visualizer-refactor-plan.md).
+>
+> Superseded by: the detailed delivery record above for historical execution details; the active plan above for remaining work.
+
 > 状态：completed
 > 完成时间：2026-05-13
 > 详细 phase 执行记录已归档到 `docs/archive/delivery/visualizer-refactor-plan-2026-05-13.md`

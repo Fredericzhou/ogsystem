@@ -31,8 +31,10 @@ The v1 snapshot keeps the runtime transition path intact:
 
 ## Diagnostics
 
-The facade reports stable diagnostics instead of throwing when it sees manually assembled or inconsistent
-inputs. Current codes cover:
+The `compiler.ts` facade reports stable diagnostics for manually assembled or inconsistent inputs; its
+`CompilerResult.ok` is `false` when an error diagnostic is present. This does not mean all compilation
+stages return normally: the Semantic IR source compiler (`semantic-ir-compiler.ts`) rejects malformed
+specifications by throwing a stable, coded error. Current facade diagnostic codes cover:
 
 - `COMPILER_CONTEXT_SELECTOR_JOIN_ONLY`
 - `COMPILER_CONTEXT_SOURCE_NOT_ALLOWED`
@@ -47,6 +49,8 @@ inputs. Current codes cover:
 
 ## Runtime Boundary
 
-The compiler is advisory and fail-closed for static facts, but it does not replace runtime execution,
-checkpointing, resume, or audit evidence. The compiler digest is included in `plan-fingerprint.json`
-so resume becomes sensitive to semantic compiler changes.
+The compiler is a static summary and validation layer, not an execution engine. It does not replace
+runtime execution, checkpointing, resume, or audit evidence. Static validation is fail-closed: callers
+must not run a plan with `ok === false`, and the Semantic IR compiler rejects invalid source contracts.
+The compiler digest is included in `plan-fingerprint.json` so resume becomes sensitive to semantic
+compiler changes.

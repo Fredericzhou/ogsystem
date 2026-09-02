@@ -528,7 +528,7 @@ OGSystem/
 
 ## 4. system.mmd
 
-Target example:
+Target example (generic binding shape; the role and event names below are illustrative only):
 
 ```mermaid
 flowchart TD
@@ -558,7 +558,7 @@ input -->|ENTER| analyst[Role:demo-analyst]
 analyst[Role:demo-analyst] -->|ANALYSIS_DONE| output
 ```
 
-Graph execution example:
+Graph execution example (debate domain fixture; these role IDs, events, and laws are example-owned and are not OGS platform keywords):
 
 ```mermaid
 flowchart TD

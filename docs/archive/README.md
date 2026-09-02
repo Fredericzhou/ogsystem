@@ -21,3 +21,9 @@
 - Current run directories use `.ogs/`.
 - Current CLI entrypoints are the installed `ogs` command and repository `pnpm run ...` scripts.
 - Old paths, old CLI forms, machine-local absolute paths, and one-off debugging commands inside archive docs are historical context only.
+
+## Theme Consolidation
+
+- Completed Visualizer UX convergence is preserved in `delivery/visualizer-refactor-plan-2026-05-13.md` and its closure summary; unfinished semantic-layout/ELK work remains active in `docs/ogs-visualizer-refactor-plan.md`.
+- Responsibility-seat review conclusions are preserved in `delivery/ogsystem-visualizer-responsibility-seat-review-2026-09-02.md` and copied into the active semantics and visualizer documents.
+- Completed semantic hardening is summarized in the active semantics manuals and tracked as closed work in `docs/todo-backlog.md`; future gaps remain in `docs/semantic-gap-implementation-plan.md`.

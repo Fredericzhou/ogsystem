@@ -1,5 +1,9 @@
 # OGSystem 可视化与责任席位语义评审
 
+> Historical review. Its conclusions are incorporated into the active [OGS visualizer refactor plan](../../ogs-visualizer-refactor-plan.md) and the orchestration semantics manual; this file is not a standalone implementation contract.
+>
+> Superseded by: the active semantics and visualizer documents for current implementation guidance.
+
 更新时间：2026-09-02
 状态：评审结论
 参照项目：[Archify](https://github.com/tt-a1i/archify)
