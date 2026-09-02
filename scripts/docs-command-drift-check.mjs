@@ -8,8 +8,8 @@ const DOCS = [
     path: path.resolve("README.md")
   },
   {
-    label: "docs/usage-manual.md",
-    path: path.resolve("docs", "usage-manual.md")
+    label: "docs/product-manual/usage-manual.md",
+    path: path.resolve("docs", "product-manual", "usage-manual.md")
   }
 ];
 
@@ -31,17 +31,17 @@ const REQUIRED_TEXT = [
   {
     label: "retention tiers",
     pattern: /Retention tiers:/,
-    files: ["docs/usage-manual.md"]
+    files: ["docs/product-manual/usage-manual.md"]
   },
   {
     label: "provider health stable codes",
     pattern: /DOCTOR_PROVIDER_ONLINE_SKIPPED/,
-    files: ["docs/usage-manual.md"]
+    files: ["docs/product-manual/usage-manual.md"]
   },
   {
     label: "redaction authorization boundary",
     pattern: /authorization headers/,
-    files: ["docs/usage-manual.md"]
+    files: ["docs/product-manual/usage-manual.md"]
   }
 ];
 
