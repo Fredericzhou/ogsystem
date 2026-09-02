@@ -16,6 +16,8 @@ const DOCS = [
 const REQUIRED_COMMANDS = [
   "npm install -g ogsystem",
   "pnpm add -g ogsystem",
+  "npm uninstall -g ogsystem",
+  "pnpm remove -g ogsystem",
   "ogs project create demo-app --template minimal",
   "ogs project init",
   "ogs run start --system system.mmd --input \"smoke\" --dry-run",

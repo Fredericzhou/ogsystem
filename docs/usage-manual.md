@@ -90,6 +90,15 @@ npm install -g ogsystem
 pnpm add -g ogsystem
 ```
 
+卸载全局 CLI：
+
+```bash
+npm uninstall -g ogsystem
+pnpm remove -g ogsystem
+```
+
+以上命令只删除 CLI 包，不会删除用户级 `~/.ogsystem` provider 配置，也不会删除项目目录。
+
 从源码目录本地安装 CLI：
 
 ```bash
@@ -1223,6 +1232,8 @@ Stable command anchors mirrored with the README:
 ```bash
 npm install -g ogsystem
 pnpm add -g ogsystem
+npm uninstall -g ogsystem
+pnpm remove -g ogsystem
 ogs project create demo-app --template minimal
 ogs project init
 ogs run start --system system.mmd --input "smoke" --dry-run

@@ -48,6 +48,15 @@ Install the published CLI with pnpm:
 pnpm add -g ogsystem
 ```
 
+Uninstall the globally installed CLI:
+
+```bash
+npm uninstall -g ogsystem
+pnpm remove -g ogsystem
+```
+
+These commands remove the CLI package only. They do not remove `~/.ogsystem` provider configuration or any project directories.
+
 Quick start with the installed CLI:
 
 ```bash
@@ -73,6 +82,8 @@ Stable lifecycle command anchors:
 ```bash
 npm install -g ogsystem
 pnpm add -g ogsystem
+npm uninstall -g ogsystem
+pnpm remove -g ogsystem
 ogs project create demo-app --template minimal
 ogs project init
 ogs run start --system system.mmd --input "smoke" --dry-run
