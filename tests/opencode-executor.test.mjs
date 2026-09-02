@@ -734,6 +734,50 @@ test("executeOpencodeModelRole aborts a session created after timeout", async ()
   ]);
 });
 
+test("executeOpencodeModelRole honors an external node cancellation signal", async () => {
+  const controller = new AbortController();
+  const aborted = [];
+  const execution = executeOpencodeModelRole({
+    roleId: "role-node-cancel",
+    prompt: "cancel",
+    schema: {
+      type: "object",
+      properties: { content: { type: "string" } }
+    },
+    modelPackage: makeModelPackage(),
+    workdir: "/tmp/run/roles/role-node-cancel",
+    timeoutMs: 5000,
+    maxOutputBytes: 4096,
+    signal: controller.signal,
+    runClient: makeRunClient({
+      client: {
+        session: {
+          async create() {
+            return { data: { id: "ses_node_cancel" } };
+          },
+          async prompt() {
+            await new Promise((resolve) => setTimeout(resolve, 100));
+            return { data: { id: "msg_node_cancel", info: { structured: { content: "late" } }, parts: [] } };
+          },
+          async abort(args) {
+            aborted.push(args);
+            return true;
+          }
+        }
+      }
+    })
+  });
+  setTimeout(() => controller.abort(new Error("role node cancelled")), 10);
+
+  await assert.rejects(execution, /role node cancelled/);
+  assert.deepStrictEqual(aborted, [
+    {
+      sessionID: "ses_node_cancel",
+      directory: "/tmp/run/roles/role-node-cancel"
+    }
+  ]);
+});
+
 test("executeOpencodeModelRole retries transient prompt failures on the same session", async () => {
   const createdSessions = [];
   const promptedSessions = [];

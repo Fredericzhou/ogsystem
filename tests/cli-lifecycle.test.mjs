@@ -107,9 +107,7 @@ test("lifecycle cli project init/create commands scaffold project control plane"
   const initTools = JSON.parse(await readFile(path.resolve(tempRoot, "tools.json"), "utf8"));
   const initConsoleTool = await readFile(path.resolve(tempRoot, "scripts", "console-print.mjs"), "utf8");
   const initHelloTool = await readFile(path.resolve(tempRoot, "scripts", "hello-ogsystem.mjs"), "utf8");
-  const initProviderConfig = JSON.parse(
-    await readFile(path.resolve(tempRoot, ".ogs", "providers", "opencode.json"), "utf8")
-  );
+  await assert.rejects(() => stat(path.resolve(tempRoot, ".ogs", "providers")), /ENOENT/);
   await stat(path.resolve(tempRoot, "system.mmd"));
   await stat(path.resolve(tempRoot, "og-roles", "README.md"));
   await assert.rejects(() => stat(path.resolve(tempRoot, "og-roles", "roles", "_shared")), /ENOENT/);
@@ -117,15 +115,6 @@ test("lifecycle cli project init/create commands scaffold project control plane"
   await assert.rejects(() => stat(path.resolve(tempRoot, "og-roles", "roles", "demo-analyst")), /ENOENT/);
   await assert.rejects(() => stat(path.resolve(tempRoot, "og-roles", "roles", "debate-judge")), /ENOENT/);
   await assert.rejects(() => stat(path.resolve(tempRoot, "og-models")), /ENOENT/);
-  assert.equal(initProviderConfig.configPath, "~/.config/opencode/opencode.json");
-  assert.equal(
-    initProviderConfig.recommendedProviderEntry?.openai?.npm,
-    "@ai-sdk/openai-compatible"
-  );
-  assert.equal(
-    initProviderConfig.recommendedProviderEntry?.openai?.options?.setCacheKey,
-    true
-  );
   assert.match(initReadme, /runtime\.json/);
   assert.match(initReadme, /model-selection\.json/);
   assert.match(initReadme, /profiles\.json/);
@@ -158,19 +147,12 @@ test("lifecycle cli project init/create commands scaffold project control plane"
   const createdReadme = await readFile(createdReadmePath, "utf8");
   const createdProfiles = JSON.parse(await readFile(path.resolve(createdDir, "profiles.json"), "utf8"));
   const createdTools = JSON.parse(await readFile(path.resolve(createdDir, "tools.json"), "utf8"));
-  const createdProviderConfig = JSON.parse(
-    await readFile(path.resolve(createdDir, ".ogs", "providers", "opencode.json"), "utf8")
-  );
+  await assert.rejects(() => stat(path.resolve(createdDir, ".ogs", "providers")), /ENOENT/);
   await stat(path.resolve(createdDir, "system.mmd"));
   await assert.rejects(() => stat(path.resolve(createdDir, "og-roles", "roles", "_shared")), /ENOENT/);
   await stat(path.resolve(createdDir, "og-roles", "roles", "hello-ogsystem", "role.json"));
   await assert.rejects(() => stat(path.resolve(createdDir, "og-roles", "roles", "demo-analyst")), /ENOENT/);
   await assert.rejects(() => stat(path.resolve(createdDir, "og-models")), /ENOENT/);
-  assert.equal(createdProviderConfig.configPath, "~/.config/opencode/opencode.json");
-  assert.equal(
-    createdProviderConfig.recommendedProviderEntry?.openai?.models?.["gpt-5.4"]?.name,
-    "GPT-5.4"
-  );
   assert.match(createdReadme, /model-catalog\.json/);
   assert.match(createdReadme, /workspaceIsolation/);
   assert.ok(createdProfiles.some((entry) => entry?.profileId === "profile.console.print"));

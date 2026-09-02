@@ -177,6 +177,7 @@ export async function runCliTool(args: {
   workdir: string;
   timeoutMs: number;
   maxOutputBytes: number;
+  signal?: AbortSignal;
   dryRun?: boolean;
   dryRunOutput?: {
     event?: string;
@@ -214,6 +215,10 @@ export async function runCliTool(args: {
       stdio: ["pipe", "pipe", "pipe"]
     });
 
+    const removeAbortListener = () => {
+      args.signal?.removeEventListener("abort", onAbort);
+    };
+
     // Invariant: once any path resolves/rejects the promise, the result is fixed and later child events are ignored.
     const rejectOnce = (error: Error) => {
       if (settled) {
@@ -221,6 +226,7 @@ export async function runCliTool(args: {
       }
       settled = true;
       clearTimeout(timer);
+      removeAbortListener();
       reject(error);
     };
 
@@ -230,6 +236,7 @@ export async function runCliTool(args: {
       }
       settled = true;
       clearTimeout(timer);
+      removeAbortListener();
       resolve({
         exitCode,
         stdout,
@@ -261,6 +268,20 @@ export async function runCliTool(args: {
         new ToolExecutionError("timeout", `Command timeout after ${args.timeoutMs}ms`)
       );
     }, args.timeoutMs);
+
+    const onAbort = () => {
+      child.kill("SIGTERM");
+      rejectOnce(
+        args.signal?.reason instanceof Error
+          ? args.signal.reason
+          : new ToolExecutionError("timeout", `Command timeout after ${args.timeoutMs}ms`)
+      );
+    };
+    args.signal?.addEventListener("abort", onAbort, { once: true });
+    if (args.signal?.aborted) {
+      onAbort();
+      return;
+    }
 
     if (args.tool.stdinMode === "text") {
       child.stdin.write(args.vars.prompt ?? "");

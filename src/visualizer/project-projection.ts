@@ -85,7 +85,6 @@ const PROJECT_CONTROLLED_PATHS = [
   ".ogs/laws.json",
   ".ogs/user-profile.json",
   ".ogs/runs-index.json",
-  ".ogs/providers/opencode.json",
   ".ogs/README.md",
   ".ogs/studio/system.authoring.json"
 ];

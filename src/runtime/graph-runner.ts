@@ -8,7 +8,17 @@
  */
 import { resolve } from "node:path";
 
-import { Annotation, END, START, StateGraph } from "@langchain/langgraph";
+import {
+  Annotation,
+  END,
+  GraphDrained,
+  isGraphDrained,
+  isNodeTimeoutError,
+  RunControl,
+  START,
+  StateGraph
+} from "@langchain/langgraph";
+import type { LangGraphRunnableConfig } from "@langchain/langgraph";
 
 import { createRunConsoleLogger } from "./console-run-log.js";
 import type { Executor } from "./executor.js";
@@ -91,6 +101,8 @@ const GRAPH_RECURSION_MARGIN = 20;
 const RECENT_AUDIT_WINDOW = 5;
 const GANTT_RENDER_LIMIT = 200;
 const TEST_CRASH_AFTER_EXECUTION_OUTCOME_ENV = "OGSYSTEM_TEST_CRASH_AFTER_EXECUTION_OUTCOME";
+const DEFAULT_ROLE_EXECUTION_TIMEOUT_MS = 120000;
+const ROLE_NODE_TIMEOUT_GRACE_MS = 5000;
 
 type RunnerInput = {
   plan: ExecutionPlan;
@@ -114,7 +126,28 @@ type RunnerInput = {
   };
   errorFlowRoutingEnabled: boolean;
   logRun: boolean;
+  runControl?: RunControl;
 };
+
+/**
+ * LangGraph times out a node attempt, while the executor timeout covers only the external
+ * backend call. Keep a small persistence/serialization grace period around the same effective
+ * role budget so a slow backend cannot leave the graph node unbounded.
+ */
+export function resolveRoleNodeTimeoutMs(
+  node: ExecutionPlanNode,
+  profilesById: Map<string, ExecutionProfile>
+): number | undefined {
+  if (node.binding.kind === "model") {
+    return (node.binding.timeoutMs ?? DEFAULT_ROLE_EXECUTION_TIMEOUT_MS) + ROLE_NODE_TIMEOUT_GRACE_MS;
+  }
+  if (node.binding.kind === "profile") {
+    return (
+      profilesById.get(node.binding.profileId)?.timeoutMs ?? DEFAULT_ROLE_EXECUTION_TIMEOUT_MS
+    ) + ROLE_NODE_TIMEOUT_GRACE_MS;
+  }
+  return undefined;
+}
 
 function mergeStatus(current: GraphRunStatus, update: GraphRunStatus): GraphRunStatus {
   if (current === "failed" || update === "failed") {
@@ -858,6 +891,7 @@ async function persistAfterCleanup(args: {
  */
 export async function runSystemWithGraphRunner(args: RunnerInput): Promise<AdapterRunResult> {
   const logger = createRunConsoleLogger(args.logRun);
+  const runControl = args.runControl ?? new RunControl();
   let runtimeIndexes = buildRuntimeIndexes(
     args.initialState ?? createInitialGraphState({ plan: args.plan, prompt: args.prompt })
   );
@@ -872,7 +906,8 @@ export async function runSystemWithGraphRunner(args: RunnerInput): Promise<Adapt
 
   for (const roleId of args.plan.roleIds) {
     const node = getExecutionPlanNode(args.plan, roleId);
-    graphBuilder.addNode(roleId, async (state: GraphState) => {
+    const roleNodeTimeoutMs = resolveRoleNodeTimeoutMs(node, args.profilesById);
+    graphBuilder.addNode(roleId, async (state: GraphState, config?: LangGraphRunnableConfig) => {
       const activeBranches = listActiveBranches(state, roleId, runtimeIndexes);
       if (activeBranches.length === 0) {
         return {};
@@ -881,116 +916,113 @@ export async function runSystemWithGraphRunner(args: RunnerInput): Promise<Adapt
       let workingState = state;
       let combinedUpdate: GraphUpdate = {};
 
-      for (const branch of activeBranches) {
-        const result = await executeRoleNode({
-          roleId,
-          node,
-          plan: args.plan,
-          state: workingState,
-          branch,
-          effectiveLaw: args.effectiveLaw,
-          profilesById: args.profilesById,
-          toolsByRef: args.toolsByRef,
-          rolePackagesByRoleId: args.rolePackagesByRoleId,
-          contractPlan: args.contractPlan,
-          compilerSnapshot: args.compilerSnapshot,
-          runContext: args.runContext,
-          executor: args.executor,
-          userProfile: args.userProfile,
-          workdir: args.workdir,
-          commandBaseDir: args.commandBaseDir,
-          logger
-        });
+      // One branch per node attempt keeps LangGraph's timeout scoped to one role execution.
+      const branch = activeBranches[0];
+      const result = await executeRoleNode({
+        roleId,
+        node,
+        plan: args.plan,
+        state: workingState,
+        branch,
+        effectiveLaw: args.effectiveLaw,
+        profilesById: args.profilesById,
+        toolsByRef: args.toolsByRef,
+        rolePackagesByRoleId: args.rolePackagesByRoleId,
+        contractPlan: args.contractPlan,
+        compilerSnapshot: args.compilerSnapshot,
+        runContext: args.runContext,
+        executor: args.executor,
+        userProfile: args.userProfile,
+        workdir: args.workdir,
+        commandBaseDir: args.commandBaseDir,
+        logger,
+        signal: config?.signal
+      });
 
-        const transitionPlan = planTransition({
-          state: workingState,
-          plan: args.plan,
-          contractPlan: args.contractPlan,
-          outcome: {
-            version: 1,
-            executionId: result.executionId,
-            roleId,
-            branchId: branch.branchId,
-            loopIteration: branch.loopIteration,
-            sessionKey: "",
-            branch,
-            committedAt: new Date().toISOString(),
-            ...(result.status === "failed"
-              ? {
-                  status: "failed" as const,
-                  error: result.error,
-                  failure: result.failure,
-                  audit: result.audit
-                }
-              : {
-                  status: result.status,
-                  selectedEvent: result.selectedEvent,
-                  storedResult: result.storedResult,
-                  audit: result.audit
-                })
-          },
-          logger,
-          errorFlowRoutingEnabled: args.errorFlowRoutingEnabled,
-          indexes: runtimeIndexes
-        });
-        for (const reviewRequest of transitionPlan.reviewRequests ?? []) {
-          await filesystemReviewStore.persistRequest({
-            context: args.runContext,
-            review: reviewRequest
-          });
-        }
-
-        maybeCrashAfterExecutionOutcome();
-        const checkpoint = await filesystemCheckpointStore.persist({
-          context: args.runContext,
+      const transitionPlan = planTransition({
+        state: workingState,
+        plan: args.plan,
+        contractPlan: args.contractPlan,
+        outcome: {
+          version: 1,
+          executionId: result.executionId,
           roleId,
           branchId: branch.branchId,
           loopIteration: branch.loopIteration,
-          executionId: result.executionId,
-          update: transitionPlan.update
+          sessionKey: "",
+          branch,
+          committedAt: new Date().toISOString(),
+          ...(result.status === "failed"
+            ? {
+                status: "failed" as const,
+                error: result.error,
+                failure: result.failure,
+                audit: result.audit
+              }
+            : {
+                status: result.status,
+                selectedEvent: result.selectedEvent,
+                storedResult: result.storedResult,
+                audit: result.audit
+              })
+        },
+        logger,
+        errorFlowRoutingEnabled: args.errorFlowRoutingEnabled,
+        indexes: runtimeIndexes
+      });
+      for (const reviewRequest of transitionPlan.reviewRequests ?? []) {
+        await filesystemReviewStore.persistRequest({
+          context: args.runContext,
+          review: reviewRequest
         });
-        const roleDirs = args.runContext.roleDirsById.get(roleId);
-        if (!roleDirs) {
-          throw new Error(`Role run directory missing for "${roleId}"`);
-        }
-        await filesystemCheckpointStore.markOutcomeReconciled({
-          executionDir: resolve(roleDirs.executionsDir, result.executionId),
-          checkpointSequence: checkpoint.checkpointSequence
-        });
-        for (const event of transitionPlan.events) {
-          await appendEvent(args.runContext, event);
-        }
+      }
 
-        workingState = applyGraphUpdate(workingState, checkpoint.update);
-        runtimeIndexes = applyGraphUpdateToIndexes(runtimeIndexes, checkpoint.update);
-        combinedUpdate = mergeGraphUpdates(combinedUpdate, checkpoint.update);
+      maybeCrashAfterExecutionOutcome();
+      const checkpoint = await filesystemCheckpointStore.persist({
+        context: args.runContext,
+        roleId,
+        branchId: branch.branchId,
+        loopIteration: branch.loopIteration,
+        executionId: result.executionId,
+        update: transitionPlan.update
+      });
+      const roleDirs = args.runContext.roleDirsById.get(roleId);
+      if (!roleDirs) {
+        throw new Error(`Role run directory missing for "${roleId}"`);
+      }
+      await filesystemCheckpointStore.markOutcomeReconciled({
+        executionDir: resolve(roleDirs.executionsDir, result.executionId),
+        checkpointSequence: checkpoint.checkpointSequence
+      });
+      for (const event of transitionPlan.events) {
+        await appendEvent(args.runContext, event);
+      }
 
-        if (workingState.status === "running") {
-          // Trade-off: stop requests are honored as soon as we see them but still let the current
-          // transition complete so auditing stays consistent.
-          const stopRequest = await readRunStopRequest(args.runContext.runDir);
-          if (stopRequest) {
-            const stopUpdate: GraphUpdate = { status: "stopping" };
-            workingState = applyGraphUpdate(workingState, stopUpdate);
-            runtimeIndexes = applyGraphUpdateToIndexes(runtimeIndexes, stopUpdate);
-            combinedUpdate = mergeGraphUpdates(combinedUpdate, stopUpdate);
-            await appendEvent(args.runContext, {
-              type: "run_stopping",
-              at: new Date().toISOString(),
-              requestedAt: stopRequest.requestedAt,
-              requestedByPid: stopRequest.requestedByPid,
-              reason: stopRequest.reason
-            });
-          }
-        }
+      workingState = applyGraphUpdate(workingState, checkpoint.update);
+      runtimeIndexes = applyGraphUpdateToIndexes(runtimeIndexes, checkpoint.update);
+      combinedUpdate = mergeGraphUpdates(combinedUpdate, checkpoint.update);
 
-        if (workingState.status !== "running") {
-          break;
+      if (workingState.status === "running") {
+        // Trade-off: stop requests are honored as soon as we see them but still let the current
+        // transition complete so auditing stays consistent.
+        const stopRequest = await readRunStopRequest(args.runContext.runDir);
+        if (stopRequest) {
+          const stopUpdate: GraphUpdate = { status: "stopping" };
+          workingState = applyGraphUpdate(workingState, stopUpdate);
+          runtimeIndexes = applyGraphUpdateToIndexes(runtimeIndexes, stopUpdate);
+          combinedUpdate = mergeGraphUpdates(combinedUpdate, stopUpdate);
+          await appendEvent(args.runContext, {
+            type: "run_stopping",
+            at: new Date().toISOString(),
+            requestedAt: stopRequest.requestedAt,
+            requestedByPid: stopRequest.requestedByPid,
+            reason: stopRequest.reason
+          });
         }
       }
 
       return combinedUpdate;
-    });
+    }, roleNodeTimeoutMs ? { timeout: roleNodeTimeoutMs } : undefined);
     graphBuilder.addEdge(roleId, SCHEDULER_NODE_ID);
   }
 
@@ -1042,14 +1074,58 @@ export async function runSystemWithGraphRunner(args: RunnerInput): Promise<Adapt
   const recursionLimit = calculateGraphRecursionLimit(args.effectiveLaw.maxTransitions);
   // Trade-off: we double the transition budget for the scheduler hops so recursion depth stays
   // bounded even when LangGraph counts scheduler nodes and role nodes separately.
-  const stream = await graph.stream(finalState, {
-    streamMode: "values",
-    recursionLimit
-  });
+  const stopRequestBeforeStart = await readRunStopRequest(args.runContext.runDir);
+  if (stopRequestBeforeStart) {
+    runControl.requestDrain(stopRequestBeforeStart.reason);
+  }
 
-  for await (const chunk of stream) {
-    finalState = chunk;
-    await persistProjectedState({ state: finalState, plan: args.plan, runContext: args.runContext });
+  try {
+    const stream = await graph.stream(finalState, {
+      streamMode: "values",
+      recursionLimit,
+      control: runControl
+    });
+
+    for await (const chunk of stream) {
+      finalState = chunk;
+      await persistProjectedState({ state: finalState, plan: args.plan, runContext: args.runContext });
+      if (finalState.status === "stopping" && !runControl.drainRequested) {
+        runControl.requestDrain(finalState.error || "stop requested");
+      }
+    }
+  } catch (error) {
+    if (isGraphDrained(error) || error instanceof GraphDrained) {
+      // The latest durable role checkpoint may have been written before LangGraph observed the
+      // drain request. Replay it so the stop result never regresses the persisted frontier.
+      const replay = await replayPendingRuntimeCheckpoints({
+        state: finalState,
+        runContext: args.runContext
+      });
+      finalState = replay.state.status === "running"
+        ? { ...replay.state, status: "stopping" }
+        : replay.state;
+      await persistProjectedState({ state: finalState, plan: args.plan, runContext: args.runContext });
+    } else if (isNodeTimeoutError(error)) {
+      const roleId = args.plan.roleIds.includes(error.node) ? error.node : undefined;
+      const message = `Role node "${error.node}" timed out after ${error.elapsed}ms`;
+      finalState = {
+        ...finalState,
+        status: "failed",
+        error: message,
+        errorEnvelope: {
+          errorCode: "ROLE_NODE_TIMEOUT",
+          errorCategory: "execution",
+          message,
+          retryable: true,
+          stage: "execute",
+          runId: args.runContext.runId,
+          roleId
+        }
+      };
+      await persistProjectedState({ state: finalState, plan: args.plan, runContext: args.runContext });
+    } else {
+      throw error;
+    }
   }
 
   if (finalState.status === "running" && args.contractPlan?.handoffMode === "transition") {

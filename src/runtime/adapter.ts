@@ -5,6 +5,7 @@
  */
 import { createDefaultExecutor } from "./executor.js";
 import { runSystemWithGraphRunner } from "./graph-runner.js";
+import { RunControl } from "@langchain/langgraph";
 import { createRuntimeError, normalizeRuntimeError } from "./runtime-errors.js";
 import { filesystemRunStore } from "./run-store.js";
 import { prepareRuntimeSetup, type RuntimeAdapterSetup } from "./runtime-setup.js";
@@ -125,33 +126,43 @@ export async function runSystemWithAdapter(args: {
           }
         }
 
-        result = await runSystemWithGraphRunner({
-          plan: setup.plan,
-          effectiveLaw: setup.effectiveLaw,
-          contractPlan: setup.contractPlan,
-          compilerSnapshot: setup.compilerSnapshot,
-          profilesById: setup.profilesById,
-          toolsByRef: setup.toolsByRef,
-          userProfile: setup.userProfile,
-          workdir: setup.targetDir,
-          commandBaseDir: args.workdir,
-          rolePackagesByRoleId: setup.rolePackagesByRoleId,
-          runContext: setup.runContext,
-          executor,
-          prompt: args.prompt,
-          initialState,
-          cleanupExecutionHistory: args.cleanupExecutionHistory,
-          autoCleanupRetention:
-            args.cleanupExecutionHistory === undefined &&
-            setup.runtimeConfig.retention?.enabled
-              ? {
-                  executionDirThreshold: setup.runtimeConfig.retention.executionDirThreshold,
-                  keepLatest: setup.runtimeConfig.retention.keepLatest
-                }
-              : undefined,
-          errorFlowRoutingEnabled: setup.runtimeConfig.runtime.error_flows.v1,
-          logRun: args.logRun ?? false
-        });
+        const runControl = new RunControl();
+        const requestDrain = (signal: string) => runControl.requestDrain(signal);
+        process.on("SIGTERM", requestDrain);
+        process.on("SIGINT", requestDrain);
+        try {
+          result = await runSystemWithGraphRunner({
+            plan: setup.plan,
+            effectiveLaw: setup.effectiveLaw,
+            contractPlan: setup.contractPlan,
+            compilerSnapshot: setup.compilerSnapshot,
+            profilesById: setup.profilesById,
+            toolsByRef: setup.toolsByRef,
+            userProfile: setup.userProfile,
+            workdir: setup.targetDir,
+            commandBaseDir: args.workdir,
+            rolePackagesByRoleId: setup.rolePackagesByRoleId,
+            runContext: setup.runContext,
+            executor,
+            prompt: args.prompt,
+            initialState,
+            cleanupExecutionHistory: args.cleanupExecutionHistory,
+            autoCleanupRetention:
+              args.cleanupExecutionHistory === undefined &&
+              setup.runtimeConfig.retention?.enabled
+                ? {
+                    executionDirThreshold: setup.runtimeConfig.retention.executionDirThreshold,
+                    keepLatest: setup.runtimeConfig.retention.keepLatest
+                  }
+                : undefined,
+            errorFlowRoutingEnabled: setup.runtimeConfig.runtime.error_flows.v1,
+            logRun: args.logRun ?? false,
+            runControl
+          });
+        } finally {
+          process.off("SIGTERM", requestDrain);
+          process.off("SIGINT", requestDrain);
+        }
       } catch (error) {
         executionError = createRuntimeError(
           normalizeRuntimeError(error, {

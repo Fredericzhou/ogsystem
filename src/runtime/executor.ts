@@ -55,6 +55,7 @@ export type ExecutorRequest = {
   env?: Record<string, string>;
   timeoutMs: number;
   maxOutputBytes: number;
+  signal?: AbortSignal;
   dryRunOutputEvent?: string;
   sessionId?: string;
 };
@@ -204,6 +205,7 @@ export function createDefaultExecutor(args: {
                 directory: request.directory,
                 timeoutMs: request.timeoutMs,
                 maxOutputBytes: request.maxOutputBytes,
+                signal: request.signal,
                 runClient,
                 sessionId: request.sessionId
               });
@@ -225,6 +227,7 @@ export function createDefaultExecutor(args: {
         workdir: request.workdir,
         timeoutMs: request.timeoutMs,
         maxOutputBytes: request.maxOutputBytes,
+        signal: request.signal,
         dryRun: args.dryRun,
         dryRunOutput: {
           event: request.dryRunOutputEvent

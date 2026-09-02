@@ -23,7 +23,7 @@ test("nl2mmd context discovers supported dictionary, roles, and models", async (
   });
 
   assert.ok(context.roleCatalog.some((item) => item.roleId === "debate-judge"));
-  assert.ok(context.modelCatalog.some((item) => item.modelRef === "opencode/gpt-5-nano"));
+  assert.ok(context.modelCatalog.some((item) => item.modelRef.endsWith("/gpt-5-nano")));
   assert.deepStrictEqual(context.supportedDictionary.roleModes, ["parallel_split"]);
   assert.deepStrictEqual(context.supportedDictionary.joinModes, ["all_of", "quorum_of"]);
   assert.ok(context.supportedDictionary.exactMetadataKeys.includes("handoff.mode"));
@@ -182,5 +182,5 @@ test("nl2mmd search helpers suggest likely roles and models from free text", asy
   const modelMatches = searchModels(context, "gpt 5 nano");
 
   assert.ok(roleMatches.slice(0, 3).some((item) => item.item.roleId === "debate-judge"));
-  assert.strictEqual(modelMatches[0].item.modelRef, "opencode/gpt-5-nano");
+  assert.match(modelMatches[0].item.modelRef, /\/gpt-5-nano$/);
 });

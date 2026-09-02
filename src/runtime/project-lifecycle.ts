@@ -45,7 +45,6 @@ const OGS_PROJECT_FILE = ".ogs/project.json";
 const OGS_RUNTIME_FILE = ".ogs/runtime.json";
 const OGS_MODEL_CATALOG_FILE = ".ogs/model-catalog.json";
 const OGS_MODEL_SELECTION_FILE = ".ogs/model-selection.json";
-const OGS_PROVIDER_OPENCODE_FILE = ".ogs/providers/opencode.json";
 const OGS_LAWS_FILE = ".ogs/laws.json";
 const OGS_USER_PROFILE_FILE = ".ogs/user-profile.json";
 const DEFAULT_DEBUG_TOOL_SCRIPT_FILE = "scripts/console-print.mjs";
@@ -337,34 +336,6 @@ function createDefaultRuntimeConfig(): Record<string, unknown> {
   };
 }
 
-function createDefaultOpencodeProviderReference(): Record<string, unknown> {
-  return {
-    provider: "opencode",
-    lifecycle: "single-serve-multi-session",
-    configPath: "~/.config/opencode/opencode.json",
-    note: [
-      "Reference only.",
-      "Copy recommendedProviderEntry.openai into ~/.config/opencode/opencode.json under provider.openai.",
-      "Replace placeholder secrets locally and do not commit real API keys."
-    ].join(" "),
-    recommendedProviderEntry: {
-      openai: {
-        npm: "@ai-sdk/openai-compatible",
-        options: {
-          baseURL: "https://your-openai-compatible-endpoint/v1",
-          apiKey: "REPLACE_WITH_REAL_API_KEY",
-          setCacheKey: true
-        },
-        models: {
-          "gpt-5.4": {
-            name: "GPT-5.4"
-          }
-        }
-      }
-    }
-  };
-}
-
 function createDefaultUserProfile(): Record<string, unknown> {
   return {
     userProfileId: "default.zh.concise",
@@ -471,7 +442,7 @@ function createDefaultOgsReadme(): string {
     "- `runtime.json`: Main runtime config. Safe place to change workspace and execution defaults.",
     "- `model-selection.json`: Default model routing and per-system overrides.",
     "- `model-catalog.json`: Generated catalog from `ogs project sync-models`. Usually do not edit manually.",
-    "- `providers/opencode.json`: Reference template for wiring OpenCode provider config on the local machine.",
+    "- Provider credentials and gateway URLs: user-level `~/.ogsystem/.env` (loaded for OpenCode).",
     "- `laws.json`: Project laws and transition constraints used by the runtime.",
     "- `user-profile.json`: Default user preference profile injected into runs.",
     "- `profiles.json`: Exec profiles that bind `exec.bind.*` roles to local tools.",
@@ -557,7 +528,6 @@ function createDefaultOgsReadme(): string {
     "",
     "## Reference-only files",
     "",
-    "- `providers/opencode.json` is a local wiring reference. Copy the recommended provider entry into the real OpenCode config and replace placeholder secrets locally.",
     "- `project.json`, `model-catalog.json`, and `runs-index.json` are mostly generated artifacts. Manual edits may be overwritten by lifecycle commands."
   ].join("\n");
 }
@@ -1262,7 +1232,6 @@ export function resolveOgsPaths(workdir: string): {
   runtimePath: string;
   modelCatalogPath: string;
   modelSelectionPath: string;
-  providerPath: string;
   lawsPath: string;
   userProfilePath: string;
 } {
@@ -1275,7 +1244,6 @@ export function resolveOgsPaths(workdir: string): {
     runtimePath: resolve(workdir, OGS_RUNTIME_FILE),
     modelCatalogPath: resolve(workdir, OGS_MODEL_CATALOG_FILE),
     modelSelectionPath: resolve(workdir, OGS_MODEL_SELECTION_FILE),
-    providerPath: resolve(workdir, OGS_PROVIDER_OPENCODE_FILE),
     lawsPath: resolve(workdir, OGS_LAWS_FILE),
     userProfilePath: resolve(workdir, OGS_USER_PROFILE_FILE)
   };
@@ -1322,7 +1290,6 @@ export async function ensureProjectSkeleton(args: {
   const paths = resolveOgsPaths(args.workdir);
   await mkdir(paths.ogsDir, { recursive: true });
   await mkdir(paths.runsDir, { recursive: true });
-  await mkdir(resolve(paths.ogsDir, "providers"), { recursive: true });
   await mkdir(resolve(args.workdir, "scripts"), { recursive: true });
   if (args.targetDir) {
     const targetStat = await stat(args.targetDir).catch(() => undefined);
@@ -1356,10 +1323,6 @@ export async function ensureProjectSkeleton(args: {
     await ensureFile(paths.projectPath, `${stringifyJson(defaultProjectRecord)}\n`);
   }
   await ensureFile(paths.runtimePath, `${stringifyJson(createDefaultRuntimeConfig())}\n`);
-  await ensureFile(
-    paths.providerPath,
-    `${stringifyJson(createDefaultOpencodeProviderReference())}\n`
-  );
   await ensureFile(
     paths.runsIndexPath,
     `${stringifyJson({

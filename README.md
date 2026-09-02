@@ -85,7 +85,7 @@ ogs visualizer --workdir .
 
 Generated projects always include `.ogs/`, `system.mmd`, and a local `og-roles/` repo. Model defaults now live under `.ogs/model-selection.json`, and `.ogs/model-catalog.json` records the latest local `opencode models --verbose` snapshot used for scaffolding and diagnostics. The scaffold also writes `.ogs/README.md` with operator notes and JSON examples; keep the runtime JSON files comment-free and use that README for local guidance.
 
-Generated projects also include `.ogs/providers/opencode.json` as a reference sample for your local OpenCode provider entry. Runtime execution still uses your machine-level `~/.config/opencode/opencode.json`; do not commit real API keys into the project copy.
+Provider credentials and gateway URLs live in the user-level `~/.ogsystem/.env`. OpenCode provider definitions live in `~/.config/opencode/opencode.json` and refer to those environment variables; projects do not contain provider stubs or API keys.
 
 Local source install:
 
@@ -183,7 +183,7 @@ For day-to-day use, start with `docs/usage-manual.md`. It keeps the command matr
 - `.ogs/model-catalog.json` snapshots the current local `opencode models --verbose` list for scaffold/doctor advisory checks.
 - `.ogs/model-selection.json` stores runtime defaults and system/role overrides using direct `provider/model` refs.
 - `.ogs/runtime.json` provides runtime defaults for the role repo and runs directory.
-- `.ogs/providers/opencode.json` is a project-local reference sample that mirrors a recommended `provider.openai` entry for `~/.config/opencode/opencode.json`.
+- `~/.ogsystem/.env` stores user-level provider credentials and gateway URLs; keep it private and out of version control.
 - `.ogs/runtime.json` may include `configVersion: "2"`; unsupported versions fail fast.
 - `.ogs/user-profile.json` provides user delivery preference sample.
 - `.ogs/laws.json` provides sample law catalog colocated with runtime config.

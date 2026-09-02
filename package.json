@@ -24,6 +24,7 @@
     "og-roles/roles/diagnosis-dispatch/**",
     "og-roles/roles/diagnosis-chief-review/**",
     "scripts/preinstall.cjs",
+    "scripts/install-system-home.cjs",
     "schemas/**",
     "README.md"
   ],
@@ -32,6 +33,7 @@
   },
   "scripts": {
     "preinstall": "node scripts/preinstall.cjs",
+    "postinstall": "node scripts/install-system-home.cjs",
     "typecheck:studio-client": "tsc -p tsconfig.visualizer-client.json --noEmit",
     "build:studio-client": "esbuild src/visualizer/studio-client/main.ts --bundle --format=iife --global-name=OGSStudioGraphBundle --outfile=dist/visualizer/studio-client/studio-graph.js",
     "build:visualizer-client": "node scripts/build-visualizer-client.mjs",
@@ -61,22 +63,23 @@
     "lint:system": "tsx src/runtime/lint.ts"
   },
   "devDependencies": {
-    "@playwright/test": "^1.59.1",
+    "@playwright/test": "^1.62.1",
     "@types/dagre": "^0.7.54",
-    "@types/node": "^24.6.0",
-    "esbuild": "^0.28.0",
-    "tsx": "^4.20.6",
-    "typescript": "^5.9.3"
+    "@types/node": "^26.4.0",
+    "esbuild": "^0.28.2",
+    "tsx": "^4.23.13",
+    "typescript": "^7.0.2"
   },
   "dependencies": {
     "@antv/x6": "^2.19.2",
     "@antv/x6-plugin-history": "^2.2.4",
     "@antv/x6-plugin-keyboard": "^2.2.3",
     "@antv/x6-plugin-selection": "^2.2.2",
-    "@langchain/langgraph": "^1.2.8",
-    "@opencode-ai/sdk": "^1.4.1",
-    "ajv": "^8.18.0",
+    "@langchain/core": "^1.2.9",
+    "@langchain/langgraph": "^1.4.13",
+    "@opencode-ai/sdk": "^1.18.25",
+    "ajv": "^8.20.0",
     "dagre": "^0.8.5",
-    "zod": "^3.25.76"
+    "zod": "^4.5.4"
   }
 }

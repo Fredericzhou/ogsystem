@@ -108,6 +108,26 @@ test("runCliTool rejects when process times out", async () => {
   );
 });
 
+test("runCliTool abort signal stops a running process", async () => {
+  const controller = new AbortController();
+  const execution = runCliTool({
+    tool: buildTool(["-e", "setTimeout(() => {}, 1000)"]),
+    vars: {},
+    workdir: process.cwd(),
+    commandBaseDir: process.cwd(),
+    timeoutMs: 5000,
+    maxOutputBytes: DEFAULT_MAX_OUTPUT_BYTES,
+    signal: controller.signal
+  });
+  setTimeout(() => controller.abort(new Error("node timeout")), 20);
+
+  await assert.rejects(execution, (error) => {
+    assert.ok(error instanceof Error);
+    assert.match(error.message, /node timeout/);
+    return true;
+  });
+});
+
 test("runCliTool rejects when process exits with non-zero code", async () => {
   await assert.rejects(
     () =>

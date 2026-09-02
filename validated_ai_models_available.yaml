@@ -1,0 +1,348 @@
+description: iMarks AI models verified with a real, usable result (credentials intentionally omitted)
+version: '2.0'
+models:
+  text:
+    - name: Ollama - Llama 3.2
+      provider: ollama
+      model_id: llama3.2:latest
+      api_endpoint: http://host.docker.internal:11434/v1
+      api_key: null
+      config: {protocol: openai_chat_compatible, temperature: 0.2, max_tokens: 1024, capabilities: [{id: chat.text}, {id: chat.streaming}], verification: {status: verified, verified_at: '2026-09-01T00:00:00Z', request_type: managed_stream}}
+      is_active: true
+      is_default: true
+      sort_order: 10
+      description: Local Ollama model; real chat completion verified through the iMarks API container.
+    - name: Ollama - Qwen 2.5 1.5B
+      provider: ollama
+      model_id: qwen2.5:1.5b
+      api_endpoint: http://host.docker.internal:11434/v1
+      api_key: null
+      config: {protocol: openai_chat_compatible, temperature: 0.2, max_tokens: 1024, capabilities: [{id: chat.text}, {id: chat.streaming}], verification: {status: verified, verified_at: '2026-09-01T00:00:00Z', request_type: managed_stream}}
+      is_active: true
+      is_default: false
+      sort_order: 11
+      description: Local Ollama model; real chat completion verified through the iMarks API container.
+    - name: Ollama - Gemma 2 2B
+      provider: ollama
+      model_id: gemma2:2b
+      api_endpoint: http://host.docker.internal:11434/v1
+      api_key: null
+      config: {protocol: openai_chat_compatible, temperature: 0.2, max_tokens: 1024, capabilities: [{id: chat.text}, {id: chat.streaming}], verification: {status: verified, verified_at: '2026-09-01T00:00:00Z', request_type: managed_stream}}
+      is_active: true
+      is_default: false
+      sort_order: 12
+      description: Local Ollama model; real chat completion verified through the iMarks API container.
+    - name: Grok - Grok 4.6
+      provider: grok
+      model_id: grok-4.6
+      api_endpoint: https://gg24.fedgroup.kdns.fr/v1
+      api_key: null
+      config: {protocol: openai_chat_compatible, temperature: 0.2, max_tokens: 1024, capabilities: [{id: chat.text}, {id: chat.streaming}], verification: {status: verified, verified_at: '2026-09-01T00:00:00Z', request_type: managed_stream}}
+      is_active: true
+      is_default: false
+      sort_order: 20
+      description: Grok2API HTTPS gateway; upstream source Build; real chat completion verified. Fill the gateway key before importing into a new database.
+    - name: OpenAI Gateway - Codex Auto Review
+      provider: openai
+      model_id: codex-auto-review
+      api_endpoint: http://43.134.72.68:8080/v1
+      api_key: null
+      config: {protocol: openai_responses, disable_response_storage: true, reasoning_effort: high}
+      is_active: false
+      is_default: false
+      sort_order: 50
+      description: OpenAI-compatible Responses gateway; real response text verified. Add the gateway key before enabling.
+    - name: OpenAI Gateway - GPT 5.4 Mini
+      provider: openai
+      model_id: gpt-5.4-mini
+      api_endpoint: http://43.134.72.68:8080/v1
+      api_key: null
+      config: {protocol: openai_responses, disable_response_storage: true}
+      is_active: false
+      is_default: false
+      sort_order: 51
+      description: OpenAI-compatible Responses gateway; real response text verified. Add the gateway key before enabling.
+    - name: OpenAI Gateway - GPT 5.5
+      provider: openai
+      model_id: gpt-5.5
+      api_endpoint: http://43.134.72.68:8080/v1
+      api_key: null
+      config: {protocol: openai_responses, disable_response_storage: true}
+      is_active: false
+      is_default: false
+      sort_order: 52
+      description: OpenAI-compatible Responses gateway; real response text verified. Add the gateway key before enabling.
+    - name: OpenAI Gateway - GPT 5.6 Luna
+      provider: openai
+      model_id: gpt-5.6-luna
+      api_endpoint: http://43.134.72.68:8080/v1
+      api_key: null
+      config: {protocol: openai_responses, disable_response_storage: true, reasoning_effort: high}
+      is_active: false
+      is_default: false
+      sort_order: 53
+      description: OpenAI-compatible Responses gateway; real response text verified. Add the gateway key before enabling.
+    - name: OpenAI Gateway - GPT 5.6 Terra
+      provider: openai
+      model_id: gpt-5.6-terra
+      api_endpoint: http://43.134.72.68:8080/v1
+      api_key: null
+      config: {protocol: openai_responses, disable_response_storage: true}
+      is_active: false
+      is_default: false
+      sort_order: 54
+      description: OpenAI-compatible Responses gateway; real response text verified. Add the gateway key before enabling.
+    - name: Grok - Grok 4.5
+      provider: grok
+      model_id: grok-4.5
+      api_endpoint: https://gg24.fedgroup.kdns.fr/v1
+      api_key: null
+      config: {protocol: openai_chat_compatible, temperature: 0.2, max_tokens: 1024, capabilities: [{id: chat.text}, {id: chat.streaming}], verification: {status: verified, verified_at: '2026-09-01T00:00:00Z', request_type: managed_stream}}
+      is_active: false
+      is_default: false
+      sort_order: 21
+      description: Grok2API HTTPS gateway; upstream source Console/Build; real Chat Completions result verified.
+    - name: Grok - Composer 2.5 Fast
+      provider: grok
+      model_id: grok-composer-2.5-fast
+      api_endpoint: https://gg24.fedgroup.kdns.fr/v1
+      api_key: null
+      config: {protocol: openai_chat_compatible, temperature: 0.2, max_tokens: 1024, capabilities: [{id: chat.text}, {id: chat.streaming}], verification: {status: verified, verified_at: '2026-09-01T00:00:00Z', request_type: managed_stream}}
+      is_active: false
+      is_default: false
+      sort_order: 22
+      description: Grok2API HTTPS gateway; upstream source Build; real Chat Completions result verified.
+    - name: Grok - Build 0.1
+      provider: grok
+      model_id: grok-build-0.1
+      api_endpoint: https://gg24.fedgroup.kdns.fr/v1
+      api_key: null
+      config: {protocol: openai_chat_compatible, temperature: 0.2, max_tokens: 1024, capabilities: [{id: chat.text}, {id: chat.streaming}, {id: chat.reasoning}], verification: {status: verified, verified_at: '2026-09-01T00:00:00Z', request_type: managed_stream}}
+      is_active: false
+      is_default: false
+      sort_order: 23
+      description: Grok2API HTTPS gateway; upstream source Console; real Chat Completions result verified.
+    - name: Grok - 4.20 Multi Agent
+      provider: grok
+      model_id: grok-4.20-multi-agent-0309
+      api_endpoint: https://gg24.fedgroup.kdns.fr/v1
+      api_key: null
+      config: {protocol: openai_chat_compatible, temperature: 0.2, max_tokens: 1024, capabilities: [{id: chat.text}, {id: chat.streaming}], verification: {status: verified, verified_at: '2026-09-01T00:00:00Z', request_type: managed_stream}}
+      is_active: false
+      is_default: false
+      sort_order: 24
+      description: Grok2API HTTPS gateway; upstream source Console; real Chat Completions result verified.
+    - name: Grok - 4.20 Non Reasoning
+      provider: grok
+      model_id: grok-4.20-0309-non-reasoning
+      api_endpoint: https://gg24.fedgroup.kdns.fr/v1
+      api_key: null
+      config: {protocol: openai_chat_compatible, temperature: 0.2, max_tokens: 1024, capabilities: [{id: chat.text}, {id: chat.streaming}], verification: {status: verified, verified_at: '2026-09-01T00:00:00Z', request_type: managed_stream}}
+      is_active: false
+      is_default: false
+      sort_order: 25
+      description: Grok2API HTTPS gateway; upstream source Console; real Chat Completions result verified.
+    - name: Grok - 4.20 Reasoning
+      provider: grok
+      model_id: grok-4.20-0309-reasoning
+      api_endpoint: https://gg24.fedgroup.kdns.fr/v1
+      api_key: null
+      config: {protocol: openai_chat_compatible, temperature: 0.2, max_tokens: 1024, supports_reasoning: true, capabilities: [{id: chat.text}, {id: chat.streaming}, {id: chat.reasoning}], verification: {status: verified, verified_at: '2026-09-01T00:00:00Z', request_type: managed_stream}}
+      is_active: false
+      is_default: false
+      sort_order: 26
+      description: Grok2API HTTPS gateway; upstream source Console; real reasoning-model Chat Completions result verified.
+    - name: Grok - Grok 4.3
+      provider: grok
+      model_id: grok-4.3
+      api_endpoint: https://gg24.fedgroup.kdns.fr/v1
+      api_key: null
+      config: {protocol: openai_chat_compatible, temperature: 0.2, max_tokens: 1024, capabilities: [{id: chat.text}, {id: chat.streaming}], verification: {status: verified, verified_at: '2026-09-01T00:00:00Z', request_type: managed_stream}}
+      is_active: false
+      is_default: false
+      sort_order: 27
+      description: Grok2API HTTPS gateway; upstream source Console; real Chat Completions result verified.
+    - name: Google Gateway - Claude Sonnet 4.6
+      provider: google
+      model_id: claude-sonnet-4-6
+      api_endpoint: http://host.docker.internal:8045/v1
+      api_key: null
+      config: {protocol: openai_chat_compatible, temperature: 0.2, max_tokens: 1024}
+      is_active: false
+      is_default: false
+      sort_order: 100
+      description: Google-compatible gateway; real text result verified. Add the gateway key before enabling.
+    - name: Google Gateway - Claude Opus 4.6 Thinking
+      provider: google
+      model_id: claude-opus-4-6-thinking
+      api_endpoint: http://host.docker.internal:8045/v1
+      api_key: null
+      config: {protocol: openai_chat_compatible, temperature: 0.2, max_tokens: 1024, supports_reasoning: true}
+      is_active: false
+      is_default: false
+      sort_order: 101
+      description: Google-compatible gateway; real text result verified. Add the gateway key before enabling.
+    - name: Google Gateway - Gemini 3.6 Flash High
+      provider: google
+      model_id: gemini-3.6-flash-high
+      api_endpoint: http://host.docker.internal:8045/v1
+      api_key: null
+      config: {protocol: openai_chat_compatible, temperature: 0.2, max_tokens: 1024}
+      is_active: false
+      is_default: false
+      sort_order: 102
+      description: Google-compatible gateway; real text result verified. Add the gateway key before enabling.
+    - name: Google Gateway - Gemini 2.5 Flash Thinking
+      provider: google
+      model_id: gemini-2.5-flash-thinking
+      api_endpoint: http://host.docker.internal:8045/v1
+      api_key: null
+      config: {protocol: openai_chat_compatible, temperature: 0.2, max_tokens: 1024, supports_reasoning: true}
+      is_active: false
+      is_default: false
+      sort_order: 103
+      description: Google-compatible gateway; real text result verified. Add the gateway key before enabling.
+    - name: Google Gateway - Gemini 3.7 Flash Medium
+      provider: google
+      model_id: gemini-3.7-flash-medium
+      api_endpoint: http://host.docker.internal:8045/v1
+      api_key: null
+      config: {protocol: openai_chat_compatible, temperature: 0.2, max_tokens: 1024}
+      is_active: false
+      is_default: false
+      sort_order: 104
+      description: Google-compatible gateway; real text result verified. Add the gateway key before enabling.
+    - name: Google Gateway - Gemini 3.1 Pro High
+      provider: google
+      model_id: gemini-3.1-pro-high
+      api_endpoint: http://host.docker.internal:8045/v1
+      api_key: null
+      config: {protocol: openai_chat_compatible, temperature: 0.2, max_tokens: 1024}
+      is_active: false
+      is_default: false
+      sort_order: 105
+      description: Google-compatible gateway; real text result verified. Add the gateway key before enabling.
+    - name: Google Gateway - Gemini 3.1 Pro Low
+      provider: google
+      model_id: gemini-3.1-pro-low
+      api_endpoint: http://host.docker.internal:8045/v1
+      api_key: null
+      config: {protocol: openai_chat_compatible, temperature: 0.2, max_tokens: 1024}
+      is_active: false
+      is_default: false
+      sort_order: 106
+      description: Google-compatible gateway; real text result verified. Add the gateway key before enabling.
+  image:
+    - name: Grok - Imagine Image 2.0
+      provider: grok
+      model_id: grok-imagine-image-2.0
+      api_endpoint: https://gg24.fedgroup.kdns.fr/v1
+      api_key: null
+      config:
+        protocol: grok_media
+        public_media_base_url: https://gg24.fedgroup.kdns.fr
+        response_format: url
+        persist_remote_media: true
+        capabilities: [{id: media.image.generate}]
+        verification: {status: verified, verified_at: '2026-09-01T00:00:00Z', request_type: managed_image, result_type: image/jpeg}
+      is_active: true
+      is_default: true
+      sort_order: 20
+      description: Grok2API HTTPS gateway; upstream source Console/Web; image generation returned a downloadable JPEG that was fetched successfully. Fill the gateway key before importing into a new database.
+    - name: Grok - Imagine Image
+      provider: grok
+      model_id: grok-imagine-image
+      api_endpoint: https://gg24.fedgroup.kdns.fr/v1
+      api_key: null
+      config: {protocol: grok_media, public_media_base_url: https://gg24.fedgroup.kdns.fr, response_format: url, persist_remote_media: true, capabilities: [{id: media.image.generate}], verification: {status: verified, verified_at: '2026-09-01T00:00:00Z', request_type: managed_image, result_type: image/jpeg}}
+      is_active: false
+      is_default: false
+      sort_order: 21
+      description: Grok2API HTTPS gateway; upstream source Console/Web; real JPEG result verified.
+    - name: Grok - Imagine Image Quality
+      provider: grok
+      model_id: grok-imagine-image-quality
+      api_endpoint: https://gg24.fedgroup.kdns.fr/v1
+      api_key: null
+      config: {protocol: grok_media, public_media_base_url: https://gg24.fedgroup.kdns.fr, response_format: url, persist_remote_media: true, capabilities: [{id: media.image.generate}], verification: {status: verified, verified_at: '2026-09-01T00:00:00Z', request_type: managed_image, result_type: image/jpeg}}
+      is_active: false
+      is_default: false
+      sort_order: 22
+      description: Grok2API HTTPS gateway; upstream source Console; real JPEG result verified.
+    - name: Grok - Imagine Image Lite
+      provider: grok
+      model_id: grok-imagine-image-lite
+      api_endpoint: https://gg24.fedgroup.kdns.fr/v1
+      api_key: null
+      config: {protocol: grok_media, public_media_base_url: https://gg24.fedgroup.kdns.fr, response_format: url, persist_remote_media: true, capabilities: [{id: media.image.generate}], verification: {status: verified, verified_at: '2026-09-01T00:00:00Z', request_type: managed_image, result_type: image/jpeg}}
+      is_active: false
+      is_default: false
+      sort_order: 23
+      description: Grok2API HTTPS gateway; upstream source Web; real JPEG result verified.
+  audio:
+    - name: Grok - Voice Think Fast 1.0
+      provider: grok
+      model_id: grok-voice-think-fast-1.0
+      api_endpoint: https://gg24.fedgroup.kdns.fr/v1
+      api_key: null
+      config:
+        protocol: grok_media
+        audio_body:
+          endpoint_path: /tts
+          voice_id: eve
+          language: en
+          output_format: {codec: mp3}
+        capabilities: [{id: media.audio.tts}]
+        verification: {status: verified, verified_at: '2026-09-01T00:00:00Z', request_type: managed_tts, result_type: audio/mpeg}
+      is_active: true
+      is_default: true
+      sort_order: 20
+      description: Grok2API HTTPS gateway; upstream source Console; real MP3 bytes were returned and identified as MPEG audio. Fill the gateway key before importing into a new database.
+    - name: Grok - Voice Think Fast 2.0
+      provider: grok
+      model_id: grok-voice-think-fast-2.0
+      api_endpoint: https://gg24.fedgroup.kdns.fr/v1
+      api_key: null
+      config:
+        protocol: grok_media
+        audio_body: {endpoint_path: /tts, voice_id: eve, language: en, output_format: {codec: mp3}}
+        capabilities: [{id: media.audio.tts}]
+        verification: {status: verified, verified_at: '2026-09-01T00:00:00Z', request_type: managed_tts, result_type: audio/mpeg}
+      is_active: false
+      is_default: false
+      sort_order: 21
+      description: Grok2API HTTPS gateway; upstream source Console; real MP3 bytes verified.
+    - name: Grok - Voice Latest
+      provider: grok
+      model_id: grok-voice-latest
+      api_endpoint: https://gg24.fedgroup.kdns.fr/v1
+      api_key: null
+      config:
+        protocol: grok_media
+        audio_body: {endpoint_path: /tts, voice_id: eve, language: en, output_format: {codec: mp3}}
+        capabilities: [{id: media.audio.tts}]
+        verification: {status: verified, verified_at: '2026-09-01T00:00:00Z', request_type: managed_tts, result_type: audio/mpeg}
+      is_active: false
+      is_default: false
+      sort_order: 22
+      description: Grok2API HTTPS gateway; upstream source Console; real MP3 bytes verified.
+  video:
+    - name: Grok - Imagine Video
+      provider: grok
+      model_id: grok-imagine-video
+      api_endpoint: https://gg24.fedgroup.kdns.fr/v1
+      api_key: null
+      config:
+        protocol: grok_media
+        public_media_base_url: https://gg24.fedgroup.kdns.fr
+        persist_remote_media: true
+        video_poll_url_template: '{endpoint}/videos/{request_id}'
+        video_poll_interval_seconds: 4
+        video_poll_timeout_seconds: 900
+        capabilities: [{id: media.video.generate}]
+        verification: {status: verified, verified_at: '2026-09-01T15:00:00Z', request_type: managed_video, result_type: video/mp4, duration_seconds: 6.041667}
+      is_active: true
+      is_default: true
+      sort_order: 20
+      description: Grok2API HTTPS gateway; 6-second managed video generation, polling, private download, and MP4 insertion verified. Fill the gateway key before importing into a new database.
+  multimodal: []

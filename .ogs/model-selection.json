@@ -1,8 +1,14 @@
 {
   "configVersion": "1",
   "defaults": {
-    "model": "opencode/gpt-5-nano",
+    "model": "openai/codex-auto-review",
+    "variant": "high",
     "timeoutMs": 120000,
     "maxOutputBytes": 65536
+  },
+  "roles": {
+    "advanced-worker-a": {
+      "model": "grok/grok-4.20-0309-reasoning"
+    }
   }
 }

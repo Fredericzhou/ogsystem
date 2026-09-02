@@ -188,6 +188,22 @@ async function waitForSingleRunDirectory(tempRoot, timeoutMs = 5000) {
   throw new Error(`Timed out waiting for run directory in ${tempRoot}`);
 }
 
+async function waitForRoleExecution(runDir, roleId, timeoutMs = 5000) {
+  const executionsDir = path.resolve(runDir, "roles", roleId, "executions");
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    try {
+      if ((await readdir(executionsDir)).length > 0) {
+        return;
+      }
+    } catch {
+      // The run setup may not have created the role directory yet.
+    }
+    await new Promise((resolve) => setTimeout(resolve, 25));
+  }
+  throw new Error(`Timed out waiting for execution of ${roleId} in ${runDir}`);
+}
+
 async function runCrashAfterOutcome(baseArgs, options = {}) {
   const crashed = await runCli(baseArgs, {
     env: {
@@ -831,6 +847,7 @@ second_role[Role:second_role] -->|DONE| output
   });
 
   const { runDir } = await waitForSingleRunDirectory(tempRoot);
+  await waitForRoleExecution(runDir, "slow_role");
   await requestRunStop({
     runDir,
     reason: "phase0 stop-consumption test"

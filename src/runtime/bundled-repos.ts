@@ -1,5 +1,8 @@
+import { existsSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+
+import { SYSTEM_HOME_DIR, SYSTEM_ROLE_REPO_ROOT } from "./system-home.js";
 
 export const DEFAULT_ROLE_REPO = "./og-roles";
 
@@ -16,6 +19,9 @@ export function resolveProjectRoleRootDir(workdir: string, configuredPath: strin
 }
 
 export function resolveTemplateRoleRepoRoot(): string {
+  if (existsSync(resolve(SYSTEM_HOME_DIR, "roles"))) {
+    return SYSTEM_ROLE_REPO_ROOT;
+  }
   return resolve(resolvePackageRootDir(), DEFAULT_ROLE_REPO);
 }
 

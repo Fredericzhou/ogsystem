@@ -218,7 +218,7 @@ cd demo-app
 - `.ogs/runtime.json`
 - `.ogs/laws.json`
 - `.ogs/user-profile.json`
-- `.ogs/providers/opencode.json`
+- user-level `~/.ogsystem/.env` and OpenCode provider configuration
 - `system.mmd`
 - 本地最小 `og-roles/`
 - `.ogs/model-selection.json`
@@ -236,9 +236,9 @@ ogs run start --system system.mmd --input "请先做一次最小分析" --dry-ru
 
 ### Step 4. 真实运行前做环境检查
 
-`model.bind` 默认走 OpenCode。项目初始化会生成 `.ogs/providers/opencode.json`，但真实模型凭据和 provider 可用性仍由你本机的 OpenCode 环境负责。
+`model.bind` 默认走 OpenCode。真实模型凭据和网关地址保存在用户级 `~/.ogsystem/.env`，由 `ogs` 启动时加载并传给 OpenCode；项目本身不保存 provider 凭据。
 
-`.ogs/providers/opencode.json` 只是项目内参考样板。真正生效的仍是你本机的 `~/.config/opencode/opencode.json`。新脚手架会附带一个推荐的 `provider.openai` 骨架，便于接入 OpenAI-compatible 网关，但占位密钥需要你本地替换，不能提交进仓库。
+`~/.config/opencode/opencode.json` 保存 provider 和模型声明，`baseURL` 与 `apiKey` 应成对使用环境变量引用，例如 `{env:OPENAI_GATEWAY_BASE_URL}` 与 `{env:OPENAI_GATEWAY_API_KEY}`。`~/.ogsystem/.env.example` 提供字段清单，Ollama 默认保留为空。
 
 最小参考形状：
 
@@ -765,7 +765,7 @@ Example:
 
 Default `roleRepo` points to `./og-roles`. Model runtime control is no longer configured in `runtime.json`; use `.ogs/model-selection.json` instead. `.ogs/model-catalog.json` is advisory only.
 
-`.ogs/providers/opencode.json` is not a runtime-consumed config file. It is a project-local reference sample that points to the real OpenCode config path and shows a recommended OpenAI-compatible provider entry with `setCacheKey: true`.
+`~/.ogsystem/.env` is the runtime provider credential file. It is loaded for the `ogs` process and inherited by `opencode serve`; keep it private and never commit it.
 
 Current rules:
 

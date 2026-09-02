@@ -160,7 +160,9 @@ test("packed CLI installs and scaffolds a runnable project with imported local d
   await stat(path.resolve(projectDir, ".ogs", "model-selection.json"));
   const ogsReadme = await readFile(ogsReadmePath, "utf8");
   await assert.rejects(() => stat(path.resolve(projectDir, "og-models")), /ENOENT/);
-  assert.match(ogsReadme, /providers\/opencode\.json/);
+  await assert.rejects(() => stat(path.resolve(projectDir, ".ogs", "providers")), /ENOENT/);
+  assert.match(ogsReadme, /\.ogsystem\/\.env/);
+  assert.doesNotMatch(ogsReadme, /providers\/opencode\.json/);
   assert.match(ogsReadme, /Use this README for operator notes and examples/);
 
   const startResult = await runCommand(

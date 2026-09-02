@@ -163,7 +163,14 @@ async function main() {
 
   await writeFile(
     path.resolve(installDir, "package.json"),
-    JSON.stringify({ name: "ogsystem-install-smoke", private: true }, null, 2),
+    JSON.stringify(
+      {
+        name: "ogsystem-install-smoke",
+        private: true
+      },
+      null,
+      2
+    ),
     "utf8"
   );
 
@@ -172,11 +179,32 @@ async function main() {
     installManager.command,
     [
       ...installManager.argsPrefix,
-      ...(packageManager === "npm" ? ["install", tarballPath] : ["add", tarballPath])
+      ...(packageManager === "npm"
+        ? ["install", tarballPath]
+        : ["add", tarballPath])
     ],
     { cwd: installDir, env: isolatedEnv }
   );
-  assert.equal(installResult.code, 0, installResult.stderr);
+  if (packageManager === "pnpm" && installResult.code !== 0 && /IGNORED_BUILDS/.test(installResult.stdout)) {
+    const approveResult = await runCommand(
+      installManager.command,
+      [...installManager.argsPrefix, "approve-builds", "--all"],
+      { cwd: installDir, env: isolatedEnv }
+    );
+    assert.equal(approveResult.code, 0, approveResult.stderr);
+    const rebuildResult = await runCommand(
+      installManager.command,
+      [...installManager.argsPrefix, "rebuild", "ogsystem"],
+      { cwd: installDir, env: isolatedEnv }
+    );
+    assert.equal(rebuildResult.code, 0, rebuildResult.stderr);
+  } else {
+    assert.equal(
+      installResult.code,
+      0,
+      `package install failed via ${packageManager}\nstdout=${installResult.stdout}\nstderr=${installResult.stderr}`
+    );
+  }
 
   const installedPackageDir = path.resolve(installDir, "node_modules", "ogsystem");
   const ogsBinPath = path.resolve(installedPackageDir, "bin", "ogs.mjs");
@@ -188,6 +216,16 @@ async function main() {
   });
   assert.equal(helpResult.code, 0, helpResult.stderr);
   assert.match(helpResult.stdout, /project\s+Init, create, or sync project files/);
+
+  const systemHomeDir = path.resolve(tempRoot, ".ogsystem");
+  await stat(path.resolve(systemHomeDir, "roles"));
+  await stat(path.resolve(systemHomeDir, "roles", "hello-ogsystem", "role.json"));
+  const systemEnvExample = await readFile(path.resolve(systemHomeDir, ".env.example"), "utf8");
+  assert.match(systemEnvExample, /^SILICONFLOW_API_KEY=$/m);
+  assert.match(systemEnvExample, /^OLLAMA_BASE_URL=$/m);
+  const installMetadata = JSON.parse(await readFile(path.resolve(systemHomeDir, "install.json"), "utf8"));
+  assert.equal(installMetadata.package, "ogsystem");
+  assert.equal(installMetadata.rolesDir, "roles");
 
   const doctorHelpResult = await runCommand("node", [ogsBinPath, "doctor", "--help"], {
     cwd: installDir,
@@ -212,9 +250,11 @@ async function main() {
   const ogsReadmePath = path.resolve(projectDir, ".ogs", "README.md");
   await stat(path.resolve(projectDir, ".ogs", "model-catalog.json"));
   await stat(path.resolve(projectDir, ".ogs", "model-selection.json"));
+  await assert.rejects(() => stat(path.resolve(projectDir, ".ogs", "providers")), /ENOENT/);
   await assert.rejects(() => stat(path.resolve(projectDir, "og-models")), /ENOENT/);
   const ogsReadme = await readFile(ogsReadmePath, "utf8");
-  assert.match(ogsReadme, /providers\/opencode\.json/);
+  assert.match(ogsReadme, /\.ogsystem\/\.env/);
+  assert.doesNotMatch(ogsReadme, /providers\/opencode\.json/);
   assert.match(ogsReadme, /Use this README for operator notes and examples/);
 
   const startResult = await runCommand(

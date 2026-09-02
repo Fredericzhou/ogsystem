@@ -43,6 +43,10 @@ import { runLintCli, usage as lintUsage } from "./lint.js";
 import type { RunSummaryProjection } from "./run-summary-schema.js";
 import { startVisualizationServer } from "../visualizer/server.js";
 import { runNl2MmdCli, usage as nl2mmdUsage } from "../nl2mmd/cli.js";
+import { ensureSystemHome, loadSystemEnvironment } from "./system-home.js";
+
+await ensureSystemHome();
+await loadSystemEnvironment();
 
 const require = createRequire(import.meta.url);
 const { version: CLI_VERSION } = require("../../package.json") as { version: string };

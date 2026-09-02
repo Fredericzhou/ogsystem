@@ -34,10 +34,7 @@ export type StartedServer = {
 };
 
 type SessionCreateResponse = {
-  error?: {
-    name?: string;
-    data?: unknown;
-  };
+  error?: unknown;
   data?: {
     id?: string;
   };
@@ -45,10 +42,7 @@ type SessionCreateResponse = {
 };
 
 type SessionPromptResponse = {
-  error?: {
-    name?: string;
-    data?: unknown;
-  };
+  error?: unknown;
   data?: {
     id?: string;
     info?: {
@@ -234,21 +228,22 @@ function augmentKnownOpencodeError(
 }
 
 function extractSdkErrorMessage(
-  response: { error?: { name?: string; data?: unknown } } | undefined,
+  response: { error?: unknown } | undefined,
   modelRef: { providerID: string; modelID: string }
 ): string | undefined {
   const payload = response?.error;
-  if (!payload) {
+  if (!payload || typeof payload !== "object") {
     return undefined;
   }
+  const payloadRecord = payload as { name?: unknown; data?: unknown };
   const messageFromData =
-    typeof payload.data === "object" &&
-    payload.data !== null &&
-    "message" in payload.data &&
-    typeof (payload.data as { message?: unknown }).message === "string"
-      ? (payload.data as { message: string }).message
+    typeof payloadRecord.data === "object" &&
+    payloadRecord.data !== null &&
+    "message" in payloadRecord.data &&
+    typeof (payloadRecord.data as { message?: unknown }).message === "string"
+      ? (payloadRecord.data as { message: string }).message
       : "";
-  const message = messageFromData || payload.name || "";
+  const message = messageFromData || (typeof payloadRecord.name === "string" ? payloadRecord.name : "");
   const normalized = message.trim();
   if (!normalized) {
     return undefined;
@@ -669,13 +664,34 @@ function throwIfCancelled(signal: AbortSignal, timeoutMs: number): void {
 function withTimeout<T>(
   operation: (signal: AbortSignal) => Promise<T>,
   timeoutMs: number,
-  onTimeout: (signal: AbortSignal) => void | Promise<void>
+  onTimeout: (signal: AbortSignal) => void | Promise<void>,
+  externalSignal?: AbortSignal
 ): Promise<T> {
   // Timeout cleanup is best-effort: abort the remote session when possible, but surface the timeout either way.
   return new Promise((resolve, reject) => {
     let settled = false;
     const controller = new AbortController();
-    const timer = setTimeout(() => {
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const onExternalAbort = () => {
+      const abortError = externalSignal?.reason instanceof Error
+        ? externalSignal.reason
+        : createTimeoutError(timeoutMs);
+      controller.abort(abortError);
+      Promise.resolve(onTimeout(controller.signal))
+        .catch(() => undefined)
+        .finally(() => {
+          if (settled) {
+            return;
+          }
+          settled = true;
+          if (timer !== undefined) {
+            clearTimeout(timer);
+          }
+          externalSignal?.removeEventListener("abort", onExternalAbort);
+          reject(abortError);
+        });
+    };
+    timer = setTimeout(() => {
       const timeoutError = createTimeoutError(timeoutMs);
       controller.abort(timeoutError);
       Promise.resolve(onTimeout(controller.signal))
@@ -685,9 +701,15 @@ function withTimeout<T>(
             return;
           }
           settled = true;
+          externalSignal?.removeEventListener("abort", onExternalAbort);
           reject(timeoutError);
         });
     }, timeoutMs);
+    externalSignal?.addEventListener("abort", onExternalAbort, { once: true });
+    if (externalSignal?.aborted) {
+      onExternalAbort();
+      return;
+    }
 
     operation(controller.signal).then(
       (value) => {
@@ -695,7 +717,10 @@ function withTimeout<T>(
           return;
         }
         settled = true;
-        clearTimeout(timer);
+        if (timer !== undefined) {
+          clearTimeout(timer);
+        }
+        externalSignal?.removeEventListener("abort", onExternalAbort);
         resolve(value);
       },
       (error) => {
@@ -703,7 +728,10 @@ function withTimeout<T>(
           return;
         }
         settled = true;
-        clearTimeout(timer);
+        if (timer !== undefined) {
+          clearTimeout(timer);
+        }
+        externalSignal?.removeEventListener("abort", onExternalAbort);
         reject(error);
       }
     );
@@ -902,6 +930,7 @@ export async function executeOpencodeModelRole(
     maxOutputBytes: number;
     runClient?: OpencodeRunClient;
     sessionId?: string;
+    signal?: AbortSignal;
   },
   transport: OpencodeSdkTransport = defaultTransport
 ): Promise<{
@@ -1285,7 +1314,8 @@ export async function executeOpencodeModelRole(
         } catch {
           // Ignore timeout cleanup failures; the timeout error is the primary signal.
         }
-      }
+      },
+      args.signal
     );
   } catch (error) {
     if (error instanceof OpencodeExecutionError) {

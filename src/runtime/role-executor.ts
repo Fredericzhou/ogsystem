@@ -353,6 +353,7 @@ export async function executeRoleNode(args: {
   workdir: string;
   commandBaseDir?: string;
   logger?: RunConsoleLogger;
+  signal?: AbortSignal;
 }): Promise<RoleExecutorResult> {
   const currentBranch =
     args.branch ?? listActiveBranches(args.state, args.roleId).at(-1);
@@ -686,6 +687,7 @@ export async function executeRoleNode(args: {
         env: resolvedBinding.env,
         timeoutMs: resolvedBinding.timeoutMs,
         maxOutputBytes: resolvedBinding.maxOutputBytes,
+        signal: args.signal,
         dryRunOutputEvent: pickDryRunEvent({
           node: args.node,
           branch: currentBranch,
