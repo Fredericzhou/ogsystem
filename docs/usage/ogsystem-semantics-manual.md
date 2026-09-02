@@ -2,7 +2,7 @@
 
 更新时间：2026-09-02
 适用范围：当前 `src/runtime/*` 的解析器与执行器实现（含 `ERROR*` 语义开关）
-文档级别：二级参考（非权威）。语义最终真相以 `src/runtime/*` 与 `docs/product-manual/ogsystem-orchestration-semantics-v1.md` 为准。
+文档级别：二级参考（非权威）。语义最终真相以 `src/runtime/*` 与 `docs/usage/ogsystem-orchestration-semantics-v1.md` 为准。
 
 ---
 

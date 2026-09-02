@@ -1,7 +1,7 @@
 # OGSystem Data Projection Spec
 
 Date: 2026-08-31
-Status: landed design record (implemented in runtime; semantics source of truth remains `docs/product-manual/ogsystem-orchestration-semantics-v1.md`)
+Status: landed design record (implemented in runtime; semantics source of truth remains `docs/usage/ogsystem-orchestration-semantics-v1.md`)
 Scope: delivered v1 contract for projection and quorum joins
 
 ## 1. Objective

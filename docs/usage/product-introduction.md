@@ -68,9 +68,9 @@ OGSystem 目前是一个很强的单机文件型内核，但仍有明确边界�
 建议按以下顺序理解项目：
 
 1. `docs/README.md`：先看文档索引与归档规则，知道什么文档是活的。
-2. `docs/product-manual/usage-manual.md`：把项目能力、目录约定、运行命令和恢复契约整体过一遍。
-3. `docs/product-manual/ogsystem-orchestration-semantics-v1.md`：确认已实现语义的精确定义。
+2. `docs/usage/usage-manual.md`：把项目能力、目录约定、运行命令和恢复契约整体过一遍。
+3. `docs/usage/ogsystem-orchestration-semantics-v1.md`：确认已实现语义的精确定义。
 4. `docs/development/DECISIONS.md`：理解为什么做这些架构选择。
-5. `docs/product-manual/ogsystem-ebook.md`：系统阅读模块设计、原则、价值与演进方向。
+5. `docs/usage/ogsystem-ebook.md`：系统阅读模块设计、原则、价值与演进方向。
 
-如果你要直接上手运行，下一站应是 `docs/product-manual/usage-manual.md`。如果你要评估设计是否合理，下一站应是 `docs/development/DECISIONS.md` 与 `docs/product-manual/ogsystem-ebook.md`。
+如果你要直接上手运行，下一站应是 `docs/usage/usage-manual.md`。如果你要评估设计是否合理，下一站应是 `docs/development/DECISIONS.md` 与 `docs/usage/ogsystem-ebook.md`。

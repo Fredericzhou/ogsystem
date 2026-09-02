@@ -7,4 +7,4 @@ and the active backlog.
 - Current engineering guidance and plans live in this directory.
 - Completed engineering plans, reviews, and validation records live in `archive/delivery/`.
 - Superseded proposals and early explorations live in `archive/history/`.
-- Product-facing usage and runtime constitution documents live in `../product-manual/`.
+- Product-facing usage and runtime constitution documents live in `../usage/`.

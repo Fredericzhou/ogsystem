@@ -1,6 +1,6 @@
 # OGSystem Archive Index
 
-`docs/development/archive/` stores inactive development documentation so historical plans, phase reviews, and completed checklists do not mix with active source-of-truth docs. Product-facing historical records are kept in `docs/product-manual/archive/`.
+`docs/development/archive/` stores inactive development documentation so historical plans, phase reviews, and completed checklists do not mix with active source-of-truth docs. Product-facing historical records are kept in `docs/usage/archive/`.
 
 ## Directories
 
@@ -10,7 +10,7 @@
 ## Rules
 
 1. Archive docs are not authoritative for current behavior or semantics by default.
-2. Conclusions that still matter must be copied back to active docs such as `docs/product-manual/usage-manual.md`, `docs/development/DECISIONS.md`, or semantic docs.
+2. Conclusions that still matter must be copied back to active docs such as `docs/usage/usage-manual.md`, `docs/development/DECISIONS.md`, or semantic docs.
 3. New archive files should use dated names and should be referenced from `docs/README.md` when they are recent or important.
 4. Phase plans, reviews, benchmarks, and checklists belong in `delivery/`.
 5. Early explorations, superseded proposals, and compatibility discussions belong in `history/`.
