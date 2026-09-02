@@ -25,13 +25,13 @@ Non-goals:
 
 Product introduction:
 
-- `docs/product-introduction.md`
+- `docs/product-manual/product-introduction.md`
 - `docs/README.md`
-- `docs/todo-backlog.md`
+- `docs/development/todo-backlog.md`
 
 Detailed usage manual:
 
-- `docs/usage-manual.md`
+- `docs/product-manual/usage-manual.md`
 - `examples/README.md` (minimal training set + capability coverage)
 
 CLI installation prerequisites:
@@ -156,7 +156,7 @@ Package manager policy:
 - Source repository development still expects `pnpm` and keeps the lockfile/CI workflow pinned to `pnpm@10.33.2`.
 - Repository docs use installed `ogs*` commands first, then note `pnpm run ...` equivalents where relevant.
 
-For day-to-day use, start with `docs/usage-manual.md`. It keeps the command matrix and example systems in one place and avoids repeating the same examples here.
+For day-to-day use, start with `docs/product-manual/usage-manual.md`. It keeps the command matrix and example systems in one place and avoids repeating the same examples here.
 
 ## Runtime Guarantees
 
@@ -261,7 +261,7 @@ node skills/ogsystem-nl-to-mmd/scripts/validate_ogsystem_mmd.mjs \
 ## Documentation
 
 - `docs/README.md` is the authoritative document index and archive policy.
-- `docs/product-introduction.md` is the project-level overview.
-- `docs/usage-manual.md` is the main operator/developer manual.
-- `docs/ogsystem-orchestration-semantics-v1.md` is the orchestration semantics source of truth.
-- `docs/DECISIONS.md` records architecture decisions.
+- `docs/product-manual/product-introduction.md` is the project-level overview.
+- `docs/product-manual/usage-manual.md` is the main operator/developer manual.
+- `docs/product-manual/ogsystem-orchestration-semantics-v1.md` is the orchestration semantics source of truth.
+- `docs/development/DECISIONS.md` records architecture decisions.

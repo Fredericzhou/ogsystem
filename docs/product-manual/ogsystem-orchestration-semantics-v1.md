@@ -154,4 +154,4 @@
 *   **异常流**：用于“运行时失败后的补偿/降级分支”（execution/validation/io/state）。
 *   **边界约束**：不要把预期业务否定路径建模为 `ERROR*`。
 
-交付记录见：`docs/archive/delivery/error-flow-v1-execution-plan-2026-04-13.md`；术语对齐收口见：`docs/archive/delivery/ogsystem-flow-edge-alignment-execution-plan-2026-04-15.md`。
+交付记录见：`docs/development/archive/delivery/error-flow-v1-execution-plan-2026-04-13.md`；术语对齐收口见：`docs/development/archive/delivery/ogsystem-flow-edge-alignment-execution-plan-2026-04-15.md`。

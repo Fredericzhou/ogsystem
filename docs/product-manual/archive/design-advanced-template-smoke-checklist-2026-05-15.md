@@ -1,6 +1,6 @@
 # Design / Advanced Template Smoke Checklist
 
-Derived from: [Design release validation template](design-release-validation-template.md)
+Derived from: [Design release validation template](../../development/design-release-validation-template.md)
 
 Date: 2026-05-15
 

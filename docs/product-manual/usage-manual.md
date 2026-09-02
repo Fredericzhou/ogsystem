@@ -69,11 +69,11 @@ OGSystem 当前重点优化以下能力：
 
 1. `README.md`
 2. `docs/README.md`
-3. `docs/product-introduction.md`
+3. `docs/product-manual/product-introduction.md`
 4. 本手册
-5. `docs/ogsystem-orchestration-semantics-v1.md`
-6. `docs/DECISIONS.md`
-7. `docs/ogsystem-ebook.md`
+5. `docs/product-manual/ogsystem-orchestration-semantics-v1.md`
+6. `docs/development/DECISIONS.md`
+7. `docs/product-manual/ogsystem-ebook.md`
 
 ## 0. 安装与构建（Win/macOS/Linux）
 

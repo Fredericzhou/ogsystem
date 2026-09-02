@@ -3,7 +3,7 @@
 更新时间：2026-04-14  
 状态：RFC / **未实现**（proposal-only）  
 适用范围：运行时编排层（Join 分阶段等待、timeout 失败路由、resume 一致性）
-权威级别：低于 `src/runtime/*` 与 `docs/ogsystem-orchestration-semantics-v1.md`
+权威级别：低于 `src/runtime/*` 与 `docs/product-manual/ogsystem-orchestration-semantics-v1.md`
 
 ---
 

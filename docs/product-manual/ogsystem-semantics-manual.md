@@ -2,7 +2,7 @@
 
 更新时间：2026-09-02
 适用范围：当前 `src/runtime/*` 的解析器与执行器实现（含 `ERROR*` 语义开关）
-文档级别：二级参考（非权威）。语义最终真相以 `src/runtime/*` 与 `docs/ogsystem-orchestration-semantics-v1.md` 为准。
+文档级别：二级参考（非权威）。语义最终真相以 `src/runtime/*` 与 `docs/product-manual/ogsystem-orchestration-semantics-v1.md` 为准。
 
 ---
 
@@ -239,7 +239,7 @@ judgeNode[Role:judge] -->|DONE| output
 - 超时会记录 expected、ready、missing sources、Join scope、超时时刻和最终动作，并纳入 checkpoint/resume 对账。
 - 同一 Join scope 只处理一次；迟到 source 不会二次激活 Join。
 - Join 的 readiness 作用域由 `runId`、Join 角色、`lineageId` 和 `loopIteration` 组成；UI 用的 `joinId` 只是显示标识，不能替代内部作用域键。
-- `join.first_packet.*`、`join.gap.*` 等分阶段等待窗口尚未实现，详见 [Join 等待超时 RFC](./ogsystem-wait-timeout-semantics-v2.md)。
+- `join.first_packet.*`、`join.gap.*` 等分阶段等待窗口尚未实现，详见 [Join 等待超时 RFC](../development/ogsystem-wait-timeout-semantics-v2.md)。
 
 ---
 
