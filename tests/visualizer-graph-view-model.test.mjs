@@ -4,6 +4,9 @@ import assert from "node:assert/strict";
 import { buildGraphViewModel } from "../dist/visualizer/graph-view-model.js";
 import { importMermaidToAuthoring } from "../dist/visualizer/studio-authoring.js";
 import { parseSystemFromMermaidSource } from "../dist/runtime/parse-mermaid.js";
+import {
+  formatStudioEdgeLabel
+} from "../dist/visualizer/studio-edge-semantics.js";
 
 const source = [
   "flowchart TD",
@@ -56,6 +59,9 @@ test("GraphViewModel edit mode inherits authoring.layout and exposes full capabi
   assert.ok(dispatch);
   assert.deepEqual(dispatch.layout, { x: 42, y: 17, width: 200, height: 96 });
   assert.equal(dispatch.bindingKind, "model");
+  assert.equal(dispatch.entityKind, "responsibility_seat");
+  assert.equal(dispatch.roleSeat, true);
+  assert.equal(dispatch.executionScope, "roleAggregate");
   assert.equal(dispatch.structure.routingMode, "parallel_split");
   assert.equal(dispatch.runtime, undefined, "edit mode keeps runtime layer empty");
   assert.ok(dispatch.badges.includes("entry"));
@@ -78,6 +84,8 @@ test("GraphViewModel synthesizes input/output boundaries and entry edge", () => 
   assert.ok(input && output);
   assert.equal(input.kind, "boundary");
   assert.equal(output.kind, "boundary");
+  assert.equal(input.roleSeat, false);
+  assert.equal(input.executionScope, "boundary");
   assert.equal(input.editable, false);
   assert.equal(output.editable, false);
   assert.equal(input.runtime, undefined);
@@ -90,6 +98,46 @@ test("GraphViewModel synthesizes input/output boundaries and entry edge", () => 
   assert.equal(entryEdge.target, "dispatch");
   assert.equal(entryEdge.editable, false);
   assert.equal(entryEdge.eventType, "START");
+});
+
+test("GraphViewModel projects Semantic IR modes, loop scopes, and edge routing metadata", () => {
+  const authoring = buildAuthoringFixture();
+  const semanticIR = {
+    seats: [
+      { roleId: "dispatch", modes: { default: {}, fast: {} }, defaultMode: "default" },
+      { roleId: "worker", modes: { default: {} }, defaultMode: "default" },
+      { roleId: "review", modes: { default: {} }, defaultMode: "default" }
+    ],
+    loops: [{ loopId: "delivery", members: ["worker"], boundaryRoleId: "worker", maxRounds: 3, onExhausted: "review" }],
+    transitions: [{ flowId: "dispatch:WORK:worker", priority: 4, channel: "normal", condition: { op: "exists", args: [{ kind: "path", root: "state", path: ["task"] }] } }]
+  };
+  const view = buildGraphViewModel({ authoring, semanticIR, mode: "edit" });
+  const dispatch = view.nodes.find((node) => node.roleId === "dispatch");
+  const worker = view.nodes.find((node) => node.roleId === "worker");
+  const work = view.edges.find((edge) => edge.source === "dispatch" && edge.target === "worker");
+  assert.deepEqual(dispatch.structure.modes, ["default", "fast"]);
+  assert.deepEqual(worker.structure.loopScope, { loopId: "delivery", boundaryRoleId: "worker", maxRounds: 3, onExhausted: "review" });
+  assert.equal(work.priority, 4);
+  assert.equal(work.conditionSummary, "exists");
+  assert.equal(work.channel, "normal");
+  assert.equal(dispatch.entityKind, "responsibility_seat");
+});
+
+test("X6 edge metadata renders semantic labels", () => {
+  const edge = {
+    id: "loop",
+    source: "b",
+    target: "a",
+    label: "CONTINUE",
+    eventType: "CONTINUE",
+    runtimeOnlyErrorFlow: false,
+    participatesInJoin: false,
+    editable: false,
+    channel: "loop",
+    priority: 2,
+    conditionSummary: "exists"
+  };
+  assert.equal(formatStudioEdgeLabel(edge), "CONTINUE  [loop p2 when:exists]");
 });
 
 test("GraphViewModel maps diagnostics onto matching roles and flows", () => {

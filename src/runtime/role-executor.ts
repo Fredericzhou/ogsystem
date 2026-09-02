@@ -62,6 +62,8 @@ import {
 import type { PersistedRoleExecutorResult } from "./role-execution-recorder.js";
 import { normalizeRuntimeError } from "./runtime-errors.js";
 import { ToolExecutionError } from "./tool-runner.js";
+import { validateEventCandidate } from "./event-contract.js";
+import type { RuntimeAuditEvent } from "./engine-adapter.js";
 import { SYSTEM_END_ROLE_ID } from "./types.js";
 import type {
   AuditRecord,
@@ -104,6 +106,36 @@ export type RoleExecutorResult =
 
 const DEFAULT_ROLE_WAIT_HEARTBEAT_MS = 15000;
 
+function validateSemanticRoleEvent(args: {
+  plan: ExecutionPlan;
+  roleId: string;
+  mode?: string;
+  allowedEvents: string[];
+  eventType?: string;
+  payload?: unknown;
+}): void {
+  if (!args.eventType || !args.plan.semanticIR) return;
+  if (args.plan.semanticIR.events && !args.plan.semanticIR.events[args.eventType]) {
+    throw new Error(`Event ${args.eventType} is not declared for role ${args.roleId} mode ${args.mode ?? "default"}`);
+  }
+  if (!args.allowedEvents.includes(args.eventType)) {
+    throw new Error(`Event ${args.eventType} is not allowed for role ${args.roleId} mode ${args.mode ?? "default"}`);
+  }
+  const contract = args.plan.semanticIR.events?.[args.eventType];
+  if (contract) {
+    validateEventCandidate({
+      roleId: args.roleId,
+      mode: args.mode ?? "default",
+      eventType: args.eventType,
+      payload: args.payload ?? {},
+      contracts: { [args.eventType]: { eventType: args.eventType, ...contract } },
+      stateUpdateFields: contract.writableStateFields && args.payload && typeof args.payload === "object" && !Array.isArray(args.payload)
+        ? Object.keys(args.payload as Record<string, unknown>)
+        : []
+    });
+  }
+}
+
 function resolveRoleWaitHeartbeatMs(): number {
   const raw = process.env.OGSYSTEM_ROLE_WAIT_HEARTBEAT_MS?.trim();
   if (!raw) {
@@ -124,6 +156,7 @@ function startRoleWaitHeartbeat(args: {
   binding: string;
   stage: string;
   timeoutMs?: number;
+  auditAppend?: (event: RuntimeAuditEvent) => Promise<void>;
 }): () => Promise<void> {
   const heartbeatMs = resolveRoleWaitHeartbeatMs();
   if (heartbeatMs <= 0) {
@@ -149,7 +182,7 @@ function startRoleWaitHeartbeat(args: {
         timeoutMs: args.timeoutMs,
         binding: args.binding
       });
-      await filesystemArtifactStore.appendEvent(args.runContext, {
+      const event: RuntimeAuditEvent = {
         type: "role_waiting",
         at: new Date().toISOString(),
         waitKind: "technical",
@@ -159,8 +192,13 @@ function startRoleWaitHeartbeat(args: {
         elapsedMs,
         timeoutMs: args.timeoutMs,
         binding: args.binding
-      });
-      await filesystemArtifactStore.flush(args.runContext);
+      };
+      if (args.auditAppend) {
+        await args.auditAppend(event);
+      } else {
+        await filesystemArtifactStore.appendEvent(args.runContext, event);
+        await filesystemArtifactStore.flush(args.runContext);
+      }
     } catch {
       // Observability must never change role execution outcome.
     } finally {
@@ -201,7 +239,8 @@ function pickDryRunEvent(args: {
         targetRoleId: flow.toRoleId,
         currentLoopIteration: args.branch.loopIteration,
         state: args.state,
-        plan: args.plan
+        plan: args.plan,
+        lineageId: args.branch.lineageId
       })
   );
   return allowed?.eventType ?? selectableOutgoing[0].eventType;
@@ -354,6 +393,8 @@ export async function executeRoleNode(args: {
   commandBaseDir?: string;
   logger?: RunConsoleLogger;
   signal?: AbortSignal;
+  /** OGS audit port supplied by the active engine adapter. */
+  auditAppend?: (event: RuntimeAuditEvent) => Promise<void>;
 }): Promise<RoleExecutorResult> {
   const currentBranch =
     args.branch ?? listActiveBranches(args.state, args.roleId).at(-1);
@@ -379,6 +420,13 @@ export async function executeRoleNode(args: {
   // Invariant: each allocation increments the per-role execution counter and uses a unique directory so retries/replays never clobber prior evidence.
   const maxTransitions = args.effectiveLaw.maxTransitions;
 
+  const assertToolCapability = (toolRef: string | undefined): void => {
+    const allowedTools = args.plan.semanticIR?.capabilities.allowedToolsByRoleId[args.roleId];
+    if (allowedTools !== undefined && !allowedTools.includes(toolRef ?? "")) {
+      throw new Error(`Tool is not authorized by semantic capability policy: ${toolRef ?? "none"}`);
+    }
+  };
+
   if (maxTransitions !== undefined && nextTransitionCount > maxTransitions) {
     // Failure window: exceeding the transition budget aborts before execution so we don't leave the graph in an over-consumed state.
     const error = `Transition budget exceeded: ${nextTransitionCount} > ${maxTransitions}`;
@@ -393,7 +441,7 @@ export async function executeRoleNode(args: {
     const audit = createAuditRecord({
       roleId: args.roleId,
       branchId,
-      joinId: args.node.joinMode ? buildJoinId(args.roleId, loopIteration) : undefined,
+      joinId: args.node.joinMode ? buildJoinId(args.roleId, loopIteration, currentBranch.lineageId) : undefined,
       loopIteration,
       lawRef,
       started,
@@ -419,7 +467,7 @@ export async function executeRoleNode(args: {
       branch: currentBranch,
       result
     });
-    await recordAudit({ context: args.runContext, audit });
+    await recordAudit({ context: args.runContext, audit, append: args.auditAppend });
     return result;
   }
 
@@ -461,11 +509,13 @@ export async function executeRoleNode(args: {
       branch: currentBranch,
       result
     });
-    await recordAudit({ context: args.runContext, audit });
+    await recordAudit({ context: args.runContext, audit, append: args.auditAppend });
     return result;
   }
 
-  const selectableOutgoing = getSelectableOutgoingFlows(args.node);
+  const selectableOutgoing = getSelectableOutgoingFlows(args.node).filter(
+    (item) => !args.node.modeAllowedEvents || args.node.modeAllowedEvents.includes(item.eventType)
+  );
   const allowedEvents = selectableOutgoing.map((item) => item.eventType);
   const roleDirs = args.runContext.roleDirsById.get(args.roleId);
   const resolvedRoleDirs = roleDirs
@@ -505,6 +555,7 @@ export async function executeRoleNode(args: {
       toolsByRef: args.toolsByRef,
       modelsById: args.modelsById
     });
+    assertToolCapability(resolvedBinding.toolRef);
     promptInput = buildRolePromptInput({
       roleId: args.roleId,
       node: args.node,
@@ -576,6 +627,7 @@ export async function executeRoleNode(args: {
       toolsByRef: args.toolsByRef,
       modelsById: args.modelsById
     });
+    assertToolCapability(resolvedBinding.toolRef);
     modelId = resolvedBinding.modelRef;
     profileId = resolvedBinding.profileId;
     toolRef = resolvedBinding.toolRef;
@@ -603,6 +655,7 @@ export async function executeRoleNode(args: {
       execution,
         roleInputProjection: {
           role_id: args.roleId,
+          ...(args.node.executionMode ? { mode: args.node.executionMode } : {}),
           task: args.state.userPrompt,
           input: promptInput.input,
           allowed_events: allowedEvents,
@@ -624,6 +677,13 @@ export async function executeRoleNode(args: {
 
       const selectedToRoleId = selectableOutgoing[0]?.toRoleId;
       const selectedEvent = selectableOutgoing[0]?.eventType;
+      validateSemanticRoleEvent({
+        plan: args.plan,
+        roleId: args.roleId,
+        mode: args.node.executionMode,
+        allowedEvents,
+        eventType: selectedEvent
+      });
       const audit = createAuditRecord({
         roleId: args.roleId,
         branchId,
@@ -658,7 +718,7 @@ export async function executeRoleNode(args: {
         selectedEvent,
         durationMs: audit.durationMs
       });
-      await recordAudit({ context: args.runContext, audit });
+      await recordAudit({ context: args.runContext, audit, append: args.auditAppend });
       return result;
     }
 
@@ -671,7 +731,8 @@ export async function executeRoleNode(args: {
       branchId,
       binding: resolvedBinding.bindingLabel,
       stage: resolvedBinding.binding.kind === "model" ? "model_provider" : "cli_tool",
-      timeoutMs: resolvedBinding.timeoutMs
+      timeoutMs: resolvedBinding.timeoutMs,
+      auditAppend: args.auditAppend
     });
     let executionResult;
     try {
@@ -726,6 +787,14 @@ export async function executeRoleNode(args: {
     });
 
     const selectedEvent = parsed.output.event;
+    validateSemanticRoleEvent({
+      plan: args.plan,
+      roleId: args.roleId,
+      mode: args.node.executionMode,
+      allowedEvents,
+      eventType: selectedEvent,
+      payload: parsed.output.data
+    });
     if (
       args.node.routingMode !== "parallel_split" &&
       selectableOutgoing.length > 0 &&
@@ -739,7 +808,7 @@ export async function executeRoleNode(args: {
     const audit = createAuditRecord({
       roleId: args.roleId,
       branchId,
-      joinId: args.node.joinMode ? buildJoinId(args.roleId, loopIteration) : undefined,
+      joinId: args.node.joinMode ? buildJoinId(args.roleId, loopIteration, currentBranch.lineageId) : undefined,
       loopIteration,
       lawRef,
       started,
@@ -810,7 +879,7 @@ export async function executeRoleNode(args: {
       selectedEvent,
       durationMs: audit.durationMs
     });
-    await recordAudit({ context: args.runContext, audit });
+    await recordAudit({ context: args.runContext, audit, append: args.auditAppend });
     return result;
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
@@ -897,7 +966,7 @@ export async function executeRoleNode(args: {
       durationMs: audit.durationMs,
       errorCode: failure.errorCode
     });
-    await recordAudit({ context: args.runContext, audit });
+    await recordAudit({ context: args.runContext, audit, append: args.auditAppend });
     return result;
   }
 }

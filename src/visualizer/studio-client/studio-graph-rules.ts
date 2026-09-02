@@ -4,7 +4,7 @@ import type { GraphViewModelNode } from "../studio-contracts.js";
 
 export function isStudioRoleCell(cell: Cell | null | undefined): boolean {
   const data = cell?.getData() as { studioNode?: GraphViewModelNode } | undefined;
-  return data?.studioNode?.kind === "role";
+  return data?.studioNode?.roleSeat === true;
 }
 
 export function isStudioBoundaryCell(cell: Cell | null | undefined): boolean {

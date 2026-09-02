@@ -1,3 +1,5 @@
+import type { SemanticIR } from "./semantic-ir.js";
+
 /**
  * Core System & Graph Definitions
  * -------------------------------
@@ -150,6 +152,9 @@ export type RoleExecutionBinding =
  */
 export type ExecutionPlanNode = {
   roleId: string;
+  /** Compiled execution-role mode; distinct from graph routing mode. */
+  executionMode?: string;
+  modeAllowedEvents?: string[];
   incoming: Flow[];
   outgoing: Flow[];
   routingMode?: GraphRoutingMode;
@@ -175,6 +180,7 @@ export type ExecutionPlan = {
   roleIds: string[];
   flows: Flow[];
   nodesByRoleId: Map<string, ExecutionPlanNode>;
+  semanticIR?: SemanticIR;
 };
 
 /**
@@ -529,6 +535,8 @@ export type PendingHumanReview = {
   status: "pending" | "paused" | "resolved" | "expired";
   round: number;
   spec: HumanReviewSpec;
+  stateVersion?: number;
+  irDigest?: string;
 };
 
 export type HumanReviewContext = {
@@ -552,7 +560,7 @@ export type HumanReviewDecisionRecord = {
   reconciledAt?: string;
 };
 
-export type GraphRunStatus = "running" | "stopping" | "stopped" | "done" | "failed";
+export type GraphRunStatus = "running" | "stopping" | "stopped" | "terminated" | "done" | "failed";
 
 export type GraphAuditSummary = {
   okCount: number;
@@ -580,7 +588,12 @@ export type GraphRoleMetricSummary = {
  * updates. Branch/result maps are keyed by branch id so recovery can reconcile partial progress.
  */
 export type GraphState = {
+  /** Monotonic business-state version used by versioned persistence adapters. */
+  stateVersion: number;
+  lastEventId?: string;
   userPrompt: string;
+  /** User/business state governed by Semantic IR reducers; runtime metadata stays separate. */
+  businessState?: Record<string, unknown>;
   status: GraphRunStatus;
   error: string;
   errorEnvelope?: RuntimeErrorEnvelope;
@@ -596,12 +609,33 @@ export type GraphState = {
   lastWaitingReviewId?: string;
   branchRecords: Record<string, BranchRecord>;
   loopIterations: Record<string, number>;
+  /** Business loop counters keyed by lineageId + loopId; role loopIterations is a projection. */
+  loopCountersByScope?: Record<string, number>;
+  /** Per-role activation guards keyed by lineageId + roleId. */
+  roleActivationsByScope?: Record<string, number>;
+  joinScopes?: Record<string, JoinScopeState>;
   selectedEventByBranchId: Record<string, string>;
   finalOutput: string;
   finalRoleId: string;
   lastExecutedRoleId: string;
   nextBranchSequence: number;
   lastCheckpointSequence: number;
+};
+
+export type JoinScopeState = {
+  joinId: string;
+  runId: string;
+  joinRoleId: string;
+  lineageId: string;
+  loopIteration: number;
+  expectedSourceRoleIds: string[];
+  readySourceRoleIds: string[];
+  missingSourceRoleIds: string[];
+  startedAt: string;
+  timeoutSeconds: number;
+  status: "waiting" | "activated" | "timed_out";
+  timeoutAction?: "fail" | "quorum_continue" | "pause" | "terminate";
+  completedAt?: string;
 };
 
 export type GraphStateUpdate = Partial<GraphState>;
@@ -612,6 +646,11 @@ export type GraphStateUpdate = Partial<GraphState>;
  */
 export type RuntimeCheckpointRecord = {
   checkpointSequence: number;
+  eventId?: string;
+  expectedStateVersion?: number;
+  resultingStateVersion?: number;
+  idempotencyKey?: string;
+  irDigest?: string;
   roleId: string;
   branchId: string;
   loopIteration: number;
@@ -659,6 +698,7 @@ export type RoleExecutionOutcomeRecord =
 
 export type RoleInputProjection = {
   role_id: string;
+  mode?: string;
   task: string;
   input: string;
   allowed_events: string[];
@@ -728,7 +768,7 @@ export type AdapterRunResult = {
   systemId: string;
   systemVersion: string;
   lawRef: string;
-  status: "done" | "failed" | "stopped";
+  status: "done" | "failed" | "stopped" | "terminated";
   finalRoleId?: string;
   finalOutput?: string;
   systemState: SystemStateSnapshot;

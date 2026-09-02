@@ -1360,16 +1360,19 @@ async function handleApiStop(
         runStatus:
           asString(asRecord(runDetail?.summary)?.status) ??
           asString(asRecord(runDetail?.state)?.status),
-        converged:
-          ["done", "failed", "stopped"].includes(
-            asString(asRecord(runDetail?.summary)?.status) ??
-              asString(asRecord(runDetail?.state)?.status) ??
-              ""
-          ),
+        converged: isConvergedRunStatus(
+          asString(asRecord(runDetail?.summary)?.status) ??
+            asString(asRecord(runDetail?.state)?.status) ??
+            ""
+        ),
         lifecycle: detail
       }
     })
   );
+}
+
+export function isConvergedRunStatus(status: string): boolean {
+  return ["done", "failed", "stopped", "terminated"].includes(status);
 }
 
 function resolveServerLocale(url: URL, request: IncomingMessage): Locale {

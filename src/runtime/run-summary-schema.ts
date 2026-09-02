@@ -24,7 +24,7 @@ export type RunSummaryProjection = {
   lastRoleId?: string;
   lastErrorCode?: string;
   stopReason?: string;
-  stopOutcome?: "stopped" | "failed";
+  stopOutcome?: "stopped" | "terminated" | "failed";
   finalRoleId?: string;
   executionDirCount: number;
   artifactIndexSummary: {
@@ -203,11 +203,11 @@ export function buildRunSummaryProjection(args: {
     lastRoleId: args.state.lastExecutedRoleId || undefined,
     lastErrorCode: args.state.errorEnvelope?.errorCode,
     stopReason:
-      args.state.status === "stopped" || args.state.status === "failed"
+      args.state.status === "stopped" || args.state.status === "terminated" || args.state.status === "failed"
         ? args.state.error || undefined
         : undefined,
     stopOutcome:
-      args.state.status === "stopped" || args.state.status === "failed"
+      args.state.status === "stopped" || args.state.status === "terminated" || args.state.status === "failed"
         ? args.state.status
         : undefined,
     finalRoleId: args.state.finalRoleId || undefined,

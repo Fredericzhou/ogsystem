@@ -1096,7 +1096,7 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
       }
       const nextNodes = Array.isArray(viewModel.nodes)
         ? viewModel.nodes.map((node) => {
-            if (node?.kind !== "role") {
+            if (!node?.roleSeat) {
               return node;
             }
             const layout = overlayAuthoring.layout.nodes[node.roleId];
@@ -1114,7 +1114,7 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
               : node;
           })
         : [];
-      const roleNodes = nextNodes.filter((node) => node?.kind === "role");
+      const roleNodes = nextNodes.filter((node) => node?.roleSeat);
       const minX = roleNodes.length ? Math.min(...roleNodes.map((node) => Number(node.layout?.x || 0))) : 120;
       const maxX = roleNodes.length
         ? Math.max(...roleNodes.map((node) => Number(node.layout?.x || 0) + Number(node.layout?.width || 0)))
@@ -5395,7 +5395,7 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
         });
         return;
       }
-      const nodes = Array.isArray(graph.nodes) ? graph.nodes.filter((node) => node?.kind === "role") : [];
+      const nodes = Array.isArray(graph.nodes) ? graph.nodes.filter((node) => node?.roleSeat) : [];
       const edges = Array.isArray(graph.edges) ? graph.edges.filter((edge) => edge?.source !== "input") : [];
       const systemId = authoring?.system?.systemId || state.detail?.header?.systemId || state.selectedRunId || t("common.unknown");
       const entryRoleId = authoring?.system?.entryRoleId || t("common.notAvailable");

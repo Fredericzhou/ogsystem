@@ -49,10 +49,14 @@ import {
 } from "./run-summary.js";
 import { buildRunSummaryProjection } from "./run-summary-schema.js";
 import { projectStages } from "./stage-projector.js";
+import { applyStateReducer, type StateReducerName } from "./state-reducer.js";
+import { resolveJoinPolicy } from "./join-policy.js";
+import { semanticIRDigest } from "./semantic-ir.js";
+import type { RuntimeExecutionServices } from "./engine-adapter.js";
 import { rebuildTimelineProjection } from "./timeline-projector.js";
 import { stringifyJson } from "./runtime-support.js";
 import {
-  appendEvent,
+  appendEvent as appendFilesystemEvent,
   clearRunStopRequest,
   cleanupHistoricalExecutionSnapshots,
   flushBufferedRunArtifacts,
@@ -93,7 +97,50 @@ import type {
   GraphRoleMetricSummary
 } from "./types.js";
 
+const runtimeServicesByContext = new WeakMap<object, RuntimeExecutionServices>();
+
+/** Routes every graph event through the adapter port when one is active. */
+async function appendEvent(context: RunContext, payload: Record<string, unknown>): Promise<void> {
+  const runtimeServices = runtimeServicesByContext.get(context);
+  if (runtimeServices) {
+    await runtimeServices.audit.append({
+      ...payload,
+      type: typeof payload.type === "string" ? payload.type : "runtime_event"
+    });
+    return;
+  }
+  await appendFilesystemEvent(context, payload);
+}
+
 type GraphUpdate = GraphStateUpdate;
+
+function semanticDigestForPlan(plan: ExecutionPlan): string {
+  return plan.semanticIR ? semanticIRDigest(plan.semanticIR) : "none";
+}
+
+export function applySemanticBusinessState(args: {
+  state: GraphState;
+  plan: ExecutionPlan;
+  roleId: string;
+  data: unknown;
+}): Record<string, unknown> | undefined {
+  const schema = args.plan.semanticIR?.stateSchema;
+  if (!schema?.reducers || !args.data || typeof args.data !== "object" || Array.isArray(args.data)) {
+    return undefined;
+  }
+  const candidate = args.data as Record<string, unknown>;
+  const current = { ...(args.state.businessState ?? {}) };
+  for (const [field, value] of Object.entries(candidate)) {
+    const reducer = schema.reducers[field] as StateReducerName | undefined;
+    if (!reducer) throw new Error(`State update field ${field} has no declared reducer`);
+    const writers = schema.writableRolesByField?.[field];
+    if (writers && !writers.includes(args.roleId)) {
+      throw new Error(`Role "${args.roleId}" cannot update state field ${field}`);
+    }
+    current[field] = applyStateReducer(reducer, current[field], value);
+  }
+  return current;
+}
 
 const SCHEDULER_NODE_ID = "__scheduler__";
 const DEFAULT_TRANSITION_BUDGET = 100;
@@ -104,7 +151,7 @@ const TEST_CRASH_AFTER_EXECUTION_OUTCOME_ENV = "OGSYSTEM_TEST_CRASH_AFTER_EXECUT
 const DEFAULT_ROLE_EXECUTION_TIMEOUT_MS = 120000;
 const ROLE_NODE_TIMEOUT_GRACE_MS = 5000;
 
-type RunnerInput = {
+export type RunnerInput = {
   plan: ExecutionPlan;
   effectiveLaw: EffectiveLawConstraints;
   contractPlan?: FlowContractPlan;
@@ -127,6 +174,7 @@ type RunnerInput = {
   errorFlowRoutingEnabled: boolean;
   logRun: boolean;
   runControl?: RunControl;
+  runtimeServices?: RuntimeExecutionServices;
 };
 
 /**
@@ -152,6 +200,9 @@ export function resolveRoleNodeTimeoutMs(
 function mergeStatus(current: GraphRunStatus, update: GraphRunStatus): GraphRunStatus {
   if (current === "failed" || update === "failed") {
     return "failed";
+  }
+  if (current === "terminated" || update === "terminated") {
+    return "terminated";
   }
   if (current === "stopped" || update === "stopped") {
     return "stopped";
@@ -182,7 +233,19 @@ function liftWaitingHumanReviewStop(state: GraphState): GraphState {
  * GraphState snapshots. Reducers bridge those two views and keep checkpoint-sized updates composable.
  */
 const GraphStateAnnotation = Annotation.Root({
+  stateVersion: Annotation<number>({
+    reducer: (current, update) => Math.max(current, update),
+    default: () => 0
+  }),
+  lastEventId: Annotation<string | undefined>({
+    reducer: (_current, update) => update,
+    default: () => undefined
+  }),
   userPrompt: Annotation<string>,
+  businessState: Annotation<Record<string, unknown>>({
+    reducer: (current, update) => ({ ...current, ...update }),
+    default: () => ({})
+  }),
   status: Annotation<GraphRunStatus>({
     reducer: mergeStatus,
     default: () => "running"
@@ -243,6 +306,14 @@ const GraphStateAnnotation = Annotation.Root({
     reducer: (current, update) => ({ ...current, ...update }),
     default: () => ({})
   }),
+  loopCountersByScope: Annotation<Record<string, number>>({
+    reducer: (current, update) => ({ ...current, ...update }),
+    default: () => ({})
+  }),
+  roleActivationsByScope: Annotation<Record<string, number>>({
+    reducer: (current, update) => ({ ...current, ...update }),
+    default: () => ({})
+  }),
   selectedEventByBranchId: Annotation<Record<string, string>>({
     reducer: (current, update) => ({ ...current, ...update }),
     default: () => ({})
@@ -271,6 +342,8 @@ const GraphStateAnnotation = Annotation.Root({
 
 function mergeGraphUpdates(current: GraphUpdate, update: GraphUpdate): GraphUpdate {
   return {
+    stateVersion: Math.max(current.stateVersion ?? 0, update.stateVersion ?? 0),
+    lastEventId: update.lastEventId ?? current.lastEventId,
     status:
       current.status && update.status
         ? mergeStatus(current.status, update.status)
@@ -307,6 +380,8 @@ function mergeGraphUpdates(current: GraphUpdate, update: GraphUpdate): GraphUpda
     lastWaitingReviewId: update.lastWaitingReviewId ?? current.lastWaitingReviewId,
     branchRecords: { ...(current.branchRecords ?? {}), ...(update.branchRecords ?? {}) },
     loopIterations: { ...(current.loopIterations ?? {}), ...(update.loopIterations ?? {}) },
+    loopCountersByScope: { ...(current.loopCountersByScope ?? {}), ...(update.loopCountersByScope ?? {}) },
+    roleActivationsByScope: { ...(current.roleActivationsByScope ?? {}), ...(update.roleActivationsByScope ?? {}) },
     selectedEventByBranchId: {
       ...(current.selectedEventByBranchId ?? {}),
       ...(update.selectedEventByBranchId ?? {})
@@ -322,9 +397,12 @@ function mergeGraphUpdates(current: GraphUpdate, update: GraphUpdate): GraphUpda
   };
 }
 
-function applyGraphUpdate(state: GraphState, update: GraphUpdate): GraphState {
+export function applyGraphUpdate(state: GraphState, update: GraphUpdate): GraphState {
   return {
+    stateVersion: state.stateVersion + 1,
+    lastEventId: update.lastEventId ?? state.lastEventId,
     userPrompt: state.userPrompt,
+    businessState: { ...(state.businessState ?? {}), ...(update.businessState ?? {}) },
     status: update.status ? mergeStatus(state.status, update.status) : state.status,
     error: state.error || update.error || "",
     errorEnvelope: state.errorEnvelope ?? update.errorEnvelope,
@@ -355,6 +433,9 @@ function applyGraphUpdate(state: GraphState, update: GraphUpdate): GraphState {
     lastWaitingReviewId: update.lastWaitingReviewId ?? state.lastWaitingReviewId,
     branchRecords: { ...state.branchRecords, ...(update.branchRecords ?? {}) },
     loopIterations: { ...state.loopIterations, ...(update.loopIterations ?? {}) },
+    loopCountersByScope: { ...(state.loopCountersByScope ?? {}), ...(update.loopCountersByScope ?? {}) },
+    roleActivationsByScope: { ...(state.roleActivationsByScope ?? {}), ...(update.roleActivationsByScope ?? {}) },
+    joinScopes: { ...(state.joinScopes ?? {}), ...(update.joinScopes ?? {}) },
     selectedEventByBranchId: {
       ...state.selectedEventByBranchId,
       ...(update.selectedEventByBranchId ?? {})
@@ -478,19 +559,33 @@ function mergeRoleMetrics(
   return merged;
 }
 
-async function replayPendingRuntimeCheckpoints(args: {
+export async function replayPendingRuntimeCheckpoints(args: {
   state: GraphState;
   runContext: RunContext;
+  runtimeServices?: RuntimeExecutionServices;
 }): Promise<{
   state: GraphState;
   checkpoints: RuntimeCheckpointRecord[];
 }> {
-  const checkpoints = await filesystemCheckpointStore.loadPending({
-    context: args.runContext,
-    afterSequence: args.state.lastCheckpointSequence
-  });
+  const checkpoints = args.runtimeServices
+    ? (await args.runtimeServices.checkpointStore.list(args.runContext.runId))
+        .filter((checkpoint) => checkpoint.checkpointSequence > args.state.lastCheckpointSequence)
+        .sort((left, right) => left.checkpointSequence - right.checkpointSequence)
+    : await filesystemCheckpointStore.loadPending({
+        context: args.runContext,
+        afterSequence: args.state.lastCheckpointSequence
+      });
   let replayedState = args.state;
   for (const checkpoint of checkpoints) {
+    // A versioned state commit may already contain this checkpoint even when its projected
+    // `lastCheckpointSequence` was not flushed. Prefer the state frontier when the WAL record
+    // declares a resulting version, and also recognize the last committed event id.
+    if (
+      (checkpoint.eventId && checkpoint.eventId === replayedState.lastEventId) ||
+      (checkpoint.resultingStateVersion !== undefined && checkpoint.resultingStateVersion <= replayedState.stateVersion)
+    ) {
+      continue;
+    }
     replayedState = applyGraphUpdate(replayedState, checkpoint.update);
   }
   return {
@@ -517,6 +612,7 @@ function maybeCrashAfterExecutionOutcome(): never | void {
 }
 
 function buildGraphUpdateFromOutcome(args: {
+  runId?: string;
   state: GraphState;
   plan: ExecutionPlan;
   contractPlan?: FlowContractPlan;
@@ -526,6 +622,7 @@ function buildGraphUpdateFromOutcome(args: {
   indexes?: RuntimeIndexes;
 }): TransitionPlan {
   return planTransition({
+    runId: args.runId,
     state: args.state,
     plan: args.plan,
     contractPlan: args.contractPlan,
@@ -542,6 +639,8 @@ async function reconcileCommittedRoleExecutionOutcomes(args: {
   contractPlan?: FlowContractPlan;
   runContext: RunContext;
   errorFlowRoutingEnabled: boolean;
+  compilerSnapshot?: CompiledExecutionSnapshot;
+  runtimeServices?: RuntimeExecutionServices;
 }): Promise<{
   state: GraphState;
   indexes: RuntimeIndexes;
@@ -550,7 +649,8 @@ async function reconcileCommittedRoleExecutionOutcomes(args: {
   // role execution committed durably but the checkpoint was never written or reconciled.
   const replay = await replayPendingRuntimeCheckpoints({
     state: args.state,
-    runContext: args.runContext
+    runContext: args.runContext,
+    runtimeServices: args.runtimeServices
   });
   let reconciledState = replay.state;
   let indexes = buildRuntimeIndexes(reconciledState);
@@ -580,6 +680,7 @@ async function reconcileCommittedRoleExecutionOutcomes(args: {
     }
 
     const transitionPlan = buildGraphUpdateFromOutcome({
+      runId: args.runContext.runId,
       state: reconciledState,
       plan: args.plan,
       contractPlan: args.contractPlan,
@@ -600,8 +701,14 @@ async function reconcileCommittedRoleExecutionOutcomes(args: {
       branchId: outcome.branchId,
       loopIteration: outcome.loopIteration,
       executionId: outcome.executionId,
-      update: transitionPlan.update
+      update: transitionPlan.update,
+      expectedStateVersion: reconciledState.stateVersion,
+      resultingStateVersion: reconciledState.stateVersion + 1,
+      irDigest: semanticDigestForPlan(args.plan),
+      eventId: `${args.runContext.runId}:${outcome.executionId}:${reconciledState.stateVersion + 1}`,
+      idempotencyKey: `${args.runContext.runId}:${outcome.executionId}:${reconciledState.stateVersion + 1}`
     });
+    await args.runtimeServices?.checkpointStore.append(checkpoint);
     const roleDirs = args.runContext.roleDirsById.get(outcome.roleId);
     if (!roleDirs) {
       throw new Error(`Role run directory missing for "${outcome.roleId}"`);
@@ -614,8 +721,21 @@ async function reconcileCommittedRoleExecutionOutcomes(args: {
       await appendEvent(args.runContext, event);
     }
     pendingCheckpointByExecutionId.set(outcome.executionId, checkpoint);
-    reconciledState = applyGraphUpdate(reconciledState, checkpoint.update);
-    indexes = applyGraphUpdateToIndexes(indexes, checkpoint.update);
+    const stateCommit = args.runtimeServices
+      ? await args.runtimeServices.stateStore.commit({
+          runId: args.runContext.runId,
+          expectedStateVersion: reconciledState.stateVersion,
+          eventId: checkpoint.eventId ?? `${args.runContext.runId}:${checkpoint.executionId}:${reconciledState.stateVersion + 1}`,
+          idempotencyKey: checkpoint.idempotencyKey ?? `${args.runContext.runId}:${checkpoint.executionId}:${reconciledState.stateVersion + 1}`,
+          checkpointSequence: checkpoint.checkpointSequence,
+          update: { ...checkpoint.update, lastCheckpointSequence: checkpoint.checkpointSequence }
+        })
+      : undefined;
+    const effectiveUpdate = stateCommit
+      ? { ...checkpoint.update, stateVersion: stateCommit.snapshot.state.stateVersion, lastEventId: checkpoint.eventId }
+      : checkpoint.update;
+    reconciledState = stateCommit?.snapshot.state ?? applyGraphUpdate(reconciledState, effectiveUpdate);
+    indexes = applyGraphUpdateToIndexes(indexes, effectiveUpdate);
   }
 
   return {
@@ -640,6 +760,8 @@ async function reconcileCommittedHumanReviewDecisions(args: {
   plan: ExecutionPlan;
   contractPlan?: FlowContractPlan;
   runContext: RunContext;
+  compilerSnapshot?: CompiledExecutionSnapshot;
+  runtimeServices?: RuntimeExecutionServices;
 }): Promise<{
   state: GraphState;
   indexes: RuntimeIndexes;
@@ -704,8 +826,14 @@ async function reconcileCommittedHumanReviewDecisions(args: {
       branchId: pendingReview.branchId,
       loopIteration: pendingReview.loopIteration,
       executionId: pendingReview.executionId,
-      update: transitionPlan.update
+      update: transitionPlan.update,
+      expectedStateVersion: reconciledState.stateVersion,
+      resultingStateVersion: reconciledState.stateVersion + 1,
+      irDigest: semanticDigestForPlan(args.plan),
+      eventId: `${args.runContext.runId}:${pendingReview.executionId}:${reconciledState.stateVersion + 1}`,
+      idempotencyKey: `${args.runContext.runId}:${pendingReview.executionId}:${reconciledState.stateVersion + 1}`
     });
+    await args.runtimeServices?.checkpointStore.append(checkpoint);
     for (const event of transitionPlan.events) {
       await appendEvent(args.runContext, event);
     }
@@ -720,8 +848,21 @@ async function reconcileCommittedHumanReviewDecisions(args: {
       context: args.runContext,
       reviewId: decision.reviewId
     });
-    reconciledState = applyGraphUpdate(reconciledState, checkpoint.update);
-    indexes = applyGraphUpdateToIndexes(indexes, checkpoint.update);
+    const stateCommit = args.runtimeServices
+      ? await args.runtimeServices.stateStore.commit({
+          runId: args.runContext.runId,
+          expectedStateVersion: reconciledState.stateVersion,
+          eventId: checkpoint.eventId ?? `${args.runContext.runId}:${checkpoint.executionId}:${reconciledState.stateVersion + 1}`,
+          idempotencyKey: checkpoint.idempotencyKey ?? `${args.runContext.runId}:${checkpoint.executionId}:${reconciledState.stateVersion + 1}`,
+          checkpointSequence: checkpoint.checkpointSequence,
+          update: { ...checkpoint.update, lastCheckpointSequence: checkpoint.checkpointSequence }
+        })
+      : undefined;
+    const effectiveUpdate = stateCommit
+      ? { ...checkpoint.update, stateVersion: stateCommit.snapshot.state.stateVersion, lastEventId: checkpoint.eventId }
+      : checkpoint.update;
+    reconciledState = stateCommit?.snapshot.state ?? applyGraphUpdate(reconciledState, effectiveUpdate);
+    indexes = applyGraphUpdateToIndexes(indexes, effectiveUpdate);
   }
 
   return {
@@ -890,6 +1031,9 @@ async function persistAfterCleanup(args: {
  * stay in one place.
  */
 export async function runSystemWithGraphRunner(args: RunnerInput): Promise<AdapterRunResult> {
+  if (args.runtimeServices) {
+    runtimeServicesByContext.set(args.runContext, args.runtimeServices);
+  }
   const logger = createRunConsoleLogger(args.logRun);
   const runControl = args.runControl ?? new RunControl();
   let runtimeIndexes = buildRuntimeIndexes(
@@ -918,29 +1062,54 @@ export async function runSystemWithGraphRunner(args: RunnerInput): Promise<Adapt
 
       // One branch per node attempt keeps LangGraph's timeout scoped to one role execution.
       const branch = activeBranches[0];
-      const result = await executeRoleNode({
-        roleId,
-        node,
-        plan: args.plan,
-        state: workingState,
-        branch,
-        effectiveLaw: args.effectiveLaw,
-        profilesById: args.profilesById,
-        toolsByRef: args.toolsByRef,
-        rolePackagesByRoleId: args.rolePackagesByRoleId,
-        contractPlan: args.contractPlan,
-        compilerSnapshot: args.compilerSnapshot,
-        runContext: args.runContext,
-        executor: args.executor,
-        userProfile: args.userProfile,
-        workdir: args.workdir,
-        commandBaseDir: args.commandBaseDir,
-        logger,
-        signal: config?.signal
-      });
+      const retryPolicy = args.plan.semanticIR?.retryByRoleId?.[roleId];
+      let result = await executeRoleNode({
+          roleId, node, plan: args.plan, state: workingState, branch,
+          effectiveLaw: args.effectiveLaw, profilesById: args.profilesById, toolsByRef: args.toolsByRef,
+          rolePackagesByRoleId: args.rolePackagesByRoleId, contractPlan: args.contractPlan,
+          compilerSnapshot: args.compilerSnapshot, runContext: args.runContext, executor: args.executor,
+          userProfile: args.userProfile, workdir: args.workdir, commandBaseDir: args.commandBaseDir,
+          logger, signal: config?.signal, auditAppend: args.runtimeServices?.audit.append
+        });
+      for (let attempt = 2; result.status === "failed" && retryPolicy && attempt <= retryPolicy.maxAttempts; attempt += 1) {
+        if (config?.signal?.aborted || runControl.drainRequested || result.failure.errorCode === "RUN_CANCELLED") break;
+        const delayMs = retryPolicy.backoff === "exponential" ? 25 * 2 ** (attempt - 2) : 25;
+        await new Promise((resolve) => setTimeout(resolve, delayMs));
+        await appendEvent(args.runContext, {
+          type: "role_retry_scheduled",
+          at: new Date().toISOString(),
+          roleId,
+          branchId: branch.branchId,
+          lineageId: branch.lineageId,
+          loopIteration: branch.loopIteration,
+          attempt,
+          maxAttempts: retryPolicy.maxAttempts,
+          errorCode: result.failure.errorCode,
+          backoffMs: delayMs
+        });
+        result = await executeRoleNode({
+          roleId, node, plan: args.plan, state: workingState, branch,
+          effectiveLaw: args.effectiveLaw, profilesById: args.profilesById, toolsByRef: args.toolsByRef,
+          rolePackagesByRoleId: args.rolePackagesByRoleId, contractPlan: args.contractPlan,
+          compilerSnapshot: args.compilerSnapshot, runContext: args.runContext, executor: args.executor,
+          userProfile: args.userProfile, workdir: args.workdir, commandBaseDir: args.commandBaseDir,
+          logger, signal: config?.signal, auditAppend: args.runtimeServices?.audit.append
+        });
+      }
 
-      const transitionPlan = planTransition({
+      const businessState = applySemanticBusinessState({
         state: workingState,
+        plan: args.plan,
+        roleId,
+        data: result.status === "failed" ? undefined : result.storedResult?.data
+      });
+      // Routing observes the same reduced business state that this transition persists.
+      const routingState = businessState
+        ? { ...workingState, businessState }
+        : workingState;
+      const transitionPlan = planTransition({
+        runId: args.runContext.runId,
+        state: routingState,
         plan: args.plan,
         contractPlan: args.contractPlan,
         outcome: {
@@ -970,6 +1139,25 @@ export async function runSystemWithGraphRunner(args: RunnerInput): Promise<Adapt
         errorFlowRoutingEnabled: args.errorFlowRoutingEnabled,
         indexes: runtimeIndexes
       });
+      if (businessState) {
+        transitionPlan.update = { ...transitionPlan.update, businessState };
+      }
+      // Review requests are created from the pre-transition snapshot. Bind them to the version
+      // produced by this checkpoint so a subsequent resume validates against the durable state.
+      if (transitionPlan.reviewRequests?.length && transitionPlan.update.pendingReviewsById) {
+        const resultingStateVersion = workingState.stateVersion + 1;
+        const pendingReviewsById = Object.fromEntries(
+          Object.entries(transitionPlan.update.pendingReviewsById).map(([reviewId, review]) => [
+            reviewId,
+            { ...review, stateVersion: resultingStateVersion }
+          ])
+        );
+        transitionPlan.update = { ...transitionPlan.update, pendingReviewsById };
+        transitionPlan.reviewRequests = transitionPlan.reviewRequests.map((review) => ({
+          ...review,
+          stateVersion: resultingStateVersion
+        }));
+      }
       for (const reviewRequest of transitionPlan.reviewRequests ?? []) {
         await filesystemReviewStore.persistRequest({
           context: args.runContext,
@@ -978,14 +1166,22 @@ export async function runSystemWithGraphRunner(args: RunnerInput): Promise<Adapt
       }
 
       maybeCrashAfterExecutionOutcome();
+      const eventId = `${args.runContext.runId}:${result.executionId}:${workingState.stateVersion + 1}`;
+      const idempotencyKey = eventId;
       const checkpoint = await filesystemCheckpointStore.persist({
         context: args.runContext,
         roleId,
         branchId: branch.branchId,
         loopIteration: branch.loopIteration,
         executionId: result.executionId,
-        update: transitionPlan.update
+        update: transitionPlan.update,
+        expectedStateVersion: workingState.stateVersion,
+        resultingStateVersion: workingState.stateVersion + 1,
+        irDigest: semanticDigestForPlan(args.plan),
+        eventId,
+        idempotencyKey
       });
+      await args.runtimeServices?.checkpointStore.append(checkpoint);
       const roleDirs = args.runContext.roleDirsById.get(roleId);
       if (!roleDirs) {
         throw new Error(`Role run directory missing for "${roleId}"`);
@@ -998,9 +1194,26 @@ export async function runSystemWithGraphRunner(args: RunnerInput): Promise<Adapt
         await appendEvent(args.runContext, event);
       }
 
-      workingState = applyGraphUpdate(workingState, checkpoint.update);
-      runtimeIndexes = applyGraphUpdateToIndexes(runtimeIndexes, checkpoint.update);
-      combinedUpdate = mergeGraphUpdates(combinedUpdate, checkpoint.update);
+      const stateCommit = args.runtimeServices
+        ? await args.runtimeServices.stateStore.commit({
+            runId: args.runContext.runId,
+            expectedStateVersion: workingState.stateVersion,
+            eventId,
+            idempotencyKey,
+            checkpointSequence: checkpoint.checkpointSequence,
+            update: { ...checkpoint.update, lastCheckpointSequence: checkpoint.checkpointSequence }
+          })
+        : undefined;
+      const effectiveUpdate: GraphUpdate = stateCommit
+        ? {
+            ...checkpoint.update,
+            stateVersion: stateCommit.snapshot.state.stateVersion,
+            lastEventId: eventId
+          }
+        : checkpoint.update;
+      workingState = stateCommit?.snapshot.state ?? applyGraphUpdate(workingState, effectiveUpdate);
+      runtimeIndexes = applyGraphUpdateToIndexes(runtimeIndexes, effectiveUpdate);
+      combinedUpdate = mergeGraphUpdates(combinedUpdate, effectiveUpdate);
 
       if (workingState.status === "running") {
         // Trade-off: stop requests are honored as soon as we see them but still let the current
@@ -1050,13 +1263,17 @@ export async function runSystemWithGraphRunner(args: RunnerInput): Promise<Adapt
       plan: args.plan,
       contractPlan: args.contractPlan,
       runContext: args.runContext,
-      errorFlowRoutingEnabled: args.errorFlowRoutingEnabled
+      errorFlowRoutingEnabled: args.errorFlowRoutingEnabled,
+      compilerSnapshot: args.compilerSnapshot,
+      runtimeServices: args.runtimeServices
     });
     const reviewReconciled = await reconcileCommittedHumanReviewDecisions({
       state: reconciled.state,
       plan: args.plan,
       contractPlan: args.contractPlan,
       runContext: args.runContext
+      , compilerSnapshot: args.compilerSnapshot,
+      runtimeServices: args.runtimeServices
     });
     finalState = reviewReconciled.state;
     runtimeIndexes = reviewReconciled.indexes;
@@ -1071,7 +1288,12 @@ export async function runSystemWithGraphRunner(args: RunnerInput): Promise<Adapt
   });
   await persistProjectedState({ state: finalState, plan: args.plan, runContext: args.runContext });
 
-  const recursionLimit = calculateGraphRecursionLimit(args.effectiveLaw.maxTransitions);
+  const semanticBudget = args.plan.semanticIR?.capabilities.maxTransitionsPerRun;
+  const effectiveTransitionBudget = Math.min(
+    args.effectiveLaw.maxTransitions ?? semanticBudget ?? DEFAULT_TRANSITION_BUDGET,
+    semanticBudget ?? Number.POSITIVE_INFINITY
+  );
+  const recursionLimit = calculateGraphRecursionLimit(effectiveTransitionBudget);
   // Trade-off: we double the transition budget for the scheduler hops so recursion depth stays
   // bounded even when LangGraph counts scheduler nodes and role nodes separately.
   const stopRequestBeforeStart = await readRunStopRequest(args.runContext.runDir);
@@ -1099,7 +1321,8 @@ export async function runSystemWithGraphRunner(args: RunnerInput): Promise<Adapt
       // drain request. Replay it so the stop result never regresses the persisted frontier.
       const replay = await replayPendingRuntimeCheckpoints({
         state: finalState,
-        runContext: args.runContext
+        runContext: args.runContext,
+        runtimeServices: args.runtimeServices
       });
       finalState = replay.state.status === "running"
         ? { ...replay.state, status: "stopping" }
@@ -1148,6 +1371,64 @@ export async function runSystemWithGraphRunner(args: RunnerInput): Promise<Adapt
           roleId: orphanedJoinGroup.roleId
         }
       };
+      await persistProjectedState({ state: finalState, plan: args.plan, runContext: args.runContext });
+    }
+  }
+
+  if (finalState.status === "running") {
+    const waitingScopes = Object.entries(finalState.joinScopes ?? {}).filter(([, scope]) => scope.status === "waiting");
+    if (waitingScopes.length > 0) {
+      const now = Date.now();
+      let timeoutFailure: { scopeKey: string; roleId: string; message: string } | undefined;
+      let paused = false;
+      let terminated = false;
+      const nextScopes = { ...(finalState.joinScopes ?? {}) };
+      for (const [scopeKey, scope] of waitingScopes) {
+        const spec = args.plan.semanticIR?.joins.find((item) => item.roleId === scope.joinRoleId);
+        const activeSourceExists = Object.values(finalState.branchRecords).some(
+          (branch) =>
+            branch.status === "active" &&
+            branch.lineageId === scope.lineageId &&
+            branch.loopIteration === scope.loopIteration &&
+            scope.missingSourceRoleIds.includes(branch.roleId)
+        );
+        const decision = resolveJoinPolicy({
+          mode: spec?.mode ?? "all_of",
+          sources: scope.expectedSourceRoleIds,
+          readySources: scope.readySourceRoleIds,
+          min: spec?.min ?? scope.expectedSourceRoleIds.length,
+          timeoutSeconds: scope.timeoutSeconds,
+          startedAt: Date.parse(scope.startedAt),
+          now,
+          onTimeout: scope.timeoutAction ?? "fail",
+          failurePolicy: spec?.failurePolicy ?? "wait",
+          sourceFailure: !activeSourceExists
+        });
+        if (decision.action === "wait") continue;
+        nextScopes[scopeKey] = { ...scope, status: "timed_out", completedAt: new Date(now).toISOString() };
+        const message = `Join "${scope.joinRoleId}" ${decision.reason}; missing sources: ${decision.missingSourceRoleIds.join(", ")}`;
+        await appendEvent(args.runContext, {
+          type: "join_timed_out", at: new Date(now).toISOString(), roleId: scope.joinRoleId,
+          joinId: scope.joinId, lineageId: scope.lineageId, loopIteration: scope.loopIteration,
+          expectedSources: scope.expectedSourceRoleIds, readySources: scope.readySourceRoleIds,
+          missingSources: decision.missingSourceRoleIds, action: decision.action
+        });
+        if (decision.action === "fail") timeoutFailure ??= { scopeKey, roleId: scope.joinRoleId, message };
+        else if (decision.action === "terminate") terminated = true;
+        else paused = true;
+      }
+      if (timeoutFailure) {
+        finalState = {
+          ...finalState, joinScopes: nextScopes, status: "failed", error: timeoutFailure.message,
+          errorEnvelope: { errorCode: "GRAPH_JOIN_TIMEOUT", errorCategory: "state", message: timeoutFailure.message, retryable: false, stage: "execute", roleId: timeoutFailure.roleId, runId: args.runContext.runId }
+        };
+      } else if (terminated) {
+        finalState = { ...finalState, joinScopes: nextScopes, status: "terminated", error: "join timeout terminated" };
+        await appendEvent(args.runContext, { type: "run_terminated", at: new Date(now).toISOString(), reason: "join_timeout_terminate", pendingJoinCount: waitingScopes.length });
+      } else {
+        finalState = { ...finalState, joinScopes: nextScopes, status: "stopped", error: paused ? "join timeout paused" : "waiting for join" };
+        await appendEvent(args.runContext, { type: "run_waiting", at: new Date(now).toISOString(), waitKind: "business", reason: paused ? "join_timeout_pause" : "join", pendingJoinCount: waitingScopes.length });
+      }
       await persistProjectedState({ state: finalState, plan: args.plan, runContext: args.runContext });
     }
   }
@@ -1277,6 +1558,8 @@ export async function runSystemWithGraphRunner(args: RunnerInput): Promise<Adapt
     status:
       finalState.status === "failed"
         ? "failed"
+        : finalState.status === "terminated"
+          ? "terminated"
         : finalState.status === "stopped"
           ? "stopped"
           : "done",
@@ -1294,6 +1577,8 @@ export async function runSystemWithGraphRunner(args: RunnerInput): Promise<Adapt
     status:
       finalState.status === "failed"
         ? "failed"
+        : finalState.status === "terminated"
+          ? "terminated"
         : finalState.status === "stopped"
           ? "stopped"
           : "done",

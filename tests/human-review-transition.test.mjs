@@ -162,6 +162,7 @@ writer[Role:writer] -->|DONE| output
     requestedByExecutionId: "exec-writer-1",
     status: "pending",
     round: 1,
+    stateVersion: 0,
     spec: {
       mode: "required",
       timeoutSeconds: 180,

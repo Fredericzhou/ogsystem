@@ -16,6 +16,7 @@ Archive rules are documented in [docs/archive/README.md](archive/README.md).
 - [PraisonAI comparison roadmap](praisonai-comparison-roadmap.md): what to borrow from a broader agent platform without weakening runtime guarantees.
 - [Unified backlog](todo-backlog.md): current active backlog.
 - [Semantic gap implementation plan](semantic-gap-implementation-plan.md): current unimplemented semantics, priorities, and acceptance boundaries.
+- [OGS workflow DSL upgrade plan](ogs-langgraph-dsl-upgrade-plan.md): backend-neutral DSL, semantic IR, contracts, reliability, standards alignment, and development-test roadmap.
 - [Ebook draft](ogsystem-ebook.md): long-form explanatory material.
 
 ## Design References
@@ -38,6 +39,7 @@ Use these recent archive records to understand implementation context:
 - [Visualizer HTTP runtime isolation decision 2026-05-04](archive/delivery/ogsystem-visualizer-http-runtime-isolation-decision-2026-05-04.md)
 - [Visualizer optimization checklist closure 2026-05-03](archive/delivery/ogsystem-visualizer-optimization-checklist-calibrated-2026-05-03.md)
 - [Canvas-centered Visualizer architecture roadmap 2026-05-03](archive/delivery/ogsystem-canvas-centered-product-architecture-roadmap-2026-05-03.md)
+- [Visualizer responsibility-seat semantic review 2026-09-02](archive/delivery/ogsystem-visualizer-responsibility-seat-review-2026-09-02.md)
 
 The full archive lives under `docs/archive/delivery/` and `docs/archive/history/`. Do not maintain a duplicated full file list here; use `rg` or browse by date when historical context is needed.
 

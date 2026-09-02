@@ -168,6 +168,7 @@ export const zhCN = {
   "status.paused": "已暂停",
   "status.running": "运行中",
   "status.stopped": "已停止",
+  "status.terminated": "已终止",
   "status.done": "已完成",
   "status.failed": "失败",
   "status.waitingReview": "等待评审",

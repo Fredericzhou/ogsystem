@@ -201,6 +201,7 @@ export function displayUiToken(value: unknown, t: Translator): string {
   if (normalized === "paused") return t("status.paused", undefined, "paused");
   if (normalized === "running") return t("status.running", undefined, "running");
   if (normalized === "stopped") return t("status.stopped", undefined, "stopped");
+  if (normalized === "terminated") return t("status.terminated", undefined, "terminated");
   if (normalized === "done") return t("status.done", undefined, "done");
   if (normalized === "failed") return t("status.failed", undefined, "failed");
   if (normalized === "waiting_review") return t("status.waitingReview", undefined, "waiting review");

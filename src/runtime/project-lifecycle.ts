@@ -16,6 +16,7 @@ import { basename, dirname, resolve } from "node:path";
 
 import {
   DEFAULT_ROLE_REPO,
+  resolvePackageRootDir,
   resolveProjectRoleRepoRoot,
   resolveTemplateRoleRepoRoot,
   resolveTemplateRoleRootDir
@@ -1202,7 +1203,13 @@ async function importRolePackageIntoProject(args: {
   workdir: string;
   roleId: string;
 }): Promise<boolean> {
-  const templateRoleRootDir = resolveTemplateRoleRootDir();
+  const preferredTemplateRoleRootDir = resolveTemplateRoleRootDir();
+  const preferredRolePath = resolve(preferredTemplateRoleRootDir, args.roleId);
+  // A partially installed system home may contain the roles directory without every
+  // bundled role. Fall back per role to the package repository instead of failing sync.
+  const templateRoleRootDir = await stat(preferredRolePath)
+    .then(() => preferredTemplateRoleRootDir)
+    .catch(() => resolve(resolvePackageRootDir(), DEFAULT_ROLE_REPO, "roles"));
   const repoConfig = await loadProjectRepoConfig(args.workdir);
   const projectRoleRootDir = resolve(
     resolveProjectRoleRepoRoot(args.workdir, repoConfig.roleRepo),

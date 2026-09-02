@@ -6,6 +6,7 @@
 import { isRuntimeOnlyErrorEvent } from "../runtime/error-flow-utils.js";
 import { SYSTEM_END_ROLE_ID } from "../runtime/types.js";
 import type { GraphState, SystemDefinition } from "../runtime/types.js";
+import type { SemanticIR, SemanticIRConditionAst } from "../runtime/semantic-ir.js";
 import {
   buildGraphNodeStatus,
   countBranches,
@@ -92,7 +93,9 @@ function toDiagnosticLayer(
   };
 }
 
-function nodeStructure(role: StudioAuthoringRole): GraphViewModelNode["structure"] {
+function nodeStructure(role: StudioAuthoringRole, semanticIR?: SemanticIR): GraphViewModelNode["structure"] {
+  const semanticSeat = semanticIR?.seats.find((seat) => seat.roleId === role.roleId);
+  const loopScope = semanticIR?.loops.find((scope) => scope.members.includes(role.roleId));
   return {
     routingMode: role.routingMode,
     joinMode: role.joinMode,
@@ -100,8 +103,24 @@ function nodeStructure(role: StudioAuthoringRole): GraphViewModelNode["structure
     joinSources: role.joinSources?.slice(),
     loopMax: role.loopMax,
     review: role.review,
-    contextFields: role.contextMap ? Object.keys(role.contextMap) : undefined
+    contextFields: role.contextMap ? Object.keys(role.contextMap) : undefined,
+    modes: semanticSeat ? Object.keys(semanticSeat.modes).sort() : undefined,
+    loopScope: loopScope
+      ? {
+          loopId: loopScope.loopId,
+          boundaryRoleId: loopScope.boundaryRoleId,
+          maxRounds: loopScope.maxRounds,
+          onExhausted: loopScope.onExhausted
+        }
+      : undefined
   };
+}
+
+function summarizeCondition(ast: SemanticIRConditionAst | undefined): string | undefined {
+  if (!ast) return undefined;
+  if (ast.op === "not") return "not(...)";
+  if (ast.op === "all" || ast.op === "any") return `${ast.op}(...)`;
+  return ast.op;
 }
 
 function deriveNodeRuntime(args: {
@@ -121,6 +140,9 @@ function deriveNodeRuntime(args: {
   const lastErrorCode = findLastErrorCode({ state, roleId });
   const lastFailure = findLatestFailureForRole({ state, roleId });
   const expectedSources = system.graph?.joinSourcesByRoleId[roleId] ?? [];
+  const persistedJoinScope = Object.values(state.joinScopes ?? {})
+    .filter((scope) => scope.joinRoleId === roleId)
+    .sort((left, right) => right.startedAt.localeCompare(left.startedAt))[0];
   const readySources = Array.from(
     new Set(
       Object.values(branchRecords)
@@ -129,7 +151,9 @@ function deriveNodeRuntime(args: {
         .filter((value): value is string => typeof value === "string")
     )
   ).sort((left, right) => left.localeCompare(right));
-  const missingSources = expectedSources.filter((sourceRoleId) => !readySources.includes(sourceRoleId));
+  const resolvedExpectedSources = persistedJoinScope?.expectedSourceRoleIds ?? expectedSources;
+  const resolvedReadySources = persistedJoinScope?.readySourceRoleIds ?? readySources;
+  const missingSources = persistedJoinScope?.missingSourceRoleIds ?? resolvedExpectedSources.filter((sourceRoleId) => !resolvedReadySources.includes(sourceRoleId));
   const status = buildGraphNodeStatus({
     state,
     roleId,
@@ -147,14 +171,14 @@ function deriveNodeRuntime(args: {
     loopIteration: state.loopIterations[roleId] ?? 0,
     lastErrorCode,
     lastSelectedEvent: findLastSelectedEvent({ state, roleId }),
-    expectedSources: expectedSources.slice(),
-    readySources,
+    expectedSources: resolvedExpectedSources.slice(),
+    readySources: resolvedReadySources,
     missingSources,
     joinWaitingSummary:
-      expectedSources.length > 0
+      resolvedExpectedSources.length > 0
         ? {
-            expectedCount: expectedSources.length,
-            readyCount: readySources.length,
+            expectedCount: resolvedExpectedSources.length,
+            readyCount: resolvedReadySources.length,
             missingCount: missingSources.length
           }
         : null,
@@ -182,6 +206,7 @@ export type BuildGraphViewModelArgs = {
   authoring: StudioAuthoringDocument | null | undefined;
   system?: SystemDefinition | null;
   state?: GraphState | null;
+  semanticIR?: SemanticIR | null;
   validation?: ValidationLike | null;
   mode: GraphViewModelMode;
 };
@@ -233,11 +258,14 @@ export function buildGraphViewModel(args: BuildGraphViewModelArgs): GraphViewMod
     return {
       id: role.roleId,
       roleId: role.roleId,
-      kind: "role",
+      kind: "roleSeat",
+      entityKind: "responsibility_seat",
+      roleSeat: true,
+      executionScope: "roleAggregate",
       label: role.title?.trim() || role.roleId,
       bindingKind: role.bindingKind,
       badges: role.badges.slice(),
-      structure: nodeStructure(role),
+      structure: nodeStructure(role, args.semanticIR ?? undefined),
       layout: { x, y, width, height },
       runtime,
       diagnostic: toDiagnosticLayer(diagnostic),
@@ -256,6 +284,9 @@ export function buildGraphViewModel(args: BuildGraphViewModelArgs): GraphViewMod
     id: "input",
     roleId: "input",
     kind: "boundary",
+    entityKind: "boundary",
+    roleSeat: false,
+    executionScope: "boundary",
     label: "▶ Entry",
     bindingKind: "boundary",
     badges: ["START"],
@@ -267,6 +298,9 @@ export function buildGraphViewModel(args: BuildGraphViewModelArgs): GraphViewMod
     id: "output",
     roleId: STUDIO_SYSTEM_END_ROLE_ID,
     kind: "boundary",
+    entityKind: "boundary",
+    roleSeat: false,
+    executionScope: "boundary",
     label: "■ End",
     bindingKind: "boundary",
     badges: ["END"],
@@ -317,6 +351,18 @@ export function buildGraphViewModel(args: BuildGraphViewModelArgs): GraphViewMod
       eventType: flow.eventType,
       runtimeOnlyErrorFlow,
       participatesInJoin: flow.participatesInJoin,
+      ...(args.semanticIR
+        ? (() => {
+            const transition = args.semanticIR.transitions.find((candidate) => candidate.flowId === edgeKey);
+            return transition
+              ? {
+                  conditionSummary: summarizeCondition(transition.condition),
+                  priority: transition.priority,
+                  channel: transition.channel
+                }
+              : {};
+          })()
+        : {}),
       runtime,
       diagnostic,
       editable: mode === "edit"

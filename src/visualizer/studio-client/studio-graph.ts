@@ -668,19 +668,19 @@ export class StudioGraphIsland {
   private bindGraphEvents(): void {
     this.graph.on("node:click", ({ node }) => {
       const data = node.getData() as { studioNode?: { kind?: string; roleId?: string } } | undefined;
-      if (data?.studioNode?.kind === "role" && data.studioNode.roleId) {
+      if (data?.studioNode?.roleSeat && data.studioNode.roleId) {
         this.selectRoleById(data.studioNode.roleId, node);
       }
     });
     this.graph.on("node:dblclick", ({ node }) => {
       const data = node.getData() as { studioNode?: { kind?: string; roleId?: string } } | undefined;
-      if (data?.studioNode?.kind === "role" && data.studioNode.roleId) {
+      if (data?.studioNode?.roleSeat && data.studioNode.roleId) {
         this.openEditRoleForm(data.studioNode.roleId);
       }
     });
     this.graph.on("node:contextmenu", ({ node, e }) => {
       const data = node.getData() as { studioNode?: { kind?: string; roleId?: string } } | undefined;
-      if (this.isReadOnly() || data?.studioNode?.kind !== "role" || !data.studioNode.roleId) {
+      if (this.isReadOnly() || !data?.studioNode?.roleSeat || !data.studioNode.roleId) {
         return;
       }
       e.preventDefault();
@@ -896,7 +896,7 @@ export class StudioGraphIsland {
       studioNode?: { kind?: string; roleId?: string };
       studioEdge?: { id?: string; source: string; target: string; eventType: string; runtimeOnlyErrorFlow?: boolean; participatesInJoin?: boolean; editable?: boolean };
     } | undefined;
-    if (data?.studioNode?.kind === "role" && data.studioNode.roleId) {
+    if (data?.studioNode?.roleSeat && data.studioNode.roleId) {
       this.openEditRoleForm(data.studioNode.roleId);
       return;
     }
@@ -1137,7 +1137,7 @@ export class StudioGraphIsland {
     }
     const query = this.quickOpenInputEl.value.trim().toLowerCase();
     const roleItems = viewModel.nodes
-      .filter((node) => node.kind === "role")
+      .filter((node) => node.roleSeat)
       .map((node) => ({
         kind: "role" as const,
         id: node.roleId,
@@ -1156,7 +1156,7 @@ export class StudioGraphIsland {
   }
 
   private showDiagnosticCard(node: Record<string, unknown> | undefined, event: Event | undefined): void {
-    if (!node || node.kind !== "role") {
+    if (!node || node.roleSeat !== true) {
       this.hideDiagnosticCard();
       return;
     }
@@ -1328,7 +1328,7 @@ export class StudioGraphIsland {
       studioNode?: { kind?: string; roleId?: string };
       studioEdge?: { source: string; target: string; eventType: string };
     } | undefined;
-    const currentRoleId = currentData?.studioNode?.kind === "role" ? currentData.studioNode.roleId || "" : "";
+    const currentRoleId = currentData?.studioNode?.roleSeat ? currentData.studioNode.roleId || "" : "";
     const currentFlowKey = currentData?.studioEdge ? studioEdgeFlowKey(currentData.studioEdge) : "";
     if (currentRoleId === roleId && currentFlowKey === flowKey) {
       this.syncSelectionPresentation(roleId || current?.id || flowKey || "");
@@ -1381,7 +1381,7 @@ export class StudioGraphIsland {
   private selectedRoleId(): string {
     const selected = this.graph.getSelectedCells()[0];
     const data = selected?.getData() as { studioNode?: { kind?: string; roleId?: string } } | undefined;
-    return data?.studioNode?.kind === "role" ? data.studioNode.roleId || "" : this.options.selectedRoleId || "";
+    return data?.studioNode?.roleSeat ? data.studioNode.roleId || "" : this.options.selectedRoleId || "";
   }
 
   private preserveBoundaryNodeLayout(viewModel: GraphViewModel): void {
@@ -1418,7 +1418,7 @@ export class StudioGraphIsland {
     const selected = this.graph.getSelectedCells()[0];
     if (!selected) return;
     const nodeData = selected.getData() as { studioNode?: { kind?: string; roleId?: string } } | undefined;
-    if (nodeData?.studioNode?.kind === "role" && nodeData.studioNode.roleId) {
+    if (nodeData?.studioNode?.roleSeat && nodeData.studioNode.roleId) {
       await this.deleteRole(nodeData.studioNode.roleId);
       return;
     }
@@ -1564,8 +1564,8 @@ export class StudioGraphIsland {
     graph.setDefaultEdgeLabel(() => ({}));
     const adjacency = new Map<string, { incoming: string[]; outgoing: string[] }>();
     for (const node of this.graph.getNodes()) {
-      const data = node.getData() as { studioNode?: { kind?: string } } | undefined;
-      if (data?.studioNode?.kind !== "role" && data?.studioNode?.kind !== "boundary") continue;
+      const data = node.getData() as { studioNode?: { roleSeat?: boolean; kind?: string } } | undefined;
+      if (!data?.studioNode || (data.studioNode.roleSeat !== true && data.studioNode.kind !== "boundary")) continue;
       const size = node.getSize();
       graph.setNode(node.id, { width: size.width, height: size.height });
       adjacency.set(node.id, { incoming: [], outgoing: [] });
@@ -1662,7 +1662,7 @@ export class StudioGraphIsland {
       }
       const cell = this.graph.getCellById(entry.id);
       const data = cell?.getData() as { studioNode?: { kind?: string } } | undefined;
-      return data?.studioNode?.kind === "role";
+      return data?.studioNode?.roleSeat === true;
     });
     const input = byId.get("input");
     const output = byId.get("output");
@@ -1873,7 +1873,7 @@ export class StudioGraphIsland {
   private ensureReadablePrimaryViewport(): void {
     const roleNodes = this.graph.getNodes().filter((node) => {
       const data = node.getData() as { studioNode?: { kind?: string } } | undefined;
-      return data?.studioNode?.kind === "role";
+      return data?.studioNode?.roleSeat === true;
     });
     if (!roleNodes.length || roleNodes.length > STUDIO_GRAPH_READABILITY_ROLE_LIMIT) {
       return;
@@ -2220,7 +2220,7 @@ export class StudioGraphIsland {
       studioNode?: { kind?: string; roleId?: string };
       studioEdge?: { editable?: boolean };
     } | undefined;
-    const selectedRole = selectedData?.studioNode?.kind === "role";
+    const selectedRole = selectedData?.studioNode?.roleSeat === true;
     const selectedEditable = selectedRole || selectedData?.studioEdge?.editable === true;
     const editActions = this.toolbar.querySelector<HTMLElement>("[data-studio-graph-edit-actions]");
     if (editActions) {
@@ -3050,7 +3050,7 @@ export class StudioGraphIsland {
     const allNodes = this.graph.getNodes();
     const roleNodes = allNodes.filter((node) => {
       const data = node.getData() as { studioNode?: { kind?: string } } | undefined;
-      return data?.studioNode?.kind === "role";
+      return data?.studioNode?.roleSeat === true;
     });
     if (!roleNodes.length) {
       this.minimapEl.hidden = true;

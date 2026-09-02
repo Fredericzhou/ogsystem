@@ -1450,11 +1450,21 @@ export async function persistRuntimeCheckpoint(args: {
   loopIteration: number;
   executionId: string;
   update: RuntimeCheckpointRecord["update"];
+  expectedStateVersion?: number;
+  resultingStateVersion?: number;
+  eventId?: string;
+  idempotencyKey?: string;
+  irDigest?: string;
 }): Promise<RuntimeCheckpointRecord> {
   const checkpointSequence = args.context.nextCheckpointSequence;
   args.context.nextCheckpointSequence += 1;
   const checkpoint: RuntimeCheckpointRecord = {
     checkpointSequence,
+    eventId: args.eventId ?? `${args.executionId}:checkpoint:${checkpointSequence}`,
+    expectedStateVersion: args.expectedStateVersion,
+    resultingStateVersion: args.resultingStateVersion,
+    idempotencyKey: args.idempotencyKey ?? `${args.executionId}:checkpoint:${checkpointSequence}`,
+    irDigest: args.irDigest,
     roleId: args.roleId,
     branchId: args.branchId,
     loopIteration: args.loopIteration,
@@ -1681,6 +1691,10 @@ export async function loadPendingRuntimeCheckpoints(args: {
       typeof (raw as RuntimeCheckpointRecord).branchId !== "string" ||
       typeof (raw as RuntimeCheckpointRecord).loopIteration !== "number" ||
       typeof (raw as RuntimeCheckpointRecord).executionId !== "string" ||
+      ((raw as RuntimeCheckpointRecord).expectedStateVersion !== undefined && typeof (raw as RuntimeCheckpointRecord).expectedStateVersion !== "number") ||
+      ((raw as RuntimeCheckpointRecord).resultingStateVersion !== undefined && typeof (raw as RuntimeCheckpointRecord).resultingStateVersion !== "number") ||
+      ((raw as RuntimeCheckpointRecord).eventId !== undefined && typeof (raw as RuntimeCheckpointRecord).eventId !== "string") ||
+      ((raw as RuntimeCheckpointRecord).idempotencyKey !== undefined && typeof (raw as RuntimeCheckpointRecord).idempotencyKey !== "string") ||
       typeof (raw as RuntimeCheckpointRecord).update !== "object" ||
       (raw as RuntimeCheckpointRecord).update === null ||
       Array.isArray((raw as RuntimeCheckpointRecord).update)

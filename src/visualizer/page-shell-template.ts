@@ -112,6 +112,7 @@ export function renderPageShellBody({ workdir, locale, t }: PageShellBodyOptions
                       <option value="paused">${escapeHtml(t("status.paused"))}</option>
                       <option value="running">${escapeHtml(t("status.running"))}</option>
                       <option value="stopped">${escapeHtml(t("status.stopped"))}</option>
+                      <option value="terminated">${escapeHtml(t("status.terminated"))}</option>
                       <option value="done">${escapeHtml(t("status.done"))}</option>
                       <option value="failed">${escapeHtml(t("status.failed"))}</option>
                       <option value="waiting_review">${escapeHtml(t("status.waitingReview"))}</option>

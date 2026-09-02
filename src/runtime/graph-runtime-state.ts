@@ -10,6 +10,7 @@ import { getExecutionPlanNode } from "./execution-plan.js";
 import { countPendingHumanReviews, hasWaitingHumanReview } from "./human-review.js";
 import { createEmptyAuditSummary, summarizeRunFromAuditSummary } from "./run-summary.js";
 import { buildRoleLineageLoopKey } from "./runtime-indexes.js";
+import { buildJoinDisplayId } from "./semantic-ir.js";
 import type { RuntimeIndexes } from "./runtime-indexes.js";
 import type {
   BranchRecord,
@@ -26,8 +27,25 @@ export function buildBranchId(
   return `${roleId}@${loopIteration}#${branchSequence}`;
 }
 
-export function buildJoinId(roleId: string, loopIteration: number): string {
-  return `${roleId}@${loopIteration}`;
+export function buildJoinId(roleId: string, loopIteration: number, lineageId: string): string {
+  return buildJoinDisplayId({
+    runId: "display-only",
+    joinRoleId: roleId,
+    lineageId,
+    loopIteration
+  });
+}
+
+export function buildLoopScopeKey(lineageId: string, loopId: string): string {
+  return `${lineageId}::${loopId}`;
+}
+
+export function buildRoleActivationScopeKey(lineageId: string, roleId: string): string {
+  return `${lineageId}::${roleId}`;
+}
+
+export function getLoopScopeForRole(plan: ExecutionPlan, roleId: string) {
+  return plan.semanticIR?.loops.find((scope) => scope.members.includes(roleId));
 }
 
 export function getTargetLoopIteration(args: {
@@ -35,8 +53,17 @@ export function getTargetLoopIteration(args: {
   currentLoopIteration: number;
   state: GraphState;
   plan: ExecutionPlan;
+  lineageId?: string;
 }): number {
   const targetNode = getExecutionPlanNode(args.plan, args.targetRoleId);
+  const scope = getLoopScopeForRole(args.plan, args.targetRoleId);
+  if (scope && args.lineageId) {
+    const scoped = args.state.loopCountersByScope?.[buildLoopScopeKey(args.lineageId, scope.loopId)];
+    if (scoped !== undefined) {
+      return args.targetRoleId === scope.boundaryRoleId ? scoped + 1 : scoped;
+    }
+    return args.targetRoleId === scope.boundaryRoleId ? 1 : 0;
+  }
   if (targetNode.loopMax !== undefined) {
     return (args.state.loopIterations[args.targetRoleId] ?? 0) + 1;
   }
@@ -48,8 +75,13 @@ export function wouldExceedLoopBudget(args: {
   currentLoopIteration: number;
   state: GraphState;
   plan: ExecutionPlan;
+  lineageId?: string;
 }): boolean {
   const targetNode = getExecutionPlanNode(args.plan, args.targetRoleId);
+  const scope = getLoopScopeForRole(args.plan, args.targetRoleId);
+  if (scope && args.lineageId) {
+    return getTargetLoopIteration(args) > scope.maxRounds;
+  }
   if (targetNode.loopMax === undefined) {
     return false;
   }
@@ -244,7 +276,10 @@ export function createInitialGraphState(args: {
   // The graph starts with a single active entry branch so branch ids and lineage ids are seeded
   // before any split, join, or loop logic runs.
   return {
+    stateVersion: 0,
+    lastEventId: undefined,
     userPrompt: args.prompt,
+    businessState: { ...(args.plan.semanticIR?.stateSchema.defaults ?? {}) },
     status: "running",
     error: "",
     transitionCount: 0,
@@ -271,6 +306,11 @@ export function createInitialGraphState(args: {
     loopIterations: {
       [args.plan.entryRoleId]: 1
     },
+    loopCountersByScope: {},
+    roleActivationsByScope: {
+      [buildRoleActivationScopeKey(branchId, args.plan.entryRoleId)]: 1
+    },
+    joinScopes: {},
     selectedEventByBranchId: {},
     finalOutput: "",
     finalRoleId: "",

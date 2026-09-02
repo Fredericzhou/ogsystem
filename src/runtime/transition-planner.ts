@@ -11,14 +11,19 @@ import {
   activateBranch,
   buildBranchId,
   buildJoinId,
+  buildLoopScopeKey,
+  buildRoleActivationScopeKey,
   completeBranch,
   getBranchResult,
   getTargetLoopIteration,
+  getLoopScopeForRole,
   storeRoleResult,
   waitForHumanReview,
   wouldExceedLoopBudget
 } from "./graph-runtime-state.js";
 import { buildReviewId, buildReviewRoundKey } from "./human-review.js";
+import { selectSemanticRoute } from "./condition-ast.js";
+import { semanticIRDigest } from "./semantic-ir.js";
 import { sanitizeRoleInputContext } from "./role-input-projector.js";
 import { buildAuditSummaryDelta } from "./run-summary.js";
 import type { RuntimeIndexes } from "./runtime-indexes.js";
@@ -128,10 +133,22 @@ type HumanReviewTransitionEvent =
       scope: "branch" | "run";
     };
 
+type LoopTransitionEvent = {
+  type: "loop_exhausted";
+  at: string;
+  loopId: string;
+  roleId: string;
+  lineageId: string;
+  loopIteration: number;
+  maxRounds: number;
+  onExhausted: string;
+};
+
 export type RuntimeTransitionEvent =
   | JoinTransitionEvent
   | FailureHandledTransitionEvent
-  | HumanReviewTransitionEvent;
+  | HumanReviewTransitionEvent
+  | LoopTransitionEvent;
 
 export type TransitionPlan = {
   update: GraphUpdate;
@@ -140,6 +157,7 @@ export type TransitionPlan = {
 };
 
 export type TransitionPlannerInput = {
+  runId?: string;
   state: GraphState;
   plan: ExecutionPlan;
   contractPlan?: FlowContractPlan;
@@ -451,6 +469,7 @@ function buildContractValidationFailureTransition(args: {
 
 function buildHumanReviewPendingTransition(args: {
   state: GraphState;
+  plan: ExecutionPlan;
   roleId: string;
   branch: BranchRecord;
   audit: AuditRecord;
@@ -486,7 +505,9 @@ function buildHumanReviewPendingTransition(args: {
     requestedByExecutionId: args.executionId,
     status: "pending",
     round,
-    spec: args.spec
+    spec: args.spec,
+    stateVersion: args.state.stateVersion,
+    ...(args.plan.semanticIR ? { irDigest: semanticIRDigest(args.plan.semanticIR) } : {})
   };
   return {
     update: {
@@ -668,7 +689,9 @@ function buildApprovedHumanReviewTransition(args: {
   const loopUpdates: Record<string, number> = {
     [args.review.roleId]: args.review.loopIteration
   };
-  const joinEvents: JoinTransitionEvent[] = [];
+  const loopScopeUpdates: Record<string, number> = {};
+  const roleActivationUpdates: Record<string, number> = {};
+  const joinEvents: RuntimeTransitionEvent[] = [];
   let nextBranchSequence = args.state.nextBranchSequence;
   let finalStatus: GraphRunStatus = "running";
   let finalError = "";
@@ -715,7 +738,8 @@ function buildApprovedHumanReviewTransition(args: {
         targetRoleId,
         currentLoopIteration: args.review.loopIteration,
         state: args.state,
-        plan: args.plan
+        plan: args.plan,
+        lineageId: args.review.lineageId
       })
     ) {
       finalStatus = "failed";
@@ -736,9 +760,14 @@ function buildApprovedHumanReviewTransition(args: {
       targetRoleId,
       currentLoopIteration: args.review.loopIteration,
       state: args.state,
-      plan: args.plan
+      plan: args.plan,
+      lineageId: args.review.lineageId
     });
     loopUpdates[targetRoleId] = nextLoopIteration;
+    const loopScope = getLoopScopeForRole(args.plan, targetRoleId);
+    if (loopScope && targetRoleId === loopScope.boundaryRoleId) {
+      loopScopeUpdates[buildLoopScopeKey(args.review.lineageId, loopScope.loopId)] = nextLoopIteration;
+    }
     const targetNode = getExecutionPlanNode(args.plan, targetRoleId);
     if (targetNode.joinMode) {
       const readiness = evaluateJoinNodeReadiness({
@@ -754,7 +783,7 @@ function buildApprovedHumanReviewTransition(args: {
         currentResult: args.review.draftResult,
         indexes: args.indexes
       });
-      const joinId = buildJoinId(targetRoleId, nextLoopIteration);
+      const joinId = buildJoinId(targetRoleId, nextLoopIteration, args.review.lineageId);
       const existingJoinBranch = findActivatedJoinBranch({
         state: args.state,
         roleId: targetRoleId,
@@ -946,6 +975,7 @@ function buildApprovedHumanReviewTransition(args: {
       },
       branchRecords: branchUpdates,
       loopIterations: loopUpdates,
+      loopCountersByScope: loopScopeUpdates,
       selectedEventByBranchId: args.review.selectedEvent
         ? { [args.review.branchId]: args.review.selectedEvent }
         : {},
@@ -982,6 +1012,12 @@ function buildApprovedHumanReviewTransition(args: {
 }
 
 export function planHumanReviewDecisionTransition(args: ReviewDecisionTransitionInput): TransitionPlan {
+  if (args.review.stateVersion !== undefined && args.review.stateVersion !== args.state.stateVersion) {
+    throw new Error(`Human review ${args.review.reviewId} is bound to state version ${args.review.stateVersion}, current version is ${args.state.stateVersion}`);
+  }
+  if (args.review.irDigest && args.plan.semanticIR && args.review.irDigest !== semanticIRDigest(args.plan.semanticIR)) {
+    throw new Error(`Human review ${args.review.reviewId} Semantic IR digest mismatch`);
+  }
   const node = getExecutionPlanNode(args.plan, args.review.roleId);
   if (args.decision.decision === "approve") {
     return buildApprovedHumanReviewTransition({
@@ -1002,7 +1038,10 @@ export function planHumanReviewDecisionTransition(args: ReviewDecisionTransition
         pendingReviewsById: {
           [args.review.reviewId]: {
             ...args.review,
-            status: "paused"
+            status: "paused",
+            // The pause decision itself is a legitimate state transition. Bind a later decision
+            // on this same review to the post-checkpoint version, not the pre-pause snapshot.
+            stateVersion: args.state.stateVersion + 1
           }
         },
         reviewHistoryByBranchId: buildReviewHistoryUpdate({
@@ -1081,7 +1120,8 @@ export function planHumanReviewDecisionTransition(args: ReviewDecisionTransition
     targetRoleId,
     currentLoopIteration: args.review.loopIteration,
     state: args.state,
-    plan: args.plan
+    plan: args.plan,
+    lineageId: args.review.lineageId
   });
   const targetNode = getExecutionPlanNode(args.plan, targetRoleId);
   const currentBranch = args.state.branchRecords[args.review.branchId];
@@ -1147,6 +1187,16 @@ export function planHumanReviewDecisionTransition(args: ReviewDecisionTransition
       loopIterations: {
         [targetRoleId]: nextLoopIteration
       },
+      ...(getLoopScopeForRole(args.plan, targetRoleId)?.boundaryRoleId === targetRoleId
+        ? {
+            loopCountersByScope: {
+              [buildLoopScopeKey(
+                args.review.lineageId,
+                getLoopScopeForRole(args.plan, targetRoleId)!.loopId
+              )]: nextLoopIteration
+            }
+          }
+        : {}),
       nextBranchSequence: args.state.nextBranchSequence + 1,
       lastExecutedRoleId: args.review.roleId
     },
@@ -1167,6 +1217,7 @@ export function planHumanReviewDecisionTransition(args: ReviewDecisionTransition
 }
 
 function buildRoutedTransitionPlan(args: {
+  runId?: string;
   state: GraphState;
   plan: ExecutionPlan;
   contractPlan?: FlowContractPlan;
@@ -1191,7 +1242,10 @@ function buildRoutedTransitionPlan(args: {
   const loopUpdates: Record<string, number> = {
     [args.roleId]: args.currentBranch.loopIteration
   };
-  const joinEvents: JoinTransitionEvent[] = [];
+  const loopScopeUpdates: Record<string, number> = {};
+  const roleActivationUpdates: Record<string, number> = {};
+  const joinEvents: RuntimeTransitionEvent[] = [];
+  const joinScopeUpdates: NonNullable<GraphState["joinScopes"]> = {};
   let nextBranchSequence = args.state.nextBranchSequence;
   let finalStatus: GraphRunStatus = "running";
   let finalError = "";
@@ -1200,7 +1254,8 @@ function buildRoutedTransitionPlan(args: {
   let finalErrorEnvelope: RuntimeErrorEnvelope | undefined;
   let reachedSystemOutput = false;
 
-  for (const targetRoleId of args.candidateTargets) {
+  for (const candidateTargetRoleId of args.candidateTargets) {
+    let targetRoleId = candidateTargetRoleId;
     const targetEvent = args.eventByTargetRoleId.get(targetRoleId) ?? args.selectedEvent;
 
     if (targetRoleId === SYSTEM_END_ROLE_ID) {
@@ -1214,17 +1269,31 @@ function buildRoutedTransitionPlan(args: {
       continue;
     }
 
-    if (
-      wouldExceedLoopBudget({
+    if (wouldExceedLoopBudget({
         targetRoleId,
         currentLoopIteration: args.currentBranch.loopIteration,
         state: args.state,
-        plan: args.plan
-      })
-    ) {
+        plan: args.plan,
+        lineageId: args.currentBranch.lineageId
+      })) {
       if (args.loopBudgetFailureMode === "abort_routing") {
         return undefined;
       }
+      const exhaustedScope = getLoopScopeForRole(args.plan, targetRoleId);
+      const exhaustedTarget = exhaustedScope?.onExhausted;
+      if (exhaustedScope && exhaustedTarget && exhaustedTarget !== targetRoleId) {
+        joinEvents.push({
+          type: "loop_exhausted",
+          at: new Date().toISOString(),
+          loopId: exhaustedScope.loopId,
+          roleId: args.roleId,
+          lineageId: args.currentBranch.lineageId,
+          loopIteration: args.currentBranch.loopIteration,
+          maxRounds: exhaustedScope.maxRounds,
+          onExhausted: exhaustedTarget
+        });
+        targetRoleId = exhaustedTarget === "end" ? SYSTEM_END_ROLE_ID : exhaustedTarget;
+      } else {
       finalStatus = "failed";
       finalError = `Loop budget exceeded for ${targetRoleId}`;
       finalErrorEnvelope = {
@@ -1238,15 +1307,32 @@ function buildRoutedTransitionPlan(args: {
       };
       finalRoleId = args.roleId;
       break;
+      }
+    }
+
+    if (targetRoleId === SYSTEM_END_ROLE_ID) {
+      reachedSystemOutput = true;
+      args.logger.transition({
+        fromRoleId: args.roleId,
+        event: targetEvent,
+        toRoleId: "output",
+        branchId: args.currentBranch.branchId
+      });
+      continue;
     }
 
     const nextLoopIteration = getTargetLoopIteration({
       targetRoleId,
       currentLoopIteration: args.currentBranch.loopIteration,
       state: args.state,
-      plan: args.plan
+      plan: args.plan,
+      lineageId: args.currentBranch.lineageId
     });
     loopUpdates[targetRoleId] = nextLoopIteration;
+    const loopScope = getLoopScopeForRole(args.plan, targetRoleId);
+    if (loopScope && targetRoleId === loopScope.boundaryRoleId) {
+      loopScopeUpdates[buildLoopScopeKey(args.currentBranch.lineageId, loopScope.loopId)] = nextLoopIteration;
+    }
     const targetNode = getExecutionPlanNode(args.plan, targetRoleId);
 
     if (targetNode.joinMode) {
@@ -1257,7 +1343,7 @@ function buildRoutedTransitionPlan(args: {
         currentResult: args.currentResult,
         indexes: args.indexes
       });
-      const joinId = buildJoinId(targetRoleId, nextLoopIteration);
+      const joinId = buildJoinId(targetRoleId, nextLoopIteration, args.currentBranch.lineageId);
       const existingJoinBranch = findActivatedJoinBranch({
         state: args.state,
         roleId: targetRoleId,
@@ -1287,6 +1373,17 @@ function buildRoutedTransitionPlan(args: {
       }
 
       if (!readiness.ready) {
+        const scopeKey = JSON.stringify([targetRoleId, args.currentBranch.lineageId, nextLoopIteration]);
+        const existingScope = args.state.joinScopes?.[scopeKey];
+        const now = new Date().toISOString();
+        const joinSpec = args.plan.semanticIR?.joins.find((item) => item.roleId === targetRoleId);
+        joinScopeUpdates[scopeKey] = {
+          joinId, runId: args.runId ?? "", joinRoleId: targetRoleId, lineageId: args.currentBranch.lineageId,
+          loopIteration: nextLoopIteration, expectedSourceRoleIds: targetNode.joinSources,
+          readySourceRoleIds: readiness.completedSourceRoleIds, missingSourceRoleIds: readiness.missingSourceRoleIds,
+          startedAt: existingScope?.startedAt ?? now, timeoutSeconds: joinSpec?.timeoutSeconds ?? 3600,
+          status: "waiting", timeoutAction: joinSpec?.onTimeout
+        };
         args.logger.joinWait({
           roleId: targetRoleId,
           arrivedFrom: args.roleId,
@@ -1300,6 +1397,29 @@ function buildRoutedTransitionPlan(args: {
         });
         continue;
       }
+
+      const activationKey = buildRoleActivationScopeKey(args.currentBranch.lineageId, targetRoleId);
+      const activationLimit = Math.min(
+        args.plan.semanticIR?.capabilities.maxRoleActivationsByRoleId?.[targetRoleId] ?? Number.POSITIVE_INFINITY,
+        loopScope?.maxRoleActivationsByRoleId?.[targetRoleId] ?? Number.POSITIVE_INFINITY
+      );
+      const activationCount = (args.state.roleActivationsByScope?.[activationKey] ?? 0) + 1;
+      if (activationCount > activationLimit) {
+        finalStatus = "failed";
+        finalError = `Role activation budget exceeded for ${targetRoleId}: ${activationCount} > ${activationLimit}`;
+        finalErrorEnvelope = {
+          errorCode: "GRAPH_ROLE_ACTIVATION_BUDGET_EXCEEDED",
+          errorCategory: "state",
+          message: finalError,
+          retryable: false,
+          stage: "execute",
+          roleId: targetRoleId,
+          branchId: args.currentBranch.branchId
+        };
+        finalRoleId = targetRoleId;
+        break;
+      }
+      roleActivationUpdates[activationKey] = activationCount;
 
       const sessionLineageId = resolveNextSessionLineageId({
         currentNode: args.node,
@@ -1322,6 +1442,17 @@ function buildRoutedTransitionPlan(args: {
       });
       nextBranchSequence += 1;
       branchUpdates[branch.branchId] = branch;
+      const scopeKey = JSON.stringify([targetRoleId, args.currentBranch.lineageId, nextLoopIteration]);
+      const existingScope = args.state.joinScopes?.[scopeKey];
+      if (existingScope) {
+        joinScopeUpdates[scopeKey] = {
+          ...existingScope,
+          readySourceRoleIds: readiness.completedSourceRoleIds,
+          missingSourceRoleIds: readiness.missingSourceRoleIds,
+          status: "activated",
+          completedAt: new Date().toISOString()
+        };
+      }
 
       if (targetNode.joinMode === "quorum_of") {
         joinEvents.push({
@@ -1365,6 +1496,29 @@ function buildRoutedTransitionPlan(args: {
       });
       continue;
     }
+
+    const activationKey = buildRoleActivationScopeKey(args.currentBranch.lineageId, targetRoleId);
+    const activationLimit = Math.min(
+      args.plan.semanticIR?.capabilities.maxRoleActivationsByRoleId?.[targetRoleId] ?? Number.POSITIVE_INFINITY,
+      loopScope?.maxRoleActivationsByRoleId?.[targetRoleId] ?? Number.POSITIVE_INFINITY
+    );
+    const activationCount = (args.state.roleActivationsByScope?.[activationKey] ?? 0) + 1;
+    if (activationCount > activationLimit) {
+      finalStatus = "failed";
+      finalError = `Role activation budget exceeded for ${targetRoleId}: ${activationCount} > ${activationLimit}`;
+      finalErrorEnvelope = {
+        errorCode: "GRAPH_ROLE_ACTIVATION_BUDGET_EXCEEDED",
+        errorCategory: "state",
+        message: finalError,
+        retryable: false,
+        stage: "execute",
+        roleId: targetRoleId,
+        branchId: args.currentBranch.branchId
+      };
+      finalRoleId = targetRoleId;
+      break;
+    }
+    roleActivationUpdates[activationKey] = activationCount;
 
     const sessionLineageId = resolveNextSessionLineageId({
       currentNode: args.node,
@@ -1443,6 +1597,9 @@ function buildRoutedTransitionPlan(args: {
       roleResults: storeRoleResult(args.currentBranch.branchId, args.currentResult),
       branchRecords: branchUpdates,
       loopIterations: loopUpdates,
+      loopCountersByScope: loopScopeUpdates,
+      roleActivationsByScope: roleActivationUpdates,
+      joinScopes: joinScopeUpdates,
       selectedEventByBranchId: args.selectedEvent
         ? { [args.currentBranch.branchId]: args.selectedEvent }
         : {},
@@ -1482,6 +1639,7 @@ export function planTransition(args: TransitionPlannerInput): TransitionPlan {
           failureInputContext: args.outcome.audit.inputContext
         });
         const handledTransition = buildRoutedTransitionPlan({
+          runId: args.runId,
           state: args.state,
           plan: args.plan,
           node,
@@ -1531,6 +1689,7 @@ export function planTransition(args: TransitionPlannerInput): TransitionPlan {
   if (node.review) {
     return buildHumanReviewPendingTransition({
       state: args.state,
+      plan: args.plan,
       roleId: args.outcome.roleId,
       branch: args.outcome.branch,
       audit: args.outcome.audit,
@@ -1541,11 +1700,32 @@ export function planTransition(args: TransitionPlannerInput): TransitionPlan {
     });
   }
 
-  const candidateTargets = selectRoutingTargets({
+  let candidateTargets = selectRoutingTargets({
     node,
     selectedEvent: args.outcome.selectedEvent,
     mode: args.outcome.status
   });
+  // Semantic IR conditions are evaluated after the role output is validated and before any
+  // branch activation. This keeps route ambiguity and fail-closed behavior in OGS runtime.
+  const selectedEvent = args.outcome.selectedEvent;
+  if (args.plan.semanticIR && selectedEvent && node.routingMode !== "parallel_split") {
+    const semanticTransitions = args.plan.semanticIR.transitions.filter(
+      (transition) => transition.fromRoleId === args.outcome.roleId && transition.eventType === selectedEvent
+    );
+    if (semanticTransitions.some((transition) => transition.condition)) {
+      const route = selectSemanticRoute({
+        transitions: semanticTransitions,
+        eventType: selectedEvent,
+        context: {
+          state: args.state.businessState ?? {},
+          loop: { iteration: args.outcome.branch.loopIteration, lineageId: args.outcome.branch.lineageId },
+          event: args.outcome.storedResult?.data ?? args.outcome.storedResult?.content,
+          role: { roleId: args.outcome.roleId, mode: "default" }
+        }
+      });
+      candidateTargets = [route.toRoleId];
+    }
+  }
   const eventByTargetRoleId = new Map<string, string | undefined>();
   const flowContractPayload: Record<string, unknown> = {};
   if (args.outcome.storedResult?.event !== undefined) {
@@ -1641,6 +1821,7 @@ export function planTransition(args: TransitionPlannerInput): TransitionPlan {
 
   return (
     buildRoutedTransitionPlan({
+      runId: args.runId,
       state: args.state,
       plan: args.plan,
       contractPlan: args.contractPlan,

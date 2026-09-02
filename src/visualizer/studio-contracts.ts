@@ -116,6 +116,13 @@ export type GraphViewModelNodeStructure = {
   loopMax?: number;
   review?: StudioHumanReviewSpec;
   contextFields?: string[];
+  modes?: string[];
+  loopScope?: {
+    loopId: string;
+    boundaryRoleId: string;
+    maxRounds: number;
+    onExhausted: string;
+  };
 };
 
 export type GraphViewModelJoinWaiting = {
@@ -146,12 +153,10 @@ export type GraphViewModelDiagnostic = {
   message?: string;
 };
 
-export type GraphViewModelNode = {
+type GraphViewModelNodeBase = {
   id: string;
   roleId: string;
-  kind: "role" | "boundary";
   label: string;
-  bindingKind: StudioAuthoringRole["bindingKind"] | "boundary";
   badges: string[];
   structure: GraphViewModelNodeStructure;
   layout: GraphViewModelLayout;
@@ -159,6 +164,26 @@ export type GraphViewModelNode = {
   diagnostic?: GraphViewModelDiagnostic;
   editable: boolean;
 };
+
+/** A rendered node that represents one accountable role seat and its aggregate runtime data. */
+export type ResponsibilitySeatNode = GraphViewModelNodeBase & {
+  kind: "roleSeat";
+  entityKind: "responsibility_seat";
+  roleSeat: true;
+  executionScope: "roleAggregate";
+  bindingKind: StudioAuthoringRole["bindingKind"];
+};
+
+/** A synthetic graph boundary; it can never be edited or treated as a role execution seat. */
+export type BoundaryNode = GraphViewModelNodeBase & {
+  kind: "boundary";
+  entityKind: "boundary";
+  roleSeat: false;
+  executionScope: "boundary";
+  bindingKind: "boundary";
+};
+
+export type GraphViewModelNode = ResponsibilitySeatNode | BoundaryNode;
 
 export type GraphViewModelEdgeRuntime = {
   recentlyActivated: boolean;
@@ -172,6 +197,9 @@ export type GraphViewModelEdge = {
   label: string;
   runtimeOnlyErrorFlow: boolean;
   participatesInJoin: boolean;
+  conditionSummary?: string;
+  priority?: number;
+  channel?: "normal" | "error" | "loop" | "join";
   runtime?: GraphViewModelEdgeRuntime;
   diagnostic?: GraphViewModelDiagnostic;
   editable: boolean;

@@ -121,7 +121,7 @@ export type RunConsoleLogger = {
     pendingReviewCount?: number;
   }): void;
   runEnd(args: {
-    status: "done" | "failed" | "stopped";
+    status: "done" | "failed" | "stopped" | "terminated";
     finalRoleId?: string;
     totalTransitions: number;
     okCount: number;

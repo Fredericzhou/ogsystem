@@ -34,7 +34,9 @@ export function isPendingHumanReview(
       (value as PendingHumanReview).status === "expired") &&
     typeof (value as PendingHumanReview).round === "number" &&
     typeof (value as PendingHumanReview).spec === "object" &&
-    (value as PendingHumanReview).spec !== null
+    (value as PendingHumanReview).spec !== null &&
+    ((value as PendingHumanReview).stateVersion === undefined || Number.isInteger((value as PendingHumanReview).stateVersion)) &&
+    ((value as PendingHumanReview).irDigest === undefined || typeof (value as PendingHumanReview).irDigest === "string")
   );
 }
 

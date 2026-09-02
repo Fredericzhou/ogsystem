@@ -176,11 +176,18 @@ test("adapter runs graph debate example with parallel branches, join, and bounde
 
   const eventsText = await readFile(path.resolve(runDir, "events.ndjson"), "utf8");
   assert.match(eventsText, /"branchId":"debate-minimalist@1#\d+"/);
-  assert.match(eventsText, /"joinId":"debate-judge@2"/);
+  assert.match(eventsText, /"joinId":"debate-judge#.*#2"/);
   const timelineText = await readFile(path.resolve(runDir, "timeline.jsonl"), "utf8");
   assert.match(timelineText, /"type":"audit"/);
   const checkpointEntries = await readdir(path.resolve(runDir, "checkpoints"));
   assert.ok(checkpointEntries.length > 0);
+  const firstCheckpoint = JSON.parse(
+    await readFile(path.resolve(runDir, "checkpoints", checkpointEntries.sort()[0]), "utf8")
+  );
+  assert.match(firstCheckpoint.eventId, /^.+:.+:1$/);
+  assert.equal(firstCheckpoint.expectedStateVersion, 0);
+  assert.equal(firstCheckpoint.resultingStateVersion, 1);
+  assert.equal(firstCheckpoint.idempotencyKey, firstCheckpoint.eventId);
 
   assert.ok((await lstat(path.resolve(runDir, "shared"))).isDirectory());
   await assert.rejects(lstat(path.resolve(runDir, "roles", "debate-minimalist", "shared")));

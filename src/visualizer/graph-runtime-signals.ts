@@ -61,6 +61,9 @@ export function buildGraphNodeStatus(args: {
   if (args.state.status === "failed" && args.state.lastExecutedRoleId === args.roleId) {
     return "failed";
   }
+  if (args.state.status === "terminated" && args.state.lastExecutedRoleId === args.roleId) {
+    return "terminated";
+  }
   if (args.waitingReviewCount > 0) {
     return "waiting_review";
   }

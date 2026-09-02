@@ -15,6 +15,8 @@ import type {
 } from "./types.js";
 
 export type RolePromptInput = {
+  role_id?: string;
+  mode?: string;
   allowed_events: string;
   user_preferences: string;
   task: string;
@@ -434,7 +436,10 @@ export function buildRolePromptInput(args: {
   state: GraphState;
   userProfile?: UserProfile;
 }): RolePromptInput {
-  const allowedEvents = getSelectableOutgoingFlows(args.node).map((item) => item.eventType);
+  const outgoingEvents = getSelectableOutgoingFlows(args.node).map((item) => item.eventType);
+  const allowedEvents = args.node.modeAllowedEvents
+    ? outgoingEvents.filter((event) => args.node.modeAllowedEvents?.includes(event))
+    : outgoingEvents;
   const hasContextMap = Boolean(args.node.contextMap && Object.keys(args.node.contextMap).length > 0);
   const context =
     hasContextMap
@@ -448,6 +453,8 @@ export function buildRolePromptInput(args: {
         : getDirectContext(args.state, args.branch);
 
   return {
+    role_id: args.roleId,
+    ...(args.node.executionMode ? { mode: args.node.executionMode } : {}),
     allowed_events: JSON.stringify(allowedEvents),
     user_preferences: renderUserProfile(args.userProfile),
     task: args.state.userPrompt,

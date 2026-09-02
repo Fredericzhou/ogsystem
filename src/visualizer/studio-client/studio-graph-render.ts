@@ -1,7 +1,10 @@
 import type { Edge, Graph, Node } from "@antv/x6";
 
 import type { GraphViewModel, GraphViewModelEdge, GraphViewModelNode } from "../studio-contracts.js";
+import { formatStudioEdgeLabel } from "../studio-edge-semantics.js";
 import { formatStudioRuntimeNodeBadges } from "./studio-graph-runtime.js";
+
+export { formatStudioEdgeLabel } from "../studio-edge-semantics.js";
 
 function diagnosticBadgeText(severity: GraphViewModelNode["diagnostic"] extends infer T
   ? T extends { severity: infer S }
@@ -30,8 +33,15 @@ function edgeStroke(edge: GraphViewModelEdge): string {
 
 function nodeLabel(node: GraphViewModelNode): string {
   const normalizedBadges = formatStudioRuntimeNodeBadges(node);
-  const badges = normalizedBadges.length ? `  [${normalizedBadges.join(" ")}]` : "";
-  return `${node.label}${badges}`;
+  const semantic = node.roleSeat
+    ? [
+        node.structure.modes?.length ? `mode:${node.structure.modes.join("/")}` : "",
+        node.structure.loopScope ? `loop:${node.structure.loopScope.loopId}` : "",
+        node.structure.review ? "review" : ""
+      ].filter(Boolean)
+    : [];
+  const badges = [...semantic, ...normalizedBadges];
+  return badges.length ? `${node.label}  [${badges.join(" ")}]` : node.label;
 }
 
 type StudioEdgeTerminal = NonNullable<Edge.Metadata["source"]>;
@@ -209,6 +219,9 @@ export function resolveStudioEdgeRouter(
   const sourceNode = nodeById.get(edge.source);
   const targetNode = nodeById.get(edge.target);
   const route = resolveStudioEdgeRoute(edge, nodeById);
+  if (edge.channel === "loop") {
+    return STUDIO_EDGE_BACKWARD_ROUTER;
+  }
   if (route.kind === "self") {
     return {
       name: "loop",
@@ -438,7 +451,7 @@ function studioNodeAttrs(node: GraphViewModelNode): Node.Metadata["attrs"] {
       fill: node.diagnostic?.severity === "error" ? "#7f1d1d" : "#713f12",
       stroke: node.diagnostic?.severity === "error" ? "#f87171" : "#fbbf24",
       strokeWidth: 1.2,
-      visibility: node.kind === "role" && node.diagnostic ? "visible" : "hidden"
+      visibility: node.roleSeat && node.diagnostic ? "visible" : "hidden"
     },
     diagnosticText: {
       x: node.layout.width - 14,
@@ -448,7 +461,7 @@ function studioNodeAttrs(node: GraphViewModelNode): Node.Metadata["attrs"] {
       fontWeight: 700,
       fill: "#f8fafc",
       text: node.diagnostic ? diagnosticBadgeText(node.diagnostic.severity) : "",
-      visibility: node.kind === "role" && node.diagnostic ? "visible" : "hidden"
+      visibility: node.roleSeat && node.diagnostic ? "visible" : "hidden"
     }
   };
 }
@@ -465,7 +478,7 @@ function studioNodePorts(node: GraphViewModelNode): Node.Metadata["ports"] {
         attrs: { circle: { r: 4, magnet: true, stroke: "#38bdf8", fill: "#050914", "data-studio-port": "out" } }
       }
     },
-    items: node.kind === "role"
+    items: node.roleSeat
       ? [
           { id: "in", group: "in" },
           { id: "out", group: "out" }
@@ -479,7 +492,7 @@ function updateStudioNode(cell: Node, node: GraphViewModelNode): void {
   cell.position(node.layout.x, node.layout.y);
   cell.resize(node.layout.width, node.layout.height);
   cell.attr(studioNodeAttrs(node));
-  const expectedPortIds = node.kind === "role" ? ["in", "out"] : [];
+  const expectedPortIds = node.roleSeat ? ["in", "out"] : [];
   const currentPortIds = cell.getPorts().map((port) => String(port.id ?? ""));
   const missingPorts = expectedPortIds.filter((id) => !cell.hasPort(id));
   if (missingPorts.length) {
@@ -509,7 +522,7 @@ function studioEdgeLabels(edge: GraphViewModelEdge): Edge.Metadata["labels"] {
   const labels: NonNullable<Edge.Metadata["labels"]> = [{
     attrs: {
       label: {
-        text: edge.label,
+        text: formatStudioEdgeLabel(edge),
         fill: "#dbeafe",
         fontSize: 11
       },

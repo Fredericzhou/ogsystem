@@ -2,7 +2,9 @@ import { spawn } from "node:child_process";
 
 const args = [
   "--test",
-  ...(process.platform === "win32" ? ["--test-concurrency=1"] : []),
+  // Several lifecycle tests intentionally exercise the shared system role installation.
+  // Serial execution keeps those filesystem mutations isolated on every platform.
+  "--test-concurrency=1",
   "tests/*.mjs"
 ];
 

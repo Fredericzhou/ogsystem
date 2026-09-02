@@ -15,6 +15,7 @@ import {
   asString
 } from "./json-guards.js";
 import type { GraphState } from "../runtime/types.js";
+import type { SemanticIR } from "../runtime/semantic-ir.js";
 
 type JsonRecord = Record<string, unknown>;
 
@@ -168,6 +169,7 @@ export async function inspectRunGraphVisualization(args: {
         authoring,
         system,
         state: extractGraphState(detail.state),
+        semanticIR: asRecord(asRecord(detail.resolvedConfig)?.effective)?.semanticIR as SemanticIR | undefined,
         mode: "run"
       })
     : null;

@@ -387,7 +387,7 @@ test("Studio graph bundle preserves stored edit layout and distributes boundarie
   assert.match(bundle, /positionBoundaryExtremes/);
   assert.match(bundle, /this\.positionBoundaryExtremes\(positions, "horizontal", config\.columnGap\)/);
   assert.match(bundle, /this\.positionBoundaryExtremes\(positions, "vertical", 96\)/);
-  assert.match(bundle, /studioNode\?\.kind !== "role" && .*studioNode\?\.kind !== "boundary"/);
+  assert.match(bundle, /studioNode\.roleSeat !== true && .*studioNode\.kind !== "boundary"/);
   assert.match(bundle, /preserveBoundaryNodeLayout/);
   assert.match(bundle, /magnetConnectable:\s*false/);
   assert.doesNotMatch(bundle, /nodeMovable:\s*false/);

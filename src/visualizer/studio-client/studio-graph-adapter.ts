@@ -18,7 +18,7 @@ export function graphToAuthoringLayoutPatch(
   graph.getNodes().forEach((cell: Node) => {
     const data = cell.getData() as { studioNode?: GraphViewModelNode } | undefined;
     const studioNode = data?.studioNode;
-    if (!studioNode || studioNode.kind !== "role") {
+    if (!studioNode || !studioNode.roleSeat) {
       return;
     }
     const size = cell.getSize();

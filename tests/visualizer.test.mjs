@@ -14,7 +14,7 @@ import { parseSystemFromMermaidSource } from "../dist/runtime/parse-mermaid.js";
 import { buildRunPlanFingerprint } from "../dist/runtime/plan-fingerprint.js";
 import { loadLaws, loadRolePackages, loadRuntimeConfig } from "../dist/runtime/runtime-loader.js";
 import { resolveEffectiveLaw } from "../dist/runtime/runtime-setup.js";
-import { startVisualizationServer } from "../dist/visualizer/server.js";
+import { isConvergedRunStatus, startVisualizationServer } from "../dist/visualizer/server.js";
 import {
   JsonBodyError,
   parseJsonObjectBody,
@@ -40,6 +40,11 @@ test("studio chat request parsing keeps trimmed identifiers and ignores non-reco
   assert.equal(parsed.selectedFlowKey, "planner:DONE:review");
   assert.equal(parsed.runtimeConfigPath, "runtime.json");
   assert.equal(parsed.validation, undefined);
+});
+
+test("visualizer recognizes terminated runs as converged", () => {
+  assert.equal(isConvergedRunStatus("terminated"), true);
+  assert.equal(isConvergedRunStatus("running"), false);
 });
 
 async function seedProjectFixture(workdir) {
@@ -1029,7 +1034,7 @@ test("visualizer server serves run list, details, and live stream", async (t) =>
     assert.equal(graph.simulation.isSimulation, true);
     assert.equal(graph.graph.mode, "run");
     assert.equal(graph.authoring.system.entryRoleId, "alpha");
-    assert.equal(graph.graph.nodes.some((node) => node.roleId === "alpha" && node.kind === "role"), true);
+    assert.equal(graph.graph.nodes.some((node) => node.roleId === "alpha" && node.roleSeat === true), true);
     assert.equal(graph.graph.edges.some((edge) => edge.eventType === "DONE"), true);
 
     const engineLogsResponse = await fetch(`${url}/api/v1/runs/${runId}/logs?engine=true`);

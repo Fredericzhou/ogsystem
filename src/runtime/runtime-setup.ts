@@ -9,6 +9,9 @@ import { loadModelSelection, resolveModelSelectionForSystem } from "./model-sele
 import { loadSystemFromMermaid } from "./parse-mermaid.js";
 import { buildRunPlanFingerprint } from "./plan-fingerprint.js";
 import { filesystemRunStore } from "./run-store.js";
+import { loadOgsSpecification, type OgsSpecificationSnapshot } from "./ogs-spec-loader.js";
+import { compileSemanticIR } from "./semantic-ir-compiler.js";
+import type { SemanticIR } from "./semantic-ir.js";
 import { resolveProjectTargetDirectory } from "./project-target.js";
 import {
   loadLaws,
@@ -139,6 +142,9 @@ export type RuntimeAdapterSetup = {
   planFingerprint: RunPlanFingerprint;
   runtimeConfig: RuntimeConfig;
   targetDir: string;
+  specificationSnapshot?: OgsSpecificationSnapshot;
+  semanticIR?: SemanticIR;
+  semanticIRDigest?: string;
 };
 
 export async function prepareRuntimeSetup(args: {
@@ -159,7 +165,25 @@ export async function prepareRuntimeSetup(args: {
     targetDir: args.targetDir,
     resumeRunDir: args.resumeRunDir
   });
+  let specificationSnapshot: OgsSpecificationSnapshot | undefined;
+  const semanticCandidates = ["semantics.yaml", "semantics.yml", "semantics.json"];
+  for (const candidate of semanticCandidates) {
+    if (await filesystemRunStore.pathExists(resolve(args.workdir, ".ogs", candidate))) {
+      specificationSnapshot = await loadOgsSpecification(args.workdir);
+      break;
+    }
+  }
   const system = await loadSystemFromMermaid(args.systemPath);
+  if (
+    specificationSnapshot &&
+    (specificationSnapshot.systemId !== system.systemId ||
+      specificationSnapshot.systemVersion !== system.systemVersion)
+  ) {
+    throw new Error(
+      `OGS specification system mismatch: Mermaid is ${system.systemId}@${system.systemVersion}, ` +
+        `semantic files are ${specificationSnapshot.systemId}@${specificationSnapshot.systemVersion}`
+    );
+  }
   const runtimeConfig = await loadRuntimeConfig(args.runtimeConfigPath, args.workdir);
   const modelSelection = await loadModelSelection(resolve(args.workdir, ".ogs", "model-selection.json"));
   const modelCatalog = await loadModelCatalog(resolve(args.workdir, ".ogs", "model-catalog.json"));
@@ -184,6 +208,30 @@ export async function prepareRuntimeSetup(args: {
   const lawCatalog = await loadLaws(args.lawsPath, args.workdir);
   const userProfile = await loadUserProfile(args.userProfilePath, args.workdir);
   const effectiveLaw = resolveEffectiveLaw(system, lawCatalog);
+  const compiledSemanticIR = specificationSnapshot
+    ? compileSemanticIR({
+        system,
+        specification: specificationSnapshot,
+        maxTransitionsPerRun: effectiveLaw.maxTransitions ?? 100
+      })
+    : undefined;
+  if (compiledSemanticIR) {
+    plan.semanticIR = compiledSemanticIR.ir;
+    for (const seat of compiledSemanticIR.ir.seats) {
+      const node = plan.nodesByRoleId.get(seat.roleId);
+      if (!node) continue;
+      const executionMode = seat.defaultMode;
+      const mode = executionMode ? seat.modes[executionMode] : undefined;
+      const modeRecord = mode && typeof mode === "object" && !Array.isArray(mode)
+        ? mode as Record<string, unknown>
+        : undefined;
+      const events = modeRecord?.events;
+      node.executionMode = executionMode;
+      if (Array.isArray(events) && events.every((event) => typeof event === "string")) {
+        node.modeAllowedEvents = events as string[];
+      }
+    }
+  }
   const roleRootDir = resolveProjectRoleRootDir(args.workdir, runtimeConfig.roleRepo);
   const contractPlan = system.graph?.handoffContracts
     ? await loadFlowContractPlan({
@@ -215,7 +263,8 @@ export async function prepareRuntimeSetup(args: {
     resolvedModelsByRoleId: resolvedModelSelection.resolvedByRoleId,
     effectiveLaw,
     contractPlan,
-    compilerSnapshot: compilerResult.snapshot
+    compilerSnapshot: compilerResult.snapshot,
+    specificationDigest: compiledSemanticIR?.digest ?? specificationSnapshot?.digest
   });
   const resolvedConfigSnapshot: Record<string, unknown> = {
     version: 1,
@@ -248,7 +297,17 @@ export async function prepareRuntimeSetup(args: {
       compiler: {
         digest: compilerResult.digest,
         diagnostics: compilerResult.diagnostics
-      }
+      },
+      specification: specificationSnapshot
+        ? {
+            digest: specificationSnapshot.digest,
+            semanticIRDigest: compiledSemanticIR?.digest,
+            specVersion: specificationSnapshot.specVersion,
+            systemId: specificationSnapshot.systemId,
+            systemVersion: specificationSnapshot.systemVersion
+          }
+        : undefined
+      , semanticIR: compiledSemanticIR?.ir
     }
   };
   const runContext = await filesystemRunStore.initialize({
@@ -279,6 +338,9 @@ export async function prepareRuntimeSetup(args: {
     runContext,
     planFingerprint,
     runtimeConfig,
-    targetDir
+    targetDir,
+    specificationSnapshot,
+    semanticIR: compiledSemanticIR?.ir,
+    semanticIRDigest: compiledSemanticIR?.digest
   };
 }

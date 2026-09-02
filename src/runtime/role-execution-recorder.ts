@@ -1,4 +1,5 @@
 import { appendAuditRecord } from "./audit-recorder.js";
+import type { RuntimeAuditEvent } from "./engine-adapter.js";
 import { filesystemArtifactStore } from "./artifact-store.js";
 import type {
   AuditRecord,
@@ -103,6 +104,7 @@ export async function recordRoleSession(args: Parameters<typeof filesystemArtifa
 export async function recordAudit(args: {
   context: RunContext;
   audit: AuditRecord;
+  append?: (event: RuntimeAuditEvent) => Promise<void>;
 }): Promise<void> {
-  await appendAuditRecord(args.context, args.audit);
+  await appendAuditRecord({ runContext: args.context, audit: args.audit, append: args.append });
 }

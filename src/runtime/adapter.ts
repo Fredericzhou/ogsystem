@@ -5,6 +5,7 @@
  */
 import { createDefaultExecutor } from "./executor.js";
 import { runSystemWithGraphRunner } from "./graph-runner.js";
+import { LangGraphEngineAdapter } from "./langgraph-engine-adapter.js";
 import { RunControl } from "@langchain/langgraph";
 import { createRuntimeError, normalizeRuntimeError } from "./runtime-errors.js";
 import { filesystemRunStore } from "./run-store.js";
@@ -13,6 +14,31 @@ import type { AdapterRunResult, GraphState } from "./types.js";
 
 export { buildRunPlanFingerprint } from "./plan-fingerprint.js";
 export { resolveEffectiveLaw } from "./runtime-setup.js";
+export {
+  buildJoinDisplayId,
+  buildJoinScopeKey,
+  semanticIRDigest,
+  validateSemanticIR
+} from "./semantic-ir.js";
+export { evaluateCondition, resolveConditionValue, selectSemanticRoute, validateConditionAst } from "./condition-ast.js";
+export { applyStateReducer } from "./state-reducer.js";
+export { loadOgsSpecification } from "./ogs-spec-loader.js";
+export { compileSemanticIR } from "./semantic-ir-compiler.js";
+export { buildLoopScopeKey, getTargetLoopIteration, wouldExceedLoopBudget } from "./graph-runtime-state.js";
+export { validateEventCandidate } from "./event-contract.js";
+export { resolveJoinPolicy } from "./join-policy.js";
+export { buildRolePromptInput } from "./role-input-projector.js";
+export { projectOgsSpan, toOgsCloudEvent } from "./observability.js";
+export { validateCapabilityPolicy } from "./capability-policy.js";
+export { compileSubgraphSpec, validateSubgraphSpec } from "./subgraph.js";
+export { createFilesystemRuntimeServices } from "./filesystem-runtime-services.js";
+export type { EngineRunInput, ExecutionEngineAdapter, RuntimeAuditEvent, RuntimeExecutionServices } from "./engine-adapter.js";
+export { LangGraphEngineAdapter } from "./langgraph-engine-adapter.js";
+export {
+  FileVersionedStateStore,
+  StateVersionConflictError,
+  VersionedStateStore
+} from "./versioned-state.js";
 
 const TEST_HOLD_RESUME_LOCK_MS_ENV = "OGSYSTEM_TEST_HOLD_RESUME_LOCK_MS";
 const TEST_FORCE_RUNTIME_ERROR_AFTER_SETUP_ENV = "OGSYSTEM_TEST_FORCE_RUNTIME_ERROR_AFTER_SETUP";
@@ -131,8 +157,7 @@ export async function runSystemWithAdapter(args: {
         process.on("SIGTERM", requestDrain);
         process.on("SIGINT", requestDrain);
         try {
-          result = await runSystemWithGraphRunner({
-            plan: setup.plan,
+          const engine = new LangGraphEngineAdapter({
             effectiveLaw: setup.effectiveLaw,
             contractPlan: setup.contractPlan,
             compilerSnapshot: setup.compilerSnapshot,
@@ -144,8 +169,6 @@ export async function runSystemWithAdapter(args: {
             rolePackagesByRoleId: setup.rolePackagesByRoleId,
             runContext: setup.runContext,
             executor,
-            prompt: args.prompt,
-            initialState,
             cleanupExecutionHistory: args.cleanupExecutionHistory,
             autoCleanupRetention:
               args.cleanupExecutionHistory === undefined &&
@@ -158,6 +181,12 @@ export async function runSystemWithAdapter(args: {
             errorFlowRoutingEnabled: setup.runtimeConfig.runtime.error_flows.v1,
             logRun: args.logRun ?? false,
             runControl
+          });
+          result = await engine.run({
+            plan: setup.plan,
+            initialState,
+            prompt: args.prompt,
+            runtimeServices: undefined
           });
         } finally {
           process.off("SIGTERM", requestDrain);

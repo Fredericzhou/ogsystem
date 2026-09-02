@@ -187,6 +187,7 @@ export function buildRunPlanFingerprint(args: {
   effectiveLaw: EffectiveLawConstraints;
   contractPlan?: FlowContractPlan;
   compilerSnapshot?: CompiledExecutionSnapshot;
+  specificationDigest?: string;
 }): RunPlanFingerprint {
   const rolePackageComponents = buildRolePackageFingerprintComponent(args.rolePackagesByRoleId);
   const modelSelectionComponents = args.resolvedModelsByRoleId
@@ -214,6 +215,9 @@ export function buildRunPlanFingerprint(args: {
     runtimePromptInput: runtimePromptInputComponent.identity,
     effectiveLaw: normalizeFingerprintValue(args.effectiveLaw)
   };
+  if (args.specificationDigest) {
+    componentValues.specification = args.specificationDigest;
+  }
   if (compilerComponent) {
     componentValues.compiler = compilerComponent.identity;
   }
@@ -248,6 +252,14 @@ export function buildRunPlanFingerprint(args: {
         digest: componentDigests.effectiveLaw,
         value: componentValues.effectiveLaw
       },
+      ...(args.specificationDigest
+        ? {
+            specification: {
+              digest: componentDigests.specification,
+              value: componentValues.specification
+            }
+          }
+        : {}),
       ...(compilerComponent
         ? {
             compiler: {

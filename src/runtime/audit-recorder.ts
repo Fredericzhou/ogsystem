@@ -12,6 +12,7 @@ import { resolve } from "node:path";
 import { filesystemArtifactStore } from "./artifact-store.js";
 import { redactInputContext, redactOptionalText, redactUnknown } from "./redaction.js";
 import { preview, previewStructuredStdout } from "./runtime-support.js";
+import type { RuntimeAuditEvent } from "./engine-adapter.js";
 import type {
   AuditRecord,
   RoleOutputCorrectionRequest,
@@ -93,26 +94,34 @@ export function createAuditRecord(args: AuditRecordInput): AuditRecord {
  * Failure semantics: the JSON event is written first so eventual recovery logic can depend on
  * the more structured record even if the markdown transition line fails to persist.
  */
-export async function appendAuditRecord(runContext: RunContext, audit: AuditRecord): Promise<void> {
+export async function appendAuditRecord(args: {
+  runContext: RunContext;
+  audit: AuditRecord;
+  append?: (event: RuntimeAuditEvent) => Promise<void>;
+}): Promise<void> {
   const redactedAudit: AuditRecord = {
-    ...audit,
-    stdoutPreview: redactOptionalText(audit.stdoutPreview, runContext.redaction),
-    stderrPreview: redactOptionalText(audit.stderrPreview, runContext.redaction),
-    error: redactOptionalText(audit.error, runContext.redaction),
-    correctionRequest: redactUnknown(audit.correctionRequest, runContext.redaction) as
+    ...args.audit,
+    stdoutPreview: redactOptionalText(args.audit.stdoutPreview, args.runContext.redaction),
+    stderrPreview: redactOptionalText(args.audit.stderrPreview, args.runContext.redaction),
+    error: redactOptionalText(args.audit.error, args.runContext.redaction),
+    correctionRequest: redactUnknown(args.audit.correctionRequest, args.runContext.redaction) as
       | RoleOutputCorrectionRequest
       | undefined,
-    inputContext: redactInputContext(audit.inputContext, runContext.redaction)
+    inputContext: redactInputContext(args.audit.inputContext, args.runContext.redaction)
   };
   // Failure window: if appending the transition markdown fails after the event is written,
   // the runtime can still rely on the persistent event log.
-  await filesystemArtifactStore.appendEvent(runContext, { type: "audit", ...redactedAudit });
+  if (args.append) {
+    await args.append({ type: "audit", ...redactedAudit });
+  } else {
+    await filesystemArtifactStore.appendEvent(args.runContext, { type: "audit", ...redactedAudit });
+  }
   // Invariant: transition stream entry is appended after the event so readers see at least
   // the audit log even if conditional transition logging fails.
   await filesystemArtifactStore.appendText({
-    context: runContext,
+    context: args.runContext,
     key: "transitions",
-    path: resolve(runContext.auditDir, "transitions.md"),
+    path: resolve(args.runContext.auditDir, "transitions.md"),
     content:
       `- ${redactedAudit.roleId}: ${redactedAudit.status}` +
       `${redactedAudit.selectedEvent ? ` (${redactedAudit.selectedEvent})` : ""}\n`

@@ -164,6 +164,7 @@ export const en = {
   "status.paused": "paused",
   "status.running": "running",
   "status.stopped": "stopped",
+  "status.terminated": "terminated",
   "status.done": "done",
   "status.failed": "failed",
   "status.waitingReview": "waiting review",
