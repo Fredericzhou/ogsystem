@@ -19,9 +19,9 @@ export function resolveProjectRoleRootDir(workdir: string, configuredPath: strin
 }
 
 export function resolveTemplateRoleRepoRoot(): string {
-  if (existsSync(resolve(SYSTEM_HOME_DIR, "roles"))) {
-    return SYSTEM_ROLE_REPO_ROOT;
-  }
+  // The source package is authoritative while developing; system-home is only a fallback when
+  // the package-local role repository is unavailable.
+  if (existsSync(resolve(SYSTEM_HOME_DIR, "roles")) && !existsSync(resolve(resolvePackageRootDir(), DEFAULT_ROLE_REPO))) return SYSTEM_ROLE_REPO_ROOT;
   return resolve(resolvePackageRootDir(), DEFAULT_ROLE_REPO);
 }
 

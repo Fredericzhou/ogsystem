@@ -5,5 +5,39 @@
   "description": "Design the legal corpus, versioning, metadata, and source traceability model.",
   "promptTemplate": "prompt.md",
   "outputSchema": "output.schema.json",
-  "tags": ["legal-rag", "knowledge-base"]
+  "tags": [
+    "legal-rag",
+    "knowledge-base"
+  ],
+  "contractVersion": 1,
+  "purpose": "Design the legal corpus, versioning, metadata, and source traceability model.",
+  "responsibility": {
+    "kind": "atomic",
+    "owns": [],
+    "contributes": [],
+    "doesNotOwn": []
+  },
+  "inputs": {
+    "preconditions": []
+  },
+  "outputs": {
+    "events": [
+      "KNOWLEDGE_PLAN_READY"
+    ],
+    "postconditions": []
+  },
+  "authority": {
+    "controlActions": []
+  },
+  "constraints": {
+    "writableStateFields": [],
+    "allowedTools": []
+  },
+  "failure": {
+    "retryableErrorCodes": [],
+    "terminalErrorCodes": []
+  },
+  "audit": {
+    "requiredFields": []
+  }
 }

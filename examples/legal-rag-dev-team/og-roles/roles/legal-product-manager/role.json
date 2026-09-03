@@ -5,5 +5,39 @@
   "description": "Clarify the product scope, source boundaries, user profile, and MVP requirements for a legal RAG service.",
   "promptTemplate": "prompt.md",
   "outputSchema": "output.schema.json",
-  "tags": ["legal-rag", "product"]
+  "tags": [
+    "legal-rag",
+    "product"
+  ],
+  "contractVersion": 1,
+  "purpose": "Clarify the product scope, source boundaries, user profile, and MVP requirements for a legal RAG service.",
+  "responsibility": {
+    "kind": "atomic",
+    "owns": [],
+    "contributes": [],
+    "doesNotOwn": []
+  },
+  "inputs": {
+    "preconditions": []
+  },
+  "outputs": {
+    "events": [
+      "REQUIREMENTS_READY"
+    ],
+    "postconditions": []
+  },
+  "authority": {
+    "controlActions": []
+  },
+  "constraints": {
+    "writableStateFields": [],
+    "allowedTools": []
+  },
+  "failure": {
+    "retryableErrorCodes": [],
+    "terminalErrorCodes": []
+  },
+  "audit": {
+    "requiredFields": []
+  }
 }

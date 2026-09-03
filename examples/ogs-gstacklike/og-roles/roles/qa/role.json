@@ -5,5 +5,43 @@
   "description": "Quality assessment stage with pass, fail, and blocked outcomes.",
   "promptTemplate": "prompt.md",
   "outputSchema": "output.schema.json",
-  "tags": ["gstacklike", "qa"]
+  "tags": [
+    "gstacklike",
+    "qa"
+  ],
+  "contractVersion": 1,
+  "purpose": "Quality assessment stage with pass, fail, and blocked outcomes.",
+  "responsibility": {
+    "kind": "atomic",
+    "owns": [],
+    "contributes": [],
+    "doesNotOwn": []
+  },
+  "inputs": {
+    "preconditions": []
+  },
+  "outputs": {
+    "events": [
+      "QA_BLOCKED",
+      "QA_FAIL",
+      "QA_PASS"
+    ],
+    "postconditions": []
+  },
+  "authority": {
+    "controlActions": []
+  },
+  "constraints": {
+    "writableStateFields": [],
+    "allowedTools": [
+      "tool.qa"
+    ]
+  },
+  "failure": {
+    "retryableErrorCodes": [],
+    "terminalErrorCodes": []
+  },
+  "audit": {
+    "requiredFields": []
+  }
 }

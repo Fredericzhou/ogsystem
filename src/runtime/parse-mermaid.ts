@@ -111,7 +111,6 @@ type ValidatedSystemGraph = ParsedSystemGraph & {
   globalLawRef: string;
   entryRoleId: string;
   roleIds: string[];
-  talentBinding: Record<string, string>;
   executionBinding: Record<string, string>;
   modelBinding: Record<string, string>;
   graph?: GraphMetadata;
@@ -675,7 +674,6 @@ function validateParsedSystemGraph(graph: ParsedSystemGraph): ValidatedSystemGra
     });
   }
 
-  const talentBinding: Record<string, string> = {};
   const executionBinding: Record<string, string> = {};
   const modelBinding: Record<string, string> = {};
   const routingModeByRoleId: Record<string, GraphRoutingMode> = {};
@@ -715,14 +713,6 @@ function validateParsedSystemGraph(graph: ParsedSystemGraph): ValidatedSystemGra
     }
 
     if (exactMetadataKeys.has(key)) {
-      continue;
-    }
-
-    if (key.startsWith("talent.bind.")) {
-      const roleId = key.slice("talent.bind.".length);
-      if (roleId) {
-        talentBinding[roleId] = value;
-      }
       continue;
     }
 
@@ -1004,17 +994,6 @@ function validateParsedSystemGraph(graph: ParsedSystemGraph): ValidatedSystemGra
       message:
         "At least one terminal role (without outgoing role-edge) or Role -->|EVENT| output transition is required"
     });
-  }
-
-  for (const roleId of Object.keys(talentBinding)) {
-    if (!roleIds.includes(roleId)) {
-      failMermaid({
-        stage: "validate",
-        errorCode: "MERMAID_UNDEFINED_ROLE_REF",
-        message: `talent.bind.${roleId} references undefined role`,
-        lineNumber: metadataLine(`talent.bind.${roleId}`)
-      });
-    }
   }
 
   for (const roleId of Object.keys(executionBinding)) {
@@ -1395,7 +1374,6 @@ function validateParsedSystemGraph(graph: ParsedSystemGraph): ValidatedSystemGra
     globalLawRef,
     entryRoleId,
     roleIds,
-    talentBinding,
     executionBinding,
     modelBinding,
     graph: graphMetadata
@@ -1410,7 +1388,6 @@ function compileSystemDefinition(graph: ValidatedSystemGraph): SystemDefinition 
     roleIds: graph.roleIds,
     flows: graph.flows,
     lawBinding: { globalLawRef: graph.globalLawRef },
-    talentBinding: graph.talentBinding,
     executionBinding: graph.executionBinding,
     modelBinding: graph.modelBinding,
     graph: graph.graph

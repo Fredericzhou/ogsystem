@@ -3,13 +3,49 @@
   "roleVersion": "1.0.0",
   "name": "Advanced Coordinator",
   "description": "Dispatches parallel branches for the advanced starter template.",
-  "talent": {
-    "coordination": "high",
-    "reasoningDepth": "medium",
-    "style": "structured"
-  },
-  "preferredModelTags": ["fast", "instruction-following"],
+  "preferredModelTags": [
+    "fast",
+    "instruction-following"
+  ],
   "promptTemplate": "prompt.md",
   "outputSchema": "output.schema.json",
-  "tags": ["demo", "starter", "parallel"]
+  "tags": [
+    "demo",
+    "starter",
+    "parallel"
+  ],
+  "contractVersion": 1,
+  "purpose": "Dispatches parallel branches for the advanced starter template.",
+  "responsibility": {
+    "kind": "atomic",
+    "owns": [],
+    "contributes": [],
+    "doesNotOwn": []
+  },
+  "inputs": {
+    "preconditions": []
+  },
+  "outputs": {
+    "events": [
+      "START_A",
+      "START_B"
+    ],
+    "postconditions": []
+  },
+  "authority": {
+    "controlActions": []
+  },
+  "constraints": {
+    "writableStateFields": [],
+    "allowedTools": [
+      "tool.console.print"
+    ]
+  },
+  "failure": {
+    "retryableErrorCodes": [],
+    "terminalErrorCodes": []
+  },
+  "audit": {
+    "requiredFields": []
+  }
 }

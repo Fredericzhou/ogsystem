@@ -3,13 +3,48 @@
   "roleVersion": "1.0.0",
   "name": "Advanced Worker A",
   "description": "Completes branch A for the advanced starter template.",
-  "talent": {
-    "reasoningDepth": "low",
-    "style": "concise",
-    "riskPreference": "balanced"
-  },
-  "preferredModelTags": ["fast", "instruction-following"],
+  "preferredModelTags": [
+    "fast",
+    "instruction-following"
+  ],
   "promptTemplate": "prompt.md",
   "outputSchema": "output.schema.json",
-  "tags": ["demo", "starter", "parallel"]
+  "tags": [
+    "demo",
+    "starter",
+    "parallel"
+  ],
+  "contractVersion": 1,
+  "purpose": "Completes branch A for the advanced starter template.",
+  "responsibility": {
+    "kind": "atomic",
+    "owns": [],
+    "contributes": [],
+    "doesNotOwn": []
+  },
+  "inputs": {
+    "preconditions": []
+  },
+  "outputs": {
+    "events": [
+      "A_DONE"
+    ],
+    "postconditions": []
+  },
+  "authority": {
+    "controlActions": []
+  },
+  "constraints": {
+    "writableStateFields": [],
+    "allowedTools": [
+      "tool.console.print"
+    ]
+  },
+  "failure": {
+    "retryableErrorCodes": [],
+    "terminalErrorCodes": []
+  },
+  "audit": {
+    "requiredFields": []
+  }
 }

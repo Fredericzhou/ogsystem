@@ -3,13 +3,47 @@
   "roleVersion": "1.0.0",
   "name": "Minimalist Debater",
   "description": "Argues that the current build should stay minimal and defer complex alignment.",
-  "talent": {
-    "reasoningDepth": "high",
-    "style": "critical",
-    "riskPreference": "conservative"
-  },
-  "preferredModelTags": ["reasoning", "long-context"],
+  "preferredModelTags": [
+    "reasoning",
+    "long-context"
+  ],
   "promptTemplate": "prompt.md",
   "outputSchema": "output.schema.json",
-  "tags": ["debate", "minimalism"]
+  "tags": [
+    "debate",
+    "minimalism"
+  ],
+  "contractVersion": 1,
+  "purpose": "Argues that the current build should stay minimal and defer complex alignment.",
+  "responsibility": {
+    "kind": "atomic",
+    "owns": [],
+    "contributes": [],
+    "doesNotOwn": []
+  },
+  "inputs": {
+    "preconditions": []
+  },
+  "outputs": {
+    "events": [
+      "MINIMALIST_DONE"
+    ],
+    "postconditions": []
+  },
+  "authority": {
+    "controlActions": []
+  },
+  "constraints": {
+    "writableStateFields": [],
+    "allowedTools": [
+      "tool.console.print"
+    ]
+  },
+  "failure": {
+    "retryableErrorCodes": [],
+    "terminalErrorCodes": []
+  },
+  "audit": {
+    "requiredFields": []
+  }
 }

@@ -5,5 +5,47 @@
   "description": "Pre-release ship coordination that produces deploy-ready output for runtime review.",
   "promptTemplate": "prompt.md",
   "outputSchema": "output.schema.json",
-  "tags": ["gstacklike", "ship"]
+  "tags": [
+    "gstacklike",
+    "ship"
+  ],
+  "contractVersion": 1,
+  "purpose": "Pre-release ship coordination that produces deploy-ready output for runtime review.",
+  "responsibility": {
+    "kind": "atomic",
+    "owns": [],
+    "contributes": [],
+    "doesNotOwn": []
+  },
+  "inputs": {
+    "preconditions": []
+  },
+  "outputs": {
+    "events": [
+      "READY_TO_DEPLOY",
+      "SHIP_BLOCKED"
+    ],
+    "postconditions": []
+  },
+  "authority": {
+    "controlActions": [
+      "approve",
+      "pause",
+      "rework",
+      "terminate"
+    ]
+  },
+  "constraints": {
+    "writableStateFields": [],
+    "allowedTools": [
+      "tool.ship"
+    ]
+  },
+  "failure": {
+    "retryableErrorCodes": [],
+    "terminalErrorCodes": []
+  },
+  "audit": {
+    "requiredFields": []
+  }
 }

@@ -5,5 +5,42 @@
   "description": "Create a minimal Rust hello-world project in the shared run workspace.",
   "promptTemplate": "prompt.md",
   "outputSchema": "output.schema.json",
-  "tags": ["rust", "developer", "pipeline"]
+  "tags": [
+    "rust",
+    "developer",
+    "pipeline"
+  ],
+  "contractVersion": 1,
+  "purpose": "Create a minimal Rust hello-world project in the shared run workspace.",
+  "responsibility": {
+    "kind": "atomic",
+    "owns": [],
+    "contributes": [],
+    "doesNotOwn": []
+  },
+  "inputs": {
+    "preconditions": []
+  },
+  "outputs": {
+    "events": [
+      "DEVELOP_DONE"
+    ],
+    "postconditions": []
+  },
+  "authority": {
+    "controlActions": []
+  },
+  "constraints": {
+    "writableStateFields": [],
+    "allowedTools": [
+      "tool.rust.developer"
+    ]
+  },
+  "failure": {
+    "retryableErrorCodes": [],
+    "terminalErrorCodes": []
+  },
+  "audit": {
+    "requiredFields": []
+  }
 }

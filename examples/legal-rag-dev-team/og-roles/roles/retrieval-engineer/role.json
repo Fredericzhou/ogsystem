@@ -5,5 +5,39 @@
   "description": "Design chunking, indexing, hybrid retrieval, and ranking for the legal RAG stack.",
   "promptTemplate": "prompt.md",
   "outputSchema": "output.schema.json",
-  "tags": ["legal-rag", "retrieval"]
+  "tags": [
+    "legal-rag",
+    "retrieval"
+  ],
+  "contractVersion": 1,
+  "purpose": "Design chunking, indexing, hybrid retrieval, and ranking for the legal RAG stack.",
+  "responsibility": {
+    "kind": "atomic",
+    "owns": [],
+    "contributes": [],
+    "doesNotOwn": []
+  },
+  "inputs": {
+    "preconditions": []
+  },
+  "outputs": {
+    "events": [
+      "RETRIEVAL_PLAN_READY"
+    ],
+    "postconditions": []
+  },
+  "authority": {
+    "controlActions": []
+  },
+  "constraints": {
+    "writableStateFields": [],
+    "allowedTools": []
+  },
+  "failure": {
+    "retryableErrorCodes": [],
+    "terminalErrorCodes": []
+  },
+  "audit": {
+    "requiredFields": []
+  }
 }

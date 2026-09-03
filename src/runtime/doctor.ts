@@ -20,7 +20,7 @@ import {
 import { validateLawsConfig, validateRuntimeConfig, validateUserProfileConfig } from "./config.js";
 import { readJsonFile } from "./json-file.js";
 import { listSupportedJoinModes, listSupportedRoutingModes } from "./graph-mode-registry.js";
-import { loadModelCatalog } from "./model-catalog.js";
+import { isModelCatalogStale, loadModelCatalog } from "./model-catalog.js";
 import { loadModelSelection, resolveModelSelectionForSystem } from "./model-selection.js";
 import { executeOpencodeModelRole, startOpencodeRunClient } from "./opencode-executor.js";
 import { loadSystemFromMermaid } from "./parse-mermaid.js";
@@ -229,8 +229,24 @@ async function inspectModelCatalog(report: DoctorReport, workdir: string): Promi
   try {
     const catalog = await loadModelCatalog(catalogPath);
     if (!catalog) {
-      addWarning(report, `model catalog unavailable: ${catalogPath}`);
+      addWarning(
+        report,
+        `model catalog unavailable: ${catalogPath}; pinned selections may run offline, but current availability is unknown. Run \`ogs project sync-models\` after installing/configuring OpenCode.`
+      );
       return;
+    }
+    if (catalog.models.length === 0) {
+      addError(
+        report,
+        `model catalog is empty: ${catalogPath}; configure an available OpenCode model and run \`ogs project sync-models\`.`
+      );
+      return;
+    }
+    if (isModelCatalogStale(catalog)) {
+      addWarning(
+        report,
+        `model catalog is stale: ${catalogPath} (generated ${catalog.generatedAt}); run \`ogs project sync-models\` to refresh availability.`
+      );
     }
     addNote(report, `model catalog loaded: ${catalog.models.length} entries`);
   } catch (error) {
@@ -454,6 +470,12 @@ export async function runDoctor(args: {
   if (report.missingRequired.length > 0) {
     addError(report, `missing required commands: ${report.missingRequired.join(", ")}`);
   }
+  if (!report.checks.find((item) => item.command === "opencode")?.found) {
+    addWarning(
+      report,
+      `OpenCode discovery command \`opencode models --verbose\` is unavailable; install OpenCode and ensure \`opencode\` is on PATH before refreshing the model catalog.`
+    );
+  }
 
   let runtimeConfig: RuntimeConfig | undefined;
   try {
@@ -527,7 +549,10 @@ export async function runDoctor(args: {
         }
       }
     } catch (error) {
-      addError(report, `system invalid: ${String(error)}`);
+      const detail = error instanceof RuntimeError
+        ? `[${error.envelope.errorCode}] ${error.message}`
+        : String(error);
+      addError(report, `system invalid: ${detail}`);
     }
   }
 

@@ -3,13 +3,47 @@
   "roleVersion": "1.0.0",
   "name": "Consultation Dispatch",
   "description": "Packages the complex case and dispatches parallel specialist tasks.",
-  "talent": {
-    "coordination": "high",
-    "reasoningDepth": "medium",
-    "style": "structured"
-  },
-  "preferredModelTags": ["fast", "long-context"],
+  "preferredModelTags": [
+    "fast",
+    "long-context"
+  ],
   "promptTemplate": "prompt.md",
   "outputSchema": "output.schema.json",
-  "tags": ["diagnosis", "dispatch"]
+  "tags": [
+    "diagnosis",
+    "dispatch"
+  ],
+  "contractVersion": 1,
+  "purpose": "Packages the complex case and dispatches parallel specialist tasks.",
+  "responsibility": {
+    "kind": "atomic",
+    "owns": [],
+    "contributes": [],
+    "doesNotOwn": []
+  },
+  "inputs": {
+    "preconditions": []
+  },
+  "outputs": {
+    "events": [
+      "START_CARDIOLOGY",
+      "START_IMAGING",
+      "START_NEUROLOGY"
+    ],
+    "postconditions": []
+  },
+  "authority": {
+    "controlActions": []
+  },
+  "constraints": {
+    "writableStateFields": [],
+    "allowedTools": []
+  },
+  "failure": {
+    "retryableErrorCodes": [],
+    "terminalErrorCodes": []
+  },
+  "audit": {
+    "requiredFields": []
+  }
 }

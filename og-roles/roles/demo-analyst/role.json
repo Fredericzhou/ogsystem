@@ -3,13 +3,51 @@
   "roleVersion": "1.0.0",
   "name": "Demo Analyst",
   "description": "Produces a concise analysis summary for the console demo.",
-  "talent": {
-    "reasoningDepth": "medium",
-    "style": "concise",
-    "riskPreference": "balanced"
-  },
-  "preferredModelTags": ["fast", "instruction-following"],
+  "preferredModelTags": [
+    "fast",
+    "instruction-following"
+  ],
   "promptTemplate": "prompt.md",
   "outputSchema": "output.schema.json",
-  "tags": ["demo"]
+  "tags": [
+    "demo"
+  ],
+  "contractVersion": 1,
+  "purpose": "Produces a concise analysis summary for the console demo.",
+  "responsibility": {
+    "kind": "atomic",
+    "owns": [],
+    "contributes": [],
+    "doesNotOwn": []
+  },
+  "inputs": {
+    "preconditions": []
+  },
+  "outputs": {
+    "events": [
+      "ANALYSIS_DONE"
+    ],
+    "postconditions": []
+  },
+  "authority": {
+    "controlActions": [
+      "approve",
+      "pause",
+      "rework",
+      "terminate"
+    ]
+  },
+  "constraints": {
+    "writableStateFields": [],
+    "allowedTools": [
+      "tool.cli.codex.exec"
+    ]
+  },
+  "failure": {
+    "retryableErrorCodes": [],
+    "terminalErrorCodes": []
+  },
+  "audit": {
+    "requiredFields": []
+  }
 }

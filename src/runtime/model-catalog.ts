@@ -6,6 +6,34 @@ import { readJsonFile } from "./json-file.js";
 import { pathExists } from "./run-store.js";
 import type { ModelCatalog, ModelCatalogEntry } from "./types.js";
 
+export const OPENCODE_MODEL_DISCOVERY_COMMAND = "opencode models --verbose";
+export const MODEL_CATALOG_STALE_AFTER_MS = 24 * 60 * 60 * 1000;
+
+export type ModelDiscoveryErrorCode =
+  | "MODEL_DISCOVERY_COMMAND_MISSING"
+  | "MODEL_DISCOVERY_NONZERO_EXIT"
+  | "MODEL_DISCOVERY_MALFORMED"
+  | "MODEL_DISCOVERY_EMPTY";
+
+export class ModelDiscoveryError extends Error {
+  constructor(
+    public readonly code: ModelDiscoveryErrorCode,
+    message: string,
+    public readonly action: string
+  ) {
+    super(`[${code}] ${message} Action: ${action}`);
+    this.name = "ModelDiscoveryError";
+  }
+}
+
+function discoveryMalformed(message: string): ModelDiscoveryError {
+  return new ModelDiscoveryError(
+    "MODEL_DISCOVERY_MALFORMED",
+    `OpenCode ${OPENCODE_MODEL_DISCOVERY_COMMAND} returned malformed output: ${message}`,
+    "Check the installed OpenCode version and rerun `ogs project sync-models`."
+  );
+}
+
 function fail(filePath: string, fieldPath: string, message: string): never {
   throw new Error(`Invalid model catalog in ${filePath} at ${fieldPath}: ${message}`);
 }
@@ -105,10 +133,6 @@ export function validateModelCatalog(value: unknown, filePath: string): ModelCat
   };
 }
 
-function countOccurrences(value: string, pattern: string): number {
-  return value.split(pattern).length - 1;
-}
-
 type RawOpencodeModelRecord = {
   id?: string;
   providerID?: string;
@@ -158,52 +182,136 @@ export function parseOpencodeModelsVerboseOutput(stdout: string): ModelCatalog {
     .split("\n")
     .map((line) => line.replace(/\r$/, ""))
     .filter((line) => line.trim().length > 0);
+  if (lines.length === 0) {
+    throw new ModelDiscoveryError(
+      "MODEL_DISCOVERY_EMPTY",
+      `OpenCode ${OPENCODE_MODEL_DISCOVERY_COMMAND} returned an empty catalog.`,
+      "Configure at least one usable OpenCode model and rerun `ogs project sync-models`."
+    );
+  }
+
   const models: ModelCatalogEntry[] = [];
   let index = 0;
 
   while (index < lines.length) {
     const ref = lines[index]?.trim();
-    if (!ref) {
-      index += 1;
-      continue;
+    if (!ref || !/^[^/\s]+\/.+/.test(ref)) {
+      throw discoveryMalformed(`expected a provider/model reference, got "${ref ?? ""}"`);
     }
     index += 1;
+    if (index >= lines.length || !lines[index].trim().startsWith("{")) {
+      throw discoveryMalformed(`model "${ref}" is missing its JSON record`);
+    }
     const jsonLines: string[] = [];
+    let parsed: RawOpencodeModelRecord | undefined;
     while (index < lines.length) {
       jsonLines.push(lines[index]);
       const joined = jsonLines.join("\n");
-      if (countOccurrences(joined, "{") > 0 && countOccurrences(joined, "{") === countOccurrences(joined, "}")) {
-        const parsed = JSON.parse(joined) as RawOpencodeModelRecord;
-        models.push(
-          normalizeRawOpencodeModel({
-            ref,
-            raw: parsed
-          })
-        );
+      try {
+        const candidate = JSON.parse(joined) as unknown;
+        if (typeof candidate !== "object" || candidate === null || Array.isArray(candidate)) {
+          throw discoveryMalformed(`model "${ref}" JSON record must be an object`);
+        }
+        parsed = candidate as RawOpencodeModelRecord;
         index += 1;
         break;
+      } catch (error) {
+        if (error instanceof ModelDiscoveryError) {
+          throw error;
+        }
+        if (index === lines.length - 1) {
+          throw discoveryMalformed(`model "${ref}" JSON record could not be parsed`);
+        }
+        index += 1;
       }
-      index += 1;
     }
+    if (!parsed) {
+      throw discoveryMalformed(`model "${ref}" JSON record is incomplete`);
+    }
+    if (models.some((model) => model.ref === ref)) {
+      throw discoveryMalformed(`duplicate model reference "${ref}"`);
+    }
+    try {
+      models.push(normalizeRawOpencodeModel({ ref, raw: parsed }));
+    } catch (error) {
+      if (error instanceof ModelDiscoveryError) {
+        throw error;
+      }
+      throw discoveryMalformed(error instanceof Error ? error.message : String(error));
+    }
+  }
+
+  if (models.length === 0) {
+    throw new ModelDiscoveryError(
+      "MODEL_DISCOVERY_EMPTY",
+      `OpenCode ${OPENCODE_MODEL_DISCOVERY_COMMAND} returned no models.`,
+      "Configure at least one usable OpenCode model and rerun `ogs project sync-models`."
+    );
   }
 
   return {
     catalogVersion: "1",
     generatedAt: new Date().toISOString(),
     source: {
-      command: "opencode models --verbose"
+      command: OPENCODE_MODEL_DISCOVERY_COMMAND
     },
     models
   };
 }
 
-async function runOpencodeModelsVerbose(workdir: string): Promise<string> {
+type DiscoveryCommandResult = {
+  stdout: string;
+  stderr?: string;
+  exitCode?: number | null;
+};
+
+export type DiscoveryCommandRunner = (args: {
+  command: string;
+  args: string[];
+  cwd: string;
+}) => Promise<DiscoveryCommandResult | string>;
+
+async function runOpencodeModelsVerbose(
+  workdir: string,
+  commandRunner?: DiscoveryCommandRunner
+): Promise<string> {
+  if (commandRunner) {
+    let result: DiscoveryCommandResult | string;
+    try {
+      result = await commandRunner({
+        command: "opencode",
+        args: ["models", "--verbose"],
+        cwd: workdir
+      });
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code === "ENOENT") {
+        throw new ModelDiscoveryError(
+          "MODEL_DISCOVERY_COMMAND_MISSING",
+          `OpenCode ${OPENCODE_MODEL_DISCOVERY_COMMAND} could not start because the "opencode" command was not found.`,
+          "Install OpenCode and ensure `opencode` is available on PATH, then rerun `ogs project sync-models`."
+        );
+      }
+      throw error;
+    }
+    if (typeof result === "string") {
+      return result;
+    }
+    if (result.exitCode !== undefined && result.exitCode !== null && result.exitCode !== 0) {
+      throw new ModelDiscoveryError(
+        "MODEL_DISCOVERY_NONZERO_EXIT",
+        `OpenCode ${OPENCODE_MODEL_DISCOVERY_COMMAND} exited with code ${result.exitCode}: ${result.stderr?.trim() || "unknown error"}`,
+        "Fix the OpenCode command or provider configuration, then rerun `ogs project sync-models`."
+      );
+    }
+    return result.stdout;
+  }
+
   const fixturePath = process.env.OGSYSTEM_OPENCODE_MODELS_STDOUT_FILE?.trim();
   if (fixturePath) {
     return readFile(resolve(workdir, fixturePath), "utf8");
   }
   const fixtureInline = process.env.OGSYSTEM_OPENCODE_MODELS_STDOUT;
-  if (fixtureInline) {
+  if (fixtureInline !== undefined) {
     return fixtureInline;
   }
 
@@ -221,12 +329,26 @@ async function runOpencodeModelsVerbose(workdir: string): Promise<string> {
       stderr += chunk.toString();
     });
     child.on("error", (error) => {
+      if ((error as NodeJS.ErrnoException).code === "ENOENT") {
+        reject(
+          new ModelDiscoveryError(
+            "MODEL_DISCOVERY_COMMAND_MISSING",
+            `OpenCode ${OPENCODE_MODEL_DISCOVERY_COMMAND} could not start because the "opencode" command was not found.`,
+            "Install OpenCode and ensure `opencode` is available on PATH, then rerun `ogs project sync-models`."
+          )
+        );
+        return;
+      }
       reject(error);
     });
     child.on("close", (code) => {
       if (code !== 0) {
         reject(
-          new Error(`opencode models --verbose failed with code ${code}: ${stderr.trim() || "unknown error"}`)
+          new ModelDiscoveryError(
+            "MODEL_DISCOVERY_NONZERO_EXIT",
+            `OpenCode ${OPENCODE_MODEL_DISCOVERY_COMMAND} exited with code ${code}: ${stderr.trim() || "unknown error"}`,
+            "Fix the OpenCode command or provider configuration, then rerun `ogs project sync-models`."
+          )
         );
         return;
       }
@@ -237,8 +359,18 @@ async function runOpencodeModelsVerbose(workdir: string): Promise<string> {
 
 export async function refreshModelCatalog(args: {
   workdir: string;
+  commandRunner?: DiscoveryCommandRunner;
 }): Promise<ModelCatalog> {
-  return parseOpencodeModelsVerboseOutput(await runOpencodeModelsVerbose(args.workdir));
+  try {
+    return parseOpencodeModelsVerboseOutput(
+      await runOpencodeModelsVerbose(args.workdir, args.commandRunner)
+    );
+  } catch (error) {
+    if (error instanceof ModelDiscoveryError) {
+      throw error;
+    }
+    throw discoveryMalformed(error instanceof Error ? error.message : String(error));
+  }
 }
 
 export async function loadModelCatalog(path: string): Promise<ModelCatalog | undefined> {
@@ -256,4 +388,13 @@ export function chooseDefaultModelFromCatalog(catalog: ModelCatalog): ModelCatal
       model.capabilities.textOutput &&
       model.capabilities.toolcall
   );
+}
+
+export function isModelCatalogStale(
+  catalog: ModelCatalog,
+  nowMs = Date.now(),
+  staleAfterMs = MODEL_CATALOG_STALE_AFTER_MS
+): boolean {
+  const generatedAtMs = Date.parse(catalog.generatedAt);
+  return !Number.isFinite(generatedAtMs) || nowMs - generatedAtMs > staleAfterMs;
 }

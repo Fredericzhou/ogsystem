@@ -5,5 +5,39 @@
   "description": "Design the answer generation policy, refusal behavior, and grounded response format.",
   "promptTemplate": "prompt.md",
   "outputSchema": "output.schema.json",
-  "tags": ["legal-rag", "answering"]
+  "tags": [
+    "legal-rag",
+    "answering"
+  ],
+  "contractVersion": 1,
+  "purpose": "Design the answer generation policy, refusal behavior, and grounded response format.",
+  "responsibility": {
+    "kind": "atomic",
+    "owns": [],
+    "contributes": [],
+    "doesNotOwn": []
+  },
+  "inputs": {
+    "preconditions": []
+  },
+  "outputs": {
+    "events": [
+      "ANSWER_PLAN_READY"
+    ],
+    "postconditions": []
+  },
+  "authority": {
+    "controlActions": []
+  },
+  "constraints": {
+    "writableStateFields": [],
+    "allowedTools": []
+  },
+  "failure": {
+    "retryableErrorCodes": [],
+    "terminalErrorCodes": []
+  },
+  "audit": {
+    "requiredFields": []
+  }
 }

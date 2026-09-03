@@ -3,13 +3,45 @@
   "roleVersion": "1.0.0",
   "name": "Debate Summary Writer",
   "description": "Writes the final summary after the judge reaches a decision.",
-  "talent": {
-    "reasoningDepth": "medium",
-    "style": "concise",
-    "riskPreference": "balanced"
-  },
-  "preferredModelTags": ["fast", "instruction-following"],
+  "preferredModelTags": [
+    "fast",
+    "instruction-following"
+  ],
   "promptTemplate": "prompt.md",
   "outputSchema": "output.schema.json",
-  "tags": ["debate", "summary"]
+  "tags": [
+    "debate",
+    "summary"
+  ],
+  "contractVersion": 1,
+  "purpose": "Writes the final summary after the judge reaches a decision.",
+  "responsibility": {
+    "kind": "atomic",
+    "owns": [],
+    "contributes": [],
+    "doesNotOwn": []
+  },
+  "inputs": {
+    "preconditions": []
+  },
+  "outputs": {
+    "events": [
+      "SUMMARY_READY"
+    ],
+    "postconditions": []
+  },
+  "authority": {
+    "controlActions": []
+  },
+  "constraints": {
+    "writableStateFields": [],
+    "allowedTools": []
+  },
+  "failure": {
+    "retryableErrorCodes": [],
+    "terminalErrorCodes": []
+  },
+  "audit": {
+    "requiredFields": []
+  }
 }

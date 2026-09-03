@@ -41,6 +41,7 @@ import type {
   HandledFailureArtifactData,
   HumanReviewDecision,
   HumanReviewDecisionRecord,
+  LoadedRolePackage,
   PendingHumanReview,
   RoleExecutionOutcomeRecord,
   RuntimeErrorEnvelope,
@@ -175,6 +176,7 @@ export type ReviewDecisionTransitionInput = {
   decision: HumanReviewDecisionRecord;
   logger: RunConsoleLogger;
   indexes?: RuntimeIndexes;
+  rolePackagesByRoleId: ReadonlyMap<string, LoadedRolePackage>;
 };
 
 function listPendingJoinSources(args: {
@@ -1019,6 +1021,11 @@ export function planHumanReviewDecisionTransition(args: ReviewDecisionTransition
     throw new Error(`Human review ${args.review.reviewId} Semantic IR digest mismatch`);
   }
   const node = getExecutionPlanNode(args.plan, args.review.roleId);
+  const rolePackage = args.rolePackagesByRoleId.get(args.review.roleId);
+  if (!rolePackage) throw new Error(`[IR_CONTRACT_INVALID] Role Contract is missing for review role ${args.review.roleId}`);
+  if (!rolePackage.manifest.authority.controlActions.includes(args.decision.decision)) {
+    throw new Error(`[IR_CONTRACT_INVALID] Role ${args.review.roleId} does not authorize human review action ${args.decision.decision}`);
+  }
   if (args.decision.decision === "approve") {
     return buildApprovedHumanReviewTransition({
       state: args.state,

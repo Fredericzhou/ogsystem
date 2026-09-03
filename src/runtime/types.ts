@@ -1,9 +1,12 @@
-import type { SemanticIR } from "./semantic-ir.js";
+import type { SemanticIR, SemanticIRConditionAst } from "./semantic-ir.js";
 
 /**
  * Core System & Graph Definitions
  * -------------------------------
- * Captures the immutable system contract that the runtime executes against.
+ * Captures the immutable System contract that the runtime executes against.
+ * In OGS, System is a bounded collaboration organization: it declares abstract Responsibility
+ * Roles, their transitions, contracts, and policies. It is not an HR organization chart and does
+ * not contain concrete people or operator identities.
  * Responsibilities: describe role topology, binding metadata, and join/routing rules.
  * Boundaries: this file does not cover live state or execution telemetry.
  * Trade-off: keeping contracts lean keeps parsing/validation simple but requires extra
@@ -112,7 +115,6 @@ export type SystemDefinition = {
   roleIds: string[];
   flows: Flow[];
   lawBinding: LawBinding;
-  talentBinding: Record<string, string>;
   executionBinding: Record<string, string>;
   modelBinding: Record<string, string>;
   graph?: GraphMetadata;
@@ -126,7 +128,9 @@ export type SystemDefinition = {
  */
 
 /**
- * Defines how a role is fulfilled. Only one binding kind is allowed, ensuring deterministic routing.
+ * Defines how a Responsibility Role is technically realized for one run.
+ * This is an execution binding, not the role's identity or a personnel assignment. Only one
+ * binding kind is allowed, ensuring deterministic routing.
  */
 export type RoleExecutionBinding =
   | {
@@ -242,13 +246,38 @@ export type RoleExecutionOutput = {
 };
 
 export type RolePackageManifest = {
+  /** Stable responsibility identity; it is not a concrete person or runtime execution id. */
   roleId: string;
+  /** Version of this implementation contract, included in runtime fingerprints. */
   roleVersion: string;
   name: string;
   description: string;
   promptTemplate: string;
   outputSchema: string;
-  talent?: Record<string, string>;
+  /** OGS responsibility contract. Roles are abstract responsibilities, never people or models. */
+  contractVersion: 1;
+  purpose: string;
+  responsibility: {
+    kind: "atomic" | "composite";
+    owns: string[];
+    contributes: string[];
+    doesNotOwn: string[];
+    composition?: {
+      nestedSystemRef: string;
+      inputContract: string;
+      outputContract: string;
+      stateNamespace: string;
+      checkpointNamespace: string;
+      errorPropagation: "fail" | "route" | "contain";
+      terminationPropagation: "propagate" | "contain";
+    };
+  };
+  inputs: { preconditions: SemanticIRConditionAst[] };
+  outputs: { events: string[]; postconditions: SemanticIRConditionAst[] };
+  authority: { controlActions: Array<"approve" | "rework" | "pause" | "terminate"> };
+  constraints: { writableStateFields: string[]; allowedTools: string[] };
+  failure: { retryableErrorCodes: string[]; terminalErrorCodes: string[] };
+  audit: { requiredFields: string[] };
   preferredModelTags?: string[];
   tags?: string[];
 };

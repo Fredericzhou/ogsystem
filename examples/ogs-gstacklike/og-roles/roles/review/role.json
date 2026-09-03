@@ -5,5 +5,43 @@
   "description": "Readiness review and phase gate for implementation quality.",
   "promptTemplate": "prompt.md",
   "outputSchema": "output.schema.json",
-  "tags": ["gstacklike", "review"]
+  "tags": [
+    "gstacklike",
+    "review"
+  ],
+  "contractVersion": 1,
+  "purpose": "Readiness review and phase gate for implementation quality.",
+  "responsibility": {
+    "kind": "atomic",
+    "owns": [],
+    "contributes": [],
+    "doesNotOwn": []
+  },
+  "inputs": {
+    "preconditions": []
+  },
+  "outputs": {
+    "events": [
+      "APPROVED",
+      "BLOCKED",
+      "CHANGES_REQUIRED"
+    ],
+    "postconditions": []
+  },
+  "authority": {
+    "controlActions": []
+  },
+  "constraints": {
+    "writableStateFields": [],
+    "allowedTools": [
+      "tool.review"
+    ]
+  },
+  "failure": {
+    "retryableErrorCodes": [],
+    "terminalErrorCodes": []
+  },
+  "audit": {
+    "requiredFields": []
+  }
 }

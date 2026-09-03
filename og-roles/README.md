@@ -9,6 +9,8 @@ Full runtime usage:
 Required files:
 
 - `role.json`
+
+`role.json` includes a mandatory Role Contract. A role is an abstract responsibility, not a person, model, vendor, or execution instance. Keep every contract array explicit, sorted, and duplicate-free. `responsibility.contributes` must reference a top-level System state field or a top-level field in a declared event payload schema. `purpose` must remain abstract and must not name concrete people, providers, models, or runtime instances.
 - `agent.md`
 - `prompt.md`
 - `output.schema.json`

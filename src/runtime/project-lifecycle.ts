@@ -23,8 +23,13 @@ import {
 } from "./bundled-repos.js";
 import { validateRuntimeConfig } from "./config.js";
 import { readJsonFile, writeJsonFileAtomic } from "./json-file.js";
-import { chooseDefaultModelFromCatalog, refreshModelCatalog } from "./model-catalog.js";
+import {
+  chooseDefaultModelFromCatalog,
+  refreshModelCatalog,
+  type DiscoveryCommandRunner
+} from "./model-catalog.js";
 import { loadSystemFromMermaid, parseSystemFromMermaidSource } from "./parse-mermaid.js";
+import { loadRolePackage } from "./role-repo.js";
 import { ROLE_EXECUTION_OUTCOME_FILE } from "./run-artifacts.js";
 import { filesystemRunStore } from "./run-store.js";
 import { projectTargetConfig } from "./project-target.js";
@@ -116,13 +121,10 @@ type ProjectTemplateSpec = {
 };
 
 type IndexedRunStateSnapshot = {
-  status: string;
-  transitionCount?: number;
-  finalRoleId?: string;
-  graphState?: {
-    status?: string;
-    transitionCount?: number;
-    finalRoleId?: string;
+  graphState: {
+    status: string;
+    transitionCount: number;
+    finalRoleId: string;
     pendingReviewsById?: Record<string, unknown>;
   };
 };
@@ -479,16 +481,16 @@ function createDefaultOgsReadme(): string {
     '{',
     '  "configVersion": "1",',
     '  "defaults": {',
-    '    "model": "opencode/gpt-5.4",',
-    '    "variant": "medium",',
+    '    "model": "<provider/model>",',
+    '    "variant": "<optional-variant>",',
     '    "timeoutMs": 120000,',
     '    "maxOutputBytes": 65536',
     "  },",
     '  "systems": {',
     '    "template.minimal": {',
     '      "defaults": {',
-    '        "model": "opencode/gpt-5.4",',
-    '        "variant": "high"',
+    '        "model": "<provider/model>",',
+    '        "variant": "<optional-variant>"',
     "      }",
     "    }",
     "  }",
@@ -621,6 +623,12 @@ async function tryReadTextIfPresent(path: string): Promise<string | undefined> {
 
 function asString(value: unknown): string | undefined {
   return typeof value === "string" ? value : undefined;
+}
+
+function asRecord(value: unknown): Record<string, unknown> | undefined {
+  return typeof value === "object" && value !== null && !Array.isArray(value)
+    ? value as Record<string, unknown>
+    : undefined;
 }
 
 function asNumber(value: unknown): number | undefined {
@@ -1394,6 +1402,7 @@ export async function syncProjectModels(args: {
   systemPath?: string;
   rewriteDefault?: boolean;
   strategy?: ProjectModelSeedStrategy;
+  commandRunner?: DiscoveryCommandRunner;
 }): Promise<{
   catalogPath: string;
   selectionPath: string;
@@ -1445,7 +1454,8 @@ export async function syncProjectModels(args: {
   }
 
   const catalog = await refreshModelCatalog({
-    workdir: args.workdir
+    workdir: args.workdir,
+    commandRunner: args.commandRunner
   });
   await writeJsonFileAtomic(paths.modelCatalogPath, catalog);
 
@@ -1515,31 +1525,22 @@ export async function loadIndexedRuns(workdir: string): Promise<IndexedRun[]> {
       stopRequest: stopRequestRaw,
       stopOutcome: stopOutcomeRaw
     });
-    // Compatibility read: tolerate both flattened status fields and nested graphState snapshots
-    // so index rebuilding can survive schema transitions across runtime versions.
-    const state =
-      typeof stateRaw === "object" &&
-      stateRaw !== null &&
-      !Array.isArray(stateRaw) &&
-      "status" in stateRaw &&
-      typeof (stateRaw as { status?: unknown }).status === "string"
-        ? (stateRaw as {
-            status: string;
-            transitionCount?: number;
-            finalRoleId?: string;
-            graphState?: { status?: string; transitionCount?: number; finalRoleId?: string };
-          })
+    const stateRecord =
+      typeof stateRaw === "object" && stateRaw !== null && !Array.isArray(stateRaw)
+        ? (stateRaw as Record<string, unknown>)
         : undefined;
-    const indexedState = state as IndexedRunStateSnapshot | undefined;
+    const indexedState =
+      stateRecord &&
+      typeof stateRecord.graphState === "object" &&
+      stateRecord.graphState !== null &&
+      !Array.isArray(stateRecord.graphState)
+        ? (stateRecord as unknown as IndexedRunStateSnapshot)
+        : undefined;
     const runStat = await stat(runDir);
     runs.push({
       runId: entry.name,
-      status: summary?.status ?? indexedState?.status ?? indexedState?.graphState?.status ?? "unknown",
-      transitionCount:
-        summary?.transitionCount ??
-        indexedState?.transitionCount ??
-        indexedState?.graphState?.transitionCount ??
-        0,
+      status: summary?.status ?? indexedState?.graphState.status ?? "unknown",
+      transitionCount: summary?.transitionCount ?? indexedState?.graphState.transitionCount ?? 0,
       durationMs: summary?.durationMs,
       wallClockDurationMs: summary?.wallClockDurationMs,
       executionDurationMs: summary?.executionDurationMs,
@@ -1548,8 +1549,7 @@ export async function loadIndexedRuns(workdir: string): Promise<IndexedRun[]> {
       stopOutcomeStatus: stopFields.stopOutcome,
       lastErrorCode: summary?.lastErrorCode,
       lastRoleId: summary?.lastRoleId,
-      finalRoleId:
-        summary?.finalRoleId ?? indexedState?.finalRoleId ?? indexedState?.graphState?.finalRoleId,
+      finalRoleId: summary?.finalRoleId ?? indexedState?.graphState.finalRoleId,
       pendingReviewCount: reviewFields.pendingReviewCount,
       hasWaitingHumanReview: reviewFields.hasWaitingHumanReview,
       latestPendingReviewId: reviewFields.latestPendingReviewId,
@@ -1940,6 +1940,18 @@ export async function writeHumanReviewDecision(args: {
   if (currentStatus !== "pending" && currentStatus !== "paused") {
     throw new Error(`Review "${args.reviewId}" is not actionable; currentStatus=${currentStatus}.`);
   }
+  const runDetail = await inspectRun(args.workdir, args.runId);
+  const resolvedConfig = asRecord(runDetail.resolvedConfig);
+  const effectiveConfig = asRecord(resolvedConfig?.effective);
+  const roleRepoDir = asString(effectiveConfig?.roleRepoDir);
+  const roleId = asString(currentReview.roleId) ?? asString(asRecord(currentReview.currentState)?.roleId);
+  if (!roleRepoDir || !roleId) {
+    throw new Error(`[IR_CONTRACT_INVALID] Review "${args.reviewId}" has no resolvable Role Contract`);
+  }
+  const rolePackage = await loadRolePackage({ roleId, roleRootDir: roleRepoDir });
+  if (!rolePackage.manifest.authority.controlActions.includes(args.decision)) {
+    throw new Error(`[IR_CONTRACT_INVALID] Role ${roleId} does not authorize human review action ${args.decision}`);
+  }
   if (args.scope !== undefined && args.decision !== "terminate") {
     throw new Error("--scope is only valid with --decision terminate");
   }
@@ -2055,20 +2067,6 @@ async function readLogRecordsFromPath(sourcePath: string, args?: {
   return records;
 }
 
-async function loadFallbackEventLogs(args: {
-  runDir: string;
-  roleId?: string;
-  maxRecords?: number;
-}): Promise<Array<Record<string, unknown>>> {
-  const records = await readLogRecordsFromPath(resolve(args.runDir, "events.ndjson"), {
-    include: args.roleId
-      ? (record) => record.type === "audit" && record.roleId === args.roleId
-      : (record) => record.type !== "audit",
-    maxRecords: args.maxRecords
-  });
-  return records;
-}
-
 export async function requestStop(workdir: string, runId: string, reason?: string): Promise<Record<string, unknown>> {
   const runDir = resolveRunDir(workdir, runId);
   const runStat = await stat(runDir).catch(() => undefined);
@@ -2120,18 +2118,7 @@ export async function loadRunLogs(args: {
       maxRecords
     }), args);
   } catch {
-    try {
-      return filterLogRecords(
-        await loadFallbackEventLogs({
-          runDir,
-          roleId: args.roleId,
-          maxRecords
-        }),
-        args
-      );
-    } catch {
-      return [];
-    }
+    return [];
   }
 }
 
@@ -2167,9 +2154,9 @@ export async function streamRunLogs(args: {
       typeof detail.state === "object" &&
       detail.state !== null &&
       !Array.isArray(detail.state)
-        ? (detail.state as { status?: string; graphState?: { status?: string } })
+        ? (detail.state as { graphState?: { status?: string } })
         : undefined;
-    const status = summary?.status ?? state?.status ?? state?.graphState?.status;
+    const status = summary?.status ?? state?.graphState?.status;
     if (status && status !== "running" && status !== "stopping") {
       return;
     }

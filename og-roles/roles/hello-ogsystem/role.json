@@ -3,13 +3,48 @@
   "roleVersion": "1.0.0",
   "name": "Hello OGSystem",
   "description": "The smallest runnable role for the Hello World starter template.",
-  "talent": {
-    "reasoningDepth": "low",
-    "style": "concise",
-    "riskPreference": "balanced"
-  },
-  "preferredModelTags": ["fast", "instruction-following"],
+  "preferredModelTags": [
+    "fast",
+    "instruction-following"
+  ],
   "promptTemplate": "prompt.md",
   "outputSchema": "output.schema.json",
-  "tags": ["demo", "starter"]
+  "tags": [
+    "demo",
+    "starter"
+  ],
+  "contractVersion": 1,
+  "purpose": "The smallest runnable role for the Hello World starter template.",
+  "responsibility": {
+    "kind": "atomic",
+    "owns": [],
+    "contributes": [],
+    "doesNotOwn": []
+  },
+  "inputs": {
+    "preconditions": []
+  },
+  "outputs": {
+    "events": [
+      "HELLO_DONE"
+    ],
+    "postconditions": []
+  },
+  "authority": {
+    "controlActions": []
+  },
+  "constraints": {
+    "writableStateFields": [],
+    "allowedTools": [
+      "tool.console.print",
+      "tool.hello.ogsystem"
+    ]
+  },
+  "failure": {
+    "retryableErrorCodes": [],
+    "terminalErrorCodes": []
+  },
+  "audit": {
+    "requiredFields": []
+  }
 }

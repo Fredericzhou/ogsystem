@@ -5,5 +5,44 @@
   "description": "Merge the specialist workstreams into a phased implementation plan, staffing proposal, and delivery roadmap.",
   "promptTemplate": "prompt.md",
   "outputSchema": "output.schema.json",
-  "tags": ["legal-rag", "delivery"]
+  "tags": [
+    "legal-rag",
+    "delivery"
+  ],
+  "contractVersion": 1,
+  "purpose": "Merge the specialist workstreams into a phased implementation plan, staffing proposal, and delivery roadmap.",
+  "responsibility": {
+    "kind": "atomic",
+    "owns": [],
+    "contributes": [],
+    "doesNotOwn": []
+  },
+  "inputs": {
+    "preconditions": []
+  },
+  "outputs": {
+    "events": [
+      "IMPLEMENTATION_READY"
+    ],
+    "postconditions": []
+  },
+  "authority": {
+    "controlActions": [
+      "approve",
+      "pause",
+      "rework",
+      "terminate"
+    ]
+  },
+  "constraints": {
+    "writableStateFields": [],
+    "allowedTools": []
+  },
+  "failure": {
+    "retryableErrorCodes": [],
+    "terminalErrorCodes": []
+  },
+  "audit": {
+    "requiredFields": []
+  }
 }

@@ -71,7 +71,7 @@ const TEMPLATES: readonly Nl2MmdStructureTemplate[] = [
     requiredSlots: [
       slot("entry", "Declare the entry role and the main linear path.", ["entry.role=role_a"]),
       slot("roles", "List the ordered roles in the single chain.", ["input -> role_a -> role_b -> output"]),
-      slot("bindings", "Bind each active role to a direct model ref or exec-bound local tool.", ["model.bind.role_a=opencode/gpt-5-nano"])
+      slot("bindings", "Bind each active role to a direct model ref or exec-bound local tool.", ["model.bind.role_a=<provider/model>"])
     ],
     optionalSlots: [
       slot("notes", "Capture any lightweight constraints or delivery preferences.", ["user profile style notes"], false)
@@ -175,7 +175,7 @@ const TEMPLATES: readonly Nl2MmdStructureTemplate[] = [
     requiredSlots: [
       slot("handoff", "Declare the handoff mode and contract bundle.", ["handoff.mode=strict", "handoff.contracts=contracts/handoff.contracts.json"]),
       slot("routes", "List deterministic sibling targets in route order when needed.", ["route.order.dispatch=reviewer,observer"]),
-      slot("binds", "Bind roles that own the handoff decision.", ["model.bind.reviewer=opencode/gpt-5-nano"])
+      slot("binds", "Bind roles that own the handoff decision.", ["model.bind.reviewer=<provider/model>"])
     ],
     optionalSlots: [
       slot("warnings", "Note transition behavior for warned contracts.", ["handoff.mode=transition skips warned contracts"], false)
@@ -275,7 +275,7 @@ const TEMPLATES: readonly Nl2MmdStructureTemplate[] = [
     semanticHintLabels: ["binding_policy"],
     requiredMetadataKeys: ["system.id", "system.version", "law.global", "entry.role"],
     requiredSlots: [
-      slot("model-binding", "Declare the model-bound role.", ["model.bind.reviewer=opencode/gpt-5-nano"]),
+      slot("model-binding", "Declare the model-bound role.", ["model.bind.reviewer=<provider/model>"]),
       slot("exec-binding", "Declare a different local-shell exec-bound role.", ["exec.bind.publisher=publish-profile"]),
       slot("binding-note", "Record which roles use each binding path.", ["review uses model.bind; ship uses exec.bind"])
     ],

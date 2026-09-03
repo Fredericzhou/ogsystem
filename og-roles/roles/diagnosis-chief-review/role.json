@@ -3,13 +3,45 @@
   "roleVersion": "1.0.0",
   "name": "Chief Consultation Summary",
   "description": "Aggregates specialist findings and writes the final multidisciplinary summary.",
-  "talent": {
-    "reasoningDepth": "high",
-    "style": "analytical",
-    "riskPreference": "conservative"
-  },
-  "preferredModelTags": ["reasoning", "long-context"],
+  "preferredModelTags": [
+    "reasoning",
+    "long-context"
+  ],
   "promptTemplate": "prompt.md",
   "outputSchema": "output.schema.json",
-  "tags": ["diagnosis", "review"]
+  "tags": [
+    "diagnosis",
+    "review"
+  ],
+  "contractVersion": 1,
+  "purpose": "Aggregates specialist findings and writes the final multidisciplinary summary.",
+  "responsibility": {
+    "kind": "atomic",
+    "owns": [],
+    "contributes": [],
+    "doesNotOwn": []
+  },
+  "inputs": {
+    "preconditions": []
+  },
+  "outputs": {
+    "events": [
+      "CONSULTATION_READY"
+    ],
+    "postconditions": []
+  },
+  "authority": {
+    "controlActions": []
+  },
+  "constraints": {
+    "writableStateFields": [],
+    "allowedTools": []
+  },
+  "failure": {
+    "retryableErrorCodes": [],
+    "terminalErrorCodes": []
+  },
+  "audit": {
+    "requiredFields": []
+  }
 }

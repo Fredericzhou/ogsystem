@@ -3,13 +3,44 @@
   "roleVersion": "1.0.0",
   "name": "Demo Intake",
   "description": "Consumes a prompt and completes the minimal example flow.",
-  "talent": {
-    "reasoningDepth": "low",
-    "style": "structured",
-    "riskPreference": "balanced"
-  },
-  "preferredModelTags": ["fast", "instruction-following"],
+  "preferredModelTags": [
+    "fast",
+    "instruction-following"
+  ],
   "promptTemplate": "prompt.md",
   "outputSchema": "output.schema.json",
-  "tags": ["demo"]
+  "tags": [
+    "demo"
+  ],
+  "contractVersion": 1,
+  "purpose": "Consumes a prompt and completes the minimal example flow.",
+  "responsibility": {
+    "kind": "atomic",
+    "owns": [],
+    "contributes": [],
+    "doesNotOwn": []
+  },
+  "inputs": {
+    "preconditions": []
+  },
+  "outputs": {
+    "events": [
+      "COMPLETE"
+    ],
+    "postconditions": []
+  },
+  "authority": {
+    "controlActions": []
+  },
+  "constraints": {
+    "writableStateFields": [],
+    "allowedTools": []
+  },
+  "failure": {
+    "retryableErrorCodes": [],
+    "terminalErrorCodes": []
+  },
+  "audit": {
+    "requiredFields": []
+  }
 }

@@ -52,15 +52,29 @@ export type SemanticIRCapabilityPolicy = {
   allowedToolsByRoleId: Record<string, string[]>;
 };
 
+export type CompositeResponsibilitySpec = {
+  ownerRoleId: string;
+  nestedSystemRef: string;
+  inputContract: string;
+  outputContract: string;
+  stateNamespace: string;
+  checkpointNamespace: string;
+  errorPropagation: "fail" | "route" | "contain";
+  terminationPropagation: "propagate" | "contain";
+  readStateFields?: string[];
+  writeStateFields?: string[];
+};
+
 export type SemanticIRRetryPolicy = {
   maxAttempts: number;
   backoff: "constant" | "exponential";
+  errorCodes?: string[];
 };
 
 export type SemanticIR = {
   version: 1;
   system: { systemId: string; systemVersion: string };
-  seats: Array<{ roleId: string; packageRef?: string; binding: unknown; modes: Record<string, unknown>; defaultMode: string }>;
+  seats: Array<{ roleId: string; packageRef?: string; binding: unknown; modes: Record<string, unknown>; defaultMode: string; roleContract?: unknown }>;
   transitions: Array<{
     flowId: string;
     fromRoleId: string;
@@ -83,6 +97,7 @@ export type SemanticIR = {
   retryByRoleId?: Record<string, SemanticIRRetryPolicy>;
   contracts: Array<{ id: string; ref: string }>;
   subgraphs?: SubgraphSpec[];
+  composites?: CompositeResponsibilitySpec[];
   capabilities: SemanticIRCapabilityPolicy;
   defaults: {
     routePriority: 0;
@@ -101,7 +116,8 @@ export type SemanticIRDiagnostic = {
   | "IR_JOIN_SCOPE_INVALID"
   | "IR_LOOP_UNBOUNDED"
   | "IR_BUDGET_INVALID"
-  | "IR_CONTRACT_INVALID";
+  | "IR_CONTRACT_INVALID"
+  | "IR_COMPOSITE_INVALID";
   message: string;
   path?: string;
 };
@@ -185,6 +201,30 @@ export function validateSemanticIR(ir: SemanticIR): SemanticIRDiagnostic[] {
     if (join.onTimeout === "quorum_continue" && join.mode !== "quorum_of") {
       diagnostics.push({ code: "IR_JOIN_SCOPE_INVALID", message: `quorum_continue timeout requires quorum_of`, path: `joins[${index}].onTimeout` });
     }
+  }
+  const stateNamespaces = new Set<string>();
+  const checkpointNamespaces = new Set<string>();
+  const allNamespaces = new Set<string>();
+  const compositeByNestedSystem = new Map<string, CompositeResponsibilitySpec>();
+  for (const [index, composite] of (ir.composites ?? []).entries()) {
+    if (!roleIds.has(composite.ownerRoleId) || !composite.nestedSystemRef || !composite.inputContract || !composite.outputContract ||
+      !composite.stateNamespace || !composite.checkpointNamespace ||
+      !["fail", "route", "contain"].includes(composite.errorPropagation) ||
+      !["propagate", "contain"].includes(composite.terminationPropagation) ||
+      stateNamespaces.has(composite.stateNamespace) || checkpointNamespaces.has(composite.checkpointNamespace) ||
+      allNamespaces.has(composite.stateNamespace) || allNamespaces.has(composite.checkpointNamespace) ||
+      (composite.readStateFields ?? []).some((field) => !/^[A-Za-z_][A-Za-z0-9_]*$/.test(field)) ||
+      (composite.writeStateFields ?? []).some((field) => !/^[A-Za-z_][A-Za-z0-9_]*$/.test(field))) {
+      diagnostics.push({ code: "IR_COMPOSITE_INVALID", message: "Invalid composite responsibility specification", path: `composites[${index}]` });
+    }
+    stateNamespaces.add(composite.stateNamespace);
+    checkpointNamespaces.add(composite.checkpointNamespace);
+    allNamespaces.add(composite.stateNamespace);
+    allNamespaces.add(composite.checkpointNamespace);
+    if (compositeByNestedSystem.has(composite.nestedSystemRef)) {
+      diagnostics.push({ code: "IR_COMPOSITE_INVALID", message: `Multiple composite owners target nested System ${composite.nestedSystemRef}`, path: `composites[${index}].nestedSystemRef` });
+    }
+    compositeByNestedSystem.set(composite.nestedSystemRef, composite);
   }
   if (!ir.stateSchema?.ref || !Number.isInteger(ir.stateSchema.schemaVersion) || ir.stateSchema.schemaVersion <= 0) {
     diagnostics.push({ code: "IR_CONTRACT_INVALID", message: "stateSchema must include a positive schemaVersion and ref", path: "stateSchema" });

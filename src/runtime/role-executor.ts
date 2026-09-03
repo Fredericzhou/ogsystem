@@ -33,6 +33,8 @@ import {
   validateRoleInputSchema,
   validateRoleOutputSchema
 } from "./role-repo.js";
+import { evaluateCondition } from "./condition-ast.js";
+import { applySemanticBusinessState } from "./semantic-state.js";
 import {
   buildProjectedContext,
   buildRolePromptInput,
@@ -74,7 +76,6 @@ import type {
   ExecutionPlanNode,
   ExecutionProfile,
   GraphState,
-  LoadedModelPackage,
   LoadedRolePackage,
   FlowContractPlan,
   RoleOutputRepairRecord,
@@ -268,6 +269,19 @@ function buildFailureEnvelope(args: {
   loopIteration: number;
   message?: string;
 }): RuntimeErrorEnvelope {
+  const errorMessage = args.message ?? (args.error instanceof Error ? args.error.message : String(args.error));
+  if (errorMessage.startsWith("[IR_CONTRACT_INVALID]")) {
+    return {
+      errorCode: "IR_CONTRACT_INVALID",
+      errorCategory: "execution",
+      message: errorMessage,
+      retryable: false,
+      stage: "execute",
+      roleId: args.roleId,
+      runId: args.runId,
+      branchId: args.branchId
+    };
+  }
   if (args.error instanceof Error && "envelope" in args.error) {
     return normalizeRuntimeError(args.error, {
       errorCode: "ROLE_EXECUTION_FAILED",
@@ -382,7 +396,6 @@ export async function executeRoleNode(args: {
   effectiveLaw: EffectiveLawConstraints;
   profilesById: Map<string, ExecutionProfile>;
   toolsByRef: Map<string, CliTool>;
-  modelsById?: Map<string, LoadedModelPackage>;
   rolePackagesByRoleId: Map<string, LoadedRolePackage>;
   contractPlan?: FlowContractPlan;
   compilerSnapshot?: CompiledExecutionSnapshot;
@@ -408,6 +421,9 @@ export async function executeRoleNode(args: {
   const nextTransitionCount = args.state.transitionCount + 1;
   const lawRef = args.plan.lawBinding.globalLawRef;
   const rolePackage = args.rolePackagesByRoleId.get(args.roleId);
+  if (!rolePackage) {
+    throw new Error(`[IR_CONTRACT_INVALID] Role Contract is missing for ${args.roleId}`);
+  }
   const execution = filesystemArtifactStore.allocateExecution({
     context: args.runContext,
     roleId: args.roleId,
@@ -421,9 +437,18 @@ export async function executeRoleNode(args: {
   const maxTransitions = args.effectiveLaw.maxTransitions;
 
   const assertToolCapability = (toolRef: string | undefined): void => {
-    const allowedTools = args.plan.semanticIR?.capabilities.allowedToolsByRoleId[args.roleId];
-    if (allowedTools !== undefined && !allowedTools.includes(toolRef ?? "")) {
-      throw new Error(`Tool is not authorized by semantic capability policy: ${toolRef ?? "none"}`);
+    const capabilityPolicy = args.plan.semanticIR?.capabilities.allowedToolsByRoleId;
+    if (
+      toolRef !== undefined &&
+      capabilityPolicy &&
+      (!Object.prototype.hasOwnProperty.call(capabilityPolicy, args.roleId) ||
+        !capabilityPolicy[args.roleId].includes(toolRef))
+    ) {
+      throw new Error(`Tool is not authorized by semantic capability policy: ${toolRef}`);
+    }
+    const contractTools = rolePackage.manifest.constraints.allowedTools;
+    if (toolRef !== undefined && !contractTools.includes(toolRef)) {
+      throw new Error(`Tool is not authorized by role contract: ${toolRef ?? "none"}`);
     }
   };
 
@@ -553,7 +578,6 @@ export async function executeRoleNode(args: {
       effectiveLaw: args.effectiveLaw,
       profilesById: args.profilesById,
       toolsByRef: args.toolsByRef,
-      modelsById: args.modelsById
     });
     assertToolCapability(resolvedBinding.toolRef);
     promptInput = buildRolePromptInput({
@@ -564,6 +588,14 @@ export async function executeRoleNode(args: {
       userProfile: args.userProfile
     });
     inputContextForAudit = sanitizeRoleInputContext(promptInput.input);
+    for (const condition of rolePackage.manifest.inputs.preconditions) {
+      if (!evaluateCondition(condition, {
+        state: args.state.businessState ?? {},
+        loop: { iteration: loopIteration, lineageId: currentBranch.lineageId },
+        event: {},
+        role: { roleId: args.roleId, input: promptInput.input }
+      })) throw new Error(`[IR_CONTRACT_INVALID] Role precondition failed: ${args.roleId}`);
+    }
 
     if (args.contractPlan) {
       const projectedContext = buildProjectedContext({
@@ -625,7 +657,6 @@ export async function executeRoleNode(args: {
       effectiveLaw: args.effectiveLaw,
       profilesById: args.profilesById,
       toolsByRef: args.toolsByRef,
-      modelsById: args.modelsById
     });
     assertToolCapability(resolvedBinding.toolRef);
     modelId = resolvedBinding.modelRef;
@@ -795,6 +826,12 @@ export async function executeRoleNode(args: {
       eventType: selectedEvent,
       payload: parsed.output.data
     });
+    const reducedBusinessState = applySemanticBusinessState({ state: args.state, plan: args.plan, roleId: args.roleId, data: parsed.output.data });
+    for (const condition of rolePackage.manifest.outputs.postconditions) {
+      if (!evaluateCondition(condition, {
+        state: reducedBusinessState ?? args.state.businessState ?? {}, loop: { iteration: loopIteration, lineageId: currentBranch.lineageId }, event: parsed.output.data ?? {}, role: { roleId: args.roleId, output: parsed.output }
+      })) throw new Error(`[IR_CONTRACT_INVALID] Role postcondition failed: ${args.roleId}`);
+    }
     if (
       args.node.routingMode !== "parallel_split" &&
       selectableOutgoing.length > 0 &&
@@ -906,7 +943,7 @@ export async function executeRoleNode(args: {
       message: `${message}${category}`,
       rawOutput: executionError?.stdout ?? lastStdout,
       allowedEvents,
-      schemaPath: rolePackage?.outputSchemaPath
+      schemaPath: rolePackage.outputSchemaPath
     });
     const audit = createAuditRecord({
       roleId: args.roleId,

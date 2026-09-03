@@ -5,5 +5,43 @@
   "description": "Decompose the legal RAG service into parallel technical workstreams.",
   "promptTemplate": "prompt.md",
   "outputSchema": "output.schema.json",
-  "tags": ["legal-rag", "architecture"]
+  "tags": [
+    "legal-rag",
+    "architecture"
+  ],
+  "contractVersion": 1,
+  "purpose": "Decompose the legal RAG service into parallel technical workstreams.",
+  "responsibility": {
+    "kind": "atomic",
+    "owns": [],
+    "contributes": [],
+    "doesNotOwn": []
+  },
+  "inputs": {
+    "preconditions": []
+  },
+  "outputs": {
+    "events": [
+      "START_ANSWERING",
+      "START_CITATION",
+      "START_EVALUATION",
+      "START_KNOWLEDGE",
+      "START_RETRIEVAL"
+    ],
+    "postconditions": []
+  },
+  "authority": {
+    "controlActions": []
+  },
+  "constraints": {
+    "writableStateFields": [],
+    "allowedTools": []
+  },
+  "failure": {
+    "retryableErrorCodes": [],
+    "terminalErrorCodes": []
+  },
+  "audit": {
+    "requiredFields": []
+  }
 }

@@ -3,13 +3,45 @@
   "roleVersion": "1.0.0",
   "name": "Alignmentist Debater",
   "description": "Argues for advancing the system toward a larger semantic alignment vision.",
-  "talent": {
-    "reasoningDepth": "high",
-    "style": "visionary",
-    "riskPreference": "balanced"
-  },
-  "preferredModelTags": ["reasoning", "long-context"],
+  "preferredModelTags": [
+    "reasoning",
+    "long-context"
+  ],
   "promptTemplate": "prompt.md",
   "outputSchema": "output.schema.json",
-  "tags": ["debate", "alignment"]
+  "tags": [
+    "debate",
+    "alignment"
+  ],
+  "contractVersion": 1,
+  "purpose": "Argues for advancing the system toward a larger semantic alignment vision.",
+  "responsibility": {
+    "kind": "atomic",
+    "owns": [],
+    "contributes": [],
+    "doesNotOwn": []
+  },
+  "inputs": {
+    "preconditions": []
+  },
+  "outputs": {
+    "events": [
+      "ALIGNMENTIST_DONE"
+    ],
+    "postconditions": []
+  },
+  "authority": {
+    "controlActions": []
+  },
+  "constraints": {
+    "writableStateFields": [],
+    "allowedTools": []
+  },
+  "failure": {
+    "retryableErrorCodes": [],
+    "terminalErrorCodes": []
+  },
+  "audit": {
+    "requiredFields": []
+  }
 }

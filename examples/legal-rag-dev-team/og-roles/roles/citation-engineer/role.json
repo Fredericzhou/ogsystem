@@ -5,5 +5,39 @@
   "description": "Design claim-to-source binding, citation rendering, and evidence traceability for legal answers.",
   "promptTemplate": "prompt.md",
   "outputSchema": "output.schema.json",
-  "tags": ["legal-rag", "citation"]
+  "tags": [
+    "legal-rag",
+    "citation"
+  ],
+  "contractVersion": 1,
+  "purpose": "Design claim-to-source binding, citation rendering, and evidence traceability for legal answers.",
+  "responsibility": {
+    "kind": "atomic",
+    "owns": [],
+    "contributes": [],
+    "doesNotOwn": []
+  },
+  "inputs": {
+    "preconditions": []
+  },
+  "outputs": {
+    "events": [
+      "CITATION_PLAN_READY"
+    ],
+    "postconditions": []
+  },
+  "authority": {
+    "controlActions": []
+  },
+  "constraints": {
+    "writableStateFields": [],
+    "allowedTools": []
+  },
+  "failure": {
+    "retryableErrorCodes": [],
+    "terminalErrorCodes": []
+  },
+  "audit": {
+    "requiredFields": []
+  }
 }

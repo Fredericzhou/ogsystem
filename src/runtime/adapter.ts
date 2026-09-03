@@ -14,6 +14,7 @@ import type { AdapterRunResult, GraphState } from "./types.js";
 
 export { buildRunPlanFingerprint } from "./plan-fingerprint.js";
 export { resolveEffectiveLaw } from "./runtime-setup.js";
+export { validateSemanticRoleContracts } from "./runtime-setup.js";
 export {
   buildJoinDisplayId,
   buildJoinScopeKey,

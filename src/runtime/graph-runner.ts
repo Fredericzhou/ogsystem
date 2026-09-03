@@ -49,7 +49,7 @@ import {
 } from "./run-summary.js";
 import { buildRunSummaryProjection } from "./run-summary-schema.js";
 import { projectStages } from "./stage-projector.js";
-import { applyStateReducer, type StateReducerName } from "./state-reducer.js";
+import { applySemanticBusinessState } from "./semantic-state.js";
 import { resolveJoinPolicy } from "./join-policy.js";
 import { semanticIRDigest } from "./semantic-ir.js";
 import type { RuntimeExecutionServices } from "./engine-adapter.js";
@@ -118,29 +118,7 @@ function semanticDigestForPlan(plan: ExecutionPlan): string {
   return plan.semanticIR ? semanticIRDigest(plan.semanticIR) : "none";
 }
 
-export function applySemanticBusinessState(args: {
-  state: GraphState;
-  plan: ExecutionPlan;
-  roleId: string;
-  data: unknown;
-}): Record<string, unknown> | undefined {
-  const schema = args.plan.semanticIR?.stateSchema;
-  if (!schema?.reducers || !args.data || typeof args.data !== "object" || Array.isArray(args.data)) {
-    return undefined;
-  }
-  const candidate = args.data as Record<string, unknown>;
-  const current = { ...(args.state.businessState ?? {}) };
-  for (const [field, value] of Object.entries(candidate)) {
-    const reducer = schema.reducers[field] as StateReducerName | undefined;
-    if (!reducer) throw new Error(`State update field ${field} has no declared reducer`);
-    const writers = schema.writableRolesByField?.[field];
-    if (writers && !writers.includes(args.roleId)) {
-      throw new Error(`Role "${args.roleId}" cannot update state field ${field}`);
-    }
-    current[field] = applyStateReducer(reducer, current[field], value);
-  }
-  return current;
-}
+export { applySemanticBusinessState } from "./semantic-state.js";
 
 const SCHEDULER_NODE_ID = "__scheduler__";
 const DEFAULT_TRANSITION_BUDGET = 100;
@@ -759,6 +737,7 @@ async function reconcileCommittedHumanReviewDecisions(args: {
   state: GraphState;
   plan: ExecutionPlan;
   contractPlan?: FlowContractPlan;
+  rolePackagesByRoleId: Map<string, LoadedRolePackage>;
   runContext: RunContext;
   compilerSnapshot?: CompiledExecutionSnapshot;
   runtimeServices?: RuntimeExecutionServices;
@@ -818,7 +797,8 @@ async function reconcileCommittedHumanReviewDecisions(args: {
       review: pendingReview,
       decision,
       logger,
-      indexes
+      indexes,
+      rolePackagesByRoleId: args.rolePackagesByRoleId
     });
     const checkpoint = await filesystemCheckpointStore.persist({
       context: args.runContext,
@@ -1071,7 +1051,7 @@ export async function runSystemWithGraphRunner(args: RunnerInput): Promise<Adapt
           userProfile: args.userProfile, workdir: args.workdir, commandBaseDir: args.commandBaseDir,
           logger, signal: config?.signal, auditAppend: args.runtimeServices?.audit.append
         });
-      for (let attempt = 2; result.status === "failed" && retryPolicy && attempt <= retryPolicy.maxAttempts; attempt += 1) {
+      for (let attempt = 2; result.status === "failed" && retryPolicy && result.failure.retryable && attempt <= retryPolicy.maxAttempts; attempt += 1) {
         if (config?.signal?.aborted || runControl.drainRequested || result.failure.errorCode === "RUN_CANCELLED") break;
         const delayMs = retryPolicy.backoff === "exponential" ? 25 * 2 ** (attempt - 2) : 25;
         await new Promise((resolve) => setTimeout(resolve, delayMs));
@@ -1271,6 +1251,7 @@ export async function runSystemWithGraphRunner(args: RunnerInput): Promise<Adapt
       state: reconciled.state,
       plan: args.plan,
       contractPlan: args.contractPlan,
+      rolePackagesByRoleId: args.rolePackagesByRoleId,
       runContext: args.runContext
       , compilerSnapshot: args.compilerSnapshot,
       runtimeServices: args.runtimeServices

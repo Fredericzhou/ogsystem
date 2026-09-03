@@ -4,7 +4,6 @@ import type {
   EffectiveLawConstraints,
   ExecutionPlanNode,
   ExecutionProfile,
-  LoadedModelPackage,
   RoleRunDirs,
   RunContext
 } from "./types.js";
@@ -35,7 +34,6 @@ export function resolveExecutionBinding(args: {
   effectiveLaw: EffectiveLawConstraints;
   profilesById: Map<string, ExecutionProfile>;
   toolsByRef: Map<string, CliTool>;
-  modelsById?: Map<string, LoadedModelPackage>;
 }): ResolvedExecutionBinding {
   const defaults = {
     timeoutMs: 120000,
@@ -45,20 +43,8 @@ export function resolveExecutionBinding(args: {
 
   if (args.node.binding.kind === "model") {
     const workdir = sessionDirectory ?? args.roleDirs?.roleDir ?? args.baseWorkdir;
-    const legacyModelId =
-      "modelId" in (args.node.binding as unknown as Record<string, unknown>) &&
-      typeof (args.node.binding as unknown as { modelId?: unknown }).modelId === "string"
-        ? (args.node.binding as unknown as { modelId: string }).modelId
-        : undefined;
-    const legacyModelPackage = legacyModelId ? args.modelsById?.get(legacyModelId) : undefined;
-    const modelRef = args.node.binding.modelRef ?? legacyModelPackage?.manifest.model;
-    const variant =
-      args.node.binding.variant ??
-      (typeof legacyModelPackage?.manifest.args?.variant === "string"
-        ? legacyModelPackage.manifest.args.variant
-        : typeof legacyModelPackage?.manifest.args?.reasoningEffort === "string"
-          ? legacyModelPackage.manifest.args.reasoningEffort
-          : undefined);
+    const modelRef = args.node.binding.modelRef;
+    const variant = args.node.binding.variant;
     if (!modelRef) {
       throw new Error(`Concrete model ref not resolved for role "${args.roleId}"`);
     }
@@ -68,11 +54,10 @@ export function resolveExecutionBinding(args: {
         modelRef,
         variant
       },
-      bindingLabel: `model:${legacyModelId ?? modelRef}`,
-      timeoutMs: args.node.binding.timeoutMs ?? legacyModelPackage?.manifest.timeoutMs ?? defaults.timeoutMs,
+      bindingLabel: `model:${modelRef}`,
+      timeoutMs: args.node.binding.timeoutMs ?? defaults.timeoutMs,
       maxOutputBytes:
         args.node.binding.maxOutputBytes ??
-        legacyModelPackage?.manifest.maxOutputBytes ??
         defaults.maxOutputBytes,
       workdir,
       env: {
@@ -82,7 +67,7 @@ export function resolveExecutionBinding(args: {
         OGSYSTEM_ROLE_DIR: args.roleDirs?.roleDir ?? workdir,
         OGSYSTEM_PRIVATE_DIR: sessionDirectory ?? "",
         OGSYSTEM_ROLE_ID: args.roleId,
-        OGSYSTEM_MODEL_ID: legacyModelId ?? modelRef,
+        OGSYSTEM_MODEL_ID: modelRef,
         OGSYSTEM_ALLOWED_EVENTS: args.allowedEvents.join(",")
       },
       modelRef,

@@ -35,10 +35,37 @@ function readVersioned(value: unknown, path: string): { value: unknown; version:
   return { value, version: String(version) };
 }
 
-async function loadStructuredFile(path: string): Promise<{ value: unknown; version: string }> {
+async function loadStructuredFile(path: string, nested = false): Promise<{ value: unknown; version: string; nested: boolean }> {
   const source = await readFile(path, "utf8");
   const parsed = extname(path).toLowerCase() === ".json" ? JSON.parse(source) : parse(source);
-  return readVersioned(parsed, path);
+  return { ...readVersioned(parsed, path), nested };
+}
+
+async function loadNestedSystemFile(path: string): Promise<{ value: unknown; version: string; nested: boolean }> {
+  if (!path.endsWith(".mmd")) return loadStructuredFile(path, true);
+  const source = await readFile(path, "utf8");
+  const systemId = source.match(/^%%\s*system\.id\s*=\s*(\S+)\s*$/m)?.[1];
+  const systemVersion = source.match(/^%%\s*system\.version\s*=\s*(\S+)\s*$/m)?.[1];
+  if (!systemId || !systemVersion) throw new Error(`${path} must declare system.id and system.version`);
+  return { value: { kind: "nested_system", systemId, systemVersion, source: path }, version: systemVersion, nested: true };
+}
+
+async function findNestedSystemPaths(root: string): Promise<string[]> {
+  const paths: string[] = [];
+  async function walk(dir: string): Promise<void> {
+    try {
+      for (const entry of await readdir(dir, { withFileTypes: true })) {
+        const path = resolve(dir, entry.name);
+        if (entry.isDirectory()) await walk(path);
+        else if (/\.(json|ya?ml|mmd)$/i.test(entry.name)) paths.push(path);
+      }
+    } catch {
+      // Nested systems are optional; references are rejected by the semantic compiler.
+    }
+  }
+  await walk(resolve(root, "systems"));
+  await walk(resolve(root, "subsystems"));
+  return paths;
 }
 
 export async function loadOgsSpecification(workdir: string): Promise<OgsSpecificationSnapshot> {
@@ -63,8 +90,9 @@ export async function loadOgsSpecification(workdir: string): Promise<OgsSpecific
       if (entry.isFile() && extname(entry.name).toLowerCase() === ".json") paths.push(resolve(contractsRoot, entry.name));
     }
   } catch {
-    // Contracts are optional until a state/event contract is declared.
+    // External flow-contract files are optional until a state/event contract is declared.
   }
+  paths.push(...await findNestedSystemPaths(root));
   if (paths.length === 0) throw new Error("No OGS specification files found under " + root);
 
   const sources: Record<string, { digest: string; value: unknown }> = {};
@@ -72,19 +100,22 @@ export async function loadOgsSpecification(workdir: string): Promise<OgsSpecific
   let systemId: string | undefined;
   let systemVersion: string | undefined;
   for (const path of paths.sort()) {
-    const loaded = await loadStructuredFile(path);
+    const isNestedPath = path.includes("/systems/") || path.includes("/subsystems/");
+    const loaded = isNestedPath ? await loadNestedSystemFile(path) : await loadStructuredFile(path);
     const record = asRecord(loaded.value, path);
     const metadata = asRecord(record.system ?? record.metadata ?? {}, path + ".system");
     const candidateSystemId = metadata.systemId ?? record.systemId;
     const candidateSystemVersion = metadata.systemVersion ?? record.systemVersion;
     if (candidateSystemId !== undefined && typeof candidateSystemId !== "string") throw new Error(path + " systemId must be a string");
     if (candidateSystemVersion !== undefined && typeof candidateSystemVersion !== "string") throw new Error(path + " systemVersion must be a string");
-    if (specVersion && specVersion !== loaded.version) throw new Error("Specification version mismatch in " + path);
-    if (candidateSystemId !== undefined && systemId && systemId !== candidateSystemId) throw new Error("systemId mismatch in " + path);
-    if (candidateSystemVersion !== undefined && systemVersion && systemVersion !== candidateSystemVersion) throw new Error("systemVersion mismatch in " + path);
-    specVersion ??= loaded.version;
-    if (candidateSystemId !== undefined) systemId ??= candidateSystemId;
-    if (candidateSystemVersion !== undefined) systemVersion ??= candidateSystemVersion;
+    if (!loaded.nested) {
+      if (specVersion && specVersion !== loaded.version) throw new Error("Specification version mismatch in " + path);
+      if (candidateSystemId !== undefined && systemId && systemId !== candidateSystemId) throw new Error("systemId mismatch in " + path);
+      if (candidateSystemVersion !== undefined && systemVersion && systemVersion !== candidateSystemVersion) throw new Error("systemVersion mismatch in " + path);
+      specVersion ??= loaded.version;
+      if (candidateSystemId !== undefined) systemId ??= candidateSystemId;
+      if (candidateSystemVersion !== undefined) systemVersion ??= candidateSystemVersion;
+    }
     sources[path] = { digest: digest(loaded.value), value: structuredClone(loaded.value) };
   }
   if (!systemId || !systemVersion) throw new Error("OGS specification must declare systemId and systemVersion");

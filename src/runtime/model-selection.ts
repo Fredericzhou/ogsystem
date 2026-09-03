@@ -1,4 +1,5 @@
 import { readJsonFile } from "./json-file.js";
+import { isModelCatalogStale } from "./model-catalog.js";
 import { pathExists } from "./run-store.js";
 import { createRuntimeError } from "./runtime-errors.js";
 import type {
@@ -166,6 +167,16 @@ export type ResolvedModelRuntimeConfig = {
   bindingSource: "system" | "selection";
 };
 
+export const REQUIRED_MODEL_CAPABILITIES = ["textInput", "textOutput"] as const;
+
+export type ModelSelectionCatalogIssue = {
+  code: "MODEL_UNAVAILABLE" | "MODEL_CAPABILITY_MISMATCH";
+  roleId: string;
+  modelRef: string;
+  message: string;
+  missingCapabilities?: string[];
+};
+
 function mergeSelectionLayers(
   ...layers: Array<ModelSelectionDefaults | ModelSelectionRoleOverride | undefined>
 ): ModelSelectionDefaults {
@@ -195,10 +206,85 @@ function advisoryCatalogWarning(args: {
   return `system "${args.systemId}" role "${args.roleId}" selects "${args.modelRef}" which is not present in .ogs/model-catalog.json`;
 }
 
+export function inspectResolvedModelCatalogEntry(args: {
+  roleId: string;
+  modelRef: string;
+  catalog?: ModelCatalog;
+}): ModelSelectionCatalogIssue | undefined {
+  if (!args.catalog) {
+    return undefined;
+  }
+
+  const catalogEntry = args.catalog.models.find((entry) => entry.ref === args.modelRef);
+  const catalogStale = isModelCatalogStale(args.catalog);
+  if (!catalogEntry) {
+    if (catalogStale) {
+      return undefined;
+    }
+    return {
+      code: "MODEL_UNAVAILABLE",
+      roleId: args.roleId,
+      modelRef: args.modelRef,
+      message:
+        `Role "${args.roleId}" selects "${args.modelRef}", but the fresh OpenCode discovery catalog does not report that model. ` +
+        "Refresh the catalog or pin an available provider/model reference."
+    };
+  }
+
+  const status = catalogEntry.status?.trim().toLowerCase();
+  if (status && ["unavailable", "inactive", "disabled", "deprecated", "offline"].includes(status)) {
+    return {
+      code: "MODEL_UNAVAILABLE",
+      roleId: args.roleId,
+      modelRef: args.modelRef,
+      message:
+        `Role "${args.roleId}" selects "${args.modelRef}", which OpenCode reports as ${status}. ` +
+        "Refresh discovery or pin an active provider/model reference."
+    };
+  }
+
+  const missingCapabilities = REQUIRED_MODEL_CAPABILITIES.filter(
+    (capability) => !catalogEntry.capabilities[capability]
+  );
+  if (missingCapabilities.length > 0) {
+    return {
+      code: "MODEL_CAPABILITY_MISMATCH",
+      roleId: args.roleId,
+      modelRef: args.modelRef,
+      missingCapabilities: [...missingCapabilities],
+      message:
+        `Role "${args.roleId}" model "${args.modelRef}" is missing required capabilities: ${missingCapabilities.join(", ")}. ` +
+        "Pin a model that advertises text input and text output capabilities."
+    };
+  }
+
+  return undefined;
+}
+
+function assertResolvedModelCatalogEntry(args: {
+  roleId: string;
+  modelRef: string;
+  catalog?: ModelCatalog;
+}): void {
+  const issue = inspectResolvedModelCatalogEntry(args);
+  if (!issue) {
+    return;
+  }
+  throw createRuntimeError({
+    errorCode: issue.code,
+    errorCategory: "config",
+    stage: "config",
+    retryable: false,
+    roleId: issue.roleId,
+    message: issue.message
+  });
+}
+
 export function resolveModelSelectionForSystem(args: {
   system: SystemDefinition;
   selection?: ModelSelectionConfig;
   catalog?: ModelCatalog;
+  validateCatalog?: boolean;
 }): {
   resolvedByRoleId: Map<string, ResolvedModelRuntimeConfig>;
   warnings: string[];
@@ -226,6 +312,9 @@ export function resolveModelSelectionForSystem(args: {
         bindingSource: "system"
       } satisfies ResolvedModelRuntimeConfig;
       resolvedByRoleId.set(roleId, resolved);
+      if (args.validateCatalog !== false) {
+        assertResolvedModelCatalogEntry({ roleId, modelRef: resolved.modelRef, catalog: args.catalog });
+      }
       const advisory = advisoryCatalogWarning({
         systemId: args.system.systemId,
         roleId,
@@ -247,6 +336,9 @@ export function resolveModelSelectionForSystem(args: {
         bindingSource: "selection"
       } satisfies ResolvedModelRuntimeConfig;
       resolvedByRoleId.set(roleId, resolved);
+      if (args.validateCatalog !== false) {
+        assertResolvedModelCatalogEntry({ roleId, modelRef: resolved.modelRef, catalog: args.catalog });
+      }
       const advisory = advisoryCatalogWarning({
         systemId: args.system.systemId,
         roleId,
@@ -280,6 +372,16 @@ export function resolveModelSelectionForSystem(args: {
           `Role "${roleId}" uses model.bind "${systemBinding}" which is not a direct "provider/model" ref and no selection override resolved it.`
       });
     }
+  }
+
+  if (resolvedByRoleId.size > 0 && !args.catalog) {
+    warnings.push(
+      "Model availability was not discovered because .ogs/model-catalog.json is missing; the pinned selections remain usable offline. Refresh with `ogs project sync-models` before relying on current availability."
+    );
+  } else if (resolvedByRoleId.size > 0 && args.catalog && isModelCatalogStale(args.catalog)) {
+    warnings.push(
+      `Model catalog generated at ${args.catalog.generatedAt} is stale; pinned model references remain in force and were not replaced. Refresh with \`ogs project sync-models\`.`
+    );
   }
 
   return {

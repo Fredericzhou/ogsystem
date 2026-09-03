@@ -1,8 +1,8 @@
 /**
  * Runtime artifact persistence port.
  *
- * The filesystem implementation deliberately delegates to the legacy artifact writer for now.
- * This keeps the on-disk contract stable while callers depend on a small ownership boundary.
+ * The filesystem implementation delegates to the current run-artifact writer while callers
+ * depend on a small ownership boundary.
  */
 import {
   allocateRoleExecution,

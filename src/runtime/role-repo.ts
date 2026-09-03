@@ -3,7 +3,7 @@
  * File Set: runtime-exec
  * Responsibilities:
  * - Load role manifests/templates/schemas from role repository.
- * - Validate role manifest shape and role I/O payloads against JSON Schema.
+ * - Validate the current Role Manifest and role I/O payloads against their schemas.
  * Boundaries:
  * - Does not schedule graph transitions or execute external tools/models.
  */
@@ -12,6 +12,7 @@ import { resolve } from "node:path";
 
 import { readJsonFile } from "./json-file.js";
 import { assertJsonSchema } from "./json-schema.js";
+import { validateConditionAst } from "./condition-ast.js";
 import type {
   LoadedRolePackage,
   RoleExecutionOutput,
@@ -52,6 +53,25 @@ function expectString(value: unknown, filePath: string, fieldPath: string): stri
   return value;
 }
 
+function purposeNamesConcreteEntity(purpose: string): boolean {
+  // Keep this lexical and conservative: generic responsibility terms such as
+  // "human review" and "Model QA" are valid, while explicit identity markers
+  // and well-known provider/model/runtime identifiers are not.
+  const providerOrModel = /\b(?:OpenAI|Anthropic|Mistral|Cohere|DeepSeek|Qwen|xAI|Azure\s+OpenAI)\b|\b(?:ChatGPT|Copilot|Grok|Gemini|Claude|GPT(?:[-\s]?\d+(?:\.\d+)?)?|Llama(?:[-\s]?\d+(?:\.\d+)?)?|o[1-9](?:[-\s](?:mini|preview))?)\b|\b(?:OpenAI|Anthropic|Google(?:\s+DeepMind)?|Microsoft|Meta|Alibaba)\s+(?:ChatGPT|Copilot|Grok|Gemini|Claude|GPT|Llama|Qwen|model)\b|\b(?:openai|anthropic|google|microsoft|azure|amazon|aws|meta|mistral|cohere|deepseek|qwen|alibaba|xai)\/[A-Za-z0-9._-]+\b/i;
+  const explicitVendor = /\b(?:provider|vendor|service)\s*(?:is|:)\s*[A-Za-z][A-Za-z0-9._/-]*\b|\b[A-Z][A-Za-z0-9.-]+\s+(?:provider|vendor)\b/i;
+  const identifiedPerson = /\b(?:person|operator|owner|assignee|assigned\s+to|maintained\s+by|managed\s+by|reviewed\s+by)\s+[A-Z][a-z]+(?:\s+[A-Z][a-z]+)?\b/;
+  const runtimeInstance = /\b(?:runtime\s+instance|run\s+instance|execution\s+instance)\b|\b(?:session|branch|run|execution|instance)[-_ ](?:id|instance)\b|\b(?:run|execution|session|branch|instance)[-_ ](?:\d+|#\d+|[a-z]*\d[a-z0-9-]*|[a-f0-9]{8,})\b/i;
+  return providerOrModel.test(purpose) || explicitVendor.test(purpose) || identifiedPerson.test(purpose) || runtimeInstance.test(purpose);
+}
+
+function expectPurpose(value: unknown, filePath: string): string {
+  const purpose = expectString(value, filePath, "$.purpose");
+  if (purposeNamesConcreteEntity(purpose)) {
+    fail(filePath, "$.purpose", "must describe an abstract responsibility and must not name a person, model, provider, or runtime instance");
+  }
+  return purpose;
+}
+
 function expectOptionalStringArray(
   value: unknown,
   filePath: string,
@@ -66,20 +86,91 @@ function expectOptionalStringArray(
   return value.map((entry, index) => expectString(entry, filePath, `${fieldPath}[${index}]`));
 }
 
-function expectOptionalTalent(
-  value: unknown,
-  filePath: string,
-  fieldPath: string
-): RolePackageManifest["talent"] | undefined {
-  if (value === undefined) {
-    return undefined;
+function expectSortedUniqueStrings(value: unknown, filePath: string, fieldPath: string): string[] {
+  if (!Array.isArray(value)) fail(filePath, fieldPath, `expected array, received ${describeType(value)}`);
+  const result = value.map((entry, index) => expectString(entry, filePath, `${fieldPath}[${index}]`));
+  if (new Set(result).size !== result.length) fail(filePath, fieldPath, "must not contain duplicates");
+  if (result.some((item, index) => index > 0 && result[index - 1].localeCompare(item) >= 0)) fail(filePath, fieldPath, "must be stable sorted");
+  return result;
+}
+
+function expectContract(value: unknown, filePath: string): Pick<RolePackageManifest, "contractVersion" | "purpose" | "responsibility" | "inputs" | "outputs" | "authority" | "constraints" | "failure" | "audit"> {
+  const contract = expectRecord(value, filePath, "$");
+  const responsibility = expectRecord(contract.responsibility, filePath, "$.responsibility");
+  const inputs = expectRecord(contract.inputs, filePath, "$.inputs");
+  const outputs = expectRecord(contract.outputs, filePath, "$.outputs");
+  const authority = expectRecord(contract.authority, filePath, "$.authority");
+  const constraints = expectRecord(contract.constraints, filePath, "$.constraints");
+  const failure = expectRecord(contract.failure, filePath, "$.failure");
+  const audit = expectRecord(contract.audit, filePath, "$.audit");
+  expectNoExtraKeys(responsibility, ["kind", "owns", "contributes", "doesNotOwn", "composition"], filePath, "$.responsibility");
+  expectNoExtraKeys(inputs, ["preconditions"], filePath, "$.inputs");
+  expectNoExtraKeys(outputs, ["events", "postconditions"], filePath, "$.outputs");
+  expectNoExtraKeys(authority, ["controlActions"], filePath, "$.authority");
+  expectNoExtraKeys(constraints, ["writableStateFields", "allowedTools"], filePath, "$.constraints");
+  expectNoExtraKeys(failure, ["retryableErrorCodes", "terminalErrorCodes"], filePath, "$.failure");
+  expectNoExtraKeys(audit, ["requiredFields"], filePath, "$.audit");
+  if (contract.contractVersion !== 1) fail(filePath, "$.contractVersion", "must equal 1");
+  const purpose = expectPurpose(contract.purpose, filePath);
+  const kind = contract.responsibility && typeof contract.responsibility === "object" && !Array.isArray(contract.responsibility)
+    ? contract.responsibility.kind
+    : undefined;
+  if (kind !== "atomic" && kind !== "composite") fail(filePath, "$.responsibility.kind", "must be atomic or composite");
+  const owns = expectSortedUniqueStrings(responsibility.owns, filePath, "$.responsibility.owns");
+  const contributes = expectSortedUniqueStrings(responsibility.contributes, filePath, "$.responsibility.contributes");
+  const doesNotOwn = expectSortedUniqueStrings(responsibility.doesNotOwn, filePath, "$.responsibility.doesNotOwn");
+  if (owns.some((field) => doesNotOwn.includes(field)) || contributes.some((field) => doesNotOwn.includes(field))) fail(filePath, "$.responsibility", "doesNotOwn must not overlap owns or contributes");
+  const compositionValue = responsibility.composition;
+  if (kind === "atomic" && compositionValue !== undefined) fail(filePath, "$.responsibility.composition", "is only valid for composite responsibilities");
+  let composition: RolePackageManifest["responsibility"]["composition"];
+  if (kind === "composite") {
+    const item = expectRecord(compositionValue, filePath, "$.responsibility.composition");
+    expectNoExtraKeys(item, ["nestedSystemRef", "inputContract", "outputContract", "stateNamespace", "checkpointNamespace", "errorPropagation", "terminationPropagation"], filePath, "$.responsibility.composition");
+    const errorPropagation = expectString(item.errorPropagation, filePath, "$.responsibility.composition.errorPropagation") as "fail" | "route" | "contain";
+    const terminationPropagation = expectString(item.terminationPropagation, filePath, "$.responsibility.composition.terminationPropagation") as "propagate" | "contain";
+    if (!["fail", "route", "contain"].includes(errorPropagation)) fail(filePath, "$.responsibility.composition.errorPropagation", "contains unsupported value");
+    if (!["propagate", "contain"].includes(terminationPropagation)) fail(filePath, "$.responsibility.composition.terminationPropagation", "contains unsupported value");
+    composition = {
+      nestedSystemRef: expectString(item.nestedSystemRef, filePath, "$.responsibility.composition.nestedSystemRef"),
+      inputContract: expectString(item.inputContract, filePath, "$.responsibility.composition.inputContract"),
+      outputContract: expectString(item.outputContract, filePath, "$.responsibility.composition.outputContract"),
+      stateNamespace: expectString(item.stateNamespace, filePath, "$.responsibility.composition.stateNamespace"),
+      checkpointNamespace: expectString(item.checkpointNamespace, filePath, "$.responsibility.composition.checkpointNamespace"),
+      errorPropagation,
+      terminationPropagation
+    };
   }
-  const record = expectRecord(value, filePath, fieldPath);
-  const talent: Record<string, string> = {};
-  for (const [key, entry] of Object.entries(record)) {
-    talent[key] = expectString(entry, filePath, `${fieldPath}.${key}`);
+  const preconditions = inputs.preconditions;
+  const postconditions = outputs.postconditions;
+  if (!Array.isArray(preconditions) || !Array.isArray(postconditions)) fail(filePath, "$.inputs/outputs", "conditions must be arrays");
+  for (const [path, conditions] of [["$.inputs.preconditions", preconditions], ["$.outputs.postconditions", postconditions]] as const) {
+    conditions.forEach((condition, index) => { const diagnostics = validateConditionAst(condition); if (diagnostics.length) fail(filePath, `${path}[${index}]`, diagnostics.join(", ")); });
   }
-  return talent;
+  const controlActions = expectSortedUniqueStrings(authority.controlActions, filePath, "$.authority.controlActions") as RolePackageManifest["authority"]["controlActions"];
+  if (!controlActions.every((action) => ["approve", "rework", "pause", "terminate"].includes(action))) fail(filePath, "$.authority.controlActions", "contains unsupported action");
+  const retryableErrorCodes = expectSortedUniqueStrings(failure.retryableErrorCodes, filePath, "$.failure.retryableErrorCodes");
+  const terminalErrorCodes = expectSortedUniqueStrings(failure.terminalErrorCodes, filePath, "$.failure.terminalErrorCodes");
+  if (![...retryableErrorCodes, ...terminalErrorCodes].every((code) => /^[A-Z][A-Z0-9_]*$/.test(code))) fail(filePath, "$.failure", "error codes must be stable uppercase identifiers");
+  if (retryableErrorCodes.some((code) => terminalErrorCodes.includes(code))) fail(filePath, "$.failure", "an error code cannot be both retryable and terminal");
+  return { contractVersion: 1, purpose, responsibility: { kind, owns, contributes, doesNotOwn, ...(composition ? { composition } : {}) }, inputs: { preconditions: preconditions as any[] }, outputs: { events: expectSortedUniqueStrings(outputs.events, filePath, "$.outputs.events"), postconditions: postconditions as any[] }, authority: { controlActions }, constraints: { writableStateFields: expectSortedUniqueStrings(constraints.writableStateFields, filePath, "$.constraints.writableStateFields"), allowedTools: expectSortedUniqueStrings(constraints.allowedTools, filePath, "$.constraints.allowedTools") }, failure: { retryableErrorCodes, terminalErrorCodes }, audit: { requiredFields: expectSortedUniqueStrings(audit.requiredFields, filePath, "$.audit.requiredFields") } };
+}
+
+function validateAuditFields(manifest: RolePackageManifest, outputSchema: unknown, filePath: string): void {
+  const builtInAuditFields = new Set([
+    "at", "roleId", "branchId", "joinId", "loopIteration", "lawRef", "modelId", "profileId", "toolRef",
+    "command", "args", "sessionId", "messageId", "serverPid", "exitCode", "durationMs", "selectedEvent",
+    "nextRoleId", "status", "stdoutPreview", "stderrPreview", "error", "errorEnvelope", "compilerDigest",
+    "compilerDiagnosticCode", "repair", "correctionRequest", "inputContext", "handledByEvent", "handledTargetRoleId"
+  ]);
+  const properties = outputSchema && typeof outputSchema === "object" && !Array.isArray(outputSchema)
+    ? (outputSchema as { properties?: unknown }).properties
+    : undefined;
+  const outputFields = properties && typeof properties === "object" && !Array.isArray(properties)
+    ? new Set(Object.keys(properties as Record<string, unknown>))
+    : new Set<string>();
+  for (const field of manifest.audit.requiredFields) {
+    if (!builtInAuditFields.has(field) && !outputFields.has(field)) fail(filePath, "$.audit.requiredFields", `unknown audit or output field ${field}`);
+  }
 }
 
 function expectNoExtraKeys(
@@ -100,6 +191,7 @@ export function validateRolePackageManifest(
   value: unknown,
   filePath: string
 ): RolePackageManifest {
+  // Role Contract sections are mandatory in the current development-test format.
   const record = expectRecord(value, filePath, "$");
   expectNoExtraKeys(
     record,
@@ -110,7 +202,7 @@ export function validateRolePackageManifest(
       "description",
       "promptTemplate",
       "outputSchema",
-      "talent",
+      "contractVersion", "purpose", "responsibility", "inputs", "outputs", "authority", "constraints", "failure", "audit",
       "preferredModelTags",
       "tags"
     ],
@@ -118,21 +210,23 @@ export function validateRolePackageManifest(
     "$"
   );
 
-  return {
+  const description = expectString(record.description, filePath, "$.description");
+  const manifest = {
     roleId: expectString(record.roleId, filePath, "$.roleId"),
     roleVersion: expectString(record.roleVersion, filePath, "$.roleVersion"),
     name: expectString(record.name, filePath, "$.name"),
-    description: expectString(record.description, filePath, "$.description"),
+    description,
     promptTemplate: expectString(record.promptTemplate, filePath, "$.promptTemplate"),
     outputSchema: expectString(record.outputSchema, filePath, "$.outputSchema"),
-    talent: expectOptionalTalent(record.talent, filePath, "$.talent"),
     preferredModelTags: expectOptionalStringArray(
       record.preferredModelTags,
       filePath,
       "$.preferredModelTags"
     ),
-    tags: expectOptionalStringArray(record.tags, filePath, "$.tags")
+    tags: expectOptionalStringArray(record.tags, filePath, "$.tags"),
+    ...expectContract(record, filePath)
   };
+  return manifest;
 }
 
 export async function loadRolePackage(args: {
@@ -153,6 +247,7 @@ export async function loadRolePackage(args: {
   const outputSchemaPath = resolve(resolvedPath, manifest.outputSchema);
   const promptTemplate = await readFile(promptTemplatePath, "utf8");
   const outputSchema = await readJsonFile(outputSchemaPath);
+  validateAuditFields(manifest, outputSchema, manifestPath);
   const agent = await readFile(resolve(resolvedPath, "agent.md"), "utf8");
 
   return {

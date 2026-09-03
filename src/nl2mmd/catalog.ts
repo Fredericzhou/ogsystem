@@ -138,7 +138,6 @@ export function getSupportedNl2MmdDictionary(): Nl2MmdSupportedDictionary {
       "handoff.contracts"
     ],
     metadataPrefixes: [
-      "talent.bind.",
       "exec.bind.",
       "model.bind.",
       "role.mode.",

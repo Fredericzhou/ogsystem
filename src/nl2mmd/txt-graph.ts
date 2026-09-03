@@ -96,7 +96,6 @@ function renderRoleBindingSummary(roleId: string, metadata: Map<string, string>)
   const parts: string[] = [];
   const modelId = metadata.get(`model.bind.${roleId}`);
   const execId = metadata.get(`exec.bind.${roleId}`);
-  const talent = metadata.get(`talent.bind.${roleId}`);
   const roleMode = metadata.get(`role.mode.${roleId}`);
   const joinMode = metadata.get(`join.mode.${roleId}`);
   const joinSources = metadata.get(`join.sources.${roleId}`);
@@ -107,9 +106,6 @@ function renderRoleBindingSummary(roleId: string, metadata: Map<string, string>)
   }
   if (execId) {
     parts.push(`exec=${execId}`);
-  }
-  if (talent) {
-    parts.push(`talent_hint=${talent}`);
   }
   if (roleMode) {
     parts.push(`mode=${roleMode}`);

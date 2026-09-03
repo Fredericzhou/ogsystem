@@ -5,5 +5,43 @@
   "description": "Intake, clarification, scope shaping, and routing readiness.",
   "promptTemplate": "prompt.md",
   "outputSchema": "output.schema.json",
-  "tags": ["gstacklike", "intake"]
+  "tags": [
+    "gstacklike",
+    "intake"
+  ],
+  "contractVersion": 1,
+  "purpose": "Intake, clarification, scope shaping, and routing readiness.",
+  "responsibility": {
+    "kind": "atomic",
+    "owns": [],
+    "contributes": [],
+    "doesNotOwn": []
+  },
+  "inputs": {
+    "preconditions": []
+  },
+  "outputs": {
+    "events": [
+      "NEEDS_MORE_INPUT",
+      "READY_FOR_REVIEW",
+      "REJECTED"
+    ],
+    "postconditions": []
+  },
+  "authority": {
+    "controlActions": []
+  },
+  "constraints": {
+    "writableStateFields": [],
+    "allowedTools": [
+      "tool.office-hours"
+    ]
+  },
+  "failure": {
+    "retryableErrorCodes": [],
+    "terminalErrorCodes": []
+  },
+  "audit": {
+    "requiredFields": []
+  }
 }

@@ -15,7 +15,6 @@ const BARE_NODE_TOKEN_REGEX = /^[A-Za-z0-9._:-]+$/;
 const EDGE_REGEX = /^(.+?)\s*-->\|(.+?)\|\s*(.+)$/;
 const METADATA_REGEX = /^%%\s*([A-Za-z0-9._:-]+)\s*=\s*(.+)$/;
 const ROLE_METADATA_PREFIXES = [
-  "talent.bind.",
   "exec.bind.",
   "model.bind.",
   "role.mode.",
@@ -35,7 +34,6 @@ const SUPPORTED_EXACT_METADATA_KEYS = new Set([
   "handoff.contracts"
 ]);
 const SUPPORTED_METADATA_PREFIXES = [
-  "talent.bind.",
   "exec.bind.",
   "model.bind.",
   "role.mode.",

@@ -5,5 +5,46 @@
   "description": "Single-step operator used by law and adapter tests.",
   "promptTemplate": "prompt.md",
   "outputSchema": "output.schema.json",
-  "tags": ["test"]
+  "tags": [
+    "test"
+  ],
+  "contractVersion": 1,
+  "purpose": "Single-step operator used by law and adapter tests.",
+  "responsibility": {
+    "kind": "atomic",
+    "owns": [],
+    "contributes": [],
+    "doesNotOwn": []
+  },
+  "inputs": {
+    "preconditions": []
+  },
+  "outputs": {
+    "events": [
+      "DONE"
+    ],
+    "postconditions": []
+  },
+  "authority": {
+    "controlActions": [
+      "approve",
+      "pause",
+      "rework",
+      "terminate"
+    ]
+  },
+  "constraints": {
+    "writableStateFields": [],
+    "allowedTools": [
+      "tool.finalizer",
+      "tool.repair"
+    ]
+  },
+  "failure": {
+    "retryableErrorCodes": [],
+    "terminalErrorCodes": []
+  },
+  "audit": {
+    "requiredFields": []
+  }
 }

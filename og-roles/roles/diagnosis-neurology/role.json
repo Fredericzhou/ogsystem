@@ -3,13 +3,45 @@
   "roleVersion": "1.0.0",
   "name": "Neurology Specialist",
   "description": "Assesses neurological signs, imaging, and cognitive clues for the case.",
-  "talent": {
-    "reasoningDepth": "high",
-    "style": "diagnostic",
-    "riskPreference": "conservative"
-  },
-  "preferredModelTags": ["reasoning", "long-context"],
+  "preferredModelTags": [
+    "reasoning",
+    "long-context"
+  ],
   "promptTemplate": "prompt.md",
   "outputSchema": "output.schema.json",
-  "tags": ["diagnosis", "neurology"]
+  "tags": [
+    "diagnosis",
+    "neurology"
+  ],
+  "contractVersion": 1,
+  "purpose": "Assesses neurological signs, imaging, and cognitive clues for the case.",
+  "responsibility": {
+    "kind": "atomic",
+    "owns": [],
+    "contributes": [],
+    "doesNotOwn": []
+  },
+  "inputs": {
+    "preconditions": []
+  },
+  "outputs": {
+    "events": [
+      "NEUROLOGY_DONE"
+    ],
+    "postconditions": []
+  },
+  "authority": {
+    "controlActions": []
+  },
+  "constraints": {
+    "writableStateFields": [],
+    "allowedTools": []
+  },
+  "failure": {
+    "retryableErrorCodes": [],
+    "terminalErrorCodes": []
+  },
+  "audit": {
+    "requiredFields": []
+  }
 }

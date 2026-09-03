@@ -56,6 +56,7 @@ export type RoleSummary = {
   agentDigest: string;
   preferredModelTags: string[];
   tags: string[];
+  roleContractDigest: string;
 };
 
 export type FlowSummary = {
@@ -193,7 +194,13 @@ function buildRoleSummary(rolePackage: LoadedRolePackage): RoleSummary {
     outputSchemaDigest: digestValue(rolePackage.outputSchema),
     agentDigest: digestValue(rolePackage.agent),
     preferredModelTags: sortStrings(rolePackage.manifest.preferredModelTags ?? []),
-    tags: sortStrings(rolePackage.manifest.tags ?? [])
+    tags: sortStrings(rolePackage.manifest.tags ?? []),
+    roleContractDigest: digestValue({
+      contractVersion: rolePackage.manifest.contractVersion, purpose: rolePackage.manifest.purpose,
+      responsibility: rolePackage.manifest.responsibility, inputs: rolePackage.manifest.inputs,
+      outputs: rolePackage.manifest.outputs, authority: rolePackage.manifest.authority,
+      constraints: rolePackage.manifest.constraints, failure: rolePackage.manifest.failure, audit: rolePackage.manifest.audit
+    })
   };
 }
 
@@ -652,6 +659,29 @@ function validateReview(args: {
   }
 }
 
+export function validateRoleContract(args: { system: SystemDefinition; basePlan: ExecutionPlan; roleId: string; rolePackage: LoadedRolePackage }): CompilerDiagnostic[] {
+  const diagnostics: CompilerDiagnostic[] = [];
+  const manifest = args.rolePackage.manifest;
+  const normalEvents = [...new Set(args.system.flows.filter((flow) => flow.fromRoleId === args.roleId && !isRuntimeOnlyErrorEvent(flow.eventType)).map((flow) => flow.eventType))].sort();
+  const declaredEvents = [...new Set(manifest.outputs.events)].sort();
+  if (normalEvents.length !== declaredEvents.length || normalEvents.some((event, index) => event !== declaredEvents[index])) {
+    diagnostics.push(createDiagnostic({ code: "IR_CONTRACT_INVALID", message: `Role contract outputs.events must match normal outgoing events for ${args.roleId}`, roleId: args.roleId }));
+  }
+  const review = args.basePlan.nodesByRoleId.get(args.roleId)?.review;
+  if (review) {
+    const requiredActions = [...new Set(["approve", "rework", review.timeoutAction])];
+    const missingActions = requiredActions.filter((action) => !manifest.authority.controlActions.includes(action as typeof manifest.authority.controlActions[number]));
+    if (missingActions.length > 0) {
+      diagnostics.push(createDiagnostic({
+        code: "IR_CONTRACT_INVALID",
+        message: `Role contract authority.controlActions for ${args.roleId} must include ${missingActions.join(", ")} for the configured human review`,
+        roleId: args.roleId
+      }));
+    }
+  }
+  return diagnostics;
+}
+
 function validateLoopBudget(args: {
   system: SystemDefinition;
   roleId: string;
@@ -878,6 +908,10 @@ export function compileExecutionSnapshot(args: CompilerInput): CompilerResult {
       roleId,
       diagnostics
     });
+    const rolePackage = args.rolePackagesByRoleId.get(roleId);
+    if (rolePackage) {
+      diagnostics.push(...validateRoleContract({ system: args.system, basePlan, roleId, rolePackage }));
+    }
   }
 
   validateContracts({

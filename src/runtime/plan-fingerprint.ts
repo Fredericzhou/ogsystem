@@ -11,7 +11,6 @@ import {
 import type {
   EffectiveLawConstraints,
   FlowContractPlan,
-  LoadedModelPackage,
   LoadedRolePackage,
   SystemDefinition
 } from "./types.js";
@@ -67,7 +66,6 @@ function buildSystemFingerprintComponent(
         return left.toRoleId.localeCompare(right.toRoleId);
       }),
     lawRef: system.lawBinding.globalLawRef,
-    talentBinding: sortedRecordEntries(system.talentBinding),
     executionBinding: sortedRecordEntries(system.executionBinding),
     modelBinding: sortedRecordEntries(system.modelBinding),
     graph: {
@@ -183,27 +181,15 @@ export function buildRunPlanFingerprint(args: {
   system: SystemDefinition;
   rolePackagesByRoleId: Map<string, LoadedRolePackage>;
   resolvedModelsByRoleId?: Map<string, ResolvedModelRuntimeConfig>;
-  modelsById?: Map<string, LoadedModelPackage>;
   effectiveLaw: EffectiveLawConstraints;
   contractPlan?: FlowContractPlan;
   compilerSnapshot?: CompiledExecutionSnapshot;
   specificationDigest?: string;
 }): RunPlanFingerprint {
   const rolePackageComponents = buildRolePackageFingerprintComponent(args.rolePackagesByRoleId);
-  const modelSelectionComponents = args.resolvedModelsByRoleId
-    ? buildModelSelectionFingerprintComponent(args.resolvedModelsByRoleId)
-    : Array.from(args.modelsById?.entries() ?? [])
-        .sort(([left], [right]) => left.localeCompare(right))
-        .map(([modelId, modelPackage]) => ({
-          identity: {
-            legacyModelId: modelId,
-            manifest: normalizeFingerprintValue(modelPackage.manifest)
-          },
-          sourceHints: {
-            legacyModelId: modelId,
-            resolvedPath: modelPackage.resolvedPath
-          }
-        }));
+  const modelSelectionComponents = buildModelSelectionFingerprintComponent(
+    args.resolvedModelsByRoleId ?? new Map()
+  );
   const runtimePromptInputComponent = buildRuntimePromptInputFingerprintComponent();
   const compilerComponent = args.compilerSnapshot
     ? buildCompilerFingerprintComponent(args.compilerSnapshot)

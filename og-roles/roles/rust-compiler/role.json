@@ -5,5 +5,42 @@
   "description": "Compile the Rust hello-world project and verify the executable is produced.",
   "promptTemplate": "prompt.md",
   "outputSchema": "output.schema.json",
-  "tags": ["rust", "compiler", "pipeline"]
+  "tags": [
+    "rust",
+    "compiler",
+    "pipeline"
+  ],
+  "contractVersion": 1,
+  "purpose": "Compile the Rust hello-world project and verify the executable is produced.",
+  "responsibility": {
+    "kind": "atomic",
+    "owns": [],
+    "contributes": [],
+    "doesNotOwn": []
+  },
+  "inputs": {
+    "preconditions": []
+  },
+  "outputs": {
+    "events": [
+      "COMPILE_DONE"
+    ],
+    "postconditions": []
+  },
+  "authority": {
+    "controlActions": []
+  },
+  "constraints": {
+    "writableStateFields": [],
+    "allowedTools": [
+      "tool.rust.compiler"
+    ]
+  },
+  "failure": {
+    "retryableErrorCodes": [],
+    "terminalErrorCodes": []
+  },
+  "audit": {
+    "requiredFields": []
+  }
 }

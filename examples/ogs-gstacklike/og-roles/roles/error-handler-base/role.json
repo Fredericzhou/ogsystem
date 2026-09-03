@@ -5,5 +5,44 @@
   "description": "Template role for handling runtime failures and deciding compensation actions.",
   "promptTemplate": "prompt.md",
   "outputSchema": "output.schema.json",
-  "tags": ["template", "error-edge", "compensation"]
+  "tags": [
+    "template",
+    "error-edge",
+    "compensation"
+  ],
+  "contractVersion": 1,
+  "purpose": "Template role for handling runtime failures and deciding compensation actions.",
+  "responsibility": {
+    "kind": "atomic",
+    "owns": [],
+    "contributes": [],
+    "doesNotOwn": []
+  },
+  "inputs": {
+    "preconditions": []
+  },
+  "outputs": {
+    "events": [
+      "ABORTED",
+      "COMPENSATED",
+      "ESCALATED"
+    ],
+    "postconditions": []
+  },
+  "authority": {
+    "controlActions": []
+  },
+  "constraints": {
+    "writableStateFields": [],
+    "allowedTools": [
+      "tool.error-handler"
+    ]
+  },
+  "failure": {
+    "retryableErrorCodes": [],
+    "terminalErrorCodes": []
+  },
+  "audit": {
+    "requiredFields": []
+  }
 }

@@ -5,5 +5,41 @@
   "description": "Executes deployment after runtime review approval and lets runtime failures route into compensation.",
   "promptTemplate": "prompt.md",
   "outputSchema": "output.schema.json",
-  "tags": ["gstacklike", "deploy"]
+  "tags": [
+    "gstacklike",
+    "deploy"
+  ],
+  "contractVersion": 1,
+  "purpose": "Executes deployment after runtime review approval and lets runtime failures route into compensation.",
+  "responsibility": {
+    "kind": "atomic",
+    "owns": [],
+    "contributes": [],
+    "doesNotOwn": []
+  },
+  "inputs": {
+    "preconditions": []
+  },
+  "outputs": {
+    "events": [
+      "SHIPPED"
+    ],
+    "postconditions": []
+  },
+  "authority": {
+    "controlActions": []
+  },
+  "constraints": {
+    "writableStateFields": [],
+    "allowedTools": [
+      "tool.ship-deploy"
+    ]
+  },
+  "failure": {
+    "retryableErrorCodes": [],
+    "terminalErrorCodes": []
+  },
+  "audit": {
+    "requiredFields": []
+  }
 }

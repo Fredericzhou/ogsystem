@@ -3,13 +3,45 @@
   "roleVersion": "1.0.0",
   "name": "Imaging Specialist",
   "description": "Produces an imaging-focused interpretation for the consultation.",
-  "talent": {
-    "reasoningDepth": "high",
-    "style": "diagnostic",
-    "riskPreference": "conservative"
-  },
-  "preferredModelTags": ["reasoning", "long-context"],
+  "preferredModelTags": [
+    "reasoning",
+    "long-context"
+  ],
   "promptTemplate": "prompt.md",
   "outputSchema": "output.schema.json",
-  "tags": ["diagnosis", "imaging"]
+  "tags": [
+    "diagnosis",
+    "imaging"
+  ],
+  "contractVersion": 1,
+  "purpose": "Produces an imaging-focused interpretation for the consultation.",
+  "responsibility": {
+    "kind": "atomic",
+    "owns": [],
+    "contributes": [],
+    "doesNotOwn": []
+  },
+  "inputs": {
+    "preconditions": []
+  },
+  "outputs": {
+    "events": [
+      "IMAGING_DONE"
+    ],
+    "postconditions": []
+  },
+  "authority": {
+    "controlActions": []
+  },
+  "constraints": {
+    "writableStateFields": [],
+    "allowedTools": []
+  },
+  "failure": {
+    "retryableErrorCodes": [],
+    "terminalErrorCodes": []
+  },
+  "audit": {
+    "requiredFields": []
+  }
 }

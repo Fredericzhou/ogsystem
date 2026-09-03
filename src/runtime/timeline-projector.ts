@@ -18,7 +18,10 @@ export type TimelineProjectionRecord = {
   status?: string;
   durationMs?: number;
   errorCode?: string;
+  channel: "main" | "error" | "loop" | "join" | "feedback";
 };
+
+export type TimelineChannel = NonNullable<TimelineProjectionRecord["channel"]>;
 
 type TimelineSnapshotArgs = {
   timelinePath: string;
@@ -30,6 +33,7 @@ type TimelineSnapshotArgs = {
   reviewId?: string;
   status?: string;
   errorCode?: string;
+  channel?: TimelineChannel;
 };
 
 type TimelineSnapshotEntry = {
@@ -56,6 +60,23 @@ function asString(value: unknown): string | undefined {
 
 function asNumber(value: unknown): number | undefined {
   return typeof value === "number" && Number.isFinite(value) ? value : undefined;
+}
+
+export function timelineChannelForEvent(event: Record<string, unknown>): TimelineChannel {
+  const route = event.route;
+  const routeRecord = route && typeof route === "object" && !Array.isArray(route)
+    ? route as Record<string, unknown>
+    : undefined;
+  const explicit = asString(event.channel) ?? asString(routeRecord?.channel);
+  if (explicit === "error" || explicit === "loop" || explicit === "join" || explicit === "feedback") return explicit;
+  if (explicit === "main" || explicit === "normal") return "main";
+  const type = (asString(event.type) ?? "").toLowerCase();
+  const selectedEvent = (asString(event.event) ?? asString(event.selectedEvent) ?? "").toUpperCase();
+  if (asString(event.errorCode) || type.includes("error") || selectedEvent.startsWith("ERROR")) return "error";
+  if (type.includes("loop") || selectedEvent.includes("LOOP")) return "loop";
+  if (type.includes("join") || asString(event.joinId) || asString(event.joinRoleId)) return "join";
+  if (type.includes("feedback") || selectedEvent.includes("FEEDBACK")) return "feedback";
+  return "main";
 }
 
 function parseJsonLines(content: string): Array<Record<string, unknown>> {
@@ -151,6 +172,9 @@ function filterTimelineEntries(
       if (args.errorCode && entry.record.errorCode !== args.errorCode) {
         return false;
       }
+      if (args.channel && entry.record.channel !== args.channel) {
+        return false;
+      }
       return true;
     })
     .slice(0, limit);
@@ -187,7 +211,13 @@ function timelineEntryFromValue(value: unknown): TimelineSnapshotEntry | undefin
   const cursor = asNumber(parsed.cursor);
   const at = asString(parsed.at);
   const type = asString(parsed.type);
-  if (cursor === undefined || !at || !type) {
+  const channel = parsed.channel;
+  if (
+    cursor === undefined ||
+    !at ||
+    !type ||
+    (channel !== "main" && channel !== "error" && channel !== "loop" && channel !== "join" && channel !== "feedback")
+  ) {
     return undefined;
   }
   return {
@@ -210,7 +240,8 @@ function matchesTimelineFilters(record: TimelineProjectionRecord, args: Timeline
     && (!args.branchId || record.branchId === args.branchId)
     && (!args.reviewId || record.reviewId === args.reviewId)
     && (!args.status || record.status === args.status)
-    && (!args.errorCode || record.errorCode === args.errorCode);
+    && (!args.errorCode || record.errorCode === args.errorCode)
+    && (!args.channel || record.channel === args.channel);
 }
 
 async function readTimelineSnapshotFromStart(
@@ -275,7 +306,8 @@ export function projectTimelineRecord(args: {
     event: asString(args.event.event) ?? asString(args.event.selectedEvent),
     status: asString(args.event.status),
     durationMs: asNumber(args.event.durationMs),
-    errorCode: extractErrorCode(args.event)
+    errorCode: extractErrorCode(args.event),
+    channel: timelineChannelForEvent(args.event)
   };
 }
 
@@ -308,6 +340,7 @@ export async function loadTimelineSnapshot(args: {
   reviewId?: string;
   status?: string;
   errorCode?: string;
+  channel?: TimelineChannel;
 }): Promise<{ events: Array<{ cursor: number; record: TimelineProjectionRecord }>; nextCursor: number }> {
   let content: string;
   try {

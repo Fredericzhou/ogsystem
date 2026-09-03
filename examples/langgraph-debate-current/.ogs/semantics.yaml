@@ -120,3 +120,9 @@ joins:
 
 capabilities:
   max_transitions_per_run: 12
+  allowed_tools_by_role:
+    debate-alignmentist: []
+    debate-judge: []
+    debate-minimalist: []
+    debate-moderator: []
+    debate-summary: []

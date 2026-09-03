@@ -1,7 +1,11 @@
 import { resolve } from "node:path";
 
 import { resolveProjectRoleRootDir } from "./bundled-repos.js";
-import { compileExecutionSnapshot, type CompiledExecutionSnapshot } from "./compiler.js";
+import {
+  compileExecutionSnapshot,
+  validateRoleContract,
+  type CompiledExecutionSnapshot
+} from "./compiler.js";
 import { createExecutionPlan } from "./execution-plan.js";
 import { loadFlowContractPlan } from "./flow-contract.js";
 import { loadModelCatalog } from "./model-catalog.js";
@@ -43,6 +47,67 @@ function resolveOptionalProjectPath(args: {
   defaultBasename: string;
 }): string | undefined {
   return args.explicitPath ?? resolve(args.workdir, args.defaultBasename);
+}
+
+function schemaProperties(value: unknown): Set<string> {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return new Set();
+  const properties = (value as { properties?: unknown }).properties;
+  if (!properties || typeof properties !== "object" || Array.isArray(properties)) return new Set();
+  return new Set(Object.keys(properties as Record<string, unknown>));
+}
+
+export function validateSemanticRoleContracts(args: { semanticIR: SemanticIR; specification: OgsSpecificationSnapshot; rolePackagesByRoleId: Map<string, LoadedRolePackage> }): void {
+  const stateSource = Object.entries(args.specification.sources).find(([path]) => path === args.semanticIR.stateSchema.ref || path.endsWith("/" + args.semanticIR.stateSchema.ref) || path.endsWith("/" + args.semanticIR.stateSchema.ref.split("/").at(-1)));
+  const stateFields = new Set(Object.keys((stateSource?.[1].value as { properties?: Record<string, unknown> } | undefined)?.properties ?? {}));
+  const writableByField = args.semanticIR.stateSchema.writableRolesByField ?? {};
+  for (const [roleId, rolePackage] of args.rolePackagesByRoleId) {
+    const contract = rolePackage.manifest;
+    const composite = args.semanticIR.composites?.find((item) => item.ownerRoleId === roleId);
+    if ((contract.responsibility.kind === "composite") !== Boolean(composite)) {
+      throw new Error(`[IR_COMPOSITE_INVALID] Role ${roleId} responsibility kind does not match Semantic IR composition`);
+    }
+    if (composite && JSON.stringify(contract.responsibility.composition) !== JSON.stringify({
+      nestedSystemRef: composite.nestedSystemRef,
+      inputContract: composite.inputContract,
+      outputContract: composite.outputContract,
+      stateNamespace: composite.stateNamespace,
+      checkpointNamespace: composite.checkpointNamespace,
+      errorPropagation: composite.errorPropagation,
+      terminationPropagation: composite.terminationPropagation
+    })) throw new Error(`[IR_COMPOSITE_INVALID] Role ${roleId} composition contract does not match Semantic IR`);
+    const retryPolicy = args.semanticIR.retryByRoleId?.[roleId];
+    const contractRetryCodes = contract.failure.retryableErrorCodes;
+    const policyRetryCodes = retryPolicy?.errorCodes ?? [];
+    if (contractRetryCodes.length || policyRetryCodes.length) {
+      if (!retryPolicy || contractRetryCodes.length !== policyRetryCodes.length || contractRetryCodes.some((code, index) => code !== policyRetryCodes[index])) {
+        throw new Error(`[IR_CONTRACT_INVALID] ${roleId} retryable error codes do not match retryByRoleId`);
+      }
+    }
+    for (const field of contract.constraints.writableStateFields) {
+      if (!stateFields.has(field) || !writableByField[field]?.includes(roleId)) throw new Error(`[IR_CONTRACT_INVALID] ${roleId} may not write state field ${field}`);
+    }
+    for (const field of contract.responsibility.owns) {
+      if (!contract.constraints.writableStateFields.includes(field)) throw new Error(`[IR_CONTRACT_INVALID] ${roleId} owns ${field} but may not write it`);
+    }
+    for (const field of contract.responsibility.doesNotOwn) {
+      if (contract.constraints.writableStateFields.includes(field)) throw new Error(`[IR_CONTRACT_INVALID] ${roleId} doesNotOwn ${field} but may write it`);
+    }
+    const outputFields = new Set<string>();
+    for (const eventType of contract.outputs.events) {
+      const event = args.semanticIR.events?.[eventType];
+      for (const field of schemaProperties(event?.payloadSchema)) outputFields.add(field);
+    }
+    for (const field of contract.responsibility.contributes) {
+      if (!stateFields.has(field) && !outputFields.has(field)) {
+        throw new Error(`[IR_CONTRACT_INVALID] ${roleId} contributes unknown state or declared output field ${field}`);
+      }
+    }
+    if (!Object.prototype.hasOwnProperty.call(args.semanticIR.capabilities.allowedToolsByRoleId, roleId)) {
+      throw new Error(`[IR_CONTRACT_INVALID] capability policy must declare tools for role ${roleId}`);
+    }
+    const allowedTools = args.semanticIR.capabilities.allowedToolsByRoleId[roleId];
+    if (!contract.constraints.allowedTools.every((tool) => allowedTools.includes(tool))) throw new Error(`[IR_CONTRACT_INVALID] ${roleId} contract requests tools outside capability policy`);
+  }
 }
 
 function mergeLawConstraints(base: EffectiveLawConstraints, spec?: LawSpec): EffectiveLawConstraints {
@@ -208,7 +273,7 @@ export async function prepareRuntimeSetup(args: {
   const lawCatalog = await loadLaws(args.lawsPath, args.workdir);
   const userProfile = await loadUserProfile(args.userProfilePath, args.workdir);
   const effectiveLaw = resolveEffectiveLaw(system, lawCatalog);
-  const compiledSemanticIR = specificationSnapshot
+  let compiledSemanticIR = specificationSnapshot
     ? compileSemanticIR({
         system,
         specification: specificationSnapshot,
@@ -243,12 +308,37 @@ export async function prepareRuntimeSetup(args: {
     system,
     roleRootDir
   });
+  // Role Contracts are mandatory for every System, including plain Mermaid Systems without a semantic snapshot.
+  const roleContractDiagnostics = system.roleIds.flatMap((roleId) => {
+    const rolePackage = rolePackagesByRoleId.get(roleId);
+    return rolePackage ? validateRoleContract({ system, basePlan: plan, roleId, rolePackage }) : [];
+  });
+  if (roleContractDiagnostics.length > 0) {
+    throw new Error(
+      `Role Contract validation failed:\n${roleContractDiagnostics.map((diagnostic) => diagnostic.message).join("\n")}`
+    );
+  }
+  // Recompile with role contracts so the Semantic IR digest captures the executable responsibility boundary.
+  if (specificationSnapshot) {
+    const contractedSemanticIR = compileSemanticIR({
+      system,
+      specification: specificationSnapshot,
+      maxTransitionsPerRun: effectiveLaw.maxTransitions ?? 100,
+      rolePackagesByRoleId
+    });
+    validateSemanticRoleContracts({ semanticIR: contractedSemanticIR.ir, specification: specificationSnapshot, rolePackagesByRoleId });
+    if (contractedSemanticIR.ir.composites?.length) {
+      throw new Error("[IR_COMPOSITE_UNSUPPORTED] Composite responsibilities compile successfully but nested System execution is not implemented");
+    }
+    plan.semanticIR = contractedSemanticIR.ir;
+    compiledSemanticIR = contractedSemanticIR;
+  }
   const compilerResult = compileExecutionSnapshot({
     system,
     rolePackagesByRoleId,
     contractPlan,
     effectiveLaw,
-    resolvedModelsByRoleId: resolvedModelSelection.resolvedByRoleId
+    resolvedModelsByRoleId: resolvedModelSelection.resolvedByRoleId,
   });
   if (!compilerResult.ok) {
     throw new Error(

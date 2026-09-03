@@ -68,14 +68,13 @@ function resolveBinding(args: {
     };
   }
 
-  const legacyModelId = args.system.modelBinding[args.roleId];
-  if (legacyModelId) {
+  const modelRef = args.system.modelBinding[args.roleId];
+  if (modelRef) {
     return {
       kind: "model",
-      modelRef: legacyModelId,
-      bindingSource: "system",
-      modelId: legacyModelId
-    } as ExecutionPlanNode["binding"];
+      modelRef,
+      bindingSource: "system"
+    };
   }
 
   return {

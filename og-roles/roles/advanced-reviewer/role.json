@@ -3,13 +3,54 @@
   "roleVersion": "1.0.0",
   "name": "Advanced Reviewer",
   "description": "Joins the parallel branches and pauses for human review in the advanced starter template.",
-  "talent": {
-    "reasoningDepth": "medium",
-    "style": "structured",
-    "riskPreference": "balanced"
-  },
-  "preferredModelTags": ["fast", "instruction-following"],
+  "preferredModelTags": [
+    "fast",
+    "instruction-following"
+  ],
   "promptTemplate": "prompt.md",
   "outputSchema": "output.schema.json",
-  "tags": ["demo", "starter", "review"]
+  "tags": [
+    "demo",
+    "starter",
+    "review"
+  ],
+  "contractVersion": 1,
+  "purpose": "Joins the parallel branches and pauses for human review in the advanced starter template.",
+  "responsibility": {
+    "kind": "atomic",
+    "owns": [],
+    "contributes": [],
+    "doesNotOwn": []
+  },
+  "inputs": {
+    "preconditions": []
+  },
+  "outputs": {
+    "events": [
+      "REVIEW_READY",
+      "REWORK"
+    ],
+    "postconditions": []
+  },
+  "authority": {
+    "controlActions": [
+      "approve",
+      "pause",
+      "rework",
+      "terminate"
+    ]
+  },
+  "constraints": {
+    "writableStateFields": [],
+    "allowedTools": [
+      "tool.console.print"
+    ]
+  },
+  "failure": {
+    "retryableErrorCodes": [],
+    "terminalErrorCodes": []
+  },
+  "audit": {
+    "requiredFields": []
+  }
 }

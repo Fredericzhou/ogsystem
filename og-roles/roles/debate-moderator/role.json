@@ -3,13 +3,46 @@
   "roleVersion": "1.0.0",
   "name": "Debate Moderator",
   "description": "Frames the debate round and dispatches one shared brief to both debaters.",
-  "talent": {
-    "coordination": "high",
-    "reasoningDepth": "medium",
-    "style": "neutral"
-  },
-  "preferredModelTags": ["fast", "instruction-following"],
+  "preferredModelTags": [
+    "fast",
+    "instruction-following"
+  ],
   "promptTemplate": "prompt.md",
   "outputSchema": "output.schema.json",
-  "tags": ["debate", "coordination"]
+  "tags": [
+    "debate",
+    "coordination"
+  ],
+  "contractVersion": 1,
+  "purpose": "Frames the debate round and dispatches one shared brief to both debaters.",
+  "responsibility": {
+    "kind": "atomic",
+    "owns": [],
+    "contributes": [],
+    "doesNotOwn": []
+  },
+  "inputs": {
+    "preconditions": []
+  },
+  "outputs": {
+    "events": [
+      "SEND_ALIGNMENTIST",
+      "SEND_MINIMALIST"
+    ],
+    "postconditions": []
+  },
+  "authority": {
+    "controlActions": []
+  },
+  "constraints": {
+    "writableStateFields": [],
+    "allowedTools": []
+  },
+  "failure": {
+    "retryableErrorCodes": [],
+    "terminalErrorCodes": []
+  },
+  "audit": {
+    "requiredFields": []
+  }
 }

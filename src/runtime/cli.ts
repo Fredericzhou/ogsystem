@@ -51,7 +51,7 @@ await loadSystemEnvironment();
 const require = createRequire(import.meta.url);
 const { version: CLI_VERSION } = require("../../package.json") as { version: string };
 
-type HelpTopic = "doctor" | "lint" | "nl2mmd" | "project" | "run" | "vis" | "visualizer";
+type HelpTopic = "compatibility" | "doctor" | "lint" | "nl2mmd" | "project" | "run" | "vis" | "visualizer";
 type ProjectSubcommand = "init" | "create" | "sync" | "sync-models";
 type RunSubcommand = "start" | "resume" | "stop" | "list" | "status" | "inspect" | "logs" | "review";
 
@@ -77,6 +77,7 @@ function usageRoot(): string {
     "Drill down:",
     "  ogs project <init|create|sync|sync-models>",
     "  ogs help run logs",
+    "  ogs help compatibility",
     "  ogs project create --help",
     "  ogs run start --help",
     "  ogs vis --help",
@@ -84,6 +85,22 @@ function usageRoot(): string {
     "",
     "Defaults:",
     "  commands use the current directory unless --workdir overrides it",
+  ].join("\n");
+}
+
+function usageCompatibility(): string {
+  return [
+    "OGSystem released CLI compatibility policy",
+    "",
+    "Released support: latest two minor lines of the current major release; all patches in those lines.",
+    `Current package: ${CLI_VERSION} ${CLI_VERSION.startsWith("0.") ? "development-test; no stable release line or historical migration guarantee." : "released; see the policy document for the supported window."}`,
+    "Unsupported inputs: future/unknown config or schema versions, malformed inputs, unsupported release",
+    "lines, and resume artifacts whose plan fingerprint or recovery authority does not match.",
+    "Deprecation warnings name the replacement and planned removal release; removal is at least one minor",
+    "release and 90 days after notice, whichever is later.",
+    "",
+    "Policy: docs/development/release-compatibility-policy.md",
+    "Commands: ogs --version | ogs help compatibility"
   ].join("\n");
 }
 
@@ -387,6 +404,9 @@ function usageVisualizer(): string {
 }
 
 function usage(topic?: HelpTopic, subcommand?: ProjectSubcommand | RunSubcommand): string {
+  if (topic === "compatibility") {
+    return usageCompatibility();
+  }
   if (topic === "doctor") {
     return doctorUsage();
   }
@@ -1495,6 +1515,7 @@ async function main(): Promise<void> {
     const subcommand = argv[2];
     if (
       topic === "doctor" ||
+      topic === "compatibility" ||
       topic === "lint" ||
       topic === "nl2mmd" ||
       topic === "project" ||

@@ -5,5 +5,39 @@
   "description": "Design the evaluation dataset, citation metrics, and regression gates for the legal RAG service.",
   "promptTemplate": "prompt.md",
   "outputSchema": "output.schema.json",
-  "tags": ["legal-rag", "evaluation"]
+  "tags": [
+    "legal-rag",
+    "evaluation"
+  ],
+  "contractVersion": 1,
+  "purpose": "Design the evaluation dataset, citation metrics, and regression gates for the legal RAG service.",
+  "responsibility": {
+    "kind": "atomic",
+    "owns": [],
+    "contributes": [],
+    "doesNotOwn": []
+  },
+  "inputs": {
+    "preconditions": []
+  },
+  "outputs": {
+    "events": [
+      "EVAL_PLAN_READY"
+    ],
+    "postconditions": []
+  },
+  "authority": {
+    "controlActions": []
+  },
+  "constraints": {
+    "writableStateFields": [],
+    "allowedTools": []
+  },
+  "failure": {
+    "retryableErrorCodes": [],
+    "terminalErrorCodes": []
+  },
+  "audit": {
+    "requiredFields": []
+  }
 }
