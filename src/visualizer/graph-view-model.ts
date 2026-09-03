@@ -15,6 +15,7 @@ import {
   findLatestFailureForRole
 } from "./graph-runtime-signals.js";
 import { buildBridgeFlows, buildBridgeRoles, fallbackGridColumnCount } from "./studio-authoring-projection.js";
+import { addTopologyFlowOrder } from "./topology-order.js";
 import {
   normalizeStudioGraphTargetRoleId,
   STUDIO_SYSTEM_END_ROLE_ID,
@@ -374,7 +375,7 @@ export function buildGraphViewModel(args: BuildGraphViewModelArgs): GraphViewMod
     version: 1,
     mode,
     nodes,
-    edges,
+    edges: addTopologyFlowOrder({ nodes, edges, entryRoleId: entryRoleId ? "input" : undefined }),
     viewport: authoring.layout.viewport,
     capabilities,
     validation

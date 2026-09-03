@@ -200,6 +200,7 @@ export type GraphViewModelEdge = {
   runtime?: GraphViewModelEdgeRuntime;
   diagnostic?: GraphViewModelDiagnostic;
   editable: boolean;
+  topologyOrder?: string;
 };
 
 export type GraphViewModel = {
