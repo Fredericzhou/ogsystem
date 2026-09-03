@@ -4,6 +4,9 @@ This directory contains product-facing documentation: product positioning, insta
 operation, runtime/orchestration contracts (“constitution”), data projection, and NL2MMD usage
 guidance.
 
+Start with [OGS Core Concepts](ogsystem-core-concepts.md) when evaluating the product boundary or
+the meaning of Role, Responsibility Seat, nested System, and runtime execution facts.
+
 - Current guidance lives in this directory.
 - Completed product validation records live in `archive/`.
 - Development plans, implementation rules, and historical engineering records live in

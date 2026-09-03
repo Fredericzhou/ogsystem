@@ -2,7 +2,7 @@
 
 ## Read This First
 
-OGSystem 当前是一套单机、文件优先、可恢复的图编排运行时（开发测试版本 `0.2.0`）。它最重要的特点不是“功能很多”，而是把编排语义、执行状态、恢复契约和运行证据收敛到了一条可审计的主路径里。
+OGSystem 当前是一套单机、文件优先、可恢复的图编排运行时（开发测试版本 `0.3.0`）。它最重要的特点不是“功能很多”，而是把编排语义、执行状态、恢复契约和运行证据收敛到了一条可审计的主路径里。
 
 建议先建立这四个认知：
 
@@ -143,7 +143,11 @@ pnpm run smoke:package-install:npm
 pnpm run smoke:package-install:pnpm
 ```
 
-版本说明：`0.2.0` 是开发测试版本，直接采用 Semantic IR v1 和当前版本化运行时合同，不提供历史 DSL、API 或运行数据迁移。
+版本说明：`0.3.0` 是开发测试版本，直接采用 Semantic IR v1 和当前版本化运行时合同，不提供历史 DSL、API 或运行数据迁移。
+
+发布兼容策略：正式发布的 CLI 支持当前主版本最近两个 minor release line 的 patch 版本，并对发生变化的配置或 schema 提供随版本发布的明确迁移说明。当前 `0.3.0` 仍在开发测试边界之外，不属于正式发布兼容窗口。使用 `ogs --version` 查看 CLI 同步输出的当前版本和严格输入边界；完整策略见 [`docs/development/release-compatibility-policy.md`](../development/release-compatibility-policy.md)。
+
+当前边界保持 fail-closed：未来或未知的 config/schema 版本、格式错误的输入、不受支持的 release line，以及 plan fingerprint 或恢复权威集不匹配的 run artifact 都不会被 CLI 猜测兼容。当前开发测试版本没有历史配置、schema 或 run-data 迁移命令；resume 也不因配置文件可读取就获得跨版本保证。
 
 覆盖率判读约定：
 
@@ -646,12 +650,37 @@ This keeps `join.min` equal to the source count, which is the current runtime-sa
 
 ## 5. Role Package Contract
 
+OGS distinguishes the **Responsibility Role** from its **Role Package**. A Role is the stable
+abstract responsibility in the System graph; a Role Package is versioned implementation material
+such as `role.json`, `agent.md`, and input/output schemas. The package explains how the
+responsibility is realized, but it is not a person, model identity, runtime branch, or execution
+record. The product-level contract and standards references are in
+[OGS Core Concepts](ogsystem-core-concepts.md) and
+[Product Boundary And Evolution](../development/ogs-product-boundary-and-evolution.md).
+
 Required:
 
-- `role.json`
+- `role.json` with the complete current Role Contract (`contractVersion: 1`)
 - `agent.md`
 - `prompt.md`
 - `output.schema.json`
+
+`role.json` is strict in the development-test release. Its contract sections are mandatory:
+`purpose`, `responsibility`, `inputs`, `outputs`, `authority`, `constraints`, `failure`, and
+`audit`. The runtime rejects manifests that omit these sections; there is no legacy manifest
+fallback or application-side migration path.
+`responsibility.kind` is also mandatory: use `atomic` for current executable roles. `composite`
+requires a complete nested-System composition contract and remains unsupported at runtime.
+
+Role Contract checks are exact at the current version boundary: normal outgoing Mermaid events must
+equal `outputs.events` after deduplication and sorting. When a role declares human review, its
+`authority.controlActions` must authorize `approve`, `rework`, and the configured timeout action.
+Any executed tool must be present in both the role's `constraints.allowedTools` and the System's
+Semantic capability entry; an absent capability entry grants no tool authorization.
+`responsibility.contributes` must name a top-level field from the System state schema or from the
+payload schema of one of the Role's declared events. `purpose` must describe an abstract
+responsibility: explicit people, providers, models, and runtime instance identifiers are rejected,
+while ordinary domain terms such as `human review` and `Model QA` are allowed.
 
 Optional:
 
@@ -681,7 +710,7 @@ Recommended template roles:
 
 `.ogs/model-selection.json` defines runtime model defaults and direct `provider/model` overrides.
 
-`.ogs/model-catalog.json` is a generated advisory snapshot from `opencode models --verbose`. The installed CLI uses it for scaffolding, `project sync-models`, and diagnostics; runtime execution does not hard-fail just because the catalog is missing or stale.
+`.ogs/model-catalog.json` is a generated discovery cache and audit snapshot from `opencode models --verbose`. `.ogs/model-selection.json` is the pinned runtime authority. A missing catalog with a valid pinned selection permits offline execution, and a stale catalog produces a warning without replacing the pinned model. Runtime fails closed when a pinned model is explicitly unavailable, a role has no resolvable model, or required model capabilities do not match. `project sync-models` updates the catalog only and never overwrites an existing selection.
 
 Example:
 
@@ -715,8 +744,10 @@ Example:
 
 Model rules:
 
-- `.ogs/model-catalog.json` is the raw availability snapshot
+- `.ogs/model-catalog.json` is the raw availability snapshot and refreshable discovery cache; snapshots older than 24 hours are stale and must not replace a pinned selection
 - `.ogs/model-selection.json` is the runtime authority for project defaults and role/system overrides
+- runtime and readiness use the same catalog/selection scenario matrix: missing or stale catalog alone is not a failure for a valid pinned offline run; explicit unavailability, missing mapping, and capability mismatch fail closed
+- `ogs project sync-models` updates the catalog only; it does not replace an existing pinned selection
 - prefer direct `provider/model` refs in `model.bind` and selection files
 - keep `system.mmd` stable by evolving `.ogs/model-selection.json` instead of editing role flow definitions for every model upgrade
 - for `executor: "opencode"`, `model.bind` roles run through OpenCode SDK v2 structured output:
@@ -784,7 +815,7 @@ Example:
 }
 ```
 
-Default `roleRepo` points to `./og-roles`. Model runtime control is no longer configured in `runtime.json`; use `.ogs/model-selection.json` instead. `.ogs/model-catalog.json` is advisory only.
+Default `roleRepo` points to `./og-roles`. Model runtime control is no longer configured in `runtime.json`; use `.ogs/model-selection.json` instead. `.ogs/model-catalog.json` is a discovery cache, while the selection file remains the pinned runtime authority. See the Model Selection Contract for the missing/stale catalog and explicit-unavailability rules.
 
 `~/.ogsystem/.env` is the runtime provider credential file. It is loaded for the `ogs` process and inherited by `opencode serve`; keep it private and never commit it.
 

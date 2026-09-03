@@ -8,7 +8,9 @@
 
 ## 1. 手册目标
 
-这份手册不是概念介绍，而是“可执行语义合同”：
+这份手册不是概念介绍，而是“可执行语义合同”。产品术语以 [OGS Core Concepts](ogsystem-core-concepts.md)
+为准：`Role` 是抽象责任角色，`Responsibility Seat` 是其静态图位置，`Role Package` 是实现资产；三者都不
+表示具体人员或一次运行实例。
 
 - 你在 Mermaid 里写的语义，解析器是否接受。
 - 解析通过后，运行时如何调度、汇合、补偿与恢复。
@@ -55,7 +57,7 @@ writerNode[Role:writer] -->|DONE| output
 当前仅支持以下键族：
 
 - 精确键：`engine`、`system.id`、`system.version`、`law.global`、`entry.role`
-- 绑定键：`model.bind.<roleId>`、`exec.bind.<roleId>`、`talent.bind.<roleId>`
+- 绑定键：`model.bind.<roleId>`、`exec.bind.<roleId>`
 - 图语义键：`role.mode.<roleId>`、`join.mode.<roleId>`、`join.min.<roleId>`、`join.sources.<roleId>`
 - 上下文键：`context.map.<roleId>.<field>`
 - 循环键：`loop.max.<roleId>`
@@ -67,7 +69,6 @@ writerNode[Role:writer] -->|DONE| output
 - `engine` 如声明，当前仅接受 `langgraph`。
 - 同一角色不能同时声明 `model.bind` 和 `exec.bind`。
 - 绑定解析不是覆盖优先级：有且仅有一种绑定时使用该绑定；同时声明 `model.bind` 与 `exec.bind` 会在解析期拒绝；无绑定时只有在 law 允许且出边不超过 1 时才进入 `noop`。
-- `talent.bind.<roleId>` 当前只作为兼容性元数据解析并纳入 fingerprint，不参与当前模型或执行器选择；它保留给未来基于能力标签的模型/执行器路由。
 - `runtime.error_flows.v1` 不是 Mermaid 元数据键，必须配置在项目的 `.ogs/runtime.json` 中；未知 Mermaid 元数据会被拒绝。
 
 ---
@@ -362,7 +363,6 @@ reviewNode[Role:review] -->|PASS| output
 - 每个角色必须解析出一种有效执行方式：显式 `model.bind`、显式 `exec.bind`、项目模型选择默认值，或满足法律约束的 `noop`。
 - 两种显式绑定同时存在会在解析期失败；没有显式绑定时不会自动回退到 `noop`，会先尝试模型选择默认值。
 - `noop` 仅在 law 设置 `allowNoopWithoutExecutionBinding=true` 且该角色最多有一条出边时可执行。
-- `talent.bind.<roleId>` 不改变上述决议，也不会在当前 runtime 选择模型或执行器；未来实现时仅作为能力标签路由输入。
 
 #### 注意事项
 

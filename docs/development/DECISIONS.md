@@ -33,6 +33,28 @@ Reason:
 - OGSystem metadata should not be documented as native LangGraph syntax
 - keep `all_of` explicit for common full-join readability, while avoiding `any_of` keyword expansion that increases parser/test surface without adding expressive power
 
+## 2.1 Responsibility Role Boundary
+
+`roleId` identifies an abstract Responsibility Role in one System. A rendered graph node is that
+role's Responsibility Seat. Neither is a person, account, model, service instance, BPMN
+gateway/event, branch, or execution record.
+
+- role packages are versioned implementation assets, not the role identity
+- `branchId`, `lineageId`, and `RoleExecutionRecord` are runtime facts, not static graph nodes
+- feedback and review outcomes are transitions/control-plane facts, not implicit roles
+- review/audit `actor` identifies an external control-plane principal and never participates in
+  graph routing merely by being recorded
+- a future nested-System relation means responsibility composition, not organization hierarchy,
+  personnel assignment, or inherited authority
+
+Reason:
+
+- preserving these distinctions lets one responsibility be repeatedly activated without changing
+  the static process graph
+- it prevents visual or organizational convenience concepts from corrupting execution semantics
+- it leaves identity, HR, organization, and legal-governance integrations outside the portable
+  OGS core
+
 ## 3. Execution Boundary
 
 OpenCode is the current default executor behind the `Executor` abstraction.

@@ -9,6 +9,7 @@ Archive rules are documented in [development/archive/README.md](development/arch
 Product-facing usage, runtime constitution, and operational contracts live under `usage/`.
 
 - [Product introduction](usage/product-introduction.md): capability overview for readers.
+- [Core concepts](usage/ogsystem-core-concepts.md): product boundary and normative terms for System, Role, Seat, runtime facts, and standards alignment.
 - [Usage manual](usage/usage-manual.md): install, CLI, run directory, operations, and Visualizer usage.
 - [Orchestration semantics](usage/ogsystem-orchestration-semantics-v1.md): runtime semantic contract.
 - [Semantics manual](usage/ogsystem-semantics-manual.md): implementation-aligned reference.
@@ -24,9 +25,12 @@ Engineering rules, plans, specifications, and active backlog live under `develop
 - [Decisions](development/DECISIONS.md): current architecture decisions and boundaries.
 - [Compiler semantics](development/compiler-semantics-v1.md): compiler and diagnostics contract.
 - [OGS workflow DSL upgrade plan](development/ogs-langgraph-dsl-upgrade-plan.md): DSL, IR, reliability, and standards roadmap.
+- [OGS product boundary and evolution](development/ogs-product-boundary-and-evolution.md): core, enhancement, extension tiers and admission rules.
 - [OGS visualizer refactor plan](development/ogs-visualizer-refactor-plan.md): semantic layout and graph interaction plan.
 - [Semantic gap implementation plan](development/semantic-gap-implementation-plan.md): current runtime gaps and priorities.
 - [Unified backlog](development/todo-backlog.md): current active backlog.
+- [Unified backlog execution plan](development/todo-backlog-execution-plan-2026-09-03.md): executable task breakdown, dependencies, acceptance gates, and evidence requirements.
+- [Released CLI compatibility policy](development/release-compatibility-policy.md): supported release lines, migrations, deprecations, and development-test boundaries.
 - [Long-term stability roadmap](development/long-term-stability-roadmap.md): durable direction.
 - [PraisonAI comparison roadmap](development/praisonai-comparison-roadmap.md): bounded capability roadmap.
 - [Runtime storage/engine roadmap](development/runtime-storage-engine-decoupling-roadmap.md): backend decoupling direction.
@@ -44,6 +48,7 @@ Use these recent archive records to understand implementation context:
 - [Visualizer optimization checklist closure 2026-05-03](development/archive/delivery/ogsystem-visualizer-optimization-checklist-calibrated-2026-05-03.md)
 - [Canvas-centered Visualizer architecture roadmap 2026-05-03](development/archive/delivery/ogsystem-canvas-centered-product-architecture-roadmap-2026-05-03.md)
 - [Visualizer responsibility-seat semantic review 2026-09-02](development/archive/delivery/ogsystem-visualizer-responsibility-seat-review-2026-09-02.md)
+- [Unified backlog execution delivery 2026-09-03](development/archive/delivery/todo-backlog-execution-2026-09-03.md)
 
 The full development archive lives under `docs/development/archive/delivery/` and `docs/development/archive/history/`; the usage archive is at `docs/usage/archive/`. Do not maintain a duplicated full file list here; use `rg` or browse by date when historical context is needed.
 
@@ -61,8 +66,9 @@ The full development archive lives under `docs/development/archive/delivery/` an
 
 1. `README.md`
 2. [Product introduction](usage/product-introduction.md)
-3. [Usage manual](usage/usage-manual.md)
-4. [Orchestration semantics](usage/ogsystem-orchestration-semantics-v1.md)
-5. [Compiler semantics](development/compiler-semantics-v1.md)
-6. [NL2MMD structure templates](usage/nl2mmd-structure-templates.md)
-7. [Decisions](development/DECISIONS.md)
+3. [Core concepts](usage/ogsystem-core-concepts.md)
+4. [Usage manual](usage/usage-manual.md)
+5. [Orchestration semantics](usage/ogsystem-orchestration-semantics-v1.md)
+6. [Compiler semantics](development/compiler-semantics-v1.md)
+7. [NL2MMD structure templates](usage/nl2mmd-structure-templates.md)
+8. [Decisions](development/DECISIONS.md)

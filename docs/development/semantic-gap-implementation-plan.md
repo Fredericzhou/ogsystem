@@ -27,15 +27,13 @@
 
 验收：文档不再把 `parallel_split` 描述成当前物理并发；执行策略与 Flow 可达性保持独立。
 
-### P0-2 收口 `talent.bind` 语义残留
+### P0-2 清理已移除的 `talent.bind` 语义
 
-现状：`talent.bind.<roleId>` 会被解析并参与 fingerprint，但不参与当前执行绑定决议；它是兼容性元数据，不是当前可执行能力。
+现状：旧版本曾将 `talent.bind.<roleId>` 作为不参与执行的元数据保留；当前开发测试版本已移除该键族。
 
-决策：保留该键，不删除、不改变现有 fingerprint 行为，统一标记为未来实现“基于能力标签的模型/执行器路由”的预留。当前 `model.bind`、`exec.bind`、模型选择和 `noop` 规则不受影响。
+决策：删除该键族及其解析、fingerprint 和生成入口。能力标签路由不属于当前开发测试版本；模型能力匹配继续由 `preferredModelTags` 和模型选择配置负责，并受 law、output schema、timeout、审计和 resume fingerprint 约束。
 
-未来实现边界：能力标签只能参与候选模型/执行器筛选和路由，不能绕过 law、output schema、timeout、审计或 resume fingerprint。
-
-验收：用户文档、语义文档和 README 均不再暗示 `talent.bind` 当前会选择执行器；解析、构建和现有测试保持不变。
+验收：解析器、NL2MMD 字典、fingerprint 和用户文档不再把 `talent.bind` 作为当前输入；测试仅保留对该已移除键的拒绝回归。
 
 ## 4. P1：剩余 Runtime 实现
 
@@ -83,7 +81,7 @@
 
 ### P2-2 Provider/Model 能力标签路由
 
-实现 `talent.bind` 与 `preferredModelTags` 的真正消费，支持模型能力匹配、provider readiness 和可解释 fallback。必须保留 direct `provider/model` 优先级，并把最终解析结果纳入 fingerprint。
+模型能力匹配继续由 `preferredModelTags` 和模型选择配置负责，必须保留 direct `provider/model` 优先级，并把最终解析结果纳入 fingerprint。
 
 ### P2-3 Prompt/Token/Cost 可观测性
 
@@ -115,7 +113,7 @@
 - 2026-09-03 示例收口：debate moderator 的示例事件字段统一为 `debate_round`，与示例状态 Schema/reducer 保持一致；该字段不属于 OGS 平台合同。嵌套示例新增 `.gitignore`，隔离生命周期生成的控制面文件与运行产物。
 - 2026-09-03 RFC 澄清：基础 `joinScopes.status=waiting` 与总等待超时属于已实现能力；本 RFC 仅描述尚未实现的 `first_packet/gap` 分阶段等待机制。
 - P0-1 已完成：活跃文档统一将 `parallel_split` 定义为语义分叉/分支激活，明确当前 scheduler 不承诺物理并发。
-- P0-2 已完成：`talent.bind` 统一定义为当前仅保留并参与 fingerprint 的兼容性元数据，未来用于基于能力标签的模型/执行器路由。
+- P0-2 已完成：`talent.bind` 已从当前 DSL、解析结果和 fingerprint 中移除。
 - 基础 Join 超时已完成：`timeoutSeconds`、`failurePolicy`、`onTimeout` 已进入 IR 和运行时主路径；分阶段 `first_packet/gap` 等待继续保留为 RFC。
-- 本轮未改动 parser、execution plan 或 scheduler 行为；因此不改变现有运行时语义和 resume 兼容性。
+- 当前开发测试版本不提供旧 DSL、配置或运行数据迁移；旧格式直接拒绝，resume 只接受当前规范版本和恢复权威集。
 - 验证要求：文档漂移检查、类型/构建检查、现有测试与 `git diff --check` 必须通过；归档文档可保留当时的历史语境，不作为当前语义契约。

@@ -1,7 +1,7 @@
 # OGSystem
 
 OGSystem is a console runtime for a restricted Mermaid flowchart DSL. Current development-test
-release: `0.2.0`.
+release: `0.3.0`.
 
 Implemented scope:
 
@@ -32,6 +32,7 @@ Product introduction:
 Detailed usage manual:
 
 - `docs/usage/usage-manual.md`
+- `docs/development/release-compatibility-policy.md`
 - `examples/README.md` (minimal training set + capability coverage)
 
 CLI installation prerequisites:
@@ -108,8 +109,14 @@ ogs visualizer --workdir .
 
 Generated projects always include `.ogs/`, `system.mmd`, and a local `og-roles/` repo. Model defaults now live under `.ogs/model-selection.json`, and `.ogs/model-catalog.json` records the latest local `opencode models --verbose` snapshot used for scaffolding and diagnostics. The scaffold also writes `.ogs/README.md` with operator notes and JSON examples; keep the runtime JSON files comment-free and use that README for local guidance.
 
-Version `0.2.0` is a development-test release. It uses the current Semantic IR v1 and versioned
+Version `0.3.0` is a development-test release. It uses the current Semantic IR v1 and versioned
 runtime contracts directly; historical DSL, API, and run-data migration is not supported.
+
+Released CLI compatibility policy: released versions support the latest two minor lines of the
+current major release, with documented migrations for changed config or schema contracts. The
+current `0.3.0` package is outside that released window. Run `ogs help compatibility` for the
+installed CLI's summary, unsupported-input boundary, and deprecation timing; see
+`docs/development/release-compatibility-policy.md` for the full policy.
 
 Provider credentials and gateway URLs live in the user-level `~/.ogsystem/.env`. OpenCode provider definitions live in `~/.config/opencode/opencode.json` and refer to those environment variables; projects do not contain provider stubs or API keys.
 
@@ -195,8 +202,7 @@ For day-to-day use, start with `docs/usage/usage-manual.md`. It keeps the comman
 
 - Target architecture uses direct `provider/model` refs plus `.ogs/model-selection.json` for project/system/role defaults.
 - The law catalog currently resolves only `law.global` and the constraints `forbiddenToolRefs`, `maxTransitions`, `allowNoopWithoutExecutionBinding`.
-- `talentBinding` is preserved as metadata-only sidecar in the parsed system definition. It is reserved for future capability-tag-based model/executor routing and is not part of current runtime execution.
-- Role packages live under `og-roles/roles/<roleId>/` and provide `role.json`, `agent.md`, `prompt.md`, `output.schema.json`, and optional `source.json`.
+- Role packages live under `og-roles/roles/<roleId>/` and provide `role.json` with the complete current Role Contract, plus `agent.md`, `prompt.md`, `output.schema.json`, and optional `source.json`.
 - The runtime-owned prompt-input shell remains fixed across roles and exposes `allowed_events`, `user_preferences`, `task`, and `input`.
 - Upstream agent repositories live under `agent-sources/` only during development; runtime executes only canonical role packages under `og-roles/roles/`.
 - `node tools/agent-source/sync-agent-sources.mjs --source agency-agents` imports an upstream checkout into canonical `imported.<source>.*` role packages and updates `tools/agent-source/sources.lock.json`.
@@ -206,7 +212,7 @@ For day-to-day use, start with `docs/usage/usage-manual.md`. It keeps the comman
 
 ## Target Scaffolding
 
-- `.ogs/model-catalog.json` snapshots the current local `opencode models --verbose` list for scaffold/doctor advisory checks.
+- `.ogs/model-catalog.json` snapshots the current local `opencode models --verbose` discovery list; `.ogs/model-selection.json` remains the pinned runtime authority, with missing/stale catalog warnings and fail-closed handling for explicit unavailability or capability mismatch.
 - `.ogs/model-selection.json` stores runtime defaults and system/role overrides using direct `provider/model` refs.
 - `.ogs/runtime.json` provides runtime defaults for the role repo and runs directory.
 - `~/.ogsystem/.env` stores user-level provider credentials and gateway URLs; keep it private and out of version control.

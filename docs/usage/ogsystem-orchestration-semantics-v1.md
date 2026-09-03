@@ -1,5 +1,9 @@
 # ogsystem 编排语义架构参考手册 (v1.0)
 
+> 术语基准：`Role` 是抽象责任角色，`Responsibility Seat` 是静态图位置，`Role Package` 是版本化实现
+> 资产。角色可递归负责嵌套 System，但当前 `SubgraphSpec` 尚未形成可执行的 owner 组合合同；不要将角色
+> 解释为具体人员、组织成员或运行实例。详见 [OGS Core Concepts](ogsystem-core-concepts.md)。
+
 ## 一、 核心架构哲学：物理隔离与逻辑投影
 
 `ogsystem` 的设计遵循 **“物理白纸，逻辑灵魂”** 的原则：
@@ -9,18 +13,19 @@
 
 ---
 
-## 二、 核心概念映射：Node vs. Branch (Git Fork 模型)
+## 二、 核心概念映射：责任角色、席位与 Branch
 
 理解 `ogsystem` 运行时的关键在于区分“静态定义”与“动态实例”：
 
 | 概念 | 类比 | 定义 | 作用 |
 | :--- | :--- | :--- | :--- |
-| **Role (角色)** | **Git Repository** | 静态资产（Prompt, Schema）。 | 定义“我是谁”以及“我怎么做”。 |
-| **Responsibility seat (责任席位，静态节点)** | **流程中的职责位置** | Mermaid 图中的方框。 | 定义“谁在流程中负责什么”以及“我的上下游”；不是一次运行实例。 |
+| **Responsibility Role（责任角色）** | **流程中的稳定职责** | 由 `roleId` 标识的抽象责任。 | 定义流程中“哪项职责负责什么”；不是人员、模型、服务或一次运行实例。 |
+| **Responsibility seat（责任席位，静态节点）** | **流程中的职责位置** | Mermaid 图中一个 Responsibility Role 的静态位置。 | 定义该职责的上下游；不是网关、事件或运行实例。 |
+| **Role Package（角色包）** | **版本化实现资产** | Prompt、Schema、manifest 等静态材料。 | 约束职责如何实现；不等同于 Responsibility Role 本身。 |
 | **Branch (分支)** | **Git Fork / Branch** | 运行时的动态实例（核心标识为 `branchId`，并携带 `lineageId/sessionLineageId`）。 | 承载“分支级执行状态与会话血缘”。注：相同 role 的分支默认共享 `roleDir`，不提供分支级独立工作目录。 |
 
 **Git Fork 类比**：
-当一次转移会激活多个下游（典型是 `parallel_split`，也可能是同事件命中多个目标）或进入 join 节点时，系统会为目标分支切换到新的 `sessionLineageId`。它们拥有相同的初始状态（上游 Context），但随后的会话记忆物理隔离（注：此处主要指会话记忆层隔离，不代表文件系统隔离，相同 role 仍共用其私有工作目录）。
+当一次转移会激活多个下游（典型是 `parallel_split`，也可能是同事件命中多个目标）或进入 join 节点时，系统会为目标分支切换到新的 `sessionLineageId`。它们拥有相同的初始状态（上游 Context），但随后的会话记忆物理隔离（注：此处主要指会话记忆层隔离，不代表文件系统隔离，相同 role 仍共用其私有工作目录）。术语的完整边界见 [核心概念](ogsystem-core-concepts.md)。
 
 ---
 
@@ -111,8 +116,7 @@
 *   **节点 token 是严格格式**：仅支持 `nodeId[Role:roleId]`；边界 token 仅支持 `input/output`，并拒绝 `start/end/done`。
 *   **边界边语义固定**：只允许 `input -->|EVENT| Role` 与 `Role -->|EVENT| output`。
 *   **入口语义需单值一致**：入口来自 `entry.role` 或唯一 `input` 边目标；两者冲突或存在多个 `input` 目标都会失败。
-*   **元数据键是白名单**：仅支持 `engine/system.id/system.version/law.global/entry.role`、`talent.bind/model.bind/exec.bind/role.mode/join.mode/join.sources/join.min/context.map/loop.max/handoff.mode/handoff.contracts/route.order.*` 以及 `review.mode/review.timeout/review.timeout.action/review.rework.target/review.rework.max/review.terminate.scope` 前缀；重复 key 与未知 key 都会失败。`runtime.error_flows.v1` 属于 `.ogs/runtime.json`，不是 Mermaid 元数据。
-*   **`talent.bind` 当前不参与执行绑定**：`talent.bind.<roleId>` 会被保留并纳入语义指纹，但当前 runtime 不据此选择模型或执行器；它是未来基于能力标签的模型/执行器路由预留。当前实际绑定仍由 `model.bind`、`exec.bind`、模型选择默认值和受 law 约束的 `noop` 决定。
+*   **元数据键是白名单**：仅支持 `engine/system.id/system.version/law.global/entry.role`、`model.bind/exec.bind/role.mode/join.mode/join.sources/join.min/context.map/loop.max/handoff.mode/handoff.contracts/route.order.*` 以及 `review.mode/review.timeout/review.timeout.action/review.rework.target/review.rework.max/review.terminate.scope` 前缀；重复 key 与未知 key 都会失败。`runtime.error_flows.v1` 属于 `.ogs/runtime.json`，不是 Mermaid 元数据。
 *   **`engine` 仅保留兼容入口**：可省略；若声明则只能是 `langgraph`。
 *   **保留角色名禁止复用**：`input/output/start/end/done` 不能作为 `roleId`。
 *   **终止条件必须显式可达**：至少要有一个无下游 role 边的终止角色，或一条 `Role -->|EVENT| output` 边。

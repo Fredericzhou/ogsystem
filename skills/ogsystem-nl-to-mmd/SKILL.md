@@ -11,7 +11,7 @@ Target outcome:
 
 - runnable on the current parser/runtime
 - compatible with `src/runtime/parse-mermaid.ts`
-- validated against local role repo, model repo, and optional law/profile config
+- validated against the local role repo, model selection/catalog, and optional law/profile config
 - generated through dialogue confirmation when requirements are incomplete
 - accompanied by a plain `txt` structure preview during drafting
 
@@ -89,7 +89,6 @@ Exact keys allowed:
 
 Prefix keys allowed:
 
-- `%% talent.bind.<roleId>=<value>`
 - `%% exec.bind.<roleId>=<profileId>`
 - `%% model.bind.<roleId>=<modelId>`
 - `%% role.mode.<roleId>=parallel_split`
@@ -127,7 +126,7 @@ Supported:
 - runtime-native human review via `review.*`
 - runtime failure routing via role-only `ERROR` and `ERROR.<errorCode>` edges
 - `model.bind` as the preferred execution binding
-- `exec.bind` as compatibility mode only
+- `exec.bind` as the current local-shell execution binding
 
 Not supported:
 
@@ -140,16 +139,17 @@ Not supported:
 
 ## Runtime Truth
 
-Prefer these rules unless the user explicitly asks for compatibility mode:
+Prefer these rules for the current development-test release:
 
 - use `model.bind.<roleId>=<modelId>`
-- use local curated model ids from `og-models/models/*`
+- use direct `provider/model` refs or the current project model selection/catalog
 - use existing role ids from `og-roles/roles/*`
 - keep role semantics in the role repo, not in Mermaid comments
 - use `review.*` metadata instead of modeling human review as a fake reviewer role when the user asks for human-in-loop approval
 - use JSON Schema role output packages for structured output instead of relying only on prompt text that says "return JSON"
 
-`exec.bind` may still be used only when the user is targeting legacy profiles/tools.
+Use `exec.bind` for roles that intentionally execute a local profile/tool; use `model.bind` for
+OpenCode model execution. Do not invent a second binding or fallback syntax.
 
 ### Context Map Selectors
 

@@ -59,6 +59,20 @@ ExecutionOverlay     -> branch / lineage / execution aggregation
 LayoutProjection     -> rank / coordinates / route channels
 ```
 
+#### 2.2.1 角色、实现资产和控制面身份不得混用
+
+本计划中的 `Role` 指 **Responsibility Role（责任角色）**：在一个 System 中稳定存在、通过
+`roleId` 标识的抽象职责。`Responsibility Seat` 是该职责在责任图中的静态位置。它们均不表示具体
+人员、账号、模型、服务实例、BPMN gateway/event 或一次运行。
+
+`Role Package`（prompt、manifest、I/O schema）是职责的版本化实现资产，不能替代角色身份；
+`branchId`、`lineageId` 和 `RoleExecutionRecord` 是运行事实，不能反向成为静态节点。审核和控制操作中
+记录的 `actor` 仅表示外部 **control-plane principal**，不参与责任图或运行路由。
+
+递归关系的目标语义是“一个责任角色对嵌套 System 的定义范围负责”，而不是行政汇报、具体人员任命或
+权限自动继承。当前 `SubgraphSpec` 仅具备独立子图描述，尚未冻结 `ownerRoleId -> nestedSystem` 的执行
+合同；在该合同和测试完成前，不得将可执行递归责任组合描述为已实现能力。
+
 ### 2.3 语义 fan-out 不承诺物理并发
 
 `parallel_split` 表示创建多个下游分支，不表示后端一定并行执行。物理并发是执行策略，必须独立于流程语义建模。
@@ -237,6 +251,24 @@ type SemanticIR = {
 ```
 
 IR 编译失败必须使用稳定错误码，至少包括 `IR_DUPLICATE_ROLE`、`IR_UNKNOWN_REFERENCE`、`IR_ROUTE_AMBIGUOUS`、`IR_INVALID_CONDITION`、`IR_JOIN_SCOPE_INVALID`、`IR_JOIN_TIMEOUT_INVALID`、`IR_LOOP_UNBOUNDED`、`IR_BUDGET_INVALID` 和 `IR_CONTRACT_INVALID`。字段名称可以调整，但必须满足：业务结构、执行聚合和布局数据不互相冒充。`GraphViewModel` 是面向渲染的投影，不应成为新的语义真相源。
+
+未来的递归组合不应把 `System` 塞入普通 role payload。它必须使用独立、版本化的组合合同，例如：
+
+```ts
+type CompositeResponsibilitySpec = {
+  ownerRoleId: string;             // parent System 中的 Responsibility Role
+  nestedSystemRef: string;         // immutable, versioned System reference
+  inputContract: ContractRef;
+  outputContract: ContractRef;
+  stateNamespace: string;
+  checkpointNamespace: string;
+  errorPropagation: "fail" | "route" | "contain";
+  terminationPropagation: "propagate" | "contain";
+};
+```
+
+该合同必须拒绝组合环、未知 owner/ref、命名空间冲突和未声明的跨 System 数据访问。它不引入人员、团队、
+组织树或具体执行者身份；这些均位于 OGS 核心外部的可选治理集成。
 
 预算归属固定为：`maxRounds` 是 Loop Scope 的业务预算；`maxRoleActivationsByRoleId` 是 Loop Scope 内的节点保护预算，并可由 CapabilityPolicy 设置更低的全局上限；`maxTransitionsPerRun` 是 CapabilityPolicy 的全局运行预算。Law 可以对 CapabilityPolicy 施加上限，但编译后的 Semantic IR 必须保存最终生效值。
 
@@ -545,7 +577,7 @@ policies:
 - 插件必须固定版本、来源和权限清单，构建时记录依赖摘要；
 - 取消、终止和人工审核动作必须鉴权、幂等并留下操作者审计。
 
-## 16. 子图和模板
+## 16. 子图、复合责任和模板
 
 子图必须是可独立编译、可版本化和可校验的语义单元：
 
@@ -557,7 +589,12 @@ subgraphs:
     outputs: [final_solution]
 ```
 
-需要定义子图的输入/输出合同、状态命名空间、错误传播、Join/Loop 边界、checkpoint 命名空间和当前规范版本行为。模板只是生成规范输入的工具，不能绕过编译校验。
+需要定义子图的输入/输出合同、状态命名空间、错误传播、Join/Loop 边界、checkpoint 命名空间和当前规范版本行为。若子图由一个责任角色组合和负责，还必须使用第 6 节的
+`CompositeResponsibilitySpec` 显式声明 owner、嵌套 System 引用以及错误/终止传播；禁止由目录结构、角色
+名称或视觉嵌套猜测父子关系。
+
+模板只是生成规范输入的工具，不能绕过编译校验。`SubgraphSpec` 和复合责任组合是未来运行时能力；当前实现
+不应把独立子图描述误称为已可执行的递归 Role。
 
 ## 17. 编译器与适配器
 
@@ -874,7 +911,7 @@ overlay 的每个指标必须能回溯到运行状态或审计事件，并标注
 
 ## 24. 成熟度判断
 
-当前 OGS 的图拓扑、基础事件流转、分支、Join（含基础超时策略）、角色输入合同、状态 reducer、条件路由、Loop Scope、人工审核和同版本恢复机制已有实现与测试覆盖。剩余事项主要是分阶段 Join 等待、人工审核自动过期、外部 signal、可配置执行重试、受控并发、子图运行时和协议对接。
+当前 OGS 的图拓扑、基础事件流转、分支、Join（含基础超时策略）、责任角色输入合同、状态 reducer、条件路由、Loop Scope、人工审核和同版本恢复机制已有实现与测试覆盖。剩余事项主要是分阶段 Join 等待、人工审核自动过期、外部 signal、可配置执行重试、受控并发、复合责任/子图运行时和协议对接。
 
 2026-09-03 审查收口：debate 示例的业务字段与 reducer 已统一，嵌套示例的生成控制面文件已隔离；`join.first_packet/gap` 继续保持 RFC，不作为当前实现承诺。
 
@@ -884,7 +921,7 @@ overlay 的每个指标必须能回溯到运行状态或审计事件，并标注
 方向：符合工作流 DSL 的主流设计原则
 核心：多角色协作流程所需语义已具备稳定运行时基础
 规范：OGS 规范持续收敛，尚非行业标准
-生产级完整性：单机核心闭环可用，长流程与资源治理能力按需补齐
+生产级完整性：单机核心闭环可用，复合责任/子图、长流程与资源治理能力按需补齐
 ```
 
 推荐优先级为：

@@ -2,7 +2,7 @@
 
 ## 1. 它是什么
 
-OGSystem 是一个面向多角色协作流程的单机编排内核。它使用受限的 Mermaid `flowchart` 作为 DSL，把角色图、模型绑定、恢复语义和运行证据统一收敛到一个文件优先的运行时里。
+OGSystem 是一个面向抽象责任角色协作流程的单机编排内核。它使用受限的 Mermaid `flowchart` 作为 DSL，把责任图、执行绑定、恢复语义和运行证据统一收敛到一个文件优先的运行时里。这里的角色表示稳定职责，不表示具体人员、模型、服务或一次运行实例；完整术语见 [核心概念](ogsystem-core-concepts.md)。
 
 它的目标不是做“平台大全”，而是把下面几件事做扎实：
 
@@ -68,9 +68,10 @@ OGSystem 目前是一个很强的单机文件型内核，但仍有明确边界�
 建议按以下顺序理解项目：
 
 1. `docs/README.md`：先看文档索引与归档规则，知道什么文档是活的。
-2. `docs/usage/usage-manual.md`：把项目能力、目录约定、运行命令和恢复契约整体过一遍。
-3. `docs/usage/ogsystem-orchestration-semantics-v1.md`：确认已实现语义的精确定义。
-4. `docs/development/DECISIONS.md`：理解为什么做这些架构选择。
-5. `docs/usage/ogsystem-ebook.md`：系统阅读模块设计、原则、价值与演进方向。
+2. `docs/usage/ogsystem-core-concepts.md`：先确认 Role、System、Seat 和运行事实的边界。
+3. `docs/usage/usage-manual.md`：把项目能力、目录约定、运行命令和恢复契约整体过一遍。
+4. `docs/usage/ogsystem-orchestration-semantics-v1.md`：确认已实现语义的精确定义。
+5. `docs/development/DECISIONS.md`：理解为什么做这些架构选择。
+6. `docs/usage/ogsystem-ebook.md`：系统阅读模块设计、原则、价值与演进方向。
 
 如果你要直接上手运行，下一站应是 `docs/usage/usage-manual.md`。如果你要评估设计是否合理，下一站应是 `docs/development/DECISIONS.md` 与 `docs/usage/ogsystem-ebook.md`。
