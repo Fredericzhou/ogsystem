@@ -367,10 +367,10 @@ test("Studio graph bundle consumes semantic projection routing for non-forward f
   assert.match(bundle, /routePoints/);
   assert.match(bundle, /lane:/);
   assert.match(bundle, /createElkLayoutProjection/);
-  assert.match(bundle, /BACK_EDGE_PRESERVED/);
+  assert.match(bundle, /elk\.edgeRouting/);
   assert.doesNotMatch(bundle, /function buildStudioEdgeRouting/);
   assert.match(bundle, /name: "orth"/);
-  assert.match(bundle, /name: "manhattan"/);
+  assert.match(bundle, /elk\.layered\.cycleBreaking\.strategy/);
 });
 
 test("Studio graph bundle preserves stored edit layout and distributes boundaries during auto layout", async () => {
@@ -379,8 +379,8 @@ test("Studio graph bundle preserves stored edit layout and distributes boundarie
   assert.match(bundle, /createElkLayoutProjection/);
   assert.match(bundle, /createStoredLayoutProjection/);
   assert.match(bundle, /buildProjection/);
-  assert.match(bundle, /BACK_EDGE_PRESERVED/);
-  assert.match(bundle, /boundaryPositions/);
+  assert.match(bundle, /elk\.edgeRouting/);
+  assert.doesNotMatch(bundle, /function boundaryPositions/);
   assert.match(bundle, /routePoints/);
   assert.match(bundle, /preserveBoundaryNodeLayout/);
   assert.match(bundle, /magnetConnectable:\s*false/);

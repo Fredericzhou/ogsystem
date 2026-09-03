@@ -100,7 +100,7 @@ test("generic ELK fixtures preserve fan-out, Join, cycle, error, and multi-termi
   assert.ok(diagnosticCodes(join).includes("UNSUPPORTED_CONSTRAINT"));
 
   const cycle = await createElkLayoutProjection(fixture("cycle"), "flow");
-  assert.ok(diagnosticCodes(cycle).includes("BACK_EDGE_PRESERVED"));
+  assert.equal(diagnosticCodes(cycle).includes("BACK_EDGE_PRESERVED"), false);
   assert.equal(cycle.edges.length, 4);
 
   const error = await createElkLayoutProjection(fixture("error"), "flow");
@@ -109,7 +109,7 @@ test("generic ELK fixtures preserve fan-out, Join, cycle, error, and multi-termi
 
   const multiTerminal = await createElkLayoutProjection(fixture("multi-terminal"), "flow");
   assert.equal(multiTerminal.edges.length, 4);
-  assert.ok(diagnosticCodes(multiTerminal).includes("MULTI_EDGE_COLLAPSED_FOR_LAYOUT"));
+  assert.equal(diagnosticCodes(multiTerminal).includes("MULTI_EDGE_COLLAPSED_FOR_LAYOUT"), false);
   assert.notEqual(
     multiTerminal.edges.find((item) => item.id === "source-target-a").routing.lane,
     multiTerminal.edges.find((item) => item.id === "source-target-b").routing.lane

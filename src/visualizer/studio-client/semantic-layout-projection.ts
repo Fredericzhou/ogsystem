@@ -333,6 +333,15 @@ function routePoints(
   return [];
 }
 
+function projectedRoutePoints(
+  edge: GraphViewModelEdge,
+  route: ReturnType<typeof resolveRoute>,
+  nodeById: ReadonlyMap<string, LayoutProjectionNode>,
+  routePointsByEdgeId: ReadonlyMap<string, readonly LayoutPoint[]> | undefined
+): LayoutPoint[] {
+  return routePointsByEdgeId?.get(edge.id)?.map((point) => ({ ...point })) ?? routePoints(edge, route, nodeById);
+}
+
 function routerFor(
   edge: GraphViewModelEdge,
   route: ReturnType<typeof resolveRoute>,
@@ -367,7 +376,8 @@ function routerFor(
 
 function buildEdgeRouting(
   edges: readonly GraphViewModelEdge[],
-  nodeById: ReadonlyMap<string, LayoutProjectionNode>
+  nodeById: ReadonlyMap<string, LayoutProjectionNode>,
+  routePointsByEdgeId?: ReadonlyMap<string, readonly LayoutPoint[]>
 ): Map<string, LayoutEdgeRouting> {
   const routes = new Map(edges.map((edge) => [edge.id, resolveRoute(edge, nodeById)]));
   const outgoing = new Map<string, GraphViewModelEdge[]>();
@@ -406,7 +416,7 @@ function buildEdgeRouting(
       target: terminal(edge.target, "target", route.targetSide, targetOffset),
       router: routerFor(edge, route, nodeById),
       connector: STUDIO_EDGE_CONNECTOR,
-      routePoints: routePoints(edge, route, nodeById),
+      routePoints: projectedRoutePoints(edge, route, nodeById, routePointsByEdgeId),
       lane: `${edge.channel ?? (edge.runtimeOnlyErrorFlow ? "error" : "normal")}:${route.kind}:${sourceOffset}:${targetOffset}`
     });
   }
@@ -423,11 +433,12 @@ export function buildProjection(
   profile: StudioLayoutMode,
   nodes: LayoutProjectionNode[],
   viewModel: GraphViewModel,
-  diagnostics: LayoutDiagnostic[] = []
+  diagnostics: LayoutDiagnostic[] = [],
+  routePointsByEdgeId?: ReadonlyMap<string, readonly LayoutPoint[]>
 ): LayoutProjection {
   const nodeById = new Map(nodes.map((node) => [node.id, node]));
   const sortedEdges = viewModel.edges.slice().sort((left, right) => edgeSortKey(left).localeCompare(edgeSortKey(right)));
-  const completeRouting = buildEdgeRouting(sortedEdges, nodeById);
+  const completeRouting = buildEdgeRouting(sortedEdges, nodeById, routePointsByEdgeId);
   const edges = sortedEdges.map((edge) => {
     const routing = completeRouting.get(edge.id)!;
     return {
