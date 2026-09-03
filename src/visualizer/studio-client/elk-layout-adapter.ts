@@ -4,6 +4,7 @@ import type { GraphViewModel, GraphViewModelEdge, GraphViewModelNode } from "../
 import {
   buildProjection,
   type LayoutDiagnostic,
+  type LayoutEdgeGeometry,
   type LayoutPoint,
   type LayoutProjection,
   type LayoutProjectionNode,
@@ -137,13 +138,19 @@ export async function createElkLayoutProjection(viewModel: GraphViewModel, mode:
   const shiftX = shifted.length ? shifted[0].x - positioned[0].x : 0;
   const shiftY = shifted.length ? shifted[0].y - positioned[0].y : 0;
   const routePointsByEdgeId = new Map<string, LayoutPoint[]>();
+  const geometryByEdgeId = new Map<string, LayoutEdgeGeometry>();
   for (const edge of (result.edges ?? []) as ElkEdgeResult[]) {
     const section = edge.sections?.[0];
     if (!section) continue;
     const points = [section.startPoint, ...(section.bendPoints ?? []), section.endPoint]
       .filter((point): point is ElkPoint => Number.isFinite(point?.x) && Number.isFinite(point?.y))
       .map((point) => ({ x: point.x + shiftX, y: point.y + shiftY }));
-    if (points.length > 2) routePointsByEdgeId.set(edge.id.slice("layout-".length), points.slice(1, -1));
+    if (points.length >= 2) {
+      const edgeId = edge.id.slice("layout-".length);
+      const geometry = { points, sourcePoint: points[0], targetPoint: points[points.length - 1] };
+      geometryByEdgeId.set(edgeId, geometry);
+      if (points.length > 2) routePointsByEdgeId.set(edgeId, points.slice(1, -1));
+    }
   }
-  return buildProjection("elk", mode, shifted, viewModel, diagnostics, routePointsByEdgeId);
+  return buildProjection("elk", mode, shifted, viewModel, diagnostics, routePointsByEdgeId, geometryByEdgeId);
 }

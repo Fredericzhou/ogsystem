@@ -3,6 +3,11 @@ import type { GraphViewModel, GraphViewModelEdge, GraphViewModelNode } from "../
 export type StudioLayoutMode = "flow" | "compact" | "stacked";
 export type StudioLayoutAdapterId = "stored" | "elk";
 export type LayoutPoint = { x: number; y: number };
+export type LayoutEdgeGeometry = {
+  points: LayoutPoint[];
+  sourcePoint: LayoutPoint;
+  targetPoint: LayoutPoint;
+};
 export type LayoutSide = "left" | "right" | "top" | "bottom";
 export type LayoutRouteKind = "self" | "backward" | "vertical" | "forward";
 export type LayoutRouter = {
@@ -311,6 +316,25 @@ function terminal(cell: string, direction: "source" | "target", side: LayoutSide
   };
 }
 
+function terminalFromPoint(
+  cell: string,
+  direction: "source" | "target",
+  point: LayoutPoint | undefined,
+  node: LayoutProjectionNode | undefined,
+  fallback: LayoutTerminal
+): LayoutTerminal {
+  if (!point || !node) return fallback;
+  const candidates: Array<{ side: LayoutSide; distance: number; offset: number }> = [
+    { side: "left", distance: Math.abs(point.x - node.x), offset: point.y - (node.y + node.height / 2) },
+    { side: "right", distance: Math.abs(point.x - (node.x + node.width)), offset: point.y - (node.y + node.height / 2) },
+    { side: "top", distance: Math.abs(point.y - node.y), offset: point.x - (node.x + node.width / 2) },
+    { side: "bottom", distance: Math.abs(point.y - (node.y + node.height)), offset: point.x - (node.x + node.width / 2) }
+  ];
+  candidates.sort((left, right) => left.distance - right.distance);
+  const selected = candidates[0];
+  return terminal(cell, direction, selected.side, Math.round(selected.offset));
+}
+
 function routePoints(
   edge: GraphViewModelEdge,
   route: ReturnType<typeof resolveRoute>,
@@ -377,7 +401,8 @@ function routerFor(
 function buildEdgeRouting(
   edges: readonly GraphViewModelEdge[],
   nodeById: ReadonlyMap<string, LayoutProjectionNode>,
-  routePointsByEdgeId?: ReadonlyMap<string, readonly LayoutPoint[]>
+  routePointsByEdgeId?: ReadonlyMap<string, readonly LayoutPoint[]>,
+  geometryByEdgeId?: ReadonlyMap<string, LayoutEdgeGeometry>
 ): Map<string, LayoutEdgeRouting> {
   const routes = new Map(edges.map((edge) => [edge.id, resolveRoute(edge, nodeById)]));
   const outgoing = new Map<string, GraphViewModelEdge[]>();
@@ -410,10 +435,12 @@ function buildEdgeRouting(
     const targetIndex = Math.max(0, targetEdges.findIndex((candidate) => candidate.id === edge.id));
     const sourceOffset = anchorOffset(sourceIndex, sourceEdges.length, sourceSpan ?? 0);
     const targetOffset = anchorOffset(targetIndex, targetEdges.length, targetSpan ?? 0);
+    const sourceTerminal = terminalFromPoint(edge.source, "source", geometryByEdgeId?.get(edge.id)?.sourcePoint, sourceNode, terminal(edge.source, "source", route.sourceSide, sourceOffset));
+    const targetTerminal = terminalFromPoint(edge.target, "target", geometryByEdgeId?.get(edge.id)?.targetPoint, targetNode, terminal(edge.target, "target", route.targetSide, targetOffset));
     result.set(edge.id, {
       kind: route.kind,
-      source: terminal(edge.source, "source", route.sourceSide, sourceOffset),
-      target: terminal(edge.target, "target", route.targetSide, targetOffset),
+      source: sourceTerminal,
+      target: targetTerminal,
       router: routerFor(edge, route, nodeById),
       connector: STUDIO_EDGE_CONNECTOR,
       routePoints: projectedRoutePoints(edge, route, nodeById, routePointsByEdgeId),
@@ -434,11 +461,12 @@ export function buildProjection(
   nodes: LayoutProjectionNode[],
   viewModel: GraphViewModel,
   diagnostics: LayoutDiagnostic[] = [],
-  routePointsByEdgeId?: ReadonlyMap<string, readonly LayoutPoint[]>
+  routePointsByEdgeId?: ReadonlyMap<string, readonly LayoutPoint[]>,
+  geometryByEdgeId?: ReadonlyMap<string, LayoutEdgeGeometry>
 ): LayoutProjection {
   const nodeById = new Map(nodes.map((node) => [node.id, node]));
   const sortedEdges = viewModel.edges.slice().sort((left, right) => edgeSortKey(left).localeCompare(edgeSortKey(right)));
-  const completeRouting = buildEdgeRouting(sortedEdges, nodeById, routePointsByEdgeId);
+  const completeRouting = buildEdgeRouting(sortedEdges, nodeById, routePointsByEdgeId, geometryByEdgeId);
   const edges = sortedEdges.map((edge) => {
     const routing = completeRouting.get(edge.id)!;
     return {
