@@ -13,12 +13,12 @@ export function mountStudioX6Bridge(root: HTMLElement, options: StudioGraphBridg
   injectStudioGraphStyles();
   const existing = mounted.get(root);
   if (existing) {
-    existing.update(options);
+    void existing.update(options);
     return;
   }
   const island = new StudioGraphIsland(root, options);
   mounted.set(root, island);
-  island.update(options);
+  void island.update(options);
 }
 
 export function disposeStudioX6Bridge(root: HTMLElement): void {

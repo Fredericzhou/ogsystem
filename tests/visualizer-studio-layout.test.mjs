@@ -3,8 +3,8 @@ import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 
 import {
-  createDagreLayoutProjection
-} from "../src/visualizer/studio-client/dagre-layout-adapter.ts";
+  createElkLayoutProjection
+} from "../src/visualizer/studio-client/elk-layout-adapter.ts";
 import {
   createStoredLayoutProjection,
   layoutDigest
@@ -68,13 +68,13 @@ function graphViewModel() {
   };
 }
 
-test("Dagre layout projection is deterministic and keeps every semantic edge", () => {
+test("ELK layout projection is deterministic and keeps every semantic edge", async () => {
   const viewModel = graphViewModel();
-  const first = createDagreLayoutProjection(viewModel, "flow");
-  const second = createDagreLayoutProjection(viewModel, "flow");
+  const first = await createElkLayoutProjection(viewModel, "flow");
+  const second = await createElkLayoutProjection(viewModel, "flow");
 
   assert.deepEqual(first, second);
-  assert.equal(first.adapter, "dagre");
+  assert.equal(first.adapter, "elk");
   assert.equal(first.layoutDigest, layoutDigest(first));
   assert.deepEqual(first.edges.map((item) => item.id).sort(), viewModel.edges.map((item) => item.id).sort());
   assert.ok(first.diagnostics.some((item) => item.code === "BACK_EDGE_PRESERVED" && item.edgeId === "join-a-loop"));
@@ -89,8 +89,8 @@ test("Dagre layout projection is deterministic and keeps every semantic edge", (
   }
 });
 
-test("Dagre projection keeps channels, Join metadata, and distinct parallel lanes", () => {
-  const projection = createDagreLayoutProjection(graphViewModel(), "compact");
+test("ELK projection keeps channels, Join metadata, and distinct parallel lanes", async () => {
+  const projection = await createElkLayoutProjection(graphViewModel(), "compact");
   const joinEdges = projection.edges.filter((item) => item.id === "a-join" || item.id === "b-join");
   const parallelEdges = projection.edges.filter((item) => ["a-join", "a-error", "a-join-alt"].includes(item.id));
 
@@ -100,8 +100,24 @@ test("Dagre projection keeps channels, Join metadata, and distinct parallel lane
   assert.equal(new Set(parallelEdges.map((item) => item.routing.lane)).size, parallelEdges.length);
 });
 
-test("stacked loop routes use vertical terminals and router directions", () => {
-  const projection = createDagreLayoutProjection(graphViewModel(), "stacked");
+test("ELK places disconnected boundaries along the selected orientation without role seats", async () => {
+  const viewModel = graphViewModel();
+  viewModel.nodes = viewModel.nodes.filter((node) => node.id === "input" || node.id === "output");
+  viewModel.edges = [];
+  const flow = await createElkLayoutProjection(viewModel, "flow");
+  const stacked = await createElkLayoutProjection(viewModel, "stacked");
+  const flowInput = flow.nodes.find((node) => node.id === "input");
+  const flowOutput = flow.nodes.find((node) => node.id === "output");
+  const stackedInput = stacked.nodes.find((node) => node.id === "input");
+  const stackedOutput = stacked.nodes.find((node) => node.id === "output");
+  assert.ok(flowInput.x < flowOutput.x);
+  assert.equal(flowInput.y + flowInput.height / 2, flowOutput.y + flowOutput.height / 2);
+  assert.ok(stackedInput.y < stackedOutput.y);
+  assert.equal(stackedInput.x + stackedInput.width / 2, stackedOutput.x + stackedOutput.width / 2);
+});
+
+test("stacked loop routes use vertical terminals and router directions", async () => {
+  const projection = await createElkLayoutProjection(graphViewModel(), "stacked");
   const verticalLoop = projection.edges.find((item) => item.id === "join-a-loop");
   assert.equal(verticalLoop.routing.kind, "vertical");
   assert.equal(verticalLoop.routing.router.name, "manhattan");
@@ -118,6 +134,18 @@ test("stored projection preserves positions while renderer stays library-indepen
   });
 
   const renderer = await readFile(new URL("../src/visualizer/studio-client/studio-graph-render.ts", import.meta.url), "utf8");
-  assert.doesNotMatch(renderer, /from ["']dagre["']/);
+  assert.doesNotMatch(renderer, /from ["']elkjs(?:\/|["'])/);
   assert.match(renderer, /renderStudioGraphViewModel\(graph: Graph, viewModel: GraphViewModel, projection: LayoutProjection\)/);
+});
+
+test("ELK is the only automatic layout engine", async () => {
+  const adapter = await readFile(new URL("../src/visualizer/studio-client/elk-layout-adapter.ts", import.meta.url), "utf8");
+  assert.match(adapter, /from ["']elkjs\/lib\/elk\.bundled\.js["']/);
+});
+
+test("Studio graph disposal invalidates pending asynchronous layouts", async () => {
+  const studioGraph = await readFile(new URL("../src/visualizer/studio-client/studio-graph.ts", import.meta.url), "utf8");
+  const disposeStart = studioGraph.indexOf("dispose(): void {");
+  assert.notEqual(disposeStart, -1);
+  assert.match(studioGraph.slice(disposeStart, disposeStart + 160), /this\.updateGeneration \+= 1/);
 });

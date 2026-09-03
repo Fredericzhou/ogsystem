@@ -15,7 +15,7 @@ SystemDefinition
   -> Semantic IR
   -> Responsibility Graph
   -> Semantic Layout Projection
-  -> Dagre semantic layout adapter
+  -> ELK.js semantic layout adapter
   -> Layout Projection
   -> GraphViewModel
   -> X6 Renderer
@@ -26,7 +26,7 @@ SystemDefinition
 
 ## 2. 设计原则
 
-1. Semantic IR 是业务语义唯一来源，X6 和 Dagre 都不是语义真相源。
+1. Semantic IR 是业务语义唯一来源，X6 和 ELK.js 都不是语义真相源。
 2. 责任席位不是 branch 或 execution 实例；运行数据按角色聚合展示。
 3. 业务图必须保留完整拓扑，布局不得删除循环、错误或异常边。
 4. 静态结构、运行 overlay、布局投影和渲染交互分层。
@@ -36,9 +36,9 @@ SystemDefinition
 
 ## 3. 技术边界
 
-### 3.1 Dagre semantic layout adapter
+### 3.1 ELK.js semantic layout adapter
 
-Dagre 是当前明确选择的 layered layout adapter，负责计算节点坐标和基础 rank。它不是流程运行时、业务语义引擎或渲染组件。OGS 不引入 ELK.js：当前 X6 bundle 需要保持轻量，现有图规模和交互需求不需要 ELK 的额外约束能力。
+ELK.js 是当前唯一的 layered layout adapter，负责计算节点坐标和层级布局。它不是流程运行时、业务语义引擎或渲染组件。不得引入第二布局依赖、后备实现或基于像素的层级推断。
 
 OGS 负责把业务语义转换成布局约束，包括：
 
@@ -188,7 +188,7 @@ backEdge 返回前序 rank 的循环边
 
 业务语义图必须保留完整边集合。循环边只设置 `backEdge: true`，不得为了让布局器接受 DAG 而删除。
 
-## 7. Dagre 布局流水线
+## 7. ELK.js 布局流水线
 
 ### 7.1 预处理
 
@@ -198,19 +198,19 @@ backEdge 返回前序 rank 的循环边
 4. 计算入口、出口和主路径。
 5. 按主路径优先级、Join source 声明顺序和 roleId 建立稳定排序键。
 
-### 7.2 构造 Dagre 输入
+### 7.2 构造 ELK 输入
 
-Dagre 输入只包含布局所需字段：
+ELK 输入只包含布局所需字段：
 
 ```ts
-type DagreLayoutNode = {
+type ElkLayoutNode = {
   id: string;
   width: number;
   height: number;
   layoutOptions?: Record<string, string>;
 };
 
-type DagreLayoutEdge = {
+type ElkLayoutEdge = {
   id: string;
   sources: string[];
   targets: string[];
@@ -218,9 +218,9 @@ type DagreLayoutEdge = {
 };
 ```
 
-基础布局采用 layered 算法、从左到右方向和 network simplex 节点放置。所有 Dagre 选项集中在 `src/visualizer/studio-client/dagre-layout-adapter.ts`；列排序、边界锚点、通道和 X6 route metadata 由 OGS semantic layout projection 负责。
+基础布局采用 ELK layered 算法，并按布局模式选择从左到右或从上到下方向。所有 ELK 选项集中在 `src/visualizer/studio-client/elk-layout-adapter.ts`；边界锚点、通道和 X6 route metadata 由 OGS semantic layout projection 负责。
 
-Dagre 接收确定性排序后的无环布局拓扑子集；完整业务边集合始终保留在 `LayoutProjection` 中。被 Dagre cycle breaking 或平行边合并影响的边会得到明确诊断和 route channel，不会改变运行语义。
+ELK 接收确定性排序后的无环布局拓扑子集；完整业务边集合始终保留在 `LayoutProjection` 中。被布局器 cycle breaking 或平行边合并影响的边会得到明确诊断和 route channel，不会改变运行语义。
 
 ### 7.3 布局锚点
 
@@ -231,7 +231,7 @@ input、output、外部系统边界和人工审核边界是锚点。它们应固
 以下做法禁止继续使用：
 
 - 通过删除回边把业务图强行变成 DAG；
-- 在 renderer 中使用像素阈值推断 rank；adapter 内部的 Dagre 坐标只用于确定性列分组后处理；
+- 在 renderer 或 adapter 中使用像素阈值推断层级；层级必须来自 ELK 的布局语义或确定性的拓扑约束；
 - 对布局结果进行无约束的二次纵向重排；
 - 在渲染器内根据节点几何位置重新判断边方向；
 - 运行 overlay 变化时重新计算静态布局。
@@ -248,7 +248,7 @@ Join 流：Join 节点下方的汇聚通道
 审核流：人工审核边界专用通道
 ```
 
-同一 source-target 的多条边必须根据稳定 edgeId 分配平行 lane。Dagre adapter 和 semantic projection 生成 route points，X6 直接消费 LayoutProjection，不再在 renderer 内根据几何位置重算路径。
+同一 source-target 的多条边必须根据稳定 edgeId 分配平行 lane。ELK.js adapter 和 semantic projection 生成 route points，X6 直接消费 LayoutProjection，不再在 renderer 内根据几何位置重算路径。
 
 ## 9. 语义显示
 
@@ -379,10 +379,10 @@ LANE_CONFLICT
 
 ## 13. 性能和缓存
 
-Dagre 布局保持在 adapter 边界内；如未来图规模需要异步化，worker 传输的仍是 LayoutInput/LayoutProjection 契约：
+ELK.js 布局保持在 adapter 边界内；布局 API 是异步的，worker 传输的仍是 LayoutInput/LayoutProjection 契约：
 
 ```text
-main thread -> LayoutInput -> worker -> Dagre adapter -> LayoutProjection -> X6
+main thread -> LayoutInput -> worker -> ELK.js adapter -> LayoutProjection -> X6
 ```
 
 布局缓存键：
@@ -408,8 +408,8 @@ branch、review、active edge、选中节点和运行计数变化不得使静态
 ### 阶段 1：布局适配层
 
 - 新增 `semantic-layout-projection.ts`；
-- 新增 `dagre-layout-adapter.ts`；
-- 将 Dagre 调用与 X6 解耦；
+- 新增 `elk-layout-adapter.ts`；
+- 将 ELK.js 调用与 X6 解耦；
 - 保留完整业务边集合并为 cycle/back/multi-terminal 产生投影诊断；
 - 删除 renderer 内的几何路由推断。
 
@@ -418,7 +418,7 @@ branch、review、active edge、选中节点和运行计数变化不得使静态
 - 实现主流程、Join、错误和循环 lane；
 - 实现多边平行 lane；
 - 实现 boundary anchor；
-- 将 Dagre adapter route points 写入 LayoutProjection。
+- 将 ELK.js adapter route points 写入 LayoutProjection。
 
 ### 阶段 3：渲染重构
 
@@ -480,11 +480,11 @@ branch、review、active edge、选中节点和运行计数变化不得使静态
 
 ### 布局适配器体积
 
-Dagre 不增加 ELK.js 的 bundle 成本。若未来需要更复杂的约束布局，应先以同一 LayoutProjection 契约做替换评估，不得让渲染器直接依赖新布局库。
+ELK.js 增加了浏览器 bundle 和异步布局成本，但提供适合复杂有向流程的 layered 约束能力。后续若更换布局器，必须沿用同一 LayoutProjection 契约，不得让渲染器直接依赖新布局库。
 
 ### 自动布局不是业务判断
 
-Dagre 不能自动理解主流程、业务优先级或审核边界。缺少 OGS 语义布局投影时，换库不会自动解决混乱。
+ELK.js 不能自动理解主流程、业务优先级或审核边界。缺少 OGS 语义布局投影时，换库不会自动解决混乱。
 
 ### 复杂布局仍需人工约束
 
@@ -497,10 +497,10 @@ OGS 采用以下现代开源可视化架构：
 ```text
 Semantic IR
   -> semantic layout projection
-  -> Dagre adapter
+  -> ELK.js adapter
   -> LayoutProjection diagnostics
   -> GraphViewModel
   -> X6 rendering and interaction
 ```
 
-OGS 当前正式采用 Dagre 作为显式 semantic layout adapter。Dagre 只负责可重复的基础坐标，OGS 负责责任席位、主路径、Join、循环、错误流、审核边界、完整业务边集合和运行 overlay 的业务判断；renderer 只消费 LayoutProjection。
+OGS 当前正式采用 ELK.js 作为唯一显式 semantic layout adapter。ELK.js 只负责可重复的基础坐标，OGS 负责责任席位、主路径、Join、循环、错误流、审核边界、完整业务边集合和运行 overlay 的业务判断；renderer 只消费 LayoutProjection。

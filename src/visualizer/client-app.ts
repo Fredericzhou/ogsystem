@@ -7322,6 +7322,7 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
         state.consoleTab = runConsoleTab();
         renderConsoleTabs();
       }
+      state.operateTab = "graph";
       state.selectedRunId = runId;
       state.runSelectionRequestId += 1;
       state.selectedReviewId = "";
@@ -7765,6 +7766,10 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
     renderConsoleTabs();
     const restoreRunSelection = state.consoleTab === runConsoleTab();
     state.selectedRunId = restoreRunSelection ? initialRoute.runId : "";
+    if (state.selectedRunId) {
+      state.operateTab = "graph";
+      renderConsoleTabs();
+    }
     state.selectedReviewId = restoreRunSelection ? initialRoute.reviewId : "";
     state.selectedLogRoleId = restoreRunSelection ? initialRoute.logRoleId : "";
     state.logTail = restoreRunSelection ? initialRoute.tail : "";

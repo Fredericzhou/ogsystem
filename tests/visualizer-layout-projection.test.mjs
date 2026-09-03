@@ -7,7 +7,7 @@ import {
   createStoredLayoutProjection,
   layoutDigest
 } from "../src/visualizer/studio-client/semantic-layout-projection.ts";
-import { createDagreLayoutProjection } from "../src/visualizer/studio-client/dagre-layout-adapter.ts";
+import { createElkLayoutProjection } from "../src/visualizer/studio-client/elk-layout-adapter.ts";
 
 function node(id, overrides = {}) {
   const boundary = id === "input" || id === "output";
@@ -90,24 +90,24 @@ function diagnosticCodes(projection) {
   return projection.diagnostics.map((diagnostic) => diagnostic.code);
 }
 
-test("generic Dagre fixtures preserve fan-out, Join, cycle, error, and multi-terminal semantics", () => {
-  const fanOut = createDagreLayoutProjection(fixture("fan-out"), "flow");
+test("generic ELK fixtures preserve fan-out, Join, cycle, error, and multi-terminal semantics", async () => {
+  const fanOut = await createElkLayoutProjection(fixture("fan-out"), "flow");
   assert.equal(fanOut.edges.length, 5);
   assert.ok(diagnosticCodes(fanOut).includes("UNSUPPORTED_CONSTRAINT"));
 
-  const join = createDagreLayoutProjection(fixture("join"), "flow");
+  const join = await createElkLayoutProjection(fixture("join"), "flow");
   assert.equal(join.edges.filter((edge) => edge.participatesInJoin).length, 2);
   assert.ok(diagnosticCodes(join).includes("UNSUPPORTED_CONSTRAINT"));
 
-  const cycle = createDagreLayoutProjection(fixture("cycle"), "flow");
+  const cycle = await createElkLayoutProjection(fixture("cycle"), "flow");
   assert.ok(diagnosticCodes(cycle).includes("BACK_EDGE_PRESERVED"));
   assert.equal(cycle.edges.length, 4);
 
-  const error = createDagreLayoutProjection(fixture("error"), "flow");
+  const error = await createElkLayoutProjection(fixture("error"), "flow");
   assert.equal(error.edges.find((item) => item.id === "work-output").runtimeOnlyErrorFlow, true);
   assert.equal(error.edges.find((item) => item.id === "work-output").routing.lane.startsWith("error:"), true);
 
-  const multiTerminal = createDagreLayoutProjection(fixture("multi-terminal"), "flow");
+  const multiTerminal = await createElkLayoutProjection(fixture("multi-terminal"), "flow");
   assert.equal(multiTerminal.edges.length, 4);
   assert.ok(diagnosticCodes(multiTerminal).includes("MULTI_EDGE_COLLAPSED_FOR_LAYOUT"));
   assert.notEqual(
@@ -116,18 +116,25 @@ test("generic Dagre fixtures preserve fan-out, Join, cycle, error, and multi-ter
   );
 });
 
-test("Dagre honors node size variation without projected overlap", () => {
-  const projection = createDagreLayoutProjection(fixture("size-variation"), "flow");
+test("ELK honors node size variation without projected overlap", async () => {
+  const projection = await createElkLayoutProjection(fixture("size-variation"), "flow");
   assert.equal(projection.nodes.find((item) => item.id === "large").width, 300);
   assert.equal(projection.nodes.find((item) => item.id === "large").height, 132);
   assert.equal(diagnosticCodes(projection).includes("NODE_OVERLAP"), false);
 });
 
-test("layout digest is stable across repeated layout and input ordering", () => {
+test("ELK keeps cyclic role graphs distributed across flow columns", async () => {
+  const projection = await createElkLayoutProjection(fixture("cycle"), "flow");
+  const roleNodes = projection.nodes.filter((item) => !["input", "output"].includes(item.id));
+  assert.ok(new Set(roleNodes.map((item) => item.x)).size > 1);
+  assert.equal(diagnosticCodes(projection).includes("NODE_OVERLAP"), false);
+});
+
+test("layout digest is stable across repeated layout and input ordering", async () => {
   const original = fixture("fan-out");
   const reordered = graph(original.nodes.slice().reverse(), original.edges.slice().reverse());
-  const first = createDagreLayoutProjection(original, "compact");
-  const second = createDagreLayoutProjection(reordered, "compact");
+  const first = await createElkLayoutProjection(original, "compact");
+  const second = await createElkLayoutProjection(reordered, "compact");
   assert.match(first.layoutDigest, /^layout-v1-[0-9a-f]{8}$/);
   assert.equal(first.layoutDigest, second.layoutDigest);
   assert.equal(first.layoutDigest, layoutDigest(first));

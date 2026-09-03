@@ -3079,6 +3079,12 @@ test("visualizer client keeps diagnostics lazy and renders decision phase detail
     decisionPhase: "recorded"
   });
 
+  const defaultOperateGraphTab = harness.document.getElementById("operate-tabs")
+    .querySelectorAll("[data-operate-tab]")
+    .find((button) => button.getAttribute("data-operate-tab") === "graph");
+  assert.equal(defaultOperateGraphTab?.getAttribute("aria-pressed"), "true");
+  assert.ok(harness.document.getElementById("graph-view").innerHTML.includes('id="run-graph-root"'));
+
   assert.ok(
     harness.document.getElementById("review-detail").textContent.includes("Decision trail")
   );

@@ -31,7 +31,7 @@ import {
   type StudioAuthoringCommand
 } from "./studio-graph-commands.js";
 import { renderStudioGraphViewModel } from "./studio-graph-render.js";
-import { createDagreLayoutProjection } from "./dagre-layout-adapter.js";
+import { createElkLayoutProjection } from "./elk-layout-adapter.js";
 import {
   createStoredLayoutProjection,
   type LayoutProjection,
@@ -277,6 +277,7 @@ export class StudioGraphIsland {
   private pendingInitialFitTimer: ReturnType<typeof setTimeout> | null = null;
   private layoutMode: StudioGraphLayoutMode = "flow";
   private currentLayoutProjection: LayoutProjection | null = null;
+  private updateGeneration = 0;
   private readonly delegatedCommandFormSubmitListener = (event: Event) => this.handleDelegatedCommandFormSubmit(event);
   private readonlyHistory: { undoStack: StudioGraphHistoryEntry[]; redoStack: StudioGraphHistoryEntry[] } = {
     undoStack: [],
@@ -392,7 +393,8 @@ export class StudioGraphIsland {
     this.updateToolbarState();
   }
 
-  update(options: StudioGraphBridgeOptions): void {
+  async update(options: StudioGraphBridgeOptions): Promise<void> {
+    const updateGeneration = ++this.updateGeneration;
     this.resetHistoryWhenProjectChanges(options);
     this.options = options;
     this.hideContextMenu();
@@ -449,7 +451,10 @@ export class StudioGraphIsland {
         readOnly: options.readOnly === true
       });
       this.syncGraphViewportSize();
-      const autoLayoutApplied = this.applyDefaultAutoLayout();
+      const autoLayoutApplied = await this.applyDefaultAutoLayout(updateGeneration);
+      if (updateGeneration !== this.updateGeneration) {
+        return;
+      }
       if (!autoLayoutApplied) {
         this.restoreViewport(
           viewModel.viewport ?? options.authoring?.layout?.viewport ?? options.canvas?.viewport,
@@ -473,6 +478,7 @@ export class StudioGraphIsland {
   }
 
   dispose(): void {
+    this.updateGeneration += 1;
     if (this.syncCanvasTimer) {
       clearTimeout(this.syncCanvasTimer);
       this.syncCanvasTimer = null;
@@ -1457,14 +1463,14 @@ export class StudioGraphIsland {
       return;
     }
     this.layoutMode = this.nextLayoutMode(this.layoutMode);
-    this.applyAutoLayout();
+    await this.applyAutoLayout();
     this.toast("info", this.formatLabel("layoutSwitched", {
       layout: this.layoutModeLabel(this.layoutMode)
     }));
     await this.syncCanvas();
   }
 
-  private applyDefaultAutoLayout(): boolean {
+  private async applyDefaultAutoLayout(updateGeneration: number): Promise<boolean> {
     if (!this.options.defaultAutoLayout) {
       return false;
     }
@@ -1476,7 +1482,10 @@ export class StudioGraphIsland {
       this.lastDefaultAutoLayoutSignature = signature;
       return false;
     }
-    this.applyAutoLayout();
+    await this.applyAutoLayout(updateGeneration);
+    if (updateGeneration !== this.updateGeneration) {
+      return false;
+    }
     this.lastDefaultAutoLayoutSignature = signature;
     return true;
   }
@@ -1510,9 +1519,14 @@ export class StudioGraphIsland {
     return nodes.length ? `${nodes.join(",")}|${edges.join(",")}` : "";
   }
 
-  private applyAutoLayout(): void {
+  private async applyAutoLayout(updateGeneration = this.updateGeneration): Promise<void> {
     if (!this.currentViewModel) return;
-    this.currentLayoutProjection = createDagreLayoutProjection(this.currentViewModel, this.layoutMode);
+    const viewModel = this.currentViewModel;
+    const projection = await createElkLayoutProjection(viewModel, this.layoutMode);
+    if (updateGeneration !== this.updateGeneration || viewModel !== this.currentViewModel) {
+      return;
+    }
+    this.currentLayoutProjection = projection;
     renderStudioGraphViewModel(this.graph, this.currentViewModel, this.currentLayoutProjection);
     this.fitGraphToViewport();
   }

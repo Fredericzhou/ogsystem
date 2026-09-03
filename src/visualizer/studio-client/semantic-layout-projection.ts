@@ -1,7 +1,7 @@
 import type { GraphViewModel, GraphViewModelEdge, GraphViewModelNode } from "../studio-contracts.js";
 
 export type StudioLayoutMode = "flow" | "compact" | "stacked";
-export type StudioLayoutAdapterId = "stored" | "dagre";
+export type StudioLayoutAdapterId = "stored" | "elk";
 export type LayoutPoint = { x: number; y: number };
 export type LayoutSide = "left" | "right" | "top" | "bottom";
 export type LayoutRouteKind = "self" | "backward" | "vertical" | "forward";
@@ -223,13 +223,13 @@ function qualityDiagnostics(
     }
   }
 
-  if (adapter === "dagre") {
+  if (adapter === "elk") {
     for (const node of viewModel.nodes) {
       if (node.structure.joinMode || node.structure.routingMode === "parallel_split") {
         diagnostics.push({
           code: "UNSUPPORTED_CONSTRAINT",
           severity: "info",
-          message: `Dagre positions ${node.id} but does not enforce its semantic branch or Join ordering constraint.`,
+          message: `ELK positions ${node.id} but does not enforce its semantic branch or Join ordering constraint.`,
           nodeId: node.id
         });
       }

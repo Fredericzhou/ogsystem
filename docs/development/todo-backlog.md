@@ -23,7 +23,7 @@ Contract freeze notes:
 - Visualizer platform validation P1/P2 is closed in `docs/development/archive/delivery/ogsystem-visualizer-platform-validation-execution-plan-2026-05-04.md`.
 - Browser smoke gating, Windows lifecycle smoke, docs drift checks, and CI Playwright Chromium setup are closed in `docs/development/archive/delivery/ogsystem-cross-platform-visualizer-validation-closure-2026-05-05.md`.
 - Visualizer product usability gate follow-up is closed in `docs/development/archive/delivery/ogsystem-visualizer-product-usability-gate-followup-2026-05-05.md`.
-- Visualizer UX convergence is closed; the short closure summary is archived at `docs/development/archive/delivery/visualizer-refactor-closure-summary-2026-05-13.md` and the detailed execution record at `docs/development/archive/delivery/visualizer-refactor-plan-2026-05-13.md`. Remaining ELK/semantic-layout work is tracked separately below.
+- Visualizer UX convergence is closed; the short closure summary is archived at `docs/development/archive/delivery/visualizer-refactor-closure-summary-2026-05-13.md` and the detailed execution record at `docs/development/archive/delivery/visualizer-refactor-plan-2026-05-13.md`. The current ELK.js semantic-layout implementation is tracked in the execution record below.
 - Responsibility-seat semantics review is closed and consolidated into `docs/development/ogs-visualizer-refactor-plan.md`, `docs/usage/ogsystem-orchestration-semantics-v1.md`, and `docs/usage/ogsystem-semantics-manual.md`; the review record remains historical at `docs/development/archive/delivery/ogsystem-visualizer-responsibility-seat-review-2026-09-02.md`.
 - Semantic IR v1 foundations, state reducers, event/payload contracts, condition AST, Loop Scope, Join readiness/timeout, CAS/idempotency, runtime-native review, and ERROR* routing are closed for the current development-test baseline. Current boundaries and remaining gaps are maintained in `docs/development/semantic-gap-implementation-plan.md`.
 - Generic feedback modeling is closed: `FEEDBACK` is a transition event between existing responsibility seats, not an implicit `a-feedback`/`b-feedback` seat.
@@ -40,7 +40,7 @@ Contract freeze notes:
 
 ## Current P1 Visualizer
 
-- [x] Replace the current Dagre/custom post-layout path with an explicit semantic layout adapter (ELK.js evaluation or a documented Dagre adapter), preserving back edges and route channels.
+- [x] Replace the current custom post-layout path with ELK.js as the sole explicit semantic layout adapter, preserving back edges and route channels.
 - [x] Add layout quality diagnostics and fixtures for fan-out, Join, cycle, error flow, multi-terminal, label overlap, and stable lane assignment.
 - [x] Add responsibility-seat graph reading modes: upstream/downstream focus, route probe, main/error/loop/Join filters, and stable URL graph state.
 - [x] Continue focusing Build around the graph workspace, with Source, Diagnostics, and Readiness as supporting panels.

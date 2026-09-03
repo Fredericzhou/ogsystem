@@ -746,7 +746,7 @@ run -> branch -> lineage -> loop iteration -> role execution -> model/tool call
 
 节点应明确显示责任席位，而不是暗示自己是 branch 实例。运行态显示实例数、完成次数、审核等待和当前 lineage；详情面板说明同一席位可在一次运行中被多次激活。
 
-布局层应保留完整业务图，并将 `backEdge`、错误流、Join 流和循环流作为布局元数据，不通过修改语义图来适配 Dagre/ELK。布局适配器需要对 fan-out、Join、cycle、error flow 和 multi-terminal 提供稳定性测试。
+布局层应保留完整业务图，并将 `backEdge`、错误流、Join 流和循环流作为布局元数据，不通过修改语义图来适配 ELK.js。布局适配器需要对 fan-out、Join、cycle、error flow 和 multi-terminal 提供稳定性测试。
 
 ### 20.1 条件标签
 

@@ -433,9 +433,11 @@ test("Studio Bridge renders and edits through the real graph workspace", async (
     await expect(page.locator("body")).toHaveClass(/show-run-sidebar/);
     await expect(page.locator("#sidebar")).toBeVisible();
     await expect(page.locator("#sidebar-toggle")).toBeHidden();
-    await expect(page.locator("#operate-tabs")).toContainText("Overview");
-    await expect(page.locator("#console-panel-ops")).toBeVisible();
+    await expect(page.locator("#operate-tabs")).toContainText("Graph");
+    await expect(page.locator("#console-panel-ops")).toBeHidden();
     await expect(page.locator("#console-panel-debug")).toBeVisible();
+    await expect(page.locator("#operate-tabpanel-graph")).toBeVisible();
+    await expect(page.locator("#run-graph-root")).toBeVisible();
     await expect(page.locator("#console-panel-logs")).toBeHidden();
     await expect(page.locator("#console-panel-artifacts")).toBeHidden();
     await page.getByRole("tab", { name: designTabName }).click();

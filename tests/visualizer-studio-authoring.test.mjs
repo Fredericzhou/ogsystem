@@ -366,7 +366,7 @@ test("Studio graph bundle consumes semantic projection routing for non-forward f
   assert.match(bundle, /projectionRouting/);
   assert.match(bundle, /routePoints/);
   assert.match(bundle, /lane:/);
-  assert.match(bundle, /createDagreLayoutProjection/);
+  assert.match(bundle, /createElkLayoutProjection/);
   assert.match(bundle, /BACK_EDGE_PRESERVED/);
   assert.doesNotMatch(bundle, /function buildStudioEdgeRouting/);
   assert.match(bundle, /name: "orth"/);
@@ -376,7 +376,7 @@ test("Studio graph bundle consumes semantic projection routing for non-forward f
 test("Studio graph bundle preserves stored edit layout and distributes boundaries during auto layout", async () => {
   const bundle = await readFile(new URL("../dist/visualizer/studio-client/studio-graph.js", import.meta.url), "utf8");
   assert.match(bundle, /hasCompleteStoredRoleLayout/);
-  assert.match(bundle, /createDagreLayoutProjection/);
+  assert.match(bundle, /createElkLayoutProjection/);
   assert.match(bundle, /createStoredLayoutProjection/);
   assert.match(bundle, /buildProjection/);
   assert.match(bundle, /BACK_EDGE_PRESERVED/);

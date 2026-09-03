@@ -76,8 +76,8 @@ The initial replay benchmark attempt was slow to complete; PERF-01/02 subsequent
   in [`src/runtime/graph-runner.ts`](../../src/runtime/graph-runner.ts:964).
 - OpenCode model discovery, catalog parsing, model selection, explicit role resolution, and
   provider health checks already have runtime foundations.
-- Current Studio auto-layout is isolated in the Dagre adapter and semantic projection modules:
-  [`dagre-layout-adapter.ts`](../../src/visualizer/studio-client/dagre-layout-adapter.ts:150) and
+- Current Studio auto-layout is isolated in the ELK.js adapter and semantic projection modules:
+  [`elk-layout-adapter.ts`](../../src/visualizer/studio-client/elk-layout-adapter.ts:1) and
   [`semantic-layout-projection.ts`](../../src/visualizer/studio-client/semantic-layout-projection.ts:327).
 
 ## 3. Execution Order
@@ -428,19 +428,20 @@ Completion evidence (2026-09-03):
 Status: `done`
 Owner: TBD
 Dependency: none
-Targets: `src/visualizer/studio-client/dagre-layout-adapter.ts`,
+Targets: `src/visualizer/studio-client/elk-layout-adapter.ts`,
 `src/visualizer/studio-client/semantic-layout-projection.ts`, `package.json`, Visualizer tests
 
 Decision gate:
 
-- Evaluate ELK.js against the existing generic fixtures and required route-channel contract; or
-- formally document Dagre as the adapter and isolate current custom post-layout behavior behind an
-  explicit adapter boundary.
+- Adopt ELK.js as the only layout engine and validate it against the existing generic fixtures and
+  required route-channel contract.
 
 The semantic contract must preserve all business edges, including back edges, error edges, Join
 edges, multi-terminal edges, stable lanes, and route points. Layout must not change runtime semantics.
 
-Implementation note: Dagre is the explicit adapter. `semantic-layout-projection.ts` owns the stable projection and route contract; `dagre-layout-adapter.ts` owns the only Dagre import. No ELK dependency is added.
+Implementation note: ELK.js is the only explicit adapter. `semantic-layout-projection.ts` owns the
+stable projection and route contract; `elk-layout-adapter.ts` owns the only ELK.js import. No
+secondary layout dependency, fallback, or pixel-based layout source is permitted.
 
 Acceptance:
 
