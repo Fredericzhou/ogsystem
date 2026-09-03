@@ -42,7 +42,7 @@ type ElkEdgeResult = {
 type ElkGraph = {
   id: string;
   layoutOptions: Record<string, string>;
-  children: Array<{ id: string; width: number; height: number }>;
+  children: Array<{ id: string; width: number; height: number; layoutOptions?: Record<string, string> }>;
   edges: Array<{ id: string; sources: string[]; targets: string[] }>;
 };
 
@@ -111,7 +111,16 @@ function createElkGraph(
         "elk.layered.considerModelOrder.strategy": "NODES_AND_EDGES",
         "elk.layered.crossingMinimization.strategy": "LAYER_SWEEP"
       },
-      children: orderedNodes.map((node) => ({ id: node.id, width: node.layout.width, height: node.layout.height })),
+      children: orderedNodes.map((node) => ({
+        id: node.id,
+        width: node.layout.width,
+        height: node.layout.height,
+        ...(node.id === "input"
+          ? { layoutOptions: { "elk.layered.layering.layerConstraint": "FIRST" } }
+          : node.id === "output"
+            ? { layoutOptions: { "elk.layered.layering.layerConstraint": "LAST" } }
+            : {})
+      })),
       edges: layoutEdges
     },
     diagnostics

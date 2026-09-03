@@ -160,6 +160,7 @@ type GraphViewModelNodeBase = {
   runtime?: GraphViewModelNodeRuntime;
   diagnostic?: GraphViewModelDiagnostic;
   editable: boolean;
+  topologyComponentId?: string;
 };
 
 /** A rendered node that represents one accountable role seat and its aggregate runtime data. */

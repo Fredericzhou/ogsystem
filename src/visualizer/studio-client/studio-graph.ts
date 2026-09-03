@@ -299,6 +299,11 @@ export class StudioGraphIsland {
       this.toolbarButton("fullscreen", "fullscreen", "⛶"),
       this.toolbarButton("fit", "fitView", "◎"),
       this.toolbarButton("layout", "autoLayout", "⇄"),
+      '<select class="studio-graph-layout-select" data-studio-graph-layout aria-label="' + this.escapeHtml(this.label("autoLayout")) + '">' +
+      '<option value="flow">' + this.escapeHtml(this.label("layoutModeFlow")) + '</option>' +
+      '<option value="compact">' + this.escapeHtml(this.label("layoutModeCompact")) + '</option>' +
+      '<option value="stacked">' + this.escapeHtml(this.label("layoutModeStacked")) + '</option>' +
+      '</select>',
       this.toolbarButton("topology-order", "topologyOrder", "#"),
       '</div>',
       '<div class="studio-graph-toolbar-group" data-studio-graph-generate-actions aria-label="' + this.escapeHtml(this.label("generate")) + '">',
@@ -613,6 +618,13 @@ export class StudioGraphIsland {
   }
 
   private bindToolbar(): void {
+    const layoutSelect = this.toolbar.querySelector<HTMLSelectElement>("[data-studio-graph-layout]");
+    layoutSelect?.addEventListener("change", () => {
+      const mode = layoutSelect.value as StudioGraphLayoutMode;
+      if (!["flow", "compact", "stacked"].includes(mode) || this.isReadOnly()) return;
+      this.layoutMode = mode;
+      void this.applyAutoLayout();
+    });
     this.toolbar.addEventListener("click", (event) => {
       const target = event.target as HTMLElement | null;
       const button = target?.closest<HTMLButtonElement>("[data-studio-graph-action]");
@@ -1543,7 +1555,11 @@ export class StudioGraphIsland {
     if (!this.currentViewModel || !this.currentLayoutProjection) return;
     const viewModel = this.showTopologyOrder
       ? this.currentViewModel
-      : { ...this.currentViewModel, edges: this.currentViewModel.edges.map((edge) => ({ ...edge, topologyOrder: undefined })) };
+      : {
+          ...this.currentViewModel,
+          nodes: this.currentViewModel.nodes.map((node) => ({ ...node, topologyComponentId: undefined })),
+          edges: this.currentViewModel.edges.map((edge) => ({ ...edge, topologyOrder: undefined }))
+        };
     renderStudioGraphViewModel(this.graph, viewModel, this.currentLayoutProjection);
   }
 
@@ -1938,6 +1954,11 @@ export class StudioGraphIsland {
     if (topologyOrder) {
       topologyOrder.setAttribute("aria-pressed", this.showTopologyOrder ? "true" : "false");
       topologyOrder.title = this.label("topologyOrder") + (this.showTopologyOrder ? " · on" : " · off");
+    }
+    const layoutSelect = this.toolbar.querySelector<HTMLSelectElement>("[data-studio-graph-layout]");
+    if (layoutSelect) {
+      layoutSelect.value = this.layoutMode;
+      layoutSelect.disabled = this.isReadOnly();
     }
     const generate = this.toolbar.querySelector<HTMLButtonElement>('[data-studio-graph-action="chat-generate"]');
     const debugRun = this.toolbar.querySelector<HTMLButtonElement>('[data-studio-graph-action="debug-run"]');

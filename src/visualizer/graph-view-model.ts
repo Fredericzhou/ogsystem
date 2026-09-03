@@ -15,7 +15,7 @@ import {
   findLatestFailureForRole
 } from "./graph-runtime-signals.js";
 import { buildBridgeFlows, buildBridgeRoles, fallbackGridColumnCount } from "./studio-authoring-projection.js";
-import { addTopologyFlowOrder } from "./topology-order.js";
+import { addTopologyFlowOrder, topologyComponentIds } from "./topology-order.js";
 import {
   normalizeStudioGraphTargetRoleId,
   STUDIO_SYSTEM_END_ROLE_ID,
@@ -371,10 +371,14 @@ export function buildGraphViewModel(args: BuildGraphViewModelArgs): GraphViewMod
     });
   }
 
+  const topologyComponentByNode = topologyComponentIds({ nodes, edges, entryRoleId: "input" });
   return {
     version: 1,
     mode,
-    nodes,
+    nodes: nodes.map((node) => ({
+      ...node,
+      topologyComponentId: topologyComponentByNode.get(node.id)
+    })),
     edges: addTopologyFlowOrder({ nodes, edges, entryRoleId: entryRoleId ? "input" : undefined }),
     viewport: authoring.layout.viewport,
     capabilities,

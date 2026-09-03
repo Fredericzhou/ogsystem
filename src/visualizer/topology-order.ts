@@ -6,6 +6,54 @@ type TopologyEdgeOrderArgs = {
   entryRoleId?: string;
 };
 
+export function topologyComponentIds(args: TopologyEdgeOrderArgs): ReadonlyMap<string, string> {
+  const nodeIds = args.nodes.map((node) => node.id).sort();
+  const nodeSet = new Set(nodeIds);
+  const outgoing = new Map(nodeIds.map((id) => [id, [] as string[]]));
+  for (const edge of args.edges) {
+    if (nodeSet.has(edge.source) && nodeSet.has(edge.target)) outgoing.get(edge.source)?.push(edge.target);
+  }
+  for (const targets of outgoing.values()) targets.sort();
+  let index = 0;
+  const indices = new Map<string, number>();
+  const lowLinks = new Map<string, number>();
+  const stack: string[] = [];
+  const onStack = new Set<string>();
+  const components: string[][] = [];
+  const visit = (id: string): void => {
+    indices.set(id, index);
+    lowLinks.set(id, index);
+    index += 1;
+    stack.push(id);
+    onStack.add(id);
+    for (const target of outgoing.get(id) ?? []) {
+      if (!indices.has(target)) {
+        visit(target);
+        lowLinks.set(id, Math.min(lowLinks.get(id)!, lowLinks.get(target)!));
+      } else if (onStack.has(target)) {
+        lowLinks.set(id, Math.min(lowLinks.get(id)!, indices.get(target)!));
+      }
+    }
+    if (lowLinks.get(id) !== indices.get(id)) return;
+    const component: string[] = [];
+    let member = "";
+    do {
+      member = stack.pop()!;
+      onStack.delete(member);
+      component.push(member);
+    } while (member !== id);
+    components.push(component.sort());
+  };
+  for (const id of nodeIds) if (!indices.has(id)) visit(id);
+  components.sort((left, right) => (left[0] ?? "").localeCompare(right[0] ?? ""));
+  const result = new Map<string, string>();
+  components.forEach((component, componentIndex) => {
+    const cyclic = component.length > 1 || args.edges.some((edge) => edge.source === component[0] && edge.target === component[0]);
+    if (cyclic) component.forEach((id) => result.set(id, `SCC-${componentIndex + 1}`));
+  });
+  return result;
+}
+
 function stableEdgeKey(edge: GraphViewModelEdge): string {
   return `${edge.source}:${edge.target}:${edge.eventType}:${edge.id}`;
 }
