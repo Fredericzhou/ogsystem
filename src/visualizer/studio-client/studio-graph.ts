@@ -55,6 +55,7 @@ type StudioGraphLabelKey =
   | "layoutModeFlow"
   | "layoutModeCompact"
   | "layoutModeStacked"
+  | "topologyOrder"
   | "layoutSwitched"
   | "generate"
   | "debugRun"
@@ -276,6 +277,7 @@ export class StudioGraphIsland {
   private pendingInitialFitSizeSignature = "";
   private pendingInitialFitTimer: ReturnType<typeof setTimeout> | null = null;
   private layoutMode: StudioGraphLayoutMode = "flow";
+  private showTopologyOrder = false;
   private currentLayoutProjection: LayoutProjection | null = null;
   private updateGeneration = 0;
   private readonly delegatedCommandFormSubmitListener = (event: Event) => this.handleDelegatedCommandFormSubmit(event);
@@ -297,6 +299,7 @@ export class StudioGraphIsland {
       this.toolbarButton("fullscreen", "fullscreen", "⛶"),
       this.toolbarButton("fit", "fitView", "◎"),
       this.toolbarButton("layout", "autoLayout", "⇄"),
+      this.toolbarButton("topology-order", "topologyOrder", "#"),
       '</div>',
       '<div class="studio-graph-toolbar-group" data-studio-graph-generate-actions aria-label="' + this.escapeHtml(this.label("generate")) + '">',
       this.toolbarButton("chat-generate", "generate", "✦"),
@@ -443,7 +446,7 @@ export class StudioGraphIsland {
     this.currentLayoutProjection = createStoredLayoutProjection(viewModel);
     this.applying = true;
     try {
-      renderStudioGraphViewModel(this.graph, viewModel, this.currentLayoutProjection);
+      this.renderCurrentProjection();
       this.syncPendingEdgePreview();
       this.runtimeVisualState = deriveStudioRuntimeVisualState({
         authoring: options.authoring,
@@ -620,6 +623,11 @@ export class StudioGraphIsland {
       if (action === "fit") void this.fitAndSync();
       if (action === "reset-view") void this.resetViewAndSync();
       if (action === "fullscreen") this.options.onToggleFullscreen?.();
+      if (action === "topology-order") {
+        this.showTopologyOrder = !this.showTopologyOrder;
+        this.renderCurrentProjection();
+        this.updateToolbarState();
+      }
       if (action === "chat-generate") void this.options.onChatGenerate?.();
       if (action === "debug-run") this.toggleQuickDebug();
       if (action === "validate") void this.options.onValidateWorkbench?.();
@@ -1527,8 +1535,16 @@ export class StudioGraphIsland {
       return;
     }
     this.currentLayoutProjection = projection;
-    renderStudioGraphViewModel(this.graph, this.currentViewModel, this.currentLayoutProjection);
+    this.renderCurrentProjection();
     this.fitGraphToViewport();
+  }
+
+  private renderCurrentProjection(): void {
+    if (!this.currentViewModel || !this.currentLayoutProjection) return;
+    const viewModel = this.showTopologyOrder
+      ? this.currentViewModel
+      : { ...this.currentViewModel, edges: this.currentViewModel.edges.map((edge) => ({ ...edge, topologyOrder: undefined })) };
+    renderStudioGraphViewModel(this.graph, viewModel, this.currentLayoutProjection);
   }
 
   private nextLayoutMode(current: StudioGraphLayoutMode): StudioGraphLayoutMode {
@@ -1917,6 +1933,11 @@ export class StudioGraphIsland {
       const layoutTitle = `${this.label("autoLayout")} · ${this.layoutModeLabel(this.layoutMode)}`;
       layout.title = layoutTitle;
       layout.setAttribute("aria-label", layoutTitle);
+    }
+    const topologyOrder = this.toolbar.querySelector<HTMLButtonElement>('[data-studio-graph-action="topology-order"]');
+    if (topologyOrder) {
+      topologyOrder.setAttribute("aria-pressed", this.showTopologyOrder ? "true" : "false");
+      topologyOrder.title = this.label("topologyOrder") + (this.showTopologyOrder ? " · on" : " · off");
     }
     const generate = this.toolbar.querySelector<HTMLButtonElement>('[data-studio-graph-action="chat-generate"]');
     const debugRun = this.toolbar.querySelector<HTMLButtonElement>('[data-studio-graph-action="debug-run"]');

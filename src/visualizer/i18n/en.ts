@@ -746,6 +746,7 @@ export const en = {
   "studio.graph.layoutModeFlow": "Flow",
   "studio.graph.layoutModeCompact": "Compact",
   "studio.graph.layoutModeStacked": "Stacked",
+  "studio.graph.topologyOrder": "Topology order",
   "studio.graph.layoutSwitched": "Layout switched to {layout}.",
   "studio.graph.generate": "Chat / Generate",
   "studio.graph.debugRun": "Quick debug",

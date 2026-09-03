@@ -750,6 +750,7 @@ export const zhCN = {
   "studio.graph.layoutModeFlow": "流向布局",
   "studio.graph.layoutModeCompact": "紧凑布局",
   "studio.graph.layoutModeStacked": "纵向布局",
+  "studio.graph.topologyOrder": "拓扑序号",
   "studio.graph.layoutSwitched": "已切换为{layout}。",
   "studio.graph.generate": "对话构建",
   "studio.graph.debugRun": "快捷调试",
