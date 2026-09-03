@@ -114,6 +114,20 @@ test("ELK places disconnected boundaries along the selected orientation without 
   assert.equal(stackedInput.x + stackedInput.width <= stackedOutput.x || stackedOutput.x + stackedOutput.width <= stackedInput.x || stackedInput.y + stackedInput.height <= stackedOutput.y || stackedOutput.y + stackedOutput.height <= stackedInput.y, true);
 });
 
+test("ELK reserves exclusive terminal layers for input and output", async () => {
+  const viewModel = graphViewModel();
+  for (const [mode, axis] of [["flow", "x"], ["stacked", "y"]]) {
+    const projection = await createElkLayoutProjection(viewModel, mode);
+    const input = projection.nodes.find((item) => item.id === "input");
+    const output = projection.nodes.find((item) => item.id === "output");
+    const business = projection.nodes.filter((item) => item.id !== "input" && item.id !== "output");
+    const inputEnd = axis === "x" ? input.x + input.width : input.y + input.height;
+    const outputStart = axis === "x" ? output.x : output.y;
+    assert.ok(business.every((item) => (axis === "x" ? item.x : item.y) > inputEnd));
+    assert.ok(business.every((item) => (axis === "x" ? item.x + item.width : item.y + item.height) < outputStart));
+  }
+});
+
 test("stacked loop routes use ELK's vertical geometry without a second router", async () => {
   const projection = await createElkLayoutProjection(graphViewModel(), "stacked");
   const verticalLoop = projection.edges.find((item) => item.id === "join-a-loop");

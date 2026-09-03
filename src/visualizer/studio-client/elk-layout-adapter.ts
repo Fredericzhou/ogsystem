@@ -80,6 +80,48 @@ function shiftToPadding(
   }));
 }
 
+function enforceExclusiveBoundaryLayers(
+  positions: Array<{ id: string; x: number; y: number; width: number; height: number }>,
+  geometries: Map<string, LayoutEdgeGeometry>,
+  edges: readonly GraphViewModelEdge[],
+  mode: StudioLayoutMode
+): void {
+  const config = configFor(mode);
+  const input = positions.find((node) => node.id === "input");
+  const output = positions.find((node) => node.id === "output");
+  const business = positions.filter((node) => node.id !== "input" && node.id !== "output");
+  if (!input || !output || !business.length) return;
+  const isVertical = config.direction === "DOWN";
+  const axisStart = (node: typeof input): number => isVertical ? node.y : node.x;
+  const axisEnd = (node: typeof input): number => isVertical ? node.y + node.height : node.x + node.width;
+  const businessStart = Math.min(...business.map(axisStart));
+  const businessEnd = Math.max(...business.map(axisEnd));
+  const inputTarget = businessStart - config.layerSpacing - (isVertical ? input.height : input.width);
+  const outputTarget = businessEnd + config.layerSpacing;
+  const inputDelta = inputTarget - axisStart(input);
+  const outputDelta = outputTarget - axisStart(output);
+  if (Math.abs(inputDelta) > 0.5) {
+    if (isVertical) input.y += inputDelta;
+    else input.x += inputDelta;
+  }
+  if (Math.abs(outputDelta) > 0.5) {
+    if (isVertical) output.y += outputDelta;
+    else output.x += outputDelta;
+  }
+  const updateEndpoint = (point: LayoutPoint, node: typeof input): void => {
+    if (isVertical) point.y = node.y + (point.y < node.y ? 0 : node.height);
+    else point.x = node.x + (point.x < node.x ? 0 : node.width);
+  };
+  for (const edge of edges) {
+    const geometry = geometries.get(edge.id);
+    if (!geometry) continue;
+    if (edge.source === "input") updateEndpoint(geometry.sourcePoint, input);
+    if (edge.target === "output") updateEndpoint(geometry.targetPoint, output);
+    geometry.points[0] = geometry.sourcePoint;
+    geometry.points[geometry.points.length - 1] = geometry.targetPoint;
+  }
+}
+
 function createElkGraph(
   viewModel: GraphViewModel,
   mode: StudioLayoutMode
@@ -143,9 +185,6 @@ export async function createElkLayoutProjection(viewModel: GraphViewModel, mode:
       height: Number.isFinite(node?.height) ? Number(node?.height) : sourceNode.layout.height
     };
   });
-  const shifted = shiftToPadding(positioned, configFor(mode).padding);
-  const shiftX = shifted.length ? shifted[0].x - positioned[0].x : 0;
-  const shiftY = shifted.length ? shifted[0].y - positioned[0].y : 0;
   const routePointsByEdgeId = new Map<string, LayoutPoint[]>();
   const geometryByEdgeId = new Map<string, LayoutEdgeGeometry>();
   for (const edge of (result.edges ?? []) as ElkEdgeResult[]) {
@@ -153,13 +192,25 @@ export async function createElkLayoutProjection(viewModel: GraphViewModel, mode:
     if (!section) continue;
     const points = [section.startPoint, ...(section.bendPoints ?? []), section.endPoint]
       .filter((point): point is ElkPoint => Number.isFinite(point?.x) && Number.isFinite(point?.y))
-      .map((point) => ({ x: point.x + shiftX, y: point.y + shiftY }));
+      .map((point) => ({ x: point.x, y: point.y }));
     if (points.length >= 2) {
       const edgeId = edge.id.slice("layout-".length);
       const geometry = { points, sourcePoint: points[0], targetPoint: points[points.length - 1] };
       geometryByEdgeId.set(edgeId, geometry);
       if (points.length > 2) routePointsByEdgeId.set(edgeId, points.slice(1, -1));
     }
+  }
+  enforceExclusiveBoundaryLayers(positioned, geometryByEdgeId, viewModel.edges, mode);
+  const shifted = shiftToPadding(positioned, configFor(mode).padding);
+  const shiftX = shifted.length ? shifted[0].x - positioned[0].x : 0;
+  const shiftY = shifted.length ? shifted[0].y - positioned[0].y : 0;
+  for (const geometry of geometryByEdgeId.values()) {
+    geometry.points = geometry.points.map((point) => ({ x: point.x + shiftX, y: point.y + shiftY }));
+    geometry.sourcePoint = geometry.points[0];
+    geometry.targetPoint = geometry.points[geometry.points.length - 1];
+  }
+  for (const [edgeId, points] of routePointsByEdgeId) {
+    routePointsByEdgeId.set(edgeId, points.map((point) => ({ x: point.x + shiftX, y: point.y + shiftY })));
   }
   return buildProjection("elk", mode, shifted, viewModel, diagnostics, routePointsByEdgeId, geometryByEdgeId);
 }
