@@ -131,7 +131,15 @@ export function renderStudioGraphViewModel(graph: Graph, viewModel: GraphViewMod
   });
 }
 
-type SccGroup = { id: string; label: string; x: number; y: number; width: number; height: number };
+type SccGroup = {
+  id: string;
+  label: string;
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+  members: Array<{ x: number; y: number; width: number; height: number }>;
+};
 
 function buildSccGroups(nodes: readonly GraphViewModelNode[]): SccGroup[] {
   const groups = new Map<string, GraphViewModelNode[]>();
@@ -145,7 +153,20 @@ function buildSccGroups(nodes: readonly GraphViewModelNode[]): SccGroup[] {
     const right = Math.max(...members.map((node) => node.layout.x + node.layout.width));
     const bottom = Math.max(...members.map((node) => node.layout.y + node.layout.height));
     const padding = 28;
-    return { id: `__ogs-scc-${label}`, label, x: left - padding, y: top - padding, width: right - left + padding * 2, height: bottom - top + padding * 2 };
+    return {
+      id: `__ogs-scc-${label}`,
+      label,
+      x: left - padding,
+      y: top - padding,
+      width: right - left + padding * 2,
+      height: bottom - top + padding * 2,
+      members: members.map((node) => ({
+        x: node.layout.x - left + padding - 8,
+        y: node.layout.y - top + padding - 8,
+        width: node.layout.width + 16,
+        height: node.layout.height + 16
+      }))
+    };
   });
 }
 
@@ -158,7 +179,10 @@ function sccGroupMetadata(group: SccGroup): Node.Metadata {
     height: group.height,
     zIndex: 0,
     shape: "rect",
-    markup: [{ tagName: "rect", selector: "body" }, { tagName: "text", selector: "label" }],
+    markup: [
+      ...group.members.map((_, index) => ({ tagName: "rect", selector: `member-${index}` })),
+      { tagName: "text", selector: "label" }
+    ],
     attrs: sccGroupAttrs(group),
     data: { studioSccGroup: true },
     interacting: false
@@ -166,8 +190,20 @@ function sccGroupMetadata(group: SccGroup): Node.Metadata {
 }
 
 function sccGroupAttrs(group: SccGroup): Node.Metadata["attrs"] {
+  const memberAttrs = Object.fromEntries(group.members.map((member, index) => [`member-${index}`, {
+    x: member.x,
+    y: member.y,
+    width: member.width,
+    height: member.height,
+    fill: "rgba(45, 212, 191, 0.045)",
+    stroke: "rgba(45, 212, 191, 0.42)",
+    strokeWidth: 1,
+    strokeDasharray: "5 5",
+    rx: 12,
+    ry: 12
+  }]));
   return {
-    body: { fill: "rgba(45, 212, 191, 0.045)", stroke: "rgba(45, 212, 191, 0.42)", strokeWidth: 1, strokeDasharray: "5 5", rx: 12, ry: 12 },
+    ...memberAttrs,
     label: { text: group.label, refX: 12, refY: 8, textAnchor: "start", textVerticalAnchor: "top", fill: "#5eead4", fontSize: 10, fontWeight: 700 }
   };
 }
@@ -175,6 +211,10 @@ function sccGroupAttrs(group: SccGroup): Node.Metadata["attrs"] {
 function updateSccGroup(cell: Node, group: SccGroup): void {
   cell.position(group.x, group.y);
   cell.resize(group.width, group.height);
+  cell.setMarkup([
+    ...group.members.map((_, index) => ({ tagName: "rect", selector: `member-${index}` })),
+    { tagName: "text", selector: "label" }
+  ]);
   cell.attr(sccGroupAttrs(group));
 }
 
