@@ -41,7 +41,8 @@ function nodeLabel(node: GraphViewModelNode): string {
         node.structure.review ? "review" : ""
       ].filter(Boolean)
     : [];
-  const badges = [...semantic, ...normalizedBadges];
+  const topology = node.topologyComponentId ? [node.topologyComponentId] : [];
+  const badges = [...semantic, ...normalizedBadges, ...topology];
   return badges.length ? `${node.label}  [${badges.join(" ")}]` : node.label;
 }
 
