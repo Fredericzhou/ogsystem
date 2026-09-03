@@ -41,8 +41,7 @@ function nodeLabel(node: GraphViewModelNode): string {
         node.structure.review ? "review" : ""
       ].filter(Boolean)
     : [];
-  const topology = node.topologyComponentId ? [node.topologyComponentId] : [];
-  const badges = [...semantic, ...normalizedBadges, ...topology];
+  const badges = [...semantic, ...normalizedBadges];
   return badges.length ? `${node.label}  [${badges.join(" ")}]` : node.label;
 }
 
@@ -93,6 +92,8 @@ export function renderStudioGraphViewModel(graph: Graph, viewModel: GraphViewMod
   const routingByEdgeId = new Map(projection.edges.map((edge) => [edge.id, projectionRouting(edge.routing)]));
   graph.batchUpdate("studio-projection", () => {
     const nextNodeIds = new Set(projectedViewModel.nodes.map((node) => node.id));
+    const sccGroups = buildSccGroups(projectedViewModel.nodes);
+    for (const group of sccGroups) nextNodeIds.add(group.id);
     const nextEdgeIds = new Set(viewModel.edges.map((edge) => edge.id));
 
     for (const cell of graph.getCells()) {
@@ -113,6 +114,12 @@ export function renderStudioGraphViewModel(graph: Graph, viewModel: GraphViewMod
       }
     }
 
+    for (const group of sccGroups) {
+      const existing = graph.getCellById(group.id);
+      if (existing?.isNode()) updateSccGroup(existing, group);
+      else graph.addNode(sccGroupMetadata(group));
+    }
+
     for (const edge of viewModel.edges) {
       const existing = graph.getCellById(edge.id);
       if (existing?.isEdge()) {
@@ -122,6 +129,53 @@ export function renderStudioGraphViewModel(graph: Graph, viewModel: GraphViewMod
       }
     }
   });
+}
+
+type SccGroup = { id: string; label: string; x: number; y: number; width: number; height: number };
+
+function buildSccGroups(nodes: readonly GraphViewModelNode[]): SccGroup[] {
+  const groups = new Map<string, GraphViewModelNode[]>();
+  for (const node of nodes) {
+    if (!node.topologyComponentId?.startsWith("SCC-")) continue;
+    groups.set(node.topologyComponentId, [...(groups.get(node.topologyComponentId) ?? []), node]);
+  }
+  return [...groups.entries()].map(([label, members]) => {
+    const left = Math.min(...members.map((node) => node.layout.x));
+    const top = Math.min(...members.map((node) => node.layout.y));
+    const right = Math.max(...members.map((node) => node.layout.x + node.layout.width));
+    const bottom = Math.max(...members.map((node) => node.layout.y + node.layout.height));
+    const padding = 28;
+    return { id: `__ogs-scc-${label}`, label, x: left - padding, y: top - padding, width: right - left + padding * 2, height: bottom - top + padding * 2 };
+  });
+}
+
+function sccGroupMetadata(group: SccGroup): Node.Metadata {
+  return {
+    id: group.id,
+    x: group.x,
+    y: group.y,
+    width: group.width,
+    height: group.height,
+    zIndex: 0,
+    shape: "rect",
+    markup: [{ tagName: "rect", selector: "body" }, { tagName: "text", selector: "label" }],
+    attrs: sccGroupAttrs(group),
+    data: { studioSccGroup: true },
+    interacting: false
+  };
+}
+
+function sccGroupAttrs(group: SccGroup): Node.Metadata["attrs"] {
+  return {
+    body: { fill: "rgba(45, 212, 191, 0.045)", stroke: "rgba(45, 212, 191, 0.42)", strokeWidth: 1, strokeDasharray: "5 5", rx: 12, ry: 12 },
+    label: { text: group.label, refX: 12, refY: 8, textAnchor: "start", textVerticalAnchor: "top", fill: "#5eead4", fontSize: 10, fontWeight: 700 }
+  };
+}
+
+function updateSccGroup(cell: Node, group: SccGroup): void {
+  cell.position(group.x, group.y);
+  cell.resize(group.width, group.height);
+  cell.attr(sccGroupAttrs(group));
 }
 
 function studioNodeMetadata(node: GraphViewModelNode): Node.Metadata {

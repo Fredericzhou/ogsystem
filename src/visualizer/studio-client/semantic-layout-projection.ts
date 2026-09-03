@@ -369,8 +369,12 @@ function projectedRoutePoints(
 function routerFor(
   edge: GraphViewModelEdge,
   route: ReturnType<typeof resolveRoute>,
-  nodeById: ReadonlyMap<string, LayoutProjectionNode>
+  nodeById: ReadonlyMap<string, LayoutProjectionNode>,
+  hasElkGeometry = false
 ): LayoutRouter {
+  // ELK already returned the complete orthogonal path. Re-routing it in X6
+  // can create short loops at terminals, especially for back edges in SCCs.
+  if (hasElkGeometry) return { name: "normal", args: {} };
   if (route.kind === "vertical") {
     return {
       ...STUDIO_EDGE_VERTICAL_ROUTER,
@@ -441,7 +445,7 @@ function buildEdgeRouting(
       kind: route.kind,
       source: sourceTerminal,
       target: targetTerminal,
-      router: routerFor(edge, route, nodeById),
+      router: routerFor(edge, route, nodeById, geometryByEdgeId?.has(edge.id)),
       connector: STUDIO_EDGE_CONNECTOR,
       routePoints: projectedRoutePoints(edge, route, nodeById, routePointsByEdgeId),
       lane: `${edge.channel ?? (edge.runtimeOnlyErrorFlow ? "error" : "normal")}:${route.kind}:${sourceOffset}:${targetOffset}`

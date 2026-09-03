@@ -114,14 +114,12 @@ test("ELK places disconnected boundaries along the selected orientation without 
   assert.equal(stackedInput.x + stackedInput.width <= stackedOutput.x || stackedOutput.x + stackedOutput.width <= stackedInput.x || stackedInput.y + stackedInput.height <= stackedOutput.y || stackedOutput.y + stackedOutput.height <= stackedInput.y, true);
 });
 
-test("stacked loop routes use vertical terminals and router directions", async () => {
+test("stacked loop routes use ELK's vertical geometry without a second router", async () => {
   const projection = await createElkLayoutProjection(graphViewModel(), "stacked");
   const verticalLoop = projection.edges.find((item) => item.id === "join-a-loop");
   assert.equal(verticalLoop.routing.kind, "vertical");
-  assert.equal(verticalLoop.routing.router.name, "manhattan");
-  assert.deepEqual(verticalLoop.routing.router.args.startDirections, [verticalLoop.routing.source.side]);
-  assert.deepEqual(verticalLoop.routing.router.args.endDirections, [verticalLoop.routing.target.side]);
-  assert.notDeepEqual(verticalLoop.routing.router.args.startDirections, ["left"]);
+  assert.equal(verticalLoop.routing.router.name, "normal");
+  assert.ok(verticalLoop.routing.routePoints.length >= 1);
 });
 
 test("stored projection preserves positions while renderer stays library-independent", async () => {

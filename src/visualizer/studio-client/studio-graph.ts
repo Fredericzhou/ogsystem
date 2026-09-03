@@ -1557,7 +1557,9 @@ export class StudioGraphIsland {
       ? this.currentViewModel
       : {
           ...this.currentViewModel,
-          nodes: this.currentViewModel.nodes.map((node) => ({ ...node, topologyComponentId: undefined })),
+          // SCC boundaries remain visible as structural context; the toggle
+          // controls only the optional edge numbering overlay.
+          nodes: this.currentViewModel.nodes,
           edges: this.currentViewModel.edges.map((edge) => ({ ...edge, topologyOrder: undefined }))
         };
     renderStudioGraphViewModel(this.graph, viewModel, this.currentLayoutProjection);
