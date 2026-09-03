@@ -22,6 +22,7 @@ import {
   type GraphViewModelEdge,
   type GraphViewModelMode,
   type GraphViewModelNode,
+  type GraphReadingState,
   type StudioAuthoringDocument,
   type StudioAuthoringRole,
   type StudioDiagnosticDto
@@ -378,4 +379,69 @@ export function buildGraphViewModel(args: BuildGraphViewModelArgs): GraphViewMod
     capabilities,
     validation
   };
+}
+
+function reachableRoleIds(args: {
+  roleId: string;
+  edges: readonly GraphViewModelEdge[];
+  direction: "upstream" | "downstream";
+}): Set<string> {
+  const related = new Set([args.roleId]);
+  const pending = [args.roleId];
+  while (pending.length) {
+    const current = pending.pop();
+    if (!current) continue;
+    for (const edge of args.edges) {
+      const next = args.direction === "upstream"
+        ? edge.target === current ? edge.source : undefined
+        : edge.source === current ? edge.target : undefined;
+      if (next && !related.has(next)) {
+        related.add(next);
+        pending.push(next);
+      }
+    }
+  }
+  return related;
+}
+
+/** Filters a reading projection without mutating semantic graph data or stored layout. */
+export function projectGraphReadingViewModel(
+  source: GraphViewModel,
+  reading: GraphReadingState
+): GraphViewModel {
+  if (reading.mode === "all" && !reading.channel) return source;
+  let edges = source.edges.slice();
+  if (reading.channel) {
+    edges = edges.filter((edge) => {
+      const channel = edge.channel ?? (edge.runtimeOnlyErrorFlow ? "error" : "normal");
+      return channel === reading.channel;
+    });
+  }
+  if (reading.mode === "route" && reading.flowKey) {
+    edges = edges.filter((edge) =>
+      edge.id === reading.flowKey || `${edge.source}:${edge.eventType}:${edge.target}` === reading.flowKey
+    );
+  } else if ((reading.mode === "upstream" || reading.mode === "downstream") && reading.roleId) {
+    const roles = new Set([reading.roleId]);
+    const pending = [reading.roleId];
+    while (pending.length) {
+      const current = pending.pop();
+      if (!current) continue;
+      for (const edge of edges) {
+        const next = reading.mode === "upstream"
+          ? edge.target === current ? edge.source : undefined
+          : edge.source === current ? edge.target : undefined;
+        if (next && !roles.has(next)) {
+          roles.add(next);
+          pending.push(next);
+        }
+      }
+    }
+    edges = edges.filter((edge) => roles.has(edge.source) && roles.has(edge.target));
+  }
+  const edgeNodeIds = new Set(edges.flatMap((edge) => [edge.source, edge.target]));
+  const nodes = reading.mode === "all" || !reading.roleId
+    ? source.nodes.filter((node) => !reading.channel || edgeNodeIds.has(node.id))
+    : source.nodes.filter((node) => node.id === "input" || node.id === "output" || edgeNodeIds.has(node.id) || node.id === reading.roleId);
+  return { ...source, nodes, edges };
 }

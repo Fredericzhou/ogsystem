@@ -555,9 +555,6 @@ export function renderPageShellStyles(): string {
     .global-status-context .segmented {
       max-width: 100%;
     }
-    .workbench-view-tabs-compat {
-      display: none;
-    }
     .global-status-diagnostics {
       flex: 1 1 auto;
       min-width: 0;

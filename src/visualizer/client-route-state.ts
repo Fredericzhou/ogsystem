@@ -1,3 +1,7 @@
+import type { GraphReadingMode } from "./studio-contracts.js";
+
+type GraphReadingChannel = "normal" | "error" | "loop" | "join" | "feedback";
+
 export type RouteState = {
   view: string;
   lifecycle: string;
@@ -6,9 +10,31 @@ export type RouteState = {
   logRoleId: string;
   tail: string;
   since: string;
+  graphMode: GraphReadingMode;
+  graphRoleId: string;
+  graphFlowKey: string;
+  graphChannel: GraphReadingChannel | "";
+  conversationMode: boolean;
+  timelineRoleId: string;
+  timelineType: string;
+  timelineStatus: string;
+  timelineBranchId: string;
+  timelineReviewId: string;
+  timelineErrorCode: string;
+  timelineChannel: "main" | "error" | "loop" | "join" | "feedback" | "";
 };
 
 export function readRouteStateFromSearch(search: string): RouteState {
+  const bounded = (value: string | null): string => value && value.length <= 160 ? value : "";
+  const mode = (value: string | null): GraphReadingMode => ["all", "upstream", "downstream", "route"].includes(value ?? "")
+    ? value as GraphReadingMode
+    : "all";
+  const channel = (value: string | null): RouteState["graphChannel"] => ["normal", "error", "loop", "join", "feedback"].includes(value ?? "")
+    ? value as RouteState["graphChannel"]
+    : "";
+  const timelineChannel = (value: string | null): RouteState["timelineChannel"] => ["main", "error", "loop", "join", "feedback"].includes(value ?? "")
+    ? value as RouteState["timelineChannel"]
+    : "";
   const params = new URLSearchParams(search.startsWith("?") ? search.slice(1) : search);
   return {
     view: params.get("view") || "",
@@ -17,7 +43,19 @@ export function readRouteStateFromSearch(search: string): RouteState {
     reviewId: params.get("reviewId") || "",
     logRoleId: params.get("logRoleId") || "",
     tail: params.get("tail") || "",
-    since: params.get("since") || ""
+    since: bounded(params.get("since")),
+    graphMode: mode(params.get("graphMode")),
+    graphRoleId: bounded(params.get("graphRoleId")),
+    graphFlowKey: bounded(params.get("graphFlowKey")),
+    graphChannel: channel(params.get("graphChannel")),
+    conversationMode: params.get("timelineView") === "conversation",
+    timelineRoleId: bounded(params.get("timelineRoleId")),
+    timelineType: bounded(params.get("timelineType")),
+    timelineStatus: bounded(params.get("timelineStatus")),
+    timelineBranchId: bounded(params.get("timelineBranchId")),
+    timelineReviewId: bounded(params.get("timelineReviewId")),
+    timelineErrorCode: bounded(params.get("timelineErrorCode")),
+    timelineChannel: timelineChannel(params.get("timelineChannel"))
   };
 }
 
@@ -67,7 +105,29 @@ export function buildRouteSearch(args: {
   selectedLogRoleId: string;
   logTail: string;
   logSince: string;
+  graphMode?: GraphReadingMode;
+  graphRoleId?: string;
+  graphFlowKey?: string;
+  graphChannel?: GraphReadingChannel | "";
+  conversationMode?: boolean;
+  timelineRoleId?: string;
+  timelineType?: string;
+  timelineStatus?: string;
+  timelineBranchId?: string;
+  timelineReviewId?: string;
+  timelineErrorCode?: string;
+  timelineChannel?: RouteState["timelineChannel"];
 }): string {
+  const bounded = (value: string): string => value.length <= 160 ? value : "";
+  const mode = (value: GraphReadingMode | undefined): GraphReadingMode => ["all", "upstream", "downstream", "route"].includes(value ?? "")
+    ? value as GraphReadingMode
+    : "all";
+  const channel = (value: RouteState["graphChannel"] | undefined): RouteState["graphChannel"] => ["normal", "error", "loop", "join", "feedback"].includes(value ?? "")
+    ? value as RouteState["graphChannel"]
+    : "";
+  const timelineChannel = (value: RouteState["timelineChannel"] | undefined): RouteState["timelineChannel"] => ["main", "error", "loop", "join", "feedback"].includes(value ?? "")
+    ? value as RouteState["timelineChannel"]
+    : "";
   const params = new URLSearchParams();
   let lifecycle = args.lifecycle || "";
   switch (lifecycle) {
@@ -104,5 +164,32 @@ export function buildRouteSearch(args: {
   if (includeRunSelection && args.logSince) {
     params.set("since", args.logSince);
   }
+  if (includeRunSelection && args.conversationMode) {
+    params.set("timelineView", "conversation");
+  }
+  const timelineFields: Array<[string, string | undefined]> = [
+    ["timelineRoleId", args.timelineRoleId],
+    ["timelineType", args.timelineType],
+    ["timelineStatus", args.timelineStatus],
+    ["timelineBranchId", args.timelineBranchId],
+    ["timelineReviewId", args.timelineReviewId],
+    ["timelineErrorCode", args.timelineErrorCode]
+  ];
+  if (includeRunSelection) {
+    for (const [key, value] of timelineFields) {
+      const boundedValue = bounded(value ?? "");
+      if (boundedValue) params.set(key, boundedValue);
+    }
+    const timelineRouteChannel = timelineChannel(args.timelineChannel);
+    if (timelineRouteChannel) params.set("timelineChannel", timelineRouteChannel);
+  }
+  const readingMode = mode(args.graphMode);
+  if (readingMode !== "all") params.set("graphMode", readingMode);
+  const roleId = bounded(args.graphRoleId ?? "");
+  if (roleId) params.set("graphRoleId", roleId);
+  const flowKey = bounded(args.graphFlowKey ?? "");
+  if (flowKey) params.set("graphFlowKey", flowKey);
+  const readingChannel = channel(args.graphChannel);
+  if (readingChannel) params.set("graphChannel", readingChannel);
   return params.toString();
 }

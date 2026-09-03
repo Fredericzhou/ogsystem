@@ -2,7 +2,6 @@ import { Graph } from "@antv/x6";
 import { History } from "@antv/x6-plugin-history";
 import { Keyboard } from "@antv/x6-plugin-keyboard";
 import { Selection } from "@antv/x6-plugin-selection";
-import dagre from "dagre";
 
 import {
   normalizeStudioGraphTargetRoleId,
@@ -32,6 +31,12 @@ import {
   type StudioAuthoringCommand
 } from "./studio-graph-commands.js";
 import { renderStudioGraphViewModel } from "./studio-graph-render.js";
+import { createDagreLayoutProjection } from "./dagre-layout-adapter.js";
+import {
+  createStoredLayoutProjection,
+  type LayoutProjection,
+  type StudioLayoutMode
+} from "./semantic-layout-projection.js";
 import {
   deriveStudioRuntimeVisualState,
   type StudioRuntimeVisualState
@@ -189,7 +194,7 @@ const STUDIO_GRAPH_EDGE_CONNECTOR = {
   }
 } as const;
 
-type StudioGraphLayoutMode = "flow" | "compact" | "stacked";
+type StudioGraphLayoutMode = StudioLayoutMode;
 
 type PendingStudioEdgePreview = {
   sourceRoleId: string;
@@ -271,6 +276,7 @@ export class StudioGraphIsland {
   private pendingInitialFitSizeSignature = "";
   private pendingInitialFitTimer: ReturnType<typeof setTimeout> | null = null;
   private layoutMode: StudioGraphLayoutMode = "flow";
+  private currentLayoutProjection: LayoutProjection | null = null;
   private readonly delegatedCommandFormSubmitListener = (event: Event) => this.handleDelegatedCommandFormSubmit(event);
   private readonlyHistory: { undoStack: StudioGraphHistoryEntry[]; redoStack: StudioGraphHistoryEntry[] } = {
     undoStack: [],
@@ -432,9 +438,10 @@ export class StudioGraphIsland {
       return;
     }
     this.setEmptyState(false);
+    this.currentLayoutProjection = createStoredLayoutProjection(viewModel);
     this.applying = true;
     try {
-      renderStudioGraphViewModel(this.graph, viewModel);
+      renderStudioGraphViewModel(this.graph, viewModel, this.currentLayoutProjection);
       this.syncPendingEdgePreview();
       this.runtimeVisualState = deriveStudioRuntimeVisualState({
         authoring: options.authoring,
@@ -1504,27 +1511,10 @@ export class StudioGraphIsland {
   }
 
   private applyAutoLayout(): void {
-    if (this.layoutMode === "stacked") {
-      this.applyStackedAutoLayout();
-      return;
-    }
-    this.applyHorizontalAutoLayout(this.layoutMode === "compact"
-      ? {
-          paddingX: 56,
-          paddingY: 56,
-          nodesep: 28,
-          ranksep: 72,
-          columnGap: 84,
-          rowGap: 24
-        }
-      : {
-          paddingX: 72,
-          paddingY: 72,
-          nodesep: 42,
-          ranksep: 92,
-          columnGap: 108,
-          rowGap: 34
-        });
+    if (!this.currentViewModel) return;
+    this.currentLayoutProjection = createDagreLayoutProjection(this.currentViewModel, this.layoutMode);
+    renderStudioGraphViewModel(this.graph, this.currentViewModel, this.currentLayoutProjection);
+    this.fitGraphToViewport();
   }
 
   private nextLayoutMode(current: StudioGraphLayoutMode): StudioGraphLayoutMode {
@@ -1537,325 +1527,6 @@ export class StudioGraphIsland {
     if (mode === "compact") return this.label("layoutModeCompact");
     if (mode === "stacked") return this.label("layoutModeStacked");
     return this.label("layoutModeFlow");
-  }
-
-  private buildAutoLayoutGraph(config: {
-    rankdir: "LR" | "TB";
-    paddingX: number;
-    paddingY: number;
-    nodesep: number;
-    ranksep: number;
-  }): {
-    graph: dagre.graphlib.Graph;
-    adjacency: Map<string, { incoming: string[]; outgoing: string[] }>;
-    layoutNodes: Array<{ id: string; width: number; height: number; dagreX: number; dagreY: number }>;
-  } {
-    const graph = new dagre.graphlib.Graph();
-    const layoutAdjacency = new Map<string, Set<string>>();
-    graph.setGraph({
-      rankdir: config.rankdir,
-      nodesep: config.nodesep,
-      ranksep: config.ranksep,
-      acyclicer: "greedy",
-      ranker: "network-simplex",
-      marginx: config.paddingX,
-      marginy: config.paddingY
-    });
-    graph.setDefaultEdgeLabel(() => ({}));
-    const adjacency = new Map<string, { incoming: string[]; outgoing: string[] }>();
-    for (const node of this.graph.getNodes()) {
-      const data = node.getData() as { studioNode?: { roleSeat?: boolean; kind?: string } } | undefined;
-      if (!data?.studioNode || (data.studioNode.roleSeat !== true && data.studioNode.kind !== "boundary")) continue;
-      const size = node.getSize();
-      graph.setNode(node.id, { width: size.width, height: size.height });
-      adjacency.set(node.id, { incoming: [], outgoing: [] });
-      layoutAdjacency.set(node.id, new Set());
-    }
-    for (const edge of this.graph.getEdges()) {
-      if (this.isPendingEdgePreviewCell(edge)) {
-        continue;
-      }
-      const source = edge.getSourceCellId();
-      const target = edge.getTargetCellId();
-      if (source && target && graph.hasNode(source) && graph.hasNode(target)) {
-        const sourceLinks = adjacency.get(source);
-        const targetLinks = adjacency.get(target);
-        if (sourceLinks) {
-          sourceLinks.outgoing.push(target);
-        }
-        if (targetLinks) {
-          targetLinks.incoming.push(source);
-        }
-        if (source !== target && !this.layoutPathExists(layoutAdjacency, target, source)) {
-          graph.setEdge(source, target);
-          layoutAdjacency.get(source)?.add(target);
-        }
-      }
-    }
-    dagre.layout(graph);
-    const layoutNodes = graph.nodes()
-      .map((id) => {
-        const layoutNode = graph.node(id) as {
-          width: number;
-          height: number;
-          x: number;
-          y: number;
-        };
-        return {
-          id,
-          width: layoutNode.width,
-          height: layoutNode.height,
-          dagreX: layoutNode.x,
-          dagreY: layoutNode.y
-        };
-      })
-      .sort((left, right) => left.dagreX - right.dagreX || left.dagreY - right.dagreY || left.id.localeCompare(right.id));
-    if (!layoutNodes.length) {
-      return {
-        graph,
-        adjacency,
-        layoutNodes: []
-      };
-    }
-    return {
-      graph,
-      adjacency,
-      layoutNodes
-    };
-  }
-
-  private layoutPathExists(adjacency: Map<string, Set<string>>, source: string, target: string): boolean {
-    if (source === target) {
-      return true;
-    }
-    const visited = new Set<string>();
-    const stack = [source];
-    while (stack.length) {
-      const current = stack.pop();
-      if (!current || visited.has(current)) {
-        continue;
-      }
-      if (current === target) {
-        return true;
-      }
-      visited.add(current);
-      for (const next of adjacency.get(current) || []) {
-        stack.push(next);
-      }
-    }
-    return false;
-  }
-
-  private positionBoundaryExtremes(
-    positions: Array<{ id: string; position: { x: number; y: number } }>,
-    orientation: "horizontal" | "vertical",
-    gap: number
-  ): Array<{ id: string; position: { x: number; y: number } }> {
-    const next = positions.map((entry) => ({
-      id: entry.id,
-      position: { ...entry.position }
-    }));
-    const byId = new Map(next.map((entry) => [entry.id, entry]));
-    const roleEntries = next.filter((entry) => {
-      if (entry.id === "input" || entry.id === "output") {
-        return false;
-      }
-      const cell = this.graph.getCellById(entry.id);
-      const data = cell?.getData() as { studioNode?: { kind?: string } } | undefined;
-      return data?.studioNode?.roleSeat === true;
-    });
-    const input = byId.get("input");
-    const output = byId.get("output");
-    if (!roleEntries.length) {
-      if (input && output) {
-        if (orientation === "horizontal") {
-          output.position.x = input.position.x + gap * 2;
-          output.position.y = input.position.y;
-        } else {
-          output.position.x = input.position.x;
-          output.position.y = input.position.y + gap * 2;
-        }
-      }
-      return next;
-    }
-    let minLeft = Number.POSITIVE_INFINITY;
-    let maxRight = Number.NEGATIVE_INFINITY;
-    let minTop = Number.POSITIVE_INFINITY;
-    let maxBottom = Number.NEGATIVE_INFINITY;
-    for (const entry of roleEntries) {
-      const cell = this.graph.getCellById(entry.id);
-      const size = cell?.isNode() ? cell.getSize() : { width: 0, height: 0 };
-      minLeft = Math.min(minLeft, entry.position.x);
-      maxRight = Math.max(maxRight, entry.position.x + size.width);
-      minTop = Math.min(minTop, entry.position.y);
-      maxBottom = Math.max(maxBottom, entry.position.y + size.height);
-    }
-    const roleCenterX = (minLeft + maxRight) / 2;
-    const roleCenterY = (minTop + maxBottom) / 2;
-    if (orientation === "horizontal") {
-      if (input) {
-        const inputCell = this.graph.getCellById("input");
-        const inputSize = inputCell?.isNode() ? inputCell.getSize() : { width: 0, height: 0 };
-        input.position.x = minLeft - gap - inputSize.width;
-        input.position.y = roleCenterY - inputSize.height / 2;
-      }
-      if (output) {
-        const outputCell = this.graph.getCellById("output");
-        const outputSize = outputCell?.isNode() ? outputCell.getSize() : { width: 0, height: 0 };
-        output.position.x = maxRight + gap;
-        output.position.y = roleCenterY - outputSize.height / 2;
-      }
-      return next;
-    }
-    if (input) {
-      const inputCell = this.graph.getCellById("input");
-      const inputSize = inputCell?.isNode() ? inputCell.getSize() : { width: 0, height: 0 };
-      input.position.x = roleCenterX - inputSize.width / 2;
-      input.position.y = minTop - gap - inputSize.height;
-    }
-    if (output) {
-      const outputCell = this.graph.getCellById("output");
-      const outputSize = outputCell?.isNode() ? outputCell.getSize() : { width: 0, height: 0 };
-      output.position.x = roleCenterX - outputSize.width / 2;
-      output.position.y = maxBottom + gap;
-    }
-    return next;
-  }
-
-  private applyHorizontalAutoLayout(config: {
-    paddingX: number;
-    paddingY: number;
-    nodesep: number;
-    ranksep: number;
-    columnGap: number;
-    rowGap: number;
-  }): void {
-    const { graph, adjacency, layoutNodes } = this.buildAutoLayoutGraph({
-      rankdir: "LR",
-      paddingX: config.paddingX,
-      paddingY: config.paddingY,
-      nodesep: config.nodesep,
-      ranksep: config.ranksep
-    });
-    if (!layoutNodes.length) {
-      return;
-    }
-    const columns: Array<Array<typeof layoutNodes[number]>> = [];
-    for (const node of layoutNodes) {
-      const column = columns[columns.length - 1];
-      if (!column || Math.abs(column[0].dagreX - node.dagreX) > 24) {
-        columns.push([node]);
-        continue;
-      }
-      column.push(node);
-    }
-    const placedCenters = new Map<string, number>();
-    const columnPositions = new Map<string, { x: number; y: number }>();
-    let columnLeft = config.paddingX;
-    for (const column of columns) {
-      const columnWidth = Math.max(...column.map((node) => node.width));
-      const ordered = column
-        .map((node) => {
-          const links = adjacency.get(node.id);
-          const neighborCenters = (links?.incoming || [])
-            .map((neighborId) => placedCenters.get(neighborId))
-            .filter((value): value is number => Number.isFinite(value))
-            .concat((links?.outgoing || [])
-              .map((neighborId) => graph.node(neighborId)?.y as number | undefined)
-              .filter((value): value is number => Number.isFinite(value)));
-          const idealCenter = neighborCenters.length
-            ? neighborCenters.slice().sort((left, right) => left - right)[Math.floor(neighborCenters.length / 2)]
-            : node.dagreY;
-          return {
-            ...node,
-            idealCenter
-          };
-        })
-        .sort((left, right) => left.idealCenter - right.idealCenter || left.dagreY - right.dagreY || left.id.localeCompare(right.id));
-      let cursorTop = Number.NEGATIVE_INFINITY;
-      const placements = ordered.map((node) => {
-        let top = node.idealCenter - node.height / 2;
-        if (Number.isFinite(cursorTop)) {
-          top = Math.max(top, cursorTop + config.rowGap);
-        }
-        cursorTop = top + node.height;
-        return { ...node, top };
-      });
-      for (let index = placements.length - 2; index >= 0; index -= 1) {
-        const nextPlacement = placements[index + 1];
-        placements[index].top = Math.min(
-          placements[index].top,
-          nextPlacement.top - config.rowGap - placements[index].height
-        );
-      }
-      for (const placement of placements) {
-        const x = columnLeft + (columnWidth - placement.width) / 2;
-        const y = placement.top;
-        columnPositions.set(placement.id, { x, y });
-        placedCenters.set(placement.id, y + placement.height / 2);
-      }
-      columnLeft += columnWidth + config.columnGap;
-    }
-    const positions = graph.nodes().map((id) => ({
-      id,
-      position: columnPositions.get(id)
-    })).filter((entry): entry is { id: string; position: { x: number; y: number } } => Boolean(entry.position));
-    this.applyLayoutPositions(
-      this.positionBoundaryExtremes(positions, "horizontal", config.columnGap),
-      config.paddingX,
-      config.paddingY
-    );
-  }
-
-  private applyStackedAutoLayout(): void {
-    const paddingX = 64;
-    const paddingY = 56;
-    const { layoutNodes } = this.buildAutoLayoutGraph({
-      rankdir: "TB",
-      paddingX,
-      paddingY,
-      nodesep: 54,
-      ranksep: 112
-    });
-    if (!layoutNodes.length) {
-      return;
-    }
-    const positions = layoutNodes.map((node) => ({
-      id: node.id,
-      position: {
-        x: node.dagreX - node.width / 2,
-        y: node.dagreY - node.height / 2
-      }
-    }));
-    this.applyLayoutPositions(
-      this.positionBoundaryExtremes(positions, "vertical", 96),
-      paddingX,
-      paddingY
-    );
-  }
-
-  private applyLayoutPositions(
-    positions: Array<{ id: string; position: { x: number; y: number } }>,
-    paddingX: number,
-    paddingY: number
-  ): void {
-    let minLeft = Number.POSITIVE_INFINITY;
-    let minTop = Number.POSITIVE_INFINITY;
-    for (const entry of positions) {
-      minLeft = Math.min(minLeft, entry.position.x);
-      minTop = Math.min(minTop, entry.position.y);
-    }
-    const offsetX = Number.isFinite(minLeft) ? paddingX - minLeft : 0;
-    const offsetY = Number.isFinite(minTop) ? paddingY - minTop : 0;
-    this.graph.batchUpdate("studio-auto-layout", () => {
-      for (const entry of positions) {
-        const cell = this.graph.getCellById(entry.id);
-        if (cell?.isNode()) {
-          cell.position(entry.position.x + offsetX, entry.position.y + offsetY);
-        }
-      }
-    });
-    this.fitGraphToViewport();
   }
 
   private fitGraphToViewport(maxScale = STUDIO_GRAPH_FIT_MAX_SCALE): void {

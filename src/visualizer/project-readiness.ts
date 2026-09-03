@@ -14,11 +14,16 @@ import {
   loadFlowContractPlan
 } from "../runtime/flow-contract.js";
 import { readJsonFile } from "../runtime/json-file.js";
-import { loadModelCatalog } from "../runtime/model-catalog.js";
-import { loadModelSelection, resolveModelSelectionForSystem } from "../runtime/model-selection.js";
+import { isModelCatalogStale, loadModelCatalog } from "../runtime/model-catalog.js";
+import {
+  inspectResolvedModelCatalogEntry,
+  loadModelSelection,
+  resolveModelSelectionForSystem
+} from "../runtime/model-selection.js";
 import { parseSystemFromMermaidSource } from "../runtime/parse-mermaid.js";
 import { resolveOgsPaths } from "../runtime/project-lifecycle.js";
 import { loadLaws, loadRuntimeConfig } from "../runtime/runtime-loader.js";
+import { validateRolePackageManifest } from "../runtime/role-repo.js";
 import { pathExists } from "../runtime/run-store.js";
 import { resolveEffectiveLaw } from "../runtime/runtime-setup.js";
 import { SYSTEM_END_ROLE_ID } from "../runtime/types.js";
@@ -35,6 +40,7 @@ import type {
   ModelCatalogEntry,
   SystemDefinition
 } from "../runtime/types.js";
+import type { ProviderHealthCheck as DoctorProviderHealthCheck } from "../runtime/doctor.js";
 
 type ReadinessSeverity = "blocker" | "warning";
 
@@ -86,6 +92,18 @@ type ModelCapabilityCheck = {
   catalogPresent: boolean;
 };
 
+type ModelSelectionReadinessIssue = {
+  roleId: string;
+  code: "MODEL_SELECTION_NOT_FOUND" | "MODEL_BINDING_UNRESOLVED";
+  message: string;
+};
+
+type ModelSelectionReadinessResult = {
+  resolvedByRoleId: Map<string, { modelRef: string }>;
+  warnings: string[];
+  issues: ModelSelectionReadinessIssue[];
+};
+
 export type ProjectReadinessProjection = {
   workdir: string;
   systemId: string | null;
@@ -112,10 +130,81 @@ export type ProjectReadinessProjection = {
     roles: RoleRepoHealthItem[];
   };
   modelCapabilityChecks: ModelCapabilityCheck[];
+  providerHealth: DoctorProviderHealthCheck[];
 };
 
 function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
+}
+
+function getModelSelectionErrorCode(error: unknown): ModelSelectionReadinessIssue["code"] | undefined {
+  const errorRecord = asRecord(error);
+  const envelope = asRecord(errorRecord?.envelope);
+  const errorCode = envelope?.errorCode;
+  return errorCode === "MODEL_SELECTION_NOT_FOUND" || errorCode === "MODEL_BINDING_UNRESOLVED"
+    ? errorCode
+    : undefined;
+}
+
+function resolveModelSelectionForReadiness(args: {
+  system: SystemDefinition;
+  selection: Awaited<ReturnType<typeof loadModelSelection>>;
+  catalog: ModelCatalog | undefined;
+}): ModelSelectionReadinessResult {
+  const resolvedByRoleId = new Map<string, { modelRef: string }>();
+  const warnings = new Set<string>();
+  const issues: ModelSelectionReadinessIssue[] = [];
+
+  // Resolve roles independently so one unresolved selector does not hide other pinned models.
+  for (const roleId of [...args.system.roleIds].sort((left, right) => left.localeCompare(right))) {
+    try {
+      const result = resolveModelSelectionForSystem({
+        system: { ...args.system, roleIds: [roleId] },
+        selection: args.selection,
+        catalog: args.catalog,
+        validateCatalog: false
+      });
+      const resolved = result.resolvedByRoleId.get(roleId);
+      if (resolved) {
+        resolvedByRoleId.set(roleId, resolved);
+      }
+      for (const warning of result.warnings) {
+        warnings.add(warning);
+      }
+    } catch (error) {
+      const code = getModelSelectionErrorCode(error);
+      if (!code) {
+        throw error;
+      }
+      issues.push({
+        roleId,
+        code,
+        message: errorMessage(error)
+      });
+    }
+  }
+
+  return {
+    resolvedByRoleId,
+    warnings: [...warnings],
+    issues
+  };
+}
+
+function buildProviderHealth(
+  resolvedModelsByRoleId: Map<string, { modelRef: string }>
+): DoctorProviderHealthCheck[] {
+  const health = [...resolvedModelsByRoleId.entries()]
+    .sort(([left], [right]) => left.localeCompare(right))
+    .map(([roleId, resolved]) => ({
+      roleId,
+      modelRef: resolved.modelRef,
+      status: "skipped" as const,
+      code: "DOCTOR_PROVIDER_ONLINE_SKIPPED" as const,
+      message: "online provider credential check skipped; project readiness never probes connectivity"
+    }));
+
+  return health;
 }
 
 function createIssue(args: {
@@ -345,6 +434,33 @@ function buildModelCapabilityChecks(args: {
     }
     const catalogEntry = catalogByRef.get(resolved.modelRef);
     if (!catalogEntry) {
+      const catalogIssue = inspectResolvedModelCatalogEntry({
+        roleId,
+        modelRef: resolved.modelRef,
+        catalog: args.modelCatalog
+      });
+      if (catalogIssue) {
+        const check: ModelCapabilityCheck = {
+          roleId,
+          bindingKind: "model",
+          modelRef: resolved.modelRef,
+          status: "blocker",
+          missingCapabilities: catalogIssue.missingCapabilities ?? [],
+          warningCapabilities: [],
+          catalogPresent: true
+        };
+        checks.push(check);
+        args.blockers.push(
+          createIssue({
+            code: "READINESS_MODEL_UNAVAILABLE",
+            message: catalogIssue.message,
+            severity: "blocker",
+            roleId,
+            detail: check
+          })
+        );
+        continue;
+      }
       const check: ModelCapabilityCheck = {
         roleId,
         bindingKind: "model",
@@ -355,11 +471,46 @@ function buildModelCapabilityChecks(args: {
         catalogPresent: false
       };
       checks.push(check);
+      const catalogStale = args.modelCatalog ? isModelCatalogStale(args.modelCatalog) : false;
       args.warnings.push(
         createIssue({
-          code: "READINESS_MODEL_CATALOG_MISSING_REF",
-          message: `Role "${roleId}" selects "${resolved.modelRef}" which is not present in .ogs/model-catalog.json`,
+          code: catalogStale ? "READINESS_MODEL_CATALOG_STALE_REF" : "READINESS_MODEL_CATALOG_MISSING",
+          message: args.modelCatalog
+            ? catalogStale
+              ? `Role "${roleId}" selects "${resolved.modelRef}" but the stale catalog cannot confirm current availability; the pinned reference remains visible.`
+              : `Role "${roleId}" selects "${resolved.modelRef}" which is not present in the current OpenCode discovery catalog.`
+            : `Role "${roleId}" selects pinned model "${resolved.modelRef}"; availability was not discovered because .ogs/model-catalog.json is missing.`,
           severity: "warning",
+          roleId,
+          detail: check
+        })
+      );
+      continue;
+    }
+    const catalogIssue = inspectResolvedModelCatalogEntry({
+      roleId,
+      modelRef: resolved.modelRef,
+      catalog: args.modelCatalog
+    });
+    if (catalogIssue) {
+      const check: ModelCapabilityCheck = {
+        roleId,
+        bindingKind: "model",
+        modelRef: resolved.modelRef,
+        status: "blocker",
+        capabilities: catalogEntry.capabilities,
+        missingCapabilities: catalogIssue.missingCapabilities ?? [],
+        warningCapabilities: [],
+        catalogPresent: true
+      };
+      checks.push(check);
+      args.blockers.push(
+        createIssue({
+          code: catalogIssue.code === "MODEL_UNAVAILABLE"
+            ? "READINESS_MODEL_UNAVAILABLE"
+            : "READINESS_MODEL_CAPABILITY_MISMATCH",
+          message: catalogIssue.message,
+          severity: "blocker",
           roleId,
           detail: check
         })
@@ -429,16 +580,16 @@ async function inspectRoleHealth(args: {
 
   if (files.roleJson) {
     try {
-      const manifest = asRecord(await readJsonFile(manifestPath));
-      const promptTemplate = asNonEmptyString(manifest?.promptTemplate);
-      const outputSchema = asNonEmptyString(manifest?.outputSchema);
+      const manifest = validateRolePackageManifest(await readJsonFile(manifestPath), manifestPath);
+      const promptTemplate = asNonEmptyString(manifest.promptTemplate);
+      const outputSchema = asNonEmptyString(manifest.outputSchema);
       files.promptTemplate = promptTemplate
         ? await pathExists(resolve(resolvedPath, promptTemplate))
         : false;
       files.outputSchema = outputSchema
         ? await pathExists(resolve(resolvedPath, outputSchema))
         : false;
-      if (manifest?.roleId !== args.roleId) {
+      if (manifest.roleId !== args.roleId) {
         error = `role.json roleId mismatch: expected "${args.roleId}"`;
       }
     } catch (readError) {
@@ -507,7 +658,8 @@ export async function inspectProjectReadiness(
         roleRepoRoot: null,
         roles: []
       },
-      modelCapabilityChecks: []
+      modelCapabilityChecks: [],
+      providerHealth: []
     };
   }
 
@@ -516,8 +668,20 @@ export async function inspectProjectReadiness(
   const roleRepoRoot = resolveProjectRoleRepoRoot(workdir, runtimeConfig.roleRepo);
   const roleRootDir = resolveProjectRoleRootDir(workdir, runtimeConfig.roleRepo);
   const modelSelection = await loadModelSelection(ogsPaths.modelSelectionPath);
-  const modelCatalog = await loadModelCatalog(ogsPaths.modelCatalogPath);
-  const resolvedModelSelection = resolveModelSelectionForSystem({
+  let modelCatalog: ModelCatalog | undefined;
+  try {
+    modelCatalog = await loadModelCatalog(ogsPaths.modelCatalogPath);
+  } catch (error) {
+    blockers.push(
+      createIssue({
+        code: "READINESS_MODEL_CATALOG_INVALID",
+        message: `Model catalog cannot be used: ${errorMessage(error)}`,
+        severity: "blocker",
+        path: ogsPaths.modelCatalogPath
+      })
+    );
+  }
+  const resolvedModelSelection = resolveModelSelectionForReadiness({
     system,
     selection: modelSelection,
     catalog: modelCatalog
@@ -535,8 +699,35 @@ export async function inspectProjectReadiness(
     );
   }
 
+  const modelSelectionIssuesByRoleId = new Map(
+    resolvedModelSelection.issues.map((issue) => [issue.roleId, issue])
+  );
+
   for (const roleId of [...system.roleIds].sort((left, right) => left.localeCompare(right))) {
     if (!system.executionBinding[roleId] && !resolvedModelSelection.resolvedByRoleId.has(roleId)) {
+      const selectionIssue = modelSelectionIssuesByRoleId.get(roleId);
+      if (selectionIssue) {
+        missingBindings.push({
+          roleId,
+          reason: selectionIssue.code === "MODEL_SELECTION_NOT_FOUND"
+            ? "model-selection file is missing for the declared model binding"
+            : "model binding did not resolve to a provider/model selection"
+        });
+        blockers.push(
+          createIssue({
+            code: selectionIssue.code === "MODEL_SELECTION_NOT_FOUND"
+              ? "READINESS_MODEL_SELECTION_MISSING"
+              : "READINESS_MODEL_SELECTION_UNRESOLVED",
+            message: selectionIssue.message,
+            severity: "blocker",
+            roleId,
+            detail: {
+              runtimeCode: selectionIssue.code
+            }
+          })
+        );
+        continue;
+      }
       missingBindings.push({
         roleId,
         reason: "no exec.bind, model.bind, or model-selection default resolved"
@@ -608,6 +799,7 @@ export async function inspectProjectReadiness(
       roleRepoRoot,
       roles: roleHealth
     },
-    modelCapabilityChecks
+    modelCapabilityChecks,
+    providerHealth: buildProviderHealth(resolvedModelSelection.resolvedByRoleId)
   };
 }

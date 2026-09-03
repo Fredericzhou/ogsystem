@@ -23,7 +23,6 @@ export type {
   StudioAuthoringFlow,
   StudioAuthoringRole
 };
-export type { StudioCanvasDocument } from "./studio-contracts.js";
 export { authoringToCanvasDocument, buildBridgeFlows, buildBridgeRoles };
 
 function sortStrings(left: string, right: string): number {

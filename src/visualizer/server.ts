@@ -19,6 +19,7 @@ import {
   resolveOgsPaths,
 } from "../runtime/project-lifecycle.js";
 import { redactUnknown } from "../runtime/redaction.js";
+import { loadConversationRunProjection, normalizeConversationItemStatus } from "../runtime/conversation-projector.js";
 import {
   inspectRun,
   inspectRunRoleIo,
@@ -973,6 +974,10 @@ async function handleApiRunEvents(
   const reviewId = url.searchParams.get("reviewId") ?? undefined;
   const status = url.searchParams.get("status") ?? undefined;
   const errorCode = url.searchParams.get("errorCode") ?? undefined;
+  const channel = url.searchParams.get("channel") ?? undefined;
+  if (channel && !["main", "error", "loop", "join", "feedback"].includes(channel)) {
+    throw new HttpError(400, "INVALID_TIMELINE_CHANNEL", "channel must be main, error, loop, join, or feedback.");
+  }
   const snapshot = await loadRunEventsSnapshot({
     workdir,
     runId,
@@ -983,9 +988,54 @@ async function handleApiRunEvents(
     type,
     reviewId,
     status,
-    errorCode
+    errorCode,
+    channel: channel as "main" | "error" | "loop" | "join" | "feedback" | undefined
   });
   jsonResponse(response, 200, snapshot);
+}
+
+async function handleApiRunConversation(
+  workdir: string,
+  runId: string,
+  url: URL,
+  response: ServerResponse
+): Promise<void> {
+  const detail = await loadRunDetail(workdir, runId);
+  const cursorValue = Number(url.searchParams.get("cursor") ?? "0");
+  const limitValue = Number(url.searchParams.get("limit") ?? "200");
+  const cursor = Number.isFinite(cursorValue) ? Math.max(0, Math.floor(cursorValue)) : 0;
+  const limit = Number.isFinite(limitValue) ? Math.min(1000, Math.max(1, Math.floor(limitValue))) : 200;
+  const channelValue = url.searchParams.get("channel") ?? undefined;
+  if (channelValue && !["main", "error", "loop", "join", "feedback"].includes(channelValue)) {
+    throw new HttpError(400, "INVALID_CONVERSATION_CHANNEL", "channel must be main, error, loop, join, or feedback.");
+  }
+  const systemId = typeof detail.systemSource === "string"
+    ? detail.systemSource.match(/system\.id\s*=\s*([^\s]+)/i)?.[1]
+    : undefined;
+  const projection = await loadConversationRunProjection({
+    runId,
+    systemId,
+    eventsPath: resolve(detail.runDir, "events.ndjson"),
+    statePath: resolve(detail.runDir, "state.json"),
+    startCursor: cursor,
+    limit,
+    cursor: { next: cursor },
+    filters: {
+      roleId: url.searchParams.get("roleId") ?? undefined,
+      branchId: url.searchParams.get("branchId") ?? undefined,
+      lineageId: url.searchParams.get("lineageId") ?? undefined,
+      loopIteration: url.searchParams.has("loopIteration") ? Number(url.searchParams.get("loopIteration")) : undefined,
+      event: url.searchParams.get("event") ?? undefined,
+      type: url.searchParams.get("type") ?? undefined,
+      reviewId: url.searchParams.get("reviewId") ?? undefined,
+      errorCode: url.searchParams.get("errorCode") ?? undefined,
+      status: url.searchParams.has("status")
+        ? normalizeConversationItemStatus(url.searchParams.get("status"))
+        : undefined,
+      channel: channelValue as "main" | "error" | "loop" | "join" | "feedback" | undefined
+    }
+  });
+  jsonResponse(response, 200, projection);
 }
 
 async function handleApiRunLogs(
@@ -1753,6 +1803,10 @@ async function handleVisualizationRequest(
   }
   if (segments.length === 5 && segments[4] === "events" && method === "GET") {
     await handleApiRunEvents(state.workdir, runId, url, response);
+    return;
+  }
+  if (segments.length === 5 && segments[4] === "conversation" && method === "GET") {
+    await handleApiRunConversation(state.workdir, runId, url, response);
     return;
   }
   if (segments.length === 5 && segments[4] === "logs" && method === "GET") {

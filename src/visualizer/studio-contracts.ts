@@ -83,9 +83,6 @@ export type StudioGraphSnapshot = {
   viewport?: { x: number; y: number; zoom: number };
 };
 
-/** @deprecated Use StudioGraphSnapshot inside the Studio boundary. Kept for API compatibility. */
-export type StudioCanvasDocument = StudioGraphSnapshot;
-
 export type StudioDiagnosticDto = {
   source: "client-preflight" | "server-validation" | "parser" | "compiler" | "readiness" | "capability";
   severity: "info" | "warning" | "error";
@@ -199,7 +196,7 @@ export type GraphViewModelEdge = {
   participatesInJoin: boolean;
   conditionSummary?: string;
   priority?: number;
-  channel?: "normal" | "error" | "loop" | "join";
+  channel?: "normal" | "error" | "loop" | "join" | "feedback";
   runtime?: GraphViewModelEdgeRuntime;
   diagnostic?: GraphViewModelDiagnostic;
   editable: boolean;
@@ -221,6 +218,16 @@ export type GraphViewModel = {
     ok: boolean;
     diagnostics: StudioDiagnosticDto[];
   };
+};
+
+export type GraphReadingMode = "all" | "upstream" | "downstream" | "route";
+
+/** Stable graph reading state shared by URL serialization and pure view projections. */
+export type GraphReadingState = {
+  mode: GraphReadingMode;
+  roleId?: string;
+  flowKey?: string;
+  channel?: "normal" | "error" | "loop" | "join" | "feedback";
 };
 
 export function normalizeStudioGraphTargetRoleId(roleId: unknown): string {

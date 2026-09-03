@@ -99,7 +99,7 @@ export function renderPageShellBody({ workdir, locale, t }: PageShellBodyOptions
                 </div>
               </article>
               <article class="card span-12 operate-panel operate-overview">
-                <header><h3>${escapeHtml(t("section.timeline"))}</h3></header>
+                <header><div class="toolbar-row"><h3>${escapeHtml(t("section.timeline"))}</h3><div class="actions"><button id="timeline-conversation" class="button subtle" type="button">${escapeHtml(t("timeline.conversation"))}</button></div></div></header>
                 <div class="body">
                   <div class="row timeline-controls">
                     <select id="timeline-role" class="select">
@@ -120,6 +120,14 @@ export function renderPageShellBody({ workdir, locale, t }: PageShellBodyOptions
                     <input id="timeline-branch" class="select" placeholder="${escapeHtml(t("timeline.branchId"))}" aria-label="${escapeHtml(t("timeline.branchId"))}" />
                     <input id="timeline-review" class="select" placeholder="${escapeHtml(t("timeline.reviewId"))}" aria-label="${escapeHtml(t("timeline.reviewId"))}" />
                     <input id="timeline-error" class="select" placeholder="${escapeHtml(t("timeline.errorCode"))}" aria-label="${escapeHtml(t("timeline.errorCode"))}" />
+                    <select id="timeline-channel" class="select" aria-label="${escapeHtml(t("timeline.channel"))}">
+                      <option value="">${escapeHtml(t("timeline.allChannels"))}</option>
+                      <option value="main">${escapeHtml(t("timeline.channelMain"))}</option>
+                      <option value="error">${escapeHtml(t("timeline.channelError"))}</option>
+                      <option value="loop">${escapeHtml(t("timeline.channelLoop"))}</option>
+                      <option value="join">${escapeHtml(t("timeline.channelJoin"))}</option>
+                      <option value="feedback">${escapeHtml(t("timeline.channelFeedback"))}</option>
+                    </select>
                     <button id="timeline-apply" class="button subtle">${escapeHtml(t("action.applyFilters"))}</button>
                     <button id="timeline-clear" class="button subtle">${escapeHtml(t("action.clearFilters"))}</button>
                   </div>

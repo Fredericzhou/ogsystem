@@ -283,6 +283,41 @@ export function renderTimelineEventHtml(args: {
   return `<div class="event"><div class="event-top"><span>#${escapeText(entry.cursor)} ${escapeText(displayUiToken(type, t))}</span><span>${escapeText(formatTime(record.at))}</span></div><strong>${role} ${event} ${status}</strong><div class="hint">${branch} ${review}</div></div>`;
 }
 
+export function renderConversationHtml(args: {
+  projection: Record<string, any> | null | undefined;
+  t: Translator;
+  escapeText: (value: unknown) => string;
+  statusClass: (value: string) => string;
+  displayUiToken: (value: unknown, t: Translator) => string;
+  formatTime: (value: unknown) => string;
+}): string {
+  const { projection, t, escapeText, statusClass, displayUiToken, formatTime } = args;
+  const items = Array.isArray(projection?.items) ? projection.items : [];
+  if (!items.length) {
+    return '<div class="hint">' + escapeText(t("timeline.conversationEmpty", undefined, "No conversation items captured yet.")) + '</div>';
+  }
+  return items.slice().reverse().map((item: Record<string, any>) => {
+    const source = item.source || {};
+    const sourceLocator = source.file === "state.json"
+      ? "state.json@" + String(source.snapshotVersion ?? "?")
+      : String(source.file || "event") + "#" + String(source.cursor ?? "?");
+    const route = item.route || {};
+    const routeLabel = route.channel ? String(route.channel) + " -> " + String(route.presentationChannel || "") : "";
+    const identity = [item.branchId, item.lineageId, item.loopIteration === undefined ? "" : "loop " + item.loopIteration]
+      .filter(Boolean).join(" · ");
+    const review = item.review ? "review " + String(item.review.reviewId) + " / " + String(item.review.reviewStatus) + (item.review.decision ? " / " + String(item.review.decision) : "") : "";
+    const join = item.join ? "expected " + (item.join.expected || []).join(", ") + " · ready " + (item.join.ready || []).join(", ") + " · missing " + (item.join.missing || []).join(", ") : "";
+    const meta = [identity, routeLabel, review, join, sourceLocator].filter(Boolean).join(" · ");
+    const content = item.content?.text ? '<div class="hint conversation-content">' + escapeText(item.content.text) + (item.content.truncated ? "..." : "") + '</div>' : "";
+    return '<div class="event conversation-item" data-conversation-item-id="' + escapeText(item.itemId) + '">' +
+      '<div class="event-top"><span>' + escapeText(item.kind || "conversation") + '</span><span>' + escapeText(formatTime(item.at)) + '</span></div>' +
+      '<strong>' + (item.roleId ? '<code>' + escapeText(item.roleId) + '</code> ' : "") +
+      (item.event ? '<code>' + escapeText(item.event) + '</code> ' : "") +
+      '<span class="status ' + escapeText(statusClass(String(item.status || "unknown"))) + '">' + escapeText(displayUiToken(item.status || "unknown", t)) + '</span></strong>' +
+      (meta ? '<div class="hint">' + escapeText(meta) + '</div>' : "") + content + '</div>';
+  }).join("");
+}
+
 export function renderTimelineHtml(args: {
   events: Array<Record<string, any>>;
   filters: Record<string, string>;
@@ -299,7 +334,8 @@ export function renderTimelineHtml(args: {
     filters.status ? "status=" + filters.status : "",
     filters.branchId ? "branch=" + filters.branchId : "",
     filters.reviewId ? "review=" + filters.reviewId : "",
-    filters.errorCode ? "error=" + filters.errorCode : ""
+    filters.errorCode ? "error=" + filters.errorCode : "",
+    filters.channel ? "channel=" + filters.channel : ""
   ].filter(Boolean);
   if (!events.length) {
     return activeFilters.length

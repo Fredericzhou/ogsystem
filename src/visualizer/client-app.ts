@@ -52,12 +52,14 @@ import {
   readRouteStateFromSearch,
   type RouteState
 } from "./client-route-state.js";
+import { projectGraphReadingViewModel } from "./graph-view-model.js";
 import {
   renderOperateTabsHtml,
   renderLoadingSkeletonHtml,
   renderRunStatsHtml,
   renderTimelineHtml,
   renderTimelineEventHtml,
+  renderConversationHtml,
   renderWorkbenchActionsHtml,
   renderWorkbenchModeBodyHtml,
   renderWorkbenchModeTabsHtml,
@@ -216,6 +218,7 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
     const renderRunStatsHtml = ${renderRunStatsHtml.toString()};
     const renderTimelineHtml = ${renderTimelineHtml.toString()};
     const renderTimelineEventHtml = ${renderTimelineEventHtml.toString()};
+    const renderConversationHtml = ${renderConversationHtml.toString()};
     const mapProjectCreateErrorFromResponse = ${mapProjectCreateErrorFromResponse.toString()};
     const asStudioChatList = ${asStudioChatList.toString()};
     const studioChatCanApply = ${studioChatCanApply.toString()};
@@ -245,6 +248,7 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
     const displayBindingKind = ${displayBindingKind.toString()};
     const displayUiToken = ${displayUiToken.toString()};
     const normalizeStudioTargetRoleId = ${normalizeStudioTargetRoleId.toString()};
+    const projectGraphReadingViewModel = ${projectGraphReadingViewModel.toString()};
     const renderStudioGraphCanvas = ${renderStudioGraphCanvas.toString()};
     const renderStudioBridgeStructureHtml = ${renderStudioBridgeStructureHtml.toString()};
     const renderStudioBridgeSelectionLabel = ${renderStudioBridgeSelectionLabel.toString()};
@@ -393,6 +397,8 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
     const timelineBranchEl = document.getElementById("timeline-branch");
     const timelineReviewEl = document.getElementById("timeline-review");
     const timelineErrorEl = document.getElementById("timeline-error");
+    const timelineChannelEl = document.getElementById("timeline-channel");
+    const timelineConversationButton = document.getElementById("timeline-conversation");
     const timelineApplyButton = document.getElementById("timeline-apply");
     const timelineClearButton = document.getElementById("timeline-clear");
     const graphViewEl = document.getElementById("graph-view");
@@ -757,7 +763,19 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
         selectedReviewId: state.selectedReviewId,
         selectedLogRoleId: state.selectedLogRoleId,
         logTail: state.logTail,
-        logSince: state.logSince
+        logSince: state.logSince,
+        graphMode: state.graphReadingMode,
+        graphRoleId: state.graphReadingRoleId,
+        graphFlowKey: state.graphReadingFlowKey,
+        graphChannel: state.graphReadingChannel,
+        conversationMode: state.conversationMode,
+        timelineRoleId: state.timelineRoleId,
+        timelineType: state.timelineType,
+        timelineStatus: state.timelineStatus,
+        timelineBranchId: state.timelineBranchId,
+        timelineReviewId: state.timelineReviewId,
+        timelineErrorCode: state.timelineErrorCode,
+        timelineChannel: state.timelineChannel
       }));
       if (state.locale && state.locale !== "en") {
         params.set("lang", state.locale);
@@ -802,6 +820,10 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
       state.events = [];
       state.eventCursor = 0;
       state.eventCursorIndex = createStreamCursorIndex(state.events);
+      state.conversation = null;
+      state.conversationCursor = 0;
+      state.conversationLoadInFlight = false;
+      state.conversationRefreshPending = false;
       state.engineLogs = [];
       state.roleLogs = [];
       state.logsLoaded = false;
@@ -1154,6 +1176,12 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
         payload.authoring = overlayRunGraphAuthoringLayout(payload.authoring, state.studioBridge.authoring);
         payload.graph = overlayRunGraphViewModelLayout(payload.graph, state.studioBridge.authoring);
       }
+      payload.graph = projectGraphReadingViewModel(payload.graph, {
+        mode: state.graphReadingMode || "all",
+        roleId: state.graphReadingRoleId || undefined,
+        flowKey: state.graphReadingFlowKey || undefined,
+        channel: state.graphReadingChannel || undefined
+      });
       return payload;
     }
 
@@ -1280,7 +1308,16 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
       if (state.timelineErrorCode) {
         params.set("errorCode", state.timelineErrorCode);
       }
+      if (state.timelineChannel) {
+        params.set("channel", state.timelineChannel);
+      }
       return API_PREFIX + "/runs/" + encodeURIComponent(runId) + "/events?" + params.toString();
+    }
+
+    function timelineChannelForRecord(record) {
+      return ["main", "error", "loop", "join", "feedback"].includes(record?.channel)
+        ? record.channel
+        : "";
     }
 
     function recordMatchesTimelineFilters(record) {
@@ -1305,6 +1342,9 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
       if (state.timelineErrorCode && record.errorCode !== state.timelineErrorCode) {
         return false;
       }
+      if (state.timelineChannel && timelineChannelForRecord(record) !== state.timelineChannel) {
+        return false;
+      }
       return true;
     }
 
@@ -1315,6 +1355,7 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
       if (timelineBranchEl) timelineBranchEl.value = state.timelineBranchId;
       if (timelineReviewEl) timelineReviewEl.value = state.timelineReviewId;
       if (timelineErrorEl) timelineErrorEl.value = state.timelineErrorCode;
+      if (timelineChannelEl) timelineChannelEl.value = state.timelineChannel || "";
     }
 
     function readTimelineFiltersFromInputs() {
@@ -1324,6 +1365,7 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
       state.timelineBranchId = timelineBranchEl?.value.trim() || "";
       state.timelineReviewId = timelineReviewEl?.value.trim() || "";
       state.timelineErrorCode = timelineErrorEl?.value.trim() || "";
+      state.timelineChannel = timelineChannelEl?.value || "";
     }
 
     function setFlash(kind, message, options) {
@@ -1786,7 +1828,8 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
         timelineStatusEl,
         timelineBranchEl,
         timelineReviewEl,
-        timelineErrorEl
+        timelineErrorEl,
+        timelineChannelEl
       ]) {
         if (input) {
           input.disabled = disabled || !state.selectedRunId;
@@ -5332,6 +5375,17 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
     }
 
     function renderTimeline(events, options) {
+      if (state.conversationMode) {
+        timelineEl.innerHTML = renderConversationHtml({
+          projection: state.conversation,
+          t,
+          escapeText,
+          statusClass,
+          displayUiToken,
+          formatTime
+        });
+        return;
+      }
       if (options?.append && timelineEl.children.length > 0) {
         const entry = events[events.length - 1];
         if (entry) {
@@ -5356,7 +5410,8 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
           status: state.timelineStatus,
           branchId: state.timelineBranchId,
           reviewId: state.timelineReviewId,
-          errorCode: state.timelineErrorCode
+          errorCode: state.timelineErrorCode,
+          channel: state.timelineChannel
         },
         t,
         escapeText,
@@ -5784,6 +5839,10 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
     }
 
     async function reloadTimeline(runId) {
+      if (state.conversationMode) {
+        await loadConversation(runId);
+        return;
+      }
       if (!runId) {
         state.events = [];
         state.eventCursor = 0;
@@ -5798,6 +5857,62 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
       renderTimeline(state.events);
       renderDetail();
       refreshMountedStudioRuntime();
+    }
+
+    async function loadConversation(runId, options) {
+      if (!runId) {
+        state.conversation = null;
+        state.conversationCursor = 0;
+        renderTimeline([]);
+        return;
+      }
+      if (options?.incremental && state.conversationLoadInFlight) {
+        state.conversationRefreshPending = true;
+        return;
+      }
+      const incremental = options?.incremental === true;
+      if (incremental) {
+        state.conversationLoadInFlight = true;
+      }
+      const requestId = state.runSelectionRequestId;
+      const params = new URLSearchParams({ cursor: String(incremental ? state.conversationCursor : 0), limit: "250" });
+      if (state.timelineRoleId) params.set("roleId", state.timelineRoleId);
+      if (state.timelineBranchId) params.set("branchId", state.timelineBranchId);
+      if (state.timelineType) params.set("type", state.timelineType);
+      if (state.timelineReviewId) params.set("reviewId", state.timelineReviewId);
+      if (state.timelineErrorCode) params.set("errorCode", state.timelineErrorCode);
+      if (state.timelineStatus) params.set("status", state.timelineStatus);
+      if (state.timelineChannel) params.set("channel", state.timelineChannel);
+      try {
+        const payload = await requestJson(API_PREFIX + "/runs/" + encodeURIComponent(runId) + "/conversation?" + params.toString());
+        if (!isCurrentRunSelection(runId, requestId)) {
+          return;
+        }
+        if (incremental && state.conversation) {
+          const byId = new Map((state.conversation.items || []).map((item) => [item.itemId, item]));
+          for (const item of payload.items || []) {
+            byId.set(item.itemId, item);
+          }
+          state.conversation = {
+            ...payload,
+            items: [...byId.values()].slice(-250)
+          };
+        } else {
+          state.conversation = payload;
+        }
+        state.conversationCursor = payload?.cursor?.next || state.conversationCursor;
+        renderTimeline([]);
+      } finally {
+        if (incremental) {
+          state.conversationLoadInFlight = false;
+          if (state.conversationRefreshPending && isCurrentRunSelection(runId, requestId)) {
+            state.conversationRefreshPending = false;
+            void loadConversation(runId, { incremental: true }).catch(() => undefined);
+          } else {
+            state.conversationRefreshPending = false;
+          }
+        }
+      }
     }
 
     async function refreshProjectDiagnostics() {
@@ -7177,6 +7292,10 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
         writeRouteToLocation();
         refreshMountedStudioRuntime();
 
+        if (state.conversationMode) {
+          await loadConversation(runId);
+        }
+
         if (!options || !options.keepStream) {
           stopStream();
           connectStream(runId, state.eventCursor);
@@ -7437,6 +7556,9 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
             renderTimeline(state.events, { append: true });
             refreshMountedStudioRuntime();
           }
+          if (state.conversationMode) {
+            void loadConversation(runId, { incremental: true }).catch(() => undefined);
+          }
           scheduleStreamRefresh(getStreamRefreshPlan(payload.record.type));
         } catch {
           // Ignore malformed stream payloads.
@@ -7543,6 +7665,7 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
       state.timelineBranchId = "";
       state.timelineReviewId = "";
       state.timelineErrorCode = "";
+      state.timelineChannel = "";
       syncTimelineFilterInputs();
       if (state.selectedRunId) {
         await reloadTimeline(state.selectedRunId);
@@ -7551,6 +7674,27 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
       }
       renderActionState();
     });
+
+    if (timelineConversationButton) {
+      timelineConversationButton.addEventListener("click", async () => {
+        state.conversationMode = !state.conversationMode;
+        timelineConversationButton.textContent = state.conversationMode
+          ? t("timeline.events", undefined, "Events")
+          : t("timeline.conversation", undefined, "Conversation");
+        if (state.conversationMode) {
+          timelineEl.innerHTML = '<div class="hint">' + escapeText(t("timeline.conversationLoading", undefined, "Loading conversation...")) + '</div>';
+          try {
+            await loadConversation(state.selectedRunId);
+          } catch (error) {
+            state.conversation = null;
+            timelineEl.innerHTML = '<div class="hint">' + escapeText(String(error?.message || error)) + '</div>';
+          }
+        } else {
+          renderTimeline(state.events);
+        }
+        writeRouteToLocation();
+      });
+    }
 
     logRoleEl.addEventListener("change", async (event) => {
       state.selectedLogRoleId = event.target.value || "";
@@ -7625,6 +7769,18 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
     state.selectedLogRoleId = restoreRunSelection ? initialRoute.logRoleId : "";
     state.logTail = restoreRunSelection ? initialRoute.tail : "";
     state.logSince = restoreRunSelection ? initialRoute.since : "";
+    state.graphReadingMode = initialRoute.graphMode;
+    state.graphReadingRoleId = initialRoute.graphRoleId;
+    state.graphReadingFlowKey = initialRoute.graphFlowKey;
+    state.graphReadingChannel = initialRoute.graphChannel;
+    state.conversationMode = initialRoute.conversationMode;
+    state.timelineRoleId = initialRoute.timelineRoleId;
+    state.timelineType = initialRoute.timelineType;
+    state.timelineStatus = initialRoute.timelineStatus;
+    state.timelineBranchId = initialRoute.timelineBranchId;
+    state.timelineReviewId = initialRoute.timelineReviewId;
+    state.timelineErrorCode = initialRoute.timelineErrorCode;
+    state.timelineChannel = initialRoute.timelineChannel;
     writeRouteToLocation();
     logTailEl.value = state.logTail;
     logPageSizeEl.value = state.logPageSize;

@@ -45,9 +45,9 @@ async function seedProject(workdir: string): Promise<void> {
       "%% system.version=1.0.0",
       "%% law.global=law.minimal.base",
       "%% entry.role=demo-analyst",
-      "%% model.bind.demo-analyst=opencode/gpt-5.4",
+      "%% model.bind.demo-analyst=openai/gpt-5-nano",
       "input -->|ENTER| analyst[Role:demo-analyst]",
-      "analyst[Role:demo-analyst] -->|DONE| output",
+      "analyst[Role:demo-analyst] -->|ANALYSIS_DONE| output",
       ""
     ].join("\n"),
     "utf8"
@@ -302,7 +302,7 @@ test("Studio Bridge renders and edits through the real graph workspace", async (
             "%% system.version=1.0.0",
             "%% law.global=law.minimal.base",
             "%% entry.role=demo-analyst",
-            "%% model.bind.demo-analyst=opencode/gpt-5.4",
+            "%% model.bind.demo-analyst=openai/gpt-5-nano",
             "input -->|ENTER| analyst[Role:demo-analyst]",
             "analyst[Role:demo-analyst] -->|REVIEW| reviewer[Role:qa-reviewer]",
             "reviewer[Role:qa-reviewer] -->|DONE| output",
@@ -535,13 +535,13 @@ test("Studio graph island exposes minimap, focus pulse, and quick open when moun
             roleId: "demo-analyst",
             title: "Demo Analyst",
             bindingKind: "model",
-            modelRef: "opencode/gpt-5.4"
+            modelRef: "openai/gpt-5-nano"
           },
           "qa-reviewer": {
             roleId: "qa-reviewer",
             title: "QA Reviewer",
             bindingKind: "model",
-            modelRef: "opencode/gpt-5.4"
+            modelRef: "openai/gpt-5-nano"
           }
         },
         flows: {

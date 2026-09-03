@@ -40,7 +40,6 @@ import {
   asRecord,
   asString
 } from "./json-guards.js";
-import type { ModelCatalog, ModelSelectionConfig } from "../runtime/types.js";
 import type { SystemDefinition } from "../runtime/types.js";
 import type { ResolvedModelRuntimeConfig } from "../runtime/model-selection.js";
 import type { CompilerDiagnostic } from "../runtime/compiler.js";
@@ -397,51 +396,6 @@ async function removeCreatedProjectFiles(workdir: string, testHooks?: ProjectCre
     error.details = { workdir, failures };
     throw error;
   }
-}
-
-function createFallbackModelCatalog(): ModelCatalog {
-  return {
-    catalogVersion: "1",
-    generatedAt: new Date().toISOString(),
-    source: {
-      command: "visualizer project create fallback"
-    },
-    models: [
-      {
-        ref: "opencode/gpt-5.4",
-        provider: "opencode",
-        model: "gpt-5.4",
-        name: "GPT-5.4",
-        status: "active",
-        capabilities: {
-          textInput: true,
-          textOutput: true,
-          toolcall: true
-        },
-        variants: ["medium"]
-      }
-    ]
-  };
-}
-
-function createFallbackModelSelection(systemId: string): ModelSelectionConfig {
-  return {
-    configVersion: "1",
-    defaults: {
-      model: "opencode/gpt-5.4",
-      variant: "medium",
-      timeoutMs: 120000,
-      maxOutputBytes: 65536
-    },
-    systems: {
-      [systemId]: {
-        defaults: {
-          model: "opencode/gpt-5.4",
-          variant: "medium"
-        }
-      }
-    }
-  };
 }
 
 function buildWorkbenchStructure(system: SystemDefinition): Record<string, unknown> {
@@ -913,36 +867,11 @@ export async function createProjectVisualization(args: {
       systemSource
     });
     const authoringRecord = authoring as Record<string, unknown>;
-    const warnings: string[] = [];
-    let modelSyncResult: {
-      catalogPath: string;
-      selectionPath: string;
-      generatedSelection: boolean;
-      selectedModel?: string;
-    };
-    try {
-      modelSyncResult = await syncProjectModels({
-        workdir: targetWorkdir,
-        systemPath: "system.mmd",
-        strategy: templateSpec.modelSeedStrategy
-      });
-    } catch (error) {
-      const paths = resolveOgsPaths(targetWorkdir);
-      warnings.push(
-        "Model catalog discovery is unavailable. A fallback model selection was written; refresh models before release."
-      );
-      await writeJsonFileAtomic(paths.modelCatalogPath, createFallbackModelCatalog());
-      await writeJsonFileAtomic(
-        paths.modelSelectionPath,
-        createFallbackModelSelection(authoring.system.systemId)
-      );
-      modelSyncResult = {
-        catalogPath: paths.modelCatalogPath,
-        selectionPath: paths.modelSelectionPath,
-        generatedSelection: true,
-        selectedModel: "opencode/gpt-5.4"
-      };
-    }
+    const modelSyncResult = await syncProjectModels({
+      workdir: targetWorkdir,
+      systemPath: "system.mmd",
+      strategy: templateSpec.modelSeedStrategy
+    });
     const draft = await saveStudioAuthoringDraft({
       workdir: targetWorkdir,
       authoring: authoringRecord,
@@ -975,7 +904,7 @@ export async function createProjectVisualization(args: {
       selectedModel: modelSyncResult.selectedModel,
       importedRoleIds: syncResult.importedRoleIds,
       importedModelIds: syncResult.importedModelIds,
-      warnings,
+      warnings: [],
       draftPath: draft.draftPath,
       draftState: templateId === "empty" ? "draft-unbound-unpublishable" : "draft",
       validation: await validateProjectSystemSource({
@@ -1352,18 +1281,26 @@ export async function inspectProjectRolePackagesVisualization(workdir: string): 
             const manifestPath = resolve(resolvedPath, "role.json");
             const manifest = await readJsonFile(manifestPath).catch(() => undefined);
             const manifestRecord = asRecord(manifest);
-            const promptTemplate = asString(manifestRecord?.promptTemplate);
-            const outputSchema = asString(manifestRecord?.outputSchema);
+            let validatedManifest: ReturnType<typeof validateRolePackageManifest> | undefined;
+            let manifestError: string | undefined;
+            try {
+              validatedManifest = validateRolePackageManifest(manifest, manifestPath);
+            } catch (error) {
+              manifestError = error instanceof Error ? error.message : String(error);
+            }
+            const promptTemplate = asString(validatedManifest?.promptTemplate ?? manifestRecord?.promptTemplate);
+            const outputSchema = asString(validatedManifest?.outputSchema ?? manifestRecord?.outputSchema);
             return {
               roleId,
               inSystem: false,
-              roleVersion: asString(manifestRecord?.roleVersion),
-              name: asString(manifestRecord?.name) ?? roleId,
-              description: asString(manifestRecord?.description),
-              preferredModelTags: Array.isArray(manifestRecord?.preferredModelTags)
-            ? manifestRecord.preferredModelTags.filter((item): item is string => typeof item === "string")
-            : [],
-              status: manifestRecord?.roleId === roleId && promptTemplate && outputSchema ? "ok" : "invalid",
+              roleVersion: validatedManifest?.roleVersion ?? asString(manifestRecord?.roleVersion),
+              name: validatedManifest?.name ?? asString(manifestRecord?.name) ?? roleId,
+              description: validatedManifest?.description ?? asString(manifestRecord?.description),
+              preferredModelTags: validatedManifest?.preferredModelTags ?? (Array.isArray(manifestRecord?.preferredModelTags)
+                ? manifestRecord.preferredModelTags.filter((item): item is string => typeof item === "string")
+                : []),
+              status: !manifestError && validatedManifest?.roleId === roleId && promptTemplate && outputSchema ? "ok" : "invalid",
+              error: manifestError,
               resolvedPath,
               manifestPath,
               promptTemplatePath: promptTemplate ? resolve(resolvedPath, promptTemplate) : undefined,
