@@ -2,7 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import path from "node:path";
 import os from "node:os";
-import { mkdir, mkdtemp, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, writeFile } from "node:fs/promises";
 
 import {
   loadRolePackage,
@@ -79,9 +79,18 @@ test("loadRolePackage fails fast when agent.md is missing", async () => {
         roleId: "missing-agent",
         roleVersion: "1.0.0",
         name: "Missing Agent",
-        description: "fixture",
-        promptTemplate: "prompt.md",
-        outputSchema: "output.schema.json"
+          description: "fixture",
+          promptTemplate: "prompt.md",
+          outputSchema: "output.schema.json",
+          contractVersion: 1,
+          purpose: "Validate a stable fixture responsibility",
+          responsibility: { kind: "atomic", owns: [], contributes: [], doesNotOwn: [] },
+          inputs: { preconditions: [] },
+          outputs: { events: [], postconditions: [] },
+          authority: { controlActions: [] },
+          constraints: { writableStateFields: [], allowedTools: [] },
+          failure: { retryableErrorCodes: [], terminalErrorCodes: [] },
+          audit: { requiredFields: [] }
       },
       null,
       2
@@ -121,6 +130,80 @@ test("role manifests reject removed inputSchema fields", () => {
         "invalid-old-field-role/role.json"
       ),
     /unknown field/
+  );
+});
+
+test("role manifests require the current Role Contract sections", () => {
+  assert.throws(
+    () =>
+      validateRolePackageManifest(
+        {
+          roleId: "missing-contract-role",
+          roleVersion: "1.0.0",
+          name: "Missing Contract Role",
+          description: "missing current contract",
+          promptTemplate: "prompt.md",
+          outputSchema: "output.schema.json"
+        },
+        "missing-contract-role/role.json"
+      ),
+    /\$\.responsibility.*expected object/
+  );
+});
+
+test("role purposes reject concrete identities but preserve domain terminology", async () => {
+  const base = JSON.parse(await readFile(path.resolve(roleRootDir, "hello-ogsystem", "role.json"), "utf8"));
+
+  assert.doesNotThrow(() => validateRolePackageManifest({
+    ...base,
+    purpose: "Coordinates human review and Model QA findings."
+  }, "valid-purpose/role.json"));
+  for (const purpose of [
+    "Analyzes Google Ads performance",
+    "Optimizes Amazon Marketplace listings",
+    "Plans Meta Ads campaigns",
+    "Maintains a shared run workspace and selects a terminal branch"
+  ]) {
+    assert.doesNotThrow(() => validateRolePackageManifest({ ...base, purpose }, "domain-purpose/role.json"));
+  }
+
+  for (const purpose of [
+    "OpenAI GPT-5 operator Alice",
+    "ChatGPT specialist",
+    "Uses openai/gpt-5 for analysis",
+    "Coordinates work for operator Alice",
+    "Runs the session instance session-42",
+    "Uses provider: acme-runtime"
+  ]) {
+    assert.throws(
+      () => validateRolePackageManifest({ ...base, purpose }, "concrete-purpose/role.json"),
+      /must describe an abstract responsibility/
+    );
+  }
+});
+
+test("role contracts reject overlapping failure classes and unknown audit fields", async () => {
+  const base = JSON.parse(await readFile(path.resolve(roleRootDir, "hello-ogsystem", "role.json"), "utf8"));
+  base.failure.retryableErrorCodes = ["TEMPORARY_IO"];
+  base.failure.terminalErrorCodes = ["TEMPORARY_IO"];
+  assert.throws(
+    () => validateRolePackageManifest(base, "invalid-failure/role.json"),
+    /cannot be both retryable and terminal/
+  );
+
+  const tempRoot = await mkdtemp(path.join(os.tmpdir(), "ogs-role-audit-contract-"));
+  const roleDir = path.join(tempRoot, "writer");
+  await mkdir(roleDir, { recursive: true });
+  const valid = JSON.parse(await readFile(path.resolve(roleRootDir, "hello-ogsystem", "role.json"), "utf8"));
+  valid.roleId = "writer";
+  valid.audit.requiredFields = ["not_an_audit_field"];
+  await writeFile(path.join(roleDir, "role.json"), JSON.stringify(valid), "utf8");
+  for (const file of ["prompt.md", "agent.md", "output.schema.json"]) {
+    await writeFile(path.join(roleDir, file), await readFile(path.resolve(roleRootDir, "hello-ogsystem", file)), "utf8");
+  }
+  await assert.rejects(
+    () => loadRolePackage({ roleId: "writer", roleRootDir: tempRoot }),
+    /unknown audit or output field not_an_audit_field/
   );
 });
 

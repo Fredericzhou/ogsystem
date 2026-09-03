@@ -355,27 +355,20 @@ test("Studio canvas apply ignores edges that reference missing roles", () => {
   assert.equal(Object.values(applied.flows).length, canvas.edges.length);
 });
 
-test("Studio graph bundle clears stale edge vertices with the X6-compatible API", async () => {
+test("Studio graph bundle consumes projected edge route points with the X6-compatible API", async () => {
   const bundle = await readFile(new URL("../dist/visualizer/studio-client/studio-graph.js", import.meta.url), "utf8");
-  assert.match(bundle, /cell\.setVertices\(\[\]\)/);
+  assert.match(bundle, /cell\.setVertices\(routing\?\.vertices \?\? \[\]\)/);
   assert.doesNotMatch(bundle, /cell\.removeVertices\(\)/);
 });
 
-test("Studio graph bundle chooses role-relative ports and X6 routers for non-forward flows", async () => {
+test("Studio graph bundle consumes semantic projection routing for non-forward flows", async () => {
   const bundle = await readFile(new URL("../dist/visualizer/studio-client/studio-graph.js", import.meta.url), "utf8");
-  assert.match(bundle, /const isVerticalRoute = absoluteHorizontalGap < 80 \|\| verticalGap > absoluteHorizontalGap \* 1\.15/);
-  assert.match(bundle, /kind: "vertical"/);
-  assert.match(bundle, /sourceSide: targetBelowSource \? "bottom" : "top"/);
-  assert.match(bundle, /targetSide: targetBelowSource \? "top" : "bottom"/);
-  assert.match(bundle, /const isBackwardEdge = horizontalGap < -36/);
-  assert.match(bundle, /sourceSide: "left"/);
-  assert.match(bundle, /targetSide: "right"/);
-  assert.match(bundle, /startDirections: \["left"\]/);
-  assert.match(bundle, /endDirections: \["right"\]/);
-  assert.match(bundle, /startDirections: \[route\.sourceSide\]/);
-  assert.match(bundle, /endDirections: \[route\.targetSide\]/);
-  assert.match(bundle, /studioEdgeEndpointOrder/);
-  assert.match(bundle, /const isTightForwardHop = horizontalGap > 0 && horizontalGap < 120/);
+  assert.match(bundle, /projectionRouting/);
+  assert.match(bundle, /routePoints/);
+  assert.match(bundle, /lane:/);
+  assert.match(bundle, /createDagreLayoutProjection/);
+  assert.match(bundle, /BACK_EDGE_PRESERVED/);
+  assert.doesNotMatch(bundle, /function buildStudioEdgeRouting/);
   assert.match(bundle, /name: "orth"/);
   assert.match(bundle, /name: "manhattan"/);
 });
@@ -383,11 +376,12 @@ test("Studio graph bundle chooses role-relative ports and X6 routers for non-for
 test("Studio graph bundle preserves stored edit layout and distributes boundaries during auto layout", async () => {
   const bundle = await readFile(new URL("../dist/visualizer/studio-client/studio-graph.js", import.meta.url), "utf8");
   assert.match(bundle, /hasCompleteStoredRoleLayout/);
-  assert.match(bundle, /layoutPathExists/);
-  assert.match(bundle, /positionBoundaryExtremes/);
-  assert.match(bundle, /this\.positionBoundaryExtremes\(positions, "horizontal", config\.columnGap\)/);
-  assert.match(bundle, /this\.positionBoundaryExtremes\(positions, "vertical", 96\)/);
-  assert.match(bundle, /studioNode\.roleSeat !== true && .*studioNode\.kind !== "boundary"/);
+  assert.match(bundle, /createDagreLayoutProjection/);
+  assert.match(bundle, /createStoredLayoutProjection/);
+  assert.match(bundle, /buildProjection/);
+  assert.match(bundle, /BACK_EDGE_PRESERVED/);
+  assert.match(bundle, /boundaryPositions/);
+  assert.match(bundle, /routePoints/);
   assert.match(bundle, /preserveBoundaryNodeLayout/);
   assert.match(bundle, /magnetConnectable:\s*false/);
   assert.doesNotMatch(bundle, /nodeMovable:\s*false/);

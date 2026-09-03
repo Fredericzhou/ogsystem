@@ -23,6 +23,7 @@ import {
   validateConditionAst,
   validateSemanticIR
 } from "../dist/runtime/adapter.js";
+import { validateSemanticRoleContracts } from "../dist/runtime/adapter.js";
 import { loadSystemFromMermaid } from "../dist/runtime/parse-mermaid.js";
 import {
   applySemanticBusinessState,
@@ -242,7 +243,6 @@ test("Loop Scope routes a boundary transition to onExhausted at max rounds", () 
       { fromRoleId: "summary", toRoleId: "output", eventType: "DONE" }
     ],
     lawBinding: { globalLawRef: "law.test" },
-    talentBinding: {},
     executionBinding: {},
     modelBinding: {}
   };
@@ -467,7 +467,7 @@ test("semantic compiler binds Mermaid topology to versioned semantics", async ()
   const system = {
     systemId: "demo", systemVersion: "1", entryRoleId: "a", roleIds: ["a", "b"],
     flows: [{ fromRoleId: "a", toRoleId: "b", eventType: "NEXT" }],
-    lawBinding: { globalLawRef: "law" }, talentBinding: {}, executionBinding: {}, modelBinding: {}
+    lawBinding: { globalLawRef: "law" }, executionBinding: {}, modelBinding: {}
   };
   const compiled = compileSemanticIR({ system, specification: snapshot, maxTransitionsPerRun: 10 });
   assert.equal(compiled.ir.joins[0].roleId, "b");
@@ -489,12 +489,42 @@ test("semantic compiler freezes event contracts, retry policy, reducers, and cap
     "  max_transitions_per_run: 10"
   ].join("\n"));
   const snapshot = await loadOgsSpecification(workdir);
-  const system = { systemId: "demo", systemVersion: "1", entryRoleId: "a", roleIds: ["a", "b"], flows: [{ fromRoleId: "a", toRoleId: "b", eventType: "DONE" }], lawBinding: { globalLawRef: "law" }, talentBinding: {}, executionBinding: {}, modelBinding: {} };
+  const system = { systemId: "demo", systemVersion: "1", entryRoleId: "a", roleIds: ["a", "b"], flows: [{ fromRoleId: "a", toRoleId: "b", eventType: "DONE" }], lawBinding: { globalLawRef: "law" }, executionBinding: {}, modelBinding: {} };
   const compiled = compileSemanticIR({ system, specification: snapshot, maxTransitionsPerRun: 20 });
   assert.equal(compiled.ir.stateSchema.reducers.count, "increment");
   assert.equal(compiled.ir.events.DONE.payloadSchema.required[0], "ok");
   assert.deepEqual(compiled.ir.retryByRoleId.a, { maxAttempts: 2, backoff: "exponential" });
   assert.equal(compiled.ir.capabilities.maxTransitionsPerRun, 10);
+});
+
+test("Role Contract contributions must resolve to state or declared event payload fields", () => {
+  const rolePackage = {
+    manifest: {
+      responsibility: { kind: "atomic", owns: [], contributes: ["decision", "finding"], doesNotOwn: [] },
+      constraints: { writableStateFields: [], allowedTools: [] },
+      outputs: { events: ["DONE"], postconditions: [] },
+      failure: { retryableErrorCodes: [], terminalErrorCodes: [] },
+      authority: { controlActions: [] }
+    },
+    outputSchema: {}
+  };
+  const args = {
+    semanticIR: {
+      stateSchema: { ref: "state.json", writableRolesByField: {} },
+      events: { DONE: { payloadSchema: { type: "object", properties: { finding: { type: "string" } } } } },
+      composites: [],
+      capabilities: { allowedToolsByRoleId: { reviewer: [] } }
+    },
+    specification: { sources: { "contracts/state.json": { digest: "state", value: { type: "object", properties: { decision: { type: "string" } } } } } },
+    rolePackagesByRoleId: new Map([["reviewer", rolePackage]])
+  };
+
+  assert.doesNotThrow(() => validateSemanticRoleContracts(args));
+  rolePackage.manifest.responsibility.contributes = ["invented_field"];
+  assert.throws(
+    () => validateSemanticRoleContracts(args),
+    /contributes unknown state or declared output field invented_field/
+  );
 });
 
 test("semantic compiler rejects join declarations that diverge from topology", async () => {
@@ -504,6 +534,119 @@ test("semantic compiler rejects join declarations that diverge from topology", a
     "version: '1'", "system:", "  systemId: demo", "  systemVersion: '1'", "state:", "  schema: contracts/state.json", "joins:", "  b:", "    mode: all_of", "    sources: [x]", "    timeoutSeconds: 10", "    onTimeout: fail"
   ].join("\n"));
   const snapshot = await loadOgsSpecification(workdir);
-  const system = { systemId: "demo", systemVersion: "1", entryRoleId: "a", roleIds: ["a", "b", "x"], flows: [{ fromRoleId: "a", toRoleId: "b", eventType: "NEXT" }], lawBinding: { globalLawRef: "law" }, talentBinding: {}, executionBinding: {}, modelBinding: {} };
+  const system = { systemId: "demo", systemVersion: "1", entryRoleId: "a", roleIds: ["a", "b", "x"], flows: [{ fromRoleId: "a", toRoleId: "b", eventType: "NEXT" }], lawBinding: { globalLawRef: "law" }, executionBinding: {}, modelBinding: {} };
   assert.throws(() => compileSemanticIR({ system, specification: snapshot, maxTransitionsPerRun: 10 }), /sources must match Mermaid/);
+});
+
+test("semantic compiler validates composite input and output references independently", async () => {
+  const workdir = await mkdtemp(join(tmpdir(), "ogs-semantic-composite-"));
+  await mkdir(join(workdir, ".ogs", "contracts"), { recursive: true });
+  const contract = JSON.stringify({ version: "1", type: "object" });
+  await writeFile(join(workdir, ".ogs", "contracts", "state.json"), contract);
+  await writeFile(join(workdir, ".ogs", "contracts", "input.json"), contract);
+  await writeFile(join(workdir, ".ogs", "contracts", "output.json"), contract);
+  const systemSource = {
+    systemId: "demo",
+    systemVersion: "1",
+    entryRoleId: "owner",
+    roleIds: ["owner"],
+    flows: [],
+    lawBinding: { globalLawRef: "law" },
+    executionBinding: {},
+    modelBinding: {}
+  };
+  const compile = async (inputContract, outputContract) => {
+    await writeFile(join(workdir, ".ogs", "semantics.yaml"), [
+      "version: '1'",
+      "system:",
+      "  systemId: demo",
+      "  systemVersion: '1'",
+      "state:",
+      "  schema: contracts/state.json",
+      "roles:",
+      "  owner: { modes: { default: {} } }",
+      "composites:",
+      "  owner:",
+      "    owner_role_id: owner",
+      "    nested_system_ref: contracts/state.json",
+      `    input_contract: contracts/${inputContract}`,
+      `    output_contract: contracts/${outputContract}`,
+      "    state_namespace: owner-state",
+      "    checkpoint_namespace: owner-checkpoints",
+      "    error_propagation: contain",
+      "    termination_propagation: contain"
+    ].join("\n"));
+    return compileSemanticIR({ system: systemSource, specification: await loadOgsSpecification(workdir), maxTransitionsPerRun: 10 });
+  };
+  await assert.doesNotReject(() => compile("input.json", "output.json"));
+  await assert.rejects(() => compile("missing-input.json", "output.json"), /Composite input contract not found/);
+  await assert.rejects(() => compile("input.json", "missing-output.json"), /Composite output contract not found/);
+});
+
+test("semantic compiler loads nested systems and rejects composite cycles", async () => {
+  const workdir = await mkdtemp(join(tmpdir(), "ogs-semantic-composite-cycle-"));
+  await mkdir(join(workdir, ".ogs", "contracts"), { recursive: true });
+  await mkdir(join(workdir, ".ogs", "systems"), { recursive: true });
+  const contract = JSON.stringify({ version: "1", type: "object" });
+  await writeFile(join(workdir, ".ogs", "contracts", "state.json"), contract);
+  await writeFile(join(workdir, ".ogs", "contracts", "input.json"), contract);
+  await writeFile(join(workdir, ".ogs", "contracts", "output.json"), contract);
+  const composite = (ownerRoleId, nestedSystemRef) => [
+    `    owner_role_id: ${ownerRoleId}`,
+    `    nested_system_ref: ${nestedSystemRef}`,
+    "    input_contract: contracts/input.json",
+    "    output_contract: contracts/output.json",
+    "    state_namespace: state-owner",
+    "    checkpoint_namespace: checkpoint-owner",
+    "    error_propagation: contain",
+    "    termination_propagation: contain"
+  ];
+  await writeFile(join(workdir, ".ogs", "semantics.yaml"), [
+    "version: '1'", "system:", "  systemId: root", "  systemVersion: '1'",
+    "state:", "  schema: contracts/state.json", "roles:", "  owner: { modes: { default: {} } }",
+    "composites:", "  owner:", ...composite("owner", "systems/child.yaml")
+  ].join("\n"));
+  await writeFile(join(workdir, ".ogs", "systems", "child.yaml"), [
+    "version: '1'", "system:", "  systemId: child", "  systemVersion: '1'", "composites:",
+    "  child-owner:", ...composite("child-owner", "semantics.yaml")
+  ].join("\n"));
+
+  const snapshot = await loadOgsSpecification(workdir);
+  assert.ok(Object.keys(snapshot.sources).some((source) => source.endsWith("/systems/child.yaml")));
+  const system = {
+    systemId: "root", systemVersion: "1", entryRoleId: "owner", roleIds: ["owner"], flows: [],
+    lawBinding: { globalLawRef: "law" }, executionBinding: {}, modelBinding: {}
+  };
+  assert.throws(
+    () => compileSemanticIR({ system, specification: snapshot, maxTransitionsPerRun: 10 }),
+    /Composite responsibility cycle detected/
+  );
+});
+
+test("semantic compiler rejects undeclared cross-System state access", async () => {
+  const workdir = await mkdtemp(join(tmpdir(), "ogs-semantic-composite-state-"));
+  await mkdir(join(workdir, ".ogs", "contracts"), { recursive: true });
+  const contract = JSON.stringify({ version: "1", type: "object" });
+  await writeFile(join(workdir, ".ogs", "contracts", "state.json"), contract);
+  await writeFile(join(workdir, ".ogs", "contracts", "input.json"), contract);
+  await writeFile(join(workdir, ".ogs", "contracts", "output.json"), contract);
+  await writeFile(join(workdir, ".ogs", "semantics.yaml"), [
+    "version: '1'", "system:", "  systemId: root", "  systemVersion: '1'",
+    "state:", "  schema: contracts/state.json", "roles:", "  owner: { modes: { default: {} } }",
+    "composites:", "  owner:",
+    "    owner_role_id: owner", "    nested_system_ref: contracts/state.json",
+    "    input_contract: contracts/input.json", "    output_contract: contracts/output.json",
+    "    state_namespace: owner-state", "    checkpoint_namespace: owner-checkpoints",
+    "    error_propagation: contain", "    termination_propagation: contain",
+    "    read_state_fields: [secret]"
+  ].join("\n"));
+  const snapshot = await loadOgsSpecification(workdir);
+  const system = {
+    systemId: "root", systemVersion: "1", entryRoleId: "owner", roleIds: ["owner"], flows: [],
+    lawBinding: { globalLawRef: "law" }, executionBinding: {}, modelBinding: {}
+  };
+  assert.throws(
+    () => compileSemanticIR({ system, specification: snapshot, maxTransitionsPerRun: 10 }),
+    /Cross-System state access requires an explicit parent\/child state contract/
+  );
 });

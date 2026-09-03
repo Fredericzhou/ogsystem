@@ -6,6 +6,7 @@ import { lstat, mkdtemp, mkdir, readFile, readdir, symlink, writeFile } from "no
 
 import { runSystemWithAdapter } from "../dist/runtime/adapter.js";
 import { writeHumanReviewDecision } from "../dist/runtime/project-lifecycle.js";
+import { latestRoleContract } from "../tests-support/role-fixture.mjs";
 
 function parseJsonCodeBlock(markdown) {
   const match = markdown.match(/```json\n([\s\S]*?)\n```/);
@@ -45,7 +46,10 @@ async function writeModelBoundRole(args) {
         name: args.name ?? args.roleId,
         description: args.description ?? `${args.roleId} test role`,
         promptTemplate: "prompt.md",
-        outputSchema: "output.schema.json"
+        outputSchema: "output.schema.json",
+        ...latestRoleContract({ events: args.allowedEvents }),
+        constraints: { writableStateFields: [], allowedTools: ["tool.fixture"] },
+        ...(args.controlActions ? { authority: { controlActions: args.controlActions } } : {})
       },
       null,
       2
@@ -514,7 +518,8 @@ test("adapter stops with pending human review and keeps reviewed output unreleas
   await writeModelBoundRole({
     rolesRoot,
     roleId: "writer",
-    allowedEvents: ["DONE"]
+    allowedEvents: ["DONE"],
+    controlActions: ["approve", "pause", "rework", "terminate"]
   });
 
   await writeFile(
@@ -595,7 +600,8 @@ test("adapter resume applies approved human review and releases the reviewed res
   await writeModelBoundRole({
     rolesRoot,
     roleId: "writer",
-    allowedEvents: ["DONE"]
+    allowedEvents: ["DONE"],
+    controlActions: ["approve", "pause", "rework", "terminate"]
   });
 
   await writeFile(
@@ -692,7 +698,8 @@ test("adapter resume backfills applied human review decision metadata without du
   await writeModelBoundRole({
     rolesRoot,
     roleId: "writer",
-    allowedEvents: ["DONE"]
+    allowedEvents: ["DONE"],
+    controlActions: ["approve", "pause", "rework", "terminate"]
   });
 
   await writeFile(
@@ -1307,8 +1314,8 @@ test("adapter executes non-join multi-incoming role once per active branch", asy
 %% model.bind.test-decision=deep-o3
 
 input -->|START| moderator[Role:debate-moderator]
-moderator[Role:debate-moderator] -->|TO_A| branchA[Role:test-branch-a]
-moderator[Role:debate-moderator] -->|TO_B| branchB[Role:test-branch-b]
+moderator[Role:debate-moderator] -->|SEND_ALIGNMENTIST| branchA[Role:test-branch-a]
+moderator[Role:debate-moderator] -->|SEND_MINIMALIST| branchB[Role:test-branch-b]
 branchA[Role:test-branch-a] -->|END_A| decision[Role:test-decision]
 branchB[Role:test-branch-b] -->|END_B| decision[Role:test-decision]
 decision[Role:test-decision] -->|PATH_A| output
@@ -1641,7 +1648,8 @@ test("adapter keeps scheduler recursion budget above loop-heavy transition count
         name: "Loop Probe",
         description: "Scheduler recursion stress role",
         promptTemplate: "prompt.md",
-        outputSchema: "output.schema.json"
+        outputSchema: "output.schema.json",
+        ...latestRoleContract({ events: ["DONE", "RETRY"] })
       },
       null,
       2

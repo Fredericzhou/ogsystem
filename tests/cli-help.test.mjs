@@ -35,9 +35,18 @@ test("ogs help command surfaces layered guidance", async () => {
   assert.match(rootHelp.stdout, /run\s+Start, inspect, review, or control runs/);
   assert.match(rootHelp.stdout, /vis\s+Start the read-mostly visualizer/);
   assert.match(rootHelp.stdout, /ogs help run logs/);
+  assert.match(rootHelp.stdout, /ogs help compatibility/);
   assert.match(rootHelp.stdout, /ogs project create --help/);
   assert.match(rootHelp.stdout, /ogs vis --help/);
   assert.match(rootHelp.stdout, /commands use the current directory unless --workdir overrides it/);
+
+  const compatibilityHelp = await runNodeCli(runtimeCliPath, ["help", "compatibility"]);
+  assert.strictEqual(compatibilityHelp.code, 0);
+  assert.match(compatibilityHelp.stdout, /latest two minor lines of the current major release/);
+  assert.match(compatibilityHelp.stdout, /development-test; no stable release line/);
+  assert.match(compatibilityHelp.stdout, /future\/unknown config or schema versions/);
+  assert.match(compatibilityHelp.stdout, /replacement and planned removal release/);
+  assert.match(compatibilityHelp.stdout, /docs\/development\/release-compatibility-policy\.md/);
 
   const doctorHelp = await runNodeCli(runtimeCliPath, ["doctor", "--help"]);
   assert.strictEqual(doctorHelp.code, 0);

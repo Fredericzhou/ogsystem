@@ -162,7 +162,9 @@ test("sync-agent-sources generates canonical agency roles and runtime can load t
       "%% model.bind.imported.agency.frontend-developer=balanced-gpt52",
       "",
       "input -->|START| agent[Role:imported.agency.frontend-developer]",
-      "agent[Role:imported.agency.frontend-developer] -->|DONE| output"
+      "agent[Role:imported.agency.frontend-developer] -->|BLOCKED| output",
+      "agent[Role:imported.agency.frontend-developer] -->|DONE| output",
+      "agent[Role:imported.agency.frontend-developer] -->|NEEDS_CLARIFICATION| output"
     ].join("\n"),
     "utf8"
   );

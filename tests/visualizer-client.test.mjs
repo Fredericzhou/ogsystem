@@ -22,6 +22,7 @@ import {
   renderStudioBridgePanel
 } from "../dist/visualizer/client-renderers.js";
 import { authoringToCanvasDocument } from "../dist/visualizer/studio-authoring.js";
+import { latestRoleContract } from "../tests-support/role-fixture.mjs";
 
 const PAGE_ELEMENT_IDS = [
   "run-list",
@@ -61,6 +62,7 @@ const PAGE_ELEMENT_IDS = [
   "timeline",
   "timeline-role",
   "timeline-type",
+  "timeline-channel",
   "timeline-status",
   "timeline-branch",
   "timeline-review",
@@ -1869,7 +1871,8 @@ function createBackend(options = {}) {
                 name: "Demo Analyst",
                 description: "fixture",
                 promptTemplate: "prompt.md",
-                outputSchema: "output.schema.json"
+                outputSchema: "output.schema.json",
+                ...latestRoleContract({ events: ["DONE"] })
               }, null, 2)
             },
             "agent.md": {
@@ -2464,7 +2467,19 @@ test("visualizer client route helpers round-trip query state", () => {
     reviewId: "review-1",
     logRoleId: "alpha",
     tail: "25",
-    since: "2026-04-23T10:11"
+    since: "2026-04-23T10:11",
+    graphMode: "all",
+    graphRoleId: "",
+    graphFlowKey: "",
+    graphChannel: "",
+    conversationMode: false,
+    timelineRoleId: "",
+    timelineType: "",
+    timelineStatus: "",
+    timelineBranchId: "",
+    timelineReviewId: "",
+    timelineErrorCode: "",
+    timelineChannel: ""
   });
   assert.equal(normalizeLifecycleView("build", ""), "design");
   assert.equal(normalizeLifecycleView("", "project"), "project");
@@ -2488,7 +2503,19 @@ test("visualizer client route helpers round-trip query state", () => {
     reviewId: "",
     logRoleId: "",
     tail: "",
-    since: ""
+    since: "",
+    graphMode: "all",
+    graphRoleId: "",
+    graphFlowKey: "",
+    graphChannel: "",
+    conversationMode: false,
+    timelineRoleId: "",
+    timelineType: "",
+    timelineStatus: "",
+    timelineBranchId: "",
+    timelineReviewId: "",
+    timelineErrorCode: "",
+    timelineChannel: ""
   });
 });
 
@@ -3878,14 +3905,17 @@ test("visualizer client applies timeline filters through the events API", async 
 
   const roleSelect = harness.document.getElementById("timeline-role");
   const typeInput = harness.document.getElementById("timeline-type");
+  const channelSelect = harness.document.getElementById("timeline-channel");
   const applyButton = harness.document.getElementById("timeline-apply");
 
   assert.ok(roleSelect);
   assert.ok(typeInput);
+  assert.ok(channelSelect);
   assert.ok(applyButton);
 
   await roleSelect.change("demo-analyst");
   await typeInput.input("human_review_requested");
+  await channelSelect.change("error");
   await applyButton.click();
   await settle();
 
@@ -3893,7 +3923,8 @@ test("visualizer client applies timeline filters through the events API", async 
     harness.backend.fetchCalls.some((call) =>
       call.path.includes("/api/v1/runs/run-123/events?") &&
       call.path.includes("roleId=demo-analyst") &&
-      call.path.includes("type=human_review_requested")
+      call.path.includes("type=human_review_requested") &&
+      call.path.includes("channel=error")
     )
   );
   assert.ok(harness.document.getElementById("timeline").innerHTML.includes("filtered by"));

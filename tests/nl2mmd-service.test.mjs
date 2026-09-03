@@ -20,7 +20,7 @@ async function loadFixtures() {
       const context = await loadNl2MmdContext({
         workdir: repoRoot
       });
-      const modelRef = context.defaultModelRef ?? "opencode/gpt-5-nano";
+      const modelRef = context.defaultModelRef ?? "openai/gpt-5-nano";
       const validMermaid = await readFile(
         path.resolve(repoRoot, "examples/langgraph-debate-current/system.mmd"),
         "utf8"

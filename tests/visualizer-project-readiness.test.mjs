@@ -2,9 +2,10 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import os from "node:os";
 import path from "node:path";
-import { mkdtemp, mkdir, rm, writeFile } from "node:fs/promises";
+import { mkdtemp, mkdir, readFile, rm, writeFile } from "node:fs/promises";
 
 import { inspectProjectReadiness } from "../dist/visualizer/project-readiness.js";
+import { latestRoleContract } from "../tests-support/role-fixture.mjs";
 
 async function withTempProject(run) {
   const workdir = await mkdtemp(path.join(os.tmpdir(), "ogsystem-project-readiness-"));
@@ -33,7 +34,8 @@ async function writeRolePackage(workdir, roleId, options = {}) {
         name: roleId,
         description: `${roleId} role`,
         promptTemplate: "prompt.md",
-        outputSchema: "output.schema.json"
+        outputSchema: "output.schema.json",
+        ...latestRoleContract({ events: ["DONE"] })
       },
       null,
       2
@@ -123,6 +125,108 @@ test("project readiness reports missing execution bindings", async () => {
   });
 });
 
+test("project readiness exposes an empty provider health array when the system cannot be parsed", async () => {
+  await withTempProject(async (workdir) => {
+    const readiness = await inspectProjectReadiness(workdir);
+
+    assert.deepEqual(readiness.providerHealth, []);
+  });
+});
+
+test("project readiness exposes doctor skipped health per resolved model without probing", async () => {
+  await withTempProject(async (workdir) => {
+    await writeRolePackage(workdir, "planner");
+    await writeRolePackage(workdir, "writer");
+    await writeSystem(workdir, [
+      "flowchart TD",
+      "%% system.id=readiness.provider.skipped",
+      "%% system.version=1.0.0",
+      "%% law.global=law.minimal.base",
+      "%% entry.role=planner",
+      "%% model.bind.planner=opencode/offline-planner",
+      "%% model.bind.writer=opencode/offline-writer",
+      "input -->|ENTER| planner[Role:planner]",
+      "planner[Role:planner] -->|DONE| writer[Role:writer]",
+      "writer[Role:writer] -->|DONE| output"
+    ]);
+
+    const readiness = await inspectProjectReadiness(workdir);
+
+    assert.deepEqual(
+      readiness.providerHealth.map(({ roleId, modelRef, status, code }) => ({ roleId, modelRef, status, code })),
+      [
+        {
+          roleId: "planner",
+          modelRef: "opencode/offline-planner",
+          status: "skipped",
+          code: "DOCTOR_PROVIDER_ONLINE_SKIPPED"
+        },
+        {
+          roleId: "writer",
+          modelRef: "opencode/offline-writer",
+          status: "skipped",
+          code: "DOCTOR_PROVIDER_ONLINE_SKIPPED"
+        }
+      ]
+    );
+    assert.match(readiness.providerHealth[0].message, /never probes connectivity/);
+  });
+});
+
+test("project readiness keeps missing catalog distinct from skipped provider health", async () => {
+  await withTempProject(async (workdir) => {
+    await writeRolePackage(workdir, "planner");
+    await writeSystem(workdir, [
+      "flowchart TD",
+      "%% system.id=readiness.provider.catalog-missing",
+      "%% system.version=1.0.0",
+      "%% law.global=law.minimal.base",
+      "%% entry.role=planner",
+      "%% model.bind.planner=opencode/pinned-model",
+      "input -->|ENTER| planner[Role:planner]",
+      "planner[Role:planner] -->|DONE| output"
+    ]);
+
+    const readiness = await inspectProjectReadiness(workdir);
+
+    assert.equal(readiness.providerHealth[0].code, "DOCTOR_PROVIDER_ONLINE_SKIPPED");
+    assert.ok(readiness.warnings.some((issue) => issue.code === "READINESS_MODEL_CATALOG_MISSING"));
+    assert.equal(readiness.blockers.some((issue) => issue.code === "READINESS_MODEL_SELECTION_UNRESOLVED"), false);
+  });
+});
+
+test("project readiness distinguishes unresolved model selection from missing provider catalog", async () => {
+  await withTempProject(async (workdir) => {
+    await writeRolePackage(workdir, "planner");
+    await writeFile(
+      path.join(workdir, ".ogs", "model-selection.json"),
+      JSON.stringify({ configVersion: "1", defaults: {} }, null, 2),
+      "utf8"
+    );
+    await writeSystem(workdir, [
+      "flowchart TD",
+      "%% system.id=readiness.provider.selection-unresolved",
+      "%% system.version=1.0.0",
+      "%% law.global=law.minimal.base",
+      "%% entry.role=planner",
+      "%% model.bind.planner=planner-default",
+      "input -->|ENTER| planner[Role:planner]",
+      "planner[Role:planner] -->|DONE| output"
+    ]);
+
+    const readiness = await inspectProjectReadiness(workdir);
+
+    assert.deepEqual(readiness.providerHealth, []);
+    assert.ok(readiness.blockers.some((issue) => issue.code === "READINESS_MODEL_SELECTION_UNRESOLVED"));
+    assert.deepEqual(readiness.missingBindings, [
+      {
+        roleId: "planner",
+        reason: "model binding did not resolve to a provider/model selection"
+      }
+    ]);
+  });
+});
+
 test("project readiness reports missing required role package files", async () => {
   await withTempProject(async (workdir) => {
     await writeRolePackage(workdir, "planner", { omitAgent: true });
@@ -145,6 +249,33 @@ test("project readiness reports missing required role package files", async () =
     assert.equal(roleHealth.files.agent, false);
     assert.ok(roleHealth.missingFiles.includes("agent"));
     assert.ok(readiness.blockers.some((issue) => issue.code === "READINESS_ROLE_PACKAGE_FILES_MISSING"));
+  });
+});
+
+test("project readiness rejects a role manifest without the current contract", async () => {
+  await withTempProject(async (workdir) => {
+    await writeRolePackage(workdir, "planner");
+    const rolePath = path.join(workdir, "og-roles", "roles", "planner", "role.json");
+    const manifest = JSON.parse(await readFile(rolePath, "utf8"));
+    delete manifest.responsibility;
+    await writeFile(rolePath, JSON.stringify(manifest, null, 2), "utf8");
+    await writeSystem(workdir, [
+      "flowchart TD",
+      "%% system.id=readiness.role.contract",
+      "%% system.version=1.0.0",
+      "%% law.global=law.minimal.base",
+      "%% entry.role=planner",
+      "%% model.bind.planner=opencode/gpt-5-nano",
+      "input -->|ENTER| planner[Role:planner]",
+      "planner[Role:planner] -->|DONE| output"
+    ]);
+
+    const readiness = await inspectProjectReadiness(workdir);
+    const roleHealth = readiness.roleRepoHealth.roles.find((role) => role.roleId === "planner");
+
+    assert.equal(roleHealth.status, "invalid");
+    assert.match(roleHealth.error, /\$\.responsibility.*expected object/);
+    assert.ok(readiness.blockers.some((issue) => issue.code === "READINESS_ROLE_PACKAGE_INVALID"));
   });
 });
 
@@ -231,6 +362,13 @@ test("project readiness blocks model capability mismatches and warns on missing 
 
     assert.equal(readiness.canDryRun, false);
     assert.equal(readiness.modelCapabilityChecks.length, 2);
+    assert.deepEqual(
+      readiness.providerHealth.map((item) => [item.roleId, item.modelRef, item.status, item.code]),
+      [
+        ["planner", "opencode/textless", "skipped", "DOCTOR_PROVIDER_ONLINE_SKIPPED"],
+        ["writer", "opencode/no-tools", "skipped", "DOCTOR_PROVIDER_ONLINE_SKIPPED"]
+      ]
+    );
     assert.ok(readiness.blockers.some((issue) => issue.code === "READINESS_MODEL_CAPABILITY_MISMATCH" && issue.roleId === "planner"));
     assert.ok(readiness.warnings.some((issue) => issue.code === "READINESS_MODEL_CAPABILITY_WARNING" && issue.roleId === "writer"));
   });

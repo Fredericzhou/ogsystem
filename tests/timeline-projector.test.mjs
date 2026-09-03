@@ -15,7 +15,8 @@ test("timeline tail snapshot reads appended records incrementally", async () => 
       version: 1,
       cursor: 0,
       at: "2026-04-23T00:00:00.000Z",
-      type: "run_start"
+      type: "run_start",
+      channel: "main"
     }) + "\n",
     "utf8"
   );
@@ -28,6 +29,7 @@ test("timeline tail snapshot reads appended records incrementally", async () => 
   assert.equal(first.events.length, 1);
   assert.equal(first.nextCursor, 1);
   assert.equal(first.events[0].record.type, "run_start");
+  assert.equal(first.events[0].record.channel, "main");
 
   await appendFile(
     timelinePath,
@@ -37,7 +39,8 @@ test("timeline tail snapshot reads appended records incrementally", async () => 
       at: "2026-04-23T00:00:01.000Z",
       type: "audit",
       roleId: "alpha",
-      status: "ok"
+      status: "ok",
+      channel: "main"
     }) + "\n",
     "utf8"
   );
@@ -60,7 +63,8 @@ test("timeline tail cache bounds memory and preserves old cursor reads", async (
     version: 1,
     cursor,
     at: `2026-04-23T00:00:${String(cursor % 60).padStart(2, "0")}.000Z`,
-    type: "audit"
+    type: "audit",
+    channel: "main"
   }));
   await writeFile(timelinePath, `${records.join("\n")}\n`, "utf8");
 
@@ -82,7 +86,8 @@ test("timeline tail snapshot ignores partial trailing lines until they complete"
       version: 1,
       cursor: 0,
       at: "2026-04-23T00:00:00.000Z",
-      type: "run_start"
+      type: "run_start",
+      channel: "main"
     }) + "\n",
     "utf8"
   );
@@ -90,7 +95,7 @@ test("timeline tail snapshot ignores partial trailing lines until they complete"
   await loadTimelineTailSnapshot({ timelinePath, cursor: 0, limit: 10 });
   await appendFile(
     timelinePath,
-    '{"version":1,"cursor":1,"at":"2026-04-23T00:00:01.000Z","type":"audit"',
+    '{"version":1,"cursor":1,"at":"2026-04-23T00:00:01.000Z","type":"audit","channel":"main"',
     "utf8"
   );
 
@@ -122,7 +127,8 @@ test("timeline tail snapshot invalidates cache on file replacement", async () =>
       version: 1,
       cursor: 0,
       at: "2026-04-23T00:00:00.000Z",
-      type: "run_start"
+      type: "run_start",
+      channel: "main"
     }) + "\n",
     "utf8"
   );
@@ -134,7 +140,8 @@ test("timeline tail snapshot invalidates cache on file replacement", async () =>
       version: 1,
       cursor: 0,
       at: "2026-04-23T01:00:00.000Z",
-      type: "a"
+      type: "a",
+      channel: "main"
     }) + "\n",
     "utf8"
   );

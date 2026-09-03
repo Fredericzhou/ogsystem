@@ -43,7 +43,7 @@ async function seedOpsProject(workdir) {
     "%% system.version=1.0.0",
     "%% law.global=law.minimal.base",
     "%% entry.role=demo-analyst",
-    "%% model.bind.demo-analyst=opencode/gpt-5.4",
+    "%% model.bind.demo-analyst=openai/gpt-5-nano",
     "%% review.mode.demo-analyst=required",
     "%% review.timeout.demo-analyst=3600",
     "%% review.timeout.action.demo-analyst=pause",

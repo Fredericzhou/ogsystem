@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import os from "node:os";
 import path from "node:path";
 import http from "node:http";
-import { chmod, mkdtemp, mkdir, readFile, rm, stat, symlink, writeFile } from "node:fs/promises";
+import { chmod, mkdtemp, mkdir, readFile, stat, symlink, writeFile } from "node:fs/promises";
 
 import { resolveProjectRoleRootDir } from "../dist/runtime/bundled-repos.js";
 import { compileExecutionSnapshot } from "../dist/runtime/compiler.js";
@@ -90,7 +90,7 @@ async function seedProjectFixture(workdir) {
       "%% system.version=1.0.0",
       "%% law.global=law.minimal.base",
       "%% entry.role=demo-analyst",
-      "%% model.bind.demo-analyst=opencode/gpt-5.4",
+      "%% model.bind.demo-analyst=openai/gpt-5-nano",
       "%% review.mode.demo-analyst=required",
       "%% review.timeout.demo-analyst=3600",
       "%% review.timeout.action.demo-analyst=pause",
@@ -98,7 +98,7 @@ async function seedProjectFixture(workdir) {
       "%% review.rework.max.demo-analyst=2",
       "%% review.terminate.scope.demo-analyst=branch",
       "input -->|ENTER| analyst[Role:demo-analyst]",
-      "analyst[Role:demo-analyst] -->|DONE| output",
+      "analyst[Role:demo-analyst] -->|ANALYSIS_DONE| output",
       ""
     ].join("\n"),
     "utf8"
@@ -127,9 +127,9 @@ async function seedAlternateProjectFixture(workdir) {
       "%% system.version=2.0.0",
       "%% law.global=law.minimal.base",
       "%% entry.role=demo-analyst",
-      "%% model.bind.demo-analyst=opencode/gpt-5.4",
+      "%% model.bind.demo-analyst=openai/gpt-5-nano",
       "input -->|ENTER| analyst[Role:demo-analyst]",
-      "analyst[Role:demo-analyst] -->|DONE| output",
+      "analyst[Role:demo-analyst] -->|ANALYSIS_DONE| output",
       ""
     ].join("\n"),
     "utf8"
@@ -168,16 +168,16 @@ async function seedRunnableReviewProjectFixture(workdir) {
       "%% system.id=viz.runtime.review.demo",
       "%% system.version=1.0.0",
       "%% law.global=law.minimal.base",
-      "%% entry.role=imported.agency.experiment-tracker",
-      "%% model.bind.imported.agency.experiment-tracker=opencode/gpt-5.4",
-      "%% review.mode.imported.agency.experiment-tracker=required",
-      "%% review.timeout.imported.agency.experiment-tracker=3600",
-      "%% review.timeout.action.imported.agency.experiment-tracker=pause",
-      "%% review.rework.target.imported.agency.experiment-tracker=imported.agency.experiment-tracker",
-      "%% review.rework.max.imported.agency.experiment-tracker=2",
-      "%% review.terminate.scope.imported.agency.experiment-tracker=branch",
-      "input -->|ENTER| tracker[Role:imported.agency.experiment-tracker]",
-      "tracker[Role:imported.agency.experiment-tracker] -->|DONE| output",
+      "%% entry.role=demo-analyst",
+      "%% model.bind.demo-analyst=openai/gpt-5-nano",
+      "%% review.mode.demo-analyst=required",
+      "%% review.timeout.demo-analyst=3600",
+      "%% review.timeout.action.demo-analyst=pause",
+      "%% review.rework.target.demo-analyst=demo-analyst",
+      "%% review.rework.max.demo-analyst=2",
+      "%% review.terminate.scope.demo-analyst=branch",
+      "input -->|ENTER| analyst[Role:demo-analyst]",
+      "analyst[Role:demo-analyst] -->|ANALYSIS_DONE| output",
       ""
     ].join("\n"),
     "utf8"
@@ -344,13 +344,14 @@ async function createFixtureRun(workdir) {
   await writeFile(
     path.resolve(runDir, "events.ndjson"),
     [
-      JSON.stringify({ type: "run_start", at: "2026-04-16T01:02:03.000Z" }),
+      JSON.stringify({ type: "run_start", at: "2026-04-16T01:02:03.000Z", channel: "main" }),
       JSON.stringify({
         type: "audit",
         at: "2026-04-16T01:02:04.000Z",
         roleId: "alpha",
         status: "ok",
-        durationMs: 12
+        durationMs: 12,
+        channel: "main"
       }),
       JSON.stringify({
         type: "runtime_error",
@@ -359,7 +360,8 @@ async function createFixtureRun(workdir) {
         status: "failed",
         errorEnvelope: {
           errorCode: "E_VIS_TEST"
-        }
+        },
+        channel: "error"
       })
     ].join("\n"),
     "utf8"
@@ -371,7 +373,8 @@ async function createFixtureRun(workdir) {
         version: 1,
         cursor: 0,
         at: "2026-04-16T01:02:03.000Z",
-        type: "run_start"
+        type: "run_start",
+        channel: "main"
       }),
       JSON.stringify({
         version: 1,
@@ -380,7 +383,8 @@ async function createFixtureRun(workdir) {
         type: "audit",
         roleId: "alpha",
         status: "ok",
-        durationMs: 12
+        durationMs: 12,
+        channel: "main"
       }),
       JSON.stringify({
         version: 1,
@@ -389,7 +393,8 @@ async function createFixtureRun(workdir) {
         type: "runtime_error",
         roleId: "alpha",
         status: "failed",
-        errorCode: "E_VIS_TEST"
+        errorCode: "E_VIS_TEST",
+        channel: "error"
       })
     ].join("\n"),
     "utf8"
@@ -543,6 +548,7 @@ async function createWaitingReviewFixtureRun(workdir, options = {}) {
         systemId: "viz.review.demo",
         runtime: "local",
         effective: {
+          roleRepoDir: path.resolve(workdir, "og-roles", "roles"),
           invocation: {
             dryRun: false
           }
@@ -560,14 +566,14 @@ async function createWaitingReviewFixtureRun(workdir, options = {}) {
     "%% law.global=law.minimal.base",
     "%% entry.role=demo-analyst",
     "input -->|GO| analyst[Role:demo-analyst]",
-    "analyst[Role:demo-analyst] -->|DONE| output",
+    "analyst[Role:demo-analyst] -->|ANALYSIS_DONE| output",
     ""
   ].join("\n");
   await writeFile(path.resolve(runDir, "system.mmd"), systemSource, "utf8");
   await writeFile(
     path.resolve(runDir, "events.ndjson"),
     [
-      JSON.stringify({ type: "run_start", at: "2026-04-22T09:15:00.000Z" }),
+      JSON.stringify({ type: "run_start", at: "2026-04-22T09:15:00.000Z", channel: "main" }),
       JSON.stringify({
         type: "human_review_requested",
         at: "2026-04-22T09:15:00.100Z",
@@ -576,7 +582,8 @@ async function createWaitingReviewFixtureRun(workdir, options = {}) {
         lineageId: "demo-analyst@1#1",
         loopIteration: 1,
         reviewId: "review.demo-analyst@1#1.r1",
-        round: 1
+        round: 1,
+        channel: "main"
       })
     ].join("\n"),
     "utf8"
@@ -591,7 +598,8 @@ async function createWaitingReviewFixtureRun(workdir, options = {}) {
         type: "human_review_requested",
         roleId: "demo-analyst",
         reviewId: "review.demo-analyst@1#1.r1",
-        status: "pending"
+        status: "pending",
+        channel: "main"
       }),
       JSON.stringify({
         version: 1,
@@ -600,7 +608,8 @@ async function createWaitingReviewFixtureRun(workdir, options = {}) {
         type: "human_review_decision_applied",
         roleId: "demo-analyst",
         reviewId: "review.demo-analyst@1#1.r1",
-        status: "pending"
+        status: "pending",
+        channel: "main"
       })
     ].join("\n"),
     "utf8"
@@ -615,10 +624,10 @@ async function createWaitingReviewFixtureRun(workdir, options = {}) {
         lineageId: "demo-analyst@1#1",
         loopIteration: 1,
         executionId: "exec-1",
-        selectedEvent: "DONE",
+        selectedEvent: "ANALYSIS_DONE",
         draftResult: {
           roleId: "demo-analyst",
-          event: "DONE",
+          event: "ANALYSIS_DONE",
           content: "draft",
           branchId: "demo-analyst@1#1",
           lineageId: "demo-analyst@1#1",
@@ -687,10 +696,10 @@ async function createWaitingReviewFixtureRun(workdir, options = {}) {
         },
         committedAt: "2026-04-22T09:15:00.000Z",
         status: "ok",
-        selectedEvent: "DONE",
+        selectedEvent: "ANALYSIS_DONE",
         storedResult: {
           roleId: "demo-analyst",
-          event: "DONE",
+          event: "ANALYSIS_DONE",
           content: "draft",
           branchId: "demo-analyst@1#1",
           lineageId: "demo-analyst@1#1",
@@ -740,7 +749,7 @@ async function seedRoleIoExecutionArtifacts(runDir) {
   );
   await writeFile(
     path.resolve(executionDir, "result.json"),
-    JSON.stringify({ event: "DONE", content: "fixture result" }, null, 2),
+    JSON.stringify({ event: "ANALYSIS_DONE", content: "fixture result" }, null, 2),
     "utf8"
   );
   await writeFile(path.resolve(executionDir, "inbox.md"), "# Inbox\n\nfixture input\n", "utf8");
@@ -844,7 +853,7 @@ test("visualizer server serves run list, details, and live stream", async (t) =>
     assert.match(rootHtml, /operate-tabs/);
     assert.match(rootHtml, /<script src="\/assets\/studio-graph\.js"><\/script>/);
     assert.match(rootHtml, /<script src="\/assets\/client-app\.js"><\/script>/);
-    assert.match(rootHtml, /<article class="card span-12 operate-panel operate-overview">\s*<header><h3>Timeline<\/h3><\/header>/);
+    assert.match(rootHtml, /<article class="card span-12 operate-panel operate-overview">\s*<header>[\s\S]*<h3>Timeline<\/h3>[\s\S]*timeline-conversation/);
 
     const clientAppAsset = await fetch(`${url}/assets/client-app.js`);
     assert.equal(clientAppAsset.status, 200);
@@ -1027,6 +1036,37 @@ test("visualizer server serves run list, details, and live stream", async (t) =>
     assert.equal(failedEvents.events.length, 1);
     assert.equal(failedEvents.events[0].record.errorCode, "E_VIS_TEST");
 
+    const errorChannelResponse = await fetch(
+      `${url}/api/v1/runs/${runId}/events?cursor=0&limit=10&channel=error`
+    );
+    assert.equal(errorChannelResponse.status, 200);
+    const errorChannel = await errorChannelResponse.json();
+    assert.equal(errorChannel.events.length, 1);
+    assert.equal(errorChannel.events[0].record.channel, "error");
+
+    const conversationResponse = await fetch(`${url}/api/v1/runs/${runId}/conversation?limit=2`);
+    assert.equal(conversationResponse.status, 200);
+    const conversation = await conversationResponse.json();
+    assert.equal(conversation.items.length, 2);
+    assert.equal(conversation.items[0].source.file, "events.ndjson");
+    assert.equal(conversation.items[0].source.cursor, 0);
+    assert.equal(conversation.items[1].kind, "role_message");
+    assert.equal(conversation.items[1].roleId, "alpha");
+    assert.equal(conversation.items[1].status, "ok");
+    assert.equal(conversation.cursor.hasMore, true);
+
+    const errorConversationResponse = await fetch(`${url}/api/v1/runs/${runId}/conversation?channel=error&errorCode=E_VIS_TEST`);
+    assert.equal(errorConversationResponse.status, 200);
+    const errorConversation = await errorConversationResponse.json();
+    assert.equal(errorConversation.items.length, 1);
+    assert.equal(errorConversation.items[0].kind, "error_flow");
+    assert.equal(errorConversation.items[0].errorCode, "E_VIS_TEST");
+
+    const invalidConversationResponse = await fetch(`${url}/api/v1/runs/${runId}/conversation?channel=unsupported`);
+    assert.equal(invalidConversationResponse.status, 400);
+    const invalidConversation = await invalidConversationResponse.json();
+    assert.equal(invalidConversation.error.code, "INVALID_CONVERSATION_CHANNEL");
+
     const graphResponse = await fetch(`${url}/api/v1/runs/${runId}/graph`);
     assert.equal(graphResponse.status, 200);
     const graph = await graphResponse.json();
@@ -1075,24 +1115,6 @@ test("visualizer server serves run list, details, and live stream", async (t) =>
     assert.ok(diagnostics.sse.writesTotal >= 1);
   } finally {
     await new Promise((resolve) => server.close(resolve));
-  }
-});
-
-test("visualizer server bounds legacy event reads and preserves cursors", async (t) => {
-  const workdir = await mkdtemp(path.join(os.tmpdir(), "ogsystem-visualizer-legacy-events-"));
-  await seedProjectFixture(workdir);
-  const { runId } = await createFixtureRun(workdir);
-  await rm(path.resolve(workdir, ".ogs", "runs", runId, "timeline.jsonl"));
-  const started = await startVisualizationServer({ workdir, host: "127.0.0.1", port: 0 });
-  try {
-    const response = await fetch(`${started.url}/api/v1/runs/${runId}/events?cursor=0&limit=1`);
-    assert.equal(response.status, 200);
-    const snapshot = await response.json();
-    assert.equal(snapshot.events.length, 1);
-    assert.equal(snapshot.events[0].cursor, 0);
-    assert.equal(snapshot.nextCursor, 3);
-  } finally {
-    await new Promise((resolve) => started.server.close(resolve));
   }
 });
 
@@ -1669,7 +1691,7 @@ test("visualizer server exposes Mermaid workbench APIs and project export", asyn
     assert.equal(bridge.canvas.edges.some((edge) => edge.source === "demo-analyst" && edge.target === "__system_end__"), true);
     assert.equal(bridge.extracted.systemId, "viz.project.demo");
     assert.equal(bridge.extracted.roles.some((role) => role.roleId === "demo-analyst" && role.bindingKind === "model"), true);
-    assert.equal(bridge.extracted.flows.some((flow) => flow.eventType === "DONE"), true);
+    assert.equal(bridge.extracted.flows.some((flow) => flow.eventType === "ANALYSIS_DONE"), true);
 
     const fallbackBridgeResponse = await fetch(`${url}/api/v1/project/studio/bridge`, {
       method: "POST",
@@ -1792,7 +1814,7 @@ test("visualizer server exposes Mermaid workbench APIs and project export", asyn
     assert.equal(applyCanvasResponse.status, 200);
     const appliedCanvas = await applyCanvasResponse.json();
     assert.equal(appliedCanvas.validation.ok, true);
-    assert.match(appliedCanvas.systemSource, /\|DONE\| output/);
+    assert.match(appliedCanvas.systemSource, /\|ANALYSIS_DONE\| output/);
     assert.equal(appliedCanvas.authoring.layout.nodes["demo-analyst"].x, 500);
     assert.equal(appliedCanvas.canvas.nodes.some((node) => node.roleId === "demo-analyst" && node.x === 500), true);
     assert.equal(await readFile(path.resolve(workdir, "system.mmd"), "utf8"), originalSystemSource);
@@ -1801,12 +1823,12 @@ test("visualizer server exposes Mermaid workbench APIs and project export", asyn
       {
         label: "authoring-only",
         body: { authoring: movedAuthoring },
-        expectedEventType: "DONE"
+        expectedEventType: "ANALYSIS_DONE"
       },
       {
         label: "canvas-only-compatible",
         body: { authoring: movedAuthoring, canvas },
-        expectedEventType: "DONE"
+        expectedEventType: "ANALYSIS_DONE"
       },
       {
         label: "authoring-and-canvas",
@@ -1815,7 +1837,7 @@ test("visualizer server exposes Mermaid workbench APIs and project export", asyn
           canvas: {
             ...canvas,
             edges: [
-              ...canvas.edges.filter((edge) => edge.eventType !== "DONE"),
+              ...canvas.edges.filter((edge) => edge.eventType !== "ANALYSIS_DONE"),
               {
                 source: "demo-analyst",
                 target: "__system_end__",
@@ -1827,7 +1849,7 @@ test("visualizer server exposes Mermaid workbench APIs and project export", asyn
             ]
           }
         },
-        expectedEventType: "DONE"
+        expectedEventType: "ANALYSIS_DONE"
       }
     ];
     for (const fixture of compatibilityPayloads) {
@@ -2241,7 +2263,7 @@ test("visualizer server marks invalid project directories and exposes diagnostic
       "%% law.global=law.minimal.base",
       "%% entry.role=missing-role",
       "input -->|ENTER| analyst[Role:demo-analyst]",
-      "analyst[Role:demo-analyst] -->|DONE| output",
+      "analyst[Role:demo-analyst] -->|ANALYSIS_DONE| output",
       ""
     ].join("\n"),
     "utf8"

@@ -5,6 +5,7 @@ import path from "node:path";
 import { mkdtemp, mkdir, writeFile } from "node:fs/promises";
 
 import { runSystemWithAdapter } from "../dist/runtime/adapter.js";
+import { latestRoleContract } from "../tests-support/role-fixture.mjs";
 
 async function writeDefaultModelSelection(workdir) {
   await writeFile(
@@ -37,7 +38,8 @@ async function writeModelBoundRole(args) {
         name: args.name ?? args.roleId,
         description: args.description ?? `${args.roleId} test role`,
         promptTemplate: "prompt.md",
-        outputSchema: "output.schema.json"
+        outputSchema: "output.schema.json",
+        ...latestRoleContract({ events: args.allowedEvents })
       },
       null,
       2
@@ -126,7 +128,7 @@ test("transition mode fails closed when a skipped flow leaves a join orphaned", 
   await writeModelBoundRole({
     rolesRoot,
     roleId: "dispatcher",
-    allowedEvents: ["PASS"],
+    allowedEvents: ["TO_A", "TO_B"],
     requireEvent: false
   });
   await writeModelBoundRole({

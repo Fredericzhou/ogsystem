@@ -65,6 +65,7 @@ test("resume context reloads sessions.json and reuses session ids for role execu
     roleId: "test-operator",
     roleRootDir: path.resolve("og-roles/roles")
   });
+  rolePackage.manifest.constraints.allowedTools = ["tool.forbidden"];
   const state = createInitialState(plan, "resume prompt");
   const seenSessionIds = [];
   const executor = {

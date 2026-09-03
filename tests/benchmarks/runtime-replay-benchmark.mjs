@@ -1,9 +1,10 @@
 import os from "node:os";
 import path from "node:path";
-import { mkdtemp, mkdir, readFile, readdir, writeFile } from "node:fs/promises";
+import { mkdtemp, mkdir, readFile, readdir, rm, writeFile } from "node:fs/promises";
 import { performance } from "node:perf_hooks";
 
 import { runSystemWithAdapter } from "../../dist/runtime/adapter.js";
+import { latestRoleContract } from "../../tests-support/role-fixture.mjs";
 import { validateRuntimeConfig } from "../../dist/runtime/config.js";
 import { createExecutionPlan } from "../../dist/runtime/execution-plan.js";
 import {
@@ -18,21 +19,116 @@ import {
   loadResumeGraphState
 } from "../../dist/runtime/run-artifacts.js";
 
-const LOOP_BUDGET = 500;
-const RESTORED_CHECKPOINT_SEQUENCE = 490;
+const DEFAULT_ITERATION_COUNT = 500;
+const DEFAULT_RESTORE_CHECKPOINT_SEQUENCE = 490;
+const BENCHMARK_NAME = "runtime-replay";
+const RECORD_VERSION = 1;
 
-const systemSource = `flowchart TD
+function createSystemSource(iterationCount) {
+  return `flowchart TD
 %% system.id=benchmark.runtime.replay
 %% system.version=1.0.0
 %% law.global=law.console.base
 %% entry.role=test-loop-probe
-%% loop.max.test-loop-probe=${LOOP_BUDGET}
+%% loop.max.test-loop-probe=${iterationCount}
 %% model.bind.test-loop-probe=opencode/gpt-5-nano
 
 input -->|GO| operator[Role:test-loop-probe]
 operator[Role:test-loop-probe] -->|RETRY| operator[Role:test-loop-probe]
 operator[Role:test-loop-probe] -->|DONE| output
 `;
+}
+
+function parseInteger(value, optionName, { minimum = 1 } = {}) {
+  if (!/^\d+$/.test(String(value))) {
+    throw new Error(`${optionName} must be an integer greater than or equal to ${minimum}`);
+  }
+  const parsed = Number(value);
+  if (!Number.isSafeInteger(parsed) || parsed < minimum) {
+    throw new Error(`${optionName} must be an integer greater than or equal to ${minimum}`);
+  }
+  return parsed;
+}
+
+function parseBenchmarkOptions(argv, env) {
+  const values = {
+    iterations: env.OGSYSTEM_RUNTIME_REPLAY_ITERATIONS ?? DEFAULT_ITERATION_COUNT,
+    restoreCheckpoint:
+      env.OGSYSTEM_RUNTIME_REPLAY_CHECKPOINT ?? DEFAULT_RESTORE_CHECKPOINT_SEQUENCE,
+    outputPath: env.OGSYSTEM_RUNTIME_REPLAY_OUTPUT ?? ""
+  };
+  let help = false;
+
+  for (let index = 0; index < argv.length; index += 1) {
+    const argument = argv[index];
+    if (argument === "--") {
+      continue;
+    }
+    if (argument === "--help" || argument === "-h") {
+      help = true;
+      continue;
+    }
+    const match = argument.match(/^--(iterations|restore-checkpoint|output)(?:=(.*))?$/);
+    if (!match) {
+      throw new Error(`Unknown benchmark option: ${argument}`);
+    }
+    const [, name, inlineValue] = match;
+    const value = inlineValue ?? argv[++index];
+    if (value === undefined || value.startsWith("--")) {
+      throw new Error(`Missing value for --${name}`);
+    }
+    if (name === "iterations") {
+      values.iterations = value;
+    } else if (name === "restore-checkpoint") {
+      values.restoreCheckpoint = value;
+    } else {
+      values.outputPath = value;
+    }
+  }
+
+  if (help) {
+    return { help };
+  }
+
+  const options = {
+    iterations: parseInteger(values.iterations, "iterations"),
+    restoreCheckpoint: parseInteger(values.restoreCheckpoint, "restore-checkpoint", { minimum: 0 }),
+    outputPath: values.outputPath ? path.resolve(process.cwd(), values.outputPath) : ""
+  };
+  if (options.restoreCheckpoint >= options.iterations) {
+    throw new Error("restore-checkpoint must be less than iterations");
+  }
+  return options;
+}
+
+function roundMetric(value, metricName) {
+  const numericValue = Number(value);
+  if (!Number.isFinite(numericValue)) {
+    throw new Error(`Runtime metric ${metricName} is missing or not finite`);
+  }
+  return Number(numericValue.toFixed(3));
+}
+
+function requireCount(value, metricName) {
+  if (!Number.isSafeInteger(value) || value < 0) {
+    throw new Error(`Runtime metric ${metricName} is missing or not a non-negative integer`);
+  }
+  return value;
+}
+
+function printHelp() {
+  console.error(`Usage: node tests/benchmarks/runtime-replay-benchmark.mjs [options]
+
+Options:
+  --iterations <count>          Loop iterations (default: 500)
+  --restore-checkpoint <seq>   Checkpoint sequence to restore (default: 490)
+  --output <path>               Write the JSON record to this path
+
+Environment variables:
+  OGSYSTEM_RUNTIME_REPLAY_ITERATIONS
+  OGSYSTEM_RUNTIME_REPLAY_CHECKPOINT
+  OGSYSTEM_RUNTIME_REPLAY_OUTPUT`);
+}
 
 function mergeStatus(current, update) {
   if (current === "failed" || update === "failed") {
@@ -116,9 +212,16 @@ function applyGraphUpdate(state, update) {
   };
 }
 
-async function main() {
+async function main(argv = process.argv.slice(2), env = process.env) {
+  const options = parseBenchmarkOptions(argv, env);
+  if (options.help) {
+    printHelp();
+    return;
+  }
+
   const repoRoot = process.cwd();
   const tempRoot = await mkdtemp(path.join(os.tmpdir(), "ogsystem-runtime-replay-bench-"));
+  const systemSource = createSystemSource(options.iterations);
   const systemPath = path.resolve(tempRoot, "system.mmd");
   const lawsPath = path.resolve(tempRoot, "laws.json");
   const runtimePath = path.resolve(tempRoot, ".ogs", "runtime.json");
@@ -149,7 +252,8 @@ async function main() {
         name: "Loop Probe",
         description: "Runtime replay benchmark role",
         promptTemplate: "prompt.md",
-        outputSchema: "output.schema.json"
+        outputSchema: "output.schema.json",
+        ...latestRoleContract({ events: ["DONE"] })
       },
       null,
       2
@@ -196,7 +300,7 @@ async function main() {
   }
   globalLaw.constraints = {
     ...(globalLaw.constraints ?? {}),
-    maxTransitions: LOOP_BUDGET
+    maxTransitions: options.iterations
   };
   await writeFile(lawsPath, JSON.stringify(laws, null, 2), "utf8");
 
@@ -245,7 +349,7 @@ async function main() {
   await reconstructionContext.releaseResumeLock?.();
 
   for (const checkpoint of allCheckpoints) {
-    if (checkpoint.checkpointSequence > RESTORED_CHECKPOINT_SEQUENCE) {
+    if (checkpoint.checkpointSequence > options.restoreCheckpoint) {
       break;
     }
     reconstructedGraphState = applyGraphUpdate(reconstructedGraphState, checkpoint.update);
@@ -297,25 +401,55 @@ async function main() {
   const resumeTotalMs = performance.now() - resumeStart;
   const metrics = JSON.parse(await readFile(path.resolve(runDir, "metrics.json"), "utf8"));
 
-  const summary = {
+  const record = {
+    schemaVersion: RECORD_VERSION,
+    benchmark: BENCHMARK_NAME,
     date: new Date().toISOString(),
-    platform: process.platform,
-    node: process.version,
-    loopBudget: LOOP_BUDGET,
-    restoredCheckpointSequence: RESTORED_CHECKPOINT_SEQUENCE,
-    totalCheckpointFiles: allCheckpoints.length,
-    pendingCheckpointFiles: checkpoints.length,
-    transitionCount: metrics.transitionCount,
-    stateLoadMs: Number(stateLoadMs.toFixed(3)),
-    stateWriteMs: metrics.stateWriteMs,
-    checkpointLoadMs: Number(checkpointLoadMs.toFixed(3)),
-    resumeTotalMs: Number(resumeTotalMs.toFixed(3)),
-    finalStatus: resumed.status,
-    finalRoleId: resumed.finalRoleId,
-    tempRoot
+    environment: {
+      nodeVersion: process.version,
+      platform: process.platform,
+      arch: process.arch
+    },
+    scenario: {
+      iterationCount: options.iterations,
+      restoreCheckpointSequence: options.restoreCheckpoint
+    },
+    checkpointCounts: {
+      total: allCheckpoints.length,
+      restored: allCheckpoints.filter(
+        (checkpoint) => checkpoint.checkpointSequence <= options.restoreCheckpoint
+      ).length,
+      pending: checkpoints.length
+    },
+    metrics: {
+      transitionCount: requireCount(metrics.transitionCount, "transitionCount"),
+      stateLoadMs: roundMetric(stateLoadMs, "stateLoadMs"),
+      checkpointLoadMs: roundMetric(checkpointLoadMs, "checkpointLoadMs"),
+      resumeTotalMs: roundMetric(resumeTotalMs, "resumeTotalMs"),
+      stateWriteMs: roundMetric(metrics.stateWriteMs, "stateWriteMs")
+    },
+    result: {
+      finalStatus: resumed.status,
+      finalRoleId: resumed.finalRoleId
+    }
   };
 
-  console.log(JSON.stringify(summary, null, 2));
+  if (options.outputPath) {
+    await mkdir(path.dirname(options.outputPath), { recursive: true });
+    await writeFile(options.outputPath, `${JSON.stringify(record, null, 2)}\n`, "utf8");
+  }
+
+  console.error(
+    `${BENCHMARK_NAME}: ${options.iterations} iterations, restore checkpoint ` +
+      `${options.restoreCheckpoint}, status ${resumed.status}`
+  );
+  console.error(
+    `  state load ${record.metrics.stateLoadMs} ms | checkpoint load ` +
+      `${record.metrics.checkpointLoadMs} ms | resume total ${record.metrics.resumeTotalMs} ms | ` +
+      `state write ${record.metrics.stateWriteMs} ms`
+  );
+  console.log(JSON.stringify(record));
+  await rm(tempRoot, { recursive: true, force: true });
 }
 
 main().catch((error) => {

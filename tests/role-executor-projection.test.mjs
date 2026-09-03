@@ -14,6 +14,7 @@ import { initializeRunContext } from "../dist/runtime/run-artifacts.js";
 import { loadFlowContractPlan } from "../dist/runtime/flow-contract.js";
 import { executeRoleNode } from "../dist/runtime/role-executor.js";
 import { validateRuntimeConfig } from "../dist/runtime/config.js";
+import { latestRoleContract } from "../tests-support/role-fixture.mjs";
 
 function parseJsonCodeBlock(markdown) {
   const match = markdown.match(/```json\n([\s\S]*?)\n```/);
@@ -33,7 +34,9 @@ async function writeRolePackage(args) {
         name: args.roleId,
         description: `${args.roleId} test role`,
         promptTemplate: "prompt.md",
-        outputSchema: "output.schema.json"
+        outputSchema: "output.schema.json",
+        ...latestRoleContract({ events: args.allowedEvents }),
+        ...(args.contract ?? {})
       },
       null,
       2
@@ -92,6 +95,292 @@ async function writeRolePackage(args) {
   );
 }
 
+test("executeRoleNode turns a failed Role Contract precondition into IR_CONTRACT_INVALID", async () => {
+  const fixture = await prepareRoleExecutorFixture({
+    tempPrefix: "ogsystem-role-contract-precondition-",
+    prompt: "precondition prompt",
+    systemSource: `flowchart TD
+%% system.id=role.contract.precondition
+%% system.version=1.0.0
+%% law.global=law.console.base
+%% entry.role=writer
+%% model.bind.writer=balanced-gpt52
+
+input -->|DONE| writer[Role:writer]
+writer[Role:writer] -->|DONE| output
+`,
+    roles: [{
+      roleId: "writer",
+      allowedEvents: ["DONE"],
+      contract: {
+        contractVersion: 1,
+        purpose: "Enforces a precondition",
+        responsibility: { kind: "atomic", owns: [], contributes: [], doesNotOwn: [] },
+        inputs: { preconditions: [{ op: "equals", args: [{ kind: "path", root: "state", path: ["ready"] }, { kind: "literal", value: true }] }] },
+        outputs: { events: ["DONE"], postconditions: [] },
+        authority: { controlActions: [] },
+        constraints: { writableStateFields: [], allowedTools: [] },
+        failure: { retryableErrorCodes: [], terminalErrorCodes: [] },
+        audit: { requiredFields: [] }
+      }
+    }]
+  });
+  const state = createInitialState(fixture.plan, "precondition prompt");
+  let executeCount = 0;
+  const result = await executeRoleNode({
+    roleId: "writer",
+    node: getExecutionPlanNode(fixture.plan, "writer"),
+    plan: fixture.plan,
+    state,
+    branch: state.branchRecords["writer@1#1"],
+    effectiveLaw: { forbiddenToolRefs: [], allowNoopWithoutExecutionBinding: false },
+    profilesById: new Map(),
+    toolsByRef: new Map(),
+    modelsById: fixture.modelsById,
+    rolePackagesByRoleId: fixture.rolePackagesByRoleId,
+    compilerSnapshot: fixture.compilerSnapshot,
+    runContext: fixture.runContext,
+    executor: {
+      async start() {}, async close() {}, async abortSession() {}, getServerMetadata() { return {}; },
+      async execute() { executeCount += 1; return { exitCode: 0, stdout: JSON.stringify({ event: "DONE", content: "unexpected" }), stderr: "", args: [] }; }
+    },
+    workdir: fixture.tempRoot
+  });
+  assert.equal(result.status, "failed");
+  assert.equal(result.failure.errorCode, "IR_CONTRACT_INVALID", result.error);
+  assert.equal(executeCount, 0);
+});
+
+test("executeRoleNode turns a failed Role Contract postcondition into IR_CONTRACT_INVALID", async () => {
+  const fixture = await prepareRoleExecutorFixture({
+    tempPrefix: "ogsystem-role-contract-postcondition-",
+    prompt: "postcondition prompt",
+    systemSource: `flowchart TD
+%% system.id=role.contract.postcondition
+%% system.version=1.0.0
+%% law.global=law.console.base
+%% entry.role=writer
+%% model.bind.writer=balanced-gpt52
+
+input -->|DONE| writer[Role:writer]
+writer[Role:writer] -->|DONE| output
+`,
+    roles: [{
+      roleId: "writer",
+      allowedEvents: ["DONE"],
+      contract: {
+        contractVersion: 1,
+        purpose: "Enforces a postcondition",
+        responsibility: { kind: "atomic", owns: [], contributes: [], doesNotOwn: [] },
+        inputs: { preconditions: [] },
+        outputs: { events: ["DONE"], postconditions: [{ op: "equals", args: [{ kind: "path", root: "event", path: ["approved"] }, { kind: "literal", value: true }] }] },
+        authority: { controlActions: [] },
+        constraints: { writableStateFields: [], allowedTools: [] },
+        failure: { retryableErrorCodes: [], terminalErrorCodes: [] },
+        audit: { requiredFields: [] }
+      }
+    }]
+  });
+  const state = createInitialState(fixture.plan, "postcondition prompt");
+  const result = await executeRoleNode({
+    roleId: "writer",
+    node: getExecutionPlanNode(fixture.plan, "writer"),
+    plan: fixture.plan,
+    state,
+    branch: state.branchRecords["writer@1#1"],
+    effectiveLaw: { forbiddenToolRefs: [], allowNoopWithoutExecutionBinding: false },
+    profilesById: new Map(),
+    toolsByRef: new Map(),
+    modelsById: fixture.modelsById,
+    rolePackagesByRoleId: fixture.rolePackagesByRoleId,
+    compilerSnapshot: fixture.compilerSnapshot,
+    runContext: fixture.runContext,
+    executor: {
+      async start() {}, async close() {}, async abortSession() {}, getServerMetadata() { return {}; },
+      async execute() { return { exitCode: 0, stdout: JSON.stringify({ event: "DONE", content: "ok", data: { approved: false } }), stderr: "", args: [] }; }
+    },
+    workdir: fixture.tempRoot
+  });
+  assert.equal(result.status, "failed");
+  assert.equal(result.failure.errorCode, "IR_CONTRACT_INVALID", result.error);
+});
+
+test("executeRoleNode evaluates state postconditions after the declared reducer", async () => {
+  const fixture = await prepareRoleExecutorFixture({
+    tempPrefix: "ogsystem-role-contract-reduced-postcondition-",
+    prompt: "reduced postcondition prompt",
+    systemSource: `flowchart TD
+%% system.id=role.contract.reduced-postcondition
+%% system.version=1.0.0
+%% law.global=law.console.base
+%% entry.role=writer
+%% model.bind.writer=balanced-gpt52
+
+input -->|DONE| writer[Role:writer]
+writer[Role:writer] -->|DONE| output
+`,
+    roles: [{
+      roleId: "writer",
+      allowedEvents: ["DONE"],
+      contract: {
+        contractVersion: 1,
+        purpose: "Checks reduced business state",
+        responsibility: { kind: "atomic", owns: ["approved"], contributes: [], doesNotOwn: [] },
+        inputs: { preconditions: [] },
+        outputs: {
+          events: ["DONE"],
+          postconditions: [{
+            op: "equals",
+            args: [{ kind: "path", root: "state", path: ["approved"] }, { kind: "literal", value: true }]
+          }]
+        },
+        authority: { controlActions: [] },
+        constraints: { writableStateFields: ["approved"], allowedTools: [] },
+        failure: { retryableErrorCodes: [], terminalErrorCodes: [] },
+        audit: { requiredFields: [] }
+      }
+    }]
+  });
+  fixture.plan.semanticIR = {
+    stateSchema: {
+      schemaVersion: 1,
+      ref: "state.json",
+      reducers: { approved: "replace" }
+    },
+    capabilities: { allowedToolsByRoleId: { writer: [] } }
+  };
+  const state = createInitialState(fixture.plan, "reduced postcondition prompt");
+  state.businessState = { approved: false };
+  const result = await executeRoleNode({
+    roleId: "writer",
+    node: getExecutionPlanNode(fixture.plan, "writer"),
+    plan: fixture.plan,
+    state,
+    branch: state.branchRecords["writer@1#1"],
+    effectiveLaw: { forbiddenToolRefs: [], allowNoopWithoutExecutionBinding: false },
+    profilesById: new Map(),
+    toolsByRef: new Map(),
+    modelsById: fixture.modelsById,
+    rolePackagesByRoleId: fixture.rolePackagesByRoleId,
+    compilerSnapshot: fixture.compilerSnapshot,
+    runContext: fixture.runContext,
+    executor: {
+      async start() {}, async close() {}, async abortSession() {}, getServerMetadata() { return {}; },
+      async execute() {
+        return { exitCode: 0, stdout: JSON.stringify({ event: "DONE", content: "approved", data: { approved: true } }), stderr: "", args: [] };
+      }
+    },
+    workdir: fixture.tempRoot
+  });
+  assert.equal(result.status, "ok", result.error ?? result.failure?.message);
+  assert.equal(result.selectedEvent, "DONE");
+});
+
+test("executeRoleNode enforces an empty Role Contract tool allowlist", async () => {
+  const fixture = await prepareRoleExecutorFixture({
+    tempPrefix: "ogsystem-role-contract-tools-",
+    prompt: "tool contract prompt",
+    systemSource: `flowchart TD
+%% system.id=role.contract.tools
+%% system.version=1.0.0
+%% law.global=law.console.base
+%% entry.role=writer
+%% exec.bind.writer=profile.fixture
+
+input -->|DONE| writer[Role:writer]
+writer[Role:writer] -->|DONE| output
+`,
+    roles: [{
+      roleId: "writer",
+      allowedEvents: ["DONE"],
+      contract: {
+        contractVersion: 1,
+        purpose: "Restricts execution tools",
+        responsibility: { kind: "atomic", owns: [], contributes: [], doesNotOwn: [] },
+        inputs: { preconditions: [] },
+        outputs: { events: ["DONE"], postconditions: [] },
+        authority: { controlActions: [] },
+        constraints: { writableStateFields: [], allowedTools: [] },
+        failure: { retryableErrorCodes: [], terminalErrorCodes: [] },
+        audit: { requiredFields: [] }
+      }
+    }]
+  });
+  fixture.plan.semanticIR = {
+    stateSchema: { defaults: {} },
+    capabilities: { allowedToolsByRoleId: { writer: ["tool.fixture"] } }
+  };
+  const state = createInitialState(fixture.plan, "tool contract prompt");
+  const result = await executeRoleNode({
+    roleId: "writer",
+    node: getExecutionPlanNode(fixture.plan, "writer"),
+    plan: fixture.plan,
+    state,
+    branch: state.branchRecords["writer@1#1"],
+    effectiveLaw: { forbiddenToolRefs: [], allowNoopWithoutExecutionBinding: false },
+    profilesById: new Map([["profile.fixture", { profileId: "profile.fixture", toolRef: "tool.fixture" }]]),
+    toolsByRef: new Map([["tool.fixture", { toolRef: "tool.fixture", runner: "local_shell", command: "node", argsTemplate: [], stdinMode: "none" }]]),
+    modelsById: fixture.modelsById,
+    rolePackagesByRoleId: fixture.rolePackagesByRoleId,
+    compilerSnapshot: fixture.compilerSnapshot,
+    runContext: fixture.runContext,
+    executor: {
+      async start() {}, async close() {}, async abortSession() {}, getServerMetadata() { return {}; },
+      async execute() { throw new Error("executor should not be called"); }
+    },
+    workdir: fixture.tempRoot
+  });
+  assert.equal(result.status, "failed");
+  assert.match(result.error, /Tool is not authorized by role contract/);
+});
+
+test("executeRoleNode denies tools when the Semantic capability role entry is absent", async () => {
+  const fixture = await prepareRoleExecutorFixture({
+    tempPrefix: "ogsystem-role-contract-capability-missing-",
+    prompt: "missing capability prompt",
+    systemSource: `flowchart TD
+%% system.id=role.contract.capability-missing
+%% system.version=1.0.0
+%% law.global=law.console.base
+%% entry.role=writer
+%% exec.bind.writer=profile.fixture
+
+input -->|DONE| writer[Role:writer]
+writer[Role:writer] -->|DONE| output
+`,
+    roles: [{
+      roleId: "writer",
+      allowedEvents: ["DONE"],
+      contract: {
+        constraints: { writableStateFields: [], allowedTools: ["tool.fixture"] }
+      }
+    }]
+  });
+  fixture.plan.semanticIR = {
+    stateSchema: { defaults: {} },
+    capabilities: { allowedToolsByRoleId: {} }
+  };
+  const state = createInitialState(fixture.plan, "missing capability prompt");
+  const result = await executeRoleNode({
+    roleId: "writer",
+    node: getExecutionPlanNode(fixture.plan, "writer"),
+    plan: fixture.plan,
+    state,
+    branch: state.branchRecords["writer@1#1"],
+    effectiveLaw: { forbiddenToolRefs: [], allowNoopWithoutExecutionBinding: false },
+    profilesById: new Map([["profile.fixture", { profileId: "profile.fixture", toolRef: "tool.fixture" }]]),
+    toolsByRef: new Map([["tool.fixture", { toolRef: "tool.fixture", runner: "local_shell", command: "node", argsTemplate: [], stdinMode: "none" }]]),
+    modelsById: fixture.modelsById,
+    rolePackagesByRoleId: fixture.rolePackagesByRoleId,
+    compilerSnapshot: fixture.compilerSnapshot,
+    runContext: fixture.runContext,
+    executor: { async start() {}, async close() {}, async abortSession() {}, getServerMetadata() { return {}; }, async execute() { throw new Error("executor should not be called"); } },
+    workdir: fixture.tempRoot
+  });
+  assert.equal(result.status, "failed");
+  assert.match(result.error, /Tool is not authorized by semantic capability policy/);
+});
+
 async function prepareRoleExecutorFixture(args) {
   const tempRoot = await mkdtemp(path.join(os.tmpdir(), args.tempPrefix));
   const systemPath = path.resolve(tempRoot, "system.mmd");
@@ -105,7 +394,8 @@ async function prepareRoleExecutorFixture(args) {
       rolesRoot,
       roleId: role.roleId,
       allowedEvents: role.allowedEvents,
-      requireEvent: role.requireEvent
+      requireEvent: role.requireEvent,
+      contract: role.contract
     });
   }
 

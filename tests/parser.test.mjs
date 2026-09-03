@@ -9,6 +9,7 @@ import {
   parseSystemFromMermaidSource
 } from "../dist/runtime/parse-mermaid.js";
 import { validateNl2MmdCandidate } from "../dist/nl2mmd/index.js";
+import { latestRoleContract } from "../tests-support/role-fixture.mjs";
 
 const validSource = `flowchart TD
 %% system.id=test.parser
@@ -177,6 +178,22 @@ test("parser accepts a minimal system", () => {
 
 test("parser rejects missing metadata", () => {
   assert.throws(() => parseSystemFromMermaidSource(invalidSource), /Missing required metadata/);
+});
+
+test("parser rejects removed talent.bind metadata", () => {
+  const source = `flowchart TD
+%% system.id=test.removed-talent-binding
+%% system.version=1.0.0
+%% law.global=law.test
+%% entry.role=intake
+%% talent.bind.intake=reasoning
+input -->|START| intake[Role:intake]
+intake[Role:intake] -->|DONE| output
+`;
+  assert.throws(
+    () => parseSystemFromMermaidSource(source),
+    /MERMAID_UNSUPPORTED_METADATA_KEY|Unsupported metadata key "talent\.bind\.intake"/
+  );
 });
 
 test("parser accepts graph metadata and compiles semantic hints without engine flag", () => {
@@ -651,7 +668,8 @@ test("nl2mmd validator ignores ERROR* edges when checking role output event enum
           name: roleId,
           description: `${roleId} test role`,
           promptTemplate: "prompt.md",
-          outputSchema: "output.schema.json"
+          outputSchema: "output.schema.json",
+          ...latestRoleContract({ events: eventEnum })
         },
         null,
         2

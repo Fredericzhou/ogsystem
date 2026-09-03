@@ -218,7 +218,16 @@ async function syncSource(args) {
       description: role.description,
       promptTemplate: "prompt.md",
       outputSchema: "output.schema.json",
-      tags: role.tags
+      tags: role.tags,
+      contractVersion: 1,
+      purpose: role.description,
+      responsibility: { kind: "atomic", owns: [], contributes: [], doesNotOwn: [] },
+      inputs: { preconditions: [] },
+      outputs: { events: [...OUTPUT_SCHEMA.properties.event.enum].sort(), postconditions: [] },
+      authority: { controlActions: [] },
+      constraints: { writableStateFields: [], allowedTools: [] },
+      failure: { retryableErrorCodes: [], terminalErrorCodes: [] },
+      audit: { requiredFields: [] }
     });
     await writeText(join(roleDir, "agent.md"), role.agent);
     await writeText(join(roleDir, "prompt.md"), PROMPT_TEMPLATE);

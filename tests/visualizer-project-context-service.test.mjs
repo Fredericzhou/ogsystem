@@ -5,6 +5,7 @@ import path from "node:path";
 import { mkdtemp, mkdir, rm, writeFile } from "node:fs/promises";
 
 import { invalidateProjectContextCache, loadProjectContext } from "../dist/visualizer/project-context-service.js";
+import { latestRoleContract } from "../tests-support/role-fixture.mjs";
 
 async function writeRolePackage(workdir, roleId) {
   const roleDir = path.join(workdir, "og-roles", "roles", roleId);
@@ -17,7 +18,8 @@ async function writeRolePackage(workdir, roleId) {
       name: roleId,
       description: `${roleId} role`,
       promptTemplate: "prompt.md",
-      outputSchema: "output.schema.json"
+      outputSchema: "output.schema.json",
+      ...latestRoleContract({ events: ["DONE"] })
     }),
     "utf8"
   );

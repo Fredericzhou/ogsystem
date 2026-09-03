@@ -2,6 +2,11 @@ import test from "node:test";
 import assert from "node:assert/strict";
 
 import { createRunConsoleLogger } from "../dist/runtime/console-run-log.js";
+
+const reviewRolePackagesByRoleId = new Map([[
+  "writer",
+  { manifest: { authority: { controlActions: ["approve", "pause", "rework", "terminate"] } } }
+]]);
 import { createExecutionPlan } from "../dist/runtime/execution-plan.js";
 import {
   createInitialGraphState,
@@ -255,7 +260,8 @@ writer[Role:writer] -->|DONE| output
       decision: "pause",
       comment: "hold"
     },
-    logger
+    logger,
+    rolePackagesByRoleId: reviewRolePackagesByRoleId
   });
 
   assert.equal(transition.update.status, undefined);
@@ -263,6 +269,23 @@ writer[Role:writer] -->|DONE| output
   assert.equal(transition.update.pendingReviewsById["review.writer@1#1.r1"].status, "paused");
   assert.equal(transition.update.lastWaitingReviewId, "review.writer@1#1.r1");
   assert.equal(transition.events[0].type, "human_review_paused");
+  assert.throws(
+    () => planHumanReviewDecisionTransition({
+      state,
+      plan,
+      review: state.pendingReviewsById["review.writer@1#1.r1"],
+      decision: {
+        reviewId: "review.writer@1#1.r1",
+        committedAt: "2026-04-22T08:01:00.000Z",
+        decidedAt: "2026-04-22T08:01:00.000Z",
+        decision: "terminate",
+        scope: "branch"
+      },
+      logger,
+      rolePackagesByRoleId: new Map([["writer", { manifest: { authority: { controlActions: ["approve"] } } }]])
+    }),
+    /does not authorize human review action terminate/
+  );
 });
 
 test("human review rework decision activates a rework branch with feedback context", () => {
@@ -326,7 +349,8 @@ writer[Role:writer] -->|DONE| output
       decision: "rework",
       comment: "please tighten the argument"
     },
-    logger
+    logger,
+    rolePackagesByRoleId: reviewRolePackagesByRoleId
   });
 
   assert.equal(transition.update.pendingReviewsById["review.writer@1#1.r1"].status, "resolved");
@@ -414,7 +438,8 @@ writer[Role:writer] -->|DONE| output
       decision: "terminate",
       scope: "run"
     },
-    logger
+    logger,
+    rolePackagesByRoleId: reviewRolePackagesByRoleId
   });
 
   assert.equal(transition.update.status, "stopped");

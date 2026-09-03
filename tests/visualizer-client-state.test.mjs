@@ -6,10 +6,62 @@ import {
   normalizeLifecycleView,
   readRouteStateFromSearch
 } from "../dist/visualizer/client-route-state.js";
+
+test("graph reading route state is bounded, validated, and round-trips", () => {
+  const search = buildRouteSearch({
+    lifecycle: "run",
+    projectHome: false,
+    selectedRunId: "run-1",
+    selectedReviewId: "",
+    selectedLogRoleId: "",
+    logTail: "",
+    logSince: "",
+    graphMode: "upstream",
+    graphRoleId: "planner",
+    graphFlowKey: "planner:NEXT:review",
+    graphChannel: "error",
+    conversationMode: true,
+    timelineRoleId: "planner",
+    timelineType: "NEXT",
+    timelineStatus: "failed",
+    timelineBranchId: "branch-1",
+    timelineReviewId: "review-1",
+    timelineErrorCode: "E_TEST",
+    timelineChannel: "error"
+  });
+  assert.deepEqual(readRouteStateFromSearch(search), {
+    view: "",
+    lifecycle: "run",
+    runId: "run-1",
+    reviewId: "",
+    logRoleId: "",
+    tail: "",
+    since: "",
+    graphMode: "upstream",
+    graphRoleId: "planner",
+    graphFlowKey: "planner:NEXT:review",
+    graphChannel: "error",
+    conversationMode: true,
+    timelineRoleId: "planner",
+    timelineType: "NEXT",
+    timelineStatus: "failed",
+    timelineBranchId: "branch-1",
+    timelineReviewId: "review-1",
+    timelineErrorCode: "E_TEST",
+    timelineChannel: "error"
+  });
+  const invalid = readRouteStateFromSearch(`?graphMode=broken&graphChannel=broken&timelineView=broken&timelineChannel=broken&graphRoleId=${"x".repeat(161)}`);
+  assert.equal(invalid.graphMode, "all");
+  assert.equal(invalid.graphChannel, "");
+  assert.equal(invalid.graphRoleId, "");
+  assert.equal(invalid.conversationMode, false);
+  assert.equal(invalid.timelineChannel, "");
+});
 import {
   renderOperateTabsHtml,
   renderLoadingSkeletonHtml,
   renderRunStatsHtml,
+  renderConversationHtml,
   renderTimelineHtml,
   renderWorkbenchActionsHtml,
   renderWorkbenchModeBodyHtml,
@@ -184,7 +236,19 @@ test("client route state helpers parse and serialize lifecycle query state", () 
     reviewId: "",
     logRoleId: "",
     tail: "",
-    since: ""
+    since: "",
+    graphMode: "all",
+    graphRoleId: "",
+    graphFlowKey: "",
+    graphChannel: "",
+    conversationMode: false,
+    timelineRoleId: "",
+    timelineType: "",
+    timelineStatus: "",
+    timelineBranchId: "",
+    timelineReviewId: "",
+    timelineErrorCode: "",
+    timelineChannel: ""
   });
   assert.equal(normalizeLifecycleView("operate", ""), "run");
   assert.equal(normalizeLifecycleView("unknown", "project"), "project");
@@ -229,7 +293,19 @@ test("client route state helpers parse and serialize lifecycle query state", () 
       reviewId: "review-2",
       logRoleId: "qa",
       tail: "50",
-      since: "2026-05-03T09:00"
+      since: "2026-05-03T09:00",
+      graphMode: "all",
+      graphRoleId: "",
+      graphFlowKey: "",
+      graphChannel: "",
+      conversationMode: false,
+      timelineRoleId: "",
+      timelineType: "",
+      timelineStatus: "",
+      timelineBranchId: "",
+      timelineReviewId: "",
+      timelineErrorCode: "",
+      timelineChannel: ""
     }
   );
 });
@@ -732,6 +808,51 @@ test("client lifecycle panel renderers cover workbench structure, stats, and tim
     formatTime
   });
   assert.match(emptyTimeline, /role=planner/);
+
+  const conversationHtml = renderConversationHtml({
+    projection: {
+      items: [
+        {
+          itemId: "run-1:role_message:events.ndjson:1",
+          kind: "role_message",
+          roleId: "planner",
+          event: "DONE",
+          status: "ok",
+          at: "2026-04-16T01:02:04.000Z",
+          content: { text: "operator-safe output", redacted: false, truncated: false },
+          source: { file: "events.ndjson", cursor: 1 }
+        },
+        {
+          itemId: "run-1:join:events.ndjson:2",
+          kind: "join",
+          roleId: "join",
+          status: "waiting",
+          at: "2026-04-16T01:02:05.000Z",
+          join: { joinRoleId: "join", mode: "all_of", expected: ["planner", "review"], ready: ["planner"], missing: ["review"], timedOut: false },
+          route: { channel: "join", presentationChannel: "join", backEdge: false },
+          source: { file: "timeline.jsonl", cursor: 2 }
+        },
+        {
+          itemId: "run-1:human_review:state.json:3",
+          kind: "human_review",
+          roleId: "planner",
+          status: "pending",
+          at: "2026-04-16T01:02:06.000Z",
+          review: { reviewId: "review-1", reviewStatus: "pending" },
+          source: { file: "state.json", snapshotVersion: 3 }
+        }
+      ]
+    },
+    t,
+    escapeText,
+    statusClass,
+    displayUiToken,
+    formatTime
+  });
+  assert.match(conversationHtml, /operator-safe output/);
+  assert.match(conversationHtml, /expected planner, review/);
+  assert.match(conversationHtml, /review review-1 \/ pending/);
+  assert.doesNotMatch(conversationHtml, /feedback-seat/);
 
   const timeline = renderTimelineHtml({
     events: [{

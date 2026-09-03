@@ -29,6 +29,18 @@ async function loadRolePackages(roleIds, roleRootDir) {
   return rolePackagesByRoleId;
 }
 
+function alignContractEventsWithSystem(system, rolePackagesByRoleId) {
+  for (const roleId of system.roleIds) {
+    const rolePackage = rolePackagesByRoleId.get(roleId);
+    if (!rolePackage) continue;
+    rolePackage.manifest.outputs.events = [...new Set(
+      system.flows
+        .filter((flow) => flow.fromRoleId === roleId && !flow.eventType.startsWith("ERROR"))
+        .map((flow) => flow.eventType)
+    )].sort();
+  }
+}
+
 test("compiler snapshot digest is stable across role package ordering", async () => {
   const source = await readFile(path.resolve("examples/target-model-binding-system.mmd"), "utf8");
   const system = parseSystemFromMermaidSource(source);
@@ -67,6 +79,27 @@ test("compiler snapshot digest is stable across role package ordering", async ()
     forwardResult.snapshot.flowSummaryByKey,
     reverseResult.snapshot.flowSummaryByKey
   );
+});
+
+test("plain Mermaid systems enforce the exact Role Contract event set", async () => {
+  const source = await readFile(path.resolve("examples/target-model-binding-system.mmd"), "utf8");
+  const system = parseSystemFromMermaidSource(source);
+  const rolePackagesByRoleId = await loadRolePackages(system.roleIds, path.resolve("og-roles", "roles"));
+  rolePackagesByRoleId.get("debate-judge").manifest.outputs.events = ["DECISION_READY", "UNDECLARED_EVENT"];
+
+  const result = compileExecutionSnapshot({
+    system,
+    rolePackagesByRoleId,
+    effectiveLaw: {
+      forbiddenToolRefs: [],
+      maxTransitions: undefined,
+      allowNoopWithoutExecutionBinding: false
+    }
+  });
+  assert.equal(result.ok, false);
+  assert.ok(result.diagnostics.some((diagnostic) =>
+    diagnostic.code === "IR_CONTRACT_INVALID" && diagnostic.roleId === "debate-judge"
+  ));
 });
 
 test("compiler emits stable diagnostics for invalid join, context, loop, and contract metadata", async () => {
@@ -185,6 +218,7 @@ decider[Role:test-decision] -->|DONE| output
   const system = parseSystemFromMermaidSource(source);
   const roleRootDir = path.resolve("og-roles", "roles");
   const rolePackagesByRoleId = await loadRolePackages(system.roleIds, roleRootDir);
+  alignContractEventsWithSystem(system, rolePackagesByRoleId);
 
   const missingBindingLaw = {
     forbiddenToolRefs: [],
@@ -245,6 +279,10 @@ decider[Role:test-decision] -->|DONE| output
   const terminateSystem = parseSystemFromMermaidSource(sourceWithTerminate);
   const pausePackages = await loadRolePackages(pauseSystem.roleIds, roleRootDir);
   const terminatePackages = await loadRolePackages(terminateSystem.roleIds, roleRootDir);
+  alignContractEventsWithSystem(pauseSystem, pausePackages);
+  alignContractEventsWithSystem(terminateSystem, terminatePackages);
+  pausePackages.get("test-decision").manifest.authority.controlActions = ["approve", "pause", "rework", "terminate"];
+  terminatePackages.get("test-decision").manifest.authority.controlActions = ["approve", "pause", "rework", "terminate"];
   const effectiveLaw = {
     forbiddenToolRefs: [],
     maxTransitions: undefined,
@@ -276,10 +314,23 @@ decider[Role:test-decision] -->|DONE| output
   });
   assert.notStrictEqual(pauseResult.digest, terminateResult.digest);
 
+  pausePackages.get("test-decision").manifest.authority.controlActions = ["approve"];
+  const unauthorizedReviewResult = compileExecutionSnapshot({
+    system: pauseSystem,
+    rolePackagesByRoleId: pausePackages,
+    effectiveLaw
+  });
+  assert.equal(unauthorizedReviewResult.ok, false);
+  assert.ok(unauthorizedReviewResult.diagnostics.some((diagnostic) =>
+    diagnostic.code === "IR_CONTRACT_INVALID" && diagnostic.roleId === "test-decision" && diagnostic.message.includes("controlActions")
+  ));
+
   const noopReviewSystem = parseSystemFromMermaidSource(
     sourceWithPause.replace("%% exec.bind.test-decision=profile.test-decision\n", "")
   );
   const noopReviewPackages = await loadRolePackages(noopReviewSystem.roleIds, roleRootDir);
+  alignContractEventsWithSystem(noopReviewSystem, noopReviewPackages);
+  noopReviewPackages.get("test-decision").manifest.authority.controlActions = ["approve", "pause", "rework", "terminate"];
   const noopReviewResult = compileExecutionSnapshot({
     system: noopReviewSystem,
     rolePackagesByRoleId: noopReviewPackages,

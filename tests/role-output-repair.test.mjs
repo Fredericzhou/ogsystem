@@ -214,7 +214,7 @@ test('runtime excludes ERROR* edges from role-facing allowed_events contract', a
 input -->|GO| operator[Role:test-operator]
 operator[Role:test-operator] -->|DONE| output
 operator[Role:test-operator] -->|ERROR| branchA[Role:test-branch-a]
-branchA[Role:test-branch-a] -->|DONE| output
+branchA[Role:test-branch-a] -->|END_A| output
 `
   });
   const result = await runSystemWithAdapter({

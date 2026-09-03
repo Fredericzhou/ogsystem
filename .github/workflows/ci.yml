@@ -42,6 +42,23 @@ jobs:
         run: pnpm exec playwright install chromium
       - name: Build
         run: pnpm run build
+      - name: Detect Rust toolchain
+        id: rust-toolchain
+        shell: bash
+        run: |
+          if command -v cargo >/dev/null 2>&1; then
+            echo "available=true" >> "$GITHUB_OUTPUT"
+            echo "Rust toolchain detected; Rust hello pipeline will run."
+          else
+            echo "available=false" >> "$GITHUB_OUTPUT"
+            echo "Rust toolchain unavailable; Rust hello pipeline will be skipped."
+          fi
+      - name: Rust hello pipeline
+        if: steps.rust-toolchain.outputs.available == 'true'
+        run: node --test tests/rust-hello-pipeline.test.mjs
+      - name: Rust hello pipeline skipped
+        if: steps.rust-toolchain.outputs.available != 'true'
+        run: echo "Rust hello pipeline skipped because cargo is unavailable on this runner."
       - name: Test
         run: pnpm test
       - name: Visualizer browser smoke

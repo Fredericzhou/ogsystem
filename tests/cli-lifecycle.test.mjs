@@ -55,7 +55,7 @@ async function seedRuntimeProject(tempRoot) {
       {
         configVersion: "1",
         defaults: {
-          model: "opencode/gpt-5-nano",
+          model: "openai/gpt-5-nano",
           timeoutMs: 120000,
           maxOutputBytes: 65536
         }
@@ -184,6 +184,7 @@ test("lifecycle cli project init/create commands scaffold project control plane"
       "input -->|DEBATE_REQUEST| minimalist[Role:debate-minimalist]",
       "minimalist[Role:debate-minimalist] -->|MINIMALIST_DONE| judge[Role:debate-judge]",
       "judge[Role:debate-judge] -->|DECISION_READY| output",
+      "judge[Role:debate-judge] -->|REBUTTAL_NEEDED| output",
       ""
     ].join("\n"),
     "utf8"
@@ -328,7 +329,8 @@ test("lifecycle cli run start resolves --system relative to --workdir", { concur
       "",
       "input -->|DEBATE_REQUEST| minimalist[Role:debate-minimalist]",
       "minimalist[Role:debate-minimalist] -->|MINIMALIST_DONE| judge[Role:debate-judge]",
-      "judge[Role:debate-judge] -->|DECISION_READY| output"
+      "judge[Role:debate-judge] -->|DECISION_READY| output",
+      "judge[Role:debate-judge] -->|REBUTTAL_NEEDED| output"
     ].join("\n"),
     "utf8"
   );
@@ -379,7 +381,7 @@ test("lifecycle cli run start/list/status/logs/resume/stop works end-to-end", { 
       {
         configVersion: "1",
         defaults: {
-          model: "opencode/gpt-5-nano",
+          model: "openai/gpt-5-nano",
           timeoutMs: 120000,
           maxOutputBytes: 65536
         }

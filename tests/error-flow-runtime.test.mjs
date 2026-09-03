@@ -5,6 +5,8 @@ import path from "node:path";
 import { mkdir, mkdtemp, readFile, readdir, writeFile } from "node:fs/promises";
 
 import { runSystemWithAdapter } from "../dist/runtime/adapter.js";
+import { parseSystemFromMermaidSource } from "../dist/runtime/parse-mermaid.js";
+import { latestRoleContract } from "../tests-support/role-fixture.mjs";
 
 async function writeRolePackage(args) {
   const roleDir = path.resolve(args.rolesRoot, args.roleId);
@@ -18,7 +20,11 @@ async function writeRolePackage(args) {
         name: args.roleId,
         description: `${args.roleId} test role`,
         promptTemplate: "prompt.md",
-        outputSchema: "output.schema.json"
+        outputSchema: "output.schema.json",
+        ...latestRoleContract({
+          events: args.contractEvents ?? args.allowedEvents,
+          allowedTools: args.allowedTools ?? []
+        })
       },
       null,
       2
@@ -100,6 +106,10 @@ async function setupFixture(args) {
   const rolesRoot = path.resolve(tempRoot, "og-roles", "roles");
   await mkdir(rolesRoot, { recursive: true });
 
+  const systemPath = path.resolve(tempRoot, "system.mmd");
+  await writeFile(systemPath, args.systemSource, "utf8");
+  const system = parseSystemFromMermaidSource(args.systemSource);
+
   const profiles = [];
   const tools = [];
   for (const role of args.roles) {
@@ -107,6 +117,10 @@ async function setupFixture(args) {
       rolesRoot,
       roleId: role.roleId,
       allowedEvents: role.allowedEvents,
+      allowedTools: [`tool.${role.roleId}`],
+      contractEvents: [...new Set(system.flows
+        .filter((flow) => flow.fromRoleId === role.roleId && !flow.eventType.startsWith("ERROR"))
+        .map((flow) => flow.eventType))].sort(),
       requireEvent: role.requireEvent
     });
     const profileId = `profile.${role.roleId}`;
@@ -129,13 +143,11 @@ async function setupFixture(args) {
     });
   }
 
-  const systemPath = path.resolve(tempRoot, "system.mmd");
   const runtimePath = path.resolve(tempRoot, "runtime.json");
   const profilesPath = path.resolve(tempRoot, "profiles.json");
   const toolsPath = path.resolve(tempRoot, "tools.json");
   const lawsPath = path.resolve(tempRoot, "laws.json");
 
-  await writeFile(systemPath, args.systemSource, "utf8");
   await writeFile(
     runtimePath,
     JSON.stringify(

@@ -101,7 +101,6 @@ test("flow-contract loader resolves nested local $ref schemas", async () => {
     lawBinding: {
       globalLawRef: "law.demo"
     },
-    talentBinding: {},
     executionBinding: {},
     modelBinding: {},
     graph: {
@@ -196,7 +195,6 @@ test("flow-contract loader rejects remote schema $ref", async () => {
     lawBinding: {
       globalLawRef: "law.demo"
     },
-    talentBinding: {},
     executionBinding: {},
     modelBinding: {},
     graph: {

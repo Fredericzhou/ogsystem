@@ -7,6 +7,7 @@ import { mkdir, mkdtemp, readFile, readdir, writeFile } from "node:fs/promises";
 
 import { validateRuntimeConfig } from "../dist/runtime/config.js";
 import { runSystemWithAdapter } from "../dist/runtime/adapter.js";
+import { latestRoleContract } from "../tests-support/role-fixture.mjs";
 import { parseSystemFromMermaidSource } from "../dist/runtime/parse-mermaid.js";
 import {
   RESUME_RUN_LOCK_FILE,
@@ -97,7 +98,8 @@ async function writeRolePackage(args) {
         name: args.roleId,
         description: `${args.roleId} test role`,
         promptTemplate: "prompt.md",
-        outputSchema: "output.schema.json"
+        outputSchema: "output.schema.json",
+        ...latestRoleContract({ events: args.allowedEvents, allowedTools: args.allowedTools })
       },
       null,
       2
@@ -468,6 +470,26 @@ finalizer[Role:test-operator] -->|DONE| output
       }
     }
   });
+  const rolesRoot = path.resolve(tempRoot, "og-roles", "roles");
+  await mkdir(rolesRoot, { recursive: true });
+  await writeRolePackage({ roleId: "test-branch-a", rolesRoot, allowedEvents: [], allowedTools: ["tool.detector"] });
+  await writeRolePackage({
+    roleId: "error-handler-base",
+    rolesRoot,
+    allowedEvents: ["ABORTED", "COMPENSATED", "ESCALATED"],
+    allowedTools: ["tool.handler"]
+  });
+  await writeRolePackage({ roleId: "test-operator", rolesRoot, allowedEvents: ["DONE"], allowedTools: ["tool.finalizer"] });
+  await writeFile(
+    runtimePath,
+    JSON.stringify({
+      executor: "opencode",
+      roleRepo: path.resolve(tempRoot, "og-roles"),
+      runsDir: ".ogs/runs",
+      runtime: { error_flows: { v1: true } }
+    }, null, 2),
+    "utf8"
+  );
   const profilesPath = path.resolve(tempRoot, "profiles.json");
   const toolsPath = path.resolve(tempRoot, "tools.json");
   const lawsPath = path.resolve(tempRoot, "laws.json");
@@ -583,7 +605,7 @@ finalizer[Role:test-operator] -->|DONE| output
 
   const resumeArgs = withResumeRun(baseArgs, runId);
   const resumed = await runCli(resumeArgs);
-  assert.strictEqual(resumed.code, 0);
+  assert.strictEqual(resumed.code, 0, resumed.stderr || resumed.stdout);
   const resumedResult = JSON.parse(resumed.stdout);
   assert.strictEqual(resumedResult.status, "done");
   assert.strictEqual(resumedResult.finalRoleId, "test-operator");
@@ -729,12 +751,14 @@ test("runner consumes stop request after current transition and lands in stopped
   await writeRolePackage({
     rolesRoot,
     roleId: "slow_role",
-    allowedEvents: ["NEXT"]
+    allowedEvents: ["NEXT"],
+    allowedTools: ["tool.slow"]
   });
   await writeRolePackage({
     rolesRoot,
     roleId: "second_role",
-    allowedEvents: ["DONE"]
+    allowedEvents: ["DONE"],
+    allowedTools: ["tool.second"]
   });
 
   await writeFile(

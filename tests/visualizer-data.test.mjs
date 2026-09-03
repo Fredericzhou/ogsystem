@@ -2,7 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import os from "node:os";
 import path from "node:path";
-import { mkdtemp, mkdir, symlink, writeFile } from "node:fs/promises";
+import { cp, mkdtemp, mkdir, readFile, symlink, writeFile } from "node:fs/promises";
 
 import {
   inspectRunContractStatusVisualization,
@@ -33,7 +33,18 @@ function decodeMermaidLivePayload(url) {
 async function seedProjectFixture(workdir) {
   const repoRoot = process.cwd();
   await mkdir(path.resolve(workdir, ".ogs"), { recursive: true });
-  await symlink(path.resolve(repoRoot, "og-roles"), path.resolve(workdir, "og-roles"), "dir");
+  await mkdir(path.resolve(workdir, "og-roles", "roles"), { recursive: true });
+  for (const roleId of ["demo-analyst", "demo-intake", "diagnosis-dispatch", "test-branch-a", "test-branch-b", "test-operator"]) {
+    await cp(
+      path.resolve(repoRoot, "og-roles", "roles", roleId),
+      path.resolve(workdir, "og-roles", "roles", roleId),
+      { recursive: true }
+    );
+  }
+  const diagnosisRolePath = path.resolve(workdir, "og-roles", "roles", "diagnosis-dispatch", "role.json");
+  const diagnosisRole = JSON.parse(await readFile(diagnosisRolePath, "utf8"));
+  diagnosisRole.outputs.events = ["DONE"];
+  await writeFile(diagnosisRolePath, JSON.stringify(diagnosisRole, null, 2), "utf8");
   for (const file of [
     "runtime.json",
     "model-selection.json",
@@ -73,7 +84,7 @@ async function seedProjectFixture(workdir) {
       "%% system.version=1.0.0",
       "%% law.global=law.minimal.base",
       "%% entry.role=demo-analyst",
-      "%% model.bind.demo-analyst=opencode/gpt-5.4",
+      "%% model.bind.demo-analyst=openai/gpt-5-nano",
       "%% review.mode.demo-analyst=required",
       "%% review.timeout.demo-analyst=3600",
       "%% review.timeout.action.demo-analyst=pause",
@@ -81,7 +92,7 @@ async function seedProjectFixture(workdir) {
       "%% review.rework.max.demo-analyst=2",
       "%% review.terminate.scope.demo-analyst=branch",
       "input -->|ENTER| analyst[Role:demo-analyst]",
-      "analyst[Role:demo-analyst] -->|DONE| output",
+      "analyst[Role:demo-analyst] -->|ANALYSIS_DONE| output",
       ""
     ].join("\n"),
     "utf8"
@@ -102,8 +113,8 @@ async function seedStrictContractProjectFixture(workdir) {
       "%% entry.role=demo-analyst",
       "%% handoff.mode=strict",
       `%% handoff.contracts=${contractBundlePath}`,
-      "%% model.bind.demo-analyst=opencode/gpt-5.4",
-      "%% model.bind.diagnosis-dispatch=opencode/gpt-5.4",
+      "%% model.bind.demo-analyst=openai/gpt-5-nano",
+      "%% model.bind.diagnosis-dispatch=openai/gpt-5-nano",
       "%% context.map.diagnosis-dispatch.content=direct.content",
       "input -->|ENTER| analyst[Role:demo-analyst]",
       "analyst[Role:demo-analyst] -->|ANALYSIS_DONE| tracker[Role:diagnosis-dispatch]",
@@ -482,10 +493,10 @@ async function createWaitingReviewRun(workdir, options = {}) {
             lineageId: "demo-analyst@1#1",
             loopIteration: 1,
             executionId: "exec-1",
-            selectedEvent: "DONE",
+            selectedEvent: "ANALYSIS_DONE",
             draftResult: {
               roleId: "demo-analyst",
-              event: "DONE",
+              event: "ANALYSIS_DONE",
               content: "draft",
               branchId: "demo-analyst@1#1",
               lineageId: "demo-analyst@1#1",
@@ -523,7 +534,7 @@ async function createWaitingReviewRun(workdir, options = {}) {
             comment: "ship it",
             previousOutput: {
               roleId: "demo-analyst",
-              event: "DONE",
+              event: "ANALYSIS_DONE",
               content: "draft",
               branchId: "demo-analyst@1#1",
               lineageId: "demo-analyst@1#1",
@@ -610,7 +621,7 @@ async function createWaitingReviewRun(workdir, options = {}) {
       "%% law.global=law.minimal.base",
       "%% entry.role=demo-analyst",
       "input -->|GO| analyst[Role:demo-analyst]",
-      "analyst[Role:demo-analyst] -->|DONE| output",
+      "analyst[Role:demo-analyst] -->|ANALYSIS_DONE| output",
       ""
     ].join("\n"),
     "utf8"
@@ -625,10 +636,10 @@ async function createWaitingReviewRun(workdir, options = {}) {
         lineageId: "demo-analyst@1#1",
         loopIteration: 1,
         executionId: "exec-1",
-        selectedEvent: "DONE",
+        selectedEvent: "ANALYSIS_DONE",
         draftResult: {
           roleId: "demo-analyst",
-          event: "DONE",
+          event: "ANALYSIS_DONE",
           content: "draft",
           branchId: "demo-analyst@1#1",
           lineageId: "demo-analyst@1#1",
@@ -695,10 +706,10 @@ async function createWaitingReviewRun(workdir, options = {}) {
         },
         committedAt: "2026-04-22T09:15:00.000Z",
         status: "ok",
-        selectedEvent: "DONE",
+        selectedEvent: "ANALYSIS_DONE",
         storedResult: {
           roleId: "demo-analyst",
-          event: "DONE",
+          event: "ANALYSIS_DONE",
           content: "draft",
           branchId: "demo-analyst@1#1",
           lineageId: "demo-analyst@1#1",

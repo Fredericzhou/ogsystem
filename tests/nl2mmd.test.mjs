@@ -75,7 +75,7 @@ test("nl2mmd txt graph renderer prints plain structure preview", async () => {
   assert.match(txt, /--DEBATE_REQUEST--> debate-moderator/);
   assert.match(
     txt,
-    /debate-judge \[model=opencode\/gpt-5-nano, join=all_of, sources=debate-minimalist,debate-alignmentist\]/
+    /debate-judge \[model=openai\/gpt-5-nano, join=all_of, sources=debate-minimalist,debate-alignmentist\]/
   );
 });
 
@@ -108,7 +108,7 @@ test("nl2mmd prompt includes current dictionary and local catalog hints", async 
 
   assert.match(
     prompt,
-    /Metadata prefixes allowed: talent\.bind\., exec\.bind\., model\.bind\., role\.mode\., join\.mode\., join\.min\., join\.sources\., context\.map\., loop\.max\., route\.order\., review\.mode\., review\.timeout\., review\.timeout\.action\., review\.rework\.target\., review\.rework\.max\., review\.terminate\.scope\./
+    /Metadata prefixes allowed: exec\.bind\., model\.bind\., role\.mode\., join\.mode\., join\.min\., join\.sources\., context\.map\., loop\.max\., route\.order\., review\.mode\., review\.timeout\., review\.timeout\.action\., review\.rework\.target\., review\.rework\.max\., review\.terminate\.scope\./
   );
   assert.match(
     prompt,
@@ -117,10 +117,6 @@ test("nl2mmd prompt includes current dictionary and local catalog hints", async 
   assert.match(
     prompt,
     /Flow-contract metadata are also supported: handoff\.mode, handoff\.contracts, and route\.order\.<fromRoleId>/
-  );
-  assert.match(
-    prompt,
-    /talent\.bind\.<roleId> is compatibility metadata only; it does not select the current model or executor and is reserved for future capability-tag-based routing/
   );
   assert.match(prompt, /Runtime-native human review uses review\.\* metadata/);
   assert.match(prompt, /do not add a synthetic reviewer role solely to represent the human decision/);
