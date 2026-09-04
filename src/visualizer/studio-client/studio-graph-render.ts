@@ -41,7 +41,8 @@ function nodeLabel(node: GraphViewModelNode): string {
         node.structure.review ? "review" : ""
       ].filter(Boolean)
     : [];
-  const badges = [...semantic, ...normalizedBadges];
+  const topology = node.topologyComponentId ? [node.topologyComponentId] : [];
+  const badges = [...semantic, ...normalizedBadges, ...topology];
   return badges.length ? `${node.label}  [${badges.join(" ")}]` : node.label;
 }
 
@@ -195,16 +196,16 @@ function sccGroupAttrs(group: SccGroup): Node.Metadata["attrs"] {
     y: member.y,
     width: member.width,
     height: member.height,
-    fill: "rgba(45, 212, 191, 0.045)",
-    stroke: "rgba(45, 212, 191, 0.42)",
-    strokeWidth: 1,
-    strokeDasharray: "5 5",
+    fill: "rgba(45, 212, 191, 0.075)",
+    stroke: "rgba(45, 212, 191, 0.72)",
+    strokeWidth: 1.8,
+    strokeDasharray: "7 5",
     rx: 12,
     ry: 12
   }]));
   return {
     ...memberAttrs,
-    label: { text: group.label, refX: 12, refY: 8, textAnchor: "start", textVerticalAnchor: "top", fill: "#5eead4", fontSize: 10, fontWeight: 700 }
+    label: { text: group.label, refX: 12, refY: 6, textAnchor: "start", textVerticalAnchor: "top", fill: "#99f6e4", fontSize: 11, fontWeight: 800 }
   };
 }
 
