@@ -33,7 +33,9 @@ import {
 import {
   alignStudioSccGroups,
   isStudioSccGroup,
-  renderStudioGraphViewModel
+  renderStudioGraphViewModel,
+  studioSccGroupMembers,
+  studioSccGroupPreviousPosition
 } from "./studio-graph-render.js";
 import { createElkLayoutProjection } from "./elk-layout-adapter.js";
 import {
@@ -283,6 +285,7 @@ export class StudioGraphIsland {
   private layoutMode: StudioGraphLayoutMode = "flow";
   // Flow order is useful for reading a graph and should be visible on first render.
   private showTopologyOrder = true;
+  private syncingSccGroupDrag = false;
   private currentLayoutProjection: LayoutProjection | null = null;
   private updateGeneration = 0;
   private readonly delegatedCommandFormSubmitListener = (event: Event) => this.handleDelegatedCommandFormSubmit(event);
@@ -534,6 +537,12 @@ export class StudioGraphIsland {
         maxScale: 2.4
       },
       interacting: (cellView) => {
+        if (cellView.cell.isNode() && isStudioSccGroup(cellView.cell)) {
+          return {
+            nodeMovable: !this.isReadOnly(),
+            magnetConnectable: false
+          };
+        }
         const data = cellView.cell.getData() as { studioNode?: { kind?: string } } | undefined;
         if (data?.studioNode?.kind === "boundary") {
           return {
@@ -805,14 +814,32 @@ export class StudioGraphIsland {
     this.graph.on("node:moved", ({ node }) => {
       if (this.isReadOnly()) return;
       if (isStudioSccGroup(node)) {
-        // SCC frames are independently draggable annotations. Moving one does
-        // not alter graph semantics or the positions of its member nodes.
+        const previous = studioSccGroupPreviousPosition(node);
+        const current = node.getPosition();
+        const delta = previous ? { x: current.x - previous.x, y: current.y - previous.y } : { x: 0, y: 0 };
+        if (!this.syncingSccGroupDrag && (delta.x !== 0 || delta.y !== 0)) {
+          this.syncingSccGroupDrag = true;
+          try {
+            for (const memberId of studioSccGroupMembers(node)) {
+              const member = this.graph.getCellById(memberId);
+              if (member?.isNode() && !isStudioSccGroup(member)) {
+                const position = member.getPosition();
+                member.position(position.x + delta.x, position.y + delta.y);
+              }
+            }
+          } finally {
+            this.syncingSccGroupDrag = false;
+          }
+          alignStudioSccGroups(this.graph);
+          this.scheduleSyncCanvas();
+        }
         this.renderMinimap();
         return;
       }
       if (this.commandForm?.kind === "add-edge") {
         this.closeCommandForm();
       }
+      if (this.syncingSccGroupDrag) return;
       alignStudioSccGroups(this.graph);
       this.scheduleSyncCanvas();
       this.renderMinimap();

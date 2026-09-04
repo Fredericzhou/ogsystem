@@ -54,6 +54,29 @@ async function seedProject(workdir: string): Promise<void> {
   );
 }
 
+async function seedCyclicProject(workdir: string): Promise<void> {
+  await seedProject(workdir);
+  await writeFile(
+    path.resolve(workdir, "system.mmd"),
+    [
+      "flowchart TD",
+      "%% system.id=viz.studio.graph",
+      "%% system.version=1.0.0",
+      "%% law.global=law.minimal.base",
+      "%% entry.role=demo-analyst",
+      "%% model.bind.demo-analyst=openai/gpt-5-nano",
+      "%% model.bind.demo-intake=openai/gpt-5-nano",
+      "%% loop.max.demo-analyst=3",
+      "input -->|ENTER| analyst[Role:demo-analyst]",
+      "analyst[Role:demo-analyst] -->|ANALYSIS_DONE| intake[Role:demo-intake]",
+      "intake[Role:demo-intake] -->|COMPLETE| analyst[Role:demo-analyst]",
+      "intake[Role:demo-intake] -->|COMPLETE| output",
+      ""
+    ].join("\n"),
+    "utf8"
+  );
+}
+
 async function dragStudioPort(page, sourceRoleId: string, targetRoleId: string): Promise<void> {
   const sourcePort = page.locator(
     `#studio-graph-root [data-cell-id="${sourceRoleId}"] [data-studio-port="out"]`
@@ -499,6 +522,72 @@ test("empty workspace creates a project visually before graph editing", async ({
     await expect(page.locator("[data-studio-bridge-filter]")).toBeVisible();
     await expect(page.locator("[data-studio-role-id]")).toHaveCount(1);
     await expect(page.getByText(/\bX6\b/)).toHaveCount(0);
+  } finally {
+    await new Promise<void>((resolve) => started.server.close(() => resolve()));
+  }
+});
+
+test("SCC container drag moves every member node with the container", async ({ page }) => {
+  const workdir = await mkdtemp(path.join(os.tmpdir(), "ogsystem-studio-scc-drag-"));
+  await seedCyclicProject(workdir);
+  const started = await startVisualizationServer({ workdir, host: "127.0.0.1", port: 0 });
+  try {
+    await page.goto(started.url);
+    await page.waitForFunction(() => Boolean((window as any).OGSVisualizerClient?.mountStudioX6Bridge));
+    await page.locator("#console-tab-design").click();
+    await page.locator('[data-workbench-view="bridge"]').click();
+    await waitForStudioCell(page, "demo-analyst");
+    await waitForStudioCell(page, "demo-intake");
+
+    const group = page.locator('#studio-graph-root [data-cell-id^="__ogs-scc-"]').first();
+    await expect(group).toBeVisible();
+    await expect(page.locator('#studio-graph-root [data-cell-id="input"]')).toHaveCount(1);
+    await expect(page.locator('#studio-graph-root [data-cell-id="output"]')).toHaveCount(1);
+
+    const before = await page.evaluate(() => {
+      const cellBox = (id: string) => {
+        const cell = document.querySelector<HTMLElement>(`#studio-graph-root [data-cell-id="${id}"]`);
+        const box = cell?.getBoundingClientRect();
+        return box ? { x: box.x, y: box.y } : null;
+      };
+      return {
+        group: document.querySelector<HTMLElement>('#studio-graph-root [data-cell-id^="__ogs-scc-"]')?.getBoundingClientRect().toJSON(),
+        analyst: cellBox("demo-analyst"),
+        intake: cellBox("demo-intake")
+      };
+    });
+    expect(before.group).toBeTruthy();
+    expect(before.analyst).toBeTruthy();
+    expect(before.intake).toBeTruthy();
+    if (!before.group || !before.analyst || !before.intake) return;
+
+    const dragStart = { x: before.group.x + 8, y: before.group.y + before.group.height / 2 };
+    await page.mouse.move(dragStart.x, dragStart.y);
+    await page.mouse.down();
+    await page.mouse.move(dragStart.x + 72, dragStart.y + 36, { steps: 8 });
+    await page.mouse.up();
+
+    await expect.poll(async () => page.evaluate((initial) => {
+      const cellBox = (id: string) => {
+        const cell = document.querySelector<HTMLElement>(`#studio-graph-root [data-cell-id="${id}"]`);
+        const box = cell?.getBoundingClientRect();
+        return box ? { x: box.x, y: box.y } : null;
+      };
+      const after = {
+        group: document.querySelector<HTMLElement>('#studio-graph-root [data-cell-id^="__ogs-scc-"]')?.getBoundingClientRect().toJSON(),
+        analyst: cellBox("demo-analyst"),
+        intake: cellBox("demo-intake")
+      };
+      if (!after.group || !after.analyst || !after.intake) return false;
+      const groupDelta = { x: after.group.x - initial.group.x, y: after.group.y - initial.group.y };
+      const analystDelta = { x: after.analyst.x - initial.analyst.x, y: after.analyst.y - initial.analyst.y };
+      const intakeDelta = { x: after.intake.x - initial.intake.x, y: after.intake.y - initial.intake.y };
+      return groupDelta.x > 45 && groupDelta.y > 15
+        && Math.abs(groupDelta.x - analystDelta.x) <= 3
+        && Math.abs(groupDelta.y - analystDelta.y) <= 3
+        && Math.abs(groupDelta.x - intakeDelta.x) <= 3
+        && Math.abs(groupDelta.y - intakeDelta.y) <= 3;
+    }, before)).toBe(true);
   } finally {
     await new Promise<void>((resolve) => started.server.close(() => resolve()));
   }

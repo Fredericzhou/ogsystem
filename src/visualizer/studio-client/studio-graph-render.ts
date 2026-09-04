@@ -189,7 +189,13 @@ function sccGroupMetadata(group: SccGroup): Node.Metadata {
     shape: "rect",
     markup: [{ tagName: "rect", selector: "body" }, { tagName: "text", selector: "label" }],
     attrs: sccGroupAttrs(group),
-    data: { studioSccGroup: { memberIds: group.memberIds, padding: group.padding } },
+    data: {
+      studioSccGroup: {
+        memberIds: group.memberIds,
+        padding: group.padding,
+        lastPosition: { x: group.x, y: group.y }
+      }
+    },
     interacting: true
   };
 }
@@ -202,7 +208,13 @@ function sccGroupAttrs(group: SccGroup): Node.Metadata["attrs"] {
 }
 
 function updateSccGroup(cell: Node, group: SccGroup): void {
-  cell.setData({ studioSccGroup: { memberIds: group.memberIds, padding: group.padding } });
+  cell.setData({
+    studioSccGroup: {
+      memberIds: group.memberIds,
+      padding: group.padding,
+      lastPosition: { x: group.x, y: group.y }
+    }
+  });
   cell.position(group.x, group.y);
   cell.resize(group.width, group.height);
   cell.attr(sccGroupAttrs(group));
@@ -237,7 +249,28 @@ export function alignStudioSccGroups(graph: Graph): void {
     }, { left: Number.POSITIVE_INFINITY, top: Number.POSITIVE_INFINITY, right: Number.NEGATIVE_INFINITY, bottom: Number.NEGATIVE_INFINITY });
     group.position(bounds.left - padding, bounds.top - padding);
     group.resize(bounds.right - bounds.left + padding * 2, bounds.bottom - bounds.top + padding * 2);
+    group.setData({
+      studioSccGroup: {
+        memberIds,
+        padding,
+        lastPosition: { x: bounds.left - padding, y: bounds.top - padding }
+      }
+    });
   }
+}
+
+export function studioSccGroupMembers(node: Node): string[] {
+  const data = node.getData() as { studioSccGroup?: { memberIds?: unknown } } | undefined;
+  return Array.isArray(data?.studioSccGroup?.memberIds)
+    ? data.studioSccGroup.memberIds.filter((id): id is string => typeof id === "string")
+    : [];
+}
+
+export function studioSccGroupPreviousPosition(node: Node): { x: number; y: number } | undefined {
+  const data = node.getData() as { studioSccGroup?: { lastPosition?: { x?: unknown; y?: unknown } } } | undefined;
+  const x = data?.studioSccGroup?.lastPosition?.x;
+  const y = data?.studioSccGroup?.lastPosition?.y;
+  return Number.isFinite(x) && Number.isFinite(y) ? { x: Number(x), y: Number(y) } : undefined;
 }
 
 function studioNodeMetadata(node: GraphViewModelNode): Node.Metadata {
