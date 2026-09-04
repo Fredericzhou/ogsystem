@@ -295,16 +295,49 @@ function anchorOffset(index: number, count: number, nodeSpan: number): number {
   return Math.round((index - (count - 1) / 2) * spacing);
 }
 
-function endpointOrder(
-  edge: GraphViewModelEdge,
-  route: ReturnType<typeof resolveRoute>,
-  terminal: "source" | "target",
+type RoutingDraft = {
+  edge: GraphViewModelEdge;
+  route: ReturnType<typeof resolveRoute>;
+  source: LayoutTerminal;
+  target: LayoutTerminal;
+};
+
+function edgeChannel(edge: GraphViewModelEdge): string {
+  return edge.channel ?? (edge.runtimeOnlyErrorFlow ? "error" : "normal");
+}
+
+function endpointFamilyKey(draft: RoutingDraft, terminalName: "source" | "target"): string {
+  const terminal = draft[terminalName];
+  return `${terminal.cell}:${terminal.side}:${draft.route.kind}:${edgeChannel(draft.edge)}`;
+}
+
+function parallelEdgeKey(draft: RoutingDraft, terminalName: "source" | "target"): string {
+  const terminal = draft[terminalName];
+  return `${endpointFamilyKey(draft, terminalName)}:${draft.edge.source}:${draft.edge.target}`;
+}
+
+function sharedEndpointOffset(
+  draft: RoutingDraft,
+  terminalName: "source" | "target",
+  drafts: readonly RoutingDraft[],
   nodeById: ReadonlyMap<string, LayoutProjectionNode>
 ): number {
-  const referenceNode = nodeById.get(terminal === "source" ? edge.target : edge.source);
-  const center = edgeCenter(referenceNode);
-  const side = terminal === "source" ? route.sourceSide : route.targetSide;
-  return side === "top" || side === "bottom" ? center.x : center.y;
+  const terminal = draft[terminalName];
+  const endpointGroup = drafts
+    .filter((candidate) => candidate[terminalName].cell === terminal.cell && candidate[terminalName].side === terminal.side)
+    .sort((left, right) => edgeSortKey(left.edge).localeCompare(edgeSortKey(right.edge)));
+  const familyKeys = [...new Set(endpointGroup.map((candidate) => endpointFamilyKey(candidate, terminalName)))].sort();
+  const familyIndex = Math.max(0, familyKeys.indexOf(endpointFamilyKey(draft, terminalName)));
+  const node = nodeById.get(terminal.cell);
+  const nodeSpan = terminal.side === "top" || terminal.side === "bottom" ? node?.width : node?.height;
+  const familyOffset = anchorOffset(familyIndex, familyKeys.length, nodeSpan ?? 0);
+
+  // Fan-out and fan-in edges share a single directional stub. Multiple edges
+  // with the same endpoints remain separated so their labels stay readable.
+  const parallelGroup = endpointGroup.filter((candidate) => parallelEdgeKey(candidate, terminalName) === parallelEdgeKey(draft, terminalName));
+  if (parallelGroup.length <= 1) return familyOffset;
+  const parallelIndex = Math.max(0, parallelGroup.findIndex((candidate) => candidate.edge.id === draft.edge.id));
+  return familyOffset + anchorOffset(parallelIndex, parallelGroup.length, Math.min(nodeSpan ?? 0, 84));
 }
 
 function terminal(cell: string, direction: "source" | "target", side: LayoutSide, offset: number): LayoutTerminal {
@@ -333,6 +366,21 @@ function terminalFromPoint(
   candidates.sort((left, right) => left.distance - right.distance);
   const selected = candidates[0];
   return terminal(cell, direction, selected.side, Math.round(selected.offset));
+}
+
+function alignRouteEndpoint(
+  points: LayoutPoint[],
+  terminalValue: LayoutTerminal,
+  node: LayoutProjectionNode | undefined,
+  endpoint: "source" | "target"
+): void {
+  if (!points.length || !node) return;
+  const point = points[endpoint === "source" ? 0 : points.length - 1];
+  if (terminalValue.side === "top" || terminalValue.side === "bottom") {
+    point.x = node.x + node.width / 2 + terminalValue.offset;
+  } else {
+    point.y = node.y + node.height / 2 + terminalValue.offset;
+  }
 }
 
 function routePoints(
@@ -409,46 +457,37 @@ function buildEdgeRouting(
   geometryByEdgeId?: ReadonlyMap<string, LayoutEdgeGeometry>
 ): Map<string, LayoutEdgeRouting> {
   const routes = new Map(edges.map((edge) => [edge.id, resolveRoute(edge, nodeById)]));
-  const outgoing = new Map<string, GraphViewModelEdge[]>();
-  const incoming = new Map<string, GraphViewModelEdge[]>();
+  const drafts: RoutingDraft[] = [];
   for (const edge of edges) {
     const route = routes.get(edge.id)!;
-    const outgoingKey = `${edge.source}:${route.sourceSide}`;
-    const incomingKey = `${edge.target}:${route.targetSide}`;
-    outgoing.set(outgoingKey, [...(outgoing.get(outgoingKey) ?? []), edge]);
-    incoming.set(incomingKey, [...(incoming.get(incomingKey) ?? []), edge]);
-  }
-  const sortEndpoints = (left: GraphViewModelEdge, right: GraphViewModelEdge, terminalName: "source" | "target") => {
-    const leftRoute = routes.get(left.id)!;
-    const rightRoute = routes.get(right.id)!;
-    return endpointOrder(left, leftRoute, terminalName, nodeById) - endpointOrder(right, rightRoute, terminalName, nodeById) || edgeSortKey(left).localeCompare(edgeSortKey(right));
-  };
-  for (const list of outgoing.values()) list.sort((left, right) => sortEndpoints(left, right, "source"));
-  for (const list of incoming.values()) list.sort((left, right) => sortEndpoints(left, right, "target"));
-
-  const result = new Map<string, LayoutEdgeRouting>();
-  for (const edge of edges) {
-    const route = routes.get(edge.id)!;
-    const sourceEdges = outgoing.get(`${edge.source}:${route.sourceSide}`) ?? [];
-    const targetEdges = incoming.get(`${edge.target}:${route.targetSide}`) ?? [];
     const sourceNode = nodeById.get(edge.source);
     const targetNode = nodeById.get(edge.target);
-    const sourceSpan = route.sourceSide === "top" || route.sourceSide === "bottom" ? sourceNode?.width : sourceNode?.height;
-    const targetSpan = route.targetSide === "top" || route.targetSide === "bottom" ? targetNode?.width : targetNode?.height;
-    const sourceIndex = Math.max(0, sourceEdges.findIndex((candidate) => candidate.id === edge.id));
-    const targetIndex = Math.max(0, targetEdges.findIndex((candidate) => candidate.id === edge.id));
-    const sourceOffset = anchorOffset(sourceIndex, sourceEdges.length, sourceSpan ?? 0);
-    const targetOffset = anchorOffset(targetIndex, targetEdges.length, targetSpan ?? 0);
-    const sourceTerminal = terminalFromPoint(edge.source, "source", geometryByEdgeId?.get(edge.id)?.sourcePoint, sourceNode, terminal(edge.source, "source", route.sourceSide, sourceOffset));
-    const targetTerminal = terminalFromPoint(edge.target, "target", geometryByEdgeId?.get(edge.id)?.targetPoint, targetNode, terminal(edge.target, "target", route.targetSide, targetOffset));
+    drafts.push({
+      edge,
+      route,
+      source: terminalFromPoint(edge.source, "source", geometryByEdgeId?.get(edge.id)?.sourcePoint, sourceNode, terminal(edge.source, "source", route.sourceSide, 0)),
+      target: terminalFromPoint(edge.target, "target", geometryByEdgeId?.get(edge.id)?.targetPoint, targetNode, terminal(edge.target, "target", route.targetSide, 0))
+    });
+  }
+
+  const result = new Map<string, LayoutEdgeRouting>();
+  for (const draft of drafts) {
+    const { edge, route } = draft;
+    const sourceTerminal = { ...draft.source, offset: sharedEndpointOffset(draft, "source", drafts, nodeById) };
+    const targetTerminal = { ...draft.target, offset: sharedEndpointOffset(draft, "target", drafts, nodeById) };
+    const sourceOffset = sourceTerminal.offset;
+    const targetOffset = targetTerminal.offset;
+    const routePoints = projectedRoutePoints(edge, route, nodeById, routePointsByEdgeId);
+    alignRouteEndpoint(routePoints, sourceTerminal, nodeById.get(edge.source), "source");
+    alignRouteEndpoint(routePoints, targetTerminal, nodeById.get(edge.target), "target");
     result.set(edge.id, {
       kind: route.kind,
       source: sourceTerminal,
       target: targetTerminal,
       router: routerFor(edge, route, nodeById, geometryByEdgeId?.has(edge.id)),
       connector: STUDIO_EDGE_CONNECTOR,
-      routePoints: projectedRoutePoints(edge, route, nodeById, routePointsByEdgeId),
-      lane: `${edge.channel ?? (edge.runtimeOnlyErrorFlow ? "error" : "normal")}:${route.kind}:${sourceOffset}:${targetOffset}`
+      routePoints,
+      lane: `${edgeChannel(edge)}:${route.kind}:${sourceOffset}:${targetOffset}`
     });
   }
   return result;

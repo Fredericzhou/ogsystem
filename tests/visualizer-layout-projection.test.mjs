@@ -123,6 +123,57 @@ test("ELK honors node size variation without projected overlap", async () => {
   assert.equal(diagnosticCodes(projection).includes("NODE_OVERLAP"), false);
 });
 
+test("stored routing bundles same-direction fan-out and fan-in stubs", () => {
+  const view = graph([
+    node("source", { layout: { x: 100, y: 120, width: 180, height: 84 } }),
+    node("left", { layout: { x: 420, y: 60, width: 180, height: 84 } }),
+    node("right", { layout: { x: 420, y: 240, width: 180, height: 84 } }),
+    node("join", { layout: { x: 740, y: 150, width: 180, height: 84 } })
+  ], [
+    edge("source-left", "source", "left"),
+    edge("source-right", "source", "right"),
+    edge("left-join", "left", "join"),
+    edge("right-join", "right", "join")
+  ]);
+  const projection = createStoredLayoutProjection(view);
+  const sourceLeft = projection.edges.find((item) => item.id === "source-left").routing;
+  const sourceRight = projection.edges.find((item) => item.id === "source-right").routing;
+  const leftJoin = projection.edges.find((item) => item.id === "left-join").routing;
+  const rightJoin = projection.edges.find((item) => item.id === "right-join").routing;
+  assert.equal(sourceLeft.source.offset, sourceRight.source.offset);
+  assert.equal(leftJoin.target.offset, rightJoin.target.offset);
+  assert.equal(sourceLeft.source.port, "out");
+  assert.equal(sourceRight.source.port, "out");
+});
+
+test("ELK routing bundles same-direction fan-out and fan-in stubs", async () => {
+  const projection = await createElkLayoutProjection(fixture("fan-out"), "flow");
+  const fanOutLeft = projection.edges.find((item) => item.id === "split-left").routing;
+  const fanOutRight = projection.edges.find((item) => item.id === "split-right").routing;
+  const fanInLeft = projection.edges.find((item) => item.id === "left-output").routing;
+  const fanInRight = projection.edges.find((item) => item.id === "right-output").routing;
+  assert.equal(fanOutLeft.source.offset, fanOutRight.source.offset);
+  assert.equal(fanInLeft.target.offset, fanInRight.target.offset);
+  for (const routing of [fanOutLeft, fanOutRight, fanInLeft, fanInRight]) {
+    assert.ok(routing.routePoints.every((point) => Number.isFinite(point.x) && Number.isFinite(point.y)));
+  }
+});
+
+test("same-endpoint parallel edges remain separated for label readability", () => {
+  const view = graph([
+    node("source", { layout: { x: 100, y: 120, width: 180, height: 84 } }),
+    node("target", { layout: { x: 420, y: 120, width: 180, height: 84 } })
+  ], [
+    edge("source-target-a", "source", "target", { eventType: "A" }),
+    edge("source-target-b", "source", "target", { eventType: "B" })
+  ]);
+  const projection = createStoredLayoutProjection(view);
+  const first = projection.edges.find((item) => item.id === "source-target-a").routing;
+  const second = projection.edges.find((item) => item.id === "source-target-b").routing;
+  assert.notEqual(first.source.offset, second.source.offset);
+  assert.notEqual(first.target.offset, second.target.offset);
+});
+
 test("ELK keeps cyclic role graphs distributed across flow columns", async () => {
   const projection = await createElkLayoutProjection(fixture("cycle"), "flow");
   const roleNodes = projection.nodes.filter((item) => !["input", "output"].includes(item.id));
