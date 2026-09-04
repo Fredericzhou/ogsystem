@@ -33,7 +33,10 @@ import {
 import {
   alignStudioSccGroups,
   isStudioSccGroup,
+  isStudioLayoutBundleEdge,
+  isStudioLayoutJunction,
   renderStudioGraphViewModel,
+  studioNodePortId,
   studioSccGroupMembers,
   studioSccGroupPreviousPosition
 } from "./studio-graph-render.js";
@@ -537,6 +540,9 @@ export class StudioGraphIsland {
         maxScale: 2.4
       },
       interacting: (cellView) => {
+        if (cellView.cell.isNode() && isStudioLayoutJunction(cellView.cell)) {
+          return false;
+        }
         if (cellView.cell.isNode() && isStudioSccGroup(cellView.cell)) {
           return {
             nodeMovable: !this.isReadOnly(),
@@ -557,7 +563,7 @@ export class StudioGraphIsland {
         snap: true,
         highlight: true,
         anchor: { name: "midSide", args: { direction: "H" } },
-        connectionPoint: { name: "boundary" },
+        connectionPoint: { name: "boundary", args: { offset: 8 } },
         router: STUDIO_GRAPH_EDGE_ROUTER,
         connector: STUDIO_GRAPH_EDGE_CONNECTOR,
         createEdge() {
@@ -831,6 +837,7 @@ export class StudioGraphIsland {
             this.syncingSccGroupDrag = false;
           }
           alignStudioSccGroups(this.graph);
+          this.refreshStoredProjectionFromGraph();
           this.scheduleSyncCanvas();
         }
         this.renderMinimap();
@@ -841,6 +848,7 @@ export class StudioGraphIsland {
       }
       if (this.syncingSccGroupDrag) return;
       alignStudioSccGroups(this.graph);
+      this.refreshStoredProjectionFromGraph();
       this.scheduleSyncCanvas();
       this.renderMinimap();
     });
@@ -1569,13 +1577,38 @@ export class StudioGraphIsland {
 
   private defaultAutoLayoutSignature(): string {
     const nodes = this.graph.getNodes()
+      .filter((node) => !isStudioLayoutJunction(node))
       .map((node) => node.id)
       .sort();
     const edges = this.graph.getEdges()
-      .filter((edge) => !this.isPendingEdgePreviewCell(edge))
+      .filter((edge) => !this.isPendingEdgePreviewCell(edge) && !isStudioLayoutBundleEdge(edge))
       .map((edge) => `${edge.getSourceCellId() || ""}->${edge.getTargetCellId() || ""}`)
       .sort();
     return nodes.length ? `${nodes.join(",")}|${edges.join(",")}` : "";
+  }
+
+  private refreshStoredProjectionFromGraph(): void {
+    if (!this.currentViewModel) return;
+    const nextNodes = this.currentViewModel.nodes.map((node) => {
+      const cell = this.graph.getCellById(node.id);
+      if (!cell?.isNode()) return node;
+      const position = cell.getPosition();
+      const size = cell.getSize();
+      return {
+        ...node,
+        layout: {
+          ...node.layout,
+          x: position.x,
+          y: position.y,
+          width: size.width,
+          height: size.height
+        }
+      };
+    });
+    this.currentViewModel = { ...this.currentViewModel, nodes: nextNodes };
+    this.currentLayoutProjection = createStoredLayoutProjection(this.currentViewModel);
+    this.renderCurrentProjection();
+    this.applyRuntimeOverlay();
   }
 
   private async applyAutoLayout(updateGeneration = this.updateGeneration): Promise<void> {
@@ -2334,15 +2367,15 @@ export class StudioGraphIsland {
       existing.setData({ studioPendingEdge: preview });
       existing.setSource({
         cell: preview.sourceRoleId,
-        port: "out",
+        port: studioNodePortId(sourceCell, "out"),
         anchor: { name: "right" },
-        connectionPoint: { name: "anchor" }
+        connectionPoint: { name: "boundary", args: { offset: 8 } }
       });
       existing.setTarget({
         cell: targetCellId,
-        port: preview.targetRoleId === STUDIO_SYSTEM_END_ROLE_ID ? undefined : "in",
+        port: preview.targetRoleId === STUDIO_SYSTEM_END_ROLE_ID ? undefined : studioNodePortId(targetCell, "in"),
         anchor: { name: "left" },
-        connectionPoint: { name: "anchor" }
+        connectionPoint: { name: "boundary", args: { offset: 8 } }
       });
       existing.setLabels(nextLabels);
       existing.attr(nextAttrs);
@@ -2355,15 +2388,15 @@ export class StudioGraphIsland {
       id: STUDIO_PENDING_EDGE_ID,
       source: {
         cell: preview.sourceRoleId,
-        port: "out",
+        port: studioNodePortId(sourceCell, "out"),
         anchor: { name: "right" },
-        connectionPoint: { name: "anchor" }
+        connectionPoint: { name: "boundary", args: { offset: 8 } }
       },
       target: {
         cell: targetCellId,
-        port: preview.targetRoleId === STUDIO_SYSTEM_END_ROLE_ID ? undefined : "in",
+        port: preview.targetRoleId === STUDIO_SYSTEM_END_ROLE_ID ? undefined : studioNodePortId(targetCell, "in"),
         anchor: { name: "left" },
-        connectionPoint: { name: "anchor" }
+        connectionPoint: { name: "boundary", args: { offset: 8 } }
       },
       zIndex: 0,
       data: { studioPendingEdge: preview },
@@ -2815,7 +2848,7 @@ export class StudioGraphIsland {
   }
 
   private renderMinimap(): void {
-    const allNodes = this.graph.getNodes();
+    const allNodes = this.graph.getNodes().filter((node) => !isStudioLayoutJunction(node));
     const roleNodes = allNodes.filter((node) => {
       const data = node.getData() as { studioNode?: { kind?: string } } | undefined;
       return data?.studioNode?.roleSeat === true;
@@ -2845,7 +2878,7 @@ export class StudioGraphIsland {
     const maxY = Math.max(...metrics.map((item) => item.y + item.height));
     const totalWidth = Math.max(maxX - minX, 1);
     const totalHeight = Math.max(maxY - minY, 1);
-    const edgeLines = this.graph.getEdges().map((edge) => {
+    const edgeLines = this.graph.getEdges().filter((edge) => !isStudioLayoutBundleEdge(edge)).map((edge) => {
       const sourceNode = metrics.find((m) => m.id === edge.getSourceCellId());
       const targetNode = metrics.find((m) => m.id === edge.getTargetCellId());
       if (!sourceNode || !targetNode) return "";

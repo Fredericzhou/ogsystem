@@ -47,9 +47,9 @@ type ElkGraph = {
 };
 
 function configFor(mode: StudioLayoutMode): LayoutConfig {
-  if (mode === "stacked") return { direction: "DOWN", padding: 64, nodeSpacing: 54, layerSpacing: 112 };
-  if (mode === "compact") return { direction: "RIGHT", padding: 56, nodeSpacing: 28, layerSpacing: 72 };
-  return { direction: "RIGHT", padding: 72, nodeSpacing: 42, layerSpacing: 92 };
+  if (mode === "stacked") return { direction: "DOWN", padding: 80, nodeSpacing: 76, layerSpacing: 144 };
+  if (mode === "compact") return { direction: "RIGHT", padding: 68, nodeSpacing: 46, layerSpacing: 96 };
+  return { direction: "RIGHT", padding: 88, nodeSpacing: 64, layerSpacing: 128 };
 }
 
 function nodeOrder(nodes: readonly GraphViewModelNode[]): GraphViewModelNode[] {

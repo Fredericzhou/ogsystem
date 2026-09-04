@@ -546,12 +546,15 @@ test("SCC container drag moves every member node with the container", async ({ p
 
     const before = await page.evaluate(() => {
       const cellBox = (id: string) => {
-        const cell = document.querySelector<HTMLElement>(`#studio-graph-root [data-cell-id="${id}"]`);
-        const box = cell?.getBoundingClientRect();
-        return box ? { x: box.x, y: box.y } : null;
+        const cell = document.querySelector<HTMLElement>(id === "__ogs-scc-"
+          ? '#studio-graph-root [data-cell-id^="__ogs-scc-"]'
+          : `#studio-graph-root [data-cell-id="${id}"]`);
+        const transform = cell?.getAttribute("transform") || "";
+        const match = transform.match(/translate\(([-\d.]+)[ ,]([-\d.]+)\)/);
+        return match ? { x: Number(match[1]), y: Number(match[2]) } : null;
       };
       return {
-        group: document.querySelector<HTMLElement>('#studio-graph-root [data-cell-id^="__ogs-scc-"]')?.getBoundingClientRect().toJSON(),
+        group: cellBox("__ogs-scc-"),
         analyst: cellBox("demo-analyst"),
         intake: cellBox("demo-intake")
       };
@@ -561,20 +564,25 @@ test("SCC container drag moves every member node with the container", async ({ p
     expect(before.intake).toBeTruthy();
     if (!before.group || !before.analyst || !before.intake) return;
 
-    const dragStart = { x: before.group.x + 8, y: before.group.y + before.group.height / 2 };
+    const groupBounds = await group.boundingBox();
+    expect(groupBounds).toBeTruthy();
+    if (!groupBounds) return;
+    const dragStart = { x: groupBounds.x + 8, y: groupBounds.y + groupBounds.height / 2 };
     await page.mouse.move(dragStart.x, dragStart.y);
     await page.mouse.down();
     await page.mouse.move(dragStart.x + 72, dragStart.y + 36, { steps: 8 });
     await page.mouse.up();
-
     await expect.poll(async () => page.evaluate((initial) => {
       const cellBox = (id: string) => {
-        const cell = document.querySelector<HTMLElement>(`#studio-graph-root [data-cell-id="${id}"]`);
-        const box = cell?.getBoundingClientRect();
-        return box ? { x: box.x, y: box.y } : null;
+        const cell = document.querySelector<HTMLElement>(id === "__ogs-scc-"
+          ? '#studio-graph-root [data-cell-id^="__ogs-scc-"]'
+          : `#studio-graph-root [data-cell-id="${id}"]`);
+        const transform = cell?.getAttribute("transform") || "";
+        const match = transform.match(/translate\(([-\d.]+)[ ,]([-\d.]+)\)/);
+        return match ? { x: Number(match[1]), y: Number(match[2]) } : null;
       };
       const after = {
-        group: document.querySelector<HTMLElement>('#studio-graph-root [data-cell-id^="__ogs-scc-"]')?.getBoundingClientRect().toJSON(),
+        group: cellBox("__ogs-scc-"),
         analyst: cellBox("demo-analyst"),
         intake: cellBox("demo-intake")
       };
@@ -699,6 +707,75 @@ test("Studio graph island exposes minimap, focus pulse, and quick open when moun
     await page.keyboard.press("Enter");
     await expect(page.locator('#studio-graph-direct-root [data-studio-graph-quick-open]')).toBeHidden();
     await expectStudioCellPulse(page, "demo-analyst");
+  } finally {
+    await new Promise<void>((resolve) => started.server.close(() => resolve()));
+  }
+});
+
+test("fan-out projection renders a visual bundle without replacing business edges", async ({ page }) => {
+  const workdir = await mkdtemp(path.join(os.tmpdir(), "ogsystem-studio-bundle-"));
+  await seedProject(workdir);
+  const started = await startVisualizationServer({ workdir, host: "127.0.0.1", port: 0 });
+  test.info().annotations.push({ type: "server", description: started.url });
+  try {
+    await page.goto(started.url);
+    await page.waitForFunction(() => Boolean((window as any).OGSVisualizerClient?.mountStudioX6Bridge));
+    await page.evaluate(() => {
+      const root = document.createElement("div");
+      root.id = "studio-graph-bundle-root";
+      root.style.width = "960px";
+      root.style.height = "560px";
+      document.body.appendChild(root);
+      const roles = ["source", "left", "right"];
+      const authoring = {
+        project: { workdir: "/tmp/bundle", systemPath: "system.mmd" },
+        system: { systemId: "viz.bundle", systemVersion: "1.0.0", entryRoleId: "source", lawGlobal: "law.minimal.base" },
+        roles: Object.fromEntries(roles.map((roleId) => [roleId, {
+          roleId,
+          title: roleId,
+          bindingKind: "model",
+          modelRef: "openai/gpt-5-nano"
+        }])),
+        flows: {
+          "flow.source.left": { flowId: "flow.source.left", fromRoleId: "source", toRoleId: "left", eventType: "LEFT", label: "left" },
+          "flow.source.right": { flowId: "flow.source.right", fromRoleId: "source", toRoleId: "right", eventType: "RIGHT", label: "right" }
+        },
+        layout: {
+          nodes: {
+            source: { x: 120, y: 210, width: 190, height: 90 },
+            left: { x: 460, y: 120, width: 190, height: 90 },
+            right: { x: 460, y: 330, width: 190, height: 90 }
+          },
+          viewport: { x: 0, y: 0, zoom: 1 }
+        }
+      };
+      const canvas = {
+        nodes: roles.map((roleId) => ({ id: roleId, roleId, x: authoring.layout.nodes[roleId].x, y: authoring.layout.nodes[roleId].y, width: 190, height: 90, label: roleId, bindingKind: "model", badges: [] })),
+        edges: [
+          { id: "flow.source.left", source: "source", target: "left", eventType: "LEFT", label: "left" },
+          { id: "flow.source.right", source: "source", target: "right", eventType: "RIGHT", label: "right" }
+        ],
+        viewport: { x: 0, y: 0, zoom: 1 }
+      };
+      (window as any).OGSVisualizerClient.mountStudioX6Bridge(root, {
+        authoring,
+        canvas,
+        validation: { ok: true, diagnostics: [] },
+        defaultAutoLayout: false
+      });
+    });
+    const root = page.locator("#studio-graph-bundle-root");
+    await expect(root.locator('[data-cell-id="flow.source.left"]')).toBeVisible();
+    await expect(root.locator('[data-cell-id="flow.source.right"]')).toBeVisible();
+    await expect(root.locator('[data-cell-id^="__ogs-layout-bundle:"]')).toHaveCount(1);
+    await expect(root.locator('[data-cell-id^="__ogs-layout-junction:"]')).toHaveCount(0);
+    await expect(root.locator('[data-cell-id="source"] [data-studio-port="out"]')).toHaveCount(1);
+    await expect.poll(async () => root.evaluate((element) =>
+      Array.from(element.querySelectorAll("[data-cell-id]")).filter((cell) => {
+        const id = cell.getAttribute("data-cell-id") || "";
+        return id === "flow.source.left" || id === "flow.source.right";
+      }).length
+    )).toBe(2);
   } finally {
     await new Promise<void>((resolve) => started.server.close(() => resolve()));
   }

@@ -3,7 +3,13 @@ import type { Edge, Graph, Node } from "@antv/x6";
 import type { GraphViewModel, GraphViewModelEdge, GraphViewModelNode } from "../studio-contracts.js";
 import { formatStudioEdgeLabel } from "../studio-edge-semantics.js";
 import { formatStudioRuntimeNodeBadges } from "./studio-graph-runtime.js";
-import type { LayoutEdgeRouting, LayoutProjection } from "./semantic-layout-projection.js";
+import type {
+  LayoutEdgeBundle,
+  LayoutEdgeRouting,
+  LayoutPortSpec,
+  LayoutProjection,
+  LayoutSide
+} from "./semantic-layout-projection.js";
 
 export { formatStudioEdgeLabel } from "../studio-edge-semantics.js";
 
@@ -62,6 +68,10 @@ const STUDIO_EDGE_CONNECTOR: StudioEdgeRouting["connector"] = {
   name: "rounded",
   args: { radius: 10 }
 };
+const STUDIO_BOUNDARY_CONNECTION_POINT = {
+  name: "boundary",
+  args: { offset: 8 }
+} as const;
 
 function projectionRouting(routing: LayoutEdgeRouting): StudioEdgeRouting {
   const toTerminal = (value: LayoutEdgeRouting["source"]): StudioEdgeTerminal => ({
@@ -73,7 +83,7 @@ function projectionRouting(routing: LayoutEdgeRouting): StudioEdgeRouting {
         ? value.side === "top" || value.side === "bottom" ? { dx: value.offset } : { dy: value.offset }
         : {}
     },
-    connectionPoint: { name: "anchor" }
+    connectionPoint: STUDIO_BOUNDARY_CONNECTION_POINT
   });
   return {
     source: toTerminal(routing.source),
@@ -91,11 +101,13 @@ export function renderStudioGraphViewModel(graph: Graph, viewModel: GraphViewMod
   });
   const projectedViewModel = { ...viewModel, nodes: projectedNodes };
   const routingByEdgeId = new Map(projection.edges.map((edge) => [edge.id, projectionRouting(edge.routing)]));
+  const portsByNodeId = projectionPortsByNode(projection);
   graph.batchUpdate("studio-projection", () => {
     const nextNodeIds = new Set(projectedViewModel.nodes.map((node) => node.id));
     const sccGroups = buildSccGroups(projectedViewModel.nodes, graph);
     for (const group of sccGroups) nextNodeIds.add(group.id);
     const nextEdgeIds = new Set(viewModel.edges.map((edge) => edge.id));
+    for (const bundle of projection.bundles) nextEdgeIds.add(bundle.id);
 
     for (const cell of graph.getCells()) {
       if (cell.isNode() && !nextNodeIds.has(cell.id)) {
@@ -109,9 +121,9 @@ export function renderStudioGraphViewModel(graph: Graph, viewModel: GraphViewMod
     for (const node of projectedViewModel.nodes) {
       const existing = graph.getCellById(node.id);
       if (existing?.isNode()) {
-        updateStudioNode(existing, node);
+        updateStudioNode(existing, node, portsByNodeId.get(node.id));
       } else {
-        graph.addNode(studioNodeMetadata(node));
+        graph.addNode(studioNodeMetadata(node, portsByNodeId.get(node.id)));
       }
     }
 
@@ -119,6 +131,12 @@ export function renderStudioGraphViewModel(graph: Graph, viewModel: GraphViewMod
       const existing = graph.getCellById(group.id);
       if (existing?.isNode()) updateSccGroup(existing, group);
       else graph.addNode(sccGroupMetadata(group));
+    }
+
+    for (const bundle of projection.bundles) {
+      const existing = graph.getCellById(bundle.id);
+      if (existing?.isEdge()) updateBundleEdge(existing, bundle);
+      else graph.addEdge(bundleEdgeMetadata(bundle));
     }
 
     for (const edge of viewModel.edges) {
@@ -130,6 +148,68 @@ export function renderStudioGraphViewModel(graph: Graph, viewModel: GraphViewMod
       }
     }
   });
+}
+
+function bundleStroke(channel: string): string {
+  if (channel === "error") return "#b7791f";
+  if (channel === "join") return "#8064b5";
+  if (channel === "loop" || channel === "feedback") return "#168477";
+  return "#64748b";
+}
+
+function bundleEdgeMetadata(bundle: LayoutEdgeBundle): Edge.Metadata {
+  return {
+    id: bundle.id,
+    source: bundle.trunk[0],
+    target: bundle.trunk[bundle.trunk.length - 1],
+    zIndex: 0,
+    data: { studioLayoutBundle: bundle },
+    attrs: {
+      line: {
+        stroke: bundleStroke(bundle.channel),
+        strokeWidth: 3.2,
+        strokeLinecap: "round",
+        targetMarker: null,
+        pointerEvents: "none"
+      }
+    },
+    vertices: bundle.trunk.slice(1, -1),
+    router: { name: "normal", args: {} },
+    connector: STUDIO_EDGE_CONNECTOR
+  };
+}
+
+function updateBundleEdge(cell: Edge, bundle: LayoutEdgeBundle): void {
+  cell.setSource(bundle.trunk[0]);
+  cell.setTarget(bundle.trunk[bundle.trunk.length - 1]);
+  cell.setVertices(bundle.trunk.slice(1, -1));
+  cell.setData({ studioLayoutBundle: bundle });
+  cell.attr(bundleEdgeMetadata(bundle).attrs ?? {});
+  cell.setRouter({ name: "normal", args: {} });
+  cell.setConnector(STUDIO_EDGE_CONNECTOR);
+}
+
+export function isStudioLayoutBundleEdge(edge: Edge): boolean {
+  const data = edge.getData() as { studioLayoutBundle?: unknown } | undefined;
+  return Boolean(data?.studioLayoutBundle);
+}
+
+export function isStudioLayoutJunction(node: Node): boolean {
+  const data = node.getData() as { studioLayoutJunction?: unknown } | undefined;
+  return Boolean(data?.studioLayoutJunction);
+}
+
+export function studioNodePortId(node: Node | null | undefined, direction: LayoutPortSpec["direction"]): string | undefined {
+  const ids = node?.getPorts()
+    .map((port) => String(port.id ?? ""))
+    .filter((id) => id.startsWith(`${direction}-`)) ?? [];
+  const preferredSide = direction === "out" ? "right" : "left";
+  return ids.sort((left, right) => {
+    const leftPreferred = left.startsWith(`${direction}-${preferredSide}-`);
+    const rightPreferred = right.startsWith(`${direction}-${preferredSide}-`);
+    if (leftPreferred !== rightPreferred) return leftPreferred ? -1 : 1;
+    return left.localeCompare(right);
+  })[0];
 }
 
 type SccGroup = {
@@ -273,7 +353,37 @@ export function studioSccGroupPreviousPosition(node: Node): { x: number; y: numb
   return Number.isFinite(x) && Number.isFinite(y) ? { x: Number(x), y: Number(y) } : undefined;
 }
 
-function studioNodeMetadata(node: GraphViewModelNode): Node.Metadata {
+type StudioPortSpec = LayoutPortSpec;
+
+function portPosition(side: LayoutSide, offset: number): { name: LayoutSide; args: { dx?: number; dy?: number } } {
+  return side === "top" || side === "bottom"
+    ? { name: side, args: { dx: offset } }
+    : { name: side, args: { dy: offset } };
+}
+
+function portAttrs(direction: LayoutPortSpec["direction"]): Record<string, unknown> {
+  return {
+    circle: {
+      r: 7,
+      magnet: true,
+      stroke: direction === "in" ? "#bae6fd" : "#67e8f9",
+      strokeWidth: 2.2,
+      fill: "#07111f",
+      "vector-effect": "non-scaling-stroke",
+      "data-studio-port": direction
+    }
+  };
+}
+
+function fallbackPortSpecs(node: GraphViewModelNode): StudioPortSpec[] {
+  if (!node.roleSeat) return [];
+  return [
+    { id: "in-left-forward-normal", direction: "in", side: "left", offset: 0 },
+    { id: "out-right-forward-normal", direction: "out", side: "right", offset: 0 }
+  ];
+}
+
+function studioNodeMetadata(node: GraphViewModelNode, ports?: readonly StudioPortSpec[]): Node.Metadata {
   return {
     id: node.id,
     x: node.layout.x,
@@ -290,7 +400,7 @@ function studioNodeMetadata(node: GraphViewModelNode): Node.Metadata {
     ],
     data: { studioNode: node },
     attrs: studioNodeAttrs(node),
-    ports: studioNodePorts(node)
+    ports: studioNodePorts(node, ports)
   };
 }
 
@@ -345,33 +455,32 @@ function studioNodeAttrs(node: GraphViewModelNode): Node.Metadata["attrs"] {
   };
 }
 
-function studioNodePorts(node: GraphViewModelNode): Node.Metadata["ports"] {
+function studioNodePorts(node: GraphViewModelNode, projectedPorts?: readonly StudioPortSpec[]): Node.Metadata["ports"] {
+  const specs = [...(projectedPorts ?? [])];
+  if (node.roleSeat) {
+    for (const fallback of fallbackPortSpecs(node)) {
+      if (!specs.some((spec) => spec.direction === fallback.direction)) specs.push(fallback);
+    }
+  }
+  specs.sort((left, right) => left.id.localeCompare(right.id));
+  const groups = Object.fromEntries(specs.map((spec) => [spec.id, {
+    position: portPosition(spec.side, spec.offset),
+    attrs: portAttrs(spec.direction)
+  }]));
   return {
-    groups: {
-      in: {
-        position: "left",
-        attrs: { circle: { r: 4, magnet: true, stroke: "#38bdf8", fill: "#050914", "data-studio-port": "in" } }
-      },
-      out: {
-        position: "right",
-        attrs: { circle: { r: 4, magnet: true, stroke: "#38bdf8", fill: "#050914", "data-studio-port": "out" } }
-      }
-    },
-    items: node.roleSeat
-      ? [
-          { id: "in", group: "in" },
-          { id: "out", group: "out" }
-        ]
-      : []
+    groups,
+    items: specs.map((spec) => ({ id: spec.id, group: spec.id }))
   };
 }
 
-function updateStudioNode(cell: Node, node: GraphViewModelNode): void {
+function updateStudioNode(cell: Node, node: GraphViewModelNode, projectedPorts?: readonly StudioPortSpec[]): void {
   cell.setData({ studioNode: node });
   cell.position(node.layout.x, node.layout.y);
   cell.resize(node.layout.width, node.layout.height);
   cell.attr(studioNodeAttrs(node));
-  const expectedPortIds = node.roleSeat ? ["in", "out"] : [];
+  const nextPorts = studioNodePorts(node, projectedPorts);
+  cell.setProp("ports", nextPorts);
+  const expectedPortIds = nextPorts.items.map((port) => String(port.id ?? ""));
   const currentPortIds = cell.getPorts().map((port) => String(port.id ?? ""));
   const missingPorts = expectedPortIds.filter((id) => !cell.hasPort(id));
   if (missingPorts.length) {
@@ -381,6 +490,27 @@ function updateStudioNode(cell: Node, node: GraphViewModelNode): void {
   if (stalePorts.length) {
     cell.removePorts(stalePorts);
   }
+}
+
+function projectionPortsByNode(projection: LayoutProjection): Map<string, StudioPortSpec[]> {
+  const portsByNodeId = new Map<string, Map<string, StudioPortSpec>>();
+  for (const edge of projection.edges) {
+    for (const [direction, terminal] of [["out", edge.routing.source], ["in", edge.routing.target]] as const) {
+      if (!terminal.port) continue;
+      const ports = portsByNodeId.get(terminal.cell) ?? new Map<string, StudioPortSpec>();
+      ports.set(terminal.port, {
+        id: terminal.port,
+        direction,
+        side: terminal.side,
+        offset: terminal.offset
+      });
+      portsByNodeId.set(terminal.cell, ports);
+    }
+  }
+  return new Map([...portsByNodeId.entries()].map(([nodeId, ports]) => [
+    nodeId,
+    [...ports.values()].sort((left, right) => left.id.localeCompare(right.id))
+  ]));
 }
 
 function studioEdgeMetadata(edge: GraphViewModelEdge, routing?: StudioEdgeRouting): Edge.Metadata {

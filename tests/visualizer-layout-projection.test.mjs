@@ -142,8 +142,21 @@ test("stored routing bundles same-direction fan-out and fan-in stubs", () => {
   const rightJoin = projection.edges.find((item) => item.id === "right-join").routing;
   assert.equal(sourceLeft.source.offset, sourceRight.source.offset);
   assert.equal(leftJoin.target.offset, rightJoin.target.offset);
-  assert.equal(sourceLeft.source.port, "out");
-  assert.equal(sourceRight.source.port, "out");
+  assert.equal(sourceLeft.source.port, "out-right-forward-normal");
+  assert.equal(sourceRight.source.port, "out-right-forward-normal");
+  assert.equal(leftJoin.target.port, "in-left-forward-normal");
+  assert.equal(rightJoin.target.port, "in-left-forward-normal");
+  assert.equal(projection.bundles.length, 2);
+  const fanOutBundle = projection.bundles.find((bundle) => bundle.kind === "fan-out");
+  const fanInBundle = projection.bundles.find((bundle) => bundle.kind === "fan-in");
+  assert.deepEqual(fanOutBundle.edgeIds, ["source-left", "source-right"]);
+  assert.deepEqual(fanInBundle.edgeIds, ["left-join", "right-join"]);
+  assert.deepEqual(sourceLeft.routePoints[0], fanOutBundle.junction);
+  assert.deepEqual(sourceRight.routePoints[0], fanOutBundle.junction);
+  assert.equal(fanOutBundle.trunk[0].x, 288);
+  assert.equal(fanInBundle.trunk.at(-1).x, 732);
+  assert.deepEqual(leftJoin.routePoints.at(-1), fanInBundle.junction);
+  assert.deepEqual(rightJoin.routePoints.at(-1), fanInBundle.junction);
 });
 
 test("ELK routing bundles same-direction fan-out and fan-in stubs", async () => {
@@ -157,6 +170,38 @@ test("ELK routing bundles same-direction fan-out and fan-in stubs", async () => 
   for (const routing of [fanOutLeft, fanOutRight, fanInLeft, fanInRight]) {
     assert.ok(routing.routePoints.every((point) => Number.isFinite(point.x) && Number.isFinite(point.y)));
   }
+  assert.equal(projection.bundles.filter((bundle) => bundle.kind === "fan-out").length, 1);
+  assert.equal(projection.bundles.filter((bundle) => bundle.kind === "fan-in").length, 1);
+  assert.deepEqual(fanOutLeft.bundleIds.source, fanOutRight.bundleIds.source);
+  assert.deepEqual(fanInLeft.bundleIds.target, fanInRight.bundleIds.target);
+  for (const routing of [fanOutLeft, fanOutRight, fanInLeft, fanInRight]) {
+    for (let index = 1; index < routing.routePoints.length; index += 1) {
+      const previous = routing.routePoints[index - 1];
+      const current = routing.routePoints[index];
+      assert.equal(previous.x === current.x || previous.y === current.y, true);
+    }
+  }
+});
+
+test("bundle grouping stays inside semantic channels and excludes SCC back edges", () => {
+  const view = graph([
+    node("source", { layout: { x: 100, y: 120, width: 180, height: 84 } }),
+    node("normal-a", { layout: { x: 420, y: 60, width: 180, height: 84 } }),
+    node("normal-b", { layout: { x: 420, y: 240, width: 180, height: 84 } }),
+    node("error-a", { layout: { x: 740, y: 60, width: 180, height: 84 } }),
+    node("error-b", { layout: { x: 740, y: 240, width: 180, height: 84 } }),
+    node("back", { layout: { x: -220, y: 120, width: 180, height: 84 } })
+  ], [
+    edge("source-normal-a", "source", "normal-a", { channel: "normal" }),
+    edge("source-normal-b", "source", "normal-b", { channel: "normal" }),
+    edge("source-error-a", "source", "error-a", { channel: "error", runtimeOnlyErrorFlow: true }),
+    edge("source-error-b", "source", "error-b", { channel: "error", runtimeOnlyErrorFlow: true }),
+    edge("source-back", "source", "back", { channel: "loop" })
+  ]);
+  const projection = createStoredLayoutProjection(view);
+  assert.deepEqual(projection.bundles.map((bundle) => bundle.channel).sort(), ["error", "normal"]);
+  assert.equal(projection.edges.find((item) => item.id === "source-back").routing.bundleIds, undefined);
+  assert.equal(projection.edges.length, 5);
 });
 
 test("same-endpoint parallel edges remain separated for label readability", () => {
@@ -172,6 +217,58 @@ test("same-endpoint parallel edges remain separated for label readability", () =
   const second = projection.edges.find((item) => item.id === "source-target-b").routing;
   assert.notEqual(first.source.offset, second.source.offset);
   assert.notEqual(first.target.offset, second.target.offset);
+  assert.equal(projection.bundles.length, 0);
+});
+
+test("fan-in from opposite sides uses separate nearby input ports", () => {
+  const view = graph([
+    node("left-source", { layout: { x: 80, y: 120, width: 180, height: 84 } }),
+    node("target", { layout: { x: 420, y: 120, width: 180, height: 84 } }),
+    node("right-source", { layout: { x: 760, y: 120, width: 180, height: 84 } })
+  ], [
+    edge("left-target", "left-source", "target"),
+    edge("right-target", "right-source", "target")
+  ]);
+  const projection = createStoredLayoutProjection(view);
+  const left = projection.edges.find((item) => item.id === "left-target").routing.target;
+  const right = projection.edges.find((item) => item.id === "right-target").routing.target;
+  assert.equal(left.side, "left");
+  assert.equal(left.port, "in-left-forward-normal");
+  assert.equal(right.side, "right");
+  assert.equal(right.port, "in-right-backward-normal");
+  assert.equal(projection.bundles.length, 0);
+});
+
+test("same-side incoming and outgoing flows use distinct port slots", () => {
+  const view = graph([
+    node("source", { layout: { x: 80, y: 120, width: 180, height: 84 } }),
+    node("center", { layout: { x: 420, y: 120, width: 180, height: 84 } }),
+    node("target", { layout: { x: 80, y: 300, width: 180, height: 84 } })
+  ], [
+    edge("source-center", "source", "center"),
+    edge("center-target", "center", "target")
+  ]);
+  const projection = createStoredLayoutProjection(view);
+  const incoming = projection.edges.find((item) => item.id === "source-center").routing.target;
+  const outgoing = projection.edges.find((item) => item.id === "center-target").routing.source;
+  assert.equal(incoming.side, "left");
+  assert.equal(outgoing.side, "left");
+  assert.equal(incoming.port, "in-left-forward-normal");
+  assert.equal(outgoing.port, "out-left-backward-normal");
+  assert.notEqual(incoming.port, outgoing.port);
+});
+
+test("moving a node recalculates bundle geometry without changing business edge ids", () => {
+  const view = graph([
+    node("source", { layout: { x: 100, y: 120, width: 180, height: 84 } }),
+    node("left", { layout: { x: 420, y: 60, width: 180, height: 84 } }),
+    node("right", { layout: { x: 420, y: 240, width: 180, height: 84 } })
+  ], [edge("source-left", "source", "left"), edge("source-right", "source", "right")]);
+  const first = createStoredLayoutProjection(view);
+  view.nodes.find((item) => item.id === "source").layout.y += 80;
+  const second = createStoredLayoutProjection(view);
+  assert.deepEqual(second.edges.map((item) => item.id), first.edges.map((item) => item.id));
+  assert.notDeepEqual(second.bundles[0].junction, first.bundles[0].junction);
 });
 
 test("ELK keeps cyclic role graphs distributed across flow columns", async () => {

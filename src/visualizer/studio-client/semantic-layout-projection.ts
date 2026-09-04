@@ -9,6 +9,13 @@ export type LayoutEdgeGeometry = {
   targetPoint: LayoutPoint;
 };
 export type LayoutSide = "left" | "right" | "top" | "bottom";
+export type LayoutPortDirection = "in" | "out";
+export type LayoutPortSpec = {
+  id: string;
+  direction: LayoutPortDirection;
+  side: LayoutSide;
+  offset: number;
+};
 export type LayoutRouteKind = "self" | "backward" | "vertical" | "forward";
 export type LayoutRouter = {
   name: string;
@@ -32,6 +39,22 @@ export type LayoutEdgeRouting = {
   connector: LayoutConnector;
   routePoints: LayoutPoint[];
   lane: string;
+  bundleIds?: {
+    source?: string;
+    target?: string;
+  };
+};
+export type LayoutBundleKind = "fan-out" | "fan-in";
+export type LayoutEdgeBundle = {
+  id: string;
+  kind: LayoutBundleKind;
+  nodeId: string;
+  side: LayoutSide;
+  routeKind: LayoutRouteKind;
+  channel: string;
+  edgeIds: string[];
+  junction: LayoutPoint;
+  trunk: LayoutPoint[];
 };
 export type LayoutProjectionNode = {
   id: string;
@@ -71,6 +94,7 @@ export type LayoutProjection = {
   profile: StudioLayoutMode;
   nodes: LayoutProjectionNode[];
   edges: LayoutProjectionEdge[];
+  bundles: LayoutEdgeBundle[];
   diagnostics: LayoutDiagnostic[];
   layoutDigest: string;
 };
@@ -111,6 +135,8 @@ const STUDIO_EDGE_FORWARD_ROUTER: LayoutRouter = {
     excludeTerminals: ["source", "target"]
   }
 };
+const NODE_EDGE_CLEARANCE = 8;
+const BUNDLE_TRUNK_LENGTH = 36;
 
 function edgeSortKey(edge: GraphViewModelEdge): string {
   return [edge.source, edge.target, edge.eventType, edge.id].join(":");
@@ -291,7 +317,7 @@ function resolveRoute(edge: GraphViewModelEdge, nodeById: ReadonlyMap<string, La
 function anchorOffset(index: number, count: number, nodeSpan: number): number {
   if (count <= 1) return 0;
   const availableHalfSpan = Math.max(16, nodeSpan / 2 - 18);
-  const spacing = Math.min(18, Math.max(10, (availableHalfSpan * 2) / Math.max(count - 1, 1)));
+  const spacing = Math.min(24, Math.max(12, (availableHalfSpan * 2) / Math.max(count - 1, 1)));
   return Math.round((index - (count - 1) / 2) * spacing);
 }
 
@@ -308,7 +334,7 @@ function edgeChannel(edge: GraphViewModelEdge): string {
 
 function endpointFamilyKey(draft: RoutingDraft, terminalName: "source" | "target"): string {
   const terminal = draft[terminalName];
-  return `${terminal.cell}:${terminal.side}:${draft.route.kind}:${edgeChannel(draft.edge)}`;
+  return `${terminalName}:${terminal.cell}:${terminal.side}:${draft.route.kind}:${edgeChannel(draft.edge)}`;
 }
 
 function parallelEdgeKey(draft: RoutingDraft, terminalName: "source" | "target"): string {
@@ -340,12 +366,146 @@ function sharedEndpointOffset(
   return familyOffset + anchorOffset(parallelIndex, parallelGroup.length, Math.min(nodeSpan ?? 0, 84));
 }
 
-function terminal(cell: string, direction: "source" | "target", side: LayoutSide, offset: number): LayoutTerminal {
+function portId(
+  cell: string,
+  direction: "source" | "target",
+  side: LayoutSide,
+  routeKind: LayoutRouteKind,
+  channel: string
+): string | undefined {
+  if (cell === "input" || cell === "output") return undefined;
+  const directionToken: LayoutPortDirection = direction === "source" ? "out" : "in";
+  const channelToken = channel.replace(/[^a-zA-Z0-9_-]/g, "_");
+  return `${directionToken}-${side}-${routeKind}-${channelToken}`;
+}
+
+function terminal(
+  cell: string,
+  direction: "source" | "target",
+  side: LayoutSide,
+  offset: number,
+  routeKind: LayoutRouteKind = "forward",
+  channel = "normal"
+): LayoutTerminal {
   return {
     cell,
-    port: cell === "input" || cell === "output" ? undefined : direction === "source" && side === "right" ? "out" : direction === "target" && side === "left" ? "in" : undefined,
+    port: portId(cell, direction, side, routeKind, channel),
     side,
     offset
+  };
+}
+
+function terminalPoint(
+  value: LayoutTerminal,
+  node: LayoutProjectionNode | undefined
+): LayoutPoint | undefined {
+  if (!node) return undefined;
+  if (value.side === "left") return { x: node.x, y: node.y + node.height / 2 + value.offset };
+  if (value.side === "right") return { x: node.x + node.width, y: node.y + node.height / 2 + value.offset };
+  if (value.side === "top") return { x: node.x + node.width / 2 + value.offset, y: node.y };
+  return { x: node.x + node.width / 2 + value.offset, y: node.y + node.height };
+}
+
+function terminalClearancePoint(
+  value: LayoutTerminal,
+  node: LayoutProjectionNode | undefined
+): LayoutPoint | undefined {
+  const boundary = terminalPoint(value, node);
+  return boundary ? outsidePoint(boundary, value.side, NODE_EDGE_CLEARANCE) : undefined;
+}
+
+function outsidePoint(point: LayoutPoint, side: LayoutSide, distance: number): LayoutPoint {
+  if (side === "left") return { x: point.x - distance, y: point.y };
+  if (side === "right") return { x: point.x + distance, y: point.y };
+  if (side === "top") return { x: point.x, y: point.y - distance };
+  return { x: point.x, y: point.y + distance };
+}
+
+function perpendicularPoint(point: LayoutPoint, side: LayoutSide, offset: number): LayoutPoint {
+  if (side === "left" || side === "right") return { x: point.x, y: point.y + offset };
+  return { x: point.x + offset, y: point.y };
+}
+
+function bundleBranchPoint(
+  bundle: LayoutEdgeBundle,
+  edgeId: string,
+  nodeById: ReadonlyMap<string, LayoutProjectionNode>
+): LayoutPoint {
+  const index = Math.max(0, bundle.edgeIds.indexOf(edgeId));
+  const node = nodeById.get(bundle.nodeId);
+  const nodeSpan = bundle.side === "top" || bundle.side === "bottom" ? node?.width : node?.height;
+  const offset = anchorOffset(index, bundle.edgeIds.length, nodeSpan ?? 0);
+  return perpendicularPoint(bundle.junction, bundle.side, offset);
+}
+
+function orthogonalizeRoutePoints(points: LayoutPoint[]): void {
+  for (let index = 0; index < points.length - 1; index += 1) {
+    const current = points[index];
+    const next = points[index + 1];
+    if (current.x === next.x || current.y === next.y) continue;
+    // Keep the existing ELK/stored geometry and only add the missing elbow
+    // introduced by attaching a bundle junction to an existing route.
+    points.splice(index + 1, 0, { x: next.x, y: current.y });
+    index += 1;
+  }
+}
+
+function bundleId(kind: LayoutBundleKind, draft: RoutingDraft): string {
+  const terminalValue = draft[kind === "fan-out" ? "source" : "target"];
+  return ["__ogs-layout-bundle", kind, terminalValue.cell, terminalValue.side, draft.route.kind, edgeChannel(draft.edge)].join(":");
+}
+
+function createRoutingBundles(
+  drafts: readonly RoutingDraft[],
+  nodeById: ReadonlyMap<string, LayoutProjectionNode>
+): {
+  bundles: LayoutEdgeBundle[];
+  bundleByEdgeId: Map<string, { source?: string; target?: string }>;
+} {
+  const bundles: LayoutEdgeBundle[] = [];
+  const bundleByEdgeId = new Map<string, { source?: string; target?: string }>();
+  for (const terminalName of ["source", "target"] as const) {
+    const kind: LayoutBundleKind = terminalName === "source" ? "fan-out" : "fan-in";
+    const groups = new Map<string, RoutingDraft[]>();
+    for (const draft of drafts) {
+      // Back edges and self edges own their lane geometry. Sharing their first
+      // or last segment can turn a valid SCC route into a short self-loop.
+      if (draft.route.kind === "self" || draft.route.kind === "backward") continue;
+      const value = draft[terminalName];
+      const key = `${value.cell}:${value.side}:${draft.route.kind}:${edgeChannel(draft.edge)}`;
+      groups.set(key, [...(groups.get(key) ?? []), draft]);
+    }
+    for (const group of groups.values()) {
+      const otherEndpointIds = new Set(group.map((draft) => terminalName === "source" ? draft.edge.target : draft.edge.source));
+      if (group.length < 2 || otherEndpointIds.size < 2) continue;
+      const first = group.slice().sort((left, right) => edgeSortKey(left.edge).localeCompare(edgeSortKey(right.edge)))[0];
+      const value = first[terminalName];
+      const boundary = terminalPoint(value, nodeById.get(value.cell));
+      if (!boundary) continue;
+      const clearancePoint = outsidePoint(boundary, value.side, NODE_EDGE_CLEARANCE);
+      const junction = outsidePoint(boundary, value.side, BUNDLE_TRUNK_LENGTH);
+      const bundle: LayoutEdgeBundle = {
+        id: bundleId(kind, first),
+        kind,
+        nodeId: value.cell,
+        side: value.side,
+        routeKind: first.route.kind,
+        channel: edgeChannel(first.edge),
+        edgeIds: group.map((draft) => draft.edge.id).sort(compareStable),
+        junction,
+        trunk: terminalName === "source" ? [clearancePoint, junction] : [junction, clearancePoint]
+      };
+      bundles.push(bundle);
+      for (const draft of group) {
+        const existing = bundleByEdgeId.get(draft.edge.id) ?? {};
+        existing[terminalName] = bundle.id;
+        bundleByEdgeId.set(draft.edge.id, existing);
+      }
+    }
+  }
+  return {
+    bundles: bundles.sort((left, right) => compareStable(left.id, right.id)),
+    bundleByEdgeId
   };
 }
 
@@ -354,7 +514,9 @@ function terminalFromPoint(
   direction: "source" | "target",
   point: LayoutPoint | undefined,
   node: LayoutProjectionNode | undefined,
-  fallback: LayoutTerminal
+  fallback: LayoutTerminal,
+  routeKind: LayoutRouteKind,
+  channel: string
 ): LayoutTerminal {
   if (!point || !node) return fallback;
   const candidates: Array<{ side: LayoutSide; distance: number; offset: number }> = [
@@ -365,7 +527,7 @@ function terminalFromPoint(
   ];
   candidates.sort((left, right) => left.distance - right.distance);
   const selected = candidates[0];
-  return terminal(cell, direction, selected.side, Math.round(selected.offset));
+  return terminal(cell, direction, selected.side, Math.round(selected.offset), routeKind, channel);
 }
 
 function alignRouteEndpoint(
@@ -455,7 +617,7 @@ function buildEdgeRouting(
   nodeById: ReadonlyMap<string, LayoutProjectionNode>,
   routePointsByEdgeId?: ReadonlyMap<string, readonly LayoutPoint[]>,
   geometryByEdgeId?: ReadonlyMap<string, LayoutEdgeGeometry>
-): Map<string, LayoutEdgeRouting> {
+): { routing: Map<string, LayoutEdgeRouting>; bundles: LayoutEdgeBundle[] } {
   const routes = new Map(edges.map((edge) => [edge.id, resolveRoute(edge, nodeById)]));
   const drafts: RoutingDraft[] = [];
   for (const edge of edges) {
@@ -465,32 +627,88 @@ function buildEdgeRouting(
     drafts.push({
       edge,
       route,
-      source: terminalFromPoint(edge.source, "source", geometryByEdgeId?.get(edge.id)?.sourcePoint, sourceNode, terminal(edge.source, "source", route.sourceSide, 0)),
-      target: terminalFromPoint(edge.target, "target", geometryByEdgeId?.get(edge.id)?.targetPoint, targetNode, terminal(edge.target, "target", route.targetSide, 0))
+      source: terminalFromPoint(
+        edge.source,
+        "source",
+        geometryByEdgeId?.get(edge.id)?.sourcePoint,
+        sourceNode,
+        terminal(edge.source, "source", route.sourceSide, 0, route.kind, edgeChannel(edge)),
+        route.kind,
+        edgeChannel(edge)
+      ),
+      target: terminalFromPoint(
+        edge.target,
+        "target",
+        geometryByEdgeId?.get(edge.id)?.targetPoint,
+        targetNode,
+        terminal(edge.target, "target", route.targetSide, 0, route.kind, edgeChannel(edge)),
+        route.kind,
+        edgeChannel(edge)
+      )
     });
   }
 
+  const effectiveDrafts = drafts.map((draft) => ({
+    ...draft,
+    source: { ...draft.source, offset: sharedEndpointOffset(draft, "source", drafts, nodeById) },
+    target: { ...draft.target, offset: sharedEndpointOffset(draft, "target", drafts, nodeById) }
+  }));
+  const { bundles, bundleByEdgeId } = createRoutingBundles(effectiveDrafts, nodeById);
+  const bundleById = new Map(bundles.map((bundle) => [bundle.id, bundle]));
   const result = new Map<string, LayoutEdgeRouting>();
-  for (const draft of drafts) {
+  for (const draft of effectiveDrafts) {
     const { edge, route } = draft;
-    const sourceTerminal = { ...draft.source, offset: sharedEndpointOffset(draft, "source", drafts, nodeById) };
-    const targetTerminal = { ...draft.target, offset: sharedEndpointOffset(draft, "target", drafts, nodeById) };
+    const sourceTerminal = draft.source;
+    const targetTerminal = draft.target;
     const sourceOffset = sourceTerminal.offset;
     const targetOffset = targetTerminal.offset;
     const routePoints = projectedRoutePoints(edge, route, nodeById, routePointsByEdgeId);
     alignRouteEndpoint(routePoints, sourceTerminal, nodeById.get(edge.source), "source");
     alignRouteEndpoint(routePoints, targetTerminal, nodeById.get(edge.target), "target");
+    const edgeBundles = bundleByEdgeId.get(edge.id);
+    if (edgeBundles?.source) {
+      const bundle = bundleById.get(edgeBundles.source);
+      if (bundle) {
+        routePoints.unshift(bundle.junction);
+        const branch = bundleBranchPoint(bundle, edge.id, nodeById);
+        if (branch.x !== bundle.junction.x || branch.y !== bundle.junction.y) routePoints.splice(1, 0, branch);
+      }
+    }
+    if (edgeBundles?.target) {
+      const bundle = bundleById.get(edgeBundles.target);
+      if (bundle) {
+        const branch = bundleBranchPoint(bundle, edge.id, nodeById);
+        if (branch.x !== bundle.junction.x || branch.y !== bundle.junction.y) routePoints.push(branch);
+        routePoints.push(bundle.junction);
+      }
+    }
+    const hasBundle = Boolean(edgeBundles?.source || edgeBundles?.target);
+    if (hasBundle) {
+      // X6 terminals are implicit route endpoints. Add a clearance waypoint
+      // when only one side is bundled so the final segment cannot become
+      // diagonal between a junction and the other node.
+      if (edgeBundles?.source && !edgeBundles.target) {
+        const point = terminalClearancePoint(targetTerminal, nodeById.get(edge.target));
+        if (point) routePoints.push(point);
+      }
+      if (edgeBundles?.target && !edgeBundles.source) {
+        const point = terminalClearancePoint(sourceTerminal, nodeById.get(edge.source));
+        if (point) routePoints.unshift(point);
+      }
+      orthogonalizeRoutePoints(routePoints);
+    }
     result.set(edge.id, {
       kind: route.kind,
       source: sourceTerminal,
       target: targetTerminal,
-      router: routerFor(edge, route, nodeById, geometryByEdgeId?.has(edge.id)),
+      router: hasBundle ? { name: "normal", args: {} } : routerFor(edge, route, nodeById, geometryByEdgeId?.has(edge.id)),
       connector: STUDIO_EDGE_CONNECTOR,
       routePoints,
-      lane: `${edgeChannel(edge)}:${route.kind}:${sourceOffset}:${targetOffset}`
+      lane: `${edgeChannel(edge)}:${route.kind}:${sourceOffset}:${targetOffset}`,
+      ...(edgeBundles ? { bundleIds: edgeBundles } : {})
     });
   }
-  return result;
+  return { routing: result, bundles };
 }
 
 export function createStoredLayoutProjection(viewModel: GraphViewModel): LayoutProjection {
@@ -511,7 +729,7 @@ export function buildProjection(
   const sortedEdges = viewModel.edges.slice().sort((left, right) => edgeSortKey(left).localeCompare(edgeSortKey(right)));
   const completeRouting = buildEdgeRouting(sortedEdges, nodeById, routePointsByEdgeId, geometryByEdgeId);
   const edges = sortedEdges.map((edge) => {
-    const routing = completeRouting.get(edge.id)!;
+    const routing = completeRouting.routing.get(edge.id)!;
     return {
       id: edge.id,
       source: edge.source,
@@ -527,6 +745,7 @@ export function buildProjection(
     profile,
     nodes: nodes.slice().sort((left, right) => left.id.localeCompare(right.id)),
     edges,
+    bundles: completeRouting.bundles,
     diagnostics: [
       ...diagnostics,
       ...qualityDiagnostics(adapter, nodes, viewModel)
@@ -538,7 +757,7 @@ export function buildProjection(
   };
 }
 
-type LayoutDigestInput = Pick<LayoutProjection, "version" | "adapter" | "profile" | "nodes" | "edges" | "diagnostics">;
+type LayoutDigestInput = Pick<LayoutProjection, "version" | "adapter" | "profile" | "nodes" | "edges" | "bundles" | "diagnostics">;
 
 function digestPayload(projection: LayoutDigestInput): string {
   return JSON.stringify({
@@ -566,7 +785,20 @@ function digestPayload(projection: LayoutDigestInput): string {
       edge.routing.connector.name,
       edge.routing.connector.args,
       edge.routing.routePoints.map((point) => [numberToken(point.x), numberToken(point.y)]),
-      edge.routing.lane
+      edge.routing.lane,
+      edge.routing.bundleIds?.source ?? "",
+      edge.routing.bundleIds?.target ?? ""
+    ]),
+    bundles: projection.bundles.slice().sort((left, right) => compareStable(left.id, right.id)).map((bundle) => [
+      bundle.id,
+      bundle.kind,
+      bundle.nodeId,
+      bundle.side,
+      bundle.routeKind,
+      bundle.channel,
+      bundle.edgeIds.slice().sort(compareStable),
+      [numberToken(bundle.junction.x), numberToken(bundle.junction.y)],
+      bundle.trunk.map((point) => [numberToken(point.x), numberToken(point.y)])
     ]),
     diagnostics: projection.diagnostics.slice().sort((left, right) => compareStable(
       [left.code, left.nodeId ?? "", left.relatedNodeId ?? "", left.edgeId ?? "", left.severity, left.message].join("\u0000"),
