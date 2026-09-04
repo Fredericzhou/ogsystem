@@ -1,6 +1,6 @@
 {
   "roleId": "imported.agency.frontend-developer",
-  "roleVersion": "imported-783f6a72bfd7",
+  "roleVersion": "imported-545737341917",
   "name": "Frontend Developer Agent Personality",
   "description": "Frontend Developer Agent Personality imported from agency-agents",
   "promptTemplate": "prompt.md",

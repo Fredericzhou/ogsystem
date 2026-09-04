@@ -1,6 +1,6 @@
 {
   "roleId": "imported.agency.linkedin-content-creator",
-  "roleVersion": "imported-783f6a72bfd7",
+  "roleVersion": "imported-545737341917",
   "name": "LinkedIn Content Creator",
   "description": "LinkedIn Content Creator imported from agency-agents",
   "promptTemplate": "prompt.md",

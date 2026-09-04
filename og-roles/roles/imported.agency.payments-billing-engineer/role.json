@@ -1,0 +1,47 @@
+{
+  "roleId": "imported.agency.payments-billing-engineer",
+  "roleVersion": "imported-545737341917",
+  "name": "Payments & Billing Engineer",
+  "description": "Payments & Billing Engineer imported from agency-agents",
+  "promptTemplate": "prompt.md",
+  "outputSchema": "output.schema.json",
+  "tags": [
+    "imported",
+    "agency-agents",
+    "engineering",
+    "payments-billing-engineer"
+  ],
+  "contractVersion": 1,
+  "purpose": "Payments & Billing Engineer imported from agency-agents",
+  "responsibility": {
+    "kind": "atomic",
+    "owns": [],
+    "contributes": [],
+    "doesNotOwn": []
+  },
+  "inputs": {
+    "preconditions": []
+  },
+  "outputs": {
+    "events": [
+      "BLOCKED",
+      "DONE",
+      "NEEDS_CLARIFICATION"
+    ],
+    "postconditions": []
+  },
+  "authority": {
+    "controlActions": []
+  },
+  "constraints": {
+    "writableStateFields": [],
+    "allowedTools": []
+  },
+  "failure": {
+    "retryableErrorCodes": [],
+    "terminalErrorCodes": []
+  },
+  "audit": {
+    "requiredFields": []
+  }
+}

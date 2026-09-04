@@ -47,7 +47,7 @@ async function loadNestedSystemFile(path: string): Promise<{ value: unknown; ver
   const systemId = source.match(/^%%\s*system\.id\s*=\s*(\S+)\s*$/m)?.[1];
   const systemVersion = source.match(/^%%\s*system\.version\s*=\s*(\S+)\s*$/m)?.[1];
   if (!systemId || !systemVersion) throw new Error(`${path} must declare system.id and system.version`);
-  return { value: { kind: "nested_system", systemId, systemVersion, source: path }, version: systemVersion, nested: true };
+  return { value: { kind: "nested_system", systemId, systemVersion, source: path.replaceAll("\\", "/") }, version: systemVersion, nested: true };
 }
 
 async function findNestedSystemPaths(root: string): Promise<string[]> {
@@ -100,7 +100,8 @@ export async function loadOgsSpecification(workdir: string): Promise<OgsSpecific
   let systemId: string | undefined;
   let systemVersion: string | undefined;
   for (const path of paths.sort()) {
-    const isNestedPath = path.includes("/systems/") || path.includes("/subsystems/");
+    const normalizedPath = path.replaceAll("\\", "/");
+    const isNestedPath = normalizedPath.includes("/systems/") || normalizedPath.includes("/subsystems/");
     const loaded = isNestedPath ? await loadNestedSystemFile(path) : await loadStructuredFile(path);
     const record = asRecord(loaded.value, path);
     const metadata = asRecord(record.system ?? record.metadata ?? {}, path + ".system");
@@ -116,7 +117,8 @@ export async function loadOgsSpecification(workdir: string): Promise<OgsSpecific
       if (candidateSystemId !== undefined) systemId ??= candidateSystemId;
       if (candidateSystemVersion !== undefined) systemVersion ??= candidateSystemVersion;
     }
-    sources[path] = { digest: digest(loaded.value), value: structuredClone(loaded.value) };
+    const sourceKey = path.replaceAll("\\", "/");
+    sources[sourceKey] = { digest: digest(loaded.value), value: structuredClone(loaded.value) };
   }
   if (!systemId || !systemVersion) throw new Error("OGS specification must declare systemId and systemVersion");
   const payload = { specVersion, systemId, systemVersion, sources: Object.fromEntries(Object.entries(sources).map(([path, source]) => [path, source.digest])) };

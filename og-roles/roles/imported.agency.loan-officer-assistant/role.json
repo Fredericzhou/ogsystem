@@ -1,6 +1,6 @@
 {
   "roleId": "imported.agency.loan-officer-assistant",
-  "roleVersion": "imported-783f6a72bfd7",
+  "roleVersion": "imported-545737341917",
   "name": "🏦 Loan Officer Assistant Agent",
   "description": "🏦 Loan Officer Assistant Agent imported from agency-agents",
   "promptTemplate": "prompt.md",

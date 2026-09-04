@@ -1,0 +1,47 @@
+{
+  "roleId": "imported.agency.it-service-manager",
+  "roleVersion": "imported-545737341917",
+  "name": "🖧 IT Service Manager",
+  "description": "🖧 IT Service Manager imported from agency-agents",
+  "promptTemplate": "prompt.md",
+  "outputSchema": "output.schema.json",
+  "tags": [
+    "imported",
+    "agency-agents",
+    "engineering",
+    "it-service-manager"
+  ],
+  "contractVersion": 1,
+  "purpose": "🖧 IT Service Manager imported from agency-agents",
+  "responsibility": {
+    "kind": "atomic",
+    "owns": [],
+    "contributes": [],
+    "doesNotOwn": []
+  },
+  "inputs": {
+    "preconditions": []
+  },
+  "outputs": {
+    "events": [
+      "BLOCKED",
+      "DONE",
+      "NEEDS_CLARIFICATION"
+    ],
+    "postconditions": []
+  },
+  "authority": {
+    "controlActions": []
+  },
+  "constraints": {
+    "writableStateFields": [],
+    "allowedTools": []
+  },
+  "failure": {
+    "retryableErrorCodes": [],
+    "terminalErrorCodes": []
+  },
+  "audit": {
+    "requiredFields": []
+  }
+}

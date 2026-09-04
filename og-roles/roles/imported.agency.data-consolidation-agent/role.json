@@ -1,6 +1,6 @@
 {
   "roleId": "imported.agency.data-consolidation-agent",
-  "roleVersion": "imported-783f6a72bfd7",
+  "roleVersion": "imported-545737341917",
   "name": "Data Consolidation Agent",
   "description": "Data Consolidation Agent imported from agency-agents",
   "promptTemplate": "prompt.md",

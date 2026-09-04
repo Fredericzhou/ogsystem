@@ -1,6 +1,6 @@
 {
   "roleId": "imported.agency.instagram-curator",
-  "roleVersion": "imported-783f6a72bfd7",
+  "roleVersion": "imported-545737341917",
   "name": "Marketing Instagram Curator",
   "description": "Marketing Instagram Curator imported from agency-agents",
   "promptTemplate": "prompt.md",

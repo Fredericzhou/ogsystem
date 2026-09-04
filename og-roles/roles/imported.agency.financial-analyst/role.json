@@ -1,6 +1,6 @@
 {
   "roleId": "imported.agency.financial-analyst",
-  "roleVersion": "imported-783f6a72bfd7",
+  "roleVersion": "imported-545737341917",
   "name": "📊 Financial Analyst Agent",
   "description": "📊 Financial Analyst Agent imported from agency-agents",
   "promptTemplate": "prompt.md",

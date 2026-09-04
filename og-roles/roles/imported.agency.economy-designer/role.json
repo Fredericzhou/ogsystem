@@ -1,0 +1,47 @@
+{
+  "roleId": "imported.agency.economy-designer",
+  "roleVersion": "imported-545737341917",
+  "name": "Economy Designer Agent Personality",
+  "description": "Economy Designer Agent Personality imported from agency-agents",
+  "promptTemplate": "prompt.md",
+  "outputSchema": "output.schema.json",
+  "tags": [
+    "imported",
+    "agency-agents",
+    "game-development",
+    "economy-designer"
+  ],
+  "contractVersion": 1,
+  "purpose": "Economy Designer Agent Personality imported from agency-agents",
+  "responsibility": {
+    "kind": "atomic",
+    "owns": [],
+    "contributes": [],
+    "doesNotOwn": []
+  },
+  "inputs": {
+    "preconditions": []
+  },
+  "outputs": {
+    "events": [
+      "BLOCKED",
+      "DONE",
+      "NEEDS_CLARIFICATION"
+    ],
+    "postconditions": []
+  },
+  "authority": {
+    "controlActions": []
+  },
+  "constraints": {
+    "writableStateFields": [],
+    "allowedTools": []
+  },
+  "failure": {
+    "retryableErrorCodes": [],
+    "terminalErrorCodes": []
+  },
+  "audit": {
+    "requiredFields": []
+  }
+}

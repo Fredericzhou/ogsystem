@@ -1,6 +1,6 @@
 {
   "roleId": "imported.agency.legal-document-review",
-  "roleVersion": "imported-783f6a72bfd7",
+  "roleVersion": "imported-545737341917",
   "name": "⚖️ Legal Document Review Agent",
   "description": "⚖️ Legal Document Review Agent imported from agency-agents",
   "promptTemplate": "prompt.md",

@@ -1,6 +1,6 @@
 {
   "roleId": "imported.agency.agentic-identity-trust",
-  "roleVersion": "imported-783f6a72bfd7",
+  "roleVersion": "imported-545737341917",
   "name": "Agentic Identity & Trust Architect",
   "description": "Agentic Identity & Trust Architect imported from agency-agents",
   "promptTemplate": "prompt.md",

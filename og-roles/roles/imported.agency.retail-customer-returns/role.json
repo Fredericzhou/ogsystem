@@ -1,6 +1,6 @@
 {
   "roleId": "imported.agency.retail-customer-returns",
-  "roleVersion": "imported-783f6a72bfd7",
+  "roleVersion": "imported-545737341917",
   "name": "🛒 Retail Customer Returns Agent",
   "description": "🛒 Retail Customer Returns Agent imported from agency-agents",
   "promptTemplate": "prompt.md",

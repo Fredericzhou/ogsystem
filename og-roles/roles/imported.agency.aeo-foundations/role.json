@@ -1,0 +1,47 @@
+{
+  "roleId": "imported.agency.aeo-foundations",
+  "roleVersion": "imported-545737341917",
+  "name": "AEO Foundations Architect",
+  "description": "AEO Foundations Architect imported from agency-agents",
+  "promptTemplate": "prompt.md",
+  "outputSchema": "output.schema.json",
+  "tags": [
+    "imported",
+    "agency-agents",
+    "marketing",
+    "aeo-foundations"
+  ],
+  "contractVersion": 1,
+  "purpose": "AEO Foundations Architect imported from agency-agents",
+  "responsibility": {
+    "kind": "atomic",
+    "owns": [],
+    "contributes": [],
+    "doesNotOwn": []
+  },
+  "inputs": {
+    "preconditions": []
+  },
+  "outputs": {
+    "events": [
+      "BLOCKED",
+      "DONE",
+      "NEEDS_CLARIFICATION"
+    ],
+    "postconditions": []
+  },
+  "authority": {
+    "controlActions": []
+  },
+  "constraints": {
+    "writableStateFields": [],
+    "allowedTools": []
+  },
+  "failure": {
+    "retryableErrorCodes": [],
+    "terminalErrorCodes": []
+  },
+  "audit": {
+    "requiredFields": []
+  }
+}

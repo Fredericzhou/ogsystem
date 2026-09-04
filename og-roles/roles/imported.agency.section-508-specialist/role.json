@@ -1,0 +1,47 @@
+{
+  "roleId": "imported.agency.section-508-specialist",
+  "roleVersion": "imported-545737341917",
+  "name": "♿ Section 508 Accessibility Specialist",
+  "description": "♿ Section 508 Accessibility Specialist imported from agency-agents",
+  "promptTemplate": "prompt.md",
+  "outputSchema": "output.schema.json",
+  "tags": [
+    "imported",
+    "agency-agents",
+    "engineering",
+    "section-508-specialist"
+  ],
+  "contractVersion": 1,
+  "purpose": "♿ Section 508 Accessibility Specialist imported from agency-agents",
+  "responsibility": {
+    "kind": "atomic",
+    "owns": [],
+    "contributes": [],
+    "doesNotOwn": []
+  },
+  "inputs": {
+    "preconditions": []
+  },
+  "outputs": {
+    "events": [
+      "BLOCKED",
+      "DONE",
+      "NEEDS_CLARIFICATION"
+    ],
+    "postconditions": []
+  },
+  "authority": {
+    "controlActions": []
+  },
+  "constraints": {
+    "writableStateFields": [],
+    "allowedTools": []
+  },
+  "failure": {
+    "retryableErrorCodes": [],
+    "terminalErrorCodes": []
+  },
+  "audit": {
+    "requiredFields": []
+  }
+}

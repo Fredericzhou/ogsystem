@@ -429,6 +429,45 @@ export function renderStudioBridgeSelectionLabel(args: {
   return selection;
 }
 
+export function renderStudioRoleSemanticSummary(args: {
+  role: JsonRecord;
+  t?: Translator;
+}): string {
+  const t: Translator = typeof args.t === "function" ? args.t : (_key, _vars, fallback) => fallback ?? _key;
+  const roleId = String(args.role.roleId ?? "");
+  const runtime = asRecord(args.role.runtime);
+  const runtimeStatus = runtime ? displayUiToken(runtime.status, t) : "";
+  const runtimeMetrics = runtime
+    ? [
+        t("studio.runtimeActiveBranches", { count: String(Number(runtime.activeBranchCount ?? 0)) }, "active branches {count}"),
+        t("studio.runtimeCompletedBranches", { count: String(Number(runtime.completedBranchCount ?? 0)) }, "completed branches {count}"),
+        t("studio.runtimeWaitingReviews", { count: String(Number(runtime.waitingReviewCount ?? 0)) }, "waiting reviews {count}"),
+        t("studio.runtimeLoopIteration", { count: String(Number(runtime.loopIteration ?? 0)) }, "loop round {count}")
+      ]
+    : [];
+  const joinWaiting = asRecord(runtime?.joinWaitingSummary);
+  const joinSummary = joinWaiting
+    ? t("studio.runtimeJoinWaiting", {
+        ready: String(Number(joinWaiting.readyCount ?? 0)),
+        expected: String(Number(joinWaiting.expectedCount ?? 0)),
+        missing: String(Number(joinWaiting.missingCount ?? 0))
+      }, "join sources {ready}/{expected}, missing {missing}")
+    : "";
+  const runtimeHint = runtime
+    ? [runtimeStatus, ...runtimeMetrics, joinSummary, runtime.lastErrorCode ? String(runtime.lastErrorCode) : ""].filter(Boolean).join(" · ")
+    : t("studio.roleSeatSemanticHint", undefined, "This node is a responsibility seat. Runtime values below are aggregate observations across its active branches, not a single execution instance.");
+  return [
+    '<div class="event studio-role-semantic-summary">',
+    '<div class="event-top"><span>' + escapeText(t("studio.responsibilitySeat", undefined, "responsibility seat")) + '</span><span>' + escapeText(t("studio.roleAggregate", undefined, "role aggregate")) + '</span></div>',
+    '<strong><code>' + escapeText(roleId) + '</code></strong>',
+    '<div class="hint">' + escapeText(runtimeHint) + '</div>',
+    runtime
+      ? '<div class="meta studio-role-runtime-metrics">' + runtimeMetrics.map((metric) => '<span>' + escapeText(metric) + '</span>').join("") + '</div>'
+      : "",
+    '</div>'
+  ].join("");
+}
+
 export function renderProjectSummaryPanel(args: {
   summary: JsonRecord | null | undefined;
   roles: Array<Record<string, unknown>>;
@@ -1278,11 +1317,11 @@ export function renderStudioBridgePanel(args: {
         ? flowKeyOf(explicitSelectedFlow)
         : "",
     selectionRolePackageHtml: explicitSelectedRole
-      ? renderStudioRolePackageEditor({
-          roleId: String(explicitSelectedRole.roleId ?? ""),
-          editor: args.rolePackageEditor,
-          t
-        })
+      ? renderStudioRoleSemanticSummary({ role: explicitSelectedRole, t }) + renderStudioRolePackageEditor({
+        roleId: String(explicitSelectedRole.roleId ?? ""),
+        editor: args.rolePackageEditor,
+        t
+      })
         : explicitSelectedFlow
         ? renderStudioFlowConfigEditor({
           flowKey: flowKeyOf(explicitSelectedFlow),

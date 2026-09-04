@@ -1,8 +1,8 @@
 {
   "roleId": "imported.agency.agentic-search-optimizer",
-  "roleVersion": "imported-783f6a72bfd7",
-  "name": "WebMCP Readiness Audit: [Site/Product Name]",
-  "description": "WebMCP Readiness Audit: [Site/Product Name] imported from agency-agents",
+  "roleVersion": "imported-545737341917",
+  "name": "Agentic Search Optimizer",
+  "description": "Agentic Search Optimizer imported from agency-agents",
   "promptTemplate": "prompt.md",
   "outputSchema": "output.schema.json",
   "tags": [
@@ -12,7 +12,7 @@
     "agentic-search-optimizer"
   ],
   "contractVersion": 1,
-  "purpose": "WebMCP Readiness Audit: [Site/Product Name] imported from agency-agents",
+  "purpose": "Agentic Search Optimizer imported from agency-agents",
   "responsibility": {
     "kind": "atomic",
     "owns": [],

@@ -1,6 +1,6 @@
 {
   "roleId": "imported.agency.terminal-integration-specialist",
-  "roleVersion": "imported-783f6a72bfd7",
+  "roleVersion": "imported-545737341917",
   "name": "Terminal Integration Specialist",
   "description": "Terminal Integration Specialist imported from agency-agents",
   "promptTemplate": "prompt.md",

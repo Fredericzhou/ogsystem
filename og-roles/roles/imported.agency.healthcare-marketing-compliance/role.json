@@ -1,6 +1,6 @@
 {
   "roleId": "imported.agency.healthcare-marketing-compliance",
-  "roleVersion": "imported-783f6a72bfd7",
+  "roleVersion": "imported-545737341917",
   "name": "Healthcare Marketing Compliance Specialist",
   "description": "Healthcare Marketing Compliance Specialist imported from agency-agents",
   "promptTemplate": "prompt.md",

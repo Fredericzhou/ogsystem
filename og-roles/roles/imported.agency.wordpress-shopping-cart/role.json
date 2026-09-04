@@ -1,0 +1,47 @@
+{
+  "roleId": "imported.agency.wordpress-shopping-cart",
+  "roleVersion": "imported-545737341917",
+  "name": "🛍️ WordPress Shopping Cart Engineer",
+  "description": "🛍️ WordPress Shopping Cart Engineer imported from agency-agents",
+  "promptTemplate": "prompt.md",
+  "outputSchema": "output.schema.json",
+  "tags": [
+    "imported",
+    "agency-agents",
+    "engineering",
+    "wordpress-shopping-cart"
+  ],
+  "contractVersion": 1,
+  "purpose": "🛍️ WordPress Shopping Cart Engineer imported from agency-agents",
+  "responsibility": {
+    "kind": "atomic",
+    "owns": [],
+    "contributes": [],
+    "doesNotOwn": []
+  },
+  "inputs": {
+    "preconditions": []
+  },
+  "outputs": {
+    "events": [
+      "BLOCKED",
+      "DONE",
+      "NEEDS_CLARIFICATION"
+    ],
+    "postconditions": []
+  },
+  "authority": {
+    "controlActions": []
+  },
+  "constraints": {
+    "writableStateFields": [],
+    "allowedTools": []
+  },
+  "failure": {
+    "retryableErrorCodes": [],
+    "terminalErrorCodes": []
+  },
+  "audit": {
+    "requiredFields": []
+  }
+}

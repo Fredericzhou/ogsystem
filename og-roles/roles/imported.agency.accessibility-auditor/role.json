@@ -1,6 +1,6 @@
 {
   "roleId": "imported.agency.accessibility-auditor",
-  "roleVersion": "imported-783f6a72bfd7",
+  "roleVersion": "imported-545737341917",
   "name": "Accessibility Auditor Agent Personality",
   "description": "Accessibility Auditor Agent Personality imported from agency-agents",
   "promptTemplate": "prompt.md",

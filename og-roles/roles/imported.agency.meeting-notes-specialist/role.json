@@ -1,0 +1,47 @@
+{
+  "roleId": "imported.agency.meeting-notes-specialist",
+  "roleVersion": "imported-545737341917",
+  "name": "Meeting Notes Specialist",
+  "description": "Meeting Notes Specialist imported from agency-agents",
+  "promptTemplate": "prompt.md",
+  "outputSchema": "output.schema.json",
+  "tags": [
+    "imported",
+    "agency-agents",
+    "project-management",
+    "meeting-notes-specialist"
+  ],
+  "contractVersion": 1,
+  "purpose": "Meeting Notes Specialist imported from agency-agents",
+  "responsibility": {
+    "kind": "atomic",
+    "owns": [],
+    "contributes": [],
+    "doesNotOwn": []
+  },
+  "inputs": {
+    "preconditions": []
+  },
+  "outputs": {
+    "events": [
+      "BLOCKED",
+      "DONE",
+      "NEEDS_CLARIFICATION"
+    ],
+    "postconditions": []
+  },
+  "authority": {
+    "controlActions": []
+  },
+  "constraints": {
+    "writableStateFields": [],
+    "allowedTools": []
+  },
+  "failure": {
+    "retryableErrorCodes": [],
+    "terminalErrorCodes": []
+  },
+  "audit": {
+    "requiredFields": []
+  }
+}

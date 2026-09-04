@@ -1,6 +1,6 @@
 {
   "roleId": "imported.agency.minimal-change-engineer",
-  "roleVersion": "imported-783f6a72bfd7",
+  "roleVersion": "imported-545737341917",
   "name": "Minimal Change Engineer Agent",
   "description": "Minimal Change Engineer Agent imported from agency-agents",
   "promptTemplate": "prompt.md",

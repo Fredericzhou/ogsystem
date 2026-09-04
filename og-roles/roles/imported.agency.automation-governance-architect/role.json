@@ -1,6 +1,6 @@
 {
   "roleId": "imported.agency.automation-governance-architect",
-  "roleVersion": "imported-783f6a72bfd7",
+  "roleVersion": "imported-545737341917",
   "name": "Automation Governance Architect",
   "description": "Automation Governance Architect imported from agency-agents",
   "promptTemplate": "prompt.md",

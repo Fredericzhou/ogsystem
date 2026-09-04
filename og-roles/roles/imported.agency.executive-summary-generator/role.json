@@ -1,6 +1,6 @@
 {
   "roleId": "imported.agency.executive-summary-generator",
-  "roleVersion": "imported-783f6a72bfd7",
+  "roleVersion": "imported-545737341917",
   "name": "Executive Summary Generator Agent Personality",
   "description": "Executive Summary Generator Agent Personality imported from agency-agents",
   "promptTemplate": "prompt.md",

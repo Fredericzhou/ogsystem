@@ -1,6 +1,6 @@
 {
   "roleId": "imported.agency.bookkeeper-controller",
-  "roleVersion": "imported-783f6a72bfd7",
+  "roleVersion": "imported-545737341917",
   "name": "📒 Bookkeeper & Controller Agent",
   "description": "📒 Bookkeeper & Controller Agent imported from agency-agents",
   "promptTemplate": "prompt.md",

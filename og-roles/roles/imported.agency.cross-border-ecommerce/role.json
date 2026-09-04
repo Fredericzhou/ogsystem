@@ -1,6 +1,6 @@
 {
   "roleId": "imported.agency.cross-border-ecommerce",
-  "roleVersion": "imported-783f6a72bfd7",
+  "roleVersion": "imported-545737341917",
   "name": "Marketing Cross-Border E-Commerce Specialist",
   "description": "Marketing Cross-Border E-Commerce Specialist imported from agency-agents",
   "promptTemplate": "prompt.md",

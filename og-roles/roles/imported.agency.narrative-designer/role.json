@@ -1,6 +1,6 @@
 {
   "roleId": "imported.agency.narrative-designer",
-  "roleVersion": "imported-783f6a72bfd7",
+  "roleVersion": "imported-545737341917",
   "name": "Narrative Designer Agent Personality",
   "description": "Narrative Designer Agent Personality imported from agency-agents",
   "promptTemplate": "prompt.md",

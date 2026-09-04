@@ -1,0 +1,47 @@
+{
+  "roleId": "imported.agency.global-podcast-strategist",
+  "roleVersion": "imported-545737341917",
+  "name": "Marketing Global Podcast Strategist",
+  "description": "Marketing Global Podcast Strategist imported from agency-agents",
+  "promptTemplate": "prompt.md",
+  "outputSchema": "output.schema.json",
+  "tags": [
+    "imported",
+    "agency-agents",
+    "marketing",
+    "global-podcast-strategist"
+  ],
+  "contractVersion": 1,
+  "purpose": "Marketing Global Podcast Strategist imported from agency-agents",
+  "responsibility": {
+    "kind": "atomic",
+    "owns": [],
+    "contributes": [],
+    "doesNotOwn": []
+  },
+  "inputs": {
+    "preconditions": []
+  },
+  "outputs": {
+    "events": [
+      "BLOCKED",
+      "DONE",
+      "NEEDS_CLARIFICATION"
+    ],
+    "postconditions": []
+  },
+  "authority": {
+    "controlActions": []
+  },
+  "constraints": {
+    "writableStateFields": [],
+    "allowedTools": []
+  },
+  "failure": {
+    "retryableErrorCodes": [],
+    "terminalErrorCodes": []
+  },
+  "audit": {
+    "requiredFields": []
+  }
+}

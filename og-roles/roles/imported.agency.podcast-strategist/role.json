@@ -1,6 +1,6 @@
 {
   "roleId": "imported.agency.podcast-strategist",
-  "roleVersion": "imported-783f6a72bfd7",
+  "roleVersion": "imported-545737341917",
   "name": "Marketing Podcast Strategist",
   "description": "Marketing Podcast Strategist imported from agency-agents",
   "promptTemplate": "prompt.md",

@@ -1,0 +1,47 @@
+{
+  "roleId": "imported.agency.multi-agent-systems-architect",
+  "roleVersion": "imported-545737341917",
+  "name": "🕸️ Multi-Agent Systems Architect Agent",
+  "description": "🕸️ Multi-Agent Systems Architect Agent imported from agency-agents",
+  "promptTemplate": "prompt.md",
+  "outputSchema": "output.schema.json",
+  "tags": [
+    "imported",
+    "agency-agents",
+    "engineering",
+    "multi-agent-systems-architect"
+  ],
+  "contractVersion": 1,
+  "purpose": "🕸️ Multi-Agent Systems Architect Agent imported from agency-agents",
+  "responsibility": {
+    "kind": "atomic",
+    "owns": [],
+    "contributes": [],
+    "doesNotOwn": []
+  },
+  "inputs": {
+    "preconditions": []
+  },
+  "outputs": {
+    "events": [
+      "BLOCKED",
+      "DONE",
+      "NEEDS_CLARIFICATION"
+    ],
+    "postconditions": []
+  },
+  "authority": {
+    "controlActions": []
+  },
+  "constraints": {
+    "writableStateFields": [],
+    "allowedTools": []
+  },
+  "failure": {
+    "retryableErrorCodes": [],
+    "terminalErrorCodes": []
+  },
+  "audit": {
+    "requiredFields": []
+  }
+}

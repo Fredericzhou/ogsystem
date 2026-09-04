@@ -1,6 +1,6 @@
 {
   "roleId": "imported.agency.korean-business-navigator",
-  "roleVersion": "imported-783f6a72bfd7",
+  "roleVersion": "imported-545737341917",
   "name": "🧠 Your Identity & Memory",
   "description": "🧠 Your Identity & Memory imported from agency-agents",
   "promptTemplate": "prompt.md",

@@ -1,6 +1,6 @@
 {
   "roleId": "imported.agency.reality-checker",
-  "roleVersion": "imported-783f6a72bfd7",
+  "roleVersion": "imported-545737341917",
   "name": "Integration Agent Personality",
   "description": "Integration Agent Personality imported from agency-agents",
   "promptTemplate": "prompt.md",

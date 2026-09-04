@@ -1,0 +1,47 @@
+{
+  "roleId": "imported.agency.offer-lead-gen-strategist",
+  "roleVersion": "imported-545737341917",
+  "name": "Offer & Lead Gen Strategist",
+  "description": "Offer & Lead Gen Strategist imported from agency-agents",
+  "promptTemplate": "prompt.md",
+  "outputSchema": "output.schema.json",
+  "tags": [
+    "imported",
+    "agency-agents",
+    "sales",
+    "offer-lead-gen-strategist"
+  ],
+  "contractVersion": 1,
+  "purpose": "Offer & Lead Gen Strategist imported from agency-agents",
+  "responsibility": {
+    "kind": "atomic",
+    "owns": [],
+    "contributes": [],
+    "doesNotOwn": []
+  },
+  "inputs": {
+    "preconditions": []
+  },
+  "outputs": {
+    "events": [
+      "BLOCKED",
+      "DONE",
+      "NEEDS_CLARIFICATION"
+    ],
+    "postconditions": []
+  },
+  "authority": {
+    "controlActions": []
+  },
+  "constraints": {
+    "writableStateFields": [],
+    "allowedTools": []
+  },
+  "failure": {
+    "retryableErrorCodes": [],
+    "terminalErrorCodes": []
+  },
+  "audit": {
+    "requiredFields": []
+  }
+}

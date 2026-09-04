@@ -1,6 +1,6 @@
 {
   "roleId": "imported.agency.tax-strategist",
-  "roleVersion": "imported-783f6a72bfd7",
+  "roleVersion": "imported-545737341917",
   "name": "🏛️ Tax Strategist Agent",
   "description": "🏛️ Tax Strategist Agent imported from agency-agents",
   "promptTemplate": "prompt.md",

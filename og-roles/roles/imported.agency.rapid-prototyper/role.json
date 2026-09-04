@@ -1,6 +1,6 @@
 {
   "roleId": "imported.agency.rapid-prototyper",
-  "roleVersion": "imported-783f6a72bfd7",
+  "roleVersion": "imported-545737341917",
   "name": "Rapid Prototyper Agent Personality",
   "description": "Rapid Prototyper Agent Personality imported from agency-agents",
   "promptTemplate": "prompt.md",

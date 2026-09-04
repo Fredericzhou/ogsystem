@@ -1,6 +1,6 @@
 {
   "roleId": "imported.agency.creative-strategist",
-  "roleVersion": "imported-783f6a72bfd7",
+  "roleVersion": "imported-545737341917",
   "name": "Paid Media Ad Creative Strategist Agent",
   "description": "Paid Media Ad Creative Strategist Agent imported from agency-agents",
   "promptTemplate": "prompt.md",

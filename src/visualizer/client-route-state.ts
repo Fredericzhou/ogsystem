@@ -2,6 +2,37 @@ import type { GraphReadingMode } from "./studio-contracts.js";
 
 type GraphReadingChannel = "normal" | "error" | "loop" | "join" | "feedback";
 
+export type GraphViewport = {
+  x: number;
+  y: number;
+  zoom: number;
+};
+
+export function normalizeGraphViewport(value: Partial<Record<keyof GraphViewport, unknown>> | null | undefined): GraphViewport | undefined {
+  if (!value) {
+    return undefined;
+  }
+  const x = Number(value.x);
+  const y = Number(value.y);
+  const zoom = Number(value.zoom);
+  if (
+    !Number.isFinite(x) ||
+    !Number.isFinite(y) ||
+    !Number.isFinite(zoom) ||
+    Math.abs(x) > 100000 ||
+    Math.abs(y) > 100000 ||
+    zoom < 0.25 ||
+    zoom > 2.5
+  ) {
+    return undefined;
+  }
+  return {
+    x: Math.round(x * 10) / 10,
+    y: Math.round(y * 10) / 10,
+    zoom: Math.round(zoom * 1000) / 1000
+  };
+}
+
 export type RouteState = {
   view: string;
   lifecycle: string;
@@ -14,6 +45,7 @@ export type RouteState = {
   graphRoleId: string;
   graphFlowKey: string;
   graphChannel: GraphReadingChannel | "";
+  graphViewport?: GraphViewport;
   conversationMode: boolean;
   timelineRoleId: string;
   timelineType: string;
@@ -36,6 +68,11 @@ export function readRouteStateFromSearch(search: string): RouteState {
     ? value as RouteState["timelineChannel"]
     : "";
   const params = new URLSearchParams(search.startsWith("?") ? search.slice(1) : search);
+  const graphViewport = normalizeGraphViewport({
+    x: params.get("graphX"),
+    y: params.get("graphY"),
+    zoom: params.get("graphZoom")
+  });
   return {
     view: params.get("view") || "",
     lifecycle: params.get("lifecycle") || "",
@@ -48,6 +85,7 @@ export function readRouteStateFromSearch(search: string): RouteState {
     graphRoleId: bounded(params.get("graphRoleId")),
     graphFlowKey: bounded(params.get("graphFlowKey")),
     graphChannel: channel(params.get("graphChannel")),
+    ...(graphViewport ? { graphViewport } : {}),
     conversationMode: params.get("timelineView") === "conversation",
     timelineRoleId: bounded(params.get("timelineRoleId")),
     timelineType: bounded(params.get("timelineType")),
@@ -109,6 +147,7 @@ export function buildRouteSearch(args: {
   graphRoleId?: string;
   graphFlowKey?: string;
   graphChannel?: GraphReadingChannel | "";
+  graphViewport?: GraphViewport;
   conversationMode?: boolean;
   timelineRoleId?: string;
   timelineType?: string;
@@ -128,6 +167,7 @@ export function buildRouteSearch(args: {
   const timelineChannel = (value: RouteState["timelineChannel"] | undefined): RouteState["timelineChannel"] => ["main", "error", "loop", "join", "feedback"].includes(value ?? "")
     ? value as RouteState["timelineChannel"]
     : "";
+  const graphViewport = normalizeGraphViewport(args.graphViewport);
   const params = new URLSearchParams();
   let lifecycle = args.lifecycle || "";
   switch (lifecycle) {
@@ -191,5 +231,11 @@ export function buildRouteSearch(args: {
   if (flowKey) params.set("graphFlowKey", flowKey);
   const readingChannel = channel(args.graphChannel);
   if (readingChannel) params.set("graphChannel", readingChannel);
+  const includeGraphViewport = lifecycle === "design" || lifecycle === "run";
+  if (includeGraphViewport && graphViewport) {
+    params.set("graphX", String(graphViewport.x));
+    params.set("graphY", String(graphViewport.y));
+    params.set("graphZoom", String(graphViewport.zoom));
+  }
   return params.toString();
 }

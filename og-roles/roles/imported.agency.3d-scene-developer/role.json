@@ -1,0 +1,47 @@
+{
+  "roleId": "imported.agency.3d-scene-developer",
+  "roleVersion": "imported-545737341917",
+  "name": "3DSceneDeveloper Agent Personality",
+  "description": "3DSceneDeveloper Agent Personality imported from agency-agents",
+  "promptTemplate": "prompt.md",
+  "outputSchema": "output.schema.json",
+  "tags": [
+    "imported",
+    "agency-agents",
+    "gis",
+    "3d-scene-developer"
+  ],
+  "contractVersion": 1,
+  "purpose": "3DSceneDeveloper Agent Personality imported from agency-agents",
+  "responsibility": {
+    "kind": "atomic",
+    "owns": [],
+    "contributes": [],
+    "doesNotOwn": []
+  },
+  "inputs": {
+    "preconditions": []
+  },
+  "outputs": {
+    "events": [
+      "BLOCKED",
+      "DONE",
+      "NEEDS_CLARIFICATION"
+    ],
+    "postconditions": []
+  },
+  "authority": {
+    "controlActions": []
+  },
+  "constraints": {
+    "writableStateFields": [],
+    "allowedTools": []
+  },
+  "failure": {
+    "retryableErrorCodes": [],
+    "terminalErrorCodes": []
+  },
+  "audit": {
+    "requiredFields": []
+  }
+}

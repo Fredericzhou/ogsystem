@@ -1,6 +1,6 @@
 {
   "roleId": "imported.agency.jira-workflow-steward",
-  "roleVersion": "imported-783f6a72bfd7",
+  "roleVersion": "imported-545737341917",
   "name": "Jira Workflow Steward Agent",
   "description": "Jira Workflow Steward Agent imported from agency-agents",
   "promptTemplate": "prompt.md",

@@ -1,6 +1,6 @@
 {
   "roleId": "imported.agency.voice-ai-integration-engineer",
-  "roleVersion": "imported-783f6a72bfd7",
+  "roleVersion": "imported-545737341917",
   "name": "🎙️ Voice AI Integration Engineer Agent",
   "description": "🎙️ Voice AI Integration Engineer Agent imported from agency-agents",
   "promptTemplate": "prompt.md",

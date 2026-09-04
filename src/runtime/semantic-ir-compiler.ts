@@ -1,3 +1,4 @@
+import { basename } from "node:path";
 import type { SystemDefinition } from "./types.js";
 import type { LoadedRolePackage } from "./types.js";
 import type { OgsSpecificationSnapshot } from "./ogs-spec-loader.js";
@@ -22,8 +23,14 @@ function numberValue(value: unknown, path: string): number {
   return value as number;
 }
 
-function sourceByBasename(snapshot: OgsSpecificationSnapshot, basename: string): unknown | undefined {
-  return Object.entries(snapshot.sources).find(([path]) => path.endsWith("/" + basename))?.[1].value;
+function sourceByBasename(snapshot: OgsSpecificationSnapshot, fileName: string): unknown | undefined {
+  return Object.entries(snapshot.sources).find(([path]) => basename(path) === fileName)?.[1].value;
+}
+
+function sourceMatchesRef(path: string, ref: string): boolean {
+  const sourcePath = path.replaceAll("\\", "/");
+  const reference = ref.replaceAll("\\", "/").replace(/^\.\//, "");
+  return sourcePath === reference || sourcePath.endsWith("/" + reference);
 }
 
 function compileLoops(raw: unknown): SemanticIRLoopScope[] {
@@ -98,7 +105,9 @@ function compileEvents(raw: unknown, snapshot: OgsSpecificationSnapshot): Semant
     let payloadSchema: unknown;
     if (schemaRef !== undefined) {
       if (typeof schemaRef !== "string" || !schemaRef) throw new Error(`[IR_CONTRACT_INVALID] events.${eventType}.payload.schema must be a string`);
-      payloadSchema = Object.entries(snapshot.sources).find(([path]) => path.endsWith("/" + schemaRef) || path.endsWith("/" + String(schemaRef).split("/").at(-1)))?.[1].value;
+      payloadSchema = Object.entries(snapshot.sources).find(([path]) =>
+        sourceMatchesRef(path, schemaRef) || basename(path) === basename(schemaRef)
+      )?.[1].value;
       if (payloadSchema === undefined) throw new Error(`[IR_CONTRACT_INVALID] Event payload schema not found: ${schemaRef}`);
     }
     const writable = event.writable_state_fields ?? event.writableStateFields;
@@ -140,9 +149,7 @@ function compileSubgraphs(raw: unknown, snapshot: OgsSpecificationSnapshot): Sub
   const compiled = entries.map(([id, value], index) => {
     const source = record(value, `semantics.subgraphs[${index}]`);
     const spec = compileSubgraphSpec({ ...(id ? { id } : {}), ...source });
-    const sourceExists = Object.keys(snapshot.sources).some((path) =>
-      path === spec.source || path.endsWith("/" + spec.source)
-    );
+    const sourceExists = Object.keys(snapshot.sources).some((path) => sourceMatchesRef(path, spec.source));
     if (!sourceExists) throw new Error(`[IR_UNKNOWN_REFERENCE] Subgraph source not found: ${spec.source}`);
     if (namespaces.has(spec.namespace) || checkpoints.has(spec.checkpointNamespace)) {
       throw new Error(`[IR_SUBGRAPH_INVALID] Subgraph namespaces must be unique: ${spec.id}`);
@@ -177,8 +184,8 @@ function compileComposites(raw: unknown, snapshot: OgsSpecificationSnapshot): Co
     if (readStateFields?.length || writeStateFields?.length) throw new Error(`[IR_COMPOSITE_INVALID] Cross-System state access requires an explicit parent/child state contract and is not available in this release`);
     if (readStateFields) spec.readStateFields = [...readStateFields];
     if (writeStateFields) spec.writeStateFields = [...writeStateFields];
-    if (!Object.keys(snapshot.sources).some((path) => path.endsWith("/" + spec.nestedSystemRef) || path === spec.nestedSystemRef)) throw new Error(`[IR_UNKNOWN_REFERENCE] Nested system not found: ${spec.nestedSystemRef}`);
-    const hasSource = (ref: string) => Object.keys(snapshot.sources).some((path) => path.endsWith("/" + ref) || path === ref);
+    if (!Object.keys(snapshot.sources).some((path) => sourceMatchesRef(path, spec.nestedSystemRef))) throw new Error(`[IR_UNKNOWN_REFERENCE] Nested system not found: ${spec.nestedSystemRef}`);
+    const hasSource = (ref: string) => Object.keys(snapshot.sources).some((path) => sourceMatchesRef(path, ref));
     if (!hasSource(spec.inputContract)) throw new Error(`[IR_UNKNOWN_REFERENCE] Composite input contract not found: ${spec.inputContract}`);
     if (!hasSource(spec.outputContract)) throw new Error(`[IR_UNKNOWN_REFERENCE] Composite output contract not found: ${spec.outputContract}`);
     if (stateNamespaces.has(spec.stateNamespace) || checkpointNamespaces.has(spec.checkpointNamespace)) throw new Error(`[IR_COMPOSITE_INVALID] Composite namespaces must be unique`);
@@ -188,7 +195,7 @@ function compileComposites(raw: unknown, snapshot: OgsSpecificationSnapshot): Co
 }
 
 function sourcePathForRef(snapshot: OgsSpecificationSnapshot, ref: string): string | undefined {
-  return Object.keys(snapshot.sources).find((path) => path === ref || path.endsWith("/" + ref));
+  return Object.keys(snapshot.sources).find((path) => sourceMatchesRef(path, ref));
 }
 
 function compositeRefsFromSource(value: unknown): string[] {

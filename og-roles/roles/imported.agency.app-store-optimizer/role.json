@@ -1,6 +1,6 @@
 {
   "roleId": "imported.agency.app-store-optimizer",
-  "roleVersion": "imported-783f6a72bfd7",
+  "roleVersion": "imported-545737341917",
   "name": "App Store Optimizer Agent Personality",
   "description": "App Store Optimizer Agent Personality imported from agency-agents",
   "promptTemplate": "prompt.md",

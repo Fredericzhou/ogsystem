@@ -1,6 +1,6 @@
 {
   "roleId": "imported.agency.accounts-payable-agent",
-  "roleVersion": "imported-783f6a72bfd7",
+  "roleVersion": "imported-545737341917",
   "name": "Accounts Payable Agent Personality",
   "description": "Accounts Payable Agent Personality imported from agency-agents",
   "promptTemplate": "prompt.md",

@@ -1,6 +1,6 @@
 {
   "roleId": "imported.agency.china-market-localization-strategist",
-  "roleVersion": "imported-783f6a72bfd7",
+  "roleVersion": "imported-545737341917",
   "name": "China Market Localization Strategist",
   "description": "China Market Localization Strategist imported from agency-agents",
   "promptTemplate": "prompt.md",

@@ -1,6 +1,6 @@
 {
   "roleId": "imported.agency.livestream-commerce-coach",
-  "roleVersion": "imported-783f6a72bfd7",
+  "roleVersion": "imported-545737341917",
   "name": "Marketing Livestream Commerce Coach",
   "description": "Marketing Livestream Commerce Coach imported from agency-agents",
   "promptTemplate": "prompt.md",

@@ -1,0 +1,47 @@
+{
+  "roleId": "imported.agency.sovereign-health-systems-agent",
+  "roleVersion": "imported-545737341917",
+  "name": "Sovereign Health Systems Agent",
+  "description": "Sovereign Health Systems Agent imported from agency-agents",
+  "promptTemplate": "prompt.md",
+  "outputSchema": "output.schema.json",
+  "tags": [
+    "imported",
+    "agency-agents",
+    "healthcare",
+    "sovereign-health-systems-agent"
+  ],
+  "contractVersion": 1,
+  "purpose": "Sovereign Health Systems Agent imported from agency-agents",
+  "responsibility": {
+    "kind": "atomic",
+    "owns": [],
+    "contributes": [],
+    "doesNotOwn": []
+  },
+  "inputs": {
+    "preconditions": []
+  },
+  "outputs": {
+    "events": [
+      "BLOCKED",
+      "DONE",
+      "NEEDS_CLARIFICATION"
+    ],
+    "postconditions": []
+  },
+  "authority": {
+    "controlActions": []
+  },
+  "constraints": {
+    "writableStateFields": [],
+    "allowedTools": []
+  },
+  "failure": {
+    "retryableErrorCodes": [],
+    "terminalErrorCodes": []
+  },
+  "audit": {
+    "requiredFields": []
+  }
+}

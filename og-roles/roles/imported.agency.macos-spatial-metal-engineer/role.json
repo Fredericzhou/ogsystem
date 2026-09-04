@@ -1,6 +1,6 @@
 {
   "roleId": "imported.agency.macos-spatial-metal-engineer",
-  "roleVersion": "imported-783f6a72bfd7",
+  "roleVersion": "imported-545737341917",
   "name": "macOS Spatial/Metal Engineer Agent Personality",
   "description": "macOS Spatial/Metal Engineer Agent Personality imported from agency-agents",
   "promptTemplate": "prompt.md",

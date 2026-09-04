@@ -1,6 +1,6 @@
 {
   "roleId": "imported.agency.technical-writer",
-  "roleVersion": "imported-783f6a72bfd7",
+  "roleVersion": "imported-545737341917",
   "name": "Technical Writer Agent",
   "description": "Technical Writer Agent imported from agency-agents",
   "promptTemplate": "prompt.md",

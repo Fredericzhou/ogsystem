@@ -1,6 +1,6 @@
 {
   "roleId": "imported.agency.workflow-architect",
-  "roleVersion": "imported-783f6a72bfd7",
+  "roleVersion": "imported-545737341917",
   "name": "Workflow Architect Agent Personality",
   "description": "Workflow Architect Agent Personality imported from agency-agents",
   "promptTemplate": "prompt.md",

@@ -1,6 +1,6 @@
 {
   "roleId": "imported.agency.cms-developer",
-  "roleVersion": "imported-783f6a72bfd7",
+  "roleVersion": "imported-545737341917",
   "name": "🧱 CMS Developer",
   "description": "🧱 CMS Developer imported from agency-agents",
   "promptTemplate": "prompt.md",

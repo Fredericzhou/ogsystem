@@ -1,8 +1,8 @@
 {
   "roleId": "imported.agency.salesforce-architect",
-  "roleVersion": "imported-783f6a72bfd7",
-  "name": "🧠 Your Identity & Memory",
-  "description": "🧠 Your Identity & Memory imported from agency-agents",
+  "roleVersion": "imported-545737341917",
+  "name": "Salesforce Architect",
+  "description": "Salesforce Architect imported from agency-agents",
   "promptTemplate": "prompt.md",
   "outputSchema": "output.schema.json",
   "tags": [
@@ -12,7 +12,7 @@
     "salesforce-architect"
   ],
   "contractVersion": 1,
-  "purpose": "🧠 Your Identity & Memory imported from agency-agents",
+  "purpose": "Salesforce Architect imported from agency-agents",
   "responsibility": {
     "kind": "atomic",
     "owns": [],

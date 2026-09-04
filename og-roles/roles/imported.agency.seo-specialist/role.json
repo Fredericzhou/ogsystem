@@ -1,6 +1,6 @@
 {
   "roleId": "imported.agency.seo-specialist",
-  "roleVersion": "imported-783f6a72bfd7",
+  "roleVersion": "imported-545737341917",
   "name": "Marketing SEO Specialist",
   "description": "Marketing SEO Specialist imported from agency-agents",
   "promptTemplate": "prompt.md",

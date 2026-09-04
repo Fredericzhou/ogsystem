@@ -1,0 +1,47 @@
+{
+  "roleId": "imported.agency.operations-manager",
+  "roleVersion": "imported-545737341917",
+  "name": "⚙️ Operations Manager Agent",
+  "description": "⚙️ Operations Manager Agent imported from agency-agents",
+  "promptTemplate": "prompt.md",
+  "outputSchema": "output.schema.json",
+  "tags": [
+    "imported",
+    "agency-agents",
+    "specialized",
+    "operations-manager"
+  ],
+  "contractVersion": 1,
+  "purpose": "⚙️ Operations Manager Agent imported from agency-agents",
+  "responsibility": {
+    "kind": "atomic",
+    "owns": [],
+    "contributes": [],
+    "doesNotOwn": []
+  },
+  "inputs": {
+    "preconditions": []
+  },
+  "outputs": {
+    "events": [
+      "BLOCKED",
+      "DONE",
+      "NEEDS_CLARIFICATION"
+    ],
+    "postconditions": []
+  },
+  "authority": {
+    "controlActions": []
+  },
+  "constraints": {
+    "writableStateFields": [],
+    "allowedTools": []
+  },
+  "failure": {
+    "retryableErrorCodes": [],
+    "terminalErrorCodes": []
+  },
+  "audit": {
+    "requiredFields": []
+  }
+}

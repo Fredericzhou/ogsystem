@@ -1,6 +1,6 @@
 {
   "roleId": "imported.agency.private-domain-operator",
-  "roleVersion": "imported-783f6a72bfd7",
+  "roleVersion": "imported-545737341917",
   "name": "Marketing Private Domain Operator",
   "description": "Marketing Private Domain Operator imported from agency-agents",
   "promptTemplate": "prompt.md",

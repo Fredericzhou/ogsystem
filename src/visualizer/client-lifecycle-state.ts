@@ -139,6 +139,7 @@ export function createOperateStateSlice() {
     graphReadingRoleId: "",
     graphReadingFlowKey: "",
     graphReadingChannel: "",
+    graphViewport: null,
     operateTab: "overview",
     sidebarOpen: false,
     runs: [],

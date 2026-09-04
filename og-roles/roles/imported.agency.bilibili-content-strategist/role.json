@@ -1,6 +1,6 @@
 {
   "roleId": "imported.agency.bilibili-content-strategist",
-  "roleVersion": "imported-783f6a72bfd7",
+  "roleVersion": "imported-545737341917",
   "name": "Marketing Bilibili Content Strategist",
   "description": "Marketing Bilibili Content Strategist imported from agency-agents",
   "promptTemplate": "prompt.md",

@@ -1,6 +1,6 @@
 {
   "roleId": "imported.agency.visionos-spatial-engineer",
-  "roleVersion": "imported-783f6a72bfd7",
+  "roleVersion": "imported-545737341917",
   "name": "visionOS Spatial Engineer",
   "description": "visionOS Spatial Engineer imported from agency-agents",
   "promptTemplate": "prompt.md",

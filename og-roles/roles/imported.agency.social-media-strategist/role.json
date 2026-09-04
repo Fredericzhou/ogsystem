@@ -1,6 +1,6 @@
 {
   "roleId": "imported.agency.social-media-strategist",
-  "roleVersion": "imported-783f6a72bfd7",
+  "roleVersion": "imported-545737341917",
   "name": "Social Media Strategist Agent",
   "description": "Social Media Strategist Agent imported from agency-agents",
   "promptTemplate": "prompt.md",

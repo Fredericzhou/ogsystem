@@ -1,0 +1,47 @@
+{
+  "roleId": "imported.agency.data-privacy-officer",
+  "roleVersion": "imported-545737341917",
+  "name": "🔐 Data Privacy Officer Agent",
+  "description": "🔐 Data Privacy Officer Agent imported from agency-agents",
+  "promptTemplate": "prompt.md",
+  "outputSchema": "output.schema.json",
+  "tags": [
+    "imported",
+    "agency-agents",
+    "specialized",
+    "data-privacy-officer"
+  ],
+  "contractVersion": 1,
+  "purpose": "🔐 Data Privacy Officer Agent imported from agency-agents",
+  "responsibility": {
+    "kind": "atomic",
+    "owns": [],
+    "contributes": [],
+    "doesNotOwn": []
+  },
+  "inputs": {
+    "preconditions": []
+  },
+  "outputs": {
+    "events": [
+      "BLOCKED",
+      "DONE",
+      "NEEDS_CLARIFICATION"
+    ],
+    "postconditions": []
+  },
+  "authority": {
+    "controlActions": []
+  },
+  "constraints": {
+    "writableStateFields": [],
+    "allowedTools": []
+  },
+  "failure": {
+    "retryableErrorCodes": [],
+    "terminalErrorCodes": []
+  },
+  "audit": {
+    "requiredFields": []
+  }
+}

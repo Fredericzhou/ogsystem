@@ -1,6 +1,6 @@
 {
   "roleId": "imported.agency.government-digital-presales-consultant",
-  "roleVersion": "imported-783f6a72bfd7",
+  "roleVersion": "imported-545737341917",
   "name": "Government Digital Presales Consultant",
   "description": "Government Digital Presales Consultant imported from agency-agents",
   "promptTemplate": "prompt.md",

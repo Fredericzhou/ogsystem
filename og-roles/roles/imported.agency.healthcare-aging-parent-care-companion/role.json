@@ -1,0 +1,47 @@
+{
+  "roleId": "imported.agency.healthcare-aging-parent-care-companion",
+  "roleVersion": "imported-545737341917",
+  "name": "🧡 Aging Parent Care Companion",
+  "description": "🧡 Aging Parent Care Companion imported from agency-agents",
+  "promptTemplate": "prompt.md",
+  "outputSchema": "output.schema.json",
+  "tags": [
+    "imported",
+    "agency-agents",
+    "specialized",
+    "healthcare-aging-parent-care-companion"
+  ],
+  "contractVersion": 1,
+  "purpose": "🧡 Aging Parent Care Companion imported from agency-agents",
+  "responsibility": {
+    "kind": "atomic",
+    "owns": [],
+    "contributes": [],
+    "doesNotOwn": []
+  },
+  "inputs": {
+    "preconditions": []
+  },
+  "outputs": {
+    "events": [
+      "BLOCKED",
+      "DONE",
+      "NEEDS_CLARIFICATION"
+    ],
+    "postconditions": []
+  },
+  "authority": {
+    "controlActions": []
+  },
+  "constraints": {
+    "writableStateFields": [],
+    "allowedTools": []
+  },
+  "failure": {
+    "retryableErrorCodes": [],
+    "terminalErrorCodes": []
+  },
+  "audit": {
+    "requiredFields": []
+  }
+}

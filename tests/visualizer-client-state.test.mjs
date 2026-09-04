@@ -136,6 +136,7 @@ import {
 import {
   renderStudioGraphCanvas,
   renderStudioBridgePanel,
+  renderStudioRoleSemanticSummary,
   sortStudioBridgeFlowsByTopology,
   sortStudioBridgeRolesTopologically
 } from "../dist/visualizer/client-renderers.js";
@@ -308,6 +309,35 @@ test("client route state helpers parse and serialize lifecycle query state", () 
       timelineChannel: ""
     }
   );
+});
+
+test("graph viewport route state is bounded and rounded", () => {
+  const search = buildRouteSearch({
+    lifecycle: "run",
+    projectHome: false,
+    selectedRunId: "run-1",
+    selectedReviewId: "",
+    selectedLogRoleId: "",
+    logTail: "",
+    logSince: "",
+    graphViewport: { x: 12.345, y: -67.89, zoom: 1.23456 }
+  });
+  assert.equal(search, "lifecycle=run&runId=run-1&graphX=12.3&graphY=-67.9&graphZoom=1.235");
+  assert.deepEqual(readRouteStateFromSearch(search).graphViewport, { x: 12.3, y: -67.9, zoom: 1.235 });
+  assert.equal(
+    buildRouteSearch({
+      lifecycle: "design",
+      projectHome: false,
+      selectedRunId: "",
+      selectedReviewId: "",
+      selectedLogRoleId: "",
+      logTail: "",
+      logSince: "",
+      graphViewport: { x: 100001, y: 0, zoom: 1 }
+    }),
+    "lifecycle=design"
+  );
+  assert.equal(readRouteStateFromSearch("?lifecycle=run&graphX=0&graphY=0&graphZoom=9").graphViewport, undefined);
 });
 
 test("client route state helpers normalize Design Run Release lifecycle aliases", () => {
@@ -1196,6 +1226,30 @@ test("client Studio Bridge topology sorting keeps stable role and flow order", (
     "writer:DONE:qa",
     "qa:APPROVE:publisher"
   ]);
+});
+
+test("Studio role summary makes responsibility and aggregate runtime explicit", () => {
+  const html = renderStudioRoleSemanticSummary({
+    role: {
+      roleId: "review",
+      runtime: {
+        status: "waiting_review",
+        activeBranchCount: 1,
+        completedBranchCount: 2,
+        waitingReviewCount: 1,
+        loopIteration: 3,
+        joinWaitingSummary: { readyCount: 1, expectedCount: 2, missingCount: 1 },
+        lastErrorCode: "E_REVIEW"
+      }
+    },
+    t
+  });
+  assert.match(html, /responsibility seat/);
+  assert.match(html, /role aggregate/);
+  assert.match(html, /active branches 1/);
+  assert.match(html, /completed branches 2/);
+  assert.match(html, /join sources 1\/2, missing 1/);
+  assert.match(html, /E_REVIEW/);
 });
 
 test("client run selection helpers keep review fallback and live state deterministic", () => {

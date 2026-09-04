@@ -1,0 +1,13 @@
+{
+  "version": 1,
+  "sourceType": "agency-agents",
+  "sourceId": "agency-agents",
+  "importedAt": "2026-09-04T16:58:05.705Z",
+  "roleId": "imported.agency.resume-tailor",
+  "upstream": {
+    "path": "specialized/resume-tailor.md",
+    "commit": "54573734191790031cfe294c98d2a6b002136956",
+    "branch": "HEAD",
+    "remote": "git@github.com:msitarzewski/agency-agents.git"
+  }
+}

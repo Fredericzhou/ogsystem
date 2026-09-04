@@ -1,6 +1,6 @@
 {
   "roleId": "imported.agency.legal-client-intake",
-  "roleVersion": "imported-783f6a72bfd7",
+  "roleVersion": "imported-545737341917",
   "name": "📋 Legal Client Intake Agent",
   "description": "📋 Legal Client Intake Agent imported from agency-agents",
   "promptTemplate": "prompt.md",

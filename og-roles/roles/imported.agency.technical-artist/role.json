@@ -1,6 +1,6 @@
 {
   "roleId": "imported.agency.technical-artist",
-  "roleVersion": "imported-783f6a72bfd7",
+  "roleVersion": "imported-545737341917",
   "name": "Technical Artist Agent Personality",
   "description": "Technical Artist Agent Personality imported from agency-agents",
   "promptTemplate": "prompt.md",

@@ -1,6 +1,6 @@
 {
   "roleId": "imported.agency.filament-optimization-specialist",
-  "roleVersion": "imported-783f6a72bfd7",
+  "roleVersion": "imported-545737341917",
   "name": "Agent Personality",
   "description": "Agent Personality imported from agency-agents",
   "promptTemplate": "prompt.md",

@@ -122,6 +122,8 @@ export type StudioGraphBridgeOptions = {
   onSelectRole?: (roleId: string) => void;
   onSelectFlow?: (flowKey: string) => void;
   onClearSelection?: () => void;
+  viewport?: StudioCanvasSnapshot["viewport"];
+  onViewportChange?: (viewport: NonNullable<StudioCanvasSnapshot["viewport"]>) => void;
   onApplyCanvas?: (canvas: StudioCanvasSnapshot) => void | Promise<void>;
   onApplyCommand?: (result: {
     authoring: StudioAuthoringDocument;
@@ -476,7 +478,7 @@ export class StudioGraphIsland {
       }
       if (!autoLayoutApplied) {
         this.restoreViewport(
-          viewModel.viewport ?? options.authoring?.layout?.viewport ?? options.canvas?.viewport,
+          options.viewport ?? viewModel.viewport ?? options.authoring?.layout?.viewport ?? options.canvas?.viewport,
           !this.hasRenderedProjection
         );
       } else if (!this.hasRenderedProjection) {
@@ -610,9 +612,11 @@ export class StudioGraphIsland {
     });
     graph.on("scale", () => {
       this.renderMinimap();
+      this.emitViewportChange();
     });
     graph.on("translate", () => {
       this.renderMinimap();
+      this.emitViewportChange();
     });
     return graph;
   }
@@ -1456,6 +1460,23 @@ export class StudioGraphIsland {
     if (firstRender && !viewport) {
       this.schedulePendingInitialFit();
     }
+  }
+
+  private emitViewportChange(): void {
+    if (this.applying || !this.options.onViewportChange) {
+      return;
+    }
+    const viewport = {
+      x: this.graph.translate().tx,
+      y: this.graph.translate().ty,
+      zoom: this.graph.zoom()
+    };
+    const signature = `${viewport.x}:${viewport.y}:${viewport.zoom}`;
+    if (signature === this.lastViewportSignature) {
+      return;
+    }
+    this.lastViewportSignature = signature;
+    this.options.onViewportChange(viewport);
   }
 
   private selectedRoleId(): string {

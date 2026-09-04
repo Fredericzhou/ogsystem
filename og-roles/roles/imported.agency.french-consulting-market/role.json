@@ -1,8 +1,8 @@
 {
   "roleId": "imported.agency.french-consulting-market",
-  "roleVersion": "imported-783f6a72bfd7",
-  "name": "🧠 Your Identity & Memory",
-  "description": "🧠 Your Identity & Memory imported from agency-agents",
+  "roleVersion": "imported-545737341917",
+  "name": "French Consulting Market Navigator",
+  "description": "French Consulting Market Navigator imported from agency-agents",
   "promptTemplate": "prompt.md",
   "outputSchema": "output.schema.json",
   "tags": [
@@ -12,7 +12,7 @@
     "french-consulting-market"
   ],
   "contractVersion": 1,
-  "purpose": "🧠 Your Identity & Memory imported from agency-agents",
+  "purpose": "French Consulting Market Navigator imported from agency-agents",
   "responsibility": {
     "kind": "atomic",
     "owns": [],

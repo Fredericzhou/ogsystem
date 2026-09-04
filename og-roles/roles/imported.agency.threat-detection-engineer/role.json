@@ -1,6 +1,6 @@
 {
   "roleId": "imported.agency.threat-detection-engineer",
-  "roleVersion": "imported-783f6a72bfd7",
+  "roleVersion": "imported-545737341917",
   "name": "Threat Detection Engineer Agent",
   "description": "Threat Detection Engineer Agent imported from agency-agents",
   "promptTemplate": "prompt.md",
@@ -8,7 +8,7 @@
   "tags": [
     "imported",
     "agency-agents",
-    "engineering",
+    "security",
     "threat-detection-engineer"
   ],
   "contractVersion": 1,

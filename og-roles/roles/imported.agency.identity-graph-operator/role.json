@@ -1,6 +1,6 @@
 {
   "roleId": "imported.agency.identity-graph-operator",
-  "roleVersion": "imported-783f6a72bfd7",
+  "roleVersion": "imported-545737341917",
   "name": "Identity Graph Operator",
   "description": "Identity Graph Operator imported from agency-agents",
   "promptTemplate": "prompt.md",

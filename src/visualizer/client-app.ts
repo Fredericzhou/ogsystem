@@ -31,6 +31,7 @@ import {
   renderRunStatePanel,
   renderStudioGraphCanvas,
   renderStudioBridgePanel,
+  renderStudioRoleSemanticSummary,
   renderStudioRoleConfigEditor,
   renderStudioExecutionConfigEditor,
   renderStudioFlowConfigEditor,
@@ -49,6 +50,7 @@ import {
 import {
   buildRouteSearch,
   normalizeLifecycleView,
+  normalizeGraphViewport,
   readRouteStateFromSearch,
   type RouteState
 } from "./client-route-state.js";
@@ -178,6 +180,7 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
     const STUDIO_INSPECTOR_WIDTH_STORAGE_KEY = "ogs.visualizer.studio.inspectorWidth";
     window.OGSVisualizerClient = window.OGSVisualizerClient || {};
     const readRouteStateFromSearch = ${readRouteStateFromSearch.toString()};
+    const normalizeGraphViewport = ${normalizeGraphViewport.toString()};
     const buildRouteSearch = ${buildRouteSearch.toString()};
     const listFromRecord = ${listFromRecord.toString()};
     const buildReleaseReadinessDecision = ${buildReleaseReadinessDecision.toString()};
@@ -276,6 +279,7 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
     const renderProjectReadinessPanel = ${renderProjectReadinessPanel.toString()};
     const renderReleaseGatePanel = ${renderReleaseGatePanel.toString()};
     const renderStudioBridgePanel = ${renderStudioBridgePanel.toString()};
+    const renderStudioRoleSemanticSummary = ${renderStudioRoleSemanticSummary.toString()};
     const renderRunStatePanel = ${renderRunStatePanel.toString()};
     const renderSuggestedNextChecksPanel = ${renderSuggestedNextChecksPanel.toString()};
     const studioRolePackageHasRequiredFileCoverage = ${studioRolePackageHasRequiredFileCoverage.toString()};
@@ -351,6 +355,7 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
     const resolvedLocale = resolveClientLocale();
     const state = createInitialVisualizerState(resolvedLocale);
     let studioCanvasSaveChain = Promise.resolve();
+    let graphViewportRouteTimer = null;
     function readStoredStudioInspectorWidth() {
       try {
         const raw = Number(window.localStorage.getItem(STUDIO_INSPECTOR_WIDTH_STORAGE_KEY));
@@ -768,6 +773,7 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
         graphRoleId: state.graphReadingRoleId,
         graphFlowKey: state.graphReadingFlowKey,
         graphChannel: state.graphReadingChannel,
+        graphViewport: state.graphViewport,
         conversationMode: state.conversationMode,
         timelineRoleId: state.timelineRoleId,
         timelineType: state.timelineType,
@@ -782,6 +788,23 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
       }
       const query = params.toString();
       window.history.replaceState(null, "", query ? "?" + query : window.location.pathname);
+    }
+
+    function updateGraphViewport(viewport) {
+      const normalized = normalizeGraphViewport(viewport);
+      if (!normalized) {
+        return;
+      }
+      const previous = state.graphViewport;
+      if (previous && previous.x === normalized.x && previous.y === normalized.y && previous.zoom === normalized.zoom) {
+        return;
+      }
+      state.graphViewport = normalized;
+      clearTimeout(graphViewportRouteTimer);
+      graphViewportRouteTimer = setTimeout(() => {
+        graphViewportRouteTimer = null;
+        writeRouteToLocation();
+      }, 120);
     }
 
     function isCurrentRunSelection(runId, requestId) {
@@ -1020,6 +1043,7 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
             }
             return {
               ...role,
+              runtime: runtimeNode?.runtime,
               badges: runtimeBadgesForRunNode({
                 status: runtimeNode?.runtime?.status,
                 loopIteration: runtimeNode?.runtime?.loopIteration,
@@ -3079,12 +3103,15 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
       if (activeTab === "selection" && selectionKind === "role") {
         ensureStudioRoleConfigEditor(selectedRoleIdValue);
         ensureStudioExecutionConfigEditor(selectedRoleIdValue);
+        const selectedRoleForSummary = (resolveStudioBridgeForDisplay()?.extracted?.roles || [])
+          .find((role) => String(role?.roleId || "") === selectedRoleIdValue) || { roleId: selectedRoleIdValue };
         const editorRoleId = rolePackageEditorRoleIdForSelectionDialog();
         const dirtyRoleId = String(state.studioRolePackageEditor?.roleId || "");
         const showDirtyRoleWarning = hasDirtyStudioRolePackageEditor() && dirtyRoleId && dirtyRoleId !== selectedRoleIdValue;
         const dirtyConfigRoleId = String(state.studioRoleConfigEditor?.roleId || "");
         const showDirtyConfigWarning = hasDirtyStudioRoleConfigEditor() && dirtyConfigRoleId && dirtyConfigRoleId !== selectedRoleIdValue;
         rolePackage.innerHTML = [
+          renderStudioRoleSemanticSummary({ role: selectedRoleForSummary, t }),
           showDirtyConfigWarning
             ? '<div class="event"><div class="event-top"><span>' + escapeText(t("common.attention", undefined, "attention")) + '</span><span>' + escapeText(t("common.changed", undefined, "changed")) + '</span></div><strong>' +
               escapeText(t("studio.roleConfigDirtySwitchBlocked", { roleId: dirtyConfigRoleId }, "Role config changes for {roleId} are unsaved. Save or revert before switching roles.")) +
@@ -4535,6 +4562,7 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
         validation: displayBridge?.validation || state.workbench?.validation || null,
         selectedRoleId: state.studioBridgeSelectedRoleId,
         selectedFlowKey: state.studioBridgeSelectedFlowKey,
+        viewport: state.graphViewport || undefined,
         editSelectionRequest: state.studioBridgeEditSelectionRequest,
         defaultAutoLayout: true,
         busy: Boolean(state.actionBusy),
@@ -4562,6 +4590,9 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
             ? state.studioWorkbenchSideTab
             : "structure";
           updateStudioBridgeSelection(false);
+        },
+        onViewportChange: (viewport) => {
+          updateGraphViewport(viewport);
         },
         onCommandFormStateChange: (formState) => {
           state.studioSelectionCommandFormOpen = Boolean(formState?.open);
@@ -4697,6 +4728,7 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
         validation: viewModel?.validation || { ok: true, diagnostics: [] },
         selectedRoleId: state.runGraphSelectedRoleId,
         selectedFlowKey: state.runGraphSelectedFlowKey,
+        viewport: state.graphViewport || undefined,
         busy: Boolean(state.actionBusy),
         readOnly: true,
         defaultAutoLayout: true,
@@ -4712,6 +4744,9 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
         onClearSelection: () => {
           state.runGraphSelectedRoleId = "";
           state.runGraphSelectedFlowKey = "";
+        },
+        onViewportChange: (viewport) => {
+          updateGraphViewport(viewport);
         },
         onToast: (tone, message) => {
           if (globalStatusDiagnosticsEl) {
@@ -7778,6 +7813,7 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
     state.graphReadingRoleId = initialRoute.graphRoleId;
     state.graphReadingFlowKey = initialRoute.graphFlowKey;
     state.graphReadingChannel = initialRoute.graphChannel;
+    state.graphViewport = initialRoute.graphViewport || null;
     state.conversationMode = initialRoute.conversationMode;
     state.timelineRoleId = initialRoute.timelineRoleId;
     state.timelineType = initialRoute.timelineType;
