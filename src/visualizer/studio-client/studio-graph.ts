@@ -277,7 +277,8 @@ export class StudioGraphIsland {
   private pendingInitialFitSizeSignature = "";
   private pendingInitialFitTimer: ReturnType<typeof setTimeout> | null = null;
   private layoutMode: StudioGraphLayoutMode = "flow";
-  private showTopologyOrder = false;
+  // Flow order is useful for reading a graph and should be visible on first render.
+  private showTopologyOrder = true;
   private currentLayoutProjection: LayoutProjection | null = null;
   private updateGeneration = 0;
   private readonly delegatedCommandFormSubmitListener = (event: Event) => this.handleDelegatedCommandFormSubmit(event);

@@ -583,6 +583,7 @@ test("Studio graph island exposes minimap, focus pulse, and quick open when moun
       });
     });
     await expect(page.locator("#studio-graph-direct-root .studio-graph-toolbar")).toBeVisible();
+    await expect(page.locator('#studio-graph-direct-root [data-studio-graph-action="topology-order"]')).toHaveAttribute("aria-pressed", "true");
     await expect(page.locator("#studio-graph-direct-root [data-cell-id=\"demo-analyst\"]")).toBeVisible();
     await expect(page.locator("#studio-graph-direct-root [data-studio-graph-minimap]")).toBeVisible();
     await expect(page.locator("#studio-graph-direct-root [data-minimap-role-id=\"demo-analyst\"]")).toBeVisible();
