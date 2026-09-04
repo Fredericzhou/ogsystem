@@ -93,7 +93,7 @@ export function renderStudioGraphViewModel(graph: Graph, viewModel: GraphViewMod
   const routingByEdgeId = new Map(projection.edges.map((edge) => [edge.id, projectionRouting(edge.routing)]));
   graph.batchUpdate("studio-projection", () => {
     const nextNodeIds = new Set(projectedViewModel.nodes.map((node) => node.id));
-    const sccGroups = buildSccGroups(projectedViewModel.nodes);
+    const sccGroups = buildSccGroups(projectedViewModel.nodes, graph);
     for (const group of sccGroups) nextNodeIds.add(group.id);
     const nextEdgeIds = new Set(viewModel.edges.map((edge) => edge.id));
 
@@ -139,6 +139,8 @@ type SccGroup = {
   y: number;
   width: number;
   height: number;
+  memberIds: string[];
+  padding: number;
   color: { fill: string; stroke: string; label: string };
 };
 
@@ -149,7 +151,7 @@ const SCC_COLORS = [
   { fill: "rgba(192, 132, 252, 0.075)", stroke: "rgba(192, 132, 252, 0.82)", label: "#e9d5ff" }
 ];
 
-function buildSccGroups(nodes: readonly GraphViewModelNode[]): SccGroup[] {
+function buildSccGroups(nodes: readonly GraphViewModelNode[], graph: Graph): SccGroup[] {
   const groups = new Map<string, GraphViewModelNode[]>();
   for (const node of nodes) {
     if (!node.topologyComponentId?.startsWith("SCC-")) continue;
@@ -161,6 +163,7 @@ function buildSccGroups(nodes: readonly GraphViewModelNode[]): SccGroup[] {
     const right = Math.max(...members.map((node) => node.layout.x + node.layout.width));
     const bottom = Math.max(...members.map((node) => node.layout.y + node.layout.height));
     const padding = 28;
+    const memberIds = members.map((node) => node.id).sort();
     return {
       id: `__ogs-scc-${label}`,
       label,
@@ -168,6 +171,8 @@ function buildSccGroups(nodes: readonly GraphViewModelNode[]): SccGroup[] {
       y: top - padding,
       width: right - left + padding * 2,
       height: bottom - top + padding * 2,
+      memberIds,
+      padding,
       color: SCC_COLORS[index % SCC_COLORS.length]
     };
   });
@@ -184,8 +189,8 @@ function sccGroupMetadata(group: SccGroup): Node.Metadata {
     shape: "rect",
     markup: [{ tagName: "rect", selector: "body" }, { tagName: "text", selector: "label" }],
     attrs: sccGroupAttrs(group),
-    data: { studioSccGroup: true },
-    interacting: false
+    data: { studioSccGroup: { memberIds: group.memberIds, padding: group.padding } },
+    interacting: true
   };
 }
 
@@ -197,9 +202,42 @@ function sccGroupAttrs(group: SccGroup): Node.Metadata["attrs"] {
 }
 
 function updateSccGroup(cell: Node, group: SccGroup): void {
+  cell.setData({ studioSccGroup: { memberIds: group.memberIds, padding: group.padding } });
   cell.position(group.x, group.y);
   cell.resize(group.width, group.height);
   cell.attr(sccGroupAttrs(group));
+}
+
+export function isStudioSccGroup(node: Node): boolean {
+  const data = node.getData() as { studioSccGroup?: unknown } | undefined;
+  return Boolean(data?.studioSccGroup);
+}
+
+/** Keeps each non-embedded SCC annotation aligned with the nodes it describes. */
+export function alignStudioSccGroups(graph: Graph): void {
+  for (const group of graph.getNodes().filter(isStudioSccGroup)) {
+    const data = group.getData() as { studioSccGroup?: { memberIds?: unknown; padding?: unknown } } | undefined;
+    const memberIds = Array.isArray(data?.studioSccGroup?.memberIds)
+      ? data.studioSccGroup.memberIds.filter((id): id is string => typeof id === "string")
+      : [];
+    const members = memberIds
+      .map((id) => graph.getCellById(id))
+      .filter((cell): cell is Node => Boolean(cell?.isNode() && !isStudioSccGroup(cell)));
+    if (!members.length) continue;
+    const padding = Number.isFinite(data?.studioSccGroup?.padding) ? Number(data!.studioSccGroup!.padding) : 28;
+    const bounds = members.reduce((result, member) => {
+      const position = member.getPosition();
+      const size = member.getSize();
+      return {
+        left: Math.min(result.left, position.x),
+        top: Math.min(result.top, position.y),
+        right: Math.max(result.right, position.x + size.width),
+        bottom: Math.max(result.bottom, position.y + size.height)
+      };
+    }, { left: Number.POSITIVE_INFINITY, top: Number.POSITIVE_INFINITY, right: Number.NEGATIVE_INFINITY, bottom: Number.NEGATIVE_INFINITY });
+    group.position(bounds.left - padding, bounds.top - padding);
+    group.resize(bounds.right - bounds.left + padding * 2, bounds.bottom - bounds.top + padding * 2);
+  }
 }
 
 function studioNodeMetadata(node: GraphViewModelNode): Node.Metadata {

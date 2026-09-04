@@ -30,7 +30,11 @@ import {
   deriveInverseCommand,
   type StudioAuthoringCommand
 } from "./studio-graph-commands.js";
-import { renderStudioGraphViewModel } from "./studio-graph-render.js";
+import {
+  alignStudioSccGroups,
+  isStudioSccGroup,
+  renderStudioGraphViewModel
+} from "./studio-graph-render.js";
 import { createElkLayoutProjection } from "./elk-layout-adapter.js";
 import {
   createStoredLayoutProjection,
@@ -798,11 +802,18 @@ export class StudioGraphIsland {
     this.graph.on("blank:mouseup", () => {
       this.schedulePendingEdgeCleanup();
     });
-    this.graph.on("node:moved", () => {
+    this.graph.on("node:moved", ({ node }) => {
       if (this.isReadOnly()) return;
+      if (isStudioSccGroup(node)) {
+        // SCC frames are independently draggable annotations. Moving one does
+        // not alter graph semantics or the positions of its member nodes.
+        this.renderMinimap();
+        return;
+      }
       if (this.commandForm?.kind === "add-edge") {
         this.closeCommandForm();
       }
+      alignStudioSccGroups(this.graph);
       this.scheduleSyncCanvas();
       this.renderMinimap();
     });

@@ -169,6 +169,9 @@ test("stored projection preserves positions while renderer stays library-indepen
   const renderer = await readFile(new URL("../src/visualizer/studio-client/studio-graph-render.ts", import.meta.url), "utf8");
   assert.doesNotMatch(renderer, /from ["']elkjs(?:\/|["'])/);
   assert.match(renderer, /renderStudioGraphViewModel\(graph: Graph, viewModel: GraphViewModel, projection: LayoutProjection\)/);
+  assert.match(renderer, /data: \{ studioSccGroup: \{ memberIds: group\.memberIds/);
+  assert.match(renderer, /interacting: true/);
+  assert.match(renderer, /export function alignStudioSccGroups\(graph: Graph\)/);
 });
 
 test("ELK is the only automatic layout engine", async () => {
