@@ -9,6 +9,7 @@ import {
   createStoredLayoutProjection,
   layoutDigest
 } from "../src/visualizer/studio-client/semantic-layout-projection.ts";
+import { topologyComponentIds } from "../src/visualizer/topology-order.ts";
 
 function node(id, x, y, structure = {}) {
   const boundary = id === "input" || id === "output";
@@ -126,6 +127,28 @@ test("ELK reserves exclusive terminal layers for input and output", async () => 
     assert.ok(business.every((item) => (axis === "x" ? item.x : item.y) > inputEnd));
     assert.ok(business.every((item) => (axis === "x" ? item.x + item.width : item.y + item.height) < outputStart));
   }
+});
+
+test("SCC topology separates independent cycles and merges mutually reachable nested cycles", () => {
+  const nodes = ["input", "a", "b", "c", "d", "e", "output"].map((id) => node(id, 0, 0));
+  const makeEdge = (source, target) => edge(`${source}-${target}`, source, target);
+  const independent = topologyComponentIds({
+    nodes,
+    edges: [makeEdge("a", "b"), makeEdge("b", "a"), makeEdge("c", "d"), makeEdge("d", "c")]
+  });
+  assert.equal(independent.get("a"), "SCC-1");
+  assert.equal(independent.get("b"), "SCC-1");
+  assert.equal(independent.get("c"), "SCC-2");
+  assert.equal(independent.get("d"), "SCC-2");
+  assert.equal(independent.has("input"), false);
+  assert.equal(independent.has("output"), false);
+
+  const nested = topologyComponentIds({
+    nodes,
+    edges: [makeEdge("a", "b"), makeEdge("b", "a"), makeEdge("b", "c"), makeEdge("c", "b")]
+  });
+  assert.equal(nested.get("a"), nested.get("b"));
+  assert.equal(nested.get("b"), nested.get("c"));
 });
 
 test("stacked loop routes use ELK's vertical geometry without a second router", async () => {

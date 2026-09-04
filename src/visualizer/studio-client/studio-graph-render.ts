@@ -139,8 +139,15 @@ type SccGroup = {
   y: number;
   width: number;
   height: number;
-  members: Array<{ x: number; y: number; width: number; height: number }>;
+  color: { fill: string; stroke: string; label: string };
 };
+
+const SCC_COLORS = [
+  { fill: "rgba(45, 212, 191, 0.075)", stroke: "rgba(45, 212, 191, 0.82)", label: "#99f6e4" },
+  { fill: "rgba(96, 165, 250, 0.075)", stroke: "rgba(96, 165, 250, 0.82)", label: "#bfdbfe" },
+  { fill: "rgba(251, 191, 36, 0.075)", stroke: "rgba(251, 191, 36, 0.82)", label: "#fde68a" },
+  { fill: "rgba(192, 132, 252, 0.075)", stroke: "rgba(192, 132, 252, 0.82)", label: "#e9d5ff" }
+];
 
 function buildSccGroups(nodes: readonly GraphViewModelNode[]): SccGroup[] {
   const groups = new Map<string, GraphViewModelNode[]>();
@@ -148,7 +155,7 @@ function buildSccGroups(nodes: readonly GraphViewModelNode[]): SccGroup[] {
     if (!node.topologyComponentId?.startsWith("SCC-")) continue;
     groups.set(node.topologyComponentId, [...(groups.get(node.topologyComponentId) ?? []), node]);
   }
-  return [...groups.entries()].map(([label, members]) => {
+  return [...groups.entries()].sort(([left], [right]) => left.localeCompare(right)).map(([label, members], index) => {
     const left = Math.min(...members.map((node) => node.layout.x));
     const top = Math.min(...members.map((node) => node.layout.y));
     const right = Math.max(...members.map((node) => node.layout.x + node.layout.width));
@@ -161,12 +168,7 @@ function buildSccGroups(nodes: readonly GraphViewModelNode[]): SccGroup[] {
       y: top - padding,
       width: right - left + padding * 2,
       height: bottom - top + padding * 2,
-      members: members.map((node) => ({
-        x: node.layout.x - left + padding - 8,
-        y: node.layout.y - top + padding - 8,
-        width: node.layout.width + 16,
-        height: node.layout.height + 16
-      }))
+      color: SCC_COLORS[index % SCC_COLORS.length]
     };
   });
 }
@@ -180,10 +182,7 @@ function sccGroupMetadata(group: SccGroup): Node.Metadata {
     height: group.height,
     zIndex: 0,
     shape: "rect",
-    markup: [
-      ...group.members.map((_, index) => ({ tagName: "rect", selector: `member-${index}` })),
-      { tagName: "text", selector: "label" }
-    ],
+    markup: [{ tagName: "rect", selector: "body" }, { tagName: "text", selector: "label" }],
     attrs: sccGroupAttrs(group),
     data: { studioSccGroup: true },
     interacting: false
@@ -191,31 +190,15 @@ function sccGroupMetadata(group: SccGroup): Node.Metadata {
 }
 
 function sccGroupAttrs(group: SccGroup): Node.Metadata["attrs"] {
-  const memberAttrs = Object.fromEntries(group.members.map((member, index) => [`member-${index}`, {
-    x: member.x,
-    y: member.y,
-    width: member.width,
-    height: member.height,
-    fill: "rgba(45, 212, 191, 0.075)",
-    stroke: "rgba(45, 212, 191, 0.72)",
-    strokeWidth: 1.8,
-    strokeDasharray: "7 5",
-    rx: 12,
-    ry: 12
-  }]));
   return {
-    ...memberAttrs,
-    label: { text: group.label, refX: 12, refY: 6, textAnchor: "start", textVerticalAnchor: "top", fill: "#99f6e4", fontSize: 11, fontWeight: 800 }
+    body: { fill: group.color.fill, stroke: group.color.stroke, strokeWidth: 2, strokeDasharray: "8 5", rx: 12, ry: 12 },
+    label: { text: group.label, refX: 12, refY: 6, textAnchor: "start", textVerticalAnchor: "top", fill: group.color.label, fontSize: 11, fontWeight: 800 }
   };
 }
 
 function updateSccGroup(cell: Node, group: SccGroup): void {
   cell.position(group.x, group.y);
   cell.resize(group.width, group.height);
-  cell.setMarkup([
-    ...group.members.map((_, index) => ({ tagName: "rect", selector: `member-${index}` })),
-    { tagName: "text", selector: "label" }
-  ]);
   cell.attr(sccGroupAttrs(group));
 }
 
