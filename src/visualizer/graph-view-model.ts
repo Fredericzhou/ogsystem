@@ -100,6 +100,7 @@ function nodeStructure(role: StudioAuthoringRole, semanticIR?: SemanticIR): Grap
   const loopScope = semanticIR?.loops.find((scope) => scope.members.includes(role.roleId));
   return {
     routingMode: role.routingMode,
+    routeOrder: role.routeOrder?.slice(),
     joinMode: role.joinMode,
     joinMin: role.joinMin,
     joinSources: role.joinSources?.slice(),

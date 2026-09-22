@@ -107,6 +107,7 @@ export type GraphViewModelLayout = {
 
 export type GraphViewModelNodeStructure = {
   routingMode?: StudioAuthoringRole["routingMode"];
+  routeOrder?: string[];
   joinMode?: StudioAuthoringRole["joinMode"];
   joinMin?: number;
   joinSources?: string[];

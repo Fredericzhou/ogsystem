@@ -77,8 +77,17 @@ if (buildResult.code !== 0) {
 
 let temporaryPlaywrightConfig;
 let playwrightArgs = ["exec", "playwright", "test", "tests-e2e/visualizer-studio-graph.spec.ts"];
-const systemChrome = "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome";
-if (process.platform === "darwin" && existsSync(systemChrome)) {
+const systemChromeCandidates = process.platform === "darwin"
+  ? ["/Applications/Google Chrome.app/Contents/MacOS/Google Chrome"]
+  : process.platform === "win32"
+    ? [
+        path.join(process.env.PROGRAMFILES || "C:\\Program Files", "Google", "Chrome", "Application", "chrome.exe"),
+        path.join(process.env["PROGRAMFILES(X86)"] || "C:\\Program Files (x86)", "Google", "Chrome", "Application", "chrome.exe"),
+        path.join(process.env.LOCALAPPDATA || "", "Google", "Chrome", "Application", "chrome.exe")
+      ]
+    : [];
+const systemChrome = systemChromeCandidates.find((candidate) => existsSync(candidate));
+if (systemChrome) {
   temporaryPlaywrightConfig = path.join(
     await mkdtemp(path.join(os.tmpdir(), "ogsystem-playwright-config-")),
     "playwright.config.mjs"

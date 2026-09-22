@@ -2,7 +2,6 @@ import type { Edge, Graph, Node } from "@antv/x6";
 
 import type { GraphViewModel, GraphViewModelEdge, GraphViewModelNode } from "../studio-contracts.js";
 import { formatStudioEdgeLabel } from "../studio-edge-semantics.js";
-import { formatStudioRuntimeNodeBadges } from "./studio-graph-runtime.js";
 import type {
   LayoutEdgeBundle,
   LayoutEdgeRouting,
@@ -10,6 +9,7 @@ import type {
   LayoutProjection,
   LayoutSide
 } from "./semantic-layout-projection.js";
+import { formatStudioNodeLabel } from "./semantic-layout-projection.js";
 
 export { formatStudioEdgeLabel } from "../studio-edge-semantics.js";
 
@@ -39,17 +39,7 @@ function edgeStroke(edge: GraphViewModelEdge): string {
 }
 
 function nodeLabel(node: GraphViewModelNode): string {
-  const normalizedBadges = formatStudioRuntimeNodeBadges(node);
-  const semantic = node.roleSeat
-    ? [
-        node.structure.modes?.length ? `mode:${node.structure.modes.join("/")}` : "",
-        node.structure.loopScope ? `loop:${node.structure.loopScope.loopId}` : "",
-        node.structure.review ? "review" : ""
-      ].filter(Boolean)
-    : [];
-  const topology = node.topologyComponentId ? [node.topologyComponentId] : [];
-  const badges = [...semantic, ...normalizedBadges, ...topology];
-  return badges.length ? `${node.label}  [${badges.join(" ")}]` : node.label;
+  return formatStudioNodeLabel(node);
 }
 
 type StudioEdgeTerminal = NonNullable<Edge.Metadata["source"]>;

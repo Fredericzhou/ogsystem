@@ -5,7 +5,8 @@ import {
   buildProjection,
   createLayoutDigest,
   createStoredLayoutProjection,
-  layoutDigest
+  layoutDigest,
+  layoutNodeSize
 } from "../src/visualizer/studio-client/semantic-layout-projection.ts";
 import { createElkLayoutProjection } from "../src/visualizer/studio-client/elk-layout-adapter.ts";
 
@@ -56,7 +57,7 @@ function graph(nodes, edges) {
 function fixture(name) {
   if (name === "fan-out") {
     return graph(
-      [node("input"), node("split", { structure: { routingMode: "parallel_split" } }), node("left"), node("right"), node("output")],
+      [node("input"), node("split", { structure: { routingMode: "parallel_split", routeOrder: ["right", "left"] } }), node("left"), node("right"), node("output")],
       [edge("input-split", "input", "split"), edge("split-left", "split", "left"), edge("split-right", "split", "right"), edge("left-output", "left", "output"), edge("right-output", "right", "output")]
     );
   }
@@ -121,6 +122,20 @@ test("ELK honors node size variation without projected overlap", async () => {
   assert.equal(projection.nodes.find((item) => item.id === "large").width, 300);
   assert.equal(projection.nodes.find((item) => item.id === "large").height, 132);
   assert.equal(diagnosticCodes(projection).includes("NODE_OVERLAP"), false);
+});
+
+test("ELK follows declared branch order and expands nodes for readable labels", async () => {
+  const projection = await createElkLayoutProjection(fixture("fan-out"), "flow");
+  const left = projection.nodes.find((item) => item.id === "left");
+  const right = projection.nodes.find((item) => item.id === "right");
+  assert.ok(right.y < left.y);
+
+  const longNode = node("long", {
+    label: "A responsibility with a deliberately long readable title",
+    badges: ["waiting_review", "review-required"]
+  });
+  const size = layoutNodeSize(longNode);
+  assert.ok(size.width > longNode.layout.width || size.height > longNode.layout.height);
 });
 
 test("stored routing bundles same-direction fan-out and fan-in stubs", () => {
@@ -298,6 +313,17 @@ test("stored projection detects node overlap and clipped labels", () => {
   const codes = diagnosticCodes(projection);
   assert.ok(codes.includes("NODE_OVERLAP"));
   assert.ok(codes.includes("LABEL_OVERFLOW"));
+});
+
+test("stored projection detects crossings between unrelated routes", () => {
+  const view = graph([
+    node("a", { layout: { x: 100, y: 80, width: 180, height: 84 } }),
+    node("b", { layout: { x: 100, y: 300, width: 180, height: 84 } }),
+    node("c", { layout: { x: 500, y: 300, width: 180, height: 84 } }),
+    node("d", { layout: { x: 500, y: 80, width: 180, height: 84 } })
+  ], [edge("a-c", "a", "c"), edge("b-d", "b", "d")]);
+  const projection = createStoredLayoutProjection(view);
+  assert.ok(diagnosticCodes(projection).includes("EDGE_CROSSING"));
 });
 
 test("layout diagnostics report route loss and unstable ordering", () => {

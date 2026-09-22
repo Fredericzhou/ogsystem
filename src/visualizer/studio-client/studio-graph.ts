@@ -1,7 +1,4 @@
-import { Graph } from "@antv/x6";
-import { History } from "@antv/x6-plugin-history";
-import { Keyboard } from "@antv/x6-plugin-keyboard";
-import { Selection } from "@antv/x6-plugin-selection";
+import { Graph, History, Keyboard, Selection } from "@antv/x6";
 
 import {
   normalizeStudioGraphTargetRoleId,
@@ -190,9 +187,6 @@ const sharedHistory: {
 const STUDIO_PENDING_EDGE_ID = "__studio_pending_edge__";
 const STUDIO_GRAPH_FIT_PADDING = 28;
 const STUDIO_GRAPH_FIT_MAX_SCALE = 1.8;
-const STUDIO_GRAPH_MIN_READABLE_ROLE_WIDTH = 90;
-const STUDIO_GRAPH_MIN_READABLE_ROLE_HEIGHT = 40;
-const STUDIO_GRAPH_READABILITY_ROLE_LIMIT = 4;
 const STUDIO_GRAPH_EDGE_ROUTER = {
   name: "orth",
   args: {
@@ -1671,8 +1665,50 @@ export class StudioGraphIsland {
   }
 
   private fitGraphToViewport(maxScale = STUDIO_GRAPH_FIT_MAX_SCALE): void {
-    this.graph.zoomToFit({ padding: STUDIO_GRAPH_FIT_PADDING, maxScale });
-    this.ensureReadablePrimaryViewport();
+    const nodes = this.graph.getNodes()
+      .filter((node) => !isStudioLayoutJunction(node))
+      .map((node) => {
+        const position = node.getPosition();
+        const size = node.getSize();
+        return {
+          left: position.x,
+          top: position.y,
+          right: position.x + size.width,
+          bottom: position.y + size.height
+        };
+      })
+      .filter((bounds) => [bounds.left, bounds.top, bounds.right, bounds.bottom].every(Number.isFinite));
+    if (!nodes.length) {
+      this.graph.zoomToFit({ padding: STUDIO_GRAPH_FIT_PADDING, maxScale });
+      this.lastViewportSignature = "";
+      return;
+    }
+    // X6 includes routed edge labels and loop geometry in zoomToFit's model
+    // bbox. Long back edges can then pull the whole graph off-screen, so fit
+    // from the stable node envelope and leave room for routes around it.
+    const bounds = nodes.reduce((result, current) => ({
+      left: Math.min(result.left, current.left),
+      top: Math.min(result.top, current.top),
+      right: Math.max(result.right, current.right),
+      bottom: Math.max(result.bottom, current.bottom)
+    }), {
+      left: Number.POSITIVE_INFINITY,
+      top: Number.POSITIVE_INFINITY,
+      right: Number.NEGATIVE_INFINITY,
+      bottom: Number.NEGATIVE_INFINITY
+    });
+    const width = Math.max(bounds.right - bounds.left, 1);
+    const height = Math.max(bounds.bottom - bounds.top, 1);
+    const viewportWidth = Math.max(this.canvasEl.clientWidth, 1);
+    const viewportHeight = Math.max(this.canvasEl.clientHeight, 1);
+    const availableWidth = Math.max(viewportWidth - STUDIO_GRAPH_FIT_PADDING * 2, 1);
+    const availableHeight = Math.max(viewportHeight - STUDIO_GRAPH_FIT_PADDING * 2, 1);
+    const scale = Math.max(0.2, Math.min(maxScale, availableWidth / width, availableHeight / height));
+    this.graph.zoomTo(scale);
+    this.graph.translate(
+      (viewportWidth - width * scale) / 2 - bounds.left * scale,
+      (viewportHeight - height * scale) / 2 - bounds.top * scale
+    );
     this.lastViewportSignature = "";
   }
 
@@ -1680,32 +1716,6 @@ export class StudioGraphIsland {
     this.pendingInitialFit = true;
     this.pendingInitialFitSizeSignature = "";
     this.flushPendingInitialFit();
-  }
-
-  private ensureReadablePrimaryViewport(): void {
-    const roleNodes = this.graph.getNodes().filter((node) => {
-      const data = node.getData() as { studioNode?: { kind?: string } } | undefined;
-      return data?.studioNode?.roleSeat === true;
-    });
-    if (!roleNodes.length || roleNodes.length > STUDIO_GRAPH_READABILITY_ROLE_LIMIT) {
-      return;
-    }
-    const currentScale = this.graph.zoom();
-    if (!Number.isFinite(currentScale) || currentScale <= 0) {
-      return;
-    }
-    const primaryRole = roleNodes[0];
-    const size = primaryRole.getSize();
-    const readableScale = Math.max(
-      STUDIO_GRAPH_MIN_READABLE_ROLE_WIDTH / Math.max(size.width, 1),
-      STUDIO_GRAPH_MIN_READABLE_ROLE_HEIGHT / Math.max(size.height, 1)
-    );
-    const desiredScale = Math.min(STUDIO_GRAPH_FIT_MAX_SCALE, readableScale);
-    if (!Number.isFinite(desiredScale) || desiredScale <= currentScale + 0.01) {
-      return;
-    }
-    this.graph.zoomTo(desiredScale);
-    this.graph.centerContent();
   }
 
   private clearPendingInitialFit(): void {

@@ -1,4 +1,5 @@
 import type { GraphViewModel, GraphViewModelEdge, GraphViewModelNode } from "../studio-contracts.js";
+import { formatStudioRuntimeNodeBadges } from "./studio-graph-runtime.js";
 
 export type StudioLayoutMode = "flow" | "compact" | "stacked";
 export type StudioLayoutAdapterId = "stored" | "elk";
@@ -81,7 +82,12 @@ export type LayoutDiagnostic = {
     | "LABEL_OVERFLOW"
     | "ROUTE_LOSS"
     | "UNSTABLE_ORDERING"
-    | "UNSUPPORTED_CONSTRAINT";
+    | "UNSUPPORTED_CONSTRAINT"
+    | "EDGE_CROSSING"
+    | "EDGE_NODE_COLLISION"
+    | "LABEL_COLLISION"
+    | "LANE_CONFLICT"
+    | "EXCESSIVE_BENDS";
   severity: "info" | "warning";
   message: string;
   nodeId?: string;
@@ -159,7 +165,7 @@ function estimateTextWidth(value: string): number {
   }, 0);
 }
 
-function projectedLabel(node: GraphViewModelNode): string {
+export function formatStudioNodeLabel(node: GraphViewModelNode): string {
   const semanticBadges = node.roleSeat
     ? [
         node.structure.modes?.length ? `mode:${node.structure.modes.join("/")}` : "",
@@ -167,8 +173,24 @@ function projectedLabel(node: GraphViewModelNode): string {
         node.structure.review ? "review" : ""
       ].filter(Boolean)
     : [];
-  const badges = [...semanticBadges, ...node.badges.filter((badge) => badge.trim())];
+  const topology = node.topologyComponentId ? [node.topologyComponentId] : [];
+  const badges = [...semanticBadges, ...formatStudioRuntimeNodeBadges(node), ...topology];
   return badges.length ? `${node.label}  [${badges.join(" ")}]` : node.label;
+}
+
+function projectedLabel(node: GraphViewModelNode): string {
+  return formatStudioNodeLabel(node);
+}
+
+export function layoutNodeSize(node: GraphViewModelNode): { width: number; height: number } {
+  const minimumWidth = node.kind === "boundary" ? node.layout.width : Math.max(180, node.layout.width);
+  const minimumHeight = Math.max(node.kind === "boundary" ? 70 : 84, node.layout.height);
+  const labelWidth = estimateTextWidth(formatStudioNodeLabel(node));
+  const width = Math.max(minimumWidth, Math.min(320, Math.ceil(labelWidth + 30)));
+  const lineWidth = Math.max(width - 18, 1);
+  const lineCount = Math.max(1, Math.ceil(labelWidth / lineWidth));
+  const height = Math.max(minimumHeight, Math.min(156, 24 + lineCount * 16));
+  return { width, height };
 }
 
 function hasRectangleOverlap(left: LayoutProjectionNode, right: LayoutProjectionNode): boolean {
@@ -178,18 +200,102 @@ function hasRectangleOverlap(left: LayoutProjectionNode, right: LayoutProjection
     right.y < left.y + left.height;
 }
 
-function qualityDiagnostics(
-  adapter: StudioLayoutAdapterId,
+type LayoutRect = { x: number; y: number; width: number; height: number };
+
+function segmentIntersectsRect(start: LayoutPoint, end: LayoutPoint, rect: LayoutRect): boolean {
+  const left = rect.x;
+  const right = rect.x + rect.width;
+  const top = rect.y;
+  const bottom = rect.y + rect.height;
+  if (start.x >= left && start.x <= right && start.y >= top && start.y <= bottom) return true;
+  if (end.x >= left && end.x <= right && end.y >= top && end.y <= bottom) return true;
+  let tMin = 0;
+  let tMax = 1;
+  const dx = end.x - start.x;
+  const dy = end.y - start.y;
+  for (const [p, q] of [
+    [-dx, start.x - left],
+    [dx, right - start.x],
+    [-dy, start.y - top],
+    [dy, bottom - start.y]
+  ]) {
+    if (Math.abs(p) < 0.0001) {
+      if (q < 0) return false;
+      continue;
+    }
+    const ratio = q / p;
+    if (p < 0) tMin = Math.max(tMin, ratio);
+    else tMax = Math.min(tMax, ratio);
+    if (tMin > tMax) return false;
+  }
+  return true;
+}
+
+function orientation(a: LayoutPoint, b: LayoutPoint, c: LayoutPoint): number {
+  return (b.x - a.x) * (c.y - a.y) - (b.y - a.y) * (c.x - a.x);
+}
+
+function segmentsCross(a: LayoutPoint, b: LayoutPoint, c: LayoutPoint, d: LayoutPoint): boolean {
+  const epsilon = 0.0001;
+  const first = orientation(a, b, c);
+  const second = orientation(a, b, d);
+  const third = orientation(c, d, a);
+  const fourth = orientation(c, d, b);
+  return ((first > epsilon && second < -epsilon) || (first < -epsilon && second > epsilon)) &&
+    ((third > epsilon && fourth < -epsilon) || (third < -epsilon && fourth > epsilon));
+}
+
+function pathPoints(edge: LayoutProjectionEdge, nodeById: ReadonlyMap<string, LayoutProjectionNode>): LayoutPoint[] {
+  const source = terminalPoint(edge.routing.source, nodeById.get(edge.source));
+  const target = terminalPoint(edge.routing.target, nodeById.get(edge.target));
+  return [source, ...edge.routing.routePoints, target]
+    .filter((point): point is LayoutPoint => Boolean(point))
+    .filter((point, index, points) => index === 0 || point.x !== points[index - 1].x || point.y !== points[index - 1].y);
+}
+
+function pathMidpoint(points: readonly LayoutPoint[]): LayoutPoint | undefined {
+  if (points.length < 2) return undefined;
+  let total = 0;
+  for (let index = 1; index < points.length; index += 1) {
+    total += Math.hypot(points[index].x - points[index - 1].x, points[index].y - points[index - 1].y);
+  }
+  if (total <= 0) return points[0];
+  let traversed = 0;
+  const target = total / 2;
+  for (let index = 1; index < points.length; index += 1) {
+    const start = points[index - 1];
+    const end = points[index];
+    const length = Math.hypot(end.x - start.x, end.y - start.y);
+    if (traversed + length >= target) {
+      const ratio = length ? (target - traversed) / length : 0;
+      return { x: start.x + (end.x - start.x) * ratio, y: start.y + (end.y - start.y) * ratio };
+    }
+    traversed += length;
+  }
+  return points.at(-1);
+}
+
+function labelRect(edge: LayoutProjectionEdge, points: readonly LayoutPoint[]): LayoutRect | undefined {
+  const center = pathMidpoint(points);
+  if (!center) return undefined;
+  const width = Math.max(28, Math.min(190, estimateTextWidth(edge.id) + 18));
+  return { x: center.x - width / 2, y: center.y - 10, width, height: 20 };
+}
+
+function sharesBundle(left: LayoutProjectionEdge, right: LayoutProjectionEdge): boolean {
+  const leftIds = [left.routing.bundleIds?.source, left.routing.bundleIds?.target].filter(Boolean);
+  const rightIds = new Set([right.routing.bundleIds?.source, right.routing.bundleIds?.target].filter(Boolean));
+  return leftIds.some((id) => rightIds.has(id));
+}
+
+function nodeGeometryDiagnostics(
   nodes: readonly LayoutProjectionNode[],
   viewModel: GraphViewModel
-): LayoutDiagnostic[] {
+): { diagnostics: LayoutDiagnostic[]; nodeById: Map<string, LayoutProjectionNode> } {
   const diagnostics: LayoutDiagnostic[] = [];
   const nodeById = new Map<string, LayoutProjectionNode>();
-  const sourceNodeById = new Map<string, GraphViewModelNode>();
-  for (const node of viewModel.nodes) sourceNodeById.set(node.id, node);
-
-  for (let index = 0; index < nodes.length; index += 1) {
-    const node = nodes[index];
+  const sourceNodeById = new Map(viewModel.nodes.map((node) => [node.id, node]));
+  for (const node of nodes) {
     if (nodeById.has(node.id)) {
       diagnostics.push({
         code: "UNSTABLE_ORDERING",
@@ -201,22 +307,25 @@ function qualityDiagnostics(
       nodeById.set(node.id, node);
     }
     const sourceNode = sourceNodeById.get(node.id);
-    if (sourceNode) {
-      const availableWidth = node.width - 18;
-      const availableHeight = node.height - 12;
-      const labelWidth = estimateTextWidth(projectedLabel(sourceNode));
-      const estimatedLines = availableWidth > 0 ? Math.ceil(labelWidth / availableWidth) : Number.POSITIVE_INFINITY;
-      if (availableWidth <= 0 || availableHeight <= 0 || estimatedLines * 16 > availableHeight) {
-        diagnostics.push({
-          code: "LABEL_OVERFLOW",
-          severity: "warning",
-          message: `Label for node ${node.id} exceeds the projected text area and may be clipped.`,
-          nodeId: node.id
-        });
-      }
+    if (!sourceNode) continue;
+    const availableWidth = node.width - 18;
+    const availableHeight = node.height - 12;
+    const labelWidth = estimateTextWidth(projectedLabel(sourceNode));
+    const estimatedLines = availableWidth > 0 ? Math.ceil(labelWidth / availableWidth) : Number.POSITIVE_INFINITY;
+    if (availableWidth <= 0 || availableHeight <= 0 || estimatedLines * 16 > availableHeight) {
+      diagnostics.push({
+        code: "LABEL_OVERFLOW",
+        severity: "warning",
+        message: `Label for node ${node.id} exceeds the projected text area and may be clipped.`,
+        nodeId: node.id
+      });
     }
   }
+  return { diagnostics, nodeById };
+}
 
+function nodeOverlapDiagnostics(nodes: readonly LayoutProjectionNode[]): LayoutDiagnostic[] {
+  const diagnostics: LayoutDiagnostic[] = [];
   const orderedNodes = nodes.slice().sort((left, right) => compareStable(left.id, right.id));
   for (let leftIndex = 0; leftIndex < orderedNodes.length; leftIndex += 1) {
     for (let rightIndex = leftIndex + 1; rightIndex < orderedNodes.length; rightIndex += 1) {
@@ -232,7 +341,14 @@ function qualityDiagnostics(
       });
     }
   }
+  return diagnostics;
+}
 
+function businessEdgeDiagnostics(
+  viewModel: GraphViewModel,
+  nodeById: ReadonlyMap<string, LayoutProjectionNode>
+): LayoutDiagnostic[] {
+  const diagnostics: LayoutDiagnostic[] = [];
   const edgeIds = new Set<string>();
   for (const edge of viewModel.edges) {
     if (edgeIds.has(edge.id)) {
@@ -253,20 +369,160 @@ function qualityDiagnostics(
       });
     }
   }
+  return diagnostics;
+}
 
-  if (adapter === "elk") {
-    for (const node of viewModel.nodes) {
-      if (node.structure.joinMode || node.structure.routingMode === "parallel_split") {
+type RouteDiagnosticContext = {
+  edges: LayoutProjectionEdge[];
+  paths: Map<string, LayoutPoint[]>;
+  labels: Map<string, LayoutRect>;
+};
+
+function routeDiagnosticContext(
+  projectedEdges: readonly LayoutProjectionEdge[],
+  nodeById: ReadonlyMap<string, LayoutProjectionNode>
+): RouteDiagnosticContext {
+  const edges = projectedEdges.filter((edge) => nodeById.has(edge.source) && nodeById.has(edge.target));
+  const paths = new Map(edges.map((edge) => [edge.id, pathPoints(edge, nodeById)]));
+  const labels = new Map<string, LayoutRect>();
+  for (const edge of edges) {
+    const rect = labelRect(edge, paths.get(edge.id) ?? []);
+    if (rect) labels.set(edge.id, rect);
+  }
+  return { edges, paths, labels };
+}
+
+function routeShapeDiagnostics(
+  nodes: readonly LayoutProjectionNode[],
+  context: RouteDiagnosticContext
+): LayoutDiagnostic[] {
+  const diagnostics: LayoutDiagnostic[] = [];
+  for (const edge of context.edges) {
+    const points = context.paths.get(edge.id) ?? [];
+    for (const node of nodes) {
+      if (node.id === edge.source || node.id === edge.target) continue;
+      for (let index = 1; index < points.length; index += 1) {
+        if (!segmentIntersectsRect(points[index - 1], points[index], node)) continue;
         diagnostics.push({
-          code: "UNSUPPORTED_CONSTRAINT",
-          severity: "info",
-          message: `ELK positions ${node.id} but does not enforce its semantic branch or Join ordering constraint.`,
+          code: "EDGE_NODE_COLLISION",
+          severity: "warning",
+          message: `Projected edge ${edge.id} crosses node ${node.id}.`,
+          edgeId: edge.id,
           nodeId: node.id
+        });
+        break;
+      }
+    }
+    if (points.length > 8) {
+      diagnostics.push({
+        code: "EXCESSIVE_BENDS",
+        severity: "info",
+        message: `Projected edge ${edge.id} has more than six bend points.`,
+        edgeId: edge.id
+      });
+    }
+  }
+  return diagnostics;
+}
+
+function edgeCrossingDiagnostics(context: RouteDiagnosticContext): LayoutDiagnostic[] {
+  const diagnostics: LayoutDiagnostic[] = [];
+  for (let leftIndex = 0; leftIndex < context.edges.length; leftIndex += 1) {
+    const left = context.edges[leftIndex];
+    const leftPath = context.paths.get(left.id) ?? [];
+    for (let rightIndex = leftIndex + 1; rightIndex < context.edges.length; rightIndex += 1) {
+      const right = context.edges[rightIndex];
+      if (left.source === right.source || left.source === right.target || left.target === right.source || left.target === right.target) continue;
+      if (sharesBundle(left, right)) continue;
+      const rightPath = context.paths.get(right.id) ?? [];
+      const crossed = leftPath.some((leftPoint, leftSegmentIndex) => {
+        if (leftSegmentIndex === 0) return false;
+        return rightPath.some((rightPoint, rightSegmentIndex) =>
+          rightSegmentIndex > 0 && segmentsCross(leftPath[leftSegmentIndex - 1], leftPoint, rightPath[rightSegmentIndex - 1], rightPoint)
+        );
+      });
+      if (crossed) {
+        diagnostics.push({
+          code: "EDGE_CROSSING",
+          severity: "warning",
+          message: `Projected edges ${left.id} and ${right.id} cross.`,
+          edgeId: left.id,
+          relatedNodeId: right.id
         });
       }
     }
   }
   return diagnostics;
+}
+
+function labelCollisionDiagnostics(
+  nodes: readonly LayoutProjectionNode[],
+  context: RouteDiagnosticContext
+): LayoutDiagnostic[] {
+  const diagnostics: LayoutDiagnostic[] = [];
+  for (const edge of context.edges) {
+    const rect = context.labels.get(edge.id);
+    if (!rect) continue;
+    for (const node of nodes) {
+      if (node.id === edge.source || node.id === edge.target || !hasRectangleOverlap(rect, node)) continue;
+      diagnostics.push({
+        code: "LABEL_COLLISION",
+        severity: "warning",
+        message: `Label for edge ${edge.id} overlaps node ${node.id}.`,
+        edgeId: edge.id,
+        nodeId: node.id
+      });
+    }
+  }
+  return diagnostics;
+}
+
+function laneDiagnostics(context: RouteDiagnosticContext): LayoutDiagnostic[] {
+  const laneGroups = new Map<string, string[]>();
+  for (const edge of context.edges) {
+    const key = `${edge.source}:${edge.target}:${edge.routing.lane}`;
+    laneGroups.set(key, [...(laneGroups.get(key) ?? []), edge.id]);
+  }
+  return [...laneGroups.entries()]
+    .filter(([, edgeIds]) => edgeIds.length >= 2)
+    .map(([key, edgeIds]) => ({
+      code: "LANE_CONFLICT" as const,
+      severity: "warning" as const,
+      message: `Parallel edges share lane ${key}: ${edgeIds.join(", ")}.`,
+      edgeId: edgeIds[0]
+    }));
+}
+
+function semanticConstraintDiagnostics(adapter: StudioLayoutAdapterId, viewModel: GraphViewModel): LayoutDiagnostic[] {
+  if (adapter !== "elk") return [];
+  return viewModel.nodes
+    .filter((node) => node.structure.joinMode || node.structure.routingMode === "parallel_split")
+    .map((node) => ({
+      code: "UNSUPPORTED_CONSTRAINT" as const,
+      severity: "info" as const,
+      message: `ELK positions ${node.id} but does not enforce its semantic branch or Join ordering constraint.`,
+      nodeId: node.id
+    }));
+}
+
+function qualityDiagnostics(
+  adapter: StudioLayoutAdapterId,
+  nodes: readonly LayoutProjectionNode[],
+  viewModel: GraphViewModel,
+  projectedEdges: readonly LayoutProjectionEdge[]
+): LayoutDiagnostic[] {
+  const nodeDiagnostics = nodeGeometryDiagnostics(nodes, viewModel);
+  const routeContext = routeDiagnosticContext(projectedEdges, nodeDiagnostics.nodeById);
+  return [
+    ...nodeDiagnostics.diagnostics,
+    ...nodeOverlapDiagnostics(nodes),
+    ...businessEdgeDiagnostics(viewModel, nodeDiagnostics.nodeById),
+    ...routeShapeDiagnostics(nodes, routeContext),
+    ...edgeCrossingDiagnostics(routeContext),
+    ...labelCollisionDiagnostics(nodes, routeContext),
+    ...laneDiagnostics(routeContext),
+    ...semanticConstraintDiagnostics(adapter, viewModel)
+  ];
 }
 
 function clonePosition(node: GraphViewModelNode): LayoutProjectionNode {
@@ -748,7 +1004,7 @@ export function buildProjection(
     bundles: completeRouting.bundles,
     diagnostics: [
       ...diagnostics,
-      ...qualityDiagnostics(adapter, nodes, viewModel)
+      ...qualityDiagnostics(adapter, nodes, viewModel, edges)
     ]
   };
   return {

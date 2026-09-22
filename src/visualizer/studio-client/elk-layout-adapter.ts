@@ -8,7 +8,8 @@ import {
   type LayoutPoint,
   type LayoutProjection,
   type LayoutProjectionNode,
-  type StudioLayoutMode
+  type StudioLayoutMode,
+  layoutNodeSize
 } from "./semantic-layout-projection.js";
 
 type LayoutConfig = {
@@ -43,7 +44,7 @@ type ElkGraph = {
   id: string;
   layoutOptions: Record<string, string>;
   children: Array<{ id: string; width: number; height: number; layoutOptions?: Record<string, string> }>;
-  edges: Array<{ id: string; sources: string[]; targets: string[] }>;
+  edges: Array<{ id: string; sources: string[]; targets: string[]; layoutOptions?: Record<string, string> }>;
 };
 
 function configFor(mode: StudioLayoutMode): LayoutConfig {
@@ -52,16 +53,76 @@ function configFor(mode: StudioLayoutMode): LayoutConfig {
   return { direction: "RIGHT", padding: 88, nodeSpacing: 64, layerSpacing: 128 };
 }
 
-function nodeOrder(nodes: readonly GraphViewModelNode[]): GraphViewModelNode[] {
-  return nodes.slice().sort((left, right) => left.id.localeCompare(right.id));
+function edgeChannelRank(edge: GraphViewModelEdge): number {
+  const channel = edge.channel ?? (edge.runtimeOnlyErrorFlow ? "error" : "normal");
+  if (channel === "normal") return 0;
+  if (channel === "join") return 1;
+  if (channel === "feedback") return 2;
+  if (channel === "error") return 3;
+  return 4;
 }
 
-function edgeOrder(edges: readonly GraphViewModelEdge[]): GraphViewModelEdge[] {
+function edgePriority(edge: GraphViewModelEdge): number {
+  const channel = edge.channel ?? (edge.runtimeOnlyErrorFlow ? "error" : "normal");
+  if (channel === "normal") return 5;
+  if (channel === "join") return 4;
+  if (channel === "feedback") return 2;
+  if (channel === "error") return 1;
+  return 0;
+}
+
+function semanticTargetRank(source: GraphViewModelNode | undefined, target: GraphViewModelNode | undefined, targetId: string): number {
+  const routeIndex = source?.structure.routeOrder?.indexOf(targetId) ?? -1;
+  if (routeIndex >= 0) return routeIndex;
+  const joinIndex = target?.structure.joinSources?.indexOf(source?.id ?? "") ?? -1;
+  if (joinIndex >= 0) return joinIndex;
+  return Number.MAX_SAFE_INTEGER;
+}
+
+function edgeOrder(
+  edges: readonly GraphViewModelEdge[],
+  nodeById: ReadonlyMap<string, GraphViewModelNode>
+): GraphViewModelEdge[] {
   return edges.slice().sort((left, right) =>
-    `${left.source}:${left.target}:${left.eventType}:${left.id}`.localeCompare(
-      `${right.source}:${right.target}:${right.eventType}:${right.id}`
-    )
+    edgeChannelRank(left) - edgeChannelRank(right) ||
+    left.source.localeCompare(right.source) ||
+    semanticTargetRank(nodeById.get(left.source), nodeById.get(left.target), left.target) -
+      semanticTargetRank(nodeById.get(right.source), nodeById.get(right.target), right.target) ||
+    left.target.localeCompare(right.target) ||
+    left.eventType.localeCompare(right.eventType) ||
+    left.id.localeCompare(right.id)
   );
+}
+
+function nodeOrder(viewModel: GraphViewModel): GraphViewModelNode[] {
+  const nodeById = new Map(viewModel.nodes.map((node) => [node.id, node]));
+  const outgoing = new Map<string, GraphViewModelEdge[]>();
+  for (const edge of edgeOrder(viewModel.edges, nodeById)) {
+    if (!nodeById.has(edge.source) || !nodeById.has(edge.target)) continue;
+    outgoing.set(edge.source, [...(outgoing.get(edge.source) ?? []), edge]);
+  }
+  const order: string[] = [];
+  const visited = new Set<string>();
+  const visit = (id: string): void => {
+    if (visited.has(id) || !nodeById.has(id)) return;
+    visited.add(id);
+    order.push(id);
+    for (const edge of outgoing.get(id) ?? []) visit(edge.target);
+  };
+  visit("input");
+  for (const node of viewModel.nodes.slice().sort((left, right) => left.id.localeCompare(right.id))) visit(node.id);
+  const indexById = new Map(order.map((id, index) => [id, index]));
+  return viewModel.nodes.slice().sort((left, right) => compareNodeOrder(indexById, left, right));
+}
+
+function boundaryRank(node: GraphViewModelNode): number {
+  return node.id === "input" ? -2 : node.id === "output" ? 2 : 0;
+}
+
+function compareNodeOrder(indexById: ReadonlyMap<string, number>, left: GraphViewModelNode, right: GraphViewModelNode): number {
+  return boundaryRank(left) - boundaryRank(right) ||
+    (indexById.get(left.id) ?? Number.MAX_SAFE_INTEGER) - (indexById.get(right.id) ?? Number.MAX_SAFE_INTEGER) ||
+    left.id.localeCompare(right.id);
 }
 
 function shiftToPadding(
@@ -127,16 +188,21 @@ function createElkGraph(
   mode: StudioLayoutMode
 ): { graph: ElkGraph; diagnostics: LayoutDiagnostic[] } {
   const config = configFor(mode);
-  const orderedNodes = nodeOrder(viewModel.nodes);
+  const orderedNodes = nodeOrder(viewModel);
   const nodeById = new Map(orderedNodes.map((node) => [node.id, node]));
   const diagnostics: LayoutDiagnostic[] = [];
   const layoutEdges: ElkGraph["edges"] = [];
-  for (const edge of edgeOrder(viewModel.edges)) {
+  for (const edge of edgeOrder(viewModel.edges, nodeById)) {
     if (!nodeById.has(edge.source) || !nodeById.has(edge.target)) {
       diagnostics.push({ code: "MISSING_ENDPOINT", severity: "warning", message: `Layout edge ${edge.id} has a missing endpoint.`, edgeId: edge.id });
       continue;
     }
-    layoutEdges.push({ id: `layout-${edge.id}`, sources: [edge.source], targets: [edge.target] });
+    layoutEdges.push({
+      id: `layout-${edge.id}`,
+      sources: [edge.source],
+      targets: [edge.target],
+      layoutOptions: { "elk.priority": String(edgePriority(edge)) }
+    });
   }
   return {
     graph: {
@@ -150,13 +216,19 @@ function createElkGraph(
         "elk.padding": `[top=${config.padding},left=${config.padding},bottom=${config.padding},right=${config.padding}]`,
         "elk.layered.cycleBreaking.strategy": "GREEDY",
         "elk.layered.nodePlacement.strategy": "BRANDES_KOEPF",
+        "elk.layered.nodePlacement.favorStraightEdges": "true",
         "elk.layered.considerModelOrder.strategy": "NODES_AND_EDGES",
-        "elk.layered.crossingMinimization.strategy": "LAYER_SWEEP"
+        "elk.layered.crossingMinimization.strategy": "LAYER_SWEEP",
+        "elk.layered.spacing.edgeNodeBetweenLayers": "28",
+        "elk.layered.spacing.edgeEdgeBetweenLayers": "20",
+        "elk.layered.unnecessaryBendpoints": "false",
+        "elk.layered.thoroughness": mode === "compact" ? "7" : "10",
+        "elk.layered.priority.direction": "2",
+        "elk.layered.priority.straightness": "2"
       },
       children: orderedNodes.map((node) => ({
         id: node.id,
-        width: node.layout.width,
-        height: node.layout.height,
+        ...layoutNodeSize(node),
         ...(node.id === "input"
           ? { layoutOptions: { "elk.layered.layering.layerConstraint": "FIRST" } }
           : node.id === "output"
@@ -175,14 +247,15 @@ export async function createElkLayoutProjection(viewModel: GraphViewModel, mode:
   const { graph, diagnostics } = createElkGraph(viewModel, mode);
   const result = await elk.layout(graph);
   const outputNodes = new Map((result.children ?? []).map((node) => [node.id, node as ElkNodeResult]));
-  const positioned = nodeOrder(viewModel.nodes).map((sourceNode) => {
+  const positioned = nodeOrder(viewModel).map((sourceNode) => {
+    const sourceSize = layoutNodeSize(sourceNode);
     const node = outputNodes.get(sourceNode.id);
     return {
       id: sourceNode.id,
       x: Number.isFinite(node?.x) ? Number(node?.x) : sourceNode.layout.x,
       y: Number.isFinite(node?.y) ? Number(node?.y) : sourceNode.layout.y,
-      width: Number.isFinite(node?.width) ? Number(node?.width) : sourceNode.layout.width,
-      height: Number.isFinite(node?.height) ? Number(node?.height) : sourceNode.layout.height
+      width: Number.isFinite(node?.width) ? Number(node?.width) : sourceSize.width,
+      height: Number.isFinite(node?.height) ? Number(node?.height) : sourceSize.height
     };
   });
   const routePointsByEdgeId = new Map<string, LayoutPoint[]>();
