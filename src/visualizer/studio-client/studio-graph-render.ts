@@ -42,6 +42,7 @@ function nodeStroke(node: GraphViewModelNode): string {
 function edgeStroke(edge: GraphViewModelEdge): string {
   if (edge.diagnostic?.severity === "error") return "#f87171";
   if (edge.diagnostic?.severity === "warning" || edge.runtimeOnlyErrorFlow) return "#fbbf24";
+  if (edge.channel === "loop" || edge.channel === "feedback" || edge.topologyOrder?.endsWith("L")) return "#2dd4bf";
   if (edge.participatesInJoin) return "#a78bfa";
   return "#94a3b8";
 }
@@ -552,6 +553,7 @@ function studioEdgeMetadata(edge: GraphViewModelEdge, routing?: StudioEdgeRoutin
 function studioEdgeLabels(edge: GraphViewModelEdge): Edge.Metadata["labels"] {
   const labels: NonNullable<Edge.Metadata["labels"]> = [];
   const topologyLabel = formatStudioEdgeTopologyLabel(edge);
+  const isCycle = edge.topologyOrder?.endsWith("L") === true;
   if (topologyLabel) {
     labels.push({
       position: {
@@ -565,13 +567,13 @@ function studioEdgeLabels(edge: GraphViewModelEdge): Edge.Metadata["labels"] {
       attrs: {
         label: {
           text: topologyLabel,
-          fill: "#e0f2fe",
+          fill: isCycle ? "#ccfbf1" : "#e0f2fe",
           fontSize: 10,
           fontWeight: 800
         },
         body: {
-          fill: "#075985",
-          stroke: "#38bdf8",
+          fill: isCycle ? "#115e59" : "#075985",
+          stroke: isCycle ? "#2dd4bf" : "#38bdf8",
           strokeWidth: 1,
           rx: 4,
           ry: 4

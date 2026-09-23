@@ -152,7 +152,7 @@ test("SCC topology separates independent cycles and merges mutually reachable ne
   assert.equal(nested.get("b"), nested.get("c"));
 });
 
-test("topology flow order is stable, branch-readable, and labels cycles explicitly", () => {
+test("topology flow order is globally unique and places cycles after forward handoffs", () => {
   const nodes = ["input", "a", "b", "c", "output"].map((id) => node(id, 0, 0));
   const edges = [
     edge("entry", "input", "a"),
@@ -164,10 +164,12 @@ test("topology flow order is stable, branch-readable, and labels cycles explicit
   const ordered = addTopologyFlowOrder({ nodes, edges, entryRoleId: "input" });
   const orderById = new Map(ordered.map((item) => [item.id, item.topologyOrder]));
   assert.equal(orderById.get("entry"), "1");
-  assert.equal(orderById.get("a-b"), "2a");
-  assert.equal(orderById.get("a-c"), "2b");
-  assert.match(orderById.get("c-self"), /^L\d+$/);
-  assert.match(formatStudioEdgeLabel({ ...edges[1], topologyOrder: orderById.get("a-b") }), /#2a/);
+  assert.equal(orderById.get("a-b"), "2");
+  assert.equal(orderById.get("a-c"), "3");
+  assert.equal(orderById.get("b-output"), "4");
+  assert.equal(orderById.get("c-self"), "5L");
+  assert.equal(new Set(orderById.values()).size, edges.length);
+  assert.match(formatStudioEdgeLabel({ ...edges[1], topologyOrder: orderById.get("a-b") }), /#2/);
 });
 
 test("stacked loop routes use ELK's vertical geometry without a second router", async () => {

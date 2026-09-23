@@ -6,7 +6,7 @@ function formatStudioEdgeDetails(edge: GraphViewModelEdge, includeTopology: bool
     edge.channel,
     edge.priority === undefined ? "" : `p${edge.priority}`,
     edge.conditionSummary ? `when:${edge.conditionSummary}` : ""
-  ].filter(Boolean);
+  ].filter((value): value is string => Boolean(value));
 }
 
 /** Produces the semantic portion of the label rendered by the X6 graph edge. */

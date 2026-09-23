@@ -543,6 +543,9 @@ test("SCC container drag moves every member node with the container", async ({ p
     await expect(group).toBeVisible();
     await expect(page.locator('#studio-graph-root [data-cell-id="input"]')).toHaveCount(1);
     await expect(page.locator('#studio-graph-root [data-cell-id="output"]')).toHaveCount(1);
+    await expect.poll(async () => page.locator("#studio-graph-root .x6-edge-label text").allTextContents())
+      .toEqual(expect.arrayContaining(["#3L", "#4L"]));
+    await expect(page.locator('#studio-graph-root .x6-edge.is-loop-back')).toHaveCount(2);
 
     const before = await page.evaluate(() => {
       const cellBox = (id: string) => {

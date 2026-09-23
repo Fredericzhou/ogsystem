@@ -58,7 +58,11 @@ function stableEdgeKey(edge: GraphViewModelEdge): string {
   return `${edge.source}:${edge.target}:${edge.eventType}:${edge.id}`;
 }
 
-/** Compresses cycles before assigning ranks so a cyclic graph still has a useful start-to-end order. */
+/**
+ * Compresses cycles before assigning one global order to every valid flow.
+ * Forward handoffs are numbered first; cycle edges are numbered afterwards
+ * with an `L` suffix so the main path remains easy to scan.
+ */
 export function addTopologyFlowOrder(args: TopologyEdgeOrderArgs): GraphViewModelEdge[] {
   const nodeIds = args.nodes.map((node) => node.id);
   const nodeSet = new Set(nodeIds);
@@ -116,52 +120,77 @@ export function addTopologyFlowOrder(args: TopologyEdgeOrderArgs): GraphViewMode
   }
 
   const componentName = (componentIndex: number): string => components[componentIndex]?.[0] ?? "";
+  const entryComponent = componentByNode.get(args.entryRoleId ?? "input");
+  const componentDistance = new Map<number, number>();
+  if (entryComponent !== undefined) {
+    componentDistance.set(entryComponent, 0);
+    const pending = [entryComponent];
+    for (let cursor = 0; cursor < pending.length; cursor += 1) {
+      const current = pending[cursor]!;
+      const distance = componentDistance.get(current) ?? 0;
+      for (const target of componentEdges.get(current) ?? []) {
+        if (componentDistance.has(target)) continue;
+        componentDistance.set(target, distance + 1);
+        pending.push(target);
+      }
+    }
+  }
+  const compareReadyComponents = (left: number, right: number): number => {
+    const leftDistance = componentDistance.get(left);
+    const rightDistance = componentDistance.get(right);
+    if (leftDistance === undefined && rightDistance !== undefined) return 1;
+    if (leftDistance !== undefined && rightDistance === undefined) return -1;
+    if (leftDistance !== undefined && rightDistance !== undefined && leftDistance !== rightDistance) {
+      return leftDistance - rightDistance;
+    }
+    return componentName(left).localeCompare(componentName(right));
+  };
   const queue = components.map((_, componentIndex) => componentIndex)
     .filter((componentIndex) => indegree.get(componentIndex) === 0)
-    .sort((a, b) => componentName(a).localeCompare(componentName(b)));
-  const componentRank = new Map<number, number>();
+    .sort(compareReadyComponents);
+  const orderedComponents: number[] = [];
   for (let cursor = 0; cursor < queue.length; cursor += 1) {
     const current = queue[cursor]!;
-    const rank = componentRank.get(current) ?? 0;
-    componentRank.set(current, rank);
+    orderedComponents.push(current);
     for (const target of componentEdges.get(current) ?? []) {
-      componentRank.set(target, Math.max(componentRank.get(target) ?? 0, rank + 1));
       indegree.set(target, indegree.get(target)! - 1);
       if (indegree.get(target) === 0) {
         queue.push(target);
-        queue.sort((a, b) => (componentRank.get(a) ?? 0) - (componentRank.get(b) ?? 0) || componentName(a).localeCompare(componentName(b)));
+        queue.sort(compareReadyComponents);
       }
     }
   }
 
-  const entryComponent = componentByNode.get(args.entryRoleId ?? "input");
-  if (entryComponent !== undefined) {
-    const entryRank = componentRank.get(entryComponent) ?? 0;
-    for (const [componentIndex, rank] of componentRank) componentRank.set(componentIndex, rank - entryRank);
+  // Defensive fallback for malformed disconnected condensation graphs. A
+  // valid condensation DAG is fully emitted by Kahn's algorithm above.
+  for (const componentIndex of components.map((_, index) => index)) {
+    if (!orderedComponents.includes(componentIndex)) orderedComponents.push(componentIndex);
   }
-  const outgoingByComponent = new Map<number, GraphViewModelEdge[]>();
-  for (const edge of edges) {
-    const componentIndex = componentByNode.get(edge.source)!;
-    outgoingByComponent.set(componentIndex, [...(outgoingByComponent.get(componentIndex) ?? []), edge]);
+  const orderedComponentIndex = new Map(orderedComponents.map((component, index) => [component, index]));
+  const forwardEdges: GraphViewModelEdge[] = [];
+  const cycleEdges: GraphViewModelEdge[] = [];
+  for (const componentIndex of orderedComponents) {
+    const componentEdgesForSource = edges
+      .filter((edge) => componentByNode.get(edge.source) === componentIndex)
+      .sort((left, right) => stableEdgeKey(left).localeCompare(stableEdgeKey(right)));
+    for (const edge of componentEdgesForSource) {
+      if (componentByNode.get(edge.target) === componentIndex) cycleEdges.push(edge);
+      else forwardEdges.push(edge);
+    }
   }
-  for (const list of outgoingByComponent.values()) list.sort((a, b) => stableEdgeKey(a).localeCompare(stableEdgeKey(b)));
-  const branchLabels = new Map<string, string>();
-  for (const list of outgoingByComponent.values()) {
-    const byTarget = new Map<string, GraphViewModelEdge[]>();
-    for (const edge of list) byTarget.set(edge.target, [...(byTarget.get(edge.target) ?? []), edge]);
-    const targets = [...byTarget.keys()].sort((a, b) => a.localeCompare(b));
-    if (targets.length < 2) continue;
-    targets.forEach((target, targetIndex) => {
-      for (const edge of byTarget.get(target) ?? []) branchLabels.set(edge.id, String.fromCharCode(97 + targetIndex));
-    });
-  }
+  cycleEdges.sort((left, right) => {
+    const leftComponent = orderedComponentIndex.get(componentByNode.get(left.source)! ) ?? 0;
+    const rightComponent = orderedComponentIndex.get(componentByNode.get(right.source)! ) ?? 0;
+    return leftComponent - rightComponent || stableEdgeKey(left).localeCompare(stableEdgeKey(right));
+  });
+  const orderByEdge = new Map<GraphViewModelEdge, string>();
+  [...forwardEdges, ...cycleEdges].forEach((edge, index) => {
+    const component = componentByNode.get(edge.source);
+    const isCycle = component !== undefined && component === componentByNode.get(edge.target);
+    orderByEdge.set(edge, `${index + 1}${isCycle ? "L" : ""}`);
+  });
   return args.edges.map((edge) => {
-    const sourceComponent = componentByNode.get(edge.source);
-    const targetComponent = componentByNode.get(edge.target);
-    if (sourceComponent === undefined || targetComponent === undefined) return edge;
-    const sourceRank = Math.max(0, componentRank.get(sourceComponent) ?? 0) + 1;
-    if (sourceComponent === targetComponent) return { ...edge, topologyOrder: `L${sourceRank}` };
-    const branch = branchLabels.get(edge.id);
-    return { ...edge, topologyOrder: `${sourceRank}${branch ?? ""}` };
+    const topologyOrder = orderByEdge.get(edge);
+    return topologyOrder ? { ...edge, topologyOrder } : edge;
   });
 }

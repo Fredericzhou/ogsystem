@@ -189,6 +189,9 @@ export function deriveStudioRuntimeEdgeState(args: {
     active: Boolean(args.readOnly && args.edge.runtime?.recentlyActivated === true),
     error: Boolean(args.edge.runtimeOnlyErrorFlow || args.edge.diagnostic?.severity === "error"),
     loopBack: args.edge.source === args.edge.target
+      || args.edge.channel === "loop"
+      || args.edge.channel === "feedback"
+      || args.edge.topologyOrder?.endsWith("L") === true
   };
 }
 

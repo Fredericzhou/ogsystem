@@ -217,6 +217,7 @@ export function injectStudioGraphStyles(): void {
     }
     .studio-graph-canvas .x6-edge.is-loop-back .connection {
       stroke-dasharray: 5 6;
+      stroke-width: 1.9px;
     }
     .studio-graph-island[data-reduced-motion="on"] .studio-graph-canvas .x6-node.is-selection-focus-pulse rect,
     .studio-graph-island[data-reduced-motion="on"] .studio-graph-canvas .x6-node.is-selection-focus-pulse path:first-of-type,
