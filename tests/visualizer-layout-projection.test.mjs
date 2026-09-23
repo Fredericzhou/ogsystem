@@ -203,10 +203,10 @@ test("stored routing bundles same-direction fan-out and fan-in stubs", () => {
   const rightJoin = projection.edges.find((item) => item.id === "right-join").routing;
   assert.equal(sourceLeft.source.offset, sourceRight.source.offset);
   assert.equal(leftJoin.target.offset, rightJoin.target.offset);
-  assert.equal(sourceLeft.source.port, "out-right-forward-normal");
-  assert.equal(sourceRight.source.port, "out-right-forward-normal");
-  assert.equal(leftJoin.target.port, "in-left-forward-normal");
-  assert.equal(rightJoin.target.port, "in-left-forward-normal");
+  assert.equal(sourceLeft.source.port, "out-flow-source-left");
+  assert.equal(sourceRight.source.port, "out-flow-source-right");
+  assert.equal(leftJoin.target.port, "in-flow-left-join");
+  assert.equal(rightJoin.target.port, "in-flow-right-join");
   assert.equal(projection.bundles.length, 2);
   const fanOutBundle = projection.bundles.find((bundle) => bundle.kind === "fan-out");
   const fanInBundle = projection.bundles.find((bundle) => bundle.kind === "fan-in");
@@ -294,9 +294,9 @@ test("fan-in from opposite sides uses separate nearby input ports", () => {
   const left = projection.edges.find((item) => item.id === "left-target").routing.target;
   const right = projection.edges.find((item) => item.id === "right-target").routing.target;
   assert.equal(left.side, "left");
-  assert.equal(left.port, "in-left-forward-normal");
+  assert.equal(left.port, "in-flow-left-target");
   assert.equal(right.side, "right");
-  assert.equal(right.port, "in-right-backward-normal");
+  assert.equal(right.port, "in-flow-right-target");
   assert.equal(projection.bundles.length, 0);
 });
 
@@ -314,9 +314,27 @@ test("same-side incoming and outgoing flows use distinct port slots", () => {
   const outgoing = projection.edges.find((item) => item.id === "center-target").routing.source;
   assert.equal(incoming.side, "left");
   assert.equal(outgoing.side, "left");
-  assert.equal(incoming.port, "in-left-forward-normal");
-  assert.equal(outgoing.port, "out-left-backward-normal");
+  assert.equal(incoming.port, "in-flow-source-center");
+  assert.equal(outgoing.port, "out-flow-center-target");
   assert.notEqual(incoming.port, outgoing.port);
+});
+
+test("flow endpoint port identities remain stable when layout direction changes", () => {
+  const view = graph([
+    node("source", { layout: { x: 100, y: 120, width: 180, height: 84 } }),
+    node("target", { layout: { x: 440, y: 120, width: 180, height: 84 } })
+  ], [edge("source-target", "source", "target")]);
+  const forward = createStoredLayoutProjection(view).edges[0].routing;
+  view.nodes.find((item) => item.id === "target").layout = { x: 220, y: 360, width: 180, height: 84 };
+  const vertical = createStoredLayoutProjection(view).edges[0].routing;
+  assert.equal(forward.kind, "forward");
+  assert.equal(vertical.kind, "vertical");
+  assert.equal(forward.source.port, "out-flow-source-target");
+  assert.equal(vertical.source.port, forward.source.port);
+  assert.equal(forward.target.port, "in-flow-source-target");
+  assert.equal(vertical.target.port, forward.target.port);
+  assert.notEqual(forward.source.side, vertical.source.side);
+  assert.notEqual(forward.target.side, vertical.target.side);
 });
 
 test("moving a node recalculates bundle geometry without changing business edge ids", () => {

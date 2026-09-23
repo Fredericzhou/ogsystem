@@ -628,14 +628,12 @@ function sharedEndpointOffset(
 function portId(
   cell: string,
   direction: "source" | "target",
-  side: LayoutSide,
-  routeKind: LayoutRouteKind,
-  channel: string
+  flowId: string
 ): string | undefined {
   if (cell === "input" || cell === "output") return undefined;
   const directionToken: LayoutPortDirection = direction === "source" ? "out" : "in";
-  const channelToken = channel.replace(/[^a-zA-Z0-9_-]/g, "_");
-  return `${directionToken}-${side}-${routeKind}-${channelToken}`;
+  const flowToken = encodeURIComponent(flowId);
+  return `${directionToken}-flow-${flowToken}`;
 }
 
 function terminal(
@@ -643,12 +641,11 @@ function terminal(
   direction: "source" | "target",
   side: LayoutSide,
   offset: number,
-  routeKind: LayoutRouteKind = "forward",
-  channel = "normal"
+  flowId: string
 ): LayoutTerminal {
   return {
     cell,
-    port: portId(cell, direction, side, routeKind, channel),
+    port: portId(cell, direction, flowId),
     side,
     offset
   };
@@ -792,8 +789,7 @@ function terminalFromPoint(
   point: LayoutPoint | undefined,
   node: LayoutProjectionNode | undefined,
   fallback: LayoutTerminal,
-  routeKind: LayoutRouteKind,
-  channel: string
+  flowId: string
 ): LayoutTerminal {
   if (!point || !node) return fallback;
   const candidates: Array<{ side: LayoutSide; distance: number; offset: number }> = [
@@ -804,7 +800,7 @@ function terminalFromPoint(
   ];
   candidates.sort((left, right) => left.distance - right.distance);
   const selected = candidates[0];
-  return terminal(cell, direction, selected.side, Math.round(selected.offset), routeKind, channel);
+  return terminal(cell, direction, selected.side, Math.round(selected.offset), flowId);
 }
 
 function alignRouteEndpoint(
@@ -1079,18 +1075,16 @@ function buildEdgeRouting(
         "source",
         geometryByEdgeId?.get(edge.id)?.sourcePoint,
         sourceNode,
-        terminal(edge.source, "source", route.sourceSide, 0, route.kind, edgeChannel(edge)),
-        route.kind,
-        edgeChannel(edge)
+        terminal(edge.source, "source", route.sourceSide, 0, edge.id),
+        edge.id
       ),
       target: terminalFromPoint(
         edge.target,
         "target",
         geometryByEdgeId?.get(edge.id)?.targetPoint,
         targetNode,
-        terminal(edge.target, "target", route.targetSide, 0, route.kind, edgeChannel(edge)),
-        route.kind,
-        edgeChannel(edge)
+        terminal(edge.target, "target", route.targetSide, 0, edge.id),
+        edge.id
       )
     });
   }

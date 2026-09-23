@@ -141,6 +141,15 @@ export function renderStudioGraphViewModel(graph: Graph, viewModel: GraphViewMod
         graph.addEdge(studioEdgeMetadata(edge, routingByEdgeId.get(edge.id)));
       }
     }
+
+    // Edge terminals must be rebound while the previous ports still exist.
+    // Remove obsolete ports only after every business edge has its new stable
+    // endpoint, otherwise X6 can rewrite the edge to a node boundary.
+    for (const node of projectedViewModel.nodes) {
+      const cell = graph.getCellById(node.id);
+      if (!cell?.isNode()) continue;
+      finalizeStudioNodePorts(cell, node, portsByNodeId.get(node.id));
+    }
   });
 }
 
@@ -372,8 +381,8 @@ function portAttrs(direction: LayoutPortSpec["direction"]): Record<string, unkno
 function fallbackPortSpecs(node: GraphViewModelNode): StudioPortSpec[] {
   if (!node.roleSeat) return [];
   return [
-    { id: "in-left-forward-normal", direction: "in", side: "left", offset: 0 },
-    { id: "out-right-forward-normal", direction: "out", side: "right", offset: 0 }
+    { id: "in-fallback", direction: "in", side: "left", offset: 0 },
+    { id: "out-fallback", direction: "out", side: "right", offset: 0 }
   ];
 }
 
@@ -473,17 +482,27 @@ function updateStudioNode(cell: Node, node: GraphViewModelNode, projectedPorts?:
   cell.resize(node.layout.width, node.layout.height);
   cell.attr(studioNodeAttrs(node));
   const nextPorts = studioNodePorts(node, projectedPorts);
-  cell.setProp("ports", nextPorts);
-  const expectedPortIds = nextPorts.items.map((port) => String(port.id ?? ""));
-  const currentPortIds = cell.getPorts().map((port) => String(port.id ?? ""));
-  const missingPorts = expectedPortIds.filter((id) => !cell.hasPort(id));
-  if (missingPorts.length) {
-    cell.addPorts(missingPorts.map((id) => ({ id, group: id })));
-  }
-  const stalePorts = currentPortIds.filter((id) => id && !expectedPortIds.includes(id));
-  if (stalePorts.length) {
-    cell.removePorts(stalePorts);
-  }
+  const currentPorts = cell.getPorts();
+  const missingPorts = nextPorts.items.filter((port) => !cell.hasPort(String(port.id ?? "")));
+  const currentGroups = (cell.getProp("ports") as { groups?: Record<string, unknown> } | undefined)?.groups ?? {};
+  cell.setProp("ports", {
+    groups: { ...currentGroups, ...nextPorts.groups },
+    // Retain stale ports until all edge terminals have been rebound.
+    items: [...currentPorts, ...missingPorts]
+  });
+}
+
+function finalizeStudioNodePorts(cell: Node, node: GraphViewModelNode, projectedPorts?: readonly StudioPortSpec[]): void {
+  const nextPorts = studioNodePorts(node, projectedPorts);
+  const expectedPortIds = new Set(nextPorts.items.map((port) => String(port.id ?? "")));
+  const stalePorts = cell.getPorts()
+    .map((port) => String(port.id ?? ""))
+    .filter((id) => id && !expectedPortIds.has(id));
+  if (stalePorts.length) cell.removePorts(stalePorts);
+  cell.setProp("ports", {
+    groups: nextPorts.groups,
+    items: cell.getPorts()
+  });
 }
 
 function projectionPortsByNode(projection: LayoutProjection): Map<string, StudioPortSpec[]> {

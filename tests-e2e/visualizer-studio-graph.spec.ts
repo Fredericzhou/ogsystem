@@ -769,7 +769,7 @@ test("fan-out projection renders a visual bundle without replacing business edge
     await expect(root.locator('[data-cell-id="flow.source.right"]')).toBeVisible();
     await expect(root.locator('[data-cell-id^="__ogs-layout-bundle:"]')).toHaveCount(1);
     await expect(root.locator('[data-cell-id^="__ogs-layout-junction:"]')).toHaveCount(0);
-    await expect(root.locator('[data-cell-id="source"] [data-studio-port="out"]')).toHaveCount(1);
+    await expect(root.locator('[data-cell-id="source"] [data-studio-port="out"]')).toHaveCount(2);
     await expect.poll(async () => root.evaluate((element) =>
       Array.from(element.querySelectorAll("[data-cell-id]")).filter((cell) => {
         const id = cell.getAttribute("data-cell-id") || "";

@@ -205,6 +205,8 @@ test("stored projection preserves positions while renderer stays library-indepen
   assert.match(styles, /\.studio-graph-canvas \.x6-edge-label \{\r?\n\s+pointer-events: none;/);
   assert.match(renderer, /routing\.routePoints\.length > 0/);
   assert.match(renderer, /router: routing\.routePoints\.length > 0/);
+  assert.match(renderer, /Retain stale ports until all edge terminals have been rebound/);
+  assert.ok(renderer.indexOf("for (const edge of viewModel.edges)") < renderer.indexOf("finalizeStudioNodePorts"));
   assert.match(renderer, /studioSccGroup: \{\r?\n\s+memberIds: group\.memberIds/);
   assert.match(renderer, /interacting: true/);
   assert.match(renderer, /export function alignStudioSccGroups\(graph: Graph\)/);
