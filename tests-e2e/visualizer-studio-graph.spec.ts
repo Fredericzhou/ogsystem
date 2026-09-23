@@ -546,6 +546,22 @@ test("SCC container drag moves every member node with the container", async ({ p
     await expect.poll(async () => page.locator("#studio-graph-root .x6-edge-label text").allTextContents())
       .toEqual(expect.arrayContaining(["#3L", "#4L"]));
     await expect(page.locator('#studio-graph-root .x6-edge.is-loop-back')).toHaveCount(2);
+    await expect.poll(async () => page.evaluate(() => Array.from(
+      document.querySelectorAll<SVGGElement>('#studio-graph-root .x6-edge.is-loop-back')
+    ).map((edge) => {
+      const path = edge.querySelector<SVGPathElement>('path[marker-end]');
+      const connection = edge.querySelector<SVGPathElement>('path[marker-end]')
+        || edge.querySelector<SVGPathElement>('.connection');
+      const style = connection ? getComputedStyle(connection) : null;
+      return {
+        hasTargetMarker: Boolean(path?.getAttribute("marker-end")),
+        dashed: Boolean(style && style.strokeDasharray !== "none"),
+        strokeWidth: Number.parseFloat(style?.strokeWidth || "0")
+      };
+    }))).toEqual([
+      { hasTargetMarker: true, dashed: true, strokeWidth: 2.2 },
+      { hasTargetMarker: true, dashed: true, strokeWidth: 2.2 }
+    ]);
 
     const before = await page.evaluate(() => {
       const cellBox = (id: string) => {

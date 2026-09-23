@@ -48,6 +48,13 @@ function edgeStroke(edge: GraphViewModelEdge): string {
   return "#94a3b8";
 }
 
+function isLoopEdge(edge: GraphViewModelEdge): boolean {
+  return edge.channel === "loop"
+    || edge.channel === "feedback"
+    || edge.topologyOrder?.endsWith("L") === true
+    || edge.source === edge.target;
+}
+
 function nodeLabel(node: GraphViewModelNode): string {
   return formatStudioNodeLabel(node);
 }
@@ -630,14 +637,17 @@ function studioEdgeLabels(edge: GraphViewModelEdge): Edge.Metadata["labels"] {
 
 function studioEdgeAttrs(edge: GraphViewModelEdge): Edge.Metadata["attrs"] {
   const stroke = edgeStroke(edge);
+  const loopEdge = isLoopEdge(edge);
   return {
     line: {
       stroke,
-      strokeWidth: edge.participatesInJoin ? 2.4 : 1.7,
+      strokeWidth: loopEdge ? 2.2 : edge.participatesInJoin ? 2.4 : 1.7,
+      strokeDasharray: loopEdge ? "7 5" : "",
+      strokeLinecap: "round",
       targetMarker: {
         name: "block",
-        width: 12,
-        height: 9,
+        width: loopEdge ? 14 : 12,
+        height: loopEdge ? 10 : 9,
         fill: stroke,
         stroke,
         strokeWidth: 1

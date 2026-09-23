@@ -205,6 +205,8 @@ test("stored routing bundles same-direction fan-out and fan-in stubs", () => {
   const rightJoin = projection.edges.find((item) => item.id === "right-join").routing;
   assert.equal(sourceLeft.source.offset, sourceRight.source.offset);
   assert.equal(leftJoin.target.offset, rightJoin.target.offset);
+  assert.equal(leftJoin.routePoints[0].x, 600 + STUDIO_NODE_EDGE_CLEARANCE);
+  assert.equal(rightJoin.routePoints[0].x, 600 + STUDIO_NODE_EDGE_CLEARANCE);
   assert.equal(sourceLeft.source.port, "out-flow-source-left");
   assert.equal(sourceRight.source.port, "out-flow-source-right");
   assert.equal(leftJoin.target.port, "in-flow-left-join");

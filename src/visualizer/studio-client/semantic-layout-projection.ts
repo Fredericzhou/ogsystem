@@ -666,7 +666,15 @@ function terminalPoint(
   return { x: node.x + node.width / 2 + value.offset, y: node.y + node.height };
 }
 
-function terminalRouteStubPoint(
+function terminalConnectionPoint(
+  value: LayoutTerminal,
+  node: LayoutProjectionNode | undefined
+): LayoutPoint | undefined {
+  const boundary = terminalPoint(value, node);
+  return boundary ? outsidePoint(boundary, value.side, STUDIO_NODE_EDGE_CLEARANCE) : undefined;
+}
+
+function terminalMarkerStubPoint(
   value: LayoutTerminal,
   node: LayoutProjectionNode | undefined
 ): LayoutPoint | undefined {
@@ -1137,11 +1145,13 @@ function buildEdgeRouting(
       // when only one side is bundled so the final segment cannot become
       // diagonal between a junction and the other node.
       if (edgeBundles?.source && !edgeBundles.target) {
-        const point = terminalRouteStubPoint(targetTerminal, nodeById.get(edge.target));
+        const point = terminalMarkerStubPoint(targetTerminal, nodeById.get(edge.target));
         if (point) routePoints.push(point);
       }
       if (edgeBundles?.target && !edgeBundles.source) {
-        const point = terminalRouteStubPoint(sourceTerminal, nodeById.get(edge.source));
+        // Match X6's source connection-point offset. A longer stub here would
+        // leave a visible gap between the port and the first route segment.
+        const point = terminalConnectionPoint(sourceTerminal, nodeById.get(edge.source));
         if (point) routePoints.unshift(point);
       }
       orthogonalizeRoutePoints(routePoints);

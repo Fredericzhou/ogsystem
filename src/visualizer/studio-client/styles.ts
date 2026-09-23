@@ -215,9 +215,12 @@ export function injectStudioGraphStyles(): void {
     .studio-graph-canvas .x6-edge.is-runtime-error .connection {
       stroke-dasharray: 7 5;
     }
-    .studio-graph-canvas .x6-edge.is-loop-back .connection {
-      stroke-dasharray: 5 6;
-      stroke-width: 1.9px;
+    .studio-graph-canvas .x6-edge.is-loop-back .connection,
+    .studio-graph-canvas .x6-edge.is-loop-back path[marker-end] {
+      stroke-dasharray: 7 5;
+      stroke-width: 2.2px;
+      stroke-linecap: round;
+      filter: drop-shadow(0 0 0.22rem rgba(45, 212, 191, 0.34));
     }
     .studio-graph-island[data-reduced-motion="on"] .studio-graph-canvas .x6-node.is-selection-focus-pulse rect,
     .studio-graph-island[data-reduced-motion="on"] .studio-graph-canvas .x6-node.is-selection-focus-pulse path:first-of-type,
