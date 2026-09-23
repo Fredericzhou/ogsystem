@@ -6,14 +6,15 @@ import {
   formatStudioEdgeSummaryLabel,
   formatStudioEdgeTopologyLabel
 } from "../studio-edge-semantics.js";
-import type {
-  LayoutEdgeBundle,
-  LayoutEdgeRouting,
-  LayoutPortSpec,
-  LayoutProjection,
-  LayoutSide
+import {
+  formatStudioNodeLabel,
+  STUDIO_NODE_EDGE_CLEARANCE,
+  type LayoutEdgeBundle,
+  type LayoutEdgeRouting,
+  type LayoutPortSpec,
+  type LayoutProjection,
+  type LayoutSide
 } from "./semantic-layout-projection.js";
-import { formatStudioNodeLabel } from "./semantic-layout-projection.js";
 
 export {
   formatStudioEdgeLabel,
@@ -69,7 +70,7 @@ const STUDIO_EDGE_CONNECTOR: StudioEdgeRouting["connector"] = {
 };
 const STUDIO_BOUNDARY_CONNECTION_POINT = {
   name: "boundary",
-  args: { offset: 8 }
+  args: { offset: STUDIO_NODE_EDGE_CLEARANCE }
 } as const;
 
 function projectionRouting(routing: LayoutEdgeRouting): StudioEdgeRouting {

@@ -6,7 +6,9 @@ import {
   createLayoutDigest,
   createStoredLayoutProjection,
   layoutDigest,
-  layoutNodeSize
+  layoutNodeSize,
+  STUDIO_EDGE_TERMINAL_STUB_LENGTH,
+  STUDIO_NODE_EDGE_CLEARANCE
 } from "../src/visualizer/studio-client/semantic-layout-projection.ts";
 import { createElkLayoutProjection } from "../src/visualizer/studio-client/elk-layout-adapter.ts";
 
@@ -218,6 +220,36 @@ test("stored routing bundles same-direction fan-out and fan-in stubs", () => {
   assert.equal(fanInBundle.trunk.at(-1).x, 732);
   assert.deepEqual(leftJoin.routePoints.at(-1), fanInBundle.junction);
   assert.deepEqual(rightJoin.routePoints.at(-1), fanInBundle.junction);
+});
+
+test("bundled business edges keep a visible terminal segment for their markers", () => {
+  const view = graph([
+    node("source", { layout: { x: 100, y: 120, width: 180, height: 84 } }),
+    node("left", { layout: { x: 420, y: 60, width: 180, height: 84 } }),
+    node("right", { layout: { x: 420, y: 240, width: 180, height: 84 } })
+  ], [
+    edge("source-left", "source", "left"),
+    edge("source-right", "source", "right")
+  ]);
+  const projection = createStoredLayoutProjection(view);
+  for (const edgeId of ["source-left", "source-right"]) {
+    const projected = projection.edges.find((item) => item.id === edgeId);
+    assert.ok(projected);
+    const target = projection.nodes.find((item) => item.id === projected.target);
+    const lastPoint = projected.routing.routePoints.at(-1);
+    assert.ok(target && lastPoint);
+    assert.equal(projected.routing.target.side, "left");
+    assert.equal(
+      target.x - lastPoint.x,
+      STUDIO_EDGE_TERMINAL_STUB_LENGTH,
+      `expected ${edgeId} to retain a terminal route stub outside the target`
+    );
+    assert.ok(
+      target.x - (lastPoint.x + STUDIO_NODE_EDGE_CLEARANCE) >=
+        STUDIO_EDGE_TERMINAL_STUB_LENGTH - STUDIO_NODE_EDGE_CLEARANCE - 1,
+      `${edgeId} marker direction segment is too short`
+    );
+  }
 });
 
 test("ELK routing bundles same-direction fan-out and fan-in stubs", async () => {

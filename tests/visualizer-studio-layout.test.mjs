@@ -214,6 +214,7 @@ test("stored projection preserves positions while renderer stays library-indepen
   assert.match(renderer, /export function alignStudioSccGroups\(graph: Graph\)/);
   assert.match(renderer, /formatStudioEdgeTopologyLabel\(edge\)/);
   assert.match(renderer, /distance: 0\.5,\r?\n\s+offset: -15/);
+  assert.match(renderer, /STUDIO_NODE_EDGE_CLEARANCE/);
   assert.match(renderer, /name: "block",\r?\n\s+width: 12,\r?\n\s+height: 9/);
   assert.match(renderer, /targetMarker: \{[\s\S]*?fill: stroke,[\s\S]*?stroke,[\s\S]*?strokeWidth: 1/);
 });

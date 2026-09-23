@@ -141,7 +141,11 @@ const STUDIO_EDGE_FORWARD_ROUTER: LayoutRouter = {
     excludeTerminals: ["source", "target"]
   }
 };
-const NODE_EDGE_CLEARANCE = 8;
+// Keep the X6 connection point just outside the node border. Business edges
+// that terminate after a bundle need an additional stub so the marker has a
+// non-zero final segment from which X6 can derive its direction.
+export const STUDIO_NODE_EDGE_CLEARANCE = 8;
+export const STUDIO_EDGE_TERMINAL_STUB_LENGTH = 24;
 const LOOP_ROUTE_CLEARANCE = 16;
 const LOOP_ROUTE_BEND_PENALTY = 24;
 const BUNDLE_TRUNK_LENGTH = 36;
@@ -662,12 +666,12 @@ function terminalPoint(
   return { x: node.x + node.width / 2 + value.offset, y: node.y + node.height };
 }
 
-function terminalClearancePoint(
+function terminalRouteStubPoint(
   value: LayoutTerminal,
   node: LayoutProjectionNode | undefined
 ): LayoutPoint | undefined {
   const boundary = terminalPoint(value, node);
-  return boundary ? outsidePoint(boundary, value.side, NODE_EDGE_CLEARANCE) : undefined;
+  return boundary ? outsidePoint(boundary, value.side, STUDIO_EDGE_TERMINAL_STUB_LENGTH) : undefined;
 }
 
 function outsidePoint(point: LayoutPoint, side: LayoutSide, distance: number): LayoutPoint {
@@ -756,7 +760,7 @@ function createRoutingBundles(
       const value = first[terminalName];
       const boundary = terminalPoint(value, nodeById.get(value.cell));
       if (!boundary) continue;
-      const clearancePoint = outsidePoint(boundary, value.side, NODE_EDGE_CLEARANCE);
+      const clearancePoint = outsidePoint(boundary, value.side, STUDIO_NODE_EDGE_CLEARANCE);
       const junction = outsidePoint(boundary, value.side, BUNDLE_TRUNK_LENGTH);
       const bundle: LayoutEdgeBundle = {
         id: bundleId(kind, first),
@@ -1133,11 +1137,11 @@ function buildEdgeRouting(
       // when only one side is bundled so the final segment cannot become
       // diagonal between a junction and the other node.
       if (edgeBundles?.source && !edgeBundles.target) {
-        const point = terminalClearancePoint(targetTerminal, nodeById.get(edge.target));
+        const point = terminalRouteStubPoint(targetTerminal, nodeById.get(edge.target));
         if (point) routePoints.push(point);
       }
       if (edgeBundles?.target && !edgeBundles.source) {
-        const point = terminalClearancePoint(sourceTerminal, nodeById.get(edge.source));
+        const point = terminalRouteStubPoint(sourceTerminal, nodeById.get(edge.source));
         if (point) routePoints.unshift(point);
       }
       orthogonalizeRoutePoints(routePoints);

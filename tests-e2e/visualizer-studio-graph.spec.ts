@@ -794,6 +794,23 @@ test("fan-out projection renders a visual bundle without replacing business edge
     await expect(root.locator('[data-cell-id^="__ogs-layout-bundle:"]')).toHaveCount(1);
     await expect(root.locator('[data-cell-id^="__ogs-layout-junction:"]')).toHaveCount(0);
     await expect(root.locator('[data-cell-id="source"] [data-studio-port="out"]')).toHaveCount(2);
+    await expect.poll(async () => root.evaluate((element) => {
+      return ["flow.source.left", "flow.source.right"].map((edgeId) => {
+        const path = element.querySelector<SVGPathElement>(`[data-cell-id="${edgeId}"] path[marker-end]`);
+        if (!path) return { edgeId, hasTargetMarker: false, hasVisibleTerminalSegment: false };
+        const length = path.getTotalLength();
+        const end = path.getPointAtLength(length);
+        const beforeEnd = path.getPointAtLength(Math.max(0, length - 10));
+        return {
+          edgeId,
+          hasTargetMarker: Boolean(path.getAttribute("marker-end")),
+          hasVisibleTerminalSegment: Math.hypot(end.x - beforeEnd.x, end.y - beforeEnd.y) >= 8
+        };
+      });
+    })).toEqual([
+      { edgeId: "flow.source.left", hasTargetMarker: true, hasVisibleTerminalSegment: true },
+      { edgeId: "flow.source.right", hasTargetMarker: true, hasVisibleTerminalSegment: true }
+    ]);
     await expect.poll(async () => root.evaluate((element) =>
       Array.from(element.querySelectorAll("[data-cell-id]")).filter((cell) => {
         const id = cell.getAttribute("data-cell-id") || "";

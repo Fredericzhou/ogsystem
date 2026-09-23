@@ -40,6 +40,7 @@ import {
 import { createElkLayoutProjection } from "./elk-layout-adapter.js";
 import {
   createStoredLayoutProjection,
+  STUDIO_NODE_EDGE_CLEARANCE,
   type LayoutProjection,
   type StudioLayoutMode
 } from "./semantic-layout-projection.js";
@@ -559,7 +560,7 @@ export class StudioGraphIsland {
         snap: true,
         highlight: true,
         anchor: { name: "midSide", args: { direction: "H" } },
-        connectionPoint: { name: "boundary", args: { offset: 8 } },
+        connectionPoint: { name: "boundary", args: { offset: STUDIO_NODE_EDGE_CLEARANCE } },
         router: STUDIO_GRAPH_EDGE_ROUTER,
         connector: STUDIO_GRAPH_EDGE_CONNECTOR,
         createEdge() {
@@ -2410,13 +2411,13 @@ export class StudioGraphIsland {
         cell: preview.sourceRoleId,
         port: studioNodePortId(sourceCell, "out"),
         anchor: { name: "right" },
-        connectionPoint: { name: "boundary", args: { offset: 8 } }
+        connectionPoint: { name: "boundary", args: { offset: STUDIO_NODE_EDGE_CLEARANCE } }
       });
       existing.setTarget({
         cell: targetCellId,
         port: preview.targetRoleId === STUDIO_SYSTEM_END_ROLE_ID ? undefined : studioNodePortId(targetCell, "in"),
         anchor: { name: "left" },
-        connectionPoint: { name: "boundary", args: { offset: 8 } }
+        connectionPoint: { name: "boundary", args: { offset: STUDIO_NODE_EDGE_CLEARANCE } }
       });
       existing.setLabels(nextLabels);
       existing.attr(nextAttrs);
@@ -2431,13 +2432,13 @@ export class StudioGraphIsland {
         cell: preview.sourceRoleId,
         port: studioNodePortId(sourceCell, "out"),
         anchor: { name: "right" },
-        connectionPoint: { name: "boundary", args: { offset: 8 } }
+        connectionPoint: { name: "boundary", args: { offset: STUDIO_NODE_EDGE_CLEARANCE } }
       },
       target: {
         cell: targetCellId,
         port: preview.targetRoleId === STUDIO_SYSTEM_END_ROLE_ID ? undefined : studioNodePortId(targetCell, "in"),
         anchor: { name: "left" },
-        connectionPoint: { name: "boundary", args: { offset: 8 } }
+        connectionPoint: { name: "boundary", args: { offset: STUDIO_NODE_EDGE_CLEARANCE } }
       },
       zIndex: 0,
       data: { studioPendingEdge: preview },
