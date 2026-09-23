@@ -9,7 +9,8 @@ import {
   createStoredLayoutProjection,
   layoutDigest
 } from "../src/visualizer/studio-client/semantic-layout-projection.ts";
-import { topologyComponentIds } from "../src/visualizer/topology-order.ts";
+import { addTopologyFlowOrder, topologyComponentIds } from "../src/visualizer/topology-order.ts";
+import { formatStudioEdgeLabel } from "../src/visualizer/studio-edge-semantics.ts";
 
 function node(id, x, y, structure = {}) {
   const boundary = id === "input" || id === "output";
@@ -149,6 +150,24 @@ test("SCC topology separates independent cycles and merges mutually reachable ne
   });
   assert.equal(nested.get("a"), nested.get("b"));
   assert.equal(nested.get("b"), nested.get("c"));
+});
+
+test("topology flow order is stable, branch-readable, and labels cycles explicitly", () => {
+  const nodes = ["input", "a", "b", "c", "output"].map((id) => node(id, 0, 0));
+  const edges = [
+    edge("entry", "input", "a"),
+    edge("a-b", "a", "b"),
+    edge("a-c", "a", "c"),
+    edge("b-output", "b", "output"),
+    edge("c-self", "c", "c", { channel: "loop" })
+  ];
+  const ordered = addTopologyFlowOrder({ nodes, edges, entryRoleId: "input" });
+  const orderById = new Map(ordered.map((item) => [item.id, item.topologyOrder]));
+  assert.equal(orderById.get("entry"), "1");
+  assert.equal(orderById.get("a-b"), "2a");
+  assert.equal(orderById.get("a-c"), "2b");
+  assert.match(orderById.get("c-self"), /^L\d+$/);
+  assert.match(formatStudioEdgeLabel({ ...edges[1], topologyOrder: orderById.get("a-b") }), /#2a/);
 });
 
 test("stacked loop routes use ELK's vertical geometry without a second router", async () => {

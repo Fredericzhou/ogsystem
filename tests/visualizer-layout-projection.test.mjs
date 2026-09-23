@@ -91,6 +91,52 @@ function diagnosticCodes(projection) {
   return projection.diagnostics.map((diagnostic) => diagnostic.code);
 }
 
+function terminalPoint(node, terminal) {
+  if (terminal.side === "left") return { x: node.x, y: node.y + node.height / 2 + terminal.offset };
+  if (terminal.side === "right") return { x: node.x + node.width, y: node.y + node.height / 2 + terminal.offset };
+  if (terminal.side === "top") return { x: node.x + node.width / 2 + terminal.offset, y: node.y };
+  return { x: node.x + node.width / 2 + terminal.offset, y: node.y + node.height };
+}
+
+function segmentIntersectsNode(start, end, node) {
+  const left = node.x;
+  const right = node.x + node.width;
+  const top = node.y;
+  const bottom = node.y + node.height;
+  if (start.x === end.x) {
+    return start.x >= left && start.x <= right &&
+      Math.max(Math.min(start.y, end.y), top) <= Math.min(Math.max(start.y, end.y), bottom);
+  }
+  if (start.y === end.y) {
+    return start.y >= top && start.y <= bottom &&
+      Math.max(Math.min(start.x, end.x), left) <= Math.min(Math.max(start.x, end.x), right);
+  }
+  throw new Error("Expected an orthogonal route");
+}
+
+function assertRouteAvoidsOtherNodes(projection, edgeId) {
+  const projectedEdge = projection.edges.find((edge) => edge.id === edgeId);
+  assert.ok(projectedEdge);
+  const sourceNode = projection.nodes.find((node) => node.id === projectedEdge.source);
+  const targetNode = projection.nodes.find((node) => node.id === projectedEdge.target);
+  const points = [
+    terminalPoint(sourceNode, projectedEdge.routing.source),
+    ...projectedEdge.routing.routePoints,
+    terminalPoint(targetNode, projectedEdge.routing.target)
+  ];
+  for (let index = 1; index < points.length; index += 1) {
+    for (const node of projection.nodes) {
+      if (node.id === projectedEdge.source || node.id === projectedEdge.target) continue;
+      assert.equal(
+        segmentIntersectsNode(points[index - 1], points[index], node),
+        false,
+        `${edgeId} segment ${index} intersects ${node.id}`
+      );
+    }
+  }
+  assert.equal(diagnosticCodes(projection).includes("EDGE_NODE_COLLISION"), false);
+}
+
 test("generic ELK fixtures preserve fan-out, Join, cycle, error, and multi-terminal semantics", async () => {
   const fanOut = await createElkLayoutProjection(fixture("fan-out"), "flow");
   assert.equal(fanOut.edges.length, 5);
@@ -335,4 +381,36 @@ test("layout diagnostics report route loss and unstable ordering", () => {
   ], view);
   assert.ok(diagnosticCodes(projection).includes("ROUTE_LOSS"));
   assert.ok(diagnosticCodes(projection).includes("UNSTABLE_ORDERING"));
+});
+
+test("stored loop routes use an independent obstacle-free outer lane", () => {
+  const view = graph([
+    node("source", { layout: { x: 760, y: 120, width: 180, height: 84 } }),
+    node("blocker", { layout: { x: 460, y: 120, width: 180, height: 84 } }),
+    node("target", { layout: { x: 140, y: 120, width: 180, height: 84 } })
+  ], [edge("source-target-loop", "source", "target", { channel: "loop" })]);
+  const projection = createStoredLayoutProjection(view);
+  const loop = projection.edges.find((item) => item.id === "source-target-loop");
+  assert.equal(loop.routing.router.name, "normal");
+  assert.ok(loop.routing.routePoints.length >= 2);
+  assert.equal(projection.bundles.length, 0);
+  assertRouteAvoidsOtherNodes(projection, "source-target-loop");
+});
+
+test("stored self-loop routes leave the role node before turning", () => {
+  const view = graph([
+    node("role", { layout: { x: 300, y: 200, width: 180, height: 84 } }),
+    node("neighbor", { layout: { x: 520, y: 200, width: 180, height: 84 } })
+  ], [edge("role-self-loop", "role", "role", { channel: "loop" })]);
+  const projection = createStoredLayoutProjection(view);
+  const loop = projection.edges.find((item) => item.id === "role-self-loop");
+  assert.ok(loop.routing.routePoints.length >= 2);
+  assertRouteAvoidsOtherNodes(projection, "role-self-loop");
+});
+
+test("ELK loop routes remain obstacle-free after automatic layout", async () => {
+  const projection = await createElkLayoutProjection(fixture("cycle"), "flow");
+  const loop = projection.edges.find((item) => item.id === "b-a");
+  assert.equal(loop.routing.router.name, "normal");
+  assertRouteAvoidsOtherNodes(projection, "b-a");
 });

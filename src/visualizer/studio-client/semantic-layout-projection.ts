@@ -142,6 +142,8 @@ const STUDIO_EDGE_FORWARD_ROUTER: LayoutRouter = {
   }
 };
 const NODE_EDGE_CLEARANCE = 8;
+const LOOP_ROUTE_CLEARANCE = 16;
+const LOOP_ROUTE_BEND_PENALTY = 24;
 const BUNDLE_TRUNK_LENGTH = 36;
 
 function edgeSortKey(edge: GraphViewModelEdge): string {
@@ -850,6 +852,168 @@ function routePoints(
   return [];
 }
 
+type RouteGraphState = {
+  pointIndex: number;
+  direction: "horizontal" | "vertical" | "start";
+};
+
+function expandedRouteObstacles(
+  nodeById: ReadonlyMap<string, LayoutProjectionNode>,
+  excludedNodeIds: ReadonlySet<string>
+): LayoutRect[] {
+  return [...nodeById.values()].filter((node) => !excludedNodeIds.has(node.id)).map((node) => ({
+    x: node.x - LOOP_ROUTE_CLEARANCE,
+    y: node.y - LOOP_ROUTE_CLEARANCE,
+    width: node.width + LOOP_ROUTE_CLEARANCE * 2,
+    height: node.height + LOOP_ROUTE_CLEARANCE * 2
+  }));
+}
+
+function pointInsideRouteObstacle(point: LayoutPoint, obstacle: LayoutRect): boolean {
+  return point.x > obstacle.x && point.x < obstacle.x + obstacle.width &&
+    point.y > obstacle.y && point.y < obstacle.y + obstacle.height;
+}
+
+function routeSegmentBlocked(start: LayoutPoint, end: LayoutPoint, obstacles: readonly LayoutRect[]): boolean {
+  if (start.x !== end.x && start.y !== end.y) return true;
+  return obstacles.some((obstacle) => {
+    if (start.y === end.y) {
+      return start.y > obstacle.y && start.y < obstacle.y + obstacle.height &&
+        Math.max(Math.min(start.x, end.x), obstacle.x) < Math.min(Math.max(start.x, end.x), obstacle.x + obstacle.width);
+    }
+    return start.x > obstacle.x && start.x < obstacle.x + obstacle.width &&
+      Math.max(Math.min(start.y, end.y), obstacle.y) < Math.min(Math.max(start.y, end.y), obstacle.y + obstacle.height);
+  });
+}
+
+function routeStateKey(state: RouteGraphState): string {
+  return `${state.pointIndex}:${state.direction}`;
+}
+
+/** Finds an obstacle-aware orthogonal route for loop edges using deterministic visibility channels. */
+function obstacleAwareLoopRoute(
+  edge: GraphViewModelEdge,
+  sourceTerminal: LayoutTerminal,
+  targetTerminal: LayoutTerminal,
+  nodeById: ReadonlyMap<string, LayoutProjectionNode>
+): LayoutPoint[] {
+  const source = terminalPoint(sourceTerminal, nodeById.get(edge.source));
+  const target = terminalPoint(targetTerminal, nodeById.get(edge.target));
+  if (!source || !target) return [];
+
+  // Endpoint nodes are allowed to contain the implicit terminal-to-route
+  // segment. Every other node remains an expanded obstacle with clearance.
+  const excludedNodeIds = edge.source === edge.target
+    ? new Set<string>()
+    : new Set([edge.source, edge.target]);
+  const obstacles = expandedRouteObstacles(nodeById, excludedNodeIds);
+  const xs = new Set<number>([source.x, target.x]);
+  const ys = new Set<number>([source.y, target.y]);
+  for (const obstacle of obstacles) {
+    xs.add(obstacle.x);
+    xs.add(obstacle.x + obstacle.width);
+    ys.add(obstacle.y);
+    ys.add(obstacle.y + obstacle.height);
+  }
+  const xValues = [...xs].sort((left, right) => left - right);
+  const yValues = [...ys].sort((left, right) => left - right);
+  const sourceClearance = outsidePoint(source, sourceTerminal.side, LOOP_ROUTE_CLEARANCE);
+  const targetClearance = outsidePoint(target, targetTerminal.side, LOOP_ROUTE_CLEARANCE);
+  const endpointKeys = new Set([
+    `${source.x}:${source.y}`,
+    `${target.x}:${target.y}`,
+    `${sourceClearance.x}:${sourceClearance.y}`,
+    `${targetClearance.x}:${targetClearance.y}`
+  ]);
+  const points: LayoutPoint[] = [];
+  for (const x of xValues) {
+    for (const y of yValues) {
+      const point = { x, y };
+      if (!endpointKeys.has(`${x}:${y}`) && obstacles.some((obstacle) => pointInsideRouteObstacle(point, obstacle))) continue;
+      points.push(point);
+    }
+  }
+  const pointIndexByKey = new Map(points.map((point, index) => [`${point.x}:${point.y}`, index]));
+  const sourceIndex = pointIndexByKey.get(`${source.x}:${source.y}`);
+  const targetIndex = pointIndexByKey.get(`${target.x}:${target.y}`);
+  if (sourceIndex === undefined || targetIndex === undefined) return [];
+
+  const neighbors = new Map<number, Array<{ pointIndex: number; direction: "horizontal" | "vertical"; distance: number }>>();
+  const connect = (leftIndex: number, rightIndex: number, allowBlocked = false): void => {
+    const left = points[leftIndex];
+    const right = points[rightIndex];
+    if (!allowBlocked && routeSegmentBlocked(left, right, obstacles)) return;
+    const direction = left.y === right.y ? "horizontal" : "vertical";
+    const distance = Math.abs(left.x - right.x) + Math.abs(left.y - right.y);
+    neighbors.set(leftIndex, [...(neighbors.get(leftIndex) ?? []), { pointIndex: rightIndex, direction, distance }]);
+    neighbors.set(rightIndex, [...(neighbors.get(rightIndex) ?? []), { pointIndex: leftIndex, direction, distance }]);
+  };
+  for (const x of xValues) {
+    const column = points
+      .map((point, index) => ({ point, index }))
+      .filter(({ point }) => point.x === x)
+      .sort((left, right) => left.point.y - right.point.y);
+    for (let index = 1; index < column.length; index += 1) connect(column[index - 1].index, column[index].index);
+  }
+  for (const y of yValues) {
+    const row = points
+      .map((point, index) => ({ point, index }))
+      .filter(({ point }) => point.y === y)
+      .sort((left, right) => left.point.x - right.point.x);
+    for (let index = 1; index < row.length; index += 1) connect(row[index - 1].index, row[index].index);
+  }
+  const sourceClearanceIndex = pointIndexByKey.get(`${sourceClearance.x}:${sourceClearance.y}`);
+  const targetClearanceIndex = pointIndexByKey.get(`${targetClearance.x}:${targetClearance.y}`);
+  if (sourceClearanceIndex !== undefined) connect(sourceIndex, sourceClearanceIndex, true);
+  if (targetClearanceIndex !== undefined) connect(targetIndex, targetClearanceIndex, true);
+
+  const startState: RouteGraphState = { pointIndex: sourceIndex, direction: "start" };
+  const queue = [{ state: startState, cost: 0, order: 0 }];
+  const distances = new Map<string, number>([[routeStateKey(startState), 0]]);
+  const previous = new Map<string, string>();
+  let sequence = 1;
+  let finalState: RouteGraphState | undefined;
+  while (queue.length) {
+    queue.sort((left, right) => left.cost - right.cost || left.order - right.order);
+    const current = queue.shift()!;
+    const currentKey = routeStateKey(current.state);
+    if (current.cost !== distances.get(currentKey)) continue;
+    if (current.state.pointIndex === targetIndex) {
+      finalState = current.state;
+      break;
+    }
+    for (const neighbor of neighbors.get(current.state.pointIndex) ?? []) {
+      const bend = current.state.direction !== "start" && current.state.direction !== neighbor.direction
+        ? LOOP_ROUTE_BEND_PENALTY
+        : 0;
+      const nextState: RouteGraphState = { pointIndex: neighbor.pointIndex, direction: neighbor.direction };
+      const nextKey = routeStateKey(nextState);
+      const nextCost = current.cost + neighbor.distance + bend;
+      if (nextCost >= (distances.get(nextKey) ?? Number.POSITIVE_INFINITY)) continue;
+      distances.set(nextKey, nextCost);
+      previous.set(nextKey, currentKey);
+      queue.push({ state: nextState, cost: nextCost, order: sequence++ });
+    }
+  }
+  if (!finalState) return [];
+
+  const path: LayoutPoint[] = [];
+  let cursor = routeStateKey(finalState);
+  while (cursor) {
+    const pointIndex = Number(cursor.split(":", 1)[0]);
+    path.unshift(points[pointIndex]);
+    const prior = previous.get(cursor);
+    if (!prior) break;
+    cursor = prior;
+  }
+  if (path.length < 2) return [];
+  return path.slice(1, -1);
+}
+
+function requiresObstacleAwareRoute(edge: GraphViewModelEdge, route: ReturnType<typeof resolveRoute>): boolean {
+  return route.kind === "self" || route.kind === "backward" || edgeChannel(edge) === "loop";
+}
+
 function projectedRoutePoints(
   edge: GraphViewModelEdge,
   route: ReturnType<typeof resolveRoute>,
@@ -948,6 +1112,10 @@ function buildEdgeRouting(
     const routePoints = projectedRoutePoints(edge, route, nodeById, routePointsByEdgeId);
     alignRouteEndpoint(routePoints, sourceTerminal, nodeById.get(edge.source), "source");
     alignRouteEndpoint(routePoints, targetTerminal, nodeById.get(edge.target), "target");
+    if (requiresObstacleAwareRoute(edge, route)) {
+      const safeRoute = obstacleAwareLoopRoute(edge, sourceTerminal, targetTerminal, nodeById);
+      if (safeRoute.length > 0) routePoints.splice(0, routePoints.length, ...safeRoute);
+    }
     const edgeBundles = bundleByEdgeId.get(edge.id);
     if (edgeBundles?.source) {
       const bundle = bundleById.get(edgeBundles.source);
