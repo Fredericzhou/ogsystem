@@ -78,7 +78,11 @@ function projectionRouting(routing: LayoutEdgeRouting): StudioEdgeRouting {
   return {
     source: toTerminal(routing.source),
     target: toTerminal(routing.target),
-    router: routing.router as NonNullable<Edge.Metadata["router"]>,
+    // A projection with vertices already owns the route. Letting X6 run a
+    // second router here can add terminal loops or undo ELK's channel lanes.
+    router: routing.routePoints.length > 0
+      ? { name: "normal", args: {} }
+      : routing.router as NonNullable<Edge.Metadata["router"]>,
     connector: routing.connector as NonNullable<Edge.Metadata["connector"]>,
     vertices: routing.routePoints
   };

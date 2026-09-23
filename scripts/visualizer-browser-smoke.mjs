@@ -4,7 +4,18 @@ import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 
-const PNPM_BIN = process.env.PNPM_BIN || (process.platform === "win32" ? "pnpm.cmd" : "pnpm");
+function resolvePnpmBin() {
+  if (process.env.PNPM_BIN) return process.env.PNPM_BIN;
+  if (process.platform !== "win32") return "pnpm";
+
+  // Windows can resolve a bare pnpm.cmd through a stale Corepack shim or a
+  // parent workspace. Prefer the package-manager shim beside the active Node
+  // executable, while retaining PATH lookup for Volta and custom installs.
+  const colocatedPnpm = path.join(path.dirname(process.execPath), "pnpm.cmd");
+  return existsSync(colocatedPnpm) ? colocatedPnpm : "pnpm.cmd";
+}
+
+const PNPM_BIN = resolvePnpmBin();
 
 function run(command, args, options = {}) {
   return new Promise((resolve) => {

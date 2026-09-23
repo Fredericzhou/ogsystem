@@ -159,6 +159,17 @@ test("stacked loop routes use ELK's vertical geometry without a second router", 
   assert.ok(verticalLoop.routing.routePoints.length >= 1);
 });
 
+test("stored back edges use their explicit lane instead of a second X6 route", () => {
+  const projection = createStoredLayoutProjection({
+    ...graphViewModel(),
+    nodes: [node("input", 0, 0), node("source", 520, 0), node("target", 180, 0), node("output", 900, 0)],
+    edges: [edge("source-target", "source", "target", { channel: "loop" })]
+  });
+  const loop = projection.edges.find((item) => item.id === "source-target");
+  assert.ok(loop.routing.routePoints.length >= 2);
+  assert.equal(loop.routing.router.name, "normal");
+});
+
 test("stored projection preserves positions while renderer stays library-independent", async () => {
   const viewModel = graphViewModel();
   const projection = createStoredLayoutProjection(viewModel);
@@ -169,6 +180,8 @@ test("stored projection preserves positions while renderer stays library-indepen
   const renderer = await readFile(new URL("../src/visualizer/studio-client/studio-graph-render.ts", import.meta.url), "utf8");
   assert.doesNotMatch(renderer, /from ["']elkjs(?:\/|["'])/);
   assert.match(renderer, /renderStudioGraphViewModel\(graph: Graph, viewModel: GraphViewModel, projection: LayoutProjection\)/);
+  assert.match(renderer, /routing\.routePoints\.length > 0/);
+  assert.match(renderer, /router: routing\.routePoints\.length > 0/);
   assert.match(renderer, /studioSccGroup: \{\r?\n\s+memberIds: group\.memberIds/);
   assert.match(renderer, /interacting: true/);
   assert.match(renderer, /export function alignStudioSccGroups\(graph: Graph\)/);

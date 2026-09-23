@@ -706,6 +706,24 @@ function orthogonalizeRoutePoints(points: LayoutPoint[]): void {
   }
 }
 
+function simplifyRoutePoints(points: LayoutPoint[]): void {
+  for (let index = points.length - 1; index > 0; index -= 1) {
+    const previous = points[index - 1];
+    const current = points[index];
+    if (previous.x === current.x && previous.y === current.y) points.splice(index, 1);
+  }
+  for (let index = 1; index < points.length - 1;) {
+    const previous = points[index - 1];
+    const current = points[index];
+    const next = points[index + 1];
+    if ((previous.x === current.x && current.x === next.x) || (previous.y === current.y && current.y === next.y)) {
+      points.splice(index, 1);
+      continue;
+    }
+    index += 1;
+  }
+}
+
 function bundleId(kind: LayoutBundleKind, draft: RoutingDraft): string {
   const terminalValue = draft[kind === "fan-out" ? "source" : "target"];
   return ["__ogs-layout-bundle", kind, terminalValue.cell, terminalValue.side, draft.route.kind, edgeChannel(draft.edge)].join(":");
@@ -818,6 +836,14 @@ function routePoints(
   }
   if (route.kind === "backward") {
     const laneX = Math.min(sourceCenter.x, targetCenter.x) - 30;
+    if (Math.abs(sourceCenter.y - targetCenter.y) < 1) {
+      const detourY = sourceCenter.y - 36;
+      return [
+        { x: laneX, y: sourceCenter.y },
+        { x: laneX, y: detourY },
+        { x: target ? target.x + target.width : laneX, y: detourY }
+      ];
+    }
     return [{ x: laneX, y: sourceCenter.y }, { x: laneX, y: targetCenter.y }];
   }
   return [];
@@ -953,11 +979,13 @@ function buildEdgeRouting(
       }
       orthogonalizeRoutePoints(routePoints);
     }
+    simplifyRoutePoints(routePoints);
+    const hasFixedRoute = routePoints.length > 0;
     result.set(edge.id, {
       kind: route.kind,
       source: sourceTerminal,
       target: targetTerminal,
-      router: hasBundle ? { name: "normal", args: {} } : routerFor(edge, route, nodeById, geometryByEdgeId?.has(edge.id)),
+      router: hasFixedRoute ? { name: "normal", args: {} } : routerFor(edge, route, nodeById, geometryByEdgeId?.has(edge.id)),
       connector: STUDIO_EDGE_CONNECTOR,
       routePoints,
       lane: `${edgeChannel(edge)}:${route.kind}:${sourceOffset}:${targetOffset}`,
