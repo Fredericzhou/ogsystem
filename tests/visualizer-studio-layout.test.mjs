@@ -178,8 +178,12 @@ test("stored projection preserves positions while renderer stays library-indepen
   });
 
   const renderer = await readFile(new URL("../src/visualizer/studio-client/studio-graph-render.ts", import.meta.url), "utf8");
+  const labelProjection = await readFile(new URL("../src/visualizer/studio-client/semantic-layout-projection.ts", import.meta.url), "utf8");
   assert.doesNotMatch(renderer, /from ["']elkjs(?:\/|["'])/);
   assert.match(renderer, /renderStudioGraphViewModel\(graph: Graph, viewModel: GraphViewModel, projection: LayoutProjection\)/);
+  assert.match(labelProjection, /return node\.roleSeat \? `Role \/ Agent: \$\{label\}` : label/);
+  const styles = await readFile(new URL("../src/visualizer/studio-client/styles.ts", import.meta.url), "utf8");
+  assert.match(styles, /\.studio-graph-canvas \.x6-edge-label \{\r?\n\s+pointer-events: none;/);
   assert.match(renderer, /routing\.routePoints\.length > 0/);
   assert.match(renderer, /router: routing\.routePoints\.length > 0/);
   assert.match(renderer, /studioSccGroup: \{\r?\n\s+memberIds: group\.memberIds/);

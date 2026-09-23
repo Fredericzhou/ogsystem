@@ -17,15 +17,39 @@ An actual person, model, service, or tool may realize a responsibility through a
 binding or an external governance integration. That realization is not the identity of the OGS
 role and does not change the process graph.
 
+## Role-first Graph Contract
+
+The OGS graph is intentionally **role-first**:
+
+- A graph node is one stable Responsibility Role / Responsibility Seat. In product usage, each
+  role can be understood as an agent seat: an agent, model, person, service, or tool performs the
+  role's responsibility under its Role Contract.
+- A `Flow` is a direct role-to-role handoff. The source role completes its responsibility and
+  hands an event, outcome, or contracted context to the target role.
+- The edge label carries the event, handoff outcome, or error route. The event is not a node.
+- Events, actions, tasks, gateways, process steps, branches, run instances, and runtime states
+  must not be modeled as Responsibility Role nodes. Keep those concepts in Role Contracts, edge
+  labels, runtime overlays, or run details.
+
+The canonical graph shape is therefore:
+
+```text
+input -> Role/Agent A --handoff event--> Role/Agent B -> output
+```
+
+The role graph describes stable accountability and collaboration boundaries. It does not expand
+an agent's internal task list into process-step nodes. Add another role only when there is a
+distinct responsibility, capability, input/output contract, or audit boundary.
+
 ## Core Terms
 
 | Term | Meaning | Is not |
 | --- | --- | --- |
 | **System** | A versioned, bounded collaboration system: roles, transitions, contracts, policies, and runtime boundary. | A host process, organization, or one run. |
-| **Responsibility Role** | A stable abstract responsibility in a System. `roleId` identifies it. A role answers "which responsibility owns this contribution?" | A person, account, model, service instance, or execution. |
+| **Responsibility Role** | A stable abstract responsibility in a System. `roleId` identifies it. In execution, an agent realizes the role and answers "which responsibility owns this contribution?" | A task, event, process step, gateway, runtime instance, or identity. |
 | **Responsibility Seat** | The static graph position occupied by one Responsibility Role in one System. In the current graph it is the rendered role node. | A BPMN gateway/event or a runtime instance. |
 | **Role Package** | Versioned implementation material associated with a role, such as prompt, manifest, and I/O schema. | The responsibility itself. A package may change while the role identity remains stable. |
-| **Transition** | A declared event-bearing relation between responsibility seats. It defines permitted collaboration and routing. | A new role, message participant, or execution instance. |
+| **Flow / Transition** | A declared event-bearing, role-to-role handoff. The source role completes work and transfers the contracted outcome to the target role. | An event node, action node, process step, message participant, or execution instance. |
 | **Branch / Lineage** | Runtime execution identity and ancestry. `branchId` identifies one active path; `lineageId` scopes related paths. | A static role or business responsibility. |
 | **Role Execution Record** | One durable record of one role activation in one run/branch/lineage/loop context. | The role definition or seat. |
 | **Control-plane principal** | An external identity recorded for an operator action, such as a human-review decision. | A Responsibility Role. It never becomes a graph node merely by being recorded in audit. |

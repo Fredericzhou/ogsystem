@@ -14,6 +14,11 @@ Implemented scope:
 - Reliability: versioned state snapshots, CAS/idempotent commits, checkpoint replay, and runtime audit adapter ports
 - Visualizer: responsibility-seat graph projections, semantic edge labels, loop channels, modes, Join overlays, and run-state overlays
 
+Graph modeling invariant:
+
+- A node is a responsibility role/agent seat, not an event, action, task, gateway, process step, or runtime record.
+- A flow is a direct role-to-role handoff after the source role completes its responsibility; edge labels carry the event or handoff outcome.
+
 Non-goals:
 
 - No cross-host distributed runtime

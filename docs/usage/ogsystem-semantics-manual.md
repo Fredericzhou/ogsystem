@@ -9,8 +9,8 @@
 ## 1. 手册目标
 
 这份手册不是概念介绍，而是“可执行语义合同”。产品术语以 [OGS Core Concepts](ogsystem-core-concepts.md)
-为准：`Role` 是抽象责任角色，`Responsibility Seat` 是其静态图位置，`Role Package` 是实现资产；三者都不
-表示具体人员或一次运行实例。
+为准：`Role` 是抽象责任角色/Agent 席位，`Responsibility Seat` 是其静态图位置，`Role Package` 是实现资产。
+`Flow` 表示源角色完成职责后向目标角色进行 handoff；事件、动作、处理步骤和运行事实都不是角色节点。
 
 - 你在 Mermaid 里写的语义，解析器是否接受。
 - 解析通过后，运行时如何调度、汇合、补偿与恢复。
@@ -19,6 +19,15 @@
 ---
 
 ## 2. DSL 基础语法与全局约束
+
+### 2.0 角色优先图契约
+
+- Mermaid 节点只能表达 `Role`：`nodeId[Role:roleId]`。一个 Role 可以理解为一个承担责任合同的
+  agent；图上显示的是责任席位，不是具体人员或一次执行实例。
+- Flow 只能表示角色到角色的直接流转：源角色完成任务后，将事件、结果或约定上下文 handoff 给目标角色。
+- 事件、动作、任务、网关、处理步骤、分支、运行实例和状态不能创建为 Role 节点。
+- 事件名和 handoff 结果放在边标签；运行状态、checkpoint、execution outcome 等放在运行投影或运行详情。
+- 不要把一个 Role 内部的工作清单拆成多个伪节点；只有具有独立责任、能力、合同或审计边界时才新增 Role。
 
 ### 2.1 最小可执行图（基础路由）
 
@@ -457,24 +466,15 @@ fallbackNode[Role:fallback_handler] -->|DONE| output
 
 ### 10.1 执行落盘流程
 
-#### 图示
+#### 说明（运行细节，不是角色图）
 
-```mermaid
-flowchart TD
-%% system.id=demo.resume.wal
-%% system.version=1.0.0
-%% law.global=law.default
-%% entry.role=role
-%% model.bind.role=model.main
-%% model.bind.execution_outcome=model.main
-%% model.bind.checkpoint=model.main
-%% model.bind.state=model.main
-input -->|EXECUTION_COMPLETE| role[Role:role]
-role[Role:role] -->|DURABLE_WRITE| outcome[Role:execution_outcome]
-outcome[Role:execution_outcome] -->|APPEND_CHECKPOINT| checkpoint[Role:checkpoint]
-checkpoint[Role:checkpoint] -->|APPLY_UPDATE| state[Role:state]
-state[Role:state] -->|DONE| output
+```text
+Static graph: input -> Role:role -> output
+Runtime evidence: role activation -> execution-outcome.json -> checkpoint WAL -> state.json
 ```
+
+`execution-outcome.json`、checkpoint 和 `state.json` 是运行产物，不是 Role，也不应写成
+`[Role:execution_outcome]`、`[Role:checkpoint]` 或 `[Role:state]` 节点。
 
 #### 含义
 

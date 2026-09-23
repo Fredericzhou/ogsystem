@@ -184,6 +184,9 @@ export function injectStudioGraphStyles(): void {
       stroke-linecap: round;
       stroke-linejoin: round;
     }
+    .studio-graph-canvas .x6-edge-label {
+      pointer-events: none;
+    }
     .studio-graph-canvas .x6-edge:hover .connection {
       stroke-width: 2.1px !important;
     }

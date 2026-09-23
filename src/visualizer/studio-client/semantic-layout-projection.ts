@@ -175,7 +175,8 @@ export function formatStudioNodeLabel(node: GraphViewModelNode): string {
     : [];
   const topology = node.topologyComponentId ? [node.topologyComponentId] : [];
   const badges = [...semanticBadges, ...formatStudioRuntimeNodeBadges(node), ...topology];
-  return badges.length ? `${node.label}  [${badges.join(" ")}]` : node.label;
+  const label = badges.length ? `${node.label}  [${badges.join(" ")}]` : node.label;
+  return node.roleSeat ? `Role / Agent: ${label}` : label;
 }
 
 function projectedLabel(node: GraphViewModelNode): string {
