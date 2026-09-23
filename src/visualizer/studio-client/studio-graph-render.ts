@@ -1,7 +1,11 @@
 import type { Edge, Graph, Node } from "@antv/x6";
 
 import type { GraphViewModel, GraphViewModelEdge, GraphViewModelNode } from "../studio-contracts.js";
-import { formatStudioEdgeLabel } from "../studio-edge-semantics.js";
+import {
+  formatStudioEdgeLabel,
+  formatStudioEdgeSummaryLabel,
+  formatStudioEdgeTopologyLabel
+} from "../studio-edge-semantics.js";
 import type {
   LayoutEdgeBundle,
   LayoutEdgeRouting,
@@ -11,7 +15,11 @@ import type {
 } from "./semantic-layout-projection.js";
 import { formatStudioNodeLabel } from "./semantic-layout-projection.js";
 
-export { formatStudioEdgeLabel } from "../studio-edge-semantics.js";
+export {
+  formatStudioEdgeLabel,
+  formatStudioEdgeSummaryLabel,
+  formatStudioEdgeTopologyLabel
+} from "../studio-edge-semantics.js";
 
 function diagnosticBadgeText(severity: GraphViewModelNode["diagnostic"] extends infer T
   ? T extends { severity: infer S }
@@ -542,10 +550,43 @@ function studioEdgeMetadata(edge: GraphViewModelEdge, routing?: StudioEdgeRoutin
 }
 
 function studioEdgeLabels(edge: GraphViewModelEdge): Edge.Metadata["labels"] {
-  const labels: NonNullable<Edge.Metadata["labels"]> = [{
+  const labels: NonNullable<Edge.Metadata["labels"]> = [];
+  const topologyLabel = formatStudioEdgeTopologyLabel(edge);
+  if (topologyLabel) {
+    labels.push({
+      position: {
+        distance: 0.5,
+        offset: -15
+      },
+      markup: [
+        { tagName: "rect", selector: "body" },
+        { tagName: "text", selector: "label" }
+      ],
+      attrs: {
+        label: {
+          text: topologyLabel,
+          fill: "#e0f2fe",
+          fontSize: 10,
+          fontWeight: 800
+        },
+        body: {
+          fill: "#075985",
+          stroke: "#38bdf8",
+          strokeWidth: 1,
+          rx: 4,
+          ry: 4
+        }
+      }
+    });
+  }
+  labels.push({
+    position: {
+      distance: 0.5,
+      offset: topologyLabel ? 9 : 0
+    },
     attrs: {
       label: {
-        text: formatStudioEdgeLabel(edge),
+        text: formatStudioEdgeSummaryLabel(edge),
         fill: "#dbeafe",
         fontSize: 11
       },
@@ -555,7 +596,7 @@ function studioEdgeLabels(edge: GraphViewModelEdge): Edge.Metadata["labels"] {
         strokeWidth: 1
       }
     }
-  }];
+  });
   if (edge.diagnostic) {
     labels.push({
       position: {
@@ -585,14 +626,18 @@ function studioEdgeLabels(edge: GraphViewModelEdge): Edge.Metadata["labels"] {
 }
 
 function studioEdgeAttrs(edge: GraphViewModelEdge): Edge.Metadata["attrs"] {
+  const stroke = edgeStroke(edge);
   return {
     line: {
-      stroke: edgeStroke(edge),
+      stroke,
       strokeWidth: edge.participatesInJoin ? 2.4 : 1.7,
       targetMarker: {
         name: "block",
-        width: 8,
-        height: 6
+        width: 12,
+        height: 9,
+        fill: stroke,
+        stroke,
+        strokeWidth: 1
       }
     }
   };

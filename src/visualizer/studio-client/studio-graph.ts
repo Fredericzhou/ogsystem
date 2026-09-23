@@ -572,7 +572,14 @@ export class StudioGraphIsland {
                 stroke: "#38bdf8",
                 strokeWidth: 1.8,
                 strokeDasharray: "7 5",
-                targetMarker: { name: "block", width: 8, height: 6 }
+                targetMarker: {
+                  name: "block",
+                  width: 12,
+                  height: 9,
+                  fill: "#38bdf8",
+                  stroke: "#38bdf8",
+                  strokeWidth: 1
+                }
               }
             },
             labels: [{ attrs: { label: { text: "DONE" } } }]
@@ -2389,8 +2396,11 @@ export class StudioGraphIsland {
         strokeDasharray: "7 5",
         targetMarker: {
           name: "block",
-          width: 8,
-          height: 6
+          width: 12,
+          height: 9,
+          fill: "#38bdf8",
+          stroke: "#38bdf8",
+          strokeWidth: 1
         }
       }
     };

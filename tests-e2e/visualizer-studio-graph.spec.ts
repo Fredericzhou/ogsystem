@@ -684,6 +684,27 @@ test("Studio graph island exposes minimap, focus pulse, and quick open when moun
     await expect(page.locator("#studio-graph-direct-root [data-cell-id=\"demo-analyst\"]")).toBeVisible();
     await expect(page.locator("#studio-graph-direct-root [data-studio-graph-minimap]")).toBeVisible();
     await expect(page.locator("#studio-graph-direct-root [data-minimap-role-id=\"demo-analyst\"]")).toBeVisible();
+    const directGraph = page.locator("#studio-graph-direct-root");
+    await expect.poll(async () => directGraph.evaluate((root) => {
+      const topologyLabels = Array.from(root.querySelectorAll(".x6-edge-label text"))
+        .map((element) => element.textContent?.trim() || "")
+        .filter((text) => /^#/.test(text));
+      const edgePath = root.querySelector('[data-cell-id="flow.demo-qa"] path[marker-end]');
+      return {
+        topologyLabels,
+        hasTargetMarker: Boolean(edgePath?.getAttribute("marker-end"))
+      };
+    })).toEqual({
+      topologyLabels: expect.arrayContaining([expect.stringMatching(/^#/)]),
+      hasTargetMarker: true
+    });
+
+    await directGraph.locator('[data-studio-graph-action="topology-order"]').evaluate((button) => button.click());
+    await expect(directGraph.locator('[data-studio-graph-action="topology-order"]')).toHaveAttribute("aria-pressed", "false");
+    await expect.poll(async () => directGraph.evaluate((root) => Array.from(root.querySelectorAll(".x6-edge-label text"))
+      .some((element) => /^#/.test(element.textContent?.trim() || "")))).toBe(false);
+    await directGraph.locator('[data-studio-graph-action="topology-order"]').evaluate((button) => button.click());
+    await expect(directGraph.locator('[data-studio-graph-action="topology-order"]')).toHaveAttribute("aria-pressed", "true");
 
     await page.evaluate(() => {
       const root = document.getElementById("studio-graph-direct-root");
