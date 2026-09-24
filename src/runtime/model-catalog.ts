@@ -332,7 +332,8 @@ async function runOpencodeModelsVerbose(
   return new Promise((resolvePromise, reject) => {
     const child = spawn("opencode", ["models", "--verbose"], {
       cwd: workdir,
-      stdio: ["ignore", "pipe", "pipe"]
+      stdio: ["ignore", "pipe", "pipe"],
+      shell: process.platform === "win32"
     });
     let stdout = "";
     let stderr = "";
