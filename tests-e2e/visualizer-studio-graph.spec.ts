@@ -200,14 +200,18 @@ test("Studio Bridge renders and edits through the real graph workspace", async (
     const browseFilter = page.locator('[data-studio-bridge-filter="1"]');
     await browseFilter.fill("demo");
     await page.locator('[data-studio-role-id="demo-analyst"]').click();
-    await expect(page.locator('[data-studio-selection-panel="selection"]')).toBeVisible();
+    await expect(page.locator('[data-studio-selection-panel="structure"]')).toBeVisible();
+    await expect(page.locator('[data-studio-selection-inline-editor] [data-role-config-editor="demo-analyst"]')).toBeVisible();
+    await expect(page.locator('[data-studio-side-tab="structure"]')).toHaveAttribute("aria-pressed", "true");
     await expectStudioCellPulse(page, "demo-analyst");
     await page.locator("[data-studio-selection-back]").click();
     await expect(page.locator('[data-studio-selection-panel="structure"]')).toBeVisible();
     await expect(page.locator('[data-studio-bridge-filter="1"]')).toHaveValue("demo");
     const firstFilteredFlow = page.locator('[data-studio-flow-key]').first();
     await firstFilteredFlow.click();
-    await expect(page.locator('[data-studio-selection-panel="selection"]')).toBeVisible();
+    await expect(page.locator('[data-studio-selection-panel="structure"]')).toBeVisible();
+    await expect(page.locator('[data-studio-selection-inline-editor] [data-flow-config-editor]')).toBeVisible();
+    await expect(page.locator('[data-studio-side-tab="structure"]')).toHaveAttribute("aria-pressed", "true");
     await page.locator("[data-studio-selection-back]").click();
     await expect(page.locator('[data-studio-bridge-filter="1"]')).toHaveValue("demo");
     await page.locator('[data-studio-bridge-filter="1"]').fill("");
@@ -990,7 +994,8 @@ test("deployed visualizer UAT keeps flow layout, browse return, and wheel zoom w
     await rolesSection.locator("summary").click();
   }
   await page.locator('[data-studio-role-id="proposal-author"]').click();
-  await expect(page.locator('[data-studio-selection-panel="selection"]')).toBeVisible();
+  await expect(page.locator('[data-studio-selection-panel="structure"]')).toBeVisible();
+  await expect(page.locator('[data-studio-selection-inline-editor] [data-role-config-editor="proposal-author"]')).toBeVisible();
   await page.locator("[data-studio-selection-back]").click();
   await expect(page.locator('[data-studio-selection-panel="structure"]')).toBeVisible();
 

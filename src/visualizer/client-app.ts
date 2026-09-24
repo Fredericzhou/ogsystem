@@ -2123,8 +2123,8 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
     function patchStudioBridgeShell(args) {
       const shell = findStudioBridgeElement("[data-studio-canvas-shell]");
       const root = document.getElementById("studio-graph-root");
-      const structurePanel = findStudioBridgeElement('[data-studio-selection-panel="structure"]');
-      if (!shell || !root || !structurePanel) {
+      const structureContent = findStudioBridgeElement("[data-studio-selection-structure-content]");
+      if (!shell || !root || !structureContent) {
         return false;
       }
       shell.classList.toggle("has-collapsed-selection", state.studioInspectorCollapsed === true);
@@ -2133,7 +2133,7 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
         root.classList.add("studio-graph-root");
       }
       root.setAttribute("data-workbench-root-mode", "bridge");
-      const structureChanged = setInnerHtmlIfChanged(structurePanel, args.selectionStructureHtml || "");
+      const structureChanged = setInnerHtmlIfChanged(structureContent, args.selectionStructureHtml || "");
       updateStudioBridgeSelection(false);
       syncStudioBridgeFullscreenChrome();
       if (structureChanged) {
@@ -2297,7 +2297,7 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
       }
       state.studioBridgeSelectedRoleId = nextRoleId;
       state.studioBridgeSelectedFlowKey = "";
-      state.studioWorkbenchSideTab = "selection";
+      state.studioWorkbenchSideTab = "structure";
       state.studioBridgeEditSelectionRequest += 1;
       updateStudioBridgeSelection(options?.syncGraph !== false);
       loadStudioRoleConfigEditor(nextRoleId);
@@ -2317,7 +2317,7 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
       }
       state.studioBridgeSelectedFlowKey = nextFlowKey;
       state.studioBridgeSelectedRoleId = "";
-      state.studioWorkbenchSideTab = "selection";
+      state.studioWorkbenchSideTab = "structure";
       state.studioBridgeEditSelectionRequest += 1;
       loadStudioFlowConfigEditor(nextFlowKey);
       updateStudioBridgeSelection(options?.syncGraph !== false);
@@ -3005,10 +3005,12 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
       const rolePackage = findStudioBridgeElement("[data-studio-selection-role-package]");
       const selectionPanel = findStudioBridgeElement('[data-studio-selection-panel="selection"]');
       const structurePanel = findStudioBridgeElement('[data-studio-selection-panel="structure"]');
+      const structureContent = findStudioBridgeElement("[data-studio-selection-structure-content]");
+      const inlineEditor = findStudioBridgeElement("[data-studio-selection-inline-editor]");
       const debugPanel = findStudioBridgeElement('[data-studio-selection-panel="debug"]');
       const logsPanel = findStudioBridgeElement('[data-studio-selection-panel="logs"]');
       const resultPanel = findStudioBridgeElement('[data-studio-selection-panel="result"]');
-      if (!shell || !overlay || !dialog || !kindLabel || !title || !rolePackage || !selectionPanel || !structurePanel || !debugPanel || !logsPanel) {
+      if (!shell || !overlay || !dialog || !kindLabel || !title || !rolePackage || !selectionPanel || !structurePanel || !structureContent || !inlineEditor || !debugPanel || !logsPanel) {
         return;
       }
       const selectedRoleIdValue = state.studioBridgeSelectedRoleId || "";
@@ -3041,7 +3043,10 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
       overlay.hidden = false;
       overlay.classList.toggle("is-collapsed", collapsed);
       shell.classList.toggle("has-collapsed-selection", collapsed);
-      const structureChanged = setInnerHtmlIfChanged(structurePanel, structureHtml);
+      const structureChanged = setInnerHtmlIfChanged(structureContent, structureHtml);
+      const showInlineEditor = activeTab === "structure" && Boolean(selectionKind);
+      inlineEditor.hidden = !showInlineEditor;
+      (showInlineEditor ? inlineEditor : selectionPanel).appendChild(rolePackage);
       selectionPanel.hidden = activeTab !== "selection";
       structurePanel.hidden = activeTab !== "structure";
       debugPanel.hidden = activeTab !== "debug";
@@ -3096,7 +3101,7 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
         collapseButton.textContent = collapsed ? ">" : "<";
       }
 
-      if (activeTab === "selection" && selectionKind === "role") {
+      if ((activeTab === "selection" || activeTab === "structure") && selectionKind === "role") {
         ensureStudioRoleConfigEditor(selectedRoleIdValue);
         ensureStudioExecutionConfigEditor(selectedRoleIdValue);
         const selectedRoleForSummary = (resolveStudioBridgeForDisplay()?.extracted?.roles || [])
@@ -3155,7 +3160,7 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
         if (resultPanel) {
           resultPanel.innerHTML = "";
         }
-      } else if (activeTab === "selection" && selectionKind === "flow") {
+      } else if ((activeTab === "selection" || activeTab === "structure") && selectionKind === "flow") {
         const editorFlowKey = studioFlowConfigEditorFlowKeyForSelectionDialog();
         const selectedFlow = resolveSelectedStudioFlowByKey(editorFlowKey);
         const dirtyFlowKey = String(state.studioFlowConfigEditor?.flowKey || "");

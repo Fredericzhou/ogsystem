@@ -1403,6 +1403,17 @@ export function renderPageShellStyles(): string {
       align-self: stretch;
       gap: 8px;
     }
+    .studio-selection-inline-editor {
+      display: grid;
+      align-content: start;
+      gap: 8px;
+      margin-top: 10px;
+      padding-top: 10px;
+      border-top: 1px solid var(--border);
+    }
+    .studio-selection-inline-editor[hidden] {
+      display: none;
+    }
     .studio-selection-title-wrap strong {
       display: block;
       font-size: 12px;
