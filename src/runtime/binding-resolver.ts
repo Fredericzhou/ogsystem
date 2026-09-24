@@ -17,6 +17,7 @@ export type ResolvedExecutionBinding = {
   commandBaseDir?: string;
   env?: Record<string, string>;
   modelRef?: string;
+  backend?: string;
   profileId?: string;
   toolRef?: string;
   command?: string;
@@ -51,10 +52,12 @@ export function resolveExecutionBinding(args: {
     return {
       binding: {
         kind: "model",
+        backend: args.node.binding.backend,
+        modelId: args.node.binding.modelId,
         modelRef,
         variant
       },
-      bindingLabel: `model:${modelRef}`,
+      bindingLabel: `model:${args.node.binding.backend}/${args.node.binding.modelId}`,
       timeoutMs: args.node.binding.timeoutMs ?? defaults.timeoutMs,
       maxOutputBytes:
         args.node.binding.maxOutputBytes ??
@@ -67,10 +70,12 @@ export function resolveExecutionBinding(args: {
         OGSYSTEM_ROLE_DIR: args.roleDirs?.roleDir ?? workdir,
         OGSYSTEM_PRIVATE_DIR: sessionDirectory ?? "",
         OGSYSTEM_ROLE_ID: args.roleId,
-        OGSYSTEM_MODEL_ID: modelRef,
+        OGSYSTEM_MODEL_ID: args.node.binding.modelId,
+        OGSYSTEM_MODEL_BACKEND: args.node.binding.backend,
         OGSYSTEM_ALLOWED_EVENTS: args.allowedEvents.join(",")
       },
       modelRef,
+      backend: args.node.binding.backend,
       sessionDirectory
     };
   }

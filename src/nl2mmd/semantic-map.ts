@@ -274,8 +274,8 @@ const HINT_RULES: HintRule[] = [
     pattern: /模型|推理|快一点|低成本|高质量|fast|cheap|deep|reasoning/i,
     hint: {
       kind: "model_lookup",
-      label: "model.bind",
-      detail: 'Detected model-selection intent. Prefer `model.bind.<roleId>=provider/model` or project defaults in `.ogs/model-selection.json`.'
+      label: "model selection",
+      detail: 'Detected model-selection intent. Configure backend and modelId in Studio or `.ogs/model-selection.json`; keep it out of Mermaid.'
     }
   },
   {

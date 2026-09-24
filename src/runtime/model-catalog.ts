@@ -5,6 +5,7 @@ import { resolve } from "node:path";
 import { readJsonFile } from "./json-file.js";
 import { pathExists } from "./run-store.js";
 import type { ModelCatalog, ModelCatalogEntry } from "./types.js";
+import { CodexAppServerClient } from "./codex-app-server.js";
 
 export const OPENCODE_MODEL_DISCOVERY_COMMAND = "opencode models --verbose";
 export const MODEL_CATALOG_STALE_AFTER_MS = 24 * 60 * 60 * 1000;
@@ -80,10 +81,21 @@ function asStringArray(value: unknown, filePath: string, fieldPath: string): str
 export function validateModelCatalog(value: unknown, filePath: string): ModelCatalog {
   const record = asRecord(value, filePath, "$");
   const catalogVersion = asString(record.catalogVersion, filePath, "$.catalogVersion");
-  if (catalogVersion !== "1") {
+  if (catalogVersion !== "2") {
     fail(filePath, "$.catalogVersion", `unsupported version "${catalogVersion}"`);
   }
-  const source = asRecord(record.source, filePath, "$.source");
+  if (!Array.isArray(record.sources)) fail(filePath, "$.sources", "expected array");
+  const sources = record.sources.map((value, index) => {
+    const source = asRecord(value, filePath, `$.sources[${index}]`);
+    const status = asString(source.status, filePath, `$.sources[${index}].status`);
+    if (status !== "available" && status !== "unavailable") fail(filePath, `$.sources[${index}].status`, "expected available or unavailable");
+    return {
+      backend: asString(source.backend, filePath, `$.sources[${index}].backend`),
+      command: asString(source.command, filePath, `$.sources[${index}].command`),
+      status,
+      detail: asOptionalString(source.detail, filePath, `$.sources[${index}].detail`)
+    } as const;
+  });
   const modelsValue = record.models;
   if (!Array.isArray(modelsValue)) {
     fail(filePath, "$.models", "expected array");
@@ -95,7 +107,10 @@ export function validateModelCatalog(value: unknown, filePath: string): ModelCat
     const rawRecord =
       rawValue === undefined ? undefined : asRecord(rawValue, filePath, `$.models[${index}].raw`);
     return {
-      ref: asString(modelRecord.ref, filePath, `$.models[${index}].ref`),
+      backend: asString(modelRecord.backend, filePath, `$.models[${index}].backend`),
+      runnable: modelRecord.runnable === true,
+      modelId: asString(modelRecord.modelId, filePath, `$.models[${index}].modelId`),
+      ref: `${asString(modelRecord.backend, filePath, `$.models[${index}].backend`)}/${asString(modelRecord.modelId, filePath, `$.models[${index}].modelId`)}`,
       provider: asString(modelRecord.provider, filePath, `$.models[${index}].provider`),
       model: asString(modelRecord.model, filePath, `$.models[${index}].model`),
       name: asOptionalString(modelRecord.name, filePath, `$.models[${index}].name`),
@@ -124,11 +139,9 @@ export function validateModelCatalog(value: unknown, filePath: string): ModelCat
   });
 
   return {
-    catalogVersion: "1",
+    catalogVersion: "2",
     generatedAt: asString(record.generatedAt, filePath, "$.generatedAt"),
-    source: {
-      command: asString(source.command, filePath, "$.source.command")
-    },
+    sources,
     models
   };
 }
@@ -159,6 +172,9 @@ function normalizeRawOpencodeModel(args: {
     throw new Error(`Invalid OpenCode model reference from verbose output: ${args.ref}`);
   }
   return {
+    backend: "opencode",
+    runnable: true,
+    modelId: args.ref,
     ref: args.ref,
     provider: args.ref.slice(0, separator),
     model: args.ref.slice(separator + 1),
@@ -250,11 +266,9 @@ export function parseOpencodeModelsVerboseOutput(stdout: string): ModelCatalog {
   }
 
   return {
-    catalogVersion: "1",
+    catalogVersion: "2",
     generatedAt: new Date().toISOString(),
-    source: {
-      command: OPENCODE_MODEL_DISCOVERY_COMMAND
-    },
+    sources: [{ backend: "opencode", command: OPENCODE_MODEL_DISCOVERY_COMMAND, status: "available" }],
     models
   };
 }
@@ -373,6 +387,70 @@ export async function refreshModelCatalog(args: {
   }
 }
 
+async function commandAvailable(command: string, workdir: string): Promise<boolean> {
+  return new Promise((resolvePromise) => {
+    const child = spawn(command, ["--version"], {
+      cwd: workdir,
+      stdio: "ignore",
+      shell: process.platform === "win32"
+    });
+    const timer = setTimeout(() => child.kill(), 2500);
+    child.once("error", () => { clearTimeout(timer); resolvePromise(false); });
+    child.once("close", (code) => { clearTimeout(timer); resolvePromise(code === 0); });
+  });
+}
+
+export async function discoverLocalModelCatalog(args: {
+  workdir: string;
+  commandRunner?: DiscoveryCommandRunner;
+}): Promise<ModelCatalog> {
+  const sources: ModelCatalog["sources"] = [];
+  const models: ModelCatalogEntry[] = [];
+  try {
+    const parsed = await refreshModelCatalog(args);
+    sources.push(...parsed.sources);
+    models.push(...parsed.models);
+  } catch (error) {
+    sources.push({
+      backend: "opencode", command: OPENCODE_MODEL_DISCOVERY_COMMAND, status: "unavailable",
+      detail: error instanceof Error ? error.message : String(error)
+    });
+  }
+
+  if (!args.commandRunner) {
+    try {
+      const codex = await CodexAppServerClient.start({ cwd: args.workdir, timeoutMs: 10000 });
+      try {
+        const found = await codex.listModels();
+        for (const model of found) {
+          models.push({
+            backend: "codex", runnable: true, modelId: model.id, ref: `codex/${model.id}`,
+            provider: "codex", model: model.id, name: model.displayName,
+            status: "active", capabilities: { textInput: true, textOutput: true, toolcall: true }, variants: []
+          });
+        }
+        sources.push({ backend: "codex", command: "codex app-server --stdio", status: "available" });
+      } finally {
+        await codex.close();
+      }
+    } catch (error) {
+      sources.push({ backend: "codex", command: "codex app-server --stdio", status: "unavailable", detail: error instanceof Error ? error.message : String(error) });
+    }
+
+    for (const [backend, command] of [["claude", "claude"], ["antigravity", "agy"]] as const) {
+      const available = await commandAvailable(command, args.workdir);
+      sources.push({
+        backend,
+        command: `${command} --version`,
+        status: available ? "available" : "unavailable",
+        detail: available ? "CLI detected; persistent OGS session adapter is not available." : `${command} CLI was not found on PATH.`
+      });
+    }
+  }
+
+  return { catalogVersion: "2", generatedAt: new Date().toISOString(), sources, models };
+}
+
 export async function loadModelCatalog(path: string): Promise<ModelCatalog | undefined> {
   if (!(await pathExists(path))) {
     return undefined;
@@ -383,6 +461,7 @@ export async function loadModelCatalog(path: string): Promise<ModelCatalog | und
 export function chooseDefaultModelFromCatalog(catalog: ModelCatalog): ModelCatalogEntry | undefined {
   return catalog.models.find(
     (model) =>
+      model.runnable &&
       model.status === "active" &&
       model.capabilities.textInput &&
       model.capabilities.textOutput &&

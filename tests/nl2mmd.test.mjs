@@ -23,7 +23,8 @@ test("nl2mmd context discovers supported dictionary, roles, and models", async (
   });
 
   assert.ok(context.roleCatalog.some((item) => item.roleId === "debate-judge"));
-  assert.ok(context.modelCatalog.some((item) => item.modelRef.endsWith("/gpt-5-nano")));
+  assert.ok(context.modelCatalog.length > 0);
+  assert.ok(context.modelCatalog.some((item) => item.modelRef === context.defaultModelRef));
   assert.deepStrictEqual(context.supportedDictionary.roleModes, ["parallel_split"]);
   assert.deepStrictEqual(context.supportedDictionary.joinModes, ["all_of", "quorum_of"]);
   assert.ok(context.supportedDictionary.exactMetadataKeys.includes("handoff.mode"));
@@ -75,7 +76,7 @@ test("nl2mmd txt graph renderer prints plain structure preview", async () => {
   assert.match(txt, /--DEBATE_REQUEST--> debate-moderator/);
   assert.match(
     txt,
-    /debate-judge \[model=openai\/gpt-5-nano, join=all_of, sources=debate-minimalist,debate-alignmentist\]/
+    /debate-judge \[join=all_of, sources=debate-minimalist,debate-alignmentist\]/
   );
 });
 
@@ -108,7 +109,7 @@ test("nl2mmd prompt includes current dictionary and local catalog hints", async 
 
   assert.match(
     prompt,
-    /Metadata prefixes allowed: exec\.bind\., model\.bind\., role\.mode\., join\.mode\., join\.min\., join\.sources\., context\.map\., loop\.max\., route\.order\., review\.mode\., review\.timeout\., review\.timeout\.action\., review\.rework\.target\., review\.rework\.max\., review\.terminate\.scope\./
+    /Metadata prefixes allowed: exec\.bind\., role\.mode\., join\.mode\., join\.min\., join\.sources\., context\.map\., loop\.max\., route\.order\., review\.mode\., review\.timeout\., review\.timeout\.action\., review\.rework\.target\., review\.rework\.max\., review\.terminate\.scope\./
   );
   assert.match(
     prompt,
@@ -175,8 +176,10 @@ test("nl2mmd search helpers suggest likely roles and models from free text", asy
   });
 
   const roleMatches = searchRoles(context, "judge summary");
-  const modelMatches = searchModels(context, "gpt 5 nano");
+  const expectedModel = context.modelCatalog[0]?.modelRef;
+  assert.ok(expectedModel);
+  const modelMatches = searchModels(context, expectedModel);
 
   assert.ok(roleMatches.slice(0, 3).some((item) => item.item.roleId === "debate-judge"));
-  assert.match(modelMatches[0].item.modelRef, /\/gpt-5-nano$/);
+  assert.equal(modelMatches[0].item.modelRef, expectedModel);
 });

@@ -330,7 +330,7 @@ Branch/commit: working tree; no commit requested
 Dependency: MODEL-01, MODEL-03
 Targets: `src/runtime/model-selection.ts`, parser/selection tests, Visualizer authoring projection
 
-Use explicit `model.bind.<roleId>` and `.ogs/model-selection.json` role/system overrides. Do not
+Use `.ogs/model-selection.json` defaults and role overrides. Do not
 infer model assignment from role names, labels, domains, or `talent` metadata.
 
 Acceptance:

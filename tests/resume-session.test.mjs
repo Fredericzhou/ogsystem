@@ -89,27 +89,17 @@ async function prepareRuntimeFingerprintResumeFixture(args) {
   const runtimePath = path.resolve(tempRoot, "runtime.json");
   const runDir = path.resolve(tempRoot, ".ogs/runs", args.runName);
   const roleRootDir = path.resolve(tempRoot, "og-roles", "roles");
-  const modelRootDir = path.resolve(tempRoot, "og-models");
   const lawsPath = path.resolve(tempRoot, "laws.json");
 
   const system = parseSystemFromMermaidSource(args.systemSource);
   await seedModelSelectionFiles(tempRoot);
   await mkdir(roleRootDir, { recursive: true });
-  await mkdir(path.resolve(modelRootDir, "models"), { recursive: true });
   await mkdir(runDir, { recursive: true });
 
   for (const roleId of system.roleIds) {
     await cp(
       path.resolve("og-roles", "roles", roleId),
       path.resolve(roleRootDir, roleId),
-      { recursive: true }
-    );
-  }
-
-  for (const modelId of new Set(Object.values(system.modelBinding))) {
-    await cp(
-      path.resolve("og-models", "models", modelId),
-      path.resolve(modelRootDir, "models", modelId),
       { recursive: true }
     );
   }
@@ -157,7 +147,6 @@ async function prepareRuntimeFingerprintResumeFixture(args) {
     runDir,
     lawsPath,
     roleRootDir,
-    modelRootDir
   };
 }
 
@@ -173,7 +162,6 @@ test("adapter resume reloads sessions.json and reuses the same model session", a
 %% system.version=1.0.0
 %% law.global=law.console.base
 %% entry.role=debate-minimalist
-%% model.bind.debate-minimalist=balanced-gpt52
 
 input -->|GO| minimalist[Role:debate-minimalist]
 minimalist[Role:debate-minimalist] -->|MINIMALIST_DONE| output
@@ -275,7 +263,6 @@ test("adapter resume rejects partial or corrupted state snapshots", async () => 
 %% system.version=1.0.0
 %% law.global=law.console.base
 %% entry.role=debate-minimalist
-%% model.bind.debate-minimalist=balanced-gpt52
 
 input -->|GO| minimalist[Role:debate-minimalist]
 minimalist[Role:debate-minimalist] -->|MINIMALIST_DONE| output
@@ -326,7 +313,6 @@ const handledFailureResumeSource = `flowchart TD
 %% system.version=1.0.0
 %% law.global=law.console.base
 %% entry.role=debate-minimalist
-%% model.bind.debate-minimalist=balanced-gpt52
 
 input -->|GO| minimalist[Role:debate-minimalist]
 minimalist[Role:debate-minimalist] -->|MINIMALIST_DONE| output
@@ -525,15 +511,11 @@ test("adapter resume rejects plan fingerprint mismatch", async () => {
 %% system.version=1.0.0
 %% law.global=law.console.base
 %% entry.role=debate-minimalist
-%% model.bind.debate-minimalist=balanced-gpt52
 
 input -->|GO| minimalist[Role:debate-minimalist]
 minimalist[Role:debate-minimalist] -->|MINIMALIST_DONE| output
 `;
-  const mutatedSystemSource = initialSystemSource.replace(
-    "%% model.bind.debate-minimalist=balanced-gpt52",
-    "%% model.bind.debate-minimalist=fast-gpt54"
-  );
+  const mutatedSystemSource = initialSystemSource;
 
   await mkdir(runDir, { recursive: true });
   await writeFile(systemPath, mutatedSystemSource, "utf8");
@@ -554,6 +536,11 @@ minimalist[Role:debate-minimalist] -->|MINIMALIST_DONE| output
   const initialSystem = parseSystemFromMermaidSource(initialSystemSource);
   const plan = createExecutionPlan(initialSystem);
   const fingerprint = await buildRuntimeFingerprint(initialSystem);
+  await writeFile(
+    path.resolve(tempRoot, ".ogs", "model-selection.json"),
+    JSON.stringify({ configVersion: "2", roles: { "debate-minimalist": { backend: "codex", modelId: "gpt-5.6-terra" } } }),
+    "utf8"
+  );
   const graphState = createInitialGraphState({
     plan,
     prompt: "resume mismatch"
@@ -577,7 +564,7 @@ minimalist[Role:debate-minimalist] -->|MINIMALIST_DONE| output
     (error) => {
       assert.ok(error instanceof Error);
       assert.match(error.message, /fingerprint mismatch/i);
-      assert.match(error.message, /system/);
+      assert.match(error.message, /modelSelection/);
       return true;
     }
   );
@@ -589,7 +576,6 @@ test("adapter resume accepts identical runtime content loaded from different pat
 %% system.version=1.0.0
 %% law.global=law.console.base
 %% entry.role=debate-minimalist
-%% model.bind.debate-minimalist=balanced-gpt52
 
 input -->|GO| minimalist[Role:debate-minimalist]
 minimalist[Role:debate-minimalist] -->|MINIMALIST_DONE| output
@@ -601,14 +587,10 @@ minimalist[Role:debate-minimalist] -->|MINIMALIST_DONE| output
     systemSource,
     prompt: "resume path stable"
   });
-  const altModelRootDir = path.resolve(fixture.tempRoot, "alt-models");
   const altLawsPath = path.resolve(fixture.tempRoot, "alt-laws.json");
   const altRuntimePath = path.resolve(fixture.tempRoot, "alt-runtime.json");
 
   await cp(path.resolve(fixture.tempRoot, "og-roles"), path.resolve(fixture.tempRoot, "alt-roles"), {
-    recursive: true
-  });
-  await cp(path.resolve(fixture.tempRoot, "og-models"), altModelRootDir, {
     recursive: true
   });
   await cp(fixture.lawsPath, altLawsPath);
@@ -646,7 +628,6 @@ test("adapter resume rejects role package content drift", async () => {
 %% system.version=1.0.0
 %% law.global=law.console.base
 %% entry.role=debate-minimalist
-%% model.bind.debate-minimalist=balanced-gpt52
 
 input -->|GO| minimalist[Role:debate-minimalist]
 minimalist[Role:debate-minimalist] -->|MINIMALIST_DONE| output
@@ -688,13 +669,12 @@ minimalist[Role:debate-minimalist] -->|MINIMALIST_DONE| output
   );
 });
 
-test("adapter resume ignores model manifest drift once selection owns runtime models", async () => {
+test("adapter resume ignores refreshable model catalog metadata drift", async () => {
   const systemSource = `flowchart TD
 %% system.id=resume.model-drift.demo
 %% system.version=1.0.0
 %% law.global=law.console.base
 %% entry.role=debate-minimalist
-%% model.bind.debate-minimalist=balanced-gpt52
 
 input -->|GO| minimalist[Role:debate-minimalist]
 minimalist[Role:debate-minimalist] -->|MINIMALIST_DONE| output
@@ -706,15 +686,10 @@ minimalist[Role:debate-minimalist] -->|MINIMALIST_DONE| output
     systemSource,
     prompt: "resume model drift"
   });
-  const modelManifestPath = path.resolve(
-    fixture.modelRootDir,
-    "models",
-    "balanced-gpt52",
-    "model.json"
-  );
-  const modelManifest = JSON.parse(await readFile(modelManifestPath, "utf8"));
-  modelManifest.timeoutMs = (modelManifest.timeoutMs ?? 120000) + 1;
-  await writeFile(modelManifestPath, JSON.stringify(modelManifest, null, 2), "utf8");
+  const modelCatalogPath = path.resolve(fixture.tempRoot, ".ogs", "model-catalog.json");
+  const modelCatalog = JSON.parse(await readFile(modelCatalogPath, "utf8"));
+  modelCatalog.generatedAt = new Date().toISOString();
+  await writeFile(modelCatalogPath, JSON.stringify(modelCatalog, null, 2), "utf8");
 
   const resumed = await runSystemWithAdapter({
     systemPath: fixture.systemPath,
@@ -736,7 +711,6 @@ test("adapter resume rejects effective law drift", async () => {
 %% system.version=1.0.0
 %% law.global=law.console.base
 %% entry.role=debate-minimalist
-%% model.bind.debate-minimalist=balanced-gpt52
 
 input -->|GO| minimalist[Role:debate-minimalist]
 minimalist[Role:debate-minimalist] -->|MINIMALIST_DONE| output
@@ -792,7 +766,6 @@ test("adapter resume replays pending checkpoints without re-executing the role",
 %% system.version=1.0.0
 %% law.global=law.console.base
 %% entry.role=test-operator
-%% model.bind.test-operator=balanced-gpt52
 
 input -->|GO| operator[Role:test-operator]
 operator[Role:test-operator] -->|DONE| output
@@ -992,7 +965,6 @@ test("adapter resume reconciles committed execution outcome without re-executing
 %% system.version=1.0.0
 %% law.global=law.console.base
 %% entry.role=test-operator
-%% model.bind.test-operator=balanced-gpt52
 
 input -->|GO| operator[Role:test-operator]
 operator[Role:test-operator] -->|DONE| output
@@ -1174,7 +1146,6 @@ test("adapter resume backfills outcome reconciliation metadata when checkpoint a
 %% system.version=1.0.0
 %% law.global=law.console.base
 %% entry.role=test-operator
-%% model.bind.test-operator=balanced-gpt52
 
 input -->|GO| operator[Role:test-operator]
 operator[Role:test-operator] -->|DONE| output
@@ -1417,7 +1388,6 @@ test("adapter resume rejects an active resume lock", async () => {
 %% system.version=1.0.0
 %% law.global=law.console.base
 %% entry.role=debate-minimalist
-%% model.bind.debate-minimalist=balanced-gpt52
 
 input -->|GO| minimalist[Role:debate-minimalist]
 minimalist[Role:debate-minimalist] -->|MINIMALIST_DONE| output
@@ -1470,7 +1440,6 @@ test("adapter resume replaces a stale lock and releases it on exit", async () =>
 %% system.version=1.0.0
 %% law.global=law.console.base
 %% entry.role=debate-minimalist
-%% model.bind.debate-minimalist=balanced-gpt52
 
 input -->|GO| minimalist[Role:debate-minimalist]
 minimalist[Role:debate-minimalist] -->|MINIMALIST_DONE| output
@@ -1530,7 +1499,6 @@ test("adapter resume setup failure releases lock acquired during initialization"
 %% system.version=1.0.0
 %% law.global=law.console.base
 %% entry.role=debate-minimalist
-%% model.bind.debate-minimalist=balanced-gpt52
 
 input -->|GO| minimalist[Role:debate-minimalist]
 minimalist[Role:debate-minimalist] -->|MINIMALIST_DONE| output

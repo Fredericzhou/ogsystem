@@ -30,6 +30,7 @@ type AuditRecordInput = {
   started: number;
   status: AuditRecord["status"];
   modelId?: string;
+  backend?: string;
   profileId?: string;
   toolRef?: string;
   command?: string;
@@ -65,6 +66,7 @@ export function createAuditRecord(args: AuditRecordInput): AuditRecord {
     loopIteration: args.loopIteration,
     lawRef: args.lawRef,
     modelId: args.modelId,
+    backend: args.backend,
     profileId: args.profileId,
     toolRef: args.toolRef,
     command: args.command,

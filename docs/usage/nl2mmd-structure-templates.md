@@ -14,7 +14,7 @@
 - 有“ERROR”“补偿”“恢复”语义，用 `error_compensation`。
 - 有“循环”“重试”“最多 N 次”语义，用 `bounded_loop`。
 - 有“人工审核”“确认”“审批”语义，用 `human_gate`；该模板表示 runtime-native review，不生成独立 human-gate role。
-- 有 `model.bind` / `exec.bind` 混用语义，用 `mixed_binding`。
+- 有 Agent 与工具角色混合的语义，用 `mixed_binding`；模型选择配置始终在项目设置中，不写进 Mermaid。
 - 如果没有明显结构信号，先退回 `linear_flow`。
 
 当多个模板都可能命中时，优先更具体的结构：
@@ -43,8 +43,6 @@ flowchart TD
 %% system.version=1.0.0
 %% law.global=law.console.base
 %% entry.role=intake
-%% model.bind.intake=opencode/gpt-5-nano
-%% model.bind.writer=opencode/gpt-5-nano
 
 input -->|GO| intake[Role:intake]
 intake[Role:intake] -->|DONE| writer[Role:writer]
@@ -72,10 +70,6 @@ flowchart TD
 %% role.mode.dispatch=parallel_split
 %% join.mode.review=all_of
 %% join.sources.review=worker_a,worker_b
-%% model.bind.dispatch=opencode/gpt-5-nano
-%% model.bind.worker_a=opencode/gpt-5-nano
-%% model.bind.worker_b=opencode/gpt-5-nano
-%% model.bind.review=opencode/gpt-5-nano
 
 input -->|START| dispatch[Role:dispatch]
 dispatch[Role:dispatch] -->|TO_A| worker_a[Role:worker_a]
@@ -107,11 +101,6 @@ flowchart TD
 %% join.sources.review=expert_a,expert_b,expert_c
 %% join.min.review=2
 %% context.map.review.task=global.task
-%% model.bind.lead=opencode/gpt-5-nano
-%% model.bind.expert_a=opencode/gpt-5-nano
-%% model.bind.expert_b=opencode/gpt-5-nano
-%% model.bind.expert_c=opencode/gpt-5-nano
-%% model.bind.review=opencode/gpt-5-nano
 
 input -->|START| lead[Role:lead]
 lead[Role:lead] -->|ASK_A| expert_a[Role:expert_a]
@@ -144,9 +133,6 @@ flowchart TD
 %% handoff.mode=strict
 %% handoff.contracts=contracts/handoff.contracts.json
 %% route.order.intake=reviewer,observer
-%% model.bind.intake=opencode/gpt-5-nano
-%% model.bind.reviewer=opencode/gpt-5-nano
-%% model.bind.observer=opencode/gpt-5-nano
 
 input -->|GO| intake[Role:intake]
 intake[Role:intake] -->|REVIEW| reviewer[Role:reviewer]
@@ -175,8 +161,6 @@ flowchart TD
 %% system.version=1.0.0
 %% law.global=law.console.base
 %% entry.role=main
-%% model.bind.main=opencode/gpt-5-nano
-%% model.bind.recovery=opencode/gpt-5-nano
 
 input -->|START| main[Role:main]
 main[Role:main] -->|DONE| output
@@ -203,7 +187,6 @@ flowchart TD
 %% law.global=law.console.base
 %% entry.role=review
 %% loop.max.review=3
-%% model.bind.review=opencode/gpt-5-nano
 
 input -->|START| review[Role:review]
 review[Role:review] -->|RETRY| review[Role:review]
@@ -228,7 +211,6 @@ flowchart TD
 %% system.version=1.0.0
 %% law.global=law.console.base
 %% entry.role=writer
-%% model.bind.writer=opencode/gpt-5-nano
 %% review.mode.writer=required
 %% review.timeout.action.writer=pause
 
@@ -238,13 +220,12 @@ writer[Role:writer] -->|DONE| output
 
 ### 2.8 `mixed_binding`
 
-适合不同 role 分别使用 `model.bind` 和 `exec.bind` 的混合执行场景；同一 role 同时声明两者会被解析器拒绝。
+适合不同 role 分别由 Agent 与项目工具执行的场景。Agent backend/model 在 `.ogs/model-selection.json` 中配置，工具 role 使用 `exec.bind`。
 
 必填槽位：
 
-- `model-binding`
 - `exec-binding`
-- `binding-note`
+- `role-note`
 
 示例：
 
@@ -254,7 +235,6 @@ flowchart TD
 %% system.version=1.0.0
 %% law.global=law.console.base
 %% entry.role=reviewer
-%% model.bind.reviewer=opencode/gpt-5-nano
 %% exec.bind.publisher=publish-profile
 
 input -->|START| reviewer[Role:reviewer]

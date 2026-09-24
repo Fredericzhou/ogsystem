@@ -2507,6 +2507,9 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
         roleId: state.studioRoleConfigEditor?.roleId || selectedStudioRoleId(),
         title: current.title || "",
         bindingKind: current.bindingKind || "noop",
+        backend: current.backend || "",
+        modelId: current.modelId || "",
+        modelSelectionSource: current.modelSelectionSource || "role",
         modelRef: current.modelRef || "",
         profileId: current.profileId || current.generatedProfileId || "",
         contextMapText: formatContextMapJson(current.contextMap)
@@ -2516,6 +2519,8 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
         const value = typeof element.value === "string" ? element.value : "";
         if (field === "title") draft.title = value;
         if (field === "bindingKind") draft.bindingKind = value;
+        if (field === "backend") draft.backend = value;
+        if (field === "modelId") draft.modelId = value;
         if (field === "modelRef") draft.modelRef = value;
         if (field === "profileId") draft.profileId = value;
         if (field === "contextMap") draft.contextMapText = value;
@@ -3123,10 +3128,11 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
               '</strong></div>'
             : "",
           renderStudioRoleConfigEditor({
-            roleId: selectedRoleIdValue,
-            editor: state.studioRoleConfigEditor,
-            projectConfig: state.project?.config || null,
-            t
+          roleId: selectedRoleIdValue,
+          editor: state.studioRoleConfigEditor,
+          projectConfig: state.project?.config || null,
+          modelCatalog: state.studioBridge?.modelCatalog || null,
+          t
           }),
           renderDisclosureCard({
             title: t("studio.executionConfig", undefined, "execution config"),
@@ -3401,6 +3407,9 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
           roleId: selectedRoleIdValue,
           title: String(role.title || ""),
           bindingKind: String(role.bindingKind || "noop"),
+          backend: String(role.backend || ""),
+          modelId: String(role.modelId || ""),
+          modelSelectionSource: String(role.modelSelectionSource || "role"),
           modelRef: String(role.modelRef || ""),
           profileId: String(role.profileId || ""),
           contextMap: role.contextMap && typeof role.contextMap === "object" ? role.contextMap : {},
@@ -3437,7 +3446,7 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
       const bindingKind = draft.bindingKind === "model" || draft.bindingKind === "exec"
         ? draft.bindingKind
         : "noop";
-      if (bindingKind === "model" && !String(draft.modelRef || "").trim()) {
+      if (bindingKind === "model" && (!String(draft.backend || "").trim() || !String(draft.modelId || "").trim())) {
         state.studioRoleConfigEditor = {
           ...(state.studioRoleConfigEditor || {}),
           roleId: selectedRoleIdValue,
@@ -3498,7 +3507,14 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
           roleId: selectedRoleIdValue,
           title: String(draft.title || "").trim() || undefined,
           bindingKind,
-          modelRef: bindingKind === "model" ? String(draft.modelRef || "").trim() : undefined,
+          backend: bindingKind === "model" ? String(draft.backend || "").trim() : undefined,
+          modelId: bindingKind === "model" ? String(draft.modelId || "").trim() : undefined,
+          modelSelectionSource: bindingKind === "model"
+            ? (String(draft.backend || "").trim() === String(current.backend || "").trim() && String(draft.modelId || "").trim() === String(current.modelId || "").trim()
+                ? current.modelSelectionSource
+                : "role")
+            : undefined,
+          modelRef: bindingKind === "model" ? \`\${String(draft.backend || "").trim()}/\${String(draft.modelId || "").trim()}\` : undefined,
           profileId: bindingKind === "exec" ? String(draft.profileId || "").trim() : undefined,
           contextMap: parsedContextMap.value,
           profileDraft: needsGeneratedExecutionConfig ? {
@@ -3535,6 +3551,23 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
           loadStudioRoleConfigEditor(button.getAttribute("data-role-config-revert") || selectedStudioRoleId(), { force: true });
         });
       }
+      for (const button of Array.from(workbenchBodyEl.querySelectorAll("[data-model-catalog-sync]") || [])) {
+        bindOnce(button, "click", "model-catalog-sync", async () => {
+          button.disabled = true;
+          try {
+            await requestJson(API_PREFIX + "/project/models/sync", { method: "POST", body: JSON.stringify({}) });
+            const bridge = await requestJson(API_PREFIX + "/project/studio/bridge");
+            state.studioBridge = bridge;
+            state.studioBridgeLoaded = true;
+            state.studioBridgeStale = false;
+            loadStudioRoleConfigEditor(selectedStudioRoleId(), { force: true });
+            setFlash("success", t("studio.modelsRefreshed", undefined, "Installed CLI models refreshed."));
+          } catch (error) {
+            setFlash("error", error instanceof Error ? error.message : String(error));
+            renderStudioSelectionDialog();
+          }
+        });
+      }
       for (const element of roleConfigEditorFieldElements()) {
         const syncRoleConfigDraft = () => {
           const field = element.getAttribute("data-role-config-field") || "";
@@ -3549,7 +3582,7 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
             draft
           };
           enableStudioEditorButtons(["[data-role-config-save]", "[data-role-config-revert]"]);
-          if (field === "bindingKind" && String(draft.bindingKind || "noop") !== previousBindingKind) {
+          if ((field === "bindingKind" && String(draft.bindingKind || "noop") !== previousBindingKind) || field === "backend") {
             renderStudioSelectionDialog();
           }
         };

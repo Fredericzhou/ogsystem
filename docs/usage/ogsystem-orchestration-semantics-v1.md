@@ -124,7 +124,7 @@ handoff。事件、动作、任务、网关、处理步骤、分支、运行实�
 *   **`engine` 仅保留兼容入口**：可省略；若声明则只能是 `langgraph`。
 *   **保留角色名禁止复用**：`input/output/start/end/done` 不能作为 `roleId`。
 *   **终止条件必须显式可达**：至少要有一个无下游 role 边的终止角色，或一条 `Role -->|EVENT| output` 边。
-*   **绑定冲突会被拒绝**：同一 role 不允许同时声明 `model.bind.<roleId>` 与 `exec.bind.<roleId>`。
+*   **绑定冲突会被拒绝**：同一 role 不允许同时声明 `exec.bind.<roleId>` 与项目模型选择；`system.mmd` 不承载模型绑定。
 
 ---
 

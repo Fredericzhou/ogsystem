@@ -12,9 +12,10 @@ async function writeDefaultModelSelection(workdir) {
     path.resolve(workdir, ".ogs", "model-selection.json"),
     JSON.stringify(
       {
-        configVersion: "1",
+        configVersion: "2",
         defaults: {
-          model: "opencode/gpt-5-nano",
+          backend: "opencode",
+          modelId: "opencode/gpt-5-nano",
           timeoutMs: 120000,
           maxOutputBytes: 65536
         }
@@ -233,10 +234,6 @@ test("transition mode fails closed when a skipped flow leaves a join orphaned", 
 %% join.mode.review=quorum_of
 %% join.sources.review=a,b
 %% join.min.review=2
-%% model.bind.dispatcher=fast-gpt54
-%% model.bind.a=balanced-gpt52
-%% model.bind.b=balanced-gpt52
-%% model.bind.review=deep-o3
 
 input -->|START| dispatcher[Role:dispatcher]
 dispatcher[Role:dispatcher] -->|TO_A| a[Role:a]

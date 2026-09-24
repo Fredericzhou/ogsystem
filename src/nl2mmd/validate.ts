@@ -169,15 +169,8 @@ export async function validateNl2MmdCandidate(args: {
         return { roleErrors, roleWarnings };
       }
 
-      const modelBinding = system.modelBinding[roleId];
       const profileId = system.executionBinding[roleId];
       const resolvedModel = resolvedModelsByRoleId.get(roleId);
-
-      if (modelBinding && resolvedModel && resolvedModel.modelRef !== modelBinding) {
-        roleWarnings.push(
-          `role "${roleId}" declares model.bind.${roleId}="${modelBinding}" but resolves via "${resolvedModel.modelRef}" from .ogs/model-selection.json`
-        );
-      }
 
       if (profileId && profilesById && !profilesById.has(profileId)) {
         roleErrors.push(`exec.bind.${roleId} references missing profile "${profileId}"`);
@@ -186,10 +179,10 @@ export async function validateNl2MmdCandidate(args: {
       if (!resolvedModel && !profileId) {
         if (allowNoopWithoutExecutionBinding) {
           roleWarnings.push(
-            `role "${roleId}" has no model.bind.${roleId} or exec.bind.${roleId}; current law allows noop only for unambiguous single-path roles`
+            `role "${roleId}" has no model selection or exec.bind.${roleId}; current law allows noop only for unambiguous single-path roles`
           );
         } else {
-          roleErrors.push(`role "${roleId}" is missing required model.bind.${roleId} or exec.bind.${roleId}`);
+          roleErrors.push(`role "${roleId}" needs a backend/model selection in .ogs/model-selection.json or an exec.bind.${roleId}`);
         }
       }
 

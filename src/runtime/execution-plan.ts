@@ -60,20 +60,13 @@ function resolveBinding(args: {
   if (resolvedModel) {
     return {
       kind: "model",
+      backend: resolvedModel.backend,
+      modelId: resolvedModel.modelId,
       modelRef: resolvedModel.modelRef,
-      variant: resolvedModel.variant,
-      timeoutMs: resolvedModel.timeoutMs,
-      maxOutputBytes: resolvedModel.maxOutputBytes,
+      ...(resolvedModel.variant ? { variant: resolvedModel.variant } : {}),
+      ...(resolvedModel.timeoutMs !== undefined ? { timeoutMs: resolvedModel.timeoutMs } : {}),
+      ...(resolvedModel.maxOutputBytes !== undefined ? { maxOutputBytes: resolvedModel.maxOutputBytes } : {}),
       bindingSource: resolvedModel.bindingSource
-    };
-  }
-
-  const modelRef = args.system.modelBinding[args.roleId];
-  if (modelRef) {
-    return {
-      kind: "model",
-      modelRef,
-      bindingSource: "system"
     };
   }
 

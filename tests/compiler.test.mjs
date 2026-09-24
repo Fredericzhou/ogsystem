@@ -50,16 +50,26 @@ test("compiler snapshot digest is stable across role package ordering", async ()
 
   const forwardPackages = await loadRolePackages(system.roleIds, roleRootDir);
   const reversePackages = await loadRolePackages([...system.roleIds].reverse(), roleRootDir);
+  const resolvedModelsByRoleId = new Map(system.roleIds
+    .filter((roleId) => !system.executionBinding[roleId])
+    .map((roleId) => [roleId, {
+      backend: "opencode",
+      modelId: "fixture-model",
+      modelRef: "opencode/fixture-model",
+      bindingSource: "selection"
+    }]));
 
   const forwardResult = compileExecutionSnapshot({
     system,
     rolePackagesByRoleId: forwardPackages,
-    effectiveLaw
+    effectiveLaw,
+    resolvedModelsByRoleId
   });
   const reverseResult = compileExecutionSnapshot({
     system,
     rolePackagesByRoleId: reversePackages,
-    effectiveLaw
+    effectiveLaw,
+    resolvedModelsByRoleId
   });
 
   assert.equal(forwardResult.ok, true);
@@ -70,7 +80,7 @@ test("compiler snapshot digest is stable across role package ordering", async ()
     "(builtin runtime prompt input schema)"
   );
   assert.match(forwardResult.snapshot.runtimePromptInputSchemaDigest, /^[a-f0-9]{64}$/);
-  assert.deepStrictEqual(forwardResult.snapshot.basePlan, createExecutionPlan(system));
+  assert.deepStrictEqual(forwardResult.snapshot.basePlan, createExecutionPlan(system, resolvedModelsByRoleId));
   assert.deepStrictEqual(
     forwardResult.snapshot.roleSummaryByRoleId,
     reverseResult.snapshot.roleSummaryByRoleId

@@ -73,7 +73,7 @@ npm uninstall -g ogsystem
 pnpm remove -g ogsystem
 ```
 
-These commands remove the CLI package only. They do not remove `~/.ogsystem` provider configuration or any project directories.
+These commands remove the CLI package only. They do not remove shared role packages under `~/.ogsystem` or any project directories.
 
 Quick start with the installed CLI:
 
@@ -112,7 +112,7 @@ ogs vis --workdir .
 ogs visualizer --workdir .
 ```
 
-Generated projects always include `.ogs/`, `system.mmd`, and a local `og-roles/` repo. Model defaults now live under `.ogs/model-selection.json`, and `.ogs/model-catalog.json` records the latest local `opencode models --verbose` snapshot used for scaffolding and diagnostics. The scaffold also writes `.ogs/README.md` with operator notes and JSON examples; keep the runtime JSON files comment-free and use that README for local guidance.
+Generated projects always include `.ogs/`, `system.mmd`, and a local `og-roles/` repo. Backend/model choices live in `.ogs/model-selection.json`; `.ogs/model-catalog.json` records locally discovered CLI services and runnable models. OGS invokes persistent CLI services and uses each CLI's own user configuration; it does not import or manage credentials. The scaffold also writes `.ogs/README.md` with operator notes and JSON examples.
 
 Version `0.3.0` is a development-test release. It uses the current Semantic IR v1 and versioned
 runtime contracts directly; historical DSL, API, and run-data migration is not supported.
@@ -123,7 +123,7 @@ current `0.3.0` package is outside that released window. Run `ogs help compatibi
 installed CLI's summary, unsupported-input boundary, and deprecation timing; see
 `docs/development/release-compatibility-policy.md` for the full policy.
 
-Provider credentials and gateway URLs live in the user-level `~/.ogsystem/.env`. OpenCode provider definitions live in `~/.config/opencode/opencode.json` and refer to those environment variables; projects do not contain provider stubs or API keys.
+OGS invokes installed CLI services using their own user-level configuration and credentials. It does not load a separate OGS credential file or manage provider credentials.
 
 Local source install:
 
@@ -173,15 +173,14 @@ For day-to-day use, start with `docs/usage/usage-manual.md`. It keeps the comman
 ## Runtime Guarantees
 
 - The adapter runs one graph-based execution model. The entry role becomes the initial active branch, each role execution emits one structured result, and completion happens only when active branches are exhausted or a transition reaches the terminal `output` boundary.
-- Executable roles always resolve to one JSON object: `{"event":"EVENT_NAME","content":"..."}`. For `model.bind`, the runtime sends `prompt + output.schema.json` to OpenCode SDK v2 and reads `info.structured`; if `info.structured` is absent or string-encoded, the runtime falls back to assistant text parts and applies JSON extraction. For `exec.bind`, the runtime parses tool stdout as one JSON object. `event` is required for roles with outgoing flows and must match one Mermaid edge label exactly.
-- When OpenCode/provider/model resolution fails, runtime now preserves the upstream provider error as the top-level failure instead of collapsing it into a generic structured-output message.
-- For `model.bind`, one run now starts one shared `opencode serve`, and each role/node keeps one isolated OpenCode session on that server for the duration of the run.
+- Executable roles return one JSON object: `{"event":"EVENT_NAME","content":"..."}`. Agent roles use their selected persistent CLI backend and retain a role/thread session for the run; tool-bound roles use `exec.bind` and parse tool stdout as JSON. `event` must match an outgoing handoff label.
+- OpenCode roles share one run-scoped `opencode serve`; Codex roles share one run-scoped `codex app-server` and resume the same thread for each role branch.
 - Directory ownership is explicit: OGSystem uses the control project root as `workdir`; `opencode serve` is started with its hostname/port arguments and no OGSystem directory binding, while OpenCode `session.create/prompt/abort` receive the resolved coding project as `directory`. OGSystem writes the run-local OpenCode metadata under `<control-project>/.ogs/runs/<run-id>/.opencode/`.
 - An OGSystem project may bind an external coding project through `.ogs/project.json.target.directory` or `--target-dir`. The default target is the OGSystem project root, so existing projects keep the same behavior; multiple OGSystem projects may bind the same coding project, but concurrent write runs require Git worktrees or another isolation policy.
 - For `exec.bind`, relative tool arguments are materialized from the control project while the role process uses its run-local workspace; this keeps generated control-plane tools available in independent-target mode.
 - Executable roles are resolved by `roleId` directly from the project-local role repo. For each Mermaid `Role:<roleId>`, the runtime loads `og-roles/roles/<roleId>/role.json`, renders `prompt.md`, validates the built-in runtime prompt-input shell, and validates `output.schema.json`.
-- The runtime now supports direct `model.bind.<roleId>=provider/model` plus `.ogs/model-selection.json` defaults with auto-discovered `.ogs/runtime.json`, `.ogs/user-profile.json`, and `.ogs/laws.json`.
-- `model.bind` retries transient OpenCode/provider failures on the same role session while keeping the same run-level shared server.
+- Each role's model binding is configured in `.ogs/model-selection.json` as a `backend` and `modelId` pair. `system.mmd` defines roles and handoffs, not model bindings.
+- Agent execution retries transient service failures on the same role session while keeping the run-level service alive.
 - The runtime supports `role.mode.*=parallel_split`, `join.mode.*=all_of|quorum_of`, `join.sources.*`, `join.min.*`, `context.map.*`, and `loop.max.*`. `join.sources.*` must list unique source role ids and match the join node's Mermaid incoming role edges exactly.
 - `quorum_of` counts unique completed source roles within the same `lineageId + loopIteration`, activates at most once, and records late arrivals without retriggering the join node.
 - `context.map.<roleId>.<field>` can replace the default `context` payload with a fail-closed, deterministic JSON projection built from `direct.*`, `source(<roleId>).*`, and `global.*` selectors.
@@ -205,7 +204,7 @@ For day-to-day use, start with `docs/usage/usage-manual.md`. It keeps the comman
 
 ## Configuration Boundaries
 
-- Target architecture uses direct `provider/model` refs plus `.ogs/model-selection.json` for project/system/role defaults.
+- `.ogs/model-selection.json` is the single backend/model binding source, with project defaults and per-role overrides.
 - The law catalog currently resolves only `law.global` and the constraints `forbiddenToolRefs`, `maxTransitions`, `allowNoopWithoutExecutionBinding`.
 - Role packages live under `og-roles/roles/<roleId>/` and provide `role.json` with the complete current Role Contract, plus `agent.md`, `prompt.md`, `output.schema.json`, and optional `source.json`.
 - The runtime-owned prompt-input shell remains fixed across roles and exposes `allowed_events`, `user_preferences`, `task`, and `input`.
@@ -213,23 +212,22 @@ For day-to-day use, start with `docs/usage/usage-manual.md`. It keeps the comman
 - `node tools/agent-source/sync-agent-sources.mjs --source agency-agents` imports an upstream checkout into canonical `imported.<source>.*` role packages and updates `tools/agent-source/sources.lock.json`.
 - Prompt-shell field names and selector syntax are separate layers: prompts use `user_preferences`, while `context.map` selectors still use `global.user_profile.*`.
 - The installed CLI ships bundled role/model templates, but those are import sources, not runtime execution dependencies.
-- `system.mmd` owns flow and role-to-model binding (`model.bind.*`); role packages own prompt and I/O contract.
+- `system.mmd` owns role and handoff structure; role packages own prompt and I/O contract; `.ogs/model-selection.json` owns backend/model selection.
 
 ## Target Scaffolding
 
-- `.ogs/model-catalog.json` snapshots the current local `opencode models --verbose` discovery list; `.ogs/model-selection.json` remains the pinned runtime authority, with missing/stale catalog warnings and fail-closed handling for explicit unavailability or capability mismatch.
-- `.ogs/model-selection.json` stores runtime defaults and system/role overrides using direct `provider/model` refs.
+- `.ogs/model-catalog.json` records discovered CLI backends and runnable model IDs; `.ogs/model-selection.json` stores `backend` and `modelId` selections.
 - `.ogs/runtime.json` provides runtime defaults for the role repo and runs directory.
-- `~/.ogsystem/.env` stores user-level provider credentials and gateway URLs; keep it private and out of version control.
+- `~/.ogsystem/` stores shared system role packages; CLI backend credentials remain in each CLI's own user-level configuration.
 - `.ogs/runtime.json` may include `configVersion: "2"`; unsupported versions fail fast.
 - `.ogs/user-profile.json` provides user delivery preference sample.
 - `.ogs/laws.json` provides sample law catalog colocated with runtime config.
 - `ogs project init` scaffolds the current directory as a runnable project using the selected template.
 - `ogs project create <name> [--template <...>]` scaffolds the same structure in a new project directory.
 - `ogs project sync --system <file.mmd>` imports only the roles referenced by that system into the project-local role repo.
-- `ogs project sync-models` refreshes `.ogs/model-catalog.json` and seeds `.ogs/model-selection.json` when missing.
+- `ogs models discover` refreshes installed CLI/model discovery; `ogs models sync` also creates `.ogs/model-selection.json` when missing without replacing existing choices.
 - `ogs vis --workdir .` starts the read-mostly run visualizer. It keeps project/run/review/resume projections read-first, uses incremental timeline streaming instead of full run reloads on every event, loads resume diagnostics on demand, keeps project cold-start on persisted projections instead of forcing a runs-directory scan, and routes review decide / stop / reindex through existing lifecycle entrypoints with confirmation + audit input prompts. Review views now expose lifecycle `currentStatus` separately from durable decision `decisionPhase` (`recorded`, `pending_reconcile`, `applied`). `ogs run start --visualize` attaches a temporary visualizer that auto-closes when the run ends.
-- `examples/target-model-binding-system.mmd` shows `model.bind.*` usage.
+- Model backend/model configuration is managed in Studio or `.ogs/model-selection.json`, not in Mermaid metadata.
 - `examples/langgraph-debate-current/` shows a minimal debate with loop + parallel + join.
 - `examples/langgraph-expert-consultation/` shows a minimal expert consultation with parallel + join.
 - `examples/medical-quorum-consultation/` shows quorum join + context projection in a professional consultation flow.

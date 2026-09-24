@@ -3,8 +3,6 @@ flowchart TD
 %% system.version=1.0.0
 %% law.global=law.console.base
 %% entry.role=debate-minimalist
-%% model.bind.debate-minimalist=opencode/big-pickle
-%% model.bind.debate-judge=opencode/big-pickle
 
 input -->|DEBATE_REQUEST| debate-minimalist[Role:debate-minimalist]
 debate-minimalist[Role:debate-minimalist] -->|MINIMALIST_DONE| debate-judge[Role:debate-judge]

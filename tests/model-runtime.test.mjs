@@ -12,7 +12,7 @@ function extractInboxProjection(markdown) {
   return JSON.parse(match[1]);
 }
 
-test("adapter auto-discovers runtime config and persists run artifacts for model.bind systems", async () => {
+test("adapter persists run artifacts for project-selected model roles", async () => {
   const repoRoot = process.cwd();
   const tempRoot = await mkdtemp(path.join(os.tmpdir(), "ogsystem-model-runtime-"));
 
@@ -50,8 +50,8 @@ test("adapter auto-discovers runtime config and persists run artifacts for model
   assert.strictEqual(stateJson.finalRoleId, "debate-judge");
   const sessionIndex = JSON.parse(await readFile(path.resolve(runDir, "sessions.json"), "utf8"));
   assert.equal(sessionIndex.length, 2);
-  assert.equal(sessionIndex[0].sessionId.startsWith("dryrun-session-"), true);
-  assert.equal(sessionIndex[1].sessionId.startsWith("dryrun-session-"), true);
+  assert.equal(sessionIndex[0].sessionId.startsWith("dryrun-codex-"), true);
+  assert.equal(sessionIndex[1].sessionId.startsWith("dryrun-codex-"), true);
 
   const minimalistPrompt = await readFile(
     path.resolve(runDir, "roles", "debate-minimalist", "prompt.md"),
@@ -63,7 +63,7 @@ test("adapter auto-discovers runtime config and persists run artifacts for model
     path.resolve(runDir, "roles", "debate-minimalist", "role.md"),
     "utf8"
   );
-  assert.match(minimalistRole, /modelId: opencode\/big-pickle/);
+  assert.match(minimalistRole, /modelId: gpt-5\.6-sol/);
   assert.match(minimalistRole, /preferredModelTags:/);
 
   const minimalistInbox = await readFile(
@@ -113,14 +113,14 @@ test("adapter auto-discovers runtime config and persists run artifacts for model
   assert.equal(minimalistSession.sessionKey, "debate-minimalist:debate-minimalist@1#1");
   assert.equal(
     minimalistSession.sessionId,
-    "dryrun-session-debate-minimalist:debate-minimalist@1#1"
+    "dryrun-codex-debate-minimalist:debate-minimalist@1#1"
   );
   const minimalistExecutionSession = JSON.parse(
     await readFile(path.resolve(minimalistExecutionDir, "session.json"), "utf8")
   );
   assert.equal(
     minimalistExecutionSession.sessionId,
-    "dryrun-session-debate-minimalist:debate-minimalist@1#1"
+    "dryrun-codex-debate-minimalist:debate-minimalist@1#1"
   );
   const minimalistAudit = JSON.parse(
     await readFile(path.resolve(runDir, "roles", "debate-minimalist", "audit.json"), "utf8")
@@ -134,7 +134,7 @@ test("adapter auto-discovers runtime config and persists run artifacts for model
     path.resolve(runDir, "roles", "debate-minimalist", "outbox.md"),
     "utf8"
   );
-  assert.match(minimalistOutbox, /\[dry-run\] opencode-sdk/);
+  assert.match(minimalistOutbox, /\[dry-run\] codex-app-server/);
   const privateReadme = await readFile(
     path.resolve(runDir, "roles", "debate-minimalist", "private", "README.md"),
     "utf8"

@@ -150,9 +150,6 @@ flowchart TD
 %% system.version=1.0.0
 %% law.global=law.default
 %% entry.role=review
-%% model.bind.writer_a=model.main
-%% model.bind.writer_b=model.main
-%% model.bind.review=model.main
 %% join.mode.review=all_of
 %% join.sources.review=writer_a,writer_b
 %% context.map.review.a_content=source(writer_a).content

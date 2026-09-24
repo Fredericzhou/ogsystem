@@ -41,7 +41,6 @@ async function seedProject(workdir: string): Promise<void> {
       "%% system.version=1.0.0",
       "%% law.global=law.minimal.base",
       "%% entry.role=demo-analyst",
-      "%% model.bind.demo-analyst=opencode/gpt-5.4",
       "input -->|ENTER| analyst[Role:demo-analyst]",
       "analyst[Role:demo-analyst] -->|DONE| output",
       ""

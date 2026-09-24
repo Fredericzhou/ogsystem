@@ -13,9 +13,10 @@ async function writeDefaultModelSelection(workdir) {
     path.resolve(workdir, ".ogs", "model-selection.json"),
     JSON.stringify(
       {
-        configVersion: "1",
+        configVersion: "2",
         defaults: {
-          model: "opencode/gpt-5-nano",
+          backend: "opencode",
+          modelId: "opencode/gpt-5-nano",
           timeoutMs: 120000,
           maxOutputBytes: 65536
         }
@@ -159,7 +160,6 @@ test("sync-agent-sources generates canonical agency roles and runtime can load t
       "%% system.version=1.0.0",
       "%% law.global=law.imported.base",
       "%% entry.role=imported.agency.frontend-developer",
-      "%% model.bind.imported.agency.frontend-developer=balanced-gpt52",
       "",
       "input -->|START| agent[Role:imported.agency.frontend-developer]",
       "agent[Role:imported.agency.frontend-developer] -->|BLOCKED| output",

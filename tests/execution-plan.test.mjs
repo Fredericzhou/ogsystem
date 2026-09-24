@@ -23,10 +23,7 @@ const source = `flowchart TD
 %% review.rework.max.review=3
 %% review.terminate.scope.review=run
 %% loop.max.dispatch=2
-%% model.bind.dispatch=model.fast
 %% exec.bind.worker_a=profile.a
-%% model.bind.worker_b=model.deep
-%% model.bind.review=model.deep
 
 input -->|ENTER| dispatch[Role:dispatch]
 dispatch[Role:dispatch] -->|TO_A| workerA[Role:worker_a]
@@ -39,7 +36,11 @@ review[Role:review] -->|DONE| output
 
 test("execution plan normalizes graph semantics and bindings", () => {
   const system = parseSystemFromMermaidSource(source);
-  const plan = createExecutionPlan(system);
+  const plan = createExecutionPlan(system, new Map([
+    ["dispatch", { backend: "opencode", modelId: "model.fast", modelRef: "opencode/model.fast", bindingSource: "selection" }],
+    ["worker_b", { backend: "codex", modelId: "model.deep", modelRef: "codex/model.deep", bindingSource: "selection" }],
+    ["review", { backend: "codex", modelId: "model.deep", modelRef: "codex/model.deep", bindingSource: "selection" }]
+  ]));
 
   assert.strictEqual(plan.systemId, "plan.demo");
   assert.strictEqual(plan.entryRoleId, "dispatch");
@@ -64,8 +65,10 @@ test("execution plan normalizes graph semantics and bindings", () => {
   );
   assert.deepStrictEqual(dispatch.binding, {
     kind: "model",
-    modelRef: "model.fast",
-    bindingSource: "system"
+    backend: "opencode",
+    modelId: "model.fast",
+    modelRef: "opencode/model.fast",
+    bindingSource: "selection"
   });
 
   assert.deepStrictEqual(workerA.binding, {
@@ -74,8 +77,10 @@ test("execution plan normalizes graph semantics and bindings", () => {
   });
   assert.deepStrictEqual(workerB.binding, {
     kind: "model",
-    modelRef: "model.deep",
-    bindingSource: "system"
+    backend: "codex",
+    modelId: "model.deep",
+    modelRef: "codex/model.deep",
+    bindingSource: "selection"
   });
 
   assert.strictEqual(review.joinMode, "quorum_of");

@@ -1,11 +1,15 @@
 import { mkdir, readFile } from "node:fs/promises";
 import { dirname, isAbsolute, resolve } from "node:path";
 
+import { resolveProjectRoleRootDir } from "../runtime/bundled-repos.js";
 import { isRuntimeOnlyErrorEvent } from "../runtime/error-flow-utils.js";
 import { readJsonFile, writeJsonFileAtomic } from "../runtime/json-file.js";
 import { parseSystemFromMermaidSource } from "../runtime/parse-mermaid.js";
+import { loadRuntimeConfig } from "../runtime/runtime-loader.js";
+import { loadModelCatalog } from "../runtime/model-catalog.js";
+import { loadModelSelection, validateModelSelection } from "../runtime/model-selection.js";
 import { SYSTEM_END_ROLE_ID } from "../runtime/types.js";
-import type { Flow, SystemDefinition } from "../runtime/types.js";
+import type { Flow, ModelCatalog, ModelSelectionConfig, SystemDefinition } from "../runtime/types.js";
 import type {
   StudioAuthoringDocument,
   StudioAuthoringFlow,
@@ -60,6 +64,7 @@ export type StudioBridgeDraft = {
   validation: StudioSystemValidation;
   authoring: StudioAuthoringDocument | null;
   canvas: StudioGraphSnapshot | null;
+  modelCatalog: ModelCatalog | null;
   extracted: {
     systemId: string;
     systemVersion: string;
@@ -92,14 +97,32 @@ function flowKey(flow: Flow): string {
   return `${flow.fromRoleId}:${flow.eventType}:${toRoleId}`;
 }
 
-function getBindingKind(system: SystemDefinition, roleId: string): StudioAuthoringRole["bindingKind"] {
-  if (system.executionBinding[roleId]) {
-    return "exec";
-  }
-  if (system.modelBinding[roleId]) {
-    return "model";
-  }
-  return "noop";
+type RoleDisplayNames = ReadonlyMap<string, string>;
+
+function normalizedRoleDisplayName(value: unknown): string | undefined {
+  const name = typeof value === "string" ? value.trim() : "";
+  return name ? name.slice(0, 120) : undefined;
+}
+
+async function loadRoleDisplayNames(args: {
+  workdir: string;
+  system: SystemDefinition;
+}): Promise<RoleDisplayNames> {
+  const names = new Map<string, string>();
+  const runtimeConfig = await loadRuntimeConfig(undefined, args.workdir).catch(() => undefined);
+  const roleRootDir = resolveProjectRoleRootDir(args.workdir, runtimeConfig?.roleRepo ?? "./og-roles");
+  await Promise.all(args.system.roleIds.map(async (roleId) => {
+    const manifest = await readJsonFile(resolve(roleRootDir, roleId, "role.json")).catch(() => undefined);
+    const name = normalizedRoleDisplayName(
+      manifest && typeof manifest === "object" && !Array.isArray(manifest)
+        ? (manifest as Record<string, unknown>).name
+        : undefined
+    );
+    if (name) {
+      names.set(roleId, name);
+    }
+  }));
+  return names;
 }
 
 function detectEntryEventType(systemSource: string, entryRoleId: string): string | undefined {
@@ -123,15 +146,24 @@ export function importSystemToAuthoring(args: {
   systemPath: string;
   system: SystemDefinition;
   systemSource?: string;
+  roleDisplayNames?: RoleDisplayNames;
+  modelSelection?: ModelSelectionConfig;
 }): StudioAuthoringDocument {
   const roles: Record<string, StudioAuthoringRole> = {};
   const layoutNodes: StudioAuthoringDocument["layout"]["nodes"] = {};
   args.system.roleIds.forEach((roleId, index) => {
-    const bindingKind = getBindingKind(args.system, roleId);
+    const selected = args.modelSelection?.roles?.[roleId] ?? args.modelSelection?.defaults;
+    const bindingKind = args.system.executionBinding[roleId]
+      ? "exec"
+      : selected?.backend && selected.modelId ? "model" : "noop";
     roles[roleId] = {
       roleId,
+      ...(args.roleDisplayNames?.get(roleId) ? { title: args.roleDisplayNames.get(roleId) } : {}),
       bindingKind,
-      modelRef: args.system.modelBinding[roleId],
+      backend: selected?.backend,
+      modelId: selected?.modelId,
+      modelSelectionSource: args.modelSelection?.roles?.[roleId] ? "role" : selected?.backend ? "default" : undefined,
+      modelRef: selected?.backend && selected.modelId ? `${selected.backend}/${selected.modelId}` : undefined,
       profileId: args.system.executionBinding[roleId],
       routingMode: args.system.graph?.routingModeByRoleId[roleId],
       routeOrder: args.system.graph?.routeOrderByRoleId?.[roleId],
@@ -289,13 +321,36 @@ export async function inspectStudioBridgeDraft(args: {
     systemSource
   });
   let authoring: StudioAuthoringDocument | null = null;
+  const [modelSelection, modelCatalog] = await Promise.all([
+    loadModelSelection(resolve(args.workdir, ".ogs", "model-selection.json")),
+    loadModelCatalog(resolve(args.workdir, ".ogs", "model-catalog.json"))
+  ]);
   let bridgeValidation = validation;
   try {
+    const system = parseSystemFromMermaidSource(systemSource);
+    const roleDisplayNames = await loadRoleDisplayNames({ workdir: args.workdir, system });
     authoring = importSystemToAuthoring({
       workdir: args.workdir,
       systemPath,
-      system: parseSystemFromMermaidSource(systemSource)
+      system,
+      roleDisplayNames,
+      modelSelection
     });
+    const roleIds = new Set(system.roleIds);
+    const invalidFlows = system.flows.filter((flow) =>
+      !roleIds.has(flow.fromRoleId) ||
+      (flow.toRoleId !== SYSTEM_END_ROLE_ID && !roleIds.has(flow.toRoleId))
+    );
+    if (invalidFlows.length) {
+      const diagnostics = Array.isArray(bridgeValidation.diagnostics) ? bridgeValidation.diagnostics.slice() : [];
+      diagnostics.push({
+        source: "studio-bridge",
+        severity: "error",
+        message: "Every flow must hand off from an existing role to an existing role or the system output.",
+        detail: invalidFlows.map((flow) => `${flow.fromRoleId} -> ${flow.toRoleId}`).join(", ")
+      } satisfies StudioBridgeValidationDiagnostic);
+      bridgeValidation = { ...bridgeValidation, ok: false, diagnostics };
+    }
   } catch (error) {
     authoring = null;
     bridgeValidation = withStudioBridgeImportFailure(validation, error);
@@ -307,6 +362,7 @@ export async function inspectStudioBridgeDraft(args: {
     validation: bridgeValidation,
     authoring,
     canvas: authoring ? authoringToCanvasDocument(authoring) : null,
+    modelCatalog: modelCatalog ?? null,
     extracted: authoring
       ? {
           systemId: authoring.system.systemId,
@@ -345,10 +401,7 @@ export function serializeAuthoringToMermaid(authoring: StudioAuthoringDocument):
 
   for (const roleId of roleIds) {
     const role = authoring.roles[roleId];
-    if (role.bindingKind === "model") {
-      const line = serializeMetadataLine(`model.bind.${roleId}`, role.modelRef);
-      if (line) metadata.push(line);
-    } else if (role.bindingKind === "exec") {
+    if (role.bindingKind === "exec") {
       const line = serializeMetadataLine(`exec.bind.${roleId}`, role.profileId);
       if (line) metadata.push(line);
     }
@@ -457,10 +510,9 @@ export async function saveStudioAuthoringDraft(args: {
   validation?: StudioSystemValidation;
 }> {
   const draftPath = authoringDraftPath(args.workdir);
-  await mkdir(dirname(draftPath), { recursive: true });
-  await writeJsonFileAtomic(draftPath, args.authoring);
   let generatedMermaid: string | undefined;
   let validation: StudioSystemValidation | undefined;
+  let nextSelection: ModelSelectionConfig | undefined;
   if (
     typeof args.authoring === "object" &&
     args.authoring !== null &&
@@ -468,6 +520,22 @@ export async function saveStudioAuthoringDraft(args: {
     (args.authoring as { version?: unknown }).version === 1
   ) {
     generatedMermaid = serializeAuthoringToMermaid(args.authoring as StudioAuthoringDocument);
+    const selectionPath = resolve(args.workdir, ".ogs", "model-selection.json");
+    const currentSelection = await loadModelSelection(selectionPath);
+    const roles: NonNullable<ModelSelectionConfig["roles"]> = {};
+    for (const [roleId, role] of Object.entries((args.authoring as StudioAuthoringDocument).roles)) {
+      if (role.bindingKind !== "model") continue;
+      if (!role.backend || !role.modelId) {
+        throw new Error(`Role "${roleId}" needs both backend and modelId before it can run as an Agent.`);
+      }
+      if (role.modelSelectionSource === "default") continue;
+      roles[roleId] = { backend: role.backend, modelId: role.modelId };
+    }
+    nextSelection = validateModelSelection({
+      configVersion: "2",
+      defaults: currentSelection?.defaults,
+      roles
+    }, selectionPath);
     if (args.validateSystemSource) {
       validation = await args.validateSystemSource({
         workdir: args.workdir,
@@ -476,6 +544,11 @@ export async function saveStudioAuthoringDraft(args: {
       });
     }
   }
+  await mkdir(dirname(draftPath), { recursive: true });
+  if (nextSelection) {
+    await writeJsonFileAtomic(resolve(args.workdir, ".ogs", "model-selection.json"), nextSelection);
+  }
+  await writeJsonFileAtomic(draftPath, args.authoring);
   return {
     workdir: args.workdir,
     draftPath,

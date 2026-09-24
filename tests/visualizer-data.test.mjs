@@ -55,6 +55,11 @@ async function seedProjectFixture(workdir) {
     await symlink(path.resolve(repoRoot, ".ogs", file), path.resolve(workdir, ".ogs", file));
   }
   await writeFile(
+    path.resolve(workdir, ".ogs", "model-selection.json"),
+    JSON.stringify({ configVersion: "2", defaults: { backend: "codex", modelId: "gpt-5.6-sol" } }, null, 2),
+    "utf8"
+  );
+  await writeFile(
     path.resolve(workdir, ".ogs", "project.json"),
     JSON.stringify(
       {
@@ -84,7 +89,6 @@ async function seedProjectFixture(workdir) {
       "%% system.version=1.0.0",
       "%% law.global=law.minimal.base",
       "%% entry.role=demo-analyst",
-      "%% model.bind.demo-analyst=openai/gpt-5-nano",
       "%% review.mode.demo-analyst=required",
       "%% review.timeout.demo-analyst=3600",
       "%% review.timeout.action.demo-analyst=pause",
@@ -113,8 +117,6 @@ async function seedStrictContractProjectFixture(workdir) {
       "%% entry.role=demo-analyst",
       "%% handoff.mode=strict",
       `%% handoff.contracts=${contractBundlePath}`,
-      "%% model.bind.demo-analyst=openai/gpt-5-nano",
-      "%% model.bind.diagnosis-dispatch=openai/gpt-5-nano",
       "%% context.map.diagnosis-dispatch.content=direct.content",
       "input -->|ENTER| analyst[Role:demo-analyst]",
       "analyst[Role:demo-analyst] -->|ANALYSIS_DONE| tracker[Role:diagnosis-dispatch]",
@@ -976,7 +978,7 @@ test("visualizer data projects binding, role package, and contract explainabilit
 
   const bindings = await inspectProjectBindingVisualization(workdir);
   assert.equal(bindings.bindings.length, 2);
-  assert.equal(bindings.bindings[0].source.startsWith("system.mmd"), true);
+  assert.equal(bindings.bindings[0].source, ".ogs/model-selection.json");
 
   const rolePackages = await inspectProjectRolePackagesVisualization(workdir);
   assert.equal(rolePackages.rolePackages.length >= 2, true);

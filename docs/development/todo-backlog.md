@@ -53,7 +53,7 @@ Contract freeze notes:
 ## Current P1 Model Discovery
 
 - [x] Make OpenCode `opencode models --verbose` the sole discovery source for available models; keep OGS responsible only for the normalized `provider/model` reference and capability contract.
-- [x] Map discovered model references to project responsibility seats through explicit `model.bind.<roleId>` and `.ogs/model-selection.json` overrides; do not infer assignments from role names or business domains.
+- [x] Map discovered model references to project responsibility seats through `.ogs/model-selection.json` defaults and role overrides; do not infer assignments from role names or business domains.
 - [x] Keep `.ogs/model-catalog.json` as a refreshable cache and audit snapshot for UI/offline use, while `.ogs/model-selection.json` remains the pinned runtime selection used for reproducible runs and resume.
 - [x] Remove concrete provider/model names from framework templates and fallback paths; use discovered catalog entries or fail closed with an actionable configuration diagnostic. Concrete model names may remain only in examples and tests.
 - [x] Add catalog refresh, stale-cache, unavailable-model, capability mismatch, and role-mapping contract tests without requiring a built-in provider/model inventory.

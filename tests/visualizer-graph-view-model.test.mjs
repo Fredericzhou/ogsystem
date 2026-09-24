@@ -2,7 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 
 import { buildGraphViewModel } from "../dist/visualizer/graph-view-model.js";
-import { importMermaidToAuthoring } from "../dist/visualizer/studio-authoring.js";
+import { importSystemToAuthoring } from "../dist/visualizer/studio-authoring.js";
 import { parseSystemFromMermaidSource } from "../dist/runtime/parse-mermaid.js";
 import {
   formatStudioEdgeLabel
@@ -14,7 +14,6 @@ const source = [
   "%% system.version=1.0.0",
   "%% law.global=law.minimal.base",
   "%% entry.role=dispatch",
-  "%% model.bind.dispatch=model.fast",
   "%% exec.bind.review=profile.review",
   "%% role.mode.dispatch=parallel_split",
   "%% route.order.dispatch=worker,review",
@@ -31,10 +30,12 @@ const source = [
 ].join("\n");
 
 function buildAuthoringFixture() {
-  return importMermaidToAuthoring({
+  return importSystemToAuthoring({
     workdir: "/tmp/project",
     systemPath: "/tmp/project/system.mmd",
-    systemSource: source
+    system: parseSystemFromMermaidSource(source),
+    systemSource: source,
+    modelSelection: { configVersion: "2", defaults: { backend: "codex", modelId: "gpt-5.6-sol" } }
   });
 }
 

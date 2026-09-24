@@ -140,10 +140,6 @@ test("resume context restores branch-local sessions and keeps sibling session me
 %% law.global=law.console.base
 %% entry.role=debate-moderator
 %% role.mode.debate-moderator=parallel_split
-%% model.bind.debate-moderator=fast-gpt54
-%% model.bind.debate-minimalist=balanced-gpt52
-%% model.bind.debate-alignmentist=balanced-gpt52
-%% model.bind.debate-summary=balanced-gpt52
 
 input -->|START| moderator[Role:debate-moderator]
 moderator[Role:debate-moderator] -->|TO_MIN| minimalist[Role:debate-minimalist]
@@ -153,7 +149,10 @@ alignmentist[Role:debate-alignmentist] -->|ALIGN_DONE| summary[Role:debate-summa
 summary[Role:debate-summary] -->|SUMMARY_READY| output
 `;
   const system = parseSystemFromMermaidSource(systemSource);
-  const plan = createExecutionPlan(system);
+  const plan = createExecutionPlan(system, new Map([[
+    "debate-summary",
+    { backend: "opencode", modelId: "balanced-gpt52", modelRef: "opencode/balanced-gpt52", bindingSource: "selection" }
+  ]]));
   const runDir = path.resolve(workdir, ".ogs/runs", "resume-branch-run");
   await mkdir(runDir, { recursive: true });
   await writeFile(systemPath, systemSource, "utf8");
@@ -354,7 +353,10 @@ test("branch workspace isolation stores session directory under branch private w
   const workdir = tempRoot;
   const systemPath = path.resolve("examples/target-model-binding-system.mmd");
   const system = await loadSystemFromMermaid(systemPath);
-  const plan = createExecutionPlan(system);
+  const plan = createExecutionPlan(system, new Map([[
+    system.entryRoleId,
+    { backend: "codex", modelId: "gpt-5.6-sol", modelRef: "codex/gpt-5.6-sol", bindingSource: "selection" }
+  ]]));
   const runtimeConfig = validateRuntimeConfig(
     {
       executor: "opencode",

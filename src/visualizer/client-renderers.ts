@@ -874,7 +874,7 @@ export function renderStudioBridgeInspector(args: {
   const selectedFlow = explicitSelectedFlow ?? (args.selectedRoleId ? null : flows[0] ?? null);
   const roleInspector = selectedRole
     ? [
-        '<div class="event"><div class="event-top"><span>' + escapeText(t("studio.roleInspector", undefined, "role inspector")) + '</span><span>' + escapeText(displayBindingKind(String(selectedRole.bindingKind ?? "noop"), t)) + '</span></div><strong><code>' + escapeText(String(selectedRole.roleId ?? "")) + '</code></strong>',
+        '<div class="event"><div class="event-top"><span>' + escapeText(t("studio.roleInspector", undefined, "role inspector")) + '</span><span>' + escapeText(displayBindingKind(String(selectedRole.bindingKind ?? "noop"), t)) + '</span></div><strong>' + escapeText(String(selectedRole.title ?? selectedRole.roleId ?? "")) + '</strong><div class="hint"><code>' + escapeText(String(selectedRole.roleId ?? "")) + '</code></div>',
         '<div class="hint">' + escapeText(t("studio.modelExecRoute", {
           modelRef: String(selectedRole.modelRef ?? "n/a"),
           profileId: String(selectedRole.profileId ?? "n/a"),
@@ -971,6 +971,7 @@ export function renderStudioRoleConfigEditor(args: {
   roleId: string;
   editor?: JsonRecord | null | undefined;
   projectConfig?: JsonRecord | null | undefined;
+  modelCatalog?: JsonRecord | null | undefined;
   t?: Translator;
 }): string {
   const t: Translator = typeof args.t === "function" ? args.t : (_key, _vars, fallback) => fallback ?? _key;
@@ -991,6 +992,8 @@ export function renderStudioRoleConfigEditor(args: {
   const title = String(draft.title ?? data.title ?? "");
   const bindingKind = String(draft.bindingKind ?? data.bindingKind ?? "noop");
   const modelRef = String(draft.modelRef ?? data.modelRef ?? "");
+  const backend = String(draft.backend ?? data.backend ?? "");
+  const modelId = String(draft.modelId ?? data.modelId ?? "");
   const profileId = String(draft.profileId ?? data.profileId ?? "");
   const contextMapText = String(draft.contextMapText ?? formatContextMapJson(data.contextMap));
   const generatedProfileId = String(data.generatedProfileId ?? "");
@@ -1033,7 +1036,25 @@ export function renderStudioRoleConfigEditor(args: {
         '<option value="noop"' + (bindingKind === "noop" ? " selected" : "") + '>' + escapeText(t("studio.binding.noop", undefined, "Noop")) + '</option>' +
       '</select><div class="hint">' + escapeText(t("studio.roleConfigBindingHint", undefined, "Agent maps to model, Tool maps to project execution config, and Noop preserves pass-through wiring.")) + '</div></label>' +
       (bindingKind === "model"
-        ? '<label class="field full"><span>' + escapeText(t("studio.form.modelRef", undefined, "Model")) + '</span><input data-role-config-field="modelRef" value="' + escapeText(modelRef) + '"' + disabled + '><div class="hint">' + escapeText(t("studio.roleConfigModelHint", undefined, "Model binding ref for Agent execution.")) + '</div></label>'
+        ? (() => {
+            const models = Array.isArray(args.modelCatalog?.models) ? args.modelCatalog.models as JsonRecord[] : [];
+            const sources = Array.isArray(args.modelCatalog?.sources) ? args.modelCatalog.sources as JsonRecord[] : [];
+            const runnable = models.filter((entry) => entry.runnable === true);
+            const discoveredBackends = [...new Set(runnable.map((entry) => String(entry.backend || "")))].filter(Boolean).sort();
+            const backends = backend && !discoveredBackends.includes(backend) ? [...discoveredBackends, backend].sort() : discoveredBackends;
+            const selectedBackend = backend || backends[0] || "";
+            const choices = runnable.filter((entry) => String(entry.backend) === selectedBackend);
+            const selectedModelId = choices.some((entry) => String(entry.modelId) === modelId) ? modelId : "";
+            const staleModel = modelId && !selectedModelId
+              ? '<option value="' + escapeText(modelId) + '" selected>' + escapeText(`${modelId} (not currently discovered)`) + '</option>'
+              : "";
+            const unavailable = !choices.length && !staleModel ? '<option value="">' + escapeText(t("studio.form.noModels", undefined, "No runnable models. Run ogs models sync.")) + '</option>' : "";
+            return '<div class="actions compact"><button class="button subtle" type="button" data-model-catalog-sync' + disabled + '>' + escapeText(t("action.refresh", undefined, "Refresh installed CLIs and models")) + '</button><span class="hint">' + escapeText(sources.map((source) => `${source.backend}: ${source.status === "available" ? (source.detail || "available") : (source.detail || "not found")}`).join(" · ")) + '</span></div><label class="field"><span>' + escapeText(t("studio.form.backend", undefined, "CLI backend")) + '</span><select data-role-config-field="backend"' + disabled + '>' +
+              backends.map((item) => '<option value="' + escapeText(item) + '"' + (item === selectedBackend ? ' selected' : '') + '>' + escapeText(discoveredBackends.includes(item) ? item : `${item} (not currently discovered)`) + '</option>').join("") +
+              '</select></label><label class="field"><span>' + escapeText(t("studio.form.modelRef", undefined, "Model")) + '</span><select data-role-config-field="modelId"' + disabled + '>' + staleModel + unavailable +
+              choices.map((item) => '<option value="' + escapeText(String(item.modelId || "")) + '"' + (String(item.modelId) === selectedModelId ? ' selected' : '') + '>' + escapeText(String(item.name || item.model || item.modelId || "")) + '</option>').join("") +
+              '</select><div class="hint">' + escapeText(models.length ? t("studio.roleConfigModelHint", undefined, "Select a model advertised by an installed persistent CLI service.") : t("studio.form.noModels", undefined, "No runnable models. Run ogs models sync.")) + '</div></label>';
+          })()
         : "") +
       (bindingKind === "exec"
         ? '<label class="field full"><span>' + escapeText(t("studio.form.profileId", undefined, "Execution profile")) + '</span><select data-role-config-field="profileId"' + disabled + '>' + profileSelectOptions + '</select><div class="hint">' + escapeText(effectiveProfileId === generatedProfileId
@@ -1230,14 +1251,15 @@ export function renderStudioBridgeStructureHtml(args: {
   const selectedRole = explicitSelectedRole ?? (args.selectedFlowKey ? null : roles[0] ?? null);
   const selectedFlow = explicitSelectedFlow ?? (args.selectedRoleId ? null : flows[0] ?? null);
   const busy = args.actionBusy ? " disabled" : "";
-  const roleButtons = filtered.roles.length
+      const roleButtons = filtered.roles.length
     ? filtered.roles.map((role) => {
         const roleId = String(role.roleId ?? "");
+        const roleTitle = String(role.title ?? "").trim() || roleId;
         const active = selectedRole && selectedRole.roleId === roleId ? " active" : "";
         const badges = Array.isArray(role.badges) ? role.badges.join(" ") : "";
         return (
           '<button class="run-card' + active + '" data-studio-role-id="' + escapeText(roleId) + '"' + busy + ">" +
-          '<div class="run-title"><span><code>' + escapeText(roleId) + '</code></span><span class="status ' +
+          '<div class="run-title"><span><strong>' + escapeText(roleTitle) + '</strong><div class="hint"><code>' + escapeText(roleId) + '</code></div></span><span class="status ' +
           escapeText(bindingTone(String(role.bindingKind ?? "noop"))) + '">' + escapeText(displayBindingKind(String(role.bindingKind ?? "noop"), t)) +
           '</span></div><div class="meta"><span>' + escapeText(badges || t("studio.standard", undefined, "standard")) + '</span><span>' +
           escapeText(t("studio.events", { count: String((role.allowedEvents as unknown[] | undefined)?.length ?? 0) }, "events " + String((role.allowedEvents as unknown[] | undefined)?.length ?? 0))) + "</span></div></button>"

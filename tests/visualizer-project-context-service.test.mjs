@@ -58,7 +58,7 @@ async function createProject() {
   );
   await writeFile(
     path.join(workdir, ".ogs", "model-selection.json"),
-    JSON.stringify({ configVersion: "1", defaults: { model: "opencode/test-model" } }),
+    JSON.stringify({ configVersion: "2", defaults: { backend: "opencode", modelId: "opencode/test-model" } }),
     "utf8"
   );
   await writeRolePackage(workdir, "planner");

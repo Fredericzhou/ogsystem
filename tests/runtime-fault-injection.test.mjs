@@ -23,7 +23,6 @@ const systemSource = `flowchart TD
 %% system.version=1.0.0
 %% law.global=law.console.base
 %% entry.role=test-operator
-%% model.bind.test-operator=balanced-gpt52
 
 input -->|GO| operator[Role:test-operator]
 operator[Role:test-operator] -->|DONE| output
@@ -37,9 +36,10 @@ async function writeDefaultModelSelection(workdir) {
     path.resolve(workdir, ".ogs", "model-selection.json"),
     JSON.stringify(
       {
-        configVersion: "1",
+        configVersion: "2",
         defaults: {
-          model: "opencode/gpt-5-nano",
+          backend: "opencode",
+          modelId: "opencode/gpt-5-nano",
           timeoutMs: 120000,
           maxOutputBytes: 65536
         }

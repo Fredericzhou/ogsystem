@@ -135,11 +135,13 @@ export type SystemDefinition = {
 export type RoleExecutionBinding =
   | {
       kind: "model";
+      backend: "opencode" | "codex" | "claude" | "antigravity";
+      modelId: string;
       modelRef: string;
       variant?: string;
       timeoutMs?: number;
       maxOutputBytes?: number;
-      bindingSource: "system" | "selection";
+      bindingSource: "selection";
     }
   | {
       kind: "profile";
@@ -364,6 +366,9 @@ export type ModelCatalogCapabilitySummary = {
 };
 
 export type ModelCatalogEntry = {
+  backend: string;
+  runnable: boolean;
+  modelId: string;
   ref: string;
   provider: string;
   model: string;
@@ -378,23 +383,23 @@ export type ModelCatalogEntry = {
 };
 
 export type ModelCatalog = {
-  catalogVersion: "1";
+  catalogVersion: "2";
   generatedAt: string;
-  source: {
-    command: string;
-  };
+  sources: Array<{ backend: string; command: string; status: "available" | "unavailable"; detail?: string }>;
   models: ModelCatalogEntry[];
 };
 
 export type ModelSelectionDefaults = {
-  model?: string;
+  backend?: string;
+  modelId?: string;
   variant?: string;
   timeoutMs?: number;
   maxOutputBytes?: number;
 };
 
 export type ModelSelectionRoleOverride = {
-  model?: string;
+  backend?: string;
+  modelId?: string;
   variant?: string;
   timeoutMs?: number;
   maxOutputBytes?: number;
@@ -406,9 +411,8 @@ export type ModelSelectionSystemOverride = {
 };
 
 export type ModelSelectionConfig = {
-  configVersion: "1";
+  configVersion: "2";
   defaults?: ModelSelectionDefaults;
-  systems?: Record<string, ModelSelectionSystemOverride>;
   roles?: Record<string, ModelSelectionRoleOverride>;
 };
 
@@ -424,6 +428,7 @@ export type AuditRecord = {
   loopIteration?: number;
   lawRef?: string;
   modelId?: string;
+  backend?: string;
   profileId?: string;
   toolRef?: string;
   command?: string;
@@ -474,6 +479,7 @@ export type OpencodeSessionRecord = {
   sessionLineageId?: string;
   branchId?: string;
   sessionId: string;
+  backend?: string;
   directory: string;
   createdAt: string;
   lastPromptAt: string;

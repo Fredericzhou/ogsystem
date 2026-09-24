@@ -53,9 +53,10 @@ async function seedRuntimeProject(tempRoot) {
     path.resolve(tempRoot, ".ogs", "model-selection.json"),
     JSON.stringify(
       {
-        configVersion: "1",
+        configVersion: "2",
         defaults: {
-          model: "openai/gpt-5-nano",
+          backend: "opencode",
+          modelId: "openai/gpt-5-nano",
           timeoutMs: 120000,
           maxOutputBytes: 65536
         }
@@ -63,11 +64,6 @@ async function seedRuntimeProject(tempRoot) {
       null,
       2
     ),
-    "utf8"
-  );
-  await writeFile(
-    path.resolve(tempRoot, ".ogs", "model-catalog.json"),
-    await readFile(path.resolve(repoRoot, ".ogs", "model-catalog.json"), "utf8"),
     "utf8"
   );
   await writeFile(
@@ -379,9 +375,10 @@ test("lifecycle cli run start/list/status/logs/resume/stop works end-to-end", { 
     path.resolve(tempRoot, ".ogs", "model-selection.json"),
     JSON.stringify(
       {
-        configVersion: "1",
+        configVersion: "2",
         defaults: {
-          model: "openai/gpt-5-nano",
+          backend: "opencode",
+          modelId: "openai/gpt-5-nano",
           timeoutMs: 120000,
           maxOutputBytes: 65536
         }
@@ -389,11 +386,6 @@ test("lifecycle cli run start/list/status/logs/resume/stop works end-to-end", { 
       null,
       2
     ),
-    "utf8"
-  );
-  await writeFile(
-    path.resolve(tempRoot, ".ogs", "model-catalog.json"),
-    await readFile(path.resolve(repoRoot, ".ogs", "model-catalog.json"), "utf8"),
     "utf8"
   );
   await writeFile(
@@ -608,7 +600,6 @@ test("lifecycle cli review commands expose pending human review state and can ap
       "%% system.version=1.0.0",
       "%% law.global=law.console.base",
       "%% entry.role=test-operator",
-      "%% model.bind.test-operator=balanced-gpt52",
       "%% review.mode.test-operator=required",
       "",
       "input -->|GO| operator[Role:test-operator]",
@@ -736,7 +727,6 @@ test("lifecycle cli review commands preserve paused status and allow a later app
       "%% system.version=1.0.0",
       "%% law.global=law.console.base",
       "%% entry.role=test-operator",
-      "%% model.bind.test-operator=balanced-gpt52",
       "%% review.mode.test-operator=required",
       "",
       "input -->|GO| operator[Role:test-operator]",
@@ -854,7 +844,6 @@ test("lifecycle cli review status normalization tracks rework rounds and rejects
       "%% system.version=1.0.0",
       "%% law.global=law.console.base",
       "%% entry.role=test-operator",
-      "%% model.bind.test-operator=balanced-gpt52",
       "%% review.mode.test-operator=required",
       "%% review.rework.target.test-operator=test-operator",
       "",

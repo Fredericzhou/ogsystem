@@ -850,6 +850,7 @@ export async function executeRoleNode(args: {
       lawRef,
       started,
       modelId: executionResult.modelId ?? modelId,
+      backend: executionResult.backend ?? resolvedBinding.backend,
       profileId: executionResult.profileId ?? profileId,
       toolRef: executionResult.toolRef ?? toolRef,
       command: executionResult.command ?? command,
@@ -876,6 +877,7 @@ export async function executeRoleNode(args: {
         roleId: args.roleId,
         execution,
         sessionId: executionResult.sessionId,
+        backend: executionResult.backend ?? resolvedBinding.backend,
         messageId: executionResult.messageId,
         sessionDirectory: resolvedBinding.sessionDirectory
       });

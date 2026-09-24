@@ -71,7 +71,7 @@ const TEMPLATES: readonly Nl2MmdStructureTemplate[] = [
     requiredSlots: [
       slot("entry", "Declare the entry role and the main linear path.", ["entry.role=role_a"]),
       slot("roles", "List the ordered roles in the single chain.", ["input -> role_a -> role_b -> output"]),
-      slot("bindings", "Bind each active role to a direct model ref or exec-bound local tool.", ["model.bind.role_a=<provider/model>"])
+      slot("execution", "Keep this graph focused on role handoffs; configure Agent backend/model choices in the project model settings.", ["Agent backend/model selection is configured outside Mermaid"])
     ],
     optionalSlots: [
       slot("notes", "Capture any lightweight constraints or delivery preferences.", ["user profile style notes"], false)
@@ -175,7 +175,7 @@ const TEMPLATES: readonly Nl2MmdStructureTemplate[] = [
     requiredSlots: [
       slot("handoff", "Declare the handoff mode and contract bundle.", ["handoff.mode=strict", "handoff.contracts=contracts/handoff.contracts.json"]),
       slot("routes", "List deterministic sibling targets in route order when needed.", ["route.order.dispatch=reviewer,observer"]),
-      slot("binds", "Bind roles that own the handoff decision.", ["model.bind.reviewer=<provider/model>"])
+      slot("roles", "Keep each node as a responsibility role; configure its Agent backend/model outside Mermaid.", ["reviewer is a role, not an event or process step"])
     ],
     optionalSlots: [
       slot("warnings", "Note transition behavior for warned contracts.", ["handoff.mode=transition skips warned contracts"], false)
@@ -261,7 +261,6 @@ const TEMPLATES: readonly Nl2MmdStructureTemplate[] = [
       "%% system.version=1.0.0",
       "%% law.global=<law.ref>",
       "%% entry.role=<reviewed-role>",
-      "%% model.bind.<reviewed-role>=<provider/model>",
       "%% review.mode.<reviewed-role>=required",
       "input -->|<EVENT>| <reviewed>[Role:<reviewed-role>]",
       "<reviewed>[Role:<reviewed-role>] -->|<APPROVED-EVENT>| output"
@@ -269,15 +268,14 @@ const TEMPLATES: readonly Nl2MmdStructureTemplate[] = [
   },
   {
     id: "mixed_binding",
-    title: "Mixed Binding",
-    summary: "Template for systems that intentionally use different bindings on different roles.",
-    triggerPatterns: [/exec\.bind|model\.bind|binding|mixed/i],
+    title: "Mixed Execution",
+    summary: "Template for a role that hands off work after invoking a project execution profile.",
+    triggerPatterns: [/exec\.bind|tool binding|mixed/i],
     semanticHintLabels: ["binding_policy"],
     requiredMetadataKeys: ["system.id", "system.version", "law.global", "entry.role"],
     requiredSlots: [
-      slot("model-binding", "Declare the model-bound role.", ["model.bind.reviewer=<provider/model>"]),
       slot("exec-binding", "Declare a different local-shell exec-bound role.", ["exec.bind.publisher=publish-profile"]),
-      slot("binding-note", "Record which roles use each binding path.", ["review uses model.bind; ship uses exec.bind"])
+      slot("role-note", "Keep each graph node as a role and configure Agent backend/model choices outside Mermaid.", ["review is an Agent role; publisher uses an execution profile"])
     ],
     optionalSlots: [
       slot("binding-policy", "Capture any explicit binding policy or rationale.", ["keep exec.bind only for local shell roles"], false)
@@ -288,7 +286,6 @@ const TEMPLATES: readonly Nl2MmdStructureTemplate[] = [
       "%% system.version=1.0.0",
       "%% law.global=<law.ref>",
       "%% entry.role=<entry-role>",
-      "%% model.bind.<model-role>=<provider/model>",
       "%% exec.bind.<exec-role>=<profile-id>",
       "input -->|<EVENT>| <model>[Role:<model-role>]",
       "<model>[Role:<model-role>] -->|NEXT| <exec>[Role:<exec-role>]",

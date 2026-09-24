@@ -25,9 +25,10 @@ import { validateRuntimeConfig } from "./config.js";
 import { readJsonFile, writeJsonFileAtomic } from "./json-file.js";
 import {
   chooseDefaultModelFromCatalog,
-  refreshModelCatalog,
+  discoverLocalModelCatalog,
   type DiscoveryCommandRunner
 } from "./model-catalog.js";
+import { loadModelSelection } from "./model-selection.js";
 import { loadSystemFromMermaid, parseSystemFromMermaidSource } from "./parse-mermaid.js";
 import { loadRolePackage } from "./role-repo.js";
 import { ROLE_EXECUTION_OUTCOME_FILE } from "./run-artifacts.js";
@@ -443,9 +444,9 @@ function createDefaultOgsReadme(): string {
     "## File guide",
     "",
     "- `runtime.json`: Main runtime config. Safe place to change workspace and execution defaults.",
-    "- `model-selection.json`: Default model routing and per-system overrides.",
-    "- `model-catalog.json`: Generated catalog from `ogs project sync-models`. Usually do not edit manually.",
-    "- Provider credentials and gateway URLs: user-level `~/.ogsystem/.env` (loaded for OpenCode).",
+    "- `model-selection.json`: Default and per-role CLI backend/model choices.",
+    "- `model-catalog.json`: Generated local CLI discovery from `ogs models discover` or `ogs models sync`.",
+    "- Backend credentials stay in each CLI's own user-level configuration; OGS does not import or manage them.",
     "- `laws.json`: Project laws and transition constraints used by the runtime.",
     "- `user-profile.json`: Default user preference profile injected into runs.",
     "- `profiles.json`: Exec profiles that bind `exec.bind.*` roles to local tools.",
@@ -479,25 +480,19 @@ function createDefaultOgsReadme(): string {
     "",
     "```json",
     '{',
-    '  "configVersion": "1",',
+    '  "configVersion": "2",',
     '  "defaults": {',
-    '    "model": "<provider/model>",',
+    '    "backend": "<opencode|codex>",',
+    '    "modelId": "<cli-model-id>",',
     '    "variant": "<optional-variant>",',
     '    "timeoutMs": 120000,',
     '    "maxOutputBytes": 65536',
     "  },",
-    '  "systems": {',
-    '    "template.minimal": {',
-    '      "defaults": {',
-    '        "model": "<provider/model>",',
-    '        "variant": "<optional-variant>"',
-    "      }",
-    "    }",
-    "  }",
+    '  "roles": { "proposal-author": { "backend": "codex", "modelId": "gpt-5.6-sol" } }',
     "}",
     "```",
     "",
-    "Use `ogs project sync-models` to refresh `model-catalog.json` first, then pick refs from that catalog.",
+    "Run `ogs models sync` to discover installed CLI services and initialize this file. Configure each role's backend and modelId in Studio or here.",
     "",
     "## Example: laws.json",
     "",
@@ -1266,33 +1261,17 @@ export function resolveOgsPaths(workdir: string): {
 
 function createDefaultModelSelection(args: {
   catalog: ModelCatalog;
-  system?: SystemDefinition;
 }): ModelSelectionConfig {
   const selected = chooseDefaultModelFromCatalog(args.catalog);
-  if (!selected) {
-    throw new Error(
-      "No active text-output toolcall model was discovered from `opencode models --verbose`."
-    );
-  }
-
   return {
-    configVersion: "1",
-    defaults: {
-      model: selected.ref,
+    configVersion: "2",
+    ...(selected ? { defaults: {
+      backend: selected.backend,
+      modelId: selected.modelId,
       variant: selected.variants.includes("medium") ? "medium" : undefined,
       timeoutMs: 120000,
       maxOutputBytes: 65536
-    },
-    systems: args.system
-      ? {
-          [args.system.systemId]: {
-            defaults: {
-              model: selected.ref,
-              variant: selected.variants.includes("medium") ? "medium" : undefined
-            }
-          }
-        }
-      : undefined
+    } } : {})
   };
 }
 
@@ -1417,17 +1396,15 @@ export async function syncProjectModels(args: {
 
     if (!hasCatalog || args.rewriteDefault) {
       await writeJsonFileAtomic(paths.modelCatalogPath, {
-        catalogVersion: "1",
+        catalogVersion: "2",
         generatedAt: new Date().toISOString(),
-        source: {
-          command: "ogs project scaffold --model-strategy empty"
-        },
+        sources: [],
         models: []
       });
     }
     if (!hasSelection || args.rewriteDefault) {
       await writeJsonFileAtomic(paths.modelSelectionPath, {
-        configVersion: "1"
+        configVersion: "2"
       });
       return {
         catalogPath: paths.modelCatalogPath,
@@ -1436,14 +1413,10 @@ export async function syncProjectModels(args: {
       };
     }
 
-    const existingSelection = await readJsonFile(paths.modelSelectionPath);
-    const selectedModel =
-      typeof existingSelection === "object" &&
-      existingSelection !== null &&
-      !Array.isArray(existingSelection) &&
-      typeof (existingSelection as { defaults?: { model?: unknown } }).defaults?.model === "string"
-        ? (existingSelection as { defaults: { model: string } }).defaults.model
-        : undefined;
+    const existingSelection = await loadModelSelection(paths.modelSelectionPath);
+    const selectedModel = existingSelection?.defaults?.backend && existingSelection.defaults.modelId
+      ? `${existingSelection.defaults.backend}/${existingSelection.defaults.modelId}`
+      : undefined;
 
     return {
       catalogPath: paths.modelCatalogPath,
@@ -1453,7 +1426,11 @@ export async function syncProjectModels(args: {
     };
   }
 
-  const catalog = await refreshModelCatalog({
+  const hasSelectionBeforeRefresh = await stat(paths.modelSelectionPath).then(() => true).catch(() => false);
+  const existingSelectionBeforeRefresh = hasSelectionBeforeRefresh && !args.rewriteDefault
+    ? await loadModelSelection(paths.modelSelectionPath)
+    : undefined;
+  const catalog = await discoverLocalModelCatalog({
     workdir: args.workdir,
     commandRunner: args.commandRunner
   });
@@ -1461,30 +1438,24 @@ export async function syncProjectModels(args: {
 
   const hasSelection = await stat(paths.modelSelectionPath).then(() => true).catch(() => false);
   if (!hasSelection || args.rewriteDefault) {
-    const system = args.systemPath
-      ? await loadSystemFromMermaid(resolve(args.workdir, args.systemPath))
-      : undefined;
     const selection = createDefaultModelSelection({
-      catalog,
-      system
+      catalog
     });
     await writeJsonFileAtomic(paths.modelSelectionPath, selection);
     return {
       catalogPath: paths.modelCatalogPath,
       selectionPath: paths.modelSelectionPath,
       generatedSelection: true,
-      selectedModel: selection.defaults?.model
+      selectedModel: selection.defaults?.backend && selection.defaults.modelId
+        ? `${selection.defaults.backend}/${selection.defaults.modelId}`
+        : undefined
     };
   }
 
-  const existingSelection = await readJsonFile(paths.modelSelectionPath);
-  const selectedModel =
-    typeof existingSelection === "object" &&
-    existingSelection !== null &&
-    !Array.isArray(existingSelection) &&
-    typeof (existingSelection as { defaults?: { model?: unknown } }).defaults?.model === "string"
-      ? (existingSelection as { defaults: { model: string } }).defaults.model
-      : undefined;
+  const existingSelection = existingSelectionBeforeRefresh;
+  const selectedModel = existingSelection?.defaults?.backend && existingSelection.defaults.modelId
+    ? `${existingSelection.defaults.backend}/${existingSelection.defaults.modelId}`
+    : undefined;
 
   return {
     catalogPath: paths.modelCatalogPath,

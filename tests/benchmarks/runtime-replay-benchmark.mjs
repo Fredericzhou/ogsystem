@@ -31,7 +31,6 @@ function createSystemSource(iterationCount) {
 %% law.global=law.console.base
 %% entry.role=test-loop-probe
 %% loop.max.test-loop-probe=${iterationCount}
-%% model.bind.test-loop-probe=opencode/gpt-5-nano
 
 input -->|GO| operator[Role:test-loop-probe]
 operator[Role:test-loop-probe] -->|RETRY| operator[Role:test-loop-probe]

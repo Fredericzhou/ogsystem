@@ -10,6 +10,7 @@
 import { writeFile } from "node:fs/promises";
 
 import { executeOpencodeModelRole, startOpencodeRunClient } from "./opencode-executor.js";
+import { CodexAppServerClient } from "./codex-app-server.js";
 import { filesystemArtifactStore } from "./artifact-store.js";
 import { stringifyJson } from "./runtime-support.js";
 import { runCliTool } from "./tool-runner.js";
@@ -29,6 +30,8 @@ import type { CliTool, ExecutionProfile, RunContext } from "./types.js";
 export type ExecutorBinding =
   | {
       kind: "model";
+      backend: "opencode" | "codex" | "claude" | "antigravity";
+      modelId: string;
       modelRef: string;
       variant?: string;
     }
@@ -73,6 +76,7 @@ export type ExecutorResult = {
   messageId?: string;
   serverPid?: number;
   modelId?: string;
+  backend?: string;
   profileId?: string;
   toolRef?: string;
   command?: string;
@@ -130,54 +134,70 @@ export function createDefaultExecutor(args: {
   runContext: RunContext;
   targetDir: string;
   needsModelExecutor: boolean;
+  modelBackends?: string[];
 }): Executor {
   let runClient: Awaited<ReturnType<typeof startOpencodeRunClient>> | undefined;
+  let codexClient: CodexAppServerClient | undefined;
 
   return {
     async start() {
       // Guard ensures model server is started only once and only when needed.
-      if (args.dryRun || !args.needsModelExecutor || runClient) {
+      if (args.dryRun || !args.needsModelExecutor) {
         return;
       }
-
-      runClient = await startOpencodeRunClient({
-        timeoutMs: 30000,
-        env: {
-          OGSYSTEM_RUN_DIR: args.runContext.runDir,
-          OGSYSTEM_SHARED_DIR: args.runContext.sharedDir
-        },
-        directory: args.targetDir
-      });
-
-      // Persist endpoint metadata so the run directory records which OpenCode server handled model roles.
-      await writeFile(
-        args.runContext.opencodeEndpointPath,
-        stringifyJson({
-          lifecycle: "single-serve-multi-session",
-          startedAt: runClient.startedAt,
-          url: runClient.url,
-          pid: runClient.pid
-        }),
-        "utf8"
-      );
-      await writeFile(
-        args.runContext.opencodePidPath,
-        `${runClient.pid ?? ""}\n`,
-        "utf8"
-      );
-      await filesystemArtifactStore.appendEvent(args.runContext, {
-        type: "opencode_server_started",
-        at: runClient.startedAt,
-        url: runClient.url,
-        pid: runClient.pid,
-        lifecycle: "single-serve-multi-session"
-      });
+      const backends = new Set(args.modelBackends?.length ? args.modelBackends : ["opencode"]);
+      if (backends.has("opencode")) {
+        runClient = await startOpencodeRunClient({
+          timeoutMs: 30000,
+          env: { OGSYSTEM_RUN_DIR: args.runContext.runDir, OGSYSTEM_SHARED_DIR: args.runContext.sharedDir },
+          directory: args.targetDir
+        });
+        await writeFile(args.runContext.opencodeEndpointPath, stringifyJson({
+          backend: "opencode", lifecycle: "single-serve-multi-session", startedAt: runClient.startedAt,
+          url: runClient.url, pid: runClient.pid
+        }), "utf8");
+        await writeFile(args.runContext.opencodePidPath, `${runClient.pid ?? ""}\n`, "utf8");
+        await filesystemArtifactStore.appendEvent(args.runContext, {
+          type: "backend_server_started", backend: "opencode", at: runClient.startedAt,
+          url: runClient.url, pid: runClient.pid, lifecycle: "single-serve-multi-session"
+        });
+      }
+      if (backends.has("codex")) {
+        codexClient = await CodexAppServerClient.start({
+          cwd: args.targetDir,
+          env: { OGSYSTEM_RUN_DIR: args.runContext.runDir, OGSYSTEM_SHARED_DIR: args.runContext.sharedDir }
+        });
+        await filesystemArtifactStore.appendEvent(args.runContext, {
+          type: "backend_server_started", backend: "codex", at: new Date().toISOString(),
+          lifecycle: "single-app-server-multi-thread"
+        });
+      }
       await filesystemArtifactStore.flush(args.runContext);
     },
 
     async execute(request) {
       // Model-bound paths depend on the shared OpenCode client; throw if it's missing during active runs.
       if (request.binding.kind === "model") {
+        if (request.binding.backend === "codex") {
+          if (!args.dryRun && !codexClient) throw new Error(`Codex app-server missing for role "${request.roleId}"`);
+          const result = args.dryRun || !codexClient
+            ? { sessionId: request.sessionId ?? `dryrun-codex-${request.sessionKey ?? request.roleId}`, stdout: JSON.stringify({ event: request.dryRunOutputEvent, content: "[dry-run] codex-app-server" }) }
+            : await codexClient.execute({
+                roleId: request.roleId, prompt: request.prompt, schema: request.schema,
+                modelId: request.binding.modelId, cwd: request.directory, timeoutMs: request.timeoutMs,
+                sessionId: request.sessionId, signal: request.signal
+              });
+          return {
+            exitCode: 0, stdout: result.stdout, stderr: "", args: ["app-server"],
+            sessionId: result.sessionId, messageId: result.messageId, modelId: request.binding.modelId,
+            backend: "codex",
+            toolRef: `model.codex/${request.binding.modelId}`, command: "codex app-server"
+          };
+        }
+        if (request.binding.backend !== "opencode") throw new Error(`Backend "${request.binding.backend}" has no persistent OGS executor`);
+        if (request.binding.backend !== "opencode") {
+          throw new Error(`Backend "${request.binding.backend}" is not yet supported for persistent execution`);
+        }
         if (!args.dryRun && !runClient) {
           throw new Error(`OpenCode run server missing for model-bound role "${request.roleId}"`);
         }
@@ -213,6 +233,7 @@ export function createDefaultExecutor(args: {
         return {
           ...result,
           modelId: request.binding.modelRef,
+          backend: "opencode",
           toolRef: `model.${request.binding.modelRef}`,
           command: "opencode-sdk"
         };
@@ -264,33 +285,28 @@ export function createDefaultExecutor(args: {
     },
 
     async close() {
-      // Clean-up only runs when the OpenCode server was started; idempotent to allow repeated calls.
-      if (!runClient) {
-        return;
-      }
-
       const closedAt = new Date().toISOString();
-      await runClient.close();
-      await writeFile(
-        args.runContext.opencodeEndpointPath,
-        stringifyJson({
-          lifecycle: "single-serve-multi-session",
-          startedAt: runClient.startedAt,
-          closedAt,
-          url: runClient.url,
-          pid: runClient.pid
-        }),
-        "utf8"
-      );
-      await filesystemArtifactStore.appendEvent(args.runContext, {
-        type: "opencode_server_closed",
-        at: closedAt,
-        url: runClient.url,
-        pid: runClient.pid,
-        lifecycle: "single-serve-multi-session"
-      });
+      if (runClient) {
+        await runClient.close();
+        await writeFile(args.runContext.opencodeEndpointPath, stringifyJson({
+          backend: "opencode", lifecycle: "single-serve-multi-session", startedAt: runClient.startedAt,
+          closedAt, url: runClient.url, pid: runClient.pid
+        }), "utf8");
+        await filesystemArtifactStore.appendEvent(args.runContext, {
+          type: "backend_server_closed", backend: "opencode", at: closedAt,
+          url: runClient.url, pid: runClient.pid, lifecycle: "single-serve-multi-session"
+        });
+        runClient = undefined;
+      }
+      if (codexClient) {
+        await codexClient.close();
+        await filesystemArtifactStore.appendEvent(args.runContext, {
+          type: "backend_server_closed", backend: "codex", at: closedAt,
+          lifecycle: "single-app-server-multi-thread"
+        });
+        codexClient = undefined;
+      }
       await filesystemArtifactStore.flush(args.runContext);
-      runClient = undefined;
     }
   };
 }

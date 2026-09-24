@@ -36,6 +36,9 @@ export type StudioAuthoringRole = {
   roleId: string;
   title?: string;
   bindingKind: "model" | "exec" | "noop";
+  backend?: string;
+  modelId?: string;
+  modelSelectionSource?: "default" | "role";
   modelRef?: string;
   profileId?: string;
   routingMode?: "parallel_split";

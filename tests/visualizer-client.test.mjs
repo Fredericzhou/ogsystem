@@ -101,6 +101,28 @@ const PAGE_ELEMENT_IDS = [
   "locale-select"
 ];
 
+test("Studio model selector shows runnable backend/model pairs and discovery status", () => {
+  const html = renderStudioRoleConfigEditor({
+    roleId: "writer",
+    editor: { roleId: "writer", data: { bindingKind: "model", backend: "codex", modelId: "gpt-5.6-sol" } },
+    modelCatalog: {
+      sources: [
+        { backend: "codex", status: "available" },
+        { backend: "claude", status: "available", detail: "CLI detected; persistent adapter unavailable." }
+      ],
+      models: [
+        { backend: "codex", runnable: true, modelId: "gpt-5.6-sol", name: "GPT-5.6 Sol" },
+        { backend: "claude", runnable: false, modelId: "claude-sonnet", name: "Claude Sonnet" }
+      ]
+    }
+  });
+  assert.match(html, /data-role-config-field="backend"/);
+  assert.match(html, /data-role-config-field="modelId"/);
+  assert.match(html, /GPT-5\.6 Sol/);
+  assert.doesNotMatch(html, /Claude Sonnet/);
+  assert.match(html, /persistent adapter unavailable/);
+});
+
 const PAGE_ELEMENT_ATTRIBUTES = {
   "action-form-section": {
     role: "dialog",

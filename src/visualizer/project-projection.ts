@@ -1219,9 +1219,6 @@ function getBindingSourceLabel(args: {
   if (args.context.system.executionBinding[args.roleId]) {
     return "system.mmd:exec.bind";
   }
-  if (args.resolvedModel?.bindingSource === "system") {
-    return "system.mmd:model.bind";
-  }
   if (args.resolvedModel?.bindingSource === "selection") {
     return ".ogs/model-selection.json";
   }

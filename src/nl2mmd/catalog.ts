@@ -139,7 +139,6 @@ export function getSupportedNl2MmdDictionary(): Nl2MmdSupportedDictionary {
     ],
     metadataPrefixes: [
       "exec.bind.",
-      "model.bind.",
       "role.mode.",
       "join.mode.",
       "join.min.",
@@ -181,12 +180,8 @@ function gatherSelectionModelRefs(context: Nl2MmdContext["modelSelection"]): str
     return [];
   }
   return [
-    context.defaults?.model,
-    ...Object.values(context.roles ?? {}).map((entry) => entry.model),
-    ...Object.values(context.systems ?? {}).flatMap((systemEntry) => [
-      systemEntry.defaults?.model,
-      ...Object.values(systemEntry.roles ?? {}).map((roleEntry) => roleEntry.model)
-    ])
+    context.defaults?.backend && context.defaults.modelId ? `${context.defaults.backend}/${context.defaults.modelId}` : undefined,
+    ...Object.values(context.roles ?? {}).map((entry) => entry.backend && entry.modelId ? `${entry.backend}/${entry.modelId}` : undefined)
   ].filter((value): value is string => isDirectModelRef(value));
 }
 
@@ -285,8 +280,9 @@ export async function loadNl2MmdContext(args: {
   ).sort((left, right) => left.modelRef.localeCompare(right.modelRef));
 
   const defaultCatalogModel = rawModelCatalog ? chooseDefaultModelFromCatalog(rawModelCatalog) : undefined;
-  const defaultModelRef =
-    modelSelection?.defaults?.model ?? defaultCatalogModel?.ref ?? modelCatalog[0]?.modelRef;
+  const defaultModelRef = modelSelection?.defaults?.backend && modelSelection.defaults.modelId
+    ? `${modelSelection.defaults.backend}/${modelSelection.defaults.modelId}`
+    : defaultCatalogModel?.ref ?? modelCatalog[0]?.modelRef;
   const defaultModelVariant = modelSelection?.defaults?.variant;
   const defaultTimeoutMs = modelSelection?.defaults?.timeoutMs ?? 120000;
   const defaultMaxOutputBytes = modelSelection?.defaults?.maxOutputBytes ?? 65536;

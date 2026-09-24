@@ -1832,6 +1832,7 @@ export async function persistRoleSession(args: {
   roleId: string;
   execution: RoleExecutionRecord;
   sessionId: string;
+  backend?: string;
   messageId?: string;
   sessionDirectory?: string;
 }): Promise<OpencodeSessionRecord> {
@@ -1846,6 +1847,7 @@ export async function persistRoleSession(args: {
     sessionLineageId: args.execution.sessionLineageId,
     branchId: args.execution.branchId,
     sessionId: args.sessionId,
+    backend: args.backend,
     directory: args.sessionDirectory ?? roleDirs.roleDir,
     createdAt: previous?.createdAt ?? args.execution.startedAt,
     lastPromptAt: args.execution.startedAt,

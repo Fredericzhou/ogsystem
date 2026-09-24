@@ -122,7 +122,9 @@ export async function runSystemWithAdapter(args: {
         runContext: setup.runContext,
         targetDir: setup.targetDir,
         needsModelExecutor:
-          Array.from(setup.plan.nodesByRoleId.values()).some((node) => node.binding.kind === "model")
+          Array.from(setup.plan.nodesByRoleId.values()).some((node) => node.binding.kind === "model"),
+        modelBackends: [...new Set(Array.from(setup.plan.nodesByRoleId.values())
+          .flatMap((node) => node.binding.kind === "model" ? [node.binding.backend] : []))]
       });
 
       try {

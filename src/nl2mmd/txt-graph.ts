@@ -94,16 +94,12 @@ function parseMermaidForTxtGraph(source: string): ParsedTxtGraph {
 
 function renderRoleBindingSummary(roleId: string, metadata: Map<string, string>): string {
   const parts: string[] = [];
-  const modelId = metadata.get(`model.bind.${roleId}`);
   const execId = metadata.get(`exec.bind.${roleId}`);
   const roleMode = metadata.get(`role.mode.${roleId}`);
   const joinMode = metadata.get(`join.mode.${roleId}`);
   const joinSources = metadata.get(`join.sources.${roleId}`);
   const loopMax = metadata.get(`loop.max.${roleId}`);
 
-  if (modelId) {
-    parts.push(`model=${modelId}`);
-  }
   if (execId) {
     parts.push(`exec=${execId}`);
   }

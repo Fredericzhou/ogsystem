@@ -37,7 +37,6 @@ async function createFixture(options = {}) {
       "%% system.version=1.0.0",
       "%% law.global=law.model.test",
       "%% entry.role=writer",
-      "%% model.bind.writer=provider/pinned",
       "input -->|START| writer[Role:writer]",
       "writer[Role:writer] -->|DONE| output"
     ].join("\n"),
@@ -46,22 +45,27 @@ async function createFixture(options = {}) {
   if (options.catalog) {
     await writeFile(path.join(workdir, ".ogs", "model-catalog.json"), JSON.stringify(options.catalog), "utf8");
   }
+  await writeFile(
+    path.join(workdir, ".ogs", "model-selection.json"),
+    JSON.stringify({ configVersion: "2", roles: { writer: { backend: "opencode", modelId: "pinned" } } }),
+    "utf8"
+  );
   return workdir;
 }
 
 test("readiness fails closed when fresh OpenCode discovery excludes a pinned model", async () => {
   const workdir = await createFixture({
     catalog: {
-      catalogVersion: "1",
+      catalogVersion: "2",
       generatedAt: new Date().toISOString(),
-      source: { command: "opencode models --verbose" },
+      sources: [{ backend: "opencode", command: "opencode models --verbose", status: "available" }],
       models: []
     }
   });
   try {
     const readiness = await inspectProjectReadiness(workdir);
     assert.equal(readiness.canDryRun, false);
-    assert.ok(readiness.blockers.some((issue) => issue.code === "READINESS_MODEL_UNAVAILABLE" && issue.roleId === "writer" && issue.message.includes("provider/pinned")));
+    assert.ok(readiness.blockers.some((issue) => issue.code === "READINESS_MODEL_UNAVAILABLE" && issue.roleId === "writer" && issue.message.includes("opencode/pinned")));
   } finally {
     await rm(workdir, { recursive: true, force: true });
   }
@@ -72,7 +76,7 @@ test("readiness permits a pinned offline model when the discovery catalog is mis
   try {
     const readiness = await inspectProjectReadiness(workdir);
     assert.equal(readiness.canDryRun, true);
-    assert.ok(readiness.warnings.some((issue) => issue.code === "READINESS_MODEL_SELECTION_WARNING" && issue.message.includes("availability was not discovered")));
+    assert.ok(readiness.warnings.some((issue) => issue.code === "READINESS_MODEL_CATALOG_MISSING" && issue.message.includes("availability was not discovered")));
   } finally {
     await rm(workdir, { recursive: true, force: true });
   }

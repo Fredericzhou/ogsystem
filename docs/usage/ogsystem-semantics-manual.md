@@ -39,8 +39,6 @@ flowchart TD
 %% system.version=1.0.0
 %% law.global=law.default
 %% entry.role=planner
-%% model.bind.planner=model.main
-%% model.bind.writer=model.main
 plannerNode[Role:planner] -->|TO_WRITER| writerNode[Role:writer]
 writerNode[Role:writer] -->|DONE| output
 ```
@@ -66,7 +64,7 @@ writerNode[Role:writer] -->|DONE| output
 当前仅支持以下键族：
 
 - 精确键：`engine`、`system.id`、`system.version`、`law.global`、`entry.role`
-- 绑定键：`model.bind.<roleId>`、`exec.bind.<roleId>`
+- 工具执行绑定键：`exec.bind.<roleId>`；Agent backend/model 位于 `.ogs/model-selection.json`
 - 图语义键：`role.mode.<roleId>`、`join.mode.<roleId>`、`join.min.<roleId>`、`join.sources.<roleId>`
 - 上下文键：`context.map.<roleId>.<field>`
 - 循环键：`loop.max.<roleId>`
@@ -76,8 +74,7 @@ writerNode[Role:writer] -->|DONE| output
 #### 注意事项
 
 - `engine` 如声明，当前仅接受 `langgraph`。
-- 同一角色不能同时声明 `model.bind` 和 `exec.bind`。
-- 绑定解析不是覆盖优先级：有且仅有一种绑定时使用该绑定；同时声明 `model.bind` 与 `exec.bind` 会在解析期拒绝；无绑定时只有在 law 允许且出边不超过 1 时才进入 `noop`。
+- Mermaid 中的 `model.bind.*` 会被拒绝；role 的 Agent backend/model 只从项目模型选择读取。无模型或工具绑定时，仅在 law 允许且出边不超过 1 时进入 `noop`。
 - `runtime.error_flows.v1` 不是 Mermaid 元数据键，必须配置在项目的 `.ogs/runtime.json` 中；未知 Mermaid 元数据会被拒绝。
 
 ---
@@ -98,9 +95,6 @@ flowchart TD
 %% system.version=1.0.0
 %% law.global=law.default
 %% entry.role=judge
-%% model.bind.judge=model.main
-%% model.bind.pass_node=model.main
-%% model.bind.reject_node=model.main
 judgeNode[Role:judge] -->|PASS| passNode[Role:pass_node]
 judgeNode[Role:judge] -->|REJECT| rejectNode[Role:reject_node]
 passNode[Role:pass_node] -->|DONE| output
@@ -127,10 +121,6 @@ flowchart LR
 %% system.version=1.0.0
 %% law.global=law.default
 %% entry.role=dispatcher
-%% model.bind.dispatcher=model.main
-%% model.bind.dev=model.main
-%% model.bind.qa=model.main
-%% model.bind.merge=model.main
 %% role.mode.dispatcher=parallel_split
 %% join.mode.merge=all_of
 %% join.sources.merge=dev,qa
@@ -179,10 +169,6 @@ flowchart TD
 %% system.version=1.0.0
 %% law.global=law.default
 %% entry.role=splitter
-%% model.bind.splitter=model.main
-%% model.bind.a=model.main
-%% model.bind.b=model.main
-%% model.bind.merge=model.main
 %% role.mode.splitter=parallel_split
 %% join.mode.merge=all_of
 %% join.sources.merge=a,b
@@ -213,11 +199,6 @@ flowchart TD
 %% system.version=1.0.0
 %% law.global=law.default
 %% entry.role=dispatcher
-%% model.bind.dispatcher=model.main
-%% model.bind.expert_a=model.main
-%% model.bind.expert_b=model.main
-%% model.bind.expert_c=model.main
-%% model.bind.judge=model.main
 %% role.mode.dispatcher=parallel_split
 %% join.mode.judge=quorum_of
 %% join.sources.judge=expert_a,expert_b,expert_c
@@ -267,8 +248,6 @@ flowchart TD
 %% system.version=1.0.0
 %% law.global=law.default
 %% entry.role=planner
-%% model.bind.planner=model.main
-%% model.bind.writer=model.main
 %% context.map.writer.goal=global.task
 %% context.map.writer.profile=global.user_profile
 %% context.map.writer.brief=direct.content
@@ -299,10 +278,6 @@ flowchart TD
 %% system.version=1.0.0
 %% law.global=law.default
 %% entry.role=splitter
-%% model.bind.splitter=model.main
-%% model.bind.left=model.main
-%% model.bind.right=model.main
-%% model.bind.merge=model.main
 %% role.mode.splitter=parallel_split
 %% join.mode.merge=all_of
 %% join.sources.merge=left,right
@@ -342,8 +317,6 @@ flowchart TD
 %% system.version=1.0.0
 %% law.global=law.default
 %% entry.role=draft
-%% model.bind.draft=model.main
-%% model.bind.review=model.main
 %% loop.max.draft=3
 draftNode[Role:draft] -->|SUBMIT| reviewNode[Role:review]
 reviewNode[Role:review] -->|REWRITE| draftNode[Role:draft]
@@ -369,14 +342,14 @@ reviewNode[Role:review] -->|PASS| output
 
 #### 含义
 
-- 每个角色必须解析出一种有效执行方式：显式 `model.bind`、显式 `exec.bind`、项目模型选择默认值，或满足法律约束的 `noop`。
-- 两种显式绑定同时存在会在解析期失败；没有显式绑定时不会自动回退到 `noop`，会先尝试模型选择默认值。
+- 每个角色必须解析出一种有效执行方式：项目模型选择中的 Agent backend/model、显式 `exec.bind`，或满足法律约束的 `noop`。
+- Agent backend/model 从项目模型选择解析；`exec.bind` 解析为工具执行。没有有效配置时，仅在 law 授权后才允许 `noop`。
 - `noop` 仅在 law 设置 `allowNoopWithoutExecutionBinding=true` 且该角色最多有一条出边时可执行。
 
 #### 注意事项
 
 - `noop` 节点若有多个可选出边会被拒绝（避免歧义路由）。
-- `model.bind` 与 `exec.bind` 同时声明属于冲突，解析期失败。
+- 模型配置仅来自项目模型选择文件；旧的 Mermaid 模型绑定会产生配置错误。
 
 ### 7.2 Runtime-native Human Review
 
@@ -419,9 +392,6 @@ flowchart TD
 %% system.version=1.0.0
 %% law.global=law.default
 %% entry.role=worker
-%% model.bind.worker=model.main
-%% model.bind.retry_handler=model.main
-%% model.bind.fallback_handler=model.main
 workerNode[Role:worker] -->|OK| output
 workerNode[Role:worker] -->|ERROR.IO_TIMEOUT| retryNode[Role:retry_handler]
 workerNode[Role:worker] -->|ERROR| fallbackNode[Role:fallback_handler]
@@ -499,7 +469,7 @@ Runtime evidence: role activation -> execution-outcome.json -> checkpoint WAL ->
 | quorum 参数错误 | 缺 `join.min` 或超范围 | 补齐并限制到 `[1, sources]` |
 | selector 非法 | join 用了 `direct.*` 或路径不存在 | 换成 `source(...)`，并补齐数据路径 |
 | 角色发出 `ERROR*` | 输出事件命中保留前缀 | 改用业务事件，失败补偿交给运行时 |
-| 无绑定误用 | 角色无绑定且 law 不允许 noop | 增加 `model.bind/exec.bind` 或调整 law |
+| 无绑定误用 | 角色无绑定且 law 不允许 noop | 配置 Agent backend/model、添加 `exec.bind` 或调整 law |
 | 无限循环风险 | 环路无 `loop.max` | 在环内至少一个节点配置 `loop.max` |
 
 ---
@@ -565,7 +535,7 @@ I -->|满足且未激活| I3[激活一次 join 分支]
 | 主题 | 优先级/顺序 | 取舍说明 |
 | :--- | :--- | :--- |
 | 入口角色决定 | `input` 边界目标 与 `entry.role` 二选一且必须一致 | 入口冲突直接拒绝，避免恢复时入口漂移 |
-| 节点绑定 | 冲突直接拒绝；单绑定使用对应执行器；无绑定按 law 判定 noop | `model.bind` 与 `exec.bind` 不是覆盖关系，避免隐藏配置错误 |
+| 节点绑定 | 从模型选择、exec profile 或受 law 控制的 noop 解析执行方式 | Mermaid 只描述 role 与 flow，不承载模型配置 |
 | 上下文来源 | `context.map` > `join 默认命名空间` > `direct 上游内容` | 显式映射优先，防止隐式 context 漂移 |
 | 成功路由 | `routingMode handler`（如 `parallel_split`）> 默认事件匹配 | 扩展模式优先，默认模式兜底 |
 | 失败路由 | `ERROR.<code>` > `ERROR` > fail-stop | typed 优先保证补偿精确性 |
@@ -588,11 +558,6 @@ flowchart LR
 %% join.min.judge=3
 %% context.map.judge.a_view=source(a).content
 %% context.map.judge.task=global.task
-%% model.bind.dispatch=model.main
-%% model.bind.a=model.main
-%% model.bind.b=model.main
-%% model.bind.c=model.main
-%% model.bind.judge=model.main
 dispatch[Role:dispatch] -->|TO_A| a[Role:a]
 dispatch[Role:dispatch] -->|TO_B| b[Role:b]
 dispatch[Role:dispatch] -->|TO_C| c[Role:c]
@@ -624,9 +589,6 @@ flowchart TD
 %% system.version=1.0.0
 %% law.global=law.default
 %% entry.role=worker
-%% model.bind.worker=model.main
-%% model.bind.recover=model.main
-%% model.bind.fallback=model.main
 %% loop.max.recover=1
 worker[Role:worker] -->|ERROR.IO| recover[Role:recover]
 worker[Role:worker] -->|ERROR| fallback[Role:fallback]

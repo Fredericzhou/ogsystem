@@ -6,59 +6,24 @@
   "additionalProperties": false,
   "required": ["configVersion"],
   "properties": {
-    "configVersion": {
-      "type": "string",
-      "enum": ["1"]
-    },
-    "defaults": {
-      "$ref": "#/$defs/selectionDefaults"
-    },
+    "configVersion": { "const": "2" },
+    "defaults": { "$ref": "#/$defs/selection" },
     "roles": {
       "type": "object",
-      "additionalProperties": {
-        "$ref": "#/$defs/selectionDefaults"
-      }
-    },
-    "systems": {
-      "type": "object",
-      "additionalProperties": {
-        "type": "object",
-        "additionalProperties": false,
-        "properties": {
-          "defaults": {
-            "$ref": "#/$defs/selectionDefaults"
-          },
-          "roles": {
-            "type": "object",
-            "additionalProperties": {
-              "$ref": "#/$defs/selectionDefaults"
-            }
-          }
-        }
-      }
+      "additionalProperties": { "$ref": "#/$defs/selection" }
     }
   },
   "$defs": {
-    "selectionDefaults": {
+    "selection": {
       "type": "object",
       "additionalProperties": false,
+      "required": ["backend", "modelId"],
       "properties": {
-        "model": {
-          "type": "string",
-          "pattern": "^[^/]+/.+$"
-        },
-        "variant": {
-          "type": "string",
-          "minLength": 1
-        },
-        "timeoutMs": {
-          "type": "integer",
-          "minimum": 1
-        },
-        "maxOutputBytes": {
-          "type": "integer",
-          "minimum": 1
-        }
+        "backend": { "enum": ["opencode", "codex", "claude", "antigravity"] },
+        "modelId": { "type": "string", "minLength": 1 },
+        "variant": { "type": "string", "minLength": 1 },
+        "timeoutMs": { "type": "integer", "minimum": 1 },
+        "maxOutputBytes": { "type": "integer", "minimum": 1 }
       }
     }
   }

@@ -4,24 +4,21 @@
   "title": "OGSystem Model Catalog",
   "type": "object",
   "additionalProperties": false,
-  "required": ["catalogVersion", "generatedAt", "source", "models"],
+  "required": ["catalogVersion", "generatedAt", "sources", "models"],
   "properties": {
-    "catalogVersion": {
-      "type": "string",
-      "enum": ["1"]
-    },
-    "generatedAt": {
-      "type": "string",
-      "minLength": 1
-    },
-    "source": {
-      "type": "object",
-      "additionalProperties": false,
-      "required": ["command"],
-      "properties": {
-        "command": {
-          "type": "string",
-          "minLength": 1
+    "catalogVersion": { "const": "2" },
+    "generatedAt": { "type": "string", "minLength": 1 },
+    "sources": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["backend", "command", "status"],
+        "properties": {
+          "backend": { "type": "string", "minLength": 1 },
+          "command": { "type": "string", "minLength": 1 },
+          "status": { "enum": ["available", "unavailable"] },
+          "detail": { "type": "string", "minLength": 1 }
         }
       }
     },
@@ -30,63 +27,33 @@
       "items": {
         "type": "object",
         "additionalProperties": false,
-        "required": ["ref", "provider", "model", "capabilities", "variants"],
+        "required": ["backend", "runnable", "modelId", "ref", "provider", "model", "capabilities", "variants"],
         "properties": {
-          "ref": {
-            "type": "string",
-            "pattern": "^[^/]+/.+$"
-          },
-          "provider": {
-            "type": "string",
-            "minLength": 1
-          },
-          "model": {
-            "type": "string",
-            "minLength": 1
-          },
-          "name": {
-            "type": "string",
-            "minLength": 1
-          },
-          "status": {
-            "type": "string",
-            "minLength": 1
-          },
+          "backend": { "type": "string", "minLength": 1 },
+          "runnable": { "type": "boolean" },
+          "modelId": { "type": "string", "minLength": 1 },
+          "ref": { "type": "string", "minLength": 1 },
+          "provider": { "type": "string", "minLength": 1 },
+          "model": { "type": "string", "minLength": 1 },
+          "name": { "type": "string", "minLength": 1 },
+          "status": { "type": "string", "minLength": 1 },
           "capabilities": {
             "type": "object",
             "additionalProperties": false,
             "required": ["textInput", "textOutput", "toolcall"],
             "properties": {
-              "textInput": {
-                "type": "boolean"
-              },
-              "textOutput": {
-                "type": "boolean"
-              },
-              "toolcall": {
-                "type": "boolean"
-              }
+              "textInput": { "type": "boolean" },
+              "textOutput": { "type": "boolean" },
+              "toolcall": { "type": "boolean" }
             }
           },
-          "variants": {
-            "type": "array",
-            "items": {
-              "type": "string",
-              "minLength": 1
-            }
-          },
+          "variants": { "type": "array", "items": { "type": "string", "minLength": 1 } },
           "raw": {
             "type": "object",
             "additionalProperties": false,
             "properties": {
-              "id": {
-                "type": "string",
-                "minLength": 1
-              },
-              "providerID": {
-                "type": "string",
-                "minLength": 1
-              }
+              "id": { "type": "string", "minLength": 1 },
+              "providerID": { "type": "string", "minLength": 1 }
             }
           }
         }

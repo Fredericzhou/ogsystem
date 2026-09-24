@@ -28,6 +28,7 @@ import {
   loadRunLogs,
   rebuildRunsIndex,
   requestStop,
+  resolveOgsPaths,
   resolveRunDir,
   writeHumanReviewDecision
 } from "./project-lifecycle.js";
@@ -43,10 +44,11 @@ import { runLintCli, usage as lintUsage } from "./lint.js";
 import type { RunSummaryProjection } from "./run-summary-schema.js";
 import { startVisualizationServer } from "../visualizer/server.js";
 import { runNl2MmdCli, usage as nl2mmdUsage } from "../nl2mmd/cli.js";
-import { ensureSystemHome, loadSystemEnvironment } from "./system-home.js";
+import { ensureSystemHome } from "./system-home.js";
+import { discoverLocalModelCatalog } from "./model-catalog.js";
+import { writeJsonFileAtomic } from "./json-file.js";
 
 await ensureSystemHome();
-await loadSystemEnvironment();
 
 const require = createRequire(import.meta.url);
 const { version: CLI_VERSION } = require("../../package.json") as { version: string };
@@ -68,6 +70,7 @@ function usageRoot(): string {
     "",
     "Commands:",
     "  doctor   Check environment, providers, and required tools",
+    "  models   Discover installed CLI backends and synchronize model choices",
     "  lint     Statically validate a Mermaid system file",
     "  nl2mmd   Generate Mermaid from natural language",
     "  project  Init, create, or sync project files",
@@ -91,6 +94,31 @@ function usageRoot(): string {
     "Defaults:",
     "  commands use the current directory unless --workdir overrides it",
   ].join("\n");
+}
+
+async function runModelsCommand(argv: string[]): Promise<void> {
+  const subcommand = argv[0];
+  if (subcommand !== "discover" && subcommand !== "sync") {
+    throw createCliInputError("CLI_MODELS_SUBCOMMAND", "Usage: ogs models <discover|sync> [--workdir <path>]");
+  }
+  const { values } = parseLifecycleArgs(argv.slice(1), {
+    workdir: { type: "string" },
+    help: { type: "boolean", short: "h" }
+  });
+  if (asBool(values.help)) {
+    console.log(`Usage:\n  ogs models ${subcommand} [--workdir <path>]\n\n  discover  Inspect installed CLI model services and refresh .ogs/model-catalog.json\n  sync      Refresh discovery and create the project model-selection file when missing`);
+    return;
+  }
+  const workdir = resolve(asString(values.workdir) ?? process.cwd());
+  if (subcommand === "sync") {
+    const result = await syncProjectModels({ workdir });
+    console.log(JSON.stringify({ status: "ok", command: "models sync", workdir, ...result }, null, 2));
+    return;
+  }
+  const catalog = await discoverLocalModelCatalog({ workdir });
+  const paths = resolveOgsPaths(workdir);
+  await writeJsonFileAtomic(paths.modelCatalogPath, catalog);
+  console.log(JSON.stringify({ status: "ok", command: "models discover", workdir, catalogPath: paths.modelCatalogPath, sources: catalog.sources, modelCount: catalog.models.length }, null, 2));
 }
 
 function usageCompatibility(): string {
@@ -1542,6 +1570,10 @@ async function main(): Promise<void> {
     const [command, ...rest] = argv;
     if (command === "doctor") {
       await runDoctorCli(rest);
+      return;
+    }
+    if (command === "models") {
+      await runModelsCommand(rest);
       return;
     }
     if (command === "lint") {

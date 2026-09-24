@@ -104,7 +104,6 @@ test("executeRoleNode turns a failed Role Contract precondition into IR_CONTRACT
 %% system.version=1.0.0
 %% law.global=law.console.base
 %% entry.role=writer
-%% model.bind.writer=balanced-gpt52
 
 input -->|DONE| writer[Role:writer]
 writer[Role:writer] -->|DONE| output
@@ -160,7 +159,6 @@ test("executeRoleNode turns a failed Role Contract postcondition into IR_CONTRAC
 %% system.version=1.0.0
 %% law.global=law.console.base
 %% entry.role=writer
-%% model.bind.writer=balanced-gpt52
 
 input -->|DONE| writer[Role:writer]
 writer[Role:writer] -->|DONE| output
@@ -214,7 +212,6 @@ test("executeRoleNode evaluates state postconditions after the declared reducer"
 %% system.version=1.0.0
 %% law.global=law.console.base
 %% entry.role=writer
-%% model.bind.writer=balanced-gpt52
 
 input -->|DONE| writer[Role:writer]
 writer[Role:writer] -->|DONE| output
@@ -400,7 +397,15 @@ async function prepareRoleExecutorFixture(args) {
   }
 
   const system = parseSystemFromMermaidSource(args.systemSource);
-  const plan = createExecutionPlan(system);
+  const resolvedModels = new Map(args.roles
+    .filter((role) => !system.executionBinding[role.roleId])
+    .map((role) => [role.roleId, {
+      backend: "opencode",
+      modelId: "balanced-gpt52",
+      modelRef: "opencode/balanced-gpt52",
+      bindingSource: "selection"
+    }]));
+  const plan = createExecutionPlan(system, resolvedModels);
   const runtimeConfig = validateRuntimeConfig(
     {
       executor: "opencode",
@@ -464,8 +469,6 @@ test("executeRoleNode projects deterministic context.map for ordinary nodes", as
 %% context.map.reviewer.brief=direct.data.brief
 %% context.map.reviewer.language=global.user_profile.language
 %% context.map.reviewer.task=global.task
-%% model.bind.intake=balanced-gpt52
-%% model.bind.reviewer=balanced-gpt52
 
 input -->|GO| intake[Role:intake]
 intake[Role:intake] -->|DONE| reviewer[Role:reviewer]
@@ -588,7 +591,6 @@ test("executeRoleNode emits technical wait heartbeats while executor is still ru
 %% system.version=1.0.0
 %% law.global=law.console.base
 %% entry.role=writer
-%% model.bind.writer=balanced-gpt52
 
 input -->|GO| writer[Role:writer]
 writer[Role:writer] -->|DONE| output
@@ -663,7 +665,6 @@ test("executeRoleNode projects current human review feedback for rework branches
 %% context.map.writer.round=global.human_review.current.round
 %% context.map.writer.previous_output=global.human_review.current.previous_output.content
 %% context.map.writer.previous_score=global.human_review.current.previous_output.data.score
-%% model.bind.writer=balanced-gpt52
 
 input -->|GO| writer[Role:writer]
 writer[Role:writer] -->|DONE| output
@@ -778,7 +779,6 @@ test("executeRoleNode omits optional human review fields when no rework context 
 %% context.map.writer.comment=global.human_review.current.comment?
 %% context.map.writer.round=global.human_review.current.round?
 %% context.map.writer.previous_output=global.human_review.current.previous_output.content?
-%% model.bind.writer=balanced-gpt52
 
 input -->|GO| writer[Role:writer]
 writer[Role:writer] -->|DONE| output
@@ -849,11 +849,6 @@ test("executeRoleNode fails closed when join projection source is unavailable", 
 %% join.sources.review=worker_a,worker_b,worker_c
 %% join.min.review=3
 %% context.map.review.missing=source(worker_c).content
-%% model.bind.dispatch=balanced-gpt52
-%% model.bind.worker_a=balanced-gpt52
-%% model.bind.worker_b=balanced-gpt52
-%% model.bind.worker_c=balanced-gpt52
-%% model.bind.review=balanced-gpt52
 
 input -->|START| dispatch[Role:dispatch]
 dispatch[Role:dispatch] -->|TO_A| workerA[Role:worker_a]
@@ -960,8 +955,6 @@ test("executeRoleNode fails closed with ROLE_CONTEXT_PATH_MISSING for null direc
 %% law.global=law.console.base
 %% entry.role=intake
 %% context.map.reviewer.missing=direct.data.detail.summary
-%% model.bind.intake=balanced-gpt52
-%% model.bind.reviewer=balanced-gpt52
 
 input -->|GO| intake[Role:intake]
 intake[Role:intake] -->|DONE| reviewer[Role:reviewer]
@@ -1058,10 +1051,6 @@ test("executeRoleNode fails closed with ROLE_CONTEXT_PATH_MISSING for null join 
 %% join.sources.review=worker_a,worker_b
 %% join.min.review=2
 %% context.map.review.primary_risk=source(worker_b).data.risks.primary
-%% model.bind.dispatch=balanced-gpt52
-%% model.bind.worker_a=balanced-gpt52
-%% model.bind.worker_b=balanced-gpt52
-%% model.bind.review=balanced-gpt52
 
 input -->|START| dispatch[Role:dispatch]
 dispatch[Role:dispatch] -->|TO_A| workerA[Role:worker_a]
@@ -1176,8 +1165,6 @@ test("executeRoleNode validates role_input contracts against projected context o
 %% context.map.reviewer.brief=direct.data.brief
 %% context.map.reviewer.language=global.user_profile.language
 %% context.map.reviewer.task=global.task
-%% model.bind.intake=balanced-gpt52
-%% model.bind.reviewer=balanced-gpt52
 
 input -->|GO| intake[Role:intake]
 intake[Role:intake] -->|DONE| reviewer[Role:reviewer]
@@ -1332,7 +1319,6 @@ test("executeRoleNode redacts prompt and audit artifacts by default", async () =
 %% system.version=1.0.0
 %% law.global=law.console.base
 %% entry.role=reviewer
-%% model.bind.reviewer=balanced-gpt52
 input -->|GO| reviewer[Role:reviewer]
 reviewer[Role:reviewer] -->|DONE| output
 `,

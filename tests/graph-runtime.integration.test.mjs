@@ -20,9 +20,10 @@ async function writeDefaultModelSelection(workdir) {
     path.resolve(workdir, ".ogs", "model-selection.json"),
     JSON.stringify(
       {
-        configVersion: "1",
+        configVersion: "2",
         defaults: {
-          model: "opencode/gpt-5-nano",
+          backend: "opencode",
+          modelId: "opencode/gpt-5-nano",
           timeoutMs: 120000,
           maxOutputBytes: 65536
         }
@@ -434,11 +435,6 @@ test("adapter preserves session lineage semantics and join context projection ac
 %% role.mode.coordinator=parallel_split
 %% join.mode.merger=all_of
 %% join.sources.merger=analyst_a,analyst_b
-%% model.bind.coordinator=fast-gpt54
-%% model.bind.analyst_a=balanced-gpt52
-%% model.bind.analyst_b=balanced-gpt52
-%% model.bind.merger=deep-o3
-%% model.bind.summary=steady-gpt54
 
 input -->|START| coordinator[Role:coordinator]
 coordinator[Role:coordinator] -->|TO_A| analystA[Role:analyst_a]
@@ -529,7 +525,6 @@ test("adapter stops with pending human review and keeps reviewed output unreleas
 %% system.version=1.0.0
 %% law.global=law.console.base
 %% entry.role=writer
-%% model.bind.writer=balanced-gpt52
 %% review.mode.writer=required
 %% review.timeout.writer=300
 %% review.rework.max.writer=2
@@ -611,7 +606,6 @@ test("adapter resume applies approved human review and releases the reviewed res
 %% system.version=1.0.0
 %% law.global=law.console.base
 %% entry.role=writer
-%% model.bind.writer=balanced-gpt52
 %% review.mode.writer=required
 input -->|GO| writer[Role:writer]
 writer[Role:writer] -->|DONE| output
@@ -709,7 +703,6 @@ test("adapter resume backfills applied human review decision metadata without du
 %% system.version=1.0.0
 %% law.global=law.console.base
 %% entry.role=writer
-%% model.bind.writer=balanced-gpt52
 %% review.mode.writer=required
 input -->|GO| writer[Role:writer]
 writer[Role:writer] -->|DONE| output
@@ -1308,10 +1301,6 @@ test("adapter executes non-join multi-incoming role once per active branch", asy
 %% law.global=law.console.base
 %% entry.role=debate-moderator
 %% role.mode.debate-moderator=parallel_split
-%% model.bind.debate-moderator=fast-gpt54
-%% model.bind.test-branch-a=balanced-gpt52
-%% model.bind.test-branch-b=balanced-gpt52
-%% model.bind.test-decision=deep-o3
 
 input -->|START| moderator[Role:debate-moderator]
 moderator[Role:debate-moderator] -->|SEND_ALIGNMENTIST| branchA[Role:test-branch-a]
@@ -1584,7 +1573,6 @@ test("adapter persists metrics fields on failed graph runs", async () => {
 %% law.global=law.console.base
 %% entry.role=test-budget-failure
 %% loop.max.test-budget-failure=10
-%% model.bind.test-budget-failure=balanced-gpt52
 
 input -->|GO| worker[Role:test-budget-failure]
 worker[Role:test-budget-failure] -->|RETRY| worker[Role:test-budget-failure]
@@ -1711,7 +1699,6 @@ test("adapter keeps scheduler recursion budget above loop-heavy transition count
 %% law.global=law.console.base
 %% entry.role=test-loop-probe
 %% loop.max.test-loop-probe=40
-%% model.bind.test-loop-probe=balanced-gpt52
 
 input -->|GO| operator[Role:test-loop-probe]
 operator[Role:test-loop-probe] -->|RETRY| operator[Role:test-loop-probe]

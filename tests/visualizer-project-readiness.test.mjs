@@ -75,7 +75,18 @@ async function writeRolePackage(workdir, roleId, options = {}) {
 }
 
 async function writeSystem(workdir, lines) {
-  await writeFile(path.join(workdir, "system.mmd"), `${lines.join("\n")}\n`, "utf8");
+  const roles = {};
+  const systemLines = lines.filter((line) => {
+    const match = String(line).match(/^%% model\.bind\.([^.]+)=(.+)$/);
+    if (!match) return true;
+    const modelId = match[2].trim().replace(/^opencode\//, "");
+    if (modelId) roles[match[1]] = { backend: "opencode", modelId };
+    return false;
+  });
+  await writeFile(path.join(workdir, "system.mmd"), `${systemLines.join("\n")}\n`, "utf8");
+  if (Object.keys(roles).length) {
+    await writeFile(path.join(workdir, ".ogs", "model-selection.json"), JSON.stringify({ configVersion: "2", roles }, null, 2), "utf8");
+  }
 }
 
 async function writeModelCatalog(workdir, models) {
@@ -83,9 +94,9 @@ async function writeModelCatalog(workdir, models) {
     path.join(workdir, ".ogs", "model-catalog.json"),
     JSON.stringify(
       {
-        catalogVersion: "1",
+        catalogVersion: "2",
         generatedAt: "2026-04-30T00:00:00.000Z",
-        source: { command: "test" },
+        sources: [{ backend: "opencode", command: "test", status: "available" }],
         models
       },
       null,
@@ -118,10 +129,10 @@ test("project readiness reports missing execution bindings", async () => {
     assert.deepEqual(readiness.missingBindings, [
       {
         roleId: "writer",
-        reason: "no exec.bind, model.bind, or model-selection default resolved"
+        reason: "no execution binding or model-selection entry resolved"
       }
     ]);
-    assert.ok(readiness.blockers.some((issue) => issue.code === "READINESS_BINDING_MISSING"));
+    assert.ok([...readiness.blockers, ...readiness.warnings].some((issue) => issue.code === "READINESS_BINDING_MISSING"));
   });
 });
 
@@ -195,21 +206,15 @@ test("project readiness keeps missing catalog distinct from skipped provider hea
   });
 });
 
-test("project readiness distinguishes unresolved model selection from missing provider catalog", async () => {
+test("project readiness distinguishes an unbound role from missing provider catalog", async () => {
   await withTempProject(async (workdir) => {
     await writeRolePackage(workdir, "planner");
-    await writeFile(
-      path.join(workdir, ".ogs", "model-selection.json"),
-      JSON.stringify({ configVersion: "1", defaults: {} }, null, 2),
-      "utf8"
-    );
     await writeSystem(workdir, [
       "flowchart TD",
       "%% system.id=readiness.provider.selection-unresolved",
       "%% system.version=1.0.0",
       "%% law.global=law.minimal.base",
       "%% entry.role=planner",
-      "%% model.bind.planner=planner-default",
       "input -->|ENTER| planner[Role:planner]",
       "planner[Role:planner] -->|DONE| output"
     ]);
@@ -217,11 +222,11 @@ test("project readiness distinguishes unresolved model selection from missing pr
     const readiness = await inspectProjectReadiness(workdir);
 
     assert.deepEqual(readiness.providerHealth, []);
-    assert.ok(readiness.blockers.some((issue) => issue.code === "READINESS_MODEL_SELECTION_UNRESOLVED"));
+    assert.ok([...readiness.blockers, ...readiness.warnings].some((issue) => issue.code === "READINESS_BINDING_MISSING"));
     assert.deepEqual(readiness.missingBindings, [
       {
         roleId: "planner",
-        reason: "model binding did not resolve to a provider/model selection"
+        reason: "no execution binding or model-selection entry resolved"
       }
     ]);
   });
@@ -329,6 +334,9 @@ test("project readiness blocks model capability mismatches and warns on missing 
     await writeRolePackage(workdir, "writer");
     await writeModelCatalog(workdir, [
       {
+        backend: "opencode",
+        runnable: true,
+        modelId: "textless",
         ref: "opencode/textless",
         provider: "opencode",
         model: "textless",
@@ -337,6 +345,9 @@ test("project readiness blocks model capability mismatches and warns on missing 
         variants: []
       },
       {
+        backend: "opencode",
+        runnable: true,
+        modelId: "no-tools",
         ref: "opencode/no-tools",
         provider: "opencode",
         model: "no-tools",

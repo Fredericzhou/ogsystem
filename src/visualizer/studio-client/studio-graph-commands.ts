@@ -17,6 +17,9 @@ type StudioAuthoringLeafCommand =
       roleId?: string;
       title?: string;
       bindingKind?: StudioAuthoringRole["bindingKind"];
+      backend?: string;
+      modelId?: string;
+      modelSelectionSource?: StudioAuthoringRole["modelSelectionSource"];
       modelRef?: string;
       profileId?: string;
       profileDraft?: StudioExecutionProfileDraft;
@@ -31,6 +34,9 @@ type StudioAuthoringLeafCommand =
       roleId?: string;
       title?: string;
       bindingKind?: StudioAuthoringRole["bindingKind"];
+      backend?: string;
+      modelId?: string;
+      modelSelectionSource?: StudioAuthoringRole["modelSelectionSource"];
       modelRef?: string;
       profileId?: string;
       contextMap?: Record<string, string>;
@@ -183,6 +189,9 @@ function applyRoleBinding(
   args: {
     title?: string;
     bindingKind?: StudioAuthoringRole["bindingKind"];
+    backend?: string;
+    modelId?: string;
+    modelSelectionSource?: StudioAuthoringRole["modelSelectionSource"];
     modelRef?: string;
     profileId?: string;
     contextMap?: Record<string, string>;
@@ -195,10 +204,19 @@ function applyRoleBinding(
     bindingKind
   };
   delete next.modelRef;
+  delete next.backend;
+  delete next.modelId;
+  delete next.modelSelectionSource;
   delete next.profileId;
   if (bindingKind === "model") {
-    const modelRef = String(args.modelRef ?? "").trim();
-    if (modelRef) next.modelRef = modelRef;
+    const backend = String(args.backend ?? "").trim();
+    const modelId = String(args.modelId ?? "").trim();
+    if (backend && modelId) {
+      next.backend = backend;
+      next.modelId = modelId;
+      next.modelSelectionSource = args.modelSelectionSource ?? "role";
+      next.modelRef = `${backend}/${modelId}`;
+    }
   }
   if (bindingKind === "exec") {
     const profileId = String(args.profileId ?? "").trim();
@@ -401,6 +419,14 @@ export function applyStudioAuthoringCommand(args: {
       if (role.bindingKind === "model") {
         const modelRef = String(command.modelRef ?? "").trim();
         if (modelRef) role.modelRef = modelRef;
+        const backend = String(command.backend ?? "").trim();
+        const modelId = String(command.modelId ?? "").trim();
+        if (backend && modelId) {
+          role.backend = backend;
+          role.modelId = modelId;
+          role.modelSelectionSource = command.modelSelectionSource ?? "role";
+          role.modelRef = `${backend}/${modelId}`;
+        }
       }
       if (role.bindingKind === "exec") {
         const profileId = String(command.profileId ?? "").trim();

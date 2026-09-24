@@ -21,6 +21,9 @@ const fixturePath = path.resolve("tests/fixtures/opencode-models-verbose.txt");
 function model(ref, capabilities = { textInput: true, textOutput: true, toolcall: true }) {
   const separator = ref.indexOf("/");
   return {
+    backend: "opencode",
+    runnable: true,
+    modelId: ref,
     ref,
     provider: ref.slice(0, separator),
     model: ref.slice(separator + 1),
@@ -32,9 +35,9 @@ function model(ref, capabilities = { textInput: true, textOutput: true, toolcall
 
 function catalog(models, generatedAt = new Date().toISOString()) {
   return {
-    catalogVersion: "1",
+    catalogVersion: "2",
     generatedAt,
-    source: { command: "opencode models --verbose" },
+    sources: [{ backend: "opencode", command: "opencode models --verbose", status: "available" }],
     models
   };
 }
@@ -98,7 +101,7 @@ test("catalog freshness is explicit and does not rewrite the pinned selection", 
   const workdir = await mkdtemp(path.join(os.tmpdir(), "ogsystem-model-sync-"));
   await writeFile(path.join(workdir, ".marker"), "fixture", "utf8");
   await import("node:fs/promises").then(({ mkdir }) => mkdir(path.join(workdir, ".ogs"), { recursive: true }));
-  const selection = { configVersion: "1", defaults: { model: "provider/pinned" } };
+  const selection = { configVersion: "2", defaults: { backend: "opencode", modelId: "provider/pinned" } };
   await writeFile(path.join(workdir, ".ogs", "model-selection.json"), JSON.stringify(selection), "utf8");
   await syncProjectModels({
     workdir,
@@ -108,70 +111,61 @@ test("catalog freshness is explicit and does not rewrite the pinned selection", 
     })
   });
   const loadedSelection = await loadModelSelection(path.join(workdir, ".ogs", "model-selection.json"));
-  assert.equal(loadedSelection.defaults.model, selection.defaults.model);
+  assert.equal(loadedSelection.defaults.modelId, selection.defaults.modelId);
 });
 
-test("direct model.bind wins over project, system, and role selection layers", () => {
+test("per-role model selection overrides the project default", () => {
   const result = resolveModelSelectionForSystem({
-    system: system(["direct", "mapped"], { direct: "provider/direct" }),
+    system: system(["defaulted", "mapped"]),
     selection: {
-      configVersion: "1",
-      defaults: { model: "provider/project" },
-      roles: { mapped: { model: "provider/role" }, label: { model: "provider/wrong" } },
-      systems: {
-        "model.contract": {
-          defaults: { model: "provider/system" },
-          roles: { mapped: { model: "provider/system-role" } }
-        }
-      }
+      configVersion: "2",
+      defaults: { backend: "opencode", modelId: "provider/project" },
+      roles: { mapped: { backend: "codex", modelId: "gpt-5.6-sol" }, label: { backend: "opencode", modelId: "provider/wrong" } }
     },
-    catalog: catalog([model("provider/direct"), model("provider/system-role")])
+    catalog: catalog([model("provider/project"), { ...model("codex/gpt-5.6-sol"), backend: "codex", modelId: "gpt-5.6-sol" }])
   });
 
-  assert.equal(result.resolvedByRoleId.get("direct").modelRef, "provider/direct");
-  assert.equal(result.resolvedByRoleId.get("direct").bindingSource, "system");
-  assert.equal(result.resolvedByRoleId.get("mapped").modelRef, "provider/system-role");
+  assert.equal(result.resolvedByRoleId.get("defaulted").modelRef, "provider/project");
+  assert.equal(result.resolvedByRoleId.get("mapped").backend, "codex");
+  assert.equal(result.resolvedByRoleId.get("mapped").modelId, "gpt-5.6-sol");
   assert.equal(result.resolvedByRoleId.has("label"), false);
 });
 
 test("fresh discovery fails closed for unavailable and incapable pinned models", () => {
   assert.throws(
     () => resolveModelSelectionForSystem({
-      system: system(["writer"], { writer: "provider/missing" }),
+      system: system(["writer"]),
+      selection: { configVersion: "2", roles: { writer: { backend: "opencode", modelId: "provider/missing" } } },
       catalog: catalog([model("provider/other")])
     }),
     (error) => error?.envelope?.errorCode === "MODEL_UNAVAILABLE" && error.envelope.roleId === "writer" && /provider\/missing/.test(error.message)
   );
   assert.throws(
     () => resolveModelSelectionForSystem({
-      system: system(["writer"], { writer: "provider/textless" }),
+      system: system(["writer"]),
+      selection: { configVersion: "2", roles: { writer: { backend: "opencode", modelId: "provider/textless" } } },
       catalog: catalog([model("provider/textless", { textInput: true, textOutput: false, toolcall: true })])
     }),
     (error) => error?.envelope?.errorCode === "MODEL_CAPABILITY_MISMATCH" && error.envelope.roleId === "writer" && /textOutput/.test(error.message)
   );
 });
 
-test("a missing or stale catalog preserves a valid pinned offline selection", () => {
-  const pinned = resolveModelSelectionForSystem({
+test("system.mmd model bindings are rejected and selection is the only model source", () => {
+  assert.throws(() => resolveModelSelectionForSystem({
     system: system(["writer"], { writer: "provider/offline" }),
-    catalog: undefined
-  });
-  assert.equal(pinned.resolvedByRoleId.get("writer").modelRef, "provider/offline");
-  assert.ok(pinned.warnings.some((warning) => /availability was not discovered/.test(warning)));
-
-  const stale = resolveModelSelectionForSystem({
-    system: system(["writer"], { writer: "provider/offline" }),
-    catalog: catalog([model("provider/other")], new Date(Date.now() - MODEL_CATALOG_STALE_AFTER_MS - 1).toISOString())
-  });
-  assert.equal(stale.resolvedByRoleId.get("writer").modelRef, "provider/offline");
-  assert.ok(stale.warnings.some((warning) => /stale/.test(warning)));
+    selection: { configVersion: "2", roles: { writer: { backend: "opencode", modelId: "provider/offline" } } }
+  }), (error) => error?.envelope?.errorCode === "MODEL_BINDING_UNRESOLVED" && /model-selection/.test(error.message));
+  assert.throws(() => resolveModelSelectionForSystem({
+    system: system(["writer"]),
+    selection: { configVersion: "1", defaults: { model: "provider/old" } }
+  }), /unsupported version/);
 });
 
-test("non-direct model binding fails with a role-specific mapping diagnostic", () => {
-  assert.throws(
-    () => resolveModelSelectionForSystem({
-      system: system(["writer"], { writer: "role.writer" })
-    }),
-    (error) => error?.envelope?.errorCode === "MODEL_SELECTION_NOT_FOUND" && error.message.includes("writer")
-  );
+test("roles without a configured backend and model remain unbound for law-level noop validation", () => {
+  const result = resolveModelSelectionForSystem({
+    system: system(["writer"])
+  });
+
+  assert.equal(result.resolvedByRoleId.has("writer"), false);
+  assert.deepEqual(result.warnings, []);
 });

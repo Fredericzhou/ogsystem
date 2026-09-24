@@ -1165,7 +1165,7 @@ async function resolveBindingVisualizationForRole(args: {
     variant: resolvedModel.variant,
     timeoutMs: resolvedModel.timeoutMs,
     maxOutputBytes: resolvedModel.maxOutputBytes,
-    source: resolvedModel.bindingSource === "system" ? "system.mmd:model.bind" : ".ogs/model-selection.json"
+    source: ".ogs/model-selection.json"
   };
 }
 

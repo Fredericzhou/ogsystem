@@ -90,7 +90,6 @@ async function seedProjectFixture(workdir) {
       "%% system.version=1.0.0",
       "%% law.global=law.minimal.base",
       "%% entry.role=demo-analyst",
-      "%% model.bind.demo-analyst=openai/gpt-5-nano",
       "%% review.mode.demo-analyst=required",
       "%% review.timeout.demo-analyst=3600",
       "%% review.timeout.action.demo-analyst=pause",
@@ -127,7 +126,6 @@ async function seedAlternateProjectFixture(workdir) {
       "%% system.version=2.0.0",
       "%% law.global=law.minimal.base",
       "%% entry.role=demo-analyst",
-      "%% model.bind.demo-analyst=openai/gpt-5-nano",
       "input -->|ENTER| analyst[Role:demo-analyst]",
       "analyst[Role:demo-analyst] -->|ANALYSIS_DONE| output",
       ""
@@ -169,7 +167,6 @@ async function seedRunnableReviewProjectFixture(workdir) {
       "%% system.version=1.0.0",
       "%% law.global=law.minimal.base",
       "%% entry.role=demo-analyst",
-      "%% model.bind.demo-analyst=openai/gpt-5-nano",
       "%% review.mode.demo-analyst=required",
       "%% review.timeout.demo-analyst=3600",
       "%% review.timeout.action.demo-analyst=pause",

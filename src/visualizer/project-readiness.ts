@@ -84,6 +84,8 @@ type ContractCoverageItem = {
 type ModelCapabilityCheck = {
   roleId: string;
   bindingKind: "model";
+  backend: string;
+  modelId: string;
   modelRef: string;
   status: "ok" | "warning" | "blocker";
   capabilities?: ModelCatalogEntry["capabilities"];
@@ -99,7 +101,7 @@ type ModelSelectionReadinessIssue = {
 };
 
 type ModelSelectionReadinessResult = {
-  resolvedByRoleId: Map<string, { modelRef: string }>;
+  resolvedByRoleId: Map<string, { backend: string; modelId: string; modelRef: string }>;
   warnings: string[];
   issues: ModelSelectionReadinessIssue[];
 };
@@ -151,7 +153,7 @@ function resolveModelSelectionForReadiness(args: {
   selection: Awaited<ReturnType<typeof loadModelSelection>>;
   catalog: ModelCatalog | undefined;
 }): ModelSelectionReadinessResult {
-  const resolvedByRoleId = new Map<string, { modelRef: string }>();
+  const resolvedByRoleId = new Map<string, { backend: string; modelId: string; modelRef: string }>();
   const warnings = new Set<string>();
   const issues: ModelSelectionReadinessIssue[] = [];
 
@@ -192,13 +194,13 @@ function resolveModelSelectionForReadiness(args: {
 }
 
 function buildProviderHealth(
-  resolvedModelsByRoleId: Map<string, { modelRef: string }>
+  resolvedModelsByRoleId: Map<string, { backend: string; modelId: string; modelRef: string }>
 ): DoctorProviderHealthCheck[] {
   const health = [...resolvedModelsByRoleId.entries()]
     .sort(([left], [right]) => left.localeCompare(right))
     .map(([roleId, resolved]) => ({
       roleId,
-      modelRef: resolved.modelRef,
+      modelRef: `${resolved.backend}/${resolved.modelId}`,
       status: "skipped" as const,
       code: "DOCTOR_PROVIDER_ONLINE_SKIPPED" as const,
       message: "online provider credential check skipped; project readiness never probes connectivity"
@@ -418,11 +420,10 @@ async function buildContractCoverage(args: {
 function buildModelCapabilityChecks(args: {
   system: SystemDefinition;
   modelCatalog: ModelCatalog | undefined;
-  resolvedModelsByRoleId: Map<string, { modelRef: string }>;
+  resolvedModelsByRoleId: Map<string, { backend: string; modelId: string; modelRef: string }>;
   blockers: ReadinessIssue[];
   warnings: ReadinessIssue[];
 }): ModelCapabilityCheck[] {
-  const catalogByRef = new Map((args.modelCatalog?.models ?? []).map((entry) => [entry.ref, entry]));
   const checks: ModelCapabilityCheck[] = [];
   for (const roleId of [...args.system.roleIds].sort((left, right) => left.localeCompare(right))) {
     if (args.system.executionBinding[roleId]) {
@@ -432,18 +433,22 @@ function buildModelCapabilityChecks(args: {
     if (!resolved?.modelRef) {
       continue;
     }
-    const catalogEntry = catalogByRef.get(resolved.modelRef);
+    const catalogEntry = args.modelCatalog?.models.find((entry) => entry.backend === resolved.backend && entry.modelId === resolved.modelId);
     if (!catalogEntry) {
       const catalogIssue = inspectResolvedModelCatalogEntry({
         roleId,
-        modelRef: resolved.modelRef,
+        backend: resolved.backend,
+        modelId: resolved.modelId,
+        modelRef: `${resolved.backend}/${resolved.modelId}`,
         catalog: args.modelCatalog
       });
       if (catalogIssue) {
         const check: ModelCapabilityCheck = {
           roleId,
           bindingKind: "model",
-          modelRef: resolved.modelRef,
+          backend: resolved.backend,
+          modelId: resolved.modelId,
+          modelRef: `${resolved.backend}/${resolved.modelId}`,
           status: "blocker",
           missingCapabilities: catalogIssue.missingCapabilities ?? [],
           warningCapabilities: [],
@@ -464,7 +469,9 @@ function buildModelCapabilityChecks(args: {
       const check: ModelCapabilityCheck = {
         roleId,
         bindingKind: "model",
-        modelRef: resolved.modelRef,
+        backend: resolved.backend,
+        modelId: resolved.modelId,
+        modelRef: `${resolved.backend}/${resolved.modelId}`,
         status: "warning",
         missingCapabilities: [],
         warningCapabilities: [],
@@ -489,14 +496,18 @@ function buildModelCapabilityChecks(args: {
     }
     const catalogIssue = inspectResolvedModelCatalogEntry({
       roleId,
-      modelRef: resolved.modelRef,
+      backend: resolved.backend,
+      modelId: resolved.modelId,
+      modelRef: `${resolved.backend}/${resolved.modelId}`,
       catalog: args.modelCatalog
     });
     if (catalogIssue) {
       const check: ModelCapabilityCheck = {
         roleId,
         bindingKind: "model",
-        modelRef: resolved.modelRef,
+        backend: resolved.backend,
+        modelId: resolved.modelId,
+        modelRef: `${resolved.backend}/${resolved.modelId}`,
         status: "blocker",
         capabilities: catalogEntry.capabilities,
         missingCapabilities: catalogIssue.missingCapabilities ?? [],
@@ -530,7 +541,9 @@ function buildModelCapabilityChecks(args: {
     const check: ModelCapabilityCheck = {
       roleId,
       bindingKind: "model",
-      modelRef: resolved.modelRef,
+      backend: resolved.backend,
+      modelId: resolved.modelId,
+      modelRef: `${resolved.backend}/${resolved.modelId}`,
       status,
       capabilities: catalogEntry.capabilities,
       missingCapabilities,
@@ -709,15 +722,11 @@ export async function inspectProjectReadiness(
       if (selectionIssue) {
         missingBindings.push({
           roleId,
-          reason: selectionIssue.code === "MODEL_SELECTION_NOT_FOUND"
-            ? "model-selection file is missing for the declared model binding"
-            : "model binding did not resolve to a provider/model selection"
+          reason: "model binding did not resolve to a backend/model selection"
         });
         blockers.push(
           createIssue({
-            code: selectionIssue.code === "MODEL_SELECTION_NOT_FOUND"
-              ? "READINESS_MODEL_SELECTION_MISSING"
-              : "READINESS_MODEL_SELECTION_UNRESOLVED",
+            code: "READINESS_MODEL_SELECTION_UNRESOLVED",
             message: selectionIssue.message,
             severity: "blocker",
             roleId,
@@ -730,7 +739,7 @@ export async function inspectProjectReadiness(
       }
       missingBindings.push({
         roleId,
-        reason: "no exec.bind, model.bind, or model-selection default resolved"
+        reason: "no execution binding or model-selection entry resolved"
       });
       const issue = createIssue({
         code: "READINESS_BINDING_MISSING",

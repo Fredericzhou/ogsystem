@@ -10,6 +10,7 @@ import {
   inspectStudioBridgeDraft,
   importMermaidToAuthoring,
   loadStudioAuthoringDraft,
+  saveStudioAuthoringDraft,
   serializeAuthoringToMermaid
 } from "../dist/visualizer/studio-authoring.js";
 import { parseSystemFromMermaidSource } from "../dist/runtime/parse-mermaid.js";
@@ -36,7 +37,6 @@ const source = [
   "%% entry.role=dispatch",
   "%% handoff.mode=strict",
   "%% handoff.contracts=contracts/handoff.json",
-  "%% model.bind.dispatch=model.fast",
   "%% exec.bind.review=profile.review",
   "%% role.mode.dispatch=parallel_split",
   "%% route.order.dispatch=worker,review",
@@ -67,13 +67,41 @@ test("Studio authoring import extracts normalized roles, flows, and metadata", (
   assert.equal(authoring.system.systemId, "test.studio.authoring");
   assert.equal(authoring.system.entryRoleId, "dispatch");
   assert.equal(authoring.system.entryEventType, "START");
-  assert.equal(authoring.roles.dispatch.bindingKind, "model");
+  assert.equal(authoring.roles.dispatch.bindingKind, "noop");
   assert.equal(authoring.roles.review.bindingKind, "exec");
   assert.equal(authoring.roles.dispatch.routingMode, "parallel_split");
   assert.deepEqual(authoring.roles.review.joinSources, ["worker", "dispatch"]);
   assert.equal(authoring.roles.review.review.mode, "required");
   assert.equal(authoring.roles.review.contextMap.summary, "source(worker).content");
   assert.equal(Object.keys(authoring.flows).length, 4);
+});
+
+test("Studio save writes role backend/model separately and preserves project defaults", async () => {
+  const workdir = await mkdtemp(path.join(os.tmpdir(), "ogsystem-studio-model-save-"));
+  try {
+    await mkdir(path.join(workdir, ".ogs"), { recursive: true });
+    await writeFile(path.join(workdir, ".ogs", "model-selection.json"), JSON.stringify({
+      configVersion: "2",
+      defaults: { backend: "opencode", modelId: "provider/default" }
+    }), "utf8");
+    const authoring = importMermaidToAuthoring({ workdir, systemPath: path.join(workdir, "system.mmd"), systemSource: source });
+    authoring.roles.dispatch.bindingKind = "model";
+    authoring.roles.dispatch.backend = "codex";
+    authoring.roles.dispatch.modelId = "gpt-5.6-sol";
+    authoring.roles.dispatch.modelSelectionSource = "role";
+
+    await saveStudioAuthoringDraft({ workdir, authoring });
+
+    const savedSelection = JSON.parse(await readFile(path.join(workdir, ".ogs", "model-selection.json"), "utf8"));
+    assert.deepEqual(savedSelection, {
+      configVersion: "2",
+      defaults: { backend: "opencode", modelId: "provider/default" },
+      roles: { dispatch: { backend: "codex", modelId: "gpt-5.6-sol" } }
+    });
+    assert.ok((await readFile(path.join(workdir, ".ogs", "studio", "system.authoring.json"), "utf8")).length > 0);
+  } finally {
+    await import("node:fs/promises").then(({ rm }) => rm(workdir, { recursive: true, force: true }));
+  }
 });
 
 test("Studio authoring serializer is deterministic and preserves parse semantics", () => {
@@ -85,7 +113,7 @@ test("Studio authoring serializer is deterministic and preserves parse semantics
   const first = serializeAuthoringToMermaid(authoring);
   const second = serializeAuthoringToMermaid(authoring);
   assert.equal(first, second);
-  assert.match(first, /%% model\.bind\.dispatch=model\.fast/);
+  assert.doesNotMatch(first, /%% model\.bind\./);
   assert.match(first, /%% exec\.bind\.review=profile\.review/);
   assert.match(first, /%% join\.sources\.review=worker,dispatch/);
   assert.match(first, /input -->\|START\| r1\[Role:dispatch\]/);
@@ -94,7 +122,7 @@ test("Studio authoring serializer is deterministic and preserves parse semantics
   const roundTripped = parseSystemFromMermaidSource(first);
   assert.equal(roundTripped.systemId, original.systemId);
   assert.equal(roundTripped.entryRoleId, original.entryRoleId);
-  assert.deepEqual(roundTripped.modelBinding, original.modelBinding);
+  assert.deepEqual(roundTripped.modelBinding, {});
   assert.deepEqual(roundTripped.executionBinding, original.executionBinding);
   assert.deepEqual(roundTripped.graph?.joinSourcesByRoleId, original.graph?.joinSourcesByRoleId);
   assert.equal(roundTripped.flows.length, original.flows.length);

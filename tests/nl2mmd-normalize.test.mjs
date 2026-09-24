@@ -20,11 +20,6 @@ test("normalizeNl2MmdMermaid converts standalone declarations and bare endpoints
 %% role.mode.debate-moderator=parallel_split
 %% route.order.debate-moderator=debate-minimalist,debate-alignmentist
 %% route.order.debate-judge=debate-moderator,debate-summary
-%% model.bind.debate-moderator=openai/gpt-5-nano
-%% model.bind.debate-minimalist=openai/gpt-5-nano
-%% model.bind.debate-alignmentist=openai/gpt-5-nano
-%% model.bind.debate-judge=openai/gpt-5-nano
-%% model.bind.debate-summary=openai/gpt-5-nano
 %% loop.max.debate-judge=3
 %% join.mode.debate-judge=all_of
 %% join.sources.debate-judge=debate-minimalist,debate-alignmentist
@@ -112,7 +107,7 @@ flowchart TD
   assert.equal(flowchartHeaders.length, 1);
   assert.ok(stabilized.includes("%% system.id=ogsystem.nl2mmd.autofix"));
   assert.ok(stabilized.includes("%% entry.role=debate-moderator"));
-  assert.ok(stabilized.includes("%% model.bind.debate-judge="));
+  assert.ok(!stabilized.includes("%% model.bind."));
 
   const validation = await validateNl2MmdCandidate({
     mermaid: stabilized,
@@ -127,11 +122,6 @@ test("stabilizeNl2MmdMermaidForRuntime relocates misplaced join metadata to the 
 %% system.version=1
 %% law.global=law.minimal.base
 %% entry.role=debate-moderator
-%% model.bind.debate-moderator=openai/gpt-5-nano
-%% model.bind.debate-minimalist=openai/gpt-5-nano
-%% model.bind.debate-alignmentist=openai/gpt-5-nano
-%% model.bind.debate-judge=openai/gpt-5-nano
-%% model.bind.debate-summary=openai/gpt-5-nano
 %% role.mode.debate-moderator=parallel_split
 %% join.mode.debate-moderator=all_of
 %% join.sources.debate-moderator=debate-minimalist,debate-alignmentist

@@ -253,7 +253,7 @@ async function main() {
   await assert.rejects(() => stat(path.resolve(projectDir, ".ogs", "providers")), /ENOENT/);
   await assert.rejects(() => stat(path.resolve(projectDir, "og-models")), /ENOENT/);
   const ogsReadme = await readFile(ogsReadmePath, "utf8");
-  assert.match(ogsReadme, /\.ogsystem\/\.env/);
+  assert.match(ogsReadme, /Backend credentials stay in each CLI's own user-level configuration/);
   assert.doesNotMatch(ogsReadme, /providers\/opencode\.json/);
   assert.match(ogsReadme, /Use this README for operator notes and examples/);
 

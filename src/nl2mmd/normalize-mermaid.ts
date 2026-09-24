@@ -16,7 +16,6 @@ const EDGE_REGEX = /^(.+?)\s*-->\|(.+?)\|\s*(.+)$/;
 const METADATA_REGEX = /^%%\s*([A-Za-z0-9._:-]+)\s*=\s*(.+)$/;
 const ROLE_METADATA_PREFIXES = [
   "exec.bind.",
-  "model.bind.",
   "role.mode.",
   "join.mode.",
   "join.min.",
@@ -35,7 +34,6 @@ const SUPPORTED_EXACT_METADATA_KEYS = new Set([
 ]);
 const SUPPORTED_METADATA_PREFIXES = [
   "exec.bind.",
-  "model.bind.",
   "role.mode.",
   "join.mode.",
   "join.min.",
@@ -196,10 +194,6 @@ function isSupportedMetadataKey(key: string): boolean {
     return true;
   }
   return SUPPORTED_METADATA_PREFIXES.some((prefix) => key.startsWith(prefix));
-}
-
-function chooseDefaultModelRef(context: Nl2MmdContext): string | undefined {
-  return context.defaultModelRef ?? context.modelCatalog[0]?.modelRef;
 }
 
 type CanonicalizedEdge = {
@@ -502,20 +496,6 @@ function canonicalizeWithRuntimeDefaults(args: {
     metadataOrder,
     edges
   });
-
-  for (const roleId of roleIds) {
-    const modelKey = `model.bind.${roleId}`;
-    const execKey = `exec.bind.${roleId}`;
-    if (metadata.has(modelKey) || metadata.has(execKey)) {
-      continue;
-    }
-    const defaultModelRef = chooseDefaultModelRef(args.context);
-    if (!defaultModelRef) {
-      continue;
-    }
-    metadata.set(modelKey, defaultModelRef);
-    metadataOrder.push(modelKey);
-  }
 
   const cycleComponents = collectCyclicRoleComponents(edges);
   for (const component of cycleComponents) {

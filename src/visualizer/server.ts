@@ -17,6 +17,7 @@ import {
   rebuildRunsIndex,
   RunRoleIoLookupError,
   resolveOgsPaths,
+  syncProjectModels,
 } from "../runtime/project-lifecycle.js";
 import { redactUnknown } from "../runtime/redaction.js";
 import { loadConversationRunProjection, normalizeConversationItemStatus } from "../runtime/conversation-projector.js";
@@ -623,6 +624,12 @@ async function handleApiStudioBridgeInspect(
 
 async function handleApiStudioAuthoringGet(workdir: string, response: ServerResponse): Promise<void> {
   jsonResponse(response, 200, await loadStudioAuthoringDraft(workdir));
+}
+
+async function handleApiModelsSync(workdir: string, response: ServerResponse): Promise<void> {
+  const result = await syncProjectModels({ workdir });
+  invalidateAllProjectCaches(workdir);
+  jsonResponse(response, 200, { status: "ok", ...result });
 }
 
 async function handleApiStudioAuthoringSave(
@@ -1512,6 +1519,7 @@ const EXACT_API_ROUTE_HANDLERS = new Map<string, ExactApiRouteHandler>([
   ["GET project/studio/bridge", async ({ state, request, response }) => handleApiStudioBridgeInspect(state.workdir, request, response)],
   ["POST project/studio/bridge", async ({ state, request, response }) => handleApiStudioBridgeInspect(state.workdir, request, response)],
   ["GET project/studio/authoring", async ({ state, response }) => handleApiStudioAuthoringGet(state.workdir, response)],
+  ["POST project/models/sync", async ({ state, response }) => handleApiModelsSync(state.workdir, response)],
   ["POST project/studio/authoring", async ({ state, request, response }) => handleApiStudioAuthoringSave(state.workdir, request, response)],
   ["POST project/studio/authoring/import-mmd", async ({ state, request, response }) => handleApiStudioAuthoringImportMmd(state.workdir, request, response)],
   ["POST project/studio/authoring/generate-mmd", async ({ state, request, response }) => handleApiStudioAuthoringGenerateMmd(state.workdir, request, response)],
@@ -1631,6 +1639,16 @@ async function handleVisualizationRequest(
   }
   if (segments.length === 5 && segments[2] === "project" && segments[3] === "system" && segments[4] === "save-as" && method === "POST") {
     await handleApiProjectSave(state.workdir, request, response, true);
+    return;
+  }
+  if (
+    segments.length === 5 &&
+    segments[2] === "project" &&
+    segments[3] === "models" &&
+    segments[4] === "sync" &&
+    method === "POST"
+  ) {
+    await handleApiModelsSync(state.workdir, response);
     return;
   }
   if (
