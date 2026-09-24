@@ -182,7 +182,7 @@ export function formatStudioNodeLabel(node: GraphViewModelNode): string {
   const topology = node.topologyComponentId ? [node.topologyComponentId] : [];
   const badges = [...semanticBadges, ...formatStudioRuntimeNodeBadges(node), ...topology];
   const label = badges.length ? `${node.label}  [${badges.join(" ")}]` : node.label;
-  return node.roleSeat ? `Role / Agent: ${label}` : label;
+  return node.roleSeat ? `Role: ${label}` : label;
 }
 
 function projectedLabel(node: GraphViewModelNode): string {
@@ -193,7 +193,7 @@ export function layoutNodeSize(node: GraphViewModelNode): { width: number; heigh
   const minimumWidth = node.kind === "boundary" ? node.layout.width : Math.max(180, node.layout.width);
   const minimumHeight = Math.max(node.kind === "boundary" ? 70 : 84, node.layout.height);
   const labelWidth = estimateTextWidth(formatStudioNodeLabel(node));
-  const width = Math.max(minimumWidth, Math.min(320, Math.ceil(labelWidth + 30)));
+  const width = Math.max(minimumWidth, Math.min(260, Math.ceil(labelWidth + 30)));
   const lineWidth = Math.max(width - 18, 1);
   const lineCount = Math.max(1, Math.ceil(labelWidth / lineWidth));
   const height = Math.max(minimumHeight, Math.min(156, 24 + lineCount * 16));

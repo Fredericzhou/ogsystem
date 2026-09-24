@@ -61,7 +61,7 @@ async function main(): Promise<void> {
     port
   });
 
-  console.log(`OGSystem Visualizer listening on ${result.url}`);
+  console.log(`OGS Multi-Agent Graph Orchestration System listening on ${result.url}`);
 }
 
 void main().catch((error) => {

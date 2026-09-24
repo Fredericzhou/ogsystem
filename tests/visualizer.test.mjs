@@ -838,7 +838,7 @@ test("visualizer server serves run list, details, and live stream", async (t) =>
     const root = await fetch(url);
     assert.equal(root.status, 200);
     const rootHtml = await root.text();
-    assert.match(rootHtml, /OGSystem Visualizer/);
+    assert.match(rootHtml, /OGS Multi-Agent Graph Orchestration System/);
     assert.match(rootHtml, /Project Overview/);
     assert.match(rootHtml, /Ops Summary/);
     assert.match(rootHtml, /Failure Triage/);

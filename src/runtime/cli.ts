@@ -1195,7 +1195,7 @@ async function runVisualizerCommand(argv: string[]): Promise<void> {
     })
   });
 
-  console.log(`OGSystem Visualizer listening on ${result.url}`);
+  console.log(`OGS Multi-Agent Graph Orchestration System listening on ${result.url}`);
 }
 
 async function runRunCommand(argv: string[]): Promise<void> {

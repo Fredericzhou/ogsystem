@@ -48,9 +48,9 @@ type ElkGraph = {
 };
 
 function configFor(mode: StudioLayoutMode): LayoutConfig {
-  if (mode === "stacked") return { direction: "DOWN", padding: 80, nodeSpacing: 76, layerSpacing: 144 };
-  if (mode === "compact") return { direction: "RIGHT", padding: 68, nodeSpacing: 46, layerSpacing: 96 };
-  return { direction: "RIGHT", padding: 88, nodeSpacing: 64, layerSpacing: 128 };
+  if (mode === "stacked") return { direction: "DOWN", padding: 64, nodeSpacing: 56, layerSpacing: 92 };
+  if (mode === "compact") return { direction: "RIGHT", padding: 50, nodeSpacing: 34, layerSpacing: 58 };
+  return { direction: "RIGHT", padding: 64, nodeSpacing: 44, layerSpacing: 76 };
 }
 
 function edgeChannelRank(edge: GraphViewModelEdge): number {
@@ -144,6 +144,7 @@ function shiftToPadding(
 function enforceExclusiveBoundaryLayers(
   positions: Array<{ id: string; x: number; y: number; width: number; height: number }>,
   geometries: Map<string, LayoutEdgeGeometry>,
+  routePointsByEdgeId: Map<string, LayoutPoint[]>,
   edges: readonly GraphViewModelEdge[],
   mode: StudioLayoutMode
 ): void {
@@ -157,8 +158,11 @@ function enforceExclusiveBoundaryLayers(
   const axisEnd = (node: typeof input): number => isVertical ? node.y + node.height : node.x + node.width;
   const businessStart = Math.min(...business.map(axisStart));
   const businessEnd = Math.max(...business.map(axisEnd));
-  const inputTarget = businessStart - config.layerSpacing - (isVertical ? input.height : input.width);
-  const outputTarget = businessEnd + config.layerSpacing;
+  const inputTarget = Math.min(
+    axisStart(input),
+    businessStart - config.layerSpacing - (isVertical ? input.height : input.width)
+  );
+  const outputTarget = Math.max(axisStart(output), businessEnd + config.layerSpacing);
   const inputDelta = inputTarget - axisStart(input);
   const outputDelta = outputTarget - axisStart(output);
   if (Math.abs(inputDelta) > 0.5) {
@@ -169,17 +173,30 @@ function enforceExclusiveBoundaryLayers(
     if (isVertical) output.y += outputDelta;
     else output.x += outputDelta;
   }
-  const updateEndpoint = (point: LayoutPoint, node: typeof input): void => {
-    if (isVertical) point.y = node.y + (point.y < node.y ? 0 : node.height);
-    else point.x = node.x + (point.x < node.x ? 0 : node.width);
-  };
   for (const edge of edges) {
     const geometry = geometries.get(edge.id);
     if (!geometry) continue;
-    if (edge.source === "input") updateEndpoint(geometry.sourcePoint, input);
-    if (edge.target === "output") updateEndpoint(geometry.targetPoint, output);
-    geometry.points[0] = geometry.sourcePoint;
-    geometry.points[geometry.points.length - 1] = geometry.targetPoint;
+    if (edge.target !== "output") continue;
+
+    const target = isVertical
+      ? { x: output.x + output.width / 2, y: output.y }
+      : { x: output.x, y: output.y + output.height / 2 };
+    const boundary = isVertical ? output.y : output.x;
+    const upstreamIndex = geometry.points.slice(0, -1).findLastIndex((point) =>
+      isVertical ? point.y < boundary : point.x < boundary
+    );
+    const upstream = geometry.points[Math.max(0, upstreamIndex)];
+    const approach = isVertical ? { x: target.x, y: boundary - 24 } : { x: boundary - 24, y: target.y };
+    const bend = isVertical ? { x: upstream.x, y: approach.y } : { x: approach.x, y: upstream.y };
+    geometry.points = [
+      ...geometry.points.slice(0, Math.max(1, upstreamIndex + 1)),
+      ...(bend.x === upstream.x && bend.y === upstream.y ? [] : [bend]),
+      approach,
+      target
+    ];
+    geometry.sourcePoint = geometry.points[0];
+    geometry.targetPoint = geometry.points[geometry.points.length - 1];
+    routePointsByEdgeId.set(edge.id, geometry.points.slice(1, -1));
   }
 }
 
@@ -273,7 +290,7 @@ export async function createElkLayoutProjection(viewModel: GraphViewModel, mode:
       if (points.length > 2) routePointsByEdgeId.set(edgeId, points.slice(1, -1));
     }
   }
-  enforceExclusiveBoundaryLayers(positioned, geometryByEdgeId, viewModel.edges, mode);
+  enforceExclusiveBoundaryLayers(positioned, geometryByEdgeId, routePointsByEdgeId, viewModel.edges, mode);
   const shifted = shiftToPadding(positioned, configFor(mode).padding);
   const shiftX = shifted.length ? shifted[0].x - positioned[0].x : 0;
   const shiftY = shifted.length ? shifted[0].y - positioned[0].y : 0;

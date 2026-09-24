@@ -293,8 +293,6 @@ export function renderStudioGraphCanvas(args: {
   selectionRolePackageHtml?: string;
   selectionStructureHtml?: string;
   selectionDebugHtml?: string;
-  selectionLogsHtml?: string;
-  selectionResultsHtml?: string;
   inspectorCollapsed?: boolean;
   inspectorWidth?: number;
   t?: Translator;
@@ -308,12 +306,14 @@ export function renderStudioGraphCanvas(args: {
   const hasSelection = Boolean(args.selectedRoleId || args.selectedFlowKey);
   const inspectorWidth = Number.isFinite(args.inspectorWidth) ? Math.max(280, Number(args.inspectorWidth)) : 380;
   const shellStyle = ` style="--studio-inspector-width:${escapeText(String(inspectorWidth))}px"`;
+  const tab = (id: string, label: string) =>
+    '<button type="button" class="button subtle' + ((args.sideTab || "structure") === id ? " active" : "") + '" data-studio-side-tab="' + id + '">' + escapeText(label) + '</button>';
   return [
     '<div class="studio-canvas-shell' + (args.fullscreen ? " is-fullscreen" : "") + (args.inspectorCollapsed ? " has-collapsed-selection" : "") + '" data-studio-canvas-shell="1"' + shellStyle + '>',
     '<div class="studio-canvas-toolbar" data-studio-bridge-region="toolbar"><div><span class="hint studio-graph-selection-label" data-studio-graph-selection-label>' + escapeText(selection) + '</span></div></div>',
     '<div id="studio-graph-root" class="studio-graph-root' + (args.rootClassName ? " " + escapeText(args.rootClassName) : "") + '" data-workbench-root-mode="' + escapeText(args.rootMode || "bridge") + '" data-selected-role-id="' + escapeText(args.selectedRoleId) + '" data-selected-flow-key="' + escapeText(args.selectedFlowKey) + '">' + (args.rootContentHtml || "") + '</div>',
     '<div class="studio-selection-resize-handle" data-studio-inspector-resize="1" aria-hidden="true"></div>',
-    '<aside class="studio-selection-overlay' + (args.inspectorCollapsed ? " is-collapsed" : "") + '" data-studio-selection-overlay><section class="studio-selection-dialog" data-studio-selection-dialog role="complementary" aria-label="' + escapeText(t("studio.sidePanel", undefined, "Right panel")) + '"><header class="studio-selection-header"><div class="studio-selection-title-wrap"><div class="hint" data-studio-selection-kind-label>' + escapeText(args.selectionKindLabel || "") + '</div><strong data-studio-selection-title>' + escapeText(args.selectionTitle || "") + '</strong></div><div class="studio-selection-actions"><button type="button" class="button subtle" data-studio-selection-back=""' + (hasSelection ? "" : " hidden") + ' title="' + escapeText(t("studio.backToBrowse", undefined, "Back to browse")) + '" aria-label="' + escapeText(t("studio.backToBrowse", undefined, "Back to browse")) + '">' + escapeText(t("studio.backToBrowse", undefined, "Back to browse")) + '</button><button type="button" class="button subtle" data-studio-selection-collapse="" title="' + escapeText(t("action.close", undefined, "Close")) + '">' + (args.inspectorCollapsed ? ">" : "<") + '</button></div></header><div class="studio-selection-tabstrip segmented"><button type="button" class="button subtle' + ((args.sideTab || "structure") === "structure" ? " active" : "") + '" data-studio-side-tab="structure">' + escapeText(t("studio.retrievalTab", undefined, "Browse")) + '</button><button type="button" class="button subtle' + ((args.sideTab || "structure") === "selection" ? " active" : "") + '" data-studio-side-tab="selection">' + escapeText(t("studio.authoringTab", undefined, "Compose")) + '</button><button type="button" class="button subtle' + ((args.sideTab || "structure") === "debug" ? " active" : "") + '" data-studio-side-tab="debug">' + escapeText(t("build.mode.debug", undefined, "Debug")) + '</button><button type="button" class="button subtle' + ((args.sideTab || "structure") === "logs" ? " active" : "") + '" data-studio-side-tab="logs">' + escapeText(t("studio.logsTab", undefined, "Logs")) + '</button><button type="button" class="button subtle' + ((args.sideTab || "structure") === "result" ? " active" : "") + '" data-studio-side-tab="result">' + escapeText(t("studio.resultsTab", undefined, "Results")) + '</button></div><div class="studio-selection-body"><section class="studio-selection-panel studio-selection-structure-panel studio-outline-panel" data-studio-selection-panel="structure"><div data-studio-selection-structure-content>' + (args.selectionStructureHtml || "") + '</div><div class="studio-selection-inline-editor" data-studio-selection-inline-editor></div></section><section class="studio-selection-panel" data-studio-selection-panel="selection"><div class="studio-selection-command-host" data-studio-selection-command-host></div><div class="studio-selection-role-package" data-studio-selection-role-package>' + (args.selectionRolePackageHtml || "") + '</div></section><section class="studio-selection-panel studio-selection-debug-panel" data-studio-selection-panel="debug">' + (args.selectionDebugHtml || "") + '</section><section class="studio-selection-panel studio-selection-logs-panel" data-studio-selection-panel="logs">' + (args.selectionLogsHtml || "") + '</section><section class="studio-selection-panel studio-selection-result-panel" data-studio-selection-panel="result">' + (args.selectionResultsHtml || "") + '</section></div></section></aside>',
+    '<aside class="studio-selection-overlay' + (args.inspectorCollapsed ? " is-collapsed" : "") + '" data-studio-selection-overlay><section class="studio-selection-dialog" data-studio-selection-dialog role="complementary" aria-label="' + escapeText(t("studio.sidePanel", undefined, "Right panel")) + '"><header class="studio-selection-header"><div class="studio-selection-title-wrap"><div class="hint" data-studio-selection-kind-label>' + escapeText(args.selectionKindLabel || "") + '</div><strong data-studio-selection-title>' + escapeText(args.selectionTitle || "") + '</strong></div><div class="studio-selection-actions"><button type="button" class="button subtle" data-studio-selection-back=""' + (hasSelection ? "" : " hidden") + ' title="' + escapeText(t("studio.backToBrowse", undefined, "Back to browse")) + '" aria-label="' + escapeText(t("studio.backToBrowse", undefined, "Back to browse")) + '">' + escapeText(t("studio.backToBrowse", undefined, "Back to browse")) + '</button><button type="button" class="button subtle" data-studio-selection-collapse="" title="' + escapeText(t("action.close", undefined, "Close")) + '">' + (args.inspectorCollapsed ? ">" : "<") + '</button></div></header><div class="studio-selection-tabstrip segmented">' + tab("structure", t("studio.retrievalTab", undefined, "Configuration")) + tab("debug", t("build.mode.debug", undefined, "Debug")) + '</div><div class="studio-selection-body"><section class="studio-selection-panel studio-selection-structure-panel studio-outline-panel" data-studio-selection-panel="structure"><div data-studio-selection-structure-content>' + (args.selectionStructureHtml || "") + '</div><div class="studio-selection-inline-editor" data-studio-selection-inline-editor><div class="studio-selection-command-host" data-studio-selection-command-host></div><div class="studio-selection-role-package" data-studio-selection-role-package>' + (args.selectionRolePackageHtml || "") + '</div></div></section><section class="studio-selection-panel studio-selection-debug-panel" data-studio-selection-panel="debug">' + (args.selectionDebugHtml || "") + '</section></div></section></aside>',
     "</div>"
   ].join("");
 }
@@ -1322,8 +1322,6 @@ export function renderStudioBridgePanel(args: {
   listMode?: string;
   sideTab?: string;
   selectionDebugHtml?: string;
-  selectionLogsHtml?: string;
-  selectionResultsHtml?: string;
   fullscreen?: boolean;
   rolePackageEditor?: JsonRecord | null | undefined;
   flowConfigEditor?: JsonRecord | null | undefined;
@@ -1386,8 +1384,6 @@ export function renderStudioBridgePanel(args: {
         t
       }),
     selectionDebugHtml: args.selectionDebugHtml || "",
-    selectionLogsHtml: args.selectionLogsHtml || "",
-    selectionResultsHtml: args.selectionResultsHtml || "",
     inspectorCollapsed: args.inspectorCollapsed === true,
     inspectorWidth: args.inspectorWidth,
     fullscreen: args.fullscreen,
@@ -1890,6 +1886,49 @@ export function renderReviewQueuePanel(args: {
     ),
     "</div>"
   ].join("");
+}
+
+export function renderStudioDebugOutcomePanel(args: {
+  snapshot: JsonRecord | null | undefined;
+  t?: Translator;
+}): string {
+  const t: Translator = typeof args.t === "function" ? args.t : (_key, _vars, fallback) => fallback ?? _key;
+  const snapshot = asRecord(args.snapshot) ?? {};
+  const detail = asRecord(snapshot.detail) ?? {};
+  const header = asRecord(detail.header) ?? {};
+  const state = asRecord(detail.state) ?? {};
+  const graph = asRecord(asRecord(snapshot.graph)?.graph) ?? {};
+  const reviewsPayload = asRecord(snapshot.reviews) ?? {};
+  const reviews = asRecordArray(reviewsPayload.reviews);
+  const waitingReviews = reviews.filter((review) => String(review.currentStatus ?? "") === "pending");
+  const status = String(header.status ?? state.status ?? "idle");
+  const statusClass = status.toLowerCase().replace(/[^a-z0-9_-]/g, "");
+  const metrics = [
+    [t("state.runtime", undefined, "Run"), displayUiToken(status, t)],
+    [t("studio.debugTransitions", undefined, "transitions"), String(header.transitionCount ?? state.transitionCount ?? 0)],
+    [t("studio.debugFlows", undefined, "flows"), String(asRecordArray(graph.edges).length)],
+    [t("studio.debugHumanReview", undefined, "human reviews"), String(header.pendingReviewCount ?? waitingReviews.length)]
+  ];
+  const summary = snapshot.runId
+    ? '<div class="studio-debug-summary" data-studio-debug-summary>' + metrics.map(([label, value], index) => '<div class="studio-debug-metric' + (index === 0 ? ' is-status' : '') + '"><span>' + escapeText(label) + '</span><strong' + (index === 0 ? ' class="status ' + escapeText(statusClass) + '"' : '') + '>' + escapeText(value) + '</strong></div>').join("") + '</div>'
+    : '<div class="hint">' + escapeText(snapshot.loadingError ? t("studio.debugSnapshotUnavailable", undefined, "Could not load the latest dry-run details.") : t("studio.debugNoRun", undefined, "Start a dry run to see role handoffs, human reviews, and role outputs here.")) + '</div>';
+  const reviewItems = reviews.map((review) => {
+    const reviewStatus = String(review.currentStatus ?? "unknown");
+    const reviewStatusClass = reviewStatus.toLowerCase().replace(/[^a-z0-9_-]/g, "");
+    const context = [review.reviewId, review.branchId, review.selectedEvent, review.reworkTarget].filter(Boolean).map(String).join(" · ");
+    const decision = [review.decision, review.actor, review.comment].filter(Boolean).map(String).join(" · ");
+    const statusLabel = reviewStatus === "pending"
+      ? t("status.waitingReview", undefined, "waiting review")
+      : displayUiToken(reviewStatus, t);
+    return '<article class="studio-debug-review-item"><div><strong>' + escapeText(String(review.roleId ?? t("common.notAvailable", undefined, "n/a"))) + '</strong><span class="status ' + escapeText(reviewStatusClass) + '">' + escapeText(statusLabel) + '</span></div><div class="hint">' + escapeText(waitingReviews.includes(review) ? context : (decision || context)) + '</div>' + (reviewStatus === "pending" ? '<button type="button" class="button subtle" data-studio-open-review="' + escapeText(String(review.reviewId ?? "")) + '">' + escapeText(t("studio.debugOpenReview", undefined, "Review and decide")) + '</button>' : '') + '</article>';
+  });
+  const pendingCount = Number(header.pendingReviewCount ?? 0);
+  const reviewSection = waitingReviews.length || reviews.length
+    ? '<section class="studio-debug-review' + (waitingReviews.length ? ' is-pending' : '') + '"><div class="studio-debug-review-heading">' + (waitingReviews.length ? '<span class="studio-debug-review-indicator" aria-hidden="true">!</span>' : '') + '<div><strong>' + escapeText(waitingReviews.length ? t("studio.debugHumanReviewPending", undefined, "Human intervention required") : t("studio.debugReviewResolved", undefined, "Human reviews")) + '</strong><span class="hint">' + escapeText(t(waitingReviews.length ? "studio.debugReviewPendingCount" : "studio.debugReviewResolvedCount", { count: String(waitingReviews.length || reviews.length) }, "{count} review(s)")) + '</span></div></div><div class="studio-debug-review-list">' + reviewItems.join("") + '</div></section>'
+    : pendingCount > 0
+      ? '<section class="studio-debug-review is-pending"><strong>' + escapeText(t("studio.debugHumanReviewPending", undefined, "Human intervention required")) + '</strong><span class="hint">' + escapeText(t("studio.debugReviewDetailsUnavailable", undefined, "Review details are not available yet.")) + '</span></section>'
+      : '';
+  return '<div class="studio-debug-outcome">' + summary + reviewSection + '</div>';
 }
 
 export function renderResumeReadinessPanel(args: {

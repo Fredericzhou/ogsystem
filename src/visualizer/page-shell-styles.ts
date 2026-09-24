@@ -316,7 +316,7 @@ export function renderPageShellStyles(): string {
     .brand-lockup h1 {
       margin: 0;
       font-size: 16px;
-      letter-spacing: 0.02em;
+      letter-spacing: 0;
     }
     .brand-lockup span {
       color: var(--muted);
@@ -1772,7 +1772,174 @@ export function renderPageShellStyles(): string {
       letter-spacing: 0.02em;
     }
     .studio-debug-panel-stack {
+      gap: 6px;
+    }
+    .studio-debug-results-section {
+      display: grid;
       gap: 8px;
+      margin-top: 2px;
+      padding-top: 8px;
+      border-top: 1px solid var(--border);
+    }
+    .studio-result-summary-grid {
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 6px;
+    }
+    .studio-selection-debug-panel .studio-result-summary-grid .event {
+      padding: 7px 8px;
+    }
+    .studio-debug-review {
+      display: grid;
+      gap: 7px;
+      padding: 8px 9px;
+      border: 1px solid var(--border);
+      border-left: 3px solid var(--accent);
+      border-radius: var(--radius-sm);
+      background: var(--surface-section);
+    }
+    .studio-debug-review.is-pending {
+      border-left-color: var(--warn);
+      background: rgba(251, 191, 36, 0.07);
+    }
+    .studio-debug-review-heading,
+    .studio-debug-review-item > div:first-child {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 8px;
+      min-width: 0;
+    }
+    .studio-debug-review-heading > div {
+      display: grid;
+      gap: 2px;
+      min-width: 0;
+      margin-right: auto;
+    }
+    .studio-debug-review-indicator {
+      display: grid;
+      place-items: center;
+      width: 22px;
+      height: 22px;
+      flex: 0 0 22px;
+      border: 1px solid rgba(251, 191, 36, 0.5);
+      border-radius: 50%;
+      color: var(--warn);
+      font-weight: 700;
+    }
+    .studio-debug-review-item {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) auto;
+      gap: 4px 8px;
+      padding-top: 7px;
+      border-top: 1px solid var(--border);
+    }
+    .studio-debug-review-item .hint {
+      overflow-wrap: anywhere;
+    }
+    .studio-debug-review-item > button {
+      grid-column: 2;
+      grid-row: 1 / span 2;
+      align-self: center;
+    }
+    .studio-debug-summary {
+      display: grid;
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+      gap: 6px;
+      min-width: 0;
+    }
+    .studio-debug-metric {
+      display: flex;
+      min-width: 0;
+      min-height: 34px;
+      align-items: center;
+      justify-content: space-between;
+      gap: 6px;
+      padding: 5px 7px;
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      background: var(--surface-section);
+      font-size: 11px;
+    }
+    .studio-debug-metric > span {
+      min-width: 0;
+      color: var(--muted);
+      overflow-wrap: anywhere;
+    }
+    .studio-debug-metric > strong {
+      min-width: 0;
+      text-align: right;
+      overflow-wrap: anywhere;
+    }
+    .studio-debug-metric.is-status {
+      border-color: var(--tab-active-border);
+    }
+    .studio-debug-handoff-list,
+    .studio-debug-trace-list {
+      display: grid;
+      gap: 5px;
+      min-width: 0;
+    }
+    .studio-debug-handoff {
+      display: flex;
+      min-width: 0;
+      min-height: 30px;
+      align-items: center;
+      gap: 5px;
+      padding: 4px 7px;
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      background: var(--surface-inset);
+      color: var(--text);
+      text-align: left;
+      cursor: pointer;
+    }
+    .studio-debug-handoff:hover,
+    .studio-debug-handoff.active {
+      border-color: var(--tab-active-border);
+      background: var(--accent-soft);
+    }
+    .studio-debug-handoff code {
+      overflow-wrap: anywhere;
+    }
+    .studio-debug-handoff-arrow {
+      color: var(--accent);
+      font-weight: 700;
+    }
+    .studio-debug-handoff-label {
+      margin-left: auto;
+      color: var(--muted);
+      font-size: 11px;
+    }
+    .studio-debug-trace-event {
+      gap: 4px;
+      padding: 7px 8px;
+    }
+    .studio-debug-trace-role,
+    .studio-debug-trace-footer {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 6px;
+      min-width: 0;
+    }
+    .studio-debug-trace-footer .hint {
+      min-width: 0;
+      overflow-wrap: anywhere;
+    }
+    .studio-debug-trace-footer .button {
+      flex: 0 0 auto;
+    }
+    @media (max-width: 520px) {
+      .studio-debug-summary {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+      }
+      .studio-debug-handoff {
+        flex-wrap: wrap;
+      }
+      .studio-debug-handoff-label {
+        flex-basis: 100%;
+        margin-left: 0;
+      }
     }
     .studio-debug-launch-panel {
       margin-bottom: -2px;

@@ -11,6 +11,7 @@ Product-facing usage, runtime constitution, and operational contracts live under
 - [Product introduction](usage/product-introduction.md): capability overview for readers.
 - [Core concepts](usage/ogsystem-core-concepts.md): product boundary and normative terms for System, Role, Seat, runtime facts, and standards alignment.
 - [Usage manual](usage/usage-manual.md): install, CLI, run directory, operations, and Visualizer usage.
+- [OGS Multi-Agent Graph Orchestration System](usage/visualizer-console.md): role-first graph design, handoffs, dry-run review, and runtime evidence.
 - [Orchestration semantics](usage/ogsystem-orchestration-semantics-v1.md): runtime semantic contract.
 - [Semantics manual](usage/ogsystem-semantics-manual.md): implementation-aligned reference.
 - [Context map guide](usage/context-map-projection-guide.md): projection selectors and boundaries.

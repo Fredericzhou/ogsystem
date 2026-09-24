@@ -27,6 +27,7 @@ import {
   renderResumeReadinessPanel,
   renderReviewQueuePanel,
   renderReviewDetailPanel,
+  renderStudioDebugOutcomePanel,
   renderRolePackagePanel,
   renderRunStatePanel,
   renderStudioGraphCanvas,
@@ -273,6 +274,7 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
     const renderResumeReadinessPanel = ${renderResumeReadinessPanel.toString()};
     const renderReviewQueuePanel = ${renderReviewQueuePanel.toString()};
     const renderReviewDetailPanel = ${renderReviewDetailPanel.toString()};
+    const renderStudioDebugOutcomePanel = ${renderStudioDebugOutcomePanel.toString()};
     const renderRolePackagePanel = ${renderRolePackagePanel.toString()};
     const renderLogsPanel = ${renderLogsPanel.toString()};
     const renderOpsSummaryPanel = ${renderOpsSummaryPanel.toString()};
@@ -1544,7 +1546,7 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
     }
 
     function isStudioRuntimeSideTab(tab) {
-      return tab === "debug" || tab === "logs" || tab === "result";
+      return tab === "debug";
     }
 
     function resolveWorkbenchViewTabsSlot() {
@@ -1555,9 +1557,7 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
       state.workbenchView = "bridge";
       state.buildMode = "edit";
       if (isStudioRuntimeSideTab(state.studioWorkbenchSideTab)) {
-        state.studioWorkbenchSideTab = state.studioBridgeSelectedRoleId || state.studioBridgeSelectedFlowKey
-          ? "selection"
-          : "structure";
+        state.studioWorkbenchSideTab = "structure";
       }
       clearTimeout(state.studioGraphMountRetryTimer);
       state.studioGraphMountRetryTimer = null;
@@ -2069,8 +2069,6 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
         listMode: state.studioBridgeListMode,
         sideTab: state.studioWorkbenchSideTab,
         selectionDebugHtml: renderStudioDebugTabContent(),
-        selectionLogsHtml: renderStudioLogsTabContent(),
-        selectionResultsHtml: renderStudioResultTabContent(),
         fullscreen: state.studioBridgeFullscreen,
         rolePackageEditor: state.studioRolePackageEditor,
         flowConfigEditor: state.studioFlowConfigEditor,
@@ -2336,7 +2334,7 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
       } else {
         return false;
       }
-      state.studioWorkbenchSideTab = "logs";
+      state.studioWorkbenchSideTab = "debug";
       state.studioBridgeEditSelectionRequest += 1;
       updateStudioBridgeSelection(true);
       return true;
@@ -2865,34 +2863,17 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
     function renderStudioLogsTabContent() {
       const disabled = state.actionBusy ? " disabled" : "";
       const snapshot = state.studioDebugSnapshot || {};
-      const detail = snapshot.detail || {};
-      const header = detail.header || {};
       const activeRunId = snapshot.runId || "";
       const events = Array.isArray(snapshot.events) ? snapshot.events : [];
-      const bridge = resolveStudioBridgeForDisplay();
-      const flowResolvedCount = events.reduce((count, entry) => {
-        const record = asRecord(entry?.record);
-        const roleId = String(record?.roleId || "");
-        const eventType = String(record?.event || "");
-        return count + (roleId && eventType && studioTraceFlowTargetsByEvent(roleId, eventType).length ? 1 : 0);
-      }, 0);
-      const errorEventCount = events.reduce((count, entry) => count + (String(entry?.record?.errorCode || "") ? 1 : 0), 0);
-      const latestRecord = asRecord(events.at(-1)?.record);
-      const summaryCardsHtml = activeRunId
-        ? '<div class="state-card-grid studio-result-summary-grid">' +
-            '<div class="event"><div class="event-top"><span>' + escapeText(t("section.timeline", undefined, "Timeline")) + '</span><span>' + escapeText(String(events.length)) + '</span></div><strong>' + escapeText(t("studio.logsEventCount", { count: String(events.length) }, "events " + String(events.length))) + '</strong><div class="hint">' + escapeText(t("studio.logsFlowResolutionHint", { count: String(flowResolvedCount) }, "resolved flow hops " + String(flowResolvedCount))) + '</div></div>' +
-            '<div class="event"><div class="event-top"><span>' + escapeText(t("state.runtime", undefined, "runtime")) + '</span><span>' + escapeText(displayUiToken(header.status ?? t("common.unknown", undefined, "unknown"), t)) + '</span></div><strong>' + escapeText(String(header.lastExecutedRoleId || latestRecord?.roleId || t("common.notAvailable", undefined, "n/a"))) + '</strong><div class="hint">' + escapeText(t("studio.logsLatestRuntimeHint", {
-              eventType: String(latestRecord?.event || t("common.notAvailable", undefined, "n/a")),
-              branchId: String(latestRecord?.branchId || t("common.notAvailable", undefined, "n/a"))
-            }, "event " + String(latestRecord?.event || "n/a") + " · branch " + String(latestRecord?.branchId || "n/a"))) + '</div></div>' +
-            '<div class="event"><div class="event-top"><span>' + escapeText(t("state.field.errors", undefined, "errors")) + '</span><span>' + escapeText(String(errorEventCount)) + '</span></div><strong>' + escapeText(errorEventCount ? t("failure.nextChecksSummary", undefined, "Move directly to the likely root-cause surfaces") : t("failure.noRecentCaptured", undefined, "No recent failure captured for this run.")) + '</strong><div class="hint">' + escapeText(t("studio.logsErrorHint", { count: String(errorEventCount) }, "events with error code " + String(errorEventCount))) + '</div></div>' +
-          '</div>'
-        : '<div class="event"><div class="event-top"><span>' + escapeText(t("studio.logsTab", undefined, "Logs")) + '</span><span>' + escapeText(t("common.idle", undefined, "idle")) + '</span></div><strong>' + escapeText(t("studio.logsPendingTitle", undefined, "Structured runtime events will appear here after a dry run starts.")) + '</strong><div class="hint">' + escapeText(t("studio.logsPendingHint", undefined, "Use this tab to inspect role, branch, event, and inferred flow routing without leaving Design.")) + '</div></div>';
       const traceCardsHtml = events.length
         ? events.map((entry) => {
             const record = asRecord(entry?.record);
             const roleId = String(record?.roleId || "");
-            const eventType = String(record?.event || "");
+            const review = (snapshot.reviews?.reviews || []).find((item) => String(item?.reviewId || "") === String(record?.reviewId || ""));
+            const eventType = String(record?.event || record?.selectedEvent || review?.selectedEvent || "");
+            const handoffLabel = record?.type === "human_review_requested" && String(record?.status || "") === "pending"
+              ? t("studio.debugHandoffAfterReview", undefined, "handoff after review")
+              : t("studio.debugHandoff", undefined, "handoff");
             const targets = roleId && eventType ? studioTraceFlowTargetsByEvent(roleId, eventType) : [];
             const routeHint = targets.length
               ? targets.map((target) => {
@@ -2914,12 +2895,15 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
             ].filter(Boolean).join(" · ");
             const roleActive = roleId && state.studioBridgeSelectedRoleId === roleId && !state.studioBridgeSelectedFlowKey;
             const roleButtonHtml = roleId
-              ? '<button type="button" class="button subtle' + (roleActive ? " active" : "") + '" data-studio-log-role-id="' + escapeText(roleId) + '" data-studio-log-branch-id="' + escapeText(String(record?.branchId || "")) + '" data-studio-log-loop-iteration="' + escapeText(String(record?.loopIteration ?? "")) + '"><code>' + escapeText(roleId) + '</code></button>'
+              ? '<button type="button" class="button subtle' + (roleActive ? " active" : "") + '" data-studio-log-role-id="' + escapeText(roleId) + '"><code>' + escapeText(roleId) + '</code></button>'
               : "";
             const flowButtonsHtml = routeHint.length
-              ? '<div class="actions compact">' + routeHint.map((target) => '<button type="button" class="button subtle' + (state.studioBridgeSelectedFlowKey === target.flowKey ? " active" : "") + '" data-studio-log-flow-key="' + escapeText(target.flowKey) + '">' + escapeText(target.text) + '</button>').join("") + '</div>'
+              ? '<div class="studio-debug-handoff-list">' + routeHint.map((target) => '<button type="button" class="studio-debug-handoff' + (state.studioBridgeSelectedFlowKey === target.flowKey ? " active" : "") + '" data-studio-log-flow-key="' + escapeText(target.flowKey) + '"><code>' + escapeText(roleId) + '</code><span class="studio-debug-handoff-event">' + escapeText(eventType) + '</span><span class="studio-debug-handoff-arrow" aria-hidden="true">&#8594;</span><code>' + escapeText(String(target.targetRoleId || "")) + '</code><span class="studio-debug-handoff-label">' + escapeText(handoffLabel) + '</span></button>').join("") + '</div>'
               : "";
-            return '<article class="event studio-debug-trace-event"><div class="event-top"><span>#' + escapeText(entry?.cursor ?? "") + " " + escapeText(displayUiToken(record?.type || "event", t)) + '</span><time>' + escapeText(formatTime(record?.at)) + '</time></div><strong>' + roleButtonHtml + (eventType ? ' <code>' + escapeText(eventType) + '</code> ' : "") + (record?.status ? '<span class="status ' + escapeText(statusClass(String(record.status))) + '">' + escapeText(displayUiToken(record.status, t)) + '</span>' : "") + '</strong>' + flowButtonsHtml + '<div class="hint">' + escapeText(meta || t("studio.logsNoExtraMeta", undefined, "No additional runtime metadata.")) + '</div></article>';
+            const roleIoButtonHtml = roleId && record?.branchId
+              ? '<button type="button" class="button subtle" data-studio-log-io-role-id="' + escapeText(roleId) + '" data-studio-log-io-branch-id="' + escapeText(String(record.branchId)) + '" data-studio-log-io-loop-iteration="' + escapeText(String(record?.loopIteration ?? "")) + '">' + escapeText(t("studio.debugViewRoleIo", undefined, "View I/O")) + '</button>'
+              : "";
+            return '<article class="event studio-debug-trace-event"><div class="event-top"><span>#' + escapeText(entry?.cursor ?? "") + " " + escapeText(displayUiToken(record?.type || "event", t)) + '</span><time>' + escapeText(formatTime(record?.at)) + '</time></div><div class="studio-debug-trace-role"><strong>' + roleButtonHtml + (eventType ? ' <code>' + escapeText(eventType) + '</code> ' : "") + '</strong>' + (record?.status ? '<span class="status ' + escapeText(statusClass(String(record.status))) + '">' + escapeText(displayUiToken(record.status, t)) + '</span>' : "") + '</div>' + flowButtonsHtml + '<div class="studio-debug-trace-footer"><span class="hint">' + escapeText(meta || t("studio.logsNoExtraMeta", undefined, "No additional runtime metadata.")) + '</span>' + roleIoButtonHtml + '</div></article>';
           }).join("")
         : '<div class="hint">' + escapeText(t("timeline.noEventsCaptured", undefined, "No events captured yet.")) + '</div>';
       const rawLogsHtml = renderDisclosureCard({
@@ -2940,48 +2924,29 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
       });
       return [
         '<div class="structure-list studio-debug-panel-stack">',
-        '<div class="actions compact"><button class="button subtle" id="studio-logs-load-raw"' + (disabled || !activeRunId ? " disabled" : "") + '>' + escapeText(snapshot.logsLoaded ? t("logs.refresh", undefined, "Refresh logs") : t("logs.load", undefined, "Load logs")) + '</button>' +
-          ((activeRunId) ? '<button class="button subtle" id="studio-logs-open-operate"' + disabled + '>' + escapeText(t("build.openOperate", undefined, "Open Run")) + '</button>' : '') +
-        '</div>',
-        summaryCardsHtml,
         '<div class="event"><div class="event-top"><span>' + escapeText(t("studio.logsTraceTitle", undefined, "Structured trace")) + '</span><span>' + escapeText(activeRunId || t("common.idle", undefined, "idle")) + '</span></div><strong>' + escapeText(t("studio.logsTraceHeadline", undefined, "Role, branch, event, status, and inferred flow routing for the current dry run.")) + '</strong><div class="hint">' + escapeText(t("studio.logsDesignRunScope", undefined, "This trace belongs to the current design dry run; it does not aggregate other production runs.")) + '</div></div>',
         '<div class="timeline studio-debug-trace-list">' + traceCardsHtml + '</div>',
+        '<div class="actions compact"><button class="button subtle" id="studio-logs-load-raw"' + (disabled || !activeRunId ? " disabled" : "") + '>' + escapeText(snapshot.logsLoaded ? t("logs.refresh", undefined, "Refresh logs") : t("logs.load", undefined, "Load logs")) + '</button></div>',
         rawLogsHtml,
         '</div>'
       ].join("");
     }
 
-    function renderStudioResultTabContent() {
-      const disabled = state.actionBusy ? " disabled" : "";
-      const snapshot = state.studioDebugSnapshot || {};
-      const detail = snapshot.detail || {};
-      const header = detail.header || {};
-      const graph = snapshot.graph?.graph || {};
-      const stateRecord = asRecord(detail.state) || {};
-      const pendingReviews = asRecord(stateRecord.pendingReviewsById ?? stateRecord.humanReviewContextByBranchId) || {};
-      const errors = asRecord(stateRecord.errors ?? stateRecord.failure ?? stateRecord.errorEnvelope ?? stateRecord.error) || {};
-      const resultSummaryHtml = snapshot.runId && snapshot.graph?.graph
-        ? '<div class="state-card-grid studio-result-summary-grid">' +
-            '<div class="event"><div class="event-top"><span>' + escapeText(t("state.runtime", undefined, "runtime")) + '</span><span>' + escapeText(displayUiToken(header.status ?? t("common.unknown", undefined, "unknown"), t)) + '</span></div><strong>' + escapeText(displayUiToken(detail.state?.status ?? header.status ?? t("common.idle", undefined, "idle"), t)) + '</strong><div class="hint">' + escapeText(t("studio.resultsSummaryActive", {
-              activeBranches: String(header.activeBranches ?? 0),
-              pendingReviews: String(header.pendingReviewCount ?? 0)
-            }, "active branches " + String(header.activeBranches ?? 0) + " · pending reviews " + String(header.pendingReviewCount ?? 0))) + '</div></div>' +
-            '<div class="event"><div class="event-top"><span>' + escapeText(t("state.graphSnapshot", undefined, "graph snapshot")) + '</span><span>' + escapeText(String(Array.isArray(graph.nodes) ? graph.nodes.length : 0)) + " " + escapeText(t("common.nodes", undefined, "nodes")) + '</span></div><strong>' + escapeText(t("state.flowsCount", { count: String(Array.isArray(graph.edges) ? graph.edges.length : 0) }, "flows " + String(Array.isArray(graph.edges) ? graph.edges.length : 0))) + '</strong><div class="hint">' + escapeText(t("studio.resultsSummaryRoles", {
-              lastRoleId: String(header.lastExecutedRoleId ?? t("common.notAvailable", undefined, "n/a")),
-              finalRoleId: String(header.finalRoleId ?? t("common.notAvailable", undefined, "n/a"))
-            }, "last role " + String(header.lastExecutedRoleId ?? "n/a") + " · final role " + String(header.finalRoleId ?? "n/a"))) + '</div></div>' +
-            '<div class="event"><div class="event-top"><span>' + escapeText(t("review.queueSummary", undefined, "queue summary")) + '</span><span>' + escapeText(String(Object.keys(pendingReviews).length)) + '</span></div><strong>' + escapeText(Object.keys(pendingReviews).length ? t("status.waitingReview", undefined, "waiting review") : t("common.none", undefined, "none")) + '</strong><div class="hint">' + escapeText(t("studio.resultsSummaryHint", undefined, "Keep this panel compact. Open Run for the full graph, payload, and role-level state.")) + '</div></div>' +
-            '<div class="event"><div class="event-top"><span>' + escapeText(t("state.field.errors", undefined, "errors")) + '</span><span>' + escapeText(String(Object.keys(errors).length)) + '</span></div><strong>' + escapeText(Object.keys(errors).length ? t("failure.nextChecksSummary", undefined, "Move directly to the likely root-cause surfaces") : t("failure.noRecentCaptured", undefined, "No recent failure captured for this run.")) + '</strong><div class="hint">' + escapeText(t("studio.resultsOpenRunHint", undefined, "Detailed runtime graph and extended diagnostics stay in the Run page to avoid crowding this panel.")) + '</div></div>' +
-          '</div>'
-        : '<div class="event"><div class="event-top"><span>' + escapeText(t("studio.resultsTab", undefined, "Results")) + '</span><span>' + escapeText(state.studioBridgeLastDryRunId || t("common.idle", undefined, "idle")) + '</span></div><strong>' + escapeText(t("studio.debugRunHint", undefined, "Start a fresh dry run from Build to watch graph progression and key signals here.")) + '</strong><div class="hint">' + escapeText(t("build.openDebugHint", undefined, "Review the latest dry-run result here, or open Run for full controls.")) + '</div></div>';
+    function renderStudioDebugWorkspaceContent() {
       return [
-        '<div class="structure-list studio-debug-panel-stack">',
-        ((snapshot.runId)
-          ? '<div class="actions compact"><button class="button subtle" id="studio-debug-open-operate"' + disabled + '>' + escapeText(t("build.openOperate", undefined, "Open Run")) + '</button></div>'
-          : ''),
-        resultSummaryHtml,
+        renderStudioDebugTabContent(),
+        '<div class="studio-debug-results-section">',
+        renderStudioResultTabContent(),
+        renderStudioLogsTabContent(),
         '</div>'
       ].join("");
+    }
+
+    function renderStudioResultTabContent() {
+      return renderStudioDebugOutcomePanel({
+        snapshot: state.studioDebugSnapshot,
+        t
+      });
     }
 
     function forceStudioWorkbenchSideTab(tab) {
@@ -3003,16 +2968,25 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
       const kindLabel = findStudioBridgeElement("[data-studio-selection-kind-label]");
       const title = findStudioBridgeElement("[data-studio-selection-title]");
       const rolePackage = findStudioBridgeElement("[data-studio-selection-role-package]");
-      const selectionPanel = findStudioBridgeElement('[data-studio-selection-panel="selection"]');
       const structurePanel = findStudioBridgeElement('[data-studio-selection-panel="structure"]');
       const structureContent = findStudioBridgeElement("[data-studio-selection-structure-content]");
       const inlineEditor = findStudioBridgeElement("[data-studio-selection-inline-editor]");
       const debugPanel = findStudioBridgeElement('[data-studio-selection-panel="debug"]');
-      const logsPanel = findStudioBridgeElement('[data-studio-selection-panel="logs"]');
-      const resultPanel = findStudioBridgeElement('[data-studio-selection-panel="result"]');
-      if (!shell || !overlay || !dialog || !kindLabel || !title || !rolePackage || !selectionPanel || !structurePanel || !structureContent || !inlineEditor || !debugPanel || !logsPanel) {
+      if (!shell || !overlay || !dialog || !kindLabel || !title || !rolePackage || !structurePanel || !structureContent || !inlineEditor || !debugPanel) {
         return;
       }
+      const setDebugPanelHtml = (html) => {
+        const disclosureStates = new Map();
+        for (const disclosure of Array.from(debugPanel.querySelectorAll?.("details") || [])) {
+          const key = disclosure.querySelector?.("summary")?.textContent || "";
+          if (key) disclosureStates.set(key, disclosure.open);
+        }
+        debugPanel.innerHTML = html;
+        for (const disclosure of Array.from(debugPanel.querySelectorAll?.("details") || [])) {
+          const key = disclosure.querySelector?.("summary")?.textContent || "";
+          if (disclosureStates.has(key)) disclosure.open = disclosureStates.get(key);
+        }
+      };
       const selectedRoleIdValue = state.studioBridgeSelectedRoleId || "";
       const selectedFlowKeyValue = state.studioBridgeSelectedFlowKey || "";
       const selectionKind = selectedRoleIdValue
@@ -3020,16 +2994,7 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
         : selectedFlowKeyValue
           ? "flow"
           : "";
-      const hasSelectionContent = Boolean(selectionKind || state.studioSelectionCommandFormOpen);
-      const activeTab = state.studioWorkbenchSideTab === "selection" && hasSelectionContent
-        ? "selection"
-        : state.studioWorkbenchSideTab === "debug"
-          ? "debug"
-          : state.studioWorkbenchSideTab === "logs"
-            ? "logs"
-          : state.studioWorkbenchSideTab === "result"
-            ? "result"
-          : "structure";
+      const activeTab = state.studioWorkbenchSideTab === "debug" ? "debug" : "structure";
       const structureHtml = renderStudioBridgeStructureHtml({
         bridge: resolveStudioBridgeForDisplay(),
         selectedRoleId: state.studioBridgeSelectedRoleId,
@@ -3044,16 +3009,10 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
       overlay.classList.toggle("is-collapsed", collapsed);
       shell.classList.toggle("has-collapsed-selection", collapsed);
       const structureChanged = setInnerHtmlIfChanged(structureContent, structureHtml);
-      const showInlineEditor = activeTab === "structure" && Boolean(selectionKind);
+      const showInlineEditor = activeTab === "structure" && Boolean(selectionKind || state.studioSelectionCommandFormOpen);
       inlineEditor.hidden = !showInlineEditor;
-      (showInlineEditor ? inlineEditor : selectionPanel).appendChild(rolePackage);
-      selectionPanel.hidden = activeTab !== "selection";
       structurePanel.hidden = activeTab !== "structure";
       debugPanel.hidden = activeTab !== "debug";
-      logsPanel.hidden = activeTab !== "logs";
-      if (resultPanel) {
-        resultPanel.hidden = activeTab !== "result";
-      }
       for (const button of Array.from(dialog.querySelectorAll?.("[data-studio-side-tab]") || [])) {
         const tab = button.getAttribute("data-studio-side-tab") || "";
         const active = tab === activeTab;
@@ -3068,24 +3027,9 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
       if (activeTab === "debug") {
         kindLabel.textContent = t("build.mode.debug", undefined, "Debug");
         title.textContent = selectedRoleIdValue || state.selectedRunId || state.studioBridgeLastDryRunId || t("studio.graphWorkspace", undefined, "Graph workspace");
-      } else if (activeTab === "logs") {
-        kindLabel.textContent = t("studio.logsTab", undefined, "Logs");
-        title.textContent = state.selectedRunId || state.studioBridgeLastDryRunId || t("studio.graphWorkspace", undefined, "Graph workspace");
-      } else if (activeTab === "result") {
-        kindLabel.textContent = t("studio.resultsTab", undefined, "Results");
-        title.textContent = state.selectedRunId || state.studioBridgeLastDryRunId || t("studio.graphWorkspace", undefined, "Graph workspace");
       } else if (activeTab === "structure") {
-        kindLabel.textContent = t("studio.retrievalTab", undefined, "Browse");
-        title.textContent = t("studio.graphWorkspace", undefined, "Graph workspace");
-      } else if (selectionKind === "role") {
-        kindLabel.textContent = t("studio.authoringTab", undefined, "Compose");
-        title.textContent = selectedRoleIdValue;
-      } else if (selectionKind === "flow") {
-        kindLabel.textContent = t("studio.authoringTab", undefined, "Compose");
-        title.textContent = selectedFlowKeyValue;
-      } else if (state.studioSelectionCommandFormOpen) {
-        kindLabel.textContent = t("studio.authoringTab", undefined, "Compose");
-        title.textContent = state.studioSelectionCommandKind || t("common.edit", undefined, "edit");
+        kindLabel.textContent = selectionKind ? t("studio.retrievalTab", undefined, "Configuration") : t("studio.graphWorkspace", undefined, "Graph workspace");
+        title.textContent = selectedRoleIdValue || selectedFlowKeyValue || state.studioSelectionCommandKind || t("studio.graphWorkspace", undefined, "Graph workspace");
       } else {
         kindLabel.textContent = t("studio.graphWorkspace", undefined, "Graph workspace");
         title.textContent = t("studio.selectRole", undefined, "Select a role to inspect metadata.");
@@ -3101,7 +3045,7 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
         collapseButton.textContent = collapsed ? ">" : "<";
       }
 
-      if ((activeTab === "selection" || activeTab === "structure") && selectionKind === "role") {
+      if (activeTab === "structure" && selectionKind === "role") {
         ensureStudioRoleConfigEditor(selectedRoleIdValue);
         ensureStudioExecutionConfigEditor(selectedRoleIdValue);
         const selectedRoleForSummary = (resolveStudioBridgeForDisplay()?.extracted?.roles || [])
@@ -3155,12 +3099,8 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
             open: false
           })
         ].join("");
-        debugPanel.innerHTML = renderStudioDebugTabContent();
-        logsPanel.innerHTML = "";
-        if (resultPanel) {
-          resultPanel.innerHTML = "";
-        }
-      } else if ((activeTab === "selection" || activeTab === "structure") && selectionKind === "flow") {
+        setDebugPanelHtml(renderStudioDebugWorkspaceContent());
+      } else if (activeTab === "structure" && selectionKind === "flow") {
         const editorFlowKey = studioFlowConfigEditorFlowKeyForSelectionDialog();
         const selectedFlow = resolveSelectedStudioFlowByKey(editorFlowKey);
         const dirtyFlowKey = String(state.studioFlowConfigEditor?.flowKey || "");
@@ -3205,41 +3145,13 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
         } else {
           rolePackage.innerHTML = '<div class="hint">' + escapeText(t("studio.selectFlow", undefined, "Select a flow to inspect event metadata.")) + "</div>";
         }
-        debugPanel.innerHTML = renderStudioDebugTabContent();
-        logsPanel.innerHTML = "";
-        if (resultPanel) {
-          resultPanel.innerHTML = "";
-        }
+        setDebugPanelHtml(renderStudioDebugWorkspaceContent());
       } else if (activeTab === "debug") {
         rolePackage.innerHTML = "";
-        debugPanel.innerHTML = renderStudioDebugTabContent();
-        logsPanel.innerHTML = "";
-        if (resultPanel) {
-          resultPanel.innerHTML = "";
-        }
-      } else if (activeTab === "logs") {
-        rolePackage.innerHTML = "";
-        debugPanel.innerHTML = "";
-        logsPanel.innerHTML = renderStudioLogsTabContent();
-        if (resultPanel) {
-          resultPanel.innerHTML = "";
-        }
-      } else if (activeTab === "result") {
-        rolePackage.innerHTML = "";
-        if (resultPanel) {
-          debugPanel.innerHTML = "";
-          logsPanel.innerHTML = "";
-          resultPanel.innerHTML = renderStudioResultTabContent();
-        } else {
-          debugPanel.innerHTML = renderStudioResultTabContent();
-        }
+        setDebugPanelHtml(renderStudioDebugWorkspaceContent());
       } else {
         rolePackage.innerHTML = "";
-        debugPanel.innerHTML = "";
-        logsPanel.innerHTML = "";
-        if (resultPanel) {
-          resultPanel.innerHTML = "";
-        }
+        setDebugPanelHtml("");
       }
       let roleIoModalRoot = workbenchBodyEl.querySelector("[data-studio-role-io-modal-root]");
       if (!roleIoModalRoot && state.studioRoleIoModal?.open) {
@@ -3286,27 +3198,35 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
         const sideTabButton = closestSelectionAction(event.target, "data-studio-side-tab");
         if (sideTabButton) {
           const nextTab = sideTabButton.getAttribute("data-studio-side-tab") || "structure";
-          if (nextTab === "selection" && !state.studioBridgeSelectedRoleId && !state.studioBridgeSelectedFlowKey && !state.studioSelectionCommandFormOpen) {
-            return;
-          }
           if (nextTab === "debug") {
             syncWorkbenchRunDraft({
               systemPath: state.workbenchSavedPath || "system.mmd",
               dryRun: true
             }, { keepErrors: true });
           }
-          state.studioWorkbenchSideTab = nextTab === "selection"
-            ? "selection"
-            : nextTab === "debug"
-              ? "debug"
-              : nextTab === "logs"
-                ? "logs"
-              : nextTab === "result"
-                ? "result"
-              : "structure";
+          state.studioWorkbenchSideTab = nextTab === "debug" ? "debug" : "structure";
           renderStudioSelectionDialog();
           if (nextTab === "debug") {
             focusWorkbenchRunInput();
+          }
+          event.preventDefault();
+          return;
+        }
+        const openReviewButton = closestSelectionAction(event.target, "data-studio-open-review");
+        if (openReviewButton) {
+          const runId = state.studioDebugSnapshot?.runId || "";
+          const reviewId = openReviewButton.getAttribute("data-studio-open-review") || "";
+          if (runId && reviewId) {
+            void (async () => {
+              state.consoleTab = runConsoleTab();
+              renderConsoleTabs();
+              await selectRun(runId);
+              state.operateTab = "reviews";
+              renderOperateTabs();
+              await selectReview(runId, reviewId);
+            })().catch((error) => {
+              setFlash("error", t("studio.debugReviewOpenFailed", { message: error instanceof Error ? error.message : String(error) }, "Could not open this review: {message}"));
+            });
           }
           event.preventDefault();
           return;
@@ -3322,17 +3242,20 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
         }
         const logRoleButton = closestSelectionAction(event.target, "data-studio-log-role-id");
         if (logRoleButton) {
-          const loopIterationValue = logRoleButton.getAttribute("data-studio-log-loop-iteration");
-          const switched = focusStudioRuntimeSelection({
+          focusStudioRuntimeSelection({
             roleId: logRoleButton.getAttribute("data-studio-log-role-id") || ""
           });
-          if (switched) {
-            void openStudioRoleIoModal({
-              roleId: logRoleButton.getAttribute("data-studio-log-role-id") || "",
-              branchId: logRoleButton.getAttribute("data-studio-log-branch-id") || "",
-              loopIteration: loopIterationValue === null || loopIterationValue === "" ? undefined : Number(loopIterationValue)
-            });
-          }
+          event.preventDefault();
+          return;
+        }
+        const logIoButton = closestSelectionAction(event.target, "data-studio-log-io-role-id");
+        if (logIoButton) {
+          const loopIterationValue = logIoButton.getAttribute("data-studio-log-io-loop-iteration");
+          void openStudioRoleIoModal({
+            roleId: logIoButton.getAttribute("data-studio-log-io-role-id") || "",
+            branchId: logIoButton.getAttribute("data-studio-log-io-branch-id") || "",
+            loopIteration: loopIterationValue === null || loopIterationValue === "" ? undefined : Number(loopIterationValue)
+          });
           event.preventDefault();
           return;
         }
@@ -4635,7 +4558,7 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
           state.studioSelectionCommandFormOpen = Boolean(formState?.open);
           state.studioSelectionCommandKind = String(formState?.kind || "");
           if (formState?.open) {
-            state.studioWorkbenchSideTab = "selection";
+            state.studioWorkbenchSideTab = "structure";
           } else if (!state.studioBridgeSelectedRoleId && !state.studioBridgeSelectedFlowKey) {
             state.studioWorkbenchSideTab = isStudioRuntimeSideTab(state.studioWorkbenchSideTab)
               ? state.studioWorkbenchSideTab
@@ -7126,10 +7049,11 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
         return;
       }
       try {
-        const [detail, eventsPayload, graph] = await Promise.all([
+        const [detail, eventsPayload, graph, reviews] = await Promise.all([
           requestJson(API_PREFIX + "/runs/" + encodeURIComponent(runId)),
           requestJson(buildTimelineQuery(runId, { cursor: 0, limit: 250 })),
-          requestJson(API_PREFIX + "/runs/" + encodeURIComponent(runId) + "/graph")
+          requestJson(API_PREFIX + "/runs/" + encodeURIComponent(runId) + "/graph"),
+          requestJson(API_PREFIX + "/runs/" + encodeURIComponent(runId) + "/reviews").catch(() => null)
         ]);
         if (requestId !== state.studioDebugSnapshotRequestId) return;
         state.studioDebugSnapshot = {
@@ -7137,6 +7061,7 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
           detail,
           events: eventsPayload.events || [],
           graph,
+          reviews,
           logsLoaded: false,
           logsStale: false,
           engineLogs: [],
@@ -7144,7 +7069,7 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
         };
       } catch {
         if (requestId === state.studioDebugSnapshotRequestId) {
-          state.studioDebugSnapshot = { runId, loadingError: true, events: [], graph: null, detail: null };
+          state.studioDebugSnapshot = { runId, loadingError: true, events: [], graph: null, reviews: null, detail: null };
         }
       }
       if (requestId === state.studioDebugSnapshotRequestId) {
@@ -7232,6 +7157,10 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
         return;
       }
       state.reviews = reviewsPayload;
+      if (state.studioDebugSnapshot?.runId === runId) {
+        state.studioDebugSnapshot.reviews = reviewsPayload;
+        renderStudioSelectionDialog();
+      }
       state.selectedReviewId = selectReviewId({
         currentReviewId: state.selectedReviewId,
         reviewsPayload

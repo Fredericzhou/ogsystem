@@ -973,9 +973,9 @@ test("client renderer graph canvas escapes selected ids before composing HTML", 
   assert.match(html, /--studio-inspector-width:412px/);
   assert.match(html, /data-studio-inspector-resize="1"/);
   assert.match(html, /data-studio-side-tab="debug"/);
-  assert.match(html, /data-studio-side-tab="logs"/);
   assert.match(html, /data-studio-selection-panel="debug"/);
-  assert.match(html, /data-studio-selection-panel="logs"/);
+  assert.doesNotMatch(html, /data-studio-side-tab="(?:logs|results)"/);
+  assert.doesNotMatch(html, /data-studio-selection-panel="(?:logs|results)"/);
   assert.doesNotMatch(html, /<script>alert\(1\)<\/script>/);
 });
 

@@ -7,6 +7,9 @@ guidance.
 Start with [OGS Core Concepts](ogsystem-core-concepts.md) when evaluating the product boundary or
 the meaning of Role, Responsibility Seat, nested System, and runtime execution facts.
 
+See [OGS Multi-Agent Graph Orchestration System](visualizer-console.md) for the design/debug workspace, role handoffs,
+human review, role I/O, and run-history views.
+
 The core modeling rule is role-first: a graph node is a responsibility role/agent seat, and a
 Flow is the direct handoff from one completed role to another. Events, actions, process steps,
 and runtime facts belong on flows or in run details, not as Role nodes.

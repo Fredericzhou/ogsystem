@@ -22,7 +22,7 @@ test("maps zh query alias to zh-CN", () => {
 
 test("falls back unsupported query locale to en", () => {
   assert.equal(resolveLocaleFromQuery("?lang=fr"), "en");
-  assert.equal(getDictionary("fr")["app.title"], "OGSystem Visualizer");
+  assert.equal(getDictionary("fr")["app.title"], "OGS Multi-Agent Graph Orchestration System");
   assert.equal(isSupportedLocale("fr"), false);
 });
 
@@ -42,7 +42,7 @@ test("translator returns pure text and preserves interpolated HTML-like text", (
   const t = createTranslator("en");
   const value = interpolate("Artifact {name} loaded", { name: "<img src=x onerror=alert(1)>" });
   assert.equal(value, "Artifact <img src=x onerror=alert(1)> loaded");
-  assert.equal(t("app.title"), "OGSystem Visualizer");
+  assert.equal(t("app.title"), "OGS Multi-Agent Graph Orchestration System");
 });
 
 test("translator uses zh-CN dictionary", () => {

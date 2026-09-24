@@ -247,7 +247,7 @@ test("Studio Bridge renders and edits through the real graph workspace", async (
     await expect(debugPanel).toBeVisible();
     await expect(debugPanel.locator("#workbench-run-input")).toBeVisible();
     await expect(debugPanel.locator("#workbench-run-runtime-path")).toBeHidden();
-    await debugPanel.locator("summary").click();
+    await debugPanel.locator("details").first().locator("summary").click();
     await expect(debugPanel.locator("#workbench-run-runtime-path")).toBeVisible();
     await expect(debugPanel.locator("#workbench-run-user-profile-path")).toBeVisible();
     await expect(debugPanel.locator("#workbench-run-laws-path")).toBeVisible();
@@ -276,7 +276,7 @@ test("Studio Bridge renders and edits through the real graph workspace", async (
     await expect(page.locator("#release-gate")).toContainText("Evidence and export scope");
     await page.getByRole("tab", { name: designTabName }).click();
     await expect(page.locator("#studio-graph-root")).toBeVisible();
-    await expect(page.locator("[data-studio-selection-dialog]")).toContainText(/Browse|检索/);
+    await expect(page.locator("[data-studio-selection-dialog]")).toContainText(/Configuration|配置/);
     await expect(page.locator('[data-studio-side-tab="structure"]')).toHaveAttribute("aria-pressed", "true");
     await expect(page.locator("[data-studio-bridge-filter]")).toBeVisible();
     await expect(page.locator("[data-studio-bridge-list-mode]")).toBeVisible();
@@ -485,7 +485,7 @@ test("Studio Bridge renders and edits through the real graph workspace", async (
     await page.locator('[data-studio-side-tab="debug"]').click();
     await expect(debugPanel.locator("#workbench-run-input")).toBeVisible();
     await expect(debugPanel.locator("#workbench-run-runtime-path")).toBeHidden();
-    await debugPanel.locator("summary").click();
+    await debugPanel.locator("details").first().locator("summary").click();
     await expect(debugPanel.locator("#workbench-run-runtime-path")).toBeVisible();
     await expect(debugPanel.locator("#workbench-run-user-profile-path")).toBeVisible();
     await expect(debugPanel.locator("#workbench-run-laws-path")).toBeVisible();
@@ -494,7 +494,6 @@ test("Studio Bridge renders and edits through the real graph workspace", async (
     await debugPanel.locator("#workbench-run-user-profile-path").fill(".ogs/user-profile.json");
     await debugPanel.locator("#workbench-run-laws-path").fill(".ogs/laws.json");
     await debugPanel.locator("#workbench-start-run").click();
-    const logsPanel = page.locator('[data-studio-selection-panel="logs"]');
     await expect(debugPanel).toBeVisible();
     await expect(debugPanel.locator("#workbench-run-input")).toBeVisible();
     await expect(debugPanel.locator("#workbench-start-run")).toBeVisible();
@@ -504,10 +503,9 @@ test("Studio Bridge renders and edits through the real graph workspace", async (
     await expect(page.getByRole("tab", { name: designTabName })).toHaveAttribute("aria-selected", "true");
     await expect(page.getByRole("tab", { name: runTabName })).toHaveAttribute("aria-selected", "false");
     await expect(page.locator('[data-studio-side-tab="debug"]')).toHaveAttribute("aria-pressed", "true");
-    await page.locator('[data-studio-side-tab="logs"]').click();
-    await expect(logsPanel).toBeVisible();
-    await expect(logsPanel).toContainText(/Structured trace|结构化轨迹/);
-    await expect(page.locator('[data-studio-side-tab="logs"]')).toHaveAttribute("aria-pressed", "true");
+    await expect(debugPanel).toContainText(/Structured trace|结构化轨迹/);
+    await debugPanel.locator("#studio-logs-load-raw").click();
+    await expect(debugPanel).toContainText(/Raw engine and role streams/);
     await expectDockedSelectionAligned(page);
     await page.getByRole("tab", { name: runTabName }).click();
     await expect(page.locator("body")).toHaveClass(/show-run-sidebar/);
@@ -583,18 +581,21 @@ test("Design shows the latest dry-run trace and keeps it separate from Run selec
       return payload.runs.find((run) => run.isSimulation === true).runId;
     });
 
-    await page.locator('[data-studio-side-tab="logs"]').click();
-    const logsPanel = page.locator('[data-studio-selection-panel="logs"]');
-    await expect(logsPanel).toContainText(runId, { timeout: 15000 });
-    await expect.poll(async () => logsPanel.locator(".studio-debug-trace-list").evaluate((element) =>
+    await expect(debugPanel).toContainText(runId, { timeout: 15000 });
+    await expect(debugPanel.locator("[data-studio-debug-summary]")).toBeVisible();
+    await expect(debugPanel.locator(".studio-debug-trace-list")).toBeVisible();
+    await expect.poll(async () => debugPanel.locator(".studio-debug-trace-list").evaluate((element) =>
       element.scrollWidth <= element.clientWidth + 1
     )).toBe(true);
+    await debugPanel.locator("#studio-logs-load-raw").click();
+    await expect(debugPanel).toContainText(/Raw engine and role streams/);
 
     await page.getByRole("tab", { name: await resolveLifecycleTabName(page, ["Operate", "Run"]) }).click();
     await expect(page.locator("#sidebar")).toBeVisible();
     await page.getByRole("tab", { name: await resolveLifecycleTabName(page, ["Build", "Design"]) }).click();
-    await page.locator('[data-studio-side-tab="logs"]').click();
-    await expect(logsPanel).toContainText(runId);
+    await page.locator('[data-studio-side-tab="debug"]').click();
+    await expect(debugPanel).toContainText(runId);
+    await expect(debugPanel.locator(".studio-debug-trace-list")).toBeVisible();
   } finally {
     await page.close();
     await new Promise<void>((resolve) => started.server.close(() => resolve()));

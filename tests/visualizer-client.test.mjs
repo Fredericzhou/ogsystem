@@ -19,7 +19,8 @@ import {
   renderStudioFlowConfigEditor,
   renderStudioRoleConfigEditor,
   renderStudioBridgeInspector,
-  renderStudioBridgePanel
+  renderStudioBridgePanel,
+  renderStudioDebugOutcomePanel
 } from "../dist/visualizer/client-renderers.js";
 import { authoringToCanvasDocument } from "../dist/visualizer/studio-authoring.js";
 import { latestRoleContract } from "../tests-support/role-fixture.mjs";
@@ -155,6 +156,50 @@ test("Studio retrieval separates role participants from flow handoffs", () => {
   assert.doesNotMatch(html, /data-studio-role-list-section open/);
   assert.doesNotMatch(html, /data-studio-flow-list-section open/);
   assert.doesNotMatch(html, /toolbar-row compact"><input data-studio-bridge-filter/);
+});
+
+test("Studio debug outcome prioritizes pending human review and keeps run state compact", () => {
+  const html = renderStudioDebugOutcomePanel({
+    snapshot: {
+      runId: "run-123",
+      detail: {
+        header: { status: "running", transitionCount: 3, pendingReviewCount: 1 },
+        state: { status: "running" }
+      },
+      graph: { graph: { edges: [{}, {}] } },
+      reviews: {
+        reviews: [{
+          reviewId: "review-1",
+          currentStatus: "pending",
+          roleId: "proposal-author",
+          branchId: "proposal-author@1#1",
+          decisionPhase: "requested",
+          reworkTarget: "proposal-author"
+        }]
+      }
+    },
+    t: testTranslator
+  });
+  assert.match(html, /Human intervention required/);
+  assert.match(html, /proposal-author/);
+  assert.match(html, /review-1/);
+  assert.match(html, /data-studio-open-review="review-1"/);
+  assert.match(html, /studio-debug-summary/);
+  assert.doesNotMatch(html, /decisionPhase/);
+});
+
+test("Studio debug outcome reports unavailable review detail without hiding pending state", () => {
+  const html = renderStudioDebugOutcomePanel({
+    snapshot: {
+      runId: "run-123",
+      detail: { header: { status: "running", pendingReviewCount: 1 } },
+      graph: { graph: { edges: [] } },
+      reviews: null
+    },
+    t: testTranslator
+  });
+  assert.match(html, /Human intervention required/);
+  assert.match(html, /Review details are not available yet/);
 });
 
 const PAGE_ELEMENT_ATTRIBUTES = {
@@ -4073,8 +4118,11 @@ test("visualizer client edits the Mermaid workbench, saves, and starts a run", a
       ?.getAttribute("aria-pressed"),
     "false"
   );
-  assert.ok(findStudioSideTabButton(harness, "result"));
-  assert.equal(harness.document.getElementById("console-panel-build").hidden, false);
+  assert.ok(findStudioSideTabButton(harness, "structure"));
+  assert.ok(findStudioSideTabButton(harness, "debug"));
+  assert.equal(harness.document.getElementById("workbench-body").querySelectorAll("[data-studio-side-tab]").length, 2);
+  const debugBody = harness.document.getElementById("workbench-body").textContent;
+  assert.match(debugBody, /Debug|Start dry run/i);
 });
 
 test("visualizer client blocks start run submit when run input is empty", async () => {
@@ -4154,9 +4202,10 @@ test("visualizer client opens Studio Bridge and keeps authoring affordances on t
   assert.match(harness.document.getElementById("workbench-body").textContent, /demo-analyst|nothing selected/i);
   assert.equal(harness.document.getElementById("workbench-tabs").textContent, "");
   assert.match(harness.document.getElementById("workbench-body").textContent, /demo-analyst|nothing selected/i);
-  assert.match(harness.document.getElementById("workbench-body").textContent, /Browse|检索/);
+  assert.match(harness.document.getElementById("workbench-body").textContent, /Back to browse/);
   assert.ok(findStudioSideTabButton(harness, "structure"));
-  assert.ok(findStudioSideTabButton(harness, "logs"));
+  assert.ok(findStudioSideTabButton(harness, "debug"));
+  assert.equal(harness.document.getElementById("workbench-body").querySelectorAll("[data-studio-side-tab]").length, 2);
   assert.ok(harness.document.getElementById("workbench-body").querySelectorAll("[data-studio-role-id]").length > 0);
   assert.ok(harness.document.getElementById("workbench-body").querySelectorAll("[data-studio-flow-key]").length > 0);
   assert.match(harness.document.getElementById("workbench-status").textContent, /disk in sync/i);
@@ -4447,10 +4496,10 @@ test("visualizer client shows role config labels and opens role I/O modal from s
   const harness = await createClientHarness();
   await openDesignTab(harness);
   const workbenchBody = harness.document.getElementById("workbench-body");
-  workbenchBody.innerHTML += '<button type="button" data-studio-log-role-id="demo-analyst" data-studio-log-branch-id="demo-analyst@1#1">demo-analyst</button>';
+  workbenchBody.innerHTML += '<button type="button" data-studio-log-io-role-id="demo-analyst" data-studio-log-io-branch-id="demo-analyst@1#1">View I/O</button>';
   const roleLogButton = workbenchBody
-    .querySelectorAll("[data-studio-log-role-id]")
-    .find((button) => button.getAttribute("data-studio-log-role-id") === "demo-analyst");
+    .querySelectorAll("[data-studio-log-io-role-id]")
+    .find((button) => button.getAttribute("data-studio-log-io-role-id") === "demo-analyst");
   assert.ok(roleLogButton);
   await roleLogButton.click();
   await waitForCondition(() =>

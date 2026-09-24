@@ -5,6 +5,7 @@ import {
   buildProjection,
   createLayoutDigest,
   createStoredLayoutProjection,
+  formatStudioNodeLabel,
   layoutDigest,
   layoutNodeSize,
   STUDIO_EDGE_TERMINAL_STUB_LENGTH,
@@ -186,6 +187,20 @@ test("ELK follows declared branch order and expands nodes for readable labels", 
   assert.ok(size.width > longNode.layout.width || size.height > longNode.layout.height);
 });
 
+test("role labels stay explicit without forcing oversized nodes in a flow layout", () => {
+  const role = node("reviewer", {
+    label: "Debate Reviewer",
+    structure: { loopScope: { loopId: "debate-loop" }, review: true },
+    badges: ["waiting_review"]
+  });
+  const label = formatStudioNodeLabel(role);
+  const size = layoutNodeSize(role);
+
+  assert.match(label, /^Role: Debate Reviewer/);
+  assert.doesNotMatch(label, /Role \/ Agent:/);
+  assert.ok(size.width <= 260);
+});
+
 test("stored routing bundles same-direction fan-out and fan-in stubs", () => {
   const view = graph([
     node("source", { layout: { x: 100, y: 120, width: 180, height: 84 } }),
@@ -274,6 +289,42 @@ test("ELK routing bundles same-direction fan-out and fan-in stubs", async () => 
       const previous = routing.routePoints[index - 1];
       const current = routing.routePoints[index];
       assert.equal(previous.x === current.x || previous.y === current.y, true);
+    }
+  }
+});
+
+test("ELK keeps converging output flows outside the output node in every layout", async () => {
+  const viewModel = fixture("fan-out");
+  for (const [mode, expectedSide] of [["flow", "left"], ["compact", "left"], ["stacked", "top"]]) {
+    const projection = await createElkLayoutProjection(viewModel, mode);
+    const output = projection.nodes.find((item) => item.id === "output");
+    const incoming = projection.edges.filter((item) => item.target === "output");
+    assert.equal(incoming.length, 2);
+
+    for (const edge of incoming) {
+      assert.equal(edge.routing.target.side, expectedSide, `${mode}: ${edge.id} should enter output from its upstream side`);
+      const target = expectedSide === "left"
+        ? { x: output.x, y: output.y + output.height / 2 + edge.routing.target.offset }
+        : { x: output.x + output.width / 2 + edge.routing.target.offset, y: output.y };
+      const points = [...edge.routing.routePoints, target];
+      for (const point of edge.routing.routePoints) {
+        assert.equal(
+          point.x > output.x && point.x < output.x + output.width &&
+            point.y > output.y && point.y < output.y + output.height,
+          false,
+          `${mode}: ${edge.id} has a route point inside output`
+        );
+      }
+      for (let index = 1; index < points.length; index += 1) {
+        const previous = points[index - 1];
+        const current = points[index];
+        const crossesOutput = previous.y === current.y
+          ? previous.y > output.y && previous.y < output.y + output.height &&
+            Math.max(Math.min(previous.x, current.x), output.x) < Math.min(Math.max(previous.x, current.x), output.x + output.width)
+          : previous.x === current.x && previous.x > output.x && previous.x < output.x + output.width &&
+            Math.max(Math.min(previous.y, current.y), output.y) < Math.min(Math.max(previous.y, current.y), output.y + output.height);
+        assert.equal(crossesOutput, false, `${mode}: ${edge.id} crosses through output`);
+      }
     }
   }
 });
