@@ -20,6 +20,7 @@ import {
   syncProjectModels,
 } from "../runtime/project-lifecycle.js";
 import { redactUnknown } from "../runtime/redaction.js";
+import { loadModelSelection } from "../runtime/model-selection.js";
 import { loadConversationRunProjection, normalizeConversationItemStatus } from "../runtime/conversation-projector.js";
 import {
   inspectRun,
@@ -660,7 +661,8 @@ async function handleApiStudioAuthoringImportMmd(
     throw new HttpError(400, "SYSTEM_SOURCE_REQUIRED", "systemSource is required.");
   }
   const systemPath = asString(body.systemPath) ?? resolve(workdir, "system.mmd");
-  const authoring = importMermaidToAuthoring({ workdir, systemPath, systemSource });
+  const modelSelection = await loadModelSelection(resolve(workdir, ".ogs", "model-selection.json"));
+  const authoring = importMermaidToAuthoring({ workdir, systemPath, systemSource, modelSelection });
   jsonResponse(response, 200, {
     workdir,
     systemPath,

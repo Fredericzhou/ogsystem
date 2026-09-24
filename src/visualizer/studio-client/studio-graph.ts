@@ -103,6 +103,8 @@ type StudioGraphLabelKey =
 export type StudioGraphLabels = Partial<Record<StudioGraphLabelKey, string>>;
 
 export type StudioGraphBridgeOptions = {
+  initialLayoutMode?: StudioLayoutMode;
+  forceInitialAutoLayout?: boolean;
   authoring?: StudioAuthoringDocument | null;
   canvas?: StudioCanvasSnapshot | null;
   viewModel?: GraphViewModel | null;
@@ -296,6 +298,9 @@ export class StudioGraphIsland {
 
   constructor(private root: HTMLElement, initialOptions: StudioGraphBridgeOptions = {}) {
     this.options = initialOptions;
+    if (initialOptions.initialLayoutMode) {
+      this.layoutMode = initialOptions.initialLayoutMode;
+    }
     this.root.classList.add("studio-graph-island");
     this.root.innerHTML = [
       '<div class="studio-graph-toolbar">',
@@ -1568,7 +1573,12 @@ export class StudioGraphIsland {
     if (!signature || (!this.isReadOnly() && this.hasRenderedProjection) || this.lastDefaultAutoLayoutSignature === signature) {
       return false;
     }
-    if (!this.isReadOnly() && !this.hasRenderedProjection && this.hasCompleteStoredRoleLayout()) {
+    if (
+      !this.isReadOnly() &&
+      !this.options.forceInitialAutoLayout &&
+      !this.hasRenderedProjection &&
+      this.hasCompleteStoredRoleLayout()
+    ) {
       this.lastDefaultAutoLayoutSignature = signature;
       return false;
     }

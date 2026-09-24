@@ -188,6 +188,7 @@ test("Studio Bridge renders and edits through the real graph workspace", async (
       contentLeft: 0
     });
     await expect(page.locator("#studio-graph-root")).toBeVisible();
+    await expect(page.locator("[data-studio-graph-layout]")).toHaveValue("flow");
     await waitForStudioCell(page, "demo-analyst");
     await expectDockedSelectionAligned(page);
     await expect(page.getByText(/\bX6\b/)).toHaveCount(0);
@@ -243,6 +244,30 @@ test("Studio Bridge renders and edits through the real graph workspace", async (
     await expect(page.locator("#studio-graph-root")).toBeVisible();
     await expect(page.locator("[data-studio-selection-dialog]")).toContainText(/Browse|检索/);
     await expect(page.locator('[data-studio-side-tab="structure"]')).toHaveAttribute("aria-pressed", "true");
+    await expect(page.locator("[data-studio-bridge-filter]")).toBeVisible();
+    await expect(page.locator("[data-studio-bridge-list-mode]")).toBeVisible();
+    const roleListSection = page.locator("[data-studio-role-list-section]");
+    const flowListSection = page.locator("[data-studio-flow-list-section]");
+    await expect(roleListSection).not.toHaveAttribute("open", "");
+    await expect(flowListSection).not.toHaveAttribute("open", "");
+    const roleSummary = roleListSection.locator("summary");
+    const roleSummaryBox = await roleSummary.boundingBox();
+    expect(roleSummaryBox).toBeTruthy();
+    if (roleSummaryBox) {
+      await page.mouse.click(roleSummaryBox.x + 8, roleSummaryBox.y + roleSummaryBox.height / 2);
+    }
+    await expect(roleListSection).toHaveAttribute("open", "");
+    await expect(roleListSection.locator("[data-studio-role-id]").first()).toBeVisible();
+    await flowListSection.locator("summary").click();
+    await expect(flowListSection).toHaveAttribute("open", "");
+    await expect(flowListSection.locator("[data-studio-flow-key]").first()).toBeVisible();
+    await expect(page.locator("[data-studio-selection-panel=\"structure\"]")).toContainText(/Roles · participants|角色 · 参与者/);
+    await expect(page.locator("[data-studio-selection-panel=\"structure\"]")).toContainText(/Flows · handoffs|流转 · 任务交接/);
+    const retrievalControlBoxes = await Promise.all([
+      page.locator("[data-studio-bridge-filter]").boundingBox(),
+      page.locator("[data-studio-bridge-list-mode]").boundingBox()
+    ]);
+    expect(retrievalControlBoxes[1].y).toBeGreaterThanOrEqual(retrievalControlBoxes[0].y + retrievalControlBoxes[0].height);
     await expect(page.locator('#studio-graph-root [data-studio-graph-action="validate"]')).toBeVisible();
     await expect(page.locator(".toolbar-group").filter({ hasText: "validation ok" }).first()).toBeVisible();
 
@@ -251,9 +276,11 @@ test("Studio Bridge renders and edits through the real graph workspace", async (
     await addRoleButton.click();
     const addRoleForm = page.locator('form[data-studio-command-form="add-role"]');
     await expect(addRoleForm).toBeVisible();
+    await expect(addRoleForm.locator('select[name="bindingKind"]')).toHaveValue("model");
     await addRoleForm.locator('input[name="mode"][value="custom"]').check();
     await addRoleForm.locator('input[name="roleId"]').fill("new-role");
     await addRoleForm.locator('input[name="title"]').fill("需求分析");
+    await addRoleForm.locator('select[name="bindingKind"]').selectOption("noop");
     await addRoleForm.locator('button[type="submit"]').click();
     await expect(page.locator("#studio-graph-root")).toBeVisible();
     await expect(page.locator('#studio-graph-root [data-cell-id="new-role"]').first()).toBeVisible();
@@ -457,6 +484,7 @@ test("Studio Bridge renders and edits through the real graph workspace", async (
     await expect(page.locator("#console-panel-debug")).toBeVisible();
     await expect(page.locator("#operate-tabpanel-graph")).toBeVisible();
     await expect(page.locator("#run-graph-root")).toBeVisible();
+    await expect(page.locator("#run-graph-root [data-studio-graph-layout]")).toHaveValue("compact");
     await expect(page.locator("#console-panel-logs")).toBeHidden();
     await expect(page.locator("#console-panel-artifacts")).toBeHidden();
     await page.getByRole("tab", { name: designTabName }).click();
@@ -476,6 +504,47 @@ test("Studio Bridge renders and edits through the real graph workspace", async (
     await collapseButton.click();
     await expect(page.locator(".studio-selection-overlay")).not.toHaveClass(/is-collapsed/);
     await expect(page.locator("[data-studio-canvas-shell]")).not.toHaveClass(/has-collapsed-selection/);
+  } finally {
+    await page.close();
+    await new Promise<void>((resolve) => started.server.close(() => resolve()));
+  }
+});
+
+test("Design shows the latest dry-run trace and keeps it separate from Run selection", async ({ page }) => {
+  const workdir = await mkdtemp(path.join(os.tmpdir(), "ogsystem-design-debug-trace-"));
+  await seedProject(workdir);
+  const started = await startVisualizationServer({ workdir, host: "127.0.0.1", port: 0 });
+  try {
+    await page.goto(started.url);
+    await page.getByRole("tab", { name: await resolveLifecycleTabName(page, ["Build", "Design"]) }).click();
+    const debugPanel = page.locator('[data-studio-selection-panel="debug"]');
+    await page.locator('[data-studio-side-tab="debug"]').click();
+    await debugPanel.locator("#workbench-run-input").fill("design trace UAT");
+    await debugPanel.locator("#workbench-start-run").click();
+
+    await expect.poll(async () => page.evaluate(async () => {
+      const response = await fetch("/api/v1/runs");
+      const payload = await response.json();
+      return payload.runs?.find((run) => run.isSimulation === true)?.runId || "";
+    }), { timeout: 30000 }).not.toBe("");
+    const runId = await page.evaluate(async () => {
+      const response = await fetch("/api/v1/runs");
+      const payload = await response.json();
+      return payload.runs.find((run) => run.isSimulation === true).runId;
+    });
+
+    await page.locator('[data-studio-side-tab="logs"]').click();
+    const logsPanel = page.locator('[data-studio-selection-panel="logs"]');
+    await expect(logsPanel).toContainText(runId, { timeout: 15000 });
+    await expect.poll(async () => logsPanel.locator(".studio-debug-trace-list").evaluate((element) =>
+      element.scrollWidth <= element.clientWidth + 1
+    )).toBe(true);
+
+    await page.getByRole("tab", { name: await resolveLifecycleTabName(page, ["Operate", "Run"]) }).click();
+    await expect(page.locator("#sidebar")).toBeVisible();
+    await page.getByRole("tab", { name: await resolveLifecycleTabName(page, ["Build", "Design"]) }).click();
+    await page.locator('[data-studio-side-tab="logs"]').click();
+    await expect(logsPanel).toContainText(runId);
   } finally {
     await page.close();
     await new Promise<void>((resolve) => started.server.close(() => resolve()));

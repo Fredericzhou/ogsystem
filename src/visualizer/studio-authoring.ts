@@ -462,12 +462,14 @@ export function importMermaidToAuthoring(args: {
   workdir: string;
   systemPath: string;
   systemSource: string;
+  modelSelection?: ModelSelectionConfig;
 }): StudioAuthoringDocument {
   return importSystemToAuthoring({
     workdir: args.workdir,
     systemPath: args.systemPath,
     system: parseSystemFromMermaidSource(args.systemSource),
-    systemSource: args.systemSource
+    systemSource: args.systemSource,
+    modelSelection: args.modelSelection
   });
 }
 

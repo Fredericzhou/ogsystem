@@ -451,7 +451,7 @@ export function applyStudioAuthoringCommand(args: {
     const roleId = nextRoleId(authoring, `${command.roleId}-copy`);
     const role: StudioAuthoringRole = source
       ? { ...source, roleId, title: source.title ? `${source.title} copy` : undefined }
-      : { roleId, title: roleId, bindingKind: "noop" };
+      : { roleId, title: roleId, bindingKind: "model" };
     const x = Number.isFinite(command.x) ? Number(command.x) : 120 + canvas.nodes.length * 260;
     const y = Number.isFinite(command.y) ? Number(command.y) : 120;
     authoring.roles[roleId] = role;

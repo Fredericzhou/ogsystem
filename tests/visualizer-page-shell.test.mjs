@@ -39,9 +39,15 @@ const REQUIRED_ELEMENT_IDS = [
 
 test("page shell keeps HTML, style, assets, and client script mounted", () => {
   const html = renderPageHtml("/tmp/<demo>&project", "/api/v1", { locale: "zh-CN" });
+  const styles = renderPageShellStyles();
   assert.match(html, /^<!doctype html>/);
   assert.match(html, /<html lang="zh-CN">/);
   assert.match(html, /<style>\n/);
+  assert.match(styles, /--surface-panel: var\(--panel\)/);
+  assert.match(styles, /--surface-section: var\(--panel-soft\)/);
+  assert.match(styles, /--surface-inset: var\(--panel-deep\)/);
+  assert.match(styles, /\.card \{[\s\S]*?background: var\(--surface-panel\)/);
+  assert.match(styles, /\.event \{[\s\S]*?background: var\(--surface-section\)/);
   assert.match(html, /<body>/);
   assert.match(html, /<script src="\/assets\/studio-graph\.js"><\/script>/);
   assert.match(html, /window\.__OGS_VISUALIZER_BOOTSTRAP__ = /);

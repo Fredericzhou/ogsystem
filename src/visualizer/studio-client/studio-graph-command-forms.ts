@@ -161,12 +161,14 @@ export function createDefaultStudioCommandFormState(args: {
   if (args.kind === "add-role") {
     const rolePackage = defaultRepositoryRolePackage(args.context);
     const roleId = rolePackage?.roleId || nextRoleId(args.context);
+    const models = extractStudioModelOptions(args.context);
     const fields: StudioAddRoleDraft = {
       mode: rolePackage ? "repository" : "custom",
       repositoryRoleId: rolePackage?.roleId,
       roleId,
       title: rolePackage?.name || rolePackage?.roleId || "",
-      bindingKind: "noop",
+      bindingKind: "model",
+      modelRef: models.find((model) => model.ref.startsWith("opencode/"))?.ref || models[0]?.ref,
       profileMode: "existing",
       newProfileId: profileIdFromRoleId(roleId)
     };

@@ -990,7 +990,7 @@ export function renderStudioRoleConfigEditor(args: {
   const disabled = saving ? " disabled" : "";
   const roleId = String(data.roleId ?? args.roleId);
   const title = String(draft.title ?? data.title ?? "");
-  const bindingKind = String(draft.bindingKind ?? data.bindingKind ?? "noop");
+  const bindingKind = String(draft.bindingKind ?? data.bindingKind ?? "model");
   const modelRef = String(draft.modelRef ?? data.modelRef ?? "");
   const backend = String(draft.backend ?? data.backend ?? "");
   const modelId = String(draft.modelId ?? data.modelId ?? "");
@@ -1040,9 +1040,12 @@ export function renderStudioRoleConfigEditor(args: {
             const models = Array.isArray(args.modelCatalog?.models) ? args.modelCatalog.models as JsonRecord[] : [];
             const sources = Array.isArray(args.modelCatalog?.sources) ? args.modelCatalog.sources as JsonRecord[] : [];
             const runnable = models.filter((entry) => entry.runnable === true);
-            const discoveredBackends = [...new Set(runnable.map((entry) => String(entry.backend || "")))].filter(Boolean).sort();
-            const backends = backend && !discoveredBackends.includes(backend) ? [...discoveredBackends, backend].sort() : discoveredBackends;
-            const selectedBackend = backend || backends[0] || "";
+            const discoveredBackends = [...new Set([
+              ...runnable.map((entry) => String(entry.backend || "")),
+              ...sources.filter((source) => source.status === "available").map((source) => String(source.backend || ""))
+            ])].filter(Boolean).sort();
+            const backends = [...new Set([...discoveredBackends, backend, "opencode"])].filter(Boolean).sort();
+            const selectedBackend = backend || "opencode";
             const choices = runnable.filter((entry) => String(entry.backend) === selectedBackend);
             const selectedModelId = choices.some((entry) => String(entry.modelId) === modelId) ? modelId : "";
             const staleModel = modelId && !selectedModelId
@@ -1250,8 +1253,11 @@ export function renderStudioBridgeStructureHtml(args: {
   const explicitSelectedFlow = flows.find((flow) => flowKeyOf(flow) === args.selectedFlowKey) ?? null;
   const selectedRole = explicitSelectedRole ?? (args.selectedFlowKey ? null : roles[0] ?? null);
   const selectedFlow = explicitSelectedFlow ?? (args.selectedRoleId ? null : flows[0] ?? null);
+  const filterActive = Boolean(args.filter?.trim());
+  const rolesOpen = filterActive || listMode === "roles";
+  const flowsOpen = filterActive || listMode === "flows";
   const busy = args.actionBusy ? " disabled" : "";
-      const roleButtons = filtered.roles.length
+  const roleButtons = filtered.roles.length
     ? filtered.roles.map((role) => {
         const roleId = String(role.roleId ?? "");
         const roleTitle = String(role.title ?? "").trim() || roleId;
@@ -1280,12 +1286,27 @@ export function renderStudioBridgeStructureHtml(args: {
         );
       })
     : ['<div class="hint">' + escapeText((args.filter || listMode !== "all") ? t("studio.noFilteredItems", undefined, "No matching graph items.") : t("studio.noFlowsExtracted", undefined, "No flows extracted from the current Mermaid source.")) + '</div>'];
-  return '<div class="studio-bridge-index structure-list" data-studio-bridge-region="index"><div class="studio-bridge-index-controls"><div class="toolbar-row compact"><input data-studio-bridge-filter="1" value="' +
-    escapeText(args.filter || "") + '" placeholder="' + escapeText(t("studio.filterGraphItems", undefined, "Filter roles or flows")) + '" aria-label="' + escapeText(t("studio.filterGraphItems", undefined, "Filter roles or flows")) + '"><select data-studio-bridge-list-mode="1" aria-label="' + escapeText(t("studio.retrievalTab", undefined, "Browse")) + '"><option value="all"' +
+  const filterControl = '<input data-studio-bridge-filter="1" value="' +
+    escapeText(args.filter || "") + '" placeholder="' + escapeText(t("studio.filterGraphItems", undefined, "Filter roles or flows")) + '" aria-label="' + escapeText(t("studio.filterGraphItems", undefined, "Filter roles or flows")) + '">';
+  const modeControl = '<select data-studio-bridge-list-mode="1" aria-label="' + escapeText(t("studio.retrievalTab", undefined, "Browse")) + '"><option value="all"' +
     (listMode === "all" ? " selected" : "") + ">" + escapeText(t("common.all", undefined, "all")) + '</option><option value="roles"' +
     (listMode === "roles" ? " selected" : "") + ">" + escapeText(t("studio.roles", undefined, "roles")) + '</option><option value="flows"' +
-    (listMode === "flows" ? " selected" : "") + ">" + escapeText(t("studio.flows", undefined, "flows")) + '</option></select></div><div class="hint">' +
-    escapeText(t("studio.topologyOrderHint", undefined, "Cycles are listed after the acyclic path so the authoring order stays stable.")) + '</div></div><div class="studio-index-stack"><div class="studio-navigator structure-list" data-studio-bridge-region="navigator"><div class="compact-list-item studio-index-section-heading"><strong>' + escapeText(t("studio.roles", undefined, "roles")) + '</strong><span class="hint">' + escapeText(String(filtered.roles.length) + " / " + String(roles.length)) + '</span></div>' + roleButtons.join("") + '</div><div class="structure-list studio-flow-list" data-studio-bridge-region="flow-list"><div class="compact-list-item studio-index-section-heading"><strong>' + escapeText(t("studio.flows", undefined, "flows")) + '</strong><span class="hint">' + escapeText(String(filtered.flows.length) + " / " + String(flows.length)) + '</span></div>' + flowButtons.join("") + "</div></div></div>";
+    (listMode === "flows" ? " selected" : "") + ">" + escapeText(t("studio.flows", undefined, "flows")) + '</option></select>';
+  const roleSection = '<details class="studio-navigator studio-index-section" data-studio-role-list-section' +
+    (rolesOpen ? " open" : "") + '><summary class="studio-index-section-heading"><strong>' +
+    escapeText(t("studio.roleSectionTitle", undefined, "Roles · participants")) + '</strong><span class="hint">' +
+    escapeText(String(filtered.roles.length) + " / " + String(roles.length)) + '</span></summary>' +
+    roleButtons.join("") + "</details>";
+  const flowSection = '<details class="studio-flow-list studio-index-section" data-studio-flow-list-section' +
+    (flowsOpen ? " open" : "") + '><summary class="studio-index-section-heading"><strong>' +
+    escapeText(t("studio.flowSectionTitle", undefined, "Flows · handoffs")) + '</strong><span class="hint">' +
+    escapeText(String(filtered.flows.length) + " / " + String(flows.length)) + '</span></summary>' +
+    flowButtons.join("") + "</details>";
+  return '<div class="studio-bridge-index structure-list" data-studio-bridge-region="index"><div class="studio-bridge-index-controls">' +
+    filterControl + modeControl + '<div class="hint">' +
+    escapeText(t("studio.retrievalRoleFlowHint", undefined, "Roles are participants; flows are handoffs between roles.")) + '</div><div class="hint">' +
+    escapeText(t("studio.topologyOrderHint", undefined, "Cycles are listed after the acyclic path so the authoring order stays stable.")) +
+    '</div></div><div class="studio-index-stack">' + roleSection + flowSection + "</div></div>";
 }
 
 export function renderStudioBridgePanel(args: {
@@ -1976,7 +1997,7 @@ export function renderLogsPanel(args: {
   const t: Translator = typeof args.t === "function" ? args.t : (_key, _vars, fallback) => fallback ?? _key;
   const formatTime: DateFormatter = typeof args.formatTime === "function" ? args.formatTime : (value) => String(value ?? t("common.notAvailable", undefined, "n/a"));
   if (!args.loaded) {
-    return '<div class="hint">' + escapeText(t("logs.onDemandHint", undefined, "Logs load on demand. The default view combines engine and role traces without a role filter.")) + '</div>';
+    return '<div class="hint">' + escapeText(t("logs.selectedRunOnly", undefined, "Only the selected run is shown; logs from other production runs are not combined.")) + '</div>';
   }
 
   const timestampOf = (record: JsonRecord): string => String(record.at ?? record.timestamp ?? "");

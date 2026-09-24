@@ -584,10 +584,12 @@ export function injectStudioGraphStyles(): void {
     .studio-command-form select {
       width: 100%;
       min-width: 0;
-      border: 1px solid rgba(148, 163, 184, 0.22);
-      background: rgba(4, 8, 16, 0.88);
-      color: #e5eefb;
-      padding: 8px;
+      min-height: 36px;
+      border: 1px solid var(--border);
+      border-radius: 7px;
+      background: var(--control-bg);
+      color: var(--text);
+      padding: 7px 10px;
       box-sizing: border-box;
     }
     .studio-command-form input[type="radio"],

@@ -984,6 +984,7 @@ test("visualizer server serves run list, details, and live stream", async (t) =>
     const listResponse = await fetch(`${url}/api/v1/runs`);
     assert.equal(listResponse.status, 200);
     const list = await listResponse.json();
+    assert.equal(list.runs[0].isSimulation, true);
     assert.equal(list.runs.length, 1);
     assert.equal(list.runs[0].runId, runId);
     assert.equal(list.runs[0].status, "done");
@@ -1573,6 +1574,21 @@ test("visualizer server keeps idle run list stable until reindex refreshes the c
   const workdir = await mkdtemp(path.join(os.tmpdir(), "ogsystem-visualizer-runs-cache-"));
   await seedProjectFixture(workdir);
   const firstRun = await createFixtureRun(workdir);
+  await writeFile(
+    path.resolve(workdir, ".ogs", "runs-index.json"),
+    JSON.stringify({
+      version: 1,
+      generatedAt: "2026-04-16T01:02:05.000Z",
+      runs: [{
+        runId: firstRun.runId,
+        status: "running",
+        transitionCount: 3,
+        updatedAt: "2026-04-16T01:02:05.000Z",
+        runDir: firstRun.runDir
+      }]
+    }),
+    "utf8"
+  );
   let started;
   try {
     started = await startVisualizationServer({
@@ -1597,6 +1613,7 @@ test("visualizer server keeps idle run list stable until reindex refreshes the c
     const firstList = await firstListResponse.json();
     assert.equal(firstList.runs.length, 1);
     assert.equal(firstList.runs[0].runId, firstRun.runId);
+    assert.equal(firstList.runs[0].isSimulation, true);
 
     const secondRun = await createWaitingReviewFixtureRun(workdir);
     const cachedListResponse = await fetch(`${url}/api/v1/runs`);

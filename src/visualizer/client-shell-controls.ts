@@ -106,6 +106,7 @@ export function renderRunListHtml(args: {
       const ariaLabel = [
         "Run",
         run.runId,
+        t(run.isSimulation === true ? "run.debugRun" : "run.actualRun"),
         "status",
         runStatus,
         t("run.transitions"),
@@ -120,6 +121,7 @@ export function renderRunListHtml(args: {
               <span class="status ${statusClass(run.status)}" data-status="${escapeText(run.status)}">${escapeText(runStatus)}</span>
             </div>
             <div class="meta">
+              <span>${escapeText(t(run.isSimulation === true ? "run.debugRun" : "run.actualRun"))}</span>
               <span>${escapeText(t("run.transitions"))} ${escapeText(run.transitionCount)}</span>
               <span>${escapeText(t("run.updated"))} ${escapeText(updatedAt)}</span>
             </div>

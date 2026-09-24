@@ -4,6 +4,9 @@ export function renderPageShellStyles(): string {
       --panel: rgba(16, 23, 44, 0.92);
       --panel-soft: rgba(23, 31, 57, 0.85);
       --panel-deep: rgba(7, 12, 24, 0.92);
+      --surface-panel: var(--panel);
+      --surface-section: var(--panel-soft);
+      --surface-inset: var(--panel-deep);
       --border: rgba(148, 163, 184, 0.18);
       --text: #e5eefb;
       --muted: #8fa1c3;
@@ -120,9 +123,10 @@ export function renderPageShellStyles(): string {
     .search, .select {
       width: 100%;
       min-width: 0;
-      padding: 8px 10px;
+      min-height: 36px;
+      padding: 7px 10px;
       border: 1px solid var(--border);
-      border-radius: 9px;
+      border-radius: 7px;
       background: var(--control-bg);
       color: var(--text);
       outline: none;
@@ -154,7 +158,7 @@ export function renderPageShellStyles(): string {
       padding: 10px;
       border: 1px solid var(--border);
       border-radius: var(--radius-sm);
-      background: rgba(255, 255, 255, 0.03);
+      background: var(--surface-section);
       cursor: pointer;
       transition: transform 120ms ease, border-color 120ms ease, background 120ms ease;
       text-align: left;
@@ -587,7 +591,7 @@ export function renderPageShellStyles(): string {
     .card {
       border: 1px solid var(--border);
       border-radius: var(--radius);
-      background: var(--panel);
+      background: var(--surface-panel);
       box-shadow: var(--shadow);
       overflow: hidden;
     }
@@ -1038,6 +1042,14 @@ export function renderPageShellStyles(): string {
       font-size: 13px;
       color: #f8fbff;
     }
+    .project-home-info-item.is-primary {
+      border-color: rgba(52, 211, 153, 0.3);
+      background: rgba(52, 211, 153, 0.07);
+    }
+    .project-home-info-item.is-primary .project-home-info-value {
+      color: #a7f3d0;
+      font-size: 16px;
+    }
     .project-home-section {
       display: grid;
       gap: 7px;
@@ -1341,7 +1353,7 @@ export function renderPageShellStyles(): string {
       border: 1px solid rgba(148, 163, 184, 0.18);
       border-left: 1px solid rgba(148, 163, 184, 0.18);
       border-radius: 12px;
-      background: linear-gradient(180deg, rgba(5, 10, 23, 0.98), rgba(10, 18, 36, 0.96));
+      background: var(--surface-panel);
       box-shadow: 0 16px 36px rgba(0, 0, 0, 0.24);
       display: grid;
       grid-template-rows: auto auto minmax(0, 1fr);
@@ -1362,6 +1374,7 @@ export function renderPageShellStyles(): string {
       gap: 6px;
       padding: 6px 8px 4px;
       border-bottom: 1px solid rgba(148, 163, 184, 0.2);
+      background: var(--surface-section);
     }
     .studio-selection-body {
       padding: 4px 8px 8px;
@@ -1417,17 +1430,47 @@ export function renderPageShellStyles(): string {
     }
     .studio-bridge-index-controls {
       display: grid;
+      grid-template-columns: minmax(0, 1fr);
       gap: 6px;
       padding-bottom: 2px;
     }
+    .studio-bridge-index-controls > input,
+    .studio-bridge-index-controls > select {
+      width: 100%;
+      min-width: 0;
+    }
     .studio-index-section-heading {
       display: flex;
+      width: 100%;
+      min-height: 36px;
       align-items: center;
       justify-content: space-between;
       gap: 8px;
-      padding: 4px 2px 0;
-      border: 0;
-      background: transparent;
+      padding: 7px 8px;
+      border: 1px solid var(--border);
+      border-radius: var(--radius-sm);
+      background: var(--surface-section);
+      cursor: pointer;
+      list-style: disclosure-closed inside;
+      transition: border-color 120ms ease, background 120ms ease;
+    }
+    .studio-index-section-heading:hover,
+    .studio-index-section-heading:focus-visible {
+      border-color: var(--tab-active-border);
+      background: var(--control-bg-strong);
+      outline: none;
+    }
+    .studio-index-section[open] > .studio-index-section-heading {
+      list-style: disclosure-open inside;
+      border-color: var(--tab-active-border);
+    }
+    .studio-index-section-heading strong {
+      flex: 1;
+    }
+    .studio-index-section {
+      display: grid;
+      gap: 6px;
+      min-width: 0;
     }
     .studio-index-section-heading strong {
       font-size: 11px;
@@ -1803,7 +1846,7 @@ export function renderPageShellStyles(): string {
       gap: 4px;
       padding: 7px 8px;
       border-radius: 8px;
-      background: rgba(255, 255, 255, 0.03);
+      background: var(--surface-section);
       border: 1px solid rgba(148, 163, 184, 0.14);
       min-width: 0;
     }
@@ -1866,12 +1909,26 @@ export function renderPageShellStyles(): string {
     .field input,
     .field select {
       width: 100%;
-      padding: 8px 10px;
+      min-width: 0;
+      min-height: 36px;
+      padding: 7px 10px;
       border: 1px solid var(--border);
-      border-radius: 9px;
-      background: rgba(255, 255, 255, 0.03);
+      border-radius: 7px;
+      background: var(--surface-inset);
       color: var(--text);
       outline: none;
+    }
+    .select,
+    .field select,
+    .studio-command-form select {
+      color-scheme: dark;
+      cursor: pointer;
+    }
+    .field select:focus-visible,
+    .studio-command-form select:focus-visible,
+    .select:focus-visible {
+      border-color: rgba(56, 189, 248, 0.7);
+      box-shadow: 0 0 0 2px rgba(56, 189, 248, 0.14);
     }
     .field [aria-invalid="true"] {
       border-color: rgba(248, 113, 113, 0.78);
@@ -1919,58 +1976,28 @@ export function renderPageShellStyles(): string {
       overflow: auto;
       padding-right: 4px;
     }
-    .studio-log-lanes {
-      min-width: 0;
-      overflow: hidden;
-      border: 1px solid rgba(148, 163, 184, 0.18);
-      border-radius: 12px;
-      background: rgba(7, 12, 24, 0.45);
-    }
-    .studio-log-lanes-scroll {
-      overflow: auto;
+    .studio-debug-trace-list {
+      gap: 6px;
       max-height: 460px;
     }
-    .studio-log-lane-header,
-    .studio-log-lane-row {
-      display: grid;
-      gap: 8px;
-      align-items: stretch;
+    .studio-debug-trace-event {
       min-width: 0;
-      padding: 8px;
+      padding: 9px 11px;
     }
-    .studio-log-lane-header {
-      position: sticky;
-      top: 0;
-      z-index: 1;
-      background: rgba(5, 10, 23, 0.96);
-      border-bottom: 1px solid rgba(148, 163, 184, 0.14);
+    .studio-debug-trace-event .event-top time {
+      color: var(--muted);
+      font-size: 0.82em;
+      white-space: nowrap;
     }
-    .studio-log-lanes-body {
-      max-height: none;
-      overflow: visible;
-      padding: 0;
-      gap: 0;
-    }
-    .studio-log-time-cell,
-    .studio-log-lane-heading {
+    .studio-debug-trace-event strong {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      gap: 6px;
       min-width: 0;
-      display: grid;
-      align-content: start;
     }
-    .studio-log-time-cell {
-      padding-top: 4px;
-    }
-    .studio-log-lane-cell {
-      min-width: 0;
-      min-height: 18px;
-    }
-    .studio-log-lane-cell.is-empty {
-      border-radius: 10px;
-      border: 1px dashed rgba(148, 163, 184, 0.1);
-      background: rgba(148, 163, 184, 0.03);
-    }
-    .studio-log-lane-card {
-      min-height: 100%;
+    .studio-debug-trace-event code {
+      overflow-wrap: anywhere;
     }
     .studio-role-io-modal-root {
       position: fixed;
@@ -2028,7 +2055,7 @@ export function renderPageShellStyles(): string {
     .event {
       border-radius: 9px;
       border: 1px solid var(--border);
-      background: rgba(255, 255, 255, 0.03);
+      background: var(--surface-section);
       padding: 9px 10px;
       display: grid;
       gap: 5px;
@@ -2253,6 +2280,9 @@ export function renderPageShellStyles(): string {
       }
       .project-home-info-strip {
         grid-template-columns: repeat(2, minmax(0, 1fr));
+      }
+      .project-home-info-item.is-primary {
+        grid-column: span 2;
       }
       .run-role-matrix-head,
       .run-role-matrix-row {

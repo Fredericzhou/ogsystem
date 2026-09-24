@@ -123,6 +123,40 @@ test("Studio model selector shows runnable backend/model pairs and discovery sta
   assert.match(html, /persistent adapter unavailable/);
 });
 
+test("Studio defaults new role binding to Agent and prefers OpenCode when available", () => {
+  const html = renderStudioRoleConfigEditor({
+    roleId: "new-role",
+    editor: { roleId: "new-role", data: {} },
+    modelCatalog: {
+      models: [
+        { backend: "codex", runnable: true, modelId: "gpt-5.6", name: "GPT-5.6" },
+        { backend: "opencode", runnable: true, modelId: "gpt-5.4", name: "GPT-5.4" }
+      ]
+    }
+  });
+  assert.match(html, /data-role-config-field="bindingKind"[\s\S]*?<option value="model" selected/);
+  assert.match(html, /<option value="opencode" selected>opencode<\/option>/);
+});
+
+test("Studio retrieval separates role participants from flow handoffs", () => {
+  const html = renderStudioBridgePanel({
+    bridge: { extracted: { roles: [{ roleId: "author", title: "Author" }], flows: [{ fromRoleId: "author", toRoleId: "reviewer", eventType: "READY" }] } },
+    readiness: {},
+    selectedRoleId: "",
+    selectedFlowKey: "",
+    actionBusy: "",
+    t: testTranslator
+  });
+  assert.match(html, /Roles are participants; flows are handoffs between roles/);
+  assert.match(html, /Roles · participants/);
+  assert.match(html, /Flows · handoffs/);
+  assert.match(html, /data-studio-role-list-section/);
+  assert.match(html, /data-studio-flow-list-section/);
+  assert.doesNotMatch(html, /data-studio-role-list-section open/);
+  assert.doesNotMatch(html, /data-studio-flow-list-section open/);
+  assert.doesNotMatch(html, /toolbar-row compact"><input data-studio-bridge-filter/);
+});
+
 const PAGE_ELEMENT_ATTRIBUTES = {
   "action-form-section": {
     role: "dialog",
@@ -2877,7 +2911,7 @@ test("visualizer client keeps console and run list interactions idempotent acros
     .querySelectorAll("[data-run-id]")
     .find((button) => button.getAttribute("data-run-id") === "run-123");
   assert.ok(runButton);
-  assert.match(runButton.getAttribute("aria-label"), /Run run-123 status \w+ transitions \d+ updated/);
+  assert.match(runButton.getAttribute("aria-label"), /Run run-123 Actual run status \w+ transitions \d+ updated/);
   const fetchCountBefore = harness.backend.fetchCalls.length;
   await runButton.click();
   await settle();
@@ -3419,7 +3453,7 @@ test("visualizer client loads logs on demand and keeps filter changes lazy until
 
   const logCallsBefore = harness.backend.fetchCalls.filter((call) => call.path.startsWith("/api/v1/runs/run-123/logs")).length;
   assert.equal(logCallsBefore, 0);
-  assert.match(harness.document.getElementById("logs").textContent, /Logs load on demand/);
+  assert.match(harness.document.getElementById("logs").textContent, /selected run is shown/i);
 
   await harness.document.getElementById("log-tail").change("25");
   await settle();
@@ -3436,6 +3470,7 @@ test("visualizer client loads logs on demand and keeps filter changes lazy until
 
   const logCallsAfterLoad = harness.backend.fetchCalls.filter((call) => call.path.startsWith("/api/v1/runs/run-123/logs")).length;
   assert.ok(logCallsAfterLoad >= 1);
+  assert.match(harness.document.getElementById("logs-filters").textContent, /run-123/);
   assert.ok(
     harness.backend.fetchCalls.some((call) =>
       call.path.startsWith("/api/v1/runs/run-123/logs") && call.path.includes("tail=25")

@@ -193,6 +193,7 @@ async function seedOpsRun(workdir, systemSource) {
         runs: [
           {
             runId,
+            isSimulation: false,
             runDir,
             status: "failed",
             transitionCount: 4,

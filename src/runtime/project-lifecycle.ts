@@ -66,6 +66,7 @@ const ROLE_IO_SCAN_BATCH_SIZE = 16;
 
 export type IndexedRun = {
   runId: string;
+  isSimulation: boolean;
   status: string;
   transitionCount: number;
   durationMs?: number;
@@ -1480,12 +1481,16 @@ export async function loadIndexedRuns(workdir: string): Promise<IndexedRun[]> {
       continue;
     }
     const runDir = resolve(runsDir, entry.name);
-    const [summaryRaw, stateRaw, stopRequestRaw, stopOutcomeRaw] = await Promise.all([
+    const [summaryRaw, stateRaw, stopRequestRaw, stopOutcomeRaw, resolvedConfigRaw] = await Promise.all([
       tryReadJson(resolve(runDir, "summary.json")),
       tryReadJson(resolve(runDir, "state.json")),
       tryReadJson(resolve(runDir, "control", "stop-request.json")),
-      tryReadJson(resolve(runDir, "control", "stop-outcome.json"))
+      tryReadJson(resolve(runDir, "control", "stop-outcome.json")),
+      tryReadJson(resolve(runDir, "resolved-config.json"))
     ]);
+    const resolvedConfig = asRecord(resolvedConfigRaw);
+    const effectiveConfig = asRecord(resolvedConfig?.effective);
+    const invocation = asRecord(effectiveConfig?.invocation);
     const summary = asSummaryProjection(summaryRaw);
     const reviewFields = derivePendingReviewFields({
       summary,
@@ -1510,6 +1515,7 @@ export async function loadIndexedRuns(workdir: string): Promise<IndexedRun[]> {
     const runStat = await stat(runDir);
     runs.push({
       runId: entry.name,
+      isSimulation: invocation?.dryRun === true,
       status: summary?.status ?? indexedState?.graphState.status ?? "unknown",
       transitionCount: summary?.transitionCount ?? indexedState?.graphState.transitionCount ?? 0,
       durationMs: summary?.durationMs,
@@ -1554,6 +1560,14 @@ export async function loadPersistedRunsIndex(workdir: string): Promise<RunsIndex
   if (record.version !== 1 || !Array.isArray(record.runs)) {
     return undefined;
   }
+  if (record.runs.some((value) => {
+    if (typeof value !== "object" || value === null || Array.isArray(value)) {
+      return false;
+    }
+    return typeof (value as Record<string, unknown>).isSimulation !== "boolean";
+  })) {
+    return undefined;
+  }
   const runs = record.runs.flatMap((value) => {
     if (typeof value !== "object" || value === null || Array.isArray(value)) {
       return [];
@@ -1567,12 +1581,14 @@ export async function loadPersistedRunsIndex(workdir: string): Promise<RunsIndex
         : undefined;
     const updatedAt = typeof item.updatedAt === "string" ? item.updatedAt : undefined;
     const runDir = typeof item.runDir === "string" ? item.runDir : undefined;
-    if (!runId || !status || transitionCount === undefined || !updatedAt || !runDir) {
+    const isSimulation = typeof item.isSimulation === "boolean" ? item.isSimulation : undefined;
+    if (!runId || !status || transitionCount === undefined || !updatedAt || !runDir || isSimulation === undefined) {
       return [];
     }
     return [
       {
         runId,
+        isSimulation,
         status,
         transitionCount,
         durationMs:

@@ -2856,26 +2856,12 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
 
     function renderStudioLogsTabContent() {
       const disabled = state.actionBusy ? " disabled" : "";
-      const header = state.detail?.header || {};
-      const activeRunId = state.selectedRunId || state.studioBridgeLastDryRunId || "";
-      const events = Array.isArray(state.events) ? state.events : [];
+      const snapshot = state.studioDebugSnapshot || {};
+      const detail = snapshot.detail || {};
+      const header = detail.header || {};
+      const activeRunId = snapshot.runId || "";
+      const events = Array.isArray(snapshot.events) ? snapshot.events : [];
       const bridge = resolveStudioBridgeForDisplay();
-      const extractedRoles = Array.isArray(bridge?.extracted?.roles) ? bridge.extracted.roles : [];
-      const runtimeLaneKey = "__runtime__";
-      const seenLaneIds = [];
-      for (const entry of events) {
-        const record = asRecord(entry?.record);
-        const roleId = String(record?.roleId || "");
-        const laneKey = roleId || runtimeLaneKey;
-        if (!seenLaneIds.includes(laneKey)) {
-          seenLaneIds.push(laneKey);
-        }
-      }
-      const roleLaneIds = extractedRoles
-        .map((role) => String(role?.roleId || ""))
-        .filter((roleId) => roleId && seenLaneIds.includes(roleId))
-        .concat(seenLaneIds.filter((laneId) => laneId === runtimeLaneKey || !extractedRoles.some((role) => String(role?.roleId || "") === laneId)));
-      const laneGridColumns = "minmax(84px, 96px) " + roleLaneIds.map(() => "minmax(196px, 1fr)").join(" ");
       const flowResolvedCount = events.reduce((count, entry) => {
         const record = asRecord(entry?.record);
         const roleId = String(record?.roleId || "");
@@ -2898,7 +2884,6 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
         ? events.map((entry) => {
             const record = asRecord(entry?.record);
             const roleId = String(record?.roleId || "");
-            const laneKey = roleId || runtimeLaneKey;
             const eventType = String(record?.event || "");
             const targets = roleId && eventType ? studioTraceFlowTargetsByEvent(roleId, eventType) : [];
             const routeHint = targets.length
@@ -2926,41 +2911,33 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
             const flowButtonsHtml = routeHint.length
               ? '<div class="actions compact">' + routeHint.map((target) => '<button type="button" class="button subtle' + (state.studioBridgeSelectedFlowKey === target.flowKey ? " active" : "") + '" data-studio-log-flow-key="' + escapeText(target.flowKey) + '">' + escapeText(target.text) + '</button>').join("") + '</div>'
               : "";
-            const laneCellsHtml = roleLaneIds.map((candidateLaneId) => candidateLaneId === laneKey
-              ? '<div class="studio-log-lane-cell"><div class="event studio-log-lane-card"><div class="event-top"><span>#' + escapeText(entry?.cursor ?? "") + " " + escapeText(displayUiToken(record?.type || "event", t)) + '</span><span>' + escapeText(record?.status ? displayUiToken(record.status, t) : "") + '</span></div><strong>' + roleButtonHtml + (eventType ? ' <code>' + escapeText(eventType) + '</code> ' : "") + (record?.status ? '<span class="status ' + escapeText(statusClass(String(record.status))) + '">' + escapeText(displayUiToken(record.status, t)) + '</span>' : "") + '</strong>' + flowButtonsHtml + '<div class="hint">' + escapeText(meta || t("studio.logsNoExtraMeta", undefined, "No additional runtime metadata.")) + '</div></div></div>'
-              : '<div class="studio-log-lane-cell is-empty"></div>'
-            ).join("");
-            return '<div class="studio-log-lane-row" style="grid-template-columns:' + escapeText(laneGridColumns) + '"><div class="studio-log-time-cell"><div class="hint">' + escapeText(formatTime(record?.at)) + '</div></div>' + laneCellsHtml + '</div>';
+            return '<article class="event studio-debug-trace-event"><div class="event-top"><span>#' + escapeText(entry?.cursor ?? "") + " " + escapeText(displayUiToken(record?.type || "event", t)) + '</span><time>' + escapeText(formatTime(record?.at)) + '</time></div><strong>' + roleButtonHtml + (eventType ? ' <code>' + escapeText(eventType) + '</code> ' : "") + (record?.status ? '<span class="status ' + escapeText(statusClass(String(record.status))) + '">' + escapeText(displayUiToken(record.status, t)) + '</span>' : "") + '</strong>' + flowButtonsHtml + '<div class="hint">' + escapeText(meta || t("studio.logsNoExtraMeta", undefined, "No additional runtime metadata.")) + '</div></article>';
           }).join("")
         : '<div class="hint">' + escapeText(t("timeline.noEventsCaptured", undefined, "No events captured yet.")) + '</div>';
-      const traceHeaderHtml = roleLaneIds.length
-        ? '<div class="studio-log-lane-header" style="grid-template-columns:' + escapeText(laneGridColumns) + '"><div class="studio-log-time-cell"><strong>' + escapeText(t("common.time", undefined, "time")) + '</strong></div>' + roleLaneIds.map((laneId) => '<div class="studio-log-lane-heading"><strong>' + escapeText(laneId === runtimeLaneKey ? t("state.runtime", undefined, "runtime") : laneId) + '</strong></div>').join("") + '</div>'
-        : "";
       const rawLogsHtml = renderDisclosureCard({
         title: t("section.logs", undefined, "Logs"),
         headline: t("studio.logsRawHeadline", undefined, "Raw engine and role streams"),
-        meta: state.logsLoaded ? t("common.loaded", undefined, "loaded") : t("common.lazy", undefined, "lazy"),
-        hint: t("studio.logsRawHint", undefined, "Structured trace stays above. Expand this section only when you need the underlying engine or role log lines."),
+        meta: snapshot.logsLoaded ? t("common.loaded", undefined, "loaded") : t("common.lazy", undefined, "lazy"),
+        hint: t("studio.logsRawRunScope", undefined, "Raw logs belong to the current design dry run and include its engine and role logs."),
         bodyHtml: renderLogsPanel({
-          loaded: state.logsLoaded,
-          stale: state.logsStale,
+          loaded: snapshot.logsLoaded,
+          stale: snapshot.logsStale,
           selectedRoleId: state.selectedLogRoleId,
-          engine: state.engineLogs,
-          role: state.roleLogs,
+          engine: snapshot.engineLogs || [],
+          role: snapshot.roleLogs || [],
           t,
           formatTime
         }),
-        open: state.logsLoaded
+        open: snapshot.logsLoaded
       });
       return [
         '<div class="structure-list studio-debug-panel-stack">',
-        '<div class="actions compact"><button class="button subtle" id="studio-logs-load-raw"' + (disabled || !state.selectedRunId ? " disabled" : "") + '>' + escapeText(state.logsLoaded ? t("logs.refresh", undefined, "Refresh logs") : t("logs.load", undefined, "Load logs")) + '</button>' +
-          '<button class="button subtle" id="studio-logs-load-more-raw"' + (disabled || !state.selectedRunId || !state.logsLoaded ? " disabled" : "") + '>' + escapeText(t("logs.loadMore", undefined, "Load more")) + '</button>' +
-          ((state.selectedRunId || state.studioBridgeLastDryRunId) ? '<button class="button subtle" id="studio-logs-open-operate"' + disabled + '>' + escapeText(t("build.openOperate", undefined, "Open Run")) + '</button>' : '') +
+        '<div class="actions compact"><button class="button subtle" id="studio-logs-load-raw"' + (disabled || !activeRunId ? " disabled" : "") + '>' + escapeText(snapshot.logsLoaded ? t("logs.refresh", undefined, "Refresh logs") : t("logs.load", undefined, "Load logs")) + '</button>' +
+          ((activeRunId) ? '<button class="button subtle" id="studio-logs-open-operate"' + disabled + '>' + escapeText(t("build.openOperate", undefined, "Open Run")) + '</button>' : '') +
         '</div>',
         summaryCardsHtml,
-        '<div class="event"><div class="event-top"><span>' + escapeText(t("studio.logsTraceTitle", undefined, "Structured trace")) + '</span><span>' + escapeText(activeRunId || t("common.idle", undefined, "idle")) + '</span></div><strong>' + escapeText(t("studio.logsTraceHeadline", undefined, "Role, branch, event, status, and inferred flow routing for the current dry run.")) + '</strong><div class="hint">' + escapeText(t("studio.logsTraceHint", undefined, "This view stays inside Design so you can compare graph structure and runtime progression without switching page shells.")) + '</div></div>',
-        '<div class="studio-log-lanes"><div class="studio-log-lanes-scroll">' + traceHeaderHtml + '<div class="timeline studio-log-lanes-body">' + traceCardsHtml + '</div></div></div>',
+        '<div class="event"><div class="event-top"><span>' + escapeText(t("studio.logsTraceTitle", undefined, "Structured trace")) + '</span><span>' + escapeText(activeRunId || t("common.idle", undefined, "idle")) + '</span></div><strong>' + escapeText(t("studio.logsTraceHeadline", undefined, "Role, branch, event, status, and inferred flow routing for the current dry run.")) + '</strong><div class="hint">' + escapeText(t("studio.logsDesignRunScope", undefined, "This trace belongs to the current design dry run; it does not aggregate other production runs.")) + '</div></div>',
+        '<div class="timeline studio-debug-trace-list">' + traceCardsHtml + '</div>',
         rawLogsHtml,
         '</div>'
       ].join("");
@@ -2968,14 +2945,16 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
 
     function renderStudioResultTabContent() {
       const disabled = state.actionBusy ? " disabled" : "";
-      const header = state.detail?.header || {};
-      const graph = state.graph?.graph || {};
-      const stateRecord = asRecord(state.detail?.state) || {};
+      const snapshot = state.studioDebugSnapshot || {};
+      const detail = snapshot.detail || {};
+      const header = detail.header || {};
+      const graph = snapshot.graph?.graph || {};
+      const stateRecord = asRecord(detail.state) || {};
       const pendingReviews = asRecord(stateRecord.pendingReviewsById ?? stateRecord.humanReviewContextByBranchId) || {};
       const errors = asRecord(stateRecord.errors ?? stateRecord.failure ?? stateRecord.errorEnvelope ?? stateRecord.error) || {};
-      const resultSummaryHtml = state.selectedRunId && state.graph?.graph
+      const resultSummaryHtml = snapshot.runId && snapshot.graph?.graph
         ? '<div class="state-card-grid studio-result-summary-grid">' +
-            '<div class="event"><div class="event-top"><span>' + escapeText(t("state.runtime", undefined, "runtime")) + '</span><span>' + escapeText(displayUiToken(header.status ?? t("common.unknown", undefined, "unknown"), t)) + '</span></div><strong>' + escapeText(displayUiToken(state.detail?.state?.status ?? header.status ?? t("common.idle", undefined, "idle"), t)) + '</strong><div class="hint">' + escapeText(t("studio.resultsSummaryActive", {
+            '<div class="event"><div class="event-top"><span>' + escapeText(t("state.runtime", undefined, "runtime")) + '</span><span>' + escapeText(displayUiToken(header.status ?? t("common.unknown", undefined, "unknown"), t)) + '</span></div><strong>' + escapeText(displayUiToken(detail.state?.status ?? header.status ?? t("common.idle", undefined, "idle"), t)) + '</strong><div class="hint">' + escapeText(t("studio.resultsSummaryActive", {
               activeBranches: String(header.activeBranches ?? 0),
               pendingReviews: String(header.pendingReviewCount ?? 0)
             }, "active branches " + String(header.activeBranches ?? 0) + " · pending reviews " + String(header.pendingReviewCount ?? 0))) + '</div></div>' +
@@ -2989,7 +2968,7 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
         : '<div class="event"><div class="event-top"><span>' + escapeText(t("studio.resultsTab", undefined, "Results")) + '</span><span>' + escapeText(state.studioBridgeLastDryRunId || t("common.idle", undefined, "idle")) + '</span></div><strong>' + escapeText(t("studio.debugRunHint", undefined, "Start a fresh dry run from Build to watch graph progression and key signals here.")) + '</strong><div class="hint">' + escapeText(t("build.openDebugHint", undefined, "Review the latest dry-run result here, or open Run for full controls.")) + '</div></div>';
       return [
         '<div class="structure-list studio-debug-panel-stack">',
-        ((state.selectedRunId || state.studioBridgeLastDryRunId)
+        ((snapshot.runId)
           ? '<div class="actions compact"><button class="button subtle" id="studio-debug-open-operate"' + disabled + '>' + escapeText(t("build.openOperate", undefined, "Open Run")) + '</button></div>'
           : ''),
         resultSummaryHtml,
@@ -4275,10 +4254,8 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
         bindOnce(studioDebugOpenOperateButton, "click", "studio-debug-open-operate", async () => {
           state.consoleTab = runConsoleTab();
           renderConsoleTabs();
-          if (state.selectedRunId) {
-            await selectRun(state.selectedRunId);
-          } else if (state.studioBridgeLastDryRunId) {
-            await selectRun(state.studioBridgeLastDryRunId);
+          if (state.studioDebugSnapshot?.runId) {
+            await selectRun(state.studioDebugSnapshot.runId);
           }
         });
       }
@@ -4287,33 +4264,34 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
         bindOnce(studioLogsOpenOperateButton, "click", "studio-logs-open-operate", async () => {
           state.consoleTab = runConsoleTab();
           renderConsoleTabs();
-          if (state.selectedRunId) {
-            await selectRun(state.selectedRunId);
-          } else if (state.studioBridgeLastDryRunId) {
-            await selectRun(state.studioBridgeLastDryRunId);
+          if (state.studioDebugSnapshot?.runId) {
+            await selectRun(state.studioDebugSnapshot.runId);
           }
         });
       }
       const studioLogsLoadRawButton = document.getElementById("studio-logs-load-raw");
       if (studioLogsLoadRawButton) {
         bindOnce(studioLogsLoadRawButton, "click", "studio-logs-load-raw", async () => {
-          if (!state.selectedRunId) {
+          const snapshot = state.studioDebugSnapshot;
+          if (!snapshot?.runId) {
             return;
           }
-          await loadSelectedLogs(state.selectedRunId, { force: true });
-          renderStudioSelectionDialog();
-        });
-      }
-      const studioLogsLoadMoreRawButton = document.getElementById("studio-logs-load-more-raw");
-      if (studioLogsLoadMoreRawButton) {
-        bindOnce(studioLogsLoadMoreRawButton, "click", "studio-logs-load-more-raw", async () => {
-          if (!state.selectedRunId || !state.logsLoaded) {
-            return;
+          try {
+            const logs = await fetchSelectedLogs({
+              requestJson,
+              apiPrefix: API_PREFIX,
+              runId: snapshot.runId,
+              selectedLogRoleId: state.selectedLogRoleId,
+              graphPayload: snapshot.graph,
+              logTail: state.logTail,
+              logPageSize: state.logPageSize,
+              logSince: state.logSince
+            });
+            if (state.studioDebugSnapshot?.runId !== snapshot.runId) return;
+            Object.assign(snapshot, logs, { logsLoaded: true, logsStale: false });
+          } catch (error) {
+            setFlash("error", error instanceof Error ? error.message : String(error));
           }
-          const current = Number(state.logPageSize || state.logTail || "100");
-          state.logTail = "";
-          state.logPageSize = String(Number.isFinite(current) ? Math.min(current * 2, 5000) : 500);
-          await loadSelectedLogs(state.selectedRunId, { force: true });
           renderStudioSelectionDialog();
         });
       }
@@ -4596,6 +4574,8 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
         selectedRoleId: state.studioBridgeSelectedRoleId,
         selectedFlowKey: state.studioBridgeSelectedFlowKey,
         viewport: state.graphViewport || undefined,
+        initialLayoutMode: "flow",
+        forceInitialAutoLayout: true,
         editSelectionRequest: state.studioBridgeEditSelectionRequest,
         defaultAutoLayout: true,
         busy: Boolean(state.actionBusy),
@@ -4762,6 +4742,7 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
         selectedRoleId: state.runGraphSelectedRoleId,
         selectedFlowKey: state.runGraphSelectedFlowKey,
         viewport: state.graphViewport || undefined,
+        initialLayoutMode: "compact",
         busy: Boolean(state.actionBusy),
         readOnly: true,
         defaultAutoLayout: true,
@@ -5298,19 +5279,19 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
           : '<div class="hint">' + escapeText(t("project.noRunsYet", undefined, "No runs recorded yet.")) + '</div>';
         const infoItems = [
           [t("project.currentProject", undefined, "Current project"), projectName],
+          [t("project.structure", undefined, "structure"), t("project.structureSummary", { roles: String(summary.roleCount ?? state.project?.roles?.roles?.length ?? 0), flows: String(summary.flowCount ?? 0) }, "{roles} roles · {flows} flows")],
           [t("project.currentDirectory", undefined, "Current directory"), workspace.workdir || getCurrentWorkdir() || "n/a"],
           [t("common.system", undefined, "system"), String(summary.systemId || summary.projectId || "n/a")],
-          [t("project.structure", undefined, "structure"), String(summary.roleCount ?? state.project?.roles?.roles?.length ?? 0) + " " + t("common.roles", undefined, "roles") + " · " + String(summary.flowCount ?? 0) + " " + t("common.flows", undefined, "flows")],
           [t("project.systemPath", { path: state.workbenchSavedPath || "system.mmd" }, "system path " + (state.workbenchSavedPath || "system.mmd")), state.workbenchSavedPath || "system.mmd"]
-        ].map(([label, value]) => (
-          '<div class="project-home-info-item"><span class="project-home-info-label">' + escapeText(label) + '</span><strong class="project-home-info-value">' + escapeText(value) + "</strong></div>"
+        ].map(([label, value], index) => (
+          '<div class="project-home-info-item' + (index === 1 ? " is-primary" : "") + '"><span class="project-home-info-label">' + escapeText(label) + '</span><strong class="project-home-info-value">' + escapeText(value) + "</strong></div>"
         )).join("");
         mainHtml = [
           '<article class="card project-home-card">',
           '<header><div class="card-header"><div class="header-copy"><h3>' + escapeText(t("section.projectOverview", undefined, "Project Overview")) + '</h3><div class="hint">' + escapeText(t("project.readyProjectHint", undefined, "Use Design for structure and bindings, Release for gates and export, and Run for runtime inspection.")) + '</div></div></div></header>',
           '<div class="body">',
           '<div class="project-home-info-strip">' + infoItems + '</div>',
-          '<div class="project-home-side-note"><strong>' + escapeText(t("readiness.blockersWarningsSystem", { blockers: String(readinessBlockers.length), warnings: String(Array.isArray(state.projectReadiness?.warnings) ? state.projectReadiness.warnings.length : 0), systemId: String(state.project?.summary?.project?.systemId || state.project?.summary?.project?.projectId || "n/a") }, "blockers " + String(readinessBlockers.length) + " · warnings " + String(Array.isArray(state.projectReadiness?.warnings) ? state.projectReadiness.warnings.length : 0) + " · system " + String(state.project?.summary?.project?.systemId || state.project?.summary?.project?.projectId || "n/a"))) + '</strong><div class="hint">' + escapeText(validationOk ? t("project.readyForNextStep", undefined, "Project summary is ready for the next workflow step.") : t("release.resolveBlockers", undefined, "Resolve release blockers.")) + " · " + escapeText(workspaceState) + '</div></div>',
+          '<div class="project-home-side-note"><strong>' + escapeText(t("project.readinessSummary", { blockers: String(readinessBlockers.length), warnings: String(Array.isArray(state.projectReadiness?.warnings) ? state.projectReadiness.warnings.length : 0) }, "{blockers} blockers · {warnings} warnings")) + '</strong><div class="hint">' + escapeText(validationOk ? t("project.readyForNextStep", undefined, "Project summary is ready for the next workflow step.") : t("release.resolveBlockers", undefined, "Resolve release blockers.")) + " · " + escapeText(displayUiToken(workspaceState, t)) + '</div></div>',
           '<section class="project-home-section"><h4>' + escapeText(t("section.projectReadiness", undefined, "Project Readiness")) + '</h4><div class="structure-list">' + projectReadinessHtml + '</div></section>',
           '</article>',
           '<div class="project-home-grid">',
@@ -5793,10 +5774,13 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
         });
       }
       logsFiltersEl.textContent =
-        "role=" + (state.selectedLogRoleId || "all")
-        + " pageSize=" + (state.logTail || state.logPageSize || "all")
-        + " since=" + (state.logSince || "n/a")
-        + (state.logsStale ? " · stale" : "");
+        t("logs.scopeRun", { runId: state.selectedRunId })
+        + " · " + t("logs.filterSummary", {
+          role: state.selectedLogRoleId || t("common.all"),
+          pageSize: state.logTail || state.logPageSize || t("logs.all"),
+          since: state.logSince || t("common.notAvailable"),
+          status: state.logsStale ? t("logs.stale") : t("logs.fresh")
+        });
       const logsScrollTop = logsEl.scrollTop;
       const changed = setInnerHtmlIfChanged(logsEl, renderLogsPanel({
         loaded: state.logsLoaded,
@@ -7098,12 +7082,50 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
     async function loadRuns() {
       const payload = await requestJson(\`\${API_PREFIX}/runs\`);
       state.runs = payload.runs || [];
+      const latestDebugRun = state.runs.find((run) => run.isSimulation === true);
+      state.studioBridgeLastDryRunId = latestDebugRun?.runId || "";
+      await loadStudioDebugSnapshot(state.studioBridgeLastDryRunId);
       renderRuns();
       if (!state.projectHome && !state.selectedRunId && state.runs.length && isRunConsoleTab()) {
         await selectRun(state.runs[0].runId);
       }
       if (!state.runs.length) {
         setLive("idle", t("live.noRuns"));
+      }
+    }
+
+    async function loadStudioDebugSnapshot(runId) {
+      const requestId = ++state.studioDebugSnapshotRequestId;
+      if (!runId) {
+        state.studioDebugSnapshot = null;
+        refreshMountedStudioRuntime();
+        return;
+      }
+      try {
+        const [detail, eventsPayload, graph] = await Promise.all([
+          requestJson(API_PREFIX + "/runs/" + encodeURIComponent(runId)),
+          requestJson(buildTimelineQuery(runId, { cursor: 0, limit: 250 })),
+          requestJson(API_PREFIX + "/runs/" + encodeURIComponent(runId) + "/graph")
+        ]);
+        if (requestId !== state.studioDebugSnapshotRequestId) return;
+        state.studioDebugSnapshot = {
+          runId,
+          detail,
+          events: eventsPayload.events || [],
+          graph,
+          logsLoaded: false,
+          logsStale: false,
+          engineLogs: [],
+          roleLogs: []
+        };
+      } catch {
+        if (requestId === state.studioDebugSnapshotRequestId) {
+          state.studioDebugSnapshot = { runId, loadingError: true, events: [], graph: null, detail: null };
+        }
+      }
+      if (requestId === state.studioDebugSnapshotRequestId) {
+        renderWorkbench();
+        refreshMountedStudioRuntime();
       }
     }
 
@@ -7208,6 +7230,10 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
       }
       state.detail = detail;
       state.graph = graphPayload;
+      if (state.studioDebugSnapshot?.runId === runId) {
+        state.studioDebugSnapshot.detail = detail;
+        state.studioDebugSnapshot.graph = graphPayload;
+      }
       state.contractRuntimeStatus = contractRuntimeStatus;
       upsertRunFromHeader(detail.header);
       const fallbackRoleId = fallbackLogRoleId(detail.header);
@@ -7622,8 +7648,19 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
           state.eventCursor = payload.cursor + 1;
           if (recordMatchesTimelineFilters(payload.record)) {
             state.events = appendIndexedStreamEntry(state.events, state.eventCursorIndex, payload, 250);
+            if (state.studioDebugSnapshot?.runId === runId) {
+              state.studioDebugSnapshot.events = appendIndexedStreamEntry(
+                state.studioDebugSnapshot.events || [],
+                createStreamCursorIndex(state.studioDebugSnapshot.events || []),
+                payload,
+                250
+              );
+            }
             renderTimeline(state.events, { append: true });
             refreshMountedStudioRuntime();
+            if (state.studioDebugSnapshot?.runId === runId && isDesignConsoleTab()) {
+              renderStudioSelectionDialog();
+            }
           }
           if (state.conversationMode) {
             void loadConversation(runId, { incremental: true }).catch(() => undefined);

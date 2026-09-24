@@ -76,6 +76,23 @@ test("Studio authoring import extracts normalized roles, flows, and metadata", (
   assert.equal(Object.keys(authoring.flows).length, 4);
 });
 
+test("Studio Mermaid import reflects the project's pinned role model bindings", () => {
+  const authoring = importMermaidToAuthoring({
+    workdir: "/tmp/project",
+    systemPath: "/tmp/project/system.mmd",
+    systemSource: source,
+    modelSelection: {
+      configVersion: "2",
+      roles: { dispatch: { backend: "codex", modelId: "gpt-5.6-luna" } }
+    }
+  });
+
+  assert.equal(authoring.roles.dispatch.bindingKind, "model");
+  assert.equal(authoring.roles.dispatch.backend, "codex");
+  assert.equal(authoring.roles.dispatch.modelId, "gpt-5.6-luna");
+  assert.equal(authoring.roles.review.bindingKind, "exec");
+});
+
 test("Studio save writes role backend/model separately and preserves project defaults", async () => {
   const workdir = await mkdtemp(path.join(os.tmpdir(), "ogsystem-studio-model-save-"));
   try {
@@ -738,6 +755,7 @@ test("Studio add-role defaults to a valid custom draft when repository roles all
   });
   const context = {
     authoring,
+    projectConfig: { modelCatalog: { models: [{ ref: "opencode/gpt-5.4", name: "GPT-5.4", provider: "opencode", model: "gpt-5.4" }] } },
     rolePackages: {
       rolePackages: [
         { roleId: "dispatch", name: "Dispatch", status: "ok", files: { "role.json": true } },
@@ -749,6 +767,8 @@ test("Studio add-role defaults to a valid custom draft when repository roles all
   const state = createDefaultStudioCommandFormState({ kind: "add-role", context });
   assert.equal(state.fields.mode, "custom");
   assert.equal(state.fields.roleId, "new-role");
+  assert.equal(state.fields.bindingKind, "model");
+  assert.equal(state.fields.modelRef, "opencode/gpt-5.4");
   assert.equal(state.validation.ok, true);
   assert.equal(state.validation.diagnostics.some((diagnostic) => diagnostic.code === "ROLE_ID_DUPLICATED"), false);
 });
