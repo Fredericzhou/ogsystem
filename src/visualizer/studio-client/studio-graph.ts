@@ -105,6 +105,7 @@ export type StudioGraphLabels = Partial<Record<StudioGraphLabelKey, string>>;
 export type StudioGraphBridgeOptions = {
   initialLayoutMode?: StudioLayoutMode;
   forceInitialAutoLayout?: boolean;
+  defaultAutoLayoutRequestId?: number;
   authoring?: StudioAuthoringDocument | null;
   canvas?: StudioCanvasSnapshot | null;
   viewModel?: GraphViewModel | null;
@@ -264,6 +265,7 @@ export class StudioGraphIsland {
   private hasRenderedProjection = false;
   private lastViewportSignature = "";
   private lastDefaultAutoLayoutSignature = "";
+  private lastDefaultAutoLayoutRequestId = 0;
   private lastEditSelectionSignature = "";
   private lastHandledEditSelectionRequest = 0;
   private lastHandledDismissCommandFormRequest = 0;
@@ -422,7 +424,7 @@ export class StudioGraphIsland {
     this.attachCommandFormHost();
     this.handleHistoryEvent(options.historyEvent);
     this.handleDismissCommandFormRequest(options.dismissCommandFormRequest);
-    const viewModel = options.viewModel ?? buildGraphViewModel({
+    let viewModel = options.viewModel ?? buildGraphViewModel({
       authoring: options.authoring,
       validation: options.validation
         ? {
@@ -440,6 +442,27 @@ export class StudioGraphIsland {
       }
     }
     this.preserveBoundaryNodeLayout(viewModel);
+    const layoutRequested = Number(options.defaultAutoLayoutRequestId || 0) > this.lastDefaultAutoLayoutRequestId;
+    if (!layoutRequested && this.currentLayoutProjection) {
+      const projectedNodes = new Map(this.currentLayoutProjection.nodes.map((node) => [node.id, node]));
+      viewModel = {
+        ...viewModel,
+        nodes: viewModel.nodes.map((node) => {
+          const projected = projectedNodes.get(node.id);
+          if (!projected) return node;
+          return {
+            ...node,
+            layout: {
+              ...node.layout,
+              x: projected.x,
+              y: projected.y,
+              width: projected.width,
+              height: projected.height
+            }
+          };
+        })
+      };
+    }
     this.currentViewModel = viewModel;
     if (!options.authoring && !options.viewModel) {
       this.applying = true;
@@ -449,6 +472,7 @@ export class StudioGraphIsland {
         this.applying = false;
       }
       this.hasRenderedProjection = false;
+      this.currentLayoutProjection = null;
       this.setEmptyState(true, viewModel.validation.diagnostics.length > 0
         ? this.label("fixMermaidBeforeGraphEditing")
         : this.label("noRolesAvailable"));
@@ -461,7 +485,7 @@ export class StudioGraphIsland {
       return;
     }
     this.setEmptyState(false);
-    this.currentLayoutProjection = createStoredLayoutProjection(viewModel);
+    this.currentLayoutProjection = createStoredLayoutProjection(this.currentViewModel);
     this.applying = true;
     try {
       this.renderCurrentProjection();
@@ -537,7 +561,7 @@ export class StudioGraphIsland {
       },
       mousewheel: {
         enabled: true,
-        modifiers: ["ctrl", "meta"],
+        modifiers: [],
         minScale: 0.2,
         maxScale: 2.4
       },
@@ -1569,11 +1593,17 @@ export class StudioGraphIsland {
     if (!this.options.defaultAutoLayout) {
       return false;
     }
+    const requestId = Number(this.options.defaultAutoLayoutRequestId || 0);
+    const requested = requestId > this.lastDefaultAutoLayoutRequestId;
+    if (requested && this.options.initialLayoutMode) {
+      this.layoutMode = this.options.initialLayoutMode;
+    }
     const signature = this.defaultAutoLayoutSignature();
-    if (!signature || (!this.isReadOnly() && this.hasRenderedProjection) || this.lastDefaultAutoLayoutSignature === signature) {
+    if (!signature || (!requested && !this.isReadOnly() && this.hasRenderedProjection) || (!requested && this.lastDefaultAutoLayoutSignature === signature)) {
       return false;
     }
     if (
+      !requested &&
       !this.isReadOnly() &&
       !this.options.forceInitialAutoLayout &&
       !this.hasRenderedProjection &&
@@ -1587,6 +1617,9 @@ export class StudioGraphIsland {
       return false;
     }
     this.lastDefaultAutoLayoutSignature = signature;
+    if (requested) {
+      this.lastDefaultAutoLayoutRequestId = requestId;
+    }
     return true;
   }
 

@@ -55,6 +55,7 @@ export function createBuildStateSlice() {
     studioWorkbenchSideTab: "structure",
     studioBridgeFullscreen: false,
     studioBridgeEditSelectionRequest: 0,
+    studioAutoLayoutRequestId: 1,
     studioInspectorCollapsed: false,
     studioInspectorWidth: 380,
     studioSelectionCommandFormOpen: false,

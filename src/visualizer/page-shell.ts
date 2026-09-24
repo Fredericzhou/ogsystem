@@ -21,6 +21,7 @@ export function renderPageHtml(workdir: string, apiPrefix: string, i18n: PageI18
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <link rel="icon" href="data:," />
   <title>${escapeHtml(t("app.title"))}</title>
   <style>
 ${renderPageShellStyles()}  </style>

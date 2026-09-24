@@ -1598,7 +1598,11 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
     function bindWorkbenchViewButtons() {
       for (const button of workbenchViewButtons()) {
         bindOnce(button, "click", "workbench-view", () => {
-          state.workbenchView = button.getAttribute("data-workbench-view") || "bridge";
+          const nextView = button.getAttribute("data-workbench-view") || "bridge";
+          if (nextView === "bridge" && state.workbenchView !== "bridge") {
+            state.studioAutoLayoutRequestId = Number(state.studioAutoLayoutRequestId || 0) + 1;
+          }
+          state.workbenchView = nextView;
           state.buildMode = "edit";
           if (state.workbenchView === "bridge") {
             clearTimeout(state.studioGraphMountRetryTimer);
@@ -1995,7 +1999,11 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
       }
       for (const button of consoleTabsEl.querySelectorAll("[data-console-tab]")) {
         bindOnce(button, "click", "console-tab", () => {
-          state.consoleTab = button.getAttribute("data-console-tab") || designConsoleTab();
+          const nextTab = button.getAttribute("data-console-tab") || designConsoleTab();
+          if (nextTab === designConsoleTab() && state.consoleTab !== designConsoleTab()) {
+            state.studioAutoLayoutRequestId = Number(state.studioAutoLayoutRequestId || 0) + 1;
+          }
+          state.consoleTab = nextTab;
           if (isDesignConsoleTab() && state.hasProject) {
             resetBuildEditingState();
             const refreshWorkdir = state.workspace?.workdir || "";
@@ -3052,7 +3060,6 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
       for (const button of Array.from(dialog.querySelectorAll?.("[data-studio-selection-collapse]") || [])) {
         button.disabled = shouldLockWorkbenchNavigation();
       }
-
       if (activeTab === "debug") {
         kindLabel.textContent = t("build.mode.debug", undefined, "Debug");
         title.textContent = selectedRoleIdValue || state.selectedRunId || state.studioBridgeLastDryRunId || t("studio.graphWorkspace", undefined, "Graph workspace");
@@ -3079,6 +3086,11 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
         title.textContent = t("studio.selectRole", undefined, "Select a role to inspect metadata.");
       }
       dialog.setAttribute("aria-label", title.textContent || kindLabel.textContent || t("studio.graphWorkspace", undefined, "Graph workspace"));
+      const selectionBackButton = dialog.querySelector?.("[data-studio-selection-back]");
+      if (selectionBackButton) {
+        selectionBackButton.hidden = !selectionKind;
+        selectionBackButton.disabled = shouldLockWorkbenchNavigation();
+      }
       const collapseButton = overlay.querySelector?.("[data-studio-selection-collapse]");
       if (collapseButton) {
         collapseButton.textContent = collapsed ? ">" : "<";
@@ -3331,6 +3343,12 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
         if (collapseButton) {
           state.studioInspectorCollapsed = !state.studioInspectorCollapsed;
           renderStudioSelectionDialog();
+          event.preventDefault();
+          return;
+        }
+        const selectionBackButton = closestSelectionAction(event.target, "data-studio-selection-back");
+        if (selectionBackButton) {
+          closeStudioSelectionDialog({ clearSelection: true, syncGraph: true });
           event.preventDefault();
           return;
         }
@@ -4576,6 +4594,7 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
         viewport: state.graphViewport || undefined,
         initialLayoutMode: "flow",
         forceInitialAutoLayout: true,
+        defaultAutoLayoutRequestId: state.studioAutoLayoutRequestId,
         editSelectionRequest: state.studioBridgeEditSelectionRequest,
         defaultAutoLayout: true,
         busy: Boolean(state.actionBusy),

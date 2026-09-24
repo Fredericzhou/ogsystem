@@ -190,6 +190,36 @@ test("Studio Bridge renders and edits through the real graph workspace", async (
     await expect(page.locator("#studio-graph-root")).toBeVisible();
     await expect(page.locator("[data-studio-graph-layout]")).toHaveValue("flow");
     await waitForStudioCell(page, "demo-analyst");
+    await expect.poll(async () => page.evaluate(() => {
+      const left = document.querySelector('#studio-graph-root [data-cell-id="input"]')?.getBoundingClientRect();
+      const role = document.querySelector('#studio-graph-root [data-cell-id="demo-analyst"]')?.getBoundingClientRect();
+      const right = document.querySelector('#studio-graph-root [data-cell-id="output"]')?.getBoundingClientRect();
+      return Boolean(left && role && right && left.right < role.left && role.right < right.left);
+    })).toBe(true);
+    await page.locator('[data-studio-side-tab="structure"]').click();
+    const browseFilter = page.locator('[data-studio-bridge-filter="1"]');
+    await browseFilter.fill("demo");
+    await page.locator('[data-studio-role-id="demo-analyst"]').click();
+    await expect(page.locator('[data-studio-selection-panel="selection"]')).toBeVisible();
+    await expectStudioCellPulse(page, "demo-analyst");
+    await page.locator("[data-studio-selection-back]").click();
+    await expect(page.locator('[data-studio-selection-panel="structure"]')).toBeVisible();
+    await expect(page.locator('[data-studio-bridge-filter="1"]')).toHaveValue("demo");
+    const firstFilteredFlow = page.locator('[data-studio-flow-key]').first();
+    await firstFilteredFlow.click();
+    await expect(page.locator('[data-studio-selection-panel="selection"]')).toBeVisible();
+    await page.locator("[data-studio-selection-back]").click();
+    await expect(page.locator('[data-studio-bridge-filter="1"]')).toHaveValue("demo");
+    await page.locator('[data-studio-bridge-filter="1"]').fill("");
+    const graphViewport = page.locator("#studio-graph-root .x6-graph-svg-viewport");
+    const viewportBeforeWheel = await graphViewport.getAttribute("transform");
+    const graphBox = await page.locator("#studio-graph-root [data-studio-graph-canvas]").boundingBox();
+    expect(graphBox).toBeTruthy();
+    if (graphBox) {
+      await page.mouse.move(graphBox.x + graphBox.width / 2, graphBox.y + graphBox.height / 2);
+      await page.mouse.wheel(0, -320);
+      await expect.poll(() => graphViewport.getAttribute("transform")).not.toBe(viewportBeforeWheel);
+    }
     await expectDockedSelectionAligned(page);
     await expect(page.getByText(/\bX6\b/)).toHaveCount(0);
     await expect(page.locator('#studio-graph-root .studio-graph-toolbar')).toBeVisible();
@@ -490,6 +520,22 @@ test("Studio Bridge renders and edits through the real graph workspace", async (
     await page.getByRole("tab", { name: designTabName }).click();
     await expect(page.locator("#console-panel-build")).toBeVisible();
     await expect(page.locator("#studio-graph-root")).toBeVisible();
+    const layoutSelect = page.locator("#studio-graph-root [data-studio-graph-layout]");
+    await layoutSelect.selectOption("stacked");
+    await expect.poll(async () => page.evaluate(() => {
+      const role = document.querySelector('#studio-graph-root [data-cell-id="demo-analyst"]')?.getBoundingClientRect();
+      const right = document.querySelector('#studio-graph-root [data-cell-id="output"]')?.getBoundingClientRect();
+      return Boolean(role && right && role.top < right.top);
+    })).toBe(true);
+    await page.getByRole("tab", { name: runTabName }).click();
+    await page.getByRole("tab", { name: designTabName }).click();
+    await expect(layoutSelect).toHaveValue("flow");
+    await expect.poll(async () => page.evaluate(() => {
+      const left = document.querySelector('#studio-graph-root [data-cell-id="input"]')?.getBoundingClientRect();
+      const role = document.querySelector('#studio-graph-root [data-cell-id="demo-analyst"]')?.getBoundingClientRect();
+      const right = document.querySelector('#studio-graph-root [data-cell-id="output"]')?.getBoundingClientRect();
+      return Boolean(left && role && right && left.right < role.left && role.right < right.left);
+    })).toBe(true);
     await expect(page.locator('[data-workbench-view="bridge"]')).toHaveAttribute("aria-pressed", "true");
     await expect(page.locator('#studio-graph-root [data-studio-graph-action="add-role"]')).toBeVisible();
     await expect(page.locator('#studio-graph-root [data-studio-graph-action="undo"]')).toBeVisible();
@@ -901,4 +947,61 @@ test("fan-out projection renders a visual bundle without replacing business edge
   } finally {
     await new Promise<void>((resolve) => started.server.close(() => resolve()));
   }
+});
+
+test("deployed visualizer UAT keeps flow layout, browse return, and wheel zoom working", async ({ page }) => {
+  const baseUrl = process.env.OGS_VISUALIZER_BASE_URL;
+  test.skip(!baseUrl, "Set OGS_VISUALIZER_BASE_URL to run against an installed release.");
+  const pageErrors: string[] = [];
+  page.on("response", (response) => {
+    if (response.status() >= 400) {
+      pageErrors.push(`HTTP ${response.status()} ${response.url()}`);
+    }
+  });
+  page.on("requestfailed", (request) => {
+    pageErrors.push(`Request failed ${request.url()}: ${request.failure()?.errorText ?? "unknown"}`);
+  });
+  page.on("pageerror", (error) => pageErrors.push(error.message));
+  page.on("console", (message) => {
+    if (message.type() === "error") {
+      const location = message.location();
+      pageErrors.push(`${message.text()} (${location.url || "unknown source"}:${location.lineNumber})`);
+    }
+  });
+
+  await page.goto(baseUrl!);
+  await expect(page.locator("#console-panel-project")).toBeVisible();
+  const designTab = page.locator('[data-console-tab="design"]');
+  if (await designTab.getAttribute("aria-selected") !== "true") {
+    await designTab.click();
+  }
+  await expect(page.locator("#studio-graph-root")).toBeVisible();
+  await expect(page.locator("#studio-graph-root [data-studio-graph-layout]")).toHaveValue("flow");
+  await waitForStudioCell(page, "proposal-author");
+  await expect.poll(async () => page.evaluate(() => {
+    const source = document.querySelector('#studio-graph-root [data-cell-id="proposal-author"]')?.getBoundingClientRect();
+    const target = document.querySelector('#studio-graph-root [data-cell-id="debate-critic"]')?.getBoundingClientRect();
+    return Boolean(source && target && source.right < target.left);
+  })).toBe(true);
+
+  await page.locator('[data-studio-side-tab="structure"]').click();
+  const rolesSection = page.locator("[data-studio-role-list-section]");
+  if (!(await rolesSection.getAttribute("open"))) {
+    await rolesSection.locator("summary").click();
+  }
+  await page.locator('[data-studio-role-id="proposal-author"]').click();
+  await expect(page.locator('[data-studio-selection-panel="selection"]')).toBeVisible();
+  await page.locator("[data-studio-selection-back]").click();
+  await expect(page.locator('[data-studio-selection-panel="structure"]')).toBeVisible();
+
+  const graphViewport = page.locator("#studio-graph-root .x6-graph-svg-viewport");
+  const beforeWheel = await graphViewport.getAttribute("transform");
+  const graphBox = await page.locator("#studio-graph-root [data-studio-graph-canvas]").boundingBox();
+  expect(graphBox).toBeTruthy();
+  if (graphBox) {
+    await page.mouse.move(graphBox.x + graphBox.width / 2, graphBox.y + graphBox.height / 2);
+    await page.mouse.wheel(0, -280);
+    await expect.poll(() => graphViewport.getAttribute("transform")).not.toBe(beforeWheel);
+  }
+  expect(pageErrors).toEqual([]);
 });

@@ -42,6 +42,7 @@ test("page shell keeps HTML, style, assets, and client script mounted", () => {
   const styles = renderPageShellStyles();
   assert.match(html, /^<!doctype html>/);
   assert.match(html, /<html lang="zh-CN">/);
+  assert.match(html, /<link rel="icon" href="data:," \/>/);
   assert.match(html, /<style>\n/);
   assert.match(styles, /--surface-panel: var\(--panel\)/);
   assert.match(styles, /--surface-section: var\(--panel-soft\)/);

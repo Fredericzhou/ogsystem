@@ -1115,6 +1115,7 @@ export const en = {
   "studio.runtimeLoopIteration": "loop round {count}",
   "studio.runtimeJoinWaiting": "join sources {ready}/{expected}, missing {missing}",
   "studio.roleInspector": "Role details",
+  "studio.backToBrowse": "Back to browse",
   "studio.rolePackage": "role package",
   "studio.rolePackageLoadHint": "Load this role package to inspect its runtime files. role.json must include the complete current Role Contract.",
   "studio.rolePackageSaved": "Role package saved: {roleId}.",

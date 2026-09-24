@@ -1119,6 +1119,7 @@ export const zhCN = {
   "studio.runtimeLoopIteration": "循环轮次 {count}",
   "studio.runtimeJoinWaiting": "汇合来源 {ready}/{expected}，缺少 {missing}",
   "studio.roleInspector": "角色详情",
+  "studio.backToBrowse": "返回检索列表",
   "studio.rolePackage": "角色包",
   "studio.rolePackageLoadHint": "加载该角色包以查看运行时文件。role.json 必须包含完整的当前角色契约。",
   "studio.rolePackageSaved": "角色包已保存：{roleId}。",
