@@ -674,8 +674,6 @@ test("lifecycle cli review commands expose pending human review state and can ap
     "review.test-operator@1#1.r1",
     "--decision",
     "approve",
-    "--actor",
-    "tester",
     "--comment",
     "approved",
     "--workdir",

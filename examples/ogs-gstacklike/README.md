@@ -51,7 +51,7 @@ ogs run list --workdir examples/ogs-gstacklike
 ogs run review list <run-id> --workdir examples/ogs-gstacklike
 ogs run review inspect <run-id> <review-id> --workdir examples/ogs-gstacklike
 
-ogs run review decide <run-id> <review-id> --decision approve --comment "approved" --actor reviewer --workdir examples/ogs-gstacklike
+ogs run review decide <run-id> <review-id> --decision approve --comment "approved" --workdir examples/ogs-gstacklike
 ogs run resume <run-id> --workdir examples/ogs-gstacklike
 ```
 
@@ -85,7 +85,7 @@ ogs run resume <run-id> --workdir examples/ogs-gstacklike
 3. `ogs run status <run-id> --workdir examples/ogs-gstacklike`
 4. 读取 `latestPendingReviewId`
 5. `ogs run review inspect <run-id> <review-id> --workdir examples/ogs-gstacklike`
-6. `ogs run review decide <run-id> <review-id> --decision approve --comment "approved" --actor reviewer --workdir examples/ogs-gstacklike`
+6. `ogs run review decide <run-id> <review-id> --decision approve --comment "approved" --workdir examples/ogs-gstacklike`
 7. `ogs run resume <run-id> --workdir examples/ogs-gstacklike`
 8. 打开 `.ogs/runs/<run-id>/shared/index.html`
 

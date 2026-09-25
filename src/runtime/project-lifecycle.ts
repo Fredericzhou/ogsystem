@@ -10,7 +10,7 @@
 import { randomUUID } from "node:crypto";
 import type { Dirent } from "node:fs";
 import { createReadStream } from "node:fs";
-import { cp, mkdir, readFile, readdir, stat, writeFile } from "node:fs/promises";
+import { appendFile, cp, mkdir, readFile, readdir, stat, writeFile } from "node:fs/promises";
 import { createInterface } from "node:readline";
 import { basename, dirname, resolve } from "node:path";
 
@@ -43,6 +43,7 @@ import type {
 } from "./types.js";
 import type { RunSummaryProjection } from "./run-summary-schema.js";
 import type { SystemDefinition } from "./types.js";
+import type { ControlPlanePrincipal } from "./identity.js";
 
 export const OGS_DIR = ".ogs";
 export const OGS_RUNS_DIR = ".ogs/runs";
@@ -953,6 +954,9 @@ function normalizeReviewProjection(args: {
     decidedAt: asString(decisionSnapshot?.decidedAt),
     committedAt: asString(decisionSnapshot?.committedAt),
     actor: asString(decisionSnapshot?.actor),
+    principal: decisionSnapshot?.principal && typeof decisionSnapshot.principal === "object"
+      ? decisionSnapshot.principal as import("./identity.js").ControlPlanePrincipal
+      : undefined,
     comment: asString(decisionSnapshot?.comment),
     scope:
       (decisionSnapshot?.scope === "branch" || decisionSnapshot?.scope === "run"
@@ -1902,13 +1906,32 @@ export async function inspectHumanReview(
   };
 }
 
+export async function recordControlPlaneAudit(args: {
+  workdir: string;
+  runId: string;
+  action: "run.start" | "run.resume" | "run.stop" | "review.decide";
+  principal: ControlPlanePrincipal;
+}): Promise<void> {
+  const runDir = resolveRunDir(args.workdir, args.runId);
+  const runStat = await stat(runDir).catch(() => undefined);
+  if (!runStat?.isDirectory()) throw new Error(`Run not found: ${args.runId}`);
+  await appendFile(resolve(runDir, "events.jsonl"), `${JSON.stringify({
+    type: "control.audit",
+    id: randomUUID(),
+    at: new Date().toISOString(),
+    runId: args.runId,
+    action: args.action,
+    principal: args.principal
+  })}\n`, "utf8");
+}
+
 export async function writeHumanReviewDecision(args: {
   workdir: string;
   runId: string;
   reviewId: string;
   decision: HumanReviewDecision;
+  principal: import("./identity.js").ControlPlanePrincipal;
   comment?: string;
-  actor?: string;
   scope?: "branch" | "run";
 }): Promise<Record<string, unknown>> {
   const currentReview = await inspectHumanReview(args.workdir, args.runId, args.reviewId);
@@ -1965,10 +1988,17 @@ export async function writeHumanReviewDecision(args: {
     decidedAt: new Date().toISOString(),
     decision: args.decision,
     comment: args.comment,
-    actor: args.actor,
+    actor: args.principal.id,
+    principal: args.principal,
     scope: effectiveScope
   };
   await writeJsonFileAtomic(resolve(reviewsDir, `${args.reviewId}.decision.json`), record);
+  await recordControlPlaneAudit({
+    workdir: args.workdir,
+    runId: args.runId,
+    action: "review.decide",
+    principal: args.principal
+  });
   return {
     runId: args.runId,
     runDir,
@@ -2054,7 +2084,12 @@ async function readLogRecordsFromPath(sourcePath: string, args?: {
   return records;
 }
 
-export async function requestStop(workdir: string, runId: string, reason?: string): Promise<Record<string, unknown>> {
+export async function requestStop(
+  workdir: string,
+  runId: string,
+  reason?: string,
+  principal?: ControlPlanePrincipal
+): Promise<Record<string, unknown>> {
   const runDir = resolveRunDir(workdir, runId);
   const runStat = await stat(runDir).catch(() => undefined);
   if (!runStat?.isDirectory()) {
@@ -2064,6 +2099,9 @@ export async function requestStop(workdir: string, runId: string, reason?: strin
     runDir,
     reason
   });
+  if (principal) {
+    await recordControlPlaneAudit({ workdir, runId, action: "run.stop", principal });
+  }
   return {
     runId,
     runDir,

@@ -63,6 +63,7 @@ import {
   renderTimelineHtml,
   renderTimelineEventHtml,
   renderConversationHtml,
+  renderFlowTraceHtml,
   renderWorkbenchActionsHtml,
   renderWorkbenchModeBodyHtml,
   renderWorkbenchModeTabsHtml,
@@ -138,6 +139,7 @@ import { WORKBENCH_VALIDATION_DEBOUNCE_MS } from "./client-input-policy.js";
 import { getDictionary, type Dictionary, type Locale } from "./i18n/index.js";
 import { applyCanvasLayoutPatchToAuthoring } from "./client-studio-authoring.js";
 import { createClientApi } from "./client-api.js";
+import { roleColorForId } from "./role-color.js";
 
 export {
   buildRouteSearch,
@@ -177,6 +179,7 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
     const API_PREFIX = ${JSON.stringify(apiPrefix)};
     const INITIAL_LOCALE = ${JSON.stringify(locale)};
     const I18N_MESSAGES = ${JSON.stringify(messagesByLocale)};
+    const roleColorForId = ${roleColorForId.toString()};
     const I18N_STORAGE_KEY = "ogs.visualizer.lang";
     const STUDIO_INSPECTOR_WIDTH_STORAGE_KEY = "ogs.visualizer.studio.inspectorWidth";
     window.OGSVisualizerClient = window.OGSVisualizerClient || {};
@@ -223,6 +226,7 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
     const renderTimelineHtml = ${renderTimelineHtml.toString()};
     const renderTimelineEventHtml = ${renderTimelineEventHtml.toString()};
     const renderConversationHtml = ${renderConversationHtml.toString()};
+    const renderFlowTraceHtml = ${renderFlowTraceHtml.toString()};
     const mapProjectCreateErrorFromResponse = ${mapProjectCreateErrorFromResponse.toString()};
     const asStudioChatList = ${asStudioChatList.toString()};
     const studioChatCanApply = ${studioChatCanApply.toString()};
@@ -398,6 +402,7 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
     const failureDetailEl = document.getElementById("failure-detail");
     const failureNextChecksEl = document.getElementById("failure-next-checks");
     const timelineEl = document.getElementById("timeline");
+    const runFlowEl = document.getElementById("run-flow");
     const timelineRoleEl = document.getElementById("timeline-role");
     const timelineTypeEl = document.getElementById("timeline-type");
     const timelineStatusEl = document.getElementById("timeline-status");
@@ -442,7 +447,7 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
     const stopRunButton = document.getElementById("stop-run");
     const refreshButton = document.getElementById("refresh");
     const localeSelectEl = document.getElementById("locale-select");
-    const OPERATE_DEBUG_PANEL_IDS = ["overview", "graph", "recovery", "reviews"];
+    const OPERATE_DEBUG_PANEL_IDS = ["overview", "recovery", "reviews"];
 
     function joinIdRefs(...ids) {
       return ids.filter(Boolean).join(" ").trim();
@@ -451,8 +456,10 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
     function getOperatePanelId(operateTab) {
       switch (operateTab) {
         case "graph":
-          return "operate-tabpanel-graph";
+          return "operate-tabpanel-overview";
         case "recovery":
+          return "operate-tabpanel-recovery";
+        case "operations":
           return "operate-tabpanel-recovery";
         case "reviews":
           return "operate-tabpanel-reviews";
@@ -499,9 +506,10 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
         const panelId = "operate-tabpanel-" + tab;
         const panelRole = isRunConsoleTab() ? "tabpanel" : "group";
         const panelLabels = isRunConsoleTab()
-          ? joinIdRefs("console-tab-operate", "operate-tab-" + tab)
+          ? joinIdRefs("console-tab-run", "operate-tab-" + ((tab === "recovery" || tab === "reviews") ? "operations" : tab))
           : "";
-        const panelVisible = isRunConsoleTab() && state.operateTab === tab;
+        const panelVisible = isRunConsoleTab() && (state.operateTab === tab ||
+          (state.operateTab === "operations" && (tab === "recovery" || tab === "reviews")));
         setPanelState(panelId, panelVisible, panelRole, panelLabels);
       }
     }
@@ -1911,7 +1919,7 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
     function renderOperateTabs() {
       const showOperateWorkspace = isRunConsoleTab();
       document.body.classList.toggle("show-operate-workspace", showOperateWorkspace);
-      for (const tab of ["overview", "graph", "recovery", "logs", "reviews", "artifacts"]) {
+      for (const tab of ["overview", "operations"]) {
         document.body.classList.toggle("operate-tab-" + tab, showOperateWorkspace && state.operateTab === tab);
       }
       if (!operateTabsEl) {
@@ -1924,6 +1932,14 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
         return;
       }
       setInnerHtmlIfChanged(operateTabsEl, renderOperateTabsHtml({ operateTab: state.operateTab, t, escapeText }));
+      const graphDisclosure = document.getElementById("run-graph-disclosure");
+      if (graphDisclosure) {
+        bindOnce(graphDisclosure, "toggle", "run-graph-toggle", () => {
+          if (graphDisclosure.open && state.graph) {
+            mountRunGraphIsland(resolveRunGraphPayloadForDisplay());
+          }
+        });
+      }
       for (const button of operateTabsEl.querySelectorAll("[data-operate-tab]")) {
         button.disabled = Boolean(state.actionBusy);
         bindOnce(button, "click", "operate-tab", () => {
@@ -1991,19 +2007,26 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
       }
       renderOperateTabs();
       renderHeroActions();
+      document.body.classList.toggle("has-selected-run", Boolean(state.selectedRunId));
+      const operateEmptyState = document.getElementById("operate-empty-state");
+      if (operateEmptyState) operateEmptyState.hidden = Boolean(state.selectedRunId);
       clearTimeout(state.runGraphMountRetryTimer);
       state.runGraphMountRetryTimer = null;
       state.runGraphMountRetryCount = 0;
-      if (isRunConsoleTab() && state.operateTab === "graph" && state.graph?.graph) {
+      if (isRunConsoleTab() && state.operateTab === "overview" && state.graph?.graph && document.getElementById("run-graph-disclosure")?.open) {
         mountRunGraphIsland(resolveRunGraphPayloadForDisplay());
       }
       for (const button of consoleTabsEl.querySelectorAll("[data-console-tab]")) {
         bindOnce(button, "click", "console-tab", () => {
           const nextTab = button.getAttribute("data-console-tab") || designConsoleTab();
+          const enteringRun = nextTab === runConsoleTab() && state.consoleTab !== runConsoleTab();
           if (nextTab === designConsoleTab() && state.consoleTab !== designConsoleTab()) {
             state.studioAutoLayoutRequestId = Number(state.studioAutoLayoutRequestId || 0) + 1;
           }
           state.consoleTab = nextTab;
+          if (enteringRun && !state.selectedRunId) {
+            state.operateTab = "operations";
+          }
           if (isDesignConsoleTab() && state.hasProject) {
             resetBuildEditingState();
             const refreshWorkdir = state.workspace?.workdir || "";
@@ -2018,6 +2041,9 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
           renderSelectedRun();
           renderActionState();
           writeRouteToLocation();
+          if (enteringRun && !state.selectedRunId && state.runs.length) {
+            void selectRun(state.runs[0].runId, { preserveOperateTab: true });
+          }
         });
       }
     }
@@ -3028,7 +3054,7 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
         kindLabel.textContent = t("build.mode.debug", undefined, "Debug");
         title.textContent = selectedRoleIdValue || state.selectedRunId || state.studioBridgeLastDryRunId || t("studio.graphWorkspace", undefined, "Graph workspace");
       } else if (activeTab === "structure") {
-        kindLabel.textContent = selectionKind ? t("studio.retrievalTab", undefined, "Configuration") : t("studio.graphWorkspace", undefined, "Graph workspace");
+        kindLabel.textContent = selectionKind ? t("studio.retrievalTab", undefined, "Configuration") : t("workbench.structure", undefined, "Structure");
         title.textContent = selectedRoleIdValue || selectedFlowKeyValue || state.studioSelectionCommandKind || t("studio.graphWorkspace", undefined, "Graph workspace");
       } else {
         kindLabel.textContent = t("studio.graphWorkspace", undefined, "Graph workspace");
@@ -3221,7 +3247,7 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
               state.consoleTab = runConsoleTab();
               renderConsoleTabs();
               await selectRun(runId);
-              state.operateTab = "reviews";
+              state.operateTab = "operations";
               renderOperateTabs();
               await selectReview(runId, reviewId);
             })().catch((error) => {
@@ -4638,7 +4664,7 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
           : 150;
       state.runGraphMountRetryTimer = setTimeout(() => {
         state.runGraphMountRetryTimer = null;
-        if (isRunConsoleTab() && state.operateTab === "graph") {
+        if (isRunConsoleTab() && state.operateTab === "overview" && document.getElementById("run-graph-disclosure")?.open) {
           mountRunGraphIsland(graph);
         } else {
           state.runGraphMountRetryCount = 0;
@@ -4647,7 +4673,7 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
     }
 
     function mountRunGraphIsland(graphPayload) {
-      const runGraphActive = isRunConsoleTab() && state.operateTab === "graph";
+      const runGraphActive = isRunConsoleTab() && state.operateTab === "overview" && Boolean(document.getElementById("run-graph-disclosure")?.open);
       if (!runGraphActive) {
         clearTimeout(state.runGraphMountRetryTimer);
         state.runGraphMountRetryTimer = null;
@@ -4658,7 +4684,7 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
       if (!root) {
         return;
       }
-      const visiblePanel = document.getElementById("operate-tabpanel-graph");
+      const visiblePanel = document.getElementById("operate-tabpanel-overview");
       const panelVisible = Boolean(visiblePanel && visiblePanel.hidden === false);
       const rect = typeof root.getBoundingClientRect === "function"
         ? root.getBoundingClientRect()
@@ -4697,6 +4723,7 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
         onSelectRole: (roleId) => {
           state.runGraphSelectedRoleId = roleId || "";
           state.runGraphSelectedFlowKey = "";
+          focusFlowRole(roleId);
         },
         onSelectFlow: (flowKey) => {
           state.runGraphSelectedFlowKey = flowKey || "";
@@ -5005,7 +5032,6 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
         actionFormEl.innerHTML = [
           '<div class="event"><div class="event-top"><span>' + escapeText(t("form.reviewDecision")) + '</span><span>' + escapeText(form.fields.reviewId || state.selectedReviewId || "n/a") + '</span></div><strong>' + escapeText(form.fields.decision || t("form.decision")) + '</strong><div class="hint">' + escapeText(t("form.reviewDecisionHint")) + '</div></div>',
           '<div class="form-grid">',
-          '<label class="field"><span>' + escapeText(t("form.actor")) + '</span><input id="action-review-actor" value="' + escapeText(form.fields.actor || "") + '"' + disabled + ' /></label>',
           '<label class="field"><span>' + escapeText(t("form.decision")) + '</span><input id="action-review-decision" value="' + escapeText(form.fields.decision || "") + '" disabled /></label>',
           '<label class="field full"><span>' + escapeText(t("form.comment")) + '</span><textarea id="action-review-comment"' + disabled + '>' + escapeText(form.fields.comment || "") + '</textarea></label>',
           (form.fields.decision === "terminate"
@@ -5052,7 +5078,7 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
             : form.kind === "stop"
               ? "action-stop-reason"
               : form.kind === "review"
-                ? "action-review-actor"
+                ? "action-review-comment"
                 : form.kind === "saveAs"
                   ? "action-save-as-path"
                   : "action-form-cancel";
@@ -5073,6 +5099,7 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
         const workspace = state.workspace || {};
         if (workdirEl && workspace.workdir) {
           workdirEl.textContent = workspace.workdir;
+          workdirEl.title = workspace.workdir;
         }
         if (opsSummaryEl) opsSummaryEl.innerHTML = workspaceEmptyStateHtml("operate");
         if (releaseGateEl) releaseGateEl.innerHTML = workspaceEmptyStateHtml("validate");
@@ -5093,6 +5120,7 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
       }
       if (workdirEl) {
         workdirEl.textContent = state.project.summary?.workdir || workdirEl.textContent;
+        workdirEl.title = workdirEl.textContent || "";
       }
       if (opsSummaryEl) {
         opsSummaryEl.innerHTML = renderOpsSummaryPanel({
@@ -5118,6 +5146,7 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
           bindings: state.bindings,
           workbenchSavedPath: state.workbenchSavedPath || "system.mmd",
           workbenchDirty: state.workbenchSource !== state.workbenchDiskSource,
+          releaseBlockers: releaseDecision.blockers,
           lastDryRunId: state.studioBridgeLastDryRunId,
           exportReady: releaseDecision.canExport,
           t
@@ -5417,6 +5446,80 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
       });
     }
 
+    function renderFlowTrace() {
+      if (!runFlowEl) return;
+      if (state.runDetailLoading) {
+        runFlowEl.innerHTML = loadingSkeleton(t("state.loadingRunDetail", undefined, "Loading run detail"), 3);
+        return;
+      }
+      runFlowEl.innerHTML = renderFlowTraceHtml({
+        projection: state.conversation,
+        graph: state.graph,
+        t,
+        escapeText,
+        statusClass,
+        displayUiToken,
+        formatTime,
+        selectedRoleId: state.runGraphSelectedRoleId
+      });
+      for (const button of runFlowEl.querySelectorAll("[data-flow-role-focus]")) {
+        bindOnce(button, "click", "flow-role-focus", () => {
+          const roleId = button.getAttribute("data-flow-role-focus") || "";
+          state.runGraphSelectedRoleId = roleId;
+          state.runGraphSelectedFlowKey = "";
+          focusFlowRole(roleId);
+          const disclosure = document.getElementById("run-graph-disclosure");
+          if (disclosure && !disclosure.open) disclosure.open = true;
+          mountRunGraphIsland(resolveRunGraphPayloadForDisplay());
+        });
+      }
+      for (const disclosure of runFlowEl.querySelectorAll("[data-flow-role-io]")) {
+        bindOnce(disclosure, "toggle", "flow-role-io", async () => {
+          if (!disclosure.open || disclosure.dataset.loaded === "true" || disclosure.dataset.loaded === "loading") {
+            return;
+          }
+          const runId = state.selectedRunId;
+          const roleId = disclosure.getAttribute("data-flow-role-io") || "";
+          const branchId = disclosure.getAttribute("data-flow-branch-id") || "";
+          const loopIteration = disclosure.getAttribute("data-flow-loop-iteration") || "";
+          const body = disclosure.querySelector(".flow-step-detail-body");
+          if (!runId || !roleId || !body) return;
+          disclosure.dataset.loaded = "loading";
+          body.innerHTML = '<div class="hint">' + escapeText(t("common.loading", undefined, "Loading")) + "</div>";
+          const params = new URLSearchParams({ roleId });
+          if (branchId) params.set("branchId", branchId);
+          if (loopIteration) params.set("loopIteration", loopIteration);
+          try {
+            const detail = await requestJson(API_PREFIX + "/runs/" + encodeURIComponent(runId) + "/role-io?" + params.toString());
+            if (!disclosure.isConnected || state.selectedRunId !== runId) return;
+            const result = asRecord(detail?.result);
+            const resultJson = result && Object.keys(result).length ? formatJson(result) : "";
+            const input = String(detail?.inboxMarkdown || "");
+            const output = String(detail?.outboxMarkdown || "");
+            body.innerHTML = '<div class="flow-step-detail-grid">' +
+              '<section><h4>' + escapeText(t("flow.input", undefined, "Input")) + '</h4><pre>' + escapeText(input || t("state.noInputSnapshot", undefined, "No input snapshot")) + "</pre></section>" +
+              '<section><h4>' + escapeText(t("flow.output", undefined, "Output")) + '</h4><pre>' + escapeText(output || t("state.noOutputSnapshot", undefined, "No output snapshot")) + "</pre>" + (resultJson ? "<pre>" + escapeText(resultJson) + "</pre>" : "") + "</section></div>";
+            disclosure.dataset.loaded = "true";
+          } catch (error) {
+            if (!disclosure.isConnected || state.selectedRunId !== runId) return;
+            body.innerHTML = '<div class="hint severity-warning">' + escapeText(error instanceof Error ? error.message : String(error)) + "</div>";
+            disclosure.dataset.loaded = "error";
+          }
+        });
+      }
+    }
+
+    function focusFlowRole(roleId) {
+      if (!roleId || !runFlowEl) return;
+      const step = [...runFlowEl.querySelectorAll("[data-flow-role]")]
+        .find((element) => element.getAttribute("data-flow-role") === roleId);
+      if (!step) return;
+      for (const element of runFlowEl.querySelectorAll("[data-flow-role]")) {
+        element.classList.toggle("is-role-focus", element === step);
+      }
+      step.scrollIntoView?.({ block: "center", behavior: "smooth" });
+    }
+
     function renderGraph() {
       if (state.runDetailLoading) {
         graphViewEl.innerHTML = loadingSkeleton(t("state.loadingRunGraph", undefined, "Loading run graph"), 4);
@@ -5462,7 +5565,7 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
         }
         existingRoot.setAttribute("data-selected-role-id", state.runGraphSelectedRoleId || "");
         existingRoot.setAttribute("data-selected-flow-key", state.runGraphSelectedFlowKey || "");
-        mountRunGraphIsland(graphPayload);
+        if (document.getElementById("run-graph-disclosure")?.open) mountRunGraphIsland(graphPayload);
       } else {
         graphViewEl.innerHTML = [
           '<div class="event" data-run-graph-summary><strong>' + escapeText(systemId) + '</strong><div class="hint">' + escapeText(t("graph.entryRolesFlows", {
@@ -5471,12 +5574,13 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
             flowCount: edges.length || 0
           })) + "</div></div>",
           '<div id="run-graph-root" class="studio-graph-root run-graph-root" data-selected-role-id="' + escapeText(state.runGraphSelectedRoleId) + '" data-selected-flow-key="' + escapeText(state.runGraphSelectedFlowKey) + '"></div>',
+          '<details class="run-event-details run-graph-notes"><summary>' + escapeText(t("graph.runtimeNotes", undefined, "Graph details")) + '</summary>',
           '<div class="run-graph-summary-grid">',
           '<div class="event"><div class="event-top"><span>' + escapeText(t("graph.runtimeSummary")) + '</span><span>' + escapeText(nodes.length) + " " + escapeText(t("common.nodes")) + " · " + escapeText(edges.length) + '</span></div><strong>' + escapeText(t("graph.topologyOverlay")) + '</strong><div class="hint">' + escapeText(t("graph.overlayHint")) + '</div></div>',
           '<div class="event"><div class="event-top"><span>' + escapeText(t("common.readOnly")) + '</span><span>' + escapeText(t("section.graphView", undefined, "Graph View")) + '</span></div><strong>' + escapeText(t("graph.readOnlyRuntimeGraph", undefined, "Read-only runtime graph")) + '</strong><div class="hint">' + escapeText(t("graph.x6RuntimeHint", undefined, "Uses the same role and flow projection as Studio Bridge, including start and end boundaries.")) + '</div></div>',
-          "</div>"
+          "</div></details>"
         ].join("");
-        mountRunGraphIsland(graphPayload);
+        if (document.getElementById("run-graph-disclosure")?.open) mountRunGraphIsland(graphPayload);
       }
       setInnerHtmlIfChanged(stateEl, renderRunStatePanel({
         state: state.detail?.state ?? null,
@@ -5579,7 +5683,6 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
             reviewId: state.selectedReviewId,
             decision: button.getAttribute("data-review-action"),
             scope: button.getAttribute("data-review-scope") || detail.scope || "branch",
-            actor: detail.actor || "visualizer",
             comment: detail.comment || \`recorded via visualizer (\${button.getAttribute("data-review-action")})\`
           }, { returnFocusEl: button })
         );
@@ -5651,6 +5754,8 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
       if (loadDiagnosticsButton) {
         loadDiagnosticsButton.disabled = Boolean(state.actionBusy);
         loadDiagnosticsButton.addEventListener("click", async () => {
+          const disclosure = document.getElementById("resume-diagnostics-disclosure");
+          if (disclosure) disclosure.open = true;
           await loadResumeDiagnostics(state.selectedRunId, { force: true });
         });
       }
@@ -5761,10 +5866,14 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
       const detail = state.detail;
       const header = detail?.header || null;
       const graphPayload = state.graph;
+      document.body.classList.toggle("has-selected-run", Boolean(state.selectedRunId));
+      const operateEmptyState = document.getElementById("operate-empty-state");
+      if (operateEmptyState) operateEmptyState.hidden = Boolean(state.selectedRunId);
       renderWorkbench();
       renderActionForm();
       renderStats(header, graphPayload);
       renderFailure();
+      renderFlowTrace();
       renderTimeline(state.events);
       renderGraph();
       renderReviews();
@@ -5900,7 +6009,10 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
           state.conversation = payload;
         }
         state.conversationCursor = payload?.cursor?.next || state.conversationCursor;
-        renderTimeline([]);
+        if (state.conversationMode) {
+          renderTimeline([]);
+        }
+        renderFlowTrace();
       } finally {
         if (incremental) {
           state.conversationLoadInFlight = false;
@@ -6460,6 +6572,7 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
         state.workbench = payload;
         if (workdirEl && payload.workdir) {
           workdirEl.textContent = payload.workdir;
+          workdirEl.title = payload.workdir;
         }
         state.workbenchDiskSource = payload.systemSource || "";
         state.workbenchSavedPath = relativeToWorkdir(payload.systemPath || "system.mmd") || "system.mmd";
@@ -6808,7 +6921,6 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
           scope: form.fields.decision === "terminate"
             ? readActionFieldValue("action-review-scope") || form.fields.scope || "branch"
             : undefined,
-          actor: readActionFieldValue("action-review-actor") || "visualizer",
           comment: readActionFieldValue("action-review-comment") || \`recorded via visualizer (\${form.fields.decision})\`
         };
         state.actionForm.fields = Object.assign({}, form.fields, payload);
@@ -7034,7 +7146,8 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
       await loadStudioDebugSnapshot(state.studioBridgeLastDryRunId);
       renderRuns();
       if (!state.projectHome && !state.selectedRunId && state.runs.length && isRunConsoleTab()) {
-        await selectRun(state.runs[0].runId);
+        state.operateTab = "operations";
+        await selectRun(state.runs[0].runId, { preserveOperateTab: true });
       }
       if (!state.runs.length) {
         setLive("idle", t("live.noRuns"));
@@ -7173,16 +7286,19 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
 
     async function refreshRunDetailAndGraph(runId) {
       const requestId = state.runSelectionRequestId;
-      const [detail, graphPayload, contractRuntimeStatus] = await Promise.all([
+      const [detail, graphPayload, contractRuntimeStatus, conversation] = await Promise.all([
         requestJson(\`\${API_PREFIX}/runs/\${encodeURIComponent(runId)}\`),
         requestJson(\`\${API_PREFIX}/runs/\${encodeURIComponent(runId)}/graph\`),
-        requestJson(\`\${API_PREFIX}/runs/\${encodeURIComponent(runId)}/contracts\`).catch(() => null)
+        requestJson(\`\${API_PREFIX}/runs/\${encodeURIComponent(runId)}/contracts\`).catch(() => null),
+        requestJson(\`\${API_PREFIX}/runs/\${encodeURIComponent(runId)}/conversation?limit=250\`).catch(() => null)
       ]);
       if (!isCurrentRunSelection(runId, requestId)) {
         return;
       }
       state.detail = detail;
       state.graph = graphPayload;
+      state.conversation = conversation;
+      state.conversationCursor = conversation?.cursor?.next || 0;
       if (state.studioDebugSnapshot?.runId === runId) {
         state.studioDebugSnapshot.detail = detail;
         state.studioDebugSnapshot.graph = graphPayload;
@@ -7194,6 +7310,7 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
       populateTimelineRoleOptions(graphPayload);
       renderGraph();
       renderStats(detail.header, graphPayload);
+      renderFlowTrace();
       renderActionState();
       renderRuns();
       renderOperateTabs();
@@ -7305,12 +7422,13 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
       state.runDetailLoading = true;
       renderSelectedRun();
       try {
-        const [detail, eventsPayload, graphPayload, reviewsPayload, contractRuntimeStatus] = await Promise.all([
+        const [detail, eventsPayload, graphPayload, reviewsPayload, contractRuntimeStatus, conversation] = await Promise.all([
           requestJson(\`\${API_PREFIX}/runs/\${encodeURIComponent(runId)}\`),
           requestJson(buildTimelineQuery(runId, { cursor: 0, limit: 250 })),
           requestJson(\`\${API_PREFIX}/runs/\${encodeURIComponent(runId)}/graph\`),
           requestJson(\`\${API_PREFIX}/runs/\${encodeURIComponent(runId)}/reviews\`),
-          requestJson(\`\${API_PREFIX}/runs/\${encodeURIComponent(runId)}/contracts\`).catch(() => null)
+          requestJson(\`\${API_PREFIX}/runs/\${encodeURIComponent(runId)}/contracts\`).catch(() => null),
+          requestJson(\`\${API_PREFIX}/runs/\${encodeURIComponent(runId)}/conversation?limit=250\`).catch(() => null)
         ]);
         if (!isCurrentRunSelection(runId, requestId)) {
           return;
@@ -7322,6 +7440,8 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
         state.eventCursorIndex = createStreamCursorIndex(state.events);
         state.graph = graphPayload;
         state.reviews = reviewsPayload;
+        state.conversation = conversation;
+        state.conversationCursor = conversation?.cursor?.next || 0;
         state.contractRuntimeStatus = contractRuntimeStatus;
         upsertRunFromHeader(detail.header);
         const fallbackRoleId = fallbackLogRoleId(detail.header);
@@ -7338,10 +7458,6 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
         renderProject();
         writeRouteToLocation();
         refreshMountedStudioRuntime();
-
-        if (state.conversationMode) {
-          await loadConversation(runId);
-        }
 
         if (!options || !options.keepStream) {
           stopStream();
@@ -7369,7 +7485,9 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
         state.consoleTab = runConsoleTab();
         renderConsoleTabs();
       }
-      state.operateTab = "graph";
+      if (options?.preserveOperateTab !== true) {
+        state.operateTab = "overview";
+      }
       state.selectedRunId = runId;
       state.runSelectionRequestId += 1;
       state.selectedReviewId = "";
@@ -7377,6 +7495,7 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
       resetStreamRefreshForRun(runId);
       closeActionForm();
       setSidebarOpen(false);
+      renderConsoleTabs();
       renderRuns();
       await loadSelectedRunBoot(runId, { keepStream: false });
     }
@@ -7409,6 +7528,8 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
       }
       state.projectHome = false;
       state.selectedReviewId = reviewId;
+      const reviewDisclosure = document.getElementById("review-detail-disclosure");
+      if (reviewDisclosure) reviewDisclosure.open = true;
       closeActionForm();
       await refreshSelectedReviewDetail(runId, { allowMissing: false });
       renderSelectedRun();
@@ -7824,8 +7945,11 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
     renderConsoleTabs();
     const restoreRunSelection = state.consoleTab === runConsoleTab();
     state.selectedRunId = restoreRunSelection ? initialRoute.runId : "";
+    if (state.consoleTab === runConsoleTab() && !state.selectedRunId) {
+      state.operateTab = "operations";
+    }
     if (state.selectedRunId) {
-      state.operateTab = "graph";
+      state.operateTab = "overview";
       renderConsoleTabs();
     }
     state.selectedReviewId = restoreRunSelection ? initialRoute.reviewId : "";

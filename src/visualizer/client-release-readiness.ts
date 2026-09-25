@@ -41,8 +41,9 @@ export function buildReleaseReadinessDecision(args: {
     });
   }
   const coverage = (args.readiness?.contractCoverage ?? {}) as Record<string, unknown>;
+  const handoffMode = coverage.handoffMode ?? args.contracts?.handoffMode ?? null;
   const missingContracts = Number(coverage.missingCount ?? coverage.missingFlowCount ?? 0);
-  if (Number.isFinite(missingContracts) && missingContracts > 0) {
+  if (handoffMode === "strict" && Number.isFinite(missingContracts) && missingContracts > 0) {
     blockers.push({
       code: "RELEASE_CONTRACT_COVERAGE_MISSING",
       message: String(missingContracts) + " required contract(s) are missing."
@@ -53,7 +54,7 @@ export function buildReleaseReadinessDecision(args: {
   const missingContractFlows = contractFlows.filter((contract) =>
     contract.lastStatus === "missing" || contract.contractId === null || contract.schemaPath === null
   );
-  if (uncoveredEdges.length || missingContractFlows.length) {
+  if (handoffMode === "strict" && (uncoveredEdges.length || missingContractFlows.length)) {
     blockers.push({
       code: "RELEASE_ARTIFACT_CONTRACT_INCOMPLETE",
       message: "Artifact contract coverage is incomplete."

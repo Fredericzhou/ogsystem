@@ -202,7 +202,9 @@ test("stored projection preserves positions while renderer stays library-indepen
   const labelProjection = await readFile(new URL("../src/visualizer/studio-client/semantic-layout-projection.ts", import.meta.url), "utf8");
   assert.doesNotMatch(renderer, /from ["']elkjs(?:\/|["'])/);
   assert.match(renderer, /renderStudioGraphViewModel\(graph: Graph, viewModel: GraphViewModel, projection: LayoutProjection\)/);
-  assert.match(labelProjection, /return node\.roleSeat \? `Role: \$\{label\}` : label/);
+  assert.doesNotMatch(labelProjection, /Role:/);
+  assert.match(labelProjection, /STUDIO_EDGE_CONNECTOR_RADIUS = 4/);
+  assert.match(renderer, /name: "boundary",\r?\n\s+args: \{ offset: 0 \}/);
   const styles = await readFile(new URL("../src/visualizer/studio-client/styles.ts", import.meta.url), "utf8");
   assert.match(styles, /\.studio-graph-canvas \.x6-edge-label \{\r?\n\s+pointer-events: none;/);
   assert.match(renderer, /routing\.routePoints\.length > 0/);
@@ -214,7 +216,6 @@ test("stored projection preserves positions while renderer stays library-indepen
   assert.match(renderer, /export function alignStudioSccGroups\(graph: Graph\)/);
   assert.match(renderer, /formatStudioEdgeTopologyLabel\(edge\)/);
   assert.match(renderer, /distance: 0\.5,\r?\n\s+offset: -15/);
-  assert.match(renderer, /STUDIO_NODE_EDGE_CLEARANCE/);
   assert.match(renderer, /name: "block",\r?\n\s+width: loopEdge \? 14 : 12,\r?\n\s+height: loopEdge \? 10 : 9/);
   assert.match(renderer, /function isLoopEdge\(edge: GraphViewModelEdge\)/);
   assert.match(renderer, /strokeDasharray: loopEdge \? "7 5"/);

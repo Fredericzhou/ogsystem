@@ -589,6 +589,7 @@ export type HumanReviewDecisionRecord = {
   decision: HumanReviewDecision;
   comment?: string;
   actor?: string;
+  principal?: import("./identity.js").ControlPlanePrincipal;
   scope?: "branch" | "run";
   checkpointSequence?: number;
   appliedAt?: string;

@@ -406,6 +406,8 @@ test("runtime renderers fold payload-heavy details by default", () => {
   assert.match(stateHtml, /<details class="event disclosure summary-section notice" open>/);
   assert.match(stateHtml, /payloads and audit details are folded by default|payload 与审计细节默认折叠/);
   assert.match(stateHtml, /<details class="event disclosure warning">/);
+  assert.match(stateHtml, /data-state-group="execution"[\s\S]*<details class="event disclosure notice" open>/);
+  assert.match(stateHtml, /data-state-group="control"[\s\S]*<details class="event disclosure critical" open>/);
   assert.match(stateHtml, /review-1/);
   assert.match(stateHtml, /TOOL_TIMEOUT/);
 
@@ -478,7 +480,7 @@ test("client release readiness state reports each export blocker category", () =
     validation: { ok: false },
     readiness: {
       blockers: [{ code: "CUSTOM_BLOCKER", message: "custom blocker" }],
-      contractCoverage: { missingCount: 2 }
+      contractCoverage: { handoffMode: "strict", missingCount: 2 }
     },
     bindings: { roles: [{ roleId: "writer", resolved: false }] },
     rolePackages: { roles: [{ roleId: "writer", files: { promptTemplate: false } }] },
@@ -780,10 +782,11 @@ test("client lifecycle panel renderers expose workspace and operate tab HTML", (
   assert.match(empty, /Use Project to initialize the current directory/);
   assert.doesNotMatch(empty, /<script/);
 
-  const tabs = renderOperateTabsHtml({ operateTab: "logs", t, escapeText });
-  assert.match(tabs, /data-operate-tab="logs"/);
+  const tabs = renderOperateTabsHtml({ operateTab: "operations", t, escapeText });
+  assert.match(tabs, /data-operate-tab="operations"/);
+  assert.doesNotMatch(tabs, /data-operate-tab="graph"/);
   assert.match(tabs, /class="button subtle active"/);
-  assert.match(tabs, /Load engine and role logs on demand/);
+  assert.match(tabs, /Reviews, recovery, logs, and artifacts/);
 
   const skeleton = renderLoadingSkeletonHtml({ label: "Loading project data", rows: 4, t, escapeText });
   assert.match(skeleton, /role="status"/);
@@ -1227,6 +1230,26 @@ test("client Studio Bridge topology sorting keeps stable role and flow order", (
     "writer:DONE:qa",
     "qa:APPROVE:publisher"
   ]);
+
+  const contractsOptional = buildReleaseReadinessDecision({
+    validation: { ok: true },
+    readiness: { blockers: [], contractCoverage: { handoffMode: null, missingFlowCount: 2 } },
+    bindings: { roles: [{ roleId: "writer", effectiveBinding: "model:gpt" }] },
+    rolePackages: { roles: [{ roleId: "writer", files: { roleJson: true, promptTemplate: true } }] },
+    contracts: { handoffMode: null, uncoveredEdges: [{ flowKey: "writer:DONE:output" }] },
+    workbenchDirty: false
+  });
+  assert.equal(contractsOptional.canExport, true);
+
+  const transitionWarningsAreNonBlocking = buildReleaseReadinessDecision({
+    validation: { ok: true },
+    readiness: { blockers: [], warnings: [{ code: "READINESS_TRANSITION_HANDOFF_CONTRACT_GAPS" }], contractCoverage: { handoffMode: "transition", missingFlowCount: 2 } },
+    bindings: { roles: [{ roleId: "writer", effectiveBinding: "model:gpt" }] },
+    rolePackages: { roles: [{ roleId: "writer", files: { roleJson: true, promptTemplate: true } }] },
+    contracts: { handoffMode: "transition", uncoveredEdges: [{ flowKey: "writer:DONE:output" }] },
+    workbenchDirty: false
+  });
+  assert.equal(transitionWarningsAreNonBlocking.canExport, true);
 });
 
 test("Studio role summary makes responsibility and aggregate runtime explicit", () => {
@@ -1357,11 +1380,11 @@ test("workbench source editor is accessible by label", () => {
 
 test("operate tabs and Studio Bridge filters expose accessible state and names", () => {
   const tabsHtml = renderOperateTabsHtml({
-    operateTab: "logs",
+    operateTab: "operations",
     t,
     escapeText
   });
-  assert.match(tabsHtml, /data-operate-tab="logs"[^>]*aria-pressed="true"/);
+  assert.match(tabsHtml, /data-operate-tab="operations"[^>]*aria-pressed="true"/);
   assert.match(tabsHtml, /data-operate-tab="overview"[^>]*aria-pressed="false"/);
 
   const bridgeHtml = renderStudioBridgePanel({

@@ -46,17 +46,18 @@ distinct responsibility, capability, input/output contract, or audit boundary.
 | Term | Meaning | Is not |
 | --- | --- | --- |
 | **System** | A versioned, bounded collaboration system: roles, transitions, contracts, policies, and runtime boundary. | A host process, organization, or one run. |
-| **Responsibility Role** | A stable abstract responsibility in a System. `roleId` identifies it. In execution, an agent realizes the role and answers "which responsibility owns this contribution?" | A task, event, process step, gateway, runtime instance, or identity. |
+| **Responsibility Role** | A stable, unique organizational seat in a System. `roleId` identifies the seat. Exactly one current executor is bound to the seat in an effective System configuration. | A task, event, process step, gateway, runtime instance, or the executor's personal identity. |
 | **Responsibility Seat** | The static graph position occupied by one Responsibility Role in one System. In the current graph it is the rendered role node. | A BPMN gateway/event or a runtime instance. |
-| **Role Package** | Versioned implementation material associated with a role, such as prompt, manifest, and I/O schema. | The responsibility itself. A package may change while the role identity remains stable. |
+| **Executor** | The current agent bound to a Role; it may represent a person, an agent service, or a bounded System. The assignment is one-to-one within one effective System configuration. | The stable Role/seat identity. Replacing an executor does not rename or replace the Role. |
+| **Role Package** | Versioned implementation material associated with a role, such as prompt, manifest, and I/O schema. | The responsibility or executor identity. A package may change while the role identity remains stable. |
 | **Flow / Transition** | A declared event-bearing, role-to-role handoff. The source role completes work and transfers the contracted outcome to the target role. | An event node, action node, process step, message participant, or execution instance. |
 | **Branch / Lineage** | Runtime execution identity and ancestry. `branchId` identifies one active path; `lineageId` scopes related paths. | A static role or business responsibility. |
 | **Role Execution Record** | One durable record of one role activation in one run/branch/lineage/loop context. | The role definition or seat. |
 | **Control-plane principal** | An external identity recorded for an operator action, such as a human-review decision. | A Responsibility Role. It never becomes a graph node merely by being recorded in audit. |
 
-The current `actor` field in review and audit payloads has the final meaning of
-`control-plane principal`. Product documentation should use that term when explaining semantics;
-the wire field remains unchanged until an explicitly versioned API change is made.
+Human review and control actions are attributed to a `control-plane principal` resolved by the
+active identity provider. Caller-supplied actor labels are not authentication and are not accepted
+as audit identity. The `actor` wire field is populated from the resolved principal ID.
 
 ## Recursive Responsibility Composition
 

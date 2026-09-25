@@ -42,7 +42,7 @@ async function seedProject(workdir: string): Promise<void> {
       "%% law.global=law.minimal.base",
       "%% entry.role=demo-analyst",
       "input -->|ENTER| analyst[Role:demo-analyst]",
-      "analyst[Role:demo-analyst] -->|DONE| output",
+      "analyst[Role:demo-analyst] -->|ANALYSIS_DONE| output",
       ""
     ].join("\n"),
     "utf8"
@@ -50,7 +50,16 @@ async function seedProject(workdir: string): Promise<void> {
 }
 
 async function waitForStudioCell(page, cellId: string): Promise<void> {
-  await expect(page.locator("#studio-graph-root")).toContainText(cellId, { timeout: 10000 });
+  const cell = page.locator(`#studio-graph-root [data-cell-id="${cellId}"]`);
+  await expect(cell).toBeVisible({ timeout: 10000 });
+  await expect.poll(async () => {
+    const before = await cell.boundingBox();
+    await page.waitForTimeout(100);
+    const after = await cell.boundingBox();
+    if (!before || !after) return false;
+    return Math.abs(before.x - after.x) < 1 && Math.abs(before.y - after.y) < 1 &&
+      Math.abs(before.width - after.width) < 1 && Math.abs(before.height - after.height) < 1;
+  }, { timeout: 10000 }).toBe(true);
 }
 
 async function expectDockedSelectionAligned(page): Promise<void> {
@@ -231,7 +240,7 @@ test("Build workbench keeps view toggles in footer and aligns graph with docked 
         scrolled: body.scrollTop > 0
       };
     })).toEqual({
-      activePanel: "selection",
+      activePanel: "structure",
       scrollable: true,
       scrolled: true
     });
@@ -262,16 +271,13 @@ test("Build workbench keeps view toggles in footer and aligns graph with docked 
     await expect(debugPanel.locator("#workbench-start-run")).toBeVisible();
     await debugPanel.locator("#workbench-run-input").fill("layout dry run");
     await debugPanel.locator("#workbench-start-run").click();
-    const logsPanel = page.locator('[data-studio-selection-panel="logs"]');
     await expect(debugPanel).toBeVisible();
     await expect(page.locator('[data-studio-side-tab="debug"]')).toHaveAttribute("aria-pressed", "true");
-    await page.locator('[data-studio-side-tab="logs"]').click();
-    await expect(logsPanel).toBeVisible();
+    await expect(debugPanel).toContainText("Structured trace");
     await expect(page.locator("#console-panel-build")).toBeVisible();
     await expect(page.locator("#console-tab-design")).toHaveAttribute("aria-pressed", "true");
     await expect(page.locator("#console-tab-run")).toHaveAttribute("aria-pressed", "false");
-    await expect(logsPanel).toContainText(/Structured trace|结构化轨迹/);
-    await expect(page.locator('[data-studio-side-tab="logs"]')).toHaveAttribute("aria-pressed", "true");
+    await expect(debugPanel).toContainText("Structured trace");
     await expectDockedSelectionAligned(page);
     await expectBuildCanvasIdentityStable(page);
     await page.reload();

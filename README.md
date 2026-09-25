@@ -7,6 +7,7 @@ Implemented scope:
 
 - DSL: Mermaid `flowchart` restricted subset
 - Root semantics: `Law / System / AuditTrail`
+- A System-local Role is a stable unique seat with one current executor binding; the executor may represent a person, agent, or bounded System.
 - Runtime outputs: `SystemState / Stage`
 - Engine: one graph runtime for sequential, branching, parallel, join, and loop systems
 - Role resolution: auto-load from project-local `og-roles/roles/<roleId>/`
@@ -227,8 +228,12 @@ For day-to-day use, start with `docs/usage/usage-manual.md`. It keeps the comman
 - `ogs project sync --system <file.mmd>` imports only the roles referenced by that system into the project-local role repo.
 - `ogs models discover` refreshes installed CLI/model discovery; `ogs models sync` also creates `.ogs/model-selection.json` when missing without replacing existing choices.
 - `ogs vis --workdir .` starts the read-mostly run visualizer. It keeps project/run/review/resume projections read-first, uses incremental timeline streaming instead of full run reloads on every event, loads resume diagnostics on demand, keeps project cold-start on persisted projections instead of forcing a runs-directory scan, and routes review decide / stop / reindex through existing lifecycle entrypoints with confirmation + audit input prompts. Review views now expose lifecycle `currentStatus` separately from durable decision `decisionPhase` (`recorded`, `pending_reconcile`, `applied`). `ogs run start --visualize` attaches a temporary visualizer that auto-closes when the run ends.
+- The Visualizer API contract is in `schemas/openapi.yaml`. `/healthz`, `/readyz`, and `/metrics` expose liveness, readiness, and low-cardinality Prometheus metrics.
+- Control actions record the principal resolved by the identity provider; request bodies cannot choose an audit actor. Loopback mode uses the current OS account. Non-loopback binds require an injected identity provider and authorization policy.
+- Remote execution protocol v1 and its runtime validators are documented in `src/runtime/remote-execution-contract.ts`; it defines the replaceable-call boundary but does not enable remote worker dispatch in this release.
 - Model backend/model configuration is managed in Studio or `.ogs/model-selection.json`, not in Mermaid metadata.
 - `examples/langgraph-debate-current/` shows a minimal debate with loop + parallel + join.
+- `D:\Coder\AAI\mulit-debate-ogs\` is a standalone OGSystem application adapted from the sibling `mulit-debate` project, with bounded parallel debate and required human review.
 - `examples/langgraph-expert-consultation/` shows a minimal expert consultation with parallel + join.
 - `examples/medical-quorum-consultation/` shows quorum join + context projection in a professional consultation flow.
 - `examples/error-flow-compensation/` shows failure-to-compensation routing via error flows expressed as `ERROR*` edge labels.

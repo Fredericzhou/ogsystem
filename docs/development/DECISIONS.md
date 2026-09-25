@@ -42,8 +42,8 @@ gateway/event, branch, or execution record.
 - role packages are versioned implementation assets, not the role identity
 - `branchId`, `lineageId`, and `RoleExecutionRecord` are runtime facts, not static graph nodes
 - feedback and review outcomes are transitions/control-plane facts, not implicit roles
-- review/audit `actor` identifies an external control-plane principal and never participates in
-  graph routing merely by being recorded
+- review/audit `actor` is derived from the authenticated control-plane principal and never
+  participates in graph routing merely by being recorded
 - a future nested-System relation means responsibility composition, not organization hierarchy,
   personnel assignment, or inherited authority
 

@@ -28,6 +28,7 @@ Engineering rules, plans, specifications, and active backlog live under `develop
 - [OGS workflow DSL upgrade plan](development/ogs-langgraph-dsl-upgrade-plan.md): DSL, IR, reliability, and standards roadmap.
 - [OGS product boundary and evolution](development/ogs-product-boundary-and-evolution.md): core, enhancement, extension tiers and admission rules.
 - [OGS visualizer refactor plan](development/ogs-visualizer-refactor-plan.md): semantic layout and graph interaction plan.
+- [Release UAT checklist](development/release-uat-checklist.md): clean-install scenarios and release sign-off gates.
 - [Semantic gap implementation plan](development/semantic-gap-implementation-plan.md): current runtime gaps and priorities.
 - [Unified backlog](development/todo-backlog.md): current active backlog.
 - [Unified backlog execution plan](development/todo-backlog-execution-plan-2026-09-03.md): executable task breakdown, dependencies, acceptance gates, and evidence requirements.

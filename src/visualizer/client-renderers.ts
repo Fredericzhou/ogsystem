@@ -1,5 +1,6 @@
 import { escapeHtml as escapeText } from "./html-escape.js";
 import { studioRolePackageHasRequiredFileCoverage, type StudioRolePackageSummary } from "./studio-client/studio-graph-validation.js";
+import { roleColorForId } from "./role-color.js";
 
 type JsonRecord = Record<string, unknown>;
 type Translator = (key: string, vars?: Record<string, unknown>, fallback?: string) => string;
@@ -618,7 +619,19 @@ export function renderOpsSummaryPanel(args: {
         "</div></div>"
       )
     : ['<div class="event"><div class="event-top"><span>' + escapeText(t("ops.recentFailureList", undefined, "recent failure list")) + '</span><span>0</span></div><strong>' + escapeText(t("ops.noFailureEntries", undefined, "No failure entries in the sampled runs")) + '</strong></div>'];
-  return ['<div class="structure-list">', ...cards, ...failureCards, "</div>"].join("");
+  return [
+    '<div class="ops-summary-layout">',
+    '<section class="ops-group ops-attention-group"><h4>' + escapeText(t("ops.groupAttention", undefined, "Needs attention")) + '</h4><div class="ops-attention-grid">',
+    ...cards.slice(0, 3),
+    '</div></section>',
+    '<details class="ops-group ops-disclosure"><summary>' + escapeText(t("ops.groupHealth", undefined, "Runtime health")) + '</summary><div class="ops-disclosure-body">',
+    cards[3],
+    '</div></details>',
+    '<details class="ops-group ops-disclosure"><summary>' + escapeText(t("ops.groupRecentFailures", { count: String(summary.recentFailureCount ?? 0) }, "Recent failures ({count})")) + '</summary><div class="ops-disclosure-body ops-failure-list">',
+    ...failureCards,
+    '</div></details>',
+    '</div>'
+  ].join("");
 }
 
 export function renderProjectReadinessPanel(args: {
@@ -697,6 +710,7 @@ export function renderReleaseGatePanel(args: {
   bindings: JsonRecord | null | undefined;
   workbenchSavedPath: string;
   workbenchDirty: boolean;
+  releaseBlockers?: JsonRecord[];
   lastDryRunId?: string;
   exportReady: boolean;
   t?: Translator;
@@ -704,9 +718,10 @@ export function renderReleaseGatePanel(args: {
   const t: Translator = typeof args.t === "function" ? args.t : (_key, _vars, fallback) => fallback ?? _key;
   const validationOk = args.validation?.ok === true;
   const diagnostics = Array.isArray(args.validation?.diagnostics) ? args.validation.diagnostics as JsonRecord[] : [];
-  const blockers = Array.isArray(args.readiness?.blockers) ? args.readiness.blockers as JsonRecord[] : [];
+  const blockers = args.releaseBlockers ?? (Array.isArray(args.readiness?.blockers) ? args.readiness.blockers as JsonRecord[] : []);
   const warnings = Array.isArray(args.readiness?.warnings) ? args.readiness.warnings as JsonRecord[] : [];
   const contractCoverage = (args.readiness?.contractCoverage ?? {}) as JsonRecord;
+  const handoffMode = contractCoverage.handoffMode ?? args.contracts?.handoffMode ?? null;
   const missingContracts = Number(contractCoverage.missingCount ?? contractCoverage.missingFlowCount ?? 0);
   const bindingRoles = Array.isArray(args.bindings?.roles) ? args.bindings.roles as JsonRecord[] : [];
   const unresolvedBindings = bindingRoles.filter((binding) =>
@@ -732,8 +747,8 @@ export function renderReleaseGatePanel(args: {
   );
   const blockerItems = blockers.slice(0, 8).map((blocker) =>
     toCompactItem(
-      compactText(blocker.message ?? blocker.code ?? t("common.unknown", undefined, "unknown"), 120),
-      String(blocker.severity ?? t("common.blocked", undefined, "blocked")),
+      compactText(blocker.message ?? blocker.code ?? t("common.unknown", undefined, "unknown"), 180),
+      String(blocker.code ?? blocker.severity ?? t("common.blocked", undefined, "blocked")),
       compactText(blocker.detail ?? blocker.flowKey ?? blocker.roleId ?? "", 140)
     )
   );
@@ -783,7 +798,9 @@ export function renderReleaseGatePanel(args: {
       '</span></div><strong>' + escapeText(blockers.length ? t("release.blockersRemain", { count: String(blockers.length) }, String(blockers.length) + " blocker(s) remain") : t("release.noBlockers", undefined, "No blocking readiness issues.")) +
       '</strong><div class="hint">' + escapeText(warningNote) + '</div></div>',
     '<div class="event"><div class="event-top"><span>' + escapeText(t("readiness.contractCoverage", undefined, "contract coverage")) + '</span><span>' +
-      escapeText(missingContracts ? t("readiness.missing", { count: String(missingContracts) }, "missing " + String(missingContracts)) : t("common.complete", undefined, "complete")) +
+      escapeText(handoffMode === null || handoffMode === undefined
+        ? t("release.contractsNotEnforced", undefined, "not enforced")
+        : missingContracts ? t("readiness.missing", { count: String(missingContracts) }, "missing " + String(missingContracts)) : t("common.complete", undefined, "complete")) +
       '</span></div><strong>' + escapeText(t("release.contractReport", undefined, "Contract and schema coverage report")) +
       '</strong><div class="hint">' + escapeText(t("release.bindingRolePackageSummary", { unresolved: String(unresolvedBindings.length), unhealthy: String(unhealthyRoles.length) }, "unresolved bindings " + String(unresolvedBindings.length) + " · unhealthy role packages " + String(unhealthyRoles.length))) + '</div></div>',
     '</div></section>',
@@ -838,7 +855,9 @@ export function renderReleaseGatePanel(args: {
       items: missingContractItems,
       emptyLabel: t("common.complete", undefined, "complete"),
       summaryLabel: t("release.contractReport", undefined, "Contract and schema coverage report"),
-      hint: t("release.contractCoverageHint", undefined, "Every deployable handoff should have visible contract and schema coverage."),
+      hint: handoffMode === null || handoffMode === undefined
+        ? t("release.contractCoverageNotEnforcedHint", undefined, "Flow contracts are not enforced because handoff mode is not configured.")
+        : t("release.contractCoverageHint", undefined, "Every deployable handoff should have visible contract and schema coverage."),
       open: missingContractItems.length > 0,
       tone: missingContractItems.length ? "warning" : undefined
     }),
@@ -1264,9 +1283,10 @@ export function renderStudioBridgeStructureHtml(args: {
         const roleTitle = String(role.title ?? "").trim() || roleId;
         const active = selectedRole && selectedRole.roleId === roleId ? " active" : "";
         const badges = Array.isArray(role.badges) ? role.badges.join(" ") : "";
+        const roleColor = roleColorForId(roleId);
         return (
-          '<button class="run-card' + active + '" data-studio-role-id="' + escapeText(roleId) + '"' + busy + ">" +
-          '<div class="run-title"><span><strong>' + escapeText(roleTitle) + '</strong><div class="hint"><code>' + escapeText(roleId) + '</code></div></span><span class="status ' +
+          '<button class="run-card studio-role-seat' + active + '" data-studio-role-id="' + escapeText(roleId) + '" style="--role-accent:' + roleColor.accent + ';--role-fill:' + roleColor.fill + '"' + busy + ">" +
+          '<div class="run-title"><span class="studio-role-seat-identity"><strong>' + escapeText(roleId) + '</strong><span>' + escapeText(roleTitle) + '</span></span><span class="status ' +
           escapeText(bindingTone(String(role.bindingKind ?? "noop"))) + '">' + escapeText(displayBindingKind(String(role.bindingKind ?? "noop"), t)) +
           '</span></div><div class="meta"><span>' + escapeText(badges || t("studio.standard", undefined, "standard")) + '</span><span>' +
           escapeText(t("studio.events", { count: String((role.allowedEvents as unknown[] | undefined)?.length ?? 0) }, "events " + String((role.allowedEvents as unknown[] | undefined)?.length ?? 0))) + "</span></div></button>"
@@ -1279,10 +1299,10 @@ export function renderStudioBridgeStructureHtml(args: {
         const active = selectedFlow && flowKeyOf(selectedFlow) === key ? " active" : "";
         const displayLabel = flowDisplayLabel(flow);
         return (
-          '<button class="run-card' + active + '" data-studio-flow-key="' + escapeText(key) + '"' + busy + ">" +
-          '<div class="run-title"><span><code>' + escapeText(String(flow.fromRoleId ?? "")) + '</code> -> <code>' +
-          escapeText(String(flow.toRoleId ?? "")) + '</code></span><span>' + escapeText(String(flow.eventType ?? "")) +
-          '</span></div><strong>' + escapeText(displayLabel) + '</strong><div class="meta"><span>' + escapeText(flow.runtimeOnlyErrorFlow ? t("studio.runtimeErrorFlow", undefined, "runtime error flow") : t("studio.designFlow", undefined, "design flow")) +
+          '<button class="run-card studio-flow-contract' + active + '" data-studio-flow-key="' + escapeText(key) + '"' + busy + ">" +
+          '<div class="studio-flow-contract-route"><code>' + escapeText(String(flow.fromRoleId ?? "")) + '</code><span aria-hidden="true">&#8594;</span><code>' +
+          escapeText(String(flow.toRoleId ?? "")) + '</code></div><div class="studio-flow-contract-event"><span>' + escapeText(String(flow.eventType ?? "")) +
+          '</span><strong>' + escapeText(displayLabel) + '</strong></div><div class="meta"><span>' + escapeText(flow.runtimeOnlyErrorFlow ? t("studio.runtimeErrorFlow", undefined, "runtime error flow") : t("studio.designFlow", undefined, "design flow")) +
           '</span><span>' + escapeText(flow.participatesInJoin ? t("studio.joinSource", undefined, "join source") : t("studio.standard", undefined, "standard")) + "</span></div></button>"
         );
       })
@@ -1305,7 +1325,6 @@ export function renderStudioBridgeStructureHtml(args: {
     flowButtons.join("") + "</details>";
   return '<div class="studio-bridge-index structure-list" data-studio-bridge-region="index"><div class="studio-bridge-index-controls">' +
     filterControl + modeControl + '<div class="hint">' +
-    escapeText(t("studio.retrievalRoleFlowHint", undefined, "Roles are participants; flows are handoffs between roles.")) + '</div><div class="hint">' +
     escapeText(t("studio.topologyOrderHint", undefined, "Cycles are listed after the acyclic path so the authoring order stays stable.")) +
     '</div></div><div class="studio-index-stack">' + roleSection + flowSection + "</div></div>";
 }
@@ -2187,13 +2206,14 @@ export function renderRunStatePanel(args: {
     );
   };
   const renderStateGroup = (title: string, cards: string[], options?: {
+    key?: string;
     open?: boolean;
     tone?: "notice" | "warning" | "critical";
   }): string => {
     if (!cards.length) {
       return "";
     }
-    return '<div class="state-group">' + renderDisclosureCard({
+    return '<div class="state-group" data-state-group="' + escapeText(options?.key || "additional") + '">' + renderDisclosureCard({
       title,
       headline: t("common.arrayItems", { count: cards.length }, `array · ${cards.length} item(s)`),
       meta: title,
@@ -2234,16 +2254,25 @@ export function renderRunStatePanel(args: {
     }
     return [
       renderStateGroup(t("state.executionState", undefined, "execution state"), executionCards, {
+        key: "execution",
         open: true,
         tone: "notice"
       }),
       renderStateGroup(t("state.branchReviewState", undefined, "branch and review state"), branchReviewCards, {
+        key: "branch-review",
         tone: branchReviewCards.length ? "warning" : undefined
       }),
       renderStateGroup(t("state.controlState", undefined, "control and artifact state"), controlCards, {
+        key: "control",
+        open: ["errors", "error", "failure", "stopRequest", "stopOutcome"].some((key) =>
+          keys.includes(key) && record[key] !== null && record[key] !== undefined &&
+          (!Array.isArray(record[key]) || record[key].length > 0)
+        ),
         tone: controlCards.length ? "critical" : undefined
       }),
-      renderStateGroup(t("state.additionalState", undefined, "additional state"), additionalCards)
+      renderStateGroup(t("state.additionalState", undefined, "additional state"), additionalCards, {
+        key: "additional"
+      })
     ].filter(Boolean);
   };
   const renderRoleIoCell = (value: unknown, emptyLabel: string): string => {
@@ -2453,7 +2482,6 @@ export function renderRunStatePanel(args: {
       meta: t("state.graphSnapshot", undefined, "graph snapshot"),
       hint: t("state.roleIoHint", undefined, "Each row keeps the most useful captured input and output signal for a role, with details folded inside the cell."),
       bodyHtml: roleIoMatrixHtml,
-      open: true,
       tone: "notice"
     }),
     ...renderStructuredStateGroups(args.state),

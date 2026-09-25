@@ -6,6 +6,9 @@
 import { createDefaultExecutor } from "./executor.js";
 import { runSystemWithGraphRunner } from "./graph-runner.js";
 import { LangGraphEngineAdapter } from "./langgraph-engine-adapter.js";
+import type { LangGraphEngineAdapterOptions } from "./langgraph-engine-adapter.js";
+import type { ExecutionEngineAdapter, RuntimeExecutionServices } from "./engine-adapter.js";
+import { createInitialGraphState } from "./graph-runtime-state.js";
 import { RunControl } from "@langchain/langgraph";
 import { createRuntimeError, normalizeRuntimeError } from "./runtime-errors.js";
 import { filesystemRunStore } from "./run-store.js";
@@ -34,7 +37,12 @@ export { validateCapabilityPolicy } from "./capability-policy.js";
 export { compileSubgraphSpec, validateSubgraphSpec } from "./subgraph.js";
 export { createFilesystemRuntimeServices } from "./filesystem-runtime-services.js";
 export type { EngineRunInput, ExecutionEngineAdapter, RuntimeAuditEvent, RuntimeExecutionServices } from "./engine-adapter.js";
+export type { ControlPlaneAction, ControlPlaneIdentityProvider, ControlPlanePrincipal } from "./identity.js";
+export { createLocalControlPlanePrincipal } from "./identity.js";
+export type { RemoteExecutionRequest, RemoteExecutionResponse } from "./remote-execution-contract.js";
+export { validateRemoteExecutionRequest, validateRemoteExecutionResponse } from "./remote-execution-contract.js";
 export { LangGraphEngineAdapter } from "./langgraph-engine-adapter.js";
+export type { LangGraphEngineAdapterOptions } from "./langgraph-engine-adapter.js";
 export {
   FileVersionedStateStore,
   StateVersionConflictError,
@@ -71,6 +79,12 @@ export async function runSystemWithAdapter(args: {
   dryRun?: boolean;
   cleanupExecutionHistory?: number;
   logRun?: boolean;
+  engineFactory?: () => ExecutionEngineAdapter;
+  runtimeServicesFactory?: (args: {
+    runContext: RuntimeAdapterSetup["runContext"];
+    plan: RuntimeAdapterSetup["plan"];
+    initialState: GraphState;
+  }) => RuntimeExecutionServices | Promise<RuntimeExecutionServices>;
 }): Promise<AdapterRunResult> {
   let runContextForCleanup: RuntimeAdapterSetup["runContext"] | undefined;
   let executionError: unknown;
@@ -160,7 +174,7 @@ export async function runSystemWithAdapter(args: {
         process.on("SIGTERM", requestDrain);
         process.on("SIGINT", requestDrain);
         try {
-          const engine = new LangGraphEngineAdapter({
+          const engineOptions: LangGraphEngineAdapterOptions = {
             effectiveLaw: setup.effectiveLaw,
             contractPlan: setup.contractPlan,
             compilerSnapshot: setup.compilerSnapshot,
@@ -184,12 +198,23 @@ export async function runSystemWithAdapter(args: {
             errorFlowRoutingEnabled: setup.runtimeConfig.runtime.error_flows.v1,
             logRun: args.logRun ?? false,
             runControl
-          });
+          };
+          const engine = args.engineFactory
+            ? args.engineFactory()
+            : new LangGraphEngineAdapter(engineOptions);
+          const engineInitialState = initialState ?? createInitialGraphState({ plan: setup.plan, prompt: args.prompt });
+          const runtimeServices = args.runtimeServicesFactory
+            ? await args.runtimeServicesFactory({
+                runContext: setup.runContext,
+                plan: setup.plan,
+                initialState: engineInitialState
+              })
+            : undefined;
           result = await engine.run({
             plan: setup.plan,
-            initialState,
+            initialState: initialState ?? (runtimeServices ? engineInitialState : undefined),
             prompt: args.prompt,
-            runtimeServices: undefined
+            runtimeServices
           });
         } finally {
           process.off("SIGTERM", requestDrain);

@@ -4,7 +4,7 @@ import path from "node:path";
 import os from "node:os";
 import { lstat, mkdtemp, mkdir, readFile, readdir, symlink, writeFile } from "node:fs/promises";
 
-import { runSystemWithAdapter } from "../dist/runtime/adapter.js";
+import { createFilesystemRuntimeServices, runSystemWithAdapter, semanticIRDigest } from "../dist/runtime/adapter.js";
 import { writeHumanReviewDecision } from "../dist/runtime/project-lifecycle.js";
 import { latestRoleContract } from "../tests-support/role-fixture.mjs";
 
@@ -126,15 +126,25 @@ test("adapter runs graph debate example with parallel branches, join, and bounde
   );
   await writeDefaultModelSelection(tempRoot);
 
+  let runtimeServicesFactoryCalled = false;
   const result = await runSystemWithAdapter({
     systemPath: path.resolve(repoRoot, "examples", "langgraph-debate-current", "system.mmd"),
     lawsPath: path.resolve(repoRoot, "examples", "langgraph-debate-current", "laws.json"),
     userProfilePath: path.resolve(repoRoot, "examples", "langgraph-debate-current", "user-profile.json"),
     prompt: "是否应继续保持 OGSystem 最小化并延后 reducer 与恢复语义？",
     workdir: tempRoot,
-    dryRun: true
+    dryRun: true,
+    runtimeServicesFactory: ({ runContext, plan, initialState }) => {
+      runtimeServicesFactoryCalled = true;
+      return createFilesystemRuntimeServices({
+        context: runContext,
+        initialState,
+        irDigest: plan.semanticIR ? semanticIRDigest(plan.semanticIR) : "none"
+      });
+    }
   });
 
+  assert.equal(runtimeServicesFactoryCalled, true);
   assert.strictEqual(result.status, "done");
   assert.strictEqual(result.finalRoleId, "debate-summary");
   assert.ok(result.auditTrail.some((item) => item.roleId === "debate-minimalist"));
@@ -627,7 +637,7 @@ writer[Role:writer] -->|DONE| output
     runId,
     reviewId: "review.writer@1#1.r1",
     decision: "approve",
-    actor: "tester",
+    principal: { id: "local:tester", issuer: "ogs:local", displayName: "tester" },
     comment: "approved"
   });
 
@@ -724,7 +734,7 @@ writer[Role:writer] -->|DONE| output
     runId,
     reviewId: "review.writer@1#1.r1",
     decision: "approve",
-    actor: "tester",
+    principal: { id: "local:tester", issuer: "ogs:local", displayName: "tester" },
     comment: "approved"
   });
 

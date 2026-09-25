@@ -196,6 +196,29 @@ test("Studio Bridge renders and edits through the real graph workspace", async (
       const right = document.querySelector('#studio-graph-root [data-cell-id="output"]')?.getBoundingClientRect();
       return Boolean(left && role && right && left.right < role.left && role.right < right.left);
     })).toBe(true);
+    await expect.poll(async () => page.evaluate(() => {
+      const root = document.getElementById("studio-graph-root");
+      const paths = Array.from(root?.querySelectorAll<SVGPathElement>('path[marker-end]') ?? []);
+      const pointDistance = (point: DOMPoint, box: DOMRect) => {
+        const distances = [];
+        if (point.y >= box.top && point.y <= box.bottom) distances.push(Math.abs(point.x - box.left), Math.abs(point.x - box.right));
+        if (point.x >= box.left && point.x <= box.right) distances.push(Math.abs(point.y - box.top), Math.abs(point.y - box.bottom));
+        return Math.min(...distances, Number.POSITIVE_INFINITY);
+      };
+      const endpointDistance = (id: string) => {
+        const box = root?.querySelector<HTMLElement>(`[data-cell-id="${id}"]`)?.getBoundingClientRect();
+        if (!box) return Number.POSITIVE_INFINITY;
+        return Math.min(...paths.flatMap((path) => {
+          const matrix = path.getScreenCTM();
+          if (!matrix) return [];
+          return [0, path.getTotalLength()].map((distance) => {
+            const point = path.getPointAtLength(distance);
+            return pointDistance(new DOMPoint(point.x, point.y).matrixTransform(matrix), box);
+          });
+        }));
+      };
+      return { input: endpointDistance("input") <= 3, output: endpointDistance("output") <= 3 };
+    })).toEqual({ input: true, output: true });
     await page.locator('[data-studio-side-tab="structure"]').click();
     const browseFilter = page.locator('[data-studio-bridge-filter="1"]');
     await browseFilter.fill("demo");
@@ -511,12 +534,36 @@ test("Studio Bridge renders and edits through the real graph workspace", async (
     await expect(page.locator("body")).toHaveClass(/show-run-sidebar/);
     await expect(page.locator("#sidebar")).toBeVisible();
     await expect(page.locator("#sidebar-toggle")).toBeHidden();
-    await expect(page.locator("#operate-tabs")).toContainText("Graph");
+    await expect(page.locator("#operate-tabs")).not.toContainText("Graph");
+    await expect(page.locator("#run-graph-disclosure")).toBeVisible();
+    await page.locator("#run-graph-disclosure > summary").click();
     await expect(page.locator("#console-panel-ops")).toBeHidden();
     await expect(page.locator("#console-panel-debug")).toBeVisible();
-    await expect(page.locator("#operate-tabpanel-graph")).toBeVisible();
     await expect(page.locator("#run-graph-root")).toBeVisible();
     await expect(page.locator("#run-graph-root [data-studio-graph-layout]")).toHaveValue("compact");
+    await expect(page.locator(".run-graph-notes")).not.toHaveAttribute("open", "");
+    await expect(page.locator("#state .state-group[data-state-group=execution] > details")).toHaveAttribute("open", "");
+    await expect(page.locator("#state .run-role-matrix")).toBeHidden();
+    await expect.poll(() => page.evaluate(() => {
+      const shell = document.querySelector(".operate-graph-shell")?.getBoundingClientRect();
+      const graph = document.querySelector(".operate-graph-main")?.getBoundingClientRect();
+      const state = document.querySelector(".operate-graph-sidebar")?.getBoundingClientRect();
+      return Boolean(shell && graph && state && graph.width >= shell.width - 2 && state.width >= shell.width - 2 && state.top >= graph.bottom - 1);
+    })).toBe(true);
+    await expect(page.locator("#run-flow .flow-step")).toBeVisible();
+    const roleColorMatch = await page.evaluate(() => {
+      const step = document.querySelector<HTMLElement>("#run-flow .flow-step");
+      const node = document.querySelector<SVGElement>('#run-graph-root [data-cell-id="demo-analyst"] rect');
+      return {
+        flow: step?.style.getPropertyValue("--role-accent").toLowerCase() || "",
+        graph: node?.getAttribute("stroke")?.toLowerCase() || ""
+      };
+    });
+    expect(roleColorMatch.graph).toBe(roleColorMatch.flow);
+    await page.locator('#run-flow [data-flow-role-focus="demo-analyst"]').click();
+    await expect(page.locator('#run-flow [data-flow-role="demo-analyst"]')).toHaveClass(/is-role-focus/);
+    await page.locator('#run-graph-root [data-cell-id="demo-analyst"]').click();
+    await expect(page.locator('#run-flow [data-flow-role="demo-analyst"]')).toHaveClass(/is-role-focus/);
     await expect(page.locator("#console-panel-logs")).toBeHidden();
     await expect(page.locator("#console-panel-artifacts")).toBeHidden();
     await page.getByRole("tab", { name: designTabName }).click();
@@ -558,6 +605,24 @@ test("Studio Bridge renders and edits through the real graph workspace", async (
   }
 });
 
+test("Run opens global operations with fixed run-view tabs", async ({ page }) => {
+  const workdir = await mkdtemp(path.join(os.tmpdir(), "ogsystem-run-empty-state-"));
+  await seedProject(workdir);
+  const started = await startVisualizationServer({ workdir, host: "127.0.0.1", port: 0 });
+  try {
+    await page.goto(started.url);
+    await page.getByRole("tab", { name: await resolveLifecycleTabName(page, ["Operate", "Run"]) }).click();
+    await expect(page.locator("#operate-tab-operations")).toHaveAttribute("aria-selected", "true");
+    await expect(page.locator("#console-panel-ops")).toBeVisible();
+    await expect(page.locator("#ops-summary")).not.toContainText(/Loading/i);
+    await expect(page.locator("#operate-tabs")).toHaveCSS("position", "sticky");
+    await expect(page.locator("#console-panel-debug")).not.toHaveCSS("min-height", "100vh");
+  } finally {
+    await page.close();
+    await new Promise<void>((resolve) => started.server.close(() => resolve()));
+  }
+});
+
 test("Design shows the latest dry-run trace and keeps it separate from Run selection", async ({ page }) => {
   const workdir = await mkdtemp(path.join(os.tmpdir(), "ogsystem-design-debug-trace-"));
   await seedProject(workdir);
@@ -592,6 +657,58 @@ test("Design shows the latest dry-run trace and keeps it separate from Run selec
 
     await page.getByRole("tab", { name: await resolveLifecycleTabName(page, ["Operate", "Run"]) }).click();
     await expect(page.locator("#sidebar")).toBeVisible();
+    const runListItem = page.locator(`#sidebar [data-run-id="${runId}"]`);
+    await expect(runListItem).toBeVisible();
+    await runListItem.click();
+    await expect(page.locator("#run-flow .flow-step")).toBeVisible();
+    await expect(page.locator("#operate-tab-overview")).toHaveAttribute("aria-selected", "true");
+    await expect(page.locator("#run-flow")).toContainText("design trace UAT");
+    await expect(page.locator("#run-flow .flow-step").first()).toHaveCSS("border-left-color", /\d+, \d+, \d+/);
+    await expect(page.locator("body")).toHaveClass(/has-selected-run/);
+    for (const width of [1280, 768, 390]) {
+      await page.setViewportSize({ width, height: 900 });
+      await expect.poll(() => page.evaluate(() => {
+        const flow = document.getElementById("run-flow");
+        const firstStep = flow?.querySelector(".flow-step");
+        const sections = firstStep ? [...firstStep.querySelectorAll(".flow-step-io > section")] : [];
+        const boxes = sections.map((section) => section.getBoundingClientRect());
+        const overlap = boxes.some((box, index) => boxes.slice(index + 1).some((other) =>
+          box.right > other.left && box.left < other.right && box.bottom > other.top && box.top < other.bottom
+        ));
+        return Boolean(flow && firstStep && flow.scrollWidth <= flow.clientWidth + 1 && !overlap);
+      })).toBe(true);
+    }
+    await page.setViewportSize({ width: 1280, height: 900 });
+    await expect(page.locator("#run-graph-disclosure")).not.toHaveAttribute("open", "");
+    await page.locator("#run-graph-disclosure > summary").click();
+    await expect(page.locator("#run-graph-root")).toBeVisible();
+    await page.locator("#operate-tab-operations").click();
+    await expect(page.locator("#ops-summary .ops-attention-group")).toBeVisible();
+    await expect(page.locator("#ops-summary details[open]")).toHaveCount(0);
+    await expect(page.locator("#failure-summary")).toBeVisible();
+    await expect(page.locator("#resume-readiness")).toBeVisible();
+    await expect(page.locator("#reviews")).toBeVisible();
+    await expect(page.locator("#failure-detail-disclosure")).not.toHaveAttribute("open", "");
+    await expect(page.locator("#failure-next-checks-disclosure")).not.toHaveAttribute("open", "");
+    await expect.poll(() => page.evaluate(() => {
+      const summary = document.getElementById("console-panel-ops")?.getBoundingClientRect();
+      const debug = document.getElementById("console-panel-debug")?.getBoundingClientRect();
+      const evidence = document.querySelector(".operate-evidence-disclosure")?.getBoundingClientRect();
+      return Boolean(debug && summary && evidence && summary.bottom <= debug.top + 1 && evidence.top >= debug.bottom - 1);
+    })).toBe(true);
+    await expect(page.locator(".operate-evidence-disclosure")).not.toHaveAttribute("open", "");
+    await expect(page.locator("#console-panel-logs")).toBeHidden();
+    await expect(page.locator("#console-panel-artifacts")).toBeHidden();
+    await page.locator(".operate-evidence-disclosure > summary").click();
+    await expect(page.locator("#console-panel-logs")).toBeVisible();
+    await expect(page.locator("#console-panel-artifacts")).toBeVisible();
+    for (const width of [1280, 768, 390]) {
+      await page.setViewportSize({ width, height: 900 });
+      await expect.poll(() => page.locator("#ops-summary .ops-summary-layout").evaluate((element) =>
+        element.scrollWidth <= element.clientWidth + 1
+      )).toBe(true);
+    }
+    await page.setViewportSize({ width: 1280, height: 900 });
     await page.getByRole("tab", { name: await resolveLifecycleTabName(page, ["Build", "Design"]) }).click();
     await page.locator('[data-studio-side-tab="debug"]').click();
     await expect(debugPanel).toContainText(runId);
@@ -868,7 +985,7 @@ test("Studio graph island exposes minimap, focus pulse, and quick open when moun
   }
 });
 
-test("fan-out projection renders a visual bundle without replacing business edges", async ({ page }) => {
+test("fan-out projection uses nearby ports without replacing business edges", async ({ page }) => {
   const workdir = await mkdtemp(path.join(os.tmpdir(), "ogsystem-studio-bundle-"));
   await seedProject(workdir);
   const started = await startVisualizationServer({ workdir, host: "127.0.0.1", port: 0 });
@@ -923,25 +1040,67 @@ test("fan-out projection renders a visual bundle without replacing business edge
     const root = page.locator("#studio-graph-bundle-root");
     await expect(root.locator('[data-cell-id="flow.source.left"]')).toBeVisible();
     await expect(root.locator('[data-cell-id="flow.source.right"]')).toBeVisible();
-    await expect(root.locator('[data-cell-id^="__ogs-layout-bundle:"]')).toHaveCount(1);
+    await expect(root.locator('[data-cell-id^="__ogs-layout-bundle:"]')).toHaveCount(0);
     await expect(root.locator('[data-cell-id^="__ogs-layout-junction:"]')).toHaveCount(0);
     await expect(root.locator('[data-cell-id="source"] [data-studio-port="out"]')).toHaveCount(2);
+    await expect(root.locator('[data-cell-id="source"] [data-studio-port="out"]').first()).toHaveAttribute("r", "4");
     await expect.poll(async () => root.evaluate((element) => {
       return ["flow.source.left", "flow.source.right"].map((edgeId) => {
         const path = element.querySelector<SVGPathElement>(`[data-cell-id="${edgeId}"] path[marker-end]`);
-        if (!path) return { edgeId, hasTargetMarker: false, hasVisibleTerminalSegment: false };
+        const targetId = edgeId === "flow.source.left" ? "left" : "right";
+        const sourcePorts = element.querySelectorAll<SVGElement>('[data-cell-id="source"] [data-studio-port="out"]');
+        const targetPorts = element.querySelectorAll<SVGElement>(`[data-cell-id="${targetId}"] [data-studio-port="in"]`);
+        if (!path || sourcePorts.length === 0 || targetPorts.length === 0) {
+          return { edgeId, hasTargetMarker: false, hasVisibleTerminalSegment: false, sourcePortAttached: false, targetPortAttached: false };
+        }
         const length = path.getTotalLength();
-        const end = path.getPointAtLength(length);
-        const beforeEnd = path.getPointAtLength(Math.max(0, length - 10));
+        const matrix = path.getScreenCTM();
+        if (!matrix) return { edgeId, hasTargetMarker: false, hasVisibleTerminalSegment: false, sourcePortAttached: false, targetPortAttached: false };
+        const toScreen = (distance: number) => {
+          const point = path.getPointAtLength(distance);
+          return new DOMPoint(point.x, point.y).matrixTransform(matrix);
+        };
+        const start = toScreen(0);
+        const end = toScreen(length);
+        const afterStart = toScreen(Math.min(4, length));
+        const beforeTarget = toScreen(Math.max(0, length - 4));
+        const beforeEnd = toScreen(Math.max(0, length - 10));
+        const distanceToPortRim = (ports: NodeListOf<SVGElement>, point: DOMPoint) => Math.min(...Array.from(ports, (port) => {
+          const bounds = port.getBoundingClientRect();
+          const radius = Math.min(bounds.width, bounds.height) / 2;
+          const centerX = bounds.left + bounds.width / 2;
+          const centerY = bounds.top + bounds.height / 2;
+          return Math.abs(Math.hypot(point.x - centerX, point.y - centerY) - radius);
+        }));
+        const outwardDot = (ports: NodeListOf<SVGElement>, endpoint: DOMPoint, next: DOMPoint) => {
+          const centers = Array.from(ports, (port) => {
+            const bounds = port.getBoundingClientRect();
+            return { x: bounds.left + bounds.width / 2, y: bounds.top + bounds.height / 2 };
+          });
+          const center = centers.sort((left, right) =>
+            Math.hypot(endpoint.x - left.x, endpoint.y - left.y) - Math.hypot(endpoint.x - right.x, endpoint.y - right.y)
+          )[0];
+          if (!center) return -1;
+          const radialX = endpoint.x - center.x;
+          const radialY = endpoint.y - center.y;
+          const tangentX = next.x - endpoint.x;
+          const tangentY = next.y - endpoint.y;
+          const lengths = Math.hypot(radialX, radialY) * Math.hypot(tangentX, tangentY);
+          return lengths ? (radialX * tangentX + radialY * tangentY) / lengths : -1;
+        };
         return {
           edgeId,
           hasTargetMarker: Boolean(path.getAttribute("marker-end")),
-          hasVisibleTerminalSegment: Math.hypot(end.x - beforeEnd.x, end.y - beforeEnd.y) >= 8
+          hasVisibleTerminalSegment: Math.hypot(end.x - beforeEnd.x, end.y - beforeEnd.y) >= 8,
+          sourcePortAttached: distanceToPortRim(sourcePorts, start) <= 2,
+          targetPortAttached: distanceToPortRim(targetPorts, end) <= 2,
+          sourceLeavesPortNormally: outwardDot(sourcePorts, start, afterStart) > 0.95,
+          targetEntersPortNormally: outwardDot(targetPorts, end, beforeTarget) > 0.95
         };
       });
     })).toEqual([
-      { edgeId: "flow.source.left", hasTargetMarker: true, hasVisibleTerminalSegment: true },
-      { edgeId: "flow.source.right", hasTargetMarker: true, hasVisibleTerminalSegment: true }
+      { edgeId: "flow.source.left", hasTargetMarker: true, hasVisibleTerminalSegment: true, sourcePortAttached: true, targetPortAttached: true, sourceLeavesPortNormally: true, targetEntersPortNormally: true },
+      { edgeId: "flow.source.right", hasTargetMarker: true, hasVisibleTerminalSegment: true, sourcePortAttached: true, targetPortAttached: true, sourceLeavesPortNormally: true, targetEntersPortNormally: true }
     ]);
     await expect.poll(async () => root.evaluate((element) =>
       Array.from(element.querySelectorAll("[data-cell-id]")).filter((cell) => {
@@ -964,7 +1123,10 @@ test("deployed visualizer UAT keeps flow layout, browse return, and wheel zoom w
     }
   });
   page.on("requestfailed", (request) => {
-    pageErrors.push(`Request failed ${request.url()}: ${request.failure()?.errorText ?? "unknown"}`);
+    const errorText = request.failure()?.errorText ?? "unknown";
+    if (errorText !== "net::ERR_ABORTED" || !request.url().includes("/stream?")) {
+      pageErrors.push(`Request failed ${request.url()}: ${errorText}`);
+    }
   });
   page.on("pageerror", (error) => pageErrors.push(error.message));
   page.on("console", (message) => {
@@ -976,27 +1138,64 @@ test("deployed visualizer UAT keeps flow layout, browse return, and wheel zoom w
 
   await page.goto(baseUrl!);
   await expect(page.locator("#console-panel-project")).toBeVisible();
+  await page.locator('[data-console-tab="run"]').click();
+  await expect(page.locator("#operate-tab-operations")).toHaveAttribute("aria-selected", "true");
+  await expect(page.locator("#console-panel-ops")).toBeVisible();
+  await expect(page.locator("#operate-tabs")).toHaveCSS("position", "sticky");
+  const recentRun = page.locator("#sidebar [data-run-id]").first();
+  if (await recentRun.count()) {
+    await recentRun.click();
+    await expect(page.locator("#operate-tab-overview")).toHaveAttribute("aria-selected", "true");
+    await expect(page.locator("#run-flow .flow-step").first()).toBeVisible();
+    await expect(page.locator("#run-flow .flow-step").first()).toHaveCSS("border-left-color", /\d+, \d+, \d+/);
+    const loopStep = page.locator("#run-flow .flow-step.is-loop-step").first();
+    if (await loopStep.count()) await expect(loopStep).toHaveCSS("margin-left", "14px");
+  }
   const designTab = page.locator('[data-console-tab="design"]');
   if (await designTab.getAttribute("aria-selected") !== "true") {
     await designTab.click();
   }
   await expect(page.locator("#studio-graph-root")).toBeVisible();
   await expect(page.locator("#studio-graph-root [data-studio-graph-layout]")).toHaveValue("flow");
-  await waitForStudioCell(page, "proposal-author");
-  await expect.poll(async () => page.evaluate(() => {
-    const source = document.querySelector('#studio-graph-root [data-cell-id="proposal-author"]')?.getBoundingClientRect();
-    const target = document.querySelector('#studio-graph-root [data-cell-id="debate-critic"]')?.getBoundingClientRect();
-    return Boolean(source && target && source.right < target.left);
-  })).toBe(true);
+  const readPortAttachmentAudit = () => page.locator("#studio-graph-root").evaluate((root) => {
+    const ports = Array.from(root.querySelectorAll<SVGElement>("[data-studio-port]"));
+    const rimDistance = (point: DOMPoint) => Math.min(...ports.map((port) => {
+      const bounds = port.getBoundingClientRect();
+      const radius = Math.min(bounds.width, bounds.height) / 2;
+      return Math.abs(Math.hypot(point.x - (bounds.left + bounds.width / 2), point.y - (bounds.top + bounds.height / 2)) - radius);
+    }));
+    const matchedEdges = Array.from(root.querySelectorAll<SVGPathElement>("[data-cell-id] path[marker-end]"))
+      .flatMap((path) => {
+        const matrix = path.getScreenCTM();
+        if (!matrix || path.getTotalLength() <= 0) return [];
+        const pointAt = (distance: number) => {
+          const point = path.getPointAtLength(distance);
+          return new DOMPoint(point.x, point.y).matrixTransform(matrix);
+        };
+        const start = pointAt(0);
+        const end = pointAt(path.getTotalLength());
+        const sourceDistance = rimDistance(start);
+        const targetDistance = rimDistance(end);
+        return sourceDistance < 24 && targetDistance < 24 ? [{ sourceDistance, targetDistance }] : [];
+      });
+    return {
+      roleToRoleEdgeCount: matchedEdges.length,
+      unattachedTerminalCount: matchedEdges.filter((edge) => edge.sourceDistance > 2 || edge.targetDistance > 2).length
+    };
+  });
+  await expect.poll(async () => (await readPortAttachmentAudit()).roleToRoleEdgeCount).toBeGreaterThan(0);
+  expect((await readPortAttachmentAudit()).unattachedTerminalCount).toBe(0);
 
   await page.locator('[data-studio-side-tab="structure"]').click();
   const rolesSection = page.locator("[data-studio-role-list-section]");
   if (!(await rolesSection.getAttribute("open"))) {
     await rolesSection.locator("summary").click();
   }
-  await page.locator('[data-studio-role-id="proposal-author"]').click();
+  const roleId = await rolesSection.locator("[data-studio-role-id]").first().getAttribute("data-studio-role-id");
+  expect(roleId).toBeTruthy();
+  await rolesSection.locator("[data-studio-role-id]").first().click();
   await expect(page.locator('[data-studio-selection-panel="structure"]')).toBeVisible();
-  await expect(page.locator('[data-studio-selection-inline-editor] [data-role-config-editor="proposal-author"]')).toBeVisible();
+  await expect(page.locator('[data-studio-selection-inline-editor] [data-role-config-editor]')).toBeVisible();
   await page.locator("[data-studio-selection-back]").click();
   await expect(page.locator('[data-studio-selection-panel="structure"]')).toBeVisible();
 
@@ -1009,5 +1208,8 @@ test("deployed visualizer UAT keeps flow layout, browse return, and wheel zoom w
     await page.mouse.wheel(0, -280);
     await expect.poll(() => graphViewport.getAttribute("transform")).not.toBe(beforeWheel);
   }
+  await page.locator('[data-console-tab="release"]').click();
+  await expect(page.locator("#release-gate")).toContainText(/release candidate ready/i);
+  await expect(page.locator("#release-gate")).toContainText(/No blocking readiness issues\./i);
   expect(pageErrors).toEqual([]);
 });

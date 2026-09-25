@@ -29,7 +29,7 @@ export function renderPageShellBody({ workdir, locale, t }: PageShellBodyOptions
             </div>
             <div class="top-nav-meta">
               <button id="sidebar-toggle" class="button subtle sidebar-toggle" aria-controls="sidebar" aria-expanded="false">${escapeHtml(t("hero.runs"))}</button>
-              <div class="pill">${escapeHtml(t("app.workdir"))} <code id="workdir">${escapeHtml(workdir)}</code></div>
+              <div class="pill">${escapeHtml(t("app.workdir"))} <code id="workdir" title="${escapeHtml(workdir)}">${escapeHtml(workdir)}</code></div>
             </div>
           </div>
           <div class="top-nav-center">
@@ -57,8 +57,8 @@ export function renderPageShellBody({ workdir, locale, t }: PageShellBodyOptions
           </div>
         </div>
       </header>
+      <div id="flash" class="flash hidden" role="status" aria-live="polite" aria-atomic="true"></div>
       <main class="main-stage">
-        <div id="flash" class="flash hidden" role="status" aria-live="polite" aria-atomic="true"></div>
         <div class="stage-stack">
           <section class="grid" id="action-form-section" hidden role="dialog" aria-modal="true" aria-labelledby="action-form-title">
             <article class="card span-12">
@@ -89,18 +89,53 @@ export function renderPageShellBody({ workdir, locale, t }: PageShellBodyOptions
                 </div>
               </article>
             </section>
+          <section id="console-panel-ops" class="console-panel grid" data-console-panel="ops" role="region" aria-labelledby="console-tab-operate" hidden>
+            <article class="card span-12 operate-panel operate-ops-summary">
+              <header><h3>${escapeHtml(t("section.opsSummary"))}</h3></header>
+              <div class="body">
+                <div id="ops-summary" class="structure-list">${escapeHtml(t("state.loadingOpsSummary"))}</div>
+              </div>
+            </article>
+          </section>
           <section id="console-panel-debug" class="console-panel grid operate-workspace" data-console-panel="debug" role="presentation" hidden>
             <div id="operate-tabs" class="segmented operate-tabs span-12" role="tablist" aria-label="${escapeHtml(t("operate.tablist"))}"></div>
-            <section id="operate-tabpanel-overview" class="grid span-12" role="tabpanel" aria-labelledby="operate-tab-overview">
+          <section id="operate-tabpanel-overview" class="grid span-12" role="tabpanel" aria-labelledby="operate-tab-overview">
+              <div id="operate-empty-state" class="operate-empty-state span-12" hidden>
+                <strong>${escapeHtml(t("state.noRunSelected"))}</strong>
+              </div>
               <article class="card span-12 operate-panel operate-overview">
                 <header><h3>${escapeHtml(t("section.runSnapshot"))}</h3></header>
                 <div class="body">
                   <div class="stat-grid" id="stats"></div>
                 </div>
               </article>
+              <article class="card span-12 operate-panel operate-overview operate-flow-card">
+                <header><h3>${escapeHtml(t("section.flowTrace"))}</h3></header>
+                <div class="body">
+                  <div id="run-flow" class="flow-trace"><div class="hint">${escapeHtml(t("state.noRunSelected"))}</div></div>
+                </div>
+              </article>
+              <article class="card span-12 operate-panel operate-overview operate-graph">
+                <header><h3>${escapeHtml(t("section.graphView"))}</h3></header>
+                <div class="body">
+                  <details id="run-graph-disclosure" class="run-graph-disclosure">
+                    <summary>${escapeHtml(t("graph.expandRuntimeGraph"))}</summary>
+                    <div class="debug-graph-body operate-graph-shell">
+                      <section class="operate-graph-main">
+                        <div id="graph-view" class="structure-list operate-graph-view"><div class="hint">${escapeHtml(t("state.noRunSelected"))}</div></div>
+                      </section>
+                      <aside class="operate-graph-sidebar">
+                        <div id="state" class="structure-list operate-graph-state"><div class="hint">${escapeHtml(t("state.noRunSelected"))}</div></div>
+                      </aside>
+                    </div>
+                  </details>
+                </div>
+              </article>
               <article class="card span-12 operate-panel operate-overview">
                 <header><div class="toolbar-row"><h3>${escapeHtml(t("section.timeline"))}</h3><div class="actions"><button id="timeline-conversation" class="button subtle" type="button">${escapeHtml(t("timeline.conversation"))}</button></div></div></header>
                 <div class="body">
+                  <details class="run-event-details">
+                    <summary>${escapeHtml(t("timeline.technicalDetails"))}</summary>
                   <div class="row timeline-controls">
                     <select id="timeline-role" class="select">
                       <option value="">${escapeHtml(t("timeline.allRoles"))}</option>
@@ -132,19 +167,7 @@ export function renderPageShellBody({ workdir, locale, t }: PageShellBodyOptions
                     <button id="timeline-clear" class="button subtle">${escapeHtml(t("action.clearFilters"))}</button>
                   </div>
                   <div id="timeline" class="timeline"></div>
-                </div>
-              </article>
-            </section>
-            <section id="operate-tabpanel-graph" class="grid span-12" role="tabpanel" aria-labelledby="operate-tab-graph" hidden>
-              <article class="card span-12 operate-panel operate-graph">
-                <header><h3>${escapeHtml(t("section.graphView"))}</h3></header>
-                <div class="body debug-graph-body operate-graph-shell">
-                  <section class="operate-graph-main">
-                    <div id="graph-view" class="structure-list operate-graph-view"><div class="hint">${escapeHtml(t("state.noRunSelected"))}</div></div>
-                  </section>
-                  <aside class="operate-graph-sidebar">
-                    <div id="state" class="structure-list operate-graph-state"><div class="hint">${escapeHtml(t("state.noRunSelected"))}</div></div>
-                  </aside>
+                  </details>
                 </div>
               </article>
             </section>
@@ -158,8 +181,14 @@ export function renderPageShellBody({ workdir, locale, t }: PageShellBodyOptions
                 </header>
                 <div class="body">
                   <div id="failure-summary" class="structure-list"><div class="hint">${escapeHtml(t("state.noRunSelected"))}</div></div>
-                  <div id="failure-detail" class="structure-list"><div class="hint">${escapeHtml(t("state.noRunSelected"))}</div></div>
-                  <div id="failure-next-checks" class="structure-list"><div class="hint">${escapeHtml(t("state.noRunSelected"))}</div></div>
+                  <details id="failure-detail-disclosure" class="run-event-details">
+                    <summary>${escapeHtml(t("failure.detailSummary"))}</summary>
+                    <div id="failure-detail" class="structure-list"><div class="hint">${escapeHtml(t("state.noRunSelected"))}</div></div>
+                  </details>
+                  <details id="failure-next-checks-disclosure" class="run-event-details">
+                    <summary>${escapeHtml(t("failure.nextChecksSummary"))}</summary>
+                    <div id="failure-next-checks" class="structure-list"><div class="hint">${escapeHtml(t("state.noRunSelected"))}</div></div>
+                  </details>
                 </div>
               </article>
               <article class="card span-6 operate-panel operate-recovery">
@@ -171,7 +200,10 @@ export function renderPageShellBody({ workdir, locale, t }: PageShellBodyOptions
                 </header>
                 <div class="body">
                   <div id="resume-readiness" class="structure-list"><div class="hint">${escapeHtml(t("state.noRunSelected"))}</div></div>
-                  <div id="resume-diagnostics" class="timeline"><div class="hint">${escapeHtml(t("state.noRunSelected"))}</div></div>
+                  <details id="resume-diagnostics-disclosure" class="run-event-details">
+                    <summary>${escapeHtml(t("resume.diagnosticsDetails"))}</summary>
+                    <div id="resume-diagnostics" class="timeline"><div class="hint">${escapeHtml(t("state.noRunSelected"))}</div></div>
+                  </details>
                 </div>
               </article>
             </section>
@@ -181,18 +213,13 @@ export function renderPageShellBody({ workdir, locale, t }: PageShellBodyOptions
                 <div class="body">
                   <div id="reviews" class="timeline"><div class="hint">${escapeHtml(t("state.noRunSelected"))}</div></div>
                   <div id="review-actions" class="actions"></div>
-                  <div id="review-detail" class="structure-list">${escapeHtml(t("state.noReviewSelected"))}</div>
+                  <details id="review-detail-disclosure" class="run-event-details">
+                    <summary>${escapeHtml(t("review.details"))}</summary>
+                    <div id="review-detail" class="structure-list">${escapeHtml(t("state.noReviewSelected"))}</div>
+                  </details>
                 </div>
               </article>
             </section>
-          </section>
-          <section id="console-panel-ops" class="console-panel grid" data-console-panel="ops" role="region" aria-labelledby="console-tab-operate" hidden>
-            <article class="card span-12 operate-panel operate-overview">
-              <header><h3>${escapeHtml(t("section.opsSummary"))}</h3></header>
-              <div class="body">
-                <div id="ops-summary" class="structure-list">${escapeHtml(t("state.loadingOpsSummary"))}</div>
-              </div>
-            </article>
           </section>
           <section id="console-panel-validate-release" class="console-panel grid" data-console-panel="validate-release" role="tabpanel" aria-labelledby="console-tab-release" hidden>
             <article class="card span-12">
@@ -222,6 +249,8 @@ export function renderPageShellBody({ workdir, locale, t }: PageShellBodyOptions
               </div>
             </article>
           </section>
+          <details class="operate-evidence-disclosure">
+            <summary>${escapeHtml(t("operate.evidence"))}</summary>
           <section id="console-panel-logs" class="console-panel grid" data-console-panel="logs" role="tabpanel" aria-labelledby="operate-tab-logs" hidden>
             <article class="card span-12 operate-panel operate-logs">
               <header>
@@ -261,6 +290,7 @@ export function renderPageShellBody({ workdir, locale, t }: PageShellBodyOptions
               </div>
             </article>
           </section>
+          </details>
         </div>
       </main>
       <footer class="status-bar global-status">

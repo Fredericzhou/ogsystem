@@ -43,6 +43,18 @@ const visualizerSseMetrics: VisualizerSseMetrics = {
   writesTotal: 0,
   activeByRunId: new Map()
 };
+const visualizerHttpMetrics = {
+  requestsTotal: 0,
+  responsesByStatus: new Map<number, number>()
+};
+
+export function recordVisualizerHttpResponse(statusCode: number): void {
+  visualizerHttpMetrics.requestsTotal += 1;
+  visualizerHttpMetrics.responsesByStatus.set(
+    statusCode,
+    (visualizerHttpMetrics.responsesByStatus.get(statusCode) ?? 0) + 1
+  );
+}
 
 function pruneProjectCreateRequestCache(
   state: ProjectCreateRequestCacheState,
@@ -247,4 +259,38 @@ export function getVisualizerSseMetricsSnapshot(): Record<string, unknown> {
     writesTotal: visualizerSseMetrics.writesTotal,
     activeByRunId: Object.fromEntries(visualizerSseMetrics.activeByRunId.entries())
   };
+}
+
+export function getVisualizerPrometheusMetrics(): string {
+  const metrics = visualizerSseMetrics;
+  const responseStatusLines = [...visualizerHttpMetrics.responsesByStatus.entries()]
+    .sort(([left], [right]) => left - right)
+    .map(([status, count]) => `ogs_visualizer_http_responses_total{status="${status}"} ${count}`);
+  return [
+    "# HELP ogs_visualizer_http_requests_total Total completed HTTP requests.",
+    "# TYPE ogs_visualizer_http_requests_total counter",
+    `ogs_visualizer_http_requests_total ${visualizerHttpMetrics.requestsTotal}`,
+    "# HELP ogs_visualizer_http_responses_total Completed HTTP responses by status code.",
+    "# TYPE ogs_visualizer_http_responses_total counter",
+    ...responseStatusLines,
+    "# HELP ogs_visualizer_sse_connections_active Active event stream connections.",
+    "# TYPE ogs_visualizer_sse_connections_active gauge",
+    `ogs_visualizer_sse_connections_active ${metrics.activeConnections}`,
+    "# HELP ogs_visualizer_sse_connections_total Total event stream connections opened.",
+    "# TYPE ogs_visualizer_sse_connections_total counter",
+    `ogs_visualizer_sse_connections_total ${metrics.openedTotal}`,
+    "# HELP ogs_visualizer_sse_ticks_total Event stream polling ticks.",
+    "# TYPE ogs_visualizer_sse_ticks_total counter",
+    `ogs_visualizer_sse_ticks_total ${metrics.ticksTotal}`,
+    "# HELP ogs_visualizer_sse_snapshots_total Event stream snapshots loaded.",
+    "# TYPE ogs_visualizer_sse_snapshots_total counter",
+    `ogs_visualizer_sse_snapshots_total ${metrics.snapshotsTotal}`,
+    "# HELP ogs_visualizer_sse_snapshot_errors_total Event stream snapshot errors.",
+    "# TYPE ogs_visualizer_sse_snapshot_errors_total counter",
+    `ogs_visualizer_sse_snapshot_errors_total ${metrics.snapshotErrorsTotal}`,
+    "# HELP ogs_visualizer_sse_writes_total Event stream writes.",
+    "# TYPE ogs_visualizer_sse_writes_total counter",
+    `ogs_visualizer_sse_writes_total ${metrics.writesTotal}`,
+    ""
+  ].join("\n");
 }

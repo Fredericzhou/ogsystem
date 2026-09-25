@@ -1,4 +1,5 @@
 type Translator = (key: string, vars?: Record<string, unknown>, fallback?: string) => string;
+import { roleColorForId } from "./role-color.js";
 
 export function renderLoadingSkeletonHtml(args: {
   label: string;
@@ -44,25 +45,86 @@ export function renderOperateTabsHtml(args: {
 }): string {
   const { operateTab, t, escapeText } = args;
   const tabs = [
-    ["overview", "operate-tabpanel-overview", t("operate.tab.overview", undefined, "Overview"), t("operate.tabHint.overview", undefined, "Run status, summary, and timeline")],
-    ["graph", "operate-tabpanel-graph", t("operate.tab.graph", undefined, "Graph"), t("operate.tabHint.graph", undefined, "Readonly runtime graph and state")],
-    ["recovery", "operate-tabpanel-recovery", t("operate.tab.recovery", undefined, "Recovery"), t("operate.tabHint.recovery", undefined, "Failure triage and resume readiness")],
-    ["logs", "console-panel-logs", t("operate.tab.logs", undefined, "Logs"), t("operate.tabHint.logs", undefined, "Load engine and role logs on demand")],
-    ["reviews", "operate-tabpanel-reviews", t("operate.tab.reviews", undefined, "Reviews"), t("operate.tabHint.reviews", undefined, "Human review queue and decisions")],
-    ["artifacts", "console-panel-artifacts", t("operate.tab.artifacts", undefined, "Artifacts"), t("operate.tabHint.artifacts", undefined, "Run snapshots and exported evidence")]
+    ["overview", "operate-tabpanel-overview", t("operate.tab.flow", undefined, "Flow"), t("operate.tabHint.flow", undefined, "Step inputs, outputs, and handoffs")],
+    ["operations", "operate-tabpanel-recovery operate-tabpanel-reviews console-panel-ops console-panel-logs console-panel-artifacts", t("operate.tab.operations", undefined, "Operations"), t("operate.tabHint.operations", undefined, "Reviews, recovery, logs, and artifacts")]
   ];
   return tabs.map(([id, panelId, label, hint]) =>
     '<button class="button subtle ' + (operateTab === id ? "active" : "") +
     '" id="operate-tab-' + escapeText(id) +
     '" data-operate-tab="' + escapeText(id) +
-    '" role="tab"' +
-    '" aria-controls="' + escapeText(panelId) +
+    '" role="tab" aria-controls="' + escapeText(panelId) +
     '" aria-selected="' + escapeText(String(operateTab === id)) +
     '" aria-pressed="' + escapeText(String(operateTab === id)) +
     '" tabindex="' + escapeText(operateTab === id ? "0" : "-1") +
     '" title="' + escapeText(hint) +
     '">' + escapeText(label) + '</button>'
   ).join("");
+}
+
+export function renderFlowTraceHtml(args: {
+  projection: Record<string, any> | null | undefined;
+  graph: Record<string, any> | null | undefined;
+  t: Translator;
+  escapeText: (value: unknown) => string;
+  statusClass: (value: string) => string;
+  displayUiToken: (value: unknown, t: Translator) => string;
+  formatTime: (value: unknown) => string;
+  selectedRoleId?: string;
+}): string {
+  const { projection, graph, t, escapeText, statusClass, displayUiToken, formatTime } = args;
+  const items = Array.isArray(projection?.items) ? projection.items : [];
+  const edges = Array.isArray(graph?.graph?.edges) ? graph.graph.edges : [];
+  const executions = items
+    .filter((item: Record<string, any>) => item.roleId && item.kind === "role_message" && item.type === "audit")
+    .sort((left: Record<string, any>, right: Record<string, any>) => (left.source?.cursor ?? 0) - (right.source?.cursor ?? 0));
+  const contentOf = (item: Record<string, any>): string => {
+    const text = String(item.content?.text ?? "");
+    const match = text.match(/^event=[^|]+\|\s*content=([\s\S]*?)(?:\s*\|\s*data=|$)/);
+    return match ? match[1].trim() : text;
+  };
+  const inputSources = (item: Record<string, any>, index: number): Array<{ roleId: string; event: string; text: string }> => {
+    const incoming = edges.filter((edge: Record<string, any>) => edge.target === item.roleId);
+    if (incoming.some((edge: Record<string, any>) => edge.source === "input") && index === 0) {
+      return [{ roleId: "input", event: "", text: String(projection?.input?.text ?? "") }].filter((source) => source.text);
+    }
+    return incoming
+      .filter((edge: Record<string, any>) => edge.source !== "input")
+      .map((edge: Record<string, any>) => {
+        const candidates = executions.slice(0, index).filter((candidate: Record<string, any>) =>
+          candidate.roleId === edge.source && (!edge.eventType || candidate.event === edge.eventType)
+        );
+        const source = candidates.at(-1) ?? executions.slice(0, index).filter((candidate: Record<string, any>) => candidate.roleId === edge.source).at(-1);
+        return source ? { roleId: source.roleId, event: source.event || edge.eventType || "", text: contentOf(source) } : null;
+      })
+      .filter((source: { roleId: string; event: string; text: string } | null): source is { roleId: string; event: string; text: string } => Boolean(source?.text));
+  };
+  if (!executions.length) {
+    return '<div class="hint">' + escapeText(projection
+      ? t("flow.noSteps", undefined, "No role execution details are available for this run.")
+      : t("flow.unavailable", undefined, "Flow details are unavailable.")) + '</div>';
+  }
+  const steps = executions.map((item: Record<string, any>, index: number) => {
+    const sources = inputSources(item, index);
+    const targets = edges.filter((edge: Record<string, any>) => edge.source === item.roleId && (!item.event || edge.eventType === item.event));
+    const inputHtml = sources.length
+      ? sources.map((source) => '<div class="flow-message"><div class="flow-message-meta"><code>' + escapeText(source.roleId) + '</code>' + (source.event ? ' · <code>' + escapeText(source.event) + '</code>' : '') + '</div><p>' + escapeText(source.text) + '</p></div>').join("")
+      : '<div class="hint">' + escapeText(t("flow.inputUnavailable", undefined, "Upstream input was not captured.")) + '</div>';
+    const output = contentOf(item);
+    const route = targets.map((edge: Record<string, any>) => '<code>' + escapeText(edge.eventType || item.event || "") + '</code> → <code>' + escapeText(edge.target) + '</code>').join(" · ");
+    const branch = item.branchId ? '<code>' + escapeText(item.branchId) + '</code>' : "";
+    const duration = Number.isFinite(item.durationMs) ? Math.round(item.durationMs) + " ms" : "";
+    const loopIteration = Number(item.loopIteration);
+    const inLoop = Number.isFinite(loopIteration) && loopIteration > 0;
+    const roleColor = roleColorForId(String(item.roleId));
+    const selected = args.selectedRoleId === item.roleId;
+    return '<article class="flow-step' + (selected ? ' is-role-focus' : '') + (inLoop ? ' is-loop-step' : '') + '" data-flow-role="' + escapeText(item.roleId) + '"' + (inLoop ? ' data-loop-iteration="' + escapeText(loopIteration) + '"' : '') + ' style="--role-accent:' + roleColor.accent + ';--role-fill:' + roleColor.fill + '">' +
+      '<header class="flow-step-head"><div><span class="flow-step-index">' + String(index + 1).padStart(2, "0") + '</span><button type="button" class="flow-role-select" data-flow-role-focus="' + escapeText(item.roleId) + '"><code>' + escapeText(item.roleId) + '</code></button></div><div class="flow-step-meta">' + (inLoop ? '<span class="flow-step-loop">' + escapeText(t("flow.loopRound", { count: String(loopIteration) }, "loop {count}")) + '</span>' : '') + '<span class="status ' + escapeText(statusClass(String(item.status || "unknown"))) + '">' + escapeText(displayUiToken(item.status || "unknown", t)) + '</span><span>' + escapeText(duration) + '</span></div></header>' +
+      '<div class="flow-step-io"><section><h4>' + escapeText(t("flow.input", undefined, "Input")) + '</h4>' + inputHtml + '</section><section><h4>' + escapeText(t("flow.output", undefined, "Output")) + '</h4><div class="flow-message"><p>' + escapeText(output || t("flow.outputUnavailable", undefined, "Output was not captured.")) + '</p></div></section></div>' +
+      '<details class="flow-step-detail" data-flow-role-io="' + escapeText(item.roleId) + '"' + (item.branchId ? ' data-flow-branch-id="' + escapeText(item.branchId) + '"' : '') + (inLoop ? ' data-flow-loop-iteration="' + escapeText(loopIteration) + '"' : '') + '><summary>' + escapeText(t("flow.fullIo", undefined, "Full captured input and output")) + '</summary><div class="flow-step-detail-body"><div class="hint">' + escapeText(t("flow.fullIoHint", undefined, "Load the complete captured Role I/O and structured result.")) + '</div></div></details>' +
+      '<footer class="flow-step-route"><span>' + escapeText(t("flow.handoff", undefined, "Handoff")) + '</span><span>' + (route || '<code>' + escapeText(item.event || "") + '</code> → <code>' + escapeText(t("flow.terminal", undefined, "terminal")) + '</code>') + '</span><span>' + escapeText(branch) + '</span><time>' + escapeText(formatTime(item.at)) + '</time></footer>' +
+      '</article>';
+  }).join("");
+  return '<div class="flow-trace">' + steps + '</div>';
 }
 
 export function renderWorkbenchStructureHtml(args: {

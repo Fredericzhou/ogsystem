@@ -10,17 +10,18 @@ async function readPromptFromStdin() {
 }
 
 function extractSection(prompt, heading) {
+  const normalizedPrompt = prompt.replace(/\r\n/g, "\n");
   const marker = `\n${heading}:\n`;
-  const start = prompt.lastIndexOf(marker);
+  const start = normalizedPrompt.lastIndexOf(marker);
   if (start === -1) {
     return "";
   }
   const contentStart = start + marker.length;
-  const nextHeading = prompt.slice(contentStart).match(/\n[A-Z][A-Za-z ]+:\n/);
+  const nextHeading = normalizedPrompt.slice(contentStart).match(/\n[A-Z][A-Za-z ]+:\n/);
   if (!nextHeading?.index) {
-    return prompt.slice(contentStart).trim();
+    return normalizedPrompt.slice(contentStart).trim();
   }
-  return prompt.slice(contentStart, contentStart + nextHeading.index).trim();
+  return normalizedPrompt.slice(contentStart, contentStart + nextHeading.index).trim();
 }
 
 function parseInputSection(prompt) {

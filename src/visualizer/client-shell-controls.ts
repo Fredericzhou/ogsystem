@@ -2,8 +2,10 @@ type Translator = (key: string, vars?: Record<string, unknown>, fallback?: strin
 function getOperatePanelId(operateTab: string): string {
   switch (operateTab) {
     case "graph":
-      return "operate-tabpanel-graph";
+      return "operate-tabpanel-overview";
     case "recovery":
+      return "operate-tabpanel-recovery";
+    case "operations":
       return "operate-tabpanel-recovery";
     case "reviews":
       return "operate-tabpanel-reviews";
@@ -35,8 +37,7 @@ export function renderConsoleTabsHtml(args: {
     '<button class="button subtle ' + (consoleTab === id ? "active" : "") +
     '" id="console-tab-' + escapeText(id) +
     '" data-console-tab="' + escapeText(id) +
-    '" role="tab"' +
-    '" aria-controls="' + escapeText(panelId) +
+    '" role="tab" aria-controls="' + escapeText(panelId) +
     '" aria-selected="' + escapeText(String(consoleTab === id)) +
     '" aria-pressed="' + escapeText(String(consoleTab === id)) +
     '" tabindex="' + escapeText(consoleTab === id ? "0" : "-1") +
@@ -61,6 +62,8 @@ export function getVisibleConsolePanelIds(args: {
     return ["validate-release"];
   }
   switch (operateTab) {
+    case "operations":
+      return ["debug", "ops", "logs", "artifacts"];
     case "logs":
       return ["debug", "logs"];
     case "artifacts":

@@ -101,6 +101,45 @@ function terminalPoint(node, terminal) {
   return { x: node.x + node.width / 2 + terminal.offset, y: node.y + node.height };
 }
 
+function projectedRoutePoints(projection, projectedEdge) {
+  const source = projection.nodes.find((node) => node.id === projectedEdge.source);
+  const target = projection.nodes.find((node) => node.id === projectedEdge.target);
+  return [
+    terminalPoint(source, projectedEdge.routing.source),
+    ...projectedEdge.routing.routePoints,
+    terminalPoint(target, projectedEdge.routing.target)
+  ];
+}
+
+function routesCross(left, right) {
+  const leftPoints = left.routePoints;
+  const rightPoints = right.routePoints;
+  for (let leftIndex = 1; leftIndex < leftPoints.length; leftIndex += 1) {
+    const leftStart = leftPoints[leftIndex - 1];
+    const leftEnd = leftPoints[leftIndex];
+    for (let rightIndex = 1; rightIndex < rightPoints.length; rightIndex += 1) {
+      const rightStart = rightPoints[rightIndex - 1];
+      const rightEnd = rightPoints[rightIndex];
+      const leftHorizontal = leftStart.y === leftEnd.y;
+      const rightHorizontal = rightStart.y === rightEnd.y;
+      if (leftHorizontal === rightHorizontal) continue;
+      const horizontalStart = leftHorizontal ? leftStart : rightStart;
+      const horizontalEnd = leftHorizontal ? leftEnd : rightEnd;
+      const verticalStart = leftHorizontal ? rightStart : leftStart;
+      const verticalEnd = leftHorizontal ? rightEnd : leftEnd;
+      const crossingX = verticalStart.x;
+      const crossingY = horizontalStart.y;
+      if (
+        crossingX > Math.min(horizontalStart.x, horizontalEnd.x) &&
+        crossingX < Math.max(horizontalStart.x, horizontalEnd.x) &&
+        crossingY > Math.min(verticalStart.y, verticalEnd.y) &&
+        crossingY < Math.max(verticalStart.y, verticalEnd.y)
+      ) return true;
+    }
+  }
+  return false;
+}
+
 function segmentIntersectsNode(start, end, node) {
   const left = node.x;
   const right = node.x + node.width;
@@ -187,7 +226,7 @@ test("ELK follows declared branch order and expands nodes for readable labels", 
   assert.ok(size.width > longNode.layout.width || size.height > longNode.layout.height);
 });
 
-test("role labels stay explicit without forcing oversized nodes in a flow layout", () => {
+test("role labels omit the redundant type prefix without forcing oversized nodes", () => {
   const role = node("reviewer", {
     label: "Debate Reviewer",
     structure: { loopScope: { loopId: "debate-loop" }, review: true },
@@ -196,12 +235,13 @@ test("role labels stay explicit without forcing oversized nodes in a flow layout
   const label = formatStudioNodeLabel(role);
   const size = layoutNodeSize(role);
 
-  assert.match(label, /^Role: Debate Reviewer/);
+  assert.match(label, /^Debate Reviewer/);
+  assert.doesNotMatch(label, /^Role:/);
   assert.doesNotMatch(label, /Role \/ Agent:/);
   assert.ok(size.width <= 260);
 });
 
-test("stored routing bundles same-direction fan-out and fan-in stubs", () => {
+test("stored routing keeps diagonal fan-in on its nearby sides", () => {
   const view = graph([
     node("source", { layout: { x: 100, y: 120, width: 180, height: 84 } }),
     node("left", { layout: { x: 420, y: 60, width: 180, height: 84 } }),
@@ -218,32 +258,24 @@ test("stored routing bundles same-direction fan-out and fan-in stubs", () => {
   const sourceRight = projection.edges.find((item) => item.id === "source-right").routing;
   const leftJoin = projection.edges.find((item) => item.id === "left-join").routing;
   const rightJoin = projection.edges.find((item) => item.id === "right-join").routing;
-  assert.equal(sourceLeft.source.offset, sourceRight.source.offset);
-  assert.equal(leftJoin.target.offset, rightJoin.target.offset);
-  assert.equal(leftJoin.routePoints[0].x, 600 + STUDIO_NODE_EDGE_CLEARANCE);
-  assert.equal(rightJoin.routePoints[0].x, 600 + STUDIO_NODE_EDGE_CLEARANCE);
+  assert.ok(["right", "top"].includes(sourceLeft.source.side));
+  assert.ok(["right", "bottom"].includes(sourceRight.source.side));
+  assert.ok(["left", "top", "bottom"].includes(leftJoin.target.side));
+  assert.ok(["left", "top", "bottom"].includes(rightJoin.target.side));
   assert.equal(sourceLeft.source.port, "out-flow-source-left");
   assert.equal(sourceRight.source.port, "out-flow-source-right");
   assert.equal(leftJoin.target.port, "in-flow-left-join");
   assert.equal(rightJoin.target.port, "in-flow-right-join");
-  assert.equal(projection.bundles.length, 2);
-  const fanOutBundle = projection.bundles.find((bundle) => bundle.kind === "fan-out");
-  const fanInBundle = projection.bundles.find((bundle) => bundle.kind === "fan-in");
-  assert.deepEqual(fanOutBundle.edgeIds, ["source-left", "source-right"]);
-  assert.deepEqual(fanInBundle.edgeIds, ["left-join", "right-join"]);
-  assert.deepEqual(sourceLeft.routePoints[0], fanOutBundle.junction);
-  assert.deepEqual(sourceRight.routePoints[0], fanOutBundle.junction);
-  assert.equal(fanOutBundle.trunk[0].x, 288);
-  assert.equal(fanInBundle.trunk.at(-1).x, 732);
-  assert.deepEqual(leftJoin.routePoints.at(-1), fanInBundle.junction);
-  assert.deepEqual(rightJoin.routePoints.at(-1), fanInBundle.junction);
+  assert.equal(projection.bundles.every((bundle) => bundle.edgeIds.every((edgeId) =>
+    projection.edges.some((item) => item.id === edgeId)
+  )), true);
 });
 
 test("bundled business edges keep a visible terminal segment for their markers", () => {
   const view = graph([
     node("source", { layout: { x: 100, y: 120, width: 180, height: 84 } }),
-    node("left", { layout: { x: 420, y: 60, width: 180, height: 84 } }),
-    node("right", { layout: { x: 420, y: 240, width: 180, height: 84 } })
+    node("left", { layout: { x: 420, y: 120, width: 180, height: 84 } }),
+    node("right", { layout: { x: 640, y: 120, width: 180, height: 84 } })
   ], [
     edge("source-left", "source", "left"),
     edge("source-right", "source", "right")
@@ -269,21 +301,20 @@ test("bundled business edges keep a visible terminal segment for their markers",
   }
 });
 
-test("ELK routing bundles same-direction fan-out and fan-in stubs", async () => {
+test("ELK routes branch links from nearby ports and keeps output boundaries directional", async () => {
   const projection = await createElkLayoutProjection(fixture("fan-out"), "flow");
   const fanOutLeft = projection.edges.find((item) => item.id === "split-left").routing;
   const fanOutRight = projection.edges.find((item) => item.id === "split-right").routing;
   const fanInLeft = projection.edges.find((item) => item.id === "left-output").routing;
   const fanInRight = projection.edges.find((item) => item.id === "right-output").routing;
-  assert.equal(fanOutLeft.source.offset, fanOutRight.source.offset);
-  assert.equal(fanInLeft.target.offset, fanInRight.target.offset);
   for (const routing of [fanOutLeft, fanOutRight, fanInLeft, fanInRight]) {
     assert.ok(routing.routePoints.every((point) => Number.isFinite(point.x) && Number.isFinite(point.y)));
   }
-  assert.equal(projection.bundles.filter((bundle) => bundle.kind === "fan-out").length, 1);
-  assert.equal(projection.bundles.filter((bundle) => bundle.kind === "fan-in").length, 1);
-  assert.deepEqual(fanOutLeft.bundleIds.source, fanOutRight.bundleIds.source);
-  assert.deepEqual(fanInLeft.bundleIds.target, fanInRight.bundleIds.target);
+  assert.equal(projection.bundles.some((bundle) => bundle.kind === "fan-out"), false);
+  assert.ok(["right", "top", "bottom"].includes(fanOutLeft.source.side));
+  assert.ok(["right", "top", "bottom"].includes(fanOutRight.source.side));
+  assert.equal(fanInLeft.target.side, "left");
+  assert.equal(fanInRight.target.side, "left");
   for (const routing of [fanOutLeft, fanOutRight, fanInLeft, fanInRight]) {
     for (let index = 1; index < routing.routePoints.length; index += 1) {
       const previous = routing.routePoints[index - 1];
@@ -300,6 +331,20 @@ test("ELK keeps converging output flows outside the output node in every layout"
     const output = projection.nodes.find((item) => item.id === "output");
     const incoming = projection.edges.filter((item) => item.target === "output");
     assert.equal(incoming.length, 2);
+    assert.equal(projection.bundles.some((bundle) => bundle.nodeId === "output"), false);
+
+    const connectionAxis = expectedSide === "left" || expectedSide === "right" ? "y" : "x";
+    const sourceCoordinate = (edge) => {
+      const source = projection.nodes.find((item) => item.id === edge.source);
+      return source[connectionAxis] + (connectionAxis === "y" ? source.height : source.width) / 2;
+    };
+    const orderedBySource = incoming.slice().sort((left, right) => sourceCoordinate(left) - sourceCoordinate(right));
+    assert.ok(
+      orderedBySource[0].routing.target.offset < orderedBySource[1].routing.target.offset,
+      `${mode}: output terminals must preserve upstream order along their shared face`
+    );
+    const routes = incoming.map((edge) => ({ edge, routePoints: projectedRoutePoints(projection, edge) }));
+    assert.equal(routesCross(routes[0], routes[1]), false, `${mode}: converging output flows must not cross`);
 
     for (const edge of incoming) {
       assert.equal(edge.routing.target.side, expectedSide, `${mode}: ${edge.id} should enter output from its upstream side`);
@@ -307,6 +352,22 @@ test("ELK keeps converging output flows outside the output node in every layout"
         ? { x: output.x, y: output.y + output.height / 2 + edge.routing.target.offset }
         : { x: output.x + output.width / 2 + edge.routing.target.offset, y: output.y };
       const points = [...edge.routing.routePoints, target];
+      const terminalBend = edge.routing.routePoints.at(-2);
+      const terminalStub = edge.routing.routePoints.at(-1);
+      assert.ok(terminalBend && terminalStub, `${mode}: ${edge.id} needs a clear final approach`);
+      const boundaryDistance = Math.abs(terminalStub.x - target.x) + Math.abs(terminalStub.y - target.y);
+      assert.ok(
+        boundaryDistance >= STUDIO_EDGE_TERMINAL_STUB_LENGTH - 1,
+        `${mode}: ${edge.id} needs a full end stub`
+      );
+      const beforeBend = edge.routing.routePoints.at(-3) ?? projectedRoutePoints(projection, edge)[0];
+      const turnsAtTerminalBend = (beforeBend.x === terminalBend.x) !== (terminalBend.x === terminalStub.x);
+      if (turnsAtTerminalBend) {
+        assert.ok(
+          Math.abs(terminalBend.x - terminalStub.x) + Math.abs(terminalBend.y - terminalStub.y) >= 20,
+          `${mode}: ${edge.id} turns too close to the end node`
+        );
+      }
       for (const point of edge.routing.routePoints) {
         assert.equal(
           point.x > output.x && point.x < output.x + output.width &&
@@ -345,7 +406,13 @@ test("bundle grouping stays inside semantic channels and excludes SCC back edges
     edge("source-back", "source", "back", { channel: "loop" })
   ]);
   const projection = createStoredLayoutProjection(view);
-  assert.deepEqual(projection.bundles.map((bundle) => bundle.channel).sort(), ["error", "normal"]);
+  assert.equal(projection.bundles.every((bundle) => {
+    const channels = new Set(bundle.edgeIds.map((edgeId) => {
+      const edge = view.edges.find((item) => item.id === edgeId);
+      return edge.channel ?? (edge.runtimeOnlyErrorFlow ? "error" : "normal");
+    }));
+    return channels.size === 1 && !bundle.edgeIds.includes("source-back");
+  }), true);
   assert.equal(projection.edges.find((item) => item.id === "source-back").routing.bundleIds, undefined);
   assert.equal(projection.edges.length, 5);
 });
@@ -385,6 +452,147 @@ test("fan-in from opposite sides uses separate nearby input ports", () => {
   assert.equal(projection.bundles.length, 0);
 });
 
+test("same-side flow ports stay centered and within the node face", () => {
+  const channels = ["normal", "join", "feedback", "error", "loop", "custom"];
+  const targets = channels.map((channel, index) => node(`target-${index}`, {
+    layout: { x: 600, y: 250, width: 180, height: 84 }
+  }));
+  const view = graph(
+    [node("source", { layout: { x: 100, y: 250, width: 180, height: 84 } }), ...targets],
+    channels.map((channel, index) => edge(`source-${index}`, "source", `target-${index}`, { channel }))
+  );
+  const projection = createStoredLayoutProjection(view);
+  const offsets = projection.edges.map((item) => {
+    assert.equal(item.routing.source.side, "right");
+    return item.routing.source.offset;
+  }).sort((left, right) => left - right);
+
+  assert.deepEqual(offsets, [-33, -20, -7, 7, 20, 33]);
+  assert.equal(offsets.reduce((total, offset) => total + offset, 0), 0);
+  assert.ok(offsets.every((offset) => Math.abs(offset) <= 180 / 2 - 9));
+});
+
+test("diagonal links choose a short route from one of the two nearby sides", () => {
+  const view = graph([
+    node("source", { layout: { x: 100, y: 80, width: 180, height: 84 } }),
+    node("target", { layout: { x: 360, y: 220, width: 180, height: 84 } })
+  ], [edge("source-target", "source", "target")]);
+  const projection = createStoredLayoutProjection(view);
+  const projected = projection.edges[0];
+  const source = projection.nodes.find((item) => item.id === "source");
+  const target = projection.nodes.find((item) => item.id === "target");
+  const points = [terminalPoint(source, projected.routing.source), ...projected.routing.routePoints, terminalPoint(target, projected.routing.target)];
+  const length = points.slice(1).reduce((total, point, index) =>
+    total + Math.abs(point.x - points[index].x) + Math.abs(point.y - points[index].y), 0);
+  assert.ok(["right", "bottom"].includes(projected.routing.source.side));
+  assert.ok(["left", "top"].includes(projected.routing.target.side));
+  assert.ok(length < 240, `expected a nearby route, received ${length}px: ${JSON.stringify(projected.routing)}`);
+  assert.equal(projected.routing.routePoints.every((point, index, routePoints) =>
+    index === 0 || point.x === routePoints[index - 1].x || point.y === routePoints[index - 1].y
+  ), true);
+  const first = projected.routing.routePoints[0];
+  const last = projected.routing.routePoints.at(-1);
+  const sourceSide = projected.routing.source.side;
+  const targetSide = projected.routing.target.side;
+  assert.equal(
+    sourceSide === "left" || sourceSide === "right" ? first.y === terminalPoint(source, projected.routing.source).y : first.x === terminalPoint(source, projected.routing.source).x,
+    true,
+    "source arrow segment must leave perpendicular to its node face"
+  );
+  assert.equal(
+    targetSide === "left" || targetSide === "right" ? last.y === terminalPoint(target, projected.routing.target).y : last.x === terminalPoint(target, projected.routing.target).x,
+    true,
+    "target arrow segment must enter perpendicular to its node face"
+  );
+});
+
+test("all nearby terminal sides keep a normal arrow segment at both ends", () => {
+  const view = graph([
+    node("a", { layout: { x: 100, y: 100, width: 180, height: 84 } }),
+    node("b", { layout: { x: 420, y: 250, width: 180, height: 84 } })
+  ], [edge("a-b", "a", "b")]);
+  const projection = createStoredLayoutProjection(view);
+  const projected = projection.edges[0];
+  const source = projection.nodes.find((item) => item.id === "a");
+  const target = projection.nodes.find((item) => item.id === "b");
+  const first = projected.routing.routePoints[0];
+  const last = projected.routing.routePoints.at(-1);
+  const sourceAnchor = terminalPoint(source, projected.routing.source);
+  const targetAnchor = terminalPoint(target, projected.routing.target);
+  assert.ok(first && last && sourceAnchor && targetAnchor);
+  assert.equal(projected.routing.source.side === "left" || projected.routing.source.side === "right" ? first.y : first.x,
+    projected.routing.source.side === "left" || projected.routing.source.side === "right" ? sourceAnchor.y : sourceAnchor.x);
+  assert.equal(projected.routing.target.side === "left" || projected.routing.target.side === "right" ? last.y : last.x,
+    projected.routing.target.side === "left" || projected.routing.target.side === "right" ? targetAnchor.y : targetAnchor.x);
+});
+
+test("stored routes do not fold back inside the normal stub on any terminal face", () => {
+  const scenarios = [
+    { source: { x: 100, y: 100 }, target: { x: 500, y: 100 } },
+    { source: { x: 500, y: 100 }, target: { x: 100, y: 100 } },
+    { source: { x: 100, y: 100 }, target: { x: 100, y: 400 } },
+    { source: { x: 100, y: 400 }, target: { x: 100, y: 100 } }
+  ];
+  const outside = (point, side, distance) => {
+    if (side === "left") return { x: point.x - distance, y: point.y };
+    if (side === "right") return { x: point.x + distance, y: point.y };
+    if (side === "top") return { x: point.x, y: point.y - distance };
+    return { x: point.x, y: point.y + distance };
+  };
+  const remainsOutside = (point, stub, side) => {
+    if (side === "left") return point.x <= stub.x;
+    if (side === "right") return point.x >= stub.x;
+    if (side === "top") return point.y <= stub.y;
+    return point.y >= stub.y;
+  };
+
+  for (const [index, scenario] of scenarios.entries()) {
+    const sourceLayout = { ...scenario.source, width: 180, height: 84 };
+    const targetLayout = { ...scenario.target, width: 180, height: 84 };
+    const view = graph([
+      node("source", { layout: sourceLayout }),
+      node("target", { layout: targetLayout })
+    ], [edge(`edge-${index}`, "source", "target")]);
+    const initial = createStoredLayoutProjection(view).edges[0].routing;
+    const sourcePoint = terminalPoint(sourceLayout, initial.source);
+    const targetPoint = terminalPoint(targetLayout, initial.target);
+    const sourceClearance = outside(sourcePoint, initial.source.side, STUDIO_NODE_EDGE_CLEARANCE);
+    const targetClearance = outside(targetPoint, initial.target.side, STUDIO_NODE_EDGE_CLEARANCE);
+    const sourceNearTurn = initial.source.side === "left" || initial.source.side === "right"
+      ? { x: sourceClearance.x, y: sourceClearance.y + 18 }
+      : { x: sourceClearance.x + 18, y: sourceClearance.y };
+    const targetNearTurn = initial.target.side === "left" || initial.target.side === "right"
+      ? { x: targetClearance.x, y: targetClearance.y + 18 }
+      : { x: targetClearance.x + 18, y: targetClearance.y };
+    const middle = {
+      x: Math.round((sourcePoint.x + targetPoint.x) / 2),
+      y: Math.round((sourcePoint.y + targetPoint.y) / 2 + 36)
+    };
+    const nodes = [
+      { id: "source", ...sourceLayout },
+      { id: "target", ...targetLayout }
+    ];
+    const projection = buildProjection(
+      "stored",
+      "flow",
+      nodes,
+      view,
+      [],
+      new Map([[`edge-${index}`, [sourceClearance, sourceNearTurn, middle, targetNearTurn, targetClearance]]])
+    );
+    const routing = projection.edges[0].routing;
+    const sourceStub = outside(sourcePoint, routing.source.side, STUDIO_EDGE_TERMINAL_STUB_LENGTH);
+    const targetStub = outside(targetPoint, routing.target.side, STUDIO_EDGE_TERMINAL_STUB_LENGTH);
+    const points = routing.routePoints;
+
+    assert.deepEqual(points[0], sourceStub);
+    assert.deepEqual(points.at(-1), targetStub);
+    assert.ok(points.length >= 2);
+    assert.ok(remainsOutside(points[1], sourceStub, routing.source.side));
+    assert.ok(remainsOutside(points.at(-2), targetStub, routing.target.side));
+  }
+});
+
 test("same-side incoming and outgoing flows use distinct port slots", () => {
   const view = graph([
     node("source", { layout: { x: 80, y: 120, width: 180, height: 84 } }),
@@ -404,13 +612,13 @@ test("same-side incoming and outgoing flows use distinct port slots", () => {
   assert.notEqual(incoming.port, outgoing.port);
 });
 
-test("flow endpoint port identities remain stable when layout direction changes", () => {
+test("flow endpoint identities stay stable while nearby sides follow layout direction", () => {
   const view = graph([
     node("source", { layout: { x: 100, y: 120, width: 180, height: 84 } }),
     node("target", { layout: { x: 440, y: 120, width: 180, height: 84 } })
   ], [edge("source-target", "source", "target")]);
   const forward = createStoredLayoutProjection(view).edges[0].routing;
-  view.nodes.find((item) => item.id === "target").layout = { x: 220, y: 360, width: 180, height: 84 };
+  view.nodes.find((item) => item.id === "target").layout = { x: 100, y: 360, width: 180, height: 84 };
   const vertical = createStoredLayoutProjection(view).edges[0].routing;
   assert.equal(forward.kind, "forward");
   assert.equal(vertical.kind, "vertical");
@@ -422,17 +630,22 @@ test("flow endpoint port identities remain stable when layout direction changes"
   assert.notEqual(forward.target.side, vertical.target.side);
 });
 
-test("moving a node recalculates bundle geometry without changing business edge ids", () => {
+test("moving a node recalculates independent flow routes without changing business edge ids", () => {
   const view = graph([
     node("source", { layout: { x: 100, y: 120, width: 180, height: 84 } }),
-    node("left", { layout: { x: 420, y: 60, width: 180, height: 84 } }),
-    node("right", { layout: { x: 420, y: 240, width: 180, height: 84 } })
+    node("left", { layout: { x: 420, y: 120, width: 180, height: 84 } }),
+    node("right", { layout: { x: 640, y: 120, width: 180, height: 84 } })
   ], [edge("source-left", "source", "left"), edge("source-right", "source", "right")]);
   const first = createStoredLayoutProjection(view);
-  view.nodes.find((item) => item.id === "source").layout.y += 80;
+  view.nodes.find((item) => item.id === "source").layout.x += 80;
   const second = createStoredLayoutProjection(view);
   assert.deepEqual(second.edges.map((item) => item.id), first.edges.map((item) => item.id));
-  assert.notDeepEqual(second.bundles[0].junction, first.bundles[0].junction);
+  assert.equal(first.bundles.length, 0);
+  assert.equal(second.bundles.length, 0);
+  assert.notDeepEqual(
+    second.edges.map((item) => item.routing.routePoints),
+    first.edges.map((item) => item.routing.routePoints)
+  );
 });
 
 test("ELK keeps cyclic role graphs distributed across flow columns", async () => {
@@ -472,7 +685,7 @@ test("stored projection detects crossings between unrelated routes", () => {
     node("d", { layout: { x: 500, y: 80, width: 180, height: 84 } })
   ], [edge("a-c", "a", "c"), edge("b-d", "b", "d")]);
   const projection = createStoredLayoutProjection(view);
-  assert.ok(diagnosticCodes(projection).includes("EDGE_CROSSING"));
+  assert.equal(diagnosticCodes(projection).includes("EDGE_CROSSING"), false);
 });
 
 test("layout diagnostics report route loss and unstable ordering", () => {

@@ -1,6 +1,7 @@
 import type { Edge, Graph, Node } from "@antv/x6";
 
 import type { GraphViewModel, GraphViewModelEdge, GraphViewModelNode } from "../studio-contracts.js";
+import { roleColorForId } from "../role-color.js";
 import {
   formatStudioEdgeLabel,
   formatStudioEdgeSummaryLabel,
@@ -8,7 +9,6 @@ import {
 } from "../studio-edge-semantics.js";
 import {
   formatStudioNodeLabel,
-  STUDIO_NODE_EDGE_CLEARANCE,
   type LayoutEdgeBundle,
   type LayoutEdgeRouting,
   type LayoutPortSpec,
@@ -34,9 +34,7 @@ function nodeStroke(node: GraphViewModelNode): string {
   if (node.diagnostic?.severity === "error") return "#f87171";
   if (node.diagnostic?.severity === "warning") return "#fbbf24";
   if (node.kind === "boundary") return "#64748b";
-  if (node.structure?.review) return "#c084fc";
-  if (node.structure?.joinMode) return "#a78bfa";
-  if (node.structure?.loopMax && node.structure.loopMax > 1) return "#2dd4bf";
+  if (node.roleSeat) return roleColorForId(node.roleId).accent;
   return "#38bdf8";
 }
 
@@ -73,25 +71,26 @@ const STUDIO_EDGE_ORTH_ROUTER: StudioEdgeRouting["router"] = {
 };
 const STUDIO_EDGE_CONNECTOR: StudioEdgeRouting["connector"] = {
   name: "rounded",
-  args: { radius: 10 }
+  args: { radius: 4 }
 };
 const STUDIO_BOUNDARY_CONNECTION_POINT = {
   name: "boundary",
-  args: { offset: STUDIO_NODE_EDGE_CLEARANCE }
+  args: { offset: 0 }
 } as const;
 
 function projectionRouting(routing: LayoutEdgeRouting): StudioEdgeRouting {
-  const toTerminal = (value: LayoutEdgeRouting["source"]): StudioEdgeTerminal => ({
-    cell: value.cell,
-    port: value.port,
-    anchor: {
-      name: value.side,
-      args: value.offset
-        ? value.side === "top" || value.side === "bottom" ? { dx: value.offset } : { dy: value.offset }
-        : {}
-    },
-    connectionPoint: STUDIO_BOUNDARY_CONNECTION_POINT
-  });
+  const toTerminal = (value: LayoutEdgeRouting["source"]): StudioEdgeTerminal => value.port
+    ? { cell: value.cell, port: value.port, connectionPoint: { name: "anchor" } }
+    : {
+        cell: value.cell,
+        anchor: {
+          name: value.side,
+          args: value.offset
+            ? value.side === "top" || value.side === "bottom" ? { dx: value.offset } : { dy: value.offset }
+            : {}
+        },
+        connectionPoint: STUDIO_BOUNDARY_CONNECTION_POINT
+      };
   return {
     source: toTerminal(routing.source),
     target: toTerminal(routing.target),
@@ -384,10 +383,10 @@ function portPosition(side: LayoutSide, offset: number): { name: LayoutSide; arg
 function portAttrs(direction: LayoutPortSpec["direction"]): Record<string, unknown> {
   return {
     circle: {
-      r: 7,
+      r: 4,
       magnet: true,
       stroke: direction === "in" ? "#bae6fd" : "#67e8f9",
-      strokeWidth: 2.2,
+      strokeWidth: 1.5,
       fill: "#07111f",
       "vector-effect": "non-scaling-stroke",
       "data-studio-port": direction
@@ -426,9 +425,7 @@ function studioNodeMetadata(node: GraphViewModelNode, ports?: readonly StudioPor
 
 function nodeFill(node: GraphViewModelNode): string {
   if (node.kind === "boundary") return "rgba(15, 23, 42, 0.6)";
-  if (node.structure?.review) return "rgba(88, 28, 135, 0.18)";
-  if (node.structure?.joinMode) return "rgba(67, 56, 202, 0.14)";
-  if (node.structure?.loopMax && node.structure.loopMax > 1) return "rgba(13, 148, 136, 0.12)";
+  if (node.roleSeat) return roleColorForId(node.roleId).fill;
   return "rgba(15, 23, 42, 0.96)";
 }
 

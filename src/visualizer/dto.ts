@@ -5,8 +5,18 @@ import {
   asString,
   type JsonRecord
 } from "./json-guards.js";
+import type { ControlPlanePrincipal } from "../runtime/identity.js";
 
 const SINGLE_PROJECT_V1_MODE = "single-project-v1";
+
+function mapPrincipal(value: unknown): ControlPlanePrincipal | undefined {
+  const record = asRecord(value);
+  const id = asString(record?.id);
+  const issuer = asString(record?.issuer);
+  if (!id || !issuer) return undefined;
+  const displayName = asString(record?.displayName);
+  return { id, issuer, ...(displayName ? { displayName } : {}) };
+}
 
 export type ErrorView = {
   error: {
@@ -170,6 +180,7 @@ export type ReviewListItem = {
   requestedAt?: string;
   decision?: string;
   actor?: string;
+  principal?: ControlPlanePrincipal;
   comment?: string;
   scope?: "branch" | "run";
   decidedAt?: string;
@@ -389,6 +400,7 @@ export function mapReviewListItem(value: unknown): ReviewListItem | undefined {
     requestedAt: asString(source.requestedAt),
     decision: asString(source.decision),
     actor: asString(source.actor),
+    principal: mapPrincipal(source.principal),
     comment: asString(source.comment),
     scope: scopeValue === "branch" || scopeValue === "run" ? scopeValue : undefined,
     decidedAt: asString(source.decidedAt),

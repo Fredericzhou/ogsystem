@@ -47,6 +47,47 @@ test("visualizer recognizes terminated runs as converged", () => {
   assert.equal(isConvergedRunStatus("running"), false);
 });
 
+test("visualizer health, readiness, scrape metrics, and external bind guard are available", async () => {
+  const workdir = await mkdtemp(path.join(os.tmpdir(), "ogsystem-visualizer-health-"));
+  await seedProjectFixture(workdir);
+  await assert.rejects(
+    () => startVisualizationServer({ workdir, host: "0.0.0.0", port: 0 }),
+    /REMOTE_VISUALIZER_AUTH_REQUIRED/
+  );
+  const started = await startVisualizationServer({
+    workdir,
+    host: "127.0.0.1",
+    port: 0,
+    identityProvider: {
+      authenticate: () => ({
+        principal: { id: "test:reader", issuer: "test" },
+        authorize: (action) => action === "read"
+      })
+    }
+  });
+  try {
+    const health = await fetch(`${started.url}/healthz`);
+    assert.equal(health.status, 200);
+    assert.deepEqual(await health.json(), { status: "ok" });
+    const readiness = await fetch(`${started.url}/readyz`);
+    assert.equal(readiness.status, 200);
+    assert.deepEqual(await readiness.json(), { status: "ready" });
+    const metrics = await fetch(`${started.url}/metrics`);
+    assert.equal(metrics.status, 200);
+    assert.match(metrics.headers.get("content-type"), /text\/plain/);
+    assert.match(await metrics.text(), /ogs_visualizer_sse_connections_active/);
+
+    const denied = await fetch(`${started.url}/api/v1/project` , { method: "POST" });
+    assert.equal(denied.status, 403);
+    assert.equal((await denied.json()).error.code, "FORBIDDEN");
+    const updatedMetrics = await (await fetch(`${started.url}/metrics`)).text();
+    assert.match(updatedMetrics, /ogs_visualizer_http_requests_total [1-9]\d*/);
+    assert.match(updatedMetrics, /ogs_visualizer_http_responses_total\{status="403"\} [1-9]\d*/);
+  } finally {
+    await new Promise((resolve) => started.server.close(resolve));
+  }
+});
+
 async function seedProjectFixture(workdir) {
   const repoRoot = process.cwd();
   await mkdir(path.resolve(workdir, ".ogs"), { recursive: true });
@@ -1510,7 +1551,13 @@ test("visualizer server writes review decisions, stop requests, and reindex thro
     started = await startVisualizationServer({
       workdir,
       host: "127.0.0.1",
-      port: 0
+      port: 0,
+      identityProvider: {
+        authenticate: () => ({
+          principal: { id: "test:workflow-operator", issuer: "ogs:test", displayName: "Workflow operator" },
+          authorize: () => true
+        })
+      }
     });
   } catch (error) {
     const errorCode =
@@ -1554,6 +1601,16 @@ test("visualizer server writes review decisions, stop requests, and reindex thro
     const reviewDetail = await reviewDetailResponse.json();
     assert.equal(reviewDetail.decision, "approve");
     assert.equal(reviewDetail.comment, "approved in visualizer");
+    assert.equal(reviewDetail.actor, "test:workflow-operator");
+    assert.deepEqual(reviewDetail.principal, {
+      id: "test:workflow-operator",
+      issuer: "ogs:test",
+      displayName: "Workflow operator"
+    });
+    const reviewAudit = (await readFile(path.resolve(workdir, ".ogs", "runs", runId, "events.jsonl"), "utf8"))
+      .split("\n").filter(Boolean).map((line) => JSON.parse(line))
+      .find((event) => event.type === "control.audit" && event.action === "review.decide");
+    assert.equal(reviewAudit.principal.id, "test:workflow-operator");
 
     const stopResponse = await fetch(`${url}/api/v1/runs/${runId}/stop`, {
       method: "POST",
@@ -1565,6 +1622,10 @@ test("visualizer server writes review decisions, stop requests, and reindex thro
     assert.equal(stop.runId, runId);
     assert.equal(stop.action, "run-stop");
     assert.equal(stop.detail.lifecycle.request.reason, "stop from visualizer test");
+    const stopAudit = (await readFile(path.resolve(workdir, ".ogs", "runs", runId, "events.jsonl"), "utf8"))
+      .split("\n").filter(Boolean).map((line) => JSON.parse(line))
+      .find((event) => event.type === "control.audit" && event.action === "run.stop");
+    assert.equal(stopAudit.principal.id, "test:workflow-operator");
   } finally {
     await new Promise((resolve) => server.close(resolve));
   }
@@ -2646,6 +2707,11 @@ test("visualizer server starts and resumes runs through lifecycle APIs", async (
     const startedRun = await startResponse.json();
     assert.equal(startedRun.status, "stopped");
     assert.ok(startedRun.runId);
+    const eventsPath = path.resolve(workdir, ".ogs", "runs", startedRun.runId, "events.jsonl");
+    const startAudit = (await readFile(eventsPath, "utf8"))
+      .split("\n").filter(Boolean).map((line) => JSON.parse(line))
+      .find((event) => event.type === "control.audit" && event.action === "run.start");
+    assert.equal(startAudit.principal.issuer, "ogs:local");
     const resolvedConfig = JSON.parse(
       await readFile(path.resolve(workdir, ".ogs", "runs", startedRun.runId, "resolved-config.json"), "utf8")
     );
@@ -2683,6 +2749,11 @@ test("visualizer server starts and resumes runs through lifecycle APIs", async (
       }
     );
     assert.equal(decisionResponse.status, 200);
+    const decisionRecord = JSON.parse(await readFile(
+      path.resolve(workdir, ".ogs", "runs", startedRun.runId, "control", "reviews", `${reviews.latestPendingReviewId}.decision.json`),
+      "utf8"
+    ));
+    assert.notEqual(decisionRecord.actor, "qa");
 
     const resumeResponse = await fetch(`${url}/api/v1/runs/${startedRun.runId}/resume`, {
       method: "POST",
@@ -2695,6 +2766,11 @@ test("visualizer server starts and resumes runs through lifecycle APIs", async (
     const resumed = await resumeResponse.json();
     assert.equal(resumed.runId, startedRun.runId);
     assert.equal(resumed.status, "done");
+    const resumeAudits = (await readFile(eventsPath, "utf8"))
+      .split("\n").filter(Boolean).map((line) => JSON.parse(line))
+      .filter((event) => event.type === "control.audit" && event.action === "run.resume");
+    assert.equal(resumeAudits.length, 1);
+    assert.equal(resumeAudits[0].principal.issuer, "ogs:local");
   } finally {
     await new Promise((resolve) => server.close(resolve));
   }

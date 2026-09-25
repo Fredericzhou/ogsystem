@@ -10,7 +10,9 @@ import {
   toOgsCloudEvent,
   projectOgsSpan,
   validateCapabilityPolicy,
-  compileSubgraphSpec
+  compileSubgraphSpec,
+  validateRemoteExecutionRequest,
+  validateRemoteExecutionResponse
 } from "../dist/runtime/adapter.js";
 import { appendAuditRecord } from "../dist/runtime/audit-recorder.js";
 
@@ -49,6 +51,44 @@ test("state store is CAS and idempotent", () => {
     idempotencyKey: "k2",
     update: (state) => state
   }), StateVersionConflictError);
+});
+
+test("remote execution contract pins protocol, deadline, and response correlation", () => {
+  const request = {
+    protocolVersion: 1,
+    invocationId: "invoke-1",
+    idempotencyKey: "run-1:exec-1:1",
+    runId: "run-1",
+    roleId: "reviewer",
+    executionId: "exec-1",
+    attempt: 1,
+    deadline: "2026-09-25T12:00:00.000Z",
+    traceparent: "00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01",
+    input: { prompt: "review", schema: { type: "object" }, binding: { kind: "model", backend: "opencode", modelId: "m", modelRef: "p/m" } }
+  };
+  assert.equal(validateRemoteExecutionRequest(request), true);
+  assert.equal(validateRemoteExecutionRequest({ ...request, attempt: 0 }), false);
+  assert.equal(validateRemoteExecutionRequest({ ...request, input: { ...request.input, binding: {} } }), false);
+  assert.equal(validateRemoteExecutionRequest({
+    ...request,
+    input: { ...request.input, binding: { kind: "model", backend: "opencode", modelId: "m" } }
+  }), false);
+  assert.equal(validateRemoteExecutionRequest({
+    ...request,
+    input: { ...request.input, binding: { kind: "profile", profile: {}, tool: {} } }
+  }), false);
+  const response = {
+    protocolVersion: 1,
+    invocationId: "invoke-1",
+    completedAt: "2026-09-25T11:59:00.000Z",
+    result: { exitCode: 0, stdout: "{}", stderr: "", args: [] }
+  };
+  assert.equal(validateRemoteExecutionResponse(response, "invoke-1"), true);
+  assert.equal(validateRemoteExecutionResponse(response, "invoke-2"), false);
+  assert.equal(validateRemoteExecutionResponse({
+    ...response,
+    result: { ...response.result, args: [null] }
+  }, "invoke-1"), false);
 });
 
 test("filesystem state store survives reload and rejects stale CAS", async () => {

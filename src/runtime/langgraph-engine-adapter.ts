@@ -5,6 +5,8 @@ import { semanticIRDigest } from "./semantic-ir.js";
 import type { AdapterRunResult } from "./types.js";
 import type { EngineRunInput, ExecutionEngineAdapter } from "./engine-adapter.js";
 
+export type LangGraphEngineAdapterOptions = Omit<RunnerInput, "plan" | "prompt" | "initialState">;
+
 /**
  * OGS' first execution backend. It owns only the mapping from the frozen execution plan
  * to LangGraph; routing, contracts, recovery, and audit remain in the OGS runner.
@@ -13,7 +15,7 @@ export class LangGraphEngineAdapter implements ExecutionEngineAdapter {
   readonly engineId = "langgraph";
   readonly engineVersion = "1";
 
-  constructor(private readonly runtime: Omit<RunnerInput, "plan" | "prompt" | "initialState">) {}
+  constructor(private readonly runtime: LangGraphEngineAdapterOptions) {}
 
   async run(input: EngineRunInput): Promise<AdapterRunResult> {
     // The current LangGraph runner still owns filesystem checkpoint/audit writes. Keeping the

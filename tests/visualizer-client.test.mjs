@@ -20,7 +20,8 @@ import {
   renderStudioRoleConfigEditor,
   renderStudioBridgeInspector,
   renderStudioBridgePanel,
-  renderStudioDebugOutcomePanel
+  renderStudioDebugOutcomePanel,
+  renderReleaseGatePanel
 } from "../dist/visualizer/client-renderers.js";
 import { authoringToCanvasDocument } from "../dist/visualizer/studio-authoring.js";
 import { latestRoleContract } from "../tests-support/role-fixture.mjs";
@@ -50,12 +51,13 @@ const PAGE_ELEMENT_IDS = [
   "workbench-body",
   "operate-tabs",
   "operate-tabpanel-overview",
-  "operate-tabpanel-graph",
+  "run-graph-disclosure",
   "operate-tabpanel-recovery",
   "operate-tabpanel-reviews",
   "project-wizard",
   "ops-summary",
   "stats",
+  "run-flow",
   "failure-controls",
   "failure-summary",
   "failure-detail",
@@ -75,11 +77,13 @@ const PAGE_ELEMENT_IDS = [
   "reviews",
   "review-actions",
   "review-detail",
+  "review-detail-disclosure",
   "binding-explain",
   "role-packages",
   "contract-explain",
   "resume-readiness",
   "resume-diagnostics",
+  "resume-diagnostics-disclosure",
   "resume-controls",
   "logs-controls",
   "logs-filters",
@@ -148,11 +152,14 @@ test("Studio retrieval separates role participants from flow handoffs", () => {
     actionBusy: "",
     t: testTranslator
   });
-  assert.match(html, /Roles are participants; flows are handoffs between roles/);
+  assert.doesNotMatch(html, /Roles are participants; flows are handoffs between roles/);
   assert.match(html, /Roles · participants/);
   assert.match(html, /Flows · handoffs/);
   assert.match(html, /data-studio-role-list-section/);
   assert.match(html, /data-studio-flow-list-section/);
+  assert.match(html, /studio-role-seat/);
+  assert.match(html, /studio-flow-contract/);
+  assert.match(html, /studio-role-seat-identity/);
   assert.doesNotMatch(html, /data-studio-role-list-section open/);
   assert.doesNotMatch(html, /data-studio-flow-list-section open/);
   assert.doesNotMatch(html, /toolbar-row compact"><input data-studio-bridge-filter/);
@@ -493,7 +500,7 @@ test("Studio Bridge derives stable flow keys when extracted flows omit flowKey",
     t: testTranslator
   });
   assert.match(panelHtml, /data-studio-flow-key="demo-analyst:DONE:output"/);
-  assert.match(panelHtml, /run-card active" data-studio-flow-key="demo-analyst:DONE:output"/);
+  assert.match(panelHtml, /studio-flow-contract active" data-studio-flow-key="demo-analyst:DONE:output"/);
   assert.match(panelHtml, /data-flow-config-save="demo-analyst:DONE:output"/);
 });
 
@@ -634,6 +641,7 @@ class FakeElement {
     this.dataset = {};
     this.disabled = Object.hasOwn(attributes, "disabled");
     this.hidden = Object.hasOwn(attributes, "hidden");
+    this.open = Object.hasOwn(attributes, "open");
     this.value = attributes.value ?? "";
     this.focused = false;
   }
@@ -1406,6 +1414,7 @@ function createBackend(options = {}) {
       const getRunFixture = (requestedRunId) => runFixtures.get(requestedRunId) ?? null;
       const runMatch = pathname.match(/^\/api\/v1\/runs\/([^/]+)$/);
       const runEventsMatch = pathname.match(/^\/api\/v1\/runs\/([^/]+)\/events$/);
+      const runConversationMatch = pathname.match(/^\/api\/v1\/runs\/([^/]+)\/conversation$/);
       const runGraphMatch = pathname.match(/^\/api\/v1\/runs\/([^/]+)\/graph$/);
       const runReviewsMatch = pathname.match(/^\/api\/v1\/runs\/([^/]+)\/reviews$/);
       const runReviewDetailMatch = pathname.match(/^\/api\/v1\/runs\/([^/]+)\/reviews\/([^/]+)$/);
@@ -2185,6 +2194,30 @@ function createBackend(options = {}) {
           return createResponse(fixture.graph);
         }
       }
+      if (runConversationMatch) {
+        const fixture = getRunFixture(runConversationMatch[1]);
+        return createResponse(fixture?.conversation ?? {
+          version: 1,
+          runId: runConversationMatch[1],
+          systemId: "demo.system",
+          status: "completed",
+          input: { text: "Representative user input", redacted: false, truncated: false },
+          cursor: { next: 1, hasMore: false },
+          items: [{
+            itemId: `${runConversationMatch[1]}:role_message:events.ndjson:0`,
+            kind: "role_message",
+            roleId: "demo-analyst",
+            type: "audit",
+            event: "DONE",
+            status: "ok",
+            at: "2026-04-23T09:15:00.000Z",
+            durationMs: 15,
+            source: { file: "events.ndjson", cursor: 0 },
+            content: { text: "event=DONE | content=Representative role output", redacted: false, truncated: false }
+          }],
+          filters: {}
+        });
+      }
       if (runReviewsMatch) {
         const fixture = getRunFixture(runReviewsMatch[1]);
         if (fixture) {
@@ -2635,7 +2668,7 @@ test("visualizer client release readiness decision gates every visible blocker c
     validation: { ok: false },
     readiness: {
       blockers: [{ code: "READINESS_BLOCKER", message: "readiness blocked" }],
-      contractCoverage: { missingFlowCount: 1 }
+      contractCoverage: { handoffMode: "strict", missingFlowCount: 1 }
     },
     bindings: { roles: [{ roleId: "demo", resolved: false }] },
     rolePackages: { rolePackages: [{ roleId: "demo", files: { roleJson: true, promptTemplate: false } }] },
@@ -2655,6 +2688,29 @@ test("visualizer client release readiness decision gates every visible blocker c
       "RELEASE_ROLE_PACKAGES_UNHEALTHY"
     ]
   );
+});
+
+test("release gate explains the concrete blockers returned by the release decision", () => {
+  const html = renderReleaseGatePanel({
+    validation: { ok: true, diagnostics: [] },
+    readiness: { blockers: [] },
+    contracts: {},
+    rolePackages: {},
+    bindings: {},
+    workbenchSavedPath: "system.mmd",
+    workbenchDirty: false,
+    releaseBlockers: [
+      { code: "RELEASE_BINDINGS_UNRESOLVED", message: "2 role bindings are unresolved." },
+      { code: "READINESS_ROLE_PACKAGE", message: "Role package is missing prompt.md.", roleId: "analyst" }
+    ],
+    exportReady: false,
+    t: testTranslator
+  });
+
+  assert.match(html, /2 role bindings are unresolved\./);
+  assert.match(html, /Role package is missing prompt\.md\./);
+  assert.match(html, /RELEASE_BINDINGS_UNRESOLVED/);
+  assert.match(html, /analyst/);
 });
 
 test("visualizer client renders empty workspace without project API writes", async () => {
@@ -3104,7 +3160,7 @@ test("visualizer client renders zh-CN chrome while preserving runtime identifier
   assert.equal(harness.document.getElementById("action-form-section").hidden, true);
   const recoveryTab = harness.document.getElementById("operate-tabs")
     .querySelectorAll("[data-operate-tab]")
-    .find((button) => button.getAttribute("data-operate-tab") === "recovery");
+    .find((button) => button.getAttribute("data-operate-tab") === "operations");
   assert.ok(recoveryTab);
   await recoveryTab.click();
   await settle();
@@ -3182,9 +3238,25 @@ test("visualizer client keeps diagnostics lazy and renders decision phase detail
 
   const defaultOperateGraphTab = harness.document.getElementById("operate-tabs")
     .querySelectorAll("[data-operate-tab]")
-    .find((button) => button.getAttribute("data-operate-tab") === "graph");
+    .find((button) => button.getAttribute("data-operate-tab") === "overview");
   assert.equal(defaultOperateGraphTab?.getAttribute("aria-pressed"), "true");
   assert.ok(harness.document.getElementById("graph-view").innerHTML.includes('id="run-graph-root"'));
+  assert.match(harness.document.getElementById("run-flow").textContent, /Representative role output/);
+  assert.match(harness.document.getElementById("run-flow").innerHTML, /--role-accent:/);
+  assert.equal(
+    harness.backend.fetchCalls.some((call) => call.path.startsWith("/api/v1/runs/run-123/role-io?")),
+    false
+  );
+  const fullIoDisclosure = harness.document.getElementById("run-flow")
+    .querySelectorAll("[data-flow-role-io]")
+    .find((disclosure) => disclosure.getAttribute("data-flow-role-io") === "demo-analyst");
+  assert.ok(fullIoDisclosure);
+  fullIoDisclosure.open = true;
+  await fullIoDisclosure.dispatch("toggle");
+  await waitForCondition(() => harness.backend.fetchCalls.some((call) =>
+    call.path.startsWith("/api/v1/runs/run-123/role-io?roleId=demo-analyst")
+  ));
+  assert.equal(Boolean(harness.document.getElementById("run-graph-disclosure").open), false);
 
   assert.ok(
     harness.document.getElementById("review-detail").textContent.includes("Decision trail")
@@ -3208,13 +3280,15 @@ test("visualizer client keeps diagnostics lazy and renders decision phase detail
   const graphTab = harness.document.getElementById("operate-tabs")
     .querySelectorAll("[data-operate-tab]")
     .find((button) => button.getAttribute("data-operate-tab") === "graph");
-  assert.ok(graphTab);
-  await graphTab.click();
+  assert.equal(graphTab, undefined);
+  const graphDisclosure = harness.document.getElementById("run-graph-disclosure");
+  graphDisclosure.open = true;
+  await graphDisclosure.dispatch("toggle");
   await settle();
   assert.ok(harness.document.getElementById("graph-view").innerHTML.includes('id="run-graph-root"'));
   const artifactsTab = harness.document.getElementById("operate-tabs")
     .querySelectorAll("[data-operate-tab]")
-    .find((button) => button.getAttribute("data-operate-tab") === "artifacts");
+    .find((button) => button.getAttribute("data-operate-tab") === "operations");
   assert.ok(artifactsTab);
   await artifactsTab.click();
   await settle();
@@ -3225,12 +3299,12 @@ test("visualizer client keeps diagnostics lazy and renders decision phase detail
   assert.match(harness.document.getElementById("detail").textContent, /historical truth/i);
   const recoveryTab = harness.document.getElementById("operate-tabs")
     .querySelectorAll("[data-operate-tab]")
-    .find((button) => button.getAttribute("data-operate-tab") === "recovery");
+    .find((button) => button.getAttribute("data-operate-tab") === "operations");
   assert.ok(recoveryTab);
   await recoveryTab.click();
   await settle();
   assert.equal(harness.document.getElementById("console-panel-debug").hidden, false);
-  assert.equal(harness.document.getElementById("console-panel-artifacts").hidden, true);
+  assert.equal(harness.document.getElementById("console-panel-artifacts").hidden, false);
   assert.equal(harness.document.getElementById("operate-tabpanel-recovery").hidden, false);
   assert.match(harness.document.getElementById("failure-summary").textContent, /TOOL_EXECUTION_TIMEOUT/);
   assert.match(harness.document.getElementById("resume-readiness").textContent, /resume blocked/);
@@ -3242,6 +3316,7 @@ test("visualizer client keeps diagnostics lazy and renders decision phase detail
   assert.ok(loadDiagnosticsButton);
   await loadDiagnosticsButton.click();
   await settle();
+  assert.equal(harness.document.getElementById("resume-diagnostics-disclosure").open, true);
 
   assert.equal(
     harness.backend.fetchCalls.some((call) => call.path === "/api/v1/runs/run-123/resume-diagnostics"),
@@ -3286,6 +3361,8 @@ test("visualizer client renders config explain panels and failure next checks", 
   assert.match(harness.document.getElementById("binding-explain").textContent, /opencode\/gpt-5-nano/);
   assert.match(harness.document.getElementById("ops-summary").textContent, /TOOL_EXECUTION_TIMEOUT/);
   assert.match(harness.document.getElementById("ops-summary").textContent, /active rework branches/);
+  assert.match(harness.document.getElementById("ops-summary").innerHTML, /ops-attention-group/);
+  assert.match(harness.document.getElementById("ops-summary").innerHTML, /ops-disclosure/);
   assert.match(harness.document.getElementById("project-wizard").textContent, /dry-run readiness/);
   assert.match(harness.document.getElementById("project-wizard").textContent, /READINESS_STRICT_HANDOFF_CONTRACT_MISSING/);
   assert.match(harness.document.getElementById("role-packages").textContent, /output\.schema\.json/);
@@ -3298,7 +3375,7 @@ test("visualizer client renders config explain panels and failure next checks", 
   await settle();
   const recoveryTab = harness.document.getElementById("operate-tabs")
     .querySelectorAll("[data-operate-tab]")
-    .find((button) => button.getAttribute("data-operate-tab") === "recovery");
+    .find((button) => button.getAttribute("data-operate-tab") === "operations");
   assert.ok(recoveryTab);
   await recoveryTab.click();
   await settle();
@@ -3336,33 +3413,34 @@ test("visualizer client switches Design Run Release shells without unloading dat
   await runTab.click();
   assert.equal(harness.document.getElementById("console-panel-debug").hidden, false);
   assert.equal(harness.document.getElementById("console-panel-ops").hidden, false);
-  assert.equal(harness.document.getElementById("console-panel-logs").hidden, true);
-  assert.equal(harness.document.getElementById("console-panel-artifacts").hidden, true);
-  assert.equal(harness.document.getElementById("operate-tabpanel-overview").hidden, false);
-  assert.equal(harness.document.getElementById("operate-tabpanel-graph").hidden, true);
+  assert.equal(harness.document.getElementById("console-panel-logs").hidden, false);
+  assert.equal(harness.document.getElementById("console-panel-artifacts").hidden, false);
+  assert.equal(harness.document.getElementById("operate-tabpanel-overview").hidden, true);
+  assert.equal(Boolean(harness.document.getElementById("run-graph-disclosure").open), false);
   assert.equal(harness.document.body.classList.classes.has("show-operate-workspace"), true);
-  assert.equal(harness.document.body.classList.classes.has("operate-tab-overview"), true);
-  assert.match(harness.document.getElementById("operate-tabs").textContent, /Overview/);
+  assert.equal(harness.document.body.classList.classes.has("operate-tab-operations"), true);
+  assert.match(harness.document.getElementById("operate-tabs").textContent, /Flow/);
   assert.equal(harness.document.body.classList.classes.has("operate-tab-logs"), false);
   assert.equal(harness.document.body.classList.classes.has("operate-tab-artifacts"), false);
   assert.equal(harness.document.body.classList.classes.has("show-run-sidebar"), true);
   assert.equal(harness.document.getElementById("sidebar-toggle").hidden, false);
   const operateTabButtons = harness.document.getElementById("operate-tabs").querySelectorAll("[data-operate-tab]");
   const overviewOperateTab = operateTabButtons.find((button) => button.getAttribute("data-operate-tab") === "overview");
-  const logsOperateTab = operateTabButtons.find((button) => button.getAttribute("data-operate-tab") === "logs");
+  const logsOperateTab = operateTabButtons.find((button) => button.getAttribute("data-operate-tab") === "operations");
   const lifecycleButtonsAfterOperate = harness.document.getElementById("console-tabs").querySelectorAll("[data-console-tab]");
   const designTabAfterRun = lifecycleButtonsAfterOperate.find((button) => button.getAttribute("data-console-tab") === "design");
   const runTabAfterRun = lifecycleButtonsAfterOperate.find((button) => button.getAttribute("data-console-tab") === "run");
   assert.equal(runTabAfterRun?.getAttribute("aria-pressed"), "true");
   assert.equal(runTabAfterRun?.getAttribute("role"), "tab");
   assert.equal(runTabAfterRun?.getAttribute("aria-selected"), "true");
-  assert.equal(runTabAfterRun?.getAttribute("aria-controls"), "operate-tabpanel-overview");
+  assert.equal(runTabAfterRun?.getAttribute("aria-controls"), "operate-tabpanel-recovery");
   assert.equal(designTabAfterRun?.getAttribute("aria-pressed"), "false");
-  assert.equal(overviewOperateTab?.getAttribute("aria-pressed"), "true");
+  assert.equal(overviewOperateTab?.getAttribute("aria-pressed"), "false");
   assert.equal(overviewOperateTab?.getAttribute("role"), "tab");
-  assert.equal(overviewOperateTab?.getAttribute("aria-selected"), "true");
+  assert.equal(overviewOperateTab?.getAttribute("aria-selected"), "false");
   assert.equal(overviewOperateTab?.getAttribute("aria-controls"), "operate-tabpanel-overview");
-  assert.equal(logsOperateTab?.getAttribute("aria-pressed"), "false");
+  assert.equal(logsOperateTab?.getAttribute("aria-pressed"), "true");
+  assert.equal(logsOperateTab?.getAttribute("aria-selected"), "true");
   assert.equal(harness.document.getElementById("operate-tabpanel-overview").getAttribute("role"), "tabpanel");
   assert.match(harness.document.getElementById("operate-tabpanel-overview").getAttribute("aria-labelledby"), /operate-tab-overview/);
   assert.equal(harness.document.getElementById("sidebar-toggle").getAttribute("aria-expanded"), "false");
@@ -3371,10 +3449,11 @@ test("visualizer client switches Design Run Release shells without unloading dat
   await logsOperateTab.click();
   assert.equal(harness.document.getElementById("console-panel-debug").hidden, false);
   assert.equal(harness.document.getElementById("console-panel-logs").hidden, false);
-  assert.equal(harness.document.getElementById("console-panel-ops").hidden, true);
+  assert.equal(harness.document.getElementById("console-panel-ops").hidden, false);
   assert.equal(harness.document.getElementById("operate-tabpanel-overview").hidden, true);
   assert.equal(harness.document.getElementById("console-panel-logs").getAttribute("role"), "tabpanel");
-  assert.match(harness.document.getElementById("console-panel-logs").getAttribute("aria-labelledby"), /operate-tab-logs/);
+  assert.equal(harness.document.getElementById("console-panel-artifacts").hidden, false);
+  assert.match(harness.document.getElementById("console-panel-logs").getAttribute("aria-labelledby"), /operate-tab-operations/);
 
   await designTab.click();
   assert.equal(harness.document.getElementById("console-panel-build").hidden, false);
@@ -3651,7 +3730,7 @@ test("visualizer client ignores late run-detail responses from an older run sele
   assert.doesNotMatch(harness.document.getElementById("failure-summary").textContent, /TOOL_EXECUTION_TIMEOUT/);
 });
 
-test("visualizer client review action captures audit input, disables controls while busy, and flashes success", async () => {
+test("visualizer client review action captures a comment, disables controls while busy, and flashes success", async () => {
   const decisionDeferred = createDeferred();
   const harness = await createClientHarness({
     backend: createBackend({ decisionDeferred })
@@ -3666,14 +3745,12 @@ test("visualizer client review action captures audit input, disables controls wh
   await approveButton.click();
   await settle();
 
-  const actorInput = harness.document.getElementById("action-review-actor");
   const commentInput = harness.document.getElementById("action-review-comment");
   const submitButton = harness.document.getElementById("action-form-submit");
-  assert.ok(actorInput);
+  assert.equal(harness.document.getElementById("action-review-actor"), null);
   assert.ok(commentInput);
   assert.ok(submitButton);
 
-  await actorInput.input("operator-a");
   await commentInput.input("looks good");
 
   const pendingClick = submitButton.click();
@@ -3689,7 +3766,6 @@ test("visualizer client review action captures audit input, disables controls wh
 
   assert.deepEqual(harness.backend.lastDecisionBody, {
     decision: "approve",
-    actor: "operator-a",
     comment: "looks good"
   });
   assert.equal(
@@ -3714,7 +3790,6 @@ test("visualizer client action failures stay local and show an error flash", asy
 
   await approveButton.click();
   await settle();
-  await harness.document.getElementById("action-review-actor").input("operator-a");
   await harness.document.getElementById("action-review-comment").input("retry later");
   await harness.document.getElementById("action-form-submit").click();
   await settle();
@@ -4303,11 +4378,9 @@ test("visualizer client opens Studio Bridge and keeps authoring affordances on t
     .find((button) => button.getAttribute("data-run-id") === "run-123");
   assert.ok(runButton);
   await runButton.click();
-  const graphOperateTab = harness.document.getElementById("operate-tabs")
-    .querySelectorAll("[data-operate-tab]")
-    .find((button) => button.getAttribute("data-operate-tab") === "graph");
-  assert.ok(graphOperateTab);
-  await graphOperateTab.click();
+  const graphDisclosure = harness.document.getElementById("run-graph-disclosure");
+  graphDisclosure.open = true;
+  await graphDisclosure.dispatch("toggle");
   await waitForCondition(() => Boolean(latestReadonlyMount()), 80);
   const readonlyMount = latestReadonlyMount();
   assert.ok(readonlyMount);
@@ -4561,22 +4634,18 @@ test("visualizer client retries readonly run graph mount until the Graph panel i
   await runTab.click();
   await settle();
 
-  const graphTab = harness.document.getElementById("operate-tabs")
-    .querySelectorAll("[data-operate-tab]")
-    .find((button) => button.getAttribute("data-operate-tab") === "graph");
-  assert.ok(graphTab);
   const initialRunGraphMountCalls = mountCalls.filter((call) => call.rootId === "run-graph-root").length;
   const runGraphRoot = harness.document.getElementById("run-graph-root");
   assert.ok(runGraphRoot);
   runGraphRoot.getBoundingClientRect = () => ({ width: 0, height: 0, top: 0, left: 0, right: 0, bottom: 0 });
 
-  await graphTab.click();
+  const graphDisclosure = harness.document.getElementById("run-graph-disclosure");
+  graphDisclosure.open = true;
+  await graphDisclosure.dispatch("toggle");
   await settle();
   assert.equal(mountCalls.filter((call) => call.rootId === "run-graph-root").length, initialRunGraphMountCalls);
 
   runGraphRoot.getBoundingClientRect = () => ({ width: 720, height: 420, top: 0, left: 0, right: 720, bottom: 420 });
-  await graphTab.click();
-  await settle();
   await harness.flushTimers();
 
   const readonlyMount = mountCalls.findLast((call) => call.rootId === "run-graph-root");

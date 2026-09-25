@@ -9,6 +9,7 @@
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
 import { readdir, readFile, stat, writeFile } from "node:fs/promises";
 import { createHash } from "node:crypto";
+import { isIP } from "node:net";
 import { dirname, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -16,10 +17,17 @@ import { runSystemWithAdapter } from "../runtime/adapter.js";
 import {
   rebuildRunsIndex,
   RunRoleIoLookupError,
+  recordControlPlaneAudit,
   resolveOgsPaths,
   syncProjectModels,
 } from "../runtime/project-lifecycle.js";
 import { redactUnknown } from "../runtime/redaction.js";
+import {
+  createLocalControlPlaneIdentityProvider,
+  type AuthenticatedControlPlaneIdentity,
+  type ControlPlaneAction,
+  type ControlPlaneIdentityProvider
+} from "../runtime/identity.js";
 import { loadModelSelection } from "../runtime/model-selection.js";
 import { loadConversationRunProjection, normalizeConversationItemStatus } from "../runtime/conversation-projector.js";
 import {
@@ -123,6 +131,8 @@ import {
   createRunsListCacheEntry,
   getRunsListCacheStats,
   getVisualizerSseMetricsSnapshot,
+  getVisualizerPrometheusMetrics,
+  recordVisualizerHttpResponse,
   readCachedProjectCreateResponse,
   readFallbackRunsListCache,
   readPendingProjectCreateResponse,
@@ -141,6 +151,7 @@ type VisualizationServerOptions = {
   workdir: string;
   host: string;
   port: number;
+  identityProvider?: ControlPlaneIdentityProvider<IncomingMessage>;
   projectCreateRequestCacheTtlMs?: number;
   projectCreateRequestCacheMaxSize?: number;
   testHooks?: {
@@ -160,6 +171,7 @@ type VisualizationServerState = {
   projectCreateRequestCacheTtlMs: number;
   projectCreateRequestCacheMaxSize: number;
   studioChatToMmdSessions: StudioChatToMmdSessionMap;
+  identityProvider: ControlPlaneIdentityProvider<IncomingMessage>;
   testHooks?: VisualizationServerOptions["testHooks"];
 };
 
@@ -627,6 +639,53 @@ async function handleApiStudioAuthoringGet(workdir: string, response: ServerResp
   jsonResponse(response, 200, await loadStudioAuthoringDraft(workdir));
 }
 
+function isLoopbackHost(host: string): boolean {
+  const normalized = host.toLowerCase().replace(/^\[|\]$/g, "");
+  if (normalized === "localhost") return true;
+  const addressType = isIP(normalized);
+  return addressType === 4 ? normalized.startsWith("127.") : addressType === 6 && normalized === "::1";
+}
+
+function resolveControlPlaneAction(method: string, segments: string[]): ControlPlaneAction {
+  if (method !== "POST" && method !== "PUT" && method !== "PATCH" && method !== "DELETE") return "read";
+  if (segments[2] === "runs" && segments[3] === "start") return "run.start";
+  if (segments[2] === "runs" && segments[4] === "stop") return "run.control";
+  if (segments[2] === "runs" && segments[4] === "resume") return "run.control";
+  if (segments[2] === "runs" && segments[4] === "reviews" && segments[6] === "decide") return "review.decide";
+  return "project.write";
+}
+
+function isControlPlaneIdentity(value: unknown): value is AuthenticatedControlPlaneIdentity {
+  if (!value || typeof value !== "object") return false;
+  const identity = value as Partial<AuthenticatedControlPlaneIdentity>;
+  return Boolean(identity.principal && typeof identity.principal.id === "string" &&
+    identity.principal.id.length > 0 && typeof identity.principal.issuer === "string" &&
+    typeof identity.authorize === "function");
+}
+
+async function handleHealthRequest(pathname: string, workdir: string, response: ServerResponse): Promise<boolean> {
+  if (pathname === "/healthz") {
+    jsonResponse(response, 200, { status: "ok" });
+    return true;
+  }
+  if (pathname === "/readyz") {
+    let ready = false;
+    try {
+      const info = await stat(workdir);
+      ready = info.isDirectory();
+    } catch {
+      ready = false;
+    }
+    jsonResponse(response, ready ? 200 : 503, { status: ready ? "ready" : "not_ready" });
+    return true;
+  }
+  if (pathname === "/metrics") {
+    textResponse(response, 200, getVisualizerPrometheusMetrics(), "text/plain; version=0.0.4; charset=utf-8");
+    return true;
+  }
+  return false;
+}
+
 async function handleApiModelsSync(workdir: string, response: ServerResponse): Promise<void> {
   const result = await syncProjectModels({ workdir });
   invalidateAllProjectCaches(workdir);
@@ -1021,9 +1080,11 @@ async function handleApiRunConversation(
   const systemId = typeof detail.systemSource === "string"
     ? detail.systemSource.match(/system\.id\s*=\s*([^\s]+)/i)?.[1]
     : undefined;
+  const initialInput = await readFile(resolve(detail.runDir, "request.md"), "utf8").catch(() => undefined);
   const projection = await loadConversationRunProjection({
     runId,
     systemId,
+    initialInput,
     eventsPath: resolve(detail.runDir, "events.ndjson"),
     statePath: resolve(detail.runDir, "state.json"),
     startCursor: cursor,
@@ -1230,7 +1291,8 @@ async function writeRunSnapshotManifest(args: {
 async function handleApiRunStart(
   workdir: string,
   request: IncomingMessage,
-  response: ServerResponse
+  response: ServerResponse,
+  principal: AuthenticatedControlPlaneIdentity["principal"]
 ): Promise<void> {
   const body = await readJsonRequest(request);
   const systemPath = asString(body.systemPath);
@@ -1267,6 +1329,7 @@ async function handleApiRunStart(
   await rebuildRunsIndex(workdir);
   const runId = await detectNewRunId(workdir, beforeIds);
   await writeRunSnapshotManifest({ workdir, runId, systemPath });
+  await recordControlPlaneAudit({ workdir, runId, action: "run.start", principal });
   jsonResponse(
     response,
     200,
@@ -1292,7 +1355,8 @@ async function handleApiRunResume(
   workdir: string,
   runId: string,
   request: IncomingMessage,
-  response: ServerResponse
+  response: ServerResponse,
+  principal: AuthenticatedControlPlaneIdentity["principal"]
 ): Promise<void> {
   const body = await readJsonRequest(request);
   const runDir = resolveRunDir(workdir, runId);
@@ -1315,6 +1379,7 @@ async function handleApiRunResume(
     logRun: false
   });
   await rebuildRunsIndex(workdir);
+  await recordControlPlaneAudit({ workdir, runId, action: "run.resume", principal });
   jsonResponse(
     response,
     200,
@@ -1341,7 +1406,8 @@ async function handleApiRunReviewDecision(
   runId: string,
   reviewId: string,
   request: IncomingMessage,
-  response: ServerResponse
+  response: ServerResponse,
+  principal: AuthenticatedControlPlaneIdentity["principal"]
 ): Promise<void> {
   const body = await readJsonRequest(request);
   const decision = asString(body.decision);
@@ -1365,7 +1431,7 @@ async function handleApiRunReviewDecision(
     reviewId,
     decision,
     comment: asString(body.comment),
-    actor: asString(body.actor),
+    principal,
     scope: scopeValue
   });
   const semanticStatus =
@@ -1400,10 +1466,11 @@ async function handleApiStop(
   workdir: string,
   runId: string,
   request: IncomingMessage,
-  response: ServerResponse
+  response: ServerResponse,
+  principal: AuthenticatedControlPlaneIdentity["principal"]
 ): Promise<void> {
   const body = await readJsonRequest(request);
-  const detail = await requestStop(workdir, runId, asString(body.reason));
+  const detail = await requestStop(workdir, runId, asString(body.reason), principal);
   const runDetail = await loadRunDetail(workdir, runId).catch(() => undefined);
   jsonResponse(
     response,
@@ -1507,6 +1574,7 @@ type ExactApiRouteContext = {
   request: IncomingMessage;
   response: ServerResponse;
   state: VisualizationServerState;
+  identity: AuthenticatedControlPlaneIdentity;
 };
 
 type ExactApiRouteHandler = (context: ExactApiRouteContext) => Promise<void>;
@@ -1541,7 +1609,7 @@ const EXACT_API_ROUTE_HANDLERS = new Map<string, ExactApiRouteHandler>([
   ["GET project/readiness", async ({ state, response }) => handleApiProjectReadiness(state.workdir, response)],
   ["POST project/export", async ({ state, response }) => handleApiProjectExport(state.workdir, response)],
   ["GET runs", async ({ state, response }) => handleApiRunsList(state.workdir, response)],
-  ["POST runs/start", async ({ state, request, response }) => handleApiRunStart(state.workdir, request, response)],
+  ["POST runs/start", async ({ state, request, response, identity }) => handleApiRunStart(state.workdir, request, response, identity.principal)],
   ["POST runs/reindex", async ({ state, response }) => handleApiReindex(state.workdir, response)]
 ]);
 
@@ -1558,6 +1626,7 @@ async function handleVisualizationRequest(
   const method = request.method?.toUpperCase() ?? "GET";
   const url = new URL(request.url ?? "/", `http://${request.headers.host ?? `${options.host}:${options.port}`}`);
   const pathname = url.pathname;
+  if (await handleHealthRequest(pathname, state.workdir, response)) return;
   let segments: string[];
   try {
     segments = pathname.split("/").filter(Boolean).map((segment) => decodeURIComponent(segment));
@@ -1581,6 +1650,14 @@ async function handleVisualizationRequest(
 
   if (segments[0] !== "api" || segments[1] !== "v1") {
     throw new HttpError(404, "NOT_FOUND", "Not found");
+  }
+
+  const authenticated = await state.identityProvider.authenticate(request);
+  if (!isControlPlaneIdentity(authenticated)) {
+    throw new HttpError(401, "UNAUTHENTICATED", "A valid control-plane identity is required.");
+  }
+  if (!(await authenticated.authorize(resolveControlPlaneAction(method, segments)))) {
+    throw new HttpError(403, "FORBIDDEN", "The authenticated principal is not authorized for this action.");
   }
 
   if (segments.length === 4 && segments[2] === "diagnostics" && segments[3] === "visualizer" && method === "GET") {
@@ -1616,7 +1693,7 @@ async function handleVisualizationRequest(
   }
   const exactApiRouteHandler = getExactApiRouteHandler(method, segments);
   if (exactApiRouteHandler) {
-    await exactApiRouteHandler({ request, response, state });
+    await exactApiRouteHandler({ request, response, state, identity: authenticated });
     return;
   }
   if (segments.length === 3 && segments[2] === "project" && method === "GET") {
@@ -1799,7 +1876,7 @@ async function handleVisualizationRequest(
     return;
   }
   if (segments.length === 4 && segments[2] === "runs" && segments[3] === "start" && method === "POST") {
-    await handleApiRunStart(state.workdir, request, response);
+    await handleApiRunStart(state.workdir, request, response, authenticated.principal);
     return;
   }
   if (segments.length >= 3 && segments[2] === "runs" && segments[3] === "reindex" && method === "POST") {
@@ -1862,11 +1939,11 @@ async function handleVisualizationRequest(
     return;
   }
   if (segments.length === 5 && segments[4] === "resume" && method === "POST") {
-    await handleApiRunResume(state.workdir, runId, request, response);
+    await handleApiRunResume(state.workdir, runId, request, response, authenticated.principal);
     return;
   }
   if (segments.length === 7 && segments[4] === "reviews" && segments[6] === "decide" && method === "POST") {
-    await handleApiRunReviewDecision(state.workdir, runId, segments[5], request, response);
+    await handleApiRunReviewDecision(state.workdir, runId, segments[5], request, response, authenticated.principal);
     return;
   }
   if (segments.length === 6 && segments[4] === "reviews" && method === "GET") {
@@ -1937,7 +2014,7 @@ async function handleVisualizationRequest(
     return;
   }
   if (segments.length === 5 && segments[4] === "stop" && method === "POST") {
-    await handleApiStop(state.workdir, runId, request, response);
+    await handleApiStop(state.workdir, runId, request, response, authenticated.principal);
     return;
   }
 
@@ -1949,6 +2026,9 @@ export async function startVisualizationServer(args: VisualizationServerOptions)
   url: string;
   port: number;
 }> {
+  if (!isLoopbackHost(args.host) && !args.identityProvider) {
+    throw new Error("REMOTE_VISUALIZER_AUTH_REQUIRED: Non-loopback binding requires an identity provider.");
+  }
   const state: VisualizationServerState = {
     workdir: resolve(args.workdir),
     projectCreateRequests: new Map(),
@@ -1961,9 +2041,11 @@ export async function startVisualizationServer(args: VisualizationServerOptions)
       DEFAULT_PROJECT_CREATE_REQUEST_CACHE_MAX_SIZE
     ),
     studioChatToMmdSessions: new Map(),
+    identityProvider: args.identityProvider ?? createLocalControlPlaneIdentityProvider<IncomingMessage>(),
     testHooks: args.testHooks
   };
   const server = createServer((request, response) => {
+    response.once("finish", () => recordVisualizerHttpResponse(response.statusCode));
     void handleVisualizationRequest(request, response, state, args).catch((error) => {
       const normalized = normalizeError(error);
       jsonResponse(

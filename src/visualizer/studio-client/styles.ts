@@ -48,6 +48,7 @@ export function injectStudioGraphStyles(): void {
       align-items: center;
       gap: 3px;
       min-width: 0;
+      flex-shrink: 0;
       padding: 2px;
       border: 1px solid rgba(148, 163, 184, 0.14);
       background: rgba(255, 255, 255, 0.035);
@@ -104,6 +105,7 @@ export function injectStudioGraphStyles(): void {
       }
       .studio-graph-toolbar-main {
         overflow-x: auto;
+        width: 100%;
       }
       .studio-graph-toolbar-text {
         display: none;

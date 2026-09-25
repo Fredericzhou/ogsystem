@@ -8,6 +8,7 @@ flowchart TD
 %% exec.bind.test-operator=profile.finalizer
 
 input -->|START| test-branch-a[Role:test-branch-a]
+test-branch-a[Role:test-branch-a] -->|END_A| output
 test-branch-a[Role:test-branch-a] -->|ERROR.TOOL_EXECUTION_SPAWN| error-handler-base[Role:error-handler-base]
 test-branch-a[Role:test-branch-a] -->|ERROR| error-handler-base[Role:error-handler-base]
 error-handler-base[Role:error-handler-base] -->|COMPENSATED| test-operator[Role:test-operator]

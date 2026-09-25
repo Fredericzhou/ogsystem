@@ -126,7 +126,7 @@ assert_file_absent() {
 assert_file_contains() {
   local path="$1"
   local pattern="$2"
-  if ! rg -q "$pattern" "$path"; then
+  if ! grep -Eq "$pattern" "$path"; then
     echo "expected pattern not found in $path: $pattern" >&2
     return 1
   fi
@@ -135,7 +135,7 @@ assert_file_contains() {
 assert_file_not_contains() {
   local path="$1"
   local pattern="$2"
-  if rg -q "$pattern" "$path"; then
+  if grep -Eq "$pattern" "$path"; then
     echo "unexpected pattern found in $path: $pattern" >&2
     return 1
   fi
@@ -209,7 +209,7 @@ assert_role_execution_exists() {
   fi
 }
 
-require_command rg
+require_command grep
 require_command pnpm
 
 happy_run_id="$(
@@ -229,7 +229,6 @@ assert_file_absent "${happy_run_dir}/shared/index.html"
 cli run review decide "$happy_run_id" "$happy_review_id" \
   --decision approve \
   --comment "approved" \
-  --actor reviewer \
   --workdir "$PROJECT_DIR" >/dev/null
 cli run resume "$happy_run_id" --workdir "$PROJECT_DIR" >/dev/null
 
@@ -266,7 +265,6 @@ assert_review_inspect "$rework_run_id" "$rework_review_id" 'data.currentStatus =
 cli run review decide "$rework_run_id" "$rework_review_id" \
   --decision rework \
   --comment "请补充风险与边界条件" \
-  --actor reviewer \
   --workdir "$PROJECT_DIR" >/dev/null
 cli run resume "$rework_run_id" --workdir "$PROJECT_DIR" >/dev/null
 
@@ -281,7 +279,6 @@ rework_followup_review_id="$(pending_review_id_for "$rework_run_id")"
 cli run review decide "$rework_run_id" "$rework_followup_review_id" \
   --decision approve \
   --comment "rework approved" \
-  --actor reviewer \
   --workdir "$PROJECT_DIR" >/dev/null
 cli run resume "$rework_run_id" --workdir "$PROJECT_DIR" >/dev/null
 
@@ -301,7 +298,6 @@ pause_run_dir="$(run_dir_for "$pause_run_id")"
 cli run review decide "$pause_run_id" "$pause_review_id" \
   --decision pause \
   --comment "hold" \
-  --actor reviewer \
   --workdir "$PROJECT_DIR" >/dev/null
 cli run resume "$pause_run_id" --workdir "$PROJECT_DIR" >/dev/null
 
@@ -323,7 +319,6 @@ cli run review decide "$terminate_run_id" "$terminate_review_id" \
   --decision terminate \
   --scope run \
   --comment "stop" \
-  --actor reviewer \
   --workdir "$PROJECT_DIR" >/dev/null
 cli run resume "$terminate_run_id" --workdir "$PROJECT_DIR" >/dev/null
 
@@ -345,7 +340,6 @@ deploy_fail_run_dir="$(run_dir_for "$deploy_fail_run_id")"
 cli run review decide "$deploy_fail_run_id" "$deploy_fail_review_id" \
   --decision approve \
   --comment "approved" \
-  --actor reviewer \
   --workdir "$PROJECT_DIR" >/dev/null
 SHIP_DEPLOY_FAIL=1 cli run resume "$deploy_fail_run_id" --workdir "$PROJECT_DIR" >/dev/null
 

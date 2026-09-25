@@ -118,6 +118,7 @@ export type ConversationRunProjection = {
   runId: string;
   systemId: string;
   status: ConversationRunStatus;
+  input?: { text: string; redacted: boolean; truncated: boolean };
   cursor: { next: number; hasMore: boolean };
   items: ConversationItem[];
   filters: ConversationFilters;
@@ -143,6 +144,7 @@ export type ConversationProjectionOptions = {
   filters?: ConversationFilters;
   previous?: ConversationRunProjection;
   maxPreviewChars?: number;
+  initialInput?: unknown;
   redaction?: RuntimeRedactionConfig;
 };
 
@@ -634,12 +636,14 @@ export function projectConversationRunWithDiagnostics(options: ConversationProje
   const pageNext = hasMore && lastPageStreamCursor !== undefined
     ? lastPageStreamCursor + 1
     : next;
+  const input = safeContent(options.initialInput, options);
   return {
     projection: {
       version: 1,
       runId: options.runId,
       systemId: options.systemId ?? firstString(snapshotValue?.systemId, record(snapshotValue?.system)?.id) ?? "",
       status: derivedRunStatus(options, incremental, snapshotValue),
+      ...(input ? { input } : {}),
       cursor: { next: pageNext, hasMore: options.cursor?.hasMore ?? hasMore },
       items: pageItems,
       filters
@@ -726,6 +730,7 @@ export async function loadConversationRunProjectionWithDiagnostics(args: {
   filters?: ConversationFilters;
   previous?: ConversationRunProjection;
   maxPreviewChars?: number;
+  initialInput?: unknown;
   redaction?: RuntimeRedactionConfig;
 }): Promise<ConversationProjectionResult> {
   const diagnostics: ConversationProjectionDiagnostic[] = [];
@@ -758,6 +763,7 @@ export async function loadConversationRunProjection(args: {
   filters?: ConversationFilters;
   previous?: ConversationRunProjection;
   maxPreviewChars?: number;
+  initialInput?: unknown;
   redaction?: RuntimeRedactionConfig;
 }): Promise<ConversationRunProjection> {
   return (await loadConversationRunProjectionWithDiagnostics(args)).projection;

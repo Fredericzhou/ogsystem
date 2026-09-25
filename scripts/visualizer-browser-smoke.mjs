@@ -87,7 +87,13 @@ if (buildResult.code !== 0) {
 }
 
 let temporaryPlaywrightConfig;
-let playwrightArgs = ["exec", "playwright", "test", "tests-e2e/visualizer-studio-graph.spec.ts"];
+let playwrightArgs = [
+  "exec",
+  "playwright",
+  "test",
+  "tests-e2e/visualizer-studio-graph.spec.ts",
+  "tests-e2e/visualizer-build-layout.spec.ts"
+];
 const systemChromeCandidates = process.platform === "darwin"
   ? ["/Applications/Google Chrome.app/Contents/MacOS/Google Chrome"]
   : process.platform === "win32"
@@ -122,6 +128,9 @@ if (systemChrome) {
     "utf8"
   );
   playwrightArgs = [...playwrightArgs, `--config=${temporaryPlaywrightConfig}`];
+}
+if (process.env.OGSYSTEM_UPDATE_VISUALIZER_SNAPSHOTS === "1") {
+  playwrightArgs.push("--update-snapshots");
 }
 
 const playwrightResult = await runPnpm(playwrightArgs);

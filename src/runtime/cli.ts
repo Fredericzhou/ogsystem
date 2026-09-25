@@ -33,6 +33,7 @@ import {
   writeHumanReviewDecision
 } from "./project-lifecycle.js";
 import { streamRunLogs } from "./project-lifecycle.js";
+import { createLocalControlPlanePrincipal } from "./identity.js";
 import {
   RuntimeError,
   createRuntimeError,
@@ -385,7 +386,7 @@ function usageRun(subcommand?: RunSubcommand): string {
       "Usage:",
       "  ogs run review list <run-id> [--workdir <path>]",
       "  ogs run review inspect <run-id> <review-id> [--workdir <path>]",
-      "  ogs run review decide <run-id> <review-id> --decision <approve|rework|pause|terminate> [--comment <text>] [--actor <name>] [--scope <branch|run>] [--workdir <path>]",
+      "  ogs run review decide <run-id> <review-id> --decision <approve|rework|pause|terminate> [--comment <text>] [--scope <branch|run>] [--workdir <path>]",
       "",
       "Examples:",
       "  ogs run review list <run-id>",
@@ -1228,7 +1229,7 @@ async function runRunCommand(argv: string[]): Promise<void> {
       throw createCliInputError("CLI_RUN_STOP_MISSING_RUN_ID", "run stop requires <run-id>");
     }
     const workdir = asString(values.workdir) ?? process.cwd();
-    const result = await requestStop(workdir, runId, asString(values.reason));
+    const result = await requestStop(workdir, runId, asString(values.reason), createLocalControlPlanePrincipal());
     console.log(JSON.stringify(result, null, 2));
     return;
   }
@@ -1390,7 +1391,6 @@ async function runRunCommand(argv: string[]): Promise<void> {
         workdir: { type: "string" },
         decision: { type: "string" },
         comment: { type: "string" },
-        actor: { type: "string" },
         scope: { type: "string" },
         help: { type: "boolean", short: "h" }
       });
@@ -1432,7 +1432,7 @@ async function runRunCommand(argv: string[]): Promise<void> {
         reviewId,
         decision: decision as "approve" | "rework" | "pause" | "terminate",
         comment: asString(values.comment),
-        actor: asString(values.actor),
+        principal: createLocalControlPlanePrincipal(),
         scope: scope as "branch" | "run" | undefined
       });
       console.log(JSON.stringify(result, null, 2));

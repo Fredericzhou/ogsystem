@@ -387,6 +387,26 @@ ogs project sync --system system.mmd
 
 这会把系统里用到但当前项目缺失的 role/model 从安装包自带模板源导入到当前项目本地仓库。
 
+## Multi Debate 应用
+
+参考 `D:\Coder\AAI\mulit-debate` 创建的可运行项目位于 `D:\Coder\AAI\mulit-debate-ogs`。主持席将输入同时交给最简方案席和长期一致性席，评审席最多发起一轮反驳，摘要席完成结论后暂停等待人工审核。
+
+进入项目目录后，先检查 OpenCode 配置，再开始辩论：
+
+```bash
+cd D:\Coder\AAI\mulit-debate-ogs
+ogs doctor --required opencode --system system.mmd
+ogs run start --system system.mmd --laws .ogs/laws.json --user-profile .ogs/user-profile.json --input "是否应该为当前系统增加跨节点远程执行？请比较成本、可靠性和风险。"
+```
+
+运行暂停后，通过 `ogs run status <run-id>` 获取 `latestPendingReviewId`，然后执行 `ogs run review inspect <run-id> <review-id>`；审核完成后用 `ogs run review decide <run-id> <review-id> --decision approve --comment "审核意见"` 写入决定，再执行 `ogs run resume <run-id>`。在项目目录运行 `ogs vis --workdir .` 可查看图、角色执行、审核状态和事件；完整命令及配置说明见该项目的 `README.md`。
+
+Visualizer 的 Run 页面默认显示“流转”：按实际执行顺序查看初始请求、每个 Role 的输入/输出和后续路由。点击 Role 名称可定位对应步骤并展开图谱；图谱默认折叠在流转页下方，画布按整行展示，运行状态与关键信号保持常显，重复的角色 I/O 快照和补充字段按需展开。自动连线从两端节点的近侧候选连接桩中选择；先减少与已布线边交叉，再缩短路径并减少折点。每条线在连接桩处保留垂直于节点面的引出和进入短段，使箭头方向清晰。不同 Role 在步骤与图谱中使用一致的颜色标记，名称始终作为辨识依据。
+
+“运维”页先显示运维摘要，再显示当前运行的失败概览、恢复就绪状态和评审队列。失败详情、根因检查、运行健康、近期失败明细、恢复诊断、评审详情，以及“日志与产物”均默认折叠，按需展开。桌面会按可用宽度分栏，窄屏自动改为单列。输入与执行明细来自脱敏后的 conversation 投影；未采集到的上游输入会明确标为不可用，不会用推测内容填充。
+
+Release 页面仅在 `handoff.mode=strict` 时把缺少的 flow contract 作为发布阻断；`transition` 的缺口保留为 readiness warning，未配置 `handoff.mode` 时不强制 flow contract。源码未保存、校验失败、readiness blockers、未解析绑定或角色包不完整仍会阻止候选导出。导出的 `single-project-v1` 不包含 `.ogs/runs`、日志、checkpoint 或审核运行产物。
+
 ## 1. Runtime Status
 
 This repository now has one active runtime path: the graph runtime.
@@ -1170,6 +1190,8 @@ Current API/control-plane shape:
 - `POST /api/v1/runs/:runId/reviews/:reviewId/decide` reuses lifecycle review-decision validation and only records the decision; actual apply/reconcile still happens on resume/runtime.
 - `POST /api/v1/runs/:runId/stop` reuses the lifecycle stop-request entrypoint and records a stop request; it does not mean the run is already stopped.
 - `POST /api/v1/runs/reindex` rebuilds `runs-index.json`.
+- Remote execution protocol v1 defines correlated, idempotent requests with deadlines and model/profile executor bindings. The exported validators reject malformed nested bindings and results; this release does not dispatch remote workers, so ordinary runs continue to use the local engine. See [`remote-execution-contract.ts`](../../src/runtime/remote-execution-contract.ts) for the precise request and response fields.
+- The versioned HTTP surface is documented in [`schemas/openapi.yaml`](../../schemas/openapi.yaml). Check `/healthz`, `/readyz`, and `/metrics` when operating the local Visualizer API.
 
 Temporary visualizer attached to a run:
 

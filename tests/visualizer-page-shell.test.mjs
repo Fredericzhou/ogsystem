@@ -19,6 +19,8 @@ const REQUIRED_ELEMENT_IDS = [
   "release-gate",
   "workbench-body",
   "operate-tabs",
+  "operate-empty-state",
+  "run-graph-disclosure",
   "project-wizard",
   "stats",
   "timeline",
@@ -26,6 +28,8 @@ const REQUIRED_ELEMENT_IDS = [
   "state",
   "reviews",
   "review-detail",
+  "review-detail-disclosure",
+  "resume-diagnostics-disclosure",
   "ops-summary",
   "binding-explain",
   "role-packages",
@@ -82,7 +86,13 @@ test("page shell keeps HTML, style, assets, and client script mounted", () => {
   assert.match(html, /id="console-panel-validate-release"[^>]*aria-labelledby="console-tab-release"/);
   assert.match(html, /id="operate-tabs"[^>]*role="tablist"[^>]*aria-label="运行视图"/);
   assert.match(html, /id="operate-tabpanel-overview"[^>]*role="tabpanel"[^>]*aria-labelledby="operate-tab-overview"/);
-  assert.match(html, /class="body debug-graph-body operate-graph-shell"/);
+  assert.match(styles, /body\.show-operate-workspace:not\(\.has-selected-run\) \.operate-overview/);
+  assert.match(html, /id="run-graph-disclosure" class="run-graph-disclosure"/);
+  assert.match(html, /id="console-panel-ops"[\s\S]*id="console-panel-debug"/);
+  assert.match(html, /id="failure-detail-disclosure" class="run-event-details"[\s\S]*id="failure-detail"/);
+  assert.match(html, /id="failure-next-checks-disclosure" class="run-event-details"[\s\S]*id="failure-next-checks"/);
+  assert.match(html, /class="operate-evidence-disclosure"/);
+  assert.match(html, /class="debug-graph-body operate-graph-shell"/);
   assert.match(html, /class="operate-graph-main"[\s\S]*id="graph-view"/);
   assert.match(html, /class="operate-graph-sidebar"[\s\S]*id="state"/);
   assert.match(html, /id="console-panel-logs"[^>]*role="tabpanel"[^>]*aria-labelledby="operate-tab-logs"/);
@@ -105,6 +115,7 @@ test("page shell styles are isolated behind a CSS renderer", () => {
   assert.match(css, /\.shell\.content > \.sidebar/);
   assert.match(css, /\.disclosure-summary\s*\{/);
   assert.match(css, /\.operate-graph-main,\s*\n\s*\.operate-graph-sidebar/);
+  assert.match(css, /\.debug-graph-body\s*\{[\s\S]*grid-template-columns:\s*minmax\(0, 1fr\)/);
   assert.match(css, /#action-form-section\s*\{[\s\S]*position:\s*fixed/);
   assert.match(css, /#action-form-section\[hidden\]\s*\{[\s\S]*display:\s*none/);
   assert.match(css, /\.studio-selection-command-host \.studio-command-dialog\s*\{[\s\S]*position:\s*absolute/);

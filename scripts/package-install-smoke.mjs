@@ -140,6 +140,7 @@ async function main() {
   const isolatedEnv = {
     ...process.env,
     HOME: tempRoot,
+    USERPROFILE: tempRoot,
     XDG_CACHE_HOME: cacheDir,
     npm_config_cache: path.resolve(cacheDir, "npm"),
     OGSYSTEM_OPENCODE_MODELS_STDOUT_FILE: opencodeModelsFixturePath
@@ -277,14 +278,14 @@ async function main() {
   try {
     const startup = await waitForProcessOutput(
       visualizer,
-      /OGSystem Visualizer listening on (http:\/\/[^\s]+)/,
+      /OGS Multi-Agent Graph Orchestration System listening on (http:\/\/[^\s]+)/,
       15000
     );
     const url = startup.match[1];
     const response = await fetch(url);
     assert.equal(response.status, 200);
     const html = await response.text();
-    assert.match(html, /OGSystem/);
+    assert.match(html, /<title>OGS Multi-Agent Graph Orchestration System<\/title>/);
     assert.match(html, /visualizer/i);
   } finally {
     await stopChild(visualizer);
