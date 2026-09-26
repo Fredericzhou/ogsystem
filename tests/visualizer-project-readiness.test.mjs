@@ -136,6 +136,52 @@ test("project readiness reports missing execution bindings", async () => {
   });
 });
 
+test("project readiness warns when a profile tool drops role input", async () => {
+  await withTempProject(async (workdir) => {
+    await writeRolePackage(workdir, "planner");
+    await writeFile(
+      path.join(workdir, "profiles.json"),
+      JSON.stringify([{ profileId: "profile.planner", toolRef: "tool.planner" }]),
+      "utf8"
+    );
+    await writeFile(
+      path.join(workdir, "tools.json"),
+      JSON.stringify({
+        tools: [{
+          toolRef: "tool.planner",
+          runner: "local_shell",
+          command: "node",
+          argsTemplate: ["planner.mjs"],
+          stdinMode: "none"
+        }]
+      }),
+      "utf8"
+    );
+    await writeSystem(workdir, [
+      "flowchart TD",
+      "%% system.id=readiness.input.dropped",
+      "%% system.version=1.0.0",
+      "%% law.global=law.minimal.base",
+      "%% entry.role=planner",
+      "%% exec.bind.planner=profile.profile.planner",
+      "input -->|ENTER| planner[Role:planner]",
+      "planner[Role:planner] -->|DONE| output"
+    ]);
+
+    const readiness = await inspectProjectReadiness(workdir);
+    const warning = readiness.warnings.find((issue) => issue.code === "READINESS_TOOL_INPUT_NOT_FORWARDED");
+
+    assert.equal(readiness.canDryRun, true);
+    assert.equal(warning?.roleId, "planner");
+    assert.match(warning?.message ?? "", /stdinMode "none"/);
+    assert.deepEqual(warning?.detail, {
+      profileId: "profile.planner",
+      toolRef: "tool.planner",
+      stdinMode: "none"
+    });
+  });
+});
+
 test("project readiness exposes an empty provider health array when the system cannot be parsed", async () => {
   await withTempProject(async (workdir) => {
     const readiness = await inspectProjectReadiness(workdir);

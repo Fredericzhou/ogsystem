@@ -9,5 +9,28 @@
     "content": { "type": "string" },
     "data": { "type": "object" }
   },
+  "if": {
+    "properties": { "event": { "const": "COMPENSATED" } },
+    "required": ["event"]
+  },
+  "then": {
+    "properties": {
+      "data": {
+        "type": "object",
+        "required": ["compensation"],
+        "properties": {
+          "compensation": {
+            "type": "object",
+            "required": ["action", "verified"],
+            "properties": {
+              "action": { "type": "string", "minLength": 1 },
+              "verified": { "const": true }
+            }
+          }
+        }
+      }
+    },
+    "required": ["data"]
+  },
   "additionalProperties": false
 }

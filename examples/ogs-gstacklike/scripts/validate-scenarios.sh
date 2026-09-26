@@ -350,6 +350,9 @@ assert_summary_failed_count "$deploy_fail_run_id" 1
 assert_role_execution_failed "$deploy_fail_run_id" "ship-deploy"
 assert_role_execution_exists "$deploy_fail_run_id" "error-handler-base"
 assert_file_absent "${deploy_fail_run_dir}/shared/index.html"
+json_eval_file \
+  "${deploy_fail_run_dir}/roles/error-handler-base/result.json" \
+  'data.event === "ESCALATED" && data.data.compensationAvailable === false && JSON.stringify(data.data.failureContext).includes("deploy failed") && data.content.includes("No compensation action is configured")'
 
 echo
 echo "All ogs-gstacklike runtime-native human review scenarios passed."

@@ -233,6 +233,30 @@ test("output schema rejects invalid payload", async () => {
   );
 });
 
+test("error-handler compensation output requires a declared verified action", async () => {
+  const rolePackage = await loadRolePackage({
+    roleId: "error-handler-base",
+    roleRootDir: path.resolve("examples/ogs-gstacklike/og-roles/roles")
+  });
+  const base = { event: "COMPENSATED", content: "restored" };
+
+  assert.throws(() => validateRoleOutputSchema({
+    output: base,
+    schema: rolePackage.outputSchema,
+    roleId: "error-handler-base"
+  }));
+  assert.throws(() => validateRoleOutputSchema({
+    output: { ...base, data: { compensation: { action: "restore" } } },
+    schema: rolePackage.outputSchema,
+    roleId: "error-handler-base"
+  }));
+  assert.doesNotThrow(() => validateRoleOutputSchema({
+    output: { ...base, data: { compensation: { action: "restore", verified: true } } },
+    schema: rolePackage.outputSchema,
+    roleId: "error-handler-base"
+  }));
+});
+
 test("schema validation supports nested objects, arrays, enums, and additionalProperties", () => {
   const schema = {
     type: "object",

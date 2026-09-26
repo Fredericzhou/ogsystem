@@ -22,7 +22,7 @@ import {
 } from "../runtime/model-selection.js";
 import { parseSystemFromMermaidSource } from "../runtime/parse-mermaid.js";
 import { resolveOgsPaths } from "../runtime/project-lifecycle.js";
-import { loadLaws, loadRuntimeConfig } from "../runtime/runtime-loader.js";
+import { loadLaws, loadProfiles, loadRuntimeConfig, loadTools } from "../runtime/runtime-loader.js";
 import { validateRolePackageManifest } from "../runtime/role-repo.js";
 import { pathExists } from "../runtime/run-store.js";
 import { resolveEffectiveLaw } from "../runtime/runtime-setup.js";
@@ -700,6 +700,10 @@ export async function inspectProjectReadiness(
     catalog: modelCatalog
   });
   const laws = await loadLaws(undefined, workdir);
+  const [profiles, tools] = await Promise.all([
+    loadProfiles(undefined, workdir),
+    loadTools(undefined, workdir)
+  ]);
   const effectiveLaw = resolveEffectiveLaw(system, laws);
 
   for (const warning of resolvedModelSelection.warnings) {
@@ -715,8 +719,30 @@ export async function inspectProjectReadiness(
   const modelSelectionIssuesByRoleId = new Map(
     resolvedModelSelection.issues.map((issue) => [issue.roleId, issue])
   );
+  const profilesById = new Map(profiles.map((profile) => [profile.profileId, profile]));
+  const toolsByRef = new Map(tools.map((tool) => [tool.toolRef, tool]));
 
   for (const roleId of [...system.roleIds].sort((left, right) => left.localeCompare(right))) {
+    const bindingRef = system.executionBinding[roleId];
+    if (bindingRef?.startsWith("profile.")) {
+      const profile = profilesById.get(bindingRef.slice("profile.".length));
+      const tool = profile ? toolsByRef.get(profile.toolRef) : undefined;
+      if (tool?.stdinMode === "none") {
+        warnings.push(
+          createIssue({
+            code: "READINESS_TOOL_INPUT_NOT_FORWARDED",
+            message: `Role "${roleId}" is bound to tool "${tool.toolRef}" with stdinMode "none"; the rendered role prompt and projected input are not sent on stdin. Set stdinMode to "text" if the tool expects prompt input there.`,
+            severity: "warning",
+            roleId,
+            detail: {
+              profileId: profile?.profileId,
+              toolRef: tool.toolRef,
+              stdinMode: tool.stdinMode
+            }
+          })
+        );
+      }
+    }
     if (!system.executionBinding[roleId] && !resolvedModelSelection.resolvedByRoleId.has(roleId)) {
       const selectionIssue = modelSelectionIssuesByRoleId.get(roleId);
       if (selectionIssue) {

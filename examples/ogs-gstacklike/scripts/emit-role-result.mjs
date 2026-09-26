@@ -37,7 +37,7 @@ function parseInputSection(prompt) {
     const parsed = JSON.parse(inputSection);
     return typeof parsed === "object" && parsed !== null ? parsed : {};
   } catch {
-    return {};
+    return { input: inputSection };
   }
 }
 
@@ -67,6 +67,13 @@ function firstNonEmptyString(...values) {
 }
 
 function toStringArray(value) {
+  if (typeof value === "string") {
+    try {
+      value = JSON.parse(value);
+    } catch {
+      return [];
+    }
+  }
   if (!Array.isArray(value)) {
     return [];
   }
@@ -254,7 +261,39 @@ function buildDefaultPayload(args) {
   };
 }
 
+function buildErrorHandlerPayload(args) {
+  const allowedEvents = String(process.env.OGSYSTEM_ALLOWED_EVENTS ?? "")
+    .split(",")
+    .map((event) => event.trim())
+    .filter(Boolean);
+  const event = allowedEvents.includes("ESCALATED")
+    ? "ESCALATED"
+    : allowedEvents.includes("ABORTED")
+      ? "ABORTED"
+      : undefined;
+  if (!event) {
+    throw new Error("error-handler-base requires ESCALATED or ABORTED when no compensation is available");
+  }
+  const errorContext = args.input.input ?? {};
+  const summary = typeof errorContext === "string"
+    ? errorContext
+    : JSON.stringify(errorContext);
+  return {
+    event,
+    content: `No compensation action is configured for this failure. Escalating through the run output for operator action. Failure context: ${summary || "unavailable"}`,
+    data: {
+      roleId: args.roleId,
+      actor: args.actor,
+      failureContext: errorContext,
+      compensationAvailable: false
+    }
+  };
+}
+
 function buildRolePayload(args) {
+  if (args.roleId === "error-handler-base") {
+    return buildErrorHandlerPayload(args);
+  }
   if (args.roleId === "office-hours") {
     return buildOfficeHoursPayload(args);
   }
@@ -286,9 +325,11 @@ const payload = buildRolePayload({
   input
 });
 
+const resultEvent = payload.event ?? event;
+
 console.log(
   JSON.stringify({
-    event,
+    event: resultEvent,
     content: payload.content,
     data: {
       roleId,

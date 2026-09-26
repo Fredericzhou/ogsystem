@@ -711,11 +711,19 @@ Role rules:
 - role packages do not define routing
 - role packages do not hard-bind model ids
 - runtime always validates the built-in prompt-input shell with `allowed_events`, `user_preferences`, `task`, and `input`
+- local tools receive that rendered prompt on stdin only when their bound tool has `stdinMode: "text"`; readiness warns when a role is bound to `stdinMode: "none"`
 - `source.json` is importer traceability metadata only and is not part of runtime manifest validation
 
 Recommended template roles:
 
 - `error-handler-base`: compensation skeleton with `COMPENSATED | ESCALATED | ABORTED`
+
+For error handling, choose `COMPENSATED` only after a concrete recovery action has run. The reusable
+role schema requires `data.compensation.action` and `data.compensation.verified: true` for that event;
+this validates the declared output contract, but cannot prove an external action actually happened.
+When no action is configured or evidence is unavailable, use `ESCALATED` for operator review or
+`ABORTED` when continuing is unsafe. For local tools that must inspect a failure context, configure
+`stdinMode: "text"` and check the execution input/output records when debugging.
 
 ## 6. Model Selection Contract
 

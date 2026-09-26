@@ -9,6 +9,7 @@
 - runtime-native human review：`review.*`
 - run 级共享产物：`shared/index.html`
 - 失败补偿：`ERROR -> error-handler-base`
+- 当前示例未配置真实补偿动作；部署失败时错误处理器会保留失败上下文并输出 `ESCALATED`，避免把固定脚本结果误报为 `COMPENSATED`
 - 场景化回归：`scenarios/*.mmd` + `scripts/validate-scenarios.sh`
 - `exec.bind` 执行绑定和 Studio/Visualizer 可视化检查
 

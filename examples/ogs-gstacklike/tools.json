@@ -40,7 +40,7 @@
       "runner": "local_shell",
       "command": "node",
       "argsTemplate": ["scripts/emit-role-result.mjs", "error-handler-base", "ERROR_HANDLER_EVENT", "COMPENSATED"],
-      "stdinMode": "none"
+      "stdinMode": "text"
     },
     {
       "toolRef": "tool.retro",
