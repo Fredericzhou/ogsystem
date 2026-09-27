@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import os from "node:os";
 import path from "node:path";
 import http from "node:http";
+import { createHash, randomUUID } from "node:crypto";
 import { chmod, mkdtemp, mkdir, readFile, stat, symlink, writeFile } from "node:fs/promises";
 
 import { resolveProjectRoleRootDir } from "../dist/runtime/bundled-repos.js";
@@ -2773,6 +2774,211 @@ test("visualizer server starts and resumes runs through lifecycle APIs", async (
     assert.equal(resumeAudits[0].principal.issuer, "ogs:local");
   } finally {
     await new Promise((resolve) => server.close(resolve));
+  }
+});
+
+test("serve sessions queue idempotent turns, create fresh runs, and fork after system drift", async (t) => {
+  const workdir = await mkdtemp(path.join(os.tmpdir(), "ogsystem-serve-session-api-"));
+  const workspaceDir = await mkdtemp(path.join(os.tmpdir(), "ogsystem-serve-session-workspace-"));
+  await seedRunnableReviewProjectFixture(workdir);
+  const systemPath = path.resolve(workdir, "system.mmd");
+  let started;
+  try {
+    started = await startVisualizationServer({
+      workdir,
+      serveProject: { ogsDir: workdir, systemPath, workspaceDir },
+      host: "127.0.0.1",
+      port: 0
+    });
+  } catch (error) {
+    const errorCode = typeof error === "object" && error !== null && "code" in error ? error.code : undefined;
+    if (errorCode === "EPERM" || errorCode === "EACCES") {
+      t.skip(`visualizer listen unavailable in sandbox: ${errorCode}`);
+      return;
+    }
+    throw error;
+  }
+  const { server, url } = started;
+  try {
+    const createdResponse = await fetch(`${url}/api/v1/sessions`, { method: "POST" });
+    assert.equal(createdResponse.status, 201);
+    const session = await createdResponse.json();
+    const request = () => fetch(`${url}/api/v1/sessions/${session.sessionId}/turns`, {
+      method: "POST",
+      headers: { "content-type": "application/json", "idempotency-key": "turn-1" },
+      body: JSON.stringify({ input: "serve first turn", dryRun: true })
+    });
+    const [firstResponse, replayResponse] = await Promise.all([request(), request()]);
+    assert.equal(firstResponse.status, 202);
+    assert.equal(replayResponse.status, 202);
+    const [firstTurn, replayTurn] = await Promise.all([firstResponse.json(), replayResponse.json()]);
+    assert.equal(firstTurn.turnId, replayTurn.turnId);
+    assert.equal(firstTurn.runId, replayTurn.runId);
+
+    const conflictingReplay = await fetch(`${url}/api/v1/sessions/${session.sessionId}/turns`, {
+      method: "POST",
+      headers: { "content-type": "application/json", "idempotency-key": "turn-1" },
+      body: JSON.stringify({ input: "different payload", dryRun: true })
+    });
+    assert.equal(conflictingReplay.status, 409);
+    assert.equal((await conflictingReplay.json()).error.code, "IDEMPOTENCY_KEY_REUSED");
+
+    const waitForTurn = async (turnId) => {
+      for (let attempt = 0; attempt < 100; attempt += 1) {
+        const response = await fetch(`${url}/api/v1/sessions/${session.sessionId}`);
+        const current = await response.json();
+        const turn = current.turns.find((item) => item.turnId === turnId);
+        if (turn && turn.status !== "queued" && turn.status !== "running") return turn;
+        await new Promise((resolve) => setTimeout(resolve, 50));
+      }
+      throw new Error(`Turn did not finish: ${turnId}`);
+    };
+    const completedFirst = await waitForTurn(firstTurn.turnId);
+    assert.notEqual(completedFirst.status, "failed");
+    const reviewResponse = await fetch(`${url}/api/v1/runs/${firstTurn.runId}/reviews`);
+    assert.equal(reviewResponse.status, 200);
+    const reviewQueue = await reviewResponse.json();
+    assert.ok(reviewQueue.latestPendingReviewId);
+    const decisionResponse = await fetch(`${url}/api/v1/runs/${firstTurn.runId}/reviews/${encodeURIComponent(reviewQueue.latestPendingReviewId)}/decide`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ decision: "approve", comment: "continue this Session Turn" })
+    });
+    assert.equal(decisionResponse.status, 200);
+    const resumeResponse = await fetch(`${url}/api/v1/runs/${firstTurn.runId}/resume`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ dryRun: true })
+    });
+    assert.equal(resumeResponse.status, 200);
+    assert.equal((await resumeResponse.json()).runId, firstTurn.runId);
+    assert.equal((await waitForTurn(firstTurn.turnId)).status, "done");
+
+    const secondResponse = await fetch(`${url}/api/v1/sessions/${session.sessionId}/turns`, {
+      method: "POST",
+      headers: { "content-type": "application/json", "idempotency-key": "turn-2" },
+      body: JSON.stringify({ input: "serve second turn", dryRun: true })
+    });
+    assert.equal(secondResponse.status, 202);
+    const secondTurn = await secondResponse.json();
+    assert.notEqual(secondTurn.runId, firstTurn.runId);
+    assert.notEqual((await waitForTurn(secondTurn.turnId)).status, "failed");
+
+    const source = await readFile(systemPath, "utf8");
+    await writeFile(systemPath, source.replace("system.version=1.0.0", "system.version=2.0.0"), "utf8");
+    const staleResponse = await fetch(`${url}/api/v1/sessions/${session.sessionId}/turns`, {
+      method: "POST",
+      headers: { "content-type": "application/json", "idempotency-key": "turn-after-edit" },
+      body: JSON.stringify({ input: "must fork", dryRun: true })
+    });
+    assert.equal(staleResponse.status, 409);
+    const stale = await staleResponse.json();
+    assert.equal(stale.error.code, "SESSION_CONFIGURATION_CHANGED");
+    assert.ok(stale.error.details.childSessionId);
+    const oldSessionResponse = await fetch(`${url}/api/v1/sessions/${session.sessionId}`);
+    assert.equal((await oldSessionResponse.json()).status, "stale");
+    const childResponse = await fetch(`${url}/api/v1/sessions/${stale.error.details.childSessionId}`);
+    const child = await childResponse.json();
+    assert.equal(child.parentSessionId, session.sessionId);
+    assert.equal(child.systemDigest, createHash("sha256").update(await readFile(systemPath)).digest("hex"));
+
+    const sessionsResponse = await fetch(`${url}/api/v1/sessions`);
+    assert.equal(sessionsResponse.status, 200);
+    assert.equal((await sessionsResponse.json()).sessions.length, 2);
+  } finally {
+    await new Promise((resolve) => server.close(resolve));
+  }
+});
+
+test("serve session events keep unique sequential IDs while turns are queued concurrently", async (t) => {
+  const workdir = await mkdtemp(path.join(os.tmpdir(), "ogsystem-session-event-order-"));
+  const workspaceDir = await mkdtemp(path.join(os.tmpdir(), "ogsystem-session-event-workspace-"));
+  await seedRunnableReviewProjectFixture(workdir);
+  let started;
+  try {
+    started = await startVisualizationServer({ workdir, serveProject: { ogsDir: workdir, systemPath: path.resolve(workdir, "system.mmd"), workspaceDir }, host: "127.0.0.1", port: 0 });
+  } catch (error) {
+    if (["EPERM", "EACCES"].includes(error?.code)) { t.skip(`visualizer listen unavailable in sandbox: ${error.code}`); return; }
+    throw error;
+  }
+  try {
+    const created = await fetch(`${started.url}/api/v1/sessions`, { method: "POST" });
+    const session = await created.json();
+    const accepted = await Promise.all(Array.from({ length: 5 }, (_, index) => fetch(`${started.url}/api/v1/sessions/${session.sessionId}/turns`, {
+      method: "POST",
+      headers: { "content-type": "application/json", "idempotency-key": `parallel-${index}` },
+      body: JSON.stringify({ input: `parallel turn ${index}`, dryRun: true })
+    })));
+    assert.ok(accepted.every((response) => response.status === 202));
+    const turns = await Promise.all(accepted.map((response) => response.json()));
+    for (let attempt = 0; attempt < 150; attempt += 1) {
+      const response = await fetch(`${started.url}/api/v1/sessions/${session.sessionId}`);
+      const current = await response.json();
+      if (current.turns.every((turn) => !["queued", "running"].includes(turn.status))) break;
+      await new Promise((resolve) => setTimeout(resolve, 50));
+    }
+    const eventPath = path.resolve(workdir, ".ogs", "sessions", session.sessionId, "events.ndjson");
+    const events = (await readFile(eventPath, "utf8")).trim().split(/\r?\n/).map((line) => JSON.parse(line));
+    const ids = events.map((event) => event.id);
+    assert.deepEqual(ids, Array.from({ length: ids.length }, (_, index) => index));
+    for (const turn of turns) assert.ok(events.some((event) => event.turnId === turn.turnId && event.type === "turn.completed"));
+  } finally {
+    await new Promise((resolve) => started.server.close(resolve));
+  }
+});
+
+test("serve server recovers a persisted queued session turn after restart", async (t) => {
+  const workdir = await mkdtemp(path.join(os.tmpdir(), "ogsystem-session-recovery-"));
+  const workspaceDir = await mkdtemp(path.join(os.tmpdir(), "ogsystem-session-recovery-workspace-"));
+  await seedRunnableReviewProjectFixture(workdir);
+  const serveProject = { ogsDir: workdir, systemPath: path.resolve(workdir, "system.mmd"), workspaceDir };
+  let first;
+  try {
+    first = await startVisualizationServer({ workdir, serveProject, host: "127.0.0.1", port: 0 });
+  } catch (error) {
+    if (["EPERM", "EACCES"].includes(error?.code)) { t.skip(`visualizer listen unavailable in sandbox: ${error.code}`); return; }
+    throw error;
+  }
+  const created = await fetch(`${first.url}/api/v1/sessions`, { method: "POST" });
+  const session = await created.json();
+  await new Promise((resolve) => first.server.close(resolve));
+
+  const sessionDir = path.resolve(workdir, ".ogs", "sessions", session.sessionId);
+  const recoveredTurns = [
+    { turnId: randomUUID(), runId: randomUUID(), input: "recover queued turn", status: "queued" },
+    { turnId: randomUUID(), runId: randomUUID(), input: "recover running turn", status: "running" }
+  ];
+  const persisted = { ...session, turns: recoveredTurns.map((turn, index) => ({ turnId: turn.turnId, runId: turn.runId, idempotencyKey: `recover-${index}`, status: turn.status, requestDigest: createHash("sha256").update(JSON.stringify({ input: turn.input, dryRun: true })).digest("hex"), dryRun: true, createdAt: new Date().toISOString() })) };
+  await writeFile(path.resolve(sessionDir, "session.json"), JSON.stringify(persisted), "utf8");
+  await mkdir(path.resolve(sessionDir, "turn-requests"), { recursive: true });
+  for (const turn of recoveredTurns) {
+    await writeFile(path.resolve(sessionDir, "turn-requests", `${turn.turnId}.json`), JSON.stringify({ input: turn.input, dryRun: true, principal: { id: "test:recovery", issuer: "test" } }), "utf8");
+  }
+
+  const recovered = await startVisualizationServer({ workdir, serveProject, host: "127.0.0.1", port: 0 });
+  try {
+    let current;
+    for (let attempt = 0; attempt < 150; attempt += 1) {
+      const response = await fetch(`${recovered.url}/api/v1/sessions/${session.sessionId}`);
+      current = await response.json();
+      if (recoveredTurns.every((expected) => {
+        const turn = current.turns.find((item) => item.turnId === expected.turnId);
+        return turn && !["queued", "running"].includes(turn.status);
+      })) break;
+      await new Promise((resolve) => setTimeout(resolve, 50));
+    }
+    for (const expected of recoveredTurns) {
+      const turn = current.turns.find((item) => item.turnId === expected.turnId);
+      assert.ok(turn);
+      assert.notEqual(turn.status, "failed");
+    }
+    const events = (await readFile(path.resolve(sessionDir, "events.ndjson"), "utf8")).trim().split(/\r?\n/).map((line) => JSON.parse(line));
+    for (const expected of recoveredTurns) {
+      assert.ok(events.some((event) => event.type === "turn.recovered" && event.turnId === expected.turnId));
+      assert.ok(events.some((event) => event.type === "turn.completed" && event.turnId === expected.turnId));
+    }
+  } finally {
+    await new Promise((resolve) => recovered.server.close(resolve));
   }
 });
 

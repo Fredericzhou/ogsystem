@@ -50,7 +50,7 @@ async function assertTargetDirectory(targetDir: string): Promise<string> {
 }
 
 /**
- * Resolves an execution target with this precedence:
+ * Resolves the coding workspace with this precedence:
  * explicit invocation, persisted resume target, project attachment, same-directory default.
  * A resume cannot silently switch to a different coding project.
  */
@@ -60,7 +60,7 @@ export async function resolveProjectTargetDirectory(args: {
   resumeRunDir?: string;
 }): Promise<string> {
   const requestedTargetDir = args.targetDir
-    ? resolve(args.workdir, args.targetDir)
+    ? resolve(args.targetDir)
     : undefined;
   const savedTargetDir = args.resumeRunDir
     ? await readSavedTargetDirectory(

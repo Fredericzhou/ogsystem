@@ -68,12 +68,14 @@ async function maybeHoldResumeLockForTest(): Promise<void> {
 
 export async function runSystemWithAdapter(args: {
   systemPath: string;
+  systemBaseDir?: string;
   profilesPath?: string;
   toolsPath?: string;
   lawsPath?: string;
   runtimeConfigPath?: string;
   userProfilePath?: string;
   resumeRunDir?: string;
+  runId?: string;
   prompt: string;
   workdir: string;
   targetDir?: string;

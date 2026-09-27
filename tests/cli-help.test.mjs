@@ -33,12 +33,16 @@ test("ogs help command surfaces layered guidance", async () => {
   assert.match(rootHelp.stdout, /doctor\s+Check environment, providers, and required tools/);
   assert.match(rootHelp.stdout, /project\s+Init, create, or sync project files/);
   assert.match(rootHelp.stdout, /run\s+Start, inspect, review, or control runs/);
+  assert.match(rootHelp.stdout, /serve\s+Serve interactive sessions and run management APIs/);
   assert.match(rootHelp.stdout, /vis\s+Start the read-mostly visualizer/);
   assert.match(rootHelp.stdout, /ogs help run logs/);
   assert.match(rootHelp.stdout, /ogs help compatibility/);
   assert.match(rootHelp.stdout, /ogs project create --help/);
   assert.match(rootHelp.stdout, /ogs vis --help/);
-  assert.match(rootHelp.stdout, /commands use the current directory unless --workdir overrides it/);
+  const serveHelp = await runNodeCli(runtimeCliPath, ["serve", "--help"]);
+  assert.strictEqual(serveHelp.code, 0);
+  assert.match(serveHelp.stdout, /ogs serve \[--ogs-dir <path>\] \[--system <file\.mmd>\] \[--workspace-dir <path>\]/);
+  assert.match(rootHelp.stdout, /--ogs-dir defaults to the current directory; system\.mmd defaults to its root/);
   assert.match(rootHelp.stdout, /A graph node is a stable responsibility role\/seat/);
   assert.match(rootHelp.stdout, /A flow is a direct role-to-role handoff/);
   assert.match(rootHelp.stdout, /Events, actions, tasks, gateways, process steps, and runtime records are not role nodes/);
@@ -69,13 +73,13 @@ test("ogs help command surfaces layered guidance", async () => {
   assert.strictEqual(projectInitHelp.code, 0);
   assert.match(
     projectInitHelp.stdout,
-    /ogs project init \[--template <empty\|minimal\|advanced-features\|software-dev\|consultation>\] \[--workdir <path>\]/
+    /ogs project init \[--template <empty\|minimal\|advanced-features\|software-dev\|consultation>\] \[--ogs-dir <path>\] \[--workspace-dir <path>\]/
   );
   assert.match(projectInitHelp.stdout, /Template to scaffold \(default: minimal\)/);
 
   const runHelp = await runNodeCli(runtimeCliPath, ["run", "--help"]);
   assert.strictEqual(runHelp.code, 0);
-  assert.match(runHelp.stdout, /ogs run start --system <file\.mmd> --input <text> \[options\]/);
+  assert.match(runHelp.stdout, /ogs run start \[--system <file\.mmd>\] --input <text> \[options\]/);
   assert.match(runHelp.stdout, /ogs run logs <run-id> \[options\]/);
   assert.match(runHelp.stdout, /ogs run logs --help/);
   assert.doesNotMatch(runHelp.stdout, /run reindex/);
@@ -103,14 +107,14 @@ test("ogs help command surfaces layered guidance", async () => {
 
   const visualizerHelp = await runNodeCli(runtimeCliPath, ["vis", "--help"]);
   assert.strictEqual(visualizerHelp.code, 0);
-  assert.match(visualizerHelp.stdout, /ogs vis \[--workdir <path>\] \[--host <host>\] \[--port <n\|0>\]/);
+  assert.match(visualizerHelp.stdout, /ogs vis \[--ogs-dir <path>\] \[--host <host>\] \[--port <n\|0>\]/);
   assert.match(visualizerHelp.stdout, /read-mostly OGSystem visualizer/);
   assert.match(visualizerHelp.stdout, /Nodes are responsibility roles\/agents, not events, actions, or process steps/);
   assert.match(visualizerHelp.stdout, /Edges are role-to-role flows\/handoffs/);
 
   const visualizerAliasHelp = await runNodeCli(runtimeCliPath, ["visualizer", "--help"]);
   assert.strictEqual(visualizerAliasHelp.code, 0);
-  assert.match(visualizerAliasHelp.stdout, /ogs vis \[--workdir <path>\] \[--host <host>\] \[--port <n\|0>\]/);
+  assert.match(visualizerAliasHelp.stdout, /ogs vis \[--ogs-dir <path>\] \[--host <host>\] \[--port <n\|0>\]/);
 
   const version = await runNodeCli(runtimeCliPath, ["--version"]);
   assert.strictEqual(version.code, 0);

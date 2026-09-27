@@ -33,6 +33,7 @@ import {
   renderStudioGraphCanvas,
   renderStudioBridgePanel,
   renderStudioRoleSemanticSummary,
+  renderStudioSystemSettingsEditor,
   renderStudioRoleConfigEditor,
   renderStudioExecutionConfigEditor,
   renderStudioFlowConfigEditor,
@@ -134,7 +135,6 @@ import {
   normalizeStudioEventType,
   validateStudioAddEdgeDraft
 } from "./studio-client/studio-graph-validation.js";
-import { applyStudioAuthoringCommand } from "./studio-client/studio-graph-commands.js";
 import { WORKBENCH_VALIDATION_DEBOUNCE_MS } from "./client-input-policy.js";
 import { getDictionary, type Dictionary, type Locale } from "./i18n/index.js";
 import { applyCanvasLayoutPatchToAuthoring } from "./client-studio-authoring.js";
@@ -177,6 +177,7 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
   messagesByLocale[locale] = i18n.messages ?? messagesByLocale[locale];
   return `
     const API_PREFIX = ${JSON.stringify(apiPrefix)};
+    const applyStudioAuthoringCommand = window.OGSVisualizerClient?.applyStudioAuthoringCommand;
     const INITIAL_LOCALE = ${JSON.stringify(locale)};
     const I18N_MESSAGES = ${JSON.stringify(messagesByLocale)};
     const roleColorForId = ${roleColorForId.toString()};
@@ -261,6 +262,7 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
     const renderStudioBridgeStructureHtml = ${renderStudioBridgeStructureHtml.toString()};
     const renderStudioBridgeSelectionLabel = ${renderStudioBridgeSelectionLabel.toString()};
     const renderStudioRoleConfigEditor = ${renderStudioRoleConfigEditor.toString()};
+    const renderStudioSystemSettingsEditor = ${renderStudioSystemSettingsEditor.toString()};
     const renderStudioExecutionConfigEditor = ${renderStudioExecutionConfigEditor.toString()};
     const renderStudioRolePackageEditor = ${renderStudioRolePackageEditor.toString()};
     const renderStudioFlowConfigEditor = ${renderStudioFlowConfigEditor.toString()};
@@ -2402,6 +2404,20 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
       return Array.from(workbenchBodyEl.querySelectorAll("[data-role-config-field]") || []);
     }
 
+    function readStudioContextMapRows() {
+      const result = {};
+      for (const row of Array.from(workbenchBodyEl.querySelectorAll("[data-context-map-row]") || [])) {
+        const field = String(row.querySelector("[data-context-map-target]")?.value || "").trim();
+        const selector = String(row.querySelector("[data-context-map-selector]")?.value || "").trim();
+        const optional = row.querySelector("[data-context-map-optional]")?.checked === true;
+        if (field && selector) {
+          const baseSelector = selector.endsWith("?") ? selector.slice(0, -1) : selector;
+          result[field] = optional ? baseSelector + "?" : baseSelector;
+        }
+      }
+      return result;
+    }
+
     function enableStudioEditorButtons(selectors) {
       for (const selector of selectors) {
         for (const button of Array.from(workbenchBodyEl.querySelectorAll(selector) || [])) {
@@ -2544,7 +2560,15 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
         modelSelectionSource: current.modelSelectionSource || "role",
         modelRef: current.modelRef || "",
         profileId: current.profileId || current.generatedProfileId || "",
-        contextMapText: formatContextMapJson(current.contextMap)
+        contextMap: current.contextMap && typeof current.contextMap === "object" ? current.contextMap : {},
+        roleSettings: current.roleSettings || {
+          routingMode: current.routingMode,
+          routeOrder: current.routeOrder,
+          joinMode: current.joinMode,
+          joinMin: current.joinMin,
+          loopMax: current.loopMax,
+          review: current.review
+        }
       };
       for (const element of roleConfigEditorFieldElements()) {
         const field = element.getAttribute("data-role-config-field") || "";
@@ -2555,8 +2579,33 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
         if (field === "modelId") draft.modelId = value;
         if (field === "modelRef") draft.modelRef = value;
         if (field === "profileId") draft.profileId = value;
-        if (field === "contextMap") draft.contextMapText = value;
       }
+      draft.contextMap = readStudioContextMapRows();
+      const settings = {};
+      const incomingCount = Object.values(state.studioBridge?.authoring?.flows || {}).filter((flow) => flow?.toRoleId === draft.roleId).length;
+      for (const element of Array.from(workbenchBodyEl.querySelectorAll("[data-role-setting]"))) {
+        settings[element.getAttribute("data-role-setting")] = element.type === "checkbox" ? element.checked : element.value;
+      }
+      const routeRows = Array.from(workbenchBodyEl.querySelectorAll("[data-route-order-position]"))
+        .map((element) => ({ target: element.getAttribute("data-route-order-target"), position: Number(element.value) }))
+        .filter((entry) => entry.target && Number.isFinite(entry.position))
+        .sort((left, right) => left.position - right.position)
+        .map((entry) => entry.target);
+      draft.roleSettings = {
+        routingMode: settings.routingMode === "parallel_split" ? "parallel_split" : undefined,
+        routeOrder: routeRows.length ? routeRows : current.routeOrder,
+        joinMode: settings.joinMode || undefined,
+        joinMin: settings.joinMode === "quorum_of" ? Number(settings.joinMin || incomingCount) : undefined,
+        loopMax: settings.loopMax === undefined || settings.loopMax === null || settings.loopMax === "" ? undefined : Number(settings.loopMax),
+        review: settings.reviewEnabled === true ? {
+          mode: "required",
+          ...(settings.reviewTimeout !== "" ? { timeoutSeconds: Number(settings.reviewTimeout) } : {}),
+          timeoutAction: settings.reviewTimeoutAction || "pause",
+          ...(settings.reviewTarget ? { reworkTargetRoleId: settings.reviewTarget } : {}),
+          ...(settings.reviewReworkMax !== "" ? { reworkMax: Number(settings.reviewReworkMax) } : {}),
+          terminateScope: settings.reviewTerminateScope || "branch"
+        } : undefined
+      };
       return draft;
     }
 
@@ -2620,8 +2669,7 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
         eventType: current.eventType || "",
         label: current.label || "",
         runtimeOnlyErrorFlow: current.runtimeOnlyErrorFlow === true,
-        participatesInJoin: current.participatesInJoin === true,
-        targetContextMapText: formatContextMapJson(current.targetContextMap)
+        participatesInJoin: current.participatesInJoin === true
       };
       for (const element of flowConfigEditorFieldElements()) {
         const field = element.getAttribute("data-flow-config-field") || "";
@@ -2636,7 +2684,6 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
         if (field === "targetRoleId") draft.targetRoleId = value;
         if (field === "eventType") draft.eventType = value;
         if (field === "label") draft.label = value;
-        if (field === "targetContextMap") draft.targetContextMapText = value;
       }
       return draft;
     }
@@ -3082,6 +3129,11 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
         const dirtyConfigRoleId = String(state.studioRoleConfigEditor?.roleId || "");
         const showDirtyConfigWarning = hasDirtyStudioRoleConfigEditor() && dirtyConfigRoleId && dirtyConfigRoleId !== selectedRoleIdValue;
         rolePackage.innerHTML = [
+          renderStudioSystemSettingsEditor({
+            projectConfig: state.project?.config || null,
+            authoring: state.studioBridge?.authoring || null,
+            t
+          }),
           renderStudioRoleSemanticSummary({ role: selectedRoleForSummary, t }),
           showDirtyConfigWarning
             ? '<div class="event"><div class="event-top"><span>' + escapeText(t("common.attention", undefined, "attention")) + '</span><span>' + escapeText(t("common.changed", undefined, "changed")) + '</span></div><strong>' +
@@ -3098,6 +3150,7 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
           editor: state.studioRoleConfigEditor,
           projectConfig: state.project?.config || null,
           modelCatalog: state.studioBridge?.modelCatalog || null,
+          authoring: state.studioBridge?.authoring || null,
           t
           }),
           renderDisclosureCard({
@@ -3155,6 +3208,11 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
                 draft: null
               };
           rolePackage.innerHTML = [
+            renderStudioSystemSettingsEditor({
+              projectConfig: state.project?.config || null,
+              authoring: state.studioBridge?.authoring || null,
+              t
+            }),
             showDirtyFlowWarning
               ? '<div class="event"><div class="event-top"><span>' + escapeText(t("common.attention", undefined, "attention")) + '</span><span>' + escapeText(t("common.changed", undefined, "changed")) + '</span></div><strong>' +
                 escapeText(t("studio.flowConfigDirtySwitchBlocked", { flowKey: dirtyFlowKey }, "Flow changes for {flowKey} are unsaved. Save or revert before switching flows.")) +
@@ -3364,6 +3422,13 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
           modelRef: String(role.modelRef || ""),
           profileId: String(role.profileId || ""),
           contextMap: role.contextMap && typeof role.contextMap === "object" ? role.contextMap : {},
+          routingMode: role.routingMode,
+          routeOrder: role.routeOrder,
+          joinMode: role.joinMode,
+          joinMin: role.joinMin,
+          joinSources: role.joinSources,
+          loopMax: role.loopMax,
+          review: role.review,
           generatedProfileId: generatedExecutionProfileIdForRole(selectedRoleIdValue),
           generatedToolRef: generatedExecutionToolRefForRole(selectedRoleIdValue)
         },
@@ -3421,16 +3486,54 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
         renderStudioSelectionDialog();
         return;
       }
-      const parsedContextMap = parseContextMapDraft(draft.contextMapText);
-      if (!parsedContextMap.ok) {
-        state.studioRoleConfigEditor = {
-          ...(state.studioRoleConfigEditor || {}),
-          roleId: selectedRoleIdValue,
-          saving: false,
-          dirty: true,
-          error: parsedContextMap.error || t("studio.contextMapObjectRequired", undefined, "Context map must be a JSON object."),
-          draft
-        };
+      const settings = draft.roleSettings || {};
+      const incomingRoleIds = Array.from(new Set(Object.values(state.studioBridge?.authoring?.flows || {}).filter((flow) => flow?.toRoleId === selectedRoleIdValue).map((flow) => flow.fromRoleId)));
+      const incomingCount = incomingRoleIds.length;
+      const mapRows = Array.from(workbenchBodyEl.querySelectorAll("[data-context-map-row]"));
+      const mapFields = mapRows.map((row) => String(row.querySelector("[data-context-map-target]")?.value || "").trim());
+      const mapSelectors = mapRows.map((row) => String(row.querySelector("[data-context-map-selector]")?.value || "").trim());
+      const invalidOptionalSource = mapRows.some((row) =>
+        row.querySelector("[data-context-map-optional]")?.checked === true &&
+        !String(row.querySelector("[data-context-map-selector]")?.value || "").startsWith("global.human_review.current")
+      );
+      const badSourceSelector = mapSelectors.find((selector) => {
+        const source = selector.match(/^source\(([^)]+)\)\./)?.[1];
+        if (source) return !settings.joinMode || !incomingRoleIds.includes(source) || (settings.joinMode === "quorum_of" && settings.joinMin < incomingCount);
+        if (selector.startsWith("direct.")) return Boolean(settings.joinMode) || incomingCount === 0;
+        return false;
+      });
+      if (mapFields.some((field) => !field) || mapSelectors.some((selector) => !selector) || new Set(mapFields).size !== mapFields.length) {
+        state.studioRoleConfigEditor = { ...(state.studioRoleConfigEditor || {}), roleId: selectedRoleIdValue, saving: false, dirty: true, error: t("studio.invalidContextMapRows", undefined, "Each mapping needs a unique target field and a selected source."), draft };
+        renderStudioSelectionDialog();
+        return;
+      }
+      if (badSourceSelector) {
+        state.studioRoleConfigEditor = { ...(state.studioRoleConfigEditor || {}), roleId: selectedRoleIdValue, saving: false, dirty: true, error: t("studio.invalidContextMapSource", { selector: badSourceSelector }, "The selected source {selector} is unavailable for this role and graph."), draft };
+        renderStudioSelectionDialog();
+        return;
+      }
+      if (invalidOptionalSource) {
+        state.studioRoleConfigEditor = { ...(state.studioRoleConfigEditor || {}), roleId: selectedRoleIdValue, saving: false, dirty: true, error: t("studio.invalidContextMapOptional", undefined, "Only Human Review context fields support the optional mapping setting."), draft };
+        renderStudioSelectionDialog();
+        return;
+      }
+      const review = settings.review;
+      const invalidReview = review && (
+        (review.timeoutSeconds !== undefined && (!Number.isInteger(review.timeoutSeconds) || review.timeoutSeconds < 0)) ||
+        (review.reworkMax !== undefined && (!Number.isInteger(review.reworkMax) || review.reworkMax < 0))
+      );
+      if (settings.joinMode === "quorum_of" && (!Number.isInteger(settings.joinMin) || settings.joinMin < 1 || settings.joinMin > incomingCount)) {
+        state.studioRoleConfigEditor = { ...(state.studioRoleConfigEditor || {}), roleId: selectedRoleIdValue, saving: false, dirty: true, error: t("studio.invalidQuorumMinimum", undefined, "Quorum minimum must be between 1 and the number of incoming flows."), draft };
+        renderStudioSelectionDialog();
+        return;
+      }
+      if (settings.loopMax !== undefined && (!Number.isInteger(settings.loopMax) || settings.loopMax < 1)) {
+        state.studioRoleConfigEditor = { ...(state.studioRoleConfigEditor || {}), roleId: selectedRoleIdValue, saving: false, dirty: true, error: t("studio.invalidLoopBudget", undefined, "Loop budget must be a positive integer."), draft };
+        renderStudioSelectionDialog();
+        return;
+      }
+      if (invalidReview) {
+        state.studioRoleConfigEditor = { ...(state.studioRoleConfigEditor || {}), roleId: selectedRoleIdValue, saving: false, dirty: true, error: t("studio.invalidReviewSetting", undefined, "Review timeout and rework limits must be non-negative whole numbers."), draft };
         renderStudioSelectionDialog();
         return;
       }
@@ -3467,7 +3570,8 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
             : undefined,
           modelRef: bindingKind === "model" ? \`\${String(draft.backend || "").trim()}/\${String(draft.modelId || "").trim()}\` : undefined,
           profileId: bindingKind === "exec" ? String(draft.profileId || "").trim() : undefined,
-          contextMap: parsedContextMap.value,
+          contextMap: draft.contextMap,
+          roleSettings: settings,
           profileDraft: needsGeneratedExecutionConfig ? {
             profileId: generatedProfileId,
             toolRef: generatedToolRef,
@@ -3492,6 +3596,100 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
     }
 
     function bindStudioRoleConfigEditorControls() {
+      for (const button of Array.from(workbenchBodyEl.querySelectorAll("[data-system-settings-save]"))) {
+        bindOnce(button, "click", "system-settings-save", async () => {
+          const settings = {};
+          for (const field of Array.from(workbenchBodyEl.querySelectorAll("[data-system-setting]"))) {
+            settings[field.getAttribute("data-system-setting")] = String(field.value || "").trim();
+          }
+          if (!settings.systemId || !settings.systemVersion || !settings.lawGlobalRef || !settings.entryRoleId || !settings.entryEventType) {
+            setFlash("error", t("studio.systemSettingsRequired", undefined, "System ID, version, Law, entry role and entry event are required."));
+            return;
+          }
+          if (Boolean(settings.handoffMode) !== Boolean(settings.handoffContracts)) {
+            setFlash("error", t("studio.handoffSettingsPairRequired", undefined, "Handoff mode and contracts file must be set together."));
+            return;
+          }
+          const selectedRole = selectedStudioRoleId();
+          const result = applyStudioAuthoringCommand({
+            authoring: state.studioBridge.authoring,
+            command: { type: "update-system", system: settings }
+          });
+          result.selectedRoleId = selectedRole;
+          await applyStudioGraphAuthoringCommand(result, {
+            successMessage: t("studio.systemSettingsSaved", undefined, "System settings saved."),
+            afterApply: () => loadStudioRoleConfigEditor(selectedRole, { force: true })
+          });
+        });
+      }
+      for (const button of Array.from(workbenchBodyEl.querySelectorAll("[data-context-map-add]"))) {
+        bindOnce(button, "click", "context-map-add", () => {
+          const rows = workbenchBodyEl.querySelector("[data-context-map-rows]");
+          const template = workbenchBodyEl.querySelector("[data-context-map-row-template]");
+          const row = template?.content?.firstElementChild?.cloneNode(true);
+          if (!rows || !row) return;
+          row.querySelector("[data-context-map-optional]").checked = false;
+          rows.appendChild(row);
+          bindStudioRoleConfigEditorControls();
+          state.studioRoleConfigEditor.draft = readStudioRoleConfigDraft();
+          state.studioRoleConfigEditor.dirty = true;
+          enableStudioEditorButtons(["[data-role-config-save]", "[data-role-config-revert]"]);
+        });
+      }
+      for (const button of Array.from(workbenchBodyEl.querySelectorAll("[data-context-map-remove]"))) {
+        bindOnce(button, "click", "context-map-remove", () => {
+          button.closest("[data-context-map-row]")?.remove();
+          const preview = workbenchBodyEl.querySelector("[data-context-map-preview]");
+          if (preview) preview.textContent = JSON.stringify(Object.fromEntries(Object.entries(readStudioContextMapRows()).sort(([left], [right]) => left.localeCompare(right)).map(([key, selector]) => [key, selector])), null, 2);
+          state.studioRoleConfigEditor.draft = readStudioRoleConfigDraft();
+          state.studioRoleConfigEditor.dirty = true;
+          enableStudioEditorButtons(["[data-role-config-save]", "[data-role-config-revert]"]);
+        });
+      }
+      for (const element of Array.from(workbenchBodyEl.querySelectorAll("[data-context-map-target]"))) {
+        bindOnce(element, "input", "context-map-edit", () => {
+          state.studioRoleConfigEditor.draft = readStudioRoleConfigDraft();
+          state.studioRoleConfigEditor.dirty = true;
+          const preview = workbenchBodyEl.querySelector("[data-context-map-preview]");
+          if (preview) preview.textContent = JSON.stringify(Object.fromEntries(Object.entries(readStudioContextMapRows()).sort(([left], [right]) => left.localeCompare(right)).map(([key, selector]) => [key, selector])), null, 2);
+          enableStudioEditorButtons(["[data-role-config-save]", "[data-role-config-revert]"]);
+        });
+      }
+      for (const element of Array.from(workbenchBodyEl.querySelectorAll("[data-context-map-selector]"))) {
+        bindOnce(element, "change", "context-map-source-change", () => {
+          const row = element.closest("[data-context-map-row]");
+          const optional = row?.querySelector("[data-context-map-optional]");
+          const supported = String(element.value || "").startsWith("global.human_review.current");
+          if (optional) {
+            optional.disabled = !supported;
+            if (!supported) optional.checked = false;
+          }
+          state.studioRoleConfigEditor.draft = readStudioRoleConfigDraft();
+          state.studioRoleConfigEditor.dirty = true;
+          const preview = workbenchBodyEl.querySelector("[data-context-map-preview]");
+          if (preview) preview.textContent = JSON.stringify(readStudioContextMapRows(), null, 2);
+          enableStudioEditorButtons(["[data-role-config-save]", "[data-role-config-revert]"]);
+        });
+      }
+      for (const element of Array.from(workbenchBodyEl.querySelectorAll("[data-context-map-optional]"))) {
+        bindOnce(element, "change", "context-map-optional-change", () => {
+          state.studioRoleConfigEditor.draft = readStudioRoleConfigDraft();
+          state.studioRoleConfigEditor.dirty = true;
+          const preview = workbenchBodyEl.querySelector("[data-context-map-preview]");
+          if (preview) preview.textContent = JSON.stringify(readStudioContextMapRows(), null, 2);
+          enableStudioEditorButtons(["[data-role-config-save]", "[data-role-config-revert]"]);
+        });
+      }
+      for (const element of Array.from(workbenchBodyEl.querySelectorAll("[data-role-setting], [data-route-order-position]"))) {
+        const syncSettings = () => {
+          const draft = readStudioRoleConfigDraft();
+          state.studioRoleConfigEditor = { ...(state.studioRoleConfigEditor || {}), dirty: true, saving: false, error: "", draft };
+          enableStudioEditorButtons(["[data-role-config-save]", "[data-role-config-revert]"]);
+          if (["joinMode", "reviewEnabled"].includes(element.getAttribute("data-role-setting"))) renderStudioSelectionDialog();
+        };
+        bindOnce(element, "input", "role-setting-input", syncSettings);
+        bindOnce(element, "change", "role-setting-change", syncSettings);
+      }
       for (const button of Array.from(workbenchBodyEl.querySelectorAll("[data-role-config-save]") || [])) {
         bindOnce(button, "click", "role-config-save", () => {
           void saveStudioRoleConfigEditor(button.getAttribute("data-role-config-save") || selectedStudioRoleId());
@@ -3884,20 +4082,6 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
         renderStudioSelectionDialog();
         return;
       }
-      const parsedTargetContextMap = parseContextMapDraft(draft.targetContextMapText);
-      if (!parsedTargetContextMap.ok) {
-        state.studioFlowConfigEditor = {
-          ...(state.studioFlowConfigEditor || {}),
-          flowKey: selectedFlowKeyValue,
-          saving: false,
-          dirty: true,
-          error: parsedTargetContextMap.error || t("studio.contextMapObjectRequired", undefined, "Context map must be a JSON object."),
-          validation,
-          draft
-        };
-        renderStudioSelectionDialog();
-        return;
-      }
       state.studioFlowConfigEditor = {
         ...(state.studioFlowConfigEditor || {}),
         flowKey: selectedFlowKeyValue,
@@ -3921,23 +4105,9 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
         runtimeOnlyErrorFlow: draft.runtimeOnlyErrorFlow === true,
         participatesInJoin: draft.participatesInJoin === true
       };
-      const targetRoleCommand = String(draft.targetRoleId || "").trim() && String(draft.targetRoleId || "").trim() !== "output"
-        ? {
-            type: "update-role",
-            originalRoleId: String(draft.targetRoleId || "").trim(),
-            roleId: String(draft.targetRoleId || "").trim(),
-            title: state.studioBridge?.authoring?.roles?.[String(draft.targetRoleId || "").trim()]?.title,
-            bindingKind: state.studioBridge?.authoring?.roles?.[String(draft.targetRoleId || "").trim()]?.bindingKind,
-            modelRef: state.studioBridge?.authoring?.roles?.[String(draft.targetRoleId || "").trim()]?.modelRef,
-            profileId: state.studioBridge?.authoring?.roles?.[String(draft.targetRoleId || "").trim()]?.profileId,
-            contextMap: parsedTargetContextMap.value
-          }
-        : null;
       const result = applyStudioAuthoringCommand({
         authoring: state.studioBridge.authoring,
-        command: targetRoleCommand
-          ? { type: "batch", commands: [flowCommand, targetRoleCommand] }
-          : flowCommand
+        command: flowCommand
       });
       await applyStudioGraphAuthoringCommand(result, {
         successMessage: t("studio.flowConfigSaved", { flowKey: selectedFlowKeyValue }, "Flow config saved: {flowKey}."),
@@ -3961,12 +4131,6 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
       for (const element of flowConfigEditorFieldElements()) {
         bindOnce(element, "input", "flow-config-field", () => {
           const draft = readStudioFlowConfigDraft();
-          if (
-            (element.getAttribute("data-flow-config-field") || "") === "targetRoleId" &&
-            String(draft.targetRoleId || "") !== currentStudioFlowTargetRoleId()
-          ) {
-            draft.targetContextMapText = contextMapTextForRole(draft.targetRoleId);
-          }
           state.studioFlowConfigEditor = {
             ...(state.studioFlowConfigEditor || {}),
             flowKey: state.studioFlowConfigEditor?.flowKey || selectedStudioFlowKey(),
@@ -3991,12 +4155,6 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
         });
         bindOnce(element, "change", "flow-config-field-change", () => {
           const draft = readStudioFlowConfigDraft();
-          if (
-            (element.getAttribute("data-flow-config-field") || "") === "targetRoleId" &&
-            String(draft.targetRoleId || "") !== currentStudioFlowTargetRoleId()
-          ) {
-            draft.targetContextMapText = contextMapTextForRole(draft.targetRoleId);
-          }
           state.studioFlowConfigEditor = {
             ...(state.studioFlowConfigEditor || {}),
             flowKey: state.studioFlowConfigEditor?.flowKey || selectedStudioFlowKey(),

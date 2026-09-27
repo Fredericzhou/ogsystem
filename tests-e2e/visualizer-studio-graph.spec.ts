@@ -1,5 +1,5 @@
 import { test, expect } from "@playwright/test";
-import { mkdir, mkdtemp, symlink, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, symlink, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 
@@ -225,6 +225,28 @@ test("Studio Bridge renders and edits through the real graph workspace", async (
     await page.locator('[data-studio-role-id="demo-analyst"]').click();
     await expect(page.locator('[data-studio-selection-panel="structure"]')).toBeVisible();
     await expect(page.locator('[data-studio-selection-inline-editor] [data-role-config-editor="demo-analyst"]')).toBeVisible();
+    await expect(page.locator("[data-flow-config-field='targetContextMap']")).toHaveCount(0);
+    await page.locator("[data-context-map-add]").click();
+    await page.locator("[data-context-map-target]").last().fill("request");
+    await page.locator("[data-context-map-selector]").last().selectOption("global.task");
+    await expect(page.locator("[data-context-map-optional]").last()).toBeDisabled();
+    await page.locator("[data-context-map-add]").click();
+    await page.locator("[data-context-map-target]").last().fill("reviewNote");
+    await page.locator("[data-context-map-selector]").last().selectOption("global.human_review.current.comment");
+    await expect(page.locator("[data-context-map-optional]").last()).toBeEnabled();
+    await page.locator("[data-context-map-optional]").last().check();
+    await expect(page.locator("[data-role-config-save='demo-analyst']")).toHaveAttribute("data-bound-role-config-save", "true");
+    await page.locator("[data-role-config-save='demo-analyst']").click();
+    const authoringDraftPath = path.resolve(workdir, ".ogs/studio/system.authoring.json");
+    await expect.poll(async () => readFile(authoringDraftPath, "utf8").then(JSON.parse).catch(() => null)).toMatchObject({
+      roles: { "demo-analyst": { contextMap: { request: "global.task", reviewNote: "global.human_review.current.comment?" } } }
+    });
+    await page.locator(".studio-system-settings summary").click();
+    await page.locator("[data-system-setting='entryEventType']").fill("BEGIN");
+    await page.locator("[data-system-settings-save]").click();
+    await expect.poll(async () => readFile(authoringDraftPath, "utf8").then(JSON.parse).catch(() => null)).toMatchObject({
+      system: { entryEventType: "BEGIN" }
+    });
     await expect(page.locator('[data-studio-side-tab="structure"]')).toHaveAttribute("aria-pressed", "true");
     await expectStudioCellPulse(page, "demo-analyst");
     await page.locator("[data-studio-selection-back]").click();
@@ -233,6 +255,7 @@ test("Studio Bridge renders and edits through the real graph workspace", async (
     const firstFilteredFlow = page.locator('[data-studio-flow-key]').first();
     await firstFilteredFlow.click();
     await expect(page.locator('[data-studio-selection-panel="structure"]')).toBeVisible();
+    await expect(page.locator(".studio-system-settings")).toHaveCount(1);
     await expect(page.locator('[data-studio-selection-inline-editor] [data-flow-config-editor]')).toBeVisible();
     await expect(page.locator('[data-studio-side-tab="structure"]')).toHaveAttribute("aria-pressed", "true");
     await page.locator("[data-studio-selection-back]").click();

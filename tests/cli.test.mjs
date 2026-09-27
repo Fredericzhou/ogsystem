@@ -24,10 +24,10 @@ function runCli(args) {
   });
 }
 
-test("cli fails when required args are missing", async () => {
-  const { code, stderr } = await runCli(["run", "start", "--input", "hello"]);
+test("cli fails when run start input is missing", async () => {
+  const { code, stderr } = await runCli(["run", "start", "--system", "system.mmd"]);
   assert.strictEqual(code, 1);
-  assert.match(stderr, /run start requires --system and --input/);
+  assert.match(stderr, /run start requires --input/);
   assert.match(stderr, /errorCode=CLI_MISSING_REQUIRED_ARGS/);
   assert.match(stderr, /stage=cli/);
 });
@@ -72,6 +72,15 @@ test("cli rejects removed top-level adapter flags", async () => {
   assert.match(stderr, /errorCode=CLI_INVALID_ARGS/);
 });
 
+test("cli does not retain legacy directory flag aliases", async () => {
+  const { code, stderr } = await runCli([
+    "run", "start", "--system", "examples/target-model-binding-system.mmd", "--input", "legacy flag", "--workdir", "."
+  ]);
+  assert.equal(code, 1);
+  assert.match(stderr, /Unknown option '--workdir'/);
+  assert.match(stderr, /errorCode=CLI_INVALID_ARGS/);
+});
+
 test("modern run start input errors do not print resume hints", async () => {
   const { code, stderr } = await runCli([
     "run",
@@ -80,7 +89,7 @@ test("modern run start input errors do not print resume hints", async () => {
     "examples/target-model-binding-system.mmd"
   ]);
   assert.strictEqual(code, 1);
-  assert.match(stderr, /run start requires --system and --input/);
+  assert.match(stderr, /run start requires --input/);
   assert.doesNotMatch(stderr, /\[hint\]/);
 });
 

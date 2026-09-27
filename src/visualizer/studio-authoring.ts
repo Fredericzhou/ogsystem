@@ -125,6 +125,10 @@ async function loadRoleDisplayNames(args: {
   return names;
 }
 
+function detectLegacyEngine(systemSource: string): "langgraph" | undefined {
+  return /^\s*%%\s*engine\s*=\s*langgraph\s*$/m.test(systemSource) ? "langgraph" : undefined;
+}
+
 function detectEntryEventType(systemSource: string, entryRoleId: string): string | undefined {
   const lines = String(systemSource || "").split(/\r?\n/);
   for (const line of lines) {
@@ -201,6 +205,7 @@ export function importSystemToAuthoring(args: {
     system: {
       systemId: args.system.systemId,
       systemVersion: args.system.systemVersion,
+      legacyEngine: detectLegacyEngine(args.systemSource ?? ""),
       entryRoleId: args.system.entryRoleId,
       entryEventType: detectEntryEventType(args.systemSource ?? "", args.system.entryRoleId),
       lawGlobalRef: args.system.lawBinding.globalLawRef,
@@ -391,6 +396,7 @@ export function serializeAuthoringToMermaid(authoring: StudioAuthoringDocument):
   const roleIds = Object.keys(authoring.roles).sort(sortStrings);
   const metadata: string[] = [
     "flowchart TD",
+    serializeMetadataLine("engine", authoring.system.legacyEngine),
     serializeMetadataLine("system.id", authoring.system.systemId),
     serializeMetadataLine("system.version", authoring.system.systemVersion),
     serializeMetadataLine("law.global", authoring.system.lawGlobalRef),

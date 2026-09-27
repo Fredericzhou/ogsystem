@@ -113,7 +113,7 @@ test("model runtime artifacts match the documented contract", async () => {
   assert.match(reproScript, /# OS:/);
   assert.match(reproScript, /# Timestamp:/);
   assert.match(reproScript, /ARGS=\(\n  run\n  resume\n  "\$RUN_ID"/);
-  assert.match(reproScript, /--workdir "\$WORKDIR"/);
+  assert.match(reproScript, /--ogs-dir "\$WORKDIR"/);
   await readFile(path.resolve(runDir, "audit", "summary.md"), "utf8");
   await readFile(path.resolve(runDir, "audit", "transitions.md"), "utf8");
   assert.equal(resolvedConfig.effective?.invocation?.dryRun, true);

@@ -51,6 +51,69 @@ paths:
           description: Indexed runs and generation time.
         "401":
           $ref: "#/components/responses/ApiError"
+  /api/v1/sessions:
+    get:
+      operationId: listSessions
+      responses:
+        "200": { description: Persisted interactive Sessions for this OGS project. }
+    post:
+      operationId: createSession
+      responses:
+        "201": { description: New Session pinned to the current System and execution configuration. }
+        "403": { $ref: "#/components/responses/ApiError" }
+  /api/v1/sessions/{sessionId}:
+    get:
+      operationId: getSession
+      parameters:
+        - name: sessionId
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        "200": { description: Session metadata and its Turn/Run status list. }
+        "404": { $ref: "#/components/responses/ApiError" }
+  /api/v1/sessions/{sessionId}/turns:
+    post:
+      operationId: submitSessionTurn
+      parameters:
+        - name: sessionId
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+        - name: Idempotency-Key
+          in: header
+          required: true
+          schema: { type: string, minLength: 1 }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [input]
+              properties:
+                input: { type: string, minLength: 1 }
+                dryRun: { type: boolean, default: false }
+      responses:
+        "202": { description: Turn accepted with a preallocated turnId and runId. }
+        "400": { $ref: "#/components/responses/ApiError" }
+        "409": { description: Session is stale or idempotency key was reused with different input. }
+  /api/v1/sessions/{sessionId}/events:
+    get:
+      operationId: streamSessionEvents
+      parameters:
+        - name: sessionId
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+        - name: Last-Event-ID
+          in: header
+          schema: { type: string }
+      responses:
+        "200":
+          description: Resumable server-sent Session and Turn events.
+          content:
+            text/event-stream: {}
   /api/v1/runs/{runId}:
     get:
       operationId: getRun

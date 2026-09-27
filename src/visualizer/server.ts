@@ -7,13 +7,15 @@
  * - Read-mostly; mutations are limited to lifecycle/control-plane entrypoints.
  */
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
-import { readdir, readFile, stat, writeFile } from "node:fs/promises";
+import { appendFile, mkdir, readdir, readFile, stat, unlink, writeFile } from "node:fs/promises";
 import { createHash } from "node:crypto";
 import { isIP } from "node:net";
 import { dirname, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { runSystemWithAdapter } from "../runtime/adapter.js";
+import { randomUUID } from "node:crypto";
+import { loadSystemFromMermaid } from "../runtime/parse-mermaid.js";
 import {
   rebuildRunsIndex,
   RunRoleIoLookupError,
@@ -26,8 +28,10 @@ import {
   createLocalControlPlaneIdentityProvider,
   type AuthenticatedControlPlaneIdentity,
   type ControlPlaneAction,
+  type ControlPlanePrincipal,
   type ControlPlaneIdentityProvider
 } from "../runtime/identity.js";
+import { writeJsonFileAtomic } from "../runtime/json-file.js";
 import { loadModelSelection } from "../runtime/model-selection.js";
 import { loadConversationRunProjection, normalizeConversationItemStatus } from "../runtime/conversation-projector.js";
 import {
@@ -43,6 +47,15 @@ import {
 } from "./run-query-service.js";
 import { inspectHumanReview, listHumanReviews } from "./review-query-service.js";
 import { requestStop, writeHumanReviewDecision } from "./run-control-service.js";
+import {
+  createServeSession,
+  fingerprintServeProject,
+  listServeSessions,
+  persistServeSession,
+  readServeSession,
+  type ServeProject,
+  type ServeSession
+} from "./session-service.js";
 import {
   inspectRunContractStatusVisualization,
   inspectRunFailureVisualization,
@@ -149,6 +162,7 @@ import {
 
 type VisualizationServerOptions = {
   workdir: string;
+  serveProject?: ServeProject;
   host: string;
   port: number;
   identityProvider?: ControlPlaneIdentityProvider<IncomingMessage>;
@@ -167,6 +181,9 @@ type VisualizationServerOptions = {
 
 type VisualizationServerState = {
   workdir: string;
+  serveProject?: ServeProject;
+  turnQueue: Promise<void>;
+  turnAcceptLocks: Map<string, Promise<void>>;
   projectCreateRequests: Map<string, ProjectCreateRequestCacheEntry>;
   projectCreateRequestCacheTtlMs: number;
   projectCreateRequestCacheMaxSize: number;
@@ -649,6 +666,7 @@ function isLoopbackHost(host: string): boolean {
 function resolveControlPlaneAction(method: string, segments: string[]): ControlPlaneAction {
   if (method !== "POST" && method !== "PUT" && method !== "PATCH" && method !== "DELETE") return "read";
   if (segments[2] === "runs" && segments[3] === "start") return "run.start";
+  if (segments[2] === "sessions" && segments[4] === "turns") return "run.start";
   if (segments[2] === "runs" && segments[4] === "stop") return "run.control";
   if (segments[2] === "runs" && segments[4] === "resume") return "run.control";
   if (segments[2] === "runs" && segments[4] === "reviews" && segments[6] === "decide") return "review.decide";
@@ -1379,6 +1397,13 @@ async function handleApiRunResume(
     logRun: false
   });
   await rebuildRunsIndex(workdir);
+  for (const session of await listServeSessions(workdir)) {
+    const turn = session.turns.find((item) => item.runId === runId);
+    if (!turn) continue;
+    turn.status = asString(asRecord(result)?.status) ?? "unknown";
+    await persistServeSession(workdir, session);
+    await emitSessionEvent(workdir, session.sessionId, { type: "turn.resumed", turnId: turn.turnId, runId, status: turn.status });
+  }
   await recordControlPlaneAudit({ workdir, runId, action: "run.resume", principal });
   jsonResponse(
     response,
@@ -1617,6 +1642,238 @@ function getExactApiRouteHandler(method: string, segments: string[]): ExactApiRo
   return EXACT_API_ROUTE_HANDLERS.get(`${method} ${segments.slice(2).join("/")}`);
 }
 
+async function emitSessionEvent(workdir: string, sessionId: string, event: Record<string, unknown>): Promise<void> {
+  const eventPath = resolve(workdir, ".ogs", "sessions", sessionId, "events.ndjson");
+  const lockKey = `${workdir}:${sessionId}`;
+  const previous = sessionEventLocks.get(lockKey) ?? Promise.resolve();
+  let release = () => {};
+  const gate = new Promise<void>((resolveGate) => { release = resolveGate; });
+  const queued = previous.then(() => gate);
+  sessionEventLocks.set(lockKey, queued);
+  await previous;
+  try {
+    const prior = await readFile(eventPath, "utf8").catch(() => "");
+    const sequence = prior ? prior.trimEnd().split(/\r?\n/).length : 0;
+    await appendFile(eventPath, `${JSON.stringify({ id: sequence, at: new Date().toISOString(), ...event })}\n`, "utf8");
+  } finally {
+    release();
+    if (sessionEventLocks.get(lockKey) === queued) sessionEventLocks.delete(lockKey);
+  }
+}
+
+const sessionEventLocks = new Map<string, Promise<void>>();
+
+function sessionTurnRequestPath(workdir: string, sessionId: string, turnId: string): string {
+  return resolve(workdir, ".ogs", "sessions", sessionId, "turn-requests", `${turnId}.json`);
+}
+
+type PersistedSessionTurnRequest = {
+  input: string;
+  dryRun: boolean;
+  principal: ControlPlanePrincipal;
+};
+
+async function executeSessionTurn(state: VisualizationServerState, session: ServeSession, turn: ServeSession["turns"][number], input: string, dryRun: boolean, principal: AuthenticatedControlPlaneIdentity["principal"]): Promise<void> {
+  const project = state.serveProject;
+  if (!project) return;
+  let currentSession: ServeSession | undefined;
+  let turnRecord = { ...turn, status: "running" };
+  try {
+    currentSession = await readServeSession(state.workdir, session.sessionId);
+    if (!currentSession) return;
+    currentSession.turns = currentSession.turns.map((item) => item.turnId === turn.turnId ? turnRecord : item);
+    await persistServeSession(state.workdir, currentSession);
+    await emitSessionEvent(state.workdir, session.sessionId, { type: "turn.started", turnId: turn.turnId, runId: turn.runId });
+    const observed = await fingerprintServeProject({ ...project, systemPath: currentSession.systemPath });
+    if (observed.systemDigest !== currentSession.systemDigest || observed.configurationDigest !== currentSession.configurationDigest) {
+      currentSession.status = "stale";
+      currentSession.turns = currentSession.turns.map((item) => item.turnId === turn.turnId ? { ...turnRecord, status: "stale" } : item);
+      await persistServeSession(state.workdir, currentSession);
+      const child = await createServeSession({ project, parentSessionId: currentSession.sessionId });
+      await emitSessionEvent(state.workdir, session.sessionId, { type: "session.stale", childSessionId: child.sessionId });
+      await unlink(sessionTurnRequestPath(state.workdir, session.sessionId, turn.turnId)).catch(() => undefined);
+      return;
+    }
+    const result = await runSystemWithAdapter({
+      systemPath: resolve(state.workdir, ".ogs", "sessions", currentSession.sessionId, "system.mmd"),
+      systemBaseDir: dirname(currentSession.systemPath),
+      prompt: input,
+      workdir: state.workdir,
+      targetDir: currentSession.workspaceDir,
+      runId: turn.runId,
+      dryRun,
+      logRun: false
+    });
+    const status = asString(asRecord(result)?.status) ?? "unknown";
+    currentSession = await readServeSession(state.workdir, session.sessionId) ?? currentSession;
+    currentSession.turns = currentSession.turns.map((item) => item.turnId === turn.turnId ? { ...turnRecord, status } : item);
+    await persistServeSession(state.workdir, currentSession);
+    await rebuildRunsIndex(state.workdir);
+    await recordControlPlaneAudit({ workdir: state.workdir, runId: turn.runId, action: "run.start", principal });
+    await writeRunSnapshotManifest({ workdir: state.workdir, runId: turn.runId, systemPath: session.systemPath });
+    await emitSessionEvent(state.workdir, session.sessionId, { type: "turn.completed", turnId: turn.turnId, runId: turn.runId, status });
+    await unlink(sessionTurnRequestPath(state.workdir, session.sessionId, turn.turnId)).catch(() => undefined);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    currentSession = await readServeSession(state.workdir, session.sessionId).catch(() => undefined) ?? currentSession;
+    if (currentSession) {
+      turnRecord = { ...turn, status: "failed" };
+      currentSession.turns = currentSession.turns.map((item) => item.turnId === turn.turnId ? turnRecord : item);
+      await persistServeSession(state.workdir, currentSession).catch(() => undefined);
+    }
+    await emitSessionEvent(state.workdir, session.sessionId, { type: "turn.failed", turnId: turn.turnId, runId: turn.runId, message }).catch(() => undefined);
+    await unlink(sessionTurnRequestPath(state.workdir, session.sessionId, turn.turnId)).catch(() => undefined);
+  }
+}
+
+async function recoverSessionTurns(state: VisualizationServerState): Promise<void> {
+  if (!state.serveProject) return;
+  for (const session of await listServeSessions(state.workdir)) {
+    for (const turn of session.turns) {
+      if (turn.status !== "queued" && turn.status !== "running") continue;
+      const requestPath = sessionTurnRequestPath(state.workdir, session.sessionId, turn.turnId);
+      let request: PersistedSessionTurnRequest;
+      try {
+        request = JSON.parse(await readFile(requestPath, "utf8")) as PersistedSessionTurnRequest;
+      } catch {
+        const current = await readServeSession(state.workdir, session.sessionId);
+        const persistedTurn = current?.turns.find((item) => item.turnId === turn.turnId);
+        if (current && persistedTurn && (persistedTurn.status === "queued" || persistedTurn.status === "running")) {
+          persistedTurn.status = "failed";
+          await persistServeSession(state.workdir, current);
+          await emitSessionEvent(state.workdir, session.sessionId, {
+            type: "turn.failed",
+            turnId: turn.turnId,
+            runId: turn.runId,
+            message: "The server restarted before this turn could be recovered because its request data is missing."
+          });
+        }
+        continue;
+      }
+      const current = await readServeSession(state.workdir, session.sessionId);
+      if (!current || current.status !== "active") continue;
+      const persistedTurn = current.turns.find((item) => item.turnId === turn.turnId);
+      if (!persistedTurn || (persistedTurn.status !== "queued" && persistedTurn.status !== "running")) continue;
+      if (persistedTurn.status === "running") {
+        persistedTurn.status = "queued";
+        await persistServeSession(state.workdir, current);
+      }
+      await emitSessionEvent(state.workdir, session.sessionId, { type: "turn.recovered", turnId: turn.turnId, runId: turn.runId });
+      state.turnQueue = state.turnQueue.catch(() => undefined).then(() => executeSessionTurn(
+        state,
+        current,
+        persistedTurn,
+        request.input,
+        request.dryRun,
+        request.principal
+      ));
+    }
+  }
+}
+
+async function withSessionTurnLock<T>(state: VisualizationServerState, sessionId: string, action: () => Promise<T>): Promise<T> {
+  const previous = state.turnAcceptLocks.get(sessionId) ?? Promise.resolve();
+  let release = () => {};
+  const gate = new Promise<void>((resolveGate) => { release = resolveGate; });
+  const queued = previous.then(() => gate);
+  state.turnAcceptLocks.set(sessionId, queued);
+  await previous;
+  try { return await action(); }
+  finally {
+    release();
+    if (state.turnAcceptLocks.get(sessionId) === queued) state.turnAcceptLocks.delete(sessionId);
+  }
+}
+
+async function handleSessionRoutes(
+  state: VisualizationServerState,
+  request: IncomingMessage,
+  response: ServerResponse,
+  segments: string[],
+  url: URL,
+  principal: AuthenticatedControlPlaneIdentity["principal"]
+): Promise<boolean> {
+  if (!state.serveProject || segments[2] !== "sessions") return false;
+  if (segments.length === 3 && request.method === "GET") {
+    jsonResponse(response, 200, { sessions: await listServeSessions(state.workdir) });
+    return true;
+  }
+  if (segments.length === 3 && request.method === "POST") {
+    const session = await createServeSession({ project: state.serveProject });
+    await emitSessionEvent(state.workdir, session.sessionId, { type: "session.created", sessionId: session.sessionId });
+    jsonResponse(response, 201, session);
+    return true;
+  }
+  const sessionId = segments[3];
+  if (!sessionId) return false;
+  const session = await readServeSession(state.workdir, sessionId);
+  if (!session) throw new HttpError(404, "SESSION_NOT_FOUND", `Session not found: ${sessionId}`);
+  if (segments.length === 4 && request.method === "GET") {
+    jsonResponse(response, 200, session);
+    return true;
+  }
+  if (segments.length === 5 && segments[4] === "turns" && request.method === "POST") {
+    return withSessionTurnLock(state, sessionId, async () => {
+      const currentSession = await readServeSession(state.workdir, sessionId);
+      if (!currentSession) throw new HttpError(404, "SESSION_NOT_FOUND", `Session not found: ${sessionId}`);
+      if (currentSession.status !== "active") throw new HttpError(409, "SESSION_STALE", "Session is stale; create a new session.");
+      const current = await fingerprintServeProject({ ...state.serveProject!, systemPath: currentSession.systemPath });
+      if (current.systemDigest !== currentSession.systemDigest || current.configurationDigest !== currentSession.configurationDigest) {
+        currentSession.status = "stale";
+        await persistServeSession(state.workdir, currentSession);
+        const child = await createServeSession({ project: state.serveProject!, parentSessionId: sessionId });
+        throw new HttpError(409, "SESSION_CONFIGURATION_CHANGED", "System or execution configuration changed; continue in the linked child session.", { childSessionId: child.sessionId });
+      }
+      const body = await readJsonRequest(request);
+      const input = asString(body.input)?.trim();
+      const dryRun = body.dryRun === true;
+      const idempotencyKey = request.headers["idempotency-key"];
+      if (!input) throw new HttpError(400, "TURN_INPUT_REQUIRED", "input is required.");
+      if (typeof idempotencyKey !== "string" || !idempotencyKey.trim()) throw new HttpError(400, "IDEMPOTENCY_KEY_REQUIRED", "Idempotency-Key header is required.");
+      const requestDigest = createHash("sha256").update(JSON.stringify({ input, dryRun })).digest("hex");
+      const prior = currentSession.turns.find((turn) => turn.idempotencyKey === idempotencyKey);
+      if (prior) {
+        if (prior.requestDigest !== requestDigest) throw new HttpError(409, "IDEMPOTENCY_KEY_REUSED", "Idempotency-Key was already used with a different request.");
+        jsonResponse(response, 202, prior);
+        return true;
+      }
+      const turn = { turnId: randomUUID(), runId: randomUUID(), idempotencyKey, status: "queued", requestDigest, dryRun, createdAt: new Date().toISOString() };
+      const requestPath = sessionTurnRequestPath(state.workdir, sessionId, turn.turnId);
+      await mkdir(dirname(requestPath), { recursive: true });
+      await writeJsonFileAtomic(requestPath, { input, dryRun, principal });
+      currentSession.turns.push(turn);
+      await persistServeSession(state.workdir, currentSession);
+      await emitSessionEvent(state.workdir, sessionId, { type: "turn.queued", turnId: turn.turnId, runId: turn.runId });
+      state.turnQueue = state.turnQueue.catch(() => undefined).then(() => executeSessionTurn(state, currentSession, turn, input, dryRun, principal));
+      jsonResponse(response, 202, turn);
+      return true;
+    });
+  }
+  if (segments.length === 5 && segments[4] === "events" && request.method === "GET") {
+    const fromHeader = Number(request.headers["last-event-id"] ?? "0");
+    let cursor = Number.isFinite(fromHeader) && fromHeader >= 0 ? fromHeader + 1 : Math.max(0, Number(url.searchParams.get("after") ?? "0") || 0);
+    response.writeHead(200, { "content-type": "text/event-stream; charset=utf-8", "cache-control": "no-cache, no-transform", connection: "keep-alive" });
+    response.write("retry: 2000\n");
+    let active = true;
+    const push = async () => {
+      const raw = await readFile(resolve(state.workdir, ".ogs", "sessions", sessionId, "events.ndjson"), "utf8").catch(() => "");
+      for (const line of raw.split(/\r?\n/)) {
+        if (!line) continue;
+        const event = JSON.parse(line) as Record<string, unknown>;
+        const id = typeof event.id === "number" ? event.id : -1;
+        if (id < cursor) continue;
+        response.write(`id: ${id}\nevent: event\ndata: ${JSON.stringify(event)}\n\n`);
+        cursor = id + 1;
+      }
+    };
+    const interval = setInterval(() => { if (active) void push(); }, 1000);
+    request.on("close", () => { active = false; clearInterval(interval); response.end(); });
+    await push();
+    return true;
+  }
+  return false;
+}
+
 async function handleVisualizationRequest(
   request: IncomingMessage,
   response: ServerResponse,
@@ -1659,6 +1916,8 @@ async function handleVisualizationRequest(
   if (!(await authenticated.authorize(resolveControlPlaneAction(method, segments)))) {
     throw new HttpError(403, "FORBIDDEN", "The authenticated principal is not authorized for this action.");
   }
+
+  if (await handleSessionRoutes(state, request, response, segments, url, authenticated.principal)) return;
 
   if (segments.length === 4 && segments[2] === "diagnostics" && segments[3] === "visualizer" && method === "GET") {
     await handleApiVisualizerDiagnostics(response);
@@ -2026,11 +2285,26 @@ export async function startVisualizationServer(args: VisualizationServerOptions)
   url: string;
   port: number;
 }> {
+  if (args.serveProject) {
+    await loadSystemFromMermaid(resolve(args.serveProject.systemPath));
+    const workspaceStat = await stat(resolve(args.serveProject.workspaceDir)).catch(() => undefined);
+    if (!workspaceStat?.isDirectory()) {
+      throw new Error(`SERVE_WORKSPACE_INVALID: Workspace directory does not exist: ${resolve(args.serveProject.workspaceDir)}`);
+    }
+  }
   if (!isLoopbackHost(args.host) && !args.identityProvider) {
     throw new Error("REMOTE_VISUALIZER_AUTH_REQUIRED: Non-loopback binding requires an identity provider.");
   }
   const state: VisualizationServerState = {
     workdir: resolve(args.workdir),
+    serveProject: args.serveProject ? {
+      ...args.serveProject,
+      ogsDir: resolve(args.serveProject.ogsDir),
+      systemPath: resolve(args.serveProject.systemPath),
+      workspaceDir: resolve(args.serveProject.workspaceDir)
+    } : undefined,
+  turnQueue: Promise.resolve(),
+    turnAcceptLocks: new Map(),
     projectCreateRequests: new Map(),
     projectCreateRequestCacheTtlMs: normalizePositiveInteger(
       args.projectCreateRequestCacheTtlMs,
@@ -2059,6 +2333,8 @@ export async function startVisualizationServer(args: VisualizationServerOptions)
       );
     });
   });
+
+  await recoverSessionTurns(state);
 
   await new Promise<void>((resolvePromise, rejectPromise) => {
     const handleError = (error: Error): void => {

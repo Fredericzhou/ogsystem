@@ -48,6 +48,7 @@ import { runNl2MmdCli, usage as nl2mmdUsage } from "../nl2mmd/cli.js";
 import { ensureSystemHome } from "./system-home.js";
 import { discoverLocalModelCatalog } from "./model-catalog.js";
 import { writeJsonFileAtomic } from "./json-file.js";
+import { resolveProjectTargetDirectory } from "./project-target.js";
 
 await ensureSystemHome();
 
@@ -76,6 +77,7 @@ function usageRoot(): string {
     "  nl2mmd   Generate Mermaid from natural language",
     "  project  Init, create, or sync project files",
     "  run      Start, inspect, review, or control runs",
+    "  serve    Serve interactive sessions and run management APIs",
     "  vis      Start the read-mostly visualizer",
     "",
     "Drill down:",
@@ -85,7 +87,7 @@ function usageRoot(): string {
     "  ogs project create --help",
     "  ogs run start --help",
     "  ogs vis --help",
-    "  ogs vis --workdir .",
+    "  ogs serve --ogs-dir .",
     "",
     "Modeling invariant:",
     "  A graph node is a stable responsibility role/seat; an agent performs that role's work.",
@@ -93,21 +95,21 @@ function usageRoot(): string {
     "  Events, actions, tasks, gateways, process steps, and runtime records are not role nodes.",
     "",
     "Defaults:",
-    "  commands use the current directory unless --workdir overrides it",
+    "  --ogs-dir defaults to the current directory; system.mmd defaults to its root",
   ].join("\n");
 }
 
 async function runModelsCommand(argv: string[]): Promise<void> {
   const subcommand = argv[0];
   if (subcommand !== "discover" && subcommand !== "sync") {
-    throw createCliInputError("CLI_MODELS_SUBCOMMAND", "Usage: ogs models <discover|sync> [--workdir <path>]");
+    throw createCliInputError("CLI_MODELS_SUBCOMMAND", "Usage: ogs models <discover|sync> [--ogs-dir <path>]");
   }
   const { values } = parseLifecycleArgs(argv.slice(1), {
     workdir: { type: "string" },
     help: { type: "boolean", short: "h" }
   });
   if (asBool(values.help)) {
-    console.log(`Usage:\n  ogs models ${subcommand} [--workdir <path>]\n\n  discover  Inspect installed CLI model services and refresh .ogs/model-catalog.json\n  sync      Refresh discovery and create the project model-selection file when missing`);
+    console.log(`Usage:\n  ogs models ${subcommand} [--ogs-dir <path>]\n\n  discover  Inspect installed CLI model services and refresh .ogs/model-catalog.json\n  sync      Refresh discovery and create the project model-selection file when missing`);
     return;
   }
   const workdir = resolve(asString(values.workdir) ?? process.cwd());
@@ -142,50 +144,50 @@ function usageProject(subcommand?: ProjectSubcommand): string {
   if (subcommand === "init") {
     return [
       "Usage:",
-      "  ogs project init [--template <empty|minimal|advanced-features|software-dev|consultation>] [--workdir <path>] [--target-dir <path>]",
+      "  ogs project init [--template <empty|minimal|advanced-features|software-dev|consultation>] [--ogs-dir <path>] [--workspace-dir <path>]",
       "",
       "Options:",
       "  --template <id>  Template to scaffold (default: minimal)",
-      "  --workdir <path> Project root to initialize (default: cwd)",
-      "  --target-dir <path> OpenCode coding project (default: workdir)",
+      "  --ogs-dir <path> OGS control-plane root (default: cwd)",
+      "  --workspace-dir <path> Role project workspace (default: saved binding or ogs-dir)",
       "  --help           Show help",
       "",
       "Examples:",
       "  ogs project init",
       "  ogs project init --template advanced-features",
-      "  ogs project init --workdir ./demo-app"
+      "  ogs project init --ogs-dir ./demo-app"
     ].join("\n");
   }
 
   if (subcommand === "create") {
     return [
       "Usage:",
-      "  ogs project create <name> [--template <empty|minimal|advanced-features|software-dev|consultation>] [--workdir <path>] [--target-dir <path>]",
+      "  ogs project create <name> [--template <empty|minimal|advanced-features|software-dev|consultation>] [--ogs-dir <path>] [--workspace-dir <path>]",
       "",
       "Arguments:",
       "  <name>           New project directory name",
       "",
       "Options:",
       "  --template <id>  Template to scaffold (default: minimal)",
-      "  --workdir <path> Parent directory for the new project (default: cwd)",
-      "  --target-dir <path> OpenCode coding project (default: new project)",
+      "  --ogs-dir <path> Parent directory for the new project (default: cwd)",
+      "  --workspace-dir <path> Role project workspace (default: new project)",
       "  --help           Show help",
       "",
       "Examples:",
       "  ogs project create demo-app",
       "  ogs project create demo-app --template advanced-features",
-      "  ogs project create demo-app --workdir ./sandbox"
+      "  ogs project create demo-app --ogs-dir ./sandbox"
     ].join("\n");
   }
 
   if (subcommand === "sync") {
     return [
       "Usage:",
-      "  ogs project sync --system <file.mmd> [--workdir <path>]",
+      "  ogs project sync --system <file.mmd> [--ogs-dir <path>]",
       "",
       "Options:",
       "  --system <file>  Mermaid system source to scan for role dependencies",
-      "  --workdir <path> Project root (default: cwd)",
+      "  --ogs-dir <path> Project root (default: cwd)",
       "  --help           Show help",
       "",
       "Example:",
@@ -196,10 +198,10 @@ function usageProject(subcommand?: ProjectSubcommand): string {
   if (subcommand === "sync-models") {
     return [
       "Usage:",
-      "  ogs project sync-models [--workdir <path>]",
+      "  ogs project sync-models [--ogs-dir <path>]",
       "",
       "Options:",
-      "  --workdir <path> Project root (default: cwd)",
+      "  --ogs-dir <path> Project root (default: cwd)",
       "  --help           Show help",
       "",
       "Behavior:",
@@ -235,18 +237,17 @@ function usageRun(subcommand?: RunSubcommand): string {
   if (subcommand === "start") {
     return [
       "Usage:",
-      "  ogs run start --system <file.mmd> --input <text> [options]",
+      "  ogs run start [--system <file.mmd>] --input <text> [options]",
       "",
       "Required:",
-      "  --system <file>        Mermaid system source to execute",
       "  --input <text>         Initial user input",
       "",
       "Options:",
       "  --runtime <file>       Runtime config JSON override",
       "  --user-profile <file>  User profile JSON override",
       "  --laws <file>          Law catalog JSON override",
-      "  --workdir <path>       Working directory (default: cwd)",
-      "  --target-dir <path>    OpenCode coding project (default: workdir)",
+      "  --ogs-dir <path>       OGS control-plane root (default: cwd)",
+      "  --workspace-dir <path> Role project workspace (default: saved binding or ogs-dir)",
       "  --cleanup-executions <n>",
       "                         Keep only latest n per-role execution snapshots",
       "  --quiet-run            Disable stderr run progress logs",
@@ -278,8 +279,8 @@ function usageRun(subcommand?: RunSubcommand): string {
       "  --runtime <file>       Runtime config JSON override",
       "  --user-profile <file>  User profile JSON override",
       "  --laws <file>          Law catalog JSON override",
-      "  --workdir <path>       Working directory (default: cwd)",
-      "  --target-dir <path>    OpenCode coding project (default: saved run target)",
+      "  --ogs-dir <path>       OGS control-plane root (default: cwd)",
+      "  --workspace-dir <path> Role project workspace (default: saved run workspace)",
       "  --cleanup-executions <n>",
       "                         Keep only latest n per-role execution snapshots",
       "  --quiet-run            Disable stderr run progress logs",
@@ -298,14 +299,14 @@ function usageRun(subcommand?: RunSubcommand): string {
   if (subcommand === "stop") {
     return [
       "Usage:",
-      "  ogs run stop <run-id> [--reason <text>] [--workdir <path>]",
+      "  ogs run stop <run-id> [--reason <text>] [--ogs-dir <path>]",
       "",
       "Arguments:",
       "  <run-id>        Existing run identifier",
       "",
       "Options:",
       "  --reason <text> Optional stop reason stored in control metadata",
-      "  --workdir <path> Working directory (default: cwd)",
+      "  --ogs-dir <path> OGS control-plane root (default: cwd)",
       "  --help          Show help"
     ].join("\n");
   }
@@ -313,11 +314,11 @@ function usageRun(subcommand?: RunSubcommand): string {
   if (subcommand === "list") {
     return [
       "Usage:",
-      "  ogs run list [--reindex] [--workdir <path>]",
+      "  ogs run list [--reindex] [--ogs-dir <path>]",
       "",
       "Options:",
       "  --reindex       Rebuild .ogs/runs-index.json before listing",
-      "  --workdir <path> Working directory (default: cwd)",
+      "  --ogs-dir <path> OGS control-plane root (default: cwd)",
       "  --help          Show help"
     ].join("\n");
   }
@@ -325,13 +326,13 @@ function usageRun(subcommand?: RunSubcommand): string {
   if (subcommand === "status") {
     return [
       "Usage:",
-      "  ogs run status <run-id> [--workdir <path>]",
+      "  ogs run status <run-id> [--ogs-dir <path>]",
       "",
       "Arguments:",
       "  <run-id>        Existing run identifier",
       "",
       "Options:",
-      "  --workdir <path> Working directory (default: cwd)",
+      "  --ogs-dir <path> OGS control-plane root (default: cwd)",
       "  --help          Show help"
     ].join("\n");
   }
@@ -339,13 +340,13 @@ function usageRun(subcommand?: RunSubcommand): string {
   if (subcommand === "inspect") {
     return [
       "Usage:",
-      "  ogs run inspect <run-id> [--workdir <path>]",
+      "  ogs run inspect <run-id> [--ogs-dir <path>]",
       "",
       "Arguments:",
       "  <run-id>        Existing run identifier",
       "",
       "Options:",
-      "  --workdir <path> Working directory (default: cwd)",
+      "  --ogs-dir <path> OGS control-plane root (default: cwd)",
       "  --help          Show help"
     ].join("\n");
   }
@@ -353,7 +354,7 @@ function usageRun(subcommand?: RunSubcommand): string {
   if (subcommand === "logs") {
     return [
       "Usage:",
-      "  ogs run logs <run-id> [--engine|--role <roleId>] [--tail <n>] [--since <iso>] [--follow] [--json|--ndjson] [--workdir <path>]",
+      "  ogs run logs <run-id> [--engine|--role <roleId>] [--tail <n>] [--since <iso>] [--follow] [--json|--ndjson] [--ogs-dir <path>]",
       "",
       "Arguments:",
       "  <run-id>        Existing run identifier",
@@ -366,7 +367,7 @@ function usageRun(subcommand?: RunSubcommand): string {
       "  --follow        Stream appended records until the run completes",
       "  --json          Emit one JSON array (not allowed with --follow)",
       "  --ndjson        Emit one JSON object per line",
-      "  --workdir <path> Working directory (default: cwd)",
+      "  --ogs-dir <path> OGS control-plane root (default: cwd)",
       "  --help          Show help",
       "",
       "Output modes:",
@@ -384,9 +385,9 @@ function usageRun(subcommand?: RunSubcommand): string {
   if (subcommand === "review") {
     return [
       "Usage:",
-      "  ogs run review list <run-id> [--workdir <path>]",
-      "  ogs run review inspect <run-id> <review-id> [--workdir <path>]",
-      "  ogs run review decide <run-id> <review-id> --decision <approve|rework|pause|terminate> [--comment <text>] [--scope <branch|run>] [--workdir <path>]",
+      "  ogs run review list <run-id> [--ogs-dir <path>]",
+      "  ogs run review inspect <run-id> <review-id> [--ogs-dir <path>]",
+      "  ogs run review decide <run-id> <review-id> --decision <approve|rework|pause|terminate> [--comment <text>] [--scope <branch|run>] [--ogs-dir <path>]",
       "",
       "Examples:",
       "  ogs run review list <run-id>",
@@ -398,7 +399,7 @@ function usageRun(subcommand?: RunSubcommand): string {
 
   return [
     "Usage:",
-    "  ogs run start --system <file.mmd> --input <text> [options]",
+    "  ogs run start [--system <file.mmd>] --input <text> [options]",
     "  ogs run resume <run-id> [options]",
     "  ogs run stop <run-id> [options]",
     "  ogs run list [options]",
@@ -418,7 +419,7 @@ function usageRun(subcommand?: RunSubcommand): string {
 function usageVisualizer(): string {
   return [
     "Usage:",
-    "  ogs vis [--workdir <path>] [--host <host>] [--port <n|0>]",
+    "  ogs vis [--ogs-dir <path>] [--host <host>] [--port <n|0>]",
     "",
     "What it does:",
     "  Starts the lightweight read-mostly OGSystem visualizer.",
@@ -431,13 +432,13 @@ function usageVisualizer(): string {
     "  Runtime state and execution records remain overlays or run details, not graph nodes.",
     "",
     "Defaults:",
-    "  workdir: current directory",
+    "  ogs-dir: current directory",
     "  host: 127.0.0.1",
     "  port: 3337",
     "",
     "Examples:",
-    "  ogs vis --workdir .",
-    "  ogs vis --workdir . --port 3338",
+    "  ogs vis --ogs-dir .",
+    "  ogs vis --ogs-dir . --port 3338",
     "  ogs run start --system system.mmd --input \"demo\" --visualize"
   ].join("\n");
 }
@@ -541,7 +542,7 @@ function appendModernResumeOptions(args: {
     args.tokens.push(`--laws ${shellEscape(args.values.laws)}`);
   }
   if (typeof args.values["target-dir"] === "string") {
-    args.tokens.push(`--target-dir ${shellEscape(args.values["target-dir"])}`);
+    args.tokens.push(`--workspace-dir ${shellEscape(args.values["target-dir"])}`);
   }
   if (typeof args.values["cleanup-executions"] === "string") {
     args.tokens.push(`--cleanup-executions ${shellEscape(args.values["cleanup-executions"])}`);
@@ -582,7 +583,7 @@ async function printModernResumeHint(args: {
     "run",
     "resume",
     shellEscape(runId),
-    `--workdir ${shellEscape(args.workdir)}`
+    `--ogs-dir ${shellEscape(args.workdir)}`
   ];
   appendModernResumeOptions({
     tokens,
@@ -621,11 +622,19 @@ type LifecycleOptionSpec = {
 
 function parseLifecycleArgs(args: string[], options: Record<string, LifecycleOptionSpec>) {
   try {
-    return parseArgs({
+    const renamedOptions = Object.fromEntries(Object.entries(options).map(([name, spec]) => [
+      name === "workdir" ? "ogs-dir" : name === "target-dir" ? "workspace-dir" : name,
+      spec
+    ]));
+    const parsed = parseArgs({
       args,
-      options,
+      options: renamedOptions,
       allowPositionals: true
     });
+    const values = { ...parsed.values } as Record<string, string | boolean | undefined>;
+    if ("ogs-dir" in values) values.workdir = values["ogs-dir"];
+    if ("workspace-dir" in values) values["target-dir"] = values["workspace-dir"];
+    return { ...parsed, values };
   } catch (error) {
     throw createCliInputError(
       "CLI_INVALID_ARGS",
@@ -635,7 +644,7 @@ function parseLifecycleArgs(args: string[], options: Record<string, LifecycleOpt
 }
 
 function resolveCliSystemPath(workdir: string, systemPath: string): string {
-  return resolve(workdir, systemPath);
+  return resolve(systemPath);
 }
 
 function asString(value: string | boolean | undefined): string | undefined {
@@ -858,7 +867,7 @@ async function runProjectCommand(argv: string[]): Promise<void> {
     await ensureProjectSkeleton({
       workdir,
       targetDir: asString(values["target-dir"])
-        ? resolve(workdir, asString(values["target-dir"]) as string)
+        ? resolve(asString(values["target-dir"]) as string)
         : undefined
     });
     const templateSpec = await scaffoldProjectTemplate({
@@ -931,6 +940,8 @@ async function runProjectCommand(argv: string[]): Promise<void> {
       name: projectName,
       templateId: template,
       targetDir: asString(values["target-dir"])
+        ? resolve(asString(values["target-dir"]) as string)
+        : undefined
     });
     console.log(
       JSON.stringify(
@@ -964,7 +975,7 @@ async function runProjectCommand(argv: string[]): Promise<void> {
     const workdir = asString(values.workdir) ?? process.cwd();
     const syncResult = await syncProjectDependencies({
       workdir,
-      systemPath
+      systemPath: resolveCliSystemPath(workdir, systemPath)
     });
     console.log(
       JSON.stringify(
@@ -1047,15 +1058,17 @@ async function runStartCommand(argv: string[]): Promise<void> {
   }
   const systemPath = asString(values.system);
   const prompt = asString(values.input);
-  if (!systemPath || !prompt) {
+  if (!prompt) {
     throw createCliInputError(
       "CLI_MISSING_REQUIRED_ARGS",
-      "run start requires --system and --input"
+      "run start requires --input"
     );
   }
 
   const workdir = asString(values.workdir) ?? process.cwd();
-  const resolvedSystemPath = resolveCliSystemPath(workdir, systemPath);
+  const resolvedSystemPath = systemPath
+    ? resolveCliSystemPath(workdir, systemPath)
+    : resolve(workdir, "system.mmd");
   await maybePrintGraphLink({
     enabled: asBool(values["print-graph-link"]),
     systemPath: resolvedSystemPath
@@ -1130,6 +1143,7 @@ async function runResumeCommand(argv: string[]): Promise<void> {
   const runDir = resolveRunDir(workdir, runId);
   const systemPath = asString(values.system) ?? resolve(runDir, "system.mmd");
   const resolvedSystemPath = resolveCliSystemPath(workdir, systemPath);
+  await inspectRun(workdir, runId);
   const prompt =
     asString(values.input) ??
     (await readFile(resolve(runDir, "request.md"), "utf8")).replace(/\s+$/, "");
@@ -1197,6 +1211,35 @@ async function runVisualizerCommand(argv: string[]): Promise<void> {
   });
 
   console.log(`OGS Multi-Agent Graph Orchestration System listening on ${result.url}`);
+}
+
+async function runServeCommand(argv: string[]): Promise<void> {
+  const { values } = parseLifecycleArgs(argv, {
+    workdir: { type: "string" },
+    system: { type: "string" },
+    "target-dir": { type: "string" },
+    host: { type: "string" },
+    port: { type: "string" },
+    help: { type: "boolean", short: "h" }
+  });
+  if (asBool(values.help)) {
+    console.log("Usage:\n  ogs serve [--ogs-dir <path>] [--system <file.mmd>] [--workspace-dir <path>] [--host <host>] [--port <n|0>]\n\nDefaults:\n  ogs-dir: current directory\n  system: <ogs-dir>/system.mmd\n  workspace-dir: saved project binding, otherwise ogs-dir\n  host: 127.0.0.1\n  port: 3337");
+    return;
+  }
+  const workdir = resolve(asString(values.workdir) ?? process.cwd());
+  const systemPath = asString(values.system)
+    ? resolve(asString(values.system) as string)
+    : resolve(workdir, "system.mmd");
+  const workspaceDir = asString(values["target-dir"])
+    ? resolve(asString(values["target-dir"]) as string)
+    : await resolveProjectTargetDirectory({ workdir });
+  const result = await startVisualizationServer({
+    workdir,
+    serveProject: { ogsDir: workdir, systemPath, workspaceDir },
+    host: asString(values.host) ?? "127.0.0.1",
+    port: parsePortOption({ optionName: "--port", value: asString(values.port), defaultValue: 3337, allowZero: true })
+  });
+  console.log(`OGS serve listening on ${result.url}`);
 }
 
 async function runRunCommand(argv: string[]): Promise<void> {
@@ -1517,7 +1560,7 @@ async function runRunCommand(argv: string[]): Promise<void> {
 }
 
 function shouldKeepProcessAlive(argv: string[]): boolean {
-  if (isVisualizerTopic(argv[0])) {
+  if (isVisualizerTopic(argv[0]) || argv[0] === "serve") {
     return true;
   }
   return argv[0] === "run" && argv[1] === "logs" && argv.includes("--follow");
@@ -1590,6 +1633,10 @@ async function main(): Promise<void> {
     }
     if (isVisualizerTopic(command)) {
       await runVisualizerCommand(rest);
+      return;
+    }
+    if (command === "serve") {
+      await runServeCommand(rest);
       return;
     }
     if (command === "run") {

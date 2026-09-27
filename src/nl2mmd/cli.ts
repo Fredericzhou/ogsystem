@@ -46,7 +46,7 @@ export function usage(): string {
     "  --profiles <file>      Profiles JSON for exec.bind validation (optional)",
     "  --user-profile <file>  User profile JSON for validation (optional)",
     "  --no-preflight         Skip startup preflight (default is preflight enabled)",
-    "  --workdir <path>       Working directory (default: cwd)",
+    "  --ogs-dir <path>       OGS control-plane root (default: cwd)",
     "  --help                 Show help",
     "",
     "Defaults:",
@@ -164,7 +164,7 @@ export async function main(): Promise<void> {
       profiles: { type: "string" },
       "user-profile": { type: "string" },
       "no-preflight": { type: "boolean" },
-      workdir: { type: "string" },
+      "ogs-dir": { type: "string" },
       help: { type: "boolean", short: "h" }
     },
     allowPositionals: false
@@ -175,7 +175,7 @@ export async function main(): Promise<void> {
     return;
   }
 
-  const workdir = values.workdir ?? process.cwd();
+  const workdir = values["ogs-dir"] ?? process.cwd();
   const context = await loadNl2MmdContext({
     workdir,
     runtimeConfigPath: values.runtime,

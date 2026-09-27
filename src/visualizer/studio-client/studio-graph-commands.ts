@@ -40,10 +40,15 @@ type StudioAuthoringLeafCommand =
       modelRef?: string;
       profileId?: string;
       contextMap?: Record<string, string>;
+      roleSettings?: Pick<StudioAuthoringRole, "routingMode" | "routeOrder" | "joinMode" | "joinMin" | "loopMax" | "review">;
       profileDraft?: StudioExecutionProfileDraft;
       toolDraft?: StudioExecutionToolDraft;
     }
   | { type: "delete-role"; roleId: string }
+  | {
+      type: "update-system";
+      system: Partial<StudioAuthoringDocument["system"]>;
+    }
   | {
       type: "add-edge";
       sourceRoleId: string;
@@ -195,6 +200,7 @@ function applyRoleBinding(
     modelRef?: string;
     profileId?: string;
     contextMap?: Record<string, string>;
+    roleSettings?: Pick<StudioAuthoringRole, "routingMode" | "routeOrder" | "joinMode" | "joinMin" | "loopMax" | "review">;
   }
 ): StudioAuthoringRole {
   const bindingKind = normalizeBindingKind(args.bindingKind);
@@ -222,15 +228,23 @@ function applyRoleBinding(
     const profileId = String(args.profileId ?? "").trim();
     if (profileId) next.profileId = profileId;
   }
-  if (args.contextMap && Object.keys(args.contextMap).length > 0) {
-    next.contextMap = Object.fromEntries(
-      Object.entries(args.contextMap)
-        .map(([fieldName, selector]) => [String(fieldName || "").trim(), String(selector || "").trim()])
-        .filter(([fieldName, selector]) => Boolean(fieldName) && Boolean(selector))
-        .sort(([left], [right]) => left.localeCompare(right))
-    );
-  } else {
-    delete next.contextMap;
+  if (args.contextMap !== undefined) {
+    if (Object.keys(args.contextMap).length > 0) {
+      next.contextMap = Object.fromEntries(
+        Object.entries(args.contextMap)
+          .map(([fieldName, selector]) => [String(fieldName || "").trim(), String(selector || "").trim()])
+          .filter(([fieldName, selector]) => Boolean(fieldName) && Boolean(selector))
+          .sort(([left], [right]) => left.localeCompare(right))
+      );
+    } else {
+      delete next.contextMap;
+    }
+  }
+  if (args.roleSettings) {
+    for (const key of ["routingMode", "routeOrder", "joinMode", "joinMin", "loopMax", "review"] as const) {
+      delete next[key];
+    }
+    Object.assign(next, args.roleSettings);
   }
   return next;
 }
@@ -489,6 +503,11 @@ export function applyStudioAuthoringCommand(args: {
     canvas.nodes = canvas.nodes.filter((node) => node.roleId !== roleId);
     canvas.edges = canvas.edges.filter((edge) => edge.source !== roleId && edge.target !== roleId);
     return { authoring, canvas, selectedRoleId: canvas.nodes[0]?.roleId || "" };
+  }
+
+  if (command.type === "update-system") {
+    authoring.system = { ...authoring.system, ...command.system };
+    return { authoring, canvas, selectedRoleId: authoring.system.entryRoleId || "" };
   }
 
   if (command.type === "update-role") {
@@ -799,6 +818,14 @@ export function deriveInverseCommand(
       modelRef: role.modelRef,
       profileId: role.profileId,
       contextMap: role.contextMap ? { ...role.contextMap } : undefined
+      ,roleSettings: {
+        routingMode: role.routingMode,
+        routeOrder: role.routeOrder ? [...role.routeOrder] : undefined,
+        joinMode: role.joinMode,
+        joinMin: role.joinMin,
+        loopMax: role.loopMax,
+        review: role.review ? { ...role.review } : undefined
+      }
     };
   }
 
@@ -818,6 +845,10 @@ export function deriveInverseCommand(
       .map((flow) => addEdgeCommandFromFlow(authoring, flow));
     const commands = [addRole, ...flowCommands];
     return commands.length === 1 ? commands[0] : { type: "batch", commands };
+  }
+
+  if (command.type === "update-system") {
+    return { type: "update-system", system: { ...authoring.system } };
   }
 
   if (command.type === "add-edge") {

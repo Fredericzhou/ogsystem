@@ -195,7 +195,7 @@ function buildRunReproScript(args: {
     "  run",
     "  resume",
     "  \"$RUN_ID\"",
-    "  --workdir \"$WORKDIR\"",
+    "  --ogs-dir \"$WORKDIR\"",
     ")",
     "",
     "if [[ -f \"$RUNTIME_FILE\" ]]; then",
@@ -728,6 +728,7 @@ export async function initializeRunContext(args: {
   runtimeConfig: RuntimeConfig;
   resolvedConfigSnapshot?: Record<string, unknown>;
   resumeRunDir?: string;
+  runId?: string;
 }): Promise<RunContext> {
   // Fresh runs and resumed runs share the same directory contract. Initialization therefore
   // prefers idempotent setup and write-if-missing files so resume never overwrites evidence.
@@ -741,7 +742,7 @@ export async function initializeRunContext(args: {
     });
   }
   const createdAt = new Date();
-  const runId = args.resumeRunDir ? basename(resolve(args.workdir, args.resumeRunDir)) : buildRunId(createdAt);
+  const runId = args.resumeRunDir ? basename(resolve(args.workdir, args.resumeRunDir)) : args.runId ?? buildRunId(createdAt);
   const runCreatedAt = args.resumeRunDir
     ? parseCreatedAtFromRunId(runId) ?? createdAt.toISOString()
     : createdAt.toISOString();

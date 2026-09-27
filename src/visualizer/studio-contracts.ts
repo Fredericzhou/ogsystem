@@ -18,6 +18,7 @@ export type StudioAuthoringDocument = {
   system: {
     systemId: string;
     systemVersion: string;
+    legacyEngine?: "langgraph";
     entryRoleId: string;
     entryEventType?: string;
     lawGlobalRef: string;

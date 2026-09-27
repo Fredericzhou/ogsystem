@@ -1,3 +1,4 @@
+import { readFile } from "node:fs/promises";
 import { resolve } from "node:path";
 
 import { resolveProjectRoleRootDir } from "./bundled-repos.js";
@@ -10,7 +11,7 @@ import { createExecutionPlan } from "./execution-plan.js";
 import { loadFlowContractPlan } from "./flow-contract.js";
 import { loadModelCatalog } from "./model-catalog.js";
 import { loadModelSelection, resolveModelSelectionForSystem } from "./model-selection.js";
-import { loadSystemFromMermaid } from "./parse-mermaid.js";
+import { loadSystemFromMermaid, parseSystemFromMermaidSource } from "./parse-mermaid.js";
 import { buildRunPlanFingerprint } from "./plan-fingerprint.js";
 import { filesystemRunStore } from "./run-store.js";
 import { loadOgsSpecification, type OgsSpecificationSnapshot } from "./ogs-spec-loader.js";
@@ -214,12 +215,14 @@ export type RuntimeAdapterSetup = {
 
 export async function prepareRuntimeSetup(args: {
   systemPath: string;
+  systemBaseDir?: string;
   profilesPath?: string;
   toolsPath?: string;
   lawsPath?: string;
   runtimeConfigPath?: string;
   userProfilePath?: string;
   resumeRunDir?: string;
+  runId?: string;
   prompt: string;
   workdir: string;
   targetDir?: string;
@@ -238,7 +241,16 @@ export async function prepareRuntimeSetup(args: {
       break;
     }
   }
-  const system = await loadSystemFromMermaid(args.systemPath);
+  let system = await loadSystemFromMermaid(args.systemPath);
+  if (args.systemBaseDir && system.graph?.handoffContracts) {
+    const sourceSystem = parseSystemFromMermaidSource(await readFile(args.systemPath, "utf8"));
+    if (sourceSystem.graph?.handoffContracts) {
+      system = {
+        ...system,
+        graph: { ...system.graph, handoffContracts: resolve(args.systemBaseDir, sourceSystem.graph.handoffContracts) }
+      };
+    }
+  }
   if (
     specificationSnapshot &&
     (specificationSnapshot.systemId !== system.systemId ||
@@ -407,7 +419,8 @@ export async function prepareRuntimeSetup(args: {
     workdir: args.workdir,
     runtimeConfig,
     resolvedConfigSnapshot,
-    resumeRunDir: args.resumeRunDir
+    resumeRunDir: args.resumeRunDir,
+    runId: args.runId
   });
   if (!args.resumeRunDir) {
     await filesystemRunStore.persistPlanFingerprint({

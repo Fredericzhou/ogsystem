@@ -1887,6 +1887,31 @@ export function renderPageShellStyles(): string {
     .run-graph-root {
       min-height: 520px;
     }
+
+    .studio-context-map-row {
+      grid-template-columns: minmax(100px, 0.7fr) minmax(160px, 1.3fr) minmax(82px, auto) 36px;
+      align-items: end;
+      gap: 8px;
+      margin: 8px 0;
+    }
+
+    .studio-context-map-preview {
+      max-height: 180px;
+      overflow: auto;
+      white-space: pre-wrap;
+      overflow-wrap: anywhere;
+    }
+
+    @media (max-width: 620px) {
+      .studio-context-map-row {
+        grid-template-columns: minmax(0, 1fr) 36px;
+      }
+      .studio-context-map-row .field:first-child,
+      .studio-context-map-row .field:nth-child(2),
+      .studio-context-map-row .field:nth-child(3) {
+        grid-column: 1 / -1;
+      }
+    }
     .run-graph-root .studio-graph-island {
       min-height: 320px;
     }

@@ -145,6 +145,78 @@ test("Studio authoring serializer is deterministic and preserves parse semantics
   assert.equal(roundTripped.flows.length, original.flows.length);
 });
 
+test("Studio authoring preserves legacy engine metadata across spaced syntax round-trips", () => {
+  const legacySource = source.replace("flowchart TD", "flowchart TD\n%% engine   =   langgraph");
+  const authoring = importMermaidToAuthoring({
+    workdir: "/tmp/project",
+    systemPath: "/tmp/project/system.mmd",
+    systemSource: legacySource
+  });
+
+  assert.equal(authoring.system.legacyEngine, "langgraph");
+  const serialized = serializeAuthoringToMermaid(authoring);
+  assert.match(serialized, /^%% engine=langgraph$/m);
+  assert.equal(importMermaidToAuthoring({
+    workdir: "/tmp/project",
+    systemPath: "/tmp/project/system.mmd",
+    systemSource: serialized
+  }).system.legacyEngine, "langgraph");
+  assert.equal(parseSystemFromMermaidSource(serialized).systemId, authoring.system.systemId);
+});
+
+test("Studio role settings commands round-trip routing, join, review, loop, and context mappings", () => {
+  const authoring = importMermaidToAuthoring({
+    workdir: "/tmp/project",
+    systemPath: "/tmp/project/system.mmd",
+    systemSource: source
+  });
+  const updated = applyStudioAuthoringCommand({
+    authoring,
+    command: {
+      type: "update-role",
+      originalRoleId: "dispatch",
+      roleId: "dispatch",
+      title: "Dispatcher",
+      bindingKind: authoring.roles.dispatch.bindingKind,
+      profileId: authoring.roles.dispatch.profileId,
+      contextMap: authoring.roles.dispatch.contextMap ?? {},
+      roleSettings: {
+        routingMode: "parallel_split",
+        routeOrder: ["review", "worker"],
+        joinMode: undefined,
+        joinMin: undefined,
+        loopMax: undefined,
+        review: {
+          mode: "required",
+          timeoutSeconds: 120,
+          timeoutAction: "pause",
+          reworkTargetRoleId: "worker",
+          reworkMax: 2,
+          terminateScope: "branch"
+        }
+      }
+    }
+  });
+  const parsed = parseSystemFromMermaidSource(serializeAuthoringToMermaid(updated.authoring));
+  const loopUpdated = applyStudioAuthoringCommand({
+    authoring: updated.authoring,
+    command: {
+      type: "update-role",
+      originalRoleId: "worker",
+      roleId: "worker",
+      bindingKind: "noop",
+      contextMap: authoring.roles.worker.contextMap ?? {},
+      roleSettings: { loopMax: 3 }
+    }
+  });
+  const parsedLoop = parseSystemFromMermaidSource(serializeAuthoringToMermaid(loopUpdated.authoring));
+  assert.equal(parsed.graph?.routingModeByRoleId.dispatch, "parallel_split");
+  assert.deepEqual(parsed.graph?.routeOrderByRoleId.dispatch, ["review", "worker"]);
+  assert.equal(parsedLoop.graph?.loopMaxByRoleId.worker, 3);
+  assert.equal(parsed.graph?.reviewByRoleId.dispatch?.timeoutSeconds, 120);
+  assert.equal(parsed.graph?.reviewByRoleId.dispatch?.reworkTargetRoleId, "worker");
+});
+
 test("Studio authoring preserves entry boundary event types across Mermaid round-trips", () => {
   const minimalSource = [
     "flowchart TD",

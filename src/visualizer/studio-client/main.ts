@@ -1,4 +1,5 @@
 import { StudioGraphIsland, type StudioGraphBridgeOptions } from "./studio-graph.js";
+import { applyStudioAuthoringCommand } from "./studio-graph-commands.js";
 import { injectStudioGraphStyles } from "./styles.js";
 
 declare global {
@@ -33,5 +34,6 @@ export function disposeStudioX6Bridge(root: HTMLElement): void {
 window.OGSVisualizerClient = window.OGSVisualizerClient || {};
 Object.assign(window.OGSVisualizerClient, {
   mountStudioX6Bridge,
-  disposeStudioX6Bridge
+  disposeStudioX6Bridge,
+  applyStudioAuthoringCommand
 });

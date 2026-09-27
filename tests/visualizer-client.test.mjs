@@ -18,6 +18,7 @@ import {
   filterStudioBridgeItems,
   renderStudioFlowConfigEditor,
   renderStudioRoleConfigEditor,
+  renderStudioSystemSettingsEditor,
   renderStudioBridgeInspector,
   renderStudioBridgePanel,
   renderStudioDebugOutcomePanel,
@@ -4519,8 +4520,34 @@ test("visualizer client shows role config labels and opens role I/O modal from s
   assert.match(roleConfigHtml, /Agent/);
   assert.match(roleConfigHtml, /Tool/);
   assert.match(roleConfigHtml, /Noop/);
-  assert.match(roleConfigHtml, /data-role-config-field="contextMap"/);
+  assert.match(roleConfigHtml, /data-context-map-row/);
   assert.match(roleConfigHtml, /writer\.output\.summary/);
+  assert.match(roleConfigHtml, /data-context-map-preview/);
+  assert.match(roleConfigHtml, /data-role-setting="joinMode"/);
+  assert.match(roleConfigHtml, /data-role-setting="reviewEnabled"/);
+  assert.doesNotMatch(roleConfigHtml, /data-system-setting=/);
+  const systemSettingsHtml = renderStudioSystemSettingsEditor({
+    authoring: {
+      system: { systemId: "test.system", systemVersion: "1.0.0", entryRoleId: "demo-analyst", entryEventType: "START" },
+      roles: { "demo-analyst": { roleId: "demo-analyst" } }
+    },
+    projectConfig: { laws: { laws: [{ lawId: "law.base" }] } },
+    t: testTranslator
+  });
+  assert.match(systemSettingsHtml, /data-system-setting="entryRoleId"/);
+  assert.match(systemSettingsHtml, /data-system-setting="handoffMode"/);
+  const quorumConfigHtml = renderStudioRoleConfigEditor({
+    roleId: "merge",
+    editor: { roleId: "merge", data: { roleId: "merge", bindingKind: "noop", joinMode: "quorum_of", joinMin: 1, contextMap: { first: "source(worker).content" } } },
+    authoring: {
+      roles: { worker: { roleId: "worker" }, second: { roleId: "second" }, merge: { roleId: "merge", joinMode: "quorum_of", joinMin: 1 } },
+      flows: { a: { fromRoleId: "worker", toRoleId: "merge" }, b: { fromRoleId: "second", toRoleId: "merge" } }
+    },
+    t: testTranslator
+  });
+  assert.match(quorumConfigHtml, /source\(worker\)\.content[^<]*<\/option>|source\(worker\)\.content/);
+  assert.match(quorumConfigHtml, /unavailable/);
+  assert.match(quorumConfigHtml, /Source selectors are unavailable until the quorum threshold includes every incoming source/);
 
   const flowConfigHtml = renderStudioFlowConfigEditor({
     flowKey: "writer:DONE:reviewer",
@@ -4562,7 +4589,7 @@ test("visualizer client shows role config labels and opens role I/O modal from s
     },
     t: testTranslator
   });
-  assert.match(flowConfigHtml, /data-flow-config-field="targetContextMap"/);
+  assert.doesNotMatch(flowConfigHtml, /data-flow-config-field="targetContextMap"/);
   assert.match(flowConfigHtml, /data-studio-open-role-config="reviewer"/);
   assert.match(flowConfigHtml, /writer\.output\.summary/);
 

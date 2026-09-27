@@ -244,11 +244,11 @@ test("lifecycle cli advanced-features template runs a local review rework loop",
   const startPayload = JSON.parse(start.stdout);
   assert.equal(startPayload.status, "stopped");
 
-  const list = await runCli(["run", "list", "--workdir", projectDir]);
+  const list = await runCli(["run", "list", "--ogs-dir", projectDir]);
   assert.strictEqual(list.code, 0);
   const runId = JSON.parse(list.stdout).runs[0].runId;
 
-  const reviewList = await runCli(["run", "review", "list", runId, "--workdir", projectDir]);
+  const reviewList = await runCli(["run", "review", "list", runId, "--ogs-dir", projectDir]);
   assert.strictEqual(reviewList.code, 0, reviewList.stderr);
   const reviewListPayload = JSON.parse(reviewList.stdout);
   const firstReviewId = reviewListPayload.latestPendingReviewId;
@@ -264,17 +264,17 @@ test("lifecycle cli advanced-features template runs a local review rework loop",
     "rework",
     "--comment",
     "run one more loop",
-    "--workdir",
+    "--ogs-dir",
     projectDir
   ]);
   assert.strictEqual(rework.code, 0, rework.stderr);
 
-  const resumeAfterRework = await runCli(["run", "resume", runId, "--workdir", projectDir]);
+  const resumeAfterRework = await runCli(["run", "resume", runId, "--ogs-dir", projectDir]);
   assert.strictEqual(resumeAfterRework.code, 0, resumeAfterRework.stderr);
   const resumeAfterReworkPayload = JSON.parse(resumeAfterRework.stdout);
   assert.equal(resumeAfterReworkPayload.status, "stopped");
 
-  const statusAfterRework = await runCli(["run", "status", runId, "--workdir", projectDir]);
+  const statusAfterRework = await runCli(["run", "status", runId, "--ogs-dir", projectDir]);
   assert.strictEqual(statusAfterRework.code, 0);
   const statusAfterReworkPayload = JSON.parse(statusAfterRework.stdout);
   assert.equal(statusAfterReworkPayload.status, "stopped");
@@ -292,17 +292,17 @@ test("lifecycle cli advanced-features template runs a local review rework loop",
     "approve",
     "--comment",
     "looks good",
-    "--workdir",
+    "--ogs-dir",
     projectDir
   ]);
   assert.strictEqual(approve.code, 0, approve.stderr);
 
-  const resumeAfterApprove = await runCli(["run", "resume", runId, "--workdir", projectDir]);
+  const resumeAfterApprove = await runCli(["run", "resume", runId, "--ogs-dir", projectDir]);
   assert.strictEqual(resumeAfterApprove.code, 0, resumeAfterApprove.stderr);
   const resumeAfterApprovePayload = JSON.parse(resumeAfterApprove.stdout);
   assert.equal(resumeAfterApprovePayload.status, "done");
 
-  const finalStatus = await runCli(["run", "status", runId, "--workdir", projectDir]);
+  const finalStatus = await runCli(["run", "status", runId, "--ogs-dir", projectDir]);
   assert.strictEqual(finalStatus.code, 0);
   const finalStatusPayload = JSON.parse(finalStatus.stdout);
   assert.equal(finalStatusPayload.status, "done");
@@ -310,7 +310,7 @@ test("lifecycle cli advanced-features template runs a local review rework loop",
   assert.equal(finalStatusPayload.hasWaitingHumanReview, false);
 });
 
-test("lifecycle cli run start resolves --system relative to --workdir", { concurrency: false }, async () => {
+test("lifecycle cli resolves explicit system paths from the command directory", { concurrency: false }, async () => {
   const repoRoot = process.cwd();
   const tempRoot = await mkdtemp(path.join(os.tmpdir(), "ogsystem-cli-run-workdir-"));
   await seedRuntimeProject(tempRoot);
@@ -336,12 +336,12 @@ test("lifecycle cli run start resolves --system relative to --workdir", { concur
       "run",
       "start",
       "--system",
-      "system.mmd",
+      path.resolve(tempRoot, "system.mmd"),
       "--input",
       "relative workdir system path",
       "--dry-run",
       "--print-graph-link",
-      "--workdir",
+      "--ogs-dir",
       tempRoot
     ],
     { cwd: repoRoot }
@@ -351,6 +351,20 @@ test("lifecycle cli run start resolves --system relative to --workdir", { concur
   const payload = JSON.parse(result.stdout);
   assert.equal(payload.status, "done");
   assert.match(result.stderr, /\[graph\] Visual preview: https:\/\/mermaid\.live\/edit#base64:/);
+});
+
+test("lifecycle cli defaults System to ogs-dir and keeps run artifacts there", { concurrency: false }, async () => {
+  const repoRoot = process.cwd();
+  const ogsDir = await mkdtemp(path.join(os.tmpdir(), "ogsystem-cli-default-system-"));
+  await seedRuntimeProject(ogsDir);
+  await writeFile(path.resolve(ogsDir, "system.mmd"), await readFile(path.resolve(repoRoot, "examples/target-model-binding-system.mmd"), "utf8"), "utf8");
+  const result = await runCli(["run", "start", "--ogs-dir", ogsDir, "--input", "default system lookup", "--dry-run"], { cwd: repoRoot });
+  assert.equal(result.code, 0, result.stderr);
+  const run = JSON.parse(result.stdout);
+  assert.equal(run.status, "done");
+  const runIndex = JSON.parse(await readFile(path.resolve(ogsDir, ".ogs", "runs-index.json"), "utf8"));
+  assert.equal(runIndex.runs.length, 1);
+  await stat(path.resolve(ogsDir, ".ogs", "runs", runIndex.runs[0].runId, "system.mmd"));
 });
 
 test("lifecycle cli run start/list/status/logs/resume/stop works end-to-end", { concurrency: false }, async () => {
@@ -417,14 +431,14 @@ test("lifecycle cli run start/list/status/logs/resume/stop works end-to-end", { 
     "--input",
     "cli lifecycle smoke",
     "--dry-run",
-    "--workdir",
+    "--ogs-dir",
     tempRoot
   ]);
   assert.strictEqual(start.code, 0);
   const startPayload = JSON.parse(start.stdout);
   assert.equal(startPayload.status, "done");
 
-  const list = await runCli(["run", "list", "--workdir", tempRoot]);
+  const list = await runCli(["run", "list", "--ogs-dir", tempRoot]);
   assert.strictEqual(list.code, 0);
   const listPayload = JSON.parse(list.stdout);
   assert.equal(Array.isArray(listPayload.runs), true);
@@ -464,7 +478,7 @@ test("lifecycle cli run start/list/status/logs/resume/stop works end-to-end", { 
     .filter(Boolean);
   assert.ok(timeline.length > 0);
 
-  const status = await runCli(["run", "status", runId, "--workdir", tempRoot]);
+  const status = await runCli(["run", "status", runId, "--ogs-dir", tempRoot]);
   assert.strictEqual(status.code, 0);
   const statusPayload = JSON.parse(status.stdout);
   assert.equal(statusPayload.status, "done");
@@ -478,16 +492,16 @@ test("lifecycle cli run start/list/status/logs/resume/stop works end-to-end", { 
   assert.equal(statusPayload.stopReason, null);
   assert.equal(statusPayload.stopOutcomeStatus, null);
 
-  const logs = await runCli(["run", "logs", runId, "--engine", "--json", "--workdir", tempRoot]);
+  const logs = await runCli(["run", "logs", runId, "--engine", "--json", "--ogs-dir", tempRoot]);
   assert.strictEqual(logs.code, 0);
   const logsPayload = JSON.parse(logs.stdout);
   assert.equal(Array.isArray(logsPayload), true);
-  const textLogs = await runCli(["run", "logs", runId, "--engine", "--workdir", tempRoot]);
+  const textLogs = await runCli(["run", "logs", runId, "--engine", "--ogs-dir", tempRoot]);
   assert.strictEqual(textLogs.code, 0);
   if (textLogs.stdout.trim()) {
     assert.doesNotMatch(textLogs.stdout, /^\s*\[/);
   }
-  const ndjsonLogs = await runCli(["run", "logs", runId, "--engine", "--ndjson", "--workdir", tempRoot]);
+  const ndjsonLogs = await runCli(["run", "logs", runId, "--engine", "--ndjson", "--ogs-dir", tempRoot]);
   assert.strictEqual(ndjsonLogs.code, 0);
   if (ndjsonLogs.stdout.trim()) {
     assert.match(ndjsonLogs.stdout, /\{.*\}\n?/);
@@ -500,7 +514,7 @@ test("lifecycle cli run start/list/status/logs/resume/stop works end-to-end", { 
     "--json",
     "--tail",
     "1",
-    "--workdir",
+    "--ogs-dir",
     tempRoot
   ]);
   assert.strictEqual(tailLogs.code, 0);
@@ -515,7 +529,7 @@ test("lifecycle cli run start/list/status/logs/resume/stop works end-to-end", { 
     "--json",
     "--since",
     summary.updatedAt,
-    "--workdir",
+    "--ogs-dir",
     tempRoot
   ]);
   assert.strictEqual(sinceLogs.code, 0);
@@ -528,7 +542,7 @@ test("lifecycle cli run start/list/status/logs/resume/stop works end-to-end", { 
     "--engine",
     "--since",
     "not-a-date",
-    "--workdir",
+    "--ogs-dir",
     tempRoot
   ]);
   assert.strictEqual(invalidSinceLogs.code, 1);
@@ -541,7 +555,7 @@ test("lifecycle cli run start/list/status/logs/resume/stop works end-to-end", { 
     "--follow",
     "--tail",
     "1",
-    "--workdir",
+    "--ogs-dir",
     tempRoot
   ]);
   assert.strictEqual(followLogs.code, 0);
@@ -552,13 +566,13 @@ test("lifecycle cli run start/list/status/logs/resume/stop works end-to-end", { 
     "--engine",
     "--follow",
     "--json",
-    "--workdir",
+    "--ogs-dir",
     tempRoot
   ]);
   assert.strictEqual(followJsonLogs.code, 1);
   assert.match(followJsonLogs.stderr, /--json cannot be used with --follow/);
 
-  const resume = await runCli(["run", "resume", runId, "--dry-run", "--workdir", tempRoot]);
+  const resume = await runCli(["run", "resume", runId, "--dry-run", "--ogs-dir", tempRoot]);
   assert.strictEqual(resume.code, 0);
   const resumePayload = JSON.parse(resume.stdout);
   assert.equal(resumePayload.status, "done");
@@ -569,17 +583,17 @@ test("lifecycle cli run start/list/status/logs/resume/stop works end-to-end", { 
   tamperedState.graphState.status = "failed";
   await writeFile(statePath, JSON.stringify(tamperedState, null, 2), "utf8");
 
-  const statusAfterTamper = await runCli(["run", "status", runId, "--workdir", tempRoot]);
+  const statusAfterTamper = await runCli(["run", "status", runId, "--ogs-dir", tempRoot]);
   assert.strictEqual(statusAfterTamper.code, 0);
   const statusAfterTamperPayload = JSON.parse(statusAfterTamper.stdout);
   assert.equal(statusAfterTamperPayload.status, "done");
 
-  const listAfterTamper = await runCli(["run", "list", "--workdir", tempRoot]);
+  const listAfterTamper = await runCli(["run", "list", "--ogs-dir", tempRoot]);
   assert.strictEqual(listAfterTamper.code, 0);
   const listAfterTamperPayload = JSON.parse(listAfterTamper.stdout);
   assert.equal(listAfterTamperPayload.runs[0].status, "done");
 
-  const stop = await runCli(["run", "stop", runId, "--workdir", tempRoot]);
+  const stop = await runCli(["run", "stop", runId, "--ogs-dir", tempRoot]);
   assert.strictEqual(stop.code, 0);
   const stopPayload = JSON.parse(stop.stdout);
   assert.equal(stopPayload.runId, runId);
@@ -617,18 +631,18 @@ test("lifecycle cli review commands expose pending human review state and can ap
     "--input",
     "cli review flow",
     "--dry-run",
-    "--workdir",
+    "--ogs-dir",
     tempRoot
   ]);
   assert.strictEqual(start.code, 0, start.stderr);
   const startPayload = JSON.parse(start.stdout);
   assert.equal(startPayload.status, "stopped");
-  const list = await runCli(["run", "list", "--workdir", tempRoot]);
+  const list = await runCli(["run", "list", "--ogs-dir", tempRoot]);
   assert.strictEqual(list.code, 0);
   const listPayload = JSON.parse(list.stdout);
   assert.equal(listPayload.runs.length, 1);
   const runId = listPayload.runs[0].runId;
-  const status = await runCli(["run", "status", runId, "--workdir", tempRoot]);
+  const status = await runCli(["run", "status", runId, "--ogs-dir", tempRoot]);
   assert.strictEqual(status.code, 0);
   const statusPayload = JSON.parse(status.stdout);
   assert.equal(statusPayload.status, "stopped");
@@ -636,13 +650,13 @@ test("lifecycle cli review commands expose pending human review state and can ap
   assert.equal(statusPayload.latestPendingReviewId, "review.test-operator@1#1.r1");
   assert.equal(statusPayload.hasWaitingHumanReview, true);
 
-  const inspect = await runCli(["run", "inspect", runId, "--workdir", tempRoot]);
+  const inspect = await runCli(["run", "inspect", runId, "--ogs-dir", tempRoot]);
   assert.strictEqual(inspect.code, 0);
   const inspectPayload = JSON.parse(inspect.stdout);
   assert.equal(inspectPayload.pendingReviewCount, 1);
   assert.equal(inspectPayload.hasWaitingHumanReview, true);
 
-  const reviewList = await runCli(["run", "review", "list", runId, "--workdir", tempRoot]);
+  const reviewList = await runCli(["run", "review", "list", runId, "--ogs-dir", tempRoot]);
   assert.strictEqual(reviewList.code, 0);
   const reviewListPayload = JSON.parse(reviewList.stdout);
   assert.equal(reviewListPayload.reviews.length, 1);
@@ -657,7 +671,7 @@ test("lifecycle cli review commands expose pending human review state and can ap
     "inspect",
     runId,
     "review.test-operator@1#1.r1",
-    "--workdir",
+    "--ogs-dir",
     tempRoot
   ]);
   assert.strictEqual(reviewInspect.code, 0);
@@ -676,19 +690,19 @@ test("lifecycle cli review commands expose pending human review state and can ap
     "approve",
     "--comment",
     "approved",
-    "--workdir",
+    "--ogs-dir",
     tempRoot
   ]);
   assert.strictEqual(decide.code, 0);
   const decidePayload = JSON.parse(decide.stdout);
   assert.equal(decidePayload.decision.decision, "approve");
 
-  const resume = await runCli(["run", "resume", runId, "--dry-run", "--workdir", tempRoot]);
+  const resume = await runCli(["run", "resume", runId, "--dry-run", "--ogs-dir", tempRoot]);
   assert.strictEqual(resume.code, 0, resume.stderr);
   const resumePayload = JSON.parse(resume.stdout);
   assert.equal(resumePayload.status, "done");
 
-  const statusAfterResume = await runCli(["run", "status", runId, "--workdir", tempRoot]);
+  const statusAfterResume = await runCli(["run", "status", runId, "--ogs-dir", tempRoot]);
   assert.strictEqual(statusAfterResume.code, 0);
   const statusAfterResumePayload = JSON.parse(statusAfterResume.stdout);
   assert.equal(statusAfterResumePayload.status, "done");
@@ -702,7 +716,7 @@ test("lifecycle cli review commands expose pending human review state and can ap
     "inspect",
     runId,
     "review.test-operator@1#1.r1",
-    "--workdir",
+    "--ogs-dir",
     tempRoot
   ]);
   assert.strictEqual(reviewInspectAfterResume.code, 0);
@@ -742,12 +756,12 @@ test("lifecycle cli review commands preserve paused status and allow a later app
     "--input",
     "cli review pause flow",
     "--dry-run",
-    "--workdir",
+    "--ogs-dir",
     tempRoot
   ]);
   assert.strictEqual(start.code, 0, start.stderr);
 
-  const list = await runCli(["run", "list", "--workdir", tempRoot]);
+  const list = await runCli(["run", "list", "--ogs-dir", tempRoot]);
   assert.strictEqual(list.code, 0);
   const runId = JSON.parse(list.stdout).runs[0].runId;
   const reviewId = "review.test-operator@1#1.r1";
@@ -762,14 +776,14 @@ test("lifecycle cli review commands preserve paused status and allow a later app
     "pause",
     "--comment",
     "hold",
-    "--workdir",
+    "--ogs-dir",
     tempRoot
   ]);
   assert.strictEqual(pause.code, 0, pause.stderr);
 
-  const resumeAfterPause = await runCli(["run", "resume", runId, "--dry-run", "--workdir", tempRoot]);
+  const resumeAfterPause = await runCli(["run", "resume", runId, "--dry-run", "--ogs-dir", tempRoot]);
   assert.strictEqual(resumeAfterPause.code, 0, resumeAfterPause.stderr);
-  const pausedStatus = await runCli(["run", "status", runId, "--workdir", tempRoot]);
+  const pausedStatus = await runCli(["run", "status", runId, "--ogs-dir", tempRoot]);
   assert.strictEqual(pausedStatus.code, 0);
   const pausedStatusPayload = JSON.parse(pausedStatus.stdout);
   assert.equal(pausedStatusPayload.status, "stopped");
@@ -781,7 +795,7 @@ test("lifecycle cli review commands preserve paused status and allow a later app
     "inspect",
     runId,
     reviewId,
-    "--workdir",
+    "--ogs-dir",
     tempRoot
   ]);
   assert.strictEqual(pausedInspect.code, 0);
@@ -800,14 +814,14 @@ test("lifecycle cli review commands preserve paused status and allow a later app
     "approve",
     "--comment",
     "approved after hold",
-    "--workdir",
+    "--ogs-dir",
     tempRoot
   ]);
   assert.strictEqual(approve.code, 0, approve.stderr);
 
-  const resumeAfterApprove = await runCli(["run", "resume", runId, "--dry-run", "--workdir", tempRoot]);
+  const resumeAfterApprove = await runCli(["run", "resume", runId, "--dry-run", "--ogs-dir", tempRoot]);
   assert.strictEqual(resumeAfterApprove.code, 0, resumeAfterApprove.stderr);
-  const finalStatus = await runCli(["run", "status", runId, "--workdir", tempRoot]);
+  const finalStatus = await runCli(["run", "status", runId, "--ogs-dir", tempRoot]);
   assert.strictEqual(finalStatus.code, 0);
   const finalStatusPayload = JSON.parse(finalStatus.stdout);
   assert.equal(finalStatusPayload.status, "done");
@@ -819,7 +833,7 @@ test("lifecycle cli review commands preserve paused status and allow a later app
     "inspect",
     runId,
     reviewId,
-    "--workdir",
+    "--ogs-dir",
     tempRoot
   ]);
   assert.strictEqual(resolvedInspect.code, 0);
@@ -860,12 +874,12 @@ test("lifecycle cli review status normalization tracks rework rounds and rejects
     "--input",
     "cli review rework flow",
     "--dry-run",
-    "--workdir",
+    "--ogs-dir",
     tempRoot
   ]);
   assert.strictEqual(start.code, 0, start.stderr);
 
-  const list = await runCli(["run", "list", "--workdir", tempRoot]);
+  const list = await runCli(["run", "list", "--ogs-dir", tempRoot]);
   assert.strictEqual(list.code, 0);
   const runId = JSON.parse(list.stdout).runs[0].runId;
   const firstReviewId = "review.test-operator@1#1.r1";
@@ -880,15 +894,15 @@ test("lifecycle cli review status normalization tracks rework rounds and rejects
     "rework",
     "--comment",
     "needs another pass",
-    "--workdir",
+    "--ogs-dir",
     tempRoot
   ]);
   assert.strictEqual(rework.code, 0, rework.stderr);
 
-  const resume = await runCli(["run", "resume", runId, "--dry-run", "--workdir", tempRoot]);
+  const resume = await runCli(["run", "resume", runId, "--dry-run", "--ogs-dir", tempRoot]);
   assert.strictEqual(resume.code, 0, resume.stderr);
 
-  const statusAfterRework = await runCli(["run", "status", runId, "--workdir", tempRoot]);
+  const statusAfterRework = await runCli(["run", "status", runId, "--ogs-dir", tempRoot]);
   assert.strictEqual(statusAfterRework.code, 0);
   const statusAfterReworkPayload = JSON.parse(statusAfterRework.stdout);
   assert.equal(statusAfterReworkPayload.status, "stopped");
@@ -901,7 +915,7 @@ test("lifecycle cli review status normalization tracks rework rounds and rejects
     "inspect",
     runId,
     firstReviewId,
-    "--workdir",
+    "--ogs-dir",
     tempRoot
   ]);
   assert.strictEqual(firstReviewInspect.code, 0);
@@ -919,7 +933,7 @@ test("lifecycle cli review status normalization tracks rework rounds and rejects
     firstReviewId,
     "--decision",
     "approve",
-    "--workdir",
+    "--ogs-dir",
     tempRoot
   ]);
   assert.strictEqual(staleDecision.code, 1);
@@ -933,7 +947,7 @@ test("lifecycle cli review status normalization tracks rework rounds and rejects
     "review.missing",
     "--decision",
     "approve",
-    "--workdir",
+    "--ogs-dir",
     tempRoot
   ]);
   assert.strictEqual(missingReview.code, 1);
@@ -949,7 +963,7 @@ test("lifecycle cli review status normalization tracks rework rounds and rejects
     "approve",
     "--scope",
     "run",
-    "--workdir",
+    "--ogs-dir",
     tempRoot
   ]);
   assert.strictEqual(invalidScope.code, 1);
@@ -965,7 +979,7 @@ test("lifecycle cli review status normalization tracks rework rounds and rejects
     "terminate",
     "--scope",
     "invalid",
-    "--workdir",
+    "--ogs-dir",
     tempRoot
   ]);
   assert.strictEqual(invalidTerminateScope.code, 1);
@@ -1006,11 +1020,11 @@ test("lifecycle cli modern run failures print modern resume hints and reject rem
     "start",
     "--system",
     path.resolve(repoRoot, "examples", "target-model-binding-system.mmd"),
-    "--workdir",
+    "--ogs-dir",
     tempRoot
   ]);
   assert.strictEqual(modernInputError.code, 1);
-  assert.match(modernInputError.stderr, /run start requires --system and --input/);
+  assert.match(modernInputError.stderr, /run start requires --input/);
   assert.doesNotMatch(modernInputError.stderr, /\[hint\]/);
 
   const hiddenProfiles = await runCli([
@@ -1023,7 +1037,7 @@ test("lifecycle cli modern run failures print modern resume hints and reject rem
     "--profiles",
     "profiles.json",
     "--dry-run",
-    "--workdir",
+    "--ogs-dir",
     tempRoot
   ]);
   assert.strictEqual(hiddenProfiles.code, 1);
@@ -1039,7 +1053,7 @@ test("lifecycle cli modern run failures print modern resume hints and reject rem
     "reject hidden log run",
     "--log-run",
     "--dry-run",
-    "--workdir",
+    "--ogs-dir",
     tempRoot
   ]);
   assert.strictEqual(hiddenLogRun.code, 1);
@@ -1054,7 +1068,7 @@ test("lifecycle cli modern run failures print modern resume hints and reject rem
     "--input",
     "modern resume hint",
     "--dry-run",
-    "--workdir",
+    "--ogs-dir",
     tempRoot
   ], {
     env: {
@@ -1078,7 +1092,7 @@ test("lifecycle cli modern run failures print modern resume hints and reject rem
     failedStartRunId,
     "--tools",
     "tools.json",
-    "--workdir",
+    "--ogs-dir",
     tempRoot
   ]);
   assert.strictEqual(hiddenTools.code, 1);
@@ -1090,7 +1104,7 @@ test("lifecycle cli modern run failures print modern resume hints and reject rem
     "resume",
     failedStartRunId,
     "--dry-run",
-    "--workdir",
+    "--ogs-dir",
     tempRoot
   ], {
     env: {

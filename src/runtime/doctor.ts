@@ -92,7 +92,7 @@ export function usage(): string {
     "  --system <file>        Mermaid system to validate with the active config/law catalog",
     "  --run-dir <dir>        Inspect an existing run directory for resume prerequisites",
     "  --online-check         Optional online model connectivity probe (costs tokens)",
-    "  --workdir <path>       Working directory root (default: cwd)",
+    "  --ogs-dir <path>       OGS control-plane root (default: cwd)",
     "  --help                 Show help"
   ].join("\n");
 }
@@ -118,7 +118,7 @@ function parseDoctorArgs() {
         system: { type: "string" },
         "run-dir": { type: "string" },
         "online-check": { type: "boolean" },
-        workdir: { type: "string" },
+        "ogs-dir": { type: "string" },
         help: { type: "boolean", short: "h" }
       },
       allowPositionals: false
@@ -593,10 +593,10 @@ export async function main(): Promise<void> {
     runtimeConfigPath: values.runtime,
     lawsPath: values.laws,
     userProfilePath: values["user-profile"],
-    systemPath: values.system,
+    systemPath: values.system ? resolve(values.system) : undefined,
     runDir: values["run-dir"],
     onlineCheck: values["online-check"] ?? false,
-    workdir: values.workdir
+    workdir: values["ogs-dir"]
   });
 
   console.log(JSON.stringify(report, null, 2));

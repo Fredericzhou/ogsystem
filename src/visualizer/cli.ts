@@ -8,13 +8,13 @@ import { startVisualizationServer } from "./server.js";
 function usage(): string {
   return [
     "Usage:",
-    "  ogs vis [--workdir <path>] [--host <host>] [--port <n|0>]",
+    "  ogs vis [--ogs-dir <path>] [--host <host>] [--port <n|0>]",
     "",
     "Source repository equivalent:",
-    "  pnpm run run:visualizer -- [--workdir <path>] [--host <host>] [--port <n|0>]",
+    "  pnpm run run:visualizer -- [--ogs-dir <path>] [--host <host>] [--port <n|0>]",
     "",
     "Defaults:",
-    "  workdir: current directory",
+    "  ogs-dir: current directory",
     "  host: 127.0.0.1",
     "  port: 3337"
   ].join("\n");
@@ -39,7 +39,7 @@ async function main(): Promise<void> {
   const { values } = parseArgs({
     args: process.argv.slice(2),
     options: {
-      workdir: { type: "string" },
+      "ogs-dir": { type: "string" },
       host: { type: "string" },
       port: { type: "string" },
       help: { type: "boolean", short: "h" }
@@ -52,7 +52,7 @@ async function main(): Promise<void> {
     return;
   }
 
-  const workdir = asString(values.workdir) ?? process.cwd();
+  const workdir = asString(values["ogs-dir"]) ?? process.cwd();
   const host = asString(values.host) ?? "127.0.0.1";
   const port = parsePort(asString(values.port));
   const result = await startVisualizationServer({

@@ -17,6 +17,13 @@ test("project target defaults to the control plane and supports an external codi
     await resolveProjectTargetDirectory({ workdir: controlDir }),
     controlDir
   );
+  assert.equal(
+    await resolveProjectTargetDirectory({
+      workdir: controlDir,
+      targetDir: path.relative(process.cwd(), codingDir)
+    }),
+    codingDir
+  );
 
   await ensureProjectSkeleton({
     workdir: controlDir,
