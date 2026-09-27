@@ -10,7 +10,7 @@
 import { randomUUID } from "node:crypto";
 import type { Dirent } from "node:fs";
 import { createReadStream } from "node:fs";
-import { appendFile, cp, mkdir, readFile, readdir, stat, writeFile } from "node:fs/promises";
+import { appendFile, cp, mkdir, open, readFile, readdir, stat, writeFile } from "node:fs/promises";
 import { createInterface } from "node:readline";
 import { basename, dirname, resolve } from "node:path";
 
@@ -804,6 +804,12 @@ function deriveCurrentReviewStatus(args: {
     !Array.isArray(args.currentState)
       ? (args.currentState as { status?: unknown })
       : undefined;
+  const decision =
+    typeof args.decisionSnapshot === "object" && args.decisionSnapshot !== null && !Array.isArray(args.decisionSnapshot)
+      ? args.decisionSnapshot as Record<string, unknown>
+      : undefined;
+  if (decision?.timedOut === true && decision.decision === "terminate") return "expired";
+  if (decision?.timedOut === true && decision.decision === "pause") return "paused";
   if (typeof currentState?.status === "string") {
     return currentState.status;
   }
@@ -962,6 +968,8 @@ function normalizeReviewProjection(args: {
       (decisionSnapshot?.scope === "branch" || decisionSnapshot?.scope === "run"
         ? decisionSnapshot.scope
         : deriveEffectiveTerminateScope(args)) ?? undefined,
+    timedOut: decisionSnapshot?.timedOut === true,
+    expiredAt: asString(decisionSnapshot?.expiredAt),
     checkpointSequence: asNumber(decisionSnapshot?.checkpointSequence),
     appliedAt: asString(decisionSnapshot?.appliedAt),
     reconciledAt: asString(decisionSnapshot?.reconciledAt),
@@ -1654,6 +1662,7 @@ export async function inspectRun(workdir: string, runId: string): Promise<Record
   if (!runStat?.isDirectory()) {
     throw new Error(`Run not found: ${runId}`);
   }
+  const timedOutReviews = await reconcileHumanReviewTimeouts(runDir);
   const [state, metrics, resolvedConfig, stopRequest, stopOutcome, summary] = await Promise.all([
     tryReadJson(resolve(runDir, "state.json")),
     tryReadJson(resolve(runDir, "metrics.json")),
@@ -1662,7 +1671,26 @@ export async function inspectRun(workdir: string, runId: string): Promise<Record
     tryReadJson(resolve(runDir, "control", "stop-outcome.json")),
     tryReadJson(resolve(runDir, "summary.json"))
   ]);
-  const summaryProjection = asSummaryProjection(summary);
+  const graphState = asGraphStateRecord(state);
+  const pendingReviewsById = graphState?.pendingReviewsById;
+  if (typeof pendingReviewsById === "object" && pendingReviewsById !== null && !Array.isArray(pendingReviewsById)) {
+    for (const timedOut of timedOutReviews) {
+      const review = (pendingReviewsById as Record<string, unknown>)[timedOut.reviewId];
+      if (typeof review === "object" && review !== null && !Array.isArray(review)) {
+        (review as Record<string, unknown>).status = timedOut.action === "terminate" ? "expired" : "paused";
+      }
+    }
+  }
+  const baseSummaryProjection = asSummaryProjection(summary);
+  const projectedPendingCount = countPendingReviewsFromGraphState(graphState);
+  const summaryProjection = baseSummaryProjection && projectedPendingCount !== undefined
+    ? {
+        ...baseSummaryProjection,
+        pendingReviewCount: projectedPendingCount,
+        hasWaitingHumanReview: projectedPendingCount > 0,
+        latestPendingReviewId: getLatestPendingReviewIdFromGraphState(graphState)
+      }
+    : baseSummaryProjection;
   const reviewFields = derivePendingReviewFields({
     summary: summaryProjection,
     state
@@ -1794,12 +1822,146 @@ function resolveReviewsDir(runDir: string): string {
   return resolve(runDir, "control", "reviews");
 }
 
+async function createReviewDecision(path: string, decision: HumanReviewDecisionRecord): Promise<boolean> {
+  await mkdir(dirname(path), { recursive: true });
+  let handle: Awaited<ReturnType<typeof open>>;
+  try {
+    handle = await open(path, "wx");
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === "EEXIST") return false;
+    throw error;
+  }
+  try {
+    await handle.writeFile(`${JSON.stringify(decision, null, 2)}\n`, "utf8");
+    await handle.sync();
+  } finally {
+    await handle.close();
+  }
+  return true;
+}
+
+const timeoutReconciliationByRun = new Map<string, Promise<Array<{ reviewId: string; action: "pause" | "terminate" }>>>();
+
+export async function reconcileHumanReviewTimeouts(
+  runDir: string,
+  now = Date.now()
+): Promise<Array<{ reviewId: string; action: "pause" | "terminate" }>> {
+  const active = timeoutReconciliationByRun.get(runDir);
+  if (active) return active;
+  const reconciliation = reconcileHumanReviewTimeoutsUnlocked(runDir, now).finally(() => {
+    if (timeoutReconciliationByRun.get(runDir) === reconciliation) timeoutReconciliationByRun.delete(runDir);
+  });
+  timeoutReconciliationByRun.set(runDir, reconciliation);
+  return reconciliation;
+}
+
+async function reconcileHumanReviewTimeoutsUnlocked(
+  runDir: string,
+  now: number
+): Promise<Array<{ reviewId: string; action: "pause" | "terminate" }>> {
+  const timedOut: Array<{ reviewId: string; action: "pause" | "terminate" }> = [];
+  const reviewsDir = resolveReviewsDir(runDir);
+  let entries: Dirent[];
+  try {
+    entries = await readdir(reviewsDir, { withFileTypes: true });
+  } catch {
+    return timedOut;
+  }
+  for (const entry of entries) {
+    if (!entry.isFile() || !entry.name.endsWith(".request.json")) continue;
+    const reviewId = entry.name.slice(0, -".request.json".length);
+    const decisionPath = resolve(reviewsDir, `${reviewId}.decision.json`);
+    const existingDecision = await loadReviewRecord(decisionPath);
+    if (existingDecision) {
+      if (typeof existingDecision === "object" && !Array.isArray(existingDecision) && (existingDecision as Record<string, unknown>).timedOut === true) {
+        const decision = existingDecision as Record<string, unknown>;
+        const action = decision.decision === "terminate" ? "terminate" : "pause";
+        timedOut.push({ reviewId, action });
+        const request = await loadReviewRecord(resolve(reviewsDir, entry.name));
+        await ensureHumanReviewTimeoutEvent({ runDir, reviewId, action, decision, request });
+      }
+      continue;
+    }
+    const request = await loadReviewRecord(resolve(reviewsDir, entry.name));
+    if (!request || typeof request !== "object" || Array.isArray(request)) continue;
+    const review = request as Record<string, unknown>;
+    const spec = typeof review.spec === "object" && review.spec !== null && !Array.isArray(review.spec)
+      ? review.spec as Record<string, unknown>
+      : undefined;
+    const timeoutSeconds = typeof spec?.timeoutSeconds === "number" ? spec.timeoutSeconds : undefined;
+    const requestedAt = typeof review.requestedAt === "string" ? Date.parse(review.requestedAt) : Number.NaN;
+    if (!spec || timeoutSeconds === undefined || timeoutSeconds < 0 || !Number.isFinite(requestedAt)) continue;
+    const expiresAtMs = requestedAt + timeoutSeconds * 1000;
+    if (now < expiresAtMs) continue;
+    const expiredAt = new Date(expiresAtMs).toISOString();
+    const decision: HumanReviewDecisionRecord = {
+      reviewId,
+      committedAt: new Date(now).toISOString(),
+      decidedAt: expiredAt,
+      decision: spec.timeoutAction === "terminate" ? "terminate" : "pause",
+      timedOut: true,
+      expiredAt,
+      actor: "ogs-runtime-timeout",
+      ...(spec.timeoutAction === "terminate" && (spec.terminateScope === "branch" || spec.terminateScope === "run")
+        ? { scope: spec.terminateScope }
+        : {})
+    };
+    if (!(await createReviewDecision(decisionPath, decision))) continue;
+    timedOut.push({ reviewId, action: decision.decision as "pause" | "terminate" });
+    await ensureHumanReviewTimeoutEvent({ runDir, reviewId, action: decision.decision as "pause" | "terminate", decision, request });
+  }
+  return timedOut;
+}
+
+async function ensureHumanReviewTimeoutEvent(args: {
+  runDir: string;
+  reviewId: string;
+  action: "pause" | "terminate";
+  decision: Record<string, unknown>;
+  request: unknown;
+}): Promise<void> {
+  const eventId = `human_review_timeout_recorded:${args.reviewId}`;
+  const eventsPath = resolve(args.runDir, "events.ndjson");
+  const events = await readFile(eventsPath, "utf8").catch(() => "");
+  if (events.split(/\r?\n/).some((line) => {
+    if (!line) return false;
+    try {
+      return (JSON.parse(line) as Record<string, unknown>).id === eventId;
+    } catch {
+      return false;
+    }
+  })) return;
+  const requestRecord = typeof args.request === "object" && args.request !== null && !Array.isArray(args.request)
+    ? args.request as Record<string, unknown>
+    : {};
+  const event = {
+    type: "human_review_timeout_recorded",
+    id: eventId,
+    at: typeof args.decision.expiredAt === "string" ? args.decision.expiredAt : args.decision.decidedAt,
+    reviewId: args.reviewId,
+    roleId: requestRecord.roleId,
+    branchId: requestRecord.branchId,
+    lineageId: requestRecord.lineageId,
+    loopIteration: requestRecord.loopIteration,
+    action: args.action,
+    ...(args.decision.scope ? { scope: args.decision.scope } : {})
+  };
+  const handle = await open(eventsPath, "a");
+  try {
+    await handle.writeFile(`${JSON.stringify(event)}\n`, "utf8");
+    await handle.sync();
+  } finally {
+    await handle.close();
+  }
+}
+
 async function loadReviewRecord(path: string): Promise<unknown | undefined> {
   return tryReadJson(path);
 }
 
 export async function listHumanReviews(workdir: string, runId: string): Promise<Record<string, unknown>> {
   const runDir = resolveRunDir(workdir, runId);
+  await reconcileHumanReviewTimeouts(runDir);
   const state = await tryReadJson(resolve(runDir, "state.json"));
   const reviewsDir = resolveReviewsDir(runDir);
   let entries: Dirent[];
@@ -1950,6 +2112,13 @@ export async function writeHumanReviewDecision(args: {
   if (currentStatus !== "pending" && currentStatus !== "paused") {
     throw new Error(`Review "${args.reviewId}" is not actionable; currentStatus=${currentStatus}.`);
   }
+  const priorDecision =
+    typeof currentReview.decisionSnapshot === "object" && currentReview.decisionSnapshot !== null && !Array.isArray(currentReview.decisionSnapshot)
+      ? currentReview.decisionSnapshot as Record<string, unknown>
+      : undefined;
+  if (priorDecision && priorDecision.decision !== "pause") {
+    throw new Error(`Review "${args.reviewId}" already has a durable decision; refusing to overwrite it.`);
+  }
   const runDetail = await inspectRun(args.workdir, args.runId);
   const resolvedConfig = asRecord(runDetail.resolvedConfig);
   const effectiveConfig = asRecord(resolvedConfig?.effective);
@@ -1992,7 +2161,12 @@ export async function writeHumanReviewDecision(args: {
     principal: args.principal,
     scope: effectiveScope
   };
-  await writeJsonFileAtomic(resolve(reviewsDir, `${args.reviewId}.decision.json`), record);
+  const decisionPath = resolve(reviewsDir, `${args.reviewId}.decision.json`);
+  if (priorDecision) {
+    await writeJsonFileAtomic(decisionPath, record);
+  } else if (!(await createReviewDecision(decisionPath, record))) {
+    throw new Error(`Review "${args.reviewId}" already has a durable decision; refusing to overwrite it.`);
+  }
   await recordControlPlaneAudit({
     workdir: args.workdir,
     runId: args.runId,

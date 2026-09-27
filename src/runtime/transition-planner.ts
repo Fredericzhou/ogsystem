@@ -132,6 +132,20 @@ type HumanReviewTransitionEvent =
       reviewId: string;
       decidedAt: string;
       scope: "branch" | "run";
+    }
+  | {
+      type: "human_review_expired";
+      at: string;
+      roleId: string;
+      branchId: string;
+      lineageId: string;
+      loopIteration: number;
+      reviewId: string;
+      decidedAt: string;
+      expiredAt: string;
+      timedOut: true;
+      action: "pause" | "terminate";
+      scope?: "branch" | "run";
     };
 
 type LoopTransitionEvent = {
@@ -1059,18 +1073,30 @@ export function planHumanReviewDecisionTransition(args: ReviewDecisionTransition
         lastWaitingReviewId: args.review.reviewId,
         lastExecutedRoleId: args.review.roleId
       },
-      events: [
-        {
-          type: "human_review_paused",
-          at: new Date().toISOString(),
-          roleId: args.review.roleId,
-          branchId: args.review.branchId,
-          lineageId: args.review.lineageId,
-          loopIteration: args.review.loopIteration,
-          reviewId: args.review.reviewId,
-          decidedAt: args.decision.decidedAt
-        }
-      ]
+      events: args.decision.timedOut
+        ? [{
+            type: "human_review_expired",
+            at: new Date().toISOString(),
+            roleId: args.review.roleId,
+            branchId: args.review.branchId,
+            lineageId: args.review.lineageId,
+            loopIteration: args.review.loopIteration,
+            reviewId: args.review.reviewId,
+            decidedAt: args.decision.decidedAt,
+            expiredAt: args.decision.expiredAt ?? args.decision.decidedAt,
+            timedOut: true,
+            action: "pause"
+          }]
+        : [{
+            type: "human_review_paused",
+            at: new Date().toISOString(),
+            roleId: args.review.roleId,
+            branchId: args.review.branchId,
+            lineageId: args.review.lineageId,
+            loopIteration: args.review.loopIteration,
+            reviewId: args.review.reviewId,
+            decidedAt: args.decision.decidedAt
+          }]
     };
   }
 
@@ -1082,7 +1108,7 @@ export function planHumanReviewDecisionTransition(args: ReviewDecisionTransition
         pendingReviewsById: {
           [args.review.reviewId]: {
             ...args.review,
-            status: "resolved"
+            status: args.decision.timedOut ? "expired" : "resolved"
           }
         },
         reviewHistoryByBranchId: buildReviewHistoryUpdate({
@@ -1106,19 +1132,32 @@ export function planHumanReviewDecisionTransition(args: ReviewDecisionTransition
         },
         lastExecutedRoleId: args.review.roleId
       },
-      events: [
-        {
-          type: "human_review_terminated",
-          at: new Date().toISOString(),
-          roleId: args.review.roleId,
-          branchId: args.review.branchId,
-          lineageId: args.review.lineageId,
-          loopIteration: args.review.loopIteration,
-          reviewId: args.review.reviewId,
-          decidedAt: args.decision.decidedAt,
-          scope: args.decision.scope ?? args.review.spec.terminateScope
-        }
-      ]
+      events: args.decision.timedOut
+        ? [{
+            type: "human_review_expired",
+            at: new Date().toISOString(),
+            roleId: args.review.roleId,
+            branchId: args.review.branchId,
+            lineageId: args.review.lineageId,
+            loopIteration: args.review.loopIteration,
+            reviewId: args.review.reviewId,
+            decidedAt: args.decision.decidedAt,
+            expiredAt: args.decision.expiredAt ?? args.decision.decidedAt,
+            timedOut: true,
+            action: "terminate",
+            scope: args.decision.scope ?? args.review.spec.terminateScope
+          }]
+        : [{
+            type: "human_review_terminated",
+            at: new Date().toISOString(),
+            roleId: args.review.roleId,
+            branchId: args.review.branchId,
+            lineageId: args.review.lineageId,
+            loopIteration: args.review.loopIteration,
+            reviewId: args.review.reviewId,
+            decidedAt: args.decision.decidedAt,
+            scope: args.decision.scope ?? args.review.spec.terminateScope
+          }]
     };
   }
 

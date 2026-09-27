@@ -51,11 +51,11 @@
 
 价值：让现有 `review.timeout` 真正提供 SLA 保障。
 
-当前状态：`review.timeout` 只解析并持久化到 review spec；`expired` 类型存在，但运行时没有自动过期路径。
+当前状态：已实现惰性到期检查。status/inspect/review list/resume 会根据 request 时间和 `review.timeout` 原子创建唯一 decision，并将缺失的 timeout event 补写到事件日志；resume 将 decision 幂等应用到 checkpoint。`pause` 保留可操作的 paused review，`terminate` 按 scope 终止并标记 expired。不配置 timeout 时行为不变；不运行后台 daemon。
 
-最小范围：优先采用 status/inspect/resume 时的惰性过期检查，并持久化明确的 expiry event/decision；不引入常驻 daemon。明确 `pause`、`terminate` 与 `expired` 的状态关系后再实现。
+实现边界：到期时间由 `requestedAt + timeoutSeconds` 计算；若进程在 durable decision 写入后、事件落盘前中断，后续检查会补齐事件。decision artifact 是恢复权威，timeout event 用固定 event id 便于识别重复记录。检查并发在进程内按 run 串行处理。
 
-验收：过期检查幂等、可审计、可恢复；未配置 timeout 的 review 行为保持不变。
+验收：已覆盖 deadline 前不触发、并发检查只生成一份 decision/event、事件缺失后的恢复、未配置 timeout 保持 pending、timeout pause 保持 actionable，以及 terminate decision 经 resume 写入 checkpoint 并只发出一次过期事件。跨进程 inspect/list 的协调仍依赖文件系统原子创建 decision；事件日志以 event id 提供重复识别，尚未承诺跨主机分布式锁。
 
 ### P1-3 外部信号等待与恢复
 

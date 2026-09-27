@@ -12,6 +12,7 @@ import { createInitialGraphState } from "./graph-runtime-state.js";
 import { RunControl } from "@langchain/langgraph";
 import { createRuntimeError, normalizeRuntimeError } from "./runtime-errors.js";
 import { filesystemRunStore } from "./run-store.js";
+import { reconcileHumanReviewTimeouts } from "./project-lifecycle.js";
 import { prepareRuntimeSetup, type RuntimeAdapterSetup } from "./runtime-setup.js";
 import type { AdapterRunResult, GraphState } from "./types.js";
 
@@ -95,6 +96,7 @@ export async function runSystemWithAdapter(args: {
     try {
       setup = await prepareRuntimeSetup(args);
       runContextForCleanup = setup.runContext;
+      if (args.resumeRunDir) await reconcileHumanReviewTimeouts(setup.runContext.runDir);
     } catch (error) {
       executionError = createRuntimeError(
         normalizeRuntimeError(error, {

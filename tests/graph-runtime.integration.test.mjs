@@ -5,7 +5,7 @@ import os from "node:os";
 import { lstat, mkdtemp, mkdir, readFile, readdir, symlink, writeFile } from "node:fs/promises";
 
 import { createFilesystemRuntimeServices, runSystemWithAdapter, semanticIRDigest } from "../dist/runtime/adapter.js";
-import { writeHumanReviewDecision } from "../dist/runtime/project-lifecycle.js";
+import { inspectRun, writeHumanReviewDecision } from "../dist/runtime/project-lifecycle.js";
 import { latestRoleContract } from "../tests-support/role-fixture.mjs";
 
 function parseJsonCodeBlock(markdown) {
@@ -537,6 +537,8 @@ test("adapter stops with pending human review and keeps reviewed output unreleas
 %% entry.role=writer
 %% review.mode.writer=required
 %% review.timeout.writer=300
+%% review.timeout.action.writer=terminate
+%% review.terminate.scope.writer=run
 %% review.rework.max.writer=2
 input -->|GO| writer[Role:writer]
 writer[Role:writer] -->|DONE| output
@@ -573,6 +575,35 @@ writer[Role:writer] -->|DONE| output
   assert.match(eventsLog, /"type":"run_waiting"/);
   assert.match(eventsLog, /"waitKind":"business"/);
   assert.match(eventsLog, /"reason":"human_review"/);
+
+  const reviewPath = path.resolve(runDir, "control", "reviews", "review.writer@1#1.r1.request.json");
+  const reviewRequest = JSON.parse(await readFile(reviewPath, "utf8"));
+  reviewRequest.requestedAt = "2020-01-01T00:00:00.000Z";
+  await writeFile(reviewPath, JSON.stringify(reviewRequest, null, 2), "utf8");
+  const timedOutDetail = await inspectRun(tempRoot, runId);
+  assert.equal(timedOutDetail.pendingReviewCount, 0);
+
+  const expired = await runSystemWithAdapter({
+    systemPath,
+    prompt: "wait for human review",
+    workdir: tempRoot,
+    resumeRunDir: `.ogs/runs/${runId}`,
+    dryRun: true
+  });
+  assert.equal(expired.status, "stopped");
+  const expiredState = JSON.parse(await readFile(path.resolve(runDir, "state.json"), "utf8"));
+  assert.equal(expiredState.graphState.pendingReviewsById["review.writer@1#1.r1"].status, "expired");
+  const appliedDecision = JSON.parse(await readFile(path.resolve(runDir, "control", "reviews", "review.writer@1#1.r1.decision.json"), "utf8"));
+  assert.equal(appliedDecision.timedOut, true);
+  assert.ok(appliedDecision.reconciledAt);
+  const timeoutRecordedEvents = (await readFile(path.resolve(runDir, "events.ndjson"), "utf8"))
+    .split(/\r?\n/)
+    .filter((line) => line.includes('"type":"human_review_timeout_recorded"'));
+  assert.equal(timeoutRecordedEvents.length, 1);
+  const appliedEvents = (await readFile(path.resolve(runDir, "events.ndjson"), "utf8"))
+    .split(/\r?\n/)
+    .filter((line) => line.includes('"type":"human_review_expired"'));
+  assert.equal(appliedEvents.length, 1);
 });
 
 test("adapter resume applies approved human review and releases the reviewed result", async () => {

@@ -768,7 +768,7 @@ async function reconcileCommittedHumanReviewDecisions(args: {
         branchId: pendingReview?.branchId ?? "",
         decidedAt: decision.decidedAt
       }) ||
-      (pendingReview !== undefined && pendingReview.status === "resolved");
+      (pendingReview !== undefined && (pendingReview.status === "resolved" || pendingReview.status === "expired"));
 
     if (alreadyApplied) {
       const appliedDecision = await filesystemReviewStore.markApplied({

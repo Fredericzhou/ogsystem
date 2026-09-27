@@ -587,6 +587,8 @@ export type HumanReviewDecisionRecord = {
   committedAt: string;
   decidedAt: string;
   decision: HumanReviewDecision;
+  timedOut?: boolean;
+  expiredAt?: string;
   comment?: string;
   actor?: string;
   principal?: import("./identity.js").ControlPlanePrincipal;
