@@ -202,7 +202,7 @@ export async function assembleProjectContextFromSource(args: {
   const roleRepoRoot = resolveProjectRoleRepoRoot(args.workdir, runtimeConfig.roleRepo);
   const roleRootDir = resolveProjectRoleRootDir(args.workdir, runtimeConfig.roleRepo);
   const contractPlan = system.graph?.handoffContracts
-    ? await loadFlowContractPlan({ system, contractPath: system.graph.handoffContracts })
+    ? await loadFlowContractPlan({ system, contractPath: resolve(dirname(systemPath), system.graph.handoffContracts) })
     : undefined;
   const rolePackagesByRoleId = await loadRolePackages({ system, roleRootDir });
   const compilerResult = compileExecutionSnapshot({

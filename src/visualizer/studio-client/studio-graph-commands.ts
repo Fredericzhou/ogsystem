@@ -241,9 +241,6 @@ function applyRoleBinding(
     }
   }
   if (args.roleSettings) {
-    for (const key of ["routingMode", "routeOrder", "joinMode", "joinMin", "loopMax", "review"] as const) {
-      delete next[key];
-    }
     Object.assign(next, args.roleSettings);
   }
   return next;

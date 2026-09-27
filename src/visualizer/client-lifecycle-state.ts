@@ -43,6 +43,7 @@ export function createBuildStateSlice() {
     workbenchRunDraft: null,
     workbenchRunDraftErrors: {},
     studioBridge: null,
+    studioAuthoringDraftStatus: "unsaved",
     studioCanvas: null,
     studioBridgeLoaded: false,
     studioBridgeLoading: false,

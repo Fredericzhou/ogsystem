@@ -63,6 +63,7 @@ export type StudioBridgeDraft = {
   systemSource: string;
   validation: StudioSystemValidation;
   authoring: StudioAuthoringDocument | null;
+  authoringDraftStatus: "missing" | "saved" | "stale" | "invalid";
   canvas: StudioGraphSnapshot | null;
   modelCatalog: ModelCatalog | null;
   extracted: {
@@ -338,6 +339,7 @@ export async function inspectStudioBridgeDraft(args: {
       workdir: args.workdir,
       systemPath,
       system,
+      systemSource,
       roleDisplayNames,
       modelSelection
     });
@@ -360,12 +362,47 @@ export async function inspectStudioBridgeDraft(args: {
     authoring = null;
     bridgeValidation = withStudioBridgeImportFailure(validation, error);
   }
+  let authoringDraftStatus: StudioBridgeDraft["authoringDraftStatus"] = "missing";
+  if (authoring) {
+    try {
+      const savedDraft = await loadStudioAuthoringDraft(args.workdir);
+      if (savedDraft.authoring !== null) {
+        if (
+          typeof savedDraft.authoring !== "object" ||
+          Array.isArray(savedDraft.authoring) ||
+          (savedDraft.authoring as { version?: unknown }).version !== 1
+        ) {
+          authoringDraftStatus = "invalid";
+        } else {
+          const savedAuthoring = savedDraft.authoring as StudioAuthoringDocument;
+          const savedSource = serializeAuthoringToMermaid(savedAuthoring);
+          const currentSource = serializeAuthoringToMermaid(authoring);
+          const savedValidation = await args.validateSystemSource({
+            workdir: args.workdir,
+            systemPath,
+            systemSource: savedSource
+          });
+          if (savedValidation.ok !== true) {
+            authoringDraftStatus = "invalid";
+          } else if (savedSource !== currentSource) {
+            authoringDraftStatus = "stale";
+          } else {
+            authoringDraftStatus = "saved";
+            authoring = savedAuthoring;
+          }
+        }
+      }
+    } catch {
+      authoringDraftStatus = "invalid";
+    }
+  }
   return {
     workdir: args.workdir,
     systemPath,
     systemSource,
     validation: bridgeValidation,
     authoring,
+    authoringDraftStatus,
     canvas: authoring ? authoringToCanvasDocument(authoring) : null,
     modelCatalog: modelCatalog ?? null,
     extracted: authoring

@@ -19,6 +19,7 @@ import {
   renderStudioFlowConfigEditor,
   renderStudioRoleConfigEditor,
   renderStudioSystemSettingsEditor,
+  renderStudioContractEditor,
   renderStudioBridgeInspector,
   renderStudioBridgePanel,
   renderStudioDebugOutcomePanel,
@@ -4284,7 +4285,7 @@ test("visualizer client opens Studio Bridge and keeps authoring affordances on t
   assert.equal(harness.document.getElementById("workbench-body").querySelectorAll("[data-studio-side-tab]").length, 2);
   assert.ok(harness.document.getElementById("workbench-body").querySelectorAll("[data-studio-role-id]").length > 0);
   assert.ok(harness.document.getElementById("workbench-body").querySelectorAll("[data-studio-flow-key]").length > 0);
-  assert.match(harness.document.getElementById("workbench-status").textContent, /disk in sync/i);
+  assert.match(harness.document.getElementById("workbench-status").textContent, /system\.mmd saved/i);
   assert.match(harness.document.getElementById("workbench-status").textContent, /validation ok/i);
   assert.match(harness.document.getElementById("workbench-status").textContent, /demo-analyst/i);
   assert.doesNotMatch(harness.document.getElementById("workbench-body").textContent, /\bX6\b/);
@@ -4506,7 +4507,7 @@ test("visualizer client shows role config labels and opens role I/O modal from s
         bindingKind: "exec",
         profileId: "profile.review",
         contextMap: {
-          summary: "$.writer.output.summary"
+          summary: "source(writer).data.output.summary"
         },
         generatedProfileId: "profile.demo-analyst",
         generatedToolRef: "tool.demo-analyst"
@@ -4515,14 +4516,22 @@ test("visualizer client shows role config labels and opens role I/O modal from s
     projectConfig: {
       profiles: [{ profileId: "profile.review", toolRef: "tool.review" }]
     },
+    contracts: {
+      contracts: [{ kind: "role_input", roleId: "demo-analyst", schemaPath: "contracts/schemas/input.json" }],
+      schemaFiles: [{ path: "contracts/schemas/input.json", content: JSON.stringify({ type: "object", required: ["summary", "issueId"], additionalProperties: false, properties: { summary: { type: "string" }, issueId: { type: "string" } } }) }]
+    },
     t: testTranslator
   });
   assert.match(roleConfigHtml, /Agent/);
   assert.match(roleConfigHtml, /Tool/);
   assert.match(roleConfigHtml, /Noop/);
   assert.match(roleConfigHtml, /data-context-map-row/);
-  assert.match(roleConfigHtml, /writer\.output\.summary/);
+  assert.match(roleConfigHtml, /value="output\.summary"/);
+  assert.equal((roleConfigHtml.match(/data-context-map-path/g) || []).length, 2);
+  assert.match(roleConfigHtml, /data-context-map-row-template/);
+  assert.match(roleConfigHtml, /value="output\.summary"/);
   assert.match(roleConfigHtml, /data-context-map-preview/);
+  assert.match(roleConfigHtml, /Missing required role_input field: issueId/);
   assert.match(roleConfigHtml, /data-role-setting="joinMode"/);
   assert.match(roleConfigHtml, /data-role-setting="reviewEnabled"/);
   assert.doesNotMatch(roleConfigHtml, /data-system-setting=/);
@@ -4536,6 +4545,20 @@ test("visualizer client shows role config labels and opens role I/O modal from s
   });
   assert.match(systemSettingsHtml, /data-system-setting="entryRoleId"/);
   assert.match(systemSettingsHtml, /data-system-setting="handoffMode"/);
+  const contractEditorHtml = renderStudioContractEditor({
+    contracts: {
+      manifest: { path: "contracts/handoff.json", content: JSON.stringify({ version: 1, contracts: [{ id: "input.demo", kind: "role_input", match: { roleId: "demo-analyst" }, schema: "schemas/input.json" }] }) },
+      contracts: [{ flowKey: "role_input:demo-analyst", kind: "role_input", roleId: "demo-analyst", contractId: "input.demo", schemaPath: "contracts/schemas/input.json", lastStatus: "covered" }],
+      schemaFiles: [{ path: "contracts/schemas/input.json", content: "{}" }],
+      coverage: { eligibleFlowCount: 2, coveredFlowCount: 1 }
+    },
+    t: testTranslator
+  });
+  assert.match(contractEditorHtml, /data-contract-kind/);
+  assert.match(contractEditorHtml, /data-contract-role-fields/);
+  assert.match(contractEditorHtml, /data-contract-flow-fields/);
+  assert.match(contractEditorHtml, /data-contract-manifest-save/);
+  assert.match(contractEditorHtml, /data-contract-file-save/);
   const quorumConfigHtml = renderStudioRoleConfigEditor({
     roleId: "merge",
     editor: { roleId: "merge", data: { roleId: "merge", bindingKind: "noop", joinMode: "quorum_of", joinMin: 1, contextMap: { first: "source(worker).content" } } },

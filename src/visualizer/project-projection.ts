@@ -1,13 +1,13 @@
 import { basename, dirname, relative, resolve, sep } from "node:path";
-import { createHash } from "node:crypto";
-import { mkdir, readdir, readFile, rm, stat, writeFile } from "node:fs/promises";
+import { createHash, randomUUID } from "node:crypto";
+import { mkdir, readdir, readFile, realpath, rename, rm, stat, writeFile } from "node:fs/promises";
 
 import { loadRuntimeConfig } from "../runtime/runtime-loader.js";
 import { parseSystemFromMermaidSource } from "../runtime/parse-mermaid.js";
 import { resolveProjectRoleRepoRoot, resolveProjectRoleRootDir, resolveTemplateRoleRootDir } from "../runtime/bundled-repos.js";
 import { isRuntimeOnlyErrorEvent } from "../runtime/error-flow-utils.js";
-import { buildFlowContractKeyForFlow } from "../runtime/flow-contract.js";
-import { readJsonFile, writeJsonFileAtomic } from "../runtime/json-file.js";
+import { buildFlowContractKeyForFlow, loadFlowContractPlan } from "../runtime/flow-contract.js";
+import { readJsonFile, writeJsonFileAtomic, writeTextFileAtomic } from "../runtime/json-file.js";
 import { isDirectModelRef } from "../runtime/model-selection.js";
 import { RuntimeError } from "../runtime/runtime-errors.js";
 import {
@@ -672,7 +672,7 @@ export async function saveProjectSystemSource(args: {
     };
   }
   await mkdir(dirname(savedPath), { recursive: true });
-  await writeFile(savedPath, args.systemSource, "utf8");
+  await writeTextFileAtomic(savedPath, args.systemSource);
   invalidateProjectProjectionCache(args.workdir);
   return {
     workdir: args.workdir,
@@ -1449,6 +1449,7 @@ export async function saveProjectRolePackageFilesVisualization(args: {
 }
 
 export async function inspectProjectContractVisualization(workdir: string): Promise<Record<string, unknown>> {
+  await assertConfiguredContractFilesInsideProject(workdir);
   const context = await loadProjectContext(workdir);
   const eligibleFlows = context.system.flows.filter(
     (flow) => flow.toRoleId !== SYSTEM_END_ROLE_ID && !isRuntimeOnlyErrorEvent(flow.eventType)
@@ -1467,7 +1468,7 @@ export async function inspectProjectContractVisualization(workdir: string): Prom
         flowKey,
         contractId: contract?.definition.id,
         kind: "flow" as const,
-        schemaPath: contract?.schemaPath,
+      schemaPath: contract?.schemaPath ? relative(workdir, contract.schemaPath).split(sep).join("/") : undefined,
         lastStatus: contract ? "covered" : "missing",
         onViolation: contract?.definition.onViolation ?? "FAIL",
         fromRoleId: flow.fromRoleId,
@@ -1482,7 +1483,7 @@ export async function inspectProjectContractVisualization(workdir: string): Prom
       flowKey: `role_input:${roleId}`,
       contractId: contract.definition.id,
       kind: "role_input" as const,
-      schemaPath: contract.schemaPath,
+      schemaPath: relative(workdir, contract.schemaPath).split(sep).join("/"),
       lastStatus: "covered",
       onViolation: contract.definition.onViolation ?? "FAIL",
       roleId
@@ -1496,11 +1497,29 @@ export async function inspectProjectContractVisualization(workdir: string): Prom
       eventType: item.eventType,
       reason: "missing flow contract"
     }));
+  const contractPath = context.contractPlan?.contractPath
+    ? resolve(workdir, context.contractPlan.contractPath)
+    : undefined;
+  const compiledContracts = [
+    ...(context.contractPlan?.flowContractsByKey.values() ?? []),
+    ...(context.contractPlan?.roleInputContractsByRoleId.values() ?? [])
+  ];
+  const schemaPaths = [...new Set(compiledContracts.map((contract) => contract.schemaPath))];
+  const projectRoot = await realpath(workdir);
+  if (contractPath) await assertProjectContractPath(projectRoot, contractPath);
+  for (const schemaPath of schemaPaths) await assertProjectContractPath(projectRoot, schemaPath);
+  const manifestContent = contractPath ? await readFile(contractPath, "utf8").catch(() => "") : "";
+  const schemaFiles = await Promise.all(schemaPaths.map(async (schemaPath) => ({
+    path: relative(workdir, schemaPath).split(sep).join("/"),
+    content: await readFile(schemaPath, "utf8")
+  })));
   return {
     workdir,
     systemId: context.system.systemId,
     handoffMode: context.system.graph?.handoffMode ?? null,
     contractPath: context.contractPlan?.contractPath ?? null,
+    manifest: contractPath ? { path: relative(workdir, contractPath).split(sep).join("/"), content: manifestContent } : null,
+    schemaFiles,
     coverage: {
       eligibleFlowCount: eligibleFlows.length,
       coveredFlowCount: contractItems.filter((item) => item.lastStatus === "covered").length,
@@ -1510,4 +1529,117 @@ export async function inspectProjectContractVisualization(workdir: string): Prom
     uncoveredEdges,
     contracts: [...contractItems, ...roleInputItems]
   };
+}
+
+async function assertProjectContractPath(projectRoot: string, candidatePath: string): Promise<string> {
+  const canonicalPath = await realpath(candidatePath);
+  const relativePath = relative(projectRoot, canonicalPath);
+  if (relativePath === ".." || relativePath.startsWith(`..${sep}`) || resolve(projectRoot, relativePath) !== canonicalPath) {
+    throw new Error("Contract files and referenced schemas must resolve inside the project directory.");
+  }
+  return canonicalPath;
+}
+
+async function assertContractManifestFilesInsideProject(args: {
+  projectRoot: string;
+  manifestPath: string;
+  manifestValue?: unknown;
+}): Promise<void> {
+  const manifestPath = await assertProjectContractPath(args.projectRoot, args.manifestPath);
+  const manifest = args.manifestValue ?? JSON.parse(await readFile(manifestPath, "utf8")) as unknown;
+  const record = asRecord(manifest);
+  const contracts = Array.isArray(record?.contracts) ? record.contracts.map(asRecord).filter((item): item is Record<string, unknown> => Boolean(item)) : [];
+  const visited = new Set<string>();
+  const visitSchema = async (schemaPath: string, candidate?: unknown): Promise<void> => {
+    const canonicalPath = await assertProjectContractPath(args.projectRoot, schemaPath);
+    if (visited.has(canonicalPath)) return;
+    visited.add(canonicalPath);
+    const value = candidate ?? JSON.parse(await readFile(canonicalPath, "utf8")) as unknown;
+    const refs: string[] = [];
+    const collect = (node: unknown): void => {
+      if (Array.isArray(node)) {
+        node.forEach(collect);
+      } else if (node && typeof node === "object") {
+        for (const [key, child] of Object.entries(node)) {
+          if (key === "$ref" && typeof child === "string") refs.push(child);
+          collect(child);
+        }
+      }
+    };
+    collect(value);
+    for (const ref of refs) {
+      const hashIndex = ref.indexOf("#");
+      const refPath = hashIndex < 0 ? ref : ref.slice(0, hashIndex);
+      if (/^[a-zA-Z][a-zA-Z0-9+.-]*:\/\//.test(ref)) continue;
+      const target = refPath ? resolve(dirname(canonicalPath), refPath) : canonicalPath;
+      await visitSchema(target);
+    }
+  };
+  for (const contract of contracts) {
+    if (typeof contract.schema !== "string" || !contract.schema.trim()) continue;
+    await visitSchema(resolve(dirname(manifestPath), contract.schema));
+  }
+}
+
+async function assertConfiguredContractFilesInsideProject(workdir: string): Promise<void> {
+  const systemPath = resolve(workdir, "system.mmd");
+  const system = parseSystemFromMermaidSource(await readFile(systemPath, "utf8"));
+  const contractRef = system.graph?.handoffContracts;
+  if (!contractRef) return;
+  const projectRoot = await realpath(workdir);
+  await assertContractManifestFilesInsideProject({
+    projectRoot,
+    manifestPath: resolve(dirname(systemPath), contractRef)
+  });
+}
+
+export async function saveProjectContractFileVisualization(args: {
+  workdir: string;
+  filePath: string;
+  content: string;
+}): Promise<Record<string, unknown>> {
+  await assertConfiguredContractFilesInsideProject(args.workdir);
+  const context = await loadProjectContext(args.workdir);
+  if (!context.contractPlan) throw new Error("A valid configured handoff contract file is required before editing contracts.");
+  const manifestPath = resolve(dirname(context.systemPath), context.system.graph?.handoffContracts ?? context.contractPlan.contractPath ?? "");
+  const projectRoot = await realpath(args.workdir);
+  const canonicalManifestPath = await assertProjectContractPath(projectRoot, manifestPath);
+  const requestedPath = await assertProjectContractPath(projectRoot, resolve(args.workdir, args.filePath));
+  const allowedSchemas = new Set(await Promise.all([
+    ...context.contractPlan.flowContractsByKey.values(),
+    ...context.contractPlan.roleInputContractsByRoleId.values()
+  ].map((contract) => assertProjectContractPath(projectRoot, resolve(contract.schemaPath)))));
+  if (requestedPath !== canonicalManifestPath && !allowedSchemas.has(requestedPath)) {
+    throw new Error("Only the configured contract manifest and its directly referenced schemas can be saved here.");
+  }
+  let candidate: unknown;
+  try {
+    candidate = JSON.parse(args.content);
+  } catch (error) {
+    throw new Error(`Invalid JSON: ${error instanceof Error ? error.message : String(error)}`);
+  }
+  const tempPath = resolve(dirname(requestedPath), `.${basename(requestedPath)}.${randomUUID()}.candidate`);
+  const tempManifestPath = requestedPath === canonicalManifestPath ? tempPath : resolve(dirname(canonicalManifestPath), `.${basename(canonicalManifestPath)}.${randomUUID()}.candidate`);
+  try {
+    await writeFile(tempPath, JSON.stringify(candidate, null, 2) + "\n", "utf8");
+    if (requestedPath === canonicalManifestPath) {
+      await assertContractManifestFilesInsideProject({ projectRoot, manifestPath: tempPath, manifestValue: candidate });
+      await loadFlowContractPlan({ system: context.system, contractPath: tempPath });
+    } else {
+      if (!candidate || typeof candidate !== "object" || Array.isArray(candidate)) throw new Error("A JSON Schema must be an object.");
+      const source = JSON.parse(await readFile(canonicalManifestPath, "utf8")) as { contracts?: Array<Record<string, unknown>> };
+      const contractEntry = source.contracts?.find((entry) => resolve(dirname(canonicalManifestPath), String(entry.schema ?? "")) === requestedPath);
+      if (!contractEntry) throw new Error("Schema is not directly referenced by the configured contract manifest.");
+      const tempSchemaRef = relative(dirname(canonicalManifestPath), tempPath).split(sep).join("/");
+      contractEntry.schema = tempSchemaRef;
+      await writeFile(tempManifestPath, JSON.stringify(source, null, 2) + "\n", "utf8");
+      await assertContractManifestFilesInsideProject({ projectRoot, manifestPath: tempManifestPath, manifestValue: source });
+      await loadFlowContractPlan({ system: context.system, contractPath: tempManifestPath });
+    }
+    await writeTextFileAtomic(requestedPath, JSON.stringify(candidate, null, 2) + "\n");
+    invalidateProjectProjectionCache(args.workdir);
+    return inspectProjectContractVisualization(args.workdir);
+  } finally {
+    await Promise.all([rm(tempPath, { force: true }), rm(tempManifestPath, { force: true })]);
+  }
 }

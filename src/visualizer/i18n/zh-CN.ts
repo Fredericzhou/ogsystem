@@ -3,6 +3,16 @@ import type { en } from "./en.js";
 type MessageKey = keyof typeof en;
 
 export const zhCN = {
+  "studio.graph.authoringDraft.saved": "Studio 作者草稿已保存",
+  "studio.graph.authoringDraft.unsaved": "Studio 作者草稿未保存",
+  "studio.graph.authoringDraft.stale": "Studio 作者草稿已过期",
+  "studio.graph.authoringDraft.invalid": "Studio 作者草稿无效",
+  "studio.graph.restoreDraft": "恢复已保存的 Studio 草稿",
+  "studio.graph.noSavedDraft": "没有可恢复的 Studio 草稿。",
+  "workbench.systemSaved": "正式 system.mmd 已保存",
+  "workbench.systemUnsaved": "正式 system.mmd 未保存",
+  "studio.contextMapPath": "字段路径（可选）",
+  "studio.handoffModeRequired": "配置合同文件时，请选择 Handoff 模式。",
   "app.title": "OGS多智能体图编排系统",
   "app.locale": "语言",
   "app.local": "本地",

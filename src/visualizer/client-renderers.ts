@@ -1,6 +1,7 @@
 import { escapeHtml as escapeText } from "./html-escape.js";
 import { studioRolePackageHasRequiredFileCoverage, type StudioRolePackageSummary } from "./studio-client/studio-graph-validation.js";
 import { roleColorForId } from "./role-color.js";
+import { listContextSelectorCandidates } from "../context-selector.js";
 
 type JsonRecord = Record<string, unknown>;
 type Translator = (key: string, vars?: Record<string, unknown>, fallback?: string) => string;
@@ -1007,12 +1008,45 @@ export function renderStudioSystemSettingsEditor(args: {
   return '<details class="studio-system-settings"><summary>' + escapeText(t("studio.systemSettings", undefined, "System settings")) + '</summary><div class="form-grid"><label class="field"><span>System ID</span><input data-system-setting="systemId" value="' + escapeText(String(system.systemId ?? "")) + '"></label><label class="field"><span>' + escapeText(t("studio.systemVersion", undefined, "Version")) + '</span><input data-system-setting="systemVersion" value="' + escapeText(String(system.systemVersion ?? "")) + '"></label><label class="field"><span>' + escapeText(t("studio.globalLaw", undefined, "Global law")) + '</span><select data-system-setting="lawGlobalRef">' + lawOptions + '</select></label><label class="field"><span>' + escapeText(t("studio.entryRole", undefined, "Entry role")) + '</span><select data-system-setting="entryRoleId">' + entryRoleOptions + '</select></label><label class="field"><span>' + escapeText(t("studio.entryEvent", undefined, "Entry event")) + '</span><input data-system-setting="entryEventType" value="' + escapeText(String(system.entryEventType ?? "START")) + '"></label><label class="field"><span>Handoff mode</span><select data-system-setting="handoffMode"><option value="">' + escapeText(t("common.none", undefined, "None")) + '</option><option value="transition"' + (system.handoffMode === "transition" ? " selected" : "") + '>transition</option><option value="strict"' + (system.handoffMode === "strict" ? " selected" : "") + '>strict</option></select></label><label class="field full"><span>' + escapeText(t("studio.handoffContractsFile", undefined, "Handoff contracts file")) + '</span><input data-system-setting="handoffContracts" value="' + escapeText(String(system.handoffContracts ?? "")) + '"></label></div><button type="button" class="button primary" data-system-settings-save>' + escapeText(t("action.save", undefined, "Save system settings")) + '</button></details>';
 }
 
+export function renderStudioContractEditor(args: {
+  contracts?: JsonRecord | null | undefined;
+  t?: Translator;
+}): string {
+  const t: Translator = typeof args.t === "function" ? args.t : (_key, _vars, fallback) => fallback ?? _key;
+  const data = args.contracts ?? {};
+  const coverage = asRecord(data.coverage) ?? {};
+  const rows = Array.isArray(data.contracts) ? data.contracts.map(asRecord).filter((row): row is JsonRecord => Boolean(row)) : [];
+  const manifest = asRecord(data.manifest);
+  if (!manifest) return '<details class="studio-contract-editor"><summary>' + escapeText(t("studio.contracts", undefined, "Handoff contracts")) + '</summary><p class="hint">' + escapeText(t("studio.contractsNotConfigured", undefined, "Configure and save a contract file in System settings first.")) + '</p></details>';
+  const editor = (file: JsonRecord) => '<div data-contract-file-editor><label class="field full"><span>' + escapeText(String(file.path ?? "")) + '</span><textarea data-contract-file-content rows="12" spellcheck="false">' + escapeText(String(file.content ?? "")) + '</textarea></label><div data-contract-save-error class="hint severity-error" role="alert"></div><button type="button" class="button subtle" data-contract-file-save="' + escapeText(String(file.path ?? "")) + '">' + escapeText(t("action.save", undefined, "Save file")) + '</button></div>';
+  const schemaFiles = Array.isArray(data.schemaFiles) ? data.schemaFiles.map(asRecord).filter((file): file is JsonRecord => Boolean(file)) : [];
+  let contractEntries: JsonRecord[] = [];
+  try {
+    const parsed = JSON.parse(String(manifest.content ?? "")) as JsonRecord;
+    contractEntries = Array.isArray(parsed.contracts) ? parsed.contracts.map(asRecord).filter((entry): entry is JsonRecord => Boolean(entry)) : [];
+  } catch { /* Keep a visible repair path in the form. */ }
+  const renderContractRow = (entry: JsonRecord) => {
+    const match = asRecord(entry.match) ?? {};
+    const roleInput = entry.kind === "role_input";
+    const property = (name: string, value: unknown, label: string) => '<label class="field"><span>' + escapeText(label) + '</span><input data-contract-property="' + escapeText(name) + '" value="' + escapeText(String(value ?? "")) + '"></label>';
+    return '<div class="form-grid studio-contract-row" data-contract-row><label class="field"><span>Kind</span><select data-contract-kind><option value="flow"' + (!roleInput ? ' selected' : '') + '>Flow</option><option value="role_input"' + (roleInput ? ' selected' : '') + '>Role input</option></select></label>' +
+      property("id", entry.id, "Contract id") +
+      '<div class="form-grid" data-contract-flow-fields' + (roleInput ? ' hidden' : '') + '>' + property("fromRoleId", match.fromRoleId, "From role") + property("eventType", match.eventType, "Event type") + property("toRoleId", match.toRoleId, "To role") + '<label class="field"><span>Match mode</span><select data-contract-property="mode"><option value=""' + (!match.mode ? ' selected' : '') + '>Flow</option><option value="split"' + (match.mode === "split" ? ' selected' : '') + '>Split</option></select></label></div>' +
+      '<div class="form-grid" data-contract-role-fields' + (!roleInput ? ' hidden' : '') + '>' + property("roleId", match.roleId, "Role id") + '</div>' +
+      '<label class="field"><span>On violation</span><select data-contract-property="onViolation"><option value="FAIL"' + ((entry.onViolation ?? "FAIL") === "FAIL" ? ' selected' : '') + '>FAIL</option><option value="WARN"' + (entry.onViolation === "WARN" ? ' selected' : '') + '>WARN</option></select></label>' +
+      property("schema", entry.schema, "Schema path") + '<button type="button" class="button subtle" data-contract-remove aria-label="' + escapeText(t("action.remove", undefined, "Remove")) + '">×</button></div>';
+  };
+  const contractPath = String(manifest.path ?? "");
+  return '<details class="studio-contract-editor"><summary>' + escapeText(t("studio.contracts", undefined, "Handoff contracts")) + '</summary><div class="hint">' + escapeText(`${String(coverage.coveredFlowCount ?? 0)} / ${String(coverage.eligibleFlowCount ?? 0)} eligible flows covered`) + '</div><table class="data-table"><thead><tr><th>Flow / Role</th><th>Contract</th><th>Status</th><th>Schema</th></tr></thead><tbody>' + rows.map((row) => '<tr><td>' + escapeText(String(row.flowKey ?? "")) + '</td><td>' + escapeText(String(row.contractId ?? "")) + '</td><td>' + escapeText(String(row.lastStatus ?? "")) + '</td><td>' + escapeText(String(row.schemaPath ?? "")) + '</td></tr>').join("") + '</tbody></table><h3>' + escapeText(t("studio.contractList", undefined, "Contract list")) + '</h3><div data-contract-rows>' + contractEntries.map(renderContractRow).join("") + '</div><template data-contract-row-template>' + renderContractRow({ kind: "flow", match: {}, onViolation: "FAIL" }) + '</template><button type="button" class="button subtle" data-contract-add>+ ' + escapeText(t("studio.addContract", undefined, "Add contract")) + '</button><div data-contract-manifest-error class="hint severity-error" role="alert"></div><button type="button" class="button primary" data-contract-manifest-save="' + escapeText(contractPath) + '">' + escapeText(t("action.save", undefined, "Save contract list")) + '</button>' + schemaFiles.map((file) => '<details><summary>' + escapeText(String(file.path ?? "")) + '</summary>' + editor(file) + '</details>').join("") + '</details>';
+}
+
 export function renderStudioRoleConfigEditor(args: {
   roleId: string;
   editor?: JsonRecord | null | undefined;
   projectConfig?: JsonRecord | null | undefined;
   modelCatalog?: JsonRecord | null | undefined;
   authoring?: JsonRecord | null | undefined;
+  contracts?: JsonRecord | null | undefined;
   t?: Translator;
 }): string {
   const t: Translator = typeof args.t === "function" ? args.t : (_key, _vars, fallback) => fallback ?? _key;
@@ -1037,6 +1071,21 @@ export function renderStudioRoleConfigEditor(args: {
   const modelId = String(draft.modelId ?? data.modelId ?? "");
   const profileId = String(draft.profileId ?? data.profileId ?? "");
   const contextMap = asRecord(draft.contextMap ?? data.contextMap) ?? {};
+  const contractsData = args.contracts ?? {};
+  const inputContract = (Array.isArray(contractsData.contracts) ? contractsData.contracts : [])
+    .map(asRecord).find((entry) => entry?.kind === "role_input" && entry.roleId === args.roleId);
+  const inputSchemaFile = (Array.isArray(contractsData.schemaFiles) ? contractsData.schemaFiles : [])
+    .map(asRecord).find((entry) => entry?.path === inputContract?.schemaPath);
+  let inputSchema: JsonRecord = {};
+  try {
+    inputSchema = asRecord(JSON.parse(String(inputSchemaFile?.content ?? "{}"))) ?? {};
+  } catch { /* The contract workspace reports malformed Schema JSON. */ }
+  const requiredInputs = Array.isArray(inputSchema.required) ? inputSchema.required.filter((field): field is string => typeof field === "string") : [];
+  const mappedFields = new Set(Object.keys(contextMap));
+  const schemaInputIssues = requiredInputs.filter((field) => !mappedFields.has(field)).map((field) => `Missing required role_input field: ${field}`);
+  if (inputSchema.additionalProperties === false) {
+    schemaInputIssues.push(...Object.keys(contextMap).filter((field) => !asRecord(inputSchema.properties)?.[field]).map((field) => `Field is not allowed by role_input schema: ${field}`));
+  }
   const authoring = asRecord(args.authoring) ?? {};
   const allRoles = asRecord(authoring.roles) ?? {};
   const allFlows = asRecord(authoring.flows) ?? {};
@@ -1049,36 +1098,30 @@ export function renderStudioRoleConfigEditor(args: {
   const loopMax = String(roleSetting("loopMax", role.loopMax ?? ""));
   const incoming = Object.values(allFlows).filter((flow) => asRecord(flow)?.toRoleId === args.roleId).map((flow) => asRecord(flow)?.fromRoleId).filter((id): id is string => typeof id === "string");
   const joinSources = Array.from(new Set(incoming));
-  const selectors = new Set<string>([
-    "global.task", "global.user_profile", "global.user_profile.language", "global.user_profile.preferences",
-    "global.human_review.current.comment", "global.human_review.current.round",
-    "global.human_review.current.previous_output.content"
-  ]);
-  if (joinMode) {
-    const sourcesAvailable = joinMode !== "quorum_of" || Number(joinMin) >= joinSources.length;
-    if (sourcesAvailable) for (const source of joinSources) {
-      selectors.add(`source(${source}).content`);
-      selectors.add(`source(${source}).event`);
-      selectors.add(`source(${source}).data`);
+  const selectors = new Set(listContextSelectorCandidates({ incomingRoleIds: joinSources, joinMode, joinMin: Number(joinMin) }));
+  const splitContextSelector = (selector: string) => {
+    const sourceData = selector.match(/^(source\([^)]+\)\.data)\.(.+)$/);
+    if (sourceData) return { base: sourceData[1]!, path: sourceData[2]! };
+    for (const root of ["direct.data", "global.user_profile", "global.human_review.current.previous_output"]) {
+      if (selector.startsWith(root + ".")) return { base: root, path: selector.slice(root.length + 1) };
     }
-  } else if (incoming.length) {
-    selectors.add("direct.content");
-    selectors.add("direct.event");
-    selectors.add("direct.data");
-  }
-  for (const selector of Object.values(contextMap)) if (typeof selector === "string") selectors.add(selector.replace(/\?$/, ""));
+    return { base: selector, path: "" };
+  };
   const selectorOptionsFor = (selected: string) => Array.from(selectors).sort((left, right) => left.localeCompare(right)).map((selector) => {
     const source = selector.match(/^source\(([^)]+)\)\./)?.[1];
     const forbidden = Boolean(source && (!joinMode || !joinSources.includes(source) || (joinMode === "quorum_of" && Number(joinMin) < joinSources.length)));
     return '<option value="' + escapeText(selector) + '"' + (selector === selected ? " selected" : "") + (forbidden ? " disabled" : "") + '>' + escapeText(selector) + (forbidden ? " · unavailable" : "") + "</option>";
-  }).join("");
+  }).join("") + (selected && !selectors.has(selected) ? '<option value="' + escapeText(selected) + '" selected>' + escapeText(selected) + '</option>' : "");
   const contextRows = Object.entries(contextMap).sort(([left], [right]) => left.localeCompare(right)).map(([field, selector]) => {
     const optional = typeof selector === "string" && selector.endsWith("?");
-    const sourceSelector = typeof selector === "string" ? selector.replace(/\?$/, "") : "";
+    const selectorValue = typeof selector === "string" ? selector.replace(/\?$/, "") : "";
+    const nested = selectorValue.match(/^(source\([^)]+\)\.data|direct\.data|global\.user_profile|global\.human_review\.current\.previous_output)\.(.+)$/);
+    const sourceSelector = nested?.[1] || selectorValue;
+    const pathValue = nested?.[2] || "";
     const optionalDisabled = disabled || (!optional && !sourceSelector.startsWith("global.human_review.current")) ? " disabled" : "";
-    return '<div class="form-grid studio-context-map-row" data-context-map-row><label class="field"><span>' + escapeText(t("studio.contextMapTargetField", undefined, "Target field")) + '</span><input data-context-map-target value="' + escapeText(field) + '"' + disabled + '></label><label class="field"><span>' + escapeText(t("studio.contextMapSource", undefined, "Source")) + '</span><select data-context-map-selector data-current-selector="' + escapeText(sourceSelector) + '"' + disabled + '>' + selectorOptionsFor(sourceSelector) + '</select></label><label class="field checkbox"><input type="checkbox" data-context-map-optional' + (optional ? " checked" : "") + optionalDisabled + '><span>' + escapeText(t("common.optional", undefined, "Optional")) + '</span></label><button type="button" class="button subtle" data-context-map-remove aria-label="' + escapeText(t("action.remove", undefined, "Remove")) + '"' + disabled + '>×</button></div>';
+    return '<div class="form-grid studio-context-map-row" data-context-map-row><label class="field"><span>' + escapeText(t("studio.contextMapTargetField", undefined, "Target field")) + '</span><input data-context-map-target value="' + escapeText(field) + '"' + disabled + '></label><label class="field"><span>' + escapeText(t("studio.contextMapSource", undefined, "Source")) + '</span><select data-context-map-selector data-current-selector="' + escapeText(sourceSelector) + '"' + disabled + '>' + selectorOptionsFor(sourceSelector) + '</select></label><label class="field"><span>' + escapeText(t("studio.contextMapPath", undefined, "Field path (optional)")) + '</span><input data-context-map-path value="' + escapeText(pathValue) + '" placeholder="issue.id"' + disabled + '></label><label class="field checkbox"><input type="checkbox" data-context-map-optional' + (optional ? " checked" : "") + optionalDisabled + '><span>' + escapeText(t("common.optional", undefined, "Optional")) + '</span></label><button type="button" class="button subtle" data-context-map-remove aria-label="' + escapeText(t("action.remove", undefined, "Remove")) + '"' + disabled + '>×</button></div>';
   }).join("");
-  const joinThresholdInvalid = joinMode === "quorum_of" && Number(joinMin) < joinSources.length;
+  const quorumSourcesUnavailable = joinMode === "quorum_of" && Number(joinMin) < joinSources.length;
   const outgoingTargets = Array.from(new Set(Object.values(allFlows).map((flow) => asRecord(flow)).filter((flow) => flow?.fromRoleId === args.roleId && flow.toRoleId !== "__system_end__").map((flow) => String(flow?.toRoleId || "")))).sort((left, right) => left.localeCompare(right));
   const reachesRole = (start: string, visited = new Set<string>()): boolean => {
     if (start === args.roleId) return true;
@@ -1093,7 +1136,12 @@ export function renderStudioRoleConfigEditor(args: {
   const routeOrderRows = orderedTargets.map((target, index) => '<label class="field studio-route-order-row"><span>' + escapeText(target) + '</span><input type="number" min="1" max="' + orderedTargets.length + '" data-route-order-position data-route-order-target="' + escapeText(target) + '" value="' + (index + 1) + '"' + disabled + '></label>').join("");
   const review = asRecord(settingsDraft.review ?? role.review) ?? {};
   const reviewEnabled = review.mode === "required";
-  const roleOptions = Object.keys(allRoles).sort((left, right) => left.localeCompare(right)).map((id) => '<option value="' + escapeText(id) + '">' + escapeText(id) + '</option>').join("");
+  const reviewTarget = String(review.reworkTargetRoleId || "");
+  const reviewTargetOptions = [
+    '<option value="">' + escapeText(t("common.none", undefined, "None")) + '</option>',
+    ...(reviewTarget && !Object.prototype.hasOwnProperty.call(allRoles, reviewTarget) ? ['<option value="' + escapeText(reviewTarget) + '" selected>' + escapeText(reviewTarget + " (missing role)") + '</option>'] : []),
+    ...Object.keys(allRoles).sort((left, right) => left.localeCompare(right)).map((id) => '<option value="' + escapeText(id) + '"' + (id === reviewTarget ? ' selected' : '') + '>' + escapeText(id) + '</option>')
+  ].join("");
   const generatedProfileId = String(data.generatedProfileId ?? "");
   const generatedToolRef = String(data.generatedToolRef ?? "");
   const profiles = Array.isArray((args.projectConfig ?? {}).profiles)
@@ -1168,10 +1216,11 @@ export function renderStudioRoleConfigEditor(args: {
       (joinMode === "quorum_of" ? '<label class="field"><span>' + escapeText(t("studio.joinMinimum", undefined, "Minimum sources")) + '</span><input type="number" min="1" max="' + Math.max(1, joinSources.length) + '" step="1" data-role-setting="joinMin" value="' + escapeText(joinMin) + '"' + disabled + '></label>' : "") +
       '<div class="hint">' + escapeText(joinSources.length ? t("studio.joinSourcesFromEdges", { count: String(joinSources.length) }, "Sources follow the {count} incoming graph edges.") : t("studio.joinNeedsIncoming", undefined, "Add incoming flows to define Join sources.")) + '</div></section>' +
       '<section class="field full"><strong>' + escapeText(t("studio.humanReview", undefined, "Human review")) + '</strong><label class="field checkbox"><input type="checkbox" data-role-setting="reviewEnabled"' + (reviewEnabled ? " checked" : "") + disabled + '><span>' + escapeText(t("studio.reviewRequired", undefined, "Require human review")) + '</span></label>' +
-      (reviewEnabled ? '<div class="form-grid"><label class="field"><span>' + escapeText(t("studio.reviewTimeout", undefined, "Timeout (seconds)")) + '</span><input type="number" min="0" step="1" data-role-setting="reviewTimeout" value="' + escapeText(String(review.timeoutSeconds ?? "")) + '"' + disabled + '></label><label class="field"><span>' + escapeText(t("studio.reviewTimeoutAction", undefined, "Timeout action")) + '</span><select data-role-setting="reviewTimeoutAction"' + disabled + '><option value="pause"' + (review.timeoutAction === "pause" ? " selected" : "") + '>pause</option><option value="terminate"' + (review.timeoutAction === "terminate" ? " selected" : "") + '>terminate</option></select></label><label class="field"><span>' + escapeText(t("studio.reworkTarget", undefined, "Rework target")) + '</span><select data-role-setting="reviewTarget"' + disabled + '><option value="">' + escapeText(t("common.none", undefined, "None")) + '</option>' + roleOptions.replace('value="' + escapeText(String(review.reworkTargetRoleId || "")) + '"', 'value="' + escapeText(String(review.reworkTargetRoleId || "")) + '" selected') + '</select></label><label class="field"><span>' + escapeText(t("studio.reworkLimit", undefined, "Maximum rework rounds")) + '</span><input type="number" min="0" step="1" data-role-setting="reviewReworkMax" value="' + escapeText(String(review.reworkMax ?? "")) + '"' + disabled + '></label><label class="field"><span>' + escapeText(t("studio.terminationScope", undefined, "Termination scope")) + '</span><select data-role-setting="reviewTerminateScope"' + disabled + '><option value="branch"' + (review.terminateScope !== "run" ? " selected" : "") + '>branch</option><option value="run"' + (review.terminateScope === "run" ? " selected" : "") + '>run</option></select></label></div>' : "") + '</section>' +
+      (reviewEnabled ? '<div class="form-grid"><label class="field"><span>' + escapeText(t("studio.reviewTimeout", undefined, "Timeout (seconds)")) + '</span><input type="number" min="0" step="1" data-role-setting="reviewTimeout" value="' + escapeText(String(review.timeoutSeconds ?? "")) + '"' + disabled + '></label><label class="field"><span>' + escapeText(t("studio.reviewTimeoutAction", undefined, "Timeout action")) + '</span><select data-role-setting="reviewTimeoutAction"' + disabled + '><option value="pause"' + (review.timeoutAction === "pause" ? " selected" : "") + '>pause</option><option value="terminate"' + (review.timeoutAction === "terminate" ? " selected" : "") + '>terminate</option></select></label><label class="field"><span>' + escapeText(t("studio.reworkTarget", undefined, "Rework target")) + '</span><select data-role-setting="reviewTarget"' + disabled + '>' + reviewTargetOptions + '</select></label><label class="field"><span>' + escapeText(t("studio.reworkLimit", undefined, "Maximum rework rounds")) + '</span><input type="number" min="0" step="1" data-role-setting="reviewReworkMax" value="' + escapeText(String(review.reworkMax ?? "")) + '"' + disabled + '></label><label class="field"><span>' + escapeText(t("studio.terminationScope", undefined, "Termination scope")) + '</span><select data-role-setting="reviewTerminateScope"' + disabled + '><option value="branch"' + (review.terminateScope !== "run" ? " selected" : "") + '>branch</option><option value="run"' + (review.terminateScope === "run" ? " selected" : "") + '>run</option></select></label></div>' : "") + '</section>' +
       '<section class="field full studio-context-map" aria-label="' + escapeText(t("studio.contextMap", undefined, "Context map")) + '"><strong>' + escapeText(t("studio.contextMap", undefined, "Context map")) + '</strong><div class="hint">' + escapeText(t("studio.contextMapEditorHint", undefined, "Map selected runtime values to fields in this role input.")) + '</div>' +
-      (joinThresholdInvalid ? '<div class="hint severity-warning">' + escapeText(t("studio.quorumProjectionUnavailable", undefined, "Source selectors are unavailable until the quorum threshold includes every incoming source.")) + '</div>' : "") +
-      '<div data-context-map-rows>' + contextRows + '</div><template data-context-map-row-template><div class="form-grid studio-context-map-row" data-context-map-row><label class="field"><span>' + escapeText(t("studio.contextMapTargetField", undefined, "Target field")) + '</span><input data-context-map-target value=""' + disabled + '></label><label class="field"><span>' + escapeText(t("studio.contextMapSource", undefined, "Source")) + '</span><select data-context-map-selector' + disabled + '>' + selectorOptionsFor("global.task") + '</select></label><label class="field checkbox"><input type="checkbox" data-context-map-optional disabled' + '><span>' + escapeText(t("common.optional", undefined, "Optional")) + '</span></label><button type="button" class="button subtle" data-context-map-remove aria-label="' + escapeText(t("action.remove", undefined, "Remove")) + '"' + disabled + '>×</button></div></template><button type="button" class="button subtle" data-context-map-add' + disabled + '>+ ' + escapeText(t("studio.contextMapAddField", undefined, "Add field")) + '</button><pre class="studio-context-map-preview" data-context-map-preview>' + escapeText(JSON.stringify(Object.fromEntries(Object.entries(contextMap).sort(([left], [right]) => left.localeCompare(right)).map(([field]) => [field, "…"])), null, 2)) + '</pre></section>' +
+      (quorumSourcesUnavailable ? '<div class="hint severity-warning">' + escapeText(t("studio.quorumProjectionUnavailable", undefined, "Source selectors are unavailable until the quorum threshold includes every incoming source.")) + '</div>' : "") +
+      (inputContract ? '<div class="hint" data-role-input-schema-diagnostics><span>' + escapeText(String(inputContract.schemaPath ?? "role_input schema")) + '</span>' + (schemaInputIssues.length ? '<ul>' + schemaInputIssues.map((issue) => '<li>' + escapeText(issue) + '</li>').join("") + '</ul>' : '<span>Role input schema fields are covered.</span>') + '</div>' : "") +
+      '<div data-context-map-rows>' + contextRows + '</div><template data-context-map-row-template><div class="form-grid studio-context-map-row" data-context-map-row><label class="field"><span>' + escapeText(t("studio.contextMapTargetField", undefined, "Target field")) + '</span><input data-context-map-target value=""' + disabled + '></label><label class="field"><span>' + escapeText(t("studio.contextMapSource", undefined, "Source")) + '</span><select data-context-map-selector' + disabled + '>' + selectorOptionsFor("global.task") + '</select></label><label class="field"><span>' + escapeText(t("studio.contextMapPath", undefined, "Field path (optional)")) + '</span><input data-context-map-path value="" placeholder="issue.id"' + disabled + '></label><label class="field checkbox"><input type="checkbox" data-context-map-optional disabled' + '><span>' + escapeText(t("common.optional", undefined, "Optional")) + '</span></label><button type="button" class="button subtle" data-context-map-remove aria-label="' + escapeText(t("action.remove", undefined, "Remove")) + '"' + disabled + '>×</button></div></template><button type="button" class="button subtle" data-context-map-add' + disabled + '>+ ' + escapeText(t("studio.contextMapAddField", undefined, "Add field")) + '</button><pre class="studio-context-map-preview" data-context-map-preview>' + escapeText(JSON.stringify(Object.fromEntries(Object.entries(contextMap).sort(([left], [right]) => left.localeCompare(right)).map(([field, selector]) => { const value = String(selector || ""); const optional = value.endsWith("?"); return [field, { source: optional ? value.slice(0, -1) : value, required: !optional }]; })), null, 2)) + '</pre></section>' +
     '</div></div>'
   ].join("");
 }

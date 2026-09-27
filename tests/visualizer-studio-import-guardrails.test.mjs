@@ -1,16 +1,16 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { readFile } from "node:fs/promises";
+import { readFile, readdir } from "node:fs/promises";
 import path from "node:path";
-import { execFile } from "node:child_process";
-import { promisify } from "node:util";
-
-const execFileAsync = promisify(execFile);
 const repoRoot = process.cwd();
 
-async function listSourceFiles(globs) {
-  const { stdout } = await execFileAsync("rg", ["--files", ...globs], { cwd: repoRoot });
-  return stdout.split("\n").filter(Boolean);
+async function listSourceFiles(directory) {
+  const entries = await readdir(path.resolve(repoRoot, directory), { withFileTypes: true });
+  const groups = await Promise.all(entries.map(async (entry) => {
+    const relative = path.join(directory, entry.name);
+    return entry.isDirectory() ? listSourceFiles(relative) : entry.isFile() ? [relative] : [];
+  }));
+  return groups.flat();
 }
 
 function normalize(filePath) {
@@ -18,7 +18,7 @@ function normalize(filePath) {
 }
 
 test("Studio X6 imports stay isolated to the browser graph island", async () => {
-  const sourceFiles = await listSourceFiles(["src"]);
+  const sourceFiles = await listSourceFiles("src");
   const violations = [];
   for (const file of sourceFiles) {
     if (!file.endsWith(".ts")) continue;

@@ -141,8 +141,56 @@ test("Studio authoring serializer is deterministic and preserves parse semantics
   assert.equal(roundTripped.entryRoleId, original.entryRoleId);
   assert.deepEqual(roundTripped.modelBinding, {});
   assert.deepEqual(roundTripped.executionBinding, original.executionBinding);
+  assert.deepEqual([...roundTripped.roleIds].sort(), [...original.roleIds].sort());
+  const byFlowKey = (left, right) =>
+    `${left.fromRoleId}:${left.eventType}:${left.toRoleId}`.localeCompare(`${right.fromRoleId}:${right.eventType}:${right.toRoleId}`);
+  assert.deepEqual([...roundTripped.flows].sort(byFlowKey), [...original.flows].sort(byFlowKey));
+  assert.equal(roundTripped.lawBinding.globalLawRef, original.lawBinding.globalLawRef);
+  assert.equal(roundTripped.graph?.handoffMode, original.graph?.handoffMode);
+  assert.equal(roundTripped.graph?.handoffContracts, original.graph?.handoffContracts);
+  assert.deepEqual(roundTripped.graph?.routingModeByRoleId, original.graph?.routingModeByRoleId);
+  assert.deepEqual(roundTripped.graph?.routeOrderByRoleId, original.graph?.routeOrderByRoleId);
+  assert.deepEqual(roundTripped.graph?.joinModeByRoleId, original.graph?.joinModeByRoleId);
   assert.deepEqual(roundTripped.graph?.joinSourcesByRoleId, original.graph?.joinSourcesByRoleId);
-  assert.equal(roundTripped.flows.length, original.flows.length);
+  assert.deepEqual(roundTripped.graph?.joinMinByRoleId, original.graph?.joinMinByRoleId);
+  assert.deepEqual(roundTripped.graph?.loopMaxByRoleId, original.graph?.loopMaxByRoleId);
+  assert.deepEqual(roundTripped.graph?.reviewByRoleId, original.graph?.reviewByRoleId);
+  assert.deepEqual(roundTripped.graph?.contextMapByRoleId, original.graph?.contextMapByRoleId);
+});
+
+test("Studio bridge restores a compatible saved authoring layout and rejects stale drafts", async () => {
+  const workdir = await mkdtemp(path.join(os.tmpdir(), "ogsystem-studio-bridge-draft-"));
+  const systemPath = path.join(workdir, "system.mmd");
+  const authoring = importMermaidToAuthoring({ workdir, systemPath, systemSource: source });
+  authoring.layout.nodes.dispatch = { x: 741, y: 329, width: 210, height: 96 };
+  authoring.layout.viewport = { x: 14, y: 28, zoom: 0.9 };
+
+  try {
+    await saveStudioAuthoringDraft({ workdir, authoring });
+    const validateSystemSource = async () => ({ ok: true, diagnostics: [] });
+    const restored = await inspectStudioBridgeDraft({
+      workdir,
+      systemPath,
+      systemSource: source,
+      validateSystemSource
+    });
+
+    assert.equal(restored.authoringDraftStatus, "saved");
+    assert.deepEqual(restored.authoring?.layout.nodes.dispatch, authoring.layout.nodes.dispatch);
+    assert.deepEqual(restored.canvas?.viewport, authoring.layout.viewport);
+
+    const changedSource = source.replace("system.version=1.0.0", "system.version=2.0.0");
+    const stale = await inspectStudioBridgeDraft({
+      workdir,
+      systemPath,
+      systemSource: changedSource,
+      validateSystemSource
+    });
+    assert.equal(stale.authoringDraftStatus, "stale");
+    assert.notDeepEqual(stale.authoring?.layout.nodes.dispatch, authoring.layout.nodes.dispatch);
+  } finally {
+    await import("node:fs/promises").then(({ rm }) => rm(workdir, { recursive: true, force: true }));
+  }
 });
 
 test("Studio authoring preserves legacy engine metadata across spaced syntax round-trips", () => {
@@ -162,6 +210,18 @@ test("Studio authoring preserves legacy engine metadata across spaced syntax rou
     systemSource: serialized
   }).system.legacyEngine, "langgraph");
   assert.equal(parseSystemFromMermaidSource(serialized).systemId, authoring.system.systemId);
+});
+
+test("Studio bridge import keeps legacy engine metadata through the editor load path", async () => {
+  const legacySource = source.replace("%% system.id=test.studio.authoring", "%% system.id=test.studio.authoring\n%% engine=langgraph");
+  const bridge = await inspectStudioBridgeDraft({
+    workdir: "/tmp/project",
+    systemPath: "/tmp/project/system.mmd",
+    systemSource: legacySource,
+    validateSystemSource: async () => ({ ok: true, diagnostics: [] })
+  });
+  assert.equal(bridge.authoring?.system.legacyEngine, "langgraph");
+  assert.match(serializeAuthoringToMermaid(bridge.authoring), /%% engine=langgraph/);
 });
 
 test("Studio role settings commands round-trip routing, join, review, loop, and context mappings", () => {
@@ -202,17 +262,19 @@ test("Studio role settings commands round-trip routing, join, review, loop, and 
     authoring: updated.authoring,
     command: {
       type: "update-role",
-      originalRoleId: "worker",
-      roleId: "worker",
-      bindingKind: "noop",
-      contextMap: authoring.roles.worker.contextMap ?? {},
-      roleSettings: { loopMax: 3 }
+      originalRoleId: "dispatch",
+      roleId: "dispatch",
+      bindingKind: updated.authoring.roles.dispatch.bindingKind,
+      contextMap: updated.authoring.roles.dispatch.contextMap ?? {},
+      roleSettings: { review: updated.authoring.roles.dispatch.review }
     }
   });
   const parsedLoop = parseSystemFromMermaidSource(serializeAuthoringToMermaid(loopUpdated.authoring));
   assert.equal(parsed.graph?.routingModeByRoleId.dispatch, "parallel_split");
   assert.deepEqual(parsed.graph?.routeOrderByRoleId.dispatch, ["review", "worker"]);
-  assert.equal(parsedLoop.graph?.loopMaxByRoleId.worker, 3);
+  assert.equal(parsedLoop.graph?.routingModeByRoleId.dispatch, "parallel_split");
+  assert.deepEqual(parsedLoop.graph?.routeOrderByRoleId.dispatch, ["review", "worker"]);
+  assert.equal(parsedLoop.graph?.reviewByRoleId.dispatch?.timeoutSeconds, 120);
   assert.equal(parsed.graph?.reviewByRoleId.dispatch?.timeoutSeconds, 120);
   assert.equal(parsed.graph?.reviewByRoleId.dispatch?.reworkTargetRoleId, "worker");
 });

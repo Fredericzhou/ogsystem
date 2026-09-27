@@ -34,6 +34,7 @@ import {
   renderStudioBridgePanel,
   renderStudioRoleSemanticSummary,
   renderStudioSystemSettingsEditor,
+  renderStudioContractEditor,
   renderStudioRoleConfigEditor,
   renderStudioExecutionConfigEditor,
   renderStudioFlowConfigEditor,
@@ -49,6 +50,7 @@ import {
   renderSuggestedNextChecksPanel,
   statusTone
 } from "./client-renderers.js";
+import { listContextSelectorCandidates, summarizeContextSelector } from "../context-selector.js";
 import {
   buildRouteSearch,
   normalizeLifecycleView,
@@ -262,7 +264,10 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
     const renderStudioBridgeStructureHtml = ${renderStudioBridgeStructureHtml.toString()};
     const renderStudioBridgeSelectionLabel = ${renderStudioBridgeSelectionLabel.toString()};
     const renderStudioRoleConfigEditor = ${renderStudioRoleConfigEditor.toString()};
+    const summarizeContextSelector = ${summarizeContextSelector.toString()};
+    const listContextSelectorCandidates = ${listContextSelectorCandidates.toString()};
     const renderStudioSystemSettingsEditor = ${renderStudioSystemSettingsEditor.toString()};
+    const renderStudioContractEditor = ${renderStudioContractEditor.toString()};
     const renderStudioExecutionConfigEditor = ${renderStudioExecutionConfigEditor.toString()};
     const renderStudioRolePackageEditor = ${renderStudioRolePackageEditor.toString()};
     const renderStudioFlowConfigEditor = ${renderStudioFlowConfigEditor.toString()};
@@ -2408,7 +2413,9 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
       const result = {};
       for (const row of Array.from(workbenchBodyEl.querySelectorAll("[data-context-map-row]") || [])) {
         const field = String(row.querySelector("[data-context-map-target]")?.value || "").trim();
-        const selector = String(row.querySelector("[data-context-map-selector]")?.value || "").trim();
+        const selectorBase = String(row.querySelector("[data-context-map-selector]")?.value || "").trim();
+        const selectorPath = String(row.querySelector("[data-context-map-path]")?.value || "").trim().replace(/^\.+|\.+$/g, "");
+        const selector = selectorBase + (selectorPath ? "." + selectorPath : "");
         const optional = row.querySelector("[data-context-map-optional]")?.checked === true;
         if (field && selector) {
           const baseSelector = selector.endsWith("?") ? selector.slice(0, -1) : selector;
@@ -2416,6 +2423,14 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
         }
       }
       return result;
+    }
+
+    function contextMapShapePreview(contextMap) {
+      return Object.fromEntries(Object.entries(contextMap || {}).sort(([left], [right]) => left.localeCompare(right)).map(([field, value]) => {
+        const selector = String(value || "");
+        const optional = selector.endsWith("?");
+        return [field, { source: optional ? selector.slice(0, -1) : selector, required: !optional }];
+      }));
     }
 
     function enableStudioEditorButtons(selectors) {
@@ -3082,7 +3097,7 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
       overlay.classList.toggle("is-collapsed", collapsed);
       shell.classList.toggle("has-collapsed-selection", collapsed);
       const structureChanged = setInnerHtmlIfChanged(structureContent, structureHtml);
-      const showInlineEditor = activeTab === "structure" && Boolean(selectionKind || state.studioSelectionCommandFormOpen);
+      const showInlineEditor = activeTab === "structure";
       inlineEditor.hidden = !showInlineEditor;
       structurePanel.hidden = activeTab !== "structure";
       debugPanel.hidden = activeTab !== "debug";
@@ -3129,11 +3144,7 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
         const dirtyConfigRoleId = String(state.studioRoleConfigEditor?.roleId || "");
         const showDirtyConfigWarning = hasDirtyStudioRoleConfigEditor() && dirtyConfigRoleId && dirtyConfigRoleId !== selectedRoleIdValue;
         rolePackage.innerHTML = [
-          renderStudioSystemSettingsEditor({
-            projectConfig: state.project?.config || null,
-            authoring: state.studioBridge?.authoring || null,
-            t
-          }),
+          '<button type="button" class="button subtle" data-studio-open-system-settings>' + escapeText(t("studio.systemSettings", undefined, "System settings")) + '</button>',
           renderStudioRoleSemanticSummary({ role: selectedRoleForSummary, t }),
           showDirtyConfigWarning
             ? '<div class="event"><div class="event-top"><span>' + escapeText(t("common.attention", undefined, "attention")) + '</span><span>' + escapeText(t("common.changed", undefined, "changed")) + '</span></div><strong>' +
@@ -3151,6 +3162,7 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
           projectConfig: state.project?.config || null,
           modelCatalog: state.studioBridge?.modelCatalog || null,
           authoring: state.studioBridge?.authoring || null,
+          contracts: state.contracts,
           t
           }),
           renderDisclosureCard({
@@ -3208,11 +3220,7 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
                 draft: null
               };
           rolePackage.innerHTML = [
-            renderStudioSystemSettingsEditor({
-              projectConfig: state.project?.config || null,
-              authoring: state.studioBridge?.authoring || null,
-              t
-            }),
+            '<button type="button" class="button subtle" data-studio-open-system-settings>' + escapeText(t("studio.systemSettings", undefined, "System settings")) + '</button>',
             showDirtyFlowWarning
               ? '<div class="event"><div class="event-top"><span>' + escapeText(t("common.attention", undefined, "attention")) + '</span><span>' + escapeText(t("common.changed", undefined, "changed")) + '</span></div><strong>' +
                 escapeText(t("studio.flowConfigDirtySwitchBlocked", { flowKey: dirtyFlowKey }, "Flow changes for {flowKey} are unsaved. Save or revert before switching flows.")) +
@@ -3234,7 +3242,10 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
         rolePackage.innerHTML = "";
         setDebugPanelHtml(renderStudioDebugWorkspaceContent());
       } else {
-        rolePackage.innerHTML = "";
+        rolePackage.innerHTML = [
+          renderStudioSystemSettingsEditor({ projectConfig: state.project?.config || null, authoring: state.studioBridge?.authoring || null, t }),
+          renderStudioContractEditor({ contracts: state.contracts, t })
+        ].join("");
         setDebugPanelHtml("");
       }
       let roleIoModalRoot = workbenchBodyEl.querySelector("[data-studio-role-io-modal-root]");
@@ -3596,6 +3607,127 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
     }
 
     function bindStudioRoleConfigEditorControls() {
+      for (const button of Array.from(workbenchBodyEl.querySelectorAll("[data-studio-open-system-settings]"))) {
+        bindOnce(button, "click", "open-system-settings", () => {
+          state.studioBridgeSelectedRoleId = "";
+          state.studioBridgeSelectedFlowKey = "";
+          state.studioWorkbenchSideTab = "structure";
+          renderStudioSelectionDialog();
+        });
+      }
+      for (const row of Array.from(workbenchBodyEl.querySelectorAll("[data-context-map-row]"))) {
+        const selector = row.querySelector("[data-context-map-selector]");
+        if (!selector || row.querySelector("[data-context-map-path]")) continue;
+        const original = String(selector.getAttribute("data-current-selector") || selector.value || "");
+        const nested = original.match(/^(source\([^)]+\)\.data|direct\.data|global\.user_profile|global\.human_review\.current\.previous_output)\.(.+)$/);
+        const label = document.createElement("label");
+        label.className = "field";
+        const caption = document.createElement("span");
+        caption.textContent = t("studio.contextMapPath", undefined, "Field path (optional)");
+        const input = document.createElement("input");
+        input.setAttribute("data-context-map-path", "");
+        input.placeholder = "issue.id";
+        label.appendChild(caption);
+        label.appendChild(input);
+        selector.parentElement?.after(label);
+        if (nested) {
+          let option = Array.from(selector.options).find((entry) => entry.value === nested[1]);
+          if (!option) {
+            option = document.createElement("option");
+            option.value = nested[1];
+            option.textContent = nested[1];
+            selector.appendChild(option);
+          }
+          selector.value = nested[1];
+          input.value = nested[2];
+        } else if (original && !Array.from(selector.options).some((entry) => entry.value === original)) {
+          const option = document.createElement("option");
+          option.value = original;
+          option.textContent = original;
+          selector.append(option);
+          selector.value = original;
+        }
+      }
+      const shapePreview = workbenchBodyEl.querySelector("[data-context-map-preview]");
+      if (shapePreview) {
+        shapePreview.setAttribute("aria-label", t("studio.contextMapProjectionShape", undefined, "Role input projection shape"));
+        shapePreview.textContent = JSON.stringify(contextMapShapePreview(readStudioContextMapRows()), null, 2);
+        if (!shapePreview.previousElementSibling?.hasAttribute("data-context-map-shape-hint")) {
+          const hint = document.createElement("p");
+          hint.className = "hint";
+          hint.setAttribute("data-context-map-shape-hint", "");
+          hint.textContent = t("studio.contextMapProjectionShapeHint", undefined, "Shape only: values are resolved at runtime and are not previewed here.");
+          shapePreview.parentNode?.insertBefore(hint, shapePreview);
+        }
+      }
+      for (const button of Array.from(workbenchBodyEl.querySelectorAll("[data-contract-file-save]"))) {
+        bindOnce(button, "click", "contract-file-save", async () => {
+          const editor = button.closest("[data-contract-file-editor]");
+          const content = String(editor?.querySelector("[data-contract-file-content]")?.value ?? "");
+          const errorEl = editor?.querySelector("[data-contract-save-error]");
+          button.disabled = true;
+          if (errorEl) errorEl.textContent = "";
+          try {
+            state.contracts = await requestJson(API_PREFIX + "/project/contracts", {
+              method: "POST",
+              body: JSON.stringify({ filePath: button.getAttribute("data-contract-file-save"), content })
+            });
+            renderStudioSelectionDialog();
+            setFlash("success", t("studio.contractFileSaved", undefined, "Contract file saved and validated."));
+          } catch (error) {
+            if (errorEl) errorEl.textContent = error instanceof Error ? error.message : String(error);
+            button.disabled = false;
+          }
+        });
+      }
+      for (const button of Array.from(workbenchBodyEl.querySelectorAll("[data-contract-add]"))) {
+        bindOnce(button, "click", "contract-add", () => {
+          const rows = workbenchBodyEl.querySelector("[data-contract-rows]");
+          const template = workbenchBodyEl.querySelector("[data-contract-row-template]");
+          const row = template?.content?.firstElementChild?.cloneNode(true);
+          if (rows && row) rows.appendChild(row);
+        });
+      }
+      for (const button of Array.from(workbenchBodyEl.querySelectorAll("[data-contract-remove]"))) {
+        bindOnce(button, "click", "contract-remove", () => button.closest("[data-contract-row]")?.remove());
+      }
+      for (const select of Array.from(workbenchBodyEl.querySelectorAll("[data-contract-kind]"))) {
+        bindOnce(select, "change", "contract-kind-change", () => {
+          const row = select.closest("[data-contract-row]");
+          const roleInput = select.value === "role_input";
+          const flowFields = row?.querySelector("[data-contract-flow-fields]");
+          const roleFields = row?.querySelector("[data-contract-role-fields]");
+          if (flowFields) flowFields.hidden = roleInput;
+          if (roleFields) roleFields.hidden = !roleInput;
+        });
+      }
+      for (const button of Array.from(workbenchBodyEl.querySelectorAll("[data-contract-manifest-save]"))) {
+        bindOnce(button, "click", "contract-manifest-save", async () => {
+          const errorEl = workbenchBodyEl.querySelector("[data-contract-manifest-error]");
+          const rows = Array.from(workbenchBodyEl.querySelectorAll("[data-contract-row]")).map((row) => {
+            const value = (key) => String(row.querySelector('[data-contract-property="' + key + '"]')?.value || "").trim();
+            const kind = String(row.querySelector("[data-contract-kind]")?.value || "flow");
+            const match = kind === "role_input"
+              ? { roleId: value("roleId") }
+              : { fromRoleId: value("fromRoleId"), toRoleId: value("toRoleId"), ...(value("mode") ? { mode: value("mode") } : {}), ...(value("mode") === "split" ? {} : { eventType: value("eventType") }) };
+            return { id: value("id"), kind, match, onViolation: value("onViolation") || "FAIL", schema: value("schema") };
+          });
+          const content = JSON.stringify({ version: 1, contracts: rows }, null, 2);
+          button.disabled = true;
+          if (errorEl) errorEl.textContent = "";
+          try {
+            state.contracts = await requestJson(API_PREFIX + "/project/contracts", {
+              method: "POST",
+              body: JSON.stringify({ filePath: button.getAttribute("data-contract-manifest-save"), content })
+            });
+            renderStudioSelectionDialog();
+            setFlash("success", t("studio.contractFileSaved", undefined, "Contract file saved and validated."));
+          } catch (error) {
+            if (errorEl) errorEl.textContent = error instanceof Error ? error.message : String(error);
+            button.disabled = false;
+          }
+        });
+      }
       for (const button of Array.from(workbenchBodyEl.querySelectorAll("[data-system-settings-save]"))) {
         bindOnce(button, "click", "system-settings-save", async () => {
           const settings = {};
@@ -3606,8 +3738,8 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
             setFlash("error", t("studio.systemSettingsRequired", undefined, "System ID, version, Law, entry role and entry event are required."));
             return;
           }
-          if (Boolean(settings.handoffMode) !== Boolean(settings.handoffContracts)) {
-            setFlash("error", t("studio.handoffSettingsPairRequired", undefined, "Handoff mode and contracts file must be set together."));
+          if (settings.handoffContracts && !settings.handoffMode) {
+            setFlash("error", t("studio.handoffModeRequired", undefined, "Choose a handoff mode when a contracts file is configured."));
             return;
           }
           const selectedRole = selectedStudioRoleId();
@@ -3640,7 +3772,7 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
         bindOnce(button, "click", "context-map-remove", () => {
           button.closest("[data-context-map-row]")?.remove();
           const preview = workbenchBodyEl.querySelector("[data-context-map-preview]");
-          if (preview) preview.textContent = JSON.stringify(Object.fromEntries(Object.entries(readStudioContextMapRows()).sort(([left], [right]) => left.localeCompare(right)).map(([key, selector]) => [key, selector])), null, 2);
+          if (preview) preview.textContent = JSON.stringify(contextMapShapePreview(readStudioContextMapRows()), null, 2);
           state.studioRoleConfigEditor.draft = readStudioRoleConfigDraft();
           state.studioRoleConfigEditor.dirty = true;
           enableStudioEditorButtons(["[data-role-config-save]", "[data-role-config-revert]"]);
@@ -3651,7 +3783,7 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
           state.studioRoleConfigEditor.draft = readStudioRoleConfigDraft();
           state.studioRoleConfigEditor.dirty = true;
           const preview = workbenchBodyEl.querySelector("[data-context-map-preview]");
-          if (preview) preview.textContent = JSON.stringify(Object.fromEntries(Object.entries(readStudioContextMapRows()).sort(([left], [right]) => left.localeCompare(right)).map(([key, selector]) => [key, selector])), null, 2);
+          if (preview) preview.textContent = JSON.stringify(contextMapShapePreview(readStudioContextMapRows()), null, 2);
           enableStudioEditorButtons(["[data-role-config-save]", "[data-role-config-revert]"]);
         });
       }
@@ -3659,7 +3791,7 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
         bindOnce(element, "change", "context-map-source-change", () => {
           const row = element.closest("[data-context-map-row]");
           const optional = row?.querySelector("[data-context-map-optional]");
-          const supported = String(element.value || "").startsWith("global.human_review.current");
+          const supported = summarizeContextSelector(String(element.value || "")).selectorKind.startsWith("global.human_review.current");
           if (optional) {
             optional.disabled = !supported;
             if (!supported) optional.checked = false;
@@ -3667,7 +3799,18 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
           state.studioRoleConfigEditor.draft = readStudioRoleConfigDraft();
           state.studioRoleConfigEditor.dirty = true;
           const preview = workbenchBodyEl.querySelector("[data-context-map-preview]");
-          if (preview) preview.textContent = JSON.stringify(readStudioContextMapRows(), null, 2);
+          if (preview) preview.textContent = JSON.stringify(contextMapShapePreview(readStudioContextMapRows()), null, 2);
+          enableStudioEditorButtons(["[data-role-config-save]", "[data-role-config-revert]"]);
+        });
+      }
+      for (const element of Array.from(workbenchBodyEl.querySelectorAll("[data-context-map-path]"))) {
+        bindOnce(element, "input", "context-map-path-edit", () => {
+          const base = String(element.closest("[data-context-map-row]")?.querySelector("[data-context-map-selector]")?.value || "");
+          const value = String(element.value || "").trim().replace(/^\.+|\.+$/g, "");
+          const summary = summarizeContextSelector(value ? base + "." + value : base);
+          element.setAttribute("aria-invalid", summary.validPath ? "false" : "true");
+          state.studioRoleConfigEditor.draft = readStudioRoleConfigDraft();
+          state.studioRoleConfigEditor.dirty = true;
           enableStudioEditorButtons(["[data-role-config-save]", "[data-role-config-revert]"]);
         });
       }
@@ -3676,7 +3819,7 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
           state.studioRoleConfigEditor.draft = readStudioRoleConfigDraft();
           state.studioRoleConfigEditor.dirty = true;
           const preview = workbenchBodyEl.querySelector("[data-context-map-preview]");
-          if (preview) preview.textContent = JSON.stringify(readStudioContextMapRows(), null, 2);
+          if (preview) preview.textContent = JSON.stringify(contextMapShapePreview(readStudioContextMapRows()), null, 2);
           enableStudioEditorButtons(["[data-role-config-save]", "[data-role-config-revert]"]);
         });
       }
@@ -4946,10 +5089,37 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
         validation,
         diagnostics,
         hasDraft: state.workbenchHasDraft,
+        authoringDraftStatus: state.studioAuthoringDraftStatus,
         validating: state.workbenchValidating,
         t,
         escapeText
       }));
+      const restoreAuthoringDraftButton = document.getElementById("workbench-restore-authoring-draft");
+      if (restoreAuthoringDraftButton) {
+        bindOnce(restoreAuthoringDraftButton, "click", "restore-authoring-draft", async () => {
+          restoreAuthoringDraftButton.disabled = true;
+          try {
+            const saved = await requestJson(API_PREFIX + "/project/studio/authoring");
+            if (!saved?.authoring) throw new Error(t("studio.graph.noSavedDraft", undefined, "No saved Studio draft is available."));
+            const generated = await requestAction(API_PREFIX + "/project/studio/authoring/generate-mmd", { authoring: saved.authoring });
+            const bridge = await requestAction(API_PREFIX + "/project/studio/bridge", {
+              systemSource: generated.systemSource,
+              systemPath: state.workbenchSavedPath || "system.mmd"
+            });
+            state.workbenchSource = generated.systemSource;
+            state.workbench = { ...(state.workbench || {}), validation: generated.validation };
+            state.studioBridge = withStudioAuthoringDisplayMetadata({ ...bridge, authoring: saved.authoring }, saved.authoring);
+            state.studioCanvas = buildStudioCanvasFromBridge(state.studioBridge);
+            state.studioAuthoringDraftStatus = "saved";
+            state.studioBridgeStale = false;
+            persistDraftSource(state.workbenchSource !== state.workbenchDiskSource ? state.workbenchSource : "");
+            renderWorkbench();
+          } catch (error) {
+            setFlash("error", error instanceof Error ? error.message : String(error));
+            renderWorkbench({ preserveEditor: true });
+          }
+        });
+      }
       setInnerHtmlIfChanged(workbenchTabsEl, renderWorkbenchModeTabsHtml({ buildMode: state.buildMode, t, escapeText }));
       renderWorkbenchViewTabs();
       if (workbenchActionsEl) {
@@ -5000,6 +5170,9 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
         editor.addEventListener("input", (event) => {
           // Keep keystrokes local until validation debounce settles.
           state.workbenchSource = event.target.value || "";
+          if (state.workbenchSource !== state.workbenchDiskSource && state.studioAuthoringDraftStatus === "saved") {
+            state.studioAuthoringDraftStatus = "stale";
+          }
           state.studioBridgeStale = true;
           persistDraftSource(state.workbenchSource !== state.workbenchDiskSource ? state.workbenchSource : "");
           renderWorkbench({ preserveEditor: true });
@@ -6236,6 +6409,9 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
         });
         const normalizedBridge = withStudioAuthoringDisplayMetadata(payload, payload?.authoring);
         state.studioBridge = normalizedBridge;
+        state.studioAuthoringDraftStatus = ["saved", "stale", "invalid"].includes(payload?.authoringDraftStatus)
+          ? payload.authoringDraftStatus
+          : "unsaved";
         state.studioCanvas = buildStudioCanvasFromBridge(normalizedBridge);
         state.studioBridgeLoaded = true;
         state.studioBridgeStale = false;
@@ -6471,6 +6647,7 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
         authoring: payload.authoring,
         validation: payload.validation || bridgePayload.validation
       }, payload.authoring);
+      state.studioAuthoringDraftStatus = "saved";
       state.studioCanvas = payload.canvas || args.canvas;
       if (args.selectedRoleId !== undefined) {
         state.studioBridgeSelectedRoleId = args.selectedRoleId || "";
@@ -6611,6 +6788,7 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
           canvas: state.studioCanvas,
           validation: state.studioChatResult?.validation?.project || state.studioBridge?.validation
         }, patch.authoring);
+        state.studioAuthoringDraftStatus = "unsaved";
         state.studioCanvas = buildStudioCanvasFromBridge(state.studioBridge);
         state.workbenchSource = state.studioChatResult?.previewMermaid || state.workbenchSource;
         state.workbench = {
@@ -6639,6 +6817,8 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
         const payload = await requestAction(\`\${API_PREFIX}/project/studio/authoring\`, {
           authoring: state.studioBridge.authoring
         });
+        state.studioAuthoringDraftStatus = "saved";
+        renderWorkbench({ preserveEditor: true });
         setFlash("success", t("studio.graph.draftSaved", { path: relativeToWorkdir(payload.draftPath || ".ogs/studio/system.authoring.json") }, "Studio draft saved to {path}."));
       });
     }

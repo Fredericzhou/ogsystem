@@ -927,7 +927,38 @@ test("client lifecycle panel renderers cover Workbench controls and modes", () =
   assert.match(statusHtml, /dry-1/);
   assert.match(statusHtml, /workbench\.validating/);
   assert.match(statusHtml, /workbench\.draftCached/);
+  assert.match(statusHtml, /workbench\.systemUnsaved/);
+  assert.match(statusHtml, /studio\.graph\.authoringDraft\.unsaved/);
   assert.doesNotMatch(statusHtml, /workbench\.validationOk/);
+
+  const savedStatusHtml = renderWorkbenchStatusHtml({
+    dirty: false,
+    entryRoleId: "planner",
+    lastDryRunId: "",
+    validation: { ok: true },
+    diagnostics: [],
+    hasDraft: false,
+    authoringDraftStatus: "saved",
+    validating: false,
+    t,
+    escapeText
+  });
+  assert.match(savedStatusHtml, /workbench\.systemSaved/);
+  assert.match(savedStatusHtml, /studio\.graph\.authoringDraft\.saved/);
+
+  const staleStatusHtml = renderWorkbenchStatusHtml({
+    dirty: false,
+    entryRoleId: "planner",
+    lastDryRunId: "",
+    validation: { ok: true },
+    diagnostics: [],
+    hasDraft: false,
+    authoringDraftStatus: "stale",
+    validating: false,
+    t,
+    escapeText
+  });
+  assert.match(staleStatusHtml, /workbench-restore-authoring-draft/);
 
   const modeTabsHtml = renderWorkbenchModeTabsHtml({ buildMode: "dry-run", t, escapeText });
   assert.equal(modeTabsHtml, "");

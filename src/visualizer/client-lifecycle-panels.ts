@@ -160,11 +160,12 @@ export function renderWorkbenchStatusHtml(args: {
   validation: Record<string, any> | null | undefined;
   diagnostics: Array<unknown>;
   hasDraft: boolean;
+  authoringDraftStatus?: string;
   validating: boolean;
   t: Translator;
   escapeText: (value: unknown) => string;
 }): string {
-  const { dirty, entryRoleId, lastDryRunId, validation, diagnostics, hasDraft, validating, t, escapeText } = args;
+  const { dirty, entryRoleId, lastDryRunId, validation, diagnostics, hasDraft, authoringDraftStatus, validating, t, escapeText } = args;
   const renderPill = (label: string, options?: { code?: string; warn?: boolean; className?: string; title?: string }): string => {
     const className = ["pill", "pill-compact", options?.warn ? "warn" : "", options?.className || ""]
       .filter(Boolean)
@@ -188,10 +189,17 @@ export function renderWorkbenchStatusHtml(args: {
           className: "workbench-status-validation"
         });
   return [
-    renderPill(dirty ? t("workbench.unsavedChanges") : t("workbench.diskInSync"), {
+    renderPill(dirty ? t("workbench.systemUnsaved") : t("workbench.systemSaved"), {
       warn: dirty,
       className: "workbench-status-sync"
     }),
+    renderPill(t(`studio.graph.authoringDraft.${authoringDraftStatus || "unsaved"}`), {
+      warn: authoringDraftStatus !== "saved",
+      className: "workbench-status-authoring-draft"
+    }),
+    authoringDraftStatus === "stale"
+      ? '<button type="button" class="button subtle" id="workbench-restore-authoring-draft">' + escapeText(t("studio.graph.restoreDraft", undefined, "Restore saved Studio draft")) + '</button>'
+      : "",
     renderPill(t("workbench.entryRole", undefined, "entry"), {
       code: entryRoleId || "n/a",
       className: "workbench-status-entry",
