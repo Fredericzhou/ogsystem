@@ -82,6 +82,7 @@ import {
   listInstalledRoleCatalog,
   listProjectRolesVisualization,
   saveProjectRolePackageFilesVisualization,
+  saveProjectContractFileVisualization,
   saveProjectSystemSource,
   upsertProjectExecutionConfigVisualization,
   upsertProjectProfilesVisualization,
@@ -555,6 +556,19 @@ async function handleApiProjectBindings(workdir: string, response: ServerRespons
 
 async function handleApiProjectContracts(workdir: string, response: ServerResponse): Promise<void> {
   jsonResponse(response, 200, await inspectProjectContractVisualization(workdir));
+}
+
+async function handleApiProjectContractSave(
+  workdir: string,
+  request: IncomingMessage,
+  response: ServerResponse
+): Promise<void> {
+  const body = await readJsonRequest(request);
+  jsonResponse(response, 200, await saveProjectContractFileVisualization({
+    workdir,
+    filePath: asString(body.filePath) ?? "",
+    content: asString(body.content) ?? ""
+  }));
 }
 
 async function handleApiProjectRolePackages(workdir: string, response: ServerResponse): Promise<void> {
@@ -1630,6 +1644,7 @@ const EXACT_API_ROUTE_HANDLERS = new Map<string, ExactApiRouteHandler>([
   ["GET project/ops-summary", async ({ state, response }) => handleApiProjectOpsSummary(state.workdir, response)],
   ["GET project/bindings", async ({ state, response }) => handleApiProjectBindings(state.workdir, response)],
   ["GET project/contracts", async ({ state, response }) => handleApiProjectContracts(state.workdir, response)],
+  ["POST project/contracts", async ({ state, request, response }) => handleApiProjectContractSave(state.workdir, request, response)],
   ["GET project/role-packages", async ({ state, response }) => handleApiProjectRolePackages(state.workdir, response)],
   ["GET project/readiness", async ({ state, response }) => handleApiProjectReadiness(state.workdir, response)],
   ["POST project/export", async ({ state, response }) => handleApiProjectExport(state.workdir, response)],
@@ -1728,6 +1743,11 @@ async function executeSessionTurn(state: VisualizationServerState, session: Serv
 
 async function recoverSessionTurns(state: VisualizationServerState): Promise<void> {
   if (!state.serveProject) return;
+  const pendingTurns: Array<{
+    session: ServeSession;
+    turn: ServeSession["turns"][number];
+    request: PersistedSessionTurnRequest;
+  }> = [];
   for (const session of await listServeSessions(state.workdir)) {
     for (const turn of session.turns) {
       if (turn.status !== "queued" && turn.status !== "running") continue;
@@ -1759,15 +1779,18 @@ async function recoverSessionTurns(state: VisualizationServerState): Promise<voi
         await persistServeSession(state.workdir, current);
       }
       await emitSessionEvent(state.workdir, session.sessionId, { type: "turn.recovered", turnId: turn.turnId, runId: turn.runId });
-      state.turnQueue = state.turnQueue.catch(() => undefined).then(() => executeSessionTurn(
-        state,
-        current,
-        persistedTurn,
-        request.input,
-        request.dryRun,
-        request.principal
-      ));
+      pendingTurns.push({ session: current, turn: persistedTurn, request });
     }
+  }
+  for (const pending of pendingTurns) {
+    state.turnQueue = state.turnQueue.catch(() => undefined).then(() => executeSessionTurn(
+      state,
+      pending.session,
+      pending.turn,
+      pending.request.input,
+      pending.request.dryRun,
+      pending.request.principal
+    ));
   }
 }
 
@@ -2106,6 +2129,10 @@ async function handleVisualizationRequest(
   }
   if (segments.length === 4 && segments[2] === "project" && segments[3] === "contracts" && method === "GET") {
     await handleApiProjectContracts(state.workdir, response);
+    return;
+  }
+  if (segments.length === 4 && segments[2] === "project" && segments[3] === "contracts" && method === "POST") {
+    await handleApiProjectContractSave(state.workdir, request, response);
     return;
   }
   if (segments.length === 4 && segments[2] === "project" && segments[3] === "role-packages" && method === "GET") {

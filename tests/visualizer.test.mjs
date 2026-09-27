@@ -4,7 +4,7 @@ import os from "node:os";
 import path from "node:path";
 import http from "node:http";
 import { createHash, randomUUID } from "node:crypto";
-import { chmod, mkdtemp, mkdir, readFile, stat, symlink, writeFile } from "node:fs/promises";
+import { chmod, mkdtemp, mkdir, readFile, rm, stat, symlink, writeFile } from "node:fs/promises";
 
 import { resolveProjectRoleRootDir } from "../dist/runtime/bundled-repos.js";
 import { compileExecutionSnapshot } from "../dist/runtime/compiler.js";
@@ -86,6 +86,115 @@ test("visualizer health, readiness, scrape metrics, and external bind guard are 
     assert.match(updatedMetrics, /ogs_visualizer_http_responses_total\{status="403"\} [1-9]\d*/);
   } finally {
     await new Promise((resolve) => started.server.close(resolve));
+  }
+});
+
+test("contract editor API restricts paths and preserves files rejected by validation", async () => {
+  const workdir = await mkdtemp(path.join(os.tmpdir(), "ogsystem-visualizer-contract-editor-"));
+  await seedProjectFixture(workdir);
+  const contractSource = JSON.stringify({ version: 1, contracts: [] }, null, 2) + "\n";
+  const contractPath = path.resolve(workdir, "contracts", "handoff.json");
+  await mkdir(path.dirname(contractPath), { recursive: true });
+  await writeFile(contractPath, contractSource, "utf8");
+  const systemPath = path.resolve(workdir, "system.mmd");
+  const source = await readFile(systemPath, "utf8");
+  await writeFile(systemPath, source.replace("%% system.version=1.0.0", "%% system.version=1.0.0\n%% handoff.mode=transition\n%% handoff.contracts=contracts/handoff.json\n%% context.map.demo-analyst.issueId=global.task"), "utf8");
+  let started;
+  try {
+    started = await startVisualizationServer({ workdir, host: "127.0.0.1", port: 0 });
+    const response = await fetch(`${started.url}/api/v1/project/contracts`);
+    assert.equal(response.status, 200);
+    const contracts = await response.json();
+    assert.equal(contracts.manifest.path, "contracts/handoff.json");
+    const rejectedPath = await fetch(`${started.url}/api/v1/project/contracts`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ filePath: "../system.mmd", content: "{}" })
+    });
+    assert.notEqual(rejectedPath.status, 200);
+    const rejectedJson = await fetch(`${started.url}/api/v1/project/contracts`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ filePath: "contracts/handoff.json", content: "{" })
+    });
+    assert.notEqual(rejectedJson.status, 200);
+    assert.equal(await readFile(contractPath, "utf8"), contractSource);
+    const saved = await fetch(`${started.url}/api/v1/project/contracts`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ filePath: "contracts/handoff.json", content: contractSource })
+    });
+    assert.equal(saved.status, 200);
+
+    const schemaPath = path.resolve(workdir, "contracts", "handoff.schema.json");
+    const schemaSource = JSON.stringify({ type: "object", properties: { issueId: { type: "string" } } }, null, 2) + "\n";
+    await writeFile(schemaPath, schemaSource, "utf8");
+    const boundManifest = JSON.stringify({
+      version: 1,
+      contracts: [{
+        id: "handoff.demo",
+        kind: "role_input",
+        match: { roleId: "demo-analyst" },
+        schema: "handoff.schema.json"
+      }]
+    }, null, 2);
+    const bindResponse = await fetch(`${started.url}/api/v1/project/contracts`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ filePath: "contracts/handoff.json", content: boundManifest })
+    });
+    assert.equal(bindResponse.status, 200);
+    const invalidManifest = await fetch(`${started.url}/api/v1/project/contracts`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ filePath: "contracts/handoff.json", content: JSON.stringify({ version: 2, contracts: [] }) })
+    });
+    assert.notEqual(invalidManifest.status, 200);
+    assert.equal(await readFile(contractPath, "utf8"), JSON.stringify(JSON.parse(boundManifest), null, 2) + "\n");
+    const invalidSchema = await fetch(`${started.url}/api/v1/project/contracts`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ filePath: "contracts/handoff.schema.json", content: "[]" })
+    });
+    assert.notEqual(invalidSchema.status, 200);
+    assert.equal(await readFile(schemaPath, "utf8"), schemaSource);
+
+    const outsideDir = await mkdtemp(path.join(os.tmpdir(), "ogsystem-outside-contract-schema-"));
+    try {
+      const outsideSchema = path.resolve(outsideDir, "schema.json");
+      await writeFile(outsideSchema, schemaSource, "utf8");
+      const outsideReference = await fetch(`${started.url}/api/v1/project/contracts`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ filePath: "contracts/handoff.schema.json", content: JSON.stringify({ $ref: outsideSchema }) })
+      });
+      assert.notEqual(outsideReference.status, 200);
+      assert.equal(await readFile(schemaPath, "utf8"), schemaSource);
+      const linkedSchema = path.resolve(workdir, "contracts", "outside.schema.json");
+      await symlink(outsideSchema, linkedSchema, "file");
+      const outsideManifest = JSON.stringify({
+        version: 1,
+        contracts: [{
+          id: "handoff.external",
+          kind: "role_input",
+          match: { roleId: "demo-analyst" },
+          schema: "outside.schema.json"
+        }]
+      }, null, 2);
+      await writeFile(contractPath, outsideManifest, "utf8");
+      const outsideWrite = await fetch(`${started.url}/api/v1/project/contracts`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ filePath: "contracts/outside.schema.json", content: schemaSource })
+      });
+      assert.notEqual(outsideWrite.status, 200);
+      assert.equal(await readFile(outsideSchema, "utf8"), schemaSource);
+    } finally {
+      await rm(outsideDir, { recursive: true, force: true });
+    }
+  } finally {
+    if (started) await new Promise((resolve) => started.server.close(resolve));
+    await rm(workdir, { recursive: true, force: true });
   }
 });
 
@@ -1752,6 +1861,15 @@ test("visualizer server exposes Mermaid workbench APIs and project export", asyn
     assert.equal(invalidSave.validation.ok, false);
     assert.equal(await readFile(path.resolve(workdir, "system.mmd"), "utf8"), originalSystemSource);
 
+    const validSaveResponse = await fetch(`${url}/api/v1/project/system/save`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ systemSource: originalSystemSource })
+    });
+    assert.equal(validSaveResponse.status, 200);
+    assert.equal((await validSaveResponse.json()).validation.ok, true);
+    assert.equal(await readFile(path.resolve(workdir, "system.mmd"), "utf8"), originalSystemSource);
+
     const bridgeResponse = await fetch(`${url}/api/v1/project/studio/bridge`, {
       method: "POST",
       headers: { "content-type": "application/json" },
@@ -1763,6 +1881,7 @@ test("visualizer server exposes Mermaid workbench APIs and project export", asyn
     assert.equal(bridgeResponse.status, 200);
     const bridge = await bridgeResponse.json();
     assert.equal(bridge.validation.ok, true);
+    assert.equal(bridge.authoringDraftStatus, "missing");
     assert.equal(bridge.canvas.nodes.some((node) => node.roleId === "demo-analyst"), true);
     assert.equal(bridge.canvas.edges.some((edge) => edge.source === "demo-analyst" && edge.target === "__system_end__"), true);
     assert.equal(bridge.extracted.systemId, "viz.project.demo");
