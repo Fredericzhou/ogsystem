@@ -16,6 +16,6 @@ ogs run start \
   --system system.mmd \
   --runtime runtime.json \
   --laws laws.json \
-  --workdir examples/error-flow-compensation \
+  --ogs-dir examples/error-flow-compensation \
   --input "run error flow compensation example"
 ```

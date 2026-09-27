@@ -68,7 +68,7 @@ pnpm run build
 ```bash
 node dist/runtime/cli.js run start \
   --system system.mmd \
-  --workdir examples/legal-rag-dev-team \
+  --ogs-dir examples/legal-rag-dev-team \
   --input "开发一个面向企业法务的法律RAG问答服务，要求支持法条、司法解释、指导案例检索，并在回答中给出可核验信源" \
   --dry-run
 ```
@@ -88,7 +88,7 @@ ogs run start \
 ```bash
 node dist/runtime/cli.js run start \
   --system system.mmd \
-  --workdir examples/legal-rag-dev-team \
+  --ogs-dir examples/legal-rag-dev-team \
   --input "开发一个面向企业法务的法律RAG问答服务，要求支持法条、司法解释、指导案例检索，并在回答中给出可核验信源"
 ```
 
@@ -105,12 +105,12 @@ node dist/runtime/cli.js run start \
 ## 审核与继续执行
 
 ```bash
-node dist/runtime/cli.js run list --workdir examples/legal-rag-dev-team
-node dist/runtime/cli.js run status <run-id> --workdir examples/legal-rag-dev-team
-node dist/runtime/cli.js run review list <run-id> --workdir examples/legal-rag-dev-team
-node dist/runtime/cli.js run review inspect <run-id> <review-id> --workdir examples/legal-rag-dev-team
-node dist/runtime/cli.js run review decide <run-id> <review-id> --decision approve --comment "方案可执行" --actor reviewer --workdir examples/legal-rag-dev-team
-node dist/runtime/cli.js run resume <run-id> --workdir examples/legal-rag-dev-team
+node dist/runtime/cli.js run list --ogs-dir examples/legal-rag-dev-team
+node dist/runtime/cli.js run status <run-id> --ogs-dir examples/legal-rag-dev-team
+node dist/runtime/cli.js run review list <run-id> --ogs-dir examples/legal-rag-dev-team
+node dist/runtime/cli.js run review inspect <run-id> <review-id> --ogs-dir examples/legal-rag-dev-team
+node dist/runtime/cli.js run review decide <run-id> <review-id> --decision approve --comment "方案可执行" --actor reviewer --ogs-dir examples/legal-rag-dev-team
+node dist/runtime/cli.js run resume <run-id> --ogs-dir examples/legal-rag-dev-team
 ```
 
 如果你希望补充需求后再收敛，可以把审核决策改为 `rework`，runtime 会把 reviewer comment 重新注入 `delivery-lead`。

@@ -92,8 +92,8 @@ ogs run start --system system.mmd --input "smoke" --dry-run
 ogs run list
 ogs run status <run-id>
 ogs run logs <run-id> --engine --tail 50
-ogs vis --workdir .
-ogs visualizer --workdir .
+ogs vis --ogs-dir .
+ogs visualizer --ogs-dir .
 ```
 
 Stable lifecycle command anchors:
@@ -109,8 +109,8 @@ ogs run start --system system.mmd --input "smoke" --dry-run
 ogs run list
 ogs run status <run-id>
 ogs run logs <run-id> --engine --tail 50
-ogs vis --workdir .
-ogs visualizer --workdir .
+ogs vis --ogs-dir .
+ogs visualizer --ogs-dir .
 ```
 
 Generated projects always include `.ogs/`, `system.mmd`, and a local `og-roles/` repo. Backend/model choices live in `.ogs/model-selection.json`; `.ogs/model-catalog.json` records locally discovered CLI services and runnable models. OGS invokes persistent CLI services and uses each CLI's own user configuration; it does not import or manage credentials. The scaffold also writes `.ogs/README.md` with operator notes and JSON examples.
@@ -176,8 +176,8 @@ For day-to-day use, start with `docs/usage/usage-manual.md`. It keeps the comman
 - The adapter runs one graph-based execution model. The entry role becomes the initial active branch, each role execution emits one structured result, and completion happens only when active branches are exhausted or a transition reaches the terminal `output` boundary.
 - Executable roles return one JSON object: `{"event":"EVENT_NAME","content":"..."}`. Agent roles use their selected persistent CLI backend and retain a role/thread session for the run; tool-bound roles use `exec.bind` and parse tool stdout as JSON. `event` must match an outgoing handoff label.
 - OpenCode roles share one run-scoped `opencode serve`; Codex roles share one run-scoped `codex app-server` and resume the same thread for each role branch.
-- Directory ownership is explicit: OGSystem uses the control project root as `workdir`; `opencode serve` is started with its hostname/port arguments and no OGSystem directory binding, while OpenCode `session.create/prompt/abort` receive the resolved coding project as `directory`. OGSystem writes the run-local OpenCode metadata under `<control-project>/.ogs/runs/<run-id>/.opencode/`.
-- An OGSystem project may bind an external coding project through `.ogs/project.json.target.directory` or `--target-dir`. The default target is the OGSystem project root, so existing projects keep the same behavior; multiple OGSystem projects may bind the same coding project, but concurrent write runs require Git worktrees or another isolation policy.
+- Directory ownership is explicit: `--ogs-dir` owns the System, runtime configuration, Sessions, and `.ogs/runs/`; `--workspace-dir` is the project directory given to coding Roles. Explicit System and workspace paths are relative to the command directory; omitted `--system` selects `<ogs-dir>/system.mmd`.
+- An OGS project may bind a separate workspace through `.ogs/project.json.target.directory`. Without an explicit `--workspace-dir`, the binding is used, then `ogs-dir` is the default. `ogs serve` manages interactive Sessions; every Turn creates a fresh Run and fresh Role backend contexts. A changed System or execution configuration makes existing Sessions stale and creates a linked child Session on the next Turn request.
 - For `exec.bind`, relative tool arguments are materialized from the control project while the role process uses its run-local workspace; this keeps generated control-plane tools available in independent-target mode.
 - Executable roles are resolved by `roleId` directly from the project-local role repo. For each Mermaid `Role:<roleId>`, the runtime loads `og-roles/roles/<roleId>/role.json`, renders `prompt.md`, validates the built-in runtime prompt-input shell, and validates `output.schema.json`.
 - Each role's model binding is configured in `.ogs/model-selection.json` as a `backend` and `modelId` pair. `system.mmd` defines roles and handoffs, not model bindings.
@@ -227,7 +227,7 @@ For day-to-day use, start with `docs/usage/usage-manual.md`. It keeps the comman
 - `ogs project create <name> [--template <...>]` scaffolds the same structure in a new project directory.
 - `ogs project sync --system <file.mmd>` imports only the roles referenced by that system into the project-local role repo.
 - `ogs models discover` refreshes installed CLI/model discovery; `ogs models sync` also creates `.ogs/model-selection.json` when missing without replacing existing choices.
-- `ogs vis --workdir .` starts the read-mostly run visualizer. It keeps project/run/review/resume projections read-first, uses incremental timeline streaming instead of full run reloads on every event, loads resume diagnostics on demand, keeps project cold-start on persisted projections instead of forcing a runs-directory scan, and routes review decide / stop / reindex through existing lifecycle entrypoints with confirmation + audit input prompts. Review views now expose lifecycle `currentStatus` separately from durable decision `decisionPhase` (`recorded`, `pending_reconcile`, `applied`). `ogs run start --visualize` attaches a temporary visualizer that auto-closes when the run ends.
+- `ogs vis --ogs-dir .` starts the read-mostly run visualizer. It keeps project/run/review/resume projections read-first, uses incremental timeline streaming instead of full run reloads on every event, loads resume diagnostics on demand, keeps project cold-start on persisted projections instead of forcing a runs-directory scan, and routes review decide / stop / reindex through existing lifecycle entrypoints with confirmation + audit input prompts. Review views now expose lifecycle `currentStatus` separately from durable decision `decisionPhase` (`recorded`, `pending_reconcile`, `applied`). `ogs run start --visualize` attaches a temporary visualizer that auto-closes when the run ends.
 - The Visualizer API contract is in `schemas/openapi.yaml`. `/healthz`, `/readyz`, and `/metrics` expose liveness, readiness, and low-cardinality Prometheus metrics.
 - Control actions record the principal resolved by the identity provider; request bodies cannot choose an audit actor. Loopback mode uses the current OS account. Non-loopback binds require an injected identity provider and authorization policy.
 - Remote execution protocol v1 and its runtime validators are documented in `src/runtime/remote-execution-contract.ts`; it defines the replaceable-call boundary but does not enable remote worker dispatch in this release.

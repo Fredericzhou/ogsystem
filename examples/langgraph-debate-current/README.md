@@ -15,7 +15,7 @@ ogs run start \
   --system system.mmd \
   --laws laws.json \
   --user-profile user-profile.json \
-  --workdir examples/langgraph-debate-current \
+  --ogs-dir examples/langgraph-debate-current \
   --input "是否继续保持最小化"
 ```
 

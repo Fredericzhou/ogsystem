@@ -1,0 +1,268 @@
+{
+  "version": 1,
+  "project": {
+    "workdir": ".",
+    "systemPath": "system.mmd"
+  },
+  "system": {
+    "systemId": "ogs.gstacklike",
+    "systemVersion": "1.0.0",
+    "entryRoleId": "office-hours",
+    "lawGlobalRef": "law.gstacklike.base"
+  },
+  "roles": {
+    "office-hours": {
+      "roleId": "office-hours",
+      "title": "Office Hours",
+      "bindingKind": "exec",
+      "profileId": "profile.office-hours",
+      "loopMax": 3
+    },
+    "error-handler-base": {
+      "roleId": "error-handler-base",
+      "title": "Error Handler Base",
+      "bindingKind": "exec",
+      "profileId": "profile.error-handler"
+    },
+    "review": {
+      "roleId": "review",
+      "title": "Review",
+      "bindingKind": "exec",
+      "profileId": "profile.review"
+    },
+    "learn": {
+      "roleId": "learn",
+      "title": "Learn",
+      "bindingKind": "exec",
+      "profileId": "profile.learn",
+      "contextMap": {
+        "retrospective": "direct.data.retrospective"
+      }
+    },
+    "qa": {
+      "roleId": "qa",
+      "title": "QA",
+      "bindingKind": "exec",
+      "profileId": "profile.qa"
+    },
+    "ship": {
+      "roleId": "ship",
+      "title": "Ship",
+      "bindingKind": "exec",
+      "profileId": "profile.ship",
+      "review": {
+        "mode": "required",
+        "timeoutSeconds": 86400,
+        "timeoutAction": "pause",
+        "reworkTargetRoleId": "ship",
+        "reworkMax": 2,
+        "terminateScope": "run"
+      },
+      "contextMap": {
+        "human_review_comment": "global.human_review.current.comment?",
+        "human_review_round": "global.human_review.current.round?",
+        "previous_ship_output": "global.human_review.current.previous_output.content?"
+      }
+    },
+    "retro": {
+      "roleId": "retro",
+      "title": "Retro",
+      "bindingKind": "exec",
+      "profileId": "profile.retro",
+      "contextMap": {
+        "deploy_result": "direct.data"
+      }
+    },
+    "ship-deploy": {
+      "roleId": "ship-deploy",
+      "title": "Ship Deploy",
+      "bindingKind": "exec",
+      "profileId": "profile.ship-deploy"
+    }
+  },
+  "flows": {
+    "1:error-handler-base:ABORTED:output": {
+      "flowId": "1:error-handler-base:ABORTED:output",
+      "fromRoleId": "error-handler-base",
+      "toRoleId": "__system_end__",
+      "eventType": "ABORTED",
+      "runtimeOnlyErrorFlow": false
+    },
+    "2:error-handler-base:ESCALATED:output": {
+      "flowId": "2:error-handler-base:ESCALATED:output",
+      "fromRoleId": "error-handler-base",
+      "toRoleId": "__system_end__",
+      "eventType": "ESCALATED",
+      "runtimeOnlyErrorFlow": false
+    },
+    "3:error-handler-base:COMPENSATED:review": {
+      "flowId": "3:error-handler-base:COMPENSATED:review",
+      "fromRoleId": "error-handler-base",
+      "toRoleId": "review",
+      "eventType": "COMPENSATED",
+      "runtimeOnlyErrorFlow": false
+    },
+    "4:learn:LEARNED:output": {
+      "flowId": "4:learn:LEARNED:output",
+      "fromRoleId": "learn",
+      "toRoleId": "__system_end__",
+      "eventType": "LEARNED",
+      "runtimeOnlyErrorFlow": false
+    },
+    "5:office-hours:NEEDS_MORE_INPUT:output": {
+      "flowId": "5:office-hours:NEEDS_MORE_INPUT:output",
+      "fromRoleId": "office-hours",
+      "toRoleId": "__system_end__",
+      "eventType": "NEEDS_MORE_INPUT",
+      "runtimeOnlyErrorFlow": false
+    },
+    "6:office-hours:REJECTED:output": {
+      "flowId": "6:office-hours:REJECTED:output",
+      "fromRoleId": "office-hours",
+      "toRoleId": "__system_end__",
+      "eventType": "REJECTED",
+      "runtimeOnlyErrorFlow": false
+    },
+    "7:office-hours:READY_FOR_REVIEW:review": {
+      "flowId": "7:office-hours:READY_FOR_REVIEW:review",
+      "fromRoleId": "office-hours",
+      "toRoleId": "review",
+      "eventType": "READY_FOR_REVIEW",
+      "runtimeOnlyErrorFlow": false
+    },
+    "8:qa:QA_FAIL:office-hours": {
+      "flowId": "8:qa:QA_FAIL:office-hours",
+      "fromRoleId": "qa",
+      "toRoleId": "office-hours",
+      "eventType": "QA_FAIL",
+      "runtimeOnlyErrorFlow": false
+    },
+    "9:qa:QA_BLOCKED:review": {
+      "flowId": "9:qa:QA_BLOCKED:review",
+      "fromRoleId": "qa",
+      "toRoleId": "review",
+      "eventType": "QA_BLOCKED",
+      "runtimeOnlyErrorFlow": false
+    },
+    "10:qa:QA_PASS:ship": {
+      "flowId": "10:qa:QA_PASS:ship",
+      "fromRoleId": "qa",
+      "toRoleId": "ship",
+      "eventType": "QA_PASS",
+      "runtimeOnlyErrorFlow": false
+    },
+    "11:retro:RETRO_DONE:learn": {
+      "flowId": "11:retro:RETRO_DONE:learn",
+      "fromRoleId": "retro",
+      "toRoleId": "learn",
+      "eventType": "RETRO_DONE",
+      "runtimeOnlyErrorFlow": false
+    },
+    "12:review:BLOCKED:output": {
+      "flowId": "12:review:BLOCKED:output",
+      "fromRoleId": "review",
+      "toRoleId": "__system_end__",
+      "eventType": "BLOCKED",
+      "runtimeOnlyErrorFlow": false
+    },
+    "13:review:CHANGES_REQUIRED:office-hours": {
+      "flowId": "13:review:CHANGES_REQUIRED:office-hours",
+      "fromRoleId": "review",
+      "toRoleId": "office-hours",
+      "eventType": "CHANGES_REQUIRED",
+      "runtimeOnlyErrorFlow": false
+    },
+    "14:review:APPROVED:qa": {
+      "flowId": "14:review:APPROVED:qa",
+      "fromRoleId": "review",
+      "toRoleId": "qa",
+      "eventType": "APPROVED",
+      "runtimeOnlyErrorFlow": false
+    },
+    "15:ship:SHIP_BLOCKED:review": {
+      "flowId": "15:ship:SHIP_BLOCKED:review",
+      "fromRoleId": "ship",
+      "toRoleId": "review",
+      "eventType": "SHIP_BLOCKED",
+      "runtimeOnlyErrorFlow": false
+    },
+    "16:ship:READY_TO_DEPLOY:ship-deploy": {
+      "flowId": "16:ship:READY_TO_DEPLOY:ship-deploy",
+      "fromRoleId": "ship",
+      "toRoleId": "ship-deploy",
+      "eventType": "READY_TO_DEPLOY",
+      "runtimeOnlyErrorFlow": false
+    },
+    "17:ship-deploy:ERROR:error-handler-base": {
+      "flowId": "17:ship-deploy:ERROR:error-handler-base",
+      "fromRoleId": "ship-deploy",
+      "toRoleId": "error-handler-base",
+      "eventType": "ERROR",
+      "runtimeOnlyErrorFlow": true
+    },
+    "18:ship-deploy:SHIPPED:retro": {
+      "flowId": "18:ship-deploy:SHIPPED:retro",
+      "fromRoleId": "ship-deploy",
+      "toRoleId": "retro",
+      "eventType": "SHIPPED",
+      "runtimeOnlyErrorFlow": false
+    }
+  },
+  "layout": {
+    "nodes": {
+      "office-hours": {
+        "x": 71.66666666666674,
+        "y": 758,
+        "width": 232,
+        "height": 84
+      },
+      "error-handler-base": {
+        "x": 693.809523809524,
+        "y": 758,
+        "width": 221,
+        "height": 84
+      },
+      "review": {
+        "x": 221.8095238095239,
+        "y": 934,
+        "width": 180,
+        "height": 84
+      },
+      "learn": {
+        "x": 457.80952380952385,
+        "y": 934,
+        "width": 180,
+        "height": 84
+      },
+      "qa": {
+        "x": 599.4761904761906,
+        "y": 226,
+        "width": 180,
+        "height": 84
+      },
+      "ship": {
+        "x": 650.9761904761906,
+        "y": 406,
+        "width": 185,
+        "height": 84
+      },
+      "retro": {
+        "x": 457.80952380952385,
+        "y": 758,
+        "width": 180,
+        "height": 84
+      },
+      "ship-deploy": {
+        "x": 684.309523809524,
+        "y": 582,
+        "width": 180,
+        "height": 84
+      }
+    },
+    "viewport": {
+      "x": 365.4,
+      "y": -6.4,
+      "zoom": 0.538
+    }
+  }
+}

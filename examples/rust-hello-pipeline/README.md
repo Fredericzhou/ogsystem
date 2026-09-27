@@ -12,7 +12,7 @@ Run command:
 ogs run start \
   --system examples/rust-hello-pipeline/system.mmd \
   --laws .ogs/laws.json \
-  --workdir examples/rust-hello-pipeline \
+  --ogs-dir examples/rust-hello-pipeline \
   --input "validate rust hello pipeline"
 ```
 

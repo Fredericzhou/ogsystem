@@ -24,7 +24,7 @@
 在仓库根目录执行：
 
 ```bash
-ogs run start --system examples/ogs-gstacklike/system.mmd --input "构建一个html页面，要求显示bye world2" --workdir examples/ogs-gstacklike
+ogs run start --system examples/ogs-gstacklike/system.mmd --input "构建一个html页面，要求显示bye world2" --ogs-dir examples/ogs-gstacklike
 ```
 
 第一次运行会停在人工审核态。这是预期行为，不是失败。
@@ -48,12 +48,12 @@ ogs run start --system examples/ogs-gstacklike/system.mmd --input "构建一个h
 ## 查看与放行
 
 ```bash
-ogs run list --workdir examples/ogs-gstacklike
-ogs run review list <run-id> --workdir examples/ogs-gstacklike
-ogs run review inspect <run-id> <review-id> --workdir examples/ogs-gstacklike
+ogs run list --ogs-dir examples/ogs-gstacklike
+ogs run review list <run-id> --ogs-dir examples/ogs-gstacklike
+ogs run review inspect <run-id> <review-id> --ogs-dir examples/ogs-gstacklike
 
-ogs run review decide <run-id> <review-id> --decision approve --comment "approved" --workdir examples/ogs-gstacklike
-ogs run resume <run-id> --workdir examples/ogs-gstacklike
+ogs run review decide <run-id> <review-id> --decision approve --comment "approved" --ogs-dir examples/ogs-gstacklike
+ogs run resume <run-id> --ogs-dir examples/ogs-gstacklike
 ```
 
 审核通过后，产物会写到：
@@ -81,20 +81,20 @@ ogs run resume <run-id> --workdir examples/ogs-gstacklike
 
 `approve` 路径：
 
-1. `ogs run start --system examples/ogs-gstacklike/system.mmd --input "构建一个html页面，要求显示hello world" --workdir examples/ogs-gstacklike`
-2. `ogs run list --workdir examples/ogs-gstacklike`
-3. `ogs run status <run-id> --workdir examples/ogs-gstacklike`
+1. `ogs run start --system examples/ogs-gstacklike/system.mmd --input "构建一个html页面，要求显示hello world" --ogs-dir examples/ogs-gstacklike`
+2. `ogs run list --ogs-dir examples/ogs-gstacklike`
+3. `ogs run status <run-id> --ogs-dir examples/ogs-gstacklike`
 4. 读取 `latestPendingReviewId`
-5. `ogs run review inspect <run-id> <review-id> --workdir examples/ogs-gstacklike`
-6. `ogs run review decide <run-id> <review-id> --decision approve --comment "approved" --workdir examples/ogs-gstacklike`
-7. `ogs run resume <run-id> --workdir examples/ogs-gstacklike`
+5. `ogs run review inspect <run-id> <review-id> --ogs-dir examples/ogs-gstacklike`
+6. `ogs run review decide <run-id> <review-id> --decision approve --comment "approved" --ogs-dir examples/ogs-gstacklike`
+7. `ogs run resume <run-id> --ogs-dir examples/ogs-gstacklike`
 8. 打开 `.ogs/runs/<run-id>/shared/index.html`
 
 `rework -> second review -> approve` 路径：
 
 1. 启动 `scenarios/approval-rework.mmd`
 2. 第一轮对 `ship` 写 `rework`
-3. `ogs run resume <run-id> --workdir examples/ogs-gstacklike`
+3. `ogs run resume <run-id> --ogs-dir examples/ogs-gstacklike`
 4. 重新执行后的 `ship` 会带着 reviewer comment 产出新的 release candidate
 5. 用 `ogs run status <run-id>` 读取新的 `latestPendingReviewId`
 6. 第二轮对新的 review request 写 `approve`
@@ -136,13 +136,13 @@ bash examples/ogs-gstacklike/scripts/validate-scenarios.sh
 这个示例很适合拿来验证可视化是否能正确表达 runtime-native review：
 
 ```bash
-ogs visualizer --workdir examples/ogs-gstacklike
+ogs visualizer --ogs-dir examples/ogs-gstacklike
 ```
 
 或在启动时临时挂载：
 
 ```bash
-ogs run start --system system.mmd --input "构建一个html页面，要求显示hello world" --workdir examples/ogs-gstacklike --visualize
+ogs run start --system system.mmd --input "构建一个html页面，要求显示hello world" --ogs-dir examples/ogs-gstacklike --visualize
 ```
 
 可视化侧至少应该能看到：

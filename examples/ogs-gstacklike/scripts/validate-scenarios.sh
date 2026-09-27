@@ -8,7 +8,7 @@ REPO_ROOT="$(cd "${PROJECT_DIR}/../.." && pwd)"
 INPUT_TEXT="构建一个html页面，要求显示hello world"
 
 cli() {
-  pnpm --dir "$REPO_ROOT" exec tsx src/runtime/cli.ts "$@"
+  pnpm --dir "$REPO_ROOT" exec tsx "$REPO_ROOT/src/runtime/cli.ts" "$@"
 }
 
 json_eval_stdin() {
@@ -56,7 +56,7 @@ run_start_case() {
   echo "==> ${title}"
 
   local output
-  output="$(cli run start --system "$system_path" --input "$INPUT_TEXT" --workdir "$PROJECT_DIR" 2>&1)"
+  output="$(cli run start --system "$system_path" --input "$INPUT_TEXT" --ogs-dir "$PROJECT_DIR" 2>&1)"
   printf '%s\n' "$output"
 
   local run_id
@@ -71,7 +71,7 @@ run_start_case() {
 
 review_id_for() {
   local run_id="$1"
-  cli run review list "$run_id" --workdir "$PROJECT_DIR" | node --input-type=module -e '
+  cli run review list "$run_id" --ogs-dir "$PROJECT_DIR" | node --input-type=module -e '
     const chunks = [];
     for await (const chunk of process.stdin) chunks.push(chunk);
     const data = JSON.parse(chunks.join(""));
@@ -81,7 +81,7 @@ review_id_for() {
 
 pending_review_id_for() {
   local run_id="$1"
-  cli run status "$run_id" --workdir "$PROJECT_DIR" | node --input-type=module -e '
+  cli run status "$run_id" --ogs-dir "$PROJECT_DIR" | node --input-type=module -e '
     const chunks = [];
     for await (const chunk of process.stdin) chunks.push(chunk);
     const data = JSON.parse(chunks.join(""));
@@ -145,7 +145,7 @@ assert_status() {
   local run_id="$1"
   local expr="$2"
   local json
-  json="$(cli run status "$run_id" --workdir "$PROJECT_DIR")"
+  json="$(cli run status "$run_id" --ogs-dir "$PROJECT_DIR")"
   printf '%s\n' "$json" | json_eval_stdin "$expr"
 }
 
@@ -154,7 +154,7 @@ assert_review_inspect() {
   local review_id="$2"
   local expr="$3"
   local json
-  json="$(cli run review inspect "$run_id" "$review_id" --workdir "$PROJECT_DIR")"
+  json="$(cli run review inspect "$run_id" "$review_id" --ogs-dir "$PROJECT_DIR")"
   printf '%s\n' "$json" | json_eval_stdin "$expr"
 }
 
@@ -229,8 +229,8 @@ assert_file_absent "${happy_run_dir}/shared/index.html"
 cli run review decide "$happy_run_id" "$happy_review_id" \
   --decision approve \
   --comment "approved" \
-  --workdir "$PROJECT_DIR" >/dev/null
-cli run resume "$happy_run_id" --workdir "$PROJECT_DIR" >/dev/null
+  --ogs-dir "$PROJECT_DIR" >/dev/null
+cli run resume "$happy_run_id" --ogs-dir "$PROJECT_DIR" >/dev/null
 
 assert_status "$happy_run_id" 'data.status === "done" && data.pendingReviewCount === 0 && data.hasWaitingHumanReview === false && data.latestPendingReviewId === undefined'
 assert_review_inspect "$happy_run_id" "$happy_review_id" 'data.decisionSnapshot.decision === "approve" && data.currentStatus === "resolved" && data.currentState.status === "resolved"'
@@ -265,8 +265,8 @@ assert_review_inspect "$rework_run_id" "$rework_review_id" 'data.currentStatus =
 cli run review decide "$rework_run_id" "$rework_review_id" \
   --decision rework \
   --comment "请补充风险与边界条件" \
-  --workdir "$PROJECT_DIR" >/dev/null
-cli run resume "$rework_run_id" --workdir "$PROJECT_DIR" >/dev/null
+  --ogs-dir "$PROJECT_DIR" >/dev/null
+cli run resume "$rework_run_id" --ogs-dir "$PROJECT_DIR" >/dev/null
 
 assert_status "$rework_run_id" 'data.status === "stopped" && data.pendingReviewCount === 1 && data.hasWaitingHumanReview === true && data.latestPendingReviewId !== "review.ship@1#4.r1"'
 assert_review_inspect "$rework_run_id" "$rework_review_id" 'data.decisionSnapshot.decision === "rework" && data.currentStatus === "resolved" && data.currentState.status === "resolved" && data.requestSnapshot.status === "pending"'
@@ -279,8 +279,8 @@ rework_followup_review_id="$(pending_review_id_for "$rework_run_id")"
 cli run review decide "$rework_run_id" "$rework_followup_review_id" \
   --decision approve \
   --comment "rework approved" \
-  --workdir "$PROJECT_DIR" >/dev/null
-cli run resume "$rework_run_id" --workdir "$PROJECT_DIR" >/dev/null
+  --ogs-dir "$PROJECT_DIR" >/dev/null
+cli run resume "$rework_run_id" --ogs-dir "$PROJECT_DIR" >/dev/null
 
 assert_status "$rework_run_id" 'data.status === "done" && data.pendingReviewCount === 0 && data.hasWaitingHumanReview === false && data.latestPendingReviewId === undefined'
 assert_review_inspect "$rework_run_id" "$rework_followup_review_id" 'data.decisionSnapshot.decision === "approve" && data.currentStatus === "resolved" && data.currentState.status === "resolved"'
@@ -298,8 +298,8 @@ pause_run_dir="$(run_dir_for "$pause_run_id")"
 cli run review decide "$pause_run_id" "$pause_review_id" \
   --decision pause \
   --comment "hold" \
-  --workdir "$PROJECT_DIR" >/dev/null
-cli run resume "$pause_run_id" --workdir "$PROJECT_DIR" >/dev/null
+  --ogs-dir "$PROJECT_DIR" >/dev/null
+cli run resume "$pause_run_id" --ogs-dir "$PROJECT_DIR" >/dev/null
 
 assert_status "$pause_run_id" 'data.status === "stopped" && data.pendingReviewCount === 1 && data.hasWaitingHumanReview === true && data.latestPendingReviewId === "review.ship@1#4.r1"'
 assert_review_inspect "$pause_run_id" "$pause_review_id" 'data.decisionSnapshot.decision === "pause" && data.currentStatus === "paused" && data.currentState.status === "paused"'
@@ -319,8 +319,8 @@ cli run review decide "$terminate_run_id" "$terminate_review_id" \
   --decision terminate \
   --scope run \
   --comment "stop" \
-  --workdir "$PROJECT_DIR" >/dev/null
-cli run resume "$terminate_run_id" --workdir "$PROJECT_DIR" >/dev/null
+  --ogs-dir "$PROJECT_DIR" >/dev/null
+cli run resume "$terminate_run_id" --ogs-dir "$PROJECT_DIR" >/dev/null
 
 assert_status "$terminate_run_id" 'data.status === "stopped" && data.pendingReviewCount === 0 && data.hasWaitingHumanReview === false && data.latestPendingReviewId === undefined'
 assert_review_inspect "$terminate_run_id" "$terminate_review_id" 'data.decisionSnapshot.decision === "terminate" && data.decisionSnapshot.scope === "run" && data.currentStatus === "resolved" && data.currentState.status === "resolved"'
@@ -340,8 +340,8 @@ deploy_fail_run_dir="$(run_dir_for "$deploy_fail_run_id")"
 cli run review decide "$deploy_fail_run_id" "$deploy_fail_review_id" \
   --decision approve \
   --comment "approved" \
-  --workdir "$PROJECT_DIR" >/dev/null
-SHIP_DEPLOY_FAIL=1 cli run resume "$deploy_fail_run_id" --workdir "$PROJECT_DIR" >/dev/null
+  --ogs-dir "$PROJECT_DIR" >/dev/null
+SHIP_DEPLOY_FAIL=1 cli run resume "$deploy_fail_run_id" --ogs-dir "$PROJECT_DIR" >/dev/null
 
 assert_status "$deploy_fail_run_id" 'data.status === "done" && data.pendingReviewCount === 0 && data.hasWaitingHumanReview === false && data.latestPendingReviewId === undefined'
 assert_review_inspect "$deploy_fail_run_id" "$deploy_fail_review_id" 'data.decisionSnapshot.decision === "approve" && data.currentStatus === "resolved" && data.currentState.status === "resolved"'

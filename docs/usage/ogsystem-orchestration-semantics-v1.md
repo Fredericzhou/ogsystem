@@ -134,7 +134,7 @@ handoff。事件、动作、任务、网关、处理步骤、分支、运行实�
 *   **run-id 规则**：`YYYYMMDD-HHMMSS-<shortHash>`，保证可排序和低碰撞。
 *   **配置快照**：每次 `run start` 写入 `resolved-config.json`，用于后续审计与复盘。
 *   **OpenCode 运行元数据**：由 OGSystem 写入 `.ogs/runs/<run-id>/.opencode/server.pid` 和 `.ogs/runs/<run-id>/.opencode/endpoint.json`，按 run 隔离。`opencode serve` 只使用 hostname/port 参数启动，不绑定 OGSystem 目录；`session.create/prompt/abort` 的 `directory` 指向解析后的编程项目。
-*   **编程项目绑定**：默认 `targetDir=workdir`。OGSystem 项目也可以通过 `.ogs/project.json.target.directory` 或 `--target-dir` 绑定外部编程项目；此时 OpenCode 的 session 上下文和工具项目基准指向目标项目，系统定义、审计和运行产物仍留在 OGSystem 项目中。多个 OGSystem 项目可绑定同一目标，但并发写入必须使用 worktree、独立 clone 或互斥策略。
+*   **编程项目绑定**：默认 `targetDir=workdir`。OGSystem 项目也可以通过 `.ogs/project.json.target.directory` 或 `--workspace-dir` 绑定外部编程项目；此时 OpenCode 的 session 上下文和工具项目基准指向目标项目，系统定义、审计和运行产物仍留在 OGSystem 项目中。多个 OGSystem 项目可绑定同一目标，但并发写入必须使用 worktree、独立 clone 或互斥策略。
 *   **日志双通道**：引擎日志 `logs/engine.ndjson`，角色日志 `logs/roles/<roleId>.ndjson`，同时保留 `events.ndjson` 作为完整事件流。
 *   **停止状态机**：支持 `running -> stopping -> stopped`，并在 `control/stop-request.json`、`control/stop-outcome.json` 保留操作证据。
 *   **人工审核原生化**：`review.*` 让 role 执行后先进入 `waiting_review`，draft result 落在 pending review 控制面，approve / rework / pause / terminate 通过 `control/reviews/` 与 resume/reconcile 主链完成，而不是通过单独 human-gate role 节点。

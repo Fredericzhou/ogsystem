@@ -352,7 +352,9 @@ ogs run resume <run-id> --dry-run
 - `ogs run status` 会暴露 `pendingReviewCount`、`hasWaitingHumanReview`、`latestPendingReviewId`
 - `ogs run review list` / `inspect` 会暴露顶层 `currentStatus`，同时把 `requestSnapshot` 和 `currentState` 分开命名
 - `summary.json` 会把 `wallClockDurationMs`、`executionDurationMs`、`humanReviewWaitDurationMs` 分开
-- `review.timeout` / `review.timeout.action` 会随 review spec 保存，但当前 runtime 不自动计时或过期；需要由外部操作显式提交 review decision
+- `review.timeout` / `review.timeout.action` 在 status、inspect、review list 或 resume 时惰性检查；到期后运行时持久化唯一的超时 decision 和审计事件，不启动后台计时服务
+- `pause` 到期会暂停 review，并保留人工后续处理能力；`terminate` 到期会按 `review.terminate.scope` 终止 branch 或 run，并将 review 标记为 `expired`
+- review 超时检查以持久化 decision 为恢复依据；resume 将该 decision 幂等应用到 checkpoint 状态，未配置 timeout 的 review 不会自动过期
 - approve / rework / pause / terminate 通过 `ogs run review decide` 写入 control plane，而不是再插一个独立 human-gate role 节点
 - 每个 decision 通过 apply / reconcile 标记进入 checkpoint 主链，所以多轮 review 或 crash 恢复后仍能判断“请求已写入”与“决策已生效”的区别
 - rework branch 可以通过 `global.human_review.current.*` 读取 reviewer comment / round / previous output
@@ -399,7 +401,7 @@ ogs doctor --required opencode --system system.mmd
 ogs run start --system system.mmd --laws .ogs/laws.json --user-profile .ogs/user-profile.json --input "是否应该为当前系统增加跨节点远程执行？请比较成本、可靠性和风险。"
 ```
 
-运行暂停后，通过 `ogs run status <run-id>` 获取 `latestPendingReviewId`，然后执行 `ogs run review inspect <run-id> <review-id>`；审核完成后用 `ogs run review decide <run-id> <review-id> --decision approve --comment "审核意见"` 写入决定，再执行 `ogs run resume <run-id>`。在项目目录运行 `ogs vis --workdir .` 可查看图、角色执行、审核状态和事件；完整命令及配置说明见该项目的 `README.md`。
+运行暂停后，通过 `ogs run status <run-id>` 获取 `latestPendingReviewId`，然后执行 `ogs run review inspect <run-id> <review-id>`；审核完成后用 `ogs run review decide <run-id> <review-id> --decision approve --comment "审核意见"` 写入决定，再执行 `ogs run resume <run-id>`。在项目目录运行 `ogs vis --ogs-dir .` 可查看图、角色执行、审核状态和事件；完整命令及配置说明见该项目的 `README.md`。
 
 Visualizer 的 Run 页面默认显示“流转”：按实际执行顺序查看初始请求、每个 Role 的输入/输出和后续路由。点击 Role 名称可定位对应步骤并展开图谱；图谱默认折叠在流转页下方，画布按整行展示，运行状态与关键信号保持常显，重复的角色 I/O 快照和补充字段按需展开。自动连线从两端节点的近侧候选连接桩中选择；先减少与已布线边交叉，再缩短路径并减少折点。每条线在连接桩处保留垂直于节点面的引出和进入短段，使箭头方向清晰。不同 Role 在步骤与图谱中使用一致的颜色标记，名称始终作为辨识依据。
 
@@ -441,18 +443,28 @@ Use it with `ogs nl2mmd --message "..."` for one-shot drafting, or omit `--messa
 - Base commands are for function and runtime behavior.
 - Wrapper commands are for project lifecycle and default operational flow.
 
-For project management, `ogs` defaults to the current directory. Use `--workdir <path>` only when you need to operate on another project root. `ogs project init` scaffolds the current directory as a runnable project by default, and `ogs project create <name>` scaffolds the same runnable `minimal` template in a new project folder by default. Both commands materialize a project-local `og-roles/` repo, `.ogs/model-catalog.json`, `.ogs/model-selection.json`, and `.ogs/README.md`; runnable templates import only the roles they reference. The generated README carries editable examples so the runtime JSON files can stay strict and comment-free.
+OGS separates its control files from the software project that Roles edit. `--ogs-dir` is the OGS project root (default: current directory); `system.mmd`, project configuration, session records, and `.ogs/runs/` live here. If `--system` is omitted, execution uses `<ogs-dir>/system.mmd`. An explicit `--system` path and `--workspace-dir` path are resolved from the command's starting directory. `--workspace-dir` is the Role coding workspace; without it, OGS uses the saved `.ogs/project.json` binding, then falls back to `ogs-dir`.
 
-An OGSystem project is the orchestration control plane. By default it also serves as the OpenCode coding project. For a separate coding project, bind `targetDir` during initialization or on a run:
+`ogs project init` scaffolds the selected `ogs-dir` as a runnable project, while `ogs project create <name>` creates one beneath the selected parent directory. Both commands materialize project-local role and runtime configuration; runnable templates import only the roles they reference.
+
+An OGS project can keep run data out of a software repository by placing `ogs-dir` separately and binding the repository as `workspace-dir`:
 
 ```bash
-ogs project init --workdir ./ogs-control --target-dir ../my-application
-ogs run start --workdir ./ogs-control --system system.mmd --input "implement the feature"
+ogs project init --ogs-dir ./ogs-control --workspace-dir ../my-application
+ogs run start --ogs-dir ./ogs-control --input "implement the feature"
 ```
 
-The binding is stored in `.ogs/project.json`; run snapshots retain the resolved target directory and resume rejects an accidental target switch. Multiple OGSystem projects may bind the same coding project, but concurrent write runs need Git worktrees, separate clones, or an explicit lock policy.
+The binding is stored in `<ogs-dir>/.ogs/project.json`; run snapshots retain the resolved workspace and resume rejects an accidental workspace switch. Runs stay under `<ogs-dir>/.ogs/runs/<run-id>/`, and interactive Session records stay under `<ogs-dir>/.ogs/sessions/<session-id>/`.
 
-The Visualizer uses the same binding automatically. Its run start/resume API also accepts an optional `targetDir` when an individual request needs to override the saved project attachment.
+The Visualizer uses the same binding automatically. A CLI `--workspace-dir` override applies to one execution without changing the saved project binding.
+
+Use `ogs serve` when an operator needs multiple interactive turns under one Session:
+
+```bash
+ogs serve --ogs-dir ./ogs-control --workspace-dir ../my-application
+```
+
+The service exposes authenticated Session endpoints at `/api/v1/sessions`: create a Session with `POST`, submit Turns to `/api/v1/sessions/<id>/turns` with an `Idempotency-Key`, poll the Session for Turn status, and stream Session events from `/api/v1/sessions/<id>/events`. Each Turn creates a fresh Run and fresh Role backend context. Sessions pin the System and execution configuration; if either changes, the old Session becomes stale and the response includes a linked child Session ID. Existing Run resume continues to use its persisted checkpoint.
 
 For `exec.bind`, relative tool arguments such as `scripts/console-print.mjs` are resolved from the OGSystem control project. The role process still runs in its run-local role workspace, while OpenCode session APIs use the resolved coding project.
 
@@ -1173,7 +1185,7 @@ ogs \
 Local visualizer:
 
 ```bash
-ogs visualizer --workdir .
+ogs visualizer --ogs-dir .
 ```
 
 The visualizer is a lightweight read-mostly observability server. It renders project summary, run detail, graph view, review inbox/detail, resume diagnostics, event timeline, logs, and live updates. It prefers `summary.json`, `timeline.jsonl`, `runs-index.json`, and other projections first, with fallback to `state.json` / `events.ndjson` where needed.
@@ -1282,7 +1294,7 @@ ogs run review inspect <run-id> <review-id>
 ogs run review decide <run-id> <review-id> --decision approve
 ogs run resume <run-id> --dry-run
 ogs run stop <run-id>
-ogs visualizer --workdir .
+ogs visualizer --ogs-dir .
 ```
 
 Stable command anchors mirrored with the README:
@@ -1298,7 +1310,7 @@ ogs run start --system system.mmd --input "smoke" --dry-run
 ogs run list
 ogs run status <run-id>
 ogs run logs <run-id> --engine --tail 50
-ogs visualizer --workdir .
+ogs visualizer --ogs-dir .
 ```
 
 Preferred runtime command:

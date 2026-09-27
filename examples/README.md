@@ -46,9 +46,9 @@ ogs run start --system examples/langgraph-debate-current/system.mmd --laws examp
 
 ogs run start --system examples/medical-quorum-consultation/system.mmd --laws examples/medical-quorum-consultation/laws.json --user-profile examples/medical-quorum-consultation/user-profile.json --input "患者发热伴神经与心血管症状，先形成会诊结论" --dry-run
 
-ogs run start --system examples/ogs-gstacklike/system.mmd --input "构建一个html页面，要求显示hello world" --workdir examples/ogs-gstacklike
+ogs run start --system examples/ogs-gstacklike/system.mmd --input "构建一个html页面，要求显示hello world" --ogs-dir examples/ogs-gstacklike
 
-ogs run start --system system.mmd --workdir examples/legal-rag-dev-team --input "开发一个法律RAG问答服务，要求回答时给出可核验信源" --dry-run
+ogs run start --system system.mmd --ogs-dir examples/legal-rag-dev-team --input "开发一个法律RAG问答服务，要求回答时给出可核验信源" --dry-run
 
 bash examples/ogs-gstacklike/scripts/validate-scenarios.sh
 ```

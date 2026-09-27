@@ -24,7 +24,7 @@ const REQUIRED_COMMANDS = [
   "ogs run list",
   "ogs run status <run-id>",
   "ogs run logs <run-id> --engine --tail 50",
-  "ogs visualizer --workdir ."
+  "ogs visualizer --ogs-dir ."
 ];
 
 const REQUIRED_TEXT = [

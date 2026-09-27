@@ -237,7 +237,7 @@ async function main() {
 
   const createResult = await runCommand(
     "node",
-    [ogsBinPath, "project", "create", "demo-app", "--template", "minimal", "--workdir", appParent],
+    [ogsBinPath, "project", "create", "demo-app", "--template", "minimal", "--ogs-dir", appParent],
     { cwd: installDir, env: isolatedEnv }
   );
   assert.equal(createResult.code, 0, createResult.stderr);
@@ -270,7 +270,7 @@ async function main() {
   assert.equal(startPayload.finalRoleId, "hello-ogsystem");
   assert.equal(startPayload.finalOutput, "Hello OGSystem world");
 
-  const visualizer = spawn("node", [ogsBinPath, "visualizer", "--workdir", projectDir, "--port", "0"], {
+  const visualizer = spawn("node", [ogsBinPath, "visualizer", "--ogs-dir", projectDir, "--port", "0"], {
     cwd: projectDir,
     env: isolatedEnv,
     stdio: ["ignore", "pipe", "pipe"]

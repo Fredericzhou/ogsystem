@@ -58,15 +58,16 @@ async function runPowerShellSmoke() {
   const node = quotePowerShell(process.execPath);
   const cli = quotePowerShell(cliPath);
   const workdir = quotePowerShell(projectDir);
+  const systemPath = quotePowerShell(path.resolve(projectDir, "system.mmd"));
   const commands = [
-    `& ${node} ${cli} project init --template minimal --workdir ${workdir}`,
-    `$start = & ${node} ${cli} run start --system system.mmd --input 'windows powershell smoke' --dry-run --workdir ${workdir}`,
+    `& ${node} ${cli} project init --template minimal --ogs-dir ${workdir}`,
+    `$start = & ${node} ${cli} run start --system ${systemPath} --input 'windows powershell smoke' --dry-run --ogs-dir ${workdir}`,
     `$startJson = $start | ConvertFrom-Json`,
     `if ($startJson.status -ne 'done') { throw 'run start did not finish as done' }`,
-    `$list = & ${node} ${cli} run list --workdir ${workdir}`,
+    `$list = & ${node} ${cli} run list --ogs-dir ${workdir}`,
     `$listJson = $list | ConvertFrom-Json`,
     `if ($listJson.runs.Count -ne 1) { throw 'run list did not return one run' }`,
-    `$status = & ${node} ${cli} run status $listJson.runs[0].runId --workdir ${workdir}`,
+    `$status = & ${node} ${cli} run status $listJson.runs[0].runId --ogs-dir ${workdir}`,
     `$statusJson = $status | ConvertFrom-Json`,
     `if ($statusJson.status -ne 'done') { throw 'run status did not return done' }`
   ].join("; ");
@@ -89,25 +90,26 @@ async function runCmdSmoke() {
   const cli = quoteCmd(cliPath);
   const parentArg = quoteCmd(projectParent);
   const workdir = quoteCmd(projectDir);
+  const systemPath = quoteCmd(path.resolve(projectDir, "system.mmd"));
 
   const create = await runCmdCommand(
-    `call ${node} ${cli} project create "cmd app" --template minimal --workdir ${parentArg}`
+    `call ${node} ${cli} project create "cmd app" --template minimal --ogs-dir ${parentArg}`
   );
   assert.equal(create.code, 0, create.stderr);
 
   const start = await runCmdCommand(
-    `call ${node} ${cli} run start --system system.mmd --input "windows cmd smoke" --dry-run --workdir ${workdir}`
+    `call ${node} ${cli} run start --system ${systemPath} --input "windows cmd smoke" --dry-run --ogs-dir ${workdir}`
   );
   assert.equal(start.code, 0, start.stderr);
   assert.equal(parseJsonOutput(start.stdout).status, "done");
 
-  const list = await runCmdCommand(`call ${node} ${cli} run list --workdir ${workdir}`);
+  const list = await runCmdCommand(`call ${node} ${cli} run list --ogs-dir ${workdir}`);
   assert.equal(list.code, 0, list.stderr);
   const listPayload = parseJsonOutput(list.stdout);
   assert.equal(listPayload.runs.length, 1);
 
   const status = await runCmdCommand(
-    `call ${node} ${cli} run status ${listPayload.runs[0].runId} --workdir ${workdir}`
+    `call ${node} ${cli} run status ${listPayload.runs[0].runId} --ogs-dir ${workdir}`
   );
   assert.equal(status.code, 0, status.stderr);
   assert.equal(parseJsonOutput(status.stdout).status, "done");
