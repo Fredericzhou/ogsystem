@@ -74,6 +74,61 @@ async function seedCyclicProject(workdir: string): Promise<void> {
   );
 }
 
+async function seedContractProject(workdir: string): Promise<void> {
+  await seedProject(workdir);
+  const contractsDir = path.resolve(workdir, ".ogs/contracts");
+  await mkdir(contractsDir, { recursive: true });
+  await writeFile(path.resolve(contractsDir, "handoff.contracts.json"), JSON.stringify({
+    version: 1,
+    contracts: [{
+      id: "analyst.input.v1",
+      kind: "role_input",
+      match: { roleId: "demo-analyst" },
+      schema: "analyst-input.schema.json",
+      onViolation: "FAIL"
+    }]
+  }, null, 2), "utf8");
+  await writeFile(path.resolve(contractsDir, "analyst-input.schema.json"), JSON.stringify({
+    type: "object",
+    properties: { request: { type: "string" } },
+    required: ["request"],
+    additionalProperties: false
+  }, null, 2), "utf8");
+  await writeFile(path.resolve(workdir, "system.mmd"), [
+    "flowchart TD",
+    "%% system.id=viz.studio.contracts",
+    "%% system.version=1.0.0",
+    "%% law.global=law.minimal.base",
+    "%% entry.role=demo-analyst",
+    "%% context.map.demo-analyst.request=global.task",
+    "%% handoff.mode=transition",
+    "%% handoff.contracts=.ogs/contracts/handoff.contracts.json",
+    "input -->|ENTER| analyst[Role:demo-analyst]",
+    "analyst[Role:demo-analyst] -->|ANALYSIS_DONE| intake[Role:demo-intake]",
+    "intake[Role:demo-intake] -->|COMPLETE| output",
+    ""
+  ].join("\n"), "utf8");
+}
+
+async function seedComplexMappingProject(workdir: string): Promise<void> {
+  await seedProject(workdir);
+  await writeFile(path.resolve(workdir, "system.mmd"), [
+    "flowchart TD",
+    "%% system.id=viz.studio.mapping-uat",
+    "%% system.version=1.0.0",
+    "%% law.global=law.minimal.base",
+    "%% entry.role=demo-intake",
+    "%% join.mode.test-operator=all_of",
+    "%% join.sources.test-operator=demo-analyst,demo-intake",
+    "input -->|ENTER| intake[Role:demo-intake]",
+    "intake[Role:demo-intake] -->|COMPLETE| analyst[Role:demo-analyst]",
+    "intake[Role:demo-intake] -->|COMPLETE| reviewer[Role:test-operator]",
+    "analyst[Role:demo-analyst] -->|ANALYSIS_DONE| reviewer[Role:test-operator]",
+    "reviewer[Role:test-operator] -->|DONE| output",
+    ""
+  ].join("\n"), "utf8");
+}
+
 async function dragStudioPort(page, sourceRoleId: string, targetRoleId: string): Promise<void> {
   const sourcePort = page.locator(
     `#studio-graph-root [data-cell-id="${sourceRoleId}"] [data-studio-port="out"]`
@@ -220,6 +275,15 @@ test("Studio Bridge renders and edits through the real graph workspace", async (
       return { input: endpointDistance("input") <= 3, output: endpointDistance("output") <= 3 };
     })).toEqual({ input: true, output: true });
     await page.locator('[data-studio-side-tab="structure"]').click();
+    await expect(page.locator(".studio-system-settings")).toBeVisible();
+    await expect(page.locator(".studio-contract-editor")).toBeVisible();
+    await page.locator(".studio-system-settings summary").click();
+    await page.locator("[data-system-setting='entryEventType']").fill("BEGIN");
+    await page.locator("[data-system-settings-save]").click();
+    const authoringDraftPath = path.resolve(workdir, ".ogs/studio/system.authoring.json");
+    await expect.poll(async () => readFile(authoringDraftPath, "utf8").then(JSON.parse).catch(() => null)).toMatchObject({
+      system: { entryEventType: "BEGIN" }
+    });
     const browseFilter = page.locator('[data-studio-bridge-filter="1"]');
     await browseFilter.fill("demo");
     await page.locator('[data-studio-role-id="demo-analyst"]').click();
@@ -237,16 +301,13 @@ test("Studio Bridge renders and edits through the real graph workspace", async (
     await page.locator("[data-context-map-optional]").last().check();
     await expect(page.locator("[data-role-config-save='demo-analyst']")).toHaveAttribute("data-bound-role-config-save", "true");
     await page.locator("[data-role-config-save='demo-analyst']").click();
-    const authoringDraftPath = path.resolve(workdir, ".ogs/studio/system.authoring.json");
     await expect.poll(async () => readFile(authoringDraftPath, "utf8").then(JSON.parse).catch(() => null)).toMatchObject({
-      roles: { "demo-analyst": { contextMap: { request: "global.task", reviewNote: "global.human_review.current.comment?" } } }
+      roles: { "demo-analyst": { contextMap: {
+        request: "global.task",
+        reviewNote: "global.human_review.current.comment?"
+      } } }
     });
-    await page.locator(".studio-system-settings summary").click();
-    await page.locator("[data-system-setting='entryEventType']").fill("BEGIN");
-    await page.locator("[data-system-settings-save]").click();
-    await expect.poll(async () => readFile(authoringDraftPath, "utf8").then(JSON.parse).catch(() => null)).toMatchObject({
-      system: { entryEventType: "BEGIN" }
-    });
+    await expect(page.locator('[data-studio-selection-inline-editor] [data-studio-open-system-settings]')).toBeVisible();
     await expect(page.locator('[data-studio-side-tab="structure"]')).toHaveAttribute("aria-pressed", "true");
     await expectStudioCellPulse(page, "demo-analyst");
     await page.locator("[data-studio-selection-back]").click();
@@ -255,10 +316,13 @@ test("Studio Bridge renders and edits through the real graph workspace", async (
     const firstFilteredFlow = page.locator('[data-studio-flow-key]').first();
     await firstFilteredFlow.click();
     await expect(page.locator('[data-studio-selection-panel="structure"]')).toBeVisible();
-    await expect(page.locator(".studio-system-settings")).toHaveCount(1);
+    await expect(page.locator('[data-studio-selection-inline-editor] .studio-system-settings')).toHaveCount(0);
+    await expect(page.locator('[data-studio-selection-inline-editor] [data-studio-open-system-settings]')).toBeVisible();
     await expect(page.locator('[data-studio-selection-inline-editor] [data-flow-config-editor]')).toBeVisible();
+    await page.locator('[data-studio-selection-inline-editor] [data-studio-open-system-settings]').click();
+    await expect(page.locator(".studio-system-settings")).toBeVisible();
+    await expect(page.locator(".studio-contract-editor")).toBeVisible();
     await expect(page.locator('[data-studio-side-tab="structure"]')).toHaveAttribute("aria-pressed", "true");
-    await page.locator("[data-studio-selection-back]").click();
     await expect(page.locator('[data-studio-bridge-filter="1"]')).toHaveValue("demo");
     await page.locator('[data-studio-bridge-filter="1"]').fill("");
     const graphViewport = page.locator("#studio-graph-root .x6-graph-svg-viewport");
@@ -1131,6 +1195,206 @@ test("fan-out projection uses nearby ports without replacing business edges", as
         return id === "flow.source.left" || id === "flow.source.right";
       }).length
     )).toBe(2);
+  } finally {
+    await new Promise<void>((resolve) => started.server.close(() => resolve()));
+  }
+});
+
+test("contract workspace supports keyboard editing and validation on a narrow viewport", async ({ page }) => {
+  const workdir = await mkdtemp(path.join(os.tmpdir(), "ogsystem-studio-contract-uat-"));
+  await seedContractProject(workdir);
+  const started = await startVisualizationServer({ workdir, host: "127.0.0.1", port: 0 });
+  try {
+    await page.setViewportSize({ width: 390, height: 844 });
+    await page.goto(started.url);
+    const designTabName = await resolveLifecycleTabName(page, ["Build", "Design"]);
+    await page.getByRole("tab", { name: designTabName }).click();
+    await page.locator('footer.status-bar.global-status [data-workbench-view="bridge"]').click();
+    await expect(page.locator('[data-studio-side-tab="structure"]')).toHaveAttribute("aria-pressed", "true");
+    const systemSettings = page.locator(".studio-system-settings");
+    await expect(systemSettings).toBeVisible();
+    await systemSettings.locator("summary").focus();
+    await page.keyboard.press("Enter");
+    const contractEditor = page.locator(".studio-contract-editor");
+    await expect(contractEditor).toBeVisible();
+    await expect(contractEditor).toContainText("0 / 1 eligible flows covered");
+    await expect(contractEditor.locator("tbody tr").first()).toContainText("missing");
+    await contractEditor.locator("summary").first().focus();
+    await page.keyboard.press("Enter");
+    await expect(contractEditor.locator("[data-contract-row]")).toHaveCount(1);
+    const schemaDisclosure = contractEditor.locator("details").filter({ has: page.locator("[data-contract-file-content]") });
+    await schemaDisclosure.locator("summary").focus();
+    await page.keyboard.press("Enter");
+    const schemaEditor = contractEditor.locator("[data-contract-file-editor]");
+    const schemaInput = schemaEditor.locator("[data-contract-file-content]");
+    await schemaInput.focus();
+    await page.keyboard.press("Control+A");
+    await page.keyboard.type("{");
+    await schemaEditor.locator("[data-contract-file-save]").focus();
+    await page.keyboard.press("Enter");
+    await expect(schemaEditor.locator("[data-contract-save-error]")).not.toBeEmpty();
+    await expect(schemaInput).toHaveValue("{");
+    const validSchema = JSON.stringify({
+      type: "object",
+      properties: { request: { type: "string" }, priority: { type: "integer" } },
+      required: ["request"],
+      additionalProperties: false
+    }, null, 2);
+    await schemaInput.fill(validSchema);
+    await schemaEditor.locator("[data-contract-file-save]").focus();
+    await page.keyboard.press("Enter");
+    await expect.poll(async () => readFile(path.resolve(workdir, ".ogs/contracts/analyst-input.schema.json"), "utf8")
+      .then((content) => content.trim()).catch(() => ""))
+      .toBe(validSchema);
+    await expect.poll(() => schemaInput.inputValue().then((content) => content.trim())).toBe(validSchema);
+    await contractEditor.locator("summary").first().focus();
+    await page.keyboard.press("Enter");
+    await expect(contractEditor).toHaveAttribute("open", "");
+    const contractId = contractEditor.locator('[data-contract-property="id"]');
+    await contractId.fill("analyst.input.v2");
+    await contractEditor.locator("[data-contract-manifest-save]").focus();
+    await page.keyboard.press("Enter");
+    await expect.poll(async () => readFile(path.resolve(workdir, ".ogs/contracts/handoff.contracts.json"), "utf8")
+      .then(JSON.parse).then((manifest) => manifest.contracts[0].id).catch(() => ""))
+      .toBe("analyst.input.v2");
+    await expect(contractEditor).toContainText("0 / 1 eligible flows covered");
+    if (!(await contractEditor.getAttribute("open"))) {
+      await contractEditor.locator("summary").first().focus();
+      await page.keyboard.press("Enter");
+    }
+    await contractEditor.locator("[data-contract-add]").focus();
+    await page.keyboard.press("Enter");
+    const flowContract = contractEditor.locator("[data-contract-row]").last();
+    await flowContract.locator('[data-contract-property="id"]').fill("analyst-to-intake.v1");
+    await flowContract.locator('[data-contract-property="fromRoleId"]').fill("demo-analyst");
+    await flowContract.locator('[data-contract-property="eventType"]').fill("ANALYSIS_DONE");
+    await flowContract.locator('[data-contract-property="toRoleId"]').fill("demo-intake");
+    await flowContract.locator('[data-contract-property="schema"]').fill("analyst-input.schema.json");
+    await contractEditor.locator("[data-contract-manifest-save]").focus();
+    await page.keyboard.press("Enter");
+    await expect.poll(async () => readFile(path.resolve(workdir, ".ogs/contracts/handoff.contracts.json"), "utf8")
+      .then(JSON.parse).then((manifest) => manifest.contracts.map((entry: { id: string }) => entry.id)).catch(() => []))
+      .toEqual(["analyst.input.v2", "analyst-to-intake.v1"]);
+    await expect(contractEditor).toContainText("1 / 1 eligible flows covered");
+    const workspaceWidth = await page.locator("#studio-graph-root").evaluate((element) => ({
+      client: element.clientWidth,
+      scroll: element.scrollWidth
+    }));
+    expect(workspaceWidth.scroll).toBeLessThanOrEqual(workspaceWidth.client + 1);
+  } finally {
+    await new Promise<void>((resolve) => started.server.close(() => resolve()));
+  }
+});
+
+test("mapping UAT covers nested direct and Join sources plus quorum source gating", async ({ page }) => {
+  const pageErrors: string[] = [];
+  page.on("pageerror", (error) => pageErrors.push(error.message));
+  const workdir = await mkdtemp(path.join(os.tmpdir(), "ogsystem-studio-mapping-uat-"));
+  await seedComplexMappingProject(workdir);
+  const started = await startVisualizationServer({ workdir, host: "127.0.0.1", port: 0 });
+  try {
+    await page.goto(started.url);
+    const designTabName = await resolveLifecycleTabName(page, ["Build", "Design"]);
+    await page.getByRole("tab", { name: designTabName }).click();
+    await page.locator('footer.status-bar.global-status [data-workbench-view="bridge"]').click();
+    await expect(page.locator('[data-studio-side-tab="structure"]')).toHaveAttribute("aria-pressed", "true");
+    const authoringDraftPath = path.resolve(workdir, ".ogs/studio/system.authoring.json");
+    const rolesSection = page.locator("[data-studio-role-list-section]");
+    if (!(await rolesSection.getAttribute("open"))) await rolesSection.locator("summary").click();
+    await page.locator('[data-studio-role-id="demo-analyst"]').click();
+    const analystEditor = page.locator('[data-role-config-editor="demo-analyst"]');
+    await expect(analystEditor).toBeVisible();
+    await analystEditor.locator("[data-context-map-add]").click();
+    await analystEditor.locator("[data-context-map-target]").last().fill("issueId");
+    await analystEditor.locator("[data-context-map-selector]").last().selectOption("direct.data");
+    await analystEditor.locator("[data-context-map-path]").last().fill("issue.id");
+    await expect(analystEditor.locator("[data-context-map-path]").last()).toHaveValue("issue.id");
+    await analystEditor.locator("[data-context-map-path]").last().press("Tab");
+    await expect(analystEditor.locator("[data-context-map-preview]")).toContainText("direct.data.issue.id");
+    await expect(analystEditor.locator("[data-context-map-path]").last()).toHaveAttribute("data-bound-context-map-path-edit", "true");
+    await expect(analystEditor.locator("[data-context-map-path]").last()).toHaveAttribute("aria-invalid", "false");
+    await expect(analystEditor.locator("[data-context-map-optional]").last()).toBeDisabled();
+    await analystEditor.locator("[data-role-config-save='demo-analyst']").click();
+    await expect.poll(async () => readFile(authoringDraftPath, "utf8").then(JSON.parse).catch(() => null)).toMatchObject({
+      roles: { "demo-analyst": { contextMap: { issueId: "direct.data.issue.id" } } }
+    });
+    const analystPath = analystEditor.locator("[data-context-map-path]").last();
+    await analystPath.fill("issue..id");
+    await expect(analystPath).toHaveAttribute("aria-invalid", "true");
+    await analystEditor.locator("[data-role-config-save='demo-analyst']").click();
+    await expect(analystEditor).toContainText("The composed Selector direct.data.issue..id is invalid.");
+    await expect.poll(async () => readFile(authoringDraftPath, "utf8").then(JSON.parse).catch(() => null)).toMatchObject({
+      roles: { "demo-analyst": { contextMap: { issueId: "direct.data.issue.id" } } }
+    });
+    await analystPath.fill(".issue.id.");
+    await expect(analystPath).toHaveAttribute("aria-invalid", "true");
+    await analystEditor.locator("[data-role-config-save='demo-analyst']").click();
+    await expect(analystEditor).toContainText("The composed Selector direct.data..issue.id. is invalid.");
+    await expect.poll(async () => readFile(authoringDraftPath, "utf8").then(JSON.parse).catch(() => null)).toMatchObject({
+      roles: { "demo-analyst": { contextMap: { issueId: "direct.data.issue.id" } } }
+    });
+    await analystEditor.locator("[data-context-map-selector]").last().selectOption("direct.content");
+    await analystPath.fill("issue.id");
+    await expect(analystPath).toHaveAttribute("aria-invalid", "true");
+    await analystEditor.locator("[data-role-config-save='demo-analyst']").click();
+    await expect(analystEditor).toContainText("The composed Selector direct.content.issue.id is invalid.");
+    await expect.poll(async () => readFile(authoringDraftPath, "utf8").then(JSON.parse).catch(() => null)).toMatchObject({
+      roles: { "demo-analyst": { contextMap: { issueId: "direct.data.issue.id" } } }
+    });
+    await analystEditor.locator("[data-context-map-selector]").last().selectOption("direct.data");
+    await analystPath.fill("issue.id");
+    await analystEditor.locator("[data-role-config-save='demo-analyst']").click();
+    await expect.poll(async () => readFile(authoringDraftPath, "utf8").then(JSON.parse).catch(() => null)).toMatchObject({
+      roles: { "demo-analyst": { contextMap: { issueId: "direct.data.issue.id" } } }
+    });
+    await page.locator('[data-studio-selection-back]').click();
+    if (!(await rolesSection.getAttribute("open"))) await rolesSection.locator("summary").click();
+    await page.locator('[data-studio-role-id="test-operator"]').click();
+    const reviewerEditor = page.locator('[data-role-config-editor="test-operator"]');
+    await expect(reviewerEditor).toBeVisible();
+    await expect(reviewerEditor.locator('[data-role-setting="joinMode"]')).toHaveValue("all_of");
+    await reviewerEditor.locator("[data-context-map-add]").click();
+    await reviewerEditor.locator("[data-context-map-target]").last().fill("reviewSummary");
+    const joinSelector = reviewerEditor.locator("[data-context-map-selector]").last();
+    await expect(joinSelector.locator('option[value="source(demo-analyst).data"]')).toHaveCount(1);
+    await expect(joinSelector.locator('option[value="source(demo-intake).data"]')).toHaveCount(1);
+    await expect(joinSelector.locator('option[value="direct.data"]')).toHaveCount(0);
+    await joinSelector.selectOption("source(demo-intake).data");
+    await expect(joinSelector).toHaveValue("source(demo-intake).data");
+    await reviewerEditor.locator("[data-context-map-path]").last().fill("result.summary");
+    expect(pageErrors).toEqual([]);
+    await expect(reviewerEditor.locator("[data-context-map-path]").last()).toHaveAttribute("aria-invalid", "false");
+    await expect(reviewerEditor.locator("[data-context-map-preview]")).toContainText("source(demo-intake).data.result.summary");
+    await expect(reviewerEditor.locator("[data-context-map-optional]").last()).toBeDisabled();
+    await reviewerEditor.locator("[data-role-config-save='test-operator']").click();
+    await expect.poll(async () => readFile(authoringDraftPath, "utf8").then(JSON.parse).catch(() => null)).toMatchObject({
+      roles: { "test-operator": { contextMap: { reviewSummary: "source(demo-intake).data.result.summary" } } }
+    });
+    const savedAuthoring = JSON.parse(await readFile(authoringDraftPath, "utf8"));
+    const generateResponse = await page.request.post(new URL("/api/v1/project/studio/authoring/generate-mmd", started.url).toString(), {
+      data: { authoring: savedAuthoring }
+    });
+    expect(generateResponse.status()).toBe(200);
+    const generated = await generateResponse.json();
+    expect(generated.validation?.ok).toBe(true);
+    const generatedContextMapLines = generated.systemSource.split(/\r?\n/).filter((line: string) => line.startsWith("%% context.map."));
+    const expectedContextMapLines = Object.entries(savedAuthoring.roles).flatMap(([roleId, role]: [string, { contextMap?: Record<string, string> }]) =>
+      Object.entries(role.contextMap || {}).map(([field, selector]) => `%% context.map.${roleId}.${field}=${selector}`)
+    ).sort();
+    expect(generatedContextMapLines.sort()).toEqual(expectedContextMapLines);
+    const importResponse = await page.request.post(new URL("/api/v1/project/studio/authoring/import-mmd", started.url).toString(), {
+      data: { systemSource: generated.systemSource, systemPath: "system.mmd" }
+    });
+    expect(importResponse.status()).toBe(200);
+    const imported = await importResponse.json();
+    expect(Object.fromEntries(Object.entries(imported.authoring.roles).map(([roleId, role]: [string, { contextMap?: Record<string, string> }]) => [roleId, role.contextMap || {}]))).toEqual(
+      Object.fromEntries(Object.entries(savedAuthoring.roles).map(([roleId, role]: [string, { contextMap?: Record<string, string> }]) => [roleId, role.contextMap || {}]))
+    );
+    await reviewerEditor.locator('[data-role-setting="joinMode"]').selectOption("quorum_of");
+    await reviewerEditor.locator('[data-role-setting="joinMin"]').fill("1");
+    await expect(reviewerEditor.locator("[data-context-map-selector]").last().locator('option[value="source(demo-intake).data"]')).toHaveAttribute("disabled", "");
+    await expect(reviewerEditor.locator("[data-context-map-selector]").last().locator('option[value="source(demo-analyst).data"]')).toHaveCount(0);
+    await expect(reviewerEditor.locator("[data-context-map-optional]").last()).toBeDisabled();
   } finally {
     await new Promise<void>((resolve) => started.server.close(() => resolve()));
   }

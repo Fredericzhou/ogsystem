@@ -50,7 +50,7 @@ import {
   renderSuggestedNextChecksPanel,
   statusTone
 } from "./client-renderers.js";
-import { listContextSelectorCandidates, summarizeContextSelector } from "../context-selector.js";
+import { isValidSelectorPath, isValidSourceRoleId, listContextSelectorCandidates, summarizeContextSelector } from "../context-selector.js";
 import {
   buildRouteSearch,
   normalizeLifecycleView,
@@ -264,6 +264,8 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
     const renderStudioBridgeStructureHtml = ${renderStudioBridgeStructureHtml.toString()};
     const renderStudioBridgeSelectionLabel = ${renderStudioBridgeSelectionLabel.toString()};
     const renderStudioRoleConfigEditor = ${renderStudioRoleConfigEditor.toString()};
+    const isValidSelectorPath = ${isValidSelectorPath.toString()};
+    const isValidSourceRoleId = ${isValidSourceRoleId.toString()};
     const summarizeContextSelector = ${summarizeContextSelector.toString()};
     const listContextSelectorCandidates = ${listContextSelectorCandidates.toString()};
     const renderStudioSystemSettingsEditor = ${renderStudioSystemSettingsEditor.toString()};
@@ -2409,17 +2411,38 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
       return Array.from(workbenchBodyEl.querySelectorAll("[data-role-config-field]") || []);
     }
 
-    function readStudioContextMapRows() {
+    function activeStudioContextMapRows() {
+      const roleId = selectedStudioRoleId();
+      const editors = Array.from(workbenchBodyEl.querySelectorAll("[data-role-config-editor]") || []);
+      const isVisible = (candidate) => typeof candidate.getClientRects !== "function" || candidate.getClientRects().length > 0;
+      const visibleEditors = editors.filter(isVisible);
+      const editor = visibleEditors.find((candidate) =>
+        candidate.getAttribute("data-role-config-editor") === roleId
+      ) || visibleEditors[0];
+      return Array.from(editor?.querySelectorAll("[data-context-map-row]") || []);
+    }
+
+    function normalizeContextMapPath(value) {
+      return String(value || "").trim();
+    }
+
+    function contextMapSelectorForRow(row) {
+      const base = String(row.querySelector("[data-context-map-selector]")?.value || "").trim();
+      const path = normalizeContextMapPath(row.querySelector("[data-context-map-path]")?.value);
+      const selector = base + (path ? "." + path : "");
+      return row.querySelector("[data-context-map-optional]")?.checked === true ? selector + "?" : selector;
+    }
+
+    function readStudioContextMapRows(editorRoot) {
       const result = {};
-      for (const row of Array.from(workbenchBodyEl.querySelectorAll("[data-context-map-row]") || [])) {
+      const rows = editorRoot
+        ? Array.from(editorRoot.querySelectorAll("[data-context-map-row]") || [])
+        : activeStudioContextMapRows();
+      for (const row of rows) {
         const field = String(row.querySelector("[data-context-map-target]")?.value || "").trim();
-        const selectorBase = String(row.querySelector("[data-context-map-selector]")?.value || "").trim();
-        const selectorPath = String(row.querySelector("[data-context-map-path]")?.value || "").trim().replace(/^\.+|\.+$/g, "");
-        const selector = selectorBase + (selectorPath ? "." + selectorPath : "");
-        const optional = row.querySelector("[data-context-map-optional]")?.checked === true;
+        const selector = contextMapSelectorForRow(row);
         if (field && selector) {
-          const baseSelector = selector.endsWith("?") ? selector.slice(0, -1) : selector;
-          result[field] = optional ? baseSelector + "?" : baseSelector;
+          result[field] = selector;
         }
       }
       return result;
@@ -2564,7 +2587,7 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
       }
     }
 
-    function readStudioRoleConfigDraft() {
+    function readStudioRoleConfigDraft(contextMapRoot) {
       const current = state.studioRoleConfigEditor?.data || {};
       const draft = {
         roleId: state.studioRoleConfigEditor?.roleId || selectedStudioRoleId(),
@@ -2595,13 +2618,14 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
         if (field === "modelRef") draft.modelRef = value;
         if (field === "profileId") draft.profileId = value;
       }
-      draft.contextMap = readStudioContextMapRows();
+      draft.contextMap = readStudioContextMapRows(contextMapRoot);
       const settings = {};
       const incomingCount = Object.values(state.studioBridge?.authoring?.flows || {}).filter((flow) => flow?.toRoleId === draft.roleId).length;
-      for (const element of Array.from(workbenchBodyEl.querySelectorAll("[data-role-setting]"))) {
+      const settingsRoot = contextMapRoot || workbenchBodyEl;
+      for (const element of Array.from(settingsRoot.querySelectorAll("[data-role-setting]"))) {
         settings[element.getAttribute("data-role-setting")] = element.type === "checkbox" ? element.checked : element.value;
       }
-      const routeRows = Array.from(workbenchBodyEl.querySelectorAll("[data-route-order-position]"))
+      const routeRows = Array.from(settingsRoot.querySelectorAll("[data-route-order-position]"))
         .map((element) => ({ target: element.getAttribute("data-route-order-target"), position: Number(element.value) }))
         .filter((entry) => entry.target && Number.isFinite(entry.position))
         .sort((left, right) => left.position - right.position)
@@ -3469,7 +3493,15 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
         return;
       }
       const current = state.studioRoleConfigEditor?.data || {};
-      const draft = readStudioRoleConfigDraft();
+      const editorRoot = Array.from(workbenchBodyEl.querySelectorAll("[data-role-config-editor]") || []).find((candidate) =>
+        candidate.getAttribute("data-role-config-editor") === selectedRoleIdValue &&
+        (typeof candidate.getClientRects !== "function" || candidate.getClientRects().length > 0)
+      );
+      const existingDraft = state.studioRoleConfigEditor?.draft;
+      const formDraft = readStudioRoleConfigDraft(editorRoot);
+      const draft = existingDraft?.roleId === selectedRoleIdValue
+        ? { ...existingDraft, ...formDraft }
+        : formDraft;
       const bindingKind = draft.bindingKind === "model" || draft.bindingKind === "exec"
         ? draft.bindingKind
         : "noop";
@@ -3500,21 +3532,28 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
       const settings = draft.roleSettings || {};
       const incomingRoleIds = Array.from(new Set(Object.values(state.studioBridge?.authoring?.flows || {}).filter((flow) => flow?.toRoleId === selectedRoleIdValue).map((flow) => flow.fromRoleId)));
       const incomingCount = incomingRoleIds.length;
-      const mapRows = Array.from(workbenchBodyEl.querySelectorAll("[data-context-map-row]"));
+      const mapRows = Array.from(editorRoot?.querySelectorAll("[data-context-map-row]") || []);
       const mapFields = mapRows.map((row) => String(row.querySelector("[data-context-map-target]")?.value || "").trim());
       const mapSelectors = mapRows.map((row) => String(row.querySelector("[data-context-map-selector]")?.value || "").trim());
+      const invalidPathSelector = mapRows.map(contextMapSelectorForRow).find((selector) => !summarizeContextSelector(selector).validPath);
       const invalidOptionalSource = mapRows.some((row) =>
         row.querySelector("[data-context-map-optional]")?.checked === true &&
         !String(row.querySelector("[data-context-map-selector]")?.value || "").startsWith("global.human_review.current")
       );
       const badSourceSelector = mapSelectors.find((selector) => {
-        const source = selector.match(/^source\(([^)]+)\)\./)?.[1];
+        const sourceEnd = selector.startsWith("source(") ? selector.indexOf(").") : -1;
+        const source = sourceEnd > 7 ? selector.slice(7, sourceEnd) : "";
         if (source) return !settings.joinMode || !incomingRoleIds.includes(source) || (settings.joinMode === "quorum_of" && settings.joinMin < incomingCount);
         if (selector.startsWith("direct.")) return Boolean(settings.joinMode) || incomingCount === 0;
         return false;
       });
       if (mapFields.some((field) => !field) || mapSelectors.some((selector) => !selector) || new Set(mapFields).size !== mapFields.length) {
         state.studioRoleConfigEditor = { ...(state.studioRoleConfigEditor || {}), roleId: selectedRoleIdValue, saving: false, dirty: true, error: t("studio.invalidContextMapRows", undefined, "Each mapping needs a unique target field and a selected source."), draft };
+        renderStudioSelectionDialog();
+        return;
+      }
+      if (invalidPathSelector) {
+        state.studioRoleConfigEditor = { ...(state.studioRoleConfigEditor || {}), roleId: selectedRoleIdValue, saving: false, dirty: true, error: t("studio.invalidContextMapPath", { selector: invalidPathSelector }, "The composed Selector {selector} is invalid."), draft };
         renderStudioSelectionDialog();
         return;
       }
@@ -3756,39 +3795,43 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
       }
       for (const button of Array.from(workbenchBodyEl.querySelectorAll("[data-context-map-add]"))) {
         bindOnce(button, "click", "context-map-add", () => {
-          const rows = workbenchBodyEl.querySelector("[data-context-map-rows]");
-          const template = workbenchBodyEl.querySelector("[data-context-map-row-template]");
+          const editorRoot = button.closest("[data-role-config-editor]");
+          const rows = editorRoot?.querySelector("[data-context-map-rows]");
+          const template = editorRoot?.querySelector("[data-context-map-row-template]");
           const row = template?.content?.firstElementChild?.cloneNode(true);
           if (!rows || !row) return;
           row.querySelector("[data-context-map-optional]").checked = false;
           rows.appendChild(row);
           bindStudioRoleConfigEditorControls();
-          state.studioRoleConfigEditor.draft = readStudioRoleConfigDraft();
+          state.studioRoleConfigEditor.draft = readStudioRoleConfigDraft(editorRoot);
           state.studioRoleConfigEditor.dirty = true;
           enableStudioEditorButtons(["[data-role-config-save]", "[data-role-config-revert]"]);
         });
       }
       for (const button of Array.from(workbenchBodyEl.querySelectorAll("[data-context-map-remove]"))) {
         bindOnce(button, "click", "context-map-remove", () => {
+          const editorRoot = button.closest("[data-role-config-editor]");
           button.closest("[data-context-map-row]")?.remove();
-          const preview = workbenchBodyEl.querySelector("[data-context-map-preview]");
-          if (preview) preview.textContent = JSON.stringify(contextMapShapePreview(readStudioContextMapRows()), null, 2);
-          state.studioRoleConfigEditor.draft = readStudioRoleConfigDraft();
+          const preview = editorRoot?.querySelector("[data-context-map-preview]");
+          if (preview) preview.textContent = JSON.stringify(contextMapShapePreview(readStudioContextMapRows(editorRoot)), null, 2);
+          state.studioRoleConfigEditor.draft = readStudioRoleConfigDraft(editorRoot);
           state.studioRoleConfigEditor.dirty = true;
           enableStudioEditorButtons(["[data-role-config-save]", "[data-role-config-revert]"]);
         });
       }
       for (const element of Array.from(workbenchBodyEl.querySelectorAll("[data-context-map-target]"))) {
         bindOnce(element, "input", "context-map-edit", () => {
-          state.studioRoleConfigEditor.draft = readStudioRoleConfigDraft();
+          const editorRoot = element.closest("[data-role-config-editor]");
+          state.studioRoleConfigEditor.draft = readStudioRoleConfigDraft(editorRoot);
           state.studioRoleConfigEditor.dirty = true;
-          const preview = workbenchBodyEl.querySelector("[data-context-map-preview]");
-          if (preview) preview.textContent = JSON.stringify(contextMapShapePreview(readStudioContextMapRows()), null, 2);
+          const preview = editorRoot?.querySelector("[data-context-map-preview]");
+          if (preview) preview.textContent = JSON.stringify(contextMapShapePreview(readStudioContextMapRows(editorRoot)), null, 2);
           enableStudioEditorButtons(["[data-role-config-save]", "[data-role-config-revert]"]);
         });
       }
       for (const element of Array.from(workbenchBodyEl.querySelectorAll("[data-context-map-selector]"))) {
         bindOnce(element, "change", "context-map-source-change", () => {
+          const editorRoot = element.closest("[data-role-config-editor]");
           const row = element.closest("[data-context-map-row]");
           const optional = row?.querySelector("[data-context-map-optional]");
           const supported = summarizeContextSelector(String(element.value || "")).selectorKind.startsWith("global.human_review.current");
@@ -3796,39 +3839,44 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
             optional.disabled = !supported;
             if (!supported) optional.checked = false;
           }
-          state.studioRoleConfigEditor.draft = readStudioRoleConfigDraft();
+          state.studioRoleConfigEditor.draft = readStudioRoleConfigDraft(editorRoot);
           state.studioRoleConfigEditor.dirty = true;
-          const preview = workbenchBodyEl.querySelector("[data-context-map-preview]");
-          if (preview) preview.textContent = JSON.stringify(contextMapShapePreview(readStudioContextMapRows()), null, 2);
+          const preview = editorRoot?.querySelector("[data-context-map-preview]");
+          if (preview) preview.textContent = JSON.stringify(contextMapShapePreview(readStudioContextMapRows(editorRoot)), null, 2);
           enableStudioEditorButtons(["[data-role-config-save]", "[data-role-config-revert]"]);
         });
       }
       for (const element of Array.from(workbenchBodyEl.querySelectorAll("[data-context-map-path]"))) {
-        bindOnce(element, "input", "context-map-path-edit", () => {
-          const base = String(element.closest("[data-context-map-row]")?.querySelector("[data-context-map-selector]")?.value || "");
-          const value = String(element.value || "").trim().replace(/^\.+|\.+$/g, "");
-          const summary = summarizeContextSelector(value ? base + "." + value : base);
+        const syncPath = () => {
+          const editorRoot = element.closest("[data-role-config-editor]");
+          const row = element.closest("[data-context-map-row]");
+          const summary = summarizeContextSelector(contextMapSelectorForRow(row));
           element.setAttribute("aria-invalid", summary.validPath ? "false" : "true");
-          state.studioRoleConfigEditor.draft = readStudioRoleConfigDraft();
+          state.studioRoleConfigEditor.draft = readStudioRoleConfigDraft(editorRoot);
           state.studioRoleConfigEditor.dirty = true;
+          const preview = editorRoot?.querySelector("[data-context-map-preview]");
+          if (preview) preview.textContent = JSON.stringify(contextMapShapePreview(readStudioContextMapRows(editorRoot)), null, 2);
           enableStudioEditorButtons(["[data-role-config-save]", "[data-role-config-revert]"]);
-        });
+        };
+        bindOnce(element, "input", "context-map-path-edit", syncPath);
+        bindOnce(element, "change", "context-map-path-change", syncPath);
       }
       for (const element of Array.from(workbenchBodyEl.querySelectorAll("[data-context-map-optional]"))) {
         bindOnce(element, "change", "context-map-optional-change", () => {
-          state.studioRoleConfigEditor.draft = readStudioRoleConfigDraft();
+          const editorRoot = element.closest("[data-role-config-editor]");
+          state.studioRoleConfigEditor.draft = readStudioRoleConfigDraft(editorRoot);
           state.studioRoleConfigEditor.dirty = true;
-          const preview = workbenchBodyEl.querySelector("[data-context-map-preview]");
-          if (preview) preview.textContent = JSON.stringify(contextMapShapePreview(readStudioContextMapRows()), null, 2);
+          const preview = editorRoot?.querySelector("[data-context-map-preview]");
+          if (preview) preview.textContent = JSON.stringify(contextMapShapePreview(readStudioContextMapRows(editorRoot)), null, 2);
           enableStudioEditorButtons(["[data-role-config-save]", "[data-role-config-revert]"]);
         });
       }
       for (const element of Array.from(workbenchBodyEl.querySelectorAll("[data-role-setting], [data-route-order-position]"))) {
         const syncSettings = () => {
-          const draft = readStudioRoleConfigDraft();
+          const draft = readStudioRoleConfigDraft(element.closest("[data-role-config-editor]"));
           state.studioRoleConfigEditor = { ...(state.studioRoleConfigEditor || {}), dirty: true, saving: false, error: "", draft };
           enableStudioEditorButtons(["[data-role-config-save]", "[data-role-config-revert]"]);
-          if (["joinMode", "reviewEnabled"].includes(element.getAttribute("data-role-setting"))) renderStudioSelectionDialog();
+          if (["joinMode", "joinMin", "reviewEnabled"].includes(element.getAttribute("data-role-setting"))) renderStudioSelectionDialog();
         };
         bindOnce(element, "input", "role-setting-input", syncSettings);
         bindOnce(element, "change", "role-setting-change", syncSettings);

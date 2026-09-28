@@ -1100,24 +1100,30 @@ export function renderStudioRoleConfigEditor(args: {
   const joinSources = Array.from(new Set(incoming));
   const selectors = new Set(listContextSelectorCandidates({ incomingRoleIds: joinSources, joinMode, joinMin: Number(joinMin) }));
   const splitContextSelector = (selector: string) => {
-    const sourceData = selector.match(/^(source\([^)]+\)\.data)\.(.+)$/);
-    if (sourceData) return { base: sourceData[1]!, path: sourceData[2]! };
+    const sourceEnd = selector.startsWith("source(") ? selector.indexOf(").data.") : -1;
+    if (sourceEnd > 7) return { base: selector.slice(0, sourceEnd + 6), path: selector.slice(sourceEnd + 7) };
     for (const root of ["direct.data", "global.user_profile", "global.human_review.current.previous_output"]) {
       if (selector.startsWith(root + ".")) return { base: root, path: selector.slice(root.length + 1) };
     }
     return { base: selector, path: "" };
   };
+  const sourceRoleFromSelector = (selector: string) => {
+    if (!selector.startsWith("source(")) return "";
+    const end = selector.indexOf(").");
+    return end > 7 ? selector.slice(7, end) : "";
+  };
+  const sourceUnavailable = (selector: string) => {
+    const source = sourceRoleFromSelector(selector);
+    return Boolean(source && (!joinMode || !joinSources.includes(source) || (joinMode === "quorum_of" && Number(joinMin) < joinSources.length)));
+  };
   const selectorOptionsFor = (selected: string) => Array.from(selectors).sort((left, right) => left.localeCompare(right)).map((selector) => {
-    const source = selector.match(/^source\(([^)]+)\)\./)?.[1];
-    const forbidden = Boolean(source && (!joinMode || !joinSources.includes(source) || (joinMode === "quorum_of" && Number(joinMin) < joinSources.length)));
+    const forbidden = sourceUnavailable(selector);
     return '<option value="' + escapeText(selector) + '"' + (selector === selected ? " selected" : "") + (forbidden ? " disabled" : "") + '>' + escapeText(selector) + (forbidden ? " · unavailable" : "") + "</option>";
-  }).join("") + (selected && !selectors.has(selected) ? '<option value="' + escapeText(selected) + '" selected>' + escapeText(selected) + '</option>' : "");
+  }).join("") + (selected && !selectors.has(selected) ? '<option value="' + escapeText(selected) + '" selected' + (sourceUnavailable(selected) ? " disabled" : "") + '>' + escapeText(selected) + (sourceUnavailable(selected) ? " · unavailable" : "") + '</option>' : "");
   const contextRows = Object.entries(contextMap).sort(([left], [right]) => left.localeCompare(right)).map(([field, selector]) => {
     const optional = typeof selector === "string" && selector.endsWith("?");
-    const selectorValue = typeof selector === "string" ? selector.replace(/\?$/, "") : "";
-    const nested = selectorValue.match(/^(source\([^)]+\)\.data|direct\.data|global\.user_profile|global\.human_review\.current\.previous_output)\.(.+)$/);
-    const sourceSelector = nested?.[1] || selectorValue;
-    const pathValue = nested?.[2] || "";
+    const selectorValue = optional ? selector.slice(0, -1) : String(selector || "");
+    const { base: sourceSelector, path: pathValue } = splitContextSelector(selectorValue);
     const optionalDisabled = disabled || (!optional && !sourceSelector.startsWith("global.human_review.current")) ? " disabled" : "";
     return '<div class="form-grid studio-context-map-row" data-context-map-row><label class="field"><span>' + escapeText(t("studio.contextMapTargetField", undefined, "Target field")) + '</span><input data-context-map-target value="' + escapeText(field) + '"' + disabled + '></label><label class="field"><span>' + escapeText(t("studio.contextMapSource", undefined, "Source")) + '</span><select data-context-map-selector data-current-selector="' + escapeText(sourceSelector) + '"' + disabled + '>' + selectorOptionsFor(sourceSelector) + '</select></label><label class="field"><span>' + escapeText(t("studio.contextMapPath", undefined, "Field path (optional)")) + '</span><input data-context-map-path value="' + escapeText(pathValue) + '" placeholder="issue.id"' + disabled + '></label><label class="field checkbox"><input type="checkbox" data-context-map-optional' + (optional ? " checked" : "") + optionalDisabled + '><span>' + escapeText(t("common.optional", undefined, "Optional")) + '</span></label><button type="button" class="button subtle" data-context-map-remove aria-label="' + escapeText(t("action.remove", undefined, "Remove")) + '"' + disabled + '>×</button></div>';
   }).join("");

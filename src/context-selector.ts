@@ -1,5 +1,3 @@
-const SELECTOR_PATH_SEGMENT_REGEX = /^[A-Za-z0-9_]+$/;
-
 export type SelectorSummary = {
   selectorKind: "global.task" | "global.user_profile" | "global.user_profile.path" | "global.human_review.current" | "global.human_review.current.comment" | "global.human_review.current.round" | "global.human_review.current.previous_output" | "global.human_review.current.previous_output.path" | "direct" | "direct.data.path" | "source" | "unsupported";
   sourceRoleId?: string;
@@ -33,8 +31,20 @@ export function listContextSelectorCandidates(args: {
   return Array.from(selectors).sort((left, right) => left.localeCompare(right));
 }
 
-function isValidSelectorPath(path: string): boolean {
-  return Boolean(path) && path.split(".").every((segment) => SELECTOR_PATH_SEGMENT_REGEX.test(segment));
+export function isValidSelectorPath(path: string): boolean {
+  const isSegmentCharacter = (character: string) => {
+    const code = character.charCodeAt(0);
+    return (code >= 48 && code <= 57) || (code >= 65 && code <= 90) || (code >= 97 && code <= 122) || character === "_";
+  };
+  return Boolean(path) && path.split(".").every((segment) => segment.length > 0 && Array.from(segment).every(isSegmentCharacter));
+}
+
+export function isValidSourceRoleId(roleId: string): boolean {
+  const isCharacterAllowed = (character: string) => {
+    const code = character.charCodeAt(0);
+    return (code >= 48 && code <= 57) || (code >= 65 && code <= 90) || (code >= 97 && code <= 122) || "_.:-".includes(character);
+  };
+  return Boolean(roleId) && Array.from(roleId).every(isCharacterAllowed);
 }
 
 export function summarizeContextSelector(selector: string): SelectorSummary {
@@ -48,7 +58,13 @@ export function summarizeContextSelector(selector: string): SelectorSummary {
   if (value.startsWith("global.human_review.current.previous_output.")) return { selectorKind: "global.human_review.current.previous_output.path", validPath: isValidSelectorPath(value.slice("global.human_review.current.previous_output.".length)), optional };
   if (["direct.content", "direct.event", "direct.data"].includes(value)) return { selectorKind: "direct", validPath: true, optional };
   if (value.startsWith("direct.data.")) return { selectorKind: "direct.data.path", validPath: isValidSelectorPath(value.slice("direct.data.".length)), optional };
-  const sourceMatch = value.match(/^source\(([A-Za-z0-9._:-]+)\)\.(content|event|data|data\.[A-Za-z0-9_]+(?:\.[A-Za-z0-9_]+)*)$/);
-  if (sourceMatch) return { selectorKind: "source", sourceRoleId: sourceMatch[1], validPath: true, optional };
+  const sourceEnd = value.startsWith("source(") ? value.indexOf(").") : -1;
+  if (sourceEnd > 7) {
+    const sourceRoleId = value.slice(7, sourceEnd);
+    const sourceValue = value.slice(sourceEnd + 2);
+    const validSourceValue = ["content", "event", "data"].includes(sourceValue)
+      || (sourceValue.startsWith("data.") && isValidSelectorPath(sourceValue.slice("data.".length)));
+    if (isValidSourceRoleId(sourceRoleId) && validSourceValue) return { selectorKind: "source", sourceRoleId, validPath: true, optional };
+  }
   return { selectorKind: "unsupported", validPath: false, optional };
 }
