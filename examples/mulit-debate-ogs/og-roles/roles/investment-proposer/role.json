@@ -1,0 +1,48 @@
+{
+  "roleId": "investment-proposer",
+  "roleVersion": "1.0.0",
+  "name": "Investment Proposal Coordinator",
+  "description": "Frames and revises an investment proposal, then dispatches a shared brief to independent reviewers.",
+  "preferredModelTags": [
+    "fast",
+    "instruction-following"
+  ],
+  "promptTemplate": "prompt.md",
+  "outputSchema": "output.schema.json",
+  "tags": [
+    "debate",
+    "coordination"
+  ],
+  "contractVersion": 1,
+  "purpose": "Frames and revises an investment proposal, then dispatches a shared brief to independent reviewers.",
+  "responsibility": {
+    "kind": "atomic",
+    "owns": [],
+    "contributes": [],
+    "doesNotOwn": []
+  },
+  "inputs": {
+    "preconditions": []
+  },
+  "outputs": {
+    "events": [
+      "SEND_CRITIC",
+      "SEND_OPTIMIZER"
+    ],
+    "postconditions": []
+  },
+  "authority": {
+    "controlActions": []
+  },
+  "constraints": {
+    "writableStateFields": [],
+    "allowedTools": []
+  },
+  "failure": {
+    "retryableErrorCodes": [],
+    "terminalErrorCodes": []
+  },
+  "audit": {
+    "requiredFields": []
+  }
+}

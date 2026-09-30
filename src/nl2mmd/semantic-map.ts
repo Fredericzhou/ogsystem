@@ -203,7 +203,7 @@ const HINT_RULES: HintRule[] = [
     hint: {
       kind: "routing_mode",
       label: "parallel_split",
-      detail: 'Detected parallel intent. Consider `role.mode.<roleId>=parallel_split`.'
+      detail: 'Detected intent to activate all statically declared normal downstream branches. Consider `role.mode.<roleId>=parallel_split`; this does not imply task splitting or simultaneous execution.'
     }
   },
   {

@@ -1146,6 +1146,7 @@ export const en = {
   "studio.noRolesExtracted": "No roles extracted from the current Mermaid source.",
   "studio.noFlowsExtracted": "No flows extracted from the current Mermaid source.",
   "studio.standard": "standard",
+  "studio.parallelSplitHint": "Activates every statically declared normal downstream branch. It does not split a task or promise simultaneous execution.",
   "studio.events": "events {count}",
   "studio.runtimeErrorFlow": "runtime error flow",
   "studio.designFlow": "design flow",

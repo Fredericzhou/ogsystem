@@ -1,7 +1,12 @@
-import { mkdir, readFile } from "node:fs/promises";
+import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
 import { dirname, isAbsolute, resolve } from "node:path";
 
 import { resolveProjectRoleRootDir } from "../runtime/bundled-repos.js";
+import { parse as parseYaml, stringify as stringifyYaml } from "yaml";
+import { validateConditionAst } from "../runtime/condition-ast.js";
+import { loadOgsSpecification } from "../runtime/ogs-spec-loader.js";
+import { compileSemanticIR } from "../runtime/semantic-ir-compiler.js";
+import type { SemanticIRConditionAst } from "../runtime/semantic-ir.js";
 import { isRuntimeOnlyErrorEvent } from "../runtime/error-flow-utils.js";
 import { readJsonFile, writeJsonFileAtomic } from "../runtime/json-file.js";
 import { parseSystemFromMermaidSource } from "../runtime/parse-mermaid.js";
@@ -100,6 +105,33 @@ function flowKey(flow: Flow): string {
 
 type RoleDisplayNames = ReadonlyMap<string, string>;
 
+async function loadSemanticRoutes(workdir: string): Promise<Map<string, Pick<StudioAuthoringFlow, "condition" | "priority">>> {
+  const routes = new Map<string, Pick<StudioAuthoringFlow, "condition" | "priority">>();
+  for (const name of ["semantics.yaml", "semantics.yml", "semantics.json"]) {
+    const path = resolve(workdir, ".ogs", name);
+    let source: string;
+    try { source = await readFile(path, "utf8"); } catch { continue; }
+    const value = name.endsWith(".json") ? JSON.parse(source) : parseYaml(source);
+    const root = value && typeof value === "object" && !Array.isArray(value) ? value as Record<string, unknown> : {};
+    const raw = root.routes ?? root.transitions;
+    const entries = Array.isArray(raw) ? raw : raw && typeof raw === "object" ? Object.values(raw as Record<string, unknown>) : [];
+    for (const item of entries) {
+      if (!item || typeof item !== "object" || Array.isArray(item)) continue;
+      const route = item as Record<string, unknown>;
+      if (route.when === undefined) continue;
+      const from = String(route.from ?? route.fromRoleId ?? "");
+      const event = String(route.event ?? route.eventType ?? "");
+      const to = String(route.to ?? route.toRoleId ?? "");
+      if (from && event && to) routes.set(`${from}:${event}:${to}`, {
+        condition: route.when as SemanticIRConditionAst,
+        priority: Number(route.priority ?? 0)
+      });
+    }
+    break;
+  }
+  return routes;
+}
+
 function normalizedRoleDisplayName(value: unknown): string | undefined {
   const name = typeof value === "string" ? value.trim() : "";
   return name ? name.slice(0, 120) : undefined;
@@ -153,6 +185,7 @@ export function importSystemToAuthoring(args: {
   systemSource?: string;
   roleDisplayNames?: RoleDisplayNames;
   modelSelection?: ModelSelectionConfig;
+  semanticRoutes?: Map<string, Pick<StudioAuthoringFlow, "condition" | "priority">>;
 }): StudioAuthoringDocument {
   const roles: Record<string, StudioAuthoringRole> = {};
   const layoutNodes: StudioAuthoringDocument["layout"]["nodes"] = {};
@@ -193,6 +226,7 @@ export function importSystemToAuthoring(args: {
       fromRoleId: flow.fromRoleId,
       toRoleId: flow.toRoleId,
       eventType: flow.eventType,
+      ...(args.semanticRoutes?.get(flowKey(flow)) ?? {}),
       runtimeOnlyErrorFlow: isRuntimeOnlyErrorEvent(flow.eventType)
     };
   });
@@ -298,7 +332,9 @@ export function applyCanvasDocumentToAuthoring(args: {
       toRoleId: edge.target,
       eventType: edge.eventType,
       ...(displayLabel && displayLabel !== edge.eventType ? { label: displayLabel } : {}),
-      runtimeOnlyErrorFlow: existing?.runtimeOnlyErrorFlow ?? isRuntimeOnlyErrorEvent(edge.eventType)
+      runtimeOnlyErrorFlow: existing?.runtimeOnlyErrorFlow ?? isRuntimeOnlyErrorEvent(edge.eventType),
+      condition: Object.hasOwn(edge, "condition") ? edge.condition : existing?.condition,
+      priority: edge.priority ?? existing?.priority
     };
   }
   return {
@@ -341,7 +377,8 @@ export async function inspectStudioBridgeDraft(args: {
       system,
       systemSource,
       roleDisplayNames,
-      modelSelection
+      modelSelection,
+      semanticRoutes: await loadSemanticRoutes(args.workdir)
     });
     const roleIds = new Set(system.roleIds);
     const invalidFlows = system.flows.filter((flow) =>
@@ -558,6 +595,7 @@ export async function saveStudioAuthoringDraft(args: {
   let generatedMermaid: string | undefined;
   let validation: StudioSystemValidation | undefined;
   let nextSelection: ModelSelectionConfig | undefined;
+  let semanticCandidate: { path: string; source: string } | undefined;
   if (
     typeof args.authoring === "object" &&
     args.authoring !== null &&
@@ -565,6 +603,69 @@ export async function saveStudioAuthoringDraft(args: {
     (args.authoring as { version?: unknown }).version === 1
   ) {
     generatedMermaid = serializeAuthoringToMermaid(args.authoring as StudioAuthoringDocument);
+    const authoring = args.authoring as StudioAuthoringDocument;
+    const conditionedFlows = Object.values(authoring.flows).filter((flow) => flow.condition !== undefined);
+    for (const flow of Object.values(authoring.flows)) {
+      if (flow.priority !== undefined && (!Number.isInteger(flow.priority) || flow.priority < 0)) {
+        throw new Error(`[IR_INVALID_CONDITION] flow ${flow.flowId} priority must be a non-negative integer`);
+      }
+      if (flow.condition && validateConditionAst(flow.condition).length) {
+        throw new Error(`[IR_INVALID_CONDITION] flow ${flow.flowId}: ${validateConditionAst(flow.condition).join("; ")}`);
+      }
+    }
+    {
+      const candidates = ["semantics.yaml", "semantics.yml", "semantics.json"];
+      let semanticsPath: string | undefined;
+      let semanticsValue: Record<string, unknown> | undefined;
+      for (const name of candidates) {
+        const path = resolve(args.workdir, ".ogs", name);
+        try {
+          const source = await readFile(path, "utf8");
+          const parsed = name.endsWith(".json") ? JSON.parse(source) : parseYaml(source);
+          if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) throw new Error(`${name} must contain an object`);
+          semanticsPath = path;
+          semanticsValue = parsed as Record<string, unknown>;
+          break;
+        } catch (error) {
+          if (!(error && typeof error === "object" && "code" in error && error.code === "ENOENT")) throw error;
+        }
+      }
+      if (!semanticsPath || !semanticsValue) {
+        if (conditionedFlows.length) throw new Error("[IR_SEMANTIC_SPEC_REQUIRED] Conditional routes require an existing .ogs/semantics.yaml Semantic IR specification.");
+      } else {
+      const system = parseSystemFromMermaidSource(generatedMermaid);
+      const topology = new Set(system.flows.map((flow) => `${flow.fromRoleId}:${flow.eventType}:${flow.toRoleId}`));
+      const rawRoutes = semanticsValue.routes ?? semanticsValue.transitions;
+      const existingRoutes = Array.isArray(rawRoutes) ? rawRoutes : rawRoutes && typeof rawRoutes === "object" ? Object.values(rawRoutes as Record<string, unknown>) : [];
+      const retainedRoutes = existingRoutes.filter((item) => {
+        if (!item || typeof item !== "object" || Array.isArray(item)) return true;
+        const route = item as Record<string, unknown>;
+        const from = String(route.from ?? route.fromRoleId ?? "");
+        const event = String(route.event ?? route.eventType ?? "");
+        const to = String(route.to ?? route.toRoleId ?? "");
+        return !topology.has(`${from}:${event}:${to}`);
+      });
+      semanticsValue.routes = [
+        ...retainedRoutes,
+        ...conditionedFlows.map((flow) => ({
+          from: flow.fromRoleId,
+          event: flow.eventType,
+          to: flow.toRoleId,
+          when: flow.condition,
+          priority: flow.priority ?? 0
+        }))
+      ];
+      const nextSemanticSource = semanticsPath.endsWith(".json")
+        ? `${JSON.stringify(semanticsValue, null, 2)}\n`
+        : stringifyYaml(semanticsValue);
+      const snapshot = await loadOgsSpecification(args.workdir);
+      const semanticSourceEntry = Object.entries(snapshot.sources).find(([path]) => path.endsWith("/" + semanticsPath!.split(/[\\/]/).at(-1)));
+      if (!semanticSourceEntry) throw new Error("[IR_SEMANTIC_SPEC_INVALID] Semantic specification could not be loaded.");
+      snapshot.sources[semanticSourceEntry[0]] = { digest: "studio-candidate", value: parseYaml(nextSemanticSource) };
+      compileSemanticIR({ system, specification: snapshot, maxTransitionsPerRun: 100 });
+      semanticCandidate = { path: semanticsPath, source: nextSemanticSource };
+      }
+    }
     const selectionPath = resolve(args.workdir, ".ogs", "model-selection.json");
     const currentSelection = await loadModelSelection(selectionPath);
     const roles: NonNullable<ModelSelectionConfig["roles"]> = {};
@@ -590,6 +691,11 @@ export async function saveStudioAuthoringDraft(args: {
     }
   }
   await mkdir(dirname(draftPath), { recursive: true });
+  if (semanticCandidate) {
+    const tempPath = `${semanticCandidate.path}.studio-tmp`;
+    await writeFile(tempPath, semanticCandidate.source, "utf8");
+    await rename(tempPath, semanticCandidate.path);
+  }
   if (nextSelection) {
     await writeJsonFileAtomic(resolve(args.workdir, ".ogs", "model-selection.json"), nextSelection);
   }

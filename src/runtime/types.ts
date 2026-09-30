@@ -666,13 +666,18 @@ export type JoinScopeState = {
   joinRoleId: string;
   lineageId: string;
   loopIteration: number;
+  joinMode?: GraphJoinMode;
+  joinMin?: number;
   expectedSourceRoleIds: string[];
   readySourceRoleIds: string[];
   missingSourceRoleIds: string[];
   startedAt: string;
   timeoutSeconds: number;
-  status: "waiting" | "activated" | "timed_out";
+  status: "waiting" | "activated" | "timed_out" | "failed";
   timeoutAction?: "fail" | "quorum_continue" | "pause" | "terminate";
+  failurePolicy?: "wait" | "fail" | "quorum_continue";
+  resolutionReason?: string;
+  resolutionAction?: "fail" | "pause" | "terminate";
   completedAt?: string;
 };
 

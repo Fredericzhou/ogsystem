@@ -275,7 +275,7 @@ test("GraphViewModel run mode derives runtime layer and disables capabilities", 
   assert.deepEqual(review.runtime.expectedSources, ["worker", "dispatch"]);
   assert.deepEqual(review.runtime.readySources, ["dispatch", "worker"]);
   assert.deepEqual(review.runtime.missingSources, []);
-  assert.deepEqual(review.runtime.joinWaitingSummary, { expectedCount: 2, readyCount: 2, missingCount: 0 });
+  assert.deepEqual(review.runtime.joinWaitingSummary, { expectedCount: 2, readyCount: 2, missingCount: 0, mode: "all_of", requiredCount: 2 });
 
   const activatedEdge = view.edges.find((edge) => edge.source === "worker" && edge.target === "review");
   assert.ok(activatedEdge?.runtime);
@@ -284,6 +284,74 @@ test("GraphViewModel run mode derives runtime layer and disables capabilities", 
   const idleEdge = view.edges.find((edge) => edge.source === "review" && edge.target === "output");
   assert.ok(idleEdge?.runtime);
   assert.equal(idleEdge.runtime.recentlyActivated, false);
+});
+
+test("GraphViewModel projects persisted Join scope timing and source state", () => {
+  const authoring = buildAuthoringFixture();
+  const system = parseSystemFromMermaidSource(source);
+  const startedAt = new Date(Date.now() - 5000).toISOString();
+  const state = {
+    status: "running",
+    recentAudits: [],
+    pendingReviewsById: {},
+    errorEnvelope: undefined,
+    branchRecords: {},
+    loopIterations: {},
+    selectedEventByBranchId: {},
+    joinScopes: {
+      "review:lineage-1:0": {
+        joinId: "join-1",
+        runId: "run-1",
+        joinRoleId: "review",
+        lineageId: "lineage-1",
+        loopIteration: 0,
+        joinMode: "quorum_of",
+        joinMin: 1,
+        expectedSourceRoleIds: ["worker", "dispatch"],
+        readySourceRoleIds: ["dispatch"],
+        missingSourceRoleIds: ["worker"],
+        startedAt,
+        timeoutSeconds: 60,
+        status: "waiting",
+        timeoutAction: "pause"
+      },
+      "review:lineage-2:1": {
+        joinId: "join-2",
+        runId: "run-1",
+        joinRoleId: "review",
+        lineageId: "lineage-2",
+        loopIteration: 1,
+        expectedSourceRoleIds: ["worker", "dispatch"],
+        readySourceRoleIds: ["dispatch", "worker"],
+        missingSourceRoleIds: [],
+        startedAt: new Date(Date.now() - 10000).toISOString(),
+        timeoutSeconds: 60,
+        status: "activated",
+        timeoutAction: "pause",
+        completedAt: new Date().toISOString()
+      }
+    }
+  };
+  const view = buildGraphViewModel({ authoring, system, state, mode: "run" });
+  const reviewRuntime = view.nodes.find((node) => node.roleId === "review")?.runtime;
+  const join = reviewRuntime?.joinWaitingSummary;
+  assert.equal(join.scopeId, "join-1");
+  assert.equal(join.status, "waiting");
+  assert.equal(join.timeoutSeconds, 60);
+  assert.equal(join.timeoutAction, "pause");
+  assert.deepEqual(join.expectedSources, ["worker", "dispatch"]);
+  assert.deepEqual(join.readySources, ["dispatch"]);
+  assert.deepEqual(join.missingSources, ["worker"]);
+  assert.equal(Date.parse(join.deadlineAt), Date.parse(startedAt) + 60000);
+  assert.ok(join.elapsedSeconds >= 4 && join.elapsedSeconds <= 6);
+  assert.deepEqual(reviewRuntime.joinInstances.map((instance) => instance.scopeId), ["join-1", "join-2"]);
+  assert.equal(reviewRuntime.joinInstances[0].status, "waiting");
+  assert.equal(reviewRuntime.joinInstances[0].mode, "quorum_of");
+  assert.equal(reviewRuntime.joinInstances[0].requiredCount, 1);
+  assert.deepEqual(reviewRuntime.joinInstances[0].readySources, ["dispatch"]);
+  assert.deepEqual(reviewRuntime.joinInstances[0].missingSources, ["worker"]);
+  assert.equal(reviewRuntime.joinInstances[1].status, "activated");
+  assert.deepEqual(reviewRuntime.joinInstances[1].missingSources, []);
 });
 
 test("GraphViewModel returns empty model when authoring is missing", () => {

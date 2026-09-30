@@ -41,8 +41,9 @@ handoff。事件、动作、任务、网关、处理步骤、分支、运行实�
 | **`join.mode: quorum_of`** | **法定人数汇合**。等待 `join.sources` 中至少 `join.min.<roleId>` 个唯一上游在同一 `lineageId + loopIteration` 下完成；`join.sources.<roleId>` 本身也必须只声明唯一 source role，并与 Mermaid 中该节点的全部入边角色严格一致；达到阈值后 join 节点只激活一次，迟到 source 只记审计、不重触发。 | **1. 阈值判定**：运行时按唯一 source role 计数，而不是按到达次数计数。 <br> **2. 默认上下文**：未配置 `context.map` 时，仍按 `join.sources` 归一化注入 JSON 命名空间到 `input`。 |
 | **`context.map.<roleId>.*`** | **字段级上下文投影**。运行时用稳定字段顺序构造新的 JSON `input`。 | **1. 普通节点来源**：`direct.*`、`global.task`、`global.user_profile.*`。 <br> **2. Join 节点来源**：`source(<roleId>).*(仅限 join.sources)` 与 `global.*`。 <br> **3. Fail-closed**：缺字段、缺 source、非法 selector 均直接失败。 |
 | **默认事件路由（无 `role.mode`）** | **条件跳转**。由输出事件决定。 | **1. 选项锁定**：在 Prompt 注入 `allowed_events`。 <br> **2. 结构化约束**：在有出边且非并行模式下要求输出 `event`。 <br> **3. 命中规则**：运行时会激活所有 `eventType == 输出 event` 的出边；若 `PASS/REJECT` 指向同一目标，仍是单次二选一路由（由输出 event 决定命中哪一组边）。 <br> **4. `noop` 例外**：仅在 law 显式允许 `allowNoopWithoutExecutionBinding=true` 且该节点最多一个出边时，运行时可无模型执行直接走唯一出边。 |
+| **Semantic IR 条件路由** | 对同一源角色和输出事件的候选 Transition 求值；无条件边恒匹配。条件为封闭形状的受限 AST，只能读取白名单 `state/loop/event/role` 路径；literal 只允许有限数值、字符串、布尔值或 null，不允许对象、脚本或额外字段。 | 只激活唯一最高优先级匹配边；无匹配、条件求值失败或最高优先级并列均 fail closed，稳定错误码分别为 `IR_ROUTE_NO_MATCH`、`IR_ROUTE_CONDITION_EVALUATION_FAILED`、`IR_ROUTE_AMBIGUOUS`（无候选为 `IR_ROUTE_NO_CANDIDATE`）。`route_decision` 事件记录候选 flow、priority、匹配布尔值、胜出 flow/目标或失败码；不记录参与比较的字段值。Studio/Run 的 Conversation 视图读取同一持久化事件。 |
 | **反馈事件** | **席位间的业务事件流**。例如 `A --|FEEDBACK|--> B` 表示 A 产生反馈，B 消费反馈；`FEEDBACK` 本身不是节点或执行实例。 | 反馈内容放入事件 Payload，并按 B 的输入/事件合同校验；除非存在独立职责、权限和审计边界，不新增 `a-feedback` / `b-feedback` 席位。 |
-| **`role.mode: parallel_split`** | **语义分叉**。在一次状态转移中激活所有普通下游；不承诺 scheduler 对分支进行物理并发执行。 | **1. 任务分片**：在 Prompt 中明确当前分支的子任务目标。 <br> **2. 会话隔离**：运行时按 `sessionLineageId` 控制分支会话隔离；注意默认并非分支级独立工作目录，同一 role 仍共享其 `privateDir`。 |
+| **`role.mode: parallel_split`** | 在一次状态转移中激活该 Role 的全部静态声明普通下游分支；`ERROR*` 异常流不属于普通分支。它不按业务集合生成子任务、不选择一个独占目标，也不承诺物理同时执行。 | 业务任务拆解必须由上游输出及显式输入/上下文映射完成。运行时按 `sessionLineageId` 隔离分支会话；默认不提供分支级独立工作目录，同一 Role 仍共享其 `privateDir`。 |
 | **`loop.max`** | **循环预算**。限制拓扑环路迭代。 | **1. 输入稳定性**：`task` 始终保持原始用户请求，轮次变化只通过新的 `input` 上下文体现。 <br> **2. 运行时守卫**：解析期要求每个拓扑环至少有一个角色声明 `loop.max.*`；执行期由 loop budget 拦截超限激活。Semantic IR 的 Loop Scope 计数按 `runId + lineageId + loopId` 隔离；`counterField` 只引用业务方声明的状态字段，不是 OGS 预置字段。 |
 
 ---
@@ -98,6 +99,9 @@ handoff。事件、动作、任务、网关、处理步骤、分支、运行实�
 
 *   **Join 配置是显式且严格的**：`join.sources.<roleId>` 必须只包含唯一 source role，且对 `all_of` 与 `quorum_of` 都必须与 Mermaid 中该节点的全部入边角色完全一致；`join.mode.<roleId>=quorum_of` 时，`join.min.<roleId>` 是必填项，且阈值按同一 `lineageId + loopIteration` 下的唯一 source role 计数。
 *   **Join 作用域键与显示 ID 分离**：内部 readiness key 包含 `runId`、Join 角色、`lineageId` 和 `loopIteration`；`joinId` 是审计/UI 显示标识，不能用于替代内部去重或 readiness 判断。
+*   **Join 可观察状态来自持久化 scope**：运行快照保留 scope 的 Join mode/minimum、预期/已到达/缺失来源、状态和 timeout policy；Visualizer 按 scope 分开展示 lineage、轮次、等待时间与 deadline。旧快照缺少可选的 mode/minimum 时，从已编译的图配置投影，不从前端猜测运行状态。
+*   **Join 失败原因保持互斥**：来源失败按 `failurePolicy` 结算时记录 `join_source_failed` 和 `GRAPH_JOIN_SOURCE_FAILED`；等待期限耗尽时记录 `join_timed_out` 和 `GRAPH_JOIN_TIMEOUT`。`failurePolicy: wait` 会继续等待到 Join timeout，不把来源失败事件伪装为 timeout。
+*   **条件路由审计不持久化比较值**：运行事件仅记录候选 flow 的 priority 与 matched 结果、选中目标或稳定失败码；state/event/role 中的实际字段值只用于运行时判定，不复制到 route decision event。
 *   **`all_of` 与 `quorum_of` 的关系是“语义特例”，不是新增模式**：`quorum_of + join.min=1` 等价“any”；`quorum_of + join.min=|sources|` 等价“all”。当前 DSL 不单独引入 `any_of`：`all_of` 保留为高频默认汇合语义（更少配置、更易审查），`any` 通过 `quorum_of + join.min=1` 表达（避免新增关键字带来的解析/测试/兼容面扩张）。
 *   **Join 上下文与字段投影都属于运行时契约**：默认 join `input` 是按 `roleId` 归一化后的 JSON 投影；若声明 `context.map.<roleId>.*`，运行时会以稳定字段顺序重建 `input`，并要求 selector 与 source 都合法。
 *   **Flow contract 是独立的运行时合同层**：`handoff.mode` 只控制合同校验策略，`transition` 会跳过告警或缺失合同对应的 flow，`strict` 则硬失败；`handoff.contracts` 指向合同 bundle；`role_input` 只校验 `context.map` 投影后的结构化对象，不替代 runtime 内建的 prompt-input schema。

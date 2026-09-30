@@ -1,0 +1,10 @@
+{
+  "status": "selected",
+  "event": "DONE",
+  "candidates": [
+    { "flowId": "approved-route", "priority": 2, "matched": true },
+    { "flowId": "fallback-route", "priority": 1, "matched": false }
+  ],
+  "selectedFlowId": "approved-route",
+  "targetRoleId": "approved"
+}

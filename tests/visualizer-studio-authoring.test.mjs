@@ -158,6 +158,46 @@ test("Studio authoring serializer is deterministic and preserves parse semantics
   assert.deepEqual(roundTripped.graph?.contextMapByRoleId, original.graph?.contextMapByRoleId);
 });
 
+test("Studio conditional route editing persists a validated Semantic IR route and reloads it", async () => {
+  const workdir = await mkdtemp(path.join(os.tmpdir(), "ogsystem-studio-conditions-"));
+  await mkdir(path.resolve(workdir, ".ogs/contracts"), { recursive: true });
+  await writeFile(path.resolve(workdir, ".ogs/contracts/state.json"), JSON.stringify({ version: "1", type: "object" }), "utf8");
+  await writeFile(path.resolve(workdir, ".ogs/semantics.yaml"), [
+    "version: '1'",
+    "system:",
+    "  systemId: test.studio.authoring",
+    "  systemVersion: 1.0.0",
+    "state:",
+    "  schema: contracts/state.json",
+    "roles: {}",
+    "routes: []",
+    ""
+  ].join("\n"), "utf8");
+  const authoring = importMermaidToAuthoring({ workdir, systemPath: path.resolve(workdir, "system.mmd"), systemSource: source });
+  const flow = Object.values(authoring.flows).find((entry) => entry.fromRoleId === "dispatch" && entry.eventType === "WORK");
+  assert.ok(flow);
+  flow.condition = {
+    op: "equals",
+    args: [
+      { kind: "path", root: "state", path: ["approved"] },
+      { kind: "literal", value: true }
+    ]
+  };
+  flow.priority = 4;
+  await saveStudioAuthoringDraft({ workdir, authoring });
+  const semantics = await readFile(path.resolve(workdir, ".ogs/semantics.yaml"), "utf8");
+  assert.match(semantics, /priority: 4/);
+  assert.match(semantics, /path:\n\s+- approved/);
+  const reloaded = await inspectStudioBridgeDraft({ workdir, systemPath: path.resolve(workdir, "system.mmd"), systemSource: source, validateSystemSource: async () => ({ ok: true }) });
+  const restored = Object.values(reloaded.authoring.flows).find((entry) => entry.fromRoleId === "dispatch" && entry.eventType === "WORK");
+  assert.deepEqual(restored.condition, flow.condition);
+  assert.equal(restored.priority, 4);
+  const invalid = structuredClone(authoring);
+  const invalidFlow = Object.values(invalid.flows).find((entry) => entry.fromRoleId === "dispatch" && entry.eventType === "WORK");
+  invalidFlow.priority = -1;
+  await assert.rejects(() => saveStudioAuthoringDraft({ workdir, authoring: invalid }), /IR_INVALID_CONDITION/);
+});
+
 test("Studio bridge restores a compatible saved authoring layout and rejects stale drafts", async () => {
   const workdir = await mkdtemp(path.join(os.tmpdir(), "ogsystem-studio-bridge-draft-"));
   const systemPath = path.join(workdir, "system.mmd");

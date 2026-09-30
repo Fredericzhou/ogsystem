@@ -373,11 +373,14 @@ export function renderConversationHtml(args: {
       : String(source.file || "event") + "#" + String(source.cursor ?? "?");
     const route = item.route || {};
     const routeLabel = route.channel ? String(route.channel) + " -> " + String(route.presentationChannel || "") : "";
+    const routeDecision = item.kind === "route_decision"
+      ? (item.status === "failed" ? "failed " + String(item.errorCode || "route selection") : "selected " + String(route.selectedFlowId || "") + " -> " + String(route.targetRoleId || "")) + (route.candidates?.length ? " / " + route.candidates.map((candidate: Record<string, any>) => String(candidate.flowId) + " p" + String(candidate.priority) + (candidate.matched === true ? " matched" : candidate.matched === false ? " not matched" : " not evaluated")).join(", ") : "")
+      : "";
     const identity = [item.branchId, item.lineageId, item.loopIteration === undefined ? "" : "loop " + item.loopIteration]
       .filter(Boolean).join(" · ");
     const review = item.review ? "review " + String(item.review.reviewId) + " / " + String(item.review.reviewStatus) + (item.review.decision ? " / " + String(item.review.decision) : "") : "";
-    const join = item.join ? "expected " + (item.join.expected || []).join(", ") + " · ready " + (item.join.ready || []).join(", ") + " · missing " + (item.join.missing || []).join(", ") : "";
-    const meta = [identity, routeLabel, review, join, sourceLocator].filter(Boolean).join(" · ");
+    const join = item.join ? "scope " + String(item.join.scopeId || item.join.joinRoleId) + " · " + String(item.join.mode) + (item.join.requiredCount === undefined ? "" : " threshold " + String(item.join.requiredCount)) + " · expected " + (item.join.expected || []).join(", ") + " · ready " + (item.join.ready || []).join(", ") + " · missing " + (item.join.missing || []).join(", ") + (item.join.timedOut ? " · timed out" : "") + (item.join.arrivedFromRoleId ? " · arrived from " + String(item.join.arrivedFromRoleId) : "") + (item.join.finalAction ? " · action " + String(item.join.finalAction) : "") + (item.join.reason ? " · reason " + String(item.join.reason) : "") + (item.join.failurePolicy ? " · failure policy " + String(item.join.failurePolicy) : "") : "";
+    const meta = [identity, routeLabel, routeDecision, review, join, sourceLocator].filter(Boolean).join(" · ");
     const content = item.content?.text ? '<div class="hint conversation-content">' + escapeText(item.content.text) + (item.content.truncated ? "..." : "") + '</div>' : "";
     return '<div class="event conversation-item" data-conversation-item-id="' + escapeText(item.itemId) + '">' +
       '<div class="event-top"><span>' + escapeText(item.kind || "conversation") + '</span><span>' + escapeText(formatTime(item.at)) + '</span></div>' +

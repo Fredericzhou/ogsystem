@@ -1,0 +1,32 @@
+{
+  "type": "object",
+  "required": ["event", "content"],
+  "properties": {
+    "event": {
+      "type": "string",
+      "enum": ["OPTIMIZER_DONE"]
+    },
+    "content": { "type": "string" },
+    "data": {
+      "type": "object",
+      "additionalProperties": true,
+      "properties": {
+        "positions": {
+          "type": "object",
+          "additionalProperties": true,
+          "properties": {
+            "optimizer": {
+              "type": "object",
+              "additionalProperties": true,
+              "properties": {
+                "argument": { "type": "string" },
+                "improvements": { "type": "array", "items": { "type": "string" } }
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "additionalProperties": false
+}

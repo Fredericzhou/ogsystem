@@ -456,8 +456,40 @@ export function renderStudioRoleSemanticSummary(args: {
         missing: String(Number(joinWaiting.missingCount ?? 0))
       }, "join sources {ready}/{expected}, missing {missing}")
     : "";
+  const joinDetail = joinWaiting
+    ? [
+        joinWaiting.scopeId ? `scope ${String(joinWaiting.scopeId)}` : "",
+        joinWaiting.status ? `join ${String(joinWaiting.status)}` : "",
+        Number.isFinite(Number(joinWaiting.elapsedSeconds)) ? `waiting ${String(joinWaiting.elapsedSeconds)}s` : "",
+        Number.isFinite(Number(joinWaiting.timeoutSeconds)) ? `timeout ${String(joinWaiting.timeoutSeconds)}s` : "",
+        joinWaiting.deadlineAt ? `deadline ${String(joinWaiting.deadlineAt)}` : "",
+        joinWaiting.timeoutAction ? `on timeout ${String(joinWaiting.timeoutAction)}` : "",
+        Array.isArray(joinWaiting.missingSources) && joinWaiting.missingSources.length
+          ? `missing: ${joinWaiting.missingSources.map(String).join(", ")}` : "",
+        Array.isArray(joinWaiting.readySources) && joinWaiting.readySources.length
+          ? `ready: ${joinWaiting.readySources.map(String).join(", ")}` : ""
+      ].filter(Boolean).join(" · ")
+    : "";
+  const joinInstances = Array.isArray(runtime?.joinInstances) ? runtime.joinInstances : [];
+  const joinInstanceDetails = joinInstances.map((value) => {
+    const instance = asRecord(value) ?? {};
+    const fields = [
+      instance.scopeId ? `scope ${String(instance.scopeId)}` : "",
+      instance.lineageId ? `lineage ${String(instance.lineageId)}` : "",
+      `round ${String(instance.loopIteration ?? 0)}`,
+      `${String(instance.mode ?? "all_of")} threshold ${String(instance.requiredCount ?? instance.expectedCount ?? 0)}`,
+      `${String(instance.readyCount ?? 0)}/${String(instance.expectedCount ?? 0)} ready`,
+      instance.status ? String(instance.status) : "",
+      instance.deadlineAt ? `deadline ${String(instance.deadlineAt)}` : "",
+      instance.timeoutAction ? `timeout ${String(instance.timeoutAction)}` : "",
+      instance.resolutionReason ? `reason ${String(instance.resolutionReason)}` : "",
+      Array.isArray(instance.readySources) && instance.readySources.length ? `ready ${instance.readySources.map(String).join(", ")}` : "",
+      Array.isArray(instance.missingSources) && instance.missingSources.length ? `missing ${instance.missingSources.map(String).join(", ")}` : ""
+    ].filter(Boolean);
+    return fields.join(" · ");
+  });
   const runtimeHint = runtime
-    ? [runtimeStatus, ...runtimeMetrics, joinSummary, runtime.lastErrorCode ? String(runtime.lastErrorCode) : ""].filter(Boolean).join(" · ")
+    ? [runtimeStatus, ...runtimeMetrics, joinSummary, joinDetail, runtime.lastErrorCode ? String(runtime.lastErrorCode) : ""].filter(Boolean).join(" · ")
     : t("studio.roleSeatSemanticHint", undefined, "This node is a responsibility seat. Runtime values below are aggregate observations across its active branches, not a single execution instance.");
   return [
     '<div class="event studio-role-semantic-summary">',
@@ -467,6 +499,7 @@ export function renderStudioRoleSemanticSummary(args: {
     runtime
       ? '<div class="meta studio-role-runtime-metrics">' + runtimeMetrics.map((metric) => '<span>' + escapeText(metric) + '</span>').join("") + '</div>'
       : "",
+    joinInstanceDetails.length ? '<div class="meta studio-join-instances">' + joinInstanceDetails.map((line) => '<div>' + escapeText(line) + '</div>').join("") + '</div>' : "",
     '</div>'
   ].join("");
 }
@@ -923,7 +956,8 @@ export function renderStudioBridgeInspector(args: {
         eventType: String(selectedFlow.eventType ?? "")
       }, "display " + flowDisplayLabel(selectedFlow) + " · event " + String(selectedFlow.eventType ?? ""))) +
       " · " + escapeText(selectedFlow.runtimeOnlyErrorFlow ? t("studio.runtimeOnlyErrorPath", undefined, "runtime-only error path") : t("studio.authoringDesignPath", undefined, "authoring design path")) +
-      " · " + escapeText(selectedFlow.participatesInJoin ? t("studio.participatesInJoin", undefined, "participates in join.sources") : t("studio.notJoinSource", undefined, "not a join source")) + "</div></div>"
+      " · " + escapeText(selectedFlow.participatesInJoin ? t("studio.participatesInJoin", undefined, "participates in join.sources") : t("studio.notJoinSource", undefined, "not a join source")) +
+      (selectedFlow.condition ? '<div class="hint">when ' + escapeText(JSON.stringify(selectedFlow.condition)) + ' · priority ' + escapeText(String(selectedFlow.priority ?? 0)) + '</div>' : "") + "</div></div>"
     : '<div class="hint">' + escapeText(t("studio.selectFlow", undefined, "Select a flow to inspect event metadata.")) + '</div>';
   const packageEditor = selectedRole
     ? renderStudioRolePackageEditor({
@@ -1215,7 +1249,7 @@ export function renderStudioRoleConfigEditor(args: {
             ? t("studio.roleConfigGeneratedProfileHint", { profileId: effectiveProfileId, toolRef: effectiveToolRef || generatedToolRef }, "A new execution config {profileId} backed by {toolRef} will be created automatically if it does not already exist.")
             : t("studio.roleConfigProfileHint", { toolRef: effectiveToolRef || t("common.notAvailable", undefined, "n/a") }, "Tool binding resolves through {toolRef}.")) + '</div></label>'
         : "") +
-      '<section class="field full"><strong>' + escapeText(t("studio.routing", undefined, "Routing")) + '</strong><label class="field"><span>' + escapeText(t("studio.distributionMode", undefined, "Distribution")) + '</span><select data-role-setting="routingMode"' + disabled + '><option value="standard"' + (routingMode === "standard" ? " selected" : "") + '>' + escapeText(t("studio.standard", undefined, "Standard")) + '</option><option value="parallel_split"' + (routingMode === "parallel_split" ? " selected" : "") + '>parallel_split</option></select></label>' +
+      '<section class="field full"><strong>' + escapeText(t("studio.routing", undefined, "Routing")) + '</strong><label class="field"><span>' + escapeText(t("studio.distributionMode", undefined, "Distribution")) + '</span><select data-role-setting="routingMode"' + disabled + '><option value="standard"' + (routingMode === "standard" ? " selected" : "") + '>' + escapeText(t("studio.standard", undefined, "Standard")) + '</option><option value="parallel_split"' + (routingMode === "parallel_split" ? " selected" : "") + '>parallel_split</option></select><div class="hint">' + escapeText(t("studio.parallelSplitHint", undefined, "Activates every statically declared normal downstream branch. It does not split a task or promise simultaneous execution.")) + '</div></label>' +
       (routeOrderRows ? '<div class="hint">' + escapeText(t("studio.routeOrderHint", undefined, "Set the order of sibling flow targets; leave positions in their current order to use the default.")) + '</div><div class="studio-route-order-list">' + routeOrderRows + '</div>' : "") +
       (isInCycle ? '<label class="field"><span>' + escapeText(t("studio.loopBudget", undefined, "Loop budget")) + '</span><input type="number" min="1" step="1" data-role-setting="loopMax" value="' + escapeText(loopMax) + '"' + disabled + '><div class="hint">' + escapeText(t("studio.loopBudgetHint", undefined, "Optional positive activation limit for this role in a cycle.")) + '</div></label>' : "") + '</section>' +
       '<section class="field full"><strong>' + escapeText(t("studio.join", undefined, "Join")) + '</strong><label class="field"><span>' + escapeText(t("studio.joinMode", undefined, "Join mode")) + '</span><select data-role-setting="joinMode"' + disabled + '><option value="">' + escapeText(t("common.none", undefined, "None")) + '</option><option value="all_of"' + (joinMode === "all_of" ? " selected" : "") + '>all_of</option><option value="quorum_of"' + (joinMode === "quorum_of" ? " selected" : "") + '>quorum_of</option></select></label>' +
@@ -1298,7 +1332,7 @@ export function renderStudioFlowConfigEditor(args: {
   const t: Translator = typeof args.t === "function" ? args.t : (_key, _vars, fallback) => fallback ?? _key;
   const editor = args.editor ?? {};
   const activeFlowKey = String(editor.flowKey ?? "");
-  const matchesFlow = activeFlowKey === args.flowKey;
+  const matchesFlow = activeFlowKey === args.flowKey || editor.dirty === true;
   const data = matchesFlow && typeof editor.data === "object" && editor.data !== null && !Array.isArray(editor.data)
     ? editor.data as JsonRecord
     : {};
@@ -1309,7 +1343,16 @@ export function renderStudioFlowConfigEditor(args: {
     ? editor.validation as JsonRecord
     : {};
   const diagnostics = Array.isArray(validation.diagnostics) ? validation.diagnostics as JsonRecord[] : [];
-  const dirty = matchesFlow && editor.dirty === true;
+  const dirty = matchesFlow && (editor.dirty === true || Boolean(Object.keys(draft).length && (
+    String(draft.sourceRoleId ?? data.sourceRoleId ?? "") !== String(data.sourceRoleId ?? "") ||
+    String(draft.targetRoleId ?? data.targetRoleId ?? "") !== String(data.targetRoleId ?? "") ||
+    String(draft.eventType ?? data.eventType ?? "") !== String(data.eventType ?? "") ||
+    String(draft.label ?? data.label ?? "") !== String(data.label ?? "") ||
+    Boolean(draft.runtimeOnlyErrorFlow ?? data.runtimeOnlyErrorFlow) !== Boolean(data.runtimeOnlyErrorFlow) ||
+    Boolean(draft.participatesInJoin ?? data.participatesInJoin) !== Boolean(data.participatesInJoin) ||
+    String(draft.conditionJson ?? (data.condition ? JSON.stringify(data.condition, null, 2) : "")) !== (data.condition ? JSON.stringify(data.condition, null, 2) : "") ||
+    String(draft.priority ?? data.priority ?? 0) !== String(data.priority ?? 0)
+  )));
   const saving = matchesFlow && editor.saving === true;
   const error = matchesFlow ? String(editor.error ?? "") : "";
   const authoring = typeof args.authoring === "object" && args.authoring !== null && !Array.isArray(args.authoring)
@@ -1322,6 +1365,8 @@ export function renderStudioFlowConfigEditor(args: {
   const label = String(draft.label ?? data.label ?? "");
   const runtimeOnlyErrorFlow = draft.runtimeOnlyErrorFlow ?? data.runtimeOnlyErrorFlow;
   const participatesInJoin = draft.participatesInJoin ?? data.participatesInJoin;
+  const conditionJson = String(draft.conditionJson ?? (data.condition ? JSON.stringify(data.condition, null, 2) : ""));
+  const priority = String(draft.priority ?? data.priority ?? 0);
   const disabled = saving ? " disabled" : "";
   const sourceProjection = projectRoleProjectionSummary(args.projectRoles, sourceRoleId);
   const targetProjection = projectRoleProjectionSummary(args.projectRoles, targetRoleId);
@@ -1375,6 +1420,8 @@ export function renderStudioFlowConfigEditor(args: {
       '<label class="field"><span>' + escapeText(t("studio.form.flowLabel", undefined, "Display name")) + '</span><input data-flow-config-field="label" value="' + escapeText(label) + '"' + disabled + '><div class="hint">' + escapeText(t("studio.flowLabelHint", undefined, "Optional display label. Empty falls back to the event type.")) + '</div></label>' +
       '<label class="field checkbox"><input type="checkbox" data-flow-config-field="runtimeOnlyErrorFlow"' + (runtimeOnlyErrorFlow ? " checked" : "") + disabled + '><span>' + escapeText(t("studio.form.runtimeOnlyErrorFlow", undefined, "Runtime error flow")) + '</span></label>' +
       '<label class="field checkbox"><input type="checkbox" data-flow-config-field="participatesInJoin"' + (participatesInJoin ? " checked" : "") + disabled + '><span>' + escapeText(t("studio.form.participatesInJoin", undefined, "Join source")) + '</span></label>' +
+      '<label class="field full"><span>Condition AST (JSON, optional)</span><textarea rows="7" spellcheck="false" data-flow-config-field="conditionJson"' + disabled + '>' + escapeText(conditionJson) + '</textarea><div class="hint">Restricted AST; paths are limited to state, loop, event, and role. Empty means unconditional.</div></label>' +
+      '<label class="field"><span>Priority</span><input type="number" min="0" step="1" data-flow-config-field="priority" value="' + escapeText(priority) + '"' + disabled + '></label>' +
     "</div>",
     projectionCardsHtml ? '<div class="studio-flow-projection-grid">' + projectionCardsHtml + '</div>' : "",
     (targetRoleId && targetRoleId !== "output"

@@ -57,6 +57,8 @@ type StudioAuthoringLeafCommand =
       label?: string;
       runtimeOnlyErrorFlow?: boolean;
       participatesInJoin?: boolean;
+      condition?: StudioAuthoringFlow["condition"];
+      priority?: number;
     }
   | {
       type: "update-edge";
@@ -70,6 +72,8 @@ type StudioAuthoringLeafCommand =
       label?: string;
       runtimeOnlyErrorFlow?: boolean;
       participatesInJoin?: boolean;
+      condition?: StudioAuthoringFlow["condition"];
+      priority?: number;
     }
   | { type: "delete-edge"; flowId?: string; sourceRoleId: string; targetRoleId: string; eventType: string };
 
@@ -605,7 +609,9 @@ export function applyStudioAuthoringCommand(args: {
       toRoleId: targetRoleId,
       eventType,
       label: normalizeFlowLabel(command.label, eventType),
-      runtimeOnlyErrorFlow: command.runtimeOnlyErrorFlow ?? eventType.startsWith("ERROR")
+      runtimeOnlyErrorFlow: command.runtimeOnlyErrorFlow ?? eventType.startsWith("ERROR"),
+      condition: command.condition,
+      priority: command.priority ?? 0
     };
     if (!flowBody.label) {
       delete flowBody.label;
@@ -620,7 +626,9 @@ export function applyStudioAuthoringCommand(args: {
       label: flow.label ?? eventType,
       eventType,
       runtimeOnlyErrorFlow: Boolean(flow.runtimeOnlyErrorFlow),
-      participatesInJoin: Boolean(command.participatesInJoin)
+      participatesInJoin: Boolean(command.participatesInJoin),
+      condition: flow.condition,
+      priority: flow.priority
     });
     if (command.participatesInJoin && targetRoleId !== STUDIO_SYSTEM_END_ROLE_ID) {
       syncJoinSource(authoring, targetRoleId, sourceRoleId, true);
@@ -673,7 +681,9 @@ export function applyStudioAuthoringCommand(args: {
       label: Object.hasOwn(command, "label")
         ? normalizeFlowLabel(command.label, eventType)
         : normalizeFlowLabel(originalFlow.label, eventType),
-      runtimeOnlyErrorFlow: command.runtimeOnlyErrorFlow ?? eventType.startsWith("ERROR")
+      runtimeOnlyErrorFlow: command.runtimeOnlyErrorFlow ?? eventType.startsWith("ERROR"),
+      condition: command.condition,
+      priority: command.priority ?? originalFlow.priority ?? 0
     };
     if (!flow.label) {
       delete flow.label;
@@ -700,7 +710,9 @@ export function applyStudioAuthoringCommand(args: {
             label: flow.label ?? eventType,
             eventType,
             runtimeOnlyErrorFlow: Boolean(flow.runtimeOnlyErrorFlow),
-            participatesInJoin: Boolean(command.participatesInJoin)
+            participatesInJoin: Boolean(command.participatesInJoin),
+            condition: flow.condition,
+            priority: flow.priority
           }
         : edge;
     });

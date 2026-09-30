@@ -82,15 +82,23 @@ export type ConversationItem = {
     backEdge: boolean;
     condition?: string;
     outcome?: string;
+    selectedFlowId?: string;
+    candidates?: Array<{ flowId: string; priority: number; matched?: boolean }>;
   };
   join?: {
+    scopeId?: string;
     joinRoleId: string;
     mode: "all_of" | "quorum_of";
+    requiredCount?: number;
     expected: string[];
     ready: string[];
     missing: string[];
     timedOut: boolean;
     finalAction?: string;
+    action?: string;
+    reason?: string;
+    failurePolicy?: string;
+    arrivedFromRoleId?: string;
   };
   review?: {
     reviewId: string;
@@ -256,6 +264,14 @@ function buildRoute(value: RecordValue): ConversationItem["route"] | undefined {
   const targetRoleId = firstString(nested?.targetRoleId, nested?.toRoleId, value.targetRoleId, value.toRoleId, value.nextRoleId, value.target);
   const condition = firstString(nested?.condition, nested?.conditionLabel, value.condition, value.conditionLabel);
   const outcome = firstString(nested?.outcome, nested?.evaluatedOutcome, value.outcome, value.evaluatedOutcome);
+  const rawCandidates = Array.isArray(value.candidates) ? value.candidates : Array.isArray(nested?.candidates) ? nested.candidates : [];
+  const candidates = rawCandidates.flatMap((candidate) => {
+    const item = record(candidate);
+    const flowId = item && stringValue(item.flowId);
+    const priority = item && integerValue(item.priority);
+    const matched = item && booleanValue(item.matched);
+    return flowId && priority !== undefined ? [{ flowId, priority, ...(matched !== undefined ? { matched } : {}) }] : [];
+  });
   const explicitBackEdge = booleanValue(nested?.backEdge) ?? booleanValue(value.backEdge) ??
     booleanValue(value.loopReturn) ?? false;
   const channel = inferChannel(value);
@@ -270,7 +286,9 @@ function buildRoute(value: RecordValue): ConversationItem["route"] | undefined {
     presentationChannel: presentationChannelForRoute(channel, backEdge),
     backEdge,
     condition,
-    outcome
+    outcome,
+    ...(firstString(value.selectedFlowId, nested?.selectedFlowId) ? { selectedFlowId: firstString(value.selectedFlowId, nested?.selectedFlowId) } : {}),
+    ...(candidates.length ? { candidates } : {})
   };
 }
 
@@ -369,6 +387,7 @@ function buildItem(args: {
   const roleId = firstString(args.value.roleId, args.value.joinRoleId);
   const type = firstString(args.value.type) ?? "";
   const rawStatus = args.value.status ??
+    (type === "route_decision" ? "selected" : undefined) ??
     (kind === "join" && (type.includes("activated") || type.includes("quorum_reached")) ? "activated" : undefined) ??
     (kind === "join" && type.includes("timed_out") ? "timed_out" : undefined) ??
     (kind === "human_review" && type.includes("requested") ? "pending" : undefined) ??
@@ -408,13 +427,21 @@ function buildItem(args: {
     const timedOut = args.value.timedOut === true || normalizeToken(args.value.status) === "timed_out" ||
       (firstString(args.value.type) ?? "").includes("timed_out");
     result.join = {
+      ...(firstString(args.value.joinId, args.value.scopeId) ? { scopeId: firstString(args.value.joinId, args.value.scopeId) } : {}),
       joinRoleId,
       mode,
+      ...(integerValue(args.value.requiredSourceCount ?? args.value.joinMin ?? args.value.requiredCount) !== undefined
+        ? { requiredCount: integerValue(args.value.requiredSourceCount ?? args.value.joinMin ?? args.value.requiredCount) }
+        : {}),
       expected,
       ready,
       missing,
       timedOut,
-      ...(firstString(args.value.finalAction, args.value.action) ? { finalAction: firstString(args.value.finalAction, args.value.action) } : {})
+      ...(firstString(args.value.finalAction, args.value.action) ? { finalAction: firstString(args.value.finalAction, args.value.action) } : {}),
+      ...(firstString(args.value.action) ? { action: firstString(args.value.action) } : {}),
+      ...(firstString(args.value.reason, args.value.resolutionReason) ? { reason: firstString(args.value.reason, args.value.resolutionReason) } : {}),
+      ...(firstString(args.value.failurePolicy) ? { failurePolicy: firstString(args.value.failurePolicy) } : {}),
+      ...(firstString(args.value.arrivedFromRoleId) ? { arrivedFromRoleId: firstString(args.value.arrivedFromRoleId) } : {})
     };
   }
   const content = safeContent(contentFromRecord(args.value), args.options);

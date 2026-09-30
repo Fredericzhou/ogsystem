@@ -65,7 +65,9 @@ export function graphToCanvasDocument(graph: Graph, authoring: StudioAuthoringDo
       label: studioEdge.label || studioEdge.eventType,
       eventType: studioEdge.eventType || "DONE",
       runtimeOnlyErrorFlow: Boolean(studioEdge.runtimeOnlyErrorFlow),
-      participatesInJoin: Boolean(studioEdge.participatesInJoin)
+      participatesInJoin: Boolean(studioEdge.participatesInJoin),
+      condition: studioEdge.condition,
+      priority: studioEdge.priority
     }];
   });
 

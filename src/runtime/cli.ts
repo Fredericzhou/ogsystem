@@ -92,6 +92,8 @@ function usageRoot(): string {
     "Modeling invariant:",
     "  A graph node is a stable responsibility role/seat; an agent performs that role's work.",
     "  A flow is a direct role-to-role handoff after the source role completes its work.",
+    "  parallel_split activates every statically declared normal downstream branch; it does not split tasks or promise simultaneous execution.",
+    "  Task decomposition must be explicit in role output and input/context mappings.",
     "  Events, actions, tasks, gateways, process steps, and runtime records are not role nodes.",
     "",
     "Defaults:",

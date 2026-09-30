@@ -18,6 +18,7 @@ import {
   filterStudioBridgeItems,
   renderStudioFlowConfigEditor,
   renderStudioRoleConfigEditor,
+  renderStudioRoleSemanticSummary,
   renderStudioSystemSettingsEditor,
   renderStudioContractEditor,
   renderStudioBridgeInspector,
@@ -25,6 +26,7 @@ import {
   renderStudioDebugOutcomePanel,
   renderReleaseGatePanel
 } from "../dist/visualizer/client-renderers.js";
+import { renderConversationHtml } from "../dist/visualizer/client-lifecycle-panels.js";
 import { authoringToCanvasDocument } from "../dist/visualizer/studio-authoring.js";
 import { latestRoleContract } from "../tests-support/role-fixture.mjs";
 
@@ -107,6 +109,88 @@ const PAGE_ELEMENT_IDS = [
   "refresh",
   "locale-select"
 ];
+
+test("Conversation view explains conditional route winners without showing evaluated values", () => {
+  const html = renderConversationHtml({
+    projection: { items: [{
+      itemId: "route-1",
+      kind: "route_decision",
+      roleId: "dispatch",
+      event: "DONE",
+      status: "selected",
+      at: "2026-09-02T00:00:00.000Z",
+      route: {
+        channel: "main",
+        presentationChannel: "primary",
+        targetRoleId: "approved",
+        selectedFlowId: "approve-route",
+        candidates: [
+          { flowId: "approve-route", priority: 2, matched: true },
+          { flowId: "fallback-route", priority: 1, matched: false }
+        ]
+      },
+      source: { file: "events.ndjson", cursor: 4 }
+    }] },
+    t: (key, _vars, fallback) => fallback ?? key,
+    escapeText: (value) => String(value),
+    statusClass: (value) => value,
+    displayUiToken: (value) => String(value),
+    formatTime: (value) => String(value)
+  });
+  assert.match(html, /selected approve-route -&gt; approved|selected approve-route -> approved/);
+  assert.match(html, /approve-route p2 matched/);
+  assert.match(html, /fallback-route p1 not matched/);
+});
+
+test("Join runtime summary distinguishes multiple scopes, quorum threshold, and source states", () => {
+  const html = renderStudioRoleSemanticSummary({
+    role: {
+      roleId: "merge",
+      runtime: {
+        status: "waiting",
+        activeBranchCount: 0,
+        completedBranchCount: 0,
+        waitingReviewCount: 0,
+        loopIteration: 1,
+        joinWaitingSummary: { expectedCount: 3, readyCount: 1, missingCount: 2, mode: "quorum_of", requiredCount: 2 },
+        joinInstances: [{
+          scopeId: "merge::lineage-a::1",
+          lineageId: "lineage-a",
+          loopIteration: 1,
+          expectedCount: 3,
+          readyCount: 1,
+          missingCount: 2,
+          mode: "quorum_of",
+          requiredCount: 2,
+          status: "waiting",
+          timeoutSeconds: 60,
+          timeoutAction: "pause",
+          readySources: ["analyst"],
+          missingSources: ["reviewer", "critic"]
+        }, {
+          scopeId: "merge::lineage-b::1",
+          lineageId: "lineage-b",
+          loopIteration: 1,
+          expectedCount: 3,
+          readyCount: 2,
+          missingCount: 1,
+          mode: "quorum_of",
+          requiredCount: 2,
+          status: "activated",
+          readySources: ["analyst", "critic"],
+          missingSources: ["reviewer"]
+        }]
+      }
+    },
+    t: testTranslator
+  });
+  assert.match(html, /merge::lineage-a::1/);
+  assert.match(html, /quorum_of threshold 2/);
+  assert.match(html, /ready analyst/);
+  assert.match(html, /missing reviewer, critic/);
+  assert.match(html, /merge::lineage-b::1/);
+  assert.match(html, /activated/);
+});
 
 test("Studio model selector shows runnable backend/model pairs and discovery status", () => {
   const html = renderStudioRoleConfigEditor({

@@ -1,0 +1,49 @@
+{
+  "roleId": "investment-critic",
+  "roleVersion": "1.0.0",
+  "name": "Investment Critic",
+  "description": "Challenges an investment proposal with evidence gaps, downside scenarios, and disconfirming signals.",
+  "preferredModelTags": [
+    "reasoning",
+    "long-context"
+  ],
+  "promptTemplate": "prompt.md",
+  "outputSchema": "output.schema.json",
+  "tags": [
+    "debate",
+    "minimalism"
+  ],
+  "contractVersion": 1,
+  "purpose": "Challenges an investment proposal with evidence gaps, downside scenarios, and disconfirming signals.",
+  "responsibility": {
+    "kind": "atomic",
+    "owns": [],
+    "contributes": [],
+    "doesNotOwn": []
+  },
+  "inputs": {
+    "preconditions": []
+  },
+  "outputs": {
+    "events": [
+      "CRITIC_DONE"
+    ],
+    "postconditions": []
+  },
+  "authority": {
+    "controlActions": []
+  },
+  "constraints": {
+    "writableStateFields": [],
+    "allowedTools": [
+      "tool.console.print"
+    ]
+  },
+  "failure": {
+    "retryableErrorCodes": [],
+    "terminalErrorCodes": []
+  },
+  "audit": {
+    "requiredFields": []
+  }
+}

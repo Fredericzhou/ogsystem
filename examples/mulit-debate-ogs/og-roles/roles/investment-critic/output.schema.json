@@ -1,0 +1,32 @@
+{
+  "type": "object",
+  "required": ["event", "content"],
+  "properties": {
+    "event": {
+      "type": "string",
+      "enum": ["CRITIC_DONE"]
+    },
+    "content": { "type": "string" },
+    "data": {
+      "type": "object",
+      "additionalProperties": true,
+      "properties": {
+        "positions": {
+          "type": "object",
+          "additionalProperties": true,
+          "properties": {
+            "critic": {
+              "type": "object",
+              "additionalProperties": true,
+              "properties": {
+                "argument": { "type": "string" },
+                "risks": { "type": "string" }
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "additionalProperties": false
+}

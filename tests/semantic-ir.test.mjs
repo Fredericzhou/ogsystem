@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { mkdtemp, mkdir, writeFile } from "node:fs/promises";
+import { mkdtemp, mkdir, readFile, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import test from "node:test";
@@ -170,6 +170,11 @@ test("restricted conditions evaluate only allowlisted paths", () => {
     { kind: "literal", value: 2 }
   ] }, context), true);
   assert.deepEqual(validateConditionAst({ op: "call", args: [] }), ["condition.op is not allowed"]);
+  assert.match(validateConditionAst({ op: "not", args: [], ignored: true })[0], /unsupported field/);
+  assert.match(validateConditionAst({ op: "not", args: [{ op: "exists", args: [{ kind: "path", root: "state", path: ["score"] }] }, { op: "exists", args: [{ kind: "path", root: "state", path: ["other"] }] }] })[0], /contain 1 item/);
+  assert.match(validateConditionAst({ op: "equals", args: [{ kind: "literal", value: { nested: true } }, { kind: "literal", value: 1 }] })[0], /invalid literal/);
+  assert.match(validateConditionAst({ op: "equals", args: [{ kind: "literal", value: 1, extra: true }, { kind: "literal", value: 1 }] })[0], /invalid literal/);
+  assert.match(validateConditionAst({ op: "exists", args: [{ kind: "path", root: "state", path: ["score"], extra: true }] })[0], /invalid value reference/);
   assert.throws(() => evaluateCondition({ op: "equals", args: [
     { kind: "path", root: "state", path: ["bad-key"] },
     { kind: "literal", value: 1 }
@@ -182,6 +187,10 @@ test("semantic route selection is priority based and fail-closed on ambiguity", 
     { flowId: "conditional", eventType: "NEXT", toRoleId: "c", priority: 1, condition: { op: "equals", args: [{ kind: "path", root: "state", path: ["ok"] }, { kind: "literal", value: true }] } }
   ];
   assert.equal(selectSemanticRoute({ transitions, eventType: "NEXT", context: { state: { ok: true }, loop: {}, event: {}, role: {} } }).toRoleId, "c");
+  assert.throws(
+    () => selectSemanticRoute({ transitions: [], eventType: "NEXT", context: { state: {}, loop: {}, event: {}, role: {} } }),
+    (error) => error.code === "IR_ROUTE_NO_CANDIDATE"
+  );
   assert.throws(() => selectSemanticRoute({ transitions: transitions.slice(1), eventType: "NEXT", context: { state: { ok: false }, loop: {}, event: {}, role: {} } }), /No condition matched/);
   assert.throws(() => selectSemanticRoute({ transitions: [transitions[0], { ...transitions[0], flowId: "other", toRoleId: "c" }], eventType: "NEXT", context: { state: {}, loop: {}, event: {}, role: {} } }), /Ambiguous routes/);
 });
@@ -320,6 +329,106 @@ test("Loop Scope routes a boundary transition to onExhausted at max rounds", () 
   }]);
 });
 
+test("conditional route transition persists a value-free decision trace", async () => {
+  const system = {
+    systemId: "conditional-route-audit",
+    systemVersion: "1",
+    entryRoleId: "dispatch",
+    roleIds: ["dispatch", "approved", "fallback"],
+    flows: [
+      { fromRoleId: "dispatch", toRoleId: "approved", eventType: "DONE" },
+      { fromRoleId: "dispatch", toRoleId: "fallback", eventType: "DONE" }
+    ],
+    lawBinding: { globalLawRef: "law.test" },
+    executionBinding: {},
+    modelBinding: {}
+  };
+  const plan = createExecutionPlan(system);
+  plan.semanticIR = {
+    transitions: [
+      { flowId: "approved-route", fromRoleId: "dispatch", toRoleId: "approved", eventType: "DONE", priority: 2, channel: "normal", condition: { op: "equals", args: [{ kind: "path", root: "event", path: ["approved"] }, { kind: "literal", value: true }] } },
+      { flowId: "fallback-route", fromRoleId: "dispatch", toRoleId: "fallback", eventType: "DONE", priority: 1, channel: "normal", condition: { op: "equals", args: [{ kind: "path", root: "event", path: ["approved"] }, { kind: "literal", value: false }] } }
+    ],
+    stateSchema: { defaults: {} },
+    loops: [],
+    joins: [],
+    capabilities: { maxRoleActivationsByRoleId: {} }
+  };
+  const state = createInitialGraphState({ plan, prompt: "route trace" });
+  const branch = Object.values(state.branchRecords)[0];
+  const args = {
+    runId: "run-route-audit",
+    state,
+    plan,
+    logger: createRunConsoleLogger(false),
+    errorFlowRoutingEnabled: false,
+    outcome: {
+      version: 1,
+      executionId: "exec-dispatch-1",
+      roleId: "dispatch",
+      branchId: branch.branchId,
+      loopIteration: 0,
+      sessionKey: "dispatch:dispatch@0#1",
+      branch,
+      committedAt: "2026-09-02T00:00:00.000Z",
+      status: "ok",
+      selectedEvent: "DONE",
+      storedResult: {
+        roleId: "dispatch",
+        event: "DONE",
+        content: "approved=true",
+        data: { approved: true, token: "must-not-be-recorded" },
+        branchId: branch.branchId,
+        lineageId: branch.lineageId,
+        loopIteration: 0
+      },
+      audit: { at: "2026-09-02T00:00:00.000Z", roleId: "dispatch", branchId: branch.branchId, loopIteration: 0, exitCode: 0, durationMs: 1, selectedEvent: "DONE", status: "ok" }
+    }
+  };
+  const transition = planTransition(args);
+  const decision = transition.events.find((event) => event.type === "route_decision");
+  const { at: _at, roleId: _roleId, branchId: _branchId, lineageId: _lineageId, loopIteration: _loopIteration, type: _type, ...decisionGolden } = decision;
+  assert.deepEqual(decisionGolden, JSON.parse(await readFile(resolve(process.cwd(), "tests/fixtures/semantic-route-decision.golden.json"), "utf8")));
+  assert.deepEqual({
+    status: decision.status,
+    event: decision.event,
+    candidates: decision.candidates,
+    selectedFlowId: decision.selectedFlowId,
+    targetRoleId: decision.targetRoleId
+  }, JSON.parse(await readFile(resolve(process.cwd(), "tests/fixtures/semantic-route-decision.golden.json"), "utf8")));
+  assert.doesNotMatch(JSON.stringify(decision), /must-not-be-recorded|approved=true/);
+
+  plan.semanticIR.transitions = plan.semanticIR.transitions.map((route) => ({
+    ...route,
+    condition: { ...route.condition, args: [route.condition.args[0], { kind: "literal", value: false }] }
+  }));
+  const noMatch = planTransition(args);
+  assert.equal(noMatch.update.status, "failed");
+  assert.equal(noMatch.events[0].type, "route_decision");
+  assert.equal(noMatch.events[0].status, "failed");
+  assert.equal(noMatch.events[0].errorCode, "IR_ROUTE_NO_MATCH");
+  assert.deepEqual(noMatch.events[0].candidates.map((candidate) => candidate.matched), [false, false]);
+
+  plan.semanticIR.transitions = plan.semanticIR.transitions.map((route) => ({
+    ...route,
+    priority: 2,
+    condition: { ...route.condition, args: [route.condition.args[0], { kind: "literal", value: true }] }
+  }));
+  const ambiguous = planTransition(args);
+  assert.equal(ambiguous.update.status, "failed");
+  assert.equal(ambiguous.events[0].errorCode, "IR_ROUTE_AMBIGUOUS");
+  assert.deepEqual(ambiguous.events[0].candidates.map((candidate) => candidate.matched), [true, true]);
+
+  plan.semanticIR.transitions = [{
+    ...plan.semanticIR.transitions[0],
+    condition: { op: "greater_than", args: [plan.semanticIR.transitions[0].condition.args[0], { kind: "literal", value: 1 }] }
+  }];
+  const evaluationFailure = planTransition(args);
+  assert.equal(evaluationFailure.update.status, "failed");
+  assert.equal(evaluationFailure.events[0].errorCode, "IR_ROUTE_CONDITION_EVALUATION_FAILED");
+  assert.equal(evaluationFailure.events[0].candidates[0].matched, undefined);
+});
+
 test("debate example compiles its business state and event contracts", async () => {
   const exampleRoot = resolve(process.cwd(), "examples", "langgraph-debate-current");
   const specification = await loadOgsSpecification(exampleRoot);
@@ -379,7 +488,13 @@ test("Join policy consumes source failure policy and keeps terminate distinct", 
   };
   assert.equal(resolveJoinPolicy({ ...base, failurePolicy: "wait", sourceFailure: true }).action, "wait");
   assert.equal(resolveJoinPolicy({ ...base, failurePolicy: "fail", sourceFailure: true }).action, "fail");
+  assert.equal(resolveJoinPolicy({ ...base, failurePolicy: "quorum_continue", sourceFailure: true }).action, "fail");
+  assert.equal(resolveJoinPolicy({ ...base, readySources: ["a", "b"], failurePolicy: "fail", sourceFailure: true }).action, "activate");
   assert.equal(resolveJoinPolicy({ ...base, now: 60000 }).action, "terminate");
+  assert.equal(resolveJoinPolicy({ ...base, onTimeout: "fail", now: 60000 }).action, "fail");
+  assert.equal(resolveJoinPolicy({ ...base, onTimeout: "pause", now: 60000 }).action, "pause");
+  assert.equal(resolveJoinPolicy({ ...base, onTimeout: "terminate", now: 60000 }).action, "terminate");
+  assert.throws(() => resolveJoinPolicy({ ...base, mode: "all_of", onTimeout: "quorum_continue", now: 60000 }), /requires quorum_of/);
 });
 
 test("Semantic IR rejects unresolved loop exhausted targets and invalid seat budgets", () => {

@@ -1,0 +1,25 @@
+{
+  "type": "object",
+  "required": ["event", "content"],
+  "properties": {
+    "event": {
+      "type": "string",
+      "enum": ["REBUTTAL_NEEDED", "DECISION_READY"]
+    },
+    "content": { "type": "string" },
+    "data": {
+      "type": "object",
+      "additionalProperties": true,
+      "properties": {
+        "consensus_reached": { "type": "boolean" },
+        "objections": {
+          "type": "object",
+          "additionalProperties": true,
+          "properties": { "summary": { "type": "string" } }
+        },
+        "decision": { "type": "string", "minLength": 1 }
+      }
+    }
+  },
+  "additionalProperties": false
+}

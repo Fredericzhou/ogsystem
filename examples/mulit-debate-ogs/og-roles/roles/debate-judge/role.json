@@ -1,0 +1,50 @@
+{
+  "roleId": "debate-judge",
+  "roleVersion": "1.0.0",
+  "name": "Investment Judge",
+  "description": "Synthesizes the critic and optimizer, decides whether a material objection remains, and issues a bounded decision.",
+  "preferredModelTags": [
+    "reasoning",
+    "long-context"
+  ],
+  "promptTemplate": "prompt.md",
+  "outputSchema": "output.schema.json",
+  "tags": [
+    "debate",
+    "synthesis"
+  ],
+  "contractVersion": 1,
+  "purpose": "Synthesizes the critic and optimizer, decides whether a material objection remains, and issues a bounded decision.",
+  "responsibility": {
+    "kind": "atomic",
+    "owns": [],
+    "contributes": [],
+    "doesNotOwn": []
+  },
+  "inputs": {
+    "preconditions": []
+  },
+  "outputs": {
+    "events": [
+      "DECISION_READY",
+      "REBUTTAL_NEEDED"
+    ],
+    "postconditions": []
+  },
+  "authority": {
+    "controlActions": []
+  },
+  "constraints": {
+    "writableStateFields": [],
+    "allowedTools": [
+      "tool.console.print"
+    ]
+  },
+  "failure": {
+    "retryableErrorCodes": [],
+    "terminalErrorCodes": []
+  },
+  "audit": {
+    "requiredFields": []
+  }
+}

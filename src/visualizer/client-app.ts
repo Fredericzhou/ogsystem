@@ -134,9 +134,16 @@ import {
 } from "./client-stream-state.js";
 import { studioRolePackageHasRequiredFileCoverage } from "./studio-client/studio-graph-validation.js";
 import {
+  issue,
   normalizeStudioEventType,
-  validateStudioAddEdgeDraft
+  validateStudioAddEdgeDraft,
+  validateStudioConditionAst
 } from "./studio-client/studio-graph-validation.js";
+import {
+  STUDIO_SYSTEM_END_ROLE_ID,
+  normalizeStudioGraphStoredRoleId,
+  normalizeStudioGraphTargetRoleId
+} from "./studio-contracts.js";
 import { WORKBENCH_VALIDATION_DEBOUNCE_MS } from "./client-input-policy.js";
 import { getDictionary, type Dictionary, type Locale } from "./i18n/index.js";
 import { applyCanvasLayoutPatchToAuthoring } from "./client-studio-authoring.js";
@@ -273,6 +280,15 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
     const renderStudioExecutionConfigEditor = ${renderStudioExecutionConfigEditor.toString()};
     const renderStudioRolePackageEditor = ${renderStudioRolePackageEditor.toString()};
     const renderStudioFlowConfigEditor = ${renderStudioFlowConfigEditor.toString()};
+    const issue = ${issue.toString()};
+    const validateStudioAddEdgeDraft = ${validateStudioAddEdgeDraft.toString()};
+    const validateStudioConditionAst = ${validateStudioConditionAst.toString()};
+    const normalizeStudioEventType = ${normalizeStudioEventType.toString()};
+    const normalizeStudioGraphStoredRoleId = ${normalizeStudioGraphStoredRoleId.toString()};
+    const normalizeStudioGraphTargetRoleId = ${normalizeStudioGraphTargetRoleId.toString()};
+    const STUDIO_SYSTEM_END_ROLE_ID = "${STUDIO_SYSTEM_END_ROLE_ID}";
+    const EVENT_TYPE_PATTERN = /^[A-Z][A-Z0-9_:-]*$/;
+    function asTrimmedStringOrEmpty(value) { return typeof value === "string" ? value.trim() : ""; }
     const roleIdOf = ${roleIdOf.toString()};
     const flowKeyOf = ${flowKeyOf.toString()};
     const flowDisplayLabel = ${flowDisplayLabel.toString()};
@@ -2656,8 +2672,8 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
       return Array.from(workbenchBodyEl.querySelectorAll("[data-execution-config-field]") || []);
     }
 
-    function flowConfigEditorFieldElements() {
-      return Array.from(workbenchBodyEl.querySelectorAll("[data-flow-config-field]") || []);
+    function flowConfigEditorFieldElements(root = document.getElementById("workbench-body") || workbenchBodyEl) {
+      return Array.from(root?.querySelectorAll("[data-flow-config-field]") || []);
     }
 
     function readExecutionConfigEditorDraft() {
@@ -2698,8 +2714,9 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
       return state.studioRolePackageEditor?.dirty === true;
     }
 
-    function readStudioFlowConfigDraft() {
+    function readStudioFlowConfigDraft(root) {
       const current = state.studioFlowConfigEditor?.data || {};
+      const fieldRoot = root || document.getElementById("workbench-body") || workbenchBodyEl;
       const draft = {
         flowKey: state.studioFlowConfigEditor?.flowKey || selectedStudioFlowKey(),
         flowId: current.flowId || "",
@@ -2708,9 +2725,11 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
         eventType: current.eventType || "",
         label: current.label || "",
         runtimeOnlyErrorFlow: current.runtimeOnlyErrorFlow === true,
-        participatesInJoin: current.participatesInJoin === true
+        participatesInJoin: current.participatesInJoin === true,
+        conditionJson: String(current.conditionJson ?? (current.condition ? JSON.stringify(current.condition, null, 2) : "")),
+        priority: String(current.priority ?? 0)
       };
-      for (const element of flowConfigEditorFieldElements()) {
+      for (const element of flowConfigEditorFieldElements(fieldRoot)) {
         const field = element.getAttribute("data-flow-config-field") || "";
         if (field === "runtimeOnlyErrorFlow" || field === "participatesInJoin") {
           const checked = element.checked === true;
@@ -2723,6 +2742,8 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
         if (field === "targetRoleId") draft.targetRoleId = value;
         if (field === "eventType") draft.eventType = value;
         if (field === "label") draft.label = value;
+        if (field === "conditionJson") draft.conditionJson = value;
+        if (field === "priority") draft.priority = value;
       }
       return draft;
     }
@@ -3222,7 +3243,7 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
         const showDirtyFlowWarning = hasDirtyStudioFlowConfigEditor() && dirtyFlowKey && dirtyFlowKey !== selectedFlowKeyValue;
         if (selectedFlow) {
           const selectedTargetRoleId = normalizeStudioTargetRoleId(selectedFlow.toRoleId);
-          const flowConfigEditor = state.studioFlowConfigEditor?.flowKey === editorFlowKey
+          const flowConfigEditor = state.studioFlowConfigEditor?.dirty || state.studioFlowConfigEditor?.flowKey === editorFlowKey
             ? state.studioFlowConfigEditor
             : {
                 flowKey: editorFlowKey,
@@ -3251,7 +3272,7 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
                 '</strong></div>'
               : "",
             renderStudioFlowConfigEditor({
-              flowKey: String(selectedFlow.flowKey || editorFlowKey),
+              flowKey: String(flowConfigEditor.flowKey || selectedFlow.flowKey || editorFlowKey),
               editor: flowConfigEditor,
               authoring: state.studioBridge?.authoring || null,
               projectRoles: projectRolesForStudioDisplay(),
@@ -4213,6 +4234,9 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
         label: String(selectedFlow.label || ""),
         runtimeOnlyErrorFlow: selectedFlow.runtimeOnlyErrorFlow === true,
         participatesInJoin: selectedFlow.participatesInJoin === true,
+        condition: selectedFlow.condition,
+        priority: selectedFlow.priority,
+        conditionJson: selectedFlow.condition ? JSON.stringify(selectedFlow.condition, null, 2) : "",
         targetContextMap: state.studioBridge?.authoring?.roles?.[normalizeStudioTargetRoleId(selectedFlow.toRoleId)]?.contextMap || {}
       };
       state.studioFlowConfigEditor = {
@@ -4259,7 +4283,9 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
         eventType: String(draft.eventType || ""),
         label: String(draft.label || ""),
         runtimeOnlyErrorFlow: draft.runtimeOnlyErrorFlow === true,
-        participatesInJoin: draft.participatesInJoin === true
+        participatesInJoin: draft.participatesInJoin === true,
+        conditionJson: String(draft.conditionJson ?? ""),
+        priority: String(draft.priority ?? current.priority ?? 0)
       }, studioFlowValidationContext());
       state.studioFlowConfigEditor = {
         ...(state.studioFlowConfigEditor || {}),
@@ -4294,7 +4320,9 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
         eventType: normalizeStudioEventType(draft.eventType || "DONE"),
         label: String(draft.label || "").trim() || undefined,
         runtimeOnlyErrorFlow: draft.runtimeOnlyErrorFlow === true,
-        participatesInJoin: draft.participatesInJoin === true
+        participatesInJoin: draft.participatesInJoin === true,
+        condition: draft.conditionJson ? JSON.parse(String(draft.conditionJson)) : undefined,
+        priority: Number(draft.priority ?? current.priority ?? 0)
       };
       const result = applyStudioAuthoringCommand({
         authoring: state.studioBridge.authoring,
@@ -4309,65 +4337,68 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
     }
 
     function bindStudioFlowConfigEditorControls() {
-      for (const button of Array.from(workbenchBodyEl.querySelectorAll("[data-flow-config-save]") || [])) {
+      for (const button of Array.from(workbenchBodyEl.querySelectorAll("[data-flow-config-save]"))) {
         bindOnce(button, "click", "flow-config-save", () => {
-          void saveStudioFlowConfigEditor(button.getAttribute("data-flow-config-save") || selectedStudioFlowKey());
+          void saveStudioFlowConfigEditor(button.getAttribute("data-flow-config-save") || selectedStudioFlowKey()).catch((error) => {
+            setFlash("error", error instanceof Error ? error.message : String(error));
+          });
         });
       }
-      for (const button of Array.from(workbenchBodyEl.querySelectorAll("[data-flow-config-revert]") || [])) {
+      for (const button of Array.from(workbenchBodyEl.querySelectorAll("[data-flow-config-revert]"))) {
         bindOnce(button, "click", "flow-config-revert", () => {
           loadStudioFlowConfigEditor(button.getAttribute("data-flow-config-revert") || selectedStudioFlowKey(), { force: true });
         });
       }
+      const handleFieldEdit = (event) => {
+        const target = event.target;
+        const field = target?.closest?.("[data-flow-config-field]");
+        const editorRoot = document.querySelector(".studio-flow-config-editor");
+        if (!field || !editorRoot) return;
+        const draft = readStudioFlowConfigDraft(editorRoot);
+        state.studioFlowConfigEditor = {
+          ...(state.studioFlowConfigEditor || {}),
+          flowKey: selectedStudioFlowKey(),
+          dirty: true,
+          saving: false,
+          error: "",
+          validation: validateStudioAddEdgeDraft({
+            flowId: String(state.studioFlowConfigEditor?.data?.flowId || draft.flowId || ""),
+            originalSourceRoleId: String(state.studioFlowConfigEditor?.data?.sourceRoleId || draft.sourceRoleId || ""),
+            originalTargetRoleId: String(state.studioFlowConfigEditor?.data?.targetRoleId || draft.targetRoleId || ""),
+            originalEventType: String(state.studioFlowConfigEditor?.data?.eventType || draft.eventType || ""),
+            sourceRoleId: String(draft.sourceRoleId || ""),
+            targetRoleId: String(draft.targetRoleId || ""),
+            eventType: String(draft.eventType || ""),
+            label: String(draft.label || ""),
+            runtimeOnlyErrorFlow: draft.runtimeOnlyErrorFlow === true,
+            participatesInJoin: draft.participatesInJoin === true,
+            conditionJson: String(draft.conditionJson ?? ""),
+            priority: String(draft.priority ?? "0")
+          }, studioFlowValidationContext()),
+          draft
+        };
+        const saveButton = editorRoot.querySelector("[data-flow-config-save]");
+        const revertButton = editorRoot.querySelector("[data-flow-config-revert]");
+        const status = editorRoot.querySelector(".event-top span:last-child");
+        if (saveButton) saveButton.disabled = state.studioFlowConfigEditor.validation?.ok !== true;
+        if (revertButton) revertButton.disabled = false;
+        if (status) status.textContent = t("common.changed", undefined, "changed");
+        let diagnostics = editorRoot.querySelector(".studio-flow-config-diagnostics");
+        const messages = state.studioFlowConfigEditor.validation?.diagnostics || [];
+        if (messages.length) {
+          if (!diagnostics) {
+            diagnostics = document.createElement("div");
+            diagnostics.className = "studio-flow-config-diagnostics";
+            editorRoot.insertBefore(diagnostics, editorRoot.querySelector(".actions"));
+          }
+          diagnostics.innerHTML = messages.map((item) => '<div class="hint severity-warning">' + escapeText(String(item.message ?? item.code ?? "")) + "</div>").join("");
+        } else if (diagnostics) {
+          diagnostics.remove();
+        }
+      };
       for (const element of flowConfigEditorFieldElements()) {
-        bindOnce(element, "input", "flow-config-field", () => {
-          const draft = readStudioFlowConfigDraft();
-          state.studioFlowConfigEditor = {
-            ...(state.studioFlowConfigEditor || {}),
-            flowKey: state.studioFlowConfigEditor?.flowKey || selectedStudioFlowKey(),
-            dirty: true,
-            saving: false,
-            error: "",
-            validation: validateStudioAddEdgeDraft({
-              flowId: String(state.studioFlowConfigEditor?.data?.flowId || draft.flowId || ""),
-              originalSourceRoleId: String(state.studioFlowConfigEditor?.data?.sourceRoleId || ""),
-              originalTargetRoleId: String(state.studioFlowConfigEditor?.data?.targetRoleId || ""),
-              originalEventType: String(state.studioFlowConfigEditor?.data?.eventType || ""),
-              sourceRoleId: String(draft.sourceRoleId || ""),
-              targetRoleId: String(draft.targetRoleId || ""),
-              eventType: String(draft.eventType || ""),
-              label: String(draft.label || ""),
-              runtimeOnlyErrorFlow: draft.runtimeOnlyErrorFlow === true,
-              participatesInJoin: draft.participatesInJoin === true
-            }, studioFlowValidationContext()),
-            draft
-          };
-          renderStudioSelectionDialog();
-        });
-        bindOnce(element, "change", "flow-config-field-change", () => {
-          const draft = readStudioFlowConfigDraft();
-          state.studioFlowConfigEditor = {
-            ...(state.studioFlowConfigEditor || {}),
-            flowKey: state.studioFlowConfigEditor?.flowKey || selectedStudioFlowKey(),
-            dirty: true,
-            saving: false,
-            error: "",
-            validation: validateStudioAddEdgeDraft({
-              flowId: String(state.studioFlowConfigEditor?.data?.flowId || draft.flowId || ""),
-              originalSourceRoleId: String(state.studioFlowConfigEditor?.data?.sourceRoleId || ""),
-              originalTargetRoleId: String(state.studioFlowConfigEditor?.data?.targetRoleId || ""),
-              originalEventType: String(state.studioFlowConfigEditor?.data?.eventType || ""),
-              sourceRoleId: String(draft.sourceRoleId || ""),
-              targetRoleId: String(draft.targetRoleId || ""),
-              eventType: String(draft.eventType || ""),
-              label: String(draft.label || ""),
-              runtimeOnlyErrorFlow: draft.runtimeOnlyErrorFlow === true,
-              participatesInJoin: draft.participatesInJoin === true
-            }, studioFlowValidationContext()),
-            draft
-          };
-          renderStudioSelectionDialog();
-        });
+        bindOnce(element, "input", "flow-config-field", handleFieldEdit);
+        bindOnce(element, "change", "flow-config-field-change", handleFieldEdit);
       }
     }
 
@@ -4895,7 +4926,7 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
         selectedRoleId: state.studioBridgeSelectedRoleId,
         selectedFlowKey: state.studioBridgeSelectedFlowKey,
         viewport: state.graphViewport || undefined,
-        initialLayoutMode: "flow",
+        initialLayoutMode: window.matchMedia?.("(max-width: 720px)").matches ? "stacked" : "flow",
         forceInitialAutoLayout: true,
         defaultAutoLayoutRequestId: state.studioAutoLayoutRequestId,
         editSelectionRequest: state.studioBridgeEditSelectionRequest,

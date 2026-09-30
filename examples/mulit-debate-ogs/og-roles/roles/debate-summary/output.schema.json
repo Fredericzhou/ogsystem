@@ -1,0 +1,17 @@
+{
+  "type": "object",
+  "required": ["event", "content"],
+  "properties": {
+    "event": {
+      "type": "string",
+      "enum": ["SUMMARY_READY"]
+    },
+    "content": { "type": "string" },
+    "data": {
+      "type": "object",
+      "additionalProperties": true,
+      "properties": { "summary": { "type": "string", "minLength": 1 } }
+    }
+  },
+  "additionalProperties": false
+}

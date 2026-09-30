@@ -21,7 +21,7 @@ test("conversation projection maps generic flow channels without creating a feed
     events: [
       { type: "audit", roleId: "a", branchId: "a@0#1", lineageId: "line-a", loopIteration: 0, selectedEvent: "DONE", status: "ok", content: "token=secret-value", at },
       { type: "audit", roleId: "b", branchId: "b@0#2", lineageId: "line-a", selectedEvent: "FEEDBACK", channel: "feedback", targetRoleId: "a", status: "ok", at },
-      { type: "route_decision", roleId: "a", targetRoleId: "b", channel: "main", condition: "all_of", outcome: "selected", status: "active", at },
+      { type: "route_decision", roleId: "a", event: "DONE", targetRoleId: "b", selectedFlowId: "a:DONE:b", candidates: [{ flowId: "a:DONE:b", priority: 2, matched: true }, { flowId: "a:DONE:c", priority: 1, matched: false }], channel: "main", condition: "all_of", outcome: "selected", status: "selected", at },
       { type: "error_flow", roleId: "a", targetRoleId: "error-handler", channel: "error", errorCode: "TOOL_FAILED", status: "failed", at },
       { type: "loop_round", roleId: "a", targetRoleId: "a", channel: "loop", backEdge: true, loopIteration: 2, status: "active", at }
     ]
@@ -33,6 +33,11 @@ test("conversation projection maps generic flow channels without creating a feed
   assert.equal(projection.items[1].route.presentationChannel, "normal");
   assert.equal(projection.items[2].kind, "route_decision");
   assert.equal(projection.items[2].route.presentationChannel, "primary");
+  assert.equal(projection.items[2].route.selectedFlowId, "a:DONE:b");
+  assert.deepEqual(projection.items[2].route.candidates, [
+    { flowId: "a:DONE:b", priority: 2, matched: true },
+    { flowId: "a:DONE:c", priority: 1, matched: false }
+  ]);
   assert.equal(projection.items[3].kind, "error_flow");
   assert.equal(projection.items[3].route.presentationChannel, "error");
   assert.equal(projection.items[4].kind, "loop_round");
@@ -47,7 +52,8 @@ test("conversation projection covers joins, snapshot results, review lifecycle, 
     runId: "run-snapshot",
     systemId: "generic-system",
     events: [
-      { type: "join_activated", roleId: "join", joinId: "join-1", joinMode: "quorum_of", joinSources: ["a", "b"], satisfiedSources: ["a"], status: "activated", at },
+      { type: "join_activated", roleId: "join", joinId: "join-1", joinMode: "quorum_of", joinMin: 1, requiredSourceCount: 1, joinSources: ["a", "b"], satisfiedSources: ["a"], status: "activated", at },
+      { type: "join_source_failed", roleId: "join", joinId: "join-failed", joinMode: "all_of", requiredSourceCount: 2, joinSources: ["a", "b"], satisfiedSources: ["a"], missingSources: ["b"], failurePolicy: "fail", action: "fail", reason: "source failure policy", status: "failed", at },
       { type: "human_review_requested", roleId: "reviewer", branchId: "reviewer@0#1", lineageId: "line-r", reviewId: "review-pending", status: "pending", at },
       { type: "human_review_approved", roleId: "reviewer", branchId: "reviewer@0#1", lineageId: "line-r", reviewId: "review-approved", status: "resolved", appliedAt: at, at },
       { type: "human_review_rework_requested", roleId: "reviewer", branchId: "reviewer@0#1", lineageId: "line-r", reviewId: "review-rework", status: "resolved", at },
@@ -61,7 +67,7 @@ test("conversation projection covers joins, snapshot results, review lifecycle, 
         "a@0#1": { roleId: "a", branchId: "a@0#1", lineageId: "line-a", loopIteration: 0, event: "DONE", content: "completed output" }
       },
       joinScopes: {
-        "join-1": { joinRoleId: "join", joinId: "join-1", lineageId: "line-a", loopIteration: 0, status: "waiting", expectedSourceRoleIds: ["a", "b"], readySourceRoleIds: ["a"], missingSourceRoleIds: ["b"], startedAt: at, timeoutAction: "pause" }
+        "join-1": { joinRoleId: "join", joinId: "join-1", lineageId: "line-a", loopIteration: 0, joinMode: "quorum_of", joinMin: 1, status: "waiting", expectedSourceRoleIds: ["a", "b"], readySourceRoleIds: ["a"], missingSourceRoleIds: ["b"], startedAt: at, timeoutSeconds: 60, timeoutAction: "pause" }
       },
       pendingReviewsById: {
         "review-pending": { reviewId: "review-pending", roleId: "reviewer", branchId: "reviewer@0#1", lineageId: "line-r", loopIteration: 0, requestedAt: at, status: "pending" }
@@ -80,7 +86,16 @@ test("conversation projection covers joins, snapshot results, review lifecycle, 
   assert.deepEqual(join.join.expected, ["a", "b"]);
   assert.deepEqual(join.join.ready, ["a"]);
   assert.deepEqual(join.join.missing, ["b"]);
+  assert.equal(join.join.scopeId, "join-1");
+  assert.equal(join.join.mode, "quorum_of");
+  assert.equal(join.join.requiredCount, 1);
+  assert.equal(join.join.timedOut, false);
   assert.equal(join.route.presentationChannel, "join");
+  const failedJoin = projection.items.find((item) => item.type === "join_source_failed");
+  assert.equal(failedJoin.status, "failed");
+  assert.equal(failedJoin.join.timedOut, false);
+  assert.equal(failedJoin.join.reason, "source failure policy");
+  assert.equal(failedJoin.join.failurePolicy, "fail");
   const snapshotRole = projection.items.find((item) => item.source.file === "state.json" && item.roleId === "a");
   assert.equal(snapshotRole.source.snapshotVersion, 7);
   assert.equal(snapshotRole.status, "completed");

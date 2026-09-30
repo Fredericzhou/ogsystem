@@ -97,7 +97,9 @@ export function authoringToGraphSnapshot(authoring: StudioAuthoringDocument): St
       label: flow.label ?? flow.eventType,
       eventType: flow.eventType,
       runtimeOnlyErrorFlow: Boolean(flow.runtimeOnlyErrorFlow),
-      participatesInJoin: flow.participatesInJoin
+      participatesInJoin: flow.participatesInJoin,
+      condition: flow.condition,
+      priority: flow.priority
     })),
     viewport: authoring.layout.viewport
   };

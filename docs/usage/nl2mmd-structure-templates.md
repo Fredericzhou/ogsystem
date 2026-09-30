@@ -51,6 +51,8 @@ writer[Role:writer] -->|DONE| output
 
 ### 2.2 `fanout_fanin`
 
+`fanout_fanin` 是描述固定分支加汇聚的模板名称，不是独立的 OGS 操作符。其拆分节点使用 `parallel_split`，语义为激活所有静态声明的普通下游分支；任务拆解由显式输入/输出映射表达，运行时不保证物理并发。
+
 适合“先并行分发，再回收到一个 merge role”。
 
 必填槽位：

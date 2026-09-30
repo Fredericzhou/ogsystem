@@ -1,4 +1,4 @@
-import { STUDIO_SYSTEM_END_ROLE_ID, type StudioAuthoringRole } from "../studio-contracts.js";
+import { STUDIO_SYSTEM_END_ROLE_ID, type StudioAuthoringFlow, type StudioAuthoringRole } from "../studio-contracts.js";
 import { escapeHtml } from "../html-escape.js";
 import { asRecord, asTrimmedString } from "../json-guards.js";
 import type {
@@ -137,6 +137,8 @@ export function createDefaultStudioCommandFormState(args: {
   label?: string;
   runtimeOnlyErrorFlow?: boolean;
   participatesInJoin?: boolean;
+  condition?: StudioAuthoringFlow["condition"];
+  priority?: number;
 }): StudioCommandFormState {
   if (args.kind === "edit-role") {
     const roleId = args.roleId || firstRoleId(args.context);
@@ -189,7 +191,9 @@ export function createDefaultStudioCommandFormState(args: {
     eventType: args.eventType || "DONE",
     label: args.label || "",
     runtimeOnlyErrorFlow: Boolean(args.runtimeOnlyErrorFlow),
-    participatesInJoin: Boolean(args.participatesInJoin)
+    participatesInJoin: Boolean(args.participatesInJoin),
+    conditionJson: args.condition ? JSON.stringify(args.condition, null, 2) : "",
+    priority: String(args.priority ?? 0)
   };
   return {
     kind: args.kind === "edit-edge" ? "edit-edge" : "add-edge",
@@ -244,7 +248,9 @@ export function commandFromStudioCommandFormState(state: StudioCommandFormState)
       eventType: normalizeStudioEventType(state.fields.eventType || "DONE"),
       label: state.fields.label?.trim(),
       runtimeOnlyErrorFlow: Boolean(state.fields.runtimeOnlyErrorFlow),
-      participatesInJoin: Boolean(state.fields.participatesInJoin)
+      participatesInJoin: Boolean(state.fields.participatesInJoin),
+      condition: parseCondition(state.fields.conditionJson),
+      priority: Number(state.fields.priority || 0)
     };
   }
   return {
@@ -254,8 +260,16 @@ export function commandFromStudioCommandFormState(state: StudioCommandFormState)
     eventType: normalizeStudioEventType(state.fields.eventType || "DONE"),
     label: state.fields.label?.trim(),
     runtimeOnlyErrorFlow: Boolean(state.fields.runtimeOnlyErrorFlow),
-    participatesInJoin: Boolean(state.fields.participatesInJoin)
+    participatesInJoin: Boolean(state.fields.participatesInJoin),
+    condition: parseCondition(state.fields.conditionJson),
+    priority: Number(state.fields.priority || 0)
   };
+}
+
+function parseCondition(source: string | undefined): StudioAuthoringFlow["condition"] {
+  const text = (source ?? "").trim();
+  if (!text) return undefined;
+  try { return JSON.parse(text) as StudioAuthoringFlow["condition"]; } catch { return undefined; }
 }
 
 export function renderStudioCommandFormDiagnostics(state: StudioCommandFormState): string {
@@ -509,6 +523,8 @@ export function renderStudioCommandForm(args: {
     '<label class="studio-command-form-row"><span>' + escapeHtml(label(labels, "targetRole", "Target role")) + '</span><select name="targetRoleId">' + targetOptions + "</select>" + renderStudioCommandFormFieldError(args.state, "targetRoleId") + "</label>",
     '<label class="studio-command-form-row"><span>' + escapeHtml(label(labels, "flowLabel", "Display name")) + '</span><input name="label" value="' + escapeHtml(fields.label || "") + '"></label>',
     '<label class="studio-command-form-row"><span>' + escapeHtml(label(labels, "eventType", "Event type")) + '</span><input name="eventType" value="' + escapeHtml(fields.eventType || "") + '">' + renderStudioCommandFormFieldError(args.state, "eventType") + "</label>",
+    '<label class="studio-command-form-row"><span>Condition AST (JSON, optional)</span><textarea name="conditionJson" rows="8" spellcheck="false">' + escapeHtml(fields.conditionJson || "") + '</textarea><div class="studio-command-form-hint">Restricted AST. Paths may read state, loop, event, or role. Leave empty for an unconditional route.</div>' + renderStudioCommandFormFieldError(args.state, "conditionJson") + '</label>',
+    '<label class="studio-command-form-row"><span>Priority</span><input type="number" name="priority" min="0" step="1" value="' + escapeHtml(fields.priority || "0") + '">' + renderStudioCommandFormFieldError(args.state, "priority") + '</label>',
     '<label class="studio-command-form-check"><input type="checkbox" name="runtimeOnlyErrorFlow"' + (fields.runtimeOnlyErrorFlow ? " checked" : "") + "> " + escapeHtml(label(labels, "runtimeOnlyErrorFlow", "Runtime error flow")) + "</label>",
     '<label class="studio-command-form-check"><input type="checkbox" name="participatesInJoin"' + (fields.participatesInJoin ? " checked" : "") + "> " + escapeHtml(label(labels, "participatesInJoin", "Join source")) + "</label>",
     renderStudioCommandFormDiagnostics(args.state),
@@ -573,7 +589,9 @@ export function readStudioCommandFormState(args: {
     eventType: String(data.get("eventType") ?? "").trim(),
     label: String(data.get("label") ?? "").trim(),
     runtimeOnlyErrorFlow: data.get("runtimeOnlyErrorFlow") === "on",
-    participatesInJoin: data.get("participatesInJoin") === "on"
+    participatesInJoin: data.get("participatesInJoin") === "on",
+    conditionJson: String(data.get("conditionJson") ?? ""),
+    priority: String(data.get("priority") ?? "0")
   };
   return {
     kind: args.previous.kind,

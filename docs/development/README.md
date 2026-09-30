@@ -5,6 +5,7 @@ compiler contracts, implementation-gap plans, visualizer design, roadmaps, devel
 and the active backlog.
 
 - Current engineering guidance and plans live in this directory.
+- [OGS semantic capability backlog](ogs-semantic-capability-backlog.md): prioritized productization work and acceptance criteria for the accepted OGS orchestration semantics.
 - [Product boundary and evolution](ogs-product-boundary-and-evolution.md): rules for keeping the OGS core small while adding standards and governance extensions.
 - [OGS GStacklike productionization plan](ogs-gstacklike-productionization-plan.md): simplify the example around real implementation, verification, gated deployment, and explicit production readiness levels.
 - [Studio System visual configuration](studio-visual-system-configuration.md): configure System, Role, Flow, handoff, and context projection through typed Studio controls while preserving Mermaid semantics.

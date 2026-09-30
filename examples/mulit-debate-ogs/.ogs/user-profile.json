@@ -1,0 +1,10 @@
+{
+  "userProfileId": "default.zh.concise",
+  "language": "zh-CN",
+  "style": "concise",
+  "riskPreference": "medium",
+  "outputLength": "short",
+  "domainBackground": [
+    "software-architecture"
+  ]
+}

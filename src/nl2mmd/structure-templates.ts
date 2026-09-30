@@ -102,12 +102,12 @@ const TEMPLATES: readonly Nl2MmdStructureTemplate[] = [
       "join.sources.<join-role>"
     ],
     requiredSlots: [
-      slot("split", "Declare the split role and its fan-out event set.", ["role.mode.dispatch=parallel_split"]),
-      slot("branches", "List parallel worker roles as separate branches.", ["dispatch -> worker_a", "dispatch -> worker_b"]),
+      slot("split", "Declare a role that activates every statically declared normal downstream branch (no automatic task splitting or physical concurrency promise).", ["role.mode.dispatch=parallel_split"]),
+      slot("branches", "List each normal downstream role as a separate static branch.", ["dispatch -> worker_a", "dispatch -> worker_b"]),
       slot("join", "Declare the merge role and all of its sources.", ["join.mode.review=all_of", "join.sources.review=worker_a,worker_b"])
     ],
     optionalSlots: [
-      slot("route-order", "Optionally stabilize sibling fan-out order.", ["route.order.dispatch=worker_a,worker_b"], false)
+      slot("route-order", "Optionally stabilize the order in which static sibling branches are scheduled.", ["route.order.dispatch=worker_a,worker_b"], false)
     ],
     skeleton: [
       "flowchart TD",

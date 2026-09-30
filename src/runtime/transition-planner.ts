@@ -22,7 +22,7 @@ import {
   wouldExceedLoopBudget
 } from "./graph-runtime-state.js";
 import { buildReviewId, buildReviewRoundKey } from "./human-review.js";
-import { selectSemanticRoute } from "./condition-ast.js";
+import { evaluateCondition, SemanticRouteSelectionError, selectSemanticRoute } from "./condition-ast.js";
 import { semanticIRDigest } from "./semantic-ir.js";
 import { sanitizeRoleInputContext } from "./role-input-projector.js";
 import { buildAuditSummaryDelta } from "./run-summary.js";
@@ -159,11 +159,27 @@ type LoopTransitionEvent = {
   onExhausted: string;
 };
 
+type RouteDecisionTransitionEvent = {
+  type: "route_decision";
+  status: "selected" | "failed";
+  at: string;
+  roleId: string;
+  branchId: string;
+  lineageId: string;
+  loopIteration: number;
+  event: string;
+  candidates: Array<{ flowId: string; priority: number; matched?: boolean }>;
+  selectedFlowId?: string;
+  targetRoleId?: string;
+  errorCode?: string;
+};
+
 export type RuntimeTransitionEvent =
   | JoinTransitionEvent
   | FailureHandledTransitionEvent
   | HumanReviewTransitionEvent
-  | LoopTransitionEvent;
+  | LoopTransitionEvent
+  | RouteDecisionTransitionEvent;
 
 export type TransitionPlan = {
   update: GraphUpdate;
@@ -1425,10 +1441,11 @@ function buildRoutedTransitionPlan(args: {
         const joinSpec = args.plan.semanticIR?.joins.find((item) => item.roleId === targetRoleId);
         joinScopeUpdates[scopeKey] = {
           joinId, runId: args.runId ?? "", joinRoleId: targetRoleId, lineageId: args.currentBranch.lineageId,
-          loopIteration: nextLoopIteration, expectedSourceRoleIds: targetNode.joinSources,
+          loopIteration: nextLoopIteration, joinMode: targetNode.joinMode, joinMin: targetNode.joinMin,
+          expectedSourceRoleIds: targetNode.joinSources,
           readySourceRoleIds: readiness.completedSourceRoleIds, missingSourceRoleIds: readiness.missingSourceRoleIds,
           startedAt: existingScope?.startedAt ?? now, timeoutSeconds: joinSpec?.timeoutSeconds ?? 3600,
-          status: "waiting", timeoutAction: joinSpec?.onTimeout
+          status: "waiting", timeoutAction: joinSpec?.onTimeout, failurePolicy: joinSpec?.failurePolicy
         };
         args.logger.joinWait({
           roleId: targetRoleId,
@@ -1751,6 +1768,7 @@ export function planTransition(args: TransitionPlannerInput): TransitionPlan {
     selectedEvent: args.outcome.selectedEvent,
     mode: args.outcome.status
   });
+  let routeDecisionEvent: RouteDecisionTransitionEvent | undefined;
   // Semantic IR conditions are evaluated after the role output is validated and before any
   // branch activation. This keeps route ambiguity and fail-closed behavior in OGS runtime.
   const selectedEvent = args.outcome.selectedEvent;
@@ -1759,16 +1777,59 @@ export function planTransition(args: TransitionPlannerInput): TransitionPlan {
       (transition) => transition.fromRoleId === args.outcome.roleId && transition.eventType === selectedEvent
     );
     if (semanticTransitions.some((transition) => transition.condition)) {
-      const route = selectSemanticRoute({
-        transitions: semanticTransitions,
-        eventType: selectedEvent,
-        context: {
-          state: args.state.businessState ?? {},
-          loop: { iteration: args.outcome.branch.loopIteration, lineageId: args.outcome.branch.lineageId },
-          event: args.outcome.storedResult?.data ?? args.outcome.storedResult?.content,
-          role: { roleId: args.outcome.roleId, mode: "default" }
-        }
-      });
+      const conditionContext = {
+        state: args.state.businessState ?? {},
+        loop: { iteration: args.outcome.branch.loopIteration, lineageId: args.outcome.branch.lineageId },
+        event: args.outcome.storedResult?.data ?? args.outcome.storedResult?.content,
+        role: { roleId: args.outcome.roleId, mode: "default" }
+      };
+      let route: ReturnType<typeof selectSemanticRoute>;
+      try {
+        route = selectSemanticRoute({ transitions: semanticTransitions, eventType: selectedEvent, context: conditionContext });
+      } catch (error) {
+        const errorCode = error instanceof SemanticRouteSelectionError
+          ? error.code
+          : "IR_ROUTE_CONDITION_EVALUATION_FAILED";
+        const failedEvent: RouteDecisionTransitionEvent = {
+          type: "route_decision",
+          status: "failed",
+          at: new Date().toISOString(),
+          roleId: args.outcome.roleId,
+          branchId: args.outcome.branch.branchId,
+          lineageId: args.outcome.branch.lineageId,
+          loopIteration: args.outcome.branch.loopIteration,
+          event: selectedEvent,
+          candidates: error instanceof SemanticRouteSelectionError ? error.candidates : [],
+          errorCode
+        };
+        const failure = buildContractValidationFailureTransition({
+          roleId: args.outcome.roleId,
+          branch: args.outcome.branch,
+          audit: args.outcome.audit,
+          selectedEvent,
+          storedResult: args.outcome.storedResult,
+          errorCode,
+          message: error instanceof Error ? error.message : String(error)
+        });
+        return { ...failure, events: [failedEvent] };
+      }
+      routeDecisionEvent = {
+        type: "route_decision",
+        status: "selected",
+        at: new Date().toISOString(),
+        roleId: args.outcome.roleId,
+        branchId: args.outcome.branch.branchId,
+        lineageId: args.outcome.branch.lineageId,
+        loopIteration: args.outcome.branch.loopIteration,
+        event: selectedEvent,
+        candidates: semanticTransitions.map((transition) => ({
+          flowId: transition.flowId,
+          priority: transition.priority,
+          matched: transition.condition ? evaluateCondition(transition.condition, conditionContext) : true
+        })),
+        selectedFlowId: route.flowId,
+        targetRoleId: route.toRoleId
+      };
       candidateTargets = [route.toRoleId];
     }
   }
@@ -1881,6 +1942,7 @@ export function planTransition(args: TransitionPlannerInput): TransitionPlan {
       eventByTargetRoleId,
       logger: args.logger,
       terminalOutput: args.outcome.storedResult?.content ?? "",
+      extraEvents: routeDecisionEvent ? [routeDecisionEvent] : undefined,
       loopBudgetFailureMode: "fail_run",
       allowOrphanedJoinFailure: args.contractPlan?.handoffMode === "transition",
       indexes: args.indexes

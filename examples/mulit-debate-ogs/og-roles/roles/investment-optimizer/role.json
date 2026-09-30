@@ -1,0 +1,47 @@
+{
+  "roleId": "investment-optimizer",
+  "roleVersion": "1.0.0",
+  "name": "Investment Optimizer",
+  "description": "Improves the proposal's risk-adjusted case, implementation path, and measurable decision criteria.",
+  "preferredModelTags": [
+    "reasoning",
+    "long-context"
+  ],
+  "promptTemplate": "prompt.md",
+  "outputSchema": "output.schema.json",
+  "tags": [
+    "debate",
+    "alignment"
+  ],
+  "contractVersion": 1,
+  "purpose": "Improves the proposal's risk-adjusted case, implementation path, and measurable decision criteria.",
+  "responsibility": {
+    "kind": "atomic",
+    "owns": [],
+    "contributes": [],
+    "doesNotOwn": []
+  },
+  "inputs": {
+    "preconditions": []
+  },
+  "outputs": {
+    "events": [
+      "OPTIMIZER_DONE"
+    ],
+    "postconditions": []
+  },
+  "authority": {
+    "controlActions": []
+  },
+  "constraints": {
+    "writableStateFields": [],
+    "allowedTools": []
+  },
+  "failure": {
+    "retryableErrorCodes": [],
+    "terminalErrorCodes": []
+  },
+  "audit": {
+    "requiredFields": []
+  }
+}

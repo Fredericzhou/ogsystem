@@ -183,6 +183,7 @@ For day-to-day use, start with `docs/usage/usage-manual.md`. It keeps the comman
 - Each role's model binding is configured in `.ogs/model-selection.json` as a `backend` and `modelId` pair. `system.mmd` defines roles and handoffs, not model bindings.
 - Agent execution retries transient service failures on the same role session while keeping the run-level service alive.
 - The runtime supports `role.mode.*=parallel_split`, `join.mode.*=all_of|quorum_of`, `join.sources.*`, `join.min.*`, `context.map.*`, and `loop.max.*`. `join.sources.*` must list unique source role ids and match the join node's Mermaid incoming role edges exactly.
+- `parallel_split` activates every statically declared normal downstream branch. It does not automatically split a task or promise simultaneous execution; express task decomposition in role outputs and input/context mappings.
 - `quorum_of` counts unique completed source roles within the same `lineageId + loopIteration`, activates at most once, and records late arrivals without retriggering the join node.
 - `context.map.<roleId>.<field>` can replace the default `context` payload with a fail-closed, deterministic JSON projection built from `direct.*`, `source(<roleId>).*`, and `global.*` selectors.
 - Role output repair is intentionally narrow: wrapped JSON object extraction and single-allowed-event normalization are auto-repaired; schema mismatch still fails fast.

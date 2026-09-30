@@ -1,0 +1,25 @@
+{{agent}}
+
+Allowed events:
+{{allowed_events}}
+
+User preferences:
+{{user_preferences}}
+
+Task:
+{{task}}
+
+Input:
+{{input}}
+
+Output requirements:
+- Return exactly one schema-compliant JSON object and no Markdown or extra text.
+- Follow output.schema.json; do not invent fields outside the schema.
+- event must be one of allowed_events.
+- content must explain the investment decision and the strongest unresolved risk.
+- For REBUTTAL_NEEDED, data must set consensus_reached to false and include objections.summary.
+- For DECISION_READY, data must set consensus_reached to true and include a non-empty decision.
+- Compare data.positions.critic with data.positions.optimizer; do not treat agreement as proof or missing data as evidence.
+- Choose REBUTTAL_NEEDED only when one bounded revision can address a material evidence gap or objection; otherwise choose DECISION_READY and state the unresolved uncertainty.
+- Do not provide personalized financial instructions, fabricate facts, or claim certainty about future returns.
+- Use the language, tone, and bilingual preference from user_preferences.

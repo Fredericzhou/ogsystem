@@ -924,6 +924,8 @@ export class StudioGraphIsland {
       label?: string;
       runtimeOnlyErrorFlow?: boolean;
       participatesInJoin?: boolean;
+      condition?: GraphViewModelEdge["condition"];
+      priority?: number;
     } = {}
   ): void {
     if (this.isReadOnly()) {
@@ -943,7 +945,9 @@ export class StudioGraphIsland {
       eventType: defaults.eventType,
       label: defaults.label,
       runtimeOnlyErrorFlow: defaults.runtimeOnlyErrorFlow,
-      participatesInJoin: defaults.participatesInJoin
+      participatesInJoin: defaults.participatesInJoin,
+      condition: defaults.condition,
+      priority: defaults.priority
     });
     this.renderCommandForm();
   }
@@ -968,6 +972,8 @@ export class StudioGraphIsland {
     label?: string;
     runtimeOnlyErrorFlow?: boolean;
     participatesInJoin?: boolean;
+    condition?: GraphViewModelEdge["condition"];
+    priority?: number;
     editable?: boolean;
   }): void {
     if (this.isReadOnly() || edge.editable === false) {
@@ -985,7 +991,9 @@ export class StudioGraphIsland {
       eventType: edge.eventType,
       label: edge.label,
       runtimeOnlyErrorFlow: edge.runtimeOnlyErrorFlow,
-      participatesInJoin: edge.participatesInJoin
+      participatesInJoin: edge.participatesInJoin,
+      condition: edge.condition,
+      priority: edge.priority
     });
   }
 
@@ -1288,6 +1296,24 @@ export class StudioGraphIsland {
     if (Array.isArray(runtime?.missingSources) && runtime.missingSources.length > 0) {
       items.push(`<div>missing inputs: ${this.escapeHtml(runtime.missingSources.join(", "))}</div>`);
     }
+    const join = runtime && typeof runtime.joinWaitingSummary === "object" && runtime.joinWaitingSummary !== null
+      ? runtime.joinWaitingSummary as Record<string, unknown>
+      : null;
+    if (join) {
+      const details = [
+        join.scopeId ? `scope ${String(join.scopeId)}` : "",
+        join.status ? `join ${String(join.status)}` : "",
+        Number.isFinite(Number(join.elapsedSeconds)) ? `waiting ${String(join.elapsedSeconds)}s` : "",
+        Number.isFinite(Number(join.timeoutSeconds)) ? `timeout ${String(join.timeoutSeconds)}s` : "",
+        join.deadlineAt ? `deadline ${String(join.deadlineAt)}` : "",
+        join.timeoutAction ? `on timeout ${String(join.timeoutAction)}` : ""
+      ].filter(Boolean);
+      if (details.length) items.push(`<div>${this.escapeHtml(details.join(" · "))}</div>`);
+      for (const [label, key] of [["expected", "expectedSources"], ["ready", "readySources"], ["missing", "missingSources"]] as const) {
+        const values = join[key];
+        if (Array.isArray(values) && values.length) items.push(`<div>${label}: ${this.escapeHtml(values.join(", "))}</div>`);
+      }
+    }
     if (typeof runtime?.lastErrorCode === "string" && runtime.lastErrorCode) {
       items.push(`<div>last error: ${this.escapeHtml(runtime.lastErrorCode)}</div>`);
     }
@@ -1391,7 +1417,7 @@ export class StudioGraphIsland {
     if (diagnostics) {
       diagnostics.outerHTML = renderStudioCommandFormDiagnostics(this.commandForm);
     }
-    for (const fieldPath of ["repositoryRoleId", "roleId", "modelRef", "profileId", "newProfileId", "newProfileToolRef", "newProfileTimeoutMs", "newProfileMaxOutputBytes", "sourceRoleId", "targetRoleId", "eventType"]) {
+    for (const fieldPath of ["repositoryRoleId", "roleId", "modelRef", "profileId", "newProfileId", "newProfileToolRef", "newProfileTimeoutMs", "newProfileMaxOutputBytes", "sourceRoleId", "targetRoleId", "eventType", "conditionJson", "priority"]) {
       const current = this.dialogEl.querySelector<HTMLElement>('[data-studio-command-error="' + this.cssEscape(fieldPath) + '"]');
       if (current) {
         current.outerHTML = renderStudioCommandFormFieldError(this.commandForm, fieldPath);

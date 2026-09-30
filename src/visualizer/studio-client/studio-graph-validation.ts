@@ -7,6 +7,32 @@ import {
   type StudioDiagnosticDto
 } from "../studio-contracts.js";
 import { asRecord, asTrimmedString } from "../json-guards.js";
+import type { SemanticIRConditionAst } from "../studio-contracts.js";
+
+export function validateStudioConditionAst(ast: unknown, path = "condition"): string[] {
+  if (!ast || typeof ast !== "object" || Array.isArray(ast)) return [`${path} must be an object`];
+  const value = ast as Record<string, unknown>;
+  const op = value.op;
+  if (!["equals", "in", "greater_than", "less_than", "exists", "not", "all", "any"].includes(String(op))) return [`${path}.op is not allowed`];
+  if (op === "not") return validateStudioConditionAst((value.args as unknown[])?.[0], `${path}.args[0]`);
+  if (op === "all" || op === "any") {
+    if (!Array.isArray(value.args) || value.args.length === 0) return [`${path}.args must be non-empty`];
+    return value.args.flatMap((child, index) => validateStudioConditionAst(child, `${path}.args[${index}]`));
+  }
+  const expected = op === "exists" ? 1 : 2;
+  if (!Array.isArray(value.args) || value.args.length !== expected) return [`${path}.args must contain ${expected} item(s)`];
+  return (value.args as unknown[]).flatMap((ref, index) => {
+    if (!ref || typeof ref !== "object" || Array.isArray(ref)) return [`${path}.args[${index}] must be a value reference`];
+    const candidate = ref as Record<string, unknown>;
+    if (candidate.kind === "literal") {
+      const literal = candidate.value;
+      if (literal !== null && !["string", "number", "boolean"].includes(typeof literal) && !Array.isArray(literal)) return [`${path}.args[${index}].value has an invalid literal type`];
+      return [];
+    }
+    if (candidate.kind !== "path" || !["state", "loop", "event", "role"].includes(String(candidate.root)) || !Array.isArray(candidate.path)) return [`${path}.args[${index}] contains an invalid value reference`];
+    return candidate.path.every((segment) => typeof segment === "string" && /^[A-Za-z_][A-Za-z0-9_]*$/.test(segment)) ? [] : [`${path}.args[${index}].path contains an invalid segment`];
+  });
+}
 
 export type StudioRolePackageSummary = {
   roleId?: string;
@@ -76,6 +102,8 @@ export type StudioAddEdgeDraft = {
   label?: string;
   runtimeOnlyErrorFlow?: boolean;
   participatesInJoin?: boolean;
+  conditionJson?: string;
+  priority?: string;
 };
 
 export type StudioValidationResult = {
@@ -135,7 +163,7 @@ export function studioRolePackageHasRequiredFileCoverage(rolePackage: StudioRole
   return !["roleJson", "promptTemplate", "outputSchema", "agent"].some((key) => files[key] === false);
 }
 
-function issue(args: {
+export function issue(args: {
   severity: StudioDiagnosticDto["severity"];
   fieldPath?: string;
   roleId?: string;
@@ -406,6 +434,30 @@ export function validateStudioAddEdgeDraft(
       messageKey: "studio.validation.eventTypeInvalid",
       message: "Event type must be uppercase and may use digits, _, : or -."
     }));
+  }
+  const priorityText = (draft.priority ?? "0").trim();
+  if (!/^(0|[1-9][0-9]*)$/.test(priorityText)) {
+    diagnostics.push(issue({
+      severity: "error", fieldPath: "priority", flowKey,
+      code: "IR_INVALID_CONDITION_PRIORITY", messageKey: "studio.validation.conditionPriorityInvalid",
+      message: "Priority must be a non-negative integer."
+    }));
+  }
+  const conditionText = (draft.conditionJson ?? "").trim();
+  if (conditionText) {
+    try {
+      const ast: unknown = JSON.parse(conditionText);
+      for (const message of validateStudioConditionAst(ast)) diagnostics.push(issue({
+        severity: "error", fieldPath: "conditionJson", flowKey,
+        code: "IR_INVALID_CONDITION", messageKey: "studio.validation.conditionInvalid", message
+      }));
+    } catch (error) {
+      diagnostics.push(issue({
+        severity: "error", fieldPath: "conditionJson", flowKey,
+        code: "IR_INVALID_CONDITION", messageKey: "studio.validation.conditionInvalid",
+        message: error instanceof Error ? `Condition must be valid JSON: ${error.message}` : "Condition must be valid JSON."
+      }));
+    }
   }
   if (authoring && sourceRoleId && targetRoleId && eventType) {
     const duplicated = Object.values(authoring.flows ?? {}).some((flow) => {

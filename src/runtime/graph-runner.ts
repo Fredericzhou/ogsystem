@@ -1360,12 +1360,16 @@ export async function runSystemWithGraphRunner(args: RunnerInput): Promise<Adapt
     const waitingScopes = Object.entries(finalState.joinScopes ?? {}).filter(([, scope]) => scope.status === "waiting");
     if (waitingScopes.length > 0) {
       const now = Date.now();
-      let timeoutFailure: { scopeKey: string; roleId: string; message: string } | undefined;
+      let timeoutFailure: { scopeKey: string; roleId: string; message: string; errorCode: string } | undefined;
       let paused = false;
       let terminated = false;
       const nextScopes = { ...(finalState.joinScopes ?? {}) };
       for (const [scopeKey, scope] of waitingScopes) {
         const spec = args.plan.semanticIR?.joins.find((item) => item.roleId === scope.joinRoleId);
+        const joinMode = spec?.mode ?? scope.joinMode ?? "all_of";
+        const joinMin = spec?.min ?? scope.joinMin ?? scope.expectedSourceRoleIds.length;
+        const failurePolicy = spec?.failurePolicy ?? scope.failurePolicy ?? "wait";
+        const timeoutAction = scope.timeoutAction ?? spec?.onTimeout ?? "fail";
         const activeSourceExists = Object.values(finalState.branchRecords).some(
           (branch) =>
             branch.status === "active" &&
@@ -1374,34 +1378,60 @@ export async function runSystemWithGraphRunner(args: RunnerInput): Promise<Adapt
             scope.missingSourceRoleIds.includes(branch.roleId)
         );
         const decision = resolveJoinPolicy({
-          mode: spec?.mode ?? "all_of",
+          mode: joinMode,
           sources: scope.expectedSourceRoleIds,
           readySources: scope.readySourceRoleIds,
-          min: spec?.min ?? scope.expectedSourceRoleIds.length,
+          min: joinMin,
           timeoutSeconds: scope.timeoutSeconds,
           startedAt: Date.parse(scope.startedAt),
           now,
-          onTimeout: scope.timeoutAction ?? "fail",
-          failurePolicy: spec?.failurePolicy ?? "wait",
+          onTimeout: timeoutAction,
+          failurePolicy,
           sourceFailure: !activeSourceExists
         });
-        if (decision.action === "wait") continue;
-        nextScopes[scopeKey] = { ...scope, status: "timed_out", completedAt: new Date(now).toISOString() };
-        const message = `Join "${scope.joinRoleId}" ${decision.reason}; missing sources: ${decision.missingSourceRoleIds.join(", ")}`;
+        if (decision.action === "wait" || decision.action === "activate") continue;
+        const sourceFailure = decision.reason.startsWith("source failure");
+        const resolutionAt = new Date(now).toISOString();
+        nextScopes[scopeKey] = {
+          ...scope,
+          status: sourceFailure ? "failed" : "timed_out",
+          completedAt: resolutionAt,
+          resolutionReason: decision.reason,
+          resolutionAction: decision.action
+        };
         await appendEvent(args.runContext, {
-          type: "join_timed_out", at: new Date(now).toISOString(), roleId: scope.joinRoleId,
-          joinId: scope.joinId, lineageId: scope.lineageId, loopIteration: scope.loopIteration,
-          expectedSources: scope.expectedSourceRoleIds, readySources: scope.readySourceRoleIds,
-          missingSources: decision.missingSourceRoleIds, action: decision.action
+          type: sourceFailure ? "join_source_failed" : "join_timed_out",
+          status: sourceFailure ? "failed" : "timed_out",
+          at: resolutionAt,
+          roleId: scope.joinRoleId,
+          joinId: scope.joinId,
+          lineageId: scope.lineageId,
+          loopIteration: scope.loopIteration,
+          joinMode,
+          joinMin,
+          requiredSourceCount: joinMode === "quorum_of" ? joinMin : scope.expectedSourceRoleIds.length,
+          joinSources: scope.expectedSourceRoleIds,
+          satisfiedSources: scope.readySourceRoleIds,
+          missingSources: decision.missingSourceRoleIds,
+          failurePolicy,
+          timeoutAction,
+          action: decision.action,
+          reason: decision.reason
         });
-        if (decision.action === "fail") timeoutFailure ??= { scopeKey, roleId: scope.joinRoleId, message };
+        const message = `Join "${scope.joinRoleId}" ${decision.reason}; missing sources: ${decision.missingSourceRoleIds.join(", ")}`;
+        if (decision.action === "fail") timeoutFailure ??= {
+          scopeKey,
+          roleId: scope.joinRoleId,
+          message,
+          errorCode: sourceFailure ? "GRAPH_JOIN_SOURCE_FAILED" : "GRAPH_JOIN_TIMEOUT"
+        };
         else if (decision.action === "terminate") terminated = true;
         else paused = true;
       }
       if (timeoutFailure) {
         finalState = {
           ...finalState, joinScopes: nextScopes, status: "failed", error: timeoutFailure.message,
-          errorEnvelope: { errorCode: "GRAPH_JOIN_TIMEOUT", errorCategory: "state", message: timeoutFailure.message, retryable: false, stage: "execute", roleId: timeoutFailure.roleId, runId: args.runContext.runId }
+          errorEnvelope: { errorCode: timeoutFailure.errorCode, errorCategory: "state", message: timeoutFailure.message, retryable: false, stage: "execute", roleId: timeoutFailure.roleId, runId: args.runContext.runId }
         };
       } else if (terminated) {
         finalState = { ...finalState, joinScopes: nextScopes, status: "terminated", error: "join timeout terminated" };

@@ -25,7 +25,7 @@ export {
   semanticIRDigest,
   validateSemanticIR
 } from "./semantic-ir.js";
-export { evaluateCondition, resolveConditionValue, selectSemanticRoute, validateConditionAst } from "./condition-ast.js";
+export { evaluateCondition, resolveConditionValue, selectSemanticRoute, SemanticRouteSelectionError, validateConditionAst } from "./condition-ast.js";
 export { applyStateReducer } from "./state-reducer.js";
 export { loadOgsSpecification } from "./ogs-spec-loader.js";
 export { compileSemanticIR } from "./semantic-ir-compiler.js";

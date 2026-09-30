@@ -104,8 +104,14 @@ export function injectStudioGraphStyles(): void {
         flex-direction: column;
       }
       .studio-graph-toolbar-main {
-        overflow-x: auto;
+        flex-wrap: wrap;
+        overflow: visible;
         width: 100%;
+      }
+      .studio-graph-toolbar-group {
+        flex-wrap: wrap;
+        flex: 0 1 auto;
+        max-width: 100%;
       }
       .studio-graph-toolbar-text {
         display: none;

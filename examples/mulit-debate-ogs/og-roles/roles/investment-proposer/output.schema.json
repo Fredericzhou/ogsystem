@@ -1,0 +1,17 @@
+{
+  "type": "object",
+  "required": ["content"],
+  "properties": {
+    "event": {
+      "type": "string",
+      "enum": ["SEND_CRITIC", "SEND_OPTIMIZER"]
+    },
+    "content": { "type": "string" },
+    "data": {
+      "type": "object",
+      "additionalProperties": true,
+      "properties": { "debate_round": { "type": "integer", "minimum": 1 } }
+    }
+  },
+  "additionalProperties": false
+}

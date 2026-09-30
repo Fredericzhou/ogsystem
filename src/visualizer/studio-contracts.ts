@@ -1,5 +1,14 @@
 export const STUDIO_SYSTEM_END_ROLE_ID = "__system_end__";
 
+export type StudioConditionValueRef =
+  | { kind: "literal"; value: string | number | boolean | null }
+  | { kind: "path"; root: "state" | "loop" | "event" | "role"; path: string[] };
+export type SemanticIRConditionAst =
+  | { op: "equals" | "in" | "greater_than" | "less_than"; args: [StudioConditionValueRef, StudioConditionValueRef] }
+  | { op: "exists"; args: [StudioConditionValueRef] }
+  | { op: "not"; args: [SemanticIRConditionAst] }
+  | { op: "all" | "any"; args: SemanticIRConditionAst[] };
+
 export type StudioHumanReviewSpec = {
   mode?: string;
   timeoutSeconds?: number;
@@ -58,6 +67,8 @@ export type StudioAuthoringFlow = {
   toRoleId: string;
   eventType: string;
   label?: string;
+  condition?: SemanticIRConditionAst;
+  priority?: number;
   runtimeOnlyErrorFlow?: boolean;
 };
 
@@ -83,6 +94,8 @@ export type StudioGraphSnapshot = {
     eventType: string;
     runtimeOnlyErrorFlow: boolean;
     participatesInJoin: boolean;
+    condition?: SemanticIRConditionAst;
+    priority?: number;
   }>;
   viewport?: { x: number; y: number; zoom: number };
 };
@@ -131,6 +144,28 @@ export type GraphViewModelJoinWaiting = {
   expectedCount: number;
   readyCount: number;
   missingCount: number;
+  mode?: "all_of" | "quorum_of";
+  requiredCount?: number;
+  scopeId?: string;
+  status?: "waiting" | "activated" | "timed_out" | "failed";
+  startedAt?: string;
+  elapsedSeconds?: number;
+  timeoutSeconds?: number;
+  deadlineAt?: string;
+  timeoutAction?: "fail" | "quorum_continue" | "pause" | "terminate";
+  failurePolicy?: "wait" | "fail" | "quorum_continue";
+  resolutionReason?: string;
+  resolutionAction?: "fail" | "pause" | "terminate";
+  expectedSources?: string[];
+  readySources?: string[];
+  missingSources?: string[];
+};
+
+export type GraphViewModelJoinInstance = GraphViewModelJoinWaiting & {
+  runId: string;
+  joinRoleId: string;
+  lineageId: string;
+  loopIteration: number;
 };
 
 export type GraphViewModelNodeRuntime = {
@@ -146,6 +181,7 @@ export type GraphViewModelNodeRuntime = {
   readySources: string[];
   missingSources: string[];
   joinWaitingSummary: GraphViewModelJoinWaiting | null;
+  joinInstances: GraphViewModelJoinInstance[];
   lastFailure?: Record<string, unknown>;
 };
 
@@ -201,6 +237,7 @@ export type GraphViewModelEdge = {
   runtimeOnlyErrorFlow: boolean;
   participatesInJoin: boolean;
   conditionSummary?: string;
+  condition?: SemanticIRConditionAst;
   priority?: number;
   channel?: "normal" | "error" | "loop" | "join" | "feedback";
   runtime?: GraphViewModelEdgeRuntime;

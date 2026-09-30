@@ -110,6 +110,34 @@ async function seedContractProject(workdir: string): Promise<void> {
   ].join("\n"), "utf8");
 }
 
+async function seedConditionalProject(workdir: string): Promise<void> {
+  await seedProject(workdir);
+  await mkdir(path.resolve(workdir, ".ogs/contracts"), { recursive: true });
+  await writeFile(path.resolve(workdir, ".ogs/contracts/state.json"), JSON.stringify({ version: "1", type: "object" }), "utf8");
+  await writeFile(path.resolve(workdir, ".ogs/semantics.yaml"), [
+    "version: '1'",
+    "system:",
+    "  systemId: viz.studio.graph",
+    "  systemVersion: 1.0.0",
+    "state:",
+    "  schema: contracts/state.json",
+    "roles: {}",
+    "routes: []",
+    ""
+  ].join("\n"), "utf8");
+}
+
+async function startBrowserCompatibleVisualizationServer(workdir: string) {
+  const browserBlockedPorts = new Set([6000, 6566, 6665, 6666, 6667, 6668, 6669, 6697, 10080]);
+  for (let attempt = 0; attempt < 5; attempt += 1) {
+    const started = await startVisualizationServer({ workdir, host: "127.0.0.1", port: 0 });
+    const port = Number(new URL(started.url).port);
+    if (!browserBlockedPorts.has(port)) return started;
+    await new Promise<void>((resolve) => started.server.close(() => resolve()));
+  }
+  throw new Error("Could not allocate a browser-compatible visualizer port");
+}
+
 async function seedComplexMappingProject(workdir: string): Promise<void> {
   await seedProject(workdir);
   await writeFile(path.resolve(workdir, "system.mmd"), [
@@ -710,6 +738,59 @@ test("Run opens global operations with fixed run-view tabs", async ({ page }) =>
   }
 });
 
+test("Studio conditional route form saves, reloads, and explains its Semantic IR condition", async ({ page }) => {
+  const workdir = await mkdtemp(path.join(os.tmpdir(), "ogsystem-studio-condition-uat-"));
+  await seedConditionalProject(workdir);
+  const started = await startVisualizationServer({ workdir, host: "127.0.0.1", port: 0 });
+  try {
+    await page.goto(started.url);
+    await page.waitForFunction(() => Boolean((window as any).OGSVisualizerClient?.mountStudioX6Bridge));
+    const designTabName = await resolveLifecycleTabName(page, ["Build", "Design"]);
+    await page.getByRole("tab", { name: designTabName }).click();
+    await expect(page.locator("#studio-graph-root")).toBeVisible();
+    const edge = page.locator('#studio-graph-root [data-cell-id="1:demo-analyst:ANALYSIS_DONE:output"]');
+    await expect(edge).toBeVisible();
+    await edge.locator('path[stroke="transparent"]').first().click({ force: true });
+    const editor = page.locator(".studio-flow-config-editor");
+    await expect(editor).toBeVisible();
+    await editor.locator('[data-flow-config-field="conditionJson"]').fill('{"op":"unknown","args":[]}');
+    await expect(editor.locator(".studio-flow-config-diagnostics")).toContainText("op is not allowed");
+    await expect(editor.locator("[data-flow-config-save]")).toBeDisabled();
+    await editor.locator("[data-flow-config-revert]").click();
+    await editor.locator('[data-flow-config-field="conditionJson"]').fill(JSON.stringify({
+      op: "equals",
+      args: [
+        { kind: "path", root: "state", path: ["approved"] },
+        { kind: "literal", value: true }
+      ]
+    }, null, 2));
+    await editor.locator('[data-flow-config-field="priority"]').fill("7");
+    await editor.locator('[data-flow-config-save]').click();
+    const semanticsPath = path.resolve(workdir, ".ogs/semantics.yaml");
+    await expect.poll(async () => readFile(semanticsPath, "utf8").catch(() => "")).toContain("priority: 7");
+    await page.reload();
+    await page.waitForFunction(() => Boolean((window as any).OGSVisualizerClient?.mountStudioX6Bridge));
+    await page.getByRole("tab", { name: designTabName }).click();
+    await edge.locator('path[stroke="transparent"]').first().click({ force: true });
+    const reloadedEditor = page.locator(".studio-flow-config-editor");
+    await expect(reloadedEditor.locator('[data-flow-config-field="conditionJson"]')).toContainText('"approved"');
+    await expect(reloadedEditor.locator('[data-flow-config-field="priority"]')).toHaveValue("7");
+    await expect(page.locator("#studio-graph-root [data-cell-id=\"1:demo-analyst:ANALYSIS_DONE:output\"]")).toContainText("when:equals");
+
+    await reloadedEditor.locator('[data-flow-config-field="conditionJson"]').fill("");
+    await reloadedEditor.locator('[data-flow-config-save]').click();
+    await expect.poll(async () => readFile(semanticsPath, "utf8").catch(() => "")).toMatch(/routes:\s*\[\s*\]/);
+    await page.reload();
+    await page.waitForFunction(() => Boolean((window as any).OGSVisualizerClient?.mountStudioX6Bridge));
+    await page.getByRole("tab", { name: designTabName }).click();
+    await edge.locator('path[stroke="transparent"]').first().click({ force: true });
+    await expect(page.locator(".studio-flow-config-editor [data-flow-config-field=\"conditionJson\"]")).toBeEmpty();
+    await expect(page.locator("#studio-graph-root [data-cell-id=\"1:demo-analyst:ANALYSIS_DONE:output\"]")).not.toContainText("when:");
+  } finally {
+    await new Promise<void>((resolve) => started.server.close(() => resolve()));
+  }
+});
+
 test("Design shows the latest dry-run trace and keeps it separate from Run selection", async ({ page }) => {
   const workdir = await mkdtemp(path.join(os.tmpdir(), "ogsystem-design-debug-trace-"));
   await seedProject(workdir);
@@ -1203,7 +1284,7 @@ test("fan-out projection uses nearby ports without replacing business edges", as
 test("contract workspace supports keyboard editing and validation on a narrow viewport", async ({ page }) => {
   const workdir = await mkdtemp(path.join(os.tmpdir(), "ogsystem-studio-contract-uat-"));
   await seedContractProject(workdir);
-  const started = await startVisualizationServer({ workdir, host: "127.0.0.1", port: 0 });
+  const started = await startBrowserCompatibleVisualizationServer(workdir);
   try {
     await page.setViewportSize({ width: 390, height: 844 });
     await page.goto(started.url);
@@ -1395,6 +1476,67 @@ test("mapping UAT covers nested direct and Join sources plus quorum source gatin
     await expect(reviewerEditor.locator("[data-context-map-selector]").last().locator('option[value="source(demo-intake).data"]')).toHaveAttribute("disabled", "");
     await expect(reviewerEditor.locator("[data-context-map-selector]").last().locator('option[value="source(demo-analyst).data"]')).toHaveCount(0);
     await expect(reviewerEditor.locator("[data-context-map-optional]").last()).toBeDisabled();
+    await reviewerEditor.locator('[data-role-setting="joinMin"]').fill("2");
+    await expect(reviewerEditor.locator("[data-context-map-selector]").last().locator('option[value="source(demo-intake).data"]')).toBeEnabled();
+    await reviewerEditor.locator("[data-role-config-save='test-operator']").click();
+    await expect.poll(async () => readFile(authoringDraftPath, "utf8").then(JSON.parse).catch(() => null)).toMatchObject({
+      roles: { "test-operator": { joinMode: "quorum_of", joinMin: 2 } }
+    });
+    await page.reload();
+    await page.getByRole("tab", { name: designTabName }).click();
+    await page.locator('footer.status-bar.global-status [data-workbench-view="bridge"]').click();
+    if (!(await rolesSection.getAttribute("open"))) await rolesSection.locator("summary").click();
+    await page.locator('[data-studio-role-id="test-operator"]').click();
+    const reloadedReviewerEditor = page.locator('[data-role-config-editor="test-operator"]');
+    await expect(reloadedReviewerEditor.locator('[data-role-setting="joinMode"]')).toHaveValue("quorum_of");
+    await expect(reloadedReviewerEditor.locator('[data-role-setting="joinMin"]')).toHaveValue("2");
+    expect(pageErrors).toEqual([]);
+  } finally {
+    await new Promise<void>((resolve) => started.server.close(() => resolve()));
+  }
+});
+
+test("studio graph stays readable and its toolbar remains reachable on mobile", async ({ page }) => {
+  const workdir = await mkdtemp(path.join(os.tmpdir(), "ogsystem-studio-mobile-uat-"));
+  await seedProject(workdir);
+  const started = await startVisualizationServer({ workdir, host: "127.0.0.1", port: 0 });
+  try {
+    await page.setViewportSize({ width: 390, height: 844 });
+    await page.goto(started.url);
+    const designTabName = await resolveLifecycleTabName(page, ["Build", "Design"]);
+    await page.getByRole("tab", { name: designTabName }).click();
+    await page.locator('footer.status-bar.global-status [data-workbench-view="bridge"]').click();
+
+    const graph = page.locator("#studio-graph-root");
+    const layoutSelect = graph.locator("[data-studio-graph-layout]");
+    await expect(layoutSelect).toHaveValue("stacked");
+    await waitForStudioCell(page, "demo-analyst");
+    const roleBounds = await graph.locator('[data-cell-id="demo-analyst"]').boundingBox();
+    expect(roleBounds?.width ?? 0).toBeGreaterThanOrEqual(90);
+    expect(roleBounds?.height ?? 0).toBeGreaterThanOrEqual(30);
+
+    const toolbar = graph.locator(".studio-graph-toolbar");
+    const toolbarMain = toolbar.locator(".studio-graph-toolbar-main");
+    await expect(toolbar).toBeVisible();
+    const toolbarBounds = await toolbarMain.boundingBox();
+    expect(toolbarBounds).toBeTruthy();
+    const toolbarAudit = await toolbarMain.evaluate((main) => {
+      const bounds = main.getBoundingClientRect();
+      const controls = Array.from(main.querySelectorAll<HTMLElement>("button:not([hidden]), select"));
+      return {
+        scrollWidth: main.scrollWidth,
+        clientWidth: main.clientWidth,
+        controlsInBounds: controls.every((control) => {
+          const controlBounds = control.getBoundingClientRect();
+          return controlBounds.left >= bounds.left - 1 && controlBounds.right <= bounds.right + 1;
+        })
+      };
+    });
+    expect(toolbarAudit.scrollWidth).toBeLessThanOrEqual(toolbarAudit.clientWidth + 1);
+    expect(toolbarAudit.controlsInBounds).toBe(true);
+    await expect(graph.locator('[data-studio-graph-action="add-role"]')).toBeVisible();
+    await graph.locator('[data-studio-graph-action="add-role"]').click();
+    await expect(page.locator(".studio-selection-overlay")).toBeVisible();
   } finally {
     await new Promise<void>((resolve) => started.server.close(() => resolve()));
   }

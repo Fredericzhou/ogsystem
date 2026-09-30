@@ -143,9 +143,44 @@ function deriveNodeRuntime(args: {
   const lastErrorCode = findLastErrorCode({ state, roleId });
   const lastFailure = findLatestFailureForRole({ state, roleId });
   const expectedSources = system.graph?.joinSourcesByRoleId[roleId] ?? [];
+  const joinMode = system.graph?.joinModeByRoleId?.[roleId] ?? "all_of";
+  const joinMin = system.graph?.joinMinByRoleId?.[roleId] ?? expectedSources.length;
   const persistedJoinScope = Object.values(state.joinScopes ?? {})
     .filter((scope) => scope.joinRoleId === roleId)
     .sort((left, right) => right.startedAt.localeCompare(left.startedAt))[0];
+  const joinInstances = Object.values(state.joinScopes ?? {})
+    .filter((scope) => scope.joinRoleId === roleId)
+    .sort((left, right) => right.startedAt.localeCompare(left.startedAt))
+    .map((scope) => {
+      const expected = scope.expectedSourceRoleIds.slice();
+      const ready = scope.readySourceRoleIds.slice();
+      const missing = scope.missingSourceRoleIds.slice();
+      const started = Date.parse(scope.startedAt);
+      return {
+        scopeId: scope.joinId,
+        runId: scope.runId,
+        joinRoleId: scope.joinRoleId,
+        mode: scope.joinMode ?? joinMode,
+        requiredCount: (scope.joinMode ?? joinMode) === "all_of" ? expected.length : (scope.joinMin ?? joinMin),
+        lineageId: scope.lineageId,
+        loopIteration: scope.loopIteration,
+        expectedCount: expected.length,
+        readyCount: ready.length,
+        missingCount: missing.length,
+        status: scope.status,
+        startedAt: scope.startedAt,
+        elapsedSeconds: Number.isFinite(started) ? Math.max(0, Math.floor((Date.now() - started) / 1000)) : 0,
+        timeoutSeconds: scope.timeoutSeconds,
+        deadlineAt: Number.isFinite(started) ? new Date(started + scope.timeoutSeconds * 1000).toISOString() : undefined,
+        timeoutAction: scope.timeoutAction,
+        failurePolicy: scope.failurePolicy,
+        resolutionReason: scope.resolutionReason,
+        resolutionAction: scope.resolutionAction,
+        expectedSources: expected,
+        readySources: ready,
+        missingSources: missing
+      };
+    });
   const readySources = Array.from(
     new Set(
       Object.values(branchRecords)
@@ -182,9 +217,24 @@ function deriveNodeRuntime(args: {
         ? {
             expectedCount: resolvedExpectedSources.length,
             readyCount: resolvedReadySources.length,
-            missingCount: missingSources.length
+            missingCount: missingSources.length,
+            mode: persistedJoinScope?.joinMode ?? joinMode,
+            requiredCount: (persistedJoinScope?.joinMode ?? joinMode) === "all_of" ? resolvedExpectedSources.length : (persistedJoinScope?.joinMin ?? joinMin),
+            ...(persistedJoinScope ? {
+              scopeId: persistedJoinScope.joinId,
+              status: persistedJoinScope.status,
+              startedAt: persistedJoinScope.startedAt,
+              elapsedSeconds: Math.max(0, Math.floor((Date.now() - Date.parse(persistedJoinScope.startedAt)) / 1000)),
+              timeoutSeconds: persistedJoinScope.timeoutSeconds,
+              deadlineAt: new Date(Date.parse(persistedJoinScope.startedAt) + persistedJoinScope.timeoutSeconds * 1000).toISOString(),
+              timeoutAction: persistedJoinScope.timeoutAction,
+              expectedSources: resolvedExpectedSources.slice(),
+              readySources: resolvedReadySources.slice(),
+              missingSources: missingSources.slice()
+            } : {})
           }
         : null,
+    joinInstances,
     lastFailure
   };
 }
@@ -354,6 +404,8 @@ export function buildGraphViewModel(args: BuildGraphViewModelArgs): GraphViewMod
       eventType: flow.eventType,
       runtimeOnlyErrorFlow,
       participatesInJoin: flow.participatesInJoin,
+      ...(flow.condition ? { condition: flow.condition } : {}),
+      ...(flow.priority !== undefined ? { priority: flow.priority } : {}),
       ...(args.semanticIR
         ? (() => {
             const transition = args.semanticIR.transitions.find((candidate) => candidate.flowId === edgeKey);
@@ -366,6 +418,8 @@ export function buildGraphViewModel(args: BuildGraphViewModelArgs): GraphViewMod
               : {};
           })()
         : {}),
+      ...(flow.condition ? { condition: flow.condition, conditionSummary: summarizeCondition(flow.condition) } : {}),
+      ...(flow.priority !== undefined ? { priority: flow.priority } : {}),
       runtime,
       diagnostic,
       editable: mode === "edit"

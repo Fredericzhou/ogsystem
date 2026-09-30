@@ -1150,6 +1150,7 @@ export const zhCN = {
   "studio.noRolesExtracted": "当前 Mermaid 源码中未解析出角色。",
   "studio.noFlowsExtracted": "当前 Mermaid 源码中未解析出流转。",
   "studio.standard": "标准",
+  "studio.parallelSplitHint": "激活所有静态声明的普通下游分支；不会自动拆分任务，也不承诺同时执行。",
   "studio.events": "事件 {count}",
   "studio.runtimeErrorFlow": "运行时错误流转",
   "studio.designFlow": "设计流转",
