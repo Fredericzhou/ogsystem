@@ -3091,7 +3091,17 @@ test("serve server recovers a persisted queued session turn after restart", asyn
       assert.ok(turn);
       assert.notEqual(turn.status, "failed");
     }
-    const events = (await readFile(path.resolve(sessionDir, "events.ndjson"), "utf8")).trim().split(/\r?\n/).map((line) => JSON.parse(line));
+    const eventsPath = path.resolve(sessionDir, "events.ndjson");
+    let events = [];
+    for (let attempt = 0; attempt < 150; attempt += 1) {
+      const contents = await readFile(eventsPath, "utf8").catch(() => "");
+      events = contents.trim().split(/\r?\n/).filter(Boolean).map((line) => JSON.parse(line));
+      if (recoveredTurns.every((expected) =>
+        events.some((event) => event.type === "turn.recovered" && event.turnId === expected.turnId) &&
+        events.some((event) => event.type === "turn.completed" && event.turnId === expected.turnId)
+      )) break;
+      await new Promise((resolve) => setTimeout(resolve, 50));
+    }
     for (const expected of recoveredTurns) {
       assert.ok(events.some((event) => event.type === "turn.recovered" && event.turnId === expected.turnId));
       assert.ok(events.some((event) => event.type === "turn.completed" && event.turnId === expected.turnId));

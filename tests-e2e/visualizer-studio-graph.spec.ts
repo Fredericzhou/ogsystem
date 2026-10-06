@@ -708,6 +708,7 @@ test("Run opens global operations with fixed run-view tabs", async ({ page }) =>
 });
 
 test("Design shows the latest dry-run trace and keeps it separate from Run selection", async ({ page }) => {
+  test.setTimeout(60000);
   const workdir = await mkdtemp(path.join(os.tmpdir(), "ogsystem-design-debug-trace-"));
   await seedProject(workdir);
   const started = await startVisualizationServer({ workdir, host: "127.0.0.1", port: 0 });

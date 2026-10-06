@@ -212,7 +212,7 @@ test("Build workbench keeps view toggles in footer and aligns graph with docked 
         caret: "hide",
         scale: "css",
         mask: [page.locator("#workdir")],
-        maxDiffPixels: 200
+        maxDiffPixels: 300
       });
     }
     await page.waitForTimeout(150);

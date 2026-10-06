@@ -8,9 +8,11 @@ function resolvePnpmBin() {
   if (process.env.PNPM_BIN) return process.env.PNPM_BIN;
   if (process.platform !== "win32") return "pnpm";
 
-  // Windows can resolve a bare pnpm.cmd through a stale Corepack shim or a
-  // parent workspace. Prefer the package-manager shim beside the active Node
-  // executable, while retaining PATH lookup for Volta and custom installs.
+  const pnpmHome = process.env.PNPM_HOME;
+  const managedPnpm = pnpmHome ? path.join(pnpmHome, "pnpm.cmd") : undefined;
+  if (managedPnpm && existsSync(managedPnpm)) return managedPnpm;
+
+  // Keep PATH lookup for Volta and custom installs when no managed shim exists.
   const colocatedPnpm = path.join(path.dirname(process.execPath), "pnpm.cmd");
   return existsSync(colocatedPnpm) ? colocatedPnpm : "pnpm.cmd";
 }

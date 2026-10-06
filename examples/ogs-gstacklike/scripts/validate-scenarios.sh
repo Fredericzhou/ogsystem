@@ -203,7 +203,7 @@ assert_role_execution_failed() {
 assert_role_execution_exists() {
   local run_id="$1"
   local role_id="$2"
-  if ! find "$(run_dir_for "$run_id")/roles/${role_id}/executions" -mindepth 1 -maxdepth 1 -type d | rg -q .; then
+  if ! find "$(run_dir_for "$run_id")/roles/${role_id}/executions" -mindepth 1 -maxdepth 1 -type d | grep -q .; then
     echo "missing executions for role ${role_id}" >&2
     return 1
   fi
