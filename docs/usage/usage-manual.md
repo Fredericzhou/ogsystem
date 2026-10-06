@@ -147,7 +147,7 @@ pnpm run smoke:package-install:pnpm
 
 发布兼容策略：正式发布的 CLI 支持当前主版本最近两个 minor release line 的 patch 版本，并对发生变化的配置或 schema 提供随版本发布的明确迁移说明。`1.0.0` 发布后将开启首个正式兼容窗口。使用 `ogs --version` 查看 CLI 同步输出的当前版本和严格输入边界；完整策略见 [`docs/development/release-compatibility-policy.md`](../development/release-compatibility-policy.md)。
 
-当前边界保持 fail-closed：未来或未知的 config/schema 版本、格式错误的输入、不受支持的 release line，以及 plan fingerprint 或恢复权威集不匹配的 run artifact 都不会被 CLI 猜测兼容。当前开发测试版本没有历史配置、schema 或 run-data 迁移命令；resume 也不因配置文件可读取就获得跨版本保证。
+当前边界保持 fail-closed：未来或未知的 config/schema 版本、格式错误的输入、不受支持的 release line，以及 plan fingerprint 或恢复权威集不匹配的 run artifact 都不会被 CLI 猜测兼容。首个稳定版不迁移开发测试期间产生的历史配置、schema 或 run data；resume 也不因配置文件可读取就获得跨 minor 保证。
 
 覆盖率判读约定：
 

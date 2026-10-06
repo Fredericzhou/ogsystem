@@ -86,9 +86,9 @@ emit a compatibility warning for historical syntax that it never promised to sup
   recoverable original, and write atomically.
 - Migration output must identify the source version, target version, changed files, and any fields
   that require operator review. A migration never upgrades a run's recovery authority by guessing.
-- The current development-test CLI has no released migration command and provides no historical DSL,
-  API, config, schema, or run-data migration guarantee. Existing version checks and strict resume
-  checks remain implementation behavior, not a stable cross-release promise.
+- The first stable release, `1.0.0`, does not migrate development-test DSL, API, config, schema, or
+  run data. Migrations for contracts changed after publication follow the explicit migration rules
+  above; strict resume still provides no cross-minor guarantee.
 
 ## Development-Test Versus Released Contract
 

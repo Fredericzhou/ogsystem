@@ -1,6 +1,9 @@
 name: Release Package Validation
 
 on:
+  push:
+    branches:
+      - "release/**"
   workflow_dispatch:
     inputs:
       ref:
@@ -9,7 +12,7 @@ on:
         type: string
       version:
         description: Expected package.json version for this candidate
-        required: true
+        required: false
         type: string
 
 jobs:
@@ -20,7 +23,7 @@ jobs:
       - name: Checkout candidate
         uses: actions/checkout@v4
         with:
-          ref: ${{ inputs.ref || github.ref }}
+          ref: ${{ inputs.ref || github.sha }}
       - name: Setup pnpm
         uses: pnpm/action-setup@v4
         with:
@@ -37,7 +40,7 @@ jobs:
           EXPECTED_VERSION: ${{ inputs.version }}
         run: |
           actual="$(node -p 'require("./package.json").version')"
-          if [[ "$actual" != "$EXPECTED_VERSION" ]]; then
+          if [[ -n "$EXPECTED_VERSION" && "$actual" != "$EXPECTED_VERSION" ]]; then
             echo "Expected package version $EXPECTED_VERSION, found $actual" >&2
             exit 1
           fi
@@ -69,7 +72,7 @@ jobs:
       - name: Checkout candidate source
         uses: actions/checkout@v4
         with:
-          ref: ${{ inputs.ref || github.ref }}
+          ref: ${{ inputs.ref || github.sha }}
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:

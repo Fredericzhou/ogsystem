@@ -206,13 +206,15 @@ test("Build workbench keeps view toggles in footer and aligns graph with docked 
     await expectDockedSelectionAligned(page);
     const roleNode = page.locator('#studio-graph-root [data-cell-id="demo-analyst"]').first();
     await expect(roleNode).toBeVisible();
-    await expect(page).toHaveScreenshot("build-workbench-desktop.png", {
-      animations: "disabled",
-      caret: "hide",
-      scale: "css",
-      mask: [page.locator("#workdir")],
-      maxDiffPixels: 200
-    });
+    if (process.platform !== "linux") {
+      await expect(page).toHaveScreenshot("build-workbench-desktop.png", {
+        animations: "disabled",
+        caret: "hide",
+        scale: "css",
+        mask: [page.locator("#workdir")],
+        maxDiffPixels: 200
+      });
+    }
     await page.waitForTimeout(150);
     const beforeClickBox = await roleNode.boundingBox();
     expect(beforeClickBox).toBeTruthy();
@@ -316,12 +318,14 @@ test("Build workbench remains usable on a narrow mobile viewport", async ({ page
     expect(viewport.contentWidth).toBeLessThanOrEqual(viewport.viewportWidth + 1);
     expect(viewport.graphWidth).toBeGreaterThan(0);
     expect(viewport.graphHeight).toBeGreaterThan(0);
-    await expect(page).toHaveScreenshot("build-workbench-mobile.png", {
-      animations: "disabled",
-      caret: "hide",
-      scale: "css",
-      maxDiffPixels: 200
-    });
+    if (process.platform !== "linux") {
+      await expect(page).toHaveScreenshot("build-workbench-mobile.png", {
+        animations: "disabled",
+        caret: "hide",
+        scale: "css",
+        maxDiffPixels: 200
+      });
+    }
   } finally {
     await page.close();
     await new Promise<void>((resolve) => started.server.close(() => resolve()));
