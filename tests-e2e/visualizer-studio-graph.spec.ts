@@ -395,11 +395,8 @@ test("Studio Bridge renders and edits through the real graph workspace", async (
     await expect(roleListSection).not.toHaveAttribute("open", "");
     await expect(flowListSection).not.toHaveAttribute("open", "");
     const roleSummary = roleListSection.locator("summary");
-    const roleSummaryBox = await roleSummary.boundingBox();
-    expect(roleSummaryBox).toBeTruthy();
-    if (roleSummaryBox) {
-      await page.mouse.click(roleSummaryBox.x + 8, roleSummaryBox.y + roleSummaryBox.height / 2);
-    }
+    await expect(roleSummary).toBeVisible();
+    await roleSummary.click();
     await expect(roleListSection).toHaveAttribute("open", "");
     await expect(roleListSection.locator("[data-studio-role-id]").first()).toBeVisible();
     await flowListSection.locator("summary").click();
