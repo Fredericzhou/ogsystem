@@ -1,6 +1,6 @@
 {
   "name": "ogsystem",
-  "version": "0.3.0",
+  "version": "1.0.0",
   "private": false,
   "type": "module",
   "packageManager": "pnpm@10.33.2",
@@ -29,7 +29,7 @@
     "README.md"
   ],
   "engines": {
-    "node": ">=20"
+    "node": "^22.0.0 || ^24.0.0"
   },
   "scripts": {
     "preinstall": "node scripts/preinstall.cjs",

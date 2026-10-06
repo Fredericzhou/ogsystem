@@ -1228,7 +1228,7 @@ test("contract workspace supports keyboard editing and validation on a narrow vi
     const schemaEditor = contractEditor.locator("[data-contract-file-editor]");
     const schemaInput = schemaEditor.locator("[data-contract-file-content]");
     await schemaInput.focus();
-    await page.keyboard.press("Control+A");
+    await page.keyboard.press(process.platform === "darwin" ? "Meta+A" : "Control+A");
     await page.keyboard.type("{");
     await schemaEditor.locator("[data-contract-file-save]").focus();
     await page.keyboard.press("Enter");

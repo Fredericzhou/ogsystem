@@ -48,7 +48,7 @@ distinct responsibility, capability, input/output contract, or audit boundary.
 | **System** | A versioned, bounded collaboration system: roles, transitions, contracts, policies, and runtime boundary. | A host process, organization, or one run. |
 | **Responsibility Role** | A stable, unique organizational seat in a System. `roleId` identifies the seat. Exactly one current executor is bound to the seat in an effective System configuration. | A task, event, process step, gateway, runtime instance, or the executor's personal identity. |
 | **Responsibility Seat** | The static graph position occupied by one Responsibility Role in one System. In the current graph it is the rendered role node. | A BPMN gateway/event or a runtime instance. |
-| **Executor** | The current agent bound to a Role; it may represent a person, an agent service, or a bounded System. The assignment is one-to-one within one effective System configuration. | The stable Role/seat identity. Replacing an executor does not rename or replace the Role. |
+| **Executor** | The model or configured tool/profile execution currently bound to a Role. The binding is one-to-one within one effective System configuration. | The stable Role/seat identity. Replacing an executor does not rename or replace the Role. |
 | **Role Package** | Versioned implementation material associated with a role, such as prompt, manifest, and I/O schema. | The responsibility or executor identity. A package may change while the role identity remains stable. |
 | **Flow / Transition** | A declared event-bearing, role-to-role handoff. The source role completes work and transfers the contracted outcome to the target role. | An event node, action node, process step, message participant, or execution instance. |
 | **Branch / Lineage** | Runtime execution identity and ancestry. `branchId` identifies one active path; `lineageId` scopes related paths. | A static role or business responsibility. |
@@ -61,8 +61,9 @@ as audit identity. The `actor` wire field is populated from the resolved princip
 
 ## Recursive Responsibility Composition
 
-A Responsibility Role may be responsible for a nested System. This represents **responsibility
-and process composition**, not an administrative reporting line:
+As a future composition concept, a Responsibility Role could be responsible for a nested System.
+This represents **responsibility and process composition**, not an administrative reporting line.
+It is design vocabulary only; nested System execution is not supported by the current runtime:
 
 ```text
 project-governance role
@@ -84,9 +85,12 @@ project System and a `legal-representative` role can be responsible for a compan
 System. Both are abstract roles. Scope and authority must be explicit when they matter; neither
 is inferred from hierarchy or a title.
 
-Current implementation status: OGS has independently versioned `SubgraphSpec` data, but it does
-not yet expose a frozen `ownerRoleId -> nestedSystem` execution contract. Documentation must not
-claim executable recursive role composition until that contract and its tests are delivered.
+Current implementation status: Semantic IR accepts composite responsibility declarations and
+statically validates nested System references, input/output contract references, namespace
+uniqueness, composition cycles, and agreement with the Role package manifest. Cross-System state
+field access is rejected. Runtime setup then fails explicitly with
+`IR_COMPOSITE_UNSUPPORTED`; child Systems are not executed. This supports declaration and preflight
+validation only, not recursive runtime composition.
 
 ## Scope And Authority
 

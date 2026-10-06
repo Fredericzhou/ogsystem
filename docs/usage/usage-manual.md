@@ -2,7 +2,7 @@
 
 ## Read This First
 
-OGSystem 当前是一套单机、文件优先、可恢复的图编排运行时（开发测试版本 `0.3.0`）。它最重要的特点不是“功能很多”，而是把编排语义、执行状态、恢复契约和运行证据收敛到了一条可审计的主路径里。
+OGSystem 当前是一套单机、文件优先、可恢复的图编排运行时（首个稳定版候选 `1.0.0`，尚未发布）。它最重要的特点不是“功能很多”，而是把编排语义、执行状态、恢复契约和运行证据收敛到了一条可审计的主路径里。
 
 建议先建立这四个认知：
 
@@ -79,7 +79,7 @@ OGSystem 当前重点优化以下能力：
 
 前置要求：
 
-- Node.js `>= 20`
+- Node.js `22.x` or `24.x`
 
 安装当前开发测试版本（源码目录）：
 
@@ -143,9 +143,9 @@ pnpm run smoke:package-install:npm
 pnpm run smoke:package-install:pnpm
 ```
 
-版本说明：`0.3.0` 是开发测试版本，直接采用 Semantic IR v1 和当前版本化运行时合同，不提供历史 DSL、API 或运行数据迁移。
+版本说明：`1.0.0` 是首个稳定版候选，尚未发布。它采用 Semantic IR v1 和当前版本化运行时合同，不提供历史 DSL、API 或运行数据迁移。
 
-发布兼容策略：正式发布的 CLI 支持当前主版本最近两个 minor release line 的 patch 版本，并对发生变化的配置或 schema 提供随版本发布的明确迁移说明。当前 `0.3.0` 仍在开发测试边界之外，不属于正式发布兼容窗口。使用 `ogs --version` 查看 CLI 同步输出的当前版本和严格输入边界；完整策略见 [`docs/development/release-compatibility-policy.md`](../development/release-compatibility-policy.md)。
+发布兼容策略：正式发布的 CLI 支持当前主版本最近两个 minor release line 的 patch 版本，并对发生变化的配置或 schema 提供随版本发布的明确迁移说明。`1.0.0` 发布后将开启首个正式兼容窗口。使用 `ogs --version` 查看 CLI 同步输出的当前版本和严格输入边界；完整策略见 [`docs/development/release-compatibility-policy.md`](../development/release-compatibility-policy.md)。
 
 当前边界保持 fail-closed：未来或未知的 config/schema 版本、格式错误的输入、不受支持的 release line，以及 plan fingerprint 或恢复权威集不匹配的 run artifact 都不会被 CLI 猜测兼容。当前开发测试版本没有历史配置、schema 或 run-data 迁移命令；resume 也不因配置文件可读取就获得跨版本保证。
 
@@ -464,9 +464,9 @@ Use `ogs serve` when an operator needs multiple interactive turns under one Sess
 ogs serve --ogs-dir ./ogs-control --workspace-dir ../my-application
 ```
 
-The service exposes authenticated Session endpoints at `/api/v1/sessions`: create a Session with `POST`, submit Turns to `/api/v1/sessions/<id>/turns` with an `Idempotency-Key`, poll the Session for Turn status, and stream Session events from `/api/v1/sessions/<id>/events`. Each Turn creates a fresh Run and fresh Role backend context. Sessions pin the System and execution configuration; if either changes, the old Session becomes stale and the response includes a linked child Session ID. Existing Run resume continues to use its persisted checkpoint.
+The service exposes Session endpoints at `/api/v1/sessions`: create a Session with `POST`, submit Turns to `/api/v1/sessions/<id>/turns` with an `Idempotency-Key`, poll the Session for Turn status, and stream Session events from `/api/v1/sessions/<id>/events`. The default `127.0.0.1` mode uses the OS account running OGS as the audit principal; it does not distinguish browser operators on the same machine. Non-loopback binding requires an injected identity provider and authorization policy, and the initial release provides no built-in remote or multi-user identity setup. Each Turn creates a fresh Run and fresh Role backend context. Sessions pin the System and execution configuration; if either changes, the old Session becomes stale and the response includes a linked child Session ID. Existing Run resume continues to use its persisted checkpoint.
 
-For `exec.bind`, relative tool arguments such as `scripts/console-print.mjs` are resolved from the OGSystem control project. The role process still runs in its run-local role workspace, while OpenCode session APIs use the resolved coding project.
+For `exec.bind`, relative tool arguments such as `scripts/console-print.mjs` are resolved from the OGSystem control project. The role process still runs in its run-local role workspace, while OpenCode session APIs use the resolved coding project. `exec.bind` invokes configured local tools with the caller's OS permissions; it is not a sandbox. Use only trusted project configuration and role packages.
 
 Recommended test split:
 

@@ -210,6 +210,7 @@ test("Build workbench keeps view toggles in footer and aligns graph with docked 
       animations: "disabled",
       caret: "hide",
       scale: "css",
+      mask: [page.locator("#workdir")],
       maxDiffPixels: 200
     });
     await page.waitForTimeout(150);

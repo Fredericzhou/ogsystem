@@ -1,13 +1,13 @@
 # OGSystem
 
-OGSystem is a console runtime for a restricted Mermaid flowchart DSL. Current development-test
-release: `0.3.0`.
+OGSystem is a console runtime for a restricted Mermaid flowchart DSL. Current stable release
+candidate: `1.0.0`; not published.
 
 Implemented scope:
 
 - DSL: Mermaid `flowchart` restricted subset
 - Root semantics: `Law / System / AuditTrail`
-- A System-local Role is a stable unique seat with one current executor binding; the executor may represent a person, agent, or bounded System.
+- Each System Role is a stable unique seat with one current executor binding. Current bindings resolve to a model or configured execution profile; nested System execution is not supported.
 - Runtime outputs: `SystemState / Stage`
 - Engine: one graph runtime for sequential, branching, parallel, join, and loop systems
 - Role resolution: auto-load from project-local `og-roles/roles/<roleId>/`
@@ -44,7 +44,7 @@ Detailed usage manual:
 CLI installation prerequisites:
 
 ```bash
-node >= 20
+node 22.x or 24.x
 ```
 
 Install the current development-test CLI from the source checkout:
@@ -115,12 +115,14 @@ ogs visualizer --ogs-dir .
 
 Generated projects always include `.ogs/`, `system.mmd`, and a local `og-roles/` repo. Backend/model choices live in `.ogs/model-selection.json`; `.ogs/model-catalog.json` records locally discovered CLI services and runnable models. OGS invokes persistent CLI services and uses each CLI's own user configuration; it does not import or manage credentials. The scaffold also writes `.ogs/README.md` with operator notes and JSON examples.
 
-Version `0.3.0` is a development-test release. It uses the current Semantic IR v1 and versioned
-runtime contracts directly; historical DSL, API, and run-data migration is not supported.
+Version `1.0.0` is the first stable release candidate and is not published yet. It uses the current
+Semantic IR v1 and versioned runtime contracts directly; historical DSL, API, and run-data migration
+is not supported.
 
 Released CLI compatibility policy: released versions support the latest two minor lines of the
 current major release, with documented migrations for changed config or schema contracts. The
-current `0.3.0` package is outside that released window. Run `ogs help compatibility` for the
+current `1.0.0` candidate defines the initial release line; its public support window starts when it
+is published. Run `ogs help compatibility` for the
 installed CLI's summary, unsupported-input boundary, and deprecation timing; see
 `docs/development/release-compatibility-policy.md` for the full policy.
 
@@ -229,7 +231,8 @@ For day-to-day use, start with `docs/usage/usage-manual.md`. It keeps the comman
 - `ogs models discover` refreshes installed CLI/model discovery; `ogs models sync` also creates `.ogs/model-selection.json` when missing without replacing existing choices.
 - `ogs vis --ogs-dir .` starts the read-mostly run visualizer. It keeps project/run/review/resume projections read-first, uses incremental timeline streaming instead of full run reloads on every event, loads resume diagnostics on demand, keeps project cold-start on persisted projections instead of forcing a runs-directory scan, and routes review decide / stop / reindex through existing lifecycle entrypoints with confirmation + audit input prompts. Review views now expose lifecycle `currentStatus` separately from durable decision `decisionPhase` (`recorded`, `pending_reconcile`, `applied`). `ogs run start --visualize` attaches a temporary visualizer that auto-closes when the run ends.
 - The Visualizer API contract is in `schemas/openapi.yaml`. `/healthz`, `/readyz`, and `/metrics` expose liveness, readiness, and low-cardinality Prometheus metrics.
-- Control actions record the principal resolved by the identity provider; request bodies cannot choose an audit actor. Loopback mode uses the current OS account. Non-loopback binds require an injected identity provider and authorization policy.
+- The initial trust model is single-machine/local-user: Visualizer defaults to `127.0.0.1`, and loopback audit identity is the OS account running OGS, not a distinct browser operator. Non-loopback binds require an injected identity provider and authorization policy; no built-in remote or multi-user identity setup is promised. Control actions record the resolved principal, never an actor supplied in the request body.
+- `exec.bind` runs configured local tools with the caller's OS permissions and is not a security sandbox. Use it only with trusted project configuration and role packages. CLI backend credentials remain under each CLI's user-level configuration.
 - Remote execution protocol v1 and its runtime validators are documented in `src/runtime/remote-execution-contract.ts`; it defines the replaceable-call boundary but does not enable remote worker dispatch in this release.
 - Model backend/model configuration is managed in Studio or `.ogs/model-selection.json`, not in Mermaid metadata.
 - `examples/langgraph-debate-current/` shows a minimal debate with loop + parallel + join.

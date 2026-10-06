@@ -8,7 +8,6 @@
  * - Delegates runtime execution and persistence to lower-level modules.
  */
 import { readFile, writeFile } from "node:fs/promises";
-import { createRequire } from "node:module";
 import { resolve } from "node:path";
 import { parseArgs } from "node:util";
 
@@ -49,11 +48,9 @@ import { ensureSystemHome } from "./system-home.js";
 import { discoverLocalModelCatalog } from "./model-catalog.js";
 import { writeJsonFileAtomic } from "./json-file.js";
 import { resolveProjectTargetDirectory } from "./project-target.js";
+import { OGS_VERSION } from "./version.js";
 
 await ensureSystemHome();
-
-const require = createRequire(import.meta.url);
-const { version: CLI_VERSION } = require("../../package.json") as { version: string };
 
 type HelpTopic = "compatibility" | "doctor" | "lint" | "nl2mmd" | "project" | "run" | "vis" | "visualizer";
 type ProjectSubcommand = "init" | "create" | "sync" | "sync-models";
@@ -129,9 +126,10 @@ function usageCompatibility(): string {
     "OGSystem released CLI compatibility policy",
     "",
     "Released support: latest two minor lines of the current major release; all patches in those lines.",
-    `Current package: ${CLI_VERSION} ${CLI_VERSION.startsWith("0.") ? "development-test; no stable release line or historical migration guarantee." : "released; see the policy document for the supported window."}`,
+    `Current package: ${OGS_VERSION}; see the policy document for its release support window and migration guarantees.`,
     "Unsupported inputs: future/unknown config or schema versions, malformed inputs, unsupported release",
     "lines, and resume artifacts whose plan fingerprint or recovery authority does not match.",
+    "Project/API compatibility does not promise migration of old run data or cross-minor resume.",
     "Deprecation warnings name the replacement and planned removal release; removal is at least one minor",
     "release and 90 days after notice, whichever is later.",
     "",
@@ -1584,7 +1582,7 @@ async function main(): Promise<void> {
     return;
   }
   if (argv[0] === "--version" || argv[0] === "-V" || argv[0] === "version") {
-    console.log(`ogs ${CLI_VERSION}`);
+    console.log(`ogs ${OGS_VERSION}`);
     return;
   }
   if (argv[0] === "--help" || argv[0] === "-h") {

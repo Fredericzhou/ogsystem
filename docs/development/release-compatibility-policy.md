@@ -11,27 +11,47 @@ build into a stable compatibility promise.
   maintenance releases.
 - A released CLI supports the latest two minor lines of the current major release. For example,
   when `1.3` is current, `1.3` and `1.2` are supported; all patches in those lines are included.
+- This is an ongoing product support commitment, not just a test target. For the first `1.0` line,
+  `1.0` is supported; after `1.1` is released, `1.1` and `1.0` are supported. The product owner
+  accepted this commitment on 2026-10-06.
 - A new major release ends the compatibility promise for the previous major unless its release
   notes explicitly extend support.
-- The current package version, `0.3.0`, is a development-test release. There is no stable release
-  line yet, and `0.3.0` is outside the released compatibility window.
+- The current package version, `1.0.0`, is the unpublished candidate for the first stable release
+  line. The public support window starts when this exact package is published.
 - `ogs --version` reports the installed version. `ogs help compatibility` reports this policy's
   effective release status and the unsupported-input boundary.
 
+## Runtime Support
+
+- Stable packages support Node.js `22.x` and `24.x` on Linux, macOS, and Windows.
+- npm and pnpm are supported installers. The release validation workflow installs the same
+  candidate tarball across all Node.js, OS, and package-manager combinations.
+- The package `engines` field lists only the supported Node.js major lines; a new major is added
+  after the release matrix passes for that line.
+
 ## Compatibility Window
 
-The window applies to project inputs that the released CLI explicitly documents as compatible:
+Compatibility is defined separately for user inputs and persisted run recovery. The release window
+applies to these explicitly documented project contracts:
 
-- Patch upgrades must accept the same project configuration, schema, CLI syntax, and run artifact
-  contracts as the previous patch in that release line.
+- Patch upgrades must accept the same project configuration, schema, CLI syntax, HTTP API, and
+  Semantic IR contracts as the previous patch in that release line.
 - A minor upgrade may add fields, commands, or syntax. It must continue to accept inputs from the
   immediately preceding supported minor line, either directly or through a documented migration.
 - A future config or schema version, an unknown version, malformed JSON, or an input from an
   unsupported release line is rejected with an actionable error. The CLI does not guess or silently
   reinterpret it.
+
+Run artifacts have a separate recovery contract:
+
 - Run resume remains strict: the stored plan fingerprint and recovery authority must match the
-  runtime contract. A released CLI must not claim cross-version resume merely because a project
-  config can be read. Semantic-compatible resume is a separate product decision and implementation.
+  runtime contract. If required artifacts are missing, corrupt, unsupported, or do not match, the
+  CLI fails closed with an actionable diagnostic.
+- This policy does not promise migration of old run data or cross-minor resume. Reading a supported
+  project config, API request, or Semantic IR does not imply that an old run can be resumed.
+- Within a supported release line, patches must preserve the documented run artifact format and
+  recovery behavior. Any change to those contracts requires explicit release notes and a decision
+  about whether affected runs remain resumable.
 
 ## Deprecation And Removal
 
@@ -52,8 +72,8 @@ The required warning shape is:
 DEPRECATION: <old syntax> is deprecated; use <replacement> instead. It will be removed in <release>.
 ~~~
 
-There are no released deprecated CLI inputs in the current `0.3.0` development-test build, so it
-does not emit a compatibility warning for historical syntax that it never promised to support.
+There are no released deprecated CLI inputs in the current `1.0.0` release candidate, so it does not
+emit a compatibility warning for historical syntax that it never promised to support.
 
 ## Config And Schema Migrations
 
@@ -72,7 +92,8 @@ does not emit a compatibility warning for historical syntax that it never promis
 
 ## Development-Test Versus Released Contract
 
-The current `vNext-dev` / `0.3.0` boundary is intentionally explicit:
+The `0.3.1` development-test build remains outside the released compatibility window. The current
+`1.0.0` candidate freezes the contract intended for the first stable release:
 
 - Development-test builds may change CLI syntax, config/schema versions, generated project files,
   runtime artifacts, and Semantic IR v1 behavior between development changes.
@@ -90,9 +111,10 @@ The installed CLI exposes the same short summary through `ogs help compatibility
 
 ~~~text
 Released support: latest two minor lines of the current major release; all patches in those lines.
-Current package: 0.3.0 development-test; no stable release line or historical migration guarantee.
+Current package: 1.0.0 first stable release candidate; the public support window starts at publication.
 Unsupported inputs: future/unknown config or schema versions, malformed inputs, unsupported release
 lines, and resume artifacts whose plan fingerprint or recovery authority does not match.
+Project/API compatibility does not promise migration of old run data or cross-minor resume.
 Deprecation warnings name the replacement and planned removal release; removal is at least one minor
 release and 90 days after notice, whichever is later.
 ~~~

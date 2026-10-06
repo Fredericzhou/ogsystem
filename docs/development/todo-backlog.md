@@ -1,7 +1,7 @@
 # OGSystem Unified Backlog
 
-Date: 2026-09-03
-Status: active; current P1 execution plan reconciled 2026-09-03
+Date: 2026-10-06
+Status: active; reconciled through 2026-10-06
 
 This is the only active backlog entry point. Dated plans, reviews, and checklists stay in `docs/development/archive/` and are not daily execution lists.
 
@@ -27,9 +27,17 @@ Contract freeze notes:
 - Responsibility-seat semantics review is closed and consolidated into `docs/development/ogs-visualizer-refactor-plan.md`, `docs/usage/ogsystem-orchestration-semantics-v1.md`, and `docs/usage/ogsystem-semantics-manual.md`; the review record remains historical at `docs/development/archive/delivery/ogsystem-visualizer-responsibility-seat-review-2026-09-02.md`.
 - Semantic IR v1 foundations, state reducers, event/payload contracts, condition AST, Loop Scope, Join readiness/timeout, CAS/idempotency, runtime-native review, and ERROR* routing are closed for the current development-test baseline. Current boundaries and remaining gaps are maintained in `docs/development/semantic-gap-implementation-plan.md`.
 - Generic feedback modeling is closed: `FEEDBACK` is a transition event between existing responsibility seats, not an implicit `a-feedback`/`b-feedback` seat.
+- 2026-09-04 to 2026-09-28 runtime, Visualizer, and Studio changes are reconciled in the execution record. Human Review timeout is implemented as lazy expiry at status/inspect/review-list/resume boundaries; it does not use a background daemon and does not provide cross-host coordination.
+- Resume compatibility is explicitly out of scope: resume requires the current exact version/fingerprint; old run data is not migrated.
 
 ## Current P1
 
+- [ ] Close first stable release gates in [`release-uat-checklist.md`](release-uat-checklist.md):
+  validate the release tarball matrix, complete and sign bounded-workflow UAT, record
+  recovery/retention evidence, and complete deployed Visualizer UAT. Support policy and Node/OS/
+  package-manager scope are now recorded; validation still requires a candidate run. Use one
+  [`release-evidence/TEMPLATE.md`](release-evidence/TEMPLATE.md) record per candidate; checklist
+  completion is not evidence of execution.
 - [x] Add an optional Rust toolchain CI gate: run `tests/rust-hello-pipeline.test.mjs` when cargo is available.
 - [x] Add default `executionDirCount` threshold guidance to operations docs.
 - [x] Add cleanup audit fields: trigger threshold, cleanup duration, directory count before cleanup, and directory count after cleanup.
@@ -60,16 +68,20 @@ Contract freeze notes:
 
 ## Current P2
 
-- [ ] Freeze recursive responsibility composition: define the `ownerRoleId -> nestedSystem` IR contract, namespace/error/termination propagation rules, compiler diagnostics, and golden fixtures. Follow [`ogs-product-boundary-and-evolution.md`](ogs-product-boundary-and-evolution.md); keep organization, personnel, and concrete executor identity outside OGS core semantics.
 - [x] Define released CLI upgrade, compatibility-window, and deprecation policy. See
   [`release-compatibility-policy.md`](release-compatibility-policy.md) and `ogs help compatibility`.
-- [ ] Design semantic-compatible resume with tolerant fingerprints and degraded recovery.
 - [ ] Add a distributed lock provider for Redis/DB cross-host coordination.
 - [ ] Define shared-storage multi-instance scheduling and claim protocol.
 - [ ] Advance `state/checkpoint compact` only if benchmark data proves it is needed.
+- [ ] Reconsider staged Join first-packet/gap timeouts only when a concrete long-wait use case requires them; preserve the existing total-timeout contract.
+- [ ] Reconsider the single-host external signal inbox only when an asynchronous integration requires durable wait/signal/resume behavior.
+- [ ] Define configurable execution retries only after real failure samples establish retryable error classes, per-attempt audit needs, and resume semantics.
 
 ## Out Of Scope For The Current Mainline
 
+- Building complex applications with the framework as part of this project; project deliverables are framework capabilities and application templates/examples.
+- Productionizing application examples into real code implementation, deployment, or sustained operational workflows.
+- Recursive child-System execution; static composite declarations are validated, but execution is rejected with `IR_COMPOSITE_UNSUPPORTED`. Reconsider only if an application template demonstrates a reuse need that the current Role/Flow model cannot express clearly.
 - Plugin and hook ecosystem.
 - A new scheduler layer.
 - Multiple persistence backends.

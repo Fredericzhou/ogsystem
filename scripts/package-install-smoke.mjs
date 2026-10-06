@@ -7,11 +7,13 @@ import os from "node:os";
 import path, { dirname } from "node:path";
 
 const repoRoot = process.cwd();
-const packageManager = process.argv[2];
+const scriptArgs = process.argv.slice(2).filter((argument) => argument !== "--");
+const packageManager = scriptArgs[0];
+const suppliedTarball = scriptArgs[1] ? path.resolve(repoRoot, scriptArgs[1]) : undefined;
 const opencodeModelsFixturePath = path.resolve(repoRoot, "tests/fixtures/opencode-models-verbose.txt");
 
 if (packageManager !== "npm" && packageManager !== "pnpm") {
-  console.error("Usage: node scripts/package-install-smoke.mjs <npm|pnpm>");
+  console.error("Usage: node scripts/package-install-smoke.mjs <npm|pnpm> [tarball]");
   process.exit(1);
 }
 
@@ -132,7 +134,6 @@ async function main() {
   const installDir = path.resolve(tempRoot, "install");
   const appParent = path.resolve(tempRoot, "apps");
   const cacheDir = path.resolve(tempRoot, "cache");
-  await mkdir(packDir, { recursive: true });
   await mkdir(installDir, { recursive: true });
   await mkdir(appParent, { recursive: true });
   await mkdir(cacheDir, { recursive: true });
@@ -145,22 +146,26 @@ async function main() {
     npm_config_cache: path.resolve(cacheDir, "npm"),
     OGSYSTEM_OPENCODE_MODELS_STDOUT_FILE: opencodeModelsFixturePath
   };
-  const packManager = resolveNodeManagedCommand("pnpm");
+  let tarballPath = suppliedTarball;
+  if (!tarballPath) {
+    await mkdir(packDir, { recursive: true });
+    const packManager = resolveNodeManagedCommand("pnpm");
+    const packResult = await runCommand(
+      packManager.command,
+      [...packManager.argsPrefix, "pack", "--pack-destination", packDir],
+      {
+        cwd: repoRoot,
+        env: isolatedEnv
+      }
+    );
+    assert.equal(packResult.code, 0, packResult.stderr);
 
-  const packResult = await runCommand(
-    packManager.command,
-    [...packManager.argsPrefix, "pack", "--pack-destination", packDir],
-    {
-    cwd: repoRoot,
-    env: isolatedEnv
-    }
-  );
-  assert.equal(packResult.code, 0, packResult.stderr);
-
-  const packedFiles = await readdir(packDir);
-  const tarballName = packedFiles.find((entry) => /^ogsystem-\d+\.\d+\.\d+\.tgz$/.test(entry));
-  assert.ok(tarballName, `expected ogsystem tarball in ${packDir}`);
-  const tarballPath = path.resolve(packDir, tarballName);
+    const packedFiles = await readdir(packDir);
+    const tarballName = packedFiles.find((entry) => /^ogsystem-\d+\.\d+\.\d+(-[^/]+)?\.tgz$/.test(entry));
+    assert.ok(tarballName, `expected ogsystem tarball in ${packDir}`);
+    tarballPath = path.resolve(packDir, tarballName);
+  }
+  await stat(tarballPath);
 
   await writeFile(
     path.resolve(installDir, "package.json"),
@@ -210,6 +215,13 @@ async function main() {
   const installedPackageDir = path.resolve(installDir, "node_modules", "ogsystem");
   const ogsBinPath = path.resolve(installedPackageDir, "bin", "ogs.mjs");
   await stat(ogsBinPath);
+  const installedManifest = JSON.parse(await readFile(path.resolve(installedPackageDir, "package.json"), "utf8"));
+  const versionResult = await runCommand("node", [ogsBinPath, "--version"], {
+    cwd: installDir,
+    env: isolatedEnv
+  });
+  assert.equal(versionResult.code, 0, versionResult.stderr);
+  assert.equal(versionResult.stdout.trim(), `ogs ${installedManifest.version}`);
 
   const helpResult = await runCommand("node", [ogsBinPath, "help"], {
     cwd: installDir,
@@ -290,6 +302,20 @@ async function main() {
   } finally {
     await stopChild(visualizer);
   }
+
+  const uninstallResult = await runCommand(
+    installManager.command,
+    [...installManager.argsPrefix, ...(packageManager === "npm" ? ["uninstall", "ogsystem"] : ["remove", "ogsystem"])],
+    { cwd: installDir, env: isolatedEnv }
+  );
+  assert.equal(
+    uninstallResult.code,
+    0,
+    `package uninstall failed via ${packageManager}\nstdout=${uninstallResult.stdout}\nstderr=${uninstallResult.stderr}`
+  );
+  await assert.rejects(() => stat(installedPackageDir), /ENOENT/);
+  await stat(path.resolve(systemHomeDir, "roles", "hello-ogsystem", "role.json"));
+  await stat(path.resolve(projectDir, "system.mmd"));
 
   console.log(`package install smoke passed via ${packageManager}`);
 }

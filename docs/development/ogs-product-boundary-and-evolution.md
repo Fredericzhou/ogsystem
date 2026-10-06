@@ -10,8 +10,9 @@ because it is useful in BPMN or enterprise organization management.
 ## Product Position
 
 OGS is a recoverable workflow runtime for collaboration among abstract Responsibility Roles. A
-Role is a stable responsibility in a System and may recursively own a bounded nested System. It is
-not a person, organization member, model, service instance, or run instance.
+Role is a stable responsibility in a System. Recursive ownership of a bounded nested System is a
+future composition concept, not a capability of the current runtime. A Role is not a person,
+organization member, model, service instance, or run instance.
 
 ```text
 Role        = who is responsible
@@ -76,7 +77,7 @@ synthetic feedback roles, or silently change core routing and recovery semantics
 
 ## Recursive Responsibility Composition
 
-The intended future contract is explicit and minimal:
+The current Semantic IR has a preliminary static contract:
 
 ```ts
 type CompositeResponsibilitySpec = {
@@ -91,13 +92,15 @@ type CompositeResponsibilitySpec = {
 };
 ```
 
-The compiler must reject unknown references, composition cycles, namespace collisions, undeclared
-cross-System data access, and ambiguous completion. A parent Role is responsible for the nested
-System's declared scope; child capabilities and control permissions do not automatically inherit.
+The compiler validates nested System and contract references, namespace uniqueness, composition
+cycles, and the Role package's matching composition declaration. Cross-System state field access is
+currently rejected. A parent Role is responsible for the nested System's declared scope; child
+capabilities and control permissions do not automatically inherit.
 
-`SubgraphSpec` currently describes independently versioned subgraphs but is not yet this execution
-contract. Until the contract and tests are delivered, recursive composition is a design direction,
-not a claimed runtime feature.
+This is not an execution contract: runtime setup currently rejects composite responsibilities with
+`IR_COMPOSITE_UNSUPPORTED`. `SubgraphSpec` can describe independently versioned subgraphs, but the
+runtime does not invoke them as Role implementations. Recursive composition remains deferred until
+an application template demonstrates a concrete need.
 
 ## Standards Alignment
 

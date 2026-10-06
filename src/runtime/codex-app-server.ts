@@ -1,6 +1,7 @@
 import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
 import { createInterface } from "node:readline";
 import { randomUUID } from "node:crypto";
+import { OGS_VERSION } from "./version.js";
 
 type JsonRecord = Record<string, unknown>;
 type PendingRequest = { resolve(value: unknown): void; reject(error: Error): void; timer: NodeJS.Timeout };
@@ -38,7 +39,7 @@ export class CodexAppServerClient {
     const client = new CodexAppServerClient(child);
     try {
       await client.request("initialize", {
-        clientInfo: { name: "ogs", title: "OGSystem", version: "0.3.0" },
+        clientInfo: { name: "ogs", title: "OGSystem", version: OGS_VERSION },
         capabilities: { experimentalApi: false, requestAttestation: false }
       }, args.timeoutMs ?? 20000);
       client.notify("initialized");

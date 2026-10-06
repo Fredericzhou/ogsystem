@@ -1,7 +1,8 @@
 # OGSystem Unified Backlog Execution Plan
 
-Date: 2026-09-03
-Status: reconciled; P2 deferred items remain explicitly gated
+Original date: 2026-09-03
+Reconciled: 2026-10-06
+Status: reconciled through 2026-10-06; deferred items remain explicitly gated
 Source backlog: [`todo-backlog.md`](todo-backlog.md)
 Scope: current mainline development-test baseline
 
@@ -54,6 +55,59 @@ runtime regression suite. Do not use a passing build as a substitute for the tas
 
 ## 2. Baseline And Reconciliation
 
+### 2.0 Reconciliation through 2026-10-06
+
+The source range reviewed was `58f49b0e..3f7af75d` (2026-09-03 through 2026-09-28). It includes
+runtime contract changes, ELK layout and Visualizer work, Studio authoring and sessions, and the
+Human Review timeout recovery fix. The range changes 60 test files across runtime/compiler
+contracts, model discovery, CLI/lifecycle, session recovery, Human Review artifacts, Visualizer
+unit tests, and Visualizer browser suites. Representative files include
+`tests/graph-runtime.integration.test.mjs`, `tests/runtime-fault-injection.test.mjs`,
+`tests/human-review-artifacts.test.mjs`, `tests/session-recovery.test.mjs`,
+`tests/visualizer-studio-authoring.test.mjs`, and both `tests-e2e/visualizer-*.spec.ts` suites.
+Changed test files are evidence of intended coverage only; they are not evidence that the tests
+passed in this reconciliation.
+
+Semantic-gap priority decisions, synchronized to the unified backlog:
+
+- Human Review lazy timeout: implemented and covered by focused tests; no background daemon and no
+  cross-host coordination. Closed for the current single-host baseline.
+- Staged Join first-packet/gap timeout: no concrete demand established; defer as demand-gated P2.
+  Existing total Join timeout semantics remain unchanged.
+- External signal wait/resume: no current integration requirement established; defer as
+  demand-gated P2, bounded to a single-host file inbox if reopened.
+- Configurable execution retry: defer as data-gated P2 until real failure classes, attempt audit,
+  and crash/resume behavior can be specified. Existing transport retries do not establish a
+  general execution retry contract.
+
+The GStacklike plan now reflects implemented lazy Human Review expiry and its single-host boundary.
+The example remains an application template/demo. Building a complex application with the
+framework, or productionizing this example with real code implementation and deployment, is outside
+this project's scope.
+
+### 2.0.1 Verification record
+
+Record only commands actually run during this reconciliation. A test file appearing in the source
+range above does not imply a passing result.
+
+| Command | Result |
+| --- | --- |
+| `pnpm run build` | Passed after restoring lockfile dependencies with `pnpm install --frozen-lockfile`; initial attempt stopped because local `yaml` was missing. |
+| `pnpm run test:docs-command-drift` | Passed. |
+| `pnpm run test:runtime-regression` | Passed: 49 tests, 0 failed. |
+| `node --test tests/human-review-artifacts.test.mjs` | Passed: 5 tests, 0 failed. |
+| `pnpm run test:visualizer` | Passed, including Studio guardrails, client/server tests, and 37 layout tests. |
+| `pnpm run test:visualizer-browser` | Passed on the final ordinary run: 11 passed, 1 skipped. The skipped case is the deployed Visualizer UAT. |
+| `pnpm run test:examples` | Passed, including all OGSystem GStacklike runtime-native review scenarios. |
+| `git diff --check` | Passed after final edits. |
+
+The first browser run exposed a macOS keyboard shortcut mismatch in the contract editor test
+(`Control+A` did not select all) and stale macOS screenshots after the current Studio layout
+changes. The test now uses the platform select-all shortcut; screenshots mask the random `#workdir`
+path and the macOS baselines were regenerated after visual inspection. A subsequent ordinary run
+passed. Test-file changes in the reviewed commit range remain recorded above as coverage intent and
+are not treated as evidence for these results.
+
 ### 2.1 Verified baseline
 
 The following checks passed on 2026-09-03:
@@ -80,23 +134,19 @@ The initial replay benchmark attempt was slow to complete; PERF-01/02 subsequent
   [`elk-layout-adapter.ts`](../../src/visualizer/studio-client/elk-layout-adapter.ts:1) and
   [`semantic-layout-projection.ts`](../../src/visualizer/studio-client/semantic-layout-projection.ts:327).
 
-## 3. Execution Order
+## 3. Current Execution Order
 
-The recommended order is:
+The original P1 sequence in this dated plan is complete and has been reconciled above. Do not start
+the old Visualizer layout, Model Discovery, or operations tasks again.
 
-1. Reconcile stale backlog entries and assign owners.
-2. Land low-risk documentation and CI tasks.
-3. Make the replay benchmark cheap, reproducible, and recordable.
-4. Establish the 500+ recovery baseline before introducing compaction or concurrency work.
-5. Execute Model Discovery in the frozen order `MODEL-01 -> MODEL-03 -> MODEL-02 -> MODEL-04 -> MODEL-05`.
-6. Resolve the Visualizer layout adapter decision, then implement layout diagnostics before UI
-   reading modes and the conversation projection.
-7. Implement or validate the remaining Visualizer operator surfaces.
-8. Define P2 policies only after the preceding evidence is available. Keep distributed operation
-   work paused unless the product boundary changes.
-
-The first executable batch is `OPS-01`, `DOC-01`, and `DOC-02`. `OPS-02` and `OPS-03` are
-reconciliation tasks, not new implementation work.
+1. Keep project work within framework capabilities and application templates/examples. Do not
+   select complex application implementation or example productionization as a product track.
+2. Keep staged Join timeout and external signal work demand-gated; keep configurable retries
+   data-gated. Promote an item only with a concrete use case and its recovery/audit boundary.
+3. Reopen recursive composition only if an application template demonstrates a concrete reuse need
+   that the current Role/Flow model cannot express clearly. Multi-host coordination still requires
+   an explicit product boundary; keep checkpoint compaction benchmark-gated. Tolerant resume is
+   closed by decision and is not to be reopened for the current scope.
 
 ## 4. P1 Runtime, Operations, And Documentation
 
@@ -914,20 +964,11 @@ no migration command or cross-version resume guarantee was added.
 
 ### P2-02 Semantic-compatible resume
 
-Status: `blocked by explicit current boundary`
-Owner: TBD
-Dependency: product decision to change strict fingerprint policy
-Targets: `src/runtime/plan-fingerprint.ts`, resume validation, migration tests, semantics docs
+Status: `closed by product decision`
+Decision: resume uses the exact current version/fingerprint; no semantic compatibility or old-run migration is required.
 
-The current development-test contract is strict fail-closed resume. The semantic-gap plan explicitly
-defers tolerant fingerprints and degraded recovery. Keep this item in design-only status until a
-product decision authorizes changing that boundary.
-
-Acceptance for a future design only:
-
-- Compatibility classes, data-loss semantics, audit wording, and operator confirmation are defined.
-- No implementation weakens current resume validation implicitly.
-- Old-run migration and rollback behavior are specified before code changes.
+The strict fail-closed resume contract remains in force. Tolerant fingerprints, degraded recovery,
+and migration of old run data are not planned.
 
 ### P2-03 Distributed lock provider
 

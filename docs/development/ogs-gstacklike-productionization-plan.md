@@ -1,13 +1,18 @@
 # OGS GStacklike Productionization Plan
 
-Status: proposal
+Status: deferred reference; outside current project scope
 Date: 2026-09-26
+
+> Scope boundary: this project provides framework capabilities and application templates/examples.
+> It does not build complex applications with the framework or productionize this example into a
+> real implementation, deployment, or sustained operations workflow. The phases below are retained
+> only as future reference if that project boundary changes.
 
 ## Goal
 
-Evolve `examples/ogs-gstacklike/` from a deterministic orchestration demonstration into a
-production-shaped software delivery workflow. Keep the example small, make each role correspond to
-a real responsibility boundary, and require evidence before release decisions.
+If the project boundary changes in the future, this proposal describes how `examples/ogs-gstacklike/`
+could evolve from a deterministic orchestration demonstration into a production-shaped software
+delivery workflow. This is not a current project goal.
 
 This plan does not claim that the current example or runtime is ready for every production
 environment. It separates workflow improvements from platform capabilities that remain outside
@@ -15,10 +20,11 @@ the current single-host runtime boundary.
 
 ## Current Baseline
 
-The current workflow demonstrates local role execution, runtime-native human review, resume,
-rework context, shared run artifacts, and error routing. The current local scripts return fixed
-role results, so they validate orchestration mechanics rather than the quality of real engineering,
-test, or deployment work.
+The current workflow demonstrates local role execution, runtime-native human review, lazy review
+timeout reconciliation, resume, rework context, shared run artifacts, and error routing. Review
+expiry is checked by status/inspect/review-list/resume operations; there is no background expiry
+daemon. The current local scripts return fixed role results, so they validate orchestration
+mechanics rather than the quality of real engineering, test, or deployment work.
 
 The example should not claim that a deployment failure was compensated unless a concrete recovery
 action ran and its result was verified. When no compensation action is configured, the error handler
@@ -132,15 +138,16 @@ platform controls for the deployment context:
 - durable storage and recovery guarantees appropriate to the run's impact;
 - multi-instance coordination if runs can be resumed or controlled from multiple hosts;
 - identity and authorization for review decisions and privileged tools;
-- review timeout, escalation, and external signal handling where the business process requires it;
+- external signal handling where the business process requires it;
 - concurrency limits, queueing, retention, secret handling, and audit access policy;
 - monitoring for run status, role failures, review wait, deployment health, and recovery outcome.
 
 These controls are not all implemented by the current example. In particular, the current runtime
 uses local filesystem artifacts and single-host resume locking, schedules logical fan-out
-sequentially, and does not automatically expire human reviews. Treat multi-instance operation,
-automatic review expiry, and physically concurrent execution as separate platform work, not as
-properties provided by this example.
+sequentially, and reconciles review expiry only when status/inspect/review-list/resume checks run.
+It does not run a background expiry daemon or provide cross-host coordination. Treat multi-instance
+operation, external signal handling, and physically concurrent execution as separate platform work,
+not as properties provided by this example.
 
 ## Production Readiness Levels
 
@@ -150,11 +157,13 @@ properties provided by this example.
 | Controlled pilot | Run a bounded, reversible workflow with a human release gate. | Real implementation and tests, isolated workspace, explicit approval, observable artifacts, manual recovery path. |
 | Sustained production | Run business-critical or multi-team workflows. | Pilot bar plus durable operations, identity/authorization, concurrency and retention policies, alerting, and tested recovery. |
 
-The current example is at the demo level. The intended next milestone is a controlled pilot, not a
-general enterprise process platform.
+The current example is an application template/demo. A controlled pilot is not a current project
+milestone; the implementation phases below are deferred reference only.
 
 ## Out of Scope
 
+- Building the software-delivery application described by this example as a project deliverable.
+- Turning the example into a real code implementation, deployment, or sustained operations workflow.
 - Modeling a complete company hierarchy or assigning every Role to an employee.
 - Replacing OGS core semantics with BPMN or introducing generic gateway/task nodes.
 - Adding roles that have no independent contract, authority, or operational responsibility.
@@ -162,7 +171,7 @@ general enterprise process platform.
 - Claiming distributed scheduling, automatic review expiry, or physical parallelism without the
   corresponding runtime implementation and tests.
 
-## Recommended Implementation Order
+## Deferred Reference Sequence
 
 1. Correct the README command and keep the simulated scenario suite reliable on supported shells.
 2. Specify the implementation and verification handoff contracts.

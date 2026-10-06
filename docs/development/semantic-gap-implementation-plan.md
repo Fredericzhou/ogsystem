@@ -1,7 +1,7 @@
 # OGSystem 语义缺口与实施计划
 
-更新时间：2026-09-02
-状态：active（P0 与基础运行语义已完成；剩余 P1/P2 按需实施）
+更新时间：2026-10-06
+状态：设计参考；当前优先级以 `todo-backlog.md` 为准
 适用范围：当前 runtime、CLI、Visualizer 与文档声明的语义边界
 
 ## 1. 结论
@@ -35,19 +35,19 @@
 
 验收：解析器、NL2MMD 字典、fingerprint 和用户文档不再把 `talent.bind` 作为当前输入；测试仅保留对该已移除键的拒绝回归。
 
-## 4. P1：剩余 Runtime 实现
+## 4. 已裁定事项与需求门槛
 
-### P1-1 Join 分阶段等待超时
+### Join 分阶段等待超时（需求触发的 P2）
 
 价值：在已有 Join 总等待超时之外，区分首包等待和相邻 source 到达间隔，并支持超时补偿。
 
 当前状态：基础 Join 超时已实现并由 Semantic IR 的 `timeoutSeconds`、`failurePolicy`、`onTimeout` 驱动，包含审计、恢复和 `terminated`/`stopped`/`failed` 收敛。`docs/development/ogsystem-wait-timeout-semantics-v2.md` 中的 `join.first_packet.*`、`join.gap.*` 和对应 timeout failure envelope 仍为 RFC/未实现。
 
-最小范围（后续）：实现 `join.first_packet.*`、`join.gap.*`、`join.on_timeout.*=FAIL`、`GRAPH_JOIN_FIRST_PACKET_TIMEOUT`、`GRAPH_JOIN_GAP_TIMEOUT`、WAL/resume 恢复、单次触发去重和审计。不得引入新的 YAML 配置面，也不改变现有基础 Join 超时合同。
+裁定：当前没有明确的长等待用例要求区分首包等待与 source 间隔，暂不进入近期执行。只有需求成立后，才按以下边界设计：实现 `join.first_packet.*`、`join.gap.*`、`join.on_timeout.*=FAIL`、对应错误码、WAL/resume 恢复、单次触发去重和审计。不得引入新的 YAML 配置面，也不改变现有基础 Join 超时合同。
 
 验收：旧图行为不变；超时可进入 `ERROR.<code>`、`ERROR` 或 fail-stop；scheduler 不会在仍有 pending join 时提前结束；resume 不重复触发。
 
-### P1-2 Human Review 自动超时
+### Human Review 惰性超时（已实现）
 
 价值：让现有 `review.timeout` 真正提供 SLA 保障。
 
@@ -55,21 +55,21 @@
 
 实现边界：到期时间由 `requestedAt + timeoutSeconds` 计算；若进程在 durable decision 写入后、事件落盘前中断，后续检查会补齐事件。decision artifact 是恢复权威，timeout event 用固定 event id 便于识别重复记录。检查并发在进程内按 run 串行处理。
 
-验收：已覆盖 deadline 前不触发、并发检查只生成一份 decision/event、事件缺失后的恢复、未配置 timeout 保持 pending、timeout pause 保持 actionable，以及 terminate decision 经 resume 写入 checkpoint 并只发出一次过期事件。跨进程 inspect/list 的协调仍依赖文件系统原子创建 decision；事件日志以 event id 提供重复识别，尚未承诺跨主机分布式锁。
+验收：代码和测试覆盖 deadline 前不触发、并发检查只生成一份 decision/event、事件缺失后的恢复、未配置 timeout 保持 pending、timeout pause 保持 actionable，以及 terminate decision 经 resume 写入 checkpoint 并只发出一次过期事件。2026-10-06 对账运行结果见统一执行计划的验证记录。跨进程 inspect/list 的协调依赖文件系统原子创建 decision；没有后台 daemon，也不承诺跨主机分布式锁。
 
-### P1-3 外部信号等待与恢复
+### 外部信号等待与恢复（需求触发的 P2）
 
 价值：支持异步任务、外部系统回调和人工系统之外的等待点。
 
-最小范围：单机文件型 signal inbox、等待状态、`run signal` 控制入口、checkpoint/resume 对账；不引入外部控制平面和新图节点。
+裁定：当前没有明确的外部异步集成要求，暂缓。需求成立后，最小范围为单机文件型 signal inbox、等待状态、`run signal` 控制入口、checkpoint/resume 对账；不引入外部控制平面和新图节点。
 
 验收：信号只能消费一次，错误 signal 不改变运行状态，crash/resume 不丢失或重复消费信号。
 
-### P1-4 可配置执行重试策略
+### 可配置执行重试策略（数据门槛 P2）
 
 价值：当前只有 OpenCode 固定 3 次、固定退避的传输级重试；本地 `exec.bind` 没有等价策略，失败后只能依赖异常边或业务循环。
 
-最小范围：把 retry/backoff/可重试错误分类放在 profile 或 runtime execution policy，不扩展 Mermaid DSL；每次 attempt 独立落盘并纳入审计/fingerprint。`ERROR*` 仍只在重试耗尽后触发。
+裁定：暂不抽象通用重试策略。先收集真实失败样本，确定 retry/backoff/可重试错误分类、每次 attempt 的持久化与审计/fingerprint 语义，再决定是否放在 profile 或 runtime execution policy；不扩展 Mermaid DSL。`ERROR*` 仍只在重试耗尽后触发。
 
 验收：model/profile 行为可分别配置；不可重试错误不重复执行；重试和 resume 均幂等，现有默认策略保持兼容。
 
@@ -100,12 +100,12 @@
 - 在没有实测资源压力前引入新的 scheduler 层。
 - 继续扩展 Studio 功能或增加新的 DSL 语义关键字。
 
-## 7. 交付顺序
+## 7. 后续评估顺序
 
-1. 完成 P0 文档与兼容性语义收口。
-2. 按真实长等待需求评估并实现 Human Review timeout 与 Join 分阶段等待超时；基础 Join 超时无需重复建设。
-3. 实现外部 signal 的单机文件型恢复闭环。
-4. 根据 benchmark 决定执行重试、受控并发和观测字段的具体范围。
+1. 按统一 backlog 排序；本计划不作为独立活跃待办入口。
+2. 只有出现具体长等待场景时，重新评估 Join 分阶段等待。
+3. 只有出现具体外部异步集成时，重新评估单机 signal 恢复。
+4. 根据真实失败样本和恢复要求，评估可配置重试；根据 benchmark 评估并发与观测字段。
 5. 最后评估能力标签路由和外部 Worker 合同。
 
 ## 8. 本轮收口记录
@@ -116,4 +116,6 @@
 - P0-2 已完成：`talent.bind` 已从当前 DSL、解析结果和 fingerprint 中移除。
 - 基础 Join 超时已完成：`timeoutSeconds`、`failurePolicy`、`onTimeout` 已进入 IR 和运行时主路径；分阶段 `first_packet/gap` 等待继续保留为 RFC。
 - 当前开发测试版本不提供旧 DSL、配置或运行数据迁移；旧格式直接拒绝，resume 只接受当前规范版本和恢复权威集。
+- 2026-10-06 产品决策：resume 只接受最新版本和精确 fingerprint；不提供语义兼容恢复、降级恢复或旧运行数据迁移。
+- 2026-10-06 优先级对账：Human Review 惰性超时已实现；Join 分阶段等待和外部 signal 降为需求触发的 P2；可配置执行重试为数据门槛 P2。当前优先级以统一 backlog 为准。
 - 验证要求：文档漂移检查、类型/构建检查、现有测试与 `git diff --check` 必须通过；归档文档可保留当时的历史语境，不作为当前语义契约。
