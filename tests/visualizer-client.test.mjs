@@ -196,6 +196,7 @@ test("Studio debug outcome prioritizes pending human review and keeps run state 
   assert.match(html, /proposal-author/);
   assert.match(html, /review-1/);
   assert.match(html, /data-studio-open-review="review-1"/);
+  assert.match(html, /data-studio-debug-run-id[^>]*>Run run-123/);
   assert.match(html, /studio-debug-summary/);
   assert.doesNotMatch(html, /decisionPhase/);
 });
@@ -327,6 +328,9 @@ test("Studio system and handoff contract panels are localized in Chinese", () =>
   assert.match(configured, /已覆盖 1 \/ 2 条适用流转/);
   assert.match(configured, /拆分流转/);
   assert.match(configured, /已覆盖/);
+  assert.match(configured, /studio-contract-coverage/);
+  assert.match(configured, /studio-contract-row-head/);
+  assert.match(configured, /studio-contract-match/);
   assert.doesNotMatch(configured, /Handoff contracts|Flow \/ role|Contract list|On violation/);
 });
 
@@ -1455,7 +1459,7 @@ function createBackend(options = {}) {
   });
   const secondaryRun = buildRunFixture({
     runId: secondRunId,
-    reviewId: "review-2",
+    reviewId: options.sameReviewIdAcrossRuns ? reviewId : "review-2",
     runStatus: "failed",
     decisionPhase: "recorded",
     roleId: "citation-engineer",
@@ -2212,6 +2216,7 @@ function createBackend(options = {}) {
           runs: [...runFixtures.values()].map((fixture) => ({
             runId: fixture.runId,
             runDir: `/tmp/${fixture.runId}`,
+            isSimulation: fixture.runId === options.latestDryRunId,
             status: fixture.detail.header.status,
             transitionCount: 1,
             lastExecutedRoleId: fixture.detail.header.lastExecutedRoleId,
@@ -2225,10 +2230,11 @@ function createBackend(options = {}) {
         this.lastStartBody = JSON.parse(request.body ?? "{}");
         return createResponse({
           runId,
-          status: "done",
+          status: options.startRunStatus ?? "done",
           resultSummary: {
             systemId: "viz.review.demo",
-            transitionCount: 1
+            transitionCount: 1,
+            hasWaitingHumanReview: options.startRunWaitingForReview === true
           },
           followUpActions: [{ action: "open-run-detail", label: "Open run." }]
         });
@@ -3874,6 +3880,74 @@ test("visualizer client review action captures a comment, disables controls whil
   );
 });
 
+test("visualizer client keeps identical review ids independent across runs", async () => {
+  const backend = createBackend({ includeSecondRun: true, sameReviewIdAcrossRuns: true });
+  const harness = await createClientHarness({ backend, search: "?runId=run-123" });
+  const secondRun = harness.document.getElementById("run-list")
+    .querySelectorAll("[data-run-id]")
+    .find((button) => button.getAttribute("data-run-id") === "run-456");
+  assert.ok(secondRun);
+
+  await secondRun.click();
+  await settle();
+  await harness.document.getElementById("operate-tab-reviews").click();
+  const secondReview = harness.document.getElementById("reviews")
+    .querySelectorAll("[data-review-id]")
+    .find((button) => button.getAttribute("data-review-id") === "review-1");
+  assert.ok(secondReview);
+  await secondReview.click();
+  await settle();
+
+  const approve = harness.document.getElementById("review-actions")
+    .querySelectorAll("[data-review-action]")
+    .find((button) => button.getAttribute("data-review-action") === "approve");
+  assert.ok(approve);
+  await approve.click();
+  await harness.document.getElementById("action-form-submit").click();
+  await settle();
+
+  assert.ok(backend.fetchCalls.some((call) => call.path === "/api/v1/runs/run-456/reviews/review-1/decide"));
+  assert.equal(backend.lastDecisionBody.decision, "approve");
+  assert.equal(backend.review.decision, undefined);
+
+  const firstRun = harness.document.getElementById("run-list")
+    .querySelectorAll("[data-run-id]")
+    .find((button) => button.getAttribute("data-run-id") === "run-123");
+  assert.ok(firstRun);
+  await firstRun.click();
+  await settle();
+  assert.equal(backend.fetchCalls.some((call) => call.path === "/api/v1/runs/run-123/reviews/review-1/decide"), false);
+  assert.match(harness.document.getElementById("review-detail").textContent, /demo-analyst/);
+});
+
+test("visualizer client opens a routed review with its tab panel visible on first render", async () => {
+  const harness = await createClientHarness({ search: "?runId=run-123&reviewId=review-1" });
+
+  assert.equal(harness.document.getElementById("operate-tab-reviews").getAttribute("aria-selected"), "true");
+  assert.equal(harness.document.getElementById("operate-tabpanel-reviews").hidden, false);
+  assert.match(harness.document.getElementById("review-detail").textContent, /review-1/);
+});
+
+test("Studio debug review shortcut shows review content on its first navigation", async () => {
+  const harness = await createClientHarness({
+    backend: createBackend({ latestDryRunId: "run-123" }),
+    search: "?lifecycle=design"
+  });
+  await openDesignTab(harness);
+  await waitForCondition(() => Boolean(findStudioSideTabButton(harness, "debug")));
+  await findStudioSideTabButton(harness, "debug").click();
+  await waitForCondition(() => Boolean(harness.document.getElementById("workbench-body")
+    .querySelector('[data-studio-open-review="review-1"]')));
+
+  await harness.document.getElementById("workbench-body")
+    .querySelector('[data-studio-open-review="review-1"]').click();
+  await waitForCondition(() => harness.document.getElementById("operate-tab-reviews")
+    ?.getAttribute("aria-selected") === "true");
+
+  assert.equal(harness.document.getElementById("operate-tabpanel-reviews").hidden, false);
+  assert.match(harness.document.getElementById("review-detail").textContent, /review-1/);
+});
+
 test("visualizer client action failures stay local and show an error flash", async () => {
   const harness = await createClientHarness({
     backend: createBackend({ failDecision: true })
@@ -4275,7 +4349,7 @@ test("visualizer client edits the Mermaid workbench, saves, and starts a run", a
   assert.equal(harness.backend.lastStartBody.userProfilePath, ".ogs/user-profile.json");
   assert.equal(harness.backend.lastStartBody.lawsPath, ".ogs/laws.json");
   assert.equal(harness.promptCalls.length, 0);
-  assert.equal(harness.document.getElementById("flash").textContent, "Start completed for run-123 (done).");
+  assert.equal(harness.document.getElementById("flash").textContent, "Run ended for run-123 (status: done).");
   assert.equal(
     harness.document.getElementById("console-tabs")
       .querySelectorAll("[data-console-tab]")
@@ -4295,6 +4369,27 @@ test("visualizer client edits the Mermaid workbench, saves, and starts a run", a
   assert.equal(harness.document.getElementById("workbench-body").querySelectorAll("[data-studio-side-tab]").length, 2);
   const debugBody = harness.document.getElementById("workbench-body").textContent;
   assert.match(debugBody, /Debug|Start dry run/i);
+});
+
+test("visualizer reports a waiting human review instead of run completion after start", async () => {
+  const harness = await createClientHarness({
+    readinessCanDryRun: true,
+    startRunStatus: "stopped",
+    startRunWaitingForReview: true
+  });
+  await openDesignTab(harness);
+  await waitForCondition(() => Boolean(findStudioSideTabButton(harness, "debug")));
+  await findStudioSideTabButton(harness, "debug").click();
+  await waitForCondition(() => Boolean(findWorkbenchStartRunButton(harness)));
+  await findWorkbenchStartRunButton(harness).click();
+  await waitForCondition(() => Boolean(harness.document.getElementById("workbench-run-input")));
+  await harness.document.getElementById("workbench-run-input").input("wait for human review");
+  await harness.document.getElementById("workbench-start-run").click();
+  await settle();
+
+  assert.ok(harness.backend.lastStartBody);
+  assert.equal(harness.document.getElementById("flash").textContent, "Run run-123 is paused and waiting for human review.");
+  assert.match(harness.document.getElementById("flash").className, /info/);
 });
 
 test("visualizer offers a confirmed real-run form from the Build debug panel", async () => {
@@ -4669,6 +4764,8 @@ test("visualizer client shows role config labels and opens role I/O modal from s
     t: testTranslator
   });
   assert.match(contractEditorHtml, /data-contract-kind/);
+  assert.match(contractEditorHtml, /studio-contract-row-head/);
+  assert.match(contractEditorHtml, /studio-contract-coverage/);
   assert.match(contractEditorHtml, /data-contract-role-fields/);
   assert.match(contractEditorHtml, /data-contract-flow-fields/);
   assert.match(contractEditorHtml, /data-contract-manifest-save/);

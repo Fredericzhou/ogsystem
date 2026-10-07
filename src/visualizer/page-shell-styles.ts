@@ -2335,6 +2335,34 @@ export function renderPageShellStyles(): string {
       grid-template-columns: repeat(2, minmax(0, 1fr));
       gap: 8px;
     }
+    .studio-contract-coverage {
+      max-width: 100%;
+      overflow-x: auto;
+    }
+    .studio-contract-coverage .data-table {
+      min-width: 520px;
+    }
+    .studio-contract-row {
+      display: grid;
+      gap: 10px;
+      min-width: 0;
+      padding: 12px 0;
+      border-top: 1px solid var(--border);
+    }
+    .studio-contract-row-head {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) minmax(0, 1.5fr) 36px;
+      align-items: end;
+      gap: 8px;
+    }
+    .studio-contract-row-head > button {
+      width: 36px;
+      min-height: 36px;
+      padding: 0;
+    }
+    .studio-contract-match {
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
     .field {
       display: grid;
       gap: 6px;
@@ -3091,6 +3119,20 @@ export function renderPageShellStyles(): string {
         overflow-wrap: anywhere;
       }
       .form-grid {
+        grid-template-columns: 1fr;
+      }
+      .studio-contract-row-head {
+        grid-template-columns: minmax(0, 1fr) 36px;
+      }
+      .studio-contract-row-head > .field:nth-child(2) {
+        grid-column: 1;
+        grid-row: 2;
+      }
+      .studio-contract-row-head > button {
+        grid-column: 2;
+        grid-row: 1 / span 2;
+      }
+      .studio-contract-match {
         grid-template-columns: 1fr;
       }
       .log-toolbar {

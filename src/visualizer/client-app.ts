@@ -1244,6 +1244,7 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
         layoutModeCompact: t("studio.graph.layoutModeCompact", undefined, "Compact"),
         layoutModeStacked: t("studio.graph.layoutModeStacked", undefined, "Stacked"),
         topologyOrder: t("studio.graph.topologyOrder", undefined, "Topology order"),
+        reviewBadge: t("studio.reviewBadge", undefined, "human review"),
         topologyOrderEnabled: t("studio.graph.topologyOrderHide", undefined, "Hide topology numbers"),
         topologyOrderDisabled: t("studio.graph.topologyOrderShow", undefined, "Show topology numbers"),
         contextEdit: t("studio.graph.contextEdit", undefined, "Edit"),
@@ -3769,7 +3770,11 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
           const rows = workbenchBodyEl.querySelector("[data-contract-rows]");
           const template = workbenchBodyEl.querySelector("[data-contract-row-template]");
           const row = template?.content?.firstElementChild?.cloneNode(true);
-          if (rows && row) rows.appendChild(row);
+          if (rows && row) {
+            rows.appendChild(row);
+            bindStudioRoleConfigEditorControls();
+            row.querySelector('[data-contract-property="id"]')?.focus();
+          }
         });
       }
       for (const button of Array.from(workbenchBodyEl.querySelectorAll("[data-contract-remove]"))) {
@@ -6103,7 +6108,9 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
       if (!state.reviews?.reviews?.length) {
         reviewsEl.innerHTML = '<div class="hint">' + escapeText(t("review.noReviews")) + '</div>';
         reviewActionsEl.innerHTML = "";
-        reviewDetailEl.innerHTML = '<div class="hint">' + escapeText(t("state.noReviewSelected")) + '</div>';
+        reviewDetailEl.innerHTML = '<div class="hint">' + escapeText(state.selectedReviewId
+          ? t("review.detailLoading", undefined, "Loading review details...")
+          : t("state.noReviewSelected")) + '</div>';
         renderActionState();
         return;
       }
@@ -7255,10 +7262,13 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
           lawsPath: args.lawsPath || undefined
         });
         closeActionForm();
-        setFlash("success", t("flash.startCompleted", {
-          runId: payload.runId,
-          status: displayUiToken(payload.status, t)
-        }));
+        const waitingForReview = payload.resultSummary?.hasWaitingHumanReview === true;
+        setFlash(waitingForReview ? "info" : "success", waitingForReview
+          ? t("flash.startWaitingReview", { runId: payload.runId })
+          : t("flash.startCompleted", {
+              runId: payload.runId,
+              status: displayUiToken(payload.status, t)
+            }));
         if (args.dryRun && payload.runId) {
           state.studioBridgeLastDryRunId = payload.runId;
           state.buildMode = "debug";
@@ -7683,7 +7693,8 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
 
     async function refreshSelectedReviewDetail(runId, options) {
       const requestId = state.runSelectionRequestId;
-      if (!state.selectedReviewId) {
+      const reviewId = state.selectedReviewId;
+      if (!reviewId) {
         state.reviewDetail = null;
         renderReviews();
         renderDetail();
@@ -7692,14 +7703,14 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
       }
       try {
         const reviewDetail = await requestJson(
-          \`\${API_PREFIX}/runs/\${encodeURIComponent(runId)}/reviews/\${encodeURIComponent(state.selectedReviewId)}\`
+          \`\${API_PREFIX}/runs/\${encodeURIComponent(runId)}/reviews/\${encodeURIComponent(reviewId)}\`
         );
-        if (!isCurrentRunSelection(runId, requestId)) {
+        if (!isCurrentRunSelection(runId, requestId) || state.selectedReviewId !== reviewId) {
           return;
         }
         state.reviewDetail = reviewDetail;
       } catch (error) {
-        if (!isCurrentRunSelection(runId, requestId)) {
+        if (!isCurrentRunSelection(runId, requestId) || state.selectedReviewId !== reviewId) {
           return;
         }
         if (options?.allowMissing) {
@@ -7985,12 +7996,15 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
       }
       state.projectHome = false;
       state.operateTab = "reviews";
-      renderOperateTabs();
+      state.reviewDetail = null;
+      renderConsoleTabs();
       state.selectedReviewId = reviewId;
       const reviewDisclosure = document.getElementById("review-detail-disclosure");
       if (reviewDisclosure) reviewDisclosure.open = true;
       closeActionForm();
+      renderReviews();
       await refreshSelectedReviewDetail(runId, { allowMissing: false });
+      if (state.selectedRunId !== runId || state.selectedReviewId !== reviewId) return;
       renderSelectedRun();
       writeRouteToLocation();
     }

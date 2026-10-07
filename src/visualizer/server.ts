@@ -449,6 +449,7 @@ function summarizeAdapterResult(result: unknown): Record<string, unknown> {
   const record = asRecord(result) ?? {};
   const runSummary = asRecord(record.runSummary) ?? {};
   const errorEnvelope = asRecord(record.errorEnvelope) ?? {};
+  const systemState = asRecord(record.systemState) ?? {};
   return {
     systemId: asString(record.systemId),
     systemVersion: asString(record.systemVersion),
@@ -456,7 +457,8 @@ function summarizeAdapterResult(result: unknown): Record<string, unknown> {
     transitionCount: asNumber(runSummary.totalTransitions),
     stageCount: Array.isArray(record.stages) ? record.stages.length : undefined,
     error: asString(record.error),
-    errorCode: asString(errorEnvelope.errorCode)
+    errorCode: asString(errorEnvelope.errorCode),
+    hasWaitingHumanReview: systemState.hasWaitingHumanReview === true
   };
 }
 

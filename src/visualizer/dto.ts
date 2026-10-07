@@ -120,6 +120,7 @@ export type RunResultSummaryView = {
   stageCount?: number;
   error?: string;
   errorCode?: string;
+  hasWaitingHumanReview?: boolean;
 };
 
 export type RunLifecycleView = {
@@ -842,7 +843,8 @@ export function mapRunLifecycleView(value: unknown): RunLifecycleView {
       transitionCount: asNumber(resultSummary.transitionCount),
       stageCount: asNumber(resultSummary.stageCount),
       error: asString(resultSummary.error),
-      errorCode: asString(resultSummary.errorCode)
+      errorCode: asString(resultSummary.errorCode),
+      hasWaitingHumanReview: asBoolean(resultSummary.hasWaitingHumanReview)
     },
     followUpActions: mapFollowUpActions(record.followUpActions)
   };
