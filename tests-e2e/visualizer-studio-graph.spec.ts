@@ -940,7 +940,41 @@ test("SCC container drag moves every member node with the container", async ({ p
       const marker = markerId ? document.getElementById(markerId) : null;
       return Number.parseFloat(marker?.getAttribute("refX") || "NaN");
     }));
-    expect(loopMarkerReferenceOffsets).toEqual([-16, -16]);
+    expect(loopMarkerReferenceOffsets).toEqual([-8, -8]);
+    await expect.poll(async () => page.evaluate(() => Array.from(
+      document.querySelectorAll<SVGGElement>('#studio-graph-root .x6-edge.is-loop-back')
+    ).map((edge) => {
+      const path = edge.querySelector<SVGPathElement>('path[marker-end]');
+      const matrix = path?.getScreenCTM();
+      if (!path || !matrix || path.getTotalLength() < 8) return false;
+      const length = path.getTotalLength();
+      const endpointPoint = path.getPointAtLength(length);
+      const beforePoint = path.getPointAtLength(length - 6);
+      const endpoint = new DOMPoint(endpointPoint.x, endpointPoint.y).matrixTransform(matrix);
+      const before = new DOMPoint(beforePoint.x, beforePoint.y).matrixTransform(matrix);
+      const nodes = Array.from(document.querySelectorAll<HTMLElement>("#studio-graph-root .x6-node:not([data-cell-id^='__ogs-scc-'])"));
+      const distanceToRect = (point: DOMPoint, rect: DOMRect) => Math.hypot(
+        Math.max(rect.left - point.x, 0, point.x - rect.right),
+        Math.max(rect.top - point.y, 0, point.y - rect.bottom)
+      );
+      const target = nodes.map((node) => ({ node, rect: node.getBoundingClientRect() }))
+        .sort((left, right) => distanceToRect(endpoint, left.rect) - distanceToRect(endpoint, right.rect))[0];
+      if (!target) return false;
+      const rect = target.rect;
+      const side = [
+        { side: "left", value: Math.abs(endpoint.x - rect.left) },
+        { side: "right", value: Math.abs(endpoint.x - rect.right) },
+        { side: "top", value: Math.abs(endpoint.y - rect.top) },
+        { side: "bottom", value: Math.abs(endpoint.y - rect.bottom) }
+      ].sort((left, right) => left.value - right.value)[0].side;
+      const dx = endpoint.x - before.x;
+      const dy = endpoint.y - before.y;
+      const normal = side === "left" || side === "right" ? Math.abs(dx) : Math.abs(dy);
+      const tangent = side === "left" || side === "right" ? Math.abs(dy) : Math.abs(dx);
+      const inwardX = rect.x + rect.width / 2 - endpoint.x;
+      const inwardY = rect.y + rect.height / 2 - endpoint.y;
+      return distanceToRect(endpoint, rect) <= 4 && normal > 0 && tangent / normal < 0.15 && dx * inwardX + dy * inwardY > 0;
+    }))).toEqual([true, true]);
 
     const before = await page.evaluate(() => {
       const cellBox = (id: string) => {
@@ -1276,6 +1310,15 @@ test("fan-out projection uses nearby ports without replacing business edges", as
       { edgeId: "flow.source.left", hasTargetMarker: true, hasVisibleTerminalSegment: true, sourcePortAttached: true, targetPortAttached: true, sourceLeavesPortNormally: true, targetEntersPortNormally: true },
       { edgeId: "flow.source.right", hasTargetMarker: true, hasVisibleTerminalSegment: true, sourcePortAttached: true, targetPortAttached: true, sourceLeavesPortNormally: true, targetEntersPortNormally: true }
     ]);
+    const markerReferenceOffsets = await root.evaluate((element) =>
+      ["flow.source.left", "flow.source.right"].map((edgeId) => {
+        const path = element.querySelector<SVGPathElement>(`[data-cell-id="${edgeId}"] path[marker-end]`);
+        const markerId = path?.getAttribute("marker-end")?.match(/#([^)]*)/)?.[1];
+        const marker = markerId ? document.getElementById(markerId) : null;
+        return Number.parseFloat(marker?.getAttribute("refX") || "NaN");
+      })
+    );
+    expect(markerReferenceOffsets).toEqual([-6, -6]);
     await expect.poll(async () => root.evaluate((element) =>
       Array.from(element.querySelectorAll("[data-cell-id]")).filter((cell) => {
         const id = cell.getAttribute("data-cell-id") || "";
@@ -1352,6 +1395,7 @@ test("contract workspace supports keyboard editing and validation on a narrow vi
     await contractEditor.locator("[data-contract-add]").focus();
     await page.keyboard.press("Enter");
     const flowContract = contractEditor.locator("[data-contract-row]").last();
+    await expect(flowContract.locator('[data-contract-property="id"]')).toBeFocused();
     await flowContract.locator('[data-contract-property="id"]').fill("analyst-to-intake.v1");
     await flowContract.locator('[data-contract-property="fromRoleId"]').fill("demo-analyst");
     await flowContract.locator('[data-contract-property="eventType"]').fill("ANALYSIS_DONE");
@@ -1368,6 +1412,11 @@ test("contract workspace supports keyboard editing and validation on a narrow vi
       scroll: element.scrollWidth
     }));
     expect(workspaceWidth.scroll).toBeLessThanOrEqual(workspaceWidth.client + 1);
+    const contractWidth = await contractEditor.evaluate((element) => ({
+      client: element.clientWidth,
+      scroll: element.scrollWidth
+    }));
+    expect(contractWidth.scroll).toBeLessThanOrEqual(contractWidth.client + 1);
   } finally {
     await new Promise<void>((resolve) => started.server.close(() => resolve()));
   }

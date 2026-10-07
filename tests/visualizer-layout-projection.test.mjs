@@ -233,9 +233,14 @@ test("role labels omit the redundant type prefix without forcing oversized nodes
     badges: ["waiting_review"]
   });
   const label = formatStudioNodeLabel(role);
+  const englishLabel = formatStudioNodeLabel(role, { reviewBadge: "human review" });
+  const chineseLabel = formatStudioNodeLabel(role, { reviewBadge: "人工审核" });
   const size = layoutNodeSize(role);
 
   assert.match(label, /^Debate Reviewer/);
+  assert.match(englishLabel, /human review/);
+  assert.match(chineseLabel, /人工审核/);
+  assert.doesNotMatch(label, /人工审核/);
   assert.doesNotMatch(label, /^Role:/);
   assert.doesNotMatch(label, /Role \/ Agent:/);
   assert.ok(size.width <= 260);
@@ -709,6 +714,25 @@ test("stored loop routes use an independent obstacle-free outer lane", () => {
   const loop = projection.edges.find((item) => item.id === "source-target-loop");
   assert.equal(loop.routing.router.name, "normal");
   assert.ok(loop.routing.routePoints.length >= 2);
+  const source = projection.nodes.find((item) => item.id === loop.source);
+  const target = projection.nodes.find((item) => item.id === loop.target);
+  const sourceAnchor = terminalPoint(source, loop.routing.source);
+  const targetAnchor = terminalPoint(target, loop.routing.target);
+  const first = loop.routing.routePoints[0];
+  const last = loop.routing.routePoints.at(-1);
+  assert.ok(sourceAnchor && targetAnchor && first && last);
+  assert.equal(
+    loop.routing.source.side === "left" || loop.routing.source.side === "right" ? first.y : first.x,
+    loop.routing.source.side === "left" || loop.routing.source.side === "right" ? sourceAnchor.y : sourceAnchor.x,
+    "loop route must leave the source perpendicular to its border"
+  );
+  assert.equal(
+    loop.routing.target.side === "left" || loop.routing.target.side === "right" ? last.y : last.x,
+    loop.routing.target.side === "left" || loop.routing.target.side === "right" ? targetAnchor.y : targetAnchor.x,
+    "loop arrow must enter the target perpendicular to its border"
+  );
+  assert.equal(Math.abs(first.x - sourceAnchor.x) + Math.abs(first.y - sourceAnchor.y), STUDIO_EDGE_TERMINAL_STUB_LENGTH);
+  assert.equal(Math.abs(last.x - targetAnchor.x) + Math.abs(last.y - targetAnchor.y), STUDIO_EDGE_TERMINAL_STUB_LENGTH);
   assert.equal(projection.bundles.length, 0);
   assertRouteAvoidsOtherNodes(projection, "source-target-loop");
 });

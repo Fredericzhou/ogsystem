@@ -8,6 +8,7 @@ import {
   type LayoutPoint,
   type LayoutProjection,
   type LayoutProjectionNode,
+  type StudioNodeLabelOptions,
   type StudioLayoutMode,
   layoutNodeSize
 } from "./semantic-layout-projection.js";
@@ -202,7 +203,8 @@ function enforceExclusiveBoundaryLayers(
 
 function createElkGraph(
   viewModel: GraphViewModel,
-  mode: StudioLayoutMode
+  mode: StudioLayoutMode,
+  labels: StudioNodeLabelOptions = {}
 ): { graph: ElkGraph; diagnostics: LayoutDiagnostic[] } {
   const config = configFor(mode);
   const orderedNodes = nodeOrder(viewModel);
@@ -245,7 +247,7 @@ function createElkGraph(
       },
       children: orderedNodes.map((node) => ({
         id: node.id,
-        ...layoutNodeSize(node),
+        ...layoutNodeSize(node, labels),
         ...(node.id === "input"
           ? { layoutOptions: { "elk.layered.layering.layerConstraint": "FIRST" } }
           : node.id === "output"
@@ -260,12 +262,16 @@ function createElkGraph(
 
 const elk = new ELK({ algorithms: ["layered"] });
 
-export async function createElkLayoutProjection(viewModel: GraphViewModel, mode: StudioLayoutMode): Promise<LayoutProjection> {
-  const { graph, diagnostics } = createElkGraph(viewModel, mode);
+export async function createElkLayoutProjection(
+  viewModel: GraphViewModel,
+  mode: StudioLayoutMode,
+  labels: StudioNodeLabelOptions = {}
+): Promise<LayoutProjection> {
+  const { graph, diagnostics } = createElkGraph(viewModel, mode, labels);
   const result = await elk.layout(graph);
   const outputNodes = new Map((result.children ?? []).map((node) => [node.id, node as ElkNodeResult]));
   const positioned = nodeOrder(viewModel).map((sourceNode) => {
-    const sourceSize = layoutNodeSize(sourceNode);
+    const sourceSize = layoutNodeSize(sourceNode, labels);
     const node = outputNodes.get(sourceNode.id);
     return {
       id: sourceNode.id,
@@ -302,5 +308,5 @@ export async function createElkLayoutProjection(viewModel: GraphViewModel, mode:
   for (const [edgeId, points] of routePointsByEdgeId) {
     routePointsByEdgeId.set(edgeId, points.map((point) => ({ x: point.x + shiftX, y: point.y + shiftY })));
   }
-  return buildProjection("elk", mode, shifted, viewModel, diagnostics, routePointsByEdgeId, geometryByEdgeId);
+  return buildProjection("elk", mode, shifted, viewModel, diagnostics, routePointsByEdgeId, geometryByEdgeId, labels);
 }

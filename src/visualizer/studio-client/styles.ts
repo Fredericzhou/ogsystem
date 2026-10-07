@@ -193,6 +193,7 @@ export function injectStudioGraphStyles(): void {
     .studio-graph-canvas .x6-node.has-human-gate:not(.is-runtime-waiting-review) rect,
     .studio-graph-canvas .x6-node.has-human-gate:not(.is-runtime-waiting-review) path:first-of-type {
       stroke-dasharray: 8 4;
+      filter: drop-shadow(0 0 0.2rem rgba(251, 191, 36, 0.22));
     }
     .studio-graph-canvas .x6-edge .connection {
       transition: stroke 160ms ease, stroke-width 160ms ease, opacity 160ms ease, stroke-dasharray 160ms ease;
@@ -230,6 +231,8 @@ export function injectStudioGraphStyles(): void {
     .studio-graph-canvas .x6-edge.is-runtime-error .connection {
       stroke-dasharray: 7 5;
     }
+    .studio-graph-canvas .x6-edge.is-loop-flow .connection,
+    .studio-graph-canvas .x6-edge.is-loop-flow path[marker-end],
     .studio-graph-canvas .x6-edge.is-loop-back .connection,
     .studio-graph-canvas .x6-edge.is-loop-back path[marker-end] {
       stroke-dasharray: 7 5;

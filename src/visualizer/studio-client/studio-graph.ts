@@ -100,7 +100,8 @@ type StudioGraphLabelKey =
   | "deleteRoleConfirm"
   | "editBlocked"
   | "boundaryEntry"
-  | "boundaryEnd";
+  | "boundaryEnd"
+  | "reviewBadge";
 
 export type StudioGraphLabels = Partial<Record<StudioGraphLabelKey, string>>;
 
@@ -510,7 +511,7 @@ export class StudioGraphIsland {
       return;
     }
     this.setEmptyState(false);
-    this.currentLayoutProjection = createStoredLayoutProjection(this.currentViewModel);
+    this.currentLayoutProjection = createStoredLayoutProjection(this.currentViewModel, this.nodeLabelOptions());
     this.applying = true;
     try {
       this.renderCurrentProjection();
@@ -1684,7 +1685,7 @@ export class StudioGraphIsland {
       };
     });
     this.currentViewModel = { ...this.currentViewModel, nodes: nextNodes };
-    this.currentLayoutProjection = createStoredLayoutProjection(this.currentViewModel);
+    this.currentLayoutProjection = createStoredLayoutProjection(this.currentViewModel, this.nodeLabelOptions());
     this.renderCurrentProjection();
     this.applyRuntimeOverlay();
   }
@@ -1692,7 +1693,7 @@ export class StudioGraphIsland {
   private async applyAutoLayout(updateGeneration = this.updateGeneration): Promise<void> {
     if (!this.currentViewModel) return;
     const viewModel = this.currentViewModel;
-    const projection = await createElkLayoutProjection(viewModel, this.layoutMode);
+    const projection = await createElkLayoutProjection(viewModel, this.layoutMode, this.nodeLabelOptions());
     if (updateGeneration !== this.updateGeneration || viewModel !== this.currentViewModel) {
       return;
     }
@@ -1712,7 +1713,11 @@ export class StudioGraphIsland {
           nodes: this.currentViewModel.nodes,
           edges: this.currentViewModel.edges.map((edge) => ({ ...edge, topologyOrder: undefined }))
         };
-    renderStudioGraphViewModel(this.graph, viewModel, this.currentLayoutProjection);
+    renderStudioGraphViewModel(this.graph, viewModel, this.currentLayoutProjection, this.nodeLabelOptions());
+  }
+
+  private nodeLabelOptions() {
+    return { reviewBadge: this.options.labels?.reviewBadge ?? "review" };
   }
 
   private layoutModeLabel(mode: StudioGraphLayoutMode): string {
@@ -2844,9 +2849,13 @@ export class StudioGraphIsland {
         continue;
       }
       const nodeState = runtime?.nodeStates.get(node.id);
+      const nodeData = node.getData() as { studioNode?: { structure?: { review?: unknown } } } | undefined;
       container.classList.toggle("is-runtime-active", Boolean(nodeState?.active));
       container.classList.toggle("is-runtime-waiting-review", Boolean(nodeState?.waitingReview));
-      container.classList.toggle("has-human-gate", Boolean(nodeState?.humanGateConfigured));
+      container.classList.toggle(
+        "has-human-gate",
+        Boolean(nodeState?.humanGateConfigured || nodeData?.studioNode?.structure?.review)
+      );
       container.classList.toggle("has-loop-count", Boolean((nodeState?.loopCount || 0) > 1));
       if (nodeState?.status) {
         container.setAttribute("data-runtime-status", nodeState.status);
@@ -2875,6 +2884,17 @@ export class StudioGraphIsland {
       container.classList.toggle("is-runtime-active", Boolean(edgeState?.active));
       container.classList.toggle("is-runtime-error", Boolean(edgeState?.error));
       container.classList.toggle("is-loop-back", Boolean(edgeState?.loopBack));
+      const edgeData = edge.getData() as { studioEdge?: { source?: string; target?: string; channel?: string; topologyOrder?: string } } | undefined;
+      const studioEdge = edgeData?.studioEdge;
+      container.classList.toggle(
+        "is-loop-flow",
+        Boolean(studioEdge && (
+          studioEdge.channel === "loop" ||
+          studioEdge.channel === "feedback" ||
+          studioEdge.topologyOrder?.endsWith("L") ||
+          studioEdge.source === studioEdge.target
+        ))
+      );
     }
   }
 

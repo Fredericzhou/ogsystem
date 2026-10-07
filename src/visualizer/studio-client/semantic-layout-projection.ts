@@ -4,6 +4,7 @@ import { formatStudioRuntimeNodeBadges } from "./studio-graph-runtime.js";
 export type StudioLayoutMode = "flow" | "compact" | "stacked";
 export type StudioLayoutAdapterId = "stored" | "elk";
 export type LayoutPoint = { x: number; y: number };
+export type StudioNodeLabelOptions = { reviewBadge?: string };
 export type LayoutEdgeGeometry = {
   points: LayoutPoint[];
   sourcePoint: LayoutPoint;
@@ -172,12 +173,12 @@ function estimateTextWidth(value: string): number {
   }, 0);
 }
 
-export function formatStudioNodeLabel(node: GraphViewModelNode): string {
+export function formatStudioNodeLabel(node: GraphViewModelNode, labels: StudioNodeLabelOptions = {}): string {
   const semanticBadges = node.roleSeat
     ? [
         node.structure.modes?.length ? `mode:${node.structure.modes.join("/")}` : "",
         node.structure.loopScope ? `loop:${node.structure.loopScope.loopId}` : "",
-        node.structure.review ? "review" : ""
+        node.structure.review ? labels.reviewBadge ?? "review" : ""
       ].filter(Boolean)
     : [];
   const topology = node.topologyComponentId ? [node.topologyComponentId] : [];
@@ -186,14 +187,14 @@ export function formatStudioNodeLabel(node: GraphViewModelNode): string {
   return label;
 }
 
-function projectedLabel(node: GraphViewModelNode): string {
-  return formatStudioNodeLabel(node);
+function projectedLabel(node: GraphViewModelNode, labels: StudioNodeLabelOptions = {}): string {
+  return formatStudioNodeLabel(node, labels);
 }
 
-export function layoutNodeSize(node: GraphViewModelNode): { width: number; height: number } {
+export function layoutNodeSize(node: GraphViewModelNode, labels: StudioNodeLabelOptions = {}): { width: number; height: number } {
   const minimumWidth = node.kind === "boundary" ? node.layout.width : Math.max(180, node.layout.width);
   const minimumHeight = Math.max(node.kind === "boundary" ? 70 : 84, node.layout.height);
-  const labelWidth = estimateTextWidth(formatStudioNodeLabel(node));
+  const labelWidth = estimateTextWidth(formatStudioNodeLabel(node, labels));
   const width = Math.max(minimumWidth, Math.min(260, Math.ceil(labelWidth + 30)));
   const lineWidth = Math.max(width - 18, 1);
   const lineCount = Math.max(1, Math.ceil(labelWidth / lineWidth));
@@ -298,7 +299,8 @@ function sharesBundle(left: LayoutProjectionEdge, right: LayoutProjectionEdge): 
 
 function nodeGeometryDiagnostics(
   nodes: readonly LayoutProjectionNode[],
-  viewModel: GraphViewModel
+  viewModel: GraphViewModel,
+  labels: StudioNodeLabelOptions = {}
 ): { diagnostics: LayoutDiagnostic[]; nodeById: Map<string, LayoutProjectionNode> } {
   const diagnostics: LayoutDiagnostic[] = [];
   const nodeById = new Map<string, LayoutProjectionNode>();
@@ -318,7 +320,7 @@ function nodeGeometryDiagnostics(
     if (!sourceNode) continue;
     const availableWidth = node.width - 18;
     const availableHeight = node.height - 12;
-    const labelWidth = estimateTextWidth(projectedLabel(sourceNode));
+    const labelWidth = estimateTextWidth(projectedLabel(sourceNode, labels));
     const estimatedLines = availableWidth > 0 ? Math.ceil(labelWidth / availableWidth) : Number.POSITIVE_INFINITY;
     if (availableWidth <= 0 || availableHeight <= 0 || estimatedLines * 16 > availableHeight) {
       diagnostics.push({
@@ -517,9 +519,10 @@ function qualityDiagnostics(
   adapter: StudioLayoutAdapterId,
   nodes: readonly LayoutProjectionNode[],
   viewModel: GraphViewModel,
-  projectedEdges: readonly LayoutProjectionEdge[]
+  projectedEdges: readonly LayoutProjectionEdge[],
+  labels: StudioNodeLabelOptions = {}
 ): LayoutDiagnostic[] {
-  const nodeDiagnostics = nodeGeometryDiagnostics(nodes, viewModel);
+  const nodeDiagnostics = nodeGeometryDiagnostics(nodes, viewModel, labels);
   const routeContext = routeDiagnosticContext(projectedEdges, nodeDiagnostics.nodeById);
   return [
     ...nodeDiagnostics.diagnostics,
@@ -980,6 +983,10 @@ function obstacleAwareLoopRoute(
   const connect = (leftIndex: number, rightIndex: number, allowBlocked = false): void => {
     const left = points[leftIndex];
     const right = points[rightIndex];
+    // Terminals may only connect through their outward normal stubs. Allowing
+    // the visibility graph to attach along a terminal face makes loop arrows
+    // arrive parallel to the node border.
+    if (!allowBlocked && [leftIndex, rightIndex].some((index) => index === sourceIndex || index === targetIndex)) return;
     if (!allowBlocked && routeSegmentBlocked(left, right, obstacles)) return;
     const direction = left.y === right.y ? "horizontal" : "vertical";
     const distance = Math.abs(left.x - right.x) + Math.abs(left.y - right.y);
@@ -1432,9 +1439,9 @@ function buildEdgeRouting(
   return { routing: result, bundles };
 }
 
-export function createStoredLayoutProjection(viewModel: GraphViewModel): LayoutProjection {
+export function createStoredLayoutProjection(viewModel: GraphViewModel, labels: StudioNodeLabelOptions = {}): LayoutProjection {
   const nodes = viewModel.nodes.map(clonePosition);
-  return buildProjection("stored", "flow", nodes, viewModel);
+  return buildProjection("stored", "flow", nodes, viewModel, [], undefined, undefined, labels);
 }
 
 export function buildProjection(
@@ -1444,7 +1451,8 @@ export function buildProjection(
   viewModel: GraphViewModel,
   diagnostics: LayoutDiagnostic[] = [],
   routePointsByEdgeId?: ReadonlyMap<string, readonly LayoutPoint[]>,
-  geometryByEdgeId?: ReadonlyMap<string, LayoutEdgeGeometry>
+  geometryByEdgeId?: ReadonlyMap<string, LayoutEdgeGeometry>,
+  labels: StudioNodeLabelOptions = {}
 ): LayoutProjection {
   const nodeById = new Map(nodes.map((node) => [node.id, node]));
   const sortedEdges = viewModel.edges.slice().sort((left, right) => edgeSortKey(left).localeCompare(edgeSortKey(right)));
@@ -1469,7 +1477,7 @@ export function buildProjection(
     bundles: completeRouting.bundles,
     diagnostics: [
       ...diagnostics,
-      ...qualityDiagnostics(adapter, nodes, viewModel, edges)
+      ...qualityDiagnostics(adapter, nodes, viewModel, edges, labels)
     ]
   };
   return {

@@ -13,7 +13,8 @@ import {
   type LayoutEdgeRouting,
   type LayoutPortSpec,
   type LayoutProjection,
-  type LayoutSide
+  type LayoutSide,
+  type StudioNodeLabelOptions
 } from "./semantic-layout-projection.js";
 
 export {
@@ -53,8 +54,8 @@ function isLoopEdge(edge: GraphViewModelEdge): boolean {
     || edge.source === edge.target;
 }
 
-function nodeLabel(node: GraphViewModelNode): string {
-  return formatStudioNodeLabel(node);
+function nodeLabel(node: GraphViewModelNode, labels: StudioNodeLabelOptions): string {
+  return formatStudioNodeLabel(node, labels);
 }
 
 type StudioEdgeTerminal = NonNullable<Edge.Metadata["source"]>;
@@ -104,7 +105,12 @@ function projectionRouting(routing: LayoutEdgeRouting): StudioEdgeRouting {
   };
 }
 
-export function renderStudioGraphViewModel(graph: Graph, viewModel: GraphViewModel, projection: LayoutProjection): void {
+export function renderStudioGraphViewModel(
+  graph: Graph,
+  viewModel: GraphViewModel,
+  projection: LayoutProjection,
+  labels: StudioNodeLabelOptions = {}
+): void {
   const projectedNodes = viewModel.nodes.map((node) => {
     const layout = projection.nodes.find((candidate) => candidate.id === node.id);
     return layout ? { ...node, layout } : node;
@@ -131,9 +137,9 @@ export function renderStudioGraphViewModel(graph: Graph, viewModel: GraphViewMod
     for (const node of projectedViewModel.nodes) {
       const existing = graph.getCellById(node.id);
       if (existing?.isNode()) {
-        updateStudioNode(existing, node, portsByNodeId.get(node.id));
+        updateStudioNode(existing, node, portsByNodeId.get(node.id), labels);
       } else {
-        graph.addNode(studioNodeMetadata(node, portsByNodeId.get(node.id)));
+        graph.addNode(studioNodeMetadata(node, portsByNodeId.get(node.id), labels));
       }
     }
 
@@ -402,7 +408,7 @@ function fallbackPortSpecs(node: GraphViewModelNode): StudioPortSpec[] {
   ];
 }
 
-function studioNodeMetadata(node: GraphViewModelNode, ports?: readonly StudioPortSpec[]): Node.Metadata {
+function studioNodeMetadata(node: GraphViewModelNode, ports: readonly StudioPortSpec[] | undefined, labels: StudioNodeLabelOptions): Node.Metadata {
   return {
     id: node.id,
     x: node.layout.x,
@@ -418,7 +424,7 @@ function studioNodeMetadata(node: GraphViewModelNode, ports?: readonly StudioPor
       { tagName: "text", selector: "diagnosticText" }
     ],
     data: { studioNode: node },
-    attrs: studioNodeAttrs(node),
+    attrs: studioNodeAttrs(node, labels),
     ports: studioNodePorts(node, ports)
   };
 }
@@ -429,7 +435,7 @@ function nodeFill(node: GraphViewModelNode): string {
   return "rgba(15, 23, 42, 0.96)";
 }
 
-function studioNodeAttrs(node: GraphViewModelNode): Node.Metadata["attrs"] {
+function studioNodeAttrs(node: GraphViewModelNode, labels: StudioNodeLabelOptions): Node.Metadata["attrs"] {
   return {
     body: {
       rx: node.kind === "boundary" ? 20 : 8,
@@ -440,7 +446,7 @@ function studioNodeAttrs(node: GraphViewModelNode): Node.Metadata["attrs"] {
       strokeDasharray: node.kind === "boundary" ? "6 4" : ""
     },
     label: {
-      text: nodeLabel(node),
+      text: nodeLabel(node, labels),
       fill: node.kind === "boundary" ? "#94a3b8" : "#e5eefb",
       fontSize: 12,
       fontWeight: 600,
@@ -490,11 +496,16 @@ function studioNodePorts(node: GraphViewModelNode, projectedPorts?: readonly Stu
   };
 }
 
-function updateStudioNode(cell: Node, node: GraphViewModelNode, projectedPorts?: readonly StudioPortSpec[]): void {
+function updateStudioNode(
+  cell: Node,
+  node: GraphViewModelNode,
+  projectedPorts: readonly StudioPortSpec[] | undefined,
+  labels: StudioNodeLabelOptions
+): void {
   cell.setData({ studioNode: node });
   cell.position(node.layout.x, node.layout.y);
   cell.resize(node.layout.width, node.layout.height);
-  cell.attr(studioNodeAttrs(node));
+  cell.attr(studioNodeAttrs(node, labels));
   const nextPorts = studioNodePorts(node, projectedPorts);
   const currentPorts = cell.getPorts();
   const missingPorts = nextPorts.items.filter((port) => !cell.hasPort(String(port.id ?? "")));
@@ -635,6 +646,7 @@ function studioEdgeLabels(edge: GraphViewModelEdge): Edge.Metadata["labels"] {
 function studioEdgeAttrs(edge: GraphViewModelEdge): Edge.Metadata["attrs"] {
   const stroke = edgeStroke(edge);
   const loopEdge = isLoopEdge(edge);
+  const markerWidth = loopEdge ? 16 : 12;
   return {
     line: {
       stroke,
@@ -643,9 +655,9 @@ function studioEdgeAttrs(edge: GraphViewModelEdge): Edge.Metadata["attrs"] {
       strokeLinecap: "round",
       targetMarker: {
         name: "block",
-        width: loopEdge ? 16 : 12,
+        width: markerWidth,
         height: loopEdge ? 12 : 9,
-        ...(loopEdge ? { refX: -16 } : {}),
+        refX: -markerWidth / 2,
         fill: stroke,
         stroke,
         strokeWidth: 1
