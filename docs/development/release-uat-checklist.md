@@ -65,20 +65,23 @@ examples and templates remain examples; the target workflow may be supplied by a
 
 ## Deployed Visualizer UAT
 
-Status: **NOT RUN for the replacement candidate**. Browser automation passed against an earlier
-locally installed `1.0.0` candidate on macOS for both first-run examples. That candidate predates the
-current worktree. The intended workflow operator has not completed the bounded workflow or signed
-off.
+Status: **IN PROGRESS**. The local `mulit-debate/ogs-app` workflow ran on the `1.0.0` candidate
+package through proposal, parallel critiques, judge join, and the required human-review pause. The
+Visualizer Review Queue rendered the pending decision and controls at desktop and 390px mobile sizes.
+The operator decision and sign-off remain pending. Windows/Linux operator UAT is planned as a later
+cross-platform confirmation; the package matrix is automated install/run evidence, not that UAT.
 
-- Package version/artifact: replacement candidate tarball and digest PENDING.
-- Deployment environment: replacement candidate environment and intended operator deployment PENDING. Earlier local checks used macOS, Node.js `22.21.1`, and `127.0.0.1:3379` / `127.0.0.1:3381`.
-- Workflow and UI/API paths exercised: earlier browser automation covered the two example apps, operations, Studio graph/structure, readiness, wheel zoom, and desktop/390px mobile view. Repeat against the replacement candidate and intended deployment.
-- Result and issue references: replacement candidate deployed UAT NOT RUN. Earlier browser automation is supplementary; no horizontal overflow or browser errors were observed at 390px.
+- Package version/artifact: local UAT tarball SHA-256 `a334f92d466ca3f04f7b3040da05a14926b86e1bfeeb2775cdc86a567bdb7bbb`. The release workflow matrix artifact is recorded separately in [`release-evidence/1.0.0.md`](release-evidence/1.0.0.md); GitHub artifact download was unavailable for local byte comparison.
+- Deployment environment: local macOS, Node.js `22.21.1`, Visualizer at `http://127.0.0.1:3377` using an isolated copy of `mulit-debate/ogs-app`.
+- Workflow and UI/API paths exercised: real Codex `gpt-6-luna` execution; 4/4 roles succeeded; the judge paused at `DECISION_READY`. The Review Queue showed decision details and approve/rework/pause/terminate controls at 1024px and 390px. `/healthz` and `/readyz` returned healthy/ready. Run ID and trace are in the linked release evidence.
+- Result and issue references: the hidden zero-height Reviews panel was fixed in candidate commit `e0f0c20` and covered by a browser regression. Local browser verification passed with no browser errors or horizontal overflow. The human decision remains pending.
+- Recovery/retention scenarios: interruptions, corrupt/missing artifacts, duplicate controls, and disk-growth measurements have not yet been observed in this target workflow.
 - Operator and product owner sign-off: NOT RUN.
 
 Create one release evidence record per release candidate using
-[`release-evidence/TEMPLATE.md`](release-evidence/TEMPLATE.md). Do not change this UAT status until
-the deployed run and sign-offs are recorded.
+[`release-evidence/TEMPLATE.md`](release-evidence/TEMPLATE.md). Do not mark UAT complete until the
+operator has made and recorded the review decision, completed the remaining scenarios, and signed
+off; the product owner must record their acceptance separately.
 
 ## Development Package Baseline
 
