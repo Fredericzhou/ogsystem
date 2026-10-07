@@ -65,18 +65,17 @@ examples and templates remain examples; the target workflow may be supplied by a
 
 ## Deployed Visualizer UAT
 
-Status: **IN PROGRESS**. The local `mulit-debate/ogs-app` workflow ran on the previous `1.0.0`
-candidate package through proposal, parallel critiques, judge join, and the required human-review pause. The
-Visualizer Review Queue rendered the pending decision and controls at desktop and 390px mobile sizes.
-The graph-routing and review workflow fixes committed on 2026-10-08 have not yet been exercised in
-the deployed candidate package. The operator decision and sign-off remain pending. Windows/Linux
-operator UAT is planned as a later cross-platform confirmation; the package matrix is automated
-install/run evidence, not that UAT.
+Status: **IN PROGRESS**. The previous local `mulit-debate/ogs-app` workflow reached the required
+human-review pause, and the Review Queue rendered at desktop and 390px mobile sizes. The replacement
+candidate package also passed deployed Visualizer browser UAT on an isolated copy of that application.
+The operator decision, fresh real workflow run on the replacement package, and sign-off remain pending.
+Windows/Linux operator UAT is planned as a later cross-platform confirmation; the package matrix is
+automated install/run evidence, not that UAT.
 
-- Previous-candidate package artifact: local UAT tarball SHA-256 `a334f92d466ca3f04f7b3040da05a14926b86e1bfeeb2775cdc86a567bdb7bbb`, built from candidate commit `2d6d26ad7de8f5a67611b8bee71c566f4a24d48e`. It does not contain the replacement commits `1866adc` and `f51fa02`. The release workflow matrix artifact is recorded separately in [`release-evidence/1.0.0.md`](release-evidence/1.0.0.md); GitHub artifact download was unavailable for local byte comparison.
+- Replacement-candidate local package: SHA-256 `2c1e002aa36788d5f91cf6f0105d9cc06eb0816b62ae056c4e298f03b7a05024`, from commit `326382e`; npm and pnpm install smoke passed from this same tarball. The release workflow's 12-combination matrix passed; its artifact could not be downloaded here for byte comparison.
 - Deployment environment: local macOS, Node.js `22.21.1`, Visualizer at `http://127.0.0.1:3377` using an isolated copy of `mulit-debate/ogs-app`.
 - Workflow and UI/API paths exercised on previous candidate: real Codex `gpt-6-luna` execution; 4/4 roles succeeded; the judge paused at `DECISION_READY`. The Review Queue showed decision details and approve/rework/pause/terminate controls at 1024px and 390px. `/healthz` and `/readyz` returned healthy/ready. Current run ID and durable run record path are in the linked release evidence. Re-run against replacement candidate: PENDING.
-- Result and issue references: the hidden zero-height Reviews panel was fixed in candidate history at `e0f0c20` and covered by a browser regression. Local browser verification passed with no browser errors or horizontal overflow. The current run remains at the required human-review gate; no operator decision has been submitted.
+- Result and issue references: the hidden zero-height Reviews panel was fixed in candidate history at `e0f0c20` and covered by a browser regression. The replacement package's deployed Visualizer browser test passed with no browser errors or horizontal overflow. The current target-workflow review remains pending; no operator decision has been submitted.
 - Recovery/retention scenarios: interruptions, corrupt/missing artifacts, duplicate controls, and disk-growth measurements have not yet been observed in this target workflow.
 - Operator and product owner sign-off: NOT RUN.
 
