@@ -105,7 +105,9 @@ const systemChromeCandidates = process.platform === "darwin"
         path.join(process.env.LOCALAPPDATA || "", "Google", "Chrome", "Application", "chrome.exe")
       ]
     : [];
-const systemChrome = systemChromeCandidates.find((candidate) => existsSync(candidate));
+const systemChrome = process.env.OGSYSTEM_USE_SYSTEM_CHROME === "1"
+  ? systemChromeCandidates.find((candidate) => existsSync(candidate))
+  : undefined;
 if (systemChrome) {
   temporaryPlaywrightConfig = path.join(
     await mkdtemp(path.join(os.tmpdir(), "ogsystem-playwright-config-")),
