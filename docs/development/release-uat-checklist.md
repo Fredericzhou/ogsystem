@@ -65,17 +65,16 @@ examples and templates remain examples; the target workflow may be supplied by a
 
 ## Deployed Visualizer UAT
 
-Status: **IN PROGRESS**. The previous local `mulit-debate/ogs-app` workflow reached the required
-human-review pause, and the Review Queue rendered at desktop and 390px mobile sizes. The replacement
-candidate package also passed deployed Visualizer browser UAT on an isolated copy of that application.
-The operator decision, fresh real workflow run on the replacement package, and sign-off remain pending.
-Windows/Linux operator UAT is planned as a later cross-platform confirmation; the package matrix is
-automated install/run evidence, not that UAT.
+Status: **IN PROGRESS**. On the replacement candidate package, the local `mulit-debate/ogs-app`
+workflow completed all four roles and paused at the required human-review gate. The deployed
+Visualizer browser UAT also passed on an isolated copy of that application. The operator decision
+and sign-off remain pending. Windows/Linux operator UAT is planned as a later cross-platform
+confirmation; the package matrix is automated install/run evidence, not that UAT.
 
-- Replacement-candidate local package: SHA-256 `2c1e002aa36788d5f91cf6f0105d9cc06eb0816b62ae056c4e298f03b7a05024`, from commit `326382e`; npm and pnpm install smoke passed from this same tarball. The release workflow's 12-combination matrix passed; its artifact could not be downloaded here for byte comparison.
-- Deployment environment: local macOS, Node.js `22.21.1`, Visualizer at `http://127.0.0.1:3377` using an isolated copy of `mulit-debate/ogs-app`.
-- Workflow and UI/API paths exercised on previous candidate: real Codex `gpt-6-luna` execution; 4/4 roles succeeded; the judge paused at `DECISION_READY`. The Review Queue showed decision details and approve/rework/pause/terminate controls at 1024px and 390px. `/healthz` and `/readyz` returned healthy/ready. Current run ID and durable run record path are in the linked release evidence. Re-run against replacement candidate: PENDING.
-- Result and issue references: the hidden zero-height Reviews panel was fixed in candidate history at `e0f0c20` and covered by a browser regression. The replacement package's deployed Visualizer browser test passed with no browser errors or horizontal overflow. The current target-workflow review remains pending; no operator decision has been submitted.
+- Replacement-candidate package: SHA-256 `2c1e002aa36788d5f91cf6f0105d9cc06eb0816b62ae056c4e298f03b7a05024`; npm and pnpm install smoke passed from this tarball. The release workflow's 12-combination matrix passed on the candidate ref; its artifact could not be downloaded here for byte comparison.
+- Deployment environment: local macOS, Node.js `22.21.1`, candidate Visualizer at `http://127.0.0.1:3378` using an isolated copy of `mulit-debate/ogs-app`.
+- Workflow and UI/API paths exercised: real Codex `gpt-6-luna` execution completed proposal-author, critic-a, critic-b, and judge; the judge produced `DECISION_READY` and paused for required human review. The Review Queue showed decision detail and approve/rework/pause/terminate controls at 1024px and 390px. `/healthz` and `/readyz` returned healthy/ready. Current run ID and durable record path are in the linked evidence.
+- Result and issue references: the hidden zero-height Reviews panel was fixed in candidate history at `e0f0c20` and covered by a browser regression. The replacement package's deployed Visualizer browser test passed with no browser errors or horizontal overflow. The target-workflow review remains pending; no operator decision has been submitted.
 - Recovery/retention scenarios: interruptions, corrupt/missing artifacts, duplicate controls, and disk-growth measurements have not yet been observed in this target workflow.
 - Operator and product owner sign-off: NOT RUN.
 
