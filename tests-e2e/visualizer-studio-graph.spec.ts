@@ -286,7 +286,13 @@ test("Studio Bridge renders and edits through the real graph workspace", async (
     });
     const browseFilter = page.locator('[data-studio-bridge-filter="1"]');
     await browseFilter.fill("demo");
-    await page.locator('[data-studio-role-id="demo-analyst"]').click();
+    const rolesSection = page.locator("[data-studio-role-list-section]");
+    if (!(await rolesSection.evaluate((section: HTMLDetailsElement) => section.open))) {
+      await rolesSection.locator("summary").click();
+    }
+    const analystRole = rolesSection.locator('[data-studio-role-id="demo-analyst"]');
+    await expect(analystRole).toBeVisible();
+    await analystRole.click();
     await expect(page.locator('[data-studio-selection-panel="structure"]')).toBeVisible();
     await expect(page.locator('[data-studio-selection-inline-editor] [data-role-config-editor="demo-analyst"]')).toBeVisible();
     await expect(page.locator("[data-flow-config-field='targetContextMap']")).toHaveCount(0);
