@@ -1239,11 +1239,16 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
           ? t("action.exitFullscreen", undefined, "Exit fullscreen")
           : t("action.fullscreen", undefined, "Fullscreen"),
         fitView: t("studio.graph.fitView", undefined, "Fit view"),
-        autoLayout: t("studio.graph.autoLayout", undefined, "Switch layout"),
+        layoutMode: t("studio.graph.layoutMode", undefined, "Layout mode"),
         layoutModeFlow: t("studio.graph.layoutModeFlow", undefined, "Flow"),
         layoutModeCompact: t("studio.graph.layoutModeCompact", undefined, "Compact"),
         layoutModeStacked: t("studio.graph.layoutModeStacked", undefined, "Stacked"),
-        layoutSwitched: t("studio.graph.layoutSwitched", undefined, "Layout switched to {layout}."),
+        topologyOrder: t("studio.graph.topologyOrder", undefined, "Topology order"),
+        topologyOrderEnabled: t("studio.graph.topologyOrderHide", undefined, "Hide topology numbers"),
+        topologyOrderDisabled: t("studio.graph.topologyOrderShow", undefined, "Show topology numbers"),
+        contextEdit: t("studio.graph.contextEdit", undefined, "Edit"),
+        contextDelete: t("studio.graph.contextDelete", undefined, "Delete"),
+        contextInsertRole: t("studio.graph.contextInsertRole", undefined, "Insert role"),
         generate: t("studio.graph.generate", undefined, "Chat / Generate"),
         debugRun: t("studio.graph.debugRun", undefined, "Quick debug"),
         debugAdvanced: t("studio.graph.debugAdvanced", undefined, "Advanced debug"),
@@ -1940,7 +1945,12 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
         setInnerHtmlIfChanged(operateTabsEl, "");
         return;
       }
-      setInnerHtmlIfChanged(operateTabsEl, renderOperateTabsHtml({ operateTab: state.operateTab, t, escapeText }));
+      setInnerHtmlIfChanged(operateTabsEl, renderOperateTabsHtml({
+        operateTab: state.operateTab,
+        pendingReviewCount: state.detail?.header?.pendingReviewCount,
+        t,
+        escapeText
+      }));
       const graphDisclosure = document.getElementById("run-graph-disclosure");
       if (graphDisclosure) {
         bindOnce(graphDisclosure, "toggle", "run-graph-toggle", () => {
@@ -2850,6 +2860,7 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
         '<label class="field full"><span>' + escapeText(t("form.runInput", undefined, "Run input")) + '</span><textarea id="workbench-run-input"' + disabled + (errors.input ? ' aria-invalid="true" aria-describedby="workbench-run-input-error"' : "") + '>' + escapeText(draft.input || "") + '</textarea><div class="hint">' + escapeText(t("build.inlineRunInputHint", undefined, "Required. Provide the exact user request or evaluation prompt for this run.")) + '</div><div id="workbench-run-input-error" class="field-error" aria-live="polite">' + escapeText(errors.input || "") + '</div></label>',
         '</div>',
         '<div class="actions compact"><button class="button primary" id="workbench-start-run"' + disabled + '>' + escapeText(t("action.startDryRun", undefined, "Start dry run")) + '</button>' +
+          '<button class="button" id="workbench-start-real-run"' + disabled + '>' + escapeText(t("build.startRealRun", undefined, "Start real run")) + '</button>' +
           ((state.selectedRunId || state.studioBridgeLastDryRunId) ? '<button class="button subtle" id="studio-debug-open-operate"' + disabled + '>' + escapeText(t("build.openOperate", undefined, "Open Run")) + '</button>' : '') +
         '</div>',
         overridesHtml,
@@ -3646,12 +3657,46 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
     }
 
     function bindStudioRoleConfigEditorControls() {
+      for (const button of Array.from(workbenchBodyEl.querySelectorAll("[data-contract-initialize]"))) {
+        bindOnce(button, "click", "contract-initialize", async () => {
+          const errorEl = workbenchBodyEl.querySelector("[data-contract-initialize-error]");
+          button.disabled = true;
+          if (errorEl) errorEl.textContent = "";
+          try {
+            const contracts = await requestAction(API_PREFIX + "/project/contracts/initialize", {});
+            state.contracts = contracts;
+            state.workbenchSource = String(contracts.systemSource || state.workbenchSource || "");
+            state.workbenchDiskSource = state.workbenchSource;
+            state.workbench = { ...(state.workbench || {}), systemSource: state.workbenchSource };
+            state.studioBridgeStale = true;
+            await refreshProjectDiagnostics();
+            await refreshStudioBridge();
+            const contractEditor = workbenchBodyEl.querySelector(".studio-contract-editor");
+            if (contractEditor instanceof HTMLDetailsElement) contractEditor.open = true;
+            setFlash("success", t("studio.contractFileSaved", undefined, "Contract file saved and validated."));
+          } catch (error) {
+            if (errorEl) {
+              errorEl.textContent = formatLabel("studio.contractInitializeFailed", {
+                message: error instanceof Error ? error.message : String(error)
+              });
+            }
+            button.disabled = false;
+          }
+        });
+      }
       for (const button of Array.from(workbenchBodyEl.querySelectorAll("[data-studio-open-system-settings]"))) {
         bindOnce(button, "click", "open-system-settings", () => {
           state.studioBridgeSelectedRoleId = "";
           state.studioBridgeSelectedFlowKey = "";
           state.studioWorkbenchSideTab = "structure";
           renderStudioSelectionDialog();
+          const systemSettings = workbenchBodyEl.querySelector(".studio-system-settings");
+          if (systemSettings) {
+            systemSettings.open = true;
+            if (typeof systemSettings.scrollIntoView === "function") {
+              systemSettings.scrollIntoView({ behavior: "smooth", block: "nearest" });
+            }
+          }
         });
       }
       for (const row of Array.from(workbenchBodyEl.querySelectorAll("[data-context-map-row]"))) {
@@ -4568,6 +4613,21 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
           }
           state.workbenchRunDraftErrors = {};
           await startRunFromWorkbench(payload);
+        });
+      }
+      const workbenchStartRealRunButton = document.getElementById("workbench-start-real-run");
+      if (workbenchStartRealRunButton) {
+        bindOnce(workbenchStartRealRunButton, "click", "workbench-start-real-run", () => {
+          const draft = readWorkbenchRunDraftFromDom();
+          state.workbenchRunDraft = draft;
+          openActionForm("start", {
+            systemPath: state.workbenchSavedPath || "system.mmd",
+            dryRun: false,
+            input: draft.input || "",
+            runtimePath: draft.runtimePath || "",
+            userProfilePath: draft.userProfilePath || "",
+            lawsPath: draft.lawsPath || ""
+          }, { returnFocusEl: workbenchStartRealRunButton });
         });
       }
       const studioDebugOpenOperateButton = document.getElementById("studio-debug-open-operate");
@@ -5776,6 +5836,17 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
         return;
       }
       setInnerHtmlIfChanged(statsEl, renderRunStatsHtml({ header, graphPayload, t, escapeText, displayUiToken }));
+      const pendingReviewsButton = statsEl?.querySelector("[data-open-pending-reviews]");
+      if (pendingReviewsButton) {
+        bindOnce(pendingReviewsButton, "click", "open-pending-reviews", () => {
+          state.operateTab = "reviews";
+          renderConsoleTabs();
+          const reviewsPanel = document.getElementById("operate-tabpanel-reviews");
+          if (reviewsPanel && typeof reviewsPanel.scrollIntoView === "function") {
+            reviewsPanel.scrollIntoView({ behavior: "smooth", block: "start" });
+          }
+        });
+      }
     }
 
     function renderTimeline(events, options) {
@@ -7913,6 +7984,8 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
         state.selectedRunId = runId;
       }
       state.projectHome = false;
+      state.operateTab = "reviews";
+      renderOperateTabs();
       state.selectedReviewId = reviewId;
       const reviewDisclosure = document.getElementById("review-detail-disclosure");
       if (reviewDisclosure) reviewDisclosure.open = true;
@@ -8331,14 +8404,14 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
     renderConsoleTabs();
     const restoreRunSelection = state.consoleTab === runConsoleTab();
     state.selectedRunId = restoreRunSelection ? initialRoute.runId : "";
+    state.selectedReviewId = restoreRunSelection ? initialRoute.reviewId : "";
     if (state.consoleTab === runConsoleTab() && !state.selectedRunId) {
       state.operateTab = "operations";
     }
     if (state.selectedRunId) {
-      state.operateTab = "overview";
+      state.operateTab = state.selectedReviewId ? "reviews" : "overview";
       renderConsoleTabs();
     }
-    state.selectedReviewId = restoreRunSelection ? initialRoute.reviewId : "";
     state.selectedLogRoleId = restoreRunSelection ? initialRoute.logRoleId : "";
     state.logTail = restoreRunSelection ? initialRoute.tail : "";
     state.logSince = restoreRunSelection ? initialRoute.since : "";

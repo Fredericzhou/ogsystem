@@ -7,17 +7,20 @@ type JsonRecord = Record<string, unknown>;
 type PendingRequest = { resolve(value: unknown): void; reject(error: Error): void; timer: NodeJS.Timeout };
 
 export type CodexModelInfo = { id: string; displayName: string; isDefault?: boolean };
+export type CodexSandboxPolicy = "readOnly" | "workspaceWrite";
 
 export class CodexAppServerClient {
   private readonly child: ChildProcessWithoutNullStreams;
+  private readonly sandboxPolicy: CodexSandboxPolicy;
   private readonly pending = new Map<string, PendingRequest>();
   private readonly waiters = new Set<(message: JsonRecord) => void>();
   private nextId = 0;
   private stderr = "";
   private closed = false;
 
-  private constructor(child: ChildProcessWithoutNullStreams) {
+  private constructor(child: ChildProcessWithoutNullStreams, sandboxPolicy: CodexSandboxPolicy = "readOnly") {
     this.child = child;
+    this.sandboxPolicy = sandboxPolicy;
     const lines = createInterface({ input: child.stdout });
     lines.on("line", (line) => this.onMessage(line));
     child.stderr.on("data", (data) => {
@@ -29,14 +32,14 @@ export class CodexAppServerClient {
     });
   }
 
-  static async start(args: { cwd: string; env?: NodeJS.ProcessEnv; timeoutMs?: number }): Promise<CodexAppServerClient> {
+  static async start(args: { cwd: string; env?: NodeJS.ProcessEnv; timeoutMs?: number; sandboxPolicy?: CodexSandboxPolicy }): Promise<CodexAppServerClient> {
     const child = spawn("codex", ["app-server", "--stdio"], {
       cwd: args.cwd,
       env: { ...process.env, ...args.env },
       stdio: ["pipe", "pipe", "pipe"],
       shell: process.platform === "win32"
     });
-    const client = new CodexAppServerClient(child);
+    const client = new CodexAppServerClient(child, args.sandboxPolicy ?? "readOnly");
     try {
       await client.request("initialize", {
         clientInfo: { name: "ogs", title: "OGSystem", version: OGS_VERSION },
@@ -182,7 +185,7 @@ export class CodexAppServerClient {
       cwd: args.cwd,
       model: args.modelId,
       approvalPolicy: "never",
-      sandboxPolicy: { type: "readOnly" },
+      sandboxPolicy: { type: this.sandboxPolicy },
       outputSchema: args.schema,
       input: [{ type: "text", text: args.prompt, text_elements: [] }]
     });

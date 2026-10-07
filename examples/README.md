@@ -1,24 +1,43 @@
-# Example Training Manual
+# Examples
 
-This directory includes runnable examples for OGSystem semantics and operations.
+Start with one of these two examples:
 
-## Minimal Learning Set
+1. **Hello World**: the default `minimal` project. It runs without model setup.
+2. **Software development and review**: `software-development-review/`. It shows a model-driven, parallel delivery workflow with human approval and bounded rework.
 
-Use this small set first to cover most capabilities with minimum repetition:
+The second example is a workflow scaffold. A real run uses the configured local coding CLI and its credentials; dry-run validates OGS configuration and graph execution only. It does not claim to implement or test application code by itself.
 
-1. `minimal-system.mmd`
-2. `langgraph-debate-current/`
-3. `medical-quorum-consultation/`
-4. `runtime-native-human-review/`
-5. `ogs-gstacklike/`
-6. `rust-hello-pipeline/`
-7. `legal-rag-dev-team/`
+## Hello World
+
+```bash
+ogs project create hello-world
+cd hello-world
+ogs run start --system system.mmd --input "Hello World"
+```
+
+## Software Development and Review
+
+```bash
+ogs run start \
+  --system examples/software-development-review/system.mmd \
+  --ogs-dir examples/software-development-review \
+  --workspace-dir /path/to/your/project \
+  --input "Add a health endpoint and tests" \
+  --dry-run
+```
+
+Before a real run, configure `.ogs/model-selection.json` for an installed Codex or OpenCode CLI and its available model. This example opts Codex into workspace-write access scoped to `--workspace-dir`; other projects keep Codex read-only by default. Remove `--dry-run` only after reviewing the project workspace and role instructions. The workflow pauses for human review; inspect the diff and run the project tests before approving.
+
+## Capability Examples
+
+These examples cover individual OGS capabilities and can be explored after the two starting points:
 
 ## Coverage Matrix
 
 | Example | Binding Mode | Core Semantics | Capability Coverage | Operational Focus |
 |---|---|---|---|---|
 | `minimal-system.mmd` | noop | linear flow | smallest runnable graph | quick smoke check without binding metadata |
+| `software-development-review/` | model selection | parallel split + all-of join + human review | implementation workstreams, QA plan, approval, bounded rework | project workspace workflow scaffold |
 | `target-model-binding-system.mmd` | model.bind | linear model flow | minimum model execution binding | smallest model-bound baseline |
 | `langgraph-debate-current/` | model.bind | `parallel_split + all_of + loop.max` | Chinese output, multi-role debate, parallel split, join, bounded loop | multi-round orchestration |
 | `medical-quorum-consultation/` | model.bind | `parallel_split + quorum_of + join.min + context.map + flow contract` | quorum arbitration, projected join context, Chinese specialist consultation | quorum decision and contract-backed validation |
@@ -29,18 +48,21 @@ Use this small set first to cover most capabilities with minimum repetition:
 
 ## Recommended Order
 
-1. Start with `minimal-system.mmd`.
-2. Move to `langgraph-debate-current/` for core graph semantics.
-3. Run `medical-quorum-consultation/` for quorum + projection + flow contract semantics.
-4. Run `runtime-native-human-review/` for native stop-review-resume semantics.
-5. Run `ogs-gstacklike/` for a full project-style example with local role repo, native review, shared artifacts, and compensation.
-6. Run `rust-hello-pipeline/` if you need external toolchain workflows.
-7. Run `legal-rag-dev-team/` for the recommended Chinese multi-agent collaboration example.
+1. Start with the default Hello World project.
+2. Use `software-development-review/` for a project workflow with implementation and review roles.
+3. Move to `langgraph-debate-current/` for core graph semantics.
+4. Run `medical-quorum-consultation/` for quorum + projection + flow contract semantics.
+5. Run `runtime-native-human-review/` for native stop-review-resume semantics.
+6. Run `ogs-gstacklike/` for a project-style example with local role repo, native review, shared artifacts, and compensation.
+7. Run `rust-hello-pipeline/` if you need external toolchain workflows.
+8. Run `legal-rag-dev-team/` for the Chinese multi-agent collaboration example.
 
 ## Fast Commands
 
 ```bash
 ogs run start --system examples/minimal-system.mmd --laws examples/console-laws.json --input "smoke" --dry-run
+
+ogs run start --system examples/software-development-review/system.mmd --ogs-dir examples/software-development-review --workspace-dir /path/to/your/project --input "Add a health endpoint and tests" --dry-run
 
 ogs run start --system examples/langgraph-debate-current/system.mmd --laws examples/langgraph-debate-current/laws.json --user-profile examples/langgraph-debate-current/user-profile.json --input "是否继续保持最小化" --dry-run
 
@@ -56,6 +78,7 @@ bash examples/ogs-gstacklike/scripts/validate-scenarios.sh
 ## Extended Examples
 
 - `target-model-binding-system.mmd`: smallest model-binding baseline.
+- `software-development-review/`: project development workflow with parallel implementation, QA, final review, and human approval.
 - `langgraph-expert-consultation/`: all-of expert consultation baseline.
 - `console-system.mmd`: smallest local-shell exec.bind baseline.
 - `error-flow-compensation/`: focused ERROR* routing baseline.

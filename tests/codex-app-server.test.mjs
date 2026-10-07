@@ -71,7 +71,23 @@ test("Codex app-server paginates models and resumes a persistent thread between 
     assert.equal(second.sessionId, first.sessionId);
     assert.match(first.stdout, /"event":"DONE"/);
     assert.deepEqual(child.requests.filter((entry) => entry.method.startsWith("thread/")).map((entry) => entry.method), ["thread/start", "thread/resume"]);
-    assert.equal(child.requests.filter((entry) => entry.method === "turn/start").length, 2);
+    const turns = child.requests.filter((entry) => entry.method === "turn/start");
+    assert.equal(turns.length, 2);
+    assert.ok(turns.every((entry) => entry.params.sandboxPolicy.type === "readOnly"));
+    assert.ok(turns.every((entry) => entry.params.cwd === process.cwd()));
+  } finally {
+    await client.close();
+  }
+});
+
+test("Codex app-server uses workspace-write only when explicitly configured", async () => {
+  const child = new FakeAppServerProcess();
+  const client = new CodexAppServerClient(child, "workspaceWrite");
+  try {
+    await client.execute({ roleId: "writer", prompt: "write", schema: {}, modelId: "gpt-6-astra", cwd: process.cwd(), timeoutMs: 1000 });
+    const turn = child.requests.find((entry) => entry.method === "turn/start");
+    assert.equal(turn.params.sandboxPolicy.type, "workspaceWrite");
+    assert.equal(turn.params.cwd, process.cwd());
   } finally {
     await client.close();
   }

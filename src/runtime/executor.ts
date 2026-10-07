@@ -11,6 +11,7 @@ import { writeFile } from "node:fs/promises";
 
 import { executeOpencodeModelRole, startOpencodeRunClient } from "./opencode-executor.js";
 import { CodexAppServerClient } from "./codex-app-server.js";
+import type { CodexSandboxPolicy } from "./codex-app-server.js";
 import { filesystemArtifactStore } from "./artifact-store.js";
 import { stringifyJson } from "./runtime-support.js";
 import { runCliTool } from "./tool-runner.js";
@@ -135,6 +136,7 @@ export function createDefaultExecutor(args: {
   targetDir: string;
   needsModelExecutor: boolean;
   modelBackends?: string[];
+  codexSandboxPolicy?: CodexSandboxPolicy;
 }): Executor {
   let runClient: Awaited<ReturnType<typeof startOpencodeRunClient>> | undefined;
   let codexClient: CodexAppServerClient | undefined;
@@ -165,7 +167,8 @@ export function createDefaultExecutor(args: {
       if (backends.has("codex")) {
         codexClient = await CodexAppServerClient.start({
           cwd: args.targetDir,
-          env: { OGSYSTEM_RUN_DIR: args.runContext.runDir, OGSYSTEM_SHARED_DIR: args.runContext.sharedDir }
+          env: { OGSYSTEM_RUN_DIR: args.runContext.runDir, OGSYSTEM_SHARED_DIR: args.runContext.sharedDir },
+          sandboxPolicy: args.codexSandboxPolicy
         });
         await filesystemArtifactStore.appendEvent(args.runContext, {
           type: "backend_server_started", backend: "codex", at: new Date().toISOString(),

@@ -343,6 +343,9 @@ test("Studio Bridge renders and edits through the real graph workspace", async (
     await expect(page.locator('#studio-graph-root [data-studio-graph-action="chat-generate"]')).toBeVisible();
     await expect(page.locator('#studio-graph-root [data-studio-graph-action="validate"]')).toBeVisible();
     await expect(page.locator('#studio-graph-root [data-studio-graph-action="save"]')).toBeVisible();
+    await expect(page.locator('#studio-graph-root [data-studio-graph-action="layout"]')).toHaveCount(0);
+    await expect(page.locator('#studio-graph-root [data-studio-graph-action="save"] svg')).toBeVisible();
+    await expect(page.locator('#studio-graph-root [data-studio-graph-action="save"]')).toHaveAttribute("title", /Save/);
     await expect(page.locator('#studio-graph-root [data-studio-graph-minimap]')).toBeVisible();
     await expect(page.locator("#studio-bridge-generate")).toHaveCount(0);
     await expect(page.locator("[data-studio-bridge-fullscreen]")).toHaveCount(0);
@@ -707,6 +710,49 @@ test("Run opens global operations with fixed run-view tabs", async ({ page }) =>
   }
 });
 
+test("Build opens a real-run form with dry-run disabled by default", async ({ page }) => {
+  const workdir = await mkdtemp(path.join(os.tmpdir(), "ogsystem-real-run-entry-"));
+  await seedProject(workdir);
+  const started = await startVisualizationServer({ workdir, host: "127.0.0.1", port: 0 });
+  try {
+    await page.goto(started.url);
+    await page.getByRole("tab", { name: await resolveLifecycleTabName(page, ["Build", "Design"]) }).click();
+    await page.locator('footer.status-bar.global-status [data-workbench-view="bridge"]').click();
+    const debugPanel = page.locator('[data-studio-selection-panel="debug"]');
+    await page.locator('[data-studio-side-tab="debug"]').click();
+    await debugPanel.locator("#workbench-run-input").fill("bounded UAT prompt");
+    await debugPanel.locator("#workbench-start-real-run").click();
+    await expect(page.locator("#action-form-section")).toBeVisible();
+    await expect(page.locator("#action-start-dry-run")).toHaveValue("false");
+    await expect(page.locator("#action-run-prompt")).toHaveValue("bounded UAT prompt");
+  } finally {
+    await page.close();
+    await new Promise<void>((resolve) => started.server.close(() => resolve()));
+  }
+});
+
+test("unconfigured contracts initialize in place and open the contract editor", async ({ page }) => {
+  const workdir = await mkdtemp(path.join(os.tmpdir(), "ogsystem-contract-initialize-"));
+  await seedProject(workdir);
+  const started = await startVisualizationServer({ workdir, host: "127.0.0.1", port: 0 });
+  try {
+    await page.goto(started.url);
+    await page.getByRole("tab", { name: await resolveLifecycleTabName(page, ["Build", "Design"]) }).click();
+    await page.locator('footer.status-bar.global-status [data-workbench-view="bridge"]').click();
+    const structurePanel = page.locator('[data-studio-selection-panel="structure"]');
+    await structurePanel.locator(".studio-contract-editor summary").click();
+    await expect(structurePanel.locator("[data-contract-default-path]")).toHaveText("contracts/handoff.contracts.json");
+    await structurePanel.locator("[data-contract-initialize]").click();
+    await expect(structurePanel.locator(".studio-contract-editor")).toHaveAttribute("open", "");
+    await expect(structurePanel.locator("[data-contract-add]")).toBeVisible();
+    await expect(structurePanel.locator("[data-contract-manifest-save]")).toBeVisible();
+    await expect(structurePanel.locator(".studio-system-settings [data-system-setting='handoffMode']")).toHaveValue("transition");
+  } finally {
+    await page.close();
+    await new Promise<void>((resolve) => started.server.close(() => resolve()));
+  }
+});
+
 test("Design shows the latest dry-run trace and keeps it separate from Run selection", async ({ page }) => {
   test.setTimeout(60000);
   const workdir = await mkdtemp(path.join(os.tmpdir(), "ogsystem-design-debug-trace-"));
@@ -877,9 +923,18 @@ test("SCC container drag moves every member node with the container", async ({ p
         strokeWidth: Number.parseFloat(style?.strokeWidth || "0")
       };
     }))).toEqual([
-      { hasTargetMarker: true, dashed: true, strokeWidth: 2.2 },
-      { hasTargetMarker: true, dashed: true, strokeWidth: 2.2 }
+      { hasTargetMarker: true, dashed: true, strokeWidth: 2.6 },
+      { hasTargetMarker: true, dashed: true, strokeWidth: 2.6 }
     ]);
+    const loopMarkerReferenceOffsets = await page.evaluate(() => Array.from(
+      document.querySelectorAll<SVGGElement>('#studio-graph-root .x6-edge.is-loop-back')
+    ).map((edge) => {
+      const path = edge.querySelector<SVGPathElement>('path[marker-end]');
+      const markerId = path?.getAttribute("marker-end")?.match(/#([^)]*)/)?.[1];
+      const marker = markerId ? document.getElementById(markerId) : null;
+      return Number.parseFloat(marker?.getAttribute("refX") || "NaN");
+    }));
+    expect(loopMarkerReferenceOffsets).toEqual([-16, -16]);
 
     const before = await page.evaluate(() => {
       const cellBox = (id: string) => {
@@ -933,6 +988,34 @@ test("SCC container drag moves every member node with the container", async ({ p
         && Math.abs(groupDelta.x - intakeDelta.x) <= 3
         && Math.abs(groupDelta.y - intakeDelta.y) <= 3;
     }, before)).toBe(true);
+  } finally {
+    await new Promise<void>((resolve) => started.server.close(() => resolve()));
+  }
+});
+
+test("Studio graph toolbar and context menus are localized in Chinese", async ({ page }) => {
+  const workdir = await mkdtemp(path.join(os.tmpdir(), "ogsystem-studio-zh-graph-"));
+  await seedProject(workdir);
+  const started = await startVisualizationServer({ workdir, host: "127.0.0.1", port: 0 });
+  try {
+    await page.goto(`${started.url}?lang=zh-CN`);
+    await page.waitForFunction(() => Boolean((window as any).OGSVisualizerClient?.mountStudioX6Bridge));
+    await page.locator("#console-tab-design").click();
+    await page.locator('[data-workbench-view="bridge"]').click();
+    await waitForStudioCell(page, "demo-analyst");
+
+    const topologyOrder = page.locator('#studio-graph-root [data-studio-graph-action="topology-order"]');
+    await expect(topologyOrder).toContainText("拓扑序号");
+    await expect(topologyOrder).toHaveAttribute("title", /隐藏拓扑序号|显示拓扑序号/);
+
+    await page.locator('#studio-graph-root [data-cell-id="demo-analyst"]').click({ button: "right" });
+    const contextMenu = page.locator("#studio-graph-root [data-studio-graph-context-menu]");
+    await expect(contextMenu).toBeVisible();
+    await expect(contextMenu).toContainText("编辑");
+    await expect(contextMenu).toContainText("删除");
+
+    await page.locator('#studio-graph-root .x6-edge path[marker-end]').first().click({ button: "right", force: true });
+    await expect(contextMenu).toContainText("插入角色");
   } finally {
     await new Promise<void>((resolve) => started.server.close(() => resolve()));
   }

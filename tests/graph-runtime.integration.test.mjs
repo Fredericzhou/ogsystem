@@ -411,8 +411,7 @@ test("adapter preserves session lineage semantics and join context projection ac
   await writeModelBoundRole({
     rolesRoot,
     roleId: "coordinator",
-    allowedEvents: ["TO_A", "TO_B"],
-    requireEvent: false
+    allowedEvents: ["TO_A", "TO_B"]
   });
   await writeModelBoundRole({
     rolesRoot,

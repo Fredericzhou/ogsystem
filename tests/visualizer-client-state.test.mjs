@@ -590,6 +590,8 @@ test("client shell control renderers keep lifecycle visibility and run-list filt
   assert.deepEqual(getVisibleConsolePanelIds({ consoleTab: "project", operateTab: "overview" }), ["project"]);
   assert.deepEqual(getVisibleConsolePanelIds({ consoleTab: "design", operateTab: "overview" }), ["build"]);
   assert.deepEqual(getVisibleConsolePanelIds({ consoleTab: "run", operateTab: "overview" }), ["debug", "ops"]);
+  assert.deepEqual(getVisibleConsolePanelIds({ consoleTab: "run", operateTab: "reviews" }), ["debug", "reviews"]);
+  assert.deepEqual(getVisibleConsolePanelIds({ consoleTab: "run", operateTab: "reviews" }), ["debug", "reviews"]);
   assert.deepEqual(getVisibleConsolePanelIds({ consoleTab: "run", operateTab: "logs" }), ["debug", "logs"]);
   assert.deepEqual(getVisibleConsolePanelIds({ consoleTab: "release", operateTab: "overview" }), ["validate-release"]);
   assert.equal(shouldShowRunSidebar("run"), true);
@@ -784,9 +786,13 @@ test("client lifecycle panel renderers expose workspace and operate tab HTML", (
 
   const tabs = renderOperateTabsHtml({ operateTab: "operations", t, escapeText });
   assert.match(tabs, /data-operate-tab="operations"/);
+  assert.match(tabs, /data-operate-tab="reviews"/);
   assert.doesNotMatch(tabs, /data-operate-tab="graph"/);
   assert.match(tabs, /class="button subtle active"/);
-  assert.match(tabs, /Reviews, recovery, logs, and artifacts/);
+  assert.match(tabs, /Recovery, logs, and artifacts/);
+  const pendingTabs = renderOperateTabsHtml({ operateTab: "reviews", pendingReviewCount: 2, t, escapeText });
+  assert.match(pendingTabs, />Reviews \(2\)</);
+  assert.match(pendingTabs, /data-operate-tab="reviews"[^>]*aria-pressed="true"/);
 
   const skeleton = renderLoadingSkeletonHtml({ label: "Loading project data", rows: 4, t, escapeText });
   assert.match(skeleton, /role="status"/);
@@ -830,6 +836,8 @@ test("client lifecycle panel renderers cover workbench structure, stats, and tim
   });
   assert.match(statsHtml, /running/);
   assert.match(statsHtml, /dry run/);
+  assert.match(statsHtml, /data-open-pending-reviews/);
+  assert.match(statsHtml, /Open 2 pending review/);
   assert.match(statsHtml, />3</);
 
   const emptyTimeline = renderTimelineHtml({

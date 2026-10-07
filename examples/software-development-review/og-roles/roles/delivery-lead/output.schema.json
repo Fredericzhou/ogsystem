@@ -1,0 +1,9 @@
+{
+  "type": "object",
+  "required": ["event", "content"],
+  "properties": {
+    "event": {"type": "string", "enum": ["REVIEW_READY", "REWORK"]},
+    "content": {"type": "string", "minLength": 1}
+  },
+  "additionalProperties": false
+}

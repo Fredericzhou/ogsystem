@@ -1,0 +1,9 @@
+{
+  "configVersion": "2",
+  "defaults": {
+    "backend": "codex",
+    "modelId": "gpt-5.5",
+    "timeoutMs": 600000,
+    "maxOutputBytes": 65536
+  }
+}

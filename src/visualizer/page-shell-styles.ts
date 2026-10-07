@@ -1680,6 +1680,15 @@ export function renderPageShellStyles(): string {
       min-width: 0;
       overflow-wrap: anywhere;
     }
+    .studio-flow-contract-route .studio-flow-endpoint {
+      color: var(--endpoint-role-color, var(--flow-accent));
+      border-left: 2px solid var(--endpoint-role-color, var(--flow-accent));
+      padding-left: 4px;
+    }
+    .studio-flow-contract-route .studio-flow-endpoint.is-boundary {
+      border-left-style: dashed;
+      color: var(--muted);
+    }
     .studio-flow-contract-route span {
       flex: 0 0 auto;
     }

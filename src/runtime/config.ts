@@ -336,6 +336,7 @@ export function validateRuntimeConfig(value: unknown, filePath: string): Runtime
       "workspace",
       "retention",
       "redaction",
+      "codex",
       "opencode",
       "runtime"
     ],
@@ -394,6 +395,18 @@ export function validateRuntimeConfig(value: unknown, filePath: string): Runtime
       : expectArray(baseArgsValue, filePath, "$.opencode.baseArgs").map((entry, index) =>
           expectString(entry, filePath, `$.opencode.baseArgs[${index}]`)
         );
+
+  const codexRecord =
+    record.codex === undefined
+      ? undefined
+      : expectRecord(record.codex, filePath, "$.codex");
+  if (codexRecord) {
+    expectNoExtraKeys(codexRecord, ["sandbox"], filePath, "$.codex");
+  }
+  const codexSandbox = expectOptionalString(codexRecord?.sandbox, filePath, "$.codex.sandbox");
+  if (codexSandbox !== undefined && codexSandbox !== "readOnly" && codexSandbox !== "workspaceWrite") {
+    fail(filePath, "$.codex.sandbox", `expected "readOnly" or "workspaceWrite", received "${codexSandbox}"`);
+  }
 
   const retentionRecord =
     record.retention === undefined
@@ -480,6 +493,9 @@ export function validateRuntimeConfig(value: unknown, filePath: string): Runtime
     },
     retention,
     redaction,
+    codex: {
+      sandbox: (codexSandbox as "readOnly" | "workspaceWrite" | undefined) ?? "readOnly"
+    },
     opencode: {
       baseArgs
     },

@@ -1,0 +1,18 @@
+{
+  "roleId": "qa-engineer",
+  "roleVersion": "1.0.0",
+  "name": "QA Engineer",
+  "description": "Defines and runs checks for the requested change and reports verified results.",
+  "promptTemplate": "prompt.md",
+  "outputSchema": "output.schema.json",
+  "tags": ["software-development", "quality"],
+  "contractVersion": 1,
+  "purpose": "Verify software changes against agreed acceptance criteria.",
+  "responsibility": {"kind": "atomic", "owns": [], "contributes": [], "doesNotOwn": []},
+  "inputs": {"preconditions": []},
+  "outputs": {"events": ["QA_READY"], "postconditions": []},
+  "authority": {"controlActions": []},
+  "constraints": {"writableStateFields": [], "allowedTools": []},
+  "failure": {"retryableErrorCodes": [], "terminalErrorCodes": []},
+  "audit": {"requiredFields": []}
+}

@@ -81,6 +81,7 @@ import {
   importInstalledRolesVisualization,
   listInstalledRoleCatalog,
   listProjectRolesVisualization,
+  initializeProjectContractsVisualization,
   saveProjectRolePackageFilesVisualization,
   saveProjectContractFileVisualization,
   saveProjectSystemSource,
@@ -569,6 +570,12 @@ async function handleApiProjectContractSave(
     filePath: asString(body.filePath) ?? "",
     content: asString(body.content) ?? ""
   }));
+}
+
+async function handleApiProjectContractInitialize(workdir: string, response: ServerResponse): Promise<void> {
+  const result = await initializeProjectContractsVisualization({ workdir });
+  invalidateAllProjectCaches(workdir);
+  jsonResponse(response, 200, result);
 }
 
 async function handleApiProjectRolePackages(workdir: string, response: ServerResponse): Promise<void> {
@@ -1571,6 +1578,12 @@ function normalizeError(error: unknown): HttpError {
   if (/already resolved|already expired|not actionable/i.test(message)) {
     return new HttpError(409, "REVIEW_NOT_ACTIONABLE", message);
   }
+  if (/^Handoff contracts are already configured/.test(message) || /^Cannot initialize contracts because .+ already exists\.$/.test(message)) {
+    return new HttpError(409, "CONTRACT_INITIALIZATION_CONFLICT", message);
+  }
+  if (/^Cannot initialize contracts because/.test(message)) {
+    return new HttpError(400, "CONTRACT_INITIALIZATION_INVALID", message);
+  }
   if (/^Choose either --engine or --role/i.test(message) || /^Invalid --since/i.test(message)) {
     return new HttpError(400, "INVALID_LOG_QUERY", message);
   }
@@ -1644,6 +1657,7 @@ const EXACT_API_ROUTE_HANDLERS = new Map<string, ExactApiRouteHandler>([
   ["GET project/ops-summary", async ({ state, response }) => handleApiProjectOpsSummary(state.workdir, response)],
   ["GET project/bindings", async ({ state, response }) => handleApiProjectBindings(state.workdir, response)],
   ["GET project/contracts", async ({ state, response }) => handleApiProjectContracts(state.workdir, response)],
+  ["POST project/contracts/initialize", async ({ state, response }) => handleApiProjectContractInitialize(state.workdir, response)],
   ["POST project/contracts", async ({ state, request, response }) => handleApiProjectContractSave(state.workdir, request, response)],
   ["GET project/role-packages", async ({ state, response }) => handleApiProjectRolePackages(state.workdir, response)],
   ["GET project/readiness", async ({ state, response }) => handleApiProjectReadiness(state.workdir, response)],

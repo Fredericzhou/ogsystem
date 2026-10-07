@@ -216,10 +216,12 @@ test("stored projection preserves positions while renderer stays library-indepen
   assert.match(renderer, /export function alignStudioSccGroups\(graph: Graph\)/);
   assert.match(renderer, /formatStudioEdgeTopologyLabel\(edge\)/);
   assert.match(renderer, /distance: 0\.5,\r?\n\s+offset: -15/);
-  assert.match(renderer, /name: "block",\r?\n\s+width: loopEdge \? 14 : 12,\r?\n\s+height: loopEdge \? 10 : 9/);
+  assert.match(renderer, /zIndex: isLoopEdge\(edge\) \? 3 : 1/);
+  assert.match(renderer, /name: "block",\r?\n\s+width: loopEdge \? 16 : 12,\r?\n\s+height: loopEdge \? 12 : 9/);
   assert.match(renderer, /function isLoopEdge\(edge: GraphViewModelEdge\)/);
+  assert.match(renderer, /strokeWidth: loopEdge \? 2\.6/);
   assert.match(renderer, /strokeDasharray: loopEdge \? "7 5"/);
-  assert.match(renderer, /width: loopEdge \? 14 : 12/);
+  assert.match(renderer, /refX: -16/);
   assert.match(renderer, /targetMarker: \{[\s\S]*?fill: stroke,[\s\S]*?stroke,[\s\S]*?strokeWidth: 1/);
 });
 

@@ -96,6 +96,11 @@ ogs vis --ogs-dir .
 ogs visualizer --ogs-dir .
 ```
 
+The two starting examples are the default Hello World project, which runs without model setup,
+and [Software Development and Review](examples/software-development-review/), which demonstrates
+parallel implementation work, QA, a joined review, and bounded human rework. The latter is a
+workflow scaffold; actual code changes depend on the selected local CLI and model.
+
 Stable lifecycle command anchors:
 
 ```bash
@@ -236,7 +241,6 @@ For day-to-day use, start with `docs/usage/usage-manual.md`. It keeps the comman
 - Remote execution protocol v1 and its runtime validators are documented in `src/runtime/remote-execution-contract.ts`; it defines the replaceable-call boundary but does not enable remote worker dispatch in this release.
 - Model backend/model configuration is managed in Studio or `.ogs/model-selection.json`, not in Mermaid metadata.
 - `examples/langgraph-debate-current/` shows a minimal debate with loop + parallel + join.
-- `D:\Coder\AAI\mulit-debate-ogs\` is a standalone OGSystem application adapted from the sibling `mulit-debate` project, with bounded parallel debate and required human review.
 - `examples/langgraph-expert-consultation/` shows a minimal expert consultation with parallel + join.
 - `examples/medical-quorum-consultation/` shows quorum join + context projection in a professional consultation flow.
 - `examples/error-flow-compensation/` shows failure-to-compensation routing via error flows expressed as `ERROR*` edge labels.

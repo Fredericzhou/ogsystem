@@ -85,6 +85,16 @@
         }
       }
     },
+    "codex": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "sandbox": {
+          "type": "string",
+          "enum": ["readOnly", "workspaceWrite"]
+        }
+      }
+    },
     "opencode": {
       "type": "object",
       "additionalProperties": false,

@@ -1,0 +1,18 @@
+{
+  "roleId": "delivery-lead",
+  "roleVersion": "1.0.0",
+  "name": "Delivery Lead",
+  "description": "Reviews the joined implementation and verification evidence for operator approval.",
+  "promptTemplate": "prompt.md",
+  "outputSchema": "output.schema.json",
+  "tags": ["software-development", "review"],
+  "contractVersion": 1,
+  "purpose": "Assess delivery evidence and prepare a reviewable change summary.",
+  "responsibility": {"kind": "atomic", "owns": [], "contributes": [], "doesNotOwn": []},
+  "inputs": {"preconditions": []},
+  "outputs": {"events": ["REVIEW_READY", "REWORK"], "postconditions": []},
+  "authority": {"controlActions": ["approve", "pause", "rework"]},
+  "constraints": {"writableStateFields": [], "allowedTools": []},
+  "failure": {"retryableErrorCodes": [], "terminalErrorCodes": []},
+  "audit": {"requiredFields": []}
+}

@@ -198,6 +198,90 @@ test("contract editor API restricts paths and preserves files rejected by valida
   }
 });
 
+test("contract initialization creates the default transition bundle without overwriting an existing file", async () => {
+  const workdir = await mkdtemp(path.join(os.tmpdir(), "ogsystem-visualizer-contract-init-"));
+  await seedProjectFixture(workdir);
+  let started;
+  try {
+    started = await startVisualizationServer({ workdir, host: "127.0.0.1", port: 0 });
+    const response = await fetch(`${started.url}/api/v1/project/contracts/initialize`, { method: "POST" });
+    const responseText = await response.text();
+    assert.equal(response.status, 200, responseText);
+    const initialized = JSON.parse(responseText);
+    assert.equal(initialized.manifest.path, "contracts/handoff.contracts.json");
+    assert.deepEqual(JSON.parse(initialized.manifest.content), { version: 1, contracts: [] });
+    assert.match(initialized.systemSource, /%% handoff\.mode=transition/);
+    assert.match(initialized.systemSource, /%% handoff\.contracts=contracts\/handoff\.contracts\.json/);
+
+    const systemSource = await readFile(path.resolve(workdir, "system.mmd"), "utf8");
+    assert.equal(systemSource, initialized.systemSource);
+    const manifestPath = path.resolve(workdir, "contracts", "handoff.contracts.json");
+    const manifestSource = await readFile(manifestPath, "utf8");
+    assert.deepEqual(JSON.parse(manifestSource), { version: 1, contracts: [] });
+
+    const repeated = await fetch(`${started.url}/api/v1/project/contracts/initialize`, { method: "POST" });
+    assert.equal(repeated.status, 409);
+    assert.equal(await readFile(manifestPath, "utf8"), manifestSource);
+    assert.equal(await readFile(path.resolve(workdir, "system.mmd"), "utf8"), systemSource);
+  } finally {
+    if (started) await new Promise((resolve) => started.server.close(resolve));
+    await rm(workdir, { recursive: true, force: true });
+  }
+});
+
+test("contract initialization rejects existing files and configured systems without partial writes", async () => {
+  const workdir = await mkdtemp(path.join(os.tmpdir(), "ogsystem-visualizer-contract-init-guards-"));
+  await seedProjectFixture(workdir);
+  let started;
+  try {
+    started = await startVisualizationServer({ workdir, host: "127.0.0.1", port: 0 });
+    const systemPath = path.resolve(workdir, "system.mmd");
+    const manifestPath = path.resolve(workdir, "contracts", "handoff.contracts.json");
+    const originalSystem = await readFile(systemPath, "utf8");
+
+    await mkdir(path.dirname(manifestPath), { recursive: true });
+    await writeFile(manifestPath, "preserve this contract file\n", "utf8");
+    const collision = await fetch(`${started.url}/api/v1/project/contracts/initialize`, { method: "POST" });
+    assert.equal(collision.status, 409);
+    assert.equal(await readFile(manifestPath, "utf8"), "preserve this contract file\n");
+    assert.equal(await readFile(systemPath, "utf8"), originalSystem);
+
+    await rm(manifestPath);
+    const configuredSystem = originalSystem.replace("flowchart TD", "flowchart TD\n%% handoff.mode=transition");
+    await writeFile(systemPath, configuredSystem, "utf8");
+    const configured = await fetch(`${started.url}/api/v1/project/contracts/initialize`, { method: "POST" });
+    assert.equal(configured.status, 409);
+    assert.equal(await readFile(systemPath, "utf8"), configuredSystem);
+    await assert.rejects(readFile(manifestPath, "utf8"), { code: "ENOENT" });
+  } finally {
+    if (started) await new Promise((resolve) => started.server.close(resolve));
+    await rm(workdir, { recursive: true, force: true });
+  }
+});
+
+test("concurrent contract initialization allows one writer and reports the other as a conflict", async () => {
+  const workdir = await mkdtemp(path.join(os.tmpdir(), "ogsystem-visualizer-contract-init-race-"));
+  await seedProjectFixture(workdir);
+  let started;
+  try {
+    started = await startVisualizationServer({ workdir, host: "127.0.0.1", port: 0 });
+    const endpoint = `${started.url}/api/v1/project/contracts/initialize`;
+    const responses = await Promise.all([
+      fetch(endpoint, { method: "POST" }),
+      fetch(endpoint, { method: "POST" })
+    ]);
+    assert.deepEqual(responses.map((response) => response.status).sort(), [200, 409]);
+    const manifest = JSON.parse(await readFile(path.resolve(workdir, "contracts", "handoff.contracts.json"), "utf8"));
+    assert.deepEqual(manifest, { version: 1, contracts: [] });
+    const systemSource = await readFile(path.resolve(workdir, "system.mmd"), "utf8");
+    assert.equal((systemSource.match(/%% handoff\.mode=transition/g) ?? []).length, 1);
+    assert.equal((systemSource.match(/%% handoff\.contracts=contracts\/handoff\.contracts\.json/g) ?? []).length, 1);
+  } finally {
+    if (started) await new Promise((resolve) => started.server.close(resolve));
+    await rm(workdir, { recursive: true, force: true });
+  }
+});
+
 async function seedProjectFixture(workdir) {
   const repoRoot = process.cwd();
   await mkdir(path.resolve(workdir, ".ogs"), { recursive: true });

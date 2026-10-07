@@ -1,0 +1,18 @@
+{
+  "roleId": "backend-engineer",
+  "roleVersion": "1.0.0",
+  "name": "Backend Engineer",
+  "description": "Implements backend changes within the requested scope and project conventions.",
+  "promptTemplate": "prompt.md",
+  "outputSchema": "output.schema.json",
+  "tags": ["software-development", "backend"],
+  "contractVersion": 1,
+  "purpose": "Implement backend changes within an agreed project scope.",
+  "responsibility": {"kind": "atomic", "owns": [], "contributes": [], "doesNotOwn": []},
+  "inputs": {"preconditions": []},
+  "outputs": {"events": ["BACKEND_READY"], "postconditions": []},
+  "authority": {"controlActions": []},
+  "constraints": {"writableStateFields": [], "allowedTools": []},
+  "failure": {"retryableErrorCodes": [], "terminalErrorCodes": []},
+  "audit": {"requiredFields": []}
+}

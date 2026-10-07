@@ -1,0 +1,18 @@
+{
+  "roleId": "solution-architect",
+  "roleVersion": "1.0.0",
+  "name": "Solution Architect",
+  "description": "Decomposes a bounded software change into implementation and verification workstreams.",
+  "promptTemplate": "prompt.md",
+  "outputSchema": "output.schema.json",
+  "tags": ["software-development", "architecture"],
+  "contractVersion": 1,
+  "purpose": "Decompose software changes into implementation and verification workstreams.",
+  "responsibility": {"kind": "atomic", "owns": [], "contributes": [], "doesNotOwn": []},
+  "inputs": {"preconditions": []},
+  "outputs": {"events": ["START_BACKEND", "START_FRONTEND", "START_QA"], "postconditions": []},
+  "authority": {"controlActions": []},
+  "constraints": {"writableStateFields": [], "allowedTools": []},
+  "failure": {"retryableErrorCodes": [], "terminalErrorCodes": []},
+  "audit": {"requiredFields": []}
+}

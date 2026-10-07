@@ -22,10 +22,13 @@ import {
   renderStudioContractEditor,
   renderStudioBridgeInspector,
   renderStudioBridgePanel,
+  renderStudioBridgeStructureHtml,
   renderStudioDebugOutcomePanel,
   renderReleaseGatePanel
 } from "../dist/visualizer/client-renderers.js";
 import { authoringToCanvasDocument } from "../dist/visualizer/studio-authoring.js";
+import { createTranslator } from "../dist/visualizer/i18n/index.js";
+import { roleColorForId } from "../dist/visualizer/role-color.js";
 import { latestRoleContract } from "../tests-support/role-fixture.mjs";
 
 const PAGE_ELEMENT_IDS = [
@@ -290,6 +293,77 @@ function testTranslator(_key, vars, fallback) {
   return text;
 }
 
+test("Studio system and handoff contract panels are localized in Chinese", () => {
+  const t = createTranslator("zh-CN");
+  const settings = renderStudioSystemSettingsEditor({
+    authoring: {
+      system: { systemId: "demo", systemVersion: "1.0.0", entryRoleId: "writer", entryEventType: "START" },
+      roles: { writer: { roleId: "writer" } }
+    },
+    t
+  });
+  assert.match(settings, /系统设置/);
+  assert.match(settings, /交接契约文件/);
+  assert.doesNotMatch(settings, />System settings</);
+  assert.doesNotMatch(settings, />Handoff mode</);
+
+  const unconfigured = renderStudioContractEditor({ contracts: {}, t });
+  assert.match(unconfigured, /交接契约/);
+  assert.match(unconfigured, /尚未配置交接契约文件/);
+  assert.match(unconfigured, /contracts\/handoff\.contracts\.json/);
+  assert.match(unconfigured, /适用流转全部覆盖后，再切换为“严格”模式/);
+  assert.match(unconfigured, /data-contract-initialize/);
+  assert.doesNotMatch(unconfigured, /Configure and save a contract file/);
+
+  const configured = renderStudioContractEditor({
+    contracts: {
+      manifest: { path: ".ogs/contracts/handoff.json", content: JSON.stringify({ contracts: [{ kind: "flow", id: "writer.done", match: { fromRoleId: "writer", eventType: "DONE", toRoleId: "__system_end__" }, schema: "schema.json" }] }) },
+      coverage: { coveredFlowCount: 1, eligibleFlowCount: 2 },
+      contracts: [{ flowKey: "writer:DONE:output", contractId: "writer.done", lastStatus: "covered", schemaPath: "schema.json" }],
+      schemaFiles: [{ path: "schema.json", content: "{}" }]
+    },
+    t
+  });
+  assert.match(configured, /已覆盖 1 \/ 2 条适用流转/);
+  assert.match(configured, /拆分流转/);
+  assert.match(configured, /已覆盖/);
+  assert.doesNotMatch(configured, /Handoff contracts|Flow \/ role|Contract list|On violation/);
+});
+
+test("Studio flow list uses role colors and localizes the system output endpoint", () => {
+  const t = createTranslator("zh-CN");
+  const html = renderStudioBridgeStructureHtml({
+    bridge: {
+      extracted: {
+        roles: [{ roleId: "writer", title: "Writer", bindingKind: "model", allowedEvents: ["DONE"] }],
+        flows: [{ flowKey: "writer:DONE:output", fromRoleId: "writer", toRoleId: "__system_end__", eventType: "DONE" }]
+      }
+    },
+    selectedRoleId: "",
+    selectedFlowKey: "",
+    actionBusy: "",
+    t
+  });
+  const writerColor = roleColorForId("writer").accent;
+  assert.ok(html.includes('style="--endpoint-role-color:' + writerColor + '"'));
+  assert.match(html, /studio-flow-endpoint is-boundary/);
+  assert.match(html, />输出\/终止<\/code>/);
+  assert.doesNotMatch(html, /__system_end__/);
+
+  const flowConfig = renderStudioFlowConfigEditor({
+    flowKey: "writer:DONE:output",
+    editor: {
+      flowKey: "writer:DONE:output",
+      data: { sourceRoleId: "writer", targetRoleId: "__system_end__", eventType: "DONE" },
+      draft: { sourceRoleId: "writer", targetRoleId: "__system_end__", eventType: "DONE" }
+    },
+    authoring: { roles: { writer: { roleId: "writer" } } },
+    t
+  });
+  assert.match(flowConfig, /输出\/终止/);
+  assert.doesNotMatch(flowConfig, /__system_end__/);
+});
+
 test("visualizer client script injects Studio authoring editor renderers", () => {
   const script = buildClientAppScript("/api/v1");
   assert.match(script, /const renderStudioRoleConfigEditor = /);
@@ -300,6 +374,14 @@ test("visualizer client script injects Studio authoring editor renderers", () =>
   assert.match(script, /studioCanvasSaveChain = studioCanvasSaveChain\.catch\(\(\) => undefined\)\.then/);
   assert.match(script, /renderWorkbench:\s*false/);
   assert.match(script, /args\.renderWorkbench === false && hasMountedStudioBridgeShell\(\)/);
+});
+
+test("Studio graph toolbar and context menu labels are wired through localization", () => {
+  const script = buildClientAppScript("/api/v1");
+  assert.match(script, /topologyOrder: t\("studio\.graph\.topologyOrder"/);
+  assert.match(script, /contextEdit: t\("studio\.graph\.contextEdit"/);
+  assert.match(script, /contextDelete: t\("studio\.graph\.contextDelete"/);
+  assert.match(script, /contextInsertRole: t\("studio\.graph\.contextInsertRole"/);
 });
 
 test("Studio Bridge renderers display and filter flow labels separately from event types", () => {
@@ -3209,6 +3291,19 @@ test("visualizer client renders zh-CN chrome while preserving runtime identifier
   assert.equal(latestMount.labels.fullscreen, "全屏");
 });
 
+test("pending-review summary opens the review queue directly", async () => {
+  const harness = await createClientHarness();
+  const openReviews = harness.document.getElementById("stats").querySelector("[data-open-pending-reviews]");
+  assert.ok(openReviews);
+  await openReviews.click();
+
+  const reviewsTab = harness.document.getElementById("operate-tabs")
+    .querySelectorAll("[data-operate-tab]")
+    .find((button) => button.getAttribute("data-operate-tab") === "reviews");
+  assert.equal(reviewsTab?.getAttribute("aria-pressed"), "true");
+  assert.equal(harness.document.getElementById("operate-tabpanel-reviews").hidden, false);
+});
+
 test("visualizer client language switch stores locale and refreshes with lang query", async () => {
   const harness = await createClientHarness();
 
@@ -4202,7 +4297,26 @@ test("visualizer client edits the Mermaid workbench, saves, and starts a run", a
   assert.match(debugBody, /Debug|Start dry run/i);
 });
 
-test("visualizer client blocks start run submit when run input is empty", async () => {
+test("visualizer offers a confirmed real-run form from the Build debug panel", async () => {
+  const harness = await createClientHarness({ readinessCanDryRun: true });
+  await openDesignTab(harness);
+  await waitForCondition(() => Boolean(findStudioSideTabButton(harness, "debug")));
+  await findStudioSideTabButton(harness, "debug").click();
+  await waitForCondition(() => Boolean(harness.document.getElementById("workbench-start-real-run")));
+  await harness.document.getElementById("workbench-run-input").input("Run a bounded real-model check");
+  await harness.document.getElementById("workbench-start-real-run").click();
+
+  assert.match(harness.document.getElementById("action-form").innerHTML, /<option value="false" selected>/);
+  harness.document.getElementById("action-start-dry-run").value = "false";
+  assert.equal(harness.document.getElementById("action-run-prompt").value, "Run a bounded real-model check");
+  await harness.document.getElementById("action-form-submit").click();
+  await settle();
+
+  assert.equal(harness.backend.lastStartBody.dryRun, false);
+  assert.equal(harness.backend.lastStartBody.input, "Run a bounded real-model check");
+});
+
+test("visualizer blocks start run submit when run input is empty", async () => {
   const harness = await createClientHarness({ readinessCanDryRun: true });
   await openDesignTab(harness);
 

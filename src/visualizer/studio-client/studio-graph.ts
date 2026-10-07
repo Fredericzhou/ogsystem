@@ -58,12 +58,16 @@ type StudioGraphLabelKey =
   | "resetView"
   | "fullscreen"
   | "fitView"
-  | "autoLayout"
+  | "layoutMode"
   | "layoutModeFlow"
   | "layoutModeCompact"
   | "layoutModeStacked"
   | "topologyOrder"
-  | "layoutSwitched"
+  | "topologyOrderEnabled"
+  | "topologyOrderDisabled"
+  | "contextEdit"
+  | "contextDelete"
+  | "contextInsertRole"
   | "generate"
   | "debugRun"
   | "debugAdvanced"
@@ -75,8 +79,6 @@ type StudioGraphLabelKey =
   | "addRole"
   | "addEdge"
   | "editSelection"
-  | "editRole"
-  | "editEdge"
   | "deleteSelection"
   | "undo"
   | "redo"
@@ -101,6 +103,30 @@ type StudioGraphLabelKey =
   | "boundaryEnd";
 
 export type StudioGraphLabels = Partial<Record<StudioGraphLabelKey, string>>;
+
+const STUDIO_GRAPH_ICON_PATHS: Record<string, string[]> = {
+  "zoom-out": ["M5 12h14"],
+  "zoom-in": ["M5 12h14", "M12 5v14"],
+  "reset-view": ["M4 7V4h3", "M4 4l4 4", "M5 12a7 7 0 1 0 2-5"],
+  fullscreen: ["M8 3H3v5", "M16 3h5v5", "M21 16v5h-5", "M3 16v5h5"],
+  fit: ["M4 9V4h5", "M20 9V4h-5", "M20 15v5h-5", "M4 15v5h5"],
+  "topology-order": ["M9 6h11", "M9 12h11", "M9 18h11", "M4 6h.01", "M4 12h.01", "M4 18h.01"],
+  generate: ["m12 3 1.8 5.2L19 10l-5.2 1.8L12 17l-1.8-5.2L5 10l5.2-1.8L12 3Z", "m19 14 1.1 2.9L23 18l-2.9 1.1L19 22l-1.1-2.9L15 18l2.9-1.1L19 14Z"],
+  "debug-run": ["m8 5 11 7-11 7V5Z"],
+  "add-role": ["M16 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2", "M10 11a4 4 0 1 0 0-8 4 4 0 0 0 0 8", "M19 8v6", "M16 11h6"],
+  "add-edge": ["M7 7h4a3 3 0 0 1 3 3v4a3 3 0 0 0 3 3h1", "M15 13l4 4-4 4", "M7 7l4-4"],
+  edit: ["M12 20h9", "M16.5 3.5a2.1 2.1 0 0 1 3 3L8 18l-4 1 1-4Z"],
+  delete: ["M3 6h18", "M8 6V4h8v2", "m19 6-1 14H6L5 6", "M10 11v5", "M14 11v5"],
+  undo: ["M9 14 4 9l5-5", "M4 9h10a6 6 0 0 1 0 12h-2"],
+  redo: ["m15 14 5-5-5-5", "M20 9H10a6 6 0 0 0 0 12h2"],
+  validate: ["m5 12 4 4L19 6"],
+  save: ["M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2Z", "M17 21v-8H7v8", "M7 3v5h8"]
+};
+
+function studioGraphIcon(name: string): string {
+  return '<svg viewBox="0 0 24 24" focusable="false" aria-hidden="true">' +
+    (STUDIO_GRAPH_ICON_PATHS[name] ?? []).map((path) => '<path d="' + path + '"></path>').join("") + '</svg>';
+}
 
 export type StudioGraphBridgeOptions = {
   initialLayoutMode?: StudioLayoutMode;
@@ -308,32 +334,31 @@ export class StudioGraphIsland {
       '<div class="studio-graph-toolbar">',
       '<div class="studio-graph-toolbar-main">',
       '<div class="studio-graph-toolbar-group" aria-label="' + this.escapeHtml(this.label("viewportGroup")) + '">',
-      this.toolbarButton("zoom-out", "zoomOut", "−", "−"),
-      this.toolbarButton("zoom-in", "zoomIn", "+", "+"),
-      this.toolbarButton("reset-view", "resetView", "1:1", "100%"),
-      this.toolbarButton("fullscreen", "fullscreen", "⛶"),
-      this.toolbarButton("fit", "fitView", "◎"),
-      this.toolbarButton("layout", "autoLayout", "⇄"),
-      '<select class="studio-graph-layout-select" data-studio-graph-layout aria-label="' + this.escapeHtml(this.label("autoLayout")) + '">' +
+      this.toolbarButton("zoom-out", "zoomOut", "zoom-out", "−"),
+      this.toolbarButton("zoom-in", "zoomIn", "zoom-in", "+"),
+      this.toolbarButton("reset-view", "resetView", "reset-view", "100%"),
+      this.toolbarButton("fullscreen", "fullscreen", "fullscreen"),
+      this.toolbarButton("fit", "fitView", "fit"),
+      '<select class="studio-graph-layout-select" data-studio-graph-layout aria-label="' + this.escapeHtml(this.label("layoutMode")) + '">' +
       '<option value="flow">' + this.escapeHtml(this.label("layoutModeFlow")) + '</option>' +
       '<option value="compact">' + this.escapeHtml(this.label("layoutModeCompact")) + '</option>' +
       '<option value="stacked">' + this.escapeHtml(this.label("layoutModeStacked")) + '</option>' +
       '</select>',
-      this.toolbarButton("topology-order", "topologyOrder", "#"),
+      this.toolbarButton("topology-order", "topologyOrder", "topology-order"),
       '</div>',
       '<div class="studio-graph-toolbar-group" data-studio-graph-generate-actions aria-label="' + this.escapeHtml(this.label("generate")) + '">',
-      this.toolbarButton("chat-generate", "generate", "✦"),
-      this.toolbarButton("debug-run", "debugRun", "▶", "Run"),
+      this.toolbarButton("chat-generate", "generate", "generate"),
+      this.toolbarButton("debug-run", "debugRun", "debug-run"),
       '</div>',
       '<div class="studio-graph-toolbar-group" data-studio-graph-edit-actions aria-label="' + this.escapeHtml(this.label("editGroup")) + '">',
-      this.toolbarButton("add-role", "addRole", "+R"),
-      this.toolbarButton("add-edge", "addEdge", "+E"),
-      this.toolbarButton("edit", "editSelection", "✎"),
-      this.toolbarButton("delete", "deleteSelection", "⌫"),
-      this.toolbarButton("undo", "undo", "↶"),
-      this.toolbarButton("redo", "redo", "↷"),
-      this.toolbarButton("validate", "validateWorkbench", "✓"),
-      this.toolbarButton("save", "saveWorkbench", "Sv"),
+      this.toolbarButton("add-role", "addRole", "add-role"),
+      this.toolbarButton("add-edge", "addEdge", "add-edge"),
+      this.toolbarButton("edit", "editSelection", "edit"),
+      this.toolbarButton("delete", "deleteSelection", "delete"),
+      this.toolbarButton("undo", "undo", "undo"),
+      this.toolbarButton("redo", "redo", "redo"),
+      this.toolbarButton("validate", "validateWorkbench", "validate"),
+      this.toolbarButton("save", "saveWorkbench", "save"),
       '</div>',
       '</div>',
       '</div>',
@@ -700,7 +725,6 @@ export class StudioGraphIsland {
       if (action === "validate") void this.options.onValidateWorkbench?.();
       if (action === "save") void this.options.onSaveWorkbench?.();
       if (this.isReadOnly()) return;
-      if (action === "layout") void this.autoLayout();
       if (action === "undo") void this.semanticUndo();
       if (action === "redo") void this.semanticRedo();
       if (action === "edit") this.openSelectedEditor();
@@ -1577,18 +1601,6 @@ export class StudioGraphIsland {
     await this.syncCanvas();
   }
 
-  private async autoLayout(): Promise<void> {
-    if (this.isReadOnly()) {
-      return;
-    }
-    this.layoutMode = this.nextLayoutMode(this.layoutMode);
-    await this.applyAutoLayout();
-    this.toast("info", this.formatLabel("layoutSwitched", {
-      layout: this.layoutModeLabel(this.layoutMode)
-    }));
-    await this.syncCanvas();
-  }
-
   private async applyDefaultAutoLayout(updateGeneration: number): Promise<boolean> {
     if (!this.options.defaultAutoLayout) {
       return false;
@@ -1701,12 +1713,6 @@ export class StudioGraphIsland {
           edges: this.currentViewModel.edges.map((edge) => ({ ...edge, topologyOrder: undefined }))
         };
     renderStudioGraphViewModel(this.graph, viewModel, this.currentLayoutProjection);
-  }
-
-  private nextLayoutMode(current: StudioGraphLayoutMode): StudioGraphLayoutMode {
-    const modes: StudioGraphLayoutMode[] = ["flow", "compact", "stacked"];
-    const index = modes.indexOf(current);
-    return modes[(index + 1) % modes.length] || "flow";
   }
 
   private layoutModeLabel(mode: StudioGraphLayoutMode): string {
@@ -2099,17 +2105,11 @@ export class StudioGraphIsland {
     if (editActions) {
       editActions.hidden = readOnly;
     }
-    const layout = this.toolbar.querySelector<HTMLButtonElement>('[data-studio-graph-action="layout"]');
-    if (layout) {
-      layout.hidden = readOnly;
-      const layoutTitle = `${this.label("autoLayout")} · ${this.layoutModeLabel(this.layoutMode)}`;
-      layout.title = layoutTitle;
-      layout.setAttribute("aria-label", layoutTitle);
-    }
     const topologyOrder = this.toolbar.querySelector<HTMLButtonElement>('[data-studio-graph-action="topology-order"]');
     if (topologyOrder) {
       topologyOrder.setAttribute("aria-pressed", this.showTopologyOrder ? "true" : "false");
-      topologyOrder.title = this.label("topologyOrder") + (this.showTopologyOrder ? " · on" : " · off");
+      topologyOrder.title = this.label(this.showTopologyOrder ? "topologyOrderEnabled" : "topologyOrderDisabled");
+      topologyOrder.setAttribute("aria-label", topologyOrder.title);
     }
     const layoutSelect = this.toolbar.querySelector<HTMLSelectElement>("[data-studio-graph-layout]");
     if (layoutSelect) {
@@ -2126,7 +2126,7 @@ export class StudioGraphIsland {
       debugRun.hidden = readOnly;
       debugRun.disabled = this.busy || readOnly || this.quickDebugBusy || typeof this.options.onQuickDebugRun !== "function";
     }
-    for (const action of ["layout", "add-role", "add-edge", "edit", "delete", "validate", "save"]) {
+    for (const action of ["add-role", "add-edge", "edit", "delete", "validate", "save"]) {
       const button = this.toolbar.querySelector<HTMLButtonElement>('[data-studio-graph-action="' + action + '"]');
       if (button) button.disabled = this.busy || readOnly;
     }
@@ -2295,7 +2295,7 @@ export class StudioGraphIsland {
     const label = this.label(key);
     return '<button type="button" data-studio-graph-action="' + this.escapeHtml(action) + '" title="' +
       this.escapeHtml(label) + '" aria-label="' + this.escapeHtml(label) + '"><span class="studio-graph-toolbar-icon" aria-hidden="true">' +
-      this.escapeHtml(icon) + '</span><span class="studio-graph-toolbar-text">' + this.escapeHtml(shortLabel ?? label) + '</span></button>';
+      studioGraphIcon(icon) + '</span><span class="studio-graph-toolbar-text">' + this.escapeHtml(shortLabel ?? label) + '</span></button>';
   }
 
   private sameCanvas(left: StudioCanvasSnapshot, right: StudioCanvasSnapshot): boolean {
@@ -2605,13 +2605,13 @@ export class StudioGraphIsland {
       : Boolean(args.state.edge.editable);
     const items = args.state.kind === "role"
       ? [
-          { action: "edit", label: "Edit", disabled: false },
-          { action: "delete", label: "Delete", disabled: !canDeleteRole, destructive: true }
+          { action: "edit", label: this.label("contextEdit"), disabled: false },
+          { action: "delete", label: this.label("contextDelete"), disabled: !canDeleteRole, destructive: true }
         ]
       : [
-          { action: "edit", label: "Edit", disabled: args.state.edge.editable === false },
-          { action: "insert-role", label: "Insert role", disabled: args.state.edge.editable === false },
-          { action: "delete", label: "Delete", disabled: args.state.edge.editable === false, destructive: true }
+          { action: "edit", label: this.label("contextEdit"), disabled: args.state.edge.editable === false },
+          { action: "insert-role", label: this.label("contextInsertRole"), disabled: args.state.edge.editable === false },
+          { action: "delete", label: this.label("contextDelete"), disabled: args.state.edge.editable === false, destructive: true }
         ];
     this.contextMenuEl.innerHTML = items.map((item) =>
       '<button type="button" class="studio-graph-context-menu-item' +

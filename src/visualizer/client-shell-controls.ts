@@ -64,6 +64,8 @@ export function getVisibleConsolePanelIds(args: {
   switch (operateTab) {
     case "operations":
       return ["debug", "ops", "logs", "artifacts"];
+    case "reviews":
+      return ["debug", "reviews"];
     case "logs":
       return ["debug", "logs"];
     case "artifacts":

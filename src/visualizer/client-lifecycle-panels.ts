@@ -40,13 +40,16 @@ export function renderWorkspaceEmptyStateHtml(args: {
 
 export function renderOperateTabsHtml(args: {
   operateTab: string;
+  pendingReviewCount?: number;
   t: Translator;
   escapeText: (value: unknown) => string;
 }): string {
   const { operateTab, t, escapeText } = args;
+  const pendingReviewCount = Math.max(0, Number(args.pendingReviewCount) || 0);
   const tabs = [
     ["overview", "operate-tabpanel-overview", t("operate.tab.flow", undefined, "Flow"), t("operate.tabHint.flow", undefined, "Step inputs, outputs, and handoffs")],
-    ["operations", "operate-tabpanel-recovery operate-tabpanel-reviews console-panel-ops console-panel-logs console-panel-artifacts", t("operate.tab.operations", undefined, "Operations"), t("operate.tabHint.operations", undefined, "Reviews, recovery, logs, and artifacts")]
+    ["reviews", "operate-tabpanel-reviews", pendingReviewCount ? t("operate.tab.reviewsPending", { count: String(pendingReviewCount) }, "Reviews ({count})") : t("operate.tab.reviews", undefined, "Reviews"), t("operate.tabHint.reviews", undefined, "Review pending human decisions")],
+    ["operations", "operate-tabpanel-recovery console-panel-ops console-panel-logs console-panel-artifacts", t("operate.tab.operations", undefined, "Operations"), t("operate.tabHint.operations", undefined, "Recovery, logs, and artifacts")]
   ];
   return tabs.map(([id, panelId, label, hint]) =>
     '<button class="button subtle ' + (operateTab === id ? "active" : "") +
@@ -324,7 +327,10 @@ export function renderRunStatsHtml(args: {
     [t("stats.pendingReviews"), header.pendingReviewCount],
     [t("stats.recentAudits"), header.recentAudits]
   ];
-  return cards
+  const pendingReviewCount = Math.max(0, Number(header.pendingReviewCount) || 0);
+  return (pendingReviewCount > 0
+    ? '<button type="button" class="button subtle" data-open-pending-reviews>' + escapeText(t("review.openPending", { count: String(pendingReviewCount) }, "Open {count} pending review(s)")) + '</button>'
+    : "") + cards
     .map(([label, value]) => `
       <div class="stat">
         <strong>${escapeText(value)}</strong>

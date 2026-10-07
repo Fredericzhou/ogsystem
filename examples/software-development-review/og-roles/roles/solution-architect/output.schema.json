@@ -1,0 +1,9 @@
+{
+  "type": "object",
+  "required": ["event", "content"],
+  "properties": {
+    "event": {"type": "string", "enum": ["START_BACKEND", "START_FRONTEND", "START_QA"]},
+    "content": {"type": "string", "minLength": 1}
+  },
+  "additionalProperties": false
+}

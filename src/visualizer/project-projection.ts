@@ -1643,3 +1643,56 @@ export async function saveProjectContractFileVisualization(args: {
     await Promise.all([rm(tempPath, { force: true }), rm(tempManifestPath, { force: true })]);
   }
 }
+
+export async function initializeProjectContractsVisualization(args: {
+  workdir: string;
+}): Promise<Record<string, unknown>> {
+  const systemPath = resolve(args.workdir, "system.mmd");
+  const systemSource = await readFile(systemPath, "utf8");
+  const system = parseSystemFromMermaidSource(systemSource);
+  if (system.graph?.handoffContracts || system.graph?.handoffMode) {
+    throw new Error("Handoff contracts are already configured in this System.");
+  }
+
+  const contractRef = "contracts/handoff.contracts.json";
+  const projectRoot = await realpath(args.workdir);
+  const manifestPath = resolve(projectRoot, contractRef);
+  const relativeManifestPath = relative(projectRoot, manifestPath);
+  if (relativeManifestPath === ".." || relativeManifestPath.startsWith(`..${sep}`) || resolve(projectRoot, relativeManifestPath) !== manifestPath) {
+    throw new Error("Contract files must stay inside the project directory.");
+  }
+  if (await pathExists(manifestPath)) {
+    throw new Error(`Cannot initialize contracts because ${contractRef} already exists.`);
+  }
+
+  const lines = systemSource.split(/\r?\n/);
+  const graphLine = lines.findIndex((line) => /^\s*(?:flowchart|graph)\b/i.test(line));
+  if (graphLine < 0) throw new Error("Cannot initialize contracts because the System graph header was not found.");
+  lines.splice(graphLine + 1, 0, "%% handoff.mode=transition", `%% handoff.contracts=${contractRef}`);
+  const candidateSource = lines.join(systemSource.includes("\r\n") ? "\r\n" : "\n");
+  const manifestContent = JSON.stringify({ version: 1, contracts: [] }, null, 2) + "\n";
+
+  await mkdir(dirname(manifestPath), { recursive: true });
+  try {
+    await writeFile(manifestPath, manifestContent, { encoding: "utf8", flag: "wx" });
+  } catch (error) {
+    if (error && typeof error === "object" && "code" in error && error.code === "EEXIST") {
+      throw new Error(`Cannot initialize contracts because ${contractRef} already exists.`);
+    }
+    throw error;
+  }
+  let systemSaved = false;
+  try {
+    const saved = await saveProjectSystemSource({ workdir: args.workdir, systemSource: candidateSource });
+    if (asRecord(saved.validation)?.ok !== true) {
+      throw new Error("Initialized contract settings failed System validation.");
+    }
+    systemSaved = true;
+    return {
+      ...await inspectProjectContractVisualization(args.workdir),
+      systemSource: candidateSource
+    };
+  } finally {
+    if (!systemSaved) await rm(manifestPath, { force: true });
+  }
+}

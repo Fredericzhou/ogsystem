@@ -545,7 +545,7 @@ function studioEdgeMetadata(edge: GraphViewModelEdge, routing?: StudioEdgeRoutin
     id: edge.id,
     source: routing?.source ?? { cell: edge.source },
     target: routing?.target ?? { cell: edge.target },
-    zIndex: 1,
+    zIndex: isLoopEdge(edge) ? 3 : 1,
     data: { studioEdge: edge },
     labels: studioEdgeLabels(edge),
     attrs: studioEdgeAttrs(edge),
@@ -638,13 +638,14 @@ function studioEdgeAttrs(edge: GraphViewModelEdge): Edge.Metadata["attrs"] {
   return {
     line: {
       stroke,
-      strokeWidth: loopEdge ? 2.2 : edge.participatesInJoin ? 2.4 : 1.7,
+      strokeWidth: loopEdge ? 2.6 : edge.participatesInJoin ? 2.4 : 1.7,
       strokeDasharray: loopEdge ? "7 5" : "",
       strokeLinecap: "round",
       targetMarker: {
         name: "block",
-        width: loopEdge ? 14 : 12,
-        height: loopEdge ? 10 : 9,
+        width: loopEdge ? 16 : 12,
+        height: loopEdge ? 12 : 9,
+        ...(loopEdge ? { refX: -16 } : {}),
         fill: stroke,
         stroke,
         strokeWidth: 1
@@ -655,6 +656,7 @@ function studioEdgeAttrs(edge: GraphViewModelEdge): Edge.Metadata["attrs"] {
 
 function updateStudioEdge(cell: Edge, edge: GraphViewModelEdge, routing?: StudioEdgeRouting): void {
   cell.setData({ studioEdge: edge });
+  cell.setZIndex(isLoopEdge(edge) ? 3 : 1);
   cell.setSource(routing?.source ?? { cell: edge.source });
   cell.setTarget(routing?.target ?? { cell: edge.target });
   cell.setLabels(studioEdgeLabels(edge));

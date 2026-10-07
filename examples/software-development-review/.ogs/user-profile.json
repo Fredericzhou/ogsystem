@@ -1,0 +1,8 @@
+{
+  "userProfileId": "software-delivery.concise",
+  "language": "zh-CN",
+  "style": "concise",
+  "riskPreference": "medium",
+  "outputLength": "medium",
+  "domainBackground": ["software-development", "testing", "code-review"]
+}

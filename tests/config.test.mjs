@@ -88,7 +88,8 @@ test("runtime config validates every supported runtime field", () => {
       },
       opencode: {
         baseArgs: ["run", "--json"]
-      }
+      },
+      codex: { sandbox: "workspaceWrite" }
     },
     "runtime.json"
   );
@@ -101,6 +102,7 @@ test("runtime config validates every supported runtime field", () => {
     workspaceIsolation: "role"
   });
   assert.deepStrictEqual(config.opencode?.baseArgs, ["run", "--json"]);
+  assert.deepStrictEqual(config.codex, { sandbox: "workspaceWrite" });
 });
 
 test("runtime config accepts every supported field", () => {
@@ -140,6 +142,14 @@ test("runtime config defaults runsDir to .ogs/runs", () => {
   );
 
   assert.equal(config.runsDir, ".ogs/runs");
+  assert.deepStrictEqual(config.codex, { sandbox: "readOnly" });
+});
+
+test("runtime config rejects unsupported Codex sandbox policy", () => {
+  assert.throws(
+    () => validateRuntimeConfig({ executor: "opencode", codex: { sandbox: "dangerFullAccess" } }, "runtime.json"),
+    /runtime\.json at \$\.codex\.sandbox: expected "readOnly" or "workspaceWrite"/
+  );
 });
 
 test("runtime config accepts retention policy with defaults", () => {

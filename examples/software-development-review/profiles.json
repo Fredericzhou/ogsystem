@@ -1,0 +1,8 @@
+[
+  {
+    "profileId": "profile.console.print",
+    "toolRef": "tool.console.print",
+    "timeoutMs": 30000,
+    "maxOutputBytes": 65536
+  }
+]

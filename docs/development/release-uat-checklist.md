@@ -65,14 +65,15 @@ examples and templates remain examples; the target workflow may be supplied by a
 
 ## Deployed Visualizer UAT
 
-Status: **PARTIAL**. Browser automation passed against the locally installed `1.0.0` candidate on
-macOS. Complete the bounded workflow with its intended operator, record the result and sign-offs,
-and run it in any separate intended deployment environment before changing this item to passed.
+Status: **NOT RUN for the replacement candidate**. Browser automation passed against an earlier
+locally installed `1.0.0` candidate on macOS for both first-run examples. That candidate predates the
+current worktree. The intended workflow operator has not completed the bounded workflow or signed
+off.
 
-- Package version/artifact: `1.0.0`, SHA-256 in `release-evidence/1.0.0.md`.
-- Deployment environment: local macOS candidate at `127.0.0.1:3379`.
-- Workflow and UI/API paths exercised: advanced-features graph; operations, Studio graph/structure, readiness, and wheel zoom.
-- Result and issue references: browser automation PASS, 12/12; real operator workflow NOT RUN.
+- Package version/artifact: replacement candidate tarball and digest PENDING.
+- Deployment environment: replacement candidate environment and intended operator deployment PENDING. Earlier local checks used macOS, Node.js `22.21.1`, and `127.0.0.1:3379` / `127.0.0.1:3381`.
+- Workflow and UI/API paths exercised: earlier browser automation covered the two example apps, operations, Studio graph/structure, readiness, wheel zoom, and desktop/390px mobile view. Repeat against the replacement candidate and intended deployment.
+- Result and issue references: replacement candidate deployed UAT NOT RUN. Earlier browser automation is supplementary; no horizontal overflow or browser errors were observed at 390px.
 - Operator and product owner sign-off: NOT RUN.
 
 Create one release evidence record per release candidate using

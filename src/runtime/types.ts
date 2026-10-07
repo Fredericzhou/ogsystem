@@ -349,6 +349,9 @@ export type RuntimeConfig = {
   workspace: RuntimeWorkspaceConfig;
   retention?: RuntimeRetentionConfig;
   redaction?: RuntimeRedactionConfig;
+  codex?: {
+    sandbox?: "readOnly" | "workspaceWrite";
+  };
   opencode?: {
     baseArgs?: string[];
   };

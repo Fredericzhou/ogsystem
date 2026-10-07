@@ -91,9 +91,22 @@ export function injectStudioGraphStyles(): void {
       overflow-wrap: anywhere;
     }
     .studio-graph-toolbar-icon {
-      font-size: 13px;
-      font-weight: 700;
-      line-height: 1;
+      display: inline-flex;
+      width: 16px;
+      height: 16px;
+      align-items: center;
+      justify-content: center;
+      flex: 0 0 16px;
+    }
+    .studio-graph-toolbar-icon svg {
+      display: block;
+      width: 16px;
+      height: 16px;
+      fill: none;
+      stroke: currentColor;
+      stroke-width: 1.8;
+      stroke-linecap: round;
+      stroke-linejoin: round;
     }
     .studio-graph-toolbar-text {
       font-size: 10px;
@@ -220,9 +233,9 @@ export function injectStudioGraphStyles(): void {
     .studio-graph-canvas .x6-edge.is-loop-back .connection,
     .studio-graph-canvas .x6-edge.is-loop-back path[marker-end] {
       stroke-dasharray: 7 5;
-      stroke-width: 2.2px;
+      stroke-width: 2.6px;
       stroke-linecap: round;
-      filter: drop-shadow(0 0 0.22rem rgba(45, 212, 191, 0.34));
+      filter: drop-shadow(0 0 0.3rem rgba(45, 212, 191, 0.52));
     }
     .studio-graph-island[data-reduced-motion="on"] .studio-graph-canvas .x6-node.is-selection-focus-pulse rect,
     .studio-graph-island[data-reduced-motion="on"] .studio-graph-canvas .x6-node.is-selection-focus-pulse path:first-of-type,
