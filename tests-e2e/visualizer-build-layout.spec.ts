@@ -191,6 +191,7 @@ test("Run Reviews tab keeps the review queue visible", async ({ page }) => {
       return Boolean(box && box.width > 0 && box.height > 0);
     }).toBe(true);
   } finally {
+    await page.close();
     await new Promise<void>((resolve) => started.server.close(() => resolve()));
   }
 });
