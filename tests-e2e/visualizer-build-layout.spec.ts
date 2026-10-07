@@ -172,6 +172,29 @@ async function expectBuildCanvasIdentityStable(page): Promise<void> {
   });
 }
 
+test("Run Reviews tab keeps the review queue visible", async ({ page }) => {
+  const workdir = await mkdtemp(path.join(os.tmpdir(), "ogsystem-run-reviews-layout-"));
+  await seedProject(workdir);
+  const started = await startVisualizationServer({ workdir, host: "127.0.0.1", port: 0 });
+  try {
+    await page.goto(started.url);
+    await page.locator("#console-tab-run").click();
+    await page.locator("#operate-tab-reviews").click();
+
+    const reviewPanel = page.locator("#operate-tabpanel-reviews");
+    const reviewCard = reviewPanel.locator("article.operate-reviews");
+    await expect(reviewPanel).toBeVisible();
+    await expect(reviewCard).toBeVisible();
+    await expect(reviewCard.locator("#reviews")).toContainText("No reviews for this run");
+    await expect.poll(async () => {
+      const box = await reviewCard.boundingBox();
+      return Boolean(box && box.width > 0 && box.height > 0);
+    }).toBe(true);
+  } finally {
+    await new Promise<void>((resolve) => started.server.close(() => resolve()));
+  }
+});
+
 test("Build workbench keeps view toggles in footer and aligns graph with docked inspector", async ({ page }) => {
   const workdir = await mkdtemp(path.join(os.tmpdir(), "ogsystem-build-layout-"));
   await seedProject(workdir);

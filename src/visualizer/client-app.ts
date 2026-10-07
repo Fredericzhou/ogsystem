@@ -1933,7 +1933,7 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
     function renderOperateTabs() {
       const showOperateWorkspace = isRunConsoleTab();
       document.body.classList.toggle("show-operate-workspace", showOperateWorkspace);
-      for (const tab of ["overview", "operations"]) {
+      for (const tab of ["overview", "reviews", "operations"]) {
         document.body.classList.toggle("operate-tab-" + tab, showOperateWorkspace && state.operateTab === tab);
       }
       if (!operateTabsEl) {

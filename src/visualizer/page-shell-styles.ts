@@ -768,7 +768,7 @@ export function renderPageShellStyles(): string {
     body.show-operate-workspace:not(.operate-tab-overview) .operate-overview,
     body.show-operate-workspace:not(.operate-tab-operations) .operate-recovery,
     body.show-operate-workspace:not(.operate-tab-operations) .operate-logs,
-    body.show-operate-workspace:not(.operate-tab-operations) .operate-reviews,
+    body.show-operate-workspace:not(.operate-tab-operations):not(.operate-tab-reviews) .operate-reviews,
     body.show-operate-workspace:not(.operate-tab-operations) .operate-artifacts {
       display: none !important;
     }
