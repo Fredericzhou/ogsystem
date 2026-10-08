@@ -45,7 +45,9 @@ examples and templates remain examples; the target workflow may be supplied by a
   npm or pnpm. Run the
   [release package validation workflow](../../.github/workflows/release-package-validation.yml) to
   test all 12 Node.js/OS/package-manager combinations using the same candidate tarball. Record this
-  matrix run and its artifact digest separately from regular CI.
+  matrix run and its artifact digest separately from regular CI. The package job exposes the SHA-256
+  as a job output; every matrix job verifies the downloaded tarball against it before installation.
+  Compare the UAT tarball's SHA-256 with that output and record the matching value.
 - Required build, unit, contract, integration, fault-injection, and browser E2E checks pass in the
   regular CI workflow for the same immutable candidate ref. Record the regular CI run separately;
   the release package validation workflow only builds the tarball and tests its install matrix.

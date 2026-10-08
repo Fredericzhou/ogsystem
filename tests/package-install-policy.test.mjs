@@ -1,11 +1,20 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
-import { mkdtemp, writeFile } from "node:fs/promises";
+import { mkdtemp, readFile, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 
 const preinstallScriptPath = path.resolve("scripts/preinstall.cjs");
+const releaseValidationWorkflowPath = path.resolve(".github/workflows/release-package-validation.yml");
+
+test("release package matrix verifies the exact tarball digest produced by the package job", async () => {
+  const workflow = await readFile(releaseValidationWorkflowPath, "utf8");
+  assert.match(workflow, /outputs:\n\s+sha256: \$\{\{ steps\.digest\.outputs\.sha256 \}\}/);
+  assert.match(workflow, /EXPECTED_SHA256: \$\{\{ needs\.package\.outputs\.sha256 \}\}/);
+  assert.match(workflow, /Candidate digest mismatch/);
+  assert.match(workflow, /Verify candidate tarball digest[\s\S]*?Install, create project, and run from candidate tarball/);
+});
 
 function runPreinstall(cwd, userAgent) {
   return new Promise((resolve, reject) => {

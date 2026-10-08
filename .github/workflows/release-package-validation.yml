@@ -19,6 +19,8 @@ jobs:
   package:
     name: Build candidate package
     runs-on: ubuntu-latest
+    outputs:
+      sha256: ${{ steps.digest.outputs.sha256 }}
     steps:
       - name: Checkout candidate
         uses: actions/checkout@v4
@@ -50,7 +52,14 @@ jobs:
       - name: Pack candidate
         run: pnpm pack --pack-destination release-candidate
       - name: Record package digest
-        run: sha256sum release-candidate/*.tgz | tee -a "$GITHUB_STEP_SUMMARY"
+        id: digest
+        shell: bash
+        run: |
+          package="$(find release-candidate -maxdepth 1 -name 'ogsystem-*.tgz' -print -quit)"
+          test -n "$package"
+          digest="$(sha256sum "$package" | cut -d ' ' -f 1)"
+          echo "sha256=$digest" >> "$GITHUB_OUTPUT"
+          echo "$digest  $(basename "$package")" | tee -a "$GITHUB_STEP_SUMMARY"
       - name: Upload candidate tarball
         uses: actions/upload-artifact@v4
         with:
@@ -86,6 +95,25 @@ jobs:
         with:
           name: ogsystem-release-candidate
           path: release-candidate
+      - name: Verify candidate tarball digest
+        shell: bash
+        env:
+          EXPECTED_SHA256: ${{ needs.package.outputs.sha256 }}
+        run: |
+          node --input-type=module <<'NODE'
+          import { createHash } from "node:crypto";
+          import { readFileSync, readdirSync } from "node:fs";
+          import { join } from "node:path";
+
+          const packages = readdirSync("release-candidate").filter((name) => /^ogsystem-.*\.tgz$/.test(name));
+          if (packages.length !== 1) throw new Error(`Expected one candidate tarball, found ${packages.length}`);
+          const filename = packages[0];
+          const actual = createHash("sha256").update(readFileSync(join("release-candidate", filename))).digest("hex");
+          if (!process.env.EXPECTED_SHA256 || actual !== process.env.EXPECTED_SHA256) {
+            throw new Error(`Candidate digest mismatch: expected ${process.env.EXPECTED_SHA256}, got ${actual}`);
+          }
+          console.log(`Verified ${filename} SHA-256 ${actual}`);
+          NODE
       - name: Install, create project, and run from candidate tarball
         shell: bash
         run: pnpm run smoke:package-install:${{ matrix.package-manager }} -- release-candidate/ogsystem-*.tgz
