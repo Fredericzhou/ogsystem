@@ -71,7 +71,13 @@ export type FlowContractPlan = {
 
 export type ContextMapByRoleId = Record<string, Record<string, string>>;
 
-export type HumanReviewDecision = "approve" | "rework" | "pause" | "terminate";
+export const HUMAN_REVIEW_DECISIONS = ["approve", "rework", "pause", "terminate"] as const;
+
+export type HumanReviewDecision = (typeof HUMAN_REVIEW_DECISIONS)[number];
+
+export function isHumanReviewDecision(value: unknown): value is HumanReviewDecision {
+  return typeof value === "string" && (HUMAN_REVIEW_DECISIONS as readonly string[]).includes(value);
+}
 
 export type HumanReviewSpec = {
   mode: "required";

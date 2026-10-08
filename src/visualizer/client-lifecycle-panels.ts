@@ -381,7 +381,7 @@ export function renderConversationHtml(args: {
     const routeLabel = route.channel ? String(route.channel) + " -> " + String(route.presentationChannel || "") : "";
     const identity = [item.branchId, item.lineageId, item.loopIteration === undefined ? "" : "loop " + item.loopIteration]
       .filter(Boolean).join(" · ");
-    const review = item.review ? "review " + String(item.review.reviewId) + " / " + String(item.review.reviewStatus) + (item.review.decision ? " / " + String(item.review.decision) : "") : "";
+    const review = item.review ? "review " + String(item.review.reviewId) + " / " + String(item.review.reviewStatus) + (item.review.decision ? " / " + t("review.decisionValue." + String(item.review.decision), undefined, String(item.review.decision)) : "") : "";
     const join = item.join ? "expected " + (item.join.expected || []).join(", ") + " · ready " + (item.join.ready || []).join(", ") + " · missing " + (item.join.missing || []).join(", ") : "";
     const meta = [identity, routeLabel, review, join, sourceLocator].filter(Boolean).join(" · ");
     const content = item.content?.text ? '<div class="hint conversation-content">' + escapeText(item.content.text) + (item.content.truncated ? "..." : "") + '</div>' : "";

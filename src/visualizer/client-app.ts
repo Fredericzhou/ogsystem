@@ -1808,7 +1808,17 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
       if (!state.selectedRunId) {
         return false;
       }
-      return !["done", "failed", "stopped"].includes(status);
+      return status === "running";
+    }
+
+    function canRequestResume() {
+      const status = state.detail?.header?.status || "";
+      return Boolean(
+        state.selectedRunId &&
+        ["stopped", "failed"].includes(status) &&
+        state.resumeReadinessLoaded &&
+        state.resumeReadiness?.canResume === true
+      );
     }
 
     function isRunActiveStatus(status) {
@@ -1975,7 +1985,7 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
       const runActive = isRunConsoleTab();
       const releaseActive = isReleaseConsoleTab();
       const stopVisible = runActive && canRequestStop();
-      const resumeVisible = runActive && !stopVisible;
+      const resumeVisible = runActive && canRequestResume();
       if (heroValidateButton) {
         heroValidateButton.hidden = !designActive;
       }
@@ -1984,11 +1994,11 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
       }
       if (resumeRunButton) {
         resumeRunButton.hidden = !resumeVisible;
-        resumeRunButton.disabled = !state.selectedRunId;
+        resumeRunButton.disabled = state.actionBusy || !canRequestResume();
       }
       if (stopRunButton) {
         stopRunButton.hidden = !stopVisible;
-        stopRunButton.disabled = !state.selectedRunId;
+        stopRunButton.disabled = state.actionBusy || !canRequestStop();
       }
       if (heroReindexButton) {
         heroReindexButton.hidden = !runActive;
@@ -5468,21 +5478,29 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
         ].join("");
       } else if (form.kind === "stop") {
         actionFormEl.innerHTML = [
-          '<div class="event"><div class="event-top"><span>' + escapeText(t("form.stopRequest")) + '</span><span>' + escapeText(state.selectedRunId || "n/a") + '</span></div><strong>' + escapeText(t("form.recordStructuredStopRequest")) + '</strong><div class="hint">' + escapeText(t("form.stopRequestHint")) + '</div></div>',
+          '<div class="event is-warning"><div class="event-top"><span>' + escapeText(t("form.stopRequest")) + '</span><span>' + escapeText(state.selectedRunId || "n/a") + '</span></div><strong>' + escapeText(t("form.recordStructuredStopRequest")) + '</strong><div class="hint">' + escapeText(t("form.stopRequestHint")) + '</div></div>',
           '<label class="field full"><span>' + escapeText(t("form.reason")) + '</span><textarea id="action-stop-reason"' + disabled + '>' + escapeText(form.fields.reason || "") + '</textarea></label>',
           '<div class="actions"><button id="action-form-cancel" class="button subtle"' + disabled + '>' + escapeText(t("action.cancel")) + '</button><button id="action-form-submit" class="button warn"' + disabled + busyAttr + '>' + escapeText(t("form.recordStopRequest")) + '</button></div>'
         ].join("");
       } else if (form.kind === "review") {
+        const terminating = form.fields.decision === "terminate";
+        const terminateScope = form.fields.scope === "run" ? "run" : "branch";
         actionFormEl.innerHTML = [
-          '<div class="event"><div class="event-top"><span>' + escapeText(t("form.reviewDecision")) + '</span><span>' + escapeText(form.fields.reviewId || state.selectedReviewId || "n/a") + '</span></div><strong>' + escapeText(form.fields.decision || t("form.decision")) + '</strong><div class="hint">' + escapeText(t("form.reviewDecisionHint")) + '</div></div>',
+          '<div class="event' + (terminating ? ' is-warning' : '') + '"><div class="event-top"><span>' + escapeText(t("form.reviewDecision")) + '</span><span>' + escapeText(form.fields.reviewId || state.selectedReviewId || "n/a") + '</span></div><strong>' + escapeText(terminating
+            ? t(terminateScope === "run" ? "review.confirmTerminateRun" : "review.confirmTerminateBranch")
+            : t("review.decisionValue." + form.fields.decision, undefined, form.fields.decision || t("form.decision"))) + '</strong><div class="hint">' + escapeText(terminating
+              ? t(terminateScope === "run" ? "review.terminateRunWarning" : "review.terminateBranchWarning")
+              : t("form.reviewDecisionHint")) + '</div></div>',
           '<div class="form-grid">',
-          '<label class="field"><span>' + escapeText(t("form.decision")) + '</span><input id="action-review-decision" value="' + escapeText(form.fields.decision || "") + '" disabled /></label>',
+          '<label class="field"><span>' + escapeText(t("form.decision")) + '</span><input id="action-review-decision" value="' + escapeText(t("review.decisionValue." + form.fields.decision, undefined, form.fields.decision || t("form.decision"))) + '" disabled /></label>',
           '<label class="field full"><span>' + escapeText(t("form.comment")) + '</span><textarea id="action-review-comment"' + disabled + '>' + escapeText(form.fields.comment || "") + '</textarea></label>',
           (form.fields.decision === "terminate"
-            ? '<label class="field"><span>' + escapeText(t("form.terminateScope")) + '</span><select id="action-review-scope"' + disabled + '><option value="branch"' + ((form.fields.scope || "branch") === "branch" ? " selected" : "") + '>branch</option><option value="run"' + (form.fields.scope === "run" ? " selected" : "") + '>run</option></select></label>'
+            ? '<label class="field"><span>' + escapeText(t("form.terminateScope")) + '</span><select id="action-review-scope"' + disabled + '><option value="branch"' + (terminateScope === "branch" ? " selected" : "") + '>' + escapeText(t("review.scopeBranch")) + '</option><option value="run"' + (terminateScope === "run" ? " selected" : "") + '>' + escapeText(t("review.scopeRun")) + '</option></select></label>'
             : ""),
           '</div>',
-          '<div class="actions"><button id="action-form-cancel" class="button subtle"' + disabled + '>' + escapeText(t("action.cancel")) + '</button><button id="action-form-submit" class="button primary"' + disabled + busyAttr + '>' + escapeText(t("form.recordReviewDecision")) + '</button></div>'
+          '<div class="actions"><button id="action-form-cancel" class="button subtle"' + disabled + '>' + escapeText(t("action.cancel")) + '</button><button id="action-form-submit" class="button ' + (terminating ? 'danger' : 'primary') + '"' + disabled + busyAttr + '>' + escapeText(terminating
+            ? t(terminateScope === "run" ? "review.confirmTerminateRun" : "review.confirmTerminateBranch")
+            : t("form.recordReviewDecision")) + '</button></div>'
         ].join("");
       } else if (form.kind === "saveAs") {
         actionFormEl.innerHTML = [
@@ -5503,6 +5521,15 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
         cancelButton.addEventListener("click", () => {
           if (!state.actionBusy) {
             closeActionForm();
+          }
+        });
+      }
+      const reviewScopeSelect = document.getElementById("action-review-scope");
+      if (reviewScopeSelect) {
+        reviewScopeSelect.addEventListener("change", () => {
+          if (state.actionForm?.kind === "review") {
+            state.actionForm.fields.scope = reviewScopeSelect.value === "run" ? "run" : "branch";
+            renderActionForm();
           }
         });
       }
@@ -6125,13 +6152,27 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
       }
       const detail = state.reviewDetail;
       reviewDetailEl.innerHTML = renderReviewDetailPanel(detail, t, formatTime);
-      const actionable = detail && (detail.currentStatus === "pending" || detail.currentStatus === "paused");
+      const decisionSnapshot = detail?.decisionSnapshot && typeof detail.decisionSnapshot === "object" && !Array.isArray(detail.decisionSnapshot)
+        ? detail.decisionSnapshot
+        : null;
+      const hasDurableDecision = Boolean(
+        ["recorded", "pending_reconcile", "applied"].includes(detail?.decisionPhase) ||
+        detail?.decision ||
+        decisionSnapshot?.decision ||
+        decisionSnapshot?.committedAt ||
+        decisionSnapshot?.decidedAt
+      );
+      const canFollowUpPausedReview = detail?.currentStatus === "paused" &&
+        detail?.decision === "pause" && detail?.decisionPhase === "applied";
+      const actionable = Boolean(
+        detail && ((!hasDurableDecision && detail.currentStatus === "pending") || canFollowUpPausedReview)
+      );
       reviewActionsEl.innerHTML = actionable
         ? [
           '<button class="button primary" data-review-action="approve">' + escapeText(t("review.approve")) + '</button>',
           '<button class="button" data-review-action="rework">' + escapeText(t("review.requestRework")) + '</button>',
           '<button class="button warn" data-review-action="pause">' + escapeText(t("review.pause")) + '</button>',
-          '<button class="button danger" data-review-action="terminate" data-review-scope="' + escapeText(detail.scope || "branch") + '">' + escapeText(t("review.terminateScope", { scope: detail.scope || "branch" })) + '</button>'
+          '<button class="button danger" data-review-action="terminate" data-review-scope="' + escapeText(detail.scope || "branch") + '">' + escapeText(t("review.terminateScope", { scope: t(detail.scope === "run" ? "review.scopeRun" : "review.scopeBranch") })) + '</button>'
           ].join("")
         : "";
       for (const button of reviewActionsEl.querySelectorAll("[data-review-action]")) {
@@ -7853,6 +7894,7 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
       }
       renderResumeDiagnostics();
       renderDetail();
+      renderActionState();
     }
 
     async function loadResumeDiagnostics(runId, options) {

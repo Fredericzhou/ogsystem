@@ -666,6 +666,14 @@ test("Studio authoring commands create validated roles and edges from command fo
   assert.equal(addedRole.authoring.roles.qa_gate.title, "QA Gate");
   assert.equal(addedRole.authoring.roles.qa_gate.bindingKind, "model");
   assert.equal(addedRole.authoring.roles.qa_gate.modelRef, "opencode/gpt-5.4");
+  assert.equal(addedRole.authoring.roles.qa_gate.backend, "opencode");
+  assert.equal(addedRole.authoring.roles.qa_gate.modelId, "gpt-5.4");
+  const nestedModelRole = applyStudioAuthoringCommand({
+    authoring: addedRole.authoring,
+    canvas: addedRole.canvas,
+    command: { type: "add-role", roleId: "nested_model", bindingKind: "model", modelRef: "opencode/provider/gpt-5.4" }
+  });
+  assert.equal(nestedModelRole.authoring.roles.nested_model.modelId, "provider/gpt-5.4");
   assert.equal(addedRole.canvas.nodes.some((node) => node.roleId === "qa_gate" && node.label === "QA Gate"), true);
 
   const duplicateRole = applyStudioAuthoringCommand({
@@ -832,6 +840,9 @@ test("Studio command forms expose visual role package, model, and profile choice
   assert.doesNotMatch(customHtml, /name="profileId"/);
   const modelCommand = commandFromStudioCommandFormState(customState);
   assert.equal(modelCommand.modelRef, "opencode/gpt-5.4");
+  const addedCustomRole = applyStudioAuthoringCommand({ authoring, canvas: authoringToCanvasDocument(authoring), command: modelCommand });
+  assert.equal(addedCustomRole.authoring.roles.custom_role.backend, "opencode");
+  assert.equal(addedCustomRole.authoring.roles.custom_role.modelId, "gpt-5.4");
 
   const existingProfileState = {
     ...repositoryState,

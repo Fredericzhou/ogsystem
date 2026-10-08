@@ -428,6 +428,9 @@ test("runtime renderers fold payload-heavy details by default", () => {
   assert.match(failureHtml, /<details class="event disclosure notice">/);
   assert.match(failureHtml, /<details class="event disclosure critical">/);
 
+  const reviewT = (key, vars, fallback) => key === "review.decisionValue.approve"
+    ? "Approve review"
+    : t(key, vars, fallback);
   const reviewHtml = renderReviewDetailPanel({
     reviewId: "review-1",
     roleId: "demo-analyst",
@@ -438,9 +441,11 @@ test("runtime renderers fold payload-heavy details by default", () => {
     decisionSnapshot: { comment: "approved" },
     humanReviewContext: { request: "more context" },
     history: [{ decision: "approve", actor: "ops", decidedAt: "2026-05-09T10:00:00.000Z", comment: "ok" }]
-  }, t, formatTime);
+  }, reviewT, formatTime);
   assert.match(reviewHtml, /<details class="event disclosure summary-section" open>/);
   assert.match(reviewHtml, /request snapshot/);
+  assert.match(reviewHtml, /Approve review/);
+  assert.doesNotMatch(reviewHtml, />approve</);
 
   const artifactsHtml = renderArtifactsPanel({
     detail: {

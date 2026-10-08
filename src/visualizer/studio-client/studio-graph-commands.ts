@@ -189,6 +189,17 @@ function normalizeBindingKind(value: unknown): StudioAuthoringRole["bindingKind"
   return value === "model" || value === "exec" ? value : "noop";
 }
 
+function modelBindingFromCommand(args: { backend?: string; modelId?: string; modelRef?: string }): { backend: string; modelId: string } {
+  const backend = String(args.backend ?? "").trim();
+  const modelId = String(args.modelId ?? "").trim();
+  if (backend && modelId) return { backend, modelId };
+  const modelRef = String(args.modelRef ?? "").trim();
+  const separator = modelRef.indexOf("/");
+  return separator > 0 && separator < modelRef.length - 1
+    ? { backend: modelRef.slice(0, separator), modelId: modelRef.slice(separator + 1) }
+    : { backend: "", modelId: "" };
+}
+
 function applyRoleBinding(
   role: StudioAuthoringRole,
   args: {
@@ -215,8 +226,7 @@ function applyRoleBinding(
   delete next.modelSelectionSource;
   delete next.profileId;
   if (bindingKind === "model") {
-    const backend = String(args.backend ?? "").trim();
-    const modelId = String(args.modelId ?? "").trim();
+    const { backend, modelId } = modelBindingFromCommand(args);
     if (backend && modelId) {
       next.backend = backend;
       next.modelId = modelId;
@@ -428,10 +438,7 @@ export function applyStudioAuthoringCommand(args: {
         bindingKind
       };
       if (role.bindingKind === "model") {
-        const modelRef = String(command.modelRef ?? "").trim();
-        if (modelRef) role.modelRef = modelRef;
-        const backend = String(command.backend ?? "").trim();
-        const modelId = String(command.modelId ?? "").trim();
+        const { backend, modelId } = modelBindingFromCommand(command);
         if (backend && modelId) {
           role.backend = backend;
           role.modelId = modelId;

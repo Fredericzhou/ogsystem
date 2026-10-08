@@ -14,6 +14,7 @@ import { dirname, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { runSystemWithAdapter } from "../runtime/adapter.js";
+import { HUMAN_REVIEW_DECISIONS, isHumanReviewDecision } from "../runtime/types.js";
 import { randomUUID } from "node:crypto";
 import { loadSystemFromMermaid } from "../runtime/parse-mermaid.js";
 import {
@@ -1459,11 +1460,11 @@ async function handleApiRunReviewDecision(
 ): Promise<void> {
   const body = await readJsonRequest(request);
   const decision = asString(body.decision);
-  if (decision !== "approve" && decision !== "rework" && decision !== "pause" && decision !== "terminate") {
+  if (!isHumanReviewDecision(decision)) {
     throw new HttpError(
       400,
       "INVALID_REVIEW_DECISION",
-      "decision must be one of: approve, rework, pause, terminate."
+      `decision must be one of: ${HUMAN_REVIEW_DECISIONS.join(", ")}.`
     );
   }
   const scopeValue = asString(body.scope);

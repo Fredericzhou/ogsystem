@@ -305,6 +305,9 @@ test("Studio system and handoff contract panels are localized in Chinese", () =>
   });
   assert.match(settings, /系统设置/);
   assert.match(settings, /交接契约文件/);
+  assert.match(settings, /流转模式会跳过缺失契约/);
+  assert.match(settings, /下游 Join 无法满足，运行仍会失败/);
+  assert.match(settings, /严格模式缺少契约或校验失败即报错/);
   assert.doesNotMatch(settings, />System settings</);
   assert.doesNotMatch(settings, />Handoff mode</);
 
@@ -1455,13 +1458,14 @@ function createBackend(options = {}) {
     runId,
     reviewId,
     runStatus,
-    decisionPhase
+    decisionPhase,
+    canResume: options.canResume ?? false
   });
   const secondaryRun = buildRunFixture({
     runId: secondRunId,
     reviewId: options.sameReviewIdAcrossRuns ? reviewId : "review-2",
     runStatus: "failed",
-    decisionPhase: "recorded",
+    decisionPhase: options.sameReviewIdAcrossRuns ? undefined : "recorded",
     roleId: "citation-engineer",
     branchId: "citation-engineer@1#1",
     failureCode: "CONTRACT_VIOLATION",
@@ -3880,6 +3884,34 @@ test("visualizer client review action captures a comment, disables controls whil
   );
 });
 
+test("visualizer hides review actions after a durable decision is recorded", async () => {
+  const harness = await createClientHarness({ decisionPhase: "recorded" });
+
+  assert.equal(harness.document.getElementById("review-actions").querySelectorAll("[data-review-action]").length, 0);
+  assert.match(harness.document.getElementById("review-detail").textContent, /Decision saved\. Resume the run to continue\./);
+  assert.match(harness.document.getElementById("review-detail").textContent, /Decision recorded/);
+});
+
+test("review termination confirmation explains scope and irreversible effect", async () => {
+  const harness = await createClientHarness();
+  const terminateButton = harness.document.getElementById("review-actions")
+    .querySelectorAll("[data-review-action]")
+    .find((button) => button.getAttribute("data-review-action") === "terminate");
+  assert.ok(terminateButton);
+
+  await terminateButton.click();
+  await settle();
+
+  assert.match(harness.document.getElementById("action-form").textContent, /This ends the current branch and cannot be undone\./);
+  assert.match(harness.document.getElementById("action-form-submit").textContent, /Confirm terminate branch/);
+  const scope = harness.document.getElementById("action-review-scope");
+  scope.value = "run";
+  await scope.change("run");
+  await settle();
+  assert.match(harness.document.getElementById("action-form").textContent, /This ends every branch in the run and cannot be undone\./);
+  assert.match(harness.document.getElementById("action-form-submit").textContent, /Confirm terminate run/);
+});
+
 test("visualizer client keeps identical review ids independent across runs", async () => {
   const backend = createBackend({ includeSecondRun: true, sameReviewIdAcrossRuns: true });
   const harness = await createClientHarness({ backend, search: "?runId=run-123" });
@@ -3972,17 +4004,18 @@ test("visualizer client action failures stay local and show an error flash", asy
 });
 
 test("visualizer client resumes and stops runs through inline forms", async () => {
-  const harness = await createClientHarness({
-    backend: createBackend({ runStatus: "running" })
+  const resumeHarness = await createClientHarness({
+    backend: createBackend({ runStatus: "stopped", canResume: true })
   });
 
-  await harness.document.getElementById("resume-run").click();
+  await waitForCondition(() => !resumeHarness.document.getElementById("resume-run").hidden);
+  await resumeHarness.document.getElementById("resume-run").click();
   await settle();
-  await harness.document.getElementById("action-resume-input").input("resume with operator note");
-  await harness.document.getElementById("action-form-submit").click();
+  await resumeHarness.document.getElementById("action-resume-input").input("resume with operator note");
+  await resumeHarness.document.getElementById("action-form-submit").click();
   await settle();
 
-  assert.deepEqual(harness.backend.lastResumeBody, {
+  assert.deepEqual(resumeHarness.backend.lastResumeBody, {
     systemPath: "system.mmd",
     input: "resume with operator note",
     dryRun: false,
@@ -3990,19 +4023,41 @@ test("visualizer client resumes and stops runs through inline forms", async () =
     userProfilePath: ".ogs/user-profile.json",
     lawsPath: ".ogs/laws.json"
   });
-  assert.equal(harness.promptCalls.length, 0);
-  assert.equal(harness.confirmCalls.length, 0);
+  assert.equal(resumeHarness.promptCalls.length, 0);
+  assert.equal(resumeHarness.confirmCalls.length, 0);
 
-  await harness.document.getElementById("stop-run").click();
+  const stopHarness = await createClientHarness({
+    backend: createBackend({ runStatus: "running" })
+  });
+
+  await stopHarness.document.getElementById("stop-run").click();
   await settle();
-  await harness.document.getElementById("action-stop-reason").input("operator stop");
-  await harness.document.getElementById("action-form-submit").click();
+  await stopHarness.document.getElementById("action-stop-reason").input("operator stop");
+  assert.match(stopHarness.document.getElementById("action-form").textContent, /does not interrupt an active role call immediately/i);
+  await stopHarness.document.getElementById("action-form-submit").click();
   await settle();
 
-  assert.deepEqual(harness.backend.lastStopBody, {
+  assert.deepEqual(stopHarness.backend.lastStopBody, {
     reason: "operator stop"
   });
-  assert.match(harness.document.getElementById("flash").textContent, /Stop request recorded/);
+  assert.match(stopHarness.document.getElementById("flash").textContent, /Stop request recorded/);
+});
+
+test("run controls hide completed tasks and expose resume only after readiness allows it", async () => {
+  const doneHarness = await createClientHarness({ backend: createBackend({ runStatus: "done", canResume: true }) });
+  assert.equal(doneHarness.document.getElementById("stop-run").hidden, true);
+  assert.equal(doneHarness.document.getElementById("resume-run").hidden, true);
+
+  const stoppingHarness = await createClientHarness({ backend: createBackend({ runStatus: "stopping", canResume: true }) });
+  assert.equal(stoppingHarness.document.getElementById("stop-run").hidden, true);
+  assert.equal(stoppingHarness.document.getElementById("resume-run").hidden, true);
+
+  const blockedHarness = await createClientHarness({ backend: createBackend({ runStatus: "stopped", canResume: false }) });
+  assert.equal(blockedHarness.document.getElementById("resume-run").hidden, true);
+
+  const readyHarness = await createClientHarness({ backend: createBackend({ runStatus: "failed", canResume: true }) });
+  await waitForCondition(() => !readyHarness.document.getElementById("resume-run").hidden);
+  assert.equal(readyHarness.document.getElementById("resume-run").disabled, false);
 });
 
 test("visualizer client keeps dry-run launch inline in Build and avoids opening the action dialog", async () => {

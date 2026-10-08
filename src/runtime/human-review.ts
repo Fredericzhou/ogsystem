@@ -4,6 +4,7 @@ import type {
   HumanReviewDecisionRecord,
   PendingHumanReview
 } from "./types.js";
+import { isHumanReviewDecision } from "./types.js";
 
 export function buildReviewRoundKey(roleId: string, lineageId: string): string {
   return `${roleId}::${lineageId}`;
@@ -50,10 +51,7 @@ export function isHumanReviewDecisionRecord(
     typeof (value as HumanReviewDecisionRecord).reviewId === "string" &&
     typeof (value as HumanReviewDecisionRecord).committedAt === "string" &&
     typeof (value as HumanReviewDecisionRecord).decidedAt === "string" &&
-    ((value as HumanReviewDecisionRecord).decision === "approve" ||
-      (value as HumanReviewDecisionRecord).decision === "rework" ||
-      (value as HumanReviewDecisionRecord).decision === "pause" ||
-      (value as HumanReviewDecisionRecord).decision === "terminate")
+    isHumanReviewDecision((value as HumanReviewDecisionRecord).decision)
   );
 }
 

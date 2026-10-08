@@ -1011,7 +1011,7 @@ export function renderStudioSystemSettingsEditor(args: {
     '<label class="field"><span>' + escapeText(t("studio.globalLaw", undefined, "Global law")) + '</span><select data-system-setting="lawGlobalRef">' + lawOptions + '</select></label>' +
     '<label class="field"><span>' + escapeText(t("studio.entryRole", undefined, "Entry role")) + '</span><select data-system-setting="entryRoleId">' + entryRoleOptions + '</select></label>' +
     '<label class="field"><span>' + escapeText(t("studio.entryEvent", undefined, "Entry event")) + '</span><input data-system-setting="entryEventType" value="' + escapeText(String(system.entryEventType ?? "START")) + '"></label>' +
-    '<label class="field"><span>' + escapeText(t("studio.handoffMode", undefined, "Handoff mode")) + '</span><select data-system-setting="handoffMode"><option value="">' + escapeText(t("common.none", undefined, "None")) + '</option><option value="transition"' + (system.handoffMode === "transition" ? " selected" : "") + '>' + escapeText(t("studio.handoffModeTransition", undefined, "Transition")) + '</option><option value="strict"' + (system.handoffMode === "strict" ? " selected" : "") + '>' + escapeText(t("studio.handoffModeStrict", undefined, "Strict")) + '</option></select></label>' +
+    '<label class="field"><span>' + escapeText(t("studio.handoffMode", undefined, "Handoff mode")) + '</span><select data-system-setting="handoffMode"><option value="">' + escapeText(t("common.none", undefined, "None")) + '</option><option value="transition"' + (system.handoffMode === "transition" ? " selected" : "") + '>' + escapeText(t("studio.handoffModeTransition", undefined, "Transition")) + '</option><option value="strict"' + (system.handoffMode === "strict" ? " selected" : "") + '>' + escapeText(t("studio.handoffModeStrict", undefined, "Strict")) + '</option></select><small class="hint">' + escapeText(t("studio.handoffModeHint", undefined, "Transition skips missing contracts or WARN failures; strict mode fails on missing or invalid contracts.")) + '</small></label>' +
     '<label class="field full"><span>' + escapeText(t("studio.handoffContractsFile", undefined, "Handoff contracts file")) + '</span><input data-system-setting="handoffContracts" value="' + escapeText(String(system.handoffContracts ?? "")) + '"></label></div>' +
     '<button type="button" class="button primary" data-system-settings-save>' + escapeText(t("action.save", undefined, "Save system settings")) + '</button></details>';
 }
@@ -1908,19 +1908,45 @@ export function renderReviewDetailPanel(detail: Record<string, unknown> | null |
   if (!detail) {
     return '<div class="hint">' + escapeText(tr("state.noReviewSelected", undefined, "No review selected.")) + '</div>';
   }
+  const decisionSnapshot = detail.decisionSnapshot && typeof detail.decisionSnapshot === "object" && !Array.isArray(detail.decisionSnapshot)
+    ? detail.decisionSnapshot as JsonRecord
+    : undefined;
+  const decision = String(detail.decision ?? decisionSnapshot?.decision ?? "");
+  const hasDurableDecision = Boolean(["recorded", "pending_reconcile", "applied"].includes(String(detail.decisionPhase ?? "")) || decision);
+  const statusLabel = detail.decisionPhase === "applied"
+    ? tr("review.statusDecisionApplied", undefined, "Decision applied")
+    : detail.decisionPhase === "pending_reconcile"
+      ? tr("review.statusDecisionApplying", undefined, "Applying decision")
+      : hasDurableDecision
+        ? tr("review.statusDecisionRecorded", undefined, "Decision recorded")
+        : displayUiToken(detail.currentStatus ?? "unknown", tr);
   const history = Array.isArray(detail.history) ? detail.history : [];
+  const decisionLabel = (value: unknown, scope?: unknown): string => {
+    const decisionValue = String(value ?? "");
+    if (!decisionValue) return tr("review.noDecision", undefined, "No decision yet");
+    if (decisionValue === "terminate" && (scope === "branch" || scope === "run")) {
+      return tr("review.terminateScope", {
+        scope: tr(scope === "run" ? "review.scopeRun" : "review.scopeBranch", undefined, scope === "run" ? "Entire run" : "This branch")
+      }, "Terminate {scope}");
+    }
+    return tr("review.decisionValue." + decisionValue, undefined, decisionValue);
+  };
   const nextActionSummary =
-    detail.currentStatus === "pending"
-      ? tr("review.awaitingDecision", undefined, "Awaiting approve, rework, pause, or terminate.")
-      : detail.decisionPhase === "recorded"
-        ? tr("review.decisionRecorded", undefined, "Decision recorded; runtime reconcile should be inspected next.")
-        : detail.decisionPhase === "pending_reconcile"
-          ? tr("review.pendingReconcile", undefined, "Decision has checkpoint state but still blocks clean resume.")
-          : tr("review.noImmediateAction", undefined, "No immediate action available.");
+    detail.decisionPhase === "recorded"
+      ? tr("review.decisionRecorded", undefined, "Decision saved. Resume the run to continue.")
+      : detail.decisionPhase === "pending_reconcile"
+        ? tr("review.pendingReconcile", undefined, "Decision is being applied. Wait for the run to finish reconciling.")
+        : detail.decisionPhase === "applied"
+          ? tr("review.decisionApplied", undefined, "Decision applied. This review is complete.")
+          : detail.currentStatus === "pending"
+            ? tr("review.awaitingDecision", undefined, "Waiting for your decision.")
+            : detail.currentStatus === "paused"
+              ? tr("review.pausedFollowUp", undefined, "This review is paused and can receive a follow-up decision.")
+              : tr("review.noImmediateAction", undefined, "No action is available for this review.");
   const historyItems = history.map((entry) => {
     const record = (entry ?? {}) as JsonRecord;
     return '<div class="compact-list-item"><span class="compact-list-title">' +
-      escapeText(String(record.decision ?? "history")) +
+      escapeText(record.decision ? decisionLabel(record.decision, record.scope) : tr("review.history", undefined, "history")) +
       '</span><span class="compact-list-meta">' +
       escapeText(fmt(record.decidedAt ?? record.committedAt)) +
       '</span><div class="hint">' +
@@ -1929,13 +1955,13 @@ export function renderReviewDetailPanel(detail: Record<string, unknown> | null |
   });
   return [
     '<div class="structure-list">',
-    '<div class="event"><div class="event-top"><span>' + escapeText(tr("review.review", undefined, "review")) + '</span><span>' + escapeText(detail.currentStatus ?? "unknown") + "</span></div><strong>" +
+    '<div class="event"><div class="event-top"><span>' + escapeText(tr("review.review", undefined, "review")) + '</span><span>' + escapeText(statusLabel) + "</span></div><strong>" +
       escapeText(detail.reviewId ?? "n/a") +
       '</strong><div class="hint">' +
       escapeText((detail.roleId ?? "n/a") + " · " + (detail.branchId ?? "n/a")) +
       "</div></div>",
     '<div class="event"><div class="event-top"><span>' + escapeText(tr("review.decision", undefined, "decision")) + '</span><span>' + escapeText(detail.decisionPhase ?? tr("common.none", undefined, "none")) + "</span></div><strong>" +
-      escapeText(detail.decision ?? "pending") +
+      escapeText(decisionLabel(decision, detail.scope ?? decisionSnapshot?.scope)) +
       '</strong><div class="hint">' +
       escapeText((detail.actor ?? "n/a") + " · " + (detail.comment ?? tr("review.noComment", undefined, "no comment"))) +
       "</div></div>",
@@ -2046,20 +2072,28 @@ export function renderReviewQueuePanel(args: {
           .join(" · ")
       ) +
       "</strong></div>",
-    ...reviewList.map((review) =>
-      '<button class="run-card ' + (review.reviewId === args.selectedReviewId ? "active" : "") + '" data-review-id="' + escapeText(review.reviewId) + '">' +
-      '<div class="run-title"><span class="truncate" title="' + escapeText(review.reviewId) + '"><code>' + escapeText(review.reviewId) + '</code></span>' +
-      '<span class="status ' + escapeText(String(review.currentStatus ?? "unknown")) + '">' + escapeText(String(review.currentStatus ?? "unknown").replace(/_/g, " ")) + "</span></div>" +
-      '<div class="meta">' +
-      '<span>' + escapeText(String(review.roleId ?? "n/a")) + "</span>" +
-      '<span>' + escapeText(t("review.round", { round: String(review.round ?? "n/a") }, "round " + String(review.round ?? "n/a"))) + "</span>" +
-      '<span>' + escapeText(t("review.phase", { phase: String(review.decisionPhase ?? "none").replace(/_/g, " ") }, "phase " + String(review.decisionPhase ?? "none").replace(/_/g, " "))) + "</span>" +
-      '<span>' + escapeText(String(review.actor ?? t("review.unassigned", undefined, "unassigned"))) + "</span>" +
-      '<span>' + escapeText(String(review.reworkTarget ?? review.reworkRoleId ?? t("review.noReworkTarget", undefined, "no rework target"))) + "</span>" +
-      "</div>" +
-      (review.comment ? '<div class="hint">' + escapeText(String(review.comment)) + "</div>" : "") +
-      "</button>"
-    ),
+    ...reviewList.map((review) => {
+      const decisionRecorded = Boolean(["recorded", "pending_reconcile", "applied"].includes(String(review.decisionPhase ?? "")) || review.decision);
+      const statusLabel = review.decisionPhase === "applied"
+        ? t("review.statusDecisionApplied", undefined, "Decision applied")
+        : review.decisionPhase === "pending_reconcile"
+          ? t("review.statusDecisionApplying", undefined, "Applying decision")
+          : decisionRecorded
+            ? t("review.statusDecisionRecorded", undefined, "Decision recorded")
+            : displayUiToken(review.currentStatus ?? "unknown", t);
+      return '<button class="run-card ' + (review.reviewId === args.selectedReviewId ? "active" : "") + '" data-review-id="' + escapeText(review.reviewId) + '">' +
+        '<div class="run-title"><span class="truncate" title="' + escapeText(review.reviewId) + '"><code>' + escapeText(review.reviewId) + '</code></span>' +
+        '<span class="status ' + escapeText(decisionRecorded ? "resolved" : String(review.currentStatus ?? "unknown")) + '">' + escapeText(statusLabel) + "</span></div>" +
+        '<div class="meta">' +
+        '<span>' + escapeText(String(review.roleId ?? "n/a")) + "</span>" +
+        '<span>' + escapeText(t("review.round", { round: String(review.round ?? "n/a") }, "round " + String(review.round ?? "n/a"))) + "</span>" +
+        '<span>' + escapeText(t("review.phase", { phase: String(review.decisionPhase ?? "none").replace(/_/g, " ") }, "phase " + String(review.decisionPhase ?? "none").replace(/_/g, " "))) + "</span>" +
+        '<span>' + escapeText(String(review.actor ?? t("review.unassigned", undefined, "unassigned"))) + "</span>" +
+        '<span>' + escapeText(String(review.reworkTarget ?? review.reworkRoleId ?? t("review.noReworkTarget", undefined, "no rework target"))) + "</span>" +
+        "</div>" +
+        (review.comment ? '<div class="hint">' + escapeText(String(review.comment)) + "</div>" : "") +
+        "</button>";
+    }),
     "</div>"
   ].join("");
 }
@@ -2090,13 +2124,24 @@ export function renderStudioDebugOutcomePanel(args: {
     : '<div class="hint">' + escapeText(snapshot.loadingError ? t("studio.debugSnapshotUnavailable", undefined, "Could not load the latest dry-run details.") : t("studio.debugNoRun", undefined, "Start a dry run to see role handoffs, human reviews, and role outputs here.")) + '</div>';
   const reviewItems = reviews.map((review) => {
     const reviewStatus = String(review.currentStatus ?? "unknown");
+    const decisionRecorded = Boolean(["recorded", "pending_reconcile", "applied"].includes(String(review.decisionPhase ?? "")) || review.decision);
     const reviewStatusClass = reviewStatus.toLowerCase().replace(/[^a-z0-9_-]/g, "");
     const context = [review.reviewId, review.branchId, review.selectedEvent, review.reworkTarget].filter(Boolean).map(String).join(" · ");
-    const decision = [review.decision, review.actor, review.comment].filter(Boolean).map(String).join(" · ");
-    const statusLabel = reviewStatus === "pending"
+    const decisionLabel = review.decision
+      ? t("review.decisionValue." + String(review.decision), undefined, String(review.decision))
+      : "";
+    const decision = [decisionLabel, review.actor, review.comment].filter(Boolean).map(String).join(" · ");
+    const statusLabel = review.decisionPhase === "applied"
+      ? t("review.statusDecisionApplied", undefined, "Decision applied")
+      : review.decisionPhase === "pending_reconcile"
+        ? t("review.statusDecisionApplying", undefined, "Applying decision")
+        : decisionRecorded
+          ? t("review.statusDecisionRecorded", undefined, "Decision recorded")
+          : reviewStatus === "pending"
       ? t("status.waitingReview", undefined, "waiting review")
       : displayUiToken(reviewStatus, t);
-    return '<article class="studio-debug-review-item"><div><strong>' + escapeText(String(review.roleId ?? t("common.notAvailable", undefined, "n/a"))) + '</strong><span class="status ' + escapeText(reviewStatusClass) + '">' + escapeText(statusLabel) + '</span></div><div class="hint">' + escapeText(waitingReviews.includes(review) ? context : (decision || context)) + '</div>' + (reviewStatus === "pending" ? '<button type="button" class="button subtle" data-studio-open-review="' + escapeText(String(review.reviewId ?? "")) + '">' + escapeText(t("studio.debugOpenReview", undefined, "Review and decide")) + '</button>' : '') + '</article>';
+    const actionable = reviewStatus === "pending" && !decisionRecorded;
+    return '<article class="studio-debug-review-item"><div><strong>' + escapeText(String(review.roleId ?? t("common.notAvailable", undefined, "n/a"))) + '</strong><span class="status ' + escapeText(decisionRecorded ? "resolved" : reviewStatusClass) + '">' + escapeText(statusLabel) + '</span></div><div class="hint">' + escapeText(actionable ? context : (decision || context)) + '</div>' + (actionable ? '<button type="button" class="button subtle" data-studio-open-review="' + escapeText(String(review.reviewId ?? "")) + '">' + escapeText(t("studio.debugOpenReview", undefined, "Review and decide")) + '</button>' : '') + '</article>';
   });
   const pendingCount = Number(header.pendingReviewCount ?? 0);
   const reviewSection = waitingReviews.length || reviews.length
