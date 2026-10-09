@@ -67,19 +67,17 @@ examples and templates remain examples; the target workflow may be supplied by a
 
 ## Deployed Visualizer UAT
 
-Status: **IN PROGRESS**. On the replacement candidate package, the local `mulit-debate/ogs-app`
-workflow completed all four roles and paused at the required human-review gate. The deployed
-Visualizer browser UAT also passed on an isolated copy of that application. The operator decision
-and sign-off remain pending. Windows/Linux operator UAT is planned as a later cross-platform
-confirmation; the package matrix is automated install/run evidence, not that UAT.
+Status: **IN PROGRESS**. The current `1.0.0` tarball passed local install, real target-workflow, and
+deployed Visualizer checks. The workflow paused at its required human-review gate. Operator and
+product-owner decisions/signatures remain pending. Windows/Linux operator UAT remains a later
+cross-platform confirmation; the package matrix is automated install/run evidence, not that UAT.
 
-- Replacement-candidate package: SHA-256 `2c1e002aa36788d5f91cf6f0105d9cc06eb0816b62ae056c4e298f03b7a05024`; npm and pnpm install smoke passed from this tarball. The release workflow's 12-combination matrix passed on the candidate ref; its artifact could not be downloaded here for byte comparison.
-- The product candidate at `8966011` passed all regular CI jobs. A later evidence-only ref had one Node 24 macOS Visualizer browser smoke failure whose log was unavailable (HTTP 403); a rerun on `3a0f426` passed all eight regular CI jobs. The 12-combination package matrix passed on both refs. See the linked release evidence.
-- Deployment environment: local macOS, Node.js `22.21.1`, candidate Visualizer at `http://127.0.0.1:3378` using an isolated copy of `mulit-debate/ogs-app`.
-- Workflow and UI/API paths exercised: real Codex `gpt-6-luna` execution completed proposal-author, critic-a, critic-b, and judge; the judge produced `DECISION_READY` and paused for required human review. The Review Queue showed decision detail and approve/rework/pause/terminate controls at 1024px and 390px. `/healthz` and `/readyz` returned healthy/ready. Current run ID and durable record path are in the linked evidence.
-- Result and issue references: the hidden zero-height Reviews panel was fixed in candidate history at `e0f0c20` and covered by a browser regression. The replacement package's deployed Visualizer browser test passed with no browser errors or horizontal overflow. The target-workflow review remains pending; no operator decision has been submitted.
-- Recovery/retention scenarios: interruptions, corrupt/missing artifacts, duplicate controls, and disk-growth measurements have not yet been observed in this target workflow.
-- Operator and product owner sign-off: NOT RUN.
+- Current candidate ref: `7fe6fa39828556e24f243de669668a14f41e445b`; tarball SHA-256 `ccb71b9698751f910595bdcaf825a7df0d2f1ae1f0a2e3f456863dff389a68db`. npm and pnpm install smoke passed against this exact local tarball. Package matrix run 37827364076 passed all 12 combinations and checked the downloaded artifact against the build-job digest; the artifact download API returned HTTP 401 here, preventing a separate byte comparison.
+- Deployment environment: local macOS, Node.js `22.21.1`, exact-candidate Visualizer at `http://127.0.0.1:3380`, using an isolated copy of `mulit-debate/ogs-app`. `/healthz` and `/readyz` returned healthy/ready.
+- Real workflow: run `20261009-095651-092b824c` completed proposal-author, critic-a, critic-b, and judge with 4/4 `gpt-6-luna` role executions, then paused at `review.judge@1#4.r1`. The run record is under the isolated app's `.ogs/runs/20261009-095651-092b824c/`. No review decision was submitted.
+- Review Queue navigation, pending-review detail, and fixed decision actions were visible at 1280px, 1024px, and 390px; page width matched viewport. Deployed-package browser UAT passed.
+- Disk observation: isolated app `.ogs` grew from 2,244 KiB across 5 runs to 2,852 KiB across 6 runs; the new run used 604 KiB. Retention is disabled in this fixture, so this is a one-run growth observation only. Cleanup behavior is covered by automated tests, but the target-workflow cleanup policy has not been exercised.
+- Remaining scenarios: operator review and sign-off, separate product-owner sign-off, interruption/recovery, missing/corrupt authoritative artifacts, duplicate control requests, and cleanup-policy exercise. Local full suite passed 580 tests with the Windows-only test skipped on macOS.
 
 Create one release evidence record per release candidate using
 [`release-evidence/TEMPLATE.md`](release-evidence/TEMPLATE.md). Do not mark UAT complete until the
