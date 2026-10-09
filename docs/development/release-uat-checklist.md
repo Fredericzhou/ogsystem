@@ -67,27 +67,28 @@ examples and templates remain examples; the target workflow may be supplied by a
 
 ## Deployed Visualizer UAT
 
-Status: **IN PROGRESS**. The current `1.0.0` tarball passed local install, real target-workflow, and
-deployed Visualizer checks. The workflow paused at its required human-review gate. Operator and
-product-owner decisions/signatures remain pending. Windows/Linux operator UAT remains a later
-cross-platform confirmation; the package matrix is automated install/run evidence, not that UAT.
+Status: **IN PROGRESS**. The fixed `1.0.0` tarball passed local install, real target-workflow,
+deployed Visualizer, interruption recovery, and cleanup checks. The workflow paused at its required
+human-review gate. Operator decision/sign-off and Product owner sign-off remain pending.
+Windows/Linux operator UAT remains a later cross-platform confirmation; the package matrix is
+automated install/run evidence, not that UAT.
 
-- Current candidate evidence ref: `94b79e5aa5aac918d79c77c58ecee0c7f0131681`; product-code commit: `dce1e583ca1f50f28ac8d83cc52210a57b7a51fb`; package version: `1.0.0`.
-- Candidate tarball: `ogsystem-1.0.0.tgz`, SHA-256 `37d7746af9905b45347bb41f6b1207fa4a7d2e3a02a8dacbd4fb300adea83e3b`. The same local tarball passed npm and pnpm install smoke. Package matrix run 37876792647 passed all 12 combinations and checked the downloaded artifact against the build-job digest.
+- Product-code commit: `dce1e583ca1f50f28ac8d83cc52210a57b7a51fb`; package version: `1.0.0`.
+- Candidate tarball: `ogsystem-1.0.0.tgz`, SHA-256 `37d7746af9905b45347bb41f6b1207fa4a7d2e3a02a8dacbd4fb300adea83e3b`. The same local tarball passed npm and pnpm install smoke. Package matrix run 37877480295 passed all 12 combinations and checked the downloaded artifact against the build-job digest.
 - Regular CI run 37877480276 passed Linux/macOS Node 22/24 and package-install smoke jobs, but failed the Windows Node 22 and Node 24 `Test` jobs. The failure annotations only report exit code 1. Downloading job logs through the unauthenticated Actions API returns `403 Must have admin rights to Repository`; a repository administrator must collect the failed test output from the Actions UI or rerun the jobs with accessible logs before closing the Windows gate.
 - Deployment environment: local macOS, Node.js `22.21.1`, exact-candidate Visualizer at `http://127.0.0.1:3380`, using an isolated copy of `mulit-debate/ogs-app`. `/healthz` and `/readyz` returned healthy/ready.
-- Real workflow: run `20261009-095651-092b824c` completed proposal-author, critic-a, critic-b, and judge with 4/4 `gpt-6-luna` role executions, then paused at `review.judge@1#4.r1`. The run record is under the isolated app's `.ogs/runs/20261009-095651-092b824c/`. No review decision was submitted.
+- Real workflow: fixed-tarball follow-up run `20261009-132640-bbecb069` completed proposal-author, critic-a, critic-b, and judge with 4/4 `gpt-6-luna` role executions, then paused at `review.judge@1#4.r1`. An injected exit `91` after proposal-author's durable outcome was recovered by resuming the same run; proposal-author executed once, and all four roles had one execution snapshot each. No review decision was submitted. The isolated run and logs are under `/tmp/ogs-release-uat-followup-1.0.0.HMrYzO/`; the source `mulit-debate/ogs-app` was not modified.
 - Review Queue navigation, pending-review detail, and fixed decision actions were visible at 1280px, 1024px, and 390px; page width matched viewport. Deployed-package browser UAT passed.
-- Disk observation: isolated app `.ogs` grew from 2,244 KiB across 5 runs to 2,852 KiB across 6 runs; the new run used 604 KiB. Retention is disabled in this fixture, so this is a one-run growth observation only. Cleanup behavior is covered by automated tests, but the target-workflow cleanup policy has not been exercised.
-- Recovery checks on disposable copies of the target run returned `RESUME_STATE_MISSING` for missing `state.json` and `RESUME_STATE_INVALID` for corrupt `state.json`. Automated tests cover recovery without re-executing committed roles and idempotent duplicate pause requests. The target workflow's interruption/recovery and cleanup-policy observations remain open.
-- Remaining scenarios: Windows operator acceptance, operator review and sign-off, separate product-owner sign-off, target-workflow interruption/recovery, and cleanup-policy exercise. Local full suite passed 581 tests with the Windows-only test skipped on macOS.
+- Cleanup exercise on a second copy of the target run added one older synthetic execution snapshot per role, then ran `run resume --cleanup-executions 1`. Cleanup event recorded success, removed 4 of 8 snapshot directories, and reduced the fixture from 782,336 to 602,112 bytes. `sessions.json`, plan fingerprint, review request, checkpoints, execution outcomes, state semantics, and one latest snapshot per role remained; a subsequent resume exited 0 without repeating role execution. This confirms cleanup behavior on target-workflow artifact layout but does not establish growth limits for naturally accumulated history.
+- Missing/corrupt recovery checks on disposable copies returned `RESUME_STATE_MISSING` for missing `state.json` and `RESUME_STATE_INVALID` for corrupt `state.json`. `pnpm run test:runtime-regression` passed 49/49 on the candidate source checkout.
+- Remaining scenarios: Windows operator acceptance, operator decision/sign-off, and separate Product owner sign-off. Local full suite passed 581 tests with the Windows-only test skipped on macOS.
 
 ## Windows Continuation
 
 Use this section to continue the same candidate validation on a Windows 10/11 machine. Keep the
 candidate ref and tarball digest fixed; do not rebuild after recording UAT results.
 
-1. Check out evidence ref `94b79e5aa5aac918d79c77c58ecee0c7f0131681` and confirm
+1. Check out product-code commit `dce1e583ca1f50f28ac8d83cc52210a57b7a51fb` and confirm
    `package.json` reports `1.0.0`. Use Node.js `22.x` and `24.x` in separate clean environments.
 2. In the GitHub Actions UI, open regular CI run `37877480276` and save the full logs for
    `Test (Node 22, windows-latest)` and `Test (Node 24, windows-latest)`. The API log download
