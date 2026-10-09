@@ -70,9 +70,10 @@ examples and templates remain examples; the target workflow may be supplied by a
 Status: **IN PROGRESS**. The latest local source commit `b323d8d` and fixed `1.0.0` tarball passed
 the full macOS suite, npm/pnpm package install smoke, and deployed-package browser UAT. The current
 fixed tarball also completed a real target workflow and applied its recorded `approve` decision.
-Interruption recovery and cleanup were exercised on the previous fixed tarball and remain useful
-runtime evidence. The current target run is `done`.
-Operator release-acceptance sign-off and Product owner sign-off remain pending.
+Interruption recovery and cleanup have now also passed on the same fixed tarball using isolated
+copies. The current target run is `done`.
+Operator release-acceptance sign-off is recorded as PASS at the operator's explicit instruction;
+Product owner sign-off remains pending.
 Windows/Linux operator UAT remains a later cross-platform confirmation; the package matrix is
 automated install/run evidence, not that UAT.
 
@@ -94,13 +95,12 @@ automated install/run evidence, not that UAT.
 - Review outcome on run `20261010-003308-59f81dd3`: Operator decision `approve` was recorded under
   principal `local:fred`, then applied on resume. The run is `done` with `pendingReviewCount=0`.
   The recorded comment is the generic UI text `recorded via visualizer (approve)`; it is not a
-  substantive rationale. This verifies the review lifecycle but does not by itself constitute
-  Operator release-acceptance or Product owner sign-off.
+  substantive rationale. This verifies the review lifecycle; release acceptance is separately
+  recorded in the current candidate evidence.
 - Cleanup exercise on a second copy of the target run added one older synthetic execution snapshot per role, then ran `run resume --cleanup-executions 1`. Cleanup event recorded success, removed 4 of 8 snapshot directories, and reduced the fixture from 782,336 to 602,112 bytes. `sessions.json`, plan fingerprint, review request, checkpoints, execution outcomes, state semantics, and one latest snapshot per role remained; a subsequent resume exited 0 without repeating role execution. This confirms cleanup behavior on target-workflow artifact layout but does not establish growth limits for naturally accumulated history.
 - Missing/corrupt recovery checks on disposable copies returned `RESUME_STATE_MISSING` for missing `state.json` and `RESUME_STATE_INVALID` for corrupt `state.json`. `pnpm run test:runtime-regression` passed 49/49 on the candidate source checkout.
 - Remaining scenarios: regular CI and package matrix for `b323d8d`; Windows operator acceptance;
-  Operator release-acceptance sign-off; and
-  separate Product owner sign-off. Local full suite passed 585 tests with the Windows-only test
+  and separate Product owner sign-off. Local full suite passed 585 tests with the Windows-only test
   skipped on macOS.
 
 ## Windows Continuation
