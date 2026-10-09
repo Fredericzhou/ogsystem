@@ -79,22 +79,33 @@ automated install/run evidence, not that UAT.
 - Deployment environment: local macOS, Node.js `22.21.1`, exact-candidate Visualizer at `http://127.0.0.1:3380`, using an isolated copy of `mulit-debate/ogs-app`. `/healthz` and `/readyz` returned healthy/ready.
 - Real workflow: fixed-tarball follow-up run `20261009-132640-bbecb069` completed proposal-author, critic-a, critic-b, and judge with 4/4 `gpt-6-luna` role executions, then paused at `review.judge@1#4.r1`. An injected exit `91` after proposal-author's durable outcome was recovered by resuming the same run; proposal-author executed once, and all four roles had one execution snapshot each. No review decision was submitted. The isolated run and logs are under `/tmp/ogs-release-uat-followup-1.0.0.HMrYzO/`; the source `mulit-debate/ogs-app` was not modified.
 - Review Queue navigation, pending-review detail, and fixed decision actions were visible at 1280px, 1024px, and 390px; page width matched viewport. Deployed-package browser UAT passed.
+- Latest local UI follow-up: commit `462d67d3be0052adb3b5b13823ac8b062e3b5d18` focuses review detail on
+  submitted content and the durable decision. Its local tarball SHA-256 is
+  `1063eb6d300e254b3f722cb14f5898ae0c4fe545f21d5f7b372aa90863b0b5cb`; build, npm/pnpm package
+  smoke, and browser checks pass. This commit is not pushed, so the prior CI and 12-combination
+  matrix do not validate it. See [`release-evidence/1.0.0.md`](release-evidence/1.0.0.md).
 - Cleanup exercise on a second copy of the target run added one older synthetic execution snapshot per role, then ran `run resume --cleanup-executions 1`. Cleanup event recorded success, removed 4 of 8 snapshot directories, and reduced the fixture from 782,336 to 602,112 bytes. `sessions.json`, plan fingerprint, review request, checkpoints, execution outcomes, state semantics, and one latest snapshot per role remained; a subsequent resume exited 0 without repeating role execution. This confirms cleanup behavior on target-workflow artifact layout but does not establish growth limits for naturally accumulated history.
 - Missing/corrupt recovery checks on disposable copies returned `RESUME_STATE_MISSING` for missing `state.json` and `RESUME_STATE_INVALID` for corrupt `state.json`. `pnpm run test:runtime-regression` passed 49/49 on the candidate source checkout.
 - Remaining scenarios: Windows operator acceptance, operator decision/sign-off, and separate Product owner sign-off. Local full suite passed 581 tests with the Windows-only test skipped on macOS.
 
 ## Windows Continuation
 
-Use this section to continue the same candidate validation on a Windows 10/11 machine. Keep the
-candidate ref and tarball digest fixed; do not rebuild after recording UAT results.
+Use this section to continue candidate validation on a Windows 10/11 machine. The previously
+recorded digest belongs to the earlier source commit `dce1e583ca1f50f28ac8d83cc52210a57b7a51fb`.
+The latest UI follow-up `462d67d3be0052adb3b5b13823ac8b062e3b5d18` is local only. Push the final
+candidate ref and complete its regular CI and package matrix before selecting the tarball digest
+for Windows UAT. Do not rebuild after recording UAT results.
 
-1. Check out product-code commit `dce1e583ca1f50f28ac8d83cc52210a57b7a51fb` and confirm
-   `package.json` reports `1.0.0`. Use Node.js `22.x` and `24.x` in separate clean environments.
-2. In the GitHub Actions UI, open regular CI run `37877480276` and save the full logs for
-   `Test (Node 22, windows-latest)` and `Test (Node 24, windows-latest)`. The API log download
-   requires repository admin rights; attach the failing test names and relevant stack traces to the
-   release evidence before attempting a fix.
-3. On each Node version, run from PowerShell:
+1. In the GitHub Actions UI, open regular CI run `37877480276` and save the full logs for
+   `Test (Node 22, windows-latest)` and `Test (Node 24, windows-latest)`. These are failures on the
+   earlier source commit; use them to diagnose the existing Windows gate. The API log download
+   requires repository admin rights. Record failing test names and relevant stack traces. Then run
+   regular CI and package validation for the final immutable candidate ref and record those runs
+   separately.
+2. Download the tarball artifact from that candidate's package validation run and verify its SHA-256
+   against the run's build-job digest. Use that same tarball for both Node versions and both package
+   managers. Record the candidate ref and digest before starting UAT.
+3. Use Node.js `22.x` and `24.x` in separate clean environments. On each, run from PowerShell:
 
    ```powershell
    corepack enable
@@ -102,28 +113,14 @@ candidate ref and tarball digest fixed; do not rebuild after recording UAT resul
    pnpm test
    pnpm run smoke:windows-lifecycle
    pnpm run test:visualizer-browser
+   pnpm run smoke:package-install:npm -- .\ogsystem-1.0.0.tgz
+   pnpm run smoke:package-install:pnpm -- .\ogsystem-1.0.0.tgz
    ```
 
    Save the command output, Node/pnpm versions, Windows version, and exit codes. If a failure is
    found, fix it on a new candidate ref and repeat CI, the 12-combination package matrix, packing,
    and UAT with a new digest.
-4. Download the tarball artifact from package validation run `37877480295`, if available, and verify
-   it before installation:
-
-   ```powershell
-   Get-FileHash .\ogsystem-1.0.0.tgz -Algorithm SHA256
-   ```
-
-   It must report
-   `37d7746af9905b45347bb41f6b1207fa4a7d2e3a02a8dacbd4fb300adea83e3b`. Then run both package
-   install smoke scripts against that same tarball:
-
-   ```powershell
-   pnpm run smoke:package-install:npm -- .\ogsystem-1.0.0.tgz
-   pnpm run smoke:package-install:pnpm -- .\ogsystem-1.0.0.tgz
-   ```
-
-5. Complete the operator workflow with the same candidate package, record the Visualizer/API paths,
+4. Complete the operator workflow with the same candidate package, record the Visualizer/API paths,
    recovery and cleanup observations, and leave the real pending review for its assigned operator.
    Record operator and Product owner sign-offs separately in
    [`release-evidence/1.0.0.md`](release-evidence/1.0.0.md).
