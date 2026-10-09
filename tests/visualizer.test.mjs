@@ -1077,7 +1077,7 @@ test("visualizer server serves run list, details, and live stream", async (t) =>
     assert.match(rootHtml, /Project Overview/);
     assert.match(rootHtml, /Ops Summary/);
     assert.match(rootHtml, /Failure Triage/);
-    assert.match(rootHtml, /Review Queue/);
+    assert.match(rootHtml, /Pending reviews/);
     assert.match(rootHtml, /Resume Readiness/);
     assert.match(rootHtml, /Config Explain/);
     assert.match(rootHtml, /Logs/);

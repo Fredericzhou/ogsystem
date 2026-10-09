@@ -329,7 +329,7 @@ export function renderRunStatsHtml(args: {
   ];
   const pendingReviewCount = Math.max(0, Number(header.pendingReviewCount) || 0);
   return (pendingReviewCount > 0
-    ? '<button type="button" class="button subtle" data-open-pending-reviews>' + escapeText(t("review.openPending", { count: String(pendingReviewCount) }, "Open {count} pending review(s)")) + '</button>'
+    ? '<button type="button" class="button primary" data-open-pending-reviews>' + escapeText(t("review.openPending", { count: String(pendingReviewCount) }, "Open {count} pending review(s)")) + '</button>'
     : "") + cards
     .map(([label, value]) => `
       <div class="stat">

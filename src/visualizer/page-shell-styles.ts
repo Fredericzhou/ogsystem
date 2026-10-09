@@ -233,6 +233,18 @@ export function renderPageShellStyles(): string {
       gap: 3px 8px;
       font-size: 11px;
     }
+    .review-detail-workspace {
+      display: grid;
+      gap: 10px;
+      padding-top: 10px;
+      border-top: 1px solid var(--border);
+    }
+    .review-open-action {
+      display: inline-flex;
+      padding-top: 4px;
+      color: var(--accent);
+      font-weight: 600;
+    }
     .shell.content > .top-nav { grid-row: 1; }
     .shell.content > .flash { grid-row: 2; }
     .shell.content > .main-stage { grid-row: 3; }
@@ -2545,7 +2557,7 @@ export function renderPageShellStyles(): string {
       font-size: 0.9rem;
     }
     .review-submitted-content {
-      max-height: 420px;
+      max-height: clamp(180px, 36vh, 320px);
       overflow: auto;
       padding: 10px;
       border: 1px solid var(--border);
@@ -3187,6 +3199,11 @@ export function renderPageShellStyles(): string {
     }
     @media (max-width: 480px) {
       .content { padding: 8px; }
+      .review-submitted-content { max-height: 120px; }
+      .operate-reviews #review-actions {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+      }
       .top-nav {
         padding: 8px;
       }

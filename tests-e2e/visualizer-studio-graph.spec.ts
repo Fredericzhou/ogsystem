@@ -1573,6 +1573,17 @@ test("deployed visualizer UAT keeps flow layout, browse return, and wheel zoom w
     await expect(page.locator("#run-flow .flow-step").first()).toHaveCSS("border-left-color", /\d+, \d+, \d+/);
     const loopStep = page.locator("#run-flow .flow-step.is-loop-step").first();
     if (await loopStep.count()) await expect(loopStep).toHaveCSS("margin-left", "14px");
+    const reviewTab = page.locator("#operate-tab-reviews");
+    const reviewEntry = page.locator("#reviews [data-review-id]").first();
+    if (await reviewEntry.count()) {
+      await reviewTab.click();
+      await expect(reviewEntry).toContainText("Open review");
+      await expect(page.locator("#review-detail .review-submission")).toBeVisible();
+      await expect(page.locator("#review-actions [data-review-action]").first()).toBeVisible();
+      expect(await page.locator("#review-detail").evaluate((detail) =>
+        Boolean(detail.compareDocumentPosition(document.getElementById("review-actions")!) & Node.DOCUMENT_POSITION_FOLLOWING)
+      )).toBe(true);
+    }
   }
   const designTab = page.locator('[data-console-tab="design"]');
   if (await designTab.getAttribute("aria-selected") !== "true") {

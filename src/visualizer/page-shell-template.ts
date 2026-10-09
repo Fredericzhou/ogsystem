@@ -208,15 +208,12 @@ export function renderPageShellBody({ workdir, locale, t }: PageShellBodyOptions
               </article>
             </section>
             <section id="operate-tabpanel-reviews" class="grid span-12" role="tabpanel" aria-labelledby="operate-tab-reviews" hidden>
-              <article class="card span-6 operate-panel operate-reviews">
+              <article class="card span-12 operate-panel operate-reviews">
                 <header><h3>${escapeHtml(t("section.reviewQueue"))}</h3></header>
                 <div class="body">
                   <div id="reviews" class="timeline"><div class="hint">${escapeHtml(t("state.noRunSelected"))}</div></div>
+                  <div id="review-detail" class="structure-list review-detail-workspace">${escapeHtml(t("state.noReviewSelected"))}</div>
                   <div id="review-actions" class="actions"></div>
-                  <details id="review-detail-disclosure" class="run-event-details">
-                    <summary>${escapeHtml(t("review.details"))}</summary>
-                    <div id="review-detail" class="structure-list">${escapeHtml(t("state.noReviewSelected"))}</div>
-                  </details>
                 </div>
               </article>
             </section>

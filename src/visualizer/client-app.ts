@@ -5877,6 +5877,9 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
           if (reviewsPanel && typeof reviewsPanel.scrollIntoView === "function") {
             reviewsPanel.scrollIntoView({ behavior: "smooth", block: "start" });
           }
+          const selectedReview = Array.from(reviewsEl?.querySelectorAll("[data-review-id]") || [])
+            .find((button) => button.getAttribute("data-review-id") === state.selectedReviewId);
+          if (selectedReview && typeof selectedReview.focus === "function") selectedReview.focus({ preventScroll: true });
         });
       }
     }
@@ -8041,14 +8044,15 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
       state.reviewDetail = null;
       renderConsoleTabs();
       state.selectedReviewId = reviewId;
-      const reviewDisclosure = document.getElementById("review-detail-disclosure");
-      if (reviewDisclosure) reviewDisclosure.open = true;
       closeActionForm();
       renderReviews();
       await refreshSelectedReviewDetail(runId, { allowMissing: false });
       if (state.selectedRunId !== runId || state.selectedReviewId !== reviewId) return;
       renderSelectedRun();
       writeRouteToLocation();
+      if (reviewDetailEl && typeof reviewDetailEl.scrollIntoView === "function") {
+        reviewDetailEl.scrollIntoView({ behavior: "smooth", block: "start" });
+      }
     }
 
     async function runAction(actionId, fn) {

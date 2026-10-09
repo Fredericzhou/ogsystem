@@ -82,7 +82,6 @@ const PAGE_ELEMENT_IDS = [
   "reviews",
   "review-actions",
   "review-detail",
-  "review-detail-disclosure",
   "binding-explain",
   "role-packages",
   "contract-explain",
@@ -3302,7 +3301,7 @@ test("visualizer client renders zh-CN chrome while preserving runtime identifier
   assert.equal(latestMount.labels.fullscreen, "全屏");
 });
 
-test("pending-review summary opens the review queue directly", async () => {
+test("pending-review shortcut opens the focused review workspace", async () => {
   const harness = await createClientHarness();
   const openReviews = harness.document.getElementById("stats").querySelector("[data-open-pending-reviews]");
   assert.ok(openReviews);
@@ -3313,6 +3312,10 @@ test("pending-review summary opens the review queue directly", async () => {
     .find((button) => button.getAttribute("data-operate-tab") === "reviews");
   assert.equal(reviewsTab?.getAttribute("aria-pressed"), "true");
   assert.equal(harness.document.getElementById("operate-tabpanel-reviews").hidden, false);
+  assert.match(harness.document.getElementById("review-detail").textContent, /Representative submitted content/);
+  assert.match(harness.document.getElementById("reviews").textContent, /demo-analyst/);
+  assert.match(harness.document.getElementById("reviews").textContent, /Open review/);
+  assert.equal(harness.document.getElementById("review-actions").querySelectorAll("[data-review-action]").length, 4);
 });
 
 test("visualizer client language switch stores locale and refreshes with lang query", async () => {
@@ -3950,7 +3953,8 @@ test("visualizer client keeps identical review ids independent across runs", asy
   await firstRun.click();
   await settle();
   assert.equal(backend.fetchCalls.some((call) => call.path === "/api/v1/runs/run-123/reviews/review-1/decide"), false);
-  assert.match(harness.document.getElementById("review-detail").textContent, /demo-analyst/);
+  assert.match(harness.document.getElementById("reviews").textContent, /demo-analyst/);
+  assert.match(harness.document.getElementById("review-detail").textContent, /Representative submitted content/);
 });
 
 test("visualizer client opens a routed review with its tab panel visible on first render", async () => {
@@ -3958,7 +3962,8 @@ test("visualizer client opens a routed review with its tab panel visible on firs
 
   assert.equal(harness.document.getElementById("operate-tab-reviews").getAttribute("aria-selected"), "true");
   assert.equal(harness.document.getElementById("operate-tabpanel-reviews").hidden, false);
-  assert.match(harness.document.getElementById("review-detail").textContent, /review-1/);
+  assert.match(harness.document.getElementById("reviews").textContent, /review-1/);
+  assert.match(harness.document.getElementById("review-detail").textContent, /Representative submitted content/);
 });
 
 test("Studio debug review shortcut shows review content on its first navigation", async () => {
@@ -3978,7 +3983,8 @@ test("Studio debug review shortcut shows review content on its first navigation"
     ?.getAttribute("aria-selected") === "true");
 
   assert.equal(harness.document.getElementById("operate-tabpanel-reviews").hidden, false);
-  assert.match(harness.document.getElementById("review-detail").textContent, /review-1/);
+  assert.match(harness.document.getElementById("reviews").textContent, /review-1/);
+  assert.match(harness.document.getElementById("review-detail").textContent, /Representative submitted content/);
 });
 
 test("visualizer client action failures stay local and show an error flash", async () => {
@@ -4000,7 +4006,7 @@ test("visualizer client action failures stay local and show an error flash", asy
 
   assert.match(harness.document.getElementById("flash").textContent, /500 Internal Server Error/);
   assert.ok(
-    harness.document.getElementById("review-detail").textContent.includes("pending")
+    harness.document.getElementById("reviews").textContent.includes("pending")
   );
 });
 

@@ -28,7 +28,6 @@ const REQUIRED_ELEMENT_IDS = [
   "state",
   "reviews",
   "review-detail",
-  "review-detail-disclosure",
   "resume-diagnostics-disclosure",
   "ops-summary",
   "binding-explain",
@@ -84,6 +83,7 @@ test("page shell keeps HTML, style, assets, and client script mounted", () => {
   assert.match(html, /id="console-panel-project"[^>]*aria-labelledby="console-tab-project"/);
   assert.match(html, /id="console-panel-build"[^>]*aria-labelledby="console-tab-design"/);
   assert.match(html, /id="console-panel-validate-release"[^>]*aria-labelledby="console-tab-release"/);
+  assert.match(html, /class="card span-12 operate-panel operate-reviews"[\s\S]*id="reviews"[\s\S]*id="review-detail"[\s\S]*id="review-actions"/);
   assert.match(html, /id="operate-tabs"[^>]*role="tablist"[^>]*aria-label="运行视图"/);
   assert.match(html, /id="operate-tabpanel-overview"[^>]*role="tabpanel"[^>]*aria-labelledby="operate-tab-overview"/);
   assert.match(styles, /body\.show-operate-workspace:not\(\.has-selected-run\) \.operate-overview/);

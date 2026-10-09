@@ -1929,7 +1929,6 @@ export function renderReviewDetailPanel(detail: Record<string, unknown> | null |
     : draftResult?.content === undefined || draftResult.content === null
       ? ""
       : JSON.stringify(draftResult.content, null, 2);
-  const selectedEvent = String(detail.selectedEvent ?? draftResult?.event ?? "");
   const decisionComment = detail.comment ?? decisionSnapshot?.comment;
   const decisionActor = detail.actor ?? decisionSnapshot?.actor;
   const decidedAt = detail.decidedAt ?? decisionSnapshot?.decidedAt;
@@ -1975,11 +1974,6 @@ export function renderReviewDetailPanel(detail: Record<string, unknown> | null |
     : "";
   return [
     '<div class="review-detail">',
-    '<div class="event review-detail-summary"><div class="event-top"><strong>' + escapeText(detail.roleId ?? "n/a") + '</strong><span class="status">' + escapeText(statusLabel) + '</span></div>' +
-      '<div class="hint"><code>' + escapeText(detail.reviewId ?? "n/a") + '</code> · ' +
-      escapeText(tr("review.round", { round: String(detail.round ?? "n/a") }, "round " + String(detail.round ?? "n/a"))) +
-      (detail.branchId ? ' · <code>' + escapeText(detail.branchId) + '</code>' : "") +
-      (selectedEvent ? ' · ' + escapeText(selectedEvent) : "") + '</div></div>',
     '<section class="event review-submission"><h4>' + escapeText(tr("review.submittedContent", undefined, "Submitted content")) + '</h4>' +
       (submittedContent
         ? '<div class="review-submitted-content">' + escapeText(submittedContent) + '</div>'
@@ -2010,22 +2004,8 @@ export function renderReviewQueuePanel(args: {
   if (!reviewList.length) {
     return '<div class="hint">' + escapeText(t("review.noReviews", undefined, "No reviews for this run.")) + '</div>';
   }
-  const statusCounts = reviewList.reduce<Record<string, number>>((counts, review) => {
-    const key = String(review.currentStatus ?? "unknown");
-    counts[key] = (counts[key] ?? 0) + 1;
-    return counts;
-  }, {});
   return [
     '<div class="structure-list">',
-    '<div class="event"><div class="event-top"><span>' + escapeText(t("review.queueSummary", undefined, "queue summary")) + '</span><span>' +
-      escapeText(reviewList.length) +
-      '</span></div><strong>' +
-      escapeText(
-        Object.entries(statusCounts)
-          .map(([status, count]) => status.replace(/_/g, " ") + " " + count)
-          .join(" · ")
-      ) +
-      "</strong></div>",
     ...reviewList.map((review) => {
       const decisionRecorded = Boolean(["recorded", "pending_reconcile", "applied"].includes(String(review.decisionPhase ?? "")) || review.decision);
       const statusLabel = review.decisionPhase === "applied"
@@ -2041,11 +2021,9 @@ export function renderReviewQueuePanel(args: {
         '<div class="meta">' +
         '<span>' + escapeText(String(review.roleId ?? "n/a")) + "</span>" +
         '<span>' + escapeText(t("review.round", { round: String(review.round ?? "n/a") }, "round " + String(review.round ?? "n/a"))) + "</span>" +
-        '<span>' + escapeText(t("review.phase", { phase: String(review.decisionPhase ?? "none").replace(/_/g, " ") }, "phase " + String(review.decisionPhase ?? "none").replace(/_/g, " "))) + "</span>" +
-        '<span>' + escapeText(String(review.actor ?? t("review.unassigned", undefined, "unassigned"))) + "</span>" +
-        '<span>' + escapeText(String(review.reworkTarget ?? review.reworkRoleId ?? t("review.noReworkTarget", undefined, "no rework target"))) + "</span>" +
         "</div>" +
         (review.comment ? '<div class="hint">' + escapeText(String(review.comment)) + "</div>" : "") +
+        '<span class="review-open-action">' + escapeText(t("review.openItem", undefined, "Open review")) + '</span>' +
         "</button>";
     }),
     "</div>"
