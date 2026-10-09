@@ -205,6 +205,8 @@ test("stored projection preserves positions while renderer stays library-indepen
   assert.doesNotMatch(labelProjection, /Role:/);
   assert.match(labelProjection, /STUDIO_EDGE_CONNECTOR_RADIUS = 4/);
   assert.match(renderer, /name: "boundary",\r?\n\s+args: \{ offset: 0 \}/);
+  assert.match(renderer, /STUDIO_PORT_CONNECTION_POINT = \{\r?\n\s+name: "boundary",\r?\n\s+args: \{ stroked: false \}/);
+  assert.match(renderer, /port: value\.port, connectionPoint: STUDIO_PORT_CONNECTION_POINT/);
   const styles = await readFile(new URL("../src/visualizer/studio-client/styles.ts", import.meta.url), "utf8");
   assert.match(styles, /\.studio-graph-canvas \.x6-edge-label \{\r?\n\s+pointer-events: none;/);
   assert.match(renderer, /routing\.routePoints\.length > 0/);
@@ -222,7 +224,7 @@ test("stored projection preserves positions while renderer stays library-indepen
   assert.match(renderer, /function isLoopEdge\(edge: GraphViewModelEdge\)/);
   assert.match(renderer, /strokeWidth: loopEdge \? 2\.6/);
   assert.match(renderer, /strokeDasharray: loopEdge \? "7 5"/);
-  assert.match(renderer, /refX: -markerWidth \/ 2/);
+  assert.match(renderer, /refX: -markerWidth \/ 6/);
   assert.match(renderer, /targetMarker: \{[\s\S]*?fill: stroke,[\s\S]*?stroke,[\s\S]*?strokeWidth: 1/);
 });
 

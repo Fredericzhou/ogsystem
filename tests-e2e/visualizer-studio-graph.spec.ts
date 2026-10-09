@@ -940,7 +940,7 @@ test("SCC container drag moves every member node with the container", async ({ p
       const marker = markerId ? document.getElementById(markerId) : null;
       return Number.parseFloat(marker?.getAttribute("refX") || "NaN");
     }));
-    expect(loopMarkerReferenceOffsets).toEqual([-8, -8]);
+    expect(loopMarkerReferenceOffsets).toEqual([-16 / 6, -16 / 6]);
     await expect.poll(async () => page.evaluate(() => Array.from(
       document.querySelectorAll<SVGGElement>('#studio-graph-root .x6-edge.is-loop-back')
     ).map((edge) => {
@@ -1318,7 +1318,7 @@ test("fan-out projection uses nearby ports without replacing business edges", as
         return Number.parseFloat(marker?.getAttribute("refX") || "NaN");
       })
     );
-    expect(markerReferenceOffsets).toEqual([-6, -6]);
+    expect(markerReferenceOffsets).toEqual([-12 / 6, -12 / 6]);
     await expect.poll(async () => root.evaluate((element) =>
       Array.from(element.querySelectorAll("[data-cell-id]")).filter((cell) => {
         const id = cell.getAttribute("data-cell-id") || "";
@@ -1595,10 +1595,21 @@ test("deployed visualizer UAT keeps flow layout, browse return, and wheel zoom w
           const point = path.getPointAtLength(distance);
           return new DOMPoint(point.x, point.y).matrixTransform(matrix);
         };
+        const length = path.getTotalLength();
         const start = pointAt(0);
-        const end = pointAt(path.getTotalLength());
+        const end = pointAt(length);
+        const beforeEnd = pointAt(Math.max(0, length - 1));
+        const tangentX = end.x - beforeEnd.x;
+        const tangentY = end.y - beforeEnd.y;
+        const tangentLength = Math.hypot(tangentX, tangentY);
+        const markerId = path.getAttribute("marker-end")?.match(/#([^\)]+)/)?.[1];
+        const marker = markerId ? root.querySelector<SVGMarkerElement>(`#${CSS.escape(markerId)}`) : null;
+        const markerOffset = marker ? Math.max(0, -Number(marker.getAttribute("refX") || 0)) * Math.hypot(tangentX, tangentY) : 0;
+        const arrowTip = tangentLength > 0
+          ? new DOMPoint(end.x + tangentX / tangentLength * markerOffset, end.y + tangentY / tangentLength * markerOffset)
+          : end;
         const sourceDistance = rimDistance(start);
-        const targetDistance = rimDistance(end);
+        const targetDistance = rimDistance(arrowTip);
         return sourceDistance < 24 && targetDistance < 24 ? [{ sourceDistance, targetDistance }] : [];
       });
     return {

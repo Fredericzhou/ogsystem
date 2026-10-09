@@ -66,6 +66,10 @@ type StudioEdgeRouting = {
   connector: NonNullable<Edge.Metadata["connector"]>;
   vertices: NonNullable<Edge.Metadata["vertices"]>;
 };
+const STUDIO_PORT_CONNECTION_POINT = {
+  name: "boundary",
+  args: { stroked: false }
+} as const;
 const STUDIO_EDGE_ORTH_ROUTER: StudioEdgeRouting["router"] = {
   name: "orth",
   args: { padding: 18 }
@@ -81,7 +85,7 @@ const STUDIO_BOUNDARY_CONNECTION_POINT = {
 
 function projectionRouting(routing: LayoutEdgeRouting): StudioEdgeRouting {
   const toTerminal = (value: LayoutEdgeRouting["source"]): StudioEdgeTerminal => value.port
-    ? { cell: value.cell, port: value.port, connectionPoint: { name: "anchor" } }
+    ? { cell: value.cell, port: value.port, connectionPoint: STUDIO_PORT_CONNECTION_POINT }
     : {
         cell: value.cell,
         anchor: {
@@ -657,7 +661,7 @@ function studioEdgeAttrs(edge: GraphViewModelEdge): Edge.Metadata["attrs"] {
         name: "block",
         width: markerWidth,
         height: loopEdge ? 12 : 9,
-        refX: -markerWidth / 2,
+        refX: -markerWidth / 6,
         fill: stroke,
         stroke,
         strokeWidth: 1

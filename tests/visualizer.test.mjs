@@ -1825,6 +1825,94 @@ test("visualizer server writes review decisions, stop requests, and reindex thro
   }
 });
 
+test("visualizer duplicate pause decisions preserve the durable record and do not duplicate audit", async (t) => {
+  const workdir = await mkdtemp(path.join(os.tmpdir(), "ogsystem-visualizer-review-pause-replay-"));
+  await seedProjectFixture(workdir);
+  const { runId } = await createWaitingReviewFixtureRun(workdir, { includeDecision: false });
+  let started;
+  try {
+    started = await startVisualizationServer({
+      workdir,
+      host: "127.0.0.1",
+      port: 0,
+      identityProvider: {
+        authenticate: () => ({
+          principal: { id: "test:workflow-operator", issuer: "ogs:test", displayName: "Workflow operator" },
+          authorize: () => true
+        })
+      }
+    });
+  } catch (error) {
+    const errorCode =
+      typeof error === "object" && error !== null && "code" in error ? error.code : undefined;
+    if (errorCode === "EPERM" || errorCode === "EACCES") {
+      t.skip(`visualizer listen unavailable in sandbox: ${errorCode}`);
+      return;
+    }
+    throw error;
+  }
+  const { server, url } = started;
+  const decideUrl = `${url}/api/v1/runs/${runId}/reviews/review.demo-analyst@1%231.r1/decide`;
+  const decisionPath = path.resolve(
+    workdir,
+    ".ogs",
+    "runs",
+    runId,
+    "control",
+    "reviews",
+    "review.demo-analyst@1#1.r1.decision.json"
+  );
+  const auditPath = path.resolve(workdir, ".ogs", "runs", runId, "events.jsonl");
+  const reviewDecisionAuditCount = async () =>
+    (await readFile(auditPath, "utf8"))
+      .split("\n")
+      .filter(Boolean)
+      .map((line) => JSON.parse(line))
+      .filter((event) => event.type === "control.audit" && event.action === "review.decide").length;
+
+  try {
+    const payload = {
+      decision: "pause",
+      comment: "pause request for duplicate-control regression"
+    };
+    const firstResponse = await fetch(decideUrl, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(payload)
+    });
+    assert.equal(firstResponse.status, 200);
+    const firstResult = await firstResponse.json();
+    const firstDurableDecision = JSON.parse(await readFile(decisionPath, "utf8"));
+    const firstAuditCount = await reviewDecisionAuditCount();
+    assert.equal(firstAuditCount, 1);
+
+    const replayResponse = await fetch(decideUrl, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(payload)
+    });
+    assert.equal(replayResponse.status, 200);
+    const replayResult = await replayResponse.json();
+    const replayDurableDecision = JSON.parse(await readFile(decisionPath, "utf8"));
+
+    assert.deepEqual(replayDurableDecision, firstDurableDecision);
+    assert.deepEqual(replayResult.detail.lifecycle.decision, firstResult.detail.lifecycle.decision);
+    assert.equal(await reviewDecisionAuditCount(), firstAuditCount);
+
+    const followUpResponse = await fetch(decideUrl, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ decision: "approve", comment: "follow-up after pause" })
+    });
+    assert.equal(followUpResponse.status, 200);
+    const followUpDecision = JSON.parse(await readFile(decisionPath, "utf8"));
+    assert.equal(followUpDecision.decision, "approve");
+    assert.equal(await reviewDecisionAuditCount(), firstAuditCount + 1);
+  } finally {
+    await new Promise((resolve) => server.close(resolve));
+  }
+});
+
 test("visualizer server keeps idle run list stable until reindex refreshes the cache", async (t) => {
   const workdir = await mkdtemp(path.join(os.tmpdir(), "ogsystem-visualizer-runs-cache-"));
   await seedProjectFixture(workdir);

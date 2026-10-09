@@ -2116,6 +2116,14 @@ export async function writeHumanReviewDecision(args: {
     typeof currentReview.decisionSnapshot === "object" && currentReview.decisionSnapshot !== null && !Array.isArray(currentReview.decisionSnapshot)
       ? currentReview.decisionSnapshot as Record<string, unknown>
       : undefined;
+  if (priorDecision?.decision === "pause" && args.decision === "pause") {
+    return {
+      runId: args.runId,
+      runDir: resolveRunDir(args.workdir, args.runId),
+      reviewId: args.reviewId,
+      decision: priorDecision
+    };
+  }
   if (priorDecision && priorDecision.decision !== "pause") {
     throw new Error(`Review "${args.reviewId}" already has a durable decision; refusing to overwrite it.`);
   }
