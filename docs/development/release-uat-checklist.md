@@ -67,9 +67,11 @@ examples and templates remain examples; the target workflow may be supplied by a
 
 ## Deployed Visualizer UAT
 
-Status: **IN PROGRESS**. The fixed `1.0.0` tarball passed local install, real target-workflow,
-deployed Visualizer, interruption recovery, and cleanup checks. The workflow paused at its required
-human-review gate. Operator decision/sign-off and Product owner sign-off remain pending.
+Status: **IN PROGRESS**. The latest local source commit `b323d8d` and fixed `1.0.0` tarball passed
+the full macOS suite, npm/pnpm package install smoke, and deployed-package browser UAT. Real
+target-workflow execution, interruption recovery, and cleanup were exercised on the previous fixed
+tarball and remain useful runtime evidence; the latest UI-only follow-up has not repeated a real
+backend run. Operator decision/sign-off and Product owner sign-off remain pending.
 Windows/Linux operator UAT remains a later cross-platform confirmation; the package matrix is
 automated install/run evidence, not that UAT.
 
@@ -79,23 +81,29 @@ automated install/run evidence, not that UAT.
 - Deployment environment: local macOS, Node.js `22.21.1`, exact-candidate Visualizer at `http://127.0.0.1:3380`, using an isolated copy of `mulit-debate/ogs-app`. `/healthz` and `/readyz` returned healthy/ready.
 - Real workflow: fixed-tarball follow-up run `20261009-132640-bbecb069` completed proposal-author, critic-a, critic-b, and judge with 4/4 `gpt-6-luna` role executions, then paused at `review.judge@1#4.r1`. An injected exit `91` after proposal-author's durable outcome was recovered by resuming the same run; proposal-author executed once, and all four roles had one execution snapshot each. No review decision was submitted. The isolated run and logs are under `/tmp/ogs-release-uat-followup-1.0.0.HMrYzO/`; the source `mulit-debate/ogs-app` was not modified.
 - Review Queue navigation, pending-review detail, and fixed decision actions were visible at 1280px, 1024px, and 390px; page width matched viewport. Deployed-package browser UAT passed.
-- Latest local UI follow-up: commit `267af8191dce82e1ebeaab5b28bfb171228f66ac` makes the selected
-  review content visible immediately and places decisions after it. Its local tarball SHA-256 is
-  `417836443bf17746fa6ccd2e4cd715517b9c2dec66ac96e93892d785725d084f`; build, unit tests, npm/pnpm
-  package smoke, and browser UAT pass. Desktop and mobile review controls fit without horizontal
-  overflow. This commit is not pushed, so remote CI and the 12-combination matrix do not validate
-  it. See [`release-evidence/1.0.0.md`](release-evidence/1.0.0.md).
+- Latest local candidate follow-up: commit `b323d8d` aligns pending/handled review state and keeps
+  live run status visible after a historical review was applied. Its fixed tarball SHA-256 is
+  `cbbb2dea7c376c5df59f5efa53da783c6abb34c6a8de8845711ba6595e550519`. The full local suite passed
+  585 tests (one Windows-only test skipped); Visualizer browser smoke passed 15 tests; npm and pnpm
+  install smoke passed against this tarball. A real workflow on an isolated copy of
+  `mulit-debate/ogs-app` completed 4/4 `gpt-6-luna` roles and stopped at its human-review gate as
+  expected; run ID `20261010-003308-59f81dd3`. Deployed-package browser UAT against that run passed
+  1/1. Regular CI and the 12-combination matrix have not run for this commit. Full details are in
+  [`release-evidence/1.0.0.md`](release-evidence/1.0.0.md).
 - Cleanup exercise on a second copy of the target run added one older synthetic execution snapshot per role, then ran `run resume --cleanup-executions 1`. Cleanup event recorded success, removed 4 of 8 snapshot directories, and reduced the fixture from 782,336 to 602,112 bytes. `sessions.json`, plan fingerprint, review request, checkpoints, execution outcomes, state semantics, and one latest snapshot per role remained; a subsequent resume exited 0 without repeating role execution. This confirms cleanup behavior on target-workflow artifact layout but does not establish growth limits for naturally accumulated history.
 - Missing/corrupt recovery checks on disposable copies returned `RESUME_STATE_MISSING` for missing `state.json` and `RESUME_STATE_INVALID` for corrupt `state.json`. `pnpm run test:runtime-regression` passed 49/49 on the candidate source checkout.
-- Remaining scenarios: Windows operator acceptance, operator decision/sign-off, and separate Product owner sign-off. Local full suite passed 581 tests with the Windows-only test skipped on macOS.
+- Remaining scenarios: regular CI and package matrix for `b323d8d`; Windows operator acceptance;
+  operator decision/sign-off; and
+  separate Product owner sign-off. Local full suite passed 585 tests with the Windows-only test
+  skipped on macOS.
 
 ## Windows Continuation
 
 Use this section to continue candidate validation on a Windows 10/11 machine. The previously
 recorded digest belongs to the earlier source commit `dce1e583ca1f50f28ac8d83cc52210a57b7a51fb`.
-The latest UI follow-up `267af8191dce82e1ebeaab5b28bfb171228f66ac` is local only. Push the final
-candidate ref and complete its regular CI and package matrix before selecting the tarball digest
-for Windows UAT. Do not rebuild after recording UAT results.
+The latest product commit `b323d8d` and its tarball are local only. Push the final candidate ref and
+complete its regular CI and package matrix before selecting the tarball digest for Windows UAT. Do
+not rebuild after recording UAT results.
 
 1. In the GitHub Actions UI, open regular CI run `37877480276` and save the full logs for
    `Test (Node 22, windows-latest)` and `Test (Node 24, windows-latest)`. These are failures on the
