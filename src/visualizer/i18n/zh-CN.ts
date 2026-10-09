@@ -654,6 +654,8 @@ export const zhCN = {
   "review.requestContext": "评审请求上下文",
   "review.decisionDurabilitySnapshot": "决策持久化快照",
   "review.humanReviewContext": "人工评审上下文",
+  "review.submittedContent": "待审内容",
+  "review.noSubmittedContent": "没有可显示的待审内容。",
   "review.noPriorDecisionHistory": "没有历史决策记录。",
   "review.awaitingDecision": "等待你作出决定。",
   "review.decisionRecorded": "决定已保存。请恢复运行以继续执行。",

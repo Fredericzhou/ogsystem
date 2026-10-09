@@ -1210,6 +1210,7 @@ function buildRunFixture({
       executionId: `exec-${runId}`,
       requestedByExecutionId: `exec-${runId}`,
       selectedEvent: "DONE",
+      draftResult: { event: "DONE", content: "Representative submitted content" },
       spec: { terminateScope: "branch" },
       history: [],
       reviewRequestSnapshot: {
@@ -2637,7 +2638,7 @@ async function createClientHarness(options = {}) {
     await settle();
     if (
       document.getElementById("resume-controls").innerHTML.includes("Load diagnostics") &&
-      document.getElementById("review-detail").textContent.includes("Decision trail")
+      document.getElementById("review-detail").textContent.includes("Representative submitted content")
     ) {
       break;
     }
@@ -3365,9 +3366,8 @@ test("visualizer client keeps diagnostics lazy and renders decision phase detail
   ));
   assert.equal(Boolean(harness.document.getElementById("run-graph-disclosure").open), false);
 
-  assert.ok(
-    harness.document.getElementById("review-detail").textContent.includes("Decision trail")
-  );
+  assert.ok(harness.document.getElementById("review-detail").textContent.includes("Submitted content"));
+  assert.ok(harness.document.getElementById("review-detail").textContent.includes("Representative submitted content"));
   assert.equal(
     harness.backend.fetchCalls.some((call) => call.path === "/api/v1/runs/run-123/failure"),
     true
@@ -3415,7 +3415,8 @@ test("visualizer client keeps diagnostics lazy and renders decision phase detail
   assert.equal(harness.document.getElementById("operate-tabpanel-recovery").hidden, false);
   assert.match(harness.document.getElementById("failure-summary").textContent, /TOOL_EXECUTION_TIMEOUT/);
   assert.match(harness.document.getElementById("resume-readiness").textContent, /resume blocked/);
-  assert.match(harness.document.getElementById("review-detail").textContent, /Decision durability snapshot/);
+  assert.match(harness.document.getElementById("review-detail").textContent, /Decision saved/);
+  assert.doesNotMatch(harness.document.getElementById("review-detail").textContent, /Decision durability snapshot/);
 
   const loadDiagnosticsButton =
     harness.document.getElementById("load-diagnostics") ??

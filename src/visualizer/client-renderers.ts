@@ -1911,6 +1911,9 @@ export function renderReviewDetailPanel(detail: Record<string, unknown> | null |
   const decisionSnapshot = detail.decisionSnapshot && typeof detail.decisionSnapshot === "object" && !Array.isArray(detail.decisionSnapshot)
     ? detail.decisionSnapshot as JsonRecord
     : undefined;
+  const draftResult = detail.draftResult && typeof detail.draftResult === "object" && !Array.isArray(detail.draftResult)
+    ? detail.draftResult as JsonRecord
+    : undefined;
   const decision = String(detail.decision ?? decisionSnapshot?.decision ?? "");
   const hasDurableDecision = Boolean(["recorded", "pending_reconcile", "applied"].includes(String(detail.decisionPhase ?? "")) || decision);
   const statusLabel = detail.decisionPhase === "applied"
@@ -1918,9 +1921,18 @@ export function renderReviewDetailPanel(detail: Record<string, unknown> | null |
     : detail.decisionPhase === "pending_reconcile"
       ? tr("review.statusDecisionApplying", undefined, "Applying decision")
       : hasDurableDecision
-        ? tr("review.statusDecisionRecorded", undefined, "Decision recorded")
-        : displayUiToken(detail.currentStatus ?? "unknown", tr);
+      ? tr("review.statusDecisionRecorded", undefined, "Decision recorded")
+      : displayUiToken(detail.currentStatus ?? "unknown", tr);
   const history = Array.isArray(detail.history) ? detail.history : [];
+  const submittedContent = typeof draftResult?.content === "string"
+    ? draftResult.content
+    : draftResult?.content === undefined || draftResult.content === null
+      ? ""
+      : JSON.stringify(draftResult.content, null, 2);
+  const selectedEvent = String(detail.selectedEvent ?? draftResult?.event ?? "");
+  const decisionComment = detail.comment ?? decisionSnapshot?.comment;
+  const decisionActor = detail.actor ?? decisionSnapshot?.actor;
+  const decidedAt = detail.decidedAt ?? decisionSnapshot?.decidedAt;
   const decisionLabel = (value: unknown, scope?: unknown): string => {
     const decisionValue = String(value ?? "");
     if (!decisionValue) return tr("review.noDecision", undefined, "No decision yet");
@@ -1940,7 +1952,7 @@ export function renderReviewDetailPanel(detail: Record<string, unknown> | null |
           ? tr("review.decisionApplied", undefined, "Decision applied. This review is complete.")
           : detail.currentStatus === "pending"
             ? tr("review.awaitingDecision", undefined, "Waiting for your decision.")
-            : detail.currentStatus === "paused"
+          : detail.currentStatus === "paused"
               ? tr("review.pausedFollowUp", undefined, "This review is paused and can receive a follow-up decision.")
               : tr("review.noImmediateAction", undefined, "No action is available for this review.");
   const historyItems = history.map((entry) => {
@@ -1953,95 +1965,37 @@ export function renderReviewDetailPanel(detail: Record<string, unknown> | null |
       escapeText(String(record.actor ?? tr("common.unknown", undefined, "unknown")) + " · " + String(record.comment ?? tr("review.noComment", undefined, "no comment"))) +
       "</div></div>";
   });
-  return [
-    '<div class="structure-list">',
-    '<div class="event"><div class="event-top"><span>' + escapeText(tr("review.review", undefined, "review")) + '</span><span>' + escapeText(statusLabel) + "</span></div><strong>" +
-      escapeText(detail.reviewId ?? "n/a") +
-      '</strong><div class="hint">' +
-      escapeText((detail.roleId ?? "n/a") + " · " + (detail.branchId ?? "n/a")) +
-      "</div></div>",
-    '<div class="event"><div class="event-top"><span>' + escapeText(tr("review.decision", undefined, "decision")) + '</span><span>' + escapeText(detail.decisionPhase ?? tr("common.none", undefined, "none")) + "</span></div><strong>" +
+  const decisionRecord = hasDurableDecision
+    ? '<section class="event review-decision-record"><div class="event-top"><strong>' +
       escapeText(decisionLabel(decision, detail.scope ?? decisionSnapshot?.scope)) +
-      '</strong><div class="hint">' +
-      escapeText((detail.actor ?? "n/a") + " · " + (detail.comment ?? tr("review.noComment", undefined, "no comment"))) +
-      "</div></div>",
-    '<div class="event"><div class="event-top"><span>' + escapeText(tr("review.timing", undefined, "timing")) + '</span><span>' + escapeText(tr("review.round", { round: String(detail.round ?? "n/a") }, "round " + String(detail.round ?? "n/a"))) + '</span></div><strong>' +
-      escapeText(tr("review.requestedAt", { at: fmt(detail.requestedAt) }, "requested " + fmt(detail.requestedAt))) +
-      '</strong><div class="hint">' +
-      escapeText(tr("review.decidedApplied", { decidedAt: fmt(detail.decidedAt), appliedAt: fmt(detail.appliedAt) }, "decided " + fmt(detail.decidedAt) + " · applied " + fmt(detail.appliedAt))) +
-      "</div></div>",
-    '<div class="event"><div class="event-top"><span>' + escapeText(tr("review.selectedEvent", undefined, "selected event")) + '</span><span>' + escapeText(detail.scope ?? "n/a") + '</span></div><strong>' +
-      escapeText(detail.selectedEvent ?? "n/a") +
-      '</strong><div class="hint">' +
-      escapeText(tr("review.executionRequestedBy", {
-        executionId: String(detail.executionId ?? "n/a"),
-        requestedByExecutionId: String(detail.requestedByExecutionId ?? "n/a")
-      }, "execution " + String(detail.executionId ?? "n/a") + " · requestedBy " + String(detail.requestedByExecutionId ?? "n/a"))) +
-      "</div></div>",
-    '<div class="event"><div class="event-top"><span>' + escapeText(tr("review.nextStep", undefined, "next step")) + '</span><span>' + escapeText(detail.branchStatus ?? "n/a") + '</span></div><strong>' +
-      escapeText(nextActionSummary) +
-      '</strong><div class="hint">' +
-      escapeText(tr("review.selectedEventBranch", {
-        event: String(detail.selectedEvent ?? "n/a"),
-        branchId: String(detail.branchId ?? "n/a")
-      }, "selected event " + String(detail.selectedEvent ?? "n/a") + " · branch " + String(detail.branchId ?? "n/a"))) +
-      "</div></div>",
-    renderSummaryListSection({
-      title: tr("review.history", undefined, "history"),
-      items: historyItems,
-      emptyLabel: tr("review.noPriorDecisionHistory", undefined, "No prior decision history."),
-      summaryLabel: tr("review.decisionTrail", undefined, "Decision trail"),
-      hint: tr("review.round", { round: String(detail.round ?? "n/a") }, "round " + String(detail.round ?? "n/a")),
-      open: history.length > 0 && history.length <= 2
-    }),
-    renderPreDisclosure({
-      title: tr("review.requestSnapshot", undefined, "request snapshot"),
-      headline: compactJsonPreview(detail.reviewRequestSnapshot ?? detail.requestSnapshot ?? detail.spec ?? null, 220) || tr("review.requestContext", undefined, "Review request context"),
-      meta: tr("common.captured", undefined, "captured"),
-      hint: tr("review.requestContext", undefined, "Review request context"),
-      value: detail.reviewRequestSnapshot ?? detail.requestSnapshot ?? detail.spec ?? null,
-      emptyTitle: tr("review.requestContext", undefined, "Review request context"),
-      emptyMeta: tr("common.missing", undefined, "missing"),
-      emptyHint: tr("review.requestContext", undefined, "Review request context")
-    }),
-    renderPreDisclosure({
-      title: tr("review.decisionSnapshot", undefined, "decision snapshot"),
-      headline: compactJsonPreview(detail.decisionSnapshot ?? {
-        decision: detail.decision ?? null,
-        actor: detail.actor ?? null,
-        comment: detail.comment ?? null,
-        decidedAt: detail.decidedAt ?? null,
-        committedAt: detail.committedAt ?? null,
-        checkpointSequence: detail.checkpointSequence ?? null,
-        appliedAt: detail.appliedAt ?? null,
-        reconciledAt: detail.reconciledAt ?? null
-      }, 220) || tr("review.decisionDurabilitySnapshot", undefined, "Decision durability snapshot"),
-      meta: tr("common.captured", undefined, "captured"),
-      hint: tr("review.decisionDurabilitySnapshot", undefined, "Decision durability snapshot"),
-      value: detail.decisionSnapshot ?? {
-        decision: detail.decision ?? null,
-        actor: detail.actor ?? null,
-        comment: detail.comment ?? null,
-        decidedAt: detail.decidedAt ?? null,
-        committedAt: detail.committedAt ?? null,
-        checkpointSequence: detail.checkpointSequence ?? null,
-        appliedAt: detail.appliedAt ?? null,
-        reconciledAt: detail.reconciledAt ?? null
-      },
-      emptyTitle: tr("review.decisionDurabilitySnapshot", undefined, "Decision durability snapshot"),
-      emptyMeta: tr("common.missing", undefined, "missing"),
-      emptyHint: tr("review.decisionDurabilitySnapshot", undefined, "Decision durability snapshot")
-    }),
-    renderPreDisclosure({
-      title: tr("review.context", undefined, "context"),
-      headline: compactJsonPreview(detail.humanReviewContext ?? null, 220) || tr("review.humanReviewContext", undefined, "Human review context"),
-      meta: tr("common.snapshot", undefined, "snapshot"),
-      hint: tr("review.humanReviewContext", undefined, "Human review context"),
-      value: detail.humanReviewContext ?? null,
-      emptyTitle: tr("review.humanReviewContext", undefined, "Human review context"),
-      emptyMeta: tr("common.missing", undefined, "missing"),
-      emptyHint: tr("review.humanReviewContext", undefined, "Human review context")
-    }),
+      '</strong><span class="status">' + escapeText(statusLabel) + '</span></div>' +
+      (decisionComment ? '<p>' + escapeText(decisionComment) + '</p>' : "") +
+      '<div class="hint">' + escapeText([decisionActor, decidedAt ? fmt(decidedAt) : undefined].filter(Boolean).join(" · ")) + '</div>' +
+      '<div class="hint">' + escapeText(nextActionSummary) + '</div></section>'
+    : "";
+  return [
+    '<div class="review-detail">',
+    '<div class="event review-detail-summary"><div class="event-top"><strong>' + escapeText(detail.roleId ?? "n/a") + '</strong><span class="status">' + escapeText(statusLabel) + '</span></div>' +
+      '<div class="hint"><code>' + escapeText(detail.reviewId ?? "n/a") + '</code> · ' +
+      escapeText(tr("review.round", { round: String(detail.round ?? "n/a") }, "round " + String(detail.round ?? "n/a"))) +
+      (detail.branchId ? ' · <code>' + escapeText(detail.branchId) + '</code>' : "") +
+      (selectedEvent ? ' · ' + escapeText(selectedEvent) : "") + '</div></div>',
+    '<section class="event review-submission"><h4>' + escapeText(tr("review.submittedContent", undefined, "Submitted content")) + '</h4>' +
+      (submittedContent
+        ? '<div class="review-submitted-content">' + escapeText(submittedContent) + '</div>'
+        : '<div class="hint">' + escapeText(tr("review.noSubmittedContent", undefined, "No submitted content.")) + '</div>') +
+      '</section>',
+    decisionRecord,
+    history.length
+      ? renderSummaryListSection({
+          title: tr("review.history", undefined, "history"),
+          items: historyItems,
+          emptyLabel: tr("review.noPriorDecisionHistory", undefined, "No prior decision history."),
+          summaryLabel: tr("review.decisionTrail", undefined, "Decision trail"),
+          hint: tr("review.round", { round: String(detail.round ?? "n/a") }, "round " + String(detail.round ?? "n/a")),
+          open: history.length <= 2
+        })
+      : "",
     "</div>"
   ].join("");
 }

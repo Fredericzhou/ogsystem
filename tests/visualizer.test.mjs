@@ -1586,6 +1586,7 @@ test("visualizer server exposes pending human review fields on waiting-review ru
     assert.equal(reviewDetail.comment, "ship it");
     assert.equal(reviewDetail.currentStatus, "pending");
     assert.equal(reviewDetail.decisionPhase, "recorded");
+    assert.equal(reviewDetail.draftResult.content, "draft");
 
     const diagnosticsResponse = await fetch(`${url}/api/v1/runs/${runId}/resume-diagnostics`);
     assert.equal(diagnosticsResponse.status, 200);

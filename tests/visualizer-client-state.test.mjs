@@ -437,15 +437,18 @@ test("runtime renderers fold payload-heavy details by default", () => {
     branchId: "branch-1",
     currentStatus: "pending",
     decisionPhase: "recorded",
-    reviewRequestSnapshot: { payload: "z".repeat(240) },
+    decision: "approve",
+    draftResult: { event: "DONE", content: "Approved output\nSecond line" },
     decisionSnapshot: { comment: "approved" },
-    humanReviewContext: { request: "more context" },
     history: [{ decision: "approve", actor: "ops", decidedAt: "2026-05-09T10:00:00.000Z", comment: "ok" }]
   }, reviewT, formatTime);
+  assert.match(reviewHtml, /Submitted content/);
+  assert.ok(reviewHtml.includes("Approved output\nSecond line"));
+  assert.match(reviewHtml, /Waiting for your decision\.|Decision saved/);
   assert.match(reviewHtml, /<details class="event disclosure summary-section" open>/);
-  assert.match(reviewHtml, /request snapshot/);
   assert.match(reviewHtml, /Approve review/);
   assert.doesNotMatch(reviewHtml, />approve</);
+  assert.doesNotMatch(reviewHtml, /Decision durability snapshot|Review request context/);
 
   const artifactsHtml = renderArtifactsPanel({
     detail: {

@@ -2533,6 +2533,33 @@ export function renderPageShellStyles(): string {
       gap: 8px;
       padding-bottom: 8px;
     }
+    .review-detail {
+      display: grid;
+      gap: 8px;
+    }
+    .review-detail-summary .hint {
+      overflow-wrap: anywhere;
+    }
+    .review-submission h4 {
+      margin: 0 0 6px;
+      font-size: 0.9rem;
+    }
+    .review-submitted-content {
+      max-height: 420px;
+      overflow: auto;
+      padding: 10px;
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      background: var(--panel-soft);
+      white-space: pre-wrap;
+      overflow-wrap: anywhere;
+      line-height: 1.5;
+    }
+    .review-decision-record p {
+      margin: 6px 0;
+      white-space: pre-wrap;
+      overflow-wrap: anywhere;
+    }
     .flow-step-detail-grid section {
       min-width: 0;
     }

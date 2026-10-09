@@ -628,6 +628,8 @@ export const en = {
   "review.requestContext": "Review request context",
   "review.decisionDurabilitySnapshot": "Decision durability snapshot",
   "review.humanReviewContext": "Human review context",
+  "review.submittedContent": "Submitted content",
+  "review.noSubmittedContent": "No submitted content.",
   "review.noPriorDecisionHistory": "No prior decision history.",
   "review.awaitingDecision": "Waiting for your decision.",
   "review.decisionRecorded": "Decision saved. Resume the run to continue.",

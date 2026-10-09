@@ -199,6 +199,7 @@ export type ReviewDetailView = ReviewListItem & {
   executionId?: string;
   requestedByExecutionId?: string;
   selectedEvent?: string;
+  draftResult?: unknown;
   spec?: unknown;
   requestSnapshot?: unknown;
   decisionSnapshot?: unknown;
@@ -427,6 +428,7 @@ export function mapReviewDetailView(value: unknown): ReviewDetailView {
     executionId: asString(record.executionId),
     requestedByExecutionId: asString(record.requestedByExecutionId),
     selectedEvent: asString(record.selectedEvent),
+    draftResult: record.draftResult,
     spec: record.spec,
     requestSnapshot: record.requestSnapshot,
     decisionSnapshot: record.decisionSnapshot,
