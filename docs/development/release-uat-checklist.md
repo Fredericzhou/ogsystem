@@ -72,12 +72,60 @@ deployed Visualizer checks. The workflow paused at its required human-review gat
 product-owner decisions/signatures remain pending. Windows/Linux operator UAT remains a later
 cross-platform confirmation; the package matrix is automated install/run evidence, not that UAT.
 
-- Current candidate ref: `7fe6fa39828556e24f243de669668a14f41e445b`; tarball SHA-256 `ccb71b9698751f910595bdcaf825a7df0d2f1ae1f0a2e3f456863dff389a68db`. npm and pnpm install smoke passed against this exact local tarball. Package matrix run 37827364076 passed all 12 combinations and checked the downloaded artifact against the build-job digest; the artifact download API returned HTTP 401 here, preventing a separate byte comparison.
+- Current candidate evidence ref: `209f107c5ffc652b9789a6d1af76bff52bcc3c93`; product-code commit: `dce1e583ca1f50f28ac8d83cc52210a57b7a51fb`; package version: `1.0.0`.
+- Candidate tarball: `ogsystem-1.0.0.tgz`, SHA-256 `37d7746af9905b45347bb41f6b1207fa4a7d2e3a02a8dacbd4fb300adea83e3b`. The same local tarball passed npm and pnpm install smoke. Package matrix run 37876792647 passed all 12 combinations and checked the downloaded artifact against the build-job digest.
+- Regular CI run 37876792591 passed Linux/macOS Node 22/24 and package-install smoke jobs, but failed the Windows Node 22 and Node 24 `Test` jobs. The failure annotations only report exit code 1. Downloading job logs through the unauthenticated Actions API returns `403 Must have admin rights to Repository`; a repository administrator must collect the failed test output from the Actions UI or rerun the jobs with accessible logs before closing the Windows gate.
 - Deployment environment: local macOS, Node.js `22.21.1`, exact-candidate Visualizer at `http://127.0.0.1:3380`, using an isolated copy of `mulit-debate/ogs-app`. `/healthz` and `/readyz` returned healthy/ready.
 - Real workflow: run `20261009-095651-092b824c` completed proposal-author, critic-a, critic-b, and judge with 4/4 `gpt-6-luna` role executions, then paused at `review.judge@1#4.r1`. The run record is under the isolated app's `.ogs/runs/20261009-095651-092b824c/`. No review decision was submitted.
 - Review Queue navigation, pending-review detail, and fixed decision actions were visible at 1280px, 1024px, and 390px; page width matched viewport. Deployed-package browser UAT passed.
 - Disk observation: isolated app `.ogs` grew from 2,244 KiB across 5 runs to 2,852 KiB across 6 runs; the new run used 604 KiB. Retention is disabled in this fixture, so this is a one-run growth observation only. Cleanup behavior is covered by automated tests, but the target-workflow cleanup policy has not been exercised.
-- Remaining scenarios: operator review and sign-off, separate product-owner sign-off, interruption/recovery, missing/corrupt authoritative artifacts, duplicate control requests, and cleanup-policy exercise. Local full suite passed 580 tests with the Windows-only test skipped on macOS.
+- Recovery checks on disposable copies of the target run returned `RESUME_STATE_MISSING` for missing `state.json` and `RESUME_STATE_INVALID` for corrupt `state.json`. Automated tests cover recovery without re-executing committed roles and idempotent duplicate pause requests. The target workflow's interruption/recovery and cleanup-policy observations remain open.
+- Remaining scenarios: Windows operator acceptance, operator review and sign-off, separate product-owner sign-off, target-workflow interruption/recovery, and cleanup-policy exercise. Local full suite passed 581 tests with the Windows-only test skipped on macOS.
+
+## Windows Continuation
+
+Use this section to continue the same candidate validation on a Windows 10/11 machine. Keep the
+candidate ref and tarball digest fixed; do not rebuild after recording UAT results.
+
+1. Check out evidence ref `209f107c5ffc652b9789a6d1af76bff52bcc3c93` and confirm
+   `package.json` reports `1.0.0`. Use Node.js `22.x` and `24.x` in separate clean environments.
+2. In the GitHub Actions UI, open regular CI run `37876792591` and save the full logs for
+   `Test (Node 22, windows-latest)` and `Test (Node 24, windows-latest)`. The API log download
+   requires repository admin rights; attach the failing test names and relevant stack traces to the
+   release evidence before attempting a fix.
+3. On each Node version, run from PowerShell:
+
+   ```powershell
+   corepack enable
+   pnpm install --frozen-lockfile
+   pnpm test
+   pnpm run smoke:windows-lifecycle
+   pnpm run test:visualizer-browser
+   ```
+
+   Save the command output, Node/pnpm versions, Windows version, and exit codes. If a failure is
+   found, fix it on a new candidate ref and repeat CI, the 12-combination package matrix, packing,
+   and UAT with a new digest.
+4. Download the tarball artifact from package validation run `37876792647`, if available, and verify
+   it before installation:
+
+   ```powershell
+   Get-FileHash .\ogsystem-1.0.0.tgz -Algorithm SHA256
+   ```
+
+   It must report
+   `37d7746af9905b45347bb41f6b1207fa4a7d2e3a02a8dacbd4fb300adea83e3b`. Then run both package
+   install smoke scripts against that same tarball:
+
+   ```powershell
+   pnpm run smoke:package-install:npm -- .\ogsystem-1.0.0.tgz
+   pnpm run smoke:package-install:pnpm -- .\ogsystem-1.0.0.tgz
+   ```
+
+5. Complete the operator workflow with the same candidate package, record the Visualizer/API paths,
+   recovery and cleanup observations, and leave the real pending review for its assigned operator.
+   Record operator and Product owner sign-offs separately in
+   [`release-evidence/1.0.0.md`](release-evidence/1.0.0.md).
 
 Create one release evidence record per release candidate using
 [`release-evidence/TEMPLATE.md`](release-evidence/TEMPLATE.md). Do not mark UAT complete until the
