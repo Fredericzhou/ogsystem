@@ -105,7 +105,10 @@ import {
   shouldSkipDeferredPanelLoad
 } from "./client-run-data-loaders.js";
 import {
+  alignGraphReviewStatuses,
   fallbackLogRoleId,
+  getActionableHumanReviewIds,
+  isActionableHumanReview,
   resolveRunLiveState,
   selectReviewId
 } from "./client-run-selection.js";
@@ -207,7 +210,10 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
     const fetchResumeReadinessData = ${fetchResumeReadinessData.toString()};
     const fetchResumeDiagnosticsData = ${fetchResumeDiagnosticsData.toString()};
     const WORKBENCH_VALIDATION_DEBOUNCE_MS = ${JSON.stringify(WORKBENCH_VALIDATION_DEBOUNCE_MS)};
+    const isActionableHumanReview = ${isActionableHumanReview.toString()};
     const selectReviewId = ${selectReviewId.toString()};
+    const getActionableHumanReviewIds = ${getActionableHumanReviewIds.toString()};
+    const alignGraphReviewStatuses = ${alignGraphReviewStatuses.toString()};
     const fallbackLogRoleId = ${fallbackLogRoleId.toString()};
     const resolveRunLiveState = ${resolveRunLiveState.toString()};
     const renderWorkspaceEmptyStateHtml = ${renderWorkspaceEmptyStateHtml.toString()};
@@ -717,6 +723,17 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
       liveEl.textContent = displayUiToken(label, t);
     }
 
+    function setStreamLive(mode, label) {
+      if (!state.selectedRunId) {
+        setLive(mode, label);
+      }
+    }
+
+    function setRunLiveState(header = state.detail?.header) {
+      const liveState = resolveRunLiveState(header, state.reviewDetail, state.reviews);
+      setLive(liveState.mode, liveState.label);
+    }
+
     function updateWorkbenchGraphStatus(text) {
       state.studioGraphStatusText = String(text || "");
       renderGlobalStatusBar();
@@ -1208,9 +1225,11 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
 
     function resolveRunGraphPayloadForDisplay() {
       const payload = state.graph ? cloneJson(state.graph) : null;
-      if (!payload?.graph || !payload?.authoring) {
-        return payload;
+      if (!payload?.graph) return payload;
+      if (Array.isArray(state.reviews?.reviews)) {
+        payload.graph = alignGraphReviewStatuses(payload.graph, state.reviews);
       }
+      if (!payload.authoring) return payload;
       if (
         state.selectedRunId
         && state.selectedRunId === state.studioBridgeLastDryRunId
@@ -1958,7 +1977,9 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
       }
       setInnerHtmlIfChanged(operateTabsEl, renderOperateTabsHtml({
         operateTab: state.operateTab,
-        pendingReviewCount: state.detail?.header?.pendingReviewCount,
+        pendingReviewCount: Array.isArray(state.reviews?.reviews)
+          ? getActionableHumanReviewIds(state.reviews).length
+          : state.detail?.header?.pendingReviewCount,
         t,
         escapeText
       }));
@@ -2108,7 +2129,10 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
           canvas: baseCanvas
         };
       }
-      return overlayRuntimeSignalsOnStudioBridge(baseBridge, baseCanvas, state.graph.graph);
+      const runtimeGraph = Array.isArray(state.reviews?.reviews)
+        ? alignGraphReviewStatuses(cloneJson(state.graph.graph), state.reviews)
+        : state.graph.graph;
+      return overlayRuntimeSignalsOnStudioBridge(baseBridge, baseCanvas, runtimeGraph);
     }
 
     function studioBridgeRenderArgs(options) {
@@ -5867,19 +5891,26 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
         setInnerHtmlIfChanged(statsEl, loadingSkeleton(t("state.loadingRunDetail", undefined, "Loading run detail"), 2));
         return;
       }
-      setInnerHtmlIfChanged(statsEl, renderRunStatsHtml({ header, graphPayload, t, escapeText, displayUiToken }));
+      setInnerHtmlIfChanged(statsEl, renderRunStatsHtml({
+        header,
+        graphPayload,
+        actionableReviewCount: Array.isArray(state.reviews?.reviews)
+          ? getActionableHumanReviewIds(state.reviews).length
+          : undefined,
+        t,
+        escapeText,
+        displayUiToken
+      }));
       const pendingReviewsButton = statsEl?.querySelector("[data-open-pending-reviews]");
       if (pendingReviewsButton) {
-        bindOnce(pendingReviewsButton, "click", "open-pending-reviews", () => {
-          state.operateTab = "reviews";
-          renderConsoleTabs();
-          const reviewsPanel = document.getElementById("operate-tabpanel-reviews");
-          if (reviewsPanel && typeof reviewsPanel.scrollIntoView === "function") {
-            reviewsPanel.scrollIntoView({ behavior: "smooth", block: "start" });
+        bindOnce(pendingReviewsButton, "click", "open-pending-reviews", async () => {
+          const reviewId = getActionableHumanReviewIds(state.reviews)[0];
+          if (reviewId) {
+            await selectReview(state.selectedRunId, reviewId);
+            const selectedReview = Array.from(reviewsEl?.querySelectorAll("[data-review-id]") || [])
+              .find((button) => button.getAttribute("data-review-id") === reviewId);
+            if (selectedReview && typeof selectedReview.focus === "function") selectedReview.focus({ preventScroll: true });
           }
-          const selectedReview = Array.from(reviewsEl?.querySelectorAll("[data-review-id]") || [])
-            .find((button) => button.getAttribute("data-review-id") === state.selectedReviewId);
-          if (selectedReview && typeof selectedReview.focus === "function") selectedReview.focus({ preventScroll: true });
         });
       }
     }
@@ -6030,6 +6061,7 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
           state: state.detail?.state ?? null,
           header: state.detail?.header ?? null,
           graph: null,
+          reviews: state.reviews?.reviews,
           t
         });
         return;
@@ -6071,6 +6103,7 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
         state: state.detail?.state ?? null,
         header: state.detail?.header ?? null,
         graph,
+        reviews: state.reviews?.reviews,
         t
       }));
     }
@@ -7767,6 +7800,7 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
       renderReviews();
       renderDetail();
       writeRouteToLocation();
+      setRunLiveState();
     }
 
     async function refreshReviews(runId) {
@@ -7793,7 +7827,12 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
       await refreshSelectedReviewDetail(runId, { allowMissing: true });
       renderReviews();
       renderDetail();
+      renderStats(state.detail?.header, state.graph);
+      renderGraph();
+      renderOperateTabs();
       writeRouteToLocation();
+      refreshMountedStudioRuntime();
+      setRunLiveState();
     }
 
     async function refreshRunDetailAndGraph(runId) {
@@ -7828,8 +7867,7 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
       renderOperateTabs();
       writeRouteToLocation();
       refreshMountedStudioRuntime();
-      const liveState = resolveRunLiveState(detail.header);
-      setLive(liveState.mode, liveState.label);
+      setRunLiveState(detail.header);
     }
 
     async function loadFailure(runId, options) {
@@ -7980,8 +8018,7 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
           loadFailure(runId, { force: true, internal: true, suppressFlash: true }),
           loadResumeReadiness(runId, { force: true, internal: true, suppressFlash: true })
         ]);
-        const liveState = resolveRunLiveState(detail.header);
-        setLive(liveState.mode, liveState.label);
+        setRunLiveState(detail.header);
       } finally {
         if (isCurrentRunSelection(runId, requestId)) {
           state.runDetailLoading = false;
@@ -8225,7 +8262,7 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
       resetStreamRefreshForRun(runId);
       const stream = new EventSource(\`\${API_PREFIX}/runs/\${encodeURIComponent(runId)}/stream?cursor=\${cursor}\`);
       state.stream = stream;
-      stream.onopen = () => setLive("online", t("live.live"));
+      stream.onopen = () => setStreamLive("online", t("live.live"));
       stream.onmessage = (message) => {
         if (state.selectedRunId !== runId) {
           return;
@@ -8264,7 +8301,7 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
         }
       };
       stream.onerror = () => {
-        setLive("idle", t("live.streamReconnecting"));
+        setStreamLive("idle", t("live.streamReconnecting"));
       };
     }
 
@@ -8530,7 +8567,7 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
           message
         }, "Failed to load project: " + message);
       }
-      setLive("idle", t("live.offline"));
+      setStreamLive("idle", t("live.offline"));
     }
 
     loadWorkspaceView()

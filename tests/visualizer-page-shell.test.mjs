@@ -98,7 +98,7 @@ test("page shell keeps HTML, style, assets, and client script mounted", () => {
   assert.match(html, /id="console-panel-logs"[^>]*role="tabpanel"[^>]*aria-labelledby="operate-tab-logs"/);
   assert.match(html, /id="timeline-type"[^>]*aria-label="事件类型"/);
   assert.match(html, /id="timeline-branch"[^>]*aria-label="分支 id"/);
-  assert.match(html, /id="timeline-review"[^>]*aria-label="评审 id"/);
+  assert.match(html, /id="timeline-review"[^>]*aria-label="审核 id"/);
   assert.match(html, /id="timeline-error"[^>]*aria-label="错误码"/);
   assert.match(html, /id="log-tail"[^>]*aria-label="尾部"/);
   assert.match(html, /id="log-since"[^>]*aria-label="Log since"/);

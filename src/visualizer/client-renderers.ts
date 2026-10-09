@@ -1,6 +1,7 @@
 import { escapeHtml as escapeText } from "./html-escape.js";
 import { studioRolePackageHasRequiredFileCoverage, type StudioRolePackageSummary } from "./studio-client/studio-graph-validation.js";
 import { roleColorForId } from "./role-color.js";
+import { isActionableHumanReview } from "./client-run-selection.js";
 import { listContextSelectorCandidates } from "../context-selector.js";
 
 type JsonRecord = Record<string, unknown>;
@@ -207,6 +208,9 @@ export function displayUiToken(value: unknown, t: Translator): string {
   if (normalized === "done") return t("status.done", undefined, "done");
   if (normalized === "failed") return t("status.failed", undefined, "failed");
   if (normalized === "waiting_review") return t("status.waitingReview", undefined, "waiting review");
+  if (normalized === "review_decision_recorded") return t("status.reviewDecisionRecorded", undefined, "review decision recorded · resume to continue");
+  if (normalized === "review_decision_applying") return t("status.reviewDecisionApplying", undefined, "applying review decision");
+  if (normalized === "review_decision_applied") return t("status.reviewDecisionApplied", undefined, "review decision applied");
   if (normalized === "applied") return t("status.applied", undefined, "applied");
   if (normalized === "warning" || normalized === "warn") return t("readiness.warning", undefined, "warning");
   if (normalized === "error") return t("state.field.error", undefined, "error");
@@ -1917,11 +1921,11 @@ export function renderReviewDetailPanel(detail: Record<string, unknown> | null |
   const decision = String(detail.decision ?? decisionSnapshot?.decision ?? "");
   const hasDurableDecision = Boolean(["recorded", "pending_reconcile", "applied"].includes(String(detail.decisionPhase ?? "")) || decision);
   const statusLabel = detail.decisionPhase === "applied"
-    ? tr("review.statusDecisionApplied", undefined, "Decision applied")
+    ? tr("review.statusDecisionApplied", undefined, "Review complete")
     : detail.decisionPhase === "pending_reconcile"
       ? tr("review.statusDecisionApplying", undefined, "Applying decision")
       : hasDurableDecision
-      ? tr("review.statusDecisionRecorded", undefined, "Decision recorded")
+      ? tr("review.statusDecisionRecorded", undefined, "Decision recorded · resume to continue")
       : displayUiToken(detail.currentStatus ?? "unknown", tr);
   const history = Array.isArray(detail.history) ? detail.history : [];
   const submittedContent = typeof draftResult?.content === "string"
@@ -1944,11 +1948,11 @@ export function renderReviewDetailPanel(detail: Record<string, unknown> | null |
   };
   const nextActionSummary =
     detail.decisionPhase === "recorded"
-      ? tr("review.decisionRecorded", undefined, "Decision saved. Resume the run to continue.")
+      ? tr("review.decisionRecorded", undefined, "Review decision recorded. Resume the run to continue.")
       : detail.decisionPhase === "pending_reconcile"
         ? tr("review.pendingReconcile", undefined, "Decision is being applied. Wait for the run to finish reconciling.")
         : detail.decisionPhase === "applied"
-          ? tr("review.decisionApplied", undefined, "Decision applied. This review is complete.")
+          ? tr("review.decisionApplied", undefined, "This review is complete.")
           : detail.currentStatus === "pending"
             ? tr("review.awaitingDecision", undefined, "Waiting for your decision.")
           : detail.currentStatus === "paused"
@@ -1974,7 +1978,7 @@ export function renderReviewDetailPanel(detail: Record<string, unknown> | null |
     : "";
   return [
     '<div class="review-detail">',
-    '<section class="event review-submission"><h4>' + escapeText(tr("review.submittedContent", undefined, "Submitted content")) + '</h4>' +
+    '<section class="event review-submission"><h4>' + escapeText(tr("review.submittedContent", undefined, "Content awaiting review")) + '</h4>' +
       (submittedContent
         ? '<div class="review-submitted-content">' + escapeText(submittedContent) + '</div>'
         : '<div class="hint">' + escapeText(tr("review.noSubmittedContent", undefined, "No submitted content.")) + '</div>') +
@@ -2004,29 +2008,33 @@ export function renderReviewQueuePanel(args: {
   if (!reviewList.length) {
     return '<div class="hint">' + escapeText(t("review.noReviews", undefined, "No reviews for this run.")) + '</div>';
   }
+  const pending = reviewList.filter(isActionableHumanReview);
+  const handled = reviewList.filter((review) => !isActionableHumanReview(review));
+  const selectedHandledReview = handled.some((review) => review.reviewId === args.selectedReviewId);
+  const renderItems = (items: JsonRecord[]): string => items.map((review) => {
+    const decisionRecorded = Boolean(["recorded", "pending_reconcile", "applied"].includes(String(review.decisionPhase ?? "")) || review.decision);
+    const statusLabel = review.decisionPhase === "applied"
+      ? t("review.statusDecisionApplied", undefined, "Review complete")
+      : review.decisionPhase === "pending_reconcile"
+        ? t("review.statusDecisionApplying", undefined, "Applying review decision")
+        : decisionRecorded
+          ? t("review.statusDecisionRecorded", undefined, "Decision recorded · resume to continue")
+          : t("review.statusPending", undefined, "Waiting for human review");
+    return '<button class="run-card ' + (review.reviewId === args.selectedReviewId ? "active" : "") + '" data-review-id="' + escapeText(String(review.reviewId ?? "")) + '">' +
+      '<div class="run-title"><span class="truncate" title="' + escapeText(String(review.reviewId ?? "")) + '"><code>' + escapeText(String(review.reviewId ?? "")) + '</code></span>' +
+      '<span class="status ' + escapeText(decisionRecorded ? "resolved" : String(review.currentStatus ?? "unknown")) + '">' + escapeText(statusLabel) + "</span></div>" +
+      '<div class="meta"><span>' + escapeText(String(review.roleId ?? "n/a")) + "</span>" +
+      '<span>' + escapeText(t("review.round", { round: String(review.round ?? "n/a") }, "round " + String(review.round ?? "n/a"))) + "</span></div>" +
+      (review.comment ? '<div class="hint">' + escapeText(String(review.comment)) + "</div>" : "") +
+      '<span class="review-open-action">' + escapeText(t("review.openItem", undefined, "Open review")) + "</span></button>";
+  }).join("");
   return [
-    '<div class="structure-list">',
-    ...reviewList.map((review) => {
-      const decisionRecorded = Boolean(["recorded", "pending_reconcile", "applied"].includes(String(review.decisionPhase ?? "")) || review.decision);
-      const statusLabel = review.decisionPhase === "applied"
-        ? t("review.statusDecisionApplied", undefined, "Decision applied")
-        : review.decisionPhase === "pending_reconcile"
-          ? t("review.statusDecisionApplying", undefined, "Applying decision")
-          : decisionRecorded
-            ? t("review.statusDecisionRecorded", undefined, "Decision recorded")
-            : displayUiToken(review.currentStatus ?? "unknown", t);
-      return '<button class="run-card ' + (review.reviewId === args.selectedReviewId ? "active" : "") + '" data-review-id="' + escapeText(review.reviewId) + '">' +
-        '<div class="run-title"><span class="truncate" title="' + escapeText(review.reviewId) + '"><code>' + escapeText(review.reviewId) + '</code></span>' +
-        '<span class="status ' + escapeText(decisionRecorded ? "resolved" : String(review.currentStatus ?? "unknown")) + '">' + escapeText(statusLabel) + "</span></div>" +
-        '<div class="meta">' +
-        '<span>' + escapeText(String(review.roleId ?? "n/a")) + "</span>" +
-        '<span>' + escapeText(t("review.round", { round: String(review.round ?? "n/a") }, "round " + String(review.round ?? "n/a"))) + "</span>" +
-        "</div>" +
-        (review.comment ? '<div class="hint">' + escapeText(String(review.comment)) + "</div>" : "") +
-        '<span class="review-open-action">' + escapeText(t("review.openItem", undefined, "Open review")) + '</span>' +
-        "</button>";
-    }),
-    "</div>"
+    pending.length
+      ? '<section class="review-queue-group"><h4>' + escapeText(t("review.pendingHeading", undefined, "Pending human reviews")) + '</h4><div class="structure-list">' + renderItems(pending) + "</div></section>"
+      : '<div class="hint">' + escapeText(t("review.noPending", undefined, "No pending human reviews.")) + "</div>",
+    handled.length
+      ? '<details class="review-history"' + (selectedHandledReview ? " open" : "") + '><summary>' + escapeText(t("review.handledHeading", { count: String(handled.length) }, "Handled reviews ({count})")) + '</summary><div class="structure-list">' + renderItems(handled) + "</div></details>"
+      : ""
   ].join("");
 }
 
@@ -2042,14 +2050,14 @@ export function renderStudioDebugOutcomePanel(args: {
   const graph = asRecord(asRecord(snapshot.graph)?.graph) ?? {};
   const reviewsPayload = asRecord(snapshot.reviews) ?? {};
   const reviews = asRecordArray(reviewsPayload.reviews);
-  const waitingReviews = reviews.filter((review) => String(review.currentStatus ?? "") === "pending");
+  const waitingReviews = reviews.filter(isActionableHumanReview);
   const status = String(header.status ?? state.status ?? "idle");
   const statusClass = status.toLowerCase().replace(/[^a-z0-9_-]/g, "");
   const metrics = [
     [t("state.runtime", undefined, "Run"), displayUiToken(status, t)],
     [t("studio.debugTransitions", undefined, "transitions"), String(header.transitionCount ?? state.transitionCount ?? 0)],
     [t("studio.debugFlows", undefined, "flows"), String(asRecordArray(graph.edges).length)],
-    [t("studio.debugHumanReview", undefined, "human reviews"), String(header.pendingReviewCount ?? waitingReviews.length)]
+    [t("studio.debugHumanReview", undefined, "human reviews"), String(Array.isArray(reviewsPayload.reviews) ? waitingReviews.length : header.pendingReviewCount ?? 0)]
   ];
   const summary = snapshot.runId
     ? '<div class="studio-debug-summary" data-studio-debug-summary>' + metrics.map(([label, value], index) => '<div class="studio-debug-metric' + (index === 0 ? ' is-status' : '') + '"><span>' + escapeText(label) + '</span><strong' + (index === 0 ? ' class="status ' + escapeText(statusClass) + '"' : '') + '>' + escapeText(value) + '</strong></div>').join("") + '</div>'
@@ -2064,22 +2072,22 @@ export function renderStudioDebugOutcomePanel(args: {
       : "";
     const decision = [decisionLabel, review.actor, review.comment].filter(Boolean).map(String).join(" · ");
     const statusLabel = review.decisionPhase === "applied"
-      ? t("review.statusDecisionApplied", undefined, "Decision applied")
+      ? t("review.statusDecisionApplied", undefined, "Review complete")
       : review.decisionPhase === "pending_reconcile"
         ? t("review.statusDecisionApplying", undefined, "Applying decision")
         : decisionRecorded
-          ? t("review.statusDecisionRecorded", undefined, "Decision recorded")
+          ? t("review.statusDecisionRecorded", undefined, "Decision recorded · resume to continue")
           : reviewStatus === "pending"
-      ? t("status.waitingReview", undefined, "waiting review")
+      ? t("status.waitingReview", undefined, "waiting for human review")
       : displayUiToken(reviewStatus, t);
-    const actionable = reviewStatus === "pending" && !decisionRecorded;
+    const actionable = isActionableHumanReview(review);
     return '<article class="studio-debug-review-item"><div><strong>' + escapeText(String(review.roleId ?? t("common.notAvailable", undefined, "n/a"))) + '</strong><span class="status ' + escapeText(decisionRecorded ? "resolved" : reviewStatusClass) + '">' + escapeText(statusLabel) + '</span></div><div class="hint">' + escapeText(actionable ? context : (decision || context)) + '</div>' + (actionable ? '<button type="button" class="button subtle" data-studio-open-review="' + escapeText(String(review.reviewId ?? "")) + '">' + escapeText(t("studio.debugOpenReview", undefined, "Review and decide")) + '</button>' : '') + '</article>';
   });
-  const pendingCount = Number(header.pendingReviewCount ?? 0);
+  const pendingCount = Array.isArray(reviewsPayload.reviews) ? waitingReviews.length : Number(header.pendingReviewCount ?? 0);
   const reviewSection = waitingReviews.length || reviews.length
-    ? '<section class="studio-debug-review' + (waitingReviews.length ? ' is-pending' : '') + '"><div class="studio-debug-review-heading">' + (waitingReviews.length ? '<span class="studio-debug-review-indicator" aria-hidden="true">!</span>' : '') + '<div><strong>' + escapeText(waitingReviews.length ? t("studio.debugHumanReviewPending", undefined, "Human intervention required") : t("studio.debugReviewResolved", undefined, "Human reviews")) + '</strong><span class="hint">' + escapeText(t(waitingReviews.length ? "studio.debugReviewPendingCount" : "studio.debugReviewResolvedCount", { count: String(waitingReviews.length || reviews.length) }, "{count} review(s)")) + '</span><span class="hint" data-studio-debug-run-id>' + escapeText(t("studio.debugRunContext", { runId: String(snapshot.runId ?? "") }, "Run {runId}")) + '</span></div></div><div class="studio-debug-review-list">' + reviewItems.join("") + '</div></section>'
+    ? '<section class="studio-debug-review' + (waitingReviews.length ? ' is-pending' : '') + '"><div class="studio-debug-review-heading">' + (waitingReviews.length ? '<span class="studio-debug-review-indicator" aria-hidden="true">!</span>' : '') + '<div><strong>' + escapeText(waitingReviews.length ? t("studio.debugHumanReviewPending", undefined, "Waiting for human review") : t("studio.debugReviewResolved", undefined, "Handled reviews")) + '</strong><span class="hint">' + escapeText(t(waitingReviews.length ? "studio.debugReviewPendingCount" : "studio.debugReviewResolvedCount", { count: String(waitingReviews.length || reviews.length) }, "{count} review(s)")) + '</span><span class="hint" data-studio-debug-run-id>' + escapeText(t("studio.debugRunContext", { runId: String(snapshot.runId ?? "") }, "Run {runId}")) + '</span></div></div><div class="studio-debug-review-list">' + reviewItems.join("") + '</div></section>'
     : pendingCount > 0
-      ? '<section class="studio-debug-review is-pending"><strong>' + escapeText(t("studio.debugHumanReviewPending", undefined, "Human intervention required")) + '</strong><span class="hint">' + escapeText(t("studio.debugReviewDetailsUnavailable", undefined, "Review details are not available yet.")) + '</span></section>'
+      ? '<section class="studio-debug-review is-pending"><strong>' + escapeText(t("studio.debugHumanReviewPending", undefined, "Waiting for human review")) + '</strong><span class="hint">' + escapeText(t("studio.debugReviewDetailsUnavailable", undefined, "Review details are not available yet.")) + '</span></section>'
       : '';
   return '<div class="studio-debug-outcome">' + summary + reviewSection + '</div>';
 }
@@ -2276,6 +2284,7 @@ export function renderRunStatePanel(args: {
   state: unknown;
   header: JsonRecord | null | undefined;
   graph: JsonRecord | null | undefined;
+  reviews?: JsonRecord[] | null;
   t?: Translator;
 }): string {
   const t: Translator = typeof args.t === "function" ? args.t : (_key, _vars, fallback) => fallback ?? _key;
@@ -2540,7 +2549,13 @@ export function renderRunStatePanel(args: {
     .filter(Boolean)
     .slice(0, 6)
     .map((label) => `<div class="compact-list-item"><span class="compact-list-title">${escapeText(label)}</span></div>`);
-  const pendingReviews = asRecordCollection(stateRecord.pendingReviewsById ?? stateRecord.humanReviewContextByBranchId)
+  const pendingReviews = Array.isArray(args.reviews)
+    ? args.reviews.filter((review) => isActionableHumanReview(review as Parameters<typeof isActionableHumanReview>[0]))
+    : asRecordCollection(stateRecord.pendingReviewsById ?? stateRecord.humanReviewContextByBranchId);
+  const pendingReviewCount = Array.isArray(args.reviews)
+    ? pendingReviews.length
+    : Number(header.pendingReviewCount ?? pendingReviews.length);
+  const pendingReviewItems = pendingReviews
     .slice(0, 6)
     .map((review) => `<div class="compact-list-item"><span class="compact-list-title">${escapeText(String(review.reviewId ?? review.branchId ?? review.roleId ?? "review"))}</span><span class="compact-list-meta">${escapeText(displayUiToken(review.currentStatus ?? review.status ?? "pending", t))}</span></div>`);
   const auditSummaryRecord = asRecord(stateRecord.auditSummary);
@@ -2569,8 +2584,8 @@ export function renderRunStatePanel(args: {
       escapeText(displayUiToken((args.state as JsonRecord | undefined)?.status ?? header.status ?? t("state.stateAvailable", undefined, "state available"), t)) +
       '</strong><div class="hint">' + escapeText(t("state.activePending", {
         activeBranches: String(header.activeBranches ?? 0),
-        pendingReviews: String(header.pendingReviewCount ?? 0)
-      }, "active branches " + String(header.activeBranches ?? 0) + " · pending reviews " + String(header.pendingReviewCount ?? 0))) + "</div></div>",
+        pendingReviews: String(pendingReviewCount)
+      }, "active branches " + String(header.activeBranches ?? 0) + " · pending reviews " + String(pendingReviewCount))) + "</div></div>",
     '<div class="event"><div class="event-top"><span>' + escapeText(t("state.graphSnapshot", undefined, "graph snapshot")) + '</span><span>' + escapeText(graphNodes) + " " + escapeText(t("common.nodes", undefined, "nodes")) + '</span></div><strong>' +
       escapeText(t("state.flowsCount", { count: graphEdges }, `flows ${graphEdges}`)) +
       '</strong><div class="hint">' + escapeText(t("state.lastFinalRole", {
@@ -2585,18 +2600,22 @@ export function renderRunStatePanel(args: {
       emptyLabel: t("common.none", undefined, "none"),
       summaryLabel: t("state.activePending", {
         activeBranches: String(header.activeBranches ?? 0),
-        pendingReviews: String(header.pendingReviewCount ?? 0)
-      }, "active branches " + String(header.activeBranches ?? 0) + " · pending reviews " + String(header.pendingReviewCount ?? 0)),
+        pendingReviews: String(pendingReviewCount)
+      }, "active branches " + String(header.activeBranches ?? 0) + " · pending reviews " + String(pendingReviewCount)),
       hint: t("graph.focusOnKeySignals", undefined, "Key signals stay visible here; payloads and audit details are folded by default."),
       open: true,
       tone: "notice"
     }),
     renderSummaryListSection({
       title: t("review.queueSummary", undefined, "queue summary"),
-      items: pendingReviews,
+      items: pendingReviewItems,
       emptyLabel: t("review.noReviews", undefined, "No reviews for this run."),
-      summaryLabel: t("status.waitingReview", undefined, "waiting review"),
-      hint: t("review.awaitingDecision", undefined, "Awaiting approve, rework, pause, or terminate."),
+      summaryLabel: pendingReviewCount > 0
+        ? t("status.waitingReview", undefined, "waiting review")
+        : t("review.noPending", undefined, "No pending reviews."),
+      hint: pendingReviewCount > 0
+        ? t("review.awaitingDecision", undefined, "Awaiting approve, rework, pause, or terminate.")
+        : t("review.noPending", undefined, "No pending reviews."),
       open: pendingReviews.length > 0,
       tone: "warning"
     }),

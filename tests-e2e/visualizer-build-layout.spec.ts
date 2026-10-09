@@ -185,7 +185,7 @@ test("Run Reviews tab keeps the review queue visible", async ({ page }) => {
     const reviewCard = reviewPanel.locator("article.operate-reviews");
     await expect(reviewPanel).toBeVisible();
     await expect(reviewCard).toBeVisible();
-    await expect(reviewCard.locator("#reviews")).toContainText("No reviews for this run");
+    await expect(reviewCard.locator("#reviews")).toContainText("No review records for this run");
     await expect.poll(async () => {
       const box = await reviewCard.boundingBox();
       return Boolean(box && box.width > 0 && box.height > 0);

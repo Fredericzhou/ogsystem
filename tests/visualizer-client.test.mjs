@@ -24,6 +24,7 @@ import {
   renderStudioBridgePanel,
   renderStudioBridgeStructureHtml,
   renderStudioDebugOutcomePanel,
+  renderRunStatePanel,
   renderReleaseGatePanel
 } from "../dist/visualizer/client-renderers.js";
 import { authoringToCanvasDocument } from "../dist/visualizer/studio-authoring.js";
@@ -191,7 +192,7 @@ test("Studio debug outcome prioritizes pending human review and keeps run state 
     },
     t: testTranslator
   });
-  assert.match(html, /Human intervention required/);
+  assert.match(html, /Waiting for human review/);
   assert.match(html, /proposal-author/);
   assert.match(html, /review-1/);
   assert.match(html, /data-studio-open-review="review-1"/);
@@ -210,8 +211,39 @@ test("Studio debug outcome reports unavailable review detail without hiding pend
     },
     t: testTranslator
   });
-  assert.match(html, /Human intervention required/);
+  assert.match(html, /Waiting for human review/);
   assert.match(html, /Review details are not available yet/);
+});
+
+test("Studio debug outcome treats a loaded empty review queue as authoritative", () => {
+  const html = renderStudioDebugOutcomePanel({
+    snapshot: {
+      runId: "run-123",
+      detail: { header: { status: "paused", pendingReviewCount: 1 } },
+      graph: { graph: { edges: [] } },
+      reviews: { reviews: [] }
+    },
+    t: testTranslator
+  });
+  assert.doesNotMatch(html, /Waiting for human review/);
+  assert.doesNotMatch(html, /Review details are not available yet/);
+  assert.match(html, /<strong>0<\/strong>/);
+});
+
+test("run state summary uses actionable reviews instead of stale persisted review counts", () => {
+  const html = renderRunStatePanel({
+    state: {
+      status: "paused",
+      pendingReviewsById: { "review-1": { reviewId: "review-1", roleId: "reviewer", status: "pending" } }
+    },
+    header: { status: "paused", activeBranches: 0, pendingReviewCount: 1 },
+    graph: { nodes: [], edges: [] },
+    reviews: [],
+    t: testTranslator
+  });
+  assert.match(html, /active branches 0 · pending reviews 0/);
+  assert.match(html, /No pending reviews/);
+  assert.doesNotMatch(html, /Awaiting approve, rework, pause, or terminate/);
 });
 
 const PAGE_ELEMENT_ATTRIBUTES = {
@@ -3369,7 +3401,7 @@ test("visualizer client keeps diagnostics lazy and renders decision phase detail
   ));
   assert.equal(Boolean(harness.document.getElementById("run-graph-disclosure").open), false);
 
-  assert.ok(harness.document.getElementById("review-detail").textContent.includes("Submitted content"));
+  assert.ok(harness.document.getElementById("review-detail").textContent.includes("Content awaiting review"));
   assert.ok(harness.document.getElementById("review-detail").textContent.includes("Representative submitted content"));
   assert.equal(
     harness.backend.fetchCalls.some((call) => call.path === "/api/v1/runs/run-123/failure"),
@@ -3418,7 +3450,7 @@ test("visualizer client keeps diagnostics lazy and renders decision phase detail
   assert.equal(harness.document.getElementById("operate-tabpanel-recovery").hidden, false);
   assert.match(harness.document.getElementById("failure-summary").textContent, /TOOL_EXECUTION_TIMEOUT/);
   assert.match(harness.document.getElementById("resume-readiness").textContent, /resume blocked/);
-  assert.match(harness.document.getElementById("review-detail").textContent, /Decision saved/);
+  assert.match(harness.document.getElementById("review-detail").textContent, /Review decision recorded/);
   assert.doesNotMatch(harness.document.getElementById("review-detail").textContent, /Decision durability snapshot/);
 
   const loadDiagnosticsButton =
@@ -3892,8 +3924,8 @@ test("visualizer hides review actions after a durable decision is recorded", asy
   const harness = await createClientHarness({ decisionPhase: "recorded" });
 
   assert.equal(harness.document.getElementById("review-actions").querySelectorAll("[data-review-action]").length, 0);
-  assert.match(harness.document.getElementById("review-detail").textContent, /Decision saved\. Resume the run to continue\./);
-  assert.match(harness.document.getElementById("review-detail").textContent, /Decision recorded/);
+  assert.match(harness.document.getElementById("review-detail").textContent, /Review decision recorded\. Resume the run to continue\./);
+  assert.match(harness.document.getElementById("review-detail").textContent, /Decision recorded · resume to continue/);
 });
 
 test("review termination confirmation explains scope and irreversible effect", async () => {
@@ -4006,7 +4038,7 @@ test("visualizer client action failures stay local and show an error flash", asy
 
   assert.match(harness.document.getElementById("flash").textContent, /500 Internal Server Error/);
   assert.ok(
-    harness.document.getElementById("reviews").textContent.includes("pending")
+    harness.document.getElementById("reviews").textContent.includes("Waiting for human review")
   );
 });
 

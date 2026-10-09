@@ -1077,7 +1077,7 @@ test("visualizer server serves run list, details, and live stream", async (t) =>
     assert.match(rootHtml, /Project Overview/);
     assert.match(rootHtml, /Ops Summary/);
     assert.match(rootHtml, /Failure Triage/);
-    assert.match(rootHtml, /Pending reviews/);
+    assert.match(rootHtml, /Human review queue/);
     assert.match(rootHtml, /Resume Readiness/);
     assert.match(rootHtml, /Config Explain/);
     assert.match(rootHtml, /Logs/);
@@ -1107,7 +1107,7 @@ test("visualizer server serves run list, details, and live stream", async (t) =>
     assert.match(zhRootHtml, /项目概览/);
     assert.match(zhRootHtml, /运行视图/);
     assert.match(zhRootHtml, /<option value="pending">待处理<\/option>/);
-    assert.match(zhRootHtml, /<option value="waiting_review">等待评审<\/option>/);
+    assert.match(zhRootHtml, /<option value="waiting_review">等待人工审核<\/option>/);
 
     const acceptLanguageRoot = await fetch(url, {
       headers: { "accept-language": "fr-CA, zh;q=0.9, en;q=0.4" }

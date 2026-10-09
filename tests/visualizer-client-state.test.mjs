@@ -62,6 +62,7 @@ import {
   renderLoadingSkeletonHtml,
   renderRunStatsHtml,
   renderConversationHtml,
+  renderFlowTraceHtml,
   renderTimelineHtml,
   renderWorkbenchActionsHtml,
   renderWorkbenchModeBodyHtml,
@@ -75,6 +76,7 @@ import {
   renderArtifactsPanel,
   renderFailureDetailPanel,
   renderReviewDetailPanel,
+  renderReviewQueuePanel,
   renderRunStatePanel
 } from "../dist/visualizer/client-renderers.js";
 import {
@@ -120,7 +122,10 @@ import {
   WORKBENCH_VALIDATION_DEBOUNCE_MS
 } from "../dist/visualizer/client-input-policy.js";
 import {
+  alignGraphReviewStatuses,
   fallbackLogRoleId,
+  getActionableHumanReviewIds,
+  isActionableHumanReview,
   resolveRunLiveState,
   selectReviewId
 } from "../dist/visualizer/client-run-selection.js";
@@ -442,9 +447,9 @@ test("runtime renderers fold payload-heavy details by default", () => {
     decisionSnapshot: { comment: "approved" },
     history: [{ decision: "approve", actor: "ops", decidedAt: "2026-05-09T10:00:00.000Z", comment: "ok" }]
   }, reviewT, formatTime);
-  assert.match(reviewHtml, /Submitted content/);
+  assert.match(reviewHtml, /Content awaiting review/);
   assert.ok(reviewHtml.includes("Approved output\nSecond line"));
-  assert.match(reviewHtml, /Waiting for your decision\.|Decision saved/);
+  assert.match(reviewHtml, /Waiting for your review\.|Review decision recorded/);
   assert.match(reviewHtml, /<details class="event disclosure summary-section" open>/);
   assert.match(reviewHtml, /Approve review/);
   assert.doesNotMatch(reviewHtml, />approve</);
@@ -809,6 +814,32 @@ test("client lifecycle panel renderers expose workspace and operate tab HTML", (
   assert.equal((skeleton.match(/class="skeleton-line /g) || []).length, 4);
 });
 
+test("flow trace distinguishes missing summary matches from uncaptured execution input", () => {
+  const html = renderFlowTraceHtml({
+    projection: {
+      items: [{
+        kind: "role_message",
+        type: "audit",
+        roleId: "reviewer",
+        branchId: "reviewer@1#1",
+        event: "DONE",
+        status: "ok",
+        source: { cursor: 2 },
+        content: { text: "event=DONE| content=review complete", redacted: false, truncated: false }
+      }]
+    },
+    graph: { graph: { edges: [{ source: "writer", target: "reviewer", eventType: "DONE" }] } },
+    t,
+    escapeText,
+    statusClass,
+    displayUiToken,
+    formatTime: String
+  });
+  assert.match(html, /No upstream result was matched in the flow summary/);
+  assert.doesNotMatch(html, /Upstream input was not captured/);
+  assert.match(html, /Load the complete captured Role I\/O and structured result/);
+});
+
 test("client lifecycle panel renderers cover workbench structure, stats, and timeline", () => {
   const structureHtml = renderWorkbenchStructureHtml({
     structure: {
@@ -847,6 +878,16 @@ test("client lifecycle panel renderers cover workbench structure, stats, and tim
   assert.match(statsHtml, /data-open-pending-reviews/);
   assert.match(statsHtml, /Open 2 pending review/);
   assert.match(statsHtml, />3</);
+  const resolvedStatsHtml = renderRunStatsHtml({
+    header: { status: "stopped", pendingReviewCount: 1 },
+    graphPayload: {},
+    actionableReviewCount: 0,
+    t,
+    escapeText,
+    displayUiToken
+  });
+  assert.doesNotMatch(resolvedStatsHtml, /data-open-pending-reviews/);
+  assert.match(resolvedStatsHtml, /<strong>0<\/strong>/);
 
   const emptyTimeline = renderTimelineHtml({
     events: [],
@@ -1353,6 +1394,18 @@ test("client run selection helpers keep review fallback and live state determini
     }),
     "review-1"
   );
+  const queue = {
+    latestPendingReviewId: "review-recorded",
+    reviews: [
+      { reviewId: "review-recorded", currentStatus: "pending", decisionPhase: "recorded", decision: "approve" },
+      { reviewId: "review-actionable", currentStatus: "pending" },
+      { reviewId: "review-applied-pause", currentStatus: "paused", decisionPhase: "applied", decision: "pause" }
+    ]
+  };
+  assert.equal(selectReviewId({ currentReviewId: "missing", reviewsPayload: queue }), "review-actionable");
+  assert.deepEqual(getActionableHumanReviewIds(queue), ["review-actionable", "review-applied-pause"]);
+  assert.equal(isActionableHumanReview({ currentStatus: "pending", decisionPhase: "recorded" }), false);
+  assert.equal(isActionableHumanReview({ currentStatus: "pending" }), true);
   assert.equal(fallbackLogRoleId({ lastExecutedRoleId: "qa", finalRoleId: "writer" }), "qa");
   assert.equal(fallbackLogRoleId({ finalRoleId: "writer" }), "writer");
   assert.deepEqual(resolveRunLiveState({ status: "running" }), { mode: "online", label: "running" });
@@ -1361,6 +1414,64 @@ test("client run selection helpers keep review fallback and live state determini
     mode: "idle",
     label: "waiting_review"
   });
+  assert.deepEqual(resolveRunLiveState(
+    { status: "stopped", hasWaitingHumanReview: true },
+    { decisionPhase: "recorded" }
+  ), { mode: "idle", label: "review_decision_recorded" });
+  assert.equal(resolveRunLiveState({ hasWaitingHumanReview: true }, { decisionPhase: "pending_reconcile" }).label, "review_decision_applying");
+  assert.equal(resolveRunLiveState({ hasWaitingHumanReview: true }, { decisionPhase: "applied" }).label, "review_decision_applied");
+  assert.deepEqual(resolveRunLiveState(
+    { status: "running" },
+    undefined,
+    { reviews: [{ currentStatus: "resolved", decisionPhase: "applied" }] }
+  ), { mode: "online", label: "running" });
+  assert.deepEqual(resolveRunLiveState(
+    { status: "stopping" },
+    undefined,
+    { reviews: [{ currentStatus: "resolved", decisionPhase: "applied" }] }
+  ), { mode: "online", label: "stopping" });
+  assert.equal(resolveRunLiveState({ hasWaitingHumanReview: true }, { decisionPhase: "pending" }).label, "waiting_review");
+  assert.equal(resolveRunLiveState(
+    { hasWaitingHumanReview: true },
+    { decisionPhase: "recorded" },
+    { reviews: [{ currentStatus: "pending" }, { currentStatus: "pending", decisionPhase: "recorded" }] }
+  ).label, "waiting_review");
+  assert.deepEqual(resolveRunLiveState(
+    { status: "paused", hasWaitingHumanReview: true },
+    undefined,
+    { reviews: [] }
+  ), { mode: "idle", label: "paused" });
+  assert.equal(resolveRunLiveState(
+    { status: "stopped", hasWaitingHumanReview: true },
+    undefined,
+    { reviews: [{ currentStatus: "pending", decisionPhase: "recorded" }] }
+  ).label, "review_decision_recorded");
+  const alignedGraph = alignGraphReviewStatuses({ nodes: [{
+    roleId: "reviewer",
+    roleSeat: true,
+    runtime: { status: "waiting_review", waitingReviewCount: 1, pendingReviewCount: 1, activeBranchCount: 0, completedBranchCount: 0 }
+  }] }, { reviews: [{ roleId: "reviewer", currentStatus: "pending", decisionPhase: "recorded" }] });
+  assert.equal(alignedGraph.nodes[0].runtime.status, "review_decision_recorded");
+  assert.equal(alignedGraph.nodes[0].runtime.waitingReviewCount, 0);
+  assert.equal(alignedGraph.nodes[0].runtime.pendingReviewCount, 0);
+});
+
+test("review queue separates pending items from handled records", () => {
+  const html = renderReviewQueuePanel({
+    selectedReviewId: "pending-1",
+    reviews: {
+      reviews: [
+        { reviewId: "done-1", currentStatus: "pending", decisionPhase: "recorded", decision: "approve", roleId: "judge" },
+        { reviewId: "pending-1", currentStatus: "pending", roleId: "operator" }
+      ]
+    },
+    t,
+    escapeText
+  });
+  assert.ok(html.indexOf("pending-1") < html.indexOf("done-1"));
+  assert.match(html, /<details class="review-history"><summary>Handled reviews \(1\)/);
+  assert.match(html, /Pending human reviews/);
+  assert.match(html, /Decision recorded · resume to continue/);
 });
 
 test("client Studio chat panel keeps apply gating and display context pure", () => {

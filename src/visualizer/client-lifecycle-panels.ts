@@ -111,7 +111,7 @@ export function renderFlowTraceHtml(args: {
     const targets = edges.filter((edge: Record<string, any>) => edge.source === item.roleId && (!item.event || edge.eventType === item.event));
     const inputHtml = sources.length
       ? sources.map((source) => '<div class="flow-message"><div class="flow-message-meta"><code>' + escapeText(source.roleId) + '</code>' + (source.event ? ' · <code>' + escapeText(source.event) + '</code>' : '') + '</div><p>' + escapeText(source.text) + '</p></div>').join("")
-      : '<div class="hint">' + escapeText(t("flow.inputUnavailable", undefined, "Upstream input was not captured.")) + '</div>';
+      : '<div class="hint">' + escapeText(t("flow.inputUnavailable", undefined, "No upstream result was matched in the flow summary; expand to inspect this execution's input.")) + '</div>';
     const output = contentOf(item);
     const route = targets.map((edge: Record<string, any>) => '<code>' + escapeText(edge.eventType || item.event || "") + '</code> → <code>' + escapeText(edge.target) + '</code>').join(" · ");
     const branch = item.branchId ? '<code>' + escapeText(item.branchId) + '</code>' : "";
@@ -122,7 +122,7 @@ export function renderFlowTraceHtml(args: {
     const selected = args.selectedRoleId === item.roleId;
     return '<article class="flow-step' + (selected ? ' is-role-focus' : '') + (inLoop ? ' is-loop-step' : '') + '" data-flow-role="' + escapeText(item.roleId) + '"' + (inLoop ? ' data-loop-iteration="' + escapeText(loopIteration) + '"' : '') + ' style="--role-accent:' + roleColor.accent + ';--role-fill:' + roleColor.fill + '">' +
       '<header class="flow-step-head"><div><span class="flow-step-index">' + String(index + 1).padStart(2, "0") + '</span><button type="button" class="flow-role-select" data-flow-role-focus="' + escapeText(item.roleId) + '"><code>' + escapeText(item.roleId) + '</code></button></div><div class="flow-step-meta">' + (inLoop ? '<span class="flow-step-loop">' + escapeText(t("flow.loopRound", { count: String(loopIteration) }, "loop {count}")) + '</span>' : '') + '<span class="status ' + escapeText(statusClass(String(item.status || "unknown"))) + '">' + escapeText(displayUiToken(item.status || "unknown", t)) + '</span><span>' + escapeText(duration) + '</span></div></header>' +
-      '<div class="flow-step-io"><section><h4>' + escapeText(t("flow.input", undefined, "Input")) + '</h4>' + inputHtml + '</section><section><h4>' + escapeText(t("flow.output", undefined, "Output")) + '</h4><div class="flow-message"><p>' + escapeText(output || t("flow.outputUnavailable", undefined, "Output was not captured.")) + '</p></div></section></div>' +
+      '<div class="flow-step-io"><section><h4>' + escapeText(t("flow.input", undefined, "Input")) + '</h4>' + inputHtml + '</section><section><h4>' + escapeText(t("flow.output", undefined, "Output")) + '</h4><div class="flow-message"><p>' + escapeText(output || t("flow.outputUnavailable", undefined, "No role output was extracted in the flow summary; expand to inspect this execution's output.")) + '</p></div></section></div>' +
       '<details class="flow-step-detail" data-flow-role-io="' + escapeText(item.roleId) + '"' + (item.branchId ? ' data-flow-branch-id="' + escapeText(item.branchId) + '"' : '') + (inLoop ? ' data-flow-loop-iteration="' + escapeText(loopIteration) + '"' : '') + '><summary>' + escapeText(t("flow.fullIo", undefined, "Full captured input and output")) + '</summary><div class="flow-step-detail-body"><div class="hint">' + escapeText(t("flow.fullIoHint", undefined, "Load the complete captured Role I/O and structured result.")) + '</div></div></details>' +
       '<footer class="flow-step-route"><span>' + escapeText(t("flow.handoff", undefined, "Handoff")) + '</span><span>' + (route || '<code>' + escapeText(item.event || "") + '</code> → <code>' + escapeText(t("flow.terminal", undefined, "terminal")) + '</code>') + '</span><span>' + escapeText(branch) + '</span><time>' + escapeText(formatTime(item.at)) + '</time></footer>' +
       '</article>';
@@ -311,6 +311,7 @@ export function renderWorkbenchModeBodyHtml(args: {
 export function renderRunStatsHtml(args: {
   header: Record<string, any> | null | undefined;
   graphPayload: Record<string, any> | null | undefined;
+  actionableReviewCount?: number;
   t: Translator;
   escapeText: (value: unknown) => string;
   displayUiToken: (value: unknown, t: Translator) => string;
@@ -319,15 +320,15 @@ export function renderRunStatsHtml(args: {
   if (!header) {
     return "";
   }
+  const pendingReviewCount = Math.max(0, Number(args.actionableReviewCount ?? header.pendingReviewCount) || 0);
   const cards = [
     [t("stats.status"), displayUiToken(header.status, t)],
     [t("stats.mode"), displayUiToken(graphPayload?.simulation?.mode || header.runMode || "runtime", t)],
     [t("stats.transitions"), header.transitionCount],
     [t("stats.activeBranches"), header.activeBranches],
-    [t("stats.pendingReviews"), header.pendingReviewCount],
+    [t("stats.pendingReviews"), pendingReviewCount],
     [t("stats.recentAudits"), header.recentAudits]
   ];
-  const pendingReviewCount = Math.max(0, Number(header.pendingReviewCount) || 0);
   return (pendingReviewCount > 0
     ? '<button type="button" class="button primary" data-open-pending-reviews>' + escapeText(t("review.openPending", { count: String(pendingReviewCount) }, "Open {count} pending review(s)")) + '</button>'
     : "") + cards
