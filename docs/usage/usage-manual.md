@@ -403,13 +403,13 @@ ogs doctor --required opencode --system system.mmd
 ogs run start --system system.mmd --laws .ogs/laws.json --user-profile .ogs/user-profile.json --input "是否应该为当前系统增加跨节点远程执行？请比较成本、可靠性和风险。"
 ```
 
-运行暂停后，可在 Visualizer 的 Runs 页面查看状态并打开运行详情，在 Reviews 页面查看待审项和审核内容。选择决定后填写具体理由，在确认页核对决定与影响，再提交；批准或返工决定应用后，使用运行详情中的 Resume 操作继续运行。等价 CLI 操作为 `ogs run status`、`ogs run review list/inspect/decide` 和 `ogs run resume`。Visualizer 通过 `ogs vis --ogs-dir .` 启动；CLI/API 也要求具体审核理由，空白及常见占位文本会被拒绝。
+运行暂停后，可在 Visualizer 的 Runs 页面查看状态并打开运行详情，在 Reviews 页面查看待审项和审核内容。选择决定后可填写审核理由（可留空）；如填写，应说明决策依据，常见占位文本会被拒绝。在确认页核对决定与影响后再提交；批准或返工决定应用后，使用运行详情中的 Resume 操作继续运行。等价 CLI 操作为 `ogs run status`、`ogs run review list/inspect/decide` 和 `ogs run resume`。Visualizer 通过 `ogs vis --ogs-dir .` 启动。
 
 Visualizer 的 Run 页面默认显示“流转”：按实际执行顺序查看初始请求、每个 Role 的输入/输出和后续路由。点击 Role 名称可定位对应步骤并展开图谱；图谱默认折叠在流转页下方，画布按整行展示，运行状态与关键信号保持常显，重复的角色 I/O 快照和补充字段按需展开。自动连线从两端节点的近侧候选连接桩中选择；先减少与已布线边交叉，再缩短路径并减少折点。每条线在连接桩处保留垂直于节点面的引出和进入短段，使箭头方向清晰。不同 Role 在步骤与图谱中使用一致的颜色标记，名称始终作为辨识依据。
 
 “运维”页先显示运维摘要，再显示当前运行的失败概览、恢复就绪状态和评审队列。失败详情、根因检查、运行健康、近期失败明细、恢复诊断、评审详情，以及“日志与产物”均默认折叠，按需展开。桌面会按可用宽度分栏，窄屏自动改为单列。输入与执行明细来自脱敏后的 conversation 投影；未采集到的上游输入会明确标为不可用，不会用推测内容填充。
 
-Release 页面仅在 `handoff.mode=strict` 时把缺少的 flow contract 作为发布阻断；`transition` 的缺口保留为 readiness warning，未配置 `handoff.mode` 时不强制 flow contract。源码未保存、校验失败、readiness blockers、未解析绑定或角色包不完整仍会阻止候选导出。导出的 `single-project-v1` 不包含 `.ogs/runs`、日志、checkpoint 或审核运行产物。
+Release 页面将角色契约和输出 schema 标为必配，将 Flow contract 覆盖按 `handoff.mode` 区分：不设置模式时是选配且不强制校验；`transition` 需要配置契约包，未覆盖的交接作为 readiness warning；`strict` 要求每条适用交接都有契约，缺口会阻断发布。源码未保存、校验失败、其他 readiness blockers、未解析绑定或角色包不完整仍会阻止候选导出。导出的 `single-project-v1` 不包含 `.ogs/runs`、日志、checkpoint 或审核运行产物。
 
 ## 1. Runtime Status
 
@@ -421,7 +421,7 @@ Use this rule:
 - graph semantics: add `role.mode/join.mode/context.map/loop.max/review.*` only when the system needs parallel split, `all_of/quorum_of` join, field-level projection, bounded loop, or runtime-native human review
 - `join.mode.<roleId>=all_of` requires `join.sources.<roleId>`; that source list must contain unique role ids and match the role's Mermaid incoming edges exactly
 - `join.mode.<roleId>=quorum_of` requires both `join.sources.<roleId>` and `join.min.<roleId>`; `join.sources` must contain unique role ids, must match the role's Mermaid incoming edges exactly, and readiness counts unique completed source roles under the same `lineageId + loopIteration`
-- `handoff.mode=strict|transition` enables flow-contract validation; `transition` skips warned or missing contracts on the affected flow while `strict` hard-fails, and will fail closed if the skip would orphan a downstream join; `handoff.contracts` points to the contract bundle, and `route.order.<fromRoleId>` only reorders sibling fan-out targets without changing reachability
+- `handoff.mode` is optional. When omitted, flow contracts are not enforced; `transition` requires a contract bundle but treats uncovered or warned flows as rollout warnings/skips; `strict` requires a valid contract for every eligible handoff and fails on gaps. Transition skips fail closed if they would orphan a downstream join. `handoff.contracts` points to the bundle, and `route.order.<fromRoleId>` only reorders sibling fan-out targets without changing reachability
 - `role_input` contracts validate the projected `context.map` object before prompt rendering; they do not replace the built-in runtime prompt-input schema
 - selector details and ancestor-access limits are documented in [context-map 投影说明](./context-map-projection-guide.md)
 - dynamic fan-out with uncertain `N` is not graph semantics; keep it inside one role (Heavy Node) or pre-expand before orchestration
