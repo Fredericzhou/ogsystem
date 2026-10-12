@@ -111,15 +111,17 @@ The latest product commit `b323d8d` and its tarball are local only. Push the fin
 complete its regular CI and package matrix before selecting the tarball digest for Windows UAT. Do
 not rebuild after recording UAT results.
 
-1. In the GitHub Actions UI, open regular CI run `37877480276` and save the full logs for
-   `Test (Node 22, windows-latest)` and `Test (Node 24, windows-latest)`. These are failures on the
-   earlier source commit; use them to diagnose the existing Windows gate. The API log download
-   requires repository admin rights. Record failing test names and relevant stack traces. Then run
-   regular CI and package validation for the final immutable candidate ref and record those runs
-   separately.
+1. Candidate validation commit `e4d6584` fixes the Windows line-ending failure in the release
+   package policy test by parsing the workflow YAML. Regular CI run `38191002912` and release
+   package validation run `38191002914` both pass; the former covers Node 22/24 on Linux, macOS, and
+   Windows, and the latter covers all 12 Node/OS/package-manager combinations. The earlier Windows
+   failures in run `37877480276` predate this fix. Record new runs separately for any later candidate
+   commit.
 2. Download the tarball artifact from that candidate's package validation run and verify its SHA-256
    against the run's build-job digest. Use that same tarball for both Node versions and both package
-   managers. Record the candidate ref and digest before starting UAT.
+   managers. Record the candidate ref and digest before starting UAT. The artifact download returned
+   HTTP 401 in the current local environment; the release artifact must be retrieved with an
+   authenticated GitHub session before claiming a byte-for-byte match with local UAT.
 3. Use Node.js `22.x` and `24.x` in separate clean environments. On each, run from PowerShell:
 
    ```powershell
