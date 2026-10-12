@@ -229,14 +229,16 @@ paths:
           application/json:
             schema:
               type: object
-              required: [decision]
+              required: [decision, comment]
               properties:
                 decision: { enum: [approve, rework, pause, terminate] }
-                comment: { type: string }
+                comment: { type: string, minLength: 1, maxLength: 2000 }
                 scope: { enum: [branch, run] }
       responses:
         "200":
           description: Durable review decision and reconcile state.
+        "400":
+          $ref: "#/components/responses/ApiError"
         "409":
           $ref: "#/components/responses/ApiError"
         "403":

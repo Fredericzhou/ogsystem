@@ -341,7 +341,7 @@ ogs run status <run-id>
 ```bash
 ogs run review list <run-id>
 ogs run review inspect <run-id> <review-id>
-ogs run review decide <run-id> <review-id> --decision approve --comment "approved"
+ogs run review decide <run-id> <review-id> --decision approve --comment "Evidence supports this bounded experiment; keep the default unchanged."
 ogs run resume <run-id> --dry-run
 ```
 
@@ -1293,7 +1293,7 @@ ogs run logs <run-id> --engine --follow --ndjson
 ogs run logs <run-id> --role <role-id> --since 2026-04-18T10:00:00Z
 ogs run review list <run-id>
 ogs run review inspect <run-id> <review-id>
-ogs run review decide <run-id> <review-id> --decision approve
+ogs run review decide <run-id> <review-id> --decision approve --comment "Evidence supports this bounded experiment; keep the default unchanged."
 ogs run resume <run-id> --dry-run
 ogs run stop <run-id>
 ogs visualizer --ogs-dir .

@@ -22,6 +22,7 @@ import {
   resolveTemplateRoleRootDir
 } from "./bundled-repos.js";
 import { validateRuntimeConfig } from "./config.js";
+import { normalizeHumanReviewComment } from "./human-review-comment.js";
 import { readJsonFile, writeJsonFileAtomic } from "./json-file.js";
 import {
   chooseDefaultModelFromCatalog,
@@ -2127,6 +2128,7 @@ export async function writeHumanReviewDecision(args: {
   if (priorDecision && priorDecision.decision !== "pause") {
     throw new Error(`Review "${args.reviewId}" already has a durable decision; refusing to overwrite it.`);
   }
+  const comment = normalizeHumanReviewComment(args.comment);
   const runDetail = await inspectRun(args.workdir, args.runId);
   const resolvedConfig = asRecord(runDetail.resolvedConfig);
   const effectiveConfig = asRecord(resolvedConfig?.effective);
@@ -2164,7 +2166,7 @@ export async function writeHumanReviewDecision(args: {
     committedAt: new Date().toISOString(),
     decidedAt: new Date().toISOString(),
     decision: args.decision,
-    comment: args.comment,
+    comment,
     actor: args.principal.id,
     principal: args.principal,
     scope: effectiveScope

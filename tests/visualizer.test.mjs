@@ -3029,6 +3029,22 @@ test("visualizer server starts and resumes runs through lifecycle APIs", async (
     const reviews = await reviewsResponse.json();
     assert.ok(reviews.latestPendingReviewId);
 
+    for (const body of [
+      { decision: "approve" },
+      { decision: "approve", comment: "recorded via visualizer (approve)" }
+    ]) {
+      const rejected = await fetch(
+        `${url}/api/v1/runs/${startedRun.runId}/reviews/${encodeURIComponent(reviews.latestPendingReviewId)}/decide`,
+        {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify(body)
+        }
+      );
+      assert.equal(rejected.status, 400);
+      assert.equal((await rejected.json()).error.code, "INVALID_HUMAN_REVIEW_COMMENT");
+    }
+
     const decisionResponse = await fetch(
       `${url}/api/v1/runs/${startedRun.runId}/reviews/${encodeURIComponent(reviews.latestPendingReviewId)}/decide`,
       {

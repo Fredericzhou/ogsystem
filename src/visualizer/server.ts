@@ -14,6 +14,7 @@ import { dirname, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { runSystemWithAdapter } from "../runtime/adapter.js";
+import { HumanReviewCommentError } from "../runtime/human-review-comment.js";
 import { HUMAN_REVIEW_DECISIONS, isHumanReviewDecision } from "../runtime/types.js";
 import { randomUUID } from "node:crypto";
 import { loadSystemFromMermaid } from "../runtime/parse-mermaid.js";
@@ -1569,6 +1570,9 @@ function normalizeError(error: unknown): HttpError {
     return error;
   }
   const message = error instanceof Error ? error.message : String(error);
+  if (error instanceof HumanReviewCommentError) {
+    return new HttpError(400, error.code, message);
+  }
   if (/ must stay within the current workdir\.$/.test(message)) {
     return new HttpError(400, "PROJECT_PATH_OUTSIDE_WORKDIR", message);
   }

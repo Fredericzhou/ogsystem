@@ -2347,6 +2347,25 @@ export function renderPageShellStyles(): string {
       grid-template-columns: repeat(2, minmax(0, 1fr));
       gap: 8px;
     }
+    .review-decision-preview {
+      grid-template-columns: minmax(96px, 0.35fr) minmax(0, 1fr);
+      margin: 12px 0;
+      padding: 12px;
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      background: var(--surface-2);
+    }
+    .review-decision-preview dt {
+      color: var(--muted);
+    }
+    .review-decision-preview dd {
+      min-width: 0;
+      margin: 0;
+      overflow-wrap: anywhere;
+    }
+    .review-decision-comment {
+      white-space: pre-wrap;
+    }
     .studio-contract-coverage {
       max-width: 100%;
       overflow-x: auto;
@@ -3197,12 +3216,21 @@ export function renderPageShellStyles(): string {
         flex-wrap: wrap;
       }
     }
+    .operate-reviews #review-actions {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 8px;
+    }
+    .operate-reviews #review-actions .button {
+      min-width: 0;
+      white-space: normal;
+    }
     @media (max-width: 480px) {
       .content { padding: 8px; }
       .review-submitted-content { max-height: 120px; }
       .operate-reviews #review-actions {
         display: grid;
-        grid-template-columns: repeat(2, minmax(0, 1fr));
+        grid-template-columns: minmax(0, 1fr);
       }
       .top-nav {
         padding: 8px;

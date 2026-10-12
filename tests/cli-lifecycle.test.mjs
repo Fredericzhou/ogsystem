@@ -291,7 +291,7 @@ test("lifecycle cli advanced-features template runs a local review rework loop",
     "--decision",
     "approve",
     "--comment",
-    "looks good",
+    "The revised draft addresses the requested evidence gaps.",
     "--ogs-dir",
     projectDir
   ]);
@@ -680,6 +680,13 @@ test("lifecycle cli review commands expose pending human review state and can ap
   assert.equal(reviewInspectPayload.currentState.status, "pending");
   assert.equal(reviewInspectPayload.requestSnapshot.reviewId, "review.test-operator@1#1.r1");
 
+  const missingReason = await runCli([
+    "run", "review", "decide", runId, "review.test-operator@1#1.r1",
+    "--decision", "approve", "--ogs-dir", tempRoot
+  ]);
+  assert.equal(missingReason.code, 1);
+  assert.match(missingReason.stderr, /CLI_RUN_REVIEW_COMMENT_INVALID/);
+
   const decide = await runCli([
     "run",
     "review",
@@ -689,7 +696,7 @@ test("lifecycle cli review commands expose pending human review state and can ap
     "--decision",
     "approve",
     "--comment",
-    "approved",
+    "The draft satisfies the acceptance criteria.",
     "--ogs-dir",
     tempRoot
   ]);

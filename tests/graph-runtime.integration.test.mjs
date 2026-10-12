@@ -668,7 +668,7 @@ writer[Role:writer] -->|DONE| output
     reviewId: "review.writer@1#1.r1",
     decision: "approve",
     principal: { id: "local:tester", issuer: "ogs:local", displayName: "tester" },
-    comment: "approved"
+    comment: "The reviewed output satisfies the required contract."
   });
 
   const resumed = await runSystemWithAdapter({
@@ -765,7 +765,7 @@ writer[Role:writer] -->|DONE| output
     reviewId: "review.writer@1#1.r1",
     decision: "approve",
     principal: { id: "local:tester", issuer: "ogs:local", displayName: "tester" },
-    comment: "approved"
+    comment: "The reviewed output satisfies the required contract."
   });
 
   const runDir = path.resolve(tempRoot, ".ogs/runs", runId);

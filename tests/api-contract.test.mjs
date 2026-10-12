@@ -20,5 +20,9 @@ test("OpenAPI contract covers versioned project, run control, monitoring, and hu
   assert.ok(spec.paths["/readyz"]?.get);
   assert.ok(spec.paths["/metrics"]?.get);
   assert.equal(spec.paths["/api/v1/runs/{runId}/reviews/{reviewId}/decide"].post.requestBody.content["application/json"].schema.properties.actor, undefined);
+  assert.deepEqual(
+    spec.paths["/api/v1/runs/{runId}/reviews/{reviewId}/decide"].post.requestBody.content["application/json"].schema.required,
+    ["decision", "comment"]
+  );
   assert.equal(spec["x-ogs-control-plane"].version, "v1");
 });

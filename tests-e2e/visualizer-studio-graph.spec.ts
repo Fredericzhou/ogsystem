@@ -53,6 +53,30 @@ async function seedProject(workdir: string): Promise<void> {
   );
 }
 
+async function seedReviewProject(workdir: string): Promise<void> {
+  await seedProject(workdir);
+  await writeFile(
+    path.resolve(workdir, "system.mmd"),
+    [
+      "flowchart TD",
+      "%% system.id=viz.studio.graph",
+      "%% system.version=1.0.0",
+      "%% law.global=law.minimal.base",
+      "%% entry.role=demo-analyst",
+      "%% review.mode.demo-analyst=required",
+      "%% review.timeout.demo-analyst=3600",
+      "%% review.timeout.action.demo-analyst=pause",
+      "%% review.rework.target.demo-analyst=demo-analyst",
+      "%% review.rework.max.demo-analyst=2",
+      "%% review.terminate.scope.demo-analyst=branch",
+      "input -->|ENTER| analyst[Role:demo-analyst]",
+      "analyst[Role:demo-analyst] -->|ANALYSIS_DONE| output",
+      ""
+    ].join("\n"),
+    "utf8"
+  );
+}
+
 async function seedCyclicProject(workdir: string): Promise<void> {
   await seedProject(workdir);
   await writeFile(
@@ -710,6 +734,58 @@ test("Run opens global operations with fixed run-view tabs", async ({ page }) =>
     await expect(page.locator("#ops-summary")).not.toContainText(/Loading/i);
     await expect(page.locator("#operate-tabs")).toHaveCSS("position", "sticky");
     await expect(page.locator("#console-panel-debug")).not.toHaveCSS("min-height", "100vh");
+  } finally {
+    await page.close();
+    await new Promise<void>((resolve) => started.server.close(() => resolve()));
+  }
+});
+
+test("Review decisions require a reason and a final confirmation", async ({ page }) => {
+  const workdir = await mkdtemp(path.join(os.tmpdir(), "ogsystem-review-confirmation-"));
+  await seedReviewProject(workdir);
+  const started = await startVisualizationServer({ workdir, host: "127.0.0.1", port: 0 });
+  try {
+    await page.goto(started.url);
+    await page.locator('[data-console-tab="design"]').click();
+    await page.locator('[data-workbench-view="bridge"]').click();
+    await page.locator('[data-studio-side-tab="debug"]').click();
+    const debugPanel = page.locator('[data-studio-selection-panel="debug"]');
+    await debugPanel.locator("#workbench-run-input").fill("visual review confirmation");
+    await debugPanel.locator("#workbench-start-run").click();
+    await page.waitForFunction(async () => {
+      const response = await fetch("/api/v1/runs");
+      const payload = await response.json();
+      return payload.runs?.length > 0;
+    }, undefined, { timeout: 30000 });
+
+    await page.locator('[data-console-tab="run"]').click();
+    const recentRun = page.locator("#sidebar [data-run-id]").first();
+    await expect(recentRun).toBeVisible();
+    await recentRun.click();
+    await page.locator("#operate-tab-reviews").click();
+    const reviewEntry = page.locator("#reviews [data-review-id]").first();
+    await expect(reviewEntry).toBeVisible();
+    await reviewEntry.click();
+    const reviewActions = page.locator("#review-actions");
+    await expect.poll(() => reviewActions.evaluate((el) => getComputedStyle(el).gridTemplateColumns.split(" ").length)).toBe(2);
+    await page.setViewportSize({ width: 390, height: 844 });
+    await expect.poll(() => reviewActions.evaluate((el) => getComputedStyle(el).gridTemplateColumns.split(" ").length)).toBe(1);
+    await page.setViewportSize({ width: 1280, height: 900 });
+    await page.locator('#review-actions [data-review-action="approve"]').click();
+
+    const comment = page.locator("#action-review-comment");
+    await expect(comment).toHaveAttribute("maxlength", "2000");
+    await page.locator("#action-form-submit").click();
+    await expect(comment).toBeVisible();
+    await expect(page.locator("#action-review-back")).toHaveCount(0);
+    await comment.fill("The simulated output passed the review gate.");
+    await page.locator("#action-form-submit").click();
+    await expect(page.locator("#action-review-back")).toBeVisible();
+    await expect(comment).toHaveValue("The simulated output passed the review gate.");
+    await comment.fill("The output meets the review criteria and its remaining risks are accepted.");
+    await page.locator("#action-form-submit").click();
+    await expect(page.locator("#action-form-section")).toBeHidden();
+    await expect(reviewEntry).toContainText("The output meets the review criteria and its remaining risks are accepted.");
   } finally {
     await page.close();
     await new Promise<void>((resolve) => started.server.close(() => resolve()));

@@ -51,6 +51,7 @@ import {
   statusTone
 } from "./client-renderers.js";
 import { isValidSelectorPath, isValidSourceRoleId, listContextSelectorCandidates, summarizeContextSelector } from "../context-selector.js";
+import { HUMAN_REVIEW_COMMENT_MAX_LENGTH, HumanReviewCommentError, normalizeHumanReviewComment } from "../runtime/human-review-comment.js";
 import {
   buildRouteSearch,
   normalizeLifecycleView,
@@ -182,6 +183,9 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
   messagesByLocale[locale] = i18n.messages ?? messagesByLocale[locale];
   return `
     const API_PREFIX = ${JSON.stringify(apiPrefix)};
+    const HumanReviewCommentError = ${HumanReviewCommentError.toString()};
+    const normalizeHumanReviewComment = ${normalizeHumanReviewComment.toString()};
+    const HUMAN_REVIEW_COMMENT_MAX_LENGTH = ${JSON.stringify(HUMAN_REVIEW_COMMENT_MAX_LENGTH)};
     const applyStudioAuthoringCommand = window.OGSVisualizerClient?.applyStudioAuthoringCommand;
     const INITIAL_LOCALE = ${JSON.stringify(locale)};
     const I18N_MESSAGES = ${JSON.stringify(messagesByLocale)};
@@ -5428,7 +5432,40 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
         kind,
         fields: Object.assign({}, fields || {})
       };
+      if (kind === "review" && !state.actionForm.fields.comment) {
+        state.actionForm.fields.comment = loadReviewDraft(state.actionForm.fields);
+      }
       renderActionForm();
+    }
+
+    function reviewDraftStorageKey(fields) {
+      return "ogs.visualizer.review-draft:" + [
+        getCurrentWorkdir(),
+        state.selectedRunId || "",
+        fields?.reviewId || state.selectedReviewId || "",
+        fields?.decision || ""
+      ].map(encodeURIComponent).join(":");
+    }
+
+    function loadReviewDraft(fields) {
+      try {
+        return window.localStorage.getItem(reviewDraftStorageKey(fields)) || "";
+      } catch {
+        return "";
+      }
+    }
+
+    function persistReviewDraft(fields, comment) {
+      try {
+        const key = reviewDraftStorageKey(fields);
+        if (comment) {
+          window.localStorage.setItem(key, comment);
+        } else {
+          window.localStorage.removeItem(key);
+        }
+      } catch {
+        // best effort only
+      }
     }
 
     function readActionFieldValue(fieldId) {
@@ -5444,6 +5481,18 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
       if (element && typeof element.focus === "function") {
         element.focus();
       }
+    }
+
+    function reviewCommentErrorMessage(error) {
+      const message = error instanceof Error ? error.message : String(error);
+      if (/requires a reason/i.test(message)) {
+        return t("form.reviewReasonEmpty");
+      }
+      const lengthError = message.match(/must be (\d+) characters or fewer/i);
+      if (lengthError) {
+        return t("form.reviewReasonTooLong", { max: lengthError[1] });
+      }
+      return t("form.reviewReasonInvalid");
     }
 
     function renderActionForm() {
@@ -5506,25 +5555,51 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
           '<label class="field full"><span>' + escapeText(t("form.reason")) + '</span><textarea id="action-stop-reason"' + disabled + '>' + escapeText(form.fields.reason || "") + '</textarea></label>',
           '<div class="actions"><button id="action-form-cancel" class="button subtle"' + disabled + '>' + escapeText(t("action.cancel")) + '</button><button id="action-form-submit" class="button warn"' + disabled + busyAttr + '>' + escapeText(t("form.recordStopRequest")) + '</button></div>'
         ].join("");
+      } else if (form.kind === "review" && form.confirming) {
+        const decision = form.fields.decision;
+        const scope = form.fields.scope || "branch";
+        const decisionLabel = decision === "approve"
+          ? t("review.approve")
+          : decision === "rework"
+            ? t("review.requestRework")
+            : decision === "pause"
+              ? t("review.pause")
+              : t("review.terminateScope", { scope });
+        const effectKey = decision === "approve"
+          ? "form.reviewEffectApprove"
+          : decision === "rework"
+            ? "form.reviewEffectRework"
+            : decision === "pause"
+              ? "form.reviewEffectPause"
+              : "form.reviewEffectTerminate";
+        actionFormEl.innerHTML = [
+          '<div class="event' + (decision === "terminate" ? ' is-warning' : '') + '"><div class="event-top"><span>' + escapeText(t("form.confirmReviewDecision")) + '</span><span>' + escapeText(form.fields.reviewId || state.selectedReviewId || "n/a") + '</span></div><strong>' + escapeText(decisionLabel) + '</strong><div class="hint">' + escapeText(t(effectKey, { scope })) + '</div></div>',
+          '<dl class="form-grid review-decision-preview">',
+          '<dt>' + escapeText(t("form.decision")) + '</dt><dd>' + escapeText(decisionLabel) + '</dd>',
+          decision === "terminate" ? '<dt>' + escapeText(t("form.terminateScope")) + '</dt><dd>' + escapeText(scope) + '</dd>' : "",
+          '</dl>',
+          '<label class="field full"><span>' + escapeText(t("form.reviewReasonRequired")) + '</span><textarea id="action-review-comment" maxlength="' + HUMAN_REVIEW_COMMENT_MAX_LENGTH + '" aria-describedby="action-review-comment-hint action-review-comment-error"' + (form.fields.commentError ? ' aria-invalid="true"' : '') + disabled + '>' + escapeText(form.fields.comment || "") + '</textarea><span id="action-review-comment-hint" class="hint">' + escapeText(t("form.reviewReasonConfirmHint")) + ' ' + escapeText(t("form.reviewReasonAutoSaveHint")) + '</span><span id="action-review-comment-error" class="field-error" role="alert">' + escapeText(form.fields.commentError || "") + '</span></label>',
+          '<div class="actions"><button id="action-review-back" class="button subtle"' + disabled + '>' + escapeText(t("form.editReviewDecision")) + '</button><button id="action-form-cancel" class="button subtle"' + disabled + '>' + escapeText(t("action.cancel")) + '</button><button id="action-form-submit" class="button primary"' + disabled + busyAttr + '>' + escapeText(t("form.confirmAndRecordReviewDecision")) + '</button></div>'
+        ].join("");
       } else if (form.kind === "review") {
-        const terminating = form.fields.decision === "terminate";
+        const reasonHintKey = form.fields.decision === "approve"
+          ? "form.reviewReasonApprove"
+          : form.fields.decision === "rework"
+            ? "form.reviewReasonRework"
+            : form.fields.decision === "pause"
+              ? "form.reviewReasonPause"
+              : "form.reviewReasonTerminate";
         const terminateScope = form.fields.scope === "run" ? "run" : "branch";
         actionFormEl.innerHTML = [
-          '<div class="event' + (terminating ? ' is-warning' : '') + '"><div class="event-top"><span>' + escapeText(t("form.reviewDecision")) + '</span><span>' + escapeText(form.fields.reviewId || state.selectedReviewId || "n/a") + '</span></div><strong>' + escapeText(terminating
-            ? t(terminateScope === "run" ? "review.confirmTerminateRun" : "review.confirmTerminateBranch")
-            : t("review.decisionValue." + form.fields.decision, undefined, form.fields.decision || t("form.decision"))) + '</strong><div class="hint">' + escapeText(terminating
-              ? t(terminateScope === "run" ? "review.terminateRunWarning" : "review.terminateBranchWarning")
-              : t("form.reviewDecisionHint")) + '</div></div>',
+          '<div class="event' + (form.fields.decision === "terminate" ? ' is-warning' : '') + '"><div class="event-top"><span>' + escapeText(t("form.reviewDecision")) + '</span><span>' + escapeText(form.fields.reviewId || state.selectedReviewId || "n/a") + '</span></div><strong>' + escapeText(t("review.decisionValue." + form.fields.decision, undefined, form.fields.decision || t("form.decision"))) + '</strong><div class="hint">' + escapeText(t("form.reviewDecisionHint")) + '</div></div>',
           '<div class="form-grid">',
           '<label class="field"><span>' + escapeText(t("form.decision")) + '</span><input id="action-review-decision" value="' + escapeText(t("review.decisionValue." + form.fields.decision, undefined, form.fields.decision || t("form.decision"))) + '" disabled /></label>',
-          '<label class="field full"><span>' + escapeText(t("form.comment")) + '</span><textarea id="action-review-comment"' + disabled + '>' + escapeText(form.fields.comment || "") + '</textarea></label>',
+          '<label class="field full"><span>' + escapeText(t("form.reviewReasonRequired")) + '</span><textarea id="action-review-comment" maxlength="' + HUMAN_REVIEW_COMMENT_MAX_LENGTH + '" aria-describedby="action-review-comment-hint action-review-comment-error"' + (form.fields.commentError ? ' aria-invalid="true"' : '') + disabled + '>' + escapeText(form.fields.comment || "") + '</textarea><span id="action-review-comment-hint" class="hint">' + escapeText(t(reasonHintKey)) + '</span><span id="action-review-comment-error" class="field-error" role="alert">' + escapeText(form.fields.commentError || "") + '</span></label>',
           (form.fields.decision === "terminate"
             ? '<label class="field"><span>' + escapeText(t("form.terminateScope")) + '</span><select id="action-review-scope"' + disabled + '><option value="branch"' + (terminateScope === "branch" ? " selected" : "") + '>' + escapeText(t("review.scopeBranch")) + '</option><option value="run"' + (terminateScope === "run" ? " selected" : "") + '>' + escapeText(t("review.scopeRun")) + '</option></select></label>'
             : ""),
           '</div>',
-          '<div class="actions"><button id="action-form-cancel" class="button subtle"' + disabled + '>' + escapeText(t("action.cancel")) + '</button><button id="action-form-submit" class="button ' + (terminating ? 'danger' : 'primary') + '"' + disabled + busyAttr + '>' + escapeText(terminating
-            ? t(terminateScope === "run" ? "review.confirmTerminateRun" : "review.confirmTerminateBranch")
-            : t("form.recordReviewDecision")) + '</button></div>'
+          '<div class="actions"><button id="action-form-cancel" class="button subtle"' + disabled + '>' + escapeText(t("action.cancel")) + '</button><button id="action-form-submit" class="button primary"' + disabled + busyAttr + '>' + escapeText(t("form.continueToReviewConfirmation")) + '</button></div>'
         ].join("");
       } else if (form.kind === "saveAs") {
         actionFormEl.innerHTML = [
@@ -5548,12 +5623,35 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
           }
         });
       }
+      const reviewBackButton = document.getElementById("action-review-back");
+      if (reviewBackButton) {
+        reviewBackButton.addEventListener("click", () => {
+          if (!state.actionBusy && state.actionForm?.kind === "review") {
+            state.actionForm.confirming = false;
+            renderActionForm();
+            focusActionField("action-review-comment");
+          }
+        });
+      }
       const reviewScopeSelect = document.getElementById("action-review-scope");
       if (reviewScopeSelect) {
         reviewScopeSelect.addEventListener("change", () => {
           if (state.actionForm?.kind === "review") {
             state.actionForm.fields.scope = reviewScopeSelect.value === "run" ? "run" : "branch";
             renderActionForm();
+          }
+        });
+      }
+      const reviewCommentInput = document.getElementById("action-review-comment");
+      if (reviewCommentInput) {
+        reviewCommentInput.addEventListener("input", () => {
+          if (state.actionForm?.kind === "review") {
+            state.actionForm.fields.comment = reviewCommentInput.value;
+            persistReviewDraft(state.actionForm.fields, reviewCommentInput.value.trim());
+            state.actionForm.fields.commentError = "";
+            const errorEl = document.getElementById("action-review-comment-error");
+            if (errorEl) errorEl.textContent = "";
+            reviewCommentInput.removeAttribute("aria-invalid");
           }
         });
       }
@@ -6217,7 +6315,7 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
             reviewId: state.selectedReviewId,
             decision: button.getAttribute("data-review-action"),
             scope: button.getAttribute("data-review-scope") || detail.scope || "branch",
-            comment: detail.comment || \`recorded via visualizer (\${button.getAttribute("data-review-action")})\`
+            comment: ""
           }, { returnFocusEl: button })
         );
       }
@@ -7460,12 +7558,38 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
         return;
       }
       if (form.kind === "review") {
+        const submittedComment = form.confirming
+          ? readActionFieldValue("action-review-comment") || form.fields.comment
+          : readActionFieldValue("action-review-comment");
+        let comment;
+        try {
+          comment = normalizeHumanReviewComment(submittedComment);
+        } catch (error) {
+          state.actionForm.fields = Object.assign({}, form.fields, {
+            comment: submittedComment,
+            commentError: reviewCommentErrorMessage(error)
+          });
+          state.actionForm.confirming = false;
+          renderActionForm();
+          focusActionField("action-review-comment");
+          return;
+        }
+        if (!form.confirming) {
+          const scope = form.fields.decision === "terminate"
+            ? readActionFieldValue("action-review-scope") || form.fields.scope || "branch"
+            : undefined;
+          state.actionForm.fields = Object.assign({}, form.fields, { comment, scope });
+          state.actionForm.confirming = true;
+          renderActionForm();
+          focusActionField("action-form-submit");
+          return;
+        }
         const payload = {
           decision: form.fields.decision,
           scope: form.fields.decision === "terminate"
-            ? readActionFieldValue("action-review-scope") || form.fields.scope || "branch"
+            ? form.fields.scope || "branch"
             : undefined,
-          comment: readActionFieldValue("action-review-comment") || \`recorded via visualizer (\${form.fields.decision})\`
+          comment
         };
         state.actionForm.fields = Object.assign({}, form.fields, payload);
         await submitReviewDecision(payload);
@@ -8111,16 +8235,30 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
         return;
       }
       await runAction("review:" + args.decision, async () => {
-        const payload = await requestAction(
-          \`\${API_PREFIX}/runs/\${encodeURIComponent(state.selectedRunId)}/reviews/\${encodeURIComponent(state.selectedReviewId)}/decide\`,
-          {
-            decision: args.decision,
-            scope: args.decision === "terminate" ? args.scope : undefined,
-            actor: args.actor,
-            comment: args.comment
+        let payload;
+        try {
+          payload = await requestAction(
+            \`\${API_PREFIX}/runs/\${encodeURIComponent(state.selectedRunId)}/reviews/\${encodeURIComponent(state.selectedReviewId)}/decide\`,
+            {
+              decision: args.decision,
+              scope: args.decision === "terminate" ? args.scope : undefined,
+              actor: args.actor,
+              comment: args.comment
+            }
+          );
+        } catch (error) {
+          if (error?.code !== "INVALID_HUMAN_REVIEW_COMMENT" || state.actionForm?.kind !== "review") {
+            throw error;
           }
-        );
+          state.actionForm.fields.comment = args.comment;
+          state.actionForm.fields.commentError = reviewCommentErrorMessage(error);
+          state.actionForm.confirming = false;
+          renderActionForm();
+          focusActionField("action-review-comment");
+          return;
+        }
         state.resumeDiagnosticsStale = true;
+        persistReviewDraft(state.actionForm?.fields || { decision: args.decision }, "");
         closeActionForm();
         setFlash(
           "success",

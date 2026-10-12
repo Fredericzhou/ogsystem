@@ -228,7 +228,7 @@ assert_file_absent "${happy_run_dir}/shared/index.html"
 
 cli run review decide "$happy_run_id" "$happy_review_id" \
   --decision approve \
-  --comment "approved" \
+  --comment "The reviewed plan satisfies the release criteria." \
   --ogs-dir "$PROJECT_DIR" >/dev/null
 cli run resume "$happy_run_id" --ogs-dir "$PROJECT_DIR" >/dev/null
 
@@ -278,7 +278,7 @@ assert_file_contains "${rework_run_dir}/roles/ship/inbox.md" 'human_review_round
 rework_followup_review_id="$(pending_review_id_for "$rework_run_id")"
 cli run review decide "$rework_run_id" "$rework_followup_review_id" \
   --decision approve \
-  --comment "rework approved" \
+  --comment "The revised plan now addresses the requested risks." \
   --ogs-dir "$PROJECT_DIR" >/dev/null
 cli run resume "$rework_run_id" --ogs-dir "$PROJECT_DIR" >/dev/null
 
@@ -297,7 +297,7 @@ pause_run_dir="$(run_dir_for "$pause_run_id")"
 
 cli run review decide "$pause_run_id" "$pause_review_id" \
   --decision pause \
-  --comment "hold" \
+  --comment "Pause this review until the operator completes the risk check." \
   --ogs-dir "$PROJECT_DIR" >/dev/null
 cli run resume "$pause_run_id" --ogs-dir "$PROJECT_DIR" >/dev/null
 
@@ -318,7 +318,7 @@ terminate_run_dir="$(run_dir_for "$terminate_run_id")"
 cli run review decide "$terminate_run_id" "$terminate_review_id" \
   --decision terminate \
   --scope run \
-  --comment "stop" \
+  --comment "Stop the run because its current result must not be released." \
   --ogs-dir "$PROJECT_DIR" >/dev/null
 cli run resume "$terminate_run_id" --ogs-dir "$PROJECT_DIR" >/dev/null
 
@@ -339,7 +339,7 @@ deploy_fail_run_dir="$(run_dir_for "$deploy_fail_run_id")"
 
 cli run review decide "$deploy_fail_run_id" "$deploy_fail_review_id" \
   --decision approve \
-  --comment "approved" \
+  --comment "The review is approved; validate the deployment failure path." \
   --ogs-dir "$PROJECT_DIR" >/dev/null
 SHIP_DEPLOY_FAIL=1 cli run resume "$deploy_fail_run_id" --ogs-dir "$PROJECT_DIR" >/dev/null
 

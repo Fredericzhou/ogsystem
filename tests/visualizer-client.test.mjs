@@ -2445,6 +2445,14 @@ function createBackend(options = {}) {
           throw new Error(`Unhandled review decision path: ${pathname}`);
         }
         this.lastDecisionBody = JSON.parse(request.body ?? "{}");
+        if (options.failDecisionCode) {
+          return createResponse({
+            error: {
+              code: options.failDecisionCode,
+              message: options.failDecisionMessage || "The review reason is not valid."
+            }
+          }, 400, "Bad Request");
+        }
         if (options.failDecision) {
           return createResponse({ error: "boom" }, 500, "Internal Server Error");
         }
@@ -3894,9 +3902,13 @@ test("visualizer client review action captures a comment, disables controls whil
   assert.ok(commentInput);
   assert.ok(submitButton);
 
-  await commentInput.input("looks good");
+  await commentInput.input("The draft addresses the stated concerns.");
 
-  const pendingClick = submitButton.click();
+  await submitButton.click();
+  await settle();
+  assert.match(harness.document.getElementById("action-form").textContent, /The draft addresses the stated concerns\./);
+
+  const pendingClick = harness.document.getElementById("action-form-submit").click();
   await settle();
 
   assert.equal(harness.document.getElementById("refresh").disabled, true);
@@ -3909,7 +3921,7 @@ test("visualizer client review action captures a comment, disables controls whil
 
   assert.deepEqual(harness.backend.lastDecisionBody, {
     decision: "approve",
-    comment: "looks good"
+    comment: "The draft addresses the stated concerns."
   });
   assert.equal(
     harness.document.getElementById("flash").textContent,
@@ -3918,6 +3930,102 @@ test("visualizer client review action captures a comment, disables controls whil
   assert.ok(
     harness.document.getElementById("review-detail").textContent.includes("recorded")
   );
+});
+
+test("visualizer blocks Chinese instruction text but accepts a specific reason", async () => {
+  const harness = await createClientHarness();
+  const approveButton = harness.document
+    .getElementById("review-actions")
+    .querySelectorAll("[data-review-action]")
+    .find((button) => button.getAttribute("data-review-action") === "approve");
+  await approveButton.click();
+  await settle();
+  await harness.document.getElementById("action-review-comment").input("填写审阅依据和接受的风险");
+  await harness.document.getElementById("action-form-submit").click();
+  await settle();
+
+  assert.equal(harness.document.getElementById("action-review-back"), null);
+  assert.equal(harness.document.getElementById("action-review-comment").getAttribute("aria-invalid"), "true");
+  assert.match(harness.document.getElementById("action-review-comment-error").textContent, /decision-specific reason/);
+  assert.equal(harness.backend.fetchCalls.some((call) => call.path.endsWith("/decide")), false);
+});
+
+test("visualizer explains that a blank review reason is required", async () => {
+  const harness = await createClientHarness();
+  const approveButton = harness.document.getElementById("review-actions")
+    .querySelectorAll("[data-review-action]")
+    .find((button) => button.getAttribute("data-review-action") === "approve");
+  await approveButton.click();
+  await settle();
+  await harness.document.getElementById("action-form-submit").click();
+  await settle();
+
+  assert.match(harness.document.getElementById("action-review-comment-error").textContent, /Enter a reason/);
+  assert.equal(harness.backend.fetchCalls.some((call) => call.path.endsWith("/decide")), false);
+});
+
+test("visualizer allows editing the review reason on the confirmation step", async () => {
+  const harness = await createClientHarness();
+  const approveButton = harness.document.getElementById("review-actions")
+    .querySelectorAll("[data-review-action]")
+    .find((button) => button.getAttribute("data-review-action") === "approve");
+  await approveButton.click();
+  await settle();
+  await harness.document.getElementById("action-review-comment").input("同意，证据符合审核标准。");
+  await harness.document.getElementById("action-form-submit").click();
+  await settle();
+
+  await harness.document.getElementById("action-review-comment").input("同意，证据与审核标准一致。");
+  await harness.document.getElementById("action-form-submit").click();
+  await settle();
+
+  assert.equal(harness.backend.lastDecisionBody.comment, "同意，证据与审核标准一致。");
+});
+
+test("visualizer auto-saves and restores an unsubmitted review reason draft", async () => {
+  const harness = await createClientHarness();
+  const approveButton = harness.document.getElementById("review-actions")
+    .querySelectorAll("[data-review-action]")
+    .find((button) => button.getAttribute("data-review-action") === "approve");
+  await approveButton.click();
+  await settle();
+  const reason = "The reviewed result meets the acceptance criteria.";
+  await harness.document.getElementById("action-review-comment").input(reason);
+  await harness.document.getElementById("action-form-cancel").click();
+  await settle();
+
+  await approveButton.click();
+  await settle();
+
+  assert.equal(harness.document.getElementById("action-review-comment").value, reason);
+});
+
+test("visualizer returns to the reason field when the server rejects a review comment", async () => {
+  const reason = "The evidence supports this approval.";
+  const harness = await createClientHarness({
+    backend: createBackend({
+      failDecisionCode: "INVALID_HUMAN_REVIEW_COMMENT",
+      failDecisionMessage: "Replace the placeholder with a reason that explains this decision."
+    })
+  });
+  const approveButton = harness.document
+    .getElementById("review-actions")
+    .querySelectorAll("[data-review-action]")
+    .find((button) => button.getAttribute("data-review-action") === "approve");
+  await approveButton.click();
+  await settle();
+  await harness.document.getElementById("action-review-comment").input(reason);
+  await harness.document.getElementById("action-form-submit").click();
+  await settle();
+  await harness.document.getElementById("action-form-submit").click();
+  await settle();
+
+  const commentInput = harness.document.getElementById("action-review-comment");
+  assert.ok(commentInput);
+  assert.equal(commentInput.value, reason);
+  assert.match(harness.document.getElementById("action-review-comment-error").textContent, /decision-specific reason/);
+  assert.equal(harness.document.getElementById("action-review-back"), null);
+  assert.equal(harness.document.getElementById("flash").textContent, "");
 });
 
 test("visualizer hides review actions after a durable decision is recorded", async () => {
@@ -3938,14 +4046,20 @@ test("review termination confirmation explains scope and irreversible effect", a
   await terminateButton.click();
   await settle();
 
-  assert.match(harness.document.getElementById("action-form").textContent, /This ends the current branch and cannot be undone\./);
-  assert.match(harness.document.getElementById("action-form-submit").textContent, /Confirm terminate branch/);
+  await harness.document.getElementById("action-review-comment").input("This branch should stop because its result is invalid.");
+  await harness.document.getElementById("action-form-submit").click();
+  await settle();
+  assert.match(harness.document.getElementById("action-form").textContent, /Terminate the selected branch scope\./);
+  assert.match(harness.document.getElementById("action-form-submit").textContent, /Confirm and record decision/);
+  await harness.document.getElementById("action-review-back").click();
+  await settle();
   const scope = harness.document.getElementById("action-review-scope");
   scope.value = "run";
   await scope.change("run");
   await settle();
-  assert.match(harness.document.getElementById("action-form").textContent, /This ends every branch in the run and cannot be undone\./);
-  assert.match(harness.document.getElementById("action-form-submit").textContent, /Confirm terminate run/);
+  await harness.document.getElementById("action-form-submit").click();
+  await settle();
+  assert.match(harness.document.getElementById("action-form").textContent, /Terminate the selected run scope\./);
 });
 
 test("visualizer client keeps identical review ids independent across runs", async () => {
@@ -3971,6 +4085,9 @@ test("visualizer client keeps identical review ids independent across runs", asy
     .find((button) => button.getAttribute("data-review-action") === "approve");
   assert.ok(approve);
   await approve.click();
+  await harness.document.getElementById("action-review-comment").input("The evidence supports this decision.");
+  await harness.document.getElementById("action-form-submit").click();
+  await settle();
   await harness.document.getElementById("action-form-submit").click();
   await settle();
 
@@ -4032,7 +4149,9 @@ test("visualizer client action failures stay local and show an error flash", asy
 
   await approveButton.click();
   await settle();
-  await harness.document.getElementById("action-review-comment").input("retry later");
+  await harness.document.getElementById("action-review-comment").input("The reviewed result satisfies the contract.");
+  await harness.document.getElementById("action-form-submit").click();
+  await settle();
   await harness.document.getElementById("action-form-submit").click();
   await settle();
 
