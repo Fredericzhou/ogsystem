@@ -756,6 +756,7 @@ export function renderReleaseGatePanel(args: {
   const warnings = Array.isArray(args.readiness?.warnings) ? args.readiness.warnings as JsonRecord[] : [];
   const contractCoverage = (args.readiness?.contractCoverage ?? {}) as JsonRecord;
   const handoffMode = contractCoverage.handoffMode ?? args.contracts?.handoffMode ?? null;
+  const handoffModeUnset = handoffMode === null || handoffMode === undefined || handoffMode === "";
   const missingContracts = Number(contractCoverage.missingCount ?? contractCoverage.missingFlowCount ?? 0);
   const bindingRoles = Array.isArray(args.bindings?.roles) ? args.bindings.roles as JsonRecord[] : [];
   const unresolvedBindings = bindingRoles.filter((binding) =>
@@ -832,8 +833,8 @@ export function renderReleaseGatePanel(args: {
       '</span></div><strong>' + escapeText(blockers.length ? t("release.blockersRemain", { count: String(blockers.length) }, String(blockers.length) + " blocker(s) remain") : t("release.noBlockers", undefined, "No blocking readiness issues.")) +
       '</strong><div class="hint">' + escapeText(warningNote) + '</div></div>',
     '<div class="event"><div class="event-top"><span>' + escapeText(t("readiness.contractCoverage", undefined, "contract coverage")) + '</span><span>' +
-      escapeText(handoffMode === null || handoffMode === undefined
-        ? t("release.contractsNotEnforced", undefined, "not enforced")
+      escapeText(handoffModeUnset
+        ? t("release.contractsOptional", undefined, "optional · not enforced")
         : missingContracts ? t("readiness.missing", { count: String(missingContracts) }, "missing " + String(missingContracts)) : t("common.complete", undefined, "complete")) +
       '</span></div><strong>' + escapeText(t("release.contractReport", undefined, "Contract and schema coverage report")) +
       '</strong><div class="hint">' + escapeText(t("release.bindingRolePackageSummary", { unresolved: String(unresolvedBindings.length), unhealthy: String(unhealthyRoles.length) }, "unresolved bindings " + String(unresolvedBindings.length) + " · unhealthy role packages " + String(unhealthyRoles.length))) + '</div></div>',
@@ -876,24 +877,32 @@ export function renderReleaseGatePanel(args: {
       tone: unresolvedBindingItems.length ? "warning" : undefined
     }),
     renderSummaryListSection({
-      title: t("release.unhealthyRolesTitle", undefined, "role package coverage"),
+      title: t("release.requiredRolePackageCoverageTitle", undefined, "Required role package and schema coverage"),
       items: unhealthyRoleItems,
       emptyLabel: t("readiness.allFilesPresent", undefined, "all required files present"),
       summaryLabel: t("readiness.rolesInspected", { count: String(packageRoles.length) }, String(packageRoles.length) + " role package(s) inspected"),
-      hint: t("release.rolePackageCoverageHint", undefined, "Missing runtime files are surfaced here before release packaging."),
+      hint: t("release.requiredRolePackageCoverageHint", undefined, "Role contracts and output schemas are required runtime files."),
       open: unhealthyRoleItems.length > 0,
       tone: unhealthyRoleItems.length ? "warning" : undefined
     }),
     renderSummaryListSection({
-      title: t("release.missingContractsTitle", undefined, "missing contracts"),
+      title: handoffModeUnset
+        ? t("release.optionalContractsTitle", undefined, "Flow contract coverage · optional")
+        : handoffMode === "strict"
+          ? t("release.requiredContractsTitle", undefined, "Flow contract coverage · required")
+          : t("release.transitionContractsTitle", undefined, "Flow contract coverage · gradual adoption"),
       items: missingContractItems,
-      emptyLabel: t("common.complete", undefined, "complete"),
+      emptyLabel: handoffModeUnset
+        ? t("release.optionalContractsEmpty", undefined, "No flow contract gaps to review.")
+        : t("common.complete", undefined, "complete"),
       summaryLabel: t("release.contractReport", undefined, "Contract and schema coverage report"),
-      hint: handoffMode === null || handoffMode === undefined
-        ? t("release.contractCoverageNotEnforcedHint", undefined, "Flow contracts are not enforced because handoff mode is not configured.")
-        : t("release.contractCoverageHint", undefined, "Every deployable handoff should have visible contract and schema coverage."),
+      hint: handoffModeUnset
+        ? t("release.contractCoverageOptionalHint", undefined, "Optional: without handoff.mode, flow contracts are not enforced and uncovered flows do not block export.")
+        : handoffMode === "strict"
+          ? t("release.contractCoverageStrictHint", undefined, "Required: strict mode needs a valid contract for every eligible handoff; gaps block release.")
+          : t("release.contractCoverageTransitionHint", undefined, "Gradual adoption: the contract bundle is required, while uncovered handoffs remain warnings during rollout."),
       open: missingContractItems.length > 0,
-      tone: missingContractItems.length ? "warning" : undefined
+      tone: missingContractItems.length && handoffMode === "strict" ? "critical" : missingContractItems.length && !handoffModeUnset ? "warning" : undefined
     }),
     '</div></section>',
     '<section class="release-group"><h4>' + escapeText(t("release.group.evidence", undefined, "Evidence and export scope")) + '</h4><div class="structure-list">',
@@ -1872,6 +1881,8 @@ export function renderContractPanel(args: {
   const t: Translator = typeof args.t === "function" ? args.t : (_key, _vars, fallback) => fallback ?? _key;
   const contracts = args.contracts ?? {};
   const runtimeStatus = args.runtimeStatus ?? null;
+  const handoffMode = contracts.handoffMode ?? null;
+  const handoffModeUnset = handoffMode === null || handoffMode === undefined || handoffMode === "";
   const flows = Array.isArray(contracts.flows)
     ? contracts.flows as JsonRecord[]
     : Array.isArray(contracts.contracts)
@@ -1901,10 +1912,22 @@ export function renderContractPanel(args: {
   return [
     '<div class="structure-list">',
     runtimeCard,
-    '<div class="toolbar-row"><div class="toolbar-group"><span class="pill">' + escapeText(t("config.flowCards", undefined, "flow cards")) + '</span><span class="pill">' + escapeText(t("config.covered", undefined, "covered")) + '</span><span class="pill warn">' + escapeText(t("common.missing", undefined, "missing")) + '</span></div></div>',
+    '<div class="toolbar-row"><div class="toolbar-group"><span class="pill">' + escapeText(t("config.flowCards", undefined, "flow cards")) + '</span><span class="pill">' + escapeText(t("config.covered", undefined, "covered")) + '</span><span class="pill' + (handoffModeUnset ? '' : ' warn') + '">' + escapeText(handoffModeUnset ? t("release.contractsOptional", undefined, "optional · not enforced") : t("common.missing", undefined, "missing")) + '</span></div></div>',
     '<div class="event"><div class="event-top"><span>' + escapeText(t("readiness.contractCoverage", undefined, "contract coverage")) + '</span><span>' +
-      escapeText(uncoveredEdges.length ? t("config.uncovered", { count: uncoveredEdges.length }, uncoveredEdges.length + " uncovered") : t("common.complete", undefined, "complete")) +
-      '</span></div><strong>' + escapeText(t("config.strictHandoffCoverage", undefined, "Strict handoff coverage across flows and role inputs")) + '</strong></div>',
+      escapeText(handoffModeUnset
+        ? t("release.contractsOptional", undefined, "optional · not enforced")
+        : uncoveredEdges.length
+          ? t("config.uncovered", { count: uncoveredEdges.length }, uncoveredEdges.length + " uncovered")
+          : t("common.complete", undefined, "complete")) +
+      '</span></div><strong>' + escapeText(handoffModeUnset
+        ? t("release.optionalContractsTitle", undefined, "Flow contract coverage · optional")
+        : handoffMode === "strict"
+          ? t("release.requiredContractsTitle", undefined, "Flow contract coverage · required")
+          : t("release.transitionContractsTitle", undefined, "Flow contract coverage · gradual adoption")) + '</strong><div class="hint">' + escapeText(handoffModeUnset
+        ? t("release.contractCoverageOptionalHint", undefined, "Optional: without handoff.mode, flow contracts are not enforced and uncovered flows do not block export.")
+        : handoffMode === "strict"
+          ? t("release.contractCoverageStrictHint", undefined, "Required: strict mode needs a valid contract for every eligible handoff; gaps block release.")
+          : t("release.contractCoverageTransitionHint", undefined, "Gradual adoption: the contract bundle is required, while uncovered handoffs remain warnings during rollout.")) + '</div></div>',
     ...flows.map((flow) =>
       '<div class="event"><div class="event-top"><span>' +
       escapeText(String(flow.flowKey ?? flow.edgeKey ?? t("common.flow", undefined, "flow"))) +
@@ -1920,7 +1943,7 @@ export function renderContractPanel(args: {
       "</div></div>"
     ),
     ...uncoveredEdges.map((edge) =>
-      '<div class="event"><div class="event-top"><span>' + escapeText(t("config.missingContract", undefined, "missing contract")) + '</span><span>' + escapeText(t("config.coverageGap", undefined, "coverage gap")) + '</span></div><strong>' +
+      '<div class="event"><div class="event-top"><span>' + escapeText(handoffModeUnset ? t("config.optionalContractGap", undefined, "optional contract gap") : handoffMode === "strict" ? t("config.requiredContractGap", undefined, "required contract gap") : t("config.transitionContractGap", undefined, "contract gap · warning")) + '</span><span>' + escapeText(handoffModeUnset ? t("release.contractsOptional", undefined, "optional · not enforced") : t("config.coverageGap", undefined, "coverage gap")) + '</span></div><strong>' +
       escapeText(String(edge.flowKey ?? edge.edgeKey ?? t("config.uncoveredEdge", undefined, "uncovered edge"))) +
       '</strong><div class="hint">' +
       escapeText(String(edge.fromRoleId ?? "n/a") + " -> " + String(edge.toRoleId ?? "n/a")) +

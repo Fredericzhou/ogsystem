@@ -52,7 +52,7 @@ ogs run list --ogs-dir examples/ogs-gstacklike
 ogs run review list <run-id> --ogs-dir examples/ogs-gstacklike
 ogs run review inspect <run-id> <review-id> --ogs-dir examples/ogs-gstacklike
 
-ogs run review decide <run-id> <review-id> --decision approve --comment "approved" --ogs-dir examples/ogs-gstacklike
+ogs run review decide <run-id> <review-id> --decision approve --comment "The evidence supports this bounded experiment; keep the current default unchanged." --ogs-dir examples/ogs-gstacklike
 ogs run resume <run-id> --ogs-dir examples/ogs-gstacklike
 ```
 
@@ -86,7 +86,7 @@ ogs run resume <run-id> --ogs-dir examples/ogs-gstacklike
 3. `ogs run status <run-id> --ogs-dir examples/ogs-gstacklike`
 4. 读取 `latestPendingReviewId`
 5. `ogs run review inspect <run-id> <review-id> --ogs-dir examples/ogs-gstacklike`
-6. `ogs run review decide <run-id> <review-id> --decision approve --comment "approved" --ogs-dir examples/ogs-gstacklike`
+6. `ogs run review decide <run-id> <review-id> --decision approve --comment "The evidence supports this bounded experiment; keep the current default unchanged." --ogs-dir examples/ogs-gstacklike`
 7. `ogs run resume <run-id> --ogs-dir examples/ogs-gstacklike`
 8. 打开 `.ogs/runs/<run-id>/shared/index.html`
 

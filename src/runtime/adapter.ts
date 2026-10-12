@@ -76,6 +76,7 @@ export async function runSystemWithAdapter(args: {
   userProfilePath?: string;
   resumeRunDir?: string;
   runId?: string;
+  onRunInitialized?: (run: { runId: string; runDir: string }) => void | Promise<void>;
   prompt: string;
   workdir: string;
   targetDir?: string;
@@ -124,6 +125,16 @@ export async function runSystemWithAdapter(args: {
     }
 
     if (setup) {
+      if (args.onRunInitialized) {
+        try {
+          await args.onRunInitialized({
+            runId: setup.runContext.runId,
+            runDir: setup.runContext.runDir
+          });
+        } catch (error) {
+          process.stderr.write(`[warn] run initialization callback failed: ${error instanceof Error ? error.message : String(error)}\n`);
+        }
+      }
       if (process.env[TEST_FORCE_RUNTIME_ERROR_AFTER_SETUP_ENV] === "1") {
         throw createRuntimeError({
           errorCode: "RUNTIME_TEST_FORCED_AFTER_SETUP",

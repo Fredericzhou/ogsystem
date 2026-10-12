@@ -51,6 +51,7 @@ import {
   statusTone
 } from "./client-renderers.js";
 import { isValidSelectorPath, isValidSourceRoleId, listContextSelectorCandidates, summarizeContextSelector } from "../context-selector.js";
+import { HUMAN_REVIEW_COMMENT_MAX_LENGTH, HumanReviewCommentError, normalizeHumanReviewComment } from "../runtime/human-review-comment.js";
 import {
   buildRouteSearch,
   normalizeLifecycleView,
@@ -186,6 +187,9 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
   messagesByLocale[locale] = i18n.messages ?? messagesByLocale[locale];
   return `
     const API_PREFIX = ${JSON.stringify(apiPrefix)};
+    const HumanReviewCommentError = ${HumanReviewCommentError.toString()};
+    const normalizeHumanReviewComment = ${normalizeHumanReviewComment.toString()};
+    const HUMAN_REVIEW_COMMENT_MAX_LENGTH = ${JSON.stringify(HUMAN_REVIEW_COMMENT_MAX_LENGTH)};
     const applyStudioAuthoringCommand = window.OGSVisualizerClient?.applyStudioAuthoringCommand;
     const INITIAL_LOCALE = ${JSON.stringify(locale)};
     const I18N_MESSAGES = ${JSON.stringify(messagesByLocale)};
@@ -5438,17 +5442,50 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
           '<label class="field full"><span>' + escapeText(t("form.reason")) + '</span><textarea id="action-stop-reason"' + disabled + '>' + escapeText(form.fields.reason || "") + '</textarea></label>',
           '<div class="actions"><button id="action-form-cancel" class="button subtle"' + disabled + '>' + escapeText(t("action.cancel")) + '</button><button id="action-form-submit" class="button warn"' + disabled + busyAttr + '>' + escapeText(t("form.recordStopRequest")) + '</button></div>'
         ].join("");
+      } else if (form.kind === "review" && form.confirming) {
+        const decision = form.fields.decision;
+        const scope = form.fields.scope || "branch";
+        const decisionLabel = decision === "approve"
+          ? t("review.approve")
+          : decision === "rework"
+            ? t("review.requestRework")
+            : decision === "pause"
+              ? t("review.pause")
+              : t("review.terminateScope", { scope });
+        const effectKey = decision === "approve"
+          ? "form.reviewEffectApprove"
+          : decision === "rework"
+            ? "form.reviewEffectRework"
+            : decision === "pause"
+              ? "form.reviewEffectPause"
+              : "form.reviewEffectTerminate";
+        actionFormEl.innerHTML = [
+          '<div class="event"><div class="event-top"><span>' + escapeText(t("form.confirmReviewDecision")) + '</span><span>' + escapeText(form.fields.reviewId || state.selectedReviewId || "n/a") + '</span></div><strong>' + escapeText(decisionLabel) + '</strong><div class="hint">' + escapeText(t(effectKey, { scope })) + '</div></div>',
+          '<dl class="form-grid review-decision-preview">',
+          '<dt>' + escapeText(t("form.decision")) + '</dt><dd>' + escapeText(decisionLabel) + '</dd>',
+          '<dt>' + escapeText(t("form.comment")) + '</dt><dd class="review-decision-comment">' + escapeText(form.fields.comment || "") + '</dd>',
+          decision === "terminate" ? '<dt>' + escapeText(t("form.terminateScope")) + '</dt><dd>' + escapeText(scope) + '</dd>' : "",
+          '</dl>',
+          '<div class="actions"><button id="action-review-back" class="button subtle"' + disabled + '>' + escapeText(t("form.editReviewDecision")) + '</button><button id="action-form-cancel" class="button subtle"' + disabled + '>' + escapeText(t("action.cancel")) + '</button><button id="action-form-submit" class="button primary"' + disabled + busyAttr + '>' + escapeText(t("form.confirmAndRecordReviewDecision")) + '</button></div>'
+        ].join("");
       } else if (form.kind === "review") {
+        const reasonHintKey = form.fields.decision === "approve"
+          ? "form.reviewReasonApprove"
+          : form.fields.decision === "rework"
+            ? "form.reviewReasonRework"
+            : form.fields.decision === "pause"
+              ? "form.reviewReasonPause"
+              : "form.reviewReasonTerminate";
         actionFormEl.innerHTML = [
           '<div class="event"><div class="event-top"><span>' + escapeText(t("form.reviewDecision")) + '</span><span>' + escapeText(form.fields.reviewId || state.selectedReviewId || "n/a") + '</span></div><strong>' + escapeText(form.fields.decision || t("form.decision")) + '</strong><div class="hint">' + escapeText(t("form.reviewDecisionHint")) + '</div></div>',
           '<div class="form-grid">',
           '<label class="field"><span>' + escapeText(t("form.decision")) + '</span><input id="action-review-decision" value="' + escapeText(form.fields.decision || "") + '" disabled /></label>',
-          '<label class="field full"><span>' + escapeText(t("form.comment")) + '</span><textarea id="action-review-comment"' + disabled + '>' + escapeText(form.fields.comment || "") + '</textarea></label>',
+          '<label class="field full"><span>' + escapeText(t("form.reviewReasonOptional")) + '</span><textarea id="action-review-comment" maxlength="' + HUMAN_REVIEW_COMMENT_MAX_LENGTH + '" aria-describedby="action-review-comment-hint"' + disabled + '>' + escapeText(form.fields.comment || "") + '</textarea><span id="action-review-comment-hint" class="hint">' + escapeText(t(reasonHintKey)) + '</span></label>',
           (form.fields.decision === "terminate"
             ? '<label class="field"><span>' + escapeText(t("form.terminateScope")) + '</span><select id="action-review-scope"' + disabled + '><option value="branch"' + ((form.fields.scope || "branch") === "branch" ? " selected" : "") + '>branch</option><option value="run"' + (form.fields.scope === "run" ? " selected" : "") + '>run</option></select></label>'
             : ""),
           '</div>',
-          '<div class="actions"><button id="action-form-cancel" class="button subtle"' + disabled + '>' + escapeText(t("action.cancel")) + '</button><button id="action-form-submit" class="button primary"' + disabled + busyAttr + '>' + escapeText(t("form.recordReviewDecision")) + '</button></div>'
+          '<div class="actions"><button id="action-form-cancel" class="button subtle"' + disabled + '>' + escapeText(t("action.cancel")) + '</button><button id="action-form-submit" class="button primary"' + disabled + busyAttr + '>' + escapeText(t("form.continueToReviewConfirmation")) + '</button></div>'
         ].join("");
       } else if (form.kind === "saveAs") {
         actionFormEl.innerHTML = [
@@ -5469,6 +5506,16 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
         cancelButton.addEventListener("click", () => {
           if (!state.actionBusy) {
             closeActionForm();
+          }
+        });
+      }
+      const reviewBackButton = document.getElementById("action-review-back");
+      if (reviewBackButton) {
+        reviewBackButton.addEventListener("click", () => {
+          if (!state.actionBusy && state.actionForm?.kind === "review") {
+            state.actionForm.confirming = false;
+            renderActionForm();
+            focusActionField("action-review-comment");
           }
         });
       }
@@ -6093,7 +6140,7 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
             reviewId: state.selectedReviewId,
             decision: button.getAttribute("data-review-action"),
             scope: button.getAttribute("data-review-scope") || detail.scope || "branch",
-            comment: detail.comment || \`recorded via visualizer (\${button.getAttribute("data-review-action")})\`
+            comment: ""
           }, { returnFocusEl: button })
         );
       }
@@ -7333,12 +7380,34 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
         return;
       }
       if (form.kind === "review") {
+        let comment;
+        try {
+          comment = normalizeHumanReviewComment(
+            form.confirming ? form.fields.comment : readActionFieldValue("action-review-comment")
+          );
+        } catch (error) {
+          setFlash("error", error instanceof Error ? error.message : String(error));
+          if (!form.confirming) {
+            focusActionField("action-review-comment");
+          }
+          return;
+        }
+        if (!form.confirming) {
+          const scope = form.fields.decision === "terminate"
+            ? readActionFieldValue("action-review-scope") || form.fields.scope || "branch"
+            : undefined;
+          state.actionForm.fields = Object.assign({}, form.fields, { comment, scope });
+          state.actionForm.confirming = true;
+          renderActionForm();
+          focusActionField("action-form-submit");
+          return;
+        }
         const payload = {
           decision: form.fields.decision,
           scope: form.fields.decision === "terminate"
-            ? readActionFieldValue("action-review-scope") || form.fields.scope || "branch"
+            ? form.fields.scope || "branch"
             : undefined,
-          comment: readActionFieldValue("action-review-comment") || \`recorded via visualizer (\${form.fields.decision})\`
+          comment
         };
         state.actionForm.fields = Object.assign({}, form.fields, payload);
         await submitReviewDecision(payload);

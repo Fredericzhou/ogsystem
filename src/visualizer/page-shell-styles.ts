@@ -233,6 +233,29 @@ export function renderPageShellStyles(): string {
       gap: 3px 8px;
       font-size: 11px;
     }
+    .sidebar .run-card {
+      min-width: 0;
+    }
+    .sidebar .run-title {
+      align-items: flex-start;
+      gap: 5px 7px;
+    }
+    .sidebar .run-title > .truncate {
+      flex: 1 1 110px;
+      overflow-wrap: anywhere;
+    }
+    .sidebar .run-title > .status {
+      flex: 0 1 auto;
+      max-width: 100%;
+      padding: 2px 6px;
+      font-size: 10px;
+      white-space: normal;
+      overflow-wrap: anywhere;
+    }
+    .sidebar .run-card .meta > span {
+      min-width: 0;
+      overflow-wrap: anywhere;
+    }
     .shell.content > .top-nav { grid-row: 1; }
     .shell.content > .flash { grid-row: 2; }
     .shell.content > .main-stage { grid-row: 3; }
@@ -2325,6 +2348,20 @@ export function renderPageShellStyles(): string {
       display: grid;
       grid-template-columns: repeat(2, minmax(0, 1fr));
       gap: 8px;
+    }
+    .review-decision-preview {
+      grid-template-columns: minmax(96px, auto) minmax(0, 1fr);
+      align-items: start;
+      margin: 12px 0;
+    }
+    .review-decision-preview dt {
+      color: var(--muted);
+    }
+    .review-decision-preview dd {
+      min-width: 0;
+      margin: 0;
+      overflow-wrap: anywhere;
+      white-space: pre-wrap;
     }
     .field {
       display: grid;

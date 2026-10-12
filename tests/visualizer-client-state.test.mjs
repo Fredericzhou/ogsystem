@@ -597,7 +597,7 @@ test("client shell control renderers keep lifecycle visibility and run-list filt
 
   const runListHtml = renderRunListHtml({
     runs: [
-      { runId: "run-1", isSimulation: true, status: "waiting_review", finalRoleId: "writer", lastExecutedRoleId: "writer", transitionCount: 3, updatedAt: "2026-05-04T08:09:10.000Z" },
+      { runId: "run-1", isSimulation: true, status: "stopped", hasWaitingHumanReview: true, finalRoleId: "writer", lastExecutedRoleId: "writer", transitionCount: 3, updatedAt: "2026-05-04T08:09:10.000Z" },
       { runId: "run-2", status: "done", finalRoleId: "qa", lastExecutedRoleId: "qa", transitionCount: 5, updatedAt: "2026-05-04T08:10:10.000Z" }
     ],
     filter: "writer",
@@ -609,6 +609,7 @@ test("client shell control renderers keep lifecycle visibility and run-list filt
     statusClass
   });
   assert.match(runListHtml, /data-run-id="run-1"/);
+  assert.match(runListHtml, /data-status="waiting_review"/);
   assert.match(runListHtml, /run\.debugRun/);
   assert.doesNotMatch(runListHtml, /data-run-id="run-2"/);
   assert.match(runListHtml, /aria-label="Run run-1 run\.debugRun status waiting review run\.transitions 3 run\.updated /);
@@ -817,6 +818,7 @@ test("client lifecycle panel renderers cover workbench structure, stats, and tim
   const statsHtml = renderRunStatsHtml({
     header: {
       status: "running",
+      hasWaitingHumanReview: true,
       runMode: "runtime",
       transitionCount: 3,
       activeBranches: 1,
@@ -828,7 +830,7 @@ test("client lifecycle panel renderers cover workbench structure, stats, and tim
     escapeText,
     displayUiToken
   });
-  assert.match(statsHtml, /running/);
+  assert.match(statsHtml, /waiting review/);
   assert.match(statsHtml, /dry run/);
   assert.match(statsHtml, />3</);
 

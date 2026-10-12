@@ -104,7 +104,8 @@ export function renderRunListHtml(args: {
   }
   return visibleRuns
     .map((run) => {
-      const runStatus = displayUiToken(run.status, t);
+      const status = run.hasWaitingHumanReview === true ? "waiting_review" : run.status;
+      const runStatus = displayUiToken(status, t);
       const updatedAt = formatTime(run.updatedAt);
       const ariaLabel = [
         "Run",
@@ -121,7 +122,7 @@ export function renderRunListHtml(args: {
           <button class="run-card ${run.runId === selectedRunId ? "active" : ""}" data-run-id="${escapeText(run.runId)}" aria-label="${escapeText(ariaLabel)}"${run.runId === selectedRunId ? ' aria-current="true"' : ""}>
             <div class="run-title">
               <span class="truncate" title="${escapeText(run.runId)}">${escapeText(run.runId)}</span>
-              <span class="status ${statusClass(run.status)}" data-status="${escapeText(run.status)}">${escapeText(runStatus)}</span>
+              <span class="status ${statusClass(status)}" data-status="${escapeText(status)}">${escapeText(runStatus)}</span>
             </div>
             <div class="meta">
               <span>${escapeText(t(run.isSimulation === true ? "run.debugRun" : "run.actualRun"))}</span>

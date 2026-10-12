@@ -42,7 +42,7 @@ ogs run review inspect <run-id> <review-id>
 ## Approve And Resume
 
 ```bash
-ogs run review decide <run-id> <review-id> --decision approve --comment "approved"
+ogs run review decide <run-id> <review-id> --decision approve --comment "The proposal meets the agreed criteria; the listed risks are acceptable."
 ogs run resume <run-id> --dry-run
 ```
 

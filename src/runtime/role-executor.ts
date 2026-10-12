@@ -224,9 +224,6 @@ function pickDryRunEvent(args: {
   plan: ExecutionPlan;
 }): string | undefined {
   const selectableOutgoing = getSelectableOutgoingFlows(args.node);
-  if (args.node.routingMode === "parallel_split") {
-    return undefined;
-  }
   if (selectableOutgoing.length === 0) {
     return undefined;
   }

@@ -178,7 +178,7 @@ paths:
                 dryRun: { type: boolean }
       responses:
         "200":
-          description: Started run projection.
+          description: Run accepted after initialization; execution continues in the background and is observable through the run APIs and event stream.
         "400":
           $ref: "#/components/responses/ApiError"
         "401":
@@ -192,7 +192,7 @@ paths:
         - $ref: "#/components/parameters/RunId"
       responses:
         "200":
-          description: Resume result projection.
+          description: Resume accepted after initialization; execution continues in the background and is observable through the run APIs and event stream.
         "409":
           $ref: "#/components/responses/ApiError"
         "403":
@@ -232,11 +232,13 @@ paths:
               required: [decision]
               properties:
                 decision: { enum: [approve, rework, pause, terminate] }
-                comment: { type: string }
+                comment: { type: string, maxLength: 2000 }
                 scope: { enum: [branch, run] }
       responses:
         "200":
           description: Durable review decision and reconcile state.
+        "400":
+          $ref: "#/components/responses/ApiError"
         "409":
           $ref: "#/components/responses/ApiError"
         "403":

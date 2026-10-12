@@ -53,6 +53,30 @@ async function seedProject(workdir: string): Promise<void> {
   );
 }
 
+async function seedReviewProject(workdir: string): Promise<void> {
+  await seedProject(workdir);
+  await writeFile(
+    path.resolve(workdir, "system.mmd"),
+    [
+      "flowchart TD",
+      "%% system.id=viz.studio.graph",
+      "%% system.version=1.0.0",
+      "%% law.global=law.minimal.base",
+      "%% entry.role=demo-analyst",
+      "%% review.mode.demo-analyst=required",
+      "%% review.timeout.demo-analyst=3600",
+      "%% review.timeout.action.demo-analyst=pause",
+      "%% review.rework.target.demo-analyst=demo-analyst",
+      "%% review.rework.max.demo-analyst=2",
+      "%% review.terminate.scope.demo-analyst=branch",
+      "input -->|ENTER| analyst[Role:demo-analyst]",
+      "analyst[Role:demo-analyst] -->|ANALYSIS_DONE| output",
+      ""
+    ].join("\n"),
+    "utf8"
+  );
+}
+
 async function seedCyclicProject(workdir: string): Promise<void> {
   await seedProject(workdir);
   await writeFile(
@@ -732,6 +756,62 @@ test("Run opens global operations with fixed run-view tabs", async ({ page }) =>
     await expect(page.locator("#ops-summary")).not.toContainText(/Loading/i);
     await expect(page.locator("#operate-tabs")).toHaveCSS("position", "sticky");
     await expect(page.locator("#console-panel-debug")).not.toHaveCSS("min-height", "100vh");
+  } finally {
+    await page.close();
+    await new Promise<void>((resolve) => started.server.close(() => resolve()));
+  }
+});
+
+test("Run, review, and resume are operable through the visual workflow", async ({ page }) => {
+  const workdir = await mkdtemp(path.join(os.tmpdir(), "ogsystem-run-review-visual-"));
+  await seedReviewProject(workdir);
+  const started = await startVisualizationServer({ workdir, host: "127.0.0.1", port: 0 });
+  try {
+    await page.goto(started.url);
+    await page.getByRole("tab", { name: await resolveLifecycleTabName(page, ["Build", "Design"]) }).click();
+    const debugPanel = page.locator('[data-studio-selection-panel="debug"]');
+    await page.locator('[data-studio-side-tab="debug"]').click();
+    await debugPanel.locator("#workbench-run-input").fill("visual lifecycle smoke");
+    await debugPanel.locator("#workbench-start-run").click();
+
+    await page.waitForFunction(async () => {
+      const response = await fetch("/api/v1/runs");
+      const payload = await response.json();
+      return payload.runs?.[0]?.runId || false;
+    }, undefined, { timeout: 30000 });
+    await expect(debugPanel.locator(".studio-debug-launch-panel .event-top span").last()).not.toHaveText(/idle/i);
+
+    await page.getByRole("tab", { name: await resolveLifecycleTabName(page, ["Operate", "Run"]) }).click();
+    await expect(page.locator("#stats")).toContainText(/waiting review|等待评审/i);
+    await page.locator("#operate-tab-operations").click();
+    await expect(page.locator("#operate-tab-operations")).toHaveAttribute("aria-selected", "true");
+    await expect(page.locator("#operate-tabpanel-reviews")).toBeVisible();
+    const reviewQueue = page.locator("#reviews");
+    await expect(reviewQueue.locator("[data-review-id]")).toHaveCount(1);
+    await reviewQueue.locator("[data-review-id]").click();
+    await page.locator('#review-actions [data-review-action="approve"]').click();
+
+    const comment = page.locator("#action-review-comment");
+    await expect(comment).toBeVisible();
+    await expect(comment).toHaveAttribute("maxlength", "2000");
+    await comment.fill("The simulated output passed the review gate.");
+    await page.locator("#action-form-submit").click();
+    await expect(comment).toHaveCount(0);
+    await expect(page.locator("#action-review-back")).toBeVisible();
+    await page.locator("#action-review-back").click();
+    await expect(comment).toBeVisible();
+    await page.locator("#action-form-submit").click();
+    await expect(page.locator("#action-review-back")).toBeVisible();
+    await expect(page.locator("#action-form")).toContainText("The simulated output passed the review gate.");
+    await page.locator("#action-form-submit").click();
+    await expect(page.locator("#action-form-section")).toBeHidden();
+
+    await page.locator('[data-operate-tab="operations"]').click();
+    await page.locator("#resume-run").click();
+    await page.locator("#action-resume-dry-run").selectOption("true");
+    await page.locator("#action-form-submit").click();
+    await expect(page.locator("#run-list [data-run-id]").first()).toContainText(/done|完成/i, { timeout: 30000 });
+    await expect(page.locator("#stats")).toContainText(/done|完成/i);
   } finally {
     await page.close();
     await new Promise<void>((resolve) => started.server.close(() => resolve()));

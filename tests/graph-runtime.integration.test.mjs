@@ -109,6 +109,41 @@ async function writeModelBoundRole(args) {
   );
 }
 
+test("parallel split dry-run supplies a schema-valid declared event", async () => {
+  const repoRoot = process.cwd();
+  const tempRoot = await mkdtemp(path.join(os.tmpdir(), "ogsystem-parallel-split-dry-run-"));
+  const rolesRoot = path.resolve(tempRoot, "og-roles", "roles");
+  const systemPath = path.resolve(tempRoot, "system.mmd");
+
+  await mkdir(path.resolve(tempRoot, ".ogs"), { recursive: true });
+  await symlink(path.resolve(repoRoot, "og-models"), path.resolve(tempRoot, "og-models"), "dir");
+  await symlink(path.resolve(repoRoot, ".ogs", "runtime.json"), path.resolve(tempRoot, ".ogs", "runtime.json"));
+  await symlink(path.resolve(repoRoot, ".ogs", "user-profile.json"), path.resolve(tempRoot, ".ogs", "user-profile.json"));
+  await writeDefaultModelSelection(tempRoot);
+  await writeModelBoundRole({ rolesRoot, roleId: "splitter", allowedEvents: ["DONE"] });
+  await writeFile(systemPath, `flowchart TD
+%% system.id=test.parallel-split-dry-run
+%% system.version=1.0.0
+%% law.global=law.console.base
+%% entry.role=splitter
+%% role.mode.splitter=parallel_split
+input -->|START| splitter[Role:splitter]
+splitter[Role:splitter] -->|DONE| output
+`, "utf8");
+
+  const result = await runSystemWithAdapter({
+    systemPath,
+    lawsPath: path.resolve(repoRoot, ".ogs", "laws.json"),
+    userProfilePath: path.resolve(repoRoot, ".ogs", "user-profile.json"),
+    prompt: "validate split dry-run output",
+    workdir: tempRoot,
+    dryRun: true
+  });
+
+  assert.equal(result.status, "done");
+  assert.equal(result.auditTrail[0].selectedEvent, "DONE");
+});
+
 test("adapter runs graph debate example with parallel branches, join, and bounded loop", async () => {
   const repoRoot = process.cwd();
   const tempRoot = await mkdtemp(path.join(os.tmpdir(), "ogsystem-langgraph-runtime-"));
@@ -669,7 +704,7 @@ writer[Role:writer] -->|DONE| output
     reviewId: "review.writer@1#1.r1",
     decision: "approve",
     principal: { id: "local:tester", issuer: "ogs:local", displayName: "tester" },
-    comment: "approved"
+    comment: "Approved this bounded test; the existing two-round default stays unchanged."
   });
 
   const resumed = await runSystemWithAdapter({
@@ -766,7 +801,7 @@ writer[Role:writer] -->|DONE| output
     reviewId: "review.writer@1#1.r1",
     decision: "approve",
     principal: { id: "local:tester", issuer: "ogs:local", displayName: "tester" },
-    comment: "approved"
+    comment: "Approved this bounded test; the existing two-round default stays unchanged."
   });
 
   const runDir = path.resolve(tempRoot, ".ogs/runs", runId);

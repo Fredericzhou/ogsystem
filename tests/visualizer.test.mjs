@@ -1686,6 +1686,27 @@ test("visualizer server writes review decisions, stop requests, and reindex thro
     const reindex = await reindexResponse.json();
     assert.equal(reindex.runs[0].runId, runId);
 
+    for (const comment of ["填写审阅依据和接受的风险", "recorded via visualizer (approve)"]) {
+      const invalidDecisionResponse = await fetch(
+        `${url}/api/v1/runs/${runId}/reviews/review.demo-analyst@1%231.r1/decide`,
+        {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({
+            decision: "approve",
+            comment
+          })
+        }
+      );
+      assert.equal(invalidDecisionResponse.status, 400);
+      assert.equal((await invalidDecisionResponse.json()).error.code, "INVALID_HUMAN_REVIEW_COMMENT");
+    }
+
+    const untouchedReview = await fetch(
+      `${url}/api/v1/runs/${runId}/reviews/review.demo-analyst@1%231.r1`
+    );
+    assert.equal((await untouchedReview.json()).decision, undefined);
+
     const decisionResponse = await fetch(
       `${url}/api/v1/runs/${runId}/reviews/review.demo-analyst@1%231.r1/decide`,
       {
@@ -1694,7 +1715,7 @@ test("visualizer server writes review decisions, stop requests, and reindex thro
         body: JSON.stringify({
           decision: "approve",
           actor: "qa",
-          comment: "approved in visualizer"
+          comment: "The evidence supports a bounded experiment; keep the current default."
         })
       }
     );
@@ -1710,7 +1731,7 @@ test("visualizer server writes review decisions, stop requests, and reindex thro
     assert.equal(reviewDetailResponse.status, 200);
     const reviewDetail = await reviewDetailResponse.json();
     assert.equal(reviewDetail.decision, "approve");
-    assert.equal(reviewDetail.comment, "approved in visualizer");
+    assert.equal(reviewDetail.comment, "The evidence supports a bounded experiment; keep the current default.");
     assert.equal(reviewDetail.actor, "test:workflow-operator");
     assert.deepEqual(reviewDetail.principal, {
       id: "test:workflow-operator",
@@ -2825,7 +2846,7 @@ test("visualizer server starts and resumes runs through lifecycle APIs", async (
     });
     assert.equal(startResponse.status, 200);
     const startedRun = await startResponse.json();
-    assert.equal(startedRun.status, "stopped");
+    assert.ok(["running", "stopped"].includes(startedRun.status));
     assert.ok(startedRun.runId);
     const eventsPath = path.resolve(workdir, ".ogs", "runs", startedRun.runId, "events.jsonl");
     const startAudit = (await readFile(eventsPath, "utf8"))
@@ -2851,9 +2872,15 @@ test("visualizer server starts and resumes runs through lifecycle APIs", async (
     assert.equal(runDetail.snapshotManifest.snapshotId, startedRun.runId);
     assert.equal(runDetail.snapshotManifest.source.sourceHash, snapshotManifest.source.sourceHash);
 
-    const reviewsResponse = await fetch(`${url}/api/v1/runs/${startedRun.runId}/reviews`);
-    assert.equal(reviewsResponse.status, 200);
-    const reviews = await reviewsResponse.json();
+    let reviews;
+    for (let attempt = 0; attempt < 1200; attempt += 1) {
+      const reviewsResponse = await fetch(`${url}/api/v1/runs/${startedRun.runId}/reviews`);
+      if (reviewsResponse.ok) {
+        reviews = await reviewsResponse.json();
+        if (reviews.latestPendingReviewId) break;
+      }
+      await new Promise((resolve) => setTimeout(resolve, 25));
+    }
     assert.ok(reviews.latestPendingReviewId);
 
     const decisionResponse = await fetch(
@@ -2885,7 +2912,15 @@ test("visualizer server starts and resumes runs through lifecycle APIs", async (
     assert.equal(resumeResponse.status, 200);
     const resumed = await resumeResponse.json();
     assert.equal(resumed.runId, startedRun.runId);
-    assert.equal(resumed.status, "done");
+    assert.ok(["running", "done"].includes(resumed.status));
+    let finalRunDetail;
+    for (let attempt = 0; attempt < 300; attempt += 1) {
+      const detailResponse = await fetch(`${url}/api/v1/runs/${startedRun.runId}`);
+      finalRunDetail = await detailResponse.json();
+      if (finalRunDetail.header?.status === "done") break;
+      await new Promise((resolve) => setTimeout(resolve, 25));
+    }
+    assert.equal(finalRunDetail.header.status, "done");
     const resumeAudits = (await readFile(eventsPath, "utf8"))
       .split("\n").filter(Boolean).map((line) => JSON.parse(line))
       .filter((event) => event.type === "control.audit" && event.action === "run.resume");
@@ -3149,9 +3184,15 @@ test("visualizer server rejects runtime override paths that escape the active wo
     const startedRun = await validStartResponse.json();
     assert.ok(startedRun.runId);
 
-    const reviewsResponse = await fetch(`${url}/api/v1/runs/${startedRun.runId}/reviews`);
-    assert.equal(reviewsResponse.status, 200);
-    const reviews = await reviewsResponse.json();
+    let reviews;
+    for (let attempt = 0; attempt < 100; attempt += 1) {
+      const reviewsResponse = await fetch(`${url}/api/v1/runs/${startedRun.runId}/reviews`);
+      if (reviewsResponse.ok) {
+        reviews = await reviewsResponse.json();
+        if (reviews.latestPendingReviewId) break;
+      }
+      await new Promise((resolve) => setTimeout(resolve, 25));
+    }
     assert.ok(reviews.latestPendingReviewId);
 
     const decisionResponse = await fetch(

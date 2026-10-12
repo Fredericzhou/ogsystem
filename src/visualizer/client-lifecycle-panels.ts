@@ -316,8 +316,9 @@ export function renderRunStatsHtml(args: {
   if (!header) {
     return "";
   }
+  const status = header.hasWaitingHumanReview === true ? "waiting_review" : header.status;
   const cards = [
-    [t("stats.status"), displayUiToken(header.status, t)],
+    [t("stats.status"), displayUiToken(status, t)],
     [t("stats.mode"), displayUiToken(graphPayload?.simulation?.mode || header.runMode || "runtime", t)],
     [t("stats.transitions"), header.transitionCount],
     [t("stats.activeBranches"), header.activeBranches],

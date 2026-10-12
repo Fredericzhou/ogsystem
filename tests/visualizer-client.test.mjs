@@ -21,6 +21,7 @@ import {
   renderStudioRoleSemanticSummary,
   renderStudioSystemSettingsEditor,
   renderStudioContractEditor,
+  renderContractPanel,
   renderStudioBridgeInspector,
   renderStudioBridgePanel,
   renderStudioDebugOutcomePanel,
@@ -2799,6 +2800,50 @@ test("release gate explains the concrete blockers returned by the release decisi
   assert.match(html, /analyst/);
 });
 
+test("release gate distinguishes optional flow contracts from strict requirements", () => {
+  const render = (handoffMode) => renderReleaseGatePanel({
+    validation: { ok: true, diagnostics: [] },
+    readiness: { blockers: [], contractCoverage: { handoffMode, missingFlowCount: 1 } },
+    contracts: { uncoveredEdges: [{ flowKey: "writer:DONE:reviewer" }] },
+    rolePackages: {},
+    bindings: {},
+    workbenchSavedPath: "system.mmd",
+    workbenchDirty: false,
+    exportReady: true,
+    t: testTranslator
+  });
+
+  const optionalHtml = render(null);
+  assert.match(optionalHtml, /Required role package and schema coverage/);
+  assert.match(optionalHtml, /Flow contract coverage · optional/);
+  assert.match(optionalHtml, /uncovered flows do not block export/);
+  assert.match(optionalHtml, /optional · not enforced/);
+
+  const strictHtml = render("strict");
+  assert.match(strictHtml, /Flow contract coverage · required/);
+  assert.match(strictHtml, /gaps block release/);
+
+  const transitionHtml = render("transition");
+  assert.match(transitionHtml, /Flow contract coverage · gradual adoption/);
+  assert.match(transitionHtml, /uncovered handoffs remain warnings/);
+});
+
+test("contract inspector labels unconfigured handoff contracts as optional", () => {
+  const html = renderContractPanel({
+    contracts: {
+      handoffMode: null,
+      flows: [],
+      uncoveredEdges: [{ flowKey: "writer:DONE:reviewer", fromRoleId: "writer", toRoleId: "reviewer" }]
+    },
+    t: testTranslator
+  });
+
+  assert.match(html, /Flow contract coverage · optional/);
+  assert.match(html, /optional contract gap/);
+  assert.match(html, /uncovered flows do not block export/);
+  assert.doesNotMatch(html, /Strict handoff coverage/);
+});
+
 test("visualizer client renders empty workspace without project API writes", async () => {
   const harness = await createClientHarness({
     workspace: {
@@ -3098,7 +3143,7 @@ test("visualizer client keeps console and run list interactions idempotent acros
     .querySelectorAll("[data-run-id]")
     .find((button) => button.getAttribute("data-run-id") === "run-123");
   assert.ok(runButton);
-  assert.match(runButton.getAttribute("aria-label"), /Run run-123 Actual run status \w+ transitions \d+ updated/);
+  assert.match(runButton.getAttribute("aria-label"), /Run run-123 Actual run status waiting review transitions \d+ updated/);
   const fetchCountBefore = harness.backend.fetchCalls.length;
   await runButton.click();
   await settle();
@@ -3253,8 +3298,8 @@ test("visualizer client renders zh-CN chrome while preserving runtime identifier
   assert.match(harness.document.getElementById("failure-summary").textContent, /TOOL_EXECUTION_TIMEOUT/);
   assert.match(harness.document.getElementById("failure-summary").textContent, /超时预算耗尽/);
   assert.match(harness.document.getElementById("resume-controls").textContent, /加载诊断/);
-  assert.match(harness.document.getElementById("run-list").textContent, /已停止/);
-  assert.match(harness.document.getElementById("stats").textContent, /已停止/);
+  assert.match(harness.document.getElementById("run-list").textContent, /等待评审/);
+  assert.match(harness.document.getElementById("stats").textContent, /等待评审/);
   assert.match(harness.document.getElementById("timeline").textContent, /待处理/);
   assert.match(harness.document.getElementById("project-wizard").textContent, /警告/);
   assert.match(harness.document.getElementById("state").textContent, /执行状态/);
@@ -3816,7 +3861,7 @@ test("visualizer client ignores late run-detail responses from an older run sele
   assert.doesNotMatch(harness.document.getElementById("failure-summary").textContent, /TOOL_EXECUTION_TIMEOUT/);
 });
 
-test("visualizer client review action captures a comment, disables controls while busy, and flashes success", async () => {
+test("visualizer client allows an optional reason, previews the decision, and records only after confirmation", async () => {
   const decisionDeferred = createDeferred();
   const harness = await createClientHarness({
     backend: createBackend({ decisionDeferred })
@@ -3836,10 +3881,35 @@ test("visualizer client review action captures a comment, disables controls whil
   assert.equal(harness.document.getElementById("action-review-actor"), null);
   assert.ok(commentInput);
   assert.ok(submitButton);
+  assert.equal(commentInput.value, "");
 
-  await commentInput.input("looks good");
+  await harness.document.getElementById("action-form-submit").click();
+  await settle();
+  assert.ok(harness.document.getElementById("action-review-back"));
+  assert.equal(harness.backend.lastDecisionBody, null);
+  await harness.document.getElementById("action-review-back").click();
+  await settle();
 
-  const pendingClick = submitButton.click();
+  await harness.document.getElementById("action-review-comment").input("填写审阅依据和接受的风险");
+  await harness.document.getElementById("action-form-submit").click();
+  await settle();
+  assert.match(harness.document.getElementById("flash").textContent, /Replace the placeholder/);
+  assert.equal(harness.backend.lastDecisionBody, null);
+
+  const reason = "The evidence supports a bounded test; keep the two-round default unchanged.";
+  await harness.document.getElementById("action-review-comment").input(reason);
+  await harness.document.getElementById("action-form-submit").click();
+  await settle();
+  assert.equal(harness.backend.lastDecisionBody, null);
+  assert.ok(harness.document.getElementById("action-form").innerHTML.includes(reason));
+
+  await harness.document.getElementById("action-review-back").click();
+  await settle();
+  assert.equal(harness.document.getElementById("action-review-comment").value, reason);
+  await harness.document.getElementById("action-form-submit").click();
+  await settle();
+
+  const pendingClick = harness.document.getElementById("action-form-submit").click();
   await settle();
 
   assert.equal(harness.document.getElementById("refresh").disabled, true);
@@ -3852,7 +3922,7 @@ test("visualizer client review action captures a comment, disables controls whil
 
   assert.deepEqual(harness.backend.lastDecisionBody, {
     decision: "approve",
-    comment: "looks good"
+    comment: reason
   });
   assert.equal(
     harness.document.getElementById("flash").textContent,
@@ -3876,7 +3946,9 @@ test("visualizer client action failures stay local and show an error flash", asy
 
   await approveButton.click();
   await settle();
-  await harness.document.getElementById("action-review-comment").input("retry later");
+  await harness.document.getElementById("action-review-comment").input("Retry after confirming the role package contract is corrected.");
+  await harness.document.getElementById("action-form-submit").click();
+  await settle();
   await harness.document.getElementById("action-form-submit").click();
   await settle();
 
@@ -4264,7 +4336,7 @@ test("visualizer client edits the Mermaid workbench, saves, and starts a run", a
   assert.equal(harness.backend.lastStartBody.userProfilePath, ".ogs/user-profile.json");
   assert.equal(harness.backend.lastStartBody.lawsPath, ".ogs/laws.json");
   assert.equal(harness.promptCalls.length, 0);
-  assert.equal(harness.document.getElementById("flash").textContent, "Start completed for run-123 (done).");
+  assert.equal(harness.document.getElementById("flash").textContent, "Run started: run-123 (done).");
   assert.equal(
     harness.document.getElementById("console-tabs")
       .querySelectorAll("[data-console-tab]")

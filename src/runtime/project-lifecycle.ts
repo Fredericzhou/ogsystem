@@ -8,6 +8,7 @@
  * - Does not execute graph runtime transitions.
  */
 import { randomUUID } from "node:crypto";
+import { normalizeHumanReviewComment } from "./human-review-comment.js";
 import type { Dirent } from "node:fs";
 import { createReadStream } from "node:fs";
 import { appendFile, cp, mkdir, open, readFile, readdir, stat, writeFile } from "node:fs/promises";
@@ -2119,6 +2120,7 @@ export async function writeHumanReviewDecision(args: {
   if (priorDecision && priorDecision.decision !== "pause") {
     throw new Error(`Review "${args.reviewId}" already has a durable decision; refusing to overwrite it.`);
   }
+  const comment = normalizeHumanReviewComment(args.comment);
   const runDetail = await inspectRun(args.workdir, args.runId);
   const resolvedConfig = asRecord(runDetail.resolvedConfig);
   const effectiveConfig = asRecord(resolvedConfig?.effective);
@@ -2156,7 +2158,7 @@ export async function writeHumanReviewDecision(args: {
     committedAt: new Date().toISOString(),
     decidedAt: new Date().toISOString(),
     decision: args.decision,
-    comment: args.comment,
+    ...(comment ? { comment } : {}),
     actor: args.principal.id,
     principal: args.principal,
     scope: effectiveScope

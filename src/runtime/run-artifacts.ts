@@ -135,7 +135,7 @@ function timestampForRunId(date: Date): string {
   ].join("-");
 }
 
-function buildRunId(createdAt: Date): string {
+export function createRunId(createdAt: Date): string {
   const entropy = createHash("sha256")
     .update(`${process.pid}:${createdAt.toISOString()}:${randomUUID()}`)
     .digest("hex")
@@ -742,7 +742,7 @@ export async function initializeRunContext(args: {
     });
   }
   const createdAt = new Date();
-  const runId = args.resumeRunDir ? basename(resolve(args.workdir, args.resumeRunDir)) : args.runId ?? buildRunId(createdAt);
+  const runId = args.resumeRunDir ? basename(resolve(args.workdir, args.resumeRunDir)) : args.runId ?? createRunId(createdAt);
   const runCreatedAt = args.resumeRunDir
     ? parseCreatedAtFromRunId(runId) ?? createdAt.toISOString()
     : createdAt.toISOString();

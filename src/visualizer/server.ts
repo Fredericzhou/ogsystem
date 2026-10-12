@@ -7,7 +7,7 @@
  * - Read-mostly; mutations are limited to lifecycle/control-plane entrypoints.
  */
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
-import { appendFile, mkdir, readdir, readFile, stat, unlink, writeFile } from "node:fs/promises";
+import { appendFile, mkdir, readFile, stat, unlink, writeFile } from "node:fs/promises";
 import { createHash } from "node:crypto";
 import { isIP } from "node:net";
 import { dirname, resolve, sep } from "node:path";
@@ -15,12 +15,12 @@ import { fileURLToPath } from "node:url";
 
 import { runSystemWithAdapter } from "../runtime/adapter.js";
 import { randomUUID } from "node:crypto";
+import { createRunId } from "../runtime/run-artifacts.js";
 import { loadSystemFromMermaid } from "../runtime/parse-mermaid.js";
 import {
   rebuildRunsIndex,
   RunRoleIoLookupError,
   recordControlPlaneAudit,
-  resolveOgsPaths,
   syncProjectModels,
 } from "../runtime/project-lifecycle.js";
 import { redactUnknown } from "../runtime/redaction.js";
@@ -47,6 +47,7 @@ import {
 } from "./run-query-service.js";
 import { inspectHumanReview, listHumanReviews } from "./review-query-service.js";
 import { requestStop, writeHumanReviewDecision } from "./run-control-service.js";
+import { HumanReviewCommentError } from "../runtime/human-review-comment.js";
 import {
   createServeSession,
   fingerprintServeProject,
@@ -1274,27 +1275,6 @@ async function handleApiReindex(workdir: string, response: ServerResponse): Prom
   jsonResponse(response, 200, index);
 }
 
-async function detectNewRunId(workdir: string, beforeIds: Set<string>): Promise<string> {
-  const indexed = await loadIndexedRuns(workdir).catch(() => []);
-  const created = indexed.find((run) => {
-    const record = asRecord(run);
-    const runId = asString(record?.runId);
-    return runId !== undefined && !beforeIds.has(runId);
-  });
-  const createdRunId = asString(asRecord(created)?.runId);
-  if (createdRunId) {
-    return createdRunId;
-  }
-  const runsDir = resolveOgsPaths(workdir).runsDir;
-  const entries = (await readdir(runsDir).catch(() => []))
-    .sort((left, right) => right.localeCompare(left));
-  const fallback = entries.find((entry) => !beforeIds.has(entry));
-  if (fallback) {
-    return fallback;
-  }
-  throw new HttpError(500, "RUN_ID_DISCOVERY_FAILED", "Run completed but no runId could be determined.");
-}
-
 async function writeRunSnapshotManifest(args: {
   workdir: string;
   runId: string;
@@ -1341,34 +1321,67 @@ async function handleApiRunStart(
       workspace
     );
   }
-  const beforeIds = new Set(
-    (await loadIndexedRuns(workdir).catch(() => []))
-      .map((run) => asString(asRecord(run)?.runId))
-      .filter((runId): runId is string => Boolean(runId))
-  );
-  const result = await runSystemWithAdapter({
+  const runId = createRunId(new Date());
+  let resolveRunReady: (() => void) | undefined;
+  const runReady = new Promise<void>((resolveReady) => {
+    resolveRunReady = resolveReady;
+  });
+  let initialized = false;
+  let result: Awaited<ReturnType<typeof runSystemWithAdapter>> | undefined;
+  let executionError: unknown;
+  const execution = runSystemWithAdapter({
     systemPath: resolveRuntimePathWithinProject(workdir, systemPath, "systemPath"),
     prompt,
     runtimeConfigPath: resolveOptionalRuntimePathWithinProject(workdir, asString(body.runtimePath), "runtimePath"),
     userProfilePath: resolveOptionalRuntimePathWithinProject(workdir, asString(body.userProfilePath), "userProfilePath"),
     lawsPath: resolveOptionalRuntimePathWithinProject(workdir, asString(body.lawsPath), "lawsPath"),
     workdir,
+    runId,
     targetDir: asString(body.targetDir),
     dryRun: body.dryRun === true,
     cleanupExecutionHistory: asNumber(body.cleanupExecutionHistory),
-    logRun: false
+    logRun: false,
+    onRunInitialized: async () => {
+      try {
+        await writeRunSnapshotManifest({ workdir, runId, systemPath });
+        await recordControlPlaneAudit({ workdir, runId, action: "run.start", principal });
+        await rebuildRunsIndex(workdir);
+        clearRunsListCache(workdir);
+      } catch (error) {
+        process.stderr.write(`[warn] failed to record run start metadata for ${runId}: ${error instanceof Error ? error.message : String(error)}\n`);
+      } finally {
+        initialized = true;
+        resolveRunReady?.();
+      }
+    }
   });
-  await rebuildRunsIndex(workdir);
-  const runId = await detectNewRunId(workdir, beforeIds);
-  await writeRunSnapshotManifest({ workdir, runId, systemPath });
-  await recordControlPlaneAudit({ workdir, runId, action: "run.start", principal });
+  const completion = execution.then(
+    (value) => {
+      result = value;
+    },
+    (error) => {
+      executionError = error;
+    }
+  ).then(async () => {
+    if (!initialized) {
+      resolveRunReady?.();
+    }
+    await rebuildRunsIndex(workdir).catch((error) => {
+      process.stderr.write(`[warn] failed to refresh run index for ${runId}: ${error instanceof Error ? error.message : String(error)}\n`);
+    });
+    clearRunsListCache(workdir);
+  });
+  await Promise.race([runReady, completion]);
+  if (!initialized && executionError) {
+    throw executionError;
+  }
   jsonResponse(
     response,
     200,
     mapRunLifecycleView({
       runId,
-      status: asString(asRecord(result)?.status) ?? "unknown",
-      resultSummary: summarizeAdapterResult(result),
+      status: asString(asRecord(result)?.status) ?? "running",
+      resultSummary: result ? summarizeAdapterResult(result) : {},
       followUpActions: [
         {
           action: "open-run-detail",
@@ -1397,7 +1410,14 @@ async function handleApiRunResume(
   const prompt =
     asString(body.input) ??
     (await readFile(resolve(runDir, "request.md"), "utf8")).replace(/\s+$/, "");
-  const result = await runSystemWithAdapter({
+  let resolveRunReady: (() => void) | undefined;
+  const runReady = new Promise<void>((resolveReady) => {
+    resolveRunReady = resolveReady;
+  });
+  let initialized = false;
+  let result: Awaited<ReturnType<typeof runSystemWithAdapter>> | undefined;
+  let executionError: unknown;
+  const execution = runSystemWithAdapter({
     systemPath: resolveRuntimePathWithinProject(workdir, systemPath, "systemPath"),
     prompt,
     runtimeConfigPath: resolveOptionalRuntimePathWithinProject(workdir, asString(body.runtimePath), "runtimePath"),
@@ -1408,28 +1428,69 @@ async function handleApiRunResume(
     targetDir: asString(body.targetDir),
     dryRun: body.dryRun === true,
     cleanupExecutionHistory: asNumber(body.cleanupExecutionHistory),
-    logRun: false
+    logRun: false,
+    onRunInitialized: async () => {
+      try {
+        await recordControlPlaneAudit({ workdir, runId, action: "run.resume", principal });
+        await rebuildRunsIndex(workdir);
+        clearRunsListCache(workdir);
+        for (const session of await listServeSessions(workdir)) {
+          const turn = session.turns.find((item) => item.runId === runId);
+          if (!turn) continue;
+          turn.status = "running";
+          await persistServeSession(workdir, session);
+          await emitSessionEvent(workdir, session.sessionId, { type: "turn.resumed", turnId: turn.turnId, runId, status: turn.status });
+        }
+      } catch (error) {
+        process.stderr.write(`[warn] failed to record resume metadata for ${runId}: ${error instanceof Error ? error.message : String(error)}\n`);
+      } finally {
+        initialized = true;
+        resolveRunReady?.();
+      }
+    }
   });
-  await rebuildRunsIndex(workdir);
-  for (const session of await listServeSessions(workdir)) {
-    const turn = session.turns.find((item) => item.runId === runId);
-    if (!turn) continue;
-    turn.status = asString(asRecord(result)?.status) ?? "unknown";
-    await persistServeSession(workdir, session);
-    await emitSessionEvent(workdir, session.sessionId, { type: "turn.resumed", turnId: turn.turnId, runId, status: turn.status });
+  const completion = execution.then(
+    (value) => {
+      result = value;
+    },
+    (error) => {
+      executionError = error;
+    }
+  ).then(async () => {
+    if (!initialized) {
+      resolveRunReady?.();
+    }
+    await rebuildRunsIndex(workdir).catch((error) => {
+      process.stderr.write(`[warn] failed to refresh run index for resumed run ${runId}: ${error instanceof Error ? error.message : String(error)}\n`);
+    });
+    clearRunsListCache(workdir);
+    if (result) {
+      for (const session of await listServeSessions(workdir)) {
+        const turn = session.turns.find((item) => item.runId === runId);
+        if (!turn) continue;
+        turn.status = asString(asRecord(result)?.status) ?? "unknown";
+        await persistServeSession(workdir, session);
+        await emitSessionEvent(workdir, session.sessionId, { type: "turn.completed", turnId: turn.turnId, runId, status: turn.status });
+      }
+    }
+  }).catch((error) => {
+    process.stderr.write(`[warn] failed to finalize resumed run ${runId}: ${error instanceof Error ? error.message : String(error)}\n`);
+  });
+  await Promise.race([runReady, completion]);
+  if (!initialized && executionError) {
+    throw executionError;
   }
-  await recordControlPlaneAudit({ workdir, runId, action: "run.resume", principal });
   jsonResponse(
     response,
     200,
     mapRunLifecycleView({
       runId,
-      status: asString(asRecord(result)?.status) ?? "unknown",
-      resultSummary: summarizeAdapterResult(result),
+      status: asString(asRecord(result)?.status) ?? "running",
+      resultSummary: result ? summarizeAdapterResult(result) : {},
       followUpActions: [
         {
           action: "open-run-detail",
-          label: `Resume finished for ${runId}; inspect the updated run detail.`
+          label: `Resume started for ${runId}; inspect the live run detail.`
         },
         {
           action: "check-resume-diagnostics",
@@ -1559,6 +1620,9 @@ function normalizeError(error: unknown): HttpError {
     return error;
   }
   const message = error instanceof Error ? error.message : String(error);
+  if (error instanceof HumanReviewCommentError) {
+    return new HttpError(400, error.code, message);
+  }
   if (/ must stay within the current workdir\.$/.test(message)) {
     return new HttpError(400, "PROJECT_PATH_OUTSIDE_WORKDIR", message);
   }

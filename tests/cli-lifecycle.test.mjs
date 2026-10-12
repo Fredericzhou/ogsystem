@@ -291,7 +291,7 @@ test("lifecycle cli advanced-features template runs a local review rework loop",
     "--decision",
     "approve",
     "--comment",
-    "looks good",
+    "The evidence is sufficient for this bounded review. Keep the current default.",
     "--ogs-dir",
     projectDir
   ]);
@@ -680,6 +680,33 @@ test("lifecycle cli review commands expose pending human review state and can ap
   assert.equal(reviewInspectPayload.currentState.status, "pending");
   assert.equal(reviewInspectPayload.requestSnapshot.reviewId, "review.test-operator@1#1.r1");
 
+  for (const comment of ["填写审阅依据和接受的风险"]) {
+    const invalidDecision = await runCli([
+      "run",
+      "review",
+      "decide",
+      runId,
+      "review.test-operator@1#1.r1",
+      "--decision",
+      "approve",
+      ...(comment === undefined ? [] : ["--comment", comment]),
+      "--ogs-dir",
+      tempRoot
+    ]);
+    assert.equal(invalidDecision.code, 1);
+    assert.match(invalidDecision.stderr, /Replace the placeholder/i);
+  }
+  const reviewAfterRejectedDecisions = await runCli([
+    "run",
+    "review",
+    "inspect",
+    runId,
+    "review.test-operator@1#1.r1",
+    "--ogs-dir",
+    tempRoot
+  ]);
+  assert.equal(JSON.parse(reviewAfterRejectedDecisions.stdout).decisionSnapshot, undefined);
+
   const decide = await runCli([
     "run",
     "review",
@@ -688,8 +715,6 @@ test("lifecycle cli review commands expose pending human review state and can ap
     "review.test-operator@1#1.r1",
     "--decision",
     "approve",
-    "--comment",
-    "approved",
     "--ogs-dir",
     tempRoot
   ]);
@@ -775,7 +800,7 @@ test("lifecycle cli review commands preserve paused status and allow a later app
     "--decision",
     "pause",
     "--comment",
-    "hold",
+    "Pause until the product owner confirms the experiment criteria.",
     "--ogs-dir",
     tempRoot
   ]);
@@ -813,7 +838,7 @@ test("lifecycle cli review commands preserve paused status and allow a later app
     "--decision",
     "approve",
     "--comment",
-    "approved after hold",
+    "Approved after hold; keep the current two-round default pending evidence.",
     "--ogs-dir",
     tempRoot
   ]);

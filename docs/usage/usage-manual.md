@@ -341,9 +341,11 @@ ogs run status <run-id>
 ```bash
 ogs run review list <run-id>
 ogs run review inspect <run-id> <review-id>
-ogs run review decide <run-id> <review-id> --decision approve --comment "approved"
+ogs run review decide <run-id> <review-id> --decision approve --comment "Evidence supports this bounded experiment; keep the current default unchanged."
 ogs run resume <run-id> --dry-run
 ```
+
+`--comment` is optional for human review decisions. When provided, it is recorded with the decision and should explain the operator's reasoning.
 
 这条路径是 runtime-native human review：
 
@@ -401,7 +403,7 @@ ogs doctor --required opencode --system system.mmd
 ogs run start --system system.mmd --laws .ogs/laws.json --user-profile .ogs/user-profile.json --input "是否应该为当前系统增加跨节点远程执行？请比较成本、可靠性和风险。"
 ```
 
-运行暂停后，通过 `ogs run status <run-id>` 获取 `latestPendingReviewId`，然后执行 `ogs run review inspect <run-id> <review-id>`；审核完成后用 `ogs run review decide <run-id> <review-id> --decision approve --comment "审核意见"` 写入决定，再执行 `ogs run resume <run-id>`。在项目目录运行 `ogs vis --ogs-dir .` 可查看图、角色执行、审核状态和事件；完整命令及配置说明见该项目的 `README.md`。
+运行暂停后，可在 Visualizer 的 Runs 页面查看状态并打开运行详情，在 Reviews 页面查看待审项和审核内容。选择决定后填写具体理由，在确认页核对决定与影响，再提交；批准或返工决定应用后，使用运行详情中的 Resume 操作继续运行。等价 CLI 操作为 `ogs run status`、`ogs run review list/inspect/decide` 和 `ogs run resume`。Visualizer 通过 `ogs vis --ogs-dir .` 启动；CLI/API 也要求具体审核理由，空白及常见占位文本会被拒绝。
 
 Visualizer 的 Run 页面默认显示“流转”：按实际执行顺序查看初始请求、每个 Role 的输入/输出和后续路由。点击 Role 名称可定位对应步骤并展开图谱；图谱默认折叠在流转页下方，画布按整行展示，运行状态与关键信号保持常显，重复的角色 I/O 快照和补充字段按需展开。自动连线从两端节点的近侧候选连接桩中选择；先减少与已布线边交叉，再缩短路径并减少折点。每条线在连接桩处保留垂直于节点面的引出和进入短段，使箭头方向清晰。不同 Role 在步骤与图谱中使用一致的颜色标记，名称始终作为辨识依据。
 
@@ -1291,7 +1293,7 @@ ogs run logs <run-id> --engine --follow --ndjson
 ogs run logs <run-id> --role <role-id> --since 2026-04-18T10:00:00Z
 ogs run review list <run-id>
 ogs run review inspect <run-id> <review-id>
-ogs run review decide <run-id> <review-id> --decision approve
+ogs run review decide <run-id> <review-id> --decision approve --comment "Evidence supports this bounded experiment; keep the current default unchanged."
 ogs run resume <run-id> --dry-run
 ogs run stop <run-id>
 ogs visualizer --ogs-dir .

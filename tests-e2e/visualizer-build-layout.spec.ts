@@ -206,6 +206,7 @@ test("Build workbench keeps view toggles in footer and aligns graph with docked 
     await expectDockedSelectionAligned(page);
     const roleNode = page.locator('#studio-graph-root [data-cell-id="demo-analyst"]').first();
     await expect(roleNode).toBeVisible();
+    await page.waitForTimeout(400);
     await expect(page).toHaveScreenshot("build-workbench-desktop.png", {
       animations: "disabled",
       caret: "hide",

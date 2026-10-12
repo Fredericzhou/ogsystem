@@ -32,6 +32,7 @@ import {
   resolveRunDir,
   writeHumanReviewDecision
 } from "./project-lifecycle.js";
+import { HumanReviewCommentError } from "./human-review-comment.js";
 import { streamRunLogs } from "./project-lifecycle.js";
 import { createLocalControlPlanePrincipal } from "./identity.js";
 import {
@@ -389,12 +390,12 @@ function usageRun(subcommand?: RunSubcommand): string {
       "Usage:",
       "  ogs run review list <run-id> [--ogs-dir <path>]",
       "  ogs run review inspect <run-id> <review-id> [--ogs-dir <path>]",
-      "  ogs run review decide <run-id> <review-id> --decision <approve|rework|pause|terminate> [--comment <text>] [--scope <branch|run>] [--ogs-dir <path>]",
+      "  ogs run review decide <run-id> <review-id> --decision <approve|rework|pause|terminate> --comment <reason> [--scope <branch|run>] [--ogs-dir <path>]",
       "",
       "Examples:",
       "  ogs run review list <run-id>",
       "  ogs run review inspect <run-id> <review-id>",
-      "  ogs run review decide <run-id> <review-id> --decision approve",
+      "  ogs run review decide <run-id> <review-id> --decision approve --comment 'Evidence supports this bounded experiment; keep the default unchanged.'",
       "  ogs run review decide <run-id> <review-id> --decision rework --comment \"missing evidence\""
     ].join("\n");
   }
@@ -1664,6 +1665,8 @@ main()
     const runtimeError =
       error instanceof RuntimeError
         ? error
+        : error instanceof HumanReviewCommentError
+          ? createCliInputError("CLI_RUN_REVIEW_COMMENT_INVALID", error.message)
         : createRuntimeError(
             normalizeRuntimeError(error, {
               errorCode: "CLI_COMMAND_FAILED",
