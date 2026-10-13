@@ -1,6 +1,7 @@
 import ELK from "elkjs/lib/elk.bundled.js";
 
 import type { GraphViewModel, GraphViewModelEdge, GraphViewModelNode } from "../studio-contracts.js";
+import { formatStudioEdgeSummaryLabel } from "../studio-edge-semantics.js";
 import {
   buildProjection,
   type LayoutDiagnostic,
@@ -48,9 +49,24 @@ type ElkGraph = {
 };
 
 function configFor(mode: StudioLayoutMode): LayoutConfig {
-  if (mode === "stacked") return { direction: "DOWN", padding: 64, nodeSpacing: 56, layerSpacing: 92 };
-  if (mode === "compact") return { direction: "RIGHT", padding: 50, nodeSpacing: 34, layerSpacing: 58 };
-  return { direction: "RIGHT", padding: 64, nodeSpacing: 44, layerSpacing: 76 };
+  if (mode === "stacked") return { direction: "DOWN", padding: 64, nodeSpacing: 64, layerSpacing: 92 };
+  if (mode === "compact") return { direction: "RIGHT", padding: 50, nodeSpacing: 42, layerSpacing: 58 };
+  return { direction: "RIGHT", padding: 64, nodeSpacing: 52, layerSpacing: 76 };
+}
+
+function estimateFlowLabelWidth(value: string): number {
+  return Array.from(value).reduce((width, character) => {
+    if (/\s/u.test(character)) return width + 3.5;
+    if (/[\u2e80-\u9fff\uff00-\uffef]/u.test(character)) return width + 10;
+    return width + 6;
+  }, 0);
+}
+
+function layerSpacingFor(viewModel: GraphViewModel, mode: StudioLayoutMode, minimum: number): number {
+  if (mode === "stacked") return minimum;
+  const longestLabel = viewModel.edges.reduce((width, edge) =>
+    Math.max(width, estimateFlowLabelWidth(formatStudioEdgeSummaryLabel(edge))), 0);
+  return Math.max(minimum, Math.ceil(longestLabel + 44));
 }
 
 function edgeChannelRank(edge: GraphViewModelEdge): number {
@@ -229,7 +245,7 @@ function createElkGraph(
         "elk.direction": config.direction,
         "elk.edgeRouting": "ORTHOGONAL",
         "elk.spacing.nodeNode": String(config.nodeSpacing),
-        "elk.layered.spacing.nodeNodeBetweenLayers": String(config.layerSpacing),
+        "elk.layered.spacing.nodeNodeBetweenLayers": String(layerSpacingFor(viewModel, mode, config.layerSpacing)),
         "elk.padding": `[top=${config.padding},left=${config.padding},bottom=${config.padding},right=${config.padding}]`,
         "elk.layered.cycleBreaking.strategy": "GREEDY",
         "elk.layered.nodePlacement.strategy": "BRANDES_KOEPF",

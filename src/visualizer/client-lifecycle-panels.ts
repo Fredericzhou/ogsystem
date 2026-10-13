@@ -317,17 +317,18 @@ export function renderRunStatsHtml(args: {
     return "";
   }
   const status = header.hasWaitingHumanReview === true ? "waiting_review" : header.status;
+  const statusKey = String(status || "unknown").toLowerCase().replace(/[^a-z0-9_-]/g, "");
   const cards = [
-    [t("stats.status"), displayUiToken(status, t)],
-    [t("stats.mode"), displayUiToken(graphPayload?.simulation?.mode || header.runMode || "runtime", t)],
-    [t("stats.transitions"), header.transitionCount],
-    [t("stats.activeBranches"), header.activeBranches],
-    [t("stats.pendingReviews"), header.pendingReviewCount],
-    [t("stats.recentAudits"), header.recentAudits]
+    ["status", t("stats.status"), displayUiToken(status, t)],
+    ["mode", t("stats.mode"), displayUiToken(graphPayload?.simulation?.mode || header.runMode || "runtime", t)],
+    ["transitions", t("stats.transitions"), header.transitionCount],
+    ["active-branches", t("stats.activeBranches"), header.activeBranches],
+    ["pending-reviews", t("stats.pendingReviews"), header.pendingReviewCount],
+    ["recent-audits", t("stats.recentAudits"), header.recentAudits]
   ];
   return cards
-    .map(([label, value]) => `
-      <div class="stat">
+    .map(([kind, label, value]) => `
+      <div class="stat is-${kind}"${kind === "status" ? ` data-status="${escapeText(statusKey)}"` : ""}>
         <strong>${escapeText(value)}</strong>
         <span>${escapeText(label)}</span>
       </div>

@@ -51,6 +51,7 @@ export function injectStudioGraphStyles(): void {
       flex-shrink: 0;
       padding: 2px;
       border: 1px solid rgba(148, 163, 184, 0.14);
+      border-radius: 8px;
       background: rgba(255, 255, 255, 0.035);
     }
     .studio-graph-toolbar-group[hidden],
@@ -63,26 +64,45 @@ export function injectStudioGraphStyles(): void {
       justify-content: center;
       gap: 5px;
       border: 1px solid transparent;
-      background: transparent;
+      border-radius: 6px;
+      background: rgba(255, 255, 255, 0.025);
       color: #e5eefb;
-      padding: 4px 6px;
-      min-width: 28px;
-      min-height: 28px;
+      padding: 5px 7px;
+      min-width: 32px;
+      min-height: 32px;
       cursor: pointer;
       font-size: 11px;
       line-height: 1;
       white-space: nowrap;
       flex: 0 0 auto;
-      transition: background 120ms ease, border-color 120ms ease, color 120ms ease;
+      transition: background 120ms ease, border-color 120ms ease, color 120ms ease, box-shadow 120ms ease;
     }
     .studio-graph-toolbar button:hover {
-      border-color: rgba(56, 189, 248, 0.32);
-      background: rgba(56, 189, 248, 0.13);
-      color: #bae6fd;
+      border-color: rgba(56, 189, 248, 0.38);
+      background: rgba(56, 189, 248, 0.1);
+      color: #d7f3ff;
+    }
+    .studio-graph-toolbar button:focus-visible,
+    .studio-graph-toolbar select:focus-visible,
+    .studio-command-form button:focus-visible,
+    .studio-command-form input:focus-visible,
+    .studio-command-form select:focus-visible,
+    .studio-graph-context-menu-item:focus-visible,
+    .studio-graph-quick-open-item:focus-visible {
+      outline: none;
+      border-color: rgba(56, 189, 248, 0.76);
+      box-shadow: 0 0 0 3px rgba(56, 189, 248, 0.18);
     }
     .studio-graph-toolbar button:disabled {
       cursor: not-allowed;
       opacity: 0.55;
+    }
+    .studio-graph-toolbar select {
+      min-height: 32px;
+      padding: 5px 34px 5px 9px;
+      border-radius: var(--control-radius);
+      font-size: 11px;
+      cursor: pointer;
     }
     .studio-graph-status {
       color: #8fa1c3;
@@ -451,10 +471,17 @@ export function injectStudioGraphStyles(): void {
       width: 100%;
       min-width: 0;
       border: 1px solid rgba(148, 163, 184, 0.24);
+      border-radius: 8px;
       background: rgba(4, 8, 16, 0.92);
       color: #e5eefb;
       padding: 9px 10px;
       box-sizing: border-box;
+    }
+    .studio-graph-quick-open-input:focus-visible,
+    .studio-graph-quick-debug-input:focus-visible {
+      outline: none;
+      border-color: rgba(56, 189, 248, 0.76);
+      box-shadow: 0 0 0 3px rgba(56, 189, 248, 0.18);
     }
     .studio-graph-quick-open-results {
       display: grid;
@@ -559,10 +586,13 @@ export function injectStudioGraphStyles(): void {
     .studio-command-form-header button,
     .studio-command-form-actions button {
       border: 1px solid rgba(148, 163, 184, 0.24);
+      border-radius: 8px;
       background: rgba(255, 255, 255, 0.05);
       color: #e5eefb;
       padding: 7px 10px;
+      min-height: 34px;
       cursor: pointer;
+      font-weight: 600;
     }
     .studio-command-form-actions button {
       background: rgba(56, 189, 248, 0.16);
@@ -588,16 +618,18 @@ export function injectStudioGraphStyles(): void {
       gap: 7px;
       min-width: 0;
     }
-    .studio-command-form input,
-    .studio-command-form select {
+    .studio-command-form input {
       width: 100%;
       min-width: 0;
       min-height: 36px;
       border: 1px solid var(--border);
-      border-radius: 7px;
+      border-radius: 8px;
       background: var(--control-bg);
       color: var(--text);
       padding: 7px 10px;
+      box-sizing: border-box;
+    }
+    .studio-command-form select {
       box-sizing: border-box;
     }
     .studio-command-form input[type="radio"],

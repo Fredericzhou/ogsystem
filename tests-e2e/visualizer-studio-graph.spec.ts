@@ -744,6 +744,70 @@ test("Studio Bridge renders and edits through the real graph workspace", async (
   }
 });
 
+test("Studio graph controls expose localized names in English and Simplified Chinese", async ({ page }) => {
+  const workdir = await mkdtemp(path.join(os.tmpdir(), "ogsystem-studio-locale-"));
+  await seedProject(workdir);
+  const started = await startVisualizationServer({ workdir, host: "127.0.0.1", port: 0 });
+  try {
+    await page.goto(started.url);
+    await page.waitForFunction(() => Boolean((window as any).OGSVisualizerClient));
+    await expect.poll(async () => page.locator("#console-tabs [role=tab]").count()).toBeGreaterThan(0);
+    const openGraph = async () => {
+      await page.locator("#console-tab-design").click();
+      await page.locator('[data-workbench-view="bridge"]').click();
+      await expect(page.locator("#studio-graph-root")).toBeVisible();
+      await waitForStudioCell(page, "demo-analyst");
+    };
+
+    await openGraph();
+    const layout = page.locator("#studio-graph-root [data-studio-graph-layout]");
+    const minimap = page.locator("#studio-graph-root [data-studio-graph-minimap]");
+    const topologyOrder = page.locator('#studio-graph-root [data-studio-graph-action="topology-order"]');
+    await expect(layout).toHaveAttribute("aria-label", "Switch layout");
+    await expect(minimap).toHaveAttribute("aria-label", "Graph minimap");
+    await expect(topologyOrder).toHaveAttribute("title", "Topology order \u00b7 on");
+    await expect(layout).toHaveCSS("border-radius", "8px");
+    await expect(page.locator("#locale-select")).toHaveCSS("border-radius", "8px");
+
+    const mainStage = page.locator(".main-stage");
+    const statusBar = page.locator("footer.status-bar");
+    const stageBoundsBeforeToast = await mainStage.evaluate((element) => {
+      const { top, height } = element.getBoundingClientRect();
+      return { top, height };
+    });
+    const statusBoundsBeforeToast = await statusBar.evaluate((element) => {
+      const { top, height } = element.getBoundingClientRect();
+      return { top, height };
+    });
+    await page.locator('#studio-graph-root [data-studio-graph-action="layout"]').click();
+    await expect(page.locator("#flash")).toBeVisible();
+    await expect(page.locator("#flash")).toContainText("Layout switched to Compact.");
+    await expect(page.locator("#flash")).toHaveCSS("position", "fixed");
+    await expect.poll(() => mainStage.evaluate((element) => {
+      const { top, height } = element.getBoundingClientRect();
+      return { top, height };
+    })).toEqual(stageBoundsBeforeToast);
+    await expect.poll(() => statusBar.evaluate((element) => {
+      const { top, height } = element.getBoundingClientRect();
+      return { top, height };
+    })).toEqual(statusBoundsBeforeToast);
+
+    await page.locator("#locale-select").selectOption("zh-CN");
+    await expect(page.locator("html")).toHaveAttribute("lang", "zh-CN");
+    await openGraph();
+    const localizedLayout = page.locator("#studio-graph-root [data-studio-graph-layout]");
+    await expect(localizedLayout).toHaveAttribute("aria-label", "切换布局");
+    await expect(page.locator("#studio-graph-root [data-studio-graph-minimap]")).toHaveAttribute("aria-label", "图谱缩略图");
+    await expect(page.locator('#studio-graph-root [data-studio-graph-action="topology-order"]')).toHaveAttribute("title", "\u62d3\u6251\u5e8f\u53f7 \u00b7 \u5df2\u5f00\u542f");
+    await localizedLayout.selectOption("compact");
+    await page.locator('#studio-graph-root [data-studio-graph-action="layout"]').click();
+    await expect(page.locator("#flash")).toContainText("已切换为纵向布局。");
+  } finally {
+    await page.close();
+    await new Promise<void>((resolve) => started.server.close(() => resolve()));
+  }
+});
+
 test("Run opens global operations with fixed run-view tabs", async ({ page }) => {
   const workdir = await mkdtemp(path.join(os.tmpdir(), "ogsystem-run-empty-state-"));
   await seedProject(workdir);
@@ -807,6 +871,7 @@ test("Run, review, and resume are operable through the visual workflow", async (
     await expect(page.locator("#action-form-section")).toBeHidden();
 
     await page.locator('[data-operate-tab="operations"]').click();
+    await expect(page.locator("#resume-run")).toBeVisible();
     await page.locator("#resume-run").click();
     await page.locator("#action-resume-dry-run").selectOption("true");
     await page.locator("#action-form-submit").click();
@@ -1026,6 +1091,17 @@ test("SCC container drag moves every member node with the container", async ({ p
     await expect(page.locator('#studio-graph-root [data-cell-id="output"]')).toHaveCount(1);
     await expect.poll(async () => page.locator("#studio-graph-root .x6-edge-label text").allTextContents())
       .toEqual(expect.arrayContaining(["#3L", "#4L"]));
+    await expect.poll(async () => page.evaluate(() => {
+      const badges = Array.from(document.querySelectorAll<SVGGElement>("#studio-graph-root .x6-edge-label"))
+        .filter((label) => label.textContent?.trim().startsWith("#"))
+        .map((label) => label.getBoundingClientRect());
+      const nodes = Array.from(document.querySelectorAll<SVGGElement>("#studio-graph-root .x6-node[data-cell-id]"))
+        .filter((node) => !node.getAttribute("data-cell-id")?.startsWith("__ogs-scc-"))
+        .map((node) => node.getBoundingClientRect());
+      return badges.filter((badge) => nodes.some((node) =>
+        badge.left < node.right && node.left < badge.right && badge.top < node.bottom && node.top < badge.bottom
+      )).length;
+    })).toBe(0);
     await expect(page.locator('#studio-graph-root .x6-edge.is-loop-back')).toHaveCount(2);
     await expect.poll(async () => page.evaluate(() => Array.from(
       document.querySelectorAll<SVGGElement>('#studio-graph-root .x6-edge.is-loop-back')
@@ -1176,10 +1252,17 @@ test("Studio graph island exposes minimap, focus pulse, and quick open when moun
         canvas,
         selectedRoleId: "demo-analyst",
         validation: { ok: true, diagnostics: [] },
+        labels: {
+          autoLayout: "Switch layout",
+          minimap: "Graph minimap",
+          quickOpen: "Quick open"
+        },
         defaultAutoLayout: false
       });
     });
     await expect(page.locator("#studio-graph-direct-root .studio-graph-toolbar")).toBeVisible();
+    await expect(page.locator('#studio-graph-direct-root [data-studio-graph-layout]')).toHaveAttribute("aria-label", "Switch layout");
+    await expect(page.locator('#studio-graph-direct-root [data-studio-graph-minimap]')).toHaveAttribute("aria-label", "Graph minimap");
     await expect(page.locator('#studio-graph-direct-root [data-studio-graph-action="topology-order"]')).toHaveAttribute("aria-pressed", "true");
     await expect(page.locator("#studio-graph-direct-root [data-cell-id=\"demo-analyst\"]")).toBeVisible();
     await expect(page.locator("#studio-graph-direct-root [data-studio-graph-minimap]")).toBeVisible();
@@ -1216,6 +1299,11 @@ test("Studio graph island exposes minimap, focus pulse, and quick open when moun
         selectedRoleId: "qa-reviewer",
         editSelectionRequest: 1,
         validation: { ok: true, diagnostics: [] },
+        labels: {
+          autoLayout: "Switch layout",
+          minimap: "Graph minimap",
+          quickOpen: "Quick open"
+        },
         defaultAutoLayout: false
       });
     });
@@ -1224,6 +1312,7 @@ test("Studio graph island exposes minimap, focus pulse, and quick open when moun
     await page.locator("#studio-graph-direct-root").click();
     await page.keyboard.press(quickOpenShortcut);
     await expect(page.locator('#studio-graph-direct-root [data-studio-graph-quick-open]')).toBeVisible();
+    await expect(page.locator('#studio-graph-direct-root [data-studio-graph-quick-open-input]')).toHaveAttribute("aria-label", "Quick open");
     await page.locator('#studio-graph-direct-root [data-studio-graph-quick-open-input]').fill("demo-analyst");
     await page.keyboard.press("Enter");
     await expect(page.locator('#studio-graph-direct-root [data-studio-graph-quick-open]')).toBeHidden();
@@ -1437,6 +1526,28 @@ test("contract workspace supports keyboard editing and validation on a narrow vi
       .then(JSON.parse).then((manifest) => manifest.contracts.map((entry: { id: string }) => entry.id)).catch(() => []))
       .toEqual(["analyst.input.v2", "analyst-to-intake.v1"]);
     await expect(contractEditor).toContainText("1 / 1 eligible flows covered");
+    if (!(await contractEditor.getAttribute("open"))) {
+      await contractEditor.locator("summary").first().focus();
+      await page.keyboard.press("Enter");
+    }
+    const roleTargetButton = contractEditor.locator('[data-studio-contract-target-kind="role"][data-studio-contract-target-id="demo-analyst"]');
+    await roleTargetButton.focus();
+    await page.keyboard.press("Enter");
+    await expect(page.locator("#studio-graph-root")).toHaveAttribute("data-selected-role-id", "demo-analyst");
+    const openSystemSettings = page.locator("[data-studio-open-system-settings]");
+    await openSystemSettings.focus();
+    await page.keyboard.press("Enter");
+    const reopenedContractEditor = page.locator(".studio-contract-editor");
+    if (!(await reopenedContractEditor.getAttribute("open"))) {
+      await reopenedContractEditor.locator("summary").first().focus();
+      await page.keyboard.press("Enter");
+    }
+    const flowTargetButton = reopenedContractEditor.locator('[data-studio-contract-target-kind="flow"]').first();
+    const targetFlowKey = await flowTargetButton.getAttribute("data-studio-contract-target-id");
+    expect(targetFlowKey).toBeTruthy();
+    await flowTargetButton.focus();
+    await page.keyboard.press("Enter");
+    await expect(page.locator("#studio-graph-root")).toHaveAttribute("data-selected-flow-key", targetFlowKey!);
     const workspaceWidth = await page.locator("#studio-graph-root").evaluate((element) => ({
       client: element.clientWidth,
       scroll: element.scrollWidth
@@ -1591,6 +1702,45 @@ test("studio graph stays readable and its toolbar remains reachable on mobile", 
     const layoutSelect = graph.locator("[data-studio-graph-layout]");
     await expect(layoutSelect).toHaveValue("stacked");
     await waitForStudioCell(page, "demo-analyst");
+    const roleNode = graph.locator('[data-cell-id="demo-analyst"]');
+    const roleName = roleNode.locator("text").filter({ hasText: "Demo Analyst" }).first();
+    await expect(roleName).toBeVisible();
+    const roleMarker = roleNode.locator("rect").nth(1);
+    const roleMarkerText = roleNode.locator("text").first();
+    await expect(roleMarker).toBeVisible();
+    await expect(roleMarkerText).toBeVisible();
+    const markerBounds = await roleMarker.boundingBox();
+    const markerTextBounds = await roleMarkerText.boundingBox();
+    const flowLabel = graph.locator(".x6-edge-label text").filter({ hasText: "ANALYSIS_DONE" }).first();
+    const flowLabelBounds = await flowLabel.boundingBox();
+    expect(markerBounds).toBeTruthy();
+    expect(markerTextBounds).toBeTruthy();
+    expect(flowLabelBounds).toBeTruthy();
+    if (markerBounds && markerTextBounds) {
+      expect(markerTextBounds.x).toBeGreaterThanOrEqual(markerBounds.x);
+      expect(markerTextBounds.x + markerTextBounds.width).toBeLessThanOrEqual(markerBounds.x + markerBounds.width);
+      expect(markerTextBounds.y).toBeGreaterThanOrEqual(markerBounds.y);
+      expect(markerTextBounds.y + markerTextBounds.height).toBeLessThanOrEqual(markerBounds.y + markerBounds.height);
+    }
+    if (markerBounds && flowLabelBounds) {
+      const markerFlowOverlap = markerBounds.x < flowLabelBounds.x + flowLabelBounds.width
+        && markerBounds.x + markerBounds.width > flowLabelBounds.x
+        && markerBounds.y < flowLabelBounds.y + flowLabelBounds.height
+        && markerBounds.y + markerBounds.height > flowLabelBounds.y;
+      expect(markerFlowOverlap, JSON.stringify({ markerBounds, flowLabelBounds })).toBe(false);
+    }
+    await expect(roleNode.locator("text").filter({ hasText: "entry" })).toHaveCount(0);
+    await expect(roleNode.locator("title")).toContainText("entry");
+    const roleNameBounds = await roleName.boundingBox();
+    expect(roleNameBounds).toBeTruthy();
+    expect(flowLabelBounds).toBeTruthy();
+    if (roleNameBounds && flowLabelBounds) {
+      const overlaps = roleNameBounds.x < flowLabelBounds.x + flowLabelBounds.width
+        && roleNameBounds.x + roleNameBounds.width > flowLabelBounds.x
+        && roleNameBounds.y < flowLabelBounds.y + flowLabelBounds.height
+        && roleNameBounds.y + roleNameBounds.height > flowLabelBounds.y;
+      expect(overlaps).toBe(false);
+    }
     const roleBounds = await graph.locator('[data-cell-id="demo-analyst"]').boundingBox();
     expect(roleBounds?.width ?? 0).toBeGreaterThanOrEqual(90);
     expect(roleBounds?.height ?? 0).toBeGreaterThanOrEqual(30);

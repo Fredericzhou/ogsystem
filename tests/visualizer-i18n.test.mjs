@@ -49,4 +49,9 @@ test("translator uses zh-CN dictionary", () => {
   const t = createTranslator("zh-CN");
   assert.equal(t("nav.logs"), "日志");
   assert.equal(t("readiness.ready"), "就绪");
+  assert.equal(t("studio.systemId"), "系统 ID");
+  assert.equal(t("studio.handoffMode"), "交接模式");
+  assert.equal(t("studio.contractKind"), "合同类型");
+  assert.equal(t("studio.graph.topologyOrder"), "拓扑序号");
+  assert.equal(t("studio.graph.enabled"), "已开启");
 });

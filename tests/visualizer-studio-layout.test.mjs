@@ -7,10 +7,32 @@ import {
 } from "../src/visualizer/studio-client/elk-layout-adapter.ts";
 import {
   createStoredLayoutProjection,
-  layoutDigest
+  layoutDigest,
+  layoutNodeSize
 } from "../src/visualizer/studio-client/semantic-layout-projection.ts";
 import { addTopologyFlowOrder, topologyComponentIds } from "../src/visualizer/topology-order.ts";
 import { formatStudioEdgeLabel } from "../src/visualizer/studio-edge-semantics.ts";
+import { studioRoleMarkerVisible, studioRoleMonogram } from "../src/visualizer/studio-client/studio-role-marker.ts";
+
+test("Studio role markers derive readable monograms", () => {
+  assert.equal(studioRoleMonogram("Debate Reviewer", "debate-reviewer"), "DR");
+  assert.equal(studioRoleMonogram("Multi Agent Analyst", "multi-agent-analyst"), "MA");
+  assert.equal(studioRoleMonogram("Multi Agent Reviewer", "multi-agent-reviewer"), "MR");
+  assert.equal(studioRoleMonogram("风险审查", "risk-review"), "风险");
+  assert.equal(studioRoleMonogram("", "test-operator"), "TO");
+  assert.equal(studioRoleMarkerVisible({ roleSeat: true, editable: true }), true);
+  assert.equal(studioRoleMarkerVisible({ roleSeat: true, editable: false }), false);
+  assert.equal(studioRoleMarkerVisible({ roleSeat: false, editable: true }), false);
+});
+
+test("Chinese role names stay readable in compact graph cards", () => {
+  const role = node("review", 0, 0);
+  role.label = "风险分析与投资价值评估审查角色".repeat(5);
+  const size = layoutNodeSize(role);
+  assert.equal(studioRoleMonogram(role.label, role.roleId), "风险");
+  assert.ok(size.width <= 260);
+  assert.ok(size.height > 84);
+});
 
 function node(id, x, y, structure = {}) {
   const boundary = id === "input" || id === "output";
@@ -100,6 +122,22 @@ test("ELK projection keeps channels, Join metadata, and distinct parallel lanes"
   assert.equal(joinEdges.every((item) => item.participatesInJoin), true);
   assert.equal(projection.edges.find((item) => item.id === "a-error").runtimeOnlyErrorFlow, true);
   assert.equal(new Set(parallelEdges.map((item) => item.routing.lane)).size, parallelEdges.length);
+});
+
+test("ELK expands flow spacing for longer handoff labels", async () => {
+  const viewModel = graphViewModel();
+  viewModel.nodes = [node("source", 0, 0), node("target", 0, 0)];
+  viewModel.edges = [edge("handoff", "source", "target", { label: "GO" })];
+  const compactLabel = await createElkLayoutProjection(viewModel, "flow");
+  viewModel.edges[0].label = "ANALYSIS_COMPLETE_WITH_REVIEW_AND_VALIDATION";
+  const longLabel = await createElkLayoutProjection(viewModel, "flow");
+  const gapFor = (projection) => {
+    const source = projection.nodes.find((item) => item.id === "source");
+    const target = projection.nodes.find((item) => item.id === "target");
+    return target.x - source.x - source.width;
+  };
+
+  assert.ok(gapFor(longLabel) > gapFor(compactLabel));
 });
 
 test("ELK places disconnected boundaries along the selected orientation without role seats", async () => {
@@ -215,6 +253,7 @@ test("stored projection preserves positions while renderer stays library-indepen
   assert.match(renderer, /interacting: true/);
   assert.match(renderer, /export function alignStudioSccGroups\(graph: Graph\)/);
   assert.match(renderer, /formatStudioEdgeTopologyLabel\(edge\)/);
+  assert.match(renderer, /text: formatStudioEdgeSummaryLabel\(edge\),[\s\S]*?fontSize: 10/);
   assert.match(renderer, /distance: 0\.5,\r?\n\s+offset: -15/);
   assert.match(renderer, /name: "block",\r?\n\s+width: loopEdge \? 14 : 12,\r?\n\s+height: loopEdge \? 10 : 9/);
   assert.match(renderer, /function isLoopEdge\(edge: GraphViewModelEdge\)/);

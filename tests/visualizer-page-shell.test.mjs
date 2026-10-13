@@ -101,7 +101,10 @@ test("page shell keeps HTML, style, assets, and client script mounted", () => {
   assert.match(html, /id="timeline-review"[^>]*aria-label="评审 id"/);
   assert.match(html, /id="timeline-error"[^>]*aria-label="错误码"/);
   assert.match(html, /id="log-tail"[^>]*aria-label="尾部"/);
-  assert.match(html, /id="log-since"[^>]*aria-label="Log since"/);
+  assert.match(html, /id="log-since"[^>]*aria-label="[^"]+"/);
+  assert.match(html, /id="log-page-size"[^>]*aria-label="[^"]+"/);
+  assert.match(html, /id="logs-all"[^>]*aria-label="[^"]+"/);
+  assert.doesNotMatch(html, /aria-label="Log (page size|scope|since)"/);
 });
 
 test("page shell styles are isolated behind a CSS renderer", () => {
@@ -121,5 +124,12 @@ test("page shell styles are isolated behind a CSS renderer", () => {
   assert.match(css, /\.studio-selection-command-host \.studio-command-dialog\s*\{[\s\S]*position:\s*absolute/);
   assert.match(css, /\.studio-role-io-dialog\s*\{[\s\S]*width:\s*min\(760px/);
   assert.match(css, /\.console-panel\[hidden\]\s*\{/);
+  assert.match(css, /--control-height:\s*36px/);
+  assert.match(css, /\.button:focus-visible,[\s\S]*?\.select:focus-visible/);
+  assert.match(css, /select\.select,[\s\S]*?\.studio-graph-toolbar select\s*\{[\s\S]*?appearance:\s*none;[\s\S]*?background-image:/);
+  assert.match(css, /scrollbar-gutter:\s*stable both-edges/);
+  assert.match(css, /\.studio-icon-button,[\s\S]*?width:\s*30px;[\s\S]*?height:\s*30px/);
+  assert.match(css, /\.stat\s*\{[\s\S]*?justify-items:\s*center;[\s\S]*?text-align:\s*center/);
+  assert.match(css, /\.button:hover\s*\{[\s\S]*?border-color:[\s\S]*?background:/);
   assert.match(css, /@media \(max-width: 960px\)/);
 });

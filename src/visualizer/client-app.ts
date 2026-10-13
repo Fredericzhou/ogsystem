@@ -5,6 +5,7 @@ import {
   bindingTone,
   compactJsonPreview,
   compactText,
+  readinessWarningMessage,
   formatContextMapJson,
   displayBindingKind,
   displayUiToken,
@@ -259,6 +260,7 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
     const asRecordArray = ${asRecordArray.toString()};
     const asRecordCollection = ${asRecordCollection.toString()};
     const compactText = ${compactText.toString()};
+    const readinessWarningMessage = ${readinessWarningMessage.toString()};
     const compactJsonPreview = ${compactJsonPreview.toString()};
     const formatContextMapJson = ${formatContextMapJson.toString()};
     const projectRoleProjectionSummary = ${projectRoleProjectionSummary.toString()};
@@ -1263,6 +1265,9 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
         layoutModeFlow: t("studio.graph.layoutModeFlow", undefined, "Flow"),
         layoutModeCompact: t("studio.graph.layoutModeCompact", undefined, "Compact"),
         layoutModeStacked: t("studio.graph.layoutModeStacked", undefined, "Stacked"),
+        topologyOrder: t("studio.graph.topologyOrder", undefined, "Topology order"),
+        enabled: t("studio.graph.enabled", undefined, "on"),
+        disabled: t("studio.graph.disabled", undefined, "off"),
         layoutSwitched: t("studio.graph.layoutSwitched", undefined, "Layout switched to {layout}."),
         generate: t("studio.graph.generate", undefined, "Chat / Generate"),
         debugRun: t("studio.graph.debugRun", undefined, "Quick debug"),
@@ -1272,6 +1277,14 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
         debugQuickHint: t("studio.graph.debugQuickHint", undefined, "Start a dry run without leaving the graph. Open advanced debug for path overrides."),
         debugQuickPlaceholder: t("studio.graph.debugQuickPlaceholder", undefined, "Describe the request for this dry run"),
         debugQuickOpen: t("studio.graph.debugQuickOpen", undefined, "Open quick debug"),
+        close: t("action.close", undefined, "Close"),
+        debugRunShort: t("studio.graph.debugRunShort", undefined, "Run"),
+        quickOpen: t("studio.graph.quickOpen", undefined, "Quick open"),
+        quickOpenPlaceholder: t("studio.graph.quickOpenPlaceholder", undefined, "Jump to a role or flow"),
+        quickOpenEmpty: t("studio.graph.quickOpenEmpty", undefined, "No matching roles or flows."),
+        quickOpenRole: t("studio.graph.quickOpenRole", undefined, "Role"),
+        quickOpenFlow: t("studio.graph.quickOpenFlow", undefined, "Flow"),
+        minimap: t("studio.graph.minimap", undefined, "Graph minimap"),
         addRole: t("studio.graph.addRole", undefined, "Role"),
         addEdge: t("studio.graph.addEdge", undefined, "Edge"),
         editSelection: t("studio.graph.editSelection", undefined, "Edit selected"),
@@ -1818,11 +1831,18 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
     }
 
     function canRequestStop() {
-      const status = state.detail?.header?.status || "";
+      const header = state.detail?.header || {};
+      const status = header.status || "";
       if (!state.selectedRunId) {
         return false;
       }
-      return !["done", "failed", "stopped"].includes(status);
+      if (
+        (header.hasWaitingHumanReview || Number(header.pendingReviewCount || 0) > 0)
+        && Number(header.activeBranches || 0) === 0
+      ) {
+        return false;
+      }
+      return isRunActiveStatus(status);
     }
 
     function isRunActiveStatus(status) {
@@ -3380,6 +3400,19 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
           const roleId = openRoleConfigButton.getAttribute("data-studio-open-role-config") || "";
           if (roleId) {
             selectStudioRole(roleId, { syncGraph: true, syncGraphOnReject: true });
+          }
+          event.preventDefault();
+          return;
+        }
+        const contractTargetButton = closestSelectionAction(event.target, "data-studio-contract-target-id");
+        if (contractTargetButton) {
+          const targetId = contractTargetButton.getAttribute("data-studio-contract-target-id") || "";
+          const targetKind = contractTargetButton.getAttribute("data-studio-contract-target-kind") || "";
+          const extracted = resolveStudioBridgeForDisplay()?.extracted || {};
+          if (targetId && targetKind === "role" && Array.isArray(extracted.roles) && extracted.roles.some((role) => String(role?.roleId || "") === targetId)) {
+            selectStudioRole(targetId, { syncGraph: true, syncGraphOnReject: true });
+          } else if (targetId && targetKind === "flow" && Array.isArray(extracted.flows) && extracted.flows.some((flow) => flowKeyOf(flow) === targetId)) {
+            selectStudioFlow(targetId, { syncGraph: true, syncGraphOnReject: true });
           }
           event.preventDefault();
           return;
@@ -5030,10 +5063,7 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
           updateWorkbenchGraphStatus(message);
         },
         onToast: (tone, message) => {
-          if (globalStatusDiagnosticsEl) {
-            globalStatusDiagnosticsEl.textContent = message;
-            globalStatusDiagnosticsEl.className = "global-status-diagnostics hint" + (tone === "error" ? " warn" : "");
-          }
+          setFlash(tone === "error" ? "error" : tone === "success" ? "success" : "info", message);
         }
       });
     }
@@ -5121,10 +5151,7 @@ export function buildClientAppScript(apiPrefix: string, i18n: ClientI18nOptions 
           updateGraphViewport(viewport);
         },
         onToast: (tone, message) => {
-          if (globalStatusDiagnosticsEl) {
-            globalStatusDiagnosticsEl.textContent = message;
-            globalStatusDiagnosticsEl.className = "global-status-diagnostics hint" + (tone === "error" ? " warn" : "");
-          }
+          setFlash(tone === "error" ? "error" : tone === "success" ? "success" : "info", message);
         }
       });
     }

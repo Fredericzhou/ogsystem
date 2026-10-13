@@ -63,6 +63,8 @@ type StudioGraphLabelKey =
   | "layoutModeCompact"
   | "layoutModeStacked"
   | "topologyOrder"
+  | "enabled"
+  | "disabled"
   | "layoutSwitched"
   | "generate"
   | "debugRun"
@@ -72,6 +74,14 @@ type StudioGraphLabelKey =
   | "debugQuickHint"
   | "debugQuickPlaceholder"
   | "debugQuickOpen"
+  | "close"
+  | "debugRunShort"
+  | "quickOpen"
+  | "quickOpenPlaceholder"
+  | "quickOpenEmpty"
+  | "quickOpenRole"
+  | "quickOpenFlow"
+  | "minimap"
   | "addRole"
   | "addEdge"
   | "editSelection"
@@ -323,7 +333,7 @@ export class StudioGraphIsland {
       '</div>',
       '<div class="studio-graph-toolbar-group" data-studio-graph-generate-actions aria-label="' + this.escapeHtml(this.label("generate")) + '">',
       this.toolbarButton("chat-generate", "generate", "✦"),
-      this.toolbarButton("debug-run", "debugRun", "▶", "Run"),
+      this.toolbarButton("debug-run", "debugRun", "▶", this.label("debugRunShort")),
       '</div>',
       '<div class="studio-graph-toolbar-group" data-studio-graph-edit-actions aria-label="' + this.escapeHtml(this.label("editGroup")) + '">',
       this.toolbarButton("add-role", "addRole", "+R"),
@@ -341,20 +351,20 @@ export class StudioGraphIsland {
       '<div class="studio-graph-empty" data-studio-graph-empty hidden></div>',
       '<div class="studio-graph-canvas" data-studio-graph-canvas></div>',
       '<div class="studio-graph-context-menu" data-studio-graph-context-menu hidden></div>',
-      '<div class="studio-graph-minimap" data-studio-graph-minimap aria-label="Graph minimap" hidden>',
+      '<div class="studio-graph-minimap" data-studio-graph-minimap aria-label="' + this.escapeHtml(this.label("minimap")) + '" hidden>',
       '<div class="studio-graph-minimap-content" data-studio-graph-minimap-content></div>',
       '<div class="studio-graph-minimap-viewport" data-studio-graph-minimap-viewport></div>',
       "</div>",
       '<div class="studio-graph-quick-open" data-studio-graph-quick-open hidden>',
       '<div class="studio-graph-quick-open-panel">',
-      '<label class="studio-graph-quick-open-label" for="studio-graph-quick-open-input">Quick open</label>',
-      '<input id="studio-graph-quick-open-input" class="studio-graph-quick-open-input" data-studio-graph-quick-open-input autocomplete="off" spellcheck="false" placeholder="Jump to role or flow" />',
+      '<label class="studio-graph-quick-open-label" for="studio-graph-quick-open-input">' + this.escapeHtml(this.label("quickOpen")) + '</label>',
+      '<input id="studio-graph-quick-open-input" class="studio-graph-quick-open-input" data-studio-graph-quick-open-input autocomplete="off" spellcheck="false" aria-label="' + this.escapeHtml(this.label("quickOpen")) + '" placeholder="' + this.escapeHtml(this.label("quickOpenPlaceholder")) + '" />',
       '<div class="studio-graph-quick-open-results" data-studio-graph-quick-open-results></div>',
       "</div>",
       "</div>",
       '<div class="studio-graph-quick-debug" data-studio-graph-quick-debug hidden>',
       '<div class="studio-graph-quick-debug-panel">',
-      '<div class="studio-graph-quick-debug-head"><strong>' + this.escapeHtml(this.label("debugQuickOpen")) + '</strong><button type="button" class="button subtle" data-studio-graph-quick-debug-close="1">×</button></div>',
+      '<div class="studio-graph-quick-debug-head"><strong>' + this.escapeHtml(this.label("debugQuickOpen")) + '</strong><button type="button" class="button subtle studio-icon-button" data-studio-graph-quick-debug-close="1" aria-label="' + this.escapeHtml(this.label("close")) + '" title="' + this.escapeHtml(this.label("close")) + '">×</button></div>',
       '<label class="studio-graph-quick-debug-label" for="studio-graph-quick-debug-input">' + this.escapeHtml(this.label("debugQuickInput")) + '</label>',
       '<textarea id="studio-graph-quick-debug-input" class="studio-graph-quick-debug-input" data-studio-graph-quick-debug-input placeholder="' + this.escapeHtml(this.label("debugQuickPlaceholder")) + '"></textarea>',
       '<div class="hint studio-graph-quick-debug-hint">' + this.escapeHtml(this.label("debugQuickHint")) + '</div>',
@@ -554,7 +564,12 @@ export class StudioGraphIsland {
   private createGraph(container: HTMLElement): Graph {
     const graph = new Graph({
       container,
-      grid: true,
+      grid: {
+        size: 10,
+        visible: true,
+        type: "dot",
+        args: { color: "rgba(148, 163, 184, 0.16)", thickness: 1 }
+      },
       autoResize: true,
       panning: {
         enabled: true
@@ -1237,7 +1252,7 @@ export class StudioGraphIsland {
   private renderQuickOpenResults(): void {
     const items = this.quickOpenItems();
     if (!items.length) {
-      this.quickOpenResultsEl.innerHTML = '<div class="studio-graph-quick-open-empty">No matching roles or flows.</div>';
+      this.quickOpenResultsEl.innerHTML = '<div class="studio-graph-quick-open-empty">' + this.escapeHtml(this.label("quickOpenEmpty")) + '</div>';
       return;
     }
     this.quickOpenSelectedIndex = Math.max(0, Math.min(this.quickOpenSelectedIndex, items.length - 1));
@@ -1247,7 +1262,7 @@ export class StudioGraphIsland {
         '" data-studio-graph-quick-open-item="1" data-item-kind="' + this.escapeHtml(item.kind) +
         '" data-item-id="' + this.escapeHtml(item.id) +
         '" data-item-label="' + this.escapeHtml(item.label) + '">' +
-        '<span class="studio-graph-quick-open-kind">' + this.escapeHtml(item.kind === "role" ? "Role" : "Flow") + '</span>' +
+        '<span class="studio-graph-quick-open-kind">' + this.escapeHtml(this.label(item.kind === "role" ? "quickOpenRole" : "quickOpenFlow")) + '</span>' +
         '<strong>' + this.escapeHtml(item.label) + "</strong>" +
         "</button>";
     }).join("");
@@ -1948,7 +1963,10 @@ export class StudioGraphIsland {
   }
 
   private toast(tone: "error" | "success" | "info", message: string): void {
-    this.options.onToast?.(tone, message);
+    if (this.options.onToast) {
+      this.options.onToast(tone, message);
+      return;
+    }
     this.setStatus(message);
   }
 
@@ -2135,7 +2153,7 @@ export class StudioGraphIsland {
     const topologyOrder = this.toolbar.querySelector<HTMLButtonElement>('[data-studio-graph-action="topology-order"]');
     if (topologyOrder) {
       topologyOrder.setAttribute("aria-pressed", this.showTopologyOrder ? "true" : "false");
-      topologyOrder.title = this.label("topologyOrder") + (this.showTopologyOrder ? " · on" : " · off");
+      topologyOrder.title = this.label("topologyOrder") + " · " + this.label(this.showTopologyOrder ? "enabled" : "disabled");
     }
     const layoutSelect = this.toolbar.querySelector<HTMLSelectElement>("[data-studio-graph-layout]");
     if (layoutSelect) {

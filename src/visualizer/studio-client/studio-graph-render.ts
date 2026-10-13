@@ -15,6 +15,7 @@ import {
   type LayoutProjection,
   type LayoutSide
 } from "./semantic-layout-projection.js";
+import { studioRoleMarkerVisible, studioRoleMonogram } from "./studio-role-marker.js";
 
 export {
   formatStudioEdgeLabel,
@@ -244,10 +245,10 @@ type SccGroup = {
 };
 
 const SCC_COLORS = [
-  { fill: "rgba(45, 212, 191, 0.075)", stroke: "rgba(45, 212, 191, 0.82)", label: "#99f6e4" },
-  { fill: "rgba(96, 165, 250, 0.075)", stroke: "rgba(96, 165, 250, 0.82)", label: "#bfdbfe" },
-  { fill: "rgba(251, 191, 36, 0.075)", stroke: "rgba(251, 191, 36, 0.82)", label: "#fde68a" },
-  { fill: "rgba(192, 132, 252, 0.075)", stroke: "rgba(192, 132, 252, 0.82)", label: "#e9d5ff" }
+  { fill: "rgba(45, 212, 191, 0.025)", stroke: "rgba(45, 212, 191, 0.38)", label: "#7fbdb4" },
+  { fill: "rgba(96, 165, 250, 0.025)", stroke: "rgba(96, 165, 250, 0.38)", label: "#8eafd0" },
+  { fill: "rgba(251, 191, 36, 0.025)", stroke: "rgba(251, 191, 36, 0.38)", label: "#c6ae71" },
+  { fill: "rgba(192, 132, 252, 0.025)", stroke: "rgba(192, 132, 252, 0.38)", label: "#b39acb" }
 ];
 
 function buildSccGroups(nodes: readonly GraphViewModelNode[], graph: Graph): SccGroup[] {
@@ -301,8 +302,8 @@ function sccGroupMetadata(group: SccGroup): Node.Metadata {
 
 function sccGroupAttrs(group: SccGroup): Node.Metadata["attrs"] {
   return {
-    body: { fill: group.color.fill, stroke: group.color.stroke, strokeWidth: 2, strokeDasharray: "8 5", rx: 12, ry: 12 },
-    label: { text: group.label, refX: 12, refY: 6, textAnchor: "start", textVerticalAnchor: "top", fill: group.color.label, fontSize: 11, fontWeight: 800 }
+    body: { fill: group.color.fill, stroke: group.color.stroke, strokeWidth: 1.2, strokeDasharray: "5 7", rx: 12, ry: 12 },
+    label: { text: group.label, refX: 12, refY: 6, textAnchor: "start", textVerticalAnchor: "top", fill: group.color.label, fontSize: 10, fontWeight: 700 }
   };
 }
 
@@ -413,6 +414,9 @@ function studioNodeMetadata(node: GraphViewModelNode, ports?: readonly StudioPor
     shape: "rect",
     markup: [
       { tagName: "rect", selector: "body" },
+      { tagName: "title", selector: "nodeTitle" },
+      { tagName: "rect", selector: "roleMarkerBadge" },
+      { tagName: "text", selector: "roleMarkerText" },
       { tagName: "text", selector: "label" },
       { tagName: "circle", selector: "diagnosticBadge" },
       { tagName: "text", selector: "diagnosticText" }
@@ -430,6 +434,10 @@ function nodeFill(node: GraphViewModelNode): string {
 }
 
 function studioNodeAttrs(node: GraphViewModelNode): Node.Metadata["attrs"] {
+  const showRoleMarker = studioRoleMarkerVisible(node);
+  const roleColor = showRoleMarker ? roleColorForId(node.roleId) : undefined;
+  const markerX = 24;
+  const markerY = 10;
   return {
     body: {
       rx: node.kind === "boundary" ? 20 : 8,
@@ -439,13 +447,46 @@ function studioNodeAttrs(node: GraphViewModelNode): Node.Metadata["attrs"] {
       strokeWidth: node.kind === "boundary" ? 1.2 : 1.5,
       strokeDasharray: node.kind === "boundary" ? "6 4" : ""
     },
+    nodeTitle: {
+      text: showRoleMarker ? nodeLabel(node) : ""
+    },
+    roleMarkerBadge: {
+      x: markerX - 16,
+      y: markerY - 10,
+      width: 32,
+      height: 20,
+      rx: 10,
+      ry: 10,
+      fill: roleColor?.accent ?? "none",
+      fillOpacity: 0.22,
+      stroke: roleColor?.accent ?? "none",
+      strokeOpacity: 0.85,
+      strokeWidth: 1.2,
+      visibility: showRoleMarker ? "visible" : "hidden"
+    },
+    roleMarkerText: {
+      x: markerX - node.layout.width / 2,
+      y: markerY - node.layout.height / 2 + 3.5,
+      text: node.roleSeat ? studioRoleMonogram(node.label, node.roleId) : "",
+      textAnchor: "middle",
+      fontSize: 11,
+      fontWeight: 700,
+      fill: "#f8fafc",
+      visibility: showRoleMarker ? "visible" : "hidden"
+    },
     label: {
-      text: nodeLabel(node),
+      text: showRoleMarker ? node.label : nodeLabel(node),
+      ...(showRoleMarker ? {
+        x: 64 - node.layout.width / 2,
+        y: 0,
+        textAnchor: "start",
+        textVerticalAnchor: "middle"
+      } : {}),
       fill: node.kind === "boundary" ? "#94a3b8" : "#e5eefb",
       fontSize: 12,
       fontWeight: 600,
       textWrap: {
-        width: node.layout.width - 18,
+        width: node.layout.width - (showRoleMarker ? 74 : 18),
         height: node.layout.height - 12,
         ellipsis: true
       }
@@ -580,8 +621,8 @@ function studioEdgeLabels(edge: GraphViewModelEdge): Edge.Metadata["labels"] {
           fill: isCycle ? "#115e59" : "#075985",
           stroke: isCycle ? "#2dd4bf" : "#38bdf8",
           strokeWidth: 1,
-          rx: 4,
-          ry: 4
+          rx: 5,
+          ry: 5
         }
       }
     });
@@ -595,7 +636,7 @@ function studioEdgeLabels(edge: GraphViewModelEdge): Edge.Metadata["labels"] {
       label: {
         text: formatStudioEdgeSummaryLabel(edge),
         fill: "#dbeafe",
-        fontSize: 11
+        fontSize: 10
       },
       body: {
         fill: "rgba(15, 23, 42, 0.94)",

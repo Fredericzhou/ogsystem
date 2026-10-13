@@ -28,6 +28,7 @@ import {
   renderReleaseGatePanel
 } from "../dist/visualizer/client-renderers.js";
 import { renderConversationHtml } from "../dist/visualizer/client-lifecycle-panels.js";
+import { createTranslator } from "../dist/visualizer/i18n/index.js";
 import { authoringToCanvasDocument } from "../dist/visualizer/studio-authoring.js";
 import { latestRoleContract } from "../tests-support/role-fixture.mjs";
 
@@ -385,6 +386,12 @@ test("visualizer client script injects Studio authoring editor renderers", () =>
   assert.match(script, /studioCanvasSaveChain = studioCanvasSaveChain\.catch\(\(\) => undefined\)\.then/);
   assert.match(script, /renderWorkbench:\s*false/);
   assert.match(script, /args\.renderWorkbench === false && hasMountedStudioBridgeShell\(\)/);
+});
+
+test("visualizer browser bundle injects release warning localization dependencies", () => {
+  const script = buildClientAppScript("/api/v1");
+  assert.match(script, /const readinessWarningMessage = function readinessWarningMessage/);
+  assert.match(script, /readinessWarningMessage\(warning\.message \?\? warning\.code, t\)/);
 });
 
 test("Studio Bridge renderers display and filter flow labels separately from event types", () => {
@@ -2800,6 +2807,32 @@ test("release gate explains the concrete blockers returned by the release decisi
   assert.match(html, /analyst/);
 });
 
+test("release gate localizes model catalog warnings and warning summary in Simplified Chinese", () => {
+  const html = renderReleaseGatePanel({
+    validation: { ok: true, diagnostics: [] },
+    readiness: {
+      blockers: [],
+      warnings: [{
+        severity: "warning",
+        message: "Model catalog generated at 2026-10-12T02:22:58.207Z is stale; refresh with `ogs models sync`."
+      }]
+    },
+    contracts: {},
+    rolePackages: {},
+    bindings: {},
+    workbenchSavedPath: "system.mmd",
+    workbenchDirty: false,
+    exportReady: true,
+    t: createTranslator("zh-CN")
+  });
+
+  assert.match(html, /1 条警告将纳入发布说明/);
+  assert.match(html, /模型目录生成于 2026-10-12T02:22:58\.207Z，已超过 24 小时未刷新/);
+  assert.match(html, /ogs models sync/);
+  assert.doesNotMatch(html, /1 条 warning 会进入 release notes/);
+  assert.doesNotMatch(html, /Model catalog generated at/);
+});
+
 test("release gate distinguishes optional flow contracts from strict requirements", () => {
   const render = (handoffMode) => renderReleaseGatePanel({
     validation: { ok: true, diagnostics: [] },
@@ -4704,13 +4737,20 @@ test("visualizer client shows role config labels and opens role I/O modal from s
   const contractEditorHtml = renderStudioContractEditor({
     contracts: {
       manifest: { path: "contracts/handoff.json", content: JSON.stringify({ version: 1, contracts: [{ id: "input.demo", kind: "role_input", match: { roleId: "demo-analyst" }, schema: "schemas/input.json" }] }) },
-      contracts: [{ flowKey: "role_input:demo-analyst", kind: "role_input", roleId: "demo-analyst", contractId: "input.demo", schemaPath: "contracts/schemas/input.json", lastStatus: "covered" }],
+      contracts: [
+        { flowKey: "role_input:demo-analyst", kind: "role_input", roleId: "demo-analyst", contractId: "input.demo", schemaPath: "contracts/schemas/input.json", lastStatus: "covered" },
+        { flowKey: "writer:DONE:reviewer", kind: "flow", fromRoleId: "writer", toRoleId: "reviewer", contractId: null, schemaPath: null, lastStatus: "missing" },
+        { flowKey: "orphan", kind: "unknown", contractId: null, schemaPath: null, lastStatus: "missing" }
+      ],
       schemaFiles: [{ path: "contracts/schemas/input.json", content: "{}" }],
       coverage: { eligibleFlowCount: 2, coveredFlowCount: 1 }
     },
     t: testTranslator
   });
   assert.match(contractEditorHtml, /data-contract-kind/);
+  assert.match(contractEditorHtml, /data-studio-contract-target-kind="role" data-studio-contract-target-id="demo-analyst"/);
+  assert.match(contractEditorHtml, /data-studio-contract-target-kind="flow" data-studio-contract-target-id="writer:DONE:reviewer"/);
+  assert.doesNotMatch(contractEditorHtml, /data-studio-contract-target-kind=""/);
   assert.match(contractEditorHtml, /data-contract-role-fields/);
   assert.match(contractEditorHtml, /data-contract-flow-fields/);
   assert.match(contractEditorHtml, /data-contract-manifest-save/);

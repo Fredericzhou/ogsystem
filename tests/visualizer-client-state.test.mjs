@@ -833,6 +833,8 @@ test("client lifecycle panel renderers cover workbench structure, stats, and tim
   assert.match(statsHtml, /waiting review/);
   assert.match(statsHtml, /dry run/);
   assert.match(statsHtml, />3</);
+  assert.match(statsHtml, /class="stat is-status" data-status="waiting_review"/);
+  assert.match(statsHtml, /class="stat is-pending-reviews"/);
 
   const emptyTimeline = renderTimelineHtml({
     events: [],

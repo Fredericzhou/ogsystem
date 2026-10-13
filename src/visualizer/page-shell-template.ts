@@ -263,16 +263,16 @@ export function renderPageShellBody({ workdir, locale, t }: PageShellBodyOptions
                     <select id="log-role" class="select" aria-label="${escapeHtml(t("logs.roleLogs"))}">
                     <option value="">${escapeHtml(t("timeline.allRoles"))}</option>
                     </select>
-                    <select id="log-page-size" class="select" aria-label="Log page size">
+                    <select id="log-page-size" class="select" aria-label="${escapeHtml(t("logs.pageSize"))}">
                       <option value="100">100</option>
                       <option value="500">500</option>
                       <option value="1000">1000</option>
                     </select>
-                    <select id="logs-all" class="select" aria-label="Log scope">
+                    <select id="logs-all" class="select" aria-label="${escapeHtml(t("logs.scope"))}">
                       <option value="">${escapeHtml(t("logs.all"))}</option>
                     </select>
                     <input id="log-tail" class="select" type="number" min="1" placeholder="${escapeHtml(t("logs.tail"))}" aria-label="${escapeHtml(t("logs.tail"))}" />
-                    <input id="log-since" class="select" type="datetime-local" aria-label="Log since" />
+                    <input id="log-since" class="select" type="datetime-local" aria-label="${escapeHtml(t("logs.since"))}" />
                   </div>
                 </div>
               </header>

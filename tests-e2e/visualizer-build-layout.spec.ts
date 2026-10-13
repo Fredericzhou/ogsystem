@@ -172,6 +172,91 @@ async function expectBuildCanvasIdentityStable(page): Promise<void> {
   });
 }
 
+test("lifecycle tabs keep the work area aligned across half-screen widths", async ({ page }) => {
+  const workdir = await mkdtemp(path.join(os.tmpdir(), "ogsystem-lifecycle-tab-alignment-"));
+  await seedProject(workdir);
+  const started = await startVisualizationServer({ workdir, host: "127.0.0.1", port: 0 });
+  try {
+    await page.goto(started.url);
+    const alignment = async () => page.evaluate(() => {
+      const stage = document.querySelector(".stage-stack");
+      const tabs = document.getElementById("console-tabs");
+      if (!stage || !tabs) return null;
+      const stageBounds = stage.getBoundingClientRect();
+      const tabBounds = tabs.getBoundingClientRect();
+      return {
+        stageLeft: Math.round(stageBounds.left),
+        stageWidth: Math.round(stageBounds.width),
+        stageGutter: stage.offsetWidth - stage.clientWidth,
+        stageClientWidth: stage.clientWidth,
+        tabsLeft: Math.round(tabBounds.left),
+        tabsWidth: Math.round(tabBounds.width)
+      };
+    });
+    const tabs = [
+      ["console-tab-project", "console-panel-project"],
+      ["console-tab-design", "console-panel-build"],
+      ["console-tab-run", "console-panel-ops"],
+      ["console-tab-release", "console-panel-validate-release"]
+    ];
+
+    for (const width of [1100, 960, 720]) {
+      await page.setViewportSize({ width, height: 820 });
+      await page.locator("#console-tab-design").click();
+      await expect(page.locator("#console-panel-build")).toBeVisible();
+      const before = await alignment();
+      for (const [tabId, panelId] of tabs) {
+        await page.locator(`#${tabId}`).click();
+        await expect(page.locator(`#${panelId}`)).toBeVisible();
+        await expect.poll(alignment).toEqual(before);
+      }
+      await page.locator("#console-tab-run").click();
+      await page.locator("#sidebar-toggle").click();
+      await expect.poll(alignment).toEqual(before);
+      await page.locator("#sidebar-overlay").click({ position: { x: width - 10, y: 10 } });
+      await expect.poll(alignment).toEqual(before);
+    }
+  } finally {
+    await page.close();
+    await new Promise<void>((resolve) => started.server.close(() => resolve()));
+  }
+});
+
+test("localized release warnings render without breaking project loading", async ({ page }) => {
+  const workdir = await mkdtemp(path.join(os.tmpdir(), "ogsystem-release-warning-render-"));
+  await seedProject(workdir);
+  const started = await startVisualizationServer({ workdir, host: "127.0.0.1", port: 0 });
+  const pageErrors: string[] = [];
+  page.on("pageerror", (error) => pageErrors.push(error.message));
+  try {
+    await page.route("**/api/v1/project/readiness", async (route) => {
+      const response = await route.fetch();
+      const readiness = await response.json();
+      readiness.warnings = [
+        ...(Array.isArray(readiness.warnings) ? readiness.warnings : []),
+        {
+          code: "READINESS_MODEL_CATALOG_STALE",
+          severity: "warning",
+          message: "Model catalog generated at 2026-10-12T02:22:58.207Z is stale; refresh with `ogs models sync`."
+        }
+      ];
+      await route.fulfill({ response, json: readiness });
+    });
+    await page.setViewportSize({ width: 1280, height: 820 });
+    await page.goto(`${started.url}/?lang=zh-CN`);
+    await expect(page.locator("#console-panel-project")).toBeVisible();
+    await page.locator("#console-tab-release").click();
+    await expect(page.locator("#console-panel-validate-release")).toBeVisible();
+    await expect(page.locator("#release-gate")).toContainText("条警告将纳入发布说明");
+    await expect(page.locator("#release-gate")).toContainText("模型目录生成于 2026-10-12T02:22:58.207Z");
+    await expect(page.locator("#release-gate")).toContainText("ogs models sync");
+    expect(pageErrors).toEqual([]);
+  } finally {
+    await page.close();
+    await new Promise<void>((resolve) => started.server.close(() => resolve()));
+  }
+});
+
 test("Build workbench keeps view toggles in footer and aligns graph with docked inspector", async ({ page }) => {
   const workdir = await mkdtemp(path.join(os.tmpdir(), "ogsystem-build-layout-"));
   await seedProject(workdir);
@@ -206,6 +291,8 @@ test("Build workbench keeps view toggles in footer and aligns graph with docked 
     await expectDockedSelectionAligned(page);
     const roleNode = page.locator('#studio-graph-root [data-cell-id="demo-analyst"]').first();
     await expect(roleNode).toBeVisible();
+    await page.locator('#studio-graph-root [data-studio-graph-action="fit"]').click();
+    await waitForStudioCell(page, "demo-analyst");
     await page.waitForTimeout(400);
     await expect(page).toHaveScreenshot("build-workbench-desktop.png", {
       animations: "disabled",
@@ -306,6 +393,8 @@ test("Build workbench remains usable on a narrow mobile viewport", async ({ page
     await expect(page.locator("#studio-graph-root")).toBeVisible();
     await expect(page.locator('[data-studio-graph-action="reset-view"]')).toBeVisible();
     await expect(page.locator('[data-studio-side-tab="structure"]')).toHaveAttribute("aria-pressed", "true");
+    await page.locator('#studio-graph-root [data-studio-graph-action="fit"]').click();
+    await waitForStudioCell(page, "demo-analyst");
 
     const viewport = await page.evaluate(() => ({
       viewportWidth: document.documentElement.clientWidth,

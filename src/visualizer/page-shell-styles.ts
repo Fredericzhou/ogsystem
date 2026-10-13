@@ -19,6 +19,9 @@ export function renderPageShellStyles(): string {
       --control-bg: rgba(255, 255, 255, 0.035);
       --control-bg-strong: rgba(255, 255, 255, 0.055);
       --control-border-strong: rgba(148, 163, 184, 0.24);
+      --control-height: 36px;
+      --control-radius: 8px;
+      --control-focus-ring: rgba(56, 189, 248, 0.2);
       --tab-active-bg: linear-gradient(180deg, rgba(56, 189, 248, 0.18), rgba(56, 189, 248, 0.1));
       --tab-active-border: rgba(56, 189, 248, 0.4);
       --radius: 12px;
@@ -123,10 +126,10 @@ export function renderPageShellStyles(): string {
     .search, .select {
       width: 100%;
       min-width: 0;
-      min-height: 36px;
-      padding: 7px 10px;
-      border: 1px solid var(--border);
-      border-radius: 7px;
+      min-height: var(--control-height);
+      padding: 7px 11px;
+      border: 1px solid var(--control-border-strong);
+      border-radius: var(--control-radius);
       background: var(--control-bg);
       color: var(--text);
       outline: none;
@@ -134,8 +137,43 @@ export function renderPageShellStyles(): string {
     }
     .search:hover, .select:hover,
     .search:focus, .select:focus {
-      border-color: rgba(56, 189, 248, 0.26);
+      border-color: rgba(56, 189, 248, 0.48);
       background: var(--control-bg-strong);
+    }
+    select.select,
+    .field select,
+    .studio-command-form select,
+    .studio-graph-toolbar select {
+      appearance: none;
+      box-sizing: border-box;
+      min-height: 32px;
+      border: 1px solid var(--control-border-strong);
+      border-radius: var(--control-radius);
+      background-color: var(--control-bg);
+      color: var(--text);
+      padding: 5px 34px 5px 9px;
+      background-image:
+        linear-gradient(45deg, transparent 50%, var(--muted) 50%),
+        linear-gradient(135deg, var(--muted) 50%, transparent 50%);
+      background-position:
+        calc(100% - 14px) 50%,
+        calc(100% - 9px) 50%;
+      background-size: 5px 5px, 5px 5px;
+      background-repeat: no-repeat;
+    }
+    .field select,
+    .studio-command-form select {
+      width: 100%;
+    }
+    .button:focus-visible,
+    .search:focus-visible,
+    .select:focus-visible,
+    .field input:focus-visible,
+    .field select:focus-visible,
+    .field textarea:focus-visible {
+      outline: none;
+      border-color: rgba(56, 189, 248, 0.72);
+      box-shadow: 0 0 0 3px var(--control-focus-ring);
     }
     .search::placeholder { color: #6d7c9b; }
     .truncate {
@@ -267,10 +305,15 @@ export function renderPageShellStyles(): string {
       grid-template-columns: 288px minmax(0, 1fr);
     }
     .flash {
-      position: relative;
+      position: fixed;
+      top: calc(env(safe-area-inset-top) + 72px);
+      left: 50%;
+      z-index: 30;
+      transform: translateX(-50%);
       justify-self: center;
-      max-width: min(560px, 100%);
-      margin: 0 8px;
+      width: max-content;
+      max-width: min(560px, calc(100vw - 24px));
+      margin: 0;
       padding: 9px 12px;
       border-radius: 10px;
       border: 1px solid var(--border);
@@ -291,6 +334,28 @@ export function renderPageShellStyles(): string {
     .flash.warning {
       border-color: rgba(251, 191, 36, 0.25);
       background: rgba(251, 191, 36, 0.08);
+    }
+    .studio-icon-button,
+    [data-studio-selection-collapse],
+    [data-contract-remove],
+    [data-context-map-remove] {
+      box-sizing: border-box;
+      display: inline-grid;
+      place-items: center;
+      width: 30px;
+      min-width: 30px;
+      height: 30px;
+      min-height: 30px;
+      flex: 0 0 30px;
+      padding: 0;
+      line-height: 1;
+      border-radius: var(--control-radius);
+    }
+    @media (max-width: 720px) {
+      .flash:not(.hidden) {
+        top: auto;
+        bottom: calc(env(safe-area-inset-bottom) + 64px);
+      }
     }
     .top-nav {
       position: sticky;
@@ -399,6 +464,11 @@ export function renderPageShellStyles(): string {
       padding: 0;
       min-width: 0;
     }
+    @media (min-width: 721px) {
+      .stage-stack {
+        scrollbar-gutter: stable both-edges;
+      }
+    }
     .status-bar {
       margin: 0;
       position: sticky;
@@ -476,8 +546,8 @@ export function renderPageShellStyles(): string {
     .top-nav-center .locale-field .select {
       min-width: 92px;
       width: auto;
-      min-height: 30px;
-      padding: 6px 10px;
+      min-height: 32px;
+      padding: 5px 34px 5px 10px;
     }
     .actions {
       display: flex;
@@ -487,27 +557,26 @@ export function renderPageShellStyles(): string {
       justify-content: flex-end;
     }
     .button {
-      border: 1px solid var(--border);
-      background: var(--control-bg);
+      border: 1px solid var(--control-border-strong);
+      background: rgba(255, 255, 255, 0.045);
       color: var(--text);
-      border-radius: 9px;
-      padding: 5px 9px;
-      min-height: 30px;
+      border-radius: var(--control-radius);
+      padding: 6px 11px;
+      min-height: 34px;
       min-width: 0;
       white-space: nowrap;
       cursor: pointer;
       font-size: 12px;
+      font-weight: 600;
       line-height: 1.2;
-      transition: border-color 120ms ease, background 120ms ease, transform 120ms ease, box-shadow 120ms ease;
+      transition: border-color 120ms ease, background 120ms ease, box-shadow 120ms ease;
     }
     .button:hover {
-      border-color: rgba(56, 189, 248, 0.4);
-      background: var(--control-bg-strong);
-      box-shadow: 0 6px 18px rgba(0, 0, 0, 0.12);
-      transform: translateY(-1px);
+      border-color: rgba(56, 189, 248, 0.52);
+      background: rgba(56, 189, 248, 0.09);
+      box-shadow: 0 2px 8px rgba(0, 0, 0, 0.16);
     }
     .button:active {
-      transform: translateY(0);
       box-shadow: none;
     }
     .button.primary {
@@ -532,7 +601,7 @@ export function renderPageShellStyles(): string {
     .run-card:disabled {
       cursor: not-allowed;
       opacity: 0.6;
-      transform: none;
+      box-shadow: none;
     }
     .live {
       display: inline-flex;
@@ -841,16 +910,66 @@ export function renderPageShellStyles(): string {
       gap: 8px;
     }
     .stat {
+      --stat-accent: var(--text);
+      display: grid;
+      align-content: center;
+      justify-items: center;
+      min-height: 76px;
       padding: 10px;
       border-radius: 9px;
       background: var(--panel-soft);
       border: 1px solid var(--border);
       min-width: 0;
+      text-align: center;
+    }
+    .stat.is-status {
+      --stat-accent: var(--accent);
+      border-color: rgba(56, 189, 248, 0.24);
+      background: rgba(56, 189, 248, 0.055);
+    }
+    .stat.is-status[data-status="done"],
+    .stat.is-status[data-status="completed"] {
+      --stat-accent: var(--ok);
+      border-color: rgba(52, 211, 153, 0.24);
+      background: rgba(52, 211, 153, 0.055);
+    }
+    .stat.is-status[data-status="failed"] {
+      --stat-accent: var(--bad);
+      border-color: rgba(248, 113, 113, 0.26);
+      background: rgba(248, 113, 113, 0.06);
+    }
+    .stat.is-status[data-status="running"],
+    .stat.is-status[data-status="stopping"],
+    .stat.is-status[data-status="pending"],
+    .stat.is-status[data-status="paused"] {
+      --stat-accent: var(--warn);
+      border-color: rgba(251, 191, 36, 0.24);
+      background: rgba(251, 191, 36, 0.055);
+    }
+    .stat.is-status[data-status="waiting_review"],
+    .stat.is-status[data-status="active"] {
+      --stat-accent: var(--accent);
+      border-color: rgba(56, 189, 248, 0.24);
+      background: rgba(56, 189, 248, 0.055);
+    }
+    .stat.is-mode,
+    .stat.is-transitions {
+      --stat-accent: #7dd3fc;
+    }
+    .stat.is-active-branches {
+      --stat-accent: #5eead4;
+    }
+    .stat.is-pending-reviews {
+      --stat-accent: #fbbf24;
+    }
+    .stat.is-recent-audits {
+      --stat-accent: #86efac;
     }
     .stat strong {
       display: block;
       font-size: 18px;
       margin-bottom: 2px;
+      color: var(--stat-accent);
       min-width: 0;
       overflow: hidden;
       text-overflow: ellipsis;
@@ -860,6 +979,7 @@ export function renderPageShellStyles(): string {
       color: var(--muted);
       font-size: 11px;
       overflow-wrap: anywhere;
+      text-align: center;
     }
     .sr-only {
       position: absolute;
@@ -1813,11 +1933,6 @@ export function renderPageShellStyles(): string {
       width: 100%;
       justify-content: center;
     }
-    .studio-selection-overlay.is-collapsed [data-studio-selection-collapse] {
-      width: 42px;
-      min-width: 42px;
-      padding: 6px 0;
-    }
     .log-toolbar {
       display: grid;
       grid-template-columns: minmax(160px, 1fr) minmax(110px, 140px) minmax(90px, 120px) minmax(160px, 1fr);
@@ -2034,6 +2149,41 @@ export function renderPageShellStyles(): string {
     .state-card-grid-primary {
       grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
     }
+    .state-card-grid-primary > .event {
+      align-content: center;
+      justify-items: center;
+      min-height: 112px;
+      text-align: center;
+    }
+    .state-card-grid-primary > .event .event-top {
+      flex-direction: column;
+      gap: 4px;
+      justify-content: center;
+    }
+    .state-card-grid-primary > .event .hint {
+      max-width: 44ch;
+    }
+    .state-status-card[data-status="done"],
+    .state-status-card[data-status="completed"] {
+      border-color: rgba(52, 211, 153, 0.24);
+      background: rgba(52, 211, 153, 0.055);
+    }
+    .state-status-card[data-status="failed"] {
+      border-color: rgba(248, 113, 113, 0.26);
+      background: rgba(248, 113, 113, 0.06);
+    }
+    .state-status-card[data-status="running"],
+    .state-status-card[data-status="stopping"],
+    .state-status-card[data-status="pending"],
+    .state-status-card[data-status="paused"] {
+      border-color: rgba(251, 191, 36, 0.24);
+      background: rgba(251, 191, 36, 0.055);
+    }
+    .state-status-card[data-status="waiting_review"],
+    .state-status-card[data-status="active"] {
+      border-color: rgba(56, 189, 248, 0.24);
+      background: rgba(56, 189, 248, 0.055);
+    }
     .state-group {
       display: grid;
       gap: 8px;
@@ -2123,17 +2273,18 @@ export function renderPageShellStyles(): string {
       min-width: 0;
     }
     .studio-debug-metric {
-      display: flex;
+      display: grid;
       min-width: 0;
       min-height: 34px;
-      align-items: center;
-      justify-content: space-between;
-      gap: 6px;
+      align-content: center;
+      justify-items: center;
+      gap: 3px;
       padding: 5px 7px;
       border: 1px solid var(--border);
       border-radius: 6px;
       background: var(--surface-section);
       font-size: 11px;
+      text-align: center;
     }
     .studio-debug-metric > span {
       min-width: 0;
@@ -2142,12 +2293,15 @@ export function renderPageShellStyles(): string {
     }
     .studio-debug-metric > strong {
       min-width: 0;
-      text-align: right;
+      text-align: center;
       overflow-wrap: anywhere;
     }
     .studio-debug-metric.is-status {
       border-color: var(--tab-active-border);
     }
+    .studio-debug-metric.is-transitions > strong { color: #7dd3fc; }
+    .studio-debug-metric.is-flows > strong { color: #5eead4; }
+    .studio-debug-metric.is-reviews > strong { color: #fbbf24; }
     .studio-debug-handoff-list,
     .studio-debug-trace-list {
       display: grid;
@@ -2373,8 +2527,7 @@ export function renderPageShellStyles(): string {
       font-size: 12px;
     }
     .field textarea,
-    .field input,
-    .field select {
+    .field input {
       width: 100%;
       min-width: 0;
       min-height: 36px;
@@ -2390,12 +2543,6 @@ export function renderPageShellStyles(): string {
     .studio-command-form select {
       color-scheme: dark;
       cursor: pointer;
-    }
-    .field select:focus-visible,
-    .studio-command-form select:focus-visible,
-    .select:focus-visible {
-      border-color: rgba(56, 189, 248, 0.7);
-      box-shadow: 0 0 0 2px rgba(56, 189, 248, 0.14);
     }
     .field [aria-invalid="true"] {
       border-color: rgba(248, 113, 113, 0.78);
@@ -2821,6 +2968,12 @@ export function renderPageShellStyles(): string {
     @media (max-width: 1180px) {
       body.show-run-sidebar .shell.content,
       .shell.content { grid-template-columns: 1fr; }
+      .shell.content > .top-nav,
+      .shell.content > .flash,
+      .shell.content > .main-stage,
+      .shell.content > .status-bar {
+        grid-column: 1;
+      }
       .top-nav-row-primary {
         grid-template-columns: minmax(0, 1fr) auto;
       }

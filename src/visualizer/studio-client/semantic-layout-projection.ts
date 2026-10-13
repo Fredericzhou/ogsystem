@@ -147,7 +147,7 @@ const STUDIO_EDGE_FORWARD_ROUTER: LayoutRouter = {
 // non-zero final segment from which X6 can derive its direction.
 export const STUDIO_NODE_EDGE_CLEARANCE = 8;
 export const STUDIO_EDGE_TERMINAL_STUB_LENGTH = 24;
-const LOOP_ROUTE_CLEARANCE = 16;
+const LOOP_ROUTE_CLEARANCE = 40;
 const LOOP_ROUTE_BEND_PENALTY = 24;
 const BUNDLE_TRUNK_LENGTH = 36;
 
@@ -195,7 +195,7 @@ export function layoutNodeSize(node: GraphViewModelNode): { width: number; heigh
   const minimumHeight = Math.max(node.kind === "boundary" ? 70 : 84, node.layout.height);
   const labelWidth = estimateTextWidth(formatStudioNodeLabel(node));
   const width = Math.max(minimumWidth, Math.min(260, Math.ceil(labelWidth + 30)));
-  const lineWidth = Math.max(width - 18, 1);
+  const lineWidth = Math.max(width - (node.roleSeat ? 74 : 18), 1);
   const lineCount = Math.max(1, Math.ceil(labelWidth / lineWidth));
   const height = Math.max(minimumHeight, Math.min(156, 24 + lineCount * 16));
   return { width, height };
@@ -1414,7 +1414,7 @@ function buildEdgeRouting(
       orthogonalizeRoutePoints(routePoints);
     }
     simplifyRoutePoints(routePoints);
-    if (!requiresObstacleAwareRoute(edge, route)) {
+    if (!requiresObstacleAwareRoute(edge, route) || edge.target === "output") {
       enforceTerminalNormalStubs(routePoints, sourceTerminal, targetTerminal, nodeById);
     }
     const hasFixedRoute = routePoints.length > 0;
