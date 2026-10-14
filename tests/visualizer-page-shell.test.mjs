@@ -52,6 +52,10 @@ test("page shell keeps HTML, style, assets, and client script mounted", () => {
   assert.match(styles, /--surface-panel: var\(--panel\)/);
   assert.match(styles, /--surface-section: var\(--panel-soft\)/);
   assert.match(styles, /--surface-inset: var\(--panel-deep\)/);
+  assert.match(styles, /select option \{[\s\S]*?color: #e5eefb;[\s\S]*?background-color: #0f172a/);
+  assert.match(styles, /\.studio-system-settings > summary,[\s\S]*?\.studio-contract-editor > summary[\s\S]*?font-size: 13px;[\s\S]*?font-weight: 600/);
+  assert.match(styles, /\.studio-system-settings \.field input,[\s\S]*?\.studio-system-settings \.field select[\s\S]*?min-height: 36px;[\s\S]*?font-size: 13px/);
+  assert.match(styles, /\.studio-graph-island input\[type="checkbox"\][\s\S]*?width: 16px;[\s\S]*?height: 16px;[\s\S]*?accent-color: #38bdf8/);
   assert.match(styles, /\.card \{[\s\S]*?background: var\(--surface-panel\)/);
   assert.match(styles, /\.event \{[\s\S]*?background: var\(--surface-section\)/);
   assert.match(html, /<body>/);
@@ -126,7 +130,7 @@ test("page shell styles are isolated behind a CSS renderer", () => {
   assert.match(css, /\.console-panel\[hidden\]\s*\{/);
   assert.match(css, /--control-height:\s*36px/);
   assert.match(css, /\.button:focus-visible,[\s\S]*?\.select:focus-visible/);
-  assert.match(css, /select\.select,[\s\S]*?\.studio-graph-toolbar select\s*\{[\s\S]*?appearance:\s*none;[\s\S]*?background-image:/);
+  assert.match(css, /select\.select,[\s\S]*?\.studio-graph-toolbar select,[\s\S]*?\.studio-bridge-index-controls > select\s*\{[\s\S]*?appearance:\s*none;[\s\S]*?background-image:/);
   assert.match(css, /scrollbar-gutter:\s*stable both-edges/);
   assert.match(css, /\.studio-icon-button,[\s\S]*?width:\s*30px;[\s\S]*?height:\s*30px/);
   assert.match(css, /\.stat\s*\{[\s\S]*?justify-items:\s*center;[\s\S]*?text-align:\s*center/);

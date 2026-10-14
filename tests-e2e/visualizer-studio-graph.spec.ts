@@ -329,6 +329,22 @@ test("Studio Bridge renders and edits through the real graph workspace", async (
     await page.locator('[data-studio-side-tab="structure"]').click();
     await expect(page.locator(".studio-system-settings")).toBeVisible();
     await expect(page.locator(".studio-contract-editor")).toBeVisible();
+    const settingsSummary = page.locator(".studio-system-settings > summary");
+    const contractsSummary = page.locator(".studio-contract-editor > summary");
+    await expect(settingsSummary).toHaveCSS("font-size", "13px");
+    await expect(settingsSummary).toHaveCSS("font-weight", "600");
+    await expect(contractsSummary).toHaveCSS("font-size", "13px");
+    await expect(contractsSummary).toHaveCSS("font-weight", "600");
+    await expect(page.locator(".studio-system-settings .field input").first()).toHaveCSS("min-height", "32px");
+    await expect(page.locator(".studio-system-settings .field select").first()).toHaveCSS("min-height", "32px");
+    await expect(page.locator(".studio-system-settings .form-grid").first()).toHaveCSS("gap", "6px");
+    await expect(page.locator(".studio-system-settings .field > span").first()).toHaveCSS("font-size", "11px");
+    await expect(page.locator("[data-system-settings-save]")).toHaveCSS("min-height", "32px");
+    const optionColors = await page.locator(".studio-system-settings select option").first().evaluate((option) => {
+      const style = getComputedStyle(option);
+      return { color: style.color, backgroundColor: style.backgroundColor };
+    });
+    expect(optionColors).toEqual({ color: "rgb(229, 238, 251)", backgroundColor: "rgb(15, 23, 42)" });
     await page.locator(".studio-system-settings summary").click();
     await page.locator("[data-system-setting='entryEventType']").fill("BEGIN");
     await page.locator("[data-system-settings-save]").click();
@@ -346,6 +362,9 @@ test("Studio Bridge renders and edits through the real graph workspace", async (
     await page.locator("[data-context-map-target]").last().fill("request");
     await page.locator("[data-context-map-selector]").last().selectOption("global.task");
     await expect(page.locator("[data-context-map-optional]").last()).toBeDisabled();
+    await expect(page.locator("[data-context-map-optional]").last()).toHaveCSS("width", "16px");
+    await expect(page.locator("[data-context-map-optional]").last()).toHaveCSS("height", "16px");
+    await expect(page.locator("[data-context-map-optional]").last()).toHaveCSS("accent-color", "rgb(56, 189, 248)");
     await page.locator("[data-context-map-add]").click();
     await page.locator("[data-context-map-target]").last().fill("reviewNote");
     await page.locator("[data-context-map-selector]").last().selectOption("global.human_review.current.comment");
@@ -768,6 +787,12 @@ test("Studio graph controls expose localized names in English and Simplified Chi
     await expect(topologyOrder).toHaveAttribute("title", "Topology order \u00b7 on");
     await expect(layout).toHaveCSS("border-radius", "8px");
     await expect(page.locator("#locale-select")).toHaveCSS("border-radius", "8px");
+    await expect(page.locator("[data-studio-bridge-list-mode]")).toHaveCSS("border-radius", "8px");
+    const layoutOptionColors = await layout.locator("option").first().evaluate((option) => {
+      const style = getComputedStyle(option);
+      return { color: style.color, backgroundColor: style.backgroundColor };
+    });
+    expect(layoutOptionColors).toEqual({ color: "rgb(229, 238, 251)", backgroundColor: "rgb(15, 23, 42)" });
 
     const mainStage = page.locator(".main-stage");
     const statusBar = page.locator("footer.status-bar");
@@ -802,6 +827,95 @@ test("Studio graph controls expose localized names in English and Simplified Chi
     await localizedLayout.selectOption("compact");
     await page.locator('#studio-graph-root [data-studio-graph-action="layout"]').click();
     await expect(page.locator("#flash")).toContainText("已切换为纵向布局。");
+  } finally {
+    await page.close();
+    await new Promise<void>((resolve) => started.server.close(() => resolve()));
+  }
+});
+
+test("long Studio flow descriptions stay clear of role nodes in both layouts", async ({ page }) => {
+  const workdir = await mkdtemp(path.join(os.tmpdir(), "ogsystem-studio-long-flow-"));
+  await seedProject(workdir);
+  const started = await startVisualizationServer({ workdir, host: "127.0.0.1", port: 0 });
+  try {
+    await page.goto(started.url);
+    await page.waitForFunction(() => Boolean((window as any).OGSVisualizerClient));
+    await expect.poll(async () => page.locator("#console-tabs [role=tab]").count()).toBeGreaterThan(0);
+    await page.locator("#console-tab-design").click();
+    await page.locator('[data-workbench-view="bridge"]').click();
+    const graph = page.locator("#studio-graph-root");
+    await expect(graph).toBeVisible();
+    await waitForStudioCell(page, "demo-analyst");
+    const edge = graph.locator('[data-cell-id="1:demo-analyst:ANALYSIS_DONE:output"]');
+    await expect(edge).toBeVisible();
+    await edge.locator('path[stroke="transparent"]').first().click({ force: true });
+    const flowEditor = page.locator(".studio-flow-config-editor");
+    await expect(flowEditor).toBeVisible();
+    await flowEditor.locator('[data-flow-config-field="label"]').fill("PROPOSAL_READY_WITH_REVIEW_AND_COMPLIANCE_VALIDATION");
+    await flowEditor.locator("[data-flow-config-save]").click();
+    await expect(graph.locator(".x6-edge-label text").filter({ hasText: "PROPOSAL_READY" })).toBeVisible();
+    const layout = graph.locator("[data-studio-graph-layout]");
+    const assertFlowLabelsAvoidRoles = async () => {
+      const summary = graph.locator(".x6-edge-label text").filter({ hasText: "PROPOSAL_READY" }).last();
+      await expect(summary).toBeVisible();
+      await expect(summary).toContainText("PROPOSAL_READY_WITH_REVIEW_AND_COMPLIANCE_VALIDATION");
+      const labelWidth = await summary.evaluate((label) => label.getBoundingClientRect().width);
+      expect(labelWidth).toBeLessThanOrEqual(112);
+      const distanceFromFlow = await summary.evaluate((label) => {
+        const edge = label.closest(".x6-edge");
+        const path = edge?.querySelector<SVGPathElement>("path[marker-end]");
+        const matrix = path?.getScreenCTM();
+        if (!path || !matrix) return { distance: Number.POSITIVE_INFINITY };
+        const bounds = label.getBoundingClientRect();
+        const center = { x: bounds.left + bounds.width / 2, y: bounds.top + bounds.height / 2 };
+        const length = path.getTotalLength();
+        let minimum = Number.POSITIVE_INFINITY;
+        for (let distance = 0; distance <= length; distance += 4) {
+          const pointOnPath = path.getPointAtLength(Math.min(distance, length));
+          const point = new DOMPoint(pointOnPath.x, pointOnPath.y).matrixTransform(matrix);
+          minimum = Math.min(minimum, Math.hypot(point.x - center.x, point.y - center.y));
+        }
+        return { distance: minimum, center, transform: label.getAttribute("transform"), path: path.getAttribute("d") };
+      });
+      expect(distanceFromFlow.distance, JSON.stringify(distanceFromFlow)).toBeLessThanOrEqual(40);
+      await expect.poll(() => graph.evaluate((root) => {
+        const labels = Array.from(root.querySelectorAll<SVGGElement>(".x6-edge-label"))
+          .filter((label) => label.textContent?.trim());
+        const roles = Array.from(root.querySelectorAll<SVGGElement>(".x6-node[data-cell-id]"))
+          .filter((node) => !["input", "output"].includes(node.getAttribute("data-cell-id") ?? "") &&
+            !node.getAttribute("data-cell-id")?.startsWith("__ogs-scc-"));
+        const nodeOverlaps = labels.flatMap((label) => {
+          const labelBounds = label.getBoundingClientRect();
+          return roles.filter((role) => {
+            const roleBounds = role.getBoundingClientRect();
+            return labelBounds.left < roleBounds.right && roleBounds.left < labelBounds.right &&
+              labelBounds.top < roleBounds.bottom && roleBounds.top < labelBounds.bottom;
+            }).map((role) => ({
+              label: label.textContent?.trim(),
+              role: role.getAttribute("data-cell-id"),
+              labelBounds: { x: labelBounds.x, y: labelBounds.y, width: labelBounds.width, height: labelBounds.height },
+              roleBounds: (() => {
+                const bounds = role.getBoundingClientRect();
+                return { x: bounds.x, y: bounds.y, width: bounds.width, height: bounds.height };
+              })()
+            }));
+        });
+        const labelOverlaps = labels.flatMap((label, index) => {
+          const bounds = label.getBoundingClientRect();
+          return labels.slice(index + 1).filter((other) => {
+            const otherBounds = other.getBoundingClientRect();
+            return bounds.left < otherBounds.right && otherBounds.left < bounds.right &&
+              bounds.top < otherBounds.bottom && otherBounds.top < bounds.bottom;
+          }).map((other) => [label.textContent?.trim(), other.textContent?.trim()]);
+        });
+        return { nodeOverlaps, labelOverlaps };
+      })).toEqual({ nodeOverlaps: [], labelOverlaps: [] });
+    };
+    await assertFlowLabelsAvoidRoles();
+    await layout.selectOption("flow");
+    await assertFlowLabelsAvoidRoles();
+    await layout.selectOption("stacked");
+    await assertFlowLabelsAvoidRoles();
   } finally {
     await page.close();
     await new Promise<void>((resolve) => started.server.close(() => resolve()));
@@ -1101,6 +1215,16 @@ test("SCC container drag moves every member node with the container", async ({ p
       return badges.filter((badge) => nodes.some((node) =>
         badge.left < node.right && node.left < badge.right && badge.top < node.bottom && node.top < badge.bottom
       )).length;
+    })).toBe(0);
+    await expect.poll(async () => page.evaluate(() => {
+      const group = document.querySelector<HTMLElement>('#studio-graph-root [data-cell-id^="__ogs-scc-"]')?.getBoundingClientRect();
+      if (!group) return -1;
+      const labels = Array.from(document.querySelectorAll<SVGGElement>("#studio-graph-root .x6-edge.is-loop-back .x6-edge-label"))
+        .filter((label) => label.textContent?.trim() && !label.textContent.trim().startsWith("#"));
+      return labels.filter((label) => {
+        const bounds = label.getBoundingClientRect();
+        return bounds.left < group.left || bounds.right > group.right || bounds.top < group.top || bounds.bottom > group.bottom;
+      }).length;
     })).toBe(0);
     await expect(page.locator('#studio-graph-root .x6-edge.is-loop-back')).toHaveCount(2);
     await expect.poll(async () => page.evaluate(() => Array.from(

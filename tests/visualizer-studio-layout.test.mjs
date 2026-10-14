@@ -140,6 +140,27 @@ test("ELK expands flow spacing for longer handoff labels", async () => {
   assert.ok(gapFor(longLabel) > gapFor(compactLabel));
 });
 
+test("ELK expands stacked columns for long handoff labels", async () => {
+  const viewModel = graphViewModel();
+  viewModel.nodes = [node("input", 0, 0), node("source", 0, 0), node("target", 0, 0), node("output", 0, 0)];
+  viewModel.edges = [
+    edge("input-source", "input", "source", { label: "GO" }),
+    edge("input-target", "input", "target", { label: "GO" }),
+    edge("source-output", "source", "output", { label: "DONE" }),
+    edge("target-output", "target", "output", { label: "DONE" })
+  ];
+  const compactLabel = await createElkLayoutProjection(viewModel, "stacked");
+  viewModel.edges[0].label = "PROPOSAL_READY_WITH_REVIEW_AND_VALIDATION";
+  const longLabel = await createElkLayoutProjection(viewModel, "stacked");
+  const siblingGap = (projection) => {
+    const source = projection.nodes.find((item) => item.id === "source");
+    const target = projection.nodes.find((item) => item.id === "target");
+    return Math.abs(source.x - target.x) - Math.max(source.width, target.width);
+  };
+
+  assert.ok(siblingGap(longLabel) > siblingGap(compactLabel));
+});
+
 test("ELK places disconnected boundaries along the selected orientation without role seats", async () => {
   const viewModel = graphViewModel();
   viewModel.nodes = viewModel.nodes.filter((node) => node.id === "input" || node.id === "output");
@@ -229,6 +250,107 @@ test("stored back edges use their explicit lane instead of a second X6 route", (
   assert.equal(loop.routing.router.name, "normal");
 });
 
+test("backward feedback edges use a distinct obstacle-aware channel from the forward handoff", () => {
+  const viewModel = {
+    ...graphViewModel(),
+    nodes: [node("input", 0, 0), node("proposer", 180, 0), node("judge", 520, 0), node("output", 900, 0)],
+    edges: [
+      edge("proposal-ready", "proposer", "judge"),
+      edge("rework", "judge", "proposer")
+    ]
+  };
+  const projection = createStoredLayoutProjection(viewModel);
+  const rework = projection.edges.find((item) => item.id === "rework").routing;
+  const proposer = projection.nodes.find((item) => item.id === "proposer");
+  const judge = projection.nodes.find((item) => item.id === "judge");
+
+  assert.ok(["top", "bottom"].includes(rework.source.side));
+  assert.equal(rework.source.side, rework.target.side);
+  assert.ok(rework.routePoints.length >= 3);
+  assert.ok(rework.routePoints.some((point) =>
+    point.y < Math.min(proposer.y, judge.y) ||
+    point.y > Math.max(proposer.y + proposer.height, judge.y + judge.height)
+  ));
+});
+
+test("backward feedback routes move around obstructing nodes without crossing their clearance", () => {
+  const viewModel = {
+    ...graphViewModel(),
+    nodes: [
+      node("input", 0, 0),
+      node("proposer", 180, 0),
+      node("critic", 340, -84),
+      node("judge", 520, 0),
+      node("output", 900, 0)
+    ],
+    edges: [
+      edge("proposal-ready", "proposer", "judge"),
+      edge("rework", "judge", "proposer")
+    ]
+  };
+  const projection = createStoredLayoutProjection(viewModel);
+  const route = projection.edges.find((item) => item.id === "rework").routing;
+  const sourceNode = projection.nodes.find((item) => item.id === "judge");
+  const targetNode = projection.nodes.find((item) => item.id === "proposer");
+  const nodes = projection.nodes.filter((item) => !["proposer", "judge"].includes(item.id));
+  const path = [
+    {
+      x: sourceNode.x + sourceNode.width / 2 + route.source.offset,
+      y: route.source.side === "top" ? sourceNode.y : sourceNode.y + sourceNode.height
+    },
+    ...route.routePoints,
+    {
+      x: targetNode.x + targetNode.width / 2 + route.target.offset,
+      y: route.target.side === "top" ? targetNode.y : targetNode.y + targetNode.height
+    }
+  ];
+  const segmentBlocked = (start, end, obstacle) => {
+    const left = obstacle.x - 40;
+    const right = obstacle.x + obstacle.width + 40;
+    const top = obstacle.y - 40;
+    const bottom = obstacle.y + obstacle.height + 40;
+    if (start.y === end.y) {
+      return start.y > top && start.y < bottom &&
+        Math.max(Math.min(start.x, end.x), left) < Math.min(Math.max(start.x, end.x), right);
+    }
+    return start.x > left && start.x < right &&
+      Math.max(Math.min(start.y, end.y), top) < Math.min(Math.max(start.y, end.y), bottom);
+  };
+
+  assert.ok(path.slice(1).every((point, index) =>
+    nodes.every((obstacle) => !segmentBlocked(path[index], point, obstacle))
+  ));
+});
+
+test("ELK feedback edges keep a separate orthogonal return path", async () => {
+  const viewModel = {
+    ...graphViewModel(),
+    nodes: [
+      node("input", 0, 0),
+      node("proposer", 0, 0, { routingMode: "parallel_split" }),
+      node("critic-a", 0, 0),
+      node("critic-b", 0, 0),
+      node("judge", 0, 0, { joinMode: "all_of", joinSources: ["proposer", "critic-a", "critic-b"] }),
+      node("output", 0, 0)
+    ],
+    edges: [
+      edge("research-request", "input", "proposer"),
+      edge("critique-a", "critic-a", "judge"),
+      edge("critique-b", "critic-b", "judge"),
+      edge("decision-ready", "judge", "output"),
+      edge("send-critique-a", "proposer", "critic-a"),
+      edge("send-critique-b", "proposer", "critic-b"),
+      edge("proposal-ready", "proposer", "judge"),
+      edge("rework", "judge", "proposer")
+    ]
+  };
+  const projection = await createElkLayoutProjection(viewModel, "flow");
+  const rework = projection.edges.find((item) => item.id === "rework").routing;
+  assert.equal(rework.source.side, rework.target.side);
+  assert.ok(["top", "bottom"].includes(rework.source.side));
+  assert.ok(rework.routePoints.length >= 3);
+});
+
 test("stored projection preserves positions while renderer stays library-independent", async () => {
   const viewModel = graphViewModel();
   const projection = createStoredLayoutProjection(viewModel);
@@ -253,8 +375,11 @@ test("stored projection preserves positions while renderer stays library-indepen
   assert.match(renderer, /interacting: true/);
   assert.match(renderer, /export function alignStudioSccGroups\(graph: Graph\)/);
   assert.match(renderer, /formatStudioEdgeTopologyLabel\(edge\)/);
-  assert.match(renderer, /text: formatStudioEdgeSummaryLabel\(edge\),[\s\S]*?fontSize: 10/);
-  assert.match(renderer, /distance: 0\.5,\r?\n\s+offset: -15/);
+  assert.match(renderer, /text: renderedSummaryLabel,[\s\S]*?fontSize: 10/);
+  assert.match(renderer, /inlineTopologyLabel = hasWrappedSummaryLabel \? formatStudioEdgeTopologyLabel\(edge\) : ""/);
+  assert.match(renderer, /offset: positions\?\.topology\?\.offset \?\? -topologyLabelOffset/);
+  assert.match(renderer, /textWrap: \{\r?\n\s+width: STUDIO_EDGE_SUMMARY_LABEL_MAX_WIDTH,[\s\S]*?ellipsis: false/);
+  assert.doesNotMatch(renderer, /hasLongSummaryLabel/);
   assert.match(renderer, /name: "block",\r?\n\s+width: loopEdge \? 14 : 12,\r?\n\s+height: loopEdge \? 10 : 9/);
   assert.match(renderer, /function isLoopEdge\(edge: GraphViewModelEdge\)/);
   assert.match(renderer, /strokeDasharray: loopEdge \? "7 5"/);

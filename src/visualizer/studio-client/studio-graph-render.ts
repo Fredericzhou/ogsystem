@@ -5,7 +5,9 @@ import { roleColorForId } from "../role-color.js";
 import {
   formatStudioEdgeLabel,
   formatStudioEdgeSummaryLabel,
-  formatStudioEdgeTopologyLabel
+  formatStudioEdgeTopologyLabel,
+  estimateStudioEdgeSummaryLabelWidth,
+  STUDIO_EDGE_SUMMARY_LABEL_MAX_WIDTH
 } from "../studio-edge-semantics.js";
 import {
   formatStudioNodeLabel,
@@ -115,7 +117,7 @@ export function renderStudioGraphViewModel(graph: Graph, viewModel: GraphViewMod
   const portsByNodeId = projectionPortsByNode(projection);
   graph.batchUpdate("studio-projection", () => {
     const nextNodeIds = new Set(projectedViewModel.nodes.map((node) => node.id));
-    const sccGroups = buildSccGroups(projectedViewModel.nodes, graph);
+    const sccGroups = buildSccGroups(projectedViewModel.nodes, viewModel.edges, graph);
     for (const group of sccGroups) nextNodeIds.add(group.id);
     const nextEdgeIds = new Set(viewModel.edges.map((edge) => edge.id));
     for (const bundle of projection.bundles) nextEdgeIds.add(bundle.id);
@@ -167,7 +169,9 @@ export function renderStudioGraphViewModel(graph: Graph, viewModel: GraphViewMod
       if (!cell?.isNode()) continue;
       finalizeStudioNodePorts(cell, node, portsByNodeId.get(node.id));
     }
+
   });
+  positionStudioEdgeLabels(graph, viewModel.edges);
 }
 
 function bundleStroke(channel: string): string {
@@ -251,7 +255,7 @@ const SCC_COLORS = [
   { fill: "rgba(192, 132, 252, 0.025)", stroke: "rgba(192, 132, 252, 0.38)", label: "#b39acb" }
 ];
 
-function buildSccGroups(nodes: readonly GraphViewModelNode[], graph: Graph): SccGroup[] {
+function buildSccGroups(nodes: readonly GraphViewModelNode[], edges: readonly GraphViewModelEdge[], graph: Graph): SccGroup[] {
   const groups = new Map<string, GraphViewModelNode[]>();
   for (const node of nodes) {
     if (!node.topologyComponentId?.startsWith("SCC-")) continue;
@@ -262,8 +266,21 @@ function buildSccGroups(nodes: readonly GraphViewModelNode[], graph: Graph): Scc
     const top = Math.min(...members.map((node) => node.layout.y));
     const right = Math.max(...members.map((node) => node.layout.x + node.layout.width));
     const bottom = Math.max(...members.map((node) => node.layout.y + node.layout.height));
-    const padding = 28;
     const memberIds = members.map((node) => node.id).sort();
+    const memberIdSet = new Set(memberIds);
+    const padding = edges.reduce((required, edge) => {
+      if (!memberIdSet.has(edge.source) || !memberIdSet.has(edge.target)) return required;
+      const summaryLabel = formatStudioEdgeSummaryLabel(edge);
+      const hasWrappedSummaryLabel = estimateStudioEdgeSummaryLabelWidth(summaryLabel) > STUDIO_EDGE_SUMMARY_LABEL_MAX_WIDTH;
+      const inlineTopologyLabel = hasWrappedSummaryLabel ? formatStudioEdgeTopologyLabel(edge) : "";
+      const labelWidth = estimateStudioEdgeSummaryLabelWidth(inlineTopologyLabel ? `${inlineTopologyLabel} ${summaryLabel}` : summaryLabel);
+      const labelHeight = Math.ceil(labelWidth / STUDIO_EDGE_SUMMARY_LABEL_MAX_WIDTH) * 20 + 12;
+      const labelOffset = hasWrappedSummaryLabel ? 0 : 9;
+      return Math.max(required, Math.ceil(40 + labelOffset + Math.max(
+        Math.min(labelWidth, STUDIO_EDGE_SUMMARY_LABEL_MAX_WIDTH) / 2,
+        labelHeight / 2
+      ) + 8));
+    }, 28);
     return {
       id: `__ogs-scc-${label}`,
       label,
@@ -581,7 +598,10 @@ function projectionPortsByNode(projection: LayoutProjection): Map<string, Studio
   ]));
 }
 
-function studioEdgeMetadata(edge: GraphViewModelEdge, routing?: StudioEdgeRouting): Edge.Metadata {
+function studioEdgeMetadata(
+  edge: GraphViewModelEdge,
+  routing?: StudioEdgeRouting
+): Edge.Metadata {
   return {
     id: edge.id,
     source: routing?.source ?? { cell: edge.source },
@@ -596,15 +616,148 @@ function studioEdgeMetadata(edge: GraphViewModelEdge, routing?: StudioEdgeRoutin
   };
 }
 
-function studioEdgeLabels(edge: GraphViewModelEdge): Edge.Metadata["labels"] {
+type StudioEdgeLabelPosition = { distance: number; offset: number };
+type StudioEdgeLabelPositions = { summary: StudioEdgeLabelPosition; topology?: StudioEdgeLabelPosition };
+type StudioLabelRect = { left: number; right: number; top: number; bottom: number };
+
+function positionStudioEdgeLabels(graph: Graph, edges: readonly GraphViewModelEdge[]): void {
+  const visibleNodes = Array.from(graph.container.querySelectorAll<SVGGElement>(".x6-node[data-cell-id]"))
+    .filter((node) => !node.getAttribute("data-cell-id")?.startsWith("__ogs-scc-"))
+    .map((node) => {
+      const bounds = node.getBoundingClientRect();
+      return { left: bounds.left, right: bounds.right, top: bounds.top, bottom: bounds.bottom };
+    });
+  const ordered = edges.map((edge) => ({
+    edge,
+    width: estimateStudioEdgeSummaryLabelWidth(formatStudioEdgeSummaryLabel(edge))
+  })).sort((left, right) => right.width - left.width || left.edge.id.localeCompare(right.edge.id));
+  const reservations: StudioLabelRect[] = [];
+  for (const { edge } of ordered) {
+    if (!formatStudioEdgeTopologyLabel(edge) ||
+      estimateStudioEdgeSummaryLabelWidth(formatStudioEdgeSummaryLabel(edge)) > STUDIO_EDGE_SUMMARY_LABEL_MAX_WIDTH) continue;
+    const cell = graph.getCellById(edge.id);
+    const view = cell?.isEdge() ? graph.findViewByCell(cell) : null;
+    const badge = view?.container.querySelector<SVGGElement>('.x6-edge-label[data-index="0"]');
+    if (!badge) continue;
+    const bounds = badge.getBoundingClientRect();
+    reservations.push({ left: bounds.left - 4, right: bounds.right + 4, top: bounds.top - 4, bottom: bounds.bottom + 4 });
+  }
+
+  for (const { edge } of ordered) {
+    const topologyLabel = Boolean(formatStudioEdgeTopologyLabel(edge)) &&
+      estimateStudioEdgeSummaryLabelWidth(formatStudioEdgeSummaryLabel(edge)) <= STUDIO_EDGE_SUMMARY_LABEL_MAX_WIDTH;
+    const labelIndex = topologyLabel ? 1 : 0;
+    const defaultLabels = studioEdgeLabels(edge);
+    const defaultPosition = defaultLabels[labelIndex]?.position as StudioEdgeLabelPosition | undefined;
+    const position = findStudioEdgeLabelPosition(
+      graph,
+      edge,
+      labelIndex,
+      visibleNodes,
+      reservations,
+      defaultPosition?.offset ?? 0
+    );
+    if (!position) continue;
+    reservations.push(position.bounds);
+  }
+}
+
+function findStudioEdgeLabelPosition(
+  graph: Graph,
+  edge: GraphViewModelEdge,
+  labelIndex: number,
+  obstacles: readonly StudioLabelRect[],
+  reserved: readonly StudioLabelRect[],
+  preferredOffset: number
+): { position: StudioEdgeLabelPosition; bounds: StudioLabelRect } | undefined {
+  const cell = graph.getCellById(edge.id);
+  if (!cell?.isEdge()) return undefined;
+  const view = graph.findViewByCell(cell) as unknown as StudioEdgeViewGeometry | null;
+  const path = view?.container.querySelector<SVGPathElement>("path[marker-end]");
+  const label = view?.container.querySelector<SVGGElement>(`.x6-edge-label[data-index="${labelIndex}"]`);
+  const matrix = path?.getScreenCTM();
+  if (!view || !path || !label || !matrix) return undefined;
+  const length = path.getTotalLength();
+  if (length <= 1) return undefined;
+  const labelSize = label.getBoundingClientRect();
+  const width = labelSize.width + 4;
+  const summaryText = formatStudioEdgeSummaryLabel(edge);
+  const inlineTopology = estimateStudioEdgeSummaryLabelWidth(summaryText) > STUDIO_EDGE_SUMMARY_LABEL_MAX_WIDTH
+    ? formatStudioEdgeTopologyLabel(edge)
+    : "";
+  const summaryWidth = estimateStudioEdgeSummaryLabelWidth(inlineTopology ? `${inlineTopology} ${summaryText}` : summaryText);
+  const summaryHeight = Math.ceil(summaryWidth / STUDIO_EDGE_SUMMARY_LABEL_MAX_WIDTH) * 20 + 12;
+  const height = Math.max(labelSize.height, summaryHeight) + 8;
+  const fractions = [0.5, 0.4, 0.6, 0.3, 0.7, 0.2, 0.8, 0.1, 0.9, 0.05, 0.95, 0.02, 0.98];
+  // Keep labels attached to their route. Long-range offsets avoid collisions
+  // visually, but make a flow label read as if it belongs to another edge.
+  const offsets = [...new Set([preferredOffset, 0, preferredOffset + 10, preferredOffset - 10])];
+  const candidates = fractions.flatMap((fraction) => {
+    const distance = length * fraction;
+    const point = path.getPointAtLength(distance);
+    const before = path.getPointAtLength(Math.max(0, distance - 2));
+    const after = path.getPointAtLength(Math.min(length, distance + 2));
+    const screenPoint = new DOMPoint(point.x, point.y).matrixTransform(matrix);
+    const screenBefore = new DOMPoint(before.x, before.y).matrixTransform(matrix);
+    const screenAfter = new DOMPoint(after.x, after.y).matrixTransform(matrix);
+    const tangentLength = Math.hypot(screenAfter.x - screenBefore.x, screenAfter.y - screenBefore.y) || 1;
+    const normal = {
+      x: -(screenAfter.y - screenBefore.y) / tangentLength,
+      y: (screenAfter.x - screenBefore.x) / tangentLength
+    };
+    const normalScale = Math.hypot(
+      matrix.a * normal.x + matrix.c * normal.y,
+      matrix.b * normal.x + matrix.d * normal.y
+    ) || 1;
+    return offsets.map((offset) => {
+      const x = screenPoint.x + normal.x * offset * normalScale;
+      const y = screenPoint.y + normal.y * offset * normalScale;
+      return {
+        position: { distance: fraction, offset },
+        bounds: { left: x - width / 2, right: x + width / 2, top: y - height / 2, bottom: y + height / 2 },
+        fraction,
+        offset
+      };
+    });
+  });
+  const intersects = (left: StudioLabelRect, right: StudioLabelRect) =>
+    left.left < right.right && right.left < left.right && left.top < right.bottom && right.top < left.bottom;
+  const predictedScore = (candidate: typeof candidates[number]) =>
+    obstacles.filter((obstacle) => intersects(candidate.bounds, obstacle)).length * 10000 +
+    reserved.filter((obstacle) => intersects(candidate.bounds, obstacle)).length * 1000 +
+    Math.abs(candidate.fraction - 0.5) * 10 + Math.abs(candidate.offset - preferredOffset) * 0.01;
+  const best = candidates.slice().sort((left, right) => predictedScore(left) - predictedScore(right))[0];
+  if (!best) return undefined;
+  const currentLabels = cell.getLabels();
+  cell.setLabels(studioEdgeLabels(edge, {
+    summary: best.position,
+    ...(formatStudioEdgeTopologyLabel(edge)
+      ? { topology: currentLabels[0]?.position as StudioEdgeLabelPosition ?? { distance: 0.5, offset: -15 } }
+      : {})
+  }));
+  return { position: best.position, bounds: best.bounds };
+}
+
+function studioEdgeLabels(edge: GraphViewModelEdge, positions?: StudioEdgeLabelPositions): Edge.Metadata["labels"] {
   const labels: NonNullable<Edge.Metadata["labels"]> = [];
+  const summaryLabel = formatStudioEdgeSummaryLabel(edge);
   const topologyLabel = formatStudioEdgeTopologyLabel(edge);
+  const hasWrappedSummaryLabel = estimateStudioEdgeSummaryLabelWidth(summaryLabel) > STUDIO_EDGE_SUMMARY_LABEL_MAX_WIDTH;
+  const inlineTopologyLabel = hasWrappedSummaryLabel ? formatStudioEdgeTopologyLabel(edge) : "";
+  const renderedSummaryLabel = inlineTopologyLabel ? `${inlineTopologyLabel} ${summaryLabel}` : summaryLabel;
+  const summaryLabelHeight = Math.ceil(
+    estimateStudioEdgeSummaryLabelWidth(renderedSummaryLabel) / STUDIO_EDGE_SUMMARY_LABEL_MAX_WIDTH
+  ) * 20 + 12;
+  const separateTopologyLabel = topologyLabel && !hasWrappedSummaryLabel;
+  const topologyLabelOffset = 15;
+  const summaryLabelOffset = separateTopologyLabel ? 9 : 0;
+  const summaryPosition = positions?.summary ?? { distance: 0.5, offset: summaryLabelOffset };
   const isCycle = edge.topologyOrder?.endsWith("L") === true;
-  if (topologyLabel) {
+  if (separateTopologyLabel) {
     labels.push({
       position: {
-        distance: 0.5,
-        offset: -15
+        distance: positions?.topology?.distance ?? 0.5,
+        offset: positions?.topology?.offset ?? -topologyLabelOffset
       },
       markup: [
         { tagName: "rect", selector: "body" },
@@ -629,14 +782,19 @@ function studioEdgeLabels(edge: GraphViewModelEdge): Edge.Metadata["labels"] {
   }
   labels.push({
     position: {
-      distance: 0.5,
-      offset: topologyLabel ? 9 : 0
+      distance: summaryPosition.distance,
+      offset: summaryPosition.offset
     },
     attrs: {
       label: {
-        text: formatStudioEdgeSummaryLabel(edge),
+        text: renderedSummaryLabel,
         fill: "#dbeafe",
-        fontSize: 10
+        fontSize: 10,
+        textWrap: {
+          width: STUDIO_EDGE_SUMMARY_LABEL_MAX_WIDTH,
+          height: summaryLabelHeight,
+          ellipsis: false
+        }
       },
       body: {
         fill: "rgba(15, 23, 42, 0.94)",
@@ -694,11 +852,16 @@ function studioEdgeAttrs(edge: GraphViewModelEdge): Edge.Metadata["attrs"] {
   };
 }
 
-function updateStudioEdge(cell: Edge, edge: GraphViewModelEdge, routing?: StudioEdgeRouting): void {
+function updateStudioEdge(
+  cell: Edge,
+  edge: GraphViewModelEdge,
+  routing?: StudioEdgeRouting,
+  labelPosition?: StudioEdgeLabelPosition
+): void {
   cell.setData({ studioEdge: edge });
   cell.setSource(routing?.source ?? { cell: edge.source });
   cell.setTarget(routing?.target ?? { cell: edge.target });
-  cell.setLabels(studioEdgeLabels(edge));
+  cell.setLabels(studioEdgeLabels(edge, labelPosition));
   cell.attr(studioEdgeAttrs(edge));
   cell.setRouter(routing?.router ?? STUDIO_EDGE_ORTH_ROUTER);
   cell.setVertices(routing?.vertices ?? []);

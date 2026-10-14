@@ -1,7 +1,11 @@
 import ELK from "elkjs/lib/elk.bundled.js";
 
 import type { GraphViewModel, GraphViewModelEdge, GraphViewModelNode } from "../studio-contracts.js";
-import { formatStudioEdgeSummaryLabel } from "../studio-edge-semantics.js";
+import {
+  estimateStudioEdgeSummaryLabelWidth,
+  formatStudioEdgeSummaryLabel,
+  STUDIO_EDGE_SUMMARY_LABEL_MAX_WIDTH
+} from "../studio-edge-semantics.js";
 import {
   buildProjection,
   type LayoutDiagnostic,
@@ -54,19 +58,30 @@ function configFor(mode: StudioLayoutMode): LayoutConfig {
   return { direction: "RIGHT", padding: 64, nodeSpacing: 52, layerSpacing: 76 };
 }
 
-function estimateFlowLabelWidth(value: string): number {
-  return Array.from(value).reduce((width, character) => {
-    if (/\s/u.test(character)) return width + 3.5;
-    if (/[\u2e80-\u9fff\uff00-\uffef]/u.test(character)) return width + 10;
-    return width + 6;
+function longestFlowLabelWidth(viewModel: GraphViewModel): number {
+  return viewModel.edges.reduce((width, edge) =>
+    Math.max(width, Math.min(
+      STUDIO_EDGE_SUMMARY_LABEL_MAX_WIDTH,
+      estimateStudioEdgeSummaryLabelWidth(formatStudioEdgeSummaryLabel(edge))
+    )), 0);
+}
+
+function longestFlowLabelHeight(viewModel: GraphViewModel): number {
+  return viewModel.edges.reduce((height, edge) => {
+    const labelWidth = estimateStudioEdgeSummaryLabelWidth(formatStudioEdgeSummaryLabel(edge));
+    return Math.max(height, Math.ceil(labelWidth / STUDIO_EDGE_SUMMARY_LABEL_MAX_WIDTH) * 20 + 12);
   }, 0);
 }
 
 function layerSpacingFor(viewModel: GraphViewModel, mode: StudioLayoutMode, minimum: number): number {
   if (mode === "stacked") return minimum;
-  const longestLabel = viewModel.edges.reduce((width, edge) =>
-    Math.max(width, estimateFlowLabelWidth(formatStudioEdgeSummaryLabel(edge))), 0);
+  const longestLabel = longestFlowLabelWidth(viewModel);
   return Math.max(minimum, Math.ceil(longestLabel + 44));
+}
+
+function nodeSpacingFor(viewModel: GraphViewModel, mode: StudioLayoutMode, minimum: number): number {
+  if (mode === "stacked") return Math.max(minimum, Math.ceil(longestFlowLabelWidth(viewModel) + 28));
+  return Math.max(minimum, longestFlowLabelHeight(viewModel) + 24);
 }
 
 function edgeChannelRank(edge: GraphViewModelEdge): number {
@@ -244,7 +259,7 @@ function createElkGraph(
         "elk.algorithm": "layered",
         "elk.direction": config.direction,
         "elk.edgeRouting": "ORTHOGONAL",
-        "elk.spacing.nodeNode": String(config.nodeSpacing),
+        "elk.spacing.nodeNode": String(nodeSpacingFor(viewModel, mode, config.nodeSpacing)),
         "elk.layered.spacing.nodeNodeBetweenLayers": String(layerSpacingFor(viewModel, mode, config.layerSpacing)),
         "elk.padding": `[top=${config.padding},left=${config.padding},bottom=${config.padding},right=${config.padding}]`,
         "elk.layered.cycleBreaking.strategy": "GREEDY",

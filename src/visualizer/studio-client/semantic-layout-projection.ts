@@ -1,4 +1,5 @@
 import type { GraphViewModel, GraphViewModelEdge, GraphViewModelNode } from "../studio-contracts.js";
+import { topologyComponentIds } from "../topology-order.js";
 import { formatStudioRuntimeNodeBadges } from "./studio-graph-runtime.js";
 
 export type StudioLayoutMode = "flow" | "compact" | "stacked";
@@ -1048,6 +1049,61 @@ function obstacleAwareLoopRoute(
   return path.slice(1, -1);
 }
 
+function backwardFeedbackRoute(
+  edge: GraphViewModelEdge,
+  sourceTerminal: LayoutTerminal,
+  targetTerminal: LayoutTerminal,
+  nodeById: ReadonlyMap<string, LayoutProjectionNode>
+): { source: LayoutTerminal; target: LayoutTerminal; points: LayoutPoint[] } | undefined {
+  const sourceNode = nodeById.get(edge.source);
+  const targetNode = nodeById.get(edge.target);
+  if (!sourceNode || !targetNode) return undefined;
+
+  const obstacles = expandedRouteObstacles(nodeById, new Set([edge.source, edge.target]));
+  const candidates: Array<{ source: LayoutTerminal; target: LayoutTerminal; points: LayoutPoint[]; length: number; order: number }> = [];
+  for (const [order, side] of (["top", "bottom"] as const).entries()) {
+    const source = { ...sourceTerminal, side };
+    const target = { ...targetTerminal, side };
+    const sourcePoint = terminalPoint(source, sourceNode);
+    const targetPoint = terminalPoint(target, targetNode);
+    if (!sourcePoint || !targetPoint) continue;
+    const sourceStub = terminalMarkerStubPoint(source, sourceNode);
+    const targetStub = terminalMarkerStubPoint(target, targetNode);
+    if (!sourceStub || !targetStub) continue;
+
+    const above = side === "top";
+    const baseLane = above
+      ? Math.min(sourceNode.y, targetNode.y) - STUDIO_EDGE_TERMINAL_STUB_LENGTH - 8
+      : Math.max(sourceNode.y + sourceNode.height, targetNode.y + targetNode.height) + STUDIO_EDGE_TERMINAL_STUB_LENGTH + 8;
+    const lanes = new Set([baseLane]);
+    for (const obstacle of obstacles) {
+      lanes.add(above ? obstacle.y - 2 : obstacle.y + obstacle.height + 2);
+    }
+    const usableLanes = [...lanes]
+      .filter((lane) => above
+        ? lane < Math.min(sourceNode.y, targetNode.y)
+        : lane > Math.max(sourceNode.y + sourceNode.height, targetNode.y + targetNode.height))
+      .sort((left, right) => Math.abs(left - baseLane) - Math.abs(right - baseLane));
+
+    for (const lane of usableLanes) {
+      const points = [
+        sourceStub,
+        { x: sourceStub.x, y: lane },
+        { x: targetStub.x, y: lane },
+        targetStub
+      ];
+      const path = [sourcePoint, ...points, targetPoint];
+      if (path.some((point, index) => index > 0 && routeSegmentBlocked(path[index - 1], point, obstacles))) continue;
+      simplifyRoutePoints(points);
+      candidates.push({ source, target, points, length: routeLength(path), order });
+      break;
+    }
+  }
+  candidates.sort((left, right) => left.length - right.length || left.order - right.order);
+  const selected = candidates[0];
+  return selected ? { source: selected.source, target: selected.target, points: selected.points } : undefined;
+}
+
 function requiresObstacleAwareRoute(edge: GraphViewModelEdge, route: ReturnType<typeof resolveRoute>): boolean {
   return route.kind === "self" || route.kind === "backward" || edgeChannel(edge) === "loop";
 }
@@ -1279,9 +1335,15 @@ function buildEdgeRouting(
   nodeById: ReadonlyMap<string, LayoutProjectionNode>,
   routePointsByEdgeId?: ReadonlyMap<string, readonly LayoutPoint[]>,
   geometryByEdgeId?: ReadonlyMap<string, LayoutEdgeGeometry>,
-  profile: StudioLayoutMode = "flow"
+  profile: StudioLayoutMode = "flow",
+  nodes: readonly GraphViewModelNode[] = []
 ): { routing: Map<string, LayoutEdgeRouting>; bundles: LayoutEdgeBundle[] } {
   const routes = new Map(edges.map((edge) => [edge.id, resolveRoute(edge, nodeById)]));
+  const topologyComponents = topologyComponentIds({ nodes, edges });
+  const feedbackEdgeIds = new Set(edges.filter((edge) => {
+    const component = topologyComponents.get(edge.source);
+    return component !== undefined && component === topologyComponents.get(edge.target);
+  }).map((edge) => edge.id));
   const drafts: RoutingDraft[] = [];
   for (const edge of edges) {
     const route = routes.get(edge.id)!;
@@ -1290,22 +1352,26 @@ function buildEdgeRouting(
     drafts.push({
       edge,
       route,
-      source: terminalFromPoint(
-        edge.source,
-        "source",
-        geometryByEdgeId?.get(edge.id)?.sourcePoint,
-        sourceNode,
-        terminal(edge.source, "source", route.sourceSide, 0, edge.id),
-        edge.id
-      ),
-      target: terminalFromPoint(
-        edge.target,
-        "target",
-        geometryByEdgeId?.get(edge.id)?.targetPoint,
-        targetNode,
-        terminal(edge.target, "target", route.targetSide, 0, edge.id),
-        edge.id
-      )
+      source: route.kind === "backward" && feedbackEdgeIds.has(edge.id)
+        ? terminal(edge.source, "source", "top", 0, edge.id)
+        : terminalFromPoint(
+            edge.source,
+            "source",
+            geometryByEdgeId?.get(edge.id)?.sourcePoint,
+            sourceNode,
+            terminal(edge.source, "source", route.sourceSide, 0, edge.id),
+            edge.id
+          ),
+      target: route.kind === "backward" && feedbackEdgeIds.has(edge.id)
+        ? terminal(edge.target, "target", "top", 0, edge.id)
+        : terminalFromPoint(
+            edge.target,
+            "target",
+            geometryByEdgeId?.get(edge.id)?.targetPoint,
+            targetNode,
+            terminal(edge.target, "target", route.targetSide, 0, edge.id),
+            edge.id
+          )
     });
   }
 
@@ -1373,9 +1439,21 @@ function buildEdgeRouting(
     const sourceOffset = sourceTerminal.offset;
     const targetOffset = targetTerminal.offset;
     const routePoints = projectedRoutePoints(edge, route, nodeById, finalRoutePoints);
-    alignRouteEndpoint(routePoints, sourceTerminal, nodeById.get(edge.source), "source");
-    alignRouteEndpoint(routePoints, targetTerminal, nodeById.get(edge.target), "target");
-    if (requiresObstacleAwareRoute(edge, route)) {
+    if (route.kind === "backward" && feedbackEdgeIds.has(edge.id)) {
+      const feedbackRoute = backwardFeedbackRoute(edge, sourceTerminal, targetTerminal, nodeById);
+      if (feedbackRoute) {
+        Object.assign(sourceTerminal, feedbackRoute.source);
+        Object.assign(targetTerminal, feedbackRoute.target);
+        routePoints.splice(0, routePoints.length, ...feedbackRoute.points);
+      } else {
+        const safeRoute = obstacleAwareLoopRoute(edge, sourceTerminal, targetTerminal, nodeById);
+        if (safeRoute.length > 0) routePoints.splice(0, routePoints.length, ...safeRoute);
+      }
+    } else {
+      alignRouteEndpoint(routePoints, sourceTerminal, nodeById.get(edge.source), "source");
+      alignRouteEndpoint(routePoints, targetTerminal, nodeById.get(edge.target), "target");
+    }
+    if (requiresObstacleAwareRoute(edge, route) && !(route.kind === "backward" && feedbackEdgeIds.has(edge.id))) {
       const safeRoute = obstacleAwareLoopRoute(edge, sourceTerminal, targetTerminal, nodeById);
       if (safeRoute.length > 0) routePoints.splice(0, routePoints.length, ...safeRoute);
     }
@@ -1448,7 +1526,7 @@ export function buildProjection(
 ): LayoutProjection {
   const nodeById = new Map(nodes.map((node) => [node.id, node]));
   const sortedEdges = viewModel.edges.slice().sort((left, right) => edgeSortKey(left).localeCompare(edgeSortKey(right)));
-  const completeRouting = buildEdgeRouting(sortedEdges, nodeById, routePointsByEdgeId, geometryByEdgeId, profile);
+  const completeRouting = buildEdgeRouting(sortedEdges, nodeById, routePointsByEdgeId, geometryByEdgeId, profile, viewModel.nodes);
   const edges = sortedEdges.map((edge) => {
     const routing = completeRouting.routing.get(edge.id)!;
     return {

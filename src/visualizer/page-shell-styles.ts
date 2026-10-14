@@ -41,6 +41,15 @@ export function renderPageShellStyles(): string {
     code, pre, input, button, select {
       font: inherit;
     }
+    select {
+      color-scheme: dark;
+      color: var(--text);
+      background-color: var(--control-bg);
+    }
+    select option {
+      color: #e5eefb;
+      background-color: #0f172a;
+    }
     textarea {
       font: 500 14px/1.6 "IBM Plex Mono", "SFMono-Regular", ui-monospace, monospace;
     }
@@ -143,7 +152,8 @@ export function renderPageShellStyles(): string {
     select.select,
     .field select,
     .studio-command-form select,
-    .studio-graph-toolbar select {
+    .studio-graph-toolbar select,
+    .studio-bridge-index-controls > select {
       appearance: none;
       box-sizing: border-box;
       min-height: 32px;
@@ -1699,6 +1709,68 @@ export function renderPageShellStyles(): string {
       font-size: 12px;
       line-height: 1.25;
     }
+    .studio-system-settings > summary,
+    .studio-contract-editor > summary {
+      color: var(--text);
+      font-size: 13px;
+      font-weight: 600;
+      line-height: 1.35;
+    }
+    .studio-system-settings .field > span {
+      color: var(--muted);
+      font-size: 11px;
+      font-weight: 500;
+      line-height: 1.35;
+    }
+    .studio-system-settings .form-grid {
+      gap: 6px;
+      margin-top: 8px;
+    }
+    .studio-system-settings .field {
+      gap: 4px;
+    }
+    .studio-system-settings .field input,
+    .studio-system-settings .field select {
+      box-sizing: border-box;
+      min-height: 32px;
+      padding: 5px 8px;
+      font-size: 13px;
+      line-height: 1.35;
+    }
+    .studio-selection-dialog .studio-system-settings [data-system-settings-save] {
+      min-height: 32px;
+      margin-top: 6px;
+      justify-self: start;
+    }
+    .studio-graph-island .field.checkbox,
+    .studio-selection-panel .field.checkbox,
+    .studio-command-form-check {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      min-width: 0;
+      min-height: 32px;
+      line-height: 1.35;
+    }
+    .studio-graph-island input[type="checkbox"],
+    .studio-selection-panel input[type="checkbox"],
+    .studio-command-form-check input[type="checkbox"] {
+      box-sizing: border-box;
+      width: 16px;
+      height: 16px;
+      min-width: 16px;
+      min-height: 16px;
+      margin: 0;
+      padding: 0;
+      accent-color: #38bdf8;
+      cursor: pointer;
+    }
+    .studio-graph-island input[type="checkbox"]:disabled,
+    .studio-selection-panel input[type="checkbox"]:disabled,
+    .studio-command-form-check input[type="checkbox"]:disabled {
+      cursor: not-allowed;
+      opacity: 0.55;
+    }
     .studio-selection-debug-panel {
       grid-auto-rows: max-content;
     }
@@ -2540,7 +2612,9 @@ export function renderPageShellStyles(): string {
     }
     .select,
     .field select,
-    .studio-command-form select {
+    .studio-command-form select,
+    .studio-graph-toolbar select,
+    .studio-bridge-index-controls > select {
       color-scheme: dark;
       cursor: pointer;
     }
