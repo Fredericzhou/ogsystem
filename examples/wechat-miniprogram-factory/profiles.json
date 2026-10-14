@@ -1,0 +1,8 @@
+[
+  {
+    "profileId": "profile.workflow.stage",
+    "toolRef": "tool.workflow.stage",
+    "timeoutMs": 30000,
+    "maxOutputBytes": 65536
+  }
+]

@@ -1,0 +1,17 @@
+{
+  "roleId": "seal",
+  "roleVersion": "1.0.0",
+  "name": "Seal",
+  "description": "Seals only a passing artifact and records a checksum manifest.",
+  "promptTemplate": "prompt.md",
+  "outputSchema": "output.schema.json",
+  "contractVersion": 1,
+  "purpose": "Produce a traceable release manifest after QA_PASS.",
+  "responsibility": { "kind": "atomic", "owns": ["release manifest"], "contributes": [], "doesNotOwn": ["changing source", "overriding test failure"] },
+  "inputs": { "preconditions": [] },
+  "outputs": { "events": ["SEALED"], "postconditions": [] },
+  "authority": { "controlActions": [] },
+  "constraints": { "writableStateFields": [], "allowedTools": ["tool.workflow.stage"] },
+  "failure": { "retryableErrorCodes": [], "terminalErrorCodes": [] },
+  "audit": { "requiredFields": [] }
+}

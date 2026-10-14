@@ -13,6 +13,7 @@ Use this small set first to cover most capabilities with minimum repetition:
 5. `ogs-gstacklike/`
 6. `rust-hello-pipeline/`
 7. `legal-rag-dev-team/`
+8. `wechat-miniprogram-factory/`
 
 ## Coverage Matrix
 
@@ -26,6 +27,7 @@ Use this small set first to cover most capabilities with minimum repetition:
 | `ogs-gstacklike/` | exec.bind | `review.* + ERROR* + context.map + shared artifacts + local role repo` | exec binding, human review, rework feedback injection, error compensation, Studio/Visualizer | project-style delivery flow with native review and run-level artifact handoff |
 | `rust-hello-pipeline/` | exec.bind | sequential multi-role tool chain | exec binding and side-effect validation | artifact-producing workflow |
 | `legal-rag-dev-team/` | model.bind | `parallel_split + all_of + context.map + strict handoff + review.*` | Chinese multi-agent team, model binding, parallel workstreams, join, human review, rework injection, citation-oriented structured handoff | end-to-end legal RAG delivery planning |
+| `wechat-miniprogram-factory/` | exec.bind | `context.map + bounded feedback loop + source sealing` | requirements/design/code/test lifecycle, QA feedback to coding, Mini Program behavior checks and source hashes | local-first iterative delivery |
 
 ## Recommended Order
 
@@ -36,6 +38,7 @@ Use this small set first to cover most capabilities with minimum repetition:
 5. Run `ogs-gstacklike/` for a full project-style example with local role repo, native review, shared artifacts, and compensation.
 6. Run `rust-hello-pipeline/` if you need external toolchain workflows.
 7. Run `legal-rag-dev-team/` for the recommended Chinese multi-agent collaboration example.
+8. Run `wechat-miniprogram-factory/` to exercise an end-to-end development loop that feeds QA findings back into coding before sealing a WeChat Mini Program.
 
 ## Fast Commands
 
@@ -60,3 +63,4 @@ bash examples/ogs-gstacklike/scripts/validate-scenarios.sh
 - `console-system.mmd`: smallest local-shell exec.bind baseline.
 - `error-flow-compensation/`: focused ERROR* routing baseline.
 - `legal-rag-dev-team/`: primary Chinese multi-agent collaboration example for a legal RAG team with explicit citation engineering, model binding, parallel decomposition, join, human review, and rework feedback injection.
+- `wechat-miniprogram-factory/`: project-style development/test flow that persists a native WeChat Mini Program, loops QA findings to coding with a bounded retry budget, and seals only a passing artifact.

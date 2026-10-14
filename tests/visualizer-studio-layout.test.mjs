@@ -13,6 +13,39 @@ import {
 import { addTopologyFlowOrder, topologyComponentIds } from "../src/visualizer/topology-order.ts";
 import { formatStudioEdgeLabel } from "../src/visualizer/studio-edge-semantics.ts";
 import { studioRoleMarkerVisible, studioRoleMonogram } from "../src/visualizer/studio-client/studio-role-marker.ts";
+import { studioSccGroupGeometry } from "../src/visualizer/studio-client/studio-graph-render.ts";
+
+test("SCC frames keep compact padding clear of neighboring role and boundary nodes", () => {
+  const geometry = studioSccGroupGeometry({
+    members: [
+      { id: "cycle-a", x: 100, y: 100, width: 180, height: 84 },
+      { id: "cycle-b", x: 320, y: 100, width: 180, height: 84 }
+    ],
+    obstacles: [
+      { id: "input", x: 20, y: 100, width: 70, height: 70 },
+      { id: "ordinary-role", x: 505, y: 100, width: 180, height: 84 },
+      { id: "output", x: 750, y: 100, width: 70, height: 70 }
+    ]
+  });
+
+  assert.ok(geometry);
+  assert.equal(geometry.paddingX, 5);
+  assert.equal(geometry.paddingY, 64);
+  const frame = { x: geometry.x, y: geometry.y, width: geometry.width, height: geometry.height };
+  for (const obstacle of [
+    { x: 20, y: 100, width: 70, height: 70 },
+    { x: 505, y: 100, width: 180, height: 84 },
+    { x: 750, y: 100, width: 70, height: 70 }
+  ]) {
+    assert.equal(
+      frame.x < obstacle.x + obstacle.width && obstacle.x < frame.x + frame.width &&
+      frame.y < obstacle.y + obstacle.height && obstacle.y < frame.y + frame.height,
+      false
+    );
+  }
+  assert.equal(frame.width, 410);
+  assert.equal(frame.height, 212);
+});
 
 test("Studio role markers derive readable monograms", () => {
   assert.equal(studioRoleMonogram("Debate Reviewer", "debate-reviewer"), "DR");

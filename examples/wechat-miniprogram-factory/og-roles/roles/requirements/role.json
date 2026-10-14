@@ -1,0 +1,17 @@
+{
+  "roleId": "requirements",
+  "roleVersion": "1.0.0",
+  "name": "Requirements",
+  "description": "Turns the requested mini-program into testable acceptance conditions.",
+  "promptTemplate": "prompt.md",
+  "outputSchema": "output.schema.json",
+  "contractVersion": 1,
+  "purpose": "Write a bounded product specification before design or implementation.",
+  "responsibility": { "kind": "atomic", "owns": ["acceptance criteria"], "contributes": [], "doesNotOwn": ["implementation"] },
+  "inputs": { "preconditions": [] },
+  "outputs": { "events": ["SPEC_READY"], "postconditions": [] },
+  "authority": { "controlActions": [] },
+  "constraints": { "writableStateFields": [], "allowedTools": ["tool.workflow.stage"] },
+  "failure": { "retryableErrorCodes": [], "terminalErrorCodes": [] },
+  "audit": { "requiredFields": [] }
+}

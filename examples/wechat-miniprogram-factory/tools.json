@@ -1,0 +1,11 @@
+{
+  "tools": [
+    {
+      "toolRef": "tool.workflow.stage",
+      "runner": "local_shell",
+      "command": "node",
+      "argsTemplate": ["scripts/workflow-stage.mjs"],
+      "stdinMode": "text"
+    }
+  ]
+}

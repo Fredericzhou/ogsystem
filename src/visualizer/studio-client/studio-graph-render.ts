@@ -117,7 +117,7 @@ export function renderStudioGraphViewModel(graph: Graph, viewModel: GraphViewMod
   const portsByNodeId = projectionPortsByNode(projection);
   graph.batchUpdate("studio-projection", () => {
     const nextNodeIds = new Set(projectedViewModel.nodes.map((node) => node.id));
-    const sccGroups = buildSccGroups(projectedViewModel.nodes, viewModel.edges, graph);
+    const sccGroups = buildSccGroups(projectedViewModel.nodes, graph);
     for (const group of sccGroups) nextNodeIds.add(group.id);
     const nextEdgeIds = new Set(viewModel.edges.map((edge) => edge.id));
     for (const bundle of projection.bundles) nextEdgeIds.add(bundle.id);
@@ -244,9 +244,45 @@ type SccGroup = {
   width: number;
   height: number;
   memberIds: string[];
-  padding: number;
+  paddingX: number;
+  paddingY: number;
   color: { fill: string; stroke: string; label: string };
 };
+
+const SCC_GROUP_PADDING_X = 12;
+const SCC_GROUP_PADDING_Y = 64;
+
+export function studioSccGroupGeometry(args: {
+  members: readonly { id: string; x: number; y: number; width: number; height: number }[];
+  obstacles: readonly { id: string; x: number; y: number; width: number; height: number }[];
+  paddingX?: number;
+  paddingY?: number;
+}): { x: number; y: number; width: number; height: number; paddingX: number; paddingY: number } | undefined {
+  if (!args.members.length) return undefined;
+  const left = Math.min(...args.members.map((node) => node.x));
+  const top = Math.min(...args.members.map((node) => node.y));
+  const right = Math.max(...args.members.map((node) => node.x + node.width));
+  const bottom = Math.max(...args.members.map((node) => node.y + node.height));
+  let paddingX = args.paddingX ?? SCC_GROUP_PADDING_X;
+  let paddingY = args.paddingY ?? SCC_GROUP_PADDING_Y;
+  for (const obstacle of args.obstacles) {
+    const gapX = Math.max(obstacle.x - right, left - (obstacle.x + obstacle.width), 0);
+    const gapY = Math.max(obstacle.y - bottom, top - (obstacle.y + obstacle.height), 0);
+    if (gapX < paddingX && gapY < paddingY) {
+      // Keep the larger free gap as the separating axis and tighten the other margin.
+      if (gapX >= gapY) paddingX = Math.min(paddingX, gapX);
+      else paddingY = Math.min(paddingY, gapY);
+    }
+  }
+  return {
+    x: left - paddingX,
+    y: top - paddingY,
+    width: right - left + paddingX * 2,
+    height: bottom - top + paddingY * 2,
+    paddingX,
+    paddingY
+  };
+}
 
 const SCC_COLORS = [
   { fill: "rgba(45, 212, 191, 0.025)", stroke: "rgba(45, 212, 191, 0.38)", label: "#7fbdb4" },
@@ -255,41 +291,25 @@ const SCC_COLORS = [
   { fill: "rgba(192, 132, 252, 0.025)", stroke: "rgba(192, 132, 252, 0.38)", label: "#b39acb" }
 ];
 
-function buildSccGroups(nodes: readonly GraphViewModelNode[], edges: readonly GraphViewModelEdge[], graph: Graph): SccGroup[] {
+function buildSccGroups(nodes: readonly GraphViewModelNode[], graph: Graph): SccGroup[] {
   const groups = new Map<string, GraphViewModelNode[]>();
   for (const node of nodes) {
     if (!node.topologyComponentId?.startsWith("SCC-")) continue;
     groups.set(node.topologyComponentId, [...(groups.get(node.topologyComponentId) ?? []), node]);
   }
   return [...groups.entries()].sort(([left], [right]) => left.localeCompare(right)).map(([label, members], index) => {
-    const left = Math.min(...members.map((node) => node.layout.x));
-    const top = Math.min(...members.map((node) => node.layout.y));
-    const right = Math.max(...members.map((node) => node.layout.x + node.layout.width));
-    const bottom = Math.max(...members.map((node) => node.layout.y + node.layout.height));
     const memberIds = members.map((node) => node.id).sort();
-    const memberIdSet = new Set(memberIds);
-    const padding = edges.reduce((required, edge) => {
-      if (!memberIdSet.has(edge.source) || !memberIdSet.has(edge.target)) return required;
-      const summaryLabel = formatStudioEdgeSummaryLabel(edge);
-      const hasWrappedSummaryLabel = estimateStudioEdgeSummaryLabelWidth(summaryLabel) > STUDIO_EDGE_SUMMARY_LABEL_MAX_WIDTH;
-      const inlineTopologyLabel = hasWrappedSummaryLabel ? formatStudioEdgeTopologyLabel(edge) : "";
-      const labelWidth = estimateStudioEdgeSummaryLabelWidth(inlineTopologyLabel ? `${inlineTopologyLabel} ${summaryLabel}` : summaryLabel);
-      const labelHeight = Math.ceil(labelWidth / STUDIO_EDGE_SUMMARY_LABEL_MAX_WIDTH) * 20 + 12;
-      const labelOffset = hasWrappedSummaryLabel ? 0 : 9;
-      return Math.max(required, Math.ceil(40 + labelOffset + Math.max(
-        Math.min(labelWidth, STUDIO_EDGE_SUMMARY_LABEL_MAX_WIDTH) / 2,
-        labelHeight / 2
-      ) + 8));
-    }, 28);
+    const geometry = studioSccGroupGeometry({
+      members: members.map((node) => ({ id: node.id, ...node.layout })),
+      obstacles: nodes
+        .filter((node) => !memberIds.includes(node.id))
+        .map((node) => ({ id: node.id, ...node.layout }))
+    })!;
     return {
       id: `__ogs-scc-${label}`,
       label,
-      x: left - padding,
-      y: top - padding,
-      width: right - left + padding * 2,
-      height: bottom - top + padding * 2,
+      ...geometry,
       memberIds,
-      padding,
       color: SCC_COLORS[index % SCC_COLORS.length]
     };
   });
@@ -309,7 +329,8 @@ function sccGroupMetadata(group: SccGroup): Node.Metadata {
     data: {
       studioSccGroup: {
         memberIds: group.memberIds,
-        padding: group.padding,
+        paddingX: group.paddingX,
+        paddingY: group.paddingY,
         lastPosition: { x: group.x, y: group.y }
       }
     },
@@ -328,7 +349,8 @@ function updateSccGroup(cell: Node, group: SccGroup): void {
   cell.setData({
     studioSccGroup: {
       memberIds: group.memberIds,
-      padding: group.padding,
+      paddingX: group.paddingX,
+      paddingY: group.paddingY,
       lastPosition: { x: group.x, y: group.y }
     }
   });
@@ -344,8 +366,9 @@ export function isStudioSccGroup(node: Node): boolean {
 
 /** Keeps each non-embedded SCC annotation aligned with the nodes it describes. */
 export function alignStudioSccGroups(graph: Graph): void {
-  for (const group of graph.getNodes().filter(isStudioSccGroup)) {
-    const data = group.getData() as { studioSccGroup?: { memberIds?: unknown; padding?: unknown } } | undefined;
+  const nodes = graph.getNodes();
+  for (const group of nodes.filter(isStudioSccGroup)) {
+    const data = group.getData() as { studioSccGroup?: { memberIds?: unknown; paddingX?: unknown; paddingY?: unknown } } | undefined;
     const memberIds = Array.isArray(data?.studioSccGroup?.memberIds)
       ? data.studioSccGroup.memberIds.filter((id): id is string => typeof id === "string")
       : [];
@@ -353,24 +376,23 @@ export function alignStudioSccGroups(graph: Graph): void {
       .map((id) => graph.getCellById(id))
       .filter((cell): cell is Node => Boolean(cell?.isNode() && !isStudioSccGroup(cell)));
     if (!members.length) continue;
-    const padding = Number.isFinite(data?.studioSccGroup?.padding) ? Number(data!.studioSccGroup!.padding) : 28;
-    const bounds = members.reduce((result, member) => {
-      const position = member.getPosition();
-      const size = member.getSize();
-      return {
-        left: Math.min(result.left, position.x),
-        top: Math.min(result.top, position.y),
-        right: Math.max(result.right, position.x + size.width),
-        bottom: Math.max(result.bottom, position.y + size.height)
-      };
-    }, { left: Number.POSITIVE_INFINITY, top: Number.POSITIVE_INFINITY, right: Number.NEGATIVE_INFINITY, bottom: Number.NEGATIVE_INFINITY });
-    group.position(bounds.left - padding, bounds.top - padding);
-    group.resize(bounds.right - bounds.left + padding * 2, bounds.bottom - bounds.top + padding * 2);
+    const geometry = studioSccGroupGeometry({
+      members: members.map((member) => ({ id: member.id, ...member.getPosition(), ...member.getSize() })),
+      obstacles: nodes
+        .filter((node) => !memberIds.includes(node.id) && !isStudioSccGroup(node))
+        .map((node) => ({ id: node.id, ...node.getPosition(), ...node.getSize() })),
+      paddingX: Number.isFinite(data?.studioSccGroup?.paddingX) ? Number(data.studioSccGroup.paddingX) : undefined,
+      paddingY: Number.isFinite(data?.studioSccGroup?.paddingY) ? Number(data.studioSccGroup.paddingY) : undefined
+    });
+    if (!geometry) continue;
+    group.position(geometry.x, geometry.y);
+    group.resize(geometry.width, geometry.height);
     group.setData({
       studioSccGroup: {
         memberIds,
-        padding,
-        lastPosition: { x: bounds.left - padding, y: bounds.top - padding }
+        paddingX: geometry.paddingX,
+        paddingY: geometry.paddingY,
+        lastPosition: { x: geometry.x, y: geometry.y }
       }
     });
   }

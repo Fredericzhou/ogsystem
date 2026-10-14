@@ -1201,6 +1201,24 @@ test("SCC container drag moves every member node with the container", async ({ p
     await expect(group).toBeVisible();
     await expect(page.locator('#studio-graph-root [data-cell-id="input"]')).toHaveCount(1);
     await expect(page.locator('#studio-graph-root [data-cell-id="output"]')).toHaveCount(1);
+    await expect.poll(async () => page.evaluate(() => {
+      const groupElement = document.querySelector<HTMLElement>('#studio-graph-root [data-cell-id^="__ogs-scc-"]');
+      const group = groupElement?.getBoundingClientRect();
+      const input = document.querySelector<HTMLElement>('#studio-graph-root [data-cell-id="input"]')?.getBoundingClientRect();
+      const output = document.querySelector<HTMLElement>('#studio-graph-root [data-cell-id="output"]')?.getBoundingClientRect();
+      const members = ["demo-analyst", "demo-intake"].map((id) =>
+        document.querySelector<HTMLElement>(`#studio-graph-root [data-cell-id="${id}"]`)?.getBoundingClientRect()
+      );
+      if (!group || !input || !output || members.some((member) => !member)) return null;
+      const overlaps = (left: DOMRect, right: DOMRect) => left.left < right.right && right.left < left.right &&
+        left.top < right.bottom && right.top < left.bottom;
+      return {
+        boundaryOverlaps: [input, output].filter((node) => overlaps(group, node)).length,
+        memberContainment: members.every((member) => member!.left >= group.left && member!.right <= group.right &&
+          member!.top >= group.top && member!.bottom <= group.bottom),
+        borderVisible: Boolean(groupElement?.querySelector("rect") && getComputedStyle(groupElement.querySelector("rect")!).stroke !== "none")
+      };
+    })).toEqual({ boundaryOverlaps: 0, memberContainment: true, borderVisible: true });
     await expect.poll(async () => page.locator("#studio-graph-root .x6-edge-label text").allTextContents())
       .toEqual(expect.arrayContaining(["#3L", "#4L"]));
     await expect.poll(async () => page.evaluate(() => {
@@ -1222,8 +1240,17 @@ test("SCC container drag moves every member node with the container", async ({ p
       return labels.filter((label) => {
         const bounds = label.getBoundingClientRect();
         return bounds.left < group.left || bounds.right > group.right || bounds.top < group.top || bounds.bottom > group.bottom;
-      }).length;
-    })).toBe(0);
+      }).map((label) => {
+        const bounds = label.getBoundingClientRect();
+        return {
+          text: label.textContent?.trim(),
+          left: Math.round(bounds.left - group.left),
+          right: Math.round(group.right - bounds.right),
+          top: Math.round(bounds.top - group.top),
+          bottom: Math.round(group.bottom - bounds.bottom)
+        };
+      });
+    })).toEqual([]);
     await expect(page.locator('#studio-graph-root .x6-edge.is-loop-back')).toHaveCount(2);
     await expect.poll(async () => page.evaluate(() => Array.from(
       document.querySelectorAll<SVGGElement>('#studio-graph-root .x6-edge.is-loop-back')
@@ -1265,12 +1292,12 @@ test("SCC container drag moves every member node with the container", async ({ p
     const groupBounds = await group.boundingBox();
     expect(groupBounds).toBeTruthy();
     if (!groupBounds) return;
-    const dragStart = { x: groupBounds.x + 8, y: groupBounds.y + groupBounds.height / 2 };
+    const dragStart = { x: groupBounds.x + groupBounds.width - 8, y: groupBounds.y + 8 };
     await page.mouse.move(dragStart.x, dragStart.y);
     await page.mouse.down();
-    await page.mouse.move(dragStart.x + 72, dragStart.y + 36, { steps: 8 });
+    await page.mouse.move(dragStart.x, dragStart.y + 72, { steps: 8 });
     await page.mouse.up();
-    await expect.poll(async () => page.evaluate((initial) => {
+    const dragResult = await page.evaluate((initial) => {
       const cellBox = (id: string) => {
         const cell = document.querySelector<HTMLElement>(id === "__ogs-scc-"
           ? '#studio-graph-root [data-cell-id^="__ogs-scc-"]'
@@ -1288,12 +1315,32 @@ test("SCC container drag moves every member node with the container", async ({ p
       const groupDelta = { x: after.group.x - initial.group.x, y: after.group.y - initial.group.y };
       const analystDelta = { x: after.analyst.x - initial.analyst.x, y: after.analyst.y - initial.analyst.y };
       const intakeDelta = { x: after.intake.x - initial.intake.x, y: after.intake.y - initial.intake.y };
-      return groupDelta.x > 45 && groupDelta.y > 15
-        && Math.abs(groupDelta.x - analystDelta.x) <= 3
-        && Math.abs(groupDelta.y - analystDelta.y) <= 3
-        && Math.abs(groupDelta.x - intakeDelta.x) <= 3
-        && Math.abs(groupDelta.y - intakeDelta.y) <= 3;
-    }, before)).toBe(true);
+      const groupBounds = document.querySelector<HTMLElement>('#studio-graph-root [data-cell-id^="__ogs-scc-"]')?.getBoundingClientRect();
+      const memberBounds = ["demo-analyst", "demo-intake"].map((id) =>
+        document.querySelector<HTMLElement>(`#studio-graph-root [data-cell-id="${id}"]`)?.getBoundingClientRect()
+      );
+      const boundaryBounds = ["input", "output"].map((id) =>
+        document.querySelector<HTMLElement>(`#studio-graph-root [data-cell-id="${id}"]`)?.getBoundingClientRect()
+      );
+      const overlaps = (left: DOMRect, right: DOMRect) => left.left < right.right && right.left < left.right &&
+        left.top < right.bottom && right.top < left.bottom;
+      const contained = Boolean(groupBounds && memberBounds.every((bounds) => bounds &&
+        bounds.left >= groupBounds.left && bounds.right <= groupBounds.right &&
+        bounds.top >= groupBounds.top && bounds.bottom <= groupBounds.bottom));
+      const clearOfBoundaries = Boolean(groupBounds && boundaryBounds.every((bounds) => bounds && !overlaps(groupBounds, bounds)));
+      return {
+        passed: analystDelta.y > 45
+        && Math.abs(analystDelta.x - intakeDelta.x) <= 3
+        && Math.abs(analystDelta.y - intakeDelta.y) <= 3
+        && contained && clearOfBoundaries,
+        groupDelta,
+        analystDelta,
+        intakeDelta,
+        contained,
+        clearOfBoundaries
+      };
+    }, before);
+    expect(dragResult.passed, JSON.stringify(dragResult)).toBe(true);
   } finally {
     await new Promise<void>((resolve) => started.server.close(() => resolve()));
   }

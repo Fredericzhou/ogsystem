@@ -1,0 +1,17 @@
+{
+  "roleId": "coding",
+  "roleVersion": "1.0.0",
+  "name": "Coding",
+  "description": "Builds and revises the native mini-program from the accepted design and QA feedback.",
+  "promptTemplate": "prompt.md",
+  "outputSchema": "output.schema.json",
+  "contractVersion": 1,
+  "purpose": "Implement the requested mini-program and apply bounded test feedback.",
+  "responsibility": { "kind": "atomic", "owns": ["mini-program source"], "contributes": [], "doesNotOwn": ["acceptance decision"] },
+  "inputs": { "preconditions": [] },
+  "outputs": { "events": ["CODE_READY"], "postconditions": [] },
+  "authority": { "controlActions": [] },
+  "constraints": { "writableStateFields": [], "allowedTools": ["tool.workflow.stage"] },
+  "failure": { "retryableErrorCodes": [], "terminalErrorCodes": [] },
+  "audit": { "requiredFields": [] }
+}

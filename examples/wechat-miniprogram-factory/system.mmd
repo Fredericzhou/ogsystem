@@ -1,0 +1,20 @@
+flowchart TD
+%% system.id=wechat.miniprogram.factory
+%% system.version=1.0.0
+%% law.global=law.console.base
+%% entry.role=requirements
+%% loop.max.coding=2
+%% exec.bind.requirements=profile.workflow.stage
+%% exec.bind.design=profile.workflow.stage
+%% exec.bind.coding=profile.workflow.stage
+%% exec.bind.testing=profile.workflow.stage
+%% exec.bind.seal=profile.workflow.stage
+%% context.map.coding.previous_output=direct.data
+
+input -->|REQUEST| requirements[Role:requirements]
+requirements[Role:requirements] -->|SPEC_READY| design[Role:design]
+design[Role:design] -->|DESIGN_READY| coding[Role:coding]
+coding[Role:coding] -->|CODE_READY| testing[Role:testing]
+testing[Role:testing] -->|TEST_FAIL| coding[Role:coding]
+testing[Role:testing] -->|TEST_PASS| seal[Role:seal]
+seal[Role:seal] -->|SEALED| output
