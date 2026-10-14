@@ -76,6 +76,30 @@ test("Mini Program factory stored layout keeps its feedback loop clear of nodes 
   );
 });
 
+test("Mini Program factory stacked feedback route leaves both role borders normally", async () => {
+  const authoringPath = new URL("../examples/wechat-miniprogram-factory/.ogs/studio/system.authoring.json", import.meta.url);
+  const authoring = JSON.parse(await readFile(authoringPath, "utf8"));
+  const viewModel = buildGraphViewModel({ authoring, mode: "edit" });
+  const projection = await createElkLayoutProjection(viewModel, "stacked");
+  const edge = projection.edges.find((item) => item.id === "4:testing:TEST_FAIL:coding");
+  assert.ok(edge);
+  const nodes = new Map(projection.nodes.map((item) => [item.id, item]));
+  const source = nodes.get(edge.source);
+  const target = nodes.get(edge.target);
+  const sourcePortX = source.x + source.width / 2 + edge.routing.source.offset;
+  const targetPortX = target.x + target.width / 2 + edge.routing.target.offset;
+  const first = edge.routing.routePoints[0];
+  const last = edge.routing.routePoints.at(-1);
+
+  assert.equal(edge.routing.source.side, "top");
+  assert.equal(edge.routing.target.side, "top");
+  assert.equal(first.x, sourcePortX);
+  assert.ok(first.y <= source.y - 24);
+  assert.equal(last.x, targetPortX);
+  assert.ok(last.y <= target.y - 24);
+  assert.equal(projection.diagnostics.some((item) => item.code === "EDGE_NODE_COLLISION"), false);
+});
+
 test("Chinese role names stay readable in compact graph cards", () => {
   const role = node("review", 0, 0);
   role.label = "风险分析与投资价值评估审查角色".repeat(5);
@@ -322,6 +346,24 @@ test("backward feedback edges use a distinct obstacle-aware channel from the for
     point.y < Math.min(proposer.y, judge.y) ||
     point.y > Math.max(proposer.y + proposer.height, judge.y + judge.height)
   ));
+  const sourcePoint = rework.routePoints[0];
+  const targetPoint = rework.routePoints.at(-1);
+  const sourcePortX = judge.x + judge.width / 2 + rework.source.offset;
+  const targetPortX = proposer.x + proposer.width / 2 + rework.target.offset;
+  if (rework.source.side === "top") {
+    assert.equal(sourcePoint.x, sourcePortX);
+    assert.ok(sourcePoint.y <= judge.y - 24);
+  } else {
+    assert.equal(sourcePoint.x, sourcePortX);
+    assert.ok(sourcePoint.y >= judge.y + judge.height + 24);
+  }
+  if (rework.target.side === "top") {
+    assert.equal(targetPoint.x, targetPortX);
+    assert.ok(targetPoint.y <= proposer.y - 24);
+  } else {
+    assert.equal(targetPoint.x, targetPortX);
+    assert.ok(targetPoint.y >= proposer.y + proposer.height + 24);
+  }
 });
 
 test("backward feedback routes move around obstructing nodes without crossing their clearance", () => {

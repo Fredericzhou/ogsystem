@@ -978,10 +978,16 @@ function obstacleAwareLoopRoute(
   if (sourceIndex === undefined || targetIndex === undefined) return [];
 
   const neighbors = new Map<number, Array<{ pointIndex: number; direction: "horizontal" | "vertical"; distance: number }>>();
-  const connect = (leftIndex: number, rightIndex: number, allowBlocked = false): void => {
+  const connect = (leftIndex: number, rightIndex: number, terminalStub = false): void => {
+    // Endpoint nodes are not obstacles, so only the explicit clearance links
+    // may leave or enter their terminals. This prevents border-hugging paths.
+    if (!terminalStub && (
+      leftIndex === sourceIndex || leftIndex === targetIndex ||
+      rightIndex === sourceIndex || rightIndex === targetIndex
+    )) return;
     const left = points[leftIndex];
     const right = points[rightIndex];
-    if (!allowBlocked && routeSegmentBlocked(left, right, obstacles)) return;
+    if (!terminalStub && routeSegmentBlocked(left, right, obstacles)) return;
     const direction = left.y === right.y ? "horizontal" : "vertical";
     const distance = Math.abs(left.x - right.x) + Math.abs(left.y - right.y);
     neighbors.set(leftIndex, [...(neighbors.get(leftIndex) ?? []), { pointIndex: rightIndex, direction, distance }]);
